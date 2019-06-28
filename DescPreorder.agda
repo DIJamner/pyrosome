@@ -6,9 +6,13 @@ open import Relation.Binary hiding (Rel)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; refl; cong; sym)
 open import Algebra.Structures
+open import Data.Product
+open import Data.Bool
 
 open import Data.Var hiding (_<$>_)
 open import Generic.Syntax
+
+open import DescUtils
 
 {-
   -- Description morphisms form a preorder wrt to equivalence
@@ -47,3 +51,25 @@ record _⊑_ (d1 d2 : Desc I) : Set₁ where
   trans = λ x x₁ → record {
     morph = MkDescMorphism (λ x₂ → _⊑_.oapply x₁ (_⊑_.oapply x x₂)) ;
     injective = mkInjective λ x₂ →  _⊑_.oinj x (_⊑_.oinj x₁ x₂) } }
+
+
+plus-⓪-no-increaseL : {d : Desc I} → ⓪ `+ d ⊑ d
+plus-⓪-no-increaseL {d} = record {
+  morph = MkDescMorphism λ x → case (λ ()) (λ y → y) ((proj₁ x) , proj₂ x) ;
+  injective = λ {X i Γ} → mkInjective (λ { {false , snd} {false , .snd} refl → refl} )}
+  
+plus-⓪-no-increaseR : {d : Desc I} → d `+ ⓪ ⊑ d
+plus-⓪-no-increaseR {d} = record {
+  morph = MkDescMorphism λ x → case (λ y → y) (λ ()) ((proj₁ x) , proj₂ x) ;
+  injective = λ {X i Γ} → mkInjective (λ { {true , snd} {true , .snd} refl → refl} )}
+                                                                                   
+plus-nondecreasingL : {d1 d2 : Desc I} → d1 ⊑ d1 `+ d2
+plus-nondecreasingL {d1} {d2} = record {
+  morph = MkDescMorphism (λ {X} {i} {Δ} → _,_ true) ;
+  injective =  mkInjective (λ { {i1} {.i1} refl → refl})}
+                                                  
+plus-nondecreasingR : {d1 d2 : Desc I} → d2 ⊑ d1 `+ d2
+plus-nondecreasingR {d1} {d2} = record {
+  morph = MkDescMorphism (λ {X} {i} {Δ} → _,_ false) ;
+  injective =  mkInjective (λ { {i1} {.i1} refl → refl})}
+     
