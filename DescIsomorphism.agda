@@ -23,6 +23,11 @@ private module Pre = IsPreorder ⊑-is-preorder
 infix 4 _≅_
 
 -- We define isomorphism by a pair of injective functions
+-- TODO: is this definition bad? I want the functions to compose to be inverses
+-- Note: maybe the right definition is d1 ⊑ d2 = DescMorphism
+-- and isomorphism is d1 ⊑ d2, d2 ⊑ d1 such that they are inverses
+-- only reason to expect this definition is if ⊑ were a partial order and it's not
+-- in this case, the two side of the isomorphism are provably injective I think
 
 record _≅_ (d1 d2 : Desc I) : Set₁ where
   field
