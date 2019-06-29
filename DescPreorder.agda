@@ -1,3 +1,4 @@
+{-# OPTIONS --sized-types --safe #-}
 -- We build a preorder on descriptions via injective morphisms
 -- This lets us define description isomorphism as ordered in both directions
 module DescPreorder {I : Set} where
@@ -6,8 +7,10 @@ open import Relation.Binary hiding (Rel)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; refl; cong; sym)
 open import Algebra.Structures
+open import Algebra.FunctionProperties
 open import Data.Product
 open import Data.Bool
+open import Function using (_∋_)
 
 open import Data.Var hiding (_<$>_)
 open import Generic.Syntax
@@ -72,4 +75,31 @@ plus-nondecreasingR : {d1 d2 : Desc I} → d2 ⊑ d1 `+ d2
 plus-nondecreasingR {d1} {d2} = record {
   morph = MkDescMorphism (λ {X} {i} {Δ} → _,_ false) ;
   injective =  mkInjective (λ { {i1} {.i1} refl → refl})}
-     
+
+-- TODO: change name and handle overlap via namespacing?
+⓪-⊑-identity : Identity _⊑_ ⓪ _`+_
+⓪-⊑-identity = ((λ x → plus-⓪-no-increaseL) , λ x → plus-⓪-no-increaseR)
+
+
+-- TODO: find the right way to inline
+tmp : {B : Bool → Set} → ∀ {b} → {a1 a2 : B b} → (Σ Bool B ∋ b , a1) ≡ (b , a2) → a1 ≡ a2
+tmp refl = refl
+
+plus-congruence : Congruent₂ _⊑_ _`+_
+plus-congruence = λ leq1 leq2 → record {
+  morph = MkDescMorphism (λ {
+    (false , snd) → false , _⊑_.oapply leq2 snd ;
+    (true , snd) → true , _⊑_.oapply leq1 snd} ) ;
+  injective = mkInjective (λ {
+    {false , snd} {false , snd₁} x₁ → cong ( false ,_) (_⊑_.oinj leq2 (tmp x₁)) ;
+    {true , snd} {true , snd₁} x₁ → cong (true ,_) (_⊑_.oinj leq1 (tmp x₁))} ) }
+
+-- under isomorphism, descriptions commute
+⊑-commute : {d1 d2 : Desc I} → d1 `+ d2 ⊑ d2 `+ d1
+⊑-commute = record {
+  morph = MkDescMorphism (λ {
+    (false , snd) → true , snd ;
+    (true , snd) → false , snd}) ;
+  injective = mkInjective (λ {
+    {false , snd} {false , .snd} refl → refl ;
+    {true , snd} {true , .snd} refl → refl}) }

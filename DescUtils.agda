@@ -1,3 +1,5 @@
+{-# OPTIONS --sized-types --safe #-}
+
 -- This module is for utilities and standard features
 -- based on the generic syntax library
 module DescUtils where

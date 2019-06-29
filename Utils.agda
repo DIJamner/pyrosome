@@ -1,3 +1,4 @@
+{-# OPTIONS --safe #-}
 -- This module is for utilities that do not directly pertain
 -- to the generic syntax library
 module Utils where
