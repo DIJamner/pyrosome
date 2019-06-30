@@ -5,102 +5,129 @@ module DescIsomorphism {I} where
 
 open import Data.Bool
 open import Data.Product
+open import Data.List using (List)
 open import Relation.Binary hiding (Rel)
 import Relation.Binary.PropositionalEquality as Eq
-open Eq using (_≡_; refl; cong; sym)
+open Eq using (_≡_; refl; cong; →-to-⟶)
 open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; _≡⟨_⟩_; _∎)
 open import Algebra.Structures
 open import Algebra.FunctionProperties
+
+import Function
+
+open import Function.Inverse renaming (_∘_ to _∘ᴵ_)
+open import Function.Equality using (_⟨$⟩_;_∘_)
 
 open import Data.Var hiding (_<$>_)
 open import Generic.Syntax
 
 open import DescUtils
-open import DescPreorder {I}
+open import DescPreorder using(_⊑_)
+import DescPreorder {I} as Pre
 
-private module Pre = IsPreorder ⊑-is-preorder
+--private module Pre = IsPreorder ⊑-is-preorder
+
+desc-≡ : Setoid _ _
+desc-≡ = Eq.setoid (Desc I)
+
+private
+  variable
+    d1 d2 : Desc I
+
 
 infix 4 _≅_
 
--- We define isomorphism by a pair of injective functions
--- TODO: is this definition bad? I want the functions to compose to be inverses
--- Note: maybe the right definition is d1 ⊑ d2 = DescMorphism
--- and isomorphism is d1 ⊑ d2, d2 ⊑ d1 such that they are inverses
--- only reason to expect this definition is if ⊑ were a partial order and it's not
--- in this case, the two side of the isomorphism are provably injective I think
+-- We use inverses/isomorphism as our equivalence for descriptions
+-- since we want commutativity of `+ and other sensible
+-- (but not syntactically equal) relationships between descriptions
 
-record _≅_ (d1 d2 : Desc I) : Set₁ where
-  field
-    ⊑R : d1 ⊑ d2
-    ⊑L : d2 ⊑ d1
+_≅_ : Desc I → Desc I → Set₁
+d1 ≅ d2 = ∀ {X i Γ} → ⟦ d1 ⟧ X i Γ ↔ ⟦ d2 ⟧ X i Γ
 
--- isomorphism is an equivalence relation
-≅-is-equivalence : IsEquivalence _≅_
-≅-is-equivalence = record {
-  refl = record {
-    ⊑R = Pre.reflexive refl ;
-    ⊑L = Pre.reflexive refl }  ;
-  sym = λ x → record { ⊑R = _≅_.⊑L x ; ⊑L = _≅_.⊑R x } ;
-  trans = λ isoIJ isoJK → record {
-    ⊑R = Pre.trans (_≅_.⊑R isoIJ) (_≅_.⊑R isoJK) ;
-    ⊑L = Pre.trans (_≅_.⊑L isoJK) (_≅_.⊑L isoIJ) } }
+right : d1 ≅ d2 → d1 ⊑ d2
+right eq = Inverse.to eq ⟨$⟩_
 
-⓪-≅-identity : Identity _≅_ ⓪ _`+_
-⓪-≅-identity =
+left : d1 ≅ d2 → d2 ⊑ d1
+left eq = Inverse.from eq ⟨$⟩_
+
+isEquivalence : IsEquivalence _≅_
+isEquivalence  = record {
+  refl = id ;
+  sym = λ x → sym x ;
+  trans = λ f g → g ∘ᴵ f }
+
+
+⓪-identity : Identity _≅_ ⓪ _`+_
+⓪-identity =
   (λ x → record {
-    ⊑R = plus-⓪-no-increaseL ;
-    ⊑L = plus-nondecreasingR }) ,
-  λ x → record {
-    ⊑R = plus-⓪-no-increaseR ;
-    ⊑L = plus-nondecreasingL }
+    to = →-to-⟶ Pre.plus-⓪-no-increaseL ;
+    from = →-to-⟶ Pre.plus-nondecreasingR ;
+    inverse-of = record {
+      left-inverse-of = λ { (false , snd) → refl} ;
+      right-inverse-of = λ x → refl } }) ,
+  (λ x → record {
+    to = →-to-⟶ Pre.plus-⓪-no-increaseR ;
+    from = →-to-⟶ Pre.plus-nondecreasingL ;
+    inverse-of = record {
+      left-inverse-of = λ { (true , snd) → refl } ;
+      right-inverse-of = λ x₁ → refl } })
 
--- Descriptions form a monoid under isomorphism with ⓪ and `+
-desc-monoid : IsMonoid _≅_ _`+_ ⓪
+`+-cong : Congruent₂ _≅_ _`+_
+`+-cong iso1 iso2 = record {
+  to = case⟶ (→-to-⟶ (true ,_ ) ∘ Inverse.to iso1) (→-to-⟶ (false ,_ ) ∘ Inverse.to iso2) ;
+  from = case⟶ ((→-to-⟶ (true ,_ ) ∘ Inverse.from iso1)) ((→-to-⟶ (false ,_ ) ∘ Inverse.from iso2)) ;
+  inverse-of = record {
+    left-inverse-of = λ {
+      (false , snd) → cong (false ,_ ) (Inverse.left-inverse-of iso2 snd)  ;
+      (true , snd) → cong (true ,_ ) (Inverse.left-inverse-of iso1 snd) } ;
+    right-inverse-of = λ {
+      (false , snd) → cong (false ,_) (Inverse.right-inverse-of iso2 snd) ;
+      (true , snd) → cong (true ,_) (Inverse.right-inverse-of iso1 snd)} } }
+
+`+-assoc : Associative _≅_ _`+_
+`+-assoc d1 d2 d3 =  record {
+  to = case⟶
+    (→-to-⟶ λ { (false , snd) → false , true , snd ;
+                (true , snd) → true , snd})
+    (→-to-⟶ (λ x → false , false , x)) ;
+  from = case⟶
+    (→-to-⟶ λ x → true , true , x)
+    (→-to-⟶ (λ { (false , snd) → false , snd ;
+                 (true , snd) → true , false , snd})) ;
+  inverse-of = record {
+    left-inverse-of = λ {
+      (false , snd) → refl ;
+      (true , false , snd) → refl ;
+      (true , true , snd) → refl} ;
+    right-inverse-of =  λ {
+      (false , false , snd) → refl ;
+      (false , true , snd) → refl ;
+      (true , snd) → refl} } }
+
+-- Descriptions form a commutative monoid under isomorphism with ⓪ and `+
+desc-monoid : IsCommutativeMonoid _≅_ _`+_ ⓪
 desc-monoid = record {
   isSemigroup = record {
     isMagma = record {
-      isEquivalence = ≅-is-equivalence ;
-      ∙-cong = λ iso1 iso2 → record {
-        ⊑R = plus-congruence (_≅_.⊑R iso1) (_≅_.⊑R iso2) ;
-        ⊑L = plus-congruence (_≅_.⊑L iso1) (_≅_.⊑L iso2) } } ;
-    assoc = λ d1 d2 d3 → record {
-      ⊑R = record {
-         morph = MkDescMorphism (λ {
-           (false , snd) → false , false , snd ;
-           (true , false , snd) → false , true , snd ;
-           (true , true , snd) → true ,  snd}) ;
-         injective = mkInjective (λ {
-           {false , snd} {false , .snd} refl → refl ;
-           {false , snd} {true , false , snd₁} () ;
-           {false , snd} {true , true , snd₁} () ;
-           {true , false , snd} {false , snd₁} () ;
-           {true , true , snd} {false , snd₁} () ;
-           {true , false , snd} {true , false , .snd} refl → cong (true ,_) refl ;
-           {true , true , snd} {true , true , .snd} refl → cong (true ,_) refl}) } ;
-      ⊑L = record {
-         morph = MkDescMorphism (λ{
-           (false , false , snd) → false , snd ;
-           (false , true , snd) → true , false , snd ;
-           (true , snd) → true , true , snd}) ;
-         injective = mkInjective (λ {
-           {false , false , snd} {false , false , .snd} refl → refl ;
-           {false , true , snd} {false , true , .snd} refl → refl ;
-           {false , false , snd} {true , snd₁} () ;
-           {false , true , snd} {true , snd₁} () ;
-           {true , snd} {false , false , snd₁} () ;
-           {true , snd} {false , true , snd₁} () ;
-           {true , snd} {true , .snd} refl → cong (true ,_) refl }) } } } ;
-  identity = ⓪-≅-identity }
-
--- TODO: clean up above by using this to show a monoid? (shorter proof)
-desc-commutative-monoid : IsCommutativeMonoid _≅_ _`+_ ⓪
-desc-commutative-monoid = record {
-  isSemigroup = IsMonoid.isSemigroup desc-monoid ;
-  identityˡ = proj₁ ⓪-≅-identity ;
+      isEquivalence = isEquivalence ;
+      ∙-cong = `+-cong } ;
+    assoc = `+-assoc } ;
+  identityˡ = proj₁ ⓪-identity ;
   comm = λ x y → record {
-    ⊑R = ⊑-commute ;
-    ⊑L = ⊑-commute } }
+    to = →-to-⟶ λ { (false , snd) → true , snd ; (true , snd) → false , snd} ;
+    from = →-to-⟶ λ { (false , snd) → true , snd ; (true , snd) → false , snd} ;
+    inverse-of = record {
+      left-inverse-of = λ { (false , snd) → refl ; (true , snd) → refl} ;
+      right-inverse-of = λ { (false , snd) → refl ; (true , snd) → refl} } } }
 
+-- morphisms form a preorder under isomorphism as well as equivalence
+⊑-isPreorder : IsPreorder _≅_ _⊑_
+⊑-isPreorder = record {
+  isEquivalence = isEquivalence ;
+  reflexive = right ;
+  trans = λ f g → g Function.∘ f }
+
+{-
 -- of course, injective morphisms also form a preorder up to isomorphism
 ⊑-is-≅-preorder : IsPreorder _≅_ _⊑_
 ⊑-is-≅-preorder = record {
@@ -111,3 +138,4 @@ desc-commutative-monoid = record {
 
 desc-setoid : Setoid _ _
 desc-setoid = record { Carrier = Desc I ; _≈_ = _≅_ ; isEquivalence = ≅-is-equivalence }
+-}
