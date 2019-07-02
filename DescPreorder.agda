@@ -19,14 +19,6 @@ open import DescUtils
 
 {-
   -- Description morphisms form a preorder wrt to equivalence
-  desc-morph-preorder : IsPreorder _≡_ (DescMorphism {I})
-  desc-morph-preorder = record {
-    isEquivalence = Eq.isEquivalence ;
-    reflexive = λ {i j} x →  MkDescMorphism (tmp i j x) ;
-    trans = λ x x₁ → MkDescMorphism (λ x₂ → DescMorphism.apply x₁ (DescMorphism.apply x x₂)) }
-
-  However, this is not an interesting preorder since it just partitions descriptions into inhabited
-  and uninhabited ones
 -}
 
 infix 4 _⊑_
@@ -79,3 +71,18 @@ plus-nondecreasingR = false ,_
 `+-coproduct f g (true , snd) = f snd
 
 {- TODO: what is the product of two descriptions? might be interesting -}
+
+-- We can transport semantics along description morphisms
+module _ {V C : I ─Scoped} where
+  open import Generic.Semantics
+
+  private variable d1 d2 : Desc I
+
+  -- Semantics can be pulled back across description morphisms
+  -- In other words, a compiler gives a semantics for the source in terms of the target
+  sem-transport : d1 ⊑ d2 → Semantics d2 V C → Semantics d1 V C
+  sem-transport m S = record {
+    th^𝓥 = S.th^𝓥 ;
+    var = S.var ;
+    alg = S.alg ∘ m } where
+    module S = Semantics S

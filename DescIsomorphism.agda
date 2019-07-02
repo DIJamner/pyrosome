@@ -18,6 +18,7 @@ import Function
 open import Function.Inverse renaming (_∘_ to _∘ᴵ_)
 open import Function.Equality using (_⟨$⟩_;_∘_)
 
+open import Data.Relation
 open import Data.Var hiding (_<$>_)
 open import Generic.Syntax
 
@@ -127,15 +128,52 @@ desc-monoid = record {
   reflexive = right ;
   trans = λ f g → g Function.∘ f }
 
+open import Level
+desc-setoid : Setoid (suc zero) (suc zero)
+desc-setoid = record {
+  Carrier = Desc I ;
+  _≈_ = _≅_ ;
+  isEquivalence = isEquivalence }
+
+-- Like morphisms, we can transport semantics along isomorphisms
+module _ {V C : I ─Scoped} where
+  open import Generic.Semantics
+
+  -- Semantics can be pulled back across Isomorphisms
+  sem-transport : d1 ≅ d2 → Semantics d2 V C → Semantics d1 V C
+  sem-transport m S = record {
+    th^𝓥 = S.th^𝓥 ;
+    var = S.var ;
+    alg = S.alg Function.∘ (right m) } where
+    module S = Semantics S
+
 {-
--- of course, injective morphisms also form a preorder up to isomorphism
-⊑-is-≅-preorder : IsPreorder _≅_ _⊑_
-⊑-is-≅-preorder = record {
-  isEquivalence = ≅-is-equivalence ;
-  reflexive = λ x → _≅_.⊑R x ;
-  trans = λ x x₁ → IsPreorder.trans ⊑-is-preorder x x₁ }
 
+  roundtrip : d1 ≅ d2 → Semantics d2 V C → Semantics d2 V C
+  roundtrip iso S = sem-transport (sym iso) (sem-transport iso S)
 
-desc-setoid : Setoid _ _
-desc-setoid = record { Carrier = Desc I ; _≈_ = _≅_ ; isEquivalence = ≅-is-equivalence }
+  strans-th : (iso : d1 ≅ d2) → (S : Semantics d2 V C) →
+              ∀{σ Γ} → Semantics.th^𝓥 S {σ} {Γ} ≡ Semantics.th^𝓥 (roundtrip iso S)
+  strans-th iso S = refl
+
+  tmp : (iso : d1 ≅ d2) → (S : Semantics d2 V C) →
+                     sem-transport (sym iso) (sem-transport iso S) ≡ S
+  tmp iso S with sem-transport (sym iso) (sem-transport iso S) | strans-th iso S
+  tmp iso record { th^𝓥 = th^𝓥₁ ; var = var₁ ; alg = alg₁ }
+          | record { th^𝓥 = th^𝓥 ; var = var ; alg = alg } | refl = {!!}
+
+  sem-transport-id : (iso : d1 ≅ d2) → (S : Semantics d2 V C) →
+                     sem-transport (sym iso) (sem-transport iso S) ≅ₛ S
+  sem-transport-id {d1} {d2} iso S = record {
+    thᴿ = λ { ρ refl → refl} ;
+    varᴿ = λ { refl → refl} ;
+    algᴿ = λ { e (All.packᴿ lookupᴿ) r → {!!}}
+    -- Eq.cong₂ (λ x x₁ → Semantics.alg x x₁) {!!} {!!}
+    --cong {!!} (Eq.cong₂ (fmap d2) {!!} refl)
+    {-λ  a b → cong S.alg Function.∘ λ x →
+      begin
+        {!!} ≡⟨ Iso.right-inverse-of {!!} ⟩ Eq.cong₂ (fmap d2) (cong {!!} {!!}) refl-}
+        } where
+    module Iso {X i Γ} = Inverse (iso {X} {i} {Γ})
+    --module S = Semantics S
 -}
