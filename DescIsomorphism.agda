@@ -26,7 +26,7 @@ open import Generic.Syntax
 open import Utils
 open import DescUtils
 open import DescPreorder using(_⊑_)
-import DescPreorder {I} as Pre
+open import Path {I}
 
 --private module Pre = IsPreorder ⊑-is-preorder
 
@@ -49,25 +49,43 @@ TODO: do I want something initial?
 It's hard to prove the right things about isomorphisms (reasoning seems parametric)
 -}
 
-_≅_ : Desc I → Desc I → Set₁
-d1 ≅ d2 = ∀ {X i Γ} → ⟦ d1 ⟧ X i Γ ↔ ⟦ d2 ⟧ X i Γ
+record _≅_ (d1 d2 : Desc I) : Set₁ where
+  field
+    right : Path d1 d2
+    left : Path d2 d1
+    inverses : ∀ {X i Γ} → ⟦ right ⟧$ {X} {i} {Γ} InverseOfᶠ ⟦ left ⟧$
 
-right : d1 ≅ d2 → d1 ⊑ d2
-right eq = Inverse.to eq ⟨$⟩_
+  left-inverse-of : ∀ {X i Γ} → ∀ e → ⟦ right ⟧$ {X} {i} {Γ} ( ⟦ left ⟧$ e) ≡ e
+  left-inverse-of = {!!}
 
-Tm-right : d1 ≅ d2 → ∀{s i Γ} → Tm d1 s i Γ → Tm d2 s i Γ
-Tm-right iso = map^Tm (MkDescMorphism (right iso))
 
-left : d1 ≅ d2 → d2 ⊑ d1
-left eq = Inverse.from eq ⟨$⟩_
+  right-morph : DescMorphism d1 d2
+  right-morph = MkDescMorphism ⟦ right ⟧$
+  
+  left-morph : DescMorphism d2 d1
+  left-morph = MkDescMorphism ⟦ left ⟧$
 
-Tm-left : d1 ≅ d2 → ∀{s i Γ} → Tm d2 s i Γ → Tm d1 s i Γ
-Tm-left iso = map^Tm (MkDescMorphism (left iso))
+                                     
+  Tm-right : ∀{s i Γ} → Tm d1 s i Γ → Tm d2 s i Γ
+  Tm-right = map^Tm right-morph
 
-{-
+  Tm-left : ∀{s i Γ} → Tm d2 s i Γ → Tm d1 s i Γ
+  Tm-left = map^Tm left-morph
+
+
+open _≅_ public
+
+  
 Tm-roundtrip : (iso : d1 ≅ d2) → ∀{s i Γ} → (e : Tm d1 s i Γ) → Tm-left iso (Tm-right iso e) ≡ e
 Tm-roundtrip iso (`var x) = refl
-Tm
+Tm-roundtrip {`σ A x₁} {d2} iso (`con x) = {!!}
+Tm-roundtrip {`X x₁ x₂ d1} {d2} iso (`con x) = {!!}
+Tm-roundtrip {`∎ x₁} {`σ A x₂} iso (`con x) = cong `con {!!}
+Tm-roundtrip {`∎ x₁} {`∎ x₂} iso (`con x) = cong `con {!inverses!} 
+
+
+{-
+{-
 -}
 
 isEquivalence : IsEquivalence _≅_
@@ -275,4 +293,6 @@ iso-fusion iso S = record {
         } where
     module Iso {X i Γ} = Inverse (iso {X} {i} {Γ})
     --module S = Semantics S
+-}
+
 -}
