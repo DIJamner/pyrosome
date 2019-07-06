@@ -1,4 +1,5 @@
 {-# OPTIONS --sized-types --safe #-}
+-- TODO: remove unsolved metas by splitting this file a little
 -- We care more about isomorphism of descriptions that equivalence
 -- since we can transport semantics across description morphisms
 module DescIsomorphism {I} where
@@ -22,6 +23,7 @@ open import Data.Relation
 open import Data.Var hiding (_<$>_)
 open import Generic.Syntax
 
+open import Utils
 open import DescUtils
 open import DescPreorder using(_⊑_)
 import DescPreorder {I} as Pre
@@ -42,14 +44,31 @@ infix 4 _≅_
 -- since we want commutativity of `+ and other sensible
 -- (but not syntactically equal) relationships between descriptions
 
+{-
+TODO: do I want something initial?
+It's hard to prove the right things about isomorphisms (reasoning seems parametric)
+-}
+
 _≅_ : Desc I → Desc I → Set₁
 d1 ≅ d2 = ∀ {X i Γ} → ⟦ d1 ⟧ X i Γ ↔ ⟦ d2 ⟧ X i Γ
 
 right : d1 ≅ d2 → d1 ⊑ d2
 right eq = Inverse.to eq ⟨$⟩_
 
+Tm-right : d1 ≅ d2 → ∀{s i Γ} → Tm d1 s i Γ → Tm d2 s i Γ
+Tm-right iso = map^Tm (MkDescMorphism (right iso))
+
 left : d1 ≅ d2 → d2 ⊑ d1
 left eq = Inverse.from eq ⟨$⟩_
+
+Tm-left : d1 ≅ d2 → ∀{s i Γ} → Tm d2 s i Γ → Tm d1 s i Γ
+Tm-left iso = map^Tm (MkDescMorphism (left iso))
+
+{-
+Tm-roundtrip : (iso : d1 ≅ d2) → ∀{s i Γ} → (e : Tm d1 s i Γ) → Tm-left iso (Tm-right iso e) ≡ e
+Tm-roundtrip iso (`var x) = refl
+Tm
+-}
 
 isEquivalence : IsEquivalence _≅_
 isEquivalence  = record {
@@ -135,17 +154,97 @@ desc-setoid = record {
   _≈_ = _≅_ ;
   isEquivalence = isEquivalence }
 
--- Like morphisms, we can transport semantics along isomorphisms
-module _ {V C : I ─Scoped} where
-  open import Generic.Semantics
 
-  -- Semantics can be pulled back across Isomorphisms
-  sem-transport : d1 ≅ d2 → Semantics d2 V C → Semantics d1 V C
-  sem-transport m S = record {
-    th^𝓥 = S.th^𝓥 ;
-    var = S.var ;
-    alg = S.alg Function.∘ (right m) } where
-    module S = Semantics S
+-- Semantics and description isomorphisms
+-- Like morphisms, we can transport semantics along isomorphisms
+private variable V C : I ─Scoped
+
+open import Generic.Semantics
+
+sem-right : d1 ≅ d2 → Semantics d2 V C → Semantics d1 V C
+sem-right iso = DescPreorder.sem-transport (right iso)
+
+sem-left : d1 ≅ d2 → Semantics d1 V C → Semantics d2 V C
+sem-left iso = DescPreorder.sem-transport (left iso)
+
+
+{- TODO: everything below is experimental -}
+
+{-
+Issue with all variations on the shuffle lemma: they seem to rely on parametric reasoning
+-}
+
+open import Data.Environment
+open import Size
+
+private
+  variable X : List I → I ─Scoped
+           i : I
+           Γ Δ : List I
+
+_≅[_]_ : ⟦ d1 ⟧ X i Γ → (iso : d1 ≅ d2) → ⟦ d2 ⟧ X i Γ → Set
+e1 ≅[ iso ] e2 = right iso e1 ≡ e2 
+
+fmap-shuffle : (iso : d1 ≅ d2) → {X Y : List I → I ─Scoped} → {i : I} → {Γ Δ : List I} →
+               (e :  ⟦ d1 ⟧ X i Γ) →
+               (f : ∀ Φ i → X Φ i Γ → Y Φ i Δ) →
+               _≅[_]_ {X = Y} (fmap d1 f e) iso (fmap d2 f (right iso e))
+fmap-shuffle {d1} {`σ A x} iso e f = {!!}
+fmap-shuffle {d1} {`X x x₁ d2} iso e f = {!!}
+fmap-shuffle {`σ A x₁} {`∎ x} iso e f = cong (right iso) refl
+fmap-shuffle {`X x₁ x₂ d1} {`∎ x} iso e f = cong (right iso) refl
+fmap-shuffle {`∎ x₁} {`∎ x} iso e f = cong (right iso) refl
+
+sem-identity : (iso : d1 ≅ d2) → (S : Semantics d2 V C) → {ρ : (Γ ─Env) V Δ} →
+  {e : Tm d1 ∞ i Γ} → 
+  Semantics.semantics (sem-right iso S) ρ e
+  ≡ Semantics.semantics S ρ (map^Tm (MkDescMorphism (right iso)) e)
+sem-identity iso S {pack lookup} {`var x} = cong (Semantics.var S) refl
+sem-identity {d1 = d1} iso S {pack lookup} {`con x} = cong (Semantics.alg S) {!!}
+{-
+  (begin
+    Inverse.to iso ⟨$⟩ fmap d1
+         (Semantics.body (Pre.sem-transport
+           (λ {X} {i} {Δ} → (Inverse.to iso)⟨$⟩_) S) (pack lookup)) x
+    ≡⟨ cong (Inverse.to iso ⟨$⟩_) {!sem-identity iso S!} ⟩
+    Inverse.to iso ⟨$⟩ {!!}
+    ≡⟨ {!!} ⟩ {!!}) where
+  module S = Semantics S
+-}
+
+{-
+(Inverse.to iso ⟨$⟩ fmap d1 (Semantics.body
+            (Pre.sem-transport (λ {X} {i} {Δ} → _⟨$⟩ (Inverse.to iso)) S)
+            (pack lookup)) x)
+-}
+
+open import Generic.Simulation
+
+sim-right : (iso : d1 ≅ d2) → {V1 V2 C1 C2 : I ─Scoped} →
+            {S1 : Semantics d2 V1 C1} → {S2 : Semantics d2 V2 C2} → ∀{VR CR} →
+            Simulation d2 S1 S2 VR CR → Simulation d1 (sem-right iso S1) (sem-right iso S2) VR CR
+sim-right iso sim = record {
+  thᴿ = Sim.thᴿ ;
+  varᴿ = Sim.varᴿ ;
+  algᴿ = λ b x x₁ → {!sem-identity!} } where
+  module Sim = Simulation sim
+
+{-
+open import MultiFusion {I}
+
+iso-fusion : (iso : d1 ≅ d2) →
+             (S : Semantics d1 V C) →
+             Fusion d1 d2 (morph-to-sem (sem-right iso)) (sem-left iso S) S {!!} Eqᴿ Eqᴿ
+iso-fusion iso S = record {
+  reifyᴬ = λ σ x → x ;
+  vl^𝓥ᴬ = record { th^𝓥 = λ x x₁ → {!!} ; new = {!!} } ;
+  _>>ᴿ_ = {!!} ;
+  th^𝓔ᴿ = {!!} ;
+  varᴿ = {!!} ;
+  algᴿ = {!!} }
+  -}
+
+
 
 {-
 
