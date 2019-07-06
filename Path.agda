@@ -34,6 +34,9 @@ private
 ⟦ `σR A s p ⟧$ e = s , ⟦ p ⟧$ e
 ⟦ `XP Γ i p ⟧$ (fst , snd) = fst , ⟦ p ⟧$ snd
 ⟦ `∎P i ⟧$ e = e
+
+morph : Path d1 d2 → DescMorphism d1 d2
+morph p = MkDescMorphism ⟦ p ⟧$
                
 id : Path d d
 id {`σ A x} = `σL A (λ s → `σR A s id)
@@ -84,9 +87,11 @@ injᵣ = `σR Bool false id
 _`+ₚ_ : Congruent₂ Path _`+_
 p1 `+ₚ p2 = (injₗ ∘ₚ p1) `+L (injᵣ ∘ₚ p2)
 
--- has the type Commutative, but with implicit arguments
-commute : Path (d1 `+ d2) (d2 `+ d1)
-commute = `σL Bool λ { true → injᵣ ; false → injₗ }
+commute : Commutative Path _`+_
+commute d1 d2 = `σL Bool λ { true → injᵣ ; false → injₗ }
+
+idempotent : Idempotent Path _`+_
+idempotent x = id `+L id
 
 fmap-shuffle : (p : Path d1 d2) → {X Y : List I → I ─Scoped} → {i : I} → {Γ Δ : List I} →
                (e :  ⟦ d1 ⟧ X i Γ) →
