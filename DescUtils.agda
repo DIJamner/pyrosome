@@ -64,14 +64,3 @@ module _ {I : Set} {V : I ─Scoped} where
   TransitiveRel : Rel V V → Set
   TransitiveRel R = ∀ {σ Γ} →  Transitive (rel R σ {Γ})
 
-{- probably requires some sort of parametricity
-open import Size
-module _ {I : Set} { X Y : List I → I ─Scoped} {Γ Δ : List I} where
-  fmap-shuffle : {d1 d2 : Desc I} →
-                 {m : ∀ {X i Γ} → ⟦ d1 ⟧ X i Γ → ⟦ d2 ⟧ X i Γ} →
-                {f : (Θ : List I) (i : I) → X Θ i Γ → Y Θ i Δ} →
-                ∀{i e} → m {Y} {i} (fmap d1 f e) ≡ fmap d2 f (m {X} e)
-  fmap-shuffle {`σ A x} {d2} {m} {f} {e = fst , snd} = {!!}
-  fmap-shuffle {`X x x₁ d1} {d2} {m} {f} {e = fst , snd} = {!fst!}
-  fmap-shuffle {`∎ x} {d2} {m} {f} {e = refl} = {!!}
--}

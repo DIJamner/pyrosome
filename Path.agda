@@ -10,6 +10,7 @@ open import Relation.Binary.PropositionalEquality as Eq using (_≡_; cong; refl
 open import Relation.Binary hiding (Rel)
 open import Algebra.FunctionProperties
 
+open import Function using (_∘_)
 
 open import Data.Var using (_─Scoped)
 open import Generic.Syntax
@@ -42,11 +43,6 @@ id : Path d d
 id {`σ A x} = `σL A (λ s → `σR A s id)
 id {`X Γ i d} = `XP Γ i id
 id {`∎ i} = `∎P i
-                
-id-identity : (e : ⟦ d ⟧ X i Γ) → ⟦ id ⟧$ e ≡ e
-id-identity {`σ A x} (fst , snd) = cong (fst ,_) (id-identity snd)
-id-identity {`X Δ j d} (fst , snd) = cong (fst ,_) (id-identity snd)
-id-identity {`∎ i} refl = refl
 
 -- note : there are 2 choices for sequencing L and R σs
 -- they should produce paths with the same interpretations
@@ -64,6 +60,10 @@ isPreorder : IsPreorder _≡_ Path
 IsPreorder.isEquivalence isPreorder = isEquivalence
 IsPreorder.reflexive isPreorder refl = id
 IsPreorder.trans isPreorder p1 p2 = p2 ∘ₚ p1
+
+{- =================================
+Properties of Description coproducts
+================================= -}
 
 -- `+ is a coproduct with paths as morphisms
 _`+L_ : Path d1 d3 → Path d2 d3 → Path (d1 `+ d2) d3
@@ -93,6 +93,11 @@ commute d1 d2 = `σL Bool λ { true → injᵣ ; false → injₗ }
 idempotent : Idempotent Path _`+_
 idempotent x = id `+L id
 
+{- ======================
+fmap shuffle property:
+This shows that paths behave parametrically wrt the next level down (X)
+====================== -}
+
 fmap-shuffle : (p : Path d1 d2) → {X Y : List I → I ─Scoped} → {i : I} → {Γ Δ : List I} →
                (e :  ⟦ d1 ⟧ X i Γ) →
                (f : ∀ Φ i → X Φ i Γ → Y Φ i Δ) →
@@ -105,3 +110,38 @@ fmap-shuffle {`X x x₁ d1} {.(`X x x₁ _)} (`XP .x .x₁ p) (fst , snd) f =
   cong (f x x₁ fst ,_) (fmap-shuffle p snd f)
 fmap-shuffle {`∎ x} {.(`σ A _)} (`σR A s p) refl f = cong (s ,_) (fmap-shuffle p refl f)
 fmap-shuffle {`∎ x} {.(`∎ x)} (`∎P .x) e f = refl
+
+-- TODO: I want to include things like IsSemigroupMorphism
+-- This relies on the definition of description isomorphism,
+-- so it shoud be in another file
+{- ==============
+Path Equivalence
+================ -}
+
+open import Algebra.Morphism
+
+-- TODO: might I want to parameterize this over e-equality?
+_≅₂_ : Path d1 d2 → Path d1 d2 → Set₁
+_≅₂_ {d1} p1 p2 = ∀ {X i Γ} → (e : ⟦ d1 ⟧ X i Γ) → ⟦ p1 ⟧$ e ≡ ⟦ p2 ⟧$ e
+
+id-identity : (e : ⟦ d ⟧ X i Γ) → ⟦ id ⟧$ e ≡ e
+id-identity {`σ A x} (fst , snd) = cong (fst ,_) (id-identity snd)
+id-identity {`X Δ j d} (fst , snd) = cong (fst ,_) (id-identity snd)
+id-identity {`∎ i} refl = refl
+
+--identity : Identity _∘ₚ_ id
+--identity = ?
+
+
+{- ==========================
+Properties of path operations
+========================== -}
+
+
+
+interp-distributes : (p1 : Path d2 d3) → (p2 : Path d1 d2) → (e : ⟦ d1 ⟧ X i Γ) →
+                     (⟦ p1 ⟧$ ∘ ⟦ p2 ⟧$) e ≡ ⟦ p1 ∘ₚ p2 ⟧$ e
+interp-distributes p1 (`σL A x) e = {!!}
+interp-distributes p1 (`σR A s p2) e = {!!}
+interp-distributes p1 (`XP Γ i p2) e = {!!}
+interp-distributes p1 (`∎P i) e = {!!}

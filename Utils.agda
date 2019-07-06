@@ -35,3 +35,7 @@ record Pushout {ℓ₁ ℓ₂ ℓ₃ ℓ₄} {A : Set ℓ₁} {_≈_ : A → A �
 flip-inv : ∀ {ℓ₁ ℓ₂} → {A : Set ℓ₁} → {B : Set ℓ₂} → ∀{e1 e2} → (iso : A ↔ B) →
            e1 ≡ Inverse.to iso ⟨$⟩ e2 → Inverse.from iso ⟨$⟩ e1 ≡ e2
 flip-inv iso refl = Inverse.left-inverse-of iso _
+
+_InverseOfᶠ_ : ∀ {f t} → {From : Set f} → {To : Set t} →
+                (from : To → From) → (to : From → To) → Set (f ⊔ t)
+f InverseOfᶠ g = (Eq.→-to-⟶ f) InverseOf (Eq.→-to-⟶ g)
