@@ -8,6 +8,7 @@ open import Data.List hiding ([_])
 
 open import Relation.Binary.PropositionalEquality as Eq using (_≡_; cong; refl; isEquivalence)
 open import Relation.Binary hiding (Rel)
+open import Algebra.FunctionProperties
 
 
 open import Data.Var using (_─Scoped)
@@ -80,11 +81,12 @@ injᵣ : Path d2 (d1 `+ d2)
 injᵣ = `σR Bool false id
 
 -- adding the inputs and outputs of two paths
-_`+ₚ_ : Path d d1 → Path d2 d3 → Path (d `+ d2) (d1 `+ d3)
+_`+ₚ_ : Congruent₂ Path _`+_
 p1 `+ₚ p2 = (injₗ ∘ₚ p1) `+L (injᵣ ∘ₚ p2)
 
-
--- TODO: rest of the axioms
+-- has the type Commutative, but with implicit arguments
+commute : Path (d1 `+ d2) (d2 `+ d1)
+commute = `σL Bool λ { true → injᵣ ; false → injₗ }
 
 fmap-shuffle : (p : Path d1 d2) → {X Y : List I → I ─Scoped} → {i : I} → {Γ Δ : List I} →
                (e :  ⟦ d1 ⟧ X i Γ) →
