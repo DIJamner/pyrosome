@@ -1,5 +1,5 @@
 {-# OPTIONS --sized-types --safe #-}
-module Path {I : Set} where
+module Path.Path {I : Set} where
 
 open import Data.Bool
 open import Data.Empty
@@ -111,6 +111,7 @@ fmap-shuffle {`X x x₁ d1} {.(`X x x₁ _)} (`XP .x .x₁ p) (fst , snd) f =
 fmap-shuffle {`∎ x} {.(`σ A _)} (`σR A s p) refl f = cong (s ,_) (fmap-shuffle p refl f)
 fmap-shuffle {`∎ x} {.(`∎ x)} (`∎P .x) e f = refl
 
+
 -- TODO: I want to include things like IsSemigroupMorphism
 -- This relies on the definition of description isomorphism,
 -- so it shoud be in another file
@@ -145,3 +146,4 @@ interp-distributes p1 (`σL A x) e = {!!}
 interp-distributes p1 (`σR A s p2) e = {!!}
 interp-distributes p1 (`XP Γ i p2) e = {!!}
 interp-distributes p1 (`∎P i) e = {!!}
+

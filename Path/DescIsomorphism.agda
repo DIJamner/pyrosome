@@ -2,7 +2,7 @@
 -- TODO: remove unsolved metas by splitting this file a little
 -- We care more about isomorphism of descriptions that equivalence
 -- since we can transport semantics across description morphisms
-module DescIsomorphism {I} where
+module Path.DescIsomorphism {I} where
 
 open import Data.Bool
 open import Data.Product
@@ -25,8 +25,7 @@ open import Generic.Syntax
 
 open import Utils
 open import DescUtils
-open import DescPreorder using(_⊑_)
-open import Path {I}
+open import Path.Path {I}
 
 --private module Pre = IsPreorder ⊑-is-preorder
 
@@ -43,11 +42,6 @@ infix 4 _≅_
 -- We use inverses/isomorphism as our equivalence for descriptions
 -- since we want commutativity of `+ and other sensible
 -- (but not syntactically equal) relationships between descriptions
-
-{-
-TODO: do I want something initial?
-It's hard to prove the right things about isomorphisms (reasoning seems parametric)
--}
 
 record _≅_ (d1 d2 : Desc I) : Set₁ where
   field
