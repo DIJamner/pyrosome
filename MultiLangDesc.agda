@@ -21,7 +21,7 @@ open import DescUtils
 
 open import DescPreorder {I}
                          
-open import DescIsomorphism {I}
+--open import DescIsomorphism {I}
                             
 open import Algebra.FunctionProperties
             

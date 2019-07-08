@@ -41,23 +41,24 @@ private
 _≅₂_ : Path d1 d2 → Path d1 d2 → Set₁
 _≅₂_ {d1} p1 p2 = ∀ {X i Γ} → (e : ⟦ d1 ⟧ X i Γ) → ⟦ p1 ⟧$ e ≡ ⟦ p2 ⟧$ e
 
+{- ==========================
+Properties of path operations
+========================== -}
+
 id-identity : (e : ⟦ d ⟧ X i Γ) → ⟦ id ⟧$ e ≡ e
 id-identity {`σ A x} (fst , snd) = cong (fst ,_) (id-identity snd)
 id-identity {`X Δ j d} (fst , snd) = cong (fst ,_) (id-identity snd)
 id-identity {`∎ i} refl = refl
 
---identity : Identity _∘ₚ_ id
---identity = ?
-
-
-{- ==========================
-Properties of path operations
-========================== -}
-
-
 interp-distributes : (p1 : Path d2 d3) → (p2 : Path d1 d2) → (e : ⟦ d1 ⟧ X i Γ) →
-                     (⟦ p1 ⟧$ ∘ ⟦ p2 ⟧$) e ≡ ⟦ p1 ∘ₚ p2 ⟧$ e
-interp-distributes p1 (`σL A x) e = {!!}
-interp-distributes p1 (`σR A s p2) e = {!!}
-interp-distributes p1 (`XP Γ i p2) e = {!!}
-interp-distributes p1 (`∎P i) e = {!!}
+                     ⟦ p1 ∘ₚ p2 ⟧$ e ≡ (⟦ p1 ⟧$ ∘ ⟦ p2 ⟧$) e
+interp-distributes p1 (`σL A x) (fst , snd) = interp-distributes (p1) (x fst) snd
+interp-distributes (`σL .A p1) (`σR A s p2) e = interp-distributes (p1 s) p2 e
+interp-distributes (`σR A₁ s₁ p1) (`σR A s p2) e =
+  cong (s₁ ,_) (interp-distributes p1 (`σR A s p2) e)
+interp-distributes (`σR A s p1) (`XP Γ i p2) (fst , snd) =
+  cong (s ,_) (interp-distributes p1 (`XP Γ i p2) ((fst , snd)))
+interp-distributes (`XP .Γ .i p1) (`XP Γ i p2) (fst , snd) =
+  cong (fst ,_) (interp-distributes p1 p2 snd)
+interp-distributes (`σR A s p1) (`∎P i) e = cong (s ,_) (interp-distributes p1 (`∎P i) e)
+interp-distributes (`∎P .i) (`∎P i) e = refl

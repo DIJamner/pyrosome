@@ -22,7 +22,7 @@ data Path : Desc I → Desc I → Set₁ where
   `σR : (A : Set) → ∀ {d1 d} → (s : A) → Path d1 (d s) → Path d1 (`σ A d)
   `XP : (Γ : List I) → (i : I) → ∀ {d1 d2} → Path d1 d2 → Path (`X Γ i d1) (`X Γ i d2)
   `∎P : (i : I) → Path (`∎ i) (`∎ i)
-                                  
+
 private
   variable
     d d1 d2 d3 : Desc I
@@ -38,7 +38,7 @@ private
 
 morph : Path d1 d2 → DescMorphism d1 d2
 morph p = MkDescMorphism ⟦ p ⟧$
-               
+
 id : Path d d
 id {`σ A x} = `σL A (λ s → `σR A s id)
 id {`X Γ i d} = `XP Γ i id
