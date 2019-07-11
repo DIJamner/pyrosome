@@ -5,10 +5,12 @@ open import Size
 
 open import Data.List
 
-open import Data.Var hiding (s)
+open import Data.Var hiding (s;_<$>_)
 open import Data.Var.Varlike
 open import Data.Environment
 open import Relation.Unary
+import Relation.Binary.PropositionalEquality as Eq
+open Eq using (_≡_)
 
 open import Data.Relation
 
@@ -47,8 +49,8 @@ Semantics d M = ∀{σ} → ∀[ ⟦ d ⟧ (Kripke M.Val M.Comp) σ ⇒ M.Comp �
   module M = Model M
 
 
-sem'-compat : {d : Desc I} → {M : Model I} → Semantics d M → Sem'.Semantics d (Val M) (Comp M)
-sem'-compat {M = M} S = record {
+sem'-compat : {d : Desc I} → (M : Model I) → Semantics d M → Sem'.Semantics d (Val M) (Comp M)
+sem'-compat M S = record {
   th^𝓥 = th^𝓥 M ; var = var M ; alg = S }
 private
   variable
@@ -56,7 +58,7 @@ private
 
 body : {d : Desc I} → (M : Model I) → Semantics d M → (Γ ─Env) (Val M) Δ → ∀ Θ σ →
              Scope (Tm d s) Θ σ Γ → Kripke (Val M) (Comp M) Θ σ Δ
-body M S = (Sem'.Semantics.body ∘ (sem'-compat {M = M})) S
+body M S = (Sem'.Semantics.body ∘ (sem'-compat M)) S
 
 {- TODO: separate simulation file? -}
 
@@ -89,6 +91,10 @@ value-model M .Comp = Val M
 value-model M .th^𝓥 = th^𝓥 M
 value-model M .var = Fun.id
 
+-- TODO: what's the best place for this?
+VCᴿ : (M : Model I) → Rel (Val M) (Comp M)
+VCᴿ M = mkRel λ σ v c → var M v ≡ c
+
 {-
 A language has two syntaxes, one for values and one for computations,
 with a path embedding the value syntax into the computation one.
@@ -101,10 +107,10 @@ semantics to implement a language by elaboration
 -}
 record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   field
-    vd-embed : Path vd cd
+    vd-embed : Path vd cd --TODO: should this be abstracted out like for model? might be too small
     val-sem : Semantics vd (value-model M)
     comp-sem : Semantics cd M
-    sem-cong : Simulation vd (value-model M) M val-sem (comp-sem ∘ ⟦ vd-embed ⟧$) Eqᴿ {!!}
+    sem-cong : Simulation vd (value-model M) M val-sem (comp-sem ∘ ⟦ vd-embed ⟧$) Eqᴿ (VCᴿ M)
     
   syntax-model : Model I
   syntax-model .Val = Tm vd ∞
@@ -112,3 +118,40 @@ record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   syntax-model .th^𝓥 = th^Tm
   syntax-model .var = Tm⟦ vd-embed ⟧$
 
+  value-syntax-model : Model I
+  value-syntax-model = value-model syntax-model
+
+  val-sem' : Sem'.Semantics vd (Val M) (Val M)
+  val-sem' = sem'-compat (value-model M) val-sem
+  
+  comp-sem' : Sem'.Semantics cd (Val M) (Comp M)
+  comp-sem' = sem'-compat M comp-sem
+
+open Language
+
+open import MultiFusion
+
+module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
+
+  record Compiler (L1 : Language vd1 cd1 M1)
+                  (L2 : Language vd2 cd2 M2)
+                  (VR : Rel (Val M2) (Val M1))
+                  (VC : Rel (Comp M2) (Comp M1)) : Set₁ where
+    module L1 = Language L1
+    module L2 = Language L2
+    field
+      translation : Language vd1 cd1 L2.syntax-model
+      correctⱽ : Fusion vd1 vd2
+                        (sem'-compat L2.value-syntax-model (val-sem translation))
+                        (sem'-compat (value-model M2) L2.val-sem)
+                        (sem'-compat (value-model M1) L1.val-sem)
+                        (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
+                        VR
+                        VR
+      correctᶜ : Fusion cd1 cd2
+                        (sem'-compat L2.syntax-model (comp-sem translation))
+                        (sem'-compat M2 L2.comp-sem)
+                        (sem'-compat M1 L1.comp-sem)
+                        (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
+                        VR
+                        VC
