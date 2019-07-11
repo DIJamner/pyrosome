@@ -1,4 +1,4 @@
---{-# OPTIONS --safe --sized-types #-}
+{-# OPTIONS --safe --sized-types #-}
 module Lang where
 
 open import Size
@@ -23,7 +23,10 @@ open import Generic.Relator
 open import Function as Fun using (_∘_)
 
 open import Path.Path
-open import Path.Semantics
+--open import Path.Semantics
+
+open import V2.Semantics
+open import V2.Fusion
 
 private
   variable
@@ -32,33 +35,9 @@ private
     Γ Δ : List I
     d : Desc I
 
-record Model (I : Set) : Set₁ where
-  field
-    Val : I ─Scoped
-    Comp : I ─Scoped
-
-    th^𝓥 : Thinnable (Val σ)
-
-    var : ∀[ Val σ ⇒ Comp σ ]
-
-open Model
-{- TODO: move this to separate semantics v2 file? -}
-
-Semantics : Desc I → Model I → Set
-Semantics d M = ∀{σ} → ∀[ ⟦ d ⟧ (Kripke M.Val M.Comp) σ ⇒ M.Comp σ ] where
-  module M = Model M
-
-
-sem'-compat : {d : Desc I} → (M : Model I) → Semantics d M → Sem'.Semantics d (Val M) (Comp M)
-sem'-compat M S = record {
-  th^𝓥 = th^𝓥 M ; var = var M ; alg = S }
 private
   variable
     s : Size
-
-body : {d : Desc I} → (M : Model I) → Semantics d M → (Γ ─Env) (Val M) Δ → ∀ Θ σ →
-             Scope (Tm d s) Θ σ Γ → Kripke (Val M) (Comp M) Θ σ Δ
-body M S = (Sem'.Semantics.body ∘ (sem'-compat M)) S
 
 {- TODO: separate simulation file? -}
 
@@ -85,15 +64,6 @@ Tm⟦_⟧$ : {d1 d2 : Desc I} → ∀ {s i Γ} → Path d1 d2 → (Tm d1 s i ⇒
 Tm⟦ p ⟧$ = map^Tm (morph p)
 
 
-value-model : Model I → Model I
-value-model M .Val = Val M
-value-model M .Comp = Val M
-value-model M .th^𝓥 = th^𝓥 M
-value-model M .var = Fun.id
-
--- TODO: what's the best place for this?
-VCᴿ : (M : Model I) → Rel (Val M) (Comp M)
-VCᴿ M = mkRel λ σ v c → var M v ≡ c
 
 {-
 A language has two syntaxes, one for values and one for computations,
@@ -122,14 +92,13 @@ record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   value-syntax-model = value-model syntax-model
 
   val-sem' : Sem'.Semantics vd (Val M) (Val M)
-  val-sem' = sem'-compat (value-model M) val-sem
+  val-sem' = to-sem' (value-model M) val-sem
   
   comp-sem' : Sem'.Semantics cd (Val M) (Comp M)
-  comp-sem' = sem'-compat M comp-sem
+  comp-sem' = to-sem' M comp-sem
 
 open Language
 
-open import MultiFusion
 
 module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
 
@@ -141,17 +110,19 @@ module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
     module L2 = Language L2
     field
       translation : Language vd1 cd1 L2.syntax-model
-      correctⱽ : Fusion vd1 vd2
-                        (sem'-compat L2.value-syntax-model (val-sem translation))
-                        (sem'-compat (value-model M2) L2.val-sem)
-                        (sem'-compat (value-model M1) L1.val-sem)
+      correctⱽ : Fusion L2.value-syntax-model (value-model M2) (value-model M1)
+                        vd1 vd2
+                        (val-sem translation)
+                        L2.val-sem
+                        L1.val-sem
                         (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
                         VR
                         VR
-      correctᶜ : Fusion cd1 cd2
-                        (sem'-compat L2.syntax-model (comp-sem translation))
-                        (sem'-compat M2 L2.comp-sem)
-                        (sem'-compat M1 L1.comp-sem)
+      correctᶜ : Fusion L2.syntax-model M2 M1
+                        cd1 cd2
+                        (comp-sem translation)
+                        L2.comp-sem
+                        L1.comp-sem
                         (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
                         VR
                         VC
