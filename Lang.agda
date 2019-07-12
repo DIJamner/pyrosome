@@ -10,9 +10,9 @@ open import Data.Var.Varlike
 open import Data.Environment
 open import Relation.Unary
 import Relation.Binary.PropositionalEquality as Eq
-open Eq using (_≡_)
+open Eq using (_≡_; refl)
 
-open import Data.Relation
+open import Data.Relation hiding (_>>ᴿ_)
 
 open import Generic.Syntax
 import Generic.Semantics as Sem'
@@ -59,12 +59,6 @@ record Simulation (d : Desc I) (MA MB : Model I)
                      vᴮ = fmap d (body MB SB ρᴮ) b
                 in ⟦ d ⟧ᴿ (Kripkeᴿ VR CR) vᴬ vᴮ → rel CR σ (SA vᴬ) (SB vᴮ)
 
-{- TODO: include in path? -}
-Tm⟦_⟧$ : {d1 d2 : Desc I} → ∀ {s i Γ} → Path d1 d2 → (Tm d1 s i ⇒ Tm d2 s i) Γ
-Tm⟦ p ⟧$ = map^Tm (morph p)
-
-
-
 {-
 A language has two syntaxes, one for values and one for computations,
 with a path embedding the value syntax into the computation one.
@@ -74,6 +68,8 @@ These semantics should agree.
 
 A laguage's syntax model can be used as the target of another's
 semantics to implement a language by elaboration
+
+TODO: shoudl vd/cd be arguments? fields prob. suit them better
 -}
 record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   field
@@ -126,3 +122,59 @@ module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
                         (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
                         VR
                         VC
+    compile : ∀ {i} → VarLike (Tm vd2 ∞) → ∀[ Tm cd1 ∞ i ⇒ Tm cd2 ∞ i ]
+    compile = eval L2.syntax-model (comp-sem translation)
+
+open Compiler
+
+
+lang-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Language vd cd (syntax-model L)
+lang-id {vd = vd} {cd = cd} M L = record {
+  vd-embed = vd-embed L ;
+  val-sem = syn-val-sem vd ;
+  comp-sem = syn-sem vd cd (vd-embed L) ;
+  sem-cong = record {
+    thᴿ = λ { ρ refl → refl} ;
+    varᴿ = λ { refl → refl} ;
+    -- TODO: would be simple if VR was Eq (just path distributivity wrt fmap)
+    -- need to figure out how to use assumptions
+    algᴿ = λ b ρᴿ vᴿ → {!Eq.cong (rel (VCᴿ (syntax-model L)) _)!} } }
+
+open Fusion
+
+comp-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Compiler L L Eqᴿ Eqᴿ
+comp-id M L .translation = lang-id M L
+comp-id M L .correctⱽ .reifyᴬ σ = Fun.id
+comp-id M L .correctⱽ .vl^𝓥ᴬ = {!!}
+comp-id M L .correctⱽ ._>>ᴿ_ ρeq veq = {!!}
+comp-id M L .correctⱽ .th^𝓔ᴿ = {!!}
+comp-id M L .correctⱽ .varᴿ = {!!}
+comp-id M L .correctⱽ .algᴿ = {!!}
+comp-id M L .correctᶜ .reifyᴬ σ = Fun.id
+comp-id M L .correctᶜ .vl^𝓥ᴬ = {!!}
+comp-id M L .correctᶜ ._>>ᴿ_ ρeq veq = {!!}
+comp-id M L .correctᶜ .th^𝓔ᴿ = {!!}
+comp-id M L .correctᶜ .varᴿ = {!!}
+comp-id M L .correctᶜ .algᴿ = {!!}
+
+-- TODO: generalize beyond Eq and to multiple models
+_∘ᶜ_ :  {vd1 cd1 vd2 cd2 vd3 cd3 : Desc I} →
+        {M : Model I} →
+        {L1 : Language vd1 cd1 M} → {L2 : Language vd2 cd2 M} → {L3 : Language vd3 cd3 M} →
+        Compiler L2 L3 Eqᴿ Eqᴿ → Compiler L1 L2 Eqᴿ Eqᴿ → Compiler L1 L3 Eqᴿ Eqᴿ
+_∘ᶜ_ {L1 = L1} C1 C2 .translation .vd-embed = vd-embed L1
+(C1 ∘ᶜ C2) .translation .val-sem v = {!!}
+(C1 ∘ᶜ C2) .translation .comp-sem e = {!!}
+(C1 ∘ᶜ C2) .translation .sem-cong = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .reifyᴬ σ = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .vl^𝓥ᴬ = {!!}
+(C1 ∘ᶜ C2) .correctⱽ ._>>ᴿ_ ρeq veq = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .th^𝓔ᴿ = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .varᴿ = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .algᴿ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .reifyᴬ σ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .vl^𝓥ᴬ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ ._>>ᴿ_ ρeq veq = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .th^𝓔ᴿ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .varᴿ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .algᴿ = {!!}

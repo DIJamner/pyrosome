@@ -4,15 +4,17 @@ module V2.Semantics where
 open import Data.List
 open import Data.Product
 
-open import Function using (id)
+open import Function using (id;_∘_)
 open import Relation.Unary
 open import Agda.Builtin.Equality
 
 open import Data.Var hiding (s;_<$>_)
+open import Data.Var.Varlike
 open import Data.Environment
 open import Data.Relation
 
 open import Generic.Syntax
+open import Generic.Semantics.Syntactic using (vl^Tm; th^Tm)
 import Generic.Semantics as Sem'
 
 
@@ -63,6 +65,10 @@ module _  {d : Desc I} where
              Scope (Tm d s) Θ σ Γ → Kripke (Val M) (Comp M) Θ σ Δ
   body M S = Sem'.Semantics.body (to-sem' M S)
 
+
+  eval : (M : Model I) → Semantics d M → ∀ {s σ} → VarLike (Val M) → ∀[ Tm d s σ ⇒ Comp M σ ]
+  eval M S =  Sem'.Semantics.eval (to-sem' M S)
+
 value-model : Model I → Model I
 value-model M .Val = Val M
 value-model M .Comp = Val M
@@ -72,3 +78,27 @@ value-model M .var = id
 -- TODO: what's the best place for this?
 VCᴿ : (M : Model I) → Rel (Val M) (Comp M)
 VCᴿ M = mkRel λ σ v c → var M v ≡ c
+
+open import Size
+open import Path.Path renaming (id to id-path)
+
+{- TODO: include in path? -}
+Tm⟦_⟧$ : {d1 d2 : Desc I} → ∀ {s i Γ} → Path d1 d2 → (Tm d1 s i ⇒ Tm d2 s i) Γ
+Tm⟦ p ⟧$ = map^Tm (morph p)
+
+--TODO: rename
+syn-model : (vd cd : Desc I) → Path vd cd → Model I
+syn-model vd cd p .Val = Tm vd ∞
+syn-model vd cd p .Comp = Tm cd ∞
+syn-model vd cd p .th^𝓥 = th^Tm
+syn-model vd cd p .var = Tm⟦ p ⟧$
+
+syn-sem : (vd cd : Desc I) → (p : Path vd cd) → Semantics cd (syn-model vd cd p)
+syn-sem vd cd p = `con ∘ fmap cd (reify vl^Tm)
+
+-- TODO: this works for value syntaxes, do I need one for comps?
+syn-val-model : (d : Desc I) → Model I
+syn-val-model d = syn-model d d id-path
+
+syn-val-sem : (d : Desc I) → Semantics d (syn-val-model d)
+syn-val-sem d = syn-sem d d id-path
