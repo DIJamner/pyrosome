@@ -141,20 +141,21 @@ lang-id {vd = vd} {cd = cd} M L = record {
     algᴿ = λ b ρᴿ vᴿ → {!Eq.cong (rel (VCᴿ (syntax-model L)) _)!} } }
 
 open Fusion
+open import Generic.Fusion.Utils
 
 comp-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Compiler L L Eqᴿ Eqᴿ
 comp-id M L .translation = lang-id M L
 comp-id M L .correctⱽ .reifyᴬ σ = Fun.id
-comp-id M L .correctⱽ .vl^𝓥ᴬ = {!!}
-comp-id M L .correctⱽ ._>>ᴿ_ ρeq veq = {!!}
+comp-id M L .correctⱽ .vl^𝓥ᴬ = vl^Tm
+comp-id M L .correctⱽ ._>>ᴿ_ = subBodyEnv (to-sem' (value-model M) (val-sem L)) {!!} {!!} {!!}
 comp-id M L .correctⱽ .th^𝓔ᴿ = {!!}
-comp-id M L .correctⱽ .varᴿ = {!!}
+comp-id M L .correctⱽ .varᴿ ρeq x = lookupᴿ ρeq x
 comp-id M L .correctⱽ .algᴿ = {!!}
 comp-id M L .correctᶜ .reifyᴬ σ = Fun.id
-comp-id M L .correctᶜ .vl^𝓥ᴬ = {!!}
-comp-id M L .correctᶜ ._>>ᴿ_ ρeq veq = {!!}
+comp-id M L .correctᶜ .vl^𝓥ᴬ = vl^Tm
+comp-id M L .correctᶜ ._>>ᴿ_ ρeq veq = thBodyEnv {!!} {!!}
 comp-id M L .correctᶜ .th^𝓔ᴿ = {!!}
-comp-id M L .correctᶜ .varᴿ = {!!}
+comp-id M L .correctᶜ .varᴿ ρeq x = lookupᴿ {!ρeq!} x
 comp-id M L .correctᶜ .algᴿ = {!!}
 
 -- TODO: generalize beyond Eq and to multiple models
@@ -163,17 +164,17 @@ _∘ᶜ_ :  {vd1 cd1 vd2 cd2 vd3 cd3 : Desc I} →
         {L1 : Language vd1 cd1 M} → {L2 : Language vd2 cd2 M} → {L3 : Language vd3 cd3 M} →
         Compiler L2 L3 Eqᴿ Eqᴿ → Compiler L1 L2 Eqᴿ Eqᴿ → Compiler L1 L3 Eqᴿ Eqᴿ
 _∘ᶜ_ {L1 = L1} C1 C2 .translation .vd-embed = vd-embed L1
-(C1 ∘ᶜ C2) .translation .val-sem v = {!!}
-(C1 ∘ᶜ C2) .translation .comp-sem e = {!!}
+(C1 ∘ᶜ C2) .translation .val-sem v = val-sem (translation C1) {!val-sem (translation C2) v!}
+(C1 ∘ᶜ C2) .translation .comp-sem e = comp-sem (translation C1) {!comp-sem (translation C2)!}
 (C1 ∘ᶜ C2) .translation .sem-cong = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .reifyᴬ σ = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .vl^𝓥ᴬ = {!!}
+(C1 ∘ᶜ C2) .correctⱽ .reifyᴬ σ = Fun.id
+(C1 ∘ᶜ C2) .correctⱽ .vl^𝓥ᴬ = vl^Tm
 (C1 ∘ᶜ C2) .correctⱽ ._>>ᴿ_ ρeq veq = {!!}
 (C1 ∘ᶜ C2) .correctⱽ .th^𝓔ᴿ = {!!}
 (C1 ∘ᶜ C2) .correctⱽ .varᴿ = {!!}
 (C1 ∘ᶜ C2) .correctⱽ .algᴿ = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .reifyᴬ σ = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .vl^𝓥ᴬ = {!!}
+(C1 ∘ᶜ C2) .correctᶜ .reifyᴬ σ = Fun.id
+(C1 ∘ᶜ C2) .correctᶜ .vl^𝓥ᴬ = vl^Tm
 (C1 ∘ᶜ C2) .correctᶜ ._>>ᴿ_ ρeq veq = {!!}
 (C1 ∘ᶜ C2) .correctᶜ .th^𝓔ᴿ = {!!}
 (C1 ∘ᶜ C2) .correctᶜ .varᴿ = {!!}

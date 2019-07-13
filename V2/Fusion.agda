@@ -24,9 +24,9 @@ open import Data.Environment
 open import Generic.Syntax
 open import Generic.Relator
 
-module Mᴬ = Model Mᴬ
-module Mᴮ = Model Mᴮ
-module Mᴬᴮ = Model Mᴬᴮ
+private module Mᴬ = Model Mᴬ
+private module Mᴮ = Model Mᴮ
+private module Mᴬᴮ = Model Mᴬᴮ
 
 
 private
