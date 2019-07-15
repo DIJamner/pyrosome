@@ -3,7 +3,9 @@ module Lang where
 
 open import Size
 
-open import Data.List
+open import Data.List hiding ([_]; lookup)
+open import Data.Product
+open import Data.Bool
 
 open import Data.Var hiding (s;_<$>_)
 open import Data.Var.Varlike
@@ -11,6 +13,8 @@ open import Data.Environment
 open import Relation.Unary
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; refl)
+open import Relation.Binary.PropositionalEquality
+open ≡-Reasoning
 
 open import Data.Relation hiding (_>>ᴿ_)
 
@@ -94,7 +98,25 @@ record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   comp-sem' = to-sem' M comp-sem
 
 open Language
+open Simulation
 
+Lang-`+-syntax : {vd1 cd1 vd2 cd2 : Desc I} → (M : Model I) →
+        Language vd1 cd1 M → Language vd2 cd2 M → Language (vd1 `+ vd2) (cd1 `+ cd2) M
+Lang-`+-syntax M L1 L2 .vd-embed = (vd-embed L1) `+ₚ (vd-embed L2)
+Lang-`+-syntax M L1 L2 .val-sem = (val-sem L1) `+[ value-model M ]ₛ (val-sem L2)
+Lang-`+-syntax M L1 L2 .comp-sem = (comp-sem L1) `+[ M ]ₛ (comp-sem L2)
+Lang-`+-syntax M L1 L2 .sem-cong .thᴿ ρ refl = refl
+Lang-`+-syntax M L1 L2 .sem-cong .varᴿ refl = refl
+Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (false , snd) ρeq (refl , snd₁) = {!Eq.cong (false ,_)!}
+Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (true , snd) ρeq (refl , snd₁)
+  with vd-embed L1 `+ₚ vd-embed L2
+... | `σR Bool b _ = {!TODO: should never happen; path compose needs to change!}
+... | `σL Bool p with `σR Bool true id ∘ₚ vd-embed L1
+...                 | `σL _ _ = {!TODO: should never happen!}
+...                 | `σR _ _ _ = {!Eq.cong (var M)!}
+  
+
+syntax Lang-`+-syntax M L1 L2 = L1 `+[ M ]ᴸ L2
 
 module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
 
@@ -147,15 +169,20 @@ comp-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Comp
 comp-id M L .translation = lang-id M L
 comp-id M L .correctⱽ .reifyᴬ σ = Fun.id
 comp-id M L .correctⱽ .vl^𝓥ᴬ = vl^Tm
-comp-id M L .correctⱽ ._>>ᴿ_ = subBodyEnv (to-sem' (value-model M) (val-sem L)) {!!} {!!} {!!}
-comp-id M L .correctⱽ .th^𝓔ᴿ = {!!}
+comp-id M L .correctⱽ ._>>ᴿ_ ρeq veq = {!thBodyEnv!}
+  --subBodyEnv (to-sem' (value-model M) (val-sem L)) {!!} {!!} {!!}
+comp-id M L .correctⱽ .th^𝓔ᴿ eq ρ = packᴿ λ k →
+  begin {!semantics (value-model M) (val-sem L) (th^Env (th^𝓥 (value-model M)) _ ρ) ≡⟨ ? ⟩_!}
 comp-id M L .correctⱽ .varᴿ ρeq x = lookupᴿ ρeq x
-comp-id M L .correctⱽ .algᴿ = {!!}
+comp-id M L .correctⱽ .algᴿ ρeq v vr = {!cong `con!}
 comp-id M L .correctᶜ .reifyᴬ σ = Fun.id
 comp-id M L .correctᶜ .vl^𝓥ᴬ = vl^Tm
 comp-id M L .correctᶜ ._>>ᴿ_ ρeq veq = thBodyEnv {!!} {!!}
 comp-id M L .correctᶜ .th^𝓔ᴿ = {!!}
-comp-id M L .correctᶜ .varᴿ ρeq x = lookupᴿ {!ρeq!} x
+--TODO: write pathlookupR? I think the issue is that I need to lookup
+-- and run the result through the path
+comp-id M L .correctᶜ .varᴿ ρeq x = {!!}
+  --cong {!var M {σ} {?}!} (lookupᴿ ρeq x)
 comp-id M L .correctᶜ .algᴿ = {!!}
 
 -- TODO: generalize beyond Eq and to multiple models

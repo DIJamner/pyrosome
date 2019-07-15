@@ -52,6 +52,19 @@ to-sem {V = V} {C = C} S =
 
 -- TODO: prove inverses
 
+--TODO: generalize to multiple models? prob requires disjoint I, J w/ 1 model each
+_`+ₛ_ : {d1 d2 : Desc I} → {M : Model I} →
+               Semantics d1 M → Semantics d2 M → Semantics (d1 `+ d2) M
+S1 `+ₛ S2 = case (λ x₁ → S1 x₁) (λ x₁ → S2 x₁)
+
+-- We need a non-infix name for the syntax declaration, but we inline it
+`+ₛ-syntax : {d1 d2 : Desc I} → (M : Model I) →
+               Semantics d1 M → Semantics d2 M → Semantics (d1 `+ d2) M
+`+ₛ-syntax M = _`+ₛ_ {M = M}
+{-# INLINE `+ₛ-syntax #-}
+
+syntax `+ₛ-syntax M S1 S2 = S1 `+[ M ]ₛ S2
+
 module _  {d : Desc I} where
 
 

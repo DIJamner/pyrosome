@@ -1,10 +1,10 @@
 {-# OPTIONS --sized-types --safe #-}
 module Path.Path {I : Set} where
 
-open import Data.Bool
+open import Data.Bool hiding (T)
 open import Data.Empty
 open import Data.Product as Prod
-open import Data.List hiding ([_])
+open import Data.List hiding ([_]; lookup)
 
 open import Relation.Binary.PropositionalEquality as Eq using (_≡_; cong; refl; isEquivalence)
 open import Relation.Binary hiding (Rel)
@@ -110,5 +110,4 @@ fmap-shuffle {`X x x₁ d1} {.(`X x x₁ _)} (`XP .x .x₁ p) (fst , snd) f =
   cong (f x x₁ fst ,_) (fmap-shuffle p snd f)
 fmap-shuffle {`∎ x} {.(`σ A _)} (`σR A s p) refl f = cong (s ,_) (fmap-shuffle p refl f)
 fmap-shuffle {`∎ x} {.(`∎ x)} (`∎P .x) e f = refl
-
 
