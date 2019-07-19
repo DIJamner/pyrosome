@@ -1,4 +1,4 @@
-{-# OPTIONS --safe --sized-types #-}
+{-# OPTIONS --allow-unsolved-metas --sized-types #-}
 module Lang where
 
 open import Size
@@ -24,7 +24,7 @@ open import Generic.Semantics.Syntactic
 import Generic.Simulation as Sim'
 open import Generic.Relator
 
-open import Function as Fun using (_∘_)
+open import Function as Fun using (_∘_;_∋_)
 
 open import Path.Path
 --open import Path.Semantics
@@ -52,16 +52,34 @@ record Simulation (d : Desc I) (MA MB : Model I)
        module MB = Model MB
            
        field
+         {- TODO: these first two should probably be separate as well? -}
           thᴿ   : ∀{σ vᴬ vᴮ} → (ρ : Thinning Γ Δ) → rel VR σ vᴬ vᴮ →
                    rel VR σ (MA.th^𝓥 vᴬ ρ) (MB.th^𝓥 vᴮ ρ)
 
           varᴿ  : ∀{σ Γ vᴬ vᴮ} → rel VR σ {Γ} vᴬ vᴮ → rel CR σ (MA.var vᴬ) (MB.var vᴮ)
 
           algᴿ  : {ρᴬ : (Γ ─Env) MA.Val Δ} → {ρᴮ : (Γ ─Env) MB.Val Δ} →
+                  -- TODO: is the Tm d the problem with Lang+?
+                  -- should I generalize is to d' w/ path from d to d' or something?
                   (b : ⟦ d ⟧ (Scope (Tm d s)) σ Γ) → All VR Γ ρᴬ ρᴮ →
                 let  vᴬ = fmap d (body MA SA ρᴬ) b
                      vᴮ = fmap d (body MB SB ρᴮ) b
                 in ⟦ d ⟧ᴿ (Kripkeᴿ VR CR) vᴬ vᴮ → rel CR σ (SA vᴬ) (SB vᴮ)
+       sim' : Sim'.Simulation d (to-sem' MA SA) (to-sem' MB SB) VR CR
+       sim' = record {
+         thᴿ = thᴿ ;
+         varᴿ = varᴿ ;
+         algᴿ = algᴿ }
+         
+       module S' = Sim'.Simulation sim'
+      
+       open S' using (sim; body) public
+      --TODO: sim and body
+
+-- TODO: put in descutils if useful
+liftK : {V C : I ─Scoped} → ∀{i} → ∀[ V i ⇒ C i ] → ∀ {Γ} → ∀[ Kripke V V Γ i ⇒ Kripke V C Γ i ]
+liftK f {Γ = []} k = f k
+liftK f {Γ = x ∷ Γ} k = λ z₁ z₂ → f (k (pack (lookup z₁)) (pack (lookup z₂)))
 
 {-
 A language has two syntaxes, one for values and one for computations,
@@ -73,7 +91,9 @@ These semantics should agree.
 A laguage's syntax model can be used as the target of another's
 semantics to implement a language by elaboration
 
-TODO: shoudl vd/cd be arguments? fields prob. suit them better
+TODO: types?
+
+
 -}
 record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   field
@@ -91,6 +111,14 @@ record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   value-syntax-model : Model I
   value-syntax-model = value-model syntax-model
 
+{-
+  var-val-sem : ∀{i Γ} → (e : ⟦ vd ⟧ (Kripke (Val M) (Val M)) i Γ) →
+                var M (val-sem e)
+                ≡ comp-sem (⟦ vd-embed ⟧$ (fmap vd (liftK {I} {Val M} {Comp M} {i} (var M)) e))
+  var-val-sem e = Simulation.sim sem-cong {!!} {!`con e!}
+-}
+  -- for comaptibility with library
+
   val-sem' : Sem'.Semantics vd (Val M) (Val M)
   val-sem' = to-sem' (value-model M) val-sem
   
@@ -98,7 +126,9 @@ record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
   comp-sem' = to-sem' M comp-sem
 
 open Language
-open Simulation
+open Simulation   
+
+open import Generic.Relator as Relator
 
 Lang-`+-syntax : {vd1 cd1 vd2 cd2 : Desc I} → (M : Model I) →
         Language vd1 cd1 M → Language vd2 cd2 M → Language (vd1 `+ vd2) (cd1 `+ cd2) M
@@ -107,13 +137,20 @@ Lang-`+-syntax M L1 L2 .val-sem = (val-sem L1) `+[ value-model M ]ₛ (val-sem L
 Lang-`+-syntax M L1 L2 .comp-sem = (comp-sem L1) `+[ M ]ₛ (comp-sem L2)
 Lang-`+-syntax M L1 L2 .sem-cong .thᴿ ρ refl = refl
 Lang-`+-syntax M L1 L2 .sem-cong .varᴿ refl = refl
+Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (false , v2) ρeq (refl , snd₁) = {!Eq.cong (false ,_)!}
+Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (true , v1) ρeq (refl , snd₁) = -- {!!}
+  S'.body (sem-cong L1) ρeq {!!} {!!} {!!}
+{-
 Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (false , snd) ρeq (refl , snd₁) = {!Eq.cong (false ,_)!}
-Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (true , snd) ρeq (refl , snd₁)
+Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (true , snd) ρeq (refl , snd₁) = {!algᴿ (sem-cong L1) snd!}
+-}
+{-
   with vd-embed L1 `+ₚ vd-embed L2
-... | `σR Bool b _ = {!TODO: should never happen; path compose needs to change!}
+... | `σR Bool b _ = {!TODO: should never happen;!}
 ... | `σL Bool p with `σR Bool true id ∘ₚ vd-embed L1
 ...                 | `σL _ _ = {!TODO: should never happen!}
 ...                 | `σR _ _ _ = {!Eq.cong (var M)!}
+-}
   
 
 syntax Lang-`+-syntax M L1 L2 = L1 `+[ M ]ᴸ L2
@@ -150,23 +187,33 @@ module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
 open Compiler
 
 
-lang-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Language vd cd (syntax-model L)
-lang-id {vd = vd} {cd = cd} M L = record {
-  vd-embed = vd-embed L ;
+lang-id : (vd cd : Desc I) → (p : Path vd cd) → Language vd cd (syn-model vd cd p)
+lang-id vd cd vd-embed = record {
+  vd-embed = vd-embed ;
   val-sem = syn-val-sem vd ;
-  comp-sem = syn-sem vd cd (vd-embed L) ;
+  comp-sem = syn-sem vd cd vd-embed ;
   sem-cong = record {
     thᴿ = λ { ρ refl → refl} ;
     varᴿ = λ { refl → refl} ;
-    -- TODO: would be simple if VR was Eq (just path distributivity wrt fmap)
-    -- need to figure out how to use assumptions
-    algᴿ = λ b ρᴿ vᴿ → {!Eq.cong (rel (VCᴿ (syntax-model L)) _)!} } }
+      algᴿ = λ {Γ} {Δ} {s} {i} {ρᴬ = ρᴬ} b ρᴿ x → cong `con (sym
+      (begin
+      fmap cd (reify vl^Tm) (⟦ vd-embed ⟧$ _)
+      ≡˘⟨ fmap-shuffle vd-embed _ _ ⟩
+      cong ⟦ vd-embed ⟧$
+      (_ ≡⟨ fmap² vd _ _ _ ⟩
+      fmap vd _ b ≡⟨ fmap-ext vd (λ Θ i₁ x₁ →
+        {!TODO: prob. need x!}) b ⟩
+      sym
+      (_ ≡⟨ fmap² vd _ _ _ ⟩
+      _ ≡⟨ fmap² vd _ _ _ ⟩
+      _ ∎))))
+        } }
 
 open Fusion
 open import Generic.Fusion.Utils
 
 comp-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Compiler L L Eqᴿ Eqᴿ
-comp-id M L .translation = lang-id M L
+comp-id {vd = vd} {cd = cd} M L .translation = lang-id vd cd (vd-embed L)
 comp-id M L .correctⱽ .reifyᴬ σ = Fun.id
 comp-id M L .correctⱽ .vl^𝓥ᴬ = vl^Tm
 comp-id M L .correctⱽ ._>>ᴿ_ ρeq veq = {!thBodyEnv!}

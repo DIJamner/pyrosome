@@ -17,6 +17,7 @@ open import Generic.Syntax
 
 open import DescUtils
 
+--TODO: I want a path from (A × B) to (B × A)
 data Path : Desc I → Desc I → Set₁ where
   `σL : (A : Set) → ∀ {d d2} → ((s : A) → Path (d s) d2) → Path (`σ A d) d2
   `σR : (A : Set) → ∀ {d1 d} → (s : A) → Path d1 (d s) → Path d1 (`σ A d)
@@ -47,11 +48,14 @@ id {`∎ i} = `∎P i
 -- note : there are 2 choices for sequencing L and R σs
 -- they should produce paths with the same interpretations
 _∘ₚ_ : Path d2 d3 → Path d1 d2 → Path d1 d3
-p1 ∘ₚ `σL A₁ x₁ = `σL A₁ (λ s → p1 ∘ₚ x₁ s)
-`σL A x ∘ₚ `σR .A s p2 = x s ∘ₚ p2
 `σR A s p1 ∘ₚ p2 = `σR A s (p1 ∘ₚ p2)
+`σL A x ∘ₚ `σR .A s p2 = x s ∘ₚ p2
 `XP Γ i p1 ∘ₚ `XP .Γ .i p2 = `XP Γ i (p1 ∘ₚ p2)
 `∎P i ∘ₚ `∎P .i = `∎P i
+-- this clause could match anything, but σR is already handled
+p1@(`σL A x) ∘ₚ `σL A₁ x₁ = `σL A₁ (λ s → p1 ∘ₚ x₁ s)
+p1@(`XP Γ i p) ∘ₚ `σL A₁ x₁ = `σL A₁ (λ s → p1 ∘ₚ x₁ s)
+p1@(`∎P i) ∘ₚ `σL A₁ x₁ = `σL A₁ (λ s → p1 ∘ₚ x₁ s)
 
 -- TODO: Prove that the order of cases above doesn't matter
 -- wrt the functions generated
