@@ -5,22 +5,32 @@ module Poly.Syntax where
 open import Size
 open import Data.Bool
 open import Data.Unit
-open import Data.List.Base as L hiding ([_])
-open import Data.List.All hiding (mapA; sequenceA)
+open import Data.List.Base as L hiding ([_]; lookup)
+open import Data.List.Categorical as LF using (functor)
+open import Data.List.All hiding (mapA; sequenceA; lookup)
 open import Data.List.Properties using (map-++-commute;++-assoc)
 open import Data.Product as Prod
 open import Data.Product using (Σ-syntax)
 open import Function hiding (case_of_)
 open import Relation.Binary.PropositionalEquality hiding ([_])
 
-open import Data.Var hiding (z; s)
+open import Data.Var hiding (z; s; _<$>_)
 open import Relation.Unary
 open import Data.Environment as E hiding (sequenceA)
 
 -- TODO: should be in environent/descutils
 extendΔ : {J : Set} → {Δ' Δ : List J} → Thinning Δ (Δ' ++ Δ)
 extendΔ {Δ' = []} = E.identity
-E.lookup (extendΔ  {Δ' = x ∷ Δ'}) v = E.lookup extend (E.lookup extendΔ v)
+lookup (extendΔ  {Δ' = x ∷ Δ'}) v = lookup extend (lookup extendΔ v)
+
+
+extendΔ2 : {J : Set} → {Δ' Δ : List J} → Thinning Δ (Δ ++ Δ')
+extendΔ2 {Δ = []} = ε
+lookup (extendΔ2 {Δ = x ∷ Δ}) Var.z = Var.z
+lookup (extendΔ2 {Δ = x ∷ Δ}) (Var.s v) = Var.s (lookup extendΔ2 v)
+
+th^App : {J : Set} → {Δ'' Δ' Δ : List J} → Thinning Δ Δ' → Thinning (Δ'' ++ Δ) (Δ'' ++ Δ')
+th^App th = extendΔ2 >> ((λ x → lookup extendΔ x) <$> th)
 
 -- Descriptions and their Interpretation
 
@@ -34,6 +44,13 @@ record DescTy (J : Set) : Set₁ where
 
   ↑Δ : ∀{j Δ'} → ∀[ type j ⇒ (Δ' ++_) ⊢ type j ]
   ↑Δ ty = th^Ty ty extendΔ
+
+  -- TODO: can this be written more simply?
+  th^Tp : Thinnable Tp
+  th^Tp (fst , snd) = (fst ,_) ∘ th^Ty snd
+
+  th^TpL : Thinnable (List ∘ Tp)
+  th^TpL = th^Functor LF.functor th^Tp
 
 open DescTy
 
@@ -61,13 +78,19 @@ cast refl P = id
 --TODO: move cast to utils
 
 reindex : ∀{J L : Set} → {I : DescTy J} → {K : DescTy L} →
-          (f : J → L) → (∀{i Δ} → type I i Δ → type K (f i) (L.map f Δ)) → ∀{Δ} → Desc I Δ → Desc K (L.map f Δ)
+          (f : J → L) → (∀{i Δ} → type I i Δ → type K (f i) (L.map f Δ)) →
+          ∀{Δ} → Desc I Δ → Desc K (L.map f Δ)
 reindex f g (`σ A d)   = `σ A λ a → reindex f g (d a)
 reindex f g (`T j d) = `T (f j) (reindex f g d)
 reindex {I = I} {K = K} f g {Δ} (`X Δ' Γ j d) =
-  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (cast (map-++-commute f Δ' Δ) (Desc K) (reindex f g d)) where
+  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (comcast (Desc K) (reindex f g d)) where
+  
+    comcast : ∀{ℓ} → (P : List _ → Set ℓ) → P _ → P _
+    comcast = cast (map-++-commute f Δ' Δ)
+    
     mapg : Tp I (Δ' ++ Δ) → Tp K (L.map f Δ' ++ L.map f Δ)
-    mapg = (Prod.map f (cast (map-++-commute f Δ' Δ) (type K (f _)) ∘ g))
+    mapg = (Prod.map f (comcast (type K (f _)) ∘ g))
+    
 reindex f g (`∎ i)     = `∎ (Prod.map f g i)
 
 -- old reindexing for simple descriptions
@@ -116,9 +139,6 @@ private
       (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ')
 ⟦ `∎ j      ⟧ X i Γ = i ≡ j
 
--- TODO: Desc to type
--- TODO: type in terms???
-
 -- Syntaxes: Free Relative Monad of a Description's Interpretation
 
 
@@ -126,13 +146,28 @@ Scope : J ─Scoped → List J → J ─Scoped
 Scope T Δ i = (Δ ++_) ⊢ T i
 
 
+□' : ∀{ℓ} → {I : Set} → (List I → Set ℓ) → (List I → Set ℓ)
+(□' T) Γ = ∀[ Thinning Γ ⇒ T ]
+
+Thinnable' : ∀{ℓ} → {I : Set} → (List I → Set ℓ) → Set ℓ
+Thinnable' T = ∀[ T ⇒ □' T ]
+                         
 module _ {J : Set} {I : DescTy J} where
 
+
+  --TODO: this should be an actual thinnable instance
+  -- but needs levels in Data.Environment
+  th^Desc : Thinnable' (Desc I)
+  th^Desc {Δ} (`σ A x) th = `σ A λ a → th^Desc (x a) th
+  th^Desc {Δ} (`T j d) th = `T j (th^Desc d th)
+  th^Desc {Δ} (`X Δ' Γ i d) th =
+    `X Δ' (th^TpL I Γ (th^App th))
+          (th^Tp I i (th^App th))
+          (th^Desc d (th^App th))
+  th^Desc {Δ} (`∎ x) th = `∎ (th^Tp I x th)
+
   ↑ΔD : ∀ Δ' → ∀[ Desc I ⇒ (Δ' ++_) ⊢ Desc I ]
-  ↑ΔD Δ' (`σ A d) = `σ A (λ a → ↑ΔD Δ' (d a))
-  ↑ΔD Δ' (`T j d) = `T j (↑ΔD Δ' d)
-  ↑ΔD Δ' (`X Δ'' Γ i d) = `X Δ'' {!L.map (map₂ (↑Δ I)) Γ!} (map₂ (↑Δ I) i) {!↑ΔD Δ'!}
-  ↑ΔD Δ' (`∎ x) = {!!}
+  ↑ΔD Δ' d = th^Desc d extendΔ
 
   --TODO: this only scopes Γ
   Scope² : Π[ I ─Scoped² ⇒ List ∘ (Tp I) ⇒ I ─Scoped² ]
@@ -142,7 +177,7 @@ module _ {J : Set} {I : DescTy J} where
     -- TODO: why is the quantified I wrong?
     `var  : ∀{i} → ∀[ Var i ⇒ Tm Δ d (↑ s) i ]
     `con  : ∀{i} → ∀[ ⟦ d ⟧
-      (λ Δ' Γ → Scope² (Δ' ++ Δ) (Tm (Δ' ++ Δ) (↑ΔD Δ' d) s) (L.map (map₂ (↑Δ _)) Γ)) i  ⇒ Tm Δ d (↑ s) i ]
+      (λ Δ' → Scope² (Δ' ++ Δ) (Tm (Δ' ++ Δ) (↑ΔD Δ' d) s)) i  ⇒ Tm Δ d (↑ s) i ]
 
 {-
 module _ {I i Γ} {d : Desc I} where
