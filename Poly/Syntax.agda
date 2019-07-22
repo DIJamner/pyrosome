@@ -4,6 +4,7 @@ module Poly.Syntax where
 
 open import Size
 open import Data.Bool
+open import Data.Unit
 open import Data.List.Base as L hiding ([_])
 open import Data.List.All hiding (mapA; sequenceA)
 open import Data.List.Properties using (map-++-commute;++-assoc)
@@ -39,8 +40,20 @@ open DescTy
 
 data Desc {J : Set} (I : DescTy J) (Δ : List J) : Set₁ where
   `σ : (A : Set) → (A → Desc I Δ) → Desc I Δ
+  `T : (j : J) → Desc I Δ → Desc I Δ
   `X : (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → Tp I (Δ' ++ Δ) → Desc I (Δ' ++ Δ) → Desc I Δ
   `∎ :  Tp I Δ  → Desc I Δ
+
+--Simple descriptions (i.e. with simple types)
+SDesc : Set → Set₁
+SDesc I = Desc {⊤} (record { type = const (const I) ; th^Ty = th^const }) []
+
+-- simple X, where no type variables are bound
+`SX : {I : Set} → List I → I → SDesc I → SDesc I
+`SX Γ i d = `X [] (L.map (tt ,_) Γ) (tt , i) d
+
+`S∎ : {I : Set} → I → SDesc I
+`S∎ i = `∎ (tt , i)
 
 cast : ∀{ℓ} → ∀ {A : Set} → ∀ {a b : A} → a ≡ b → (P : A → Set ℓ) → P a → P b
 cast refl P = id
@@ -50,11 +63,16 @@ cast refl P = id
 reindex : ∀{J L : Set} → {I : DescTy J} → {K : DescTy L} →
           (f : J → L) → (∀{i Δ} → type I i Δ → type K (f i) (L.map f Δ)) → ∀{Δ} → Desc I Δ → Desc K (L.map f Δ)
 reindex f g (`σ A d)   = `σ A λ a → reindex f g (d a)
+reindex f g (`T j d) = `T (f j) (reindex f g d)
 reindex {I = I} {K = K} f g {Δ} (`X Δ' Γ j d) =
   `X (L.map f Δ') (L.map mapg Γ) (mapg j) (cast (map-++-commute f Δ' Δ) (Desc K) (reindex f g d)) where
     mapg : Tp I (Δ' ++ Δ) → Tp K (L.map f Δ' ++ L.map f Δ)
     mapg = (Prod.map f (cast (map-++-commute f Δ' Δ) (type K (f _)) ∘ g))
 reindex f g (`∎ i)     = `∎ (Prod.map f g i)
+
+-- old reindexing for simple descriptions
+sreindex : {I J : Set} → (I → J) → SDesc I → SDesc J
+sreindex f = reindex id f
 
 {- TODO
 -- simpler version that does not reindex types
@@ -85,6 +103,7 @@ private
 
 ⟦_⟧ : ∀[ Desc I ⇒ Tp-Scoped I ⇒ I ─Scoped² ]
 ⟦ `σ A d    ⟧ X i Γ = Σ[ a ∈ A ] (⟦ d a ⟧ X i Γ)
+⟦_⟧ {I = I} {Δ} (`T j d) X i Γ = type I j Δ × ⟦ d ⟧ X i Γ
 ⟦_⟧ {I = I} {Δ} (`X Δ' Γ' j d) X i Γ =
   X Δ' Γ' j ↑Γ × ⟦ d ⟧ ↑X (map₂ (↑Δ I) i) ↑Γ where
   ↑Γ : List (Tp I (Δ' ++ Δ))
@@ -97,6 +116,8 @@ private
       (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ')
 ⟦ `∎ j      ⟧ X i Γ = i ≡ j
 
+-- TODO: Desc to type
+-- TODO: type in terms???
 
 -- Syntaxes: Free Relative Monad of a Description's Interpretation
 
@@ -104,18 +125,26 @@ private
 Scope : J ─Scoped → List J → J ─Scoped
 Scope T Δ i = (Δ ++_) ⊢ T i
 
---TODO:
-Scope² : ∀[ Tp-Scoped I ⇒ List ∘ (Tp I) ⇒ Tp-Scoped I ]
-Scope² T Γ Δ' Γ' = {!!}
+
+module _ {J : Set} {I : DescTy J} where
+
+  ↑ΔD : ∀ Δ' → ∀[ Desc I ⇒ (Δ' ++_) ⊢ Desc I ]
+  ↑ΔD Δ' (`σ A d) = `σ A (λ a → ↑ΔD Δ' (d a))
+  ↑ΔD Δ' (`T j d) = `T j (↑ΔD Δ' d)
+  ↑ΔD Δ' (`X Δ'' Γ i d) = `X Δ'' {!L.map (map₂ (↑Δ I)) Γ!} (map₂ (↑Δ I) i) {!↑ΔD Δ'!}
+  ↑ΔD Δ' (`∎ x) = {!!}
+
+  --TODO: this only scopes Γ
+  Scope² : Π[ I ─Scoped² ⇒ List ∘ (Tp I) ⇒ I ─Scoped² ]
+  Scope² Δ T Γ i = (Γ ++_) ⊢ T i
+
+  data Tm (Δ : List J) (d : Desc I Δ) : Size → (I ─Scoped²) Δ where
+    -- TODO: why is the quantified I wrong?
+    `var  : ∀{i} → ∀[ Var i ⇒ Tm Δ d (↑ s) i ]
+    `con  : ∀{i} → ∀[ ⟦ d ⟧
+      (λ Δ' Γ → Scope² (Δ' ++ Δ) (Tm (Δ' ++ Δ) (↑ΔD Δ' d) s) (L.map (map₂ (↑Δ _)) Γ)) i  ⇒ Tm Δ d (↑ s) i ]
 
 {-
-module _ {I : Set} where
-
- data Tm (d : Desc I) : Size → I ─Scoped where
-   `var  : ∀[ Var i                     ⇒ Tm d (↑ s) i ]
-   `con  : ∀[ ⟦ d ⟧ (Scope (Tm d s)) i  ⇒ Tm d (↑ s) i ]
-
-
 module _ {I i Γ} {d : Desc I} where
 
   `var-inj : ∀ {t u} → (Tm d ∞ i Γ ∋ `var t) ≡ `var u → t ≡ u
@@ -132,17 +161,18 @@ module _ {I : Set} where
 
 
 -- Descriptions are closed under sums
-
+-}
+--TODO: `+ for non-simple descriptions
 module _ {I : Set} where
 
  infixr 5 _`+_
 
 
- _`+_ : Desc I → Desc I → Desc I
+ _`+_ : SDesc I → SDesc I → SDesc I
  d `+ e = `σ Bool $ λ isLeft →
           if isLeft then d else e
-
-module _ {I : Set} {d e : Desc I} {X : List I → I ─Scoped}
+{-
+module _ {I : Set} {d e : SDesc I} {X : List I → I ─Scoped}
          {A : Set} {i : I} {Γ : List I} where
 
  case : (⟦ d ⟧ X i Γ → A) → (⟦ e ⟧ X i Γ → A) →
