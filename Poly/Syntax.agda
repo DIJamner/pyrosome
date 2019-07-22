@@ -6,6 +6,7 @@ open import Size
 open import Data.Bool
 open import Data.List.Base as L hiding ([_])
 open import Data.List.All hiding (mapA; sequenceA)
+open import Data.List.Properties using (map-++-commute;++-assoc)
 open import Data.Product as Prod
 open import Data.Product using (Σ-syntax)
 open import Function hiding (case_of_)
@@ -15,32 +16,47 @@ open import Data.Var hiding (z; s)
 open import Relation.Unary
 open import Data.Environment as E hiding (sequenceA)
 
--- TODO: should be in utils, gneralized to levels
-_⇒₂_ : ∀{A B : Set} → (A → B → Set) → (A → B → Set) → (A → B → Set)
-P ⇒₂ Q = λ x y → P x y → Q x y
-
-
-I2Universal : {A B : Set} → (A → B → Set) → Set
-I2Universal P = ∀ {x y} → P x y
-
-syntax I2Universal P = ∀₂[ P ]
+-- TODO: should be in environent/descutils
+extendΔ : {J : Set} → {Δ' Δ : List J} → Thinning Δ (Δ' ++ Δ)
+extendΔ {Δ' = []} = E.identity
+E.lookup (extendΔ  {Δ' = x ∷ Δ'}) v = E.lookup extend (E.lookup extendΔ v)
 
 -- Descriptions and their Interpretation
 
-Tp : ∀ {J} → J ─Scoped → List J → Set
-Tp {J} I Δ = Σ[ j ∈ J ] I j Δ
+record DescTy (J : Set) : Set₁ where
+  field
+    type : J ─Scoped
+    th^Ty : ∀ {j} → Thinnable (type j)
+  
+  Tp : List J → Set
+  Tp Δ = Σ[ j ∈ J ] type j Δ
 
-data Desc {J : Set} (I : J ─Scoped) : Set₁ where
-  `σ : (A : Set) → (A → Desc I)  → Desc I
-  `X : (Δ : List J) → List (Tp I Δ) → Tp I Δ → Desc I → Desc I
-  `∎ : (Δ : List J) → Tp I Δ  → Desc I
+  ↑Δ : ∀{j Δ'} → ∀[ type j ⇒ (Δ' ++_) ⊢ type j ]
+  ↑Δ ty = th^Ty ty extendΔ
 
-reindex : ∀{J L : Set} → {I : J ─Scoped} → {K : L ─Scoped} →
-          (f : J → L) → (∀{i Δ} → I i Δ → K (f i) (L.map f Δ)) → Desc I → Desc K
+open DescTy
+
+
+data Desc {J : Set} (I : DescTy J) (Δ : List J) : Set₁ where
+  `σ : (A : Set) → (A → Desc I Δ) → Desc I Δ
+  `X : (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → Tp I (Δ' ++ Δ) → Desc I (Δ' ++ Δ) → Desc I Δ
+  `∎ :  Tp I Δ  → Desc I Δ
+
+cast : ∀{ℓ} → ∀ {A : Set} → ∀ {a b : A} → a ≡ b → (P : A → Set ℓ) → P a → P b
+cast refl P = id
+
+--TODO: move cast to utils
+
+reindex : ∀{J L : Set} → {I : DescTy J} → {K : DescTy L} →
+          (f : J → L) → (∀{i Δ} → type I i Δ → type K (f i) (L.map f Δ)) → ∀{Δ} → Desc I Δ → Desc K (L.map f Δ)
 reindex f g (`σ A d)   = `σ A λ a → reindex f g (d a)
-reindex f g (`X Δ Γ j d) = `X (L.map f Δ) (L.map (Prod.map f g) Γ) (Prod.map f g j) (reindex f g d)
-reindex f g (`∎ Δ i)     = `∎ (L.map f Δ) (Prod.map f g i)
+reindex {I = I} {K = K} f g {Δ} (`X Δ' Γ j d) =
+  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (cast (map-++-commute f Δ' Δ) (Desc K) (reindex f g d)) where
+    mapg : Tp I (Δ' ++ Δ) → Tp K (L.map f Δ' ++ L.map f Δ)
+    mapg = (Prod.map f (cast (map-++-commute f Δ' Δ) (type K (f _)) ∘ g))
+reindex f g (`∎ i)     = `∎ (Prod.map f g i)
 
+{- TODO
 -- simpler version that does not reindex types
 reindex' : ∀{J} → {I K : J ─Scoped} → ∀₂[ I ⇒₂ K ] → Desc I → Desc K
 reindex' g = reindex id {!TODO: should just be g (modulo types)!}
@@ -48,38 +64,51 @@ reindex' g = reindex id {!TODO: should just be g (modulo types)!}
 -- only reindexes types
 reindexᵗ : {J K : Set} → {I : J ─Scoped} → (J → K) → Desc I → Desc {!!}
 reindexᵗ f = reindex f id
+-}
 
-Tp-Scoped : ∀{J} → J ─Scoped → Set₁
-Tp-Scoped {J} I = (Δ' : List J) → ∀{Δ} → List (Tp I (Δ' ++ Δ)) → (Tp I (Δ' ++ Δ)) ─Scoped
+Tp-Scoped : ∀{J} → DescTy J → List J → Set₁
+Tp-Scoped {J} I Δ = (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → (Tp I (Δ' ++ Δ)) ─Scoped
 
-_─Scoped² : ∀ {J} → J ─Scoped → Set₁
-I ─Scoped² = ∀ Δ → (Tp I Δ) ─Scoped
+_─Scoped² : ∀ {J} → DescTy J → List J → Set₁
+(I ─Scoped²) Δ = (Tp I Δ) ─Scoped
 
 private
   variable
     J : Set
-    I : J ─Scoped
+    I : DescTy J
     j : J
     Δ : List J
-    i σ : I j Δ
+    i σ : type I j Δ
     Γ₁ Γ₂ : List (Tp I Δ)
     s : Size
-    X Y : Tp-Scoped I
+    X Y : Tp-Scoped I Δ
 
+⟦_⟧ : ∀[ Desc I ⇒ Tp-Scoped I ⇒ I ─Scoped² ]
+⟦ `σ A d    ⟧ X i Γ = Σ[ a ∈ A ] (⟦ d a ⟧ X i Γ)
+⟦_⟧ {I = I} {Δ} (`X Δ' Γ' j d) X i Γ =
+  X Δ' Γ' j ↑Γ × ⟦ d ⟧ ↑X (map₂ (↑Δ I) i) ↑Γ where
+  ↑Γ : List (Tp I (Δ' ++ Δ))
+  ↑Γ = L.map (map₂ (↑Δ I)) Γ
+  ↑X : Tp-Scoped I (Δ' ++ Δ)
+  ↑X Δ'' Γ ty Γ' =
+    X (Δ'' ++ Δ')
+      (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ)
+      (cast (sym (++-assoc Δ'' Δ' Δ)) (Tp I) ty)
+      (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ')
+⟦ `∎ j      ⟧ X i Γ = i ≡ j
 
-⟦_⟧ : Desc I → Tp-Scoped I → I ─Scoped²
-⟦ `σ A d    ⟧ X Δ i Γ = Σ[ a ∈ A ] (⟦ d a ⟧ X Δ i Γ)
-⟦ `X Δ' Γ' j d  ⟧ X Δ i Γ = X Δ' Γ' j (L.map {!!} Γ) × ⟦ d ⟧ X Δ i Γ
-⟦ `∎ Δ' j      ⟧ X Δ i Γ = i ≡ {!!} j
-
-{-
 
 -- Syntaxes: Free Relative Monad of a Description's Interpretation
 
 
-Scope : I ─Scoped → List I → I ─Scoped
+Scope : J ─Scoped → List J → J ─Scoped
 Scope T Δ i = (Δ ++_) ⊢ T i
 
+--TODO:
+Scope² : ∀[ Tp-Scoped I ⇒ List ∘ (Tp I) ⇒ Tp-Scoped I ]
+Scope² T Γ Δ' Γ' = {!!}
+
+{-
 module _ {I : Set} where
 
  data Tm (d : Desc I) : Size → I ─Scoped where
