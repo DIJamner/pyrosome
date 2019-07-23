@@ -1,4 +1,4 @@
-{-# OPTIONS --safe --sized-types #-}
+--{-# OPTIONS --safe --sized-types #-}
 
 module Poly.Syntax where
 
@@ -107,11 +107,16 @@ reindexᵗ : {J K : Set} → {I : J ─Scoped} → (J → K) → Desc I → Desc
 reindexᵗ f = reindex f id
 -}
 
-Tp-Scoped : ∀{J} → DescTy J → List J → Set₁
-Tp-Scoped {J} I Δ = (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → (Tp I (Δ' ++ Δ)) ─Scoped
-
 _─Scoped² : ∀ {J} → DescTy J → List J → Set₁
 (I ─Scoped²) Δ = (Tp I Δ) ─Scoped
+
+--TODO: better names
+
+Tp-Scoped : ∀{J} → DescTy J → List J → Set₁
+Tp-Scoped {J} I Δ = (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → (I ─Scoped²) (Δ' ++ Δ)
+
+Δ-Scoped : ∀{J} → DescTy J → List J → Set₁
+Δ-Scoped {J} I Δ = (Δ' : List J) → (I ─Scoped²) (Δ' ++ Δ)
 
 private
   variable
@@ -145,7 +150,6 @@ private
 Scope : J ─Scoped → List J → J ─Scoped
 Scope T Δ i = (Δ ++_) ⊢ T i
 
-
 □' : ∀{ℓ} → {I : Set} → (List I → Set ℓ) → (List I → Set ℓ)
 (□' T) Γ = ∀[ Thinning Γ ⇒ T ]
 
@@ -170,14 +174,18 @@ module _ {J : Set} {I : DescTy J} where
   ↑ΔD Δ' d = th^Desc d extendΔ
 
   --TODO: this only scopes Γ
-  Scope² : Π[ I ─Scoped² ⇒ List ∘ (Tp I) ⇒ I ─Scoped² ]
-  Scope² Δ T Γ i = (Γ ++_) ⊢ T i
+  Scope² : Π[ Tp-Scoped I ⇒ List ∘ (Tp I) ⇒ I ─Scoped² ]
+  Scope² Δ T Γ i = (Γ ++_) ⊢ T [] Γ i
 
-  data Tm (Δ : List J) (d : Desc I Δ) : Size → (I ─Scoped²) Δ where
-    -- TODO: why is the quantified I wrong?
-    `var  : ∀{i} → ∀[ Var i ⇒ Tm Δ d (↑ s) i ]
-    `con  : ∀{i} → ∀[ ⟦ d ⟧
-      (λ Δ' → Scope² (Δ' ++ Δ) (Tm (Δ' ++ Δ) (↑ΔD Δ' d) s)) i  ⇒ Tm Δ d (↑ s) i ]
+  S2 :  Π[ Δ-Scoped I ⇒ Tp-Scoped I ]
+  S2 Δ T Δ' Γ i = (Γ ++_) ⊢ T Δ' i
+
+  --TODO: convince the positivity checker
+  {-# NO_POSITIVITY_CHECK #-}
+  data Tm (d : Desc I Δ) : Size → Δ-Scoped I Δ where
+    -- TODO: empty or arbitrary delta?
+    `var  : ∀{i} → ∀[ Var i ⇒ Tm d (↑ s) [] i ]
+    `con  : ∀{i} → ∀[ ⟦ d ⟧ (S2 Δ (Tm d s)) i ⇒ Tm d (↑ s) [] i ]
 
 {-
 module _ {I i Γ} {d : Desc I} where
@@ -188,15 +196,17 @@ module _ {I i Γ} {d : Desc I} where
   `con-inj : ∀ {t u} → (Tm d ∞ i Γ ∋ `con t) ≡ `con u → t ≡ u
   `con-inj refl = refl
 
--- Closed terms
-module _ {I : Set} where
+-}
 
-  TM : Desc I → I → Set
-  TM d i = Tm d ∞ i []
+-- Closed terms
+module _ where
+
+  TM : Desc I Δ → Tp I Δ → Set
+  TM d i = Tm d ∞ [] i []
 
 
 -- Descriptions are closed under sums
--}
+
 --TODO: `+ for non-simple descriptions
 module _ {I : Set} where
 
