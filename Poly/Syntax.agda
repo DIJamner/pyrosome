@@ -58,7 +58,7 @@ open DescTy
 data Desc {J : Set} (I : DescTy J) (Δ : List J) : Set₁ where
   `σ : (A : Set) → (A → Desc I Δ) → Desc I Δ
   `T : (j : J) → Desc I Δ → Desc I Δ
-  `X : (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → Tp I (Δ' ++ Δ) → Desc I (Δ' ++ Δ) → Desc I Δ
+  `X : (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → Tp I (Δ' ++ Δ) → Desc I Δ → Desc I Δ
   `∎ :  Tp I Δ  → Desc I Δ
 
 --Simple descriptions (i.e. with simple types)
@@ -83,13 +83,9 @@ reindex : ∀{J L : Set} → {I : DescTy J} → {K : DescTy L} →
 reindex f g (`σ A d)   = `σ A λ a → reindex f g (d a)
 reindex f g (`T j d) = `T (f j) (reindex f g d)
 reindex {I = I} {K = K} f g {Δ} (`X Δ' Γ j d) =
-  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (comcast (Desc K) (reindex f g d)) where
-  
-    comcast : ∀{ℓ} → (P : List _ → Set ℓ) → P _ → P _
-    comcast = cast (map-++-commute f Δ' Δ)
-    
+  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (reindex f g d) where
     mapg : Tp I (Δ' ++ Δ) → Tp K (L.map f Δ' ++ L.map f Δ)
-    mapg = (Prod.map f (comcast (type K (f _)) ∘ g))
+    mapg = (Prod.map f (cast (map-++-commute f Δ' Δ) (type K (f _)) ∘ g))
     
 reindex f g (`∎ i)     = `∎ (Prod.map f g i)
 
@@ -133,15 +129,9 @@ private
 ⟦ `σ A d    ⟧ X i Γ = Σ[ a ∈ A ] (⟦ d a ⟧ X i Γ)
 ⟦_⟧ {I = I} {Δ} (`T j d) X i Γ = type I j Δ × ⟦ d ⟧ X i Γ
 ⟦_⟧ {I = I} {Δ} (`X Δ' Γ' j d) X i Γ =
-  X Δ' Γ' j ↑Γ × ⟦ d ⟧ ↑X (map₂ (↑Δ I) i) ↑Γ where
+  X Δ' Γ' j ↑Γ × ⟦ d ⟧ X (map₂ (↑Δ I) i) Γ where
   ↑Γ : List (Tp I (Δ' ++ Δ))
   ↑Γ = L.map (map₂ (↑Δ I)) Γ
-  ↑X : Tp-Scoped I (Δ' ++ Δ)
-  ↑X Δ'' Γ ty Γ' =
-    X (Δ'' ++ Δ')
-      (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ)
-      (cast (sym (++-assoc Δ'' Δ' Δ)) (Tp I) ty)
-      (cast (sym (++-assoc Δ'' Δ' Δ)) (List ∘ (Tp I)) Γ')
 ⟦ `∎ j      ⟧ X i Γ = i ≡ j
 
 -- Syntaxes: Free Relative Monad of a Description's Interpretation
