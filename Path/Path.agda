@@ -17,6 +17,7 @@ open import Generic.Syntax
 
 open import DescUtils
 
+-- TODO: is there a good way to have a path from A × B to B × A?
 data Path : Desc I → Desc I → Set₁ where
   `σL : (A : Set) → ∀ {d d2} → ((s : A) → Path (d s) d2) → Path (`σ A d) d2
   `σR : (A : Set) → ∀ {d1 d} → (s : A) → Path d1 (d s) → Path d1 (`σ A d)
@@ -43,6 +44,11 @@ id : Path d d
 id {`σ A x} = `σL A (λ s → `σR A s id)
 id {`X Γ i d} = `XP Γ i id
 id {`∎ i} = `∎P i
+
+id-ext : ∀{X i Γ} → (e : ⟦ d ⟧ X i Γ) → ⟦ id ⟧$ e ≡ e
+id-ext {`σ A x} (fst , snd) = cong (fst ,_) (id-ext snd)
+id-ext {`X x x₁ d} (fst , snd) = cong (fst ,_) (id-ext snd)
+id-ext {`∎ x} refl = refl
 
 -- note : there are 2 choices for sequencing L and R σs
 -- they should produce paths with the same interpretations

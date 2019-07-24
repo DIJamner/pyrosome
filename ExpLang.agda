@@ -8,12 +8,15 @@ open import Data.Nat
 open import Data.Bool
 open import Data.Product
 open import Data.Sum
+open import Data.Unit
 open import Data.Maybe
 open import Data.Maybe.Categorical as MC
 open import Category.Monad
-open import Data.List using (List; [_])
+open import Data.List hiding (tabulate)
+open import Data.List.Properties
+open import Data.List.Relation.Unary.All using (tabulate)
 open import Relation.Unary
-open import Agda.Builtin.Equality
+open import Relation.Binary.PropositionalEquality hiding ([_])
 
 open import Function
 
@@ -21,7 +24,7 @@ open import Data.Var
 open import Data.Var.Varlike
 open import Data.Environment
 open import Data.Relation
-open import Generic.Syntax renaming (Desc to IDesc)
+open import Generic.Syntax
 open import Generic.Semantics
 open import Generic.Semantics.Syntactic using (th^Tm; vl^Tm)
 
@@ -45,68 +48,48 @@ module _ {a b} {A : Set a} {B : Set b} where
   _⇒²_ : ∀ {ℓ₁ ℓ₂} → (A → B → Set ℓ₁) → (A → B → Set ℓ₂) → A → B → Set _
   P ⇒² Q = λ x y → P x y → Q x y
 
-{-=============
-TODO!!!! nothing so far depends on this
-it would be better to abstract it out if that continues to be the case
-this may change, however, when we consider typing
-==============-}
-data SynClass : Set where
-  Term : SynClass
-  Type : SynClass
+cast : ∀{ℓ₁ ℓ₂} → ∀ {A : Set ℓ₁} → ∀ {a b : A} → a ≡ b → (P : A → Set ℓ₂) → P a → P b
+cast refl P = id
 
-Desc : Set₁
-Desc = IDesc SynClass
 
-Scoped : Set₁
-Scoped = SynClass ─Scoped
+cong-app' : ∀ {a b} {A : Set a} {B : Set b} → {x y : A} → x ≡ y → {f g : (x : A) → B} →
+           f ≡ g  → f x ≡ g y
+cong-app' refl refl = refl
 
-ValSet : Set₁
-ValSet = List SynClass → Set
+Tm⟦_⟧$ : ∀{I} → {d1 d2 : Desc I} → Path d1 d2 → ∀²[ Tm d1 ∞ ⇒² Tm d2 ∞ ]
+Tm⟦ p ⟧$ = map^Tm (morph p)
 
-private
-  variable
-    i : SynClass
-    Γ : List SynClass
+id-ext-tm : ∀{I} → {d : Desc I} → ∀{i Γ} → (e : Tm d ∞ i Γ) → Tm⟦ path-id ⟧$ e ≡ e
+id-ext-tm = {!!}
 
---Type of partial terms (stuck/error, term, or value)
-data PTm (d : Desc) (V : Scoped) : Scoped where
-  Stuck : PTm d V i Γ
-  Comp : Tm d ∞ i Γ → PTm d V i Γ
-  Val : V i Γ → PTm d V i Γ
-
--- for sequential evaluation/interpretation
--- enables do notation
-_>>=_ : ∀{d V} → ∀²[ (PTm d V ⇒² (Tm d ∞ ⇒² PTm d V) ⇒² PTm d V) ]
-Stuck >>= f = Stuck
-Comp x >>= f = f x
-Val x >>= f = Val x
-
-record Denotation : Set₁ where
+record Path² {t1 t2 : Desc ⊤} (d1 : Desc (TM t1 tt)) (d2 : Desc (TM t2 tt)) : Set₁ where
   field
-    val : Scoped
-    th : ∀{i} → Thinnable (val i)
-    vl : VarLike val
+    type-path : Path t1 t2
+    term-path : Path (reindex Tm⟦ type-path ⟧$ d1) d2
 
-open Denotation
+open Path²
 
-SynD : Desc → Denotation
-SynD d .val = Tm d ∞
-SynD d .th = th^Tm
-SynD d .vl = vl^Tm
+path-id² : ∀{t d} → Path² {t} d d
+path-id² .type-path = path-id
+path-id² {d = `σ A x} .term-path = {!!}
+path-id² {d = `X x x₁ d} .term-path = {!`XP!}
+path-id² {d = `∎ x} .term-path = cast (sym (id-ext-tm x)) (λ y → Path (`∎ y) (`∎ x)) (`∎P x)
 
--- TODO: move away from Desc.
-record Lang (I : Set) : Set₁ where
+-- TODO: this currently only works for simple types
+-- get the indexing right in Poly/Syntax and it should work
+-- for more interesting types though
+record Lang : Set₁ where
   field
-    desc : IDesc I
+    type : Desc ⊤
+    desc : Desc (TM type tt)
     -- Mendler semantics; represents one step of the precision derivation
-    precision : ∀{d'} → Path desc d' → Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞)
-    -- should be transitive and reflexive (TODO)
-    -- precision-trans
-    -- precision-refl
+    precision : ∀{t'} → {d' : Desc (TM t' tt)} → Path² desc d' →
+                Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞)
 
+  -- TODO: build in transitivity
   precⁿ : ℕ → Rel (Tm desc ∞) (Tm desc ∞)
   precⁿ zero = Eqᴿ
-  precⁿ (suc n) = precision path-id (precⁿ n)
+  precⁿ (suc n) = precision path-id² (precⁿ n)
 
   -- two terms are related if they are related by a finite precision derivation
   -- TODO: possible to write using size types? (probably not)
@@ -133,16 +116,18 @@ private
   variable
     I : Set
 
-path-projₗ : {d1 d2 d3 : IDesc I} → Path (d1 `+ d2) d3 → Path d1 d3
+--TODO: should be in path
+path-projₗ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d1 d3
 path-projₗ (`σL .Bool x) = x true
 path-projₗ (`σR A s₁ p) = `σR A s₁ (path-projₗ p)
 
-path-projᵣ : {d1 d2 d3 : IDesc I} → Path (d1 `+ d2) d3 → Path d2 d3
+path-projᵣ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d2 d3
 path-projᵣ (`σL .Bool x) = x false
 path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
 
+{-
 --TODO: issue: precision does not take types of vars into account
-_+ᴸ_ : Lang I → Lang I → Lang I
+_+ᴸ_ : Lang → Lang → Lang
 (L1 +ᴸ L2) .desc  = desc L1 `+ desc L2
 (L1 +ᴸ L2) .precision p R .rel i e1 e2 =
   rel (precision L1 (path-projₗ p) R) i e1 e2
@@ -152,10 +137,11 @@ _+ᴸ_ : Lang I → Lang I → Lang I
 -- This language makes i into the unit type
 -- i.e. with a trival element and all elements equal
 -- issue: what if i is shared? this works on the intrinsic typing model
-UnitLang : I → Lang I
+UnitLang : {!!} → Lang
 UnitLang i .desc = `∎ i
 UnitLang i .precision p R .rel j _ _ = i ≡ j
 
 
 _ : {i : I} → ∀{Γ e1 e2} →  rel (prec (UnitLang i)) i {Γ} e1 e2
 _ = (suc zero) , refl
+-}
