@@ -1,5 +1,7 @@
 module ExpLang where
 
+import Level as L
+
 open import Size
 
 open import Data.Nat
@@ -11,12 +13,14 @@ open import Data.Maybe.Categorical as MC
 open import Category.Monad
 open import Data.List using (List; [_])
 open import Relation.Unary
+open import Agda.Builtin.Equality
 
 open import Function
 
 open import Data.Var
 open import Data.Var.Varlike
 open import Data.Environment
+open import Data.Relation
 open import Generic.Syntax renaming (Desc to IDesc)
 open import Generic.Semantics
 open import Generic.Semantics.Syntactic using (th^Tm; vl^Tm)
@@ -90,50 +94,68 @@ SynD d .val = Tm d ∞
 SynD d .th = th^Tm
 SynD d .vl = vl^Tm
 
-record Lang (V : Denotation) : Set₁ where
-  module V = Denotation V
+-- TODO: move away from Desc.
+record Lang (I : Set) : Set₁ where
   field
-    desc : Desc
-    -- Mendler semantics
-    alg   : ∀{d'} → Path desc d'  →
-            -- TODO: makesure right things are patial
-            ∀[ ⟦ desc ⟧ (Kripke V.val (PTm d' V.val)) i ⇒ PTm d' V.val i ]
-    --TODO: typing : ~⟦ desc ⟧ Exp → ⟦ desc ⟧ Type
-    -- TODO: equivalence: go with original axiomatic approach?
-     {-
-       this would replace the algebra in a lang def
-       using the same injection trick to cover language extensions
-    -}
+    desc : IDesc I
+    -- Mendler semantics; represents one step of the precision derivation
+    precision : ∀{d'} → Path desc d' → Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞)
+    -- should be transitive and reflexive (TODO)
+    -- precision-trans
+    -- precision-refl
 
-  
-  sem : ∀{d'} → Path desc d' → Semantics desc V.val (PTm d' V.val)
-  sem m .Semantics.th^𝓥 = th V
-  sem m .Semantics.var = Val
-  sem m .Semantics.alg = alg m
+  precⁿ : ℕ → Rel (Tm desc ∞) (Tm desc ∞)
+  precⁿ zero = Eqᴿ
+  precⁿ (suc n) = precision path-id (precⁿ n)
 
-  module S = Semantics (sem path-id)
-  open S
+  -- two terms are related if they are related by a finite precision derivation
+  -- TODO: possible to write using size types? (probably not)
+  prec : Rel (Tm desc ∞) (Tm desc ∞)
+  prec .rel i e1 e2 = ∃[ n ] rel (precⁿ n) i e1 e2
 
-  evalN : ℕ → ∀[ Tm desc ∞ i ⇒ PTm desc V.val i ]
-  evalN zero = Comp
-  evalN (suc n) e = do
-    r ← eval V.vl e
-    evalN n r
+  -- We use the precision relation to simultaneously define well-typed terms
+  -- Issue: this would work for an intrinsically typed language,
+  -- but if we want type-based reasoning (and we really do)
+  -- this is insufficient for a syntax with types on top
+  -- TODO: is this solvable with an addl syntax for types
+  -- WITHOUT indexing desc by that syntax?
+  -- to give precision enough info, it needs the typing of Γ
+  -- Question: would that be enough?
+  well-typed : ∀{i Γ} → Pred (Tm desc ∞ i Γ) L.0ℓ
+  well-typed e = rel prec _ e e
 
-  -- TODO: gammas?
---  ctx-approx : (e1 e2 : Tm desc ∞ Exp ) → (C : Ctx desc) → {!!}
---  ctx-approx e1 e2 C = {!!}
+open Lang public hiding (precⁿ)
 
-open Lang public
 
 open import DescUtils
 
 private
   variable
-    V : Denotation
+    I : Set
 
-_+ᴸ_ : Lang V → Lang V → Lang V
+path-projₗ : {d1 d2 d3 : IDesc I} → Path (d1 `+ d2) d3 → Path d1 d3
+path-projₗ (`σL .Bool x) = x true
+path-projₗ (`σR A s₁ p) = `σR A s₁ (path-projₗ p)
+
+path-projᵣ : {d1 d2 d3 : IDesc I} → Path (d1 `+ d2) d3 → Path d2 d3
+path-projᵣ (`σL .Bool x) = x false
+path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
+
+--TODO: issue: precision does not take types of vars into account
+_+ᴸ_ : Lang I → Lang I → Lang I
 (L1 +ᴸ L2) .desc  = desc L1 `+ desc L2
-(L1 +ᴸ L2) .alg p  = case
-  (alg L1 (p ∘ₚ injₗ))
-  (alg L2 (p ∘ₚ injᵣ))
+(L1 +ᴸ L2) .precision p R .rel i e1 e2 =
+  rel (precision L1 (path-projₗ p) R) i e1 e2
+  ⊎ rel (precision L2 (path-projᵣ p) R) i e1 e2
+
+
+-- This language makes i into the unit type
+-- i.e. with a trival element and all elements equal
+-- issue: what if i is shared? this works on the intrinsic typing model
+UnitLang : I → Lang I
+UnitLang i .desc = `∎ i
+UnitLang i .precision p R .rel j _ _ = i ≡ j
+
+
+_ : {i : I} → ∀{Γ e1 e2} →  rel (prec (UnitLang i)) i {Γ} e1 e2
+_ = (suc zero) , refl
