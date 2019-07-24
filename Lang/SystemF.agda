@@ -8,12 +8,17 @@ open import Data.Unit
 open import Data.Bool
 open import Data.Product
 open import Data.List
-open import Agda.Builtin.Equality
+open import Data.List.Properties as LP
+open import Data.List.Relation.Unary.All
+open import Relation.Binary.PropositionalEquality as P
+  using (_≡_; _≢_; _≗_; refl ; sym ; cong)
 
 open import Poly.Syntax
 open import Data.Var
 open import Data.Environment
 open import Generic.Semantics.Syntactic
+
+open import Function
 
 private
   variable
@@ -28,6 +33,8 @@ DescTy.type (AsTypes d) = Tm d ∞ []
 --TODO: needs semantics (including ren) ported to Poly.Desc
 DescTy.th^Ty (AsTypes d) = {!th^Tm!}
 
+TopTy : DescTy ⊤
+TopTy = record { type = λ _ _ → ⊤ ; th^Ty = λ {j} {x} a {_} _ → a }
 
 --TODO: get Tm
 FtyDesc : SDesc ⊤
@@ -35,30 +42,33 @@ FtyDesc = `SX [] tt (`SX [] tt (`S∎ tt)) -- arrow
         `+ `SX [ tt ] tt (`S∎ tt) -- forall
       -- variables will be handled by Tm
 
-Fty : DescTy _
+Fty : DescTy (DescTy.Tp TopTy [])
 Fty = AsTypes FtyDesc
 
 kd : ⊤ × ⊤
 kd = tt , tt
 
+
 --TODO: should this be over arbitrary Δ?
-∀t : DescTy.type Fty kd [ kd ] → DescTy.type Fty kd []
-∀t b = `con (false , (b , refl))
+∀t : DescTy.type Fty kd (kd ∷ Δ) → DescTy.type Fty kd Δ
+∀t {Δ = Δ} b = `con (false , (cast (cong (kd ∷_) ((sym ∘ map-id) Δ)) (DescTy.type Fty kd) b , refl))
+
 
 _→t_ :  DescTy.type Fty kd Δ → DescTy.type Fty kd Δ → DescTy.type Fty kd Δ
-a →t b = `con (true , ({!a!} , ({!!} , refl)))
+_→t_ {Δ = Δ} a b = `con (true ,
+     ((cast ((sym ∘ map-id) Δ) (DescTy.type Fty kd) a) ,
+     (cast ((sym ∘ map-id) Δ) (DescTy.type Fty kd) b , refl)))
 
-empty : DescTy.type Fty kd []
+empty : DescTy.type Fty kd Δ
 empty = ∀t (`var z)
 
-ident : DescTy.type Fty kd []
-ident = ∀t {!!}
+ident : DescTy.type Fty kd Δ
+ident = ∀t ((`var z) →t (`var z))
 
 -- issue: how do I specify the type of the input to FDesc?
 -- It should work for any type that starts with a forall
 -- but this requires storing a type with an open variable
 -- that is not free in the rest of the term
 -- (this might be okay if the T constructor were to bind type variables)
--- TODO: X constructor wrong???? Should its Δ be exposed to the rest of the desc?
 FDesc : Desc Fty []
-FDesc = `X [] [] {!!} {!!}
+FDesc = `T [ kd ] kd (`X [] [] (kd , ∀t (`var (s z))) {!!})
