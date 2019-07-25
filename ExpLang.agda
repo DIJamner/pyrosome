@@ -9,6 +9,7 @@ open import Data.Bool
 open import Data.Product
 open import Data.Sum
 open import Data.Unit
+open import Data.Empty
 open import Data.Maybe
 open import Data.Maybe.Categorical as MC
 open import Category.Monad
@@ -59,41 +60,53 @@ cong-app' refl refl = refl
 Tm⟦_⟧$ : ∀{I} → {d1 d2 : Desc I} → Path d1 d2 → ∀²[ Tm d1 ∞ ⇒² Tm d2 ∞ ]
 Tm⟦ p ⟧$ = map^Tm (morph p)
 
-id-ext-tm : ∀{I} → {d : Desc I} → ∀{i Γ} → (e : Tm d ∞ i Γ) → Tm⟦ path-id ⟧$ e ≡ e
-id-ext-tm = {!!}
+Extensible : ∀{ℓ I} → Desc I → (Desc I → Set ℓ) → Set _
+Extensible d f = ∀{d'} → Path d d' → f d'
 
-record Path² {t1 t2 : Desc ⊤} (d1 : Desc (TM t1 tt)) (d2 : Desc (TM t2 tt)) : Set₁ where
-  field
-    type-path : Path t1 t2
-    term-path : Path (reindex Tm⟦ type-path ⟧$ d1) d2
-
-open Path²
-
-path-id² : ∀{t d} → Path² {t} d d
-path-id² .type-path = path-id
-path-id² {d = `σ A x} .term-path = {!!}
-path-id² {d = `X x x₁ d} .term-path = {!`XP!}
-path-id² {d = `∎ x} .term-path = cast (sym (id-ext-tm x)) (λ y → Path (`∎ y) (`∎ x)) (`∎P x)
+infix 10 Extensible
+syntax Extensible d (λ d' → e) = Ex⟨ d ↑ d' ⟩ e
 
 -- TODO: this currently only works for simple types
--- get the indexing right in Poly/Syntax and it should work
--- for more interesting types though
-record Lang : Set₁ where
-  field
-    type : Desc ⊤
-    desc : Desc (TM type tt)
-    -- Mendler semantics; represents one step of the precision derivation
-    precision : ∀{t'} → {d' : Desc (TM t' tt)} → Path² desc d' →
-                Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞)
+-- need to replace [] with the type environment
+TTm : ∀{I} → (t d : Desc I) → I ─Scoped
+TTm t d i Γ = Tm d ∞ i Γ × TM t i × (Γ ─Env) (Tm t ∞) []
 
+-- TODO: this currently only works for simple types
+-- get the indexing right in Poly/Syntax and it should work?
+-- for more interesting types though
+record Lang (I : Set) : Set₁ where
+  field
+    type : Desc I
+    desc : Desc I
+    type-precision : Ex⟨ type ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+    --TODO: consistent type information
+      -- envs for Γ mapping to types
+        -- should be related if mapping give related types
+        -- right now this allows for anything
+      -- types should be related iff type precision relates them
+      --what's the best way to guarantee these properties?
+    -- Mendler semantics; represents one step of the precision derivation
+    precision : Ex⟨ type ↑ t' ⟩ Ex⟨ desc ↑ d' ⟩
+                (Rel (TTm t' d') (TTm t' d') → Rel (TTm t' d') (TTm t' d'))
+                
   -- TODO: build in transitivity
-  precⁿ : ℕ → Rel (Tm desc ∞) (Tm desc ∞)
+  type-precⁿ : ℕ → Rel (Tm type ∞) (Tm type ∞)
+  type-precⁿ zero = Eqᴿ
+  type-precⁿ (suc n) = type-precision path-id (type-precⁿ n)
+
+  -- two types are related if they are related by a finite precision derivation
+  -- TODO: possible to write using size types? (probably not)
+  type-prec : Rel (Tm type ∞) (Tm type ∞)
+  type-prec .rel i e1 e2 = ∃[ n ] rel (type-precⁿ n) i e1 e2
+  
+  -- TODO: build in transitivity
+  precⁿ : ℕ → Rel (TTm type desc) (TTm type desc)
   precⁿ zero = Eqᴿ
-  precⁿ (suc n) = precision path-id² (precⁿ n)
+  precⁿ (suc n) = precision path-id path-id (precⁿ n)
 
   -- two terms are related if they are related by a finite precision derivation
   -- TODO: possible to write using size types? (probably not)
-  prec : Rel (Tm desc ∞) (Tm desc ∞)
+  prec : Rel (TTm type desc) (TTm type desc)
   prec .rel i e1 e2 = ∃[ n ] rel (precⁿ n) i e1 e2
 
   -- We use the precision relation to simultaneously define well-typed terms
@@ -104,7 +117,7 @@ record Lang : Set₁ where
   -- WITHOUT indexing desc by that syntax?
   -- to give precision enough info, it needs the typing of Γ
   -- Question: would that be enough?
-  well-typed : ∀{i Γ} → Pred (Tm desc ∞ i Γ) L.0ℓ
+  well-typed : ∀{i Γ} → Pred (TTm type desc i Γ) L.0ℓ
   well-typed e = rel prec _ e e
 
 open Lang public hiding (precⁿ)
@@ -125,23 +138,14 @@ path-projᵣ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d2 d3
 path-projᵣ (`σL .Bool x) = x false
 path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
 
-{-
+
 --TODO: issue: precision does not take types of vars into account
-_+ᴸ_ : Lang → Lang → Lang
+_+ᴸ_ : Lang I → Lang I → Lang I
+(L1 +ᴸ L2) .type  = type L1 `+ type L2
 (L1 +ᴸ L2) .desc  = desc L1 `+ desc L2
-(L1 +ᴸ L2) .precision p R .rel i e1 e2 =
-  rel (precision L1 (path-projₗ p) R) i e1 e2
-  ⊎ rel (precision L2 (path-projᵣ p) R) i e1 e2
-
-
--- This language makes i into the unit type
--- i.e. with a trival element and all elements equal
--- issue: what if i is shared? this works on the intrinsic typing model
-UnitLang : {!!} → Lang
-UnitLang i .desc = `∎ i
-UnitLang i .precision p R .rel j _ _ = i ≡ j
-
-
-_ : {i : I} → ∀{Γ e1 e2} →  rel (prec (UnitLang i)) i {Γ} e1 e2
-_ = (suc zero) , refl
--}
+(L1 +ᴸ L2) .type-precision pt R .rel i t1 t2 =
+  rel (type-precision L1 (path-projₗ pt) R) i t1 t2
+  ⊎ rel (type-precision L2 (path-projᵣ pt) R) i t1 t2
+(L1 +ᴸ L2) .precision pt pd R .rel i e1 e2 =
+  rel (precision L1 (path-projₗ pt) (path-projₗ pd) R) i e1 e2
+  ⊎ rel (precision L2 (path-projᵣ pt) (path-projᵣ pd) R) i e1 e2
