@@ -66,58 +66,60 @@ Extensible d f = ∀{d'} → Path d d' → f d'
 infix 10 Extensible
 syntax Extensible d (λ d' → e) = Ex⟨ d ↑ d' ⟩ e
 
--- TODO: this currently only works for simple types
--- need to replace [] with the type environment
-TTm : ∀{I} → (t d : Desc I) → I ─Scoped
-TTm t d i Γ = Tm d ∞ i Γ × TM t i × (Γ ─Env) (Tm t ∞) []
+Tp : ∀{I} → (I → I) → Desc I → I ─Scoped
+Tp f d = Tm d ∞ ∘ f
 
--- TODO: this currently only works for simple types
--- get the indexing right in Poly/Syntax and it should work?
--- for more interesting types though
-record Lang (I : Set) : Set₁ where
+TEnv : ∀{I} → (I → I) → Desc I → List I → Set
+TEnv f d Γ = (Γ ─Env) (Tp f d) Γ  --TODO: this last Γ is wrong; I want to order the env
+
+TTm : ∀{I} → (I → I) → Desc I → I ─Scoped
+TTm f d i Γ = TEnv f d Γ × Tm d ∞ i Γ × Tp f d i Γ
+
+DescUnfix : ∀{I ℓ} → Desc I → (P : Desc I → Set ℓ) → Set _
+DescUnfix d P = Ex⟨ d ↑ d' ⟩ (P d' → P d')
+
+infix 10 DescUnfix
+syntax DescUnfix d (λ d' → T) = Exᶠ⟨ d ↑ d' ⟩ T
+
+record Lang (I : Set) (tp : I → I) : Set₁ where
   field
-    type : Desc I
     desc : Desc I
-    type-precision : Ex⟨ type ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+    -- TODO: how do I want to handle this?
+    -- not every syntactic term has a type, so it should be partial
+    -- should be total on well-typed terms though
+    -- also, types of well-typed terms should be well-typed
+    -- should be "unfixed" in the same way as precision
+    {-
+    typeof : ∀{i} → Ex⟨ desc ↑ d' ⟩
+      (∀[ TEnv tp d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp tp d' i ] →
+        ∀[ TEnv tp d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp tp d' i ])
+        -}
     --TODO: consistent type information
       -- envs for Γ mapping to types
         -- should be related if mapping give related types
         -- right now this allows for anything
-      -- types should be related iff type precision relates them
-      --what's the best way to guarantee these properties?
+      -- types should be related if type precision relates their terms
+      --what's the best way to guarantee these properties? (may want typeof to be monotonic)
     -- Mendler semantics; represents one step of the precision derivation
-    precision : Ex⟨ type ↑ t' ⟩ Ex⟨ desc ↑ d' ⟩
-                (Rel (TTm t' d') (TTm t' d') → Rel (TTm t' d') (TTm t' d'))
-                
-  -- TODO: build in transitivity
-  type-precⁿ : ℕ → Rel (Tm type ∞) (Tm type ∞)
-  type-precⁿ zero = Eqᴿ
-  type-precⁿ (suc n) = type-precision path-id (type-precⁿ n)
-
-  -- two types are related if they are related by a finite precision derivation
-  -- TODO: possible to write using size types? (probably not)
-  type-prec : Rel (Tm type ∞) (Tm type ∞)
-  type-prec .rel i e1 e2 = ∃[ n ] rel (type-precⁿ n) i e1 e2
+    precision : Exᶠ⟨ desc ↑ d' ⟩ (Rel (TTm tp d') (TTm tp d'))
   
-  -- TODO: build in transitivity
-  precⁿ : ℕ → Rel (TTm type desc) (TTm type desc)
-  precⁿ zero = Eqᴿ
-  precⁿ (suc n) = precision path-id path-id (precⁿ n)
-
+  -- TODO: build in transitivity, reflexivity or prove admissible ?
+  -- TODO: Γ should be related by precision in base case
+  -- and x should be mapped to type in Γ
+  precⁿ : ℕ → Rel (TTm tp desc) (TTm tp desc)
+  precⁿ zero .rel i (Γt1 , `var x , _) (Γt2 , `var x₁ , _) = x ≡ x₁
+  precⁿ zero .rel i (Γt1 , `var _ , _) (Γt2 , `con _ , _) = ⊥
+  precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `var _ , _) = ⊥
+  precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `con _ , _) = ⊥
+  precⁿ (suc n) = precision path-id (precⁿ n)
+  
   -- two terms are related if they are related by a finite precision derivation
   -- TODO: possible to write using size types? (probably not)
-  prec : Rel (TTm type desc) (TTm type desc)
-  prec .rel i e1 e2 = ∃[ n ] rel (precⁿ n) i e1 e2
+  prec : Rel (TTm tp desc) (TTm tp desc)
+  prec .rel i e1 e2 = ∀ n → rel (precⁿ n) i e1 e2
 
   -- We use the precision relation to simultaneously define well-typed terms
-  -- Issue: this would work for an intrinsically typed language,
-  -- but if we want type-based reasoning (and we really do)
-  -- this is insufficient for a syntax with types on top
-  -- TODO: is this solvable with an addl syntax for types
-  -- WITHOUT indexing desc by that syntax?
-  -- to give precision enough info, it needs the typing of Γ
-  -- Question: would that be enough?
-  well-typed : ∀{i Γ} → Pred (TTm type desc i Γ) L.0ℓ
+  well-typed : ∀{i Γ} → Pred (TTm tp desc i Γ) L.0ℓ
   well-typed e = rel prec _ e e
 
 open Lang public hiding (precⁿ)
@@ -140,12 +142,21 @@ path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
 
 
 --TODO: issue: precision does not take types of vars into account
-_+ᴸ_ : Lang I → Lang I → Lang I
-(L1 +ᴸ L2) .type  = type L1 `+ type L2
+_+ᴸ_ : ∀[ Lang I ⇒ Lang I ⇒ Lang I ]
 (L1 +ᴸ L2) .desc  = desc L1 `+ desc L2
-(L1 +ᴸ L2) .type-precision pt R .rel i t1 t2 =
-  rel (type-precision L1 (path-projₗ pt) R) i t1 t2
-  ⊎ rel (type-precision L2 (path-projᵣ pt) R) i t1 t2
-(L1 +ᴸ L2) .precision pt pd R .rel i e1 e2 =
-  rel (precision L1 (path-projₗ pt) (path-projₗ pd) R) i e1 e2
-  ⊎ rel (precision L2 (path-projᵣ pt) (path-projᵣ pd) R) i e1 e2
+(L1 +ᴸ L2) .precision p R .rel i e1 e2 =
+  rel (precision L1 (path-projₗ p) R) i e1 e2
+  ⊎ rel (precision L2 (path-projᵣ p) R) i e1 e2
+
+
+-- If we have a fixed point of tp,
+-- we can establish an element that is its own type
+-- termination issues here suggest that it may be better
+-- to just use finite stratification for now.
+-- It certainly captures more languages than I need
+module _ {e : I} {tp : I → I} (fixed : tp e ≡ e) where
+  TypeInType : Lang I tp
+  TypeInType .desc = `∎ e
+  -- TODO: this doesn't account for types properly, should use prec rather than equiv
+  TypeInType .precision p R .rel i (_ , _ , t1) (_ , _ , t2) =
+    Σ (i ≡ e) λ { refl → (t1 ≡ `con (⟦ p ⟧$ fixed)) × t2 ≡ `con (⟦ p ⟧$ fixed)}

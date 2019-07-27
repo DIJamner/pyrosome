@@ -90,33 +90,42 @@ module _ {I : Set} {d : IDesc I} {i : I} {Γ : List I} where
   ↑⟨ e ⟩c {Δ} p = asConstr (map^Tm (morph p) (th^Tm e extendΔ2))
 
 
+UnitDesc : I → (I → I) → IDesc I
+UnitDesc e tp = `∎ e `+ `∎ (tp e)
 
-⑴ : {i : I} → ∀[ Tm (`∎ i) ∞ i ]
-⑴ = `con refl
+module _ {e : I} {tp : I → I} where
+  -- the unit type
+  -- TODO: what's the type (kind) of the unit type?
+     -- the most obvious thing right now is just to build an infinite tower, tp^n
+     -- however, if tp is idempotent, for example, this does bad things
+     -- one option is to find a fixpoint of tp and stop there
+     -- another option is to pass in a kind for the unit type
+        -- this seems not in the spirit of things? the unit language
+        -- should describe its interactions with the kind of types
+  -- need to establish a system of kinds
+  -- also, language extensions that depend on the other parts
+  ⑴ : ∀[ Tm (UnitDesc e tp) ∞ (tp e) ]
+  ⑴ = `con (false , refl)
 
-⑴⟨_⟩ : {i : I} → Ex⟨ `∎ i ↑ d' ⟩ ∀[ Tm d' ∞ i ]
-⑴⟨ p ⟩ = ↑⟨ `con refl ⟩c p
+  ⑴⟨_⟩ : Ex⟨ UnitDesc e tp ↑ d' ⟩ ∀[ Tm d' ∞ (tp e) ]
+  ⑴⟨ p ⟩ = ↑⟨ ⑴ ⟩c p
 
--- This language makes i into the unit type
--- i.e. with a trival element and all elements equal
--- issue: what if i is shared? this works on the intrinsic typing model
-UnitLang : I → Lang I
-UnitLang i .type = `∎ i
-UnitLang i .desc = `∎ i
--- Reflexivity is automatic and we don't want to relate additional types
-UnitLang i .type-precision _ _ .rel _ _ _ = ⊥
--- two terms are related if their types are both unit
--- TODO: also need Γ-relatedness (should be built in to Lang, but isn't yet
-UnitLang i .precision pt pd R .rel j (_ , i1 , Γt1) (_ , i2 , Γt2) =
-  Σ (j ≡ i) λ { refl → i1 ≡ ⑴⟨ pt ⟩ × i2 ≡ ⑴⟨ pt ⟩ }
+  UnitLang : Lang I tp
+  UnitLang .desc = UnitDesc e tp
+  -- two terms are related if their types are both unit
+  -- TODO: also need Γ-relatedness (should be built in to Lang, but isn't yet
+  UnitLang .precision p R .rel j (_ , i1 , Γt1) (_ , i2 , Γt2) =
+    -- TODO: equivalences on types are bad; this should
+    -- be using precision on the types
+    Σ (j ≡ e) λ { refl → i1 ≡ ⑴⟨ p ⟩ × i2 ≡ ⑴⟨ p ⟩ }
 
 
--- Proof that all terms are related at unit type
-_ : {i : I} → ∀{Γ Γt1 Γt2 e1 e2} →
-    rel (prec (UnitLang i)) i {Γ} (e1 , ⑴ , Γt1) (e2 , ⑴ , Γt2)
-_ = suc zero , refl , refl , refl
+  -- Proof that all terms are related at unit type
+  _ : ∀{Γ Γt1 Γt2 e1 e2} →
+      rel (prec UnitLang) e {Γ} (e1 , ⑴ , Γt1) (e2 , ⑴ , Γt2)
+  _ = suc zero , refl , refl , refl
 
-
+{-
 
 LamDesc : I → I → IDesc I
 LamDesc t e = `X [] t (`X [ e ] e (`∎ e)) -- λ:a.b
@@ -167,3 +176,7 @@ SLam .alg m = case
       Val (⟨ path-id ⟩ {!l!} →t {!r!})})
 
 -}
+-}
+
+--oplang: give operational semantics via function f
+--precision is defined as rel x (f x)
