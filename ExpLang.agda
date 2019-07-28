@@ -4,7 +4,8 @@ import Level as L
 
 open import Size
 
-open import Data.Nat
+open import Data.Nat hiding (pred)
+open import Data.Fin hiding (cast)
 open import Data.Bool
 open import Data.Product
 open import Data.Sum
@@ -13,7 +14,7 @@ open import Data.Empty
 open import Data.Maybe
 open import Data.Maybe.Categorical as MC
 open import Category.Monad
-open import Data.List hiding (tabulate)
+open import Data.List hiding (tabulate; lookup)
 open import Data.List.Properties
 open import Data.List.Relation.Unary.All using (tabulate)
 open import Relation.Unary
@@ -66,14 +67,29 @@ Extensible d f = ∀{d'} → Path d d' → f d'
 infix 10 Extensible
 syntax Extensible d (λ d' → e) = Ex⟨ d ↑ d' ⟩ e
 
-Tp : ∀{I} → (I → I) → Desc I → I ─Scoped
-Tp f d = Tm d ∞ ∘ f
+-- everything at level 0 has the same type
+Tp : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
+Tp .{suc _} d zero Γ = ⊤
+Tp .{suc _} d (suc i) Γ = Tm d ∞ (inject₁ i) Γ
 
-TEnv : ∀{I} → (I → I) → Desc I → List I → Set
-TEnv f d Γ = (Γ ─Env) (Tp f d) Γ  --TODO: this last Γ is wrong; I want to order the env
+{-
+  ordered environments do not fit this library too well
+  TODO: figure out the right way to do it; is it as below?:
+-}
+data EnvTyping {n : ℕ} : Desc (Fin n) → List (Fin n) → Set where
+  · : ∀{d} → EnvTyping d []
+  _,ₜ_ : ∀ {d i Γ} → Tp d i Γ → EnvTyping d Γ → EnvTyping d (i ∷ Γ)
 
-TTm : ∀{I} → (I → I) → Desc I → I ─Scoped
-TTm f d i Γ = TEnv f d Γ × Tm d ∞ i Γ × Tp f d i Γ
+-- A convenience definition for use with ─Scoped
+TEnv : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
+TEnv d _ Γ = EnvTyping d Γ
+--TEnv d _ Γ = (Γ ─Env) (Tp d) Γ  --TODO: this last Γ is wrong; I want to order the env
+
+TTm : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
+TTm d i Γ = TEnv d i Γ × Tm d ∞ i Γ × Tp d i Γ
+
+TTp : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
+TTp d i Γ = TEnv d i Γ × Tp d i Γ × Tp d (pred i) Γ
 
 DescUnfix : ∀{I ℓ} → Desc I → (P : Desc I → Set ℓ) → Set _
 DescUnfix d P = Ex⟨ d ↑ d' ⟩ (P d' → P d')
@@ -81,9 +97,10 @@ DescUnfix d P = Ex⟨ d ↑ d' ⟩ (P d' → P d')
 infix 10 DescUnfix
 syntax DescUnfix d (λ d' → T) = Exᶠ⟨ d ↑ d' ⟩ T
 
-record Lang (I : Set) (tp : I → I) : Set₁ where
+-- We deal with n-level languages only for now
+record Lang (n : ℕ) : Set₁ where
   field
-    desc : Desc I
+    desc : Desc (Fin n)
     -- TODO: how do I want to handle this?
     -- not every syntactic term has a type, so it should be partial
     -- should be total on well-typed terms though
@@ -91,9 +108,9 @@ record Lang (I : Set) (tp : I → I) : Set₁ where
     -- should be "unfixed" in the same way as precision
     {-
     typeof : ∀{i} → Ex⟨ desc ↑ d' ⟩
-      (∀[ TEnv tp d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp tp d' i ] →
-        ∀[ TEnv tp d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp tp d' i ])
-        -}
+      (∀[ TEnv d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp d' i ] →
+        ∀[ TEnv d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp d' i ])
+    -}
     --TODO: consistent type information
       -- envs for Γ mapping to types
         -- should be related if mapping give related types
@@ -101,23 +118,41 @@ record Lang (I : Set) (tp : I → I) : Set₁ where
       -- types should be related if type precision relates their terms
       --what's the best way to guarantee these properties? (may want typeof to be monotonic)
     -- Mendler semantics; represents one step of the precision derivation
-    precision : Exᶠ⟨ desc ↑ d' ⟩ (Rel (TTm tp d') (TTm tp d'))
-  
+    precision : Exᶠ⟨ desc ↑ d' ⟩ (Rel (TTm d') (TTm d'))
+
   -- TODO: build in transitivity, reflexivity or prove admissible ?
   -- TODO: Γ should be related by precision in base case
   -- and x should be mapped to type in Γ
-  precⁿ : ℕ → Rel (TTm tp desc) (TTm tp desc)
+  precⁿ : ℕ → Rel (TTm desc) (TTm desc)
   precⁿ zero .rel i (Γt1 , `var x , _) (Γt2 , `var x₁ , _) = x ≡ x₁
   precⁿ zero .rel i (Γt1 , `var _ , _) (Γt2 , `con _ , _) = ⊥
   precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `var _ , _) = ⊥
   precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `con _ , _) = ⊥
   precⁿ (suc n) = precision path-id (precⁿ n)
+
+
   
   -- two terms are related if they are related by a finite precision derivation
-  -- TODO: possible to write using size types? (probably not)
-  prec : Rel (TTm tp desc) (TTm tp desc)
+  -- TODO: remove t1,t2 from TTm? (use typeof) since terms in 0 don't have types
+  -- environment relation ignores the output type
+  prec-env : Rel (TEnv desc) (TEnv desc)
+  prec-type : Rel (TTp desc) (TTp desc)
+  prec : Rel (TTm desc) (TTm desc)
+
+  prec-env .rel _ {[]} · · = ⊤
+  prec-env .rel i {x ∷ Γ} (x₁ ,ₜ Γ1) (x₂ ,ₜ Γ2) =
+         rel prec-type x (Γ1 , x₁ , {!!}) (Γ2 , x₂ , {!!})
+         × rel prec-env i Γ1 Γ2
+
+  -- rel prec-env zero Γ1 Γ2
+  -- TODO: where best to enforce that the environment is well-formed?
+  -- does this suffice? also, make user prove that rules preserve well-formedness
+  prec-type .rel zero (Γ1 , tt , tt) (Γ2 , tt , tt) = rel prec-env zero Γ1 Γ2
+  prec-type .rel (suc i) = rel prec (inject₁ i)
+  
   prec .rel i e1 e2 = ∀ n → rel (precⁿ n) i e1 e2
 
+{-
   -- We use the precision relation to simultaneously define well-typed terms
   well-typed : ∀{i Γ} → Pred (TTm tp desc i Γ) L.0ℓ
   well-typed e = rel prec _ e e
@@ -147,16 +182,4 @@ _+ᴸ_ : ∀[ Lang I ⇒ Lang I ⇒ Lang I ]
 (L1 +ᴸ L2) .precision p R .rel i e1 e2 =
   rel (precision L1 (path-projₗ p) R) i e1 e2
   ⊎ rel (precision L2 (path-projᵣ p) R) i e1 e2
-
-
--- If we have a fixed point of tp,
--- we can establish an element that is its own type
--- termination issues here suggest that it may be better
--- to just use finite stratification for now.
--- It certainly captures more languages than I need
-module _ {e : I} {tp : I → I} (fixed : tp e ≡ e) where
-  TypeInType : Lang I tp
-  TypeInType .desc = `∎ e
-  -- TODO: this doesn't account for types properly, should use prec rather than equiv
-  TypeInType .precision p R .rel i (_ , _ , t1) (_ , _ , t2) =
-    Σ (i ≡ e) λ { refl → (t1 ≡ `con (⟦ p ⟧$ fixed)) × t2 ≡ `con (⟦ p ⟧$ fixed)}
+-}
