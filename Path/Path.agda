@@ -17,7 +17,9 @@ open import Generic.Syntax
 
 open import DescUtils
 
+-- TODO: can we use a function as a fully generic path in cubical type theory?
 -- TODO: is there a good way to have a path from A × B to B × A?
+-- use Γ─Env Δ where Γ is free on right and Δ is bound on left? (or something like that)
 data Path : Desc I → Desc I → Set₁ where
   `σL : (A : Set) → ∀ {d d2} → ((s : A) → Path (d s) d2) → Path (`σ A d) d2
   `σR : (A : Set) → ∀ {d1 d} → (s : A) → Path d1 (d s) → Path d1 (`σ A d)
@@ -117,3 +119,34 @@ fmap-shuffle {`X x x₁ d1} {.(`X x x₁ _)} (`XP .x .x₁ p) (fst , snd) f =
 fmap-shuffle {`∎ x} {.(`σ A _)} (`σR A s p) refl f = cong (s ,_) (fmap-shuffle p refl f)
 fmap-shuffle {`∎ x} {.(`∎ x)} (`∎P .x) e f = refl
 
+{- ==================================
+Description subtraction/partitioning
+================================== -}
+
+path-projₗ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d1 d3
+path-projₗ (`σL .Bool x) = x true
+path-projₗ (`σR A s₁ p) = `σR A s₁ (path-projₗ p)
+
+path-projᵣ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d2 d3
+path-projᵣ (`σL .Bool x) = x false
+path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
+
+factor : ∀{i Γ} → Path (`X i Γ d1 `+ `X i Γ d2) (`X i Γ (d1 `+ d2))
+factor {d1} {d2} {i} {Γ} = `σL Bool λ {
+  false → `XP i Γ (`σR Bool false id) ;
+  true → `XP i Γ (`σR Bool true id)}
+
+{-
+-- TODO: I can't implement this side since I can't split Xs
+distribute : ∀{i Γ} → Path (`X i Γ (d1 `+ d2)) (`X i Γ d1 `+ `X i Γ d2)
+distribute = {!!}
+-}
+
+{- TODO
+path-sub : ∀ d1 d2 → Path d2 d1 → Σ[ d' ∈ Desc I ] Path d1 (d2 `+ d')
+path-sub d1 .(`σ A _) (`σL A x) = {!!}
+path-sub .(`σ A _) d2 (`σR A s p) = {!!}
+path-sub (`X .Γ .i d2) (`X .Γ .i d1) (`XP Γ i p) with path-sub d2 d1 p
+...                                                 | d' , p' = {!!}
+path-sub .(`∎ i) .(`∎ i) (`∎P i) = ⓪ , `σR Bool true (`∎P i)
+-}

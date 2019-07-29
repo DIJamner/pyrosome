@@ -86,16 +86,24 @@ TEnv d _ Γ = EnvTyping d Γ
 --TEnv d _ Γ = (Γ ─Env) (Tp d) Γ  --TODO: this last Γ is wrong; I want to order the env
 
 TTm : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
-TTm d i Γ = TEnv d i Γ × Tm d ∞ i Γ × Tp d i Γ
+TTm d i Γ = TEnv d i Γ × Tm d ∞ i Γ
 
 TTp : ∀ {n} → Desc (Fin n) → (Fin n) ─Scoped
-TTp d i Γ = TEnv d i Γ × Tp d i Γ × Tp d (pred i) Γ
+TTp d i Γ = TEnv d i Γ × Tp d i Γ
 
 DescUnfix : ∀{I ℓ} → Desc I → (P : Desc I → Set ℓ) → Set _
 DescUnfix d P = Ex⟨ d ↑ d' ⟩ (P d' → P d')
 
 infix 10 DescUnfix
 syntax DescUnfix d (λ d' → T) = Exᶠ⟨ d ↑ d' ⟩ T
+
+-- TODO: better placement of ⊤/naming here and elsewhere
+-- probably makes sense to include "top" in the description
+-- makes signatures much easier to work with
+-- question: should it be up to the user then or should we add to the description?
+⟦_⟧' : ∀{n} → Desc (Fin n) → (List (Fin n) → (Fin n) ─Scoped) → (Fin n) ─Scoped
+⟦_⟧' {zero} _ _ _ _ = ⊤
+⟦_⟧' {suc n} d X i Γ = ⟦ d ⟧ X (pred i) Γ
 
 -- We deal with n-level languages only for now
 record Lang (n : ℕ) : Set₁ where
@@ -106,11 +114,7 @@ record Lang (n : ℕ) : Set₁ where
     -- should be total on well-typed terms though
     -- also, types of well-typed terms should be well-typed
     -- should be "unfixed" in the same way as precision
-    {-
-    typeof : ∀{i} → Ex⟨ desc ↑ d' ⟩
-      (∀[ TEnv d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp d' i ] →
-        ∀[ TEnv d' ⇒ Tm d' ∞ i ⇒ Maybe ∘ Tp d' i ])
-    -}
+    typeof : ∀{X i} → ∀[ EnvTyping desc ⇒ ⟦ desc ⟧ X i ⇒ Maybe ∘ ⟦ desc ⟧' X (pred i) ]
     --TODO: consistent type information
       -- envs for Γ mapping to types
         -- should be related if mapping give related types
@@ -118,16 +122,25 @@ record Lang (n : ℕ) : Set₁ where
       -- types should be related if type precision relates their terms
       --what's the best way to guarantee these properties? (may want typeof to be monotonic)
     -- Mendler semantics; represents one step of the precision derivation
-    precision : Exᶠ⟨ desc ↑ d' ⟩ (Rel (TTm d') (TTm d'))
+    precision : Ex⟨ desc ↑ d' ⟩ (Rel (TTm d') (TTm d') → Rel (TTm d') (TTm d'))
+
+  -- TODO: how to guarantee termination?
+  --  I want some way to partition d' and shrink it
+  -- does that help here?
+  -- should probably look back at Delaware's stuff
+  type : ∀{i} → ∀[ EnvTyping desc ⇒ Tm desc ∞ i ⇒ Maybe ∘ Tp desc i ]
+  type Γt (`var x) = {!lookup in Γt!}
+  type {zero} Γt (`con x) = {!handle top; make part of desc???!}
+  type {suc i} Γt (`con x) = Data.Maybe.map `con (Data.Maybe.map {!typeof!} {!!})
 
   -- TODO: build in transitivity, reflexivity or prove admissible ?
   -- TODO: Γ should be related by precision in base case
   -- and x should be mapped to type in Γ
   precⁿ : ℕ → Rel (TTm desc) (TTm desc)
-  precⁿ zero .rel i (Γt1 , `var x , _) (Γt2 , `var x₁ , _) = x ≡ x₁
-  precⁿ zero .rel i (Γt1 , `var _ , _) (Γt2 , `con _ , _) = ⊥
-  precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `var _ , _) = ⊥
-  precⁿ zero .rel i (Γt1 , `con _ , _) (Γt2 , `con _ , _) = ⊥
+  precⁿ zero .rel i (Γt1 , `var x) (Γt2 , `var x₁) = x ≡ x₁
+  precⁿ zero .rel i (Γt1 , `var _) (Γt2 , `con _) = ⊥
+  precⁿ zero .rel i (Γt1 , `con _) (Γt2 , `var _) = ⊥
+  precⁿ zero .rel i (Γt1 , `con _) (Γt2 , `con _) = ⊥
   precⁿ (suc n) = precision path-id (precⁿ n)
 
 
@@ -141,13 +154,13 @@ record Lang (n : ℕ) : Set₁ where
 
   prec-env .rel _ {[]} · · = ⊤
   prec-env .rel i {x ∷ Γ} (x₁ ,ₜ Γ1) (x₂ ,ₜ Γ2) =
-         rel prec-type x (Γ1 , x₁ , {!!}) (Γ2 , x₂ , {!!})
+         rel prec-type x (Γ1 , x₁) (Γ2 , x₂)
          × rel prec-env i Γ1 Γ2
 
   -- rel prec-env zero Γ1 Γ2
   -- TODO: where best to enforce that the environment is well-formed?
   -- does this suffice? also, make user prove that rules preserve well-formedness
-  prec-type .rel zero (Γ1 , tt , tt) (Γ2 , tt , tt) = rel prec-env zero Γ1 Γ2
+  prec-type .rel zero (Γ1 , tt) (Γ2 , tt) = rel prec-env zero Γ1 Γ2
   prec-type .rel (suc i) = rel prec (inject₁ i)
   
   prec .rel i e1 e2 = ∀ n → rel (precⁿ n) i e1 e2
@@ -165,15 +178,6 @@ open import DescUtils
 private
   variable
     I : Set
-
---TODO: should be in path
-path-projₗ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d1 d3
-path-projₗ (`σL .Bool x) = x true
-path-projₗ (`σR A s₁ p) = `σR A s₁ (path-projₗ p)
-
-path-projᵣ : {d1 d2 d3 : Desc I} → Path (d1 `+ d2) d3 → Path d2 d3
-path-projᵣ (`σL .Bool x) = x false
-path-projᵣ (`σR A s₁ p) = `σR A s₁ (path-projᵣ p)
 
 
 --TODO: issue: precision does not take types of vars into account
