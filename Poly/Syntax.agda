@@ -12,6 +12,8 @@ open import Data.List.Properties using (map-++-commute;++-assoc)
 open import Data.Product as Prod
 open import Data.Product using (Σ-syntax)
 open import Function hiding (case_of_)
+open import Function.Inverse renaming (_∘_ to _∘ᴵ_; id to inv-id)
+open import Function.Equality using (_⟨$⟩_;_⟶_)
 open import Relation.Binary.PropositionalEquality hiding ([_])
 
 open import Data.Var hiding (z; s; _<$>_)
@@ -57,7 +59,7 @@ open DescTy
 
 data Desc {J : Set} (I : DescTy J) (Δ : List J) : Set₁ where
   `σ : (A : Set) → (A → Desc I Δ) → Desc I Δ
-  `T : (j : J) → Desc I Δ → Desc I Δ
+  `T : (Δ' : List J) → (j : J) → (type I j (Δ' ++ Δ) → Desc I Δ) → Desc I Δ
   `X : (Δ' : List J) → List (Tp I (Δ' ++ Δ)) → Tp I (Δ' ++ Δ) → Desc I Δ → Desc I Δ
   `∎ :  Tp I Δ  → Desc I Δ
 
@@ -75,23 +77,30 @@ SDesc I = Desc {⊤} (record { type = const (const I) ; th^Ty = th^const }) []
 cast : ∀{ℓ} → ∀ {A : Set} → ∀ {a b : A} → a ≡ b → (P : A → Set ℓ) → P a → P b
 cast refl P = id
 
---TODO: move cast to utils
+toᶠ : {A B : Set} → A ↔ B → A → B
+toᶠ f = Inverse.to f ⟨$⟩_
+
+fromᶠ : {A B : Set} → A ↔ B → B → A
+fromᶠ f = Inverse.from f ⟨$⟩_
+
+--TODO: move cast, toᶠ to utils
 
 reindex : ∀{J L : Set} → {I : DescTy J} → {K : DescTy L} →
-          (f : J → L) → (∀{i Δ} → type I i Δ → type K (f i) (L.map f Δ)) →
-          ∀{Δ} → Desc I Δ → Desc K (L.map f Δ)
+          (f : J ↔ L) → (∀{i Δ} → type I i Δ → type K (toᶠ f i) (L.map (toᶠ f) Δ)) →
+          ∀{Δ} → Desc I Δ → Desc K (L.map (toᶠ f) Δ)
 reindex f g (`σ A d)   = `σ A λ a → reindex f g (d a)
-reindex f g (`T j d) = `T (f j) (reindex f g d)
+reindex {K = K} f g (`T Δ' j d) = `T (L.map (toᶠ f) Δ') (toᶠ f j) λ i →
+  reindex f g (d {!cast (cong₂ (type K) ? ?) id ?!})
 reindex {I = I} {K = K} f g {Δ} (`X Δ' Γ j d) =
-  `X (L.map f Δ') (L.map mapg Γ) (mapg j) (reindex f g d) where
-    mapg : Tp I (Δ' ++ Δ) → Tp K (L.map f Δ' ++ L.map f Δ)
-    mapg = (Prod.map f (cast (map-++-commute f Δ' Δ) (type K (f _)) ∘ g))
+  `X (L.map (toᶠ f) Δ') (L.map mapg Γ) (mapg j) (reindex f g d) where
+    mapg : Tp I (Δ' ++ Δ) → Tp K (L.map (toᶠ f) Δ' ++ L.map (toᶠ f) Δ)
+    mapg = (Prod.map (toᶠ f) (cast (map-++-commute (toᶠ f) Δ' Δ) (type K (toᶠ f _)) ∘ g))
     
-reindex f g (`∎ i)     = `∎ (Prod.map f g i)
+reindex f g (`∎ i)     = `∎ (Prod.map (toᶠ f) g i)
 
 -- old reindexing for simple descriptions
 sreindex : {I J : Set} → (I → J) → SDesc I → SDesc J
-sreindex f = reindex id f
+sreindex f = reindex inv-id f
 
 {- TODO
 -- simpler version that does not reindex types
@@ -127,7 +136,7 @@ private
 
 ⟦_⟧ : ∀[ Desc I ⇒ Tp-Scoped I ⇒ I ─Scoped² ]
 ⟦ `σ A d    ⟧ X i Γ = Σ[ a ∈ A ] (⟦ d a ⟧ X i Γ)
-⟦_⟧ {I = I} {Δ} (`T j d) X i Γ = type I j Δ × ⟦ d ⟧ X i Γ
+⟦_⟧ {I = I} {Δ} (`T Δ' j d) X i Γ = Σ[ i' ∈ type I j (Δ' ++ Δ) ] ⟦ d i' ⟧ X i Γ
 ⟦_⟧ {I = I} {Δ} (`X Δ' Γ' j d) X i Γ =
   X Δ' Γ' j ↑Γ × ⟦ d ⟧ X (map₂ (↑Δ I) i) Γ where
   ↑Γ : List (Tp I (Δ' ++ Δ))
@@ -153,7 +162,7 @@ module _ {J : Set} {I : DescTy J} where
   -- but needs levels in Data.Environment
   th^Desc : Thinnable' (Desc I)
   th^Desc {Δ} (`σ A x) th = `σ A λ a → th^Desc (x a) th
-  th^Desc {Δ} (`T j d) th = `T j (th^Desc d th)
+  th^Desc {Δ} (`T Δ' j d) th = `T Δ' j λ i → th^Desc (d (th^Ty I i {!th^App th!})) th
   th^Desc {Δ} (`X Δ' Γ i d) th =
     `X Δ' (th^TpL I Γ (th^App th))
           (th^Tp I i (th^App th))

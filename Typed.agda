@@ -17,8 +17,10 @@ open import Path.Path
 open import DescUtils
 
 -- (open) types are pairs of type context and type syntax
+-- (closed) types are type terms
+-- TODO: how to handle polymorphism? (hard intrinsically)
 AsIdx : {I : Set} → Desc I → I → Set
-AsIdx d i = Σ[ Γ ∈ List _ ] Tm d ∞ i Γ
+AsIdx = TM
 
 
 -- here we have our two-level syntax
@@ -30,7 +32,7 @@ record TypedDesc : Set₁ where
 open TypedDesc
 
 Ty⟦_⟧$ : ∀{I} {d1 d2 : Desc I} → Path d1 d2 → ∀{i} → AsIdx d1 i → AsIdx d2 i
-Ty⟦ p ⟧$ = map₂ (map^Tm (morph p))
+Ty⟦ p ⟧$ = (map^Tm (morph p))
 
 inj₁+ : ∀{d1 d2} → AsIdx (types d1) tt → AsIdx (types d1 `+ types d2) tt
 inj₁+ = Ty⟦ injₗ ⟧$

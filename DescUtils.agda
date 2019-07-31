@@ -15,6 +15,7 @@ import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; refl; cong; →-to-⟶)
 open import Function.Inverse
 open import Function.Equality using (_⟨$⟩_; _⟶_)
+open import Function
 
 open import Data.Relation
 open import Data.Var
@@ -64,3 +65,6 @@ module _ {I : Set} {V : I ─Scoped} where
   TransitiveRel : Rel V V → Set
   TransitiveRel R = ∀ {σ Γ} →  Transitive (rel R σ {Γ})
 
+module _ {I : Set} where
+  _∘ₘ_ : {d1 d2 d3 : Desc I} → DescMorphism d2 d3 → DescMorphism d1 d2 → DescMorphism d1 d3
+  m1 ∘ₘ m2 = MkDescMorphism (DescMorphism.apply m1 ∘′ DescMorphism.apply m2)

@@ -35,7 +35,6 @@ record Model (I : Set) : Set₁ where
     var : ∀[ Val σ ⇒ Comp σ ]
 
 open Model public
-{- TODO: move this to separate semantics v2 file? -}
 
 Semantics : Desc I → Model I → Set
 Semantics d M = ∀{σ} → ∀[ ⟦ d ⟧ (Kripke M.Val M.Comp) σ ⇒ M.Comp σ ] where

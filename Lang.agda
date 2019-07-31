@@ -3,9 +3,10 @@ module Lang where
 
 open import Size
 
-open import Data.List hiding ([_]; lookup)
+open import Data.List as L hiding ([_]; lookup)
 open import Data.Product
 open import Data.Bool
+open import Data.Maybe
 
 open import Data.Var hiding (s;_<$>_)
 open import Data.Var.Varlike
@@ -16,193 +17,69 @@ open Eq using (_≡_; refl)
 open import Relation.Binary.PropositionalEquality
 open ≡-Reasoning
 
-open import Data.Relation hiding (_>>ᴿ_)
-
-open import Generic.Syntax
-import Generic.Semantics as Sem'
-open import Generic.Semantics.Syntactic
-import Generic.Simulation as Sim'
-open import Generic.Relator
-
 open import Function as Fun using (_∘_)
+open import Generic.Syntax
 
-open import Path.Path
---open import Path.Semantics
 
-open import V2.Semantics
-open import V2.Fusion
-
-private
-  variable
-    I : Set
-    σ : I
-    Γ Δ : List I
-    d : Desc I
-
-private
-  variable
-    s : Size
-
-{- TODO: separate simulation file? -}
-
-record Simulation (d : Desc I) (MA MB : Model I)
-                  (SA : Semantics d MA) (SB : Semantics d MB)
-                  (VR : Rel (Val MA) (Val MB)) (CR : Rel (Comp MA) (Comp MB)) : Set where
-       module MA = Model MA
-       module MB = Model MB
-           
-       field
-          thᴿ   : ∀{σ vᴬ vᴮ} → (ρ : Thinning Γ Δ) → rel VR σ vᴬ vᴮ →
-                   rel VR σ (MA.th^𝓥 vᴬ ρ) (MB.th^𝓥 vᴮ ρ)
-
-          varᴿ  : ∀{σ Γ vᴬ vᴮ} → rel VR σ {Γ} vᴬ vᴮ → rel CR σ (MA.var vᴬ) (MB.var vᴮ)
-
-          algᴿ  : {ρᴬ : (Γ ─Env) MA.Val Δ} → {ρᴮ : (Γ ─Env) MB.Val Δ} →
-                  (b : ⟦ d ⟧ (Scope (Tm d s)) σ Γ) → All VR Γ ρᴬ ρᴮ →
-                let  vᴬ = fmap d (body MA SA ρᴬ) b
-                     vᴮ = fmap d (body MB SB ρᴮ) b
-                in ⟦ d ⟧ᴿ (Kripkeᴿ VR CR) vᴬ vᴮ → rel CR σ (SA vᴬ) (SB vᴮ)
-
-{-
-A language has two syntaxes, one for values and one for computations,
-with a path embedding the value syntax into the computation one.
-It also has a model and a denotational semantics of values as model values
-and computations as model computations.
-These semantics should agree.
-
-A laguage's syntax model can be used as the target of another's
-semantics to implement a language by elaboration
-
-TODO: shoudl vd/cd be arguments? fields prob. suit them better
--}
-record Language (vd : Desc I) (cd : Desc I) (M : Model I) : Set₁ where
-  field
-    vd-embed : Path vd cd --TODO: should this be abstracted out like for model? might be too small
-    val-sem : Semantics vd (value-model M)
-    comp-sem : Semantics cd M
-    sem-cong : Simulation vd (value-model M) M val-sem (comp-sem ∘ ⟦ vd-embed ⟧$) Eqᴿ (VCᴿ M)
-    
-  syntax-model : Model I
-  syntax-model .Val = Tm vd ∞
-  syntax-model .Comp = Tm cd ∞
-  syntax-model .th^𝓥 = th^Tm
-  syntax-model .var = Tm⟦ vd-embed ⟧$
-
-  value-syntax-model : Model I
-  value-syntax-model = value-model syntax-model
-
-  val-sem' : Sem'.Semantics vd (Val M) (Val M)
-  val-sem' = to-sem' (value-model M) val-sem
+module _ {I : Set} where
   
-  comp-sem' : Sem'.Semantics cd (Val M) (Comp M)
-  comp-sem' = to-sem' M comp-sem
+  private
+    variable
+      i σ : I
+      Γ₁ Γ₂ : List I
+      s : Size
+      X Y : List I → I ─Scoped
 
-open Language
-open Simulation
+  _─TpEnv : List I → (I → I) → (List I → I ─Scoped) → List I → Set
+  (Δ ─TpEnv) tp X Γ = ((L.map tp Δ) ─Env) (X []) Γ
 
-Lang-`+-syntax : {vd1 cd1 vd2 cd2 : Desc I} → (M : Model I) →
-        Language vd1 cd1 M → Language vd2 cd2 M → Language (vd1 `+ vd2) (cd1 `+ cd2) M
-Lang-`+-syntax M L1 L2 .vd-embed = (vd-embed L1) `+ₚ (vd-embed L2)
-Lang-`+-syntax M L1 L2 .val-sem = (val-sem L1) `+[ value-model M ]ₛ (val-sem L2)
-Lang-`+-syntax M L1 L2 .comp-sem = (comp-sem L1) `+[ M ]ₛ (comp-sem L2)
-Lang-`+-syntax M L1 L2 .sem-cong .thᴿ ρ refl = refl
-Lang-`+-syntax M L1 L2 .sem-cong .varᴿ refl = refl
-Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (false , snd) ρeq (refl , snd₁) = {!Eq.cong (false ,_)!}
-Lang-`+-syntax M L1 L2 .sem-cong .algᴿ (true , snd) ρeq (refl , snd₁)
-  with vd-embed L1 `+ₚ vd-embed L2
-... | `σR Bool b _ = {!TODO: should never happen; path compose needs to change!}
-... | `σL Bool p with `σR Bool true id ∘ₚ vd-embed L1
-...                 | `σL _ _ = {!TODO: should never happen!}
-...                 | `σR _ _ _ = {!Eq.cong (var M)!}
-  
+  ⟦_⟧⟨_⟩ : Desc I → (I → I) → (List I → I ─Scoped) → (List I → I ─Scoped) → I ─Scoped
+  ⟦ `σ A d    ⟧⟨ tp ⟩ X Xt i Γ = Σ[ a ∈ A ] (⟦ d a ⟧⟨ tp ⟩ X Xt i Γ)
+  --TODO: should the argument to X be [] or Δ or something else?
+  ⟦ `X Δ j d  ⟧⟨ tp ⟩ X Xt i Γ = (Δ ─TpEnv) tp Xt Γ × X Δ j Γ × ⟦ d ⟧⟨ tp ⟩ X Xt i Γ
+  ⟦ `∎ j      ⟧⟨ tp ⟩ X Xt i Γ = i ≡ j × Xt [] (tp i) Γ
 
-syntax Lang-`+-syntax M L1 L2 = L1 `+[ M ]ᴸ L2
+  data Tm⟨_⟩ (tp : I → I) (d : Desc I) : Size → I ─Scoped where
+   `var  : ∀[ Var i                     ⇒ Tm⟨ tp ⟩ d (↑ s) i ]
+   `con  : ∀[ ⟦ d ⟧⟨ tp ⟩ (Scope (Tm⟨ tp ⟩ d s)) (Scope (Tm d s)) i  ⇒ Tm⟨ tp ⟩ d (↑ s) i ]
 
-module _ {I : Set} {vd1 vd2 cd1 cd2 : Desc I} {M1 M2 : Model I} where
+  _─TmTpEnv : List I → Desc I → (I → I) → List I → Set
+  (Δ ─TmTpEnv) d tp Γ = (Δ ─Env) (Tm⟨ tp ⟩ d ∞) Γ
 
-  record Compiler (L1 : Language vd1 cd1 M1)
-                  (L2 : Language vd2 cd2 M2)
-                  (VR : Rel (Val M2) (Val M1))
-                  (VC : Rel (Comp M2) (Comp M1)) : Set₁ where
-    module L1 = Language L1
-    module L2 = Language L2
-    field
-      translation : Language vd1 cd1 L2.syntax-model
-      correctⱽ : Fusion L2.value-syntax-model (value-model M2) (value-model M1)
-                        vd1 vd2
-                        (val-sem translation)
-                        L2.val-sem
-                        L1.val-sem
-                        (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
-                        VR
-                        VR
-      correctᶜ : Fusion L2.syntax-model M2 M1
-                        cd1 cd2
-                        (comp-sem translation)
-                        L2.comp-sem
-                        L1.comp-sem
-                        (λ Γ Δ ρ1 ρ2 → All VR Γ (Sem'.Semantics.semantics L2.val-sem' ρ2 <$> ρ1))
-                        VR
-                        VC
-    compile : ∀ {i} → VarLike (Tm vd2 ∞) → ∀[ Tm cd1 ∞ i ⇒ Tm cd2 ∞ i ]
-    compile = eval L2.syntax-model (comp-sem translation)
+  --TODO: this env is wrong; should be a stack of envs
+  Inference : (d : Desc I) → (tp : I → I) → Set
+  Inference d tp =  ∀{i Γ} → (Γ ─TmTpEnv) d tp Γ → Tm d ∞ i Γ → Maybe (Tm⟨ tp ⟩ d ∞ i Γ)
 
-open Compiler
+module TEST where
+  data Kind : Set where
+    KTm : Kind
+    KTp : Kind
+    KTop : Kind
 
+  typeof : Kind → Kind
+  typeof KTm = KTp
+  typeof KTp = KTop
+  typeof KTop = KTop
 
-lang-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Language vd cd (syntax-model L)
-lang-id {vd = vd} {cd = cd} M L = record {
-  vd-embed = vd-embed L ;
-  val-sem = syn-val-sem vd ;
-  comp-sem = syn-sem vd cd (vd-embed L) ;
-  sem-cong = record {
-    thᴿ = λ { ρ refl → refl} ;
-    varᴿ = λ { refl → refl} ;
-    -- TODO: would be simple if VR was Eq (just path distributivity wrt fmap)
-    -- need to figure out how to use assumptions
-    algᴿ = λ b ρᴿ vᴿ → {!Eq.cong (rel (VCᴿ (syntax-model L)) _)!} } }
+  Lam : Desc Kind
+  Lam = `X [] KTp (`X (KTm ∷ []) KTm (`∎ KTm))
+      `+ `X [] KTm (`X [] KTm (`∎ KTm))
+      `+ `X [] KTp (`X [] KTp (`∎ KTp))
 
-open Fusion
-open import Generic.Fusion.Utils
+  Unit : Desc Kind
+  Unit = `∎ KTp `+ `∎ KTm
 
-comp-id : {vd cd : Desc I} → (M : Model I) → (L : Language vd cd M) → Compiler L L Eqᴿ Eqᴿ
-comp-id M L .translation = lang-id M L
-comp-id M L .correctⱽ .reifyᴬ σ = Fun.id
-comp-id M L .correctⱽ .vl^𝓥ᴬ = vl^Tm
-comp-id M L .correctⱽ ._>>ᴿ_ ρeq veq = {!thBodyEnv!}
-  --subBodyEnv (to-sem' (value-model M) (val-sem L)) {!!} {!!} {!!}
-comp-id M L .correctⱽ .th^𝓔ᴿ eq ρ = packᴿ λ k →
-  begin {!semantics (value-model M) (val-sem L) (th^Env (th^𝓥 (value-model M)) _ ρ) ≡⟨ ? ⟩_!}
-comp-id M L .correctⱽ .varᴿ ρeq x = lookupᴿ ρeq x
-comp-id M L .correctⱽ .algᴿ ρeq v vr = {!cong `con!}
-comp-id M L .correctᶜ .reifyᴬ σ = Fun.id
-comp-id M L .correctᶜ .vl^𝓥ᴬ = vl^Tm
-comp-id M L .correctᶜ ._>>ᴿ_ ρeq veq = thBodyEnv {!!} {!!}
-comp-id M L .correctᶜ .th^𝓔ᴿ = {!!}
---TODO: write pathlookupR? I think the issue is that I need to lookup
--- and run the result through the path
-comp-id M L .correctᶜ .varᴿ ρeq x = {!!}
-  --cong {!var M {σ} {?}!} (lookupᴿ ρeq x)
-comp-id M L .correctᶜ .algᴿ = {!!}
+  TypeInType : Desc Kind
+  TypeInType = `∎ KTop
 
--- TODO: generalize beyond Eq and to multiple models
-_∘ᶜ_ :  {vd1 cd1 vd2 cd2 vd3 cd3 : Desc I} →
-        {M : Model I} →
-        {L1 : Language vd1 cd1 M} → {L2 : Language vd2 cd2 M} → {L3 : Language vd3 cd3 M} →
-        Compiler L2 L3 Eqᴿ Eqᴿ → Compiler L1 L2 Eqᴿ Eqᴿ → Compiler L1 L3 Eqᴿ Eqᴿ
-_∘ᶜ_ {L1 = L1} C1 C2 .translation .vd-embed = vd-embed L1
-(C1 ∘ᶜ C2) .translation .val-sem v = val-sem (translation C1) {!val-sem (translation C2) v!}
-(C1 ∘ᶜ C2) .translation .comp-sem e = comp-sem (translation C1) {!comp-sem (translation C2)!}
-(C1 ∘ᶜ C2) .translation .sem-cong = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .reifyᴬ σ = Fun.id
-(C1 ∘ᶜ C2) .correctⱽ .vl^𝓥ᴬ = vl^Tm
-(C1 ∘ᶜ C2) .correctⱽ ._>>ᴿ_ ρeq veq = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .th^𝓔ᴿ = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .varᴿ = {!!}
-(C1 ∘ᶜ C2) .correctⱽ .algᴿ = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .reifyᴬ σ = Fun.id
-(C1 ∘ᶜ C2) .correctᶜ .vl^𝓥ᴬ = vl^Tm
-(C1 ∘ᶜ C2) .correctᶜ ._>>ᴿ_ ρeq veq = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .th^𝓔ᴿ = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .varᴿ = {!!}
-(C1 ∘ᶜ C2) .correctᶜ .algᴿ = {!!}
+  ttInf : Inference TypeInType typeof
+  ttInf Γt (`var x) = just (lookup Γt x)
+  ttInf Γt (`con refl) = just (`con (refl , `con refl))
+
+  ttUnit : Inference (Unit `+ TypeInType) typeof
+  ttUnit Γt (`var x) = just (lookup Γt x)
+  ttUnit Γt (`con (false , refl)) = just (`con (false , (refl , (`con (false , refl)))))
+  ttUnit Γt (`con (true , false , refl)) =
+    just (`con (true , (false , (refl , `con (true , (true , refl))))))
+  ttUnit Γt (`con (true , true , refl)) = just (`con (false , ({!!} , {!!})))
+
