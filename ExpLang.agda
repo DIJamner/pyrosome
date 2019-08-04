@@ -89,16 +89,15 @@ record Lang (I : Set) : Set₁ where
       -- types should be related if type precision relates their terms
       --what's the best way to guarantee these properties? (may want typeof to be monotonic)
     -- Mendler semantics; represents one step of the precision derivation
+    -- TODO: I might be able to avoid the natural number indexing if I handle sizes right here
+      -- issue: the existing substitution is defined in terms of ∞; (maybe solve this later?)
     precision : Ex⟨ desc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
 
   -- TODO: build in transitivity, reflexivity or prove admissible ?
   -- TODO: Γ should be related by precision in base case
   -- and x should be mapped to type in Γ
   precⁿ : ℕ → Rel (Tm desc ∞) (Tm desc ∞)
-  precⁿ zero .rel i  (`var x) (`var x₁) = x ≡ x₁
-  precⁿ zero .rel i (`var _) (`con _) = ⊥
-  precⁿ zero .rel i (`con _) (`var _) = ⊥
-  precⁿ zero .rel i (`con _) (`con _) = ⊥
+  precⁿ zero .rel _ _ _ = ⊥
   precⁿ (suc n) = precision path-id (precⁿ n)
 
   
@@ -121,7 +120,6 @@ record Lang (I : Set) : Set₁ where
   -- does this suffice? also, make user prove that rules preserve well-formedness
   --prec-type .rel zero (Γ1 , _) (Γ2 , _) = rel prec-env zero Γ1 Γ2
   --prec-type .rel i = rel prec (tp i)
-  
   prec .rel i e1 e2 = Σ[ n ∈ ℕ ] (rel (precⁿ n) i e1 e2)
 
 open Lang public hiding (precⁿ)
@@ -146,6 +144,9 @@ cong-prec (`∎ x) R .rel .x refl refl = ⊤
 rel-embed : ∀{I} → {A B : I ─Scoped} → (F : ∀{i} → ∀[ A i ⇒ B i ]) → Rel A A → Rel B B
 rel-embed F R .rel i e1 e2 = ∃₂ λ x₁ x₂ → e1 ≡ F x₁ × e2 ≡ F x₂
 
+rel-map : ∀{I} → {A B : I ─Scoped} → (F : ∀{i} → ∀[ A i ⇒ B i ]) → Rel B B → Rel A A
+rel-map F R .rel i e1 e2 = rel R i (F e1) (F e2)
+
 congp1 : (d : Desc I) → ∀{X} → (∀ Δ → Rel (X Δ) (X Δ)) → Ex⟨ d ↑ d' ⟩ (Rel (⟦ d' ⟧ X) (⟦ d' ⟧ X))
 congp1 d R p = rel-embed ⟦ p ⟧$ (cong-prec d R)
 
@@ -160,17 +161,18 @@ cong-prec' d Δ .rel i (`con x) (`con x₁) = rel (cong-prec d (cong-prec' d)) i
 cp'' : (d : Desc I) → (∀ Δ → Rel (Scope (Tm d ∞) Δ) (Scope (Tm d ∞) Δ))
 cp'' d = cong-prec' d
 
+-- TODO: is there a way to use Path knowledge to avoid the rel-embed existentials?
 congp' : (d : Desc I) → Ex⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
 congp' d p Δ = rel-embed (map^Tm (morph p)) (cong-prec' d Δ)
 
 {-
 --TODO: check first 3 cases
-cong-prec' : (d : Desc I) → Exᶠ⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
-cong-prec' d p R Δ .rel i (`var x) (`var x₁) = x ≡ x₁
-cong-prec' d p R Δ .rel i (`var x) (`con x₁) = ⊥
-cong-prec' d p R Δ .rel i (`con x) (`var x₁) = ⊥
-cong-prec' d {d'} p R Δ .rel i (`con x) (`con x₁) =
-  rel (cong-prec d' (cong-prec' d p R)) i x x₁
+cprec' : (d : Desc I) → Exᶠ⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
+cprec' d p R Δ .rel i (`var x) (`var x₁) = x ≡ x₁
+cprec' d p R Δ .rel i (`var x) (`con x₁) = ⊥
+cprec' d p R Δ .rel i (`con x) (`var x₁) = ⊥
+cprec' d {d'} p R Δ .rel i (`con x) (`con x₁) =
+  rel (cong-prec d' (cprec' d p R)) i x x₁
 -}
 
 data Kind : Set where
@@ -210,3 +212,44 @@ LamPrec {d' = d'} p R .rel KTm {Γ} x x₁ =
 LamLang : Lang Kind
 LamLang .desc = LamDesc
 LamLang .precision = LamPrec
+
+UL : Lang Kind
+UL = UnitLang +ᴸ LamLang
+
+module UL = Lang UL
+
+UL⑴ : TM UL.desc KTm
+UL⑴ = `con (true , refl)
+
+ULλ : ∀{Γ} → Tm UL.desc ∞ KTm (KTm ∷ Γ) → Tm UL.desc ∞ KTm Γ
+ULλ b = `con (false , (true , (b , refl)))
+
+_ULApp_ :  ∀{Γ} → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ
+a ULApp b = `con (false , (false , (a , (b , refl))))
+
+--TODO: generalize to any language with a path into it
+_ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
+_ = 2 , inj₂ (inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl))))
+
+
+-- precision preserving compilers
+-- TODO: expand to Lang I, Lang J (different types)
+record PComp (L1 L2 : Lang I) : Set where
+  module L1 = Lang L1
+  module L2 = Lang L2
+  field
+    compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+    --TODO: make this about precision rather than prec for extensibility
+    preserve-prec : ∀{i Γ} → (e1 e2 : Tm L1.desc ∞ i Γ) →
+                    rel L1.prec i e1 e2 → rel L2.prec i (compile e1) (compile e2)
+
+open PComp
+
+ucomp : ∀ L1 → PComp L1 UnitLang
+ucomp L1 .compile {KTm} _ = `con refl
+ucomp L1 .preserve-prec {KTm} e1 e2 (suc fst , _) = (suc fst) , (refl , refl)
+
++embed : (L1 L2 : Lang I) → PComp L1 (L1 +ᴸ L2) 
++embed L1 L2 .compile e = Tm⟦ injₗ ⟧$ e
++embed L1 L2 .preserve-prec e1 e2 (suc zero , snd) = {!!} -- (suc zero) , inj₁ {!snd!}
++embed L1 L2 .preserve-prec e1 e2 (suc (suc fst) , snd) = (suc (suc fst)) , inj₁ {!!}
