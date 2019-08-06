@@ -165,6 +165,16 @@ cp'' d = cong-prec' d
 congp' : (d : Desc I) → Ex⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
 congp' d p Δ = rel-embed (map^Tm (morph p)) (cong-prec' d Δ)
 
+
+scopeR : {A B : I ─Scoped} → Rel A B → ∀ Δ → Rel (Scope A Δ) (Scope B Δ)
+scopeR R Δ .rel i e1 e2 = rel R i e1 e2
+
+cprec' : (d : Desc I) → Ex⟨ d ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+cprec' d p R .rel i (`var x) (`var x₁) = x ≡ x₁
+cprec' d p R .rel i (`var x) (`con x₁) = ⊥
+cprec' d p R .rel i (`con x) (`var x₁) = ⊥
+cprec' d p R .rel i (`con x) (`con x₁) = rel (rel-embed ⟦ p ⟧$ (cong-prec d (scopeR R))) i x x₁
+
 {-
 --TODO: check first 3 cases
 cprec' : (d : Desc I) → Exᶠ⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
@@ -178,11 +188,10 @@ cprec' d {d'} p R Δ .rel i (`con x) (`con x₁) =
 data Kind : Set where
   KTm : Kind
 
-
+-- TODO: use congruence generation to add back in var eq
 UnitLang : Lang Kind
 UnitLang .desc = `∎ KTm
-UnitLang .precision p R .rel KTm x x₁ =
-   x ≡ `con (⟦ p ⟧$ refl) × x₁ ≡ `con (⟦ p ⟧$ refl)
+UnitLang .precision = cprec' (desc UnitLang)
 
 
 LamDesc : Desc Kind
@@ -191,15 +200,7 @@ LamDesc = `X [ KTm ] KTm (`∎ KTm)
 
 LamPrec : Ex⟨ LamDesc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
 LamPrec {d' = d'} p R .rel KTm {Γ} x x₁ =
-   -- congruence case for lambda
-   (Σ (Scope (Tm d' ∞) (KTm ∷ []) KTm Γ × Scope (Tm d' ∞) (KTm ∷ []) KTm Γ) λ { (y₁ , y₂) → 
-     x ≡ `con (⟦ p ⟧$ (true , (y₁ , refl))) × x₁ ≡ `con (⟦ p ⟧$ (true , (y₂ , refl)))
-     × rel R KTm y₁ y₂})
-   -- congruence case for app
-   ⊎  (Σ (Scope (Tm d' ∞) [] KTm Γ × Scope (Tm d' ∞) [] KTm Γ) λ { (y₁ , y₂) →
-     Σ (Scope (Tm d' ∞) [] KTm Γ × Scope (Tm d' ∞) [] KTm Γ) λ { (z₁ , z₂) → 
-     x ≡ `con (⟦ p ⟧$ (false , y₁ , (z₁ , refl))) × x₁ ≡ `con (⟦ p ⟧$ (false , y₂ , (z₂ , refl)))
-     × rel R KTm y₁ y₂ × rel R KTm z₁ z₂}})
+   rel (cprec' LamDesc p R) KTm x x₁
    -- beta reduction
    ⊎ (Σ (Scope (Tm d' ∞) (KTm ∷ []) KTm Γ × Scope (Tm d' ∞) ([]) KTm Γ) λ { (y₁ , y₂) →
      x ≡ `con (⟦ p ⟧$ (false , `con (⟦ p ⟧$ (true , (y₁ , refl))) , (y₂ , refl)))
@@ -229,27 +230,43 @@ a ULApp b = `con (false , (false , (a , (b , refl))))
 
 --TODO: generalize to any language with a path into it
 _ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
-_ = 2 , inj₂ (inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl))))
+_ = 2 , inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl)))
 
 
 -- precision preserving compilers
 -- TODO: expand to Lang I, Lang J (different types)
-record PComp (L1 L2 : Lang I) : Set where
+record PComp (L1 L2 : Lang I) : Set₁ where
   module L1 = Lang L1
   module L2 = Lang L2
   field
-    compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+    --compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+    compile : Ex⟨ L2.desc ↑ d' ⟩ (∀ {i} → ∀[ Tm (d' `+ L1.desc) ∞ i ⇒ Tm d' ∞ i ])
     --TODO: make this about precision rather than prec for extensibility
-    preserve-prec : ∀{i Γ} → (e1 e2 : Tm L1.desc ∞ i Γ) →
-                    rel L1.prec i e1 e2 → rel L2.prec i (compile e1) (compile e2)
+    -- precision : Ex⟨ desc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+    {-
+    preserves : Ex⟨ L2.desc ↑ d' ⟩ ((R : Rel (Tm d' ∞) (Tm d' ∞)) → ∀{i Γ} →
+                (e1 e2 : Tm (d' `+ L1.desc) ∞ i Γ) → ? ) where
+                L+
+    TODO: need Ex for languages (need to extend L2 with a semantics, not just a syntax)
+    -}
+   
+      --∀{i Γ} → (e1 e2 : Tm L1.desc ∞ i Γ) →
+      --              rel L1.prec i e1 e2 → rel L2.prec i (compile e1) (compile e2)
+  comp : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+  comp e = compile path-id (Tm⟦ injᵣ ⟧$ e)
 
 open PComp
 
 ucomp : ∀ L1 → PComp L1 UnitLang
-ucomp L1 .compile {KTm} _ = `con refl
+ucomp L1 .compile p {KTm} e = Tm⟦ p ⟧$ (`con refl)
+{-
 ucomp L1 .preserve-prec {KTm} e1 e2 (suc fst , _) = (suc fst) , (refl , refl)
+-}
+
 
 +embed : (L1 L2 : Lang I) → PComp L1 (L1 +ᴸ L2) 
-+embed L1 L2 .compile e = Tm⟦ injₗ ⟧$ e
++embed L1 L2 .compile p e = map^Tm (morph (path-id `+L (path-projₗ p))) e
+{-
 +embed L1 L2 .preserve-prec e1 e2 (suc zero , snd) = {!!} -- (suc zero) , inj₁ {!snd!}
 +embed L1 L2 .preserve-prec e1 e2 (suc (suc fst) , snd) = (suc (suc fst)) , inj₁ {!!}
+-}
