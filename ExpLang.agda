@@ -91,6 +91,7 @@ record Lang (I : Set) : Set₁ where
     -- Mendler semantics; represents one step of the precision derivation
     -- TODO: I might be able to avoid the natural number indexing if I handle sizes right here
       -- issue: the existing substitution is defined in terms of ∞; (maybe solve this later?)
+    --TODO: rename? (approximation?)
     precision : Ex⟨ desc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
 
   -- TODO: build in transitivity, reflexivity or prove admissible ?
@@ -233,6 +234,29 @@ _ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
 _ = 2 , inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl)))
 
 
+-- TODO: move to descutils
+_⇒ᴿ_ : {A B : I ─Scoped} → Rel A B → Rel A B → Set
+R1 ⇒ᴿ R2 = ∀{i Γ e1 e2} → rel R1 i {Γ} e1 e2 → rel R2 i e1 e2
+
+record LPath (L1 L2 : Lang I) : Set₁ where
+  module L1 = Lang L1
+  module L2 = Lang L2
+  field
+    desc-path : Path L1.desc L2.desc
+    --TODO: finish; is this correct?
+    --TODO: do I need R1 => R2 or does R suffice? (probably the former)
+    prec-path :  ∀ d' → (p : Path L2.desc d') → ∀ R1 R2 → (R1 ⇒ᴿ R2) →
+                 (L1.precision (p ∘ₚ desc-path) R1) ⇒ᴿ (L2.precision p R2)
+    
+
+-- Construct for ranging over all extensions of a given language
+ExtensibleLang : ∀{ℓ} → Lang I → (Lang I → Set ℓ) → Set _
+ExtensibleLang L f = ∀{L'} → LPath L L' → f L'
+
+infix 10 ExtensibleLang
+syntax ExtensibleLang L (λ L' → e) = ExL⟨ L ↑ L' ⟩ e
+
+
 -- precision preserving compilers
 -- TODO: expand to Lang I, Lang J (different types)
 record PComp (L1 L2 : Lang I) : Set₁ where
@@ -241,13 +265,22 @@ record PComp (L1 L2 : Lang I) : Set₁ where
   field
     --compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
     compile : Ex⟨ L2.desc ↑ d' ⟩ (∀ {i} → ∀[ Tm (d' `+ L1.desc) ∞ i ⇒ Tm d' ∞ i ])
+    preserves : ExL⟨ L2 ↑ L' ⟩ (∀ R1 R2 → (R1 ⇒ᴿ R2) →
+                 precision (L' +ᴸ L1) {!TODO: paths not expresive enough!} R1
+                 ⇒ᴿ (precision L' path-id R2))
     --TODO: make this about precision rather than prec for extensibility
     -- precision : Ex⟨ desc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
     {-
     preserves : Ex⟨ L2.desc ↑ d' ⟩ ((R : Rel (Tm d' ∞) (Tm d' ∞)) → ∀{i Γ} →
-                (e1 e2 : Tm (d' `+ L1.desc) ∞ i Γ) → ? ) where
+                (e1 e2 : Tm (d' `+ L1.desc) ∞ i Γ) → 
+                R) where
                 L+
     TODO: need Ex for languages (need to extend L2 with a semantics, not just a syntax)
+
+    1. R1 => R2
+    2. e1 e2 : Tm ?
+    
+    precision (L1 +L L') R1 e1 e2 => precision L' R2 (compile e1) (compile e2)
     -}
    
       --∀{i Γ} → (e1 e2 : Tm L1.desc ∞ i Γ) →
