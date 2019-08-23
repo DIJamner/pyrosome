@@ -186,6 +186,28 @@ cprec' d {d'} p R Δ .rel i (`con x) (`con x₁) =
   rel (cong-prec d' (cprec' d p R)) i x x₁
 -}
 
+-- Simply typed languages (the types have no variables and only one kind)
+record TLang : Set₁ where
+  field
+    type-lang : Lang ⊤
+    tdesc : ∀{td} → DescMorphism (desc type-lang) td → Desc (TM td tt)
+    tprecision : ∀{td} → (m : DescMorphism (desc type-lang) td) →
+                 Ex⟨ tdesc m ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+    
+  term-lang : ∀{td} → (m : DescMorphism (desc type-lang) td) →
+              Lang (TM td tt)
+  term-lang m .desc = tdesc m
+  term-lang m .precision = tprecision m
+
+open TLang
+
+_+ᵀ_ : TLang → TLang → TLang
+_+ᵀ_ L1 L2 .type-lang = (type-lang L1) +ᴸ (type-lang L2)
+_+ᵀ_ L1 L2 .tdesc m = (tdesc L1 (m ∘ₘ minjₗ)) `+ (tdesc L2 (m ∘ₘ minjᵣ))
+_+ᵀ_ L1 L2 .tprecision m p R =
+  tprecision L1 (m ∘ₘ minjₗ) (p ∘ₚ injₗ) R
+  ⊎ᴿ tprecision L2 (m ∘ₘ minjᵣ) (p ∘ₚ injᵣ) R
+
 data Kind : Set where
   KTm : Kind
 
@@ -232,11 +254,6 @@ a ULApp b = `con (false , (false , (a , (b , refl))))
 --TODO: generalize to any language with a path into it
 _ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
 _ = 2 , inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl)))
-
-
--- TODO: move to descutils
-_⇒ᴿ_ : {A B : I ─Scoped} → Rel A B → Rel A B → Set
-R1 ⇒ᴿ R2 = ∀{i Γ e1 e2} → rel R1 i {Γ} e1 e2 → rel R2 i e1 e2
 
 record LPath (L1 L2 : Lang I) : Set₁ where
   module L1 = Lang L1

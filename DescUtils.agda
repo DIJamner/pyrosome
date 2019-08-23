@@ -66,5 +66,30 @@ module _ {I : Set} {V : I ─Scoped} where
   TransitiveRel R = ∀ {σ Γ} →  Transitive (rel R σ {Γ})
 
 module _ {I : Set} where
-  _∘ₘ_ : {d1 d2 d3 : Desc I} → DescMorphism d2 d3 → DescMorphism d1 d2 → DescMorphism d1 d3
+
+  private variable d1 d2 d3 : Desc I
+
+  _∘ₘ_ : DescMorphism d2 d3 → DescMorphism d1 d2 → DescMorphism d1 d3
   m1 ∘ₘ m2 = MkDescMorphism (DescMorphism.apply m1 ∘′ DescMorphism.apply m2)
+
+  open import Data.Bool
+
+  minjₗ : DescMorphism d1 (d1 `+ d2)
+  minjₗ .DescMorphism.apply e = true , e
+
+  minjᵣ : DescMorphism d2 (d1 `+ d2)
+  minjᵣ .DescMorphism.apply e = false , e
+
+-- relation tools
+module _ {I : Set} where
+
+  private variable A B : I ─Scoped
+
+  -- TODO: move to descutils
+  _⇒ᴿ_ : Rel A B → Rel A B → Set
+  R1 ⇒ᴿ R2 = ∀{i Γ e1 e2} → rel R1 i {Γ} e1 e2 → rel R2 i e1 e2
+
+  open import Data.Sum
+
+  _⊎ᴿ_ : Rel A B → Rel A B → Rel A B
+  (R1 ⊎ᴿ R2) .rel i e1 e2 = rel R1 i e1 e2 ⊎ rel R2 i e1 e2
