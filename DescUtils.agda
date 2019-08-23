@@ -91,5 +91,7 @@ module _ {I : Set} where
 
   open import Data.Sum
 
+  infixr 8 _⊎ᴿ_
+
   _⊎ᴿ_ : Rel A B → Rel A B → Rel A B
   (R1 ⊎ᴿ R2) .rel i e1 e2 = rel R1 i e1 e2 ⊎ rel R2 i e1 e2

@@ -187,104 +187,177 @@ cprec' d {d'} p R Δ .rel i (`con x) (`con x₁) =
 -}
 
 -- Simply typed languages (the types have no variables and only one kind)
+-- note : this can definitely be generalized to n-level type systems
 record TLang : Set₁ where
   field
     type-lang : Lang ⊤
-    tdesc : ∀{td} → DescMorphism (desc type-lang) td → Desc (TM td tt)
-    tprecision : ∀{td} → (m : DescMorphism (desc type-lang) td) →
-                 Ex⟨ tdesc m ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
-    
-  term-lang : ∀{td} → (m : DescMorphism (desc type-lang) td) →
+    --TODO: better to just have term-lang?
+    term-lang : ∀{td} → (m : DescMorphism (desc type-lang) td) →
               Lang (TM td tt)
-  term-lang m .desc = tdesc m
-  term-lang m .precision = tprecision m
+
+
+  tdesc : ∀{td} → DescMorphism (desc type-lang) td → Desc (TM td tt)
+  tdesc m = desc (term-lang m)
+  tprecision : ∀{td} → (m : DescMorphism (desc type-lang) td) →
+                 Ex⟨ tdesc m ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  tprecision m = precision (term-lang m)
 
 open TLang
 
 _+ᵀ_ : TLang → TLang → TLang
 _+ᵀ_ L1 L2 .type-lang = (type-lang L1) +ᴸ (type-lang L2)
-_+ᵀ_ L1 L2 .tdesc m = (tdesc L1 (m ∘ₘ minjₗ)) `+ (tdesc L2 (m ∘ₘ minjᵣ))
-_+ᵀ_ L1 L2 .tprecision m p R =
+_+ᵀ_ L1 L2 .term-lang m .desc = (tdesc L1 (m ∘ₘ minjₗ)) `+ (tdesc L2 (m ∘ₘ minjᵣ))
+_+ᵀ_ L1 L2 .term-lang m .precision p R =
   tprecision L1 (m ∘ₘ minjₗ) (p ∘ₚ injₗ) R
   ⊎ᴿ tprecision L2 (m ∘ₘ minjᵣ) (p ∘ₚ injᵣ) R
 
-data Kind : Set where
-  KTm : Kind
+free-lang : ∀{I} → Desc I → Lang I
+free-lang d .desc = d
+free-lang d .precision = cprec' d
 
--- TODO: use congruence generation to add back in var eq
-UnitLang : Lang Kind
-UnitLang .desc = `∎ KTm
-UnitLang .precision = cprec' (desc UnitLang)
+module SIMPLE where
+  UnitLang : TLang
+  UnitLang .type-lang .desc = `∎ tt
+  UnitLang .type-lang .precision = cprec' (`∎ tt)
+  UnitLang .term-lang m .desc = `∎ (map^Tm m (`con refl))
+  UnitLang .term-lang m .precision = cprec' (`∎ (map^Tm m (`con refl)))
 
+  LamTy : Lang ⊤
+  LamTy = free-lang (`X [] tt (`X [] tt (`∎ tt)))
 
-LamDesc : Desc Kind
-LamDesc = `X [ KTm ] KTm (`∎ KTm)
-        `+ `X [] KTm (`X [] KTm (`∎ KTm))
+  ⟨_⟩_→t_ : ∀{td} → DescMorphism (desc LamTy) td → (TM td tt) → (TM td tt) → (TM td tt)
+  ⟨ m ⟩ a →t b = `con (DescMorphism.apply m (a , (b , refl)))
 
-LamPrec : Ex⟨ LamDesc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
-LamPrec {d' = d'} p R .rel KTm {Γ} x x₁ =
-   rel (cprec' LamDesc p R) KTm x x₁
-   -- beta reduction
-   ⊎ (Σ (Scope (Tm d' ∞) (KTm ∷ []) KTm Γ × Scope (Tm d' ∞) ([]) KTm Γ) λ { (y₁ , y₂) →
-     x ≡ `con (⟦ p ⟧$ (false , `con (⟦ p ⟧$ (true , (y₁ , refl))) , (y₂ , refl)))
-     × x₁ ≡ y₁ [ y₂ /0]})
+  LamDesc : ∀{td} → (m : DescMorphism (desc LamTy) td) → Desc (TM td tt)
+  LamDesc m = 
+    --Lambda
+    `σ (_ × _) (λ {(i , j) →  `X [ i ] j (`∎ (⟨ m ⟩ i →t j))})
+    -- app
+    `+ `σ (_ × _) (λ {(i , j) →  `X [] (⟨ m ⟩ i →t j) (`X [] i (`∎ j))})
 
---TODO: define using congruences
---LamPrec' : Ex⟨ LamDesc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  lamexp : ∀{td} → (m : DescMorphism (desc LamTy) td) → Ex⟨ LamDesc m ↑ d' ⟩
+           ((i : TM td tt) → {j : TM td tt} →
+           ∀{Γ} → Scope (Tm d' ∞) [ i ] j Γ → Tm d' ∞ (⟨ m ⟩ i →t j) Γ)
+  lamexp m p i {j} e = `con (⟦ p ⟧$ (true , ((i , j) , (e , refl))))
 
--- TODO: can we generate the congruence rules automatically?
-LamLang : Lang Kind
-LamLang .desc = LamDesc
-LamLang .precision = LamPrec
+  syntax lamexp m p i e = ⟨ m , p ⟩λ i →f e
 
-UL : Lang Kind
-UL = UnitLang +ᴸ LamLang
+  appexp : ∀{td} → (m : DescMorphism (desc LamTy) td) → Ex⟨ LamDesc m ↑ d' ⟩
+           ({i j : TM td tt} →
+           ∀{Γ} → Tm d' ∞ (⟨ m ⟩ i →t j) Γ → Tm d' ∞ i Γ → Tm d' ∞ j Γ)
+  appexp m p {i} {j} e1 e2 =
+    `con (⟦ p ⟧$ (false , ((i , j) , (e1 , (e2 , refl)))))
 
-module UL = Lang UL
+  syntax appexp m p e1 e2 = ⟨ m , p ⟩ e1 % e2
 
-UL⑴ : TM UL.desc KTm
-UL⑴ = `con (true , refl)
+  beta :  ∀{td} → (m : DescMorphism (desc LamTy) td) → Ex⟨ LamDesc m ↑ d' ⟩
+          (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  -- TODO: use pattern synonyms/some form of pattern matching
+  -- to reduce burden of all of these existentials
+  beta m {d'} p R .rel i {Γ} e1 e2 =
+    Σ (∃[ j ] (Scope (Tm d' ∞) [ j ] i Γ × Tm d' ∞ j Γ)) λ { (j , e1' , e2') →
+    --TODO: application
+    e1 ≡ ⟨ m , p ⟩ ⟨ m , p ⟩λ j →f e1' % e2'
+    × e2 ≡ e1' [ e2' /0]}
 
-ULλ : ∀{Γ} → Tm UL.desc ∞ KTm (KTm ∷ Γ) → Tm UL.desc ∞ KTm Γ
-ULλ b = `con (false , (true , (b , refl)))
+  eta :  ∀{td} → (m : DescMorphism (desc LamTy) td) → Ex⟨ LamDesc m ↑ d' ⟩
+          (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  -- TODO: use pattern synonyms/some form of pattern matching
+  -- to reduce burden of all of these existentials
+  eta m {d'} p R .rel i {Γ} e1 e2 =
+    Σ (_ × _) λ { (j1 , j2) →
+    Σ (i ≡ ⟨ m ⟩ j1 →t j2) λ { refl →
+    --TODO: is there a nicer way to write weakening?
+    --TODO: should I be making a call to R here instead of using e1 directly?
+            -- transitivity might handle this (but if so I should add it)
+    e2 ≡ ⟨ m , p ⟩λ j1 →f ⟨ m , p ⟩ th^Tm e1 (pack (λ {i} → s)) % `var z }}
 
-_ULApp_ :  ∀{Γ} → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ
-a ULApp b = `con (false , (false , (a , (b , refl))))
-
---TODO: generalize to any language with a path into it
-_ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
-_ = 2 , inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl)))
-
-record LPath (L1 L2 : Lang I) : Set₁ where
-  module L1 = Lang L1
-  module L2 = Lang L2
-  field
-    desc-path : Path L1.desc L2.desc
-    --TODO: finish; is this correct?
-    --TODO: do I need R1 => R2 or does R suffice? (probably the former)
-    prec-path :  ∀ d' → (p : Path L2.desc d') → ∀ R1 R2 → (R1 ⇒ᴿ R2) →
-                 (L1.precision (p ∘ₚ desc-path) R1) ⇒ᴿ (L2.precision p R2)
+  LamLang : TLang
+  LamLang .type-lang = LamTy
+  LamLang .term-lang m .desc = LamDesc m
+  LamLang .term-lang m .precision p R = cprec' (LamDesc m) p R
+    ⊎ᴿ beta m p R
+    ⊎ᴿ eta m p R
     
 
--- Construct for ranging over all extensions of a given language
-ExtensibleLang : ∀{ℓ} → Lang I → (Lang I → Set ℓ) → Set _
-ExtensibleLang L f = ∀{L'} → LPath L L' → f L'
-
-infix 10 ExtensibleLang
-syntax ExtensibleLang L (λ L' → e) = ExL⟨ L ↑ L' ⟩ e
-
-
--- precision preserving compilers
--- TODO: expand to Lang I, Lang J (different types)
-record PComp (L1 L2 : Lang I) : Set₁ where
-  module L1 = Lang L1
-  module L2 = Lang L2
-  field
-    --compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
-    compile : Ex⟨ L2.desc ↑ d' ⟩ (∀ {i} → ∀[ Tm (d' `+ L1.desc) ∞ i ⇒ Tm d' ∞ i ])
-    preserves : ExL⟨ L2 ↑ L' ⟩ (∀ R1 R2 → (R1 ⇒ᴿ R2) →
-                 precision (L' +ᴸ L1) {!TODO: paths not expresive enough!} R1
-                 ⇒ᴿ (precision L' path-id R2))
+module UNTYPED where
+  data Kind : Set where
+    KTm : Kind
+  
+  -- TODO: use congruence generation to add back in var eq
+  UnitLang : Lang Kind
+  UnitLang .desc = `∎ KTm
+  UnitLang .precision = cprec' (desc UnitLang)
+  
+  
+  LamDesc : Desc Kind
+  LamDesc = `X [ KTm ] KTm (`∎ KTm)
+          `+ `X [] KTm (`X [] KTm (`∎ KTm))
+  
+  LamPrec : Ex⟨ LamDesc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  LamPrec {d' = d'} p R .rel KTm {Γ} x x₁ =
+    rel (cprec' LamDesc p R) KTm x x₁
+    -- beta reduction
+    ⊎ (Σ (Scope (Tm d' ∞) (KTm ∷ []) KTm Γ × Scope (Tm d' ∞) ([]) KTm Γ) λ { (y₁ , y₂) →
+      x ≡ `con (⟦ p ⟧$ (false , `con (⟦ p ⟧$ (true , (y₁ , refl))) , (y₂ , refl)))
+      × x₁ ≡ y₁ [ y₂ /0]})
+  
+  --TODO: define using congruences
+  --LamPrec' : Ex⟨ LamDesc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+  
+  -- TODO: can we generate the congruence rules automatically?
+  LamLang : Lang Kind
+  LamLang .desc = LamDesc
+  LamLang .precision = LamPrec
+  
+  UL : Lang Kind
+  UL = UnitLang +ᴸ LamLang
+  
+  module UL = Lang UL
+  
+  UL⑴ : TM UL.desc KTm
+  UL⑴ = `con (true , refl)
+  
+  ULλ : ∀{Γ} → Tm UL.desc ∞ KTm (KTm ∷ Γ) → Tm UL.desc ∞ KTm Γ
+  ULλ b = `con (false , (true , (b , refl)))
+  
+  _ULApp_ :  ∀{Γ} → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ → Tm UL.desc ∞ KTm Γ
+  a ULApp b = `con (false , (false , (a , (b , refl))))
+  
+  --TODO: generalize to any language with a path into it
+  _ : rel UL.prec KTm ((ULλ (`var z)) ULApp UL⑴) UL⑴
+  _ = 2 , inj₂ (inj₂ (((`var z) , UL⑴) , (refl , refl)))
+  
+  record LPath (L1 L2 : Lang I) : Set₁ where
+    module L1 = Lang L1
+    module L2 = Lang L2
+    field
+      desc-path : Path L1.desc L2.desc
+      --TODO: finish; is this correct?
+      --TODO: do I need R1 => R2 or does R suffice? (probably the former)
+      prec-path :  ∀ d' → (p : Path L2.desc d') → ∀ R1 R2 → (R1 ⇒ᴿ R2) →
+                   (L1.precision (p ∘ₚ desc-path) R1) ⇒ᴿ (L2.precision p R2)
+      
+  
+  -- Construct for ranging over all extensions of a given language
+  ExtensibleLang : ∀{ℓ} → Lang I → (Lang I → Set ℓ) → Set _
+  ExtensibleLang L f = ∀{L'} → LPath L L' → f L'
+  
+  infix 10 ExtensibleLang
+  syntax ExtensibleLang L (λ L' → e) = ExL⟨ L ↑ L' ⟩ e
+  
+  
+  -- precision preserving compilers
+  -- TODO: expand to Lang I, Lang J (different types)
+  record PComp (L1 L2 : Lang I) : Set₁ where
+    module L1 = Lang L1
+    module L2 = Lang L2
+    field
+      --compile : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+      compile : Ex⟨ L2.desc ↑ d' ⟩ (∀ {i} → ∀[ Tm (d' `+ L1.desc) ∞ i ⇒ Tm d' ∞ i ])
+      preserves : ExL⟨ L2 ↑ L' ⟩ (∀ R1 R2 → (R1 ⇒ᴿ R2) →
+                  precision (L' +ᴸ L1) {!TODO: paths not expresive enough!} R1
+                  ⇒ᴿ (precision L' path-id R2))
     --TODO: make this about precision rather than prec for extensibility
     -- precision : Ex⟨ desc ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
     {-
@@ -302,21 +375,21 @@ record PComp (L1 L2 : Lang I) : Set₁ where
    
       --∀{i Γ} → (e1 e2 : Tm L1.desc ∞ i Γ) →
       --              rel L1.prec i e1 e2 → rel L2.prec i (compile e1) (compile e2)
-  comp : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
-  comp e = compile path-id (Tm⟦ injᵣ ⟧$ e)
-
-open PComp
-
-ucomp : ∀ L1 → PComp L1 UnitLang
-ucomp L1 .compile p {KTm} e = Tm⟦ p ⟧$ (`con refl)
-{-
-ucomp L1 .preserve-prec {KTm} e1 e2 (suc fst , _) = (suc fst) , (refl , refl)
--}
-
-
-+embed : (L1 L2 : Lang I) → PComp L1 (L1 +ᴸ L2) 
-+embed L1 L2 .compile p e = map^Tm (morph (path-id `+L (path-projₗ p))) e
-{-
-+embed L1 L2 .preserve-prec e1 e2 (suc zero , snd) = {!!} -- (suc zero) , inj₁ {!snd!}
-+embed L1 L2 .preserve-prec e1 e2 (suc (suc fst) , snd) = (suc (suc fst)) , inj₁ {!!}
--}
+    comp : ∀ {i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+    comp e = compile path-id (Tm⟦ injᵣ ⟧$ e)
+  
+  open PComp
+  
+  ucomp : ∀ L1 → PComp L1 UnitLang
+  ucomp L1 .compile p {KTm} e = Tm⟦ p ⟧$ (`con refl)
+  {-
+  ucomp L1 .preserve-prec {KTm} e1 e2 (suc fst , _) = (suc fst) , (refl , refl)
+  -}
+  
+  
+  +embed : (L1 L2 : Lang I) → PComp L1 (L1 +ᴸ L2) 
+  +embed L1 L2 .compile p e = map^Tm (morph (path-id `+L (path-projₗ p))) e
+  {-
+  +embed L1 L2 .preserve-prec e1 e2 (suc zero , snd) = {!!} -- (suc zero) , inj₁ {!snd!}
+  +embed L1 L2 .preserve-prec e1 e2 (suc (suc fst) , snd) = (suc (suc fst)) , inj₁ {!!}
+  -}
