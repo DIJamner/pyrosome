@@ -176,6 +176,12 @@ cprec' d p R .rel i (`var x) (`con x₁) = ⊥
 cprec' d p R .rel i (`con x) (`var x₁) = ⊥
 cprec' d p R .rel i (`con x) (`con x₁) = rel (rel-embed ⟦ p ⟧$ (cong-prec d (scopeR R))) i x x₁
 
+--TODO: what's the best way to handle this?
+-- I probably want it "built in", but right now that means adding it to every language
+-- and this gives me multiple copies
+transitivity :  (d : Desc I) → Ex⟨ d ↑ d' ⟩ (Rel (Tm d' ∞) (Tm d' ∞) → Rel (Tm d' ∞) (Tm d' ∞))
+transitivity d p R .rel i e1 e2 = ∃[ x ] (rel R i e1 x × rel R i x e2)
+
 {-
 --TODO: check first 3 cases
 cprec' : (d : Desc I) → Exᶠ⟨ d ↑ d' ⟩ (∀ Δ → Rel (Scope (Tm d' ∞) Δ) (Scope (Tm d' ∞) Δ))
@@ -216,11 +222,30 @@ free-lang d .desc = d
 free-lang d .precision = cprec' d
 
 module SIMPLE where
+
+  ⑴t : ∀{d'} → DescMorphism (`∎ tt) d' → ∀{Γ} → TM d' Γ
+  ⑴t m = map^Tm m (`con refl)
+
   UnitLang : TLang
   UnitLang .type-lang .desc = `∎ tt
   UnitLang .type-lang .precision = cprec' (`∎ tt)
   UnitLang .term-lang m .desc = `∎ (map^Tm m (`con refl))
-  UnitLang .term-lang m .precision = cprec' (`∎ (map^Tm m (`con refl)))
+  --TODO: eta law
+  UnitLang .term-lang m .precision {d'} p R = cprec' (`∎ (map^Tm m (`con refl))) p R
+    ⊎ᴿ unit-eta
+    ⊎ᴿ transitivity _ p R where
+    -- all terms at type unit are equivalent; not quite the traditional law,
+    -- but a close enough approximation and simpler
+    -- TODO: doesn't hold in the presence of effects
+    --TODO: to think about: how can we tell there's an issue when we add
+    -- a rule like this to a nonterminating language?
+    unit-eta : Rel (Tm d' ∞) (Tm d' ∞)
+    unit-eta .rel i e1 e2 = i ≡ ⑴t m
+  
+  ⑴e : ∀{td} → (m : DescMorphism (`∎ tt) td) → Ex⟨ `∎ (map^Tm m (`con refl)) ↑ d' ⟩
+           (∀{Γ} → Tm d' ∞ (⑴t m) Γ)
+  ⑴e m p = `con (⟦ p ⟧$ refl)
+
 
   LamTy : Lang ⊤
   LamTy = free-lang (`X [] tt (`X [] tt (`∎ tt)))
@@ -278,6 +303,30 @@ module SIMPLE where
   LamLang .term-lang m .precision p R = cprec' (LamDesc m) p R
     ⊎ᴿ beta m p R
     ⊎ᴿ eta m p R
+    ⊎ᴿ transitivity _ p R
+
+  UL : TLang
+  UL = UnitLang +ᵀ LamLang
+
+  --TODO: make this proof go through;
+  -- shows that any function that returns unit
+  -- is equivalent to the specific function that immediately does so
+  _ : ∀ {Γ} i e → rel (prec (term-lang UL mid)) (⟨ minjᵣ ⟩ i →t ⑴t minjₗ) {Γ}
+      e (⟨ minjᵣ , injᵣ ⟩λ i →f ⑴e minjₗ injₗ)
+      --transitivity
+      --TODO: have "cartesian" base theory as per Shulman
+      --use in all std. theories, deduplicate
+      --"precision" then always becomes an equality
+  _ = λ i e → 2 , inj₁ (inj₂ (inj₂ ((⟨ minjᵣ , injᵣ ⟩λ i →f ⟨ minjᵣ , injᵣ ⟩
+        (th^Tm e (pack (λ {i} → s))) % `var z) ,
+      -- eta
+      (inj₂ (inj₂ (inj₂ (inj₁ ((i , ⑴t minjₗ) , refl , refl)))) ,
+      -- fn congruence, unit rule(?)
+      inj₂ (inj₁ ((true , (i , ⑴t minjₗ) ,
+                 appexp minjᵣ injᵣ (th^Tm e (pack (λ {i = i₁} → s))) (`var z) , refl) ,
+           (true , (((i , ⑴t minjₗ)) , ((⑴e minjₗ injₗ) , refl))) ,
+      (refl , refl)))))))
+
     
 
 module UNTYPED where

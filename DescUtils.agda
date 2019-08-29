@@ -23,6 +23,25 @@ open import Generic.Syntax
 open import Generic.Semantics
 open import Generic.Simulation
 
+{-
+module _ {I J : Set} where
+  open import Size
+  
+  reindex-map' : (f : I → J) → (d : Desc I) →
+                 {XI : List I → I ─Scoped} → {XJ : List J → J ─Scoped} →
+                 (∀{Δ i Γ} → XI Δ i Γ → XJ (Data.List.map f Δ) (f i) (Data.List.map f Γ)) →
+                 ∀{i Γ} → ⟦ d ⟧ XI i Γ → ⟦ reindex f d ⟧ XJ (f i) (Data.List.map f Γ)
+  reindex-map' f (`σ A x) Xmap (fst , snd) = fst , (reindex-map' f (x fst) Xmap snd)
+  reindex-map' f (`X x x₁ d) Xmap (fst , snd) = Xmap fst , reindex-map' f d Xmap snd
+  reindex-map' f (`∎ x) Xmap refl = refl
+  
+  reindex-map : (f : I → J) → (d : Desc I) → ∀{Δ i Γ} →
+                Scope (Tm d ∞) Δ i Γ →
+                Scope (Tm (reindex f d) ∞) (Data.List.map f Δ) (f i) (Data.List.map f Γ)
+  reindex-map f d (`var x) = `var {!!} -- (f <$> x)
+  reindex-map f d (`con e) = `con {!!} --(reindex-map' f d (λ x → {!reindex-map!}) e)
+-}
+
 module _ {I : Set} where
 
   -- the empty description
@@ -79,6 +98,9 @@ module _ {I : Set} where
 
   minjᵣ : DescMorphism d2 (d1 `+ d2)
   minjᵣ .DescMorphism.apply e = false , e
+
+  mid : DescMorphism d1 d1
+  mid = MkDescMorphism λ x → x
 
 -- relation tools
 module _ {I : Set} where
