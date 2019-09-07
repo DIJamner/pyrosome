@@ -24,7 +24,7 @@ open import Function
 
 open import Data.Var
 open import Data.Var.Varlike
-open import Data.Environment
+open import Data.Environment hiding (_<$>_)
 open import Data.Relation
 open import Generic.Syntax
 open import Generic.Semantics
@@ -307,8 +307,7 @@ module SIMPLE where
 
   UL : TLang
   UL = UnitLang +ᵀ LamLang
-
-  --TODO: make this proof go through;
+  
   -- shows that any function that returns unit
   -- is equivalent to the specific function that immediately does so
   _ : ∀ {Γ} i e → rel (prec (term-lang UL mid)) (⟨ minjᵣ ⟩ i →t ⑴t minjₗ) {Γ}
@@ -327,7 +326,26 @@ module SIMPLE where
            (true , (((i , ⑴t minjₗ)) , ((⑴e minjₗ injₗ) , refl))) ,
       (refl , refl)))))))
 
-    
+
+  --TODO: not much traction here; maybe the generalized type description is a bad idea
+  -- I'm sort of giving up on initiality that way
+  liftT' : (L : TLang) → ∀{td} → (m : DescMorphism (desc (type-lang L)) td) →
+           ∀{XI XJ i Γ} → (∀{Δ i Γ} → XI Δ i Γ →
+                   XJ (Data.List.map (map^Tm m) Δ) (map^Tm m i) (Data.List.map (map^Tm m) Γ))→
+             ⟦ desc (term-lang L mid)⟧ XI i Γ →
+                  ⟦ desc (term-lang L m)⟧ XJ (map^Tm m i) (Data.List.map (map^Tm m) Γ)
+  liftT' L m rec e = {!!}
+
+  liftT : (L : TLang) → ∀{td} → (m : DescMorphism (desc (type-lang L)) td) →
+         ∀{i Γ} → Tm (desc (term-lang L mid)) ∞ i Γ →
+                  Tm (desc (term-lang L m)) ∞ (map^Tm m i) (Data.List.map (map^Tm m) Γ)
+  liftT L m (`var x) = `var (map^Tm m <$> x)
+  liftT L m (`con x) = `con {!!}
+{-
+  eqₗ : (L1 L2 : TLang) → ∀{Γ i} e1 e2 → rel (prec (term-lang L1 mid)) i {Γ} e1 e2 →
+        rel (prec (term-lang (L1 +ᵀ L2) mid)) (map^Tm minjₗ i) {!map^Tm minjₗ e1!} {!!} -- i (map^Tm minjₗ e1) (map^Tm minjₗ e2)
+  eqₗ = {!!}
+    -}
 
 module UNTYPED where
   data Kind : Set where
@@ -394,7 +412,59 @@ module UNTYPED where
   
   infix 10 ExtensibleLang
   syntax ExtensibleLang L (λ L' → e) = ExL⟨ L ↑ L' ⟩ e
+
+  DescFn : Desc I → Desc I → Set
+  DescFn d1 d2 = ∀{i} → ∀[ Tm d1 ∞ i ⇒ Tm d2 ∞ i ]
+
+  open import Generic.Semantics
   
+  record Compiler (d1 d2 : Desc I) : Set₁ where
+    constructor CMP
+    field csem : ∀{d'} → (DescFn d2 d') → ∀ {σ} →
+                 ∀[ ⟦ d1 ⟧ (Kripke (Tm d' ∞) (Tm d' ∞)) σ ⇒ Tm d' ∞ σ ]
+    comp-sem : ∀{d'} → (DescFn d2 d') → Semantics d1 (Tm d' ∞) (Tm d' ∞)
+    comp-sem m .Semantics.th^𝓥 = th^Tm
+    comp-sem m .Semantics.var = id
+    comp-sem m .Semantics.alg = csem m
+    compile : ∀{d'} → (DescFn d2 d') → (∀{i} → ∀[ Tm d1 ∞ i ⇒ Tm d' ∞ i ])
+    compile p e = Semantics.semantics (comp-sem p) (pack `var) e
+
+
+  --TODO: naive def doesn't work; use actual bisim?
+  -- also: seems to roughly be the same as self-"simulation" in Allais' parlance?
+    -- maybe not: simulation only deals with 1 input term
+  Preserving : (L1 L2 : Lang I) → Compiler (desc L1) (desc L2) → Set
+  Preserving L1 L2 C = ∀{i Γ} → ∀ e1 e2 → rel L1.prec i {Γ} e1 e2 → rel L2.prec i (comp e1) (comp e2)
+    where
+      module L1 = Lang L1
+      module L2 = Lang L2
+      comp : ∀{i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
+      comp = Compiler.compile C id
+
+  --compiler combination
+
+  _+ᶜ_ : {d1 d2 d : Desc I} → Compiler d1 d → Compiler d2 d → Compiler (d1 `+ d2) d
+  Compiler.csem (CMP csem1 +ᶜ CMP csem2) p = case (csem1 p) (csem2 p)
+
+  -- For this to be a function, the "return continuation" from the Mendler Algebra
+  -- needs to be from term to term
+  _∘ᶜ_ : {d1 d2 d3 : Desc I} → Compiler d1 d2 → Compiler d2 d3 → Compiler d1 d3
+  Compiler.csem (CMP csem ∘ᶜ C2) p = csem (Compiler.compile C2 p)
+
+{-
+  ∘ᶜ-preserves : {L1 L2 L3 : Lang I} →
+                    (c1 : Compiler (desc L1) (desc L2)) → (c2 : Compiler (desc L2) (desc L3)) →
+                      Preserving L1 L2 c1 → Preserving L2 L3 c2 → Preserving L1 L3 (c1 ∘ᶜ c2)
+  ∘ᶜ-preserves = {!!}
+
+  +ᶜ-preserves-prec : {L1 L2 L : Lang I} →
+                      (c1 : Compiler (desc L1) (desc L)) → (c2 : Compiler (desc L2) (desc L)) →
+                      Preserving L1 L c1 → Preserving L2 L c2 → Preserving (L1 +ᴸ L2) L (c1 +ᶜ c2)
+  +ᶜ-preserves-prec c1 c2 P1 P2 e1 e2 (suc fst , inj₁ x) = suc fst , {!P1!}
+  +ᶜ-preserves-prec c1 c2 P1 P2 e1 e2 (suc fst , inj₂ y) = suc fst , {!!}
+  
+{-
+
   
   -- precision preserving compilers
   -- TODO: expand to Lang I, Lang J (different types)
@@ -442,3 +512,6 @@ module UNTYPED where
   +embed L1 L2 .preserve-prec e1 e2 (suc zero , snd) = {!!} -- (suc zero) , inj₁ {!snd!}
   +embed L1 L2 .preserve-prec e1 e2 (suc (suc fst) , snd) = (suc (suc fst)) , inj₁ {!!}
   -}
+-}
+
+-}
