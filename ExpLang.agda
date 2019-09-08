@@ -430,6 +430,44 @@ module UNTYPED where
     compile p e = Semantics.semantics (comp-sem p) (pack `var) e
 
 
+  --compiler combination
+
+  _+ᶜ_ : {d1 d2 d : Desc I} → Compiler d1 d → Compiler d2 d → Compiler (d1 `+ d2) d
+  Compiler.csem (CMP csem1 +ᶜ CMP csem2) p = case (csem1 p) (csem2 p)
+
+  -- For this to be a function, the "return continuation" from the Mendler Algebra
+  -- needs to be from term to term
+  _∘ᶜ_ : {d1 d2 d3 : Desc I} → Compiler d1 d2 → Compiler d2 d3 → Compiler d1 d3
+  Compiler.csem (CMP csem ∘ᶜ C2) p = csem (Compiler.compile C2 p)
+
+  --TODO: naive def doesn't work; use actual bisim?
+  -- also: seems to roughly be the same as self-"simulation" in Allais' parlance?
+    -- maybe not: simulation only deals with 1 input term
+  --TODO: maybe keep the mendler "continuation"?
+    -- how does that work w/ axiomatic semantics? Assume L3 with naive preservation from L2 to L3
+    -- Prove preservation from L1 to L3
+  Preserving : (L1 L2 : Lang I) → Compiler (desc L1) (desc L2) → Set₁
+  Preserving L1 L2 C = ∀ L3 → (C' : Compiler (desc L2) (desc L3))
+                         → (L2.prec ⟨ Compiler.compile C' id ⟩⇒ᴿ prec L3)
+                         → L1.prec ⟨ Compiler.compile C (Compiler.compile C' id) ⟩⇒ᴿ prec L3
+    where
+      module L1 = Lang L1
+      module L2 = Lang L2
+
+
+  ∘ᶜ-preserves : {L1 L2 L3 : Lang I} →
+                    (c1 : Compiler (desc L1) (desc L2)) → (c2 : Compiler (desc L2) (desc L3)) →
+                      Preserving L1 L2 c1 → Preserving L2 L3 c2 → Preserving L1 L3 (c1 ∘ᶜ c2)
+  ∘ᶜ-preserves c1 c2 P1 P2 LR C' prC' pf = P1 LR (c2 ∘ᶜ C') (P2 LR C' prC') pf
+
+{-
+  Preserving : (L1 L2 : Lang I) → Compiler (desc L1) (desc L2) → Set
+  Preserving L1 L2 C = Simulation (desc L1) (Compiler.comp-sem C) (Compiler.comp-sem C)
+ -}                      
+
+{-
+ 
+
   --TODO: naive def doesn't work; use actual bisim?
   -- also: seems to roughly be the same as self-"simulation" in Allais' parlance?
     -- maybe not: simulation only deals with 1 input term
@@ -441,17 +479,7 @@ module UNTYPED where
       comp : ∀{i} → ∀[ Tm L1.desc ∞ i ⇒ Tm L2.desc ∞ i ]
       comp = Compiler.compile C id
 
-  --compiler combination
-
-  _+ᶜ_ : {d1 d2 d : Desc I} → Compiler d1 d → Compiler d2 d → Compiler (d1 `+ d2) d
-  Compiler.csem (CMP csem1 +ᶜ CMP csem2) p = case (csem1 p) (csem2 p)
-
-  -- For this to be a function, the "return continuation" from the Mendler Algebra
-  -- needs to be from term to term
-  _∘ᶜ_ : {d1 d2 d3 : Desc I} → Compiler d1 d2 → Compiler d2 d3 → Compiler d1 d3
-  Compiler.csem (CMP csem ∘ᶜ C2) p = csem (Compiler.compile C2 p)
-
-{-
+  
   ∘ᶜ-preserves : {L1 L2 L3 : Lang I} →
                     (c1 : Compiler (desc L1) (desc L2)) → (c2 : Compiler (desc L2) (desc L3)) →
                       Preserving L1 L2 c1 → Preserving L2 L3 c2 → Preserving L1 L3 (c1 ∘ᶜ c2)

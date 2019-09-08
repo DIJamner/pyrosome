@@ -107,9 +107,11 @@ module _ {I : Set} where
 
   private variable A B : I ─Scoped
 
-  -- TODO: move to descutils
   _⇒ᴿ_ : Rel A B → Rel A B → Set
   R1 ⇒ᴿ R2 = ∀{i Γ e1 e2} → rel R1 i {Γ} e1 e2 → rel R2 i e1 e2
+  
+  _⟨_⟩⇒ᴿ_ : Rel A A → (∀{i Γ} → A i Γ → B i Γ) → Rel B B → Set
+  R1 ⟨ f ⟩⇒ᴿ R2 = ∀{i Γ e1 e2} → rel R1 i {Γ} e1 e2 → rel R2 i (f e1) (f e2)
 
   open import Data.Sum
 
