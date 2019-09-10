@@ -1,0 +1,9 @@
+
+open import Generic.Syntax
+
+data DescMorph (I : Set) : Desc I → Desc I → Set where
+  `Xm : 
+
+private variable I : Set
+
+⟦_⟧ₘ : DescMorph I → (List I → I ─Scoped) → ⟦ 
