@@ -28,7 +28,7 @@ open import Data.Environment hiding (_<$>_)
 open import Data.Relation
 open import Generic.Syntax
 open import Generic.Semantics
-open import Generic.Semantics.Syntactic using (th^Tm; vl^Tm;_[_;_/0])
+open import Generic.Semantics.Syntactic using (th^Tm; vl^Tm;_[_;_/0];sub)
 
 open import Path.Path renaming (id to path-id)
 
@@ -416,40 +416,84 @@ module UNTYPED where
   DescFn : Desc I → Desc I → Set
   DescFn d1 d2 = ∀{i} → ∀[ Tm d1 ∞ i ⇒ Tm d2 ∞ i ]
 
+  DescAlg : Desc I → Desc I → Set
+  DescAlg d1 d2 = ∀{i} → ∀[ ⟦ d1 ⟧ (Kripke (Tm d2 ∞) (Tm d2 ∞)) i ⇒ Tm d2 ∞ i ]
+
+  --taken from defn of Sub
+  id-alg : (d : Desc I) → DescAlg d d
+  id-alg d = `con ∘ fmap d (reify vl^Tm)
+
+  --private variable i : I
+
   open import Generic.Semantics
   
   record Compiler (d1 d2 : Desc I) : Set₁ where
     constructor CMP
-    field csem : ∀{d'} → (DescFn d2 d') → ∀ {σ} →
-                 ∀[ ⟦ d1 ⟧ (Kripke (Tm d' ∞) (Tm d' ∞)) σ ⇒ Tm d' ∞ σ ]
-    comp-sem : ∀{d'} → (DescFn d2 d') → Semantics d1 (Tm d' ∞) (Tm d' ∞)
-    comp-sem m .Semantics.th^𝓥 = th^Tm
-    comp-sem m .Semantics.var = id
-    comp-sem m .Semantics.alg = csem m
-    compile : ∀{d'} → (DescFn d2 d') → (∀{i} → ∀[ Tm d1 ∞ i ⇒ Tm d' ∞ i ])
-    compile p e = Semantics.semantics (comp-sem p) (pack `var) e
+    field csem : ∀{d'} → DescAlg d2 d' → DescAlg d1 d'
+    comp-sem : ∀{d'} → DescAlg d2 d' → Semantics d1 (Tm d' ∞) (Tm d' ∞)
+    (comp-sem alg) .Semantics.th^𝓥 = th^Tm
+    (comp-sem alg) .Semantics.var = id
+    (comp-sem alg) .Semantics.alg = csem alg
+    compile : ∀{i} → ∀[ Tm d1 ∞ i ⇒ Tm d2 ∞ i ]
+    compile e = Semantics.semantics (comp-sem (id-alg d2)) (pack `var) e
 
 
   --compiler combination
 
   _+ᶜ_ : {d1 d2 d : Desc I} → Compiler d1 d → Compiler d2 d → Compiler (d1 `+ d2) d
-  Compiler.csem (CMP csem1 +ᶜ CMP csem2) p = case (csem1 p) (csem2 p)
+  Compiler.csem (CMP csem1 +ᶜ CMP csem2) alg = case (csem1 alg) (csem2 alg)
 
   -- For this to be a function, the "return continuation" from the Mendler Algebra
   -- needs to be from term to term
   _∘ᶜ_ : {d1 d2 d3 : Desc I} → Compiler d1 d2 → Compiler d2 d3 → Compiler d1 d3
-  Compiler.csem (CMP csem ∘ᶜ C2) p = csem (Compiler.compile C2 p)
+  Compiler.csem (CMP csem2 ∘ᶜ CMP csem1) alg = csem2 (csem1 alg)
+
+  --Test
+  testcomp : ∀ d → Compiler (`X [] KTm d) d
+  Compiler.csem (testcomp d) alg (fst , snd) = alg snd
+
+  ΒοοlDesc : Desc Kind
+  BoolDesc = (`σ Bool λ _ → `∎ KTm)
+           --if
+           `+ `X [] KTm (`X [] KTm (`X [] KTm (`∎ KTm)))
+
+  NatDesc : Desc Kind
+  NatDesc = (`σ ℕ λ _ → `∎ KTm)
+          --if0
+          `+ `X [] KTm (`X [] KTm (`X [] KTm (`∎ KTm)))
+
+  --TODO: figure out the right details of binding (right lib fns) for this
+  --TODO: simplify
+  λa : ∀{d'} → DescAlg LamDesc d' → ∀{Γ} → Tm d' ∞ KTm (KTm ∷ Γ) → Tm d' ∞ KTm Γ
+  λa alg e = alg (true , (λ x x₁ →  sub (x₁ >> (pack (λ x₃ → `var (th^Var x₃ x)))) e) , refl)
+
+  aapp : ∀{d'} → DescAlg LamDesc d' → ∀[ Tm d' ∞ KTm ⇒ Tm d' ∞ KTm ⇒ Tm d' ∞ KTm ]
+  aapp alg e1 e2 = alg (false , e1 , (e2 , refl))
+
+  --church encoding of booleans
+  --demonstrates multi-level translations
+  testcomp2 : Compiler BoolDesc (desc LamLang)
+  Compiler.csem testcomp2 alg (false , cond , then , else , refl) =
+    aapp alg (aapp alg cond then) else
+  Compiler.csem testcomp2 alg (true , false , refl) = λa alg (λa alg (`var z))
+  Compiler.csem testcomp2 alg (true , true , refl) =  λa alg (λa alg (`var (s z)))
+
+  idcomp : (d : Desc I) → Compiler d d
+  Compiler.csem (idcomp d) alg = alg
+
+  -- I can make a compiler that eliminates booleans
+  testcomp3 : Compiler (BoolDesc `+ LamDesc) LamDesc
+  testcomp3 = testcomp2 +ᶜ (idcomp _)
 
   --TODO: naive def doesn't work; use actual bisim?
   -- also: seems to roughly be the same as self-"simulation" in Allais' parlance?
     -- maybe not: simulation only deals with 1 input term
-  --TODO: maybe keep the mendler "continuation"?
-    -- how does that work w/ axiomatic semantics? Assume L3 with naive preservation from L2 to L3
-    -- Prove preservation from L1 to L3
+  --TODO: maybe make (like) an algebra over relations?
+    -- might help deal with the unfolding in the + case
   Preserving : (L1 L2 : Lang I) → Compiler (desc L1) (desc L2) → Set₁
   Preserving L1 L2 C = ∀ L3 → (C' : Compiler (desc L2) (desc L3))
-                         → (L2.prec ⟨ Compiler.compile C' id ⟩⇒ᴿ prec L3)
-                         → L1.prec ⟨ Compiler.compile C (Compiler.compile C' id) ⟩⇒ᴿ prec L3
+                         → (L2.prec ⟨ Compiler.compile C' ⟩⇒ᴿ prec L3)
+                         → L1.prec ⟨ Compiler.compile C' ∘ Compiler.compile C ⟩⇒ᴿ prec L3
     where
       module L1 = Lang L1
       module L2 = Lang L2
@@ -458,14 +502,25 @@ module UNTYPED where
   ∘ᶜ-preserves : {L1 L2 L3 : Lang I} →
                     (c1 : Compiler (desc L1) (desc L2)) → (c2 : Compiler (desc L2) (desc L3)) →
                       Preserving L1 L2 c1 → Preserving L2 L3 c2 → Preserving L1 L3 (c1 ∘ᶜ c2)
-  ∘ᶜ-preserves c1 c2 P1 P2 LR C' prC' pf = P1 LR (c2 ∘ᶜ C') (P2 LR C' prC') pf
+  ∘ᶜ-preserves c1 c2 P1 P2 LR C' prC' pf = P1 LR {!!} {!!} {!!}
+{-
+  +ᶜ-preserves-prec : {L1 L2 L : Lang I} →
+                      (c1 : Compiler (desc L1) (desc L)) → (c2 : Compiler (desc L2) (desc L)) →
+                      Preserving L1 L c1 → Preserving L2 L c2 → Preserving (L1 +ᴸ L2) L (c1 +ᶜ c2)
+  +ᶜ-preserves-prec c1 c2 P1 P2 LR C' prC' (suc fst , inj₁ x) = (suc fst) , {!P1R!} where
+    P1R : (prec _) ⟨ (Compiler.compile (c1 ∘ᶜ C') id) ⟩⇒ᴿ (prec LR)
+    P1R = P1 LR C' prC'
+    P2R : (prec _) ⟨ (Compiler.compile (c2 ∘ᶜ C') id) ⟩⇒ᴿ (prec LR)
+    P2R = P2 LR C' prC'
+  +ᶜ-preserves-prec c1 c2 P1 P2 LR C' prC' (suc fst , inj₂ y) = {!!}
+    --TODO: need fact about +L
 
 {-
   Preserving : (L1 L2 : Lang I) → Compiler (desc L1) (desc L2) → Set
   Preserving L1 L2 C = Simulation (desc L1) (Compiler.comp-sem C) (Compiler.comp-sem C)
  -}                      
 
-{-
+
  
 
   --TODO: naive def doesn't work; use actual bisim?
