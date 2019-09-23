@@ -72,6 +72,9 @@ Inductive ctxt_var p : Type :=
 | term_var : poly_fix p -> ctxt_var p
 | sort_var : ctxt_var p.
 
+Arguments term_var {p} e.
+Arguments sort_var {p}.
+
 Definition ctxt p := list (ctxt_var p).
   
 Definition sort_rule p : Type := ctxt p * poly_fix p.
@@ -122,16 +125,16 @@ Definition svar (n : nat) : poly_fix subst_syn :=
 
   (* equational theory of substitutions *)
 Definition subst_lang : lang subst_syn :=
-  [:: {s [:: sort_var _] |- sub (svar 0) (var 0) === var 0}]
+  [:: {s [:: sort_var] |- sub (svar 0) (var 0) === var 0}]
     ++ (List.flat_map
      wf_sort_and_cong
-     [:: ([:: sort_var _; sort_var _],
+     [:: ([:: sort_var; sort_var],
           [{subst_syn} 1 | tt, [* var 0; var 1]]);
-        ([:: sort_var _; sort_var _; term_var (var 1)],
+        ([:: sort_var; sort_var; term_var (var 1)],
          [{subst_syn} 1 | tt , [* var 0; var 2]])])
     ++ (List.flat_map
           wf_term_and_cong
-          [:: ([:: sort_var _; term_var (var 0); sort_var _],
+          [:: ([:: sort_var; term_var (var 0); sort_var ],
                [{subst_syn} 1 | tt , [* var 1; var 2]],
               var 0)]).             
   (*TODO: finish axioms
@@ -324,31 +327,110 @@ Proof.
 Qed.
 
 (* TODO: from here*)
-Definition wf_ctxt {p : polynomial} (c : ctxt p) : Type := True.
+(* We could embed well-scopedness in bool, but well-typedness can be undecideable,
+   so we leave it in Prop.
+   All judgements presuppose that the input language is well-formed to be sensible.
+   TODO: should I try to avoid mutual induction?/build in these presuppositions?
+ *)
+(* TODO: make clear & clean admissible vs derivable props *)
+(* TODO: include language equality (will change most defs) *)
+Inductive wf_sort {p} : lang p -> ctxt p -> poly_fix p -> Prop :=
+| wf_sort_by : forall l c e s c',
+    (* these should be admissible
+       wf_lang l ->
+       wf_ctxt l c -> 
+       wf_ctxt l c' -> 
+       wf_sort l c' e *)
+    wf_subst l c s c' ->
+    List.In (sort (c',e)) l ->
+    wf_sort l c (exp_subst e s)
+with  wf_term {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
+| wf_term_by : forall l c e t s c',
+    (* these should be admissible
+       wf_lang l ->
+       wf_ctxt l c -> 
+       wf_ctxt l c' -> 
+       wf_term l c' e t *)
+    wf_subst l c s c' ->
+    List.In (term (c',e,t)) l ->
+    wf_term l c (exp_subst e s) (exp_subst t s)
+with wf_sort_eq {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
+| wf_sort_eq_by : forall l c t1 t2 s c',
+    (* these should be admissible
+       wf_lang l ->
+       wf_ctxt l c -> 
+       wf_ctxt l c' -> 
+       wf_sort l c' t1 -> 
+       wf_sort l c' t2 -> *)
+    wf_subst l c s c' -> (*todo: subst eq*)
+    List.In (sort_eq (c',(t1,t2))) l ->
+    wf_sort_eq l c (exp_subst t1 s) (exp_subst t2 s)
+with wf_subst {p} : lang p -> ctxt p -> psubst p -> ctxt p -> Prop :=
+| wf_subst_nil : forall l c c',
+    (* wf_lang l ->*)
+    wf_ctxt l c ->
+    wf_ctxt l c' ->
+    wf_subst l c [::] c'
+| wf_subst_cons_sort : forall l c s c' e,
+    (* wf_lang l ->
+       wf_ctxt l c ->
+       wf_ctxt l c' ->*)
+    wf_subst l c s c' ->
+    wf_sort l c e ->
+    wf_subst l c (e::s) (sort_var::c')
+| wf_subst_cons_term : forall l c s c' e t,
+    (* wf_lang l ->
+       wf_ctxt l c ->
+       wf_ctxt l c' ->*)
+    wf_subst l c s c' ->
+    wf_term l c e t ->
+    wf_subst l c (e::s) (term_var t::c')
+with wf_ctxt_var {p} : lang p -> ctxt p -> ctxt_var p -> Prop :=
+| wf_sort_var : forall l c,
+    (* wf_lang l ->*)
+    wf_ctxt l c ->
+    wf_ctxt_var l c sort_var
+| wf_term_var : forall l c t,
+    (*wf_lang l ->*)
+    wf_sort l c t ->
+    wf_ctxt_var l c (term_var t)
+with wf_ctxt {p} : lang p -> ctxt p -> Prop :=
+| wf_ctxt_nil : forall l, wf_lang l -> wf_ctxt l [::]
+| wf_ctxt_cons : forall l c v,
+    (*wf_lang l ->*)
+    (*wf_ctxt l c ->*)
+    wf_ctxt_var l c v -> wf_ctxt l (v::c)
+with wf_rule {p} : lang p -> rule p -> Prop :=
+| wf_sort_rule : forall l c t,
+    (*wf_lang l ->*)
+    wf_ctxt l c ->
+    ws_exp (size c) t ->
+    wf_rule l (sort (c,t))
+| wf_term_rule : forall l c e t,
+    (*wf_lang l ->*)
+    (*wf_ctxt l c ->*)
+    wf_sort l c t ->
+    ws_exp (size c) e ->
+    wf_rule l (term (c,e,t))
+| wf_sort_eq_rule : forall l c t1 t2,
+    (*wf_lang l ->*)
+    (*wf_ctxt l c ->*)
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    wf_rule l (sort_eq (c,(t1,t2)))
+| wf_term_eq_rule : forall l c e1 e2 t,
+    (*wf_lang l ->*)
+    (*wf_ctxt l c ->*)
+    (*wf_sort l c t->*)
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    wf_rule l (term_eq (c,(e1,e2),t))
+(* TODO: I make common use of this dependent list structure. Codify?*)
+with wf_lang {p} : lang p -> Prop :=
+| wf_lang_nil : wf_lang [::]
+| wf_lang_cons : forall l r, wf_lang l -> wf_rule l r -> wf_lang (r::l).
 
-Fixpoint wf_lang {p : polynomial} (l : lang p) : Prop :=
-  match l with
-  |[::] => True
-  | sort (c, s) :: l' => wf_lang l' /\ wf_ctxt c /\ ws_exp c s
-  | term _ :: l' => wf_lang l'
-  | sort_eq _ :: l' => wf_lang l'
-  | term_eq _ :: l' => wf_lang l'
-  end.
 
-(* This ought to have worked
-Fixpoint ws_exp {p : polynomial} (c : ctxt p) (s : poly_ctx p) { struct s} : Prop :=
-  match s with
-  | Cvar n => n < length c
-  | Ccon _ => True
-  end
-with ws_pf {p1 p2 : polynomial} (c : ctxt p1) (s : Ipoly_functor (poly_ctx p1) p2) { struct s} : Prop :=
-       match s with
-       | pffst _ _ _ _ s'  => ws_prd c s'
-       | pfrst _ _ _ e' => ws_pf c e'
-       end
-with ws_prd {p : polynomial} {n : nat} (c : ctxt p) (s : Iprod_n (poly_ctx p) n) { struct s} : Prop :=
-       match s with
-       | prod0 => True
-       | prodS _ t s' => ws_exp c t /\ ws_prd c s'
-       end.
+(* TODOTODOTODOTOOTODOTODOTODOTODOTODO:
+   preorder type theory! necessary to model weakening the way I want
 *)
