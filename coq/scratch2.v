@@ -82,17 +82,25 @@ Definition sort_rule p : Type := ctxt p * poly_fix p.
 Definition term_rule p : Type := ctxt p * poly_fix p * poly_fix p.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
-Definition sort_eq_rule p : Type := ctxt p * (poly_fix p * poly_fix p).
+(* TODO: two ctxts? *)
+Definition sort_le_rule p : Type := (ctxt p * ctxt p) * (poly_fix p * poly_fix p).
 
-(* TODO: two sorts? *)
-Definition term_eq_rule p : Type := ctxt p * (poly_fix p * poly_fix p) * poly_fix p.
+Definition term_le_rule p : Type :=
+  (ctxt p * ctxt p) * (poly_fix p * poly_fix p) * (poly_fix p * poly_fix p).
 
 (* TODO: inline all of these defs? probably not? *)
 Inductive rule (p : polynomial) : Type :=
 | sort : sort_rule p -> rule p
 | term : term_rule p -> rule p
-| sort_eq : sort_eq_rule p -> rule p
-| term_eq : term_eq_rule p -> rule p.
+| sort_le : sort_le_rule p -> rule p
+| term_le : term_le_rule p -> rule p.
+
+Notation "{ c1 <# c2 |- s1 <# s2 }" := (sort_le ((c1,c2), (s1, s2))) (at level 80).
+Notation "{ c1 <# c2 |- e1 <# e2 .: s1 <# s2 }" :=
+  (term_le ((c1,c2), (e1,e2), (s1, s2))) (at level 80).
+Notation "{ c |- s1 <# s2 }" := (sort_le ((c,c), (s1, s2))) (at level 80).
+Notation "{ c |- e1 <# e2 .: s1 <# s2 }" := (term_le ((c,c), (e1,e2), (s1, s2))) (at level 80).
+Notation "{ c |- e1 <# e2 .: s }" := (term_le ((c,c), (e1,e2), (s, s))) (at level 80).
 
 Definition lang p := list (rule p).
   
@@ -104,18 +112,13 @@ Definition subst_syn : polynomial :=
 
 Definition wf_sort_and_cong {p : polynomial} (wfs : sort_rule p) : lang p :=
   let (c, s) := wfs in
-  [:: sort_eq (c, (s, s)); sort wfs].
+  [:: {c |- s <# s}; sort wfs].
 
 Definition wf_term_and_cong {p : polynomial} (wft : term_rule p) : lang p :=
   let (ct, s) := wft in
   let (c, t) := ct in
-  [:: term_eq (c, (t, t), s); term wft].
+  [::  {c |- t <# t .: s}; term wft].
 
-
-
-(*TODO: put notations in the right place*)
-
-Notation "{s c |- s1 === s2 }" := (sort_eq (c, (s1, s2))) (at level 80).
 
 Definition sub (m n : poly_fix subst_syn) : poly_fix subst_syn :=
   [{subst_syn} 1 | tt , [* m; n]].
@@ -125,7 +128,7 @@ Definition svar (n : nat) : poly_fix subst_syn :=
 
   (* equational theory of substitutions *)
 Definition subst_lang : lang subst_syn :=
-  [:: {s [:: sort_var] |- sub (svar 0) (var 0) === var 0}]
+  [:: { [:: sort_var] |- sub (svar 0) (var 0) <# var 0}]
     ++ (List.flat_map
      wf_sort_and_cong
      [:: ([:: sort_var; sort_var],
@@ -219,9 +222,10 @@ Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
   |[::] => true
   | sort (c, s) :: l' => ws_lang l' && ws_ctxt c && ws_exp (size c) s
   | term (c, t, s) :: l' => ws_lang l' && ws_ctxt c && ws_exp (size c) t && ws_exp (size c) s
-  | sort_eq (c, (s1,s2)) :: l' => ws_lang l' && ws_exp (size c) s1 && ws_exp (size c) s2
-  | term_eq (c, (t1,t2), s) :: l' =>
-    ws_lang l' && ws_exp (size c) t1 && ws_exp (size c) t2 && ws_exp (size c) s
+  | {c1 <# c2 |- s1 <# s2} :: l' => ws_lang l' && ws_exp (size c1) s1 && ws_exp (size c2) s2
+  | {c1 <# c2 |- e1 <# e2 .: s1 <# s2} :: l' =>
+    ws_lang l' && ws_exp (size c1) e1 && ws_exp (size c2) e2
+            && ws_exp (size c1) s1 && ws_exp (size c2) s2
   end.
 
 (* replaces m variables with terms with n free vars*)
@@ -344,6 +348,19 @@ Inductive wf_sort {p} : lang p -> ctxt p -> poly_fix p -> Prop :=
     wf_subst l c s c' ->
     List.In (sort (c',e)) l ->
     wf_sort l c (exp_subst e s)
+with wf_sort_le {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
+| wf_sort_le_by : forall l c1 c2 t1 t2 s1 s2 c1' c2',
+    (* these should be admissible
+       wf_lang l ->
+       wf_ctxt l c -> 
+       wf_ctxt l c' -> 
+       wf_sort l c' t1 -> 
+       wf_sort l c' t2 -> *)
+    wf_subst l c1 s1 c1' ->
+    wf_subst l c2 s2 c2' ->
+    (*todo: subst le*)
+    List.In ({c1' <# c2'|- t1 <# t2}) l ->
+    wf_sort_le l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
 with  wf_term {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
 | wf_term_by : forall l c e t s c',
     (* these should be admissible
@@ -354,17 +371,6 @@ with  wf_term {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
     wf_subst l c s c' ->
     List.In (term (c',e,t)) l ->
     wf_term l c (exp_subst e s) (exp_subst t s)
-with wf_sort_eq {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
-| wf_sort_eq_by : forall l c t1 t2 s c',
-    (* these should be admissible
-       wf_lang l ->
-       wf_ctxt l c -> 
-       wf_ctxt l c' -> 
-       wf_sort l c' t1 -> 
-       wf_sort l c' t2 -> *)
-    wf_subst l c s c' -> (*todo: subst eq*)
-    List.In (sort_eq (c',(t1,t2))) l ->
-    wf_sort_eq l c (exp_subst t1 s) (exp_subst t2 s)
 with wf_subst {p} : lang p -> ctxt p -> psubst p -> ctxt p -> Prop :=
 | wf_subst_nil : forall l c c',
     (* wf_lang l ->*)
@@ -385,6 +391,29 @@ with wf_subst {p} : lang p -> ctxt p -> psubst p -> ctxt p -> Prop :=
     wf_subst l c s c' ->
     wf_term l c e t ->
     wf_subst l c (e::s) (term_var t::c')
+with wf_subst_le {p} : lang p ->
+                       ctxt p -> ctxt p ->
+                       psubst p -> psubst p ->
+                       ctxt p -> ctxt p -> Prop :=
+| wf_subst_le_nil : forall l c1 c2 c1' c2',
+    (* wf_lang l ->*)
+    wf_ctxt l c1 ->
+    wf_ctxt l c1' ->
+    wf_subst_le l c1 c2 [::] [::] c1' c2'
+| wf_subst_le_cons_sort : forall l c s c' e,
+    (* wf_lang l ->
+       wf_ctxt l c ->
+       wf_ctxt l c' ->*)
+    wf_subst l c s c' ->
+    wf_sort l c e ->
+    wf_subst_le l c (e::s) (sort_var::c')
+| wf_subst_le_cons_term : forall l c s c' e t,
+    (* wf_lang l ->
+       wf_ctxt l c ->
+       wf_ctxt l c' ->*)
+    wf_subst l c s c' ->
+    wf_term l c e t ->
+    wf_subst_le l c (e::s) (term_var t::c')
 with wf_ctxt_var {p} : lang p -> ctxt p -> ctxt_var p -> Prop :=
 | wf_sort_var : forall l c,
     (* wf_lang l ->*)
@@ -412,19 +441,20 @@ with wf_rule {p} : lang p -> rule p -> Prop :=
     wf_sort l c t ->
     ws_exp (size c) e ->
     wf_rule l (term (c,e,t))
-| wf_sort_eq_rule : forall l c t1 t2,
+| wf_sort_eq_rule : forall l c1 c2 t1 t2,
     (*wf_lang l ->*)
     (*wf_ctxt l c ->*)
-    wf_sort l c t1 ->
-    wf_sort l c t2 ->
-    wf_rule l (sort_eq (c,(t1,t2)))
-| wf_term_eq_rule : forall l c e1 e2 t,
+    (*wf_ctxt_le l c -> TODO*)
+    wf_sort l c1 t1 ->
+    wf_sort l c2 t2 ->
+    wf_rule l ({ c1 <# c2 |- t1 <# t2})
+| wf_term_eq_rule : forall l c1 c2 e1 e2 t1 t2,
     (*wf_lang l ->*)
     (*wf_ctxt l c ->*)
     (*wf_sort l c t->*)
-    wf_term l c e1 t ->
-    wf_term l c e2 t ->
-    wf_rule l (term_eq (c,(e1,e2),t))
+    wf_term l c1 e1 t1 ->
+    wf_term l c2 e2 t2 ->
+    wf_rule l ({ c1 <# c2 |- e1 <# e2 .: t1 <# t2})
 (* TODO: I make common use of this dependent list structure. Codify?*)
 with wf_lang {p} : lang p -> Prop :=
 | wf_lang_nil : wf_lang [::]
@@ -433,4 +463,5 @@ with wf_lang {p} : lang p -> Prop :=
 
 (* TODOTODOTODOTOOTODOTODOTODOTODOTODO:
    preorder type theory! necessary to model weakening the way I want
+   TODO: If I do preorder type theory, can/should I simplify to only precision judgments?
 *)
