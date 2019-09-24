@@ -336,6 +336,10 @@ Inductive wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -
     wf_subst l c1 c2 s1 s2 c1' c2' ->
     List.In ({r c1' <# c2'|- t1 <# t2}%rule) l ->
     wf_sort l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
+| wf_sort_trans : forall l c1 c2 c3 t1 t2 t3,
+    wf_sort l c1 c2 t1 t2 ->
+    wf_sort l c2 c3 t2 t3 ->
+    wf_sort l c1 c3 t1 t3
 with wf_term {p} : lang p ->
                    ctxt p -> ctxt p ->
                    poly_fix p -> poly_fix p ->
@@ -349,16 +353,25 @@ with wf_term {p} : lang p ->
     wf_subst l c1 c2 s1 s2 c1' c2' ->
     List.In ({r c1' <# c2' |- e1 <# e2.: t1 <# t2}%rule) l ->
     wf_term l c1 c2 (exp_subst e1 s1) (exp_subst e2 s2) (exp_subst t1 s1) (exp_subst t2 s2)
+| wf_term_trans : forall l c1 c2 c3 e1 e2 e3 t1 t2 t3,
+    wf_term l c1 c2 e1 e2 t1 t2 ->
+    wf_term l c2 c3 e2 e3 t2 t3 ->
+    wf_term l c1 c3 e1 e3 t1 t3
 (* TODO: this rule is experimental; 
    definitely needed in some form though.
    Unfortunately probably not this form.
-   Probably needs a single type on term wf.
+   needs a single type on term wf ?
    Single type on term wf probably okay if you have conversion though?
- 
-| wf_term_conv : forall l c1 c2 e1 e2 t1 t2 t1' t2',
+   SOLUTION: coversionL and R
+ *)
+| wf_term_conv_r : forall l c1 c2 c3 e1 e2 t1 t2 t3,
     wf_term l c1 c2 e1 e2 t1 t2 ->
-    wf_sort l c1 c
-    wf_term l c1 c2 e1 e2 t1' t2'*)
+    wf_sort l c2 c3 t2 t3 ->
+    wf_term l c1 c2 e1 e2 t1 t3
+| wf_term_conv_l : forall l c1 c2 c3 e2 e3 t1 t2 t3,
+    wf_term l c2 c3 e2 e3 t2 t3 ->
+    wf_sort l c1 c2 t1 t2 ->
+    wf_term l c1 c2 e2 e3 t1 t3
 with wf_subst {p} : lang p ->
                     ctxt p -> ctxt p ->
                     psubst p -> psubst p ->
@@ -437,6 +450,7 @@ Section LangProps.
          match wfs with
          | wf_sort_by l c1 c2 t1 t2 s1 s2 c1' c2' wfsb _ =>
            wf_subst_lang wfsb
+         | wf_sort_trans l c1 c2 c3 t1 t2 t3 wfs1 _ => wf_sort_lang wfs1
          end
   with wf_subst_lang {p} (l : lang p) c1 c2 s1 s2 c1' c2'
                      (wfsb : wf_subst l c1 c2 s1 s2 c1' c2') : wf_lang l :=
@@ -447,15 +461,57 @@ Section LangProps.
            wf_subst_lang wfsb
          end.
 
-  Lemma wf_term_lang {p} (l : lang p) c1 c2 e1 e2 t1 t2
-             (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_lang l.
+  Fixpoint wf_term_lang {p} (l : lang p) c1 c2 e1 e2 t1 t2
+           (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_lang l :=
+    match wft with
+    | wf_term_by  l c1 c2 e1 e2 t1 t2 s1 s2 c1' c2' wfsb _ => wf_subst_lang wfsb
+    | wf_term_trans l c1 c2 c3 e1 e2 e3 t1 t2 t3 wft1 _ => wf_term_lang wft1
+    | wf_term_conv_r l c1 c2 c3 e1 e2 t1 t2 t3 _ wfs => wf_sort_lang wfs
+    | wf_term_conv_l l c1 c2 c3 e2 e3 t1 t2 t3 _ wfs => wf_sort_lang wfs
+    end.
+
+  Lemma list_triple_ind {A : Type} (P : seq A -> seq A -> seq A -> Prop)
+        (Peee : P [::] [::] [::])
+        (Pccc : forall a1 a2 a3 l1 l2 l3, P l1 l2 l3 -> P (a1::l1) (a2::l2) (a3::l3))
+        (l1 l2 l3 : seq A)
+    : size l1 == size l2 -> size l2 == size l3 -> P l1 l2 l3.
   Proof.
-    case: wft.
-    move => l' c1' c2' e1' e2' t1' t2'.
-    move => s1 s2 c1'' c2''.
-    move /wf_subst_lang => //=.
+    elim: l1 l2 l3.
+    - elim => //=; elim => //=.
+    - move => a1' l1' IH1.
+      elim => //= => a2' l2' IH2.
+      elim => //= => a3' l3' IH3 sz12 sz23.
+      apply Pccc.
+      apply: IH1.
+      move: eqSS sz12 => -> //=.
+      move: eqSS sz23 => -> //=.
   Qed.
 
+  Fixpoint wf_ctxt_size {p} (l : lang p) c1 c2 (wfc : wf_ctxt l c1 c2) : size c1 == size c2.
+  Proof.
+    elim: wfc => //= l' c1' c2' v1 v2.
+    elim => //=.
+    apply: wf_ctxt_size.
+    move => l'' c1'' c2'' t1 t2.
+    elim => //=.
+    
+    apply: wf_ctxt_size.
+    elim: wfv.
+    
+  
+  Lemma wf_ctxt_trans {p} (l : lang p) c1 c2 c3
+        (wfc1 : wf_ctxt l c1 c2) (wfc2 : wf_ctxt l c2 c3) : wf_ctxt l c1 c3.
+  Proof.
+    
+  elim: wfc1 wfc2 => //=.
+  move => l' c1' c2' v1 v2 wfv wfc.
+  have c3c : ~c3 = [::];
+    [by inversion wfc|..].
+  elim: wfc.
+  elim: c3 => [wfc|]; [inversion wfc|].
+  move => v3 c3'.
+  
+  (* TODO: relies on ctxt transitivity *)
   Fixpoint wf_sort_ctxt {p} (l : lang p) c1 c2 t1 t2
            (wfs : wf_sort l c1 c2 t1 t2) : wf_ctxt l c1 c2 :=
     match wfs with
@@ -471,18 +527,17 @@ Section LangProps.
            wf_subst_ctxt wfsb
          end.
 
-  Lemma wf_term_ctxt {p} (l : lang p) c1 c2 e1 e2 t1 t2
-        (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_ctxt l c1 c2.
-  Proof.
-    elim: wft.
-    move => l' c1' c2' e1' e2' t1' t2' s1 s2 c1'' c2''.
-    move /wf_subst_ctxt => //=.
-  Qed.
   
-  Definition wfs {p} l : Type := { pr : ctxt p * poly_fix p | wf_sort' l (fst pr) (snd pr)}.
+  Fixpoint wf_term_ctxt {p} (l : lang p) c1 c2 e1 e2 t1 t2
+        (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_ctxt l c1 c2 :=
+    match wft with
+    | wf_term_by  l c1 c2 e1 e2 t1 t2 s1 s2 c1' c2' wfsb _ => wf_subst_ctxt wfsb
+    | wf_term_conv_r l c1 c2 c3 e1 e2 t1 t2 t3 wft wfs =>
+      wf_ctxt_trans (wf_term_ctxt wft) (wf_sort_ctxt wfs)
+    | wf_term_conv_l l c1 c2 c3 e2 e3 t1 t2 t3 wft wfs =>
+      wf_ctxt_trans (wf_sort_ctxt wfs) (wf_term_ctxt wft)
+    end.
   
-  Definition wft {p} l : Type :=
-    { pr : ctxt p * poly_fix p * poly_fix p | wf_term' l (fst (fst pr)) (snd (fst pr)) (snd pr)}.
 
   Definition wfs_le {p} l (s1 s2 : wft l) : Prop :=
     match s1, s2 with
