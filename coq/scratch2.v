@@ -90,14 +90,20 @@ Inductive rule (p : polynomial) : Type :=
 | sort : ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> rule p
 | term : ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> poly_fix p -> poly_fix p ->  rule p.
 
-Notation "{ c1 <# c2 |- s1 <# s2 }" := (sort c1 c2 s1 s2) (at level 80).
-Notation "{ c1 <# c2 |- e1 <# e2 .: s1 <# s2 }" :=
-  (term c1 c2 e1 e2 s1 s2) (at level 80).
-Notation "{ c |- s1 <# s2 }" := ({ c <# c |- s1 <# s2 }) (at level 80).
-Notation "{ c |- s }" := ({ c |- s <# s }) (at level 80).
-Notation "{ c |- e1 <# e2 .: s1 <# s2 }" := ({ c <# c |- e1 <# e2 .: s1 <# s2 }) (at level 80).
-Notation "{ c |- e1 <# e2 .: s }" := ({ c |- e1 <# e2 .: s <# s }) (at level 80).
-Notation "{ c |- e .: s }" := ({ c |- e <# e .: s }) (at level 80).
+Bind Scope rule_scope with rule.
+Delimit Scope rule_scope with rule.
+Local Open Scope rule_scope.
+Notation "{r c1 <# c2 |- s1 <# s2 }" := (sort c1 c2 s1 s2) (at level 80) : rule_scope.
+Notation "{r c |- s1 <# s2 }" := (sort c c s1 s2) (at level 80):rule_scope.
+Notation "{r c |- s }" := (sort c c s s) (at level 80):rule_scope.
+Notation "{r c1 <# c2 |- e1 <# e2 .: s1 <# s2 }" :=
+  (term c1 c2 e1 e2 s1 s2) (at level 80) : rule_scope.
+Notation "{r c |- e1 <# e2 .: s1 <# s2 }" :=
+  (term c c e1 e2 s1 s2) (at level 80) : rule_scope.
+Notation "{r c |- e1 <# e2 .: s }" :=
+  ({r c |- e1 <# e2 .: s <# s}) (at level 80) : rule_scope.
+Notation "{r c |- e .: s }" := 
+  ({r c |- e <# e.: s}) (at level 80) : rule_scope.
 
 Definition lang p := list (rule p).
 
@@ -116,14 +122,15 @@ Definition svar (n : nat) : poly_fix subst_syn :=
 
   (* equational theory of substitutions *)
 Definition subst_lang : lang subst_syn :=
-  [:: { [:: sort_var] |- sub (svar 0) (var 0) <# var 0};
-     {[:: sort_var; sort_var] |- [{subst_syn} 1 | tt, [* var 0; var 1]]};
-     {[:: sort_var; sort_var; term_var (var 1)] |- [{subst_syn} 1 | tt, [* var 0; var 2]]};
-     {[:: sort_var; term_var (var 0); sort_var] |-
+  [:: {r [:: sort_var] |- sub (svar 0) (var 0) <# var 0};
+     {r[:: sort_var; sort_var] |- [{subst_syn} 1 | tt, [* var 0; var 1]]};
+     {r[:: sort_var; sort_var; term_var (var 1)] |- [{subst_syn} 1 | tt, [* var 0; var 2]]};
+     {r[:: sort_var; term_var (var 0); sort_var] |-
       [{subst_syn} 1 | tt, [* var 1; var 2]] .: var 0};
-     {[:: sort_var; term_var (var 0); sort_var; term_var (var 2)] |-
+     {r[:: sort_var; term_var (var 0); sort_var; term_var (var 2)] |-
       [{subst_syn} 1 | tt, [* var 1; var 3]] .: var 0}
-  ].            
+  ].
+
   (*TODO: finish axioms
     (wf_sort_and_cong ([:: sort_var _; sort_var _],
                        Ccon [++ tt | [* Cvar _ 0; Cvar _ 1]]))
@@ -204,11 +211,11 @@ Fixpoint ws_ctxt {p : polynomial} (c : ctxt p) : bool :=
 Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
   match l with
   |[::] => true
-  | {c1 <# c2 |- s1 <# s2} :: l' => ws_lang l' && ws_exp (size c1) s1 && ws_exp (size c2) s2
-  | {c1 <# c2 |- e1 <# e2 .: s1 <# s2} :: l' =>
+  | {r c1 <# c2 |- s1 <# s2} :: l' => ws_lang l' && ws_exp (size c1) s1 && ws_exp (size c2) s2
+  | {r c1 <# c2 |- e1 <# e2 .: s1 <# s2} :: l' =>
     ws_lang l' && ws_exp (size c1) e1 && ws_exp (size c2) e2
             && ws_exp (size c1) s1 && ws_exp (size c2) s2
-  end.
+  end%rule.
 
 (* replaces m variables with terms with n free vars*)
 Definition ws_subst {p} n (s : psubst p) m : bool :=
@@ -318,10 +325,8 @@ Qed.
    All judgements presuppose that the input language is well-formed to be sensible.
    TODO: should I try to avoid mutual induction?/build in these presuppositions?
  *)
-(* TODO: make clear & clean admissible vs derivable props *)
-(* TODO: include language equality (will change most defs) *)
-(* TODO: move non-le defs out *)
-Inductive  wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
+(* TODO: build in transitivity? and conversion *)
+Inductive wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
 | wf_sort_by : forall l c1 c2 t1 t2 s1 s2 c1' c2',
     (* these should be admissible
        wf_lang l ->
@@ -329,7 +334,7 @@ Inductive  wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p 
        wf_ctxt l c' -> 
        wf_sort l c' t ->  *)
     wf_subst l c1 c2 s1 s2 c1' c2' ->
-    List.In ({c1' <# c2'|- t1 <# t2}) l ->
+    List.In ({r c1' <# c2'|- t1 <# t2}%rule) l ->
     wf_sort l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
 with wf_term {p} : lang p ->
                    ctxt p -> ctxt p ->
@@ -342,8 +347,18 @@ with wf_term {p} : lang p ->
        wf_ctxt l c' -> 
        wf_term l c' e t *)
     wf_subst l c1 c2 s1 s2 c1' c2' ->
-    List.In ({c1' <# c2' |- e1 <# e2.: t1 <# t2}) l ->
+    List.In ({r c1' <# c2' |- e1 <# e2.: t1 <# t2}%rule) l ->
     wf_term l c1 c2 (exp_subst e1 s1) (exp_subst e2 s2) (exp_subst t1 s1) (exp_subst t2 s2)
+(* TODO: this rule is experimental; 
+   definitely needed in some form though.
+   Unfortunately probably not this form.
+   Probably needs a single type on term wf.
+   Single type on term wf probably okay if you have conversion though?
+ 
+| wf_term_conv : forall l c1 c2 e1 e2 t1 t2 t1' t2',
+    wf_term l c1 c2 e1 e2 t1 t2 ->
+    wf_sort l c1 c
+    wf_term l c1 c2 e1 e2 t1' t2'*)
 with wf_subst {p} : lang p ->
                     ctxt p -> ctxt p ->
                     psubst p -> psubst p ->
@@ -385,13 +400,13 @@ with wf_rule {p} : lang p -> rule p -> Prop :=
 | wf_sort_rule : forall l c1 c2 t1 t2,
     (*wf_lang l ->*)
     wf_ctxt l c1 c2 ->
-    wf_rule l ({ c1 <# c2 |- t1 <# t2})
+    wf_rule l ({r c1 <# c2 |- t1 <# t2})
 | wf_term_rule : forall l c1 c2 e1 e2 t1 t2,
     (*wf_lang l ->*)
     (*wf_ctxt l c ->*)
     (*wf_sort l c t->*)
     wf_sort l c1 c2 t1 t2 ->
-    wf_rule l ({ c1 <# c2 |- e1 <# e2 .: t1 <# t2})
+    wf_rule l ({r c1 <# c2 |- e1 <# e2 .: t1 <# t2})
 (* TODO: I make common use of this dependent list structure. Codify?*)
 with wf_lang {p} : lang p -> Prop :=
 | wf_lang_nil : wf_lang [::]
@@ -463,6 +478,23 @@ Section LangProps.
     move => l' c1' c2' e1' e2' t1' t2' s1 s2 c1'' c2''.
     move /wf_subst_ctxt => //=.
   Qed.
+  
+  Definition wfs {p} l : Type := { pr : ctxt p * poly_fix p | wf_sort' l (fst pr) (snd pr)}.
+  
+  Definition wft {p} l : Type :=
+    { pr : ctxt p * poly_fix p * poly_fix p | wf_term' l (fst (fst pr)) (snd (fst pr)) (snd pr)}.
+
+  Definition wfs_le {p} l (s1 s2 : wft l) : Prop :=
+    match s1, s2 with
+    ...
+  
+  Lemma sort_le_refl {p} l : forall s : wft l, 
+  
+  (* Sort and term relations are reflexive trivially *)
+
+  
+  Lemma le_sort_trans {p} (l : lang p) c1 c2 
+  
   
 End LangProps.
 
