@@ -76,49 +76,37 @@ Arguments term_var {p} e.
 Arguments sort_var {p}.
 
 Definition ctxt p := list (ctxt_var p).
-  
-Definition sort_rule p : Type := ctxt p * poly_fix p.
-  
-Definition term_rule p : Type := ctxt p * poly_fix p * poly_fix p.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
-(* TODO: two ctxts? *)
-Definition sort_le_rule p : Type := (ctxt p * ctxt p) * (poly_fix p * poly_fix p).
+(* Well-typed sorts are those which are related to themselves by the sort rules of a language*)
+Definition sort_rule p : Type := (ctxt p * ctxt p) * (poly_fix p * poly_fix p).
 
-Definition term_le_rule p : Type :=
+(* Well-typed terms are those which are related to themselves by the sort rules of a language*)
+Definition term_rule p : Type :=
   (ctxt p * ctxt p) * (poly_fix p * poly_fix p) * (poly_fix p * poly_fix p).
 
-(* TODO: inline all of these defs? probably not? *)
+(* TODO: inline these or no? *)
 Inductive rule (p : polynomial) : Type :=
-| sort : sort_rule p -> rule p
-| term : term_rule p -> rule p
-| sort_le : sort_le_rule p -> rule p
-| term_le : term_le_rule p -> rule p.
+| sort : ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> rule p
+| term : ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> poly_fix p -> poly_fix p ->  rule p.
 
-Notation "{ c1 <# c2 |- s1 <# s2 }" := (sort_le ((c1,c2), (s1, s2))) (at level 80).
+Notation "{ c1 <# c2 |- s1 <# s2 }" := (sort c1 c2 s1 s2) (at level 80).
 Notation "{ c1 <# c2 |- e1 <# e2 .: s1 <# s2 }" :=
-  (term_le ((c1,c2), (e1,e2), (s1, s2))) (at level 80).
-Notation "{ c |- s1 <# s2 }" := (sort_le ((c,c), (s1, s2))) (at level 80).
-Notation "{ c |- e1 <# e2 .: s1 <# s2 }" := (term_le ((c,c), (e1,e2), (s1, s2))) (at level 80).
-Notation "{ c |- e1 <# e2 .: s }" := (term_le ((c,c), (e1,e2), (s, s))) (at level 80).
+  (term c1 c2 e1 e2 s1 s2) (at level 80).
+Notation "{ c |- s1 <# s2 }" := ({ c <# c |- s1 <# s2 }) (at level 80).
+Notation "{ c |- s }" := ({ c |- s <# s }) (at level 80).
+Notation "{ c |- e1 <# e2 .: s1 <# s2 }" := ({ c <# c |- e1 <# e2 .: s1 <# s2 }) (at level 80).
+Notation "{ c |- e1 <# e2 .: s }" := ({ c |- e1 <# e2 .: s <# s }) (at level 80).
+Notation "{ c |- e .: s }" := ({ c |- e <# e .: s }) (at level 80).
 
 Definition lang p := list (rule p).
-  
+
+(*EXAMPLE*)
 (* syntax of single explicit substitutions *)
 Definition subst_syn : polynomial :=
   [:: (nat, 0); (* var (deBruijn) *)
      (unit, 2) (*subst M[N/0] *)
   ].
-
-Definition wf_sort_and_cong {p : polynomial} (wfs : sort_rule p) : lang p :=
-  let (c, s) := wfs in
-  [:: {c |- s <# s}; sort wfs].
-
-Definition wf_term_and_cong {p : polynomial} (wft : term_rule p) : lang p :=
-  let (ct, s) := wft in
-  let (c, t) := ct in
-  [::  {c |- t <# t .: s}; term wft].
-
 
 Definition sub (m n : poly_fix subst_syn) : poly_fix subst_syn :=
   [{subst_syn} 1 | tt , [* m; n]].
@@ -128,18 +116,14 @@ Definition svar (n : nat) : poly_fix subst_syn :=
 
   (* equational theory of substitutions *)
 Definition subst_lang : lang subst_syn :=
-  [:: { [:: sort_var] |- sub (svar 0) (var 0) <# var 0}]
-    ++ (List.flat_map
-     wf_sort_and_cong
-     [:: ([:: sort_var; sort_var],
-          [{subst_syn} 1 | tt, [* var 0; var 1]]);
-        ([:: sort_var; sort_var; term_var (var 1)],
-         [{subst_syn} 1 | tt , [* var 0; var 2]])])
-    ++ (List.flat_map
-          wf_term_and_cong
-          [:: ([:: sort_var; term_var (var 0); sort_var ],
-               [{subst_syn} 1 | tt , [* var 1; var 2]],
-              var 0)]).             
+  [:: { [:: sort_var] |- sub (svar 0) (var 0) <# var 0};
+     {[:: sort_var; sort_var] |- [{subst_syn} 1 | tt, [* var 0; var 1]]};
+     {[:: sort_var; sort_var; term_var (var 1)] |- [{subst_syn} 1 | tt, [* var 0; var 2]]};
+     {[:: sort_var; term_var (var 0); sort_var] |-
+      [{subst_syn} 1 | tt, [* var 1; var 2]] .: var 0};
+     {[:: sort_var; term_var (var 0); sort_var; term_var (var 2)] |-
+      [{subst_syn} 1 | tt, [* var 1; var 3]] .: var 0}
+  ].            
   (*TODO: finish axioms
     (wf_sort_and_cong ([:: sort_var _; sort_var _],
                        Ccon [++ tt | [* Cvar _ 0; Cvar _ 1]]))
@@ -220,8 +204,6 @@ Fixpoint ws_ctxt {p : polynomial} (c : ctxt p) : bool :=
 Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
   match l with
   |[::] => true
-  | sort (c, s) :: l' => ws_lang l' && ws_ctxt c && ws_exp (size c) s
-  | term (c, t, s) :: l' => ws_lang l' && ws_ctxt c && ws_exp (size c) t && ws_exp (size c) s
   | {c1 <# c2 |- s1 <# s2} :: l' => ws_lang l' && ws_exp (size c1) s1 && ws_exp (size c2) s2
   | {c1 <# c2 |- e1 <# e2 .: s1 <# s2} :: l' =>
     ws_lang l' && ws_exp (size c1) e1 && ws_exp (size c2) e2
@@ -338,127 +320,152 @@ Qed.
  *)
 (* TODO: make clear & clean admissible vs derivable props *)
 (* TODO: include language equality (will change most defs) *)
-Inductive wf_sort {p} : lang p -> ctxt p -> poly_fix p -> Prop :=
-| wf_sort_by : forall l c e s c',
+(* TODO: move non-le defs out *)
+Inductive  wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
+| wf_sort_by : forall l c1 c2 t1 t2 s1 s2 c1' c2',
     (* these should be admissible
        wf_lang l ->
        wf_ctxt l c -> 
        wf_ctxt l c' -> 
-       wf_sort l c' e *)
-    wf_subst l c s c' ->
-    List.In (sort (c',e)) l ->
-    wf_sort l c (exp_subst e s)
-with wf_sort_le {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
-| wf_sort_le_by : forall l c1 c2 t1 t2 s1 s2 c1' c2',
-    (* these should be admissible
-       wf_lang l ->
-       wf_ctxt l c -> 
-       wf_ctxt l c' -> 
-       wf_sort l c' t1 -> 
-       wf_sort l c' t2 -> *)
-    wf_subst l c1 s1 c1' ->
-    wf_subst l c2 s2 c2' ->
-    (*todo: subst le*)
+       wf_sort l c' t ->  *)
+    wf_subst l c1 c2 s1 s2 c1' c2' ->
     List.In ({c1' <# c2'|- t1 <# t2}) l ->
-    wf_sort_le l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
-with  wf_term {p} : lang p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
-| wf_term_by : forall l c e t s c',
+    wf_sort l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
+with wf_term {p} : lang p ->
+                   ctxt p -> ctxt p ->
+                   poly_fix p -> poly_fix p ->
+                   poly_fix p -> poly_fix p -> Prop :=
+| wf_term_by : forall l c1 c2 e1 e2 t1 t2 s1 s2 c1' c2',
     (* these should be admissible
        wf_lang l ->
        wf_ctxt l c -> 
        wf_ctxt l c' -> 
        wf_term l c' e t *)
-    wf_subst l c s c' ->
-    List.In (term (c',e,t)) l ->
-    wf_term l c (exp_subst e s) (exp_subst t s)
-with wf_subst {p} : lang p -> ctxt p -> psubst p -> ctxt p -> Prop :=
-| wf_subst_nil : forall l c c',
+    wf_subst l c1 c2 s1 s2 c1' c2' ->
+    List.In ({c1' <# c2' |- e1 <# e2.: t1 <# t2}) l ->
+    wf_term l c1 c2 (exp_subst e1 s1) (exp_subst e2 s2) (exp_subst t1 s1) (exp_subst t2 s2)
+with wf_subst {p} : lang p ->
+                    ctxt p -> ctxt p ->
+                    psubst p -> psubst p ->
+                    ctxt p -> ctxt p -> Prop :=
+| wf_subst_nil : forall l c1 c2 c1' c2',
     (* wf_lang l ->*)
-    wf_ctxt l c ->
-    wf_ctxt l c' ->
-    wf_subst l c [::] c'
-| wf_subst_cons_sort : forall l c s c' e,
+    wf_ctxt l c1 c2 ->
+    wf_subst l c1 c2 [::] [::] c1' c2'
+| wf_subst_cons_sort : forall l c1 c2 s1 s2 c1' c2' t1 t2,
     (* wf_lang l ->
        wf_ctxt l c ->
        wf_ctxt l c' ->*)
-    wf_subst l c s c' ->
-    wf_sort l c e ->
-    wf_subst l c (e::s) (sort_var::c')
-| wf_subst_cons_term : forall l c s c' e t,
+    wf_subst l c1 c2 s1 s2 c1' c2' ->
+    wf_sort l c1 c2 t1 t2 ->
+    wf_subst l c1 c2 (t1::s1) (t2::s2) (sort_var::c1') (sort_var::c2')
+| wf_subst_cons_term : forall l c1 c2 s1 s2 c1' c2' e1 e2 t1 t2,
     (* wf_lang l ->
        wf_ctxt l c ->
        wf_ctxt l c' ->*)
-    wf_subst l c s c' ->
-    wf_term l c e t ->
-    wf_subst l c (e::s) (term_var t::c')
-with wf_subst_le {p} : lang p ->
-                       ctxt p -> ctxt p ->
-                       psubst p -> psubst p ->
-                       ctxt p -> ctxt p -> Prop :=
-| wf_subst_le_nil : forall l c1 c2 c1' c2',
+    wf_subst l c1 c2 s1 s2 c1' c2' ->
+    wf_term l c1 c2 e1 e2 t1 t2 ->
+    wf_subst l c1 c2 (e1::s1) (e2::s2) (term_var t1::c1') (term_var t2::c2')
+with wf_ctxt_var {p} : lang p -> ctxt p -> ctxt p -> ctxt_var p -> ctxt_var p -> Prop :=
+| wf_sort_var : forall l c1 c2,
     (* wf_lang l ->*)
-    wf_ctxt l c1 ->
-    wf_ctxt l c1' ->
-    wf_subst_le l c1 c2 [::] [::] c1' c2'
-| wf_subst_le_cons_sort : forall l c s c' e,
-    (* wf_lang l ->
-       wf_ctxt l c ->
-       wf_ctxt l c' ->*)
-    wf_subst l c s c' ->
-    wf_sort l c e ->
-    wf_subst_le l c (e::s) (sort_var::c')
-| wf_subst_le_cons_term : forall l c s c' e t,
-    (* wf_lang l ->
-       wf_ctxt l c ->
-       wf_ctxt l c' ->*)
-    wf_subst l c s c' ->
-    wf_term l c e t ->
-    wf_subst_le l c (e::s) (term_var t::c')
-with wf_ctxt_var {p} : lang p -> ctxt p -> ctxt_var p -> Prop :=
-| wf_sort_var : forall l c,
-    (* wf_lang l ->*)
-    wf_ctxt l c ->
-    wf_ctxt_var l c sort_var
-| wf_term_var : forall l c t,
+    wf_ctxt l c1 c2 ->
+    wf_ctxt_var l c1 c2 sort_var sort_var
+| wf_term_var : forall l c1 c2 t1 t2,
     (*wf_lang l ->*)
-    wf_sort l c t ->
-    wf_ctxt_var l c (term_var t)
-with wf_ctxt {p} : lang p -> ctxt p -> Prop :=
-| wf_ctxt_nil : forall l, wf_lang l -> wf_ctxt l [::]
-| wf_ctxt_cons : forall l c v,
+    wf_sort l c1 c2 t1 t2 ->
+    wf_ctxt_var l c1 c2 (term_var t1) (term_var t2)
+with wf_ctxt {p} : lang p -> ctxt p -> ctxt p -> Prop :=
+| wf_ctxt_nil : forall l, wf_lang l -> wf_ctxt l [::] [::]
+| wf_ctxt_cons : forall l c1 c2 v1 v2,
     (*wf_lang l ->*)
     (*wf_ctxt l c ->*)
-    wf_ctxt_var l c v -> wf_ctxt l (v::c)
+    wf_ctxt_var l c1 c2 v1 v2 -> wf_ctxt l (v1::c1) (v2::c2)
 with wf_rule {p} : lang p -> rule p -> Prop :=
-| wf_sort_rule : forall l c t,
+| wf_sort_rule : forall l c1 c2 t1 t2,
     (*wf_lang l ->*)
-    wf_ctxt l c ->
-    ws_exp (size c) t ->
-    wf_rule l (sort (c,t))
-| wf_term_rule : forall l c e t,
-    (*wf_lang l ->*)
-    (*wf_ctxt l c ->*)
-    wf_sort l c t ->
-    ws_exp (size c) e ->
-    wf_rule l (term (c,e,t))
-| wf_sort_eq_rule : forall l c1 c2 t1 t2,
-    (*wf_lang l ->*)
-    (*wf_ctxt l c ->*)
-    (*wf_ctxt_le l c -> TODO*)
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
+    wf_ctxt l c1 c2 ->
     wf_rule l ({ c1 <# c2 |- t1 <# t2})
-| wf_term_eq_rule : forall l c1 c2 e1 e2 t1 t2,
+| wf_term_rule : forall l c1 c2 e1 e2 t1 t2,
     (*wf_lang l ->*)
     (*wf_ctxt l c ->*)
     (*wf_sort l c t->*)
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
+    wf_sort l c1 c2 t1 t2 ->
     wf_rule l ({ c1 <# c2 |- e1 <# e2 .: t1 <# t2})
 (* TODO: I make common use of this dependent list structure. Codify?*)
 with wf_lang {p} : lang p -> Prop :=
 | wf_lang_nil : wf_lang [::]
 | wf_lang_cons : forall l r, wf_lang l -> wf_rule l r -> wf_lang (r::l).
+
+(* well-typed sorts, terms are the reflexive case *)
+Definition wf_sort' p l c s : Prop := @wf_sort p l c c s s.
+Definition wf_term' p l c e s : Prop := @wf_term p l c c e e s s.
+Definition wf_subst' p l c s c' : Prop := @wf_subst p l c c s s c' c'.
+Definition wf_ctxt' p l c : Prop := @wf_ctxt p l c c.
+
+Section LangProps.
+
+  Fixpoint wf_ctxt_lang {p} (l : lang p) c1 c2
+           (wfc : wf_ctxt l c1 c2) : wf_lang l :=
+    match wfc with
+    | wf_ctxt_nil l' pf => pf
+    | wf_ctxt_cons l' c1' c2' v1 v2 wfv => wf_ctxt_var_lang wfv
+    end
+  with wf_ctxt_var_lang {p} (l : lang p) c1 c2 v1 v2
+                        (wfv : wf_ctxt_var l c1 c2 v1 v2) : wf_lang l :=
+         match wfv with
+         | wf_sort_var l c1 c2 wfc => wf_ctxt_lang wfc
+         | wf_term_var l c1 c2 t1 t2 wfs => wf_sort_lang wfs
+         end
+  with wf_sort_lang {p} (l : lang p) c1 c2 t1 t2
+                    (wfs : wf_sort l c1 c2 t1 t2) : wf_lang l :=
+         match wfs with
+         | wf_sort_by l c1 c2 t1 t2 s1 s2 c1' c2' wfsb _ =>
+           wf_subst_lang wfsb
+         end
+  with wf_subst_lang {p} (l : lang p) c1 c2 s1 s2 c1' c2'
+                     (wfsb : wf_subst l c1 c2 s1 s2 c1' c2') : wf_lang l :=
+         match wfsb with
+         | wf_subst_nil l c1 c2 c1' c2' wfc => wf_ctxt_lang wfc
+         | wf_subst_cons_sort l c1 c2 s1 s2 c1' c2' _ _ wfsb _ 
+         | wf_subst_cons_term l c1 c2 s1 s2 c1' c2' _ _ _ _ wfsb _ =>
+           wf_subst_lang wfsb
+         end.
+
+  Lemma wf_term_lang {p} (l : lang p) c1 c2 e1 e2 t1 t2
+             (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_lang l.
+  Proof.
+    case: wft.
+    move => l' c1' c2' e1' e2' t1' t2'.
+    move => s1 s2 c1'' c2''.
+    move /wf_subst_lang => //=.
+  Qed.
+
+  Fixpoint wf_sort_ctxt {p} (l : lang p) c1 c2 t1 t2
+           (wfs : wf_sort l c1 c2 t1 t2) : wf_ctxt l c1 c2 :=
+    match wfs with
+    | wf_sort_by l c1 c2 t1 t2 s1 s2 c1' c2' wfsb _ =>
+      wf_subst_ctxt wfsb
+    end
+  with wf_subst_ctxt {p} (l : lang p) c1 c2 s1 s2 c1' c2'
+                     (wfsb : wf_subst l c1 c2 s1 s2 c1' c2') :=
+         match wfsb with
+         | wf_subst_nil l c1 c2 c1' c2' wfc => wfc
+         | wf_subst_cons_sort l c1 c2 s1 s2 c1' c2' _ _ wfsb _ 
+         | wf_subst_cons_term l c1 c2 s1 s2 c1' c2' _ _ _ _ wfsb _ =>
+           wf_subst_ctxt wfsb
+         end.
+
+  Lemma wf_term_ctxt {p} (l : lang p) c1 c2 e1 e2 t1 t2
+        (wft : wf_term l c1 c2 e1 e2 t1 t2) : wf_ctxt l c1 c2.
+  Proof.
+    elim: wft.
+    move => l' c1' c2' e1' e2' t1' t2' s1 s2 c1'' c2''.
+    move /wf_subst_ctxt => //=.
+  Qed.
+  
+End LangProps.
+
 
 
 (* TODOTODOTODOTOOTODOTODOTODOTODOTODO:
