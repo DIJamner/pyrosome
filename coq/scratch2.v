@@ -645,6 +645,7 @@ Proof.
   split; case; solve_wf.
 Qed.
 Hint Resolve <- wf_ctxt_conv 0 : wf_hints.
+Coercion ctxt_coerce p (l : lang p) c1 c2 := fst (wf_ctxt_conv l c1 c2).
 
 Lemma wf_ctxt_var_conv p (l : lang p) c1 c2 v1 v2
   : wf_ctxt_var l c1 c2 v1 v2 <-> wf_ctxt_var_ l c1 c2 v1 v2.
@@ -652,193 +653,122 @@ Proof.
   split; case; solve_wf.
 Qed.
 Hint Resolve <- wf_ctxt_var_conv 0 : wf_hints.
+Coercion ctxt_var_coerce p (l : lang p) c1 c2 v1 v2 := fst (wf_ctxt_var_conv l c1 c2 v1 v2).
 
-(* transitivity lemmas*)
-Lemma wf_ctxt_var_trans p (l : lang p) c1 c2 c3 v1 v2 v3
-         (wfv12 : wf_ctxt_var l c1 c2 v1 v2)
-         (wfv23 : wf_ctxt_var l c2 c3 v2 v3)
-  : wf_ctxt_var l c1 c3 v1 v3
-with wf_ctxt_trans p (l : lang p) c1 c2 c3
-         (wfv12 : wf_ctxt l c1 c2)
-         (wfv23 : wf_ctxt l c2 c3)
-     : wf_ctxt l c1 c3.
+Inductive wf_ctxt_trans p (l : lang p) : ctxt p -> ctxt p -> ctxt p -> Prop :=
+| wf_ctxt_trans_nil : wf_ctxt_trans l [::] [::] [::]
+| wf_ctxt_trans_cons : forall c1 c2 c3 v1 v2 v3,
+    wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3 ->
+    wf_ctxt_trans l (v1::c1) (v2::c2) (v3::c3)
+with wf_ctxt_var_trans p (l : lang p)
+      : ctxt p -> ctxt p -> ctxt p ->
+        ctxt_var p -> ctxt_var p -> ctxt_var p -> Prop :=
+| wf_sort_var_trans : forall c1 c2 c3,
+    wf_ctxt_trans l c1 c2 c3 ->
+    wf_ctxt_var_trans l c1 c2 c3 sort_var sort_var sort_var
+| wf_term_var_trans : forall c1 c2 c3 t1 t2 t3,
+    wf_ctxt_trans l c1 c2 c3 ->
+    wf_sort l c1 c2 t1 t2 ->
+    wf_sort l c2 c3 t2 t3 ->
+    wf_ctxt_var_trans l c1 c2 c3 (term_var t1) (term_var t2) (term_var t3).
+Hint Constructors wf_ctxt_trans.
+Hint Constructors wf_ctxt_var_trans.
+
+
+Lemma wf_ctxt_nil_inv_l p (l : lang p) c : wf_ctxt l c [::] -> c = [::].
 Proof.
-  - move: wfv12 wfv23 => /wf_ctxt_var_conv.
-    case.
-    + move => wfc12 /wf_ctxt_var_conv.
-      case.
-      * move => wfc23.
-        rewrite wf_ctxt_var_conv.
+  move => wf; inversion wf => //=.
+Qed.
+
+Lemma wf_ctxt_nil_inv_r p (l : lang p) c : wf_ctxt l [::] c -> c = [::].
+Proof.
+  move => wf; inversion wf => //=.
+Qed.
+
+Derive Inversion wf_ctxt_inv with (forall {p} (l : lang p) c1 c2, wf_ctxt l c1 c2) Sort Prop.
+Derive Inversion wf_ctxt_var_inv with
+    (forall {p} (l : lang p) c1 c2 v1 v2, wf_ctxt_var l c1 c2 v1 v2) Sort Prop.
+
+Scheme wf_ctxt_cv_ind := Minimality for wf_ctxt Sort Prop
+with wf_ctxt_var_cv_ind := Minimality for wf_ctxt_var Sort Prop.
+
+Combined Scheme cv_mutind from wf_ctxt_cv_ind, wf_ctxt_var_cv_ind.
+Check cv_mutind.
+
+Scheme wf_ctxt_cv_trans_ind := Minimality for wf_ctxt_trans Sort Prop
+with wf_ctxt_var_cv_trans_ind := Minimality for wf_ctxt_var_trans Sort Prop.
+
+Combined Scheme cv_trans_mutind from wf_ctxt_cv_trans_ind, wf_ctxt_var_cv_trans_ind.
+Check cv_trans_mutind.
+
+(*Almost done!!!! just need to convince Coq 
+that c2 doesn't need to decrease on wf_ctxt_var
+Aka provide some sort of measure that decreases when wf_ctxt_var calls wf_ctxt *)
+Fixpoint wf_ctxt_to_trans' (n : nat) p (l : lang p) (c1 c2 c3 :ctxt p) {struct n}
+  : n = 2 * size c1 -> wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt_trans l c1 c2 c3
+with wf_ctxt_var_to_trans' (n : nat) p (l : lang p) c1 c2 c3 v1 v2 v3 {struct n}
+     : n = (2 * size c1).+1 ->
+       wf_ctxt_var l c1 c2 v1 v2 ->
+       wf_ctxt_var l c2 c3 v2 v3 ->
+       wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3.
+Proof.
+  - refine (match n as n' return n' = 2 * size c1 -> _ -> _ -> _ with
+              | 0 => _
+              | S n0 => _
+            end).
+    + case c1.
+      * move => _ wf2 wf3.
+        inversion wf2.
+        rewrite -H2 in wf3.
+        inversion wf3.
+        constructor => //=.
+      * move => c l' neq; inversion neq.
+    + move => neq wf1 wf2.
+      inversion wf1.
+      rewrite -H2 in wf2;
+      inversion wf2;
+      constructor => //=.
+      rewrite -H4 in wf2;
+      inversion wf2;
+      constructor => //=.
+      apply: (wf_ctxt_var_to_trans' n0) => //=.
+      rewrite -H3 in neq.
+      simpl in neq.
+      rewrite mulnSr in neq.
+      rewrite addn2 in neq.
+      inversion neq.
+      done.
+  - refine (match n as n' return n' = (2 * size c1).+1 -> _ -> _ -> _ with
+              | 0 => _
+              | S n0 => _
+            end).
+    + move => neq;
+      inversion neq.
+    + move => neq wf1 wf2; inversion neq.
+      inversion wf1;
+      rewrite <- H6 in wf2;
+        inversion wf2;
         constructor.
-        apply (wf_ctxt_trans _ _ _ _ _ wfc12 wfc23).
-      * 
-  move
-  case: wfv12 wfv23; try solve_wf.
-  
-  eapply wf_ctxt_trans_; eauto.
-  Show Proof.
+      * apply: (wf_ctxt_to_trans' n0) => //=.
+      * apply: (wf_ctxt_to_trans' n0) => //=.
+        apply: wf_sort_ctxt; eauto.
+        apply: wf_sort_ctxt; eauto.
+      * done.
+      * done.
+Qed. 
+
+Lemma wf_ctxt_to_trans p (l : lang p) (c1 c2 c3 :ctxt p)
+  : wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt_trans l c1 c2 c3.
+Proof.
+  apply: wf_ctxt_to_trans'; eauto.
 Qed.
-
-with wf_ctxt_var_trans p (l : lang p) c1 c2 c3 v1 v2 v3
-         (wfv12 : wf_ctxt_var l c1 c2 v1 v2)
-         (wfv23 : wf_ctxt_var l c2 c3 v2 v3)
-  : wf_ctxt_var l c1 c3 v1 v3
-with wf_ctxt_trans p (l : lang p) c1 c2 c3
-         (wfv12 : wf_ctxt l c1 c2)
-         (wfv23 : wf_ctxt l c2 c3)
-     : wf_ctxt l c1 c3.
-
-Fixpoint wf_ctxt_var_trans_ p (l : lang p) c1 c2 c3 v1 v2 v3
-         (wfv12 : wf_ctxt_var_ l c1 c2 v1 v2)
-         (wfv23 : wf_ctxt_var_ l c2 c3 v2 v3)
-  : wf_ctxt_var l c1 c3 v1 v3 :=
-  match iffLR (wf_ctxt_var_conv l c1 c2 v1 v2) wfv12,
-        iffLR (wf_ctxt_var_conv l c2 c3  _ _) wfv23 with
-  | wf_sort_var_ wfc, wf_sort_var_ wfc2  =>
-    iffRL (wf_ctxt_var_conv l c1 c3 _ _) (wf_sort_var_ (wf_ctxt_trans wfc wfc2))
-  | wf_term_var_ t1 t2 wfs1, wf_term_var_ t1' t2' wfs2 => _
-  | _,_ => _
-  end
-with wf_ctxt_var_trans p (l : lang p) c1 c2 c3 v1 v2 v3
-         (wfv12 : wf_ctxt_var l c1 c2 v1 v2)
-         (wfv23 : wf_ctxt_var l c2 c3 v2 v3)
-  : wf_ctxt_var l c1 c3 v1 v3 :=
-with wf_ctxt_trans p (l : lang p) c1 c2 c3
-         (wfv12 : wf_ctxt l c1 c2)
-         (wfv23 : wf_ctxt l c2 c3)
-     : wf_ctxt l c1 c3 :=
-       match iffLR (wf_ctxt_conv l c1 c2) wfv12,
-        iffLR (wf_ctxt_conv l c2 c3) wfv23 with
-       | _,_ => _
-       end.
-
+                                                        
+Lemma wf_ctxt_var_to_trans p (l : lang p) c1 c2 c3 v1 v2 v3
+     : wf_ctxt_var l c1 c2 v1 v2 ->
+       wf_ctxt_var l c2 c3 v2 v3 ->
+       wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3.
 Proof.
-  refine(fun wf12 =>
-           match wf12 in wf_ctxt_var_ _ _ _ v1 v2
-                 return wf_ctxt_var_ l c2 c3 v2 v3 -> wf_ctxt_var_ l c1 c3 v1 v3 with
-           | wf_sort_var_ wfc => _
-           | wf_term_var_ t1 t2 wfs => _
-           end).
-  move => wf23.
-  destruct wf23.
-  constructor.
-  apply wf_ctxt_conv.
-  Focus 2.
-  constructor.
-  
-  refine(fun wf23 =>
-           match wf23 as wf23' in wf_ctxt_var_ _ _ _ v1 v2
-                 return wf_ctxt_var_ l c1 c3 v1 v3 with
-           | wf_sort_var_ wfc => _
-           | wf_term_var_ t1 t2 wfs => _
-           end).
-  
-  constructor.
-  Focus 2.
-  refi
-  case /wf_ctxt_var_conv => wfc12.
-  case /wf_ctxt_var_conv => wfc23.
-  rewrite wf_ctxt_var_conv.
-  constructor.
-  Show Proof.
-  solve_wf.
-  auto with wf_hints.
-  auto.
-  auto.
-  c1' c2' v1 v2.
-  case /wf_ctxt_var_conv => wf12.
-  move /wf_ctxt_conv => wf23.
-  apply (iffRL (wf_ctxt_conv l c1 c3)).
-
-Lemma wf_ctxt_trans p (l : lang p) c1 c2 c3
-  : wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3.
-Proof.
-  case /wf_ctxt_conv => //= c1' c2' v1 v2.
-  case /wf_ctxt_var_conv => wf12.
-  move /wf_ctxt_conv => wf23.
-  apply (iffRL (wf_ctxt_conv l c1 c3)).
-    
-
-  Lemma wf_sort_conv : forall p (l : lang p) c1 c2 t1 t2,
-      wf_sort l c1 c2 t1 t2 <-> wf_sort_ l c1 c2 t1 t2.
-  Proof.
-    move => p l c1 c2.
-    split; case; try solve_wf.
-    intros.
-    apply:wf_sort_trans; try solve_wf.
-    TODO: needs context transitivity
-  Qed.
-  
-
-End GoodConstructors.
-
-  
-(* transitivity *)
-Lemma wf_ctxt_trans {p} (l : lang p) c1 c2 c3
-  : wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3.
-Proof.
-  refine (list_triple_ind
-            (fun c1 c2 c3 =>  wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3)
-            (fun wf _ => wf) _ c1 c2 c3 _ _).
-  move => v1 v2 v3 c1' c2' c3' IH wf12 wf23.
-  apply wf_ctxt_cons_r_invert
-  destruct wf12.
-    destruct wf23; try solve_wf.
-  constr_wf; try solve_wf.
-  inversion wf23.
-  
-  destruct H.
-  destruct H2.
-  destruct H0.
-  destruct H1.
-  destruct H3.
-  apply: wf_ctxt_cons; try solve_wf.
-  Show Proof.
-  
-          .
-  refine (match wf12 in wf_ctxt l' c1' c2' return wf_ctxt l' c2' c3 -> wf_ctxt l' c1' c3 with
-          | wf_ctxt_nil l' wfl => _
-          | wf_ctxt_cons l' c1' c2' v1 v2 wfl wfc wfv => _
-          end).
-  refine (fun wf23 => match wf23 in wf_ctxt l' c2' c3' return wf_ctxt l' [::] c3' with
-                      | wf_ctxt_nil l' wft => wf_ctxt_nil wft
-                      | wf_ctxt_cons l' c1' c2' v1 v2 wfl wfc wfv => _
-                      end).
-
-Lemma wf_ctxt_trans {p} (l : lang p) c1 c2 c3
-      (wf12 : wf_ctxt l c1 c2)
-      (wf23 : wf_ctxt l c2 c3)
-  : wf_ctxt l c1 c3.
-Proof.
-  have sz12 : size c1 == size c2.
-  by apply: wf_ctxt_size; eauto.
-  have sz23 : size c2 == size c3.
-  by apply: wf_ctxt_size; eauto.
-  move: sz12 sz23 wf12 wf23.
-  apply (list_triple_ind (fun c1 c2 c3 => wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3)).
-  induction c1, c2, c3, _, _ using list_triple_ind.
-  apply: list_triple_ind wf12 wf23.
-  elim: wf12 wf23 => //= l' c1' c2' v1 v2 wfl'.
-  
-
-(* Minimal constructors *)
-Definition wf_sort_by' {p} (l : lang p) c1 c2 t1 t2 s1 s2 c1' c2'
-           (wfs : wf_sort l c1 c2 t1 t2)
-           (wfsb : wf_subst l c1 c2 s1 s2 c1' c2')
-           (rin : List.In ({r c1' <# c2'|- t1 <# t2}%rule) l)
-  : wf_sort l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2).
-Proof.
-  solve_wf.
-Qed.
-
-Definition wf_sort_trans' {p} (l : lang p) c1 c2 c3 t1 t2 t3
-           (wfs12 : wf_sort l c1 c2 t1 t2)
-           (wfs23 : wf_sort l c2 c3 t2 t3)
-  :  wf_sort l c1 c3 t1 t3.
-Proof.
-  apply:wf_sort_trans; try solve_wf.
-  
-  solve_wf.
+  apply: wf_ctxt_var_to_trans'; eauto.
 Qed.
   
 
