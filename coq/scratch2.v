@@ -655,62 +655,13 @@ Qed.
 Hint Resolve <- wf_ctxt_var_conv 0 : wf_hints.
 Coercion ctxt_var_coerce p (l : lang p) c1 c2 v1 v2 := fst (wf_ctxt_var_conv l c1 c2 v1 v2).
 
-Inductive wf_ctxt_trans p (l : lang p) : ctxt p -> ctxt p -> ctxt p -> Prop :=
-| wf_ctxt_trans_nil : wf_ctxt_trans l [::] [::] [::]
-| wf_ctxt_trans_cons : forall c1 c2 c3 v1 v2 v3,
-    wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3 ->
-    wf_ctxt_trans l (v1::c1) (v2::c2) (v3::c3)
-with wf_ctxt_var_trans p (l : lang p)
-      : ctxt p -> ctxt p -> ctxt p ->
-        ctxt_var p -> ctxt_var p -> ctxt_var p -> Prop :=
-| wf_sort_var_trans : forall c1 c2 c3,
-    wf_ctxt_trans l c1 c2 c3 ->
-    wf_ctxt_var_trans l c1 c2 c3 sort_var sort_var sort_var
-| wf_term_var_trans : forall c1 c2 c3 t1 t2 t3,
-    wf_ctxt_trans l c1 c2 c3 ->
-    wf_sort l c1 c2 t1 t2 ->
-    wf_sort l c2 c3 t2 t3 ->
-    wf_ctxt_var_trans l c1 c2 c3 (term_var t1) (term_var t2) (term_var t3).
-Hint Constructors wf_ctxt_trans.
-Hint Constructors wf_ctxt_var_trans.
-
-
-Lemma wf_ctxt_nil_inv_l p (l : lang p) c : wf_ctxt l c [::] -> c = [::].
-Proof.
-  move => wf; inversion wf => //=.
-Qed.
-
-Lemma wf_ctxt_nil_inv_r p (l : lang p) c : wf_ctxt l [::] c -> c = [::].
-Proof.
-  move => wf; inversion wf => //=.
-Qed.
-
-Derive Inversion wf_ctxt_inv with (forall {p} (l : lang p) c1 c2, wf_ctxt l c1 c2) Sort Prop.
-Derive Inversion wf_ctxt_var_inv with
-    (forall {p} (l : lang p) c1 c2 v1 v2, wf_ctxt_var l c1 c2 v1 v2) Sort Prop.
-
-Scheme wf_ctxt_cv_ind := Minimality for wf_ctxt Sort Prop
-with wf_ctxt_var_cv_ind := Minimality for wf_ctxt_var Sort Prop.
-
-Combined Scheme cv_mutind from wf_ctxt_cv_ind, wf_ctxt_var_cv_ind.
-Check cv_mutind.
-
-Scheme wf_ctxt_cv_trans_ind := Minimality for wf_ctxt_trans Sort Prop
-with wf_ctxt_var_cv_trans_ind := Minimality for wf_ctxt_var_trans Sort Prop.
-
-Combined Scheme cv_trans_mutind from wf_ctxt_cv_trans_ind, wf_ctxt_var_cv_trans_ind.
-Check cv_trans_mutind.
-
-(*Almost done!!!! just need to convince Coq 
-that c2 doesn't need to decrease on wf_ctxt_var
-Aka provide some sort of measure that decreases when wf_ctxt_var calls wf_ctxt *)
 Fixpoint wf_ctxt_to_trans' (n : nat) p (l : lang p) (c1 c2 c3 :ctxt p) {struct n}
-  : n = 2 * size c1 -> wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt_trans l c1 c2 c3
+  : n = 2 * size c1 -> wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3
 with wf_ctxt_var_to_trans' (n : nat) p (l : lang p) c1 c2 c3 v1 v2 v3 {struct n}
      : n = (2 * size c1).+1 ->
        wf_ctxt_var l c1 c2 v1 v2 ->
        wf_ctxt_var l c2 c3 v2 v3 ->
-       wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3.
+       wf_ctxt_var l c1 c3 v1 v3.
 Proof.
   - refine (match n as n' return n' = 2 * size c1 -> _ -> _ -> _ with
               | 0 => _
@@ -726,17 +677,21 @@ Proof.
     + move => neq wf1 wf2.
       inversion wf1.
       rewrite -H2 in wf2;
-      inversion wf2;
+        inversion wf2;
+      apply wf_ctxt_conv;
       constructor => //=.
       rewrite -H4 in wf2;
-      inversion wf2;
-      constructor => //=.
+        inversion wf2.
+      apply wf_ctxt_conv;
+        constructor => //=.
       apply: (wf_ctxt_var_to_trans' n0) => //=.
       rewrite -H3 in neq.
       simpl in neq.
       rewrite mulnSr in neq.
       rewrite addn2 in neq.
       inversion neq.
+      done.
+      exact H1.
       done.
   - refine (match n as n' return n' = (2 * size c1).+1 -> _ -> _ -> _ with
               | 0 => _
@@ -747,30 +702,41 @@ Proof.
     + move => neq wf1 wf2; inversion neq.
       inversion wf1;
       rewrite <- H6 in wf2;
-        inversion wf2;
+      inversion wf2;
+        apply wf_ctxt_var_conv;
         constructor.
-      * apply: (wf_ctxt_to_trans' n0) => //=.
-      * apply: (wf_ctxt_to_trans' n0) => //=.
+      * apply: (wf_ctxt_to_trans' n0) => //=.        
+        exact H1.
+        done.
+      * have wfs13 : wf_sort l c1 c3 t1 t3.
+        apply: wf_sort_trans.
+        done.
+        apply: (wf_ctxt_to_trans' n0) => //=.
         apply: wf_sort_ctxt; eauto.
         apply: wf_sort_ctxt; eauto.
-      * done.
-      * done.
+        eauto.
+        eauto.
+        done.
 Qed. 
 
+
 Lemma wf_ctxt_to_trans p (l : lang p) (c1 c2 c3 :ctxt p)
-  : wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt_trans l c1 c2 c3.
+  : wf_ctxt l c1 c2 -> wf_ctxt l c2 c3 -> wf_ctxt l c1 c3.
 Proof.
-  apply: wf_ctxt_to_trans'; eauto.
+  apply: wf_ctxt_to_trans' => //=.
 Qed.
                                                         
 Lemma wf_ctxt_var_to_trans p (l : lang p) c1 c2 c3 v1 v2 v3
      : wf_ctxt_var l c1 c2 v1 v2 ->
        wf_ctxt_var l c2 c3 v2 v3 ->
-       wf_ctxt_var_trans l c1 c2 c3 v1 v2 v3.
+       wf_ctxt_var l c1 c3 v1 v3.
 Proof.
   apply: wf_ctxt_var_to_trans'; eauto.
 Qed.
-  
+
+
+
+Fail Define fls := 0.
 
   Inductive wf_sort {p} : lang p -> ctxt p -> ctxt p -> poly_fix p -> poly_fix p -> Prop :=
 | wf_sort_trans : forall l c1 c2 c3 t1 t2 t3,
