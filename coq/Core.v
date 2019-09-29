@@ -16,80 +16,36 @@ Load Exp.
  *)
 Inductive wf_sort {p} : lang p -> ctx p -> exp p -> Prop :=
 | wf_sort_by : forall l c t,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c ->
-    (* well-formed input *)
     List.In ({| c|- t}) l ->
     wf_sort l c t
 | wf_sort_subst : forall l c s c' t',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c ->
-    (* well-formed input *)
     wf_subst l c s c' ->
     wf_sort l c' t' ->
     wf_sort l c t'[/s/]
 with le_sort {p} : lang p -> ctx p -> ctx p -> exp p -> exp p -> Prop :=
 | le_sort_by : forall l c1 c2 t1 t2,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c1 t2 ->
-    (* well-formed input *)
     List.In ({< c1 <# c2 |- t1 <# t2}) l ->
     le_sort l c1 c2 t1 t2
 | le_sort_subst : forall l c1 c2 s1 s2 c1' c2' t1' t2',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1'[/s1/] ->
-    wf_sort l c1 t2'[/s2/] ->
-    (* well-formed input *)
     le_subst l c1 c2 s1 s2 c1' c2' ->
     le_sort l c1' c2' t1' t2' ->
     le_sort l c1 c2 t1'[/s1/] t2'[/s2/]
 | le_sort_refl : forall l c t,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c ->
-    le_ctx l c c ->
-    wf_sort l c t ->
-    (* well-formed input *)
     List.In ({| c |- t }) l ->
     le_sort l c c t t
 | le_sort_trans : forall l c1 c12 c2 t1 t12 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    (* well-formed input *)
     le_sort l c1 c12 t1 t12 ->
     le_sort l c12 c2 t12 t2 ->
     le_sort l c1 c2 t1 t2
 with wf_term {p} : lang p -> ctx p -> exp p -> exp p -> Prop :=
 | wf_term_by : forall l c e t,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c ->
-    wf_sort l c t ->
-    (* well-formed input *)
     List.In ({| c |- e .: t}) l ->
     wf_term l c e t
 | wf_term_subst : forall l c s c' e' t',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c ->
-    wf_sort l c t'[/s/] ->
-    (* well-formed input *)
     wf_subst l c s c' ->
     wf_term l c' e' t' ->
     wf_term l c e'[/s/] t'[/s/]
@@ -97,11 +53,6 @@ with wf_term {p} : lang p -> ctx p -> exp p -> exp p -> Prop :=
    but not the other way around
  *)
 | wf_term_conv : forall l c e t c' t',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c' ->
-    wf_sort l c' t' ->
-    (* well-formed input *)
     wf_term l c e t ->
     le_sort l c c' t t' ->
     wf_term l c' e t'
@@ -110,57 +61,18 @@ with le_term {p} : lang p ->
                    exp p -> exp p ->
                    exp p -> exp p -> Prop :=
 | le_term_by : forall l c1 c2 e1 e2 t1 t2,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c1 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    (* well-formed input *)
     List.In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
     le_term l c1 c2 e1 e2 t1 t2
 | le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1'[/s1/] ->
-    wf_sort l c1 t1'[/s2/] ->
-    le_sort l c1 c2 t1'[/s1/] t1'[/s2/] ->
-    wf_term l c1 e1'[/s1/] t1'[/s1/] ->
-    wf_term l c2 e2'[/s2/] t2'[/s2/] ->
-    (* well-formed input *)
     le_subst l c1 c2 s1 s2 c1' c2' ->
     le_term l c1' c2' e1' e2' t1' t2' ->
     le_term l c1 c2 e1'[/s1/] e2'[/s2/] t1'[/s1/] t2'[/s2/]
 | le_term_refl : forall l c e t,
-    (* presuppositions *)
     wf_lang l ->
-    wf_ctx l c ->
-    le_ctx l c c ->
-    wf_sort l c t ->
-    le_sort l c c t t ->
-    wf_term l c e t ->
-    (* well-formed input *)
-    List.In ({| c |- e .: t }%rule) l ->
+    List.In ({| c |- e .: t }) l ->
     le_term l c c e e t t
 | le_term_trans : forall l c1 c12 c2 e1 e12 e2 t1 t12 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c1 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    (* well-formed input *)
     le_term l c1 c12 e1 e12 t1 t12 ->
     le_term l c12 c2 e12 e2 t12 t2 ->
     le_term l c1 c2 e1 e2 t1 t2
@@ -171,45 +83,20 @@ c1  < c2  |- e1 < e2 : t1  < t2   ||
 c1' < c2' |- e1 < e2 : t1' < t2'  \/
 *)
 | le_term_conv : forall l c1 c2 e1 e2 t1 t2 c1' c2' t1' t2',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1' ->
-    wf_ctx l c2' ->
-    le_ctx l c1' c2' ->
-    wf_sort l c1' t1' ->
-    wf_sort l c1' t2' ->
-    (* this presupposition is necessary*)
     le_sort l c1' c2' t1' t2' ->
-    wf_term l c1' e1 t1' ->
-    wf_term l c2' e2 t2' ->
-    (* well-formed input *)
     le_term l c1 c2 e1 e2 t1 t2 ->
     le_sort l c1 c1' t1 t1' ->
     le_sort l c2 c2' t2 t2' ->
     le_term l c1' c2' e1 e2 t1' t2'
 with wf_subst {p} : lang p -> ctx p -> subst p ->  ctx p -> Prop :=
-| wf_subst_nil : forall l c c',
-    (* presuppositions *)
-    wf_lang l ->
+| wf_subst_nil : forall l c,
     wf_ctx l c ->
-    wf_ctx l c' ->
-    (* well-formed input entirely from presuppositions *)
-    wf_subst l c [::] c'
+    wf_subst l c [::] [::]
 | wf_subst_sort : forall l c s c' t,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c ->
-    wf_ctx l c' ->
-    (* well-formed input *)
     wf_subst l c s c' ->
     wf_sort l c t ->
     wf_subst l c (t::s) c'
 | wf_subst_term : forall l c s c' e t,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c ->
-    wf_ctx l (term_var t::c') ->
-    (* well-formed input *)
     wf_subst l c s c' ->
     wf_term l c e t[/s/] ->
     wf_subst l c (e::s) (term_var t::c')
@@ -217,170 +104,99 @@ with le_subst {p} : lang p ->
                     ctx p -> ctx p ->
                     subst p -> subst p ->
                     ctx p -> ctx p -> Prop :=
-| le_subst_nil : forall l c1 c2 c1' c2',
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
+| le_subst_nil : forall l c1 c2,
     le_ctx l c1 c2 ->
-    wf_ctx l c1' ->
-    wf_ctx l c2' ->
-    le_ctx l c1' c2' ->
-    wf_subst l c1 [::] c1' ->
-    wf_subst l c2 [::] c2' ->
-    (* well-formed input entirely from presuppositions *)
-    le_subst l c1 c2 [::] [::] c1' c2'
+    le_subst l c1 c2 [::] [::] [::] [::]
 | le_subst_sort : forall l c1 c2 s1 s2 c1' c2' t1 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_ctx l (sort_var::c1') ->
-    wf_ctx l (sort_var::c2') ->
-    le_ctx l (sort_var::c1') (sort_var::c2') ->
-    wf_subst l c1 (t1::s1) (sort_var::c1') -> 
-    wf_subst l c2 (t2::s2) (sort_var::c2') -> 
-    (* well-formed input *)
     le_subst l c1 c2 s1 s2 c1' c2' ->
     le_sort l c1 c2 t1 t2 ->
     le_subst l c1 c2 (t1::s1) (t2::s2) (sort_var::c1') (sort_var::c2')
 | le_subst_term : forall l c1 c2 s1 s2 c1' c2' e1 e2 t1 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_ctx l (term_var t1::c1') ->
-    wf_ctx l (term_var t2 :: c2') ->
-    le_ctx l (term_var t1::c1') (term_var t2 :: c2') ->
-    wf_subst l c1 (e1::s1) (term_var t1::c1') -> 
-    wf_subst l c2 (e2::s2) (term_var t2 :: c2') -> 
-    (* well-formed input *)
     le_subst l c1 c2 s1 s2 c1' c2' ->
     le_term l c1 c2 e1 e2 t1[/s1/] t2[/s1/] ->
     le_subst l c1 c2 (e1::s1) (e2::s2) (term_var t1::c1') (term_var t2 :: c2')
 with wf_ctx_var {p} : lang p -> ctx p -> ctx_var p -> Prop :=
-| wf_sort_var : forall l c, 
-    (* presuppositions *)
-    wf_lang l ->
+| wf_sort_var : forall l c,
     wf_ctx l c ->
-    (* well-formed input from presuppositions *)
     wf_ctx_var l c sort_var
-| wf_term_var : forall l c t, 
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c ->
-    (* well-formed input *)
+| wf_term_var : forall l c t,
     wf_sort l c t ->
     wf_ctx_var l c (term_var t)
 with le_ctx_var {p} : lang p -> ctx p -> ctx p -> ctx_var p -> ctx_var p -> Prop :=
-| le_sort_var : forall l c1 c2, 
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
+| le_sort_var : forall l c1 c2,
     le_ctx l c1 c2 ->
-    wf_ctx_var l c1 sort_var ->
-    wf_ctx_var l c2 sort_var ->
-    (* well-formed input from presuppositions *)
     le_ctx_var l c1 c2 sort_var sort_var
-| le_term_var : forall l c1 c2 t1 t2, 
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_ctx_var l c1 (term_var t1) ->
-    wf_ctx_var l c2 (term_var t2) ->
-    (* well-formed input *)
+| le_term_var : forall l c1 c2 t1 t2,
     le_sort l c1 c2 t1 t2 ->
     le_ctx_var l c1 c2 (term_var t1) (term_var t2)
 with wf_ctx {p} : lang p -> ctx p -> Prop :=
 | wf_ctx_nil : forall l, wf_lang l -> wf_ctx l [::]
 | wf_ctx_cons : forall l c v,
-    (* presuppositions *)
-    wf_lang l ->
-    (* well-formed input *)
     wf_ctx_var l c v ->
     wf_ctx l (v::c)
 with le_ctx {p} : lang p -> ctx p -> ctx p -> Prop :=
 | le_ctx_nil : forall l, wf_lang l -> le_ctx l [::] [::]
 | le_ctx_cons : forall l c1 c2 v1 v2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l (v1::c1) ->
-    wf_ctx l (v2::c2) ->
-    (* well-formed input *)
-    le_ctx l c1 c2 ->
     le_ctx_var l c1 c2 v1 v2 ->
     le_ctx l (v1::c1) (v2::c2)
 with wf_rule {p} : lang p -> rule p -> Prop :=
 | wf_sort_rule : forall l c t,
-    (* presuppositions *)
-    wf_lang l ->
     wf_ctx l c ->
-    (* TODO: require t not in thy? *)
-    (* well-formed input from presuppositions *)
+    (* TODO: require t (prefix) not in thy *)
     wf_rule l ({| c |- t})
 | wf_term_rule : forall l c e t,
-    (* presuppositions *)
-    wf_lang l ->
     wf_ctx l c ->
     wf_sort l c t ->
-    (* TODO: require e not in thy? *)
-    (* well-formed input from presuppositions *)
+    (* TODO: require e (prefix) not in thy *)
     wf_rule l ({| c |- e .: t})
 | le_sort_rule : forall l c1 c2 t1 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
     le_ctx l c1 c2 ->
     wf_sort l c1 t1 ->
     wf_sort l c2 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    (* well-formed input from presuppositions *)
     wf_rule l ({< c1 <# c2 |- t1 <# t2})
 | le_term_rule : forall l c1 c2 e1 e2 t1 t2,
-    (* presuppositions *)
-    wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
     le_sort l c1 c2 t1 t2 ->
     wf_term l c1 e1 t1 ->
     wf_term l c2 e2 t2 ->
-    (* well-formed input from presuppositions *)
     wf_rule l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2})
 with wf_lang {p} : lang p -> Prop :=
 | wf_lang_nil : wf_lang [::]
-| wf_lang_cons : forall l r,
-    (* well-formed input *)
-    wf_lang l ->
-    wf_rule l r ->
-    wf_lang (r::l).
-
-Section Minimal.
-  (* data type with minimal presuppositions *)
-
-
-(* well-typed sorts, terms are the reflexive case *)
-Definition wf_sort' p l c s : Prop := @wf_sort p l c c s s.
-Definition wf_term' p l c e s : Prop := @wf_term p l c c e e s s.
-Definition wf_subst' p l c s c' : Prop := @wf_subst p l c c s s c' c'.
-Definition wf_ctx' p l c : Prop := @wf_ctx p l c c.
+| wf_lang_cons : forall l r, wf_rule l r -> wf_lang (r::l).
+Hint Constructors wf_sort.
+Hint Constructors wf_term.
+Hint Constructors wf_subst.
+Hint Constructors wf_ctx_var.
+Hint Constructors wf_ctx.
+Hint Constructors wf_rule.
+Hint Constructors wf_lang.
+Hint Constructors le_sort.
+Hint Constructors le_term.
+Hint Constructors le_subst.
+Hint Constructors le_ctx_var.
+Hint Constructors le_ctx.
 
 Create HintDb wf_hints discriminated.
 
 (* well-formed language suppositions *)
-Lemma wf_ctx_lang  {p} (l : lang p) c1 c2
-      (wfc : wf_ctx l c1 c2) : wf_lang l.
-  case: wfc => //=.
+Lemma wf_ctx_lang  {p} (l : lang p) c (wf : wf_ctx l c) : wf_lang l
+with wf_ctx_var_lang  {p} (l : lang p) c v (wf : wf_ctx_var l c v) : wf_lang l
+with wf_sort_lang  {p} (l : lang p) c t (wf : wf_sort l c t) : wf_lang l.
+  all: case: wf => //=.
+  apply: wf_ctx_var_lang.
+  apply: wf_ctx_lang.
+  apply: wf_sort_lang.
+  move => l' c' s c'' t'' _;
+    apply: wf_sort_lang.
 Qed.
 Hint Immediate wf_ctx_lang : wf_hints.
+Hint Immediate wf_ctx_var_lang : wf_hints.
+Hint Immediate wf_sort_lang : wf_hints.
+
+
+(* =======================
+   OLD: update to wrok with present definition
+===============================*)
+
 Lemma wf_ctx_var_lang  {p} (l : lang p) c1 c2 v1 v2
            (wf : wf_ctx_var l c1 c2 v1 v2) : wf_lang l.
   case: wf => //=.
