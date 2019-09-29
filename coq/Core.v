@@ -245,54 +245,97 @@ with le_term_mono {p} (l : lang p) r c1 c2 e1 e2 t1 t2
      : wf_rule l r -> le_term l c1 c2 e1 e2 t1 t2 -> le_term (r::l) c1 c2 e1 e2 t1 t2.
 Proof.
  - move => wfr wfs.
-   case: wfs wfr.
-   + constructor; auto;
-       apply: List.in_cons => //=.
-   + move => l' c' s' c'' t' wfsb wfs wfr.
-     apply: wf_sort_subst.
-     apply: wf_subst_mono => //=; eauto.
-     apply: wf_sort_mono => //=; eauto.
- - move => wfr wfsb;
-   case: wfsb wfr.
+   move: wfr.
+   refine (match wfs with
+           | wf_sort_by _ _ _ _ _ => _
+           | wf_sort_subst _ _ _ _ _ _ _ => _
+           end).
+   + constructor. auto. move => //=. apply: List.in_cons => //=.
+   +  move => wfr.
+      apply: wf_sort_subst.
+      apply: wf_subst_mono => //=. apply w.
+      apply: wf_sort_mono => //=.
+ - move => wfr wfsb.
+   move: wfr.
+   refine (match wfsb with
+           | wf_subst_nil _ _ _ => _
+           | wf_subst_sort _ _ _ _ _ _ _ => _
+           | wf_subst_term _ _ _ _ _ _ _ _ => _
+           end).
    + auto.
    + repeat intro_term.
-     move => wfsb wfs wfr.
+     move => wfr.
      apply: wf_subst_sort.
      apply: wf_subst_mono => //=.
      apply: wf_sort_mono => //=.
    + repeat intro_term.
-     move => wfsb wft wfr.
+     move => wfr.
      apply: wf_subst_term.
      apply: wf_subst_mono => //=.
      apply: wf_term_mono => //=.
- - move => wfr wft; case: wft wfr.
+ - move => wfr wft.
+   move: wfr.
+   refine (match wft with
+           | wf_term_by _ _ _ _ _ _ => _
+           | wf_term_subst _ _ _ _ _ _ _ _ => _
+           | wf_term_conv _ _ _ _ _ _ _ _ => _ end).
    + constructor; auto;
        apply: List.in_cons => //=.
-   + intros; apply: wf_term_subst; eauto.
-   + intros; apply: wf_term_conv; eauto.
- - move => wfr wf; case: wf wfr.
+   + Print wf_term_subst. 
+     (*
+       wf_term_subst : forall (l : lang p) (c : ctx p) (s : subst p) (c' : ctx p) (e' t' : exp p),
+                       wf_subst l c s c' -> wf_term l c' e' t' -> wf_term l c e' [/s /] t' [/s /]  
+
+      *)
+     intros; apply: (@wf_term_subst p (r :: l0) c0 s c1 e0 e1); auto.
+   + intros; apply: (@wf_term_conv p (r :: l0) c0 e0 e1); auto.
+ - move => wfr wf.
+   move: wfr.
+   refine (match wf with
+           | le_ctx_nil _ _ => _
+           | le_ctx_cons _ _ _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
-   + intros; apply: le_ctx_cons; eauto.
- - move => wfr wf; case: wf wfr.
+   + intros; apply: le_ctx_cons. auto.
+ - move => wfr wf.
+   move: wfr.
+   refine (match wf with
+           | le_term_var _ _ _ _ _ _ => _
+           | le_sort_var _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
-   + intros; apply: le_term_var; eauto.
- - move => wfr wf; case: wf wfr.
+   + intros; apply: le_term_var. auto.
+ - move => wfr wf; move: wfr.
+   refine (match wf with
+           | le_sort_by _ _ _ _ _ _ _ => _
+           | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_sort_refl _ _ _ _ _ => _
+           | le_sort_trans _ _ _ _ _ _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
-   + intros; apply: le_sort_subst; eauto.
-   + intros; apply: le_sort_refl; eauto;
+   + intros; apply: (@le_sort_subst p (r :: l0) c c0 s s0 c3 c4); auto.
+   + intros; apply: (@le_sort_refl p (r :: l0) c e); auto;
        apply: List.in_cons => //=.
-   + intros; apply: le_sort_trans; eauto.
- - move => wfr wf; case: wf wfr.
-   + constructor; eauto.
-   + intros; apply: le_subst_sort; eauto.
-   + intros; apply: le_subst_term; eauto.
- - move => wfr wf; case: wf wfr.
+   + intros; apply: (@le_sort_trans p (r :: l0) c c0 c3 e e0 e1); auto.
+ - move => wfr wf; move: wfr.
+   refine (match wf with
+           | le_subst_nil _ _ _ _ => _
+           | le_subst_sort _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_subst_term _ _ _ _ _ _ _ _ _ _ _ _ _ => _ end).
+   + constructor; auto. 
+   + intros; apply: le_subst_sort; auto. 
+   + intros; apply: le_subst_term; auto.
+ - move => wfr wf; move: wfr.
+   refine (match wf with
+           | le_term_by _ _ _ _ _ _ _ _ _ => _
+           | le_term_subst _ _ _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_term_refl _ _ _ _ _ _ => _
+           | le_term_trans _ _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_term_conv _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
-   + intros; apply: le_term_subst; eauto.
-   + intros; apply: le_term_refl; eauto;
+   + intros; apply: (@le_term_subst p (r :: l0) c c0 s s0 c3 c4); auto.
+   + intros; apply: le_term_refl; auto;
        apply: List.in_cons => //=.
-   + intros; apply: le_term_trans; eauto.
-   + intros; apply: le_term_conv; eauto.
+   + intros; apply: (@le_term_trans p (r :: l0) c c0 c3 e e0 e3 e4 e5); auto.
+   + intros; apply: (@le_term_conv p (r :: l0) c c0 e e0 e3 e4); auto.
+     Show Proof.
 Qed.  
      
    
