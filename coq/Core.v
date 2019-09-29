@@ -142,12 +142,12 @@ with le_ctx {p} : lang p -> ctx p -> ctx p -> Prop :=
 with wf_rule {p} : lang p -> rule p -> Prop :=
 | wf_sort_rule : forall l c t,
     wf_ctx l c ->
-    (* TODO: require t (prefix) not in thy *)
+    (* TODO: require t (prefix) not in thy? interferes with monotonicity *)
     wf_rule l ({| c |- t})
 | wf_term_rule : forall l c e t,
     wf_ctx l c ->
     wf_sort l c t ->
-    (* TODO: require e (prefix) not in thy *)
+    (* TODO: require e (prefix) not in thy? interferes with monotonicity *)
     wf_rule l ({| c |- e .: t})
 | le_sort_rule : forall l c1 c2 t1 t2,
     le_ctx l c1 c2 ->
@@ -185,9 +185,11 @@ Ltac intro_term :=
   | [|- subst _ -> _] => intro
   end.
 
+Ltac construct_with t :=
+  constructor; apply: t; eauto.
   
 Ltac solve_wf_with t :=
-  solve [ apply: t
+  solve [ (constructor + idtac); apply: t; eauto
         | intro_term; solve_wf_with t
         | move => _; solve_wf_with t].
 
@@ -226,6 +228,99 @@ Proof.
   solve_wf_with (@wf_term_lang p).
 Qed.
 
+Lemma wf_sort_mono {p} (l : lang p) r c t : wf_rule l r -> wf_sort l c t -> wf_sort (r::l) c t
+with wf_subst_mono {p} (l : lang p) r c s c'
+     : wf_rule l r -> wf_subst l c s c' -> wf_subst (r::l) c s c'
+with wf_term_mono {p} (l : lang p) r c e t
+     : wf_rule l r -> wf_term l c e t -> wf_term (r::l) c e t
+with le_ctx_mono {p} (l : lang p) r c1 c2
+     : wf_rule l r -> le_ctx l c1 c2 -> le_ctx (r::l) c1 c2
+with le_ctx_var_mono {p} (l : lang p) r c1 c2 v1 v2
+     : wf_rule l r -> le_ctx_var l c1 c2 v1 v2 -> le_ctx_var (r::l) c1 c2 v1 v2
+with le_sort_mono {p} (l : lang p) r c1 c2 t1 t2
+     : wf_rule l r -> le_sort l c1 c2 t1 t2 -> le_sort (r::l) c1 c2 t1 t2
+with le_subst_mono {p} (l : lang p) r c1 c2 s1 s2 c1' c2'
+     : wf_rule l r -> le_subst l c1 c2 s1 s2 c1' c2' -> le_subst (r::l) c1 c2 s1 s2 c1' c2'
+with le_term_mono {p} (l : lang p) r c1 c2 e1 e2 t1 t2
+     : wf_rule l r -> le_term l c1 c2 e1 e2 t1 t2 -> le_term (r::l) c1 c2 e1 e2 t1 t2.
+Proof.
+ - move => wfr wfs.
+   case: wfs wfr.
+   + constructor; auto;
+       apply: List.in_cons => //=.
+   + move => l' c' s' c'' t' wfsb wfs wfr.
+     apply: wf_sort_subst.
+     apply: wf_subst_mono => //=; eauto.
+     apply: wf_sort_mono => //=; eauto.
+ - move => wfr wfsb;
+   case: wfsb wfr.
+   + auto.
+   + repeat intro_term.
+     move => wfsb wfs wfr.
+     apply: wf_subst_sort.
+     apply: wf_subst_mono => //=.
+     apply: wf_sort_mono => //=.
+   + repeat intro_term.
+     move => wfsb wft wfr.
+     apply: wf_subst_term.
+     apply: wf_subst_mono => //=.
+     apply: wf_term_mono => //=.
+ - move => wfr wft; case: wft wfr.
+   + constructor; auto;
+       apply: List.in_cons => //=.
+   + intros; apply: wf_term_subst; eauto.
+   + intros; apply: wf_term_conv; eauto.
+ - move => wfr wf; case: wf wfr.
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_ctx_cons; eauto.
+ - move => wfr wf; case: wf wfr.
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_term_var; eauto.
+ - move => wfr wf; case: wf wfr.
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_sort_subst; eauto.
+   + intros; apply: le_sort_refl; eauto;
+       apply: List.in_cons => //=.
+   + intros; apply: le_sort_trans; eauto.
+ - move => wfr wf; case: wf wfr.
+   + constructor; eauto.
+   + intros; apply: le_subst_sort; eauto.
+   + intros; apply: le_subst_term; eauto.
+ - move => wfr wf; case: wf wfr.
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_term_subst; eauto.
+   + intros; apply: le_term_refl; eauto;
+       apply: List.in_cons => //=.
+   + intros; apply: le_term_trans; eauto.
+   + intros; apply: le_term_conv; eauto.
+Qed.  
+     
+   
+Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 (wf : le_ctx l c1 c2) : wf_ctx l c1
+with le_ctx_var_wf_l  {p} (l : lang p) c1 c2 v1 v2
+                      (wf : le_ctx_var l c1 c2 v1 v2) : wf_ctx_var l c1 v1
+with le_sort_wf_l  {p} (l : lang p) c1 c2 t1 t2
+                   (wf : le_sort l c1 c2 t1 t2) : wf_sort l c1 t1.
+  all: case: wf => //=.
+  solve_wf_with (@wf_ctx_nil p).
+  solve_wf_with le_ctx_var_wf_l.
+  solve_wf_with le_ctx_wf_l.
+  solve_wf_with le_sort_wf_l.
+  (* depends on monotonicity *)
+Qed.
+
+(* TODO: this isn't true in general if I add *)
+Lemma rule_in_wf {p} (l : lang p) r : wf_lang l -> List.In r l -> wf_rule l r.
+Qed.
+
+Lemma wf_sort_ctx {p} (l : lang p) c t
+      (wf : wf_sort l c t) : wf_ctx l c.
+Proof.
+  all: case: wf => //=.
+Qed.
+
+(* TODO: transitivity proofs *)
+(* TODO: monotonicity proofs *)  
 
 (* =======================
    OLD: update to work with present definition
