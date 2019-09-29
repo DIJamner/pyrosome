@@ -175,22 +175,48 @@ Hint Constructors le_subst.
 Hint Constructors le_ctx_var.
 Hint Constructors le_ctx.
 
-Create HintDb wf_hints discriminated.
+Ltac intro_term :=
+  match goal with
+  | [|- lang _ -> _] => intro
+  | [|- exp _ -> _] => intro
+  | [|- ctx _ -> _] => intro
+  | [|- ctx_var _ -> _] => intro
+  | [|- rule _ -> _] => intro
+  | [|- subst _ -> _] => intro
+  end.
+
+  
+Ltac solve_wf_with t :=
+  repeat intro_term;
+  solve [ apply: t
+        | move => _; solve_wf_with t].
 
 (* well-formed language suppositions *)
 Lemma wf_ctx_lang  {p} (l : lang p) c (wf : wf_ctx l c) : wf_lang l
 with wf_ctx_var_lang  {p} (l : lang p) c v (wf : wf_ctx_var l c v) : wf_lang l
 with wf_sort_lang  {p} (l : lang p) c t (wf : wf_sort l c t) : wf_lang l.
   all: case: wf => //=.
-  apply: wf_ctx_var_lang.
-  apply: wf_ctx_lang.
-  apply: wf_sort_lang.
-  move => l' c' s c'' t'' _;
-    apply: wf_sort_lang.
+  solve_wf_with wf_ctx_var_lang.
+  solve_wf_with wf_ctx_lang.
+  solve_wf_with wf_sort_lang.
+  solve_wf_with wf_sort_lang.
 Qed.
-Hint Immediate wf_ctx_lang : wf_hints.
-Hint Immediate wf_ctx_var_lang : wf_hints.
-Hint Immediate wf_sort_lang : wf_hints.
+
+Lemma wf_term_lang  {p} (l : lang p) c e t
+      (wf : wf_term l c e t) : wf_lang l
+with wf_subst_lang  {p} (l : lang p) c s c'
+           (wf : wf_subst l c s c') : wf_lang l.
+  all: case: wf => //=.
+  solve_wf_with wf_term_lang.
+  move => l' c' s c'' e' t' wft wfs.
+  apply: wf_term_lang; eauto.
+  apply: wf_ctx_lang.
+  repeat intro_term.
+  move => _.
+  repeat intro_term.
+  by apply: wf_sort_lang.
+  solve_wf_with wf_term_lang.
+Qed.
 
 
 (* =======================
@@ -207,10 +233,7 @@ Lemma wf_sort_lang  {p} (l : lang p) c1 c2 t1 t2
   case: wf => //=.
 Qed.
 Hint Immediate wf_sort_lang : wf_hints.
-Lemma wf_term_lang  {p} (l : lang p) c1 c2 e1 e2 t1 t2
-           (wf : wf_term l c1 c2 e1 e2 t1 t2) : wf_lang l.
-  case: wf => //=.
-Qed.
+
 Hint Immediate wf_term_lang : wf_hints.
 Lemma wf_subst_lang  {p} (l : lang p) c1 c2 s1 s2 c1' c2'
            (wf : wf_subst l c1 c2 s1 s2 c1' c2') : wf_lang l.
