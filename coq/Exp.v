@@ -208,7 +208,7 @@ Definition ws_ctx_var {p : polynomial} csz (v : ctx_var p) : bool :=
 Fixpoint ws_ctx {p : polynomial} (c : ctx p) : bool :=
   match c with
   | [::] => true
-  | v :: c' => ws_ctx c' && ws_ctx_var (size c) v
+  | v :: c' => ws_ctx c' && ws_ctx_var (size c') v
   end.
 
 Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
