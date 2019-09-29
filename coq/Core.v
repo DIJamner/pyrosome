@@ -187,8 +187,8 @@ Ltac intro_term :=
 
   
 Ltac solve_wf_with t :=
-  repeat intro_term;
   solve [ apply: t
+        | intro_term; solve_wf_with t
         | move => _; solve_wf_with t].
 
 (* well-formed language suppositions *)
@@ -208,19 +208,27 @@ with wf_subst_lang  {p} (l : lang p) c s c'
            (wf : wf_subst l c s c') : wf_lang l.
   all: case: wf => //=.
   solve_wf_with wf_term_lang.
-  move => l' c' s c'' e' t' wft wfs.
+  repeat intro_term.
+  move => wft wfs.
   apply: wf_term_lang; eauto.
-  apply: wf_ctx_lang.
-  repeat intro_term.
-  move => _.
-  repeat intro_term.
-  by apply: wf_sort_lang.
+  solve_wf_with (@wf_ctx_lang p).
+  solve_wf_with (@wf_sort_lang p).
   solve_wf_with wf_term_lang.
+Qed.
+
+Lemma wf_rule_lang {p} (l : lang p) r
+      (wf : wf_rule l r) : wf_lang l.
+Proof.
+  all: case: wf => //=.
+  solve_wf_with (@wf_ctx_lang p).
+  solve_wf_with (@wf_sort_lang p).
+  solve_wf_with (@wf_sort_lang p).
+  solve_wf_with (@wf_term_lang p).
 Qed.
 
 
 (* =======================
-   OLD: update to wrok with present definition
+   OLD: update to work with present definition
 ===============================*)
 
 Lemma wf_ctx_var_lang  {p} (l : lang p) c1 c2 v1 v2
