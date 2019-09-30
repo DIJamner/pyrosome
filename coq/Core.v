@@ -88,36 +88,82 @@ Proof.
   solve_wf_with (@wf_term_lang p).
 Qed.
 
-Lemma wf_sort_mono {p} (l : lang p) r c t : wf_rule l r -> wf_sort l c t -> wf_sort (r::l) c t
-with wf_subst_mono {p} (l : lang p) r c s c'
-     : wf_rule l r -> wf_subst l c s c' -> wf_subst (r::l) c s c'
-with wf_term_mono {p} (l : lang p) r c e t
-     : wf_rule l r -> wf_term l c e t -> wf_term (r::l) c e t
-with le_ctx_mono {p} (l : lang p) r c1 c2
-     : wf_rule l r -> le_ctx l c1 c2 -> le_ctx (r::l) c1 c2
+
+(* Note: Fixpoint vs Lemma changes the elements chosen to be recursive *)
+Fixpoint le_ctx_mono {p} (l : lang p) r c1 c2
+                 (wfc : le_ctx l c1 c2)
+     : wf_rule l r -> le_ctx (r::l) c1 c2
 with le_ctx_var_mono {p} (l : lang p) r c1 c2 v1 v2
-     : wf_rule l r -> le_ctx_var l c1 c2 v1 v2 -> le_ctx_var (r::l) c1 c2 v1 v2
+                     (wfv : le_ctx_var l c1 c2 v1 v2)
+     : wf_rule l r -> le_ctx_var (r::l) c1 c2 v1 v2
 with le_sort_mono {p} (l : lang p) r c1 c2 t1 t2
-     : wf_rule l r -> le_sort l c1 c2 t1 t2 -> le_sort (r::l) c1 c2 t1 t2
+                  (wfs : le_sort l c1 c2 t1 t2)
+     : wf_rule l r -> le_sort (r::l) c1 c2 t1 t2
 with le_subst_mono {p} (l : lang p) r c1 c2 s1 s2 c1' c2'
-     : wf_rule l r -> le_subst l c1 c2 s1 s2 c1' c2' -> le_subst (r::l) c1 c2 s1 s2 c1' c2'
+                   (wfsb : le_subst l c1 c2 s1 s2 c1' c2')
+     : wf_rule l r -> le_subst (r::l) c1 c2 s1 s2 c1' c2'
 with le_term_mono {p} (l : lang p) r c1 c2 e1 e2 t1 t2
-     : wf_rule l r -> le_term l c1 c2 e1 e2 t1 t2 -> le_term (r::l) c1 c2 e1 e2 t1 t2.
+                  (wft :  le_term l c1 c2 e1 e2 t1 t2)
+     : wf_rule l r -> le_term (r::l) c1 c2 e1 e2 t1 t2.
 Proof.
- - move => wfr wfs.
-   move: wfr.
-   refine (match wfs with
-           | wf_sort_by _ _ _ _ _ => _
-           | wf_sort_subst _ _ _ _ _ _ _ => _
-           end).
-   + constructor. auto. move => //=. apply: List.in_cons => //=.
-   +  move => wfr.
-      apply: wf_sort_subst.
-      apply: wf_subst_mono => //=. apply w.
-      apply: wf_sort_mono => //=.
- - move => wfr wfsb.
-   move: wfr.
-   refine (match wfsb with
+  - refine (match wfc with
+           | le_ctx_nil _ _ => _
+           | le_ctx_cons _ _ _ _ _ _ => _ end).
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_ctx_cons. auto.
+ - refine (match wfv with
+           | le_term_var _ _ _ _ _ _ => _
+           | le_sort_var _ _ _ _ => _ end).
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: le_term_var. auto.
+ - refine (match wfs with
+           | le_sort_by _ _ _ _ _ _ _ => _
+           | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_sort_refl _ _ _ _ _ => _
+           | le_sort_trans _ _ _ _ _ _ _ _ _ => _ end).
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: (@le_sort_subst p (r :: l0) c c0 s s0 c3 c4); auto.
+   + intros; apply: (@le_sort_refl p (r :: l0) c e); auto;
+       apply: List.in_cons => //=.
+   + intros; apply: (@le_sort_trans p (r :: l0) c c0 c3 e e0 e1); auto.
+ - refine (match wfsb with
+           | le_subst_nil _ _ _ _ => _
+           | le_subst_sort _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_subst_term _ _ _ _ _ _ _ _ _ _ _ _ _ => _ end).
+   + constructor; auto. 
+   + intros; apply: le_subst_sort; auto. 
+   + intros; apply: le_subst_term; auto.
+ - refine (match wft with
+           | le_term_by _ _ _ _ _ _ _ _ _ => _
+           | le_term_subst _ _ _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_term_refl _ _ _ _ _ _ => _
+           | le_term_trans _ _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_term_conv _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => _ end).
+   + constructor; auto; apply: List.in_cons => //=.
+   + intros; apply: (@le_term_subst p (r :: l0) c c0 s s0 c3 c4); auto.
+   + intros; apply: le_term_refl; auto;
+       apply: List.in_cons => //=.
+   + intros; apply: (@le_term_trans p (r :: l0) c c0 c3 e e0 e3 e4 e5); auto.
+   + intros; apply: (@le_term_conv p (r :: l0) c c0 e e0 e3 e4); auto.
+Qed.
+
+(* Note: Fixpoint vs Lemma changes the elements chosen to be recursive *)
+Fixpoint wf_sort_mono {p} (l : lang p) r c t
+      (wfs : wf_sort l c t)
+  : wf_rule l r -> wf_sort (r::l) c t
+with wf_subst_mono {p} (l : lang p) r c s c'
+                   (wfsb : wf_subst l c s c')
+     : wf_rule l r -> wf_subst (r::l) c s c'
+with wf_term_mono {p} (l : lang p) r c e t
+                  (wft : wf_term l c e t)
+     : wf_rule l r -> wf_term (r::l) c e t.
+Proof.
+  - tac_map_wf_sort wfs.
+    + by constructor.
+    + by apply: List.in_cons.
+   + apply: wf_subst_mono => //=. apply w.
+   + apply: wf_sort_mono => //=.
+ - refine (match wfsb with
            | wf_subst_nil _ _ _ => _
            | wf_subst_sort _ _ _ _ _ _ _ => _
            | wf_subst_term _ _ _ _ _ _ _ _ => _
@@ -133,38 +179,28 @@ Proof.
      apply: wf_subst_term.
      apply: wf_subst_mono => //=.
      apply: wf_term_mono => //=.
- - move => wfr wft.
-   move: wfr.
-   refine (match wft with
+ - refine (match wft with
            | wf_term_by _ _ _ _ _ _ => _
            | wf_term_subst _ _ _ _ _ _ _ _ => _
            | wf_term_conv _ _ _ _ _ _ _ _ => _ end).
    + constructor; auto;
        apply: List.in_cons => //=.
-   + Print wf_term_subst. 
-     (*
-       wf_term_subst : forall (l : lang p) (c : ctx p) (s : subst p) (c' : ctx p) (e' t' : exp p),
-                       wf_subst l c s c' -> wf_term l c' e' t' -> wf_term l c e' [/s /] t' [/s /]  
-
-      *)
-     intros; apply: (@wf_term_subst p (r :: l0) c0 s c1 e0 e1); auto.
+   + intros; apply: (@wf_term_subst p (r :: l0) c0 s c1 e0 e1); auto.
    + intros; apply: (@wf_term_conv p (r :: l0) c0 e0 e1); auto.
- - move => wfr wf.
-   move: wfr.
-   refine (match wf with
+     apply: le_sort_mono; auto.
+     Show Proof.
+Qed.
+ - refine (match wfc with
            | le_ctx_nil _ _ => _
            | le_ctx_cons _ _ _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
    + intros; apply: le_ctx_cons. auto.
- - move => wfr wf.
-   move: wfr.
-   refine (match wf with
+ - refine (match wfv with
            | le_term_var _ _ _ _ _ _ => _
            | le_sort_var _ _ _ _ => _ end).
    + constructor; auto; apply: List.in_cons => //=.
    + intros; apply: le_term_var. auto.
- - move => wfr wf; move: wfr.
-   refine (match wf with
+ - refine (match wfs with
            | le_sort_by _ _ _ _ _ _ _ => _
            | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
            | le_sort_refl _ _ _ _ _ => _
@@ -174,16 +210,14 @@ Proof.
    + intros; apply: (@le_sort_refl p (r :: l0) c e); auto;
        apply: List.in_cons => //=.
    + intros; apply: (@le_sort_trans p (r :: l0) c c0 c3 e e0 e1); auto.
- - move => wfr wf; move: wfr.
-   refine (match wf with
+ - refine (match wfsb with
            | le_subst_nil _ _ _ _ => _
            | le_subst_sort _ _ _ _ _ _ _ _ _ _ _ => _
            | le_subst_term _ _ _ _ _ _ _ _ _ _ _ _ _ => _ end).
    + constructor; auto. 
    + intros; apply: le_subst_sort; auto. 
    + intros; apply: le_subst_term; auto.
- - move => wfr wf; move: wfr.
-   refine (match wf with
+ - refine (match wft with
            | le_term_by _ _ _ _ _ _ _ _ _ => _
            | le_term_subst _ _ _ _ _ _ _ _ _ _ _ _ _ => _
            | le_term_refl _ _ _ _ _ _ => _
@@ -196,7 +230,16 @@ Proof.
    + intros; apply: (@le_term_trans p (r :: l0) c c0 c3 e e0 e3 e4 e5); auto.
    + intros; apply: (@le_term_conv p (r :: l0) c c0 e e0 e3 e4); auto.
      Show Proof.
-Qed.  
+Qed.
+
+
+Combined Scheme mono_ind from
+         wf_sort_ind
+         wf_subst_ind
+         wf_term_ind
+         le_ctx_ind
+
+
      
    
 Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 (wf : le_ctx l c1 c2) : wf_ctx l c1
@@ -286,64 +329,14 @@ Lemma wf_term_sort {p} (l : lang p) c1 c2 e1 e2 t1 t2
 Qed.
 Hint Immediate wf_term_sort : wf_hints.
 
-(* TODO: what is the best way to handle these tactics?
-   I am going to want to improve them later, but dont want to rewrite all of them.
-   I'm attempting the hint database now. It's possible the tactics won't be necessary?
-*)
 
-(* TODO: should I have another variant w/ the same parameter improvement
-   but keeping all of the presuppositions?
-   I could call the m wf...intro and wf...elim)*)
-Variant wf_ctx_ {p} (l : lang p) : ctx p -> ctx p -> Prop :=
-| wf_ctx_nil_ : wf_lang l -> wf_ctx_ l [::] [::]
-| wf_ctx_cons_ : forall c1 c2 v1 v2,
-    wf_ctx_var l c1 c2 v1 v2 ->
-    wf_ctx_ l (v1::c1) (v2::c2).
-Hint Constructors wf_ctx_.
+Lemma wf_sort_conv {p} (l : lang p) c t : wf_sort l c t <-> wf_sort_ l c t.
+Proof.
+  split; case; auto.
+  - constructor.
+    TODO
 
-Variant wf_ctx_var_ {p} (l : lang p) (c1 c2 : ctx p) : ctx_var p -> ctx_var p -> Prop :=
-| wf_sort_var_ : wf_ctx l c1 c2 -> wf_ctx_var_ l c1 c2 sort_var sort_var
-| wf_term_var_ : forall t1 t2,
-    wf_sort l c1 c2 t1 t2 ->
-    wf_ctx_var_ l c1 c2 (term_var t1) (term_var t2).
-Hint Constructors wf_ctx_var_.
-
-Variant wf_sort_ {p} (l : lang p) (c1 c2 : ctx p) : poly_fix p -> poly_fix p -> Prop :=
-| wf_sort_by_ : forall t1 t2 s1 s2 c1' c2',
-    (* TODO: remove this presupposition *)
-    wf_sort l c1 c2 t1 t2 ->
-    wf_subst l c1 c2 s1 s2 c1' c2' ->
-    List.In ({r c1' <# c2'|- t1 <# t2}%rule) l ->
-    wf_sort_ l c1 c2 (exp_subst t1 s1) (exp_subst t2 s2)
-| wf_sort_trans_ : forall c12 t1 t12 t2,
-    (* well-formed input *)
-    wf_sort l c1 c12 t1 t12 ->
-    wf_sort l c12 c2 t12 t2 ->
-    wf_sort_ l c1 c2 t1 t2.
-Hint Constructors wf_sort_.
-
-
-Variant wf_term_ {p} (l : lang p) (c1 c2 : ctx p)
-  : poly_fix p -> poly_fix p -> poly_fix p -> poly_fix p -> Prop :=
-| wf_term_by_ : forall e1 e2 t1 t2 s1 s2 c1' c2',
-    wf_subst l c1 c2 s1 s2 c1' c2' ->
-    List.In ({r c1' <# c2' |- e1 <# e2.: t1 <# t2}%rule) l ->
-    wf_term_ l c1 c2 (exp_subst e1 s1) (exp_subst e2 s2) (exp_subst t1 s1) (exp_subst t2 s2)
-| wf_term_trans_ : forall c12 e1 e12 e2 t1 t12 t2,
-    wf_term l c1 c12 e1 e12 t1 t12 ->
-    wf_term l c12 c2 e12 e2 t12 t2 ->
-    wf_term_ l c1 c2 e1 e2 t1 t2
-(* TODO: these rules are experimental; check *)
-| wf_term_conv_r_ : forall c12 e1 e2 t1 t12 t2,
-    wf_term l c1 c12 e1 e2 t1 t12 ->
-    wf_sort l c12 c2 t12 t2 ->
-    wf_term_ l c1 c2 e1 e2 t1 t2
-| wf_term_conv_l_ : forall c12 e1 e2 t1 t12 t2,
-    wf_term l c12 c2 e1 e2 t12 t2 ->
-    wf_sort l c1 c12 t1 t12 ->
-    wf_term_ l c1 c2 e1 e2 t1 t2.
-Hint Constructors wf_sort_.
-
+TODO: place these tactics well wrt wf_..._convs
 Ltac hypothesize :=
   try match goal with
         [|- _ -> _] => let H := fresh in move => H; hypothesize
