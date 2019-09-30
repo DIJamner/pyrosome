@@ -174,6 +174,39 @@ Hint Constructors le_ctx.
 Hint Constructors wf_rule.
 Hint Constructors wf_lang.
 
+(* Judgment manipulation tactics
+   These tactics are designed to generate reasdable subterms,
+   particularly for use when the proof must be inspected for well-foundedness
+ *)
+
+Ltac get_polynomial :=
+  lazymatch goal with
+    [ p : polynomial |- _] => p
+  end.
+
+(* tac_map tactics push under "wf : (wf_X ...) |- ... -> (wf_X ...)" goals to the subterms 
+   These tactics are meant to generate readable proof terms
+*)
+Ltac tac_map_wf_sort wf :=
+  refine (match wf with
+           | wf_sort_by _ _ _ _ _ => _ (*TODO*)
+           | wf_sort_subst _ _ _ _ _ _ _ => _
+            end);
+  [ intros; eapply wf_sort_by
+  | intros; eapply wf_sort_subst].
+
+
+Ltac tac_map_le_sort :=
+  refine (fun wfs =>
+            match wfs with
+           | le_sort_by _ _ _ _ _ _ _ => _
+           | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_sort_refl _ _ _ _ _ => _
+           | le_sort_trans _ _ _ _ _ _ _ _ _ => _
+            end).
+
+
+
 (* =================================
    Inductives with better parameters
    =================================
