@@ -5,175 +5,35 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-Load Exp.
+Load CoreDefs.
 
-(* We could embed well-scopedness in bool, but well-typedness can be undecideable,
-   so we leave it in Prop.
-   Some constructors take in more presuppositions than strictly necessary
-   (i.e. they can be derived from other arguments). This is a conscious design choice.
-   It is easier to devise secondary "constructor" functions that perform these
-   derivations than to do the mutually inductive proof that such derivations exist.
- *)
-Inductive wf_sort {p} : lang p -> ctx p -> exp p -> Prop :=
-| wf_sort_by : forall l c t,
-    wf_lang l ->
-    List.In ({| c|- t}) l ->
-    wf_sort l c t
-| wf_sort_subst : forall l c s c' t',
-    wf_subst l c s c' ->
-    wf_sort l c' t' ->
-    wf_sort l c t'[/s/]
-with le_sort {p} : lang p -> ctx p -> ctx p -> exp p -> exp p -> Prop :=
-| le_sort_by : forall l c1 c2 t1 t2,
-    wf_lang l ->
-    List.In ({< c1 <# c2 |- t1 <# t2}) l ->
-    le_sort l c1 c2 t1 t2
-| le_sort_subst : forall l c1 c2 s1 s2 c1' c2' t1' t2',
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_sort l c1' c2' t1' t2' ->
-    le_sort l c1 c2 t1'[/s1/] t2'[/s2/]
-| le_sort_refl : forall l c t,
-    wf_lang l ->
-    List.In ({| c |- t }) l ->
-    le_sort l c c t t
-| le_sort_trans : forall l c1 c12 c2 t1 t12 t2,
-    le_sort l c1 c12 t1 t12 ->
-    le_sort l c12 c2 t12 t2 ->
-    le_sort l c1 c2 t1 t2
-with wf_term {p} : lang p -> ctx p -> exp p -> exp p -> Prop :=
-| wf_term_by : forall l c e t,
-    wf_lang l ->
-    List.In ({| c |- e .: t}) l ->
-    wf_term l c e t
-| wf_term_subst : forall l c s c' e' t',
-    wf_subst l c s c' ->
-    wf_term l c' e' t' ->
-    wf_term l c e'[/s/] t'[/s/]
-(* terms can be lifted to greater (less precise) types,
-   but not the other way around
- *)
-| wf_term_conv : forall l c e t c' t',
-    wf_term l c e t ->
-    le_sort l c c' t t' ->
-    wf_term l c' e t'
-with le_term {p} : lang p ->
-                   ctx p -> ctx p ->
-                   exp p -> exp p ->
-                   exp p -> exp p -> Prop :=
-| le_term_by : forall l c1 c2 e1 e2 t1 t2,
-    wf_lang l ->
-    List.In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
-    le_term l c1 c2 e1 e2 t1 t2
-| le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_term l c1' c2' e1' e2' t1' t2' ->
-    le_term l c1 c2 e1'[/s1/] e2'[/s2/] t1'[/s1/] t2'[/s2/]
-| le_term_refl : forall l c e t,
-    wf_lang l ->
-    List.In ({| c |- e .: t }) l ->
-    le_term l c c e e t t
-| le_term_trans : forall l c1 c12 c2 e1 e12 e2 t1 t12 t2,
-    le_term l c1 c12 e1 e12 t1 t12 ->
-    le_term l c12 c2 e12 e2 t12 t2 ->
-    le_term l c1 c2 e1 e2 t1 t2
-(* Conversion:
+(* Cheat Sheet
 
-c1  < c2  |- e1 < e2 : t1  < t2   ||
-/\    /\               /\    /\   ||
-c1' < c2' |- e1 < e2 : t1' < t2'  \/
-*)
-| le_term_conv : forall l c1 c2 e1 e2 t1 t2 c1' c2' t1' t2',
-    le_sort l c1' c2' t1' t2' ->
-    le_term l c1 c2 e1 e2 t1 t2 ->
-    le_sort l c1 c1' t1 t1' ->
-    le_sort l c2 c2' t2 t2' ->
-    le_term l c1' c2' e1 e2 t1' t2'
-with wf_subst {p} : lang p -> ctx p -> subst p ->  ctx p -> Prop :=
-| wf_subst_nil : forall l c,
-    wf_ctx l c ->
-    wf_subst l c [::] [::]
-| wf_subst_sort : forall l c s c' t,
-    wf_subst l c s c' ->
-    wf_sort l c t ->
-    wf_subst l c (t::s) c'
-| wf_subst_term : forall l c s c' e t,
-    wf_subst l c s c' ->
-    wf_term l c e t[/s/] ->
-    wf_subst l c (e::s) (term_var t::c')
-with le_subst {p} : lang p ->
-                    ctx p -> ctx p ->
-                    subst p -> subst p ->
-                    ctx p -> ctx p -> Prop :=
-| le_subst_nil : forall l c1 c2,
-    le_ctx l c1 c2 ->
-    le_subst l c1 c2 [::] [::] [::] [::]
-| le_subst_sort : forall l c1 c2 s1 s2 c1' c2' t1 t2,
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_sort l c1 c2 t1 t2 ->
-    le_subst l c1 c2 (t1::s1) (t2::s2) (sort_var::c1') (sort_var::c2')
-| le_subst_term : forall l c1 c2 s1 s2 c1' c2' e1 e2 t1 t2,
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s1/] ->
-    le_subst l c1 c2 (e1::s1) (e2::s2) (term_var t1::c1') (term_var t2 :: c2')
-with wf_ctx_var {p} : lang p -> ctx p -> ctx_var p -> Prop :=
-| wf_sort_var : forall l c,
-    wf_ctx l c ->
-    wf_ctx_var l c sort_var
-| wf_term_var : forall l c t,
-    wf_sort l c t ->
-    wf_ctx_var l c (term_var t)
-with le_ctx_var {p} : lang p -> ctx p -> ctx p -> ctx_var p -> ctx_var p -> Prop :=
-| le_sort_var : forall l c1 c2,
-    le_ctx l c1 c2 ->
-    le_ctx_var l c1 c2 sort_var sort_var
-| le_term_var : forall l c1 c2 t1 t2,
-    le_sort l c1 c2 t1 t2 ->
-    le_ctx_var l c1 c2 (term_var t1) (term_var t2)
-with wf_ctx {p} : lang p -> ctx p -> Prop :=
-| wf_ctx_nil : forall l, wf_lang l -> wf_ctx l [::]
-| wf_ctx_cons : forall l c v,
-    wf_ctx_var l c v ->
-    wf_ctx l (v::c)
-with le_ctx {p} : lang p -> ctx p -> ctx p -> Prop :=
-| le_ctx_nil : forall l, wf_lang l -> le_ctx l [::] [::]
-| le_ctx_cons : forall l c1 c2 v1 v2,
-    le_ctx_var l c1 c2 v1 v2 ->
-    le_ctx l (v1::c1) (v2::c2)
-with wf_rule {p} : lang p -> rule p -> Prop :=
-| wf_sort_rule : forall l c t,
-    wf_ctx l c ->
-    (* TODO: require t (prefix) not in thy? interferes with monotonicity *)
-    wf_rule l ({| c |- t})
-| wf_term_rule : forall l c e t,
-    wf_ctx l c ->
-    wf_sort l c t ->
-    (* TODO: require e (prefix) not in thy? interferes with monotonicity *)
-    wf_rule l ({| c |- e .: t})
-| le_sort_rule : forall l c1 c2 t1 t2,
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    wf_rule l ({< c1 <# c2 |- t1 <# t2})
-| le_term_rule : forall l c1 c2 e1 e2 t1 t2,
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    wf_rule l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2})
-with wf_lang {p} : lang p -> Prop :=
-| wf_lang_nil : wf_lang [::]
-| wf_lang_cons : forall l r, wf_rule l r -> wf_lang (r::l).
-Hint Constructors wf_sort.
-Hint Constructors wf_term.
-Hint Constructors wf_subst.
-Hint Constructors wf_ctx_var.
-Hint Constructors wf_ctx.
-Hint Constructors wf_rule.
-Hint Constructors wf_lang.
-Hint Constructors le_sort.
-Hint Constructors le_term.
-Hint Constructors le_subst.
-Hint Constructors le_ctx_var.
-Hint Constructors le_ctx.
+Syntax:
+polynomial
+lang p
+exp p
+ctx p
+ctx_var p
+rule p
+subst p
+
+Judgments:
+wf_sort
+le_sort
+wf_term
+le_term
+wf_subst
+le_subst
+wf_ctx_var
+le_ctx_var
+wf_ctx
+le_ctx
+wf_rule
+wf_lang
+ *)
+
+(* Tactics *)
 
 Ltac intro_term :=
   match goal with
