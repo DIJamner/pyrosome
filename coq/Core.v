@@ -40,6 +40,7 @@ Ltac intro_term :=
   | [|- lang _ -> _] => intro
   | [|- exp _ -> _] => intro
   | [|- ctx _ -> _] => intro
+  | [|- seq (ctx_var _) -> _] => intro
   | [|- ctx_var _ -> _] => intro
   | [|- rule _ -> _] => intro
   | [|- subst _ -> _] => intro
@@ -234,19 +235,20 @@ Proof.
 Qed.
 Hint Immediate wf_lang_prefix.
 
+Ltac top_inversion :=
+  let H := fresh in
+  move => H;
+  inversion H.
+
 Lemma wf_lang_rst {p} : forall (l : lang p) a, wf_lang (a :: l) -> wf_lang l.
 Proof.
-  intros; inversion H; by apply (wf_rule_lang H1).
+  repeat intro_term; top_inversion; apply: wf_rule_lang; eauto.
 Qed.
 
 Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
   with wf_lang_lang_ind := Induction for wf_lang Sort Prop.
 Check wf_lang_lang_ind.
 
-Ltac top_inversion :=
-  let H := fresh in
-  move => H;
-  inversion H.
 
 (* ==============================
    Context relation transitivity
@@ -275,33 +277,33 @@ Lemma ctx_trans p (l : lang p) n
 Proof.
   move: n.
   apply: nat2_mut_ind.
-  - move => c1 c2 c3; case: c1 => [_|v c1]; top_inversion; auto.
-  - case => [|v c1] c2 c3 v1 v2 v3; top_inversion; auto.
-  - move => n IH c1 c2 c3 v1 v2 v3.
-    case => neq;
-    repeat top_inversion; constructor;
+  - case; repeat intro_term; repeat top_inversion; auto.
+  - case; repeat intro_term; repeat top_inversion; auto.
+  - move => n IH; repeat intro_term;
+    case;
+    repeat top_inversion;
+    constructor;
     [ apply: IH
     | apply: le_sort_trans]; eauto.
-  - move => n IH c1 c2 c3 neq.
+  - move => n IH; repeat intro_term.
+    move => neq.
     repeat top_inversion; constructor; auto.
     apply: IH; eauto.
     move: neq.
-    rewrite -H2.
-    rewrite !mul2n doubleS.
-    case => ->.
-    done.
+    rewrite -H2 !mul2n doubleS.
+    auto.
 Qed.
 
 Lemma le_ctx_trans p (l : lang p) c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
 Proof.
-  eapply (ctx_trans l (2* size c1)); done.
+  eapply ctx_trans; eauto.
 Qed.
 Hint Resolve le_ctx_trans.
 
 Lemma le_ctx_var_trans p (l : lang p) c1 c2 c3 v1 v2 v3 :
   le_ctx_var l c1 c2 v1 v2 -> le_ctx_var l c2 c3 v2 v3 -> le_ctx_var l c1 c3 v1 v3.
 Proof.
-  eapply (ctx_trans l (2* size c1).+1); done.
+  eapply ctx_trans; eauto.
 Qed.
 Hint Resolve le_ctx_var_trans.
 
@@ -327,6 +329,7 @@ Proof.
   eapply le_refl.
 Qed.
 Hint Resolve le_ctx_var_refl.
+
 
 (* note: this isn't true in general if I add a freshness condition *)
 Lemma rule_in_wf {p} : forall (l : lang p), wf_lang l -> forall r, List.In r l -> wf_rule l r.
