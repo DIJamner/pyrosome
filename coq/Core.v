@@ -64,6 +64,8 @@ with wf_sort_lang  {p} (l : lang p) c t (wf : wf_sort l c t) : wf_lang l.
   solve_wf_with wf_sort_lang.
 Qed.
 Hint Immediate wf_ctx_lang.
+Hint Immediate wf_ctx_var_lang.
+Hint Immediate wf_sort_lang.
 
 Lemma wf_term_lang  {p} (l : lang p) c e t
       (wf : wf_term l c e t) : wf_lang l
@@ -99,16 +101,26 @@ Scheme le_sort_mono_ind := Minimality for le_sort Sort Prop
   with le_subst_mono_ind := Minimality for le_subst Sort Prop
   with le_term_mono_ind := Minimality for le_term Sort Prop
   with le_ctx_mono_ind := Minimality for le_ctx Sort Prop
-  with le_ctx_var_mono_ind := Minimality for le_ctx_var Sort Prop.
+  with le_ctx_var_mono_ind := Minimality for le_ctx_var Sort Prop
+  with wf_sort_mono_ind := Minimality for wf_sort Sort Prop
+  with wf_subst_mono_ind := Minimality for wf_subst Sort Prop
+  with wf_term_mono_ind := Minimality for wf_term Sort Prop
+  with wf_ctx_mono_ind := Minimality for wf_ctx Sort Prop
+  with wf_ctx_var_mono_ind := Minimality for wf_ctx_var Sort Prop.
 
-Combined Scheme le_mono_ind from
+Combined Scheme mono_ind from
          le_sort_mono_ind,
          le_subst_mono_ind,
          le_term_mono_ind,
          le_ctx_mono_ind,
-         le_ctx_var_mono_ind.
+         le_ctx_var_mono_ind,
+         wf_sort_mono_ind,
+         wf_subst_mono_ind,
+         wf_term_mono_ind,
+         wf_ctx_mono_ind,
+         wf_ctx_var_mono_ind.
 
-Lemma le_mono {p} r
+Lemma mono {p} r
   : (forall (l : lang p) c1 c2 t1 t2,
         le_sort l c1 c2 t1 t2 -> wf_rule l r -> le_sort (r::l) c1 c2 t1 t2)
     /\ (forall (l : lang p) c1 c2 s1 s2 c1' c2',
@@ -121,18 +133,22 @@ Lemma le_mono {p} r
            le_term (r::l) c1 c2 e1 e2 t1 t2)
     /\ (forall (l : lang p) c1 c2,  le_ctx l c1 c2 -> wf_rule l r ->  le_ctx (r::l) c1 c2)
     /\ (forall (l : lang p) c1 c2 v1 v2,
-           le_ctx_var l c1 c2 v1 v2 -> wf_rule l r ->  le_ctx_var (r::l) c1 c2 v1 v2).
+           le_ctx_var l c1 c2 v1 v2 -> wf_rule l r ->  le_ctx_var (r::l) c1 c2 v1 v2)
+    /\ (forall (l : lang p) c t, wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
+    /\ (forall (l : lang p) c s c', wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c')
+    /\ (forall (l : lang p) c e t,  wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c e t)
+    /\ (forall (l : lang p) c,  wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c)
+    /\ (forall (l : lang p) c v,  wf_ctx_var l c v -> wf_rule l r ->  wf_ctx_var (r::l) c v).
 Proof.
-  apply: le_mono_ind; eauto.
+  apply: mono_ind; eauto.  
   intros; apply: le_term_conv; eauto.
 Qed.
-
 
 Lemma le_ctx_mono {p} (l : lang p) r c1 c2
                  (wfc : le_ctx l c1 c2)
   : wf_rule l r -> le_ctx (r::l) c1 c2.
 Proof.
-  apply le_mono; auto.
+  apply mono; auto.
 Qed.
 Hint Resolve le_ctx_mono.
   
@@ -140,7 +156,7 @@ Lemma le_ctx_var_mono {p} (l : lang p) r c1 c2 v1 v2
                      (wfv : le_ctx_var l c1 c2 v1 v2)
      : wf_rule l r -> le_ctx_var (r::l) c1 c2 v1 v2.
 Proof.
-  apply le_mono; auto.
+  apply mono; auto.
 Qed.
 Hint Resolve le_ctx_var_mono.
 
@@ -148,7 +164,7 @@ Lemma le_sort_mono {p} (l : lang p) r c1 c2 t1 t2
                   (wfs : le_sort l c1 c2 t1 t2)
      : wf_rule l r -> le_sort (r::l) c1 c2 t1 t2.
 Proof.
-  apply le_mono; auto.
+  apply mono; auto.
 Qed.
 Hint Resolve le_sort_mono.
 
@@ -156,7 +172,7 @@ Lemma le_subst_mono {p} (l : lang p) r c1 c2 s1 s2 c1' c2'
                    (wfsb : le_subst l c1 c2 s1 s2 c1' c2')
      : wf_rule l r -> le_subst (r::l) c1 c2 s1 s2 c1' c2'.
 Proof.
-  apply le_mono; auto.
+  apply mono; auto.
 Qed.
 Hint Resolve le_subst_mono.
 
@@ -164,64 +180,40 @@ Lemma le_term_mono {p} (l : lang p) r c1 c2 e1 e2 t1 t2
                   (wft :  le_term l c1 c2 e1 e2 t1 t2)
   : wf_rule l r -> le_term (r::l) c1 c2 e1 e2 t1 t2.
 Proof.
-  apply le_mono; auto.
+  apply mono; auto.
 Qed.
 Hint Resolve le_term_mono.
 
-
-Scheme wf_sort_mono_ind := Minimality for wf_sort Sort Prop
-  with wf_subst_mono_ind := Minimality for wf_subst Sort Prop
-  with wf_term_mono_ind := Minimality for wf_term Sort Prop
-  with wf_ctx_mono_ind := Minimality for wf_ctx Sort Prop
-  with wf_ctx_var_mono_ind := Minimality for wf_ctx_var Sort Prop.
-
-Combined Scheme mono_ind from
-         wf_sort_mono_ind,
-         wf_subst_mono_ind,
-         wf_term_mono_ind,
-         wf_ctx_mono_ind,
-         wf_ctx_var_mono_ind.
-
-Lemma wf_sort_subst_term_ctx_ctx_var_mono {p} r
-  : (forall (l : lang p) c t, wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
-    /\ (forall (l : lang p) c s c', wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c')
-    /\ (forall (l : lang p) c e t,  wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c e t)
-    /\ (forall (l : lang p) c,  wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c)
-    /\ (forall (l : lang p) c v,  wf_ctx_var l c v -> wf_rule l r ->  wf_ctx_var (r::l) c v).
-Proof.
-  apply: mono_ind; by eauto.
-Qed.
-
 Lemma wf_sort_mono {p} (l : lang p) r c t : wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t.
 Proof.
-  eapply wf_sort_subst_term_ctx_ctx_var_mono.
+  apply mono; auto.
 Qed.
 Hint Resolve wf_sort_mono.
       
 Lemma wf_subst_mono {p} (l : lang p) r c s c'
   : wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c'.
 Proof.
-  eapply wf_sort_subst_term_ctx_ctx_var_mono.
+  apply mono; auto.
 Qed.
 Hint Resolve wf_subst_mono.
 
 Lemma wf_term_mono {p} (l : lang p) r c e t
   : wf_term l c e t -> wf_rule l r -> wf_term (r::l) c e t.
 Proof.
-  eapply wf_sort_subst_term_ctx_ctx_var_mono.
+  apply mono; auto.
 Qed.
 Hint Resolve wf_term_mono.
 
 Lemma wf_ctx_mono {p} (l : lang p) r c : wf_ctx l c -> wf_rule l r -> wf_ctx (r::l) c.
 Proof.
-  eapply wf_sort_subst_term_ctx_ctx_var_mono.
+  apply mono; auto.
 Qed.
 Hint Resolve wf_ctx_mono.
 
 Lemma wf_ctx_var_mono {p} (l : lang p) r c v
   : wf_ctx_var l c v -> wf_rule l r -> wf_ctx_var (r::l) c v.
 Proof.
-  eapply wf_sort_subst_term_ctx_ctx_var_mono.
+  apply mono; auto.
 Qed.
 Hint Resolve wf_ctx_var_mono.
 
@@ -251,47 +243,14 @@ Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
   with wf_lang_lang_ind := Induction for wf_lang Sort Prop.
 Check wf_lang_lang_ind.
 
-(*
-Fixpoint wf_lang_ind' {p} (P : lang p -> Prop) (P0 : P [::])
-         (PS : forall (l : lang p) (r : rule p), wf_rule l r -> P l -> P (r :: l))
-         (l : lang p) (wfl : wf_lang l) : P l.
-Proof.
-  refine (match wfl with
-            | wf_lang_nil => P0
-            | wf_lang_cons l0 r w => PS l0 r w (wf_lang_ind' p P P0 PS l0 (wf_rule_lang w))
-          end).
-  Show Proof.
-Qed.
-  done.
-  Show Proof.
-  apply: wf_lang_ind'.
-  done.
-  
-  Show Proof.
-  move: (@wf_lang_ind p P P0).
-  move => IH.
-  move: (fun l r wfl 
-
-  move => p P p
-
-  move => p P p0 pIH l.
-  elim.
-  - auto. 
-  - move => l0 r wfr.
-    apply: pIH; auto.
-    
-
-    wf_lang_ind'
-     : forall (p : polynomial) (P : lang p -> Prop),
-       P [::] ->
-       (forall (l : lang p) (r : rule p), wf_rule l r -> P (r :: l)) ->
-       forall l : lang p, wf_lang l -> P l
-*)
-
 Ltac top_inversion :=
   let H := fresh in
   move => H;
   inversion H.
+
+(* ==============================
+   Context relation transitivity
+   ============================= *)
 
 (* manual induction scheme *)
 Lemma nat2_mut_ind (Pl Pr : nat -> Prop)
@@ -345,8 +304,29 @@ Proof.
   eapply (ctx_trans l (2* size c1).+1); done.
 Qed.
 Hint Resolve le_ctx_var_trans.
-     
 
+Scheme wf_ctx_var_refl_ind := Minimality for wf_ctx_var Sort Prop
+  with wf_ctx_refl_ind := Minimality for wf_ctx Sort Prop.
+Combined Scheme ctx_refl_ind from wf_ctx_refl_ind, wf_ctx_var_refl_ind.
+
+Lemma le_refl p 
+  : (forall (l : lang p) (c : ctx p), wf_ctx l c -> le_ctx l c c)
+    /\ (forall (l : lang p) c v, wf_ctx_var l c v -> le_ctx_var l c c v v).
+Proof.
+  eapply ctx_refl_ind; eauto.
+Qed.
+
+Lemma le_ctx_refl p (l : lang p) c : wf_ctx l c -> le_ctx l c c.
+Proof.
+  eapply le_refl.
+Qed.
+Hint Resolve le_ctx_refl.
+
+Lemma le_ctx_var_refl p (l : lang p) c v : wf_ctx_var l c v -> le_ctx_var l c c v v.
+Proof.
+  eapply le_refl.
+Qed.
+Hint Resolve le_ctx_var_refl.
 
 (* note: this isn't true in general if I add a freshness condition *)
 Lemma rule_in_wf {p} : forall (l : lang p), wf_lang l -> forall r, List.In r l -> wf_rule l r.

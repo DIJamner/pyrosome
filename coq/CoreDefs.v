@@ -33,7 +33,7 @@ with le_sort {p} : lang p -> ctx p -> ctx p -> exp p -> exp p -> Prop :=
     le_sort l c1 c2 t1'[/s1/] t2'[/s2/]
 | le_sort_refl : forall l c t,
     wf_lang l ->
-    List.In ({| c |- t }) l ->
+    wf_sort l c t ->
     le_sort l c c t t
 | le_sort_trans : forall l c1 c12 c2 t1 t12 t2,
     le_sort l c1 c12 t1 t12 ->
@@ -42,7 +42,7 @@ with le_sort {p} : lang p -> ctx p -> ctx p -> exp p -> exp p -> Prop :=
 with wf_term {p} : lang p -> ctx p -> exp p -> exp p -> Prop :=
 | wf_term_by : forall l c e t,
     wf_lang l ->
-    List.In ({| c |- e .: t}) l ->
+    wf_term l c e t ->
     wf_term l c e t
 | wf_term_subst : forall l c s c' e' t',
     wf_subst l c s c' ->
@@ -234,11 +234,11 @@ Variant le_sort_ {p} (l : lang p) c1 c2 t1 t2 : Prop :=
     le_subst l c1 c2 s1 s2 c1' c2' ->
     le_sort l c1' c2' t1' t2' ->
     le_sort_ l c1 c2 t1 t2
-| le_sort_refl_ : forall t,
+| le_sort_refl_ :
     c1 = c2 ->
     t1 = t2 ->
     wf_lang l ->
-    List.In ({| c1 |- t }) l ->
+    wf_sort l c1 t1 ->
     le_sort_ l c1 c2 t1 t2
 | le_sort_trans_ : forall c12 t12,
     le_sort l c1 c12 t1 t12 ->
@@ -281,7 +281,7 @@ Variant le_term_ {p} (l : lang p) c1 c2 e1 e2 t1 t2 : Prop :=
     e1 = e2 ->
     t1 = t2 ->
     wf_lang l ->
-    List.In ({| c1 |- e1 .: t1 }) l ->
+    wf_term l c1 e1 t1 ->
     le_term_ l c1 c2 e1 e2 t1 t2
 | le_term_trans_ : forall c12 e12 t12,
     le_term l c1 c12 e1 e12 t1 t12 ->
