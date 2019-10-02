@@ -63,6 +63,7 @@ with wf_sort_lang  {p} (l : lang p) c t (wf : wf_sort l c t) : wf_lang l.
   solve_wf_with wf_sort_lang.
   solve_wf_with wf_sort_lang.
 Qed.
+Hint Immediate wf_ctx_lang.
 
 Lemma wf_term_lang  {p} (l : lang p) c e t
       (wf : wf_term l c e t) : wf_lang l
@@ -77,6 +78,7 @@ with wf_subst_lang  {p} (l : lang p) c s c'
   solve_wf_with (@wf_sort_lang p).
   solve_wf_with wf_term_lang.
 Qed.
+Hint Immediate wf_term_lang.
 
 Lemma wf_rule_lang {p} (l : lang p) r
       (wf : wf_rule l r) : wf_lang l.
@@ -87,6 +89,7 @@ Proof.
   solve_wf_with (@wf_sort_lang p).
   solve_wf_with (@wf_term_lang p).
 Qed.
+Hint Immediate wf_rule_lang.
 
 
 (* TODO: should this hint be used more generally? *)
@@ -235,7 +238,186 @@ Proof.
   move => r l1 IH.
   rewrite cat_cons => wfl.
   inversion wfl.
-  apply: IH; apply: wf_rule_lang; eassumption.
+  eauto.
+Qed.
+Hint Immediate wf_lang_prefix.
+
+Lemma wf_lang_rst {p} : forall (l : lang p) a, wf_lang (a :: l) -> wf_lang l.
+Proof.
+  intros; inversion H; by apply (wf_rule_lang H1).
+Qed.
+
+Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
+  with wf_lang_lang_ind := Induction for wf_lang Sort Prop.
+Check wf_lang_lang_ind.
+
+(*
+Fixpoint wf_lang_ind' {p} (P : lang p -> Prop) (P0 : P [::])
+         (PS : forall (l : lang p) (r : rule p), wf_rule l r -> P l -> P (r :: l))
+         (l : lang p) (wfl : wf_lang l) : P l.
+Proof.
+  refine (match wfl with
+            | wf_lang_nil => P0
+            | wf_lang_cons l0 r w => PS l0 r w (wf_lang_ind' p P P0 PS l0 (wf_rule_lang w))
+          end).
+  Show Proof.
+Qed.
+  done.
+  Show Proof.
+  apply: wf_lang_ind'.
+  done.
+  
+  Show Proof.
+  move: (@wf_lang_ind p P P0).
+  move => IH.
+  move: (fun l r wfl 
+
+  move => p P p
+
+  move => p P p0 pIH l.
+  elim.
+  - auto. 
+  - move => l0 r wfr.
+    apply: pIH; auto.
+    
+
+    wf_lang_ind'
+     : forall (p : polynomial) (P : lang p -> Prop),
+       P [::] ->
+       (forall (l : lang p) (r : rule p), wf_rule l r -> P (r :: l)) ->
+       forall l : lang p, wf_lang l -> P l
+*)
+
+Ltac top_inversion :=
+  let H := fresh in
+  move => H;
+  inversion H.
+
+(* manual induction scheme *)
+Lemma nat2_mut_ind (Pl Pr : nat -> Prop)
+  : Pl 0 ->
+    Pr 0 ->
+    (forall n, Pl n -> Pr (n.+1)) ->
+    (forall n, Pr n -> Pl (n.+1)) ->
+    (forall n, Pl n /\ Pr n).
+Proof.
+  move => Pl0 Pr0 Plr Prl.
+  elim; auto.
+  move => n; case => Pln Prn; split; auto.
+Qed.
+
+Lemma ctx_trans p (l : lang p) n
+  : (forall c1 c2 c3, n = 2 * size c1 -> le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3)
+    /\ (forall c1 c2 c3 v1 v2 v3,
+           n = (2 * size c1).+1 ->
+           le_ctx_var l c1 c2 v1 v2 ->
+           le_ctx_var l c2 c3 v2 v3 ->
+           le_ctx_var l c1 c3 v1 v3).
+Proof.
+  move: n.
+  apply: nat2_mut_ind.
+  - move => c1 c2 c3; case: c1 => [_|v c1]; top_inversion; auto.
+  - case => [|v c1] c2 c3 v1 v2 v3; top_inversion; auto.
+  - move => n IH c1 c2 c3 v1 v2 v3.
+    case => neq;
+    repeat top_inversion; constructor;
+    [ apply: IH
+    | apply: le_sort_trans]; eauto.
+  - move => n IH c1 c2 c3 neq.
+    repeat top_inversion; constructor; auto.
+    apply: IH; eauto.
+    move: neq.
+    rewrite -H2.
+    rewrite !mul2n doubleS.
+    case => ->.
+    done.
+Qed.
+
+Lemma le_ctx_trans p (l : lang p) c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
+Proof.
+  eapply (ctx_trans l (2* size c1)); done.
+Qed.
+Hint Resolve le_ctx_trans.
+
+Lemma le_ctx_var_trans p (l : lang p) c1 c2 c3 v1 v2 v3 :
+  le_ctx_var l c1 c2 v1 v2 -> le_ctx_var l c2 c3 v2 v3 -> le_ctx_var l c1 c3 v1 v3.
+Proof.
+  eapply (ctx_trans l (2* size c1).+1); done.
+Qed.
+Hint Resolve le_ctx_var_trans.
+     
+
+
+(* note: this isn't true in general if I add a freshness condition *)
+Lemma rule_in_wf {p} : forall (l : lang p), wf_lang l -> forall r, List.In r l -> wf_rule l r.
+Proof.
+  apply: (@wf_lang_lang_ind p (fun l r' wfr' => forall r, List.In r l -> wf_rule l r)).
+  case.
+  repeat do [move => lin; by inversion lin | intro].
+  move => r l c _ wfc r'.
+  case => req.
+  move: req wfc => -> wfc.
+  apply: wf_rule_mono.
+  apply wf_ctx_lang in wfc.
+  by inversion wfc.
+  apply wf_ctx_lang in wfc.
+  by inversion wfc.
+  
+  
+  move => l r wfr huh r'.
+  case.
+  - move => req.
+    move: req wfr huh => -> wfr huh.
+      by apply: wf_rule_mono.
+  - move => l c t wfc.
+    
+    eauto.
+    eauto. done.
+    apply: wf_sort_rule.
+  
+  apply: wf_lang_ind'.
+  - move => l c t wfc.
+    
+
+
+  induction l.
+  - move => _ r lin; exfalso; auto using List.in_nil.
+  - move => wfl r lin.
+    inversion lin; [rewrite -H; auto|].
+    
+    Focus 2.
+  - apply: wf_rule_mono.
+    apply: IHl; eauto using wf_lang_rst.
+    apply: IHl; eauto using wf_lang_rst.
+
+    destruct wfl; auto.
+    + exfalso; auto using List.in_nil.
+    + 
+
+    apply: wf_lang_rst. move: (IHl (wf_lang_rst wfl) a).
+    move => impl.
+    
+
+    destruct wfl.
+    + auto.
+
+  elim; auto.
+  - move => r lin; exfalso; auto using List.in_nil.
+  - move => l' r wfr r' lin.
+    inversion lin; [rewrite -H; auto|].
+    apply: wf_rule_mono; auto.
+    
+
+
+    case => [<-|]; auto.
+    eauto.
+    
+  move => l' r' wfr' lin.
+  inversion lin; [rewrite -H; auto|].
+  auto.
+  apply: wf_rule_mono; auto.
+  case => [<-|]; auto.
+  
 Qed.
 
 Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 (wf : le_ctx l c1 c2) : wf_ctx l c1
@@ -252,14 +434,25 @@ with le_sort_wf_l  {p} (l : lang p) c1 c2 t1 t2
     apply List.in_split in lin;
       case: lin => ll;
       case => lr l'eq.
+    rewrite l'eq in wfl.
+    pose wfl' := (wf_lang_prefix wfl).
+    inversion wfl'.
+    inversion H0.
+    rewrite l'eq.
+    move: l'eq wfl' => _ _.
+    elim: ll wfl H8; simpl; auto.
+    move => r' ll IH wfl' wfs.
+    apply: wf_sort_mono; auto.
+    apply: IH; auto.
+    inversion wfl'.
+    apply: wf_rule_lang; eauto.
+    inversion wfl'; auto.
+  - move => l' c1' c2' s1 s2 c1'' c2'' t1' t2' lesb les.
+    apply: le_sort_wf_l.
     
     Check List.in_split.
   Search _ (List.In).
   (* depends on monotonicity *)
-Qed.
-
-(* TODO: this isn't true in general if I add *)
-Lemma rule_in_wf {p} (l : lang p) r : wf_lang l -> List.In r l -> wf_rule l r.
 Qed.
 
 Lemma wf_sort_ctx {p} (l : lang p) c t
