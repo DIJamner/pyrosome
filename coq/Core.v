@@ -396,12 +396,11 @@ Proof.
 Qed.
 Coercion wf_subst_from_variant p (l : lang p) c s c' := iffRL (wf_subst_iff_variant l c s c').
 
-(*
+(* TODO: why does this one fail?
 Lemma wf_term_iff_variant {p} (l : lang p) c e t : wf_term l c e t <-> wf_term_ l c e t.
 Proof.
   split;case; rewrite_constr_eqs; eauto.
-  Focus 2.
-Qed.
+Fail Qed.
 Coercion wf_term_from_variant p (l : lang p) c e t := iffRL (wf_term_iff_variant l c e t).
 *)
 
@@ -445,6 +444,8 @@ Qed.
 Coercion le_term_from_variant p (l : lang p) c1 c2 e1 e2 t1 t2 :=
   iffRL (le_term_iff_variant l c1 c2 e1 e2 t1 t2).
 
+(* TODO: from here *)
+(*
 Lemma presupp_ctx {p}
       : forall (l : lang p) c1 c2
       
@@ -495,35 +496,14 @@ with le_sort_wf_l  {p} (l : lang p) c1 c2 t1 t2
   Search _ (List.In).
   (* depends on monotonicity *)
 Qed.
-
+*)
 
 
 (* =======================
    OLD: update to work with present definition
 ===============================*)
 
-Lemma wf_ctx_var_lang  {p} (l : lang p) c1 c2 v1 v2
-           (wf : wf_ctx_var l c1 c2 v1 v2) : wf_lang l.
-  case: wf => //=.
-Qed.
-Hint Immediate wf_ctx_var_lang : wf_hints.
-Lemma wf_sort_lang  {p} (l : lang p) c1 c2 t1 t2
-           (wf : wf_sort l c1 c2 t1 t2) : wf_lang l.
-  case: wf => //=.
-Qed.
-Hint Immediate wf_sort_lang : wf_hints.
-
-Hint Immediate wf_term_lang : wf_hints.
-Lemma wf_subst_lang  {p} (l : lang p) c1 c2 s1 s2 c1' c2'
-           (wf : wf_subst l c1 c2 s1 s2 c1' c2') : wf_lang l.
-  case: wf => //=.
-Qed.
-Hint Immediate wf_subst_lang : wf_hints.
-Lemma wf_rule_lang  {p} (l : lang p) r
-           (wf : wf_rule l r) : wf_lang l.
-  case: wf => //=.
-Qed.
-Hint Immediate wf_rule_lang : wf_hints.
+(*
 
 (* well-formed context suppositions *)
 Lemma wf_sort_ctx  {p} (l : lang p) c1 c2 t1 t2
@@ -622,171 +602,4 @@ Ltac solve_wf :=
      | solve_wf_ctx
      | eauto].
   
-Lemma wf_ctx_conv p (l : lang p) c1 c2 : wf_ctx l c1 c2 <-> wf_ctx_ l c1 c2.
-Proof.
-  split; case; solve_wf.
-Qed.
-Hint Resolve <- wf_ctx_conv 0 : wf_hints.
-Coercion ctx_coerce p (l : lang p) c1 c2 := fst (wf_ctx_conv l c1 c2).
-
-Lemma wf_ctx_var_conv p (l : lang p) c1 c2 v1 v2
-  : wf_ctx_var l c1 c2 v1 v2 <-> wf_ctx_var_ l c1 c2 v1 v2.
-Proof.
-  split; case; solve_wf.
-Qed.
-Hint Resolve <- wf_ctx_var_conv 0 : wf_hints.
-Coercion ctx_var_coerce p (l : lang p) c1 c2 v1 v2 := fst (wf_ctx_var_conv l c1 c2 v1 v2).
-
-Fixpoint wf_ctx_to_trans' (n : nat) p (l : lang p) (c1 c2 c3 :ctx p) {struct n}
-  : n = 2 * size c1 -> wf_ctx l c1 c2 -> wf_ctx l c2 c3 -> wf_ctx l c1 c3
-with wf_ctx_var_to_trans' (n : nat) p (l : lang p) c1 c2 c3 v1 v2 v3 {struct n}
-     : n = (2 * size c1).+1 ->
-       wf_ctx_var l c1 c2 v1 v2 ->
-       wf_ctx_var l c2 c3 v2 v3 ->
-       wf_ctx_var l c1 c3 v1 v3.
-Proof.
-  - refine (match n as n' return n' = 2 * size c1 -> _ -> _ -> _ with
-              | 0 => _
-              | S n0 => _
-            end).
-    + case c1.
-      * move => _ wf2 wf3.
-        inversion wf2.
-        rewrite -H2 in wf3.
-        inversion wf3.
-        constructor => //=.
-      * move => c l' neq; inversion neq.
-    + move => neq wf1 wf2.
-      inversion wf1.
-      rewrite -H2 in wf2;
-        inversion wf2;
-      apply wf_ctx_conv;
-      constructor => //=.
-      rewrite -H4 in wf2;
-        inversion wf2.
-      apply wf_ctx_conv;
-        constructor => //=.
-      apply: (wf_ctx_var_to_trans' n0) => //=.
-      rewrite -H3 in neq.
-      simpl in neq.
-      rewrite mulnSr in neq.
-      rewrite addn2 in neq.
-      inversion neq.
-      done.
-      exact H1.
-      done.
-  - refine (match n as n' return n' = (2 * size c1).+1 -> _ -> _ -> _ with
-              | 0 => _
-              | S n0 => _
-            end).
-    + move => neq;
-      inversion neq.
-    + move => neq wf1 wf2; inversion neq.
-      inversion wf1;
-      rewrite <- H6 in wf2;
-      inversion wf2;
-        apply wf_ctx_var_conv;
-        constructor.
-      * apply: (wf_ctx_to_trans' n0) => //=.        
-        exact H1.
-        done.
-      * have wfs13 : wf_sort l c1 c3 t1 t3.
-        apply: wf_sort_trans.
-        done.
-        apply: (wf_ctx_to_trans' n0) => //=.
-        apply: wf_sort_ctx; eauto.
-        apply: wf_sort_ctx; eauto.
-        eauto.
-        eauto.
-        done.
-Qed. 
-
-
-Lemma wf_ctx_to_trans p (l : lang p) (c1 c2 c3 :ctx p)
-  : wf_ctx l c1 c2 -> wf_ctx l c2 c3 -> wf_ctx l c1 c3.
-Proof.
-  apply: wf_ctx_to_trans' => //=.
-Qed.
-                                                        
-Lemma wf_ctx_var_to_trans p (l : lang p) c1 c2 c3 v1 v2 v3
-     : wf_ctx_var l c1 c2 v1 v2 ->
-       wf_ctx_var l c2 c3 v2 v3 ->
-       wf_ctx_var l c1 c3 v1 v3.
-Proof.
-  apply: wf_ctx_var_to_trans'; eauto.
-Qed.
-
-
-Lemma wf_sort_conv p (l : lang p) c1 c2 t1 t2
-  : wf_sort l c1 c2 t1 t2 <-> wf_sort_ l c1 c2 t1 t2.
-Proof.
-  split.
-  - case; solve_wf.
-  - case.
-    move => t1' t2' s1 s2 c1' c2' wfs wfsb wfr.
-    apply: wf_sort_by; auto; try by solve_wf.
-    move => c12 t1' t12 t3' wf1 wf3.
-    apply: wf_sort_trans.
-    solve_wf.
-    apply: wf_ctx_to_trans;
-      apply: wf_sort_ctx; eauto.
-    eauto.
-    eauto.
-Qed.
-Hint Resolve <- wf_sort_conv 0 : wf_hints.
-Coercion sort_coerce p (l : lang p) c1 c2 t1 t2 := fst (wf_sort_conv l c1 c2 t1 t2).
-
-(*TODO: induction principles using wf_sort_, etc
-  should _ be inductives? probably
- *)
-Lemma wf_sort_monotone p (l : lang p) c1 c2 t1 t2
-  : wf_sort l c1 c2 t1 t2 -> forall r, wf_rule l r -> wf_sort (r::l) c1 c2 t1 t2
-with wf_subst_monotone p (l : lang p) c1 c2 s1 s2 c1' c2'
-     : wf_subst l c1 c2 s1 s2 c1' c2' ->
-       forall r, wf_rule l r -> wf_subst (r::l) c1 c2 s1 s2 c1' c2'.
-Proof.
-  - case /wf_sort_conv.
-    move => t1' t2' s1 s2 c1'' c2''.
-    move => wfs wfsb lin r wfr.
-    rewrite wf_sort_conv.
-    apply: wf_sort_by_.
-    apply: wf_sort_monotone; done.
-    apply: wf_subst_monotone; try done.
-    eassumption.
-    
-    apply: IH; done.
-    
-    (*TODO: needs to be mutual with subst monotone? *)
-    
-
-Lemma wf_rule_term p (l : lang p) c1 c2 e1 e2 t1 t2
-  : wf_lang l -> List.In ({rc1 <# c2 |- e1 <# e2 .: t1 <# t2}) l -> wf_term l c1 c2 e1 e2 t1 t2.
-Proof.
-  elim: l; [done|].
-  move => r l' IH wfl.
-  case.
-  - move => req.
-    inversion wfl.
-    rewrite req in H2.
-    inversion H2.
-    (*TODO: prove monotonicity of language extension *)
-i
-Lemma wf_term_conv p (l : lang p) c1 c2 e1 e2 t1 t2
-  : wf_term l c1 c2 e1 e2 t1 t2 <-> wf_term_ l c1 c2 e1 e2 t1 t2.
-Proof.
-  split; case; try solve_wf.
-  - hypothesize.
-    apply:wf_term_conv_r_; eauto.
-    (*TODO: build into solve_wf*)
-  - hypothesize.
-    apply:wf_term_conv_l_; eauto.
-  - hypothesize.
-    apply:wf_term_by; eauto.
-    apply: wf_subst_lang; eauto.
-    apply: wf_subst_ctx; eauto.
-    move => l' c1' c12 c2' e1' e2' t1' t12 t2'.
-    move => wfl wfc wfs wft wfs'.
-    apply:wf_term_conv_r_; eauto.
-    apply wft.
-Hint Resolve <- wf_term_conv 0 : wf_hints.
-Coercion term_coerce p (l : lang p) c1 c2 e1 e2 t1 t2 := fst (wf_term_conv l c1 c2 e1 e2 t1 t2).
+*)
