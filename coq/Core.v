@@ -82,6 +82,7 @@ with wf_subst_lang  {p} (l : lang p) c s c'
   solve_wf_with wf_term_lang.
 Qed.
 Hint Immediate wf_term_lang.
+Hint Immediate wf_subst_lang.
 
 Lemma wf_rule_lang {p} (l : lang p) r
       (wf : wf_rule l r) : wf_lang l.
@@ -349,6 +350,63 @@ Proof.
          apply: wf_rule_lang; eauto]).
 Qed.
 
+(*
+
+         le_sort_mono_ind,
+         le_subst_mono_ind,
+         le_term_mono_ind,
+         le_ctx_mono_ind,
+         le_ctx_var_mono_ind,
+         wf_sort_mono_ind,
+         wf_subst_mono_ind,
+         wf_term_mono_ind,
+         wf_ctx_mono_ind,
+         wf_ctx_var_mono_ind.
+ *)
+
+(* constructor conversion lemmas *)
+
+Ltac rewrite_constr_eqs :=
+  repeat lazymatch goal with
+  | [ |- _ = _ -> _] => move => ->
+  | _ => intro
+  end.
+
+Lemma wf_ctx_iff_variant {p} (l : lang p) c : wf_ctx l c <-> wf_ctx_ l c.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion wf_ctx_from_variant p (l : lang p) c := iffRL (wf_ctx_iff_variant l c).
+
+Lemma wf_sort_iff_variant {p} (l : lang p) c t : wf_sort l c t <-> wf_sort_ l c t.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion wf_sort_from_variant p (l : lang p) c t := iffRL (wf_sort_iff_variant l c t).
+
+Lemma wf_term_iff_variant {p} (l : lang p) c e t : wf_term l c e t <-> wf_term_ l c e t.
+Proof.
+  split;case; rewrite_constr_eqs; eauto.
+  Focus 2.
+Qed.
+Coercion wf_term_from_variant p (l : lang p) c e t := iffRL (wf_term_iff_variant l c e t).
+
+Lemma presupp_ctx {p}
+      : forall (l : lang p) c1 c2
+      
+Lemma wf_sort_ctx {p} (l : lang p) c t
+      (wf : wf_sort l c t) : wf_ctx l c.
+Proof.
+  all: case: wf => //=.
+  + move => l' c' t' wfl lin.
+    have rwf : wf_rule l' ({| c' |- t'}).
+      by apply: rule_in_wf.
+    by inversion rwf.
+  + move => l' c' s c'' t'' wfsb wfs.
+    (* by apply: wf_subst_ctx. TODO: mutual *)
+    give_up.
+Qed.
+
 Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 (wf : le_ctx l c1 c2) : wf_ctx l c1
 with le_ctx_var_wf_l  {p} (l : lang p) c1 c2 v1 v2
                       (wf : le_ctx_var l c1 c2 v1 v2) : wf_ctx_var l c1 v1
@@ -384,14 +442,7 @@ with le_sort_wf_l  {p} (l : lang p) c1 c2 t1 t2
   (* depends on monotonicity *)
 Qed.
 
-Lemma wf_sort_ctx {p} (l : lang p) c t
-      (wf : wf_sort l c t) : wf_ctx l c.
-Proof.
-  all: case: wf => //=.
-Qed.
 
-(* TODO: transitivity proofs *)
-(* TODO: monotonicity proofs *)  
 
 (* =======================
    OLD: update to work with present definition
