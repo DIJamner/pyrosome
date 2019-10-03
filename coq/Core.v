@@ -378,18 +378,72 @@ Proof.
 Qed.
 Coercion wf_ctx_from_variant p (l : lang p) c := iffRL (wf_ctx_iff_variant l c).
 
+Lemma wf_ctx_var_iff_variant {p} (l : lang p) c v : wf_ctx_var l c v <-> wf_ctx_var_ l c v.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion wf_ctx_var_from_variant p (l : lang p) c v := iffRL (wf_ctx_var_iff_variant l c v).
+
 Lemma wf_sort_iff_variant {p} (l : lang p) c t : wf_sort l c t <-> wf_sort_ l c t.
 Proof.
   split;case; rewrite_constr_eqs; by eauto.
 Qed.
 Coercion wf_sort_from_variant p (l : lang p) c t := iffRL (wf_sort_iff_variant l c t).
 
+Lemma wf_subst_iff_variant {p} (l : lang p) c s c' : wf_subst l c s c' <-> wf_subst_ l c s c'.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion wf_subst_from_variant p (l : lang p) c s c' := iffRL (wf_subst_iff_variant l c s c').
+
+(*
 Lemma wf_term_iff_variant {p} (l : lang p) c e t : wf_term l c e t <-> wf_term_ l c e t.
 Proof.
   split;case; rewrite_constr_eqs; eauto.
   Focus 2.
 Qed.
 Coercion wf_term_from_variant p (l : lang p) c e t := iffRL (wf_term_iff_variant l c e t).
+*)
+
+Lemma le_ctx_iff_variant {p} (l : lang p) c1 c2 : le_ctx l c1 c2 <-> le_ctx_ l c1 c2.
+Proof.
+  split;case; rewrite_constr_eqs; eauto;
+    (* TODO: why doesn't eauto handle this?*)
+    by constructor.    
+Qed.
+Coercion le_ctx_from_variant p (l : lang p) c1 c2 := iffRL (le_ctx_iff_variant l c1 c2).
+
+Lemma le_ctx_var_iff_variant {p} (l : lang p) c1 c2 v1 v2
+  : le_ctx_var l c1 c2 v1 v2 <-> le_ctx_var_ l c1 c2 v1 v2.
+Proof.
+  split;case; rewrite_constr_eqs;  eauto.
+Qed.
+Coercion e_ctx_var_from_variant p (l : lang p) c1 c2 v1 v2 :=
+  iffRL (le_ctx_var_iff_variant l c1 c2 v1 v2).
+
+Lemma le_sort_iff_variant {p} (l : lang p) c1 c2 t1 t2
+  : le_sort l c1 c2 t1 t2 <-> le_sort_ l c1 c2 t1 t2.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion le_sort_from_variant p (l : lang p) c1 c2 t1 t2 :=
+  iffRL (le_sort_iff_variant l c1 c2 t1 t2).
+
+Lemma le_subst_iff_variant {p} (l : lang p) c1 c2 s1 s2 c1' c2'
+  : le_subst l c1 c2 s1 s2 c1' c2' <-> le_subst_ l c1 c2 s1 s2 c1' c2'.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion le_subst_from_variant p (l : lang p) c1 c2 s1 s2 c1' c2' :=
+  iffRL (le_subst_iff_variant l c1 c2 s1 s2 c1' c2').
+
+Lemma le_term_iff_variant {p} (l : lang p) c1 c2 e1 e2 t1 t2
+  : le_subst l c1 c2 e1 e2 t1 t2 <-> le_subst_ l c1 c2 e1 e2 t1 t2.
+Proof.
+  split;case; rewrite_constr_eqs; by eauto.
+Qed.
+Coercion le_term_from_variant p (l : lang p) c1 c2 e1 e2 t1 t2 :=
+  iffRL (le_term_iff_variant l c1 c2 e1 e2 t1 t2).
 
 Lemma presupp_ctx {p}
       : forall (l : lang p) c1 c2

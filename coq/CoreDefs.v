@@ -324,7 +324,7 @@ Hint Constructors le_subst_.
 
 Variant wf_ctx_var_ {p} (l : lang p) c : ctx_var p -> Prop :=
 | wf_sort_var_ :  wf_ctx l c ->  wf_ctx_var_ l c sort_var
-| wf_term_var_ : forall t, wf_sort_ l c t -> wf_ctx_var_ l c (term_var t).
+| wf_term_var_ : forall t, wf_sort l c t -> wf_ctx_var_ l c (term_var t).
 Hint Constructors wf_ctx_var_.
 
 Variant le_ctx_var_ {p} (l : lang p) c1 c2 : ctx_var p -> ctx_var p -> Prop :=
