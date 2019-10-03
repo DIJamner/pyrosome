@@ -332,75 +332,21 @@ Hint Resolve le_ctx_var_refl.
 
 
 (* note: this isn't true in general if I add a freshness condition *)
-Lemma rule_in_wf {p} : forall (l : lang p), wf_lang l -> forall r, List.In r l -> wf_rule l r.
+Lemma rule_in_wf {p} r : forall (l : lang p), wf_lang l -> List.In r l -> wf_rule l r.
 Proof.
-  apply: (@wf_lang_lang_ind p (fun l r' wfr' => forall r, List.In r l -> wf_rule l r)).
-  case.
-  repeat do [move => lin; by inversion lin | intro].
-  move => r l c _ wfc r'.
-  case => req.
-  move: req wfc => -> wfc.
-  apply: wf_rule_mono.
-  apply wf_ctx_lang in wfc.
-  by inversion wfc.
-  apply wf_ctx_lang in wfc.
-  by inversion wfc.
-  
-  
-  move => l r wfr huh r'.
-  case.
-  - move => req.
-    move: req wfr huh => -> wfr huh.
-      by apply: wf_rule_mono.
-  - move => l c t wfc.
-    
-    eauto.
-    eauto. done.
-    apply: wf_sort_rule.
-  
-  apply: wf_lang_ind'.
-  - move => l c t wfc.
-    
-
-
-  induction l.
-  - move => _ r lin; exfalso; auto using List.in_nil.
-  - move => wfl r lin.
-    inversion lin; [rewrite -H; auto|].
-    
-    Focus 2.
-  - apply: wf_rule_mono.
-    apply: IHl; eauto using wf_lang_rst.
-    apply: IHl; eauto using wf_lang_rst.
-
-    destruct wfl; auto.
-    + exfalso; auto using List.in_nil.
-    + 
-
-    apply: wf_lang_rst. move: (IHl (wf_lang_rst wfl) a).
-    move => impl.
-    
-
-    destruct wfl.
-    + auto.
-
-  elim; auto.
-  - move => r lin; exfalso; auto using List.in_nil.
-  - move => l' r wfr r' lin.
-    inversion lin; [rewrite -H; auto|].
-    apply: wf_rule_mono; auto.
-    
-
-
-    case => [<-|]; auto.
-    eauto.
-    
-  move => l' r' wfr' lin.
-  inversion lin; [rewrite -H; auto|].
-  auto.
-  apply: wf_rule_mono; auto.
-  case => [<-|]; auto.
-  
+  case: r => [c e l | c e t l | c1 c2 t1 t2 l | c1 c2 e1 e2 t1 t2 l] wfl lin;
+  constructor;
+  elim: l lin wfl => //= => r l IH;
+  (case => [->| linl]; top_inversion;
+       do [ apply: wf_ctx_mono => //=
+           | apply: wf_sort_mono => //=
+           | apply: wf_term_mono => //=
+           | apply: le_ctx_mono => //=
+           | apply: le_sort_mono => //=
+           | apply: le_term_mono => //=];
+       [ by inversion H1
+       | apply: IH => //=;
+         apply: wf_rule_lang; eauto]).
 Qed.
 
 Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 (wf : le_ctx l c1 c2) : wf_ctx l c1
