@@ -50,6 +50,16 @@ Notation "[* x ; .. ; y ]" := (Vector.cons _ x _ .. (Vector.cons _ y _ (Vector.n
 Notation "[ n | s , v ]" := (con n s v).
 Notation "[{ p } n | s , v ]" := (@con p n s v).
 
+Variant constr p (T : Type) :=
+| ccon : forall n, fst (nth zterm p n) ->
+                   Vector.t T (snd (nth zterm p n)) -> constr p T.
+
+Definition Alg p1 p2 := constr p1 (exp p2) -> exp p2.
+
+Definition id_alg {p} : Alg p p := fun ce =>
+  match ce with
+  | ccon n s v => con n s v
+  end.
 
 Section ExpTest.
   Definition test1 : polynomial := [:: (unit,1) ; (unit,2) ; (nat,0)].
@@ -75,6 +85,12 @@ Inductive ctx_var p : Type :=
 
 Arguments term_var {p} e.
 Arguments sort_var {p}.
+
+Definition ctx_var_map {p1 p2} (f : exp p1 -> exp p2) (v : ctx_var p1) : ctx_var p2 :=
+  match v with
+  | sort_var => sort_var
+  | term_var t => term_var (f t)
+  end.
 
 Definition ctx p := list (ctx_var p).
 

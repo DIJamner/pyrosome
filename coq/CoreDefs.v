@@ -1,9 +1,5 @@
-Require Import mathcomp.ssreflect.all_ssreflect.
-Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
-Set Bullet Behavior "Strict Subproofs".
 
+(* TODO: change from loads to imports*)
 Load Exp.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
@@ -42,7 +38,7 @@ with le_sort {p} : lang p -> ctx p -> ctx p -> exp p -> exp p -> Prop :=
 with wf_term {p} : lang p -> ctx p -> exp p -> exp p -> Prop :=
 | wf_term_by : forall l c e t,
     wf_lang l ->
-    wf_term l c e t ->
+    List.In ({| c |- e .: t}) l ->
     wf_term l c e t
 | wf_term_subst : forall l c s c' e' t',
     wf_subst l c s c' ->
@@ -112,7 +108,7 @@ with le_subst {p} : lang p ->
     le_subst l c1 c2 (t1::s1) (t2::s2) (sort_var::c1') (sort_var::c2')
 | le_subst_term : forall l c1 c2 s1 s2 c1' c2' e1 e2 t1 t2,
     le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s1/] ->
+    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s2/] ->
     le_subst l c1 c2 (e1::s1) (e2::s2) (term_var t1::c1') (term_var t2 :: c2')
 with wf_ctx_var {p} : lang p -> ctx p -> ctx_var p -> Prop :=
 | wf_sort_var : forall l c,
@@ -318,7 +314,7 @@ Variant le_subst_ {p} (l : lang p) c1 c2
     le_subst_ l c1 c2 (t1::s1) (t2::s2) (sort_var::c1') (sort_var::c2')
 | le_subst_term_ : forall s1 s2 c1' c2' e1 e2 t1 t2,
     le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s1/] ->
+    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s2/] ->
     le_subst_ l c1 c2 (e1::s1) (e2::s2) (term_var t1::c1') (term_var t2 :: c2').
 Hint Constructors le_subst_.
 

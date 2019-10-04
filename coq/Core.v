@@ -1,10 +1,5 @@
 
-Require Import mathcomp.ssreflect.all_ssreflect.
-Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
-Set Bullet Behavior "Strict Subproofs".
-
+(* TODO: change from loads to imports *)
 Load CoreDefs.
 
 (* Cheat Sheet
@@ -350,19 +345,145 @@ Proof.
          apply: wf_rule_lang; eauto]).
 Qed.
 
-(*
 
-         le_sort_mono_ind,
-         le_subst_mono_ind,
-         le_term_mono_ind,
-         le_ctx_mono_ind,
-         le_ctx_var_mono_ind,
-         wf_sort_mono_ind,
-         wf_subst_mono_ind,
-         wf_term_mono_ind,
-         wf_ctx_mono_ind,
-         wf_ctx_var_mono_ind.
- *)
+Scheme le_wf_ctx_var_ind := Minimality for le_ctx_var Sort Prop
+  with le_wf_ctx_ind := Minimality for le_ctx Sort Prop
+  with le_wf_sort_ind := Minimality for le_sort Sort Prop
+  with le_wf_subst_ind := Minimality for le_subst Sort Prop
+  with le_wf_term_ind := Minimality for le_term Sort Prop.
+Combined Scheme le_wf_ind from
+         le_wf_sort_ind,
+         le_wf_subst_ind,
+         le_wf_term_ind,
+         le_wf_ctx_ind,
+         le_wf_ctx_var_ind.
+
+
+Lemma le_wf_l {p}
+  : (forall (l : lang p) c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> wf_sort l c1 t1)
+    /\ (forall (l : lang p) c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c1 s1 c1')
+    /\ (forall (l : lang p) c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c1 e1 t1)
+    /\ (forall (l : lang p) c1 c2,  le_ctx l c1 c2 -> wf_ctx l c1)
+    /\ (forall (l : lang p) c1 c2 v1 v2,
+           le_ctx_var l c1 c2 v1 v2 -> wf_ctx_var l c1 v1).
+Proof.
+  apply: le_wf_ind; eauto; repeat intro_term;
+    move => wfl /rule_in_wf rin;
+     apply rin in wfl;
+     by inversion wfl.
+Qed.
+
+Lemma le_wf_r {p}
+  : (forall (l : lang p) c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> wf_sort l c2 t2)
+    /\ (forall (l : lang p) c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c2 s2 c2')
+    /\ (forall (l : lang p) c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c2 e2 t2)
+    /\ (forall (l : lang p) c1 c2,  le_ctx l c1 c2 -> wf_ctx l c2)
+    /\ (forall (l : lang p) c1 c2 v1 v2,
+           le_ctx_var l c1 c2 v1 v2 -> wf_ctx_var l c2 v2).
+Proof.
+  apply: le_wf_ind; eauto; repeat intro_term;
+    move => wfl /rule_in_wf rin;
+     apply rin in wfl;
+       by inversion wfl.
+Qed.
+ 
+Lemma le_ctx_wf_l  {p} (l : lang p) c1 c2 : le_ctx l c1 c2 -> wf_ctx l c1.
+Proof.
+    by eapply le_wf_l.
+Qed.
+Hint Immediate le_ctx_wf_l. 
+Lemma le_ctx_wf_r  {p} (l : lang p) c1 c2 : le_ctx l c1 c2 -> wf_ctx l c2.
+Proof.
+    by eapply le_wf_r.
+Qed.
+Hint Immediate le_ctx_wf_r. 
+Lemma le_ctx_var_wf_l  {p} (l : lang p) c1 c2 v1 v2 : le_ctx_var l c1 c2 v1 v2 -> wf_ctx_var l c1 v1.
+Proof.
+    by eapply le_wf_l.
+Qed.
+Hint Immediate le_ctx_var_wf_l.
+Lemma le_ctx_var_wf_r  {p} (l : lang p) c1 c2 v1 v2 : le_ctx_var l c1 c2 v1 v2 -> wf_ctx_var l c2 v2.
+Proof.
+    by eapply le_wf_r.
+Qed.
+Hint Immediate le_ctx_var_wf_r.
+Lemma le_sort_wf_l  {p} (l : lang p) c1 c2 t1 t2 : le_sort l c1 c2 t1 t2 -> wf_sort l c1 t1.
+Proof.
+    by eapply le_wf_l.
+Qed.
+Hint Immediate le_sort_wf_l.
+Lemma le_sort_wf_r  {p} (l : lang p) c1 c2 t1 t2 : le_sort l c1 c2 t1 t2 -> wf_sort l c2 t2.
+Proof.
+    by eapply le_wf_r.
+Qed.
+Hint Immediate le_sort_wf_r.
+Lemma le_term_wf_l  {p} (l : lang p) c1 c2 e1 e2 t1 t2
+  : le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c1 e1 t1.
+Proof.
+    by eapply le_wf_l.
+Qed.
+Hint Immediate le_term_wf_l.
+Lemma le_term_wf_r  {p} (l : lang p) c1 c2 e1 e2 t1 t2
+  : le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c2 e2 t2.
+Proof.
+    by eapply le_wf_r.
+Qed.
+Hint Immediate le_term_wf_r.
+Lemma le_subst_wf_l  {p} (l : lang p) c1 c2 s1 s2 c1' c2'
+  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c1 s1 c1'.
+Proof.
+    by eapply le_wf_l.
+Qed.
+Hint Immediate le_subst_wf_l.
+Lemma le_subst_wf_r  {p} (l : lang p) c1 c2 s1 s2 c1' c2'
+  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c2 s2 c2'.
+Proof.
+    by eapply le_wf_r.
+Qed.
+Hint Immediate le_subst_wf_r.
+
+Lemma wf_to_ctx {p}
+  : (forall (l : lang p) c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> le_ctx l c1 c2)
+    /\ (forall (l : lang p) c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' -> le_ctx l c1 c2)
+    /\ (forall (l : lang p) c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 -> le_ctx l c1 c2)
+    /\ (forall (l : lang p) c1 c2,  le_ctx l c1 c2 -> le_ctx l c1 c2)
+    /\ (forall (l : lang p) c1 c2 v1 v2,
+           le_ctx_var l c1 c2 v1 v2 -> le_ctx l c1 c2)
+    /\ (forall (l : lang p) c t, wf_sort l c t -> wf_ctx l c)
+    /\ (forall (l : lang p) c s c', wf_subst l c s c' -> wf_ctx l c)
+    /\ (forall (l : lang p) c e t,  wf_term l c e t -> wf_ctx l c)
+    /\ (forall (l : lang p) c,  wf_ctx l c -> wf_ctx l c)
+    /\ (forall (l : lang p) c v,  wf_ctx_var l c v -> wf_ctx l c).
+Proof.
+  apply: mono_ind; eauto.
+  - move => l c1 c2 t1 t2 wfl /rule_in_wf => riwf.
+    apply riwf in wfl.
+      by inversion wfl.
+  - move => l c1 c2 e1 e2 t1 t2 wfl /rule_in_wf => riwf.
+    apply riwf in wfl.
+    inversion wfl.
+    give_up. (*TODO: need IH for sort here *)
+  - move => l c e t wfl /rule_in_wf => riwf.
+    apply riwf in wfl.
+    apply: le_ctx_refl.
+      by inversion wfl.
+  - move => l c t wfl /rule_in_wf => riwf.
+    apply riwf in wfl.
+      by inversion wfl.
+  - move => l c e t wfl lin.
+    apply rule_in_wf in lin => //=.
+      by inversion lin.
+Admitted.
+
 
 (* constructor conversion lemmas *)
 
