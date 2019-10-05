@@ -33,6 +33,7 @@ wf_lang
 Ltac intro_term :=
   match goal with
   | [|- lang _ -> _] => intro
+  | [|- seq (rule _) -> _] => intro
   | [|- exp _ -> _] => intro
   | [|- ctx _ -> _] => intro
   | [|- seq (ctx_var _) -> _] => intro
@@ -243,8 +244,6 @@ Qed.
 
 Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
   with wf_lang_lang_ind := Induction for wf_lang Sort Prop.
-Check wf_lang_lang_ind.
-
 
 (* ==============================
    Context relation transitivity
@@ -448,6 +447,7 @@ Proof.
 Qed.
 Hint Immediate le_subst_wf_r.
 
+(* TODO: finish the proof
 Lemma wf_to_ctx {p}
   : (forall (l : lang p) c1 c2 t1 t2,
         le_sort l c1 c2 t1 t2 -> le_ctx l c1 c2)
@@ -464,26 +464,18 @@ Lemma wf_to_ctx {p}
     /\ (forall (l : lang p) c,  wf_ctx l c -> wf_ctx l c)
     /\ (forall (l : lang p) c v,  wf_ctx_var l c v -> wf_ctx l c).
 Proof.
-  apply: mono_ind; eauto.
-  - move => l c1 c2 t1 t2 wfl /rule_in_wf => riwf.
-    apply riwf in wfl.
-      by inversion wfl.
-  - move => l c1 c2 e1 e2 t1 t2 wfl /rule_in_wf => riwf.
-    apply riwf in wfl.
-    inversion wfl.
+  apply: mono_ind;
+    eauto;
+    repeat intro_term;
+    move => wfl /rule_in_wf => riwf;
+    apply riwf in wfl;
+    try by inversion wfl.
+  - inversion wfl.
     give_up. (*TODO: need IH for sort here *)
-  - move => l c e t wfl /rule_in_wf => riwf.
-    apply riwf in wfl.
-    apply: le_ctx_refl.
+  - apply: le_ctx_refl.
       by inversion wfl.
-  - move => l c t wfl /rule_in_wf => riwf.
-    apply riwf in wfl.
-      by inversion wfl.
-  - move => l c e t wfl lin.
-    apply rule_in_wf in lin => //=.
-      by inversion lin.
-Admitted.
-
+Fail Qed.
+*)
 
 (* constructor conversion lemmas *)
 
