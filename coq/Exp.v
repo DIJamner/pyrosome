@@ -14,7 +14,7 @@ Definition zterm : Set * nat := (Empty_set , 0).
 
 
 Unset Elimination Schemes.
-Inductive exp (p : polynomial) : Type :=
+Inductive exp (p : polynomial) : Set :=
   | var : nat -> exp p
   | con : forall n, fst (nth zterm p n) ->
                      Vector.t (exp p) (snd (nth zterm p n)) ->
@@ -50,7 +50,7 @@ Notation "[* x ; .. ; y ]" := (Vector.cons _ x _ .. (Vector.cons _ y _ (Vector.n
 Notation "[ n | s , v ]" := (con n s v).
 Notation "[{ p } n | s , v ]" := (@con p n s v).
 
-Variant constr p (T : Type) :=
+Variant constr p (T : Set) :=
 | ccon : forall n, fst (nth zterm p n) ->
                    Vector.t T (snd (nth zterm p n)) -> constr p T.
 
@@ -79,7 +79,7 @@ Section ExpTest.
   Definition test1ex : exp test1 := tlam (tlam (tapp (tvar 1) (tvar 0))).
 End ExpTest.
   
-Inductive ctx_var p : Type :=
+Inductive ctx_var p : Set :=
 | term_var : exp p -> ctx_var p
 | sort_var : ctx_var p.
 
