@@ -56,10 +56,20 @@ Variant constr p (T : Set) :=
 
 Definition Alg p1 p2 := constr p1 (exp p2) -> exp p2.
 
+Fixpoint alg_fn {p1 p2} (a : Alg p1 p2) (e : exp p1) : exp p2 :=
+  match e with
+  | var n => var n
+  | con n s v => a (ccon s (Vector.map (alg_fn a) v))
+  end.
+    
+
 Definition id_alg {p} : Alg p p := fun ce =>
   match ce with
   | ccon n s v => con n s v
   end.
+
+(* TODO: uniform inheritance condition? this feels like it would be nice to have
+Coercion id_alg : constr >-> exp. *)
 
 Section ExpTest.
   Definition test1 : polynomial := [:: (unit,1) ; (unit,2) ; (nat,0)].
@@ -100,6 +110,18 @@ Inductive rule (p : polynomial) : Type :=
 | term :  ctx p -> exp p -> exp p -> rule p
 | sort_le : ctx p -> ctx p -> exp p -> exp p -> rule p
 | term_le : ctx p -> ctx p -> exp p -> exp p -> exp p -> exp p -> rule p.
+
+Definition rule_map {p1 p2} (f : exp p1 -> exp p2) r : rule p2 :=
+  match r with
+| sort c t => sort (List.map (ctx_var_map f) c) (f t)
+| term c e t => term (List.map (ctx_var_map f) c) (f e) (f t)
+| sort_le c1 c2 t1 t2 =>
+  sort_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c1) (f t1) (f t2)
+| term_le  c1 c2 e1 e2 t1 t2 =>
+  term_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c2)
+          (f e1) (f e2)
+          (f t1) (f t2)
+  end.
 
 Bind Scope rule_scope with rule.
 Delimit Scope rule_scope with rule.
