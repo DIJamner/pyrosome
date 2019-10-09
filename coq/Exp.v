@@ -116,7 +116,7 @@ Definition rule_map {p1 p2} (f : exp p1 -> exp p2) r : rule p2 :=
 | sort c t => sort (List.map (ctx_var_map f) c) (f t)
 | term c e t => term (List.map (ctx_var_map f) c) (f e) (f t)
 | sort_le c1 c2 t1 t2 =>
-  sort_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c1) (f t1) (f t2)
+  sort_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c2) (f t1) (f t2)
 | term_le  c1 c2 e1 e2 t1 t2 =>
   term_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c2)
           (f e1) (f e2)
