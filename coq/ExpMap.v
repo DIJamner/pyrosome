@@ -297,7 +297,6 @@ Section Morphisms.
            Admissible l {| c |- t} <-> wf_sort l c t ?
          *)
     
-  End MorphFns.
 
 End Morphisms.
 
@@ -329,21 +328,60 @@ Definition eq_ccon p (T : Set) n elt (elteq : nth zterm p n = elt)
        (eq_rect_r (fun elt => Vector.t _ elt.2) v elteq).
 Arguments eq_ccon {p} {T} {n} {elt} elteq s.
 
-(* TODO: make a reasonable computational defn *)
-Definition sumL {p1 p2} : exp_morph p1 (p1 ++ p2) :=
-  fun S e =>
-    match e with
-    | ccon n s v =>
-      let bounds := (nth_in_bounds s) in
-      let ncat := nth_cat1 bounds in
-      eq_ccon ncat s v
-    end.
+Fixpoint  min_fin_of_nat (n : nat) : Fin.t (n.+1) :=
+  match n as n0 return (Fin.t n0.+1) with
+   | 0 => Fin.F1
+   | x.+1 => Fin.FS (min_fin_of_nat x)
+   end.
+
+Fixpoint  fin_weak1 {n} (f : Fin.t n) : Fin.t (n.+1) :=
+  match f in Fin.t n' return (Fin.t n'.+1) with
+   | Fin.F1 _ => Fin.F1
+   | Fin.FS _ x => Fin.FS (fin_weak1 x)
+   end.
+
+Fixpoint id_vec b : Vector.t (Fin.t b) b :=
+  match b as b0 return (Vector.t (Fin.t b0) b0) with
+   | 0 => [*]
+   | x.+1 => Vector.cons (Fin.t x.+1) (min_fin_of_nat x) x (Vector.map fin_weak1 (id_vec x))
+  end.
+
+
+Fixpoint morph_weaken {p1 p2} (m : exp_morph' p2 p1) a b : exp_morph' ((a,b) :: p2) p1. 
+Proof.
+  refine (match
+      m as e in (exp_morph' _ p)
+      return ((fun (p0 : polynomial) (_ : exp_morph' p2 p0) => exp_morph' ((a, b) :: p2) p0) p e)
+    with
+    | @nil_morph _ => nil_morph ((a, b) :: p2)
+    | @cons_morph _ S' x0 idx m' f v x5 => _
+    end).
+  apply: (@cons_morph _ S' _ (fun s => (idx s).+1)).
+  - exact f.
+  - exact v.
+  - exact (morph_weaken _ _ x5 a b).
+Defined.
+
+Definition sumL {p1 p2} : exp_morph' (p1 ++ p2) p1.
+  elim: p1.
+  constructor.
+  case.
+  econstructor.
+  instantiate (1 := fun _ => 0).
+    by simpl.
+  simpl.
+  move => _.
+  apply: id_vec.
+  simpl.
+    by apply: morph_weaken.
+Defined.
 
 Lemma nth_cat2 : forall p1 p2 n, nth zterm (p1 ++ p2) (size p1 + n) = nth zterm p2 n.
 Proof.
   elim; auto.
 Qed.
 
+(*
 Definition sumR {p1 p2} : exp_morph p2 (p1 ++ p2) :=
   fun S e =>
     match e with
@@ -351,3 +389,4 @@ Definition sumR {p1 p2} : exp_morph p2 (p1 ++ p2) :=
       let bounds := (nth_cat2 p1 p2 n) in
       eq_ccon bounds s v
     end.
+*)
