@@ -1,8 +1,12 @@
 Load Core.
 
-
 (* A compiler assumes a way to compile p2 to the target and then compiles p1 to the target *)
-Definition compiler p1 p2 := forall {p'}, Alg p2 p' -> Alg p1 p'. 
+Definition compiler p1 p2 := forall {p'}, Alg p2 p' -> Alg p1 p'.
+
+Definition ccompose {p1 p2 p3} (C : compiler p1 p2) (C' : compiler p2 p3) : compiler p1 p3 :=
+  fun _ CR => C _ (C' _ CR).
+
+Section Preserving.
 
 Variable p1 p2 : polynomial.
 
@@ -21,6 +25,77 @@ Fixpoint compile (e : exp p1) : exp p2 :=
 Definition compile_var : ctx_var p1 -> ctx_var p2 := ctx_var_map compile.
 
 Definition compile_ctx : ctx p1 -> ctx p2 := List.map compile_var.
+
+Definition preserving :=
+  (forall c1 c2 t1 t2,
+            le_sort l1 c1 c2 t1 t2 ->
+            le_sort l2 (compile_ctx c1) (compile_ctx c2) (compile t1) (compile t2))
+        /\ (forall c1 c2 s1 s2 c1' c2',
+               le_subst l1 c1 c2 s1 s2 c1' c2' ->
+               le_subst l2
+                        (compile_ctx c1) (compile_ctx c2)
+                        (List.map compile s1) (List.map compile s2)
+                        (compile_ctx c1') (compile_ctx c2'))
+        /\ (forall c1 c2 e1 e2 t1 t2,
+               le_term l1 c1 c2 e1 e2 t1 t2 ->
+               le_term l2
+                       (compile_ctx c1) (compile_ctx c2)
+                       (compile e1) (compile e2)
+                       (compile t1) (compile t2))
+        /\ (forall c1 c2,
+               le_ctx l1 c1 c2 ->
+               le_ctx l2 (compile_ctx c1) (compile_ctx c2))
+        /\ (forall c1 c2 v1 v2,
+               le_ctx_var l1 c1 c2 v1 v2 ->
+               le_ctx_var l2
+                          (compile_ctx c1) (compile_ctx c2)
+                          (compile_var v1) (compile_var v2))
+        /\ (forall c t, 
+            wf_sort l1 c t ->
+            wf_sort l2 (compile_ctx c) (compile t))
+        /\ (forall c s c',
+               wf_subst l1 c s c' ->
+               wf_subst l2 (compile_ctx c) (List.map compile s) (compile_ctx c'))
+        /\ (forall c e t, 
+               wf_term l1 c e t ->
+               wf_term l2 (compile_ctx c) (compile e) (compile t))
+        /\ (forall c,  wf_ctx l1 c -> wf_ctx l2 (compile_ctx c))
+        /\ (forall c v,
+               wf_ctx_var l1 c v ->
+               wf_ctx_var l2 (compile_ctx c) (compile_var v))
+        /\ (forall r,  wf_rule l1 r -> wf_rule l2 (rule_map compile r))
+        /\ (wf_lang l1 -> wf_lang l2).
+End Preserving.
+
+Lemma compile_id p (t : exp p) : compile (fun x : polynomial => id) t = t.
+Proof.
+  elim t; simpl; intros; f_equal; eauto.
+  elim: v H; simpl; eauto.
+  intros; f_equal.
+    by case: H0.
+    apply: H.
+    by case: H0.
+Qed.
+
+Lemma compile_var_id p (v : ctx_var p) : compile_var (fun x : polynomial => id) v = v.
+Proof.
+  case: v; simpl; eauto.
+  intro.
+    by rewrite !compile_id.
+Qed.
+
+Lemma compile_ctx_id p (c : ctx p) : compile_ctx (fun x : polynomial => id) c = c.
+Proof.
+  elim: c; simpl; intros; f_equal; eauto.
+    by rewrite compile_var_id.
+Qed.
+    
+Lemma preserve_id p (l : lang p) : preserving l l (fun x C => C).
+Proof.
+  split; simpl; intros.
+  - by rewrite !compile_id !compile_ctx_id.
+  -
+  eauto using compile_id.
 
 (* Non-cpsed versions *)
 Definition wf_sort_preserving : Prop :=
