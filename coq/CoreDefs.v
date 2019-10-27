@@ -1,6 +1,12 @@
 
+Require Import mathcomp.ssreflect.all_ssreflect.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+Set Bullet Behavior "Strict Subproofs".
+
 (* TODO: change from loads to imports*)
-Load Exp.
+From excomp Require Import Exp.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -57,7 +63,7 @@ with le_term {p} : lang p ->
                    exp p -> exp p -> Prop :=
 | le_term_by : forall l c1 c2 e1 e2 t1 t2,
     wf_lang l ->
-    List.In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
+    List.In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2})%rule l ->
     le_term l c1 c2 e1 e2 t1 t2
 | le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
     le_subst l c1 c2 s1 s2 c1' c2' ->
@@ -65,7 +71,7 @@ with le_term {p} : lang p ->
     le_term l c1 c2 e1'[/s1/] e2'[/s2/] t1'[/s1/] t2'[/s2/]
 | le_term_refl : forall l c e t,
     wf_lang l ->
-    List.In ({| c |- e .: t }) l ->
+    List.In ({| c |- e .: t })%rule l ->
     le_term l c c e e t t
 | le_term_trans : forall l c1 c12 c2 e1 e12 e2 t1 t12 t2,
     le_term l c1 c12 e1 e12 t1 t12 ->
@@ -176,8 +182,8 @@ Hint Constructors wf_lang.
  *)
 
 Ltac get_polynomial :=
-  lazymatch goal with
-    [ p : polynomial |- _] => p
+  match goal with
+    p : polynomial |- _ => p
   end.
 
 (* tac_map tactics push under "wf : (wf_X ...) |- ... -> (wf_X ...)" goals to the subterms 
@@ -211,7 +217,7 @@ so they are just defined by reference to the core datatypes
  *)
 
 Variant wf_sort_ {p} (l : lang p) c t : Prop :=
-| wf_sort_by_ :  wf_lang l ->  List.In ({| c|- t}) l -> wf_sort_ l c t
+| wf_sort_by_ :  wf_lang l ->  List.In ({| c|- t})%rule l -> wf_sort_ l c t
 | wf_sort_subst_ : forall s c' t',
     t = t'[/s/] ->
     wf_subst l c s c' ->
@@ -222,7 +228,7 @@ Hint Constructors wf_sort_.
 Variant le_sort_ {p} (l : lang p) c1 c2 t1 t2 : Prop :=
 | le_sort_by_ :
     wf_lang l ->
-    List.In ({< c1 <# c2 |- t1 <# t2}) l ->
+    List.In ({< c1 <# c2 |- t1 <# t2})%rule l ->
     le_sort_ l c1 c2 t1 t2
 | le_sort_subst_ : forall s1 s2 c1' c2' t1' t2',
     t1 = t1'[/s1/] ->
@@ -245,7 +251,7 @@ Hint Constructors le_sort_.
 Variant wf_term_ {p} (l : lang p) c e t : Prop :=
 | wf_term_by_ :
     wf_lang l ->
-    List.In ({| c |- e .: t}) l ->
+    List.In ({| c |- e .: t})%rule l ->
     wf_term_ l c e t
 | wf_term_subst_ : forall s c' e' t',
     e = e'[/s/] ->

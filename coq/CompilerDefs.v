@@ -89,13 +89,38 @@ Proof.
   elim: c; simpl; intros; f_equal; eauto.
     by rewrite compile_var_id.
 Qed.
+
+Lemma compile_subst_id p (s : subst p) : List.map (compile (fun x => id)) s = s.
+Proof.
+  elim: s; simpl; intros; f_equal; eauto.
+    by rewrite compile_id.
+Qed.
+
+Lemma compile_rule_id p (r : rule p) : rule_map (compile (fun x => id)) r = r.
+Proof.
+  elim: r; simpl; intros; f_equal; eauto;
+    (try by rewrite ?compile_id ?compile_subst_id ?compile_ctx_id ?compile_var_id);
+  move: compile_ctx_id  => cid;
+  unfold compile_ctx in cid;
+  unfold compile_var in cid;
+    by apply: cid.
+Qed.
     
 Lemma preserve_id p (l : lang p) : preserving l l (fun x C => C).
 Proof.
-  split; simpl; intros.
-  - by rewrite !compile_id !compile_ctx_id.
-  -
-  eauto using compile_id.
+  unfold preserving.
+  repeat match goal with
+  | |- _ /\ _ => split
+  | _ => intros; simpl;
+           try by rewrite ?compile_id
+                          ?compile_subst_id
+                          ?compile_ctx_id
+                          ?compile_var_id
+                          ?compile_rule_id
+  end.
+Qed.
+
+
 
 (* Non-cpsed versions *)
 Definition wf_sort_preserving : Prop :=

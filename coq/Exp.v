@@ -125,7 +125,7 @@ Definition rule_map {p1 p2} (f : exp p1 -> exp p2) r : rule p2 :=
 
 Bind Scope rule_scope with rule.
 Delimit Scope rule_scope with rule.
-Local Open Scope rule_scope.
+Open Scope rule_scope.
 Notation "{< c1 <# c2 |- s1 <# s2 }" := (sort_le c1 c2 s1 s2) (at level 80) : rule_scope.
 Notation "{< c |- s1 <# s2 }" := (sort_le c c s1 s2) (at level 80):rule_scope.
 Notation "{< c |- s }" := (sort_le c c s s) (at level 80):rule_scope.

@@ -1,6 +1,12 @@
 
+Require Import mathcomp.ssreflect.all_ssreflect.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+Set Bullet Behavior "Strict Subproofs".
+
 (* TODO: change from loads to imports *)
-Load CoreDefs.
+From excomp Require Import Exp CoreDefs.
 
 (* Cheat Sheet
 
