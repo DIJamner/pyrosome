@@ -54,6 +54,8 @@ Variant constr p (T : Set) :=
 | ccon : forall n, fst (nth zterm p n) ->
                    Vector.t T (snd (nth zterm p n)) -> constr p T.
 
+Notation "[{ p , T }> n | s , v ]" := (@ccon p T n s v).
+
 Definition Alg p1 p2 := constr p1 (exp p2) -> exp p2.
 
 Fixpoint alg_fn {p1 p2} (a : Alg p1 p2) (e : exp p1) : exp p2 :=
@@ -190,13 +192,27 @@ Fixpoint var_lookup {p} (c : subst p) (n : nat) : exp p :=
   | _ :: c', n'.+1 => var_lookup c' n' (*otherwise decrease both and continue *)
   end.
 
-Fixpoint exp_subst {p} (e : exp p) (s : subst p) : exp p :=
+Fixpoint exp_var_map {p} (f : nat -> exp p) (e : exp p) : exp p :=
   match e with
-  | var n => var_lookup s n
-  | con n s' v => con n s' (Vector.map (fun e => exp_subst e s) v)
+  | var n => f n
+  | con n s v => con n s (Vector.map (exp_var_map f) v)
   end.
 
+Definition exp_subst {p} (e : exp p) (s : subst p) : exp p :=
+  exp_var_map (var_lookup s) e.
+
 Notation "e [/ s /]" := (exp_subst e s) (at level 7, left associativity).
+
+Definition exp_shift {p} (e : exp p) (m : nat) : exp p :=
+  exp_var_map (fun n => var (m + n)) e.
+
+Notation "e ^! n" := (exp_shift e n) (at level 7, left associativity).
+
+Fixpoint shift_subst (sz start : nat) : forall {p}, subst p :=
+  match sz with
+  | 0 => fun p => [::]
+  | sz'.+1 => fun p => (var start)::(shift_subst sz' (start.+1))
+  end.
 
 (*TODO: this is in the library. Why can't I find it? *)
 Lemma sub_0_r : forall n, n - 0 = n.
@@ -338,10 +354,10 @@ Ltac ws_simpl :=
 
 
 Theorem subst_preserves_ws
-  : forall {p} e (s : subst p) (c c' : ctx p),
-    ws_exp (size c') e ->
-    ws_subst (size c) s (size c') ->
-    ws_exp (size c) (exp_subst e s).
+  : forall {p} e (s : subst p) (csz csz' : nat),
+    ws_exp csz' e ->
+    ws_subst csz s csz' ->
+    ws_exp csz (exp_subst e s).
 Proof.
   move => p e s c c' wse.
   move => wss.
@@ -361,3 +377,212 @@ Proof.
     apply /andP. split; [auto|].
     move: IHA -> => //=.
 Qed.
+
+
+Lemma shiftz {p} (e : exp p) : e^!0 = e.
+Proof.
+  elim: e; simpl; auto.
+  intros; simpl.
+  unfold exp_shift.
+  simpl.
+  f_equal; auto.
+  elim: v H.
+  - by simpl; auto.
+  - simpl.
+    intros.
+    f_equal.
+    + destruct H0.
+      rewrite  -{2}H0.
+      by unfold exp_shift.
+    + apply: H.
+      destruct H0.
+      done.
+Qed.
+
+Lemma shift1_preserves_ws {p} (e : exp p) (n : nat)
+  : ws_exp n e -> ws_exp (n.+1) e^!1. 
+Proof.
+  elim: e n.
+  - simpl; auto.      
+  - simpl.
+    intros until v.
+    elim: v.
+    + simpl; auto.
+    + simpl.
+      intros.
+      case: H0 => H00 H01.
+      move: H1; case /andP => wse H1.
+      apply /andP.
+      split; auto.
+Qed.
+
+
+Lemma vec_map_map {T1 T2 T3} (g : T2 -> T3) (f : T1 -> T2) {n} (v : Vector.t T1 n)
+  : Vector.map g (Vector.map f v) = Vector.map (fun x => g (f x)) v.
+Proof.
+  elim: v => //.
+  intros.
+  simpl.
+    by rewrite H.
+Qed.
+
+Lemma vec_map_ext {B C : Type} (f g : B -> C) n (v : Vector.t B n)
+  : (forall e, f e = g e) -> Vector.map f v = Vector.map g v.
+Proof.
+  move => ext.
+  elim: v; first done.
+  move => e1 n' v' IH.
+  simpl.
+    by rewrite ext IH.
+Qed.
+
+Lemma vec_map_ext' {B C : Type} (f g : B -> C) n (v : Vector.t B n)
+  : forall (P : B -> bool),
+    (forall e, P e -> f e = g e) ->
+    Vector.fold_right (fun e => [eta andb (P e)]) v true ->
+    Vector.map f v = Vector.map g v.
+Proof.
+  move => P ext.
+  elim: v;[> done|].
+  move => e1 n' v' IH vfr.
+  simpl.
+  f_equal.
+  - rewrite ext => //.
+    move: vfr.
+    simpl.
+    by case /andP.
+  - apply: IH.
+    move: vfr; simpl; by case /andP.
+Qed.
+
+Lemma exp_var_map_map {p} g fn (e : exp p)
+  : exp_var_map g (exp_var_map (fun n => var (fn n)) e) = exp_var_map (fun n => g (fn n)) e.
+Proof.
+  elim: e => //.
+  - simpl. intros.
+    f_equal.
+    rewrite vec_map_map.
+    elim: v H => //.
+    simpl.
+    move => h n' t vfr.
+    case.
+    intros.
+    f_equal => //.
+    by apply: vfr.
+Qed.    
+
+Lemma exp_var_map_ext {p} f1 f2 (e : exp p)
+  : (forall n, f1 n = f2 n) -> exp_var_map f1 e = exp_var_map f2 e.
+Proof.
+  move => ext.
+  elim: e; eauto.
+  move => n s v H.
+  unfold exp_var_map.
+  fold (@exp_var_map p).
+  f_equal.
+  elim: v H => //.
+  simpl.
+  intros.
+  case: H0 => -> IH.
+  f_equal.
+  auto.
+Qed.
+
+Lemma exp_var_map_ext' {p} f1 f2 (e : exp p) m
+  : ws_exp m e -> (forall n, n < m -> f1 n = f2 n) -> exp_var_map f1 e = exp_var_map f2 e.
+Proof.
+  move => wse ext.
+  elim: e wse ; eauto.
+  move => n s v H wsv.
+  unfold exp_var_map.
+  fold (@exp_var_map p).
+  f_equal.
+  simpl in wsv.
+  elim: v H wsv => //.
+  simpl.
+  intros.
+  case: H0 => IH1 IH.
+  move: wsv.
+  case /andP.
+  move /IH1 ->.
+  move /H.
+  intros.
+  f_equal.
+  auto.
+Qed.
+  
+Lemma shift1_decomp {p} (e : exp p) n : e^!(n.+1) = e^!n^!1.
+Proof.
+  elim: e n.
+  - simpl; auto.
+  - intros.
+    unfold exp_shift.
+    simpl.
+    f_equal.
+    rewrite vec_map_map.
+    apply: vec_map_ext.
+    intro e.
+    rewrite exp_var_map_map.
+    f_equal.
+Qed.
+  
+Theorem shift_preserves_ws {p} (e : exp p) (n m : nat)
+  : ws_exp n e -> ws_exp (m + n) e^!m. 
+Proof.
+  elim: m e n.
+  - intros; rewrite shiftz.
+      by change (0 + n) with n.
+  - intros.
+    rewrite addSn.
+    rewrite shift1_decomp.
+    apply: shift1_preserves_ws.
+    auto.
+Qed.
+
+Lemma lookup_in_shift_subst n' n m
+  : n' < n -> forall p, @var_lookup p (shift_subst n m) n' = var (n' + m).
+Proof.
+  elim: n' n m.
+  - case => //.
+  - move => n IH.
+    case => //.
+    simpl.
+    intros.
+    change (n.+1 + m) with (n + m).+1.
+    rewrite addnC.
+    change (m + n).+1 with (m.+1 + n).
+    rewrite addnC.
+    eauto.
+Qed.    
+
+Theorem shift_subst_shift {p} (e : exp p) : forall n m, ws_exp n e ->  e [/shift_subst n m/] = e^!m.
+Proof.
+  elim: e.
+  - unfold exp_shift.
+    unfold exp_subst.
+    unfold exp_var_map.
+    intros; rewrite addnC;
+    eapply lookup_in_shift_subst.
+    auto.
+  - intros.
+    unfold exp_shift.
+    unfold exp_subst.
+    unfold exp_var_map.
+    f_equal.
+    pose H0' := H0.
+    simpl in H0'.
+    fold (@exp_var_map p).
+    apply: vec_map_ext'.
+    move => e ppf.
+    apply: exp_var_map_ext'.
+    exact ppf.
+    move => n1 n1lt.
+    rewrite addnC.
+    eapply lookup_in_shift_subst.
+    exact n1lt.
+    done.
+Qed.
+
+(* TODO: is this true? if so, prove
+Lemma id_subst {p} (e : exp p) : forall n m, e [/shift_subst n 0/] = e [/shift_subst m 0/].
+*)
