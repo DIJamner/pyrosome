@@ -90,21 +90,8 @@ Section ExpTest.
   
   Definition test1ex : exp test1 := tlam (tlam (tapp (tvar 1) (tvar 0))).
 End ExpTest.
-  
-Inductive ctx_var p : Set :=
-| term_var : exp p -> ctx_var p
-| sort_var : ctx_var p.
 
-Arguments term_var {p} e.
-Arguments sort_var {p}.
-
-Definition ctx_var_map {p1 p2} (f : exp p1 -> exp p2) (v : ctx_var p1) : ctx_var p2 :=
-  match v with
-  | sort_var => sort_var
-  | term_var t => term_var (f t)
-  end.
-
-Definition ctx p := list (ctx_var p).
+Definition ctx p := list (exp p).
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
 Inductive rule (p : polynomial) : Type :=
@@ -115,12 +102,12 @@ Inductive rule (p : polynomial) : Type :=
 
 Definition rule_map {p1 p2} (f : exp p1 -> exp p2) r : rule p2 :=
   match r with
-| sort c t => sort (List.map (ctx_var_map f) c) (f t)
-| term c e t => term (List.map (ctx_var_map f) c) (f e) (f t)
+| sort c t => sort (List.map f c) (f t)
+| term c e t => term (List.map f c) (f e) (f t)
 | sort_le c1 c2 t1 t2 =>
-  sort_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c2) (f t1) (f t2)
+  sort_le (List.map f c1) (List.map f c2) (f t1) (f t2)
 | term_le  c1 c2 e1 e2 t1 t2 =>
-  term_le (List.map (ctx_var_map f) c1) (List.map (ctx_var_map f) c2)
+  term_le (List.map f c1) (List.map f c2)
           (f e1) (f e2)
           (f t1) (f t2)
   end.
@@ -146,43 +133,6 @@ Notation "{| c |- e .: s }" :=
 
 Definition lang p := list (rule p).
 
-Section SynExample.
-  (*EXAMPLE*)
-  (* syntax of single explicit substitutions *)
-  Definition subst_syn : polynomial :=
-    [:: (nat, 0); (* var (deBruijn) *)
-       (unit, 2) (*subst M[N/0] *)
-    ].
-  
-  Definition sub (m n : exp subst_syn) : exp subst_syn :=
-    [{subst_syn} 1 | tt , [* m; n]].
-  
-  Definition svar (n : nat) : exp subst_syn :=
-    [{subst_syn} 0 | n , [*]].
-  
-  (* equational theory of substitutions *)
-  Definition subst_lang : lang subst_syn :=
-    [:: {< [:: sort_var] |- sub (svar 0) (var 0) <# var 0};
-       {<[:: sort_var; sort_var] |- [{subst_syn} 1 | tt, [* var 0; var 1]]};
-       {<[:: sort_var; sort_var; term_var (var 1)] |- [{subst_syn} 1 | tt, [* var 0; var 2]]};
-       {<[:: sort_var; term_var (var 0); sort_var] |-
-        [{subst_syn} 1 | tt, [* var 1; var 2]] .: var 0};
-       {<[:: sort_var; term_var (var 0); sort_var; term_var (var 2)] |-
-        [{subst_syn} 1 | tt, [* var 1; var 3]] .: var 0}
-    ].
-
-  (*TODO: finish axioms
-    (wf_sort_and_cong ([:: sort_var _; sort_var _],
-    Ccon [++ tt | [* Cvar _ 0; Cvar _ 1]]))
-    ++ (wf_sort_and_cong ([:: sort_var _; sort_var _; term_var (Cvar _ 1)],
-    Ccon [++ tt | [* Cvar _ 0; Cvar _ 2]]))
-    ++ (wf_sort_and_cong ([:: sort_var _; term_var (Cvar _ 0); sort_var _],
-    Ccon [++ tt | [* Cvar _ 1; Cvar _ 2]]))
-      ++ (wf_sort_and_cong ([:: sort_var _; term_var (Cvar _ 0); sort_var _; term_var (Cvar _ 2)],
-      Ccon [++ tt | [* Cvar _ 1; Cvar _ 3]])).
-   *)
-End SynExample.
-  
 Definition subst (p : polynomial) := seq (exp p).
 
 Fixpoint var_lookup {p} (c : subst p) (n : nat) : exp p :=
@@ -253,16 +203,10 @@ Fixpoint ws_exp {p : polynomial} csz (e : exp p) : bool :=
   | con n s v => Vector.fold_right (fun e f => (ws_exp csz e) && f) v true
   end.
 
-Definition ws_ctx_var {p : polynomial} csz (v : ctx_var p) : bool :=
-  match v with
-  | sort_var => true
-  | term_var ty => ws_exp csz ty
-  end.
-
 Fixpoint ws_ctx {p : polynomial} (c : ctx p) : bool :=
   match c with
   | [::] => true
-  | v :: c' => ws_ctx c' && ws_ctx_var (size c') v
+  | t :: c' => ws_ctx c' && ws_exp (size c') t
   end.
 
 Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
@@ -553,7 +497,7 @@ Proof.
     change (m + n).+1 with (m.+1 + n).
     rewrite addnC.
     eauto.
-Qed.    
+Qed. 
 
 Theorem shift_subst_shift {p} (e : exp p) : forall n m, ws_exp n e ->  e [/shift_subst n m/] = e^!m.
 Proof.
@@ -586,3 +530,12 @@ Qed.
 (* TODO: is this true? if so, prove
 Lemma id_subst {p} (e : exp p) : forall n m, e [/shift_subst n 0/] = e [/shift_subst m 0/].
 *)
+
+Lemma extract_var_shift n : forall {p}, @var p n = (var 0)^!n.
+Proof.
+  elim: n; simpl; auto.
+  intros.
+  rewrite shift1_decomp.
+  rewrite -H.
+  auto.
+Qed.
