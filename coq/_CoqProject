@@ -2,3 +2,5 @@
 Exp.v
 CoreDefs.v
 Core.v
+-Q ./langs langs
+Subst.v
