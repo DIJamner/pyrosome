@@ -48,7 +48,7 @@ Ltac intro_term :=
   end.
 
 Tactic Notation "intro_to" constr(ty) :=
-  repeat lazymatch goal with
+  repeat match goal with
          | |- ty -> _ => idtac
          | |- ty _ -> _ => idtac
          | |- ty _ _-> _ => idtac
@@ -65,43 +65,29 @@ Ltac solve_wf_with t :=
         | move => _; solve_wf_with t].
 
 (* well-formed language suppositions *)
-Lemma wf_ctx_lang  {p} (l : lang p) c (wf : wf_ctx l c) : wf_lang l
-with wf_sort_lang  {p} (l : lang p) c t (wf : wf_sort l c t) : wf_lang l.
+Lemma wf_ctx_lang (l : lang) c (wf : wf_ctx l c) : wf_lang l
+with wf_sort_lang (l : lang) c t (wf : wf_sort l c t) : wf_lang l
+with wf_term_lang (l : lang) c e t
+      (wf : wf_term l c e t) : wf_lang l
+with wf_subst_lang (l : lang) c s c'
+           (wf : wf_subst l c s c') : wf_lang l.
   all: case: wf => //=;
-  solve_wf_with wf_sort_lang.
+       intros;
+       first [apply: wf_subst_lang; eassumption
+                 | apply: wf_term_lang; eassumption].
 Qed.
 Hint Immediate wf_ctx_lang.
 Hint Immediate wf_sort_lang.
-
-Lemma wf_term_lang  {p} (l : lang p) c e t
-      (wf : wf_term l c e t) : wf_lang l
-with wf_subst_lang  {p} (l : lang p) c s c'
-           (wf : wf_subst l c s c') : wf_lang l.
-  all: case: wf => //=;
-  try solve_wf_with wf_term_lang.
-  repeat intro_term.
-  move => wft wfs.
-  apply: wf_term_lang; eauto.
-  solve_wf_with (@wf_sort_lang p).
-  solve_wf_with (@wf_ctx_lang p).
-Qed.
 Hint Immediate wf_term_lang.
 Hint Immediate wf_subst_lang.
 
-Lemma wf_rule_lang {p} (l : lang p) r
+Lemma wf_rule_lang (l : lang) r
       (wf : wf_rule l r) : wf_lang l.
 Proof.
-  all: case: wf => //=.
-  solve_wf_with (@wf_ctx_lang p).
-  solve_wf_with (@wf_sort_lang p).
-  solve_wf_with (@wf_sort_lang p).
-  solve_wf_with (@wf_term_lang p).
+  case: wf => //=; eauto.
 Qed.
 Hint Immediate wf_rule_lang.
 
-
-(* TODO: should this hint be used more generally? *)
-Local Hint Resolve List.in_cons.
 
 Scheme le_sort_mono_ind := Minimality for le_sort Sort Prop
   with le_subst_mono_ind := Minimality for le_subst Sort Prop
@@ -122,58 +108,142 @@ Combined Scheme mono_ind from
          wf_term_mono_ind,
          wf_ctx_mono_ind.
 
-Lemma mono {p} r
-  : (forall (l : lang p) c1 c2 t1 t2,
-        le_sort l c1 c2 t1 t2 -> wf_rule l r -> le_sort (r::l) c1 c2 t1 t2)
-    /\ (forall (l : lang p) c1 c2 s1 s2 c1' c2',
+Ltac expand_rule_shift :=
+  match goal with
+  | |- context [ {| ?c ::%! 1 |- sort}] =>
+    change ({| ?c ::%! 1 |- sort})
+      with ({| c |- sort})%%!1
+  | |- context [ {| ?c ::%! 1 |- ?t %! 1}] =>
+    change ({| ?c ::%! 1 |- ?t %! 1})
+      with ({| c |- t})%%!1
+  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1}] =>
+    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1})
+      with ({<c1 <# c2 |- t1 <# t2})%%!1
+  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1}] =>
+    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1})
+      with ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2})%%!1
+  end.
+
+Lemma mono r
+  : (forall (l : lang) c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> wf_rule l r ->
+        le_sort (r::l) c1::%!1 c2::%!1 t1%!1 t2%!1)
+    /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
            le_subst l c1 c2 s1 s2 c1' c2' ->
            wf_rule l r ->
-           le_subst (r::l) c1 c2 s1 s2 c1' c2')
-    /\ (forall (l : lang p) c1 c2 e1 e2 t1 t2,
+           le_subst (r::l) c1::%!1 c2::%!1 s1::%!1 s2::%!1 c1'::%!1 c2'::%!1)
+    /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
            le_term l c1 c2 e1 e2 t1 t2 ->
            wf_rule l r ->
-           le_term (r::l) c1 c2 e1 e2 t1 t2)
-    /\ (forall (l : lang p) c1 c2,  le_ctx l c1 c2 -> wf_rule l r ->  le_ctx (r::l) c1 c2)
-    /\ (forall (l : lang p) c t, wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
-    /\ (forall (l : lang p) c s c', wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c')
-    /\ (forall (l : lang p) c e t,  wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c e t)
-    /\ (forall (l : lang p) c,  wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c).
+           le_term (r::l) c1::%!1 c2::%!1 e1%!1 e2%!1 t1%!1 t2%!1)
+    /\ (forall (l : lang) c1 c2,
+           le_ctx l c1 c2 ->
+           wf_rule l r ->
+           le_ctx (r::l) c1::%!1 c2::%!1)
+    /\ (forall (l : lang) c t,
+           wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c::%!1 t%!1)
+    /\ (forall (l : lang) c s c',
+           wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c::%!1 s::%!1 c'::%!1)
+    /\ (forall (l : lang) c e t,
+           wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c::%!1 e%!1 t%!1)
+    /\ (forall (l : lang) c,
+           wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c::%!1).
 Proof.
-  apply: mono_ind; eauto.  
-  intros; apply: le_term_conv; eauto.
+  apply: mono_ind; intros; eauto.
+  all: try solve[ constructor; try expand_rule_shift; move: rule_in_mono; eauto
+                | rewrite !constr_shift_subst_comm; eauto
+                | simpl; constructor; eauto; rewrite -!constr_shift_subst_comm; auto
+                | apply: le_term_conv; eauto].
+  simpl; econstructor; eauto;
+  unfold is_nth; simpl;
+  change 1 with (0 + 1) at 1;
+  expand_rule_shift;
+    by apply: unshift_is_nth_cons.
+
+  rewrite constr_shift_subst_comm.
+  simpl; eapply wf_term_by; eauto.
+  unfold is_nth; simpl.
+  change 1 with (0 + 1) at 1;
+  expand_rule_shift;
+    by apply: unshift_is_nth_cons.
 Qed.
 
-Lemma le_ctx_mono {p} (l : lang p) r c1 c2
+Lemma mono_n l'
+  : (forall (l : lang) c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> wf_lang (l'++l) ->
+        le_sort (l'++ l) c1::%!(size l') c2::%!(size l') t1%!(size l') t2%!(size l'))
+    /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' ->
+           wf_lang (l' ++ l) ->
+           le_subst (l'++ l)
+                    c1::%!(size l') c2::%!(size l')
+                    s1::%!(size l') s2::%!(size l')
+                    c1'::%!(size l') c2'::%!(size l'))
+    /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 ->
+           wf_lang (l' ++ l) ->
+           le_term (l' ++ l) 
+                   c1::%!(size l') c2::%!(size l')
+                   e1%!(size l') e2%!(size l')
+                   t1%!(size l') t2%!(size l'))
+    /\ (forall (l : lang) c1 c2,
+           le_ctx l c1 c2 ->
+           wf_lang (l' ++ l) ->
+           le_ctx (l' ++ l) c1::%!(size l') c2::%!(size l'))
+    /\ (forall (l : lang) c t,
+           wf_sort l c t -> wf_lang (l' ++ l) -> wf_sort (l' ++ l) c::%!(size l') t%!(size l'))
+    /\ (forall (l : lang) c s c',
+           wf_subst l c s c' ->
+           wf_lang (l' ++ l) ->
+           wf_subst (l'++ l) c::%!(size l') s::%!(size l') c'::%!(size l'))
+    /\ (forall (l : lang) c e t,
+           wf_term l c e t ->
+           wf_lang (l' ++ l) ->
+           wf_term (l' ++ l) c::%!(size l') e%!(size l') t%!(size l'))
+    /\ (forall (l : lang) c,
+           wf_ctx l c -> wf_lang (l' ++ l) -> wf_ctx (l'++l) c::%!(size l')).
+Proof.
+  elim: l'; simpl;
+    try by repeat match goal with |- _/\_ => split end;
+    intros; rewrite ?constr_shift0 ?map_constr_shift0.
+  intros.
+  repeat match goal with |- _/\_ => split end;
+    intros.
+  all: by change (size l).+1 with (1 + size l);
+    rewrite addnC -?rule_constr_shift_shift -?map_constr_shift_shift -?constr_shift_shift;
+    eapply mono; [eapply H|];
+    inversion H1; eauto.
+Qed.
+
+(*
+Lemma le_ctx_mono (l : lang) r c1 c2
                  (wfc : le_ctx l c1 c2)
-  : wf_rule l r -> le_ctx (r::l) c1 c2.
+  : wf_rule l r -> le_ctx (r::l) c1::%!1 c2::%!1.
 Proof.
   apply mono; auto.
 Qed.
-Hint Resolve le_ctx_mono.
+(*Hint Resolve le_ctx_mono. TODO: use DBs *)
 
-Lemma le_sort_mono {p} (l : lang p) r c1 c2 t1 t2
+Lemma le_sort_mono l r c1 c2 t1 t2
                   (wfs : le_sort l c1 c2 t1 t2)
-     : wf_rule l r -> le_sort (r::l) c1 c2 t1 t2.
+     : wf_rule l r -> le_sort (r::l) c1::%!1 c2::%!1 t1%!1 t2%!1.
 Proof.
   apply mono; auto.
 Qed.
-Hint Resolve le_sort_mono.
 
-Lemma le_subst_mono {p} (l : lang p) r c1 c2 s1 s2 c1' c2'
+Lemma le_subst_mono l r c1 c2 s1 s2 c1' c2'
                    (wfsb : le_subst l c1 c2 s1 s2 c1' c2')
-     : wf_rule l r -> le_subst (r::l) c1 c2 s1 s2 c1' c2'.
+     : wf_rule l r -> le_subst (r::l) c1::%!1 c2::%!1 s1::%!1 s2::%!1 c1'::%!1 c2'::%!1.
 Proof.
   apply mono; auto.
 Qed.
-Hint Resolve le_subst_mono.
 
-Lemma le_term_mono {p} (l : lang p) r c1 c2 e1 e2 t1 t2
+Lemma le_term_mono l r c1 c2 e1 e2 t1 t2
                   (wft :  le_term l c1 c2 e1 e2 t1 t2)
-  : wf_rule l r -> le_term (r::l) c1 c2 e1 e2 t1 t2.
+  : wf_rule l r -> le_term (r::l) c1::%!1 c2::%!1 e1%!1 e2%!1 t1%!1 t2%!1.
 Proof.
   apply mono; auto.
 Qed.
-Hint Resolve le_term_mono.
 
 Lemma wf_sort_mono {p} (l : lang p) r c t : wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t.
 Proof.
@@ -207,8 +277,9 @@ Proof.
   elim; auto.
 Qed.
 Hint Resolve wf_rule_mono.
+*)
 
-Lemma wf_lang_prefix {p} (l1 l2 : lang p) : wf_lang (l1 ++ l2) -> wf_lang l2.
+Lemma wf_lang_prefix l1 l2 : wf_lang (l1 ++ l2) -> wf_lang l2.
 Proof.
   elim: l1; auto.
   move => r l1 IH.
@@ -223,9 +294,9 @@ Ltac top_inversion :=
   move => H;
   inversion H.
 
-Lemma wf_lang_rst {p} : forall (l : lang p) a, wf_lang (a :: l) -> wf_lang l.
+Lemma wf_lang_rst : forall l a, wf_lang (a :: l) -> wf_lang l.
 Proof.
-  repeat intro_term; top_inversion; apply: wf_rule_lang; eauto.
+  intro_to wf_lang; top_inversion; eauto.
 Qed.
 
 Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
@@ -248,10 +319,10 @@ Proof.
   move => n; case => Pln Prn; split; auto.
 Qed.
 
-Lemma ctx_trans p (l : lang p) n
-  : (forall c1 c2 c3, n = 2 * size c1 -> le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3)
+Lemma ctx_trans' l n
+  : (forall c1 c2 c3, n = size c1 * 2 -> le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3)
     /\ (forall c1 c2 c3 v1 v2 v3,
-           n = (2 * size c1).+1 ->
+           n = (size c1 * 2).+1 ->
            le_sort l c1 c2 v1 v2 ->
            le_sort l c2 c3 v2 v3 ->
            le_sort l c1 c3 v1 v3).
@@ -259,33 +330,75 @@ Proof.
   move: n.
   apply: nat2_mut_ind.
   1,2: case; repeat intro_term; repeat top_inversion; auto.
-  all: move => n IH; repeat intro_term;
-    case => neq;
-    repeat top_inversion; subst; eauto.
+  - intro_to (@eq nat); case; eauto.
+  - intro_to seq.
+    case => // a1 c1.
+    simpl.
+    case => //; [intro_to le_ctx; top_inversion|]; move => a2 c2.
+    case => //; [ move => _ _; top_inversion|]; move => a3 c3.
+    change ((size c1).+1 * 2) with (size c1 * 2).+2.
+    case => neq.
+    repeat top_inversion; eauto.
 Qed.
 
-Lemma le_ctx_trans p (l : lang p) c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
+Lemma le_ctx_trans l c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
 Proof.
-  eapply ctx_trans; eauto.
+  eapply ctx_trans'; eauto.
 Qed.
-Hint Resolve le_ctx_trans.
-
 
 Scheme ctx_refl_ind := Minimality for wf_ctx Sort Prop.
 
-Lemma le_ctx_refl p : forall (l : lang p) (c : ctx p), wf_ctx l c -> le_ctx l c c.
+Lemma le_ctx_refl : forall l c, wf_ctx l c -> le_ctx l c c.
 Proof.
   eapply ctx_refl_ind; eauto.
 Qed.
 Hint Resolve le_ctx_refl.
 
 
-(* note: this isn't true in general if I add a freshness condition *)
-Lemma rule_in_wf {p} r : forall (l : lang p), wf_lang l -> List.In r l -> wf_rule l r.
+Lemma is_nth_list_split m r l n
+  : shifted_is_nth m r l n ->
+    exists l1 r' l2, l = l1 ++ (r':: l2) /\ r = r'%%!(m + n) /\ n = (size l1).
 Proof.
-  case: r => [c e l | c e t l | c1 c2 t1 t2 l | c1 c2 e1 e2 t1 t2 l] wfl lin;
-  constructor;
-  elim: l lin wfl => //= => r l IH;
+  elim: n l m.
+  - case; simpl;
+      intro_to is_true;
+      [intro_to is_true; top_inversion|].
+    rewrite addn0.
+    move /eqP; intros;
+    exists [::]; simpl; eauto.
+  - intro_to seq.
+    case; simpl; [intro_to is_true; top_inversion|].
+    intros.
+    rewrite addnS. 
+    change (m + n).+1 with (m.+1 + n).
+    case: (H l m.+1 H0) => l1 [r' [l2[[]]]] -> [] -> neq.
+    exists (a::l1).
+    exists r'.
+    exists l2.
+    rewrite {3}neq.
+    eauto.
+Qed.
+
+(*
+Lemma rule_in_wf r l : wf_lang l -> forall n, is_nth r l n -> wf_rule l r.
+Proof.
+  case: r => [c e | c e t | c1 c2 t1 t2 | c1 c2 e1 e2 t1 t2] n.
+  - constructor.
+    move: H => /is_nth_list_split.
+    change (0+n) with n.
+    case => l1 [r'[l2 []]] leq [req neq].
+    subst.
+    case: r' e req; intro_to (@eq rule); simpl; try by top_inversion.
+    case => ->.
+    elim: l1 e; simpl.
+    + rewrite map_constr_shift0.
+      give_up.
+    +intros.
+  
+  
+  Lemma is_nth_list_split : is_nth r l n -> exists l1 r' l2, l = l1 ++ [:: r'] ++ l2 /\ r'%%!n = r.
+  eapply mono_n.
+  elim: l lin wfl => //= => r l IH.
   (case => [->| linl]; top_inversion;
        do [ apply: wf_ctx_mono => //=
            | apply: wf_sort_mono => //=
@@ -519,6 +632,8 @@ Proof.
       rewrite extract_var_shift.
       erewrite <-shift_subst_shift.
       instantiate(1:=1).
+      (*TODO: is there a place I'm missing shifts in the defs?*)
+      (* posible since Jon Sterling doesn't use debruijn *)
       (*TODO: strengthen? e.g. n <= size c'?*)
       eapply wf_term_subst.
       change (size c') with (0+(size c')).
@@ -536,4 +651,5 @@ Proof.
   apply: wf_sort_subst; eauto.
   give_up. (* need to prove that shift_substs are well-typed *)
   give_up. (* need to prove that well-typed terms are well-scoped*)
+*)
   

@@ -5,105 +5,102 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Vector.
-
-Definition polynomial := seq (Set * nat).
-Print nth.
-
-Definition zterm : Set * nat := (Empty_set , 0).
-
-
 Unset Elimination Schemes.
-Inductive exp (p : polynomial) : Set :=
-  | var : nat -> exp p
-  | con : forall n, fst (nth zterm p n) ->
-                     Vector.t (exp p) (snd (nth zterm p n)) ->
-                     exp p.
+Inductive exp : Set :=
+(* variable deBruijn index *)
+| var : nat -> exp
+(* Rule deBruijn index, list of subterms*)
+| con : nat -> seq exp -> exp.
 Set Elimination Schemes.
 
-Arguments var {p}.
-Arguments con {p}.
 
-(*Stronger induction principle w/ better subterm knowledge *)
-Fixpoint exp_ind {p}
-         (P : exp p -> Prop)
+(*Stronger induction principle w/ better subterm knowledge 
+  TODO: not so necessary anymore I think? remove?
+*)
+Fixpoint exp_ind
+         (P : exp -> Prop)
          (IHV : forall n, P(var n))
-         (IHC : forall n s v,
-             Vector.fold_right (fun t : exp p => and (P t)) v True ->
-             P (con n s v))
-         (e : exp p) { struct e} : P e :=
+         (IHC : forall n l,
+             List.fold_right (fun t : exp => and (P t)) True l ->
+             P (con n l))
+         (e : exp) { struct e} : P e :=
   match e with
   | var n => IHV n
-  | con n s v =>
-    let fix loop n v :=
-        match v return Vector.fold_right (fun t => and (P t)) v True with
-        | Vector.nil => I
-        | Vector.cons e' n v' => conj (exp_ind IHV IHC e') (loop n v')
+  | con n l =>
+    let fix loop l :=
+        match l return List.fold_right (fun t => and (P t)) True l with
+        | [::] => I
+        | e' :: l' => conj (exp_ind IHV IHC e') (loop l')
         end in
-    IHC n s v (loop _ v)
+    IHC n l (loop l)
   end.
 
-Notation "[*]" := (Vector.nil _).
-Notation "[* x ]" := (Vector.cons _ _ x (Vector.nil _)).
-Notation "[* x ; .. ; y ]" := (Vector.cons _ x _ .. (Vector.cons _ y _ (Vector.nil _)) ..).
+Fixpoint exp_rect
+         (P : exp -> Type)
+         (IHV : forall n, P(var n))
+         (IHC : forall n l,
+             List.fold_right (fun t : exp => prod (P t)) unit l ->
+             P (con n l))
+         (e : exp) { struct e} : P e :=
+  match e with
+  | var n => IHV n
+  | con n l =>
+    let fix loop l :=
+        match l return List.fold_right (fun t => prod (P t)) unit l with
+        | [::] => tt
+        | e' :: l' => (exp_rect IHV IHC e', loop l')
+        end in
+    IHC n l (loop l)
+  end.
 
-Notation "[ n | s , v ]" := (con n s v).
-Notation "[{ p } n | s , v ]" := (@con p n s v).
+Definition exp_rec := 
+[eta exp_rect]
+     : forall P : exp -> Set,
+       (forall n : nat, P (var n)) ->
+       (forall n l,
+             List.fold_right (fun t : exp => prod (P t)) unit l ->
+             P (con n l))-> forall e : exp, P e.
 
-Variant constr p (T : Set) :=
-| ccon : forall n, fst (nth zterm p n) ->
-                   Vector.t T (snd (nth zterm p n)) -> constr p T.
+Notation "[ n | ]" := (con n [::]).
+Notation "[ n | e ]" := (con n [:: e]).
+Notation "[ n | e ; .. ; e' ]" := (con n (cons e .. (cons e' [::]) ..)).
 
-Notation "[{ p , T }> n | s , v ]" := (@ccon p T n s v).
+Variant constr (T : Set) : Set :=
+| ccon : nat -> seq T -> constr T.
 
-Definition Alg p1 p2 := constr p1 (exp p2) -> exp p2.
+Notation "[{ T } n | ]" := (ccon T n [::]).
+Notation "[{ T } n | e ]" := (ccon T n [:: e]).
+Notation "[{ T } n | e ; .. ; e' ]" := (ccon T n (cons e .. (cons e' [::]) ..)).
 
-Fixpoint alg_fn {p1 p2} (a : Alg p1 p2) (e : exp p1) : exp p2 :=
+Definition Alg := constr exp -> exp.
+
+Fixpoint alg_fn (a : Alg) (e : exp) : exp :=
   match e with
   | var n => var n
-  | con n s v => a (ccon s (Vector.map (alg_fn a) v))
-  end.
-    
+  | con n l => a (ccon n (map (alg_fn a) l))
+  end.    
 
-Definition id_alg {p} : Alg p p := fun ce =>
+Definition id_alg : Alg := fun ce =>
   match ce with
-  | ccon n s v => con n s v
+  | ccon n l => con n l
   end.
 
 (* TODO: uniform inheritance condition? this feels like it would be nice to have
 Coercion id_alg : constr >-> exp. *)
 
-Section ExpTest.
-  Definition test1 : polynomial := [:: (unit,1) ; (unit,2) ; (nat,0)].
-  
-  Definition tvar (n : nat) : exp test1 :=
-    [{test1} 2 | n, [*]].
-  
-  Definition prod_test : Vector.t nat 1 := [* 3].
-  Definition prod_test2 : Vector.t nat 3 := [* 3; 5; 4].
-  
-  Definition tlam (e : exp test1) : exp test1 :=
-    [{test1} 0 | tt , [* e]].
-  
-  Definition tapp (e1 e2 : exp test1) : exp test1 :=
-    [{test1} 1 | tt, [* e1; e2]].
-  
-  Definition test1ex : exp test1 := tlam (tlam (tapp (tvar 1) (tvar 0))).
-End ExpTest.
-
-Definition ctx p := list (exp p).
+Definition ctx := list exp.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
-Inductive rule (p : polynomial) : Type :=
-| sort :  ctx p -> exp p -> rule p
-| term :  ctx p -> exp p -> exp p -> rule p
-| sort_le : ctx p -> ctx p -> exp p -> exp p -> rule p
-| term_le : ctx p -> ctx p -> exp p -> exp p -> exp p -> exp p -> rule p.
+Inductive rule : Type :=
+| sort :  ctx -> rule
+| term :  ctx -> exp -> rule
+| sort_le : ctx -> ctx -> exp -> exp -> rule
+| term_le : ctx -> ctx -> exp -> exp -> exp -> exp -> rule.
 
-Definition rule_map {p1 p2} (f : exp p1 -> exp p2) r : rule p2 :=
+Definition rule_map (f : exp -> exp) r : rule :=
   match r with
-| sort c t => sort (List.map f c) (f t)
-| term c e t => term (List.map f c) (f e) (f t)
+| sort c => sort (List.map f c)
+| term c t => term (List.map f c) (f t)
 | sort_le c1 c2 t1 t2 =>
   sort_le (List.map f c1) (List.map f c2) (f t1) (f t2)
 | term_le  c1 c2 e1 e2 t1 t2 =>
@@ -126,42 +123,42 @@ Notation "{< c |- e1 <# e2 .: s }" :=
   ({< c |- e1 <# e2 .: s <# s}) (at level 80) : rule_scope.
 Notation "{< c |- e .: s }" := 
   ({< c |- e <# e.: s}) (at level 80) : rule_scope.
+Notation "{| c |- 'sort' }" := 
+  (sort c) (at level 80) : rule_scope.
 Notation "{| c |- s }" := 
-  (sort c s) (at level 80) : rule_scope.
-Notation "{| c |- e .: s }" := 
-  (term c e s) (at level 80) : rule_scope.
+  (term c s) (at level 80) : rule_scope.
 
-Definition lang p := list (rule p).
+Definition lang := list rule.
 
-Definition subst (p : polynomial) := seq (exp p).
+Definition subst := seq exp.
 
-Fixpoint var_lookup {p} (c : subst p) (n : nat) : exp p :=
+Fixpoint var_lookup (c : subst) (n : nat) : exp :=
   match c , n with
   | [::], _ => var n (*keep the var if no substitution needed*)
   | e :: _, 0 => e (*use the element if one is found *)
   | _ :: c', n'.+1 => var_lookup c' n' (*otherwise decrease both and continue *)
   end.
 
-Fixpoint exp_var_map {p} (f : nat -> exp p) (e : exp p) : exp p :=
+Fixpoint exp_var_map (f : nat -> exp) (e : exp) : exp :=
   match e with
   | var n => f n
-  | con n s v => con n s (Vector.map (exp_var_map f) v)
+  | con n l => con n (map (exp_var_map f) l)
   end.
 
-Definition exp_subst {p} (e : exp p) (s : subst p) : exp p :=
+Definition exp_subst (e : exp) (s : subst) : exp :=
   exp_var_map (var_lookup s) e.
 
 Notation "e [/ s /]" := (exp_subst e s) (at level 7, left associativity).
 
-Definition exp_shift {p} (e : exp p) (m : nat) : exp p :=
+Definition exp_shift (e : exp) (m : nat) : exp :=
   exp_var_map (fun n => var (m + n)) e.
 
 Notation "e ^! n" := (exp_shift e n) (at level 7, left associativity).
 
-Fixpoint shift_subst (sz start : nat) : forall {p}, subst p :=
+Fixpoint shift_subst (sz start : nat) : subst :=
   match sz with
-  | 0 => fun p => [::]
-  | sz'.+1 => fun p => (var start)::(shift_subst sz' (start.+1))
+  | 0 => [::]
+  | sz'.+1 => (var start)::(shift_subst sz' (start.+1))
   end.
 
 (*TODO: this is in the library. Why can't I find it? *)
@@ -170,9 +167,9 @@ Proof.
   elim; done.
 Qed.  
 
-Lemma lookup_ge : forall p c n, length c <= n -> @var_lookup p c n = var (n - size c).
+Lemma lookup_ge : forall c n, length c <= n -> var_lookup c n = var (n - size c).
 Proof.
-  move => p; elim.
+  elim.
   move => n _;
   rewrite sub_0_r //=.
   move => x l IH; elim.
@@ -181,9 +178,9 @@ Proof.
   apply: IH.
 Qed.
 
-Lemma lookup_nth : forall p c n, @var_lookup p c n = nth (var (n - size c)) c n.
+Lemma lookup_nth : forall c n, var_lookup c n = nth (var (n - size c)) c n.
 Proof.
-  move => p; elim.
+  elim.
   move => n;
   rewrite sub_0_r nth_nil //=.
   move => x l IH; elim;[done|].
@@ -195,33 +192,43 @@ Qed.
 (* Well-scoped languages
    a presupposition of well-formed languages
    Written as functions that decide the properties
+   determines that variables (but not constructor symbols) are well-scoped
  *)
 
-Fixpoint ws_exp {p : polynomial} csz (e : exp p) : bool :=
+Fixpoint ws_exp csz (e : exp) : bool :=
   match e with
   | var n => n < csz
-  | con n s v => Vector.fold_right (fun e f => (ws_exp csz e) && f) v true
+  | con n v => List.fold_right (fun e f => (ws_exp csz e) && f) true v
   end.
 
-Fixpoint ws_ctx {p : polynomial} (c : ctx p) : bool :=
+Fixpoint ws_ctx (c : ctx) : bool :=
   match c with
   | [::] => true
   | t :: c' => ws_ctx c' && ws_exp (size c') t
   end.
 
-Fixpoint ws_lang {p : polynomial} (l : lang p) : bool :=
-  match l with
-  |[::] => true
-  | {| c |- s} :: l' => ws_lang l' && ws_exp (size c) s
-  | {| c |- s .: t} :: l' => ws_lang l' && ws_exp (size c) s && ws_exp (size c) t
-  | {< c1 <# c2 |- s1 <# s2} :: l' => ws_lang l' && ws_exp (size c1) s1 && ws_exp (size c2) s2
-  | {< c1 <# c2 |- e1 <# e2 .: s1 <# s2} :: l' =>
-    ws_lang l' && ws_exp (size c1) e1 && ws_exp (size c2) e2
-            && ws_exp (size c1) s1 && ws_exp (size c2) s2
-  end%rule.
+Definition ws_rule (r : rule) : bool :=
+  match r with
+  | {| c |- sort} => ws_ctx c
+  | {| c |- t} => ws_ctx c && ws_exp (size c) t
+  | {< c1 <# c2 |- s1 <# s2} =>
+    ws_ctx c1
+           && ws_exp (size c1) s1
+           && ws_ctx c2
+           && ws_exp (size c2) s2
+  | {< c1 <# c2 |- e1 <# e2 .: s1 <# s2} =>
+    ws_ctx c1
+           && ws_exp (size c1) e1
+           && ws_exp (size c1) s1
+           && ws_ctx c2
+           && ws_exp (size c2) e2
+           && ws_exp (size c2) s2
+  end.
+
+Definition ws_lang : lang -> bool := List.forallb ws_rule.
 
 (* replaces m variables with terms with n free vars*)
-Definition ws_subst {p} n (s : subst p) m : bool :=
+Definition ws_subst n (s : subst) m : bool :=
   (List.fold_right (fun e b => ws_exp n e && b) true s) && (size s == m).
 
 
@@ -237,10 +244,10 @@ Proof.
     rewrite andb_true_intro //=.
 Qed.
 
-Lemma ws_nth : forall p n (s : subst p) m e n',
+Lemma ws_nth : forall n (s : subst) m e n',
     ws_subst n s m -> ws_exp n e -> ws_exp n (nth e s n').
 Proof.
-  move => p n ; elim.
+  move => n ; elim.
   - move => m e; elim; [done|].
     move => n' IH //=.
   - move => x l IH m e.
@@ -260,16 +267,16 @@ Proof.
       exact wse.
 Qed.
 
-Lemma ws_empty : forall p n m, @ws_subst p n [::] m = (m == 0).
+Lemma ws_empty : forall n m, ws_subst n [::] m = (m == 0).
 Proof.
-  move => p n m.
+  move => n m.
   rewrite /ws_subst //=.
 Qed.
 
-Lemma ws_lookup : forall p n (s : subst p) (m n' : nat),
+Lemma ws_lookup : forall n (s : subst) (m n' : nat),
     ws_subst n s m -> n' < m -> ws_exp n (var_lookup s n').
 Proof.  
-  move => p n.
+  move => n.
   elim.  
   - move => m;
     elim;
@@ -298,12 +305,12 @@ Ltac ws_simpl :=
 
 
 Theorem subst_preserves_ws
-  : forall {p} e (s : subst p) (csz csz' : nat),
+  : forall e (s : subst) (csz csz' : nat),
     ws_exp csz' e ->
     ws_subst csz s csz' ->
     ws_exp csz (exp_subst e s).
 Proof.
-  move => p e s c c' wse.
+  move => e s c c' wse.
   move => wss.
   pose (wss' := wss).
   move: wss'.
@@ -314,8 +321,7 @@ Proof.
   elim: e => //= => n.
   - apply: ws_lookup => //=;
     move: size_eq => /eqP -> //=.
-  - move => _.
-    elim => //= x n' v IHA IHB.
+  - elim => //= x l' IHA IHB.
     case /andP => xexp rexp.
     case: IHB => IHB1 IHB2.
     apply /andP. split; [auto|].
@@ -323,14 +329,14 @@ Proof.
 Qed.
 
 
-Lemma shiftz {p} (e : exp p) : e^!0 = e.
+Lemma shiftz (e : exp) : e^!0 = e.
 Proof.
   elim: e; simpl; auto.
   intros; simpl.
   unfold exp_shift.
   simpl.
   f_equal; auto.
-  elim: v H.
+  elim: l H.
   - by simpl; auto.
   - simpl.
     intros.
@@ -343,14 +349,14 @@ Proof.
       done.
 Qed.
 
-Lemma shift1_preserves_ws {p} (e : exp p) (n : nat)
+Lemma shift1_preserves_ws (e : exp) (n : nat)
   : ws_exp n e -> ws_exp (n.+1) e^!1. 
 Proof.
   elim: e n.
   - simpl; auto.      
   - simpl.
-    intros until v.
-    elim: v.
+    intros until l.
+    elim: l.
     + simpl; auto.
     + simpl.
       intros.
@@ -361,34 +367,25 @@ Proof.
 Qed.
 
 
-Lemma vec_map_map {T1 T2 T3} (g : T2 -> T3) (f : T1 -> T2) {n} (v : Vector.t T1 n)
-  : Vector.map g (Vector.map f v) = Vector.map (fun x => g (f x)) v.
-Proof.
-  elim: v => //.
-  intros.
-  simpl.
-    by rewrite H.
-Qed.
-
-Lemma vec_map_ext {B C : Type} (f g : B -> C) n (v : Vector.t B n)
-  : (forall e, f e = g e) -> Vector.map f v = Vector.map g v.
+Lemma map_ext {B C : Type} (f g : B -> C) (l : seq B)
+  : (forall e, f e = g e) -> map f l = map g l.
 Proof.
   move => ext.
-  elim: v; first done.
-  move => e1 n' v' IH.
+  elim: l; try done.
+  move => e1 l' IH.
   simpl.
     by rewrite ext IH.
 Qed.
 
-Lemma vec_map_ext' {B C : Type} (f g : B -> C) n (v : Vector.t B n)
+Lemma map_ext' {B C : Type} (f g : B -> C) (v : seq B)
   : forall (P : B -> bool),
     (forall e, P e -> f e = g e) ->
-    Vector.fold_right (fun e => [eta andb (P e)]) v true ->
-    Vector.map f v = Vector.map g v.
+    List.fold_right (fun e => [eta andb (P e)]) true v ->
+    map f v = map g v.
 Proof.
   move => P ext.
   elim: v;[> done|].
-  move => e1 n' v' IH vfr.
+  move => e1 v' IH vfr.
   simpl.
   f_equal.
   - rewrite ext => //.
@@ -399,32 +396,32 @@ Proof.
     move: vfr; simpl; by case /andP.
 Qed.
 
-Lemma exp_var_map_map {p} g fn (e : exp p)
+Lemma exp_var_map_map g fn (e : exp)
   : exp_var_map g (exp_var_map (fun n => var (fn n)) e) = exp_var_map (fun n => g (fn n)) e.
 Proof.
   elim: e => //.
   - simpl. intros.
     f_equal.
-    rewrite vec_map_map.
-    elim: v H => //.
+    rewrite map_comp.
+    elim: l H => //.
     simpl.
-    move => h n' t vfr.
+    move => h t vfr.
     case.
     intros.
     f_equal => //.
     by apply: vfr.
-Qed.    
+Qed.
 
-Lemma exp_var_map_ext {p} f1 f2 (e : exp p)
+Lemma exp_var_map_ext f1 f2 (e : exp)
   : (forall n, f1 n = f2 n) -> exp_var_map f1 e = exp_var_map f2 e.
 Proof.
   move => ext.
   elim: e; eauto.
-  move => n s v H.
+  move => s l H.
   unfold exp_var_map.
-  fold (@exp_var_map p).
+  fold exp_var_map.
   f_equal.
-  elim: v H => //.
+  elim: l H => //.
   simpl.
   intros.
   case: H0 => -> IH.
@@ -432,17 +429,17 @@ Proof.
   auto.
 Qed.
 
-Lemma exp_var_map_ext' {p} f1 f2 (e : exp p) m
+Lemma exp_var_map_ext' f1 f2 (e : exp) m
   : ws_exp m e -> (forall n, n < m -> f1 n = f2 n) -> exp_var_map f1 e = exp_var_map f2 e.
 Proof.
   move => wse ext.
   elim: e wse ; eauto.
-  move => n s v H wsv.
+  move => n l H wsv.
   unfold exp_var_map.
-  fold (@exp_var_map p).
+  fold exp_var_map.
   f_equal.
   simpl in wsv.
-  elim: v H wsv => //.
+  elim: l H wsv => //.
   simpl.
   intros.
   case: H0 => IH1 IH.
@@ -455,7 +452,7 @@ Proof.
   auto.
 Qed.
   
-Lemma shift1_decomp {p} (e : exp p) n : e^!(n.+1) = e^!n^!1.
+Lemma shift1_decomp (e : exp) n : e^!(n.+1) = e^!n^!1.
 Proof.
   elim: e n.
   - simpl; auto.
@@ -463,14 +460,15 @@ Proof.
     unfold exp_shift.
     simpl.
     f_equal.
-    rewrite vec_map_map.
-    apply: vec_map_ext.
+    rewrite -map_comp.
+    eapply map_ext.
     intro e.
+    simpl.
     rewrite exp_var_map_map.
     f_equal.
 Qed.
   
-Theorem shift_preserves_ws {p} (e : exp p) (n m : nat)
+Theorem shift_preserves_ws (e : exp) (n m : nat)
   : ws_exp n e -> ws_exp (m + n) e^!m. 
 Proof.
   elim: m e n.
@@ -484,7 +482,7 @@ Proof.
 Qed.
 
 Lemma lookup_in_shift_subst n' n m
-  : n' < n -> forall p, @var_lookup p (shift_subst n m) n' = var (n' + m).
+  : n' < n -> var_lookup (shift_subst n m) n' = var (n' + m).
 Proof.
   elim: n' n m.
   - case => //.
@@ -499,7 +497,7 @@ Proof.
     eauto.
 Qed. 
 
-Theorem shift_subst_shift {p} (e : exp p) : forall n m, ws_exp n e ->  e [/shift_subst n m/] = e^!m.
+Theorem shift_subst_shift (e : exp) : forall n m, ws_exp n e ->  e [/shift_subst n m/] = e^!m.
 Proof.
   elim: e.
   - unfold exp_shift.
@@ -515,8 +513,8 @@ Proof.
     f_equal.
     pose H0' := H0.
     simpl in H0'.
-    fold (@exp_var_map p).
-    apply: vec_map_ext'.
+    fold exp_var_map.
+    apply: map_ext'.
     move => e ppf.
     apply: exp_var_map_ext'.
     exact ppf.
@@ -531,7 +529,7 @@ Qed.
 Lemma id_subst {p} (e : exp p) : forall n m, e [/shift_subst n 0/] = e [/shift_subst m 0/].
 *)
 
-Lemma extract_var_shift n : forall {p}, @var p n = (var 0)^!n.
+Lemma extract_var_shift n : var n = (var 0)^!n.
 Proof.
   elim: n; simpl; auto.
   intros.
