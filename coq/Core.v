@@ -71,10 +71,12 @@ with wf_term_lang (l : lang) c e t
       (wf : wf_term l c e t) : wf_lang l
 with wf_subst_lang (l : lang) c s c'
            (wf : wf_subst l c s c') : wf_lang l.
-  all: case: wf => //=;
+  all: by case: wf => //=;
        intros;
        first [apply: wf_subst_lang; eassumption
-                 | apply: wf_term_lang; eassumption].
+             | apply: wf_term_lang; eassumption
+             | apply: wf_ctx_lang; eassumption].
+  
 Qed.
 Hint Immediate wf_ctx_lang.
 Hint Immediate wf_sort_lang.
@@ -124,6 +126,8 @@ Ltac expand_rule_shift :=
       with ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2})%%!1
   end.
 
+
+
 Lemma mono r
   : (forall (l : lang) c1 c2 t1 t2,
         le_sort l c1 c2 t1 t2 -> wf_rule l r ->
@@ -166,6 +170,8 @@ Proof.
   change 2 with (1 + 1) at 1;
   expand_rule_shift;
     by apply: unshift_is_nth_cons.
+  constructor; eauto.
+  by apply: List.map_nth_error.
 Qed.
 
 Lemma mono_n l'

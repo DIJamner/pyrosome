@@ -437,9 +437,10 @@ with wf_term : lang -> ctx -> exp -> exp -> Prop :=
     wf_term l c e t ->
     le_sort l c c' t t' ->
     wf_term l c' e t'
-| wf_term_var : forall l c t,
-    wf_sort l c t ->
-    wf_term l (t :: c) (var 0) t
+| wf_term_var : forall l c n t,
+    wf_ctx l c ->
+    List.nth_error c n = Some t ->
+    wf_term l c (var n) t
 with le_term : lang ->
                ctx -> ctx ->
                exp -> exp ->
