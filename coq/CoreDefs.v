@@ -164,39 +164,6 @@ Definition exp_eqMixin := Equality.Mixin eq_expP.
 
 Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
 
-(* TODO: necessary for computational defn
-Lemma eq_expP e1 e2 : reflect (e1 = e2) (eq_exp e1 e2).
-Proof.
-  elim: e1 e2; intro_to exp; elim; intros; simpl; eauto.
-  - case neq : (n == n0); constructor.
-    + f_equal; by apply: eqP.
-    + case.
-      move /eqP.
-        by rewrite neq.
-  - constructor => //.
-  - constructor => //.
-  - case neq: (n == n0); simpl.
-    + elim: l l0.
-      * case; simpl; constructor; f_equal.
-        apply /eqP; eauto.
-        case => _.
-        case => //.
-      * move => a l IH.
-        case.
-        -- constructor; by case.
-        -- intros.
-           case eqa: (eq_exp a a0); simpl.
-           give_up.
-           ++ constructor.
-              case => _.
-              
-    + constructor.
-      case.
-      move /eqP.
-        by rewrite neq.
-Qed.
-*)
-
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
   | {| c1 |- sort }, {| c2 |- sort } => c1 == c2
@@ -222,17 +189,44 @@ Proof.
       solve [ by f_equal; apply /eqP
             | by case; move /eqP; rewrite eqcase]
       end.
-  match goal with
-  | |- reflect _ (?E && _) => case and1: E; simpl
-  end.
-  match goal with
-  | |- reflect _ false => constructor; by inversion
-  | |- reflect _ (?A == ?B) =>
-    case eqcase: (A == B); constructor;
-      try solve [ by f_equal; apply /eqP
-            | by case; move /eqP; rewrite eqcase]
-  end.
-Admitted.
+  - match goal with
+    | |- reflect _ (?E && _) => case and1: E; simpl
+    end.
+    match goal with
+    | |- reflect _ false => constructor; by inversion
+    | |- reflect _ (?A == ?B) =>
+      case eqcase: (A == B); constructor;
+        try solve [ by f_equal; apply /eqP
+                  | by case; move /eqP; rewrite eqcase]
+    end.
+    case => _ => /eqP.
+    by rewrite eqcase.
+    constructor.
+    case  => /eqP.
+      by rewrite and1.
+  - case ccs: (c == c1); simpl.
+    case ecs: (e == e1); simpl.
+    case c0cs: (c0 == c2); simpl.
+    case e0cs: (e0 == e2); simpl.
+    constructor; f_equal; by apply /eqP.
+    constructor; case => _ _ _ /eqP; by rewrite e0cs.
+    constructor; case => _ /eqP; by rewrite c0cs.
+    constructor; case => _ _ /eqP; by rewrite ecs.
+    constructor; case => /eqP; by rewrite ccs.
+  - case ccs: (c == c1); simpl.
+    case ecs: (e == e3); simpl.
+    case e1cs: (e1 == e5); simpl.
+    case c0cs: (c0 == c2); simpl.
+    case e0cs: (e0 == e4); simpl.
+    case e2cs: (e2 == e6); simpl.
+    constructor; f_equal; by apply /eqP.
+    constructor; case => _ _ _ _ _ /eqP; by rewrite e2cs.
+    constructor; case => _ _ _ /eqP; by rewrite e0cs.
+    constructor; case => _ /eqP; by rewrite c0cs.
+    constructor; case => _ _ _ _ /eqP; by rewrite e1cs.
+    constructor; case => _ _ /eqP; by rewrite ecs.
+    constructor; case => /eqP; by rewrite ccs.
+Qed.
 
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
@@ -370,7 +364,7 @@ Proof.
   by apply: unshift_rule_in_cons.
 Qed.
 
-Definition rule_in r (l : lang) : bool := shifted_rule_in 0 r l.
+Definition rule_in r (l : lang) : bool := shifted_rule_in 1 r l.
 Hint Unfold rule_in.
 
 Fixpoint shifted_is_nth n (r : rule) l m : bool :=
@@ -395,7 +389,7 @@ Proof.
     auto.
 Qed.
 
-Definition is_nth r l m := shifted_is_nth 0 r l m.
+Definition is_nth r l m := shifted_is_nth 1 r l m.
 Hint Unfold is_nth.
   
 

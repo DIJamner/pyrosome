@@ -155,15 +155,15 @@ Proof.
                 | simpl; constructor; eauto; rewrite -!constr_shift_subst_comm; auto
                 | apply: le_term_conv; eauto].
   simpl; econstructor; eauto;
-  unfold is_nth; simpl;
-  change 1 with (0 + 1) at 1;
+  unfold is_nth; simpl.
+  change 2 with (1 + 1) at 1;
   expand_rule_shift;
     by apply: unshift_is_nth_cons.
 
   rewrite constr_shift_subst_comm.
   simpl; eapply wf_term_by; eauto.
   unfold is_nth; simpl.
-  change 1 with (0 + 1) at 1;
+  change 2 with (1 + 1) at 1;
   expand_rule_shift;
     by apply: unshift_is_nth_cons.
 Qed.
