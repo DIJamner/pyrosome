@@ -8,11 +8,36 @@ Set Bullet Behavior "Strict Subproofs".
 (* TODO: change from loads to imports *)
 From excomp Require Import Exp CoreDefs Core.
 
-Ltac easy_wf_lang :=
-  first [ constructor
-        |  econstructor; unfold is_nth; simpl; eauto];
+Ltac guard_single_goal :=
   let n := numgoals in
   guard n < 2.
+
+
+Ltac compute_adds :=
+  repeat match goal with
+           |- context [?X + ?Y] =>
+           let res := eval compute in (X + Y) in
+               change (X + Y) with res
+         end.
+
+
+Ltac clear_const_substs :=
+  repeat match goal with
+         | |- context [[ ?N |] [/?S/]] =>
+           change [N |][/?S/] with [N|]
+         end.
+
+
+Ltac easy_wf_lang :=
+  first [ constructor
+        |  econstructor; unfold is_nth; simpl; eauto; 
+           guard_single_goal];
+  compute_adds;
+  clear_const_substs.
+
+Ltac constructors :=
+  progress repeat (constructor; guard_single_goal).
+
 
 Definition ctx_lang : lang :=
   [:: {| [:: [2(*tp*)|]; [1(*ctx*)|]] |- (*C,t*) [1(*ctx*)|]};
@@ -26,113 +51,58 @@ Proof.
   repeat easy_wf_lang.
 Qed.  
 
-Definition subst_lang : lang :=
+Definition subst_lang' : lang :=
   [::
     (* {| [:: [5(*tp*)|];[1(*var*)| var 1; var 0];[5(*tp*)|]; [4(*ctx*)|]]
         |- (*S x*) [1(*var*)| [2(*C,t'*)| var 3; var 0];var 2]};
-     *){| [:: [4(*tp*)|]; [3(*ctx*)|]] |- (*Z*) [0(*var*)| [1(*C,t*)| var 1; var 0] ; var 0]};
+     *){| [:: [4(*tp*)|]; [3(*ctx*)|]] |- (*Z*) [0(*var*)| var 0; [1(*C,t*)| var 0; var 1]]};
      {| [:: [3(*tp*)|]; [2(*ctx*)|]] |- (*var(C|-t)*) sort}]
 ++ ctx_lang.
 (* TODO: substitutions, judgments, equalities *)
 
-Lemma wf_subst_lang : wf_lang subst_lang.
+
+Lemma wf_subst_lang : wf_lang subst_lang'.
 Proof.
   pose p := eqP.
   pose cl := wf_ctx_lang.
   repeat easy_wf_lang.
-  constructor.
-  constructor.
-  constructor.
+  change [3|] with [3|][/[:: var 0; var 1]/].  
+  apply: wf_term_by.
+  unfold is_nth; simpl.
+  compute_adds.
+  apply /eqP; f_equal.
   repeat easy_wf_lang.
-  (*TODO: issue: seems to be a +1 that isn't happening in the var C,t substitution*)
-  give_up.
-  repeat easy_wf_lang.
-  
+Qed.
 
+Definition subst_lang'' : lang :=
+  [:: {| [:: [5(*tp*)|];[1(*var*)| var 1; var 0];[4(*ctx*)|]; [5(*tp*)|]]
+        |- (*S x*) [1(*var*)| var 3 ; [2(*C,t'*)| var 0; var 2]]}]
+    ++ subst_lang'.
+
+Lemma wf_subst_lang'' : wf_lang subst_lang''.
+Proof.
+  pose wfp :=  wf_subst_lang.
+  repeat easy_wf_lang.
   match goal with
-    |- wf_subst ?L _ _ _ =>
-    suff: wf_lang L
+  | |- wf_term ?l ?c (con ?m ?s) [?n|] =>
+    change (wf_term l c (con m s) [n|])
+      with (wf_term l c (con m s) [n|][/s/])
   end.
-  give_up.
-  repeat constructor.
-  match goal with
-    |- wf_sort ?L _ _ =>
-    enough (wf_lang L)
-  end;[| repeat easy_wf_lang].
+  apply: wf_term_by.
+  unfold is_nth; simpl.
+  compute_adds.
+  eauto.
   repeat easy_wf_lang.
-  constructor.
-  constructor.
-  repeat easy_wf_lang.
-  give_up.
-  unfold exp_subst; simpl.
-  change (0+3) with 3.
-  change [3|] with ([3|][/[:: var 1; var 0]/]).
-  eapply wf_term_by.
-  unfold is_nth; simpl. eauto.
-  simpl.
-  repeat easy_wf_lang.
-  econstructor; unfold is_nth; simpl; eauto.
-  
+Qed.
 
+Definition subst_lang_syn : lang :=
+  [::{| [:: [4 | var 0; var 1] ; [3(*tp*)|]; [2(*ctx*)|]] |- [0| var 1; var 2]};
+     {| [:: [3(*tp*)|]; [2(*ctx*)|]] |- (*jdg(C|-t)*) sort}]
+    ++ subst_lang''.
 
+Lemma wf_syn : wf_lang subst_lang_syn
 
   
-  give_up.
-  repeat easy_wf_lang.
-  repeat constructor.
-  econstructor; unfold is_nth; simpl; eauto.
-  repeat constructor.
-  econstructor; unfold is_nth; simpl; eauto.
-  
-  
-  
-  match goal with
-    |- wf_sort ?L _ _ =>
-    enough (wf_lang L)
-  end;repeat easy_wf_lang.
-  let n := numgoals in
-  idtac numgoals.
-  - move => wfl.
-    constructor.
-    give_up.
-    + constructor.
-      constructor.
-      constructor.
-  - do 2 easy_wf_lang.
-    + do 3 easy_wf_lang.
-      * repeat easy_wf_lang.
-      * repeat easy_wf_lang.
-        give_up.
-      * 
-        repeat constructor.
-        -- repeat easy_wf_lang.
-        -- unfold rule_in; simpl; eauto.
- 
-    econstructor; unfold is_nth; simpl; eauto.
-      repeat constructor.
-      econstructor; unfold is_nth; simpl; eauto.
-      repeat constructor.
-      econstructor; unfold is_nth; simpl; eauto.
-      repeat constructor.
-      * econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor.
-        econstructor; unfold is_nth; simpl; eauto.
-        repeat constructor;
-        econstructor; unfold is_nth; simpl; eauto;
-        repeat constructor.
-      *
-    
-
 Definition subst_lang : lang subst_syn :=
   (* terms *)
   [::
@@ -226,3 +196,5 @@ Proof.
   constructor.
      (* TODO: how to talk about an arbitrary coefficient? needs to be 3rd ctxt option? *)
      {| [:: coeff] |- (svar' 0) .: judg' (@! ,, (var 0)) (var 0)}].
+
+                                                                  
