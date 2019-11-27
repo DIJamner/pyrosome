@@ -5,8 +5,8 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-(* TODO: change from loads to imports *)
-From excomp Require Import Exp CoreDefs Core.
+From excomp Require Import Exp CoreDefs Core Named.
+Require Import String.
 
 Ltac guard_single_goal :=
   let n := numgoals in
@@ -31,13 +31,129 @@ Ltac clear_const_substs :=
 Ltac easy_wf_lang :=
   first [ constructor
         |  econstructor; unfold is_nth; simpl; eauto; 
-           guard_single_goal];
+           guard_single_goal
+        | by eapply wf_to_ctx; eauto];
   compute_adds;
   clear_const_substs.
 
 Ltac constructors :=
   progress repeat (constructor; guard_single_goal).
 
+Ltac topswap :=
+  let H1 := fresh in
+  let H2 := fresh in
+  move => H1 H2;
+  move: H2 H1.
+
+(*TODO: put in named*)
+Notation "C% s %" := (ncon s [::]) (at level 7).
+Notation "C% s | e %" := (ncon s [:: e]) (at level 7).
+Notation "C% s | e1 ; .. ; e2 %" := (ncon s (cons e1 .. (cons e2 nil) ..)) (at level 7).
+
+(* syntax of categories *)
+Definition cat_stx' : seq named_rule :=
+    [::{|n [:: C%"hom"| nvar 2; nvar 1%; C%"hom"| nvar 2; nvar 1% ; C%"ob"%; C%"ob"%; C%"ob"%] |-
+         "cmp" .: C% "hom" | nvar 4 ; nvar 2 %};
+       {|n [:: C%"ob"%] |- "id" .: C% "hom" | nvar 0; nvar 0 % };
+       {|n [:: C%"ob"%; C%"ob"% ] |- "hom" sort};
+       {|n [::] |- "ob" sort }].
+
+Definition cat_stx : lang := index_nlang cat_stx'.
+
+Lemma cat_syx_wf : wf_lang cat_stx.
+Proof.
+  compute.
+  repeat easy_wf_lang.
+Qed.
+
+Eval compute in cat_stx.
+
+Definition ob := [3|].
+Definition hom a b := [2| a; b].
+Definition id a := [1| a].
+Definition cmp A B C f g := [0| g; f; C; B; A].
+
+Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
+Proof.
+  easy_wf_lang.
+Qed.
+
+Lemma wf_hom c a b : wf_term cat_stx c a ob -> wf_term cat_stx c b ob -> wf_sort cat_stx c (hom a b).
+Proof.
+  easy_wf_lang.
+  constructor; eauto.
+  easy_wf_lang; eauto.
+  easy_wf_lang; eauto.
+  eapply wf_to_ctx.
+  eauto.
+Qed.
+
+Lemma wf_id c a : wf_term cat_stx c a ob -> wf_term cat_stx c (id a) (hom a a).
+Proof.
+  intro.
+  change (hom a a) with (hom (var 0) (var 0))[/[::a]/].
+  easy_wf_lang.
+  constructor.
+  easy_wf_lang.
+  eapply wf_to_ctx; eauto.
+  done.
+Qed.
+
+Lemma wf_hom_inversion c A B
+  : wf_sort cat_stx c (hom A B) ->
+    wf_term cat_stx c A ob /\ wf_term cat_stx c B ob.
+Proof.
+  inversion.
+  move: H4.
+  unfold is_nth.
+  simpl.
+  change (3+0) with 3.
+  move /eqP.
+  case => c'eq.
+  move: H5.
+  rewrite -c'eq.
+  inversion.
+  split; eauto.
+  inversion H10.
+  eauto.
+Qed.
+
+Lemma wf_cmp c A B C f g
+  : wf_term cat_stx c f (hom A B) ->
+    wf_term cat_stx c g (hom B C) ->
+    wf_term cat_stx c (cmp A B C f g) (hom A C).
+Proof.
+  intros.
+  change (hom A C) with (hom (var 4) (var 2)) [/[:: g; f; C; B; A]/].
+  easy_wf_lang.
+  constructor; eauto; easy_wf_lang.
+  constructor; eauto.
+  repeat easy_wf_lang.
+  TODO: wf_term_sort and inversion lemmas
+  constructor; eauto.
+  repeat easy_wf_lang.
+  easy_wf_lang.
+  easy_wf_lang.
+  eapply wf_to_ctx; eauto
+  
+Goal wf_term cat_stx [:: ob]
+     (cmp (var 0) (var 0) (var 0) (id (var 0)) (id (var 0))) (hom (var 0) (var 0)).
+Proof.
+  change (hom (var 0) (var 0)) with (hom (var 2) (var 3))[/[:: id (var 0); id (var 0); var 0; var 0; var 0]/].
+  eapply wf_term_by.
+  compute.
+  match goal with
+  | |- wf_term ?l ?c (con ?m ?s) [?n|] =>
+    change (wf_term l c (con m s) [n|])
+      with (wf_term l c (con m s) [n|][/s/])
+  end.
+  
+
+Definition cat_lang' : seq named_rule :=
+  [:: {<n 
+  ]++cat_stx'.
+
+           
 
 Definition ctx_lang : lang :=
   [:: {| [:: [2(*tp*)|]; [1(*ctx*)|]] |- (*C,t*) [1(*ctx*)|]};

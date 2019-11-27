@@ -291,7 +291,7 @@ Notation "r %%! n" := (rule_constr_shift n r) (at level 7).
 
 (*TODO: should be mutually recursive w/ last lemma *)
 Lemma map_constr_shift_shift l n m
-  : [seq e%!m | e <- [seq e'%!n | e' <- l]] = [seq e%!(n + m) | e <- l].
+  : l ::%! n ::%! m = l::%!(n+m).
 Proof.
   elim: l => //.
   simpl.
