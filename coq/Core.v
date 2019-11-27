@@ -54,6 +54,7 @@ Tactic Notation "intro_to" constr(ty) :=
          | |- ty _ _-> _ => idtac
          | |- ty _ _ _ -> _ => idtac
          | |- _ -> _ => intro
+         | |- _ => fail 2 "could not find argument with head" ty
          end.
 
 Ltac construct_with t :=
@@ -174,6 +175,12 @@ Proof.
   by apply: List.map_nth_error.
 Qed.
 
+Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'%%!1.
+Proof.
+  move => wfr.
+  inversion; constructor; eapply mono; eauto.
+Qed.
+  
 Lemma mono_n l'
   : (forall (l : lang) c1 c2 t1 t2,
         le_sort l c1 c2 t1 t2 -> wf_lang (l'++l) ->
@@ -384,6 +391,166 @@ Proof.
     rewrite {3}neq.
     eauto.
 Qed.
+
+
+Lemma rule_constr_shift_0_id r : r%%!0 = r.
+Proof.
+  case: r => //; simpl; intros;
+  by rewrite ?map_constr_shift0 ?constr_shift0.
+Qed.  
+
+Ltac suff_to_use H :=
+   match goal with
+    | |- ?T =>
+      let T' := type of H in
+      suff: T = T' => [-> //|]; f_equal
+   end.
+
+
+Lemma add_inj_left a b c : c + a = c + b -> a = b.
+Proof.
+  elim: c => //; eauto.
+Qed.
+
+Lemma inj_constr_shift e e' n : e %! n == e' %! n -> e == e'.
+Proof.
+  elim: e e' n; intros until e'; case: e'; simpl; auto.
+  intro_to is_true.
+  case /eqP.
+  move /add_inj_left => ->.
+  elim: l H l0; intros until l0; case: l0; simpl; auto.
+  - move => a l; inversion.
+  - inversion.
+  - move: H0; simpl; case => H00 H01.
+    move => a0 l0; inversion.
+    apply /eqP; f_equal.
+    f_equal.
+    apply /eqP.
+    apply: H00.
+    apply /eqP; eauto.
+    suff: (con n0 l == con n0 l0); [by case /eqP|].
+    apply: H; eauto.
+Qed.
+
+Lemma inj_map_constr_shift c c' n : c::%! n == c' ::%! n -> c == c'.
+Proof.
+  elim: c c'; intros until c'; case: c'; simpl; auto.
+  intro_to is_true.
+  case /eqP => /eqP => aeq /eqP => leq.
+  apply /eqP; f_equal; apply /eqP.
+  apply: inj_constr_shift; eauto.
+  eauto.
+Qed.
+
+Ltac solve_subpar_eq_surjective :=
+  match goal with
+      | |- ?c ::%! _ = ?c' ::%! _ => 
+        suff: c = c' => [-> //|]
+      | |- ?e %! _ = ?e'%! _ => 
+        suff: e = e' => [-> //|]
+      end;
+      apply /eqP;
+      first[ apply: inj_map_constr_shift | apply: inj_constr_shift];
+      apply /eqP;
+      repeat match goal with H : _ = _ |- _ => move: H end;
+      rewrite ?map_constr_shift_shift ?constr_shift_shift; eauto.
+
+Lemma surjective_rule_shift r r' n : r %%! n == r' %%! n -> r == r'.
+Proof.
+  elim: n; simpl.
+  - by rewrite !rule_constr_shift_0_id.
+  - case: r; case: r'; simpl; auto;
+      intro_to is_true;
+      case /eqP;
+      change (n.+1) with (1 + n);
+      rewrite ![1 + _]addnC;
+      rewrite -?map_constr_shift_shift -?constr_shift_shift;
+      intros;   
+      apply: H;
+      apply /eqP; f_equal;
+      solve_subpar_eq_surjective.
+Qed.    
+
+Lemma first_rule_wf l a : wf_lang (a :: l) -> wf_rule (a :: l) a %%! 1.
+Proof.
+  inversion.
+  inversion H1; subst; constructor; eapply mono; auto.
+Qed.
+
+Lemma rule_in_wf l : wf_lang l ->
+                     forall r m n, shifted_rule_in n r%%!(m+n) l -> wf_rule l r%%!m%%!1.
+Proof.
+  elim: l => //=.
+  intro_to is_true.
+  case /orP.
+  - rewrite -!rule_constr_shift_shift.
+    move /surjective_rule_shift /eqP <-.
+    by apply: first_rule_wf.
+  - Search _ shifted_rule_in.
+    case: a H0; eauto.  econstructor.
+  eapply mono_rule.
+
+Lemma rule_in_wf n r l : wf_lang l -> rule_in r%%!n l -> wf_rule l r%%!n.
+Proof.
+  elim: l n => //.
+  move => a l IH n wfl.
+  unfold rule_in.
+  simpl; case /orP.
+  1:{
+    case: n.
+    - rewrite rule_constr_shift_0_id.
+      move /eqP <-.
+      by apply: first_rule_wf.
+    - move => n.
+      change (n.+1) with (1+n).
+      rewrite addnC.
+      rewrite -rule_constr_shift_shift.
+      move /surjective_rule_shift => /eqP <-.
+      by apply: first_rule_wf.
+  }
+  
+  Search _ shifted_rule_in. TODO: lemma to cancel n? (should it already be cancelled?)
+  compute.
+  move
+  Search _ (_%%! _).
+  2: {
+  inversion wfl.
+  move: H0.
+  move /wf_rule_lang => /IH => IH'.
+  move /IH'.
+  apply wf_rule_lang in H0.
+  move: 
+  eapply IH in H0; eauto
+  eauto.
+  simpl. TODO: needs to be more general, encorporate shift
+Admitted.
+
+Ltac wf_to_ctx_from_rule :=
+  intro_to is_true;
+  move /rule_in_wf;
+  let H := fresh in
+  move => H;
+  match goal with
+    H : ?E, H' : ?E -> _ |- _ =>
+    specialize (H' H)
+  end;
+   inversion H.
+
+Lemma wf_to_ctx
+  : (forall l c1 c2 t1 t2,
+        le_sort l c1 c2 t1 t2 -> le_ctx l c1 c2)
+    /\ (forall l c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' -> le_ctx l c1 c2)
+    /\ (forall l c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 -> le_ctx l c1 c2)
+    /\ (forall l c1 c2,  le_ctx l c1 c2 -> le_ctx l c1 c2)
+    /\ (forall l c t, wf_sort l c t -> wf_ctx l c)
+    /\ (forall l c s c', wf_subst l c s c' -> wf_ctx l c)
+    /\ (forall l c e t,  wf_term l c e t -> wf_ctx l c).
+Proof.
+ (* apply: mono_ind; eauto.
+  by wf_to_ctx_from_rule.*)
+Admitted.
 
 (*
 Lemma rule_in_wf r l : wf_lang l -> forall n, is_nth r l n -> wf_rule l r.
@@ -658,4 +825,5 @@ Proof.
   give_up. (* need to prove that shift_substs are well-typed *)
   give_up. (* need to prove that well-typed terms are well-scoped*)
 *)
-  
+
+
