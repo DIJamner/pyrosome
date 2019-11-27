@@ -5,16 +5,8 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Exp.
+From excomp Require Import Utils Exp.
 
-Tactic Notation "intro_to" constr(ty) :=
-  repeat match goal with
-         | |- ty -> _ => idtac
-         | |- ty _ -> _ => idtac
-         | |- ty _ _-> _ => idtac
-         | |- ty _ _ _ -> _ => idtac
-         | |- _ -> _ => intro
-         end.
 
 (* grouped right with the fixpoint so that eq_exp goes through*)
 Definition all2 := 
@@ -88,6 +80,7 @@ Proof.
       case; auto.
 Qed.      
 
+(*TODO: case neq does not use the right name*)
 Tactic Notation "case_on_eqb" ident(a) ident(b) :=
   let neq := fresh "neq" in
   case neq: (a == b); constructor;

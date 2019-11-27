@@ -3,5 +3,6 @@ Exp.v
 CoreDefs.v
 Core.v
 Named.v
+Utils.v
 -Q ./langs langs
 Subst.v

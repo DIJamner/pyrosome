@@ -25,6 +25,9 @@ le_sort
 wf_term
 le_term
 wf_subst
+
+Ltac construct_with t :=
+  constructor; apply: t; eauto.
 le_subst
 wf_ctx_var
 le_ctx_var
@@ -33,6 +36,8 @@ le_ctx
 wf_rule
 wf_lang
  *)
+
+From excomp Require Import Utils.
 
 (* Tactics *)
 
@@ -46,19 +51,6 @@ Ltac intro_term :=
   | [|- rule _ -> _] => intro
   | [|- subst _ -> _] => intro
   end.
-
-Tactic Notation "intro_to" constr(ty) :=
-  repeat match goal with
-         | |- ty -> _ => idtac
-         | |- ty _ -> _ => idtac
-         | |- ty _ _-> _ => idtac
-         | |- ty _ _ _ -> _ => idtac
-         | |- _ -> _ => intro
-         | |- _ => fail 2 "could not find argument with head" ty
-         end.
-
-Ltac construct_with t :=
-  constructor; apply: t; eauto.
   
 Ltac solve_wf_with t :=
   solve [ (constructor + idtac); apply: t; eauto
@@ -302,14 +294,9 @@ Proof.
 Qed.
 Hint Immediate wf_lang_prefix.
 
-Ltac top_inversion :=
-  let H := fresh in
-  move => H;
-  inversion H.
-
 Lemma wf_lang_rst : forall l a, wf_lang (a :: l) -> wf_lang l.
 Proof.
-  intro_to wf_lang; top_inversion; eauto.
+  intro_to wf_lang; inversion; eauto.
 Qed.
 
 Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
@@ -342,16 +329,16 @@ Lemma ctx_trans' l n
 Proof.
   move: n.
   apply: nat2_mut_ind.
-  1,2: case; repeat intro_term; repeat top_inversion; auto.
+  1,2: case; repeat intro_term; repeat inversion; auto.
   - intro_to (@eq nat); case; eauto.
   - intro_to seq.
     case => // a1 c1.
     simpl.
-    case => //; [intro_to le_ctx; top_inversion|]; move => a2 c2.
-    case => //; [ move => _ _; top_inversion|]; move => a3 c3.
+    case => //; [intro_to le_ctx; inversion|]; move => a2 c2.
+    case => //; [ move => _ _; inversion|]; move => a3 c3.
     change ((size c1).+1 * 2) with (size c1 * 2).+2.
     case => neq.
-    repeat top_inversion; eauto.
+    repeat inversion; eauto.
 Qed.
 
 Lemma le_ctx_trans l c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
@@ -375,12 +362,12 @@ Proof.
   elim: n l m.
   - case; simpl;
       intro_to is_true;
-      [intro_to is_true; top_inversion|].
+      [intro_to is_true; inversion|].
     rewrite addn0.
     move /eqP; intros;
     exists [::]; simpl; eauto.
   - intro_to seq.
-    case; simpl; [intro_to is_true; top_inversion|].
+    case; simpl; [intro_to is_true; inversion|].
     intros.
     rewrite addnS. 
     change (m + n).+1 with (m.+1 + n).
