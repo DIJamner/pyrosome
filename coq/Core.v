@@ -6,7 +6,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 (* TODO: change from loads to imports *)
-From excomp Require Import Exp CoreDefs.
+From excomp Require Import Exp Rule CoreDefs.
 
 (* Cheat Sheet
 

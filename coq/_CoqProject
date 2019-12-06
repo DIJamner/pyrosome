@@ -1,5 +1,6 @@
 -Q . excomp
 Exp.v
+Rule.v
 CoreDefs.v
 Core.v
 Named.v

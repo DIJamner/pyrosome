@@ -12,6 +12,10 @@ Tactic Notation "intro_to" constr(ty) :=
          | |- ty _ -> _ => idtac
          | |- ty _ _-> _ => idtac
          | |- ty _ _ _ -> _ => idtac
+         | |- ty _ _ _ _ -> _ => idtac
+         | |- ty _ _ _ _ _ -> _ => idtac
+         | |- ty _ _ _ _ _ _ -> _ => idtac
+         | |- ty _ _ _ _ _ _ _ -> _ => idtac
          | |- _ -> _ => intro
          | |- _ => fail 2 "could not find argument with head" ty
          end.

@@ -5,7 +5,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Utils Exp.
+From excomp Require Import Utils Exp Rule.
 
 
 (* grouped right with the fixpoint so that eq_exp goes through*)
