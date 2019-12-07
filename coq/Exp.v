@@ -5,6 +5,8 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
+From excomp Require Import Utils.
+
 Unset Elimination Schemes.
 Inductive exp : Set :=
 (* variable deBruijn index *)
@@ -471,3 +473,180 @@ Proof.
   rewrite -H.
   auto.
 Qed.
+
+Fixpoint constr_shift n e :=
+  match e with
+  | var x => var x
+  | con m l => con (n + m) (map (constr_shift n) l)
+  end.
+
+
+Notation "e %! n" := (constr_shift n e) (at level 7).
+
+Notation "e ::%! n" := (map (constr_shift n) e) (at level 7).
+
+Lemma constr_shift0 e : e%!0 = e.
+Proof.
+  elim: e => //.
+  intros; simpl.
+  f_equal.
+  elim: l H => //.
+  simpl; intros.
+  case: H0 => H01 H02; f_equal; auto.
+Qed.
+
+Lemma map_constr_shift0 s : s::%!0 = s.
+  elim: s => //.
+  intros; simpl; f_equal; move: constr_shift0; auto.
+Qed.
+  
+Lemma constr_shift_shift e n m : e%!n %!m = e%!(n + m).
+Proof.
+  elim: e => //.
+  intros;
+    simpl;
+    f_equal.
+  - ring.
+  - elim: l H => //; simpl; intros.
+    rewrite -> H;
+      case: H0; intros.
+    f_equal; auto.
+    auto.
+Qed.
+
+Lemma map_constr_shift_shift l n m
+  : l ::%! n ::%! m = l::%!(n+m).
+Proof.
+  elim: l => //.
+  simpl.
+  move => a l ->.
+  f_equal; move: constr_shift_shift; auto.
+Qed.
+Lemma constr_shift_subst_comm e s n : e[/s/]%!n = e%!n[/s::%!n/].
+Proof.
+  elim: e s n.
+  - elim ;intro_to subst; case => //.
+  - intros; simpl;
+      unfold exp_subst;
+      unfold exp_var_map;
+      fold exp_var_map;
+      fold exp_subst.
+    f_equal.
+    fold exp_subst.
+    elim: l H => //.
+    simpl; intro_to and.
+    case; intros.
+    f_equal; eauto.
+Qed.
+
+Fixpoint eq_exp e1 e2 {struct e1} : bool :=
+  match e1, e2 with
+  | var x, var y => x == y
+  | con n1 l1, con n2 l2 =>
+    (n1 == n2) && (all2 eq_exp l1 l2)
+  | _,_ => false
+  end.
+
+Lemma exp2_ind (P : exp -> exp -> Set)
+  : (forall n m, P (var n) (var m)) ->
+    (forall n c l, P (var n) (con c l)) ->
+    (forall n c l, P (con c l) (var n)) ->
+    (forall c1 c2, P (con c1 [::]) (con c2 [::])) ->
+    (forall c1 c2 a l, P (con c1 [::]) (con c2 (a::l))) ->
+    (forall c1 c2 a l, P (con c1 (a::l)) (con c2 [::])) ->
+    (forall c1 c2 a1 a2 l1 l2,
+        P a1 a2 ->
+        P (con c1 l1) (con c2 l2) ->
+        P (con c1 (a1::l1)) (con c2 (a2::l2))) ->
+    forall e1 e2, P e1 e2.
+Proof.
+  intro_to exp.
+  elim.
+  - intro_to exp; case; auto.
+  - intro_to exp.
+    case; auto.
+    move => n0.
+    elim: l X.
+    + move => _; case; auto.
+    + move => a l IH.
+      simpl; case => pa fld.
+      case; auto.
+Qed.      
+
+(*TODO: case neq does not use the right name*)
+Tactic Notation "case_on_eqb" ident(a) ident(b) :=
+  let neq := fresh "neq" in
+  case neq: (a == b); constructor;
+  [f_equal; apply /eqP
+  | case => /eqP; rewrite neq].
+  
+
+Lemma eq_exp_refl : forall e, eq_exp e e.
+Proof.
+  elim; simpl; auto.
+  move => n.
+  suff: n == n.
+  move ->; simpl.
+  elim; simpl; auto.
+  intro_to and.
+  case => eqaa fld.
+  apply /andP.
+  split; auto.
+  elim: n; simpl; auto.
+Qed.
+
+Lemma all2_eq_exp_refl : forall l, all2 eq_exp l l.
+  pose eqer := eq_exp_refl.
+  elim; simpl; auto.
+  intros; apply /andP; split; auto.
+Qed.
+
+Lemma eq_expP : forall e1 e2, reflect (e1 = e2) (eq_exp e1 e2).
+Proof.
+  elim.
+  - intro_to exp; case; simpl.
+    + move => n0.
+        by case_on_eqb n n0.
+    + constructor; by case.
+  - intro_to exp; case; simpl.
+    + constructor; by case.
+    + intros.
+      case neq: (n == n0); simpl.
+      * case alleq: (all2 eq_exp l l0).
+        --constructor.
+          f_equal.
+            by apply /eqP; rewrite neq.
+            elim: l X l0 alleq.
+          ++ simpl; move => _; case; by auto.
+          ++ simpl; move => a l IH.
+             case => refla fld.
+             case; try by auto.
+             move => a0 l0.
+             case /andP.
+             move /refla => -> all2l.
+             f_equal.
+             eauto.
+        -- constructor.
+           case => _.
+           elim: l X l0 alleq.
+           ++ simpl; move => _; case; by auto.
+          ++ simpl; move => a l IH.
+             case => refla fld.
+             case; try by auto.
+             move => a0 l0.
+             move /andP => oneof.
+             case => aeq leq.
+             apply oneof.
+             split.
+             rewrite aeq.
+             apply: eq_exp_refl.
+             rewrite leq.
+             apply: all2_eq_exp_refl.
+      * constructor.
+        case; move /eqP; by rewrite neq.
+Qed.
+
+Definition exp_eqMixin := Equality.Mixin eq_expP.
+
+Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
+

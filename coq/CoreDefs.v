@@ -7,156 +7,6 @@ Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils Exp Rule.
 
-
-(* grouped right with the fixpoint so that eq_exp goes through*)
-Definition all2 := 
-fun (S T : Type) (r : S -> T -> bool) =>
-fix all2 (s : seq S) (t : seq T) {struct s} : bool :=
-  match s, t with
-  | [::], [::] => true
-  | x :: s0, y::t0 => r x y && all2 s0 t0
-  | _,_ => false
-  end.
-
-(* TODO: I have to inline all2 to get this accepted *)
-Fixpoint eq_exp e1 e2 {struct e1} : bool :=
-  match e1, e2 with
-  | var x, var y => x == y
-  | con n1 l1, con n2 l2 =>
-    (n1 == n2) && (all2 eq_exp l1 l2)
-  | _,_ => false
-  end.
-
-Lemma all2P {T} eqb (l1 l2 : seq T)
-  : (forall e1 e2, reflect (e1 = e2) (eqb e1 e2)) ->
-    reflect (l1 = l2) (all2 eqb l1 l2).
-Proof.
-  move => eqbP.
-  elim: l1 l2.
-  - case; simpl; [by constructor|].
-    intros.
-    constructor; eauto.
-    move => H; inversion H.
-  - move => a l IH.
-    case; simpl.
-    constructor; move => H; inversion H.
-    intros.
-    move: (eqbP a a0).
-    case (eqb a a0); simpl.
-    move: (IH l0); case:(all2 eqb l l0); simpl.
-    + constructor.
-      inversion IH0; inversion eqbP0; by subst.
-    + constructor.
-      move => lfl.
-      inversion lfl.
-      inversion IH0; eauto.
-    + constructor; move => lfl.
-      inversion lfl; inversion eqbP0; auto.
-Qed.
-
-Lemma exp2_ind (P : exp -> exp -> Set)
-  : (forall n m, P (var n) (var m)) ->
-    (forall n c l, P (var n) (con c l)) ->
-    (forall n c l, P (con c l) (var n)) ->
-    (forall c1 c2, P (con c1 [::]) (con c2 [::])) ->
-    (forall c1 c2 a l, P (con c1 [::]) (con c2 (a::l))) ->
-    (forall c1 c2 a l, P (con c1 (a::l)) (con c2 [::])) ->
-    (forall c1 c2 a1 a2 l1 l2,
-        P a1 a2 ->
-        P (con c1 l1) (con c2 l2) ->
-        P (con c1 (a1::l1)) (con c2 (a2::l2))) ->
-    forall e1 e2, P e1 e2.
-Proof.
-  intro_to exp.
-  elim.
-  - intro_to exp; case; auto.
-  - intro_to exp.
-    case; auto.
-    move => n0.
-    elim: l X.
-    + move => _; case; auto.
-    + move => a l IH.
-      simpl; case => pa fld.
-      case; auto.
-Qed.      
-
-(*TODO: case neq does not use the right name*)
-Tactic Notation "case_on_eqb" ident(a) ident(b) :=
-  let neq := fresh "neq" in
-  case neq: (a == b); constructor;
-  [f_equal; apply /eqP
-  | case => /eqP; rewrite neq].
-  
-
-Lemma eq_exp_refl : forall e, eq_exp e e.
-Proof.
-  elim; simpl; auto.
-  move => n.
-  suff: n == n.
-  move ->; simpl.
-  elim; simpl; auto.
-  intro_to and.
-  case => eqaa fld.
-  apply /andP.
-  split; auto.
-  elim: n; simpl; auto.
-Qed.
-
-Lemma all2_eq_exp_refl : forall l, all2 eq_exp l l.
-  pose eqer := eq_exp_refl.
-  elim; simpl; auto.
-  intros; apply /andP; split; auto.
-Qed.
-
-Lemma eq_expP : forall e1 e2, reflect (e1 = e2) (eq_exp e1 e2).
-Proof.
-  elim.
-  - intro_to exp; case; simpl.
-    + move => n0.
-        by case_on_eqb n n0.
-    + constructor; by case.
-  - intro_to exp; case; simpl.
-    + constructor; by case.
-    + intros.
-      case neq: (n == n0); simpl.
-      * case alleq: (all2 eq_exp l l0).
-        --constructor.
-          f_equal.
-            by apply /eqP; rewrite neq.
-            elim: l X l0 alleq.
-          ++ simpl; move => _; case; by auto.
-          ++ simpl; move => a l IH.
-             case => refla fld.
-             case; try by auto.
-             move => a0 l0.
-             case /andP.
-             move /refla => -> all2l.
-             f_equal.
-             eauto.
-        -- constructor.
-           case => _.
-           elim: l X l0 alleq.
-           ++ simpl; move => _; case; by auto.
-          ++ simpl; move => a l IH.
-             case => refla fld.
-             case; try by auto.
-             move => a0 l0.
-             move /andP => oneof.
-             case => aeq leq.
-             apply oneof.
-             split.
-             rewrite aeq.
-             apply: eq_exp_refl.
-             rewrite leq.
-             apply: all2_eq_exp_refl.
-      * constructor.
-        case; move /eqP; by rewrite neq.
-Qed.
-
-Definition exp_eqMixin := Equality.Mixin eq_expP.
-
-Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
-
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
   | {| c1 |- sort }, {| c2 |- sort } => c1 == c2
@@ -168,9 +18,6 @@ Definition eq_rule r1 r2 : bool :=
   | _,_ => false
   end.
 
-Tactic Notation "inversion" :=
-  let H := fresh in
-  move => H; inversion H.
 
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
 Proof.
@@ -226,46 +73,7 @@ Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
 
 
-(*TODO: move these to Exp*)
-Fixpoint constr_shift n e :=
-  match e with
-  | var x => var x
-  | con m l => con (n + m) (map (constr_shift n) l)
-  end.
 
-
-Notation "e %! n" := (constr_shift n e) (at level 7).
-
-Notation "e ::%! n" := (map (constr_shift n) e) (at level 7).
-
-Lemma constr_shift0 e : e%!0 = e.
-Proof.
-  elim: e => //.
-  intros; simpl.
-  f_equal.
-  elim: l H => //.
-  simpl; intros.
-  case: H0 => H01 H02; f_equal; auto.
-Qed.
-
-Lemma map_constr_shift0 s : s::%!0 = s.
-  elim: s => //.
-  intros; simpl; f_equal; move: constr_shift0; auto.
-Qed.
-  
-Lemma constr_shift_shift e n m : e%!n %!m = e%!(n + m).
-Proof.
-  elim: e => //.
-  intros;
-    simpl;
-    f_equal.
-  - ring.
-  - elim: l H => //; simpl; intros.
-    rewrite -> H;
-      case: H0; intros.
-    f_equal; auto.
-    auto.
-Qed.
 
 Definition rule_constr_shift n r :=
   match r with
@@ -283,14 +91,7 @@ Definition rule_constr_shift n r :=
 Notation "r %%! n" := (rule_constr_shift n r) (at level 7).
 
 (*TODO: should be mutually recursive w/ last lemma *)
-Lemma map_constr_shift_shift l n m
-  : l ::%! n ::%! m = l::%!(n+m).
-Proof.
-  elim: l => //.
-  simpl.
-  move => a l ->.
-  f_equal; move: constr_shift_shift; auto.
-Qed.
+
 
 Lemma rule_constr_shift_shift r n m : r%%!n %%!m = r%%!(n+m).
 Proof.
