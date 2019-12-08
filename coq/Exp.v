@@ -650,3 +650,44 @@ Definition exp_eqMixin := Equality.Mixin eq_expP.
 
 Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
 
+Fixpoint constr_downshift n e : option exp :=
+  match e with
+  | var x => Some (var x)
+  | con m l =>
+    if n <= m
+    then Option.map (con (m - n)) (try_map (constr_downshift n) l)
+    else None
+  end.
+
+Lemma add_sub n n0 : n0 + n - n0 = n.
+Proof.
+  elim: n0 => //=.
+  rewrite sub_0_r.
+  by compute.
+Qed.
+  
+Lemma downshift_left_inverse e n : constr_downshift n e%!n = Some e.
+Proof.
+  elim: e n; [by simpl|].
+  intros; simpl.
+  rewrite leq_addr.
+  rewrite try_map_map_distribute.
+  change (Some (con n l)) with (omap (con n) (Some l)).
+  f_equal.
+  f_equal; by apply add_sub.
+  elim: l H => //=.
+  intros.
+  case: H0 => shifta shiftl.
+  rewrite shifta.
+  specialize (H shiftl).
+  rewrite H.
+  by compute.
+Qed.
+
+Lemma try_map_downshift_left_inverse l n : try_map (constr_downshift n) l::%!n = Some l.
+Proof.
+  elim: l => //=; intros.
+  rewrite downshift_left_inverse H.
+  by compute.
+Qed.
+    

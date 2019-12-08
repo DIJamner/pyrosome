@@ -152,3 +152,34 @@ Proof.
     move: constr_shift_shift map_constr_shift_shift;
   auto.
 Qed.
+
+Definition rule_constr_downshift n r : option rule :=
+  match r with
+  | {| c |- sort } => c' <- try_map (constr_downshift n) c; Some ({| c' |- sort})
+  | {| c |- t } =>
+    c' <- try_map (constr_downshift n) c;
+      t' <- constr_downshift n t;
+      Some ({| c' |- t'})
+  | {< c1 <# c2 |- t1 <# t2 } =>
+    c1' <- try_map (constr_downshift n) c1;
+      c2' <- try_map (constr_downshift n) c2;
+      t1' <- constr_downshift n t1;
+      t2' <- constr_downshift n t2;
+      Some ({< c1' <# c2' |- t1' <# t2' })
+  | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } =>
+    c1' <- try_map (constr_downshift n) c1;
+      c2' <- try_map (constr_downshift n) c2;
+      e1' <- constr_downshift n e1;
+      e2' <- constr_downshift n e2;
+      t1' <- constr_downshift n t1;
+      t2' <- constr_downshift n t2;
+      Some ({< c1' <# c2' |- e1' <# e2' .: t1' <# t2'})
+  end.
+
+Lemma rule_downshift_left_inverse r n : rule_constr_downshift n r%%!n = Some r.
+Proof.
+  case: r => //=;
+  intros;
+  rewrite ?downshift_left_inverse ?try_map_downshift_left_inverse;
+  by compute.
+Qed.

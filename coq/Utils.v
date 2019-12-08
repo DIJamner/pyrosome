@@ -73,3 +73,21 @@ Proof.
     + constructor; move => lfl.
       inversion lfl; inversion eqbP0; auto.
 Qed.
+
+Notation " x <- e ; e'" := (obind (fun x => e') e)
+  (*match e with None => None | Some x => e' end*)
+    (right associativity, at level 88).
+
+Definition try_map {A B : Type} (f : A -> option B) (l : seq A) : option (seq B) :=
+  foldr (fun e acc =>
+           accl <- acc;
+             fe <- f e;
+             Some (fe::accl)
+        ) (Some [::]) l.
+
+Lemma try_map_map_distribute {A B C : Type} (f : B -> option C) (g : A -> B) l
+  : try_map f (map g l) = try_map (fun x => f (g x)) l.
+Proof.
+  elim: l => //=.
+  intros; by rewrite H.
+Qed.
