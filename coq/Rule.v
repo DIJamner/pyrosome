@@ -183,3 +183,10 @@ Proof.
   rewrite ?downshift_left_inverse ?try_map_downshift_left_inverse;
   by compute.
 Qed.
+
+Lemma rule_constr_shift_inj r1 r2 n : r1 %%!n = r2 %%!n -> r1 = r2.
+Proof.
+  case: r1; case: r2 => //=;
+  intro_to (@eq rule); inversion; f_equal;
+  move: constr_shift_inj seq_constr_shift_inj; eauto. 
+Qed.  

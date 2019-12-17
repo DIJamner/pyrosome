@@ -690,4 +690,36 @@ Proof.
   rewrite downshift_left_inverse H.
   by compute.
 Qed.
-    
+
+Lemma add_inj_r n m1 m2 : n + m1 = n + m2 -> m1 = m2.
+Proof.
+  elim: n => //=.
+  eauto.
+Qed.
+  
+Lemma constr_shift_inj e1 e2 n : e1 %!n = e2 %!n -> e1 = e2.
+Proof.
+  elim: e1 e2; intro_to exp; case => //=.
+  move => n1 l0.
+  case.
+  move /add_inj_r -> => shift_eq.
+  f_equal.
+  move: shift_eq.
+  elim: l l0 H; intros until l0; case: l0 => //=.
+  intro_to and.
+  case => IH_a0 IHl.
+  case.
+  move /IH_a0 -> => shifteq.
+  f_equal.
+  eauto.
+Qed.
+
+Lemma seq_constr_shift_inj l1 l2 n : l1 ::%!n = l2 ::%!n -> l1 = l2.
+Proof.
+  elim: l1 l2; intros until l2; case: l2 => //=.
+  move => a0 l0.
+  case.
+  by move /constr_shift_inj -> => /H ->.
+Qed.
+
+

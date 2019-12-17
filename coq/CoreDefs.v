@@ -10,12 +10,35 @@ From excomp Require Import Utils Exp Rule.
 (* determines whether a given language contains the appropriate axiom.
    Uses constructor shifts to get the right debruijn indices
  *)
-Fixpoint shifted_rule_in n (r : rule) (l : lang) : bool :=
+Inductive Rule_In : rule -> lang -> Prop :=
+| rule_in_first : forall r l, Rule_In r%%!1 (r::l)
+| rule_in_rest : forall r r' l, Rule_In r l -> Rule_In r%%!1 (r'::l).
+Hint Constructors Rule_In.
+
+
+Fixpoint rule_in (r : rule) (l : lang) : bool :=
   match l with
   | [::] => false
-  | r' :: l' => ( r' %%! n == r) || (shifted_rule_in (n.+1) r l')
+  | r' :: l' =>
+    (r == r'%%!1)
+    || match rule_constr_downshift 1 r with
+       | None => false
+       | Some r'' => rule_in r'' l'
+       end
   end.
 
+(*
+Lemma rule_inP r l : reflect (Rule_In r l) (rule_in r l).
+Proof.
+  elim: l r => //=.
+  - constructor; inversion.
+  - intros until r.
+    case aeq: (r == a %%! 1) => //=.
+    + move: aeq => /eqP ->; constructor; eauto.
+    + case: (H (r%%!1)); constructor.
+      * constructor. eauto.
+*)
+ (*
 Lemma shifted_rule_in_cons n r l
   : shifted_rule_in n.+1 r l -> forall r', shifted_rule_in n r (r'::l).
 Proof.
@@ -50,39 +73,128 @@ Qed.
 
 Definition rule_in r (l : lang) : bool := shifted_rule_in 1 r l.
 Hint Unfold rule_in.
+*)
 
-Fixpoint shifted_is_nth n (r : rule) l m : bool :=
-  match m, l with
-  | _, [::] => false
-  | 0, r'::l' => (rule_constr_shift n r' == r)
-  | m'.+1, _::l' => shifted_is_nth n.+1 r l' m'
+Inductive Is_Nth : rule -> lang -> nat -> Prop :=
+  (* Shift at the base because input rule assumed to come after existing lang *)
+| Is_0th : forall r l, Is_Nth r%%!1 (r::l) 0
+| Is_Succ : forall r m r' l, Is_Nth r l m -> Is_Nth r%%!1 (r'::l) m.+1.
+Hint Constructors Is_Nth.
+
+Fixpoint is_nth (r : rule) l m : bool :=
+  match l, m with
+  | [::], _ => false
+  | r'::l', 0 => r'%%!1 == r
+  (* TODO: need the same kind of rule downshift*)
+  |  _::l', m'.+1 =>
+     match rule_constr_downshift 1 r with
+     | None => false
+     | Some r'' => is_nth r'' l' m'
+     end
   end.
 
-Lemma unshift_is_nth_cons n r l m
-  : shifted_is_nth n r l m -> forall n', shifted_is_nth (n + n') r%%!n' l m.
+
+ 
+Lemma downshift_inj n e e' : Some e' = constr_downshift n e -> e' %!n = e.
 Proof.
-  elim: m l n => //.
-  - case; simpl; auto.
-    intro_to is_true.
-    move /eqP <- => n'.
-    by rewrite rule_constr_shift_shift.
-  - intro_to seq.
-    case; simpl; auto.
-    intros.
-    change (n0 + n').+1 with (n0.+1 + n').
-    auto.
+  elim: e e' => //=; intros until e'.
+  - by case => ->.
+  - case nlen0: (n <=n0); [|done].
+    move => someeq.
+    suff: exists e, (try_map (constr_downshift n) l) = Some e.
+    2:{
+      apply: omap_some; eauto.
+    }
+    case => l'.
+    move => mapeq.
+    pose p := mapeq.
+    move: p someeq ->.
+    simpl.
+    case.
+    move ->.
+    simpl.
+    rewrite subnKC; auto.
+    f_equal.
+    move: H mapeq.
+    elim: l l' => //=.
+    move => l' _.
+    by case => <- =>//=.
+    intro_to and.
+    case => eIH lIH.
+    case leq: (try_map (constr_downshift n) l) => //=.
+    case aeq: (constr_downshift n a) => //=.
+    case=> <- //=.
+    f_equal.
+    eauto.
+    apply: H; eauto.
 Qed.
 
-Definition is_nth r l m := shifted_is_nth 1 r l m.
-Hint Unfold is_nth.
+Lemma rule_downshift_inj r r0 n : Some r0 = rule_constr_downshift n r -> r0 %%!n = r.
+Proof.
+  case: r => //=;
+  intro_to (@eq (option rule)).
+  case cc: (try_map (constr_downshift n) c); simpl; try done.
+  case.
+  move ->; simpl.
+Admitted.
   
+Lemma is_nthP r l n : reflect (Is_Nth r l n) (is_nth r l n).
+Proof.
+  elim: l r n.
+  - simpl; constructor; inversion.
+  - intros until r.
+    case => //=.
+    + case raeq: (a %%! 1 == r).
+      move: raeq => /eqP <-.
+      constructor.
+      by constructor.
+      constructor.
+      inversion.
+      move: raeq.
+      rewrite -H1 H3.
+      pose (eq_refl (a%%!1)).
+      by rewrite i.
+    + move => n.
+      remember (rule_constr_downshift 1 r) as rdn.
+      destruct rdn.
+      * case isn:(is_nth r0 l n); constructor.
+        rewrite <-(@rule_downshift_inj r r0 1);[|done..].
+        eapply Is_Succ.
+        move: (H r0 n).
+        rewrite isn.
+        by inversion.
+        inversion. 
+        move: (H r0 n).
+        rewrite isn.
+        inversion.
+        apply: H7.
+        move: Heqrdn.
+        rewrite -H2.
+        move /rule_downshift_inj.
+        by move /rule_constr_shift_inj ->.
+      * constructor.
+        inversion.
+        move: Heqrdn.
+        rewrite -H2.
+        by rewrite rule_downshift_left_inverse.
+Qed.
+
+Lemma rule_in_iff_nth r l : Rule_In r l <-> exists n, Is_Nth r l n.
+Proof.
+  split.
+  - elim => //=; eauto.
+    move => r0 r' l0 rin.
+    case => n nth.
+    exists n.+1; eauto.
+  - case => n.
+    elim => //=; eauto.
+Qed.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
    Expression constructors contain the index of the sort/term rule that proves them wf.
    This is a deruijn version of how Jon Sterling does it
  *)
-Print List.
 Inductive wf_sort : lang -> ctx -> exp -> Prop :=
 | wf_sort_by : forall l c n s c',
     is_nth ({| c' |- sort}) l n ->
@@ -111,7 +223,7 @@ with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
     le_sort l c1 c2 t1 t2
 with wf_term : lang -> ctx -> exp -> exp -> Prop :=
 | wf_term_by : forall l c n s c' t,
-    is_nth ({| c' |- t}) l n ->
+    Is_Nth ({| c' |- t}) l n ->
     wf_subst l c s c' ->
     wf_term l c (con n s) t[/s/]
 (* terms can be lifted to greater (less precise) types,
@@ -407,4 +519,5 @@ Variant wf_rule_ {p} (l : lang p) : rule p -> Prop :=
     wf_rule_ l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2}).
 Hint Constructors wf_rule_.
 *)
+
 

@@ -32,6 +32,13 @@ Tactic Notation "inversion" :=
   let H := fresh in
   move => H; inversion H.
 
+Tactic Notation "swap" :=
+  let H := fresh in
+  let H' := fresh in
+  move => H H';
+  move: H' H.
+  
+
 
 (****************
 Definitions
@@ -90,4 +97,21 @@ Lemma try_map_map_distribute {A B C : Type} (f : B -> option C) (g : A -> B) l
 Proof.
   elim: l => //=.
   intros; by rewrite H.
+Qed.
+
+Lemma omap_some {A B} (e' : B) (f : A -> B) me : Some e' = omap f me -> exists e, me = Some e.
+Proof.
+  case: me => //=; eauto.
+Qed.
+
+Lemma omap_some' {A B} (e' : B) (f : A -> B) me
+  : Some e' = omap f me -> exists e, Some e' = omap f (Some e).
+Proof.
+  move => someeq.
+  suff: exists e, me = Some e.
+  move: someeq.
+  swap.
+  case => e ->.
+  eauto.
+  apply: omap_some; eauto.
 Qed.
