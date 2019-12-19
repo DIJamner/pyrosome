@@ -21,6 +21,21 @@ Fixpoint lookup_rule n l m : option rule :=
      lookup_rule n.+1 l' m'
   end.
 
+Lemma lookup_result_shifted n l m r :  lookup_rule n l m = Some r -> exists r', r = r'%%!n.
+Proof.
+  elim: l n m => //=.
+  intros until m; case: m => //=.
+  - case => <-.
+    change (n.+1) with (1+n).
+    rewrite -rule_constr_shift_shift.
+    eauto.
+  - move => m /H.
+    case => r' ->.
+    change (n.+1) with (1+n).
+    rewrite -rule_constr_shift_shift.
+    eauto.
+Qed.    
+
 Lemma lookup_rule_is_nth n l m r : lookup_rule n l m = Some r%%!n -> Is_Nth r l m.
 Proof.
   elim: l r m n => //=.
@@ -37,14 +52,25 @@ Proof.
   - move => m n lu.
     apply /is_nthP; simpl.
     case rcd: (rule_constr_downshift 1 r).
-    apply /is_nthP.
-    symmetry in rcd.
-    move: rcd lu => /rule_downshift_inj <-.
-    clear r.
-    rewrite rule_constr_shift_shift.
-    change (1+n) with (n.+1).
-    by move /H.
-Admitted.
+    1:{
+      apply /is_nthP.
+      symmetry in rcd.
+      move: rcd lu => /rule_downshift_inj <-.
+      clear r.
+      rewrite rule_constr_shift_shift.
+      change (1+n) with (n.+1).
+        by move /H.
+    }
+    1:{
+      move: lu rcd.
+      move /lookup_result_shifted.
+      case => r'.
+    change (n.+1) with (1+n).
+    rewrite -rule_constr_shift_shift.
+    move /rule_constr_shift_inj ->.
+      by rewrite rule_downshift_left_inverse.
+    }
+Qed.
 
 Lemma lookup_rule_is_nth' l m r : lookup_rule 0 l m = Some r -> Is_Nth r l m.
 Proof.
