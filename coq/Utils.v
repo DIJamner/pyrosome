@@ -85,6 +85,11 @@ Notation " x <- e ; e'" := (obind (fun x => e') e)
   (*match e with None => None | Some x => e' end*)
     (right associativity, at level 88).
 
+Tactic Notation "on_bind_do" tactic(t) :=
+  match goal with
+  | |- context [obind _ ?e] => t e
+  end.
+
 Definition try_map {A B : Type} (f : A -> option B) (l : seq A) : option (seq B) :=
   foldr (fun e acc =>
            accl <- acc;

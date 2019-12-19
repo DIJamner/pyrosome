@@ -6,7 +6,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 (* TODO: change from loads to imports *)
-From excomp Require Import Exp Rule CoreDefs.
+From excomp Require Import Utils Exp Rule CoreDefs.
 
 (* Cheat Sheet
 
@@ -37,7 +37,6 @@ wf_rule
 wf_lang
  *)
 
-From excomp Require Import Utils.
 
 (* Tactics *)
 
@@ -151,7 +150,18 @@ Proof.
                 | rewrite !constr_shift_subst_comm; eauto
                 | simpl; constructor; eauto; rewrite -!constr_shift_subst_comm; auto
                 | apply: le_term_conv; eauto].
-  simpl; econstructor; eauto;
+  all: econstructor; eauto.
+  (*TODO: automate*)
+  change ({<c1 ::%! 1 <# c2 ::%! 1 |- t1 %! 1 <# t2 %! 1})
+    with ({<c1 <# c2 |- t1<# t2}%%!1); auto.
+  change ({<c1 ::%! 1 <# c2 ::%! 1 |-  e1 %! 1 <# e2 %! 1.:t1 %! 1 <# t2 %! 1})
+    with ({<c1 <# c2 |- e1 <# e2 .: t1<# t2}%%!1); auto.
+  change ({|c' ::%! 1 |- sort})
+    with ({|c' |- sort})%%!1; auto.
+  move: H2 => /H1.
+(*
+  econstructor; eauto.
+  constructor.
   unfold is_nth; simpl.
   change 2 with (1 + 1) at 1;
   expand_rule_shift;
@@ -165,7 +175,8 @@ Proof.
     by apply: unshift_is_nth_cons.
   constructor; eauto.
   by apply: List.map_nth_error.
-Qed.
+Qed.*)
+Admitted.
 
 Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'%%!1.
 Proof.
@@ -354,7 +365,7 @@ Proof.
 Qed.
 Hint Resolve le_ctx_refl.
 
-
+(*
 Lemma is_nth_list_split m r l n
   : shifted_is_nth m r l n ->
     exists l1 r' l2, l = l1 ++ (r':: l2) /\ r = r'%%!(m + n) /\ n = (size l1).
@@ -378,6 +389,7 @@ Proof.
     rewrite {3}neq.
     eauto.
 Qed.
+*)
 
 
 Lemma rule_constr_shift_0_id r : r%%!0 = r.
@@ -464,6 +476,7 @@ Proof.
   inversion H1; subst; constructor; eapply mono; auto.
 Qed.
 
+(*
 Lemma rule_in_wf l : wf_lang l ->
                      forall r m n, shifted_rule_in n r%%!(m+n) l -> wf_rule l r%%!m%%!1.
 Proof.
@@ -474,8 +487,8 @@ Proof.
     move /surjective_rule_shift /eqP <-.
     by apply: first_rule_wf.
   - Search _ shifted_rule_in.
-    case: a H0; eauto.  econstructor.
-  eapply mono_rule.
+    case: a H0; eauto.
+    (*eapply mono_rule.*)
 
 Lemma rule_in_wf n r l : wf_lang l -> rule_in r%%!n l -> wf_rule l r%%!n.
 Proof.
@@ -511,7 +524,7 @@ Proof.
   eauto.
   simpl. TODO: needs to be more general, encorporate shift
 Admitted.
-
+*)
 Ltac wf_to_ctx_from_rule :=
   intro_to is_true;
   move /rule_in_wf;
@@ -538,6 +551,11 @@ Proof.
  (* apply: mono_ind; eauto.
   by wf_to_ctx_from_rule.*)
 Admitted.
+
+Lemma wf_term_sort l c t s : wf_term l c t s -> wf_sort l c s.
+Proof.
+Admitted.
+    
 
 (*
 Lemma rule_in_wf r l : wf_lang l -> forall n, is_nth r l n -> wf_rule l r.
@@ -812,5 +830,5 @@ Proof.
   give_up. (* need to prove that shift_substs are well-typed *)
   give_up. (* need to prove that well-typed terms are well-scoped*)
 *)
-
+    
 

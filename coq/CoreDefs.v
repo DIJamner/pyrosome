@@ -85,7 +85,6 @@ Fixpoint is_nth (r : rule) l m : bool :=
   match l, m with
   | [::], _ => false
   | r'::l', 0 => r'%%!1 == r
-  (* TODO: need the same kind of rule downshift*)
   |  _::l', m'.+1 =>
      match rule_constr_downshift 1 r with
      | None => false
@@ -129,6 +128,21 @@ Proof.
     apply: H; eauto.
 Qed.
 
+
+Lemma list_downshift_inj n l l' : Some l' = try_map (constr_downshift n) l -> l' ::%!n = l.
+Proof.
+  elim: l l'; intros until l'; case: l' => //=.
+  - on_bind_do (fun x => case: x => //=).
+    on_bind_do (fun x => case: x => //=).
+  - move => a0 l0.
+    on_bind_do (fun x => case b1: x => //=).
+    on_bind_do (fun x => case b2: x => //=).
+    case => -> ->.
+    simpl; f_equal.
+    by apply: downshift_inj.
+    by apply: H.
+Qed.
+
 Lemma rule_downshift_inj r r0 n : Some r0 = rule_constr_downshift n r -> r0 %%!n = r.
 Proof.
   case: r => //=;
@@ -136,6 +150,11 @@ Proof.
   case cc: (try_map (constr_downshift n) c); simpl; try done.
   case.
   move ->; simpl.
+  f_equal.
+  symmetry in cc.
+  move: cc.
+  Check downshift_inj.
+  Search _ constr_downshift.
 Admitted.
   
 Lemma is_nthP r l n : reflect (Is_Nth r l n) (is_nth r l n).
@@ -179,7 +198,7 @@ Proof.
         by rewrite rule_downshift_left_inverse.
 Qed.
 
-Lemma rule_in_iff_nth r l : Rule_In r l <-> exists n, Is_Nth r l n.
+Lemma Rule_In_iff_Nth r l : Rule_In r l <-> exists n, Is_Nth r l n.
 Proof.
   split.
   - elim => //=; eauto.
@@ -190,6 +209,52 @@ Proof.
     elim => //=; eauto.
 Qed.
 
+Lemma rule_in_iff_nth r l : rule_in r l <-> exists n, is_nth r l n.
+Proof.
+  split.
+  - elim: l r => //=; eauto.
+    move => r' l IH r.
+    case /orP.
+    + move /eqP ->.
+      exists 0.
+      done.
+    + case rdn: (rule_constr_downshift 1 r).
+      move /IH.
+      case => n nth.
+      exists n.+1.
+      done.
+      done.
+  - case => n.
+    elim: l n r => //=; eauto.
+    move => a l IH.
+    case => //=.
+    2: move => n.
+    all: move => r.
+    move /eqP <-.
+    apply /orP; left; apply /eqP; done.
+    case rdn: (rule_constr_downshift 1 r); try done.
+    move /IH => rin.
+    apply /orP; right; done.
+Qed.
+
+(*TODO: need to rewrite the above with boolable exists
+ (requires fintype; can get by limiting n to len of l)
+or (should work?) equality in Set and {n | ...}
+*)
+
+Lemma rule_inP r l : reflect (Rule_In r l) (rule_in r l).
+Proof.
+  
+  suff: Rule_In r l <-> rule_in r l.
+  case rin: (rule_in r l).
+  case => _ rimp.
+  constructor; auto.
+  case => rimp _.
+  constructor; auto.
+  rewrite rule_in_iff_nth Rule_In_iff_Nth.
+  Check existsP.
+Admitted.
+
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
    Expression constructors contain the index of the sort/term rule that proves them wf.
@@ -197,7 +262,7 @@ Qed.
  *)
 Inductive wf_sort : lang -> ctx -> exp -> Prop :=
 | wf_sort_by : forall l c n s c',
-    is_nth ({| c' |- sort}) l n ->
+    Is_Nth ({| c' |- sort}) l n ->
     wf_subst l c s c' ->
     wf_sort l c (con n s)
 with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
@@ -207,7 +272,7 @@ with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
 *)
 | le_sort_by : forall l c1 c2 t1 t2,
     wf_lang l ->
-    rule_in ({< c1 <# c2 |- t1 <# t2}) l ->
+    Rule_In ({< c1 <# c2 |- t1 <# t2}) l ->
     le_sort l c1 c2 t1 t2
 | le_sort_subst : forall l c1 c2 s1 s2 c1' c2' t1' t2',
     le_subst l c1 c2 s1 s2 c1' c2' ->
@@ -243,7 +308,7 @@ with le_term : lang ->
                exp -> exp -> Prop :=
 | le_term_by : forall l c1 c2 e1 e2 t1 t2,
     wf_lang l ->
-    rule_in ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
+    Rule_In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
     le_term l c1 c2 e1 e2 t1 t2
 | le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
     le_subst l c1 c2 s1 s2 c1' c2' ->
@@ -519,5 +584,6 @@ Variant wf_rule_ {p} (l : lang p) : rule p -> Prop :=
     wf_rule_ l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2}).
 Hint Constructors wf_rule_.
 *)
+
 
 
