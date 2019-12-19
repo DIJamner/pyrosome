@@ -60,13 +60,11 @@ Definition cat_stx' : seq named_rule :=
 
 Definition cat_stx : lang := index_nlang cat_stx'.
 
+
 Lemma cat_syx_wf : wf_lang cat_stx.
 Proof.
-  compute.
-  repeat easy_wf_lang.
+  solve_easy_wf_lang.
 Qed.
-
-Eval compute in cat_stx.
 
 Definition ob := [3|].
 Definition hom a b := [2| a; b].
@@ -76,8 +74,11 @@ Definition cmp A B C f g := [0| g; f; C; B; A].
 Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
 Proof.
   easy_wf_lang.
+  by apply /is_nthP; compute.
 Qed.
 
+
+(*TODO: fix now that is_nth changed; use partial recognizer*)
 Lemma wf_hom c a b : wf_term cat_stx c a ob -> wf_term cat_stx c b ob -> wf_sort cat_stx c (hom a b).
 Proof.
   easy_wf_lang.

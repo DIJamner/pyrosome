@@ -230,7 +230,15 @@ Proof.
   }
 Qed.
 
+(* Tactics for using the partial recognizer to prove a language well-formed *)
+(*TODO: generalize to all constructs, not just langs*)
+Ltac solve_easy_wf_lang n :=
+  suff: is_easy_wf_lang cat_stx n;
+  [ intros; eapply is_easy_wf_recognizes; by eauto
+  | by compute].
 
+Tactic Notation "solve_easy_wf_lang" constr(n) := solve_easy_wf_lang n.
+Tactic Notation "solve_easy_wf_lang" := solve_easy_wf_lang 1000.
     
 (*  
   Ltac case_matched_or_intro :=
