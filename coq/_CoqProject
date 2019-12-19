@@ -5,5 +5,6 @@ CoreDefs.v
 Core.v
 Named.v
 Utils.v
+EasyWF.v
 -Q ./langs langs
 Subst.v
