@@ -5,7 +5,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Exp CoreDefs Core Named.
+From excomp Require Import Exp Rule CoreDefs Core EasyWF Named.
 Require Import String.
 
 Ltac guard_single_goal :=
