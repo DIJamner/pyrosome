@@ -109,6 +109,7 @@ Notation "@@[ default ] fuel =1> fuel' ; e @@" :=
      | fuel'.+1 => e
      end).
 
+Print le_sort.
 Fixpoint is_easy_wf_sort l c t fuel : bool :=
   @@[false] fuel =1> fuel';
     match t with
@@ -133,7 +134,8 @@ with is_easy_wf_term l (c : ctx) e t fuel : bool :=
          match e with
          | var x =>
            match List.nth_error c x with
-           | Some t' => is_easy_wf_ctx l c fuel' && (t == t') (*TODO: use le judgment*)
+           | Some t' => is_easy_wf_ctx l c fuel' && (t == t')
+             (*TODO: get this to work && is_easy_le_sort l c c t' t fuel'*)
            | None => false
            end
          | con n s => false (*TODO*)
@@ -162,6 +164,13 @@ with is_easy_wf_rule l r fuel : bool :=
          | {< c1 <# c2 |- t1 <# t2 } => false
          | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } => false
          end@@.
+
+Definition is_easy_le_sort l (c1 c2 : ctx) t1 t2 fuel : bool :=
+  @@[false] fuel =1> fuel';
+    (*refl*) ((c1 == c2) && (t1 == t2) && is_easy_wf_sort l c1 t1 fuel')
+    || (* by *) (is_easy_wf_lang l fuel' && rule_in ({<c1 <# c2 |- t1 <# t2}) l)
+(*TODO: trans, subst (these are the scary cases performance-wise)*)
+@@.
 
 Ltac exp_head e :=
   match e with
@@ -256,15 +265,26 @@ Proof.
   }
 Qed.
 
+Ltac get_is_easy_goal :=
+  match goal with
+  | |- wf_lang ?L => type_term (is_easy_wf_lang L)
+  | |- wf_rule ?L ?r => type_term (is_easy_wf_rule L r)
+  | |- wf_ctx ?L ?c => type_term (is_easy_wf_ctx L c)
+  | |- wf_sort ?L ?c ?t => type_term (is_easy_wf_sort L c t)
+  | |- wf_term ?L ?c ?e ?t => type_term (is_easy_wf_term L c e t)
+  | |- wf_subst ?L ?c ?s ?c' => type_term (is_easy_wf_subst L c s c')
+  end.
+
 (* Tactics for using the partial recognizer to prove a language well-formed *)
 (*TODO: generalize to all constructs, not just langs*)
-Ltac solve_easy_wf_lang n :=
-  suff: is_easy_wf_lang cat_stx n;
+Ltac solve_easy_wf n :=
+  let easy_goal := get_is_easy_goal in
+  suff: easy_goal n;
   [ intros; eapply is_easy_wf_recognizes; by eauto
   | by compute].
 
-Tactic Notation "solve_easy_wf_lang" constr(n) := solve_easy_wf_lang n.
-Tactic Notation "solve_easy_wf_lang" := solve_easy_wf_lang 1000.
+Tactic Notation "solve_easy_wf" constr(n) := solve_easy_wf n.
+Tactic Notation "solve_easy_wf" := solve_easy_wf 1000.
     
 (*  
   Ltac case_matched_or_intro :=

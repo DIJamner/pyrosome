@@ -63,7 +63,7 @@ Definition cat_stx : lang := index_nlang cat_stx'.
 
 Lemma cat_syx_wf : wf_lang cat_stx.
 Proof.
-  solve_easy_wf_lang.
+  solve_easy_wf.
 Qed.
 
 Definition ob := [3|].
@@ -71,11 +71,20 @@ Definition hom a b := [2| a; b].
 Definition id a := [1| a].
 Definition cmp A B C f g := [0| g; f; C; B; A].
 
+(*TODO: how can I use the partial recognizer here? it would have to be a total recognizer
+  (up to fuel), and I would need a completeness theorem to convert the wf_ctx to 
+ a recognizer call. I guess this might be possible, it's worth trying *)
 Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
 Proof.
   easy_wf_lang.
   by apply /is_nthP; compute.
 Qed.
+
+Lemma wf_ob' : wf_sort cat_stx [::] ob.
+Proof.
+  solve_easy_wf.
+Qed.
+(*TODO: expand solve_easy tactic to match on goal type *)
 
 
 (*TODO: fix now that is_nth changed; use partial recognizer*)
