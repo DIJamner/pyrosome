@@ -115,46 +115,78 @@ Notation "x <-[ default ] val ; body" :=
    | None => default
    end) (at level 80, right associativity).
 
+Require Import String.
+
+(* Give good error messages so that users know what goes wrong
+   Note: an error does not mean the term is necessarily ill-formed
+   just that more fuel will not change the result
+ *)
+Variant wf_result : Set :=
+| wf_success
+| wf_no_fuel
+| wf_error (s : string).
+
+Definition wf_result_is_success r : bool :=
+  match r with
+  | wf_success => true
+  | _ => false
+  end.
+
+Coercion wf_result_is_success : wf_result >-> bool.
+
+Definition wf_result_seq r1 : wf_result -> wf_result :=
+  match r1 with
+  | wf_success => id
+  | _ => fun _ => r1
+  end.
+
+Notation "check! r1 ; r2" := (wf_result_seq r1 r2) (at level 80, right associativity).
+
+Notation "check![ es ] b1 ; r" :=
+  (wf_result_seq (if b1 then wf_success else wf_error es) r)
+    (at level 80, right associativity).
+
 Fixpoint is_easy_wf_sort fuel :=
-  @@[fun l c t => false] fuel =1> fuel';
+  @@[fun l c t => wf_no_fuel] fuel =1> fuel';
     fun l c t =>
     match t with
-    | var x => false
+    | var x => wf_error "Variables are not valid sorts"
     | con n s =>
-      c' <-[false] lookup_sort_args l n;
+      c' <-[wf_error "Sort rule out of bounds"] lookup_sort_args l n;
       is_easy_wf_subst fuel' l c s c'
     end@@
-with is_easy_wf_subst fuel : lang -> ctx -> subst -> ctx -> bool :=
-       @@[fun l c s c' => false] fuel =1> fuel';
+with is_easy_wf_subst fuel : lang -> ctx -> subst -> ctx -> wf_result :=
+       @@[fun l c s c' => wf_no_fuel] fuel =1> fuel';
          fun l c s c' => match s, c' with
          | [::], [::] => is_easy_wf_ctx fuel' l c
          | e::s', t::c'' =>
-           is_easy_wf_term fuel' l c e t[/s' /]
-           && is_easy_wf_subst fuel' l c s' c''
-         | _, _ => false
+           check! is_easy_wf_term fuel' l c e t[/s' /];
+             is_easy_wf_subst fuel' l c s' c''
+         | _, _ => wf_error "Substitution and output context of different lengths"
          end@@
-with is_easy_wf_term fuel : lang -> ctx -> exp -> exp -> bool :=
-       @@[fun l c e t => false] fuel =1> fuel';
+with is_easy_wf_term fuel : lang -> ctx -> exp -> exp -> wf_result :=
+       @@[fun l c e t => wf_no_fuel] fuel =1> fuel';
          fun l c e t => match e with
          | var x =>
-           t' <-[false] List.nth_error c x;
-           (t == t') && is_easy_wf_ctx fuel' l c
-             (*TODO: get this to work && is_easy_le_sort l c c t' t fuel'*)
+           t' <-[wf_error "Term variable out of bounds"] List.nth_error c x;
+           check!["Variable type mismatch"] t == t';
+           is_easy_wf_ctx fuel' l c
+           (*TODO: get this to work && is_easy_le_sort l c c t' t fuel'*)
          | con n s =>
-           c' <-[false] lookup_term_args l n;
-             t' <-[false] lookup_term_sort l n;
-             (t'[/s/] == t) && (is_easy_wf_subst fuel' l c s c')
-              
+           c' <-[wf_error "Term constructor out of bounds"] lookup_term_args l n;
+           t' <-[wf_error "Term constructor out of bounds"] lookup_term_sort l n;
+           check!["Constructor type mismatch"] t'[/s/] == t;
+           is_easy_wf_subst fuel' l c s c'
          end@@
-with is_easy_wf_ctx fuel : lang -> ctx -> bool :=
-       @@[fun l c => false] fuel =1> fuel';
+with is_easy_wf_ctx fuel : lang -> ctx -> wf_result :=
+       @@[fun l c => wf_no_fuel] fuel =1> fuel';
          fun l c => match c with
-         | [::] => true
+         | [::] => wf_success
          | t::c' =>
-           is_easy_wf_sort fuel' l c' t
-           && is_easy_wf_ctx fuel' l c'
-         end@@
-with is_easy_wf_lang fuel : lang -> bool :=
+           check! is_easy_wf_sort fuel' l c' t;
+           is_easy_wf_ctx fuel' l c'
+         end@@.
+Fixpoint is_easy_wf_lang fuel : lang -> bool :=
        @@[fun l => false] fuel =1> fuel';
          fun l => match l with
          | [::] => true
@@ -197,6 +229,11 @@ Definition is_easy_le_term l (c1 c2 : ctx) (e1 e2 t1 t2 : exp) fuel : bool :=
 (*TODO: trans, subst (these are the scary cases performance-wise)*)
 @@.
 
+Lemma check_passes_and r1 r2 : check! r1 ; r2 <-> r1 && r2.
+Proof.
+  case: r1; case: r2; simpl; split; eauto.
+Qed.
+
 Ltac exp_head e :=
   match e with
   | ?e' _ => exp_head e'
@@ -225,7 +262,8 @@ Ltac view_is_easy_IH_and_intro :=
 Unset SsrIdents.
 
 Ltac solve_easy_wf_from_hyps :=
-  repeat first [ case /andP
+  repeat first [ rewrite check_passes_and
+          | case /andP
           | view_is_easy_IH_and_intro
           | intro ];
   by eauto.
@@ -292,20 +330,24 @@ Proof.
     case => //=.
     move => n t wfl.
     case lne: (List.nth_error c n) =>//=.
+    case ta: (t == _a_).
+    move: ta => /eqP ->.
     repeat first [ case /andP
                  | view_is_easy_IH_and_intro
                  | intro ].
     constructor; eauto.
-    move: a => /eqP -> => //.
+    solve_easy_wf_from_hyps.
     unfold lookup_term_args.
     unfold lookup_term_sort.
     move => n s t.
     case lsa: (lookup_rule 0 l n) => //=.
     case: _a_ lsa => //=.
     move => c' t' /lookup_rule_is_nth' => isn wfl.
-    case /andP.
-    move /eqP <-.
+    case /check_passes_and /andP.
+    case teq: (t' [/s /] == t).
+    move: teq => /eqP <- => _.
     solve_easy_wf_from_hyps.
+    done.
   }
   split.
   1:{
