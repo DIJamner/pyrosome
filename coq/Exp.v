@@ -723,3 +723,59 @@ Proof.
 Qed.
 
 
+Require Import String.
+Section Printing.
+
+  (* A lazily-written print nat fn *)
+  Fixpoint printnat' fuel n : string :=
+    match fuel with
+    | 0 => "ERR"
+    | fuel'.+1 =>
+      match n with
+      | 0 => "0"
+      | 1 => "1"
+      | 2 => "2"
+      | 3 => "3"
+      | 4 => "4"
+      | 5 => "5"
+      | 6 => "6"
+      | 7 => "7"
+      | 8 => "8"
+      | 9 => "9"
+      | _ => (printnat' fuel' (Nat.div n 10)) ++ (printnat' fuel' (Nat.modulo n 10))
+      end
+    end.
+
+  Definition printnat x : string := printnat' (x.+1) x.
+
+  Goal printnat 0 = "0"%string.
+      by compute.
+  Qed.
+  
+  Goal printnat 1 = "1"%string.
+      by compute.
+  Qed.
+  
+  Goal printnat 5 = "5"%string.
+      by compute.
+  Qed.
+  
+  Goal printnat 78 = "78"%string.
+      by compute.
+  Qed.
+  
+  Goal printnat 100 = "100"%string.
+      by compute.
+  Qed.
+  
+  Fixpoint print e : string :=
+    match e with
+    | var n => printnat n
+    | con n s => "[" ++ printnat n ++ "|" ++ concat ";" (map print s) ++ "]"
+    end.
+
+  Goal print [1| (var 2); (var 2)] = "[1|2;2]"%string.
+      by compute.
+  Qed.
+
+End Printing.

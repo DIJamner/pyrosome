@@ -150,9 +150,9 @@ Fixpoint is_easy_wf_sort fuel :=
   @@[fun l c t => wf_no_fuel] fuel =1> fuel';
     fun l c t =>
     match t with
-    | var x => wf_error "Variables are not valid sorts"
+    | var x => wf_error ("Variables like " ++ printnat x ++ " are not valid sorts")
     | con n s =>
-      c' <-[wf_error "Sort rule out of bounds"] lookup_sort_args l n;
+      c' <-[wf_error ("Sort rule " ++ printnat n ++ " out of bounds")] lookup_sort_args l n;
       is_easy_wf_subst fuel' l c s c'
     end@@
 with is_easy_wf_subst fuel : lang -> ctx -> subst -> ctx -> wf_result :=
@@ -168,13 +168,14 @@ with is_easy_wf_term fuel : lang -> ctx -> exp -> exp -> wf_result :=
        @@[fun l c e t => wf_no_fuel] fuel =1> fuel';
          fun l c e t => match e with
          | var x =>
-           t' <-[wf_error "Term variable out of bounds"] List.nth_error c x;
-           check!["Variable type mismatch"] t == t';
+           t' <-[wf_error ("Term variable " ++ printnat x ++ " out of bounds")] List.nth_error c x;
+           check!["Variable type mismatch; expected " ++ print t ++ " but found " ++ print t'] t == t';
            is_easy_wf_ctx fuel' l c
            (*TODO: get this to work && is_easy_le_sort l c c t' t fuel'*)
          | con n s =>
-           c' <-[wf_error "Term constructor out of bounds"] lookup_term_args l n;
-           t' <-[wf_error "Term constructor out of bounds"] lookup_term_sort l n;
+           let outofbounds_err := ("Term constructor " ++ printnat n ++ " out of bounds")%string in
+           c' <-[wf_error outofbounds_err] lookup_term_args l n;
+           t' <-[wf_error outofbounds_err] lookup_term_sort l n;
            check!["Constructor type mismatch"] t'[/s/] == t;
            is_easy_wf_subst fuel' l c s c'
          end@@
