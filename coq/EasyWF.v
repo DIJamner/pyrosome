@@ -102,7 +102,6 @@ Definition lookup_term_sort l n : option exp :=
 Hint Unfold lookup_term_sort.
 Hint Transparent lookup_term_sort.
 
-
 Notation "@@[ default ] fuel =1> fuel' ; e @@" :=
   (match fuel with
      | 0 => default
@@ -117,6 +116,8 @@ Notation "x <-[ default ] val ; body" :=
 
 Require Import String.
 
+
+(*TODO: move error messaging code into separate file/library *)
 (* Give good error messages so that users know what goes wrong
    Note: an error does not mean the term is necessarily ill-formed
    just that more fuel will not change the result
@@ -140,11 +141,73 @@ Definition wf_result_seq r1 : wf_result -> wf_result :=
   | _ => fun _ => r1
   end.
 
+Definition wf_result_alt r1 : wf_result -> wf_result :=
+  match r1 with
+  | wf_success => fun _ => wf_success
+  (*TODO: figure out the best way to incorporate left branch's error message *)
+  | _ => id
+  end.
+
 Notation "check! r1 ; r2" := (wf_result_seq r1 r2) (at level 80, right associativity).
+
+Notation "r1 <||> r2" := (wf_result_alt r1 r2) (at level 70).
 
 Notation "check![ es ] b1 ; r" :=
   (wf_result_seq (if b1 then wf_success else wf_error es) r)
     (at level 80, right associativity).
+
+(*TODO: notation or fn call*)
+Definition wf_result_ctx c r1 : wf_result :=
+  match r1 with
+  | wf_success => wf_success
+  | wf_no_fuel => wf_no_fuel
+  | wf_error s => wf_error (c ++ ":\n" ++ s)
+  end.
+
+Notation "ctx[ c ]" := (wf_result_ctx c).
+
+Lemma wf_result_ctx_id c r : (ctx[c] r : bool) = (r : bool).
+Proof.
+  case: r; simpl; auto.
+Qed.
+
+Lemma check_passes_and r1 r2 : (check! r1 ; r2 : bool) = r1 && r2.
+Proof.
+  case: r1; case: r2; simpl; split; eauto.
+Qed.
+
+Lemma default_as_bool {A} (default : wf_result) (val : option A) (body : A -> wf_result)
+  : (match val with
+     | Some x => body x
+     | None => default
+     end : bool)
+    = (match val with
+       | Some x => (body x) : bool
+       | None => default : bool
+       end : bool).
+Proof.
+  case val; eauto.
+Qed.
+
+Lemma alt_as_or r1 r2 : (r1 <||> r2 : bool) = r1 || r2.
+Proof.
+  case: r1; case: r2; simpl; split; eauto.
+Qed.
+
+Lemma if_distr_bool b (r2 r3 : wf_result)
+  : ((if b then r2 else r3) : bool) = if b then r2 : bool else r3 : bool.
+Proof.
+  case: b; auto.
+Qed.
+
+Ltac result_as_bool :=
+  rewrite ?default_as_bool ?wf_result_ctx_id ?check_passes_and ?alt_as_or ?if_distr_bool;
+  change (wf_success : bool) with true;
+  change (wf_no_fuel : bool) with false;
+  change (wf_error _ : bool) with false.
+
+
+(*TODO: give contexts for errors*)
 
 Fixpoint is_easy_wf_sort fuel :=
   @@[fun l c t => wf_no_fuel] fuel =1> fuel';
@@ -153,7 +216,7 @@ Fixpoint is_easy_wf_sort fuel :=
     | var x => wf_error ("Variables like " ++ printnat x ++ " are not valid sorts")
     | con n s =>
       c' <-[wf_error ("Sort rule " ++ printnat n ++ " out of bounds")] lookup_sort_args l n;
-      is_easy_wf_subst fuel' l c s c'
+      ctx["In sort " ++ print t] (is_easy_wf_subst fuel' l c s c')
     end@@
 with is_easy_wf_subst fuel : lang -> ctx -> subst -> ctx -> wf_result :=
        @@[fun l c s c' => wf_no_fuel] fuel =1> fuel';
@@ -177,7 +240,7 @@ with is_easy_wf_term fuel : lang -> ctx -> exp -> exp -> wf_result :=
            c' <-[wf_error outofbounds_err] lookup_term_args l n;
            t' <-[wf_error outofbounds_err] lookup_term_sort l n;
            check!["Constructor type mismatch"] t'[/s/] == t;
-           is_easy_wf_subst fuel' l c s c'
+           ctx["In term " ++ print e ++ " with sort " ++ print t](is_easy_wf_subst fuel' l c s c')
          end@@
 with is_easy_wf_ctx fuel : lang -> ctx -> wf_result :=
        @@[fun l c => wf_no_fuel] fuel =1> fuel';
@@ -187,39 +250,45 @@ with is_easy_wf_ctx fuel : lang -> ctx -> wf_result :=
            check! is_easy_wf_sort fuel' l c' t;
            is_easy_wf_ctx fuel' l c'
          end@@.
-Fixpoint is_easy_wf_lang fuel : lang -> bool :=
-       @@[fun l => false] fuel =1> fuel';
+Fixpoint is_easy_wf_lang fuel : lang -> wf_result :=
+       @@[fun l =>  wf_no_fuel] fuel =1> fuel';
          fun l => match l with
-         | [::] => true
-         | r::l' => is_easy_wf_rule fuel' l' r
-                    && is_easy_wf_lang fuel' l'
+         | [::] => wf_success
+         | r::l' => check! is_easy_wf_rule fuel' l' r;
+                      is_easy_wf_lang fuel' l'
          end@@
 with is_easy_wf_rule fuel :=
-       @@[fun l r => false] fuel =1> fuel';
+       @@[fun l r => wf_no_fuel] fuel =1> fuel';
          fun l r => match r with
          | {| c |- sort } => is_easy_wf_ctx fuel' l c
          | {| c |- t } => is_easy_wf_sort fuel' l c t
          | {< c1 <# c2 |- t1 <# t2 } =>
-           (is_easy_le_ctx l c1 c2 fuel')
-             && (is_easy_wf_sort fuel' l c1 t1)
-             && (is_easy_wf_sort fuel' l c2 t2)
+           check! is_easy_le_ctx l c1 c2 fuel';
+           check! is_easy_wf_sort fuel' l c1 t1;
+           is_easy_wf_sort fuel' l c2 t2
          | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } =>
-           (is_easy_le_sort l c1 c2 t1 t2 fuel')
-             && (is_easy_wf_term fuel' l c1 e1 t1)
-             && (is_easy_wf_term fuel' l c2 e2 t2)
+           check! is_easy_le_sort l c1 c2 t1 t2 fuel';
+             check! is_easy_wf_term fuel' l c1 e1 t1;
+             is_easy_wf_term fuel' l c2 e2 t2
          end@@
-with is_easy_le_sort l (c1 c2 : ctx) (t1 t2 : exp) fuel : bool :=
-  @@[false] fuel =1> fuel';
-    (*refl*) ((c1 == c2) && (t1 == t2) && is_easy_wf_sort fuel' l c1 t1)
-    || (* by *) (is_easy_wf_lang fuel' l && rule_in ({<c1 <# c2 |- t1 <# t2}) l)
+with is_easy_le_sort l (c1 c2 : ctx) (t1 t2 : exp) fuel :=
+       @@[wf_no_fuel] fuel =1> fuel';
+         (*TODO:include ctxts in error message*)
+         (check!["Contexts unequal"] c1 == c2;
+         check!["Sorts " ++ print t1 ++ " and " ++ print t2 ++ " unequal"] t1 == t2;
+         is_easy_wf_sort fuel' l c1 t1)
+           <||> (* by *) (check! is_easy_wf_lang fuel' l;
+                            (*TODO:better message*)
+                            check!["Rule is in"] rule_in ({<c1 <# c2 |- t1 <# t2}) l;
+                         wf_success)
     (*TODO: trans, subst (these are the scary cases performance-wise)*)
     @@
-with is_easy_le_ctx l (c1 c2 : ctx) fuel : bool :=
-       @@[false] fuel =1> fuel';
+with is_easy_le_ctx l (c1 c2 : ctx) fuel :=
+       @@[wf_no_fuel] fuel =1> fuel';
        match c1, c2 with
        | [::],[::] => is_easy_wf_lang fuel' l
        | t1::c1',t2::c2' => is_easy_le_sort l c1' c2' t1 t2 fuel'
-       | _, _ => false
+       | _, _ => wf_error "TODO: write error message"
        end@@.
 
 
@@ -229,11 +298,6 @@ Definition is_easy_le_term l (c1 c2 : ctx) (e1 e2 t1 t2 : exp) fuel : bool :=
     || (* by *) (is_easy_wf_lang fuel' l && rule_in ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2}) l)
 (*TODO: trans, subst (these are the scary cases performance-wise)*)
 @@.
-
-Lemma check_passes_and r1 r2 : check! r1 ; r2 <-> r1 && r2.
-Proof.
-  case: r1; case: r2; simpl; split; eauto.
-Qed.
 
 Ltac exp_head e :=
   match e with
@@ -263,6 +327,7 @@ Ltac view_is_easy_IH_and_intro :=
 Unset SsrIdents.
 
 Ltac solve_easy_wf_from_hyps :=
+  result_as_bool;
   repeat first [ rewrite check_passes_and
           | case /andP
           | view_is_easy_IH_and_intro
@@ -282,49 +347,21 @@ Proof.
   elim: fuel => //=.
   move => fuel.
   case => [IHlang [IHrule [IHctx [IHsort [IHsubst [IHterm [IHlectx IHlesort]]]]]]].
-  split.
-  1:{
-    case; auto.
-    solve_easy_wf_from_hyps.
-  }
-  split.
-  1:{
-    move => l.
-    case; auto.
-    move => c c0 e e0 wfl.
-    solve_easy_wf_from_hyps.
-    move => c c0 e e0 t t0 wfl.
-    solve_easy_wf_from_hyps.
-  }
-  split.
-  1:{
-    move => l.
-    case; auto.
-    move => a l0 wfl.
-    solve_easy_wf_from_hyps.
-  }
-  split.
-  1:{
-    move => l c.
-    case => //=.
-    move => n s.
+  split;[case; auto; solve_easy_wf_from_hyps|].
+  split;[move => l; case; auto; intro_to is_true; solve_easy_wf_from_hyps|].
+  split;[move => l; case; auto; intro_to is_true; solve_easy_wf_from_hyps|].
+  split;[move => l c; case; auto; intro_to is_true|].
+  {
     unfold lookup_sort_args.
     case lsa: (lookup_rule 0 l n) => //=.
     case: _a_ lsa => //=.
     move => c' /lookup_rule_is_nth' => isn.
-    move => wfl.
     solve_easy_wf_from_hyps.
   }
-  split.
-  1:{
-    move => l c.
-    case => //=.
-    case => //=; by eauto.
-    move => e s.
-    case => //=.
-    move => a l0 wfl.
-    solve_easy_wf_from_hyps.
-  }
+  split;[move => l c; case; [case|]; eauto;
+         move => e s; case; auto;
+         intro_to is_true;
+         solve_easy_wf_from_hyps|].
   split.
   {
     move => l c.
@@ -344,23 +381,18 @@ Proof.
     case lsa: (lookup_rule 0 l n) => //=.
     case: _a_ lsa => //=.
     move => c' t' /lookup_rule_is_nth' => isn wfl.
-    case /check_passes_and /andP.
+    result_as_bool.
+    case /andP.
     case teq: (t' [/s /] == t).
     move: teq => /eqP <- => _.
     solve_easy_wf_from_hyps.
     done.
   }
-  split.
-  1:{
-    move => l.
-    case => //=.
-    case => //=; auto.
-    move => t1 c1.
-    case => //.
-    solve_easy_wf_from_hyps.
-  }
-  1:{
+  split;[move => l; case => //=; [case; by auto|];
+        move => t1 c1; case => //; solve_easy_wf_from_hyps|].
+  {
     intro_to is_true.
+    result_as_bool.
     case /orP.
     - case ceq:(c1 == c2) =>//=; move: ceq => /eqP ->.
       case teq:(t1 == t2) =>//=; move: teq => /eqP ->.
@@ -368,8 +400,18 @@ Proof.
     - repeat first [ case /andP
           | view_is_easy_IH_and_intro
           | intro ].
-      move: b => /rule_inP.
-      eauto.
+      move: b.
+      result_as_bool.
+      case /andP => /IHlang => wfl.
+      case /andP.
+      result_as_bool.
+      case req: (rule_in ({<c1 <# c2 |- t1 <# t2}) l); eauto.
+      move => _.
+      rewrite <- req.
+      move => rin.
+      apply: le_sort_by;
+        eauto.
+      by apply /rule_inP.
   }
 Qed.
 
