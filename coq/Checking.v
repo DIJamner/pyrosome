@@ -14,17 +14,17 @@ Require Import BinPos.
 Import MonadNotation.
 Local Open Scope monad_scope.
 
-Section SemiDecisions.
+Section PartialDecisions.
 
-  (* the final element of the SemiDecision structure *)
-  Variant semi_decision : predArgType := yes | maybe | no.
+  (* the final element of the PartialDecision structure *)
+  Variant partial_decision : predArgType := yes | maybe | no.
 
-  Definition sd2o (sd : semi_decision) : 'I_3 :=
+  Definition sd2o (sd : partial_decision) : 'I_3 :=
     match sd with
     | yes => inord 0 | maybe => inord 1 | no => inord 2
     end.
   
-  Definition o2sd (o : 'I_3) : option semi_decision :=
+  Definition o2sd (o : 'I_3) : option partial_decision :=
     match val o with
     | 0 => Some yes
     | 1 => Some maybe
@@ -36,7 +36,7 @@ Section SemiDecisions.
   Proof. by case; rewrite /o2sd /= inordK. Qed.
 
   (* I want a more straightforward equality computationally *)
-  Definition sd_eq_fn a b : bool :=
+  Definition pd_eq_fn a b : bool :=
     match a,b with
     | yes, yes => true
     | maybe, maybe => true
@@ -44,35 +44,35 @@ Section SemiDecisions.
     | _, _ => false
     end.
 
-  Lemma sd_eq_fn_Reflect a b : reflect (a = b) (sd_eq_fn a b).
+  Lemma pd_eq_fn_Reflect a b : reflect (a = b) (pd_eq_fn a b).
   Proof.
     case: a; case: b => //=; by constructor.
   Qed.
   
-  Definition semi_decision_eqMixin := Equality.Mixin sd_eq_fn_Reflect.
-  Canonical semi_decision_eqType := EqType semi_decision semi_decision_eqMixin.
-  Definition semi_decision_choiceMixin := PcanChoiceMixin pcan_sdo3.
-  Canonical semi_decision_choiceType := ChoiceType semi_decision semi_decision_choiceMixin.
-  Definition semi_decision_countMixin := PcanCountMixin pcan_sdo3.
-  Canonical semi_decision_countType := CountType semi_decision semi_decision_countMixin.
-  Definition semi_decision_finMixin := PcanFinMixin pcan_sdo3.
-  Canonical semi_decision_finType := FinType semi_decision semi_decision_finMixin.
+  Definition partial_decision_eqMixin := Equality.Mixin pd_eq_fn_Reflect.
+  Canonical partial_decision_eqType := EqType partial_decision partial_decision_eqMixin.
+  Definition partial_decision_choiceMixin := PcanChoiceMixin pcan_sdo3.
+  Canonical partial_decision_choiceType := ChoiceType partial_decision partial_decision_choiceMixin.
+  Definition partial_decision_countMixin := PcanCountMixin pcan_sdo3.
+  Canonical partial_decision_countType := CountType partial_decision partial_decision_countMixin.
+  Definition partial_decision_finMixin := PcanFinMixin pcan_sdo3.
+  Canonical partial_decision_finType := FinType partial_decision partial_decision_finMixin.
 
-  Create HintDb sd_lit discriminated.
+  Create HintDb pd_lit discriminated.
   
   (*TODO: make a prop whose negation only holds when it is no? might overcomplicate things *)
-  Definition sd_as_prop sd : Prop := sd = yes.
-  Coercion sd_as_prop : semi_decision >-> Sortclass.
+  Definition pd_as_prop sd : Prop := sd = yes.
+  Coercion pd_as_prop : partial_decision >-> Sortclass.
 
   Print Bool.reflect.
   
-  Variant semi_decide (P : Prop) : semi_decision -> Set :=
-  | DecideY : P -> semi_decide P yes
-  | DecideN : ~P -> semi_decide P no
-  | DecideM : semi_decide P maybe.
-  Hint Constructors semi_decide.
+  Variant partial_decide (P : Prop) : partial_decision -> Set :=
+  | DecideY : P -> partial_decide P yes
+  | DecideN : ~P -> partial_decide P no
+  | DecideM : partial_decide P maybe.
+  Hint Constructors partial_decide.
   
-  Definition sd_lit_and sd1 sd2 :=
+  Definition pd_lit_and sd1 sd2 :=
     match sd1, sd2 with
     | yes, yes => yes
     | yes, maybe => maybe
@@ -81,25 +81,25 @@ Section SemiDecisions.
     | _, _ => no
     end.
 
-  Lemma sd_lit_and_assoc : Associative sd_lit_and eq.
+  Lemma pd_lit_and_assoc : Associative pd_lit_and eq.
   Proof.
     case => //; case => //; case => //.
   Qed.
-  Hint Resolve sd_lit_and_assoc : sd_lit.
+  Hint Resolve pd_lit_and_assoc : pd_lit.
   
-  Lemma sd_lit_and_comm : Commutative sd_lit_and eq.
+  Lemma pd_lit_and_comm : Commutative pd_lit_and eq.
   Proof.
     case => //; case => //.
   Qed.
-  Hint Resolve sd_lit_and_comm : sd_lit.
+  Hint Resolve pd_lit_and_comm : pd_lit.
 
-  Lemma sd_lit_and_unit : LeftUnit sd_lit_and yes eq.
+  Lemma pd_lit_and_unit : LeftUnit pd_lit_and yes eq.
   Proof.
     case => //.
   Qed.
-  Hint Resolve sd_lit_and_unit : sd_lit.
+  Hint Resolve pd_lit_and_unit : pd_lit.
   
-  Definition sd_lit_or sd1 sd2 :=
+  Definition pd_lit_or sd1 sd2 :=
     match sd1, sd2 with
     | yes, _ => yes
     | _,  yes => yes
@@ -108,126 +108,126 @@ Section SemiDecisions.
     | no, no => no
     end.
 
-  Lemma sd_lit_or_assoc : Associative sd_lit_or eq.
+  Lemma pd_lit_or_assoc : Associative pd_lit_or eq.
   Proof.
     case => //; case => //; case => //.
   Qed.
-  Hint Resolve sd_lit_or_assoc : sd_lit.
+  Hint Resolve pd_lit_or_assoc : pd_lit.
 
-  Lemma sd_lit_or_comm : Commutative sd_lit_or eq.
+  Lemma pd_lit_or_comm : Commutative pd_lit_or eq.
   Proof.
     case => //; case => //.
   Qed.
-  Hint Resolve sd_lit_or_comm : sd_lit.
+  Hint Resolve pd_lit_or_comm : pd_lit.
   
-  Lemma sd_lit_or_unit : LeftUnit sd_lit_or no eq.
+  Lemma pd_lit_or_unit : LeftUnit pd_lit_or no eq.
   Proof.
     case => //.
   Qed.
-  Hint Resolve sd_lit_or_unit : sd_lit.
+  Hint Resolve pd_lit_or_unit : pd_lit.
 
   (*TODO: add negation*)
-  Class SemiDecision (T : Type) : Type :=
+  Class PartialDecision (T : Type) : Type :=
     {
-      (* force semi_decision to be final wrt instances of this class *)
-      as_lit : T -> semi_decision;
-      sd_and : T -> T -> T;
-      sd_or : T -> T -> T
+      (* force partial_decision to be final wrt instances of this class *)
+      as_lit : T -> partial_decision;
+      pd_and : T -> T -> T;
+      pd_or : T -> T -> T
     }.
 
-  Definition Yes' T `{SemiDecision T} := { yes' : T | as_lit yes' = yes}.
-  Definition No' T `{SemiDecision T} := { no' : T | as_lit no' = no}.
+  Definition Yes' T `{PartialDecision T} := { yes' : T | as_lit yes' = yes}.
+  Definition No' T `{PartialDecision T} := { no' : T | as_lit no' = no}.
   
-  Definition sd_and_Monoid T `{SemiDecision T} (yes' : Yes') : Monoid T :=
+  Definition pd_and_Monoid T `{PartialDecision T} (yes' : Yes') : Monoid T :=
     {|
-      monoid_plus := sd_and;
+      monoid_plus := pd_and;
       monoid_unit := proj1_sig yes'
     |}.
 
-  Definition sd_or_Monoid T `{SemiDecision T} (no' : No') : Monoid T :=
+  Definition pd_or_Monoid T `{PartialDecision T} (no' : No') : Monoid T :=
     {|
-      monoid_plus := sd_or;
+      monoid_plus := pd_or;
       monoid_unit := proj1_sig no'
     |}.
 
   (* values equal up to their literal interpretations *)
-  Definition eqd T `{SemiDecision T} a b := as_lit a = as_lit b.
+  Definition eqd T `{PartialDecision T} a b := as_lit a = as_lit b.
 
   (*TODO: what laws do I really need/have? all up to eqd? commutativity? *)
-  Class SemiDecisionLaws T (SD : SemiDecision T) : Type :=
+  Class PartialDecisionLaws T (SD : PartialDecision T) : Type :=
     {
-      sd_and_interp : forall a b, as_lit (sd_and a b) = sd_lit_and (as_lit a) (as_lit b);
-      sd_or_interp : forall a b, as_lit (sd_or a b) = sd_lit_or (as_lit a) (as_lit b)
+      pd_and_interp : forall a b, as_lit (pd_and a b) = pd_lit_and (as_lit a) (as_lit b);
+      pd_or_interp : forall a b, as_lit (pd_or a b) = pd_lit_or (as_lit a) (as_lit b)
     }.
 
-  Ltac solve_sd_prop :=
+  Ltac solve_pd_prop :=
     repeat intro;
     unfold eqd;
-    rewrite ?sd_and_interp ?sd_or_interp;
-    by auto with sd_lit.
+    rewrite ?pd_and_interp ?pd_or_interp;
+    by auto with pd_lit.
   
-  Lemma sd_and_assoc T `{SD : SemiDecision T} `{SemiDecisionLaws T}
-    : Associative sd_and (@eqd T _).
-  Proof. solve_sd_prop. Qed.
+  Lemma pd_and_assoc T `{SD : PartialDecision T} `{PartialDecisionLaws T}
+    : Associative pd_and (@eqd T _).
+  Proof. solve_pd_prop. Qed.
     
-  Lemma sd_and_comm T `{SD : SemiDecision T} `{SemiDecisionLaws T}
-    : Commutative sd_and (@eqd T _).
-  Proof. solve_sd_prop. Qed.
+  Lemma pd_and_comm T `{SD : PartialDecision T} `{PartialDecisionLaws T}
+    : Commutative pd_and (@eqd T _).
+  Proof. solve_pd_prop. Qed.
 
-  Lemma sd_and_unit T `{SD : SemiDecision T} `{SemiDecisionLaws T} (yes' : T)
-    : as_lit yes' = yes -> LeftUnit sd_and yes' (@eqd T _).
+  Lemma pd_and_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} (yes' : T)
+    : as_lit yes' = yes -> LeftUnit pd_and yes' (@eqd T _).
   Proof. 
     repeat intro;
     unfold eqd;
-    rewrite ?sd_and_interp ?sd_or_interp;
-    auto with sd_lit.
+    rewrite ?pd_and_interp ?pd_or_interp;
+    auto with pd_lit.
     rewrite H0.
     by case (as_lit a).
   Qed.
   
   
-  Lemma sd_or_assoc T `{SD : SemiDecision T} `{SemiDecisionLaws T}
-    : Associative sd_or (@eqd T _).
-  Proof. solve_sd_prop. Qed.
+  Lemma pd_or_assoc T `{SD : PartialDecision T} `{PartialDecisionLaws T}
+    : Associative pd_or (@eqd T _).
+  Proof. solve_pd_prop. Qed.
     
-  Lemma sd_or_comm T `{SD : SemiDecision T} `{SemiDecisionLaws T}
-    : Commutative sd_or (@eqd T _).
-  Proof. solve_sd_prop. Qed.
+  Lemma pd_or_comm T `{SD : PartialDecision T} `{PartialDecisionLaws T}
+    : Commutative pd_or (@eqd T _).
+  Proof. solve_pd_prop. Qed.
 
-  Lemma sd_or_unit T `{SD : SemiDecision T} `{SemiDecisionLaws T} (no' : T)
-    : as_lit no' = no -> LeftUnit sd_or no' (@eqd T _).
+  Lemma pd_or_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} (no' : T)
+    : as_lit no' = no -> LeftUnit pd_or no' (@eqd T _).
   Proof. 
     repeat intro;
     unfold eqd;
-    rewrite ?sd_and_interp ?sd_or_interp;
-    auto with sd_lit.
+    rewrite ?pd_and_interp ?pd_or_interp;
+    auto with pd_lit.
     rewrite H0.
     by case (as_lit a).
   Qed.
  
 
-End SemiDecisions.
+End PartialDecisions.
 
-Instance Bool_SemiDecision : SemiDecision bool :=
+Instance Bool_PartialDecision : PartialDecision bool :=
   {
     as_lit b := if b then yes else no;
-    sd_and b1 b2 := b1 && b2;
-    sd_or b1 b2 := b1 || b2
+    pd_and b1 b2 := b1 && b2;
+    pd_or b1 b2 := b1 || b2
   }.
 
-Instance Bool_SemiDecisionLaws : SemiDecisionLaws Bool_SemiDecision.
+Instance Bool_PartialDecisionLaws : PartialDecisionLaws Bool_PartialDecision.
 Proof.
   split; case; case => //=.
 Qed.
 
-Instance Unit_SemiDecision : SemiDecision unit :=
+Instance Unit_PartialDecision : PartialDecision unit :=
   {
     as_lit _ := yes;
-    sd_and _ _ := tt;
-    sd_or _ _ := tt
+    pd_and _ _ := tt;
+    pd_or _ _ := tt
   }.
 
-Instance Unit_SemiDecisionLaws : SemiDecisionLaws Unit_SemiDecision.
+Instance Unit_PartialDecisionLaws : PartialDecisionLaws Unit_PartialDecision.
 Proof.
   split; auto.
 Qed.
@@ -249,31 +249,31 @@ Proof.
   { intros until aM; case: aM; simpl; auto. }
 Qed.
 
-Instance FixResult_SemiDecision (R : Type) `{SemiDecision R} : SemiDecision (FixResult R) :=
+Instance FixResult_PartialDecision (R : Type) `{PartialDecision R} : PartialDecision (FixResult R) :=
   {
     as_lit m :=
       match m with
       | Term t => as_lit t
       | Diverge => maybe
       end;
-    sd_and m1 m2 :=
+    pd_and m1 m2 :=
       match m1, m2 with
-      | Term t1, Term t2 => ret (sd_and t1 t2)
+      | Term t1, Term t2 => ret (pd_and t1 t2)
       | Term t1, Diverge => if as_lit t1 == no then Term t1 else Diverge
       | Diverge, Term t2 => if as_lit t2 == no then Term t2 else Diverge
       | Diverge, Diverge => Diverge
       end;
-    sd_or m1 m2 :=
+    pd_or m1 m2 :=
       match m1, m2 with
-      | Term t1, Term t2 => ret (sd_or t1 t2)
+      | Term t1, Term t2 => ret (pd_or t1 t2)
       | Term t1, Diverge => if as_lit t1 == no then Diverge else Term t1
       | Diverge, Term t2 => if as_lit t2 == no then Diverge else Term t2
       | Diverge, Diverge => Diverge
       end;
   }.
 
-Instance FixResult_SemiDecisionLaws (R : Type) `{SDR : SemiDecision R} `{SemiDecisionLaws R}
-  : SemiDecisionLaws (FixResult_SemiDecision R).
+Instance FixResult_PartialDecisionLaws (R : Type) `{SDR : PartialDecision R} `{PartialDecisionLaws R}
+  : PartialDecisionLaws (FixResult_PartialDecision R).
 Proof.
   destruct H.
   split; case => [t1|]; case => [t2|] => //=.
@@ -303,16 +303,16 @@ Qed.
 Definition GFix_Diverge {T} : GFix T := mkGFix (fun _ => Diverge).
 
 (*TODO: rec_true and rec_and derivable; derive rec_or from monadplus?*)
-Instance SemiDecision_GFix (R : Type) `{SemiDecision R} (n : N)
-  : SemiDecision (GFix R) :=
+Instance PartialDecision_GFix (R : Type) `{PartialDecision R} (n : N)
+  : PartialDecision (GFix R) :=
   {
     as_lit m := as_lit (runGFix m n);
-    sd_and m1 m2 := mkGFix (fun n' => sd_and (runGFix m1 n') (runGFix m2 n'));
-    sd_or m1 m2 := mkGFix (fun n' => sd_or (runGFix m1 n') (runGFix m2 n'))
+    pd_and m1 m2 := mkGFix (fun n' => pd_and (runGFix m1 n') (runGFix m2 n'));
+    pd_or m1 m2 := mkGFix (fun n' => pd_or (runGFix m1 n') (runGFix m2 n'))
   }.
 
-Instance SemiDecisionLaws_GFix (R : Type) `{SemiDecision R} `{SemiDecisionLaws R} (n : N)
-  : SemiDecisionLaws (SemiDecision_GFix R n).
+Instance PartialDecisionLaws_GFix (R : Type) `{PartialDecision R} `{PartialDecisionLaws R} (n : N)
+  : PartialDecisionLaws (PartialDecision_GFix R n).
 Proof.
   destruct H0.
   split;
@@ -325,14 +325,14 @@ Proof.
     by case alt: (as_lit r) => //=.
 Qed.
 
-Inductive sd_with_msg (N M Y : Type) : Type :=
-| yes_msg : Y -> sd_with_msg N M Y
-| maybe_msg : M -> sd_with_msg N M Y
-| no_msg : N -> sd_with_msg N M Y.
+Inductive pd_with_msg (N M Y : Type) : Type :=
+| yes_msg : Y -> pd_with_msg N M Y
+| maybe_msg : M -> pd_with_msg N M Y
+| no_msg : N -> pd_with_msg N M Y.
 
 (* left-biased; chooses left message on all operations*)
 (*TODO: better to make N M Y monoidal, combine elements? *)
-Instance SemiDecision_With_Msg {N} {M} {Y} : SemiDecision (sd_with_msg N M Y) :=
+Instance PartialDecision_With_Msg {N} {M} {Y} : PartialDecision (pd_with_msg N M Y) :=
   {
     as_lit m :=
       match m with
@@ -340,7 +340,7 @@ Instance SemiDecision_With_Msg {N} {M} {Y} : SemiDecision (sd_with_msg N M Y) :=
       | maybe_msg _ => maybe
       | no_msg _ => no
       end;
-    sd_and m1 m2 :=
+    pd_and m1 m2 :=
       match m1, m2 with
       | yes_msg msg, yes_msg _ => yes_msg _ _ msg
       | yes_msg _, maybe_msg msg => maybe_msg _ _ msg
@@ -349,7 +349,7 @@ Instance SemiDecision_With_Msg {N} {M} {Y} : SemiDecision (sd_with_msg N M Y) :=
       | no_msg msg, _ => no_msg _ _ msg
       | _, no_msg msg => no_msg _ _ msg
     end;
-    sd_or m1 m2 :=
+    pd_or m1 m2 :=
       match m1, m2 with
       | yes_msg msg, _ => yes_msg _ _ msg
       | _, yes_msg msg => yes_msg _ _ msg
@@ -359,12 +359,12 @@ Instance SemiDecision_With_Msg {N} {M} {Y} : SemiDecision (sd_with_msg N M Y) :=
     end
   }.
 
-Instance SemiDecisionLaws_With_Msg {N} {M} {Y} : SemiDecisionLaws (@SemiDecision_With_Msg N M Y).
+Instance PartialDecisionLaws_With_Msg {N} {M} {Y} : PartialDecisionLaws (@PartialDecision_With_Msg N M Y).
 Proof.
   split; case => ma; case => mb //=.
 Qed.
 
-Instance Monad_SD_With_Msg {N} {M} : Monad (sd_with_msg N M) :=
+Instance Monad_PD_With_Msg {N} {M} : Monad (pd_with_msg N M) :=
   {
     ret := yes_msg _ _;
     bind _ _ m f :=
@@ -376,7 +376,7 @@ Instance Monad_SD_With_Msg {N} {M} : Monad (sd_with_msg N M) :=
   }.
 
 (*TODO: one instance or two? if n and m are the same, two is bad *)
-Instance MonadExc_SD_With_Msg {N} {M} : MonadExc (N + M) (sd_with_msg N M) :=
+Instance MonadExc_PD_With_Msg {N} {M} : MonadExc (N + M) (pd_with_msg N M) :=
   {
     raise _ nm :=
       match nm with
@@ -403,8 +403,8 @@ Section MonadLaws.
   
 End MonadLaws.  
 
-Instance MonadExcLaws_SD_With_Msg {N} {M}
-  : MonadExcLaws Monad_SD_With_Msg (@MonadExc_SD_With_Msg N M).
+Instance MonadExcLaws_PD_With_Msg {N} {M}
+  : MonadExcLaws Monad_PD_With_Msg (@MonadExc_PD_With_Msg N M).
 Proof.
   split.
   1,2: intros until e; case: e => [n | m] k => //=.
