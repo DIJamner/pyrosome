@@ -17,70 +17,66 @@ Local Open Scope monad_scope.
 Section PartialDecisions.
 
   (* the final element of the PartialDecision structure *)
-  Variant partial_decision : predArgType := yes | maybe | no.
+  Variant partial_decision (N Y : Type) : Type := yes (msg:Y) | maybe | no (msg:N).
 
-  Definition sd2o (sd : partial_decision) : 'I_3 :=
-    match sd with
-    | yes => inord 0 | maybe => inord 1 | no => inord 2
-    end.
-  
-  Definition o2sd (o : 'I_3) : option partial_decision :=
-    match val o with
-    | 0 => Some yes
-    | 1 => Some maybe
-    | 2 => Some no
-    | _ => None
-    end.
-
-  Lemma pcan_sdo3 : pcancel sd2o o2sd.
-  Proof. by case; rewrite /o2sd /= inordK. Qed.
-
-  (* I want a more straightforward equality computationally *)
-  Definition pd_eq_fn a b : bool :=
+  Definition pd_eq_fn {N Y : eqType} (a b : partial_decision N Y) : bool :=
     match a,b with
-    | yes, yes => true
+    | yes m1, yes m2 => m1 == m2
     | maybe, maybe => true
-    | no, no => true
+    | no m1, no m2 => m1 == m2
     | _, _ => false
     end.
 
-  Lemma pd_eq_fn_Reflect a b : reflect (a = b) (pd_eq_fn a b).
+  Lemma pd_eq_fn_Reflect {N Y : eqType} (a b : partial_decision N Y) : reflect (a = b) (pd_eq_fn a b).
   Proof.
-    case: a; case: b => //=; by constructor.
+    case: a; case: b => //=; try by constructor.
+    all: move => m1 m2; case meq: (m2 == m1) => //=; constructor; f_equal.
+    1,3:by apply /eqP.
+    all: unfold not; case; move /eqP; by rewrite meq.
   Qed.
   
-  Definition partial_decision_eqMixin := Equality.Mixin pd_eq_fn_Reflect.
-  Canonical partial_decision_eqType := EqType partial_decision partial_decision_eqMixin.
+  Definition partial_decision_eqMixin {N Y : eqType} := Equality.Mixin (@pd_eq_fn_Reflect N Y).
+  Canonical partial_decision_eqType {N Y : eqType} :=
+    EqType (@partial_decision N Y) partial_decision_eqMixin.
+  (*TODO: this stuff can be added for finite N,Y
   Definition partial_decision_choiceMixin := PcanChoiceMixin pcan_sdo3.
   Canonical partial_decision_choiceType := ChoiceType partial_decision partial_decision_choiceMixin.
   Definition partial_decision_countMixin := PcanCountMixin pcan_sdo3.
   Canonical partial_decision_countType := CountType partial_decision partial_decision_countMixin.
   Definition partial_decision_finMixin := PcanFinMixin pcan_sdo3.
   Canonical partial_decision_finType := FinType partial_decision partial_decision_finMixin.
+   *)
 
   Create HintDb pd_lit discriminated.
   
   (*TODO: make a prop whose negation only holds when it is no? might overcomplicate things *)
-  Definition pd_as_prop sd : Prop := sd = yes.
+  Definition pd_as_prop {N Y} (pd : partial_decision N Y) : Prop :=
+    match pd with
+    | yes _ => True
+    | _ => False
+    end.
   Coercion pd_as_prop : partial_decision >-> Sortclass.
-
-  Print Bool.reflect.
   
-  Variant partial_decide (P : Prop) : partial_decision -> Set :=
-  | DecideY : P -> partial_decide P yes
-  | DecideN : ~P -> partial_decide P no
-  | DecideM : partial_decide P maybe.
+  Variant partial_decide (P : Prop) {N Y} : partial_decision N Y -> Type :=
+  | DecideY : forall (msg : Y), P -> partial_decide P (yes _ msg)
+  | DecideN : forall (msg : N), ~P -> partial_decide P (no _ msg)
+  | DecideM : partial_decide P (maybe _ _).
   Hint Constructors partial_decide.
   
-  Definition pd_lit_and sd1 sd2 :=
+  Definition pd_lit_and {N1 N2 Y1 Y2} sd1 sd2 : partial_decision (N1 + N2) (Y1 * Y2) :=
     match sd1, sd2 with
-    | yes, yes => yes
-    | yes, maybe => maybe
-    | maybe, yes => maybe
-    | maybe, maybe => maybe
-    | _, _ => no
+    | yes m1, yes m2 => yes _ (m1, m2)
+    | yes _, maybe => maybe _ _
+    | maybe, yes _ => maybe _ _
+    | maybe, maybe => maybe _ _
+     (* we make and and or left-biased *)
+    | no m1, _ => no _ (inl m1)
+    | _, no m2 => no _ (inr m2)
     end.
 
+  (* TODO: define Associative over type operators, up to given isomorphism *)
+  (*
+  Print Associative.
   Lemma pd_lit_and_assoc : Associative pd_lit_and eq.
   Proof.
     case => //; case => //; case => //.
@@ -98,16 +94,20 @@ Section PartialDecisions.
     case => //.
   Qed.
   Hint Resolve pd_lit_and_unit : pd_lit.
+*)
   
-  Definition pd_lit_or sd1 sd2 :=
+  Definition pd_lit_or {N1 N2 Y1 Y2} sd1 sd2 : partial_decision (N1 * N2) (Y1 + Y2) :=
     match sd1, sd2 with
-    | yes, _ => yes
-    | _,  yes => yes
-    | maybe, _ => maybe
-    | _, maybe => maybe
-    | no, no => no
+    | no m1, no m2 => no _ (m1, m2)
+    | no _, maybe => maybe _ _
+    | maybe, no _ => maybe _ _
+    | maybe, maybe => maybe _ _
+     (* we make and and or left-biased *)
+    | yes m1, _ => yes _ (inl m1)
+    | _, yes m2 => yes _ (inr m2)
     end.
 
+(*
   Lemma pd_lit_or_assoc : Associative pd_lit_or eq.
   Proof.
     case => //; case => //; case => //.
@@ -125,15 +125,32 @@ Section PartialDecisions.
     case => //.
   Qed.
   Hint Resolve pd_lit_or_unit : pd_lit.
+ *)
 
-  (*TODO: add negation*)
-  Class PartialDecision (T : Type) : Type :=
+  Definition pd_lit_neg {N Y} pd : partial_decision Y N :=
+    match pd with
+    | yes m => no _ m
+    | maybe => maybe _ _
+    | no m => yes _ m
+    end.
+
+  Lemma pd_lit_neg_cancel : forall {N Y} (sd : partial_decision N Y), pd_lit_neg (pd_lit_neg sd) = sd.
+  Proof. move => N Y; case => //=. Qed.
+
+  Class PartialDecision (T : Type -> Type -> Type) : Type :=
     {
       (* force partial_decision to be final wrt instances of this class *)
-      as_lit : T -> partial_decision;
-      pd_and : T -> T -> T;
-      pd_or : T -> T -> T
+      as_lit : forall {N Y}, T N Y -> partial_decision N Y;
+      (* require both yes and no to be inhabited in the type *)
+      (* TODO: prefix constructor instead of this one?*)
+      pd_yes : forall {N Y}, Y -> T N Y;
+      pd_no : forall {N Y}, N -> T N Y;
+      pd_and : forall {N1 Y1 N2 Y2}, T N1 Y1 -> T N2 Y2 -> (T (N1 + N2) (Y1 * Y2))%type;
+      pd_or : forall {N1 Y1 N2 Y2}, T N1 Y1 -> T N2 Y2 -> (T (N1 * N2) (Y1 + Y2))%type;
+      pd_neg : forall {N Y}, T N Y -> T Y N
     }.
+
+(*
 
   Definition Yes' T `{PartialDecision T} := { yes' : T | as_lit yes' = yes}.
   Definition No' T `{PartialDecision T} := { no' : T | as_lit no' = no}.
@@ -148,34 +165,54 @@ Section PartialDecisions.
     {|
       monoid_plus := pd_or;
       monoid_unit := proj1_sig no'
-    |}.
+    |}.*)
 
-  (* values equal up to their literal interpretations *)
-  Definition eqd T `{PartialDecision T} a b := as_lit a = as_lit b.
-
-  (*TODO: what laws do I really need/have? all up to eqd? commutativity? *)
+  (* values equal up to their decisions; TODO: map contents to unit;
+     need pd to be a bifunctor
+   *)
+  (*
+  Definition eqd T `{PartialDecision T} {N1 N2 Y1 Y2}
+             (a : T N1 Y1) (b : T N2 Y2) :=
+    as_lit a = as_lit b.
+*)
+  
   Class PartialDecisionLaws T (SD : PartialDecision T) : Type :=
     {
-      pd_and_interp : forall a b, as_lit (pd_and a b) = pd_lit_and (as_lit a) (as_lit b);
-      pd_or_interp : forall a b, as_lit (pd_or a b) = pd_lit_or (as_lit a) (as_lit b)
+      pd_yes_interp : forall {N Y} (y : Y), as_lit (pd_yes y) = yes N y;
+      pd_no_interp : forall {N Y} (n : N), as_lit (pd_no n) = no Y n;
+      pd_and_interp
+      : forall {N1 N2 Y1 Y2} (a : T N1 Y1) (b : T N2 Y2),
+        as_lit (pd_and a b) = pd_lit_and (as_lit a) (as_lit b);
+      pd_or_interp
+      : forall {N1 N2 Y1 Y2} (a : T N1 Y1) (b : T N2 Y2),
+          as_lit (pd_or a b) = pd_lit_or (as_lit a) (as_lit b);
+      pd_neg_interp
+      : forall {N Y} (a : T N Y),
+          as_lit (pd_neg a) = pd_lit_neg (as_lit a)
     }.
 
+  (*
   Ltac solve_pd_prop :=
     repeat intro;
     unfold eqd;
     rewrite ?pd_and_interp ?pd_or_interp;
     by auto with pd_lit.
-  
+*)
+
+  (*TODO: these are all up to isomophism now 
+    same issue as laws statements (these should prob. be the laws, and the laws proven from them*)
+   
+  (*
   Lemma pd_and_assoc T `{SD : PartialDecision T} `{PartialDecisionLaws T}
-    : Associative pd_and (@eqd T _).
+    : forall {N Y}, Associative pd_and (@eqd T _ N Y).
   Proof. solve_pd_prop. Qed.
     
   Lemma pd_and_comm T `{SD : PartialDecision T} `{PartialDecisionLaws T}
-    : Commutative pd_and (@eqd T _).
+    : forall {N M Y}, Commutative pd_and (@eqd T _ N M Y).
   Proof. solve_pd_prop. Qed.
 
-  Lemma pd_and_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} (yes' : T)
-    : as_lit yes' = yes -> LeftUnit pd_and yes' (@eqd T _).
+  Lemma pd_and_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} {N M Y} (yes' : T N M Y)
+    : as_lit yes' = yes -> LeftUnit pd_and yes' (@eqd T _ N M Y).
   Proof. 
     repeat intro;
     unfold eqd;
@@ -185,17 +222,16 @@ Section PartialDecisions.
     by case (as_lit a).
   Qed.
   
-  
   Lemma pd_or_assoc T `{SD : PartialDecision T} `{PartialDecisionLaws T}
-    : Associative pd_or (@eqd T _).
+    : forall {N M Y}, Associative pd_or (@eqd T _ N M Y).
   Proof. solve_pd_prop. Qed.
     
   Lemma pd_or_comm T `{SD : PartialDecision T} `{PartialDecisionLaws T}
-    : Commutative pd_or (@eqd T _).
+    : forall {N M Y}, Commutative pd_or (@eqd T _ N M Y).
   Proof. solve_pd_prop. Qed.
 
-  Lemma pd_or_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} (no' : T)
-    : as_lit no' = no -> LeftUnit pd_or no' (@eqd T _).
+  Lemma pd_or_unit T `{SD : PartialDecision T} `{PartialDecisionLaws T} {N M Y} (no' : T N M Y)
+    : as_lit no' = no -> LeftUnit pd_or no' (@eqd T _ N M Y).
   Proof. 
     repeat intro;
     unfold eqd;
@@ -203,33 +239,53 @@ Section PartialDecisions.
     auto with pd_lit.
     rewrite H0.
     by case (as_lit a).
-  Qed.
- 
+  Qed. 
+   *)
 
+  Definition try_bind_no {T M : Type -> Type -> Type} {N Y N' Y'} `{PartialDecision T}
+             (pd : T N Y)
+             (f : N -> M N' Y')
+             (default : M N' Y') : M N' Y' :=
+    match as_lit pd with
+    | no m => f m
+    | _ => default
+    end.
+  
+  Definition try_bind_yes {T M : Type -> Type -> Type} {N Y N' Y'} `{PartialDecision T}
+             (pd : T N Y)
+             (f : Y -> M N' Y')
+             (default : M N' Y') : M N' Y' :=
+    match as_lit pd with
+    | yes m => f m
+    | _ => default
+    end.
+  
 End PartialDecisions.
 
-Instance Bool_PartialDecision : PartialDecision bool :=
+Instance Sum_PartialDecision : PartialDecision sum :=
   {
-    as_lit b := if b then yes else no;
-    pd_and b1 b2 := b1 && b2;
-    pd_or b1 b2 := b1 || b2
+    as_lit _ _ s :=
+      match s with inl m => no _ m | inr m => yes _ m end;
+    pd_yes _ _ y := inr y;
+    pd_no _ _ y := inl y;
+    pd_and _ _ _ _ s1 s2 :=
+      match s1, s2 with
+      | inl m, _ => inl (inl m)
+      | _, inl m => inl (inr m)
+      | inr m1, inr m2 => inr (m1,m2)
+      end;
+    pd_or _ _ _ _ s1 s2 :=
+      match s1, s2 with
+      | inr m, _ => inr (inl m)
+      | _, inr m => inr (inr m)
+      | inl m1, inl m2 => inl (m1,m2)
+      end;
+    pd_neg _ _ s := match s with inl m => inr m | inr m => inl m end
   }.
 
-Instance Bool_PartialDecisionLaws : PartialDecisionLaws Bool_PartialDecision.
+Instance Sum_PartialDecisionLaws : PartialDecisionLaws Sum_PartialDecision.
 Proof.
-  split; case; case => //=.
-Qed.
-
-Instance Unit_PartialDecision : PartialDecision unit :=
-  {
-    as_lit _ := yes;
-    pd_and _ _ := tt;
-    pd_or _ _ := tt
-  }.
-
-Instance Unit_PartialDecisionLaws : PartialDecisionLaws Unit_PartialDecision.
-Proof.
-  split; auto.
+  split; move => A B //=; first [case => //= | move => C D; case => ma; case => mb //=].
 Qed.
 
 Instance Monad_FixResult : Monad FixResult :=
@@ -249,38 +305,69 @@ Proof.
   { intros until aM; case: aM; simpl; auto. }
 Qed.
 
-Instance FixResult_PartialDecision (R : Type) `{PartialDecision R} : PartialDecision (FixResult R) :=
+(*Section BiFunctor.
+
+  Class BiFunctor (F : Type -> Type -> Type) : Type :=
+    {
+      bifmap : forall {A B C D}, (A -> C) -> (B -> D) -> F A B -> F C D 
+    }.
+
+  (*TODO: laws*)
+  
+
+End BiFunctor.*)
+
+Instance FixResult_PartialDecision R `{PartialDecision R}
+  : PartialDecision (fun N Y => FixResult (R N Y)) :=
   {
-    as_lit m :=
+    as_lit _ _ m :=
       match m with
       | Term t => as_lit t
-      | Diverge => maybe
+      | Diverge => maybe _ _
       end;
-    pd_and m1 m2 :=
+    pd_yes _ _ y := Term (pd_yes y);
+    pd_no _ _ n := Term (pd_no n);
+    pd_and _ _ _ _ m1 m2 :=
       match m1, m2 with
       | Term t1, Term t2 => ret (pd_and t1 t2)
-      | Term t1, Diverge => if as_lit t1 == no then Term t1 else Diverge
-      | Diverge, Term t2 => if as_lit t2 == no then Term t2 else Diverge
+      (* TODO: not quite right; diverge does not have type T *)
+      | Term t1, Diverge =>
+        try_bind_no (M := fun N Y => FixResult (R N Y))
+                    t1 (compose Term (compose pd_no inl)) Diverge
+      | Diverge, Term t2 =>
+        try_bind_no (M := fun N Y => FixResult (R N Y))
+                    t2 (compose Term (compose pd_no inr)) Diverge
       | Diverge, Diverge => Diverge
       end;
-    pd_or m1 m2 :=
+    pd_or _ _ _ _ m1 m2 :=
       match m1, m2 with
       | Term t1, Term t2 => ret (pd_or t1 t2)
-      | Term t1, Diverge => if as_lit t1 == no then Diverge else Term t1
-      | Diverge, Term t2 => if as_lit t2 == no then Diverge else Term t2
+      | Term t1, Diverge =>
+        try_bind_yes (M := fun N Y => FixResult (R N Y))
+                     t1 (compose Term (compose pd_yes inl)) Diverge
+      | Diverge, Term t2 => 
+        try_bind_yes (M := fun N Y => FixResult (R N Y))
+                     t2 (compose Term (compose pd_yes inr)) Diverge
       | Diverge, Diverge => Diverge
       end;
+    pd_neg _ _ m :=
+      match m with
+      | Term t => ret (pd_neg t)
+      | Diverge => Diverge
+      end
   }.
 
-Instance FixResult_PartialDecisionLaws (R : Type) `{SDR : PartialDecision R} `{PartialDecisionLaws R}
+Instance FixResult_PartialDecisionLaws R `{SDR : PartialDecision R} `{PartialDecisionLaws R}
   : PartialDecisionLaws (FixResult_PartialDecision R).
 Proof.
   destruct H.
-  split; case => [t1|]; case => [t2|] => //=.
-  case alt: (as_lit t1) => //=.
-  case alt: (as_lit t2) => //=.
-  case alt: (as_lit t1) => //=.
-  case alt: (as_lit t2) => //=.
+  split; auto;
+    first [ move => N1 N2 Y1 Y2; case => [t1|]; case => [t2|] => //=
+          | move => N Yl; case => [t1|] => //= ];
+    unfold try_bind_no; unfold try_bind_yes;
+      try first [case alt: (as_lit t1) => //=; by eauto
+            | case alt: (as_lit t2) => //=; by eauto
+            | case alt: (as_lit a) => //=; by eauto].
 Qed.
     
 Instance MonadTrans_GFix_Result_N (n : N) : MonadT FixResult GFix :=
@@ -303,12 +390,15 @@ Qed.
 Definition GFix_Diverge {T} : GFix T := mkGFix (fun _ => Diverge).
 
 (*TODO: rec_true and rec_and derivable; derive rec_or from monadplus?*)
-Instance PartialDecision_GFix (R : Type) `{PartialDecision R} (n : N)
-  : PartialDecision (GFix R) :=
+Instance PartialDecision_GFix R `{PartialDecision R} (n : N)
+  : PartialDecision (fun N Y => GFix (R N Y)) :=
   {
-    as_lit m := as_lit (runGFix m n);
-    pd_and m1 m2 := mkGFix (fun n' => pd_and (runGFix m1 n') (runGFix m2 n'));
-    pd_or m1 m2 := mkGFix (fun n' => pd_or (runGFix m1 n') (runGFix m2 n'))
+    as_lit _ _ m := as_lit (runGFix m n);
+    pd_yes _ _ m := mkGFix (fun _ => pd_yes m);
+    pd_no _ _ m := mkGFix (fun _ => pd_no m);
+    pd_and _ _ _ _ m1 m2 := mkGFix (fun n' => pd_and (runGFix m1 n') (runGFix m2 n'));
+    pd_or _ _ _ _ m1 m2 := mkGFix (fun n' => pd_or (runGFix m1 n') (runGFix m2 n'));
+    pd_neg _ _ m := mkGFix (fun n' => pd_neg (runGFix m n'))
   }.
 
 Instance PartialDecisionLaws_GFix (R : Type) `{PartialDecision R} `{PartialDecisionLaws R} (n : N)
@@ -398,7 +488,8 @@ Section MonadLaws.
     {
       raise_catch : forall {A} (e : E) (k : E -> m A), catch (raise e) k = k e;
       raise_bind : forall {A} {B} (e : E) (f : A -> m B), bind (raise e) f = raise e;
-      catch_raise : forall {A} (v : m A) , catch v raise = v
+      catch_raise : forall {A} (v : m A) , catch v raise = v;
+      catch_ret : forall {A} (a : A) (k : E -> m A), catch (ret a) k = ret a
     }.
   
 End MonadLaws.  
@@ -409,10 +500,67 @@ Proof.
   split.
   1,2: intros until e; case: e => [n | m] k => //=.
   intros until v; case: v => [y | m | n] => //=.
+  intros; simpl; auto.
 Qed.
 
-(*TODO: compose monads *)
+(*
+(*TODO: issue: bind does not get along well with parial decisions. Use relative bimonad?*)
+Class RelativeBimonad (j m : Type -> Type -> Type) : Type :=
+  {
+    biret : forall {a b}, j a b -> m a b;
+    bibind : forall {a b c d}, m a b -> (j a b -> m c d) -> m c d
+  }.
 
+Class RelativeBimonadLaws {j m : Type -> Type -> Type} `{RelativeBimonad j m} : Type :=
+  {
+    bibind_of_bireturn :
+      forall {A B C D} (a : j A B) (f : j A B -> m C D),
+        bibind (biret a) f = f a;
+    bibind_associativity : 
+      forall {A B C D E F} (aM:m A D) (f: j A D -> m B E) (g: j B E -> m C F),
+        bibind (bibind aM f) g = bibind aM (fun a => bibind (f a) g)
+  }.
+
+Instance PD_With_Msg_RelativeBimonad {N} : RelativeBimonad sum (pd_with_msg N) :=
+  {
+    biret _ _ a :=
+      match a with
+      | inl m => maybe_msg _ _ m
+      | inr y => yes_msg _ _ y
+      end;
+    bibind A B C D m f :=
+      match m with
+      | yes_msg msg => f (inr msg)
+      | maybe_msg msg => maybe_msg _ _ msg
+      | no_msg msg => f (inl msg)
+      end
+  }.
+*)
+
+(*TODO: compose monads *)
+Instance MonadT_Inner {mi mo : Type -> Type} `{Monad mo} : MonadT (compose mo mi) mi :=
+  { lift _ := ret }.
+
+Instance MonadT_Outer {mi mo : Type -> Type} `{Monad mi} `{Monad mo} : MonadT (compose mo mi) mo :=
+  { lift _ := fmap ret }.
+
+(*TODO: monadT laws*)
+
+Instance Monad_GFix_With_Msg {N} {M} : Monad (compose GFix (pd_with_msg N M)) :=
+  {
+    ret _ a := ret (m:=GFix) (ret a);
+    bind _ _ m f :=
+      mkGFix
+        (fun fuel =>
+           match runGFix m fuel with
+           | Diverge => Diverge
+           | Term (yes_msg msg) => runGFix (f msg) fuel
+           | Term (maybe_msg msg) => ret (maybe_msg _ _ msg)
+           | Term (no_msg msg) => ret (no_msg _ _ msg)
+           end)
+  }.
+  
+  
 Fail Proof.
 (*TODO: playing around with fuel *)
 Inductive check_result (C : Type) (E : Type) (R : Type) : Type :=
