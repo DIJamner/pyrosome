@@ -7,11 +7,11 @@ Set Bullet Behavior "Strict Subproofs".
 
 (*From excomp Require Import Utils.*)
 Require Import String.
-From ExtLib.Structures Require Import
-     Monad MonadTrans MonadExc MonadLaws MonadPlus Monoid Functor BinOps.
-From ExtLib.Data.Monads Require Import FuelMonad OptionMonad.
+From ExtLib.Structures Require Export Monad.
+From ExtLib.Structures Require Import MonadTrans MonadExc MonadLaws Functor (*BinOps*).
+From ExtLib.Data.Monads Require Export FuelMonad.
 Require Import BinPos.
-Import MonadNotation.
+Export MonadNotation.
 Local Open Scope monad_scope.
 
 Section PartialDecisions.
@@ -242,6 +242,21 @@ Section PartialDecisions.
   Qed. 
    *)
 
+  Instance pd_PartialDecision : PartialDecision partial_decision :=
+    {
+      as_lit _ _ := id;
+      pd_yes := yes;
+      pd_no := no;
+      pd_and _ _ _ _ := pd_lit_and;
+      pd_or _ _ _ _ := pd_lit_or;
+      pd_neg _ _ := pd_lit_neg;
+    }.
+
+  Instance pd_PartialDecisionLaws : PartialDecisionLaws pd_PartialDecision.
+  Proof.
+    split; eauto.
+  Qed.
+  
   Definition try_bind_no {T M : Type -> Type -> Type} {N Y N' Y'} `{PartialDecision T}
              (pd : T N Y)
              (f : N -> M N' Y')
@@ -259,6 +274,13 @@ Section PartialDecisions.
     | yes m => f m
     | _ => default
     end.
+
+  Instance pd_Monad {T} `{PartialDecision T} (maybe : forall {N Y}, T N Y) {N} : Monad (T N) :=
+    {
+      ret _ := pd_yes;
+      bind _ _ m := (try_bind_yes m)^~ (maybe _ _)
+    }.
+  (*TODO: laws for this instance; also: when/do I want it? bind might not be the best *)
   
 End PartialDecisions.
 
@@ -390,6 +412,7 @@ Qed.
 Definition GFix_Diverge {T} : GFix T := mkGFix (fun _ => Diverge).
 
 (*TODO: rec_true and rec_and derivable; derive rec_or from monadplus?*)
+(*TODO: issue with n (not finding it/how to plug in; separate as_lit from rest?*)
 Instance PartialDecision_GFix R `{PartialDecision R} (n : N)
   : PartialDecision (fun N Y => GFix (R N Y)) :=
   {
@@ -401,7 +424,60 @@ Instance PartialDecision_GFix R `{PartialDecision R} (n : N)
     pd_neg _ _ m := mkGFix (fun n' => pd_neg (runGFix m n'))
   }.
 
-Instance PartialDecisionLaws_GFix (R : Type) `{PartialDecision R} `{PartialDecisionLaws R} (n : N)
+Class RelativeBimonad (T M : Type -> Type -> Type) : Type :=
+  {
+    biret : forall {N Y}, T N Y -> M N Y;
+    bibind : forall {N1 N2 Y1 Y2}, M N1 Y1 -> (T N1 Y1 -> M N2 Y2) -> M N2 Y2
+  }.
+
+(*TODO: better scoping *)
+Notation "x <<- c1 ;; c2" := (@bibind _ _ _ _ _ _ _ c1 (fun x => c2))
+    (at level 61, c1 at next level, right associativity).
+(*TODO: laws*)
+
+Definition sum_bibind' {M} `{RelativeBimonad sum M} {N1 N2 Y1 Y2}
+           (m : M N1 Y1)
+           (fn : N1 -> M N2 Y2)
+           (fy : Y1 -> M N2 Y2) : M N2 Y2 :=
+  s <<- m ;; match s with inl sn => fn sn | inr sy => fy sy end.
+
+(*TODO: better variable binding syntax*)
+Notation "y ||| n <<|- m ;; {| b1 |} {| b2 |}" := (sum_bibind' m (fun n => b2) (fun y => b1))
+                                                (at level 61, m at next level, right associativity).
+
+(*TODO: ret or biret (inr _) ? *)
+Notation "x <<|- m ;; b1" := (sum_bibind' m (fun msg => pd_no msg) (fun x => b1))
+    (at level 61, m at next level, right associativity).
+
+Instance pd_Relative_Bimonad : RelativeBimonad sum partial_decision :=
+  {
+    biret _ _ s := match s with inl m => no _ m | inr m => yes _ m end;
+    bibind _ _ _ _ pd f :=
+      match pd with
+      | yes m => f (inr m)
+      | no m => f (inl m)
+      | maybe => maybe _ _
+      end
+  }.
+
+
+Definition pd_comp N Y := GFix (partial_decision N Y).
+
+Instance GFix_Relative_Bimonad : RelativeBimonad sum pd_comp :=
+  {
+    biret _ _ t := ret (m:=GFix) (biret t);
+    bibind N1 N2 Y1 Y2 m f :=
+      mkGFix (fun n =>
+                match runGFix m n with
+                | Term maybe => Term (maybe _ _)
+                | Term (yes y) => runGFix (f (inr y)) n
+                | Term (no y) => runGFix (f (inl y)) n
+                | Diverge =>  Diverge
+                end)
+  }.
+         
+(*
+Instance PartialDecisionLaws_GFix R `{PartialDecision R} `{PartialDecisionLaws R} (n : N)
   : PartialDecisionLaws (PartialDecision_GFix R n).
 Proof.
   destruct H0.
@@ -414,58 +490,10 @@ Proof.
     destruct rbn; simpl; auto;
     by case alt: (as_lit r) => //=.
 Qed.
+*)
 
-Inductive pd_with_msg (N M Y : Type) : Type :=
-| yes_msg : Y -> pd_with_msg N M Y
-| maybe_msg : M -> pd_with_msg N M Y
-| no_msg : N -> pd_with_msg N M Y.
 
-(* left-biased; chooses left message on all operations*)
-(*TODO: better to make N M Y monoidal, combine elements? *)
-Instance PartialDecision_With_Msg {N} {M} {Y} : PartialDecision (pd_with_msg N M Y) :=
-  {
-    as_lit m :=
-      match m with
-      | yes_msg _ => yes
-      | maybe_msg _ => maybe
-      | no_msg _ => no
-      end;
-    pd_and m1 m2 :=
-      match m1, m2 with
-      | yes_msg msg, yes_msg _ => yes_msg _ _ msg
-      | yes_msg _, maybe_msg msg => maybe_msg _ _ msg
-      | maybe_msg msg, yes_msg _ => maybe_msg _ _ msg
-      | maybe_msg msg, maybe_msg _ => maybe_msg _ _ msg
-      | no_msg msg, _ => no_msg _ _ msg
-      | _, no_msg msg => no_msg _ _ msg
-    end;
-    pd_or m1 m2 :=
-      match m1, m2 with
-      | yes_msg msg, _ => yes_msg _ _ msg
-      | _, yes_msg msg => yes_msg _ _ msg
-      | maybe_msg msg, _ => maybe_msg _ _ msg
-      | _, maybe_msg msg => maybe_msg _ _ msg
-      | no_msg msg, no_msg _ => no_msg _ _ msg
-    end
-  }.
-
-Instance PartialDecisionLaws_With_Msg {N} {M} {Y} : PartialDecisionLaws (@PartialDecision_With_Msg N M Y).
-Proof.
-  split; case => ma; case => mb //=.
-Qed.
-
-Instance Monad_PD_With_Msg {N} {M} : Monad (pd_with_msg N M) :=
-  {
-    ret := yes_msg _ _;
-    bind _ _ m f :=
-      match m with
-      | yes_msg msg => f msg
-      | maybe_msg msg => maybe_msg _ _ msg
-      | no_msg msg => no_msg _ _ msg
-      end
-  }.
-
-(*TODO: one instance or two? if n and m are the same, two is bad *)
+(*TODO: still want something like this? but for partial_decision
 Instance MonadExc_PD_With_Msg {N} {M} : MonadExc (N + M) (pd_with_msg N M) :=
   {
     raise _ nm :=
@@ -479,7 +507,7 @@ Instance MonadExc_PD_With_Msg {N} {M} : MonadExc (N + M) (pd_with_msg N M) :=
       | maybe_msg msg => k (inr msg)
       | no_msg msg => k (inl msg)
       end
-  }.
+  }.*)
 
 (* Not defined in the library *)
 Section MonadLaws.
@@ -492,7 +520,10 @@ Section MonadLaws.
       catch_ret : forall {A} (a : A) (k : E -> m A), catch (ret a) k = ret a
     }.
   
-End MonadLaws.  
+End MonadLaws.
+
+
+(*
 
 Instance MonadExcLaws_PD_With_Msg {N} {M}
   : MonadExcLaws Monad_PD_With_Msg (@MonadExc_PD_With_Msg N M).
@@ -501,7 +532,7 @@ Proof.
   1,2: intros until e; case: e => [n | m] k => //=.
   intros until v; case: v => [y | m | n] => //=.
   intros; simpl; auto.
-Qed.
+Qed.*)
 
 (*
 (*TODO: issue: bind does not get along well with parial decisions. Use relative bimonad?*)
@@ -545,22 +576,8 @@ Instance MonadT_Outer {mi mo : Type -> Type} `{Monad mi} `{Monad mo} : MonadT (c
   { lift _ := fmap ret }.
 
 (*TODO: monadT laws*)
-
-Instance Monad_GFix_With_Msg {N} {M} : Monad (compose GFix (pd_with_msg N M)) :=
-  {
-    ret _ a := ret (m:=GFix) (ret a);
-    bind _ _ m f :=
-      mkGFix
-        (fun fuel =>
-           match runGFix m fuel with
-           | Diverge => Diverge
-           | Term (yes_msg msg) => runGFix (f msg) fuel
-           | Term (maybe_msg msg) => ret (maybe_msg _ _ msg)
-           | Term (no_msg msg) => ret (no_msg _ _ msg)
-           end)
-  }.
   
-  
+  (*
 Fail Proof.
 (*TODO: playing around with fuel *)
 Inductive check_result (C : Type) (E : Type) (R : Type) : Type :=
@@ -747,3 +764,4 @@ Ltac result_as_bool :=
   change (wf_no_fuel : bool) with false;
   change (wf_error _ : bool) with false.
 
+*)
