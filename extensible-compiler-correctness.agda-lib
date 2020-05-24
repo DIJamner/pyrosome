@@ -1,3 +1,0 @@
-name: extensible-compiler-correctness
-include: .
-depend: standard-library generic-syntax
