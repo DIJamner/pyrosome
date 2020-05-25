@@ -1,10 +1,9 @@
--Q . excomp
-Exp.v
-Rule.v
-CoreDefs.v
-Core.v
-Named.v
-Utils.v
-EasyWF.v
--Q ./langs langs
-Subst.v
+-R src/ excomp
+src/Utils.v
+src/Exp.v
+src/Rule.v
+src/CoreDefs.v
+src/Core.v
+src/Named.v
+src/EasyWF.v
+src/langs/Subst.v
