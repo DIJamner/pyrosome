@@ -11,7 +11,7 @@ Unset Elimination Schemes.
 Inductive exp : Set :=
 (* variable deBruijn index *)
 | var : nat -> exp
-(* Rule deBruijn index, list of subterms*)
+(* Rule deBruijn level, list of subterms*)
 | con : nat -> seq exp -> exp.
 Set Elimination Schemes.
 
@@ -474,6 +474,8 @@ Proof.
   auto.
 Qed.
 
+
+(*TODO: how to do with levels?*)
 Fixpoint constr_shift n e :=
   match e with
   | var x => var x
@@ -650,6 +652,8 @@ Definition exp_eqMixin := Equality.Mixin eq_expP.
 
 Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
 
+(* TODO: how to do for levels? any different?*)
+(* TODO: write a predlike version?/nonoption?*)
 Fixpoint constr_downshift n e : option exp :=
   match e with
   | var x => Some (var x)

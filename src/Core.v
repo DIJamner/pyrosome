@@ -119,32 +119,41 @@ Ltac expand_rule_shift :=
   end.
 
 
-
+Lemma is_nth_level_cons {A : eqType} l n t (r : A) : is_nth_level l n t -> is_nth_level (r::l) n t.
+Proof using .  
+  unfold is_nth_level.
+  move /andP => [nlts] /eqP <-.
+  simpl.
+  apply /andP; split.
+  auto.
+  rewrite subSn; auto.
+Qed.
+  
 Lemma mono r
   : (forall (l : lang) c1 c2 t1 t2,
         le_sort l c1 c2 t1 t2 -> wf_rule l r ->
-        le_sort (r::l) c1::%!1 c2::%!1 t1%!1 t2%!1)
+        le_sort (r::l) c1 c2 t1 t2)
     /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
            le_subst l c1 c2 s1 s2 c1' c2' ->
            wf_rule l r ->
-           le_subst (r::l) c1::%!1 c2::%!1 s1::%!1 s2::%!1 c1'::%!1 c2'::%!1)
+           le_subst (r::l) c1 c2 s1 s2 c1' c2')
     /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
            le_term l c1 c2 e1 e2 t1 t2 ->
            wf_rule l r ->
-           le_term (r::l) c1::%!1 c2::%!1 e1%!1 e2%!1 t1%!1 t2%!1)
+           le_term (r::l) c1 c2 e1 e2 t1 t2)
     /\ (forall (l : lang) c1 c2,
            le_ctx l c1 c2 ->
            wf_rule l r ->
-           le_ctx (r::l) c1::%!1 c2::%!1)
+           le_ctx (r::l) c1 c2)
     /\ (forall (l : lang) c t,
-           wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c::%!1 t%!1)
+           wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
     /\ (forall (l : lang) c s c',
-           wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c::%!1 s::%!1 c'::%!1)
+           wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c')
     /\ (forall (l : lang) c e t,
-           wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c::%!1 e%!1 t%!1)
+           wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c e t)
     /\ (forall (l : lang) c,
-           wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c::%!1).
-Proof.
+           wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c).
+Proof using .
   apply: mono_ind; intros; eauto.
   all: try solve[ constructor; try expand_rule_shift; move: rule_in_mono; eauto
                 | rewrite !constr_shift_subst_comm; eauto
@@ -152,72 +161,41 @@ Proof.
                 | apply: le_term_conv; eauto].
   all: econstructor; eauto.
   (*TODO: automate*)
-  change ({<c1 ::%! 1 <# c2 ::%! 1 |- t1 %! 1 <# t2 %! 1})
-    with ({<c1 <# c2 |- t1<# t2}%%!1); auto.
-  change ({<c1 ::%! 1 <# c2 ::%! 1 |-  e1 %! 1 <# e2 %! 1.:t1 %! 1 <# t2 %! 1})
-    with ({<c1 <# c2 |- e1 <# e2 .: t1<# t2}%%!1); auto.
-  change ({|c' ::%! 1 |- sort})
-    with ({|c' |- sort})%%!1; auto.
-  move: H2 => /H1.
-(*
-  econstructor; eauto.
-  constructor.
-  unfold is_nth; simpl.
-  change 2 with (1 + 1) at 1;
-  expand_rule_shift;
-    by apply: unshift_is_nth_cons.
+  all: try by rewrite in_cons; apply /orP; auto.
+  all: by apply is_nth_level_cons.
+Qed.
 
-  rewrite constr_shift_subst_comm.
-  simpl; eapply wf_term_by; eauto.
-  unfold is_nth; simpl.
-  change 2 with (1 + 1) at 1;
-  expand_rule_shift;
-    by apply: unshift_is_nth_cons.
-  constructor; eauto.
-  by apply: List.map_nth_error.
-Qed.*)
-Admitted.
-
-Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'%%!1.
-Proof.
+Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'.
+Proof using .
   move => wfr.
   inversion; constructor; eapply mono; eauto.
 Qed.
-  
+
+
 Lemma mono_n l'
   : (forall (l : lang) c1 c2 t1 t2,
-        le_sort l c1 c2 t1 t2 -> wf_lang (l'++l) ->
-        le_sort (l'++ l) c1::%!(size l') c2::%!(size l') t1%!(size l') t2%!(size l'))
+        le_sort l c1 c2 t1 t2 -> wf_lang (l' ++ l) ->
+        le_sort (l' ++ l) c1 c2 t1 t2)
     /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
            le_subst l c1 c2 s1 s2 c1' c2' ->
            wf_lang (l' ++ l) ->
-           le_subst (l'++ l)
-                    c1::%!(size l') c2::%!(size l')
-                    s1::%!(size l') s2::%!(size l')
-                    c1'::%!(size l') c2'::%!(size l'))
+           le_subst (l' ++ l) c1 c2 s1 s2 c1' c2')
     /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
            le_term l c1 c2 e1 e2 t1 t2 ->
            wf_lang (l' ++ l) ->
-           le_term (l' ++ l) 
-                   c1::%!(size l') c2::%!(size l')
-                   e1%!(size l') e2%!(size l')
-                   t1%!(size l') t2%!(size l'))
+           le_term (l' ++ l) c1 c2 e1 e2 t1 t2)
     /\ (forall (l : lang) c1 c2,
            le_ctx l c1 c2 ->
            wf_lang (l' ++ l) ->
-           le_ctx (l' ++ l) c1::%!(size l') c2::%!(size l'))
+           le_ctx (l' ++ l) c1 c2)
     /\ (forall (l : lang) c t,
-           wf_sort l c t -> wf_lang (l' ++ l) -> wf_sort (l' ++ l) c::%!(size l') t%!(size l'))
+           wf_sort l c t -> wf_lang (l' ++ l) -> wf_sort (l' ++ l) c t)
     /\ (forall (l : lang) c s c',
-           wf_subst l c s c' ->
-           wf_lang (l' ++ l) ->
-           wf_subst (l'++ l) c::%!(size l') s::%!(size l') c'::%!(size l'))
+           wf_subst l c s c' -> wf_lang (l' ++ l) -> wf_subst (l' ++ l) c s c')
     /\ (forall (l : lang) c e t,
-           wf_term l c e t ->
-           wf_lang (l' ++ l) ->
-           wf_term (l' ++ l) c::%!(size l') e%!(size l') t%!(size l'))
+           wf_term l c e t -> wf_lang (l' ++ l) -> wf_term (l' ++ l) c e t)
     /\ (forall (l : lang) c,
-           wf_ctx l c -> wf_lang (l' ++ l) -> wf_ctx (l'++l) c::%!(size l')).
+           wf_ctx l c -> wf_lang (l' ++ l) ->  wf_ctx (l' ++ l) c).
 Proof.
   elim: l'; simpl;
     try by repeat match goal with |- _/\_ => split end;
@@ -225,10 +203,9 @@ Proof.
   intros.
   repeat match goal with |- _/\_ => split end;
     intros.
-  all: by change (size l).+1 with (1 + size l);
-    rewrite addnC -?rule_constr_shift_shift -?map_constr_shift_shift -?constr_shift_shift;
-    eapply mono; [eapply H|];
-    inversion H1; eauto.
+  all: by eapply mono;
+  [eapply H; auto; inversion H1; apply: wf_rule_lang; eauto|
+    by inversion H1].
 Qed.
 
 (*
@@ -470,7 +447,7 @@ Proof.
       solve_subpar_eq_surjective.
 Qed.    
 
-Lemma first_rule_wf l a : wf_lang (a :: l) -> wf_rule (a :: l) a %%! 1.
+Lemma first_rule_wf l a : wf_lang (a :: l) -> wf_rule (a :: l) a.
 Proof.
   inversion.
   inversion H1; subst; constructor; eapply mono; auto.

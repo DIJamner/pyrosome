@@ -13,73 +13,8 @@ Set Bullet Behavior "Strict Subproofs".
 From excomp Require Import Utils Exp Rule CoreDefs Core.
 
 
-Fixpoint lookup_rule n l m : option rule :=
-  match l, m with
-  | [::], _ => None
-  | r'::l', 0 => Some r'%%!n.+1
-  |  _::l', m'.+1 =>
-     lookup_rule n.+1 l' m'
-  end.
-
-Lemma lookup_result_shifted n l m r :  lookup_rule n l m = Some r -> exists r', r = r'%%!n.
-Proof.
-  elim: l n m => //=.
-  intros until m; case: m => //=.
-  - case => <-.
-    change (n.+1) with (1+n).
-    rewrite -rule_constr_shift_shift.
-    eauto.
-  - move => m /H.
-    case => r' ->.
-    change (n.+1) with (1+n).
-    rewrite -rule_constr_shift_shift.
-    eauto.
-Qed.    
-
-Lemma lookup_rule_is_nth n l m r : lookup_rule n l m = Some r%%!n -> Is_Nth r l m.
-Proof.
-  elim: l r m n => //=.
-  intros until m.
-  case: m => //=.
-  - move => n.
-    case.
-    change (n.+1) with (1+n).
-    rewrite -rule_constr_shift_shift.
-    move /rule_constr_shift_inj => req.
-    move: req H => <- H.
-    clear r.
-    constructor.
-  - move => m n lu.
-    apply /is_nthP; simpl.
-    case rcd: (rule_constr_downshift 1 r).
-    1:{
-      apply /is_nthP.
-      symmetry in rcd.
-      move: rcd lu => /rule_downshift_inj <-.
-      clear r.
-      rewrite rule_constr_shift_shift.
-      change (1+n) with (n.+1).
-        by move /H.
-    }
-    1:{
-      move: lu rcd.
-      move /lookup_result_shifted.
-      case => r'.
-    change (n.+1) with (1+n).
-    rewrite -rule_constr_shift_shift.
-    move /rule_constr_shift_inj ->.
-      by rewrite rule_downshift_left_inverse.
-    }
-Qed.
-
-Lemma lookup_rule_is_nth' l m r : lookup_rule 0 l m = Some r -> Is_Nth r l m.
-Proof.
-  rewrite -{1}(rule_constr_shift_0_id r).
-  apply: lookup_rule_is_nth.
-Qed.
-  
 Definition lookup_sort_args l n : option ctx :=
-  match lookup_rule 0 l n with
+  match nth_level l n with
   | Some ({| c |- sort}) => Some c
   | _ => None
   end.
@@ -87,7 +22,7 @@ Hint Unfold lookup_sort_args.
 Hint Transparent lookup_sort_args.
 
 Definition lookup_term_args l n : option ctx :=
-  match lookup_rule 0 l n with
+  match nth_level l n with
   | Some ({| c |- _}) => Some c
   | _ => None
   end.
@@ -95,7 +30,7 @@ Hint Unfold lookup_term_args.
 Hint Transparent lookup_term_args.
 
 Definition lookup_term_sort l n : option exp :=
-  match lookup_rule 0 l n with
+  match nth_level l n with
   | Some ({| _ |- t}) => Some t
   | _ => None
   end.
@@ -279,7 +214,7 @@ with is_easy_le_sort l (c1 c2 : ctx) (t1 t2 : exp) fuel :=
          is_easy_wf_sort fuel' l c1 t1)
            <||> (* by *) (check! is_easy_wf_lang fuel' l;
                             (*TODO:better message*)
-                            check!["Rule is in"] rule_in ({<c1 <# c2 |- t1 <# t2}) l;
+                            check!["Rule is in"] ({<c1 <# c2 |- t1 <# t2}) \in l;
                          wf_success)
     (*TODO: trans, subst (these are the scary cases performance-wise)*)
     @@
@@ -295,7 +230,7 @@ with is_easy_le_ctx l (c1 c2 : ctx) fuel :=
 Definition is_easy_le_term l (c1 c2 : ctx) (e1 e2 t1 t2 : exp) fuel : bool :=
   @@[false] fuel =1> fuel';
     (*refl*) ((c1 == c2) && (e1 == e2) && (t1 == t2) && is_easy_wf_term fuel' l c1 e1 t1)
-    || (* by *) (is_easy_wf_lang fuel' l && rule_in ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2}) l)
+    || (* by *) (is_easy_wf_lang fuel' l && ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2} \in l))
 (*TODO: trans, subst (these are the scary cases performance-wise)*)
 @@.
 
@@ -344,7 +279,7 @@ Theorem is_easy_wf_recognizes fuel
     /\ (forall l c1 c2, wf_lang l -> is_easy_le_ctx l c1 c2 fuel -> le_ctx l c1 c2)
     /\ (forall l c1 c2 t1 t2, wf_lang l -> is_easy_le_sort l c1 c2 t1 t2 fuel -> le_sort l c1 c2 t1 t2).
 Proof.
-  elim: fuel => //=.
+  elim: fuel; try by move => //=.
   move => fuel.
   case => [IHlang [IHrule [IHctx [IHsort [IHsubst [IHterm [IHlectx IHlesort]]]]]]].
   split;[case; auto; solve_easy_wf_from_hyps|].
@@ -352,10 +287,15 @@ Proof.
   split;[move => l; case; auto; intro_to is_true; solve_easy_wf_from_hyps|].
   split;[move => l c; case; auto; intro_to is_true|].
   {
+    simpl.    
     unfold lookup_sort_args.
-    case lsa: (lookup_rule 0 l n) => //=.
+    case lsa: (nth_level l n) => //=.
     case: _a_ lsa => //=.
-    move => c' /lookup_rule_is_nth' => isn.
+    move => c' /eqP => isn.
+    rewrite wf_result_ctx_id.
+    move => wfs.
+    econstructor.
+    rewrite <- nth_level_confluent; eauto.
     solve_easy_wf_from_hyps.
   }
   split;[move => l c; case; [case|]; eauto;
@@ -378,15 +318,19 @@ Proof.
     unfold lookup_term_args.
     unfold lookup_term_sort.
     move => n s t.
-    case lsa: (lookup_rule 0 l n) => //=.
+    case lsa: (nth_level l n) => //=.
     case: _a_ lsa => //=.
-    move => c' t' /lookup_rule_is_nth' => isn wfl.
+    move => c' t' /eqP => isn wfl.
     result_as_bool.
     case /andP.
     case teq: (t' [/s /] == t).
     move: teq => /eqP <- => _.
+    rewrite wf_result_ctx_id.
+    move => wfs.
+    econstructor.
+    rewrite <- nth_level_confluent; eauto.
     solve_easy_wf_from_hyps.
-    done.
+    solve_easy_wf_from_hyps.
   }
   split;[move => l; case => //=; [case; by auto|];
         move => t1 c1; case => //; solve_easy_wf_from_hyps|].
@@ -405,13 +349,7 @@ Proof.
       case /andP => /IHlang => wfl.
       case /andP.
       result_as_bool.
-      case req: (rule_in ({<c1 <# c2 |- t1 <# t2}) l); eauto.
-      move => _.
-      rewrite <- req.
-      move => rin.
-      apply: le_sort_by;
-        eauto.
-      by apply /rule_inP.
+      case req: (({<c1 <# c2 |- t1 <# t2}) \in l); eauto.
   }
 Qed.
 
@@ -438,7 +376,6 @@ Proof.
     case /andP.
     move => et.
     eapply is_easy_wf_recognizes in et.
-    move /rule_inP.
     eauto.
   }
 Qed.

@@ -7,92 +7,6 @@ Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils Exp Rule.
 
-(* determines whether a given language contains the appropriate axiom.
-   Uses constructor shifts to get the right debruijn indices
- *)
-Inductive Rule_In : rule -> lang -> Prop :=
-| rule_in_first : forall r l, Rule_In r%%!1 (r::l)
-| rule_in_rest : forall r r' l, Rule_In r l -> Rule_In r%%!1 (r'::l).
-Hint Constructors Rule_In.
-
-
-Fixpoint rule_in (r : rule) (l : lang) : bool :=
-  match l with
-  | [::] => false
-  | r' :: l' =>
-    (r == r'%%!1)
-    || match rule_constr_downshift 1 r with
-       | None => false
-       | Some r'' => rule_in r'' l'
-       end
-  end.
-
-(*
-Lemma rule_inP r l : reflect (Rule_In r l) (rule_in r l).
-Proof.
-  elim: l r => //=.
-  - constructor; inversion.
-  - intros until r.
-    case aeq: (r == a %%! 1) => //=.
-    + move: aeq => /eqP ->; constructor; eauto.
-    + case: (H (r%%!1)); constructor.
-      * constructor. eauto.
-*)
- (*
-Lemma shifted_rule_in_cons n r l
-  : shifted_rule_in n.+1 r l -> forall r', shifted_rule_in n r (r'::l).
-Proof.
-  intros; by apply /orP; auto.
-Qed.
-
-Lemma unshift_rule_in_cons n r l
-  : shifted_rule_in n r l -> forall m, shifted_rule_in (n + m) r%%!m l.
-Proof.
-  elim: l n => //.
-  intro_to is_true.
-  case /orP => [ /eqP <- |].
-  - move => m; rewrite rule_constr_shift_shift.
-    simpl.
-    apply /orP; left; by apply /eqP.
-  - fold shifted_rule_in.
-    intros; simpl.
-    apply /orP; right.
-    change (n+m).+1 with (n.+1 + m).
-    auto.
-Qed.
-
-Lemma rule_in_mono n r l
-  : shifted_rule_in n r l -> forall r', shifted_rule_in n r%%!1 (r'::l).
-Proof.
-  intros.
-  apply: shifted_rule_in_cons.
-  change n.+1 with (1+n).
-  rewrite addnC.
-  by apply: unshift_rule_in_cons.
-Qed.
-
-Definition rule_in r (l : lang) : bool := shifted_rule_in 1 r l.
-Hint Unfold rule_in.
-*)
-
-Inductive Is_Nth : rule -> lang -> nat -> Prop :=
-  (* Shift at the base because input rule assumed to come after existing lang *)
-| Is_0th : forall r l, Is_Nth r%%!1 (r::l) 0
-| Is_Succ : forall r m r' l, Is_Nth r l m -> Is_Nth r%%!1 (r'::l) m.+1.
-Hint Constructors Is_Nth.
-
-Fixpoint is_nth (r : rule) l m : bool :=
-  match l, m with
-  | [::], _ => false
-  | r'::l', 0 => r'%%!1 == r
-  |  _::l', m'.+1 =>
-     match rule_constr_downshift 1 r with
-     | None => false
-     | Some r'' => is_nth r'' l' m'
-     end
-  end.
-
-
  
 Lemma downshift_inj n e e' : Some e' = constr_downshift n e -> e' %!n = e.
 Proof.
@@ -143,6 +57,7 @@ Proof.
     by apply: H.
 Qed.
 
+(*
 Lemma rule_downshift_inj r r0 n : Some r0 = rule_constr_downshift n r -> r0 %%!n = r.
 Proof.
   case: r => //=;
@@ -155,106 +70,22 @@ Proof.
   move: cc.
   Check downshift_inj.
   Search _ constr_downshift.
-Admitted.
+Admitted.*)
+
+(*Todo: whichs more useful?*)
+Definition nth_level {A} l n : option A :=
+  if n < size l then List.nth_error l (size l - n) else None.
+Definition is_nth_level {A:eqType} (l : seq A) n x : bool :=
+   (n < size l) && (List.nth_error l (size l - n) == Some x).
+
+Lemma nth_level_confluent {A:eqType} (l : seq A) n x
+  : (nth_level l n == Some x) = is_nth_level l n x.
+Proof.
+  unfold nth_level; unfold is_nth_level.
+  case: (n < size l);
+    by simpl.
+Qed.    
   
-Lemma is_nthP r l n : reflect (Is_Nth r l n) (is_nth r l n).
-Proof.
-  elim: l r n.
-  - simpl; constructor; inversion.
-  - intros until r.
-    case => //=.
-    + case raeq: (a %%! 1 == r).
-      move: raeq => /eqP <-.
-      constructor.
-      by constructor.
-      constructor.
-      inversion.
-      move: raeq.
-      rewrite -H1 H3.
-      pose (eq_refl (a%%!1)).
-      by rewrite i.
-    + move => n.
-      remember (rule_constr_downshift 1 r) as rdn.
-      destruct rdn.
-      * case isn:(is_nth r0 l n); constructor.
-        rewrite <-(@rule_downshift_inj r r0 1);[|done..].
-        eapply Is_Succ.
-        move: (H r0 n).
-        rewrite isn.
-        by inversion.
-        inversion. 
-        move: (H r0 n).
-        rewrite isn.
-        inversion.
-        apply: H7.
-        move: Heqrdn.
-        rewrite -H2.
-        move /rule_downshift_inj.
-        by move /rule_constr_shift_inj ->.
-      * constructor.
-        inversion.
-        move: Heqrdn.
-        rewrite -H2.
-        by rewrite rule_downshift_left_inverse.
-Qed.
-
-Lemma Rule_In_iff_Nth r l : Rule_In r l <-> exists n, Is_Nth r l n.
-Proof.
-  split.
-  - elim => //=; eauto.
-    move => r0 r' l0 rin.
-    case => n nth.
-    exists n.+1; eauto.
-  - case => n.
-    elim => //=; eauto.
-Qed.
-
-Lemma rule_in_iff_nth r l : rule_in r l <-> exists n, is_nth r l n.
-Proof.
-  split.
-  - elim: l r => //=; eauto.
-    move => r' l IH r.
-    case /orP.
-    + move /eqP ->.
-      exists 0.
-      done.
-    + case rdn: (rule_constr_downshift 1 r).
-      move /IH.
-      case => n nth.
-      exists n.+1.
-      done.
-      done.
-  - case => n.
-    elim: l n r => //=; eauto.
-    move => a l IH.
-    case => //=.
-    2: move => n.
-    all: move => r.
-    move /eqP <-.
-    apply /orP; left; apply /eqP; done.
-    case rdn: (rule_constr_downshift 1 r); try done.
-    move /IH => rin.
-    apply /orP; right; done.
-Qed.
-
-(*TODO: need to rewrite the above with boolable exists
- (requires fintype; can get by limiting n to len of l)
-or (should work?) equality in Set and {n | ...}
-*)
-
-Lemma rule_inP r l : reflect (Rule_In r l) (rule_in r l).
-Proof.
-  
-  suff: Rule_In r l <-> rule_in r l.
-  case rin: (rule_in r l).
-  case => _ rimp.
-  constructor; auto.
-  case => rimp _.
-  constructor; auto.
-  rewrite rule_in_iff_nth Rule_In_iff_Nth.
-  Check existsP.
-Admitted.
-
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
    Expression constructors contain the index of the sort/term rule that proves them wf.
@@ -262,17 +93,13 @@ Admitted.
  *)
 Inductive wf_sort : lang -> ctx -> exp -> Prop :=
 | wf_sort_by : forall l c n s c',
-    Is_Nth ({| c' |- sort}) l n ->
+    is_nth_level l n (sort c') ->
     wf_subst l c s c' ->
     wf_sort l c (con n s)
 with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
-(*TODO: constructor indices!!!
- get right! should these get shifted?
- answer: I think so, in every case where
-*)
 | le_sort_by : forall l c1 c2 t1 t2,
     wf_lang l ->
-    Rule_In ({< c1 <# c2 |- t1 <# t2}) l ->
+    ({< c1 <# c2 |- t1 <# t2}) \in l ->
     le_sort l c1 c2 t1 t2
 | le_sort_subst : forall l c1 c2 s1 s2 c1' c2' t1' t2',
     le_subst l c1 c2 s1 s2 c1' c2' ->
@@ -288,11 +115,11 @@ with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
     le_sort l c1 c2 t1 t2
 with wf_term : lang -> ctx -> exp -> exp -> Prop :=
 | wf_term_by : forall l c n s c' t,
-    Is_Nth ({| c' |- t}) l n ->
+    is_nth_level l n ({| c' |- t}) ->
     wf_subst l c s c' ->
     wf_term l c (con n s) t[/s/]
 (* terms can be lifted to greater (less precise) types,
-   but not the other way around
+   but not the other way around; TODO: change the direction? might be more intuitive
  *)
 | wf_term_conv : forall l c e t c' t',
     wf_term l c e t ->
@@ -308,7 +135,7 @@ with le_term : lang ->
                exp -> exp -> Prop :=
 | le_term_by : forall l c1 c2 e1 e2 t1 t2,
     wf_lang l ->
-    Rule_In ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) l ->
+    ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) \in l ->
     le_term l c1 c2 e1 e2 t1 t2
 | le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
     le_subst l c1 c2 s1 s2 c1' c2' ->
