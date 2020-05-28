@@ -96,7 +96,7 @@ Definition wf_result_ctx c r1 : wf_result :=
   match r1 with
   | wf_success => wf_success
   | wf_no_fuel => wf_no_fuel
-  | wf_error s => wf_error (c ++ ":\n" ++ s)
+  | wf_error s => wf_error (c ++ "; " ++ s)
   end.
 
 Notation "ctx[ c ]" := (wf_result_ctx c).

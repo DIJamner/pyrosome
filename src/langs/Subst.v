@@ -43,27 +43,22 @@ Ltac topswap :=
   let H1 := fresh in
   let H2 := fresh in
   move => H1 H2;
-  move: H2 H1.
+          move: H2 H1.
 
-Notation "'ob'" := (ncon 0 [::]).
-Notation "'hom' a b" := (ncon 1 [:: b a]) (at level 7).
-Notation "'id' a" := (ncon 2 [:: a]) (at level 7).
-Notation "'cmp' c b a f g" := (ncon 1 [:: f g c b a]) (at level 7).
+Definition ob := (con 1 [::]).
+Definition hom a b := con 2 [:: b; a].
+Definition id a := con 3 [:: a].
+Definition cmp a b c g f := (con 4 [:: f; g; c; b; a]).
 
 (* syntax of categories *)
 Definition cat_stx : lang :=
   [::
-     (sort [::])
+     term_rule [:: hom (var 2) (var 3); hom (var 0) (var 1); ob; ob; ob]
+               (hom (var 2) (var 4));
+     term_rule [:: ob] (hom (var 0) (var 0));
+     sort_rule [:: ob; ob];
+     sort_rule [::]
   ].
-
-  
-    [::{|n [:: C%"hom"| nvar 2; nvar 1%; C%"hom"| nvar 2; nvar 1% ; C%"ob"%; C%"ob"%; C%"ob"%] |-
-         "cmp" .: C% "hom" | nvar 4 ; nvar 2 %};
-       {|n [:: C%"ob"%] |- "id" .: C% "hom" | nvar 0; nvar 0 % };
-       {|n [:: C%"ob"%; C%"ob"% ] |- "hom" sort};
-       {|n [::] |- "ob" sort }].
-
-Definition cat_stx : lang := index_nlang cat_stx'.
 
 
 Lemma cat_syx_wf : wf_lang cat_stx.
@@ -71,28 +66,12 @@ Proof.
   solve_easy_wf.
 Qed.
 
-Definition ob := [3|].
-Definition hom a b := [2| a; b].
-Definition id a := [1| a].
-Definition cmp A B C f g := [0| g; f; C; B; A].
-
-(*TODO: how can I use the partial recognizer here? it would have to be a total recognizer
-  (up to fuel), and I would need a completeness theorem to convert the wf_ctx to 
- a recognizer call. I guess this might be possible, it's worth trying *)
+(* TODO: use partial recognizaer*)
 Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
 Proof.
   easy_wf_lang.
-  by apply /is_nthP; compute.
 Qed.
 
-Lemma wf_ob' : wf_sort cat_stx [::] ob.
-Proof.
-  solve_easy_wf.
-Qed.
-(*TODO: expand solve_easy tactic to match on goal type *)
-
-
-(*TODO: fix now that is_nth changed; use partial recognizer*)
 Lemma wf_hom c a b : wf_term cat_stx c a ob -> wf_term cat_stx c b ob -> wf_sort cat_stx c (hom a b).
 Proof.
   easy_wf_lang.
@@ -114,6 +93,7 @@ Proof.
   done.
 Qed.
 
+(*
 Lemma wf_hom_inversion c A B
   : wf_sort cat_stx c (hom A B) ->
     wf_term cat_stx c A ob /\ wf_term cat_stx c B ob.
@@ -131,7 +111,7 @@ Proof.
   split; eauto.
   inversion H10.
   eauto.
-Qed.
+Qed.*)
 
 Lemma wf_cmp c A B C f g
   : wf_term cat_stx c f (hom A B) ->
