@@ -30,7 +30,7 @@ Ltac clear_const_substs :=
 
 Ltac easy_wf_lang :=
   first [ constructor
-        |  econstructor; unfold is_nth; simpl; eauto; 
+        |  econstructor; unfold is_nth_level; unfold nth_level; simpl; eauto; 
            guard_single_goal
         | by eapply wf_to_ctx; eauto];
   compute_adds;
@@ -45,13 +45,18 @@ Ltac topswap :=
   move => H1 H2;
   move: H2 H1.
 
-(*TODO: put in named*)
-Notation "C% s %" := (ncon s [::]) (at level 7).
-Notation "C% s | e %" := (ncon s [:: e]) (at level 7).
-Notation "C% s | e1 ; .. ; e2 %" := (ncon s (cons e1 .. (cons e2 nil) ..)) (at level 7).
+Notation "'ob'" := (ncon 0 [::]).
+Notation "'hom' a b" := (ncon 1 [:: b a]) (at level 7).
+Notation "'id' a" := (ncon 2 [:: a]) (at level 7).
+Notation "'cmp' c b a f g" := (ncon 1 [:: f g c b a]) (at level 7).
 
 (* syntax of categories *)
-Definition cat_stx' : seq named_rule :=
+Definition cat_stx : lang :=
+  [::
+     (sort [::])
+  ].
+
+  
     [::{|n [:: C%"hom"| nvar 2; nvar 1%; C%"hom"| nvar 2; nvar 1% ; C%"ob"%; C%"ob"%; C%"ob"%] |-
          "cmp" .: C% "hom" | nvar 4 ; nvar 2 %};
        {|n [:: C%"ob"%] |- "id" .: C% "hom" | nvar 0; nvar 0 % };

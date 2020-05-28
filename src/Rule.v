@@ -8,15 +8,15 @@ From excomp Require Import Utils Exp.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
 Inductive rule : Type :=
-| sort :  ctx -> rule
-| term :  ctx -> exp -> rule
+| sort_rule :  ctx -> rule
+| term_rule :  ctx -> exp -> rule
 | sort_le : ctx -> ctx -> exp -> exp -> rule
 | term_le : ctx -> ctx -> exp -> exp -> exp -> exp -> rule.
 
 Definition rule_map (f : exp -> exp) r : rule :=
   match r with
-| sort c => sort (List.map f c)
-| term c t => term (List.map f c) (f t)
+| sort_rule c => sort_rule (List.map f c)
+| term_rule c t => term_rule (List.map f c) (f t)
 | sort_le c1 c2 t1 t2 =>
   sort_le (List.map f c1) (List.map f c2) (f t1) (f t2)
 | term_le  c1 c2 e1 e2 t1 t2 =>
@@ -40,9 +40,9 @@ Notation "{< c |- e1 <# e2 .: s }" :=
 Notation "{< c |- e .: s }" := 
   ({< c |- e <# e.: s}) (at level 80) : rule_scope.
 Notation "{| c |- 'sort' }" := 
-  (sort c) (at level 80) : rule_scope.
+  (sort_rule c) (at level 80) : rule_scope.
 Notation "{| c |- s }" := 
-  (term c s) (at level 80) : rule_scope.
+  (term_rule c s) (at level 80) : rule_scope.
 
 Definition lang := list rule.
 

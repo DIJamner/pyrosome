@@ -396,11 +396,19 @@ Ltac get_is_easy_goal n :=
 (* Tactics for using the partial recognizer to prove a language well-formed *)
 (*TODO: generalize to all constructs, not just langs*)
 Ltac solve_easy_wf n :=
-  let easy_goal := get_is_easy_goal n in
+   let easy_goal := get_is_easy_goal 100 in
   suff: easy_goal;
   [ intros; first [ eapply is_easy_wf_recognizes
-                  | eapply is_easy_le_term_recognizes]; by eauto
-  | by compute].
+                  | eapply is_easy_le_term_recognizes]; by eauto|
+    let p := fresh in
+    pose p:= easy_goal;
+    change easy_goal with p;
+    cbv in p;
+    match eval cbv in p with
+    | wf_success => by cbv
+    | wf_no_fuel => fail 0 "is_easy_wf out of fuel"
+    | wf_error ?msg => fail 0 msg
+    end ].
 
 Tactic Notation "solve_easy_wf" constr(n) := solve_easy_wf n.
 Tactic Notation "solve_easy_wf" := solve_easy_wf 1000.

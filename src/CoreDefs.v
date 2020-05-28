@@ -74,15 +74,15 @@ Admitted.*)
 
 (*Todo: whichs more useful?*)
 Definition nth_level {A} l n : option A :=
-  if n < size l then List.nth_error l (size l - n) else None.
+  if n <= size l then List.nth_error l (size l - n) else None.
 Definition is_nth_level {A:eqType} (l : seq A) n x : bool :=
-   (n < size l) && (List.nth_error l (size l - n) == Some x).
+   (n <= size l) && (List.nth_error l (size l - n) == Some x).
 
 Lemma nth_level_confluent {A:eqType} (l : seq A) n x
   : (nth_level l n == Some x) = is_nth_level l n x.
 Proof.
   unfold nth_level; unfold is_nth_level.
-  case: (n < size l);
+  case: (n <= size l);
     by simpl.
 Qed.    
   
@@ -93,7 +93,7 @@ Qed.
  *)
 Inductive wf_sort : lang -> ctx -> exp -> Prop :=
 | wf_sort_by : forall l c n s c',
-    is_nth_level l n (sort c') ->
+    is_nth_level l n (sort_rule c') ->
     wf_subst l c s c' ->
     wf_sort l c (con n s)
 with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
