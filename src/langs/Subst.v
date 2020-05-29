@@ -66,7 +66,7 @@ Proof.
   solve_easy_wf.
 Qed.
 
-(* TODO: use partial recognizaer*)
+(* TODO: use partial recognizer*)
 Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
 Proof.
   easy_wf_lang.
@@ -113,20 +113,145 @@ Proof.
   eauto.
 Qed.*)
 
-Lemma wf_cmp c A B C f g
-  : wf_term cat_stx c f (hom A B) ->
-    wf_term cat_stx c g (hom B C) ->
-    wf_term cat_stx c (cmp A B C f g) (hom A C).
+
+(* TODO: move to exp,core *)
+
+Lemma
+  exp_subst_ind' (P : exp -> Prop) (Q : subst -> Prop)
+  : (forall n,  P (var n)) ->
+    (forall n s,  Q s -> P (con n s)) ->
+    Q [::] ->
+    (forall e s, P e -> Q s -> Q (e :: s)) ->
+    forall e, P e.
 Proof.
   intros.
-  change (hom A C) with (hom (var 4) (var 2)) [/[:: g; f; C; B; A]/].
-  easy_wf_lang.
-  constructor; eauto; easy_wf_lang.
-  constructor; eauto.
-  repeat easy_wf_lang.
-  TODO: wf_term_sort and inversion lemmas
-  constructor; eauto.
-  repeat easy_wf_lang.
+    elim: e; auto.
+    move=> n.
+    elim.
+    auto.
+    intros.
+    simpl in H4.
+    destruct H4.
+    apply H0.
+    apply H2; auto.
+    clear H3.
+    elim: l H5; auto.
+    intros.
+    destruct H5.
+    apply H2; auto.
+Qed.
+
+Lemma
+  exp_subst_ind (P : exp -> Prop) (Q : subst -> Prop)
+  : (forall n,  P (var n)) ->
+    (forall n s,  Q s -> P (con n s)) ->
+    Q [::] ->
+    (forall e s, P e -> Q s -> Q (e :: s)) ->
+    (forall e, P e) /\ (forall s, Q s).
+Proof.
+  intros.
+  assert ( alleP : forall e, P e).
+  apply (@exp_subst_ind' P Q); auto.
+  split; auto.
+  clear H0 H.
+  suff: (forall e s, Q s -> Q (e :: s)).
+  intro; elim; eauto.
+  eauto.
+Qed.
+
+Lemma var_lookup_cmp n s1 s2 : n < size s1 ->
+                               var_lookup (subst_cmp s1 s2) n = exp_var_map (var_lookup s2) (var_lookup s1 n).
+Proof.
+  elim: s1 s2 n; simpl.
+  {
+    move => s2 n.
+    by rewrite ltn0.
+  }
+  {
+    intros.
+    elim: n H0 s2; auto.
+  }
+Qed.
+
+(* TODO: include output size for ws_subst? *)
+Lemma subst_cmp_assoc'
+  : (forall e s1 s2, ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/])
+    /\ (forall s s1 s2, List.fold_right (fun e : exp => andb (ws_exp (size s1) e)) true s -> subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2)).
+Proof.
+  apply exp_subst_ind; simpl; auto; intros.
+  2: by rewrite !con_subst_cmp H.
+  2: {
+    move /andP in H1.
+    destruct H1.
+    rewrite H; auto.
+    rewrite H0; auto.
+  }
+ intros.
+ unfold exp_subst.
+ simpl.
+ by apply var_lookup_cmp.
+Qed.
+
+Lemma subst_cmp_assoc s s1 s2
+  : List.fold_right (fun e : exp => andb (ws_exp (size s1) e)) true s ->
+    subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2).
+Proof.
+    by eapply subst_cmp_assoc'.
+Qed.
+
+Lemma sep_subst_cmp e s1 s2 :  ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/].
+Proof.
+    by eapply subst_cmp_assoc'.
+Qed.
+  
+Scheme wf_sort_subst_props_ind := Minimality for wf_sort Sort Prop
+  with wf_subst_subst_props_ind := Minimality for wf_subst Sort Prop
+  with wf_term_subst_props_ind := Minimality for wf_term Sort Prop.
+
+Combined Scheme subst_props_ind from
+         wf_sort_subst_props_ind,
+wf_subst_subst_props_ind,
+wf_term_subst_props_ind.
+(*TODO: will eventually want a library of betterinduction schemes for same reason I wantedparameters*)
+
+Lemma wf_subst_props c s
+  : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
+    /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
+    /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/]).
+Proof.
+  apply: subst_props_ind.
+  {  
+    intros.
+    rewrite con_subst_cmp.
+    eauto.
+  }
+  {
+    intros; simpl; constructor.
+    by apply wf_to_ctx in H0.
+  }
+  {
+    intros; simpl; constructor; eauto.
+    rewrite sep_subst_cmp.
+    auto.
+    Check subst_props_ind.
+    TODO: presupposition issue; adding presuppositions should make schemes better
+
+    
+  
+Lemma wf_cmp c A B C g f
+  : wf_term cat_stx c f (hom A B) ->
+    wf_term cat_stx c g (hom B C) ->
+    wf_term cat_stx c (cmp A B C g f) (hom A C).
+Proof.
+  intros.
+  eapply wf_term_subst.
+  change (hom A C) with (hom (var 4) (var 2)) [/[:: f; g; C; B; A]/].
+  eapply wf_term_by.
+  2:{
+    easy_wf_lang; eauto.
+    constructor; eauto.
+    repeat easy_wf_lang; eauto.
+    
   easy_wf_lang.
   easy_wf_lang.
   eapply wf_to_ctx; eauto

@@ -108,10 +108,21 @@ Fixpoint exp_var_map (f : nat -> exp) (e : exp) : exp :=
   | con n l => con n (map (exp_var_map f) l)
   end.
 
-Definition exp_subst (e : exp) (s : subst) : exp :=
+Definition exp_subst (s : subst) e : exp :=
   exp_var_map (var_lookup s) e.
 
-Notation "e [/ s /]" := (exp_subst e s) (at level 7, left associativity).
+Notation "e [/ s /]" := (exp_subst s e) (at level 7, left associativity).
+
+Definition subst_cmp s1 s2 : subst := map (exp_subst s2) s1.
+
+
+Lemma con_subst_cmp n s s0 : (con n s0)[/s/] = con n (subst_cmp s0 s).
+Proof.
+  unfold exp_subst.
+  simpl.
+  f_equal.
+Qed.
+
 
 Definition exp_shift (e : exp) (m : nat) : exp :=
   exp_var_map (fun n => var (m + n)) e.
@@ -243,7 +254,7 @@ Theorem subst_preserves_ws
   : forall e (s : subst) (csz csz' : nat),
     ws_exp csz' e ->
     ws_subst csz s csz' ->
-    ws_exp csz (exp_subst e s).
+    ws_exp csz (exp_subst s e).
 Proof.
   move => e s c c' wse.
   move => wss.
