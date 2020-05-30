@@ -183,8 +183,8 @@ Fixpoint ws_ctx (c : ctx) : bool :=
 
 
 (* replaces m variables with terms with n free vars*)
-Definition ws_subst n (s : subst) m : bool :=
-  (List.fold_right (fun e b => ws_exp n e && b) true s) && (size s == m).
+Definition ws_subst n (s : subst) : bool :=
+  List.fold_right (fun e b => ws_exp n e && b) true s.
 
 
 Lemma unandb : forall (a b : bool) (C : Prop), (a -> b -> C) <-> (a && b -> C).
@@ -199,13 +199,13 @@ Proof.
     rewrite andb_true_intro //=.
 Qed.
 
-Lemma ws_nth : forall n (s : subst) m e n',
-    ws_subst n s m -> ws_exp n e -> ws_exp n (nth e s n').
+Lemma ws_nth : forall n (s : subst) e n',
+    ws_subst n s -> ws_exp n e -> ws_exp n (nth e s n').
 Proof.
   move => n ; elim.
-  - move => m e; elim; [done|].
+  - move => e; elim; [done|].
     move => n' IH //=.
-  - move => x l IH m e.
+  - move => x l IH e.
     elim => [| n' _].
     + rewrite /ws_subst //=.
       repeat case /andb_prop.
@@ -213,59 +213,43 @@ Proof.
     + rewrite /ws_subst //=.
       repeat case /andb_prop.
       move => _ lf wse.
-      case: m wse => //= m.
-      rewrite eqSS => wse.
       apply: IH.
-      rewrite /ws_subst //=.
-      apply andb_true_intro; split. 
+      rewrite /ws_subst //=. 
       done.
-      exact wse.
 Qed.
 
-Lemma ws_empty : forall n m, ws_subst n [::] m = (m == 0).
+Lemma ws_empty : forall n, ws_subst n [::].
 Proof.
-  move => n m.
+  move => n.
   rewrite /ws_subst //=.
 Qed.
 
-Lemma ws_lookup : forall n (s : subst) (m n' : nat),
-    ws_subst n s m -> n' < m -> ws_exp n (var_lookup s n').
+Lemma ws_lookup : forall n (s : subst) (n' : nat),
+    ws_subst n s -> n' < size s -> ws_exp n (var_lookup s n').
 Proof.  
   move => n.
   elim.  
-  - move => m;
-    elim;
-    move: ws_empty ->;
-    [ move => /eqP -> //=
-    | move => n' IH //= /eqP => -> //=].
-  - move => e l IH m n'.
+  - elim => //=.
+  - move => e l IH n'.
     rewrite /ws_subst => //=.
-    (repeat case /andP) => wse sl sr.
+    (repeat case /andP) => wse sl.
     elim: n' => [ //= | n' _ n'lt].
-    case: m sr n'lt => //= m.
-    move: eqSS -> => n'lt ngm.
-    apply: (IH m n') => //=.
-    rewrite /ws_subst //=.
-    move: n'lt ->.
-    rewrite Bool.andb_true_r //=.
+    apply: IH; auto.
 Qed.
 
 Theorem subst_preserves_ws
-  : forall e (s : subst) (csz csz' : nat),
-    ws_exp csz' e ->
-    ws_subst csz s csz' ->
+  : forall e (s : subst) (csz : nat),
+    ws_exp (size s) e ->
+    ws_subst csz s ->
     ws_exp csz (exp_subst s e).
 Proof.
-  move => e s c c' wse.
+  move => e s c wse.
   move => wss.
   pose (wss' := wss).
   move: wss'.
-  rewrite /ws_subst;
-    case /andP.
-  move => elem_ws size_eq.
-  pose size_eq' := size_eq.
-  move: size_eq' wse => /eqP <-.
-  elim: e => //= => n.
+  rewrite /ws_subst.
+  move => elem_ws.
+  elim: e wse => //= => n.
   - apply: ws_lookup => //=;
     move: size_eq => /eqP -> //=.
   - elim => //= x l' IHA IHB.
