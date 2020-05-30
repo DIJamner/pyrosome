@@ -158,6 +158,7 @@ with is_easy_wf_subst fuel : lang -> ctx -> subst -> ctx -> wf_result :=
          fun l c s c' => match s, c' with
          | [::], [::] => is_easy_wf_ctx fuel' l c
          | e::s', t::c'' =>
+           check! is_easy_wf_sort fuel' l c'' t;
            check! is_easy_wf_term fuel' l c e t[/s' /];
              is_easy_wf_subst fuel' l c s' c''
          | _, _ => wf_error "Substitution and output context of different lengths"

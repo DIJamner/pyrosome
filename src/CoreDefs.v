@@ -166,6 +166,7 @@ with wf_subst : lang -> ctx -> subst -> ctx -> Prop :=
     wf_subst l c [::] [::]
 | wf_subst_cons : forall l c s c' e t,
     wf_subst l c s c' ->
+    wf_sort l c' t ->
     wf_term l c e t[/s/] ->
     wf_subst l c (e::s) (t::c')
 with le_subst : lang ->

@@ -172,7 +172,7 @@ Qed.
 Fixpoint ws_exp csz (e : exp) : bool :=
   match e with
   | var n => n < csz
-  | con n v => List.fold_right (fun e f => (ws_exp csz e) && f) true v
+  | con _ v => List.fold_right (fun e f => (ws_exp csz e) && f) true v
   end.
 
 Fixpoint ws_ctx (c : ctx) : bool :=
@@ -183,8 +183,8 @@ Fixpoint ws_ctx (c : ctx) : bool :=
 
 
 (* replaces m variables with terms with n free vars*)
-Definition ws_subst n (s : subst) : bool :=
-  List.fold_right (fun e b => ws_exp n e && b) true s.
+Definition ws_subst n : subst -> bool :=
+  List.fold_right (fun e b => ws_exp n e && b) true.
 
 
 Lemma unandb : forall (a b : bool) (C : Prop), (a -> b -> C) <-> (a && b -> C).

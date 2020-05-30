@@ -74,12 +74,13 @@ Qed.
 
 Lemma wf_hom c a b : wf_term cat_stx c a ob -> wf_term cat_stx c b ob -> wf_sort cat_stx c (hom a b).
 Proof.
-  easy_wf_lang.
+  easy_wf_lang; auto.
   constructor; eauto.
   easy_wf_lang; eauto.
   easy_wf_lang; eauto.
-  eapply wf_to_ctx.
-  eauto.
+  eapply wf_to_ctx; eauto.
+  solve_easy_wf.
+  solve_easy_wf.
 Qed.
 
 Lemma wf_id c a : wf_term cat_stx c a ob -> wf_term cat_stx c (id a) (hom a a).
@@ -90,7 +91,11 @@ Proof.
   constructor.
   easy_wf_lang.
   eapply wf_to_ctx; eauto.
-  done.
+  solve_easy_wf.
+  easy_wf_lang.
+  apply: le_sort_refl.
+  solve_easy_wf.
+  apply: wf_term_sort; eauto.
 Qed.
 
 (*
@@ -173,6 +178,7 @@ Proof.
   }
 Qed.
 
+  
 (* TODO: include output size for ws_subst? *)
 Lemma subst_cmp_assoc'
   : (forall e s1 s2, ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/])
@@ -214,6 +220,32 @@ wf_subst_subst_props_ind,
 wf_term_subst_props_ind.
 (*TODO: will eventually want a library of betterinduction schemes for same reason I wantedparameters*)
 
+
+Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
+Proof.
+  elim: n l => [| n IH];case; simpl; auto; try done.
+Qed.
+
+Lemma le_ctx_len_eq  l c c' : le_ctx l c c' -> size c = size c'
+with le_sort_ctx_len_eq l c c' t t' : le_sort l c c' t t' -> size c = size c'.
+Proof.
+  case; simpl; auto; intros; f_equal.
+  apply: le_sort_ctx_len_eq; eauto.
+  intro les.
+  eapply wf_to_ctx in les.
+  apply: le_ctx_len_eq; eauto.
+TODO: get a nicer induction w/ presuppositions
+  
+Lemma wf_is_ws : (forall l c t, wf_sort l c t -> ws_exp (size c) t)
+                 /\ (forall l c s c', wf_subst l c s c' -> ws_subst (size c) s)
+                 /\ (forall l c e t, wf_term l c e t -> ws_exp (size c) e).
+Proof.
+  apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
+  eapply wf_to_ctx in H1.
+  TODO: show cssame size
+Qed.
+
+
 Lemma wf_subst_props c s
   : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
     /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
@@ -233,8 +265,8 @@ Proof.
     intros; simpl; constructor; eauto.
     rewrite sep_subst_cmp.
     auto.
-    Check subst_props_ind.
-    TODO: presupposition issue; adding presuppositions should make schemes better
+    Search _ ws_subst.
+    TODO: need wf ->ws
 
     
   
