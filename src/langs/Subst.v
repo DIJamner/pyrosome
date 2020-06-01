@@ -121,95 +121,6 @@ Qed.*)
 
 (* TODO: move to exp,core *)
 
-Lemma
-  exp_subst_ind' (P : exp -> Prop) (Q : subst -> Prop)
-  : (forall n,  P (var n)) ->
-    (forall n s,  Q s -> P (con n s)) ->
-    Q [::] ->
-    (forall e s, P e -> Q s -> Q (e :: s)) ->
-    forall e, P e.
-Proof.
-  intros.
-    elim: e; auto.
-    move=> n.
-    elim.
-    auto.
-    intros.
-    simpl in H4.
-    destruct H4.
-    apply H0.
-    apply H2; auto.
-    clear H3.
-    elim: l H5; auto.
-    intros.
-    destruct H5.
-    apply H2; auto.
-Qed.
-
-Lemma
-  exp_subst_ind (P : exp -> Prop) (Q : subst -> Prop)
-  : (forall n,  P (var n)) ->
-    (forall n s,  Q s -> P (con n s)) ->
-    Q [::] ->
-    (forall e s, P e -> Q s -> Q (e :: s)) ->
-    (forall e, P e) /\ (forall s, Q s).
-Proof.
-  intros.
-  assert ( alleP : forall e, P e).
-  apply (@exp_subst_ind' P Q); auto.
-  split; auto.
-  clear H0 H.
-  suff: (forall e s, Q s -> Q (e :: s)).
-  intro; elim; eauto.
-  eauto.
-Qed.
-
-Lemma var_lookup_cmp n s1 s2 : n < size s1 ->
-                               var_lookup (subst_cmp s1 s2) n = exp_var_map (var_lookup s2) (var_lookup s1 n).
-Proof.
-  elim: s1 s2 n; simpl.
-  {
-    move => s2 n.
-    by rewrite ltn0.
-  }
-  {
-    intros.
-    elim: n H0 s2; auto.
-  }
-Qed.
-
-  
-(* TODO: include output size for ws_subst? *)
-Lemma subst_cmp_assoc'
-  : (forall e s1 s2, ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/])
-    /\ (forall s s1 s2, List.fold_right (fun e : exp => andb (ws_exp (size s1) e)) true s -> subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2)).
-Proof.
-  apply exp_subst_ind; simpl; auto; intros.
-  2: by rewrite !con_subst_cmp H.
-  2: {
-    move /andP in H1.
-    destruct H1.
-    rewrite H; auto.
-    rewrite H0; auto.
-  }
- intros.
- unfold exp_subst.
- simpl.
- by apply var_lookup_cmp.
-Qed.
-
-Lemma subst_cmp_assoc s s1 s2
-  : List.fold_right (fun e : exp => andb (ws_exp (size s1) e)) true s ->
-    subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2).
-Proof.
-    by eapply subst_cmp_assoc'.
-Qed.
-
-Lemma sep_subst_cmp e s1 s2 :  ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/].
-Proof.
-    by eapply subst_cmp_assoc'.
-Qed.
-  
 Scheme wf_sort_subst_props_ind := Minimality for wf_sort Sort Prop
   with wf_subst_subst_props_ind := Minimality for wf_subst Sort Prop
   with wf_term_subst_props_ind := Minimality for wf_term Sort Prop.
@@ -220,7 +131,7 @@ wf_subst_subst_props_ind,
 wf_term_subst_props_ind.
 (*TODO: will eventually want a library of betterinduction schemes for same reason I wantedparameters*)
 
-
+(* TODO: move to utils*)
 Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
 Proof.
   elim: n l => [| n IH];case; simpl; auto; try done.

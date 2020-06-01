@@ -1,4 +1,3 @@
-
 Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -189,7 +188,6 @@ with wf_ctx : lang -> ctx -> Prop :=
 with le_ctx : lang -> ctx -> ctx -> Prop :=
 | le_ctx_nil : forall l, wf_lang l -> le_ctx l [::] [::]
 | le_ctx_cons : forall l c1 c2 v1 v2,
-    le_ctx l c1 c2 ->
     le_sort l c1 c2 v1 v2 ->
     le_ctx l (v1::c1) (v2::c2)
 with wf_rule : lang -> rule -> Prop :=
@@ -222,60 +220,6 @@ Hint Constructors wf_ctx.
 Hint Constructors le_ctx.
 Hint Constructors wf_rule.
 Hint Constructors wf_lang.
-
-(* Judgment manipulation tactics
-   These tactics are designed to generate reasdable subterms,
-   particularly for use when the proof must be inspected for well-foundedness
- *)
-
-(* tac_map tactics push under "wf : (wf_X ...) |- ... -> (wf_X ...)" goals to the subterms 
-   These tactics are meant to generate readable proof terms
-*)
-Ltac tac_map_wf_sort wf :=
-  refine (match wf with
-           | wf_sort_by _ _ _ _ _ _ _ => _ (*TODO*)
-            end);
-  intros; eapply wf_sort_by.
-
-
-Ltac tac_map_le_sort :=
-  refine (fun wfs =>
-            match wfs with
-           | le_sort_by _ _ _ _ _ _ _ => _
-           | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
-           | le_sort_refl _ _ _ _ => _
-           | le_sort_trans _ _ _ _ _ _ _ _ _ => _
-            end).
-
-
-(* Cheat Sheet
-
-Syntax:
-polynomial
-lang p
-exp p
-ctx p
-ctx_var p
-rule p
-subst p
-
-Judgments:
-wf_sort
-le_sort
-wf_term
-le_term
-wf_subst
-
-Ltac construct_with t :=
-  constructor; apply: t; eauto.
-le_subst
-wf_ctx_var
-le_ctx_var
-wf_ctx
-le_ctx
-wf_rule
-wf_lang
- *)
 
 
 (* Tactics *)
@@ -321,6 +265,85 @@ Proof.
   case: wf => //=; eauto.
 Qed.
 Hint Immediate wf_rule_lang.
+
+(* Provides a better scheme for non-mutual induction *)
+Inductive wf_lang' : lang -> Prop :=
+| wf_lang_nil' : wf_lang' [::]
+| wf_lang_cons' : forall l r,
+    wf_lang' l -> wf_rule l r -> wf_lang' (r::l).
+Hint Constructors wf_lang'.
+
+Lemma wf_lang_lang' l : wf_lang l <-> wf_lang' l.
+Proof.
+  split; [|elim; auto].
+  elim: l; auto; intros.
+  inversion H0.
+  eauto using wf_rule_lang.
+Qed.
+
+Inductive wf_ctx' l : ctx -> Prop :=
+| wf_ctx_nil' : wf_lang l -> wf_ctx' l [::]
+| wf_ctx_cons' : forall c v,
+    wf_ctx' l c ->
+    wf_sort l c v ->
+    wf_ctx' l (v::c).
+
+(* provides everything one might expect with inversion*)
+Variant wf_rule' l : rule -> Prop :=
+| wf_sort_rule' : forall c,
+    wf_lang l ->
+    wf_ctx l c ->
+    wf_rule' l ({| c |- sort})
+| wf_term_rule' : forall c t,
+    wf_lang l ->
+    wf_ctx l c ->
+    wf_sort l c t ->
+    wf_rule' l ({| c |- t})
+| le_sort_rule' : forall c1 c2 t1 t2,
+    wf_lang l ->
+    wf_ctx l c1 ->
+    wf_ctx l c2 ->
+    le_ctx l c1 c2 ->
+    wf_sort l c1 t1 ->
+    wf_sort l c2 t2 ->
+    wf_rule' l ({< c1 <# c2 |- t1 <# t2})
+| le_term_rule' : forall c1 c2 e1 e2 t1 t2,
+    wf_lang l ->
+    wf_ctx l c1 ->
+    wf_ctx l c2 ->
+    le_ctx l c1 c2 ->
+    wf_sort l c1 t1 ->
+    wf_sort l c2 t2 ->
+    le_sort l c1 c2 t1 t2 ->
+    wf_term l c1 e1 t1 ->
+    wf_term l c2 e2 t2 ->
+    wf_rule' l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2}).
+(*TODO:prove equivalences *)
+
+(* Judgment manipulation tactics
+   These tactics are designed to generate reasdable subterms,
+   particularly for use when the proof must be inspected for well-foundedness
+ *)
+
+(* tac_map tactics push under "wf : (wf_X ...) |- ... -> (wf_X ...)" goals to the subterms 
+   These tactics are meant to generate readable proof terms
+*)
+Ltac tac_map_wf_sort wf :=
+  refine (match wf with
+           | wf_sort_by _ _ _ _ _ _ _ => _ (*TODO*)
+            end);
+  intros; eapply wf_sort_by.
+
+
+Ltac tac_map_le_sort :=
+  refine (fun wfs =>
+            match wfs with
+           | le_sort_by _ _ _ _ _ _ _ => _
+           | le_sort_subst _ _ _ _ _ _ _ _ _ _ _ => _
+           | le_sort_refl _ _ _ _ => _
+           | le_sort_trans _ _ _ _ _ _ _ _ _ => _
+            end).
+
 
 
 Scheme le_sort_mono_ind := Minimality for le_sort Sort Prop
@@ -510,7 +533,8 @@ Proof.
   elim; auto.
 Qed.
 Hint Resolve wf_rule_mono.
-*)
+ *)
+
 
 Lemma wf_lang_prefix l1 l2 : wf_lang (l1 ++ l2) -> wf_lang l2.
 Proof.
@@ -527,6 +551,15 @@ Proof.
   intro_to wf_lang; inversion; eauto.
 Qed.
 
+Lemma rule_in_wf l r : wf_lang l -> r \in l -> wf_rule l r.
+Proof using .
+ move /wf_lang_lang'; elim; first by compute.
+ intro_to is_true.
+ rewrite in_cons; case /orP; first move /eqP ->; eauto using mono_rule.
+Qed.
+
+
+   
 Scheme wf_rule_lang_ind := Induction for wf_rule Sort Prop
   with wf_lang_lang_ind := Induction for wf_lang Sort Prop.
 
@@ -567,10 +600,6 @@ Proof.
     change ((size c1).+1 * 2) with (size c1 * 2).+2.
     case => neq; auto.
     repeat inversion; eauto; subst.
-    suff:  le_sort l c1 c3 a1 a3; eauto; move => les.
-    constructor; auto.
-    inversion les.
-    
 Qed.
 
 Lemma le_ctx_trans l c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
@@ -697,6 +726,90 @@ Proof.
   inversion H1; subst; constructor; eapply mono; auto.
 Qed.
 
+
+Scheme wf_sort_subst_props_ind := Minimality for wf_sort Sort Prop
+  with wf_subst_subst_props_ind := Minimality for wf_subst Sort Prop
+  with wf_term_subst_props_ind := Minimality for wf_term Sort Prop.
+
+Combined Scheme subst_props_ind from
+         wf_sort_subst_props_ind,
+wf_subst_subst_props_ind,
+wf_term_subst_props_ind.
+(*TODO: will eventually want a library of betterinduction schemes for same reason I wantedparameters*)
+
+(* TODO: move to utils*)
+Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
+Proof.
+  elim: n l => [| n IH];case; simpl; auto; try done.
+Qed.
+
+Lemma le_ctx_len_eq  l c c' : le_ctx l c c' -> size c = size c'
+with le_sort_ctx_len_eq l c c' t t' : le_sort l c c' t t' -> size c = size c'.
+Proof.
+  case; simpl; auto; intros; f_equal.
+  apply: le_sort_ctx_len_eq; eauto.
+  intro les.
+  eapply wf_to_ctx in les.
+  apply: le_ctx_len_eq; eauto.
+TODO: get a nicer induction w/ presuppositions
+  
+Lemma wf_is_ws : (forall l c t, wf_sort l c t -> ws_exp (size c) t)
+                 /\ (forall l c s c', wf_subst l c s c' -> ws_subst (size c) s)
+                 /\ (forall l c e t, wf_term l c e t -> ws_exp (size c) e).
+Proof.
+  apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
+  eapply wf_to_ctx in H1.
+  TODO: show cssame size
+Qed.
+
+
+Lemma wf_subst_props c s
+  : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
+    /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
+    /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/]).
+Proof.
+  apply: subst_props_ind.
+  {  
+    intros.
+    rewrite con_subst_cmp.
+    eauto.
+  }
+  {
+    intros; simpl; constructor.
+    by apply wf_to_ctx in H0.
+  }
+  {
+    intros; simpl; constructor; eauto.
+    rewrite sep_subst_cmp.
+    auto.
+    Search _ ws_subst.
+    TODO: need wf ->ws
+
+Lemma wf_sort_subst l c s c' t : wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/].
+Proof.
+  inversion; subst; unfold exp_subst; simpl.
+  econstructor; eauto.
+  
+  Print subst_cmp.
+
+Lemma le_ctx_wf_l l c1 c2 : le_ctx l c1 c2 -> wf_ctx l c1
+with le_sort_wf_l l c1 c2 t1 t2 : le_sort l c1 c2 t1 t2 -> wf_sort l c1 t1
+with le_term_wf_l l c1 c2 e1 e2 t1 t2 : le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c1 e1 t1
+with le_subst_wf_l l c1 c2 s1 s2 c1' c2' : le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c1 s1 c1'.
+Proof.
+  {
+    case: c1 c2.
+    case => //=; intro_to le_ctx; inversion; auto.
+    intros until c2.
+    case: c2; intro_to le_ctx; inversion; eauto.
+  }
+  {
+    case.
+    intros; apply rule_in_wf in i; by inversion i.
+    intros until t2'; move /le_subst_wf_l => wfsub /le_sort_wf_l => wfs.
+    eapply wf_sort_subst.
+
+    
 (*
 Lemma rule_in_wf l : wf_lang l ->
                      forall r m n, shifted_rule_in n r%%!(m+n) l -> wf_rule l r%%!m%%!1.
@@ -755,7 +868,9 @@ Ltac wf_to_ctx_from_rule :=
     H : ?E, H' : ?E -> _ |- _ =>
     specialize (H' H)
   end;
-   inversion H.
+  inversion H.
+
+
 
 Lemma wf_to_ctx
   : (forall l c1 c2 t1 t2,
@@ -764,13 +879,13 @@ Lemma wf_to_ctx
            le_subst l c1 c2 s1 s2 c1' c2' -> le_ctx l c1 c2)
     /\ (forall l c1 c2 e1 e2 t1 t2,
            le_term l c1 c2 e1 e2 t1 t2 -> le_ctx l c1 c2)
-    /\ (forall l c1 c2,  le_ctx l c1 c2 -> le_ctx l c1 c2)
+    /\ (forall l c1 c2,  le_ctx l c1 c2 -> wf_ctx l c1 /\ wf)
     /\ (forall l c t, wf_sort l c t -> wf_ctx l c)
     /\ (forall l c s c', wf_subst l c s c' -> wf_ctx l c)
     /\ (forall l c e t,  wf_term l c e t -> wf_ctx l c).
 Proof.
- (* apply: mono_ind; eauto.
-  by wf_to_ctx_from_rule.*)
+  apply: mono_ind; eauto.
+  by wf_to_ctx_from_rule.
 Admitted.
 
 Lemma wf_term_sort l c t s : wf_term l c t s -> wf_sort l c s.
