@@ -918,22 +918,27 @@ Proof with (eauto with judgment judgment_constructors) using .
 Qed.
 Hint Resolve wf_term_by' : judgment.
 
-(* terms can be lifted to greater (less precise) types,
-   but not the other way around; TODO: change the direction? might be more intuitive
- *)
-| wf_term_conv : forall l c e t c' t',
-    wf_lang l ->
-    wf_ctx l c' ->
-    wf_sort l c' t' ->
+Lemma wf_term_conv' : forall l c e t c' t',
     wf_term l c e t ->
     le_sort l c c' t t' ->
-    wf_term l c' e t'
-| wf_term_var : forall l c n t,
-    wf_lang l ->
+    wf_term l c' e t'.
+Proof using .
+  eauto with judgment judgment_constructors.
+Qed.
+Hint Resolve wf_term_conv' : judgment.
+
+Lemma wf_term_var' : forall l c n t,
     wf_ctx l c ->
-    wf_sort l c t ->
     List.nth_error c n = Some t ->
-    wf_term l c (var n) t
+    wf_term l c (var n) t.
+Proof with (eauto with judgment judgment_constructors) using .
+  intros.
+  suff: wf_sort l c t...
+  suff: t \in c.
+Qed.
+Hint Resolve wf_term_var' : judgment.
+
+
 with le_term : lang ->
                ctx -> ctx ->
                exp -> exp ->
