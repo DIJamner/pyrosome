@@ -115,42 +115,42 @@ Inductive wf_sort : lang -> ctx -> exp -> Prop :=
     is_nth_level l n (sort_rule c') ->
     wf_subst l c s c' ->
     wf_sort l c (con n s)
-with le_sort : lang -> ctx -> ctx -> exp -> exp -> Prop :=
-| le_sort_by : forall l c1 c2 t1 t2,
+with le_sort : lang -> ctx -> exp -> exp -> Prop :=
+| le_sort_by : forall l c t1 t2,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    ({< c1 <# c2 |- t1 <# t2}) \in l ->
-    le_sort l c1 c2 t1 t2
-| le_sort_subst : forall l c1 c2 s1 s2 c1' c2' t1' t2',
+    wf_ctx l c ->
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    ({< c |- t1 <# t2}) \in l ->
+    le_sort l c t1 t2
+| le_sort_subst : forall l c s1 s2 c' t1' t2',
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1'[/s1/] ->
-    wf_sort l c2 t2'[/s2/] ->
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_sort l c1' c2' t1' t2' ->
-    le_sort l c1 c2 t1'[/s1/] t2'[/s2/]
+    wf_ctx l c ->
+    wf_sort l c t1'[/s1/] ->
+    wf_sort l c t2'[/s2/] ->
+    le_subst l c s1 s2 c' ->
+    le_sort l c' t1' t2' ->
+    le_sort l c t1'[/s1/] t2'[/s2/]
 | le_sort_refl : forall l c t,
     wf_lang l ->
     wf_ctx l c ->
-    le_ctx l c c ->
     wf_sort l c t ->
-    le_sort l c c t t
-| le_sort_trans : forall l c1 c12 c2 t1 t12 t2,
+    le_sort l c t t
+| le_sort_trans : forall l c t1 t12 t2,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    le_sort l c1 c12 t1 t12 ->
-    le_sort l c12 c2 t12 t2 ->
-    le_sort l c1 c2 t1 t2
+    wf_ctx l c ->
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    le_sort l c t1 t12 ->
+    le_sort l c t12 t2 ->
+    le_sort l c t1 t2
+| le_sort_sym : forall l c t1 t2,
+    wf_lang l ->
+    wf_ctx l c ->
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    le_sort l c t2 t1 ->
+    le_sort l c t1 t2    
 with wf_term : lang -> ctx -> exp -> exp -> Prop :=
 | wf_term_by : forall l c n s c' t,
     wf_lang l ->
@@ -159,92 +159,61 @@ with wf_term : lang -> ctx -> exp -> exp -> Prop :=
     is_nth_level l n ({| c' |- t}) ->
     wf_subst l c s c' ->
     wf_term l c (con n s) t[/s/]
-(* terms can be lifted to greater (less precise) types,
-   but not the other way around; TODO: change the direction? might be more intuitive
- *)
-| wf_term_conv : forall l c e t c' t',
+| wf_term_conv : forall l c e t t',
     wf_lang l ->
-    wf_ctx l c' ->
-    wf_sort l c' t' ->
+    wf_ctx l c ->
+    wf_sort l c t' ->
     wf_term l c e t ->
-    le_sort l c c' t t' ->
-    wf_term l c' e t'
+    le_sort l c t t' ->
+    wf_term l c e t'
 | wf_term_var : forall l c n t,
     wf_lang l ->
     wf_ctx l c ->
     wf_sort l c t ->
     List.nth_error c n = Some t ->
     wf_term l c (var n) t
-with le_term : lang ->
-               ctx -> ctx ->
-               exp -> exp ->
-               exp -> exp -> Prop :=
-| le_term_by : forall l c1 c2 e1 e2 t1 t2,
+with le_term : lang -> ctx -> exp -> exp -> exp -> Prop :=
+| le_term_by : forall l c e1 e2 t,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    ({< c1 <# c2|- e1 <# e2 .: t1 <# t2}) \in l ->
-    le_term l c1 c2 e1 e2 t1 t2
-| le_term_subst : forall l c1 c2 s1 s2 c1' c2' e1' e2' t1' t2',
+    wf_ctx l c ->
+    wf_sort l c t ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    ({< c|- e1 <# e2 .: t}) \in l ->
+    le_term l c e1 e2 t
+| le_term_subst : forall l c s1 s2 c' e1' e2' t',
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1'[/s1/] ->
-    wf_sort l c2 t2'[/s2/] ->
-    le_sort l c1 c2 t1'[/s1/] t2'[/s2/] ->
-    wf_term l c1 e1'[/s1/] t1'[/s1/] ->
-    wf_term l c2 e2'[/s2/] t2'[/s2/] ->
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_term l c1' c2' e1' e2' t1' t2' ->
-    le_term l c1 c2 e1'[/s1/] e2'[/s2/] t1'[/s1/] t2'[/s2/]
+    wf_ctx l c ->
+    wf_sort l c t'[/s1/] ->
+    wf_term l c e1'[/s1/] t'[/s1/] ->
+    wf_term l c e2'[/s2/] t'[/s1/] ->(*note that the type is asymmetric*)
+    le_subst l c s1 s2 c' ->
+    le_term l c' e1' e2' t' ->
+    le_term l c e1'[/s1/] e2'[/s2/] t'[/s1/](*note that the type is asymmetric*)
 | le_term_refl : forall l c e t,
     wf_lang l ->
     wf_ctx l c ->
-    le_ctx l c c ->
     wf_sort l c t ->
-    le_sort l c c t t ->
     wf_term l c e t ->
-    le_term l c c e e t t
-| le_term_trans : forall l c1 c12 c2 e1 e12 e2 t1 t12 t2,
+    le_term l c e e t
+| le_term_trans : forall l c e1 e12 e2 t,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    le_term l c1 c12 e1 e12 t1 t12 ->
-    le_term l c12 c2 e12 e2 t12 t2 ->
-    le_term l c1 c2 e1 e2 t1 t2
-(* Conversion:
-
-c1  < c2  |- e1 < e2 : t1  < t2   ||
-/\    /\               /\    /\   ||
-c1' < c2' |- e1 < e2 : t1' < t2'  \/
-*)
-| le_term_conv : forall l c1 c2 e1 e2 t1 t2 c1' c2' t1' t2',
+    wf_ctx l c ->
+    wf_sort l c t ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    le_term l c e1 e12 t ->
+    le_term l c e12 e2 t ->
+    le_term l c e1 e2 t
+| le_term_conv : forall l c e1 e2 t t',
     wf_lang l ->
-    wf_ctx l c1' ->
-    wf_ctx l c2' ->
-    le_ctx l c1' c2' ->
-    wf_sort l c1' t1' ->
-    wf_sort l c2' t2' ->
-    le_sort l c1' c2' t1' t2' ->
-    wf_term l c1' e1 t1' ->
-    wf_term l c2' e2 t2' ->
-    le_term l c1 c2 e1 e2 t1 t2 ->
-    le_sort l c1 c1' t1 t1' ->
-    le_sort l c2 c2' t2 t2' ->
-    le_term l c1' c2' e1 e2 t1' t2'
+    wf_ctx l c ->
+    wf_sort l c t' ->
+    wf_term l c e1 t' ->
+    wf_term l c e2 t' ->
+    le_term l c e1 e2 t ->
+    le_sort l c t t' ->
+    le_term l c e1 e2 t'
 with wf_subst : lang -> ctx -> subst -> ctx -> Prop :=
 | wf_subst_nil : forall l c,
     wf_lang l ->
@@ -259,34 +228,21 @@ with wf_subst : lang -> ctx -> subst -> ctx -> Prop :=
     wf_sort l c' t ->
     wf_term l c e t[/s/] ->
     wf_subst l c (e::s) (t::c')
-with le_subst : lang ->
-                ctx -> ctx ->
-                subst -> subst ->
-                ctx -> ctx -> Prop :=
-| le_subst_nil : forall l c1 c2,
+with le_subst : lang -> ctx -> subst -> subst -> ctx -> Prop :=
+| le_subst_nil : forall l c,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
+    wf_ctx l c ->
     wf_ctx l [::] ->
-    le_ctx l [::] [::] ->
-    wf_subst l c1 [::] [::] ->
-    wf_subst l c2 [::] [::] ->
-    le_subst l c1 c2 [::] [::] [::] [::]
-| le_subst_cons : forall l c1 c2 s1 s2 c1' c2' e1 e2 t1 t2,
+    wf_subst l c [::] [::] ->
+    le_subst l c [::] [::] [::]
+| le_subst_cons : forall l c s1 s2 c' e1 e2 t,
     wf_lang l ->
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_ctx l (t1::c1') ->
-    wf_ctx l (t2::c2') ->
-    le_ctx l (t1::c1') (t2::c2') ->
-    wf_subst l c1 (e1::s1) (t1::c1') ->
-    wf_subst l c2 (e2::s2) (t2::c2') ->
-    le_subst l c1 c2 s1 s2 c1' c2' ->
-    le_sort l c1' c2' t1 t2 ->
-    le_term l c1 c2 e1 e2 t1[/s1/] t2[/s2/] ->
-    le_subst l c1 c2 (e1::s1) (e2::s2) (t1::c1') (t2 :: c2')
+    wf_ctx l c ->
+    wf_ctx l (t::c') ->
+    wf_subst l c (e1::s1) (t::c') ->
+    wf_subst l c (e2::s2) (t::c') ->
+    le_term l c e1 e2 t[/s1/] -> (* not symmetric *)
+    le_subst l c (e1::s1) (e2::s2) (t::c')
 with wf_ctx : lang -> ctx -> Prop :=
 | wf_ctx_nil : forall l, wf_lang l -> wf_ctx l [::]
 | wf_ctx_cons : forall l c v,
@@ -294,17 +250,6 @@ with wf_ctx : lang -> ctx -> Prop :=
     wf_ctx l c ->
     wf_sort l c v ->
     wf_ctx l (v::c)
-with le_ctx : lang -> ctx -> ctx -> Prop :=
-| le_ctx_nil : forall l,
-    wf_lang l ->
-    wf_ctx l [::] ->
-    le_ctx l [::] [::]
-| le_ctx_cons : forall l c1 c2 v1 v2,
-    wf_lang l ->
-    wf_ctx l (v1::c1) ->
-    wf_ctx l (v2::c2) -> 
-    le_sort l c1 c2 v1 v2 ->
-    le_ctx l (v1::c1) (v2::c2)
 with wf_rule : lang -> rule -> Prop :=
 | wf_sort_rule : forall l c,
     wf_lang l ->
@@ -315,25 +260,19 @@ with wf_rule : lang -> rule -> Prop :=
     wf_ctx l c ->
     wf_sort l c t ->
     wf_rule l ({| c |- t})
-| le_sort_rule : forall l c1 c2 t1 t2,
+| le_sort_rule : forall l c t1 t2,
     wf_lang l -> 
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    wf_rule l ({< c1 <# c2 |- t1 <# t2})
-| le_term_rule : forall l c1 c2 e1 e2 t1 t2,
+    wf_ctx l c ->
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    wf_rule l ({< c |- t1 <# t2})
+| le_term_rule : forall l c e1 e2 t,
     wf_lang l -> 
-    wf_ctx l c1 ->
-    wf_ctx l c2 ->
-    le_ctx l c1 c2 ->
-    wf_sort l c1 t1 ->
-    wf_sort l c2 t2 ->
-    le_sort l c1 c2 t1 t2 ->
-    wf_term l c1 e1 t1 ->
-    wf_term l c2 e2 t2 ->
-    wf_rule l ({< c1 <# c2 |- e1 <# e2 .: t1 <# t2})
+    wf_ctx l c ->
+    wf_sort l c t ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    wf_rule l ({< c |- e1 <# e2 .: t})
 with wf_lang : lang -> Prop :=
 | wf_lang_nil : wf_lang [::]
 | wf_lang_cons : forall l r, wf_lang l -> wf_rule l r -> wf_lang (r::l).
@@ -344,9 +283,8 @@ Create HintDb judgment_constructors discriminated.
 Hint Constructors wf_sort le_sort
      wf_term le_term
      wf_subst le_subst
-     wf_ctx le_ctx
+     wf_ctx (* note: no le_ctx *)
      wf_rule wf_lang : judgment_constructors.
-
 
 (* build a database of presuppositions and judgment facts *)
 Create HintDb judgment discriminated.
@@ -356,7 +294,7 @@ Lemma wf_sort_lang l c t : wf_sort l c t -> wf_lang l.
 Proof. by inversion. Qed.
 Hint Immediate wf_sort_lang : judgment.
 
-Lemma le_sort_lang l c1 c2 t1 t2 : le_sort l c1 c2 t1 t2 -> wf_lang l.
+Lemma le_sort_lang l c t1 t2 : le_sort l c t1 t2 -> wf_lang l.
 Proof. by inversion. Qed.
 Hint Immediate le_sort_lang : judgment.
 
@@ -364,8 +302,8 @@ Lemma wf_term_lang l c e t : wf_term l c e t -> wf_lang l.
 Proof using . by inversion. Qed.
 Hint Immediate wf_term_lang : judgment.
 
-Lemma le_term_lang l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_lang l.
+Lemma le_term_lang l c e1 e2 t
+  : le_term l c e1 e2 t -> wf_lang l.
 Proof using . by inversion. Qed.
 Hint Immediate le_term_lang : judgment.
 
@@ -373,18 +311,14 @@ Lemma wf_subst_lang l c s c' : wf_subst l c s c' -> wf_lang l.
 Proof using . by inversion. Qed.
 Hint Immediate wf_subst_lang : judgment.
 
-Lemma le_subst_lang l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_lang l.
+Lemma le_subst_lang l c s1 s2 c'
+  : le_subst l c s1 s2 c' -> wf_lang l.
 Proof using . by inversion. Qed.
 Hint Immediate le_subst_lang : judgment.
 
 Lemma wf_ctx_lang l c : wf_ctx l c -> wf_lang l.
 Proof using . by inversion. Qed.
 Hint Immediate wf_ctx_lang : judgment.
-
-Lemma le_ctx_lang l c1 c2 : le_ctx l c1 c2 -> wf_lang l.
-Proof using . by inversion. Qed.
-Hint Immediate le_ctx_lang : judgment.
 
 Lemma wf_rule_lang l r : wf_ctx l r -> wf_lang l.
 Proof using . by inversion. Qed.
@@ -396,29 +330,19 @@ Lemma wf_sort_ctx l c t : wf_sort l c t -> wf_ctx l c.
 Proof using . by inversion. Qed.
 Hint Immediate wf_sort_ctx : judgment.
 
-Lemma le_sort_ctx_l l c1 c2 t1 t2
-  : le_sort l c1 c2 t1 t2 -> wf_ctx l c1.
+Lemma le_sort_ctx l c t1 t2
+  : le_sort l c t1 t2 -> wf_ctx l c.
 Proof using . by inversion. Qed.
-Hint Immediate le_sort_ctx_l : judgment.
-
-Lemma le_sort_ctx_r l c1 c2 t1 t2
-  : le_sort l c1 c2 t1 t2 -> wf_ctx l c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_sort_ctx_r : judgment.
+Hint Immediate le_sort_ctx : judgment.
 
 Lemma wf_term_ctx l c e t : wf_term l c e t -> wf_ctx l c.
 Proof using . by inversion. Qed.
 Hint Immediate wf_term_ctx : judgment.
 
-Lemma le_term_ctx_l l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_ctx l c1.
+Lemma le_term_ctx l c e1 e2 t
+  : le_term l c e1 e2 t -> wf_ctx l c.
 Proof using . by inversion. Qed.
-Hint Immediate le_term_ctx_l : judgment.
-
-Lemma le_term_ctx_r l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_ctx l c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_term_ctx_r : judgment.
+Hint Immediate le_term_ctx : judgment.
 
 Lemma wf_subst_ctx_in l c s c' : wf_subst l c s c' -> wf_ctx l c.
 Proof using . by inversion. Qed.
@@ -428,43 +352,24 @@ Lemma wf_subst_ctx_out l c s c' : wf_subst l c s c' -> wf_ctx l c'.
 Proof using . by inversion. Qed.
 Hint Immediate wf_subst_ctx_in : judgment.
 
-Lemma le_subst_ctx_in_l l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_ctx l c1.
+Lemma le_subst_ctx_in l c s1 s2 c'
+  : le_subst l c s1 s2 c' -> wf_ctx l c.
 Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_in_l : judgment.
+Hint Immediate le_subst_ctx_in : judgment.
 
-Lemma le_subst_ctx_in_r l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_ctx l c2.
+Lemma le_subst_ctx_out l c s1 s2 c'
+  : le_subst l c s1 s2 c' -> wf_ctx l c'.
 Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_in_r : judgment.
-
-Lemma le_subst_ctx_out_l l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_ctx l c1'.
-Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_out_l : judgment.
-
-Lemma le_subst_ctx_out_r l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_ctx l c2'.
-Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_out_r : judgment.
-
-Lemma le_ctx_ctx_l l c1 c2 : le_ctx l c1 c2 -> wf_ctx l c1.
-Proof using . by inversion. Qed.
-Hint Immediate le_ctx_ctx_l : judgment.
-
-Lemma le_ctx_ctx_r l c1 c2 : le_ctx l c1 c2 -> wf_ctx l c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_ctx_ctx_r : judgment.
-
+Hint Immediate le_subst_ctx_out : judgment.
 
 (* Presuppositions of sort well-formedness *)
-Lemma le_sort_sort_l l c1 c2 t1 t2
-  : le_sort l c1 c2 t1 t2 -> wf_sort l c1 t1.
+Lemma le_sort_sort_l l c t1 t2
+  : le_sort l c t1 t2 -> wf_sort l c t1.
 Proof using . by inversion. Qed.
 Hint Immediate le_sort_sort_l : judgment.
 
-Lemma le_sort_sort_r l c1 c2 t1 t2
-  : le_sort l c1 c2 t1 t2 -> wf_sort l c2 t2.
+Lemma le_sort_sort_r l c t1 t2
+  : le_sort l c t1 t2 -> wf_sort l c t2.
 Proof using . by inversion. Qed.
 Hint Immediate le_sort_sort_r : judgment.
 
@@ -472,68 +377,34 @@ Lemma wf_term_sort l c e t : wf_term l c e t -> wf_sort l c t.
 Proof using . by inversion. Qed.
 Hint Immediate wf_term_sort : judgment.
 
-Lemma le_term_sort_l l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_sort l c1 t1.
+Lemma le_term_sort l c e1 e2 t
+  : le_term l c e1 e2 t -> wf_sort l c t.
 Proof using . by inversion. Qed.
-Hint Immediate le_term_sort_l : judgment.
-
-Lemma le_term_sort_r l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_sort l c2 t2.
-Proof using . by inversion. Qed.
-Hint Immediate le_term_sort_r : judgment.
+Hint Immediate le_term_sort : judgment.
 
 
 (* Presuppositions of term well-formedness *)
-Lemma le_term_term_l l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c1 e1 t1.
+Lemma le_term_term_l l c e1 e2 t
+  : le_term l c e1 e2 t -> wf_term l c e1 t.
 Proof using . inversion; try done. Qed.
 Hint Immediate le_term_term_l : judgment.
 
-Lemma le_term_term_r l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> wf_term l c2 e2 t2.
+Lemma le_term_term_r l c e1 e2 t
+  : le_term l c e1 e2 t -> wf_term l c e2 t.
 Proof using . by inversion. Qed.
 Hint Immediate le_term_term_r : judgment.
 
 
 (* Presuppositions of subst well-formedness *)
-Lemma le_subst_subst_l l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c1 s1 c1'.
+Lemma le_subst_subst_l l c s1 s2 c'
+  : le_subst l c s1 s2 c' -> wf_subst l c s1 c'.
 Proof using . by inversion. Qed.
 Hint Immediate le_subst_subst_l : judgment.
 
-Lemma le_subst_subst_r l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> wf_subst l c2 s2 c2'.
+Lemma le_subst_subst_r l c s1 s2 c'
+  : le_subst l c s1 s2 c' -> wf_subst l c s2 c'.
 Proof using . by inversion. Qed.
 Hint Immediate le_subst_subst_r : judgment.
-
-
-
-(* Presuppositions of context relatedness *)
-Lemma le_sort_ctx l c1 c2 t1 t2
-  : le_sort l c1 c2 t1 t2 -> le_ctx l c1 c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_sort_ctx : judgment.
-
-Lemma le_term_ctx l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> le_ctx l c1 c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_term_ctx : judgment.
-
-Lemma le_subst_ctx_in l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> le_ctx l c1 c2.
-Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_in : judgment.
-
-Lemma le_subst_ctx_out l c1 c2 s1 s2 c1' c2'
-  : le_subst l c1 c2 s1 s2 c1' c2' -> le_ctx l c1' c2'.
-Proof using . by inversion. Qed.
-Hint Immediate le_subst_ctx_out : judgment.
-
-(* Presuppositions of sort relatedness *)
-Lemma le_term_sort l c1 c2 e1 e2 t1 t2
-  : le_term l c1 c2 e1 e2 t1 t2 -> le_sort l c1 c2 t1 t2.
-Proof using . by inversion. Qed.
-Hint Immediate le_term_sort : judgment.
 
 
 (* monotinicity of judgments under language extension *)
@@ -560,7 +431,6 @@ Ltac solve_wf_with t :=
 Scheme le_sort_mono_ind := Minimality for le_sort Sort Prop
   with le_subst_mono_ind := Minimality for le_subst Sort Prop
   with le_term_mono_ind := Minimality for le_term Sort Prop
-  with le_ctx_mono_ind := Minimality for le_ctx Sort Prop
   with wf_sort_mono_ind := Minimality for wf_sort Sort Prop
   with wf_subst_mono_ind := Minimality for wf_subst Sort Prop
   with wf_term_mono_ind := Minimality for wf_term Sort Prop
@@ -570,28 +440,10 @@ Combined Scheme mono_ind from
          le_sort_mono_ind,
          le_subst_mono_ind,
          le_term_mono_ind,
-         le_ctx_mono_ind,
          wf_sort_mono_ind,
          wf_subst_mono_ind,
          wf_term_mono_ind,
          wf_ctx_mono_ind.
-
-Ltac expand_rule_shift :=
-  match goal with
-  | |- context [ {| ?c ::%! 1 |- sort}] =>
-    change ({| ?c ::%! 1 |- sort})
-      with ({| c |- sort})%%!1
-  | |- context [ {| ?c ::%! 1 |- ?t %! 1}] =>
-    change ({| ?c ::%! 1 |- ?t %! 1})
-      with ({| c |- t})%%!1
-  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1}] =>
-    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1})
-      with ({<c1 <# c2 |- t1 <# t2})%%!1
-  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1}] =>
-    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1})
-      with ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2})%%!1
-  end.
-
 
 Lemma is_nth_level_cons {A : eqType} l n t (r : A) : is_nth_level l n t -> is_nth_level (r::l) n t.
 Proof using .  
@@ -604,21 +456,17 @@ Proof using .
 Qed.
 
 Lemma mono r
-  : (forall (l : lang) c1 c2 t1 t2,
-        le_sort l c1 c2 t1 t2 -> wf_rule l r ->
-        le_sort (r::l) c1 c2 t1 t2)
-    /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
-           le_subst l c1 c2 s1 s2 c1' c2' ->
+  : (forall (l : lang) c t1 t2,
+        le_sort l c t1 t2 -> wf_rule l r ->
+        le_sort (r::l) c t1 t2)
+    /\ (forall (l : lang) c s1 s2 c',
+           le_subst l c s1 s2 c' ->
            wf_rule l r ->
-           le_subst (r::l) c1 c2 s1 s2 c1' c2')
-    /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
-           le_term l c1 c2 e1 e2 t1 t2 ->
+           le_subst (r::l) c s1 s2 c')
+    /\ (forall (l : lang) c e1 e2 t,
+           le_term l c e1 e2 t ->
            wf_rule l r ->
-           le_term (r::l) c1 c2 e1 e2 t1 t2)
-    /\ (forall (l : lang) c1 c2,
-           le_ctx l c1 c2 ->
-           wf_rule l r ->
-           le_ctx (r::l) c1 c2)
+           le_term (r::l) c e1 e2 t)
     /\ (forall (l : lang) c t,
            wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
     /\ (forall (l : lang) c s c',
@@ -629,7 +477,7 @@ Lemma mono r
            wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c).
 Proof using .
   apply: mono_ind; intros; eauto with judgment judgment_constructors.
-  all: try solve[ constructor; try expand_rule_shift; move: rule_in_mono; eauto with judgment_constructors
+  all: try solve[ constructor; move: rule_in_mono; eauto with judgment_constructors
                 | rewrite !constr_shift_subst_comm; eauto with judgment_constructors
                 | simpl; constructor; eauto with judgment_constructors;
                   rewrite -!constr_shift_subst_comm; auto with judgment_constructors
@@ -668,65 +516,6 @@ Proof using .
 Qed.
 Hint Resolve rule_in_wf : judgment.
 
-
-(* ==============================
-   Context relation transitivity
-   ============================= *)
-
-(* manual induction scheme *)
-Lemma nat2_mut_ind (Pl Pr : nat -> Prop)
-  : Pl 0 ->
-    Pr 0 ->
-    (forall n, Pl n -> Pr n -> Pr (n.+1)) ->
-    (forall n, Pl n -> Pr n -> Pl (n.+1)) ->
-    (forall n, Pl n /\ Pr n).
-Proof using .
-  move => Pl0 Pr0 Plr Prl.
-  elim; auto.
-  move => n; case => Pln Prn; split; auto.
-Qed.
-
-Lemma ctx_trans' l n
-  : (forall c1 c2 c3, n = size c1 * 2 -> le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3)
-    /\ (forall c1 c2 c3 v1 v2 v3,
-           n = (size c1 * 2).+1 ->
-           le_sort l c1 c2 v1 v2 ->
-           le_sort l c2 c3 v2 v3 ->
-           le_sort l c1 c3 v1 v3).
-Proof using .
-  move: n.
-  apply: nat2_mut_ind.
-  1,2: by case; repeat intro_term; repeat inversion; eauto with judgment judgment_constructors.
-  - intro_to (@eq nat).
-    case; intros; eapply le_sort_trans;
-      eauto with judgment judgment_constructors.
-  - intro_to seq.
-    case => // a1 c1.
-    simpl.
-    case => //; [intro_to le_ctx; inversion|]; move => a2 c2.
-    case => //; [ move => _ _; inversion|]; move => a3 c3.
-    change ((size c1).+1 * 2) with (size c1 * 2).+2.
-    case => neq; auto.
-    repeat inversion; eauto with judgment judgment_constructors; subst.
-Qed.
-
-Lemma le_ctx_trans l c1 c2 c3 : le_ctx l c1 c2 -> le_ctx l c2 c3 -> le_ctx l c1 c3.
-Proof using .
-  eapply ctx_trans'; eauto.
-Qed.
-(*Hint Resolve le_ctx_trans 26 : judgment.
-TODO: slows down auto too much to add
-*)
-
-Scheme ctx_refl_ind := Minimality for wf_ctx Sort Prop.
-
-Lemma le_ctx_refl : forall l c, wf_ctx l c -> le_ctx l c c.
-Proof using .
-  eapply ctx_refl_ind; eauto with judgment judgment_constructors.
-Qed.
-Hint Resolve le_ctx_refl : judgment.
-
-
 Scheme wf_sort_subst_props_ind := Minimality for wf_sort Sort Prop
   with wf_subst_subst_props_ind := Minimality for wf_subst Sort Prop
   with wf_term_subst_props_ind := Minimality for wf_term Sort Prop.
@@ -742,18 +531,6 @@ wf_term_subst_props_ind.
 Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
 Proof using .
   elim: n l => [| n IH];case; simpl; auto; try done.
-Qed.
-
-Lemma le_ctx_len_eq l c c' : le_ctx l c c' -> size c' = size c.
-Proof using .
-  elim: c c'.
-  - case; simpl; auto; intro_to le_ctx; by inversion.
-  - intros until c'; elim: c'.
-    + simpl; auto; intro_to le_ctx; by inversion.
-    + simpl; intros; f_equal;
-      specialize H with l1; destruct H;
-      inversion H1;
-      eauto with judgment.
 Qed.
 
 Lemma wf_subst_len_eq l c s c' : wf_subst l c s c' -> size s = size c'.
@@ -773,7 +550,6 @@ Lemma wf_is_ws : (forall l c t, wf_sort l c t -> ws_exp (size c) t)
                  /\ (forall l c e t, wf_term l c e t -> ws_exp (size c) e).
 Proof using .
   apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
-   erewrite le_ctx_len_eq; eauto with judgment.
 Qed.
 
 (*
@@ -811,27 +587,28 @@ Lemma wf_subst_props c s
   : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
     /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
     /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/]).
-Proof.
+Proof with (eauto with judgment judgment_constructors) using .
   apply: subst_props_ind;intros; simpl.
   all: rewrite ?con_subst_cmp.
-  1-2: by eauto with judgment judgment_constructors.
+  1-2: idtac...
   {
-    econstructor; rewrite ?sep_subst_cmp;
-      eauto  with judgment judgment_constructors.
+    econstructor; rewrite ?sep_subst_cmp...
     eapply wf_is_ws in H4.
-    erewrite wf_subst_len_eq; eauto with judgment.
+    erewrite wf_subst_len_eq...
   }
   {
     suff: wf_rule l ({|c' |- t}).
     2: apply is_nth_level_in in H3;
-    apply rule_in_wf in H3; eauto with judgment.
+    apply rule_in_wf in H3...
     inversion; subst.
     rewrite -sep_subst_cmp.
-    eapply wf_term_by; eauto with judgment.
-    rewrite sep_subst_cmp; eauto with judgment.
-    all: erewrite wf_subst_len_eq; eauto with judgment; by eapply wf_is_ws in H13.
+    eapply wf_term_by...
+    rewrite sep_subst_cmp...
+    all: erewrite wf_subst_len_eq...
+    all: by eapply wf_is_ws in H13.
   }
   {
+    
     suff: wf_term l c' e t'; [ move => wft | by eauto with judgment judgment_constructors].
     pose H7 := H2 H6.
     (*should have IH?*)
