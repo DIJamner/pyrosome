@@ -169,9 +169,9 @@ with wf_term : lang -> ctx -> exp -> exp -> Prop :=
 | wf_term_var : forall l c n t,
     wf_lang l ->
     wf_ctx l c ->
-    wf_sort l c t ->
+    wf_sort l c t^!n.+1 ->
     List.nth_error c n = Some t ->
-    wf_term l c (var n) t
+    wf_term l c (var n) t^!n.+1
 with le_term : lang -> ctx -> exp -> exp -> exp -> Prop :=
 | le_term_by : forall l c e1 e2 t,
     wf_lang l ->
@@ -581,16 +581,41 @@ Lemma le_sort_subst l c1 c2 t1 t2 : wf_subst c s c1 -> le_sort l c1 c2 t1 t2 -> 
 
 
 TODO: do I need to mix in something about relatedness below?
-*)
+ *)
+
+Lemma wf_sort_in_ctx : forall l n c t,
+    wf_ctx l c ->
+    List.nth_error c n = Some t ->
+    wf_sort l c t^!n.+1.
+Proof with (eauto with judgment judgment_constructors) using .
+  intros until n; elim: n;
+    intros until c; case: c; simpl;
+      intro_to (@eq (option exp)); try done.
+  - case => <-.
+    TODO: need monotonicity lem
+
+Qed.
+
+Scheme wf_sort_subst_props_ind' := Minimality for wf_sort Sort Prop
+  with wf_subst_subst_props_ind' := Minimality for wf_subst Sort Prop
+  with wf_term_subst_props_ind' := Minimality for wf_term Sort Prop
+  with le_sort_subst_props_ind' := Minimality for le_sort Sort Prop.
+
+Combined Scheme subst_props_ind' from
+         wf_sort_subst_props_ind',
+wf_subst_subst_props_ind',
+wf_term_subst_props_ind',
+le_sort_subst_props_ind'.
   
 Lemma wf_subst_props c s
   : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
     /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
-    /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/]).
+    /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/])
+    /\ (forall l c' t1 t2, le_sort l c' t1 t2 -> wf_subst l c s c' -> le_sort l c t1[/s/] t2[/s/]).
 Proof with (eauto with judgment judgment_constructors) using .
-  apply: subst_props_ind;intros; simpl.
+  apply: subst_props_ind';intros; simpl.
   all: rewrite ?con_subst_cmp.
-  1-2: idtac...
+  1-2, 5: idtac...
   {
     econstructor; rewrite ?sep_subst_cmp...
     eapply wf_is_ws in H4.
@@ -608,12 +633,8 @@ Proof with (eauto with judgment judgment_constructors) using .
     all: by eapply wf_is_ws in H13.
   }
   {
-    
-    suff: wf_term l c' e t'; [ move => wft | by eauto with judgment judgment_constructors].
-    pose H7 := H2 H6.
-    (*should have IH?*)
-    eapply wf_term_conv; eauto with judgment.
-    apply: H4.
+    Search _ (_ \in _-> wf_sort _ _ _).
+  }
 Admitted.
 
 Definition wf_subst_on_sort c s := proj1 (wf_subst_props c s).
