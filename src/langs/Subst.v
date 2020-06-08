@@ -121,63 +121,7 @@ Qed.*)
 
 (* TODO: move to exp,core *)
 
-Scheme wf_sort_subst_props_ind := Minimality for wf_sort Sort Prop
-  with wf_subst_subst_props_ind := Minimality for wf_subst Sort Prop
-  with wf_term_subst_props_ind := Minimality for wf_term Sort Prop.
 
-Combined Scheme subst_props_ind from
-         wf_sort_subst_props_ind,
-wf_subst_subst_props_ind,
-wf_term_subst_props_ind.
-(*TODO: will eventually want a library of betterinduction schemes for same reason I wantedparameters*)
-
-(* TODO: move to utils*)
-Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
-Proof.
-  elim: n l => [| n IH];case; simpl; auto; try done.
-Qed.
-
-Lemma le_ctx_len_eq  l c c' : le_ctx l c c' -> size c = size c'
-with le_sort_ctx_len_eq l c c' t t' : le_sort l c c' t t' -> size c = size c'.
-Proof.
-  case; simpl; auto; intros; f_equal.
-  apply: le_sort_ctx_len_eq; eauto.
-  intro les.
-  eapply wf_to_ctx in les.
-  apply: le_ctx_len_eq; eauto.
-TODO: get a nicer induction w/ presuppositions
-  
-Lemma wf_is_ws : (forall l c t, wf_sort l c t -> ws_exp (size c) t)
-                 /\ (forall l c s c', wf_subst l c s c' -> ws_subst (size c) s)
-                 /\ (forall l c e t, wf_term l c e t -> ws_exp (size c) e).
-Proof.
-  apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
-  eapply wf_to_ctx in H1.
-  TODO: show cssame size
-Qed.
-
-
-Lemma wf_subst_props c s
-  : (forall l c' t, wf_sort l c' t -> wf_subst l c s c' -> wf_sort l c t[/s/])
-    /\ (forall l c' s2 c2', wf_subst l c' s2 c2' -> wf_subst l c s c' -> wf_subst l c (subst_cmp s2 s) c2')
-    /\ (forall l c' e t, wf_term l c' e t -> wf_subst l c s c' -> wf_term l c e[/s/] t[/s/]).
-Proof.
-  apply: subst_props_ind.
-  {  
-    intros.
-    rewrite con_subst_cmp.
-    eauto.
-  }
-  {
-    intros; simpl; constructor.
-    by apply wf_to_ctx in H0.
-  }
-  {
-    intros; simpl; constructor; eauto.
-    rewrite sep_subst_cmp.
-    auto.
-    Search _ ws_subst.
-    TODO: need wf ->ws
 
     
   

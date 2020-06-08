@@ -552,6 +552,15 @@ Proof using .
   apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
 Qed.
 
+Definition wf_is_ws_sort := proj1 wf_is_ws.
+Hint Resolve wf_is_ws_sort : judgment.
+
+Definition wf_is_ws_subst := proj1 (proj2 wf_is_ws).
+Hint Resolve wf_is_ws_subst : judgment.
+
+Definition wf_is_ws_term := proj2 (proj2 wf_is_ws).
+Hint Resolve wf_is_ws_term : judgment.
+
 (*
 Lemma wf_subst_conv l c s c' c'' : le_ctx l c' c'' -> wf_subst l c s c' -> wf_subst l c s c''.
 Proof.
@@ -582,6 +591,63 @@ Lemma le_sort_subst l c1 c2 t1 t2 : wf_subst c s c1 -> le_sort l c1 c2 t1 t2 -> 
 
 TODO: do I need to mix in something about relatedness below?
  *)
+
+Scheme le_sort_mono_ctx_ind := Minimality for le_sort Sort Prop
+  with le_subst_mono_ctx_ind := Minimality for le_subst Sort Prop
+  with le_term_mono_ctx_ind := Minimality for le_term Sort Prop
+  with wf_sort_mono_ctx_ind := Minimality for wf_sort Sort Prop
+  with wf_subst_mono_ctx_ind := Minimality for wf_subst Sort Prop
+  with wf_term_mono_ctx_ind := Minimality for wf_term Sort Prop.
+
+Combined Scheme mono_ctx_ind from
+         le_sort_mono_ctx_ind,
+         le_subst_mono_ctx_ind,
+         le_term_mono_ctx_ind,
+         wf_sort_mono_ctx_ind,
+         wf_subst_mono_ctx_ind,
+         wf_term_mono_ctx_ind.
+
+Lemma mono_ctx t
+  : (forall (l : lang) c t1 t2,
+        le_sort l c t1 t2 -> wf_sort l c t ->
+        le_sort l (t::c) t1^!1 t2^!1)
+    /\ (forall (l : lang) c s1 s2 c',
+           le_subst l c s1 s2 c' ->
+           wf_sort l c t ->
+           le_subst l (t::c) s1^!!1 s2^!!1 c')
+    /\ (forall (l : lang) c e1 e2 t',
+           le_term l c e1 e2 t' ->
+           wf_sort l c t ->
+           le_term l (t::c) e1^!1 e2^!1 t^!1)
+    /\ (forall (l : lang) c t',
+           wf_sort l c t' -> 
+           wf_sort l c t -> wf_sort l (t::c) t'^!1)
+    /\ (forall (l : lang) c s c',
+           wf_subst l c s c' -> 
+           wf_sort l c t -> wf_subst l (t::c) s^!!1 c')
+    /\ (forall (l : lang) c e t,
+           wf_term l c e t -> 
+           wf_sort l c t -> wf_term l (t::c) e^!1 t^!1).
+Proof using .
+  apply: mono_ctx_ind; intros; eauto with judgment_constructors; simpl.
+  all: try by econstructor; eauto with judgment_constructors; rewrite in_cons; apply /orP; auto.
+  erewrite !lift_is_subst; eauto with judgment.
+  eapply le_sort_subst; eauto with judgment judgment_constructors.
+  1-2:erewrite <- !lift_is_subst; eauto with judgment.
+  econstructor.
+  give_up.
+  erewrite <- !lift_is_subst.
+  apply: le_subst_refl.
+
+  TODO: rewrite lift into subst
+  econstructor; eauto with judgment judgment_constructors.
+  all: try by econstructor; eauto with judgment_constructors; apply is_nth_level_cons.
+Qed.
+(* TODO: add as hint? *)
+
+
+
+
 
 Lemma wf_sort_in_ctx : forall l n c t,
     wf_ctx l c ->

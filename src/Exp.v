@@ -124,10 +124,11 @@ Proof.
 Qed.
 
 
-Definition exp_shift (e : exp) (m : nat) : exp :=
+Definition exp_shift (m : nat) e : exp :=
   exp_var_map (fun n => var (m + n)) e.
 
-Notation "e ^! n" := (exp_shift e n) (at level 7, left associativity).
+Notation "e ^! n" := (exp_shift n e) (at level 7, left associativity).
+Notation "s ^!! n" := (map (exp_shift n) s) (at level 7, left associativity).
 
 Fixpoint shift_subst (sz start : nat) : subst :=
   match sz with
@@ -840,7 +841,7 @@ Qed.
 Lemma subst_cmp_assoc'
   : (forall e s1 s2, ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/])
     /\ (forall s s1 s2, ws_subst (size s1) s -> subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2)).
-Proof.
+Proof using .
   apply exp_subst_ind; simpl; auto; intros.
   2: by rewrite !con_subst_cmp H.
   2: {
@@ -858,12 +859,47 @@ Qed.
 Lemma subst_cmp_assoc s s1 s2
   : List.fold_right (fun e : exp => andb (ws_exp (size s1) e)) true s ->
     subst_cmp (subst_cmp s s1) s2 = subst_cmp s (subst_cmp s1 s2).
-Proof.
+Proof using .
     by eapply subst_cmp_assoc'.
 Qed.
 
 Lemma sep_subst_cmp e s1 s2 :  ws_exp (size s1) e -> e[/subst_cmp s1 s2/] = e[/s1/][/s2/].
-Proof.
+Proof using .
     by eapply subst_cmp_assoc'.
 Qed.
-  
+
+Fixpoint lift_subst sz n : subst :=
+  match sz with
+  | 0 => [::]
+  | sz'.+1 => (var n)::(lift_subst sz' (n.+1))
+  end.
+
+Lemma lift_subst_lookup n n0 sz : n < sz -> var (n0 + n) = var_lookup (lift_subst sz n0) n.
+Proof using .
+elim: n sz n0.
+    case; first easy; by simpl; intros; rewrite addn0.
+    move => n IH.
+    case; first easy.
+    intros; simpl.
+    rewrite -addSnnS.
+    eauto.
+Qed.
+
+Lemma lift_is_subst sz e n : ws_exp sz e -> e^!n = e[/lift_subst sz n/].
+Proof using .
+  case: e; unfold exp_subst; unfold exp_shift; simpl; eauto using lift_subst_lookup.
+  - intros.
+    f_equal.
+    apply: (map_ext' (P := ws_exp sz)); auto; intros.
+    apply: (exp_var_map_ext' (m:=sz)); auto; intros.
+    by apply: lift_subst_lookup.
+Qed.    
+
+
+Lemma subst_lift_is_subst sz s n : ws_subst sz s -> s^!!n = subst_cmp s (lift_subst sz n).
+Proof using .
+  elim: s n; simpl.
+  - elim: sz; simpl; auto.
+  - move => a l IH n /andP [wsa wsl].
+    f_equal; eauto using lift_is_subst.
+Qed.
