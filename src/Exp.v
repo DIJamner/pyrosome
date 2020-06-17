@@ -903,3 +903,10 @@ Proof using .
   - move => a l IH n /andP [wsa wsl].
     f_equal; eauto using lift_is_subst.
 Qed.
+
+Definition id_subst sz := lift_subst sz 0.
+
+Lemma id_subst_identity e sz : ws_exp sz e -> e[/id_subst sz/] = e.
+Proof using .
+  intros; rewrite -lift_is_subst ?shiftz; auto.
+Qed.  
