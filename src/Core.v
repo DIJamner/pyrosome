@@ -71,36 +71,6 @@ Proof.
   Search _ constr_downshift.
 Admitted.*)
 
-(*Todo: whichs more useful?*)
-Definition nth_level {A} l n : option A :=
-  if n <= size l then List.nth_error l (size l - n) else None.
-Definition is_nth_level {A:eqType} (l : seq A) n x : bool :=
-   (n <= size l) && (List.nth_error l (size l - n) == Some x).
-
-Lemma nth_level_confluent {A:eqType} (l : seq A) n x
-  : (nth_level l n == Some x) = is_nth_level l n x.
-Proof using .
-  unfold nth_level; unfold is_nth_level.
-  case: (n <= size l);
-    by simpl.
-Qed.
-
-Lemma is_nth_level_in  {A:eqType} (l : seq A) n x
-  : is_nth_level l n x -> x \in l.
-Proof using .
-  unfold is_nth_level; case /andP => _.
-  generalize (size l - n) as m.
-  move => m.
-  elim: m l.
-  - case; simpl; auto.
-    move => a l.
-    case /eqP => ->.
-    by apply: mem_head.
-  - move => m IH; case; simpl; auto; intro_to is_true.
-    move /IH => xin.
-    rewrite in_cons.
-    by apply /orP; auto.
-Qed.
     
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -173,7 +143,7 @@ with wf_term : lang -> ctx -> exp -> exp -> Prop :=
     wf_lang l ->
     wf_ctx l c ->
     wf_sort l c t ->
-    List.nth_error c n = Some t ->
+    is_nth_level c n t ->
     wf_term l c (var n) t
 with le_term : lang ->
                ctx -> ctx ->
@@ -674,9 +644,10 @@ Hint Resolve rule_in_wf : judgment.
    ============================= *)
 
 (* TODO: move to utils*)
-Lemma nth_error_size_lt {A} (l : seq A) n e : List.nth_error l n = Some e -> n < size l.
+Lemma nth_level_size_lt {A:eqType} l n e : @is_nth_level A l n e -> n < size l.
 Proof using .
-  elim: n l => [| n IH];case; simpl; auto; try done.
+  unfold is_nth_level.
+  move /andP; tauto.
 Qed.
 
 Lemma le_ctx_len_eq l c c' : le_ctx l c c' -> size c' = size c.
@@ -772,7 +743,7 @@ Lemma wf_is_ws : (forall l c t, wf_sort l c t -> ws_exp (size c) t)
                  /\ (forall l c s c', wf_subst l c s c' -> ws_subst (size c) s)
                  /\ (forall l c e t, wf_term l c e t -> ws_exp (size c) e).
 Proof using .
-  apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_error_size_lt; eauto.
+  apply: subst_props_ind; simpl; intros; try apply /andP; auto; try apply: nth_level_size_lt; eauto.
    erewrite <-le_ctx_len_eq; eauto with judgment.
 Qed.
 Definition wf_is_ws_sort := proj1 wf_is_ws.
@@ -863,6 +834,247 @@ Definition le_ctx_square l c1 c2 c3 c4 :=
 Hint Transparent le_ctx_square : judgment.
 Hint Unfold le_ctx_square : judgment.
 
+(*
+Lemma wf_id_subst l c c' :  wf_ctx l (c'++c) -> wf_subst l (c' ++ c) (id_subst (size c)) c.
+Proof with eauto with judgment judgment_constructors.
+  elim: c c'; simpl...
+  intros; constructor...
+  move: H0; rewrite -!cat_rcons; by eauto.
+  apply wf_ctx_suffix in H0; by inversion H0.
+  rewrite id_subst_identity id_subst_size.
+  constructor...
+  {
+    elim: c' H0; simpl.
+    - inversion.
+  
+  idtac...
+  Search _ id_subst.
+  Search _ (wf_ctx _ (_++_)).
+  *)
+
+Lemma is_nth_level_cat {A : eqType} l (a : A) l' : is_nth_level (l ++ a :: l') (size l') a.
+Proof using .
+  unfold is_nth_level.
+  apply /andP; split;
+  rewrite size_cat; simpl.
+  apply: ltn_addl; auto.
+  rewrite addnC; rewrite add_sub.
+  elim: l; simpl; auto.
+Qed.
+
+(* manual induction scheme *)
+Lemma nat3_mut_ind' (Pl Pr1 Pr2 : nat -> Prop)
+  : Pl 0 ->
+    Pr1 0 ->
+    Pr2 0 ->
+    (forall n, Pl n -> Pr1 n -> Pr1 (n.+1)) ->
+    (forall n, Pl n -> Pr1 n.+1 -> Pr2 n -> Pr2 n.+1) ->
+    (forall n, Pr1 n -> Pr2 n -> Pl n) ->
+    (forall n, Pl n /\ Pr1 n /\ Pr2 n).
+Proof using .
+  move => Pl0 Pr10 Pr20 Plr1 Plr2 Prl.
+  elim; auto.
+  move => n; case => Pln Prn; split; eauto.
+  apply: Prl.
+  apply: Plr1; auto.
+  tauto.
+  apply: Plr2; auto.
+  apply: Plr1; auto.
+  tauto.
+  tauto.
+  split.
+  apply: Plr1; auto; tauto.
+  apply: Plr2; auto.
+  apply: Plr1; auto; tauto.
+  tauto.
+Qed.
+
+(* TODO: move to utils *)
+Ltac rewrite_matching lem c :=
+      match goal with [ H : context[c] |- _] =>
+                      rewrite lem in H end.
+
+Lemma mono_ctx'
+  : forall n, (forall c3 c4, (forall (l : lang) c1 c2 t1 t2,
+                                 le_sort l c1 c2 t1 t2 ->
+                                 le_ctx l (c4 ++ c2) (c3 ++ c1) ->
+                                 n >= (size c1).+1 ->
+                                 le_sort l (c3 ++ c1) (c4 ++ c2) t1 t2)
+                             /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
+                                    le_subst l c1 c2 s1 s2 c1' c2' ->
+                                    le_ctx l (c4 ++ c2) (c3 ++ c1) ->
+                                    n >= (size c1).+1 ->
+                                    le_subst l (c3 ++ c1) (c4 ++ c2) s1 s2 c1' c2')
+                             /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
+                                    le_term l c1 c2 e1 e2 t1 t2 ->
+                                    le_ctx l (c4 ++ c2) (c3 ++ c1) ->
+                                    n >= (size c1).+1 ->
+                                    le_term l (c3 ++ c1) (c4 ++ c2) e1 e2 t1 t2)
+                             /\ (forall (l : lang) c t,
+                                    wf_sort l c t ->
+                                    n >= (size c).+1 -> wf_ctx l (c3 ++ c) -> wf_sort l (c3 ++ c) t)
+                             /\ (forall (l : lang) c s c',
+                                    wf_subst l c s c' ->
+                                    n >= (size c).+1 -> wf_ctx l (c3 ++ c) ->
+                                    wf_subst l (c3 ++ c) s c')
+                             /\ (forall (l : lang) c e t,
+                                    wf_term l c e t ->
+                                    n >= (size c).+1 -> wf_ctx l (c3 ++ c) ->
+                                    wf_term l (c3 ++ c) e t))
+              /\ (forall l c c',  n >= (size c).+2 -> wf_ctx l (c'++c) -> wf_subst l (c' ++ c) (id_subst (size c)) c)
+                  /\ (forall l c1 c2 c1' c2',
+                         n >= (size c1).+2 ->
+                         le_ctx l c2 c1 ->
+                         le_ctx l (c2'++c2) (c1'++c1) ->
+                         le_subst l (c1'++c1) (c2'++c2) (id_subst (size c1)) (id_subst (size c2)) c1 c2).
+Proof with eauto with judgment judgment_constructors using .
+  apply: nat3_mut_ind'.
+  repeat split;intros; simpl; easy.
+  repeat split;intros; simpl; easy.
+  repeat split;intros; simpl; easy.
+  {
+    intros until c; elim: c; simpl; rewrite ?cats0...
+    intros until c'; case.
+    rewrite id_subst_size.
+    constructor...
+    rewrite -!cat_rcons.
+    apply H1; auto.
+    by rewrite cat_rcons.
+    apply wf_ctx_suffix in H2.
+    by inversion H2.
+    rewrite id_subst_identity.
+    eapply H; simpl...
+    constructor...
+    change (a::l0) with ([:: a] ++ l0).
+    eapply H...
+    apply wf_ctx_suffix in H2; by inversion H2.
+    change (a::l0) with ([::]++a::l0). 
+    by apply: is_nth_level_cat.
+  }
+  {
+    intro_to le_ctx => lec.
+    move: H2 c1' c2'.
+    elim: lec; simpl.
+    intros until c2'; rewrite !cats0...
+    intros until c2'; rewrite !id_subst_size.
+    constructor; eauto with judgment.
+    TODO: some ctx is backwards
+(*  {
+    split.
+    intros until c'; intro szeq.
+    symmetry in szeq; apply size0nil in szeq; subst.
+    rewrite cats0; simpl; by eauto with judgment judgment_constructors.
+
+    intros until c2'; intros szeq1 lec.
+    suff: 0 = size c2; [| rewrite szeq1; eapply le_ctx_len_eq; by eauto].
+    intro szeq2.
+    symmetry in szeq1; symmetry in szeq2.
+    apply size0nil in szeq1; apply size0nil in szeq2; subst.
+    rewrite !cats0; simpl.
+    by eauto with judgment judgment_constructors.
+    }*)
+
+
+  {
+    intros.
+    repeat match goal with [ H : _ /\ _ |- _] => destruct H end.
+    split.
+    {
+      intros until c; case: c; simpl;
+        intros until c'; case.
+      rewrite !cats0...
+      rewrite -cat_rcons.
+      constructor...
+      1,2:rewrite_matching cat_rcons (rcons c').
+      apply: wf_ctx_suffix; by eauto.
+      apply wf_ctx_suffix in H3.
+      by inversion H3.
+      rewrite id_subst_identity.
+      rewrite id_subst_size.
+      constructor...
+      eapply H...
+      rewrite_matching cat_rcons (rcons c').
+      apply wf_ctx_suffix in H3.
+      by inversion H3.
+      rewrite cat_rcons.
+      by apply is_nth_level_cat.
+    }
+    {
+      intros until c1; case:c1;
+        intros until c2; case: c2; simpl;
+          intros until c2'; rewrite ?cats0.
+      constructor...
+      all: case; intro_to le_ctx; inversion; subst.
+      
+      
+      
+      Search "_suffix".
+        
+        
+  
+  apply: mono_ctx_ind.
+  {
+    intros.
+    inversion H8;subst.
+    erewrite <-(@id_subst_identity t1 (size c1)).
+    erewrite <-(@id_subst_identity t2 (size c2)).
+    apply: le_sort_subst...
+    1,2:rewrite id_subst_identity...
+    inversion H15;subst; inversion H16; subst.
+    2: apply: le_sort_by; try by apply H7...
+    
+
+(* manual induction scheme *)
+Lemma nat2_mut_ind (Pl Pr : nat -> Prop)
+  : Pl 0 ->
+    Pr 0 ->
+    (forall n, Pl n -> Pr n -> Pr (n.+1)) ->
+    (forall n, Pr n -> Pl n) ->
+    (forall n, Pl n /\ Pr n).
+Proof using .
+  move => Pl0 Pr0 Plr Prl.
+  elim; auto.
+  move => n; case => Pln Prn; split; auto.
+Qed.
+
+    
+    Search _ id_subst.
+
+Lemma mono_ctx
+  : (forall (l : lang) c1 c2 t1' t2',
+        le_sort l c1 c2 t1' t2' ->
+        forall c1' c2', le_ctx l (c2' ++ c2) (c1' ++ c1) ->
+                        le_sort l (c1' ++ c1) (c2' ++ c2) t1' t2')
+    /\ (forall (l : lang) c1 c2 s1 s2 c1' c2',
+           le_subst l c1 c2 s1 s2 c1' c2' ->
+        forall c1'' c2'', le_ctx l (c2'' ++ c2) (c1'' ++ c1) ->
+                           le_subst l (c1'' ++ c1) (c2'' ++ c2) s1 s2 c1' c2')
+    /\ (forall (l : lang) c1 c2 e1 e2 t1 t2,
+           le_term l c1 c2 e1 e2 t1 t2 ->
+        forall c1' c2', le_ctx l (c2' ++ c2) (c1' ++ c1) ->
+                           le_term l c1' c2' e1 e2 t1 t2)
+    /\ (forall (l : lang) c t,
+           wf_sort l c t -> 
+           forall c', wf_ctx l (c' ++ c) -> wf_sort l (c' ++ c) t)
+    /\ (forall (l : lang) c s c',
+           wf_subst l c s c' -> 
+           forall c'', wf_ctx l (c'' ++ c) ->
+                          wf_subst l (c'' ++ c) s c')
+    /\ (forall (l : lang) c e t,
+           wf_term l c e t -> 
+           forall c', wf_ctx l (c' ++ c) ->
+                        wf_term l (c' ++ c) e t).
+Proof with eauto with judgment using .
+  apply: mono_ctx_ind.
+  {
+    intros.
+    erewrite <-(@id_subst_identity t1 (size c1)).
+    erewrite <-(@id_subst_identity t2 (size c2)).
+    apply: le_sort_subst...
+    1,2:rewrite id_subst_identity...
+    Search _ id_subst.
+    Lemma wf_id_subst_ctx c c' : wf_subst (c' ++ c) (id_subst (size c)) c. 
+  
 
 Lemma lift_subst_le_ctxs l c1' c2' c1 c2 c3 c4
   : le_ctx_square l c1 c2 c1' c2' ->

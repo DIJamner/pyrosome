@@ -95,12 +95,9 @@ Definition ctx := list exp.
 
 Definition subst := seq exp.
 
-Fixpoint var_lookup (c : subst) (n : nat) : exp :=
-  match c , n with
-  | [::], _ => var n (*keep the var if no substitution needed*)
-  | e :: _, 0 => e (*use the element if one is found *)
-  | _ :: c', n'.+1 => var_lookup c' n' (*otherwise decrease both and continue *)
-  end.
+Definition var_lookup (c : subst) (n : nat) : exp :=
+  nth_level (var n) c n.
+Global Transparent var_lookup.
 
 Fixpoint exp_var_map (f : nat -> exp) (e : exp) : exp :=
   match e with
@@ -117,7 +114,7 @@ Definition subst_cmp s1 s2 : subst := map (exp_subst s2) s1.
 
 
 Lemma con_subst_cmp n s s0 : (con n s0)[/s/] = con n (subst_cmp s0 s).
-Proof.
+Proof using .
   unfold exp_subst.
   simpl.
   f_equal.
@@ -138,30 +135,15 @@ Fixpoint shift_subst (sz start : nat) : subst :=
 
 (*TODO: this is in the library. Why can't I find it? *)
 Lemma sub_0_r : forall n, n - 0 = n.
-Proof.
+Proof using .
   elim; done.
 Qed.  
 
-Lemma lookup_ge : forall c n, length c <= n -> var_lookup c n = var (n - size c).
-Proof.
-  elim.
-  move => n _;
-  rewrite sub_0_r //=.
-  move => x l IH; elim.
-  rewrite ltn0; done.
-  move => n _.
-  apply: IH.
+Lemma lookup_ge : forall c n, ~n < size c -> var_lookup c n = var n.
+Proof using .
+  intros; unfold var_lookup; unfold nth_level.
+  case nlt: (n < size c) => //=.
 Qed.
-
-Lemma lookup_nth : forall c n, var_lookup c n = nth (var (n - size c)) c n.
-Proof.
-  elim.
-  move => n;
-  rewrite sub_0_r nth_nil //=.
-  move => x l IH; elim;[done|].
-  move => n _;
-  apply: IH.
-Qed.  
 
 (*TODO*)
 (* Well-scoped languages
@@ -189,7 +171,7 @@ Definition ws_subst n : subst -> bool :=
 
 
 Lemma unandb : forall (a b : bool) (C : Prop), (a -> b -> C) <-> (a && b -> C).
-Proof.
+Proof using .
   move => a b C; split.
   - move => CF ab.
     apply andb_prop in ab.
@@ -202,7 +184,7 @@ Qed.
 
 Lemma ws_nth : forall n (s : subst) e n',
     ws_subst n s -> ws_exp n e -> ws_exp n (nth e s n').
-Proof.
+Proof using .
   move => n ; elim.
   - move => e; elim; [done|].
     move => n' IH //=.
@@ -220,30 +202,84 @@ Proof.
 Qed.
 
 Lemma ws_empty : forall n, ws_subst n [::].
-Proof.
+Proof using .
   move => n.
   rewrite /ws_subst //=.
 Qed.
 
+Lemma sub_n_n n : n - n = 0.
+Proof using .
+  elim: n => //=.
+Qed.
+
+Lemma ltn_lte a b : a < b -> a <= b.
+Proof.
+Admitted.
+
+Lemma sub_flip a b c : a < b -> c = b - a.+1 -> a = b -c.+1.
+Proof using .
+  move => alt ->.
+  clear c.
+  rewrite subnSK //.
+  rewrite subKn //.
+  auto using ltn_lte.
+Qed.
+
+
+Lemma level_ind sz m (R: nat -> nat -> Prop)
+  : (forall n, n < sz -> R n (sz - n.+1)) -> m < sz -> R (sz - m.+1) m.
+Proof using .
+  intros.
+  remember (sz - m.+1) as n.
+  move: (sub_flip H0 Heqn) ->.
+  apply: H.
+  rewrite Heqn; clear Heqn.
+  case: sz H0 => //= sz.
+  rewrite !subSS.
+  intros.
+  apply: sub_ord_proof.
+Qed.
+
+
+(* TODO: use above principle *)
 Lemma ws_lookup : forall n (s : subst) (n' : nat),
     ws_subst n s -> n' < size s -> ws_exp n (var_lookup s n').
-Proof.  
+Proof using .  
   move => n.
-  elim.  
-  - elim => //=.
-  - move => e l IH n'.
-    rewrite /ws_subst => //=.
-    (repeat case /andP) => wse sl.
-    elim: n' => [ //= | n' _ n'lt].
-    apply: IH; auto.
+  unfold var_lookup;
+    unfold nth_level.
+  intros.
+  pose p := H0; move: p; case: (n'< size s) => //= _.
+  remember (size s - n'.+1) as y.
+  suff: n' = size s - y.+1.
+  move => n'eq.
+  suff: y < size s.
+  {
+    move: n'eq => -> ylt.
+    clear Heqy H0 n'.
+    elim: y s ylt H;
+      intros until s;
+      case: s => //= e s nlt /andP [wse wss] //=.
+    rewrite subSS.
+    suff: n0 < size s; auto.
+  }
+  move: H0 Heqy n'eq.
+  generalize (size s) as z.
+  case => //= n0.
+  rewrite !subSS.
+  intros.
+  rewrite Heqy.
+  apply: sub_ord_proof.
+  auto using sub_flip.
 Qed.
+
 
 Theorem subst_preserves_ws
   : forall e (s : subst) (csz : nat),
     ws_exp (size s) e ->
     ws_subst csz s ->
     ws_exp csz (exp_subst s e).
-Proof.
+Proof using .
   move => e s c wse.
   move => wss.
   pose (wss' := wss).
@@ -262,7 +298,7 @@ Qed.
 
 
 Lemma shiftz (e : exp) : e^!0 = e.
-Proof.
+Proof using .
   elim: e; simpl; auto.
   intros; simpl.
   unfold exp_shift.
@@ -283,7 +319,7 @@ Qed.
 
 Lemma shift1_preserves_ws (e : exp) (n : nat)
   : ws_exp n e -> ws_exp (n.+1) e^!1. 
-Proof.
+Proof using .
   elim: e n.
   - simpl; auto.      
   - simpl.
@@ -413,9 +449,11 @@ Proof.
     auto.
 Qed.
 
+(* TODO: needed?
 Lemma lookup_in_shift_subst n' n m
   : n' < n -> var_lookup (shift_subst n m) n' = var (n' + m).
 Proof.
+  Print shift_subst.
   elim: n' n m.
   - case => //.
   - move => n IH.
@@ -455,7 +493,7 @@ Proof.
     eapply lookup_in_shift_subst.
     exact n1lt.
     done.
-Qed.
+Qed.*)
 
 (* TODO: is this true? if so, prove
 Lemma id_subst {p} (e : exp p) : forall n m, e [/shift_subst n 0/] = e [/shift_subst m 0/].
@@ -520,6 +558,8 @@ Proof.
   move => a l ->.
   f_equal; move: constr_shift_shift; auto.
 Qed.
+
+(* TODO: is this needed? if so, prove
 Lemma constr_shift_subst_comm e s n : e[/s/]%!n = e%!n[/s::%!n/].
 Proof.
   elim: e s n.
@@ -536,6 +576,7 @@ Proof.
     case; intros.
     f_equal; eauto.
 Qed.
+*)
 
 Fixpoint eq_exp e1 e2 {struct e1} : bool :=
   match e1, e2 with
@@ -557,7 +598,7 @@ Lemma exp2_ind (P : exp -> exp -> Set)
         P (con c1 l1) (con c2 l2) ->
         P (con c1 (a1::l1)) (con c2 (a2::l2))) ->
     forall e1 e2, P e1 e2.
-Proof.
+Proof using .
   intro_to exp.
   elim.
   - intro_to exp; case; auto.
@@ -788,7 +829,7 @@ Lemma
     Q [::] ->
     (forall e s, P e -> Q s -> Q (e :: s)) ->
     forall e, P e.
-Proof.
+Proof using .
   intros.
     elim: e; auto.
     move=> n.
@@ -813,7 +854,7 @@ Lemma
     Q [::] ->
     (forall e s, P e -> Q s -> Q (e :: s)) ->
     (forall e, P e) /\ (forall s, Q s).
-Proof.
+Proof using .
   intros.
   assert ( alleP : forall e, P e).
   apply (@exp_subst_ind' P Q); auto.
@@ -824,18 +865,33 @@ Proof.
   eauto.
 Qed.
 
+Lemma subst_cmp_size s1 s2 : size (subst_cmp s1 s2) = size s1.
+Proof using .
+  elim: s1; simpl; auto.
+Qed.
+
+Lemma exp_var_map_nth s' m s n
+  : exp_var_map (var_lookup s') (nth (var m) s n)
+    = nth (var_lookup s' m) (subst_cmp s s') n.
+Proof using .
+  elim: n s; intros until s; case: s => //=.
+Qed.
+
 Lemma var_lookup_cmp n s1 s2 : n < size s1 ->
                                var_lookup (subst_cmp s1 s2) n = exp_var_map (var_lookup s2) (var_lookup s1 n).
-Proof.
-  elim: s1 s2 n; simpl.
-  {
-    move => s2 n.
-    by rewrite ltn0.
-  }
-  {
-    intros.
-    elim: n H0 s2; auto.
-  }
+Proof using .
+  unfold var_lookup at 1 3; unfold nth_level.
+  rewrite !subst_cmp_size.
+  move => nlt; pose p := nlt; move: p.
+  case: (n < size s1) => //= _.
+  rewrite exp_var_map_nth.
+  move: nlt.
+  rewrite -!(@subst_cmp_size s1 s2) => nlt.
+  apply: set_nth_default.
+  move: nlt.
+  generalize (size (subst_cmp s1 s2)); case =>//.
+  intros; rewrite subSS.
+  apply: sub_ord_proof.
 Qed.
 
 Lemma subst_cmp_assoc'
@@ -868,6 +924,7 @@ Proof using .
     by eapply subst_cmp_assoc'.
 Qed.
 
+(*TODO: needed?
 Fixpoint lift_subst sz n : subst :=
   match sz with
   | 0 => [::]
@@ -893,7 +950,7 @@ Proof using .
     apply: (map_ext' (P := ws_exp sz)); auto; intros.
     apply: (exp_var_map_ext' (m:=sz)); auto; intros.
     by apply: lift_subst_lookup.
-Qed.    
+Qed. 
 
 
 Lemma subst_lift_is_subst sz s n : ws_subst sz s -> s^!!n = subst_cmp s (lift_subst sz n).
@@ -903,10 +960,45 @@ Proof using .
   - move => a l IH n /andP [wsa wsl].
     f_equal; eauto using lift_is_subst.
 Qed.
+*)
 
-Definition id_subst sz := lift_subst sz 0.
+Fixpoint id_subst n : subst :=
+  match n with
+  | 0 => [::]
+  | n'.+1 =>
+    let s' := id_subst n' in
+    (var (size s'))::s'
+  end.
 
-Lemma id_subst_identity e sz : ws_exp sz e -> e[/id_subst sz/] = e.
+Lemma id_subst_size sz : size (id_subst sz) = sz.
 Proof using .
-  intros; rewrite -lift_is_subst ?shiftz; auto.
+  elim: sz => //=.
+  intros; by f_equal.
+Qed.
+
+Lemma id_subst_lookup n sz : var_lookup (id_subst sz) n = var n.
+Proof using .
+  unfold var_lookup.
+  unfold nth_level.
+  rewrite id_subst_size.
+  case nsz: (n < sz) => //.
+  apply (level_ind (R:=fun m n => nth (var n) (id_subst sz) m = var n)); auto.
+  intro m.
+  elim: m n sz nsz; intros until sz; case: sz => //; simpl; intros.
+  - f_equal.
+    rewrite id_subst_size subn1.
+    by rewrite <-pred_Sn.
+  - rewrite !subSS.
+    eauto.
+Qed.    
+
+Lemma id_subst_identity e sz : e[/id_subst sz/] = e.
+Proof using .
+  elim: e sz; intros; unfold exp_subst; simpl; first by apply id_subst_lookup.
+  f_equal.
+  elim: l H => //.
+  simpl.
+  intro_to and.
+  case => [ aeq fld].
+  f_equal; eauto.    
 Qed.  
