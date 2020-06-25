@@ -10,35 +10,26 @@ From excomp Require Import Utils Exp.
 Inductive rule : Type :=
 | sort_rule :  ctx -> rule
 | term_rule :  ctx -> exp -> rule
-| sort_le : ctx -> ctx -> exp -> exp -> rule
-| term_le : ctx -> ctx -> exp -> exp -> exp -> exp -> rule.
+| sort_le : ctx -> exp -> exp -> rule
+| term_le : ctx -> exp -> exp -> exp -> rule.
 
 Definition rule_map (f : exp -> exp) r : rule :=
   match r with
 | sort_rule c => sort_rule (List.map f c)
 | term_rule c t => term_rule (List.map f c) (f t)
-| sort_le c1 c2 t1 t2 =>
-  sort_le (List.map f c1) (List.map f c2) (f t1) (f t2)
-| term_le  c1 c2 e1 e2 t1 t2 =>
-  term_le (List.map f c1) (List.map f c2)
-          (f e1) (f e2)
-          (f t1) (f t2)
+| sort_le c t1 t2 =>
+  sort_le (List.map f c) (f t1) (f t2)
+| term_le  c e1 e2 t =>
+  term_le (List.map f c) (f e1) (f e2) (f t)
   end.
 
 Bind Scope rule_scope with rule.
 Delimit Scope rule_scope with rule.
 Open Scope rule_scope.
-Notation "{< c1 <# c2 |- s1 <# s2 }" := (sort_le c1 c2 s1 s2) (at level 80) : rule_scope.
-Notation "{< c |- s1 <# s2 }" := (sort_le c c s1 s2) (at level 80):rule_scope.
+Notation "{< c |- s1 <# s2 }" := (sort_le c s1 s2) (at level 80) : rule_scope.
 Notation "{< c |- s }" := (sort_le c c s s) (at level 80):rule_scope.
-Notation "{< c1 <# c2 |- e1 <# e2 .: s1 <# s2 }" :=
-  (term_le c1 c2 e1 e2 s1 s2) (at level 80) : rule_scope.
-Notation "{< c |- e1 <# e2 .: s1 <# s2 }" :=
-  (term_le c c e1 e2 s1 s2) (at level 80) : rule_scope.
 Notation "{< c |- e1 <# e2 .: s }" :=
-  ({< c |- e1 <# e2 .: s <# s}) (at level 80) : rule_scope.
-Notation "{< c |- e .: s }" := 
-  ({< c |- e <# e.: s}) (at level 80) : rule_scope.
+  (term_le c e1 e2 s) (at level 80) : rule_scope.
 Notation "{| c |- 'sort' }" := 
   (sort_rule c) (at level 80) : rule_scope.
 Notation "{| c |- s }" := 
@@ -50,18 +41,15 @@ Definition ws_rule (r : rule) : bool :=
   match r with
   | {| c |- sort} => ws_ctx c
   | {| c |- t} => ws_ctx c && ws_exp (size c) t
-  | {< c1 <# c2 |- s1 <# s2} =>
-    ws_ctx c1
-           && ws_exp (size c1) s1
-           && ws_ctx c2
-           && ws_exp (size c2) s2
-  | {< c1 <# c2 |- e1 <# e2 .: s1 <# s2} =>
-    ws_ctx c1
-           && ws_exp (size c1) e1
-           && ws_exp (size c1) s1
-           && ws_ctx c2
-           && ws_exp (size c2) e2
-           && ws_exp (size c2) s2
+  | {< c |- s1 <# s2} =>
+    ws_ctx c
+           && ws_exp (size c) s1
+           && ws_exp (size c) s2
+  | {< c |- e1 <# e2 .: s} =>
+    ws_ctx c
+           && ws_exp (size c) e1
+           && ws_exp (size c) e2
+           && ws_exp (size c) s
   end.
 
 Definition ws_lang : lang -> bool := List.forallb ws_rule.
@@ -70,15 +58,15 @@ Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
   | {| c1 |- sort }, {| c2 |- sort } => c1 == c2
   | {| c1 |- t1 }, {| c2 |- t2 } => (c1 == c2) && (t1 == t2)
-  | {< c1 <# c2 |- t1 <# t2 },{< c1' <# c2' |- t1' <# t2' } =>
-    (c1 == c1') && (t1 == t1') && (c2 == c2') && (t2 == t2')
-  | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 },{< c1' <# c2' |- e1' <# e2' .: t1' <# t2' } =>
-    (c1 == c1') && (e1 == e1') && (t1 == t1') && (c2 == c2')  && (e2 == e2') && (t2 == t2')
+  | {< c |- t1 <# t2 },{< c' |- t1' <# t2' } =>
+    (c == c') && (t1 == t1') && (t2 == t2')
+  | {< c |- e1 <# e2 .: t },{< c' |- e1' <# e2' .: t' } =>
+    (c == c') && (e1 == e1') && (e2 == e2') && (t == t')
   | _,_ => false
   end.
 
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
-Proof.
+Proof using .
   case: r1 r2; intro_to rule; case; intros; simpl; eauto;
   try match goal with
   | |- reflect _ false => constructor; by inversion
@@ -102,27 +90,21 @@ Proof.
     constructor.
     case  => /eqP.
       by rewrite and1.
-  - case ccs: (c == c1); simpl.
+  - case ccs: (c == c0); simpl.
     case ecs: (e == e1); simpl.
-    case c0cs: (c0 == c2); simpl.
     case e0cs: (e0 == e2); simpl.
     constructor; f_equal; by apply /eqP.
-    constructor; case => _ _ _ /eqP; by rewrite e0cs.
-    constructor; case => _ /eqP; by rewrite c0cs.
-    constructor; case => _ _ /eqP; by rewrite ecs.
+    constructor; case => _ _ /eqP; by rewrite e0cs.
+    constructor; case => _ /eqP; by rewrite ecs.
     constructor; case => /eqP; by rewrite ccs.
-  - case ccs: (c == c1); simpl.
-    case ecs: (e == e3); simpl.
-    case e1cs: (e1 == e5); simpl.
-    case c0cs: (c0 == c2); simpl.
-    case e0cs: (e0 == e4); simpl.
-    case e2cs: (e2 == e6); simpl.
+  - case ccs: (c == c0); simpl.
+    case ecs: (e == e2); simpl.
+    case e0cs: (e0 == e3); simpl.
+    case e1cs: (e1 == e4); simpl.
     constructor; f_equal; by apply /eqP.
-    constructor; case => _ _ _ _ _ /eqP; by rewrite e2cs.
-    constructor; case => _ _ _ /eqP; by rewrite e0cs.
-    constructor; case => _ /eqP; by rewrite c0cs.
-    constructor; case => _ _ _ _ /eqP; by rewrite e1cs.
-    constructor; case => _ _ /eqP; by rewrite ecs.
+    constructor; case => _ _ _ /eqP; by rewrite e1cs.
+    constructor; case => _ _ /eqP; by rewrite e0cs.
+    constructor; case => _ /eqP; by rewrite ecs.
     constructor; case => /eqP; by rewrite ccs.
 Qed.
 
@@ -130,12 +112,13 @@ Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
 
+(* TODO: need shifts?
 Definition rule_constr_shift n r :=
   match r with
   | {| c |- sort } => {| map (constr_shift n) c |- sort}
   | {| c |- t } => {| map (constr_shift n) c |- constr_shift n t}
-  | {< c1 <# c2 |- t1 <# t2 } =>
-    {< map (constr_shift n) c1 <# map (constr_shift n) c2
+  | {< c |- t1 <# t2 } =>
+    {< map (constr_shift n) c
      |- constr_shift n t1 <# constr_shift n t2 }
   | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } =>
     {< map (constr_shift n) c1 <# map (constr_shift n) c2
@@ -190,3 +173,4 @@ Proof.
   intro_to (@eq rule); inversion; f_equal;
   move: constr_shift_inj seq_constr_shift_inj; eauto. 
 Qed.  
+*)
