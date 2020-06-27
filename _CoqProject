@@ -2,8 +2,7 @@
 src/Utils.v
 src/Exp.v
 src/Rule.v
-src/CoreDefs.v
 src/Core.v
-src/Named.v
 src/EasyWF.v
+src/Named.v
 src/langs/Subst.v
