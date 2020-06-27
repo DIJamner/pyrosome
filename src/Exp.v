@@ -213,8 +213,9 @@ Proof using .
 Qed.
 
 Lemma ltn_lte a b : a < b -> a <= b.
-Proof.
-Admitted.
+Proof using .
+  elim: b a; simpl; auto.
+Qed.  
 
 Lemma sub_flip a b c : a < b -> c = b - a.+1 -> a = b -c.+1.
 Proof using .
