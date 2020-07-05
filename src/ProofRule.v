@@ -110,5 +110,5 @@ Qed.
 
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
-Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
+Canonical proof_rule_eqType := @Equality.Pack rule rule_eqMixin.
 

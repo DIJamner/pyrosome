@@ -67,6 +67,7 @@ Notation "[ n | ]" := (con n [::]).
 Notation "[ n | e ]" := (con n [:: e]).
 Notation "[ n | e ; .. ; e' ]" := (con n (cons e .. (cons e' [::]) ..)).
 
+(* TODO: what's the right thing to do? nee intuition from denotations, compilers
 Variant constr (T : Set) : Set :=
 | ccon : nat -> seq T -> constr T.
 
@@ -74,7 +75,7 @@ Notation "[{ T } n | ]" := (ccon T n [::]).
 Notation "[{ T } n | e ]" := (ccon T n [:: e]).
 Notation "[{ T } n | e ; .. ; e' ]" := (ccon T n (cons e .. (cons e' [::]) ..)).
 
-Definition Alg := constr exp -> exp.
+Definition Alg T := constr T -> T.
 
 Fixpoint alg_fn (a : Alg) (e : exp) : exp :=
   match e with
@@ -86,6 +87,7 @@ Definition id_alg : Alg := fun ce =>
   match ce with
   | ccon n l => con n l
   end.
+*)
 
 (* TODO: uniform inheritance condition? this feels like it would be nice to have
 Coercion id_alg : constr >-> exp. *)

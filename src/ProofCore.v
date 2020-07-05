@@ -5,7 +5,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils ProofExp ProofRule.
-From excomp Require Exp Core.
+From excomp Require Exp Core Rule.
 
 
 Inductive wf_sort : lang -> ctx -> exp -> Prop :=
@@ -196,9 +196,11 @@ with wf_lang : lang -> Prop :=
 | wf_lang_nil : wf_lang [::]
 | wf_lang_cons : forall l r, wf_lang l -> wf_rule l r -> wf_lang (r::l).
 
+
+(* TODOTODOTODOTODO: change hint dbs?*)
 (* database of constructor hints. In general, this should be avoided 
    in favor of the databse below of related lemmas with fewer hypotheses *)
-Create HintDb judgment_constructors discriminated.
+(*Create HintDb judgment_constructors discriminated.*)
 Hint Constructors wf_sort le_sort
      wf_term le_term
      wf_subst le_subst
@@ -206,7 +208,7 @@ Hint Constructors wf_sort le_sort
 
 
 (* build a database of presuppositions and judgment facts *)
-Create HintDb judgment discriminated.
+(*Create HintDb judgment discriminated.*)
 
 (* Presuppositions of language well-formedness *)
 Lemma wf_sort_lang l c t : wf_sort l c t -> wf_lang l.
@@ -327,103 +329,303 @@ Proof using . by inversion. Qed.
 Hint Immediate le_subst_subst_r : judgment.
 
 
-(* monotonicity of judgments under language extension *)
+Scheme le_sort_ind' := Minimality for le_sort Sort Prop
+  with le_subst_ind' := Minimality for le_subst Sort Prop
+  with le_term_ind' := Minimality for le_term Sort Prop
+  with wf_sort_ind' := Minimality for wf_sort Sort Prop
+  with wf_subst_ind' := Minimality for wf_subst Sort Prop
+  with wf_term_ind' := Minimality for wf_term Sort Prop
+  with wf_ctx_ind' := Minimality for wf_ctx Sort Prop
+  with wf_rule_ind' := Minimality for wf_rule Sort Prop
+  with wf_lang_ind' := Minimality for wf_lang Sort Prop.
 
-(* Tactics *)
+Combined Scheme ind from
+         le_sort_ind',
+         le_subst_ind',
+         le_term_ind',
+         wf_sort_ind',
+         wf_subst_ind',
+         wf_term_ind',
+         wf_ctx_ind',
+         wf_rule_ind',
+         wf_lang_ind'.
 
-Ltac intro_term :=
-  match goal with
-  | [|- lang _ -> _] => intro
-  | [|- seq (rule _) -> _] => intro
-  | [|- exp _ -> _] => intro
-  | [|- ctx _ -> _] => intro
-  | [|- seq (exp _) -> _] => intro
-  | [|- rule _ -> _] => intro
-  | [|- subst _ -> _] => intro
+(* TODO: move to exp, rule *)
+Fixpoint erase e : Exp.exp :=
+  match e with
+  | var n => Exp.var n
+  | con n s => Exp.con n (map erase s)
+  | conv _ e => erase e
   end.
-  
-Ltac solve_wf_with t :=
-  solve [ (constructor + idtac); apply: t; eauto
-        | intro_term; solve_wf_with t
-        | move => _; solve_wf_with t].
+
+Definition erase_rule r : Rule.rule :=
+  match r with
+  | sort_rule c => Rule.sort_rule (map erase c)
+  | term_rule c t => Rule.term_rule (map erase c) (erase t)
+  | sort_le c t1 t2 => Rule.sort_le (map erase c) (erase t1) (erase t2)
+  | term_le c e1 e2 t => Rule.term_le (map erase c) (erase e1) (erase e2) (erase t)
+  end.
+
+(*TODO: add this in the right place *)
+Hint Resolve is_nth_level_in : judgment.
 
 
-Scheme le_sort_mono_ind := Minimality for le_sort Sort Prop
-  with le_subst_mono_ind := Minimality for le_subst Sort Prop
-  with le_term_mono_ind := Minimality for le_term Sort Prop
-  with wf_sort_mono_ind := Minimality for wf_sort Sort Prop
-  with wf_subst_mono_ind := Minimality for wf_subst Sort Prop
-  with wf_term_mono_ind := Minimality for wf_term Sort Prop
-  with wf_ctx_mono_ind := Minimality for wf_ctx Sort Prop.
-
-Combined Scheme mono_ind from
-         le_sort_mono_ind,
-         le_subst_mono_ind,
-         le_term_mono_ind,
-         wf_sort_mono_ind,
-         wf_subst_mono_ind,
-         wf_term_mono_ind,
-         wf_ctx_mono_ind.
-
-(*TODO: needed?
-Ltac expand_rule_shift :=
-  match goal with
-  | |- context [ {| ?c ::%! 1 |- sort}] =>
-    change ({| ?c ::%! 1 |- sort})
-      with ({| c |- sort})%%!1
-  | |- context [ {| ?c ::%! 1 |- ?t %! 1}] =>
-    change ({| ?c ::%! 1 |- ?t %! 1})
-      with ({| c |- t})%%!1
-  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1}] =>
-    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?t1 %! 1 <# ?t2 %! 1})
-      with ({<c1 <# c2 |- t1 <# t2})%%!1
-  | |- context [ {<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1}] =>
-    change ({<?c1 ::%! 1 <# ?c2 ::%! 1 |- ?e1%!1 <# ?e2%!1 .: ?t1 %! 1 <# ?t2 %! 1})
-      with ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2})%%!1
-  end. *)
-
-
-Lemma is_nth_level_cons {A : eqType} l n t (r : A) : is_nth_level l n t -> is_nth_level (r::l) n t.
-Proof using .  
-  unfold is_nth_level.
-  move /andP => [nlts] /eqP <-.
-  simpl.
-  apply /andP; split.
-  auto.
-  rewrite subSn; auto.
-Qed.
-
-Lemma mono r
-  : (forall (l : lang) c t1 t2,
-        le_sort l c t1 t2 -> wf_rule l r ->
-        le_sort (r::l) c t1 t2)
-    /\ (forall (l : lang) c s1 s2 c',
-           le_subst l c s1 s2 c' ->
-           wf_rule l r ->
-           le_subst (r::l) c s1 s2 c')
-    /\ (forall (l : lang) c e1 e2 t,
-           le_term l c e1 e2 t ->
-           wf_rule l r ->
-           le_term (r::l) c e1 e2 t)
-    /\ (forall (l : lang) c t,
-           wf_sort l c t -> wf_rule l r -> wf_sort (r::l) c t)
-    /\ (forall (l : lang) c s c',
-           wf_subst l c s c' -> wf_rule l r -> wf_subst (r::l) c s c')
-    /\ (forall (l : lang) c e t,
-           wf_term l c e t -> wf_rule l r ->  wf_term (r::l) c e t)
-    /\ (forall (l : lang) c,
-           wf_ctx l c -> wf_rule l r ->  wf_ctx (r::l) c).
+Lemma nth_error_map {A B : Type} (f : A -> B) l n e
+  : List.nth_error l n = Some e -> List.nth_error (map f l) n = Some (f e).
 Proof using .
-  apply: mono_ind; intros; eauto with judgment judgment_constructors.
-  all: try solve[ constructor; move: rule_in_mono; eauto with judgment_constructors
-                | rewrite !constr_shift_subst_comm; eauto with judgment_constructors
-                | simpl; constructor; eauto with judgment_constructors;
-                  rewrite -!constr_shift_subst_comm; auto with judgment_constructors
-                | apply: le_term_conv; eauto with judgment_constructors].
-  all: try by econstructor; eauto with judgment_constructors; rewrite in_cons; apply /orP; auto.
-  all: try by econstructor; eauto with judgment_constructors; apply is_nth_level_cons.
+  elim: n l; intros until l; case: l; simpl; try easy.
+  intros a _; case => -> //.
 Qed.
-(* TODO: add as hint? *)
+  
+Lemma is_nth_level_erase l n r : is_nth_level l n r -> @is_nth_level Rule.rule_eqType (map erase_rule l) n (erase_rule r).
+Proof using .
+  unfold is_nth_level.
+  rewrite size_map.
+  move /andP => [nlt] /eqP.
+  rewrite nlt; simpl.
+  intros; apply /eqP.
+  by apply: nth_error_map.
+Qed.
+
+
+Lemma is_nth_level_erase_var c n t : is_nth_level c n t -> @is_nth_level Exp.exp_eqType (map erase c) n (erase t).
+Proof using .
+  unfold is_nth_level.
+  rewrite size_map.
+  move /andP => [nlt] /eqP.
+  rewrite nlt; simpl.
+  intros; apply /eqP.
+  by apply: nth_error_map.
+Qed.
+
+
+Lemma nth_level_fn {A B : Type} (f : A -> B) d l n : nth_level (f d) (map f l) n = f (nth_level d l n).
+Proof using .
+  unfold nth_level.
+  rewrite size_map.
+  case szn : (n < size l); auto.
+  apply: nth_map.
+  case: (size l) szn; try easy.
+  intros; compute;
+  apply sub_ord_proof.
+Qed.          
+
+Lemma erase_subst_comm e s : (erase e[/s/]) = Exp.exp_subst (map erase s) (erase e).
+Proof.
+  elim: e; simpl; auto.
+  {
+    intro n.
+    unfold Exp.exp_subst.
+    unfold exp_subst.
+    simpl.
+    unfold Exp.var_lookup; unfold var_lookup.
+    change (Exp.var n) with (erase (var n)).
+    symmetry.
+    by apply: nth_level_fn.
+  }
+  {
+    intro n; elim; simpl; auto.
+    intros.
+    inversion H0; subst.
+    unfold Exp.exp_subst; simpl.
+    f_equal.
+    f_equal; eauto.
+    pose p:= H H4.
+    by case: p.
+  }
+Qed.
+
+Lemma proof_impl_core
+  : (forall (l : lang) pf c t1 t2,
+        le_sort l pf c t1 t2 ->
+        Core.le_sort (map erase_rule l) (map erase c) (erase t1) (erase t2))
+    /\ (forall (l : lang) pfs c s1 s2 c',
+           le_subst l pfs c s1 s2 c' ->
+           Core.le_subst (map erase_rule l) (map erase c) (map erase s1) (map erase s2) (map erase c'))
+    /\ (forall (l : lang) pf c e1 e2 t,
+           le_term l pf c e1 e2 t ->
+           Core.le_term (map erase_rule l) (map erase c) (erase e1) (erase e2) (erase t))
+    /\ (forall (l : lang) c t,
+           wf_sort l c t -> Core.wf_sort (map erase_rule l) (map erase c) (erase t))
+    /\ (forall (l : lang) c s c',
+           wf_subst l c s c' -> Core.wf_subst (map erase_rule l) (map erase c) (map erase s) (map erase c'))
+    /\ (forall (l : lang) c e t,
+           wf_term l c e t -> Core.wf_term (map erase_rule l) (map erase c) (erase e) (erase t))
+    /\ (forall (l : lang) c,
+           wf_ctx l c -> Core.wf_ctx (map erase_rule l) (map erase c))
+    /\ (forall (l : lang) r,
+           wf_rule l r -> Core.wf_rule (map erase_rule l) (erase_rule r))
+    /\ (forall (l : lang),
+           wf_lang l -> Core.wf_lang (map erase_rule l)).
+Proof using .
+  apply: ind; intros; rewrite ?erase_subst_comm; eauto with judgment.
+  {
+    constructor; eauto with judgment.
+    apply: is_nth_level_in.
+    change (Rule.sort_le (map erase c) (erase t1) (erase t2)) with (erase_rule (sort_le c t1 t2)).
+    eapply is_nth_level_erase; eauto.
+  }
+  {
+    simpl; constructor; eauto with judgment.
+    rewrite -erase_subst_comm.
+    done.    
+  }
+  {
+    constructor; eauto with judgment.
+    apply: is_nth_level_in.
+    change (Rule.term_le (map erase c) (erase e1) (erase e2) (erase t)) with (erase_rule (term_le c e1 e2 t)).
+    eapply is_nth_level_erase; eauto. 
+  }
+  {
+    simpl; econstructor; eauto with judgment.
+    change (Rule.sort_rule (map erase c')) with (erase_rule (sort_rule c')).
+    eapply is_nth_level_erase; eauto. 
+  }
+  {
+    simpl; econstructor; eauto with judgment.
+    rewrite -erase_subst_comm.
+    done.    
+  }
+  {
+    simpl; econstructor; eauto with judgment.
+    rewrite -erase_subst_comm.
+    done.
+    change (Rule.term_rule (map erase c') (erase t)) with (erase_rule (term_rule c' t)).
+    eapply is_nth_level_erase; eauto.
+  }
+  {
+    simpl.
+    eapply Core.wf_term_var; eauto with judgment.
+    eapply is_nth_level_erase_var; eauto.
+  }
+Qed.
+
+Lemma in_ListIn : forall (A : eqType) (x : A) (l : seq A), x \in l -> List.In x l.
+  intros until l; elim: l => //=.
+  intros a l IH.
+  rewrite in_cons; case /orP.
+  - move /eqP ->; tauto.
+  - move /IH; tauto.
+Qed.    
+
+Lemma in_is_nth_level {A : eqType} (a : A) (l : seq A) : a \in l -> exists n, is_nth_level l n a.
+Proof.
+  unfold is_nth_level.
+  move /in_ListIn => lin.
+  apply List.In_nth_error in lin.
+  destruct lin.
+  remember (size l - x.+1) as n.
+  exists n.
+  case nlt : (n < size l); simpl.
+  suff: (x < size l).
+  move => xlt.
+  move: (sub_flip xlt Heqn).
+  move <-; apply /eqP; auto.
+  admit.
+  admit.
+Admitted.
+
+Lemma core_impl_proof
+  : (forall l c t1 t2,
+        Core.le_sort l c t1 t2 ->
+        exists lp pf cp t1p t2p, le_sort lp pf cp t1p t2p
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ t1 = erase t1p
+                         /\ t2 = erase t2p)
+    /\ (forall l c s1 s2 c',
+           Core.le_subst l c s1 s2 c' ->
+           exists lp pfs cp s1p s2p c'p, le_subst lp pfs cp s1p s2p c'p
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ s1 = map erase s1p
+                         /\ s2 = map erase s2p
+                         /\ c' = map erase c'p)
+    /\ (forall l c e1 e2 t,
+           Core.le_term l c e1 e2 t ->
+           exists lp pf cp e1p e2p tp, le_term lp pf cp e1p e2p tp
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ e1 = erase e1p
+                         /\ e2 = erase e2p
+                         /\ t = erase tp)
+    /\ (forall l c t,
+           Core.wf_sort l c t ->
+           exists lp cp tp, wf_sort lp cp tp
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ t = erase tp)
+    /\ (forall l c s c',
+           Core.wf_subst l c s c' ->
+           exists lp cp sp c'p, wf_subst lp cp sp c'p
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ s = map erase sp
+                         /\ c' = map erase c'p)
+    /\ (forall l c e t,
+           Core.wf_term l c e t ->
+           exists lp cp ep tp, wf_term lp cp ep tp
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp
+                         /\ e = erase ep
+                         /\ t = erase tp)
+    /\ (forall l c,
+           Core.wf_ctx l c ->
+           exists lp cp, wf_ctx lp cp
+                         /\ l = map erase_rule lp
+                         /\ c = map erase cp)
+    /\ (forall l r,
+           Core.wf_rule l r ->
+           exists lp rp, wf_rule lp rp
+                         /\ l = map erase_rule lp
+                         /\ r = erase_rule rp)
+    /\ (forall (l : Rule.lang),
+           Core.wf_lang l ->
+           exists lp, wf_lang lp /\ l = map erase_rule lp).
+Proof using .
+
+Scheme Cle_sort_ind' := Minimality for Core.le_sort Sort Prop
+  with Cle_subst_ind' := Minimality for Core.le_subst Sort Prop
+  with Cle_term_ind' := Minimality for Core.le_term Sort Prop
+  with Cwf_sort_ind' := Minimality for Core.wf_sort Sort Prop
+  with Cwf_subst_ind' := Minimality for Core.wf_subst Sort Prop
+  with Cwf_term_ind' := Minimality for Core.wf_term Sort Prop
+  with Cwf_ctx_ind' := Minimality for Core.wf_ctx Sort Prop
+  with Cwf_rule_ind' := Minimality for Core.wf_rule Sort Prop
+  with Cwf_lang_ind' := Minimality for Core.wf_lang Sort Prop.
+
+Combined Scheme Cind from
+         Cle_sort_ind',
+         Cle_subst_ind',
+         Cle_term_ind',
+         Cwf_sort_ind',
+         Cwf_subst_ind',
+         Cwf_term_ind',
+         Cwf_ctx_ind',
+         Cwf_rule_ind',
+         Cwf_lang_ind'.
+apply: Cind.
+{
+  intros.
+  repeat match goal with
+         | H : exists _, _ |- _ => destruct H
+         | H : _ /\ _ |- _ => destruct H
+         end.
+  match goal with
+  | H : is_true(_ \in _) |- _ => apply in_is_nth_level in H; destruct H
+  end.
+  repeat esplit; eauto with judgment.
+  apply: le_sort_by; eauto with judgment.
+  2:{
+    instantiate (1:=x8).
+    subst.
+    is_nth_level_erase.
+    
+
+    
+  TODO: need that related proof terms are interchangeable?
+
+  Fail.
 
 Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'.
 Proof using .

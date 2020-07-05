@@ -681,7 +681,7 @@ Admitted.
 
 Definition exp_eqMixin := Equality.Mixin eq_expP.
 
-Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
+Canonical proof_exp_eqType := @Equality.Pack exp exp_eqMixin.
 
 
 
