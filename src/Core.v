@@ -42,19 +42,6 @@ Proof.
 Qed.
 
 
-Lemma list_downshift_inj n l l' : Some l' = try_map (constr_downshift n) l -> l' ::%!n = l.
-Proof.
-  elim: l l'; intros until l'; case: l' => //=.
-  - on_bind_do (fun x => case: x => //=).
-    on_bind_do (fun x => case: x => //=).
-  - move => a0 l0.
-    on_bind_do (fun x => case b1: x => //=).
-    on_bind_do (fun x => case b2: x => //=).
-    case => -> ->.
-    simpl; f_equal.
-    by apply: downshift_inj.
-    by apply: H.
-Qed.
 
 (*
 Lemma rule_downshift_inj r r0 n : Some r0 = rule_constr_downshift n r -> r0 %%!n = r.
