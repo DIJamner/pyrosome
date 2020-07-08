@@ -5,5 +5,6 @@ src/Rule.v
 src/Core.v
 src/withproof/ProofExp.v
 src/withproof/ProofRule.v
+src/v2/Syntax.v
 src/withproof/ProofCore.v
 src/langs/Subst.v
