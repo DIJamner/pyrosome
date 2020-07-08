@@ -3,9 +3,7 @@ src/Utils.v
 src/Exp.v
 src/Rule.v
 src/Core.v
-src/ProofExp.v
-src/ProofRule.v
-src/ProofCore.v
-src/EasyWF.v
-src/Named.v
+src/withproof/ProofExp.v
+src/withproof/ProofRule.v
+src/withproof/ProofCore.v
 src/langs/Subst.v
