@@ -500,6 +500,114 @@ Proof using .
   }
 Qed.
 
+Import PartialCompMonad.
+
+(*TODO: implement*)
+Parameter nth_level : forall {A : Type}, seq A -> nat -> option A.
+
+(* TODO: differentiate out of fuel? or just calculate enough? *)
+
+(*TODO: assuming a partial nthlevel fn*)
+(* TODO: termination? use fuel? should be structural if done right *)
+Fixpoint type_wf_sort l c t : partial_comp unit :=
+  do con n s <<- t;
+  do sort_rule c' <%- nth_level l n;
+  do c'' <- type_wf_subst l c s;
+  check (c' == c'')
+with type_le_sort l pf c : partial_comp (exp * exp) :=
+       match pf with
+       | lepf_by n =>
+        (*do _ <- check_wf_lang l; assume lang wf *)
+         do sort_le c' t1 t2 <%- nth_level l n;
+         (*TODO: check should be an option I think*)
+         do _ <- check (c == c');
+         ret (t1, t2)
+       | lepf_subst pf' pfs =>
+         do (s1,s2,c') <- type_le_subst l pfs c;
+         do (t1, t2) <- type_le_sort l pf' c';
+         ret (t1[/s1/], t2[/s2/])
+       | lepf_refl => fail
+       (*TODO
+         | lepf_refl t =>
+         do tt <- type_wf_sort l c t;
+         Some (t, t) *)
+       | lepf_trans p1 p2 =>
+         do (t1, t12) <- type_le_sort l p1 c;
+         do (t12', t2) <- type_le_sort l p2 c;
+         do tt <- check (t12 == t12');
+         ret (t1, t2)
+       | lepf_conv _ _ => fail
+      end
+with type_wf_term l c e {struct e} : partial_comp exp :=
+       match e with
+       | con n s =>
+         do term_rule c' t <%- nth_level l n;
+         do c'' <- type_wf_subst l c s;
+         do tt <- check (c' == c'');
+         ret t[/s/]
+       | conv pf e' =>
+         do t <- type_wf_term l c e';
+         do (t1,t2) <- type_le_sort l pf c;
+         do tt <- check (t == t1);
+         ret t2
+       | var n =>
+         do tt <- type_wf_ctx l c;
+         do e <%- nth_level c n;
+         ret e
+       end
+with type_le_term l pf c {struct pf} : partial_comp (exp * exp * exp) :=
+       match pf with
+       | lepf_by n =>
+        (*do _ <- check_wf_lang l; assume lang wf *)
+         do term_le c' e1 e2 t <%- nth_level l n;
+         do _ <- check (c == c');
+         ret (e1, e2, t)
+       | lepf_subst pf' pfs =>
+         do (s1,s2,c') <- type_le_subst l pfs c;
+         do (e1, e2, t) <- type_le_term l pf' c';
+         ret (e1[/s1/], e2[/s2/], t[/s2/])
+       | lepf_refl => fail
+       (*TODO
+         | lepf_refl t =>
+         do tt <- type_wf_sort l c t;
+         Some (t, t) *)
+       | lepf_trans p1 p2 =>
+         do (e1, e12, t) <- type_le_term l p1 c;
+         do (e12', e2, t') <- type_le_term l p2 c;
+         do tt <- check (e12 == e12');
+         do tt <- check (t == t');
+         ret (e1, e2, t)
+       | lepf_conv pfs pft => 
+         do (t1, t2) <- type_le_sort l pfs c;
+         do (e1, e2, t1') <- type_le_term l pft c;
+         do _ <- check (t1 == t1');
+         ret (e1, e2, t2)
+       end
+(* telescope not easily inferred; has to be a check for now
+TODO: is that good enough? no, for le_subst. *)
+with type_wf_subst l c s : partial_comp ctx :=
+       match s with
+       | [::] => ret [::]
+       | e::s' =>
+         do t <- type_wf_term l c e;
+         (* it's not complete, but this should tc non-dependent telescopes *)
+         do tt <- type_wf_sort l c'' t;
+         do tt <- check (t == t[/s'/]);
+         type_wf_subst l c s' c''
+       | _,_ => fail
+       end
+with type_le_subst l pfs c : partial_comp (subst * subst * ctx) :=
+       match pfs with
+       | [::] =>
+         do _ <- type_wf_ctx l c;
+         ret ([::],[::],[::])
+       | pf::pfs' =>
+         do (s1,s2,c') <- type_le_subst l pfs' c;
+         fail(*TODO*)
+       end
+with type_wf_ctx l c : partial_comp unit := fail   (*TODO: assume input ctx wf everywhere*)                                                           
+(*with check_wf_lang l : option unit := None TODO*).
+         
 Lemma in_ListIn : forall (A : eqType) (x : A) (l : seq A), x \in l -> List.In x l.
   intros until l; elim: l => //=.
   intros a l IH.
@@ -525,60 +633,60 @@ Proof.
   admit.
 Admitted.
 
+Notation "'forall_ex' x , P ; Q" := ((exists x, P)%type /\ forall x, P -> Q)
+                                      (at level 100, right associativity, Q at level 200).
+
 Lemma core_impl_proof
   : (forall l c t1 t2,
         Core.le_sort l c t1 t2 ->
-        exists lp pf cp t1p t2p, le_sort lp pf cp t1p t2p
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
-                         /\ t1 = erase t1p
-                         /\ t2 = erase t2p)
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           forall_ex t1p, wf_sort lp cp t1p /\ t1 = erase t1p;
+           forall_ex t2p, wf_sort lp cp t2p /\ t2 = erase t2p;
+        exists pf, le_sort lp pf cp t1p t2p)
     /\ (forall l c s1 s2 c',
            Core.le_subst l c s1 s2 c' ->
-           exists lp pfs cp s1p s2p c'p, le_subst lp pfs cp s1p s2p c'p
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           exists pfs s1p s2p c'p, le_subst lp pfs cp s1p s2p c'p
                          /\ s1 = map erase s1p
                          /\ s2 = map erase s2p
                          /\ c' = map erase c'p)
     /\ (forall l c e1 e2 t,
            Core.le_term l c e1 e2 t ->
-           exists lp pf cp e1p e2p tp, le_term lp pf cp e1p e2p tp
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           exists pf e1p e2p tp, le_term lp pf cp e1p e2p tp
                          /\ e1 = erase e1p
                          /\ e2 = erase e2p
                          /\ t = erase tp)
     /\ (forall l c t,
            Core.wf_sort l c t ->
-           exists lp cp tp, wf_sort lp cp tp
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
-                         /\ t = erase tp)
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           exists tp, wf_sort lp cp tp /\ t = erase tp)
     /\ (forall l c s c',
            Core.wf_subst l c s c' ->
-           exists lp cp sp c'p, wf_subst lp cp sp c'p
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           exists sp c'p, wf_subst lp cp sp c'p
                          /\ s = map erase sp
                          /\ c' = map erase c'p)
     /\ (forall l c e t,
            Core.wf_term l c e t ->
-           exists lp cp ep tp, wf_term lp cp ep tp
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           forall_ex cp, wf_ctx lp cp /\ c = map erase cp;
+           exists ep tp, wf_term lp cp ep tp
                          /\ e = erase ep
                          /\ t = erase tp)
     /\ (forall l c,
            Core.wf_ctx l c ->
-           exists lp cp, wf_ctx lp cp
-                         /\ l = map erase_rule lp
-                         /\ c = map erase cp)
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           exists cp, wf_ctx lp cp /\ c = map erase cp)
     /\ (forall l r,
            Core.wf_rule l r ->
-           exists lp rp, wf_rule lp rp
-                         /\ l = map erase_rule lp
-                         /\ r = erase_rule rp)
+           forall_ex lp, wf_lang lp /\ l = map erase_rule lp;
+           exists rp, wf_rule lp rp /\ r = erase_rule rp)
     /\ (forall (l : Rule.lang),
            Core.wf_lang l ->
            exists lp, wf_lang lp /\ l = map erase_rule lp).
@@ -604,27 +712,40 @@ Combined Scheme Cind from
          Cwf_ctx_ind',
          Cwf_rule_ind',
          Cwf_lang_ind'.
-apply: Cind.
-{
-  intros.
+apply: Cind; intros.
+Ltac break_forall_exs :=
   repeat match goal with
-         | H : exists _, _ |- _ => destruct H
          | H : _ /\ _ |- _ => destruct H
+         | H : forall _ : ?A, _, e : ?A |- _ => specialize H with e
+| H : ?B /\ ?C -> _, HB : ?B, HC : ?C |- _=> move: (H (conj HB HC)); clear H; move => H
+end.
+Ltac clear_exists :=
+  repeat match goal with
+         | H : exists _: ?A, _ /\ ?e = _ |- _ =>
+           (match goal with [_ : A, _ : e = _ |- _] => clear H end)
          end.
+Ltac intro_pf_props :=
+  let x := fresh "x" in
+  let wf := fresh "wf" x in
+  let eq := fresh "eq" x in
+  move => x [wf eq].
+{
   match goal with
   | H : is_true(_ \in _) |- _ => apply in_is_nth_level in H; destruct H
   end.
-  repeat esplit; eauto with judgment.
-  apply: le_sort_by; eauto with judgment.
-  2:{
-    instantiate (1:=x8).
-    subst.
-    is_nth_level_erase.
-    
-
-    
-  TODO: need that related proof terms are interchangeable?
-
+  repeat (split; eauto with judgment; intro_pf_props; break_forall_exs).
+  clear_exists.
+  esplit; apply: le_sort_by; eauto with judgment.
+  
+  give_up.
+}    
+{
+  repeat (split; eauto with judgment; intro_pf_props; break_forall_exs).
+  clear_exists.
+  TODO: c, c' typo?
+  break_forall_exs.
+  
+  
   Fail.
 
 Lemma mono_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'.

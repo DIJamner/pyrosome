@@ -81,9 +81,44 @@ Proof.
       inversion lfl; inversion eqbP0; auto.
 Qed.
 
-Notation " x <- e ; e'" := (obind (fun x => e') e)
-  (*match e with None => None | Some x => e' end*)
-    (right associativity, at level 88).
+Module OptionMonad.
+  Definition check b : option unit := if b then Some tt else None.
+  Notation "'do' x <<- val ; body" :=
+  (match val with
+   | x => body
+   | _ => None
+   end) (at level 88, right associativity, x pattern).
+  Notation "'do' x <- val ; body" :=
+  (match val with
+   | Some x => body
+   | _ => None
+   end) (at level 88, right associativity, x pattern).
+End OptionMonad.
+
+
+Module PartialCompMonad.
+  (* TODO: differentiate out of fuel? or just calculate enough? *)
+  Definition partial_comp A := nat -> option A.
+  Definition fail {A : Type} : partial_comp A := fun _ => None.
+  Definition ret {A : Type} e : partial_comp A := fun _ => Some e.
+  Definition check b : partial_comp unit := if b then ret tt else fail.
+  Notation "'do' x <<- val ; body" :=
+  (match val with
+   | x => body
+   | _ => fail
+   end) (at level 88, right associativity, x pattern).
+  Notation "'do' x <%- val ; body" :=
+  (match val with
+   | Some x => body
+   | _ => fail
+   end) (at level 88, right associativity, x pattern).
+  Notation "'do' x <- val ; body" :=
+  (fun fuel => match (val) fuel with
+   | Some x => (body) fuel
+   | _ => None
+   end) (at level 88, right associativity, x pattern).
+End PartialCompMonad.
+Import OptionMonad.
 
 Tactic Notation "on_bind_do" tactic(t) :=
   match goal with
@@ -92,8 +127,8 @@ Tactic Notation "on_bind_do" tactic(t) :=
 
 Definition try_map {A B : Type} (f : A -> option B) (l : seq A) : option (seq B) :=
   foldr (fun e acc =>
-           accl <- acc;
-             fe <- f e;
+           do accl <- acc;
+             do fe <- f e;
              Some (fe::accl)
         ) (Some [::]) l.
 
