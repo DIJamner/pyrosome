@@ -472,3 +472,5 @@ Unset Boolean Equality Schemes.
 Axiom rule_eq_dec : forall r1 r2, reflect (r1 = r2) (rule_beq r1 r2).
 
 Canonical rule_eqType := @Equality.Pack rule (Equality.Mixin rule_eq_dec).
+
+Notation lang := (seq rule).
