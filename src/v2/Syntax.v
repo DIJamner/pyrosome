@@ -174,6 +174,28 @@ Definition var_lookup_le (s : subst_le) (n : nat) : term_le :=
   nth_level (tle_refl_con 0 [::]) s n.
 Global Transparent var_lookup_le.
 
+(* TODO: issue with transitivity (w/out symmetry):
+   substitution.
+   need to subst a refl on to one side, except:
+   cannot create the necessary refl w/out knowing the language b/c of tle_by
+   don't want substitution dependent on lang
+*)
+Fixpoint term_le_proj1 p : term :=
+  match p with
+  | tle_by n ps => con n (map (term_le_subst s) ps)
+  | tle_refl_var x => var_lookup_le s x
+  | tle_refl_con n ps => tle_refl_con n (map (term_le_subst s) ps)
+  | tle_conv sp p' => tle_conv (sort_le_subst s sp) (term_le_subst s p')
+  | tle_trans p1 p2 => tle_trans (term_le_subst s p1) (term_le_subst s p2)
+  end.
+
+with sort_le_proj1 s sp : sort_le :=
+  match sp with
+  | sle_by n ps => sle_by n (map (term_le_subst s) ps)
+  | sle_refl n ps => sle_refl n (map (term_le_subst s) ps)
+  | sle_trans sp1 sp2 => sle_trans (sort_le_subst s sp1) (sort_le_subst s sp2)
+  end.
+
 (* TODO: the right way (?): subst subst_Les into term_les
    and subts into terms? just need to change this to take a subst_le *)
 Fixpoint term_le_subst s p : term_le :=
