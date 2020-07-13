@@ -5,7 +5,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Exp Rule CoreDefs Core EasyWF Named.
+From excomp Require Import Utils Exp Rule Core EasyWF.
 Require Import String.
 
 Ltac guard_single_goal :=
@@ -27,15 +27,6 @@ Ltac clear_const_substs :=
            change [N |][/?S/] with [N|]
          end.
 
-
-Ltac easy_wf_lang :=
-  first [ constructor
-        |  econstructor; unfold is_nth_level; unfold nth_level; simpl; eauto; 
-           guard_single_goal
-        | by eapply wf_to_ctx; eauto];
-  compute_adds;
-  clear_const_substs.
-
 Ltac constructors :=
   progress repeat (constructor; guard_single_goal).
 
@@ -45,35 +36,81 @@ Ltac topswap :=
   move => H1 H2;
           move: H2 H1.
 
-Definition ob := (con 1 [::]).
-Definition hom a b := con 2 [:: b; a].
-Definition id a := con 3 [:: a].
-Definition cmp a b c g f := (con 4 [:: f; g; c; b; a]).
+Definition ob := (con 0 [::]).
+Definition hom a b := con 1 [:: b; a].
+Definition id a := con 2 [:: a].
+Definition cmp a b c f g := (con 3 [:: f; g; c; b; a]).
 
 (* syntax of categories *)
 Definition cat_stx : lang :=
   [::
-     term_rule [:: hom (var 2) (var 3); hom (var 0) (var 1); ob; ob; ob]
-               (hom (var 2) (var 4));
+     term_rule [:: hom (var 1) (var 2); hom (var 0) (var 1); ob; ob; ob]
+               (hom (var 0) (var 2));
      term_rule [:: ob] (hom (var 0) (var 0));
      sort_rule [:: ob; ob];
      sort_rule [::]
   ].
 
+Ltac recognize_lang :=
+  match goal with
+    |- wf_lang ?L =>
+    suff: type_wf_lang L = Some tt;
+    [ by apply type_wf_lang_recognizes
+    | by compute]
+  end.
 
-Lemma cat_syx_wf : wf_lang cat_stx.
-Proof.
-  solve_easy_wf.
+Ltac recognize_rule' :=
+  match goal with
+    |- wf_rule ?L ?R =>
+    suff: type_wf_rule L R = Some tt;
+    [ by apply type_wf_rule_recognizes
+    | idtac]
+  end.
+Lemma cat_stx_wf : wf_lang cat_stx.
+Proof using . recognize_lang. Qed.
+
+Coercion var : nat >-> exp.
+
+Definition cat_lang : lang :=
+  (* compose associativity *)
+  (term_le [:: hom 2 3; hom 1 2; hom 0 1; ob; ob; ob; ob]
+           (cmp 0 1 3 (cmp 1 2 3 6 5) 4)
+           (cmp 0 2 3 6 (cmp 0 1 2 5 4))
+           (hom 0 3))::
+  (* left identity *)
+  (term_le [:: (hom 0 1); ob; ob]
+               (cmp 0 1 1 (id 1) 2)
+               2
+               (hom 0 1))::
+  (* right identity *)
+  (term_le [:: (hom 0 1); ob; ob]
+               (cmp 0 0 1 2 (id 0))
+               2
+               (hom 0 1))::cat_stx.
+
+
+Lemma cat_lang_wf : wf_lang cat_lang.
+Proof using .
+  recognize_lang.
 Qed.
 
-(* TODO: use partial recognizer*)
 Lemma wf_ob c : wf_ctx cat_stx c -> wf_sort cat_stx c ob.
-Proof.
-  easy_wf_lang.
+Proof using .
+  intros.
+  suff: type_wf_sort cat_stx c ob = Some tt; first by apply type_wf_sort_recognizes.
+  by compute.
 Qed.
 
+
+(* TODO: need decision instead of recognizer for this one  due to a, b*)
 Lemma wf_hom c a b : wf_term cat_stx c a ob -> wf_term cat_stx c b ob -> wf_sort cat_stx c (hom a b).
 Proof.
+  intros.
+  suff: type_wf_sort cat_stx c (hom a b) = Some tt; first by apply type_wf_sort_recognizes; eauto with judgment.
+  
+  compute.
+Qed.
+
   easy_wf_lang; auto.
   constructor; eauto.
   easy_wf_lang; eauto.
