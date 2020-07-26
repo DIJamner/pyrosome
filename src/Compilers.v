@@ -7,7 +7,69 @@ Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils Exp Rule Core.
 
+Definition compiler := (*src constr*) nat -> (* target closing *) subst -> (*tgt*) exp. 
 
+Fixpoint compile (cmp : compiler) (close : subst) (e : exp) : exp :=
+  match e with
+  | var x => var_lookup close x
+  | con n s => cmp n (map (compile cmp close) s)
+  end.
+
+(*TODO: necessary? 
+ make inductive instead*)
+Fixpoint wf_cmp_subst tgt_l tgt_s cmp src_c :=
+  match tgt_s, src_c with
+  | [::],[::] => True
+  | e::s', t::c' =>
+    wf_cmp_subst tgt_l s' cmp c'
+    /\ wf_term tgt_l [::] e (compile cmp s' t)
+  | _,_ => False
+  end.
+
+(* Conjecture : wf_ctx src_l c -> 
+           wf_cmp_subst l s cmp c <-> wf_subst l [::] s (map (compile cmp s) c))*)
+
+(*
+TODO: seems wrong; specializing c too much?
+*)
+Definition sort_wf_preserving cmp l1 l2 :=
+  forall s c t, wf_ctx l1 c ->
+                wf_subst l2 [::] s (map (compile cmp s) c) ->
+                wf_sort l1 c t ->
+                wf_sort l2 [::] (compile cmp s t).
+
+Definition term_wf_preserving cmp l1 l2 :=
+  forall s c e t, wf_ctx l1 c ->
+                wf_subst l2 [::] s (map (compile cmp s) c) ->
+                wf_term l1 c e t ->
+                wf_term l2 [::] (compile cmp s e) (compile cmp s t).
+
+Definition sort_le_preserving cmp l1 l2 :=
+  forall s c t, wf_ctx l1 c ->
+                wf_subst l2 [::] s (map (compile cmp s) c) ->
+                wf_sort l1 c t ->
+                wf_sort l2 [::] (compile cmp s t).
+
+
+(* =======================*)
+Definition compiler := (* target closing *) subst -> (* src *) exp -> (* target *) exp.
+
+Fixpoint compile_ctx cmp s c : ctx :=
+  match s, c with
+  | [::],[::] => [::]
+  | e::s', t::c' => ::(compile_ctx cmp s' c')
+  | _,_ => (* unreachable with wf inputs; is this okay? *) [::]
+  end.
+
+Definition sort_wf_preserving cmp l1 l2 :=
+  forall s c t, wf_subst l2 [::] s (compile_ctx cmp s c) ->
+                wf_sort l1 c t ->
+                wf_sort l2 [::] (cmp s t).
+(*================*)
+
+(*
+  TODO!!!: too weak; can't do eg closure conversion if the type is a metavar
+*)
 Definition optimizer := exp -> exp.
 Definition translation := list exp.
 
@@ -240,12 +302,12 @@ Proof.
   rewrite -{2}(id_subst_cmp l0).
   rewrite -con_subst_cmp.
   rewrite srt.
+  inversion H; subst.
   f_equal.      
   2:{
-    inversion H; subst.
     suff: (size l0 = size c'); first move ->.
     eapply nth_level_trans_table.
     tauto.
     give_up.
   }
-   
+  TODO: subst. ver. of lemma
