@@ -7,16 +7,17 @@ Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils Exp Rule Core.
 
-Definition compiler := (*src constr*) nat -> (* target closing *) subst -> (*tgt*) exp. 
+(* each element is the map for that constructor *)
+Definition compiler := list ((* target closing *) subst -> (* target *) exp). 
 
 Fixpoint compile (cmp : compiler) (close : subst) (e : exp) : exp :=
   match e with
   | var x => var_lookup close x
-  | con n s => cmp n (map (compile cmp close) s)
+  | con n s => nth_level (fun _ => con 0 [::]) cmp n (map (compile cmp close) s)
   end.
 
 (*TODO: necessary? 
- make inductive instead*)
+ make inductive instead if so
 Fixpoint wf_cmp_subst tgt_l tgt_s cmp src_c :=
   match tgt_s, src_c with
   | [::],[::] => True
@@ -26,30 +27,111 @@ Fixpoint wf_cmp_subst tgt_l tgt_s cmp src_c :=
   | _,_ => False
   end.
 
-(* Conjecture : wf_ctx src_l c -> 
+ Conjecture : wf_ctx src_l c -> 
            wf_cmp_subst l s cmp c <-> wf_subst l [::] s (map (compile cmp s) c))*)
 
 (*
-TODO: seems wrong; specializing c too much?
+TODO: seems wrong; specializing c too much; seems artificial
+Is it sufficient to talk about closed terms?
+
+First we specify the properties in terms of compile,
+then inductively on the compiler. TODO: prove equivalent
 *)
-Definition sort_wf_preserving cmp l1 l2 :=
+Definition sort_wf_preserving_sem cmp l1 l2 :=
   forall s c t, wf_ctx l1 c ->
                 wf_subst l2 [::] s (map (compile cmp s) c) ->
                 wf_sort l1 c t ->
                 wf_sort l2 [::] (compile cmp s t).
 
-Definition term_wf_preserving cmp l1 l2 :=
+Definition term_wf_preserving_sem cmp l1 l2 :=
   forall s c e t, wf_ctx l1 c ->
                 wf_subst l2 [::] s (map (compile cmp s) c) ->
                 wf_term l1 c e t ->
                 wf_term l2 [::] (compile cmp s e) (compile cmp s t).
 
-Definition sort_le_preserving cmp l1 l2 :=
-  forall s c t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (map (compile cmp s) c) ->
-                wf_sort l1 c t ->
-                wf_sort l2 [::] (compile cmp s t).
+(*TODO: this is a stronger property; includes le principles;
+  formalize the relationship to those above and le semantic statements *)
+Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
+| preserving_compiler_nil : preserving_compiler target [::] [::]
+| preserving_compiler_sort : forall cmp l cf c,
+    preserving_compiler target cmp l ->
+    (* Notable: only uses the previous parts of the compiler on c *)
+    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+               wf_sort target [::] (cf s)) ->
+    preserving_compiler target (cf::cmp) (sort_rule c :: l)
+| preserving_compiler_term : forall cmp l cf c t,
+    preserving_compiler target cmp l ->
+    (* Notable: only uses the previous parts of the compiler on c, t *)
+    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+               wf_term target [::] (cf s) (compile cmp s t)) ->
+    preserving_compiler target (cf::cmp) (term_rule c t :: l)
+| preserving_compiler_sort_le : forall cmp l c t1 t2,
+    preserving_compiler target cmp l ->
+    (* Notable: only uses the previous parts of the compiler on c *)
+    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+               le_sort target [::] (compile cmp s t1) (compile cmp s t2)) ->
+    (* TODO: when I build in proof terms, this function will be useful *)
+    preserving_compiler target ((fun _=>con 0[::])::cmp) (sort_le c t1 t2 :: l)
+| preserving_compiler_term_le : forall cmp l c e1 e2 t,
+    preserving_compiler target cmp l ->
+    (* Notable: only uses the previous parts of the compiler on c *)
+    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+               le_term target [::]
+                       (compile cmp s e1)
+                       (compile cmp s e2)
+                       (compile cmp s t)) ->
+    (* TODO: when I build in proof terms, this function will be useful *)
+    preserving_compiler target ((fun _=>con 0[::])::cmp) (term_le c e1 e2 t :: l).
 
+Lemma wf_ctx_empty_sort c t : ~wf_sort [::] c t.
+Proof.
+  by inversion.
+Qed.
+
+Lemma preserving_preserves_term cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    term_wf_preserving_sem cmp ls lt.
+Proof.
+  unfold term_wf_preserving_sem.
+  intros until e; move: s; elim: e; simpl.
+  { give_up. }
+  intros.
+  
+       
+
+
+    
+  Lemma compiler_var_lookup
+    :  wf_subst lt [::] s (map (compile cmp s) c) ->
+       wf_term lt [::] (var_lookup s n) (compile cmp s t)
+
+Lemma preserving_preserves_sort cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    sort_wf_preserving_sem cmp ls lt.
+Proof.
+  unfold sort_wf_preserving_sem.
+  
+  elim; simpl.
+  {
+    intros; exfalso.
+    by inversion H1.
+  }
+  {
+    
+    
+
+(* something like this would be for closed ctxs
+   Before using this one, the signature of compile should change though *)
+Definition sort_wf_preserving_closed cmp l1 l2 :=
+  forall t, wf_sort l1 [::] t -> wf_sort l2 [::] (compile cmp [::] t).
+
+Lemma compiler_cat_sort_preserving cmp1 cmp2 l1 l2 lt
+  : sort_wf_preserving cmp1 l1 lt ->
+    sort_wf_preserving cmp2 l2 lt ->
+    sort_wf_preserving (cmp1 ++ cmp2) (l1 ++ l2) lt.
+Proof.
+  elim: cmp1 l1; intros until l1; case l1; simpl; first easy.
+  1,2: intro_to sort_wf_preserving.
 
 (* =======================*)
 Definition compiler := (* target closing *) subst -> (* src *) exp -> (* target *) exp.
