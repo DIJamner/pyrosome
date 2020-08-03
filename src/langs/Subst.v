@@ -152,10 +152,24 @@ Definition snoc a b t g n := con 20 [:: n; g; t; b; a]
 Definition p a t := con 21 [:: t; a].
 Definition q a t := con 22 [:: t; a].
 
+(* convenience def to avoid repetition *)
+Definition el_srt_subst a b g e :=
+  (el a (ty_subst a b g e)).
+
 Definition subst_lang : lang :=
+  (term_le [:: el_srt_subst 0 1 2 3; ty 1; hom 0 1; ob; ob]
+           (el_subst 0 (ext 1 3) (snoc 0 1 3 2 4)
+                     (ty_subst (ext 1 3) 1 (p 1 3) 3) (q 1 3))
+           4
+           (el_srt_subst 0 1 2 3))::
+  (term_le [:: el_srt_subst 0 1 2 3; ty 1; hom 0 1; ob; ob]
+           (cmp 0 (ext 1 3) 1
+                (p 1 3)
+                (snoc 0 1 3 2 4))
+           2
+           (hom 0 1))::
   (term_rule [:: ty 0; ob]
-             (el (ext 0 1)
-                 (ty_subst  (ext 0 1) 0 (p 0 1) 1)))::
+             (el_srt_subst (ext 0 1) 0 (p 0 1) 1))::
   (term_rule [:: ty 0; ob] (hom (ext 0 1) 0))::
   (term_rule [:: el 0 (ty_subst 0 1 3 2); hom 0 1; ty 1; ob; ob]
              (hom 0 (ext 1 2)))::
@@ -207,10 +221,10 @@ Ltac wf_lang_eauto :=
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof using .
   wf_lang_eauto.
-  { (* element identity substitution *)
+  
+  2:{ (* element identity substitution *)
     constructor;auto with judgment.     
-    apply: wf_term_conv.
-    1-3:auto with judgment.
+    apply: wf_term_conv'.
     instantiate (1:= el 0 (ty_subst 0 0 (id 0) 1)).
     auto with judgment.
     change (el 0 (ty_subst 0 0 (id 0) 1)) with (el 0 1)[/[:: (ty_subst 0 0 (id 0) 1); var 0]/].
@@ -230,4 +244,12 @@ Proof using .
     change [:: el 0 1; ty 0; ob] with ([:: el 0 1] ++ [:: ty 0; ob]).
     eapply mono_ctx; eauto with judgment.
   }
+  {
+    constructor; auto with judgment.
+    apply: wf_term_conv'.
+    instantiate
+      (1:= (el 0 (ty_subst 0 1 2
+                   (ty_subst (ext 1 3) 1 (p 1 3) 3)))).
+    apply:type_wf_term_recognizes; eauto with judgment.
+    compute.
 Qed.
