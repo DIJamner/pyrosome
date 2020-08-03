@@ -13,39 +13,59 @@ Set Boolean Equality Schemes.
 (* we build in substitutions to all necessary proof constructors
    to make substitution admissible, just like for terms
  *)
+
+
+(*
+  one constructor each for relating projections to their concrete terms
+ *)
+Variant rule_ref_le :=
+| le_by
+| le_refl
+| proj_ll
+| proj_lr
+| proj_rl
+| proj_rr.
+
 Inductive term_le : Set :=
-(* proof by axiom with subst built in; we prove relatedness of substitutions by pointwise proofs *)
-| tle_by : nat -> seq term_le -> term_le
-(* proof by reflexivity with subst built in.
+(* proof with subst built in.
    Since the subst is built in, it suffices to 
    just give the level of a term constructor.
    To build reflexivity for complex terms,
    use the right substitution.
    This is the key to decidable typechecking. *)
-| tle_refl_con : nat -> seq term_le -> term_le
-| tle_refl_var : nat -> term_le
+| tle : rule_ref_le -> nat -> seq term_le -> term_le
+(*reflexivity for variables *)
+| tle_var : nat -> term_le
 (* Substitutions should be able to be pushed under these last two constructors *)
 | tle_trans : term_le -> term_le -> term_le
-(* applies a sort relation to the type of a term relation *)
+(* applies a sort relation to the type of a term relation 
+   TODO: this could be merged into the tle and tle_var constructors;
+   should I? I could even then remove trans and use a list of term_les.
+   could maybe show uniqueness of proofs?
+   potential future work
+ *)
 | tle_conv : sort_le -> term_le -> term_le
 with sort_le : Set :=
-(* proof by axiom like term_le *)
-| sle_by : nat -> seq term_le -> sort_le
-(* proof by reflexivity like term_le *)
-| sle_refl : nat -> seq term_le -> sort_le
+(* like term_le *)
+| sle : rule_ref_le -> nat -> seq term_le -> sort_le
 (* like term_le *)
 | sle_trans : sort_le -> sort_le -> sort_le.
+
+Variant rule_ref :=
+| rr_by
+| proj_l
+| proj_r.
 
 Inductive term : Set :=
 (* variable deBruijn level *)
 | var : nat -> term
 (* Rule deBruijn level, list of subterms*)
-| con : nat -> seq term -> term
+| con : rule_ref -> nat -> seq term -> term
 (* sort rewrite *)
 | conv : sort_le -> term -> term.
 Variant sort : Set :=
 (* Rule deBruijn level, list of subterms*)
-| srt : nat -> seq term -> sort.
+| srt : rule_ref -> nat -> seq term -> sort.
 Unset Boolean Equality Schemes.
 Set Elimination Schemes.
 
@@ -60,30 +80,27 @@ Fixpoint term_le_ind
          (Psle : sort_le -> Prop)
 
          (* assumptions *)
-         (IH_tle_by : forall n ps, List.Forall Ptle ps -> Ptle (tle_by n ps))
-         (IH_tle_refl_con : forall n ps, List.Forall Ptle ps -> Ptle (tle_refl_con n ps))
-         (IH_tle_refl_var : forall n, Ptle (tle_refl_var n))
+         (IH_tle : forall r n ps, List.Forall Ptle ps -> Ptle (tle r n ps))
+         (IH_tle_var : forall n, Ptle (tle_var n))
          (IH_tle_trans : forall p1 p2, Ptle p1 -> Ptle p2 -> Ptle (tle_trans p1 p2))
          (IH_tle_conv : forall sp p, Psle sp -> Ptle p -> Ptle (tle_conv sp p))
          
-         (IH_sle_by : forall n ps, List.Forall Ptle ps -> Psle (sle_by n ps))
-         (IH_sle_refl : forall n ps, List.Forall Ptle ps -> Psle (sle_refl n ps))
+         (IH_sle : forall r n ps, List.Forall Ptle ps -> Psle (sle r n ps))
          (IH_sle_trans : forall p1 p2, Psle p1 -> Psle p2 -> Psle (sle_trans p1 p2))
 
          p : Ptle p :=
-  let tl_ind := term_le_ind IH_tle_by IH_tle_refl_con IH_tle_refl_var IH_tle_trans IH_tle_conv
-                            IH_sle_by IH_sle_refl IH_sle_trans in
-  let sl_ind := sort_le_ind IH_tle_by IH_tle_refl_con IH_tle_refl_var IH_tle_trans IH_tle_conv
-                            IH_sle_by IH_sle_refl IH_sle_trans in
+  let tl_ind := term_le_ind IH_tle IH_tle_var IH_tle_trans IH_tle_conv
+                            IH_sle IH_sle_trans in
+  let sl_ind := sort_le_ind IH_tle IH_tle_var IH_tle_trans IH_tle_conv
+                            IH_sle IH_sle_trans in
   let fix subst_le_ind s : List.Forall Ptle s :=
       match s with
       | [::] => List.Forall_nil _
       | e::s' => List.Forall_cons _ (tl_ind e) (subst_le_ind s')
       end in
   match p with
-  | tle_by n ps => IH_tle_by n ps (subst_le_ind ps)
-  | tle_refl_con n ps => IH_tle_refl_con n ps (subst_le_ind ps)
-  | tle_refl_var n => IH_tle_refl_var n
+  | tle r n ps => IH_tle r n ps (subst_le_ind ps)
+  | tle_var n => IH_tle_var n
   | tle_trans p1 p2 => IH_tle_trans p1 p2 (tl_ind p1) (tl_ind p2)
   | tle_conv sp p => IH_tle_conv sp p (sl_ind sp) (tl_ind p)
   end
@@ -93,29 +110,26 @@ with sort_le_ind
        (Psle : sort_le -> Prop)
 
        (* assumptions *)
-       (IH_tle_by : forall n ps, List.Forall Ptle ps -> Ptle (tle_by n ps))
-       (IH_tle_refl_con : forall n ps, List.Forall Ptle ps -> Ptle (tle_refl_con n ps))
-       (IH_tle_refl_var : forall n, Ptle (tle_refl_var n))
+       (IH_tle : forall r n ps, List.Forall Ptle ps -> Ptle (tle r n ps))
+       (IH_tle_var : forall n, Ptle (tle_var n))
        (IH_tle_trans : forall p1 p2, Ptle p1 -> Ptle p2 -> Ptle (tle_trans p1 p2))
        (IH_tle_conv : forall sp p, Psle sp -> Ptle p -> Ptle (tle_conv sp p))
        
-       (IH_sle_by : forall n ps, List.Forall Ptle ps -> Psle (sle_by n ps))
-       (IH_sle_refl : forall n ps, List.Forall Ptle ps -> Psle (sle_refl n ps))
+       (IH_sle : forall r n ps, List.Forall Ptle ps -> Psle (sle r n ps))
        (IH_sle_trans : forall p1 p2, Psle p1 -> Psle p2 -> Psle (sle_trans p1 p2))
 
        sp : Psle sp :=
-       let tl_ind := term_le_ind IH_tle_by IH_tle_refl_con IH_tle_refl_var IH_tle_trans IH_tle_conv
-                                 IH_sle_by IH_sle_refl IH_sle_trans in
-       let sl_ind := sort_le_ind IH_tle_by IH_tle_refl_con IH_tle_refl_var IH_tle_trans IH_tle_conv
-                                 IH_sle_by IH_sle_refl IH_sle_trans in
+       let tl_ind := term_le_ind IH_tle IH_tle_var IH_tle_trans IH_tle_conv
+                                 IH_sle IH_sle_trans in
+       let sl_ind := sort_le_ind IH_tle IH_tle_var IH_tle_trans IH_tle_conv
+                                 IH_sle IH_sle_trans in
        let fix subst_le_ind s : List.Forall Ptle s :=
            match s with
            | [::] => List.Forall_nil _
            | e::s' => List.Forall_cons _ (tl_ind e) (subst_le_ind s')
            end in
        match sp with
-       | sle_by n ps => IH_sle_by n ps (subst_le_ind ps)
-       | sle_refl n ps => IH_sle_refl n ps (subst_le_ind ps)
+       | sle r n ps => IH_sle r n ps (subst_le_ind ps)
        | sle_trans p1 p2 => IH_sle_trans p1 p2 (sl_ind p1) (sl_ind p2)
        end.
 
@@ -124,7 +138,7 @@ Combined Scheme le_ind from term_le_ind, sort_le_ind.
 Fixpoint term_ind (P : term -> Prop)
   (* assumptions *)
   (IH_var : forall x, P (var x))
-  (IH_con : forall n s, List.Forall P s -> P (con n s))
+  (IH_con : forall r n s, List.Forall P s -> P (con r n s))
   (IH_conv : forall sp e, P e -> P (conv sp e))
    e : P e :=
     let fix subst_ind s : List.Forall P s :=
@@ -134,7 +148,7 @@ Fixpoint term_ind (P : term -> Prop)
     end in
     match e with
     | var x => IH_var x
-    | con n s => IH_con n s (subst_ind s)
+    | con r n s => IH_con r n s (subst_ind s)
     | conv sp e => IH_conv sp e (term_ind IH_var IH_con IH_conv e)
     end.
 
@@ -152,44 +166,72 @@ Canonical sort_eqType := @Equality.Pack sort (Equality.Mixin sort_eq_dec).
 
 Fixpoint term_to_refl (e : term) : term_le :=
   match e with
-  | var x => tle_refl_var x
-  | con n s => tle_refl_con n (map term_to_refl s)
+  | var x => tle_var x
+  | con rr_by n s => tle le_refl n (map term_to_refl s)
+  | con proj_l n s =>
+    let s_refl := map term_to_refl s in
+    tle_trans (tle proj_ll n s_refl) (tle proj_lr n s_refl)
+  | con proj_r n s =>
+    let s_refl := map term_to_refl s in
+    tle_trans (tle proj_rl n s_refl) (tle proj_rr n s_refl)
   | conv sp e => tle_conv sp (term_to_refl e)
   end.
 
 Definition subst_to_refl := map term_to_refl.
 
 Definition sort_to_refl (t : sort) : sort_le :=
-  match t with srt n s => sle_refl n (subst_to_refl s) end.
+  match t with
+  | srt rr_by n s => sle le_refl n (subst_to_refl s)
+  | srt proj_l n s =>
+    let s_refl := map term_to_refl s in
+    sle_trans (sle proj_ll n s_refl) (sle proj_lr n s_refl)
+  | srt proj_r n s =>
+    let s_refl := map term_to_refl s in
+    sle_trans (sle proj_rl n s_refl) (sle proj_rr n s_refl)
+  end.
+
+(* TODO: need these? if so,
+make sure these are going the right direction; fix substs
+Definition tle_refl_proj_l n s :=
+  tle_trans (tle proj_ll n s) (tle proj_lr n s).
+Definition tle_refl_proj_r n s :=
+  tle_trans (tle proj_rl n s) (tle proj_rr n s).
+
+Definition sle_refl_proj_l n s :=
+  sle_trans (sle proj_ll n s) (sle proj_lr n s).
+Definition sle_refl_proj_r n s :=
+  sle_trans (sle proj_rl n s) (sle proj_rr n s).
+*)
 
 Definition var_lookup (s : subst) (n : nat) : term :=
-  nth_level (con 0 [::]) s n.
+  nth_level (con proj_l 0 [::]) s n.
 Global Transparent var_lookup.
 
 Definition var_lookup_type (c : ctx) (n : nat) : sort :=
-  nth_level (srt 0 [::]) c n.
+  nth_level (srt proj_l 0 [::]) c n.
 Global Transparent var_lookup_type.
 
 Definition var_lookup_le (s : subst_le) (n : nat) : term_le :=
-  nth_level (tle_refl_con 0 [::]) s n.
+  nth_level (tle proj_ll 0 [::]) s n.
 Global Transparent var_lookup_le.
 
-(* TODO: issue with transitivity (w/out symmetry):
-   substitution.
-   need to subst a refl on to one side, except:
-   cannot create the necessary refl w/out knowing the language b/c of tle_by
-   don't want substitution dependent on lang
+(* 
+   Produces the term on the left of the relation
 *)
-Fixpoint term_le_proj1 p : term :=
+Fixpoint term_le_proj_l p : term :=
   match p with
-  | tle_by n ps => con n (map (term_le_subst s) ps)
-  | tle_refl_var x => var_lookup_le s x
-  | tle_refl_con n ps => tle_refl_con n (map (term_le_subst s) ps)
-  | tle_conv sp p' => tle_conv (sort_le_subst s sp) (term_le_subst s p')
-  | tle_trans p1 p2 => tle_trans (term_le_subst s p1) (term_le_subst s p2)
-  end.
-
-with sort_le_proj1 s sp : sort_le :=
+  | tle le_by n ps => con proj_l n (map term_le_proj_l ps)
+  | tle le_refl n ps => con rr_by n (map term_le_proj_l ps)
+  (* issue: need to be able to produce the term here
+     can't have proj axioms since I then need to project
+     out of those
+   *)
+  | tle proj_lr n ps => con rr_by n (map term_le_proj_l ps)
+  | tle_var x => var x
+  | tle_conv sp p' => tle_conv (sort_le_proj_l sp) (term_le_proj_l p')
+  | tle_trans p1 p2 => term_le_proj_l p1
+  end
+with sort_le_proj_l s sp : sort_le :=
   match sp with
   | sle_by n ps => sle_by n (map (term_le_subst s) ps)
   | sle_refl n ps => sle_refl n (map (term_le_subst s) ps)
