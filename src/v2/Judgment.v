@@ -6,15 +6,19 @@ Set Bullet Behavior "Strict Subproofs".
 
 From excomp Require Import Utils Syntax.
 
+Print rule_ref_le.
+(*TODO: decide how to handle projections
+TODO: write down use for projections
+*) 
 Inductive le_sort l c : sort_le -> sort -> sort -> Prop :=
 | le_sort_by : forall n c' t1 t2 ps s1 s2,
     is_nth_level l n (sort_le_rule c' t1 t2) ->
     le_subst l c ps s1 s2 c' ->
-    le_sort l c (sle_by n ps) t1[/s1/] t2[/s2/]
+    le_sort l c (sle le_by n ps) t1[/s1/] t2[/s2/]
 | le_sort_refl : forall n c' ps s1 s2,
     is_nth_level l n (sort_rule c') ->
     le_subst l c ps s1 s2 c' ->    
-    le_sort l c (sle_refl n ps) (srt n s1) (srt n s2)
+    le_sort l c (sle le_refl n ps) (srt rr_by n s1) (srt rr_by n s2)
 | le_sort_trans : forall sp1 sp2 t1 t12 t2,
     le_sort l c sp1 t1 t12 ->
     le_sort l c sp2 t12 t2 ->
@@ -23,14 +27,14 @@ with le_term l c : term_le -> term -> term -> sort -> Prop :=
 | le_term_by : forall n c' e1 e2 t ps s1 s2,
     is_nth_level l n (term_le_rule c' e1 e2 t) ->
     le_subst l c ps s1 s2 c' ->
-    le_term l c (tle_by n ps) e1[/s1/] e2[/s2/] t[/s2/]
-| le_term_refl_var : forall x t,
+    le_term l c (tle le_by n ps) e1[/s1/] e2[/s2/] t[/s2/]
+| le_term_var : forall x t,
     is_nth_level c x t ->
-    le_term l c (tle_refl_var x) (var x) (var x) t
-| le_term_refl_con : forall n c' t ps s1 s2,  
+    le_term l c (tle_var x) (var x) (var x) t
+| le_term_con : forall n c' t ps s1 s2,  
     is_nth_level l n (term_rule c' t) ->
     le_subst l c ps s1 s2 c' ->    
-    le_term l c (tle_refl_con n ps) (con n s1) (con n s2) t[/s2/]
+    le_term l c (tle le_refl n ps) (con rr_by n s1) (con rr_by n s2) t[/s2/]
 (* TODO: do I want transitivity as a constructor?
  I could probably get uniqueness of proofs if I used successive convs *)
 | le_term_trans : forall p1 p2 e1 e12 e2 t,
@@ -62,12 +66,12 @@ Inductive wf_sort l c : sort -> Prop :=
 | wf_sort_by : forall n s c',
     is_nth_level l n (sort_rule c') ->
     wf_subst l c s c' ->
-    wf_sort l c (srt n s)
+    wf_sort l c (srt rr_by n s)
 with wf_term l c : term -> sort -> Prop :=
 | wf_term_by : forall n s c' t,
     is_nth_level l n (term_rule c' t) ->
     wf_subst l c s c' ->
-    wf_term l c (con n s) t[/s/]
+    wf_term l c (con rr_by n s) t[/s/]
 (* terms can be lifted to greater (less precise) types,
    but not the other way around; TODO: change the direction from le to ge? might be more intuitive
  *)
