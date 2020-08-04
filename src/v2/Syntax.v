@@ -21,10 +21,8 @@ Set Boolean Equality Schemes.
 Variant rule_ref_le :=
 | le_by
 | le_refl
-| proj_ll
-| proj_lr
-| proj_rl
-| proj_rr.
+| le_proj_l
+| le_proj_r.
 
 Inductive term_le : Set :=
 (* proof with subst built in.
@@ -168,12 +166,8 @@ Fixpoint term_to_refl (e : term) : term_le :=
   match e with
   | var x => tle_var x
   | con rr_by n s => tle le_refl n (map term_to_refl s)
-  | con proj_l n s =>
-    let s_refl := map term_to_refl s in
-    tle_trans (tle proj_ll n s_refl) (tle proj_lr n s_refl)
-  | con proj_r n s =>
-    let s_refl := map term_to_refl s in
-    tle_trans (tle proj_rl n s_refl) (tle proj_rr n s_refl)
+  | con proj_l n s => tle le_proj_l n (map term_to_refl s)
+  | con proj_r n s => tle le_proj_r n (map term_to_refl s)
   | conv sp e => tle_conv sp (term_to_refl e)
   end.
 
@@ -182,12 +176,8 @@ Definition subst_to_refl := map term_to_refl.
 Definition sort_to_refl (t : sort) : sort_le :=
   match t with
   | srt rr_by n s => sle le_refl n (subst_to_refl s)
-  | srt proj_l n s =>
-    let s_refl := map term_to_refl s in
-    sle_trans (sle proj_ll n s_refl) (sle proj_lr n s_refl)
-  | srt proj_r n s =>
-    let s_refl := map term_to_refl s in
-    sle_trans (sle proj_rl n s_refl) (sle proj_rr n s_refl)
+  | srt proj_l n s => sle le_proj_l n (map term_to_refl s)
+  | srt proj_r n s => sle le_proj_r n (map term_to_refl s)
   end.
 
 (* TODO: need these? if so,
@@ -212,7 +202,7 @@ Definition var_lookup_type (c : ctx) (n : nat) : sort :=
 Global Transparent var_lookup_type.
 
 Definition var_lookup_le (s : subst_le) (n : nat) : term_le :=
-  nth_level (tle proj_ll 0 [::]) s n.
+  nth_level (tle le_proj_l 0 [::]) s n.
 Global Transparent var_lookup_le.
 
 (* 
@@ -222,36 +212,56 @@ Fixpoint term_le_proj_l p : term :=
   match p with
   | tle le_by n ps => con proj_l n (map term_le_proj_l ps)
   | tle le_refl n ps => con rr_by n (map term_le_proj_l ps)
-  (* issue: need to be able to produce the term here
-     can't have proj axioms since I then need to project
-     out of those
-   *)
-  | tle proj_lr n ps => con rr_by n (map term_le_proj_l ps)
+  | tle le_proj_l n ps => con proj_l n (map term_le_proj_l ps)
+  | tle le_proj_r n ps => con proj_r n (map term_le_proj_l ps)
   | tle_var x => var x
-  | tle_conv sp p' => tle_conv (sort_le_proj_l sp) (term_le_proj_l p')
+  | tle_conv sp p' => conv sp (term_le_proj_l p')
   | tle_trans p1 p2 => term_le_proj_l p1
-  end
-with sort_le_proj_l s sp : sort_le :=
+  end.
+
+Fixpoint sort_le_proj_l sp : sort :=
   match sp with
-  | sle_by n ps => sle_by n (map (term_le_subst s) ps)
-  | sle_refl n ps => sle_refl n (map (term_le_subst s) ps)
-  | sle_trans sp1 sp2 => sle_trans (sort_le_subst s sp1) (sort_le_subst s sp2)
+  | sle le_by n ps => srt proj_l n (map term_le_proj_l ps)
+  | sle le_refl n ps => srt rr_by n (map term_le_proj_l ps)
+  | sle le_proj_l n ps => srt proj_l n (map term_le_proj_l ps)
+  | sle le_proj_r n ps => srt proj_r n (map term_le_proj_l ps)
+  | sle_trans sp1 sp2 => sort_le_proj_l sp1
+  end.
+(* 
+   Produces the term on the right of the relation
+*)
+Fixpoint term_le_proj_r p : term :=
+  match p with
+  | tle le_by n ps => con proj_r n (map term_le_proj_r ps)
+  | tle le_refl n ps => con rr_by n (map term_le_proj_r ps)
+  | tle le_proj_l n ps => con proj_l n (map term_le_proj_r ps)
+  | tle le_proj_r n ps => con proj_r n (map term_le_proj_r ps)
+  | tle_var x => var x
+  | tle_conv sp p' => conv sp (term_le_proj_r p')
+  | tle_trans p1 p2 => term_le_proj_r p1
+  end.
+
+Fixpoint sort_le_proj_r sp : sort :=
+  match sp with
+  | sle le_by n ps => srt proj_r n (map term_le_proj_r ps)
+  | sle le_refl n ps => srt rr_by n (map term_le_proj_r ps)
+  | sle le_proj_l n ps => srt proj_l n (map term_le_proj_r ps)
+  | sle le_proj_r n ps => srt proj_r n (map term_le_proj_r ps)
+  | sle_trans sp1 sp2 => sort_le_proj_r sp1
   end.
 
 (* TODO: the right way (?): subst subst_Les into term_les
    and subts into terms? just need to change this to take a subst_le *)
 Fixpoint term_le_subst s p : term_le :=
   match p with
-  | tle_by n ps => tle_by n (map (term_le_subst s) ps)
-  | tle_refl_var x => var_lookup_le s x
-  | tle_refl_con n ps => tle_refl_con n (map (term_le_subst s) ps)
+  | tle r n ps => tle r n (map (term_le_subst s) ps)
+  | tle_var x => var_lookup_le s x
   | tle_conv sp p' => tle_conv (sort_le_subst s sp) (term_le_subst s p')
   | tle_trans p1 p2 => tle_trans (term_le_subst s p1) (term_le_subst s p2)
   end
 with sort_le_subst s sp : sort_le :=
   match sp with
-  | sle_by n ps => sle_by n (map (term_le_subst s) ps)
-  | sle_refl n ps => sle_refl n (map (term_le_subst s) ps)
+  | sle r n ps => sle r n (map (term_le_subst s) ps)
   | sle_trans sp1 sp2 => sle_trans (sort_le_subst s sp1) (sort_le_subst s sp2)
   end.
 
@@ -261,7 +271,7 @@ Definition subst_le_subst s s' : subst_le :=
 Fixpoint term_subst s e : term :=
   match e with
   | var n => var_lookup s n
-  | con n l => con n (map (term_subst s) l)
+  | con r n l => con r n (map (term_subst s) l)
   | conv pf e' => conv (sort_le_subst (subst_to_refl s) pf) (term_subst s e')
   end.
 
@@ -269,8 +279,8 @@ Definition subst_subst s s' : subst :=
   map (term_subst s) s'.
 
 Definition sort_subst s (t : sort) : sort :=
-  let (n, s') := t in
-  srt n (subst_subst s s').
+  let (r, n, s') := t in
+  srt r n (subst_subst s s').
 
 Lemma subst_le_cmp_size s1 s2 : size (subst_le_subst s2 s1) = size s1.
 Proof using .
@@ -330,7 +340,11 @@ Qed.
 Lemma term_to_refl_distributes s e : term_le_subst (subst_to_refl s) (term_to_refl e) = term_to_refl (term_subst s e).
 Proof using .
   elim: e; simpl; auto; intros; (try by apply: lookup_to_refl); f_equal; auto.
-  elim: s0 H; simpl; auto; intro_to List.Forall; inversion; subst; f_equal; auto.
+  case: r;
+    elim: s0 H; simpl; auto; intro_to List.Forall;
+      inversion; subst; f_equal; auto;
+        match goal with [ H : ?a -> ?b, H' : ?a |- _ ] => move: (H H'); case end;
+  intros; repeat f_equal; auto.
 Qed.  
 
 Lemma subst_to_refl_distributes s1 s2
