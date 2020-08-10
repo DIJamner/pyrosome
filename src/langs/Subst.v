@@ -36,17 +36,32 @@ Ltac topswap :=
   move => H1 H2;
           move: H2 H1.
 
-Definition ob := (con 0 [::]).
-Definition hom a b := con 1 [:: b; a].
-Definition id a := con 2 [:: a].
-Definition cmp a b c f g := (con 3 [:: f; g; c; b; a]).
+(*todo: put in the right place*)
+Definition exp_of_uint ui := var (Nat.of_uint ui).
+Definition uint_of_exp e :=
+  match e with
+  | var n => Some (Nat.to_uint n)
+  | _ => None
+  end.
+
+Declare Scope exp_scope.
+Bind Scope exp_scope with exp.
+Delimit Scope exp_scope with exp_scope.
+Numeral Notation exp exp_of_uint uint_of_exp : exp_scope.
+
+Arguments con n s%exp_scope.
+
+Local Notation ob := (con 0 [::]).
+Local Notation hom a b := (con 1 [:: b; a]%exp_scope).
+Local Notation id a := (con 2 [:: a]%exp_scope).
+Local Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).
 
 (* syntax of categories *)
 Definition cat_stx : lang :=
   [::
-     term_rule [:: hom (var 1) (var 2); hom (var 0) (var 1); ob; ob; ob]
-               (hom (var 0) (var 2));
-     term_rule [:: ob] (hom (var 0) (var 0));
+     term_rule [:: hom 1 2; hom 0 1; ob; ob; ob]
+               (hom 0 2);
+     term_rule [:: ob] (hom 0 0);
      sort_rule [:: ob; ob];
      sort_rule [::]
   ].
@@ -97,8 +112,7 @@ Ltac recognize_rule' :=
 Lemma cat_stx_wf : wf_lang cat_stx.
 Proof using . recognize_lang. Qed.
 
-(* TODO: put coercion, hint in right places *)
-Coercion var : nat >-> exp.
+(* TODO: put hints in right place *)
 
 Hint Resolve type_wf_lang_recognizes : judgment.
 Hint Resolve type_wf_rule_recognizes : judgment.
@@ -106,6 +120,7 @@ Hint Resolve type_wf_ctx_recognizes : judgment.
 Hint Resolve type_wf_sort_recognizes : judgment.
 Hint Resolve type_wf_term_recognizes : judgment.
 Hint Resolve type_wf_subst_recognizes : judgment.
+
 
 Definition cat_lang : lang :=
   (* compose associativity *)
@@ -138,19 +153,19 @@ Proof using .
   auto with judgment.
 Qed.
 
-Definition ty a := con 7 [:: a].
-Definition ty_subst a b s t := con 8 [:: t; s; b; a].
-Definition el a t := con 9 [:: t; a].
-Definition el_subst a b s t m := con 10 [:: m; t; s; b; a].
+Local Notation ty a := (con 7 [:: a]%exp_scope).
+Local Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
+Local Notation el a t := (con 9 [:: t; a]%exp_scope).
+Local Notation el_subst a b s t m := (con 10 [:: m; t; s; b; a]%exp_scope).
 
-Definition emp := con 15 [::].
-Definition forget a := con 16 [:: a].
+Local Notation emp := (con 15 [::]%exp_scope).
+Local Notation forget a := (con 16 [:: a]%exp_scope).
 
-Definition ext g a := con 19 [:: a; g] (*[:: ty 0; ob]*).
-Definition snoc a b t g n := con 20 [:: n; g; t; b; a]
+Local Notation ext g a := (con 19 [:: a; g]%exp_scope) (*[:: ty 0; ob]*).
+Local Notation snoc a b t g n := (con 20 [:: n; g; t; b; a]%exp_scope)
 (*[:: el 0 (ty_subst 0 1 3 2); hom 0 1; ty 1; ob; ob]*).
-Definition p a t := con 21 [:: t; a].
-Definition q a t := con 22 [:: t; a].
+Local Notation p a t := (con 21 [:: t; a]%exp_scope).
+Local Notation q a t := (con 22 [:: t; a]%exp_scope).
 
 (* convenience def to avoid repetition *)
 Definition el_srt_subst a b g e :=
