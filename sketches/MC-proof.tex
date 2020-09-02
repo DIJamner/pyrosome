@@ -95,7 +95,7 @@
 \newcommand{\texist}[2]{\exists \bind{#1}{#2}}
 
 
-\newcommand{\cclam}[3]{\lambda \bind{[{#1}]({#2})}{#3}}
+\newcommand{\cclam}[2]{\lambda \bind{({#1})}{#2}}
 
 \begin{document}
 \section{Interpretation of rules}
@@ -123,34 +123,55 @@
 {\Gamma \vdash (\elam x \tau e)~e' \sqsupseteq \sqsubseteq e[e'/x] :\tau'}
 \end{align*}
 \section{CC Rules}
+TODO: 2 options: can close over delta or leave it open. Need tyvars for the former, so I'll avoid it for expedience.
 \begin{align*}
-\inferrule{X_1...X_n,x_1:\tau_1...x_m:\tau_m \vdash e : \tau'}
-{\Gamma \vdash \cclam {X_1...X_n} {x_1:\tau_1...x_m:\tau_m} e 
-:\tforall {X_1...X_n}{(\tau_1...\tau_m) \to \tau'}}
+\inferrule{\Delta;x_1:\tau_1...x_n:\tau_n \vdash e : \tau'}
+{\Delta; \Gamma \vdash \cclam {x_1:\tau_1...x_n:\tau_n} e 
+:(\tau_1...\tau_n) \to \tau'}
 \quad
-\\\inferrule{\Gamma \vdash e : \tforall {X_1...X_n}{(\tau_1...\tau_n) \to \tau'} 
-\quad \Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_m  : \tau
-\quad \Gamma \vdash \sigma_i ~{\tt type} ~...~ \Gamma \vdash \sigma_n ~{\tt type}}
-{\Gamma \vdash e~[\sigma_1...\sigma_n]~(e'_1...e'_m) :\tau'}
+\\\inferrule{\Delta;\Gamma \vdash e : {(\tau_1...\tau_n) \to \tau'} 
+\quad \Delta;\Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_n  : \tau}
+{\Delta;\Gamma \vdash e~(e'_1...e'_n) :\tau'}
 \\\quad
-\inferrule{X_1...X_n,x_1:\tau_1...x_m:\tau_n \vdash e : \tau' 
-\quad \Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_m  : \tau
-\quad \Gamma \vdash \sigma_i ~{\tt type} ~...~ \Gamma \vdash \sigma_n ~{\tt type}}
-{\Gamma \vdash (\cclam {X_1...X_n} {x_1:\tau_1...x_m:\tau_m} e)~[\sigma_1...\sigma_n]~(e'_1...e'_m) 
-	 \sqsupseteq \sqsubseteq e[e'_1/x_1,...,e'_m/x_m] :\tau'}
+\inferrule{\Delta;x_1:\tau_1...x_n:\tau_n \vdash e : \tau' 
+\quad \Delta;\Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_n  : \tau}
+{\Delta; \Gamma \vdash (\cclam {x_1:\tau_1...x_n:\tau_n} e)~(e'_1...e'_n) 
+	 \sqsupseteq \sqsubseteq e[e'_1/x_1,...,e'_n/x_n] :\tau'}
 \end{align*}
+We additionally add the standard rules for existentials, pairs, and the unit type (TODO: write out).
 \section{Compiler}
 We define our compiler as follows:
-\\TODO:need separate delta in judgments to make separate Xs work right?otherwise, need to mix x and Xs in CC,products
 \[\begin{array}{lcl}
-(\Gamma \vdash \tau \to \tau)^+ &=& (\Gamma)^+ \vdash \texist Y {\tprod{(\tforall {X_1...X_n}{(Y, \tau_1...\tau_m) \to \tau'})}Y}\\
+(\tau \to \tau')^+ &=&  \texist Y {\tprod{({(Y, \tau^+) \to \tau'^+})}Y}\\
 (\Gamma \vdash \elam x \tau e : \tau \to \tau')^+ &=& 
 	\epackspaced {envty(\Gamma^+)}
-	{\epair {\cclam {?} {?} {e^+}}{mkenv(\Gamma^+)}}{\\&&}
-	Y {\tprod{(\tforall {}{(Y, \tau^+) \to \tau'^+})}Y}\\
+	{\epair {\cclam {y: envty(\Gamma^+), x : \tau^+} {e^+[y.i/i]}}{mkenv(size(\Gamma^+))}}{\\&&}
+	Y {\tprod{({(Y, \tau^+) \to \tau'^+})}Y}\\
+(e~e')^+ &=& \eunpack {e^+} Y p {p.1~ (p.2,e'^+)}\\
 \\
-mkenv(\cdot) &=& \eunit
+mkenv(0) &=& \eunit\\
+mkenv(n +1) &=& \epair {mkenv(n)} n\\
+\\ 
+envty(\cdot) &=& \tunit\\
+envty(\Gamma, \tau) &=& \tprod {envty(\Gamma)} {\tau}
 \end{array}\]
+
+\subsection{Type-preserving compilation}
+We proceed rule-by-rule. Consider an arbitrary substitution satisfying the premises of each rule in the target.
+It suffices to show that the translation is well-typed.
+\begin{itemize}
+\item $( - \to -)^+$:
+Consider arbitrary closed, well-formed $\tau,\tau'$ in the target language.
+We then have the following derivation:
+\[
+\inferrule{\inferrule{
+\inferrule{\inferrule{Y \in Y}{Y \vdash Y} \quad {Y \vdash \tau}\quad{Y \vdash \tau'}}
+{Y \vdash {({(Y, \tau) \to \tau'})}}
+	 \quad \inferrule{Y \in Y}{Y \vdash Y}}
+{Y \vdash \tprod{({(Y, \tau) \to \tau'})}Y}}
+{\cdot \vdash \texist Y {\tprod{({(Y, \tau) \to \tau'})}Y}}
+\]
+\end{itemize}
 \end{document}
 
 
