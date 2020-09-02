@@ -156,11 +156,11 @@ envty(\cdot) &=& \tunit\\
 envty(\Gamma, \tau) &=& \tprod {envty(\Gamma)} {\tau}
 \end{array}\]
 
-\subsection{Type-preserving compilation}
+\subsection{Judgment-preserving compilation}
 We proceed rule-by-rule. Consider an arbitrary substitution satisfying the premises of each rule in the target.
 It suffices to show that the translation is well-typed.
 \begin{itemize}
-\item $( - \to -)^+$:
+\item Function type:
 Consider arbitrary closed, well-formed $\tau,\tau'$ in the target language.
 We then have the following derivation:
 \[
@@ -171,6 +171,43 @@ We then have the following derivation:
 {Y \vdash \tprod{({(Y, \tau) \to \tau'})}Y}}
 {\cdot \vdash \texist Y {\tprod{({(Y, \tau) \to \tau'})}Y}}
 \]
+\item Application:
+Let $\tau_f = \tprod{({(Y, \tau) \to \tau'})}Y$.
+\[
+\inferrule{
+	\cdot; \Gamma \vdash e : \texist Y {\tau_f}
+	\quad \inferrule{\inferrule{\inferrule{ }{Y;\Gamma,p : \tau_f\vdash {p} : \tau_f}}
+				{Y;\Gamma,p : \tau_f\vdash {p.1} : {(Y, \tau) \to \tau'}}
+				\quad \inferrule{\inferrule{ }{Y;\Gamma,p : \tau_f\vdash {p} : \tau_f}}{Y;\Gamma,p : \tau_f\vdash {p.2} : Y}
+				\quad \inferrule{Y;\Gamma\vdash {e'} : \tau}{Y;\Gamma,p : \tau_f\vdash {e'} : \tau}}
+		{Y;\Gamma,p : \tau_f\vdash {p.1~ (p.2,e')} : \tau'}
+	\quad \cdot \vdash \tau'}
+{\cdot;\Gamma \vdash \eunpack {e} Y p {p.1~ (p.2,e')} : \tau'}
+\] 
+\item Beta-reduction: We need to show the following:
+\[
+\inferrule{\Gamma,x:\tau \vdash e : \tau' \quad \Gamma \vdash e' : \tau}
+{\begin{array}{lll}\Gamma \vdash &\eunpack {&\epackspaced {envty(\Gamma)}
+	{\epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&&}
+	Y {\tprod{({(Y, \tau) \to \tau'})}Y}\\&} Y p {p.1~ (p.2,e')}
+\\&\sqsupseteq \sqsubseteq e[e'/x] :\tau'
+\end{array}}\]
+We proceed by these steps:
+\[\begin{array}{rl}
+&\begin{array}{lll}\eunpack {&\epackspaced {envty(\Gamma)}
+	{\epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&}
+	Y {\tprod{({(Y, \tau) \to \tau'})}Y}\\} Y p {p.1~ (p.2,e')}
+\end{array}\\
+\sqsupseteq \sqsubseteq& 
+(p.1~ (p.2,e'))[envty(\Gamma)/Y, \epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}/p]\\
+\sqsupseteq \sqsubseteq& 
+((\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]})~ 
+	(mkenv(size(\Gamma)),e'))\\
+\sqsupseteq \sqsubseteq& 
+	e[y.i/i][mkenv(size(\Gamma))/y, e'/x]\\
+\sqsupseteq \sqsubseteq& 
+	e[e'/x]\\
+\end{array}\]
 \end{itemize}
 \end{document}
 
