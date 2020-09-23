@@ -5,6 +5,11 @@
 *.vo*
 *.glob
 *.aux
+*.synctex.gz
+*.log
+*.dvi
+*.cache
+*.v~
 Makefile
 Makefile.conf
 Makefile.d
