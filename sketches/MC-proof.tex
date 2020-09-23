@@ -95,9 +95,36 @@
 \newcommand{\texist}[2]{\exists \bind{#1}{#2}}
 
 
-\newcommand{\cclam}[2]{\lambda \bind{({#1})}{#2}}
+\newcommand{\ulam}[2]{\lambda \bind{{#1}}{#2}}
+
+\newtheorem{theorem}{Theorem}
 
 \begin{document}
+
+\section{Identity Compilers}
+
+\begin{theorem}[Identity compilers preserve semantics]
+Let $L_1 {++} S$, $L_2 {++} S$, and $T$ be well-formed languages
+such that $L_1$ is contained in $T$.
+Let $c$ be a semantics-preserving compiler from $L_2{++}L$ to $T$.
+Then $\texttt{repeat id (size }L_1\texttt{) } {++}~ c$ is a
+semantics preserving compiler from $L_1 {++} L_2 {++} L$ to $T$.
+\end{theorem}
+
+Proof sketch:
+By induction on $L$.
+We must consider each kind of rule.
+We show here the case for term relatedness:
+
+We have the following on the head of $L$:
+\texttt{term\_le c e1 e2 t}.
+It then suffices to derive
+$\inferrule{\texttt{id c}}{\texttt{id e1} \sqsupseteq \texttt{id e2} : \texttt{id t}}$
+in the target.
+We may conclude since there is exactly such a rule, since the target contains $L$.
+
+Note: strictly speaking, we need the indices of the constructors to line up if we want to use the identity function. The more general version of this theorem performs a constant shift on constructors in $L$.
+
 \section{Interpretation of rules}
 \[
 \inferrule{ \Gamma_1 \vdash X_1~{\tt type} ~...~ \Gamma_i \vdash X_i~{\tt type}}{\Gamma \vdash c(X_1,...,X_i)~{\tt type}}
@@ -122,32 +149,52 @@
 \inferrule{\Gamma,x:\tau \vdash e : \tau' \quad \Gamma \vdash e' : \tau}
 {\Gamma \vdash (\elam x \tau e)~e' \sqsupseteq \sqsubseteq e[e'/x] :\tau'}
 \end{align*}
+
+
+\section{Product Type Rules}
+\begin{align*}
+\inferrule{\Gamma \vdash e_1 : \tau_1 \quad \Gamma \vdash e_2 : \tau_2}
+{\Gamma \vdash \epair {e_1} {e_2} :\tau_1 \times \tau_2}
+\quad
+\inferrule{\Gamma \vdash e : \tau_1 \times \tau_2}
+{\Gamma \vdash e.1 :\tau_1}
+\quad
+\inferrule{\Gamma \vdash e : \tau_1 \times \tau_2}
+{\Gamma \vdash e.2 :\tau_2}
+\\
+\inferrule{\Gamma \vdash e_1 : \tau_1 \quad \Gamma \vdash e_2 : \tau_2}
+{\Gamma \vdash \epair {e_1} {e_2} .1 \sqsupseteq \sqsubseteq e_1:\tau_1}
+\quad
+\inferrule{\Gamma \vdash e_1 : \tau_1 \quad \Gamma \vdash e_2 : \tau_2}
+{\Gamma \vdash \epair {e_1} {e_2} .2 \sqsupseteq \sqsubseteq e_2:\tau_2}
+\end{align*}
+
 \section{CC Rules}
 TODO: 2 options: can close over delta or leave it open. Need tyvars for the former, so I'll avoid it for expedience.
 \begin{align*}
-\inferrule{\Delta;x_1:\tau_1...x_n:\tau_n \vdash e : \tau'}
-{\Delta; \Gamma \vdash \cclam {x_1:\tau_1...x_n:\tau_n} e 
-:(\tau_1...\tau_n) \to \tau'}
+\inferrule{\Delta;x:\tau \vdash e : \tau'}
+{\Delta; \Gamma \vdash \elam x\tau e 
+:\tau \to \tau'}
 \quad
-\\\inferrule{\Delta;\Gamma \vdash e : {(\tau_1...\tau_n) \to \tau'} 
-\quad \Delta;\Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_n  : \tau}
-{\Delta;\Gamma \vdash e~(e'_1...e'_n) :\tau'}
-\\\quad
-\inferrule{\Delta;x_1:\tau_1...x_n:\tau_n \vdash e : \tau' 
-\quad \Delta;\Gamma \vdash e'_1  : \tau ~...~ \Gamma \vdash e'_n  : \tau}
-{\Delta; \Gamma \vdash (\cclam {x_1:\tau_1...x_n:\tau_n} e)~(e'_1...e'_n) 
-	 \sqsupseteq \sqsubseteq e[e'_1/x_1,...,e'_n/x_n] :\tau'}
+\inferrule{\Delta;\Gamma \vdash e : {\tau \to \tau'} 
+\quad \Delta;\Gamma \vdash e'  : \tau}
+{\Delta;\Gamma \vdash e~e' :\tau'}
+\quad
+\inferrule{\Delta;x:\tau\vdash e : \tau' 
+\quad \Delta;\Gamma \vdash e'  : \tau}
+{\Delta; \Gamma \vdash (\elam x\tau e)~e' 
+	 \sqsupseteq \sqsubseteq e[e'/x] :\tau'}
 \end{align*}
 We additionally add the standard rules for existentials, pairs, and the unit type (TODO: write out).
-\section{Compiler}
+\section{Closure Conversion}
 We define our compiler as follows:
 \[\begin{array}{lcl}
-(\tau \to \tau')^+ &=&  \texist Y {\tprod{({(Y, \tau^+) \to \tau'^+})}Y}\\
+(\tau \to \tau')^+ &=&  \texist Y {\tprod{({\tprod Y {\tau^+} \to \tau'^+})}Y}\\
 (\Gamma \vdash \elam x \tau e : \tau \to \tau')^+ &=& 
 	\epackspaced {envty(\Gamma^+)}
-	{\epair {\cclam {y: envty(\Gamma^+), x : \tau^+} {e^+[y.i/i]}}{mkenv(size(\Gamma^+))}}{\\&&}
+	{\epair {\elam y {\tprod{envty(\Gamma^+)} {\tau^+}} {e^+[y.i/i]}}{mkenv(size(\Gamma^+))}}{\\&&}
 	Y {\tprod{({(Y, \tau^+) \to \tau'^+})}Y}\\
-(e~e')^+ &=& \eunpack {e^+} Y p {p.1~ (p.2,e'^+)}\\
+(e~e')^+ &=& \eunpack {e^+} Y p {p.1~ \epair{p.2}{e'^+}}\\
 \\
 mkenv(0) &=& \eunit\\
 mkenv(n +1) &=& \epair {mkenv(n)} n\\
@@ -165,19 +212,19 @@ Consider arbitrary closed, well-formed $\tau,\tau'$ in the target language.
 We then have the following derivation:
 \[
 \inferrule{\inferrule{
-\inferrule{\inferrule{Y \in Y}{Y \vdash Y} \quad {Y \vdash \tau}\quad{Y \vdash \tau'}}
-{Y \vdash {({(Y, \tau) \to \tau'})}}
+\inferrule{\inferrule{\inferrule{Y \in Y}{Y \vdash Y}\quad Y \vdash \tau}{Y \vdash \tprod Y\tau}\quad{Y \vdash \tau'}}
+{Y \vdash {({\tprod Y \tau \to \tau'})}}
 	 \quad \inferrule{Y \in Y}{Y \vdash Y}}
-{Y \vdash \tprod{({(Y, \tau) \to \tau'})}Y}}
-{\cdot \vdash \texist Y {\tprod{({(Y, \tau) \to \tau'})}Y}}
+{Y \vdash \tprod{({\tprod Y \tau \to \tau'})}Y}}
+{\cdot \vdash \texist Y {\tprod{({\tprod Y \tau \to \tau'})}Y}}
 \]
 \item Application:
-Let $\tau_f = \tprod{({(Y, \tau) \to \tau'})}Y$.
+Let $\tau_f = \tprod{(\tprod Y \tau\to \tau')}Y$.
 \[
 \inferrule{
 	\cdot; \Gamma \vdash e : \texist Y {\tau_f}
 	\quad \inferrule{\inferrule{\inferrule{ }{Y;\Gamma,p : \tau_f\vdash {p} : \tau_f}}
-				{Y;\Gamma,p : \tau_f\vdash {p.1} : {(Y, \tau) \to \tau'}}
+				{Y;\Gamma,p : \tau_f\vdash {p.1} : {\tprod Y \tau \to \tau'}}
 				\quad \inferrule{\inferrule{ }{Y;\Gamma,p : \tau_f\vdash {p} : \tau_f}}{Y;\Gamma,p : \tau_f\vdash {p.2} : Y}
 				\quad \inferrule{Y;\Gamma\vdash {e'} : \tau}{Y;\Gamma,p : \tau_f\vdash {e'} : \tau}}
 		{Y;\Gamma,p : \tau_f\vdash {p.1~ (p.2,e')} : \tau'}
@@ -188,27 +235,361 @@ Let $\tau_f = \tprod{({(Y, \tau) \to \tau'})}Y$.
 \[
 \inferrule{\Gamma,x:\tau \vdash e : \tau' \quad \Gamma \vdash e' : \tau}
 {\begin{array}{lll}\Gamma \vdash &\eunpack {&\epackspaced {envty(\Gamma)}
-	{\epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&&}
-	Y {\tprod{({(Y, \tau) \to \tau'})}Y}\\&} Y p {p.1~ (p.2,e')}
+	{\epair {\elam y {envty(\Gamma) \times\tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&&}
+	Y {\tprod{({\tprod Y \tau \to \tau'})}Y}\\&} Y p {p.1~ (p.2,e')}
 \\&\sqsupseteq \sqsubseteq e[e'/x] :\tau'
 \end{array}}\]
 We proceed by these steps:
 \[\begin{array}{rl}
 &\begin{array}{lll}\eunpack {&\epackspaced {envty(\Gamma)}
-	{\epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&}
-	Y {\tprod{({(Y, \tau) \to \tau'})}Y}\\} Y p {p.1~ (p.2,e')}
+	{\epair {\elam y{ envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}}{\\&}
+	Y {\tprod{({\tprod Y \tau \to \tau'})}Y}\\} Y p {p.1~ (p.2,e')}
 \end{array}\\
 \sqsupseteq \sqsubseteq& 
-(p.1~ (p.2,e'))[envty(\Gamma)/Y, \epair {\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}/p]\\
+(p.1~ (p.2,e'))[envty(\Gamma)/Y, \epair {\elam y {envty(\Gamma) \times \tau} {e[y.i/i]}}{mkenv(size(\Gamma))}/p]\\
 \sqsupseteq \sqsubseteq& 
-((\cclam {y: envty(\Gamma), x : \tau} {e[y.i/i]})~ 
+((\elam y {envty(\Gamma) \times \tau} {e[y.i/i]})~ 
 	(mkenv(size(\Gamma)),e'))\\
 \sqsupseteq \sqsubseteq& 
-	e[y.i/i][mkenv(size(\Gamma))/y, e'/x]\\
+	e[y.i/i][\epair{mkenv(size(\Gamma))} {e'}/y]\\
 \sqsupseteq \sqsubseteq& 
 	e[e'/x]\\
 \end{array}\]
 \end{itemize}
+
+\section{Adding source-language products}
+Let STLC$^\times$ be STLC plus the product language.
+By our identity compilers theorem, we have a semantics preserving compiler from STLC$^\times$ to CC.
+
+Note: there is one caveat here: $\Delta$.
+To use this result, we would have to add $\Delta$s to every rule in STLC$^\times$.
+However, I conjecture that this can be done with a general purpose lemma (one that does not mention STLC or products).
+ 
+
+\section{Untyped Lambda Calculus}
+
+\begin{align*}
+\inferrule{\Gamma,x:{\tt Dyn} \vdash e : {\tt Dyn}}
+{\Gamma \vdash \ulam x e : {\tt Dyn}}
+\quad
+\inferrule{\Gamma \vdash e : {\tt Dyn} \quad \Gamma \vdash e' : {\tt Dyn}}
+{\Gamma \vdash e~e' :{\tt Dyn}}
+\quad
+\inferrule{\Gamma,x:{\tt Dyn} \vdash e : {\tt Dyn} \quad \Gamma \vdash e' : {\tt Dyn}}
+{\Gamma \vdash (\ulam x e)~e' \sqsupseteq \sqsubseteq e[e'/x] :{\tt Dyn}}
+\end{align*}
+
+\section{CPS}
+
+\subsection{Call-by-value}
+
+Note that for call-by-value, we have to call the continuation on variables
+and dually, evaluate expressions before substitution.
+This means we cannot take advantage of the identity compiler for substitutions.
+
+We define our compiler as follows:
+\[\begin{array}{lcl}
+(\Gamma \vdash x)^+ &=& \Gamma,k : {\tt Dyn} \vdash k~ x\\
+(\Gamma \vdash e[e'/x])^+ &=& \Gamma,k : {\tt Dyn} \vdash e'^+~[\ulam r {(e^+[r/x])}/k]\\
+(\tau \to \tau')^+ &=&  {\tt Dyn}\\
+(\Gamma\vdash \elam x \tau e)^+ &=& 
+	\Gamma,k : {\tt Dyn} \vdash {k~\ulam x {\ulam k {e^+}}}\\
+(\Gamma\vdash e~e')^+ &=& 
+	\Gamma,k : {\tt Dyn} \vdash{e^+[\ulam f {(e'^+[\ulam r {(f~r~k)}/k])}/k]}
+\end{array}\]
+
+All resulting terms are well-scoped and so well-typed in the dynamic target.
+
+We demonstrate the substitution case as the representative example:
+
+\[
+\inferrule
+{\Gamma,k : {\tt Dyn} \vdash e':{\tt Dyn} \quad 
+	\inferrule{\inferrule{\Gamma,k : {\tt Dyn},x:{\tt Dyn} \vdash {e}  : {\tt Dyn} \quad
+				\inferrule{r\in \Gamma,k : {\tt Dyn},r:{\tt Dyn}}{\Gamma,k : {\tt Dyn},r:{\tt Dyn} \vdash {r}  : {\tt Dyn}}}
+			{\Gamma,k : {\tt Dyn},r:{\tt Dyn} \vdash {(e[r/x])}  : {\tt Dyn}}}
+	{\Gamma,k : {\tt Dyn} \vdash \ulam r {(e[r/x])}  : {\tt Dyn}}}
+{\Gamma,k : {\tt Dyn} \vdash e'~[\ulam r {(e[r/x])}/k]  : {\tt Dyn}}
+\]
+
+It remains to show that beta equivalence holds:
+
+\[\inferrule{\Gamma,x:{\tt Dyn},k:{\tt Dyn}\vdash e : {\tt Dyn} 
+\quad \Gamma,k:{\tt Dyn} \vdash e'  : {\tt Dyn}}
+{\Gamma,k:{\tt Dyn} \vdash (k~\ulam x {\ulam k {e}})[\ulam f {(e'[\ulam r {(f~r~k)}/k])}/k]
+	 \sqsupseteq \sqsubseteq e'~[\ulam r {(e[r/x])}/k] :{\tt Dyn}}\]
+We use the following relations:
+
+\[\begin{array}{rl}
+&(k~\ulam x {\ulam k {e}})[\ulam f {(e'[\ulam r {(f~r~k)}/k])}/k]\\
+\sqsupseteq \sqsubseteq& (\ulam f {(e'[\ulam r {(f~r~k)}/k])})~\ulam x {\ulam k {e}}\\
+\sqsupseteq \sqsubseteq& {(e'[\ulam r {((\ulam x {\ulam k {e}})~r~k)}/k])}\\
+\sqsupseteq \sqsubseteq& {(e'[\ulam r {((\ulam k {e[r/x]})~k)}/k])}\\
+\sqsupseteq \sqsubseteq& {(e'[\ulam r {({e[r/x, k/k]})}/k])}\\
+\sqsupseteq \sqsubseteq& {(e'[\ulam r {({e[r/x]})}/k])}
+\end{array}\]
+
+
+\subsection{Call-by-name}
+We define our compiler as follows:
+\[\begin{array}{lcl}
+(\tau \to \tau')^+ &=&  {\tt Dyn}\\
+(\elam x \tau e)^+ &=& \ulam k{k~\ulam x {e^+}}\\
+(e~e')^+ &=& \ulam k {e^+~(\ulam f {f~e'^+~ k})}
+\end{array}\]
+
+All resulting terms are well-scoped and so well-typed in the dynamic target.
+
+It remains to show that beta equivalence holds:
+
+\[\inferrule{\Gamma,x:{\tt Dyn}\vdash e : {\tt Dyn} 
+\quad \Gamma\vdash e'  : {\tt Dyn}}
+{\Gamma \vdash \ulam k {(\ulam k{k~\ulam x {e}})~(\ulam f {f~e'~ k})}
+	 \sqsupseteq \sqsubseteq e[e'/x] :{\tt Dyn}}\]
+We want to use the following relations:
+
+\[\begin{array}{rl}
+&\ulam k {(\ulam k{k~\ulam x {e}})~(\ulam f {f~e'~ k})}\\
+\sqsupseteq \sqsubseteq& \ulam k {(\ulam f {f~e'~ k})~\ulam x {e}}\\
+\sqsupseteq \sqsubseteq& \ulam k {(\ulam x {e})~e'~ k}\\
+\sqsupseteq \sqsubseteq& \ulam k {(e[e'/x])~ k}\\
+\not\sqsupseteq \not \sqsubseteq& e[e'/x]
+\end{array}\]
+
+However, since we do not have $\eta$ rules, we cannot complete this proof.
+
+\pagebreak
+
+\section{Order of Evaluation}
+
+To enforce call-by-value evaluation on pure languages like STLC and the product construct,
+we need to restrict their relations to the case where e.g. the argument to a function is a value.
+Thus, we need a notion of value.
+We add the following sort: ${\bf \Gamma} : Ctx, {\bf \tau} : Ty({\bf \Gamma}) \vdash Val({\bf \Gamma},{\bf \tau})~\text{sort}$. In addition, since values are usually regarded as a special case of expressions, we add the following relation:
+\[\inferrule{\vdash{\bf \Gamma}\quad{\bf \Gamma}\vdash {\bf \tau}}
+{Val({\bf \Gamma},{\bf \tau}) \sqsupseteq Exp({\bf \Gamma},{\bf \tau})}
+\]
+This effectively declares the well-typed value judgment as a subset of the well-typed expression judgment.
+We will use the notation $\Gamma \vdash_v e : \tau$ to mean $e : Val(\Gamma,\tau)$.
+
+A note on variables: 
+If we want variables to count as values, we would have to change our definition to substitution accordingly.
+
+\subsection{Call-by-Value STLC}
+\begin{align*}
+\inferrule{{\bf \Gamma},x:{\bf \tau} \vdash {\bf e} : {\bf \tau'}}
+{{\bf \Gamma} \vdash_v \elam x {\bf \tau} {\bf e} :{\bf \tau} \to {\bf \tau'}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf e} : {\bf \tau}\to {\bf \tau'} \quad {\bf \Gamma} \vdash {\bf e'} : {\bf \tau}}
+{{\bf \Gamma} \vdash {\bf e}~{\bf e'} :{\bf \tau'}}
+\quad
+\inferrule{{\bf \Gamma},x:{\bf \tau} \vdash {\bf e} : {\bf \tau'} \quad {\bf \Gamma} \vdash_v {\bf v} : {\bf \tau}}
+{{\bf \Gamma} \vdash (\elam x {\bf \tau} {\bf e})~{\bf v} \sqsupseteq \sqsubseteq {\bf e}[{\bf v}/x] :{\bf \tau'}}
+\end{align*}
+
+
+\subsection{Call-by-Value Products}
+The product type demonstrates a subtle point of this approach. We cannot use one pair constructor as both
+a value and an expression constructor, so we need to add one of each and then relate them.
+\begin{align*}
+\inferrule{{\bf \Gamma} \vdash {\bf e_1} : {\bf \tau_1} \quad {\bf \Gamma} \vdash {\bf e_2} : {\bf \tau_2}}
+{{\bf \Gamma} \vdash \epair {{\bf e_1}} {{\bf e_2}} :{\bf \tau_1} \times {\bf \tau_2}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf e} : {\bf \tau_1} \times {\bf \tau_2}}
+{{\bf \Gamma} \vdash {\bf e}.1 :{\bf \tau_1}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf e} : {\bf \tau_1} \times {\bf \tau_2}}
+{{\bf \Gamma} \vdash {\bf e}.2 :{\bf \tau_2}}\\
+\inferrule{{\bf \Gamma} \vdash_v {\bf v_1}  : {\bf \tau_1} \quad {\bf \Gamma} \vdash_v {\bf v_2}  : {\bf \tau_2}}
+{{\bf \Gamma} \vdash_v \epair {{\bf v_1} } {{\bf v_2} }_v :{\bf \tau_1} \times {\bf \tau_2}}
+\quad
+\inferrule{{\bf \Gamma} \vdash_v {\bf v_1}  : {\bf \tau_1} \quad {\bf \Gamma} \vdash_v {\bf v_2}  : {\bf \tau_2}}
+{{\bf \Gamma} \vdash \epair {{\bf v_1} } {{\bf v_2} }_v \sqsupseteq \sqsubseteq \epair {{\bf v_1} } {{\bf v_2} }:{\bf \tau_1} \times {\bf \tau_2}}
+\\
+\inferrule{{\bf \Gamma} \vdash_v {\bf v_1}  : {\bf \tau_1} \quad {\bf \Gamma} \vdash_v {\bf v_2}  : {\bf \tau_2}}
+{{\bf \Gamma} \vdash \epair {{\bf v_1} } {{\bf v_2} }_v .1 \sqsupseteq \sqsubseteq {\bf v_1} :{\bf \tau_1}}
+\quad
+\inferrule{{\bf \Gamma} \vdash_v {\bf v_1}  : {\bf \tau_1} \quad {\bf \Gamma} \vdash_v {\bf v_2}  : {\bf \tau_2}}
+{{\bf \Gamma} \vdash \epair {{\bf v_1} } {{\bf v_2} }_v .2 \sqsupseteq \sqsubseteq {\bf v_2} :{\bf \tau_2}}
+\end{align*}
+
+\section{Evaluation Contexts}
+To permit effects to be evaluated in the middle of expressions, we need a notion of evaluation context.
+We add a sort $EC(\Gamma,\tau, \tau')$ of evaluation contexts, writing the judgment as $\Gamma \vdash E : \tau \rightsquigarrow \tau'$,
+and define the base language of evaluation contexts as follows:
+\begin{align*}
+\inferrule{{\bf \Gamma} \vdash {\bf \tau}}
+{{\bf \Gamma} \vdash [\cdot] : {\bf \tau} \rightsquigarrow {\bf \tau}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf E} : {\bf \tau} \rightsquigarrow {\bf \tau'}
+			\quad {\bf \Gamma} \vdash {\bf e} : {\bf \tau} }
+{{\bf \Gamma} \vdash {\bf E}[{\bf e}] : {\bf \tau'}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf e} : {\bf \tau} }
+{{\bf \Gamma} \vdash [\cdot][{\bf e}] \sqsupseteq \sqsubseteq {\bf e} : {\bf \tau}}
+\end{align*}
+
+We then need to extend our existing languages to describe their evaluation contexts.
+Like the product expression/value split, we will technically have a new constructor for each evaluation context.
+However, we abuse notation here since it should be clear which we are using.
+\subsection{STLC Extension}
+\begin{align*}
+\inferrule{{\bf \Gamma} \vdash {\bf E} : {\bf \tau_s} \rightsquigarrow {\bf \tau}\to {\bf \tau'} \quad {\bf \Gamma} \vdash {\bf e} : {\bf \tau}}
+{{\bf \Gamma} \vdash {\bf E}~{\bf e} : {\bf \tau_s} \rightsquigarrow {\bf \tau'}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf E} : {\bf \tau_s} \rightsquigarrow {\bf \tau}\to {\bf \tau'} \quad {\bf \Gamma} \vdash {\bf e'} : {\bf \tau}
+			\quad {\bf \Gamma} \vdash {\bf e} : {\bf \tau_s} }
+{{\bf \Gamma} \vdash ({\bf E}~{\bf e'})[{\bf e}] \sqsupseteq \sqsubseteq {\bf E}[{\bf e}]~{\bf e'} : {\bf \tau'}}\\
+\inferrule{{\bf \Gamma} \vdash_v {\bf v} : {\bf \tau}\to {\bf \tau'} \quad {\bf \Gamma} \vdash {\bf e} :  {\bf \tau_s} \rightsquigarrow {\bf \tau}}
+{{\bf \Gamma} \vdash {\bf v}~{\bf E} : {\bf \tau_s} \rightsquigarrow {\bf \tau'}}
+\quad
+\inferrule{{\bf \Gamma} \vdash {\bf E} : {\bf \tau_s} \rightsquigarrow {\bf \tau} \quad {\bf \Gamma} \vdash_v {\bf v} : {\bf \tau}\to {\bf \tau'}
+			\quad {\bf \Gamma} \vdash {\bf e} : {\bf \tau_s} }
+{{\bf \Gamma} \vdash ({\bf v}~{\bf E})[{\bf e}] \sqsupseteq \sqsubseteq {\bf v}~{\bf E}[{\bf e}] : {\bf \tau'}}
+\end{align*}
+
+\section{Mutable State}
+We show here an axiomatic semantics for a global memory, assuming a semantics for natural numbers.
+We add a new sort for stores, written $Store({\bf \Gamma})$ with judgment notation ${\bf \Gamma}\vdash_S {\bf S}$,
+and the following rules:
+\begin{align*}
+\inferrule{\vdash {\bf \Gamma}}{{\bf \Gamma}\vdash_S \emptyset}\quad
+\inferrule{{\bf \Gamma}\vdash_S {\bf S}
+\quad {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
+\quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N}
+{{\bf \Gamma}\vdash_S {\bf S}({\bf v_2}:= {\bf v_1})}\quad
+\inferrule{{\bf \Gamma}\vdash_S {\bf S}
+\quad {\bf \Gamma}\vdash_v {\bf v} : \mathbb N}
+{{\bf \Gamma}\vdash {\bf S}.{\bf v} : \mathbb N}\\\quad
+\inferrule{{\bf \Gamma}\vdash_S {\bf S}
+\quad {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
+\quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N}
+{{\bf \Gamma}\vdash {\bf S}({\bf v_2}:= {\bf v_1}).{\bf v_2}
+\sqsupseteq\sqsubseteq
+{\bf v_1} : \mathbb N}\quad
+\inferrule{ {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
+\quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N}
+{{\bf \Gamma}\vdash \emptyset.{\bf v_2}
+\sqsupseteq
+{\bf v_1} : \mathbb N}\\
+\inferrule{{\bf \Gamma}\vdash_S {\bf S}
+\quad {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
+\quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N
+\quad {\bf \Gamma}\vdash_v {\bf v_3} : \mathbb N
+\quad {\bf v_2} \neq {\bf v_3}}
+{{\bf \Gamma}\vdash {\bf S}({\bf v_2}:= {\bf v_1}).{\bf v_3}
+\sqsupseteq\sqsubseteq
+{\bf S}.{\bf v_3} : \mathbb N}
+\end{align*}
+
+
+We also add a new sort for configurations, written
+$CFG({\bf\Gamma},{\bf\tau})$ with judgment notation ${\bf \Gamma}\vdash_C C : {\bf \tau}$, and the following rules:
+
+\begin{align*}
+\inferrule{\cdot \vdash_v {\bf S} : \texttt{list } \mathbb N
+\quad {\bf \Gamma} \vdash {\bf e} : {\bf\tau}}
+{{\bf\Gamma}\vdash_C{\bf S}\triangleright {\bf e} :{\bf\tau}}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash{\bf e_1} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
+{{\bf\Gamma}\vdash\texttt{write }{\bf e_1}\texttt{ to }{\bf e_2};{\bf e_3} : {\bf \tau}}
+\quad\\
+\inferrule{
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
+{{\bf\Gamma}\vdash\texttt{write }{\bf E}\texttt{ to }{\bf e_2};{\bf e_3} : {\bf \tau_s}\rightsquigarrow{\bf \tau}}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
+{{\bf\Gamma}\vdash\texttt{write }{\bf v}\texttt{ to }{\bf E};{\bf e_3} : {\bf \tau_s}\rightsquigarrow{\bf \tau}}
+\quad\\
+\inferrule{
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
+{\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
+{{\bf\Gamma}\vdash(\texttt{write }{\bf E}\texttt{ to }{\bf e_2};{\bf e_3})[{\bf e'}]
+\sqsupseteq\sqsubseteq
+\texttt{write }{\bf E}[{\bf e'}]\texttt{ to }{\bf e_2};{\bf e_3} :{\bf \tau}}
+\quad\\
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
+{\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
+{{\bf\Gamma}\vdash(\texttt{write }{\bf v}\texttt{ to }{\bf E};{\bf e_3})[{\bf e'}] 
+\sqsupseteq\sqsubseteq
+\texttt{write }{\bf v}\texttt{ to }{\bf E}[{\bf e'}];{\bf e_3}:{\bf \tau}}
+\quad\\
+\inferrule{
+{\bf\Gamma}\vdash{\bf e} : \mathbb N}
+{{\bf\Gamma}\vdash\texttt{read }{\bf e} : \mathbb N}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N}
+{{\bf\Gamma}\vdash\texttt{read }{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N
+\quad {\bf\Gamma}\vdash {\bf e'} : {\bf \tau_s}}
+{{\bf\Gamma}\vdash(\texttt{read }{\bf E})[{\bf e'}] 
+\sqsupseteq\sqsubseteq
+\texttt{read }({\bf E}[{\bf e'}]): \mathbb N}
+\quad\\
+\inferrule{\vdash_S {\bf S}
+\quad {\bf \Gamma} \vdash_v {\bf v} : \mathbb N}
+{{\bf\Gamma}\vdash_C{\bf S}\triangleright {\bf E}[\texttt{read }{\bf v}]
+\sqsupseteq\sqsubseteq
+{\bf S} \triangleright {\bf E}[{\bf S}.{\bf v}] :{\bf\tau}}\quad\\
+\inferrule{\vdash_S {\bf S}\quad
+{\bf\Gamma}\vdash_v{\bf v_1} : \mathbb N \quad
+{\bf\Gamma}\vdash_v{\bf v_2} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
+{\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
+{{\bf\Gamma}\vdash{\bf S}\triangleright{\bf E}[\texttt{write }{\bf v_1}\texttt{ to }{\bf v_2};{\bf e_3}]
+\sqsupseteq\sqsubseteq
+{\bf S}({\bf v_2}:={\bf v_1})\triangleright{\bf E}[{\bf e_3}]:{\bf \tau}}
+\end{align*}
+
+
+\section{Exceptions}
+Exceptions need to trace outwards through evaluation contexts until they hit a handler.
+To capture this behavior, we will add handlers, but not designate them as evaluation contexts.
+We assume the boolean language (not written here) for demonstration purposes.
+\newcommand{\handleexn}[3]{\texttt{handle }{#1}\texttt{ catch }{#2}.{#3}}
+\newcommand{\throwexn}[1]{\texttt{throw }{#1}}
+\begin{align*}
+\inferrule{{\bf\Gamma}\vdash {\bf e} : \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
+{{\bf \Gamma}\vdash\throwexn {\bf e} : {\bf\tau}}\quad
+\inferrule{{\bf\Gamma}\vdash {\bf e} : {\bf\tau}\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
+{{\bf\Gamma}\vdash \handleexn {\bf e} x {\bf e'} : {\bf\tau}}
+\quad
+\inferrule{{\bf\Gamma}\vdash_v {\bf v} : \mathbb B\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
+{{\bf\Gamma}\vdash \handleexn {{\bf E}[\throwexn {\bf v}]} x {\bf e'}
+	\sqsupseteq\sqsubseteq {\bf e'}[{\bf v}/x] : {\bf\tau}}\\
+\inferrule{{\bf\Gamma}\vdash_v {\bf v} : {\bf \tau}\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
+{{\bf\Gamma}\vdash \handleexn {\bf v} x {\bf e'}
+	\sqsupseteq\sqsubseteq {\bf v} : {\bf\tau}}
+	\quad
+\inferrule{{\bf\Gamma}\vdash {\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
+{{\bf \Gamma}\vdash\throwexn {\bf E} : {\bf \tau_s} \rightsquigarrow{\bf\tau}}\quad
+\inferrule{{\bf\Gamma}\vdash {\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb B
+\quad{\bf\Gamma}\vdash{\bf e}:{\bf\tau_s}\quad {\bf\Gamma}\vdash {\bf\tau}}
+{{\bf \Gamma}\vdash(\throwexn {\bf E})[{\bf e}]
+\sqsupseteq\sqsubseteq  \throwexn {({\bf E}[{\bf e}])}:{\bf\tau}}
+\end{align*}
+
+
+Note that as written, these two language extensions (exceptions and mutable state) do not play well together.
+However, this approach to exceptions should be generalizeable to algebraic effects, including a more compatible description of memory.
+
+
 \end{document}
 
 
