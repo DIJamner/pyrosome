@@ -448,6 +448,48 @@ However, we abuse notation here since it should be clear which we are using.
 {{\bf \Gamma} \vdash ({\bf v}~{\bf E})[{\bf e}] \sqsupseteq \sqsubseteq {\bf v}~{\bf E}[{\bf e}] : {\bf \tau'}}
 \end{align*}
 
+\subsection{Let-bindings}
+
+\newcommand{\elet}[4]{\lit{let}~ {#1}:{#2}:={#3}~\lit{in}~{#4}}
+\begin{align*}
+  \inferrule{{\bf\Gamma} \vdash {\bf e_1} : {\bf \tau} \quad
+    {\bf\Gamma} \vdash {\bf \tau'} \quad
+    {\bf\Gamma},x:{\bf \tau} \vdash {\bf e_2} : {\bf \tau'}}
+    {{\bf\Gamma} \vdash \elet x {\bf \tau} {\bf e_1} {\bf e_2} : {\bf \tau'}}
+  \quad  
+  \inferrule{{\bf\Gamma} \vdash_v {\bf v_1} : {\bf \tau} \quad
+    {\bf\Gamma} \vdash {\bf \tau'} \quad
+    {\bf\Gamma},x:{\bf \tau} \vdash {\bf e_2} : {\bf \tau'}}
+  {{\bf\Gamma} \vdash \elet x {\bf \tau} {\bf v_1} {\bf e_2}
+    \equiv
+        {\bf e_2}[{\bf v_1}/x]: {\bf \tau'}}
+  \quad\\
+  \inferrule{{\bf\Gamma} \vdash {\bf E_1} : {\bf\tau_s} \rightsquigarrow {\bf \tau} \quad
+    {\bf\Gamma} \vdash {\bf \tau'} \quad
+    {\bf\Gamma},x:{\bf \tau} \vdash {\bf e_2} : {\bf \tau'}}
+            {{\bf\Gamma} \vdash \elet x {\bf \tau} {\bf E_1} {\bf e_2}
+              : {\bf\tau_s}\rightsquigarrow{\bf \tau'}}
+  \quad\\
+  \inferrule{{\bf\Gamma} \vdash {\bf E_1} : {\bf\tau_s} \rightsquigarrow {\bf \tau} \quad
+    {\bf\Gamma} \vdash {\bf \tau'} \quad
+    {\bf\Gamma},x:{\bf \tau} \vdash {\bf e_2} : {\bf \tau'}}
+            {{\bf\Gamma} \vdash (\elet x {\bf \tau} {\bf E_1} {\bf e_2})[{\bf e}]
+              \equiv
+              \elet x {\bf \tau} {{\bf E_1}[{\bf e}]} {\bf e_2}
+              : {\bf\tau_s}\rightsquigarrow{\bf \tau'}}\\
+  \inferrule{{\bf\Gamma} \vdash {\bf e} : {\bf \tau} \quad
+    {\bf\Gamma} \vdash {\bf E} : {\bf \tau} \rightsquigarrow{\bf \tau'}}
+  {{\bf\Gamma} \vdash \elet x {\bf \tau} {\bf e} {{\bf E}[x]}
+    \equiv
+        {\bf E}[{\bf e}]: {\bf \tau'}}
+\end{align*}
+
+\section{Effectful Operations}
+We want to be able to identify expressions that represent an effect ready to be performed,
+so we introduce a new sort, $Ef(\Gamma,\tau)$ for such expressions
+and declare $Ef(\Gamma,\tau) \sqsupseteq Exp(\Gamma,\tau)$.
+We write $\Gamma \vdash_{Ef} e : \tau$ to represent $e : Ef(\Gamma,\tau)$.
+
 \section{Mutable State}
 We show here an axiomatic semantics for a global memory, assuming a semantics for natural numbers.
 We add a new sort for stores, written $Store({\bf \Gamma})$ with judgment notation ${\bf \Gamma}\vdash_S {\bf S}$,
@@ -465,7 +507,7 @@ and the following rules:
 \quad {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
 \quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N}
 {{\bf \Gamma}\vdash {\bf S}({\bf v_2}:= {\bf v_1}).{\bf v_2}
-\sqsupseteq\sqsubseteq
+\equiv
 {\bf v_1} : \mathbb N}\quad
 \inferrule{ {\bf \Gamma}\vdash_v {\bf v_1} : \mathbb N
 \quad {\bf \Gamma}\vdash_v {\bf v_2} : \mathbb N}
@@ -478,7 +520,7 @@ and the following rules:
 \quad {\bf \Gamma}\vdash_v {\bf v_3} : \mathbb N
 \quad {\bf v_2} \neq {\bf v_3}}
 {{\bf \Gamma}\vdash {\bf S}({\bf v_2}:= {\bf v_1}).{\bf v_3}
-\sqsupseteq\sqsubseteq
+\equiv
 {\bf S}.{\bf v_3} : \mathbb N}
 \end{align*}
 
@@ -493,68 +535,84 @@ $CFG({\bf\Gamma},{\bf\tau})$ with judgment notation ${\bf \Gamma}\vdash_C C : {\
 \quad
 \inferrule{
 {\bf\Gamma}\vdash{\bf e_1} : \mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
-{{\bf\Gamma}\vdash\texttt{write }{\bf e_1}\texttt{ to }{\bf e_2};{\bf e_3} : {\bf \tau}}
-\quad\\
-\inferrule{
-{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
-{{\bf\Gamma}\vdash\texttt{write }{\bf E}\texttt{ to }{\bf e_2};{\bf e_3} : {\bf \tau_s}\rightsquigarrow{\bf \tau}}
+{\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad}
+{{\bf\Gamma}\vdash\texttt{write }{\bf e_1}\texttt{ to }{\bf e_2} : \tunit}
 \quad
 \inferrule{
-{\bf\Gamma}\vdash_v{\bf v} : \mathbb N \quad
 {\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}}
-{{\bf\Gamma}\vdash\texttt{write }{\bf v}\texttt{ to }{\bf E};{\bf e_3} : {\bf \tau_s}\rightsquigarrow{\bf \tau}}
+{\bf\Gamma}\vdash{\bf e_2} : \mathbb N}
+{{\bf\Gamma}\vdash\texttt{write }{\bf E}\texttt{ to }{\bf e_2} : {\bf \tau_s}\rightsquigarrow \tunit}
 \quad\\
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v} : \mathbb N \quad
+{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N}
+          {{\bf\Gamma}\vdash\texttt{write }{\bf v}\texttt{ to }{\bf E}
+            : {\bf \tau_s}\rightsquigarrow\tunit}
+\quad
 \inferrule{
 {\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
 {\bf\Gamma}\vdash{\bf e_2} : \mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
 {\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
-{{\bf\Gamma}\vdash(\texttt{write }{\bf E}\texttt{ to }{\bf e_2};{\bf e_3})[{\bf e'}]
-\sqsupseteq\sqsubseteq
-\texttt{write }{\bf E}[{\bf e'}]\texttt{ to }{\bf e_2};{\bf e_3} :{\bf \tau}}
+{{\bf\Gamma}\vdash(\texttt{write }{\bf E}\texttt{ to }{\bf e_2})[{\bf e'}]
+\equiv
+\texttt{write }{\bf E}[{\bf e'}]\texttt{ to }{\bf e_2} :\tunit}
 \quad\\
 \inferrule{
 {\bf\Gamma}\vdash_v{\bf v} : \mathbb N \quad
 {\bf\Gamma}\vdash{\bf E} : {\bf \tau_s}\rightsquigarrow\mathbb N \quad
-{\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
 {\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
-{{\bf\Gamma}\vdash(\texttt{write }{\bf v}\texttt{ to }{\bf E};{\bf e_3})[{\bf e'}] 
-\sqsupseteq\sqsubseteq
-\texttt{write }{\bf v}\texttt{ to }{\bf E}[{\bf e'}];{\bf e_3}:{\bf \tau}}
+{{\bf\Gamma}\vdash(\texttt{write }{\bf v}\texttt{ to }{\bf E})[{\bf e'}] 
+\equiv
+\texttt{write }{\bf v}\texttt{ to }{\bf E}[{\bf e'}]:\tunit}\quad\\
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v_1} : \mathbb N \quad
+{\bf\Gamma}\vdash_v{\bf v_2} : \mathbb N \quad}
+{{\bf\Gamma}\vdash_{Ef}\texttt{write}_{Ef}~{\bf v_1}\texttt{ to }{\bf v_2} : \tunit}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v_1} : \mathbb N \quad
+{\bf\Gamma}\vdash_v{\bf v_2} : \mathbb N \quad}
+          {{\bf\Gamma}\vdash\texttt{write}_{Ef}~{\bf v_1}\texttt{ to }{\bf v_2}
+            \equiv\texttt{write }{\bf v_1}\texttt{ to }{\bf v_2} : \tunit}
 \quad\\
 \inferrule{
 {\bf\Gamma}\vdash{\bf e} : \mathbb N}
 {{\bf\Gamma}\vdash\texttt{read }{\bf e} : \mathbb N}
 \quad
 \inferrule{
-{\bf\Gamma}\vdash{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N}
+  {\bf\Gamma}\vdash{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N}
 {{\bf\Gamma}\vdash\texttt{read }{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N}
 \quad
 \inferrule{
 {\bf\Gamma}\vdash{\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb N
 \quad {\bf\Gamma}\vdash {\bf e'} : {\bf \tau_s}}
 {{\bf\Gamma}\vdash(\texttt{read }{\bf E})[{\bf e'}] 
-\sqsupseteq\sqsubseteq
+\equiv
 \texttt{read }({\bf E}[{\bf e'}]): \mathbb N}
+\quad\\
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v} : \mathbb N}
+{{\bf\Gamma}\vdash_{Ef}\texttt{read}_{Ef}~{\bf v} : \mathbb N}
+\quad
+\inferrule{
+{\bf\Gamma}\vdash_v{\bf v} : \mathbb N}
+          {{\bf\Gamma}\vdash\texttt{read }{\bf v}
+            \equiv\texttt{read}_{Ef}~{\bf v}: \mathbb N}
 \quad\\
 \inferrule{\vdash_S {\bf S}
 \quad {\bf \Gamma} \vdash_v {\bf v} : \mathbb N}
-{{\bf\Gamma}\vdash_C{\bf S}\triangleright {\bf E}[\texttt{read }{\bf v}]
-\sqsupseteq\sqsubseteq
-{\bf S} \triangleright {\bf E}[{\bf S}.{\bf v}] :{\bf\tau}}\quad\\
+{{\bf\Gamma}\vdash_C{\bf S}\triangleright \elet x {\mathbb N} {\texttt{read}_{Ef}~{\bf v}} e
+\equiv
+{\bf S} \triangleright e[{\bf S}.{\bf v}/x] :{\bf\tau}}\quad\\
 \inferrule{\vdash_S {\bf S}\quad
 {\bf\Gamma}\vdash_v{\bf v_1} : \mathbb N \quad
 {\bf\Gamma}\vdash_v{\bf v_2} : \mathbb N \quad
 {\bf\Gamma}\vdash{\bf e_3} : {\bf \tau}\quad
 {\bf\Gamma}\vdash{\bf e'} : {\bf\tau_s}}
-{{\bf\Gamma}\vdash{\bf S}\triangleright{\bf E}[\texttt{write }{\bf v_1}\texttt{ to }{\bf v_2};{\bf e_3}]
-\sqsupseteq\sqsubseteq
-{\bf S}({\bf v_2}:={\bf v_1})\triangleright{\bf E}[{\bf e_3}]:{\bf \tau}}
+          {{\bf\Gamma}\vdash{\bf S}\triangleright
+            \elet x \tunit {\texttt{write}_{Ef}~{\bf v_1}\texttt{ to }{\bf v_2}} e
+\equiv
+{\bf S}({\bf v_2}:={\bf v_1})\triangleright{\bf e}[\eunit/x]:{\bf \tau}}
 \end{align*}
 
 
@@ -567,28 +625,61 @@ We assume the boolean language (not written here) for demonstration purposes.
 \begin{align*}
 \inferrule{{\bf\Gamma}\vdash {\bf e} : \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
 {{\bf \Gamma}\vdash\throwexn {\bf e} : {\bf\tau}}\quad
+\inferrule{{\bf\Gamma}\vdash_v {\bf v} : \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
+{{\bf \Gamma}\vdash_{Ef}\lit{throw}_{Ef}~ {\bf v} : {\bf\tau}}\quad
+\inferrule{{\bf\Gamma}\vdash_v {\bf v} : \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
+{{\bf \Gamma}\vdash\lit{throw}_{Ef}~ {\bf v}\equiv\throwexn {\bf v} : {\bf\tau}}\quad\\
 \inferrule{{\bf\Gamma}\vdash {\bf e} : {\bf\tau}\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
 {{\bf\Gamma}\vdash \handleexn {\bf e} x {\bf e'} : {\bf\tau}}
 \quad
-\inferrule{{\bf\Gamma}\vdash_v {\bf v} : \mathbb B\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
-{{\bf\Gamma}\vdash \handleexn {{\bf E}[\throwexn {\bf v}]} x {\bf e'}
-	\sqsupseteq\sqsubseteq {\bf e'}[{\bf v}/x] : {\bf\tau}}\\
+\inferrule{{\bf\Gamma}\vdash_v {\bf v} : \mathbb B\quad
+  {\bf\Gamma},x:{\bf\tau}\vdash {\bf e} : {\bf\tau'}\quad
+  {\bf\Gamma},y:\mathbb{B}\vdash {\bf e'} : {\bf\tau'}}
+{{\bf\Gamma}\vdash \handleexn {\elet x {\bf \tau} {\lit{throw}_{Ef}~ {\bf v}} {\bf e}} y {\bf e'}
+	\equiv {\bf e'}[{\bf v}/y] : {\bf\tau'}}\\
 \inferrule{{\bf\Gamma}\vdash_v {\bf v} : {\bf \tau}\quad{\bf\Gamma},x:\mathbb{B}\vdash {\bf e'} : {\bf\tau}}
 {{\bf\Gamma}\vdash \handleexn {\bf v} x {\bf e'}
-	\sqsupseteq\sqsubseteq {\bf v} : {\bf\tau}}
+	\equiv{\bf v} : {\bf\tau}}
 	\quad
 \inferrule{{\bf\Gamma}\vdash {\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb B\quad {\bf\Gamma}\vdash {\bf\tau}}
 {{\bf \Gamma}\vdash\throwexn {\bf E} : {\bf \tau_s} \rightsquigarrow{\bf\tau}}\quad
 \inferrule{{\bf\Gamma}\vdash {\bf E} : {\bf \tau_s} \rightsquigarrow \mathbb B
 \quad{\bf\Gamma}\vdash{\bf e}:{\bf\tau_s}\quad {\bf\Gamma}\vdash {\bf\tau}}
 {{\bf \Gamma}\vdash(\throwexn {\bf E})[{\bf e}]
-\sqsupseteq\sqsubseteq  \throwexn {({\bf E}[{\bf e}])}:{\bf\tau}}
+  \equiv \throwexn {({\bf E}[{\bf e}])}:{\bf\tau}}\quad\\
+\inferrule{{\bf\Gamma}\vdash_{Ef} {\bf e_f} : {\bf \tau}\quad
+  {\bf\Gamma},x:{\bf\tau}\vdash {\bf e} : {\bf\tau'}\quad
+  {\bf\Gamma},y:\mathbb B\vdash {\bf e'} : {\bf\tau'}
+  \quad \neg{\lit{is\_throw}(e_f)}}
+{{\bf\Gamma}\vdash \handleexn {\elet x {\bf \tau} {\bf e_f} {\bf e}} y {\bf e'}
+	\equiv \elet x {\bf \tau} {\bf e_f} {\handleexn {\bf e} y {\bf e'}} : {\bf\tau'}}\\
 \end{align*}
 
 
-Note that as written, these two language extensions (exceptions and mutable state) do not play well together.
-However, this approach to exceptions should be generalizeable to algebraic effects, including a more compatible description of memory.
+Note that we have not yet provided an implementation for $\neg{\lit{is\_throw}(e_f)}$.
+There are a couple approaches here.
+The most straightforward would be to define this operation pointwise
+over all effects, but this fails modularity like the prior versions of
+these languages.
 
+A modular approach involves a sort of effect tags, with each effect term related to a tag
+and an inequality operation on tags.
+That said, this would require a good number of rules to formalize.
+It would be more pleasant if we could directly write the
+proposition we want in Coq and then import it into our framework.
+
+An additional note on global effects:
+If we wanted to add, for example, an additional global register file to our mutable state
+language, we would run into an issue of what comprises a top-level configuration.
+There are two immediate approaches: first, we could unify configurations
+and expressions, creating a language with local state,
+and by convention only write programs with one state at the top level.
+Then we could add analogues of the exception handler pass-through rule to our
+mutable state languages.
+
+Alternately, we could standardize the idea of a configuration and
+add the ability to extend the contents of a configuration, e.g.
+by giving its state component map-like properties with an extensible set of keys.
 
 \end{document}
 
