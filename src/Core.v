@@ -913,7 +913,7 @@ Qed.
 Hint Immediate wf_term_sort : judgment.
 
 (*TODOTODOTODOTODOTODO: evaluate everything below this line *)
-
+(*
 
 Lemma is_nth_level_cat {A : eqType} l (a : A) l' : is_nth_level (l ++ a :: l') (size l') a.
 Proof using .
@@ -1140,3 +1140,4 @@ Ltac wf_to_ctx_from_rule :=
     specialize (H' H)
   end;
   inversion H.
+*)

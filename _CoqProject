@@ -1,6 +1,5 @@
 -R src/ excomp
 src/Utils.v
-src/v2/Syntax.v
 src/Exp.v
 src/Rule.v
 src/Core.v
