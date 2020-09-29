@@ -92,8 +92,9 @@ Ltac break_option_dos :=
      let H := fresh "casevar" in move: nxtnxtnxt => H).
 
 Lemma type_wf_term_recognizes l c e t
-  : wf_ctx l c -> type_wf_term l c e = Some t -> wf_term l c e t.
+  : wf_lang l -> wf_ctx l c -> type_wf_term l c e = Some t -> wf_term l c e t.
 Proof with eauto with judgment using .
+  intro wfl.
   elim: e c t.
   {
     simpl; intros until t; intro wfc.
@@ -106,7 +107,7 @@ Proof with eauto with judgment using .
     subst.
     case => <-. move: casevar => /eqP.
     rewrite -is_nth_level_to_fn_err.
-    intro isn. apply: wf_term_by'; eauto.
+    intro isn. apply: wf_term_by; eauto.
     move: isn casevar1.
     match goal with
       |- _ -> _ -> wf_subst _ _ _ ?c => move: c => c' end.
@@ -129,38 +130,39 @@ Proof with eauto with judgment using .
       move: aeq wft => /eqP -> wft.
       intros.
       inversion x;  subst.
-      apply: wf_subst_cons'...
+      apply: wf_subst_cons...
     }
     move: isn.
-    suff: wf_lang l...
-    move => wfl.
     move /is_nth_level_in /(rule_in_wf wfl).
     inversion...
   }
 Qed.    
 
 Lemma type_wf_subst_recognizes l c s c'
-  : wf_ctx l c -> wf_ctx l c' -> type_wf_subst l c s c' = Some tt -> wf_subst l c s c'.
+  : wf_lang l -> wf_ctx l c -> wf_ctx l c' -> type_wf_subst l c s c' = Some tt -> wf_subst l c s c'.
 Proof using .
-  intros wfc.
+  intros wfl wfc.
   elim: s c'; intros until c'; case: c'; simpl; try easy; eauto with judgment.
   intros t' c' wfc'.
   inversion wfc'; subst.
   break_option_dos...
   subst.
-  move /(H c' H4) => wfs.
-  apply: wf_subst_cons'; eauto with judgment.
-  move: casevar0.
-  unfold check.
-  match goal with |-context[if ?A then _ else _] => case aeq: A end; try easy.
-  move: aeq casevar => /eqP ->.
-  move / type_wf_term_recognizes.
-  eauto with judgment.
+  intro.
+  apply: wf_subst_cons; eauto with judgment.
+  apply: type_wf_term_recognizes;
+    eauto with judgment.
+  match goal with
+    H : check (?E) = Some tt |- _ =>
+    move:H; case cv: E; simpl; try easy; move => _
+  end.
+  move: cv => /eqP <-.
+  done.
 Qed.
 
 Lemma type_wf_sort_recognizes l c t
-  : wf_ctx l c -> type_wf_sort l c t = Some tt -> wf_sort l c t.
+  : wf_lang l -> wf_ctx l c -> type_wf_sort l c t = Some tt -> wf_sort l c t.
 Proof.
+  move => wfl.
   case: t; simpl; try easy.
   intros n s.
   break_option_dos.
@@ -190,12 +192,8 @@ Lemma type_wf_ctx_recognizes l c
   : wf_lang l -> type_wf_ctx l c = Some tt -> wf_ctx l c.
 Proof using .
   elim: c; simpl; eauto with judgment.
-  intros t c.
-  break_option_dos.
-  subst.
-  move => H /H => H1 /H1.
-  move: casevar => /type_wf_sort_recognizes.
-  eauto with judgment.
+  Unshelve.
+  all: auto.
 Qed.
 
 Definition type_wf_rule l r : option unit :=

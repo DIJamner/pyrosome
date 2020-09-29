@@ -233,38 +233,50 @@ Ltac wf_lang_eauto :=
          | |- wf_lang nil => apply: wf_lang_nil
          end.
 
+Require Import Setoid.
+
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof using .
   wf_lang_eauto.
   
   2:{ (* element identity substitution *)
-    constructor;auto with judgment.     
-    apply: wf_term_conv'.
+    constructor;auto with judgment.
+    
+    (*TODO: should be handledby this rewriting:
+      match goal with
+      |- wf_term ?l ?c _ _ => 
+      setoid_replace (el 0 1) with (el 0 (ty_subst 0 0 (id 0) 1))
+                             using relation (le_sort l c) at 2
+    end.
+     *)
+    apply:wf_term_conv; first by auto with judgment.
     instantiate (1:= el 0 (ty_subst 0 0 (id 0) 1)).
     auto with judgment.
-    change (el 0 (ty_subst 0 0 (id 0) 1)) with (el 0 1)[/[:: (ty_subst 0 0 (id 0) 1); var 0]/].
-    change (el 0 1) at 3 with (el 0 1)[/[:: var 1; var 0]/].
-    eapply le_sort_subst'.
-    instantiate (1:=[:: ty 0; ob]).
-    2:eauto with judgment.
-    
-    eapply le_subst_cons'.
-    recognize_subst; eauto with judgment.
-    eapply le_subst_cons'.
-    recognize_subst; eauto with judgment.
-    eauto with judgment.
-    rewrite subst_nil.
-    eapply le_term_refl'; eauto with judgment.
-    change (ty 0) [/[:: var 0] /] with (ty 0).
-    change [:: el 0 1; ty 0; ob] with ([:: el 0 1] ++ [:: ty 0; ob]).
-    eapply mono_ctx; eauto with judgment.
+
+    eapply sort_con_mor.
+    eapply subst_cons_mor.
+    eapply reflexivity.
+    change ( [:: el 0 1; ty 0; ob] ) with ( [:: el 0 1]++[:: ty 0; ob] ).
+    eapply le_mono_ctx.
+    eapply le_term_by.
+    instantiate (1:= ty 0).
+    by compute.
   }
   {
     constructor; auto with judgment.
-    apply: wf_term_conv'.
+    apply: wf_term_conv; first by auto with judgment.
+    instantiate (1 := (el 0 (ty_subst 0 (ext 1 3) (snoc 0 1 3 2 4) (ty_subst (ext 1 3) 1 (p 1 3) 3)))).
+    apply:type_wf_term_recognizes; eauto with judgment.
+    unfold el_srt_subst.
+    eapply sort_con_mor.
+    repeat (eapply subst_cons_mor; try eapply reflexivity).
+    TODO: I might need symmetry here
+    strategy: rewrite to compose, compose p with snoc
+    TODO: add symmetric rules to fuller framework.
+
     instantiate
       (1:= (el 0 (ty_subst 0 1 2
-                   (ty_subst (ext 1 3) 1 (p 1 3) 3)))).
+                           (ty_subst (ext 1 3) 1 (p 1 3) 3)))).
     apply:type_wf_term_recognizes; eauto with judgment.
     compute.
 Qed.
