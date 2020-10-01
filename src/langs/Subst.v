@@ -8,49 +8,6 @@ Set Bullet Behavior "Strict Subproofs".
 From excomp Require Import Utils Exp Rule Core EasyWF.
 Require Import String.
 
-Ltac guard_single_goal :=
-  let n := numgoals in
-  guard n < 2.
-
-
-Ltac compute_adds :=
-  repeat match goal with
-           |- context [?X + ?Y] =>
-           let res := eval compute in (X + Y) in
-               change (X + Y) with res
-         end.
-
-
-Ltac clear_const_substs :=
-  repeat match goal with
-         | |- context [[ ?N |] [/?S/]] =>
-           change [N |][/?S/] with [N|]
-         end.
-
-Ltac constructors :=
-  progress repeat (constructor; guard_single_goal).
-
-Ltac topswap :=
-  let H1 := fresh in
-  let H2 := fresh in
-  move => H1 H2;
-          move: H2 H1.
-
-(*todo: put in the right place*)
-Definition exp_of_uint ui := var (Nat.of_uint ui).
-Definition uint_of_exp e :=
-  match e with
-  | var n => Some (Nat.to_uint n)
-  | _ => None
-  end.
-
-Declare Scope exp_scope.
-Bind Scope exp_scope with exp.
-Delimit Scope exp_scope with exp_scope.
-Numeral Notation exp exp_of_uint uint_of_exp : exp_scope.
-
-Arguments con n s%exp_scope.
-
 Local Notation ob := (con 0 [::]).
 Local Notation hom a b := (con 1 [:: b; a]%exp_scope).
 Local Notation id a := (con 2 [:: a]%exp_scope).
@@ -109,8 +66,28 @@ Ltac recognize_rule' :=
     [ by apply type_wf_rule_recognizes
     | idtac]
   end.
-Lemma cat_stx_wf : wf_lang cat_stx.
-Proof using . recognize_lang. Qed.
+
+
+(*TODO: move to utils *)
+Ltac unfold_tail l :=
+  match l with
+  | _::?l' => unfold_tail l'
+  | _ => unfold l
+  end.
+
+(* TODO: move to EasyWF*)
+Ltac wf_lang_eauto :=
+   repeat match goal with
+          | |- wf_lang ?l => unfold_tail l
+         end;
+  repeat match goal with
+         | |- wf_lang (?R :: ?L) =>
+           suff: wf_lang L;
+             [intro;
+              apply: wf_lang_cons;
+              eauto with judgment|]
+         | |- wf_lang nil => apply: wf_lang_nil
+         end.
 
 (* TODO: put hints in right place *)
 
@@ -212,28 +189,7 @@ Definition subst_lang : lang :=
   (term_rule [:: ty 1; hom 0 1; ob; ob] (ty 0))::
   (sort_rule [:: ob])::cat_lang.
 
-(*TODO: move to utils *)
-Ltac unfold_tail l :=
-  match l with
-  | _::?l' => unfold_tail l'
-  | _ => unfold l
-  end.
 
-(* TODO: move to EasyWF*)
-Ltac wf_lang_eauto :=
-   repeat match goal with
-          | |- wf_lang ?l => unfold_tail l
-         end;
-  repeat match goal with
-         | |- wf_lang (?R :: ?L) =>
-           suff: wf_lang L;
-             [intro;
-              apply: wf_lang_cons;
-              eauto with judgment|]
-         | |- wf_lang nil => apply: wf_lang_nil
-         end.
-
-Require Import Setoid.
 
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof using .

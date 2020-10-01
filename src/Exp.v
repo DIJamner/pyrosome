@@ -1005,3 +1005,17 @@ Proof using .
   case => [ aeq fld].
   f_equal; eauto.    
 Qed.  
+
+Definition exp_of_uint ui := var (Nat.of_uint ui).
+Definition uint_of_exp e :=
+  match e with
+  | var n => Some (Nat.to_uint n)
+  | _ => None
+  end.
+
+Declare Scope exp_scope.
+Bind Scope exp_scope with exp.
+Delimit Scope exp_scope with exp_scope.
+Numeral Notation exp exp_of_uint uint_of_exp : exp_scope.
+
+Arguments con n s%exp_scope.

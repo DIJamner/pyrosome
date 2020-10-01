@@ -4,4 +4,7 @@ src/Exp.v
 src/Rule.v
 src/Core.v
 src/EasyWF.v
+-R src/discrete excomp.discrete
+src/discrete/DExp.v
+src/discrete/DRule.v
 src/langs/Subst.v
