@@ -23,71 +23,6 @@ Definition cat_stx : lang :=
      sort_rule [::]
   ].
 
-Ltac recognize_lang :=
-  match goal with
-    |- wf_lang ?L =>
-    suff: type_wf_lang L = Some tt;
-    [ by apply type_wf_lang_recognizes
-    | by cbv]
-  end.
-
-Ltac recognize_ctx :=  match goal with
-    |- wf_ctx ?L ?C =>
-    suff: type_wf_ctx L C = Some tt;
-    [ apply type_wf_ctx_recognizes
-    | by cbv]
-  end.
-
-Ltac recognize_sort :=  match goal with
-    |- wf_sort ?L ?C ?T =>
-    suff: type_wf_sort L C T = Some tt;
-    [ apply type_wf_sort_recognizes
-    | by cbv]
-  end.
-
-Ltac recognize_term :=  match goal with
-    |- wf_term ?L ?C ?E ?T =>
-    suff: type_wf_term L C E = Some T;
-    [ apply type_wf_term_recognizes
-    | by cbv]
-  end.
-
-Ltac recognize_subst :=  match goal with
-    |- wf_subst ?L ?C ?S ?C' =>
-    suff: type_wf_subst L C S C' = Some tt;
-    [ apply type_wf_subst_recognizes
-    | by cbv]
-  end.
-
-Ltac recognize_rule' :=
-  match goal with
-    |- wf_rule ?L ?R =>
-    suff: type_wf_rule L R = Some tt;
-    [ by apply type_wf_rule_recognizes
-    | idtac]
-  end.
-
-
-(*TODO: move to utils *)
-Ltac unfold_tail l :=
-  match l with
-  | _::?l' => unfold_tail l'
-  | _ => unfold l
-  end.
-
-(* TODO: move to EasyWF*)
-Ltac wf_lang_eauto :=
-   repeat match goal with
-          | |- wf_lang ?l => unfold_tail l
-         end;
-  repeat match goal with
-         | |- wf_lang (?R :: ?L) =>
-           suff: wf_lang L;
-             [intro;
-              apply: wf_lang_cons;
-              eauto with judgment|]
-         | |- wf_lang nil => apply: wf_lang_nil
-         end.
 
 (* TODO: put hints in right place *)
 
@@ -189,7 +124,7 @@ Definition subst_lang : lang :=
   (term_rule [:: ty 1; hom 0 1; ob; ob] (ty 0))::
   (sort_rule [:: ob])::cat_lang.
 
-
+Require Import Setoid.
 
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof using .
@@ -225,8 +160,25 @@ Proof using .
     apply:type_wf_term_recognizes; eauto with judgment.
     unfold el_srt_subst.
     eapply sort_con_mor.
-    repeat (eapply subst_cons_mor; try eapply reflexivity).
-    TODO: I might need symmetry here
+    repeat eapply subst_cons_mor.
+    auto with judgment.
+    auto with judgment.
+    
+    (*TODO: eapply symmetry does something very bad; why?*)
+    match goal with |- le_term ?l ?c _ _ ?t => eapply (@symmetry _ (fun x y => le_term l c x y t)) end.
+    eauto with typeclass_instances.
+    (* TODO: why doesn't this work? setoid_symmetry relation (fun x y => le_term l c x y t).*)
+    eapply le_term_trans.
+    2:{
+    match goal with |- le_term ?l ?c _ _ ?t => eapply (@symmetry _ (fun x y => le_term l c x y t)) end.
+    eauto with typeclass_instances.
+    
+    match goal with _ : wf_lang ?l |- _ => let e := eval cbv in (size l) in idtac e end.
+    
+    setoid_replace (ty_subst 0 (ext 1 3) (snoc 0 1 3 2 4) (ty_subst (ext 1 3) 1 (p 1 3) 3))
+                   with (ty_subst 0 1 (cmp 0 (ext 1 3) 1 (p 1 3) (snoc 0 1 3 2 4)) 3).
+    match goal with
+      |- le_term _ _ 
     strategy: rewrite to compose, compose p with snoc
     TODO: add symmetric rules to fuller framework.
 
@@ -236,3 +188,4 @@ Proof using .
     apply:type_wf_term_recognizes; eauto with judgment.
     compute.
 Qed.
+es

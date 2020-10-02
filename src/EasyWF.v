@@ -322,4 +322,55 @@ Ltac wf_lang_eauto :=
          | |- wf_lang nil => apply: wf_lang_nil
          end.
 
- 
+(*Todo: For testing only*)
+Require Import Setoid Equivalence.
+
+Definition testlang :=
+  [:: sort_le [::] (con 1 [::]) (con 0 [::]);
+      sort_rule [::];
+      sort_rule [::]
+  ].
+
+(*
+Hint Extern 1 (is_true (is_nth_level _ _ _)) => by compute : judgment.
+Lemma wf_test : wf_lang testlang.
+Proof.
+  unfold testlang.
+  wf_lang_eauto.
+  constructor; eauto with judgment.
+  apply: wf_sort_by;
+    auto with judgment.
+  (*TODO: need this because the first auto solves an existential variable*)
+  auto with judgment.
+  
+  apply: wf_sort_by; auto with judgment.
+  auto with judgment.
+Qed.
+
+Goal le_sort testlang [::] (con 1 [::]) (con 1 [::]).
+Proof.
+  unfold testlang.
+  reflexivity.
+Qed.  
+(*
+Goal le_sort testlang [::] (con 1 [::]) (con 0 [::]).
+  unfold testlang.
+  
+  Check le_sort_by.
+
+  rewrite (@le_sort_by testlang [::] [1|] [0|]).
+  setoid_replace [1|] with [0|] using relation (le_sort testlang [::]).
+  
+goal: get rewriting working
+ *)
+
+Ltac requiresamevar n1 n2 :=let c1 := constr:(fun n1 n2 : Set⇒ltac:(exact n1)) inlet c2 := constr:(fun n1 n2 : Set⇒ltac:(exact n2)) infirst [ constreq c1 c2|fail 1 "Not the same var:" n1 "and" n2 "(via constreq" c1 c2 ")" ].Ltac issamevar n1 n2 :=match goal with|⇒let:= match goal with⇒requiresamevar n1 n2 end intrue|⇒falseend.
+
+Ltac isunderscore v :=
+  let v' := fresh v in
+  let v' := fresh v' in
+  issamevar v v'.
+
+
+goal: ltac2 integrated inference algo
+*)

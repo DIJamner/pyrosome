@@ -83,6 +83,7 @@ Inductive le_sort (l : lang) c : exp -> exp -> Prop :=
     le_sort l c t1 t12 ->
     le_sort l c t12 t2 ->
     le_sort l c t1 t2
+| le_sort_sym : forall t1 t2, le_sort l c t1 t2 -> le_sort l c t2 t1
 with le_term (l : lang) c : exp -> exp -> exp -> Prop :=
 | le_term_subst : forall s1 s2 c' e1 e2 t,
     le_subst l c s1 s2 c' ->
@@ -99,6 +100,7 @@ with le_term (l : lang) c : exp -> exp -> exp -> Prop :=
     le_term l c e1 e12 t ->
     le_term l c e12 e2 t ->
     le_term l c e1 e2 t
+| le_term_sym : forall e1 e2 t, le_term l c e1 e2 t -> le_term l c e2 e1 t
 (* Conversion:
 
 c |- e1 < e2 : t  ||
@@ -699,21 +701,29 @@ Proof with eauto with judgment using .
   }
 Qed.
 
-  
+
+Lemma subst_sym l c c' s1 s2 : le_subst l c s1 s2 c' -> le_subst l c s2 s1 c'.
+Proof using.
+  elim; eauto with judgment.
+Qed.
+
 (* Preservation of judgments under rewriting *)
 Add Parametric Relation l c : exp (le_sort l c)
-   reflexivity proved by (le_sort_refl l c)
-   transitivity proved by (@le_sort_trans l c)
-     as le_sort_rel.
+    reflexivity proved by (le_sort_refl l c)
+    symmetry proved by (@le_sort_sym l c)
+    transitivity proved by (@le_sort_trans l c)
+      as le_sort_rel.
 Add Parametric Relation l c c' : subst (fun x y => le_subst l c x y c')
    (*reflexivity proved by (le_subst_refl l c)
      not reflexive unless I implement ws syntax
     *)
-   transitivity proved by (@le_subst_trans l c c')
+    symmetry proved by (@subst_sym l c c')
+    transitivity proved by (@le_subst_trans l c c')
    as le_subst_rel.
 Add Parametric Relation l c t : exp (fun x y => le_term l c x y t)
-   reflexivity proved by (fun x => le_term_refl l c x t)
-   transitivity proved by (fun x y z => @le_term_trans l c x y z t)
+    reflexivity proved by (fun x => le_term_refl l c x t)
+    symmetry proved by (fun x y => @le_term_sym l c x y t)
+    transitivity proved by (fun x y z => @le_term_trans l c x y z t)
    as le_term_rel.
 
 Require Import Setoid Morphisms Program.Basics.
@@ -723,7 +733,7 @@ Local Notation term_sig l c t :=  (fun e1 e2 => le_term l c e1 e2 t).
 
 Add Parametric Morphism l c c' : exp_subst
   with signature subst_sig l c c' ==> (le_sort l c') ==>(le_sort l c) as sort_subst_mor.
-Proof.
+Proof using .
   intro_to le_sort; inversion;
     eauto with judgment.
 Qed.
@@ -739,7 +749,7 @@ Local Notation "@( x , y ) : R , R'" :=
    isn't yet supported by the automatic machinery*)
 Instance term_subst_mor_Proper (l : lang) (c c': ctx) t
   : Morphisms.Proper (@(_,s2) : (subst_sig l c c'), term_sig l c' t ==> term_sig l c t[/s2/])%signature exp_subst.
-Proof.
+Proof using .
   unfold Proper.
   unfold dep_respectful.
   unfold respectful.
@@ -765,7 +775,7 @@ Qed.
 
 Add Parametric Morphism l c c' n : (con n)
     with signature subst_sig l c c' ==> le_sort l c as sort_con_mor.
-Proof.
+Proof using .
   intros.
   suff: (le_sort l c (con n (id_subst (size c')))[/x/] (con n (id_subst (size c')))[/y/]);
     eauto with judgment.
@@ -782,7 +792,7 @@ Qed.
 Instance subst_cons_mor_Proper (l : lang) (c c': ctx) t
   : Morphisms.Proper (@(_,s2) : (subst_sig l c c'), term_sig l c t[/s2/] ==> subst_sig l c (t::c'))%signature
                      (flip cons).
-Proof.
+Proof using .
   unfold Proper.
   unfold dep_respectful.
   unfold respectful.
@@ -802,7 +812,7 @@ Defined.
 
 Instance term_con_mor_Proper (l : lang) (c c': ctx) n t
   : Morphisms.Proper (@(_,s2) : (subst_sig l c c'), term_sig l c t[/s2/])%signature (con n).
-Proof.
+Proof using .
   unfold Proper.
   unfold dep_respectful.
   intros.
