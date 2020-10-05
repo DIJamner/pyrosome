@@ -352,17 +352,16 @@ Proof.
   unfold testlang.
   reflexivity.
 Qed.  
-(*
+
 Goal le_sort testlang [::] (con 1 [::]) (con 0 [::]).
   unfold testlang.
   
   Check le_sort_by.
-
-  rewrite (@le_sort_by testlang [::] [1|] [0|]).
+  (*rewrite (@le_sort_by testlang [::] [1|] [0|]).*)
   setoid_replace [1|] with [0|] using relation (le_sort testlang [::]).
   
 goal: get rewriting working
- *)
+
 
 Ltac requiresamevar n1 n2 :=let c1 := constr:(fun n1 n2 : Set⇒ltac:(exact n1)) inlet c2 := constr:(fun n1 n2 : Set⇒ltac:(exact n2)) infirst [ constreq c1 c2|fail 1 "Not the same var:" n1 "and" n2 "(via constreq" c1 c2 ")" ].Ltac issamevar n1 n2 :=match goal with|⇒let:= match goal with⇒requiresamevar n1 n2 end intrue|⇒falseend.
 
@@ -373,4 +372,5 @@ Ltac isunderscore v :=
 
 
 goal: ltac2 integrated inference algo
+*)
 *)
