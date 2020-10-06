@@ -325,7 +325,7 @@ Ltac wf_lang_eauto :=
 (*Todo: For testing only*)
 Require Import Setoid Equivalence.
 
-Definition testlang :=
+Local Definition testlang :=
   [:: sort_le [::] (con 1 [::]) (con 0 [::]);
       sort_rule [::];
       sort_rule [::]
@@ -373,4 +373,198 @@ Ltac isunderscore v :=
 
 goal: ltac2 integrated inference algo
 *)
+
+(* Tactics for easy rule application: todo;
+   move to separate file?
+ *)
+
+From Ltac2 Require Import Ltac2.
+(* TODO: generalize over key, value types? *)
+Ltac2 Type rec FinMap :=
+  [ MapEmpty
+  | MapCons (int, constr, FinMap)].
+
+Ltac2 Type exn ::= [EmptyMapLookupExn].
+Ltac2 rec map_lookup n m :=
+  match m with
+  | MapEmpty => Control.zero EmptyMapLookupExn
+  | MapCons n' v m' =>
+    match Int.equal n' n with
+    | true => v
+    | false => map_lookup n m'
+    end
+  end.
+
+
+
+(* Computes a map that has all mappings from both,
+   or throws if none exists
+TODO: optimize representation for this operation
+ *)
+Ltac2 Type exn ::= [MapMergeExn(constr, constr)].
+Ltac2 rec map_merge m1 m2 :=
+  match m1 with
+  | MapEmpty => m2
+  | MapCons k v1 m1' =>
+    MapCons k v1
+            (Control.plus
+               (fun _ => let v2 := map_lookup k m2 in
+                match Constr.equal v1 v2 with
+                | true => map_merge m1' m2
+                | false => Control.zero (MapMergeExn v1 v2)
+                end)
+               (fun ex =>
+                  match ex with
+                  | EmptyMapLookupExn => map_merge m1' m2
+                  | _ => Control.zero ex
+                  end))
+  end.
+
+Ltac2 Type exn ::= [DomainExn(constr, constr, constr)].
+Ltac2 dom_exn c t := DomainExn c (Constr.type c) t.
+Ltac2 rec int_of_nat c :=
+  match! c with
+  | 0 => 0
+  | S ?c' => Int.add 1 (int_of_nat c')
+  | _ => Control.throw (dom_exn c constr:(nat)) 
+  end.
+
+Ltac2 Type exn ::= [ExpMatchExn(constr, constr)].
+Ltac2 rec exp_match (p : constr) e :=
+  match! p with
+  | var ?x => MapCons (int_of_nat x) e MapEmpty
+  | con ?pn ?ps =>
+    match! e with
+    | con ?n ?s =>
+      match Constr.equal pn n with
+      | true => subst_match ps s
+      | false => Control.throw (ExpMatchExn p e)
+      end
+    | var _ => Control.throw (ExpMatchExn p e)
+    | _ => Control.throw (dom_exn e constr:(exp))
+      (* TODO: need to handle evars*)
+    end
+  | _ => Control.throw (dom_exn p constr:(exp))
+  end
+with subst_match p s :=
+    match! p with
+    | [::] => match! s with [::] => MapEmpty end
+    | ?pe::?p' =>
+      match! s with
+      | ?e::?s' =>
+        map_merge (exp_match pe e) (subst_match p' s')
+      | [::] => Control.throw (ExpMatchExn p s)
+      end
+    end.
+
+Ltac2 Eval (exp_match constr:(var 1) constr:(var 2)).
+Ltac2 Eval
+      (exp_match constr:(con 1 [:: var 2; var 2])
+                          constr:(con 1 [:: (con 2 [::]); (con 2 [::])])).
+
+
+(* assumes idx <= size 
+   TODO: how to handle terms that aren't listed?
+   evar?
 *)
+Ltac2 subst_of_map m size :=
+  let rec som idx acc :=
+      match Int.equal idx size with
+      | true => acc
+      | false =>
+        let v := map_lookup idx m in
+        som (Int.add idx 1) constr:($v::$acc)
+      end in
+  som 0 constr:(@nil exp).
+
+Ltac2 Eval (subst_of_map
+              (MapCons 2 constr:(var 3)
+              (MapCons 0 constr:(var 1)
+              (MapCons 1 constr:(var 2) MapEmpty)))) 3.
+
+Ltac2 max n m :=
+  match Int.gt n m with
+  | true => n
+  | false => m
+  end.
+
+Ltac2 rec min_subst_size m :=
+  match m with
+  | MapEmpty => 0
+  | MapCons n _ m' =>
+    max (Int.add n 1) (min_subst_size m')
+  end.
+
+(* taken from https://github.com/coq/coq/issues/11641 *)
+Ltac2 my_change2 (a : constr) (b : constr) :=
+  ltac1:( a b |- change a with b ) (Ltac1.of_constr a) (Ltac1.of_constr b).
+
+Require Import Ltac2.Notations.
+
+Ltac2 rec unify_in () :=
+  match! goal with
+    [|- is_true (?r \in ?r'::?l)] =>
+    rewrite in_cons;
+    ltac1:(apply /orP);
+    Control.plus
+      (fun () => left;ltac1:(apply /eqP; by f_equal))
+      (fun _ =>
+         right; unify_in ())
+end.
+
+Ltac2 apply_term_rule n :=
+  match! goal with
+    [|- le_term ?l ?c ?t ?e1 ?e2 ]=>
+    match! Std.eval_hnf constr:(nth_level (sort_rule [::]) $l $n) with
+      term_le _ ?pe1 ?pe2 ?pt =>
+      let m := subst_match constr:([:: $pt; $pe1; $pe2])
+                           constr:([:: $t; $e1; $e2]) in
+      let s := subst_of_map m (min_subst_size m) in
+      my_change2
+        constr:(le_term $l $c $t $e1 $e2)
+        constr:(le_term $l $c $pt[/$s/] $pe1[/$s/] $pe2[/$s/]);
+      eapply le_term_subst;
+      Control.enter
+        (fun () =>
+           match! goal with
+           | [|- le_term _ _ _ _ _] =>
+             eapply le_term_by;
+             unify_in ()
+           | [|- le_subst _ _ _ _ _] => ()
+           | [|- _] => Control.throw Match_failure
+           end)
+    end
+end.
+
+Ltac2 unify_nth_level () :=
+  ltac1:(apply /andP);
+  split; auto;
+  ltac1:(apply /eqP);
+  cbv; f_equal.
+  
+Ltac2 try f :=
+  Control.enter
+    (fun () => Control.plus f (fun _ => ())).
+
+Ltac2 all_red_flags :=
+  { Std.rBeta := true;
+  Std.rMatch := true;
+  Std.rFix := true;
+  Std.rCofix := true;
+  Std.rZeta := true;
+  Std.rDelta := true;
+  Std.rConst := []
+}.
+
+Ltac2 apply_term_constr () :=
+  match! goal with
+    [|- wf_term ?l ?c (con ?n ?s) ?t ]=>
+    match! Std.eval_cbv all_red_flags
+           constr:(nth_level (sort_rule [::]) $l $n) with
+    | term_rule ?c' ?t' =>
+      try (fun () => my_change2 constr:(wf_term $l $c (con $n $s) $t)
+                     constr:(wf_term $l $c (con $n $s) $t'[/$s/]));
+      eapply wf_term_by;
+      try unify_nth_level
+    end
+end.
