@@ -354,3 +354,71 @@ Proof using .
       all: exact [::].
   }
 Qed.
+
+Ltac2 unify_nth_level () :=
+  ltac1:(apply /andP);
+  split; auto;
+  ltac1:(apply /eqP);
+  cbv; f_equal.
+  
+Ltac2 try f :=
+  Control.enter
+    (fun () => Control.plus f (fun _ => ())).
+
+Ltac2 all_red_flags :=
+  { Std.rBeta := true;
+  Std.rMatch := true;
+  Std.rFix := true;
+  Std.rCofix := true;
+  Std.rZeta := true;
+  Std.rDelta := true;
+  Std.rConst := []
+}.
+
+Ltac2 apply_term_constr () :=
+  match! goal with
+    [|- wf_term ?l ?c (con ?n ?s) ?t ]=>
+    match! Std.eval_cbv all_red_flags
+           constr:(nth_level (sort_rule [::]) $l $n) with
+    | term_rule ?c' ?t' =>
+      try (fun () => my_change2 constr:(wf_term $l $c (con $n $s) $t)
+                     constr:(wf_term $l $c (con $n $s) $t'[/$s/]));
+      eapply wf_term_by;
+      try unify_nth_level
+    end
+end.
+
+Goal wf_rule subst_lang
+      (term_le [:: el_srt_subst 1 2 3 5;
+               ty 2; hom 0 1; hom 1 2; ob; ob; ob]
+        (cmp 0 1 (ext 2 5) (snoc 1 2 5 3 6) 4)
+        (snoc 0 2 5
+              (cmp 0 1 2 3 4)
+              (el_subst 0 1 4 (ty_subst 1 2 3 5) 6))
+        (hom 0 (ext 2 5))).
+Proof.
+  pose p := subst_lang_wf.
+  constructor; eauto with judgment.
+  ltac2:(apply_term_constr()).
+  repeat eapply wf_subst_cons; eauto with judgment.
+  cbv.
+  eapply wf_term_conv.
+  eauto with judgment.
+  ltac2:(apply_term_constr()).
+  repeat eapply wf_subst_cons; eauto with judgment.
+  eapply sort_con_mor.
+  cbv.
+  eapply le_subst_cons.
+  2:{
+    (* TODO: automate: *)
+    instantiate (1 := ty 0).
+    cbv.
+    Eval cbv in (nth_level (sort_rule [::]) subst_lang 14).
+    symmetry.
+    ltac2:(apply_term_rule constr:(14)).
+    eauto with judgment.
+  }
+  eauto with judgment.
+  Unshelve.
+  all: solve [exact (con 0 [::]) | exact [::]].
+Qed.
