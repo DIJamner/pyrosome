@@ -310,15 +310,16 @@ Ltac unfold_tail l :=
   end.
 
 Ltac wf_lang_eauto :=
-   repeat match goal with
-          | |- wf_lang ?l => unfold_tail l
+  repeat match goal with
+         | |- wf_lang ?l => unfold_tail l
          end;
   repeat match goal with
          | |- wf_lang (?R :: ?L) =>
+           try assumption;
            suff: wf_lang L;
-             [intro;
-              apply: wf_lang_cons;
-              eauto with judgment|]
+           [intro;
+            apply: wf_lang_cons;
+            eauto with judgment|]
          | |- wf_lang nil => apply: wf_lang_nil
          end.
 

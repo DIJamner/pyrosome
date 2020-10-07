@@ -11,10 +11,11 @@ Set Default Proof Mode "Classic".
 From excomp Require Import Utils Exp Rule Core EasyWF.
 Require Import String.
 
-Local Notation ob := (con 0 [::]).
-Local Notation hom a b := (con 1 [:: b; a]%exp_scope).
-Local Notation id a := (con 2 [:: a]%exp_scope).
-Local Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).
+(* TODO: make a notations module *)
+Notation ob := (con 0 [::]).
+Notation hom a b := (con 1 [:: b; a]%exp_scope).
+Notation id a := (con 2 [:: a]%exp_scope).
+Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).
 
 (* syntax of categories *)
 Definition cat_stx : lang :=
@@ -68,19 +69,19 @@ Proof using .
   auto with judgment.
 Qed.
 
-Local Notation ty a := (con 7 [:: a]%exp_scope).
-Local Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
-Local Notation el a t := (con 9 [:: t; a]%exp_scope).
-Local Notation el_subst a b s t m := (con 10 [:: m; t; s; b; a]%exp_scope).
+Notation ty a := (con 7 [:: a]%exp_scope).
+Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
+Notation el a t := (con 9 [:: t; a]%exp_scope).
+Notation el_subst a b s t m := (con 10 [:: m; t; s; b; a]%exp_scope).
 
-Local Notation emp := (con 15 [::]%exp_scope).
-Local Notation forget a := (con 16 [:: a]%exp_scope).
+ Notation emp := (con 15 [::]%exp_scope).
+Notation forget a := (con 16 [:: a]%exp_scope).
 
-Local Notation ext g a := (con 19 [:: a; g]%exp_scope) (*[:: ty 0; ob]*).
-Local Notation snoc a b t g n := (con 20 [:: n; g; t; b; a]%exp_scope)
+Notation ext g a := (con 19 [:: a; g]%exp_scope) (*[:: ty 0; ob]*).
+Notation snoc a b t g n := (con 20 [:: n; g; t; b; a]%exp_scope)
 (*[:: el 0 (ty_subst 0 1 3 2); hom 0 1; ty 1; ob; ob]*).
-Local Notation p a t := (con 21 [:: t; a]%exp_scope).
-Local Notation q a t := (con 22 [:: t; a]%exp_scope).
+Notation p a t := (con 21 [:: t; a]%exp_scope).
+Notation q a t := (con 22 [:: t; a]%exp_scope).
 
 (* convenience def to avoid repetition *)
 Definition el_srt_subst a b g e :=
