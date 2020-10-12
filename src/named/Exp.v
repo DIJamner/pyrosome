@@ -1,4 +1,3 @@
-
 Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -6,17 +5,25 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 Require Import String.
-From excomp Require Import Utils.
+From Utils Require Import Utils.
 
 (* TODO: put in utils*)
 
 Definition named_list (A : Set) :=list (string * A).
+Definition named_list_ty (A : Type) :=list (string * A).
 
 Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
   match l with
   | [::] => default
   | (s', v)::l' =>
     if eqb s s' then v else named_list_lookup default l' s
+  end.
+
+Fixpoint named_list_check {A : eqType} (l : named_list_ty A) (s : string) e : bool :=
+  match l with
+  | [::] => false
+  | (s', v)::l' =>
+    if eqb s s' then v == e else named_list_check l' s e
   end.
 
 Unset Elimination Schemes.
@@ -75,7 +82,7 @@ Definition exp_rec :=
              List.fold_right (fun t => prod (P (snd t))) unit l ->
              P (con n l))-> forall e : exp, P e.
 
-Variant sort : Set := srt : string -> list exp -> sort.
+Variant sort : Set := srt : string -> named_list exp -> sort.
 
 
 Definition ctx := named_list sort.
@@ -108,7 +115,7 @@ Definition exp_subst (s : subst) e : exp :=
 
 Definition subst_cmp s1 s2 : subst := named_map (exp_subst s2) s1.
 
-Class Substable {A : Set} : Set :=
+Class Substable (A : Set) : Set :=
   {
   apply_subst : subst -> A -> A;
   subst_assoc : forall s1 s2 a,
@@ -118,6 +125,29 @@ Class Substable {A : Set} : Set :=
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
+#[refine]
+Instance substable_exp : Substable exp :=
+  {
+  apply_subst := exp_subst
+  }.
+Admitted.
+
+#[refine]
+Instance substable_subst : Substable subst :=
+  {
+  apply_subst := (fun s1 s2 => subst_cmp s2 s1)
+  }.
+Admitted.
+
+Definition sort_subst (s : subst) (t : sort) : sort :=
+  let (c, s') := t in srt c s'[/s/].
+
+#[refine]
+Instance substable_sort : Substable sort :=
+  {
+  apply_subst := sort_subst
+  }.
+Admitted.
 
 
 (*
@@ -589,15 +619,22 @@ Proof.
     f_equal; eauto.
 Qed.
 *)
+*)
+
+Definition eq_pr {A B} eq_a eq_b (p1 p2 : A*B) : bool :=
+  let (a1,b1) := p1 in
+  let (a2,b2) := p2 in
+  (eq_a a1 a2) && (eq_b b1 b2).
 
 Fixpoint eq_exp e1 e2 {struct e1} : bool :=
   match e1, e2 with
-  | var x, var y => x == y
+  | var x, var y => eqb x y
   | con n1 l1, con n2 l2 =>
-    (n1 == n2) && (all2 eq_exp l1 l2)
+    (eqb n1 n2) && (all2 (eq_pr eqb eq_exp) l1 l2)
   | _,_ => false
   end.
 
+(*
 Lemma exp2_ind (P : exp -> exp -> Set)
   : (forall n m, P (var n) (var m)) ->
     (forall n c l, P (var n) (con c l)) ->
@@ -652,8 +689,11 @@ Lemma all2_eq_exp_refl : forall l, all2 eq_exp l l.
   intros; apply /andP; split; auto.
 Qed.
 
+*)
+
 Lemma eq_expP : forall e1 e2, reflect (e1 = e2) (eq_exp e1 e2).
-Proof.
+Admitted.
+(*Proof.
   elim.
   - intro_to exp; case; simpl.
     + move => n0.
@@ -695,11 +735,28 @@ Proof.
              apply: all2_eq_exp_refl.
       * constructor.
         case; move /eqP; by rewrite neq.
-Qed.
+Qed.*)        
+                
 
 Definition exp_eqMixin := Equality.Mixin eq_expP.
 
 Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
+
+Lemma str_eqP : forall s s', reflect (s = s') (eqb s s').
+Admitted.
+
+Canonical str_eqType := @Equality.Pack string (Equality.Mixin str_eqP).
+
+Definition eq_sort (t1 t2 : sort) :=
+  let (n1, s1) := t1 in
+  let (n2, s2) := t2 in
+  (n1 == n2) && (s1 == s2).
+
+Lemma eq_sortP s1 s2 : reflect (s1 = s2) (eq_sort s1 s2).
+Admitted.
+
+Canonical sort_eqType := @Equality.Pack sort (Equality.Mixin eq_sortP).
+(*
 
 (* TODO: how to do for levels? any different?*)
 (* TODO: write a predlike version?/nonoption?*)
