@@ -77,9 +77,9 @@ Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
     (* Notable: only uses the previous parts of the compiler on c *)
     (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
                le_term target [::]
+                       (compile cmp s t)
                        (compile cmp s e1)
-                       (compile cmp s e2)
-                       (compile cmp s t)) ->
+                       (compile cmp s e2)) ->
     (* TODO: when I build in proof terms, this function will be useful *)
     preserving_compiler target ((fun _=>con 0[::])::cmp) (term_le c e1 e2 t :: l).
 
@@ -96,10 +96,10 @@ Proof.
   intros until e; move: s; elim: e; simpl.
   { give_up. }
   intros.
-  
+  (*TODO*) Admitted.
        
 
-
+(*
     
   Lemma compiler_var_lookup
     :  wf_subst lt [::] s (map (compile cmp s) c) ->
@@ -393,3 +393,4 @@ Proof.
     give_up.
   }
   TODO: subst. ver. of lemma
+*)

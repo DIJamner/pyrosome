@@ -8,3 +8,5 @@ src/EasyWF.v
 src/discrete/DExp.v
 src/discrete/DRule.v
 src/langs/Subst.v
+src/Compilers.v
+src/langs/STLC.v
