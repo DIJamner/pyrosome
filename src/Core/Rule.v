@@ -4,7 +4,8 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Utils Exp.
+From Utils Require Import Utils.
+From Core Require Import Exp.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
 Inductive rule : Type :=

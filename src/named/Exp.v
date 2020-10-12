@@ -8,32 +8,43 @@ Set Bullet Behavior "Strict Subproofs".
 Require Import String.
 From excomp Require Import Utils.
 
+(* TODO: put in utils*)
+
+Definition named_list (A : Set) :=list (string * A).
+
+Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
+  match l with
+  | [::] => default
+  | (s', v)::l' =>
+    if eqb s s' then v else named_list_lookup default l' s
+  end.
+
 Unset Elimination Schemes.
 Inductive exp : Set :=
 (* variable name *)
 | var : string -> exp
 (* Rule label, list of subterms*)
-| con : string -> seq exp -> exp.
+| con : string -> named_list exp -> exp.
 Set Elimination Schemes.
 
 
 (*Stronger induction principle w/ better subterm knowledge 
   TODO: not so necessary anymore I think? remove?
-*)
+ *)
 Fixpoint exp_ind
          (P : exp -> Prop)
          (IHV : forall n, P(var n))
          (IHC : forall n l,
-             List.fold_right (fun t : exp => and (P t)) True l ->
+             List.fold_right (fun t => and (P (snd t))) True l ->
              P (con n l))
          (e : exp) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
-        match l return List.fold_right (fun t => and (P t)) True l with
+        match l return List.fold_right (fun t => and (P (snd t))) True l with
         | [::] => I
-        | e' :: l' => conj (exp_ind IHV IHC e') (loop l')
+        | (_, e') :: l' => conj (exp_ind IHV IHC e') (loop l')
         end in
     IHC n l (loop l)
   end.
@@ -42,16 +53,16 @@ Fixpoint exp_rect
          (P : exp -> Type)
          (IHV : forall n, P(var n))
          (IHC : forall n l,
-             List.fold_right (fun t : exp => prod (P t)) unit l ->
+             List.fold_right (fun t => prod (P (snd t))) unit l ->
              P (con n l))
          (e : exp) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
-        match l return List.fold_right (fun t => prod (P t)) unit l with
+        match l return List.fold_right (fun t => prod (P (snd t))) unit l with
         | [::] => tt
-        | e' :: l' => (exp_rect IHV IHC e', loop l')
+        | (_,e') :: l' => (exp_rect IHV IHC e', loop l')
         end in
     IHC n l (loop l)
   end.
@@ -61,19 +72,11 @@ Definition exp_rec :=
      : forall P : exp -> Set,
        (forall n, P (var n)) ->
        (forall n l,
-             List.fold_right (fun t : exp => prod (P t)) unit l ->
+             List.fold_right (fun t => prod (P (snd t))) unit l ->
              P (con n l))-> forall e : exp, P e.
 
 Variant sort : Set := srt : string -> list exp -> sort.
 
-Definition named_list A :=list (string * A).
-
-Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
-  match l with
-  | [::] => default
-  | (s', v)::l' =>
-    if eqb s s' then v else named_list_lookup default l' s
-  end.
 
 Definition ctx := named_list sort.
 
@@ -87,18 +90,37 @@ Definition ctx_lookup (c: ctx) (n : string) : sort :=
   named_list_lookup (srt "" [::]) c n.
 Global Transparent ctx_lookup.
 
+(*TODO: move to utils*)
+Definition pair_map_snd {A B C} (f : B -> C) (p : A * B) :=
+  let (a,b) := p in (a, f b).
+
+Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
+  := map (pair_map_snd f).
+
 Fixpoint exp_var_map (f : string -> exp) (e : exp) : exp :=
   match e with
   | var n => f n
-  | con n l => con n (map (exp_var_map f) l)
+  | con n l => con n (named_map (exp_var_map f) l)
   end.
 
 Definition exp_subst (s : subst) e : exp :=
   exp_var_map (subst_lookup s) e.
 
-(* TODO: subst typeclass
-Notation "e [/ s /]" := (exp_subst s e) (at level 7, left associativity).
+Definition subst_cmp s1 s2 : subst := named_map (exp_subst s2) s1.
 
+Class Substable {A : Set} : Set :=
+  {
+  apply_subst : subst -> A -> A;
+  subst_assoc : forall s1 s2 a,
+      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a
+(* TODO: identity law*)
+  }.
+
+Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
+
+
+
+(*
 Definition subst_cmp s1 s2 : subst := map (exp_subst s2) s1.
 
 

@@ -8,7 +8,9 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
-From excomp Require Import Utils Exp Rule Core EasyWF langs.Subst.
+From Utils Require Import Utils.
+From Core Require Import Exp Rule Core EasyWF.
+Require Import Langs.Subst.
 
 
 Notation arr g a b := (con 27 [:: b; a; g]%exp_scope).
@@ -136,7 +138,7 @@ Proof using .
   all: solve [exact (con 0 [::]) | exact [::]].
 Qed.
 *)
-From excomp Require Import Compilers.
+From Core Require Import Compilers.
 
 Notation "'cfun' pat => e" :=
   (fun s =>

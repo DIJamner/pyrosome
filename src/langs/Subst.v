@@ -8,7 +8,8 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
-From excomp Require Import Utils Exp Rule Core EasyWF.
+From Utils Require Import Utils.
+From Core Require Import Exp Rule Core EasyWF.
 Require Import String.
 
 (* TODO: make a notations module *)

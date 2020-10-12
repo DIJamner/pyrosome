@@ -5,7 +5,8 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From excomp Require Import Utils Exp Rule Core.
+From Utils Require Import Utils.
+From Core Require Import Exp Rule Core.
 
 (* each element is the map for that constructor *)
 Definition compiler := list ((* target closing *) subst -> (* target *) exp). 

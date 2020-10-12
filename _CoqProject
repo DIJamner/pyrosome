@@ -1,12 +1,22 @@
--R src/ excomp
-src/Utils.v
-src/Exp.v
-src/Rule.v
-src/Core.v
-src/EasyWF.v
--R src/discrete excomp.discrete
+-R src/Utils Utils
+src/Utils/Utils.v
+
+-R src/Core Core
+src/Core/Exp.v
+src/Core/Rule.v
+src/Core/Core.v
+src/Core/EasyWF.v
+src/Core/Compilers.v
+
+-R src/discrete Discrete
 src/discrete/DExp.v
 src/discrete/DRule.v
+
+-R src/langs Langs
 src/langs/Subst.v
-src/Compilers.v
 src/langs/STLC.v
+
+-R src/named Named
+src/named/Exp.v
+src/named/Rule.v
+src/named/Core.v
