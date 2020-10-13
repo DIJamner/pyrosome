@@ -8,10 +8,104 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
-From excomp Require Import Utils Exp Rule Core EasyWF.
+From Utils Require Import Utils.
+From Named Require Import Exp Rule Core.
 Require Import String.
 
-(* TODO: make a notations module *)
+(* TODO: move expression sublang to dedicated place *)
+Declare Custom Entry expr.
+Declare Custom Entry srt.
+Declare Custom Entry subst.
+Declare Custom Entry ctx.
+
+Notation "[:> G |- s ]" :=
+  (s%string, sort_rule G)
+    (s constr at level 0, G custom ctx).
+
+Notation "[:> G |- s : t ]" :=
+  (s%string, term_rule G t)
+    (t custom srt,
+     s constr at level 0, G custom ctx).
+
+Notation "[:> G |- ( s ) e1 = e2 ]" :=
+  (s%string, sort_le G e1 e2)
+    (s constr at level 0, G custom ctx,
+     e1 custom srt, e2 custom srt).
+
+Notation "[:> G |- ( s ) e1 = e2 : t ]" :=
+  (s%string, sort_le G e1 e2)
+    (s constr at level 0, G custom ctx,
+     t custom srt, e1 custom expr, e2 custom expr).
+
+Notation "# c" :=
+  (con c%string [::])
+    (in custom expr at level 0, c constr at level 0).
+
+Notation "# c" :=
+  (srt c%string [::])
+    (in custom srt at level 0, c constr at level 0).
+
+Definition sort_app (t : sort) e :=
+  let (n, s) := t in
+  srt n (e::s).
+Hint Unfold sort_app.
+Hint Transparent sort_app.
+
+Notation "e1 s 'is' e2" :=
+  (sort_app e1 (s%string,e2))
+    (in custom srt at level 10, left associativity,
+        e1 custom srt, e2 custom expr, s constr at level 0).
+
+(*Notation "[:> |- rc ]" :=
+  (rc [::])
+    (rc custom rule_conclusion at level 99).*)
+
+(*
+
+Notation "s 'sort'" :=
+  (fun G => (s%string, sort_rule G))
+    (in custom rule_conclusion at level 98, s constr at level 0).
+Notation "s : t" :=
+  (fun G => (s%string, term_rule G t))
+    (in custom rule_conclusion at level 98, t custom srt, s constr at level 0).
+Print Custom Grammar rule_conclusion.
+*)
+(*
+Notation " G |- t = t' ( s )" :=
+  (s%string, sort_le G t t')
+    (in custom rule at level 96, G custom ctx, t custom srt, t' custom srt).
+
+Notation " G |- e = e' : t ( s )" :=
+  (s%string, term_le G e e' t)
+    (in custom rule at level 95, G custom ctx, t custom srt, e custom expr, e' custom expr).
+
+Notation " |- s 'sort'" :=
+  (s%string, sort_rule [::])
+    (in custom rule at level 98, s constr).
+
+Notation " |- s : t" :=
+  (s%string, term_rule [::] t)
+    (in custom rule at level 97, t custom srt).
+
+Notation " |- (s) t = t' sort" :=
+  (s%string, sort_le [::] t t')
+    (in custom rule at level 96, t custom srt, t' custom srt).
+
+Notation " |- (s) e = e' : t" :=
+  (s%string, term_le [::] e e' t)
+    (in custom rule at level 95, t custom srt, e custom expr, e' custom expr).
+*)
+Notation "(:)" := [::] (in custom ctx).
+
+Notation "'ERR'" := nil (in custom srt at level 0).
+
+Eval cbv in [:> (:) |- "foo" : #"bar" "e" is #"baz" "f" is #"qux"].
+
+Notation "G , s : t" := ((s%string,t)
+
+Notation "." := [::] (in custom subst).
+
+
 Notation ob := (con 0 [::]).
 Notation hom a b := (con 1 [:: b; a]%exp_scope).
 Notation id a := (con 2 [:: a]%exp_scope).
