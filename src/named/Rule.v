@@ -45,122 +45,102 @@ Notation "# c ( bd , .. , bd' )" :=
     (in custom srt at level 0, c constr at level 0,
     bd custom subst_binding, bd' custom subst_binding).
 
-Notation "x" :=
+Notation "! x" :=
   x (in custom expr at level 0, x ident).
-Notation "x" :=
+Notation "! x" :=
   x (in custom srt at level 0, x ident).
-Notation "x" :=
+Notation "! x" :=
   x (in custom subst at level 0, x ident).
-Notation "x" :=
+Notation "! x" :=
   x (in custom ctx at level 0, x ident).
                
 Notation "# c" :=
   (srt c%string [::])
     (in custom srt at level 0, c constr at level 0).
 
-Notation "[:> G '|-s' s ]" :=
+Notation "'[s|' G |- s ]" :=
   (s%string, sort_rule G)
-    (s constr at level 0, G custom ctx,
-    format "'[v  ' [:> G '/' '|-s' s ] ']'").
+    (s constr at level 0, G custom ctx
+(*    format "'[  ' G '/' '|-s' s ']'").*)).
 
-Notation "[:> G |- s : t ]" :=
+Notation "[:| G |- s : t ]" :=
   (s%string, term_rule G t)
     (t custom srt,
-     s constr at level 0, G custom ctx,
-    format "'[v  ' [:> G '/' |- '[  ' s '/' : t ']' ] ']'").
+     s constr at level 0, G custom ctx
+    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
 
-Notation "[:> G '|-s' e1 = e2 ( s ) ]" :=
+Notation "'[s>' G |- ( s ) e1 = e2 ]" :=
   (s%string, sort_le G e1 e2)
-    (at level 99,
-     s constr at level 0, G custom ctx,
+    (s constr at level 0, G custom ctx,
      e1 custom srt, e2 custom srt).
 
-Notation "[:> G |- e1 = e2 : t ( s ) ]" :=
+Notation "[:> G |- ( s ) e1 = e2 : t ]" :=
   (s%string, term_le G e1 e2 t)
-    (at level 98,
-     s constr at level 0, G custom ctx,
+    (s constr at level 0, G custom ctx,
      t custom srt, e1 custom expr, e2 custom expr).
 
+Notation "'[s|' |- s ]" :=
+  (s%string, sort_rule [::])
+    (s constr at level 0).
 
-Notation "(:)" := [::] (in custom ctx).
+Notation "[:| |- s : t ]" :=
+  (s%string, term_rule [::] t)
+    (t custom srt,
+     s constr at level 0
+    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
 
-Notation "[:> '|-s' s ]" :=
-  [:> (:) |-s s ]
-    (s constr at level 0, format "'[v  ' [:> '|-s' s ] ']'").
-
-Notation "[:> |- s : t ]" :=
-  [:> (:) |- s : t ]
-    (at level 97, t custom srt,
-     s constr at level 0,
-    format "'[v  ' [:> |- '[  ' s '/' : t ']' ] ']'").
-
-Notation "[:> '|-s' e1 = e2 ( s ) ]" :=
-  [:> (:) |-s e1 = e2 (s)]
-    (at level 97, s constr at level 0,
+Notation "'[s>' |- ( s ) e1 = e2 ]" :=
+  (s%string, sort_le [::] e1 e2)
+    (s constr at level 0,
      e1 custom srt, e2 custom srt).
 
-(*TODO: fix
-Notation "[:> |- e1 = e2 : t ( s ) ]" :=
-  [:> (:) |- e1 = e2 : t (s)]
-    (at level 96, s constr at level 0,
+Notation "[:> |- ( s ) e1 = e2 : t ]" :=
+  (s%string, term_le [::] e1 e2 t)
+    (s constr at level 0,
+     t custom srt, e1 custom expr, e2 custom expr).
+
+(*Notation "(:)" := [::] (in custom ctx).*)
+
+(*
+
+Notation "'|-s' s" :=
+  (s%string, sort_rule [::])
+    (in custom rule at level 80, s constr at level 0).
+
+Notation "|- s : t" :=
+  (s%string, term_rule [::] t)
+    (in custom rule at level 81, t custom srt,
+     s constr at level 0,
+    format "'[  ' |- '[  ' s '/' : t ']' ']'").
+
+Notation "'|-s' ( s ) e1 = e2" :=
+  (s%string, sort_le [::] e1 e2)
+    (in custom rule at level 82,
+     s constr at level 0,
+     e1 custom srt, e2 custom srt).
+
+Notation "|- ( s ) e1 = e2 : t" :=
+  (s%string, term_le [::] e1 e2 t)
+    (in custom rule at level 83,
+     s constr at level 0,
      t custom srt, e1 custom expr, e2 custom expr).
 *)
 
-(*Notation "[:> |- rc ]" :=
-  (rc [::])
-    (rc custom rule_conclusion at level 99).*)
+Declare Custom Entry ctx_binding.
 
-(*
+Notation "bd , .. , bd'" :=
+  (cons bd' .. (cons bd nil)..)
+    (in custom ctx at level 100, bd custom ctx_binding).
 
-Notation "s 'sort'" :=
-  (fun G => (s%string, sort_rule G))
-    (in custom rule_conclusion at level 98, s constr at level 0).
-Notation "s : t" :=
-  (fun G => (s%string, term_rule G t))
-    (in custom rule_conclusion at level 98, t custom srt, s constr at level 0).
-Print Custom Grammar rule_conclusion.
-*)
-(*
-Notation " G |- t = t' ( s )" :=
-  (s%string, sort_le G t t')
-    (in custom rule at level 96, G custom ctx, t custom srt, t' custom srt).
+Notation "x : t" :=
+  (x%string, t)
+    (in custom ctx_binding at level 100, x constr at level 0,
+        t custom srt).
 
-Notation " G |- e = e' : t ( s )" :=
-  (s%string, term_le G e e' t)
-    (in custom rule at level 95, G custom ctx, t custom srt, e custom expr, e' custom expr).
-
-Notation " |- s 'sort'" :=
-  (s%string, sort_rule [::])
-    (in custom rule at level 98, s constr).
-
-Notation " |- s : t" :=
-  (s%string, term_rule [::] t)
-    (in custom rule at level 97, t custom srt).
-
-Notation " |- (s) t = t' sort" :=
-  (s%string, sort_le [::] t t')
-    (in custom rule at level 96, t custom srt, t' custom srt).
-
-Notation " |- (s) e = e' : t" :=
-  (s%string, term_le [::] e e' t)
-    (in custom rule at level 95, t custom srt, e custom expr, e' custom expr).
-*)
-Notation "(:)" := [::] (in custom ctx).
-
-Notation "'ERR'" := nil (in custom srt at level 0).
-
-Check [:> (:)|- "foo" : #"bar" (#"baz"/"e", #"qux"/"f")].
+Print Grammar constr.
+Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" (#"baz"/"e", #"qux"/"f")].
+Check [s> |- ("eq")#"foo" = #"bar"].
 (*TODO: get printing working! are list notations interfering?*)
-
-Notation "s : t" :=
-  [::(s%string,t)]
-    (in custom ctx at level 20, t custom srt).
-
-Notation "G , s : t" :=
-  ((s%string,t)::G)
-    (in custom ctx at level 30,
-        G custom ctx, t custom srt).
-
 
 Definition lang := named_list rule.
 
