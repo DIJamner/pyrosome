@@ -27,10 +27,10 @@ Require Import String.
 
 Declare Custom Entry subst_binding.
 
-Notation "# c ( bd , .. , bd' )" :=
-  (con c%string (cons bd' .. (cons bd nil) ..))
+Notation "# c ( e , .. , e' )" :=
+  (con c%string (cons e' .. (cons e nil) ..))
     (in custom expr at level 0, c constr at level 0,
-    bd custom subst_binding, bd' custom subst_binding).
+    e custom expr, e' custom expr).
 
 Notation "e / x" :=
   (x%string,e) (in custom subst_binding at level 0,
@@ -40,10 +40,10 @@ Notation "# c" :=
   (con c%string [::])
     (in custom expr at level 0, c constr at level 0).
 
-Notation "# c ( bd , .. , bd' )" :=
-  (srt c%string (cons bd' .. (cons bd nil) ..))
+Notation "# c ( e , .. , e' )" :=
+  (srt c%string (cons e' .. (cons e nil) ..))
     (in custom srt at level 0, c constr at level 0,
-    bd custom subst_binding, bd' custom subst_binding).
+    e custom expr, e' custom expr).
 
 Notation "! x" :=
   x (in custom expr at level 0, x ident).
@@ -53,7 +53,12 @@ Notation "! x" :=
   x (in custom subst at level 0, x ident).
 Notation "! x" :=
   x (in custom ctx at level 0, x ident).
+
                
+Notation "% x" :=
+  (var x%string)
+    (in custom expr at level 0, x constr at level 0).
+
 Notation "# c" :=
   (srt c%string [::])
     (in custom srt at level 0, c constr at level 0).
@@ -138,7 +143,7 @@ Notation "x : t" :=
         t custom srt).
 
 Print Grammar constr.
-Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" (#"baz"/"e", #"qux"/"f")].
+Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" (#"baz", #"qux")].
 Check [s> |- ("eq")#"foo" = #"bar"].
 (*TODO: get printing working! are list notations interfering?*)
 

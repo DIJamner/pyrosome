@@ -7,8 +7,12 @@ Set Bullet Behavior "Strict Subproofs".
 From Utils Require Import Utils.
 From Named Require Import Exp Rule.
 
-Definition fresh {A} n (nl : named_list_ty A) : bool :=
+Definition fresh {A} n (nl : named_list A) : bool :=
   ~~ (n \in map fst nl).
+
+
+Definition with_names_from (c : ctx) (l : list exp) : subst :=
+  (map (fun p => (fst (fst p), snd p)) (zip c l)).
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -20,7 +24,6 @@ Definition fresh {A} n (nl : named_list_ty A) : bool :=
 
    For the relational judgments, we assume all arguments are well-formed.
  *)
-Print Custom Grammar ctx.
 Inductive le_sort (l : lang) c : sort -> sort -> Prop :=
 | le_sort_by : forall name t1 t2,
     [s> !c |- (name) !t1 = !t2] \in l ->
@@ -78,13 +81,13 @@ with le_subst (l : lang) c : ctx -> subst -> subst -> Prop :=
 Inductive wf_sort l c : sort -> Prop :=
 | wf_sort_by : forall n s c',
     (n, (sort_rule c')) \in l ->
-    wf_subst l c s c' ->
+    wf_subst l c (with_names_from c' s) c' ->
     wf_sort l c (srt n s)
 with wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s c' t,
     [:| !c' |- n : !t] \in l ->
-    wf_subst l c s c' ->
-    wf_term l c (con n s) t[/s/]
+    wf_subst l c (with_names_from c' s) c' ->
+    wf_term l c (con n s) t[/(with_names_from c' s)/]
 (* terms can be lifted to greater (less precise) types,
    but not the other way around; TODO: change the direction? might be more intuitive
  *)
@@ -144,7 +147,7 @@ Inductive wf_lang : lang -> Prop :=
     (* TODO: pull name out of wf_rule *)
     wf_rule l (name, r) ->
     wf_lang ((name,r)::l).
-(*
+
 
 (* build a database of presuppositions and judgment facts *)
 Create HintDb judgment discriminated.
@@ -156,24 +159,6 @@ Hint Constructors wf_sort le_sort
 
 
 (* monotonicity of judgments under language extension *)
-
-(* Tactics *)
-
-Ltac intro_term :=
-  match goal with
-  | [|- lang _ -> _] => intro
-  | [|- seq (rule _) -> _] => intro
-  | [|- exp _ -> _] => intro
-  | [|- ctx _ -> _] => intro
-  | [|- seq (exp _) -> _] => intro
-  | [|- rule _ -> _] => intro
-  | [|- subst _ -> _] => intro
-  end.
-  
-Ltac solve_wf_with t :=
-  solve [ (constructor + idtac); apply: t; eauto
-        | intro_term; solve_wf_with t
-        | move => _; solve_wf_with t].
 
 
 Scheme le_sort_ind' := Minimality for le_sort Sort Prop
@@ -209,7 +194,7 @@ Ltac expand_rule_shift :=
       with ({<c1 <# c2 |- e1 <# e2 .: t1 <# t2})%%!1
   end. *)
 
-(* TOOD: move to utils *)
+(* TOOD: do I need a named analogue? 
 Lemma is_nth_level_cons {A : eqType} l n t (r : A) : is_nth_level l n t -> is_nth_level (r::l) n t.
 Proof using .  
   unfold is_nth_level.
@@ -218,7 +203,7 @@ Proof using .
   apply /andP; split.
   auto.
   rewrite subSn; auto.
-Qed.
+Qed.*)
 
 Lemma wf_subst_len_eq l c s c' : wf_subst l c s c' -> size s = size c'.
 Proof using .
@@ -252,14 +237,15 @@ Proof using .
 Qed.
 
 
-(* TODO: move to utils*)
+(* TODO: do I need a named analogue?
 Lemma nth_level_size_lt {A:eqType} l n e : @is_nth_level A l n e -> n < size l.
 Proof using .
   unfold is_nth_level.
   move /andP; tauto.
 Qed.
+*)
 
-
+(* TODO: wsness with names
 Lemma wf_is_ws l c
   : (forall t, wf_sort l c t -> ws_exp (size c) t)
     /\ (forall s c', wf_subst l c s c' -> ws_subst (size c) s)
@@ -298,6 +284,7 @@ Proof.
   give_up(*TODO: prob have to show directly *).
 Admitted.
 Hint Resolve wf_is_ws_rule : judgment.
+*)
 
 Lemma le_subst_refl l c s c' : wf_subst l c s c' -> le_subst l c c' s s.
 Proof using .
@@ -306,36 +293,45 @@ Qed.
 Hint Resolve le_subst_refl : judgment.
 
 
-Lemma lookup_wf l c n t c' s
-  : wf_ctx l c -> is_nth_level c n t ->
-    wf_subst l c' s c -> wf_term l c' (var_lookup s n) t [/s /].
+Lemma lookup_wf l c d (n : string) t c' s
+  : wf_ctx l c -> (n, t) \in c ->
+    wf_subst l c' s c -> wf_term l c' (named_list_lookup d s n) t [/s /].
 Proof.
   elim: c n; simpl.
   intros n _.
   inversion.
   intro_to wf_ctx; inversion; subst.
-  unfold is_nth_level.
+  rewrite in_cons.
+  case heq: ((n,t) == (name,v)); simpl.
+  {
+    move: heq => /eqP <- _.
+    inversion; subst.
+    simpl.
+    replace (n=?n)%string with true.
+  (*  TODO: use wsness
   case: n; simpl.
   intro.
   inversion; subst.
-  unfold var_lookup.
+  unfold named_list_lookup.
   unfold nth_level; simpl.
   (* TODO
   Search _ nth.
   rewrite
   eauto with judgment.
 
-  Fail.*)
+  Fail.*)*)
 Admitted.
 
-
+(*
 Lemma rule_in_ws l r : wf_lang l -> r \in l -> ws_rule r.
 Proof using .
  elim; first by compute.
  intro_to is_true.
  rewrite in_cons; case /orP; first move /eqP ->; eauto with judgment. 
 Qed.
-Hint Resolve rule_in_ws : judgment.
+Hint Resolve rule_in_ws : judgment.*)
+
+(* TODO: get proofs through
 
 (* Monotonicity under substitution
 TODO: need wf_ctx for c' is subst case? (to get ws) *)

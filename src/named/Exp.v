@@ -9,8 +9,8 @@ From Utils Require Import Utils.
 
 (* TODO: put in utils*)
 
-Definition named_list (A : Set) :=list (string * A).
-Definition named_list_ty (A : Type) :=list (string * A).
+Definition named_list_set (A : Set) :=list (string * A).
+Definition named_list (A : Type) :=list (string * A).
 
 Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
   match l with
@@ -19,7 +19,7 @@ Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
     if eqb s s' then v else named_list_lookup default l' s
   end.
 
-Fixpoint named_list_check {A : eqType} (l : named_list_ty A) (s : string) e : bool :=
+Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool :=
   match l with
   | [::] => false
   | (s', v)::l' =>
@@ -31,7 +31,7 @@ Inductive exp : Set :=
 (* variable name *)
 | var : string -> exp
 (* Rule label, list of subterms*)
-| con : string -> named_list exp -> exp.
+| con : string -> list exp -> exp.
 Set Elimination Schemes.
 
 
@@ -42,16 +42,16 @@ Fixpoint exp_ind
          (P : exp -> Prop)
          (IHV : forall n, P(var n))
          (IHC : forall n l,
-             List.fold_right (fun t => and (P (snd t))) True l ->
+             List.fold_right (fun t => and (P t)) True l ->
              P (con n l))
          (e : exp) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
-        match l return List.fold_right (fun t => and (P (snd t))) True l with
+        match l return List.fold_right (fun t => and (P t)) True l with
         | [::] => I
-        | (_, e') :: l' => conj (exp_ind IHV IHC e') (loop l')
+        | e' :: l' => conj (exp_ind IHV IHC e') (loop l')
         end in
     IHC n l (loop l)
   end.
@@ -60,16 +60,16 @@ Fixpoint exp_rect
          (P : exp -> Type)
          (IHV : forall n, P(var n))
          (IHC : forall n l,
-             List.fold_right (fun t => prod (P (snd t))) unit l ->
+             List.fold_right (fun t => prod (P t)) unit l ->
              P (con n l))
          (e : exp) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
-        match l return List.fold_right (fun t => prod (P (snd t))) unit l with
+        match l return List.fold_right (fun t => prod (P t)) unit l with
         | [::] => tt
-        | (_,e') :: l' => (exp_rect IHV IHC e', loop l')
+        | e' :: l' => (exp_rect IHV IHC e', loop l')
         end in
     IHC n l (loop l)
   end.
@@ -79,15 +79,14 @@ Definition exp_rec :=
      : forall P : exp -> Set,
        (forall n, P (var n)) ->
        (forall n l,
-             List.fold_right (fun t => prod (P (snd t))) unit l ->
+             List.fold_right (fun t => prod (P t)) unit l ->
              P (con n l))-> forall e : exp, P e.
 
-Variant sort : Set := srt : string -> named_list exp -> sort.
+Variant sort : Set := srt : string -> list exp -> sort.
 
+Definition ctx : Set := named_list_set sort.
 
-Definition ctx := named_list sort.
-
-Definition subst := named_list exp.
+Definition subst : Set := named_list_set exp.
 
 Definition subst_lookup (s : subst) (n : string) : exp :=
   named_list_lookup (var n) s n.
@@ -107,7 +106,7 @@ Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
 Fixpoint exp_var_map (f : string -> exp) (e : exp) : exp :=
   match e with
   | var n => f n
-  | con n l => con n (named_map (exp_var_map f) l)
+  | con n l => con n (map (exp_var_map f) l)
   end.
 
 Definition exp_subst (s : subst) e : exp :=
@@ -125,11 +124,20 @@ Class Substable (A : Set) : Set :=
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
-#[refine]
+Lemma exp_subst_assoc : forall s1 s2 a,
+    exp_subst s1 (exp_subst s2 a)
+    = exp_subst (subst_cmp s1 s2) a.
+Admitted.
+
 Instance substable_exp : Substable exp :=
   {
-  apply_subst := exp_subst
+  apply_subst := exp_subst;
+  subst_assoc := exp_subst_assoc;
   }.
+ 
+Lemma subst_subst_assoc : forall s1 s2 a,
+    subst_cmp s1 (subst_cmp a s2)
+    = subst_cmp (subst_cmp s1 s2) a.
 Admitted.
 
 #[refine]
@@ -137,18 +145,23 @@ Instance substable_subst : Substable subst :=
   {
   apply_subst := (fun s1 s2 => subst_cmp s2 s1)
   }.
-Admitted.
+intros.
+by rewrite subst_subst_assoc.
+Defined.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
-  let (c, s') := t in srt c s'[/s/].
+  let (c, s') := t in srt c (map (apply_subst s) s').
 
-#[refine]
-Instance substable_sort : Substable sort :=
-  {
-  apply_subst := sort_subst
-  }.
+Lemma sort_subst_assoc : forall s1 s2 a,
+    sort_subst s1 (sort_subst s2 a)
+    = sort_subst (subst_cmp s1 s2) a.
 Admitted.
 
+Instance substable_sort : Substable sort :=
+  {
+  apply_subst := sort_subst;
+  subst_assoc := sort_subst_assoc;
+  }.
 
 (*
 Definition subst_cmp s1 s2 : subst := map (exp_subst s2) s1.
@@ -630,7 +643,7 @@ Fixpoint eq_exp e1 e2 {struct e1} : bool :=
   match e1, e2 with
   | var x, var y => eqb x y
   | con n1 l1, con n2 l2 =>
-    (eqb n1 n2) && (all2 (eq_pr eqb eq_exp) l1 l2)
+    (eqb n1 n2) && (all2 eq_exp l1 l2)
   | _,_ => false
   end.
 

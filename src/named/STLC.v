@@ -8,28 +8,108 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
-From excomp Require Import Utils Exp Rule Core EasyWF langs.Subst.
+From Utils Require Import Utils.
+From Named Require Import Exp Rule Core.
+Require Import String.
+
+(* constructors from subst*)
+Parameter emp : exp -> exp.
+Parameter snoc : exp -> exp -> exp -> exp -> exp -> exp -> exp.
+Parameter el_subst : exp -> exp -> exp -> exp -> exp -> exp.
+Parameter ty_subst : exp -> exp -> exp -> exp -> exp.
+Parameter ovar : exp -> exp -> exp -> exp.
+Parameter octxt : sort.
 
 
-Notation arr g a b := (con 27 [:: b; a; g]%exp_scope).
-Notation lam g a b e := (con 28 [:: e; b; a; g]%exp_scope).
-Notation app g a b e1 e2 := (con 29 [:: e2; e1; b; a; g]%exp_scope).
-Definition ty_wkn g a b :=  (ty_subst (ext g a) g (p g a) b).
+Notation ty G := (srt "ty" [:: G]).
+Notation el G t := (srt "el" [:: t; G]).
+Notation var_srt G t := (srt "var" [:: t; G]).
+
+(* Note: the output substs intentionally
+   do not satisfy the output ctx *)
+Fixpoint alpha_eq_ctx_subst c : ctx * list exp * list exp * (exp -> exp) :=
+  let TODO := (con "TODO" [::]) in
+  match c with
+  | [::] => ([::], [::], [::], fun G => (con "id" [::G]))
+  | (n, var_srt G t)::c' =>
+    match alpha_eq_ctx_subst c' with
+      (c_a, s, s', rn) =>
+      let n' := append n "$a"%string in
+      ((n', var_srt G t)::(n, var_srt G t)::c_a,
+       (var n)::s, (var n')::s', fun G => (snoc TODO G t (rn G) (var n) (var n')))
+    end
+  | (n, ty G)::c' =>
+    match alpha_eq_ctx_subst c' with
+      (c_a, s, s', rn) =>
+      ((n,ty G)::c_a, (var n)::s, (ty_subst TODO G (rn G) (var n))::s', rn)
+    end
+  | (n, el G t)::c' =>
+    match alpha_eq_ctx_subst c' with
+      (c_a, s, s', rn) =>
+      ((n,el G t)::c_a, (var n)::s, (el_subst TODO G t (rn G) (var n))::s', rn)
+    end
+  | (n, t)::c' =>
+    match alpha_eq_ctx_subst c' with
+      (c_a, s, s', rn) =>
+      ((n,t)::c_a, (var n)::s, (var n)::s', rn)
+    end
+  end.
+
+Definition alpha_eq_term name c t : rule :=
+  match alpha_eq_ctx_subst c with
+    (c, s, s', _) =>
+    term_le c (con name s) (con name s') t
+  end.
+
+Notation "{[ G ]}" := G (G custom ctx).
+Eval cbv in (alpha_eq_term "lam"
+                           {[ "G" : #"env",
+                              "A" : #"ty"(%"G"),
+                              "x" : #"var"(%"G",%"A"),
+                              "B" : #"ty"(%"G"),
+                              "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B")
+                           ]}
+                           (srt "arr" [:: var "B"; var "A"])).
+
+Fixpoint alpha_rules l :=
+  match l with
+  | [::] => [::]            
+  | (n, term_rule c t)::l' =>
+    (append n "$alpha", alpha_eq_term n c t)::(alpha_rules l')
+  (*| (n, sort_rule c)::l' => TODO*)
+  | _::l' => alpha_rules l'
+  end.
+
+Definition stlc' :=
+  [:> "G" : #"env",
+      "A" : #"ty"(%"G"),
+      "x" : #"var"(%"G",%"A"),
+      "B" : #"ty"(%"G"),
+      "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B"),
+      "e'" : #"el"(%"G", %"A")
+   |- ("STLC-beta") #"app"(%"G", %"A", %"B", #"lambda"(%"G",%"A", %"x",%"B",%"e"), %"e'")
+      = #"el_subst"(%"G", #"ext"(%"G",%"A",%"x"),
+                    #"snoc"(%"G",%"G",%"A",%"x", #"id"(%"G"),%"e'"),
+                    %"e")
+   : #"el" (%"G", %"B")]::
+                 
+  [:| "G" : #"env", "A" : #"ty"(%"G"), "B" : #"ty"(%"G"),
+      "e" : #"el"(%"G", #"->"(%"A",%"B")),
+      "e'" : #"el"(%"G", %"A")
+   |- "app" : #"el"(%"G",%"B")]::
+  [:| "G" : #"env",
+      "A" : #"ty"(%"G"),
+      "x" : #"var"(%"G",%"A"),
+      "B" : #"ty"(%"G"),
+      "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B")
+   |- "lambda" : #"el" (%"G", #"->"(%"G", %"A", %"B"))]::
+  [:| "G" : #"env", "t" : #"ty"(%"G"), "t'": #"ty"(%"G") |- "->" : #"ty"(%"G")]::[::].
+
 Definition stlc :=
-  (term_le [:: el 0 1; el (ext 0 1) (ty_wkn 0 1 2); ty 0; ty 0; ob]
-           (app 0 1 2 (lam 0 1 2 3) 4)
-           (el_subst 0 (ext 0 1)
-                     (snoc 0 0 1 (id 0) 4) (ty_wkn 0 1 2) 3)
-           (el 0 2))::
-  ([:> "e'" : el 0 1, "e" : el 0 (arr 0 1 2),
-       "t'" : ty "G", "t" : ty "G", "G" : ob]
-           |- "app"  (el "G" "t'")])::
-  ([:> "e": el (ext "G" "t") (ty_wkn "G" "t" "t'"),
-       "t'" : ty "G", "t" : ty "G", "G" : ob]
-             |- "lamba" : el "G" (arr "G" "t" "t'")])::
-  ([:> "t'" : ty "G", "t": ty "G", "G": ob |- "arrow" : ty "G"])::
-  subst_lang.
-      
+  alpha_rules stlc' ++ stlc' ++ [::(*subst_lang*)].
+Eval cbv in stlc.
+
+  
 Lemma stlc_wf : wf_lang stlc.
 Proof using.
   pose p:= subst_lang_wf.
@@ -50,7 +130,7 @@ Proof using.
       eapply wf_subst_cons; eauto with judgment.
       cbv.
       eapply wf_term_conv.
-      eauto with judgment.
+      eauto with judgmenxt.
       eapply wf_term_var.
       ltac2:(unify_nth_level()).
       eapply sort_con_mor.

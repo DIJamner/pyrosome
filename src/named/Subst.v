@@ -12,156 +12,48 @@ From Utils Require Import Utils.
 From Named Require Import Exp Rule Core.
 Require Import String.
 
-(* TODO: move expression sublang to dedicated place *)
-Declare Custom Entry expr.
-Declare Custom Entry srt.
-Declare Custom Entry subst.
-Declare Custom Entry ctx.
-
-Notation "[:> G |- s ]" :=
-  (s%string, sort_rule G)
-    (s constr at level 0, G custom ctx).
-
-Notation "[:> G |- s : t ]" :=
-  (s%string, term_rule G t)
-    (t custom srt,
-     s constr at level 0, G custom ctx).
-
-Notation "[:> G |- ( s ) e1 = e2 ]" :=
-  (s%string, sort_le G e1 e2)
-    (s constr at level 0, G custom ctx,
-     e1 custom srt, e2 custom srt).
-
-Notation "[:> G |- ( s ) e1 = e2 : t ]" :=
-  (s%string, sort_le G e1 e2)
-    (s constr at level 0, G custom ctx,
-     t custom srt, e1 custom expr, e2 custom expr).
-
-Notation "# c" :=
-  (con c%string [::])
-    (in custom expr at level 0, c constr at level 0).
-
-Notation "# c" :=
-  (srt c%string [::])
-    (in custom srt at level 0, c constr at level 0).
-
-Definition sort_app (t : sort) e :=
-  let (n, s) := t in
-  srt n (e::s).
-Hint Unfold sort_app.
-Hint Transparent sort_app.
-
-Notation "e1 s 'is' e2" :=
-  (sort_app e1 (s%string,e2))
-    (in custom srt at level 10, left associativity,
-        e1 custom srt, e2 custom expr, s constr at level 0).
-
-(*Notation "[:> |- rc ]" :=
-  (rc [::])
-    (rc custom rule_conclusion at level 99).*)
-
-(*
-
-Notation "s 'sort'" :=
-  (fun G => (s%string, sort_rule G))
-    (in custom rule_conclusion at level 98, s constr at level 0).
-Notation "s : t" :=
-  (fun G => (s%string, term_rule G t))
-    (in custom rule_conclusion at level 98, t custom srt, s constr at level 0).
-Print Custom Grammar rule_conclusion.
-*)
-(*
-Notation " G |- t = t' ( s )" :=
-  (s%string, sort_le G t t')
-    (in custom rule at level 96, G custom ctx, t custom srt, t' custom srt).
-
-Notation " G |- e = e' : t ( s )" :=
-  (s%string, term_le G e e' t)
-    (in custom rule at level 95, G custom ctx, t custom srt, e custom expr, e' custom expr).
-
-Notation " |- s 'sort'" :=
-  (s%string, sort_rule [::])
-    (in custom rule at level 98, s constr).
-
-Notation " |- s : t" :=
-  (s%string, term_rule [::] t)
-    (in custom rule at level 97, t custom srt).
-
-Notation " |- (s) t = t' sort" :=
-  (s%string, sort_le [::] t t')
-    (in custom rule at level 96, t custom srt, t' custom srt).
-
-Notation " |- (s) e = e' : t" :=
-  (s%string, term_le [::] e e' t)
-    (in custom rule at level 95, t custom srt, e custom expr, e' custom expr).
-*)
-Notation "(:)" := [::] (in custom ctx).
-
-Notation "'ERR'" := nil (in custom srt at level 0).
-
-Eval cbv in [:> (:) |- "foo" : #"bar" "e" is #"baz" "f" is #"qux"].
-
-Notation "G , s : t" := ((s%string,t)
-
-Notation "." := [::] (in custom subst).
 
 
-Notation ob := (con 0 [::]).
+
+(*Notation ob := (con 0 [::]).
 Notation hom a b := (con 1 [:: b; a]%exp_scope).
 Notation id a := (con 2 [:: a]%exp_scope).
-Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).
+Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).*)       
 
 (* syntax of categories *)
-Definition cat_stx : lang :=
+Definition cat_lang : lang :=
   [::
-     term_rule [:: hom 1 2; hom 0 1; ob; ob; ob]
-               (hom 0 2);
-     term_rule [:: ob] (hom 0 0);
-     [:> "G" : env, "G'" : env |- "sub" sort];
-     [:> "env" sort]
+     [:> "G1" : #"env", "G2" : #"env", "G3" : #"env", "G4" : #"env",
+         "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"), "h" : #"sub"(%"G3",%"G4")
+      |- ("cmp_assoc") #"cmp"(%"G1", %"G2", %"G4", %"f",
+                              #"cmp"(%"G2",%"G3",%"G4", %"g",%"h"))
+         = #"cmp"(%"G1", %"G3", %"G4", #"cmp"(%"G1",%"G2",%"G3", %"f",%"g"), %"h")
+         : #"sub"(%"G1",%"G4")];  
+  [:> "G" : #"env", "G'" : #"env", "f" : #"sub"(%"G",%"G'")
+   |- ("id_left") #"cmp"(%"G", %"G", %"G'", #"id"(%"G"), %"f") = %"f" : #"sub"(%"G",%"G'")];
+  [:> "G" : #"env", "G'" : #"env", "f" : #"sub"(%"G",%"G'")
+   |- ("id_right") #"cmp"(%"G", %"G'", %"G'", %"f", #"id"(%"G'")) = %"f" : #"sub"(%"G",%"G'")];
+  [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
+      "f" : #"sub"(%"G1", %"G2"),
+      "g" : #"sub"(%"G2", %"G3")
+   |- "cmp" : #"sub"(%"G1",%"G3")];
+  [:| "G" : #"env" |- "id" : #"sub" (%"G", %"G")];
+  [s| "G" : #"env", "G'" : #"env" |- "sub"];
+  [s| |- "env"]
   ].
 
+Definition var_lang : lang :=
+  [::
+     [:| "G" : #"env", "t" : #"ty",
+         "v" : #"var"(%"G", %"t"),
+         "_" : #"Pf"(#"var_in"(%"G", %"t", %"v"))
+      |- "v-ref" : #"el"(%"G", %"t")];
+     [:| "G" : #"env", "t" : #"ty"(%"G"), "s" : #"string"
+      |- "v" : #"var"(%"G", %"t")]; 
+     [s| "G" : #"env", "t" : #"ty"(%"G") |- "var"];
+     (*TODO: elements of string sort and matching*)
+     [s| |- "string"]].
 
-(* TODO: put hints in right place *)
-
-Hint Resolve type_wf_lang_recognizes : judgment.
-Hint Resolve type_wf_rule_recognizes : judgment.
-Hint Resolve type_wf_ctx_recognizes : judgment.
-Hint Resolve type_wf_sort_recognizes : judgment.
-Hint Resolve type_wf_term_recognizes : judgment.
-Hint Resolve type_wf_subst_recognizes : judgment.
-
-
-Definition cat_lang : lang :=
-  (* compose associativity *)
-  (term_le [:: hom 2 3; hom 1 2; hom 0 1; ob; ob; ob; ob]
-           (cmp 0 1 3 (cmp 1 2 3 6 5) 4)
-           (cmp 0 2 3 6 (cmp 0 1 2 5 4))
-           (hom 0 3))::
-  (* left identity *)
-  (term_le [:: (hom 0 1); ob; ob]
-               (cmp 0 1 1 (id 1) 2)
-               2
-               (hom 0 1))::
-  (* right identity *)
-  (term_le [:: (hom 0 1); ob; ob]
-               (cmp 0 0 1 2 (id 0))
-               2
-               (hom 0 1))::cat_stx.
-
-
-Lemma cat_lang_wf : wf_lang cat_lang.
-Proof using .
-  auto with judgment.
-  (*recognize_lang.*)
-Qed.
-(*TODO: symmetry for rules;currently only go one direction *)
-
-
-Lemma wf_ob c : wf_ctx cat_lang c -> wf_sort cat_lang c ob.
-Proof using .
-  auto with judgment.
-Qed.
 
 Notation ty a := (con 7 [:: a]%exp_scope).
 Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
