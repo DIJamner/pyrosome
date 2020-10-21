@@ -62,6 +62,7 @@ Definition alpha_eq_term name c t : rule :=
   end.
 
 Notation "{[ G ]}" := G (G custom ctx).
+                        
 Eval cbv in (alpha_eq_term "lam"
                            {[ "G" : #"env",
                               "A" : #"ty"(%"G"),
@@ -83,25 +84,22 @@ Fixpoint alpha_rules l :=
 Definition stlc' :=
   [:> "G" : #"env",
       "A" : #"ty"(%"G"),
-      "x" : #"var"(%"G",%"A"),
       "B" : #"ty"(%"G"),
-      "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B"),
+      "e" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"),%"G",#"wkn"(%"G",%"A"),%"B")),
       "e'" : #"el"(%"G", %"A")
-   |- ("STLC-beta") #"app"(%"G", %"A", %"B", #"lambda"(%"G",%"A", %"x",%"B",%"e"), %"e'")
+   |- ("STLC-beta") #"app"(%"G", %"A", %"B", #"lambda"(%"G",%"A",%"B",%"e"), %"e'")
       = #"el_subst"(%"G", #"ext"(%"G",%"A",%"x"),
                     #"snoc"(%"G",%"G",%"A",%"x", #"id"(%"G"),%"e'"),
                     %"e")
    : #"el" (%"G", %"B")]::
-                 
   [:| "G" : #"env", "A" : #"ty"(%"G"), "B" : #"ty"(%"G"),
       "e" : #"el"(%"G", #"->"(%"A",%"B")),
       "e'" : #"el"(%"G", %"A")
    |- "app" : #"el"(%"G",%"B")]::
   [:| "G" : #"env",
       "A" : #"ty"(%"G"),
-      "x" : #"var"(%"G",%"A"),
       "B" : #"ty"(%"G"),
-      "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B")
+      "e" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"),%"G",#"wkn"(%"G",%"A"),%"B"))
    |- "lambda" : #"el" (%"G", #"->"(%"G", %"A", %"B"))]::
   [:| "G" : #"env", "t" : #"ty"(%"G"), "t'": #"ty"(%"G") |- "->" : #"ty"(%"G")]::[::].
 

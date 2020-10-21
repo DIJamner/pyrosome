@@ -42,19 +42,7 @@ Definition cat_lang : lang :=
   [s| |- "env"]
   ].
 
-Definition var_lang : lang :=
-  [::
-     [:| "G" : #"env", "t" : #"ty",
-         "v" : #"var"(%"G", %"t"),
-         "_" : #"Pf"(#"var_in"(%"G", %"t", %"v"))
-      |- "v-ref" : #"el"(%"G", %"t")];
-     [:| "G" : #"env", "t" : #"ty"(%"G"), "s" : #"string"
-      |- "v" : #"var"(%"G", %"t")]; 
-     [s| "G" : #"env", "t" : #"ty"(%"G") |- "var"];
-     (*TODO: elements of string sort and matching*)
-     [s| |- "string"]].
-
-
+(*
 Notation ty a := (con 7 [:: a]%exp_scope).
 Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
 Notation el a t := (con 9 [:: t; a]%exp_scope).
@@ -72,65 +60,350 @@ Notation q a t := (con 22 [:: t; a]%exp_scope).
 (* convenience def to avoid repetition *)
 Definition el_srt_subst a b g e :=
   (el a (ty_subst a b g e)).
+*)
+Definition subst_lang' : lang :=
+  [:> |- ("id_emp_forget") #"id"(#"emp") = #"forget"(#"emp") : #"sub"(#"emp", #"emp")]::
+  [:> "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'")
+   |- ("cmp_forget") #"cmp"(%"G",%"G'",#"emp", #"forget"(%"G'"))
+                     = #"forget"(%"G") : #"sub"(%"G",#"emp")]::
+  [:| "G" : #"env" |- "forget" : #"sub"(%"G",#"emp")]::
+  [:| |- "emp" : #"env"]::
+  [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"),
+       "A" : #"ty"(%"G3"), "e" : #"el"(%"G3",%"A")
+   |- ("el_subst_cmp") #"el_subst"(%"G1",%"G3", #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A",%"e")
+      = #"el_subst"(%"G1",%"G2", %"f", #"ty_subst"(%"G2",%"G3",%"g", %"A"),
+                   #"el_subst"(%"G2",%"G3",#"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A",%"e"))
+      : #"el"(%"G1",#"ty_subst"(%"G1",%"G3", #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A"))]:: 
+  [:> "G" : #"env", "A" : #"ty"(%"G"), "e" : #"el"(%"G", %"A")
+   |- ("el_subst_id") #"el_subst"(%"G",%"G", #"id"(%"G"),%"A",%"e") = %"e" : #"el"(%"G",%"A")]::
+  [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"),
+       "A" : #"ty"(%"G3")
+   |- ("ty_subst_cmp") #"ty_subst"(%"G1",%"G3", #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A")
+      = #"ty_subst"(%"G1",%"G2", %"f", #"ty_subst"(%"G2",%"G3",%"g", %"A"))
+      : #"ty"(%"G1")]::              
+  [:> "G" : #"env", "A" : #"ty"(%"G")
+   |- ("ty_subst_id") #"ty_subst"(%"G",%"G", #"id"(%"G"), %"A")
+                      = %"A" : #"ty"(%"G")]::
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'"),
+      "A" : #"ty"(%"G'"), "e" : #"el"(%"G'", %"A")
+    |- "el_subst" : #"el"(%"G",#"ty_subst"(%"G", %"G'",%"g",%"A"))]::
+  [s| "G" : #"env", "A" : #"ty"(%"G") |- "el"]::
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G", %"G'"), "A" : #"ty"(%"G'")
+   |- "ty_subst" : #"ty"(%"G")]::
+  [s| "G" : #"env" |- "ty"]::cat_lang.
 
 Definition subst_lang : lang :=
-  (term_le [:: ty 0; ob]
-              (id (ext 0 1))
-              (snoc (ext 0 1) 0 1 (p 0 1) (q 0 1))
-              (hom (ext 0 1) (ext 0 1)))::
-   (term_le [:: el_srt_subst 1 2 3 5;
-               ty 2; hom 0 1; hom 1 2; ob; ob; ob]
-        (cmp 0 1 (ext 2 5) (snoc 1 2 5 3 6) 4)
-        (snoc 0 2 5
-              (cmp 0 1 2 3 4)
-              (el_subst 0 1 4 (ty_subst 1 2 3 5) 6))
-        (hom 0 (ext 2 5)))::
-  (term_le [:: el_srt_subst 0 1 2 3; ty 1; hom 0 1; ob; ob]
-           (el_subst 0 (ext 1 3) (snoc 0 1 3 2 4)
-                     (ty_subst (ext 1 3) 1 (p 1 3) 3) (q 1 3))
-           4
-           (el_srt_subst 0 1 2 3))::
-  (term_le [:: el_srt_subst 0 1 2 3; ty 1; hom 0 1; ob; ob]
-           (cmp 0 (ext 1 3) 1
-                (p 1 3)
-                (snoc 0 1 3 2 4))
-           2
-           (hom 0 1))::
-  (term_rule [:: ty 0; ob]
-             (el_srt_subst (ext 0 1) 0 (p 0 1) 1))::
-  (term_rule [:: ty 0; ob] (hom (ext 0 1) 0))::
-  (term_rule [:: el 0 (ty_subst 0 1 3 2); hom 0 1; ty 1; ob; ob]
-             (hom 0 (ext 1 2)))::
-  (term_rule [:: ty 0; ob] ob)::
-  (term_le [::] (id emp) (forget emp) (hom emp emp))::
-  (term_le [:: hom 0 1; ob; ob] (cmp 0 1 emp (forget 1) 2) (forget 0) (hom 0 emp))::
-  (term_rule [:: ob] (hom 0 emp))::
-  (term_rule [::] ob)::
-  (* el_subst compose to sequence *)
-  (term_le [:: ty 2; hom 1 2; hom 0 1; ob; ob; ob]
-           (ty_subst 0 2 (cmp 0 1 2 4 3) 5)
-           (ty_subst 0 1 3 (ty_subst 1 2 4 5))
-           (ty 0))::
-  (* id el_subst; may be the first rule that holds, but isn't recognized. *)
-  (term_le [:: el 0 1; ty 0; ob] (el_subst 0 0 (id 0) 1 2) 2 (el 0 1))::
-  (* ty_subst compose to sequence *)
-  (term_le [:: ty 2; hom 1 2; hom 0 1; ob; ob; ob]
-           (ty_subst 0 2 (cmp 0 1 2 4 3) 5)
-           (ty_subst 0 1 3 (ty_subst 1 2 4 5))
-           (ty 0))::
-  (* id ty_subst *)
-  (term_le [:: ty 0; ob] (ty_subst 0 0 (id 0) 1) 1 (ty 0))::
-  (term_rule [:: el 1 3; ty 1; hom 0 1; ob; ob] (el 0 (ty_subst 0 1 2 3)))::
-  (sort_rule [:: ty 0; ob])::
-  (term_rule [:: ty 1; hom 0 1; ob; ob] (ty 0))::
-  (sort_rule [:: ob])::cat_lang.
+   [:> "G" : #"env", "A" : #"ty"(%"G")
+    |- ("snoc_wkn_hd") #"id"(#"ext"(%"G",%"A"))
+       = #"snoc"(#"ext"(%"G",%"A"),%"G",%"A",#"wkn"(%"G",%"A"),#"hd"(%"G",%"A"))
+       : #"sub"(#"ext"(%"G",%"A"),#"ext"(%"G",%"A"))]::
+   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"),
+       "A" : #"ty"(%"G3"), "e" : #"el"(%"G2", #"ty_subst"(%"G2", %"G3",%"g",%"A"))
+    |- ("cmp_snoc") #"cmp"(%"G1",%"G2",#"ext"(%"G3",%"A"),%"f",#"snoc"(%"G2",%"G3",%"A",%"g",%"e"))
+       = #"snoc"(%"G1",%"G3", %"A",
+                 #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"),
+                 #"el_subst"(%"G1",%"G2",%"f",#"ty_subst"(%"G2", %"G3",%"g",%"A"),%"e"))
+       : #"sub"(%"G1",#"ext"(%"G3",%"A"))]::
+  [:> "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'"),
+      "A" : #"ty"(%"G'"), "e" : #"el"(%"G", #"ty_subst"(%"G", %"G'",%"g",%"A"))
+   |- ("snoc_hd") #"el_subst"(%"G", #"ext"(%"G'", %"A"), #"snoc"(%"G",%"G'",%"A",%"g",%"e"),
+                              #"ty_subst"(#"ext"(%"G'",%"A"),%"G'",#"wkn"(%"G'",%"A"), %"A"), #"hd"(%"G'",%"A"))
+      = %"e" : #"el"(%"G", #"ty_subst"(%"G", %"G'",%"g",%"A"))]::
+  [:> "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'"),
+      "A" : #"ty"(%"G'"), "e" : #"el"(%"G", #"ty_subst"(%"G", %"G'",%"g",%"A"))
+   |- ("wkn_snoc") #"cmp"(%"G",#"ext"(%"G'",%"A"),%"G'",
+                          #"wkn"(%"G'",%"A"),#"snoc"(%"G",%"G'",%"A",%"g",%"e"))
+      = %"g" : #"sub"(%"G",%"G'")]::
+  [:| "G" : #"env", "A" : #"ty"(%"G")
+   |- "hd" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"), %"G", #"wkn"(%"G",%"A"), %"A"))]::
+  [:| "G" : #"env", "A" : #"ty"(%"G") |- "wkn" : #"sub"(#"ext"(%"G",%"A"), %"G")]::
+  [:| "G" : #"env", "G'" : #"env", "A" : #"ty"(%"G'"), "g" : #"sub"(%"G",%"G'"),
+      "e" : #"el"(%"G", #"ty_subst"(%"G",%"G'",%"g",%"A"))
+   |- "snoc" : #"sub"(%"G",#"ext"(%"G'",%"A"))]::
+  [:| "G" : #"env", "A": #"ty"(%"G") |- "ext" : #"env"]::subst_lang'.
 
 Require Import Setoid.
 
+Require Import Named.Tactics.
+
+Set Default Proof Mode "Ltac2".
+
+Lemma nil_with_names c : with_names_from c [::] = [::].
+Proof using.
+  destruct c; auto.
+Qed.
+
+Ltac2 process_judgment () :=
+  (simpl;lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
+  | [|- wf_term _ _ (var _) _] => eapply wf_term_var; unify_in()
+   end).
 
 
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof using .
+  constructor > [|repeat (process_judgment())].
+  constructor > [|repeat (process_judgment())]. (* long *)
+  constructor > [|repeat (process_judgment())].
+  constructor > [|repeat (process_judgment())]. (* long *)
+
+  constructor > [|repeat (process_judgment())]. (* long *) 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. (* long *)
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())].
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())].
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())].
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())]. 
+  constructor > [|repeat (process_judgment())].
+  constructor.
+  {
+    eapply wf_term_conv > [ repeat (process_judgment()) | repeat (process_judgment()) |].
+    admit.
+  }
+  {
+    eapply wf_term_conv.
+    repeat (process_judgment()).
+    apply_rule '"el_subst"%string.
+    constructor; auto.
+    constructor; auto.
+    constructor; auto.
+    constructor; auto.
+    constructor; auto.
+    constructor.
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()). cbv.
+    admit. admit.
+  }
+  {
+    eapply wf_term_conv.
+    repeat (process_judgment()).
+    cbv.
+    eapply wf_term_var.
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+    repeat (process_judgment()).
+
+
+
+    
+    eapply wf_term_var.
+    
+    change_cbv constr:((srt "sub" [:: var "G'"; var "G"]) [/[:: ("G'"%string, var "G3"); ("G"%string, var "G1")] /]).
+      unify_in().
+
+    
+    admit.
+  }    
+
+  simpl.
+  eapply wf_term_var.
+  
+  cbv.
+  auto.
+  Focus 1.
+  lazy.
+  Unset Printing Coercions.
+  cbv. unify_in().
+  process_judgment().
+  Focus 2.
+  process_judgment'().
+  repeat (process_judgment ()).
+  Focus 2.
+  repeat (process_judgment ()).
+  repeat (simpl;lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ (con ?s _) _] => Control.plus (fun () => apply_rule s) (fun _ => eapply wf_term_conv)
+  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
+  end).
+  eapply wf_term_conv.
+
+  
+  repeat (simpl;lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
+  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
+  end).
+
+   
+  repeat (simpl;lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
+  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
+  end).
+
+  cbv.
+  eapply sort_con_mor.
+  constructor.
+  constructor.
+  constructor.
+  reflexivity.
+  rewrite nil_with_names.
+  reflexivity.
+  admit.
+
+  unfold with_names_from.
+  simpl.
+  eapply le_term_conv.
+  admit.
+  let rec print_map m :=
+      match m with
+      | MapEmpty => Message.of_string "[::]"
+      | MapCons s v m' =>
+        Message.concat
+          (Message.of_string "(")
+          (Message.concat (Message.of_constr s)
+                          (Message.concat (Message.of_string ",")
+                                          (Message.concat (Message.of_constr v)
+                                                          (Message.concat (Message.of_string ")::")
+                                                                          (print_map m)))))
+      end in
+      
+  let name := '"ty_subst_id"%string in
+  let l := goal_lang () in
+  (* TODO: make d an evar so it isn't silently returned?*)
+  let d := constr:(sort_rule [::]) in
+  let r := Std.eval_cbv all_red_flags
+           constr:(named_list_lookup $d $l $name) in
+  lazy_match! r with
+  | term_le ?c' ?e1' ?e2' ?t' =>
+    lazy_match! goal with
+    | [|- le_term ?l ?c ?t ?e1 ?e2] =>
+      let m := (map_merge
+                    (exp_match e1' e1)
+                    (exp_match e2' e2)) in
+      Message.print (print_map m)
+      end end.
+      
+      let s := subst_of_map m c' in
+      Message.print (Message.of_constr s) end end.
+      
+      my_change2
+        '(le_term $l $c $t $e1 $e2)
+        '(le_term $l $c $t'[/$s/] $e1'[/$s/] $e2'[/$s/]);
+      eapply le_term_subst;
+      Control.enter
+        (fun () =>
+           match! goal with
+           | [|- le_term _ _ _ _ _] =>
+             eapply le_term_by;
+             unify_in ()
+           | [|- le_subst _ _ _ _ _] => ()
+           | [|- _] => Control.throw Match_failure
+           end)
+    | [|- ?j] =>
+      Control.zero
+        (JudgmentMismatchExn constr:(($name,$r)) j)
+    end
+      
+end.
+  unify_in ().
+  apply_rule '"ty_subst_id"%string.
+  
+  
+  simpl.
+   (lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ ?e _] =>
+    simpl;
+    lazy_match! e with
+    | con ?s _ => apply_rule s
+    | var _ => eapply wf_term_var
+    end
+    end).
+   unify_in().
+  TODO: should I always apply s?
+  simpl.
+  apply_rule '"cmp"%string.
+  repeat (lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ _ _] => try (fun () => simpl; eapply wf_term_var)
+          end).
+  simpl.
+  apply_rule '"id"%string.
+
+  repeat (lazy_match! goal with
+  | [|- wf_ctx _ _] => constructor
+  | [|- wf_lang _] => constructor
+  | [|- wf_rule _ _] => constructor
+  | [|- is_true(fresh _ _)] => trivial
+  | [|- wf_sort _ _ _] => econstructor
+  | [|- is_true(_ \in _)] => unify_in()
+  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
+  | [|- wf_term _ _ _ _] => try (fun () => simpl; eapply wf_term_var)
+  end).
+  
+
+  eapply wf_term_var.
+  TODO: defaukt rule is showing up next to ext (from unify_in?)
+  bugs: used ext as a sort somewhere
+                      wf_subst _ (w_n_f ?c [::]) _ not recognized
+   lazy_match! goal with
+  end.
+  
   wf_lang_eauto.
 
   {

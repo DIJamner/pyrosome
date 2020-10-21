@@ -495,6 +495,7 @@ Proof using .
 Qed.
 Hint Resolve rule_in_wf : judgment.
 
+*)
 Lemma le_subst_trans l c c' s1 s2 s3
   : le_subst l c c' s1 s2 -> le_subst l c c' s2 s3 ->
     le_subst l c c' s1 s3.
@@ -508,7 +509,7 @@ Proof using .
   econstructor; eauto with judgment.
 Qed.
 
-
+(*
 Lemma exp_subst_strengthen e s2 e2
   : ws_exp (size s2) e -> e[/e2::s2/] = e[/s2/].
 Proof.
@@ -662,14 +663,14 @@ Proof with eauto with judgment using .
   }
 Qed.
 
-
+*)
 Lemma subst_sym l c c' s1 s2 : le_subst l c c' s1 s2 -> le_subst l c c' s2 s1.
 Proof using.
   elim; eauto with judgment.
 Qed.
 
 (* Preservation of judgments under rewriting *)
-Add Parametric Relation l c : exp (le_sort l c)
+Add Parametric Relation l c : sort (le_sort l c)
     reflexivity proved by (le_sort_refl l c)
     symmetry proved by (@le_sort_sym l c)
     transitivity proved by (@le_sort_trans l c)
@@ -689,7 +690,7 @@ Add Parametric Relation l c t : exp (le_term l c t)
 
 Require Import Setoid Morphisms Program.Basics.
 
-Add Parametric Morphism l c c' : exp_subst
+Add Parametric Morphism l c c' : sort_subst
   with signature le_subst l c c' ==> (le_sort l c') ==>(le_sort l c) as sort_subst_mor.
 Proof using .
   intro_to le_sort; inversion;
@@ -714,27 +715,49 @@ Proof using .
   eauto with judgment.
 Qed.
 
-Definition term_subst_mor  : forall (l : lang) (c c' : ctx) (t : exp) (x y : subst),
+Definition term_subst_mor  : forall (l : lang) (c c' : ctx) (t : sort) (x y : subst),
        le_subst l c c' x y ->
        forall x0 y0 : exp, le_term l c' t x0 y0 -> le_term l c t[/y/] x0 [/x /] y0 [/y /].
-  refine (fun (l : lang) (c c' : ctx) (t : exp) => _).
+  refine (fun (l : lang) (c c' : ctx) (t : sort) => _).
   eapply @proper_prf.
   eauto with typeclass_instances.
   Unshelve.
   eapply term_subst_mor_Proper.
 Defined.
 
+(* TODO
 Add Parametric Morphism l c c' c'' (_:ws_ctx c'') : subst_cmp
     with signature le_subst l c' c'' ==> le_subst l c c' ==> le_subst l c c''
       as subst_subst_mor.
 Proof with eauto with judgment using.
   intro_to le_subst; intros les; elim: les H...
 Qed.
+ *)
 
-Add Parametric Morphism l c c' n : (con n)
-    with signature le_subst l c c' ==> le_sort l c as sort_con_mor.
+
+Inductive wf_args l c : list exp -> ctx -> Prop :=
+| wf_args_nil : wf_args l c [::] [::]
+| wf_args_cons : forall (s : list exp) c' name e t,
+    fresh name c' ->
+    wf_args l c s c' ->
+    wf_sort l c' t ->
+    wf_term l c e t[/with_names_from c' s/] ->
+    wf_args l c (e::s) ((name,t)::c').
+
+
+Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
+| le_args_nil : le_args l c [::] [::] [::]
+| le_args_cons : forall c' s1 s2,
+    le_args l c c' s1 s2 ->
+    forall name t e1 e2,
+      fresh name c' ->
+      le_term l c t[/with_names_from c' s2/] e1 e2 ->
+    le_args l c ((name, t)::c') (e1::s1) (e2::s2).
+
+Add Parametric Morphism l c c' n : (srt n)
+    with signature le_args l c c' ==> le_sort l c as sort_con_mor.
 Proof using .
-  intros.
+(*  intros.
   suff: (le_sort l c (con n (id_subst (size c')))[/x/] (con n (id_subst (size c')))[/y/]);
     eauto with judgment.
   rewrite !con_subst_cmp.
@@ -743,12 +766,13 @@ Proof using .
   rewrite !id_subst_cmp.
   eauto with judgment.
   erewrite le_subst_len_eq_r; eauto.
-Qed.
+Qed.*)
+Admitted.
 
 (* We have to write the instance manually because dep_respectful
    isn't yet supported by the automatic machinery*)
-Instance subst_cons_mor_Proper (l : lang) (c c': ctx) t
-  : Morphisms.Proper (@(_,s2) : (le_subst l c c'), le_term l c t[/s2/] ==> le_subst l c (t::c'))%signature
+Instance args_cons_mor_Proper (l : lang) (c c': ctx) t name
+  : Morphisms.Proper (@(_,s2) : (le_args l c c'), le_term l c t[/with_names_from c' s2/] ==> le_args l c ((name,t)::c'))%signature
                      (flip cons).
 Proof using .
   unfold Proper.
@@ -756,18 +780,19 @@ Proof using .
   unfold respectful.
   unfold flip.
   eauto with judgment.
-Qed.
+Admitted.
 
-Definition subst_cons_mor  : forall (l : lang) (c c' : ctx) (t : exp) (x y : subst),
-       le_subst l c c' x y ->
-       forall x0 y0 : exp, le_term l c t[/y/] x0 y0 -> le_subst l c (t::c') (x0::x) (y0::y).
-  refine (fun (l : lang) (c c' : ctx) (t : exp) => _).
+Definition args_cons_mor  : forall (l : lang) (c c' : ctx) (t : sort) name (x y : list exp),
+       le_args l c c' x y ->
+       forall x0 y0 : exp, le_term l c t[/with_names_from c' y/] x0 y0 -> le_args l c ((name,t)::c') (x0::x) (y0::y).
+  refine (fun (l : lang) (c c' : ctx) (t : sort) name => _).
   eapply @proper_prf.
   eauto with typeclass_instances.
   Unshelve.
-  eapply subst_cons_mor_Proper.
+  apply args_cons_mor_Proper.
 Defined.
 
+(* TODO
 Instance term_con_mor_Proper (l : lang) (c c': ctx) n t
   : Morphisms.Proper (@(_,s2) : (le_subst l c c'), le_term l c t[/s2/])%signature (con n).
 Proof using .
@@ -792,7 +817,7 @@ Definition term_con_mor  : forall (l : lang) (c c' : ctx) n (t : exp) (x y : sub
   Unshelve.
   eapply term_con_mor_Proper.
 Defined.
-
+*)
 
 
 (*TODO: should this be true?/do I need it to be true?
@@ -848,7 +873,7 @@ Add Parametric Morphism l c : (wf_sort l c)
 Proof.
   unfold impl.
  *)
-
+(*
 
 (* TODO:put somewhere better?*)
 Lemma wf_ctx_in l c t : wf_lang l -> wf_ctx l c -> t \in c -> wf_sort l c t.
