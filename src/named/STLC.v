@@ -12,76 +12,11 @@ From Utils Require Import Utils.
 From Named Require Import Exp Rule Core.
 Require Import String.
 
-(* constructors from subst*)
-Parameter emp : exp -> exp.
-Parameter snoc : exp -> exp -> exp -> exp -> exp -> exp -> exp.
-Parameter el_subst : exp -> exp -> exp -> exp -> exp -> exp.
-Parameter ty_subst : exp -> exp -> exp -> exp -> exp.
-Parameter ovar : exp -> exp -> exp -> exp.
-Parameter octxt : sort.
-
-
-Notation ty G := (srt "ty" [:: G]).
-Notation el G t := (srt "el" [:: t; G]).
-Notation var_srt G t := (srt "var" [:: t; G]).
-
-(* Note: the output substs intentionally
-   do not satisfy the output ctx *)
-Fixpoint alpha_eq_ctx_subst c : ctx * list exp * list exp * (exp -> exp) :=
-  let TODO := (con "TODO" [::]) in
-  match c with
-  | [::] => ([::], [::], [::], fun G => (con "id" [::G]))
-  | (n, var_srt G t)::c' =>
-    match alpha_eq_ctx_subst c' with
-      (c_a, s, s', rn) =>
-      let n' := append n "$a"%string in
-      ((n', var_srt G t)::(n, var_srt G t)::c_a,
-       (var n)::s, (var n')::s', fun G => (snoc TODO G t (rn G) (var n) (var n')))
-    end
-  | (n, ty G)::c' =>
-    match alpha_eq_ctx_subst c' with
-      (c_a, s, s', rn) =>
-      ((n,ty G)::c_a, (var n)::s, (ty_subst TODO G (rn G) (var n))::s', rn)
-    end
-  | (n, el G t)::c' =>
-    match alpha_eq_ctx_subst c' with
-      (c_a, s, s', rn) =>
-      ((n,el G t)::c_a, (var n)::s, (el_subst TODO G t (rn G) (var n))::s', rn)
-    end
-  | (n, t)::c' =>
-    match alpha_eq_ctx_subst c' with
-      (c_a, s, s', rn) =>
-      ((n,t)::c_a, (var n)::s, (var n)::s', rn)
-    end
-  end.
-
-Definition alpha_eq_term name c t : rule :=
-  match alpha_eq_ctx_subst c with
-    (c, s, s', _) =>
-    term_le c (con name s) (con name s') t
-  end.
-
-Notation "{[ G ]}" := G (G custom ctx).
-                        
-Eval cbv in (alpha_eq_term "lam"
-                           {[ "G" : #"env",
-                              "A" : #"ty"(%"G"),
-                              "x" : #"var"(%"G",%"A"),
-                              "B" : #"ty"(%"G"),
-                              "e" : #"el"(#"ext"(%"G",%"A",%"x"), %"B")
-                           ]}
-                           (srt "arr" [:: var "B"; var "A"])).
-
-Fixpoint alpha_rules l :=
-  match l with
-  | [::] => [::]            
-  | (n, term_rule c t)::l' =>
-    (append n "$alpha", alpha_eq_term n c t)::(alpha_rules l')
-  (*| (n, sort_rule c)::l' => TODO*)
-  | _::l' => alpha_rules l'
-  end.
-
-Definition stlc' :=
+Definition stlc :=
+  (*[:| "G" : #"env", "A" : #"ty"(%"G"), "B" : #"ty"(%"G"),
+      "e" : #"el"(%"G", #"->"(%"A",%"B")),
+      "e'" : #"el"(%"G", %"A")
+   |- "app_subst" : #"el"(%"G",%"B")]::*)
   [:> "G" : #"env",
       "A" : #"ty"(%"G"),
       "B" : #"ty"(%"G"),
@@ -101,11 +36,8 @@ Definition stlc' :=
       "B" : #"ty"(%"G"),
       "e" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"),%"G",#"wkn"(%"G",%"A"),%"B"))
    |- "lambda" : #"el" (%"G", #"->"(%"G", %"A", %"B"))]::
-  [:| "G" : #"env", "t" : #"ty"(%"G"), "t'": #"ty"(%"G") |- "->" : #"ty"(%"G")]::[::].
+  [:| "G" : #"env", "t" : #"ty"(%"G"), "t'": #"ty"(%"G") |- "->" : #"ty"(%"G")]::subst_lang.
 
-Definition stlc :=
-  alpha_rules stlc' ++ stlc' ++ [::(*subst_lang*)].
-Eval cbv in stlc.
 
   
 Lemma stlc_wf : wf_lang stlc.
@@ -223,17 +155,65 @@ Notation "'cfun' pat => e" :=
      end)
     (at level 60, pat pattern).
 
-(*
-Definition cps : compiler :=
-  [:: (*TODO*)
-     (cfun [:: f; g; a; b; c] =>
-        (cmp a b c f g)
-     );
-  (fun s =>
-     let withK g := (ext g (bot g)) in
-     (con 1 (map withK s)));
-  (fun s => con 0 s)].
-*)
+
+Definition compiler' : string -> list exp -> exp.
+Definition to_cmp l c' : compiler :=
+  map c' (map fst l).
+
+
+Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
+Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}
+Definition call_cont g t v := 
+  {{#"app"(#"ext"(g, #"->"(g,t,#"bot")),
+           twkn g {{#"->"(g,t,#"bot")}} t,
+           #"hd"(g, #"->"(g,t,#"bot")),
+           (ewkn g {{#"->"(g,t,#"bot")}} t v))}}
+Definition cps c args : compiler' :=
+  match c, args with
+  | "lambda", [:: e; b; a; g] =>
+    call_cont _ _ {{#"lambda"(g,a,#"lambda"(_,#"->"(g,t,#"bot"),e))}}
+  | "hd", [:: a, g] =>
+    call_cont g a {{#"hd"(g,a)}}
+  | "app", [:: e2; e1; b; a; g] =>
+    let K_ty1 := {{#"->"(g,#"->"(g,a,b),#"bot"))}} in
+    {{#"el_subst"(_,_,#"snoc"(g,g,K_ty1,#"id"(g),
+                              #"lambda"(_,_,
+                                        #"el_subst"(_,_,#"snoc"(#"ext"(g,a),_,K_ty2,#"id"(g),
+                                                                #"app"(_,_,_,
+                                                                       #"app"(_,_,_,var_ref 2 _ _ _,
+                                                                              var_ref 1 _ _ _),
+                                                                       #"hd"(_,_))), ewkn _ _ _ e2))),
+                  #"->"(#"ext"(g,K_ty1,a, b),e1)}}
+  end.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 Notation dyn g := (con 27 [:: g]%exp_scope).
 Notation dlam g e := (con 29 [:: e; g]%exp_scope).

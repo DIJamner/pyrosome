@@ -182,6 +182,7 @@ Proof using .
   constructor.
   {
     eapply wf_term_conv > [ repeat (process_judgment()) | repeat (process_judgment()) |].
+    cbv.
     admit.
   }
   {
@@ -209,9 +210,8 @@ Proof using .
   {
     eapply wf_term_conv.
     repeat (process_judgment()).
-    cbv.
-    eapply wf_term_var.
     repeat (process_judgment()).
+    cbv. constructor.
     repeat (process_judgment()).
     repeat (process_judgment()).
     repeat (process_judgment()).

@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Core Require Import Exp Rule Core.
 
 (* each element is the map for that constructor *)
-Definition compiler := list ((* target closing *) subst -> (* target *) exp). 
+Definition compiler := list ((* target closing *) list exp -> (* target *) exp). 
 
 Fixpoint compile (cmp : compiler) (close : subst) (e : exp) : exp :=
   match e with
