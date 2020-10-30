@@ -216,3 +216,22 @@ Proof using .
     by apply ListIn_in.
   - move => m IH; case; simpl; auto; intro_to is_true.
 Qed.
+
+Require Import String.
+
+Definition named_list_set (A : Set) :=list (string * A).
+Definition named_list (A : Type) :=list (string * A).
+
+Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
+  match l with
+  | [::] => default
+  | (s', v)::l' =>
+    if eqb s s' then v else named_list_lookup default l' s
+  end.
+
+Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool :=
+  match l with
+  | [::] => false
+  | (s', v)::l' =>
+    if eqb s s' then v == e else named_list_check l' s e
+  end.

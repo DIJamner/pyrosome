@@ -7,25 +7,6 @@ Set Bullet Behavior "Strict Subproofs".
 Require Import String.
 From Utils Require Import Utils.
 
-(* TODO: put in utils*)
-
-Definition named_list_set (A : Set) :=list (string * A).
-Definition named_list (A : Type) :=list (string * A).
-
-Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
-  match l with
-  | [::] => default
-  | (s', v)::l' =>
-    if eqb s s' then v else named_list_lookup default l' s
-  end.
-
-Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool :=
-  match l with
-  | [::] => false
-  | (s', v)::l' =>
-    if eqb s s' then v == e else named_list_check l' s e
-  end.
-
 Unset Elimination Schemes.
 Inductive exp : Set :=
 (* variable name *)
