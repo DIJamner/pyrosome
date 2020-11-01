@@ -182,26 +182,38 @@ Fixpoint filter_map {A B} (f : A -> option B) l :=
     end
   end.
 
-Notation "'[s|' G ----------------------------------------------- s e .. e' 'srt' ]" :=
-  (s%string, sort_rule (map snd G) (filter_map fst G)
-                       (cons e' .. (cons e nil) ..)%string )
-    (s constr at level 0, e constr at level 0, e' constr at level 0,
+Declare Custom Entry constr_conclusion.
+Notation "s e .. e'" :=
+  (s, (cons e' .. (cons e nil) ..))%string
+  (in custom constr_conclusion at level 50,
+   s constr at level 0, e constr at level 0, e' constr at level 0).
+
+Notation "s" := (s, @nil string)%string
+  (in custom constr_conclusion at level 50,
+   s constr at level 0).
+
+
+Notation "'[s|' G ----------------------------------------------- cc 'srt' ]" :=
+  (fst cc, sort_rule (map snd G) (filter_map fst G) (snd cc) )
+    (cc custom constr_conclusion at level 100,
      G custom bi_ctx at level 100,
-     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' s e .. e'  'srt' ']' '//' ] ']'").
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' cc  'srt' ']' '//' ] ']'").
 
 Check [s| "x" : #"env", "y" => #"ty" %"x", "z" : #"ty" %"x"
           -----------------------------------------------
                       "foo" "y" "z" srt                    ].
 
+Check [s| (:)
+          -----------------------------------------------
+                      "env" srt                    ].
+
           
-Notation "[:| G ----------------------------------------------- s e .. e' : t ]" :=
-  (s%string, term_rule (map snd G) (filter_map fst G)
-                       (cons e' .. (cons e nil) ..)%string
-                       (filter_map fst G)
-                       (cons e' .. (cons e nil) ..)%string t)
-    (s constr at level 0, e constr at level 0, e' constr at level 0,
+Notation "[:| G ----------------------------------------------- cc : t ]" :=
+  (fst cc, term_rule (map snd G) (filter_map fst G) (snd cc)
+                       (filter_map fst G) (snd cc) t)
+    (cc custom constr_conclusion at level 100,
      G custom bi_ctx at level 100, t custom sort at level 100,
-     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' :  t ']' ']' '//' ] ']'").
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' :  t ']' ']' '//' ] ']'").
 
 Check [:| "G" : #"env",
           "A" : #"ty" %"G",
@@ -210,22 +222,26 @@ Check [:| "G" : #"env",
           -----------------------------------------------
           "lam" "A" "e" : #"el" (#"->" %"A" %"B")].
 
+Check [:| (:)
+          -----------------------------------------------
+                      "emp" : #"env"                   ].
+
 Definition constr_name_eq (c1 c2 : string) r : string * rule :=
   if String.eqb c1 c2 then r
   else ("ERR: constr names differ"%string, snd r).
 
 
-Notation "[<=| G ----------------------------------------------- s e .. e' <= t =>| Gs ----------------------------------------------- ss es .. es' => ]" :=
-  (constr_name_eq s ss
-                 (s%string, term_rule (map snd G) (filter_map fst G)
-                       (cons e' .. (cons e nil) ..)%string
+Notation "[<=| G ----------------------------------------------- cc <= t =>| Gs ----------------------------------------------- scc => ]" :=
+  (constr_name_eq (fst cc) (fst scc)
+                 (fst cc, term_rule (map snd G) (filter_map fst G)
+                       (snd cc)
                        Gs
-                       (cons es' .. (cons es nil) ..)%string t))
-    (s constr at level 0, e constr at level 0, e' constr at level 0,
+                       (snd scc) t))
+    (cc custom constr_conclusion at level 100,
      G custom bi_ctx at level 100, t custom sort at level 100,
-     ss constr at level 0, es constr at level 0, es' constr at level 0,
+     scc custom constr_conclusion at level 100,
      Gs custom synth_ctx at level 100,
-     format "'[' [<=|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' <=  t ']' ']' '//'  =>|  '[' Gs '//' ----------------------------------------------- '//' '[' ss es .. es'  '/' => ']' ']' '//' ] ']'").
+     format "'[' [<=|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' <=  t ']' ']' '//'  =>|  '[' Gs '//' ----------------------------------------------- '//' '[' scc  '/' => ']' ']' '//' ] ']'").
 
 
 Check [<=| "G" : #"env",
@@ -238,17 +254,15 @@ Check [<=| "G" : #"env",
            -----------------------------------------------
            "lam" "A" "e" =>].
 
-Notation "[=>| G ----------------------------------------------- s e .. e' => t <=| Gs ----------------------------------------------- ss es .. es' <= ]" :=
-  (constr_name_eq s ss
-                 (s%string, term_rule (map snd G) Gs
-                                      (cons es' .. (cons es nil) ..)%string
-                                       (filter_map fst G)
-                       (cons e' .. (cons e nil) ..)%string t))
-    (s constr at level 0, e constr at level 0, e' constr at level 0,
+Notation "[=>| G ----------------------------------------------- cc => t <=| Gs ----------------------------------------------- scc <= ]" :=
+  (constr_name_eq (fst cc) (fst scc)
+                 (fst cc, term_rule (map snd G) Gs (snd scc)
+                                       (filter_map fst G) (snd cc) t))
+    (cc custom constr_conclusion at level 100,
      G custom bi_ctx at level 100, t custom sort at level 100,
-     ss constr at level 0, es constr at level 0, es' constr at level 0,
+     scc custom constr_conclusion at level 100,
      Gs custom synth_ctx at level 100,
-     format "'[' [=>|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' =>  t ']' ']' '//'  <=|  '[' Gs '//' ----------------------------------------------- '//' '[' ss es .. es'  '/' <= ']' ']' '//' ] ']'").
+     format "'[' [=>|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' =>  t ']' ']' '//'  <=|  '[' Gs '//' ----------------------------------------------- '//' '[' scc  '/' <= ']' ']' '//' ] ']'").
 
 
 Check [=>| "G" : #"env",

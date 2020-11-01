@@ -9,7 +9,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import Exp Rule Core.
+From Named Require Import IExp IRule.
 Require Import String.
 
 
@@ -23,23 +23,48 @@ Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).*)
 (* syntax of categories *)
 Definition cat_lang : lang :=
   [::
-     [:> "G1" : #"env", "G2" : #"env", "G3" : #"env", "G4" : #"env",
-         "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"), "h" : #"sub"(%"G3",%"G4")
-      |- ("cmp_assoc") #"cmp"(%"G1", %"G2", %"G4", %"f",
-                              #"cmp"(%"G2",%"G3",%"G4", %"g",%"h"))
-         = #"cmp"(%"G1", %"G3", %"G4", #"cmp"(%"G1",%"G2",%"G3", %"f",%"g"), %"h")
-         : #"sub"(%"G1",%"G4")];  
-  [:> "G" : #"env", "G'" : #"env", "f" : #"sub"(%"G",%"G'")
-   |- ("id_left") #"cmp"(%"G", %"G", %"G'", #"id"(%"G"), %"f") = %"f" : #"sub"(%"G",%"G'")];
-  [:> "G" : #"env", "G'" : #"env", "f" : #"sub"(%"G",%"G'")
-   |- ("id_right") #"cmp"(%"G", %"G'", %"G'", %"f", #"id"(%"G'")) = %"f" : #"sub"(%"G",%"G'")];
-  [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
-      "f" : #"sub"(%"G1", %"G2"),
-      "g" : #"sub"(%"G2", %"G3")
-   |- "cmp" : #"sub"(%"G1",%"G3")];
-  [:| "G" : #"env" |- "id" : #"sub" (%"G", %"G")];
-  [s| "G" : #"env", "G'" : #"env" |- "sub"];
-  [s| |- "env"]
+     [:> "G1" : #"env",
+         "G2" : #"env",
+         "G3" : #"env",
+         "G4" : #"env",
+         "f" : #"sub" %"G1" %"G2",
+         "g" : #"sub" %"G2" %"G3",
+         "h" : #"sub"%"G3" %"G4"
+         ----------------------------------------------- ("cmp_assoc")
+         #"cmp" %"f" (#"cmp" %"g" %"h") = #"cmp" (#"cmp" %"f" %"g") %"h" : #"sub" %"G1" %"G4"
+  ];  
+  [:> "G" : #"env", "G'" : #"env", "f" : #"sub" %"G" %"G'"
+       ----------------------------------------------- ("id_left")
+       #"cmp" (#"id" %"G") %"f" = %"f" : #"sub" %"G"%"G'"
+  ];
+  [:> "G" : #"env", "G'" : #"env", "f" : #"sub" %"G" %"G'"
+      ----------------------------------------------- ("id_right")
+      #"cmp" %"f" #"id" = %"f" : #"sub" %"G" %"G'"
+  ];
+  [<=| "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" => #"sub" %"G1" %"G2",
+       "g" : #"sub" %"G2" %"G3"
+       -----------------------------------------------
+       "cmp" "f" "g" <= #"sub" %"G1" %"G3"
+   =>| "f" =>, "g" =>
+       -----------------------------------------------
+       "cmp" "f" "g" =>
+  ];
+  (*[=>| "G" : #"env" 
+       -----------------------------------------------
+       "id" "G" => #"sub" %"G" %"G"
+   <=| (:) 
+       -----------------------------------------------
+       "id" <=
+  ];*)
+  [s| "G" : #"env", "G'" : #"env" 
+      -----------------------------------------------
+      "sub" "G" "G'" srt                     
+  ];
+  [s| (:)
+      -----------------------------------------------
+      "env" srt
+  ]
   ].
 
 (*
