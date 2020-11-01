@@ -50,13 +50,13 @@ Definition cat_lang : lang :=
        -----------------------------------------------
        "cmp" "f" "g" =>
   ];
-  (*[=>| "G" : #"env" 
+  [=>| "G" : #"env" 
        -----------------------------------------------
        "id" "G" => #"sub" %"G" %"G"
    <=| (:) 
        -----------------------------------------------
        "id" <=
-  ];*)
+  ];
   [s| "G" : #"env", "G'" : #"env" 
       -----------------------------------------------
       "sub" "G" "G'" srt                     
@@ -67,27 +67,8 @@ Definition cat_lang : lang :=
   ]
   ].
 
-(*
-Notation ty a := (con 7 [:: a]%exp_scope).
-Notation ty_subst a b s t := (con 8 [:: t; s; b; a]%exp_scope).
-Notation el a t := (con 9 [:: t; a]%exp_scope).
-Notation el_subst a b s t m := (con 10 [:: m; t; s; b; a]%exp_scope).
-
- Notation emp := (con 15 [::]%exp_scope).
-Notation forget a := (con 16 [:: a]%exp_scope).
-
-Notation ext g a := (con 19 [:: a; g]%exp_scope) (*[:: ty 0; ob]*).
-Notation snoc a b t g n := (con 20 [:: n; g; t; b; a]%exp_scope)
-(*[:: el 0 (ty_subst 0 1 3 2); hom 0 1; ty 1; ob; ob]*).
-Notation p a t := (con 21 [:: t; a]%exp_scope).
-Notation q a t := (con 22 [:: t; a]%exp_scope).
-
-(* convenience def to avoid repetition *)
-Definition el_srt_subst a b g e :=
-  (el a (ty_subst a b g e)).
-*)
 Definition subst_lang' : lang :=
-  [:> |- ("id_emp_forget") #"id"(#"emp") = #"forget"(#"emp") : #"sub"(#"emp", #"emp")]::
+ (* [:> |- ("id_emp_forget") #"id"(#"emp") = #"forget"(#"emp") : #"sub"(#"emp", #"emp")]::
   [:> "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'")
    |- ("cmp_forget") #"cmp"(%"G",%"G'",#"emp", #"forget"(%"G'"))
                      = #"forget"(%"G") : #"sub"(%"G",#"emp")]::
@@ -101,23 +82,44 @@ Definition subst_lang' : lang :=
                    #"el_subst"(%"G2",%"G3",#"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A",%"e"))
       : #"el"(%"G1",#"ty_subst"(%"G1",%"G3", #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A"))]:: 
   [:> "G" : #"env", "A" : #"ty"(%"G"), "e" : #"el"(%"G", %"A")
-   |- ("el_subst_id") #"el_subst"(%"G",%"G", #"id"(%"G"),%"A",%"e") = %"e" : #"el"(%"G",%"A")]::
+   |- ("el_subst_id") #"el_subst"(%"G",%"G", #"id"(%"G"),%"A",%"e") = %"e" : #"el"(%"G",%"A")]::*)
   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub"(%"G1",%"G2"), "g" : #"sub"(%"G2",%"G3"),
-       "A" : #"ty"(%"G3")
-   |- ("ty_subst_cmp") #"ty_subst"(%"G1",%"G3", #"cmp"(%"G1",%"G2",%"G3",%"f",%"g"), %"A")
-      = #"ty_subst"(%"G1",%"G2", %"f", #"ty_subst"(%"G2",%"G3",%"g", %"A"))
-      : #"ty"(%"G1")]::              
-  [:> "G" : #"env", "A" : #"ty"(%"G")
-   |- ("ty_subst_id") #"ty_subst"(%"G",%"G", #"id"(%"G"), %"A")
-                      = %"A" : #"ty"(%"G")]::
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G",%"G'"),
-      "A" : #"ty"(%"G'"), "e" : #"el"(%"G'", %"A")
-    |- "el_subst" : #"el"(%"G",#"ty_subst"(%"G", %"G'",%"g",%"A"))]::
-  [s| "G" : #"env", "A" : #"ty"(%"G") |- "el"]::
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub"(%"G", %"G'"), "A" : #"ty"(%"G'")
-   |- "ty_subst" : #"ty"(%"G")]::
-  [s| "G" : #"env" |- "ty"]::cat_lang.
+       "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
+       "A" : #"ty" %"G3"
+       ----------------------------------------------- ("ty_subst_cmp")
+       #"ty_subst" (#"cmp" %"f" %"g") %"A"
+       = #"ty_subst" %"f" (#"ty_subst" %"g" %"A")
+       : #"ty" %"G1"
+  ]::              
+  [:> "G" : #"env", "A" : #"ty" %"G"
+       ----------------------------------------------- ("ty_subst_id")
+       #"ty_subst" #"id" %"A" = %"A" : #"ty" %"G"
+  ]::
+  [<=| "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'",
+       "A" => #"ty"(%"G'"), "e" : #"el" %"G'" %"A"
+       -----------------------------------------------
+       "el_subst" "g" "e" <= #"el" %"G" (#"ty_subst" %"g" %"A")
+   =>| "g" =>, "e" =>
+       -----------------------------------------------
+       "el_subst" "g" "e" =>
+  ]::
+  [s| "G" : #"env", "A" : #"ty"(%"G")
+      -----------------------------------------------
+      "el" "G" "A" srt
+  ]::
+  [<=| "G" : #"env", "G'" : #"env",
+       "g" : #"sub" %"G" %"G'",
+       "A" => #"ty" %"G'"
+       -----------------------------------------------
+       "ty_subst" "g" "A" <= #"ty" %"G"
+   =>| "g" =>
+      -----------------------------------------------
+      "ty_subst" "g" "A" =>
+  ]::
+  [s| "G" : #"env" 
+      -----------------------------------------------
+      "ty" srt
+  ]::cat_lang.
 
 Definition subst_lang : lang :=
    [:> "G" : #"env", "A" : #"ty"(%"G")
