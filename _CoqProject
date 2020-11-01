@@ -20,4 +20,5 @@ src/named/Exp.v
 src/named/Rule.v
 src/named/Core.v
 src/named/Tactics.v
-src/named/Subst.v
+src/named/IExp.v
+src/named/IRule.v

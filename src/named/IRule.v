@@ -18,10 +18,6 @@ Inductive rule : Type :=
 
 Declare Custom Entry exp.
 Declare Custom Entry sort.
-Declare Custom Entry subst.
-Declare Custom Entry ctx.
-
-Declare Custom Entry subst_binding.
 
 (*TODO: rename *)
 Definition scon := srt.
@@ -77,6 +73,7 @@ Check {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
 Check {{s #"foo" }}.
 Check {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
 
+(*
 Notation "! x" :=
   x (in custom exp at level 0, x ident).
 Notation "! x" :=
@@ -85,32 +82,73 @@ Notation "! x" :=
   x (in custom subst at level 0, x ident).
 Notation "! x" :=
   x (in custom ctx at level 0, x ident).
+*)
 
+Declare Custom Entry ctx.
 Declare Custom Entry ctx_binding.
 
+Declare Custom Entry bi_ctx.
+Declare Custom Entry bi_ctx_binding.
+
+Declare Custom Entry synth_ctx.
+Declare Custom Entry synth_ctx_binding.
+
+Definition print_ctx (c : list (string*sort)) := c.
+Definition print_bi_ctx (c : list ((option string)*(string*sort))) := c.
+Definition print_synth_ctx (c : list string) := c.
+
 Notation "bd , .. , bd'" :=
-  (cons bd' .. (cons bd nil)..)
+  (print_ctx (cons bd' .. (cons bd nil)..))
     (in custom ctx at level 100, bd custom ctx_binding at level 100,
-    format "'[hv' bd , '/' .. , '/' bd' ']'").
+    format "'[hv' bd ,  '/' .. ,  '/' bd' ']'").
+Notation "bd , .. , bd'" := 
+  (print_bi_ctx (cons bd' .. (cons bd nil)..))
+    (in custom bi_ctx at level 100, bd custom bi_ctx_binding at level 100,
+    format "'[hv' bd ,  '/' .. ,  '/' bd' ']'").
+Notation "bd , .. , bd'" :=
+  (print_synth_ctx (cons bd' .. (cons bd nil)..))
+    (in custom synth_ctx at level 100, bd custom synth_ctx_binding at level 100,
+    format "'[hv' bd ,  '/' .. ,  '/' bd' ']'").
 
-Notation "(:)" := (@nil (string*string*sort)) (in custom ctx at level 0).
+Notation "(:)" := (@nil (string*sort)) (in custom ctx at level 0).
+Notation "(:)" :=
+  (@nil ((option string)*(string*sort))) (in custom bi_ctx at level 0).
+Notation "(:)" := (@nil string) (in custom synth_ctx at level 0).
 
-Notation "x <= t" :=
-  (None (*not synth*), (x%string, t))
+
+Notation "x =>" := x%string (*synth*)
+    (in custom synth_ctx_binding at level 100, x constr at level 0).
+
+Notation "x : t" :=
+  (x%string, t)
     (in custom ctx_binding at level 100, x constr at level 0,
+        t custom sort at level 100).
+
+Notation "x : t" :=
+  (@None string (*not synth*), (x%string, t))
+    (in custom bi_ctx_binding at level 100, x constr at level 0,
         t custom sort at level 100).
 
 Notation "x => t" :=
   (Some x%string (*synth*), (x%string, t))
-    (in custom ctx_binding at level 100, x constr at level 0,
+    (in custom bi_ctx_binding at level 100, x constr at level 0,
         t custom sort at level 100).
 
 Notation "'{{c' e }}" := (e) (at level 0,e custom ctx at level 100).
+Notation "'{{bc' e }}" := (e) (at level 0,e custom bi_ctx at level 100).
+Notation "'{{sc' e }}" := (e) (at level 0,e custom synth_ctx at level 100).
 
 Check {{c (:) }}.
-Check {{c "x" <= #"env"}}.
-Check {{c "x" <= #"env", "y" => #"ty" %"x", "z" <= #"ty" %"x"}}.
+Check {{bc (:) }}.
+Check {{sc (:) }}.
+Check {{c "x" : #"env"}}.
+Check {{bc "x" : #"env"}}.
+Check {{sc "x" =>}}.
+Check {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}.
+Check {{bc "x" : #"env", "y" => #"ty" %"x", "z" : #"ty" %"x"}}.
+Check {{sc "x" =>, "y" =>, "z" =>}}.
 
+(*
 (* TODO: get rule bar printing to work *)
 Inductive rule_bar := bar_base | bar_ext (r : rule_bar).
 
@@ -131,6 +169,7 @@ Notation "'[TMP' rb ]" :=
 Check [TMP ------------------------------------------------].
 
 Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
+ *)
 
 (*TODO: move to utils*)
 Fixpoint filter_map {A B} (f : A -> option B) l :=
@@ -143,42 +182,30 @@ Fixpoint filter_map {A B} (f : A -> option B) l :=
     end
   end.
 
-Notation "'[s|' G
-                ----------------------------------------------- 
-                s e .. e' 'srt' ]" :=
+Notation "'[s|' G ----------------------------------------------- s e .. e' 'srt' ]" :=
   (s%string, sort_rule (map snd G) (filter_map fst G)
                        (cons e' .. (cons e nil) ..)%string )
     (s constr at level 0, e constr at level 0, e' constr at level 0,
-     G custom ctx at level 100,
-     format "'[' [s| 
-'[' G '//'
------------------------------------------------ '//'
-s e .. e'  'srt' ']' '//'
- ] ']'").
+     G custom bi_ctx at level 100,
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' s e .. e'  'srt' ']' '//' ] ']'").
 
-Check [s| "x" <= #"env", "y" => #"ty" %"x", "z" <= #"ty" %"x"
+Check [s| "x" : #"env", "y" => #"ty" %"x", "z" : #"ty" %"x"
           -----------------------------------------------
                       "foo" "y" "z" srt                    ].
 
           
-Notation "[:| G 
-              -----------------------------------------------    
-              s e .. e' : t ]" :=
+Notation "[:| G ----------------------------------------------- s e .. e' : t ]" :=
   (s%string, term_rule (map snd G) (filter_map fst G)
                        (cons e' .. (cons e nil) ..)%string
                        (filter_map fst G)
                        (cons e' .. (cons e nil) ..)%string t)
     (s constr at level 0, e constr at level 0, e' constr at level 0,
-     G custom ctx at level 100, t custom sort at level 100,
-     format "'[' [:| 
-'[' G '//'
------------------------------------------------ '//'
-'[' s e .. e'  '/' :  t ']' ']' '//'
- ] ']'").
+     G custom bi_ctx at level 100, t custom sort at level 100,
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' :  t ']' ']' '//' ] ']'").
 
-Check [:| "G" <= #"env",
-          "A" <= #"ty" %"G",
-          "B" <= #"ty" %"x",
+Check [:| "G" : #"env",
+          "A" : #"ty" %"G",
+          "B" : #"ty" %"x",
           "e" => #"el" (#"wkn" %"A" %"B")
           -----------------------------------------------
           "lam" "A" "e" : #"el" (#"->" %"A" %"B")].
@@ -187,49 +214,23 @@ Definition constr_name_eq (c1 c2 : string) r : string * rule :=
   if String.eqb c1 c2 then r
   else ("ERR: constr names differ"%string, snd r).
 
-Declare Custom Entry synth_ctx.
-Declare Custom Entry synth_ctx_binding.
 
-Notation "bd , .. , bd'" :=
-  (cons bd' .. (cons bd nil)..)
-    (in custom synth_ctx at level 100, bd custom synth_ctx_binding at level 100,
-    format "'[hv' bd , '/' .. , '/' bd' ']'").
-
-Notation "(:)" := (@nil string) (in custom synth_ctx at level 0).
-
-
-Notation "x =>" := x%string (*synth*)
-    (in custom synth_ctx_binding at level 100, x constr at level 0).
-
-
-Notation "[<=| G 
-              -----------------------------------------------    
-              s e .. e' <= t
-           =>| Gs
-              -----------------------------------------------    
-              ss es .. es' => ]" :=
+Notation "[<=| G ----------------------------------------------- s e .. e' <= t =>| Gs ----------------------------------------------- ss es .. es' => ]" :=
   (constr_name_eq s ss
                  (s%string, term_rule (map snd G) (filter_map fst G)
                        (cons e' .. (cons e nil) ..)%string
                        Gs
                        (cons es' .. (cons es nil) ..)%string t))
     (s constr at level 0, e constr at level 0, e' constr at level 0,
-     G custom ctx at level 100, t custom sort at level 100,
+     G custom bi_ctx at level 100, t custom sort at level 100,
      ss constr at level 0, es constr at level 0, es' constr at level 0,
      Gs custom synth_ctx at level 100,
-     format "'[' [<=| 
-'[' G '//'
------------------------------------------------ '//'
-'[' s e .. e'  '/' <=  t ']' ']' '//'
-=>| '[' Gs '//'
------------------------------------------------ '//'
-'[' ss es .. es'  '/' => ']' ']' '//'
- ] ']'").
+     format "'[' [<=|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' <=  t ']' ']' '//'  =>|  '[' Gs '//' ----------------------------------------------- '//' '[' ss es .. es'  '/' => ']' ']' '//' ] ']'").
 
 
-Check [<=| "G" <= #"env",
-           "A" <= #"ty" %"G",
-           "B" <= #"ty" %"x",
+Check [<=| "G" : #"env",
+           "A" : #"ty" %"G",
+           "B" : #"ty" %"x",
            "e" => #"el" (#"wkn" %"A" %"B")
            -----------------------------------------------
            "lam" "e" <= #"el" (#"->" %"A" %"B")
@@ -237,34 +238,22 @@ Check [<=| "G" <= #"env",
            -----------------------------------------------
            "lam" "A" "e" =>].
 
-Notation "[=>| G 
-              -----------------------------------------------    
-              s e .. e' => t
-           <=| Gs
-              -----------------------------------------------    
-              ss es .. es' <= ]" :=
+Notation "[=>| G ----------------------------------------------- s e .. e' => t <=| Gs ----------------------------------------------- ss es .. es' <= ]" :=
   (constr_name_eq s ss
                  (s%string, term_rule (map snd G) Gs
                                       (cons es' .. (cons es nil) ..)%string
                                        (filter_map fst G)
                        (cons e' .. (cons e nil) ..)%string t))
     (s constr at level 0, e constr at level 0, e' constr at level 0,
-     G custom ctx at level 100, t custom sort at level 100,
+     G custom bi_ctx at level 100, t custom sort at level 100,
      ss constr at level 0, es constr at level 0, es' constr at level 0,
      Gs custom synth_ctx at level 100,
-     format "'[' [=>| 
-'[' G '//'
------------------------------------------------ '//'
-'[' s e .. e'  '/' =>  t ']' ']' '//'
-<=| '[' Gs '//'
------------------------------------------------ '//'
-'[' ss es .. es'  '/' <= ']' ']' '//'
- ] ']'").
+     format "'[' [=>|  '[' G '//' ----------------------------------------------- '//' '[' s e .. e'  '/' =>  t ']' ']' '//'  <=|  '[' Gs '//' ----------------------------------------------- '//' '[' ss es .. es'  '/' <= ']' ']' '//' ] ']'").
 
 
-Check [=>| "G" <= #"env",
-           "A" <= #"ty" %"G",
-           "B" <= #"ty" %"x",
+Check [=>| "G" : #"env",
+           "A" : #"ty" %"G",
+           "B" : #"ty" %"x",
            "e" => #"el" (#"wkn" %"A" %"B")
            -----------------------------------------------
            "lam" "A" "e" => #"el" (#"->" %"A" %"B")
@@ -272,65 +261,32 @@ Check [=>| "G" <= #"env",
            -----------------------------------------------
            "lam" "e" <=].
 
-Notation "'[s>' G rb ( s ) e1 = e2 ]" :=
-  (snd (rb,(s%string, sort_le G e1 e2)))
-    (s constr at level 0, G custom ctx,
-     e1 custom srt, e2 custom srt, rb custom rule_bar).
-
-Notation "[:> G rb ( s ) e1 = e2 : t ]" :=
-  (snd (rb, (s%string, term_le G e1 e2 t)))
-    (s constr at level 0, G custom ctx,
-     t custom srt, e1 custom exp, e2 custom exp, rb custom rule_bar).
-
-Notation "'[s|' rb s ]" :=
-  (snd (rb, (s%string, sort_rule [::])))
-    (s constr at level 0, rb custom rule_bar).
-
-Notation "[:| |- s : t ]" :=
-  (s%string, term_rule [::] t)
-    (t custom srt,
-     s constr at level 0
-    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
-
-Notation "'[s>' |- ( s ) e1 = e2 ]" :=
-  (s%string, sort_le [::] e1 e2)
-    (s constr at level 0,
-     e1 custom srt, e2 custom srt).
-
-Notation "[:> |- ( s ) e1 = e2 : t ]" :=
-  (s%string, term_le [::] e1 e2 t)
-    (s constr at level 0,
-     t custom srt, e1 custom expr, e2 custom expr).
-
-(*Notation "(:)" := [::] (in custom ctx).*)
-
-(*
-
-Notation "'|-s' s" :=
-  (s%string, sort_rule [::])
-    (in custom rule at level 80, s constr at level 0).
-
-Notation "|- s : t" :=
-  (s%string, term_rule [::] t)
-    (in custom rule at level 81, t custom srt,
-     s constr at level 0,
-    format "'[  ' |- '[  ' s '/' : t ']' ']'").
-
-Notation "'|-s' ( s ) e1 = e2" :=
-  (s%string, sort_le [::] e1 e2)
-    (in custom rule at level 82,
-     s constr at level 0,
-     e1 custom srt, e2 custom srt).
-
-Notation "|- ( s ) e1 = e2 : t" :=
-  (s%string, term_le [::] e1 e2 t)
-    (in custom rule at level 83,
-     s constr at level 0,
-     t custom srt, e1 custom expr, e2 custom expr).
-*)
+Notation "'[s>' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
+  (s%string, sort_le G e1 e2)
+    (s constr at level 0, G custom ctx at level 100,
+     e1 custom sort at level 100, e2 custom sort at level 100,
+    format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'").
 
 
-(*TODO: get printing working! are list notations interfering?*)
+Check [s> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+          "eq" : #"ty_eq" %"G" %"A" %"B" 
+          ----------------------------------------------- ("ty_eq_sort")
+          #"ty" %"G" %"A" = #"ty" %"G" %"B"
+      ].
+           
+Notation "[:> G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
+  (s%string, term_le G e1 e2 t)
+    (s constr at level 0, G custom ctx at level 100,
+     t custom sort at level 100,
+     e1 custom exp at level 100, e2 custom exp at level 100, 
+    format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'").
+
+
+Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+          "eq" : #"ty_eq" %"G" %"A" %"B" 
+          ----------------------------------------------- ("ty_eq_sort")
+          %"A" = %"B" : #"ty" %"G"
+      ].
 
 Definition lang := named_list rule.
 
@@ -352,7 +308,7 @@ Definition ws_rule (r : rule) : bool :=
 
 Definition ws_lang : lang -> bool := List.forallb ws_rule.
 *)
-
+ (* TODO:
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
   | sort_rule c1, sort_rule c2 => c1 == c2
@@ -371,3 +327,4 @@ Admitted.
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
+*)

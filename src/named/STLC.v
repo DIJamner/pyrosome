@@ -9,34 +9,106 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import Exp Rule Core.
+From Named Require Import IExp IRule.
 Require Import String.
 
 Definition stlc :=
-  (*[:| "G" : #"env", "A" : #"ty"(%"G"), "B" : #"ty"(%"G"),
-      "e" : #"el"(%"G", #"->"(%"A",%"B")),
-      "e'" : #"el"(%"G", %"A")
-   |- "app_subst" : #"el"(%"G",%"B")]::*)
+  [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+      "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B"),
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("lambda_subst")
+      #"el_subst" %"g" (#"lambda" %"e")
+      = #"lambda" (#"el_subst" (#"ext" %"g" #"hd") %"e")
+      : #"el" %"G'" (#"ty_subst" %"g" (#"->" %"A" %"B"))
+  ]::
+  [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+      "e" : #"el"%"G" (#"->" %"A" %"B"),
+      "e'" : #"el" %"G" %"A",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("app_subst")
+      #"el_subst" %"g" (#"app" %"e" %"e'")
+      = #"app" (#"el_subst" %"g" %"e") (#"el_subst" %"g" %"e'")
+      : #"el" %"G'" (#"ty_subst" %"g" %"B")
+  ]::
   [:> "G" : #"env",
-      "A" : #"ty"(%"G"),
-      "B" : #"ty"(%"G"),
-      "e" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"),%"G",#"wkn"(%"G",%"A"),%"B")),
-      "e'" : #"el"(%"G", %"A")
-   |- ("STLC-beta") #"app"(%"G", %"A", %"B", #"lambda"(%"G",%"A",%"B",%"e"), %"e'")
-      = #"el_subst"(%"G", #"ext"(%"G",%"A",%"x"),
-                    #"snoc"(%"G",%"G",%"A",%"x", #"id"(%"G"),%"e'"),
-                    %"e")
-   : #"el" (%"G", %"B")]::
-  [:| "G" : #"env", "A" : #"ty"(%"G"), "B" : #"ty"(%"G"),
-      "e" : #"el"(%"G", #"->"(%"A",%"B")),
-      "e'" : #"el"(%"G", %"A")
-   |- "app" : #"el"(%"G",%"B")]::
-  [:| "G" : #"env",
-      "A" : #"ty"(%"G"),
-      "B" : #"ty"(%"G"),
-      "e" : #"el"(#"ext"(%"G",%"A"), #"ty_subst"(#"ext"(%"G",%"A"),%"G",#"wkn"(%"G",%"A"),%"B"))
-   |- "lambda" : #"el" (%"G", #"->"(%"G", %"A", %"B"))]::
-  [:| "G" : #"env", "t" : #"ty"(%"G"), "t'": #"ty"(%"G") |- "->" : #"ty"(%"G")]::subst_lang.
+      "A" : #"ty"%"G",
+      "B" : #"ty"%"G",
+      "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B"),
+      "e'" : #"el" %"G" %"A"
+      ----------------------------------------------- ("STLC-beta")
+      #"app" (#"lambda"%"e") %"e'"
+      = #"el_subst" (#"snoc" #"id" %"e'") %"e"
+      : #"el" %"G" %"B"
+  ]::
+  [<=| "G" : #"env",
+       "A" : #"ty" %"G",
+       "B" : #"ty" %"G",
+       "e" : #"el" %"G" (#"->" %"A" %"B"),
+       "e'" => #"el" %"G" %"A"
+       -----------------------------------------------
+       "app" "e" "e'" <= #"el" %"G" %"B"
+  =>| "e" =>
+      -----------------------------------------------
+      "app" "e" "e'" =>
+  ]::
+  [<=| "G" : #"env",
+       "A" : #"ty" %"G",
+       "B" : #"ty" %"G",
+       "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
+       -----------------------------------------------
+       "lambda" "e" <= #"el" %"G" (#"->" %"A" %"B")
+   =>| "e" =>
+      -----------------------------------------------
+      "lambda" "A" "e" =>
+  ]::
+  [<=| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
+      -----------------------------------------------
+      "->" "t" "t'" <= #"ty" %"G"
+   =>| "t" =>, "t'" =>
+      -----------------------------------------------
+      "->" "t" "t'" =>
+  ]::[::(*subst_lang*)].
+
+
+Lemma term_elaborations_wf : forall l c e e' t, check_term l c e e' t -> wf_term l c e' t.
+(* note: this is trivially an iff *)
+Lemma term_canonical_elaboration : forall l c e t , (exists e',check_term l c e e' t) -> check_term l c e (elab_tm l c t e) t.
+
+  
+              
+G : ctx,  A : Ty(G) 
+-----------------------
+hd G A => El(G,A |- A)
+
+G : ctx,  A : Ty(G) 
+-----------------------
+hd : El(G,A |- A)
+
+
+G : ctx,  A,B : Ty(G)  e : El(G,A |- B) 
+--------------------------------------
+lambda e : El(G |- A -> B)
+             
+G : ctx  A,B : Ty(G)  e => El(G,A |- B) 
+--------------------------------------
+lambda A e => El(G |- A -> B)
+
+
+G : ctx  A,B : Ty(G)  e1 => El(G|- A -> B)  e2 : El(G|-A) 
+--------------------------------------------------------
+app e1 e2 => El(G |- B)
+              
+G : ctx  A,B : Ty(G)  e1 : El(G|- A -> B)  e2 => El(G|-A) 
+--------------------------------------------------------
+app e1 e2 : El(G |- B)
+
+
+
+G : ctx  A,B : Ty(G)  e1 : El(G|- A -> B)  e2 => El(G|-A) 
+--------------------------------------------------------
+app e1 e2 : El(G[<=A|B|e1|e2] |- B[<=e1])
 
 
   
@@ -162,27 +234,21 @@ Definition to_cmp l c' : compiler :=
 
 
 Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
-Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}
+Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.
 Definition call_cont g t v := 
   {{#"app"(#"ext"(g, #"->"(g,t,#"bot")),
            twkn g {{#"->"(g,t,#"bot")}} t,
            #"hd"(g, #"->"(g,t,#"bot")),
-           (ewkn g {{#"->"(g,t,#"bot")}} t v))}}
+           (ewkn g {{#"->"(g,t,#"bot")}} t v))}}.
 Definition cps c args : compiler' :=
   match c, args with
   | "lambda", [:: e; b; a; g] =>
-    call_cont _ _ {{#"lambda"(g,a,#"lambda"(_,#"->"(g,t,#"bot"),e))}}
+    call_cont _ _ {{#"lambda"(#"lambda"(e))}}
   | "hd", [:: a, g] =>
     call_cont g a {{#"hd"(g,a)}}
   | "app", [:: e2; e1; b; a; g] =>
     let K_ty1 := {{#"->"(g,#"->"(g,a,b),#"bot"))}} in
-    {{#"el_subst"(_,_,#"snoc"(g,g,K_ty1,#"id"(g),
-                              #"lambda"(_,_,
-                                        #"el_subst"(_,_,#"snoc"(#"ext"(g,a),_,K_ty2,#"id"(g),
-                                                                #"app"(_,_,_,
-                                                                       #"app"(_,_,_,var_ref 2 _ _ _,
-                                                                              var_ref 1 _ _ _),
-                                                                       #"hd"(_,_))), ewkn _ _ _ e2))),
+    {{#"el_subst"(#"snoc"(#"id"(g),#"lambda"(#"el_subst"(#"snoc"(#"id"(g),#"app"(_,#"app"(_,var_ref 2 _ _,var_ref 1 _ _),#"hd"(_,_))),ewkn _ _ _ e2))),
                   #"->"(#"ext"(g,K_ty1,a, b),e1)}}
   end.
 
