@@ -22,4 +22,5 @@ src/named/Core.v
 src/named/Tactics.v
 src/named/IExp.v
 src/named/IRule.v
-src/named/BiRule.v
+src/named/ARule.v
+src/named/ICore.v

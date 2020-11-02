@@ -119,34 +119,32 @@ Inductive wf_ctx l : ctx -> Prop :=
 
 Require Import String.
 
-Variant wf_rule l : string * rule -> Prop :=
-| wf_sort_rule : forall n c,
-    fresh n l ->
+Variant wf_rule l : rule -> Prop :=
+| wf_sort_rule : forall c,
     wf_ctx l c ->
-    wf_rule l [s| !c |- n]
-| wf_term_rule : forall n c t,
-    fresh n l ->
+    wf_rule l (sort_rule c)
+| wf_term_rule : forall c t,
     wf_ctx l c ->
     wf_sort l c t ->
-    wf_rule l [:| !c |- n : !t]
-| le_sort_rule : forall n c t1 t2,
+    wf_rule l (term_rule c t)
+| le_sort_rule : forall c t1 t2,
     wf_ctx l c ->
     wf_sort l c t1 ->
     wf_sort l c t2 ->
-    wf_rule l [s> !c |- (n) !t1 = !t2]
-| le_term_rule : forall n c e1 e2 t,
+    wf_rule l (sort_le c t1 t2)
+| le_term_rule : forall c e1 e2 t,
     wf_ctx l c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    wf_rule l [:> !c |- (n) !e1 = !e2 : !t].
+    wf_rule l (term_le c e1 e2 t).
 
 Inductive wf_lang : lang -> Prop :=
 | wf_lang_nil : wf_lang [::]
-| wf_lang_cons : forall l name r,
+| wf_lang_cons : forall l n r,
+    fresh n l ->
     wf_lang l ->
-    (* TODO: pull name out of wf_rule *)
-    wf_rule l (name, r) ->
-    wf_lang ((name,r)::l).
+    wf_rule l r ->
+    wf_lang ((n,r)::l).
 
 
 (* build a database of presuppositions and judgment facts *)

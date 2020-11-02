@@ -5,7 +5,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Named Require Import IExp.
+From Named Require Import Exp.
 Require Import String.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
@@ -15,18 +15,15 @@ Inductive rule : Type :=
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
-
-Declare Custom Entry exp.
-Declare Custom Entry sort.
-
 (*TODO: rename *)
 Definition scon := srt.
 
+(* TODO: notations *)
 (*
 Notation "e / x" :=
   (x%string,e) (in custom subst_binding at level 0,
         e custom expr, x constr at level 0).*)
-
+(*
 Notation "# c" :=
   (con c%string [::])
     (right associativity,in custom exp at level 0, c constr at level 0,
@@ -215,9 +212,9 @@ Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           ----------------------------------------------- ("ty_eq_sort")
           %"A" = %"B" : #"ty" %"G"
       ].
-
+*)
 Definition lang := named_list rule.
-
+(*
 (*
 Definition ws_rule (r : rule) : bool :=
   match r with
@@ -247,7 +244,9 @@ Definition eq_rule r1 r2 : bool :=
     (c1 == c2) && (e1 == e2) && (e1' == e2') && (t1 == t2)
   | _,_ => false
   end.
+*)*)
 
+Parameter eq_rule : rule -> rule -> bool.
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
 Proof using .
 Admitted.
@@ -255,4 +254,4 @@ Admitted.
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
-*)
+
