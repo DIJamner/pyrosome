@@ -9,8 +9,13 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import IExp IRule.
+From Named Require Import ARule.
+From Named Require Import IExp IRule ICore.
 Require Import String.
+
+Require Import Named.Tactics.
+
+Set Default Proof Mode "Ltac2".
 
 
 
@@ -60,6 +65,101 @@ Definition cat_lang : lang :=
       "env" srt
   ]
   ].
+
+(* TODO: move to tactics*)
+
+Ltac2 inline () :=
+    cbn [fst snd named_list_lookup
+           String.eqb Ascii.eqb Bool.eqb
+           get_rule_args get_rule_ctx zip
+           strip_args strip_rule_args map];
+repeat (rewrite Core.with_names_from_cons).
+
+Ltac2 Type exn ::= [SubstFormExn].
+
+Ltac2 step_elab () :=
+  lazy_match! goal with
+  | [|- elab_lang _ _] => constructor
+  | [|- elab_rule _ _ _] => constructor
+  | [|- elab_ctx _ _ _] => constructor
+  | [|- elab_subst _ _ _ _ _] => 
+    inline ();
+    lazy_match! goal with
+    | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
+    | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
+      apply elab_subst_cons_ex
+    | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
+      apply elab_subst_cons_im
+    | [|- _] => Control.zero SubstFormExn
+    end
+  | [|- Core.wf_subst _ _ _ _] => 
+    inline (); constructor
+  | [|- elab_sort _ _ _ _] => apply elab_sort_by'
+  | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
+  | [|- elab_term _ _ (var _) _ _] => apply elab_term_var
+  | [|- is_true (_ \in _)] => cbv; reflexivity
+  | [|- is_true (Core.fresh _ _)] => cbv; reflexivity
+  | [|- is_true (subseq _ _)] => admit (*TODO: implement subseq*)
+end.
+
+
+  
+Lemma elab_cat_lang : exists el, elab_lang cat_lang el.
+Proof using.
+  eexists.
+  repeat (step_elab ()).
+  {
+    inline ().
+    Check in_cons.
+    Fail (rewrite in_cons).
+    admit.
+  }
+  {
+    inline().
+    match! goal with
+    | 
+    apply elab_term_var.
+    cbn [Core.with_names_from Core.zip'].
+    admit (* TODO: implement strip_args*). }
+  { admit (* TODO: implement strip_args*). }
+  {
+    inline ().
+    constructor.
+    unfold Core.with_names_from.
+    unfold Core.zip'; fold Core.zip'.
+    simpl.    
+    constructor.
+  
+
+  Check elab_subst.
+  constructor.
+  cbv.
+  cbv [fst snd named_list_lookup
+           String.eqb Ascii.eqb Bool.eqb
+           get_rule_args get_rule_ctx zip
+           Core.with_names_from Core.zip' map].
+  unfold Core.with_names_from.
+  rewrite zip_zip'.
+  cbv [zip'].
+  assert (forall {B A} (a : list A), zip (@nil B) a = [::]).
+  intros.
+  induction ; cbv; reflexivity.
+  cbv.
+  
+  apply elab_subst_nil.
+  Search Core.with_names_from.
+  constructor.
+  repeat (constructor > [cbv; reflexivity | |]); constructor; 
+    cbn [fst snd].
+  {
+    constructor.
+  }
+  {
+    cbv. admit.
+  }
+  {
+    constructor.
+    cbv; reflexivity.
 
 Definition subst_lang' : lang :=
   [:> (:)
@@ -171,6 +271,7 @@ Definition subst_lang : lang :=
        "ext" : #"env"
   ]::subst_lang'.
 
+(*
 Require Import Setoid.
 
 Require Import Named.Tactics.
@@ -537,3 +638,4 @@ end.
   all: exact [::].
 Qed.
 
+*)

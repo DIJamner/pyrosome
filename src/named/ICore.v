@@ -9,7 +9,16 @@ From Named Require IExp IRule Rule.
 From Named Require Import Core Exp ARule.
 Require Import String.
 
-Parameter strip_args : ARule.lang -> Rule.lang.
+Definition strip_rule_args r :=
+  match r with
+  | ARule.sort_rule c _ => Rule.sort_rule c
+  | ARule.term_rule c _ t => Rule.term_rule c t
+  | ARule.sort_le c t1 t2 => Rule.sort_le c t1 t2 
+  | ARule.term_le c e1 e2 t => Rule.term_le c e1 e2 t
+  end.
+    
+Definition strip_args : ARule.lang -> Rule.lang :=
+  map (fun p=> (fst p, strip_rule_args (snd p))).
 
 (* TODO: are sort annotations worth it? *)
 Inductive elab_sort l c : IExp.sort -> sort -> Prop :=
@@ -56,7 +65,7 @@ with elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
 | elab_ctx_nil : elab_ctx l [::] [::]
 | elab_ctx_cons : forall name c ec v ev,
-    fresh name ec ->
+    fresh name c ->
     elab_ctx l c ec ->
     elab_sort l ec v ev ->
     elab_ctx l ((name,v)::c) ((name,ev)::ec).
@@ -88,10 +97,39 @@ Variant elab_rule l : IRule.rule -> rule -> Prop :=
 Inductive elab_lang : IRule.lang -> lang -> Prop :=
 | elab_lang_nil : elab_lang [::] [::]
 | elab_lang_cons : forall l el name r er,
-    fresh name el ->
+    fresh name l ->
     elab_lang l el ->
     elab_rule el r er ->
     elab_lang ((name,r)::l) ((name,er)::el).
 
 Lemma elab_lang_wf l el : elab_lang l el -> wf_lang (strip_args el).
 Admitted.
+
+
+Definition get_rule_ctx (r : ARule.rule) : Exp.ctx :=
+  match r with
+  | ARule.sort_rule c _ => c
+  | ARule.term_rule c _ _ => c
+  | ARule.sort_le c _ _ => c
+  | ARule.term_le c _ _ _ => c
+  end.
+
+Definition get_rule_args r :=
+  match r with
+  | ARule.sort_rule _ args => args
+  | ARule.term_rule _ args _ => args
+  | ARule.sort_le c _ _ => map fst c
+  | ARule.term_le c _ _ _ => map fst c
+  end.
+
+Lemma elab_sort_by' l c : forall n s es,
+    let r := named_list_lookup (ARule.sort_rule [::] [::]) l n in
+    let c' := get_rule_ctx r in
+    let args := get_rule_args r in
+    (n, (ARule.sort_rule c' args)) \in l ->
+    elab_subst l c (zip args s) (Core.with_names_from c' es) c' ->
+    elab_sort l c (IExp.srt n s) (Exp.srt n es).
+Proof using .
+  intros.
+  econstructor; eassumption.
+Qed. 

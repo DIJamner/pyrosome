@@ -11,8 +11,38 @@ Definition fresh {A} n (nl : named_list A) : bool :=
   ~~ (n \in map fst nl).
 
 
+(* I want zip to be structural on s*)
+Definition zip' := 
+fun S T : Type =>
+fix zip (s : seq S) (t : seq T) {struct s} : seq (S * T) :=
+  match s with
+  | [::] => [::]
+  | x :: s' => match t with
+               | [::] => [::]
+               | y :: t' => (x, y) :: zip s' t'
+               end
+  end.
+
+Lemma zip_zip' {S T} (s : seq S) (t : seq T) : zip s t = zip' s t.
+Proof using .
+  generalize t; clear t.
+  induction s; intro t; destruct t; simpl; f_equal; auto.
+Qed.
+
 Definition with_names_from (c : ctx) (l : list exp) : subst :=
-  (map (fun p => (fst (fst p), snd p)) (zip c l)).
+  (map (fun p => (fst (fst p), snd p)) (zip' c l)).
+
+Lemma with_names_from_cons c l n t e
+  : with_names_from ((n,t)::c) (e::l)
+    = (n,e)::(with_names_from c l).
+Proof using .
+  cbn; f_equal.
+Qed.
+
+Lemma with_names_from_nil l : with_names_from [::] l = [::].
+Proof using.
+  cbn; f_equal.
+Qed.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -146,6 +176,24 @@ Inductive wf_lang : lang -> Prop :=
     wf_rule l r ->
     wf_lang ((n,r)::l).
 
+Definition get_rule_ctx (r : rule) : ctx :=
+  match r with
+  | sort_rule c => c
+  | term_rule c _ => c
+  | sort_le c _ _ => c
+  | term_le c _ _ _ => c
+  end.
+
+Lemma wf_sort_by' l c : forall n s,
+    let r := named_list_lookup (sort_rule [::]) l n in
+    let c' := get_rule_ctx r in
+    (n, (sort_rule c')) \in l ->
+    wf_subst l c (with_names_from c' s) c' ->
+    wf_sort l c (srt n s).
+Proof using .
+  intros.
+  econstructor; eassumption.
+Qed. 
 
 (* build a database of presuppositions and judgment facts *)
 Create HintDb judgment discriminated.

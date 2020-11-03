@@ -9,7 +9,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import IExp IRule.
+From Named Require Import IExp IRule Subst.
 Require Import String.
 
 Definition stlc :=
@@ -37,80 +37,33 @@ Definition stlc :=
       "B" : #"ty"%"G",
       "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B"),
       "e'" : #"el" %"G" %"A"
-      ----------------------------------------------- ("STLC-beta")
+      ----------------------------------------------- ("STLC_beta")
       #"app" (#"lambda"%"e") %"e'"
       = #"el_subst" (#"snoc" #"id" %"e'") %"e"
       : #"el" %"G" %"B"
   ]::
-  [<=| "G" : #"env",
+  [:| "G" : #"env",
        "A" : #"ty" %"G",
        "B" : #"ty" %"G",
        "e" : #"el" %"G" (#"->" %"A" %"B"),
-       "e'" => #"el" %"G" %"A"
+       "e'" : #"el" %"G" %"A"
        -----------------------------------------------
-       "app" "e" "e'" <= #"el" %"G" %"B"
-  =>| "e" =>
-      -----------------------------------------------
-      "app" "e" "e'" =>
+       "app" "e" "e'" : #"el" %"G" %"B"
   ]::
-  [<=| "G" : #"env",
+  [:| "G" : #"env",
        "A" : #"ty" %"G",
        "B" : #"ty" %"G",
        "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
        -----------------------------------------------
-       "lambda" "e" <= #"el" %"G" (#"->" %"A" %"B")
-   =>| "e" =>
-      -----------------------------------------------
-      "lambda" "A" "e" =>
+       "lambda" "e" : #"el" %"G" (#"->" %"A" %"B")
   ]::
-  [<=| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
+  [:| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
       -----------------------------------------------
-      "->" "t" "t'" <= #"ty" %"G"
-   =>| "t" =>, "t'" =>
-      -----------------------------------------------
-      "->" "t" "t'" =>
-  ]::[::(*subst_lang*)].
+      "->" "t" "t'" : #"ty" %"G"
+  ]::subst_lang.
 
 
-Lemma term_elaborations_wf : forall l c e e' t, check_term l c e e' t -> wf_term l c e' t.
-(* note: this is trivially an iff *)
-Lemma term_canonical_elaboration : forall l c e t , (exists e',check_term l c e e' t) -> check_term l c e (elab_tm l c t e) t.
-
-  
-              
-G : ctx,  A : Ty(G) 
------------------------
-hd G A => El(G,A |- A)
-
-G : ctx,  A : Ty(G) 
------------------------
-hd : El(G,A |- A)
-
-
-G : ctx,  A,B : Ty(G)  e : El(G,A |- B) 
---------------------------------------
-lambda e : El(G |- A -> B)
-             
-G : ctx  A,B : Ty(G)  e => El(G,A |- B) 
---------------------------------------
-lambda A e => El(G |- A -> B)
-
-
-G : ctx  A,B : Ty(G)  e1 => El(G|- A -> B)  e2 : El(G|-A) 
---------------------------------------------------------
-app e1 e2 => El(G |- B)
-              
-G : ctx  A,B : Ty(G)  e1 : El(G|- A -> B)  e2 => El(G|-A) 
---------------------------------------------------------
-app e1 e2 : El(G |- B)
-
-
-
-G : ctx  A,B : Ty(G)  e1 : El(G|- A -> B)  e2 => El(G|-A) 
---------------------------------------------------------
-app e1 e2 : El(G[<=A|B|e1|e2] |- B[<=e1])
-
-
+(*
   
 Lemma stlc_wf : wf_lang stlc.
 Proof using.
@@ -217,38 +170,59 @@ Proof using .
   all: solve [exact (con 0 [::]) | exact [::]].
 Qed.
 *)
-From excomp Require Import Compilers.
+*)
 
-Notation "'cfun' pat => e" :=
-  (fun s =>
-     match s with
-     | pat => e
-     | _ => con 0 [::]
-     end)
-    (at level 60, pat pattern).
+(*
+From excomp Require Import Compilers.*)
 
+(* TODO: handle sort vs exp *)
+Definition compiler' := string -> list exp -> exp.
+(*Definition to_cmp l c' : compiler :=
+  map c' (map fst l).*)
 
-Definition compiler' : string -> list exp -> exp.
-Definition to_cmp l c' : compiler :=
-  map c' (map fst l).
-
-
+(*
 Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
-Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.
-Definition call_cont g t v := 
-  {{#"app"(#"ext"(g, #"->"(g,t,#"bot")),
-           twkn g {{#"->"(g,t,#"bot")}} t,
-           #"hd"(g, #"->"(g,t,#"bot")),
-           (ewkn g {{#"->"(g,t,#"bot")}} t v))}}.
-Definition cps c args : compiler' :=
+Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.*)
+Fixpoint wkn_n n e :=
+  match n with
+  | 0 => e
+  | n'.+1 =>
+    let e' := wkn_n n' e in
+    {{e #"el_subst" #"wkn" !e'}}
+  end.
+
+Definition let_bind e k :=
+  {{e #"app" !e (#"snoc" #"id" (#"lambda" !k))}}.
+
+Definition ret_val v :=
+  {{e #"lambda" (#"app" #"hd" (#"el_subst" #"wkn" !v))}}.
+
+(* TODO: I'm embedding full terms into inferred terms; need to make work.
+   Add escape hatch constr?*)
+
+Definition double_neg t :=
+    {{e #"->" (#"->" !t #"bot") #"bot"}}.  
+
+Definition lam e := {{e #"lambda" !e}}.
+
+Definition cps (c : string) args : exp :=
   match c, args with
-  | "lambda", [:: e; b; a; g] =>
-    call_cont _ _ {{#"lambda"(#"lambda"(e))}}
-  | "hd", [:: a, g] =>
-    call_cont g a {{#"hd"(g,a)}}
+  | "->", [:: B; A; G] =>
+    double_neg {{e #"->" !A !B}}
+  | "lambda", [:: e; B; A; G] =>
+    ret_val {{e #"lambda" !e}}
   | "app", [:: e2; e1; b; a; g] =>
-    let K_ty1 := {{#"->"(g,#"->"(g,a,b),#"bot"))}} in
-    {{#"el_subst"(#"snoc"(#"id"(g),#"lambda"(#"el_subst"(#"snoc"(#"id"(g),#"app"(_,#"app"(_,var_ref 2 _ _,var_ref 1 _ _),#"hd"(_,_))),ewkn _ _ _ e2))),
+    let k := wkn_n 2 {{e #"hd"}} in
+    let x1 := wkn_n 1 {{e #"hd"}} in
+    let x2 := {{e #"hd"}} in
+    lam
+      (let_bind (wkn_n 1 e1)
+      (let_bind (wkn_n 2 e2)
+      {{e #"app" !k (#"app" !x1 !x2)}}))
+  | _,_ => con c args
+  end%string.
+
+                   i{{#"el_subst"(#"snoc"(#"id"(g),#"lambda"(#"el_subst"(#"snoc"(#"id"(g),#"app"(_,#"app"(_,var_ref 2 _ _,var_ref 1 _ _),#"hd"(_,_))),ewkn _ _ _ e2))),
                   #"->"(#"ext"(g,K_ty1,a, b),e1)}}
   end.
 

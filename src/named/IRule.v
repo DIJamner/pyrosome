@@ -73,9 +73,10 @@ Check {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
 Check {{s #"foo" }}.
 Check {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
 
-(*
+
 Notation "! x" :=
   x (in custom exp at level 0, x ident).
+(*
 Notation "! x" :=
   x (in custom sort at level 0, x ident).
 Notation "! x" :=

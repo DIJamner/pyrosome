@@ -233,20 +233,20 @@ Definition ws_rule (r : rule) : bool :=
 
 Definition ws_lang : lang -> bool := List.forallb ws_rule.
 *)
- (* TODO:
+*)
+
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
-  | sort_rule c1, sort_rule c2 => c1 == c2
-  | term_rule c1 t1, term_rule c2 t2 => (c1 == c2) && (t1 == t2)
+  | sort_rule c1 args1, sort_rule c2 args2 => (c1 == c2) && (args1 == args2)
+  | term_rule c1 args1 t1, term_rule c2 args2 t2 =>
+    (c1 == c2) && (args1 == args2) && (t1 == t2)
   | sort_le c1 t1 t1', sort_le c2 t2 t2' =>
     (c1 == c2) && (t1 == t2) && (t1' == t2')
   | term_le c1 e1 e1' t1, term_le c2 e2 e2' t2 =>
     (c1 == c2) && (e1 == e2) && (e1' == e2') && (t1 == t2)
   | _,_ => false
   end.
-*)*)
 
-Parameter eq_rule : rule -> rule -> bool.
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
 Proof using .
 Admitted.
