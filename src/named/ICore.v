@@ -51,15 +51,19 @@ with elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_nil : elab_subst l c [::] [::] [::]
 | elab_subst_cons_ex : forall s es c' name e ee t,
     fresh name c' ->
-    elab_subst l c s es c' ->
     wf_sort (strip_args l) c' t ->
     elab_term l c e ee t[/es/] ->
+    (* this argument is last so that proof search unifies existentials
+       from the other arguments first*)
+    elab_subst l c s es c' ->
     elab_subst l c ((name,e)::s) ((name,ee)::es) ((name,t)::c')
 | elab_subst_cons_im : forall s es c' name e ee t,
     fresh name c' ->
-    elab_subst l c s es c' ->
     wf_sort (strip_args l) c' t ->
     elab_term l c e ee t[/es/] ->
+    (* this argument is last so that proof search unifies existentials
+       from the other arguments first*)
+    elab_subst l c s es c' ->
     elab_subst l c s ((name,ee)::es) ((name,t)::c').
 
 Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
@@ -156,11 +160,13 @@ Lemma elab_term_by' l c : forall n s es t,
     let args := get_rule_args r in
     let t' := get_rule_sort r in
     (n, (term_rule c' args t')) \in l ->
-    elab_subst l c (zip args s) (with_names_from c' es) c' ->
     t = t'[/(with_names_from c' es)/] ->
+    (* this argument is last so that proof search unifies existentials
+       from the other arguments first*)
+    elab_subst l c (zip args s) (with_names_from c' es) c' ->
     elab_term l c (IExp.con n s) (con n es) t.
-Proof.
+Proof using.
   intros.
-  rewrite H1.
+  rewrite H0.
   eapply elab_term_by; eassumption.
 Qed.  

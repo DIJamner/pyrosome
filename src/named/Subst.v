@@ -123,16 +123,16 @@ Ltac2 step_elab () :=
         assert ($l = [::]) > [reflexivity | apply elab_subst_nil]
   | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
   | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
-      apply elab_subst_cons_ex
+      apply elab_subst_cons_ex > [solve_fresh ()| | |]
   | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
-      eapply elab_subst_cons_im
+      eapply elab_subst_cons_im > [solve_fresh ()| | |]
   | [|- Core.wf_subst _ _ _ _] => 
     inline (); constructor
   | [|- elab_sort _ _ _ _] => apply elab_sort_by'
   | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
   | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var
-  | [|- elab_term _ _ (var _) _ _] => apply elab_term_var
-  | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var
+  | [|- elab_term _ _ (var _) _ _] => apply elab_term_var; solve_in()
+  | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var; solve_in()
   | [|- is_true (_ \in _)] => solve_in ()
   | [|- is_true (Core.fresh _ _)] => solve_fresh ()
   | [|- is_true (subseq _ _)] => cbv; reflexivity
@@ -141,40 +141,15 @@ end.
 
 Ltac2 elab_term_by ():=
     apply elab_term_by'>
-    [ step_elab() | repeat (inline(); step_elab()) |  
-      repeat (inline());
-      reflexivity].
+    [ inline(); solve_in()
+    | repeat (inline()); reflexivity
+    | repeat (inline(); step_elab())].
 
 Lemma elab_cat_lang : exists el, elab_lang cat_lang el.
 Proof using. 
   eexists.
-  repeat (inline(); step_elab ()).
-  {
-    elab_term_by();
-    (* TODO: get the first repeat the suffice for variables*)
-    (repeat (inline ();step_elab())).
-    elab_term_by();
-    (repeat (inline ();step_elab())).
-  }
-  {
-    elab_term_by();
-      repeat(inline(); step_elab()).
-    elab_term_by();
-    (repeat (inline ();step_elab())).
-  }
-  {
-    elab_term_by();
-    (repeat (inline ();step_elab())).
-    elab_term_by();
-      (repeat (inline ();step_elab())).
-  }
-  {
-    
-    elab_term_by();
-    (repeat (inline ();step_elab())).
-    elab_term_by();
-    (repeat (inline ();step_elab())).
-  }
+  repeat (inline(); step_elab ());
+    solve [repeat (elab_term_by())].
 Qed.
 
 Definition subst_lang' : lang :=
