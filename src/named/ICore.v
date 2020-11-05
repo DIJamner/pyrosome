@@ -70,7 +70,14 @@ Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
     elab_sort l ec v ev ->
     elab_ctx l ((name,v)::c) ((name,ev)::ec).
 
-Parameter subseq : list string -> list string -> bool. 
+Fixpoint subseq (s l : list string) : bool :=
+  match s,l with
+  | [::],_ => true
+  | sa::s', [::] => false
+  | sa::s', la::l' =>
+    if sa == la then subseq s' l'
+    else subseq s l'
+  end.
 
 Variant elab_rule l : IRule.rule -> rule -> Prop :=
 | elab_sort_rule : forall c ec args,
@@ -122,6 +129,15 @@ Definition get_rule_args r :=
   | ARule.term_le c _ _ _ => map fst c
   end.
 
+
+Definition get_rule_sort r :=
+  match r with
+  | ARule.sort_rule _ _ => srt "ERR" [::]
+  | ARule.term_rule _ _ t => t
+  | ARule.sort_le _ _ _ => srt "ERR" [::]
+  | ARule.term_le _ _ _ t => t
+  end.
+
 Lemma elab_sort_by' l c : forall n s es,
     let r := named_list_lookup (ARule.sort_rule [::] [::]) l n in
     let c' := get_rule_ctx r in
@@ -133,3 +149,18 @@ Proof using .
   intros.
   econstructor; eassumption.
 Qed. 
+
+Lemma elab_term_by' l c : forall n s es t,
+    let r := named_list_lookup (ARule.sort_rule [::] [::]) l n in
+    let c' := get_rule_ctx r in
+    let args := get_rule_args r in
+    let t' := get_rule_sort r in
+    (n, (term_rule c' args t')) \in l ->
+    elab_subst l c (zip args s) (with_names_from c' es) c' ->
+    t = t'[/(with_names_from c' es)/] ->
+    elab_term l c (IExp.con n s) (con n es) t.
+Proof.
+  intros.
+  rewrite H1.
+  eapply elab_term_by; eassumption.
+Qed.  

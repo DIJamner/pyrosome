@@ -9,7 +9,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import ARule.
+From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore.
 Require Import String.
 
@@ -71,95 +71,111 @@ Definition cat_lang : lang :=
 Ltac2 inline () :=
     cbn [fst snd named_list_lookup
            String.eqb Ascii.eqb Bool.eqb
-           get_rule_args get_rule_ctx zip
-           strip_args strip_rule_args map];
+           get_rule_args get_rule_ctx get_rule_sort zip
+           strip_args strip_rule_args map
+           Exp.apply_subst
+           Exp.substable_sort Exp.sort_subst
+           Exp.substable_exp Exp.exp_subst map
+           Exp.exp_var_map Exp.subst_lookup];
 repeat (rewrite Core.with_names_from_cons).
 
 Ltac2 Type exn ::= [SubstFormExn].
 
+(* TODO: move*)
+Definition id_subst : list string -> Exp.subst :=
+  map (fun x => (x, Exp.var x)).
+
+Lemma id_subst_exp_identity e args : Exp.exp_subst (id_subst args) e = e.
+Admitted.
+Lemma id_subst_sort_identity t args : Exp.sort_subst (id_subst args) t = t.
+Admitted.
+
+Lemma id_subst_fold x args : (x,Exp.var x)::(id_subst args) = id_subst (x::args).
+Proof using.
+  simpl; reflexivity.
+Qed.
+
+Lemma sort_subst_fold s n l
+  : Exp.srt n (map (Exp.exp_subst s) l)
+    = Exp.apply_subst s (Exp.srt n l).
+Proof using .
+  simpl; reflexivity.
+Qed.
+
+Ltac2 solve_in () :=
+  solve [ cbv; reflexivity
+        | repeat (rewrite in_cons);
+          rewrite in_nil;
+          rewrite Bool.orb_false_r;
+          ltac1:(apply /eqP);
+          reflexivity].
+
+Ltac2 solve_fresh () := cbv; reflexivity.
+
 Ltac2 step_elab () :=
   lazy_match! goal with
   | [|- elab_lang _ _] => constructor
+  | [|- elab_lang nil _] => constructor
   | [|- elab_rule _ _ _] => constructor
   | [|- elab_ctx _ _ _] => constructor
-  | [|- elab_subst _ _ _ _ _] => 
-    inline ();
-    lazy_match! goal with
-    | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
-    | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
+  (* special case to force existentials to the empty list*)
+  | [|- elab_subst _ _ _ (Core.with_names_from [::] ?l) [::]] =>
+        assert ($l = [::]) > [reflexivity | apply elab_subst_nil]
+  | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
+  | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
       apply elab_subst_cons_ex
-    | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
-      apply elab_subst_cons_im
-    | [|- _] => Control.zero SubstFormExn
-    end
+  | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
+      eapply elab_subst_cons_im
   | [|- Core.wf_subst _ _ _ _] => 
     inline (); constructor
   | [|- elab_sort _ _ _ _] => apply elab_sort_by'
   | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
+  | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var
   | [|- elab_term _ _ (var _) _ _] => apply elab_term_var
-  | [|- is_true (_ \in _)] => cbv; reflexivity
-  | [|- is_true (Core.fresh _ _)] => cbv; reflexivity
-  | [|- is_true (subseq _ _)] => admit (*TODO: implement subseq*)
+  | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var
+  | [|- is_true (_ \in _)] => solve_in ()
+  | [|- is_true (Core.fresh _ _)] => solve_fresh ()
+  | [|- is_true (subseq _ _)] => cbv; reflexivity
 end.
 
 
-  
-Lemma elab_cat_lang : exists el, elab_lang cat_lang el.
-Proof using.
-  eexists.
-  repeat (step_elab ()).
-  {
-    inline ().
-    Check in_cons.
-    Fail (rewrite in_cons).
-    admit.
-  }
-  {
-    inline().
-    match! goal with
-    | 
-    apply elab_term_var.
-    cbn [Core.with_names_from Core.zip'].
-    admit (* TODO: implement strip_args*). }
-  { admit (* TODO: implement strip_args*). }
-  {
-    inline ().
-    constructor.
-    unfold Core.with_names_from.
-    unfold Core.zip'; fold Core.zip'.
-    simpl.    
-    constructor.
-  
+Ltac2 elab_term_by ():=
+    apply elab_term_by'>
+    [ step_elab() | repeat (inline(); step_elab()) |  
+      repeat (inline());
+      reflexivity].
 
-  Check elab_subst.
-  constructor.
-  cbv.
-  cbv [fst snd named_list_lookup
-           String.eqb Ascii.eqb Bool.eqb
-           get_rule_args get_rule_ctx zip
-           Core.with_names_from Core.zip' map].
-  unfold Core.with_names_from.
-  rewrite zip_zip'.
-  cbv [zip'].
-  assert (forall {B A} (a : list A), zip (@nil B) a = [::]).
-  intros.
-  induction ; cbv; reflexivity.
-  cbv.
-  
-  apply elab_subst_nil.
-  Search Core.with_names_from.
-  constructor.
-  repeat (constructor > [cbv; reflexivity | |]); constructor; 
-    cbn [fst snd].
+Lemma elab_cat_lang : exists el, elab_lang cat_lang el.
+Proof using. 
+  eexists.
+  repeat (inline(); step_elab ()).
   {
-    constructor.
+    elab_term_by();
+    (* TODO: get the first repeat the suffice for variables*)
+    (repeat (inline ();step_elab())).
+    elab_term_by();
+    (repeat (inline ();step_elab())).
   }
   {
-    cbv. admit.
+    elab_term_by();
+      repeat(inline(); step_elab()).
+    elab_term_by();
+    (repeat (inline ();step_elab())).
   }
   {
-    constructor.
-    cbv; reflexivity.
+    elab_term_by();
+    (repeat (inline ();step_elab())).
+    elab_term_by();
+      (repeat (inline ();step_elab())).
+  }
+  {
+    
+    elab_term_by();
+    (repeat (inline ();step_elab())).
+    elab_term_by();
+    (repeat (inline ();step_elab())).
+  }
+Qed.
 
 Definition subst_lang' : lang :=
   [:> (:)
