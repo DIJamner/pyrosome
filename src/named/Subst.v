@@ -66,6 +66,14 @@ Definition cat_lang : lang :=
   ]
   ].
 
+
+(* TODO: move to ICore*)
+Class Elaborated (l : IRule.lang) :=
+  {
+  elaboration : ARule.lang;
+  elab_pf : elab_lang l elaboration;
+  }.
+
 (* TODO: move to tactics*)
 
 Ltac2 inline () :=
@@ -76,7 +84,8 @@ Ltac2 inline () :=
            Exp.apply_subst
            Exp.substable_sort Exp.sort_subst
            Exp.substable_exp Exp.exp_subst map
-           Exp.exp_var_map Exp.subst_lookup];
+           Exp.exp_var_map Exp.subst_lookup
+           elaboration proj1_sig];
 repeat (rewrite Core.with_names_from_cons).
 
 Ltac2 Type exn ::= [SubstFormExn].
@@ -114,8 +123,8 @@ Ltac2 solve_fresh () := cbv; reflexivity.
 
 Ltac2 step_elab () :=
   lazy_match! goal with
-  | [|- elab_lang _ _] => constructor
   | [|- elab_lang nil _] => constructor
+  | [|- elab_lang _ _] => Control.plus (fun () => apply elab_pf) (fun _ => constructor)
   | [|- elab_rule _ _ _] => constructor
   | [|- elab_ctx _ _ _] => constructor
   (* special case to force existentials to the empty list*)
@@ -136,30 +145,92 @@ Ltac2 step_elab () :=
   | [|- is_true (_ \in _)] => solve_in ()
   | [|- is_true (Core.fresh _ _)] => solve_fresh ()
   | [|- is_true (subseq _ _)] => cbv; reflexivity
+  | [|- is_true true] => reflexivity
 end.
+
+(* TODO: move to tactics or utils*)
+Require Import Ltac2.Constr.
+Ltac2 is_evar e :=
+  match Unsafe.kind e with
+  | Unsafe.Evar _ _ => true
+  | _ => false
+  end.
+
+Ltac2 shelve_if b :=
+  match b with
+  | true => Control.shelve ()
+  | false => ()
+  end.
+
+Ltac2 error_if b e :=
+  match b with
+  | true => Control.zero e
+  | false => ()
+  end.
+
+Ltac2 Type exn ::= [ElabExn(constr)].
+Ltac2 rec elaborate () :=
+  Control.enter (fun () =>
+                   inline (); simpl;
+                Control.plus (fun () =>
+                                lazy_match! goal with
+                             | [|- elab_lang nil _] => solve [constructor]
+                             | [|- elab_lang _ _] =>
+                               Control.plus (fun () => solve[apply elab_pf])
+                                            (fun _ => constructor; elaborate())
+                             | [|- elab_rule _ _ _] => constructor; elaborate()
+                             | [|- elab_ctx _ _ _] => constructor; elaborate()
+                             (* special case to force existentials to the empty list*)
+                             | [|- elab_subst _ _ _ (Core.with_names_from [::] ?l) [::]] =>
+                               assert ($l = [::]) > [reflexivity | solve [apply elab_subst_nil]]
+                             | [|- elab_subst _ _ _ _ [::]] => solve [apply elab_subst_nil]
+                             | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
+                               apply elab_subst_cons_ex > [solve_fresh ()| | |]; elaborate ()
+                             | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
+                               eapply elab_subst_cons_im > [solve_fresh ()| | |]; elaborate ()
+                             | [|- Core.wf_subst _ _ _ _] => 
+                               constructor; elaborate()
+                             | [|- elab_sort _ _ _ _] => apply elab_sort_by'; elaborate ()
+                             | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'; elaborate ()
+                             | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var; solve_in()
+                             | [|- Core.wf_term _ _ ?e _] => 
+                               (* if term is existential, shelve and come back later*)
+                               shelve_if (is_evar e)
+                             | [|- elab_term _ _ (var _) _ _] => try (fun () =>apply elab_term_var; solve_in())
+                             | [|- elab_term _ _ _ (Exp.var _) _] => try(fun()=>apply elab_term_var; solve_in())
+                             | [|- elab_term _ _ ?e ?ee _] =>
+                               (* if both sides are existential, shelve and come back later*)
+                               shelve_if (Bool.and (is_evar e) (is_evar ee))
+                             | [|- is_true (_ \in _)] => solve_in ()
+                             | [|- is_true (Core.fresh _ _)] => solve_fresh ()
+                             | [|- is_true (subseq _ _)] => cbv; reflexivity
+                             | [|- is_true true] => reflexivity
+                end)
+  (fun _ => lazy_match! goal with [|- ?g ] => Control.throw (ElabExn g)end)).
+
 
 
 Ltac2 elab_term_by ():=
     apply elab_term_by'>
     [ inline(); solve_in()
     | repeat (inline()); reflexivity
-    | repeat (inline(); step_elab())].
+    | elaborate()].
 
-Lemma elab_cat_lang : exists el, elab_lang cat_lang el.
-Proof using. 
-  eexists.
-  repeat (inline(); step_elab ());
-    solve [repeat (elab_term_by())].
-Qed.
+#[refine]
+ Instance elab_cat_lang_inst : Elaborated cat_lang := {}.
+Proof.
+  Control.shelve().
+  elaborate(); solve [repeat (elab_term_by())].
+Defined.
 
 Definition subst_lang' : lang :=
-  [:> (:)
+ [:> (:)
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
   ]::
   [:> "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'"
        ----------------------------------------------- ("cmp_forget")
-       #"cmp" #"forget" %"g" = #"forget" : #"sub" %"G" #"emp"
+       #"cmp" %"g" #"forget" = #"forget" : #"sub" %"G" #"emp"
   ]::
   [:| "G" : #"env" 
       -----------------------------------------------
@@ -174,7 +245,7 @@ Definition subst_lang' : lang :=
        "A" : #"ty" %"G3", "e" : #"el" %"G3" %"A"
        ----------------------------------------------- ("el_subst_cmp")
        #"el_subst" (#"cmp" %"f" %"g") %"e"
-       = #"el_subst" %"f" (#"el_subst" (#"cmp" %"f" %"g") %"e")
+       = #"el_subst" %"f" (#"el_subst" %"g" %"e")
        : #"el" %"G1" (#"ty_subst" (#"cmp" %"f" %"g") %"A")
   ]:: 
   [:> "G" : #"env", "A" : #"ty" %"G", "e" : #"el" %"G" %"A"
@@ -210,8 +281,106 @@ Definition subst_lang' : lang :=
   ]::
   [s| "G" : #"env" 
       -----------------------------------------------
-      "ty" srt
+      "ty" "G" srt
   ]::cat_lang.
+
+
+#[refine]
+Instance elab_subst_lang' : Elaborated subst_lang' := {}.
+Proof.
+  Control.shelve().
+  time (elaborate()).
+  {
+    elab_term_by().
+  }
+  {
+    elab_term_by().
+    elab_term_by().    
+  }
+  {
+    elab_term_by().
+    elab_term_by().    
+  }
+  {
+    elab_term_by().
+    elab_term_by().    
+  }
+  {
+    eapply elab_term_conv.
+    elab_term_by().
+    elab_term_by().
+    elaborate().
+    eapply Core.sort_con_mor.
+    admit(*TODO: drop down to tactics for relations (need fixing)*).
+  }
+  {
+    elab_term_by().
+    elab_term_by().    
+  }
+  {
+    elab_term_by().
+    elab_term_by().    
+  }
+  {
+    eapply elab_term_conv.
+    elab_term_by().
+    elab_term_by().
+    elaborate().
+    elaborate().
+    admit (*TODO: handle wfterm like elabtermby apply wf_term_by'.*).
+    admit(*TODO: drop down to tactics for relations (need fixing)*).
+  }
+  
+  {
+    elab_term_by().    
+  }
+  {
+    elab_term_by().
+  }
+  { 
+    elab_term_by().
+    elab_term_by().
+    apply elab_term_by'.
+    elaborate().
+    inline(); reflexivity.
+    inline().
+    rewrite Core.zip_zip'.
+    cbv.
+    apply elab_subst_nil.
+  }
+  {
+    elab_term_by().
+  }
+  {
+    elab_term_by().
+  }
+  {
+    elab_term_by().
+  }
+  {
+    elab_term_by().
+    (* TODO: get elab_term_by towork for emp*)
+    apply elab_term_by'.
+    elaborate().
+    inline(); reflexivity.
+    inline().
+    rewrite Core.zip_zip'.
+    cbv.
+    apply elab_subst_nil.
+  }
+  {
+    elab_term_by().
+    
+    (* TODO: get elab_term_by towork for emp*)
+    apply elab_term_by'.
+    elaborate().
+    inline(); reflexivity.
+    inline().
+    rewrite Core.zip_zip'.
+    cbv.
+    apply elab_subst_nil.
+  }
+Defined.
 
 Definition subst_lang : lang :=
    [:> "G" : #"env", "A" : #"ty" %"G"

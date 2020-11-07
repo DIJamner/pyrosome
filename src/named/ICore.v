@@ -35,9 +35,9 @@ with elab_term l c : IExp.exp -> exp -> sort -> Prop :=
    but not the other way around; TODO: change the direction? might be more intuitive
  *)
 | elab_term_conv : forall e ee t t',
+    elab_term l c e ee t ->
     (* We add this condition so that we satisfy the assumptions of le_sort *)
     wf_sort (strip_args l) c t' ->  
-    elab_term l c e ee t ->
     le_sort (strip_args l) c t t' ->
     elab_term l c e ee t'
 | elab_term_var : forall n t,
@@ -51,19 +51,19 @@ with elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_nil : elab_subst l c [::] [::] [::]
 | elab_subst_cons_ex : forall s es c' name e ee t,
     fresh name c' ->
-    wf_sort (strip_args l) c' t ->
     elab_term l c e ee t[/es/] ->
-    (* this argument is last so that proof search unifies existentials
+    (* these arguments is last so that proof search unifies existentials
        from the other arguments first*)
     elab_subst l c s es c' ->
+    wf_sort (strip_args l) c' t ->
     elab_subst l c ((name,e)::s) ((name,ee)::es) ((name,t)::c')
 | elab_subst_cons_im : forall s es c' name e ee t,
     fresh name c' ->
-    wf_sort (strip_args l) c' t ->
     elab_term l c e ee t[/es/] ->
-    (* this argument is last so that proof search unifies existentials
+    (* these arguments is last so that proof search unifies existentials
        from the other arguments first*)
     elab_subst l c s es c' ->
+    wf_sort (strip_args l) c' t ->
     elab_subst l c s ((name,ee)::es) ((name,t)::c').
 
 Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
@@ -112,6 +112,17 @@ Inductive elab_lang : IRule.lang -> lang -> Prop :=
     elab_lang l el ->
     elab_rule el r er ->
     elab_lang ((name,r)::l) ((name,er)::el).
+
+Lemma elab_lang_cons' : forall l name r er,
+    fresh name l ->
+    forall el : {el | elab_lang l el},
+    elab_rule (proj1_sig el) r er ->
+    elab_lang ((name,r)::l) ((name,er)::(proj1_sig el)).
+Proof using.
+  intros.
+  destruct el.
+  constructor; assumption.
+Qed.
 
 Lemma elab_lang_wf l el : elab_lang l el -> wf_lang (strip_args el).
 Admitted.
