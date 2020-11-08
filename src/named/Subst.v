@@ -310,7 +310,13 @@ Proof.
     elab_term_by().
     elab_term_by().
     elaborate().
+    
     eapply Core.sort_con_mor.
+    repeat (match! goal with
+              |[ |- Core.le_args _ _ _ _ _] => constructor
+              |[ |- is_true (Core.fresh _ _)] => Control.shelve()end).
+    reflexivity.
+    eapply (Core.le_term_by' "ty_subst_id"%string).
     admit(*TODO: drop down to tactics for relations (need fixing)*).
   }
   {

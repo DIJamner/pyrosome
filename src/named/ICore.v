@@ -5,7 +5,8 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Named Require IExp IRule Rule.
+From Named Require IExp IRule.
+From Named Require Import Rule.
 From Named Require Import Core Exp ARule.
 Require Import String.
 
@@ -124,8 +125,165 @@ Proof using.
   constructor; assumption.
 Qed.
 
+Lemma elab_lang_fresh l el name : elab_lang l el -> fresh name l -> fresh name el.
+Proof using .
+  elim; auto.
+  intros l' el' name' r er.
+  unfold fresh.
+  intros fn' elab_el' fr_impl elab_r.
+  simpl.
+  rewrite !in_cons.
+  move /norP.
+  case => [nneq nnin].
+  apply /norP.
+  split; tauto.
+Qed.
+
+Lemma strip_args_fresh l name : fresh name l -> fresh name (strip_args l).
+Proof using .
+  elim: l; simpl; auto.
+  unfold fresh.
+  simpl.
+  intros a l IH.
+  rewrite !in_cons.
+  move /norP => [nneq nnin].
+  apply /norP; split; tauto.
+Qed.
+
+Lemma elab_ctx_fresh l c ec name
+  : elab_ctx l c ec -> fresh name c -> fresh name ec.
+Proof using .
+  elim; auto.
+  intros name' c' ec' t et.
+  unfold fresh.
+  intros fn' elab_el' fr_impl elab_r.
+  simpl.
+  rewrite !in_cons.
+  move /norP.
+  case => [nneq nnin].
+  apply /norP.
+  split; tauto.
+Qed.
+
+
+Lemma rule_in_strip_args l n r
+  : (n,r) \in l -> (n, strip_rule_args r) \in (strip_args l).
+Proof using .
+  elim: l; auto.
+  intros p l IH.
+  simpl.
+  rewrite !in_cons.
+  move /orP; case.
+  {
+    move /eqP <-.
+    apply /orP; left.
+    by apply /eqP.
+  }
+  {
+    intro nin.
+    apply /orP; right.
+    auto.
+  }
+Qed.
+
+
+Lemma elab_term_wf l c e ee t
+  : elab_term l c e ee  t -> wf_term (strip_args l) c ee t
+with elab_subst_wf l c s es c'
+  : elab_subst l c s es c' -> wf_subst (strip_args l) c es c'.
+Proof using .
+  all: case.
+  {
+    intros.
+    constructor.
+    apply rule_in_strip_args in i; exact i.
+    eapply elab_subst_wf.
+    eassumption.
+  }
+  {
+    intros.
+    eapply wf_term_conv; try eassumption.
+    eapply elab_term_wf; eassumption.
+  }
+  {
+    intros.
+    apply wf_term_var; eassumption.
+  }
+  {
+    intros.
+    eapply elab_term_wf; eassumption.
+  }
+  {
+    constructor.
+  }
+  {
+    intros.
+    constructor; try assumption.
+    eapply elab_subst_wf; eassumption.
+    eapply elab_term_wf; eassumption.
+  }
+  {
+    intros.
+    constructor; try assumption.
+    eapply elab_subst_wf; eassumption.
+    eapply elab_term_wf; eassumption.
+  }    
+Qed.
+
+Lemma elab_sort_wf l c t et
+  : elab_sort l c t et -> wf_sort (strip_args l) c et.
+Proof using .
+  elim; econstructor.
+  { apply rule_in_strip_args in H; exact H. }
+  { eapply elab_subst_wf; eassumption. }
+Qed.    
+  
+Lemma elab_ctx_wf l c ec : elab_ctx l c ec -> wf_ctx (strip_args l) ec.
+Proof using .
+  elim; constructor.
+  { eapply elab_ctx_fresh; eauto. }
+  { assumption. }
+  { eapply elab_sort_wf; eassumption. }
+Qed.
+
+Lemma elab_rule_wf l r er
+  : elab_rule l r er ->
+    wf_rule (strip_args l) (strip_rule_args er).
+Proof using .
+  case.
+  {
+    constructor.
+    eapply elab_ctx_wf; eassumption.
+  }
+  {
+    constructor.
+    eapply elab_ctx_wf; eassumption.
+    eapply elab_sort_wf; eassumption.
+  }
+  {
+    constructor.
+    eapply elab_ctx_wf; eassumption.
+    eapply elab_sort_wf; eassumption.
+    eapply elab_sort_wf; eassumption.
+  }
+  {
+    constructor.
+    eapply elab_ctx_wf; eassumption.
+    eapply elab_term_wf; eassumption.
+    eapply elab_term_wf; eassumption.
+  }
+Qed.
+
 Lemma elab_lang_wf l el : elab_lang l el -> wf_lang (strip_args el).
-Admitted.
+Proof using .
+  elim;simpl; constructor.
+  {
+    apply strip_args_fresh; auto.
+    eapply elab_lang_fresh; eauto.
+  }
+  { assumption. }
+  { eapply elab_rule_wf; eassumption. }
+Qed.
 
 
 Definition get_rule_ctx (r : ARule.rule) : Exp.ctx :=

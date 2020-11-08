@@ -193,7 +193,21 @@ Lemma wf_sort_by' l c : forall n s,
 Proof using .
   intros.
   econstructor; eassumption.
-Qed. 
+Qed.
+
+(* combines le_term_by and le_term_subst *)
+Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
+    [:> !c' |- (name) !e1 = !e2 : !t] \in l ->
+    t' = t[/s2/] -> e1' = e1[/s1/] -> e2' = e2[/s2/] ->
+    le_subst l c c' s1 s2 ->
+    le_term l c t' e1' e2'.
+Proof using .
+  intros.
+  repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
+  eapply le_term_subst; [ eassumption | eapply le_term_by; eassumption].
+Qed.
+
+Arguments le_term_by' name [l] {c} {c'} {t} {e1} {e2} {s1} {s2} {t'} {e1'} {e2'}.
 
 (* build a database of presuppositions and judgment facts *)
 Create HintDb judgment discriminated.
