@@ -243,14 +243,37 @@ Proof.
     simpl.
     {
       (*wf args*)
-      elim: s0 w.
+      (*TODO: rewrite ...c'... to ...c'[/s0/]...?*)
+      clear i i' x pres.
+      elim: s0 c' w.
       {
+        intro c'.
         simpl.
         rewrite !with_names_from_nil_r.
         inversion; constructor.
       }
       {
-        
+        intros e s' IH c'.
+        simpl.
+        case c'.
+        give_up (* TODO: the with_names_from issue bites me here;
+                   need to switch handling *).
+        intros p c''.
+        inversion; subst.
+        destruct p.
+        move: H3.
+        case.
+        move ->.
+        simpl.
+        constructor.
+        {
+          give_up. }
+        {
+          
+        eauto.
+        {
+          simpl in *.
+          ; easy.
      TODO: addl prop for wf_args/subst?
     
 

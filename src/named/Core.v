@@ -108,15 +108,25 @@ with le_subst (l : lang) c : ctx -> subst -> subst -> Prop :=
       this suffices since t[/s1/] <# t[/s2/] *)
     le_subst l c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2).
 
+Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
+| le_args_nil : le_args l c [::] [::] [::]
+| le_args_cons : forall c' s1 s2,
+    le_args l c c' s1 s2 ->
+    forall name t e1 e2,
+      fresh name c' ->
+      le_term l c t[/with_names_from c' s2/] e1 e2 ->
+      le_args l c ((name, t)::c') (e1::s1) (e2::s2).
+
+
 Inductive wf_sort l c : sort -> Prop :=
 | wf_sort_by : forall n s c',
     (n, (sort_rule c')) \in l ->
-    wf_subst l c (with_names_from c' s) c' ->
+    wf_args l c s c' ->
     wf_sort l c (srt n s)
 with wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s c' t,
     [:| !c' |- n : !t] \in l ->
-    wf_subst l c (with_names_from c' s) c' ->
+    wf_args l c s c' ->
     wf_term l c (con n s) t[/(with_names_from c' s)/]
 (* terms can be lifted to greater (less precise) types,
    but not the other way around; TODO: change the direction? might be more intuitive
@@ -130,7 +140,16 @@ with wf_term l c : exp -> sort -> Prop :=
 | wf_term_var : forall n t,
     (n, t) \in c ->
     wf_term l c (var n) t
-with wf_subst l c : subst -> ctx -> Prop :=
+with wf_args l c : list exp -> ctx -> Prop :=
+| wf_args_nil : wf_args l c [::] [::]
+| wf_args_cons : forall (s : list exp) c' name e t,
+    fresh name c' ->
+    wf_args l c s c' ->
+    wf_sort l c' t ->
+    wf_term l c e t[/with_names_from c' s/] ->
+    wf_args l c (e::s) ((name,t)::c').
+
+Inductive wf_subst l c : subst -> ctx -> Prop :=
 | wf_subst_nil : wf_subst l c [::] [::]
 | wf_subst_cons : forall s c' name e t,
     fresh name c' ->
@@ -188,7 +207,7 @@ Lemma wf_sort_by' l c : forall n s,
     let r := named_list_lookup (sort_rule [::]) l n in
     let c' := get_rule_ctx r in
     (n, (sort_rule c')) \in l ->
-    wf_subst l c (with_names_from c' s) c' ->
+    wf_args l c s c' ->
     wf_sort l c (srt n s).
 Proof using .
   intros.
@@ -214,9 +233,8 @@ Create HintDb judgment discriminated.
 Hint Constructors wf_sort le_sort
      wf_term le_term
      wf_subst le_subst
+     wf_args le_args
      wf_ctx wf_rule wf_lang : judgment.
-
-
 
 (* monotonicity of judgments under language extension *)
 
@@ -229,12 +247,12 @@ Combined Scheme le_ind
          from le_sort_ind', le_subst_ind', le_term_ind'.
 
 Scheme wf_sort_ind' := Minimality for wf_sort Sort Prop
-  with wf_subst_ind' := Minimality for wf_subst Sort Prop
+  with wf_args_ind' := Minimality for wf_args Sort Prop
   with wf_term_ind' := Minimality for wf_term Sort Prop.
 
 Combined Scheme wf_ind
          from wf_sort_ind',
-         wf_subst_ind',
+         wf_args_ind',
          wf_term_ind'.
 
 (*TODO: needed?
@@ -794,25 +812,6 @@ Proof with eauto with judgment using.
 Qed.
  *)
 
-
-Inductive wf_args l c : list exp -> ctx -> Prop :=
-| wf_args_nil : wf_args l c [::] [::]
-| wf_args_cons : forall (s : list exp) c' name e t,
-    fresh name c' ->
-    wf_args l c s c' ->
-    wf_sort l c' t ->
-    wf_term l c e t[/with_names_from c' s/] ->
-    wf_args l c (e::s) ((name,t)::c').
-
-
-Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
-| le_args_nil : le_args l c [::] [::] [::]
-| le_args_cons : forall c' s1 s2,
-    le_args l c c' s1 s2 ->
-    forall name t e1 e2,
-      fresh name c' ->
-      le_term l c t[/with_names_from c' s2/] e1 e2 ->
-    le_args l c ((name, t)::c') (e1::s1) (e2::s2).
 
 Add Parametric Morphism l c c' n : (srt n)
     with signature le_args l c c' ==> le_sort l c as sort_con_mor.

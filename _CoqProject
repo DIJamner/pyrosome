@@ -5,8 +5,6 @@ src/Utils/Utils.v
 src/Core/Exp.v
 src/Core/Rule.v
 src/Core/Core.v
-src/Core/EasyWF.v
-src/Core/Compilers.v
 
 -R src/discrete Discrete
 src/discrete/DExp.v
@@ -24,5 +22,6 @@ src/named/IExp.v
 src/named/IRule.v
 src/named/ARule.v
 src/named/ICore.v
+src/named/Compilers.v
 src/named/Subst.v
 src/named/STLC.v

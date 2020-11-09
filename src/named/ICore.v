@@ -25,12 +25,12 @@ Definition strip_args : ARule.lang -> Rule.lang :=
 Inductive elab_sort l c : IExp.sort -> sort -> Prop :=
 | elab_sort_by : forall n s es c' args,
     (n, (sort_rule c' args)) \in l ->
-    elab_subst l c (zip args s) (with_names_from c' es) c' ->
+    elab_args l c s args es c' ->
     elab_sort l c (IExp.srt n s) (Exp.srt n es)
 with elab_term l c : IExp.exp -> exp -> sort -> Prop :=
 | elab_term_by : forall n s es c' t args,
     (n, (term_rule c' args t)) \in l ->
-    elab_subst l c (zip args s) (with_names_from c' es) c' ->
+    elab_args l c s args es c' ->
     elab_term l c (IExp.con n s) (con n es) t[/(with_names_from c' es)/]
 (* terms can be lifted to greater (less precise) types,
    but not the other way around; TODO: change the direction? might be more intuitive
@@ -48,7 +48,27 @@ with elab_term l c : IExp.exp -> exp -> sort -> Prop :=
     elab_sort l c t et ->
     elab_term l c e ee et ->
     elab_term l c (IExp.ann e t) ee et
-with elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
+with elab_args l c : list IExp.exp -> list string -> list exp -> ctx -> Prop :=
+| elab_args_nil : elab_args l c [::] [::] [::] [::]
+| elab_args_cons_ex : forall s args es c' name e ee t,
+    fresh name c' ->
+    elab_term l c e ee t[/with_names_from c' es/] ->
+    (* these arguments is last so that proof search unifies existentials
+       from the other arguments first*)
+    elab_args l c s args es c' ->
+    wf_sort (strip_args l) c' t ->
+    elab_args l c (e::s) (name::args) (ee::es) ((name,t)::c')
+| elab_args_cons_im : forall s args es c' name e ee t,
+    fresh name c' ->
+    elab_term l c e ee t[/with_names_from c' es/] ->
+    (* these arguments is last so that proof search unifies existentials
+       from the other arguments first*)
+    elab_args l c s args es c' ->
+    wf_sort (strip_args l) c' t ->
+    elab_args l c s args (ee::es) ((name,t)::c').
+
+
+Inductive elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_nil : elab_subst l c [::] [::] [::]
 | elab_subst_cons_ex : forall s es c' name e ee t,
     fresh name c' ->
@@ -188,16 +208,16 @@ Qed.
 
 
 Lemma elab_term_wf l c e ee t
-  : elab_term l c e ee  t -> wf_term (strip_args l) c ee t
-with elab_subst_wf l c s es c'
-  : elab_subst l c s es c' -> wf_subst (strip_args l) c es c'.
+  : elab_term l c e ee t -> wf_term (strip_args l) c ee t
+with elab_args_wf l c s args es c'
+  : elab_args l c s args es c' -> wf_args (strip_args l) c es c'.
 Proof using .
   all: case.
   {
     intros.
     constructor.
     apply rule_in_strip_args in i; exact i.
-    eapply elab_subst_wf.
+    eapply elab_args_wf.
     eassumption.
   }
   {
@@ -219,25 +239,36 @@ Proof using .
   {
     intros.
     constructor; try assumption.
-    eapply elab_subst_wf; eassumption.
+    eapply elab_args_wf; eassumption.
     eapply elab_term_wf; eassumption.
   }
   {
     intros.
     constructor; try assumption.
-    eapply elab_subst_wf; eassumption.
+    eapply elab_args_wf; eassumption.
     eapply elab_term_wf; eassumption.
   }    
 Qed.
+
+Hint Resolve elab_term_wf : judgment.
+Hint Resolve elab_args_wf : judgment.
+
+Lemma elab_subst_wf l c s es c'
+  : elab_subst l c s es c' -> wf_subst (strip_args l) c es c'.
+Proof using .
+  elim; intros; constructor; eauto with judgment.
+Qed.    
+Hint Resolve elab_subst_wf : judgment.  
 
 Lemma elab_sort_wf l c t et
   : elab_sort l c t et -> wf_sort (strip_args l) c et.
 Proof using .
   elim; econstructor.
   { apply rule_in_strip_args in H; exact H. }
-  { eapply elab_subst_wf; eassumption. }
+  { eapply elab_args_wf; eassumption. }
 Qed.    
-  
+Hint Resolve elab_sort_wf : judgment.
+
 Lemma elab_ctx_wf l c ec : elab_ctx l c ec -> wf_ctx (strip_args l) ec.
 Proof using .
   elim; constructor.
@@ -316,7 +347,7 @@ Lemma elab_sort_by' l c : forall n s es,
     let c' := get_rule_ctx r in
     let args := get_rule_args r in
     (n, (ARule.sort_rule c' args)) \in l ->
-    elab_subst l c (zip args s) (Core.with_names_from c' es) c' ->
+    elab_args l c s args es c' ->
     elab_sort l c (IExp.srt n s) (Exp.srt n es).
 Proof using .
   intros.
@@ -332,7 +363,7 @@ Lemma elab_term_by' l c : forall n s es t,
     t = t'[/(with_names_from c' es)/] ->
     (* this argument is last so that proof search unifies existentials
        from the other arguments first*)
-    elab_subst l c (zip args s) (with_names_from c' es) c' ->
+    elab_args l c s args es c' ->
     elab_term l c (IExp.con n s) (con n es) t.
 Proof using.
   intros.

@@ -14,6 +14,7 @@ From Named Require Import IExp IRule ICore.
 Require Import String.
 
 Require Import Named.Tactics.
+Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
@@ -135,8 +136,7 @@ Ltac2 step_elab () :=
       apply elab_subst_cons_ex > [solve_fresh ()| | |]
   | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
       eapply elab_subst_cons_im > [solve_fresh ()| | |]
-  | [|- Core.wf_subst _ _ _ _] => 
-    inline (); constructor
+  | [|- Core.wf_subst _ _ _ _] =>constructor
   | [|- elab_sort _ _ _ _] => apply elab_sort_by'
   | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
   | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var
@@ -216,12 +216,19 @@ Ltac2 elab_term_by ():=
     | repeat (inline()); reflexivity
     | elaborate()].
 
-#[refine]
- Instance elab_cat_lang_inst : Elaborated cat_lang := {}.
+Derive elab_cat_lang
+       SuchThat (elab_lang cat_lang elab_cat_lang)
+       As elab_cat_lang_pf.
 Proof.
-  Control.shelve().
   elaborate(); solve [repeat (elab_term_by())].
-Defined.
+Qed.
+  
+Instance elab_cat_lang_inst : Elaborated cat_lang :=
+  {
+  elaboration := elab_cat_lang;
+  elab_pf := elab_cat_lang_pf;
+  }.
+
 
 Definition subst_lang' : lang :=
  [:> (:)
@@ -284,11 +291,12 @@ Definition subst_lang' : lang :=
       "ty" "G" srt
   ]::cat_lang.
 
-
-#[refine]
-Instance elab_subst_lang' : Elaborated subst_lang' := {}.
+Derive elab_subst_lang'
+       SuchThat (elab_lang subst_lang' elab_subst_lang')
+       As elab_subst_lang'_pf.
 Proof.
-  Control.shelve().
+  repeat (simpl;step_elab()).
+  simpl.
   time (elaborate()).
   {
     elab_term_by().
@@ -386,7 +394,9 @@ Proof.
     cbv.
     apply elab_subst_nil.
   }
-Defined.
+Qed.
+
+Instance elab_subst_lang' : Elaborated subst_lang' := {}.
 
 Definition subst_lang : lang :=
    [:> "G" : #"env", "A" : #"ty" %"G"
