@@ -6,16 +6,47 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Core Require Import Exp Rule Core.
+From Named Require Import Exp Rule Core.
+
+Require Import String.
 
 (* each element is the map for that constructor *)
-Definition compiler := list ((* target closing *) list exp -> (* target *) exp). 
+Variant compiler_case : Set :=
+| sort_case : ((* target closing *) list exp -> (* target *) sort) -> compiler_case
+| term_case : ((* target closing *) list exp -> (* target *) exp) -> compiler_case.
 
-Fixpoint compile (cmp : compiler) (close : subst) (e : exp) : exp :=
+(* each element is the map for that constructor *)
+Definition compiler := named_list compiler_case. 
+
+
+Fixpoint compile_term (cmp : compiler) (close : subst) (e : exp) : exp :=
   match e with
-  | var x => var_lookup close x
-  | con n s => nth_level (fun _ => con 0 [::]) cmp n (map (compile cmp close) s)
+  | var x => named_list_lookup (var x) close x
+  | con n s =>
+    let default := sort_case (fun _ => srt "ERR" [::]) in
+    match named_list_lookup default cmp n with
+    | term_case c_case => c_case (map (compile_term cmp close) s)
+    | _ => con "ERR"%string [::]
+    end
   end.
+
+Definition compile_sort (cmp : compiler) (close : subst) (e : sort) : sort :=
+  match e with
+  | srt n s =>
+    let default := term_case (fun _ => con "ERR" [::]) in
+    match named_list_lookup default cmp n with
+    | sort_case c_case => c_case (map (compile_term cmp close) s)
+    | _ => srt"ERR"%string [::]
+    end
+  end.
+
+Definition compile_subst (cmp : compiler) (close : subst) (e : subst) : subst :=
+  map (fun p => (fst p, compile_term cmp close (snd p))) e.
+
+Definition compile_ctx (cmp : compiler) (close : subst) (e : ctx) : ctx :=
+  map (fun p => (fst p, compile_sort cmp close (snd p))) e.
+
+(* TODO: ICompilers*)
 
 (*TODO: necessary? 
  make inductive instead if so
@@ -37,62 +68,215 @@ Is it sufficient to talk about closed terms?
 
 First we specify the properties in terms of compile,
 then inductively on the compiler. TODO: prove equivalent
-*)
+ *)
 Definition sort_wf_preserving_sem cmp l1 l2 :=
   forall s c t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (map (compile cmp s) c) ->
+                wf_subst l2 [::] s (compile_ctx cmp s c) ->
                 wf_sort l1 c t ->
-                wf_sort l2 [::] (compile cmp s t).
+                wf_sort l2 [::] (compile_sort cmp s t).
 
 Definition term_wf_preserving_sem cmp l1 l2 :=
   forall s c e t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (map (compile cmp s) c) ->
+                wf_subst l2 [::] s (compile_ctx cmp s c) ->
                 wf_term l1 c e t ->
-                wf_term l2 [::] (compile cmp s e) (compile cmp s t).
+                wf_term l2 [::] (compile_term cmp s e) (compile_sort cmp s t).
 
-(*TODO: this is a stronger property; includes le principles;
+Definition sort_le_preserving_sem cmp l1 l2 :=
+  forall s c t1 t2, wf_ctx l1 c ->
+                wf_subst l2 [::] s (compile_ctx cmp s c) ->
+                le_sort l1 c t1 t2 ->
+                le_sort l2 [::] (compile_sort cmp s t1) (compile_sort cmp s t2).
+
+Definition term_le_preserving_sem cmp l1 l2 :=
+  forall s c e1 e2 t, wf_ctx l1 c ->
+                wf_subst l2 [::] s (compile_ctx cmp s c) ->
+                le_term l1 c t e1 e2 ->
+                le_term l2 [::] (compile_sort cmp s t)
+                        (compile_term cmp s e1) (compile_term cmp s e2).
+
+Definition semantics_preserving cmp l1 l2 :=
+  sort_wf_preserving_sem cmp l1 l2
+  /\ term_wf_preserving_sem cmp l1 l2
+  /\ sort_le_preserving_sem cmp l1 l2
+  /\ term_le_preserving_sem cmp l1 l2.
+
+(*TODO: this is an equal stronger property (which?); includes le principles;
   formalize the relationship to those above and le semantic statements *)
 Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
 | preserving_compiler_nil : preserving_compiler target [::] [::]
-| preserving_compiler_sort : forall cmp l cf c,
+| preserving_compiler_sort : forall cmp l cf n c,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+    (forall s, wf_args target [::] s (compile_ctx cmp (with_names_from c s) c) ->
                wf_sort target [::] (cf s)) ->
-    preserving_compiler target (cf::cmp) (sort_rule c :: l)
-| preserving_compiler_term : forall cmp l cf c t,
+    preserving_compiler target ((n, sort_case cf)::cmp) ((n,sort_rule c) :: l)
+| preserving_compiler_term : forall cmp l cf n c t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c, t *)
-    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
-               wf_term target [::] (cf s) (compile cmp s t)) ->
-    preserving_compiler target (cf::cmp) (term_rule c t :: l)
-| preserving_compiler_sort_le : forall cmp l c t1 t2,
+    (forall s, wf_args target [::] s (compile_ctx cmp (with_names_from c s) c) ->
+               wf_term target [::] (cf s)
+                       (compile_sort cmp (with_names_from c s) t)) ->
+    preserving_compiler target ((n,term_case cf)::cmp) ((n,term_rule c t) :: l)
+| preserving_compiler_sort_le : forall cmp l n c t1 t2,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
-               le_sort target [::] (compile cmp s t1) (compile cmp s t2)) ->
-    (* TODO: when I build in proof terms, this function will be useful *)
-    preserving_compiler target ((fun _=>con 0[::])::cmp) (sort_le c t1 t2 :: l)
-| preserving_compiler_term_le : forall cmp l c e1 e2 t,
+    (forall s, wf_subst target [::] s (compile_ctx cmp s c) ->
+               le_sort target [::] (compile_sort cmp s t1)
+                       (compile_sort cmp s t2)) ->
+    preserving_compiler target cmp ((n,sort_le c t1 t2) :: l)
+| preserving_compiler_term_le : forall cmp l n c e1 e2 t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_subst target [::] s (map (compile cmp s) c) ->
+    (forall s, wf_subst target [::] s (compile_ctx cmp s c) ->
                le_term target [::]
-                       (compile cmp s t)
-                       (compile cmp s e1)
-                       (compile cmp s e2)) ->
-    (* TODO: when I build in proof terms, this function will be useful *)
-    preserving_compiler target ((fun _=>con 0[::])::cmp) (term_le c e1 e2 t :: l).
+                       (compile_sort cmp s t)
+                       (compile_term cmp s e1)
+                       (compile_term cmp s e2)) ->
+    preserving_compiler target cmp ((n,term_le c e1 e2 t) :: l).
 
-Lemma wf_ctx_empty_sort c t : ~wf_sort [::] c t.
-Proof.
+Lemma wf_empty_sort c t : ~wf_sort [::] c t.
+Proof using .
   by inversion.
 Qed.
 
-Lemma preserving_preserves_term cmp ls lt
+Lemma wf_empty_ctx c : wf_ctx [::] c -> c = [::].
+Proof using .
+  case; auto.
+  intros.
+  exfalso.
+  eapply wf_empty_sort; eassumption.
+Qed.
+
+
+Lemma wf_empty_term c e t : wf_ctx [::] c -> ~wf_term [::] c e t.
+Proof using .
+  intros wfc wft.
+  elim: wft wfc; eauto.
+  intros c0 n t0 nin.
+  move /wf_empty_ctx => wfe.
+  move: wfe nin => ->.
+  auto.  
+Qed.
+
+
+Lemma le_empty_term c e1 e2 t : le_term [::] c t e1 e2 -> e1 = e2
+with le_empty_subst c s1 s2 c' : le_subst [::] c c' s1 s2 -> s1 = s2.
+Proof using .
+  all: case; intros.
+  {
+    f_equal; eauto.
+  }
+  { easy. }
+  { reflexivity. }
+  { apply le_empty_term in l.
+    apply le_empty_term in l0.
+    rewrite l l0; reflexivity.
+  }
+  {
+    symmetry.
+    eapply le_empty_term; eassumption.
+  }
+  {
+    eapply le_empty_term; eassumption.
+  }
+  { reflexivity. }
+  {
+    f_equal.
+    f_equal.
+    eauto.
+    eauto.
+  }
+Qed.
+  
+Lemma le_empty_sort c t1 t2 : le_sort [::] c t1 t2 -> t1 = t2.
+Proof using .
+  elim; intros; try by (cbv in *; eauto).
+  f_equal; eauto using le_empty_subst.
+  by rewrite H0 -H2.
+Qed.    
+
+
+Lemma in_lang_in_cmp_sort lt cmp ls n c
   : preserving_compiler lt cmp ls ->
-    term_wf_preserving_sem cmp ls lt.
+    (n, sort_rule c) \in ls ->
+    exists f, (forall d, named_list_lookup d cmp n = sort_case f)
+              /\ (forall s, wf_args lt [::] s
+                                    (compile_ctx cmp (with_names_from c s) c) ->
+               wf_sort lt [::] (f s)). 
 Proof.
+Admitted.
+
+(*TODO: move to core*)
+
+Lemma with_names_from_nil_r c : with_names_from c [::] = [::].
+Proof.
+  case: c; simpl; auto.
+Qed.
+
+Lemma inductive_implies_semantic_sort_wf cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    sort_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_term_wf cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    term_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_sort_le cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    sort_le_preserving_sem cmp ls lt
+with inductive_implies_semantic_term_le cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    term_le_preserving_sem cmp ls lt.
+Proof.
+  all: intros pc s c.
+  {
+    intros t wfc wfs.
+    case; intros.
+    pose (i':=i).
+    move: i' => /in_lang_in_cmp_sort => i'.
+    pose (pc':=pc).
+    move: pc' => /i'.
+    case.
+    intro.
+    case.
+    simpl.
+    move -> => pres.
+    apply pres.
+    simpl.
+    {
+      (*wf args*)
+      elim: s0 w.
+      {
+        simpl.
+        rewrite !with_names_from_nil_r.
+        inversion; constructor.
+      }
+      {
+        
+     TODO: addl prop for wf_args/subst?
+    
+
+Lemma inductive_implies_semantic cmp ls lt
+  : preserving_compiler lt cmp ls ->
+    semantics_preserving cmp ls lt.
+Proof.
+  intro
+  elim.
+  {
+    repeat split; intros s c; intros.
+    { exfalso; eapply wf_empty_sort; eassumption. }
+    { exfalso; eapply wf_empty_term; eassumption. }
+    { move: H1 => /le_empty_sort ->; reflexivity. }
+    { move: H1 => /le_empty_term ->; reflexivity. }
+  }
+  {
+    intros until c; intro cmp_preserves.
+    move => [swf [twf [sle tle]]] IH.
+    repeat split; intro s; intros.
+    {
+      TODO: wrong induction?
+                  probably need to do induction on exprs
+    
+    inversion H1.
+    
   unfold term_wf_preserving_sem.
   intros until e; move: s; elim: e; simpl.
   { give_up. }
