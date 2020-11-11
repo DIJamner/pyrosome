@@ -443,12 +443,7 @@ Proof.
     (* TODO: want to start w/ subgoal 2 for inference purposes?*)
     apply elab_term_by'; repeat (cbn;step_elab()).
 
-    (* this tactic makes a choice *)
-    apply elab_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
-
+    apply (@elab_term_var' "A"%string); reflexivity.
     
     apply elab_term_by'; repeat (cbn;step_elab()).
   }    
@@ -463,15 +458,7 @@ Proof.
     apply elab_term_by'; repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
 
-    cbn.
-    (* this tactic makes a choice; should wkn take A as an arg? *)
-    apply elab_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
-    
+    apply (@elab_term_var' "A"%string); reflexivity.    
     apply elab_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
@@ -488,12 +475,7 @@ Proof.
     apply elab_term_by'; repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
 
-    apply elab_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
+    apply (@elab_term_var' "A"%string); cbn; solve_in().    
     repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
@@ -505,10 +487,10 @@ Proof.
     repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
 
-    cbn.
+    
     eapply Core.le_sort_refl'; repeat (cbn;step_elab()).
     reflexivity.
-    cbn.
+
     eapply Core.le_term_trans.
     symmetry.
     eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
@@ -541,40 +523,10 @@ Proof.
     apply (@Core.wf_term_by' "cmp"%string); repeat (cbn;step_elab()).
     cbn. step_elab().
     step_elab().
-    cbn.
-    apply Core.wf_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
+    apply (@Core.wf_term_var' "G2"%string); reflexivity.    
     apply Core.wf_term_var; repeat (cbn;step_elab()).
-    apply Core.wf_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
-    apply Core.wf_term_var.
-    cbn. rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); right.
-    rewrite in_cons.
-    ltac1:(apply /orP); left.
-    ltac1:(apply /eqP); reflexivity.
+    apply (@Core.wf_term_var' "f"%string); reflexivity. 
+    apply (@Core.wf_term_var' "g"%string); reflexivity. 
 
     eapply Core.le_sort_refl'; repeat(cbn;step_elab()).
     reflexivity.

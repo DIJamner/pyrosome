@@ -9,8 +9,14 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import IExp IRule Subst.
+From Named Require Import IExp IRule ICore Subst.
 Require Import String.
+
+
+Require Import Named.Tactics.
+Require Coq.derive.Derive.
+
+Set Default Proof Mode "Ltac2".
 
 Definition stlc :=
   [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
@@ -62,6 +68,29 @@ Definition stlc :=
       "->" "t" "t'" : #"ty" %"G"
   ]::subst_lang.
 
+(* TODO: move to subst *)
+Instance elab_subst_lang_inst : Elaborated subst_lang :=
+  {
+  elaboration := elab_subst_lang;
+  elab_pf := elab_subst_lang_pf;
+  }.
+
+Derive elab_stlc
+       SuchThat (elab_lang stlc elab_stlc)
+       As elab_stlc_pf.
+Proof.
+  repeat (repeat (cbn;step_elab())).
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  
+Qed. 
+  
+Instance elab_cat_lang_inst : Elaborated cat_lang :=
+  {
+  elaboration := elab_cat_lang;
+  elab_pf := elab_cat_lang_pf;
+  }.
 
 (*
   

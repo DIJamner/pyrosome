@@ -247,6 +247,15 @@ Proof using .
   eapply wf_term_by; eassumption.
 Qed.
 
+
+Lemma wf_term_var' n l c t :
+    (n, t) \in c ->
+    wf_term l c (var n) t.
+Proof.
+  constructor; assumption.
+Qed.
+
+  
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_refl' name l c : forall c' s1 s2,
     [s| !c' |- name] \in l ->
