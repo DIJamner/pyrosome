@@ -1,4 +1,3 @@
-
 Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -76,7 +75,7 @@ Class Elaborated (l : IRule.lang) :=
   }.
 
 (* TODO: move to tactics*)
-
+(*
 Ltac2 inline () :=
     cbn [fst snd named_list_lookup
            String.eqb Ascii.eqb Bool.eqb
@@ -88,7 +87,7 @@ Ltac2 inline () :=
            Exp.exp_var_map Exp.subst_lookup
            elaboration proj1_sig];
 repeat (rewrite Core.with_names_from_cons).
-
+*)
 Ltac2 Type exn ::= [SubstFormExn].
 
 (* TODO: move*)
@@ -128,6 +127,11 @@ Ltac2 step_elab () :=
   | [|- elab_lang _ _] => Control.plus (fun () => apply elab_pf) (fun _ => constructor)
   | [|- elab_rule _ _ _] => constructor
   | [|- elab_ctx _ _ _] => constructor
+  | [|- elab_args _ _ _ _ _ [::]] => apply elab_args_nil
+  | [|- elab_args _ _ _ (?n::_) _ ((?n,?t)::_)] =>
+      apply elab_args_cons_ex
+  | [|- elab_args _ _ _ _ _ ((?n,?t)::_)] =>
+      eapply elab_args_cons_im
   (* special case to force existentials to the empty list*)
   | [|- elab_subst _ _ _ (Core.with_names_from [::] ?l) [::]] =>
         assert ($l = [::]) > [reflexivity | apply elab_subst_nil]
@@ -136,16 +140,22 @@ Ltac2 step_elab () :=
       apply elab_subst_cons_ex > [solve_fresh ()| | |]
   | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
       eapply elab_subst_cons_im > [solve_fresh ()| | |]
+  | [|- Core.le_args _ _ _ _ _] =>constructor
+  | [|- Core.wf_args _ _ _ _] =>constructor
   | [|- Core.wf_subst _ _ _ _] =>constructor
   | [|- elab_sort _ _ _ _] => apply elab_sort_by'
   | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
   | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var
   | [|- elab_term _ _ (var _) _ _] => apply elab_term_var; solve_in()
   | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var; solve_in()
+  | [|- is_true((?n,?e)\in ?l)]=> 
+      assert ($e = named_list_lookup $e $l $n); cbv; solve[auto]
   | [|- is_true (_ \in _)] => solve_in ()
   | [|- is_true (Core.fresh _ _)] => solve_fresh ()
   | [|- is_true (subseq _ _)] => cbv; reflexivity
   | [|- is_true true] => reflexivity
+  | [|- len_eq _ _] => constructor  
+  | [|- _ = _] => try (fun ()=>solve[reflexivity| cbv; f_equal])          
 end.
 
 (* TODO: move to tactics or utils*)
@@ -168,6 +178,7 @@ Ltac2 error_if b e :=
   | false => ()
   end.
 
+(*
 Ltac2 Type exn ::= [ElabExn(constr)].
 Ltac2 rec elaborate () :=
   Control.enter (fun () =>
@@ -207,21 +218,41 @@ Ltac2 rec elaborate () :=
                              | [|- is_true true] => reflexivity
                 end)
   (fun _ => lazy_match! goal with [|- ?g ] => Control.throw (ElabExn g)end)).
+*)
 
+(*_TODO: move *)
+Transparent get_rule_args.
+Transparent get_rule_ctx.
 
 
 Ltac2 elab_term_by ():=
     apply elab_term_by'>
-    [ inline(); solve_in()
-    | repeat (inline()); reflexivity
-    | elaborate()].
+    [ simpl; solve_in()
+    | simpl; reflexivity
+    | repeat(simpl;step_elab())].
 
 Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)
        As elab_cat_lang_pf.
 Proof.
-  elaborate(); solve [repeat (elab_term_by())].
-Qed.
+  repeat (simpl;step_elab()).
+  {
+    apply elab_term_by'; repeat (simpl;step_elab()).
+    apply elab_term_by'; repeat (simpl;step_elab()).
+  }
+  {
+    apply elab_term_by'; repeat (simpl;step_elab()).
+    apply elab_term_by'; repeat (simpl;step_elab()).
+  }    
+  {
+    apply elab_term_by'; repeat (simpl;step_elab()).
+    apply elab_term_by'; repeat (simpl;step_elab()).
+  }   
+  {
+    apply elab_term_by'; repeat (simpl;step_elab()).
+    apply elab_term_by'; repeat (simpl;step_elab()).
+  }   
+Qed. 
   
 Instance elab_cat_lang_inst : Elaborated cat_lang :=
   {
@@ -295,108 +326,51 @@ Derive elab_subst_lang'
        SuchThat (elab_lang subst_lang' elab_subst_lang')
        As elab_subst_lang'_pf.
 Proof.
-  repeat (simpl;step_elab()).
-  simpl.
-  time (elaborate()).
-  {
-    elab_term_by().
-  }
-  {
-    elab_term_by().
-    elab_term_by().    
-  }
-  {
-    elab_term_by().
-    elab_term_by().    
-  }
-  {
-    elab_term_by().
-    elab_term_by().    
-  }
+  (* TODO: figure out how to get rid of the second repeat*)
+  repeat (repeat (cbn;step_elab())); try (fun()=> solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))]).
   {
     eapply elab_term_conv.
-    elab_term_by().
-    elab_term_by().
-    elaborate().
-    
-    eapply Core.sort_con_mor.
-    repeat (match! goal with
-              |[ |- Core.le_args _ _ _ _ _] => constructor
-              |[ |- is_true (Core.fresh _ _)] => Control.shelve()end).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    repeat (cbn;step_elab()).
+    repeat (cbn;step_elab()).
+
+    cbn.
+    eapply Core.le_sort_refl'; repeat (cbn; step_elab()).
     reflexivity.
-    eapply (Core.le_term_by' "ty_subst_id"%string).
-    admit(*TODO: drop down to tactics for relations (need fixing)*).
+    cbn.
+    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (cbn;step_elab()).
+    reflexivity.
+    reflexivity.
   }
   {
-    elab_term_by().
-    elab_term_by().    
-  }
-  {
-    elab_term_by().
-    elab_term_by().    
-  }
-  {
-    eapply elab_term_conv.
-    elab_term_by().
-    elab_term_by().
-    elaborate().
-    elaborate().
-    admit (*TODO: handle wfterm like elabtermby apply wf_term_by'.*).
-    admit(*TODO: drop down to tactics for relations (need fixing)*).
-  }
-  
-  {
-    elab_term_by().    
-  }
-  {
-    elab_term_by().
-  }
-  { 
-    elab_term_by().
-    elab_term_by().
-    apply elab_term_by'.
-    elaborate().
-    inline(); reflexivity.
-    inline().
-    rewrite Core.zip_zip'.
-    cbv.
-    apply elab_subst_nil.
-  }
-  {
-    elab_term_by().
-  }
-  {
-    elab_term_by().
-  }
-  {
-    elab_term_by().
-  }
-  {
-    elab_term_by().
-    (* TODO: get elab_term_by towork for emp*)
-    apply elab_term_by'.
-    elaborate().
-    inline(); reflexivity.
-    inline().
-    rewrite Core.zip_zip'.
-    cbv.
-    apply elab_subst_nil.
-  }
-  {
-    elab_term_by().
+    eapply elab_term_conv; 
+    repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+
+
+    cbn.
+    {
+      eapply Core.wf_term_by'; repeat(cbn; step_elab()).
+      eapply Core.wf_term_by'; repeat(cbn; step_elab()).
+    }
     
-    (* TODO: get elab_term_by towork for emp*)
-    apply elab_term_by'.
-    elaborate().
-    inline(); reflexivity.
-    inline().
-    rewrite Core.zip_zip'.
-    cbv.
-    apply elab_subst_nil.
+    cbn.
+    eapply Core.le_sort_refl'; repeat (cbn; step_elab()).
+    reflexivity.
+    cbn.
+    symmetry.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn;step_elab()); reflexivity.
   }
 Qed.
 
-Instance elab_subst_lang' : Elaborated subst_lang' := {}.
+Instance elab_subst_lang'_inst : Elaborated subst_lang' :=
+  {
+  elaboration := elab_subst_lang';
+  elab_pf := elab_subst_lang'_pf;
+  }.
 
 Definition subst_lang : lang :=
    [:> "G" : #"env", "A" : #"ty" %"G"
@@ -409,8 +383,8 @@ Definition subst_lang : lang :=
        "A" : #"ty" %"G3",
        "e" : #"el" %"G2" (#"ty_subst" %"g" %"A")
        ----------------------------------------------- ("cmp_snoc")
-       #"cmp" (#"snoc" %"g" %"e") %"f"
-       = #"snoc" (#"cmp" %"g" %"f") (#"el_subst" %"f" %"e")
+       #"cmp" %"f" (#"snoc" %"g" %"e")
+       = #"snoc" (#"cmp" %"f" %"g") (#"el_subst" %"f" %"e")
        : #"sub" %"G1" (#"ext" %"G3" %"A")
    ]::
    [:> "G" : #"env", "G'" : #"env",
@@ -426,7 +400,7 @@ Definition subst_lang : lang :=
       "A" : #"ty" %"G'",
       "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
       ----------------------------------------------- ("wkn_snoc")
-      #"cmp" #"wkn" (#"snoc" %"g" %"e") = %"g" : #"sub" %"G" %"G'"
+      #"cmp" (#"snoc" %"g" %"e") #"wkn" = %"g" : #"sub" %"G" %"G'"
   ]::
   [:| "G" : #"env", "A" : #"ty"(%"G")
        -----------------------------------------------
@@ -444,374 +418,189 @@ Definition subst_lang : lang :=
   ]::
   [:| "G" : #"env", "A": #"ty" %"G"
        -----------------------------------------------
-       "ext" : #"env"
+       "ext" "G" "A" : #"env"
   ]::subst_lang'.
 
-(*
-Require Import Setoid.
 
-Require Import Named.Tactics.
-
-Set Default Proof Mode "Ltac2".
-
-Lemma nil_with_names c : with_names_from c [::] = [::].
-Proof using.
-  destruct c; auto.
-Qed.
-
-Ltac2 process_judgment () :=
-  (simpl;lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
-  | [|- wf_term _ _ (var _) _] => eapply wf_term_var; unify_in()
-   end).
-
-
-Lemma subst_lang_wf : wf_lang subst_lang.
-Proof using .
-  constructor > [|repeat (process_judgment())].
-  constructor > [|repeat (process_judgment())]. (* long *)
-  constructor > [|repeat (process_judgment())].
-  constructor > [|repeat (process_judgment())]. (* long *)
-
-  constructor > [|repeat (process_judgment())]. (* long *) 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. (* long *)
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())].
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())].
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())].
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())]. 
-  constructor > [|repeat (process_judgment())].
-  constructor.
+Derive elab_subst_lang
+       SuchThat (elab_lang subst_lang elab_subst_lang)
+       As elab_subst_lang_pf.
+Proof.
+  (* TODO: figure out how to get rid of the second repeat*)
+  repeat (repeat (cbn;step_elab())).
   {
-    eapply wf_term_conv > [ repeat (process_judgment()) | repeat (process_judgment()) |].
-    cbv.
-    admit.
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
   }
   {
-    eapply wf_term_conv.
-    repeat (process_judgment()).
-    apply_rule '"el_subst"%string.
-    constructor; auto.
-    constructor; auto.
-    constructor; auto.
-    constructor; auto.
-    constructor; auto.
-    constructor.
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()). cbv.
-    admit. admit.
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
   }
   {
-    eapply wf_term_conv.
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    cbv. constructor.
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
-    repeat (process_judgment()).
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    cbn.
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    (* TODO: want to start w/ subgoal 2 for inference purposes?*)
+    apply elab_term_by'; repeat (cbn;step_elab()).
 
-
-
-    
-    eapply wf_term_var.
-    
-    change_cbv constr:((srt "sub" [:: var "G'"; var "G"]) [/[:: ("G'"%string, var "G3"); ("G"%string, var "G1")] /]).
-      unify_in().
+    (* this tactic makes a choice *)
+    apply elab_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
 
     
-    admit.
+    apply elab_term_by'; repeat (cbn;step_elab()).
   }    
-
-  simpl.
-  eapply wf_term_var.
-  
-  cbv.
-  auto.
-  Focus 1.
-  lazy.
-  Unset Printing Coercions.
-  cbv. unify_in().
-  process_judgment().
-  Focus 2.
-  process_judgment'().
-  repeat (process_judgment ()).
-  Focus 2.
-  repeat (process_judgment ()).
-  repeat (simpl;lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ (con ?s _) _] => Control.plus (fun () => apply_rule s) (fun _ => eapply wf_term_conv)
-  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
-  end).
-  eapply wf_term_conv.
-
-  
-  repeat (simpl;lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
-  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
-  end).
-
-   
-  repeat (simpl;lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ (con ?s _) _] => apply_rule s
-  | [|- wf_term _ _ (var _) _] => eapply wf_term_var
-  end).
-
-  cbv.
-  eapply sort_con_mor.
-  constructor.
-  constructor.
-  constructor.
-  reflexivity.
-  rewrite nil_with_names.
-  reflexivity.
-  admit.
-
-  unfold with_names_from.
-  simpl.
-  eapply le_term_conv.
-  admit.
-  let rec print_map m :=
-      match m with
-      | MapEmpty => Message.of_string "[::]"
-      | MapCons s v m' =>
-        Message.concat
-          (Message.of_string "(")
-          (Message.concat (Message.of_constr s)
-                          (Message.concat (Message.of_string ",")
-                                          (Message.concat (Message.of_constr v)
-                                                          (Message.concat (Message.of_string ")::")
-                                                                          (print_map m)))))
-      end in
-      
-  let name := '"ty_subst_id"%string in
-  let l := goal_lang () in
-  (* TODO: make d an evar so it isn't silently returned?*)
-  let d := constr:(sort_rule [::]) in
-  let r := Std.eval_cbv all_red_flags
-           constr:(named_list_lookup $d $l $name) in
-  lazy_match! r with
-  | term_le ?c' ?e1' ?e2' ?t' =>
-    lazy_match! goal with
-    | [|- le_term ?l ?c ?t ?e1 ?e2] =>
-      let m := (map_merge
-                    (exp_match e1' e1)
-                    (exp_match e2' e2)) in
-      Message.print (print_map m)
-      end end.
-      
-      let s := subst_of_map m c' in
-      Message.print (Message.of_constr s) end end.
-      
-      my_change2
-        '(le_term $l $c $t $e1 $e2)
-        '(le_term $l $c $t'[/$s/] $e1'[/$s/] $e2'[/$s/]);
-      eapply le_term_subst;
-      Control.enter
-        (fun () =>
-           match! goal with
-           | [|- le_term _ _ _ _ _] =>
-             eapply le_term_by;
-             unify_in ()
-           | [|- le_subst _ _ _ _ _] => ()
-           | [|- _] => Control.throw Match_failure
-           end)
-    | [|- ?j] =>
-      Control.zero
-        (JudgmentMismatchExn constr:(($name,$r)) j)
-    end
-      
-end.
-  unify_in ().
-  apply_rule '"ty_subst_id"%string.
-  
-  
-  simpl.
-   (lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ ?e _] =>
-    simpl;
-    lazy_match! e with
-    | con ?s _ => apply_rule s
-    | var _ => eapply wf_term_var
-    end
-    end).
-   unify_in().
-  TODO: should I always apply s?
-  simpl.
-  apply_rule '"cmp"%string.
-  repeat (lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ _ _] => try (fun () => simpl; eapply wf_term_var)
-          end).
-  simpl.
-  apply_rule '"id"%string.
-
-  repeat (lazy_match! goal with
-  | [|- wf_ctx _ _] => constructor
-  | [|- wf_lang _] => constructor
-  | [|- wf_rule _ _] => constructor
-  | [|- is_true(fresh _ _)] => trivial
-  | [|- wf_sort _ _ _] => econstructor
-  | [|- is_true(_ \in _)] => unify_in()
-  | [|- wf_subst _ _ _ _] => rewrite ?nil_with_names; constructor
-  | [|- wf_term _ _ _ _] => try (fun () => simpl; eapply wf_term_var)
-  end).
-  
-
-  eapply wf_term_var.
-  TODO: defaukt rule is showing up next to ext (from unify_in?)
-  bugs: used ext as a sort somewhere
-                      wf_subst _ (w_n_f ?c [::]) _ not recognized
-   lazy_match! goal with
-  end.
-  
-  wf_lang_eauto.
-
+    
   {
-    constructor; eauto with judgment.
-  ltac2:(apply_term_constr()).
-  repeat eapply wf_subst_cons; eauto with judgment.
-  cbv.
-  eapply wf_term_conv.
-  eauto with judgment.
-  ltac2:(apply_term_constr()).
-  repeat eapply wf_subst_cons; eauto with judgment.
-  eapply sort_con_mor.
-  cbv.
-  eapply le_subst_cons.
-  2:{
-    (* TODO: automate: *)
-    instantiate (1 := ty 0).
-    cbv.
-    Eval cbv in (nth_level (sort_rule [::]) subst_lang 14).
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+
+    cbn.
+    (* this tactic makes a choice; should wkn take A as an arg? *)
+    apply elab_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
+    
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+  }
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    cbn.
+    eapply elab_term_conv.
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+
+    apply elab_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
+    repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    repeat (cbn;step_elab()).
+    repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+
+    cbn.
+    eapply Core.le_sort_refl'; repeat (cbn;step_elab()).
+    reflexivity.
+    cbn.
+    eapply Core.le_term_trans.
     symmetry.
-    ltac2:(apply_term_rule constr:(14)).
-    eauto with judgment.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
+    reflexivity.
+    eapply Core.le_term_refl';repeat (cbn;step_elab()).
+    reflexivity.
+    reflexivity.
+    eapply (Core.le_term_by' "wkn_snoc"%string);repeat (cbn;step_elab());
+      reflexivity.
+    reflexivity.
   }
-  eauto with judgment.
-  }  
   {
-    constructor; auto with judgment.
-    apply: wf_term_conv; first by auto with judgment.
-    instantiate (1 := (el 0 (ty_subst 0 (ext 1 3) (snoc 0 1 3 2 4) (ty_subst (ext 1 3) 1 (p 1 3) 3)))).
-    apply:type_wf_term_recognizes; eauto with judgment.
-    unfold el_srt_subst.
-    eapply sort_con_mor.
-    repeat eapply subst_cons_mor.
-    auto with judgment.
-    auto with judgment.
-    
-    eapply le_term_trans.
-    instantiate (2 := ty 0); cbv.
-    - symmetry (* TODO: handle in tactic *).
-      instantiate (1 := ty_subst 0 1
-                           (cmp 0 (ext 1 3) 1
-                                (p 1 3) (snoc 0 1 3 2 4))
-                           3)
-      (*TODO: handle in tactic*).
-      ltac2:(apply_term_rule constr:(14)).
-      eauto with judgment.
-    -
-      (* TODO: should be handled by tactic *)
-      change (ty 0)[/[:: var 0]/]
-        with (ty 0)[/[:: var 3; var 2; var 1; var 0]/].
-      eapply term_con_mor.
-      repeat eapply subst_cons_mor;
-        auto with judgment.
-      instantiate (1:= hom 0 1).
-      cbv.
-      ltac2:(apply_term_rule constr:(23)).
-      eauto with judgment.
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
   }
-  { (* element identity substitution *)
-    constructor;auto with judgment.
-    
-    (*TODO: should be handledby this rewriting:
-      match goal with
-      |- wf_term ?l ?c _ _ => 
-      setoid_replace (el 0 1) with (el 0 (ty_subst 0 0 (id 0) 1))
-                             using relation (le_sort l c) at 2
-    end.
-     *)
-    apply:wf_term_conv; first by auto with judgment.
-    instantiate (1:= el 0 (ty_subst 0 0 (id 0) 1)).
-    auto with judgment.
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+  }
+  {
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    eapply elab_term_conv.
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+    repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()). cbn.
+    apply (@Core.wf_term_by' "cmp"%string); repeat (cbn;step_elab()).
+    cbn. step_elab().
+    step_elab().
+    cbn.
+    apply Core.wf_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
+    apply Core.wf_term_var; repeat (cbn;step_elab()).
+    apply Core.wf_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
+    apply Core.wf_term_var.
+    cbn. rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); right.
+    rewrite in_cons.
+    ltac1:(apply /orP); left.
+    ltac1:(apply /eqP); reflexivity.
 
-    eapply sort_con_mor.
-    eapply subst_cons_mor.
-    eapply subst_cons_mor; try reflexivity.
-    eauto with judgment.
-    change ( [:: el 0 1; ty 0; ob] ) with ( [:: el 0 1]++[:: ty 0; ob] ).
-    eapply le_mono_ctx.
-    eapply le_term_by.
-    instantiate (1:= ty 0).
-    by compute.
+    eapply Core.le_sort_refl'; repeat(cbn;step_elab()).
+    reflexivity.
+    symmetry.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
+      reflexivity.
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
   }
-  Unshelve.
-  all: try exact (con 0 [::]).
-  all: exact [::].
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+  }
+  {
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+  }
 Qed.
-
-*)
+ 
+    

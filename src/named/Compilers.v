@@ -213,6 +213,198 @@ Proof.
   case: c; simpl; auto.
 Qed.
 
+
+Lemma fresh_compile_ctx c cmp s n
+  : fresh n c -> fresh n (compile_ctx cmp s c).
+Proof using.
+  elim: c; simpl; auto.
+  move => [n' t] c'.
+  unfold fresh.
+  intro IH; simpl.
+  rewrite !in_cons.
+  move /norP => [nneq nnin].
+  apply /norP.
+  split; auto.
+Qed.
+
+Ltac f_equal_match :=
+  match goal with
+  | [|- match ?e with _ => _ end = match ?e with _ => _ end]
+    => let e':= fresh in remember e as e'; destruct e'
+  end.
+
+
+Lemma fresh_tail {A} n (l1 l2 : named_list A)
+  : fresh n (l1 ++ l2) -> fresh n l2.
+Proof.
+  elim: l1; simpl; auto.
+  intros a l.
+  unfold fresh; simpl; intro IH.
+  rewrite !in_cons.
+  move /norP => [_] //.
+Qed.
+
+Lemma fresh_neq_in {A : eqType} n l n' (t : A)
+  : fresh n l -> (n',t) \in l -> ~~ (n'==n).
+Proof.
+  elim: l; unfold fresh; simpl.
+  by cbv.
+  move => [n1 t1] l IH.
+  rewrite !in_cons.
+  move /norP => //= [nn1 nnl].
+  move /orP; case; eauto.
+  {
+    move /eqP.
+    case.
+    move -> => _.
+    
+    apply /negP.
+    move /eqP.
+    move: nn1=> /eqP.
+    intros nnneq nneq.
+    apply nnneq.
+    by symmetry.
+  }
+Qed.
+  
+Lemma lookup_in_tail l cmp c0 c c' n t s s'
+  : let cc := compile_ctx cmp in
+    let cs' := with_names_from (c'++ c) (s' ++ s) in
+    size s == size c ->
+    wf_args l c0 (s'++s) (cc cs' (c'++c)) ->
+    (n,t) \in c ->
+              named_list_lookup (var n) cs' n =
+              named_list_lookup (var n) (with_names_from c s) n.
+Proof.
+  simpl.
+ (* intro.
+  elim: c' s'; intros until s'; case: s'; simpl; auto.
+  {
+    give_up (*TODO: show absurd*).
+  }
+  { give_up (*TODO: show absurd*).
+  }
+  {
+    intro_to wf_args; inversion; subst; simpl.
+    intro; suff: (n=?name = false)%string.
+    {
+      move -> => //.
+      unfold with_names_from in *.
+      eauto.
+    }
+    {
+      replace ((n =? name)%string=false) with (is_true(n!=name)).
+      eapply fresh_neq_in.
+      eapply fresh_tail; eassumption.
+      eassumption.
+      give_up (*TODO*).
+    }
+  }*)
+Admitted.
+
+Lemma strengthen_compile_term l c0 c' c cmp s' s e t
+  : wf_term l c e t ->
+    let cc := compile_ctx cmp in
+    let cce := compile_term cmp in
+    let cs' := with_names_from (c'++ c) (s' ++ s) in
+    size s == size c ->
+    wf_args l c0 (s'++s) (cc cs' (c'++c)) ->
+    cce cs' e = cce (with_names_from c s) e
+with strengthen_compile_args l c0 c' c cmp s' s s1 c1
+  : wf_args l c s1 c1 ->
+    let cc := compile_ctx cmp in
+    let cca sub := map (compile_term cmp sub) in
+    let cs' := with_names_from (c'++ c) (s' ++ s) in
+    size s == size c ->
+    wf_args l c0 (s'++s) (cc cs' (c'++c)) ->
+    cca cs' s1 = cca (with_names_from c s) s1.
+Proof using .
+  all: inversion; subst; simpl; eauto.
+  {
+    intros; f_equal_match; auto.
+    f_equal.
+    eauto.
+  }
+  {
+    intros.
+    eapply lookup_in_tail; eauto.
+  }
+  {
+    intros; f_equal; eauto.
+  }
+Qed.
+  
+Lemma strengthen_compile_sort l c0 c' c cmp s' s t
+  : let cc := compile_ctx cmp in
+    let ccs := compile_sort cmp in
+    let cs' := with_names_from (c'++ c) (s' ++ s) in
+    wf_sort l c (cc cs' t) ->
+    wf_args l c0 s (cc cs' c) ->
+    wf_args l c0 (s'++s) (cc cs' (c'++c)) ->
+    ccs cs' t = ccs (with_names_from c s) t.
+Proof using .
+  simpl.
+  case.
+  intros.
+  simpl.
+  f_equal_match; auto.
+  f_equal.
+  eapply strengthen_compile_args; by eauto.
+Qed.
+
+
+Lemma strengthen_compile_ctx l c0 c' c cmp s' s
+  : let cc := compile_ctx cmp in
+    let cs' := with_names_from (c'++ c) (s' ++ s) in
+    wf_args l c0 s (cc cs' c) ->
+    wf_args l c0 (s'++s) (cc cs' (c'++c)) ->
+    cc cs' c = cc (with_names_from c s) c.
+Proof using.
+  simpl.
+  elim: c c' s s'; auto.
+  move => [n' t'] c1 // => IH c' s s'.
+  inversion; subst.
+  rewrite -!cat_rcons.
+  intro.
+  simpl.
+  f_equal.
+  f_equal.
+  
+  change (?a::?b) with ([::a]++b).
+  erewrite !strengthen_compile_sort; eauto.
+
+  change (?a::?b) with ([::a]++b).
+  rewrite !IH; auto.
+Qed.
+
+  
+  
+Lemma strengthen_compile_ctx l c0 c' c cmp s' s
+  : wf_args l c0 s c ->
+    wf_args l c0 (s'++s) (c'++c) ->
+    compile_ctx cmp
+                (with_names_from (c'++ c)
+                                 (s' ++ s)) c =
+    compile_ctx cmp (with_names_from c s) c.
+Proof using .
+  elim: c c' s s'; auto.
+  move => [n' t'] c1 // => IH c' s s'.
+  inversion; subst.
+  rewrite -!cat_rcons.
+  intro.
+  simpl.
+  f_equal.
+  f_equal.
+  
+  change (?a::?b) with ([::a]++b).
+  erewrite !strengthen_compile_sort; eauto.
+
+  change (?a::?b) with ([::a]++b).
+  rewrite !IH; auto.
+Qed.
+
+
+  
 Lemma inductive_implies_semantic_sort_wf cmp ls lt
   : preserving_compiler lt cmp ls ->
     sort_wf_preserving_sem cmp ls lt
@@ -254,8 +446,42 @@ Proof.
       }
       {
         intros e s' IH c'.
-        simpl.
+        inversion; subst.
+        simpl; constructor.
+        { by apply fresh_compile_ctx. }
+        {
+          move: (IH _ H3) => IH'.
+          match goal with
+          | [ H : wf_args _ _ ?s ?c
+              |- wf_args _ _ ?s ?c']
+            => suff: (c' = c); [ move ->; assumption |]
+          end.
+          change (?a::?l) with ([::a]++l).
+
+          eapply strengthen_compile_ctx; eauto.
+
+
+
+
+
+          Lemma strengthen_compile_ctx l c0 c' c cmp s' s
+  : let cc := compile_ctx cmp in
+    let ca := compile_args cmp in
+    size s == size c ->
+    wf_args l c0 (ca (s'++s)) (cc (c'++c)) ->
+    cc (with_names_from (c'++ c) (s' ++ s)) c
+    = cc (with_names_from c s) c.
+
+          
+                    TODO: doesn't quite line up yet
+          give_up (* suffices to prove freshness condition*).
+        }
+        {
+          same freshness condition
+
+          TODO: apply IH        
         case c'.
+        
         give_up (* TODO: the with_names_from issue bites me here;
                    need to switch handling *).
         intros p c''.
@@ -269,6 +495,7 @@ Proof.
         {
           give_up. }
         {
+
           
         eauto.
         {

@@ -354,12 +354,15 @@ Proof using .
   econstructor; eassumption.
 Qed. 
 
+(* Structured to work well with repeat *)
 Lemma elab_term_by' l c : forall n s es t,
     let r := named_list_lookup (ARule.sort_rule [::] [::]) l n in
     let c' := get_rule_ctx r in
     let args := get_rule_args r in
     let t' := get_rule_sort r in
     (n, (term_rule c' args t')) \in l ->
+    (*Unnecessary, but helps with evars *)
+    len_eq es c' ->
     t = t'[/(with_names_from c' es)/] ->
     (* this argument is last so that proof search unifies existentials
        from the other arguments first*)
@@ -367,6 +370,6 @@ Lemma elab_term_by' l c : forall n s es t,
     elab_term l c (IExp.con n s) (con n es) t.
 Proof using.
   intros.
-  rewrite H0.
+  rewrite H1.
   eapply elab_term_by; eassumption.
 Qed.  

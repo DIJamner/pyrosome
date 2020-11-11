@@ -1,10 +1,6 @@
 -R src/Utils Utils
 src/Utils/Utils.v	
 
--R src/discrete Discrete
-src/discrete/DExp.v
-src/discrete/DRule.v
-
 -R src/named Named
 src/named/Exp.v
 src/named/Rule.v

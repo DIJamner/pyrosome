@@ -29,6 +29,7 @@ Proof using .
   induction s; intro t; destruct t; simpl; f_equal; auto.
 Qed.
 
+(* TODO: which version?
 Definition with_names_from (c : ctx) (l : list exp) : subst :=
   (map (fun p => (fst (fst p), snd p)) (zip' c l)).
 
@@ -42,7 +43,16 @@ Qed.
 Lemma with_names_from_nil l : with_names_from [::] l = [::].
 Proof using.
   cbn; f_equal.
-Qed.
+Qed.*)
+
+Fixpoint with_names_from  (c : ctx) (l : list exp) : subst :=
+  match c, l with
+  | [::],_ => [::]
+  | _,[::] => [::]
+  | (n,_)::c',e::l' =>
+    (n,e)::(with_names_from c' l')
+  end.
+Transparent with_names_from.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -203,7 +213,16 @@ Definition get_rule_ctx (r : rule) : ctx :=
   | term_le c _ _ _ => c
   end.
 
-Lemma wf_sort_by' l c : forall n s,
+
+Definition get_rule_sort (r : rule) : sort :=
+  match r with
+  | sort_rule _ => srt "ERR" [::]
+  | term_rule _ t => t
+  | sort_le _ _ _ => srt "ERR" [::]
+  | term_le _ _ _ t => t
+  end.
+
+Lemma wf_sort_by' n l c : forall s,
     let r := named_list_lookup (sort_rule [::]) l n in
     let c' := get_rule_ctx r in
     (n, (sort_rule c')) \in l ->
@@ -214,17 +233,77 @@ Proof using .
   econstructor; eassumption.
 Qed.
 
+Lemma wf_term_by' n l c : forall s t,
+    let r := named_list_lookup (sort_rule [::]) l n in
+    let c' := get_rule_ctx r in
+    let t' := get_rule_sort r in
+    (n, (term_rule c' t')) \in l ->
+    wf_args l c s c' ->   
+    t = t'[/with_names_from c' s/] ->
+    wf_term l c (con n s) t.
+Proof using .
+  intros.
+  rewrite H1.
+  eapply wf_term_by; eassumption.
+Qed.
+
+(* combines le_sort_by and le_sort_subst *)
+Lemma le_sort_refl' name l c : forall c' s1 s2,
+    [s| !c' |- name] \in l ->
+    len_eq s1 c' ->
+    len_eq s2 c' ->
+    le_args l c c' s1 s2 ->
+    le_sort l c (srt name s1) (srt name s2).
+Proof using .
+  intros.
+  repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
+Admitted  (*TODO:finish*).
+
+
+
+(* combines le_sort_by and le_sort_subst *)
+Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
+    [:| !c' |- name : !t'] \in l ->
+    len_eq s1 c' ->
+    len_eq s2 c' ->
+    t = t'[/with_names_from c' s2/] ->
+    le_args l c c' s1 s2 ->
+    le_term l c t (con name s1) (con name s2).
+Proof using .
+  intros.
+  repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
+Admitted  (*TODO:finish*).
+
+(* combines le_sort_by and le_sort_subst *)
+Lemma le_sort_by' name l c : forall c' e1 e2 s1 s2 e1' e2',
+    [s> !c' |- (name) !e1 = !e2 ] \in l ->
+    len_eq s1 c' ->
+    len_eq s2 c' -> 
+    e1' = e1[/with_names_from c' s1/] ->
+    e2' = e2[/with_names_from c' s2/] ->
+    le_args l c c' s1 s2 ->
+    le_sort l c e1' e2'.
+Proof using .
+  intros.
+  repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
+  eapply le_sort_subst;[ | eapply le_sort_by; eassumption].
+Admitted  (*TODO:finish*).
+
 (* combines le_term_by and le_term_subst *)
 Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
     [:> !c' |- (name) !e1 = !e2 : !t] \in l ->
-    t' = t[/s2/] -> e1' = e1[/s1/] -> e2' = e2[/s2/] ->
-    le_subst l c c' s1 s2 ->
+    len_eq s1 c' ->
+    len_eq s2 c' ->                          
+    t' = t[/with_names_from c' s2/] ->
+    e1' = e1[/with_names_from c' s1/] ->
+    e2' = e2[/with_names_from c' s2/] ->
+    le_args l c c' s1 s2 ->
     le_term l c t' e1' e2'.
 Proof using .
   intros.
   repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
-  eapply le_term_subst; [ eassumption | eapply le_term_by; eassumption].
-Qed.
+  eapply le_term_subst;[ | eapply le_term_by; eassumption].
+Admitted  (*TODO:finish*).
 
 Arguments le_term_by' name [l] {c} {c'} {t} {e1} {e2} {s1} {s2} {t'} {e1'} {e2'}.
 

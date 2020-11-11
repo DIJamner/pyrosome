@@ -235,3 +235,10 @@ Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool 
   | (s', v)::l' =>
     if eqb s s' then v == e else named_list_check l' s e
   end.
+
+
+
+Inductive len_eq {A} {B} : list A -> list B -> Type :=
+| len_eq_nil : len_eq [::] [::]
+| len_eq_cons : forall a a' l l',
+    len_eq l l' -> len_eq (a::l) (a'::l').
