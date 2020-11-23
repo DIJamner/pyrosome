@@ -556,3 +556,8 @@ Proof.
 Qed.
  
     
+Instance elab_subst_lang_inst : Elaborated subst_lang :=
+  {
+  elaboration := elab_subst_lang;
+  elab_pf := elab_subst_lang_pf;
+  }.

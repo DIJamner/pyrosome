@@ -10,41 +10,63 @@ From Named Require Import Exp Rule Core.
 
 Require Import String.
 
-(* each element is the map for that constructor *)
+(* TODO: this does not admit for optimization *)
 Variant compiler_case : Set :=
-| sort_case : ((* target closing *) list exp -> (* target *) sort) -> compiler_case
-| term_case : ((* target closing *) list exp -> (* target *) exp) -> compiler_case.
+| sort_case : list string (* holes *) -> (* target *) sort -> compiler_case
+| term_case :  list string (* holes *) -> (* target *) exp -> compiler_case.
+
+Definition eq_compiler_case c1 c2 : bool :=
+  match c1,c2 with
+  | sort_case args1 t1, sort_case args2 t2 =>
+    (args1 == args2) && (t1 == t2)
+  | term_case args1 e1, term_case args2 e2 =>
+    (args1 == args2) && (e1 == e2)
+  | _,_ => false
+  end.
+
+Lemma eq_compiler_caseP c1 c2 : reflect (c1 = c2) (eq_compiler_case c1 c2).
+Proof using .
+  case: c1; case: c2; simpl; eauto.
+Admitted.
+
+Definition compiler_case_eqMixin := Equality.Mixin eq_compiler_caseP.
+
+Canonical compiler_case_eqType := @Equality.Pack compiler_case compiler_case_eqMixin.
 
 (* each element is the map for that constructor *)
 Definition compiler := named_list compiler_case. 
 
 
-Fixpoint compile_term (cmp : compiler) (close : subst) (e : exp) : exp :=
+Fixpoint compile_term (cmp : compiler) (e : exp) : exp :=
   match e with
-  | var x => named_list_lookup (var x) close x
+  | var x => var x
   | con n s =>
-    let default := sort_case (fun _ => srt "ERR" [::]) in
+    let default := sort_case [::] (srt "ERR" [::]) in
+    let arg_terms := map (compile_term cmp) s in
     match named_list_lookup default cmp n with
-    | term_case c_case => c_case (map (compile_term cmp close) s)
+    | term_case args c_case => c_case[/zip args arg_terms /]
     | _ => con "ERR"%string [::]
     end
   end.
 
-Definition compile_sort (cmp : compiler) (close : subst) (e : sort) : sort :=
+Definition compile_args cmp := map (compile_term cmp).
+
+Definition compile_sort (cmp : compiler) (e : sort) : sort :=
   match e with
   | srt n s =>
-    let default := term_case (fun _ => con "ERR" [::]) in
+    let default := term_case [::] (con "ERR" [::]) in
+    let arg_terms := compile_args cmp s in
     match named_list_lookup default cmp n with
-    | sort_case c_case => c_case (map (compile_term cmp close) s)
+    | sort_case args c_case => c_case[/zip args arg_terms/]
     | _ => srt"ERR"%string [::]
     end
   end.
 
-Definition compile_subst (cmp : compiler) (close : subst) (e : subst) : subst :=
-  map (fun p => (fst p, compile_term cmp close (snd p))) e.
+Definition compile_subst (cmp : compiler) (e : subst) : subst :=
+  map (fun p => (fst p, compile_term cmp (snd p))) e.
 
-Definition compile_ctx (cmp : compiler) (close : subst) (e : ctx) : ctx :=
-  map (fun p => (fst p, compile_sort cmp close (snd p))) e.
+Definition compile_ctx (cmp : compiler) (e : ctx) : ctx :=
+  map (fun p => (fst p, compile_sort cmp (snd p))) e.
 
 (* TODO: ICompilers*)
 
@@ -63,51 +85,40 @@ Fixpoint wf_cmp_subst tgt_l tgt_s cmp src_c :=
            wf_cmp_subst l s cmp c <-> wf_subst l [::] s (map (compile cmp s) c))*)
 
 (*
-TODO: seems wrong; specializing c too much; seems artificial
-Is it sufficient to talk about closed terms?
 
 First we specify the properties in terms of compile,
 then inductively on the compiler. TODO: prove equivalent
  *)
 Definition sort_wf_preserving_sem cmp l1 l2 :=
-  forall s c t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                wf_sort l1 c t ->
-                wf_sort l2 [::] (compile_sort cmp s t).
+  forall c t, wf_sort l1 c t ->
+              wf_sort l2 (compile_ctx cmp c) (compile_sort cmp t).
 
 Definition term_wf_preserving_sem cmp l1 l2 :=
-  forall s c e t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                wf_term l1 c e t ->
-                wf_term l2 [::] (compile_term cmp s e) (compile_sort cmp s t).
+  forall c e t, wf_term l1 c e t ->
+                wf_term l2 (compile_ctx cmp c) (compile_term cmp e) (compile_sort cmp t).
 
 Definition sort_le_preserving_sem cmp l1 l2 :=
-  forall s c t1 t2, wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                le_sort l1 c t1 t2 ->
-                le_sort l2 [::] (compile_sort cmp s t1) (compile_sort cmp s t2).
+  forall c t1 t2, le_sort l1 c t1 t2 ->
+                  le_sort l2 (compile_ctx cmp c) (compile_sort cmp t1) (compile_sort cmp t2).
 
 Definition term_le_preserving_sem cmp l1 l2 :=
-  forall s c e1 e2 t, wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                le_term l1 c t e1 e2 ->
-                le_term l2 [::] (compile_sort cmp s t)
-                        (compile_term cmp s e1) (compile_term cmp s e2).
+  forall c e1 e2 t, le_term l1 c t e1 e2 ->
+                    le_term l2 (compile_ctx cmp c) (compile_sort cmp t)
+                        (compile_term cmp e1) (compile_term cmp e2).
 
 Definition args_wf_preserving_sem cmp l1 l2 :=
-  forall s c s' c', wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                wf_args l1 c s' c' ->
-                wf_args l2 [::] (map (compile_term cmp s) s')
-                        (compile_ctx cmp (with_names_from c' (map (compile_term cmp s) s')) c').
-Definition args_le_preserving_sem cmp l1 l2 :=
-  forall s c s1 s2 c', wf_ctx l1 c ->
-                wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                le_args l1 c c' s1 s2 ->
-                (* TODO: picking s2 here makes things interesting in a bad way *)
-                le_args l2 [::] (compile_ctx cmp (with_names_from c' (map (compile_term cmp s) s2)) c')
-                        (map (compile_term cmp s) s1) (map (compile_term cmp s) s2).
+  forall c s' c', wf_args l1 c s' c' ->
+                    wf_args l2 (compile_ctx cmp c) (map (compile_term cmp) s')
+                            (compile_ctx cmp c').
 
+Definition ctx_wf_preserving_sem cmp l1 l2 :=
+  forall c , wf_ctx l1 c ->
+             wf_ctx l2 (compile_ctx cmp c).
+
+Definition args_le_preserving_sem cmp l1 l2 :=
+  forall c s1 s2 c', le_args l1 c c' s1 s2 ->
+                     le_args l2 (compile_ctx cmp c) (compile_ctx cmp c')
+                        (map (compile_term cmp) s1) (map (compile_term cmp) s2).
   
 
 Definition semantics_preserving cmp l1 l2 :=
@@ -122,34 +133,30 @@ Definition semantics_preserving cmp l1 l2 :=
   formalize the relationship to those above and le semantic statements *)
 Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
 | preserving_compiler_nil : preserving_compiler target [::] [::]
-| preserving_compiler_sort : forall cmp l cf n c,
+| preserving_compiler_sort : forall cmp l n c t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_args target [::] s (compile_ctx cmp (with_names_from c s) c) ->
-               wf_sort target [::] (cf s)) ->
-    preserving_compiler target ((n, sort_case cf)::cmp) ((n,sort_rule c) :: l)
-| preserving_compiler_term : forall cmp l cf n c t,
+    wf_sort target (compile_ctx cmp c) t ->
+    preserving_compiler target ((n, sort_case (map fst c) t)::cmp) ((n,sort_rule c) :: l)
+| preserving_compiler_term : forall cmp l n c e t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c, t *)
-    (forall s, wf_args target [::] s (compile_ctx cmp (with_names_from c s) c) ->
-               wf_term target [::] (cf s)
-                       (compile_sort cmp (with_names_from c s) t)) ->
-    preserving_compiler target ((n,term_case cf)::cmp) ((n,term_rule c t) :: l)
+    wf_term target (compile_ctx cmp c) e (compile_sort cmp t) ->
+    preserving_compiler target ((n,term_case (map fst c) e)::cmp) ((n,term_rule c t) :: l)
 | preserving_compiler_sort_le : forall cmp l n c t1 t2,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_subst target [::] s (compile_ctx cmp s c) ->
-               le_sort target [::] (compile_sort cmp s t1)
-                       (compile_sort cmp s t2)) ->
+    le_sort target (compile_ctx cmp c)
+            (compile_sort cmp t1)
+            (compile_sort cmp t2) ->
     preserving_compiler target cmp ((n,sort_le c t1 t2) :: l)
 | preserving_compiler_term_le : forall cmp l n c e1 e2 t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
-    (forall s, wf_subst target [::] s (compile_ctx cmp s c) ->
-               le_term target [::]
-                       (compile_sort cmp s t)
-                       (compile_term cmp s e1)
-                       (compile_term cmp s e2)) ->
+    le_term target (compile_ctx cmp c)
+            (compile_sort cmp t)
+            (compile_term cmp e1)
+            (compile_term cmp e2) ->
     preserving_compiler target cmp ((n,term_le c e1 e2 t) :: l).
 
 Lemma wf_empty_sort c t : ~wf_sort [::] c t.
@@ -213,16 +220,17 @@ Proof using .
   by rewrite H0 -H2.
 Qed.    
 
-
+(*
 Lemma in_lang_in_cmp_sort lt cmp ls n c
   : preserving_compiler lt cmp ls ->
     (n, sort_rule c) \in ls ->
     exists f, (forall d, named_list_lookup d cmp n = sort_case f)
               /\ (forall s, wf_args lt [::] s
-                                    (compile_ctx cmp (with_names_from c s) c) ->
+                                    (compile_ctx cmp c) ->
                wf_sort lt [::] (f s)). 
 Proof.
 Admitted.
+*)
 
 (*TODO: move to core*)
 
@@ -281,9 +289,8 @@ Fixpoint named_list_all_fresh {A} (l : named_list A) : bool :=
   | (n,_)::l' => (fresh n l') && (named_list_all_fresh l')
   end.
   
-Lemma lookup_in_tail cmp c c' n t s s'
-  : let cc := compile_ctx cmp in
-    let cs' := with_names_from (c'++ c) (s' ++ s) in
+Lemma lookup_in_tail c c' n t s s'
+    : let cs' := with_names_from (c'++ c) (s' ++ s) in
     size s == size c ->
     size s' == size c' ->
     named_list_all_fresh (c' ++ c) ->
@@ -317,6 +324,7 @@ Proof.
 Admitted.
 
 
+(*
 (* TODO: use ws_term instead? *)
 Lemma strengthen_compile_term l c' c cmp s' s e t
   : wf_term l c e t ->
@@ -326,7 +334,7 @@ Lemma strengthen_compile_term l c' c cmp s' s e t
     size s == size c ->
     size s' == size c' ->
     named_list_all_fresh (c' ++ c) ->
-    cce cs' e = cce (with_names_from c s) e
+    compile_term cmp e =  e
 with strengthen_compile_args l c' c cmp s' s s1 c1
   : wf_args l c s1 c1 ->
     let cc := compile_ctx cmp in
@@ -381,13 +389,9 @@ Proof.
 Qed.
 
 Lemma strengthen_compile_ctx l c' c cmp s' s
-  : wf_ctx l c ->
-    let cc := compile_ctx cmp in
-    let cs' := with_names_from (c'++ c) (s' ++ s) in
-    size s == size c ->
-    size s' == size c' ->
-    named_list_all_fresh (c' ++ c) ->
-    cc cs' c = cc (with_names_from c s) c.
+  : 
+    named_list_all_fresh cmp ->
+    compile ((n, cc)::cmp) c = compile cmp c.
 Proof using.
   {
     simpl.
@@ -437,11 +441,11 @@ Proof using.
     }
   }
 Qed.
-   
+   *)
 
 
-Lemma fresh_compile_ctx c cmp s n
-  : fresh n c -> fresh n (compile_ctx cmp s c).
+Lemma fresh_compile_ctx c cmp n
+  : fresh n c -> fresh n (compile_ctx cmp c).
 Proof using.
   elim: c; simpl; auto.
   move => [n' t] c'.
@@ -453,6 +457,7 @@ Proof using.
   split; auto.
 Qed.
 
+(*
 (*TODO: move to separate file*)
 (*TODO: think harder about Core lack of typing for le rel; 
 c should be inferrable here/refl should use wfness constr*)
@@ -542,471 +547,516 @@ Definition args_le_preserving_sem_cut cmp l1 l2 :=
                 (* TODO: picking s2 here makes things interesting in a bad way *)
                 le_args l2 [::] (compile_ctx cmp (with_names_from c' (map (compile_term cmp s) s2)) c')
                         (map (compile_term cmp s) s1) (map (compile_term cmp s) s2).
+*)
+Ltac case_match :=match goal with
+  | [|- context[match ?e with _ => _ end]]
+    => let e':= fresh in remember e as e'; destruct e'
+  end.
 
-
-Lemma inductive_implies_semantic_sort_wf cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    sort_wf_preserving_sem cmp ls lt
-with inductive_implies_semantic_term_wf cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    term_wf_preserving_sem cmp ls lt
-with inductive_implies_semantic_args_wf cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    args_wf_preserving_sem cmp ls lt
-with inductive_implies_semantic_sort_le cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    sort_le_preserving_sem_cut cmp ls lt
-with inductive_implies_semantic_term_le cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    term_le_preserving_sem_cut cmp ls lt
-with inductive_implies_semantic_args_le cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    args_le_preserving_sem_cut cmp ls lt.
-Proof.
-  all: intros pc s c.
-  {
-    intros t wfc wfs.
-    case; intros.
-    pose (i':=i).
-    move: i' => /in_lang_in_cmp_sort => i'.
-    pose (pc':=pc).
-    move: pc' => /i'.
-    case.
-    intro.
-    case.
-    simpl.
-    move -> => pres.
-    apply pres.
-    eapply inductive_implies_semantic_args_wf; eassumption.
-  }
-  5:{
-    (*this one is a bit suspect*)
-    intro_to le_args_cut.
-    elim; simpl; constructor.
-    {
-      change ((name, ?e) :: with_names_from ?c ?s) with
-          (with_names_from ((name,t)::c) (e::s)).
-      change (?a::?l) with ([::a]++l).
-      erewrite strengthen_compile_ctx; eauto.
-      admit.
-      rewrite size_map.
-      admit.
-      admit.
-    }
-    {
-      by apply fresh_compile_ctx.
-    }
-    {
+Local Ltac in_preserving_sort_rec :=
+  intros;
       match goal with
-        [ |- context[?t[/_/]] ] =>
-        replace (t[/_/]) with t
-        end.
-      (*TODO: preservation of substitutivity?
-        difficult to reason about since everything is closed.
-        use cut-like approach to get rid of substs/maintain
-        them more like wf terms?
-       *)
-      eapply inductive_implies_semantic_term_le.
-      simpl.
-    
-  {
-    
+        [ Hin : is_true(_\in_),
+          IH : is_true(_\in_) -> exists t,_ |- _] =>
+        move: (IH Hin); case; intros
+      end; solve [eauto 3 | eexists; rewrite in_cons; apply /orP; eauto].
 
+Lemma in_preserving_sort lt cmp ls n c'
+  : preserving_compiler lt cmp ls ->
+    (n, sort_rule c') \in ls ->
+    exists t,(n, sort_case (map fst c') t) \in cmp.
+Proof using .
+  elim; simpl; eauto; intros;
+    try  match goal with
+    [ H : is_true(_\in_::_)|- _] =>
+    revert H; rewrite in_cons; move /orP; case
+    end; try solve [move/eqP; case; done| in_preserving_sort_rec].
+  { 
+    move /eqP => [neq ceq].
+    subst.
+    exists t.
+    rewrite in_cons.
+    apply /orP.
+    left.
+    apply /eqP; reflexivity.
+  }
+  Unshelve.
+  exact (srt "ERR" [::]).
+Qed.
+
+Lemma in_preserving_term lt cmp ls n c' t
+  : preserving_compiler lt cmp ls ->
+    (n, term_rule c' t) \in ls ->
+    exists e,(n, term_case (map fst c') e) \in cmp.
+Proof using .
+  elim; simpl; eauto; intros;
+    try  match goal with
+    [ H : is_true(_\in_::_)|- _] =>
+    revert H; rewrite in_cons; move /orP; case
+    end; try solve [move/eqP; case; done| in_preserving_sort_rec].
+  { 
+    move /eqP => [neq ceq teq].
+    subst.
+    exists e.
+    rewrite in_cons.
+    apply /orP.
+    left.
+    apply /eqP; reflexivity.
+  }
+  Unshelve.
+  exact (con "ERR" [::]).
+Qed.
+
+Lemma named_list_all_fresh_lookup {A : eqType} l n (e default : A)
+  : named_list_all_fresh l ->
+    (n, e) \in l ->
+    named_list_lookup default l n = e.
+Proof using .
+  elim: l; [ by cbv |].
+  move => [n' e'] l IH; simpl.
+  move /andP => [ fn allf].
+  rewrite in_cons.
+  case neq: (n == n').
+  case eeq: (e == e').
+  {
+    move: neq eeq => /eqP neq /eqP eeq.
+    rewrite -!neq -!eeq.
+    move /orP; case; intros; subst;
+    rewrite eqb_refl; reflexivity.
+  }
+  {
+    pose neq' := neq.
+    cbn.
+    cbn in neq.
+    rewrite neq.
+    rewrite eeq.
     simpl.
+    clear IH.
+    move: neq' fn => /eqP ->.
+    intros.
+    exfalso.
+    pose p := (fresh_neq_in fn H).
+    move: p.
+    move /eqP.
+    done.
+  }
+  {
+    suff: ((n, e) == (n', e') = false); [ move ->; simpl|].
+    2:{
+      rewrite -Bool.negb_true_iff.
+      apply /negP.
+      move /eqP.
+      case.
+      move /eqP.
+      by rewrite neq.
+    }
+    pose p := neq; cbn in p; rewrite p; clear p.
+    auto.
+  } 
+Qed.
+
+Lemma preserving_compiler_fresh n lt cmp ls
+  : preserving_compiler lt cmp ls ->
+    fresh n ls ->
+    fresh n cmp.
+Proof using .
+  elim; simpl; auto; solve
+  [unfold fresh; intro_to is_true;
+  simpl;
+  rewrite !in_cons !negb_or; simpl;
+  move /andP; case; intros; try apply /andP; auto].
+Qed.
+
+  
+Lemma preserving_compiler_all_fresh lt cmp ls
+  : preserving_compiler lt cmp ls ->
+    named_list_all_fresh ls ->
+    named_list_all_fresh cmp.
+Proof using .
+  elim; simpl; auto; intro_to is_true;
+    move /andP => [frn af]; auto; apply /andP; split; auto.
+  all: eapply preserving_compiler_fresh;eauto.
+Qed. 
+
+Lemma wf_lang_all_fresh l : wf_lang l -> named_list_all_fresh l.
+Proof.
+  elim; intros; simpl in *; auto.
+  apply /andP; auto.
+Qed.
+
+
+Lemma term_fresh_strengthen n cc l cmp c e t
+  : fresh n l ->
+    wf_term l c e t ->
+    compile_term ((n, cc) :: cmp) e = compile_term cmp e
+with args_fresh_strengthen n cc l cmp c s c'
+  : fresh n l ->
+    wf_args l c s c' ->
+    compile_args ((n, cc) :: cmp) s = compile_args cmp s.
+Proof using .
+  {
+    intro_to wf_term; inversion; subst; simpl in *; eauto.
     {
-      (*wf args*)
-      (*TODO: rewrite ...c'... to ...c'[/s0/]...?*)
-      clear i i' x pres.
-      elim: s0 c' w.
+      suff: ((n0 =? n)%string = false);[ move ->|].
       {
-        intro c'.
-        simpl.
-        rewrite !with_names_from_nil_r.
-        inversion; constructor.
+        f_equal_match; auto.
+        change (map (compile_term ?cmp)) with (compile_args cmp).
+        erewrite args_fresh_strengthen; eauto.
       }
       {
-        intros e s' IH c'.
-        inversion; subst.
-        simpl; constructor.
-        { by apply fresh_compile_ctx. }
-        {
-          move: (IH _ H3) => IH'.
-          match goal with
-          | [ H : wf_args _ _ ?s ?c
-              |- wf_args _ _ ?s ?c']
-            => suff: (c' = c); [ move ->; assumption |]
-          end.
-          change ((name, ?e) :: with_names_from ?c ?s) with
-          (with_names_from ((name,t0)::c) (e::s)).
-          change (?a::?l) with ([::a]++l).          
-          erewrite strengthen_compile_ctx; eauto.
-          admit.
-          rewrite size_map.
-          admit.
-          admit.
-        }
-        {
-          change ((name, ?e) :: with_names_from ?c ?s) with
-              (with_names_from ((name,t0)::c) (e::s)).
-          change (?a::?l) with ([::a]++l).
-          erewrite strengthen_compile_ctx; eauto.
-          erewrite strengthen_compile_sort; eauto.
-          specialize IH with c'0.
-          TODO: don't have the right hyps for t0
-          
-          
+        apply /negP.
+        apply /negP.
+        eapply fresh_neq_in; eauto.
+      }
+    }
+  }
+  {
+    intro_to wf_args; inversion; subst; simpl in *; eauto.
+    f_equal; eauto.
+  }    
+Qed.    
+    
+Lemma sort_fresh_strengthen n cc l cmp c t
+  : fresh n l ->
+    wf_sort l c t ->
+    compile_sort ((n, cc) :: cmp) t = compile_sort cmp t.
+Proof using .
+  intro_to wf_sort; inversion; subst.
+  simpl.
+  suff: ((n0 =? n)%string = false);[ move ->|].
+  {
+    f_equal_match; auto.
+    erewrite args_fresh_strengthen; eauto.
+  }
+  {
+    apply /negP.
+    apply /negP.
+    eapply fresh_neq_in; eauto.
+  }
+Qed.
+  
+Lemma ctx_fresh_strengthen n cc l cmp c
+  : fresh n l ->
+    wf_ctx l c ->
+    compile_ctx ((n, cc) :: cmp) c = compile_ctx cmp c.
+Proof.
+  elim: c; simpl; auto.
+  intro_to wf_ctx; inversion; subst.
+  simpl.
+  f_equal; auto.
+  erewrite sort_fresh_strengthen; eauto.
+Qed.  
+
+Lemma preserving_sort_case_inv n t c lt cmp ls
+  :  preserving_compiler lt cmp ls ->
+     wf_lang ls ->
+     (n, sort_rule c) \in ls ->
+     (n, sort_case (map fst c) t) \in cmp ->
+     wf_sort lt (compile_ctx cmp c) t.
+Proof.
+  intros pc wfl.
+  suff: named_list_all_fresh ls; [intro nlfls | eapply wf_lang_all_fresh; by eauto].
+  suff: named_list_all_fresh cmp; [intro nlfc| eapply preserving_compiler_all_fresh; by eauto].
+  revert pc wfl nlfc nlfls.
+  elim; [by cbv|..];
+    intro_to wf_lang; inversion; subst; simpl;
+    repeat lazymatch goal with
+           | H : wf_rule _ _ |- _ => inversion H; clear H; subst
+           | |- is_true(_ && _) -> _=> move /andP; case
+           | |- is_true(_ == _) -> _=> move /eqP; repeat case
+           | |- _ = _ -> _=> intro
+           | |- is_true(_ \in _::_) -> _=> rewrite in_cons; move /orP; case
+           | |- is_true(_ \in _) -> _=> intro
+           | |- is_true (fresh _ _) -> _=> intro
+           | |- is_true (named_list_all_fresh _) -> _=> intro
+           end.
+  all: try erewrite ctx_fresh_strengthen; subst; eauto; try easy.
+  (* freshness contradiction *)
+  all: try lazymatch goal with
+      [ H : is_true (fresh ?n ?l), Hin : is_true ((?n, _) \in ?l) |- _ ] =>
+      exfalso;
+        suff: (n == n);
+        [ apply /negP; eapply fresh_neq_in; [ exact H | exact Hin]
+        | apply /eqP; reflexivity]
+           end.
+  all: apply rule_in_wf in b1; auto; inversion b1; done.
+Qed.    
 
 
-          
-          same freshness condition
+(* TODO: move to core*)
+Lemma wf_subst_from_wf_args l c s c'
+  :  wf_args l c s c' -> wf_subst l c (zip (map fst c') s) c'.
+Proof.
+  elim; simpl; constructor; eauto with judgment.
+  (*with_names_from equiv*)
+Admitted.
 
-          TODO: apply IH        
-        case c'.
+
+Lemma f_apply_case_map {A B} (f : A -> B) cc b1 b2
+  : f match cc with
+      | sort_case args c_case => b1 args c_case
+      | term_case args c_case => b2 args c_case
+      end
+    = match cc with
+      | sort_case args c_case => f (b1 args c_case)
+      | term_case args c_case => f (b2 args c_case)
+      end.
+Proof.
+  case: cc; reflexivity.
+Qed.
+
+Lemma compile_sort_subst cmp t s
+  : compile_sort cmp (t[/s/]) = (compile_sort cmp t)[/compile_subst cmp s/].
+Proof.
+  case: t; simpl.
+  intros n a.
+  rewrite (f_apply_case_map (sort_subst (compile_subst cmp s))).
+  f_equal_match; simpl; auto.
+Admitted.
+
+
+Lemma compile_term_subst cmp e s
+  : compile_term cmp (e[/s/]) = (compile_term cmp e)[/compile_subst cmp s/].
+Proof.
+  (* TODO: requires induction *)
+Admitted.
+
+
+Lemma with_names_from_zip c s
+  : with_names_from c s = zip (map fst c) s.
+Proof.
+  elim: c s; [| case]; intros until s; case: s; simpl; auto.
+  intros.
+  f_equal.
+  eauto.
+Qed.
+
+
+Lemma compile_with_names_from cmp c s
+  : compile_subst cmp (with_names_from c s)
+    = with_names_from c (map (compile_term cmp) s).
+Proof.
+  elim: c s; [| case]; intros until s; case: s; simpl; auto.
+  intros.
+  f_equal.
+  eauto.
+Qed.
+
+
+Lemma compile_ctx_in cmp n t c
+  : (n,t) \in c -> (n, compile_sort cmp t) \in compile_ctx cmp c.
+Proof.
+  elim: c; simpl; auto.
+  case; intro_to is_true.
+  rewrite in_cons.
+  move /orP; case.
+  {
+    move /eqP; case; intros; subst.
+    rewrite in_cons.
+    apply /orP; left.
+    apply /eqP; f_equal.
+  }
+  {
+    simpl.
+    intro.
+    rewrite in_cons.
+    apply /orP; auto.
+  }
+Qed.
+
+
+Lemma compile_ctx_fst c cmp : map fst (compile_ctx cmp c) = map fst c.
+Proof.
+  elim: c; auto.
+  case => n s l //= -> //.
+Qed.
+
+Lemma inductive_implies_semantic_sort_wf cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    sort_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_term_wf cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    term_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_args_wf cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    args_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_ctx_wf cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    ctx_wf_preserving_sem cmp ls lt
+with inductive_implies_semantic_sort_le cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    sort_le_preserving_sem cmp ls lt
+with inductive_implies_semantic_term_le cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    term_le_preserving_sem cmp ls lt
+with inductive_implies_semantic_args_le cmp ls lt
+  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+    args_le_preserving_sem cmp ls lt.
+Proof.
+  all: intros wfs wft pc c.
+  {
+    intros t.    
+    case; intros; simpl.
+    pose in_cmp := i; eapply in_preserving_sort in in_cmp; destruct in_cmp as [e H]; eauto.
+    erewrite named_list_all_fresh_lookup; eauto using preserving_compiler_fresh.
+    simpl.
+    eapply mono_subst_wf_sort; auto. 
+    { eapply preserving_sort_case_inv; eauto. }
+    {
+      eapply inductive_implies_semantic_ctx_wf; [| |eauto |]; eauto with judgment.
+    }
+    {
+      replace (map fst c') with (map fst (compile_ctx cmp c')).
+      apply wf_subst_from_wf_args.
+      eapply inductive_implies_semantic_args_wf;  [| |eauto |]; eauto with judgment.
+      admit(* TODO: lemma*).
+    }
+    {
+      eauto using preserving_compiler_all_fresh, wf_lang_all_fresh.
+    }
+  }
+  {
+    intros e t.
+    case; intros; simpl.
+    {
+       pose in_cmp := i; eapply in_preserving_term in in_cmp; destruct in_cmp as [e' H]; eauto.
+       erewrite named_list_all_fresh_lookup; eauto using preserving_compiler_fresh.
+       simpl.
+       rewrite compile_sort_subst.
+       rewrite -with_names_from_zip.
+       rewrite -compile_with_names_from.
+       eapply mono_subst_wf_term; eauto. 
+       { admit (*TODO: term version eapply preserving_sort_case_inv; eauto.*). }
+       {
+         eapply inductive_implies_semantic_ctx_wf; [| |eauto |]; eauto.
+         apply rule_in_wf in i; auto.
+         inversion i; subst; eauto.
+       }
+       {
+         admit(*
+         rewrite compile_subst_compile_args.
+         apply wf_subst_from_wf_args.
+         eapply inductive_implies_semantic_args_wf;  [| |eauto |]; eauto with judgment.
+         admitTODO: lemma*).
+       }
+       {
+         eauto using preserving_compiler_all_fresh, wf_lang_all_fresh.
+       }
+    }
+    {
+      eapply wf_term_conv.
+      { eapply inductive_implies_semantic_sort_wf; [| |eauto |]; eauto. }
+      { eapply inductive_implies_semantic_term_wf; [| |eauto |]; eauto. }
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+    }
+    {
+      constructor; eauto.
+      by apply compile_ctx_in.
+    }
+  }
+  {
+    intro_to wf_args; case; simpl; constructor.
+    { by apply fresh_compile_ctx. }
+    { eapply inductive_implies_semantic_args_wf; [| |eauto |]; eauto. }
+    { eapply inductive_implies_semantic_sort_wf; [| |eauto |]; eauto. }
+    {
+      rewrite -compile_with_names_from.
+      rewrite -compile_sort_subst.
+      eapply inductive_implies_semantic_term_wf; [| |eauto |]; eauto.
+      rewrite with_names_from_zip.
+      rewrite compile_ctx_fst.
+      rewrite -with_names_from_zip.
+      done.
+    }
+  }
+  {
+    intro_to wf_ctx; case; simpl; constructor.
+    { by apply fresh_compile_ctx. }
+    { eapply inductive_implies_semantic_ctx_wf; [| |eauto |]; eauto. }
+    { eapply inductive_implies_semantic_sort_wf; [| |eauto |]; eauto. }
+  }
+  {
+    intro_to le_sort; case; simpl; intros.
+    {
+      admit (*TODO: inversion lemma*).
+    }
+    {
+      rewrite !compile_sort_subst.
+      eapply le_sort_subst.
+      { admit (*TODO: le subst,not leargs?
+                eapply inductive_implies_semantic_subst_le; [| |eauto |]; eauto.*). }
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+    }
+    { eapply le_sort_refl. }
+    { eapply le_sort_trans.
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+    }
+    {
+      eapply le_sort_sym.
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+    }
+  }
+  {
+    intro_to le_term; case; simpl; intros.
+    {
+      rewrite !compile_sort_subst.
+      rewrite !compile_term_subst.
+      eapply le_term_subst.
+      { admit (*TODO: le subst,not leargs?
+                eapply inductive_implies_semantic_subst_le; [| |eauto |]; eauto.*). }
+      { eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto. }
+    }
+    
+    {
+      admit (*TODO: inversion lemma*).
+    }
+    { eapply le_term_refl. }
+    { eapply le_term_trans.
+      { eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto. }
+      { eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto. }
+    }
+    {
+      eapply le_term_sym.
+      { eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto. }
+    }
+    {
+      eapply le_term_conv.
+      { eapply inductive_implies_semantic_sort_le; [| |eauto |]; eauto. }
+      { eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto. }
+    }
+  }
+  {
+    intro_to le_args; case; simpl; intros; constructor.
+    { eapply inductive_implies_semantic_args_le; [| |eauto |]; eauto. }
+    { by apply fresh_compile_ctx. }
+    {
+      rewrite -compile_with_names_from.
+      rewrite -compile_sort_subst.
+      eapply inductive_implies_semantic_term_le; [| |eauto |]; eauto.
+      rewrite with_names_from_zip.
+      rewrite compile_ctx_fst.
+      rewrite -with_names_from_zip.
+      done.
+    }
+  }
+Admitted.
+  
         
-        give_up (* TODO: the with_names_from issue bites me here;
-                   need to switch handling *).
-        intros p c''.
-        inversion; subst.
-        destruct p.
-        move: H3.
-        case.
-        move ->.
-        simpl.
-        constructor.
-        {
-          give_up. }
-        {
-
-          
-        eauto.
-        {
-          simpl in *.
-          ; easy.
-     TODO: addl prop for wf_args/subst?
     
 
 Lemma inductive_implies_semantic cmp ls lt
-  : preserving_compiler lt cmp ls ->
+  : wf_lang ls -> wf_lang lt ->
+    preserving_compiler lt cmp ls ->
     semantics_preserving cmp ls lt.
 Proof.
-  intro
-  elim.
-  {
-    repeat split; intros s c; intros.
-    { exfalso; eapply wf_empty_sort; eassumption. }
-    { exfalso; eapply wf_empty_term; eassumption. }
-    { move: H1 => /le_empty_sort ->; reflexivity. }
-    { move: H1 => /le_empty_term ->; reflexivity. }
-  }
-  {
-    intros until c; intro cmp_preserves.
-    move => [swf [twf [sle tle]]] IH.
-    repeat split; intro s; intros.
-    {
-      TODO: wrong induction?
-                  probably need to do induction on exprs
-    
-    inversion H1.
-    
-  unfold term_wf_preserving_sem.
-  intros until e; move: s; elim: e; simpl.
-  { give_up. }
   intros.
-  (*TODO*) Admitted.
-       
-
-(*
-    
-  Lemma compiler_var_lookup
-    :  wf_subst lt [::] s (map (compile cmp s) c) ->
-       wf_term lt [::] (var_lookup s n) (compile cmp s t)
-
-Lemma preserving_preserves_sort cmp ls lt
-  : preserving_compiler lt cmp ls ->
-    sort_wf_preserving_sem cmp ls lt.
-Proof.
-  unfold sort_wf_preserving_sem.
-  
-  elim; simpl.
-  {
-    intros; exfalso.
-    by inversion H1.
-  }
-  {
-    
-    
-
-(* something like this would be for closed ctxs
-   Before using this one, the signature of compile should change though *)
-Definition sort_wf_preserving_closed cmp l1 l2 :=
-  forall t, wf_sort l1 [::] t -> wf_sort l2 [::] (compile cmp [::] t).
-
-Lemma compiler_cat_sort_preserving cmp1 cmp2 l1 l2 lt
-  : sort_wf_preserving cmp1 l1 lt ->
-    sort_wf_preserving cmp2 l2 lt ->
-    sort_wf_preserving (cmp1 ++ cmp2) (l1 ++ l2) lt.
-Proof.
-  elim: cmp1 l1; intros until l1; case l1; simpl; first easy.
-  1,2: intro_to sort_wf_preserving.
-
-(* =======================*)
-Definition compiler := (* target closing *) subst -> (* src *) exp -> (* target *) exp.
-
-Fixpoint compile_ctx cmp s c : ctx :=
-  match s, c with
-  | [::],[::] => [::]
-  | e::s', t::c' => ::(compile_ctx cmp s' c')
-  | _,_ => (* unreachable with wf inputs; is this okay? *) [::]
-  end.
-
-Definition sort_wf_preserving cmp l1 l2 :=
-  forall s c t, wf_subst l2 [::] s (compile_ctx cmp s c) ->
-                wf_sort l1 c t ->
-                wf_sort l2 [::] (cmp s t).
-(*================*)
-
-(*
-  TODO!!!: too weak; can't do eg closure conversion if the type is a metavar
-*)
-Definition optimizer := exp -> exp.
-Definition translation := list exp.
-
-Variant pass :=
-| opt_pass : optimizer -> pass
-| trans_pass : translation -> pass.
-
-Definition compiler := list pass.
-
-Fixpoint translate (t : translation) (e : exp) : exp :=
-  match e with
-  | var x => var x
-  | con n s => (nth_level (con 0 [::]) t n)[/ map (translate t) s/]
-  end.
-
-Definition run_pass (p : pass) : exp -> exp :=
-  match p with
-  | opt_pass o => o
-  | trans_pass t => translate t
-  end.
-
-Definition compile : compiler -> exp -> exp :=
-  foldr (fun p => Basics.compose (run_pass p)) id.
-
-Fixpoint compiler_translation (c: compiler) : list translation :=
-  match c with
-  | [::] => [::]
-  | (opt_pass _)::c' => compiler_translation c'
-  | (trans_pass p)::c' => p::compiler_translation c'
-  end.
-
-(*todo: can also precompute start-to-end translation table*)
-Definition translate_n : list translation -> exp -> exp :=
-  foldr (fun p => Basics.compose (translate p)) id.
-
-(* Properties *)
-Definition optimizer_refines (o : optimizer) l
-  := forall c,
-    (forall t1 t2, le_sort l c t1 t2 -> le_sort l c t1 (o t2))
-    /\ (forall e1 e2 t, le_term l c e1 e2 t -> le_term l c e1 (o e2) (o t)).
-
-(* A simpler statement, but not quite the right property:
-Definition optimizer_refines (o : optimizer) l
-  := forall c,
-    (forall t, wf_sort l c t -> le_sort l c t (o t))
-     /\ (forall e t, wf_term l c e t -> le_term l c e (o e) (o t)). 
-TODO: I might be able to use something closer to this if I prove o
-respects substitution/behaves like syntax.
-idea: define a notion of fns that agree with a syntactic object, like:
-add [:: e] |- so as a constructor, prove that (so e) > (o e)
-and (o e) is universal in that, ie if (so e) > e' then exists (unique) e'' where e' > e''
-and (o e) > e''
-*)
-
-Definition translation_preserves (t : translation) l1 l2
-  := forall c,
-    (forall t1 t2, le_sort l1 c t1 t2 ->
-                    le_sort l2 (map (translate t) c) (translate t t1) (translate t t2))
-     /\ (forall e1 e2 t', le_term l1 c e1 e2 t' ->
-                          le_term l2 (map (translate t) c)
-                                  (translate t e1) (translate t e2) (translate t t')).
-
-Definition compiler_refines (cmp : compiler) l1 l2
-  := forall c, (forall t1 t2, le_sort l1 c t1 t2 ->
-                    le_sort l2 (map (translate_n (compiler_translation cmp)) c)
-                            (translate_n (compiler_translation cmp) t1)
-                            (compile cmp t2))
-     /\ (forall e1 e2 t', le_term l1 c e1 e2 t' ->
-                          le_term l2 (map (translate_n (compiler_translation cmp)) c)
-                            (translate_n (compiler_translation cmp) e1)
-                            (compile cmp e2) (compile cmp t')).
-
-Inductive compiler_refines' : compiler -> lang -> lang -> Prop :=
-| cref_nil : forall l, compiler_refines' [::] l l
-| cref_trans : forall t c' l1 l2 l3,
-    compiler_refines' c' l1 l2 ->
-    translation_preserves t l2 l3 ->
-    compiler_refines' (trans_pass t::c') l1 l3
-| cref_opt : forall o c' l1 l2,
-    compiler_refines' c' l1 l2 ->
-    optimizer_refines o l2 ->
-    compiler_refines' (opt_pass o::c') l1 l2.
-
-Lemma compiler_empty_id : compile [::] = id.
-Proof using .
-  by compute.
-Qed.
- 
-Lemma map_compose {A B C : Type} (f : B -> C) (g : A -> B) l
-  : map (Basics.compose f g) l = map f (map g l).
-Proof using .
-  elim: l; simpl; eauto.
-  move => a l ->; eauto.
+  repeat split.
+  by eapply inductive_implies_semantic_sort_wf.
+  by eapply inductive_implies_semantic_term_wf.
+  by eapply inductive_implies_semantic_args_wf.
+  by eapply inductive_implies_semantic_sort_le.
+  by eapply inductive_implies_semantic_term_le.
+  by eapply inductive_implies_semantic_args_le.
 Qed.
 
-Lemma compiler_refines_translation t c' l1 l2 l3
-  : compiler_refines c' l1 l2 ->
-    translation_preserves t l2 l3 ->
-    compiler_refines (trans_pass t::c') l1 l3.
-Proof using .
-  unfold compiler_refines; unfold translation_preserves; unfold optimizer_refines.
-    intros.
-    specialize H with c.
-    destruct H.
-    simpl.
-    rewrite map_compose.
-    unfold Basics.compose.
-    specialize H0 with (map (translate_n (compiler_translation c')) c).
-    destruct H0.
-    split; intros; eauto.
-Qed.
-
-Lemma compiler_refines_optimization o c' l1 l2
-  : compiler_refines c' l1 l2 ->
-    optimizer_refines o l2 ->
-    compiler_refines (opt_pass o::c') l1 l2.
-Proof using .
-  unfold compiler_refines; unfold translation_preserves; unfold optimizer_refines.
-  intros.
-  specialize H with c.
-  destruct H.
-  simpl.
-  unfold Basics.compose.
-  specialize H0 with (map (translate_n (compiler_translation c')) c).
-  destruct H0.
-  split; intros; eauto with judgment.
-Qed.
-  
-Lemma compiler_refines_by_pass c l1 l2
-  : compiler_refines' c l1 l2 -> compiler_refines c l1 l2.
-Proof using .
-  elim; eauto using compiler_refines_optimization,
-        compiler_refines_translation
-          with judgment.
-  unfold compiler_refines;
-    intros; split; intros; rewrite !compiler_empty_id !map_id; done.
-Qed.  
-
-(* TODO: is the ' ver useful?
-   Interesting note: it is not clear how to extend optimizers;
-   easiest way is to apply it iff a program fragment is in the core lang
-   otherwise, not clear what they should do.
-   TODO: come up with a more restrictive type that strikes the right balance?
- *)
-
-Definition subst_respecting t :=
-  forall e s, t e[/s/] = (t e)[/map t s/].
-
-Definition var_respecting t :=
-  forall x, t (var x) = var x.
-
-Fixpoint trans_fn_to_table (t : exp -> exp) (src : lang) : translation :=
-  match src with
-  | [::] => [::]
-  | (sort_rule c)::src'
-  | (term_rule c _)::src' =>
-    t (con (size src') (id_subst (size c)))::(trans_fn_to_table t src')
-  | _::src' => (con 0 [::])::(trans_fn_to_table t src')
-  end.
-
-
-Lemma id_subst_cmp : forall (s : subst),  subst_cmp (id_subst (size s)) s = s.
-Admitted.
-
-
-Lemma trans_fn_to_table_size t l : size (trans_fn_to_table t l) = size l.
-Admitted.
-
-Lemma nth_level_trans_table t l n c t'
-  : (is_nth_level l n (sort_rule c) \/ (is_nth_level l n (term_rule c t'))) ->
-    nth_level [0 | ] (trans_fn_to_table t l) n
-    = t (con n (id_subst (size c))).
-Proof.
-  case.
-  all: unfold is_nth_level; unfold nth_level.
-  all: move /andP => [nlt].
-  all: rewrite !trans_fn_to_table_size.
-  all: rewrite !nlt.
-  all: suff: n = size l - (size l - n.+1).+1.
-  1,3:remember (size l - n.+1) as m.
-  1,2: rewrite -!Heqm.
-  1,2: move ->.
-Admitted.
-  
-  
-
-(*Seems true, but have technical mechanics to work out*)
-Lemma trans_fn_representation_term t l c e t'
-  : subst_respecting t ->
-    var_respecting t ->
-    wf_term l c e t' -> translate (trans_fn_to_table t l) e = t e.
-Proof.
-  unfold subst_respecting; intro srt.
-  unfold var_respecting; intro vrt.
-  elim: e t'; simpl; eauto.
-  intros.
-  rewrite -{2}(id_subst_cmp l0).
-  rewrite -con_subst_cmp.
-  rewrite srt.
-  f_equal.
-  {
-    elim: l0 H0 H; simpl; eauto with judgment.
-    intros.
-    destruct H1.
-    f_equal; eauto with judgment.
-    apply: H1.
-    (*2:{
-      apply: map_ext'.(*TODO: need map_ext' for props?*)
-             eapply H1.*)
-    give_up.
-    give_up.
-  }
-  {
-    eapply nth_level_trans_table.
-    give_up.
-  }
-  Unshelve.
-  all: auto.
-Admitted.
-    
-Lemma trans_fn_representation_sort t l c t'
-  : subst_respecting t ->
-    var_respecting t ->
-    wf_sort l c t' -> translate (trans_fn_to_table t l) t' = t t'.
-Proof.
-  unfold subst_respecting; intro srt.
-  unfold var_respecting; intro vrt.
-  case: t'; simpl; eauto.
-  intros.
-  rewrite -{2}(id_subst_cmp l0).
-  rewrite -con_subst_cmp.
-  rewrite srt.
-  inversion H; subst.
-  f_equal.      
-  2:{
-    suff: (size l0 = size c'); first move ->.
-    eapply nth_level_trans_table.
-    tauto.
-    give_up.
-  }
-  TODO: subst. ver. of lemma
-*)

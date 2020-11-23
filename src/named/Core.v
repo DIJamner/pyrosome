@@ -497,7 +497,7 @@ Proof using .
 Qed.
 Hint Resolve rule_in_ws : judgment.*)
 
-(* TODO: get proofs through
+(* TODO: get proofs through*)
 
 (* Monotonicity under substitution
 TODO: need wf_ctx for c' is subst case? (to get ws) *)
@@ -507,7 +507,7 @@ Lemma mono_le_subst l c
         forall c' s1 s2, le_subst l c' c s1 s2 ->
                          le_sort l c' t1[/s1/] t2[/s2/])
     /\ (forall c' s1 s2,
-           le_subst l c c' s1 s2 -> ws_ctx c' ->
+           le_subst l c c' s1 s2 -> wf_ctx l c' ->
            forall c'' s1' s2', le_subst l c'' c s1' s2' ->
                                le_subst l c'' c' (subst_cmp s1 s1') (subst_cmp s2 s2'))
     /\ (forall t e1 e2,
@@ -515,6 +515,7 @@ Lemma mono_le_subst l c
            forall c' s1 s2, le_subst l c' c s1 s2 ->
                             le_term l c' t[/s2/] e1[/s1/] e2[/s2/]).
 Proof with eauto with judgment using.
+  (*
   move: c; apply: le_ind; intros; simpl...
   move: H3; simpl; move /andP => [wst wsc].
   constructor...
@@ -522,7 +523,8 @@ Proof with eauto with judgment using.
   rewrite sep_subst_cmp...
   (*TODO: this step is automatable*)
   erewrite le_subst_len_eq_r...
-Qed.
+Qed.*)
+Admitted.
 
 Lemma mono_wf_subst l c
   : wf_lang l (*TODO: just used for wsness; handle differently? ws syntax?*)->
@@ -539,6 +541,7 @@ Lemma mono_wf_subst l c
            forall c' s, wf_subst l c' s c ->
                         wf_term l c' e[/s/] t[/s/]).
 Proof with eauto with judgment using .
+(*
   move => wfl; move:c; apply wf_ind; intros; simpl; try by econstructor; eauto with judgment.
   { (* wf_term_subst *)
     (*TODO: automatable*)
@@ -560,7 +563,8 @@ Proof with eauto with judgment using .
     unfold exp_subst; simpl.
     apply: lookup_wf...
   }
-Qed.
+Qed.*)
+Admitted.
 
 Definition mono_subst_le_sort l c := proj1 (mono_le_subst l c).
 Hint Resolve mono_subst_le_sort : judgment.
@@ -588,35 +592,55 @@ Proof.
 Qed.
 Hint Resolve wf_subst_ctx :judgment.
 
-Lemma mono_ext_le l r c
+
+Lemma mono_ext_le l n r c
   : (forall t1 t2,
         le_sort l c t1 t2 -> wf_rule l r ->
-        le_sort (r::l) c t1 t2)
+        le_sort ((n,r)::l) c t1 t2)
     /\ (forall s1 s2 c',
            le_subst l c s1 s2 c' ->
            wf_rule l r ->
-           le_subst (r::l) c s1 s2 c')
+           le_subst ((n,r)::l) c s1 s2 c')
     /\ (forall e1 e2 t,
            le_term l c e1 e2 t ->
            wf_rule l r ->
-           le_term (r::l) c e1 e2 t).
+           le_term ((n,r)::l) c e1 e2 t).
 Proof with eauto with judgment using.
   move: c; apply le_ind...
   all: intro_to is_true; intro H; constructor...
-  all: rewrite in_cons H; by apply orbT.
+  {
+    apply le_sort_sym.
+    eapply le_sort_by.
+    rewrite in_cons.
+    apply /orP; right.
+    eassumption.
+  }
+  {
+    apply le_term_sym.
+    eapply le_term_by.
+    rewrite in_cons.
+    apply /orP; right.
+    eassumption.
+  }
 Qed.
 
-Lemma mono_ext_wf l r c  
+Lemma wf_args_ctx l c s c'
+  : wf_args l c s c' -> wf_ctx l c'.
+Proof.
+  elim; eauto with judgment.
+Qed.
+Hint Resolve wf_args_ctx : judgment.
+
+Lemma mono_ext_wf l n r c  
     : (forall t,
-           wf_sort l c t -> wf_ctx l c -> wf_rule l r -> wf_sort (r::l) c t)
+           wf_sort l c t -> wf_ctx l c -> wf_rule l r -> wf_sort ((n,r)::l) c t)
     /\ (forall s c',
-           wf_subst l c s c' -> wf_ctx l c -> wf_rule l r -> wf_subst (r::l) c s c')
+           wf_args l c s c' -> wf_ctx l c -> wf_rule l r -> wf_args ((n,r)::l) c s c')
     /\ (forall e t,
-           wf_term l c e t -> wf_ctx l c -> wf_rule l r ->  wf_term (r::l) c e t).
+           wf_term l c e t -> wf_ctx l c -> wf_rule l r ->  wf_term ((n,r)::l) c e t).
 Proof with eauto with judgment using .
   move: c; apply wf_ind...
   all: try by econstructor; eauto with judgment; rewrite in_cons; apply /orP; auto.
-  all: try by econstructor; eauto with judgment; apply is_nth_level_cons.
   {
     econstructor...
     eapply mono_ext_le...
@@ -624,14 +648,14 @@ Proof with eauto with judgment using .
 Qed.
 (* TODO: add as hint? *)
 
-Lemma mono_ext_ctx l r c : wf_rule l r -> wf_ctx l c -> wf_ctx (r::l) c.
+Lemma mono_ext_ctx l n r c : wf_rule l r -> wf_ctx l c -> wf_ctx ((n,r)::l) c.
 Proof.
   elim: c; simpl; intro_to wf_ctx; inversion; subst; constructor;
     eauto with judgment.
   eapply mono_ext_wf; eauto with judgment.  
 Qed.
 
-Lemma mono_ext_rule l r r' : wf_rule l r -> wf_rule l r' -> wf_rule (r::l) r'.
+Lemma mono_ext_rule l n r r' : wf_rule l r -> wf_rule l r' -> wf_rule ((n,r)::l) r'.
 Proof using .
   move => wfr.
   inversion; constructor; try by constructor; auto.
@@ -639,6 +663,7 @@ Proof using .
   all: eapply mono_ext_ctx; eauto with judgment.
 Qed.
 
+(*
 Lemma wf_lang_prefix l1 l2 : wf_lang (l1 ++ l2) -> wf_lang l2.
 Proof using .
   elim: l1; auto.
@@ -652,16 +677,24 @@ Lemma wf_lang_rst : forall l a, wf_lang (a :: l) -> wf_lang l.
 Proof using .
   intro_to wf_lang; inversion; eauto.
 Qed.
+*)
 
-Lemma rule_in_wf l r : wf_lang l -> r \in l -> wf_rule l r.
+Lemma rule_in_wf l r n : wf_lang l -> (n,r) \in l -> wf_rule l r.
 Proof using .
  elim; first by compute.
- intro_to is_true.
- rewrite in_cons; case /orP; first move /eqP ->; eauto using mono_ext_rule.
+ intro_to wf_lang; intro_to is_true.
+ rewrite in_cons; case /orP.
+ {
+   move /eqP; case => _ ->.
+   eapply mono_ext_rule; auto.
+ }
+ {
+   move /H1.
+   eapply mono_ext_rule; auto.
+ }   
 Qed.
 Hint Resolve rule_in_wf : judgment.
 
-*)
 Lemma le_subst_trans l c c' s1 s2 s3
   : le_subst l c c' s1 s2 -> le_subst l c c' s2 s3 ->
     le_subst l c c' s1 s3.
