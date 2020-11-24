@@ -1060,3 +1060,11 @@ Proof.
   by eapply inductive_implies_semantic_args_le.
 Qed.
 
+(*
+Lemma semantic_implies_inductive cmp ls lt
+  : wf_lang ls -> wf_lang lt ->
+    semantics_preserving cmp ls lt ->
+    preserving_compiler lt cmp ls.
+Proof.
+  (* TODO: actually quite non-trivial *)
+*)

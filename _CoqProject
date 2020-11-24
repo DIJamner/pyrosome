@@ -11,4 +11,5 @@ src/named/IRule.v
 src/named/ARule.v
 src/named/ICore.v
 src/named/Subst.v
+src/named/Compilers.v
 src/named/STLC.v
