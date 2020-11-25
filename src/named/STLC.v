@@ -404,178 +404,180 @@ Proof.
     (* TODO: move to tactics or utils*)
     Require Import Ltac2.Constr.
     Ltac2 refine_elab pat :=
-      match! goal with
-      [|- elab_term _ _ _ ?g _] =>
+      let g := match! goal with
+                 | [|- elab_term _ _ _ ?g _] => g
+                 | [|- elab_sort _ _ _ ?g ] => g
+                 | [|- Core.wf_term _ _ ?g _] => g
+                 | [|- Core.wf_sort _ _ ?g] => g
+               end in
       match Unsafe.kind g with
       | Unsafe.Evar n _ => Control.new_goal n > [| refine pat]
       | _ => ()
-      end
       end.
     refine_elab '(Exp.con "lambda" [:: _; _; Exp.con "ty_subst" [:: Exp.var "A" ;Exp.var "g"; _; _]; _]).
     apply elab_term_by'; repeat (cbn;step_elab()). cbn.
-    apply elab_term_by'; repeat (cbn;step_elab()). cbn.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()). cbn.
-    
-    apply elab_term_by'; repeat (cbn;step_elab()). cbn. Control.shelve().
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    cbn.
-    
-    eapply (@elab_term_by').
-    ltac1:(instantiate (1:= "ty_subst"%string)).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    cbn. apply (@elab_term_var' "A"%string);
-           repeat (cbn;step_elab()).
-    cbn. apply (@elab_term_var' "g"%string);
-           repeat (cbn;step_elab()).
-    cbn. step_elab().
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    cbn. repeat (cbn; step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-
-
-    Unshelve.
-    Focus 12.
-    cbn.
     eapply elab_term_conv.
-    cbn.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    cbn.
-    eapply (@elab_term_by').
-    ltac1:(instantiate (1:= "ty_subst"%string)).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    cbn. apply (@elab_term_var' "A"%string);
+    {
+      apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+      {
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        apply elab_term_by'; repeat (cbn;step_elab()).
+      }
+      { cbn.
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        eapply elab_term_conv.
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        refine_elab '(Exp.con "ty_subst" [:: Exp.var "A" ;Exp.var "g"; _; _]).
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        step_elab().
+        cbn.
+        apply Core.wf_sort_by'; repeat (cbn;step_elab()).
+        refine_elab '( (Exp.con "ext"
+       [:: Exp.con "ty_subst" [:: Exp.var "A"; Exp.var "g"; Exp.var "G"; Exp.var "G'"]; Exp.var "G'"])).
+        cbn.
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        cbn.
+        Focus 3.
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        cbn.
+        {
+          eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try (fun () => reflexivity).
+          cbn.
+          symmetry.
+          eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+        }
+        
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()). cbn.
+        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+      }
+      {
+        apply elab_term_by'; repeat (cbn;step_elab()).
+      }
+      {
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+      }
+    }
+    apply Core.wf_sort_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    cbn. apply (@Core.wf_term_var' "G'"%string);
            repeat (cbn;step_elab()).
-    cbn. apply (@elab_term_var' "g"%string);
-           repeat (cbn;step_elab()).
+    cbn.
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    cbn. repeat (cbn;step_elab()).
     repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
+    cbn.
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    cbn.
+    refine_elab '(Exp.con "ty_subst"%string [:: Exp.var "B"%string ;Exp.var "g"%string;_;_]). (* TODO: check*)
     
-      cbn.   
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    progress (repeat (cbn;step_elab())).
+    progress (repeat (cbn;step_elab())).
+    cbn.
+    {
       eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try (fun () => reflexivity).
       cbn.
+      eapply Core.le_term_trans.
       symmetry.
-      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab());
-        reflexivity.      
+      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+      symmetry.
+      eapply Core.le_term_trans.
+      symmetry.      
+      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+      eapply Core.le_term_refl'; repeat (cbn; step_elab()); try (fun () => reflexivity).
       cbn.
-      apply (@Core.wf_term_var' "G'"%string);
-           repeat (cbn;step_elab()).
-      cbn.
-      eapply (@Core.wf_term_by' "ty_subst"%string); repeat (cbn; step_elab()).
-      repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "G"%string);
-        repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "g"%string);
-        repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "A"%string);
-        repeat (cbn;step_elab()).
-      cbn.
+      symmetry.
+      eapply Core.le_term_trans.
+      eapply (@Core.le_term_by' "wkn_snoc"%string); repeat (cbn; step_elab()); reflexivity.
+      reflexivity.
+    }
+    
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    apply elab_term_by'; repeat (cbn;step_elab()).
+    progress (repeat (cbn;step_elab())).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    progress (repeat (cbn;step_elab())).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     cbn.
-
-     eapply (@Core.wf_term_by' "ty_subst"%string); repeat (cbn; step_elab()).
-      repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "G"%string);
-        repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "g"%string);
-        repeat (cbn;step_elab()).
-      cbn.
-      apply (@Core.wf_term_var' "A"%string);
-        repeat (cbn;step_elab()).
-      cbn.
-      
-
+    {
       eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try (fun () => reflexivity).
       cbn.
-      TODO: things don't seem to quite line up
       symmetry.
-      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab());
-        reflexivity.      
-      cbn.
-      
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-
-    cbn.
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-      repeat (cbn;step_elab()).
-).
+      eapply (@Core.le_term_by' "->_subst"%string); repeat (cbn; step_elab()); reflexivity.
+    }      
   }
+Qed.
   
-Qed. 
-  
-Instance elab_cat_lang_inst : Elaborated cat_lang :=
+Instance elab_stlc_inst : Elaborated stlc :=
   {
-  elaboration := elab_cat_lang;
-  elab_pf := elab_cat_lang_pf;
+  elaboration := elab_stlc;
+  elab_pf := elab_stlc_pf;
+  }.
+
+Definition stlc_bot :=
+  [:| "G" : #"env"
+      -----------------------------------------------
+      "bot" : #"ty" %"G"
+  ]::stlc.
+  
+Derive elab_stlc_bot
+       SuchThat (elab_lang stlc_bot elab_stlc_bot)
+       As elab_stlc_bot_pf.
+Proof.
+  repeat (repeat (cbn;step_elab())).
+Qed.  
+
+Instance elab_stlc_bot_inst : Elaborated stlc_bot :=
+  {
+  elaboration := elab_stlc_bot;
+  elab_pf := elab_stlc_bot_pf;
   }.
 
 
-(*
-Notation bot g := (con 30 [::g]).
-Definition tgt :=
-  (term_rule [:: ob] (ty 0))::stlc.
+From Named Require Import Compilers.
 
-Lemma wf_tgt : wf_lang tgt.
-Proof using .
-  constructor.
-  apply stlc_wf.
-  constructor; eauto with judgment.
-  econstructor; eauto with judgment.
-  ltac2:(unify_nth_level ()).
-  constructor; eauto with judgment.
-  econstructor; eauto with judgment.
-  by cbv.
-  Unshelve.
-  all: solve [exact (con 0 [::]) | exact [::]].
-Qed.
-*)
-
-(*
-From excomp Require Import Compilers.*)
-
-(* TODO: handle sort vs exp *)
-Definition compiler' := string -> list exp -> exp.
+  
+Fixpoint make_pre_compiler
+           (cmp_sort : string -> list string -> sort)
+           (cmp_exp : string -> list string -> exp)
+           (l : lang) : compiler :=
+  match l with
+  | (n,sort_rule c _)::l' =>
+    (sort_case (map fst c) (cmp_sort n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,term_rule c _ _)::l' => term_case (map fst c) (cmp_exp n (map fst c))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,_)::l' => 
+    (make_compiler cmp_sort cmp_exp l')
+  | [::] => [::]
+  end.
+  map (fun p => (p.1, make_cmp_rule cmp_sort cmp_exp p.1 p.2)) l.
+  
 (*Definition to_cmp l c' : compiler :=
   map c' (map fst l).*)
 
@@ -604,12 +606,13 @@ Definition double_neg t :=
 
 Definition lam e := {{e #"lambda" !e}}.
 
+Definition cps_sort (c:string) args : sort := srt c (map Exp.var args).
 Definition cps (c : string) args : exp :=
   match c, args with
   | "->", [:: B; A; G] =>
     double_neg {{e #"->" !A !B}}
   | "lambda", [:: e; B; A; G] =>
-    ret_val {{e #"lambda" !e}}
+    ret_val {{e #"lambda" %e}}
   | "app", [:: e2; e1; b; a; g] =>
     let k := wkn_n 2 {{e #"hd"}} in
     let x1 := wkn_n 1 {{e #"hd"}} in
@@ -617,7 +620,7 @@ Definition cps (c : string) args : exp :=
     lam
       (let_bind (wkn_n 1 e1)
       (let_bind (wkn_n 2 e2)
-      {{e #"app" !k (#"app" !x1 !x2)}}))
+      {{e #"app" %k (#"app" %x1 %x2)}}))
   | _,_ => con c args
   end%string.
 
