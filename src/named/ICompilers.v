@@ -87,3 +87,49 @@ Class ElabCompiler lt ls cmp :=
   elab_compiler : Compilers.compiler;
   elab_compiler_pf : elab_preserving_compiler lt cmp elab_compiler ls
   }.
+
+Fixpoint make_compiler
+           (cmp_sort : string -> list string -> sort)
+           (cmp_exp : string -> list string -> exp)
+           (l : Rule.lang) : compiler :=
+  match l with
+  | (n,Rule.sort_rule c)::l' =>
+    (n,sort_case (map fst c) (cmp_sort n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,Rule.term_rule c _)::l' => (n,term_case (map fst c) (cmp_exp n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,_)::l' => 
+    (make_compiler cmp_sort cmp_exp l')
+  | [::] => [::]
+  end.
+
+Lemma preserving_compiler_term' target
+  : forall cmp ecmp l n c args e ee t case_args,
+    case_args = map fst c ->
+    elab_preserving_compiler target cmp ecmp l ->
+    elab_term target (compile_ctx ecmp c) e ee (compile_sort ecmp t) ->
+    elab_preserving_compiler target
+                             ((n, term_case case_args e)::cmp)
+                             ((n, Compilers.term_case case_args ee)::ecmp)
+                             ((n,ARule.term_rule c args t) :: l).
+Proof using .
+  intros.
+  rewrite H.
+  constructor; eauto.
+Qed.
+
+
+Lemma preserving_compiler_sort' target
+  : forall cmp ecmp l n c args t et case_args,
+    case_args = map fst c ->
+    elab_preserving_compiler target cmp ecmp l ->
+    elab_sort target (compile_ctx ecmp c) t et ->
+    elab_preserving_compiler target
+                             ((n, sort_case case_args t)::cmp)
+                             ((n, Compilers.sort_case case_args et)::ecmp)
+                             ((n,ARule.sort_rule c args ) :: l).
+Proof using .
+  intros.
+  rewrite H.
+  constructor; eauto.
+Qed.
