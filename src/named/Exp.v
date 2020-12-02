@@ -71,18 +71,14 @@ Definition subst : Set := named_list_set exp.
 
 Definition subst_lookup (s : subst) (n : string) : exp :=
   named_list_lookup (var n) s n.
-Global Transparent subst_lookup.
+
+Arguments subst_lookup !s n/.
 
 Definition ctx_lookup (c: ctx) (n : string) : sort :=
   named_list_lookup (srt "" [::]) c n.
-Global Transparent ctx_lookup.
 
-(*TODO: move to utils*)
-Definition pair_map_snd {A B C} (f : B -> C) (p : A * B) :=
-  let (a,b) := p in (a, f b).
+Arguments ctx_lookup !c n/.
 
-Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
-  := map (pair_map_snd f).
 
 Fixpoint exp_var_map (f : string -> exp) (e : exp) : exp :=
   match e with
@@ -90,224 +86,205 @@ Fixpoint exp_var_map (f : string -> exp) (e : exp) : exp :=
   | con n l => con n (map (exp_var_map f) l)
   end.
 
+Arguments exp_var_map f !e /.
+
 Definition exp_subst (s : subst) e : exp :=
   exp_var_map (subst_lookup s) e.
 
-Definition subst_cmp s1 s2 : subst := named_map (exp_subst s2) s1.
+Arguments exp_subst s !e /.
 
-Class Substable (A : Set) : Set :=
-  {
-  apply_subst : subst -> A -> A;
-  subst_assoc : forall s1 s2 a,
-      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a
-(* TODO: identity law*)
-  }.
+Definition subst_cmp s1 s2 : subst := named_map (exp_subst s1) s2.
+Arguments subst_cmp s1 s2 /.
 
-Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
-
-Lemma exp_subst_assoc : forall s1 s2 a,
-    exp_subst s1 (exp_subst s2 a)
-    = exp_subst (subst_cmp s1 s2) a.
-Admitted.
-
-Instance substable_exp : Substable exp :=
-  {
-  apply_subst := exp_subst;
-  subst_assoc := exp_subst_assoc;
-  }.
- 
-Lemma subst_subst_assoc : forall s1 s2 a,
-    subst_cmp s1 (subst_cmp a s2)
-    = subst_cmp (subst_cmp s1 s2) a.
-Admitted.
-
-#[refine]
-Instance substable_subst : Substable subst :=
-  {
-  apply_subst := (fun s1 s2 => subst_cmp s2 s1)
-  }.
-intros.
-by rewrite subst_subst_assoc.
-Defined.
-
-Definition sort_subst (s : subst) (t : sort) : sort :=
-  let (c, s') := t in srt c (map (apply_subst s) s').
-
-Lemma sort_subst_assoc : forall s1 s2 a,
-    sort_subst s1 (sort_subst s2 a)
-    = sort_subst (subst_cmp s1 s2) a.
-Admitted.
-
-Instance substable_sort : Substable sort :=
-  {
-  apply_subst := sort_subst;
-  subst_assoc := sort_subst_assoc;
-  }.
-
-(*
-Definition subst_cmp s1 s2 : subst := map (exp_subst s2) s1.
-
-
-Lemma con_subst_cmp n s s0 : (con n s0)[/s/] = con n (subst_cmp s0 s).
-Proof using .
-  unfold exp_subst.
-  simpl.
-  f_equal.
-Qed.
-
-
-Definition exp_shift (m : nat) e : exp :=
-  exp_var_map (fun n => var (m + n)) e.
-
-Notation "e ^! n" := (exp_shift n e) (at level 7, left associativity).
-Notation "s ^!! n" := (map (exp_shift n) s) (at level 7, left associativity).
-
-Fixpoint shift_subst (sz start : nat) : subst :=
-  match sz with
-  | 0 => [::]
-  | sz'.+1 => (var start)::(shift_subst sz' (start.+1))
-  end.
-
-(*TODO: this is in the library. Why can't I find it? *)
-Lemma sub_0_r : forall n, n - 0 = n.
-Proof using .
-  elim; done.
-Qed.  
-
-Lemma lookup_ge : forall c n, ~n < size c -> var_lookup c n = var n.
-Proof using .
-  intros; unfold var_lookup; unfold nth_level.
-  case nlt: (n < size c) => //=.
-Qed.
-
-(*TODO*)
 (* Well-scoped languages
-   a presupposition of well-formed languages
    Written as functions that decide the properties
    determines that variables (but not constructor symbols) are well-scoped
  *)
-
-Fixpoint ws_exp csz (e : exp) : bool :=
+Fixpoint ws_exp (args : seq string) (e : exp) : bool :=
   match e with
-  | var n => n < csz
-  | con _ v => List.fold_right (fun e f => (ws_exp csz e) && f) true v
+  | var x => x \in args
+  | con _ s => all (ws_exp args) s
   end.
+Arguments ws_exp args !e/.
+
+Definition ws_args args : list exp -> bool := all (ws_exp args).
+Arguments ws_args args !s/.
+
+Fixpoint ws_subst args (s : subst) : bool :=
+  match s with
+  | [::] => true
+  | (n,e)::s' => fresh n s' && ws_exp args e && ws_subst args s'
+  end.
+Arguments ws_subst args !s/.
+
+Definition ws_sort args (t : sort) : bool :=
+  match t with srt _ s => ws_args args s end.
+Arguments ws_sort args !t/.
 
 Fixpoint ws_ctx (c : ctx) : bool :=
   match c with
   | [::] => true
-  | t :: c' => ws_ctx c' && ws_exp (size c') t
+  | (n,t) :: c' => fresh n c' && ws_sort (map fst c') t && ws_ctx c'
   end.
+Arguments ws_ctx !c/.
 
-
-(* replaces m variables with terms with n free vars*)
-Definition ws_subst n : subst -> bool :=
-  List.fold_right (fun e b => ws_exp n e && b) true.
-
-
-Lemma unandb : forall (a b : bool) (C : Prop), (a -> b -> C) <-> (a && b -> C).
+Lemma ws_all_fresh_ctx c
+  : ws_ctx c -> all_fresh c.
 Proof using .
-  move => a b C; split.
-  - move => CF ab.
-    apply andb_prop in ab.
-    case: ab.
-    done.
-  - move => CF aa bb.
-    apply CF.
-    rewrite andb_true_intro //=.
+  elim: c; simpl; auto.
+  case; intros; simpl in *.
+  move: H0.
+  move => /andP [] /andP [] fr wss wsc.
+  apply /andP; split; auto.
 Qed.
 
-Lemma ws_nth : forall n (s : subst) e n',
-    ws_subst n s -> ws_exp n e -> ws_exp n (nth e s n').
+Class Substable (A : Set) : Set :=
+  {
+  apply_subst : subst -> A -> A;
+  well_scoped : list string -> A -> bool;
+  subst_assoc : forall s1 s2 a,
+      well_scoped (map fst s2) a ->
+      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a
+(* TODO: identity law*)
+  }.
+
+Arguments well_scoped {A}%type_scope {Substable} _%seq_scope !_.
+Arguments apply_subst {A}%type_scope {Substable} _%seq_scope !_.
+
+Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
+
+Lemma exp_subst_nil e : exp_subst [::] e = e.
 Proof using .
-  move => n ; elim.
-  - move => e; elim; [done|].
-    move => n' IH //=.
-  - move => x l IH e.
-    elim => [| n' _].
-    + rewrite /ws_subst //=.
-      repeat case /andb_prop.
-      done.
-    + rewrite /ws_subst //=.
-      repeat case /andb_prop.
-      move => _ lf wse.
-      apply: IH.
-      rewrite /ws_subst //=. 
-      done.
+  elim: e; simpl; auto.
+  intro n.
+  elim;simpl; auto.
+  intros e s IH.
+  case; intros eeq IHfold.
+  move: (IH IHfold); case => ->.
+  repeat f_equal; assumption.
+Qed. 
+
+Lemma named_map_subst_nil s : named_map (exp_subst [::]) s = s.
+Proof using .
+  elim s; simpl; auto.
+  case; intros.
+  simpl; f_equal.
+  f_equal; rewrite exp_subst_nil; reflexivity.
+  done.
 Qed.
 
-Lemma ws_empty : forall n, ws_subst n [::].
+Lemma subst_lookup_map s1 s2 n
+  : n \in (map fst s2) ->
+          exp_subst s1 (subst_lookup s2 n) = subst_lookup (named_map (exp_subst s1) s2) n.
 Proof using .
-  move => n.
-  rewrite /ws_subst //=.
+  elim: s2; intro_to is_true; simpl in *.
+  { inversion. }
+  {
+    destruct a; simpl.
+    rewrite in_cons.
+    case neqs:(n==s); simpl.
+    {
+      move: neqs => /eqP => neq; subst.
+      by rewrite !eqb_refl.
+    }
+    {
+      move /H.
+      cbn in neqs.
+      by rewrite !neqs.
+    }
+  }
 Qed.
-
-Lemma sub_n_n n : n - n = 0.
+  
+Lemma exp_subst_assoc : forall s1 s2 a,
+    ws_exp (map fst s2) a ->
+    exp_subst s1 (exp_subst s2 a)
+    = exp_subst (subst_cmp s1 s2) a.
 Proof using .
-  elim: n => //=.
-Qed.
-
-Lemma ltn_lte a b : a < b -> a <= b.
-Proof using .
-  elim: b a; simpl; auto.
+  intros s1 s2 a.
+  elim: a s1 s2; intros; simpl in *.
+  { by apply subst_lookup_map. }
+  {
+    f_equal.
+    elim: l H H0; intros; simpl in *; auto.
+    move: H1 => /andP [] wse wsl.
+    destruct H0.
+    f_equal; eauto.
+  }
 Qed.  
 
-Lemma sub_flip a b c : a < b -> c = b - a.+1 -> a = b -c.+1.
-Proof using .
-  move => alt ->.
-  clear c.
-  rewrite subnSK //.
-  rewrite subKn //.
-  auto using ltn_lte.
-Qed.
-
-
-Lemma level_ind sz m (R: nat -> nat -> Prop)
-  : (forall n, n < sz -> R n (sz - n.+1)) -> m < sz -> R (sz - m.+1) m.
-Proof using .
-  intros.
-  remember (sz - m.+1) as n.
-  move: (sub_flip H0 Heqn) ->.
-  apply: H.
-  rewrite Heqn; clear Heqn.
-  case: sz H0 => //= sz.
-  rewrite !subSS.
-  intros.
-  apply: sub_ord_proof.
-Qed.
-
-
-(* TODO: use above principle *)
-Lemma ws_lookup : forall n (s : subst) (n' : nat),
-    ws_subst n s -> n' < size s -> ws_exp n (var_lookup s n').
-Proof using .  
-  move => n.
-  unfold var_lookup;
-    unfold nth_level.
-  intros.
-  pose p := H0; move: p; case: (n'< size s) => //= _.
-  remember (size s - n'.+1) as y.
-  suff: n' = size s - y.+1.
-  move => n'eq.
-  suff: y < size s.
+Instance substable_exp : Substable exp :=
   {
-    move: n'eq => -> ylt.
-    clear Heqy H0 n'.
-    elim: y s ylt H;
-      intros until s;
-      case: s => //= e s nlt /andP [wse wss] //=.
-    rewrite subSS.
-    suff: n0 < size s; auto.
-  }
-  move: H0 Heqy n'eq.
-  generalize (size s) as z.
-  case => //= n0.
-  rewrite !subSS.
-  intros.
-  rewrite Heqy.
-  apply: sub_ord_proof.
-  auto using sub_flip.
+  apply_subst := exp_subst;
+  well_scoped := ws_exp;
+  subst_assoc := exp_subst_assoc;
+  }.
+ 
+Lemma subst_subst_assoc : forall s1 s2 a,
+    ws_subst (map fst s2) a ->
+    subst_cmp s1 (subst_cmp s2 a)
+    = subst_cmp (subst_cmp s1 s2) a.
+Proof using .
+  intros s1 s2 a.
+  elim: a s1 s2; intros; simpl in *; auto.
+  destruct a; simpl in *.
+  move: H0 => /andP [] /andP []; intros.
+  f_equal; eauto; f_equal; eauto using exp_subst_assoc.
 Qed.
+
+Instance substable_subst : Substable subst :=
+  {
+  apply_subst := subst_cmp;
+  well_scoped := ws_subst;
+  subst_assoc := subst_subst_assoc;
+  }.
+
+Definition args_subst s (a : list exp) := map (apply_subst s) a.
+Arguments args_subst s !a/.
+
+Lemma args_subst_assoc : forall s1 s2 a,
+    ws_args (map fst s2) a ->
+    args_subst s1 (args_subst s2 a)
+    = args_subst (subst_cmp s1 s2) a.
+Proof using .
+  intros s1 s2 a.
+  elim: a s1 s2; intros; simpl in *; auto.
+  move: H0 => /andP []; intros.
+  f_equal; eauto using exp_subst_assoc.
+Qed.
+
+Instance substable_args : Substable (list exp) :=
+  {
+  apply_subst := args_subst;
+  well_scoped := ws_args;
+  subst_assoc := args_subst_assoc;
+  }.
+
+Definition sort_subst (s : subst) (t : sort) : sort :=
+  let (c, s') := t in srt c s'[/s/].
+Arguments sort_subst s !t/.
+
+Lemma sort_subst_assoc : forall s1 s2 a,
+    ws_sort (map fst s2) a ->
+    sort_subst s1 (sort_subst s2 a)
+    = sort_subst (subst_cmp s1 s2) a.
+Proof using .
+  intros s1 s2; case; intros; simpl.
+  f_equal; eauto using subst_assoc.
+Qed.
+
+Instance substable_sort : Substable sort :=
+  { subst_assoc := sort_subst_assoc }.
+    
+(*
+
+Lemma ws_lookup : forall d args (s : subst) n,
+    ws_subst args s -> n \in map fst s -> ws_exp args (named_list_lookup d s n).
+Proof.
+  intros d args.
+  elim; simpl; auto.
+  case.
+  intros n0 e0 s IH n.
+  simpl ws_subst.
 
 
 Theorem subst_preserves_ws
@@ -736,11 +713,6 @@ Definition exp_eqMixin := Equality.Mixin eq_expP.
 
 Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
 
-Lemma str_eqP : forall s s', reflect (s = s') (eqb s s').
-Admitted.
-
-Canonical str_eqType := @Equality.Pack string (Equality.Mixin str_eqP).
-
 Definition eq_sort (t1 t2 : sort) :=
   let (n1, s1) := t1 in
   let (n2, s2) := t2 in
@@ -1080,3 +1052,94 @@ Numeral Notation exp exp_of_uint uint_of_exp : exp_scope.
 
 Arguments con n s%exp_scope.
 *)
+
+(* TODO: how many of these should be part of the substable class?*)
+Lemma ws_exp_mono s (v : exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
+Proof using .
+  elim: v; intros; simpl in *.
+  {
+    suff: (n0 =? n = false)%string.
+    { by move ->. }
+    {
+      apply /negP.
+      apply /negP.
+      eapply fresh_neq_in_fst; eauto.
+    }
+  }
+  {
+    f_equal.
+    elim: l H H1; intros; simpl in *; auto.
+    move: H2 => /andP []; intros.
+    move: H1 => []; intros.
+    f_equal; eauto.
+  }
+Qed.
+
+Lemma ws_args_mono s (v : list exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
+Proof using .
+  elim: v; intros; simpl in *; auto.
+  {
+    move: H1 => /andP []; intros.
+    f_equal; eauto using ws_exp_mono.
+  }
+Qed.
+
+Lemma ws_sort_mono s (v : sort) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
+Proof using .
+  case: v; intros; simpl in *.
+  f_equal; eauto using ws_args_mono.
+Qed.
+
+Lemma ws_subst_lookup args s n
+  : well_scoped args s -> n \in map fst s -> well_scoped args (subst_lookup s n).
+Proof using .
+  elim: s; intros; simpl in *; break; auto.
+  move: H1; rewrite in_cons; cbn.  
+  case neq : (n=?s)%string; simpl; auto.
+Qed.
+  
+Lemma ws_exp_subst args s (v : exp)
+  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
+Proof using .
+  elim: v; intros; simpl in *; auto using ws_subst_lookup.
+  elim: l H H1; intros; simpl in *; break; auto.
+  break_goal; auto.
+Qed.  
+
+Lemma ws_args_subst args s (v : list exp)
+  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
+Proof using .
+  elim: v; intros; simpl in *; auto; break.
+  break_goal; auto using ws_exp_subst.
+Qed.
+
+Lemma ws_sort_subst args s (v : sort)
+  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
+Proof using .
+  case: v; intros; simpl in *; break; auto using ws_args_subst.
+Qed.
+
+Lemma ws_subst_subst args s (v : subst)
+  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
+Proof using .
+  elim: v; intros; break; simpl in *; break; auto.
+  break_goal; auto using ws_exp_subst.
+  erewrite fresh_iff_names_eq; eauto using named_map_fst_eq.
+Qed.  
+
+Ltac fold_Substable :=
+  try change (named_map (exp_subst ?s') ?s) with s[/s'/];
+  try change (exp_subst ?s ?e) with e[/s/];
+  try change (sort_subst ?s ?e) with e[/s/];
+  try change (subst_cmp ?s ?e) with e[/s/].
+
+
+Lemma ws_subst_args args (s : subst)
+  : well_scoped args s = (all_fresh s) && (well_scoped args (map snd s)).
+Proof using .
+  elim: s; simpl; auto.
+  case; intros n0 e0 s IH; simpl.
+  unfold well_scoped in IH; simpl in *.
+  rewrite IH.
+  ring.
+Qed.

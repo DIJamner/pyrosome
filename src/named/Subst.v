@@ -12,7 +12,7 @@ From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore.
 Require Import String.
 
-Require Import Named.Tactics.
+Require Import Named.Tactics Named.Recognizers.
 Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
@@ -353,6 +353,7 @@ Proof.
 
     cbn.
     {
+      apply wf_term_no_conv_recognizes; vm_compute; reflexivity.
       eapply Core.wf_term_by'; repeat(cbn; step_elab()).
       eapply Core.wf_term_by'; repeat(cbn; step_elab()).
     }

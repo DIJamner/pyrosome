@@ -246,48 +246,6 @@ Ltac f_equal_match :=
   | [|- match ?e with _ => _ end = match ?e with _ => _ end]
     => let e':= fresh in remember e as e'; destruct e'
   end.
-
-
-Lemma fresh_tail {A} n (l1 l2 : named_list A)
-  : fresh n (l1 ++ l2) -> fresh n l2.
-Proof.
-  elim: l1; simpl; auto.
-  intros a l.
-  unfold fresh; simpl; intro IH.
-  rewrite !in_cons.
-  move /norP => [_] //.
-Qed.
-
-Lemma fresh_neq_in {A : eqType} n l n' (t : A)
-  : fresh n l -> (n',t) \in l -> ~~ (n'==n).
-Proof.
-  elim: l; unfold fresh; simpl.
-  by cbv.
-  move => [n1 t1] l IH.
-  rewrite !in_cons.
-  move /norP => //= [nn1 nnl].
-  move /orP; case; eauto.
-  {
-    move /eqP.
-    case.
-    move -> => _.
-    
-    apply /negP.
-    move /eqP.
-    move: nn1=> /eqP.
-    intros nnneq nneq.
-    apply nnneq.
-    by symmetry.
-  }
-Qed.
-
-
-(*TODO: move to utils *) 
-Fixpoint named_list_all_fresh {A} (l : named_list A) : bool :=
-  match l with
-  | [::] => true
-  | (n,_)::l' => (fresh n l') && (named_list_all_fresh l')
-  end.
   
 Lemma lookup_in_tail c c' n t s s'
     : let cs' := with_names_from (c'++ c) (s' ++ s) in

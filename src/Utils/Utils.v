@@ -242,3 +242,146 @@ Inductive len_eq {A} {B} : list A -> list B -> Type :=
 | len_eq_nil : len_eq [::] [::]
 | len_eq_cons : forall a a' l l',
     len_eq l l' -> len_eq (a::l) (a'::l').
+
+Definition pair_map_snd {A B C} (f : B -> C) (p : A * B) :=
+  let (a,b) := p in (a, f b).
+Arguments pair_map_snd {A B C} f !p/.
+
+Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
+  := map (pair_map_snd f).
+Arguments named_map {A B} f !l/.
+
+Lemma str_eqP : forall s s', reflect (s = s') (eqb s s').
+Admitted.
+
+Canonical str_eqType := @Equality.Pack string (Equality.Mixin str_eqP).
+
+Definition fresh {A} n (nl : named_list A) : bool :=
+  ~~ (n \in map fst nl).
+
+Arguments fresh {A} n !nl/.
+
+
+Lemma fresh_tail {A} n (l1 l2 : named_list A)
+  : fresh n (l1 ++ l2) -> fresh n l2.
+Proof.
+  elim: l1; simpl; auto.
+  intros a l.
+  unfold fresh; simpl; intro IH.
+  rewrite !in_cons.
+  move /norP => [_] //.
+Qed.
+
+Lemma fresh_neq_in {A : eqType} n l n' (t : A)
+  : fresh n l -> (n',t) \in l -> ~~ (n'==n).
+Proof.
+  elim: l; unfold fresh; simpl.
+  by cbv.
+  move => [n1 t1] l IH.
+  rewrite !in_cons.
+  move /norP => //= [nn1 nnl].
+  move /orP; case; eauto.
+  {
+    move /eqP.
+    case.
+    move -> => _.
+    
+    apply /negP.
+    move /eqP.
+    move: nn1=> /eqP.
+    intros nnneq nneq.
+    apply nnneq.
+    by symmetry.
+  }
+Qed.
+
+Lemma fresh_neq_in_fst {A : eqType} n (l : named_list A) n'
+  : fresh n l -> n' \in (map fst l) -> ~~ (n'==n).
+Proof using .
+  elim: l; unfold fresh; simpl.
+  by cbv.
+  move => [n1 t1] l IH.
+  rewrite !in_cons.
+  move /norP => //= [nn1 nnl].
+  move /orP; case; eauto.
+  {
+    move /eqP.
+    case.
+    move ->.
+    
+    apply /negP.
+    move /eqP.
+    move: nn1=> /eqP.
+    intros nnneq nneq.
+    apply nnneq.
+    by symmetry.
+  }
+Qed.
+
+Fixpoint all_fresh {A} (l : named_list A) : bool :=
+  match l with
+  | [::] => true
+  | (n,_)::l' => (fresh n l') && (all_fresh l')
+  end.
+
+Lemma pair_fst_in {N A : eqType} l (n: N) (a : A)
+  : (n,a) \in l -> n \in (map fst l).
+Proof using.
+  elim: l; simpl.
+  { inversion. }
+  {
+    case.
+    intros; simpl in *.
+    move: H0.
+    rewrite !in_cons.
+    move /orP; case.
+    {
+      move /eqP; case => -> _.
+      rewrite eq_refl; done.
+    }
+    {
+      intros; apply /orP; auto.
+    }
+  }
+Qed.
+
+Lemma fresh_iff_names_eq {A B} n (l1 : named_list A) (l2 : named_list B)
+  : map fst l1 = map fst l2 -> fresh n l1 = fresh n l2.
+Proof using .
+  elim: l1 l2; intros until l2; case: l2; intros;
+    repeat match goal with
+           | [H : _*_|-_]=> destruct H; simpl in *
+           | [H : _::_ = _|-_] => inversion H; clear H
+           | [H : _ = _::_|-_] => inversion H; clear H
+           end;auto.
+Qed.
+
+Ltac break_andbs :=
+  repeat match goal with
+           [H : is_true(_&&_)|-_]=>
+           let H' := fresh H in
+           move: H => /andP [H' H]
+         end.
+Ltac break :=
+  repeat match goal with
+         | [H: _*_|-_]=> destruct H
+         | [H: _/\_|-_]=> destruct H
+         | [H : is_true(_&&_)|-_]=>
+           let H' := fresh H in
+           move: H => /andP [H' H]
+         end.
+
+Ltac break_goal :=
+  repeat match goal with
+         | [|- _*_]=> split
+         | [|- _/\_]=> split
+         | [|-is_true(_&&_)]=>
+           apply /andP; split
+         end.
+
+
+Lemma named_map_fst_eq {A B: Set} (f : A -> B) l
+  : map fst (named_map f l) = map fst l.
+Proof using .  
+  elim: l; intros; break; simpl in *; f_equal; auto.
+Qed.
