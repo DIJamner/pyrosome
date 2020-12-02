@@ -1124,7 +1124,7 @@ Lemma ws_subst_subst args s (v : subst)
 Proof using .
   elim: v; intros; break; simpl in *; break; auto.
   break_goal; auto using ws_exp_subst.
-  erewrite fresh_iff_names_eq; eauto using named_map_fst_eq.
+  by rewrite named_map_fst_eq.
 Qed.  
 
 Ltac fold_Substable :=

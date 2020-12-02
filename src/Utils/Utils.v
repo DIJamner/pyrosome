@@ -257,14 +257,13 @@ Admitted.
 Canonical str_eqType := @Equality.Pack string (Equality.Mixin str_eqP).
 
 Definition fresh {A} n (nl : named_list A) : bool :=
-  ~~ (n \in map fst nl).
+  (n \notin map fst nl).
 
-Arguments fresh {A} n !nl/.
-
+Arguments fresh/.
 
 Lemma fresh_tail {A} n (l1 l2 : named_list A)
   : fresh n (l1 ++ l2) -> fresh n l2.
-Proof.
+Proof using .
   elim: l1; simpl; auto.
   intros a l.
   unfold fresh; simpl; intro IH.
@@ -274,7 +273,7 @@ Qed.
 
 Lemma fresh_neq_in {A : eqType} n l n' (t : A)
   : fresh n l -> (n',t) \in l -> ~~ (n'==n).
-Proof.
+Proof using .
   elim: l; unfold fresh; simpl.
   by cbv.
   move => [n1 t1] l IH.
@@ -318,11 +317,15 @@ Proof using .
   }
 Qed.
 
-Fixpoint all_fresh {A} (l : named_list A) : bool :=
+Fixpoint all_notin (l : list string) : bool :=
   match l with
   | [::] => true
-  | (n,_)::l' => (fresh n l') && (all_fresh l')
+  | n::l' => (n \notin l') && all_notin l'
   end.
+
+Definition all_fresh {A} (l : named_list A) : bool :=
+  all_notin (map fst l).
+Arguments all_fresh /.
 
 Lemma pair_fst_in {N A : eqType} l (n: N) (a : A)
   : (n,a) \in l -> n \in (map fst l).
@@ -343,17 +346,6 @@ Proof using.
       intros; apply /orP; auto.
     }
   }
-Qed.
-
-Lemma fresh_iff_names_eq {A B} n (l1 : named_list A) (l2 : named_list B)
-  : map fst l1 = map fst l2 -> fresh n l1 = fresh n l2.
-Proof using .
-  elim: l1 l2; intros until l2; case: l2; intros;
-    repeat match goal with
-           | [H : _*_|-_]=> destruct H; simpl in *
-           | [H : _::_ = _|-_] => inversion H; clear H
-           | [H : _ = _::_|-_] => inversion H; clear H
-           end;auto.
 Qed.
 
 Ltac break_andbs :=
