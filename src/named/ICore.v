@@ -38,7 +38,7 @@ with elab_term l c : IExp.exp -> exp -> sort -> Prop :=
 | elab_term_conv : forall e ee t t',
     elab_term l c e ee t ->
     (* We add this condition so that we satisfy the assumptions of le_sort *)
-    wf_sort (strip_args l) c t' ->  
+    wf_sort (strip_args l) c t ->  
     le_sort (strip_args l) c t t' ->
     elab_term l c e ee t'
 | elab_term_var : forall n t,
