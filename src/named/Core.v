@@ -130,8 +130,8 @@ Inductive wf_term l c : exp -> sort -> Prop :=
     wf_args l c s c' ->
     wf_term l c (con n s) t[/(with_names_from c' s)/]
 | wf_term_conv : forall e t t',
-    (* We add this condition so that we satisfy the assumptions of le_sort; todo: needed? 
-    wf_sort l c t' ->  *)
+    (* We add this condition so that we satisfy the assumptions of le_sort *)
+    wf_sort l c t -> 
     wf_term l c e t ->
     le_sort l c t t' ->
     wf_term l c e t'
@@ -144,7 +144,12 @@ with wf_args l c : list exp -> ctx -> Prop :=
     (* assumed because the output ctx is wf: fresh name c' ->*)
     wf_args l c s c' ->
     wf_term l c e t[/with_names_from c' s/] ->
-    wf_args l c (e::s) ((name,t)::c').
+    wf_args l c (e::s) ((name,t)::c')
+with wf_sort l c : sort -> Prop :=
+| wf_sort_by : forall n s c',
+    (n, (sort_rule c')) \in l ->
+    wf_args l c s c' ->
+    wf_sort l c (srt n s).
 
 Inductive wf_subst l c : subst -> ctx -> Prop :=
 | wf_subst_nil : wf_subst l c [::] [::]
@@ -153,12 +158,6 @@ Inductive wf_subst l c : subst -> ctx -> Prop :=
     wf_subst l c s c' ->
     wf_term l c e t[/s/] ->
     wf_subst l c ((name,e)::s) ((name,t)::c').
-
-Variant wf_sort l c : sort -> Prop :=
-| wf_sort_by : forall n s c',
-    (n, (sort_rule c')) \in l ->
-    wf_args l c s c' ->
-    wf_sort l c (srt n s).
 
 Inductive wf_ctx l : ctx -> Prop :=
 | wf_ctx_nil : wf_ctx l [::]
@@ -211,31 +210,31 @@ Scheme le_sort_ind' := Minimality for le_sort Sort Prop
 Combined Scheme le_ind
          from le_sort_ind', le_subst_ind', le_term_ind'.
 
-Scheme wf_args_ind' := Minimality for wf_args Sort Prop
-  with wf_term_ind' := Minimality for wf_term Sort Prop.
+Scheme wf_term_ind' := Minimality for wf_term Sort Prop
+  with wf_args_ind' := Minimality for wf_args Sort Prop
+  with wf_sort_ind' := Minimality for wf_sort Sort Prop.
 
 Combined Scheme wf_ind
-         from wf_args_ind',
-         wf_term_ind'.
+         from wf_term_ind',
+         wf_args_ind',
+         wf_sort_ind'.
 
 Local Lemma wf_is_ws l c
-  : (forall s c', wf_args l c s c' -> well_scoped (map fst c) s)
-    /\ (forall e t, wf_term l c e t -> well_scoped (map fst c) e).
+  : (forall e t, wf_term l c e t -> well_scoped (map fst c) e)
+    /\ (forall s c', wf_args l c s c' -> well_scoped (map fst c) s)
+    /\ (forall t, wf_sort l c t -> well_scoped (map fst c) t).
 Proof using .
-  eapply wf_ind; intros; simpl in *; break_goal; auto.
+  apply wf_ind; intros; simpl in *; break_goal; auto.
   eapply pair_fst_in; eauto.
 Qed.    
 
-Definition wf_args_ws l c := proj1 (wf_is_ws l c).
-Hint Resolve wf_args_ws : judgment.
-Definition wf_term_ws l c := proj2 (wf_is_ws l c).
+Definition wf_term_ws l c := proj1 (wf_is_ws l c).
 Hint Resolve wf_term_ws : judgment.
-
-Lemma wf_sort_ws l c t : wf_sort l c t -> well_scoped (map fst c) t.
-Proof using .
-  inversion; simpl in *; eauto with judgment.
-Qed.
+Definition wf_args_ws l c := proj1 (proj2 (wf_is_ws l c)).
+Hint Resolve wf_args_ws : judgment.
+Definition wf_sort_ws l c := proj2 (proj2 (wf_is_ws l c)).
 Hint Resolve wf_sort_ws : judgment.
+
 
 Lemma wf_is_ws_ctx l c : wf_ctx l c -> ws_ctx c.
 Proof using .
@@ -307,6 +306,22 @@ Proof using .
       inversion H1;
       eauto with judgment.
 Qed.
+Hint Resolve wf_subst_len_eq : judgment.
+
+
+Lemma wf_args_len_eq l c s c' : wf_args l c s c' -> size s = size c'.
+Proof using .
+  elim: s c'.
+  - case; simpl; auto; intro_to wf_args; by inversion.
+  - intros until c'; elim: c'.
+    + simpl; auto; intro_to wf_args; by inversion.
+    + simpl; intros; f_equal;
+      specialize H with l1; destruct H;
+      inversion H1;
+      eauto with judgment.
+Qed.
+Hint Resolve wf_args_len_eq : judgment.
+
 
 Lemma le_subst_len_eq_r l c c' s1 s2 : le_subst l c c' s1 s2 -> size s2 = size c'.
 Proof using .
@@ -317,6 +332,8 @@ Proof using .
     simpl; intros; f_equal.
     inversion H0; eauto.
 Qed.
+Hint Resolve le_subst_len_eq_r : judgment.
+
 Lemma le_subst_len_eq_l l c c' s1 s2 : le_subst l c c' s1 s2 -> size s1 = size c'.
 Proof using .
   elim: s1 s2 c'.
@@ -326,6 +343,8 @@ Proof using .
     simpl; intros; f_equal.
     inversion H0; eauto.
 Qed.
+Hint Resolve le_subst_len_eq_l : judgment.
+
 
 
 (* TODO
@@ -370,59 +389,6 @@ Proof using .
 Qed.
 Hint Resolve le_subst_names_eq_r : judgment.
 
-(*
-Lemma lookup_wf l c d (n : string) t c' s
-  : wf_ctx l c -> (n, t) \in c ->
-    wf_subst l c' s c -> wf_term l c' (named_list_lookup d s n) t [/s /].
-Proof.
-  elim: c s n; simpl.
-  intros s n _; inversion.
-  intro_to wf_ctx; inversion; subst.
-  rewrite in_cons.
-  case neq:(n==name); simpl.
-  case teq: (t == v); simpl.
-  {
-    move: neq teq => /eqP neq /eqP teq.
-    rewrite -!neq -!teq.
-    rewrite eq_refl;simpl.
-    intro.
-    inversion; subst.
-    simpl.
-    rewrite eqb_refl.
-    change (sort_subst ?s v) with v[/s/].
-    rewrite ws_sort_mono; auto.
-    erewrite fresh_iff_names_eq; eauto using wf_subst_names_eq.
-    erewrite  wf_subst_names_eq; eauto with judgment.
-  }
-  {
-    change ((n,t)==(name,v)) with ((n==name)&&(t==v)).
-    rewrite teq neq; simpl.
-    
-    move: 
-    
-  (*  TODO: use wsness
-  case: n; simpl.
-  intro.
-  inversion; subst.
-  unfold named_list_lookup.
-  unfold nth_level; simpl.
-  (* TODO
-  Search _ nth.
-  rewrite
-  eauto with judgment.
-
-  Fail.*)*)
-Admitted.
-*)
-(*
-Lemma rule_in_ws l r : wf_lang l -> r \in l -> ws_rule r.
-Proof using .
- elim; first by compute.
- intro_to is_true.
- rewrite in_cons; case /orP; first move /eqP ->; eauto with judgment. 
-Qed.
-Hint Resolve rule_in_ws : judgment.*)
-
 (* TODO: get proofs through*)
 
 (* Monotonicity under substitution
@@ -447,9 +413,15 @@ Proof with eauto with judgment using.
   erewrite le_subst_names_eq_r...
 Qed.
 
+Definition le_subst_sort l c := proj1 (mono_le_subst l c).
+Hint Resolve le_subst_sort : judgment.
+Definition le_subst_subst l c := proj1 (proj2 (mono_le_subst l c)).
+Hint Resolve le_subst_subst : judgment.
+Definition le_subst_term l c := proj2 (proj2 (mono_le_subst l c)).
+Hint Resolve le_subst_term : judgment.
 
 Lemma with_names_from_args_subst c' s' s
-  : with_names_from c' (args_subst s' s) = (with_names_from c' s)[/s'/].
+  : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof using .
   elim: c' s; intros until s; case: s; intros; break; simpl in *; auto.
   f_equal; auto.
@@ -465,88 +437,137 @@ Proof using .
     f_equal; auto.
   }
 Qed.
+
+Lemma map_snd_with_names_from c s
+  : size s = size c -> map snd (with_names_from c s) = s.
+Proof using .
+  elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
+  { inversion H. }
+  {
+    f_equal; auto.
+  }
+Qed.
+
+Lemma wf_subst_lookup l c s c' n t
+  : wf_subst l c s c' -> wf_ctx l c' -> (n,t) \in c' ->  wf_term l c (subst_lookup s n) t [/s /].
+Proof using .
+  elim; intros; simpl in *; [ easy|].
+  inversion H2; subst; clear H2.
+  move: H3.
+  rewrite in_cons.
+  change ((?a,?b)==(?c,?d)) with ((a==c)&&(b==d)).
+  change (n =? name)%string with (n == name).
+  case neq: (n== name); simpl.
+  case teq: (t==t0); simpl.
+  {
+    move: neq teq => /eqP neq /eqP teq _.
+    subst.
+    rewrite ws_sort_mono; auto.
+    simpl in *.
+    all: erewrite wf_subst_names_eq; eauto with judgment.
+  }
+  {
+    move: neq => /eqP neq; subst.
+    intros; exfalso.
+    suff: (name != name).
+    { rewrite eq_refl; done. }
+    eapply fresh_neq_in_fst; eauto using pair_fst_in.
+  }
+  {
+    intro.
+    rewrite ws_sort_mono; auto.
+    {
+      simpl in *.
+      erewrite wf_subst_names_eq; eauto with judgment.
+    }
+    {
+      erewrite wf_subst_names_eq; eauto.
+      eapply sort_in_ws; eauto with judgment.
+    }
+  }
+Qed.      
   
 Lemma mono_wf_subst l c
-  : wf_lang l (*TODO: just used for wsness; handle differently? ws syntax?*)->
-    (forall s c',
+  : ws_lang l (*TODO: just used for wsness; handle differently? ws syntax?*)->
+    (forall e t,
+           wf_term l c e t ->
+           wf_ctx l c ->
+           well_scoped (map fst c) t ->
+           forall c' s, wf_subst l c' s c ->
+                        wf_term l c' e[/s/] t[/s/])
+    /\ (forall s c',
            wf_args l c s c' ->
            wf_ctx l c ->
            ws_ctx c' ->
            forall c'' s', wf_subst l c'' s' c ->
                           wf_args l c'' s[/s'/] c')
-    /\ (forall e t,
-           wf_term l c e t ->
-           wf_ctx l c ->
-           well_scoped (map fst c) t ->
+    /\ (forall t,
+           wf_sort l c t -> wf_ctx l c ->
            forall c' s, wf_subst l c' s c ->
-                        wf_term l c' e[/s/] t[/s/]).
+                        wf_sort l c' t[/s/]).
 Proof with eauto with judgment using .
-  move => wfl; apply wf_ind; intros; simpl in *; break_andbs...
+  move => wsl; apply wf_ind; intros; simpl in *; break_andbs...
+  {
+    rewrite subst_assoc.
+    {
+      fold_Substable.
+      rewrite -with_names_from_args_subst.
+      apply wf_term_by...
+      apply H1...
+      apply rule_in_ws in H...
+      simpl in H.
+      by break.
+    }
+    {
+      rewrite map_fst_with_names_from...
+      apply rule_in_ws in H...
+      simpl in H; by break.
+    }
+  }
+  {
+    eapply wf_term_conv.
+    apply H0...
+    apply H2...
+    eapply le_subst_sort...
+  }
+  {
+    eauto using wf_subst_lookup.
+  }
   {
     econstructor...
     rewrite with_names_from_args_subst.
-    rewrite -subst_assoc...
+    rewrite -subst_assoc ?map_fst_with_names_from...
     {
       apply H2...
       change (sort_subst ?s ?t) with t[/s/].
       apply ws_sort_subst.
-      rewrite ws_subst_args.
-      break_goal...
-      Search _ ws_subst.
-      TODO: ws sub from ws args
-    rewrite map_fst_with_names_from...
-    Search _ (map fst (with_names_from _ _)).
-
-
-    Lemma mono_subst_wf_sort: (forall t,
-           wf_sort l c t -> wf_ctx l c ->
-           forall c' s, wf_subst l c' s c ->
-                        wf_sort l c' t[/s/])
-    /\ 
-(*
-  move => wfl; move:c; apply wf_ind; intros; simpl; try by econstructor; eauto with judgment.
-  { (* wf_term_subst *)
-    (*TODO: automatable*)
-    econstructor...
-    rewrite sep_subst_cmp...
-    erewrite le_subst_len_eq_r...
+      {
+        rewrite ws_subst_args.
+        break_goal; simpl; rewrite ?map_snd_with_names_from ?map_fst_with_names_from...
+        apply ws_all_fresh_ctx...
+      }
+      {
+        rewrite map_fst_with_names_from...
+      }
+    }
   }
-  { (* wf_term_by *)
-    (*econstructor picks the wrong one by default*)
-    rewrite -sep_subst_cmp.
-    econstructor...
-    unfold exp_subst; simpl...
-    erewrite le_subst_len_eq_r...
-    apply is_nth_level_in in H;
-      apply rule_in_ws in H...
-    move: H => /andP; easy.
+  {
+    econstructor; eauto.
+    apply H1; eauto.
+    apply rule_in_ws in H; auto.
   }
-  { (* wf var*)
-    unfold exp_subst; simpl.
-    apply: lookup_wf...
-  }
-Qed.*)
-Admitted.
+Qed.
 
-Definition mono_subst_le_sort l c := proj1 (mono_le_subst l c).
-Hint Resolve mono_subst_le_sort : judgment.
+Definition wf_subst_term l c wfl := proj1 (@mono_wf_subst l c wfl).
+Hint Resolve wf_subst_term : judgment.
 
-Definition mono_subst_le_subst l c := proj1 (proj2 (mono_le_subst l c)).
-Hint Resolve mono_subst_le_subst : judgment.
-
-Definition mono_subst_le_term l c := proj2 (proj2 (mono_le_subst l c)).
-Hint Resolve mono_subst_le_term : judgment.
-
-Definition mono_subst_wf_sort l c wfl := proj1 (@mono_wf_subst l c wfl).
-Hint Resolve mono_subst_wf_sort : judgment.
-
-Definition mono_subst_wf_subst l c wfl :=
+Definition wf_args_subst l c wfl :=
   proj1 (proj2 (@mono_wf_subst l c wfl)).
-Hint Resolve mono_subst_wf_subst : judgment.
+Hint Resolve wf_args_subst : judgment.
 
-Definition mono_subst_wf_term l c wfl :=
+Definition wf_sort_subst l c wfl :=
   proj2 (proj2 (@mono_wf_subst l c wfl)).
-Hint Resolve mono_subst_wf_term : judgment.
+Hint Resolve wf_sort_subst : judgment.
 
 
 Lemma mono_ext_le l n r c
@@ -580,22 +601,15 @@ Proof with eauto with judgment using.
   }
 Qed.
 
-Lemma wf_args_ctx l c s c'
-  : wf_args l c s c' -> wf_ctx l c'.
-Proof.
-  elim; eauto with judgment.
-Qed.
-Hint Resolve wf_args_ctx : judgment.
-
 Lemma mono_ext_wf l n r c  
-    : (forall t,
-           wf_sort l c t -> wf_ctx l c -> wf_rule l r -> wf_sort ((n,r)::l) c t)
-    /\ (forall s c',
+    : (forall e t,
+          wf_term l c e t -> wf_ctx l c -> wf_rule l r ->  wf_term ((n,r)::l) c e t)
+      /\ (forall s c',
            wf_args l c s c' -> wf_ctx l c -> wf_rule l r -> wf_args ((n,r)::l) c s c')
-    /\ (forall e t,
-           wf_term l c e t -> wf_ctx l c -> wf_rule l r ->  wf_term ((n,r)::l) c e t).
+      /\ (forall t,
+           wf_sort l c t -> wf_ctx l c -> wf_rule l r -> wf_sort ((n,r)::l) c t).
 Proof with eauto with judgment using .
-  move: c; apply wf_ind...
+  apply wf_ind...
   all: try by econstructor; eauto with judgment; rewrite in_cons; apply /orP; auto.
   {
     econstructor...
@@ -1273,12 +1287,14 @@ Ltac wf_to_ctx_from_rule :=
 *)
 
 
+Lemma len_eq_size {A B} (l1 : list A) (l2 : list B) : len_eq l1 l2 -> size l1 = size l2.
+Proof using .
+  elim; intros; simpl in *; auto.
+Qed.
 
-(* TODO: all_fresh is harder to satisfy than I thought; needs wf_lang, or sim.
-   not a problem, but needs work to do*)
-Lemma unsubst_id_sort n s c
-  : all_fresh c -> len_eq s c -> (srt n s) = (srt n (map var (map fst c)))[/with_names_from c s/].
-Proof.
+Lemma unsubst_id s c
+  : all_fresh c -> len_eq s c -> s = (map var (map fst c))[/with_names_from c s/].
+Proof using .
   elim: s c; intros until c; case: c.
   all: repeat match goal with
   | [|- forall _:(_*_),_] => case; intro; intro
@@ -1286,10 +1302,12 @@ Proof.
   | [|- is_true (all_fresh (_::_)) -> _] => simpl; move /andP; case
   | [|- is_true (all_fresh _) -> _] => intro
   | [|- is_true (fresh _ _) -> _] => intro
-  | [|- len_eq _ _ -> _] => first [ by inversion | intro ]
+  | [|- is_true (_ \notin _) -> _] => intro
+  | [|- is_true (all_notin (_::_)) -> _] => simpl; move /andP; case
+  | [|- is_true (all_notin _) -> _] => intro
+  | [|- len_eq _ _ -> _] => inversion; subst; try done
   end.  
   simpl.
-  f_equal.
   f_equal.
   {
     cbn.
@@ -1302,11 +1320,51 @@ Proof.
     specialize (H l0 b0 H2).
     move: H.
     case.
-    move ->.
-    admit (*TODO fresh var doesn't affect subst*).
+    fold_Substable.
+    rewrite ws_args_mono; eauto with judgment.
+    {
+      simpl.
+      rewrite map_fst_with_names_from; eauto with judgment.
+      auto using len_eq_size.
+    }
+    {
+      clear H0 H3 a1 b0.
+      elim: l0 l H2; intro_to (@len_eq exp (string*sort));inversion; subst;
+        intros; break; try by simpl in *; auto.
+      simpl in *.
+      rewrite in_cons eq_refl.
+      simpl.
+      auto using ws_args_ext_ctx.
+    }
   }
-Admitted.
+Qed.
 
+
+Lemma unsubst_id_sort n s c
+  : all_fresh c -> len_eq s c -> (srt n s) = (srt n (map var (map fst c)))[/with_names_from c s/].
+Proof using .
+  intros.
+  simpl.
+  f_equal.
+  by apply unsubst_id.
+Qed.
+
+Lemma unsubst_id_term n s c
+  : all_fresh c -> len_eq s c -> (con n s) = (con n (map var (map fst c)))[/with_names_from c s/].
+Proof using .
+  intros.
+  simpl.
+  f_equal.
+  by apply unsubst_id.
+Qed.  
+
+Lemma le_args_le_subst l c c' s1 s2
+  : le_args l c c' s1 s2 -> le_subst l c c' (with_names_from c' s1) (with_names_from c' s2).
+Proof using .
+  elim; intros; simpl in *; eauto with judgment.
+Qed.
+
+  
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_refl' name l c : forall c' s1 s2,
     wf_lang l ->
@@ -1317,21 +1375,20 @@ Lemma le_sort_refl' name l c : forall c' s1 s2,
     le_sort l c (srt name s1) (srt name s2).
 Proof using .
   intros.
+  apply rule_in_wf in H0; auto.
+  inversion H0.
   erewrite unsubst_id_sort; eauto.
   replace (srt name s2) with (srt name (map var (map fst c')))[/with_names_from c' s2/];
     [| erewrite <-unsubst_id_sort; eauto].
   eapply le_sort_subst.
-  eapply le_args_le_subst.
-  constructor.
-  eauto with judgment.
-  
-  repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
-Admitted  (*TODO:finish*).
-
-
+  eapply le_args_le_subst; auto.
+  reflexivity.
+  all: eauto using ws_all_fresh_ctx, wf_is_ws_ctx.
+Qed.
 
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
+    wf_lang l ->
     [:| !c' |- name : !t'] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
@@ -1341,7 +1398,16 @@ Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
 Proof using .
   intros.
   repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
-Admitted  (*TODO:finish*).
+  apply rule_in_wf in H0; auto.
+  inversion H0; subst.
+  erewrite unsubst_id_term; eauto.
+  replace (con name s2) with (con name (map var (map fst c')))[/with_names_from c' s2/];
+    [| erewrite <-unsubst_id_term; eauto].
+  eapply le_term_subst.
+  eapply le_args_le_subst; auto.
+  reflexivity.
+  all: eauto using ws_all_fresh_ctx, wf_is_ws_ctx.
+Qed.
 
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_by' name l c : forall c' e1 e2 s1 s2 e1' e2',
@@ -1356,7 +1422,8 @@ Proof using .
   intros.
   repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
   eapply le_sort_subst;[ | eapply le_sort_by; eassumption].
-Admitted  (*TODO:finish*).
+  apply le_args_le_subst; auto.
+Qed.
 
 (* combines le_term_by and le_term_subst *)
 Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
@@ -1372,13 +1439,15 @@ Proof using .
   intros.
   repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
   eapply le_term_subst;[ | eapply le_term_by; eassumption].
-Admitted  (*TODO:finish*).
+  apply le_args_le_subst; auto.
+Qed.
 
 Arguments le_term_by' name [l] {c} {c'} {t} {e1} {e2} {s1} {s2} {t'} {e1'} {e2'}.
 
 
 
-(* Justification for eliding typing guarantees in inductive for le*)
+(* TODO: Justification for eliding typing guarantees in inductive for le.
+Sufficient, but prob. not provable directly:
 Lemma le_sort_preserves_wf l c t1 t2
   : wf_lang l -> wf_sort l c t1 -> le_sort l c t1 t2 -> wf_sort l c t2.
 Proof.
@@ -1387,3 +1456,4 @@ Proof.
   {
     
     intros.
+*)

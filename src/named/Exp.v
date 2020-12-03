@@ -1131,6 +1131,7 @@ Ltac fold_Substable :=
   try change (named_map (exp_subst ?s') ?s) with s[/s'/];
   try change (exp_subst ?s ?e) with e[/s/];
   try change (sort_subst ?s ?e) with e[/s/];
+  try change (args_subst ?s ?e) with e[/s/];
   try change (subst_cmp ?s ?e) with e[/s/].
 
 
@@ -1142,4 +1143,48 @@ Proof using .
   unfold well_scoped in IH; simpl in *.
   rewrite IH.
   ring.
+Qed.
+
+Lemma ws_exp_ext_ctx args n (e : exp)
+  : well_scoped args e -> well_scoped (n::args) e.
+Proof using .
+  elim: e.
+  {
+    intros; simpl in *.
+    rewrite in_cons.
+    apply /orP; by right.
+  }
+  {
+    intros until l.
+    elim: l; intros; simpl in *; break; auto.
+    break_goal; auto.
+  }
+Qed.
+
+Lemma ws_args_ext_ctx args n (l : list exp)
+  : well_scoped args l -> well_scoped (n::args) l.
+Proof using .
+  elim: l; intros; simpl in *; break; auto.
+  break_goal; auto using ws_exp_ext_ctx.
+Qed.
+
+Lemma ws_sort_ext_ctx args n (e : sort)
+  : well_scoped args e -> well_scoped (n::args) e.
+Proof using .
+  case: e; intros; simpl; auto using ws_args_ext_ctx.
+Qed.
+    
+Lemma sort_in_ws c n t : ws_ctx c -> (n,t) \in c -> ws_sort (map fst c) t.
+Proof using .
+  elim: c; intros; break; simpl in *; break; auto.
+  match goal with [H : is_true(_ \in _::_)|- _]=>
+                  move: H;rewrite in_cons; move /orP => [] end.
+  {
+    move /eqP => []; intros; subst.
+    auto using ws_sort_ext_ctx.
+  }
+  {
+    intros.
+    auto using ws_sort_ext_ctx.
+  }
 Qed.

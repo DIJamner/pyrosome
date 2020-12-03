@@ -249,3 +249,33 @@ Proof.
   move: constr_shift_inj seq_constr_shift_inj; eauto. 
 Qed.  
 *)
+
+Definition ws_rule r : bool :=
+  match r with
+  | sort_rule c => ws_ctx c
+  | term_rule c t => (ws_ctx c) && (well_scoped (map fst c) t)
+  | sort_le c t t'=>
+    (ws_ctx c) && (well_scoped (map fst c) t)
+    && (well_scoped (map fst c) t')
+  | term_le c e e' t =>
+    (ws_ctx c) && (well_scoped (map fst c) e)
+    && (well_scoped (map fst c) e') && (well_scoped (map fst c) t)
+  end.
+
+Definition ws_lang (l : lang) : bool :=
+  (all_fresh l) && (all ws_rule (map snd l)).
+
+Arguments ws_lang !l/.
+
+Lemma rule_in_ws l n r : ws_lang l -> (n,r) \in l -> ws_rule r.
+Proof using .
+  elim: l; intros; break; simpl in *; break; auto.
+  match goal with [H : is_true(_ \in _::_)|- _]=>
+                  move: H;rewrite in_cons; move /orP => [] end.
+  {
+    move /eqP => []; intros; by subst.
+  }
+  {
+    apply H; unfold ws_lang; break_goal; auto.
+  }
+Qed.
