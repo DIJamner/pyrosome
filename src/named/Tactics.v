@@ -71,10 +71,10 @@ Ltac2 rec unify_in () :=
   end.
 
 Require Import String.
-  
+  (*
 Ltac2 try f :=
   Control.enter
-    (fun () => Control.plus f (fun _ => ())).
+    (fun () => Control.plus f (fun _ => ())).*)
 
 
 Ltac2 goal_lang () :=

@@ -1367,7 +1367,7 @@ Qed.
   
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_refl' name l c : forall c' s1 s2,
-    wf_lang l ->
+    ws_lang l ->
     [s| !c' |- name] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
@@ -1375,8 +1375,8 @@ Lemma le_sort_refl' name l c : forall c' s1 s2,
     le_sort l c (srt name s1) (srt name s2).
 Proof using .
   intros.
-  apply rule_in_wf in H0; auto.
-  inversion H0.
+  apply rule_in_ws in H0; auto.
+  simpl in *; break.
   erewrite unsubst_id_sort; eauto.
   replace (srt name s2) with (srt name (map var (map fst c')))[/with_names_from c' s2/];
     [| erewrite <-unsubst_id_sort; eauto].
@@ -1388,7 +1388,7 @@ Qed.
 
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
-    wf_lang l ->
+    ws_lang l ->
     [:| !c' |- name : !t'] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
@@ -1398,7 +1398,7 @@ Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
 Proof using .
   intros.
   repeat (match goal with [eqH : _ = _ |- _] => rewrite eqH; clear eqH end).
-  apply rule_in_wf in H0; auto.
+  apply rule_in_ws in H0; auto; simpl in *; break.
   inversion H0; subst.
   erewrite unsubst_id_term; eauto.
   replace (con name s2) with (con name (map var (map fst c')))[/with_names_from c' s2/];

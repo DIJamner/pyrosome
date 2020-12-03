@@ -12,7 +12,7 @@ From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore.
 Require Import String.
 
-Require Import Named.Tactics Named.Recognizers.
+Require Import Named.Recognizers.
 Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
@@ -119,7 +119,7 @@ Ltac2 solve_in () :=
           ltac1:(apply /eqP);
           reflexivity].
 
-Ltac2 solve_fresh () := cbv; reflexivity.
+Ltac2 solve_fresh () := vm_compute; reflexivity.
 
 Ltac2 step_elab () :=
   lazy_match! goal with
@@ -141,21 +141,25 @@ Ltac2 step_elab () :=
   | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
       eapply elab_subst_cons_im > [solve_fresh ()| | |]
   | [|- Core.le_args _ _ _ _ _] =>constructor
-  | [|- Core.wf_args _ _ _ _] =>constructor
+  | [|- Core.wf_args _ _ _ _] =>first [apply wf_args_no_conv_recognizes; vm_compute; reflexivity
+                                     | apply Core.wf_sort_by']
   | [|- Core.wf_subst _ _ _ _] =>constructor
   | [|- elab_sort _ _ _ _] => apply elab_sort_by'
-  | [|- Core.wf_sort _ _ _] => apply Core.wf_sort_by'
+  | [|- Core.wf_sort _ _ _] => first [apply wf_sort_no_conv_recognizes; vm_compute; reflexivity
+                                     | apply Core.wf_sort_by']
   | [|- Core.wf_term _ _ (Exp.var _) _] => apply Core.wf_term_var
+  | [|- Core.wf_term _ _ _ _] => try (apply wf_term_no_conv_recognizes; vm_compute; reflexivity)
   | [|- elab_term _ _ (var _) _ _] => apply elab_term_var; solve_in()
   | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var; solve_in()
   | [|- is_true((?n,?e)\in ?l)]=> 
-      assert ($e = named_list_lookup $e $l $n); cbv; solve[auto]
+      assert ($e = named_list_lookup $e $l $n); vm_compute; solve[auto]
   | [|- is_true (_ \in _)] => solve_in ()
-  | [|- is_true (Core.fresh _ _)] => solve_fresh ()
-  | [|- is_true (subseq _ _)] => cbv; reflexivity
+  | [|- is_true (fresh _ _)] => solve_fresh ()
+  | [|- is_true (_ \notin _)] => solve_fresh ()
+  | [|- is_true (subseq _ _)] => vm_compute; reflexivity
   | [|- is_true true] => reflexivity
   | [|- len_eq _ _] => constructor  
-  | [|- _ = _] => try (fun ()=>solve[reflexivity| cbv; f_equal])          
+  | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])          
 end.
 
 (* TODO: move to tactics or utils*)
@@ -226,32 +230,13 @@ Transparent get_rule_ctx.
 
 
 Ltac2 elab_term_by ():=
-    apply elab_term_by'>
-    [ simpl; solve_in()
-    | simpl; reflexivity
-    | repeat(simpl;step_elab())].
+    apply elab_term_by'; repeat(simpl;step_elab()).
 
 Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)
        As elab_cat_lang_pf.
 Proof.
-  repeat (simpl;step_elab()).
-  {
-    apply elab_term_by'; repeat (simpl;step_elab()).
-    apply elab_term_by'; repeat (simpl;step_elab()).
-  }
-  {
-    apply elab_term_by'; repeat (simpl;step_elab()).
-    apply elab_term_by'; repeat (simpl;step_elab()).
-  }    
-  {
-    apply elab_term_by'; repeat (simpl;step_elab()).
-    apply elab_term_by'; repeat (simpl;step_elab()).
-  }   
-  {
-    apply elab_term_by'; repeat (simpl;step_elab()).
-    apply elab_term_by'; repeat (simpl;step_elab()).
-  }   
+  repeat (simpl;step_elab()); repeat (elab_term_by()).
 Qed. 
   
 Instance elab_cat_lang_inst : Elaborated cat_lang :=
@@ -326,44 +311,36 @@ Derive elab_subst_lang'
        SuchThat (elab_lang subst_lang' elab_subst_lang')
        As elab_subst_lang'_pf.
 Proof.
-  (* TODO: figure out how to get rid of the second repeat*)
-  repeat (repeat (cbn;step_elab())); try (fun()=> solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))]).
+  (repeat (simpl; step_elab()));
+    try (solve[repeat (simpl; step_elab())
+              | repeat(elab_term_by())]).
   {
     eapply elab_term_conv.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-
-    cbn.
-    eapply Core.le_sort_refl'; repeat (cbn; step_elab()).
+    elab_term_by().
+    elab_term_by().
+    solve [repeat (simpl;step_elab())].
+    solve [repeat (simpl;step_elab())].
+    
+    eapply Core.le_sort_refl'; repeat (simpl; step_elab()).
     reflexivity.
-    cbn.
-    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (cbn;step_elab()).
+    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (simpl;step_elab()).
     reflexivity.
     reflexivity.
   }
   {
     eapply elab_term_conv; 
-    repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-
-
-    cbn.
-    {
-      apply wf_term_no_conv_recognizes; vm_compute; reflexivity.
-      eapply Core.wf_term_by'; repeat(cbn; step_elab()).
-      eapply Core.wf_term_by'; repeat(cbn; step_elab()).
-    }
+    repeat (simpl;step_elab()).
+    elab_term_by().
+    elab_term_by().
+    elab_term_by().
+    solve [repeat (simpl;step_elab())].
+    solve [repeat (simpl;step_elab())].
     
-    cbn.
     eapply Core.le_sort_refl'; repeat (cbn; step_elab()).
     reflexivity.
-    cbn.
+    reflexivity.
     symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn;step_elab()); reflexivity.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn;step_elab()); auto;reflexivity.
   }
 Qed.
 
@@ -427,133 +404,56 @@ Derive elab_subst_lang
        SuchThat (elab_lang subst_lang elab_subst_lang)
        As elab_subst_lang_pf.
 Proof.
-  (* TODO: figure out how to get rid of the second repeat*)
-  repeat (repeat (cbn;step_elab())).
+  repeat (simpl; step_elab());
+    try (solve[repeat (simpl; step_elab())
+        | repeat(elab_term_by())]).
+  { repeat (elab_term_by()). }
   {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    cbn.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    (* TODO: want to start w/ subgoal 2 for inference purposes?*)
-    apply elab_term_by'; repeat (cbn;step_elab()).
-
+    elab_term_by().
+    elab_term_by().
     apply (@elab_term_var' "A"%string); reflexivity.
-    
-    apply elab_term_by'; repeat (cbn;step_elab()).
+    repeat (elab_term_by()).
+    repeat (elab_term_by()).
   }    
-    
   {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-
-    apply (@elab_term_var' "A"%string); reflexivity.    
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    cbn.
     eapply elab_term_conv.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
+    elab_term_by().
+    elab_term_by().
 
-    apply (@elab_term_var' "A"%string); cbn; solve_in().    
-    repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
+    apply (@elab_term_var' "A"%string); simpl; solve_in().    
+    progress (repeat (simpl;step_elab())).
+    elab_term_by().
+    elab_term_by().
+    elab_term_by().
+    elab_term_by().
+    elab_term_by().
+    progress (repeat (cbn;step_elab())).
+    progress (repeat (cbn;step_elab())).
 
     
-    eapply Core.le_sort_refl'; repeat (cbn;step_elab()).
-    reflexivity.
+    eapply Core.le_sort_refl'; repeat (cbn;step_elab()); try reflexivity.
 
     eapply Core.le_term_trans.
     symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
+    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
     reflexivity.
-    eapply Core.le_term_refl';repeat (cbn;step_elab()).
-    reflexivity.
-    reflexivity.
+    eapply Core.le_term_refl';repeat (cbn;step_elab()); try reflexivity.
     eapply (Core.le_term_by' "wkn_snoc"%string);repeat (cbn;step_elab());
       reflexivity.
-    reflexivity.
   }
   {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-  }
-  {
-    apply elab_term_by'; repeat (cbn;step_elab()).
+    elab_term_by().
     eapply elab_term_conv.
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-    repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()). cbn.
-    apply (@Core.wf_term_by' "cmp"%string); repeat (cbn;step_elab()).
-    cbn. step_elab().
-    step_elab().
-    apply (@Core.wf_term_var' "G2"%string); reflexivity.    
-    apply Core.wf_term_var; repeat (cbn;step_elab()).
-    apply (@Core.wf_term_var' "f"%string); reflexivity. 
-    apply (@Core.wf_term_var' "g"%string); reflexivity. 
+    solve[repeat(elab_term_by())].
+    progress (repeat (simpl;step_elab())).
 
-    eapply Core.le_sort_refl'; repeat(cbn;step_elab()).
-    reflexivity.
+    eapply Core.le_sort_refl'; repeat(cbn;step_elab());try reflexivity.
     symmetry.
     eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
       reflexivity.
     solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
   }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
-  }
-  {
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-  }
+  { repeat (elab_term_by()). }
 Qed.
  
     

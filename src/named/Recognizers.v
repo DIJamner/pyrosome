@@ -226,4 +226,32 @@ Proof using .
     done.
   }
 Qed.
-    
+
+(* Elaboration recognizers are more tricky than
+   wfness ones because elaboration requires
+   generation of implicit proof terms.
+
+   TODO: come up with a good way to do it; ideas below:
+*)
+
+Require IExp IRule ICore.
+
+(* general pattern here:
+   - a little interaction-tree-like
+   - have recognizer work in option monad + reader monad
+   - TODO: good labelling for cases; is a string enough for interactive proving?
+*)
+Inductive elab_recognizer_output : Set :=
+| elab_term_out : exp -> sort -> elab_recognizer_output
+| elab_sort_out : sort -> elab_recognizer_output
+| elab_args_out : list exp -> elab_recognizer_output
+| fail_elab : elab_recognizer_output
+(* TODO: have a similar case for conversion? *)
+| infer_term
+    (* context to help the user know what's going on *)
+  : IExp.exp (* expression one level up the AST *) ->
+    sort (* sort of the expression *) ->
+    string (* name of argument*) ->
+    (*expects a wf term and its sort *)
+    (exp -> sort -> elab_recognizer_output) -> elab_recognizer_output.
+ (* TODO: how do I frame correctness? it's a 2-party kind of thing here *)
