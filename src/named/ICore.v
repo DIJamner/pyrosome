@@ -369,3 +369,9 @@ Lemma elab_term_var' n l c t
 Proof using .
   constructor; assumption.
 Qed.
+
+Class Elaborated (l : IRule.lang) :=
+  {
+  elaboration : ARule.lang;
+  elab_pf : elab_lang l elaboration;
+  }.

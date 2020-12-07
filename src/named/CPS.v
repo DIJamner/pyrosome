@@ -8,11 +8,11 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import IExp IRule ICore ICompilers Subst STLC.
+From Named Require Import Exp.
+From Named Require Import IExp IRule ICore ICompilers Subst STLC Tactics.
 Require Import String.
 
 
-Require Import Named.Tactics.
 Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
@@ -199,6 +199,7 @@ Definition cps (c : string) (args : list string) : exp :=
   | _,_ => con c (map var (lookup_args elab_stlc c))
   end%string.
 
+
 Derive elab_cps
        SuchThat (elab_preserving_compiler elab_stlc_bot (make_compiler cps_sort cps (strip_args elab_stlc)) elab_cps elab_stlc)
        As elab_cps_pf.
@@ -212,86 +213,78 @@ Proof.
   | [ |-  elab_preserving_compiler _ _ _ _]=>
     constructor
   | [|-_] => simpl; step_elab()
-          end).
-  solve [apply elab_term_by'; repeat (simpl;step_elab())].
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
-  {
-    cbn.
-    eapply (Core.le_term_by' "id_right"%string);repeat(cbn; step_elab()); reflexivity.
+          end);
+    try (solve [ repeat(simpl; step_elab())
+                | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
+  { 
+    eapply (Core.le_term_by' "id_right"%string);repeat(simpl; step_elab()); reflexivity.
   }    
   {
-    cbn.
-    eapply (Core.le_term_by' "id_left"%string);repeat(cbn; step_elab()); reflexivity.
+    eapply (Core.le_term_by' "id_left"%string);repeat(simpl; step_elab()); reflexivity.
   }   
   {
-    cbn.
-    eapply (Core.le_term_by' "cmp_assoc"%string);repeat(cbn; step_elab()); reflexivity.
+    eapply (Core.le_term_by' "cmp_assoc"%string);repeat(simpl; step_elab()); reflexivity.
   } 
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
-  solve [step_elab()].
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
   {
-    cbn.
-    eapply (Core.le_term_by' "ty_subst_id"%string);repeat(cbn; step_elab()); reflexivity.
+    eapply (Core.le_term_by' "ty_subst_id"%string);repeat(simpl; step_elab()); reflexivity.
   }   
   {
-    cbn.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat(cbn; step_elab()); reflexivity.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat(simpl; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "el_subst_id"%string);repeat(cbn; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "el_subst_cmp"%string);repeat(cbn; step_elab()); reflexivity.
   }   
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
   {
-    cbn.
     eapply (Core.le_term_by' "cmp_forget"%string);repeat(cbn; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "id_emp_forget"%string);repeat(cbn; step_elab()); reflexivity.
   }   
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
   {
-    cbn.
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply Core.wf_term_by'; repeat (cbn;step_elab()).
-  }
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
-  solve [apply elab_term_by'; repeat (cbn;step_elab())].
-  {
-    cbn.
     eapply (Core.le_term_by' "wkn_snoc"%string);repeat(cbn; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "snoc_hd"%string);repeat(cbn; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "cmp_snoc"%string);repeat(cbn; step_elab()); reflexivity.
   }   
   {
-    cbn.
     eapply (Core.le_term_by' "snoc_wkn_hd"%string);repeat(cbn; step_elab()); reflexivity.
   }
   (* end of subst lang *)
   {
     cbn.
-    repeat (apply elab_term_by'; repeat (cbn;step_elab())).
-  }
-  {
-    cbn.
     apply elab_term_by'; repeat (cbn;step_elab()).
     apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
-    cbn.
+    {
+      eapply elab_term_conv.
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+
+      inst_elab '({{e #"->" (#"->" %"A" %"B") #"bot"}}).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      repeat (simpl;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      repeat (simpl;step_elab()).
+      eapply Core.le_sort_refl'; repeat (simpl; step_elab()).
+      reflexivity.
+      cbn.
+    }
+    {
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      cbn.
     Require Import Named.Recognizers.
     apply Core.wf_term_by'; repeat (cbn;step_elab()).
     apply Core.wf_term_by'; repeat (cbn;step_elab()).

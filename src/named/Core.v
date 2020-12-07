@@ -1445,6 +1445,23 @@ Qed.
 
 Arguments le_term_by' name [l] {c} {c'} {t} {e1} {e2} {s1} {s2} {t'} {e1'} {e2'}.
 
+(* TODO: prove id-lang lemma? *)
+
+
+
+Lemma le_term_by_nameless (l : lang) c e1 e2 t
+  : term_le c e1 e2 t \in (map snd l) -> Core.le_term l c t e1 e2.
+Proof using .
+  move /in_map_snd; case;
+  intros; eapply le_term_by; eauto with judgment.
+Qed.
+
+Lemma le_sort_by_nameless (l : lang) c t1 t2
+  : sort_le c t1 t2 \in (map snd l) -> Core.le_sort l c t1 t2.
+Proof using .
+  move /in_map_snd; case;
+  intros; eapply le_sort_by; eauto with judgment.
+Qed.  
 
 
 (* TODO: Justification for eliding typing guarantees in inductive for le.

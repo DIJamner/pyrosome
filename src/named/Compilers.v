@@ -595,12 +595,7 @@ Lemma preserving_term_le_inv n t e1 e2 c lt cmp ls
      wf_lang ls ->
      (n, term_le c e1 e2 t) \in ls ->
      le_term lt (compile_ctx cmp c) (compile_sort cmp t) (compile_term cmp e1) (compile_term cmp e2).
-Proof using . prove_inv_lem.
-              let H := H2 in
-    rewrite -all_fresh_in_once in H; auto; apply rule_in_wf in H; inversion H; subst. eassumption.
-              idtac.
-Qed.
-   
+Proof using . prove_inv_lem. Qed.
 
 
 Lemma f_apply_case_map {A B} (f : A -> B) cc b1 b2
@@ -616,21 +611,64 @@ Proof.
   case: cc; reflexivity.
 Qed.
 
+
+Lemma subst_zip args s s'
+  : (zip args s)[/s'/] = zip args s[/s'/].
+Proof.
+  elim: args s; intros until s; case: s; intros; break; simpl in *; auto.
+  f_equal.
+  by fold_Substable.
+Qed.
+
+
+(* TODO: finish these
+Lemma compile_subst_lookup s n cmp
+  : compile_term cmp (subst_lookup s n) = subst_lookup (compile_subst cmp s) n.
+Proof.
+  elim: s; intros; break; simpl in *; auto.
+  change (?n =? ?s)%string with (n==s).
+  case neq: (n == s); simpl in *; auto.
+Qed.
+
+Lemma compile_term_subst cmp e s
+  : well_scoped (map fst s) e -> compile_term cmp (e[/s/]) = (compile_term cmp e)[/compile_subst cmp s/]
+with compile_args_subst cmp e s
+  : well_scoped (map fst s) e -> compile_args cmp (e[/s/]) = (compile_args cmp e)[/compile_subst cmp s/].
+Proof.
+  {
+    case: e; intros; simpl in *; auto using compile_subst_lookup.
+    case_match; simpl; auto.
+    rewrite subst_assoc; fold_Substable.
+    {
+      rewrite subst_zip.
+      unfold compile_args in *.
+      by rewrite compile_args_subst.
+    }
+    {
+      Search _ (map _ (zip _ _)).
+(* TODO: ws assumption; need ws_compiler
+ *)
+Admitted.
+Proof.
+  (* TODO: requires induction *)
+Admitted.
+
 Lemma compile_sort_subst cmp t s
   : compile_sort cmp (t[/s/]) = (compile_sort cmp t)[/compile_subst cmp s/].
 Proof.
   case: t; simpl.
   intros n a.
+  case_match; simpl; auto.
+  rewrite subst_assoc.
+  fold_Substable.
+  rewrite subst_zip.
+  Lemma subst_zip
+    : (zip args s)[/s'/] = zip args s[/s'/].
   rewrite (f_apply_case_map (sort_subst (compile_subst cmp s))).
   f_equal_match; simpl; auto.
 Admitted.
 
 
-Lemma compile_term_subst cmp e s
-  : compile_term cmp (e[/s/]) = (compile_term cmp e)[/compile_subst cmp s/].
-Proof.
-  (* TODO: requires induction *)
-Admitted.
 
 
 Lemma with_names_from_zip c s
@@ -878,4 +916,5 @@ Lemma semantic_implies_inductive cmp ls lt
     preserving_compiler lt cmp ls.
 Proof.
   (* TODO: actually quite non-trivial *)
+*)
 *)

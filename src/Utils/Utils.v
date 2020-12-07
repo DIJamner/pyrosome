@@ -377,3 +377,24 @@ Lemma named_map_fst_eq {A B: Set} (f : A -> B) l
 Proof using .  
   elim: l; intros; break; simpl in *; f_equal; auto.
 Qed.
+
+Lemma in_map_snd {A B : eqType} e (l : list (A*B))
+  : e \in (map snd l) -> exists n, (n,e) \in l.
+Proof using .
+  elim: l; simpl; [ by inversion|];
+    intros; break; simpl in *.
+  move: H0; rewrite in_cons; move /orP; case.
+  {
+    move => /eqP ->.
+    exists s.
+    rewrite in_cons.
+    apply /orP; left; apply eq_refl.
+  }
+  {
+    move /H.
+    case.
+    intros.
+    exists x.
+    rewrite in_cons; apply /orP; right; done.
+  }
+Qed.

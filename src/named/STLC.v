@@ -9,7 +9,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import IExp IRule ICore Subst.
+From Named Require Import IExp IRule ICore Subst Tactics.
 Require Import String.
 
 Require Coq.derive.Derive.
@@ -168,19 +168,6 @@ Proof.
   }
   {
     eapply elab_term_conv.
-    (* TODO: move to tactics or utils*)
-    Require Import Ltac2.Constr.
-    Ltac2 refine_elab pat :=
-      let g := match! goal with
-                 | [|- elab_term _ _ _ ?g _] => g
-                 | [|- elab_sort _ _ _ ?g ] => g
-                 | [|- Core.wf_term _ _ ?g _] => g
-                 | [|- Core.wf_sort _ _ ?g] => g
-               end in
-      match Unsafe.kind g with
-      | Unsafe.Evar n _ => Control.new_goal n > [| refine pat]
-      | _ => ()
-      end.
     refine_elab '(Exp.con "lambda" [:: _; _; Exp.con "ty_subst" [:: Exp.var "A" ;Exp.var "g"; _; _]; _]).
     elab_term_by().
     eapply elab_term_conv.
