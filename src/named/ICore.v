@@ -67,6 +67,7 @@ with elab_args l c : list IExp.exp -> list string -> list exp -> ctx -> Prop :=
     wf_sort (strip_args l) c' t ->
     elab_args l c s args (ee::es) ((name,t)::c').
 
+Hint Constructors elab_sort elab_term elab_args : judgment.
 
 Inductive elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_nil : elab_subst l c [::] [::] [::]
@@ -87,6 +88,9 @@ Inductive elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
     wf_sort (strip_args l) c' t ->
     elab_subst l c s ((name,ee)::es) ((name,t)::c').
 
+Hint Constructors elab_subst : judgment.
+
+
 Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
 | elab_ctx_nil : elab_ctx l [::] [::]
 | elab_ctx_cons : forall name c ec v ev,
@@ -94,6 +98,8 @@ Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
     elab_ctx l c ec ->
     elab_sort l ec v ev ->
     elab_ctx l ((name,v)::c) ((name,ev)::ec).
+
+Hint Constructors elab_ctx : judgment.
 
 Fixpoint subseq (s l : list string) : bool :=
   match s,l with
@@ -126,6 +132,8 @@ Variant elab_rule l : IRule.rule -> rule -> Prop :=
     elab_term l ec e2 ee2 et ->
     elab_rule l (IRule.term_le c e1 e2 t) (term_le ec ee1 ee2 et).
 
+Hint Constructors elab_rule : judgment.
+
 Inductive elab_lang : IRule.lang -> lang -> Prop :=
 | elab_lang_nil : elab_lang [::] [::]
 | elab_lang_cons : forall l el name r er,
@@ -133,6 +141,8 @@ Inductive elab_lang : IRule.lang -> lang -> Prop :=
     elab_lang l el ->
     elab_rule el r er ->
     elab_lang ((name,r)::l) ((name,er)::el).
+
+Hint Constructors elab_lang : judgment.
 
 Lemma elab_lang_cons' : forall l name r er,
     fresh name l ->
@@ -276,44 +286,23 @@ Proof using .
   { assumption. }
   { eapply elab_sort_wf; eassumption. }
 Qed.
+Hint Resolve elab_ctx_wf : judgment.
 
 Lemma elab_rule_wf l r er
   : elab_rule l r er ->
     wf_rule (strip_args l) (strip_rule_args er).
 Proof using .
-  case.
-  {
-    constructor.
-    eapply elab_ctx_wf; eassumption.
-  }
-  {
-    constructor.
-    eapply elab_ctx_wf; eassumption.
-    eapply elab_sort_wf; eassumption.
-  }
-  {
-    constructor.
-    eapply elab_ctx_wf; eassumption.
-    eapply elab_sort_wf; eassumption.
-    eapply elab_sort_wf; eassumption.
-  }
-  {
-    constructor.
-    eapply elab_ctx_wf; eassumption.
-    eapply elab_term_wf; eassumption.
-    eapply elab_term_wf; eassumption.
-  }
+  case; constructor; eauto with judgment.
 Qed.
+Hint Resolve elab_rule_wf : judgment.
 
 Lemma elab_lang_wf l el : elab_lang l el -> wf_lang (strip_args el).
 Proof using .
-  elim;simpl; constructor.
+  elim;simpl; constructor; eauto with judgment.
   {
     apply strip_args_fresh; auto.
     eapply elab_lang_fresh; eauto.
   }
-  { assumption. }
-  { eapply elab_rule_wf; eassumption. }
 Qed.
 
 

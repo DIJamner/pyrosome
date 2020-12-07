@@ -183,6 +183,7 @@ Variant wf_rule l : rule -> Prop :=
     wf_rule l (sort_le c t1 t2)
 | le_term_rule : forall c e1 e2 t,
     wf_ctx l c ->
+    wf_sort l c t ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
     wf_rule l (term_le c e1 e2 t).
