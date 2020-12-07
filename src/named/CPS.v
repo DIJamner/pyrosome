@@ -215,47 +215,7 @@ Proof.
   | [|-_] => simpl; step_elab()
           end);
     try (solve [ repeat(simpl; step_elab())
-                | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
-  { 
-    eapply (Core.le_term_by' "id_right"%string);repeat(simpl; step_elab()); reflexivity.
-  }    
-  {
-    eapply (Core.le_term_by' "id_left"%string);repeat(simpl; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "cmp_assoc"%string);repeat(simpl; step_elab()); reflexivity.
-  } 
-  {
-    eapply (Core.le_term_by' "ty_subst_id"%string);repeat(simpl; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat(simpl; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "el_subst_id"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "el_subst_cmp"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "cmp_forget"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "id_emp_forget"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "wkn_snoc"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "snoc_hd"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "cmp_snoc"%string);repeat(cbn; step_elab()); reflexivity.
-  }   
-  {
-    eapply (Core.le_term_by' "snoc_wkn_hd"%string);repeat(cbn; step_elab()); reflexivity.
-  }
-  (* end of subst lang *)
+               | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
   {
     cbn.
     apply elab_term_by'; repeat (cbn;step_elab()).

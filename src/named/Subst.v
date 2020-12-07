@@ -272,8 +272,6 @@ Proof.
     eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
     reflexivity.
     eapply Core.le_term_refl';repeat (cbn;step_elab()); try reflexivity.
-    eapply (Core.le_term_by' "wkn_snoc"%string);repeat (cbn;step_elab());
-      reflexivity.
   }
   {
     elab_term_by().

@@ -56,6 +56,8 @@ Ltac2 solve_in () :=
 
 Ltac2 solve_fresh () := vm_compute; reflexivity.
 
+(*TODO: I think I should make sure this never errors, might
+  be what's causing double-repeat issues*) 
 Ltac2 step_elab () :=
   lazy_match! goal with
   | [|- elab_lang nil _] => constructor
@@ -94,7 +96,11 @@ Ltac2 step_elab () :=
   | [|- is_true (subseq _ _)] => vm_compute; reflexivity
   | [|- is_true true] => reflexivity
   | [|- len_eq _ _] => constructor  
-  | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])          
+  | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])
+  | [|- Core.le_term _ _ _ _ _]=>
+      try (solve[apply Core.le_term_by_nameless; vm_compute; reflexivity])
+  | [|- Core.le_sort _ _ _ _]=>
+      try (solve[apply Core.le_sort_by_nameless; vm_compute; reflexivity])
 end.
 
 (* TODO: move to tactics or utils*)
@@ -151,3 +157,4 @@ Ltac2 inst_elab pat :=
   | Unsafe.Evar n _ => Control.new_goal n > [| refine pat]
   | _ => ()
   end.
+
