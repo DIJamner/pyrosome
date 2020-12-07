@@ -377,6 +377,6 @@ Qed.
 Lemma elab_term_var' n l c t
   : (n, t) \in c ->
     elab_term l c (IExp.var n) (var n) t.
-Proof.
+Proof using .
   constructor; assumption.
 Qed.
