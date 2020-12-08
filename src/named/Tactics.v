@@ -158,3 +158,8 @@ Ltac2 inst_elab pat :=
   | _ => ()
   end.
 
+
+Ltac case_match :=match goal with
+  | [|- context[match ?e with _ => _ end]]
+    => let e':= fresh in remember e as e'; destruct e'
+  end.

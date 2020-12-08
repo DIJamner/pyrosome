@@ -81,80 +81,6 @@ Proof.
       inversion lfl; inversion eqbP0; auto.
 Qed.
 
-Module OptionMonad.
-  Definition check b : option unit := if b then Some tt else None.
-  Notation "'do' x <<- val ; body" :=
-  (match val with
-   | x => body
-   | _ => None
-   end) (at level 88, right associativity, x pattern).
-  Notation "'do' x <- val ; body" :=
-  (match val with
-   | Some x => body
-   | _ => None
-   end) (at level 88, right associativity, x pattern).
-End OptionMonad.
-
-
-Module PartialCompMonad.
-  (* TODO: differentiate out of fuel? or just calculate enough? *)
-  Definition partial_comp A := nat -> option A.
-  Definition fail {A : Type} : partial_comp A := fun _ => None.
-  Definition ret {A : Type} e : partial_comp A := fun _ => Some e.
-  Definition check b : partial_comp unit := if b then ret tt else fail.
-  Notation "'do' x <<- val ; body" :=
-  (match val with
-   | x => body
-   | _ => fail
-   end) (at level 88, right associativity, x pattern).
-  Notation "'do' x <%- val ; body" :=
-  (match val with
-   | Some x => body
-   | _ => fail
-   end) (at level 88, right associativity, x pattern).
-  Notation "'do' x <- val ; body" :=
-  (fun fuel => match (val) fuel with
-   | Some x => (body) fuel
-   | _ => None
-   end) (at level 88, right associativity, x pattern).
-End PartialCompMonad.
-Import OptionMonad.
-
-Tactic Notation "on_bind_do" tactic(t) :=
-  match goal with
-  | |- context [obind _ ?e] => t e
-  end.
-
-Definition try_map {A B : Type} (f : A -> option B) (l : seq A) : option (seq B) :=
-  foldr (fun e acc =>
-           do accl <- acc;
-             do fe <- f e;
-             Some (fe::accl)
-        ) (Some [::]) l.
-
-Lemma try_map_map_distribute {A B C : Type} (f : B -> option C) (g : A -> B) l
-  : try_map f (map g l) = try_map (fun x => f (g x)) l.
-Proof using .
-  elim: l => //=.
-  intros; by rewrite H.
-Qed.
-
-Lemma omap_some {A B} (e' : B) (f : A -> B) me : Some e' = omap f me -> exists e, me = Some e.
-Proof using .
-  case: me => //=; eauto.
-Qed.
-
-Lemma omap_some' {A B} (e' : B) (f : A -> B) me
-  : Some e' = omap f me -> exists e, Some e' = omap f (Some e).
-Proof using .
-  move => someeq.
-  suff: exists e, me = Some e.
-  move: someeq.
-  swap.
-  case => e ->.
-  eauto.
-  apply: omap_some; eauto.
-Qed.
 
  (*Todo: whichs more useful?*)
 (*Definition nth_level {A} l n : option A :=
@@ -398,3 +324,28 @@ Proof using .
     rewrite in_cons; apply /orP; right; done.
   }
 Qed.
+
+Module OptionMonad.
+  Declare Custom Entry monadic_do.
+  
+  Notation "'do' e" := (e) (at level 92, e custom monadic_do).
+
+  Notation "p <- e ; b" :=
+    (match e with
+     | Some (p) => b
+     | _ => None
+     end)
+      (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
+
+  Notation "'ret' e" := (Some e) (in custom monadic_do at level 90, e constr).
+
+  Notation "! e ; b" :=
+    (if e then b else None)
+      (in custom monadic_do at level 90, left associativity, e constr, b custom monadic_do).
+End OptionMonad.
+
+Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
+  match l with
+  | [::] => None
+  | (s', v) :: l' => if (s =? s')%string then Some v else named_list_lookup_err l' s
+  end.

@@ -7,36 +7,7 @@ Set Bullet Behavior "Strict Subproofs".
 Require Import String.
 From Utils Require Import Utils.
 From Named Require Import Exp Rule Core.
-
-Print le_sort.
-
-
-
-Declare Custom Entry monadic_do.
-
-Local Notation "'do' e" := (e) (at level 92, e custom monadic_do).
-
-Local Notation "p <- e ; b" :=
-  (match e with
-   | Some (p) => b
-   | _ => None
-   end)
-    (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
-
-Local Notation "'ret' e" := (Some e) (in custom monadic_do at level 90, e constr).
-
-Local Notation "! e ; b" :=
-  (if e then b else None)
-    (in custom monadic_do at level 90, left associativity, e constr, b custom monadic_do).
-
-(*TODO: move to utils*)
-Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
-  match l with
-  | [::] => None
-  | (s', v) :: l' => if (s =? s')%string then Some v else named_list_lookup_err l' s
-  end.
-
-Print wf_sort.
+Import OptionMonad.
 
 
 Fixpoint wf_term_no_conv l c e {struct e} : option sort :=

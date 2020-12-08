@@ -266,11 +266,6 @@ Proof using.
   split; auto.
 Qed.
 
-Ltac case_match :=match goal with
-  | [|- context[match ?e with _ => _ end]]
-    => let e':= fresh in remember e as e'; destruct e'
-  end.
-
 Local Ltac in_preserving_sort_rec :=
   intros;
       match goal with
