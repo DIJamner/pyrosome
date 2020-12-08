@@ -18,6 +18,12 @@ Require Coq.derive.Derive.
 Set Default Proof Mode "Ltac2".
 
 Definition stlc_bot :=
+  [:> "G" : #"env",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("bot_subst")
+      #"ty_subst" %"g" #"bot" = #"bot" : #"ty" %"G'"
+  ]::
   [:| "G" : #"env"
       -----------------------------------------------
       "bot" : #"ty" %"G"
@@ -27,7 +33,8 @@ Derive elab_stlc_bot
        SuchThat (elab_lang stlc_bot elab_stlc_bot)
        As elab_stlc_bot_pf.
 Proof.
-  repeat (repeat (cbn;step_elab())).
+  repeat (repeat (cbn;step_elab()));
+    repeat (elab_term_by()).
 Qed.  
 
 Instance elab_stlc_bot_inst : Elaborated stlc_bot :=
@@ -217,9 +224,53 @@ Proof.
     try (solve [ repeat(simpl; step_elab())
                | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
   {
+    
     cbn.
+    TODO: curr. proof missing weakenings inside cont type in Gamma
     apply elab_term_by'; repeat (cbn;step_elab()).
-    apply elab_term_by'; repeat (cbn;step_elab()).
+    {
+      eapply elab_term_conv.
+      apply elab_term_by'; repeat (cbn;step_elab()).
+      {
+        eapply elab_term_conv.
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        (* TODO: just a guess right now *)
+        inst_elab '({{e #"->" (#"->" %"A" %"B") #"bot"}}).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        repeat(simpl; step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        step_elab().
+        cbn.
+
+        {
+          eapply Core.le_sort_refl'; repeat (simpl; step_elab()).
+          reflexivity.
+          eapply Core.le_term_trans.
+          eapply (@Core.le_term_by' "->_subst"%string); repeat (simpl;step_elab()); reflexivity.
+          
+          reflexivity.
+          reflexivity.
+          reflexivity.
+          reflexivity.
+        }
+      }
+      {
+        cbn.
+        apply elab_term_by'; repeat (cbn;step_elab()).
+        
+        cbn.
+    }
+          symmetry.
+        
+      cbn.
     {
       eapply elab_term_conv.
       apply elab_term_by'; repeat (cbn;step_elab()).
