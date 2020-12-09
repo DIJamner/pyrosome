@@ -20,34 +20,40 @@ Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
+
+(* constructs the union of the two lists viewed as maps,
+   arbitrarily choosing one list when they disagree*)
+Fixpoint unordered_merge_unsafe {A : eqType} (l1 l2 : named_list A) :=
+  match l1 with
+  | [::] => l2
+  | (n,e)::l1' =>
+    (if fresh n l2 then [:: (n,e)] else [::])
+      ++ (unordered_merge_unsafe l1' l2)
+  end.
+
 (* Finds the subst s such that s >= acc, e = pat[/s/]
-   and (map fst s) = FV(e) U (map fst acc), if such a substitution exists*)
-Fixpoint matches_unordered_fuel (fuel : nat) (e pat : exp) (acc : subst) {struct fuel} : option subst :=
+   and (map fst s) = FV(e) U (map fst acc), if such a substitution exists
+   and sufficient fuel is provided.
+   Behavior intentionally unspecified otherwise.
+*)
+Fixpoint matches_unordered_fuel (fuel : nat) (e pat : exp) {struct fuel} : option subst :=
   match pat, e, fuel with
-  | var px, _,_ =>
-    match named_list_lookup_err acc px with
-    | Some e' =>
-      do !e == e';
-         ret acc
-    | None =>
-      do ret ((px,e)::acc)
-    end
+  | var px, _,_ => Some ([:: (px,e)])
   | con pn ps, con n s,fuel'.+1 =>
-    do !pn == n;
-       res <- args_match_unordered_fuel fuel' s ps acc;
-       ret res
-  | _,_, _ => None
+    if pn == n then args_match_unordered_fuel fuel' s ps else None
+  | _,_,_ => None
 end
-  with args_match_unordered_fuel (fuel : nat)
-                            (s pat : list exp) acc {struct fuel} : option subst :=
+with args_match_unordered_fuel (fuel : nat)
+                               (s pat : list exp) {struct fuel} : option subst :=
        match pat, s, fuel with
-       | [::],[::],_ => do ret acc
+       | [::],[::],_ => do ret [::]
        | pe::pat',e::s',fuel'.+1 =>
-         do acc' <- matches_unordered_fuel fuel' pe e acc;
-            res <- args_match_unordered_fuel fuel' s' pat' acc';
-            ret res                          
+         do res_e <- matches_unordered_fuel fuel' e pe;
+            res_s <- args_match_unordered_fuel fuel' s' pat';
+            ret (unordered_merge_unsafe res_e res_s)                          
        | _,_,_ => None
        end.
+
 
 Fixpoint exp_depth (e: exp) : nat :=
   match e with
@@ -56,7 +62,26 @@ Fixpoint exp_depth (e: exp) : nat :=
   end.
   
 Definition matches_unordered e pat :=
-  matches_unordered_fuel (exp_depth pat) e pat [::].
+  do s <- matches_unordered_fuel (exp_depth pat) e pat;
+     ! e == pat[/s/]; (* since we don't check merges, we check post-hoc *)
+     ret s.
+
+(* This lemma is pretty much trivial, but it's the useful property.
+   A 'completeness' lemma is much harder, but also not as useful
+   for proofs of positive statements.
+*)
+Lemma matches_unordered_recognizes e pat s
+  : matches_unordered e pat = Some s ->
+    e = pat[/s/].
+Proof.
+  unfold matches_unordered.
+  ltac1:(case_match;[|inversion]).
+  ltac1:(case_match;[|inversion]).
+  symmetry in HeqH0.
+  intro seq; inversion seq; subst.
+  ltac1:(apply /eqP); assumption.
+Qed.
+
 
 Fixpoint order_subst' s args : option subst :=
   match args with
@@ -67,10 +92,66 @@ Fixpoint order_subst' s args : option subst :=
        ret ((x,e)::s')
   end.
 
+Lemma order_subst'_vals s args s' p
+  : all_fresh s ->
+    order_subst' s args = Some s' ->
+    p \in s ->
+    p.1 \in args ->
+    p \in s'.             
+Proof.
+  simpl in *.
+  ltac1:(break); simpl.
+  revert s'.
+  induction args; intro s'; simpl.
+  {    
+    intros _ _ _ absurd; inversion absurd.
+  }
+  {
+    intro.
+    ltac1:(case_match;[|inversion]).
+    ltac1:(case_match;[|inversion]).
+    intro s'eq; inversion s'eq; clear s'eq; subst.
+    rewrite !in_cons.
+    intro.
+    ltac1:(move /orP; case).
+    {
+      ltac1:(move /eqP); intro s0eq; subst.
+      (*Lemma lookup_in
+       *)
+Admitted.
+
 Definition order_subst s args :=
-  do !size s == size args;
-  res <- order_subst' s args;
-  ret res.
+  (*guarantees that args is a permutation of (map fst s)
+    if this function returns a result.
+   *)
+  if size s == size args then order_subst' s args else None.
+
+Lemma order_subst_vals s args s' p
+  : all_fresh s ->
+    order_subst s args = Some s' ->
+    p \in s ->
+    p.1 \in args ->
+    p \in s'.             
+Proof.
+  intro.
+  unfold order_subst.
+  ltac1:(case_match;[|inversion]).
+  eauto using order_subst'_vals.
+Qed.
+
+
+Lemma matches_unordered_fuel_all_fresh e pat fuel s
+  : matches_unordered_fuel fuel e pat = Some s ->
+    all_fresh s.
+Proof.
+  unfold matches_unordered.
+
+Lemma matches_unordered_all_fresh e pat s
+  : matches_unordered e pat = Some s ->
+    all_fresh s.
+Proof.
+  unfold matches_unordered.
+  
 
 (* Note that 'args' is critical to getting the order of the output subst correct.
    We assume of the input that FV(pat) is a permutation of args.
@@ -80,120 +161,17 @@ Definition matches (e pat : exp) (args : list string) : option subst :=
     s' <- order_subst s args;
 ret s'.
 
-(* TODO: move to utils*)
-Lemma named_list_lookup_err_found {A:eqType} l n d (e : A)
-  : Some e = named_list_lookup_err l n ->
-    e = named_list_lookup d l n.
-Proof.
-  induction l> [ltac1:(inversion)|]; ltac1:(break); simpl.
-  ltac1:(change (?a =? ?b)%string with (a == b)).
-  ltac1:(case_match); auto.
-  intro seq; inversion seq; reflexivity.
-Qed.
-
-Lemma matches_unordered_fuel_recognizes fuel e pat acc s
-  : matches_unordered_fuel fuel e pat acc = Some s ->
+(* a lifting of the prior property*)
+Lemma matches_recognizes e pat args s
+  : matches e pat args = Some s ->
     e = pat[/s/].
 Proof.
-  revert fuel e.
-  induction pat; intros fuel e.
-  {
-    destruct fuel; simpl;
-      ltac1:(case_match)>
-            [
-              ltac1:(case_match;[|inversion]);
-              symmetry in HeqH0;
-              revert HeqH0;
-              ltac1:(move /eqP ->);
-              intro seq; inversion seq; clear seq; subst;
-              unfold subst_lookup;
-              eapply (@named_list_lookup_err_found exp_eqType);
-              assumption
-            | intro seq; inversion seq; clear seq;
-              simpl;
-              rewrite eqb_refl;
-              reflexivity].
-  }
-  {
-    destruct e;destruct fuel; try (solve[ltac1:(inversion)]).
-    simpl.
-    ltac1:(case_match;[|inversion]).
-    symmetry in HeqH0.
-    revert HeqH0.
-    ltac1:(move => /eqP HeqH0); subst.
-    ltac1:(case_match;[|inversion]).
-    intro seq; inversion seq; clear seq; subst.
-    f_equal.
-    revert fuel l H HeqH0.
-    induction l0; intros fuel l H.
-    {
-      destruct l; auto.
-      destruct fuel; try (solve[ltac1:(inversion)]).
-    }
-    {
-      destruct l; destruct fuel; try (solve[ltac1:(inversion)]).
-      simpl.
-      ltac1:(case_match;[|inversion]).
-      ltac1:(case_match;[|inversion]).
-      intro seq; inversion seq; clear seq; subst.
-      simpl in *; ltac1:(break).
-      f_equal.
-      ltac1:(change (exp_var_map (subst_lookup ?s) ?e) with e[/s/]).
-      erewrite <-H; eauto.
-      symmetry; eauto.
-      ltac1:(fold_Substable).
-      cbv.
-      {
-        
-    }
-    {
-      
-      in H.
-    vm_compute in H.
-    inversion H.
-    simpl.
-    rewrite eqb_refl.
-    reflexivity.
-  }
-  destruct e.
-  {
-    unfold matches_unordered in H0.
-    simpl in H0.
-    inversion H0.
-  }
-  {
-    revert H0.
-    unfold matches_unordered in *.
-    revert H.
-    generalize (exp_depth (con n l)); intro fuel.
-    intro H.
-    simpl.
+  unfold matches.
+  ltac1:(case_match;[|inversion]).
+  ltac1:(case_match;[|inversion]).
+  symmetry in HeqH.
+  apply matches_unordered_recognizes in HeqH.
+  intro seq; inversion seq; subst.
+Admitted  (*TODO: permutation lemmas.*).
 
-    
-    (destruct fuel; simpl)>[ltac1:(inversion)|].
-    
-    ltac1:(case neq:(n==s0);[|inversion]).
-    ltac1:(move: neq => /eqP neq); subst.
-    ltac1:(case_match;[|inversion]).
-    intro seq; inversion seq; subst.
-    f_equal.
-    revert l H HeqH0.
-    clear seq s0.
-    revert fuel.
-    induction l0.
-    {
-      intros fuel l; destruct l; intros; simpl in *; ltac1:(break); simpl in *; auto.
-      destruct fuel; simpl in HeqH0; inversion HeqH0.
-    }
-    {
-      intros fuel l; destruct l; intros; simpl in *; ltac1:(break); simpl in *; auto.
-      destruct fuel; simpl in HeqH0; inversion HeqH0.
-      destruct fuel; simpl in HeqH0; try (solve[inversion HeqH0]).
-      revert HeqH0.
-      ltac1:(case_match;[|inversion]).
-      ltac1:(case_match;[|inversion]).
-      intro seq; inversion seq; subst; clear seq.
-      f_equal.
-      symmetry in HeqH1.
-      unfold matches_unordered in H.
-      apply H in HeqH1.
+
