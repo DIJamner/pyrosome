@@ -74,34 +74,6 @@ Definition wf_sort_no_conv l c t : option unit :=
     _ <- wf_args_no_conv l c s c';
     ret tt
   end.
-
-Lemma named_list_lookup_err_in {A : eqType} c n (t : A)
-  : named_list_lookup_err c n = Some t -> (n,t) \in c.
-Proof using .
-  elim: c.
-  {
-    intro eqn; inversion eqn.
-  }
-  {
-    intros p c IH.
-    destruct p as [n' t'].
-    simpl.
-    rewrite in_cons.
-    case neq: (n=? n')%string.
-    {
-      case.
-      intro; subst.
-      apply /orP.
-      left.
-      apply /eqP; f_equal.
-      by apply /eqP.
-    }
-    {
-      move /IH ->.
-      apply /orP; by right.
-    }
-  }
-Qed.
       
 Lemma wf_term_no_conv_recognizes l c e t
   : wf_term_no_conv l c e = Some t -> wf_term l c e t.

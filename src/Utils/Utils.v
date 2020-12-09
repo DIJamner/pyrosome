@@ -409,4 +409,32 @@ Ltac solve_reflect_norec :=
            destruct_reflect_bool;
              [ format_eq_hyps; subst; reflexivity
               |inversion; subst; clear_neq_hyps]
-         end.
+          end.
+
+Lemma named_list_lookup_err_in {A : eqType} c n (t : A)
+  : named_list_lookup_err c n = Some t -> (n,t) \in c.
+Proof using .
+  elim: c.
+  {
+    intro eqn; inversion eqn.
+  }
+  {
+    intros p c IH.
+    destruct p as [n' t'].
+    simpl.
+    rewrite in_cons.
+    case neq: (n=? n')%string.
+    {
+      case.
+      intro; subst.
+      apply /orP.
+      left.
+      apply /eqP; f_equal.
+      by apply /eqP.
+    }
+    {
+      move /IH ->.
+      apply /orP; by right.
+    }
+  }
+Qed.

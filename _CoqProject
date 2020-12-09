@@ -11,6 +11,7 @@ src/named/ARule.v
 src/named/ICore.v
 src/named/Recognizers.v
 src/named/Tactics.v
+src/named/Matches.v
 src/named/Subst.v
 src/named/Compilers.v
 src/named/STLC.v
