@@ -72,7 +72,7 @@ Derive elab_cat_lang
 Proof.
   repeat (simpl;step_elab()); repeat (elab_term_by()).
 Qed. 
-  
+
 Instance elab_cat_lang_inst : Elaborated cat_lang :=
   {
   elaboration := elab_cat_lang;

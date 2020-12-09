@@ -26,8 +26,8 @@ Definition eq_compiler_case c1 c2 : bool :=
 
 Lemma eq_compiler_caseP c1 c2 : reflect (c1 = c2) (eq_compiler_case c1 c2).
 Proof using .
-  case: c1; case: c2; simpl; eauto.
-Admitted.
+  destruct c1; destruct c2; simpl;  solve_reflect_norec.
+Qed.
 
 Definition compiler_case_eqMixin := Equality.Mixin eq_compiler_caseP.
 
@@ -218,7 +218,8 @@ Ltac f_equal_match :=
   | [|- match ?e with _ => _ end = match ?e with _ => _ end]
     => let e':= fresh in remember e as e'; destruct e'
   end.
-  
+
+(*
 Lemma lookup_in_tail c c' n t s s'
     : let cs' := with_names_from (c'++ c) (s' ++ s) in
     size s == size c ->
@@ -252,6 +253,7 @@ Proof.
     }
   }
 Admitted.
+*)
 
 Lemma fresh_compile_ctx c cmp n
   : fresh n c -> fresh n (compile_ctx cmp c).

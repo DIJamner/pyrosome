@@ -904,7 +904,7 @@ Proof with eauto with judgment using.
 Qed.
  *)
 
-
+(*
 Add Parametric Morphism l c c' n : (srt n)
     with signature le_args l c c' ==> le_sort l c as sort_con_mor.
 Proof using .
@@ -942,6 +942,7 @@ Definition args_cons_mor  : forall (l : lang) (c c' : ctx) (t : sort) name (x y 
   Unshelve.
   apply args_cons_mor_Proper.
 Defined.
+*)
 
 (* TODO
 Instance term_con_mor_Proper (l : lang) (c c': ctx) n t

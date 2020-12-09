@@ -177,10 +177,7 @@ Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
   := map (pair_map_snd f).
 Arguments named_map {A B} f !l/.
 
-Lemma str_eqP : forall s s', reflect (s = s') (eqb s s').
-Admitted.
-
-Canonical str_eqType := @Equality.Pack string (Equality.Mixin str_eqP).
+Canonical str_eqType := @Equality.Pack string (Equality.Mixin eqb_spec).
 
 Definition fresh {A} n (nl : named_list A) : bool :=
   (n \notin map fst nl).
@@ -349,3 +346,67 @@ Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
   | [::] => None
   | (s', v) :: l' => if (s =? s')%string then Some v else named_list_lookup_err l' s
   end.
+
+
+
+Definition eq_pr {A B} eq_a eq_b (p1 p2 : A*B) : bool :=
+  let (a1,b1) := p1 in
+  let (a2,b2) := p2 in
+  (eq_a a1 a2) && (eq_b b1 b2).
+
+
+Ltac case_match :=match goal with
+  | [|- context[match ?e with _ => _ end]]
+    => let e':= fresh in remember e as e'; destruct e'
+  end.
+
+Ltac destruct_reflect_bool :=
+  match goal with
+  | [|- reflect _ ?b] =>
+    let b' := fresh "b" in
+    remember b as b';
+      destruct b';
+      constructor
+  end.
+
+Ltac get_andb_leftmost b :=
+  lazymatch b with
+  | ?b'&&_ =>
+    get_andb_leftmost b'
+  | _ => b
+  end.
+
+Ltac destruct_reflect_andb_l :=
+  match goal with
+  | [|- reflect _ (?b)] =>
+    let bb := get_andb_leftmost b in
+    let b' := fresh "b" in
+    remember bb as b';
+      destruct b'
+  end.
+
+
+Ltac format_eq_hyps :=
+  repeat match goal with
+  | [H : true = (_==_)|-_] =>
+    symmetry in H; move: H => /eqP H
+  end.
+
+Ltac clear_neq_hyps :=
+  match goal with
+  | [H : false = (?a==?a)|-_] =>
+    rewrite eq_refl in H; by inversion H
+  end.
+
+Ltac solve_reflect_norec :=
+   repeat match goal with
+         | [|- reflect _ (_&&_)] =>
+           destruct_reflect_andb_l; simpl
+         | [|- reflect _ true] => constructor
+         | [|- reflect _ false] =>
+           constructor; inversion; subst; clear_neq_hyps
+         | [|- reflect _ (_==_)]=>
+           destruct_reflect_bool;
+             [ format_eq_hyps; subst; reflexivity
+              |inversion; subst; clear_neq_hyps]
+         end.

@@ -249,7 +249,8 @@ Definition eq_rule r1 r2 : bool :=
 
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
 Proof using .
-Admitted.
+  destruct r1; destruct r2; simpl; solve_reflect_norec.
+Qed.
 
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 

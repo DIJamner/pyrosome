@@ -104,33 +104,6 @@ Notation "[:> |- ( s ) e1 = e2 : t ]" :=
     (s constr at level 0,
      t custom srt, e1 custom expr, e2 custom expr).
 
-(*Notation "(:)" := [::] (in custom ctx).*)
-
-(*
-
-Notation "'|-s' s" :=
-  (s%string, sort_rule [::])
-    (in custom rule at level 80, s constr at level 0).
-
-Notation "|- s : t" :=
-  (s%string, term_rule [::] t)
-    (in custom rule at level 81, t custom srt,
-     s constr at level 0,
-    format "'[  ' |- '[  ' s '/' : t ']' ']'").
-
-Notation "'|-s' ( s ) e1 = e2" :=
-  (s%string, sort_le [::] e1 e2)
-    (in custom rule at level 82,
-     s constr at level 0,
-     e1 custom srt, e2 custom srt).
-
-Notation "|- ( s ) e1 = e2 : t" :=
-  (s%string, term_le [::] e1 e2 t)
-    (in custom rule at level 83,
-     s constr at level 0,
-     t custom srt, e1 custom expr, e2 custom expr).
-*)
-
 Declare Custom Entry ctx_binding.
 
 Notation "bd , .. , bd'" :=
@@ -145,28 +118,9 @@ Notation "x : t" :=
 Print Grammar constr.
 Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" (#"baz", #"qux")].
 Check [s> |- ("eq")#"foo" = #"bar"].
-(*TODO: get printing working! are list notations interfering?*)
+(*TODO: get printing working! are list notations interfering? probably exp notations*)
 
 Definition lang := named_list rule.
-
-(*
-Definition ws_rule (r : rule) : bool :=
-  match r with
-  | {| c |- sort} => ws_ctx c
-  | {| c |- t} => ws_ctx c && ws_exp (size c) t
-  | {< c |- s1 <# s2} =>
-    ws_ctx c
-           && ws_exp (size c) s1
-           && ws_exp (size c) s2
-  | {< c |- e1 <# e2 .: s} =>
-    ws_ctx c
-           && ws_exp (size c) e1
-           && ws_exp (size c) e2
-           && ws_exp (size c) s
-  end.
-
-Definition ws_lang : lang -> bool := List.forallb ws_rule.
-*)
 
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with
@@ -181,7 +135,8 @@ Definition eq_rule r1 r2 : bool :=
 
 Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
 Proof using .
-Admitted.
+  destruct r1; destruct r2; simpl; solve_reflect_norec.
+Qed.
 
 Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
