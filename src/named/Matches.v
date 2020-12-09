@@ -148,7 +148,10 @@ Proof.
    We assume of the input that FV(pat) is a permutation of args.
  *)
 Definition matches (e pat : exp) (args : list string) : option subst :=
-  do s <- matches_unordered_fuel (exp_depth pat) e pat;
+  (* multiply depth by 2 because each level consumes 1 fuel for exp
+     and 1 for its args
+   *)
+  do s <- matches_unordered_fuel (exp_depth pat).*2 e pat;
      s' <- order_subst s args;
      (* this condition can fail because merge doesn't check for conflicts *)
      !e == pat[/s'/];
@@ -208,19 +211,9 @@ Proof.
 Qed.
 
 
-
-Goal (matches (con "foo" [:: con "quox" [::]; con "bar" [:: con "baz"[::]]; var "b"])
-              (con "foo" [:: con "quox" [::]; var "b"; var "a"])
-              [:: "b"; "a"])%string.
-  unfold matches.
-  ltac1:(case_match).
-  simpl in HeqH.
-  vm_compute in HeqH.
-
-Notation "'{{e' e }}" := (e) (at level 0,e custom expr at level 100).
-Notation "'{{s' e }}" := (e) (at level 0,e custom srt at level 100).
-
-
-
-Goal (matches {{e #"foo" %"b" (#"bar" #"baz") #"quox"}}
-     {{e #"foo" %"a" %"b" #"quox"}} [:: "b"; "a"]).
+Goal
+  (let e:= con "foo" [:: con "quox" [::]; con "bar" [:: con "baz"[::]]; var "b"]in
+   matches e  (con "foo" [:: con "quox" [::]; var "b"; var "a"]) [::"b";"a"])%string.
+  vm_compute.
+  reflexivity.
+Qed.
