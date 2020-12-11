@@ -157,6 +157,17 @@ Proof.
     
     eapply Core.le_sort_refl'; repeat (simpl; step_elab()).
     reflexivity.
+    (*Require Import Matches.
+    eapply (apply_le_term_recognizes "ty_subst_id").
+    unfold apply_le_term.
+    ltac1:(case_match).
+    vm_compute in HeqH.
+    inversion HeqH; subst.
+    ltac1:(case_match).
+    unfold match_all_le in HeqH0.
+    revert HeqH0.
+    ltac1:(case_match).
+    vm_compute in HeqH0.*)
     eapply (Core.le_term_by' "ty_subst_id"%string); repeat (simpl;step_elab()).
     reflexivity.
     reflexivity.

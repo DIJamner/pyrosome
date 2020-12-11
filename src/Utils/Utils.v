@@ -323,6 +323,7 @@ Proof using .
 Qed.
 
 Module OptionMonad.
+  (* TODO: use general monad instead of duplicating*)
   Declare Custom Entry monadic_do.
   
   Notation "'do' e" := (e) (at level 92, e custom monadic_do).

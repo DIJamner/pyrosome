@@ -396,10 +396,13 @@ Definition apply_le_term l n (e1 e2 : exp) (t : sort) : option (subst * subst*ct
                           (map fst c);
   ret (s1,s2,c).
 
-Lemma apply_le_term_recognizes l n c e1 e2 t s1 s2 c'
+Lemma apply_le_term_recognizes n l c e1 e2 t s1 s2 c'
   : apply_le_term l n e1 e2 t = Some (s1,s2,c') ->
     le_subst l c c' s1 s2 ->
     le_term l c t e1 e2.
+(* e1 = e1'[/s1/]
+   e2 = e2'[/s2/]
+   e1' ~ e2' (by rule n)*)
 Proof.
   unfold apply_le_term.
   repeat ltac1:(case_match;[|inversion]).
@@ -428,3 +431,21 @@ Proof.
   eapply le_term_subst; eauto.
   eapply le_term_by; eauto.
 Qed.
+
+Arguments apply_le_term_recognizes n%string_scope [l c e1 e2 t s1 s2 c'].
+
+(*
+Goal match_all_unordered
+            [:: Exp.con "ty_subst"
+                  [:: Exp.var "A"; Exp.con "id" [:: Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable]
+            [:: Exp.con "ty_subst"
+                [:: Exp.var "A"; Exp.con "id" [:: Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable].
+Proof.
+  unfold match_all_unordered.
+  ltac1:(case_match).
+  unfold matches_unordered in HeqH.
+  cbv [exp_depth foldl Nat.max] in HeqH.
+  unfold matches_unordered_fuel in HeqH.
+  
+  vm_compute in HeqH.
+*)

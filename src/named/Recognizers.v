@@ -7,6 +7,7 @@ Set Bullet Behavior "Strict Subproofs".
 Require Import String.
 From Utils Require Import Utils.
 From Named Require Import Exp Rule Core.
+
 Import OptionMonad.
 
 
@@ -170,31 +171,42 @@ Proof using .
   }
 Qed.
 
-(* Elaboration recognizers are more tricky than
-   wfness ones because elaboration requires
-   generation of implicit proof terms.
 
-   TODO: come up with a good way to do it; ideas below:
-*)
-
-Require IExp IRule ICore.
-
+(*
 (* general pattern here:
    - a little interaction-tree-like
    - have recognizer work in option monad + reader monad
    - TODO: good labelling for cases; is a string enough for interactive proving?
 *)
-Inductive elab_recognizer_output : Set :=
-| elab_term_out : exp -> sort -> elab_recognizer_output
-| elab_sort_out : sort -> elab_recognizer_output
-| elab_args_out : list exp -> elab_recognizer_output
-| fail_elab : elab_recognizer_output
-(* TODO: have a similar case for conversion? *)
+Inductive elab_recognizer_output (A : Set) : Set :=
+| elab_out : A -> elab_recognizer_output A
+| fail_elab : elab_recognizer_output A 
 | infer_term
     (* context to help the user know what's going on *)
   : IExp.exp (* expression one level up the AST *) ->
     sort (* sort of the expression *) ->
     string (* name of argument*) ->
     (*expects a wf term and its sort *)
-    (exp -> sort -> elab_recognizer_output) -> elab_recognizer_output.
+    (exp -> sort -> elab_recognizer_output A) -> elab_recognizer_output A
+(* TODO: would it be useful to specialize this to conversion? *)
+| infer_conv
+    (* context to help the user know what's going on *)
+  : exp (* expression to convert *) ->
+    sort (* sort to convert to *) ->
+    (*expects a wf sort *)
+    (sort -> elab_recognizer_output A) -> elab_recognizer_output A .
  (* TODO: how do I frame correctness? it's a 2-party kind of thing here *)
+
+Inductive correct_out_exp l c :exp -> elab_recognizer_output -> Prop :=
+| elab_out_correct
+  : forall e t, elab_term l c e t -> elab_out_correct l c e (elab_out t)
+| infer_term_correct
+  : forall e' out e t,
+    elab_term l c e t ->
+    elab_out_correct l c e' (out t) ->
+    elab_out_correct l c e (infter_term )
+| 
+
+Definition oracle A out := {f: elab_recognizer_output A -> A | wf (f out)}.
+
+*)
