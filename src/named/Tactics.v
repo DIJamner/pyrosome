@@ -40,8 +40,8 @@ Proof using.
 Qed.
 
 Lemma sort_subst_fold s n l
-  : Exp.srt n (map (Exp.exp_subst s) l)
-    = Exp.apply_subst s (Exp.srt n l).
+  : Exp.scon n (map (Exp.exp_subst s) l)
+    = Exp.apply_subst s (Exp.scon n l).
 Proof using .
   simpl; reflexivity.
 Qed.

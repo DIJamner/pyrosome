@@ -153,7 +153,7 @@ Definition matches_unordered e pat :=
 
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
-  | srt n s, srt n_pat s_pat =>
+  | scon n s, scon n_pat s_pat =>
     if n == n_pat then
       (* multiply depth by 2 because each level consumes 1 fuel for exp
      and 1 for its args
@@ -448,4 +448,31 @@ Proof.
   unfold matches_unordered_fuel in HeqH.
   
   vm_compute in HeqH.
+
+
+
+
+
+
+e1 ~ e2
+<= e1 = e1'[/s1/]
+   e2 = e2'[/s2/]
+   e1' ~ e2' (by rule n)
+
+args : t...
+--------- n
+e1' ~ e2'
+
+s1 = s2
+
+beta: C |- (\x.e) e'~ e[e'/x]
+
+           ....
+---- refl  -------
+4~4        4~2+2
+----------------------cong
+(4,4) ~ (2+2,4)
+------------------ beta
+(\x.(x,x)) 4 ~ (2+2,4)
+
 *)

@@ -9,6 +9,7 @@ From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
 From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore Tactics.
+Import IExp.Notations IRule.Notations.
 Require Import String.
 
 Require Import Named.Recognizers.
@@ -59,12 +60,11 @@ Definition cat_lang : lang :=
       -----------------------------------------------
       "sub" "G" "G'" srt                     
   ];
-  [s| (:)
+  [s|
       -----------------------------------------------
       "env" srt
   ]
   ].
-
 
 Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)
@@ -81,7 +81,7 @@ Instance elab_cat_lang_inst : Elaborated cat_lang :=
 
 
 Definition subst_lang' : lang :=
- [:> (:)
+ [:> 
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
   ]::
@@ -93,7 +93,7 @@ Definition subst_lang' : lang :=
       -----------------------------------------------
       "forget" : #"sub" %"G" #"emp"
   ]::
-  [:| (:)
+  [:| 
       -----------------------------------------------
       "emp" : #"env"
   ]::

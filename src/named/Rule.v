@@ -4,8 +4,10 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
+Require Import String.
 From Utils Require Import Utils.
 From Named Require Import Exp.
+Import Exp.Notations.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
 Inductive rule : Type :=
@@ -14,111 +16,126 @@ Inductive rule : Type :=
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
+Module Notations.
+(*
+(* TODO: get rule bar printing to work *)
+Inductive rule_bar := bar_base | bar_ext (r : rule_bar).
 
-Bind Scope rule_scope with rule.
-Delimit Scope rule_scope with rule.
+Declare Custom Entry rule_dash.
+Notation "-" := bar_ext (in custom rule_dash at level 0).
 
-Declare Custom Entry expr.
-Declare Custom Entry srt.
-Declare Custom Entry subst.
-Declare Custom Entry ctx.
+Notation "x .. y":=
+  (x .. (y bar_base) ..) (in custom rule_bar at level 50,
+                      x custom rule_dash at level 100,
+                      y custom rule_dash at level 100).
 
-Require Import String.
+Definition with_rule_bar' (rb : nat) := 0.
 
-Declare Custom Entry subst_binding.
+Notation "'[TMP' rb ]" :=
+ rb
+    (at level 0, rb custom rule_bar at level 100).
+Check [TMP ------------------------------------------------].
 
-Notation "# c ( e , .. , e' )" :=
-  (con c%string (cons e' .. (cons e nil) ..))
-    (in custom expr at level 0, c constr at level 0,
-    e custom expr, e' custom expr).
+Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
+ *)
 
-Notation "e / x" :=
-  (x%string,e) (in custom subst_binding at level 0,
-        e custom expr, x constr at level 0).
 
-Notation "# c" :=
-  (con c%string [::])
-    (in custom expr at level 0, c constr at level 0).
+Notation "'[s|' G ----------------------------------------------- name 'srt' ]" :=
+  (name%string, sort_rule G)
+    (name constr at level 0,
+     G custom ctx at level 100,
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' name  'srt' ']' '//' ] ']'").
 
-Notation "# c ( e , .. , e' )" :=
-  (srt c%string (cons e' .. (cons e nil) ..))
-    (in custom srt at level 0, c constr at level 0,
-    e custom expr, e' custom expr).
+Check [s| "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"
+          -----------------------------------------------
+                      "foo" srt                    ].
 
-Notation "! x" :=
-  x (in custom expr at level 0, x ident).
-Notation "! x" :=
-  x (in custom srt at level 0, x ident).
-Notation "! x" :=
-  x (in custom subst at level 0, x ident).
-Notation "! x" :=
-  x (in custom ctx at level 0, x ident).
+Check [s| 
+          -----------------------------------------------
+                      "env" srt                    ].
 
-               
-Notation "% x" :=
-  (var x%string)
-    (in custom expr at level 0, x constr at level 0).
+          
+Notation "[:| G ----------------------------------------------- name : t ]" :=
+  (name%string, term_rule G t)
+    (name constr at level 0,
+     G custom ctx at level 100, t custom sort at level 100,
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' name  '/' :  t ']' ']' '//' ] ']'").
 
-Notation "# c" :=
-  (srt c%string [::])
-    (in custom srt at level 0, c constr at level 0).
+Check [:| "G" : #"env",
+          "A" : #"ty" %"G",
+          "B" : #"ty" %"x",
+          "e" : #"el" (#"wkn" %"A" %"B")
+          -----------------------------------------------
+          "lam" : #"el" (#"->" %"A" %"B")].
+
+Check [:|
+          -----------------------------------------------
+                      "emp" : #"env"                   ].
+
+
+Check [:| "G" : #"env",
+           "A" : #"ty" %"G",
+           "B" : #"ty" %"x",
+           "e" : #"el" (#"wkn" %"A" %"B")
+           -----------------------------------------------
+           "lam" : #"el" (#"->" %"A" %"B") ].
+
+Notation "'[s>' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
+  (s%string, sort_le G e1 e2)
+    (s constr at level 0, G custom ctx at level 100,
+     e1 custom sort at level 100, e2 custom sort at level 100,
+    format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'").
+
+
+Check [s> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+          "eq" : #"ty_eq" %"G" %"A" %"B" 
+          ----------------------------------------------- ("ty_eq_sort")
+          #"ty" %"G" %"A" = #"ty" %"G" %"B"
+      ].
+           
+Notation "[:> G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
+  (s%string, term_le G e1 e2 t)
+    (s constr at level 0, G custom ctx at level 100,
+     t custom sort at level 100,
+     e1 custom exp at level 100, e2 custom exp at level 100, 
+    format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'").
+
+Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+          "eq" : #"ty_eq" %"G" %"A" %"B" 
+          ----------------------------------------------- ("ty_eq_sort")
+          %"A" = %"B" : #"ty" %"G"
+      ].
+
+(* TODO: do I still want to allow these notations? I think so.
+   If so, which by default? For now there are only parsing.
+   Can prob. handle better once I fix rule bars
+*)
 
 Notation "'[s|' G |- s ]" :=
   (s%string, sort_rule G)
-    (s constr at level 0, G custom ctx
+    (s constr at level 0, G custom ctx, only parsing
 (*    format "'[  ' G '/' '|-s' s ']'").*)).
 
 Notation "[:| G |- s : t ]" :=
   (s%string, term_rule G t)
-    (t custom srt,
-     s constr at level 0, G custom ctx
+    (t custom sort,
+     s constr at level 0, G custom ctx, only parsing
     (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
 
 Notation "'[s>' G |- ( s ) e1 = e2 ]" :=
   (s%string, sort_le G e1 e2)
     (s constr at level 0, G custom ctx,
-     e1 custom srt, e2 custom srt).
+     e1 custom sort, e2 custom sort, only parsing).
 
 Notation "[:> G |- ( s ) e1 = e2 : t ]" :=
   (s%string, term_le G e1 e2 t)
     (s constr at level 0, G custom ctx,
-     t custom srt, e1 custom expr, e2 custom expr).
+     t custom sort, e1 custom exp, e2 custom exp, only parsing).
 
-Notation "'[s|' |- s ]" :=
-  (s%string, sort_rule [::])
-    (s constr at level 0).
 
-Notation "[:| |- s : t ]" :=
-  (s%string, term_rule [::] t)
-    (t custom srt,
-     s constr at level 0
-    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
-
-Notation "'[s>' |- ( s ) e1 = e2 ]" :=
-  (s%string, sort_le [::] e1 e2)
-    (s constr at level 0,
-     e1 custom srt, e2 custom srt).
-
-Notation "[:> |- ( s ) e1 = e2 : t ]" :=
-  (s%string, term_le [::] e1 e2 t)
-    (s constr at level 0,
-     t custom srt, e1 custom expr, e2 custom expr).
-
-Declare Custom Entry ctx_binding.
-
-Notation "bd , .. , bd'" :=
-  (cons bd' .. (cons bd nil)..)
-    (in custom ctx at level 100, bd custom ctx_binding).
-
-Notation "x : t" :=
-  (x%string, t)
-    (in custom ctx_binding at level 100, x constr at level 0,
-        t custom srt).
-
-Print Grammar constr.
-Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" (#"baz", #"qux")].
+Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" #"baz" #"qux"].
 Check [s> |- ("eq")#"foo" = #"bar"].
-(*TODO: get printing working! are list notations interfering? probably exp notations*)
+End Notations.
 
 Definition lang := named_list rule.
 
@@ -142,68 +159,6 @@ Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
 
-(* TODO: need shifts?
-Definition rule_constr_shift n r :=
-  match r with
-  | {| c |- sort } => {| map (constr_shift n) c |- sort}
-  | {| c |- t } => {| map (constr_shift n) c |- constr_shift n t}
-  | {< c |- t1 <# t2 } =>
-    {< map (constr_shift n) c
-     |- constr_shift n t1 <# constr_shift n t2 }
-  | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } =>
-    {< map (constr_shift n) c1 <# map (constr_shift n) c2
-     |- constr_shift n e1 <# constr_shift n e2
-                     .: constr_shift n t1 <# constr_shift n t2}
-  end.
-
-Notation "r %%! n" := (rule_constr_shift n r) (at level 7).
-
-
-Lemma rule_constr_shift_shift r n m : r%%!n %%!m = r%%!(n+m).
-Proof.
-  case: r; simpl; intros; f_equal;
-    move: constr_shift_shift map_constr_shift_shift;
-  auto.
-Qed.
-
-Definition rule_constr_downshift n r : option rule :=
-  match r with
-  | {| c |- sort } => c' <- try_map (constr_downshift n) c; Some ({| c' |- sort})
-  | {| c |- t } =>
-    c' <- try_map (constr_downshift n) c;
-      t' <- constr_downshift n t;
-      Some ({| c' |- t'})
-  | {< c1 <# c2 |- t1 <# t2 } =>
-    c1' <- try_map (constr_downshift n) c1;
-      c2' <- try_map (constr_downshift n) c2;
-      t1' <- constr_downshift n t1;
-      t2' <- constr_downshift n t2;
-      Some ({< c1' <# c2' |- t1' <# t2' })
-  | {< c1 <# c2 |- e1 <# e2 .: t1 <# t2 } =>
-    c1' <- try_map (constr_downshift n) c1;
-      c2' <- try_map (constr_downshift n) c2;
-      e1' <- constr_downshift n e1;
-      e2' <- constr_downshift n e2;
-      t1' <- constr_downshift n t1;
-      t2' <- constr_downshift n t2;
-      Some ({< c1' <# c2' |- e1' <# e2' .: t1' <# t2'})
-  end.
-
-Lemma rule_downshift_left_inverse r n : rule_constr_downshift n r%%!n = Some r.
-Proof.
-  case: r => //=;
-  intros;
-  rewrite ?downshift_left_inverse ?try_map_downshift_left_inverse;
-  by compute.
-Qed.
-
-Lemma rule_constr_shift_inj r1 r2 n : r1 %%!n = r2 %%!n -> r1 = r2.
-Proof.
-  case: r1; case: r2 => //=;
-  intro_to (@eq rule); inversion; f_equal;
-  move: constr_shift_inj seq_constr_shift_inj; eauto. 
-Qed.  
-*)
 
 Definition ws_rule r : bool :=
   match r with

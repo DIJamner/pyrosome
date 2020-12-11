@@ -8,6 +8,7 @@ From Utils Require Import Utils.
 From Named Require IExp IRule.
 From Named Require Import Rule.
 From Named Require Import Core Exp ARule.
+
 Require Import String.
 
 Definition strip_rule_args r :=
@@ -26,7 +27,7 @@ Inductive elab_sort l c : IExp.sort -> sort -> Prop :=
 | elab_sort_by : forall n s es c' args,
     (n, (sort_rule c' args)) \in l ->
     elab_args l c s args es c' ->
-    elab_sort l c (IExp.srt n s) (Exp.srt n es)
+    elab_sort l c (IExp.scon n s) (Exp.scon n es)
 with elab_term l c : IExp.exp -> exp -> sort -> Prop :=
 | elab_term_by : forall n s es c' t args,
     (n, (term_rule c' args t)) \in l ->
@@ -325,9 +326,9 @@ Definition get_rule_args r :=
 
 Definition get_rule_sort r :=
   match r with
-  | ARule.sort_rule _ _ => srt "ERR" [::]
+  | ARule.sort_rule _ _ => scon "ERR" [::]
   | ARule.term_rule _ _ t => t
-  | ARule.sort_le _ _ _ => srt "ERR" [::]
+  | ARule.sort_le _ _ _ => scon "ERR" [::]
   | ARule.term_le _ _ _ t => t
   end.
 
@@ -337,7 +338,7 @@ Lemma elab_sort_by' l c : forall n s es,
     let args := get_rule_args r in
     (n, (ARule.sort_rule c' args)) \in l ->
     elab_args l c s args es c' ->
-    elab_sort l c (IExp.srt n s) (Exp.srt n es).
+    elab_sort l c (IExp.scon n s) (Exp.scon n es).
 Proof using .
   intros.
   econstructor; eassumption.

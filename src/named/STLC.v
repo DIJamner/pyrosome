@@ -11,6 +11,7 @@ Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
 From Named Require Import Exp.
 From Named Require Import IExp IRule ICore Subst Tactics.
+Import IExp.Notations IRule.Notations.
 Require Import String.
 
 Require Coq.derive.Derive.

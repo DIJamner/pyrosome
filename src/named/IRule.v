@@ -6,6 +6,7 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
 From Named Require Import IExp.
+Import IExp.Notations.
 Require Import String.
 
 (* terms form a category over sorts w/ (empty or constant?) Γ *)
@@ -15,98 +16,7 @@ Inductive rule : Type :=
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
-
-Declare Custom Entry exp.
-Declare Custom Entry sort.
-
-(*TODO: rename *)
-Definition scon := srt.
-
-(*
-Notation "e / x" :=
-  (x%string,e) (in custom subst_binding at level 0,
-        e custom expr, x constr at level 0).*)
-
-Notation "# c" :=
-  (con c%string [::])
-    (right associativity,in custom exp at level 0, c constr at level 0,
-    format "# c").
-Notation "# c" :=
-  (scon c%string [::])
-    (right associativity,in custom sort at level 0, c constr at level 0,
-    format "# c").
-
-
-Definition exp_constr_app e e' :=
-  match e with
-  | con c l => con c (e'::l)
-  | _ => con "ERR" [::]
-  end.
-
-Definition srt_constr_app t e' :=
-  match t with
-  | srt c l => srt c (e'::l)
-  end.
-
-Notation "c e" :=
-  (exp_constr_app c e)
-    (left associativity, in custom exp at level 10,
-                            c custom exp, e custom exp at level 9).
-Notation "c e" :=
-  (srt_constr_app c e)
-    (left associativity, in custom sort at level 10,
-                            c custom sort, e custom exp at level 9).
-
-Notation "( e )" := e (in custom exp at level 0, e custom exp at level 100).
-Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
-
-Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).
-Notation "'{{s' e }}" := (e) (at level 0,e custom sort at level 100).
-
-Notation "% x" :=
-  (var x%string)
-    (in custom exp at level 0, x constr at level 0, format "% x").
-
-
-Check {{e #"foo" }}.
-Check {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
-Check {{s #"foo" }}.
-Check {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
-
-
-Notation "! x" :=
-  x (in custom exp at level 0, x ident).
-(*
-Notation "! x" :=
-  x (in custom sort at level 0, x ident).
-Notation "! x" :=
-  x (in custom subst at level 0, x ident).
-Notation "! x" :=
-  x (in custom ctx at level 0, x ident).
-*)
-
-Declare Custom Entry ctx.
-Declare Custom Entry ctx_binding.
-
-Definition print_ctx (c : list (string*sort)) := c.
-
-Notation "bd , .. , bd'" :=
-  (print_ctx (cons bd' .. (cons bd nil)..))
-    (in custom ctx at level 100, bd custom ctx_binding at level 100,
-    format "'[hv' bd ,  '/' .. ,  '/' bd' ']'").
-
-Notation "(:)" := (@nil (string*sort)) (in custom ctx at level 0).
-
-Notation "x : t" :=
-  (x%string, t)
-    (in custom ctx_binding at level 100, x constr at level 0,
-        t custom sort at level 100).
-
-Notation "'{{c' e }}" := (e) (at level 0,e custom ctx at level 100).
-
-Check {{c (:) }}.
-Check {{c "x" : #"env"}}.
-Check {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}.
+Module Notations.
 
 (*
 (* TODO: get rule bar printing to work *)
@@ -152,7 +62,7 @@ Check [s| "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"
           -----------------------------------------------
                       "foo" "y" "z" srt                    ].
 
-Check [s| (:)
+Check [s| 
           -----------------------------------------------
                       "env" srt                    ].
 
@@ -170,17 +80,9 @@ Check [:| "G" : #"env",
           -----------------------------------------------
           "lam" "A" "e" : #"el" (#"->" %"A" %"B")].
 
-Check [:| (:)
+Check [:|
           -----------------------------------------------
                       "emp" : #"env"                   ].
-
-
-
-Notation "[:| G ----------------------------------------------- cc : t ]" :=
-  (fst cc, term_rule G (snd cc) t)
-    (cc custom constr_conclusion at level 100,
-     G custom ctx at level 100, t custom sort at level 100,
-     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' :  t ']' ']' '//' ] ']'").
 
 
 Check [:| "G" : #"env",
@@ -216,6 +118,8 @@ Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           ----------------------------------------------- ("ty_eq_sort")
           %"A" = %"B" : #"ty" %"G"
       ].
+
+End Notations.
 
 Definition lang := named_list rule.
 
@@ -257,3 +161,4 @@ Definition rule_eqMixin := Equality.Mixin eq_ruleP.
 
 Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
 *)
+

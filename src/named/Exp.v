@@ -63,7 +63,7 @@ Definition exp_rec :=
              List.fold_right (fun t => prod (P t)) unit l ->
              P (con n l))-> forall e : exp, P e.
 
-Variant sort : Set := srt : string -> list exp -> sort.
+Variant sort : Set := scon : string -> list exp -> sort.
 
 Definition ctx : Set := named_list_set sort.
 
@@ -75,7 +75,7 @@ Definition subst_lookup (s : subst) (n : string) : exp :=
 Arguments subst_lookup !s n/.
 
 Definition ctx_lookup (c: ctx) (n : string) : sort :=
-  named_list_lookup (srt "" [::]) c n.
+  named_list_lookup (scon "" [::]) c n.
 
 Arguments ctx_lookup !c n/.
 
@@ -118,7 +118,7 @@ Fixpoint ws_subst args (s : subst) : bool :=
 Arguments ws_subst args !s/.
 
 Definition ws_sort args (t : sort) : bool :=
-  match t with srt _ s => ws_args args s end.
+  match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
 
 Fixpoint ws_ctx (c : ctx) : bool :=
@@ -260,7 +260,7 @@ Instance substable_args : Substable (list exp) :=
   }.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
-  let (c, s') := t in srt c s'[/s/].
+  let (c, s') := t in scon c s'[/s/].
 Arguments sort_subst s !t/.
 
 Lemma sort_subst_assoc : forall s1 s2 a,
@@ -383,67 +383,6 @@ Lemma eq_sortP s1 s2 : reflect (s1 = s2) (eq_sort s1 s2).
 Qed.
 
 Canonical sort_eqType := @Equality.Pack sort (Equality.Mixin eq_sortP).
-
-(*
-
-Require Import String.
-Section Printing.
-
-  (* A lazily-written print nat fn *)
-  Fixpoint printnat' fuel n : string :=
-    match fuel with
-    | 0 => "ERR"
-    | fuel'.+1 =>
-      match n with
-      | 0 => "0"
-      | 1 => "1"
-      | 2 => "2"
-      | 3 => "3"
-      | 4 => "4"
-      | 5 => "5"
-      | 6 => "6"
-      | 7 => "7"
-      | 8 => "8"
-      | 9 => "9"
-      | _ => (printnat' fuel' (Nat.div n 10)) ++ (printnat' fuel' (Nat.modulo n 10))
-      end
-    end.
-
-  Definition printnat x : string := printnat' (x.+1) x.
-
-  Goal printnat 0 = "0"%string.
-      by compute.
-  Qed.
-  
-  Goal printnat 1 = "1"%string.
-      by compute.
-  Qed.
-  
-  Goal printnat 5 = "5"%string.
-      by compute.
-  Qed.
-  
-  Goal printnat 78 = "78"%string.
-      by compute.
-  Qed.
-  
-  Goal printnat 100 = "100"%string.
-      by compute.
-  Qed.
-  
-  Fixpoint print e : string :=
-    match e with
-    | var n => printnat n
-    | con n s => "[" ++ printnat n ++ "|" ++ concat ";" (map print s) ++ "]"
-    end.
-
-  Goal print [1| (var 2); (var 2)] = "[1|2;2]"%string.
-      by compute.
-  Qed.
-
-End Printing.
-
-*)
 
 (* TODO: how many of these should be part of the substable class?*)
 Lemma ws_exp_mono s (v : exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
@@ -580,3 +519,128 @@ Proof using .
     auto using ws_sort_ext_ctx.
   }
 Qed.
+
+Module Notations.
+
+  Declare Custom Entry exp.
+  Declare Custom Entry sort.
+  
+
+  Declare Custom Entry ctx.
+  Declare Custom Entry ctx_binding.
+
+  (* Since contexts are regular lists, 
+     we need a scope to determine when to print them *)
+  Declare Scope ctx_scope.
+  Bind Scope ctx_scope with ctx.
+
+  
+  (* for notation purposes *)
+  Definition as_ctx (c : ctx) := c.
+  
+  Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).
+  Notation "'{{s' e }}" := (e) (at level 0,e custom sort at level 100).
+  Notation "'{{c' e }}" := (as_ctx e) (at level 0,e custom ctx at level 100).
+  
+  Notation "{ x }" :=
+    x (in custom exp at level 0, x constr).
+  Notation "{ x }" :=
+    x (in custom sort at level 0, x constr).
+  (* TODO: issues; fix *)
+  Notation "{ x }" :=
+    x (in custom ctx at level 0, x constr).
+  
+  Notation "# c" :=
+    (con c%string [::])
+      (right associativity,in custom exp at level 0, c constr at level 0,
+                              format "# c").
+  Notation "# c" :=
+    (scon c%string [::])
+      (right associativity,in custom sort at level 0, c constr at level 0,
+                              format "# c").
+
+  Definition exp_constr_app e e' :=
+    match e with
+    | con c l => con c (e'::l)
+    | _ => con "ERR" [::]
+    end.
+
+  Definition srt_constr_app t e' :=
+    match t with
+    | scon c l => scon c (e'::l)
+    end.
+
+  Notation "c e" :=
+    (exp_constr_app c e)
+      (left associativity, in custom exp at level 10,
+                              c custom exp, e custom exp at level 9).
+  Notation "c e" :=
+    (srt_constr_app c e)
+      (left associativity, in custom sort at level 10,
+                              c custom sort, e custom exp at level 9).
+
+  Notation "( e )" := e (in custom exp at level 0, e custom exp at level 100).
+  Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
+
+  Notation "% x" :=
+    (var x%string)
+      (in custom exp at level 0, x constr at level 0, format "% x").
+
+
+  Check {{e #"foo" }}.
+  Check {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Check {{s #"foo" }}.
+  Check {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
+
+  
+  Eval compute in {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  
+  Notation "# c e1 .. en"
+    := (con c (cons en .. (cons e1 nil) ..))
+      (left associativity,
+         in custom exp at level 10,
+            c constr at level 0,
+            e1 custom exp at level 9,
+            en custom exp at level 9,
+            only printing).
+
+  Notation "# c e1 .. en"
+    := (scon c (cons en .. (cons e1 nil) ..))
+      (left associativity,
+         in custom sort at level 10,
+            c constr at level 0,
+            e1 custom exp at level 9,
+            en custom exp at level 9,
+            only printing).
+  
+  Eval compute in {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Eval compute in {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Eval compute in {{s #"foo" }}.
+                               
+
+
+  Notation "bd , .. , bd'" :=
+    (cons bd' .. (cons bd nil)..)
+      (in custom ctx at level 100, bd custom ctx_binding at level 100,
+          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : ctx_scope.
+
+  (* TODO: temporary holdover until { c } works*)
+  Notation "! c" :=
+    (c)
+      (in custom ctx at level 0,
+          c constr at level 0) : ctx_scope.
+
+  Notation "" := nil (*(@nil (string*sort))*) (in custom ctx at level 0) : ctx_scope.
+
+  Notation "x : t" :=
+    (x%string, t)
+      (in custom ctx_binding at level 100, x constr at level 0,
+          t custom sort at level 100).
+
+  Check {{c }}.
+  Check {{c "x" : #"env"}}.
+  Check {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}.
+
+  Check let c := {{c }} in {{c !c}}.
+
+End Notations.

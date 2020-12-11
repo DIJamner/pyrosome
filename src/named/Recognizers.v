@@ -70,7 +70,7 @@ Qed.
 
 Definition wf_sort_no_conv l c t : option unit :=
   match t with
-  | srt n s =>
+  | scon n s =>
     do sort_rule c' <- named_list_lookup_err l n;
     _ <- wf_args_no_conv l c s c';
     ret tt

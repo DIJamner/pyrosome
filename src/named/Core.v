@@ -6,6 +6,8 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
 From Named Require Import Exp Rule.
+Import Exp.Notations.
+Import Rule.Notations.
 Require Import String.
 
 (* I want zip to be structural on s
@@ -66,7 +68,7 @@ Transparent with_names_from.
  *)
 Inductive le_sort (l : lang) c : sort -> sort -> Prop :=
 | le_sort_by : forall name t1 t2,
-    [s> !c |- (name) !t1 = !t2] \in l ->
+    [s> !c |- (name) {t1} = {t2}] \in l ->
     le_sort l c t1 t2
 | le_sort_subst : forall s1 s2 c' t1' t2',
     le_subst l c c' s1 s2 ->
@@ -85,7 +87,7 @@ with le_term (l : lang) c : sort -> exp -> exp -> Prop :=
     le_term l c' t e1 e2 ->
     le_term l c t[/s2/] e1[/s1/] e2[/s2/]
 | le_term_by : forall name t e1 e2,
-    [:> !c |- (name) !e1 = !e2 : !t] \in l ->
+    [:> !c |- (name) {e1} = {e2} : {t}] \in l ->
     le_term l c t e1 e2
 | le_term_refl : forall t e,
     le_term l c t e e
@@ -126,7 +128,7 @@ Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
 
 Inductive wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s c' t,
-    [:| !c' |- n : !t] \in l ->
+    [:| !c' |- n : {t}] \in l ->
     wf_args l c s c' ->
     wf_term l c (con n s) t[/(with_names_from c' s)/]
 | wf_term_conv : forall e t t',
@@ -149,7 +151,7 @@ with wf_sort l c : sort -> Prop :=
 | wf_sort_by : forall n s c',
     (n, (sort_rule c')) \in l ->
     wf_args l c s c' ->
-    wf_sort l c (srt n s).
+    wf_sort l c (scon n s).
 
 Inductive wf_subst l c : subst -> ctx -> Prop :=
 | wf_subst_nil : wf_subst l c [::] [::]
@@ -256,9 +258,9 @@ Definition get_rule_ctx (r : rule) : ctx :=
 
 Definition get_rule_sort (r : rule) : sort :=
   match r with
-  | sort_rule _ => srt "ERR" [::]
+  | sort_rule _ => {{s #"ERR"}}
   | term_rule _ t => t
-  | sort_le _ _ _ => srt "ERR" [::]
+  | sort_le _ _ _ => {{s #"ERR"}}
   | term_le _ _ _ t => t
   end.
 
@@ -267,7 +269,7 @@ Lemma wf_sort_by' n l c : forall s,
     let c' := get_rule_ctx r in
     (n, (sort_rule c')) \in l ->
     wf_args l c s c' ->
-    wf_sort l c (srt n s).
+    wf_sort l c (scon n s).
 Proof using .
   intros.
   econstructor; eassumption.
@@ -1343,7 +1345,7 @@ Qed.
 
 
 Lemma unsubst_id_sort n s c
-  : all_fresh c -> len_eq s c -> (srt n s) = (srt n (map var (map fst c)))[/with_names_from c s/].
+  : all_fresh c -> len_eq s c -> (scon n s) = (scon n (map var (map fst c)))[/with_names_from c s/].
 Proof using .
   intros.
   simpl.
@@ -1374,13 +1376,13 @@ Lemma le_sort_refl' name l c : forall c' s1 s2,
     len_eq s1 c' ->
     len_eq s2 c' ->
     le_args l c c' s1 s2 ->
-    le_sort l c (srt name s1) (srt name s2).
+    le_sort l c (scon name s1) (scon name s2).
 Proof using .
   intros.
   apply rule_in_ws in H0; auto.
   simpl in *; break.
   erewrite unsubst_id_sort; eauto.
-  replace (srt name s2) with (srt name (map var (map fst c')))[/with_names_from c' s2/];
+  replace (scon name s2) with (scon name (map var (map fst c')))[/with_names_from c' s2/];
     [| erewrite <-unsubst_id_sort; eauto].
   eapply le_sort_subst.
   eapply le_args_le_subst; auto.
@@ -1391,7 +1393,7 @@ Qed.
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
     ws_lang l ->
-    [:| !c' |- name : !t'] \in l ->
+    [:| !c' |- name : {t'}] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
     t = t'[/with_names_from c' s2/] ->
@@ -1413,7 +1415,7 @@ Qed.
 
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_by' name l c : forall c' e1 e2 s1 s2 e1' e2',
-    [s> !c' |- (name) !e1 = !e2 ] \in l ->
+    [s> !c' |- (name) {e1} = {e2} ] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' -> 
     e1' = e1[/with_names_from c' s1/] ->
@@ -1429,7 +1431,7 @@ Qed.
 
 (* combines le_term_by and le_term_subst *)
 Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
-    [:> !c' |- (name) !e1 = !e2 : !t] \in l ->
+    [:> !c' |- (name) {e1} = {e2} : {t}] \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->                          
     t' = t[/with_names_from c' s2/] ->

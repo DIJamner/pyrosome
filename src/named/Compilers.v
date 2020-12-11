@@ -41,7 +41,7 @@ Fixpoint compile_term (cmp : compiler) (e : exp) : exp :=
   match e with
   | var x => var x
   | con n s =>
-    let default := sort_case [::] (srt "ERR" [::]) in
+    let default := sort_case [::] (scon "ERR" [::]) in
     let arg_terms := map (compile_term cmp) s in
     match named_list_lookup default cmp n with
     | term_case args c_case => c_case[/zip args arg_terms /]
@@ -53,12 +53,12 @@ Definition compile_args cmp := map (compile_term cmp).
 
 Definition compile_sort (cmp : compiler) (e : sort) : sort :=
   match e with
-  | srt n s =>
+  | scon n s =>
     let default := term_case [::] (con "ERR" [::]) in
     let arg_terms := compile_args cmp s in
     match named_list_lookup default cmp n with
     | sort_case args c_case => c_case[/zip args arg_terms/]
-    | _ => srt"ERR"%string [::]
+    | _ => scon"ERR"%string [::]
     end
   end.
 
@@ -296,7 +296,7 @@ Proof using .
     apply /eqP; reflexivity.
   }
   Unshelve.
-  exact (srt "ERR" [::]).
+  exact (scon "ERR" [::]).
 Qed.
 
 Lemma in_preserving_term lt cmp ls n c' t
