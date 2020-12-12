@@ -533,18 +533,9 @@ Module Notations.
      we need a scope to determine when to print them *)
   Declare Scope ctx_scope.
   Bind Scope ctx_scope with ctx.
-
-  
-  (* for notation purposes 
-     TODO: get computed ctxs to print in some format
-     (probably requires separate format from rule ctxs;
-     maybe merge with {{c}} construct?)
-   *)
-  Definition as_ctx (c : ctx) := c.
   
   Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).
   Notation "'{{s' e }}" := (e) (at level 0,e custom sort at level 100).
-  Notation "'{{c' e }}" := (as_ctx e) (at level 0,e custom ctx at level 100).
   
   Notation "{ x }" :=
     x (in custom exp at level 0, x constr).
@@ -621,7 +612,13 @@ Module Notations.
   Eval compute in {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
   Eval compute in {{s #"foo" }}.
                                
+  Bind Scope ctx_scope with ctx.
 
+  Notation "'{{c' }}" := nil (at level 0) : ctx_scope.
+  Notation "'{{c' bd , .. , bd' '}}'" :=
+    (cons bd' .. (cons bd nil)..)
+      (at level 0, bd custom ctx_binding at level 100,
+          format "'[' {{c '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : ctx_scope.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)
@@ -641,10 +638,9 @@ Module Notations.
       (in custom ctx_binding at level 100, x constr at level 0,
           t custom sort at level 100).
 
-  Check {{c }}.
-  Check {{c "x" : #"env"}}.
-  Check {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}.
-
-  Check let c := {{c }} in {{c !c}}.
+  Local Definition as_ctx (c:ctx) :=c.
+  Check (as_ctx {{c }}).
+  Check (as_ctx {{c "x" : #"env"}}).
+  Check (as_ctx {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}).
 
 End Notations.
