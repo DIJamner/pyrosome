@@ -535,7 +535,11 @@ Module Notations.
   Bind Scope ctx_scope with ctx.
 
   
-  (* for notation purposes *)
+  (* for notation purposes 
+     TODO: get computed ctxs to print in some format
+     (probably requires separate format from rule ctxs;
+     maybe merge with {{c}} construct?)
+   *)
   Definition as_ctx (c : ctx) := c.
   
   Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).

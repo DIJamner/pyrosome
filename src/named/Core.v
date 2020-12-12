@@ -68,7 +68,7 @@ Transparent with_names_from.
  *)
 Inductive le_sort (l : lang) c : sort -> sort -> Prop :=
 | le_sort_by : forall name t1 t2,
-    [s> !c |- (name) {t1} = {t2}] \in l ->
+    [s> !c |- (name) {t1} = {t2}]%rule \in l ->
     le_sort l c t1 t2
 | le_sort_subst : forall s1 s2 c' t1' t2',
     le_subst l c c' s1 s2 ->
@@ -87,7 +87,7 @@ with le_term (l : lang) c : sort -> exp -> exp -> Prop :=
     le_term l c' t e1 e2 ->
     le_term l c t[/s2/] e1[/s1/] e2[/s2/]
 | le_term_by : forall name t e1 e2,
-    [:> !c |- (name) {e1} = {e2} : {t}] \in l ->
+    [:> !c |- (name) {e1} = {e2} : {t}]%rule \in l ->
     le_term l c t e1 e2
 | le_term_refl : forall t e,
     le_term l c t e e
@@ -128,7 +128,7 @@ Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
 
 Inductive wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s c' t,
-    [:| !c' |- n : {t}] \in l ->
+    [:| !c' |- n : {t}]%rule \in l ->
     wf_args l c s c' ->
     wf_term l c (con n s) t[/(with_names_from c' s)/]
 | wf_term_conv : forall e t t',
@@ -1372,7 +1372,7 @@ Qed.
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_refl' name l c : forall c' s1 s2,
     ws_lang l ->
-    [s| !c' |- name] \in l ->
+    [s| !c' |- name]%rule \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
     le_args l c c' s1 s2 ->
@@ -1393,7 +1393,7 @@ Qed.
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_term_refl' name l c : forall c' s1 s2 t' t,
     ws_lang l ->
-    [:| !c' |- name : {t'}] \in l ->
+    [:| !c' |- name : {t'}]%rule \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->
     t = t'[/with_names_from c' s2/] ->
@@ -1415,7 +1415,7 @@ Qed.
 
 (* combines le_sort_by and le_sort_subst *)
 Lemma le_sort_by' name l c : forall c' e1 e2 s1 s2 e1' e2',
-    [s> !c' |- (name) {e1} = {e2} ] \in l ->
+    [s> !c' |- (name) {e1} = {e2} ]%rule \in l ->
     len_eq s1 c' ->
     len_eq s2 c' -> 
     e1' = e1[/with_names_from c' s1/] ->
@@ -1431,7 +1431,7 @@ Qed.
 
 (* combines le_term_by and le_term_subst *)
 Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
-    [:> !c' |- (name) {e1} = {e2} : {t}] \in l ->
+    [:> !c' |- (name) {e1} = {e2} : {t}]%rule \in l ->
     len_eq s1 c' ->
     len_eq s2 c' ->                          
     t' = t[/with_names_from c' s2/] ->

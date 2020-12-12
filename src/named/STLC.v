@@ -19,7 +19,7 @@ Require Coq.derive.Derive.
 Set Default Proof Mode "Ltac2".
 
 Definition stlc :=
-  [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
+  [::[:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
       "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B"),
       "G'" : #"env",
       "g" : #"sub" %"G'" %"G"
@@ -27,7 +27,7 @@ Definition stlc :=
       #"el_subst" %"g" (#"lambda" %"e")
       = #"lambda" (#"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
       : #"el" %"G'" (#"ty_subst" %"g" (#"->" %"A" %"B"))
-  ]::
+  ];
   [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
       "e" : #"el"%"G" (#"->" %"A" %"B"),
       "e'" : #"el" %"G" %"A",
@@ -37,7 +37,7 @@ Definition stlc :=
       #"el_subst" %"g" (#"app" %"e" %"e'")
       = #"app" (#"el_subst" %"g" %"e") (#"el_subst" %"g" %"e'")
       : #"el" %"G'" (#"ty_subst" %"g" %"B")
-  ]::
+  ];
   [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
       "G'" : #"env",
       "g" : #"sub" %"G'" %"G"
@@ -45,7 +45,7 @@ Definition stlc :=
       #"ty_subst" %"g" (#"->" %"A" %"B")
       = #"->" (#"ty_subst" %"g" %"A") (#"ty_subst" %"g" %"B")
       : #"ty" %"G'"
-  ]::
+  ];
   [:> "G" : #"env",
       "A" : #"ty"%"G",
       "B" : #"ty"%"G",
@@ -55,26 +55,26 @@ Definition stlc :=
       #"app" (#"lambda"%"e") %"e'"
       = #"el_subst" (#"snoc" #"id" %"e'") %"e"
       : #"el" %"G" %"B"
-  ]::
+  ];
   [:| "G" : #"env",
        "A" : #"ty" %"G",
        "B" : #"ty" %"G",
        "e" : #"el" %"G" (#"->" %"A" %"B"),
        "e'" : #"el" %"G" %"A"
        -----------------------------------------------
-       "app" "e" "e'" : #"el" %"G" %"B"
-  ]::
+       #"app" "e" "e'" : #"el" %"G" %"B"
+  ];
   [:| "G" : #"env",
        "A" : #"ty" %"G",
        "B" : #"ty" %"G",
        "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
        -----------------------------------------------
-       "lambda" "e" : #"el" %"G" (#"->" %"A" %"B")
-  ]::
+       #"lambda" "e" : #"el" %"G" (#"->" %"A" %"B")
+  ];
   [:| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
       -----------------------------------------------
-      "->" "t" "t'" : #"ty" %"G"
-  ]::subst_lang.
+      #"->" "t" "t'" : #"ty" %"G"
+  ]]%irule++subst_lang.
 
 Derive elab_stlc
        SuchThat (elab_lang stlc elab_stlc)

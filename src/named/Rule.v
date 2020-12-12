@@ -16,6 +16,8 @@ Inductive rule : Type :=
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
+Definition lang := named_list rule.
+
 Module Notations.
 (*
 (* TODO: get rule bar printing to work *)
@@ -39,38 +41,45 @@ Check [TMP ------------------------------------------------].
 Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
  *)
 
+  
+  Declare Scope rule_scope.
+  Bind Scope rule_scope with rule.
+  Bind Scope rule_scope with lang.
+  Delimit Scope rule_scope with rule.
 
-Notation "'[s|' G ----------------------------------------------- name 'srt' ]" :=
+Notation "'[s|' G ----------------------------------------------- # name 'srt' ]" :=
   (name%string, sort_rule G)
     (name constr at level 0,
      G custom ctx at level 100,
-     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' name  'srt' ']' '//' ] ']'").
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' # name  'srt' ']' '//' ] ']'")
+  : rule_scope.
 
 Check [s| "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"
           -----------------------------------------------
-                      "foo" srt                    ].
+                      #"foo" srt                    ]%rule.
 
 Check [s| 
           -----------------------------------------------
-                      "env" srt                    ].
+                      #"env" srt                    ]%rule.
 
           
 Notation "[:| G ----------------------------------------------- name : t ]" :=
   (name%string, term_rule G t)
     (name constr at level 0,
      G custom ctx at level 100, t custom sort at level 100,
-     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' name  '/' :  t ']' ']' '//' ] ']'").
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' name  '/' :  t ']' ']' '//' ] ']'")
+  : rule_scope.
 
 Check [:| "G" : #"env",
           "A" : #"ty" %"G",
           "B" : #"ty" %"x",
           "e" : #"el" (#"wkn" %"A" %"B")
           -----------------------------------------------
-          "lam" : #"el" (#"->" %"A" %"B")].
+          "lam" : #"el" (#"->" %"A" %"B")]%rule.
 
 Check [:|
           -----------------------------------------------
-                      "emp" : #"env"                   ].
+                      "emp" : #"env"                   ]%rule.
 
 
 Check [:| "G" : #"env",
@@ -78,33 +87,35 @@ Check [:| "G" : #"env",
            "B" : #"ty" %"x",
            "e" : #"el" (#"wkn" %"A" %"B")
            -----------------------------------------------
-           "lam" : #"el" (#"->" %"A" %"B") ].
+           "lam" : #"el" (#"->" %"A" %"B") ]%rule.
 
 Notation "'[s>' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
   (s%string, sort_le G e1 e2)
     (s constr at level 0, G custom ctx at level 100,
      e1 custom sort at level 100, e2 custom sort at level 100,
-    format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'").
+     format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'")
+  : rule_scope.
 
 
 Check [s> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           "eq" : #"ty_eq" %"G" %"A" %"B" 
           ----------------------------------------------- ("ty_eq_sort")
           #"ty" %"G" %"A" = #"ty" %"G" %"B"
-      ].
+      ]%rule.
            
 Notation "[:> G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
   (s%string, term_le G e1 e2 t)
     (s constr at level 0, G custom ctx at level 100,
      t custom sort at level 100,
      e1 custom exp at level 100, e2 custom exp at level 100, 
-    format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'").
+     format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'")
+  : rule_scope.
 
 Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           "eq" : #"ty_eq" %"G" %"A" %"B" 
           ----------------------------------------------- ("ty_eq_sort")
           %"A" = %"B" : #"ty" %"G"
-      ].
+      ]%rule.
 
 (* TODO: do I still want to allow these notations? I think so.
    If so, which by default? For now there are only parsing.
@@ -114,30 +125,32 @@ Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
 Notation "'[s|' G |- s ]" :=
   (s%string, sort_rule G)
     (s constr at level 0, G custom ctx, only parsing
-(*    format "'[  ' G '/' '|-s' s ']'").*)).
+    (*    format "'[  ' G '/' '|-s' s ']'").*))
+: rule_scope.
 
 Notation "[:| G |- s : t ]" :=
   (s%string, term_rule G t)
     (t custom sort,
      s constr at level 0, G custom ctx, only parsing
-    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*)).
+    (*format "'[  ' G '/' |- '[  ' s '/' : t ']' ']'"*))
+  : rule_scope.
 
 Notation "'[s>' G |- ( s ) e1 = e2 ]" :=
   (s%string, sort_le G e1 e2)
     (s constr at level 0, G custom ctx,
-     e1 custom sort, e2 custom sort, only parsing).
+     e1 custom sort, e2 custom sort, only parsing)
+: rule_scope.
 
 Notation "[:> G |- ( s ) e1 = e2 : t ]" :=
   (s%string, term_le G e1 e2 t)
     (s constr at level 0, G custom ctx,
-     t custom sort, e1 custom exp, e2 custom exp, only parsing).
+     t custom sort, e1 custom exp, e2 custom exp, only parsing)
+  : rule_scope.
 
-
-Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" #"baz" #"qux"].
-Check [s> |- ("eq")#"foo" = #"bar"].
+Check [:| "x" : #"foo", "y" : #"bar" |- "foo" : #"bar" #"baz" #"qux"]%rule.
+Check [s> |- ("eq")#"foo" = #"bar"]%rule.
 End Notations.
 
-Definition lang := named_list rule.
 
 Definition eq_rule r1 r2 : bool :=
   match r1, r2 with

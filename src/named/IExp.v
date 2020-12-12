@@ -104,43 +104,43 @@ Instance substable_sort : Substable sort :=
 
 Module Notations.
 
-  Declare Custom Entry exp.
-  Declare Custom Entry sort.
+  Declare Custom Entry iexp.
+  Declare Custom Entry isort.
   
 
-  Declare Custom Entry ctx.
-  Declare Custom Entry ctx_binding.
+  Declare Custom Entry ictx.
+  Declare Custom Entry ictx_binding.
 
   (* Since contexts are regular lists, 
      we need a scope to determine when to print them *)
-  Declare Scope ctx_scope.
-  Bind Scope ctx_scope with ctx.
+  Declare Scope ictx_scope.
+  Bind Scope ictx_scope with ctx.
 
   (* for notation purposes *)
-  Definition as_ctx (c : ctx) := c.
+  Definition as_ictx (c : ctx) := c.
   
-  Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).
-  Notation "'{{s' e }}" := (e) (at level 0,e custom sort at level 100).
-  Notation "'{{c' e }}" := (as_ctx e) (at level 0,e custom ctx at level 100).
+  Notation "'{{e' e }}" := (e) (at level 0,e custom iexp at level 100).
+  Notation "'{{s' e }}" := (e) (at level 0,e custom isort at level 100).
+  Notation "'{{c' e }}" := (as_ictx e) (at level 0,e custom ictx at level 100).
   
   Notation "{ x }" :=
-    x (in custom exp at level 0, x constr).
+    x (in custom iexp at level 0, x constr).
   Notation "{ x }" :=
-    x (in custom sort at level 0, x constr).
+    x (in custom isort at level 0, x constr).
   (* TODO: issues; fix *)
   Notation "{ x }" :=
-    x (in custom ctx at level 0, x constr).
+    x (in custom ictx at level 0, x constr).
   
   Notation "# c" :=
     (con c%string [::])
-      (right associativity,in custom exp at level 0, c constr at level 0,
+      (right associativity,in custom iexp at level 0, c constr at level 0,
                               format "# c").
   Notation "# c" :=
     (scon c%string [::])
-      (right associativity,in custom sort at level 0, c constr at level 0,
+      (right associativity,in custom isort at level 0, c constr at level 0,
                               format "# c").
 
-  Definition exp_constr_app e e' :=
+  Definition iexp_constr_app e e' :=
     match e with
     | con c l => con c (e'::l)
     | _ => con "ERR" [::]
@@ -152,20 +152,20 @@ Module Notations.
     end.
 
   Notation "c e" :=
-    (exp_constr_app c e)
-      (left associativity, in custom exp at level 10,
-                              c custom exp, e custom exp at level 9).
+    (iexp_constr_app c e)
+      (left associativity, in custom iexp at level 10,
+                              c custom iexp, e custom iexp at level 9).
   Notation "c e" :=
     (srt_constr_app c e)
-      (left associativity, in custom sort at level 10,
-                              c custom sort, e custom exp at level 9).
+      (left associativity, in custom isort at level 10,
+                              c custom isort, e custom iexp at level 9).
 
-  Notation "( e )" := e (in custom exp at level 0, e custom exp at level 100).
-  Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
+  Notation "( e )" := e (in custom iexp at level 0, e custom iexp at level 100).
+  Notation "( e )" := e (in custom isort at level 0, e custom isort at level 100).
 
   Notation "% x" :=
     (var x%string)
-      (in custom exp at level 0, x constr at level 0, format "% x").
+      (in custom iexp at level 0, x constr at level 0, format "% x").
 
 
   Check {{e #"foo" }}.
@@ -179,19 +179,19 @@ Module Notations.
   Notation "# c e1 .. en"
     := (con c (cons en .. (cons e1 nil) ..))
       (left associativity,
-         in custom exp at level 10,
+         in custom iexp at level 10,
             c constr at level 0,
-            e1 custom exp at level 9,
-            en custom exp at level 9,
+            e1 custom iexp at level 9,
+            en custom iexp at level 9,
             only printing).
 
   Notation "# c e1 .. en"
     := (scon c (cons en .. (cons e1 nil) ..))
       (left associativity,
-         in custom sort at level 10,
+         in custom isort at level 10,
             c constr at level 0,
-            e1 custom exp at level 9,
-            en custom exp at level 9,
+            e1 custom iexp at level 9,
+            en custom iexp at level 9,
             only printing).
   
   Eval compute in {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
@@ -202,21 +202,21 @@ Module Notations.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)
-      (in custom ctx at level 100, bd custom ctx_binding at level 100,
-          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : ctx_scope.
+      (in custom ictx at level 100, bd custom ictx_binding at level 100,
+          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : ictx_scope.
 
   (* TODO: temporary holdover until { c } works*)
   Notation "! c" :=
     (c)
-      (in custom ctx at level 0,
-          c constr at level 0) : ctx_scope.
+      (in custom ictx at level 0,
+          c constr at level 0) : ictx_scope.
 
-  Notation "" := nil (*(@nil (string*sort))*) (in custom ctx at level 0) : ctx_scope.
+  Notation "" := nil (*(@nil (string*sort))*) (in custom ictx at level 0) : ictx_scope.
 
   Notation "x : t" :=
     (x%string, t)
-      (in custom ctx_binding at level 100, x constr at level 0,
-          t custom sort at level 100).
+      (in custom ictx_binding at level 100, x constr at level 0,
+          t custom isort at level 100).
 
   Check {{c }}.
   Check {{c "x" : #"env"}}.

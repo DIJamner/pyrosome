@@ -9,7 +9,7 @@ From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
 From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore Tactics.
-Import IExp.Notations IRule.Notations.
+Import IExp.Notations IRule.Notations ARule.Notations Exp.Notations.
 Require Import String.
 
 Require Import Named.Recognizers.
@@ -50,21 +50,21 @@ Definition cat_lang : lang :=
        "f" : #"sub" %"G1" %"G2",
        "g" : #"sub" %"G2" %"G3"
        -----------------------------------------------
-       "cmp" "f" "g" : #"sub" %"G1" %"G3"
+       #"cmp" "f" "g" : #"sub" %"G1" %"G3"
   ];
   [:| "G" : #"env" 
        -----------------------------------------------
-       "id" : #"sub" %"G" %"G"
+       #"id" : #"sub" %"G" %"G"
   ];
   [s| "G" : #"env", "G'" : #"env" 
       -----------------------------------------------
-      "sub" "G" "G'" srt                     
+      #"sub" "G" "G'" srt                     
   ];
   [s|
       -----------------------------------------------
-      "env" srt
+      #"env" srt
   ]
-  ].
+  ]%irule.
 
 Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)
@@ -81,22 +81,22 @@ Instance elab_cat_lang_inst : Elaborated cat_lang :=
 
 
 Definition subst_lang' : lang :=
- [:> 
+ [::[:> 
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
-  ]::
+  ];
   [:> "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'"
        ----------------------------------------------- ("cmp_forget")
        #"cmp" %"g" #"forget" = #"forget" : #"sub" %"G" #"emp"
-  ]::
+  ];
   [:| "G" : #"env" 
       -----------------------------------------------
-      "forget" : #"sub" %"G" #"emp"
-  ]::
+      #"forget" : #"sub" %"G" #"emp"
+  ];
   [:| 
       -----------------------------------------------
-      "emp" : #"env"
-  ]::
+      #"emp" : #"env"
+  ];
   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
        "A" : #"ty" %"G3", "e" : #"el" %"G3" %"A"
@@ -104,11 +104,11 @@ Definition subst_lang' : lang :=
        #"el_subst" (#"cmp" %"f" %"g") %"e"
        = #"el_subst" %"f" (#"el_subst" %"g" %"e")
        : #"el" %"G1" (#"ty_subst" (#"cmp" %"f" %"g") %"A")
-  ]:: 
+  ]; 
   [:> "G" : #"env", "A" : #"ty" %"G", "e" : #"el" %"G" %"A"
        ----------------------------------------------- ("el_subst_id")
        #"el_subst" #"id" %"e" = %"e" : #"el" %"G" %"A"
-  ]::
+  ];
   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
        "A" : #"ty" %"G3"
@@ -116,30 +116,30 @@ Definition subst_lang' : lang :=
        #"ty_subst" (#"cmp" %"f" %"g") %"A"
        = #"ty_subst" %"f" (#"ty_subst" %"g" %"A")
        : #"ty" %"G1"
-  ]::              
+  ];              
   [:> "G" : #"env", "A" : #"ty" %"G"
        ----------------------------------------------- ("ty_subst_id")
        #"ty_subst" #"id" %"A" = %"A" : #"ty" %"G"
-  ]::
+  ];
   [:| "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'",
        "A" : #"ty" %"G'", "e" : #"el" %"G'" %"A"
        -----------------------------------------------
-       "el_subst" "g" "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
-  ]::
+       #"el_subst" "g" "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
+  ];
   [s| "G" : #"env", "A" : #"ty"(%"G")
       -----------------------------------------------
-      "el" "G" "A" srt
-  ]::
+      #"el" "G" "A" srt
+  ];
   [:| "G" : #"env", "G'" : #"env",
        "g" : #"sub" %"G" %"G'",
        "A" : #"ty" %"G'"
        -----------------------------------------------
-       "ty_subst" "g" "A" : #"ty" %"G"
-  ]::
+       #"ty_subst" "g" "A" : #"ty" %"G"
+  ];
   [s| "G" : #"env" 
       -----------------------------------------------
-      "ty" "G" srt
-  ]::cat_lang.
+      #"ty" "G" srt
+  ]]%irule++cat_lang.
 
 Derive elab_subst_lang'
        SuchThat (elab_lang subst_lang' elab_subst_lang')
@@ -196,10 +196,10 @@ Instance elab_subst_lang'_inst : Elaborated subst_lang' :=
   }.
 
 Definition subst_lang : lang :=
-   [:> "G" : #"env", "A" : #"ty" %"G"
+   [::[:> "G" : #"env", "A" : #"ty" %"G"
        ----------------------------------------------- ("snoc_wkn_hd")
        #"id" = #"snoc" #"wkn" #"hd" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
-   ]::
+   ];
    [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" %"G1" %"G2",
        "g" : #"sub" %"G2" %"G3",
@@ -209,7 +209,7 @@ Definition subst_lang : lang :=
        #"cmp" %"f" (#"snoc" %"g" %"e")
        = #"snoc" (#"cmp" %"f" %"g") (#"el_subst" %"f" %"e")
        : #"sub" %"G1" (#"ext" %"G3" %"A")
-   ]::
+   ];
    [:> "G" : #"env", "G'" : #"env",
        "g" : #"sub" %"G" %"G'",
        "A" : #"ty" %"G'",
@@ -217,32 +217,32 @@ Definition subst_lang : lang :=
        ----------------------------------------------- ("snoc_hd")
        #"el_subst" (#"snoc" %"g" %"e") #"hd" = %"e"
        : #"el" %"G" (#"ty_subst" %"g" %"A")
-  ]::
+  ];
   [:> "G" : #"env", "G'" : #"env",
       "g" : #"sub" %"G" %"G'",
       "A" : #"ty" %"G'",
       "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
       ----------------------------------------------- ("wkn_snoc")
       #"cmp" (#"snoc" %"g" %"e") #"wkn" = %"g" : #"sub" %"G" %"G'"
-  ]::
+  ];
   [:| "G" : #"env", "A" : #"ty"(%"G")
        -----------------------------------------------
-       "hd" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"A")
-  ]::
+       #"hd" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"A")
+  ];
   [:| "G" : #"env", "A" : #"ty" %"G"
        -----------------------------------------------
-       "wkn" : #"sub" (#"ext" %"G" %"A") %"G"
-  ]::
+       #"wkn" : #"sub" (#"ext" %"G" %"A") %"G"
+  ];
   [:| "G" : #"env", "G'" : #"env", "A" : #"ty" %"G'",
       "g" : #"sub" %"G" %"G'",
       "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
        -----------------------------------------------
-       "snoc" "g" "e" : #"sub" %"G" (#"ext" %"G'" %"A")
-  ]::
+       #"snoc" "g" "e" : #"sub" %"G" (#"ext" %"G'" %"A")
+  ];
   [:| "G" : #"env", "A": #"ty" %"G"
        -----------------------------------------------
-       "ext" "G" "A" : #"env"
-  ]::subst_lang'.
+       #"ext" "G" "A" : #"env"
+  ]]%irule++subst_lang'.
 
 
 Derive elab_subst_lang

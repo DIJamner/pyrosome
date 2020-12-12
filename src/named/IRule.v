@@ -16,6 +16,8 @@ Inductive rule : Type :=
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
+Definition lang := named_list rule.
+
 Module Notations.
 
 (*
@@ -41,87 +43,156 @@ Check [TMP ------------------------------------------------].
 Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
  *)
 
-Declare Custom Entry constr_conclusion.
-Notation "s e .. e'" :=
-  (s, (cons e' .. (cons e nil) ..))%string
-  (in custom constr_conclusion at level 50,
-   s constr at level 0, e constr at level 0, e' constr at level 0).
+  Declare Custom Entry iconstr_conclusion.
 
-Notation "s" := (s, @nil string)%string
-  (in custom constr_conclusion at level 50,
-   s constr at level 0).
+  Declare Scope irule_scope.
+  Bind Scope irule_scope with rule.
+  Bind Scope irule_scope with lang.
+  Delimit Scope irule_scope with irule.
+  
+Notation "# s e .. e'" :=
+  (s, (cons e' .. (cons e nil) ..))%string
+  (in custom iconstr_conclusion at level 50,
+   s constr at level 0, e constr at level 0, e' constr at level 0, format "# s  e  ..  e'").
+
+Notation "# s" := (s, @nil string)%string
+  (in custom iconstr_conclusion at level 50,
+   s constr at level 0, format "# s").
 
 
 Notation "'[s|' G ----------------------------------------------- cc 'srt' ]" :=
   (fst cc, sort_rule G (snd cc))
-    (cc custom constr_conclusion at level 100,
-     G custom ctx at level 100,
-     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' cc  'srt' ']' '//' ] ']'").
+    (cc custom iconstr_conclusion at level 100,
+     G custom ictx at level 100,
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' cc  'srt' ']' '//' ] ']'")
+  : irule_scope.
+
+
+Notation "'[s|' G ----------------------------------------------- # n 'srt' ]" :=
+  (n%string, sort_rule G [::])
+    (n constr at level 0,
+     G custom ictx at level 100,
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' # n  'srt' ']' '//' ] ']'",
+    only printing)
+  : irule_scope.
+
+
+Notation "'[s|' G ----------------------------------------------- # n a .. a' 'srt' ]" :=
+  (n%string, sort_rule G (cons a' .. (cons a nil) .. )%string)
+    (n constr at level 0,
+     G custom ictx at level 100,
+     a constr at level 0, a' constr at level 0,
+     format "'[' [s|  '[' G '//' ----------------------------------------------- '//' # n  a  ..  a'  'srt' ']' '//' ] ']'", only printing)
+  : irule_scope.
 
 Check [s| "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"
           -----------------------------------------------
-                      "foo" "y" "z" srt                    ].
+                      #"foo" "y" "z" srt                    ]%irule.
+
+Eval compute in
+    [s| "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"
+          -----------------------------------------------
+                      #"foo" "y" "z" srt                    ]%irule.
 
 Check [s| 
           -----------------------------------------------
-                      "env" srt                    ].
+            #"env" srt                    ]%irule.
+
+
+Eval compute in
+    [s| 
+          -----------------------------------------------
+            #"env" srt                    ]%irule.
+
 
           
 Notation "[:| G ----------------------------------------------- cc : t ]" :=
   (fst cc, term_rule G (snd cc) t)
-    (cc custom constr_conclusion at level 100,
-     G custom ctx at level 100, t custom sort at level 100,
-     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' :  t ']' ']' '//' ] ']'").
+    (cc custom iconstr_conclusion at level 100,
+     G custom ictx at level 100, t custom isort at level 100,
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' :  t ']' ']' '//' ] ']'")
+  : irule_scope.
+
+
+Notation "'[:|' G ----------------------------------------------- # n : t ]" :=
+  (n%string, term_rule G [::] t)
+    (n constr at level 0,
+     G custom ictx at level 100, t custom isort at level 100,
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' # n  :  t ']' '//' ] ']'",
+    only printing)
+  : irule_scope.
+
+
+Notation "'[:|' G ----------------------------------------------- # n a .. a' : t ]" :=
+  (n%string, term_rule G (cons a' .. (cons a nil) .. )%string t)
+    (n constr at level 0,
+     a constr at level 0, a' constr at level 0,
+     G custom ictx at level 100, t custom isort at level 100,
+     format "'[' [:|  '[' G '//' ----------------------------------------------- '//' # n  a  ..  a'  :  t ']' '//' ] ']'", only printing)
+  : irule_scope.
 
 Check [:| "G" : #"env",
           "A" : #"ty" %"G",
           "B" : #"ty" %"x",
           "e" : #"el" (#"wkn" %"A" %"B")
           -----------------------------------------------
-          "lam" "A" "e" : #"el" (#"->" %"A" %"B")].
+          #"lam" "A" "e" : #"el" (#"->" %"A" %"B")]%irule.
+
+Eval compute in
+     [:| "G" : #"env",
+          "A" : #"ty" %"G",
+          "B" : #"ty" %"x",
+          "e" : #"el" (#"wkn" %"A" %"B")
+          -----------------------------------------------
+          #"lam" "A" "e" : #"el" (#"->" %"A" %"B")]%irule.
+
 
 Check [:|
           -----------------------------------------------
-                      "emp" : #"env"                   ].
+                      #"emp" : #"env"                   ]%irule.
 
+
+Eval compute in
+     [:|
+          -----------------------------------------------
+          #"emp" : #"env"                   ]%irule.
 
 Check [:| "G" : #"env",
            "A" : #"ty" %"G",
            "B" : #"ty" %"x",
            "e" : #"el" (#"wkn" %"A" %"B")
            -----------------------------------------------
-           "lam" "e" : #"el" (#"->" %"A" %"B") ].
+           #"lam" "e" : #"el" (#"->" %"A" %"B") ]%irule.
 
 Notation "'[s>' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
   (s%string, sort_le G e1 e2)
-    (s constr at level 0, G custom ctx at level 100,
-     e1 custom sort at level 100, e2 custom sort at level 100,
-    format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'").
+    (s constr at level 0, G custom ictx at level 100,
+     e1 custom isort at level 100, e2 custom isort at level 100,
+     format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'")
+  : irule_scope.
 
 
 Check [s> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           "eq" : #"ty_eq" %"G" %"A" %"B" 
           ----------------------------------------------- ("ty_eq_sort")
           #"ty" %"G" %"A" = #"ty" %"G" %"B"
-      ].
+      ]%irule.
            
 Notation "[:> G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
   (s%string, term_le G e1 e2 t)
-    (s constr at level 0, G custom ctx at level 100,
-     t custom sort at level 100,
-     e1 custom exp at level 100, e2 custom exp at level 100, 
-    format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'").
-
+    (s constr at level 0, G custom ictx at level 100,
+     t custom isort at level 100,
+     e1 custom iexp at level 100, e2 custom iexp at level 100, 
+     format "'[' [:>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' '/'  :  t ']' '//' ] ']'")
+  : irule_scope.
 
 Check [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
           "eq" : #"ty_eq" %"G" %"A" %"B" 
           ----------------------------------------------- ("ty_eq_sort")
           %"A" = %"B" : #"ty" %"G"
-      ].
+      ]%irule.
 
 End Notations.
-
-Definition lang := named_list rule.
 
 (*
 Definition ws_rule (r : rule) : bool :=
