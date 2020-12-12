@@ -43,8 +43,6 @@ Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
 
   
   Declare Scope rule_scope.
-  Bind Scope rule_scope with rule.
-  Bind Scope rule_scope with lang.
   Delimit Scope rule_scope with rule.
 
 Notation "'[s|' G ----------------------------------------------- # name 'srt' ]" :=

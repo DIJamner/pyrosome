@@ -46,8 +46,6 @@ Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
   Declare Custom Entry iconstr_conclusion.
 
   Declare Scope irule_scope.
-  Bind Scope irule_scope with rule.
-  Bind Scope irule_scope with lang.
   Delimit Scope irule_scope with irule.
   
 Notation "# s e .. e'" :=

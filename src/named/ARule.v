@@ -47,8 +47,6 @@ Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
 
   
   Declare Scope arule_scope.
-  Bind Scope arule_scope with rule.
-  Bind Scope arule_scope with lang.
   Delimit Scope arule_scope with arule.
 
   (* TODO: is there a better way to do this that doesn't affect list parsing?

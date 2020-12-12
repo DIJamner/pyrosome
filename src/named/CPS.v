@@ -10,6 +10,7 @@ Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
 From Named Require Import Exp.
 From Named Require Import IExp IRule ICore ICompilers Subst STLC Tactics.
+Import Exp.Notations IExp.Notations IRule.Notations ARule.Notations.
 Require Import String.
 
 
@@ -18,16 +19,16 @@ Require Coq.derive.Derive.
 Set Default Proof Mode "Ltac2".
 
 Definition stlc_bot :=
-  [:> "G" : #"env",
+  [::[:> "G" : #"env",
       "G'" : #"env",
       "g" : #"sub" %"G'" %"G"
       ----------------------------------------------- ("bot_subst")
       #"ty_subst" %"g" #"bot" = #"bot" : #"ty" %"G'"
-  ]::
+  ];
   [:| "G" : #"env"
       -----------------------------------------------
-      "bot" : #"ty" %"G"
-  ]::stlc.
+      #"bot" : #"ty" %"G"
+  ]]%irule++stlc.
   
 Derive elab_stlc_bot
        SuchThat (elab_lang stlc_bot elab_stlc_bot)
@@ -67,7 +68,7 @@ Fixpoint id_compiler (l : ARule.lang) : compiler :=
 Fixpoint eid_compiler (l : ARule.lang) : Compilers.compiler :=
   match l with
   | (n,ARule.sort_rule c args)::l' =>
-    (n,Compilers.sort_case (map fst c) (Exp.srt n (map Exp.var (map fst c))))
+    (n,Compilers.sort_case (map fst c) (Exp.scon n (map Exp.var (map fst c))))
       ::(eid_compiler l')
   | (n,ARule.term_rule c args _)::l' =>
     (n,Compilers.term_case (map fst c) (Exp.con n (map Exp.var (map fst c))))
@@ -167,23 +168,22 @@ Fixpoint wkn_n n e :=
   match n with
   | 0 => e
   | n'.+1 =>
-    let e' := wkn_n n' e in
-    {{e #"el_subst" #"wkn" !e'}}
+    {{e #"el_subst" #"wkn" {wkn_n n' e} }}
   end.
 
 Definition let_bind e k :=
-  {{e #"app" !e (#"snoc" #"id" (#"lambda" !k))}}.
+  {{e #"app" {e} (#"snoc" #"id" (#"lambda" {k}))}}.
 
 Definition ret_val v :=
-  {{e #"lambda" (#"app" #"hd" (#"el_subst" #"wkn" !v))}}.
+  {{e #"lambda" (#"app" #"hd" (#"el_subst" #"wkn" {v}))}}.
 
 (* TODO: I'm embedding full terms into inferred terms; need to make work.
    Add escape hatch constr?*)
 
 Definition double_neg t :=
-    {{e #"->" (#"->" !t #"bot") #"bot"}}.  
+    {{e #"->" (#"->" {t} #"bot") #"bot"}}.  
 
-Definition lam e := {{e #"lambda" !e}}.
+Definition lam e := {{e #"lambda" {e} }}.
 
 Definition lookup_args l n :=
   get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
@@ -202,10 +202,9 @@ Definition cps (c : string) (args : list string) : exp :=
     lam
       (let_bind (wkn_n 1 (var e1))
       (let_bind (wkn_n 2 (var e2))
-      {{e #"app" !k (#"app" !x1 !x2)}}))
+      {{e #"app" {k} (#"app" {x1} {x2})}}))
   | _,_ => con c (map var (lookup_args elab_stlc c))
   end%string.
-
 
 Derive elab_cps
        SuchThat (elab_preserving_compiler elab_stlc_bot (make_compiler cps_sort cps (strip_args elab_stlc)) elab_cps elab_stlc)
@@ -224,7 +223,7 @@ Proof.
     try (solve [ repeat(simpl; step_elab())
                | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
   {
-    
+   
     cbn.
     TODO: curr. proof missing weakenings inside cont type in Gamma
     apply elab_term_by'; repeat (cbn;step_elab()).
