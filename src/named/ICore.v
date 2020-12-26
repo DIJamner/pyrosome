@@ -54,7 +54,7 @@ with elab_args l c : list IExp.exp -> list string -> list exp -> ctx -> Prop :=
 | elab_args_cons_ex : forall s args es c' name e ee t,
     fresh name c' ->
     elab_term l c e ee t[/with_names_from c' es/] ->
-    (* these arguments is last so that proof search unifies existentials
+    (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
     elab_args l c s args es c' ->
     wf_sort (strip_args l) c' t ->
@@ -62,7 +62,7 @@ with elab_args l c : list IExp.exp -> list string -> list exp -> ctx -> Prop :=
 | elab_args_cons_im : forall s args es c' name e ee t,
     fresh name c' ->
     elab_term l c e ee t[/with_names_from c' es/] ->
-    (* these arguments is last so that proof search unifies existentials
+    (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
     elab_args l c s args es c' ->
     wf_sort (strip_args l) c' t ->
@@ -75,7 +75,7 @@ Inductive elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_cons_ex : forall s es c' name e ee t,
     fresh name c' ->
     elab_term l c e ee t[/es/] ->
-    (* these arguments is last so that proof search unifies existentials
+    (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
     elab_subst l c s es c' ->
     wf_sort (strip_args l) c' t ->
@@ -83,7 +83,7 @@ Inductive elab_subst l c : IExp.subst -> subst -> ctx -> Prop :=
 | elab_subst_cons_im : forall s es c' name e ee t,
     fresh name c' ->
     elab_term l c e ee t[/es/] ->
-    (* these arguments is last so that proof search unifies existentials
+    (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
     elab_subst l c s es c' ->
     wf_sort (strip_args l) c' t ->
