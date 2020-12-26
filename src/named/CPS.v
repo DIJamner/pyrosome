@@ -10,7 +10,7 @@ Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
 From Named Require Import Exp.
 From Named Require Import IExp IRule ICore ICompilers Subst STLC Tactics.
-Import Exp.Notations IExp.Notations IRule.Notations ARule.Notations.
+Import IExp.Notations IRule.Notations ARule.Notations.
 Require Import String.
 
 
@@ -172,18 +172,22 @@ Fixpoint wkn_n n e :=
   end.
 
 Definition let_bind e k :=
-  {{e #"app" {e} (#"snoc" #"id" (#"lambda" {k}))}}.
+  {{e #"app" {e} (#"lambda" {k})}}.
+Arguments let_bind e k/.
 
 Definition ret_val v :=
   {{e #"lambda" (#"app" #"hd" (#"el_subst" #"wkn" {v}))}}.
+Arguments ret_val v/.
 
 (* TODO: I'm embedding full terms into inferred terms; need to make work.
    Add escape hatch constr?*)
 
-Definition double_neg t :=
-    {{e #"->" (#"->" {t} #"bot") #"bot"}}.  
+Definition double_neg t : exp :=
+  {{e #"->" (#"->" {t} #"bot") #"bot"}}.
+Arguments double_neg t /.
 
 Definition lam e := {{e #"lambda" {e} }}.
+Arguments lam e/.
 
 Definition lookup_args l n :=
   get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
@@ -206,6 +210,90 @@ Definition cps (c : string) (args : list string) : exp :=
   | _,_ => con c (map var (lookup_args elab_stlc c))
   end%string.
 
+Require Import Recognizers.
+
+Ltac2 has_evar (c : constr) :=
+  Control.plus (fun ()=> ltac1:(c|-has_evar c) (Ltac1.of_constr c); true)
+               (fun _=> false).
+
+Ltac2 reflexivity_no_evars () :=
+  match! goal with
+    [|- _ ?a ?b] =>
+    match Bool.or (has_evar a) (has_evar b) with
+    | true => Control.backtrack_tactic_failure "found evars in goal terms"
+    | false => reflexivity
+    end
+  end.
+
+Check Core.wf_term_conv.
+(*TODO: I think I should make sure this never errors, might
+  be what's causing double-repeat issues*)
+Ltac2 step_elab () :=
+  lazy_match! goal with
+  | [|- elab_lang nil _] => constructor
+  | [|- elab_lang _ _] => Control.plus (fun () => apply elab_pf) (fun _ => constructor)
+  | [|- elab_rule _ _ _] => constructor
+  | [|- elab_ctx _ _ _] => constructor
+  | [|- elab_args _ _ _ _ _ [::]] => apply elab_args_nil
+  | [|- elab_args _ _ _ (?n::_) _ ((?n,?t)::_)] =>
+      apply elab_args_cons_ex
+  | [|- elab_args _ _ _ _ _ ((?n,?t)::_)] =>
+      eapply elab_args_cons_im
+  (* special case to force existentials to the empty list*)
+  | [|- elab_subst _ _ _ (with_names_from [::] ?l) [::]] =>
+        assert ($l = [::]) > [reflexivity | apply elab_subst_nil]
+  | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
+  | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
+      apply elab_subst_cons_ex > [solve_fresh ()| | |]
+  | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
+      eapply elab_subst_cons_im > [solve_fresh ()| | |]
+  | [|- elab_sort _ _ _ _] => apply elab_sort_by'
+  | [|- Core.le_args _ _ _ _ _] =>constructor
+  (* TODO: tmp; try shelving any wfness side-conditions; do elab first*)
+  | [|- Core.wf_args _ _ _ _] =>(*first [apply wf_args_no_conv_recognizes; vm_compute; reflexivity
+                                      | apply Core.wf_args_cons
+                                      | apply Core.wf_args_nil]*) Control.shelve()
+  | [|- Core.wf_subst _ _ _ _] =>(*constructor*) Control.shelve()
+  | [|- Core.wf_sort _ _ _] => (*first [apply wf_sort_no_conv_recognizes; vm_compute; reflexivity
+                                     | apply Core.wf_sort_by']*) Control.shelve()
+  | [|- Core.wf_term _ _ (Exp.var _) _] => (*(*TODO: potential eargerness here*)apply Core.wf_term_var*) Control.shelve()
+  | [|- Core.wf_term _ _ ?t _] =>(*
+    match (is_evar t) with
+    | true => Control.shelve()
+    | false => try (solve[apply wf_term_no_conv_recognizes; vm_compute; reflexivity])
+    end*) Control.shelve()
+    (*eapply Core.wf_term_conv> [ | eapply Core.wf_term_by' | ]*)
+  | [|- elab_term _ _ (var _) _ _] =>
+    eapply elab_term_conv > [apply elab_term_var; solve_in() |..]
+  | [|- elab_term _ _ _ (Exp.var _) _] => 
+    eapply elab_term_conv > [apply elab_term_var; solve_in() |..]
+  | [|- elab_term _ _ (con _ _) _ _] => 
+    eapply elab_term_conv > [apply elab_term_by' |..]
+  | [|- elab_term _ _ _ (Exp.con _ _) _] => 
+    eapply elab_term_conv > [apply elab_term_by' |..]
+  | [|- elab_term _ _ ?e ?ee _] =>
+    match Bool.and (is_evar e) (is_evar ee) with
+    | true => Control.shelve()
+    | false => ()
+    end
+  | [|- is_true((?n,?e)\in ?l)]=> 
+      assert ($e = named_list_lookup $e $l $n); vm_compute; solve[auto]
+  | [|- is_true (_ \in _)] => solve_in ()
+  | [|- is_true (fresh _ _)] => solve_fresh ()
+  | [|- is_true (_ \notin _)] => solve_fresh ()
+  | [|- is_true (subseq _ _)] => vm_compute; reflexivity
+  | [|- is_true true] => reflexivity
+  | [|- len_eq _ _] => constructor  
+  | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])
+  | [|- Core.le_term _ _ _ _ _]=>
+    try (solve[apply Core.le_term_by_nameless; vm_compute; reflexivity
+              | reflexivity_no_evars ()])
+  | [|- Core.le_sort _ _ _ _]=>
+    try (solve[apply Core.le_sort_by_nameless; vm_compute; reflexivity
+              | reflexivity_no_evars()])
+end.
+
+Import Exp.Notations.
 Derive elab_cps
        SuchThat (elab_preserving_compiler elab_stlc_bot (make_compiler cps_sort cps (strip_args elab_stlc)) elab_cps elab_stlc)
        As elab_cps_pf.
@@ -219,7 +307,156 @@ Proof.
   | [ |-  elab_preserving_compiler _ _ _ _]=>
     constructor
   | [|-_] => simpl; step_elab()
-          end);
+          end); repeat (simpl; step_elab()).
+
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+  }
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    symmetry.
+    eapply Core.le_term_trans.
+    symmetry.
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+    eapply Core.le_term_refl'; repeat(simpl; step_elab()).
+    (* making choices here*)
+    symmetry.
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+  }
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    eapply Core.le_term_trans.
+    symmetry.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+    eapply Core.le_term_trans.
+    symmetry.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+    eapply Core.le_term_trans.
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+    eapply Core.le_term_refl'; repeat(simpl; step_elab()).
+    {
+      eapply Core.le_term_trans.
+      eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+      eapply Core.le_term_trans.
+      eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+      (* makes choices*)
+      reflexivity.
+    }
+    {
+      eapply Core.le_term_trans.
+      eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+      eapply Core.le_term_trans.
+      eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat(simpl; step_elab()).
+      (* makes choices*)
+      reflexivity.
+    }
+  }
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    symmetry.
+    eapply Core.le_term_trans.
+    eapply (Core.le_term_by' "ty_subst_id"%string); repeat(simpl; step_elab()).
+    symmetry.
+    (* TODO: makes choices*)
+    simpl.
+ee    reflexivity.
+  }
+  {
+    TODO: issue here
+      
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+  }
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+
+  {
+    eapply Core.le_sort_refl'; repeat(simpl; step_elab()).
+    
+    eapply (Core.le_term_by' "->_subst"%string); repeat(simpl; step_elab()).
+  }
+  simpl.
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  eapply Core.wf_term_conv> [|apply Core.wf_term_by'|]; repeat (simpl; step_elab()); repeat (simpl; step_elab()).
+  simpl.
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  progress (repeat (simpl; step_elab())).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  repeat (simpl; step_elab()).
+  (repeat (simpl; step_elab())).
+  (repeat (simpl; step_elab())).
+  (repeat (simpl; step_elab())).
+  (repeat (simpl; step_elab())).
+  (repeat (simpl; step_elab())).
+  (repeat (simpl; step_elab())).
+  simpl.
+  repeat (simpl; step_elab()).
     try (solve [ repeat(simpl; step_elab())
                | repeat(apply elab_term_by'; repeat (simpl;step_elab()))]).
   {

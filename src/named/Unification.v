@@ -16,63 +16,131 @@ From Named Require Import Exp Rule Core.
 *)
 Require IExp IRule ICore.
 Require Import ARule.
+Require Import UExp.
+Require Import ZArith.
 
-(*TODO: this is hacky, but easier to draft this way for now 
-  TODO: sort vars still have to be done differently
-*)
-Definition cvar s := var (String Ascii.zero s).
-Definition uvar s := var (String Ascii.Beep s).
+Record uvar_data := mkuvar {
+  uvar_name: string (* for humans*);
+  uvar_ident: N;
+  uvar_subst : subst}.
 
-Variant usort := uscon (n : string) (s: list exp) | usvar (x:string).
+Definition uvar_from_data (d : uvar_data) : exp :=
+  let (n,i,s):= d in uvar n i s.
+
+
+Definition suvar_from_data (d : uvar_data) : sort :=
+  let (n,i,s):= d in suvar n i s.
 
 Variant unif_clause :=
-| unif_wf_term (c:ctx) (x:string) (t:usort)
-| unif_le_term (x:string) (e : exp)
-| unif_wf_sort (c:ctx) (x:string)
-| unif_le_sort (x : string) (t : usort).
+| unif_wf_term (c:ctx)  (x : uvar_data) (t:sort)
+| unif_le_term (c:ctx) (e1 e2 : exp) (t:sort)
+| unif_wf_sort (c:ctx) (x:uvar_data)
+| unif_le_sort (c:ctx) (t1 t2 : sort).
 
 Definition with_unification (A : Set) : Set :=
-  option (A * list unif_clause).
+  N -> list unif_clause -> option (A * list unif_clause * N).
 
-Definition add_clauses uc : with_unification unit :=
-  Some (tt, uc).
+Definition add_clauses uc' : with_unification unit :=
+  fun n uc => Some (tt, uc'++uc,n).
 
-Definition add_clause uc : with_unification unit :=
-  Some (tt, [::uc]).
+Definition add_clause uc' : with_unification unit :=
+  fun n uc => Some (tt, uc'::uc, n).
 
-(*TODO: this may not be quite right for wf term, wf sort; 
- wf_term should be inductive, return non-unit*)
-Parameter add_unif_wf_term : ctx -> string -> usort -> with_unification unit.
-Parameter add_unif_wf_sort : ctx -> string -> with_unification unit.
-Parameter add_unif_le_term : ctx -> exp -> exp -> usort -> with_unification unit.
-Parameter add_unif_le_sort : ctx -> usort -> usort -> with_unification unit.
 
 Instance unification_monad : Monad with_unification :=
   {
-  Mret _ e := Some (e,[::]);
-  Mbind _ _ f me :=
-    match me with
-    | Some (e, ucs) =>
-      Option.map (fun p:(_*_) => let (e,l):= p in (e,ucs++l)) (f e)
+  Mret _ e := fun n uc => Some (e,uc,n);
+  Mbind _ _ f me n uc :=
+    match me n uc with
+    | Some (e, ucs,n') => (f e n' ucs)
     | None => None
     end;
-  Mfail _ := None
+  Mfail _ := fun _ _ => None
   }.
 
 Definition lookup_rule l n : with_unification rule :=
   match named_list_lookup_err l n with
-  | Some r => Some (r,[::])
-  | None => None
+  | Some r => fun n uc => Some (r,uc,n)
+  | None => fun _ _ => None
   end.
 
-Parameter elab_args_unif
-  : lang -> ctx -> list string -> list exp -> ctx -> with_unification (list exp).
 
-Definition elab_sort_unif (l : lang) (c : ctx) (t : sort)
-  : with_unification usort :=
+Definition newvar_with_subst (x : string) s : with_unification uvar_data :=
+  fun n uc => Some ((mkuvar x n s), uc,(n+1)%N).
+
+Definition newvar (x : string) (args : list string) : with_unification uvar_data :=
+  newvar_with_subst x (map (fun y => (y, var y)) args).
+
+
+Fixpoint exp_from_core (e : Exp.exp) : exp :=
+  match e with
+  | Exp.var x => var x
+  | Exp.con n s => con n (map exp_from_core s)
+  end.
+
+Definition sort_from_core t : sort :=
   match t with
-  | srt n s =>
-    (do (sort_rule c' args) <?- lookup_rule l n;
-       es <- elab_args_unif l c args s c';
-       ret (srt n es))
+  | Exp.scon n s => scon n (map exp_from_core s)
+  end.
+
+Definition ctx_from_core : Exp.ctx -> ctx := named_map sort_from_core.
+    
+Fixpoint elab_args_unif_fuel l c args s c' (fuel:nat) {struct fuel} : with_unification (list exp) :=
+  match c',args, s, fuel with
+  | [::],[::],[::],_ => do ret [::]
+  | (n,t)::c'',[::],[::],fuel'.+1 =>
+    do es <- elab_args_unif_fuel l c args s c'' fuel';
+       n_fr <- newvar n (map fst c);
+       tt <- add_clause (unif_wf_term c n_fr (t:sort)[/with_names_from c'' es/]);
+       ret ((uvar_from_data n_fr)::es)
+  | (n,t)::c'', a::args',e::s', fuel'.+1 =>
+    if n == a
+    then do es <- elab_args_unif_fuel l c args' s' c'' fuel';
+            ee <- elab_term_unif_fuel l c e t[/with_names_from c'' es/] fuel';
+            ret (ee::es)
+    else 
+    do es <- elab_args_unif_fuel l c args s c'' fuel';
+       n_fr <- newvar n (map fst c);
+       tt <- add_clause (unif_wf_term c n_fr (t:sort)[/with_names_from c'' es/]);
+       ret ((uvar_from_data n_fr)::es)
+  | _, _,_,_ => Mfail
+end
+with elab_term_unif_fuel (l:lang) c (e:IExp.exp) t (fuel : nat) : with_unification exp :=
+       match e, fuel with
+       | IExp.var x, _ => do ret (var x)
+       | IExp.con n s, fuel'.+1 =>
+         do (term_rule c' args t') <?- lookup_rule l n;
+            es <- elab_args_unif_fuel l c args s (ctx_from_core c') fuel';
+            tt <- let t'' := (sort_from_core t')[/with_names_from c' es/] in
+                  add_clause (unif_le_sort c t t'');
+            ret (con n es)
+       | _, _ => Mfail (*TODO: ann?*)
+         end.
+
+Definition elab_args_unif l c args s c' :=
+  elab_args_unif_fuel l c args s c' 0. (* TODO: how much fuel is enough?*)
+
+Definition elab_term_unif l c e t :=
+  elab_term_unif_fuel l c e t 0.  (* TODO: how much fuel is enough?*)
+                                           
+
+Definition elab_sort_unif (l : lang) (c : ctx) (t : IExp.sort)
+  : with_unification sort :=
+  match t with
+  | IExp.scon n s =>
+    do (sort_rule c' args) <?- lookup_rule l n;
+       es <- elab_args_unif l c args s (ctx_from_core c');
+       ret (scon n es)
 end.
+
+Record answer :Set := {
+  fill_uvar :N -> exp;
+  fill_suvar : N-> sort;
+}.
+
+Inductive satisfying_answer (l : (a : answer) : list unif_clause -> Prop :=
+| satisfying_nil : satisfying_answer a [::]
+| satisfying_wf_sort : forall,
+    satisfying_answer a l ->
+    satisfying_answer a (unif_wf_sort.
+

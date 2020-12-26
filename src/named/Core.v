@@ -44,14 +44,6 @@ Proof using.
   cbn; f_equal.
 Qed.*)
 
-Fixpoint with_names_from  (c : ctx) (l : list exp) : subst :=
-  match c, l with
-  | [::],_ => [::]
-  | _,[::] => [::]
-  | (n,_)::c',e::l' =>
-    (n,e)::(with_names_from c' l')
-  end.
-Transparent with_names_from.
 
 (* We could embed well-scopedness in bool, but well-typedness can be undecideable,
    so we leave it in Prop.
@@ -423,7 +415,7 @@ Hint Resolve le_subst_subst : judgment.
 Definition le_subst_term l c := proj2 (proj2 (mono_le_subst l c)).
 Hint Resolve le_subst_term : judgment.
 
-Lemma with_names_from_args_subst c' s' s
+Lemma with_names_from_args_subst (c':ctx) s' (s : list exp)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof using .
   elim: c' s; intros until s; case: s; intros; break; simpl in *; auto.
@@ -431,7 +423,7 @@ Proof using .
   by fold_Substable.
 Qed.
 
-Lemma map_fst_with_names_from c s
+Lemma map_fst_with_names_from (c:ctx) (s : list exp)
   : size s = size c -> map fst (with_names_from c s) = map fst c.
 Proof using .
   elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
@@ -441,7 +433,7 @@ Proof using .
   }
 Qed.
 
-Lemma map_snd_with_names_from c s
+Lemma map_snd_with_names_from  (c:ctx) (s : list exp)
   : size s = size c -> map snd (with_names_from c s) = s.
 Proof using .
   elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
@@ -1296,7 +1288,7 @@ Proof using .
   elim; intros; simpl in *; auto.
 Qed.
 
-Lemma unsubst_id s c
+Lemma unsubst_id s (c : ctx)
   : all_fresh c -> len_eq s c -> s = (map var (map fst c))[/with_names_from c s/].
 Proof using .
   elim: s c; intros until c; case: c.
@@ -1344,7 +1336,7 @@ Proof using .
 Qed.
 
 
-Lemma unsubst_id_sort n s c
+Lemma unsubst_id_sort n s (c : ctx)
   : all_fresh c -> len_eq s c -> (scon n s) = (scon n (map var (map fst c)))[/with_names_from c s/].
 Proof using .
   intros.
@@ -1353,7 +1345,7 @@ Proof using .
   by apply unsubst_id.
 Qed.
 
-Lemma unsubst_id_term n s c
+Lemma unsubst_id_term n s (c : ctx)
   : all_fresh c -> len_eq s c -> (con n s) = (con n (map var (map fst c)))[/with_names_from c s/].
 Proof using .
   intros.

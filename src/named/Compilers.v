@@ -206,7 +206,7 @@ Qed.
 
 (*TODO: move to core*)
 
-Lemma with_names_from_nil_r c : with_names_from c [::] = [::].
+Lemma with_names_from_nil_r (c : ctx) : with_names_from c (@nil exp) = [::].
 Proof.
   case: c; simpl; auto; case; auto.
 Qed.

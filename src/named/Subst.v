@@ -9,7 +9,7 @@ From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
 From Named Require Import Exp ARule.
 From Named Require Import IExp IRule ICore Tactics.
-Import IExp.Notations IRule.Notations ARule.Notations Exp.Notations.
+Import IExp.Notations IRule.Notations ARule.Notations Exp.Notations. (* TODO: Rule.Notations.*)
 Require Import String.
 
 Require Import Named.Recognizers.

@@ -439,3 +439,13 @@ Proof using .
     }
   }
 Qed.
+
+
+Fixpoint with_names_from {A B:Set} (c : named_list_set A) (l : list B) : named_list_set B :=
+  match c, l with
+  | [::],_ => [::]
+  | _,[::] => [::]
+  | (n,_)::c',e::l' =>
+    (n,e)::(with_names_from c' l')
+  end.
+Transparent with_names_from.

@@ -22,14 +22,14 @@ Notation "p <- e ; b" :=
   (Mbind (fun p => b) e)
     (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
-(* Uses the partiality of fail toperform additional matching where desired *)
+(* Uses the partiality of fail to perform additional matching where desired *)
 Notation "p <?- e ; b" :=
   (Mbind (fun x => match x with p => b | _ => Mfail end) e)
     (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
-Notation "'ret' e" := (Some e) (in custom monadic_do at level 90, e constr).
+Notation "'ret' e" := (Mret e) (in custom monadic_do at level 90, e constr).
 
-Notation "e" := (e) (in custom monadic_do at level 80, e constr at level 80).
+(*Notation "e" := (e) (in custom monadic_do at level 80, e constr at level 80).*)
 
 Notation "! e ; b" :=
   (if e then b else Mfail)

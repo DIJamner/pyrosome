@@ -70,7 +70,7 @@ Ltac2 step_elab () :=
   | [|- elab_args _ _ _ _ _ ((?n,?t)::_)] =>
       eapply elab_args_cons_im
   (* special case to force existentials to the empty list*)
-  | [|- elab_subst _ _ _ (Core.with_names_from [::] ?l) [::]] =>
+  | [|- elab_subst _ _ _ (with_names_from [::] ?l) [::]] =>
         assert ($l = [::]) > [reflexivity | apply elab_subst_nil]
   | [|- elab_subst _ _ _ _ [::]] => apply elab_subst_nil
   | [|- elab_subst _ _ ((?n,?e)::_) ((?n,?ee)::_) ((?n,?t)::_)] =>
