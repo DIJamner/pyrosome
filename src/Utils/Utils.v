@@ -449,3 +449,13 @@ Fixpoint with_names_from {A B:Set} (c : named_list_set A) (l : list B) : named_l
     (n,e)::(with_names_from c' l')
   end.
 Transparent with_names_from.
+
+Fixpoint subseq {A : eqType} (s l : list A) : bool :=
+  match s,l with
+  | [::],_ => true
+  | sa::s', [::] => false
+  | sa::s', la::l' =>
+    if sa == la then subseq s' l'
+    else subseq s l'
+  end.
+

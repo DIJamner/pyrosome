@@ -11,6 +11,159 @@ From Named Require Import Core Exp ARule.
 
 Require Import String.
 
+Module IndependentJudgment.
+
+  (*These use Exp and ARule for inferred terms;
+    I have yet to use ann, so maybe give it up for now?*)
+  
+ Inductive le_sort (l : lang) c : sort -> sort -> Prop :=
+ | le_sort_by : forall name t1 t2,
+     (name, sort_le c t1 t2) \in l ->
+                                 le_sort l c t1 t2
+ | le_sort_subst : forall s1 s2 c' t1' t2',
+     le_subst l c c' s1 s2 ->
+     le_sort l c' t1' t2' ->
+     le_sort l c t1'[/s1/] t2'[/s2/]
+ | le_sort_refl : forall t,
+     le_sort l c t t
+ | le_sort_trans : forall t1 t12 t2,
+     le_sort l c t1 t12 ->
+     le_sort l c t12 t2 ->
+     le_sort l c t1 t2
+ | le_sort_sym : forall t1 t2, le_sort l c t1 t2 -> le_sort l c t2 t1
+ with le_term (l : lang) c : sort -> exp -> exp -> Prop :=
+ | le_term_subst : forall s1 s2 c' t e1 e2,
+     le_subst l c c' s1 s2 ->
+     le_term l c' t e1 e2 ->
+     le_term l c t[/s2/] e1[/s1/] e2[/s2/]
+ | le_term_by : forall name t e1 e2,
+     (name,term_le c e1 e2 t) \in l ->
+                                  le_term l c t e1 e2
+ | le_term_refl : forall t e,
+     le_term l c t e e
+ | le_term_trans : forall t e1 e12 e2,
+     le_term l c t e1 e12 ->
+     le_term l c t e12 e2 ->
+     le_term l c t e1 e2
+ | le_term_sym : forall t e1 e2, le_term l c t e1 e2 -> le_term l c t e2 e1
+ (* Conversion:
+
+c |- e1 = e2 : t 
+               ||
+c |- e1 = e2 : t'
+*)
+| le_term_conv : forall t t',
+    le_sort l c t t' ->
+    forall e1 e2,
+    le_term l c t e1 e2 ->
+    le_term l c t' e1 e2
+ (* TODO: do I want to allow implicit elements in substitutions? *)
+with le_subst (l : lang) c : ctx -> subst -> subst -> Prop :=
+| le_subst_nil : le_subst l c [::] [::] [::]
+| le_subst_cons : forall c' s1 s2,
+    le_subst l c c' s1 s2 ->
+    forall name t e1 e2,
+      (* assumed because the output ctx is wf: fresh name c' ->*)
+      le_term l c t[/s2/] e1 e2 ->
+    le_subst l c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2).
+
+ (* TODO: more complicated? needs inference?*)
+Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
+| le_args_nil : le_args l c [::] [::] [::]
+| le_args_cons : forall c' s1 s2,
+    le_args l c c' s1 s2 ->
+    forall name t e1 e2,
+      (* assumed because the output ctx is wf: fresh name c' ->*)
+      le_term l c t[/with_names_from c' s2/] e1 e2 ->
+      le_args l c ((name, t)::c') (e1::s1) (e2::s2).
+
+Inductive wf_term l c : exp -> sort -> Prop :=
+| wf_term_by : forall n s args es c' t,
+    (n, term_rule c args t) \in l ->
+    wf_args l c s args es c' ->
+    wf_term l c (con n s) t[/(with_names_from c' es)/]
+| wf_term_conv : forall e t t',
+    (* We add this condition so that we satisfy the assumptions of le_sort *)
+    wf_sort l c t -> 
+    wf_term l c e t ->
+    le_sort l c t t' ->
+    wf_term l c e t'
+| wf_term_var : forall n t,
+    (n, t) \in c ->
+    wf_term l c (var n) t
+with wf_args l c : list exp -> list string -> list exp -> ctx -> Prop :=
+| wf_args_nil : wf_args l c [::] [::] [::] [::]
+| wf_args_cons_ex : forall s args es c' name e t,
+    fresh name c' ->
+    wf_term l c e t[/with_names_from c' es/] ->
+    (* these arguments are last so that proof search unifies existentials
+       from the other arguments first*)
+    wf_args l c s args es c' ->
+    wf_sort l c' t ->
+    wf_args l c (e::s) (name::args) (e::es) ((name,t)::c')
+| elab_args_cons_im : forall s args es c' name e t,
+    fresh name c' ->
+    wf_term l c e t[/with_names_from c' es/] ->
+    (* these arguments are last so that proof search unifies existentials
+       from the other arguments first*)
+    wf_args l c s args es c' ->
+    wf_sort l c' t ->
+    wf_args l c s args (e::es) ((name,t)::c')
+with wf_sort l c : sort -> Prop :=
+| wf_sort_by : forall n s args es c',
+    (n, (sort_rule c' args)) \in l ->
+    wf_args l c s args es c' ->
+    wf_sort l c (scon n s).
+
+Inductive wf_subst l c : subst -> ctx -> Prop :=
+| wf_subst_nil : wf_subst l c [::] [::]
+| wf_subst_cons : forall s c' name e t,
+    (* assumed because the output ctx is wf: fresh name c' ->*)
+    wf_subst l c s c' ->
+    wf_term l c e t[/s/] ->
+    wf_subst l c ((name,e)::s) ((name,t)::c').
+
+Inductive wf_ctx l : ctx -> Prop :=
+| wf_ctx_nil : wf_ctx l [::]
+| wf_ctx_cons : forall name c v,
+    fresh name c ->
+    wf_ctx l c ->
+    wf_sort l c v ->
+    wf_ctx l ((name,v)::c).
+
+
+Variant wf_rule l : rule -> Prop :=
+| wf_sort_rule : forall c args,
+    wf_ctx l c ->
+    subseq args (map fst c) ->
+    wf_rule l (sort_rule c args)
+| wf_term_rule : forall c args t,
+    wf_ctx l c ->
+    wf_sort l c t ->
+    subseq args (map fst c) ->
+    wf_rule l (term_rule c args t)
+| le_sort_rule : forall c t1 t2,
+    wf_ctx l c ->
+    wf_sort l c t1 ->
+    wf_sort l c t2 ->
+    wf_rule l (sort_le c t1 t2)
+| le_term_rule : forall c e1 e2 t,
+    wf_ctx l c ->
+    wf_sort l c t ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    wf_rule l (term_le c e1 e2 t).
+
+Inductive wf_lang : lang -> Prop :=
+| wf_lang_nil : wf_lang [::]
+| wf_lang_cons : forall l n r,
+    fresh n l ->
+    wf_lang l ->
+    wf_rule l r ->
+    wf_lang ((n,r)::l).
+
+End IndependentJudgment.
+
 Definition strip_rule_args r :=
   match r with
   | ARule.sort_rule c _ => Rule.sort_rule c
@@ -101,15 +254,6 @@ Inductive elab_ctx l : IExp.ctx -> ctx -> Prop :=
     elab_ctx l ((name,v)::c) ((name,ev)::ec).
 
 Hint Constructors elab_ctx : judgment.
-
-Fixpoint subseq (s l : list string) : bool :=
-  match s,l with
-  | [::],_ => true
-  | sa::s', [::] => false
-  | sa::s', la::l' =>
-    if sa == la then subseq s' l'
-    else subseq s l'
-  end.
 
 Variant elab_rule l : IRule.rule -> rule -> Prop :=
 | elab_sort_rule : forall c ec args,

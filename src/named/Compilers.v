@@ -6,11 +6,15 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Named Require Import Exp Rule Core.
+From Named Require Import Exp ARule ICore.
+Import IndependentJudgment.
 
 Require Import String.
 
 (* TODO: this does not admit for optimization *)
+(* TODO! : trying to define compilation for to-be-inferred terms;
+   how do I include info from the type?
+ *)
 Variant compiler_case : Set :=
 | sort_case : list string (* holes *) -> (* target *) sort -> compiler_case
 | term_case :  list string (* holes *) -> (* target *) exp -> compiler_case.
@@ -91,9 +95,11 @@ Definition term_le_preserving_sem cmp l1 l2 :=
                         (compile_term cmp e1) (compile_term cmp e2).
 
 Definition args_wf_preserving_sem cmp l1 l2 :=
-  forall c s' c', wf_args l1 c s' c' ->
-                    wf_args l2 (compile_ctx cmp c) (map (compile_term cmp) s')
-                            (compile_ctx cmp c').
+  forall c s' args es' c',
+    wf_args l1 c s' args es' c' ->
+    wf_args l2 (compile_ctx cmp c) (map (compile_term cmp) s')
+            args (map (compile_term cmp) es')
+            (compile_ctx cmp c').
 
 Definition ctx_wf_preserving_sem cmp l1 l2 :=
   forall c , wf_ctx l1 c ->
@@ -117,16 +123,16 @@ Definition semantics_preserving cmp l1 l2 :=
   formalize the relationship to those above and le semantic statements *)
 Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
 | preserving_compiler_nil : preserving_compiler target [::] [::]
-| preserving_compiler_sort : forall cmp l n c t,
+| preserving_compiler_sort : forall cmp l n c args t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
     wf_sort target (compile_ctx cmp c) t ->
-    preserving_compiler target ((n, sort_case (map fst c) t)::cmp) ((n,sort_rule c) :: l)
-| preserving_compiler_term : forall cmp l n c e t,
+    preserving_compiler target ((n, sort_case (map fst c) t)::cmp) ((n,sort_rule c args) :: l)
+| preserving_compiler_term : forall cmp l n c args e t,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c, t *)
     wf_term target (compile_ctx cmp c) e (compile_sort cmp t) ->
-    preserving_compiler target ((n,term_case (map fst c) e)::cmp) ((n,term_rule c t) :: l)
+    preserving_compiler target ((n,term_case (map fst c) e)::cmp) ((n,term_rule c args t) :: l)
 | preserving_compiler_sort_le : forall cmp l n c t1 t2,
     preserving_compiler target cmp l ->
     (* Notable: only uses the previous parts of the compiler on c *)
@@ -156,7 +162,7 @@ Proof using .
   eapply wf_empty_sort; eassumption.
 Qed.
 
-
+(*
 Lemma wf_empty_term c e t : wf_ctx [::] c -> ~wf_term [::] c e t.
 Proof using .
   intros wfc wft.
@@ -166,7 +172,7 @@ Proof using .
   move: wfe nin => ->.
   auto.  
 Qed.
-
+*)
 
 Lemma le_empty_term c e1 e2 t : le_term [::] c t e1 e2 -> e1 = e2
 with le_empty_subst c s1 s2 c' : le_subst [::] c c' s1 s2 -> s1 = s2.
@@ -276,9 +282,9 @@ Local Ltac in_preserving_sort_rec :=
         move: (IH Hin); case; intros
       end; solve [eauto 3 | eexists; rewrite in_cons; apply /orP; eauto].
 
-Lemma in_preserving_sort lt cmp ls n c'
+Lemma in_preserving_sort lt cmp ls n c' args
   : preserving_compiler lt cmp ls ->
-    (n, sort_rule c') \in ls ->
+    (n, sort_rule c' args) \in ls ->
     exists t,(n, sort_case (map fst c') t) \in cmp.
 Proof using .
   elim; simpl; eauto; intros;
@@ -299,9 +305,9 @@ Proof using .
   exact (scon "ERR" [::]).
 Qed.
 
-Lemma in_preserving_term lt cmp ls n c' t
+Lemma in_preserving_term lt cmp ls n c' args t
   : preserving_compiler lt cmp ls ->
-    (n, term_rule c' t) \in ls ->
+    (n, term_rule c' args t) \in ls ->
     exists e,(n, term_case (map fst c') e) \in cmp.
 Proof using .
   elim; simpl; eauto; intros;
