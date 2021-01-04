@@ -152,21 +152,21 @@ Proof.
     apply elab_term_by'; repeat (simpl;step_elab()).
     apply elab_term_by'; repeat (simpl;step_elab()).
     eapply elab_term_conv.
-    solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
+    solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
     repeat (simpl; step_elab()).
     {
-       eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try reflexivity.
-       eapply (@Core.le_term_by' "->_subst"%string); repeat (cbn; step_elab()); reflexivity.
+       eapply Core.le_sort_refl'; repeat (simpl; step_elab()); try reflexivity.
+       eapply (@Core.le_term_by' "->_subst"%string); repeat (simpl; step_elab()); reflexivity.
     }
     
-    solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
-    solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
+    solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
+    solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
   }
   {
-    solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
+    solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
   }
   {    
-    solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
+    solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
   }
   {
     eapply elab_term_conv.
@@ -176,7 +176,7 @@ Proof.
     {
       elab_term_by().
       {
-        solve [repeat (apply elab_term_by'; repeat (cbn;step_elab()))].
+        solve [repeat (apply elab_term_by'; repeat (simpl;step_elab()))].
       }
       {
         elab_term_by().
@@ -185,12 +185,12 @@ Proof.
         refine_elab '(Exp.con "ty_subst" [:: Exp.var "A" ;Exp.var "g"; _; _]).
         elab_term_by().
         step_elab().
-        apply Core.wf_sort_by'; repeat (cbn;step_elab()).
+        apply Core.wf_sort_by'; repeat (simpl;step_elab()).
          {
-          eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try reflexivity.
-          cbn.
+          eapply Core.le_sort_refl'; repeat (simpl; step_elab()); try reflexivity.
+          simpl.
           symmetry.
-          eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+          eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (simpl; step_elab()); reflexivity.
          }
          simpl.
          solve[repeat(elab_term_by())].
@@ -206,34 +206,34 @@ Proof.
     { repeat (simpl; step_elab()).
       constructor; repeat (simpl; step_elab()).
       simpl.
-        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (simpl;step_elab()).
         constructor; repeat (simpl; step_elab()).
         constructor; repeat (simpl; step_elab()).
-        apply Core.wf_term_by'; repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (simpl;step_elab()).
         constructor; repeat (simpl; step_elab()).
         eapply Core.wf_term_conv.
         Focus 2.
-        apply Core.wf_term_by'; repeat (cbn;step_elab()).
-        repeat (cbn;step_elab()).
+        apply Core.wf_term_by'; repeat (simpl;step_elab()).
+        repeat (simpl;step_elab()).
         {
-          eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try  reflexivity.
+          eapply Core.le_sort_refl'; repeat (simpl; step_elab()); try  reflexivity.
           symmetry.
-          eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+          eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (simpl; step_elab()); reflexivity.
         }
     }
      {
-      eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try reflexivity.
+      eapply Core.le_sort_refl'; repeat (simpl; step_elab()); try reflexivity.
       eapply Core.le_term_trans.
       symmetry.
-      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
+      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (simpl; step_elab()); reflexivity.
       symmetry.
       eapply Core.le_term_trans.
       symmetry.      
-      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn; step_elab()); reflexivity.
-      eapply Core.le_term_refl'; repeat (cbn; step_elab()); try reflexivity.
+      eapply (@Core.le_term_by' "ty_subst_cmp"%string); repeat (simpl; step_elab()); reflexivity.
+      eapply Core.le_term_refl'; repeat (simpl; step_elab()); try reflexivity.
       symmetry.
       eapply Core.le_term_trans.
-      eapply (@Core.le_term_by' "wkn_snoc"%string); repeat (cbn; step_elab()); reflexivity.
+      eapply (@Core.le_term_by' "wkn_snoc"%string); repeat (simpl; step_elab()); reflexivity.
       reflexivity.
      }
      { 
@@ -249,9 +249,9 @@ Proof.
        solve[repeat(simpl; step_elab())].
      }
      {
-       eapply Core.le_sort_refl'; repeat (cbn; step_elab()); try reflexivity.
+       eapply Core.le_sort_refl'; repeat (simpl; step_elab()); try reflexivity.
        symmetry.
-       eapply (@Core.le_term_by' "->_subst"%string); repeat (cbn; step_elab()); reflexivity.
+       eapply (@Core.le_term_by' "->_subst"%string); repeat (simpl; step_elab()); reflexivity.
      }
   }
 Qed.

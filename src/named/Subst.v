@@ -7,7 +7,7 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
-From Named Require Import Exp ARule.
+From Named Require Import Exp Rule ARule.
 From Named Require Import IExp IRule ICore Tactics.
 Import IExp.Notations IRule.Notations ARule.Notations Exp.Notations. (* TODO: Rule.Notations.*)
 Require Import String.
@@ -195,6 +195,91 @@ Instance elab_subst_lang'_inst : Elaborated subst_lang' :=
   elab_pf := elab_subst_lang'_pf;
   }.
 
+
+(****************************
+ Nth-tail section; TODO: is any of this needed?
+                            *)
+
+Lemma nth_tail_nil {A} n : @nth_tail A n [::] = [::].
+Proof.
+  destruct n; simpl; reflexivity.
+Qed.
+
+Definition is_fst {A : eqType} (l:list A) (e:A) : bool :=
+  match l with
+  | [::] => false
+  | e'::_ => e == e'
+  end.
+
+Arguments is_fst {A} !l/.
+
+(*Temporary, just for the following lemma:*)
+Arguments nth_tail {A} !n l/.
+Lemma elab_lang_cons'_helper
+  : forall (l : named_list rule) (el : ARule.lang) (name : string) 
+           (r : rule) (er : ARule.rule),
+    fresh name l ->
+    (* TODO: is_fst for lang?; need eqtype for IExp; just get rid of iexp?*)
+    is_fst el (name,er) ->
+    elab_lang l (nth_tail 1 el) ->
+    elab_rule (nth_tail 1 el) r er ->
+    elab_lang ((name,r)::l) el.
+Proof.
+  intros l el.
+  revert l.
+  destruct el.
+  {
+    intros.
+    vm_compute in H0.
+    inversion H0.
+  }
+  {
+    intros.
+    simpl in H0,H1,H2.
+    ltac1:(move: H0 => /eqP H0).
+    subst.
+    constructor; auto.
+  }
+Qed.
+
+Lemma nth_tail_S_cons {A} n (e:A) l : nth_tail n.+1 (e::l) = nth_tail n l.
+Proof.
+  reflexivity.
+Qed.      
+
+Lemma nth_tail_add1 {A} n (l:list A) : nth_tail 1 (nth_tail n l) = nth_tail (n.+1) l.
+Proof.
+  revert l; induction n; intros.
+  { reflexivity. }
+  { destruct l.
+    { reflexivity. }
+    { rewrite !nth_tail_S_cons.
+      rewrite IHn.
+      reflexivity.
+    }
+  }
+Qed.    
+
+Lemma elab_lang_cons' n l el name r er
+  : fresh name l ->
+    (* TODO: is_fst for lang?; need eqtype for IExp; just get rid of iexp?*)
+    is_fst (nth_tail n el) (name,er) ->
+    elab_lang l (nth_tail n.+1 el) ->
+    elab_rule (nth_tail n.+1 el) r er ->
+    elab_lang ((name,r)::l) (nth_tail n el).
+Proof.
+  intros.
+  eapply (@elab_lang_cons'_helper l (nth_tail n el));
+    rewrite ?nth_tail_add1; eauto.
+Qed.
+
+
+Arguments nth_tail : simpl never.
+
+(****************
+ end nth_tail
+*)
+
 Definition subst_lang : lang :=
    [::[:> "G" : #"env", "A" : #"ty" %"G"
        ----------------------------------------------- ("snoc_wkn_hd")
@@ -244,14 +329,13 @@ Definition subst_lang : lang :=
        #"ext" "G" "A" : #"env"
   ]]%irule++subst_lang'.
 
-
 Derive elab_subst_lang
        SuchThat (elab_lang subst_lang elab_subst_lang)
        As elab_subst_lang_pf.
 Proof.
   repeat (simpl; step_elab());
     try (solve[repeat (simpl; step_elab())
-        | repeat(elab_term_by())]).
+        | repeat(elab_term_by())]); simpl.
   { repeat (elab_term_by()). }
   {
     elab_term_by().
@@ -272,17 +356,18 @@ Proof.
     elab_term_by().
     elab_term_by().
     elab_term_by().
-    progress (repeat (cbn;step_elab())).
-    progress (repeat (cbn;step_elab())).
+    progress (repeat (simpl;step_elab())).
+    progress (repeat (simpl;step_elab())).
 
     
-    eapply Core.le_sort_refl'; repeat (cbn;step_elab()); try reflexivity.
-
+    eapply Core.le_sort_refl'; repeat (simpl;step_elab()); try reflexivity.
+    
+    simpl.
     eapply Core.le_term_trans.
     symmetry.
     eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
     reflexivity.
-    eapply Core.le_term_refl';repeat (cbn;step_elab()); try reflexivity.
+    eapply Core.le_term_refl';repeat (simpl;step_elab()); try reflexivity.
   }
   {
     elab_term_by().
@@ -290,11 +375,12 @@ Proof.
     solve[repeat(elab_term_by())].
     progress (repeat (simpl;step_elab())).
 
-    eapply Core.le_sort_refl'; repeat(cbn;step_elab());try reflexivity.
+    eapply Core.le_sort_refl'; repeat(simpl;step_elab());try reflexivity.
     symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (cbn;step_elab());
+    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
       reflexivity.
-    solve[repeat(apply elab_term_by'; repeat (cbn;step_elab()))].
+    simpl.
+    solve[repeat(apply elab_term_by'; repeat (simpl;step_elab()))].
   }
   { repeat (elab_term_by()). }
 Qed.

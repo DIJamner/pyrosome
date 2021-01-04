@@ -47,7 +47,7 @@ Proof using .
 Qed.
 
 Ltac2 solve_in () :=
-  solve [ cbv; reflexivity
+  solve [ vm_compute; reflexivity
         | repeat (rewrite in_cons);
           rewrite in_nil;
           rewrite Bool.orb_false_r;
@@ -56,12 +56,29 @@ Ltac2 solve_in () :=
 
 Ltac2 solve_fresh () := vm_compute; reflexivity.
 
+(* Reduce size of language terms for smaller goals *)
+Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
+  match n,l with
+  | 0,_ => l
+  | S_,[::]=> [::]
+  | S n', _::l'=> nth_tail n' l'
+  end.
+
+Arguments nth_tail : simpl never.
+
 (*TODO: I think I should make sure this never errors, might
   be what's causing double-repeat issues*) 
 Ltac2 step_elab () :=
   lazy_match! goal with
   | [|- elab_lang nil _] => constructor
   | [|- elab_lang _ _] => Control.plus (fun () => apply elab_pf) (fun _ => constructor)
+  | [tll : ARule.lang|- elab_rule ?l _ _] =>
+    let tll := Control.hyp tll in
+    (*TODO: precompute this? definitely at least needs simpl but maybe not here
+    let n := Std.eval_vm None constr:(size $tll - size $l) in*)
+    ltac1:(l tll|-change l with (nth_tail (size tll - size l) tll))
+            (Ltac1.of_constr l) (Ltac1.of_constr tll);
+    constructor
   | [|- elab_rule _ _ _] => constructor
   | [|- elab_ctx _ _ _] => constructor
   | [|- elab_args _ _ _ _ _ [::]] => apply elab_args_nil
@@ -89,7 +106,7 @@ Ltac2 step_elab () :=
   | [|- elab_term _ _ (var _) _ _] => apply elab_term_var; solve_in()
   | [|- elab_term _ _ _ (Exp.var _) _] => apply elab_term_var; solve_in()
   | [|- is_true((?n,?e)\in ?l)]=> 
-      assert ($e = named_list_lookup $e $l $n); vm_compute; solve[auto]
+      assert ($e = named_list_lookup $e $l $n); cbv(*vm_compute doesn't work*); solve[auto]
   | [|- is_true (_ \in _)] => solve_in ()
   | [|- is_true (fresh _ _)] => solve_fresh ()
   | [|- is_true (_ \notin _)] => solve_fresh ()

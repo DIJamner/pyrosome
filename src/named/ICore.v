@@ -21,6 +21,8 @@ Definition strip_rule_args r :=
     
 Definition strip_args : ARule.lang -> Rule.lang :=
   map (fun p=> (fst p, strip_rule_args (snd p))).
+ (* don't simplify, speeds up proofs *)
+Arguments strip_args l : simpl never.
 
 (* TODO: are sort annotations worth it? *)
 Inductive elab_sort l c : IExp.sort -> sort -> Prop :=
@@ -364,11 +366,27 @@ Proof using.
   eapply elab_term_by; eassumption.
 Qed.  
 
+(* putting n first *)
 Lemma elab_term_var' n l c t
   : (n, t) \in c ->
     elab_term l c (IExp.var n) (var n) t.
 Proof using .
   constructor; assumption.
+Qed.
+
+(* combined with conv; should be fully general, i.e. should always be applied when possible *)
+Lemma elab_term_conv_var n l c t
+  : let t' := named_list_lookup (scon "" [::]) c n in
+    (n, t') \in c ->
+    (*TODO: better to use wf_ctx c for sharing purposes? *)
+    wf_sort (strip_args l) c t' ->
+    le_sort (strip_args l) c t' t ->
+    elab_term l c (IExp.var n) (var n) t.
+Proof using .
+  intros.
+  eapply elab_term_conv; eauto.
+  constructor.
+  assumption.
 Qed.
 
 Class Elaborated (l : IRule.lang) :=

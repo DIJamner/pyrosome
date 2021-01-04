@@ -144,7 +144,13 @@ Ltac2 rec elab () :=
   match! goal with
   | [|- elab_lang nil _] => constructor; enter elab
   | [|- elab_lang _ _] => (Control.plus (fun () => apply elab_pf) (fun _ => constructor)); enter elab
-  | [|- elab_rule _ _ _] => constructor;enter elab
+  | [tll : ARule.lang|- elab_rule ?l _ _] =>
+    let tll := Control.hyp tll in
+    (*TODO: precompute this? definitely at least needs simpl but maybe not here
+    let n := Std.eval_vm None constr:(size $tll - size $l) in*)
+    ltac1:(l tll|-change l with (nth_tail (size tll - size l) tll))
+            (Ltac1.of_constr l) (Ltac1.of_constr tll);
+    constructor; enter elab
   | [|- elab_ctx _ _ _] => constructor;enter elab
   | [|- elab_args _ _ _ _ _ [::]] => apply elab_args_nil;enter elab
   | [|- elab_args _ _ _ (?n::_) _ ((?n,?t)::_)] =>
@@ -198,7 +204,7 @@ eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]*)
     | false => ()
     end
   | [|- is_true((?n,?e)\in ?l)]=> 
-      assert ($e = named_list_lookup $e $l $n); vm_compute; solve[auto]
+      assert ($e = named_list_lookup $e $l $n); cbv; solve[auto]
   | [|- is_true (_ \in _)] => solve_in ()
   | [|- is_true (fresh _ _)] => solve_fresh ()
   | [|- is_true (_ \notin _)] => solve_fresh ()
