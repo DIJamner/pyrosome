@@ -141,7 +141,7 @@ Ltac2 reflexivity_no_evars () :=
 Import Control.
 Ltac2 rec elab () :=
   simpl;
-  lazy_match! goal with
+  match! goal with
   | [|- elab_lang nil _] => constructor; enter elab
   | [|- elab_lang _ _] => (Control.plus (fun () => apply elab_pf) (fun _ => constructor)); enter elab
   | [|- elab_rule _ _ _] => constructor;enter elab
@@ -166,19 +166,28 @@ Ltac2 rec elab () :=
                                       | apply Core.wf_args_cons
                                       | apply Core.wf_args_nil]*)()
   | [|- Core.wf_subst _ _ _ _] =>(*constructor*) ()
-  | [|- Core.wf_sort _ _ _] => (*first [apply wf_sort_no_conv_recognizes; vm_compute; reflexivity
-                                     | apply Core.wf_sort_by']*) ()
-  | [|- Core.wf_term _ _ (Exp.var _) _] => (*(*TODO: potential eargerness here*)apply Core.wf_term_var*) ()
-  | [|- Core.wf_term _ _ ?t _] =>(*
-    match (is_evar t) with
-    | true => Control.shelve()
-    | false => try (solve[apply wf_term_no_conv_recognizes; vm_compute; reflexivity])
-    end*) ()
+  | [|- Core.wf_sort ?l ?c ?t] =>
+    (*time: mean ~0.03 high ~0.3*)
+    match Bool.or (has_evar l) (Bool.or (has_evar c) (has_evar t)) with
+    | true => ()
+    | false => apply wf_sort_no_conv_recognizes; vm_compute; reflexivity
+    end
+  | [|- Core.wf_term _ _ (Exp.var _) _] =>
+    eapply Core.wf_term_conv > [apply Core.wf_term_var; solve_in() |enter elab ..]
+  | [|- Core.wf_term ?l ?c ?e ?t] =>
+    match has_evar '(Core.wf_term $l $c $e $t) with
+    | true => ()
+    | false => apply wf_term_no_conv_recognizes; vm_compute; reflexivity
+    end
     (*eapply Core.wf_term_conv> [ | eapply Core.wf_term_by' | ]*)
   | [|- elab_term _ _ (var _) _ _] =>
     eapply elab_term_conv > [apply elab_term_var; solve_in() |enter elab ..]
-  | [|- elab_term _ _ _ (Exp.var _) _] => 
-    eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]
+  | [|- elab_term _ _ _ (Exp.var _) _] =>
+                 (*
+TODO: no speedup vs this;
+maybe could assrt wf ctx to avoid wf sort assumptions?
+eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]*)
+                  apply elab_term_conv_var ; enter elab 
   | [|- elab_term _ _ (con _ _) _ _] => 
     eapply elab_term_conv > [apply elab_term_by';enter elab | enter elab ..]
   | [|- elab_term _ _ _ (Exp.con _ _) _] => 
@@ -198,11 +207,19 @@ Ltac2 rec elab () :=
   | [|- len_eq _ _] => constructor;enter elab
   | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])
   | [|- Core.le_term _ _ _ _ _]=>
+    (*time: mean ~0.02 high ~0.3*)
     try (solve[apply Core.le_term_by_nameless; vm_compute; reflexivity
               | reflexivity_no_evars ()])
   | [|- Core.le_sort _ _ _ _]=>
+    (*time: mean ~0.3 high ~0.5*)
     try (solve[apply Core.le_sort_by_nameless; vm_compute; reflexivity
               | reflexivity_no_evars()])
+  | [ |-  elab_preserving_compiler _ ((_,sort_case _ _)::_) _ _]=>
+    apply preserving_compiler_sort';enter elab
+  | [ |-  elab_preserving_compiler _ ((_,term_case _ _)::_) _ _]=>
+    apply preserving_compiler_term';enter elab
+  | [ |-  elab_preserving_compiler _ _ _ _]=>
+    constructor;enter elab
 end.
 
 
@@ -220,6 +237,10 @@ Definition compile_let (c : string) (args : list string) : exp :=
   else con c (map var (lookup_args elab_stlc c)).
 Arguments compile_let c args /.
 
+Arguments strip_args l : simpl never. (* don't simplify. 
+major speedup here
+TODO: put in right place*)
+
 Derive elab_compile_let
        SuchThat (elab_preserving_compiler
                    elab_stlc
@@ -230,17 +251,5 @@ Derive elab_compile_let
                    elab_stlc_let)
        As elab_compile_let_preserving.
 Proof.
-  
-  simpl.
-  repeat (match! goal with
-  | [ |-  elab_preserving_compiler _ ((_,sort_case _ _)::_) _ _]=>
-    apply preserving_compiler_sort'
-  | [ |-  elab_preserving_compiler _ ((_,term_case _ _)::_) _ _]=>
-    apply preserving_compiler_term'
-  | [ |-  elab_preserving_compiler _ _ _ _]=>
-    constructor
-    |[|- wf_sort _ _ _] =>
-     try (solve [apply wf_sort_no_conv_recognizes; vm_compute; reflexivity])
-  | [|-_] => Control.enter elab
-          end).
+  repeat (elab()).
 Qed.
