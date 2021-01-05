@@ -70,7 +70,7 @@ Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)
        As elab_cat_lang_pf.
 Proof.
-  repeat (simpl;step_elab()); repeat (elab_term_by()).
+  repeat (elab (fun () => reflexivity)).
 Qed. 
 
 Instance elab_cat_lang_inst : Elaborated cat_lang :=
@@ -145,47 +145,15 @@ Derive elab_subst_lang'
        SuchThat (elab_lang subst_lang' elab_subst_lang')
        As elab_subst_lang'_pf.
 Proof.
-  (repeat (simpl; step_elab()));
-    try (solve[repeat (simpl; step_elab())
-              | repeat(elab_term_by())]).
+  repeat (elab(fun () => reflexivity )).
   {
-    eapply elab_term_conv.
-    elab_term_by().
-    elab_term_by().
-    solve [repeat (simpl;step_elab())].
-    solve [repeat (simpl;step_elab())].
-    
-    eapply Core.le_sort_refl'; repeat (simpl; step_elab()).
-    reflexivity.
-    (*Require Import Matches.
-    eapply (apply_le_term_recognizes "ty_subst_id").
-    unfold apply_le_term.
-    ltac1:(case_match).
-    vm_compute in HeqH.
-    inversion HeqH; subst.
-    ltac1:(case_match).
-    unfold match_all_le in HeqH0.
-    revert HeqH0.
-    ltac1:(case_match).
-    vm_compute in HeqH0.*)
-    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (simpl;step_elab()).
-    reflexivity.
-    reflexivity.
+    eapply Core.le_sort_refl'; repeat (elab(fun()=> reflexivity)).
+    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (elab (fun()=>reflexivity)).
   }
-  {
-    eapply elab_term_conv; 
-    repeat (simpl;step_elab()).
-    elab_term_by().
-    elab_term_by().
-    elab_term_by().
-    solve [repeat (simpl;step_elab())].
-    solve [repeat (simpl;step_elab())].
-    
-    eapply Core.le_sort_refl'; repeat (cbn; step_elab()).
-    reflexivity.
-    reflexivity.
+  {    
+    eapply Core.le_sort_refl'; repeat (elab (fun()=>reflexivity)).
     symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (cbn;step_elab()); auto;reflexivity.
+    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (elab (fun()=>reflexivity)).
   }
 Qed.
 
@@ -333,57 +301,129 @@ Derive elab_subst_lang
        SuchThat (elab_lang subst_lang elab_subst_lang)
        As elab_subst_lang_pf.
 Proof.
-  repeat (simpl; step_elab());
-    try (solve[repeat (simpl; step_elab())
-        | repeat(elab_term_by())]); simpl.
-  { repeat (elab_term_by()). }
-  {
-    elab_term_by().
-    elab_term_by().
-    apply (@elab_term_var' "A"%string); reflexivity.
-    repeat (elab_term_by()).
-    repeat (elab_term_by()).
-  }    
-  {
-    eapply elab_term_conv.
-    elab_term_by().
-    elab_term_by().
+  repeat (elab(fun()=>
+       lazy_match! goal with
+       | [|-Core.le_sort _ _ (Exp.scon ?name _) _] => eapply (@Core.le_sort_refl' $name)
+       | [|-Core.le_sort _ _ _ (Exp.scon ?name _)] => eapply (@Core.le_sort_refl' $name)
+       | [|-Core.le_term _ _ _ _ (Exp.var _)] => reflexivity
+       | [|-Core.le_term _ _ _ (Exp.var _) _] => reflexivity
+       | [|-Core.le_term _ _ _ (Exp.con "ext" _) _] => eapply (@Core.le_term_refl' "ext"%string)
+       | [|-Core.le_term _ _ _ _ (Exp.con "ext" _)] => eapply (@Core.le_term_refl' "ext"%string)
+       | [|-Core.le_term _ _ _
+                         (Exp.con "ty_subst" [:: _; ?g; ?gg'; ?gg])
+                         (Exp.con "ty_subst" [:: _; ?g; ?gg'; ?gg])] =>
+          eapply (@Core.le_term_refl' "ty_subst"%string)
+               end)).
+  (*TODO: why is this not done already?*)
+  Focus 3.
+  reflexivity.
+  
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
 
-    apply (@elab_term_var' "A"%string); simpl; solve_in().    
-    progress (repeat (simpl;step_elab())).
-    elab_term_by().
-    elab_term_by().
-    elab_term_by().
-    elab_term_by().
-    elab_term_by().
-    progress (repeat (simpl;step_elab())).
-    progress (repeat (simpl;step_elab())).
+  Focus 2.
+  elab(fun()=>()).
 
-    
-    eapply Core.le_sort_refl'; repeat (simpl;step_elab()); try reflexivity.
-    
-    simpl.
+  Focus 5.
+  reflexivity.
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+
+  Focus 2.
+  elab(fun()=>()).
+
+  Focus 5.
+  reflexivity.
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  simpl.
+
+  reflexivity.
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  {
     eapply Core.le_term_trans.
     symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
-    reflexivity.
-    eapply Core.le_term_refl';repeat (simpl;step_elab()); try reflexivity.
+    eapply (@Core.le_term_by' "ty_subst_cmp"%string);elab(fun()=>reflexivity).
+    eapply (Core.le_term_refl');elab(fun()=>easy_le_tac()).
   }
-  {
-    elab_term_by().
-    eapply elab_term_conv.
-    solve[repeat(elab_term_by())].
-    progress (repeat (simpl;step_elab())).
+  
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
 
-    eapply Core.le_sort_refl'; repeat(simpl;step_elab());try reflexivity.
-    symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string);repeat (simpl;step_elab());
-      reflexivity.
-    simpl.
-    solve[repeat(apply elab_term_by'; repeat (simpl;step_elab()))].
-  }
-  { repeat (elab_term_by()). }
+  reflexivity.
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+
+  symmetry.
+  eapply (@Core.le_term_by' "ty_subst_cmp"%string);elab(fun()=>reflexivity).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
+  elab(fun()=>()).
 Qed.
+
  
     
 Instance elab_subst_lang_inst : Elaborated subst_lang :=
