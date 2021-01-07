@@ -19,6 +19,9 @@ Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
+Require Import STLC_bot.
+
+(*TODO: copied from Let.v. Deal with this*)
  Lemma elab_args_cons_ex' l c : forall s args (es:list Exp.exp) c' name e ee t,
     fresh name c' ->
     (* these arguments are last so that proof search unifies existentials
@@ -33,80 +36,47 @@ Set Default Proof Mode "Ltac2".
    eauto with judgment.
  Qed.
 (* TODO: let/k? *)
- Definition stlc_let :=
+ Definition stlc_letk :=
   [::
   [:> "G" : #"env",
       "A" : #"ty" %"G",
-      "B" : #"ty" %"G",
-      "e" : #"el" %"G" %"A",
-      "body" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
+      "e" : #"el" %"G" (#"->" (#"->" %"A" #"bot") #"bot"),
+      "body" : #"el" (#"ext" %"G" %"A") #"bot"
       ----------------------------------------------- ("let beta")
-      #"let" %"e" %"body" = #"app" (#"lambda" %"body")  %"e"
-      : #"el" %"G" %"B"
+      #"let" %"e" %"body" = #"app" %"e" (#"lambda" %"body")
+      : #"el" %"G" #"bot"
      ];
   [:| "G" : #"env",
       "A" : #"ty" %"G",
-      "B" : #"ty" %"G",
-      "e" : #"el" %"G" %"A",
-      "body" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
+      "e" : #"el" %"G" (#"->" (#"->" %"A" #"bot") #"bot"),
+      "body" : #"el" (#"ext" %"G" %"A") #"bot"
       -----------------------------------------------
-      #"let" "e" "body"  : #"el" %"G" %"B"
-  ]]%irule++stlc.
+      #"let" "e" "body"  : #"el" %"G" #"bot"
+  ]]%irule++stlc_bot.
   
-Derive elab_stlc_let
-       SuchThat (elab_lang stlc_let elab_stlc_let)
-       As elab_stlc_let_pf.
+Derive elab_stlc_letk
+       SuchThat (elab_lang stlc_letk elab_stlc_letk)
+       As elab_stlc_letk_pf.
 Proof.
   repeat (elab easy_le_tac);
-  repeat (elab easy_le_tac).
-  (*TODO: figure out why 2 repeats *)
+    repeat (elab easy_le_tac).
+  simpl in *.
+  symmetry.
+  eapply (@Core.le_sort_refl' "el"%string);
+    repeat (elab easy_le_tac).
+  eapply (@Core.le_term_by' "bot_subst"%string);
+    repeat (elab easy_le_tac).
 Qed.
   
 
-Instance elab_stlc_let_inst : Elaborated stlc_let :=
+Instance elab_stlc_let_inst : Elaborated stlc_letk :=
   {
-  elaboration := elab_stlc_let;
-  elab_pf := elab_stlc_let_pf;
+  elaboration := elab_stlc_letk;
+  elab_pf := elab_stlc_letk_pf;
   }.
 
-(*
-(* TODO: general-purpose lemma that macro-like languages
-   like this can be compiled away
- *)
-Definition compile_macro_sort (c:string) args : sort := scon c (map var args).
 
-(*TODO:move helper somewhere; duped from CPS*)
-Definition lookup_args l n :=
-  get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
-Definition compile_macro
-           (* macro components *)
-           name e
-           (c : string) (args : list string) : exp :=
-    if c == name
-    then e
-    else con c (map var (lookup_args elab_stlc c)).
-  
-Derive elab_compile_macro
-  SuchThat
-  (forall target c name t args e eq_name (elab_macro elab_target : ARule.lang),
-    let macro_ext :=
-        [:: (eq_name,term_le c (con name (map var args)) e t);
-        (name,term_rule c args t)]
-    in
-    let compiler := ICompilers.make_compiler compile_macro_sort
-                                  (compile_macro name e)
-                                  (strip_args (elab_macro++elab_target))
-    in
-    elab_lang target elab_target ->
-    elab_lang (macro_ext ++ target) (elab_macro++elab_target) ->
-    elab_preserving_compiler elab_target
-                             compiler
-                             (elab_compile_macro ...)
-                             (elab_macro++elab_target))
-    As compile_macro_preserving.
- *)
-
-(*TODO: copied from CPS; should have definitive version *)
+(*TODO: copied from Tactics; should haveuse definitive version *)
 Require Import Recognizers.
 
 Ltac2 has_evar (c : constr) :=
@@ -125,6 +95,7 @@ Ltac2 reflexivity_no_evars () :=
 (*TODO: I think I should make sure this never errors, might
   be what's causing double-repeat issues*)
 Import Control.
+Ltac2 elab_true := elab.
 Ltac2 rec elab () :=
   simpl;
   match! goal with
@@ -215,31 +186,37 @@ eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]*)
 end.
 
 
-Definition compile_let_sort (c:string) args : sort := scon c (map var args).
-Arguments compile_let_sort c args/.
+Definition compile_letk_sort (c:string) args : sort := scon c (map var args).
+Arguments compile_letk_sort c args/.
 
 (*TODO:move helper somewhere; duped from CPS*)
 Definition lookup_args l n :=
   get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
 
 
-Definition compile_let (c : string) (args : list string) : exp :=
+Definition compile_letk (c : string) (args : list string) : exp :=
   if c == "let"%string
-  then con "app" [:: var "e"; con "lambda" [:: var "body"]]
+  then con "app" [:: con "lambda" [:: var "body"]; var "e"]
   else con c (map var (lookup_args elab_stlc c)).
-Arguments compile_let c args /.
+Arguments compile_letk c args /.
 
-
-Derive elab_compile_let
+Derive elab_compile_letk
        SuchThat (elab_preserving_compiler
-                   elab_stlc
-                   (make_compiler compile_let_sort
-                                  compile_let
-                                  (strip_args elab_stlc_let))
-                   elab_compile_let
-                   elab_stlc_let)
-       As elab_compile_let_preserving.
+                   elab_stlc_letk
+                   (make_compiler compile_letk_sort
+                                  compile_letk
+                                  (strip_args elab_stlc_letk))
+                   elab_compile_letk
+                   elab_stlc_letk)
+       As elab_compile_letk_preserving.
 Proof.
   (* TODO: use Tactics.elab easy_le_tac.*)
-  repeat (elab()).
+  repeat (elab ()).
+  {
+    eapply le_sort_refl';
+      repeat (elab_true (fun()=>())).
+    symmetry.
+    eapply (@le_term_by' "bot_subst"%string);
+      repeat (elab_true easy_le_tac).
+  }
 Qed.

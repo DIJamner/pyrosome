@@ -18,3 +18,5 @@ src/named/Compilers.v
 src/named/STLC.v
 src/named/ICompilers.v
 src/named/Let.v
+src/named/STLC_bot.v
+src/named/LetK.v

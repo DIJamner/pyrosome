@@ -12,37 +12,13 @@ From Named Require Import Exp.
 From Named Require Import IExp IRule ICore ICompilers Subst STLC Tactics.
 Import IExp.Notations IRule.Notations ARule.Notations.
 Require Import String.
+Require Import STLC_bot.
 
 
 Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
-Definition stlc_bot :=
-  [::[:> "G" : #"env",
-      "G'" : #"env",
-      "g" : #"sub" %"G'" %"G"
-      ----------------------------------------------- ("bot_subst")
-      #"ty_subst" %"g" #"bot" = #"bot" : #"ty" %"G'"
-  ];
-  [:| "G" : #"env"
-      -----------------------------------------------
-      #"bot" : #"ty" %"G"
-  ]]%irule++stlc.
-  
-Derive elab_stlc_bot
-       SuchThat (elab_lang stlc_bot elab_stlc_bot)
-       As elab_stlc_bot_pf.
-Proof.
-  repeat (repeat (cbn;step_elab()));
-    repeat (elab_term_by()).
-Qed.  
-
-Instance elab_stlc_bot_inst : Elaborated stlc_bot :=
-  {
-  elaboration := elab_stlc_bot;
-  elab_pf := elab_stlc_bot_pf;
-  }.
 
 (* equivalent definition
 Definition lookup_args l n :=
