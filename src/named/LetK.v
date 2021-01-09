@@ -35,9 +35,23 @@ Require Import STLC_bot.
  Proof.
    eauto with judgment.
  Qed.
-(* TODO: let/k? *)
+
+ 
  Definition stlc_letk :=
   [::
+     (*[:> "G" : #"env",
+         "A" : #"ty" %"G",
+         "B" : #"ty" (#"ext" %"G" %"A")
+      ----------------------------------------------- ("snd beta")
+      #"snd" = #"ty_subst" #"wkn" #"hd"
+      : (#"ty_subst" #"wkn" (#"ty_subst" #"wkn" %"A"))
+     ];
+  [:| "G" : #"env",
+      "A" : #"ty" %"G",
+      "B" : #"ty" (#"ext" %"G" %"A")
+       -----------------------------------------------
+       #"snd" : #"el" (#"ext" (#"ext" %"G" %"A") %"B") (#"ty_subst" #"wkn" (#"ty_subst" #"wkn" %"A"))
+  ];*)
   [:> "G" : #"env",
       "A" : #"ty" %"G",
       "e" : #"el" %"G" (#"->" (#"->" %"A" #"bot") #"bot"),
@@ -75,6 +89,61 @@ Instance elab_stlc_let_inst : Elaborated stlc_letk :=
   elab_pf := elab_stlc_letk_pf;
   }.
 
+Definition stlc_precps :=
+  [::
+     [:> "G" : #"env", 
+         "A" : #"ty" %"G",
+         "B" : #"ty" (#"ext" %"G" %"A")
+      ----------------------------------------------- ("snd beta")
+      #"snd" = #"el_subst" #"wkn" #"hd"
+      :  #"el" (#"ext" (#"ext" %"G" %"A") %"B") (#"ty_subst" #"wkn 2" %"A")
+     ];
+  [:| "G" : #"env",
+      "A" : #"ty" %"G",
+      "B" : #"ty" (#"ext" %"G" %"A")
+       -----------------------------------------------
+       #"snd" : #"el" (#"ext" (#"ext" %"G" %"A") %"B") (#"ty_subst" #"wkn 2" %"A")
+  ];
+  [:> "G" : #"env",
+      "A" : #"ty" %"G",
+      "B" : #"ty" (#"ext" %"G" %"A")
+       ----------------------------------------------- ("wkn 2 beta")
+       #"wkn 2" = #"cmp" #"wkn" #"wkn"
+       : #"sub" (#"ext" (#"ext" %"G" %"A") %"B") %"G"
+  ];
+  [:| "G" : #"env",
+      "A" : #"ty" %"G",
+      "B" : #"ty" (#"ext" %"G" %"A")
+       -----------------------------------------------
+       #"wkn 2" : #"sub" (#"ext" (#"ext" %"G" %"A") %"B") %"G"
+  ]]%irule++stlc_letk.
+
+Derive elab_stlc_precps
+       SuchThat (elab_lang stlc_precps elab_stlc_precps)
+       As elab_stlc_precps_pf.
+Proof.
+  repeat (elab(fun()=>
+       lazy_match! goal with
+       | [|-Core.le_sort _ _ (Exp.scon ?name _) _] => eapply (@Core.le_sort_refl' $name)
+       | [|-Core.le_sort _ _ _ (Exp.scon ?name _)] => eapply (@Core.le_sort_refl' $name)
+       | [|-Core.le_term _ _ _ _ (Exp.var _)] => reflexivity
+       | [|-Core.le_term _ _ _ (Exp.var _) _] => reflexivity
+       | [|-Core.le_term _ _ _ (Exp.con "ext" _) _] => eapply (@Core.le_term_refl' "ext"%string)
+       | [|-Core.le_term _ _ _ _ (Exp.con "ext" _)] => eapply (@Core.le_term_refl' "ext"%string)
+       | [|-Core.le_term _ _ _
+                         (Exp.con "ty_subst" [:: _; ?g; ?gg'; ?gg])
+                         (Exp.con "ty_subst" [:: _; ?g; ?gg'; ?gg])] =>
+          eapply (@Core.le_term_refl' "ty_subst"%string)
+               end));
+  repeat (elab easy_le_tac);
+  repeat (elab easy_le_tac).
+  eapply le_term_trans.
+  symmetry.
+  eapply (@le_term_by' "ty_subst_cmp"%string); elab easy_le_tac.
+  symmetry.
+  eapply le_term_refl'; elab easy_le_tac.
+Qed.
+(*TODO: wkn 3*)  
 
 (*TODO: copied from Tactics; should haveuse definitive version *)
 Require Import Recognizers.
@@ -202,7 +271,7 @@ Arguments compile_letk c args /.
 
 Derive elab_compile_letk
        SuchThat (elab_preserving_compiler
-                   elab_stlc_letk
+                   elab_stlc
                    (make_compiler compile_letk_sort
                                   compile_letk
                                   (strip_args elab_stlc_letk))

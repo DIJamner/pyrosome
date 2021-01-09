@@ -12,7 +12,7 @@ From Named Require Import Exp.
 From Named Require Import IExp IRule ICore ICompilers Subst STLC Tactics.
 Import IExp.Notations IRule.Notations ARule.Notations.
 Require Import String.
-Require Import STLC_bot.
+Require Import STLC_bot LetK.
 
 
 Require Coq.derive.Derive.
@@ -179,12 +179,13 @@ Definition cps (c : string) (args : list string) : exp :=
     let k := wkn_n 2 {{e #"hd"}} in
     let x1 := wkn_n 1 {{e #"hd"}} in
     let x2 := {{e #"hd"}} in
-    lam
-      (let_bind (wkn_n 1 (var e1))
-      (let_bind (wkn_n 2 (var e2))
-      {{e #"app" {k} (#"app" {x1} {x2})}}))
+    {{e #"lambda"
+      (#"let" {wkn_n 1 (var e1)}
+      (#"let" {wkn_n 2 (var e2)}
+      (#"app" {k} (#"app" {x1} {x2}))))}}
   | _,_ => con c (map var (lookup_args elab_stlc c))
   end%string.
+
 
 Require Import Recognizers.
 
@@ -271,7 +272,7 @@ end.
 
 Import Exp.Notations.
 Derive elab_cps
-       SuchThat (elab_preserving_compiler elab_stlc_bot (make_compiler cps_sort cps (strip_args elab_stlc)) elab_cps elab_stlc)
+       SuchThat (elab_preserving_compiler elab_stlc_letk (make_compiler cps_sort cps (strip_args elab_stlc)) elab_cps elab_stlc)
        As elab_cps_pf.
 Proof.
   simpl.
