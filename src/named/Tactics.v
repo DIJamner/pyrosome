@@ -13,7 +13,8 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
 From Named Require Import Exp ARule.
-From Named Require Import IExp IRule ICore.
+From Named Require ICore.
+Import ICore.IndependentJudgment.
 Require Import String.
 
 Require Import Named.Recognizers.
@@ -66,8 +67,46 @@ Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
 
 Arguments nth_tail : simpl never.
 
+(* TODO: put with nth_tail*)
+Lemma nth_tail_nil {A} n : @nth_tail A n [::] = [::].
+Proof.
+  destruct n; simpl; reflexivity.
+Qed.
+
+
+Lemma nth_tail_S_cons {A} n (e:A) l : nth_tail n.+1 (e::l) = nth_tail n l.
+Proof.
+  reflexivity.
+Qed.      
+
+Lemma nth_tail_cons_eq {A} (a:A) l n l'
+  : a::l = nth_tail n l' -> l = nth_tail n.+1 l'.
+Proof.
+  revert a l l'.
+  induction n.
+  {
+    intros; destruct l';
+      cbv[nth_tail] in*;
+      inversion H; auto.
+  }
+  {
+    intros; destruct l'.
+    {
+      cbv[nth_tail] in*;
+        inversion H; auto.
+    }
+    {
+      rewrite nth_tail_S_cons.
+      rewrite nth_tail_S_cons in H.
+      eauto.
+    }
+  }
+Qed.
+
+
 (*TODO: I think I should make sure this never errors, might
-  be what's causing double-repeat issues*) 
+  be what's causing double-repeat issues*)
+(* TODO: outdated; remove?
 Ltac2 step_elab () :=
   lazy_match! goal with
   | [|- elab_lang nil _] => constructor
@@ -119,6 +158,7 @@ Ltac2 step_elab () :=
   | [|- Core.le_sort _ _ _ _]=>
       try (solve[apply Core.le_sort_by_nameless; vm_compute; reflexivity])
 end.
+*)
 
 (* TODO: move to tactics or utils*)
 Require Import Ltac2.Constr.
@@ -146,11 +186,13 @@ Transparent get_rule_args.
 Transparent get_rule_ctx.
 *)
 
+(*
 Ltac2 elab_term_by ():=
     apply elab_term_by'; repeat(simpl;step_elab()).
-
+*)
 
 Require Import Ltac2.Constr.
+(*
 Ltac2 refine_elab pat :=
   let g := match! goal with
            | [|- elab_term _ _ _ ?g _] => g
@@ -174,10 +216,11 @@ Ltac2 inst_elab pat :=
   | Unsafe.Evar n _ => Control.new_goal n > [| refine pat]
   | _ => ()
   end.
+*)
 
- (*TODO: copied from CPS; should make this the definitive version *)
+(*TODO: copied from CPS; should make this the definitive version *)
 Require Import Recognizers.
-Require Import ICompilers.
+Require Import Compilers.
 Import Control.
 
 (*was bugged: used first-class backtracking when it's not supposed to; plus is no good here*)
@@ -198,26 +241,121 @@ Ltac2 reflexivity_no_evars () :=
 (*TODO: I think I should make sure this never errors, might
   be what's causing double-repeat issues*)
 Import Control.
-Ltac2 elab (le_tac : unit -> unit) :=
+
+(*TODO: prove / put in the right place
+ *)
+Definition get_rule_ctx r :=
+  match r with
+  | sort_rule c _
+  | term_rule c _ _
+  | sort_le c _ _
+  | term_le c _ _ _ => c
+  end.
+
+Definition get_rule_args r :=
+  match r with
+  | sort_rule _ args
+  | term_rule _ args _ => args
+  | sort_le c _ _
+  | term_le c _ _ _ => map fst c
+  end.
+
+Definition get_rule_sort r :=
+  match r with
+  | sort_rule _ _
+  | sort_le _ _ _ => scon "ERR" [::]
+  | term_rule _ _ t
+  | term_le _ _ _ t => t
+  end.
+
+(* TODO: compute s from es? *)
+Parameter wf_sort_by' : forall (n : string) (l : lang) (c : ctx) (s es : seq exp),
+       let r := named_list_lookup (sort_rule [::] [::]) l n in
+       let c' := get_rule_ctx r in
+       let args := get_rule_args r in
+       (n, sort_rule c' args) \in l -> wf_args l c s args es c' -> wf_sort l c (scon n s).
+
+(* TODO: compute s from es? *)
+Parameter wf_term_by'
+     : forall (n : string) (l : lang) (c : ctx) (s es : seq exp) (t : sort),
+       let r := named_list_lookup (sort_rule [::] [::]) l n in
+       let c' := get_rule_ctx r in
+       let t' := get_rule_sort r in
+       let args := get_rule_args r in
+       (n, term_rule c' args t') \in l ->
+       wf_args l c s args es c' -> t = t' [/with_names_from c' s /] -> wf_term l c (con n s) t.
+
+
+(* TODO: put in right place*)
+Fixpoint make_compiler
+           (cmp_sort : string -> list string -> sort)
+           (cmp_exp : string -> list string -> exp)
+           (l : Rule.lang) : compiler :=
+  match l with
+  | (n,Rule.sort_rule c)::l' =>
+    (n,sort_case (map fst c) (cmp_sort n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,Rule.term_rule c _)::l' => (n,term_case (map fst c) (cmp_exp n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,_)::l' => 
+    (make_compiler cmp_sort cmp_exp l')
+  | [::] => [::]
+  end.
+
+Lemma preserving_compiler_term' target
+  : forall cmp l n c args e t case_args,
+    case_args = map fst c ->
+    preserving_compiler target cmp l ->
+    wf_term target (compile_ctx cmp c) e (compile_sort cmp t) ->
+    preserving_compiler target
+                             ((n, term_case case_args e)::cmp)
+                             ((n,term_rule c args t) :: l).
+Proof using .
+  intros.
+  rewrite H.
+  constructor; eauto.
+Qed.
+
+
+Lemma preserving_compiler_sort' target
+  : forall cmp l n c args t case_args,
+    case_args = map fst c ->
+    preserving_compiler target cmp l ->
+    wf_sort target (compile_ctx cmp c) t ->
+    preserving_compiler target
+                             ((n, sort_case case_args t)::cmp)
+                             ((n,ARule.sort_rule c args ) :: l).
+Proof using .
+  intros.
+  rewrite H.
+  constructor; eauto.
+Qed.
+
+Ltac2 elab  (sublang_wf_pf : constr) (le_tac : unit -> unit) :=
   let rec elab () :=
-  simpl;
+      simpl;
+(*TODO: try? balance partial completion w/ error reporting
+  maybe use plus w/ error printing?
+ *)
   try (lazy_match! goal with
-  | [|- elab_lang nil _] => constructor; enter elab
-  | [|- elab_lang _ _] => (Control.plus (fun () => apply elab_pf) (fun _ => constructor)); enter elab
-  | [tll : ARule.lang|- elab_rule ?l _ _] =>
+  | [|- wf_lang nil] => constructor; enter elab
+  | [|- wf_lang _] => (Control.plus (fun () => exact $sublang_wf_pf) (fun _ => constructor)); enter elab
+  | [tll : ARule.lang|- wf_rule ?l ?r] =>
     let tll := Control.hyp tll in
     (*TODO: precompute this? definitely at least needs simpl but maybe not here
     let n := Std.eval_vm None constr:(size $tll - size $l) in*)
+    (*TODO: change instead of changewith for performance*)
     ltac1:(l tll|-change l with (nth_tail (size tll - size l) tll))
 
             (Ltac1.of_constr l) (Ltac1.of_constr tll);
     constructor; enter elab
-  | [|- elab_ctx _ _ _] => constructor;enter elab
-  | [|- elab_args _ _ _ _ _ [::]] => apply elab_args_nil;enter elab
-  | [|- elab_args _ _ _ (?n::_) _ ((?n,?t)::_)] =>
-      apply elab_args_cons_ex;enter elab
-  | [|- elab_args _ _ _ _ _ ((?n,?t)::_)] =>
-      eapply elab_args_cons_im;enter elab
+  | [|- wf_ctx _ _] => constructor;enter elab
+  | [|- wf_args _ _ _ _ _ [::]] => apply wf_args_nil;enter elab
+  | [|- wf_args _ _ _ (?n::_) _ ((?n,?t)::_)] =>
+      apply wf_args_cons_ex;enter elab
+  | [|- wf_args _ _ _ _ _ ((?n,?t)::_)] =>
+    eapply wf_args_cons_im;enter elab
+                                 (*TODO: handle substs
   (* special case to force existentials to the empty list*)
   | [|- elab_subst _ _ _ (with_names_from [::] ?l) [::]] =>
         assert ($l = [::]) > [reflexivity | apply elab_subst_nil;enter elab]
@@ -226,17 +364,15 @@ Ltac2 elab (le_tac : unit -> unit) :=
       apply elab_subst_cons_ex > [solve_fresh ()| | |]; enter elab
   | [|- elab_subst _ _ _ ((?n,?ee)::_) ((?n,?t)::_)] =>
       eapply elab_subst_cons_im > [solve_fresh ()| | |]; enter elab
-  | [|- elab_sort _ _ _ _] => apply elab_sort_by'; enter elab
-  | [|- Core.le_args _ _ _ _ _] =>constructor; enter elab
-  | [|- Core.wf_args _ _ _ _] =>(*first [apply wf_args_no_conv_recognizes; vm_compute; reflexivity
-                                      | apply Core.wf_args_cons
-                                      | apply Core.wf_args_nil]*)()
-  | [|- Core.wf_subst _ _ _ _] =>(*constructor*) ()
+*)
+   | [|- wf_sort _ _ _] => eapply wf_sort_by'; enter elab
+   (* TODO: port to ICore..wf_sort?                                                 
   | [|- Core.wf_sort ?l ?c ?t] =>
     match has_evar '(Core.wf_sort $l $c $t) with
     | true => ()
-    | false => apply wf_sort_no_conv_recognizes; vm_compute; reflexivity
-    end
+    | false => try (apply wf_sort_no_conv_recognizes; vm_compute; reflexivity)
+    end; apply wf_sort_by'; enter elab
+    
   | [|- Core.wf_term _ _ (Exp.var _) _] =>
     eapply Core.wf_term_conv > [apply Core.wf_term_var; elab() |enter elab ..]
   | [|- Core.wf_term ?l ?c ?e ?t] =>
@@ -244,29 +380,17 @@ Ltac2 elab (le_tac : unit -> unit) :=
     | true => ()
     | false => apply wf_term_no_conv_recognizes; vm_compute; reflexivity
     end
-    (*eapply Core.wf_term_conv> [ | eapply Core.wf_term_by' | ]*)
-  | [|- elab_term _ _ (var _) _ _] =>
-    eapply elab_term_conv > [apply elab_term_var; elab() |enter elab ..]
-  | [|- elab_term _ _ _ (Exp.var _) _] =>
-                 (*
-TODO: no speedup vs this;
-maybe could assrt wf ctx to avoid wf sort assumptions?
-eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]*)
-                  apply elab_term_conv_var ; enter elab 
-  | [|- elab_term _ _ (con _ _) _ _] => 
-    eapply elab_term_conv > [apply elab_term_by';enter elab | enter elab ..]
-  | [|- elab_term _ _ _ (Exp.con _ _) _] => 
-    eapply elab_term_conv > [apply elab_term_by';enter elab | enter elab ..]
-  | [|- elab_term _ _ ?e ?ee _] =>
-    match Bool.and (is_evar e) (is_evar ee) with
+    (*eapply Core.wf_term_conv> [ | eapply Core.wf_term_by' | ]*)*)
+  | [|- wf_term _ _ (var _) _] =>
+    ()(*eapply wf_term_conv > [|apply wf_term_var; elab() |enter elab ..]>[elab()|..]*)
+  | [|- wf_term _ _ (con _ _) _] => 
+    eapply wf_term_conv > [|eapply wf_term_by';enter elab | enter elab ..]>[elab()|..]
+  | [|- wf_term _ _ ?e _] =>
+    match is_evar e with
     | true => ()
     | false => Message.print (Message.concat
-                                (Message.concat
-                                   (Message.of_string "Encountered bad elab_term; ")
+                                   (Message.of_string "Encountered unprocessable term ")
                                    (Message.of_constr e))
-                                (Message.concat
-                                   (Message.of_string " elaborates to: ")
-                                   (Message.of_constr ee)))
     end
   | [|- is_true((?n,?e)\in ?l)]=>
     (*TODO: this can be improved a bit*)
@@ -278,15 +402,16 @@ eapply elab_term_conv > [apply elab_term_var; solve_in() | enter elab ..]*)
   | [|- is_true true] => reflexivity
   | [|- len_eq _ _] => constructor;enter elab
   | [|- _ = _] => try (solve[reflexivity| cbv; f_equal])
-  | [|- Core.le_term _ _ _ _ _]=>
+  | [|- le_term _ _ _ _ _]=>
     try (first[ reflexivity_no_evars () | progress le_tac ; enter elab])
-  | [|- Core.le_sort _ _ _ _]=>
-    try (first[  reflexivity_no_evars() | progress le_tac; enter elab])
-  | [ |-  elab_preserving_compiler _ ((_,sort_case _ _)::_) _ _]=>
+  | [|- le_sort _ _ _ _]=>
+  (* TODO: fix up: try (first[  reflexivity_no_evars() | progress le_tac; enter elab])*)
+    progress le_tac; enter elab
+  | [ |-  preserving_compiler _ ((_,sort_case _ _)::_) _ _]=>
     apply preserving_compiler_sort';enter elab
-  | [ |-  elab_preserving_compiler _ ((_,term_case _ _)::_) _ _]=>
+  | [ |-  preserving_compiler _ ((_,term_case _ _)::_) _ _]=>
     apply preserving_compiler_term';enter elab
-  | [ |-  elab_preserving_compiler _ _ _ _]=>
+  | [ |-  preserving_compiler _ _ _ _]=>
     constructor;enter elab
   | [ |- ?g] =>
     (*Message.print (Message.concat

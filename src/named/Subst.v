@@ -7,13 +7,13 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
-From Named Require Import Exp Rule ARule.
-From Named Require Import IExp IRule ICore Tactics.
-Import IExp.Notations IRule.Notations ARule.Notations Exp.Notations. (* TODO: Rule.Notations.*)
+From Named Require Import Exp Rule ARule Tactics Decidable.
+From Named Require ICore.
+Import ICore.IndependentJudgment.
+Import Exp.Notations ARule.Notations. (* TODO: Rule.Notations.*)
 Require Import String.
 
 Require Import Named.Recognizers.
-Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
@@ -64,7 +64,51 @@ Definition cat_lang : lang :=
       -----------------------------------------------
       #"env" srt
   ]
-  ]%irule.
+  ]%arule.
+
+Print LangRecognize.
+
+Fixpoint cat_lang_sub_r c e G_l : exp :=
+  match e with
+  | con "id" [::] => G_l
+  | con "cmp" [:: g; f] =>
+    let G_lf := cat_lang_sub_r c f G_l in
+    let G_lg := cat_lang_sub_r c g G_lf in
+    G_lg
+  | var x =>
+    match named_list_lookup {{s #"ERR"}} c x with
+    | scon "sub" [:: G; _] => G
+    | _ => {{e #"ERR"}}
+    end
+  | _ => {{e #"ERR"}}
+  end.
+  
+#[refine]
+Instance rec_cat_lang : LangRecognize cat_lang :=
+  { le_sort_dec _ _ t1 t2 := t1 == t2;
+    term_args_elab c s name t := 
+      match name, t, s with
+      | "id", scon "sub" [:: _; G],_ => [:: G]
+      | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
+        let G2 := cat_lang_sub_r c f G1 in
+        [:: g; f; G3; G2; G1]
+      | _,_,_ => s
+      end%string;
+    sort_args_elab c s _ := s
+  }.
+Proof.
+  {
+    intros n c t1 t2 _ _ _.
+    ltac1:(move /eqP ->).
+    apply le_sort_refl.
+  }
+Defined.
+
+Lemma cat_lang_wf : wf_lang cat_lang.
+Proof.
+  apply (@decide_wf_lang _ _ 100).
+  vm_compute; reflexivity.
+Qed.
 
 Derive elab_cat_lang
        SuchThat (elab_lang cat_lang elab_cat_lang)

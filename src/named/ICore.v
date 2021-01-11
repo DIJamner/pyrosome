@@ -79,7 +79,7 @@ Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
 
 Inductive wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s args es c' t,
-    (n, term_rule c args t) \in l ->
+    (n, term_rule c' args t) \in l ->
     wf_args l c s args es c' ->
     wf_term l c (con n s) t[/(with_names_from c' es)/]
 | wf_term_conv : forall e t t',
@@ -101,7 +101,7 @@ with wf_args l c : list exp -> list string -> list exp -> ctx -> Prop :=
     wf_args l c s args es c' ->
     wf_sort l c' t ->
     wf_args l c (e::s) (name::args) (e::es) ((name,t)::c')
-| elab_args_cons_im : forall s args es c' name e t,
+| wf_args_cons_im : forall s args es c' name e t,
     fresh name c' ->
     wf_term l c e t[/with_names_from c' es/] ->
     (* these arguments are last so that proof search unifies existentials

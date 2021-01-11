@@ -413,9 +413,9 @@ Lemma term_fresh_strengthen n cc l cmp c e t
   : fresh n l ->
     wf_term l c e t ->
     compile_term ((n, cc) :: cmp) e = compile_term cmp e
-with args_fresh_strengthen n cc l cmp c s c'
+with args_fresh_strengthen n cc l cmp c s args es c'
   : fresh n l ->
-    wf_args l c s c' ->
+    wf_args l c s args es c' ->
     compile_args ((n, cc) :: cmp) s = compile_args cmp s.
 Proof using .
   {
@@ -545,6 +545,14 @@ Local Ltac setup_inv_lem :=
   rewrite !all_fresh_in_once; auto;
   revert pc wfl frls frcmp.
 
+
+(* TODO: relate independent judgment to elab
+   to port core lemmas.
+*)
+Parameter rule_in_wf
+     : forall (l : lang) (r : rule) (n : string),
+       wf_lang l -> (n, r) \in l -> wf_rule l r.
+
 Local Ltac inv_lem_step :=
   match goal with
   | H : wf_lang (_::_)|-_=> inversion H; subst; clear H
@@ -569,19 +577,19 @@ Local Ltac prove_inv_lem :=
     intros; simpl in *; break;
   repeat inv_lem_step; eauto.
 
-Lemma preserving_sort_case_inv n t c lt cmp ls
+Lemma preserving_sort_case_inv n t c args lt cmp ls
   :  preserving_compiler lt cmp ls ->
      wf_lang ls ->
-     (n, sort_rule c) \in ls ->
-     (n, sort_case (map fst c) t) \in cmp ->
+     (n, sort_rule c args) \in ls ->
+     (n, sort_case args t) \in cmp ->
      wf_sort lt (compile_ctx cmp c) t.
 Proof using . prove_inv_lem. Qed.
 
-Lemma preserving_term_case_inv n t e c lt cmp ls
+Lemma preserving_term_case_inv n t e c args lt cmp ls
   :  preserving_compiler lt cmp ls ->
      wf_lang ls ->
-     (n, term_rule c t) \in ls ->
-     (n, term_case (map fst c) e) \in cmp ->
+     (n, term_rule c args t) \in ls ->
+     (n, term_case args e) \in cmp ->
      wf_term lt (compile_ctx cmp c) e (compile_sort cmp t).
 Proof using . prove_inv_lem. Qed.
 
