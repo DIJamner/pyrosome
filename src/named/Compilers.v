@@ -106,9 +106,11 @@ Definition ctx_wf_preserving_sem cmp l1 l2 :=
              wf_ctx l2 (compile_ctx cmp c).
 
 Definition args_le_preserving_sem cmp l1 l2 :=
-  forall c s1 s2 c', le_args l1 c c' s1 s2 ->
+  forall c s1 s2 args es1 es2 c', le_args l1 c c' s1 s2 args es1 es2 ->
                      le_args l2 (compile_ctx cmp c) (compile_ctx cmp c')
-                        (map (compile_term cmp) s1) (map (compile_term cmp) s2).
+                             (map (compile_term cmp) s1) (map (compile_term cmp) s2)
+                             args
+                             (map (compile_term cmp) es1) (map (compile_term cmp) es2).
   
 
 Definition semantics_preserving cmp l1 l2 :=

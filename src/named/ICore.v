@@ -67,15 +67,21 @@ with le_subst (l : lang) c : ctx -> subst -> subst -> Prop :=
       le_term l c t[/s2/] e1 e2 ->
     le_subst l c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2).
 
- (* TODO: more complicated? needs inference?*)
-Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> Prop :=
-| le_args_nil : le_args l c [::] [::] [::]
-| le_args_cons : forall c' s1 s2,
-    le_args l c c' s1 s2 ->
+ (* TODO: more complicated? needs inference I think *)
+Inductive le_args (l : lang) c : ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
+| le_args_nil : le_args l c [::] [::] [::] [::] [::] [::]
+| le_args_cons_ex : forall c' s1 s2 args es1 es2,
+    le_args l c c' s1 s2 args es1 es2 ->
     forall name t e1 e2,
       (* assumed because the output ctx is wf: fresh name c' ->*)
-      le_term l c t[/with_names_from c' s2/] e1 e2 ->
-      le_args l c ((name, t)::c') (e1::s1) (e2::s2).
+      le_term l c t[/with_names_from c' es2/] e1 e2 ->
+      le_args l c ((name, t)::c') (e1::s1) (e2::s2) (name::args) (e1::es1) (e1::es2)
+| le_args_cons_im : forall c' s1 s2 args es1 es2,
+    le_args l c c' s1 s2 args es1 es2 ->
+    forall name t e1 e2,
+      (* assumed because the output ctx is wf: fresh name c' ->*)
+      le_term l c t[/with_names_from c' es2/] e1 e2 ->
+      le_args l c ((name, t)::c') s1 s2 args (e1::es1) (e1::es2).
 
 Inductive wf_term l c : exp -> sort -> Prop :=
 | wf_term_by : forall n s args es c' t,
