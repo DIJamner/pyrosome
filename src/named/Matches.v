@@ -31,35 +31,30 @@ Fixpoint unordered_merge_unsafe {A : eqType} (l1 l2 : named_list A) :=
       ++ (unordered_merge_unsafe l1' l2)
   end.
 
+Section InnerLoop.
+  Context (matches_unordered : forall (e pat : exp), option subst).
+  Fixpoint args_match_unordered (s pat : list exp) : option subst :=
+       match pat, s with
+       | [::],[::] => do ret [::]
+       | pe::pat',e::s' =>
+         do res_e <- matches_unordered e pe;
+            res_s <- args_match_unordered s' pat';
+            ret (unordered_merge_unsafe res_e res_s)                          
+       | _,_ => None
+       end.
+End InnerLoop.
+
 (* Finds the subst s such that s >= acc, e = pat[/s/]
-   and (map fst s) = FV(e) U (map fst acc), if such a substitution exists
-   and sufficient fuel is provided.
+   and (map fst s) = FV(e) U (map fst acc), if such a substitution exists.
    Behavior intentionally unspecified otherwise.
 *)
-Fixpoint matches_unordered_fuel (fuel : nat) (e pat : exp) {struct fuel} : option subst :=
-  match pat, e, fuel with
-  | var px, _,_ => Some ([:: (px,e)])
-  | con pn ps, con n s,fuel'.+1 =>
-    if pn == n then args_match_unordered_fuel fuel' s ps else None
-  | _,_,_ => None
-end
-with args_match_unordered_fuel (fuel : nat)
-                               (s pat : list exp) {struct fuel} : option subst :=
-       match pat, s, fuel with
-       | [::],[::],_ => do ret [::]
-       | pe::pat',e::s',fuel'.+1 =>
-         do res_e <- matches_unordered_fuel fuel' e pe;
-            res_s <- args_match_unordered_fuel fuel' s' pat';
-            ret (unordered_merge_unsafe res_e res_s)                          
-       | _,_,_ => None
-       end.
-
-(* The maximum depth of the expression is enough fuel for the matcher *)
-Fixpoint exp_depth (e: exp) : nat :=
-  match e with
-  | var _ => 0
-  | con _ s => (foldl (fun n e => max (exp_depth e) n) 0 s).+1
-  end.
+Fixpoint matches_unordered (e pat : exp) : option subst :=
+  match pat, e with
+  | var px, _ => Some ([:: (px,e)])
+  | con pn ps, con n s =>
+    if pn == n then args_match_unordered matches_unordered s ps else None
+  | _,_ => None
+end.
 
 (*
 Definition matches_unordered e pat :=
@@ -144,13 +139,6 @@ Proof.
   unfold matches_unordered.
   *)
 
-Definition matches_unordered e pat :=
-  (* multiply depth by 2 because each level consumes 1 fuel for exp
-     and 1 for its args
-   *)
-  matches_unordered_fuel (exp_depth pat).*2 e pat.
-
-
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
   | scon n s, scon n_pat s_pat =>
@@ -158,7 +146,7 @@ Definition matches_unordered_sort (t pat : sort) :=
       (* multiply depth by 2 because each level consumes 1 fuel for exp
      and 1 for its args
        *)
-      args_match_unordered_fuel (foldl (fun n e => max (exp_depth e) n) 0 s_pat).*2 s s_pat
+      args_match_unordered matches_unordered s s_pat
     else None
   end.
           

@@ -104,7 +104,7 @@ Section Base.
                 (wf_args_dec n c s' args' es' c'' fuel')
            else (wf_term_dec n c e t[/with_names_from c'' es'/] fuel') &&
                 (wf_args_dec n c s args es' c'' fuel')
-         | _,_,_,_,_ => false (*TODO*)
+         | _,_,_,_,_ => false (*TODO?*)
          end
   with wf_sort_dec n c t fuel : bool :=
     match fuel, t with
@@ -333,3 +333,282 @@ Proof.
 
 
 End Base.
+
+
+
+(*TODO: prove, put in right place *)
+Parameter le_subst_refl
+     : forall (l : lang) (c : ctx) (s : subst) (c' : ctx),
+    map fst s = map fst c' -> le_subst l c c' s s.
+
+Section SingleStep.
+(*TODO: connect to matches?*)
+(* Variant sort_redex_steps_1 (l : lang) t1 t2 name: Prop :=
+  sort_steps_1 : forall c t1' t2' s,
+    (name, sort_le c t1' t2') \in l ->
+    t1 = t1'[/s/] ->
+    t2 = t2'[/s/] ->
+    map fst s = map fst c ->
+    sort_redex_steps_1 l t1 t2 name. *)
+
+
+
+Inductive term_steps_1 (l : lang) name : sort -> exp -> exp -> Prop :=
+| term_redex_steps_1 : forall c' e1' e2' t' s,
+    (name, term_le c' e1' e2' t') \in l ->
+    map fst s = map fst c' ->
+    term_steps_1 l name t'[/s/] e1'[/s/] e2'[/s/]
+| term_eval_ctx_steps_1 : forall ename c' t' args1 args2 args s1 s2,
+    (*TODO: needed?*)
+    (ename, term_rule c' args t') \in l ->
+    args_steps_1 l name c' args1 args2 args s1 s2 ->
+    term_steps_1 l name t'[/with_names_from c' s2/] (con ename args1) (con ename args2)
+with args_steps_1 (l:lang) name : ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
+  (* TODO: have an implicit one? prob not necessary *)
+| fst_arg_steps_1 : forall ename e1 e2 t args args' s c',
+    term_steps_1 l name t[/with_names_from c' s /] e1 e2 ->
+    args_steps_1 l name ((ename,t)::c') (e1::args') (e2::args') (ename::args) (e1::s) (e2::s)
+| rst_arg_steps_1_ex : forall ename e t args1' args2' c' args s1 s2,
+    args_steps_1 l name c' args1' args2' args s1 s2 ->
+    args_steps_1 l name ((ename,t)::c') (e::args1') (e::args2') (ename::args) (e::s1) (e::s2)
+| rst_arg_steps_1_im : forall ename e t args1' args2' c' args s1 s2,
+    args_steps_1 l name c' args1' args2' args s1 s2 ->
+    args_steps_1 l name ((ename,t)::c') (args1') (args2') (args) (e::s1) (e::s2).
+
+Lemma term_steps_1_le l name c t e1 e2
+  : term_steps_1 l name t e1 e2 -> le_term l c t e1 e2
+with args_steps_1_le l name c c' s1 s2 args es1 es2
+     : args_steps_1 l name c' s1 s2 args es1 es2 ->
+       le_args l c c' s1 s2 args es1 es2.
+Proof.
+  {
+    intro ts; inversion ts; subst.
+    eapply le_term_subst.
+    { eapply le_subst_refl; eauto. }
+    {
+      ltac1:(simple eapply (le_term_by (name:=name))); auto.
+    }
+    {
+      (* TODO: need congruence *)
+      eapply args_steps_1_le in H0.
+      admit.
+    }
+  }
+  {
+    intro argss; (inversion argss; subst)>
+                 [eapply le_args_cons_ex
+                 |eapply le_args_cons_ex
+                 |eapply le_args_cons_im]; eauto.
+    { (*TODO: reflexivity*) admit. }
+    { apply le_term_refl. }
+    { apply le_term_refl. }
+  }
+  Unshelve.
+  exact c.
+Admitted.
+
+Variant sort_steps_1 (l : lang) name : sort -> sort -> Prop :=
+| sort_redex_steps_1 : forall c t1 t2 s,
+    (name, sort_le c t1 t2) \in l ->
+    map fst s = map fst c ->
+    sort_steps_1 l name t1[/s/] t2[/s/]
+| sort_eval_ctx_steps_1 : forall sname args1 args2 s1 s2 c' args,
+    (*TODO: needed?*)
+    (sname, sort_rule c' args) \in l ->
+    args_steps_1 l name c' args1 args2 args s1 s2 ->
+    sort_steps_1 l name (scon sname args1) (scon sname args2).
+
+Lemma sort_steps_1_le l name c t1 t2
+  : sort_steps_1 l name t1 t2 -> le_sort l c t1 t2.
+Proof.
+  {
+    intro ts; inversion ts; subst.
+    eapply le_sort_subst.
+    { eapply le_subst_refl; eauto. }
+    {
+      ltac1:(simple eapply (le_sort_by (name:=name))); auto.
+    }
+    {
+      (* TODO: need congruence *)
+      eapply args_steps_1_le in H0.
+      admit.
+    }
+  }
+Admitted.
+
+
+End SingleStep.
+
+
+Require Import Matches.
+
+Section ParStep.
+
+  
+  (* 0 or more parallel steps (involving disjoint parts of the AST) *)
+  Inductive term_steps_par (l : lang) : sort -> exp -> exp -> Prop :=
+  | term_redex_steps_par : forall name c' e1' e2' t' s,
+      (name, term_le c' e1' e2' t') \in l ->
+      map fst s = map fst c' ->
+      term_steps_par l t'[/s/] e1'[/s/] e2'[/s/]
+  | term_eval_ctx_steps_par : forall ename c' t' args1 args2 args s1 s2,
+      (*TODO: needed?*)
+      (ename, term_rule c' args t') \in l ->
+      args_steps_par l c' args1 args2 args s1 s2 ->
+      term_steps_par l t'[/with_names_from c' s2/] (con ename args1) (con ename args2)
+  with args_steps_par (l:lang) : ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
+  | args_steps_par_nil : args_steps_par l [::] [::] [::] [::] [::] [::]
+  (* TODO: have an implicit one? prob not necessary *)
+  | fst_arg_steps_par : forall ename e1 e2 t args args1' args2' s1 s2 c',
+      term_steps_par l t[/with_names_from c' s2 /] e1 e2 ->
+      args_steps_par l c' args1' args2' args s1 s2 ->
+      args_steps_par l ((ename,t)::c') (e1::args1') (e2::args2') (ename::args) (e1::s1) (e2::s2)
+  | rst_arg_steps_par_ex : forall ename e t args1' args2' c' args s1 s2,
+      args_steps_par l c' args1' args2' args s1 s2 ->
+      args_steps_par l ((ename,t)::c') (e::args1') (e::args2') (ename::args) (e::s1) (e::s2)
+  | rst_arg_steps_par_im : forall ename e t args1' args2' c' args s1 s2,
+      args_steps_par l c' args1' args2' args s1 s2 ->
+      args_steps_par l ((ename,t)::c') (args1') (args2') (args) (e::s1) (e::s2).
+
+  
+  Lemma term_steps_par_le l c t e1 e2
+    : term_steps_par l t e1 e2 -> le_term l c t e1 e2
+  with args_steps_par_le l c c' s1 s2 args es1 es2
+       : args_steps_par l c' s1 s2 args es1 es2 ->
+         le_args l c c' s1 s2 args es1 es2.
+  Proof.
+    {
+      intro ts; inversion ts; subst.
+      eapply le_term_subst.
+      { eapply le_subst_refl; eauto. }
+      {
+        ltac1:(simple eapply (le_term_by (name:=name))); auto.
+      }
+      {
+        (* TODO: need congruence *)
+        eapply args_steps_par_le in H0.
+        admit.
+      }
+    }
+    {
+      intro argss; (inversion argss; subst)>
+                   [apply le_args_nil
+                   |eapply le_args_cons_ex
+                   |eapply le_args_cons_ex
+                   |eapply le_args_cons_im]; eauto.
+      { apply le_term_refl. }
+      { apply le_term_refl. }
+    }
+    Unshelve.
+    exact c.
+  Admitted.
+
+  
+  Variant sort_steps_par (l : lang) : sort -> sort -> Prop :=
+  | sort_redex_steps_par : forall name c t1 t2 s,
+      (name, sort_le c t1 t2) \in l ->
+      map fst s = map fst c ->
+      sort_steps_par l t1[/s/] t2[/s/]
+  | sort_eval_ctx_steps_par : forall sname args1 args2 s1 s2 c' args,
+      (*TODO: needed?*)
+      (sname, sort_rule c' args) \in l ->
+      args_steps_par l c' args1 args2 args s1 s2 ->
+      sort_steps_par l (scon sname args1) (scon sname args2).
+
+  Lemma sort_steps_par_le l c t1 t2
+    : sort_steps_par l t1 t2 -> le_sort l c t1 t2.
+  Proof.
+    {
+      intro ts; inversion ts; subst.
+      eapply le_sort_subst.
+      { eapply le_subst_refl; eauto. }
+      {
+        ltac1:(simple eapply (le_sort_by (name:=name))); auto.
+      }
+      {
+        (* TODO: need congruence *)
+        eapply args_steps_par_le in H0.
+        admit.
+      }
+    }
+  Admitted.
+
+  
+  Inductive sort_steps_star (l :lang) : sort -> sort -> Prop :=
+  | sort_steps_refl : forall t, sort_steps_star l t t
+  | sort_steps_next : forall t1 t2 t3,
+      sort_steps_par l t1 t2 ->
+      sort_steps_star l t2 t3 ->
+      sort_steps_star l t1 t3.
+
+  
+  
+  Lemma sort_steps_star_le l c t1 t2
+    : sort_steps_star l t1 t2 -> le_sort l c t1 t2.
+  Proof.
+    intro sss; induction sss; eauto using le_sort_refl, le_sort_trans, sort_steps_par_le.
+  Qed.
+
+  (*TODO: the other direction probably holds too; might be useful? *)
+  
+  Import OptionMonad.
+  Fixpoint term_step_redex (l : lang) (e : exp) : option exp :=
+    (*TODO: matches is currently going to behave badly w/ implicit terms.
+      Need to fix this before I can run this.
+     *)
+    match l with
+    | [::] => None
+    | (_,term_le c e1 e2 t)::l' =>
+      match term_step_redex l' e with
+      | Some t' => Some t'
+      | None => do s <- matches e e1 (map fst c);
+                ret e2[/s/]
+      end
+    | _::l' => term_step_redex l' e
+    end.
+
+  (*TODO
+  Fixpoint sort_step_redex (l : lang) (t : sort) : option sort :=
+    (*TODO: matches is currently going to behave badly w/ implicit terms.
+      Need to fix this before I can run this.
+
+     TODO: need matches on sorts
+     *)
+    match l with
+    | [::] => None
+    | (_,sort_le c t1 t2)::l' =>
+      match sort_step_redex l' t with
+      | Some t' => Some t'
+      | None => do s <- matches t t1 (map fst c);
+                ret t2[/s/]
+      end
+    | _::l' => sort_step_redex l' t
+    end.
+   *)
+
+  (* TODO: define as option or iterate to a fixed point? *)
+  Section InnerLoop.
+    Context (term_par_step : forall (l : lang) (e : exp), option exp).
+    Fixpoint args_par_step l s {struct s} : option (list exp) :=
+         match s with
+         | [::] => None
+         | e::s' =>
+           match term_par_step l e, args_par_step l s' with
+           | Some e', Some s'' => Some (e'::s'')
+           | Some e', None => Some (e'::s')
+           | None, Some s'' => Some (e::s'')
+           | None, None => None
+           end
+         end.
+  End InnerLoop.
+
+  Fixpoint term_par_step (l : lang) (e : exp) {struct e} : option exp :=
+    match term_step_redex l e, e with
+    | Some e',_ => Some e'
+    | None, var _ => None
+    | None, con name s =>
+      do s' <- args_par_step term_par_step l s;
+      ret (con name s')
+    end.
+
+End ParStep.
