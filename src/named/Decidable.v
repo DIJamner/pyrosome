@@ -452,8 +452,6 @@ Section ParStep.
       map fst s = map fst c' ->
       term_steps_par l t'[/s/] e1'[/s/] e2'[/s/]
   | term_eval_ctx_steps_par : forall ename c' t' args1 args2 args s1 s2,
-      (*TODO: needed?*)
-      (ename, term_rule c' args t') \in l ->
       args_steps_par l c' args1 args2 args s1 s2 ->
       term_steps_par l t'[/with_names_from c' s2/] (con ename args1) (con ename args2)
   with args_steps_par (l:lang) : ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
@@ -486,7 +484,7 @@ Section ParStep.
       }
       {
         (* TODO: need congruence *)
-        eapply args_steps_par_le in H0.
+        eapply args_steps_par_le in H.
         admit.
       }
     }
@@ -510,8 +508,6 @@ Section ParStep.
       map fst s = map fst c ->
       sort_steps_par l t1[/s/] t2[/s/]
   | sort_eval_ctx_steps_par : forall sname args1 args2 s1 s2 c' args,
-      (*TODO: needed?*)
-      (sname, sort_rule c' args) \in l ->
       args_steps_par l c' args1 args2 args s1 s2 ->
       sort_steps_par l (scon sname args1) (scon sname args2).
 
@@ -527,7 +523,7 @@ Section ParStep.
       }
       {
         (* TODO: need congruence *)
-        eapply args_steps_par_le in H0.
+        eapply args_steps_par_le in H.
         admit.
       }
     }
@@ -553,38 +549,30 @@ Section ParStep.
   
   Import OptionMonad.
   Fixpoint term_step_redex (l : lang) (e : exp) : option exp :=
-    (*TODO: matches is currently going to behave badly w/ implicit terms.
-      Need to fix this before I can run this.
-     *)
     match l with
     | [::] => None
     | (_,term_le c e1 e2 t)::l' =>
+      (*TODO: check that rule is executable, i.e. FV(e1) >= FV(e2)*)
       match term_step_redex l' e with
       | Some t' => Some t'
-      | None => do s <- matches e e1 (map fst c);
+      | None => do s <- matches_unordered e e1;
                 ret e2[/s/]
       end
     | _::l' => term_step_redex l' e
     end.
 
-  (*TODO
   Fixpoint sort_step_redex (l : lang) (t : sort) : option sort :=
-    (*TODO: matches is currently going to behave badly w/ implicit terms.
-      Need to fix this before I can run this.
-
-     TODO: need matches on sorts
-     *)
     match l with
     | [::] => None
     | (_,sort_le c t1 t2)::l' =>
+      (*TODO: check that rule is executable, i.e. FV(t1) >= FV(t2)*)
       match sort_step_redex l' t with
       | Some t' => Some t'
-      | None => do s <- matches t t1 (map fst c);
+      | None => do s <- matches_unordered_sort t t1;
                 ret t2[/s/]
       end
     | _::l' => sort_step_redex l' t
     end.
-   *)
 
   (* TODO: define as option or iterate to a fixed point? *)
   Section InnerLoop.
@@ -610,5 +598,77 @@ Section ParStep.
       do s' <- args_par_step term_par_step l s;
       ret (con name s')
     end.
+  
+  Definition sort_par_step (l : lang) (t:sort) : option sort :=
+    match sort_step_redex l t, t with
+    | Some e',_ => Some e'
+    | None, scon name s =>
+      do s' <- args_par_step term_par_step l s;
+      ret (scon name s')
+    end.
 
+  Fixpoint term_par_step_n (l : lang) (e : exp) (fuel : nat) : exp :=
+    match fuel, term_par_step l e with
+    | 0,_ => e
+    | S _, None => e
+    | S fuel', Some e' => term_par_step_n l e' fuel'
+    end.
+  
+  Fixpoint sort_par_step_n (l : lang) (t : sort) (fuel : nat) : sort :=
+    match fuel, sort_par_step l t with
+    | 0,_ => t
+    | S _, None => t
+    | S fuel', Some t' => sort_par_step_n l t' fuel'
+    end.
+
+  Lemma sort_par_step_related
+    : forall l t t', sort_par_step l t = Some t' -> sort_steps_par l t t'.
+  Admitted.
+
+  Lemma sort_par_step_n_related l t fuel : sort_steps_star l t (sort_par_step_n l t fuel).
+  Proof.
+    revert t.
+    induction fuel.
+    { cbn; apply sort_steps_refl. }
+    {
+      intro t.
+      cbn.
+      ltac1:(case_match); eauto using sort_steps_refl.
+      symmetry in HeqH.
+      eapply sort_par_step_related in HeqH.
+      eapply sort_steps_next; eauto.
+    }
+  Qed.
+
+  Lemma sort_par_step_n_le l c t fuel
+    : le_sort l c t (sort_par_step_n l t fuel).
+  Proof.
+    auto using sort_par_step_n_related, sort_steps_star_le .
+  Qed.
+
+  Definition generic_sort_dec_fuel (fuel : nat) (l : lang)
+             (n : nat) (c:ctx) t1 t2 : bool :=
+    let l' := nth_tail n l in
+    let t1' := sort_par_step_n l' t1 fuel in
+    let t2' := sort_par_step_n l' t2 fuel in
+    t1' == t2'.
+  
+  Lemma generic_decide_le_sort (fuel : nat) (l : lang)
+    : forall n c t1 t2,
+      wf_lang (nth_tail n l) ->
+      wf_sort (nth_tail n l) c t1 ->
+      wf_sort (nth_tail n l) c t2 ->
+      (generic_sort_dec_fuel fuel l n c t1 t2) -> (le_sort (nth_tail n l) c t1 t2).
+  Proof.
+    unfold generic_sort_dec_fuel.
+    intros n c t1 t2 _ _ _.
+    ltac1:(move /eqP).
+    intro speq.
+    match! goal with
+      [ speq : ?a = ?b|- le_sort ?l ?c _ _] =>
+      assert (le_sort $l $c $a $b)>[rewrite speq; apply le_sort_refl|]
+    end.
+    eauto using le_sort_trans, sort_par_step_n_le, le_sort_sym, le_sort_refl.
+  Qed.
+  
 End ParStep.
