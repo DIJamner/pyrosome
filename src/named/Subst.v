@@ -68,21 +68,71 @@ Definition cat_lang : lang :=
 
 Print LangRecognize.
 
-Fixpoint cat_lang_sub_r c e G_l : exp :=
-  match e with
-  | con "id" [::] => G_l
-  | con "cmp" [:: g; f] =>
-    let G_lf := cat_lang_sub_r c f G_l in
-    let G_lg := cat_lang_sub_r c g G_lf in
-    G_lg
-  | var x =>
-    match named_list_lookup {{s #"ERR"}} c x with
-    | scon "sub" [:: G; _] => G
-    | _ => {{e #"ERR"}}
-    end
-  | _ => {{e #"ERR"}}
-  end.
+Section InferSub.
+
+  Context (subst_lang_el_ty : ctx -> exp (*G*) -> exp (*e*) -> exp).
+
   
+  Fixpoint sub_decompose g f : exp :=
+    if f == g then {{e #"id"}}
+    else match f with
+         | con "cmp" [:: h; f'] =>
+           {{e #"cmp" {sub_decompose g f'} {h} }}
+         | _ => {{e #"ERR"}}
+         end.
+
+  (*Only works sometimes; not guaranteed to be correct *)
+  Definition ty_decompose g A :=
+    if g == {{e #"id"}} then A
+    else match A with
+         | con "ty_subst" [:: A; g'] =>
+           {{e #"ty_subst" {sub_decompose g g'} {A} }}
+         | _ => {{e #"ERR: ty_decompose"}}
+         end.
+
+  Fixpoint cat_lang_sub_r c e G_l : exp :=
+    match e with
+    | con "id" [::] => G_l
+    | con "cmp" [:: g; f] =>
+      let G_lf := cat_lang_sub_r c f G_l in
+      let G_lg := cat_lang_sub_r c g G_lf in
+      G_lg
+    | con "wkn" [::] =>
+      match G_l with
+      | con "ext" [:: _;G_r] => G_r
+      | _ => {{e #"ERR"}}
+      end
+    | con "snoc" [:: e; f] =>
+      let G' := cat_lang_sub_r c f G_l in
+      let Af := subst_lang_el_ty c G' e in
+      {{e #"ext" {G'} {ty_decompose f Af} }}
+    | var x =>
+      match named_list_lookup {{s #"ERR"}} c x with
+      | scon "sub" [:: G; _] => G
+      | _ => {{e #"ERR"}}
+      end
+    | _ => {{e #"ERR"}}
+    end.
+
+End InferSub.
+  
+Fixpoint subst_lang_el_ty c G e : exp :=
+  match e,G with
+  | var x,_ => 
+    match named_list_lookup {{s #"ERR not in c"}} c x with
+    | scon "el" [:: t; _] => t
+    | _ => {{e #"ERR sort from c not in subst lang"}}
+    end
+  | con "hd" [::], con "ext" [:: A; G'] =>
+    {{e #"ty_subst" #"wkn" %"A" }}
+  | con "el_subst" [:: e'; g], _ =>
+    let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+    let A := subst_lang_el_ty c G' e' in
+    {{e #"ty_subst" {g} {A} }}
+  | _, _ => {{e #"ERR: not in subst lang" }}
+  end.
+
+
 Instance rec_cat_lang : LangRecognize cat_lang :=
   { le_sort_dec := generic_sort_dec_fuel 10 cat_lang;
     decide_le_sort := @generic_decide_le_sort 10 cat_lang;
@@ -90,7 +140,7 @@ Instance rec_cat_lang : LangRecognize cat_lang :=
       match name, t, s with
       | "id", scon "sub" [:: _; G],_ => [:: G]
       | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
-        let G2 := cat_lang_sub_r c f G1 in
+        let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
         [:: g; f; G3; G2; G1]
       | _,_,_ => s
       end%string;
@@ -225,13 +275,6 @@ Lemma nth_tail_in_bound {A : eqType} (e:A) m n l
 Admitted.
  *)
 
-Fixpoint sub_decompose g f : exp :=
-  if f == g then {{e #"id"}}
-  else match f with
-       | con "cmp" [:: h; f'] =>
-         {{e #"cmp" {sub_decompose g f'} {h} }}
-       | _ => {{e #"ERR"}}
-       end.
 
 (* TODO: the right way to do the elab is some bidirectional thing 
    I think. For now special casing el_subst
@@ -239,26 +282,18 @@ Fixpoint sub_decompose g f : exp :=
 Instance rec_subst_lang' : LangRecognize subst_lang' :=
   {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang';
     decide_le_sort := @generic_decide_le_sort 10 subst_lang';
-(*  le_sort_dec n c t1 t2 :=
-      (t1 == t2) ||
-      ((n <= 6) &&
-       (c == [:: ("e"%string, {{s#"el" %"G3" %"A"}}); ("A"%string, {{s#"ty" %"G3"}});
-        ("g"%string, {{s#"sub" %"G2" %"G3"}}); ("f"%string, {{s#"sub" %"G1" %"G2"}}); 
-       ("G3"%string, {{s#"env"}}); ("G2"%string, {{s#"env"}}); ("G1"%string, {{s#"env"}})])&&
-       (t1=={{s#"el" %"G1" (#"ty_subst" %"f" (#"ty_subst" %"g" %"A"))}})&&
-       (t2=={{s#"el" %"G1" (#"ty_subst" (#"cmp" %"f" %"g") %"A")}}));*)
     term_args_elab c s name t := 
       match name, t, s with
       | "forget", scon "sub" [:: _; G],_ => [:: G]
       | "id", scon "sub" [:: _; G],_ => [:: G]
       | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
-        let G2 := cat_lang_sub_r c f G1 in
+        let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
         [:: g; f; G3; G2; G1]
       | "ty_subst", scon "ty" [:: G], [:: A; g] =>
-        let G' := cat_lang_sub_r c g G in
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         [:: A; g; G'; G]
       | "el_subst", scon "el" [:: (con "ty_subst" [:: A; f]); G], [:: e; g] =>
-        let G' := cat_lang_sub_r c g G in
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         (* need to pull a g substitution off of f;
            first run f to simplify
          *)
@@ -267,7 +302,7 @@ Instance rec_subst_lang' : LangRecognize subst_lang' :=
         [:: e; (con "ty_subst" [:: A; f'']); g; G'; G]
       (* special case for id subst since it can disappear; only works if g ~ id*)
       | "el_subst", scon "el" [:: A; G], [:: e; g] =>
-        let G' := cat_lang_sub_r c g G in
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         (* need to pull a g substitution off of f;
            first run f to simplify
          *)
@@ -276,63 +311,6 @@ Instance rec_subst_lang' : LangRecognize subst_lang' :=
       end%string;
     sort_args_elab c s _ := s
   }.
-(*
-Proof.
-  {
-    intros n c t1 t2 _ _ _.
-    ltac1:(move /orP => []).
-    {
-      ltac1:(move /eqP ->);
-        apply le_sort_refl.
-    }
-    {
-      ltac1:(move => /andP [] /andP [] /andP [nlt] /eqP -> /eqP -> /eqP ->).
-      eapply (le_sort_refl' (name:="el"%string)).
-      ltac1:(simple eapply nth_tail_in_bound); eauto.
-      match!goal with
-      | [|- is_true((?n,?e)\in ?l)]=>
-        (*TODO: this can be improved a bit*)
-        assert ($e = named_list_lookup $e $l $n); cbv; solve[auto]
-      end.
-      repeat constructor.
-      repeat constructor.
-      repeat constructor.
-      reflexivity.
-      reflexivity.
-      {
-        constructor.
-        constructor.
-        constructor.
-        {
-          simpl.
-          apply le_term_refl.
-        }
-        {
-          eapply (le_term_by' (name:="ty_subst_cmp"%string)); eauto.
-          
-          ltac1:(simple eapply nth_tail_in_bound); eauto.
-          match!goal with
-          | [|- is_true((?n,?e)\in ?l)]=>
-            (*TODO: this can be improved a bit*)
-            assert ($e = named_list_lookup $e $l $n); cbv; solve[auto]
-          end.
-          repeat constructor.
-          repeat constructor.
-          reflexivity.
-          reflexivity.
-          reflexivity.
-          simpl.
-          repeat (constructor>[| eapply le_term_refl]).
-          constructor.
-        }
-      }
-    }
-  }
-  Unshelve.
-  exact ({{e%"ERR"}}).
-  exact ({{e%"ERR"}}).
-Defined.
-*)
     
 Lemma unfold_wf_term_dec l lr n c name s t fuel'
   : wf_term_dec lr  n c (con name s) t (S fuel')
@@ -370,162 +348,26 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma unfold_wf_sort_dec l lr n c t fuel'
+  :  wf_sort_dec lr n c t (S fuel') =
+    match t with
+    | scon name s =>
+      match named_list_lookup_err (nth_tail n l) name with
+      | Some (sort_rule c' args) =>
+        let es := sort_args_elab (l:=l) c s name in
+        (wf_args_dec lr n c s args es c' fuel')
+      | _ => false
+      end
+    end.
+Proof.
+  reflexivity.
+Qed.
+
 Lemma subst_lang'_wf : wf_lang subst_lang'.
 Proof.
   apply (@decide_wf_lang _ _ 100); vm_compute; reflexivity.
 Qed.
 
-
-(*
-Fixpoint subst_lang'_reduce_sub e : exp :=
-  match e with
-  | con "cmp" [::g; f] =>
-    match subst_lang'_reduce_sub g, subst_lang'_reduce_sub f with
-    | con "id" [::], f' => f'
-    | g', con "id" [::] => g'
-    | g',f' => (*TODO: incomplete; cmp assoc*) {{e #"cmp" {f'} {g'} }}
-    end
-  (* TODO: incomplete*)
-  | _ => e
-  end.
-
-Fixpoint subst_lang'_reduce_ty e : exp :=
-  match e with
-  | con "ty_subst" [:: A; g] =>
-    match subst_lang'_reduce_sub g, subst_lang'_reduce_ty A with
-    | con "id" [::], A' => A'
-    | g', con "ty_subst" [:: B; f] =>
-      let gf := subst_lang'_reduce_sub {{e #"cmp" {g} {f} }} in
-      {{e #"ty_subst" {gf} {B} }}
-    | g', A' => {{e #"ty_subst" {g'} {A'} }}
-    end
-  (* TODO: incomplete*)
-  | _ => e
-  end.
-*)
-(* TODO: congruence is trickier for this version*)
-(*
-Lemma subst_lang'_reduce_sub_le c e t
-  : wf_term subst_lang' c e t ->
-    le_term subst_lang' c t e (subst_lang'_reduce_sub e).
-Proof.
-  induction e.
-  { intros _; simpl; eapply le_term_refl. }
-  {
-    ltac1:(case neq: (n == "cmp")%string).
-    {
-      ltac1:(move: neq => /eqP ->).
-      repeat (destruct l;
-              try (solve[intros; simpl; eapply le_term_refl])).
-      destruct H.
-      destruct H0.
-      destruct H1.
-      Search _ le_term.
-      apply Tactics.le_term_refl'.
-      
-    }
-    {
-      simpl.
-      destruct l; simpl.
-      { intros; simpl; eapply le_term_refl. }
-*)
-(*
-  
-#[refine]
-Instance rec_subst_lang' : LangRecognize subst_lang' :=
-  { le_sort_dec _ _ t1 t2 :=
-      match t1,t2 with
-      | scon "ty" [::A1; G1], scon "ty" [::A2; G2] =>
-        (G1 == G2)&&(subst_lang'_reduce_ty A1 == subst_lang'_reduce_ty A2)
-      | _, _ => t1 == t2
-      end;
-      (* TODO: extend *)
-    term_args_elab c s name t := 
-      match name, t, s with
-      | "id", scon "sub" [:: _; G],_ => [:: G]
-      | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
-        let G2 := cat_lang_sub_r c f G1 in
-        [:: g; f; G3; G2; G1]
-      | _,_,_ => s
-      end%string;
-    sort_args_elab c s _ := s
-  }.
-Proof.
-  {
-    intros n c t1 t2 _ _ _.
-    ltac1:(move /eqP ->).
-    apply le_sort_refl.
-  }
-Defined.
-
-Derive elab_subst_lang'
-       SuchThat (elab_lang subst_lang' elab_subst_lang')
-       As elab_subst_lang'_pf.
-Proof.
-  repeat (elab(fun () => reflexivity )).
-  {
-    eapply Core.le_sort_refl'; repeat (elab(fun()=> reflexivity)).
-    eapply (Core.le_term_by' "ty_subst_id"%string); repeat (elab (fun()=>reflexivity)).
-  }
-  {    
-    eapply Core.le_sort_refl'; repeat (elab (fun()=>reflexivity)).
-    symmetry.
-    eapply (Core.le_term_by' "ty_subst_cmp"%string); repeat (elab (fun()=>reflexivity)).
-  }
-Qed.
-
-Instance elab_subst_lang'_inst : Elaborated subst_lang' :=
-  {
-  elaboration := elab_subst_lang';
-  elab_pf := elab_subst_lang'_pf;
-  }.
-*)
-
-(****************************
- Nth-tail section; TODO: is any of this needed?
-                            *)
-
-Lemma nth_tail_nil {A} n : @nth_tail A n [::] = [::].
-Proof.
-  destruct n; simpl; reflexivity.
-Qed.
-
-Definition is_fst {A : eqType} (l:list A) (e:A) : bool :=
-  match l with
-  | [::] => false
-  | e'::_ => e == e'
-  end.
-
-Arguments is_fst {A} !l/.
-
-(*Temporary, just for the following lemma:*)
-Arguments nth_tail {A} !n l/.
-
-
-Lemma nth_tail_S_cons {A} n (e:A) l : nth_tail n.+1 (e::l) = nth_tail n l.
-Proof.
-  reflexivity.
-Qed.      
-
-Lemma nth_tail_add1 {A} n (l:list A) : nth_tail 1 (nth_tail n l) = nth_tail (n.+1) l.
-Proof.
-  revert l; induction n; intros.
-  { reflexivity. }
-  { destruct l.
-    { reflexivity. }
-    { rewrite !nth_tail_S_cons.
-      rewrite IHn.
-      reflexivity.
-    }
-  }
-Qed.    
-
-
-Arguments nth_tail : simpl never.
-
-(****************
- end nth_tail
-*)
 
 Definition subst_lang : lang :=
    [::[:> "G" : #"env", "A" : #"ty" %"G"
@@ -574,8 +416,73 @@ Definition subst_lang : lang :=
   [:| "G" : #"env", "A": #"ty" %"G"
        -----------------------------------------------
        #"ext" "G" "A" : #"env"
-  ]]%arule++subst_lang'.
+   ]]%arule++subst_lang'.
 
-Eval compute in (term_par_step_n subst_lang
-                               {{e #"el_subst" (#"snoc" (#"snoc" (#"snoc" #"forget" %"y") %"x") %"e")
-                                   (#"el_subst" #"wkn" (#"el_subst" #"wkn" #"hd"))}} 7).
+
+(* TODO: the right way to do the elab is some bidirectional thing 
+   I think. For now special casing el_subst.
+   TODO: this fails at hd[/snoc/]
+*)         
+Instance rec_subst_lang : LangRecognize subst_lang :=
+  {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang;
+    decide_le_sort := @generic_decide_le_sort 10 subst_lang;
+    term_args_elab c s name t := 
+      match name, t, s with
+      | "forget", scon "sub" [:: _; G],_ => [:: G]
+      | "id", scon "sub" [:: _; G],_ => [:: G]
+      | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
+        let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
+        [:: g; f; G3; G2; G1]
+      | "ty_subst", scon "ty" [:: G], [:: A; g] =>
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+        [:: A; g; G'; G]
+      (* special case for hd[/snoc/]; really should gen type; TODO: needed?
+      | "el_subst", scon "el" [:: (con "ty_subst" [:: A; f]); G],
+        [:: con "hd" [::]; con "snoc" [:: e;g]] =>
+        [:: {{e #"hd"}}; {{e #"ty_subst" _ {A} }}; {{e #"snoc" {g} {e} }}; G'; G] *)
+      | "el_subst", scon "el" [:: _; G], [:: e; g] =>
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+        let A := subst_lang_el_ty c G' e in
+        [:: e; A; g; G'; G]
+     (* (* special case for id subst since it can disappear; only works if g ~ id*)
+      | "el_subst", scon "el" [:: A; G], [:: e; g] =>
+        let G' := cat_lang_sub_r c g G in
+        (* need to pull a g substitution off of f;
+           first run f to simplify
+         *)
+        [:: e; A; g; G'; G]*)
+      | "snoc", scon "sub" [:: con "ext" [:: A; G']; G], [:: e; g] =>
+        [:: e; g; A; G'; G]
+      | "wkn", scon "sub" [:: G; con "ext" [:: A; _]], [::] =>
+        [:: A; G]
+      | "hd", scon "el" [:: _; con "ext" [:: A; G]], [::] =>
+        [:: A; G]
+      | _,_,_ => s
+      end%string;
+    sort_args_elab c s _ := s
+  }.
+
+Ltac2 unfold_wf_term_dec () :=
+    rewrite unfold_wf_term_dec;
+cbv [nth_tail named_list_lookup_err
+              cat fst snd
+              cat_lang subst_lang'
+              String.eqb Ascii.eqb Bool.eqb].
+
+
+Ltac2 unfold_wf_sort_dec () :=
+    rewrite unfold_wf_sort_dec;
+cbv [nth_tail named_list_lookup_err
+              cat fst snd
+              cat_lang subst_lang'
+              String.eqb Ascii.eqb Bool.eqb].
+
+Ltac2 break_dec_goal () :=
+  ltac1:(apply /andP); split; try (solve[vm_compute; reflexivity]).
+  
+Lemma subst_lang_wf : wf_lang subst_lang.
+Proof.
+  apply (@decide_wf_lang _ _ 100).
+  vm_compute.
+  reflexivity.
+Qed.
