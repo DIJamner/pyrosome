@@ -66,8 +66,6 @@ Definition cat_lang : lang :=
   ]
   ]%arule.
 
-Print LangRecognize.
-
 Section InferSub.
 
   Context (subst_lang_el_ty : ctx -> exp (*G*) -> exp (*e*) -> exp).
@@ -215,70 +213,6 @@ Definition subst_lang' : lang :=
   ]]%arule++cat_lang.
 
 
-(* combines le_sort_by and le_sort_subst *)
-Lemma le_sort_by' name l c : forall c' e1 e2 s1 s2 e1' e2',
-    [s> !c' 
-         ----------------------------------------------- (name)
-         {e1} = {e2} ]%arule \in l ->
-    len_eq s1 c' ->
-    len_eq s2 c' -> 
-    e1' = e1[/with_names_from c' s1/] ->
-    e2' = e2[/with_names_from c' s2/] ->
-    le_subst l c c' (with_names_from c' s1) (with_names_from c' s2) ->
-    le_sort l c e1' e2'.
-Proof using .
-  intros.
-  rewrite H2; clear H2.
-  rewrite H3; clear H3.
-  eapply le_sort_subst>[| eapply le_sort_by; eauto].
-  auto.
-Qed.
-
-(* combines le_term_by and le_term_subst *)
-Lemma le_term_by' name l c : forall c' t e1 e2 s1 s2 t' e1' e2',
-    [:> !c' 
-        ----------------------------------------------- (name)
-        {e1} = {e2} : {t}]%arule \in l ->
-    len_eq s1 c' ->
-    len_eq s2 c' ->                          
-    t' = t[/with_names_from c' s2/] ->
-    e1' = e1[/with_names_from c' s1/] ->
-    e2' = e2[/with_names_from c' s2/] ->
-      le_subst l c c' (with_names_from c' s1) (with_names_from c' s2) ->
-    le_term l c t' e1' e2'.
-Proof using .
-  intros.
-  rewrite H2; clear H2.
-  rewrite H3; clear H3.
-  rewrite H4; clear H4.
-  eapply le_term_subst>[| eapply le_term_by; eauto].
-  auto.
-Qed.
-(*
-
-(*TODO: temp; needs improvement*)
-Lemma le_sort_refl' name l c args : forall c' s1 s2 e1' e2',
-    (name, sort_rule c' args) \in l ->
-    len_eq s1 c' ->
-    len_eq s2 c' ->
-    len_eq s1 args ->
-    e1' = scon name s1 ->
-    e2' = scon name s2 ->
-    le_subst l c c' (with_names_from c' s1) (with_names_from c' s2) ->
-    le_sort l c e1' e2'.
-Proof using .
-Admitted.
-  
-
-Lemma nth_tail_in_bound {A : eqType} (e:A) m n l
-        : m <= n -> e \in nth_tail n l -> e \in nth_tail m l.
-Admitted.
- *)
-
-
-(* TODO: the right way to do the elab is some bidirectional thing 
-   I think. For now special casing el_subst
-*)         
 Instance rec_subst_lang' : LangRecognize subst_lang' :=
   {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang';
     decide_le_sort := @generic_decide_le_sort 10 subst_lang';
@@ -312,56 +246,7 @@ Instance rec_subst_lang' : LangRecognize subst_lang' :=
     sort_args_elab c s _ := s
   }.
     
-Lemma unfold_wf_term_dec l lr n c name s t fuel'
-  : wf_term_dec lr  n c (con name s) t (S fuel')
-    = match named_list_lookup_err (nth_tail n l) name with
-      | Some (term_rule c' args t') =>
-        let es := @term_args_elab l lr c s name t in
-        (wf_sort_dec lr n c t'[/with_names_from c' es/] fuel') &&
-        (le_sort_dec n c t'[/with_names_from c' es/] t) &&
-        (wf_args_dec lr n c s args es c' fuel')
-      | _ => false
-      end.
-Proof.
-  reflexivity.
-Qed.
 
-Lemma unfold_wf_args_dec l (lr : LangRecognize l) n c s args es c' fuel'
-  : wf_args_dec lr n c s args es c' (S fuel') =
-         match c',es, args, s with
-         | [::], [::], [::], [::] => true
-         | [::], _, _, _ => false
-         | (name,t)::c'', [::], _, _ => false
-         | (name,t)::c'', e::es', [::], [::] =>
-           (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
-           (wf_args_dec lr n c [::] [::] es' c'' fuel')
-         | (name,t)::c'', e::es', name'::args', e'::s' =>
-           if name == name'
-           then (e == e') &&
-                (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
-                (wf_args_dec lr n c s' args' es' c'' fuel')
-           else (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
-                (wf_args_dec lr n c s args es' c'' fuel')
-         | _,_,_,_ => false (*TODO?*)
-         end.
-Proof.
-  reflexivity.
-Qed.
-
-Lemma unfold_wf_sort_dec l lr n c t fuel'
-  :  wf_sort_dec lr n c t (S fuel') =
-    match t with
-    | scon name s =>
-      match named_list_lookup_err (nth_tail n l) name with
-      | Some (sort_rule c' args) =>
-        let es := sort_args_elab (l:=l) c s name in
-        (wf_args_dec lr n c s args es c' fuel')
-      | _ => false
-      end
-    end.
-Proof.
-  reflexivity.
-Qed.
 
 Lemma subst_lang'_wf : wf_lang subst_lang'.
 Proof.
@@ -417,12 +302,7 @@ Definition subst_lang : lang :=
        -----------------------------------------------
        #"ext" "G" "A" : #"env"
    ]]%arule++subst_lang'.
-
-
-(* TODO: the right way to do the elab is some bidirectional thing 
-   I think. For now special casing el_subst.
-   TODO: this fails at hd[/snoc/]
-*)         
+ 
 Instance rec_subst_lang : LangRecognize subst_lang :=
   {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang;
     decide_le_sort := @generic_decide_le_sort 10 subst_lang;
@@ -436,21 +316,10 @@ Instance rec_subst_lang : LangRecognize subst_lang :=
       | "ty_subst", scon "ty" [:: G], [:: A; g] =>
         let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         [:: A; g; G'; G]
-      (* special case for hd[/snoc/]; really should gen type; TODO: needed?
-      | "el_subst", scon "el" [:: (con "ty_subst" [:: A; f]); G],
-        [:: con "hd" [::]; con "snoc" [:: e;g]] =>
-        [:: {{e #"hd"}}; {{e #"ty_subst" _ {A} }}; {{e #"snoc" {g} {e} }}; G'; G] *)
       | "el_subst", scon "el" [:: _; G], [:: e; g] =>
         let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         let A := subst_lang_el_ty c G' e in
         [:: e; A; g; G'; G]
-     (* (* special case for id subst since it can disappear; only works if g ~ id*)
-      | "el_subst", scon "el" [:: A; G], [:: e; g] =>
-        let G' := cat_lang_sub_r c g G in
-        (* need to pull a g substitution off of f;
-           first run f to simplify
-         *)
-        [:: e; A; g; G'; G]*)
       | "snoc", scon "sub" [:: con "ext" [:: A; G']; G], [:: e; g] =>
         [:: e; g; A; G'; G]
       | "wkn", scon "sub" [:: G; con "ext" [:: A; _]], [::] =>
@@ -461,24 +330,6 @@ Instance rec_subst_lang : LangRecognize subst_lang :=
       end%string;
     sort_args_elab c s _ := s
   }.
-
-Ltac2 unfold_wf_term_dec () :=
-    rewrite unfold_wf_term_dec;
-cbv [nth_tail named_list_lookup_err
-              cat fst snd
-              cat_lang subst_lang'
-              String.eqb Ascii.eqb Bool.eqb].
-
-
-Ltac2 unfold_wf_sort_dec () :=
-    rewrite unfold_wf_sort_dec;
-cbv [nth_tail named_list_lookup_err
-              cat fst snd
-              cat_lang subst_lang'
-              String.eqb Ascii.eqb Bool.eqb].
-
-Ltac2 break_dec_goal () :=
-  ltac1:(apply /andP); split; try (solve[vm_compute; reflexivity]).
   
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof.

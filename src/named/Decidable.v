@@ -672,3 +672,78 @@ Section ParStep.
   Qed.
   
 End ParStep.
+
+
+(* Tools for proof debugging *)
+Section InteractiveTactics.
+  Lemma unfold_wf_term_dec l lr n c name s t fuel'
+  : wf_term_dec lr  n c (con name s) t (S fuel')
+    = match named_list_lookup_err (nth_tail n l) name with
+      | Some (term_rule c' args t') =>
+        let es := @term_args_elab l lr c s name t in
+        (wf_sort_dec lr n c t'[/with_names_from c' es/] fuel') &&
+        (le_sort_dec n c t'[/with_names_from c' es/] t) &&
+        (wf_args_dec lr n c s args es c' fuel')
+      | _ => false
+      end.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Lemma unfold_wf_args_dec l (lr : LangRecognize l) n c s args es c' fuel'
+    : wf_args_dec lr n c s args es c' (S fuel') =
+      match c',es, args, s with
+      | [::], [::], [::], [::] => true
+      | [::], _, _, _ => false
+      | (name,t)::c'', [::], _, _ => false
+      | (name,t)::c'', e::es', [::], [::] =>
+        (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
+        (wf_args_dec lr n c [::] [::] es' c'' fuel')
+      | (name,t)::c'', e::es', name'::args', e'::s' =>
+        if name == name'
+        then (e == e') &&
+             (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
+             (wf_args_dec lr n c s' args' es' c'' fuel')
+        else (wf_term_dec lr n c e t[/with_names_from c'' es'/] fuel') &&
+             (wf_args_dec lr n c s args es' c'' fuel')
+      | _,_,_,_ => false (*TODO?*)
+      end.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Lemma unfold_wf_sort_dec l lr n c t fuel'
+    :  wf_sort_dec lr n c t (S fuel') =
+       match t with
+       | scon name s =>
+         match named_list_lookup_err (nth_tail n l) name with
+         | Some (sort_rule c' args) =>
+           let es := sort_args_elab (l:=l) c s name in
+           (wf_args_dec lr n c s args es c' fuel')
+         | _ => false
+         end
+       end.
+  Proof.
+    reflexivity.
+  Qed.
+
+
+  (*TODO: may need lang name(s) passed in for cbv*)
+  Ltac2 unfold_wf_term_dec () :=
+    rewrite unfold_wf_term_dec; 
+    cbv [nth_tail named_list_lookup_err
+              cat fst snd
+              String.eqb Ascii.eqb Bool.eqb].
+
+
+  (*TODO: may need lang name(s) passed in for cbv*)
+  Ltac2 unfold_wf_sort_dec () :=
+    rewrite unfold_wf_sort_dec;
+    cbv [nth_tail named_list_lookup_err
+              cat fst snd
+              String.eqb Ascii.eqb Bool.eqb].
+
+  Ltac2 break_dec_goal () :=
+    ltac1:(apply /andP); split; try (solve[vm_compute; reflexivity]).
+
+End InteractiveTactics.
