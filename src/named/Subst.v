@@ -10,20 +10,13 @@ From Utils Require Import Utils.
 From Named Require Import Exp Rule ARule Tactics Decidable.
 From Named Require ICore.
 Import ICore.IndependentJudgment.
-Import Exp.Notations ARule.Notations. (* TODO: Rule.Notations.*)
+Import Exp.Notations ARule.Notations.
 Require Import String.
 
 Require Import Named.Recognizers.
 
 Set Default Proof Mode "Ltac2".
 
-
-
-
-(*Notation ob := (con 0 [::]).
-Notation hom a b := (con 1 [:: b; a]%exp_scope).
-Notation id a := (con 2 [:: a]%exp_scope).
-Notation cmp a b c f g := (con 3 [:: f; g; c; b; a]%exp_scope).*)       
 
 (* syntax of categories *)
 Definition cat_lang : lang :=
@@ -151,8 +144,56 @@ Proof.
   vm_compute; reflexivity.
 Qed.
 
-Definition subst_lang' : lang :=
- [::[:> 
+
+Definition subst_lang : lang :=
+   [::[:> "G" : #"env", "A" : #"ty" %"G"
+       ----------------------------------------------- ("snoc_wkn_hd")
+       #"id" = #"snoc" #"wkn" #"hd" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
+   ];
+   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" %"G1" %"G2",
+       "g" : #"sub" %"G2" %"G3",
+       "A" : #"ty" %"G3",
+       "e" : #"el" %"G2" (#"ty_subst" %"g" %"A")
+       ----------------------------------------------- ("cmp_snoc")
+       #"cmp" %"f" (#"snoc" %"g" %"e")
+       = #"snoc" (#"cmp" %"f" %"g") (#"el_subst" %"f" %"e")
+       : #"sub" %"G1" (#"ext" %"G3" %"A")
+   ];
+   [:> "G" : #"env", "G'" : #"env",
+       "g" : #"sub" %"G" %"G'",
+       "A" : #"ty" %"G'",
+       "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
+       ----------------------------------------------- ("snoc_hd")
+       #"el_subst" (#"snoc" %"g" %"e") #"hd" = %"e"
+       : #"el" %"G" (#"ty_subst" %"g" %"A")
+  ];
+  [:> "G" : #"env", "G'" : #"env",
+      "g" : #"sub" %"G" %"G'",
+      "A" : #"ty" %"G'",
+      "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
+      ----------------------------------------------- ("wkn_snoc")
+      #"cmp" (#"snoc" %"g" %"e") #"wkn" = %"g" : #"sub" %"G" %"G'"
+  ];
+  [:| "G" : #"env", "A" : #"ty"(%"G")
+       -----------------------------------------------
+       #"hd" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"A")
+  ];
+  [:| "G" : #"env", "A" : #"ty" %"G"
+       -----------------------------------------------
+       #"wkn" : #"sub" (#"ext" %"G" %"A") %"G"
+  ];
+  [:| "G" : #"env", "G'" : #"env", "A" : #"ty" %"G'",
+      "g" : #"sub" %"G" %"G'",
+      "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
+       -----------------------------------------------
+       #"snoc" "g" "e" : #"sub" %"G" (#"ext" %"G'" %"A")
+  ];
+  [:| "G" : #"env", "A": #"ty" %"G"
+       -----------------------------------------------
+       #"ext" "G" "A" : #"env"
+  ];
+  [:> 
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
   ];
@@ -211,97 +252,6 @@ Definition subst_lang' : lang :=
       -----------------------------------------------
       #"ty" "G" srt
   ]]%arule++cat_lang.
-
-
-Instance rec_subst_lang' : LangRecognize subst_lang' :=
-  {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang';
-    decide_le_sort := @generic_decide_le_sort 10 subst_lang';
-    term_args_elab c s name t := 
-      match name, t, s with
-      | "forget", scon "sub" [:: _; G],_ => [:: G]
-      | "id", scon "sub" [:: _; G],_ => [:: G]
-      | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
-        let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
-        [:: g; f; G3; G2; G1]
-      | "ty_subst", scon "ty" [:: G], [:: A; g] =>
-        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
-        [:: A; g; G'; G]
-      | "el_subst", scon "el" [:: (con "ty_subst" [:: A; f]); G], [:: e; g] =>
-        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
-        (* need to pull a g substitution off of f;
-           first run f to simplify
-         *)
-        let f' := term_par_step_n subst_lang' f 100 in
-        let f'' := sub_decompose g f' in
-        [:: e; (con "ty_subst" [:: A; f'']); g; G'; G]
-      (* special case for id subst since it can disappear; only works if g ~ id*)
-      | "el_subst", scon "el" [:: A; G], [:: e; g] =>
-        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
-        (* need to pull a g substitution off of f;
-           first run f to simplify
-         *)
-        [:: e; A; g; G'; G]
-      | _,_,_ => s
-      end%string;
-    sort_args_elab c s _ := s
-  }.
-    
-
-
-Lemma subst_lang'_wf : wf_lang subst_lang'.
-Proof.
-  apply (@decide_wf_lang _ _ 100); vm_compute; reflexivity.
-Qed.
-
-
-Definition subst_lang : lang :=
-   [::[:> "G" : #"env", "A" : #"ty" %"G"
-       ----------------------------------------------- ("snoc_wkn_hd")
-       #"id" = #"snoc" #"wkn" #"hd" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
-   ];
-   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" %"G1" %"G2",
-       "g" : #"sub" %"G2" %"G3",
-       "A" : #"ty" %"G3",
-       "e" : #"el" %"G2" (#"ty_subst" %"g" %"A")
-       ----------------------------------------------- ("cmp_snoc")
-       #"cmp" %"f" (#"snoc" %"g" %"e")
-       = #"snoc" (#"cmp" %"f" %"g") (#"el_subst" %"f" %"e")
-       : #"sub" %"G1" (#"ext" %"G3" %"A")
-   ];
-   [:> "G" : #"env", "G'" : #"env",
-       "g" : #"sub" %"G" %"G'",
-       "A" : #"ty" %"G'",
-       "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
-       ----------------------------------------------- ("snoc_hd")
-       #"el_subst" (#"snoc" %"g" %"e") #"hd" = %"e"
-       : #"el" %"G" (#"ty_subst" %"g" %"A")
-  ];
-  [:> "G" : #"env", "G'" : #"env",
-      "g" : #"sub" %"G" %"G'",
-      "A" : #"ty" %"G'",
-      "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
-      ----------------------------------------------- ("wkn_snoc")
-      #"cmp" (#"snoc" %"g" %"e") #"wkn" = %"g" : #"sub" %"G" %"G'"
-  ];
-  [:| "G" : #"env", "A" : #"ty"(%"G")
-       -----------------------------------------------
-       #"hd" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"A")
-  ];
-  [:| "G" : #"env", "A" : #"ty" %"G"
-       -----------------------------------------------
-       #"wkn" : #"sub" (#"ext" %"G" %"A") %"G"
-  ];
-  [:| "G" : #"env", "G'" : #"env", "A" : #"ty" %"G'",
-      "g" : #"sub" %"G" %"G'",
-      "e" : #"el" %"G" (#"ty_subst" %"g" %"A")
-       -----------------------------------------------
-       #"snoc" "g" "e" : #"sub" %"G" (#"ext" %"G'" %"A")
-  ];
-  [:| "G" : #"env", "A": #"ty" %"G"
-       -----------------------------------------------
-       #"ext" "G" "A" : #"env"
-   ]]%arule++subst_lang'.
  
 Instance rec_subst_lang : LangRecognize subst_lang :=
   {  le_sort_dec := generic_sort_dec_fuel 10 subst_lang;
@@ -333,7 +283,7 @@ Instance rec_subst_lang : LangRecognize subst_lang :=
   
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof.
-  apply (@decide_wf_lang _ _ 100).
-  vm_compute.
-  reflexivity.
+  time(apply (@decide_wf_lang _ _ 100);
+  vm_compute;
+  reflexivity).
 Qed.

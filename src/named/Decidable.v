@@ -675,7 +675,7 @@ End ParStep.
 
 
 (* Tools for proof debugging *)
-Section InteractiveTactics.
+Module InteractiveTactics.
   Lemma unfold_wf_term_dec l lr n c name s t fuel'
   : wf_term_dec lr  n c (con name s) t (S fuel')
     = match named_list_lookup_err (nth_tail n l) name with
