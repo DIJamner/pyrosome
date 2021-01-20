@@ -279,6 +279,7 @@ Ltac break_andbs :=
          end.
 Ltac break :=
   repeat match goal with
+         | [H: unit|-_]=> destruct H
          | [H: _*_|-_]=> destruct H
          | [H: _/\_|-_]=> destruct H
          | [H : is_true(_&&_)|-_]=>

@@ -123,25 +123,26 @@ Fixpoint subst_lang_el_ty c G e : exp :=
   | _, _ => {{e #"ERR: not in subst lang" }}
   end.
 
+Import OptionMonad.
 
 Instance rec_cat_lang : LangRecognize cat_lang :=
   { le_sort_dec := generic_sort_dec_fuel 10 cat_lang;
     decide_le_sort := @generic_decide_le_sort 10 cat_lang;
     term_args_elab c s name t := 
       match name, t, s with
-      | "id", scon "sub" [:: _; G],_ => [:: G]
+      | "id", scon "sub" [:: _; G],_ => do ret [:: G]
       | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
         let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
-        [:: g; f; G3; G2; G1]
-      | _,_,_ => s
+        do ret [:: g; f; G3; G2; G1]
+      | _,_,_ => do ret s
       end%string;
-    sort_args_elab c s _ := s
+    sort_args_elab c s _ := do ret s
   }.
 
 Lemma cat_lang_wf : wf_lang cat_lang.
 Proof.
-  apply (@decide_wf_lang _ _ 100).
-  vm_compute; reflexivity.
+    apply (decide_wf_lang (fuel:=100));
+    vm_compute; constructor.
 Qed.
 
 
@@ -258,32 +259,31 @@ Instance rec_subst_lang : LangRecognize subst_lang :=
     decide_le_sort := @generic_decide_le_sort 10 subst_lang;
     term_args_elab c s name t := 
       match name, t, s with
-      | "forget", scon "sub" [:: _; G],_ => [:: G]
-      | "id", scon "sub" [:: _; G],_ => [:: G]
+      | "forget", scon "sub" [:: _; G],_ => do ret [:: G]
+      | "id", scon "sub" [:: _; G],_ => do ret [:: G]
       | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
         let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
-        [:: g; f; G3; G2; G1]
+        do ret [:: g; f; G3; G2; G1]
       | "ty_subst", scon "ty" [:: G], [:: A; g] =>
         let G' := cat_lang_sub_r subst_lang_el_ty c g G in
-        [:: A; g; G'; G]
+        do ret [:: A; g; G'; G]
       | "el_subst", scon "el" [:: _; G], [:: e; g] =>
         let G' := cat_lang_sub_r subst_lang_el_ty c g G in
         let A := subst_lang_el_ty c G' e in
-        [:: e; A; g; G'; G]
+        do ret [:: e; A; g; G'; G]
       | "snoc", scon "sub" [:: con "ext" [:: A; G']; G], [:: e; g] =>
-        [:: e; g; A; G'; G]
+        do ret [:: e; g; A; G'; G]
       | "wkn", scon "sub" [:: G; con "ext" [:: A; _]], [::] =>
-        [:: A; G]
+        do ret [:: A; G]
       | "hd", scon "el" [:: _; con "ext" [:: A; G]], [::] =>
-        [:: A; G]
-      | _,_,_ => s
+        do ret [:: A; G]
+      | _,_,_ => do ret s
       end%string;
-    sort_args_elab c s _ := s
+    sort_args_elab c s _ := do ret s
   }.
   
 Lemma subst_lang_wf : wf_lang subst_lang.
 Proof.
-  time(apply (@decide_wf_lang _ _ 100);
-  vm_compute;
-  reflexivity).
+    apply (decide_wf_lang (fuel:=100));
+    vm_compute; constructor.
 Qed.

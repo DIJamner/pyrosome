@@ -39,19 +39,6 @@ Require Import STLC_bot.
  
  Definition stlc_letk :=
   [::
-     (*[:> "G" : #"env",
-         "A" : #"ty" %"G",
-         "B" : #"ty" (#"ext" %"G" %"A")
-      ----------------------------------------------- ("snd beta")
-      #"snd" = #"ty_subst" #"wkn" #"hd"
-      : (#"ty_subst" #"wkn" (#"ty_subst" #"wkn" %"A"))
-     ];
-  [:| "G" : #"env",
-      "A" : #"ty" %"G",
-      "B" : #"ty" (#"ext" %"G" %"A")
-       -----------------------------------------------
-       #"snd" : #"el" (#"ext" (#"ext" %"G" %"A") %"B") (#"ty_subst" #"wkn" (#"ty_subst" #"wkn" %"A"))
-  ];*)
   [:> "G" : #"env",
       "A" : #"ty" %"G",
       "e" : #"el" %"G" (#"->" (#"->" %"A" #"bot") #"bot"),

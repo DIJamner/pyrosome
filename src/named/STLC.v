@@ -10,11 +10,10 @@ From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
 From Named Require Import Exp.
-From Named Require Import IExp IRule ICore Subst Tactics.
-Import IExp.Notations IRule.Notations Exp.Notations ARule.Notations.
+From Named Require ICore.
+From Named Require Import Subst Tactics Decidable.
+Import ICore.IndependentJudgment Exp.Notations ARule.Notations.
 Require Import String.
-
-Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
 
@@ -24,8 +23,9 @@ Definition stlc :=
       "G'" : #"env",
       "g" : #"sub" %"G'" %"G"
       ----------------------------------------------- ("lambda_subst")
-      #"el_subst" %"g" (#"lambda" %"e")
-      = #"lambda" (#"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
+      #"el_subst" %"g" (#"lambda" %"A" %"e")
+      = #"lambda" (#"ty_subst" %"g" %"A")
+         (#"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
       : #"el" %"G'" (#"ty_subst" %"g" (#"->" %"A" %"B"))
   ];
   [:> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
@@ -52,7 +52,7 @@ Definition stlc :=
       "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B"),
       "e'" : #"el" %"G" %"A"
       ----------------------------------------------- ("STLC_beta")
-      #"app" (#"lambda"%"e") %"e'"
+      #"app" (#"lambda" %"A" %"e") %"e'"
       = #"el_subst" (#"snoc" #"id" %"e'") %"e"
       : #"el" %"G" %"B"
   ];
@@ -69,13 +69,234 @@ Definition stlc :=
        "B" : #"ty" %"G",
        "e" : #"el" (#"ext" %"G" %"A") (#"ty_subst" #"wkn" %"B")
        -----------------------------------------------
-       #"lambda" "e" : #"el" %"G" (#"->" %"A" %"B")
+       #"lambda" "A" "e" : #"el" %"G" (#"->" %"A" %"B")
   ];
   [:| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
       -----------------------------------------------
       #"->" "t" "t'" : #"ty" %"G"
-  ]]%irule++subst_lang.
+  ]]%arule++subst_lang.
 
+Import OptionMonad.
+
+Section InferSub.
+
+  Context (subst_lang_el_ty : ctx -> exp (*G*) -> exp (*e*) -> option exp).
+
+  
+  Fixpoint sub_decompose' g f : option exp :=
+    if f == g then do ret {{e #"id"}}
+    else match f with
+         | con "cmp" [:: h; f'] =>
+           do ret {{e #"cmp" {sub_decompose g f'} {h} }}
+         | _ => None
+         end.
+  
+  Fixpoint sub_decompose g f : option exp :=
+    match g with
+    | con "cmp" [:: h; g'] =>
+      do g'_minus_f <- sub_decompose g' f;
+      res <- sub_decompose h (g'_minus_f);
+           ret res
+    | _ => sub_decompose' g f
+    end.
+
+  Definition ty_decompose g A :=
+    if g == {{e #"id"}} then do ret A
+    else match A with
+         | con "ty_subst" [:: A; g'] =>
+           do g'_minus_g <- sub_decompose g g';
+           ret {{e #"ty_subst" {g'_minus_g} {A} }}
+         | _ => None
+         end.
+
+  Fixpoint cat_lang_sub_r c e G_l : option exp :=
+    match e with
+    | con "id" [::] => G_l
+    | con "cmp" [:: g; f] =>
+      let G_lf := cat_lang_sub_r c f G_l in
+      let G_lg := cat_lang_sub_r c g G_lf in
+      G_lg
+    | con "wkn" [::] =>
+      match G_l with
+      | con "ext" [:: _;G_r] => G_r
+      | _ => {{e #"ERR"}}
+      end
+    | con "snoc" [:: e; f] =>
+      let G' := cat_lang_sub_r c f G_l in
+      let Af := subst_lang_el_ty c G' e in
+      {{e #"ext" {G'} {ty_decompose f Af} }}
+    | var x =>
+      match named_list_lookup {{s #"ERR"}} c x with
+      | scon "sub" [:: G; _] => G
+      | _ => {{e #"ERR"}}
+      end
+    | _ => {{e #"ERR"}}
+    end.
+
+End InferSub.
+  
+Fixpoint subst_lang_el_ty c G e : exp :=
+  match e,G with
+  | var x,_ => 
+    match named_list_lookup {{s #"ERR not in c"}} c x with
+    | scon "el" [:: t; _] => t
+    | _ => {{e #"ERR sort from c not in subst lang"}}
+    end
+  | con "hd" [::], con "ext" [:: A; G'] =>
+    {{e #"ty_subst" #"wkn" %"A" }}
+  | con "el_subst" [:: e'; g], _ =>
+    let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+    let A := subst_lang_el_ty c G' e' in
+    {{e #"ty_subst" {g} {A} }}
+  | con "lambda" [:: e'; A], _ =>
+    let Bwkn := subst_lang_el_ty c {{e #"ext" {G} {A} }} e' in
+    {{e #"->" {A} {ty_decompose {{e#"wkn"}} Bwkn} }}
+  | con "app" [:: e'; e], _ =>
+    match subst_lang_el_ty c G e with
+    | con "->" [:: B; _] => B
+    | _ => {{e #"ERR: bad app"}}
+    end
+  | _, _ => {{e #"ERR: not in subst lang" }}
+  end.
+
+
+Instance rec_stlc : LangRecognize stlc :=
+  {  le_sort_dec := generic_sort_dec_fuel 10 stlc;
+    decide_le_sort := @generic_decide_le_sort 10 stlc;
+    term_args_elab c s name t := 
+      match name, t, s with
+      | "app", scon "el" [:: T; G], [:: e'; e] =>
+        match subst_lang_el_ty c G e with
+        | con "->" [:: B; A] => [:: e'; e; B; A; G]
+        | _ => [:: e';e; {{e #"ERR: bad app elab"}}]
+        end          
+      | "lambda", scon "el" [:: T; G], [:: e; A] =>
+        let T' := term_par_step_n stlc T 100 in
+        match T' with
+        | con "->" [:: B; _] =>
+          [:: e; B; A; G]
+        | _ => [:: {{e #"ERR"}}]
+        end
+      | "->", scon "ty" [:: G], [:: t'; t] => [:: t'; t; G]
+      | "forget", scon "sub" [:: _; G],_ => [:: G]
+      | "id", scon "sub" [:: _; G],_ => [:: G]
+      | "cmp", scon "sub" [:: G3; G1], [:: g; f] =>
+        let G2 := cat_lang_sub_r subst_lang_el_ty c f G1 in
+        [:: g; f; G3; G2; G1]
+      | "ty_subst", scon "ty" [:: G], [:: A; g] =>
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+        [:: A; g; G'; G]
+      | "el_subst", scon "el" [:: _; G], [:: e; g] =>
+        let G' := cat_lang_sub_r subst_lang_el_ty c g G in
+        let A := subst_lang_el_ty c G' e in
+        [:: e; A; g; G'; G]
+      | "snoc", scon "sub" [:: con "ext" [:: A; G']; G], [:: e; g] =>
+        [:: e; g; A; G'; G]
+      | "wkn", scon "sub" [:: G; con "ext" [:: A; _]], [::] =>
+        [:: A; G]
+      | "hd", scon "el" [:: _; con "ext" [:: A; G]], [::] =>
+        [:: A; G]
+      | _,_,_ => s
+      end%string;
+    sort_args_elab c s _ := s
+  }.
+
+Ltac2 rec break_forall_goal ():=
+  first [ apply List.Forall_nil
+        | apply List.Forall_cons > [| break_forall_goal()]].
+
+  
+Lemma stlc_wf : wf_lang stlc.
+Proof.
+  apply (decide_wf_lang (fuel:=100)).
+  match! goal with
+    [|-dm_remaining_goals _ ?comp] =>
+    let e := Std.eval_vm None comp in
+    Message.print (Message.of_constr e)
+  end.
+  ().
+  break_forall_goal ().
+  constructor.
+  apply (@decide_wf_lang _ _ 100).
+  next_goal().
+  simpl;
+    rewrite unfold_wf_term_dec.
+  break_dec_goal().
+  next_goal().
+  
+  
+
+
+  {
+    simpl.
+    rewrite unfold_wf_term_dec.
+    next_goal().
+    rewrite unfold_wf_args_dec.
+    next_goal().
+    simpl; rewrite unfold_wf_term_dec.
+    next_goal().
+    {
+      simpl; rewrite unfold_wf_sort_dec.
+      next_goal().
+      simpl.
+      rewrite unfold_wf_args_dec.
+      next_goal().
+      rewrite unfold_wf_term_dec.
+      next_goal().
+      rewrite unfold_wf_args_dec.
+      next_goal().
+      {
+        cbn[with_names_from].
+        cbn[cat_lang_sub_r subst_lang_el_ty].
+        cbn [nth_tail named_list_lookup_err
+                      named_list_lookup
+              cat fst snd
+              String.eqb Ascii.eqb Bool.eqb].
+        simpl; rewrite unfold_wf_term_dec.
+        todo
+        next_goal().
+      {
+        simpl; rewrite unfold_wf_sort_dec.
+        next_goal().
+        simpl; rewrite unfold_wf_args_dec.
+        next_goal().
+        rewrite unfold_wf_term_dec.
+        next_goal().
+        rewrite unfold_wf_args_dec.
+        next_goal().
+        
+        simpl; rewrite unfold_wf_term_dec.
+      next_goal().
+      
+      rewrite unfold_wf_args_dec; rewrite ?eq_refl.
+      repeat ltac1:(timeout 2 ltac2:(break_dec_goal())).
+      repeat (first [ rewrite unfold_wf_sort_dec;
+                     repeat ltac1:(timeout 2 ltac2:(break_dec_goal()))
+                   | rewrite unfold_wf_term_dec;
+                     repeat ltac1:(timeout 2 ltac2:(break_dec_goal()))
+                   | rewrite unfold_wf_args_dec;
+                     repeat ltac1:(timeout 2 ltac2:(break_dec_goal()))
+             ]).
+      match!goal with [|-is_true(_==?e)]=> remember $e as x end.
+      means there is a weaken I don't want
+      vm_compute in Heqx.
+      cbn.
+      
+      break_dec_goal().
+  break_dec_goal().
+  break_dec_goal().
+      
+  
+    cbn[with_names_from term_args_elab nth_tail named_list_lookup_err
+              cat fst snd rec_stlc
+              String.eqb Ascii.eqb Bool.eqb apply_subst sort_subst exp_subst].
+    cbv[term_args_elab].
+    simpl.
+    break_dec_goal().
+  vm_compute; reflexivity.
+Qed.
+
+  
 Derive elab_stlc
        SuchThat (elab_lang stlc elab_stlc)
        As elab_stlc_pf.

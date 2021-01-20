@@ -27,7 +27,7 @@ Class LangRecognize (l : lang) : Type :=
       wf_sort (nth_tail n l) c t1 ->
       wf_sort (nth_tail n l) c t2 ->
       (le_sort_dec n c t1 t2) -> (le_sort (nth_tail n l) c t1 t2);
-  term_args_elab : ctx -> list exp -> string -> sort -> list exp;
+  term_args_elab : ctx -> list exp -> string -> sort -> option (list exp);
   (* only needed for proof of other direction *)
   (*elaborate_term_implicits
   : forall n c name s t,
@@ -38,7 +38,7 @@ Class LangRecognize (l : lang) : Type :=
       wf_lang (nth_tail n l) ->
       (wf_term (nth_tail n l) c (con name s) t)
       <-> wf_args (nth_tail n l) c s args (term_args_elab c s name t) c';*)
-  sort_args_elab : ctx -> list exp -> string -> list exp;
+  sort_args_elab : ctx -> list exp -> string -> option (list exp);
   (*elaborate_sort_implicits
   : forall n c name s,
       let r := named_list_lookup (sort_rule [::] [::]) l name in
@@ -49,9 +49,67 @@ Class LangRecognize (l : lang) : Type :=
       <-> wf_args (nth_tail n l) c s args (sort_args_elab c s name) c'*)
   }.
 
+Require Monad.
+
 Section Base.
 
+  Inductive wfness_goal : Set :=
+  | wf_sort_goal : nat -> ctx -> sort -> wfness_goal
+  | wf_term_goal : nat -> ctx -> exp -> sort -> wfness_goal
+  | le_sort_goal : nat -> ctx -> sort -> sort -> wfness_goal
+  | le_term_goal : nat -> ctx -> sort -> exp -> exp -> wfness_goal.
+
+  Definition dec_monad (A : Set) : Set := option (list wfness_goal * A).
+
+  Import Monad.
+  
+  Instance dec_monad_instance : Monad dec_monad :=
+    {
+    Mret _ a := Some ([::],a);
+    Mbind _ _ f ma :=
+      match ma with
+      | Some (l,a) =>
+        Option.map (fun p => (p.1++l, p.2)) (f a)
+      | None => None
+      end;
+      Mfail _ := None
+    }.
+  
+  Definition add_goal (g : wfness_goal) : dec_monad unit :=
+    Some ([:: g],tt).
+
+  Local Definition lift {A : Set} (e : option A) : dec_monad A :=
+    match e with
+    | Some e' => Mret e'
+    | None => None
+    end.
+
+  Definition dm_catch_as (g:wfness_goal) (ma : dec_monad unit) : dec_monad unit :=
+    match ma with
+    | Some (l, tt) => Some (l,tt)
+    | None => add_goal g
+    end.
+  
   Variable l : lang.
+
+  Definition reify_goal (g : wfness_goal) : Prop :=
+    match g with
+    | wf_sort_goal n c t => wf_sort (nth_tail n l) c t
+    | wf_term_goal n c e t => wf_term (nth_tail n l) c e t
+    | le_sort_goal n c t1 t2 => le_sort (nth_tail n l) c t1 t2
+    | le_term_goal n c t e1 e2 => le_term (nth_tail n l) c t e1 e2
+    end.
+
+  Definition reify_all_goals (l : list wfness_goal) : Prop :=
+    List.Forall reify_goal l.
+
+  Definition dm_remaining_goals (res : dec_monad unit) : Prop :=
+    match res with
+    | Some (l, tt) => reify_all_goals l
+    | None => False
+    end.
+  Arguments dm_remaining_goals !res /.
+    
   Context (langrec : LangRecognize l).
 
 
@@ -70,53 +128,57 @@ Section Base.
   Definition args_depth s : nat := (foldr max 0 (map depth s)).+1.
    *)     
   
-  Fixpoint wf_term_dec n c e t fuel : bool :=
-    match fuel, e with
-    | 0,_ => false
-    | S fuel', var x =>
-      match named_list_lookup_err c x with
-      | Some t' => le_sort_dec n c t' t
-      | None => false
-      end
-    | S fuel', con name s =>
-      match named_list_lookup_err (nth_tail n l) name with
-      | Some (term_rule c' args t') =>
-        let es := term_args_elab c s name t in
-        (wf_sort_dec n c t'[/with_names_from c' es/] fuel') &&
-        (le_sort_dec n c t'[/with_names_from c' es/] t) &&
-        (wf_args_dec n c s args es c' fuel')
-      | _ => false
-      end
-    end
-  with wf_args_dec n c s args es c' fuel : bool :=
-         match fuel, c',es, args, s with
-         | 0,_,_,_,_=> false
-         | S fuel', [::], [::], [::], [::] => true
-         | S fuel', [::], _, _, _ => false
-         | S fuel', (name,t)::c'', [::], _, _ => false
-         | S fuel', (name,t)::c'', e::es', [::], [::] =>
-           (wf_term_dec n c e t[/with_names_from c'' es'/] fuel') &&
-           (wf_args_dec n c [::] [::] es' c'' fuel')
-         | S fuel', (name,t)::c'', e::es', name'::args', e'::s' =>
+  Definition try_le_sort n c t' t : dec_monad unit :=
+    if le_sort_dec n c t' t
+    then do ret tt else add_goal (le_sort_goal n c t' t).  
+
+  Fixpoint wf_term_dec n c e t fuel : dec_monad unit :=
+    dm_catch_as (wf_term_goal n c e t)
+    (match e with
+    | var x =>
+      do t' <- lift (named_list_lookup_err c x);
+         tt <- try_le_sort n c t' t;
+         ret tt
+    | con name s =>
+      do (S fuel') <?- do ret fuel;
+         (term_rule c' args t') <?- lift (named_list_lookup_err (nth_tail n l) name);
+         es <- lift (term_args_elab c s name t);
+         tt <- wf_sort_dec n c t'[/with_names_from c' es/] fuel';
+         tt <- try_le_sort n c t'[/with_names_from c' es/] t;
+         tt <- wf_args_dec n c s args es c' fuel';
+         ret tt
+    end)
+  with wf_args_dec n c s args es c' fuel : dec_monad unit :=
+         match c',es, args, s with
+         | [::], [::], [::], [::] => do ret tt
+         | [::], _, _, _ => Mfail
+         | (name,t)::c'', [::], _, _ => Mfail
+         | (name,t)::c'', e::es', [::], [::] =>
+           do (S fuel') <?- do ret fuel;
+              tt <- wf_term_dec n c e t[/with_names_from c'' es'/] fuel';
+              tt <- wf_args_dec n c [::] [::] es' c'' fuel'; 
+              ret tt
+         |  (name,t)::c'', e::es', name'::args', e'::s' =>
            if name == name'
-           then (e == e') &&
-                (wf_term_dec n c e t[/with_names_from c'' es'/] fuel') &&
-                (wf_args_dec n c s' args' es' c'' fuel')
-           else (wf_term_dec n c e t[/with_names_from c'' es'/] fuel') &&
-                (wf_args_dec n c s args es' c'' fuel')
-         | _,_,_,_,_ => false (*TODO?*)
+           then do (S fuel') <?- do ret fuel;
+                   !e == e';
+                   tt <- wf_term_dec n c e t[/with_names_from c'' es'/] fuel';
+                   tt <- wf_args_dec n c s' args' es' c'' fuel';
+                   ret tt
+           else do (S fuel') <?- do ret fuel;
+              tt <- wf_term_dec n c e t[/with_names_from c'' es'/] fuel';
+              tt <- wf_args_dec n c [::] [::] es' c'' fuel'; 
+              ret tt
+         | _,_,_,_ => Mfail (*TODO?*)
          end
-  with wf_sort_dec n c t fuel : bool :=
-    match fuel, t with
-    | 0,_ => false
-    | S fuel', scon name s =>
-      match named_list_lookup_err (nth_tail n l) name with
-      | Some (sort_rule c' args) =>
-        let es := sort_args_elab c s name in
-        (wf_args_dec n c s args es c' fuel')
-      | _ => false
-      end
-    end.
+  with wf_sort_dec n c t fuel : dec_monad unit :=
+  dm_catch_as (wf_sort_goal n c t)
+    (do (S fuel') <?- do ret fuel;
+        let (scon name s) := t;
+        (sort_rule c' args) <?- lift (named_list_lookup_err (nth_tail n l) name);
+        es <- lift (sort_args_elab c s name);
+        tt <- wf_args_dec n c s args es c' fuel';
+        ret tt).
 
   Arguments wf_term_dec n c !e t !fuel/.
   Arguments wf_args_dec n c !s !args !es !c' !fuel/.
@@ -126,18 +188,18 @@ Section Base.
     : wf_lang (nth_tail n l) ->
       wf_ctx (nth_tail n l) c ->
       wf_sort (nth_tail n l) c t ->
-      wf_term_dec n c e t fuel -> wf_term (nth_tail n l) c e t
+      dm_remaining_goals (wf_term_dec n c e t fuel) -> wf_term (nth_tail n l) c e t
   with decide_wf_args n c s args es c' fuel
        : wf_lang (nth_tail n l) ->
          wf_ctx (nth_tail n l) c ->
          wf_ctx (nth_tail n l) c' ->
-         wf_args_dec n c s args es c' fuel -> wf_args (nth_tail n l) c s args es c'
+         dm_remaining_goals (wf_args_dec n c s args es c' fuel) -> wf_args (nth_tail n l) c s args es c'
   with decide_wf_sort n c t fuel
        : wf_lang (nth_tail n l) ->
          wf_ctx (nth_tail n l) c ->
-         wf_sort_dec n c t fuel -> wf_sort (nth_tail n l) c t.
-  Proof using Type.
-    {
+         dm_remaining_goals (wf_sort_dec n c t fuel) -> wf_sort (nth_tail n l) c t.
+  Proof.
+(* TODO    {
       intros wfl wfc wfs.
       destruct fuel> [intro fls; inversion fls|].
       destruct e; simpl;
@@ -211,121 +273,136 @@ Section Base.
       symmetry; eauto.
       apply wfa; auto.
       (* from wf lang *)admit.
-    }
+    }*)
   Admitted.
 
-  Fixpoint wf_ctx_dec n c fuel : bool :=
+  Fixpoint wf_ctx_dec n c fuel : dec_monad unit :=
     match c with
-    | [::] => true
+    | [::] => do ret tt
     | (name,t)::c'=>
-      (fresh name c') &&
-      (wf_sort_dec n c' t fuel) &&
-      (wf_ctx_dec n c' fuel)
-    end.
-
+      do !fresh name c';
+      tt <- wf_sort_dec n c' t fuel;
+      tt <- wf_ctx_dec n c' fuel;
+      ret tt
+  end.
   Arguments wf_ctx_dec n !c fuel/.
+
+  Lemma reify_all_goals_cat l0 l1
+    : reify_all_goals (l1 ++ l0) <-> reify_all_goals l0 /\ reify_all_goals l1.
+  Proof.
+    unfold reify_all_goals.
+    rewrite List.Forall_app.
+    ltac1:(easy).
+  Qed.
+    
+  (*TODO: move up*)
+  Lemma split_remaining_goals f mtt
+    : dm_remaining_goals (Mbind f mtt)
+      <-> dm_remaining_goals mtt /\ dm_remaining_goals (f tt).
+  Proof.
+    destruct mtt;ltac1:(break).
+    {
+      simpl.
+      remember (f tt) as mtt'.
+      (destruct mtt'; ltac1:(break);
+        simpl)>[ apply reify_all_goals_cat |ltac1:(easy)].
+    }
+    {
+      ltac1:(easy).
+    }
+  Qed.
+
+  Arguments Mbind : simpl never.
 
   Lemma decide_wf_ctx n c fuel
        : wf_lang (nth_tail n l) ->
-         wf_ctx_dec n c fuel -> wf_ctx (nth_tail n l) c.
+         dm_remaining_goals (wf_ctx_dec n c fuel) -> wf_ctx (nth_tail n l) c.
   Proof.
-    induction c; intros; ltac1:(break); simpl in *; constructor; auto;
-    revert H0;
-    repeat ltac1:(move => /andP []);
-    intros; auto.
-    eapply decide_wf_sort; eauto.
-  Qed.    
+    induction c; intros; ltac1:(break); constructor; auto;
+      revert H0; simpl; repeat ltac1:(case_match); subst;
+        rewrite ?split_remaining_goals;intro; ltac1:(break); eauto using decide_wf_sort;
+          apply False_ind; assumption.
+  Qed.
+   
 
-  Definition wf_rule_dec n r fuel : bool :=
+  Definition wf_rule_dec n r fuel : dec_monad unit :=
     match r with
     | sort_rule c args =>
-      (subseq args (map fst c)) &&
-      (wf_ctx_dec n c fuel)
+      do !subseq args (map fst c);
+         tt <- wf_ctx_dec n c fuel;
+         ret tt
     | term_rule c args t =>
-      (subseq args (map fst c)) &&
-      (wf_ctx_dec n c fuel) &&
-      (wf_sort_dec n c t fuel)
+      do !subseq args (map fst c);
+         tt <- wf_ctx_dec n c fuel;
+         tt <- wf_sort_dec n c t fuel;
+         ret tt
     | sort_le c t1 t2 =>
-      (wf_ctx_dec n c fuel) &&
-      (wf_sort_dec n c t1 fuel) &&
-      (wf_sort_dec n c t2 fuel)
+      do tt <- wf_ctx_dec n c fuel;
+         tt <- wf_sort_dec n c t1 fuel;
+         tt <- wf_sort_dec n c t2 fuel;
+         ret tt
     | term_le c e1 e2 t =>
-      (wf_ctx_dec n c fuel) &&
-      (wf_term_dec n c e1 t fuel) &&
-      (wf_term_dec n c e2 t fuel) &&
-      (wf_sort_dec n c t fuel)
+      do tt <- wf_ctx_dec n c fuel;
+         tt <- wf_sort_dec n c t fuel;
+         tt <- wf_term_dec n c e1 t fuel;
+         tt <- wf_term_dec n c e2 t fuel;
+         ret tt
     end.
 
   Lemma decide_wf_rule n r fuel
        : wf_lang (nth_tail n l) ->
-         wf_rule_dec n r fuel -> wf_rule (nth_tail n l) r.
+         dm_remaining_goals (wf_rule_dec n r fuel) -> wf_rule (nth_tail n l) r.
   Proof.
     intro.
     destruct r;
-    repeat ltac1:(move => /andP []);
-    intros; constructor; eauto using decide_wf_ctx, decide_wf_sort, decide_wf_term.
+    simpl; repeat ltac1:(case_match); subst;
+      rewrite ?split_remaining_goals;intro; ltac1:(break); constructor;
+        eauto using decide_wf_sort, decide_wf_ctx, decide_wf_term;
+          apply False_ind; assumption.
   Qed.
 
-  Fixpoint wf_lang_dec' n l fuel : bool :=
+  Fixpoint wf_lang_dec' n l fuel : dec_monad unit :=
     match l with
-    | [::] => true
+    | [::] => do ret tt
     | (name,r)::l' =>
-      (fresh name l') &&
-      (wf_rule_dec n.+1 r fuel) &&
-      (wf_lang_dec' n.+1 l' fuel)
+      do !(fresh name l');
+         tt <- wf_rule_dec n.+1 r fuel;
+         tt <- wf_lang_dec' n.+1 l' fuel;
+         ret tt
     end.
 
-  Definition wf_lang_dec fuel : bool :=
+  Definition wf_lang_dec fuel : dec_monad unit :=
     wf_lang_dec' 0 l fuel.
 
-(*
-Lemma decide_wf_lang_succ n name r fuel
-  : wf_lang_dec' n.+1 (nth_tail n.+1 l) fuel ->
-    fresh name (nth_tail n.+1 l) ->
-    wf_rule_dec n r fuel ->
-    wf_lang_dec' n (nth_tail n l) fuel.
-Proof.
-  intros.
-  destruct l.
-  { destruct n; simpl; auto. }
-  {
-    destruct n; simpl; ltac1:(break); auto.
-    {
-      ltac1:(break_goal); auto.
-      unfold nth_tail in H.
-      repeat ltac1:(move => /andP []).      
-    simpl.
-  *)
-
   Lemma decide_wf_lang' n fuel
-    : wf_lang_dec' n (nth_tail n l) fuel -> wf_lang (nth_tail n l).
+    : dm_remaining_goals (wf_lang_dec' n (nth_tail n l) fuel) -> wf_lang (nth_tail n l).
   Proof.
     remember (nth_tail n l) as nl.
     revert n Heqnl.
     induction nl.
     { constructor. }
     {
-      intros; ltac1:(break); simpl in *.
-      revert H;
-        repeat ltac1:(move => /andP []);
-        intros.
-      constructor; auto.
+      intros n ntheq;ltac1:(break); simpl in *.
+      simpl; repeat ltac1:(case_match); subst;
+      rewrite ?split_remaining_goals;intro; ltac1:(break); constructor;
+        eauto using decide_wf_rule;    
+          try (solve[apply False_ind; assumption]).
       {
         eapply (IHnl (S n)).
         ltac1:(simple eapply nth_tail_cons_eq); eauto.
         assumption.
       }
       {
-        ltac1:(simple apply nth_tail_cons_eq in Heqnl).
-        rewrite Heqnl.
+        ltac1:(simple apply nth_tail_cons_eq in ntheq).
+        rewrite ntheq.
         eapply decide_wf_rule; eauto.
-        rewrite <-Heqnl.
+        rewrite <-ntheq.
         eauto.
       }
     }
   Qed.
 
-  Lemma decide_wf_lang fuel : wf_lang_dec fuel -> wf_lang l.
+  Lemma decide_wf_lang fuel : dm_remaining_goals (wf_lang_dec fuel) -> wf_lang l.
   Proof.
     unfold wf_lang_dec.
     apply decide_wf_lang'.
@@ -333,7 +410,7 @@ Proof.
 
 
 End Base.
-
+  
 
 
 (*TODO: prove, put in right place *)
@@ -621,6 +698,7 @@ Section ParStep.
     | S fuel', Some t' => sort_par_step_n l t' fuel'
     end.
 
+  (*TODO: not true in general!*)
   Lemma sort_par_step_related
     : forall l t t', sort_par_step l t = Some t' -> sort_steps_par l t t'.
   Admitted.
@@ -674,6 +752,7 @@ Section ParStep.
 End ParStep.
 
 
+(*
 (* Tools for proof debugging *)
 Module InteractiveTactics.
   Lemma unfold_wf_term_dec l lr n c name s t fuel'
@@ -747,3 +826,4 @@ Module InteractiveTactics.
     ltac1:(apply /andP); split; try (solve[vm_compute; reflexivity]).
 
 End InteractiveTactics.
+*)
