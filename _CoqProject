@@ -9,6 +9,7 @@ src/named/Core.v
 src/named/IExp.v
 src/named/IRule.v
 src/named/ARule.v
+src/named/Pf.v
 src/named/ICore.v
 src/named/Compilers.v
 src/named/Recognizers.v

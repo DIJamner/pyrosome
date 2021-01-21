@@ -520,6 +520,41 @@ Proof using .
   }
 Qed.
 
+Definition id_subst args : subst := map (fun x => (x,var x)) args.
+
+Lemma id_subst_reduce args (e : exp)
+  : e[/id_subst args/] = e.
+Proof.
+  elim: e.
+  {
+    intros; cbn.
+    elim args.
+    { reflexivity. }
+    {
+      intros; simpl.
+      case_match.
+      symmetry in HeqH0.
+      move: HeqH0 => /eqP -> //=.
+      exact H.
+    }
+  }
+  {
+    intros; cbn; f_equal.
+    elim: l H; simpl; intros; break; f_equal.
+    exact H0.
+    auto.
+  }
+Qed.
+
+
+Lemma id_subst_reduce_sort args (e : sort)
+  : e[/id_subst args/] = e.
+Proof.
+  destruct e.
+  intros; cbn; f_equal.
+  elim: l; simpl; intros; break; f_equal; eauto using id_subst_reduce.
+Qed.
+
 Module Notations.
 
   Declare Custom Entry exp.

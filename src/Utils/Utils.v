@@ -337,6 +337,10 @@ Module OptionMonad.
       (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
   Notation "'ret' e" := (Some e) (in custom monadic_do at level 90, e constr).
+  
+  Notation "'let' p := e ; b" :=
+    (let p := e in b)
+      (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
   Notation "! e ; b" :=
     (if e then b else None)
@@ -414,7 +418,7 @@ Ltac solve_reflect_norec :=
           end.
 
 Lemma named_list_lookup_err_in {A : eqType} c n (t : A)
-  : named_list_lookup_err c n = Some t -> (n,t) \in c.
+  : Some t = named_list_lookup_err c n -> (n,t) \in c.
 Proof using .
   elim: c.
   {
@@ -456,7 +460,64 @@ Fixpoint subseq {A : eqType} (s l : list A) : bool :=
   | [::],_ => true
   | sa::s', [::] => false
   | sa::s', la::l' =>
-    if sa == la then subseq s' l'
-    else subseq s l'
+    ((sa == la) && (subseq s' l')) || (subseq s l')
   end.
 
+Lemma subseq_cons_rest {A:eqType} (a:A) l1 l2
+  : subseq (a::l1) l2 -> subseq l1 l2.
+Proof using.
+  induction l2.
+  { simpl; intro fls; inversion fls. }
+  {
+    simpl.
+    move /orP => [].
+    {
+      move /andP => [] /eqP <-.
+      case l1; auto.
+      intros; apply /orP; right; auto.
+    }
+    {
+      move /IHl2 => IH.
+      clear IHl2.
+      case: l1 IH; auto.
+      intros; apply /orP; right; auto.
+    }
+  }
+Qed.
+
+Lemma subseq_cons_first {A:eqType} (a:A) l1 l2
+  : subseq (a::l1) l2 -> a \in l2.
+Proof using.
+  induction l2.
+  { simpl; intro fls; inversion fls. }
+  {
+    simpl.
+    move /orP => [].
+    {
+      move /andP => [] /eqP <-.
+      intros _.
+      apply mem_head.
+    }
+    {
+      move /IHl2 => IH.
+      clear IHl2.
+      rewrite in_cons.
+      apply /orP; right; assumption.
+    }
+  }
+Qed.
+
+Lemma subseq_refl {A:eqType} l : @subseq A l l.
+Proof.
+  elim: l; intros; simpl; eauto.
+  rewrite eq_refl; rewrite H; reflexivity.
+Qed.
+  
+Lemma subseq_l_cons_l {A:eqType} (a:A) l
+  : subseq l (a::l).
+Proof.
+  simpl.
+  case: l; auto.
+  intros; apply /orP; right. 
+  apply subseq_refl.
+Qed.
