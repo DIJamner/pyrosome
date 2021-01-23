@@ -463,7 +463,8 @@ Ltac fold_Substable :=
   try change (exp_subst ?s ?e) with e[/s/];
   try change (sort_subst ?s ?e) with e[/s/];
   try change (args_subst ?s ?e) with e[/s/];
-  try change (subst_cmp ?s ?e) with e[/s/].
+  try change (subst_cmp ?s ?e) with e[/s/];
+  try change (map (exp_var_map (subst_lookup ?s')) ?s) with s[/s'/].
 
 
 Lemma ws_subst_args args (s : subst)
