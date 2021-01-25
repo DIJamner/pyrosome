@@ -17,107 +17,111 @@ Section TermsAndRules.
 
   (*These use Exp and ARule for inferred terms
     I have yet to use ann, so maybe give it up for now?
+
+    All assume wf_lang.
+    All ctxs (other than in wf_ctx) are assumed to satisfy wf_ctx.
+    Judgments whose assumptions take ctxs must ensure they are wf.
+    Sorts are not assumed to be wf; the term judgments should guarantee
+    that their sorts are wf.
    *)
   
-  Inductive le_sort c : sort -> sort -> Prop :=
-  | le_sort_by : forall name t1 t2,
+  Inductive le_sort : ctx -> sort -> sort -> Prop :=
+  | le_sort_by : forall c name t1 t2,
       (name, sort_le c t1 t2) \in l ->
       le_sort c t1 t2
-  | le_sort_subst : forall s1 s2 c' t1' t2',
-      (* TODO: this breaks le_sort's assumptions;
-         Need to assert wf_ctx c'?
-         Would have to be mutual.
-         That would give me a big circularity;
-         better to have wf_ctx' that uses refl
+  | le_sort_subst : forall c s1 s2 c' t1' t2',
+      (* Need to assert wf_ctx c here to satisfy
+         assumptions' presuppositions
        *)
+      wf_ctx c' ->
       le_subst c c' s1 s2 ->
       le_sort c' t1' t2' ->
       le_sort c t1'[/s1/] t2'[/s2/]
-  | le_sort_con : forall name c' args s1 s2 es1 es2,
+  | le_sort_con : forall c name c' args s1 s2 es1 es2,
       (name, (sort_rule c' args)) \in l ->
       le_args c c' s1 s2 args es1 es2 ->
       le_sort c (scon name s1) (scon name s2)
-  | le_sort_trans : forall t1 t12 t2,
+  | le_sort_trans : forall c t1 t12 t2,
       le_sort c t1 t12 ->
       le_sort c t12 t2 ->
       le_sort c t1 t2
-  | le_sort_sym : forall t1 t2, le_sort c t1 t2 -> le_sort c t2 t1
-  with le_term c : sort -> exp -> exp -> Prop :=
-  | le_term_subst : forall s1 s2 c' t e1 e2,
+  | le_sort_sym : forall c t1 t2, le_sort c t1 t2 -> le_sort c t2 t1
+  with le_term : ctx -> sort -> exp -> exp -> Prop :=
+  | le_term_subst : forall c s1 s2 c' t e1 e2,
+      (* Need to assert wf_ctx c' here to satisfy
+         assumptions' presuppositions
+       *)
+      wf_ctx c' ->
       le_subst c c' s1 s2 ->
       le_term c' t e1 e2 ->
       le_term c t[/s2/] e1[/s1/] e2[/s2/]
-  | le_term_by : forall name t e1 e2,
+  | le_term_by : forall c name t e1 e2,
       (name,term_le c e1 e2 t) \in l ->
-                                   le_term c t e1 e2
-  | le_term_con : forall name c' args t s1 s2 es1 es2,
-      (*TODO: use le_args here? makes things more mutual.*)
+      le_term c t e1 e2
+  | le_term_con : forall c name c' args t s1 s2 es1 es2,
       (name, (term_rule c' args t)) \in l ->
-                                        le_args c c' s1 s2 args es1 es2 ->
-                                        le_term c t[/with_names_from c' es2/] (con name s1) (con name s2)
-  | le_term_var : forall x t,
+      le_args c c' s1 s2 args es1 es2 ->
+      le_term c t[/with_names_from c' es2/] (con name s1) (con name s2)
+  | le_term_var : forall c x t,
       (x,t) \in c ->
                 le_term c t (var x) (var x)
-  | le_term_trans : forall t e1 e12 e2,
+  | le_term_trans : forall c t e1 e12 e2,
       le_term c t e1 e12 ->
       le_term c t e12 e2 ->
       le_term c t e1 e2
-  | le_term_sym : forall t e1 e2, le_term c t e1 e2 -> le_term c t e2 e1
+  | le_term_sym : forall c t e1 e2, le_term c t e1 e2 -> le_term c t e2 e1
   (* Conversion:
 
 c |- e1 = e2 : t 
                ||
 c |- e1 = e2 : t'
    *)
-  | le_term_conv : forall t t',
+  | le_term_conv : forall c t t',
       le_sort c t t' ->
       forall e1 e2,
         le_term c t e1 e2 ->
         le_term c t' e1 e2
   (* TODO: do I want to allow implicit elements in substitutions? *)
   (* TODO: do I want to define this in terms of le_args? *)
-  with le_subst c : ctx -> subst -> subst -> Prop :=
-  | le_subst_nil : le_subst c [::] [::] [::]
-  | le_subst_cons : forall c' s1 s2,
+  with le_subst : ctx -> ctx -> subst -> subst -> Prop :=
+  | le_subst_nil : forall c, le_subst c [::] [::] [::]
+  | le_subst_cons : forall c c' s1 s2,
       le_subst c c' s1 s2 ->
       forall name t e1 e2,
         (* assumed because the output ctx is wf: fresh name c' ->*)
         le_term c t[/s2/] e1 e2 ->
         le_subst c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2)
-  with le_args c : ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
-  | le_args_nil : le_args c [::] [::] [::] [::] [::] [::]
-  | le_args_cons_ex : forall c' s1 s2 args es1 es2,
+  with le_args : ctx -> ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
+  | le_args_nil : forall c, le_args c [::] [::] [::] [::] [::] [::]
+  | le_args_cons_ex : forall c c' s1 s2 args es1 es2,
       le_args c c' s1 s2 args es1 es2 ->
       forall name t e1 e2,
         (* assumed because the output ctx is wf: fresh name c' ->*)
         le_term c t[/with_names_from c' es2/] e1 e2 ->
         le_args c ((name, t)::c') (e1::s1) (e2::s2) (name::args) (e1::es1) (e2::es2)
-  | le_args_cons_im : forall c' s1 s2 args es1 es2,
+  | le_args_cons_im : forall c c' s1 s2 args es1 es2,
       le_args c c' s1 s2 args es1 es2 ->
       forall name t e1 e2,
         (* assumed because the output ctx is wf: fresh name c' ->*)
         le_term c t[/with_names_from c' es2/] e1 e2 ->
-        le_args c ((name, t)::c') s1 s2 args (e1::es1) (e2::es2).
-
-  Hint Constructors le_sort le_term le_subst le_args : imcore.
-
-  Inductive wf_term c : exp -> sort -> Prop :=
-  | wf_term_by : forall n s args es c' t,
+        le_args c ((name, t)::c') s1 s2 args (e1::es1) (e2::es2)
+  with wf_term : ctx -> exp -> sort -> Prop :=
+  | wf_term_by : forall c n s args es c' t,
       (n, term_rule c' args t) \in l ->
                                    wf_args c s args es c' ->
                                    wf_term c (con n s) t[/(with_names_from c' es)/]
-  | wf_term_conv : forall e t t',
+  | wf_term_conv : forall c e t t',
       (* We add this condition so that we satisfy the assumptions of le_sort *)
       wf_sort c t -> 
       wf_term c e t ->
       le_sort c t t' ->
       wf_term c e t'
-  | wf_term_var : forall n t,
+  | wf_term_var : forall c n t,
       (n, t) \in c ->
                  wf_term c (var n) t
-  with wf_args c : list exp -> list string -> list exp -> ctx -> Prop :=
-  | wf_args_nil : wf_args c [::] [::] [::] [::]
-  | wf_args_cons_ex : forall s args es c' name e t,
+  with wf_args : ctx -> list exp -> list string -> list exp -> ctx -> Prop :=
+  | wf_args_nil : forall c, wf_args c [::] [::] [::] [::]
+  | wf_args_cons_ex : forall c s args es c' name e t,
       fresh name c' ->
       wf_term c e t[/with_names_from c' es/] ->
       (* these arguments are last so that proof search unifies existentials
@@ -125,7 +129,7 @@ c |- e1 = e2 : t'
       wf_args c s args es c' ->
       wf_sort c' t ->
       wf_args c (e::s) (name::args) (e::es) ((name,t)::c')
-  | wf_args_cons_im : forall s args es c' name e t,
+  | wf_args_cons_im : forall c s args es c' name e t,
       fresh name c' ->
       wf_term c e t[/with_names_from c' es/] ->
       (* these arguments are last so that proof search unifies existentials
@@ -133,11 +137,18 @@ c |- e1 = e2 : t'
       wf_args c s args es c' ->
       wf_sort c' t ->
       wf_args c s args (e::es) ((name,t)::c')
-  with wf_sort c : sort -> Prop :=
-  | wf_sort_by : forall n s args es c',
+  with wf_sort : ctx -> sort -> Prop :=
+  | wf_sort_by : forall c n s args es c',
       (n, (sort_rule c' args)) \in l ->
                                    wf_args c s args es c' ->
-                                   wf_sort c (scon n s).
+                                   wf_sort c (scon n s)
+  with wf_ctx : ctx -> Prop :=
+  | wf_ctx_nil : wf_ctx [::]
+  | wf_ctx_cons : forall name c v,
+      fresh name c ->
+      wf_ctx c ->
+      wf_sort c v ->
+      wf_ctx ((name,v)::c).
 
   Inductive wf_subst c : subst -> ctx -> Prop :=
   | wf_subst_nil : wf_subst c [::] [::]
@@ -147,15 +158,11 @@ c |- e1 = e2 : t'
       wf_term c e t[/s/] ->
       wf_subst c ((name,e)::s) ((name,t)::c').
 
+
+  Hint Constructors le_sort le_term le_subst le_args : imcore.
+
   Hint Constructors wf_sort wf_term wf_subst wf_args : imcore.
 
-  Inductive wf_ctx : ctx -> Prop :=
-  | wf_ctx_nil : wf_ctx [::]
-  | wf_ctx_cons : forall name c v,
-      fresh name c ->
-      wf_ctx c ->
-      wf_sort c v ->
-      wf_ctx ((name,v)::c).
   Hint Constructors wf_ctx : imcore.
 
   Lemma le_term_refl c e t
@@ -172,8 +179,8 @@ c |- e1 = e2 : t'
     {
       intro wfa; inversion wfa; clear wfa.
       eapply le_args_nil; auto.
-      eapply le_args_cons_ex; auto.
-      eapply le_args_cons_im; auto.
+      eapply le_args_cons_ex; eauto.
+      eapply le_args_cons_im; eauto.
     }
   Qed.
   (* TODO: show other direction*)
@@ -199,8 +206,12 @@ c |- e1 = e2 : t'
     : le_args c c' al1 al2 args el1 el2 ->
       le_subst c c' (with_names_from c' el1) (with_names_from c' el2).
   Proof.
-    intro leargs; induction leargs; eauto with imcore.
-  Qed.
+    revert c c' al1 al2 args el2;
+    induction el1; intros c c' al1 al2 args el2 lea;
+    inversion lea;
+    clear lea; subst;
+      eauto with imcore.
+  Qed.    
   Hint Resolve le_subst_from_args : imcore.
 
     
@@ -281,11 +292,12 @@ c |- e1 = e2 : t'
 
   
   Lemma le_subst_subst_monotonicity c c' s1 s2 c'' s1' s2'
-       : le_subst c c' s1 s2 -> ws_ctx c' ->
+       : le_subst c c' s1 s2 -> wf_ctx c -> ws_ctx c' ->
              le_subst c'' c s1' s2' ->
              le_subst c'' c' s1[/s1'/] s2[/s2'/].
   Proof using.
-    intro les; induction les; simpl;
+    revert c c' s2;
+    induction s1; intros c c' s2 les; inversion les; subst; simpl;
       intros; break; simpl; eauto with imcore.
     constructor; fold_Substable; eauto with imcore.
     rewrite <- subst_assoc; eauto with imcore.
@@ -293,10 +305,12 @@ c |- e1 = e2 : t'
   Qed.
     
   Lemma le_args_subst_monotonicity c c' al1 al2 args el1 el2 c'' s1 s2
-       : le_args c c' al1 al2 args el1 el2 -> ws_ctx c' ->
+       : le_args c c' al1 al2 args el1 el2 -> wf_ctx c -> ws_ctx c' ->
          le_subst c'' c s1 s2 -> le_args c'' c' al1[/s1/] al2[/s2/] args el1[/s1/] el2[/s2/].
   Proof using.
-    intro les; induction les; simpl;
+    revert c c' al1 al2 args el2;
+      induction el1;
+      intros c c' al1 al2 args el2 les; inversion les; simpl;
       intros; break; simpl; eauto with imcore;
       constructor; fold_Substable; eauto with imcore;
       rewrite with_names_from_args_subst;
@@ -407,141 +421,7 @@ c |- e1 = e2 : t'
       eapply sort_in_ws; eauto.
     }
   Qed.
-        
-  Lemma wf_sort_subst_monotonicity c t c' s
-    : ws_lang l ->
-      ws_ctx c ->
-      wf_sort c t ->
-      wf_subst c' s c ->
-      wf_sort c' t[/s/]
-  with wf_term_subst_monotonicity c e t c' s
-       : ws_lang l ->
-         ws_ctx c ->
-         wf_term c e t ->
-         wf_subst c' s c ->
-         wf_term c' e[/s/] t[/s/]
-  with wf_args_subst_monotonicity c al args el c' c'' s
-       : ws_lang l ->
-         ws_ctx c ->
-         ws_ctx c' ->
-         wf_args c al args el c' ->
-         wf_subst c'' s c ->
-         wf_args c'' al[/s/] args el[/s/] c'.
-  Proof.
-    {
-      intros wsl wsc wfs; destruct wfs; intro wfsb; simpl.
-      assert (ws_ctx c'0).
-      {
-        apply rule_in_ws in H; simpl in H; break; eauto.
-      }
-      eapply wf_sort_by; eauto with imcore.
-    }
-    {
-      intros wsl wsc wft; destruct wft; intro wfsb; simpl.
-      {
-        (*TODO: fix; should work here. fold_Substable.*)
-        rewrite subst_assoc.
-        rewrite <-with_names_from_args_subst.
-        eapply wf_term_by; eauto with imcore.
-        eapply wf_args_subst_monotonicity; eauto with imcore.
-        apply rule_in_ws in H; simpl in H; break; eauto.
-        rewrite map_fst_with_names_from.
-        apply rule_in_ws in H; eauto; simpl in H.
-        break; auto.
-        eapply wf_args_size; eauto.
-      }
-      {
-        eapply wf_term_conv; eauto with imcore.
-        eapply le_sort_subst; eauto with imcore.
-        eapply le_subst_refl; auto.
-      }
-      {
-        eapply wf_subst_lookup; eauto with imcore.
-      }
-    }
-    {
-      intros wsl wsc wsc' wfs; destruct wfs; intro wfsb; simpl in *; break; constructor;
-      fold_Substable; eauto with imcore.
-      rewrite with_names_from_args_subst.
-      rewrite <-subst_assoc; eauto with imcore.
-      erewrite wf_subst_names_eq; eauto with imcore.
-      rewrite with_names_from_args_subst.
-      rewrite <-subst_assoc; eauto with imcore.
-      rewrite map_fst_with_names_from; eauto with imcore.
-      eapply wf_args_size; eauto.
-    }
-  Qed.
 
-  Hint Resolve wf_term_subst_monotonicity : imcore.
-
-  Lemma wf_subst_subst_monotonicity c s c' c'' s'
-       : ws_lang l ->
-         ws_ctx c ->
-         ws_ctx c' ->
-         wf_subst c s c' ->
-         wf_subst c'' s' c ->
-         wf_subst c'' s[/s'/] c'.
-  Proof using.
-    intros wsl wsc wsc' wfs; induction wfs; intro wfsb; simpl in *; break; constructor;
-      fold_Substable; eauto with imcore.
-    rewrite <-subst_assoc; eauto with imcore.
-    erewrite wf_subst_names_eq; eauto with imcore.
-  Qed.
-
-  
-  Lemma le_sort_ctx_monotonicity c t1 t2 name t
-    : le_sort c t1 t2 ->
-      le_sort ((name,t)::c) t1 t2
-  with le_term_ctx_monotonicity c t e1 e2 name t'
-       : le_term c t e1 e2 ->
-         le_term ((name,t')::c) t e1 e2
-  with le_subst_ctx_monotonicity c c' s1 s2 name t
-       : le_subst c c' s1 s2 ->
-         le_subst ((name,t)::c) c' s1 s2
-  with le_args_ctx_monotonicity c c' al1 al2 args el1 el2 name t
-       : le_args c c' al1 al2 args el1 el2 ->
-         le_args ((name,t)::c) c' al1 al2 args el1 el2.
-  Proof using.
-    {
-      intro les; destruct les;
-        [| eapply le_sort_subst;eauto with imcore
-         | eapply le_sort_con;eauto with imcore
-         | eapply le_sort_trans;eauto with imcore
-         | eapply le_sort_sym;eauto with imcore].
-      replace t1 with t1[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
-      replace t2 with t2[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
-      eapply le_sort_subst.
-      eapply le_subst_id; eauto with imcore.
-      apply subseq_l_cons_l.
-      eapply le_sort_by;eauto.
-    }
-    {
-      intro letm; destruct letm;
-      [eapply le_term_subst;eauto with imcore
-      |
-      | eapply le_term_con;eauto with imcore
-      | eapply le_term_var;eauto with imcore
-      | eapply le_term_trans;eauto with imcore
-      | eapply le_term_sym;eauto with imcore
-      | eapply le_term_conv;eauto with imcore].
-      replace t with t[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
-      replace e1 with e1[/id_subst (map fst c)/] by apply id_subst_reduce.
-      replace e2 with e2[/id_subst (map fst c)/] by apply id_subst_reduce.
-      eapply le_term_subst.
-      eapply le_subst_id; eauto with imcore.
-      apply subseq_l_cons_l.
-      eapply le_term_by;eauto.
-      rewrite in_cons; apply /orP; right; assumption.
-    }
-    {
-      intro les; destruct les; constructor; eauto with imcore.
-    }
-    {
-      intro lea; destruct lea; constructor; eauto with imcore.
-    }
-  Qed.
-
-  
   Variant wf_rule : rule -> Prop :=
   | wf_sort_rule : forall c args,
       wf_ctx c ->
@@ -570,6 +450,159 @@ c |- e1 = e2 : t'
     : wf_rule r -> ws_rule r.
   Proof using.
     intro wfr; destruct wfr; simpl; break_goal; eauto with imcore.
+  Qed.
+
+  (* will bootstrap this with lang_monotonicity*)
+  Context (rule_in_wf : forall name r, (name, r) \in l -> wf_rule r).
+        
+  Lemma wf_sort_subst_monotonicity c t c' s
+    : wf_ctx c ->
+      wf_sort c t ->
+      wf_subst c' s c ->
+      wf_sort c' t[/s/]
+  with wf_term_subst_monotonicity c e t c' s
+       : wf_ctx c ->
+         wf_term c e t ->
+         wf_subst c' s c ->
+         wf_term c' e[/s/] t[/s/]
+  with wf_args_subst_monotonicity c al args el c' c'' s
+       : wf_ctx c ->
+         wf_ctx c' ->
+         wf_args c al args el c' ->
+         wf_subst c'' s c ->
+         wf_args c'' al[/s/] args el[/s/] c'.
+  Proof using rule_in_wf.
+    {
+      intros wsc wfs; destruct wfs; intro wfsb; simpl.
+      assert (wf_ctx c'0).
+      {
+        apply rule_in_wf in H; inversion H; subst; eauto.
+      }
+      eapply wf_sort_by; eauto with imcore.
+    }
+    {
+      intros wsc wft; destruct wft; intro wfsb; simpl.
+      {
+        rewrite subst_assoc.
+        fold_Substable.
+        rewrite <-with_names_from_args_subst.
+        eapply wf_term_by; eauto with imcore.
+        eapply wf_args_subst_monotonicity; eauto with imcore.
+        apply rule_in_wf in H; inversion H; subst; eauto.
+        rewrite map_fst_with_names_from.
+        apply rule_in_wf in H; inversion H; subst; eauto.
+        apply wf_rule_is_ws in H; eauto; simpl in H.
+        break; auto.
+        eapply wf_args_size; eauto.
+      }
+      {
+        eapply wf_term_conv; eauto with imcore.
+        eapply le_sort_subst; eauto with imcore.
+        eapply le_subst_refl; auto.
+      }
+      {
+        eapply wf_subst_lookup; eauto with imcore.
+      }
+    }
+    {
+      intros wsc wsc' wfs; destruct wfs; intro wfsb; simpl in *; break; constructor;
+      inversion wsc'; subst;
+      fold_Substable; eauto with imcore.
+      {
+        rewrite with_names_from_args_subst.
+        rewrite <-subst_assoc; eauto with imcore.
+        erewrite wf_subst_names_eq; eauto with imcore.
+      }
+      {
+        rewrite with_names_from_args_subst.
+        rewrite <-subst_assoc; eauto with imcore.
+        rewrite map_fst_with_names_from; eauto with imcore.
+        eapply wf_args_size; eauto.
+      }
+    }
+  Qed.
+
+  Hint Resolve wf_term_subst_monotonicity : imcore.
+
+  Lemma wf_subst_subst_monotonicity c s c' c'' s'
+       : wf_ctx c ->
+         wf_ctx c' ->
+         wf_subst c s c' ->
+         wf_subst c'' s' c ->
+         wf_subst c'' s[/s'/] c'.
+  Proof using rule_in_wf.
+    intros wsc wsc' wfs; induction wfs; intro wfsb; simpl in *; break; constructor;
+      inversion wsc'; subst;
+      fold_Substable; eauto with imcore.
+    rewrite <-subst_assoc; eauto with imcore.
+    erewrite wf_subst_names_eq; eauto with imcore.
+  Qed.
+
+  
+  Fixpoint le_sort_ctx_monotonicity c t1 t2 name t
+    (wfc:wf_ctx c)
+    (les: le_sort c t1 t2) {struct les}
+    : le_sort ((name,t)::c) t1 t2
+  with le_term_ctx_monotonicity c t e1 e2 name t'
+                                (wfc : wf_ctx c)
+                                (letm :le_term c t e1 e2) {struct letm}
+       : le_term ((name,t')::c) t e1 e2
+  with le_subst_ctx_monotonicity c c' s1 s2 name t
+       (wfc : wf_ctx c)
+       (les :le_subst c c' s1 s2) {struct les}
+       : le_subst ((name,t)::c) c' s1 s2
+  with le_args_ctx_monotonicity c c' al1 al2 args el1 el2 name t
+       (wfc : wf_ctx c)
+       (lea : le_args c c' al1 al2 args el1 el2) {struct lea}
+       : le_args ((name,t)::c) c' al1 al2 args el1 el2.
+  Proof using rule_in_wf.
+    {
+      inversion les; subst;
+        [| eapply le_sort_subst;eauto with imcore
+         | eapply le_sort_con;eauto with imcore
+         | eapply le_sort_trans;eauto with imcore
+         | eapply le_sort_sym].
+      {
+        replace t1 with t1[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
+        replace t2 with t2[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
+        eapply le_sort_subst; [ eauto
+                              | eapply le_subst_id; apply subseq_l_cons_l
+                              | eapply le_sort_by; eauto].
+      }
+      {
+        apply le_sort_ctx_monotonicity; assumption.
+      }
+    }
+    {
+      inversion letm; subst;
+      [eapply le_term_subst;eauto with imcore
+      |
+      | eapply le_term_con;eauto with imcore
+      | eapply le_term_var;eauto with imcore
+      | eapply le_term_trans;eauto with imcore
+      | eapply le_term_sym
+      | eapply le_term_conv;eauto with imcore].
+      {
+        replace t with t[/id_subst (map fst c)/] by apply id_subst_reduce_sort.
+        replace e1 with e1[/id_subst (map fst c)/] by apply id_subst_reduce.
+        replace e2 with e2[/id_subst (map fst c)/] by apply id_subst_reduce.
+        eapply le_term_subst; eauto.
+        eapply le_subst_id; eauto with imcore.
+        apply subseq_l_cons_l.
+      }
+      {
+        rewrite in_cons; apply /orP; right; assumption.
+      }
+      {
+        apply le_term_ctx_monotonicity; assumption.
+      }
+    }
+    {
+      destruct les; subst; constructor; eauto with imcore.
+    }
+    {
+      destruct lea; constructor; eauto with imcore.
+    }
   Qed.
 
 End TermsAndRules.
@@ -613,46 +646,84 @@ Qed.
 
 Hint Resolve wf_lang_is_ws : imcore.
 
-Lemma le_sort_lang_monotonicity l c t1 t2 name r
-  : le_sort l c t1 t2 ->
-    le_sort ((name,r)::l) c t1 t2
+(*
+Section LangMono.*)
+(*TODO: best way to handle rule_in_wf here? another section, right? *)
+
+Fixpoint le_sort_lang_monotonicity l c t1 t2 name r
+  (les : le_sort l c t1 t2) {struct les}
+  : le_sort ((name,r)::l) c t1 t2
 with le_term_lang_monotonicity l c t e1 e2 name r
-     : le_term l c t e1 e2 ->
-       le_term ((name,r)::l) c t e1 e2
+     (letm : le_term l c t e1 e2) {struct letm}
+     : le_term ((name,r)::l) c t e1 e2
 with le_subst_lang_monotonicity l c c' s1 s2 name r
-     : le_subst l c c' s1 s2 ->
-       le_subst ((name,r)::l) c c' s1 s2
+     (les : le_subst l c c' s1 s2) {struct les}
+     : le_subst ((name,r)::l) c c' s1 s2
 with le_args_lang_monotonicity l c c' al1 al2 args el1 el2 name r
-     : le_args l c c' al1 al2 args el1 el2 ->
-       le_args ((name,r)::l) c c' al1 al2 args el1 el2.
+     (lea : le_args l c c' al1 al2 args el1 el2) {struct lea}
+     : le_args ((name,r)::l) c c' al1 al2 args el1 el2
+with wf_sort_lang_monotonicity l c t name r
+     (les : wf_sort l c t) {struct les}
+     : wf_sort ((name,r)::l) c t
+with wf_term_lang_monotonicity l c e t name r
+     (letm: wf_term l c e t) {struct letm}
+     : wf_term ((name,r)::l) c e t
+with wf_args_lang_monotonicity l c al args el c' name r
+     (lea : wf_args l c al args el c') {struct lea}
+     : wf_args ((name,r)::l) c al args el c'
+with wf_ctx_lang_monotonicity l c name r (wfc : wf_ctx l c) {struct wfc} : wf_ctx ((name,r)::l) c.
 Proof using.
   {
-    intro les; destruct les;
-      [ eapply le_sort_by; eauto with imcore
-      | eapply le_sort_subst;eauto with imcore
-      | eapply le_sort_con;eauto with imcore
+    destruct les;
+      [ eapply le_sort_by; rewrite in_cons; apply /orP; right; eassumption
+      | eapply le_sort_subst
+      | eapply le_sort_con;eauto with imcore; 
+        rewrite in_cons; apply /orP; right; eassumption
       | eapply le_sort_trans;eauto with imcore
-      | eapply le_sort_sym;eauto with imcore].
-    rewrite in_cons; apply /orP; right; eassumption.
-    rewrite in_cons; apply /orP; right; eassumption.
+      | eapply le_sort_sym; eapply le_sort_lang_monotonicity; assumption].
+    - eapply wf_ctx_lang_monotonicity; eassumption.
+    - eauto with imcore.
+    - eauto with imcore.
   }
   {
-    intro letm; destruct letm;
-    [eapply le_term_subst;eauto with imcore
+   destruct letm;
+    [eapply le_term_subst
     | eapply le_term_by;eauto with imcore
     | eapply le_term_con;eauto with imcore
     | eapply le_term_var;eauto with imcore
     | eapply le_term_trans;eauto with imcore
-    | eapply le_term_sym;eauto with imcore
+    | eapply le_term_sym; eapply le_term_lang_monotonicity; assumption
     | eapply le_term_conv;eauto with imcore].
-    rewrite in_cons; apply /orP; right; eassumption.
-    rewrite in_cons; apply /orP; right; eassumption.
+    - eapply wf_ctx_lang_monotonicity; eassumption.
+    - eauto with imcore.
+    - eauto with imcore.
+    - rewrite in_cons; apply /orP; right; eassumption.
+    - rewrite in_cons; apply /orP; right; eassumption.
   }
   {
-    intro les; destruct les; constructor; eauto with imcore.
+    destruct les; constructor; eauto with imcore.
   }
   {
-    intro lea; destruct lea; constructor; eauto with imcore.
+    destruct lea; constructor; eauto with imcore.
+  }
+  {
+    destruct les; eapply wf_sort_by; eauto with imcore.
+    rewrite in_cons; apply /orP; auto.
+  }
+  {
+    destruct letm;
+    [eapply wf_term_by;eauto with imcore
+    | eapply wf_term_conv;eauto with imcore
+    | eapply wf_term_var;eauto with imcore].
+    rewrite in_cons; apply /orP; auto.
+  }
+  {
+    destruct lea; constructor; eauto with imcore.
+  }
+  {
+    destruct wfc.
+    eauto with imcore.
+    econstructor; auto.
   }
 Qed.
 
@@ -661,42 +732,9 @@ Hint Resolve le_term_lang_monotonicity : imcore.
 Hint Resolve le_subst_lang_monotonicity : imcore.
 Hint Resolve le_args_lang_monotonicity : imcore.
 
-Lemma wf_sort_lang_monotonicity l c t name r
-  : wf_sort l c t ->
-    wf_sort ((name,r)::l) c t
-with wf_term_lang_monotonicity l c e t name r
-     : wf_term l c e t ->
-       wf_term ((name,r)::l) c e t
-with wf_args_lang_monotonicity l c al args el c' name r
-     : wf_args l c al args el c'->
-       wf_args ((name,r)::l) c al args el c'.
-Proof using.
-  {
-    intro les; destruct les; eapply wf_sort_by; eauto with imcore.
-    rewrite in_cons; apply /orP; auto.
-  }
-  {
-    intro letm; destruct letm;
-    [eapply wf_term_by;eauto with imcore
-    | eapply wf_term_conv;eauto with imcore
-    | eapply wf_term_var;eauto with imcore].
-    rewrite in_cons; apply /orP; auto.
-  }
-  {
-    intro les; destruct les; constructor; eauto with imcore.
-  }
-Qed.
-
-
 Hint Resolve wf_sort_lang_monotonicity : imcore.
 Hint Resolve wf_term_lang_monotonicity : imcore.
 Hint Resolve wf_args_lang_monotonicity : imcore.
-
-Lemma wf_ctx_lang_monotonicity l c name r
-  : wf_ctx l c -> wf_ctx ((name,r)::l) c.
-Proof.
-  intro wfc; induction wfc; eauto with imcore.
-Qed.
 
 Hint Resolve wf_ctx_lang_monotonicity : imcore.
 
