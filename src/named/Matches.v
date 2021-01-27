@@ -11,8 +11,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import Exp Rule.
-From Named Require Import Tactics.
+From Named Require Import Exp ARule ImCore.
 Require Import String.
 Import OptionMonad.
 
@@ -373,8 +372,6 @@ Proof.
   symmetry; eauto.
 Qed.
 
-Require Import Rule Core.
-
 Definition apply_le_term l n (e1 e2 : exp) (t : sort) : option (subst * subst*ctx) :=
   do (term_le c pat1 pat2 patt) <- named_list_lookup_err l n;
   (s1,s2) <- match_all_le [:: e1:matchable]
@@ -385,13 +382,15 @@ Definition apply_le_term l n (e1 e2 : exp) (t : sort) : option (subst * subst*ct
   ret (s1,s2,c).
 
 Lemma apply_le_term_recognizes n l c e1 e2 t s1 s2 c'
-  : apply_le_term l n e1 e2 t = Some (s1,s2,c') ->
+  : wf_lang l ->
+    apply_le_term l n e1 e2 t = Some (s1,s2,c') ->
     le_subst l c c' s1 s2 ->
     le_term l c t e1 e2.
 (* e1 = e1'[/s1/]
    e2 = e2'[/s2/]
    e1' ~ e2' (by rule n)*)
 Proof.
+  intro wfl.
   unfold apply_le_term.
   repeat ltac1:(case_match;[|inversion]).
   destruct r; 
@@ -414,9 +413,9 @@ Proof.
 
   simpl in *; subst.
   intro.
-  symmetry in  HeqH.
   apply (@named_list_lookup_err_in rule_eqType) in HeqH.  
   eapply le_term_subst; eauto.
+  eapply rule_in_wf in HeqH; auto; inversion HeqH; subst; assumption.
   eapply le_term_by; eauto.
 Qed.
 

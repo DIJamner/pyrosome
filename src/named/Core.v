@@ -415,14 +415,6 @@ Hint Resolve le_subst_subst : judgment.
 Definition le_subst_term l c := proj2 (proj2 (mono_le_subst l c)).
 Hint Resolve le_subst_term : judgment.
 
-Lemma with_names_from_args_subst (c':ctx) s' (s : list exp)
-  : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
-Proof using .
-  elim: c' s; intros until s; case: s; intros; break; simpl in *; auto.
-  f_equal; auto.
-  by fold_Substable.
-Qed.
-
 Lemma map_fst_with_names_from (c:ctx) (s : list exp)
   : size s = size c -> map fst (with_names_from c s) = map fst c.
 Proof using .

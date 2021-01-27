@@ -4,17 +4,13 @@ src/Utils/Monad.v
 
 -R src/named Named
 src/named/Exp.v
-src/named/Rule.v
-src/named/Core.v
-src/named/IExp.v
-src/named/IRule.v
 src/named/ARule.v
 src/named/Pf.v
-src/named/ICore.v
+src/named/ImCore.v
+src/named/Matches.v
 src/named/Compilers.v
 src/named/Recognizers.v
 src/named/Tactics.v
-src/named/Matches.v
 src/named/Decidable.v
 src/named/Subst.v
 src/named/STLC.v

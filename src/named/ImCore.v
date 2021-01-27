@@ -5,7 +5,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Named Require Import Core (*TODO: remove dependency*) Exp ARule Pf.
+From Named Require Import Exp ARule.
 
 Require Import String.
 
@@ -230,64 +230,7 @@ c |- e1 = e2 : t'
   Hint Resolve wf_subst_from_args : imcore.
 
   Hint Resolve named_list_lookup_err_in : imcore.
-
-  (*
-  Lemma le_args_shortened_universal_l
-    : le_args c c' al1 al2 args el1 el2 ->
-      Some al1 = get_subseq args (with_names_from c' el1)*)
   
-  Lemma get_subseq_exact (s : subst)
-    : Some s = get_subseq (map fst s) s.
-  Proof.
-    induction s; intros; break; simpl in *; auto.
-    rewrite ?eq_refl.
-    rewrite <-IHs; eauto.
-  Qed.
-
-  
-  Lemma synth_le_args_size_l l0 l1 l2 c c0
-    : Some (l1, l2) = synth_le_args (synth_le_term l) l0 c c0 ->
-      size l1 = size c0.
-  Proof.
-    revert l1 l2 c0.
-    induction l0; intros; destruct c0; break; simpl in *; try by (inversion H; subst; auto).
-    revert H.
-    case_match; [| intro H; inversion H];
-    break.
-    case_match; [| intro H; inversion H];
-    break.
-    case_match; [| intro H; inversion H];
-      break.
-    symmetry in HeqH1.
-    case.
-    move: HeqH1 => /eqP.
-    intros.
-    subst.
-    simpl.
-    f_equal; eauto.
-  Qed.
-
-  Lemma synth_le_args_size_r l0 l1 l2 c c0
-    : Some (l1, l2) = synth_le_args (synth_le_term l) l0 c c0 ->
-      size l2 = size c0.
-  Proof.
-    revert l1 l2 c0.
-    induction l0; intros; destruct c0; break; simpl in *; try by (inversion H; subst; auto).
-    revert H.
-    case_match; [| intro H; inversion H];
-    break.
-    case_match; [| intro H; inversion H];
-    break.
-    case_match; [| intro H; inversion H];
-      break.
-    symmetry in HeqH1.
-    case.
-    move: HeqH1 => /eqP.
-    intros.
-    subst.
-    simpl.
-    f_equal; eauto.
-  Qed.
 
   Lemma le_subst_names_eq_r c c' s1 s2
     : le_subst c c' s1 s2 -> map fst s2 = map fst c'.
@@ -916,7 +859,8 @@ Proof.
     intros wfl wfc les; destruct les; eauto with imcore.
   }
 Qed.
-*)
+ *)
+(*
 (*TODO: needs to be 8-way mutual*)
 Lemma sound_synth_le_term l p c t e1 e2
   : wf_lang l ->
@@ -1006,7 +950,10 @@ Proof.
         eapply sound_synth_wf_ctx; break_goal; eauto; apply /eqP; auto.
       }
       {
+        eapply sound_synth_le_term; break_goal; eauto; try apply /eqP; eauto.
+        eapply sound_synth_wf_ctx; break_goal; eauto; apply /eqP; auto.
         
+        eapply 
         eauto with imcore.
         rewrite map_fst_with_names_from.
         erewrite <-map_fst_with_names_from.
@@ -1062,3 +1009,4 @@ Proof.
       }
       {
         
+*)
