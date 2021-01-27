@@ -115,8 +115,10 @@ c |- e1 = e2 : t'
          TODO: necessary? not based on current judgment scheme.
          wf_term c e t should imply wf_sort c t,
          and le_sort c t t' should imply wf_sort c t
-       *)
+
+
       wf_sort c t -> 
+       *)
       wf_term c e t ->
       le_sort c t t' ->
       wf_term c e t'
@@ -618,6 +620,14 @@ Proof.
     auto.
 Qed.
 Hint Resolve wf_ctx_term_rule_in : imcore.
+
+Lemma wf_sort_term_rule_in l c args t name
+  : wf_lang l -> (name,term_rule c args t) \in l -> wf_sort l c t.
+Proof.
+  intros wfl nin; pose (p:= rule_in_wf wfl nin); inversion p;
+    auto.
+Qed.
+Hint Resolve wf_sort_term_rule_in : imcore.
 (*TODO: specialize more cases for eauto?*)
 
 Lemma wf_sort_subst_monotonicity l c t c' s
@@ -770,43 +780,61 @@ Proof.
     {
       destruct lea; constructor; eauto with imcore.
     }
-  Qed.
+Qed.
 
+(*TODO: convert to fixpoint to debug.
 Lemma le_sort_l_wf l c t1 t2
   : wf_lang l ->
+    wf_ctx l c ->
     le_sort l c t1 t2 ->
     wf_sort l c t1
   with le_sort_r_wf l c t1 t2
-  : wf_lang l ->
-    le_sort l c t1 t2 ->
-    wf_sort l c t2
+       : wf_lang l ->
+         wf_ctx l c ->
+         le_sort l c t1 t2 ->
+         wf_sort l c t2
   with le_term_l_wf l c t e1 e2
        : wf_lang l ->
+         wf_ctx l c ->
          le_term l c t e1 e2 ->
          wf_term l c e1 t
   with le_term_r_wf l c t e1 e2
        : wf_lang l ->
+         wf_ctx l c ->
          le_term l c t e1 e2 ->
          wf_term l c e2 t
   with le_subst_l_wf l c c' s1 s2
        : wf_lang l ->
+         wf_ctx l c ->
+         wf_ctx l c' ->
          le_subst l c c' s1 s2 ->
          wf_subst l c s1 c'
   with le_subst_r_wf l c c' s1 s2
        : wf_lang l ->
+         wf_ctx l c ->
+         wf_ctx l c' ->
          le_subst l c c' s1 s2 ->
          wf_subst l c s2 c'
   with le_args_l_wf l c c' al1 al2 args el1 el2
        : wf_lang l ->
+         wf_ctx l c ->
+         wf_ctx l c' ->
          le_args l c c' al1 al2 args el1 el2 ->
          wf_args l c al1 args el1 c'
   with le_args_r_wf l c c' al1 al2 args el1 el2
        : wf_lang l ->
+         wf_ctx l c ->
+         wf_ctx l c' ->
          le_args l c c' al1 al2 args el1 el2 ->
-         wf_args l c al2 args el2 c'.
+         wf_args l c al2 args el2 c'
+  with wf_term_sort_wf l c e t
+  : wf_lang l ->
+    wf_ctx l c ->
+    wf_term l c e t ->
+    wf_sort l c t.
 Proof.
   {
-    intros wfl les; destruct les.
+    intros wfl wfc les; destruct les.
     - apply rule_in_wf in H; auto; inversion H; subst; assumption.
     - eapply wf_sort_subst_monotonicity; try eassumption;
         eauto with imcore.
@@ -815,7 +843,7 @@ Proof.
     - eapply le_sort_r_wf; eassumption.
   }
   {
-    intros wfl les; destruct les.
+    intros wfl wfc les; destruct les.
     - apply rule_in_wf in H; auto; inversion H; subst; assumption.
     - eapply wf_sort_subst_monotonicity; try eassumption;
         eauto with imcore.
@@ -824,80 +852,162 @@ Proof.
     - eapply le_sort_l_wf; eassumption.
   }
   {
-    intros wfl les; destruct les.
+    intros wfl wfc les; destruct les.
     - eapply wf_term_conv.
-      2: eapply wf_term_subst_monotonicity; try eassumption;
-        eauto with imcore.
+      {
+        eapply wf_term_subst_monotonicity; try eassumption;
+          eauto with imcore.
+      }
+      {
+        eapply le_sort_subst; eauto with imcore.
+      }
     - apply rule_in_wf in H; auto; inversion H; subst; assumption.
-    - eapply wf_sort_by; eauto with imcore.
-    - eapply le_sort_l_wf; eassumption.
-    - eapply le_sort_r_wf; eassumption.
+    - eapply wf_term_conv.
+      {
+        eapply wf_term_by; try eassumption;
+          eauto with imcore.
+      }
+      {
+        eapply le_sort_subst.
+        eapply wf_ctx_term_rule_in; eauto.
+        eapply le_subst_from_args; eauto.
+        eapply le_sort_refl; eauto with imcore.
+      }
+    - eauto with imcore.
+    - eapply le_term_l_wf; eassumption.
+    - eapply le_term_r_wf; eassumption.
+    - eapply wf_term_conv; eauto with imcore.      
   }
   {
-    intros wfl les; destruct les.
+    intros wfl wfc les; destruct les.
+    - eapply wf_term_conv.
+      {
+        eapply wf_term_subst_monotonicity; try eassumption;
+          eauto with imcore.
+      }
+      {
+        eapply le_sort_subst; eauto with imcore.
+      }
     - apply rule_in_wf in H; auto; inversion H; subst; assumption.
-    - eapply wf_sort_subst_monotonicity; try eassumption;
+    - eapply wf_term_by; try eassumption;
+          eauto with imcore.
+    - eauto with imcore.
+    - eapply le_term_r_wf; eassumption.
+    - eapply le_term_l_wf; eassumption.
+    - eapply wf_term_conv; eauto with imcore.      
+  }
+  {
+    intros wfl wfc wfc' les; destruct les; inversion wfc'; subst; constructor;
         eauto with imcore.
-    - eapply wf_sort_by; eauto with imcore.
-    - eapply le_sort_r_wf; eassumption.
-    - eapply le_sort_l_wf; eassumption.
+    {
+      eapply wf_term_conv; eauto with imcore.
+    }
   }
   {
-    intros wfl les; destruct les; eauto with imcore.
+    intros wfl wfc les; destruct les; eauto with imcore.
   }
   {
-    intros wfl les; destruct les; eauto with imcore.
+    intros wfl wfc les; destruct les; eauto with imcore.
   }
   {
-    intros wfl les; destruct les; eauto with imcore.
+    intros wfl wfc les; destruct les; eauto with imcore.
   }
   {
-    intros wfl les; destruct les; eauto with imcore.
-  }
-  {
-    intros wfl les; destruct les; eauto with imcore.
-  }
-  {
-    intros wfl les; destruct les; eauto with imcore.
+    intros wfl wfc les; destruct les; eauto with imcore.
   }
 Qed.
-
+*)
+(*TODO: needs to be 8-way mutual*)
 Lemma sound_synth_le_term l p c t e1 e2
   : wf_lang l ->
-    Some (t,e1,e2) = synth_le_term l p c ->
+    wf_ctx l c ->
+    check_le_term l p c t e1 e2 ->
     le_term l c t e1 e2
-with sound_synth_le_args l p c c' al1 al2 args el1 el2 al12 al22
+with sound_synth_le_args l pl c c' al1 al2 args (el1 el2 : list exp) al12 al22
      : wf_lang l ->
+       wf_ctx l c ->
        wf_ctx l c' ->
-       Some (el1,el2) = synth_le_args (synth_le_term l) p c c' ->
+       check_le_args l pl c c' el1 el2 ->
        Some al1 = get_subseq args (with_names_from c' el1) ->
        Some al2 = get_subseq args (with_names_from c' el2) ->
        al12 = map snd al1 ->
        al22 = map snd al2 ->
        le_args l c c' al12 al22 args el1 el2
 with sound_synth_le_sort l p c t1 t2
-     : Some (t1,t2) = synth_le_sort l (synth_le_term l) p c ->
-       le_sort l c t1 t2.
+     : wf_lang l ->
+       wf_ctx l c ->
+       check_le_sort l p c t1 t2 ->
+       le_sort l c t1 t2
+with sound_synth_wf_term l p c e t
+  : wf_lang l ->
+    wf_ctx l c ->
+    check_wf_term l p c e t ->
+    wf_term l c e t
+with sound_synth_wf_args l pl c c' al args (el : list exp) al'
+     : wf_lang l ->
+       wf_ctx l c ->
+       wf_ctx l c' ->
+       check_wf_args l pl c el c' ->
+       Some al = get_subseq args (with_names_from c' el) ->
+       al' = map snd al ->
+       wf_args l c al' args el c'
+with sound_synth_wf_sort l p c t
+     : wf_lang l ->
+       wf_ctx l c ->
+       check_wf_sort l p c t ->
+       wf_sort l c t
+with sound_synth_wf_ctx l p c
+     : wf_lang l ->
+       check_wf_ctx l p c ->
+       wf_ctx l c.
 Proof.
   {
-    intro wfl.
     destruct p; simpl;
-        repeat case_match;intros;
+        repeat case_match;intros; simpl in *; break;
           repeat match goal with
           | [H : Some _ = Some _|-_] => inversion H; clear H; subst
           | [H : None = Some _|-_] => by inversion H
           | [H : Some _ = None |-_] => by inversion H
           | [H : true = ?a |-_] => symmetry in H; change (is_true a) in H
           | [H : is_true (_ == _) |-_] => move: H => /eqP H; subst
-                 end; eauto with imcore.
+                 end;
+          try solve[clear sound_synth_le_term; eauto with imcore].
+    {
+      eapply le_term_var; apply named_list_lookup_err_in; assumption.
+    }
     {
       eapply le_term_con; eauto with imcore.
-      (* TODO: need monotonicity *)
-      suff: wf_rule l (term_rule c0 l1 s0).
+      eapply sound_synth_le_args; break_goal;auto.
+      eauto with imcore.
+      apply /eqP; eauto with imcore.
+      assumption.
+      assumption.
+      assumption.
+    }
     {
-      eapply le_term_subst; eauto with imcore.
+      eapply le_term_subst.
+      2:{
         eapply le_subst_from_args.
-        eapply sound_synth_le_args; eauto using get_subseq_exact.
+        eapply sound_synth_le_args; break_goal; eauto using get_subseq_exact with imcore.
+        {
+          eapply sound_synth_wf_ctx; break_goal; eauto; apply /eqP; auto.
+        }
+        {
+          apply /eqP; assumption.
+        }
+        {
+          replace (map fst (with_names_from c0 l1)) with (map fst (with_names_from c0 l2)).
+          apply get_subseq_exact.
+          rewrite !map_fst_with_names_from;
+            eauto using synth_le_args_size_r, synth_le_args_size_l.
+        }
+      }
+      {
+        eapply sound_synth_wf_ctx; break_goal; eauto; apply /eqP; auto.
+      }
+      {
+        
+        eauto with imcore.
         rewrite map_fst_with_names_from.
         erewrite <-map_fst_with_names_from.
         apply get_subseq_exact.

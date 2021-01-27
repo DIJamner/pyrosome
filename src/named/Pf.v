@@ -34,7 +34,8 @@ Inductive pf : Set :=
    Might be able to eliminate it, but probably
    not worth it at the moment.
  *)
-| sub : pf -> ctx -> list pf -> pf
+| sub : pf -> ctx (*TODO: hack to beat fixpoint checker; remove when able*) ->
+        named_list_set pf (* interface ctx wf*) -> list pf (* subst le *) -> pf
 | sym : pf -> pf
 | trans : pf -> pf -> pf
 | conv : pf (*term*) -> pf (*sort*) -> pf.
@@ -50,10 +51,11 @@ Fixpoint pf_ind
              List.fold_right (fun t => and (P t)) True l ->
              P (pcon n l))
          (IHA : forall n, P(ax n))
-         (IHS : forall e' c l,
+         (IHS : forall e' c pfc l,
              P e' ->
+             List.fold_right (fun p => and (P p.2)) True pfc ->
              List.fold_right (fun p => and (P p)) True l ->
-             P (sub e' c l))
+             P (sub e' c pfc l))
          (IHSY : forall e', P e' -> P (sym e'))
          (IHT : forall e1 e2,
              P e1 -> P e2 -> P (trans e1 e2))
@@ -70,13 +72,18 @@ Fixpoint pf_ind
         end in
     IHC n l (loop l)
   | ax n => IHA n
-  | sub e' c l =>
+  | sub e' c pfc l =>
+    let fix cloop l :=
+        match l return List.fold_right (fun t => and (P t.2)) True l with
+        | [::] => I
+        | (_,e') :: l' => conj (pf_ind IHV IHC IHA IHS IHSY IHT IHCV e') (cloop l')
+        end in
     let fix loop l :=
         match l return List.fold_right (fun t => and (P t)) True l with
         | [::] => I
         | e' :: l' => conj (pf_ind IHV IHC IHA IHS IHSY IHT IHCV e') (loop l')
         end in
-    IHS e' c l (pf_ind IHV IHC IHA IHS IHSY IHT IHCV e') (loop l)
+    IHS e' c pfc l (pf_ind IHV IHC IHA IHS IHSY IHT IHCV e') (cloop pfc) (loop l)
   | sym e' =>
     IHSY e' (pf_ind IHV IHC IHA IHS IHSY IHT IHCV e')
   | trans e1 e2 =>
@@ -161,7 +168,7 @@ Section RuleChecking.
         do (sort_le c' e1 e2) <- named_list_lookup_err l name;
            ! c == c';
            ret (e1,e2)
-      | sub p c' pl =>
+      | sub p c' _ pl =>
         do (e1, e2) <- synth_le_sort p c';
            (el1, el2) <- synth_le_args pl c c';
            let s1 := with_names_from c' el1;
@@ -189,18 +196,18 @@ Section RuleChecking.
         do (sort_le c' e1 e2) <- named_list_lookup_err l name;
            ! c == c';
            ret (e1,e2)
-      | sub p c' pl =>
+      | sub p c' _ pl =>
         do (e1, e2) <- synth_le_sort p c';
            (el1, el2) <- synth_le_args pl c c';
            let s1 := with_names_from c' el1;
            let s2 := with_names_from c' el2;
            ret (e1[/s1/],e2[/s2/])
       | sym p =>
-        do (e1,e2) <- synth_le_sort p c;
+        do (e1,e2) <- synth_le_sort_ex p c;
            ret (e2,e1)
       | trans p1 p2 =>
-        do (e1,e2) <- synth_le_sort p1 c;
-           (e2',e3) <- synth_le_sort p2 c;
+        do (e1,e2) <- synth_le_sort_ex p1 c;
+           (e2',e3) <- synth_le_sort_ex p2 c;
            !e2 == e2';
            ret (e1,e3)
       | conv pt p => None
@@ -225,7 +232,7 @@ Section RuleChecking.
       do (term_le c' e1 e2 t) <- named_list_lookup_err l name;
          !c == c';
          ret (t,e1,e2)
-    | sub p' c' pl =>
+    | sub p' c' _ pl =>
       do (t,e1, e2) <- synth_le_term p' c';
          (el1, el2) <- synth_le_args synth_le_term pl c c';
          let s1 := with_names_from c' el1;
@@ -262,7 +269,7 @@ Section RuleChecking.
       do (term_le c' e1 e2 t) <- named_list_lookup_err l name;
          !c == c';
          ret (t,e1,e2)
-    | sub p' c' pl =>
+    | sub p' c' _ pl =>
       do (t,e1, e2) <- synth_le_term_ex p' c';
          (el1, el2) <- synth_le_args synth_le_term_ex pl c c';
          let s1 := with_names_from c' el1;
@@ -283,12 +290,6 @@ Section RuleChecking.
          ! t == t';
          ret (t1,e1,e2)
   end.
-
-  Definition check_le_term p c t e1 e2 : bool :=
-    synth_le_term p c == Some (t,e1,e2).
-  
-  Definition check_le_sort p c t1 t2 : bool :=
-    synth_le_sort synth_le_term p c == Some (t1,t2).
 
   Section InnerLoop.
     Context (synth_wf_term : pf -> ctx -> option (sort*exp)).
@@ -319,7 +320,7 @@ Section RuleChecking.
          al <- get_subseq args (with_names_from c' el);
          ret (t[/with_names_from c' el/], con name (map snd al))
     | ax name => None
-    | sub p' c' pl => None
+    | sub p' c' _ pl => None
     | sym p' => None
     | trans p1 p2 => None
     | conv pt p' =>
@@ -338,64 +339,151 @@ Section RuleChecking.
            al <- get_subseq args (with_names_from c' el);
            ret (scon name (map snd al))
       | ax name => None
-      | sub p c' pl => None
+      | sub p c' _ pl => None
       | sym p => None
       | trans p1 p2 => None
       | conv pt p => None
     end.
 
+  Fixpoint synth_wf_ctx pl : option ctx :=
+    match pl with
+    | [::] => do ret [::]
+    | (name,p)::pl' =>
+      do c' <- synth_wf_ctx pl';
+         ! fresh name c';
+         t <- synth_wf_sort p c';
+         ret (name,t)::c'
+  end.
+
+  Fixpoint all_ctxs_ok p : bool :=
+    match p with
+    | pvar _ => true
+    | pcon _ pl => foldr andb true (map all_ctxs_ok pl)
+    | ax name => true
+    | sub p c' plc pl =>
+      (Some c' == synth_wf_ctx plc) &&
+      (foldr andb true (map (fun q => (all_ctxs_ok q.2)) plc)) &&
+      (foldr andb true (map all_ctxs_ok pl))
+    | sym p => all_ctxs_ok p
+    | trans p1 p2 => (all_ctxs_ok p1) && (all_ctxs_ok p2)
+    | conv pt p => (all_ctxs_ok pt) && (all_ctxs_ok p)
+    end.
+
+  Definition list_all_ctxs_ok pl :=
+    foldr andb true (map all_ctxs_ok pl).
+
+  
+  Definition named_list_all_ctxs_ok (pl : named_list pf) :=
+    foldr andb true (map (fun p => all_ctxs_ok p.2) pl).
+
+  
+  Definition check_le_term p c t e1 e2 : bool :=
+    (Some (t,e1, e2) == synth_le_term p c) &&
+    (all_ctxs_ok p).
+  Arguments check_le_term p c t e1 e2/.
+  
+  Definition check_le_sort p c t1 t2 : bool :=
+    (Some (t1, t2) == synth_le_sort synth_le_term p c)&&
+    (all_ctxs_ok p).
+  Arguments check_le_sort p c t1 t2/.
+
+  
+  Definition check_le_args pl c c' el1 el2 : bool :=
+    (Some (el1, el2) == synth_le_args synth_le_term pl c c')&&
+    (list_all_ctxs_ok pl).
+  Arguments check_le_args pl c c' el1 el2/.
+
+  
   Definition check_wf_term p c e t : bool :=
-    synth_wf_term p c == Some (t,e).
+    (Some (t,e) == synth_wf_term p c) &&
+    (all_ctxs_ok p).
+  Arguments check_wf_term p c e t/.
   
   Definition check_wf_sort p c t : bool :=
-    synth_wf_sort p c == Some t.
+    (Some t == synth_wf_sort p c) &&
+    (all_ctxs_ok p).
+  Arguments check_wf_sort p c t/.
+  
+  Definition check_wf_ctx pl c : bool :=
+    (Some c == synth_wf_ctx pl) &&
+    (named_list_all_ctxs_ok pl).
+  Arguments check_wf_ctx pl c/.
 
-  Fixpoint check_wf_ctx pl c : bool :=
-    match pl, c with
-    | [::], [::] => true
-    | [::], _::_ => false
-    | _::_,[::] => false
-    | p::pl', (name,t)::c' =>
-      (fresh name c') &&
-      (check_wf_sort p c' t) &&
-      (check_wf_ctx pl' c')
-    end.
+  
+  Definition check_wf_args pl c el c' : bool :=
+    (Some el == synth_wf_args synth_wf_term pl c c')&&
+    (list_all_ctxs_ok pl).
+  Arguments check_wf_args pl c el c'/.
+  
 
   Variant rule_pf : Set :=
-  | sort_rule_pf : list pf -> rule_pf
-  | term_rule_pf : list pf -> pf -> rule_pf
-  | sort_le_pf : list pf -> pf -> pf -> rule_pf
-  | term_le_pf : list pf -> pf -> pf -> pf (*sort*)-> rule_pf.
+  | sort_rule_pf : named_list_set pf -> list string -> rule_pf
+  | term_rule_pf : named_list_set pf -> list string -> pf -> rule_pf
+  | sort_le_pf : named_list_set pf -> pf -> pf -> rule_pf
+  | term_le_pf : named_list_set pf -> pf -> pf -> pf (*sort; TODO: not needed*)-> rule_pf.
       
+  Definition synth_wf_rule rp : option rule :=
+    match rp with
+    | sort_rule_pf pl args =>
+      do !named_list_all_ctxs_ok pl;
+         c <- synth_wf_ctx pl;
+         ! subseq args (map fst c);
+         ret sort_rule c args
+    | term_rule_pf pl args p =>
+      do !named_list_all_ctxs_ok pl;
+         !all_ctxs_ok p;
+         c <- synth_wf_ctx pl;
+         t <- synth_wf_sort p c;
+         ! subseq args (map fst c);
+         ret term_rule c args t
+    | sort_le_pf pl p1 p2 =>
+      do !named_list_all_ctxs_ok pl;
+         !all_ctxs_ok p1;
+         !all_ctxs_ok p2;
+         c <- synth_wf_ctx pl;
+         t1 <- synth_wf_sort p1 c;
+         t2 <- synth_wf_sort p2 c;
+         ret sort_le c t1 t2
+    | term_le_pf pl p1 p2 pt =>
+      do !named_list_all_ctxs_ok pl;
+         !all_ctxs_ok p1;
+         !all_ctxs_ok p2;
+         !all_ctxs_ok pt;
+         c <- synth_wf_ctx pl;
+         (t1,e1) <- synth_wf_term p1 c;
+         (t2,e2) <- synth_wf_term p2 c;
+         t <- synth_wf_sort p2 c;
+         ! t == t1;
+         ! t == t2;
+         ret term_le c e1 e2 t
+  end.
+
   Definition check_wf_rule rp r : bool :=
-    match rp, r with
-    | sort_rule_pf pl, sort_rule c args =>
-      (subseq args (map fst c)) &&
-      (check_wf_ctx pl c)
-    | term_rule_pf pl p, term_rule c args t =>
-      (subseq args (map fst c)) &&
-      (check_wf_ctx pl c) &&
-      (check_wf_sort p c t)
-    | sort_le_pf pl p1 p2, sort_le c t1 t2 =>
-      (check_wf_ctx pl c) &&
-      (check_wf_sort p1 c t1) &&
-      (check_wf_sort p2 c t2)
-    | term_le_pf pl p1 p2 pt, term_le c e1 e2 t =>
-      (check_wf_ctx pl c) &&
-      (check_wf_sort pt c t) &&
-      (check_wf_term p1 c e1 t) &&
-      (check_wf_term p2 c e2 t)
-    | _, _=> false
-    end.
+    Some r == synth_wf_rule rp.
+  Arguments check_wf_rule rp r/.
 
 End RuleChecking.
   
-Fixpoint check_wf_lang rpl l : bool :=
-  match rpl, l with
-  | [::], [::] => true
-  | [::], _::_ => false
-  | _::_,[::] => false
-  | rp::rpl', (name,r)::l' =>
-    (fresh name l') &&
-    (check_wf_rule l' rp r)
+Fixpoint synth_wf_lang rpl : option lang :=
+  match rpl with
+  | [::] => do ret [::]
+  | (name,rp)::rpl' =>
+    do l' <- synth_wf_lang rpl';
+       ! fresh name l';
+       r <- synth_wf_rule l' rp;
+       ret (name,r)::l'
   end.
+
+Definition check_wf_lang rpl l : bool :=
+  Some l == synth_wf_lang rpl.
+Arguments check_wf_lang rpl l/.
+
+
+Arguments check_wf_args l pl c el c'/.
+Arguments check_wf_ctx l pl c/.
+Arguments check_wf_sort l p c t/.
+Arguments check_wf_term l p c e t/.
+Arguments check_le_args l pl c c' el1 el2/.
+Arguments check_le_sort l p c t1 t2/.
+Arguments check_le_term l p c t e1 e2/.
+Arguments check_wf_rule l rp r/.
