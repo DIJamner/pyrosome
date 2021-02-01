@@ -24,6 +24,31 @@ Inductive pf : Set :=
 | conv : pf (*term*) -> pf (*sort*) -> pf.
 Set Elimination Schemes.
 
+Ltac break_monadic_do :=
+  repeat (lazymatch goal with
+          | [H : Some _ = Some _|-_] => inversion H; clear H
+          | [H : Some _ = None|-_] => inversion H
+          | [H : None = Some _ |-_] => inversion H
+          | [H : Some _ = named_list_lookup_err _ _ |-_] =>
+            apply named_list_lookup_err_in in H;
+            try (let H' := fresh H in
+                 pose proof H as H';
+                 apply rule_in_wf in H'; inversion H'; clear H')
+          | [H : true = (?a == ?b) |-_] =>
+            symmetry in H;
+            move: H => /eqP H
+          | [H : false = true |-_] =>inversion H
+          | [H : false = (?a == ?a) |-_] =>
+            rewrite eq_refl in H; inversion H
+          | |- context [ match ?e with
+                         | _ => _
+                         end ] => let e' := fresh in
+                                  remember e as e'; destruct e'
+          | [H:context [ match ?e with
+                         | _ => _
+                         end ] |-_] => let e' := fresh in
+                                       remember e as e'; destruct e'
+          end; subst; simpl in * ).
 
 (*Stronger induction principle w/ better subterm knowledge
  *)
@@ -307,80 +332,31 @@ Section RuleChecking.
       sind_conv pt p'
     end.
 
-   Lemma synth_le_args_related' (pl : list pf)  (pa : pf_args_ind pl) c c' el1 el2 args al1 al2
+ 
+
+   Lemma synth_le_args_related' (pl : list pf)  (pa : pf_args_ind pl) c c' el1 el2 args al1 al2 al1' al2'
        : Some (el1,el2) = synth_le_args synth_le_term pl c c' ->
          Some al1 = get_subseq args (with_names_from c' el1) ->
          Some al2 = get_subseq args (with_names_from c' el2) ->
-         le_args l c c' (map snd al1) (map snd al2) args el1 el2
+         al1' = (map snd al1) ->
+         al2' = (map snd al2) ->
+         le_args l c c' al1' al2' args el1 el2
    with synth_le_sort_related' (p : pf)  (ps : pf_sort_ind p) c e1 e2
     : Some (e1,e2) = synth_le_sort synth_le_term p c ->
       le_sort l c e1 e2
    with synth_le_term_related' (p : pf) (pt : pf_term_ind p) c t e1 e2
     : Some (t,e1,e2) = synth_le_term p c ->
       le_term l c t e1 e2.
-   Proof.
-     inversion pa;
-        destruct c'; destruct args; break; simpl in *; repeat case_match; intros; simpl in *;
-        repeat (lazymatch goal with
-                | [H : Some _ = Some _|-_] => inversion H; clear H
-                | [H : Some _ = None|-_] => inversion H
-                | [H : None = Some _ |-_] => inversion H
-                | [H : Some _ = named_list_lookup_err _ _ |-_] =>
-                  apply named_list_lookup_err_in in H;
-                  try (let H' := fresh H in
-                       pose proof H as H';
-                       apply rule_in_wf in H'; inversion H'; clear H')
-                | [H : true = (?a == ?b) |-_] =>
-                  symmetry in H;
-                  move: H => /eqP H
-                end; subst; simpl in* ).          
-      { constructor. }
-      {
-        constructor; eauto with imcore.
-        change (le_args l c c' (map (snd (A:=string))  [::]) (map (snd (A:=string)) [::]) [::] l0 l1).
-        eapply synth_le_args_related'; eauto using get_subseq_nil with imcore.
-      }  
-      {
-        revert H5 H6.
-        case seq: (s == s0).
-        {
-          move:seq => /eqP ->.
-          repeat case_match; intros; simpl in *;
-        repeat (lazymatch goal with
-        | [H : Some _ = Some _|-_] => inversion H; clear H
-        | [H : Some _ = None|-_] => inversion H
-        | [H : None = Some _ |-_] => inversion H
-        | [H : Some _ = named_list_lookup_err _ _ |-_] =>
-          apply named_list_lookup_err_in in H;
-            try (let H' := fresh H in
-                 pose proof H as H';
-                 apply rule_in_wf in H'; inversion H'; clear H')
-        | [H : true = (?a == ?b) |-_] =>
-          symmetry in H;
-          move: H => /eqP H
-               end; subst; simpl in* ).
-          constructor; eauto with imcore.
-        }
-        {
-          intros; constructor; eauto with imcore.
-        }
-      }
-      {
-        inversion ps; simpl; repeat case_match; intros;
-        repeat lazymatch goal with
-        | [H : Some _ = Some _|-_] => inversion H; clear H
-        | [H : Some _ = None|-_] => inversion H
-        | [H : None = Some _ |-_] => inversion H
-        | [H : Some _ = named_list_lookup_err _ _ |-_] =>
-          apply named_list_lookup_err_in in H;
-            try (let H' := fresh H in
-                 pose proof H as H';
-                 apply rule_in_wf in H'; inversion H'; clear H')
-        | [H : true = (?a == ?b) |-_] =>
-          symmetry in H;
-          move: H => /eqP H
-               end; subst;
-          eauto with imcore.
+   Proof using wfl.
+     {
+       inversion pa; intros; break; simpl in *;
+         break_monadic_do; constructor;
+           eauto using get_subseq_nil with imcore.
+     }
+    
+     {
+       inversion ps; intros; break; simpl in *;
+       break_monadic_do; eauto with imcore.
       {
         eapply le_sort_subst; eauto with imcore.
         eapply le_subst_from_args.
@@ -390,39 +366,26 @@ Section RuleChecking.
         {
           rewrite !map_fst_with_names_from; eauto using synth_le_args_size_r, synth_le_args_size_l.
         }
-        rewrite H0.
+        rewrite H1.
         eapply get_subseq_exact.
       }
-      }
-      {
-        inversion pt; simpl; repeat case_match; intros;
-        repeat lazymatch goal with
-        | [H : Some _ = Some _|-_] => inversion H; clear H
-        | [H : Some _ = None|-_] => inversion H
-        | [H : None = Some _ |-_] => inversion H
-        | [H : Some _ = named_list_lookup_err _ _ |-_] =>
-          apply named_list_lookup_err_in in H;
-            try (let H' := fresh H in
-                 pose proof H as H';
-                 apply rule_in_wf in H'; inversion H'; clear H')
-        | [H : true = (?a == ?b) |-_] =>
-          symmetry in H;
-          move: H => /eqP H
-               end; subst;
-          eauto with imcore.
-      {
-        eapply le_term_subst; eauto with imcore.
-        eapply le_subst_from_args.
-        eapply synth_le_args_related'; eauto.
-        eapply get_subseq_exact.
-        assert (map fst (with_names_from c0 l0) = map fst (with_names_from c0 l1)).
-        {
-          rewrite !map_fst_with_names_from; eauto using synth_le_args_size_r, synth_le_args_size_l.
-        }
-        rewrite H0.
-        eapply get_subseq_exact.
-      }
-    }
+     }
+     {
+       inversion pt; intros; break; simpl in *;
+       break_monadic_do; eauto with imcore.
+       {
+         eapply le_term_subst; eauto with imcore.
+         eapply le_subst_from_args.
+         eapply synth_le_args_related'; eauto.
+         eapply get_subseq_exact.
+         assert (map fst (with_names_from c0 l0) = map fst (with_names_from c0 l1)).
+         {
+           rewrite !map_fst_with_names_from; eauto using synth_le_args_size_r, synth_le_args_size_l.
+         }
+         rewrite H1.
+         eapply get_subseq_exact.
+       }
+     }
    Qed.
 
    Lemma synth_le_args_related (pl : list pf) c c' el1 el2 args al1 al2
@@ -431,9 +394,9 @@ Section RuleChecking.
          Some al2 = get_subseq args (with_names_from c' el2) ->
          le_args l c c' (map snd al1) (map snd al2) args el1 el2.
    Proof using wfl.
-     apply synth_le_args_related'; eauto using pf_args_ind_trivial,pf_term_ind_trivial.
+     intros; eapply synth_le_args_related'; eauto using pf_args_ind_trivial,pf_term_ind_trivial.
    Qed.
-
+   Hint Resolve synth_le_args_related : imcore.
    
    Lemma synth_le_sort_related (p : pf) c e1 e2
     : Some (e1,e2) = synth_le_sort synth_le_term p c ->
@@ -441,6 +404,7 @@ Section RuleChecking.
    Proof using wfl.
      apply synth_le_sort_related'; eauto using pf_sort_ind_trivial, pf_args_ind_trivial,pf_term_ind_trivial.
    Qed.
+   Hint Resolve synth_le_sort_related : imcore.
 
    Lemma synth_le_term_related (p : pf) c t e1 e2
     : Some (t,e1,e2) = synth_le_term p c ->
@@ -448,6 +412,7 @@ Section RuleChecking.
    Proof using wfl.
      apply synth_le_term_related'; eauto using pf_term_ind_trivial.
    Qed.
+   Hint Resolve synth_le_term_related : imcore.
    
 
   Section InnerLoop.
@@ -513,99 +478,205 @@ Section RuleChecking.
          ret (name,t)::c'
   end.
 
-   Lemma synth_wf_args_related (pl : list pf) c c' el args al
+   Lemma synth_wf_args_related' (pl : list pf) (ipl : pf_args_ind pl) c c' el args al al'
        : Some (el) = synth_wf_args synth_wf_term pl c c' ->
          Some al = get_subseq args (with_names_from c' el) ->
-         wf_args l c (map snd al) args el c'
-   with synth_wf_term_related (p : pf) c t e1 e2
-    : Some (t,e1,e2) = synth_le_term p c ->
-      le_term l c t e1 e2.
-   Proof.
+         al' = map snd al -> 
+         wf_args l c al' args el c'
+   with synth_wf_term_related' (p : pf) (ip : pf_term_ind p) c t e
+    : Some (t,e) = synth_wf_term p c ->
+      wf_term l c e t.
+   Proof using wfl.
      {
-       
+       inversion ipl; intros; break; simpl in *;
+         break_monadic_do; constructor;
+           eauto using get_subseq_nil with imcore.
+     }
+     {
+       inversion ip; intros; break; simpl in *;
+       break_monadic_do; eauto with imcore.
+     }
+   Qed.
+
+   Lemma synth_wf_args_related (pl : list pf) c c' el args al
+     : Some (el) = synth_wf_args synth_wf_term pl c c' ->
+       Some al = get_subseq args (with_names_from c' el) ->
+       wf_args l c (map snd al) args el c'.
+   Proof using wfl.
+     intros; eapply synth_wf_args_related'; eauto using pf_args_ind_trivial,pf_term_ind_trivial.
+   Qed.
+   Hint Resolve synth_wf_args_related : imcore.
+    
+   Lemma synth_wf_term_related (p : pf) c e t
+    : Some (t,e) = synth_wf_term p c ->
+      wf_term l c e t.
+   Proof using wfl.
+     intros; eapply synth_wf_term_related'; eauto using pf_args_ind_trivial,pf_term_ind_trivial.
+   Qed.
+   Hint Resolve synth_wf_term_related : imcore.
+
+   Lemma synth_wf_sort_related (p : pf) c t
+    : Some t = synth_wf_sort p c ->
+      wf_sort l c t.
+   Proof using wfl.
+     destruct p; intros; break; simpl in *;
+       break_monadic_do; eauto with imcore.
+   Qed.
+   Hint Resolve synth_wf_sort_related : imcore.
+
+   Lemma synth_wf_ctx_related pl c
+    : Some c = synth_wf_ctx pl ->
+      wf_ctx l c.
+   Proof using wfl.
+     revert c; induction pl; intros; break; simpl in *;
+       break_monadic_do; constructor; eauto with imcore.
+   Qed.
+   
+   Hint Resolve synth_wf_ctx_related : imcore.
+
+   Variant rule_pf : Set :=
+   | sort_rule_pf : named_list_set pf -> list string -> rule_pf
+   | term_rule_pf : named_list_set pf -> list string -> pf -> rule_pf
+   | sort_le_pf : named_list_set pf -> pf -> pf -> rule_pf
+   | term_le_pf : named_list_set pf -> pf -> pf -> pf (*sort; TODO: not needed*)-> rule_pf.
+   
+   Definition synth_wf_rule rp : option rule :=
+    match rp with
+    | sort_rule_pf pl args =>
+      do c <- synth_wf_ctx pl;
+         ! subseq args (map fst c);
+         ret sort_rule c args
+    | term_rule_pf pl args p =>
+      do c <- synth_wf_ctx pl;
+         t <- synth_wf_sort p c;
+         ! subseq args (map fst c);
+         ret term_rule c args t
+    | sort_le_pf pl p1 p2 =>
+      do c <- synth_wf_ctx pl;
+         t1 <- synth_wf_sort p1 c;
+         t2 <- synth_wf_sort p2 c;
+         ret sort_le c t1 t2
+    | term_le_pf pl p1 p2 pt =>
+      do c <- synth_wf_ctx pl;
+         (t1,e1) <- synth_wf_term p1 c;
+         (t2,e2) <- synth_wf_term p2 c;
+         t <- synth_wf_sort p2 c;
+         ! t == t1;
+         ! t == t2;
+         ret term_le c e1 e2 t
+    end.
+
+  Lemma synth_wf_rule_related pr r
+    : Some r = synth_wf_rule pr ->
+      wf_rule l r.
+   Proof using wfl.
+     revert r; destruct pr; intros; break; simpl in *;
+       break_monadic_do; constructor; eauto with imcore.
+   Qed.
+   Hint Resolve synth_wf_rule_related : imcore.
        
 End RuleChecking.
 
-Fixpoint refl_pf (e : exp) : pf :=
-  match e with
-  | var x => pvar x
-  | con n l => pcon n (map refl_pf l)
+Fixpoint synth_wf_lang rpl : option lang :=
+  match rpl with
+  | [::] => do ret [::]
+  | (name,rp)::rpl' =>
+    do l' <- synth_wf_lang rpl';
+       ! fresh name l';
+       r <- synth_wf_rule l' rp;
+       ret (name,r)::l'
   end.
-  
-Fixpoint term_step_redex (l : lang) (e : exp) : option (pf*exp) :=
-    match l with
-    | [::] => None
-    | (name,term_le c e1 e2 t)::l' =>
-      (*TODO: check that rule is executable, i.e. FV(e1) >= FV(e2)*)
-      match term_step_redex l' e with
-      | Some t' => Some t'
-      | None => do s <- matches_unordered e e1;
-                ret (ax name (map refl_pf (map snd s)), e2[/s/])
-      end
-    | _::l' => term_step_redex l' e
-    end.
-
-  Fixpoint sort_step_redex (l : lang) (t : sort) : option (pf*sort) :=
-    match l with
-    | [::] => None
-    | (name,sort_le c t1 t2)::l' =>
-      (*TODO: check that rule is executable, i.e. FV(t1) >= FV(t2)*)
-      match sort_step_redex l' t with
-      | Some t' => Some t'
-      | None => do s <- matches_unordered_sort t t1;
-                ret (ax name (map refl_pf (map snd s)),t2[/s/])
-      end
-    | _::l' => sort_step_redex l' t
-    end.
-
-  Section InnerLoop.
-    Context (term_par_step : forall (l : lang) (e : exp), option (pf*exp)).
-    (*TODO: might run afoul of implicits here; probably needs to operate on 
-      full proof terms
-     *)
-    Fixpoint args_par_step l s {struct s} : option (list pf * list exp) :=
-         match s with
-         | [::] => None
-         | e::s' =>
-           match term_par_step l e, args_par_step l s' with
-           | Some e', Some s'' => Some (e'::s'')
-           | Some e', None => Some (e'::s')
-           | None, Some s'' => Some (e::s'')
-           | None, None => None
-           end
-         end.
-  End InnerLoop.
-
-  Fixpoint term_par_step (l : lang) (e : exp) {struct e} : option exp :=
-    match term_step_redex l e, e with
-    | Some e',_ => Some e'
-    | None, var _ => None
-    | None, con name s =>
-      do s' <- args_par_step term_par_step l s;
-      ret (con name s')
-    end.
-  
-  Definition sort_par_step (l : lang) (t:sort) : option sort :=
-    match sort_step_redex l t, t with
-    | Some e',_ => Some e'
-    | None, scon name s =>
-      do s' <- args_par_step term_par_step l s;
-      ret (scon name s')
-    end.
-
-  Fixpoint term_par_step_n (l : lang) (e : exp) (fuel : nat) : exp :=
-    match fuel, term_par_step l e with
-    | 0,_ => e
-    | S _, None => e
-    | S fuel', Some e' => term_par_step_n l e' fuel'
-    end.
-  
-  Fixpoint sort_par_step_n (l : lang) (t : sort) (fuel : nat) : sort :=
-    match fuel, sort_par_step l t with
-    | 0,_ => t
-    | S _, None => t
-    | S fuel', Some t' => sort_par_step_n l t' fuel'
-    end.
 
 
+Lemma synth_wf_lang_related pl l
+  : Some l = synth_wf_lang pl ->
+    wf_lang l.
+Proof.
+  revert l; induction pl; intros; break; simpl in *;
+    break_monadic_do; constructor; eauto with imcore.
+  eapply synth_wf_rule_related; eauto with imcore.
+Qed.
+
+(*TODO: put in right place*)
+Definition get_rule_args (r : rule) : list string :=
+  match r with
+  | sort_rule _ args => args
+  | term_rule _ args _ => args
+  | sort_le c _ _ => map fst c
+  | term_le c _ _ _ => map fst c
+  end.
+
+Definition get_rule_ctx (r : rule) : ctx :=
+  match r with
+  | sort_rule c _ => c
+  | term_rule c _ _ => c
+  | sort_le c _ _ => c
+  | term_le c _ _ _ => c
+  end.
+
+
+(* For using the structure of an expression to derive
+   its proof
+ *)
+Inductive elab_term_structure {l : lang} : exp -> pf -> Prop :=
+| elab_con le n s ps
+  : let r := named_list_lookup (sort_rule [::][::]) l n in
+    elab_args_structure s (get_rule_args r) ps (map fst (get_rule_ctx r)) ->
+    elab_term_structure (con n s) (conv le (pcon n ps))
+| elab_var le x : elab_term_structure (var x) (conv le (pvar x))
+with elab_args_structure {l : lang} : list exp -> list string -> list pf -> list string -> Prop :=
+| elab_args_nil : elab_args_structure [::] [::] [::] [::]
+| elab_args_cons_ex e s a args p ps pargs
+  : elab_term_structure e p ->
+    elab_args_structure s args ps pargs ->
+    elab_args_structure (e::s) (a::args) (p::ps) (a::pargs)
+| elab_args_cons_im s args p ps a pargs
+  : elab_args_structure s args ps pargs -> elab_args_structure s args (p::ps) (a::pargs).
+
+Arguments elab_term_structure l : clear implicits.
+Arguments elab_args_structure l : clear implicits.
+
+Variant elab_sort_structure (l : lang) : sort -> pf -> Prop :=
+| elab_scon n s ps
+  : let r := named_list_lookup (sort_rule [::][::]) l n in
+    elab_args_structure l s (get_rule_args r) ps (map fst (get_rule_ctx r)) ->
+    elab_sort_structure l (scon n s) (pcon n ps).
+
+Inductive elab_ctx_structure (l : lang) : ctx -> named_list pf -> Prop :=
+| elab_ctx_nil : elab_ctx_structure l [::] [::]
+| elab_ctx_cons t c a p ps
+  : elab_sort_structure l t p ->
+    elab_ctx_structure l c ps -> elab_ctx_structure l ((a,t)::c) ((a,p)::ps).
+
+Variant elab_rule_structure (l : lang) : rule -> rule_pf -> Prop :=
+| elab_sort_rule c args p
+  : elab_ctx_structure l c p -> elab_rule_structure l (sort_rule c args) (sort_rule_pf p args)
+| elab_term_rule c t args pc pt
+  : elab_ctx_structure l c pc -> 
+    elab_sort_structure l t pt ->
+    elab_rule_structure l (term_rule c args t) (term_rule_pf pc args pt)
+| elab_sort_le c t1 t2 pc pt1 pt2
+  : elab_ctx_structure l c pc -> 
+    elab_sort_structure l t1 pt1 ->
+    elab_sort_structure l t2 pt2 ->
+    elab_rule_structure l (sort_le c t1 t2) (sort_le_pf pc pt1 pt2)
+| elab_term_le c t e1 e2 pc pt pe1 pe2
+  : elab_ctx_structure l c pc -> 
+    elab_sort_structure l t pt ->
+    elab_term_structure l e1 pe1 ->
+    elab_term_structure l e2 pe2 ->
+    elab_rule_structure l (term_le c e1 e2 t) (term_le_pf pc pe1 pe2 pt).
+
+Inductive elab_lang_structure :  lang -> named_list rule_pf -> Prop :=
+| elab_lang_nil : elab_lang_structure [::] [::]
+| elab_lang_cons l a r pr pl
+  : elab_rule_structure l r pr ->
+    elab_lang_structure l pl -> elab_lang_structure ((a,r)::l) ((a,pr)::pl).
+
+Hint Constructors elab_term_structure
+     elab_args_structure
+     elab_sort_structure
+     elab_ctx_structure
+     elab_rule_structure
+     elab_lang_structure : imcore.
 

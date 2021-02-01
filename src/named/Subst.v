@@ -7,16 +7,14 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
-From Named Require Import Exp Rule ARule Tactics Decidable.
-From Named Require ICore.
-Import ICore.IndependentJudgment.
+From Named Require Import Exp ARule ImCore Pf.
 Import Exp.Notations ARule.Notations.
 Require Import String.
 
-Require Import Named.Recognizers.
+
+Require Coq.derive.Derive.
 
 Set Default Proof Mode "Ltac2".
-
 
 (* syntax of categories *)
 Definition cat_lang : lang :=
@@ -58,6 +56,45 @@ Definition cat_lang : lang :=
       #"env" srt
   ]
   ]%arule.
+
+Ltac break_monadic_do :=
+  (lazymatch goal with
+          | [H : Some _ = Some _|-_] => inversion H; clear H
+          | [H : Some _ = None|-_] => inversion H
+          | [H : None = Some _ |-_] => inversion H
+          | [H : Some _ = named_list_lookup_err _ _ |-_] =>
+            apply named_list_lookup_err_in in H;
+            try (let H' := fresh H in
+                 pose proof H as H';
+                 apply rule_in_wf in H'; inversion H'; clear H')
+          | [H : true = (?a == ?b) |-_] =>
+            symmetry in H;
+            move: H => /eqP H
+          | [H : false = true |-_] =>inversion H
+          | [H : false = (?a == ?a) |-_] =>
+            rewrite eq_refl in H; inversion H
+          | |- context [ match ?e with
+                         | _ => _
+                         end ] => let e' := fresh in
+                                  remember e as e'; destruct e'
+          | [H:context [ match ?e with
+                         | _ => _
+                         end ] |-_] => let e' := fresh in
+                                       remember e as e'; destruct e'
+          end; subst; simpl in * ).
+
+Derive cat_lang_pf SuchThat (Some cat_lang = synth_wf_lang cat_lang_pf) As cat_lang_pf_ok.
+Proof.
+  assert (elab_lang_structure cat_lang cat_lang_pf) > [ repeat constructor | ].
+  cbn.
+  match! goal with
+  | [|- context c[?s \notin ?l]] =>
+     let e:= Std.eval_vm None constr:($s \notin $l) in
+     change ($c e)
+  end.
+  ltac1:(break_monadic_do).
+  }
+    auto with imcore.
 
 Section InferSub.
 

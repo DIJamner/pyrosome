@@ -5,11 +5,11 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 (* Monad with a fail operation*)
-Class Monad (M : Set -> Set) : Type :=
+Class Monad (M : Type -> Type) : Type :=
   {
-  Mret : forall {A:Set}, A -> M A;
-  Mbind : forall {A B:Set}, (A -> M B) -> M A -> M B;
-  Mfail : forall {A:Set}, M A;
+  Mret : forall {A}, A -> M A;
+  Mbind : forall {A B}, (A -> M B) -> M A -> M B;
+  Mfail : forall {A}, M A;
   }.
 
 

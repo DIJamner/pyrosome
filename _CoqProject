@@ -5,9 +5,9 @@ src/Utils/Monad.v
 -R src/named Named
 src/named/Exp.v
 src/named/ARule.v
-src/named/Pf.v
 src/named/ImCore.v
 src/named/Matches.v
+src/named/Pf.v
 src/named/Compilers.v
 src/named/Recognizers.v
 src/named/Tactics.v

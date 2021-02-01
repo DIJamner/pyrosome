@@ -128,20 +128,16 @@ c |- e1 = e2 : t'
   with wf_args : ctx -> list exp -> list string -> list exp -> ctx -> Prop :=
   | wf_args_nil : forall c, wf_args c [::] [::] [::] [::]
   | wf_args_cons_ex : forall c s args es c' name e t,
-      fresh name c' ->
       wf_term c e t[/with_names_from c' es/] ->
       (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
       wf_args c s args es c' ->
-      wf_sort c' t ->
       wf_args c (e::s) (name::args) (e::es) ((name,t)::c')
   | wf_args_cons_im : forall c s args es c' name e t,
-      fresh name c' ->
       wf_term c e t[/with_names_from c' es/] ->
       (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
       wf_args c s args es c' ->
-      wf_sort c' t ->
       wf_args c s args (e::es) ((name,t)::c')
   with wf_sort : ctx -> sort -> Prop :=
   | wf_sort_by : forall c n s args es c',
