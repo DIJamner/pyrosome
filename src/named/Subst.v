@@ -6,8 +6,8 @@ Set Bullet Behavior "Strict Subproofs".
 
 
 From Ltac2 Require Import Ltac2.
-From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore Pf.
+From Utils Require Import Utils Monad.
+From Named Require Import Exp ARule ImCore Pf Interactive.
 Import Exp.Notations ARule.Notations.
 Require Import String.
 
@@ -82,6 +82,247 @@ Ltac break_monadic_do :=
                          end ] |-_] => let e' := fresh in
                                        remember e as e'; destruct e'
           end; subst; simpl in * ).
+
+Set Default Proof Mode "Classic".
+
+(*TODO: move somewhere? need to deal w/ cat_lang *)
+Ltac nth_tail_show_hd :=
+  erewrite nth_tail_show_hd;[cbn[nth cat_lang]| by compute].
+
+
+Ltac store_bound_comp_as Hcmp :=
+  match goal with
+    [|- context ctx [Mbind ?f ?comp] ]=>
+    let cmp := fresh "comp" in
+    remember comp as cmp eqn:Hcmp;
+    let comp' := eval hnf in comp in
+    change (cmp = comp') in Hcmp
+  end.
+
+
+Ltac store_bound_comp_as_in Hcmp H :=
+  match type of H with
+    context ctx [Mbind ?f ?comp]=>
+    let cmp := fresh "comp" in
+    remember comp as cmp eqn:Hcmp in H;
+    let comp' := eval hnf in comp in
+    change (cmp = comp') in Hcmp
+  end.
+
+Definition focus {A} (a:A) := a.
+Opaque focus.
+Arguments focus : simpl never.
+
+Opaque Mbind Mret.
+
+(*TODO: replace one interactive with this*)
+Ltac process_interactive :=
+  lazymatch goal with
+  | [tl : list ?Q |-
+     context ctx[(Mbind ?f (focus ask) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
+    instantiate_term tl (hd::tl');
+    let x := context ctx [focus (f hd tl')]in
+    change x
+  | [tl : list ?Q |-
+     context ctx[(Mbind ?f (focus (ask_for ?d)) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
+    instantiate_term tl (hd::tl');
+    let x := context ctx [focus (f hd tl')]in
+    change x;
+    pose proof (shouldsatisfy hd d)
+  | [tl : list ?Q |-
+     context ctx
+        [(Mbind ?f (focus (ask_satisfying ?p)) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
+    instantiate_term tl (hd::tl');
+    let x := context ctx [focus (f hd tl')]in
+    change x; assert (p hd)
+  | [|- context ctx[(Mret ?a ?tl)]] =>
+    let x := context ctx [Some (a,tl)] in
+    change x
+   | [|- context ctx [Mbind ?f (focus (Mret ?a))] ]=>
+      let x := context ctx [focus (f a)] in
+      change x
+   | [|- context [Mbind _ (Mbind _ _) _] ]=>
+      rewrite Mbind_assoc
+   | [|- context ctx [focus ?comp] ]=>
+    let comp' := eval hnf in comp in
+    lazymatch comp' with
+    | Mbind ?f (Mret ?a) ?tl =>
+      let x := context ctx [focus (f a tl)] in
+      change x
+    | Mbind ?f ?cmp ?tl =>
+      let x := context ctx [Mbind f (focus cmp) tl] in
+      change x
+             
+    | Mbind ?f (Mret ?a) =>
+      let x := context ctx [focus (f a)] in
+      change x
+    | Mbind ?f ?cmp =>
+      let x := context ctx [Mbind f (focus cmp)] in
+      change x
+    | Mret ?a =>  
+      let x := context ctx [focus (Mret a)] in
+      change x(*TODO: need to backtrack focus*)
+    end
+  end.
+
+
+(*TODO: make a derive version*)
+Lemma cat_lang_ok : find_wf_lang_elaboration cat_lang.
+Proof.
+  unfold find_wf_lang_elaboration.
+  enter_interactive.
+  rewrite <-(@nth_tail_0 _ cat_lang) at 1.
+  nth_tail_show_hd.
+  
+  (*TODO: make part of enter_interactive*)
+  match goal with
+    [ |- omap fst ?cmp = ?rhs /\ ?p] =>
+    change (omap fst (focus cmp) = rhs /\ p)
+  end.
+  repeat process_interactive.
+  {
+    instantiate_term hd (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd0 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  {
+    instantiate_term hd1 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd2 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  {
+    instantiate_term hd3 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  
+   | [|- context ctx [Mbind ?f (focus (Mret ?a))] ]=>
+      let x := context ctx [focus (f a)] in
+      change x
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  process_interactive.
+  rewrite Mbind_assoc.
+  
+  process_interactive.
+  rewrite Mbind_assoc.
+  process_interactive.
+  rewrite Mbind_assoc.
+  rewrite Mbind_assoc.
+  lazymatch goal with
+   | [|- context ctx [focus ?comp] ]=>
+     let comp' := eval hnf in comp in
+         idtac comp' end.
+         lazymatch comp' with
+         | Mbind ?g (Mbind ?f ?cmp) ?tl =>
+           idtac f
+         end
+  end.
+  
+  process_interactive.
+  lazymatch goal with
+  | [|- context out_ctx
+                [Mbind ?f ?cmp ?tl] ]=>
+    lazymatch cmp with
+      context in_ctx [focus ?a] =>
+      lazymatch type of tl with
+      | list ?Q =>
+      let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
+    instantiate_term tl (hd::tl')
+      end
+    end
+  end.
+  let x := context ctx [focus (f a)] in
+      change x
+  store_bound_comp_as Hcmp.
+  store_bound_comp_as_in Hcmp0 Hcmp.
+  store_bound_comp_as_in Hcmp1 Hcmp0.
+  store_bound_comp_as_in Hcmp2 Hcmp1.
+  rewrite Hcmp2 in Hcmp1.
+  clear Hcmp2.
+  rewrite monad_bind_ret in Hcmp1.
+  store_bound_comp_as_in Hcmp2 Hcmp1.
+  store_bound_comp_as_in Hcmp3 Hcmp2.
+  rewrite monad_bind_ret in Hcmp3.
+  pose (p := Mbind
+            (fun s : seq exp =>
+             Mbind (fun pe : pf => do ret [:: pe])
+               (elab_term (nth_tail 1 cat_lang)
+                  {{c"G1" : #"env",
+                     "G2" : #"env",
+                     "G3" : #"env",
+                     "G4" : #"env",
+                     "f" : #"sub" %"G1" %"G2",
+                     "g" : #"sub" %"G2" %"G3"}} {{e%"G3"}}
+                  {{s#"env"}} [/with_names_from (@nil (string *exp)) s /]))
+            (lift
+               (synth_wf_args (synth_wf_term (nth_tail 1 cat_lang)) [::]
+                  {{c"G1" : #"env",
+                     "G2" : #"env",
+                     "G3" : #"env",
+                     "G4" : #"env",
+                     "f" : #"sub" %"G1" %"G2",
+                     "g" : #"sub" %"G2" %"G3"}} {{c }}))).
+  let x := eval hnf in p in idtac x.
+  store_bound_comp_as_in Hcmp4 Hcmp3.
+  rewrite Hcmp2 in Hcmp1.
+  clear Hcmp2.
+  rewrite monad_bind_ret in Hcmp1.
+  
+  Transparent elab_lang.
+  hnf.
+  unfold elab_lang.
+  store_bound_comp_as Hcmp.
+  unfold elab_rule in Hcmp.
+  store_bound_comp_as_in Hcmp0 Hcmp.
+  unfold elab_ctx in Hcmp0.
+  unfold elab_sort.
+  cbv match beta.
+  match goal with
+    [|- context ctx [named_list_lookup_err
+                       (nth_tail ?n ?l) ?s]] =>
+    let r := eval compute in (named_list_lookup_err
+                                (nth_tail n l) s) in
+    let x := context ctx [r] in
+    change x; cbn
+  end.
+  rewrite !monad_bind_ret.
+  process_interactive.
+  simpl.
+  cbn [elab_lang].
+  pose (tst := nth_tail 1 cat_lang).
+  
+  unfold elab_lang.
+  TODO: best way to reduce to first ask?
+  
+  
+  process_interactive.
 
 Derive cat_lang_pf SuchThat (Some cat_lang = synth_wf_lang cat_lang_pf) As cat_lang_pf_ok.
 Proof.

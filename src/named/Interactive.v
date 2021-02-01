@@ -87,7 +87,32 @@ Instance interactive_monad Q : Monad (interactive Q) :=
   Mfail := fun _ _ => None
   }.                     
 
+(*TODO: move statement to monad file *)
+Lemma monad_bind_ret {Q A B} (f : A -> interactive Q B) (a : A)
+  : Mbind f (Mret a) = f a.
+Proof.
+  cbn.
+  unfold interact_bind.
+  unfold interact_ret.
+  reflexivity.
+Qed.
 
+(*weakened associativity
+  to avoid using extensionality
+*)
+Lemma Mbind_assoc Q A B C
+      (f : A -> interactive Q B)
+      (g : B -> interactive Q C)
+      a
+      inputs
+    : Mbind g (Mbind f a) inputs
+      = Mbind (fun x => Mbind g (f x)) a inputs.
+Proof.
+  cbn.
+  unfold interact_bind.
+  case ain: (a inputs); break; reflexivity.
+Qed.
+  
 Definition find_result_such_that
            {Q} {A}
            (ma : interactive Q A)
@@ -120,24 +145,24 @@ Ltac coerce_input_to_cons tl :=
 
 Ltac process_interactive :=
  lazymatch goal with
-  | [|- context ctx[(Mbind ?f ask ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : nat);
-    let tl' := fresh "tl" in evar (tl' : list nat);
+  | [tl : list ?Q |- context ctx[(Mbind ?f ask ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
     let cmp := eval cbn beta in (f hd tl') in
     let x := context ctx [cmp]in
     change x
-  | [|- context ctx[(Mbind ?f (ask_for ?d) ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : nat);
-    let tl' := fresh "tl" in evar (tl' : list nat);
+  | [tl : list ?Q |- context ctx[(Mbind ?f (ask_for ?d) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
     let cmp := eval cbn beta in (f hd tl') in
     let x := context ctx [cmp]in
     change x;
     pose proof (shouldsatisfy hd d)
-  | [|- context ctx[(Mbind ?f (ask_satisfying ?p) ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : nat);
-    let tl' := fresh "tl" in evar (tl' : list nat);
+  | [tl : list ?Q |- context ctx[(Mbind ?f (ask_satisfying ?p) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
     let cmp := eval cbn beta in (f hd tl') in
     let x := context ctx [cmp]in
@@ -158,9 +183,9 @@ Ltac exit_interactive :=
 Ltac enter_interactive :=
   unfold find_result_such_that;
   match goal with
-  [ |- exists _ (_:?A),_] =>
+  [ |- exists (_: list ?Q) (_:?A),_] =>
   let tl := fresh "tl" in
-  evar (tl : list nat);
+  evar (tl : list Q);
   exists tl;
   let res := fresh "res" in
   evar (res : A);
@@ -279,7 +304,7 @@ Section WithLang.
   end.
 
   
-  Fixpoint elab_sort c t : interactive pf pf :=
+  Definition elab_sort c t : interactive pf pf :=
     match t with
     | scon name s =>
     do (sort_rule c' args)
@@ -287,4 +312,48 @@ Section WithLang.
        es <- elab_args elab_term c s args name c';
        ret (pcon name es)
     end.
+
+  Fixpoint elab_ctx c : interactive pf (named_list pf) :=
+    match c with
+    | [::] => do ret [::]
+    | (n,t)::c' =>
+      do pt <- elab_sort c' t; 
+         pc' <- elab_ctx c';
+         ret (n,pt)::pc'
+    end.
+
+  Definition elab_rule r : interactive pf rule_pf :=
+    match r with
+    | sort_rule c args =>
+      do cp <- elab_ctx c;
+         ret sort_rule_pf cp args
+    | term_rule c args t =>
+      do cp <- elab_ctx c;
+         tp <- elab_sort c t;
+         ret term_rule_pf cp args tp
+    | sort_le c t1 t2 =>
+      do cp <- elab_ctx c;
+         p1 <- elab_sort c t1;
+         p2 <- elab_sort c t2;
+         ret sort_le_pf cp p1 p2
+    | term_le c e1 e2 t =>
+      do cp <- elab_ctx c;
+         pe1 <- elab_term c e1 t;
+         pe2 <- elab_term c e2 t;
+         tp <- elab_sort c t;
+         ret term_le_pf cp pe1 pe2 tp
+    end.      
   
+End WithLang.
+
+Fixpoint elab_lang l : interactive pf (named_list rule_pf) :=
+  match l with
+  | [::] => do ret [::]
+  | (n,r)::l' =>
+    do pr <- elab_rule l' r;
+       pl' <- elab_lang l';
+       ret (n,pr)::pl'
+  end.              
+
+Definition find_wf_lang_elaboration (l : lang) :=
+  find_result_such_that (elab_lang l) (fun pl => Some l = synth_wf_lang pl).

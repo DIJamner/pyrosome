@@ -8,10 +8,7 @@ src/named/ARule.v
 src/named/ImCore.v
 src/named/Matches.v
 src/named/Pf.v
-src/named/Compilers.v
-src/named/Recognizers.v
-src/named/Tactics.v
-src/named/Decidable.v
+src/named/Interactive.v
 src/named/Subst.v
 src/named/STLC.v
 src/named/Let.v

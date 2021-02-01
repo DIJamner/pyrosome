@@ -522,3 +522,70 @@ Proof.
   apply subseq_refl.
 Qed.
 
+(* Reduce size of language terms for smaller goals *)
+Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
+  match n,l with
+  | 0,_ => l
+  | S_,[::]=> [::]
+  | S n', _::l'=> nth_tail n' l'
+  end.
+
+Arguments nth_tail : simpl never.
+
+(* TODO: put with nth_tail*)
+Lemma nth_tail_nil {A} n : @nth_tail A n [::] = [::].
+Proof.
+  destruct n; simpl; reflexivity.
+Qed.
+
+
+Lemma nth_tail_S_cons {A} n (e:A) l : nth_tail n.+1 (e::l) = nth_tail n l.
+Proof.
+  reflexivity.
+Qed.      
+
+Lemma nth_tail_cons_eq {A} (a:A) l n l'
+  : a::l = nth_tail n l' -> l = nth_tail n.+1 l'.
+Proof.
+  revert a l l'.
+  induction n.
+  {
+    intros; destruct l';
+      cbv[nth_tail] in*;
+      inversion H; auto.
+  }
+  {
+    intros; destruct l'.
+    {
+      cbv[nth_tail] in*;
+        inversion H; auto.
+    }
+    {
+      rewrite nth_tail_S_cons.
+      rewrite nth_tail_S_cons in H.
+      eauto.
+    }
+  }
+Qed.
+
+Lemma nth_tail_0 {A} (l : list A) : nth_tail 0 l = l.
+Proof. reflexivity. Qed.
+      
+Lemma nth_tail_show_hd {A} (default:A) n l
+  : size l > n ->
+    nth_tail n l = (nth default l n) ::(nth_tail (S n) l).
+Proof.
+  elim: n l; intros.
+  {
+    destruct l; simpl in *; inversion H.
+    rewrite nth_tail_S_cons.
+    rewrite !nth_tail_0.
+    reflexivity.
+  }   
+  {
+    destruct l; simpl in *; inversion H0.
+    clear H2.
+    rewrite !nth_tail_S_cons.
+    apply H; exact H0.
+  }
+Qed.    
