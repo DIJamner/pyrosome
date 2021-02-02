@@ -57,32 +57,6 @@ Definition cat_lang : lang :=
   ]
   ]%arule.
 
-Ltac break_monadic_do :=
-  (lazymatch goal with
-          | [H : Some _ = Some _|-_] => inversion H; clear H
-          | [H : Some _ = None|-_] => inversion H
-          | [H : None = Some _ |-_] => inversion H
-          | [H : Some _ = named_list_lookup_err _ _ |-_] =>
-            apply named_list_lookup_err_in in H;
-            try (let H' := fresh H in
-                 pose proof H as H';
-                 apply rule_in_wf in H'; inversion H'; clear H')
-          | [H : true = (?a == ?b) |-_] =>
-            symmetry in H;
-            move: H => /eqP H
-          | [H : false = true |-_] =>inversion H
-          | [H : false = (?a == ?a) |-_] =>
-            rewrite eq_refl in H; inversion H
-          | |- context [ match ?e with
-                         | _ => _
-                         end ] => let e' := fresh in
-                                  remember e as e'; destruct e'
-          | [H:context [ match ?e with
-                         | _ => _
-                         end ] |-_] => let e' := fresh in
-                                       remember e as e'; destruct e'
-          end; subst; simpl in * ).
-
 Set Default Proof Mode "Classic".
 
 (*TODO: move somewhere? need to deal w/ cat_lang *)
@@ -109,68 +83,8 @@ Ltac store_bound_comp_as_in Hcmp H :=
     change (cmp = comp') in Hcmp
   end.
 
-Definition focus {A} (a:A) := a.
-Opaque focus.
-Arguments focus : simpl never.
-
+(*TODO: get "global" working*)
 Opaque Mbind Mret.
-
-(*TODO: replace one interactive with this*)
-Ltac process_interactive :=
-  lazymatch goal with
-  | [tl : list ?Q |-
-     context ctx[(Mbind ?f (focus ask) ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : Q);
-    let tl' := fresh "tl" in evar (tl' : list Q);
-    instantiate_term tl (hd::tl');
-    let x := context ctx [focus (f hd tl')]in
-    change x
-  | [tl : list ?Q |-
-     context ctx[(Mbind ?f (focus (ask_for ?d)) ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : Q);
-    let tl' := fresh "tl" in evar (tl' : list Q);
-    instantiate_term tl (hd::tl');
-    let x := context ctx [focus (f hd tl')]in
-    change x;
-    pose proof (shouldsatisfy hd d)
-  | [tl : list ?Q |-
-     context ctx
-        [(Mbind ?f (focus (ask_satisfying ?p)) ?tl)]] =>
-    let hd := fresh "hd" in evar (hd : Q);
-    let tl' := fresh "tl" in evar (tl' : list Q);
-    instantiate_term tl (hd::tl');
-    let x := context ctx [focus (f hd tl')]in
-    change x; assert (p hd)
-  | [|- context ctx[(Mret ?a ?tl)]] =>
-    let x := context ctx [Some (a,tl)] in
-    change x
-   | [|- context ctx [Mbind ?f (focus (Mret ?a))] ]=>
-      let x := context ctx [focus (f a)] in
-      change x
-   | [|- context [Mbind _ (Mbind _ _) _] ]=>
-      rewrite Mbind_assoc
-   | [|- context ctx [focus ?comp] ]=>
-    let comp' := eval hnf in comp in
-    lazymatch comp' with
-    | Mbind ?f (Mret ?a) ?tl =>
-      let x := context ctx [focus (f a tl)] in
-      change x
-    | Mbind ?f ?cmp ?tl =>
-      let x := context ctx [Mbind f (focus cmp) tl] in
-      change x
-             
-    | Mbind ?f (Mret ?a) =>
-      let x := context ctx [focus (f a)] in
-      change x
-    | Mbind ?f ?cmp =>
-      let x := context ctx [Mbind f (focus cmp)] in
-      change x
-    | Mret ?a =>  
-      let x := context ctx [focus (Mret a)] in
-      change x(*TODO: need to backtrack focus*)
-    end
-  end.
-
 
 (*TODO: make a derive version*)
 Lemma cat_lang_ok : find_wf_lang_elaboration cat_lang.
@@ -179,12 +93,6 @@ Proof.
   enter_interactive.
   rewrite <-(@nth_tail_0 _ cat_lang) at 1.
   nth_tail_show_hd.
-  
-  (*TODO: make part of enter_interactive*)
-  match goal with
-    [ |- omap fst ?cmp = ?rhs /\ ?p] =>
-    change (omap fst (focus cmp) = rhs /\ p)
-  end.
   repeat process_interactive.
   {
     instantiate_term hd (pcon "env" [::]).
@@ -214,16 +122,183 @@ Proof.
     reflexivity.
   }
   repeat process_interactive.
+  {
+    instantiate_term hd4 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  { instantiate_term hd5 (pvar "G1").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd6 (pvar "G2").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd7 (pvar "G4").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd8 (pcon "sub" [:: pvar "G2"; pvar "G1"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
   
-   | [|- context ctx [Mbind ?f (focus (Mret ?a))] ]=>
-      let x := context ctx [focus (f a)] in
-      change x
-  process_interactive.
-  process_interactive.
-  process_interactive.
-  process_interactive.
-  process_interactive.
-  process_interactive.
+  {
+    instantiate_term hd9 (pvar "G2").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd10 (pvar "G3").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd11 (pvar "G4").
+    vm_compute; eauto.
+  }    
+  repeat process_interactive.
+  {
+    instantiate_term hd12 (pcon "sub" [:: pvar "G3"; pvar "G2"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd13 (pcon "sub" [:: pvar "G4"; pvar "G3"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd14 (pcon "sub" [:: pvar "G4"; pvar "G2"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd15 (pcon "sub" [:: pvar "G4"; pvar "G1"]).
+    vm_compute.
+    reflexivity.
+  }
+  {
+    instantiate_term hd16 (pvar "G1").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd17 (pvar "G3").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd18 (pvar "G4").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd19 (pvar "G1").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd20 (pvar "G2").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd21 (pvar "G3").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd22 (pcon "sub" [:: pvar "G2"; pvar "G1"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd23 (pcon "sub" [:: pvar "G3"; pvar "G2"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd24 (pcon "sub" [:: pvar "G3"; pvar "G1"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd25 (pcon "sub" [:: pvar "G4"; pvar "G3"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd26 (pcon "sub" [:: pvar "G4"; pvar "G1"]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd27 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd28 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  {
+    instantiate_term hd29 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd30 (pcon "env" [::]).
+    vm_compute.
+    reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd31 (pvar "G").
+    vm_compute.
+    eexists; reflexivity.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd32 (pvar "G").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd33 (pvar "G'").
+    vm_compute.
+    eauto.
+  }
+  repeat process_interactive.
+  {
+    instantiate_term hd32 (pvar "G").
+    vm_compute.
+    eauto.
+  }
+    cbn.
   process_interactive.
   process_interactive.
   process_interactive.

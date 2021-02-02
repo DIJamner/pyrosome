@@ -14,7 +14,7 @@ Inductive interactive : Type -> Type :=
 | interact_ret A : A -> interactive A
 | interact_fail A : interactive A.
  *)
-  
+ 
 
 Definition interactive Q A : Type :=
   list Q (*list of ordered inputs*) ->
@@ -143,53 +143,99 @@ Ltac coerce_input_to_cons tl :=
   let tl' := fresh "tl" in evar (tl' : list nat);
   instantiate_term tl (hd::tl').  
 
+Definition focus {A} (a:A) := a.
+Opaque focus.
+Arguments focus : simpl never.
+
+Global Opaque Mbind Mret.
+
+(*TODO: replace one interactive with this*)
 Ltac process_interactive :=
- lazymatch goal with
-  | [tl : list ?Q |- context ctx[(Mbind ?f ask ?tl)]] =>
+  lazymatch goal with
+  | [tl : list ?Q |-
+     context ctx[(Mbind ?f (focus ask) ?tl)]] =>
     let hd := fresh "hd" in evar (hd : Q);
     let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
-    let cmp := eval cbn beta in (f hd tl') in
-    let x := context ctx [cmp]in
+    let x := context ctx [focus (f hd tl')]in
     change x
-  | [tl : list ?Q |- context ctx[(Mbind ?f (ask_for ?d) ?tl)]] =>
+  | [tl : list ?Q |-
+     context ctx[(Mbind ?f (focus (ask_for ?d)) ?tl)]] =>
     let hd := fresh "hd" in evar (hd : Q);
     let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
-    let cmp := eval cbn beta in (f hd tl') in
-    let x := context ctx [cmp]in
+    let x := context ctx [focus (f hd tl')]in
     change x;
     pose proof (shouldsatisfy hd d)
-  | [tl : list ?Q |- context ctx[(Mbind ?f (ask_satisfying ?p) ?tl)]] =>
+  | [tl : list ?Q |-
+     context ctx
+        [(Mbind ?f (focus (ask_for_satisfying ?d ?p)) ?tl)]] =>
     let hd := fresh "hd" in evar (hd : Q);
     let tl' := fresh "tl" in evar (tl' : list Q);
     instantiate_term tl (hd::tl');
-    let cmp := eval cbn beta in (f hd tl') in
-    let x := context ctx [cmp]in
+    let x := context ctx [focus (f hd tl')]in
+    change x;
+    pose proof (shouldsatisfy hd d);
+    assert (p hd)
+  | [tl : list ?Q |-
+     context ctx
+        [(Mbind ?f (focus (ask_satisfying ?p)) ?tl)]] =>
+    let hd := fresh "hd" in evar (hd : Q);
+    let tl' := fresh "tl" in evar (tl' : list Q);
+    instantiate_term tl (hd::tl');
+    let x := context ctx [focus (f hd tl')]in
     change x; assert (p hd)
   | [|- context ctx[(Mret ?a ?tl)]] =>
     let x := context ctx [Some (a,tl)] in
     change x
- end.
+   | [|- context ctx [Mbind ?f (focus (Mret ?a))] ]=>
+      let x := context ctx [focus (f a)] in
+      change x
+   | [|- context [Mbind _ (Mbind _ _) _] ]=>
+      rewrite Mbind_assoc
+   | [|- context ctx [focus ?comp] ]=>
+    let comp' := eval hnf in comp in
+    lazymatch comp' with
+    | Mbind ?f (Mret ?a) ?tl =>
+      let x := context ctx [focus (f a tl)] in
+      change x
+    | Mbind ?f ?cmp ?tl =>
+      let x := context ctx [Mbind f (focus cmp) tl] in
+      change x
+             
+    | Mbind ?f (Mret ?a) =>
+      let x := context ctx [focus (f a)] in
+      change x
+    | Mbind ?f ?cmp =>
+      let x := context ctx [Mbind f (focus cmp)] in
+      change x
+    | Mret ?a =>  
+      let x := context ctx [focus (Mret a)] in
+      change x
+    | fun=> None =>
+      fail "Reached monad failure:" comp
+    end
+  end.
+
 
 Ltac exit_interactive :=
   match goal with
-    [|- omap fst (Some (?cmp,?intl)) = Some ?res /\ ?P ?res] =>
+    [|- omap fst (focus (Some (?cmp,?intl))) = Some ?res /\ ?P ?res] =>
     instantiate_term intl open_constr:([::]);
     unfold res;
     split;[ cbn; reflexivity|]; clear res
   end.
 
 Ltac enter_interactive :=
-  unfold find_result_such_that;
   match goal with
-  [ |- exists (_: list ?Q) (_:?A),_] =>
+  [ |- @find_result_such_that ?Q ?A ?ma ?p] =>
   let tl := fresh "tl" in
   evar (tl : list Q);
   exists tl;
   let res := fresh "res" in
   evar (res : A);
-  exists res
+  exists res;
+  change (omap fst (focus (ma tl)) = Some res /\ p res)
   end.
 
 
@@ -203,9 +249,12 @@ Goal find_result_such_that ask_and_add (eq 7).
   unfold ask_and_add.
   enter_interactive.
   repeat process_interactive.
-  instantiate_term hd 0.
-  done.
+  {
+    instantiate_term hd 0.
+    done.
+  }
   instantiate_term hd0 7.
+  repeat process_interactive.
   exit_interactive.
   reflexivity.
 Qed.
@@ -237,7 +286,7 @@ Section WithLang.
     (*TODO*)
     
     (* separate for termination purposes*)
-    Fixpoint elab_args_all_implicit (c:ctx) name c'
+    Fixpoint elab_args_all_implicit {A} (debug : A) (c:ctx) c'
       : interactive pf (list pf) :=
       match c' with
       | [::] => do ret [::]
@@ -245,19 +294,19 @@ Section WithLang.
         (*TODO: decide the right way to ask for this:
           implicit or elaborated, conv'ing to t or not
          *)
-        do ps <- elab_args_all_implicit c name c'';
-           s <- lift (synth_wf_args (synth_wf_term l) ps c c');
+        do ps <- elab_args_all_implicit debug c c'';
+           s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
            e <- ask_for_satisfying
-                  (name ++ " argument: " ++ an)%string
+                  (c,debug, " argument: " ++ an)%string
                   (fun pf => exists e,
-                       check_wf_term l c e t[/with_names_from c' s/] pf);
+                       check_wf_term l c e t[/with_names_from c'' s/] pf);
            ret (e::ps)
     end.
     
-    Fixpoint elab_args c s args name c' {struct s}
+    Fixpoint elab_args {A} (debug : A) c s args c' {struct s}
       : interactive pf (list pf) :=
       match args, s with
-      | [::], [::] => elab_args_all_implicit c name c'
+      | [::], [::] => elab_args_all_implicit debug c c'
       | [::], _ => Mfail
       | an::args', [::] => Mfail
       | an::args', e::s' =>
@@ -267,7 +316,7 @@ Section WithLang.
               | [::] => Mfail
               | (an',t)::c'' =>
                 if an' == an then
-                  do ps <- elab_args c s' args' name c'';
+                  do ps <- elab_args debug c s' args' c'';
                      s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
                      pe <- elab_term c e t[/with_names_from c'' s/];
                      ret (pe::ps)
@@ -276,12 +325,12 @@ Section WithLang.
                   implicit or elaborated, conv'ing to t or not
                  *)
                 do ps <- elab_implicits c'';
-                   s <- lift (synth_wf_args (synth_wf_term l) ps c c');
+                   s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
                    e <- ask_for_satisfying
-                        (name ++ " argument: " ++ an)%string
+                        (c,debug,  " argument: " ++ an)%string
                         (fun pf => exists e,
                              check_wf_term l c e
-                                 t[/with_names_from c' s/] pf);
+                                 t[/with_names_from c'' s/] pf);
                    ret (e::ps)
               end in
     elab_implicits c'
@@ -297,7 +346,7 @@ Section WithLang.
   | con name s =>
     do (term_rule c' args t')
          <?- lift (named_list_lookup_err l name);
-      es <- elab_args elab_term c s args name c';
+      es <- elab_args elab_term e c s args c';
       s <- lift (synth_wf_args (synth_wf_term l) es c c');
       cv <- ask_satisfying (check_le_sort l c t'[/with_names_from c' s/] t);
      ret (conv cv (pcon name es))
@@ -309,7 +358,7 @@ Section WithLang.
     | scon name s =>
     do (sort_rule c' args)
          <?- lift (named_list_lookup_err l name);
-       es <- elab_args elab_term c s args name c';
+       es <- elab_args elab_term t c s args c';
        ret (pcon name es)
     end.
 
