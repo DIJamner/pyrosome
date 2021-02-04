@@ -14,120 +14,151 @@ Inductive interactive : Type -> Type :=
 | interact_ret A : A -> interactive A
 | interact_fail A : interactive A.
  *)
- 
 
-Definition interactive Q A : Type :=
-  list Q (*list of ordered inputs*) ->
-  (*partial fn returning remaining inputs*)
-  option (A * list Q).
+(*TODO: this is just itrees with failure; actually use the library?*)
+CoInductive interactive (E : Type -> Type) A : Type :=
+| iret (a:A)
+| ifail
+| itau (i : interactive E A)
+| iask {D} (d:E D) (k : D -> interactive E A).
 
-Definition interact_bind Q A B
-           (f : A -> interactive Q B)
-           (ma : interactive Q A) : interactive Q B :=
-  fun inputs =>
-    match ma inputs with
-    | Some (a, inputs') =>
-      f a inputs'
-    | None => None
-    end.
+Arguments iret {E A}.
+Arguments ifail {E A}.
+Arguments itau {E A}.
+Arguments iask {E A D} d k.        
 
-Definition interact_ret Q A a : interactive Q A :=
-  fun inputs => Some (a,inputs).
+CoFixpoint ibind {E A B} (f : A -> interactive E B) (ma : interactive E A) : interactive E B :=
+  match ma with
+  | iret a => f a
+  | ifail => ifail
+  | itau i => itau (ibind f i)
+  | iask _ d k => iask d (fun q => ibind f (k q))
+  end.
+Arguments ibind {E A B} f !ma/.
 
-Definition ask {Q} : interactive Q Q :=
-  fun inputs =>
-    match inputs with
-    | q::inputs' =>
-      Some (q,inputs')
-    | [::] => None
-    end.
+(* fixes the input q when able.
+   Note: may add itaus
+ *)
+CoFixpoint maybe_handle {E A}
+           (handler : forall D, E D -> option D)
+           (ma : interactive E A) : interactive E A :=
+  match ma with
+  | iret a => iret a
+  | ifail => ifail
+  | itau i => itau (maybe_handle handler i)
+  | iask D d k =>
+    match handler D d with
+    | Some q => itau (maybe_handle handler (k q))
+    | None => iask d k
+    end
+  end.
 
+CoFixpoint handle {E A}
+           (handler : forall D, E D -> D)
+           (ma : interactive E A) : interactive (fun=>void) A :=
+  match ma with
+  | iret a => iret a
+  | ifail => ifail
+  | itau i => itau (handle handler i)
+  | iask D d k => itau (handle handler (k (handler D d)))
+  end.
 
-Definition ask_for {D} (data:D) {Q} : interactive Q Q :=
-  fun inputs =>
-    match inputs with
-    | q::inputs' =>
-      Some (q,inputs')
-    | [::] => None
-    end.
+CoFixpoint handle_idx {E A}
+           (handler : forall D, nat -> E D -> D)
+           (ma : interactive E A) n : interactive (fun=>void) A :=
+  match ma with
+  | iret a => iret a
+  | ifail => ifail
+  | itau i => itau (handle_idx handler i n)
+  | iask D d k => itau (handle_idx handler (k (handler D n d)) n.+1)
+  end.
 
-
-Definition ask_satisfying {Q} (p : Q -> Prop) : interactive Q Q :=
-  fun inputs =>
-    match inputs with
-    | q::inputs' =>
-      Some (q,inputs')
-    | [::] => None
-    end.
-
-
-Definition ask_for_satisfying
-           {D} (data:D)
-           {Q} (p : Q -> Prop) : interactive Q Q :=
-  fun inputs =>
-    match inputs with
-    | q::inputs' =>
-      Some (q,inputs')
-    | [::] => None
-    end.
-
-Definition ask_satisfying_checked {Q} (p : Q -> bool)
-  : interactive Q Q :=
-  fun inputs =>
-    match inputs with
-    | q::inputs' =>
-      if p q then Some (q,inputs') else None
-    | [::] => None
-    end.
-
-Instance interactive_monad Q : Monad (interactive Q) :=
+Instance interactive_monad E : Monad (interactive E) :=
   {
-  Mret := @interact_ret Q;
-  Mbind := @interact_bind Q;
-  Mfail := fun _ _ => None
-  }.                     
+  Mret := @iret E;
+  Mbind := @ibind E;
+  Mfail := @ifail E
+  }.
 
-(*TODO: move statement to monad file *)
-Lemma monad_bind_ret {Q A B} (f : A -> interactive Q B) (a : A)
+Variant interactiveF (E : Type -> Type) A : Type :=
+| iretF (a:A)
+| ifailF
+| itauF (i : interactive E A)
+| iaskF {D} (d:E D) (k : D -> interactive E A).
+Arguments iretF {E A}.
+Arguments ifailF {E A}.
+Arguments itauF {E A}.
+Arguments iaskF {E A D} d k.        
+
+Definition iforce {E A} (i : interactive E A) : interactiveF E A :=
+  match i with
+  | iret a => iretF a
+  | ifail => ifailF
+  | itau i => itauF i
+  | iask _ d k => iaskF d k
+  end.
+
+Arguments iforce {E A} !i/.
+
+Definition ifold {E A} (i : interactiveF E A) : interactive E A :=
+  match i with
+  | iretF a => iret a
+  | ifailF => ifail
+  | itauF i => itau i
+  | iaskF _ d k => iask d k
+  end.
+Arguments ifold {E A} !i/.
+
+
+Lemma force_interactive {E A} (i : interactive E A)
+  : i = ifold (iforce i).
+Proof.
+  destruct i; simpl; reflexivity.
+Qed.
+
+(*TODO: the first is just the semantics and the second
+  requires a custom relation. Are either needed anymore?
+Lemma monad_bind_ret {E A B} (f : A -> interactive E B) (a : A)
   : Mbind f (Mret a) = f a.
 Proof.
-  cbn.
-  unfold interact_bind.
-  unfold interact_ret.
+  match goal with
+    [|- ?a = ?b] =>
+    rewrite (force_interactive a)
+            (force_interactive b)
+  end.
+  cbv.
   reflexivity.
 Qed.
 
-(*weakened associativity
-  to avoid using extensionality
-*)
-Lemma Mbind_assoc Q A B C
-      (f : A -> interactive Q B)
-      (g : B -> interactive Q C)
+Lemma Mbind_assoc {E A B C}
+      (f : A -> interactive E B)
+      (g : B -> interactive E C)
       a
-      inputs
-    : Mbind g (Mbind f a) inputs
-      = Mbind (fun x => Mbind g (f x)) a inputs.
+    : Mbind g (Mbind f a) = Mbind (fun x => Mbind g (f x)) a.
 Proof.
-  cbn.
-  unfold interact_bind.
-  case ain: (a inputs); break; reflexivity.
 Qed.
-  
+*)
+
+(* clears itaus*)
+Fixpoint run {E A} n (i : interactive E A) : option A :=
+   match i,n with
+  | itau _, 0 => None
+  | itau i', S n' => run n' i'
+  | iret a, _ => Some a
+  | _, _ => None
+   end.
+
+Definition handle_from_list {E} (l : list (forall D, E D -> D)) default D (n : nat)
+  := nth default l n D.
+
 Definition find_result_such_that
-           {Q} {A}
-           (ma : interactive Q A)
+           {E} {A}
+           (ma : interactive E A)
            (P : A -> Prop) : Prop :=
-  exists (inputs : list Q) res,
-    omap fst (ma inputs) = Some res
-    /\ P res.
+  exists l h n res,
+    run n (handle_idx (handle_from_list l h) ma 0) = Some res /\ P res.
 
-Arguments Mbind : simpl never.
-Arguments Mret : simpl never.
-
-
-Inductive ShouldSatisfy {A} {D} (var : A) (data : D) : Prop :=
-  shouldsatisfy.
-
+(*TODO: update ltac
 (*Note: doesn't work if tl is in an assumption *)
 Ltac instantiate_term tm vl :=
   (try lazymatch goal with
@@ -225,38 +256,76 @@ Ltac exit_interactive :=
     unfold res;
     split;[ cbn; reflexivity|]; clear res
   end.
+*)
 
-Ltac enter_interactive :=
+
+Definition ask {E D} (q : E D) : interactive E D :=
+  iask q iret.
+
+(* example *)
+Variant natE : Type -> Type :=
+  natEpred (p : nat -> bool) : natE nat.
+
+Local Definition ask_and_add : interactive natE nat :=
+  do a <- ask (natEpred Nat.even);
+     b <- ask (natEpred Nat.odd);
+     ret (a + b)%nat.
+
+Require Import Ltac2.Constr.
+Require Import Ltac2.Ltac2.
+
+Ltac2 refine_evar e pat :=
+  let e' := Std.eval_vm None e in
+  match Unsafe.kind e' with
+  | Unsafe.Evar n _ => Control.new_goal n > [|refine pat]
+  | _ => ()(*TODO: fail*)
+  end.
+
+Set Default Proof Mode "Classic".
+
+Ltac enter_interactive n :=
   match goal with
-  [ |- @find_result_such_that ?Q ?A ?ma ?p] =>
+  [ |- @find_result_such_that ?E ?A ?ma ?p] =>
   let tl := fresh "tl" in
-  evar (tl : list Q);
+  evar (tl : list (forall D, E D -> D));
   exists tl;
+  let h := fresh "h" in
+  evar (h : forall {D}, E D -> D);
+  exists h; (*TODO: refine*)
+  exists n;
   let res := fresh "res" in
   evar (res : A);
   exists res;
-  change (omap fst (focus (ma tl)) = Some res /\ p res)
+  change (run n (handle_idx (handle_from_list tl h) ma 0) = Some res /\ p res)
   end.
 
 
-(* example *)
-Local Definition ask_and_add : interactive nat nat :=
-  do a <- ask_satisfying Nat.even;
-     b <- ask_for "second num"%string;
-     ret (a + b)%nat.
+(*Note: doesn't work if tl is in an assumption *)
+Ltac instantiate_term tm vl :=
+    let H := fresh in 
+    assert (tm = vl) as H; [cbv; reflexivity|];
+    rewrite ?H; clear H tm.
+
+Ltac coerce_input_to_cons tl :=
+  match type of tl with
+  | list ?A =>
+    let hd := fresh "hd" in evar (hd : A);
+    let tl' := fresh "tl" in evar (tl' : list A);
+    instantiate_term tl (hd::tl')
+  end.
 
 Goal find_result_such_that ask_and_add (eq 7).
   unfold ask_and_add.
-  enter_interactive.
-  repeat process_interactive.
-  {
-    instantiate_term hd 0.
-    done.
-  }
-  instantiate_term hd0 7.
-  repeat process_interactive.
-  exit_interactive.
-  reflexivity.
+  enter_interactive 100.
+  cbn.
+  coerce_input_to_cons tl.
+  coerce_input_to_cons tl0.
+  assert (hd = fun _ '(natEpred p) => 0); [cbv;reflexivity| cbn].
+  assert (hd0 = fun _ '(natEpred p) => 7); [cbv;reflexivity| cbn].
+  split; cbv;reflexivity.
+  Unshelve.
+  exact (fun _ '(natEpred p) => 0).
+  exact [::].
 Qed.
 
 (*TODO: move generic version to monad file*)
@@ -270,6 +339,14 @@ Definition lift {Q A} (oa : option A) : interactive Q A :=
              
 (* Pf-specific code; todo: separate file? *)
 
+(*TODO: decide what should be proofs and what should be exps*)
+Variant PfGoal : Type -> Type :=
+| le_sort_goal (c:named_list pf) (t1 t2: pf) : PfGoal pf
+(*TODO what is the right interface for elaboration?*)
+| expand_sort_args (t : sort) : PfGoal (list exp)
+(*TODO what is the right interface for elaboration?*)
+| expand_term_args (e : exp) (t : sort) : PfGoal (list exp).
+                 
 (*TODO: put in Pf.v?*)
 Definition check_le_sort l c t t' pf :=
   Some(t',t) = synth_le_sort l (synth_le_term l) pf c.
@@ -277,132 +354,226 @@ Definition check_le_sort l c t t' pf :=
 Definition check_wf_term l c e t pf :=
   Some(t,e) = synth_wf_term l pf c.
 
+(* Operates on already-elaborated (i.e. noimplicit arguments) languages *)
 Section WithLang.
-  Context (l : lang).
+  Context (l : named_list rule_pf).
+
+  Print pf.
+  (*TODO: move to Pf*)
+  Fixpoint pf_subst (s : named_list pf) p :=
+    match p with
+    | pvar x => named_list_lookup (pvar x) s x
+    | ax n s' => ax n (map (pf_subst s) s')
+    | pcon n s' => pcon n (map (pf_subst s) s')
+    | sym p' => sym (pf_subst s p')
+    | trans p1 p2 => trans (pf_subst s p1) (pf_subst s p2)
+    | conv pt p => conv (pf_subst s pt) (pf_subst s p)
+    end.
 
   Section InnerLoop.
-    Context (elab_term : ctx -> exp -> sort -> interactive pf pf).
-
-    (*TODO*)
-    
-    (* separate for termination purposes*)
-    Fixpoint elab_args_all_implicit {A} (debug : A) (c:ctx) c'
-      : interactive pf (list pf) :=
-      match c' with
-      | [::] => do ret [::]
-      | (an,t)::c'' =>
-        (*TODO: decide the right way to ask for this:
-          implicit or elaborated, conv'ing to t or not
-         *)
-        do ps <- elab_args_all_implicit debug c c'';
-           s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
-           e <- ask_for_satisfying
-                  (c,debug, " argument: " ++ an)%string
-                  (fun pf => exists e,
-                       check_wf_term l c e t[/with_names_from c'' s/] pf);
-           ret (e::ps)
-    end.
-    
-    Fixpoint elab_args {A} (debug : A) c s args c' {struct s}
-      : interactive pf (list pf) :=
-      match args, s with
-      | [::], [::] => elab_args_all_implicit debug c c'
-      | [::], _ => Mfail
-      | an::args', [::] => Mfail
-      | an::args', e::s' =>
-        let elab_implicits :=
-            fix elab_implicits c' :=
-              match c' with
-              | [::] => Mfail
-              | (an',t)::c'' =>
-                if an' == an then
-                  do ps <- elab_args debug c s' args' c'';
-                     s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
-                     pe <- elab_term c e t[/with_names_from c'' s/];
-                     ret (pe::ps)
-                else 
-                (*TODO: decide the right way to ask for this:
-                  implicit or elaborated, conv'ing to t or not
-                 *)
-                do ps <- elab_implicits c'';
-                   s <- lift (synth_wf_args (synth_wf_term l) ps c c'');
-                   e <- ask_for_satisfying
-                        (c,debug,  " argument: " ++ an)%string
-                        (fun pf => exists e,
-                             check_wf_term l c e
-                                 t[/with_names_from c'' s/] pf);
-                   ret (e::ps)
-              end in
-    elab_implicits c'
-    end.
+    Context (term_to_pf : named_list pf -> exp -> pf -> interactive PfGoal pf).
+    Fixpoint args_to_pf c s (c' : named_list pf) {struct s}
+      : interactive PfGoal (list pf) :=
+      match c', s with
+      | [::], [::] => do ret [::]
+      | (_,t)::c'', e::s' =>
+        do ps' <- args_to_pf c s' c'';
+           pe <- term_to_pf c e (pf_subst (with_names_from c'' ps') t);
+           ret pe::ps'
+      | _, _ => Mfail
+      end.
   End InnerLoop.   
         
-  Fixpoint elab_term c e t : interactive pf pf :=
+  Fixpoint term_to_pf (c : named_list pf) e (t:pf) {struct e} : interactive PfGoal pf :=
     match e with
     | var x =>
       do t' <- lift (named_list_lookup_err c x);
-       cv <- ask_satisfying (check_le_sort l c t' t);
+       cv <- ask (le_sort_goal c t' t);
        ret (conv cv (pvar x))
   | con name s =>
-    do (term_rule c' args t')
+    do (term_rule_pf c' args t')
          <?- lift (named_list_lookup_err l name);
-      es <- elab_args elab_term e c s args c';
-      s <- lift (synth_wf_args (synth_wf_term l) es c c');
-      cv <- ask_satisfying (check_le_sort l c t'[/with_names_from c' s/] t);
-     ret (conv cv (pcon name es))
+      ps <- args_to_pf term_to_pf c s c';
+      cv <- ask (le_sort_goal c (pf_subst (with_names_from c' ps) t') t);
+     ret (conv cv (pcon name ps))
   end.
-
   
-  Definition elab_sort c t : interactive pf pf :=
+  Definition sort_to_pf c t : interactive PfGoal pf :=
     match t with
     | scon name s =>
-    do (sort_rule c' args)
+    do (sort_rule_pf c' args)
          <?- lift (named_list_lookup_err l name);
-       es <- elab_args elab_term t c s args c';
-       ret (pcon name es)
+       ps <- args_to_pf term_to_pf c s c';
+       ret (pcon name ps)
     end.
 
-  Fixpoint elab_ctx c : interactive pf (named_list pf) :=
+  Fixpoint ctx_to_pf c : interactive PfGoal (named_list pf) :=
     match c with
     | [::] => do ret [::]
     | (n,t)::c' =>
-      do pt <- elab_sort c' t; 
-         pc' <- elab_ctx c';
+      do pc' <- ctx_to_pf c';
+         pt <- sort_to_pf pc' t;
          ret (n,pt)::pc'
     end.
 
-  Definition elab_rule r : interactive pf rule_pf :=
+  Definition rule_to_pf r : interactive PfGoal rule_pf :=
     match r with
     | sort_rule c args =>
-      do cp <- elab_ctx c;
+      do cp <- ctx_to_pf c;
          ret sort_rule_pf cp args
     | term_rule c args t =>
-      do cp <- elab_ctx c;
-         tp <- elab_sort c t;
+      do cp <- ctx_to_pf c;
+         tp <- sort_to_pf cp t;
          ret term_rule_pf cp args tp
     | sort_le c t1 t2 =>
-      do cp <- elab_ctx c;
-         p1 <- elab_sort c t1;
-         p2 <- elab_sort c t2;
+      do cp <- ctx_to_pf c;
+         p1 <- sort_to_pf cp t1;
+         p2 <- sort_to_pf cp t2;
          ret sort_le_pf cp p1 p2
     | term_le c e1 e2 t =>
-      do cp <- elab_ctx c;
-         pe1 <- elab_term c e1 t;
-         pe2 <- elab_term c e2 t;
-         tp <- elab_sort c t;
+      do cp <- ctx_to_pf c;
+         tp <- sort_to_pf cp t;
+         pe1 <- term_to_pf cp e1 tp;
+         pe2 <- term_to_pf cp e2 tp;
          ret term_le_pf cp pe1 pe2 tp
     end.      
   
 End WithLang.
 
-Fixpoint elab_lang l : interactive pf (named_list rule_pf) :=
+Fixpoint lang_to_pf l : interactive PfGoal (named_list rule_pf) :=
   match l with
   | [::] => do ret [::]
   | (n,r)::l' =>
-    do pr <- elab_rule l' r;
-       pl' <- elab_lang l';
+    do pl' <- lang_to_pf l';
+       pr <- rule_to_pf pl' r;
        ret (n,pr)::pl'
   end.              
 
-Definition find_wf_lang_elaboration (l : lang) :=
-  find_result_such_that (elab_lang l) (fun pl => Some l = synth_wf_lang pl).
+
+Definition find_lang_pf_with p l help :=
+  exists elab : lang -> interactive PfGoal lang,
+    find_result_such_that (do el <- elab l; pl <- help (lang_to_pf l);ret pl)
+                          (fun pl => synth_wf_lang pl = Some l /\ p = pl).
+
+(*TODO: move defs to Pf, use everywhere*)
+Definition pf_lang := named_list rule_pf.
+Definition pf_ctx := named_list pf.
+
+Section Elaborators.
+  Context (term_elaborator : lang -> ctx -> exp -> sort -> interactive PfGoal exp)
+          (sort_elaborator : lang -> ctx -> sort -> interactive PfGoal sort).
+
+  Fixpoint ctx_elaborator (l : lang) (c : ctx) : interactive PfGoal ctx :=
+    match c with
+    | [::] => do ret [::]
+    | (n,t)::c' =>
+      do pc' <- ctx_elaborator l c';
+         pt <- sort_elaborator l c' t;
+         ret (n,pt)::pc'
+    end.
+
+  Definition rule_elaborator l r : interactive PfGoal rule :=
+    match r with
+    | sort_rule c args =>
+      do cp <- ctx_elaborator l c;
+         ret sort_rule cp args
+    | term_rule c args t =>
+      do cp <- ctx_elaborator l c;
+         tp <- sort_elaborator l c t;
+         ret term_rule cp args tp
+    | sort_le c t1 t2 =>
+      do cp <- ctx_elaborator l c;
+         p1 <- sort_elaborator l c t1;
+         p2 <- sort_elaborator l c t2;
+         ret sort_le cp p1 p2
+    | term_le c e1 e2 t =>
+      do cp <- ctx_elaborator l c;
+         pe1 <- term_elaborator l c e1 t;
+         pe2 <- term_elaborator l c e2 t;
+         tp <- sort_elaborator l c t;
+         ret term_le cp pe1 pe2 tp
+    end.
+
+  
+  Fixpoint lang_elaborator l : interactive PfGoal lang :=
+    match l with
+    | [::] => do ret [::]
+    | (n,r)::l' =>
+      do pr <- rule_elaborator l' r;
+         pl' <- lang_elaborator l';
+         ret (n,pr)::pl'
+    end.
+
+  (*Not directly used by any of the above, 
+    but may be used by the term and sort elaborators *)
+  Fixpoint args_elaborator l c es c' :=
+       match es,c' with
+       | [::],[::] => do ret [::]
+       | e::es', (_,t)::c'' =>
+         do es'' <- args_elaborator l c es' c'';
+            (*TODO: check whether this should be es''*)
+            ee <- term_elaborator l c  e t[/with_names_from c'' es'/];
+            ret (ee::es'')
+       | _,_ => Mfail
+       end.
+
+End Elaborators.
+  
+Fixpoint default_term_elaborator n l c e (t : sort) : interactive PfGoal exp :=
+  match e,n with
+  | var x, _ => do ret var x
+  | con _ _, 0 => Mfail
+  | con name s, S n' =>
+    do (term_rule c' args t')
+         <?- lift (named_list_lookup_err l name);
+       es <- ask (expand_term_args e t);
+       es' <- args_elaborator (default_term_elaborator n') l c es c';
+       ret (con name es)
+  end.
+
+
+Definition default_sort_elaborator n l c '(scon name s) :=
+    do (sort_rule c' args)
+         <?- lift (named_list_lookup_err l name);
+       es <- ask (expand_sort_args (scon name s));
+       es' <- args_elaborator (default_term_elaborator n) l c es c';
+       ret (scon name es).
+
+(*Convenience definition. Asks for manual elaboration every time*)
+Definition default_lang_elaborator n :=
+  lang_elaborator (default_term_elaborator n) (default_sort_elaborator n).
+
+(*TODO: put in Pf*)
+Fixpoint eq_pf e1 e2 {struct e1} : bool :=
+  match e1, e2 with
+  | pvar x, pvar y => eqb x y
+  | pcon n1 l1, pcon n2 l2 =>
+    (eqb n1 n2) && (all2 eq_pf l1 l2)
+  | ax n1 l1, ax n2 l2 =>
+    (eqb n1 n2) && (all2 eq_pf l1 l2)
+  | sym p1', sym p2' => (eq_pf p1' p2')
+  | trans p1a p1b, trans p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | conv p1a p1b, conv p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | _,_ => false
+  end.
+
+Lemma eq_pfP : forall e1 e2, reflect (e1 = e2) (eq_pf e1 e2).
+Admitted.
+     
+Definition pf_eqMixin := Equality.Mixin eq_pfP.
+
+Canonical pf_eqType := @Equality.Pack pf pf_eqMixin.
+
+CoFixpoint handle_refls {A} (i : interactive PfGoal A) : interactive PfGoal A :=
+  match i with
+  | iret a => iret a
+  | itau i => itau (handle_refls i)
+  | ifail => ifail
+  | iask _ (le_sort_goal c t1 t2) k =>
+    (*wfness proofs also prove reflexivity*)
+    (*TODO: need proof equality*)
+    if (t1 == t2) then itau (handle_refls (k t1))
+    else iask (le_sort_goal c t1 t2) (fun a => handle_refls (k a))
+  | iask _ q k => iask q (fun a => handle_refls (k a))
+  end.
+                    

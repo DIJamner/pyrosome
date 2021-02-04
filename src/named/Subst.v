@@ -83,10 +83,27 @@ Ltac store_bound_comp_as_in Hcmp H :=
     change (cmp = comp') in Hcmp
   end.
 
-(*TODO: get "global" working*)
-Opaque Mbind Mret.
+Derive cat_lang_pf
+       SuchThat (find_lang_pf_with cat_lang_pf cat_lang handle_refls)
+       As cat_lang_pf_ok.
+Proof.
+  exists (default_lang_elaborator 100).
+  enter_interactive 100.
+  coerce_input_to_cons tl.
+  match goal with
+    [|- ?m = ?r /\ ?p] =>
+    let x := eval hnf in m in
+        change (x = r /\ p)
+  end.
+  cbn [handle_from_list nth].
+  match goal with
+    [ |- context ctx[_ ?f (iret ?a)] ]=>
+      let x := context ctx [f a]in change x
+      end.
+  fold ibind.
+  hnf_elaborator
+  
 
-(*TODO: make a derive version*)
 Lemma cat_lang_ok : find_wf_lang_elaboration cat_lang.
 Proof.
   unfold find_wf_lang_elaboration.
