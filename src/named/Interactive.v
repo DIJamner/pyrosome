@@ -15,8 +15,9 @@ Inductive interactive : Type -> Type :=
 | interact_fail A : interactive A.
  *)
 
-(*TODO: this is just itrees with failure; actually use the library?*)
-CoInductive interactive (E : Type -> Type) A : Type :=
+(*TODO: this is just itrees with failure, but not coinductive; actually use the library?
+*)
+Inductive interactive (E : Type -> Type) A : Type :=
 | iret (a:A)
 | ifail
 | itau (i : interactive E A)
@@ -27,7 +28,7 @@ Arguments ifail {E A}.
 Arguments itau {E A}.
 Arguments iask {E A D} d k.        
 
-CoFixpoint ibind {E A B} (f : A -> interactive E B) (ma : interactive E A) : interactive E B :=
+Fixpoint ibind {E A B} (f : A -> interactive E B) (ma : interactive E A) : interactive E B :=
   match ma with
   | iret a => f a
   | ifail => ifail
@@ -39,7 +40,7 @@ Arguments ibind {E A B} f !ma/.
 (* fixes the input q when able.
    Note: may add itaus
  *)
-CoFixpoint maybe_handle {E A}
+Fixpoint maybe_handle {E A}
            (handler : forall D, E D -> option D)
            (ma : interactive E A) : interactive E A :=
   match ma with
@@ -53,7 +54,7 @@ CoFixpoint maybe_handle {E A}
     end
   end.
 
-CoFixpoint handle {E A}
+Fixpoint handle {E A}
            (handler : forall D, E D -> D)
            (ma : interactive E A) : interactive (fun=>void) A :=
   match ma with
@@ -63,7 +64,7 @@ CoFixpoint handle {E A}
   | iask D d k => itau (handle handler (k (handler D d)))
   end.
 
-CoFixpoint handle_idx {E A}
+Fixpoint handle_idx {E A}
            (handler : forall D, nat -> E D -> D)
            (ma : interactive E A) n : interactive (fun=>void) A :=
   match ma with
@@ -455,10 +456,6 @@ Definition find_lang_pf_with p l help :=
     find_result_such_that (do el <- elab l; pl <- help (lang_to_pf l);ret pl)
                           (fun pl => synth_wf_lang pl = Some l /\ p = pl).
 
-(*TODO: move defs to Pf, use everywhere*)
-Definition pf_lang := named_list rule_pf.
-Definition pf_ctx := named_list pf.
-
 Section Elaborators.
   Context (term_elaborator : lang -> ctx -> exp -> sort -> interactive PfGoal exp)
           (sort_elaborator : lang -> ctx -> sort -> interactive PfGoal sort).
@@ -543,28 +540,8 @@ Definition default_sort_elaborator n l c '(scon name s) :=
 Definition default_lang_elaborator n :=
   lang_elaborator (default_term_elaborator n) (default_sort_elaborator n).
 
-(*TODO: put in Pf*)
-Fixpoint eq_pf e1 e2 {struct e1} : bool :=
-  match e1, e2 with
-  | pvar x, pvar y => eqb x y
-  | pcon n1 l1, pcon n2 l2 =>
-    (eqb n1 n2) && (all2 eq_pf l1 l2)
-  | ax n1 l1, ax n2 l2 =>
-    (eqb n1 n2) && (all2 eq_pf l1 l2)
-  | sym p1', sym p2' => (eq_pf p1' p2')
-  | trans p1a p1b, trans p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
-  | conv p1a p1b, conv p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
-  | _,_ => false
-  end.
 
-Lemma eq_pfP : forall e1 e2, reflect (e1 = e2) (eq_pf e1 e2).
-Admitted.
-     
-Definition pf_eqMixin := Equality.Mixin eq_pfP.
-
-Canonical pf_eqType := @Equality.Pack pf pf_eqMixin.
-
-CoFixpoint handle_refls {A} (i : interactive PfGoal A) : interactive PfGoal A :=
+Fixpoint handle_refls {A} (i : interactive PfGoal A) : interactive PfGoal A :=
   match i with
   | iret a => iret a
   | itau i => itau (handle_refls i)

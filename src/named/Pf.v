@@ -539,6 +539,10 @@ Section RuleChecking.
    | term_rule_pf : named_list_set pf -> list string -> pf -> rule_pf
    | sort_le_pf : named_list_set pf -> pf -> pf -> rule_pf
    | term_le_pf : named_list_set pf -> pf -> pf -> pf (*sort; TODO: not needed*)-> rule_pf.
+
+   
+   Definition pf_lang := named_list rule_pf.
+   Definition pf_ctx := named_list pf.
    
    Definition synth_wf_rule rp : option rule :=
     match rp with
@@ -560,7 +564,7 @@ Section RuleChecking.
       do c <- synth_wf_ctx pl;
          (t1,e1) <- synth_wf_term p1 c;
          (t2,e2) <- synth_wf_term p2 c;
-         t <- synth_wf_sort p2 c;
+         t <- synth_wf_sort pt c;
          ! t == t1;
          ! t == t2;
          ret term_le c e1 e2 t
@@ -576,6 +580,27 @@ Section RuleChecking.
    Hint Resolve synth_wf_rule_related : imcore.
        
 End RuleChecking.
+
+Fixpoint eq_pf e1 e2 {struct e1} : bool :=
+  match e1, e2 with
+  | pvar x, pvar y => eqb x y
+  | pcon n1 l1, pcon n2 l2 =>
+    (eqb n1 n2) && (all2 eq_pf l1 l2)
+  | ax n1 l1, ax n2 l2 =>
+    (eqb n1 n2) && (all2 eq_pf l1 l2)
+  | sym p1', sym p2' => (eq_pf p1' p2')
+  | trans p1a p1b, trans p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | conv p1a p1b, conv p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | _,_ => false
+  end.
+
+Lemma eq_pfP : forall e1 e2, reflect (e1 = e2) (eq_pf e1 e2).
+Admitted.
+     
+Definition pf_eqMixin := Equality.Mixin eq_pfP.
+
+Canonical pf_eqType := @Equality.Pack pf pf_eqMixin.
+
 
 Fixpoint synth_wf_lang rpl : option lang :=
   match rpl with

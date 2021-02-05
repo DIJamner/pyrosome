@@ -83,23 +83,59 @@ Ltac store_bound_comp_as_in Hcmp H :=
     change (cmp = comp') in Hcmp
   end.
 
+Fixpoint noim_elab l (e : interactive PfGoal lang) : interactive PfGoal lang :=
+  match e  with
+  | iret el => iret el
+  | itau i => noim_elab l i
+  | ifail => ifail
+  | iask _ (expand_sort_args (scon n s)) k =>
+    do (sort_rule c' args) <?- lift (named_list_lookup_err l n);
+    res <- if size args == size c' then noim_elab l (k s)
+           else iask (expand_sort_args (scon n s)) (fun a => noim_elab l (k a));
+       ret res
+  | iask _ (expand_term_args (con n s) t) k =>
+    do (sort_rule c' args) <?- lift (named_list_lookup_err l n);
+    res <- if size args == size c' then noim_elab l (k s)
+           else iask (expand_term_args (con n s) t) (fun a => noim_elab l (k a));
+       ret res                                                          
+  | iask _ d k => iask d (fun a => noim_elab l (k a))
+  end.
+
+    
 Derive cat_lang_pf
        SuchThat (find_lang_pf_with cat_lang_pf cat_lang handle_refls)
        As cat_lang_pf_ok.
 Proof.
-  exists (default_lang_elaborator 100).
+  exists (fun l => noim_elab l (default_lang_elaborator 100 l)).
   enter_interactive 100.
   coerce_input_to_cons tl.
+  remember (noim_elab cat_lang (default_lang_elaborator 100 cat_lang)) as el.
+  remember (default_lang_elaborator 100 cat_lang) as el' in Heqel.
+  match goal with
+    [ H : el' = ?e|-_] =>
+    let x := eval hnf in e in
+        change (el' = x) in H
+  end.
+  rewrite Heqel' in Heqel.
+  clear Heqel'.
+  cbn [noim_elab cat_lang] in Heqel.
+  cbn [lift named_list_lookup_err cat_lang String.eqb Ascii.eqb Bool.eqb fst snd] in Heqel.
+  cbn beta match delta [Mbind ibind Mret interactive_monad] in Heqel.
   match goal with
     [|- ?m = ?r /\ ?p] =>
-    let x := eval hnf in m in
+    let x := eval vm_compute in m in
         change (x = r /\ p)
   end.
   cbn [handle_from_list nth].
   match goal with
     [ |- context ctx[_ ?f (iret ?a)] ]=>
       let x := context ctx [f a]in change x
-      end.
+  end.
+  match goal with
+    [|- ?m = ?r /\ ?p] =>
+    let x := eval hnf in m in
+        change (x = r /\ p)
+  end.
   fold ibind.
   hnf_elaborator
   
