@@ -204,8 +204,14 @@ Fixpoint simple_subst_to_pf_lang (l : lang) : option pf_lang :=
        ret (n,pr)::pl'
   end.
 
-Lemma simple_stlc_wf : wf_lang (nth_tail 1 stlc).
+Lemma simple_stlc_wf : wf_lang stlc.
 Proof.
   prove_wf_with_fn simple_subst_to_pf_lang.
 Qed.
 
+Derive elab_stlc
+       SuchThat (Some elab_stlc = simple_subst_to_pf_lang stlc)
+  As elab_stlc_pf.
+Proof.
+  compute; reflexivity.
+Qed.

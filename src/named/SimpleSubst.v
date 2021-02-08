@@ -7,7 +7,7 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Ltac2 Require Import Ltac2.
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore Pf Interactive.
+From Named Require Import Exp ARule ImCore Pf.
 Import Exp.Notations ARule.Notations.
 Require Import String.
 
@@ -146,15 +146,6 @@ Definition subst_lang : lang :=
    ]]%arule.
 
 
-(*
-invariants:
-
-ty := A
-env := . | env, ty | G
-...
-
- *)
-
 Import OptionMonad.
 Definition simple_subst_to_pf_ty (e:exp) : option pf :=
   match e with
@@ -283,13 +274,21 @@ Fixpoint simple_subst_to_pf_lang (l : lang) : option pf_lang :=
 
 Ltac prove_wf_with_fn f :=
   match goal with
-    [|- wf_lang ?l] =>
+  | [|- wf_lang ?l] =>
     remember (f l) as mp eqn:Heqmp;
     vm_compute in Heqmp;
     match goal with
       [ H : _ = Some ?pl|-_] =>
       pose (p:=pl); clear H;
       apply (@synth_wf_lang_related p)
+    end
+  | [|- wf_sort _ _ ?t] =>
+    remember (simple_subst_to_pf_sort t) as mp eqn:Heqmp;
+      vm_compute in Heqmp;
+    match goal with
+      [ H : _ = Some ?pl|-_] =>
+      pose (p:=pl); clear H;
+        apply (synth_wf_sort_related _ (p:= p))
     end
   end;
   by compute.
@@ -298,3 +297,4 @@ Lemma simplesubst_wf : wf_lang subst_lang.
 Proof.
   prove_wf_with_fn simple_subst_to_pf_lang.
 Qed.
+

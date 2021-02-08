@@ -10,6 +10,8 @@ src/named/Matches.v
 src/named/Pf.v
 src/named/SimpleSubst.v
 src/named/SimpleSTLC.v
+src/named/Compilers.v
+src/named/SimpleCPS.v
 src/named/Interactive.v
 src/named/Subst.v
 src/named/STLC.v

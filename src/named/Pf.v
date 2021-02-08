@@ -622,6 +622,64 @@ Proof.
   eapply synth_wf_rule_related; eauto with imcore.
 Qed.
 
+
+Lemma with_names_from_names_eq {A B C:Set}
+      (l1 : named_list A) (l1' : named_list B) (l2 : list C)
+  : map fst l1 = map fst l1' ->
+    with_names_from l1 l2 = with_names_from l1' l2.
+Proof.
+  revert l1' l2; induction l1; intros; subst;
+    destruct l1';
+    destruct l2; break;simpl in *;auto;
+    match goal with
+      [ H : _ = _|- _] => inversion H; clear H
+    end; subst; f_equal; eauto.
+Qed.
+
+Lemma with_names_from_snd {A:Set}
+      (l : named_list A)
+  : with_names_from l (map snd l) = l.
+Proof.
+  induction l; intros; break; simpl in *; f_equal;eauto.
+Qed.
+  
+Lemma le_args_from_subst l c c' s1 s2
+      : le_subst l c c' s1 s2 ->
+        le_args l c c'
+                (map snd s1) (map snd s2) (map fst c')
+                (map snd s1) (map snd s2).
+Proof.
+  intro les; induction les; simpl; constructor; eauto with imcore.
+  erewrite with_names_from_names_eq;
+    [| symmetry; eapply le_subst_names_eq_r];
+    eauto.
+  rewrite with_names_from_snd; auto.
+Qed.  
+
+Lemma synth_le_term_complete l c e1 e2 t
+  : le_term l c t e1 e2 ->
+    exists p, Some (t,e1,e2) = synth_le_term l p c
+with synth_le_args_complete l c c' s1 s2 args es1 es2
+     : le_args l c c' s1 s2 args es1 es2 ->
+       exists p, Some (es1,es2) = synth_le_args (synth_le_term l) p c c'.
+Proof.
+  {
+    intro lt; destruct lt.
+    repeat lazymatch goal with
+     | [ H : le_term _ _ _ _ _|-_] =>
+      apply synth_le_term_complete in H;
+        let p := fresh "p" in
+        destruct H as [p H]
+     | [ H : le_subst _ _ _ _ _|-_] =>
+      apply le_args_from_subst in H;
+      apply synth_le_args_complete in H;
+        let p := fresh "p" in
+        destruct H as [p H]
+    end.
+    (*TODO: define substitution on proofs, prove correct*)
+     Search _ le_subst.
+    Check le_subst_from_args.
+    
 (*TODO: put in right place*)
 Definition get_rule_args (r : rule) : list string :=
   match r with

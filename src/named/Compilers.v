@@ -6,9 +6,7 @@ Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ICore.
-Import IndependentJudgment.
-
+From Named Require Import Exp ARule ImCore.
 Require Import String.
 
 (* TODO: this does not admit for optimization *)
@@ -41,6 +39,9 @@ Canonical compiler_case_eqType := @Equality.Pack compiler_case compiler_case_eqM
 Definition compiler := named_list compiler_case. 
 
 
+(*Issue: can't define this as a function on terms w/ implicit args
+  if I want access to those args (and I do)
+*)
 Fixpoint compile_term (cmp : compiler) (e : exp) : exp :=
   match e with
   | var x => var x
@@ -175,42 +176,6 @@ Proof using .
   auto.  
 Qed.
 *)
-
-Lemma le_empty_term c e1 e2 t : le_term [::] c t e1 e2 -> e1 = e2
-with le_empty_subst c s1 s2 c' : le_subst [::] c c' s1 s2 -> s1 = s2.
-Proof using .
-  all: case; intros.
-  {
-    f_equal; eauto.
-  }
-  { easy. }
-  { reflexivity. }
-  { apply le_empty_term in l.
-    apply le_empty_term in l0.
-    rewrite l l0; reflexivity.
-  }
-  {
-    symmetry.
-    eapply le_empty_term; eassumption.
-  }
-  {
-    eapply le_empty_term; eassumption.
-  }
-  { reflexivity. }
-  {
-    f_equal.
-    f_equal.
-    eauto.
-    eauto.
-  }
-Qed.
-  
-Lemma le_empty_sort c t1 t2 : le_sort [::] c t1 t2 -> t1 = t2.
-Proof using .
-  elim; intros; try by (cbv in *; eauto).
-  f_equal; eauto using le_empty_subst.
-  by rewrite H0 -H2.
-Qed.    
 
 (*TODO: move to core*)
 
@@ -931,3 +896,19 @@ Proof.
   (* TODO: actually quite non-trivial *)
 *)
 *)
+
+
+Fixpoint make_compiler
+           (cmp_sort : string -> list string -> sort)
+           (cmp_exp : string -> list string -> exp)
+           (l : lang) : compiler :=
+  match l with
+  | (n,sort_rule c args)::l' =>
+    (n,sort_case args (cmp_sort n args))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,term_rule c args _)::l' => (n,term_case args (cmp_exp n args))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,_)::l' => 
+    (make_compiler cmp_sort cmp_exp l')
+  | [::] => [::]
+  end.
