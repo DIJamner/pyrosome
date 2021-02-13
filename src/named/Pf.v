@@ -92,33 +92,49 @@ Fixpoint pf_ind
         (pf_ind IHV IHC IHA IHSY IHT IHCV e2)
   end.
 
-(* TODO
-Fixpoint exp_rect
-         (P : exp -> Type)
-         (IHV : forall n, P(var n))
+Fixpoint pf_rect
+         (P : pf -> Type)
+         (IHV : forall n, P(pvar n))
          (IHC : forall n l,
              List.fold_right (fun t => prod (P t)) unit l ->
-             P (con n l))
-         (e : exp) { struct e} : P e :=
+             P (pcon n l))
+         (IHA : forall n pfs, 
+             List.fold_right (fun p => prod (P p)) unit pfs -> P(ax n pfs))
+         (IHSY : forall e', P e' -> P (sym e'))
+         (IHT : forall e1 e2,
+             P e1 -> P e2 -> P (trans e1 e2))
+         (IHCV : forall e1 e2,
+             P e1 -> P e2 -> P (conv e1 e2))
+         (e : pf) { struct e} : P e :=
   match e with
-  | var n => IHV n
-  | con n l =>
+  | pvar n => IHV n
+  | pcon n l =>
     let fix loop l :=
         match l return List.fold_right (fun t => prod (P t)) unit l with
         | [::] => tt
-        | e' :: l' => (exp_rect IHV IHC e', loop l')
+        | e' :: l' => (pf_rect IHV IHC IHA IHSY IHT IHCV e',loop l')
         end in
     IHC n l (loop l)
+  | ax n pfs => 
+    let fix loop l :=
+        match l return List.fold_right (fun t => prod (P t)) unit l with
+        | [::] => tt
+        | e' :: l' => (pf_rect IHV IHC IHA IHSY IHT IHCV e',loop l')
+        end in
+    IHA n pfs (loop pfs)
+  | sym e' =>
+    IHSY e' (pf_rect IHV IHC IHA IHSY IHT IHCV e')
+  | trans e1 e2 =>
+    IHT e1 e2 (pf_rect IHV IHC IHA IHSY IHT IHCV e1)
+        (pf_rect IHV IHC IHA IHSY IHT IHCV e2)
+  | conv e1 e2 =>
+    IHCV e1 e2 (pf_rect IHV IHC IHA IHSY IHT IHCV e1)
+        (pf_rect IHV IHC IHA IHSY IHT IHCV e2)
   end.
 
-Definition exp_rec := 
-[eta exp_rect]
-     : forall P : exp -> Set,
-       (forall n, P (var n)) ->
-       (forall n l,
-             List.fold_right (fun t => prod (P t)) unit l ->
-             P (con n l))-> forall e : exp, P e.
-*)
+Definition pf_rec := 
+[eta pf_rect]
+     : forall P : pf -> Set, _.
 
 Definition subst_pf : Set := named_list_set pf.
 
@@ -656,6 +672,107 @@ Proof.
   rewrite with_names_from_snd; auto.
 Qed.  
 
+(*Determines whether the proofs represent equal expressions *)
+Definition eq_pf_term (l : lang) c (p1 p2 : pf) : bool :=
+  synth_wf_term l p1 c == synth_wf_term l p2 c.
+Definition eq_pf_sort (l : lang) c (p1 p2 : pf) : bool :=
+  synth_wf_sort l p1 c == synth_wf_sort l p2 c.
+
+Fixpoint pf_subst (s : named_list pf) (p : pf) : pf :=
+      match p with
+      | pvar x => named_list_lookup (pvar x) s x
+      | pcon name pl =>
+        pcon name (map (pf_subst s) pl)
+      | ax name pl => 
+        ax name (map (pf_subst s) pl)
+      | sym p => sym (pf_subst s p)
+      | trans p1 p2 =>
+        trans (pf_subst s p1) (pf_subst s p2)
+      | conv pt p => conv (pf_subst s pt) (pf_subst s p)
+  end.
+
+
+Definition check_le_sort l pf c t t' :=
+  Some(t',t) = synth_le_sort l (synth_le_term l) pf c.
+
+Definition check_le_term l pf c t e1 e2 :=
+  Some(t,e1, e2) = synth_le_term l pf c.
+
+Definition check_wf_term l pf c e t :=
+  Some(t,e) = synth_wf_term l pf c.
+
+Definition check_le_subst l pf c (c':ctx) s1 s2 :=
+  match synth_le_args (synth_le_term l) pf c c' with
+  | Some (es1, es2) =>
+    (with_names_from c' es1 == s1) &&
+    (with_names_from c' es2 == s2)
+  | None => false
+  end.
+
+(*
+Lemma check_le_subst_false_cons_nil_l l p ps c c' s2
+  : check_le_subst l (p::ps) c c' [::] s2 = false.
+Proof.
+  destruct c'; destruct s2; break; try reflexivity.
+  unfold check_le_subst.
+  simpl.
+  case_match; break.
+  revert HeqH; case_match; break.
+  case_match; break.
+    
+Lemma le_subst_lookup_pf l ps c c' s1 s2 n t
+  : check_le_subst l ps c c' s1 s2 ->
+    all_fresh c' ->
+    (n,t) \in c' ->
+    check_le_term l (named_list_lookup (pvar n) (with_names_from c' ps) n)
+                  c t [/s2 /] (subst_lookup s1 n) (subst_lookup s2 n).
+Proof.
+  revert c' s1 s2.
+  induction ps; intros; destruct c'; destruct s1; destruct s2;
+    repeat (break; simpl in *;
+     try match goal with
+         | [H: is_true(check_le_subst l [::] c (_:: _) _ _) |-_] =>
+            vm_compute in H; inversion H
+         | [H: is_true(check_le_subst l (_::_) c (_::_) [::] [::]) |-_]=>
+            TODO
+         | [H: is_true(check_le_subst l (_::_) c [::] _ _) |-_] =>
+            vm_compute in H; inversion H
+    | [ H : is_true(_ \in [::]) |-_] =>
+    inversion H
+    | [ H : is_true(_ \in _::_) |-_] =>
+    rewrite in_cons in H; move: H => /orP []; intros
+    | [ H : is_true(_ == _) |-_] =>
+      move: H => /eqP; intros
+    | [ H : (_,_)=(_,_) |-_] =>
+      move: H; case; intros; subst
+      end).
+  cbn in H.
+
+  Lemma check_le_subst_false_cons_nil_l
+    : check_le_subst l (p::ps) c c' [::] s2 = false.
+  
+  hnf in H.
+  rewrite a.
+   
+    cbv in H.
+
+
+Lemma le_term_subst_pf l ps p c c' s1 s2 t e1 e2
+  : wf_ctx l c' ->
+    check_le_subst l ps c c' s1 s2 ->
+    check_le_term l p c' t e1 e2 ->
+    check_le_term l (pf_subst (with_names_from c' ps) p)
+                  c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
+Proof.
+  revert t e1 e2.
+  induction p; intros; break; cbn in *.
+  {
+    hnf in H1; simpl in H1.
+    revert H1; case_match; intro H1; inversion H1; subst.
+    cbn.
+    TODO: subst_lookup lem
+*)
+(*
 Lemma synth_le_term_complete l c e1 e2 t
   : le_term l c t e1 e2 ->
     exists p, Some (t,e1,e2) = synth_le_term l p c
@@ -680,86 +797,26 @@ Proof.
      Search _ le_subst.
     Check le_subst_from_args.
     
-(*TODO: put in right place*)
-Definition get_rule_args (r : rule) : list string :=
-  match r with
-  | sort_rule _ args => args
-  | term_rule _ args _ => args
-  | sort_le c _ _ => map fst c
-  | term_le c _ _ _ => map fst c
+
+*)
+
+Definition eq_rule_pf r1 r2 : bool :=
+  match r1, r2 with
+  | sort_rule_pf c1 args1, sort_rule_pf c2 args2 => (c1 == c2) && (args1 == args2)
+  | term_rule_pf c1 args1 t1, term_rule_pf c2 args2 t2 =>
+    (c1 == c2) && (args1 == args2) && (t1 == t2)
+  | sort_le_pf c1 t1 t1', sort_le_pf c2 t2 t2' =>
+    (c1 == c2) && (t1 == t2) && (t1' == t2')
+  | term_le_pf c1 e1 e1' t1, term_le_pf c2 e2 e2' t2 =>
+    (c1 == c2) && (e1 == e2) && (e1' == e2') && (t1 == t2)
+  | _,_ => false
   end.
 
-Definition get_rule_ctx (r : rule) : ctx :=
-  match r with
-  | sort_rule c _ => c
-  | term_rule c _ _ => c
-  | sort_le c _ _ => c
-  | term_le c _ _ _ => c
-  end.
+Lemma eq_rule_pfP r1 r2 : reflect (r1 = r2) (eq_rule_pf r1 r2).
+Proof using .
+  destruct r1; destruct r2; simpl; solve_reflect_norec.
+Qed.
 
+Definition rule_pf_eqMixin := Equality.Mixin eq_rule_pfP.
 
-(* For using the structure of an expression to derive
-   its proof
- *)
-Inductive elab_term_structure {l : lang} : exp -> pf -> Prop :=
-| elab_con le n s ps
-  : let r := named_list_lookup (sort_rule [::][::]) l n in
-    elab_args_structure s (get_rule_args r) ps (map fst (get_rule_ctx r)) ->
-    elab_term_structure (con n s) (conv le (pcon n ps))
-| elab_var le x : elab_term_structure (var x) (conv le (pvar x))
-with elab_args_structure {l : lang} : list exp -> list string -> list pf -> list string -> Prop :=
-| elab_args_nil : elab_args_structure [::] [::] [::] [::]
-| elab_args_cons_ex e s a args p ps pargs
-  : elab_term_structure e p ->
-    elab_args_structure s args ps pargs ->
-    elab_args_structure (e::s) (a::args) (p::ps) (a::pargs)
-| elab_args_cons_im s args p ps a pargs
-  : elab_args_structure s args ps pargs -> elab_args_structure s args (p::ps) (a::pargs).
-
-Arguments elab_term_structure l : clear implicits.
-Arguments elab_args_structure l : clear implicits.
-
-Variant elab_sort_structure (l : lang) : sort -> pf -> Prop :=
-| elab_scon n s ps
-  : let r := named_list_lookup (sort_rule [::][::]) l n in
-    elab_args_structure l s (get_rule_args r) ps (map fst (get_rule_ctx r)) ->
-    elab_sort_structure l (scon n s) (pcon n ps).
-
-Inductive elab_ctx_structure (l : lang) : ctx -> named_list pf -> Prop :=
-| elab_ctx_nil : elab_ctx_structure l [::] [::]
-| elab_ctx_cons t c a p ps
-  : elab_sort_structure l t p ->
-    elab_ctx_structure l c ps -> elab_ctx_structure l ((a,t)::c) ((a,p)::ps).
-
-Variant elab_rule_structure (l : lang) : rule -> rule_pf -> Prop :=
-| elab_sort_rule c args p
-  : elab_ctx_structure l c p -> elab_rule_structure l (sort_rule c args) (sort_rule_pf p args)
-| elab_term_rule c t args pc pt
-  : elab_ctx_structure l c pc -> 
-    elab_sort_structure l t pt ->
-    elab_rule_structure l (term_rule c args t) (term_rule_pf pc args pt)
-| elab_sort_le c t1 t2 pc pt1 pt2
-  : elab_ctx_structure l c pc -> 
-    elab_sort_structure l t1 pt1 ->
-    elab_sort_structure l t2 pt2 ->
-    elab_rule_structure l (sort_le c t1 t2) (sort_le_pf pc pt1 pt2)
-| elab_term_le c t e1 e2 pc pt pe1 pe2
-  : elab_ctx_structure l c pc -> 
-    elab_sort_structure l t pt ->
-    elab_term_structure l e1 pe1 ->
-    elab_term_structure l e2 pe2 ->
-    elab_rule_structure l (term_le c e1 e2 t) (term_le_pf pc pe1 pe2 pt).
-
-Inductive elab_lang_structure :  lang -> named_list rule_pf -> Prop :=
-| elab_lang_nil : elab_lang_structure [::] [::]
-| elab_lang_cons l a r pr pl
-  : elab_rule_structure l r pr ->
-    elab_lang_structure l pl -> elab_lang_structure ((a,r)::l) ((a,pr)::pl).
-
-Hint Constructors elab_term_structure
-     elab_args_structure
-     elab_sort_structure
-     elab_ctx_structure
-     elab_rule_structure
-     elab_lang_structure : imcore.
-
+Canonical rule_pf_eqType := @Equality.Pack rule_pf rule_pf_eqMixin.

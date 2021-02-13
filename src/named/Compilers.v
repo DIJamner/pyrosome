@@ -36,43 +36,21 @@ Definition compiler_case_eqMixin := Equality.Mixin eq_compiler_caseP.
 Canonical compiler_case_eqType := @Equality.Pack compiler_case compiler_case_eqMixin.
 
 (* each element is the map for that constructor *)
-Definition compiler := named_list compiler_case. 
+Definition compiler := named_list compiler_case.
 
-
-(*Issue: can't define this as a function on terms w/ implicit args
-  if I want access to those args (and I do)
+(*
+Inductive term_compiles_to {l : lang} {cmp : compiler} : ctx -> exp -> sort -> exp -> Prop :=
+| compile_var x c t : (x,t) \in c -> (term_compiles_to c (var x) t (var x)
+| compile_con n s es c' args t
+  : (n, term_rule c' args t) \in l ->
+    (*TODO: check wfness? *)
+    wf_args l c s args es c' ->
+    args_compile_to es es'
+    wf_term l c c t [/with_names_from c' es /]
 *)
-Fixpoint compile_term (cmp : compiler) (e : exp) : exp :=
-  match e with
-  | var x => var x
-  | con n s =>
-    let default := sort_case [::] (scon "ERR" [::]) in
-    let arg_terms := map (compile_term cmp) s in
-    match named_list_lookup default cmp n with
-    | term_case args c_case => c_case[/zip args arg_terms /]
-    | _ => con "ERR"%string [::]
-    end
-  end.
-
-Definition compile_args cmp := map (compile_term cmp).
-
-Definition compile_sort (cmp : compiler) (e : sort) : sort :=
-  match e with
-  | scon n s =>
-    let default := term_case [::] (con "ERR" [::]) in
-    let arg_terms := compile_args cmp s in
-    match named_list_lookup default cmp n with
-    | sort_case args c_case => c_case[/zip args arg_terms/]
-    | _ => scon"ERR"%string [::]
-    end
-  end.
-
-Definition compile_subst (cmp : compiler) (e : subst) : subst :=
-  map (fun p => (fst p, compile_term cmp (snd p))) e.
-
-Definition compile_ctx (cmp : compiler) (e : ctx) : ctx :=
-  map (fun p => (fst p, compile_sort cmp (snd p))) e.
-
+    
+                                 
+(*
 (*
 
 First we specify the properties in terms of compile,
@@ -897,6 +875,7 @@ Proof.
 *)
 *)
 
+*)
 
 Fixpoint make_compiler
            (cmp_sort : string -> list string -> sort)

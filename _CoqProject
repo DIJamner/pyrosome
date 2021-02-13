@@ -8,9 +8,11 @@ src/named/ARule.v
 src/named/ImCore.v
 src/named/Matches.v
 src/named/Pf.v
+src/named/PfCore.v
 src/named/SimpleSubst.v
 src/named/SimpleSTLC.v
 src/named/Compilers.v
+src/named/PfCompilers.v
 src/named/SimpleCPS.v
 src/named/Interactive.v
 src/named/Subst.v

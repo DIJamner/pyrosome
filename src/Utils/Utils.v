@@ -589,3 +589,10 @@ Proof.
     apply H; exact H0.
   }
 Qed.    
+
+
+
+Ltac my_case eqnname exp :=
+  let casevar := fresh "casevar" in
+  remember exp as casevar eqn:eqnname;
+  destruct casevar; symmetry in eqnname.
