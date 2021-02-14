@@ -714,5 +714,61 @@ Fixpoint check_lang_ok l :=
 Lemma check_lang_ok_all_fresh l : check_lang_ok l -> all_fresh l.
 Proof using.
   induction l; intros; repeat (break; simpl in * ); break_goal; auto.
+Qed.
+
+
+Lemma check_lang_okP l : reflect (lang_ok l) (check_lang_ok l).
+Proof using.
+  induction l; intros; break; simpl; repeat constructor;
+    repeat lazymatch goal with
+    | [H : true = true |-_]=> clear H
+    | [H : true = ?a |-_]=> symmetry in H
+    | [H : ?a=true |-_]=> change (is_true a) in H
+    | [H : false = false |-_]=> clear H
+    | [H : false = ?a |-_]=> symmetry in H
+    | [H : ?a = false, H': is_true ?a |-_]=> rewrite H in H'; inversion H'
+    | [|- reflect _ true]=> constructor
+    | [|- reflect _ false]=> constructor
+    | [H:reflect ?a false, H' : ?a|-_]=>
+      move: H' => /H H'; inversion H'
+    | [|- reflect _ (_&&_)]=>
+      (destruct_reflect_andb_l; simpl)
+    | [|- reflect _ ?p]=>
+      let H := fresh in my_case H p
+    | [|- ~_]=> let H:= fresh in intro H; inversion H; subst; clear H; auto
+    | [|- rule_ok _]=> constructor; auto
+    | [|- term_ok _ _ _]=> apply /check_term_okP; auto
+    | [|- sort_ok _ _]=> apply /check_sort_okP; auto
+    | [|- ctx_ok _]=> apply /check_ctx_okP; auto
+    | [H : check_term_ok _ ?e ?t = false, H' : term_ok _ ?e ?t|- _]=>
+      move: H' => /check_term_okP; rewrite H; auto
+    | [H : check_sort_ok _ ?t = false, H' : sort_ok _ ?t|- _]=>
+      move: H' => /check_sort_okP; rewrite H; auto
+    | [H : check_ctx_ok _ = false, H' : ctx_ok _|- _]=>
+      move: H' => /check_ctx_okP; rewrite H; auto
+    | [H : check_rule_ok _ _ = false, H' : rule_ok _ _|- _]=>
+      move: H' => /check_rule_okP; rewrite H; auto
+    | [H : check_is_exp ?e = false, H' : is_exp ?e|- _]=>
+      move: H' => /check_is_expP; rewrite H; auto
+    | [H : is_true(check_ctx_ok _)|- _]=>
+      move: H => /check_ctx_okP H
+    | [|- is_exp _]=> apply /check_is_expP; auto
+    | [|- lang_ok (_::_)]=> constructor
+           end; auto.
+  apply /IHl; auto.
+  apply /check_rule_okP; auto.
+  apply check_lang_ok_all_fresh; auto.
+  {
+    move: H4 => /IHl /check_lang_ok_all_fresh; auto.
+  }
+  {
+    simpl in H3; rewrite Heqb in H3; auto.
+  }
+Qed.
+
+
+Lemma lang_ok_all_fresh l : lang_ok l -> all_fresh l.
+Proof.
+  induction l; break; simpl in *;
+    intro H; inversion H; subst; break_goal; auto.
 Qed.  
-  
