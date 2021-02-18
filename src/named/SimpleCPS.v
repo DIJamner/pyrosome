@@ -8,7 +8,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore Pf Compilers PfCompilers PfMatches ParStep.
+From Named Require Import Exp ARule ImCore Pf PfCore Compilers PfCompilers PfMatches ParStep.
 Require Import String.
 Require Import SimpleSubst SimpleSTLC.
 Import Exp.Notations ARule.Notations.
@@ -225,7 +225,11 @@ Definition cps (c : string) (args : list string) : exp :=
     let x1 := {{e #"hd"}} in
     bind_k (var e2) (var A)
     (bind_k (wkn_n 1 (var e1)) {{e #"->" %A {double_neg (var B)} }}
-    {{e #"app" (#"app" {x1} {x2}) {k} }})
+            {{e #"app" (#"app" {x1} {x2}) {k} }})
+  | "hd", [::] =>
+    {{e #"app" #"hd" (#"el_subst" #"wkn" #"hd")}}
+  | "el_subst", [:: e; A; g; G'; G] =>
+    {{e #"el_subst" (#"snoc" %g #"hd") %e }}
   | _,_ => con c (map var (lookup_args stlc c))
   end%string.
 
@@ -270,7 +274,14 @@ Definition cps_elab :=
      | Some pl => pl
      | None => [::]
      end).
-                
+
+Lemma cps_elab_wf : preserving_compiler stlc_bot_elab (nth_tail 25 cps_elab) (nth_tail 25 stlc_elab).
+Proof.
+  constructor.
+  apply /check_preservingP; try by compute.
+  
+  TODO: changing el probably caused issues w/ subst translations;
+  need to update hd and el_subst.
 
 Derive cps_elab
        SuchThat (Some (make_compiler cps_sort cps stlc) = synth_compiler cps_elab stlc)
