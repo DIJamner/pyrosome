@@ -8,7 +8,7 @@ Set Bullet Behavior "Strict Subproofs".
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore Pf Compilers PfCompilers.
+From Named Require Import Exp ARule ImCore Pf Compilers PfCompilers PfMatches ParStep.
 Require Import String.
 Require Import SimpleSubst SimpleSTLC.
 Import Exp.Notations ARule.Notations.
@@ -25,7 +25,7 @@ Definition stlc_bot :=
   ])%arule:: stlc.
 
 Import OptionMonad.
-Definition simple_subst_to_pf_ty (e:exp) : option pf :=
+Fixpoint simple_subst_to_pf_ty (e:exp) : option pf :=
   match e with
   | var x => Some (pvar x)
   | con "->" [:: B; A] =>
@@ -184,24 +184,17 @@ Fixpoint wkn_n n e :=
     {{e #"el_subst" #"wkn" {wkn_n n' e} }}
   end.
 
-Definition let_bind e k :=
-  {{e #"app" {e} (#"lambda" {k})}}.
-Arguments let_bind e k/.
+Definition bind_k e A k :=
+  {{e #"el_subst" (#"snoc" #"id" (#"lambda" {A} {k})) {e} }}.
+Arguments bind_k e A k/.
 
 Definition ret_val v :=
-  {{e #"lambda" (#"app" #"hd" (#"el_subst" #"wkn" {v}))}}.
-Arguments ret_val v/.
-
-(* TODO: I'm embedding full terms into inferred terms; need to make work.
-   Add escape hatch constr?*)
+  {{e #"app" #"hd" (#"el_subst" #"wkn" {v})}}.
+Arguments ret_val v /.
 
 Definition double_neg t : exp :=
   {{e #"->" (#"->" {t} #"bot") #"bot"}}.
 Arguments double_neg t /.
-
-Definition lam e := {{e #"lambda" {e} }}.
-Arguments lam e/.
-
 
 Definition get_rule_args r :=
   match r with
@@ -214,35 +207,70 @@ Definition get_rule_args r :=
 Definition lookup_args l n :=
   get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
 
-Definition cps_sort (c:string) args : sort := scon c (map var args).
+Definition cps_sort (c:string) args : sort :=
+  match c, args with
+  | "el", [:: A; G] =>
+    {{s #"el" (#"ext" %G (#"->" %A #"bot")) #"bot" }}
+  | _,_ => scon c (map var (lookup_args stlc c))
+  end%string.
 Definition cps (c : string) (args : list string) : exp :=
   match c, args with
   | "->", [:: B; A] =>
-    double_neg {{e #"->" %A %B}}
-  | "lambda", [:: e; A] =>
+    {{e #"->" %A {double_neg (var B)} }}
+  | "lambda", [:: e; B; A; G] =>
     ret_val {{e #"lambda" %A %e}}
-  | "app", [:: e2; e1] =>
+  | "app", [:: e2; e1; B; A; G] =>
     let k := wkn_n 2 {{e #"hd"}} in
-    let x1 := wkn_n 1 {{e #"hd"}} in
-    let x2 := {{e #"hd"}} in
-    {{e #"lambda" %"TODO"
-        {let_bind (wkn_n 1 (var e1))
-         (let_bind (wkn_n 2 (var e2))
-         {{e #"app" {k} (#"app" {x1} {x2})}} ) } }}
-  | _,_ => con c (map var args)
+    let x2 := wkn_n 1 {{e #"hd"}} in
+    let x1 := {{e #"hd"}} in
+    bind_k (var e2) (var A)
+    (bind_k (wkn_n 1 (var e1)) {{e #"->" %A {double_neg (var B)} }}
+    {{e #"app" (#"app" {x1} {x2}) {k} }})
+  | _,_ => con c (map var (lookup_args stlc c))
   end%string.
 
 Require Compilers.
 
-(*
-Parameter simple_subst_to_pf_compiler : Compilers.compiler -> option compiler.
-Definition cps_elab :=
+(*TODO: need to compile ctx, type*)
+Fixpoint elab_compiler (tgt:pf_lang) (cc : Compilers.compiler) (src : pf_lang) : option compiler :=
+  match src, cc with
+  | [::], [::] => Some [::]
+  | (n, sort_rule_pf _ _)::src', (n',sort_case t)::cc' =>
+    do pt <- simple_subst_to_pf_sort t;
+       pcc' <- elab_compiler tgt cc' src';
+       ret (n,pt)::pcc'
+  | (n, term_rule_pf c _ t)::src', (n',term_case e)::cc' =>
+    do pcc' <- elab_compiler tgt cc' src';
+       pt <- simple_subst_to_pf_term (compile_ctx src' pcc' c)
+                                     e
+                                     (compile src' pcc' t);
+       ret (n,pt)::pcc'
+  | (n, term_le_pf c e1 e2 t)::src', _ =>
+    do pcc <- elab_compiler tgt cc src';
+       (* attempt to reduce both sides to the same normal form *)
+       ret (n,trans (par_step_n tgt (compile src' pcc e1) 100)
+                    (par_step_n tgt (compile src' pcc e1) 100))::pcc
+  | _,_ => None (* No sort relations in this language *)
+  end.
+
+
+Definition stlc_elab :=
   Eval compute in
-    (match simple_subst_to_pf_compiler (make_compiler cps_sort cps stlc) with
+    (match simple_subst_to_pf_lang stlc with
      | Some pl => pl
      | None => [::]
      end).
-Print cps_elab. TODO: maybe automate to this degree later*)
+
+Definition cps_elab :=
+  Eval compute in
+    let n := 0 in
+    (match elab_compiler stlc_bot_elab
+                         (make_compiler cps_sort cps (nth_tail n stlc))
+                         (nth_tail n stlc_elab) with
+     | Some pl => pl
+     | None => [::]
+     end).
+                
 
 Derive cps_elab
        SuchThat (Some (make_compiler cps_sort cps stlc) = synth_compiler cps_elab stlc)

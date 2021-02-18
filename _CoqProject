@@ -13,6 +13,8 @@ src/named/SimpleSubst.v
 src/named/SimpleSTLC.v
 src/named/Compilers.v
 src/named/PfCompilers.v
+src/named/PfMatches.v
+src/named/ParStep.v
 src/named/SimpleCPS.v
 src/named/Interactive.v
 src/named/Subst.v

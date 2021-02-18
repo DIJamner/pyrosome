@@ -14,15 +14,13 @@ Require Import String.
    how do I include info from the type?
  *)
 Variant compiler_case : Set :=
-| sort_case : list string (* holes *) -> (* target *) sort -> compiler_case
-| term_case :  list string (* holes *) -> (* target *) exp -> compiler_case.
+| sort_case : (* target *) sort -> compiler_case
+| term_case :  (* target *) exp -> compiler_case.
 
 Definition eq_compiler_case c1 c2 : bool :=
   match c1,c2 with
-  | sort_case args1 t1, sort_case args2 t2 =>
-    (args1 == args2) && (t1 == t2)
-  | term_case args1 e1, term_case args2 e2 =>
-    (args1 == args2) && (e1 == e2)
+  | sort_case t1, sort_case t2 => (t1 == t2)
+  | term_case e1, term_case e2 => (e1 == e2)
   | _,_ => false
   end.
 
@@ -877,15 +875,16 @@ Proof.
 
 *)
 
+(*Note: args not helpful*)
 Fixpoint make_compiler
            (cmp_sort : string -> list string -> sort)
            (cmp_exp : string -> list string -> exp)
            (l : lang) : compiler :=
   match l with
   | (n,sort_rule c args)::l' =>
-    (n,sort_case args (cmp_sort n args))
+    (n,sort_case (cmp_sort n (map fst c)))
       ::(make_compiler cmp_sort cmp_exp l')
-  | (n,term_rule c args _)::l' => (n,term_case args (cmp_exp n args))
+  | (n,term_rule c args _)::l' => (n,term_case (cmp_exp n (map fst c)))
       ::(make_compiler cmp_sort cmp_exp l')
   | (n,_)::l' => 
     (make_compiler cmp_sort cmp_exp l')
