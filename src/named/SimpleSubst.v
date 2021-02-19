@@ -22,7 +22,7 @@ Set Default Proof Mode "Classic".
 Definition subst_lang : lang :=
    [::[:> "G" : #"env", "A" : #"ty"
        ----------------------------------------------- ("snoc_wkn_hd")
-       #"id" = #"snoc" #"wkn" #"hd" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
+        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
    ];
    [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" %"G1" %"G2",

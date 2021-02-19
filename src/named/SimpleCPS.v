@@ -229,7 +229,7 @@ Definition cps (c : string) (args : list string) : exp :=
   | "hd", [::] =>
     {{e #"app" #"hd" (#"el_subst" #"wkn" #"hd")}}
   | "el_subst", [:: e; A; g; G'; G] =>
-    {{e #"el_subst" (#"snoc" %g #"hd") %e }}
+    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %g) #"hd") %e }}
   | _,_ => con c (map var (lookup_args stlc c))
   end%string.
 
@@ -253,7 +253,7 @@ Fixpoint elab_compiler (tgt:pf_lang) (cc : Compilers.compiler) (src : pf_lang) :
     do pcc <- elab_compiler tgt cc src';
        (* attempt to reduce both sides to the same normal form *)
        ret (n,trans (par_step_n tgt (compile src' pcc e1) 100)
-                    (par_step_n tgt (compile src' pcc e1) 100))::pcc
+                    (sym (par_step_n tgt (compile src' pcc e2) 100)))::pcc
   | _,_ => None (* No sort relations in this language *)
   end.
 
@@ -275,13 +275,76 @@ Definition cps_elab :=
      | None => [::]
      end).
 
-Lemma cps_elab_wf : preserving_compiler stlc_bot_elab (nth_tail 25 cps_elab) (nth_tail 25 stlc_elab).
+
+Lemma term_ok_con'
+  : forall (l : pf_lang) (c : pf_ctx) (name : str_eqType) (c' : named_list_set pf) (args : seq string) (t t' : pf) (s : seq pf),
+    (name, term_rule_pf c' args t) \in l -> args_ok l c s c' ->
+    t' = (pf_subst (with_names_from c' (map (proj_r l) s)) t) ->
+    term_ok l c (pcon name s) t'.
+Proof.
+Admitted.
+  
+Lemma cps_elab_wf : preserving_compiler stlc_bot_elab (nth_tail 12 cps_elab) (nth_tail 12 stlc_elab).
 Proof.
   constructor.
-  apply /check_preservingP; try by compute.
-  
-  TODO: changing el probably caused issues w/ subst translations;
-  need to update hd and el_subst.
+  apply /check_preservingP; by compute.
+  {
+    cbn.
+    TODO: conceptual issue w/ compiling snoc:
+        don't have the continuation available to
+        plug into e; maybe el(G,A) ~> el(G,(A->bot) -> bot) would be better?
+    eapply term_ok_trans.
+    4:{
+      match goal with
+        [|- is_true (eq_pf_irr _ ?a ?b)] =>
+        assert (a=b);[ reflexivity| by compute]
+      end.
+    }
+    apply /check_term_okP; by compute.
+    apply /check_term_okP; by compute.
+    {
+      
+      match goal with
+        [|- is_true (eq_pf_irr _ ?a ?b)] =>
+        assert (a=b);[ reflexivity
+      end.
+      
+      
+      TODO: did I forget to do a subst somewhere?
+    }
+    
+    
+  2: apply /check_is_expP; by compute.
+  {
+    cbv -[compile_ctx stlc_bot_elab].
+    eapply term_ok_con'.
+    rewrite <-named_list_lookup_err_inb.
+    apply /eqP.
+      by compute.
+      by compute.
+    2:{ by compute. }
+    constructor.
+    constructor.
+    constructor.
+    
+    apply /check_args_okP; by compute.
+    {
+      cbn.
+      eapply term_ok_con'.
+      rewrite <-named_list_lookup_err_inb.
+      apply /eqP.
+        by compute.
+      by compute.
+      2:{ by compute. }
+      constructor.
+      constructor.
+      apply /check_args_okP; by compute.
+      {
+        cbn.
+      rewr
+      apply /check_term_okP; by compute.
+    eauto.
+    
 
 Derive cps_elab
        SuchThat (Some (make_compiler cps_sort cps stlc) = synth_compiler cps_elab stlc)

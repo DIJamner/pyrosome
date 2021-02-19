@@ -35,6 +35,47 @@ Proof.
 Qed.
 
 
+Lemma eq_sym {A :eqType} (a b :A) : (a == b) = (b == a).
+Proof.
+  case ab: (a==b);
+    move: ab => /eqP ab; subst;
+    [ by rewrite eq_refl
+    | case ba: (b==a);
+      move: ba => /eqP ba; auto].
+Qed.          
+  
+(*TODO: move to utils *)
+Lemma named_list_lookup_err_inb {A : eqType} l x (v:A)
+  : all_fresh l ->
+    named_list_lookup_err l x == Some v = ((x,v) \in l).
+Proof.
+  induction l; break; [by compute | simpl]; intros; break.
+  case_match.
+  {
+    match goal with
+      [H : true = (?a =? ?b)%string |-_]=>
+      symmetry in H; change (is_true (a == b)) in H;
+        move: H => /eqP H; subst
+    end.
+    case veqs0: (s0 == v).
+    {
+      move:veqs0 => /eqP veqs0; subst.
+      rewrite in_cons.
+      rewrite !eq_refl.
+      by compute.
+    }
+    {
+      rewrite in_cons.
+      cbn.
+      rewrite veqs0 eqb_refl.
+      rewrite eq_sym in veqs0.
+      rewrite veqs0.
+      simpl.
+      simpl in IHl.
+      rewrite <- IHl; auto.
+Admitted.
+      
+
 Lemma named_list_lookup_none {A:eqType} l s (a:A)
   : None = named_list_lookup_err l s ->
     (s, a) \notin l.
@@ -83,17 +124,17 @@ Section TermsAndRules.
   with proj_r (p:pf) :=
     match p with
     | pvar x => (pvar x)
-    | pcon name pl => pcon name (map proj_l pl)
+    | pcon name pl => pcon name (map proj_r pl)
     | ax name pl =>
       match named_list_lookup_err l name with
       | Some (sort_le_pf c _ p')
       | Some (term_le_pf c _ p' _) =>
-        pf_subst (with_names_from c (map (proj_l) pl)) p'
+        pf_subst (with_names_from c (map (proj_r) pl)) p'
       | _ => pcon "ERR" [::]
       end
     | sym p => proj_l p
     | trans p1 p2 => proj_r p2
-    | conv pt p' => conv pt (proj_l p')
+    | conv pt p' => conv pt (proj_r p')
     end.
 
   (* Strips components of the proof that we consider
@@ -142,7 +183,7 @@ Section TermsAndRules.
     All ctxs (other than in ctx_ok) are assumed to satisfy ctx_ok.
     Judgments whose assumptions take ctxs must ensure they are ok.
     Sorts are not assumed to be ok; the term judgments should guarantee
-    that their sorts are ok.
+    that their sorts are ok and is_exp.
    *)
   
   Inductive sort_ok : pf_ctx -> pf -> Prop :=
@@ -164,22 +205,22 @@ Section TermsAndRules.
   | term_ok_ax : forall c c' name e1 e2 t s,
       (name, term_le_pf c' e1 e2 t) \in l ->
       args_ok c s c' ->
-      (*non-obvious fact: the sort may not be a wfness proof;
+      (*non-obvious fact: the sort may not be a wfness proof if we don't project;
         may be a non-identity relation due to s
        *)
-      term_ok c (ax name s) (pf_subst (with_names_from c' s) t)
+      term_ok c (ax name s) (proj_r (pf_subst (with_names_from c' s) t))
   | term_ok_con : forall c name c' args t s,
       (name, (term_rule_pf c' args t)) \in l ->
       args_ok c s c' ->
       (* same as above *)
-      term_ok c (pcon name s) (pf_subst (with_names_from c' s) t)
+      term_ok c (pcon name s) (proj_r (pf_subst (with_names_from c' s) t))
   | term_ok_trans : forall c e1 t1 e2 t2,
       term_ok c e1 t1 ->
       term_ok c e2 t2 ->
       eq_pf_irr (proj_r e1) (proj_l e2) ->
-      eq_pf_irr (proj_r t1) (proj_l t2) ->
-      term_ok c (trans e1 e2) (trans t1 t2)
-  | term_ok_sym : forall c e t, term_ok c e t -> term_ok c (sym e) (sym t)
+      eq_pf_irr t1 t2 ->
+      term_ok c (trans e1 e2) t2
+  | term_ok_sym : forall c e t, term_ok c e t -> term_ok c (sym e) t
   | term_ok_var : forall c x t,
       (x,t) \in c ->
       term_ok c (pvar x) t
@@ -188,12 +229,18 @@ Section TermsAndRules.
 c |- e1 = e2 : t = t'
                  ||
 c |- e1 = e2 : t' = t''
+
+TODO: this rule is no good; 
+want to have output type (proj_r? t'), not trans.
+(note that this interferes w/ removing symmetry if I aim to do that later.)
+The theoretically proper thing to do is to give computation rules to trans, sym,
+e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
    *)
   | term_ok_conv : forall c e t t',
       sort_ok c t' ->
       term_ok c e t ->
-      eq_pf_irr (proj_r t) (proj_l t') ->
-      term_ok c (conv t' e) (trans t t')
+      eq_pf_irr t (proj_l t') ->
+      term_ok c (conv t' e) (proj_r t')
   with args_ok : pf_ctx -> list pf -> pf_ctx -> Prop :=
   | args_ok_nil : forall c, args_ok c [::] [::]
   | args_ok_cons : forall c s c' name e t,
@@ -369,69 +416,67 @@ c |- e1 = e2 : t' = t''
          
   End InnerLoop.
 
-  Fixpoint check_term_ok (c : pf_ctx) e t {struct e} : bool :=
+  (*computes the sort of the term for any ok term *)
+  (*TODO: unnecessary*)
+  Fixpoint sort_of_term (c : pf_ctx) (e : pf) : pf :=
+    let default := ax "ERR" [::] in
     match e with
     | pvar x =>
       match named_list_lookup_err c x with
-      | Some t' => t == t' (*TODO: this lines up w/ the inductive, 
-                             but maybe should be pf_eq_irr?
-                             Might want to change the inductive.
-                             Can be worked around w/ extra convs as is,
-                             but that might be easier.
-                             Same for other cases.
-                            *)
-      | None => false
+      | Some t => t
+      | None => default
       end
     | pcon name pl =>
       match named_list_lookup_err l name with
-      | Some (term_rule_pf c' _ t') =>
-        (check_args_ok' (check_term_ok c) pl c') &&
-        (t == pf_subst (with_names_from c' pl) t')
-      | _ => false
+      | Some (term_rule_pf c' _ t') => pf_subst (with_names_from c' pl) t'
+      | _ => default
       end
     | ax name pl =>
       match named_list_lookup_err l name with
-      | Some (term_le_pf c' _ _ t') => 
-        (check_args_ok' (check_term_ok c) pl c') &&
-        (t == pf_subst (with_names_from c' pl) t')
-      | _ => false
+      | Some (term_rule_pf c' _ t') => pf_subst (with_names_from c' pl) t'
+      | _ => default
       end
-    | sym p =>
-      match t with
-      | sym t' => check_term_ok c p t'
-      | _ => false (*TODO: same thing as ==s above.
-                     This works, but it feels like I should use a looser
-                     defn of equivalence. Should come back to these if it
-                     ends up as a pain point.
-                    *)
-      end
-    | trans p1 p2 => 
-      match t with
-      | trans t1 t2 =>
-        (check_term_ok c p1 t1) &&
-        (check_term_ok c p2 t2) &&
-        (eq_pf_irr (proj_r p1) (proj_l p2)) &&
-        (eq_pf_irr (proj_r t1) (proj_l t2))
-      | _ => false (*TODO: same thing as ==s above.
-                     This works, but it feels like I should use a looser
-                     defn of equivalence. Should come back to these if it
-                     ends up as a pain point.
-                    *)
-      end
-    | conv pt p' =>
-      match t with
-      | trans t1 t2 =>
-      (pt == t2) &&
-      (eq_pf_irr (proj_r t1) (proj_l t2)) &&
-      (check_sort_ok' (check_term_ok c) pt) &&
-      (check_term_ok  c p' t1)
-      | _ => false (*TODO: same thing as ==s above.
-                     This works, but it feels like I should use a looser
-                     defn of equivalence. Should come back to these if it
-                     ends up as a pain point.
-                    *)
-      end
+    | sym p => sort_of_term c p
+    (*TODO: needs normalization here to be consistent in the right way;
+      otherwise weakens some syntactic identities to semantic ones.
+      Is this a problem?
+      TODO: figure out whether this matters when all ok terms have is_exp sorts
+     *)
+    | trans p1 p2 => sort_of_term c p2
+    | conv pt p' => proj_r pt
     end.
+
+  Import OptionMonad.
+  
+  Fixpoint synth_term_ok (c : pf_ctx) e {struct e} : option pf :=
+    let check_term_ok e t := synth_term_ok c e == Some t in 
+    match e with
+    | pvar x => named_list_lookup_err c x
+    | pcon name pl =>
+      do (term_rule_pf c' _ t') <- named_list_lookup_err l name;
+         ! check_args_ok' check_term_ok pl c';
+         ret (proj_r (pf_subst (with_names_from c' pl) t'))
+    | ax name pl =>
+      do (term_le_pf c' _ _ t') <- named_list_lookup_err l name;
+         ! check_args_ok' check_term_ok pl c';
+         ret (proj_r (pf_subst (with_names_from c' pl) t'))
+    | sym p => synth_term_ok c p
+    | trans p1 p2 =>
+      do t1 <- synth_term_ok c p1;
+         t2 <- synth_term_ok c p2;
+         ! eq_pf_irr (proj_r p1) (proj_l p2);
+         ! eq_pf_irr t1 t2;
+         ret t2
+    | conv pt p' =>
+      do t1 <- synth_term_ok c p';
+         ! eq_pf_irr t1 (proj_l pt);
+         ! check_sort_ok' check_term_ok pt;
+         ret (proj_r pt)
+  end.
+
+  Definition check_term_ok c e t := synth_term_ok c e == Some t.
+  Definition check_sort_ok c p := check_sort_ok' (check_term_ok c) p.
+  Definition check_args_ok c pl c' := check_args_ok' (check_term_ok c) pl c'.
 
   
   (*TODO: build right induction*)
@@ -439,15 +484,16 @@ c |- e1 = e2 : t' = t''
     : all_fresh l ->
       all_fresh c ->
       reflect (term_ok c e t) (check_term_ok c e t)
-  with check_args_ok'P c pl c'
+  with check_args_okP c pl c'
        : all_fresh l ->
          all_fresh c ->
-         reflect (args_ok c pl c') (check_args_ok' (check_term_ok c) pl c')
-  with check_sort_ok'P c t
+         reflect (args_ok c pl c') (check_args_ok c pl c')
+  with check_sort_okP c t
       : all_fresh l ->
         all_fresh c ->
-        reflect (sort_ok c t) (check_sort_ok' (check_term_ok c) t).
+        reflect (sort_ok c t) (check_sort_ok c t).
   Proof using.
+    all: unfold check_sort_ok in *; unfold check_args_ok in *; unfold check_term_ok in *.
     all: intros frl frc.
     all: match goal with
     | [|- reflect (term_ok _ ?e _) _]=> destruct e
@@ -460,12 +506,12 @@ c |- e1 = e2 : t' = t''
     | [|- sort_ok _ (sym _)] => apply sort_ok_sym
     | [|- sort_ok _ (trans _ _)] => apply sort_ok_trans
      (*Recursive cases; proceed w/ caution*)
-    | [H : is_true(check_term_ok _ ?e ?t) |- term_ok _ ?e ?t]=>
+    | [H : is_true(synth_term_ok _ ?e == Some ?t) |- term_ok _ ?e ?t]=>
       apply /check_term_okP; auto
     | [H : is_true(check_args_ok' _ ?e ?t) |- args_ok _ ?e ?t]=>
-      apply /check_args_ok'P; auto
+      apply /check_args_okP; auto
     | [H : is_true(check_sort_ok' _ ?t) |- sort_ok _ ?t]=>
-      apply /check_sort_ok'P; auto
+      apply /check_sort_okP; auto
     (* end of recursive cases *)
     | [ H: ?P |- ?P] => exact H
     | [ H: ?P, Hf : ~?P |- _] => exfalso; exact (Hf H)
@@ -482,6 +528,8 @@ c |- e1 = e2 : t' = t''
     | [H : (?a)=true |-_]=> change (is_true a) in H
     | [H : false = false |-_]=> clear H
     | [H : false = ?a |-_]=> symmetry in H
+    | [H : None = Some _ |-_]=> inversion H
+    | [H : Some _ = Some _ |-_]=> inversion H; subst; clear H
     | [H : is_true(_&&_) |-_]=> break
     | [|-is_true(_&&_)]=> break_goal
     | [H : is_true(_==_) |-_]=> move: H => /eqP H; subst
@@ -494,24 +542,28 @@ c |- e1 = e2 : t' = t''
     | [|- ~_]=> let H:= fresh in intro H; inversion H; subst; clear H; auto
     |[_:~_, _:~_|-_] => idtac "two possible negations"
     |[H:~_|-False] => apply H 
+    | [H : (do ret ?t) = synth_term_ok ?c ?e|- _] => symmetry in H
+    | [H : synth_term_ok ?c ?e = (do ret _)|- term_ok ?c ?e _] =>
+      move: H => /eqP /check_term_okP; auto
     | [|- rule_ok _]=> constructor; auto
+    | [|- term_ok _ (trans _ _) _]=> eapply term_ok_trans
     | [|- term_ok _ _ _]=> constructor
     | [|- ctx_ok _]=> apply /check_ctx_okP; auto
     | [H : ~(is_true(check_args_ok' _ ?e ?t)), H' : args_ok _ ?e ?t|- _]=>
-      move: H => /negP /check_args_ok'P H;
+      move: H => /negP /check_args_okP H;
       exfalso; apply H; auto
     | [H : ~(is_true(check_term_ok _ ?e ?t)), H' : term_ok _ ?e ?t|- _]=>
       move: H => /negP /check_term_okP H;
       exfalso; apply H; auto
     | [H : ~(is_true(check_sort_ok' _ ?t)), H' : sort_ok _ ?t|- _]=>
-      move: H => /negP /check_sort_ok'P H;
+      move: H => /negP /check_sort_okP H;
       exfalso; apply H; auto
-    | [H : check_term_ok _ ?e ?t = false, H' : term_ok _ ?e ?t|- _]=>
+    | [H : (synth_term_ok _ ?e == Some ?t) = false, H' : term_ok _ ?e ?t|- _]=>
       move: H' => /check_term_okP; rewrite H; auto
     | [H : check_args_ok' _ ?e ?t = false, H' : args_ok _ ?e ?t|- _]=>
-      move: H' => /check_args_ok'P; rewrite H; auto
+      move: H' => /check_args_okP; rewrite H; auto
     | [H : check_sort_ok' _ ?t = false, H' : sort_ok _ ?t|- _]=>
-      move: H' => /check_sort_ok'P; rewrite H; auto
+      move: H' => /check_sort_okP; rewrite H; auto
     | [H : check_is_exp ?e = false, H' : is_exp ?e|- _]=>
       move: H' => /check_is_expP; rewrite H; auto
     | [|- is_exp _]=> apply /check_is_expP; auto
@@ -535,48 +587,44 @@ c |- e1 = e2 : t' = t''
     | [H: (_&&_)=false |-_]=>
        move: H => /nandP [] H
     |[H:is_true(~~_)|-_] => move: H => /negP H
+    |[H :context [(named_list_lookup_err _ _ == (do ret _))] |- _] =>
+     rewrite named_list_lookup_err_inb in H
              end.
     { (*TODO: automate*)
       eapply term_ok_con.
       apply named_list_lookup_err_in; eauto.
-      apply /check_args_ok'P; auto.
+      apply /check_args_okP; auto.
     }
     { (*TODO: automate*)
       eapply term_ok_ax.
       apply named_list_lookup_err_in; eauto.
-      apply /check_args_ok'P; auto.
+      apply /check_args_okP; auto.
     }
+    admit (*TODO: need to fix t in theorem for induction*).
+    admit (*TODO: need to fix t in theorem for induction*).
+    {
+      rewrite HeqH0 in H.
+      move: H => /check_term_okP H; apply H; auto.
+    }
+    
+    (* TODO: finish (might still have bugs)
+    eapply term_ok_trans.
+    constructor.
+    TODO: false case for term_ok
     { (*TODO: automate*)
+      move: H => /eqP H.
       eapply sort_ok_con; eauto.
       apply /check_args_ok'P; auto.
     }
     { (*TODO: automate*)
       eapply sort_ok_ax; eauto.
       apply /check_args_ok'P; auto.
-    }
+    }*)
    (* TODO: break 2 directions up to make the fixpoint go through?
                 reflection harder to reason about wrt termination
       prob not necessary w/ right recursion*)
     (*Guarded.*)
   Admitted.
-
-  Definition check_sort_ok c t := check_sort_ok' (check_term_ok c) t.
-  Definition check_args_ok c s c' := check_args_ok' (check_term_ok c) s c'.
-
-  
-  Lemma check_sort_okP c t
-      : all_fresh l -> all_fresh c -> reflect (sort_ok c t) (check_sort_ok c t).
-  Proof using.
-    eauto using check_term_okP, check_sort_ok'P.
-  Qed.
-
-  
-  Lemma check_args_okP c s c'
-    : all_fresh l -> all_fresh c ->
-      reflect (args_ok c s c') (check_args_ok c s c').
-  Proof using.
-    eauto using check_term_okP, check_args_ok'P.
-  Qed.
 
   Fixpoint check_ctx_ok c :=
     match c with
