@@ -257,6 +257,10 @@ Definition cps (c : string) (args : list string) : exp :=
     let k := wkn_n 2 {{e #"ret" #"hd"}} in
     let x2 := wkn_n 1 {{e #"ret" #"hd"}} in
     let x1 := {{e #"ret" #"hd"}} in
+    (*TODO: don't want the thunk here;
+      need to push lambda under bind_ks
+      (and ideally not have it at all)
+     *)
     {{e #"ret" (#"lambda" (#"->" %B #"bot")
     {bind_k (wkn_n 1 (var e2)) (var A)
     (bind_k (wkn_n 2 (var e1)) {{e #"->" %A {double_neg (var B)} }}
@@ -511,6 +515,23 @@ Ltac le_rewrite_rtl rule_name :=
 Ltac le_reflexivity :=
       apply is_pf_of_le_refl; apply /check_is_expP; by compute.
 
+Ltac reduce fuel :=
+  lazymatch goal with
+    [|- is_pf_of_le ?l ?p_evar ?lhs ?rhs] =>
+    tryif is_evar p_evar
+    then
+      let lhsp := eval compute in (par_step_n l lhs fuel) in
+          let rhsp := eval compute in (par_step_n l rhs fuel) in
+              let lhs' := eval compute in (proj_r l lhsp) in
+                  let rhs' := eval compute in (proj_r l rhsp) in
+                      let p_r := open_constr:(trans _ (sym rhsp)) in
+                      apply (@is_pf_of_le_trans l lhsp p_r lhs lhs' rhs);
+                      [by compute |];
+                      apply (is_pf_of_le_trans (t12 := rhs'));
+                      [| by compute]
+    else fail p_evar "not an evar"
+  end.
+
 Local Open Scope string.
 
 Derive cps_elab
@@ -524,12 +545,17 @@ Proof.
   split.
   repeat match goal with
            [|- is_pf_of_compiler _ _ _ _] => constructor
-         end; try solve [repeat first [ pvar | pcon]].
+         end; try solve [ reduce 100; le_reflexivity
+                        | repeat first [ pvar | pcon]].
   {
     cbn.
+    reduce 100.
+    TODO: might need eta?
     le_rewrite "id_right".
     le_reflexivity.
   }
+  TODO: deal/ term blowup in derived term
+  & partially inlined compiler
   {
     cbn.
     le_rewrite "id_left".
@@ -537,6 +563,12 @@ Proof.
   }
   {
     cbn.
+    
+    reduce 10.
+    time le_reflexivity.
+    eapply is_pf_of_le_trans (t12 := rhs')
+    
+    apply (@is_pf_of_le_trans l lhsp p_r lhs lhs' rhs) 
     TODO: to handle most rules,
           write reduce tactic to make use of par_step
     solve [repeat first [ pvar | pcon]].
