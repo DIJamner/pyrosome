@@ -25,7 +25,8 @@ Definition stlc_bot :=
   ])%arule:: stlc.
 
 (* To prove preservation of beta reduction w/ an arbitrary expression
-   as the argument, need continuation shuffling
+   as the argument, need continuation shuffling axiom (see Bowman et al):
+   e' (\x. e) = e[(e' id)/x]
 *)
 Definition stlc_no_beta :=
   [::[:> "G" : #"env", "A" : #"ty", "B" : #"ty",

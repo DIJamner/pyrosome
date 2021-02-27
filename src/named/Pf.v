@@ -820,3 +820,91 @@ Qed.
 Definition rule_pf_eqMixin := Equality.Mixin eq_rule_pfP.
 
 Canonical rule_pf_eqType := @Equality.Pack rule_pf rule_pf_eqMixin.
+
+
+Module Notations.
+
+  Declare Custom Entry pf.
+
+  Declare Custom Entry pf_ctx.
+  Declare Custom Entry pf_ctx_binding.
+
+  (* Since contexts are regular lists, 
+     we need a scope to determine when to print them *)
+  Declare Scope pf_ctx_scope.
+  Bind Scope pf_ctx_scope with pf_ctx.
+  
+  Notation "'{{p' e }}" := (e) (at level 0,e custom pf at level 100).
+  
+  Notation "{ x }" :=
+    x (in custom pf at level 0, x constr).
+  (* TODO: issues; fix *)
+  Notation "{ x }" :=
+    x (in custom pf_ctx at level 0, x constr).
+  
+  Notation "# c" :=
+    (pcon c%string [::])
+      (right associativity,in custom pf at level 0, c constr at level 0,
+                              format "# c").
+  (*TODO: ax? really should just merge w/ pcon *)
+  
+  Definition pf_constr_app e e' :=
+    match e with
+    | pcon c l => pcon c (e'::l)
+    | ax c l => ax c (e'::l)
+    | _ => pcon "ERR" [::]
+    end.
+
+  Notation "c e" :=
+    (pf_constr_app c e)
+      (left associativity, in custom pf at level 10,
+                              c custom pf, e custom pf at level 9).
+
+  Notation "( e )" := e (in custom pf at level 0, e custom pf at level 100).
+
+  Notation "% x" :=
+    (pvar x%string)
+      (in custom pf at level 0, x constr at level 0, format "% x").
+
+
+  Check {{p #"foo" }}.
+  Check {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  
+  Eval compute in {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  
+  Notation "# c e1 .. en"
+    := (pcon c (cons en .. (cons e1 nil) ..))
+      (left associativity,
+         in custom pf at level 10,
+            c constr at level 0,
+            e1 custom pf at level 9,
+            en custom pf at level 9,
+            only printing, format "# c  e1  ..  en").
+  
+  Eval compute in {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Eval compute in {{p #"foo" }}.
+
+  Notation "'{{pc' }}" := nil (at level 0) : pf_ctx_scope.
+  Notation "'{{pc' bd , .. , bd' '}}'" :=
+    (cons bd' .. (cons bd nil)..)
+      (at level 0, bd custom pf_ctx_binding at level 100,
+          format "'[' {{pc '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : pf_ctx_scope.
+
+  Notation "bd , .. , bd'" :=
+    (cons bd' .. (cons bd nil)..)
+      (in custom pf_ctx at level 100, bd custom pf_ctx_binding at level 100,
+          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : pf_ctx_scope.
+
+  Notation "" := nil (*(@nil (string*sort))*) (in custom pf_ctx at level 0) : pf_ctx_scope.
+
+  Notation "x : t" :=
+    (x%string, t)
+      (in custom pf_ctx_binding at level 100, x constr at level 0,
+          t custom pf at level 100).
+
+  Local Definition as_ctx (c:pf_ctx) :=c.
+  Check (as_ctx {{pc }}).
+  Check (as_ctx {{pc "x" : #"env"}}).
+  Check (as_ctx {{pc "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}).
+
+End Notations.
