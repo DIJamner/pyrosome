@@ -202,27 +202,27 @@ Definition stlc_bot_elab :=
 (*
 Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
 Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.*)
-Fixpoint wkn_n n e :=
+Fixpoint wkn_n n :=
   match n with
-  | 0 => e
+  | 0 => {{e #"id"}}
   | n'.+1 =>
-    {{e #"el_subst" #"wkn" {wkn_n n' e} }}
+    {{e #"cmp" #"wkn" {wkn_n n'} }}
   end.
 
 Fixpoint vwkn_n n e :=
   match n with
   | 0 => e
   | n'.+1 =>
-    {{e #"val_subst" #"wkn" {wkn_n n' e} }}
+    {{e #"val_subst" #"wkn" {vwkn_n n' e} }}
   end.
 
-Definition bind_k e A k :=
-  {{e #"app" {e} (#"ret" (#"lambda" {A} {k}))}}.
-Arguments bind_k e A k/.
+(*n is how many wknings to do on e*)
+Definition bind_k n e A k :=
+  {{e #"el_subst" (#"snoc" {wkn_n n} (#"lambda" {A} {k})) {e} }}.
+Arguments bind_k n e A k/.
 
-Definition ret_val v A :=
-  {{e #"ret" (#"lambda" (#"->" {A} #"bot") (#"app" (#"ret" #"hd") (#"ret" {vwkn_n 1 v})))}}.
-Arguments ret_val v A/.
+Definition ret_val v :=
+  {{e #"app" (#"ret" #"hd") (#"ret" {vwkn_n 1 v})}}.
 
 Definition double_neg t : exp :=
   {{e #"->" (#"->" {t} #"bot") #"bot"}}.
@@ -242,33 +242,34 @@ Definition lookup_args l n :=
 Definition cps_sort (c:string) args : sort :=
   match c, args with
   | "el", [:: A; G] =>
-    {{s #"el" %G {double_neg (var A)} }}
+    {{s #"el" (#"ext" %G (#"->" %A #"bot")) #"bot" }}
   | _,_ => scon c (map var (lookup_args stlc c))
   end%string.
 Definition cps (c : string) (args : list string) : exp :=
   match c, args with
   | "->", [:: B; A] =>
     {{e #"->" %A {double_neg (var B)} }}
-  (*| "lambda", [:: e; B; A; G] =>
-    (*knock-on effect of changing ext: e needs a subst*)
-    ret_val {{e #"lambda" %A (#"el_subst" (#"snoc" (#"cmp" #"wkn" #"id") {ret_val {{e #"hd"}} (var A) }) %e)}}
-            {{e #"->" %A {double_neg (var B)} }}*)
+  | "lambda", [:: e; B; A; G] =>
+    {{e #"lambda" %A (#"ret" (#"lambda" (#"->" %B #"bot") %e))}}
   | "app", [:: e2; e1; B; A; G] =>
-    let k := wkn_n 2 {{e #"ret" #"hd"}} in
-    let x2 := wkn_n 1 {{e #"ret" #"hd"}} in
-    let x1 := {{e #"ret" #"hd"}} in
+    let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
+    let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
+    let x2 := {{e #"ret" #"hd"}} in
     (*TODO: don't want the thunk here;
       need to push lambda under bind_ks
       (and ideally not have it at all)
+
+TODO: wkn_n not sufficient; need to weaken leaving the continuation hypothesis
      *)
-    {{e #"ret" (#"lambda" (#"->" %B #"bot")
-    {bind_k (wkn_n 1 (var e2)) (var A)
-    (bind_k (wkn_n 2 (var e1)) {{e #"->" %A {double_neg (var B)} }}
-    {{e #"app" (#"app" {x1} {x2}) {k} }})}) }}
+    bind_k 1 (var e1) {{e #"->" %A {double_neg (var B)} }}
+    (bind_k 2 (var e2) (var A)
+    {{e #"app" (#"app" {x1} {x2}) {k} }})
+  | "el_subst", [:: e; A; g; G'; G] =>
+    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %g) #"hd") %e }}
   (*| "hd", [:: A] =>
     ret_val {{e #"hd"}} (var A)*)
   | "ret", [:: v; A; G] =>
-    ret_val (var v) (var A)
+    ret_val (var v)
   | _,_ => con c (map var (lookup_args stlc c))
   end%string.
 
@@ -545,496 +546,56 @@ Proof.
   split.
   repeat match goal with
            [|- is_pf_of_compiler _ _ _ _] => constructor
-         end; try solve [ reduce 100; le_reflexivity
-                        | repeat first [ pvar | pcon]].
-  {
-    cbn.
-    reduce 100.
-    TODO: might need eta?
-    le_rewrite "id_right".
-    le_reflexivity.
+         end; try solve [ repeat first [ pvar | pcon]].
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  {  reduce 100; le_reflexivity. }
+  { cbn.
+    reduce 100; le_reflexivity.
+    (*TODO: remove the cbn*)
   }
-  TODO: deal/ term blowup in derived term
-  & partially inlined compiler
   {
-    cbn.
-    le_rewrite "id_left".
-    le_reflexivity.
+    reduce 100; le_reflexivity.
   }
   {
-    cbn.
-    
-    reduce 10.
-    time le_reflexivity.
-    eapply is_pf_of_le_trans (t12 := rhs')
-    
-    apply (@is_pf_of_le_trans l lhsp p_r lhs lhs' rhs) 
-    TODO: to handle most rules,
-          write reduce tactic to make use of par_step
-    solve [repeat first [ pvar | pcon]].
-    pcon.
-    pcon.
-    cbn.
-    
-  lazymatch goal with
-  | [|-is_pf_of_wf_sort ?l ?c ?t ?pt] =>
-    let t' := eval compute in t in
-    let pt' := eval compute in pt in
-    (* should never succeed:
-       assert_fails (is_evar t'; is_evar pt'); *)
-    let c' := eval compute in c in
-    change_no_check (is_pf_of_wf_sort l c' t' pt');
-    eapply elab_sort_by'; [ by compute|break_is_pf_of_wf_args]
-  | [|-is_pf_of_wf_term ?l ?c ?e ?pe ?t] =>
-    let e' := eval compute in e in
-    let pe' := eval compute in pe in
-    (* should never succeed:
-       assert_fails (is_evar e'; is_evar pe'); *)
-    let c' := eval compute in c in
-    let t' := eval compute in t in
-    change_no_check (is_pf_of_wf_term l c' e' pe' t');
-    eapply elab_term_by'; [ by compute| break_is_pf_of_wf_args |]
-  end.
-  3:{
-    compute.
-    
-    pcon.
-    2:{
-
-      pvar.
-      
-      eapply elab_term_var;
-      apply named_list_lookup_err_in;
-      match goal with
-        [|- Some ?t = named_list_lookup_err ?c ?x] =>
-        let t' := eval compute in t in
-        let t_r := eval compute in (named_list_lookup_err c x) in
-        change_no_check (Some t' = t_r);
-        compute;
-        reflexivity ||
-        fail "attempted to use var" x "at type" t'
-        "when it has type" t_r
-      end.
-      compute.
-      pvar.
-    [| pvar].
-    
-    repeat first [ pvar | pcon].
-    cbn.
-    eapply elab_term_var.
-    apply named_list_lookup_err_in; compute.
-    f_equal.
-    f_equal.
-    f_equal.
-    f_equal.
-    f_equal.
-    f_equal.
-    
-    TODO: types don't line up; probably needed a conv somewhere? shouldn't be for this example though. Probably a bug in the defn
-    reflexivity.
-    pvar.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    pcon.
-    cbn.
-    cycle 0.
-    pcon.
-    pcon.
-    pcon.
-    time pcon.
-    p
-    time pcon.
-    eapply elab_term_by'.
-    time (by compute).
-    [ by compute| break_is_pf_of_wf_args | by compute]
-    time(
-    eapply elab_term_by'; [ by compute| break_is_pf_of_wf_args | by compute]).
-  lazymatch goal with
-  | [|-is_pf_of_wf_sort ?l ?c ?t ?pt] =>
-    eapply elab_sort_by'; [ by compute|break_is_pf_of_wf_args]
-  | [|-is_pf_of_wf_term ?l ?c ?e ?pe ?t] =>
-    eapply elab_term_by'; [ by compute| break_is_pf_of_wf_args | by compute]
-  end.
-    
-  solve [repeat first [ pvar | pcon]].
-  solve [repeat first [ pvar | pcon]].
-  solve [repeat first [ pvar | pcon]].
-  solve [repeat first [ pvar | pcon]].
-  solve [repeat first [ pvar | pcon]].
-  try solve [repeat first [ pvar | pcon]].
-  try solve [repeat first [ pvar | pcon]].
-  try solve [repeat first [ pvar | pcon]].
-  try solve [repeat first [ pvar | pcon]].
-  try solve [repeat first [ pvar | pcon]].
+    reduce 100; le_reflexivity.
+  }
   {
-    compute in cps_elab.
-    TODO: how to generate nicer (evaluated) terms?
-    compute.
-  { pcon. }
-  { pcon; pvar. }
-  { pcon; pvar. }
-  { repeat first [ pvar | pcon]. }
-    cbn.
-    eapply elab_term_var.
-    Search _ ((_,_)\in _).
-    pvar.
-  srepeat econstructor; try by compute.
-  Tactic strategy:
-    destruct per-rule, try automation on that rule.
-  failure = manual/interactive proof,
-  success = done.
-  All success = can just apply fast tactic
-  Fail.
-
-Definition cps_elab :=
+    apply /check_preservingP; by compute.
+  }
+Qed.
+ 
+(* This way is much faster, but doesn't work if we would have
+   needed to specify the rewrite strategy manually in the above proof.
+   TODO: extend this method so that I can generate a rewrite trace
+   in the interactive form above and then plug it into this 
+   computational approach
+*)
+Definition cps_elab' :=
   Eval compute in
-    let n := 2 in
     (match elab_compiler stlc_bot_elab
-                         (make_compiler cps_sort cps (nth_tail n stlc))
-                         (nth_tail n stlc_elab) with
+                         (make_compiler cps_sort cps stlc)
+                         stlc_elab with
      | Some pl => pl
      | None => [::]
      end).
-Goal match cps_elab with [::] => False | _ => True end.
+Goal match cps_elab' with [::] => False | _ => True end.
     by compute.
 Qed.
+                      
 
-Goal true = false.
-  pose (p := (head (""%string,sort_rule_pf [::] [::]) (nth_tail 2 stlc_elab))).
-  compute in p.
-  match goal with
-    [ p:= (?s,term_le_pf ?cc ?ee1 ?ee2 ?tt)|-_] =>
-    pose (n := s); pose (c:=cc); pose (e1:= ee1); pose (e2:=ee2); pose (t:= tt)
-  end.
-  pose (src' := nth_tail 3 stlc_elab).
-  pose (pcc := cps_elab).
-  pose (tgt := stlc_bot_elab).
-  pose (lhs:=(par_step_n tgt (compile src' pcc e1) 100)).
-  pose (rhs := (par_step_n tgt (compile src' pcc e2) 100)).
-  pose (lhs_r := proj_r tgt lhs).
-  assert (par_step tgt lhs_r = None).
-  compute in lhs_r.
-  cbv [par_step lhs_r]; clear lhs_r.
-  case_match.
-  inversion HeqH.
-  fold par_step.
-  case_match.
-  inversion HeqH.
-  cbv [args_par_step] in HeqH0.
-  revert HeqH0.
-  case_match.
-  compute.
-  intro INV; inversion INV; subst; clear INV.
-
-  revert HeqH0.
-  cbn [par_step].
-  case_match.
-  intro INV; inversion INV; subst; clear INV.
-  {
-    cbn [step_redex tgt stlc_bot_elab] in HeqH0.
-    revert HeqH0; case_match.
-    intro INV; inversion INV; subst; clear INV.
-    {
-
-      Eval compute in
-          (step_redex tgt
-                      (pcon "val_subst"
-                            [:: pcon "lambda"
-                                [:: pcon "app"
-                                    [:: pcon "ret"
-                                        [:: pcon "hd"
-                                            [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                            pcon "ext"
-                                                 [:: pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                 pcon "ext" [:: pvar "A"; pvar "G"]]]; pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                        pcon "ext"
-                                             [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                             pcon "ext"
-                                                  [:: pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                  pcon "ext" [:: pvar "A"; pvar "G"]]]];
-                                    pcon "app"
-                                         [:: pcon "ret"
-                                             [:: pcon "val_subst"
-                                                 [:: pcon "hd" [:: pvar "A"; pvar "G"]; pvar "A";
-                                                 pcon "cmp"
-                                                      [:: pcon "wkn"
-                                                          [:: pcon "->"
-                                                              [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                          pcon "ext" [:: pvar "A"; pvar "G"]];
-                                                      pcon "wkn"
-                                                           [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                           pcon "ext"
-                                                                [:: pcon "->"
-                                                                    [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]];
-                                                                    pvar "A"]; pcon "ext" [:: pvar "A"; pvar "G"]]];
-                                                      pcon "ext" [:: pvar "A"; pvar "G"];
-                                                      pcon "ext"
-                                                           [:: pcon "->"
-                                                               [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                           pcon "ext" [:: pvar "A"; pvar "G"]];
-                                                      pcon "ext"
-                                                           [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                           pcon "ext"
-                                                                [:: pcon "->"
-                                                                    [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]];
-                                                                    pvar "A"]; pcon "ext" [:: pvar "A"; pvar "G"]]]];
-                                                 pcon "ext" [:: pvar "A"; pvar "G"];
-                                                 pcon "ext"
-                                                      [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                      pcon "ext"
-                                                           [:: pcon "->"
-                                                               [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                           pcon "ext" [:: pvar "A"; pvar "G"]]]]; pvar "A";
-                                             pcon "ext"
-                                                  [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                  pcon "ext"
-                                                       [:: pcon "->"
-                                                           [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                       pcon "ext" [:: pvar "A"; pvar "G"]]]];
-                                         pcon "ret"
-                                              [:: pcon "val_subst"
-                                                  [:: pcon "hd"
-                                                      [:: pcon "->"
-                                                          [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                      pcon "ext" [:: pvar "A"; pvar "G"]];
-                                                  pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                  pcon "wkn"
-                                                       [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                       pcon "ext"
-                                                            [:: pcon "->"
-                                                                [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                            pcon "ext" [:: pvar "A"; pvar "G"]]];
-                                                  pcon "ext"
-                                                       [:: pcon "->"
-                                                           [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                       pcon "ext" [:: pvar "A"; pvar "G"]];
-                                                  pcon "ext"
-                                                       [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                       pcon "ext"
-                                                            [:: pcon "->"
-                                                                [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                            pcon "ext" [:: pvar "A"; pvar "G"]]]];
-                                              pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                              pcon "ext"
-                                                   [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                                   pcon "ext"
-                                                        [:: pcon "->"
-                                                            [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                        pcon "ext" [:: pvar "A"; pvar "G"]]]];
-                                         pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A";
-                                         pcon "ext"
-                                              [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                              pcon "ext"
-                                                   [:: pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                                   pcon "ext" [:: pvar "A"; pvar "G"]]]]; pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                    pcon "ext"
-                                         [:: pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                         pcon "ext"
-                                              [:: pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                              pcon "ext" [:: pvar "A"; pvar "G"]]]]; pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"];
-                                pcon "ext"
-                                     [:: pcon "->" [:: pcon "->" [:: pcon "bot" [::]; pcon "->" [:: pcon "bot" [::]; pvar "B"]]; pvar "A"];
-                                     pcon "ext" [:: pvar "A"; pvar "G"]]]]
-          )).
-      compute in
-      Print stlc_bot_elab.
-      TODO: probable issue: step_redex not working on val_subst
-    
-  Eval compute in ((proj_r tgt lhs)).
-  Eval compute in (match (proj_r tgt lhs) with
-                   | pcon name s => Some s
-      | _ => None
-      end).
-  
-  compute in lhs.
-  compute in rhs.
-   == (proj_r tgt rhs)).
-  Eval compute in (do lhs <- Some (par_step_n tgt (compile src' pcc e1) 100);
-       rhs <- Some (par_step_n tgt (compile src' pcc e2) 100);
-       (*TODO: failing on terms that seem identical?*)
-       (*! eq_pf_irr tgt (proj_r tgt lhs) (proj_r tgt rhs);*)
-       (* attempt to reduce both sides to the same normal form *)
-       ret (n,trans lhs (sym rhs))::pcc).
-  let e1 := constr:(pcon "el_subst"%string
-         [:: pcon "app" [:: pvar "e'"; pvar "e"; pvar "B"; pvar "A"; pvar "G"]; 
-            pvar "B"; pvar "g"; pvar "G"; pvar "G'"]) in
-  let x := eval compute in (proj_r stlc_bot_elab (par_step_n stlc_bot_elab (compile stlc_elab cps_elab e1) 100))
-    in pose (t1 := x).
-
-
-   let e1 := constr:(pcon "app"
-         [:: pcon "el_subst" [:: pvar "e'"; pvar "A"; pvar "g"; pvar "G"; pvar "G'"];
-             pcon "el_subst"
-               [:: pvar "e"; pcon "->" [:: pvar "B"; pvar "A"]; pvar "g"; pvar "G"; pvar "G'"];
-             pvar "B"; pvar "A"; pvar "G'"]) in
-  let x := eval compute in (proj_r stlc_bot_elab (par_step_n stlc_bot_elab (compile stlc_elab cps_elab e1) 100))
-    in pose (t2 := x).
-   Eval compute in (eq_pf_irr stlc_bot_elab t1 t2).
-
-(*
-Lemma term_ok_con'
-  : forall (l : pf_lang) (c : pf_ctx) (name : str_eqType) (c' : named_list_set pf) (args : seq string) (t t' : pf) (s : seq pf),
-    (name, term_rule_pf c' args t) \in l -> args_ok l c s c' ->
-    t' = (pf_subst (with_names_from c' (map (proj_r l) s)) t) ->
-    term_ok l c (pcon name s) t'.
-Proof.
-Admitted.*)
-
-  
-Lemma cps_elab_wf : preserving_compiler stlc_bot_elab cps_elab stlc_no_beta_elab.
+Lemma cps_elab'_wf : preserving_compiler stlc_bot_elab cps_elab' stlc_elab.
 Proof.
   apply /check_preservingP; by compute.
 Qed.
-
-
-
-
-
-
-
-
-
-
-
-(*
-
-
-
-Goal true = false.
-  pose (p := (head (""%string,sort_rule_pf [::] [::]) (nth_tail 2 stlc_elab))).
-  compute in p.
-  match goal with
-    [ p:= (?s,term_le_pf ?cc ?ee1 ?ee2 ?tt)|-_] =>
-    pose (n := s); pose (c:=cc); pose (e1:= ee1); pose (e2:=ee2); pose (t:= tt)
-  end.
-  pose (src' := nth_tail 3 stlc_elab).
-  pose (pcc := cps_elab).
-  pose (tgt := stlc_bot_elab).
-  pose (lhs:=(par_step_n tgt (compile src' pcc e1) 100)).
-  pose (rhs := (par_step_n tgt (compile src' pcc e2) 100)).
-  compute in lhs.
-  compute in rhs.
-  
-  Eval compute in ((proj_r tgt lhs) == (proj_r tgt rhs)).
-  Eval compute in (do lhs <- Some (par_step_n tgt (compile src' pcc e1) 100);
-       rhs <- Some (par_step_n tgt (compile src' pcc e2) 100);
-       (*TODO: failing on terms that seem identical?*)
-       (*! eq_pf_irr tgt (proj_r tgt lhs) (proj_r tgt rhs);*)
-       (* attempt to reduce both sides to the same normal form *)
-       ret (n,trans lhs (sym rhs))::pcc).
-  let e1 := constr:(pcon "el_subst"%string
-         [:: pcon "app" [:: pvar "e'"; pvar "e"; pvar "B"; pvar "A"; pvar "G"]; 
-            pvar "B"; pvar "g"; pvar "G"; pvar "G'"]) in
-  let x := eval compute in (proj_r stlc_bot_elab (par_step_n stlc_bot_elab (compile stlc_elab cps_elab e1) 100))
-    in pose (t1 := x).
-
-
-   let e1 := constr:(pcon "app"
-         [:: pcon "el_subst" [:: pvar "e'"; pvar "A"; pvar "g"; pvar "G"; pvar "G'"];
-             pcon "el_subst"
-               [:: pvar "e"; pcon "->" [:: pvar "B"; pvar "A"]; pvar "g"; pvar "G"; pvar "G'"];
-             pvar "B"; pvar "A"; pvar "G'"]) in
-  let x := eval compute in (proj_r stlc_bot_elab (par_step_n stlc_bot_elab (compile stlc_elab cps_elab e1) 100))
-    in pose (t2 := x).
-   Eval compute in (eq_pf_irr stlc_bot_elab t1 t2).
-
-
-
-
-
-
-{
-    cbn. (*TODO: do these rules need eta? 
-           should have a baseline check that projections line up in elab.
-          *)
-    Ltac dive1 :=
-       eapply term_ok_con'; [rewrite <-named_list_lookup_err_inb;
-                          apply /eqP; by compute| |by compute];
-    repeat match goal with
-      [|-args_ok _ _ _ _]=>
-    first [ apply /check_args_okP; by compute
-          | constructor]
-           end.
-    repeat dive1.
-    cbn.
-    TODO: issue: using e in a position where ctx is G,A,(dneg A) instead of G,(dneg A)
-    eapply term_ok_con'.
-    {
-      rewrite <-named_list_lookup_err_inb.
-      apply /eqP.
-        by compute.
-          by compute.
-    }
-    2: by compute.
-    cbn.
-    constructor.
-    apply /check_args_okP; by compute.
-    eapply term_ok_con'; [rewrite <-named_list_lookup_err_inb;
-                          apply /eqP; by compute| |by compute].
-    repeat match goal with
-      [|-args_ok _ _ _ _]=>
-    first [ apply /check_args_okP; by compute
-          | constructor]
-    end.
-    
-    eapply term_ok_trans.
-    4:{
-      match goal with
-        [|- is_true (eq_pf_irr _ ?a ?b)] =>
-        assert (a=b);[ reflexivity| by compute]
-      end.
-    }
-    apply /check_term_okP; by compute.
-    apply /check_term_okP; by compute.
-    {
-      
-      match goal with
-        [|- is_true (eq_pf_irr _ ?a ?b)] =>
-        assert (a=b);[ reflexivity
-      end.
-      
-      
-      TODO: did I forget to do a subst somewhere?
-    }
-    
-    
-  2: apply /check_is_expP; by compute.
-  {
-    cbv -[compile_ctx stlc_bot_elab].
-    eapply term_ok_con'.
-    rewrite <-named_list_lookup_err_inb.
-    apply /eqP.
-      by compute.
-      by compute.
-    2:{ by compute. }
-    constructor.
-    constructor.
-    constructor.
-    
-    apply /check_args_okP; by compute.
-    {
-      cbn.
-      eapply term_ok_con'.
-      rewrite <-named_list_lookup_err_inb.
-      apply /eqP.
-        by compute.
-      by compute.
-      2:{ by compute. }
-      constructor.
-      constructor.
-      apply /check_args_okP; by compute.
-      {
-        cbn.
-      rewr
-      apply /check_term_okP; by compute.
-    eauto.
-    
- *)
