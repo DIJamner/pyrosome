@@ -58,28 +58,9 @@ Section CompileFn.
 End CompileFn.
 
 (*
-
-First we specify the properties in terms of compile,
-then inductively on the compiler. TODO: prove equivalent
-
- *)
-Definition sort_preserving_sem cmp l1 l2 :=
-  forall c t, sort_ok l1 c t ->
-              sort_ok l2 (compile_ctx l1 cmp c) (compile l1 cmp t).
-
-Definition term_preserving_sem cmp l1 l2 :=
-  forall c e t, term_ok l1 c e t ->
-                term_ok l2 (compile_ctx l1 cmp c) (compile l1 cmp e) (compile l1 cmp t).
-
-Definition args_preserving_sem cmp l1 l2 :=
-  forall c s c', args_ok l1 c s c' ->
-                 args_ok l2 (compile_ctx l1 cmp c) (compile_args l1 cmp s) (compile_ctx l1 cmp c').
-
-
-Definition semantics_preserving cmp l1 l2 :=
-  sort_preserving_sem cmp l1 l2
-  /\ term_preserving_sem cmp l1 l2
-  /\ args_preserving_sem cmp l1 l2.
+First we define an inductively provable (and in fact decidable) property 
+of elaborated compilers.
+*)
 
 (*TODO: this is an equal or stronger property (which?); includes le principles;
   formalize the relationship to those above and le semantic statements *)
@@ -237,3 +218,42 @@ Proof.
     end ||
         match goal with [|-?P] => idtac P end)).
 Qed.
+
+
+
+(*
+We then specify the semantic properties of compilation we expect.
+ TODO: prove equivalent
+ *)
+Definition sort_preserving_sem cmp l1 l2 :=
+  forall c t, sort_ok l1 c t ->
+              sort_ok l2 (compile_ctx l1 cmp c) (compile l1 cmp t).
+
+Definition term_preserving_sem cmp l1 l2 :=
+  forall c e t, term_ok l1 c e t ->
+                term_ok l2 (compile_ctx l1 cmp c) (compile l1 cmp e) (compile l1 cmp t).
+
+Definition args_preserving_sem cmp l1 l2 :=
+  forall c s c', args_ok l1 c s c' ->
+                 args_ok l2 (compile_ctx l1 cmp c) (compile_args l1 cmp s) (compile_ctx l1 cmp c').
+
+(* TODO: should need lemma about is_exp preservation *)
+
+Lemma inductive_implies_semantic_sort_ok cmp ls lt
+  : lang_ok ls -> lang_ok lt -> preserving_compiler lt cmp ls ->
+    sort_preserving_sem cmp ls lt
+with inductive_implies_semantic_term_ok cmp ls lt
+  : lang_ok ls -> lang_ok lt -> preserving_compiler lt cmp ls ->
+    term_preserving_sem cmp ls lt
+with inductive_implies_semantic_args_ok cmp ls lt
+  : lang_ok ls -> lang_ok lt -> preserving_compiler lt cmp ls ->
+    args_preserving_sem cmp ls lt.
+Proof.
+  {
+    unfold sort_preserving_sem.
+    intros until t.
+    destruct t; intro t_ok; inversion t_ok; subst; clear t_ok.
+    {
+      cbn.
+      (*TODO: need subst ok*)
+      apply sort_subst_ok.

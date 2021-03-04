@@ -45,6 +45,20 @@ Proof.
 Qed.          
   
 (*TODO: move to utils *)
+Lemma named_list_lookup_err_none {A} (l : named_list A) n
+  : n \notin (map fst l) ->
+    named_list_lookup_err l n = None.
+Proof.
+  elim: l; simpl; auto.
+  intros; break; simpl.
+  rewrite in_cons in H0.
+  move: H0 => /norP []; simpl; intros.
+  apply negbTE in a0;
+    change (n =? s = false)%string in a0;
+    rewrite a0.
+  auto.
+Qed.
+  
 Lemma named_list_lookup_err_inb {A : eqType} l x (v:A)
   : all_fresh l ->
     named_list_lookup_err l x == Some v = ((x,v) \in l).
@@ -73,8 +87,17 @@ Proof.
       simpl.
       simpl in IHl.
       rewrite <- IHl; auto.
-Admitted.
-      
+      rewrite named_list_lookup_err_none; auto.
+    }
+  }
+  {
+      rewrite in_cons.
+      cbn.
+      rewrite <- HeqH1.
+      cbn.
+      auto.
+  }
+Qed.
 
 Lemma named_list_lookup_none {A:eqType} l s (a:A)
   : None = named_list_lookup_err l s ->
@@ -103,39 +126,190 @@ Qed.
 Section TermsAndRules.
   Context (l : pf_lang).
 
-  (*TODO: rename these to dom and codom? *)
+  Inductive is_dom : pf -> pf -> Prop :=
+  | dom_var x : is_dom (pvar x) (pvar x)
+  | dom_con n pl pl_l
+    : List.Forall2 is_dom pl pl_l ->
+      is_dom (pcon n pl) (pcon n pl_l)
+  | dom_ax_sort n pl pl_l c p' p_r
+    : List.Forall2 is_dom pl pl_l ->
+      (n, sort_le_pf c p' p_r) \in l ->
+      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
+  | dom_ax_term n pl pl_l c p' p_r t
+    : List.Forall2 is_dom pl pl_l ->
+      (n, term_le_pf c p' p_r t) \in l ->
+      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
+  | dom_sym p p_r
+    : is_codom p p_r ->
+      is_dom (sym p) p_r
+  | dom_trans p1 p2 p1_l
+    : is_dom p1 p1_l ->
+      is_dom (trans p1 p2) p1_l
+  | dom_conv pt p p_l
+    : is_dom p p_l ->
+      is_dom (conv pt p) (conv pt p_l)
+  with is_codom : pf -> pf -> Prop :=
+  | codom_var x : is_codom (pvar x) (pvar x)
+  | codom_con n pl pl_r
+    : List.Forall2 is_codom pl pl_r ->
+      is_codom (pcon n pl) (pcon n pl_r)
+  | codom_ax_sort n pl pl_r c p' p_l
+    : List.Forall2 is_dom pl pl_r ->
+      (n, sort_le_pf c p_l p') \in l ->
+      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
+  | codom_ax_term n pl pl_r c p' p_l t
+    : List.Forall2 is_dom pl pl_r ->
+      (n, term_le_pf c p_l p' t) \in l ->
+      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
+  | codom_sym p p_r
+    : is_dom p p_r ->
+      is_codom (sym p) p_r
+  | codom_trans p1 p2 p2_r
+    : is_codom p2 p2_r ->
+      is_codom (trans p1 p2) p2_r
+  | codom_conv pt p p_r
+    : is_codom p p_r ->
+      is_codom (conv pt p) (conv pt p_r).
+
+  (* assumes ok inputs
+    equivalent to exists p', is_codom p1 p' /\ is_dom p2 p'; TODO: prove 
+    Note that this judgment is wrt the left-to-right orientation
+    of equivalences
+   TODO: sym is tricky; better to just use dom/codom?
+  Inductive can_compose : pf -> pf -> Prop :=
+  | can_compose_var x : can_compose (pvar x) (pvar x)
+  | can_compose_con n pl pl_l
+    : List.Forall2 can_compose pl pl_l ->
+      can_compose (pcon n pl) (pcon n pl_l)
+  | can_compose_ax_sort_l n pl c p p' p_r
+    : (n, sort_le_pf c p p') \in l ->
+      can_compose (pf_subst (with_names_from c pl) p') p_r ->
+      can_compose (ax n pl) p_r
+  | can_compose_ax_sort_r n pl c p p' p_l
+    : (n, sort_le_pf c p p') \in l ->
+      can_compose p_l (pf_subst (with_names_from c pl) p) ->
+      can_compose p_l (ax n pl)
+  | can_compose_ax_term_l n pl c p p' p_r t
+    : (n, term_le_pf c p p' t) \in l ->
+      can_compose (pf_subst (with_names_from c pl) p') p_r ->
+      can_compose (ax n pl) p_r
+  | can_compose_ax_term_r n pl c p p' p_l t
+    : (n, term_le_pf c p p' t) \in l ->
+      can_compose p_l (pf_subst (with_names_from c pl) p) ->
+      can_compose p_l (ax n pl)
+  | can_compose_sym_l p p'
+    : can_compose p' p ->
+      can_compose (sym p) p'
+  | can_compose_trans p1 p2 p1_l
+    : can_compose p1 p1_l ->
+      can_compose (trans p1 p2) p1_l
+  | can_compose_conv pt p p_l
+    : can_compose p p_l ->
+      can_compose (conv pt p) (conv pt p_l).
+   *)
+
+  (*TODO: move to OptionMonad *)
+  Import OptionMonad.
+  Fixpoint Mmap {A B} (f : A -> option B) (l_a : list A) : option (list B) :=
+    match l_a with
+    | [::] => do ret [::]
+    | a::l_a' =>
+      do l_b' <- Mmap f l_a';
+         b <- f a;
+         ret (b::l_b')
+    end.              
+
+  Section DomInnerLoop.
+    (*For some reason I need two copies of Mmap
+      for the mutual recursion to go through below.
+     *)
+    Context (dom : pf -> option pf)
+            (codom : pf -> option pf).
+    Fixpoint dom_args (pl : list pf) :=
+      match pl with
+      | [::] => do ret [::]
+      | a::pl' =>
+        do pl'_dom <- dom_args pl';
+           b <- dom a;
+           ret (b::pl'_dom)
+      end.
+
+    Fixpoint codom_args (pl : list pf) :=
+         match pl with
+         | [::] => do ret [::]
+         | a::pl' =>
+           do pl'_codom <- codom_args pl';
+              b <- codom a;
+              ret (b::pl'_codom)
+         end.
+  End DomInnerLoop.
+    
   (*Pressupposition: p is ok *)
-  Fixpoint proj_l (p:pf) :=
+  Fixpoint dom (p:pf) :=
     match p with
-    | pvar x => (pvar x)
-    | pcon name pl => pcon name (map proj_l pl)
+    | pvar x => do ret (pvar x)
+    | pcon name pl => omap (pcon name) (dom_args dom pl)
     | ax name pl =>
       match named_list_lookup_err l name with
       | Some (sort_le_pf c p' _)
       | Some (term_le_pf c p' _ _) =>
-        pf_subst (with_names_from c (map (proj_l) pl)) p'
-      | _ => pcon "ERR" [::]
+        do pl' <- dom_args dom pl;
+        ret pf_subst (with_names_from c pl') p'
+      | _ => None
       end
-    | sym p => proj_r p
-    | trans p1 p2 => proj_l p1
-    | conv pt p' => conv pt (proj_l p')
-    end
-  (*Pressupposition: p is ok *)
-  with proj_r (p:pf) :=
+    | sym p => codom p
+    | trans p1 p2 => dom p1
+    | conv pt p' => omap (conv pt) (dom p')
+    end               
+ (*Pressupposition: p is ok *)
+  with codom (p:pf) :=
     match p with
-    | pvar x => (pvar x)
-    | pcon name pl => pcon name (map proj_r pl)
+    | pvar x => do ret (pvar x)
+    | pcon name pl => omap (pcon name) (codom_args codom pl)
     | ax name pl =>
       match named_list_lookup_err l name with
       | Some (sort_le_pf c _ p')
       | Some (term_le_pf c _ p' _) =>
-        pf_subst (with_names_from c (map (proj_r) pl)) p'
-      | _ => pcon "ERR" [::]
+        do pl' <- codom_args codom pl;
+        ret pf_subst (with_names_from c pl') p'
+      | _ => None
       end
-    | sym p => proj_l p
-    | trans p1 p2 => proj_r p2
-    | conv pt p' => conv pt (proj_r p')
+    | sym p => dom p
+    | trans p1 p2 => codom p2
+    | conv pt p' => omap (conv pt) (codom p')
     end.
+
+  Lemma is_domP p p' : reflect (is_dom p p') (dom p == Some p')
+  with is_codomP p p' : reflect (is_dom p p') (codom p == Some p').
+  Proof.
+    all: destruct p; destruct p'; cbn;
+      repeat match goal with
+             | [H : true = false |- _] => inversion H
+             | [H : context [(?s =? ?s)%string] |- _] =>
+               rewrite eqb_refl in H
+            | [|- ~ _] => let fls := fresh "fls" in intro fls; inversion fls; subst; clear fls
+            | [|- is_dom _ _] => constructor
+            | [|- reflect _ true] => constructor
+            | [|- reflect _ false] => constructor
+            | [|- reflect _ (?a =? ?b)%string] =>
+              let Heq := fresh "Heq" in
+              my_case Heq (a =? b)%string;
+                [change (is_true (a == b)) in Heq;
+                 move: Heq => /eqP ->|]
+             end.
+    Admitted.
+      
+                      
+  (*TODO: relate dom to is_dom on ok terms
+    TODO: should dom be partial?
+    prob. want Inhabited typeclass first,
+    maybe this one too:
+    Class SyntaxWithPredicate t :=
+    {
+      inhabited :> Inhabited t;
+      is_ok : t -> Prop
+    }
+   *)
 
   (* Strips components of the proof that we consider
      irrelevant for the purpose of equality.
@@ -143,36 +317,6 @@ Section TermsAndRules.
      Probably not necessary as long as this is only
      used on projections
    *)
-  Fixpoint strip_irrelevant (e : pf) : pf :=
-    match e with
-    | pvar x => (pvar x)
-    | pcon name pl => 
-      match named_list_lookup_err l name with
-      | Some (sort_rule_pf c args)
-      | Some (term_rule_pf c args _) =>
-        match get_subseq args (with_names_from c (map (proj_l) pl)) with
-        | Some pl' => pcon name (map snd pl')
-        | None => pcon "ERR" [::]
-        end
-      | _ => pcon name (map strip_irrelevant pl)
-      end
-    | ax name pl => ax name (map strip_irrelevant pl)
-    | sym p => sym (strip_irrelevant p)
-    | trans p1 p2 => trans (strip_irrelevant p1) (strip_irrelevant p2)
-    | conv _ p' => (strip_irrelevant p')
-    end.
-
-  (* TODO: this is a shortcut; it's probably safe but should
-     be generalized at some point.
-     Current potential issues: 
-     -sym, trans in sorts
-     Should definitely be safe when used on projections
-
-    TODO: define (proj_l a `eq_pf_irr` proj_r b) as a
-    relation for ease-of-proof?
-   *)
-  Definition eq_pf_irr (e1 e2 : pf): bool :=
-    (strip_irrelevant e1) == (strip_irrelevant e2).
   
   (*
     Judgments for checking proofs of relations between programs.
@@ -195,31 +339,34 @@ Section TermsAndRules.
       (name, (sort_rule_pf c' args)) \in l ->
       args_ok c s c' ->
       sort_ok c (pcon name s)
-  | sort_ok_trans : forall c t1 t2,
+  | sort_ok_trans : forall c t1 t t2,
       sort_ok c t1 ->
       sort_ok c t2 ->
-      eq_pf_irr (proj_r t1) (proj_l t2) ->
+      is_codom t1 t ->
+      is_dom t2 t ->
       sort_ok c (trans t1 t2)
   | sort_ok_sym : forall c t, sort_ok c t -> sort_ok c (sym t)
   with term_ok : pf_ctx -> pf -> pf -> Prop :=
-  | term_ok_ax : forall c c' name e1 e2 t s,
+  | term_ok_ax : forall c c' name e1 e2 t s t',
       (name, term_le_pf c' e1 e2 t) \in l ->
       args_ok c s c' ->
       (*non-obvious fact: the sort may not be a wfness proof if we don't project;
         may be a non-identity relation due to s
        *)
-      term_ok c (ax name s) (proj_r (pf_subst (with_names_from c' s) t))
-  | term_ok_con : forall c name c' args t s,
+      is_dom (pf_subst (with_names_from c' s) t) t' ->
+      term_ok c (ax name s) t'
+  | term_ok_con : forall c name c' args t t' s,
       (name, (term_rule_pf c' args t)) \in l ->
       args_ok c s c' ->
+      is_dom (pf_subst (with_names_from c' s) t) t' ->
       (* same as above *)
-      term_ok c (pcon name s) (proj_r (pf_subst (with_names_from c' s) t))
-  | term_ok_trans : forall c e1 t1 e2 t2,
-      term_ok c e1 t1 ->
-      term_ok c e2 t2 ->
-      eq_pf_irr (proj_r e1) (proj_l e2) ->
-      eq_pf_irr t1 t2 ->
-      term_ok c (trans e1 e2) t2
+      term_ok c (pcon name s) t'
+  | term_ok_trans : forall c e1 e e2 t,
+      term_ok c e1 t ->
+      term_ok c e2 t ->
+      is_codom e1 e ->
+      is_dom e2 e ->
+      term_ok c (trans e1 e2) t
   | term_ok_sym : forall c e t, term_ok c e t -> term_ok c (sym e) t
   | term_ok_var : forall c x t,
       (x,t) \in c ->
@@ -236,11 +383,12 @@ want to have output type (proj_r? t'), not trans.
 The theoretically proper thing to do is to give computation rules to trans, sym,
 e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
    *)
-  | term_ok_conv : forall c e t t',
-      sort_ok c t' ->
+  | term_ok_conv : forall c e t tp t',
+      sort_ok c tp ->
       term_ok c e t ->
-      eq_pf_irr t (proj_l t') ->
-      term_ok c (conv t' e) (proj_r t')
+      is_dom tp t ->
+      is_codom tp t' ->
+      term_ok c (conv tp e) t'
   with args_ok : pf_ctx -> list pf -> pf_ctx -> Prop :=
   | args_ok_nil : forall c, args_ok c [::] [::]
   | args_ok_cons : forall c s c' name e t,
@@ -407,7 +555,10 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
       | trans p1 p2 =>
         (check_sort_ok' p1) &&
         (check_sort_ok' p2) &&
-        (eq_pf_irr (proj_r p1) (proj_l p2))
+        (*TODO: will need to show that they are not none when the sorts are okay
+          because I am using the ==, but it reads more nicely this way
+         *)
+        (codom p1 == dom p2) 
       | conv _ _ => false
       | pvar _ => false
       end.
@@ -418,7 +569,7 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
 
   (*computes the sort of the term for any ok term *)
   (*TODO: unnecessary*)
-  Fixpoint sort_of_term (c : pf_ctx) (e : pf) : pf :=
+  (*Fixpoint sort_of_term (c : pf_ctx) (e : pf) : pf :=
     let default := ax "ERR" [::] in
     match e with
     | pvar x =>
@@ -443,10 +594,8 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
       TODO: figure out whether this matters when all ok terms have is_exp sorts
      *)
     | trans p1 p2 => sort_of_term c p2
-    | conv pt p' => proj_r pt
-    end.
-
-  Import OptionMonad.
+    | conv pt p' => dom pt
+    end. *)
   
   Fixpoint synth_term_ok (c : pf_ctx) e {struct e} : option pf :=
     let check_term_ok e t := synth_term_ok c e == Some t in 
@@ -455,23 +604,27 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
     | pcon name pl =>
       do (term_rule_pf c' _ t') <- named_list_lookup_err l name;
          ! check_args_ok' check_term_ok pl c';
-         ret (proj_r (pf_subst (with_names_from c' pl) t'))
+         d <-(codom (pf_subst (with_names_from c' pl) t'));
+         ret d
     | ax name pl =>
       do (term_le_pf c' _ _ t') <- named_list_lookup_err l name;
          ! check_args_ok' check_term_ok pl c';
-         ret (proj_r (pf_subst (with_names_from c' pl) t'))
+         d <-(codom (pf_subst (with_names_from c' pl) t'));
+         ret d
     | sym p => synth_term_ok c p
     | trans p1 p2 =>
       do t1 <- synth_term_ok c p1;
          t2 <- synth_term_ok c p2;
-         ! eq_pf_irr (proj_r p1) (proj_l p2);
-         ! eq_pf_irr t1 t2;
+         ! codom p1 == dom p2;
+         ! t1 == t2;
          ret t2
     | conv pt p' =>
       do t1 <- synth_term_ok c p';
-         ! eq_pf_irr t1 (proj_l pt);
          ! check_sort_ok' check_term_ok pt;
-         ret (proj_r pt)
+         d <- dom pt;
+         ! t1 == d;
+         cd <- codom pt;
+         ret cd
   end.
 
   Definition check_term_ok c e t := synth_term_ok c e == Some t.
@@ -493,6 +646,7 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
         all_fresh c ->
         reflect (sort_ok c t) (check_sort_ok c t).
   Proof using.
+    (* TODO: may need updates for == vs eq_pf_irr and dom/codom
     all: unfold check_sort_ok in *; unfold check_args_ok in *; unfold check_term_ok in *.
     all: intros frl frc.
     all: match goal with
@@ -623,7 +777,7 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
    (* TODO: break 2 directions up to make the fixpoint go through?
                 reflection harder to reason about wrt termination
       prob not necessary w/ right recursion*)
-    (*Guarded.*)
+    (*Guarded.*)*)
   Admitted.
 
   Fixpoint check_ctx_ok c :=
@@ -820,3 +974,185 @@ Proof.
   induction l; break; simpl in *;
     intro H; inversion H; subst; break_goal; auto.
 Qed.  
+
+Ltac destruct_is_dom e :=
+      destruct e; intros;
+      [ eapply dom_var
+      | eapply dom_con
+      | eapply dom_ax_sort
+      | eapply dom_ax_term
+      | eapply dom_sym
+      | eapply dom_trans
+      | eapply dom_conv].
+Ltac destruct_is_codom e :=
+      destruct e; intros;
+      [ eapply codom_var
+      | eapply codom_con
+      | eapply codom_ax_sort
+      | eapply codom_ax_term
+      | eapply codom_sym
+      | eapply codom_trans
+      | eapply codom_conv].
+
+Lemma is_dom_monotonicity t t' n r l
+  : is_dom l t t' -> is_dom ((n,r)::l) t t'
+with is_codom_monotonicity t t' n r l
+     : is_codom l t t' -> is_codom ((n,r)::l) t t'.
+Proof.
+    
+    all:intro d; first [destruct_is_dom d | destruct_is_codom d];
+      repeat match goal with
+             |[H : List.Forall2 _ _ _ |-_]=>
+              induction H; constructor; eauto
+            |[|- is_true (_ \in _::_)]=>
+             rewrite in_cons; apply /orP; right; eauto
+             end; eauto.
+Qed.
+
+
+Ltac destruct_term_ok e :=
+  destruct e; intros;
+  [ eapply term_ok_ax
+  | eapply term_ok_con
+  | eapply term_ok_trans
+  | eapply term_ok_sym
+  | eapply term_ok_var
+  | eapply term_ok_conv].
+
+
+Ltac destruct_sort_ok s :=
+  destruct s; intros;
+  [ eapply sort_ok_ax
+  | eapply sort_ok_con
+  | eapply sort_ok_trans
+  | eapply sort_ok_sym].
+
+Fixpoint sort_lang_monotonicity l c t name r
+     (les : sort_ok l c t) {struct les}
+     : sort_ok ((name,r)::l) c t
+with term_lang_monotonicity l c e t name r
+     (letm: term_ok l c e t) {struct letm}
+     : term_ok ((name,r)::l) c e t
+with args_lang_monotonicity l c al c' name r
+     (lea : args_ok l c al c') {struct lea}
+     : args_ok ((name,r)::l) c al c'.
+Proof.
+  {
+    destruct_sort_ok les; 
+      repeat match goal with
+             |[|- is_true (_ \in _::_)]=>
+              rewrite in_cons; apply /orP; right; eauto
+             end; eauto using is_dom_monotonicity, is_codom_monotonicity.
+  }
+  {
+      destruct_term_ok letm;
+      repeat match goal with
+             |[|- is_true (_ \in _::_)]=>
+              rewrite in_cons; apply /orP; right; eauto
+             end; eauto using is_dom_monotonicity, is_codom_monotonicity.
+  }
+  {
+    destruct lea; constructor; eauto.
+  }
+Qed.
+
+(*TODO: move to pf.v*)
+Lemma pf_subst_nil p : pf_subst [::] p = p.
+Proof.
+  induction p; simpl; auto.
+  { revert H; induction l; intros; simpl in *; break; simpl in *; auto.
+    f_equal; f_equal; auto.
+    pose proof (IHl H0) as H'; inversion H'.
+    rewrite H2.
+    assumption.
+  }
+  { revert H; induction pfs; intros; simpl in *; break; simpl in *; auto.
+    f_equal; f_equal; auto.
+    pose proof (IHpfs H0) as H'; inversion H'.
+    rewrite H2.
+    assumption.
+  }
+  {
+    rewrite IHp; reflexivity.
+  }
+  {
+    rewrite IHp1 IHp2; reflexivity.
+  }
+  {
+    rewrite IHp1 IHp2; reflexivity.
+  }
+Qed.
+
+Lemma map_pf_subst_nil pl : map (pf_subst [::]) pl = pl.
+Proof.
+  induction pl; simpl; rewrite ?pf_subst_nil; f_equal; auto.
+Qed.
+
+Lemma is_dom_subst_monotonicity l t t' s s'
+  : is_dom l t t' -> List.Forall2 (fun p1 p2 => p1.1 = p2.1 /\ is_dom l p1.2 p2.2) s s' -> is_dom l (pf_subst s t) (pf_subst s' t')
+with is_codom_subst_monotonicity l t t' s s'
+     : is_codom l t t' -> List.Forall2 (fun p1 p2 => p1.1 = p2.1 /\ is_codom l p1.2 p2.2) s s' -> is_codom l (pf_subst s t) (pf_subst s' t').
+Proof.
+  all: intro d; destruct d; simpl; try solve [constructor; eauto].
+  {
+    intro lfs; induction lfs;  break; simpl in *; subst; [constructor | case_match; auto].    
+  }
+  {
+    intro lfs; constructor.
+    induction H; break; simpl in *; subst; constructor; auto.
+  }
+  {
+    admit
+    (*TODO: subst distribution require ok terms *).
+  }
+  {
+    admit
+    (*TODO: subst distribution require ok terms *).
+  }
+  {
+    constructor.
+    eauto.
+    TODO: issue;
+  sym needs List.forall2 for codom;
+  better to compute dom/codom or add s'' the codom?
+  }
+  
+Qed.*)
+
+(*TODO: figure out which ctxs need to be ok (could be all)
+*)
+Lemma sort_subst_monotonicity l c t c' s
+  : sort_ok l c t -> ctx_ok l c -> ctx_ok l c' ->
+    subst_ok l c' s c ->
+    sort_ok l c' (pf_subst s t)
+with term_subst_monotonicity l c e t c' s t'
+  : term_ok l c e t -> ctx_ok l c -> ctx_ok l c' ->
+    subst_ok l c' s c ->
+    is_dom l (pf_subst s t) t' ->
+    term_ok l c' (pf_subst s e) t'
+with args_subst_monotonicity l c ss c' s c''
+  : args_ok l c ss c' -> ctx_ok l c -> ctx_ok l c'' ->
+    subst_ok l c'' s c ->
+    args_ok l c'' (map (pf_subst s) ss) c'.
+Proof.
+  {
+    intro sok;
+      destruct_sort_ok sok; fold pf_subst; eauto.
+    TODO: need monotonicity for dom/codom too again
+    eapply args_subst_monotonicity.
+    repeat match goal with
+             |[|- is_true (_ \in _::_)]=>
+              rewrite in_cons; apply /orP; right; eauto
+             end; eauto using is_dom_monotonicity, is_codom_monotonicity.
+  }
+  {
+      destruct_term_ok letm;
+      repeat match goal with
+             |[|- is_true (_ \in _::_)]=>
+              rewrite in_cons; apply /orP; right; eauto
+             end; eauto using is_dom_monotonicity, is_codom_monotonicity.
+  }
+  {
+    destruct lea; constructor; eauto.
+  }
+Qed.

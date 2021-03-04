@@ -20,9 +20,4 @@ src/named/RuleStep.v
 src/named/SimpleCPS.v
 src/named/SimpleVSubst.v
 src/named/SimpleVSTLC.v
-src/named/Interactive.v
-src/named/Subst.v
-src/named/STLC.v
-src/named/Let.v
-src/named/STLC_bot.v
-src/named/LetK.v
+src/named/SimpleVCPS.v
