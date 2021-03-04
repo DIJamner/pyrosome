@@ -561,9 +561,17 @@ Proof.
   {  reduce 100; le_reflexivity. }
   {  reduce 100; le_reflexivity. }
   {  reduce 100; le_reflexivity. }
-  { cbn.
+  {
+    match goal with
+      [|- is_pf_of_le ?l ?p ?t1 ?t2] =>
+      let t1' := eval compute in t1 in
+      let t2' := eval compute in t2 in
+      change_no_check (is_pf_of_le l p t1' t2')
+    end.
+    repeat first [le_rewrite "app_subst"
+                 | le_rewrite "lambda_subst"
+                 | le_rewrite "el_subst_ret"].
     reduce 100; le_reflexivity.
-    (*TODO: remove the cbn*)
   }
   {
     reduce 100; le_reflexivity.
