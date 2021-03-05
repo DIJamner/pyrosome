@@ -228,7 +228,7 @@ Fixpoint simple_subst_to_pf_lang (l : lang) : option pf_lang :=
 
 Definition vstlc_elab :=
   Eval compute in
-  match simple_subst_to_pf_lang (nth_tail 0 subst_lang) with
+  match simple_subst_to_pf_lang stlc with
   | Some l => l
   | None => [::]
   end.
