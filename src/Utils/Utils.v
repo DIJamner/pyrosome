@@ -596,3 +596,89 @@ Ltac my_case eqnname exp :=
   let casevar := fresh "casevar" in
   remember exp as casevar eqn:eqnname;
   destruct casevar; symmetry in eqnname.
+
+
+
+Definition is_included {A: eqType} (l1 l2 : list A) :=
+  forall x, x \in l1 -> x \in l2.
+(*TODO: relate*)
+Fixpoint included {A: eqType} (l1 l2 : list A): bool :=
+  match l1 with
+  | [::] => true
+  | a::l1' =>
+    (a\in l2) && (included l1' l2)
+  end.
+
+(*
+Lemma is_includedP {A:eqType} (l1 l2 : list A)
+  : reflect (is_included l1 l2) (included l1 l2).
+Proof.
+  unfold is_included.
+  induction l1; simpl.
+  { constructor; auto. }
+  {
+    solve_reflect_norec.    
+    my_case H (included l1 l2); simpl; auto.
+    all: constructor.
+    { intro x; rewrite in_cons.
+      move /orP => [/eqP ->|].
+      rewrite <-Heqb; done.
+      generalize x.
+      apply /IHl1.
+      done.
+    }
+    {
+      intro fls; specialize (fls a);
+      rewrite in_cons in fls.
+      rewrite <- Heqb in fls.
+      rewrite /eq_refl in fls.
+Admitted.
+ *)
+
+Context (is_includedP
+         : forall {A:eqType} (l1 l2 : list A),
+            reflect (is_included l1 l2) (included l1 l2)).
+
+Lemma included_rest {A:eqType} l1 l2 (a:A)
+  : included l1 l2 -> included l1 (a::l2).
+Proof.
+  move /is_includedP; intros.
+  apply /is_includedP.
+  unfold is_included in *.
+  intros; rewrite in_cons; apply /orP; right; eauto.
+Qed.
+
+
+Lemma included_app {A:eqType} (l1 l1' l2 : list A)
+  : included (l1 ++ l1') l2 = included l1 l2 && included l1' l2.
+Proof.
+  induction l1; simpl; auto.
+  rewrite <- Bool.andb_assoc.
+  f_equal.
+  assumption.
+Qed.
+
+
+(*TODO: move to utils*)
+(*redefined to use the right concatenation*)
+Definition flat_map {A B} (f : A -> list B) :=
+  fix flat_map l :=
+  match l with
+  | [::] => [::]
+  | x :: t => (f x ++ flat_map t)
+  end.
+
+Lemma included_flatmap {A B:eqType} l1 l2 (f : A -> list B)
+    : (forall x, x \in l1 -> included (f x) l2)->
+      included (flat_map f l1) l2.
+Proof.  
+  induction l1; simpl; auto.
+  intro fall.
+  rewrite included_app; eauto.
+  apply /andP; split.
+  apply fall; apply mem_head.
+  apply IHl1; intros.
+  apply fall.
+  rewrite in_cons.
+  apply /orP; right; auto.
+Qed.

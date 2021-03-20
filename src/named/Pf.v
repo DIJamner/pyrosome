@@ -908,3 +908,23 @@ Module Notations.
   Check (as_ctx {{pc "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}).
 
 End Notations.
+
+Inductive ws_pf {c : list string} : pf -> Prop :=
+| ws_var x : x \in c -> ws_pf (pvar x)
+| ws_con n l : List.Forall ws_pf l -> ws_pf (pcon n l)
+| ws_ax n l : List.Forall ws_pf l -> ws_pf (ax n l)
+| ws_sym p : ws_pf p -> ws_pf (sym p)
+| ws_trans p1 p2 : ws_pf p1 -> ws_pf p2 -> ws_pf (trans p1 p2)
+| ws_conv p1 p2 : ws_pf p1 -> ws_pf p2 -> ws_pf (conv p1 p2).
+
+Arguments ws_pf : clear implicits.
+
+Fixpoint fv (p : pf) :=
+  match p with
+  | pvar x => [:: x]
+  | pcon _ l => flat_map fv l
+  | ax _ l => flat_map fv l
+  | sym p => fv p
+  | trans p1 p2 => fv p1 ++ fv p2
+  | conv p1 p2 => fv p1 ++ fv p2
+  end.

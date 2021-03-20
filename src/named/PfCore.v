@@ -6,6 +6,7 @@ Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Utils.
 From Named Require Import Pf.
+From Named Require Export PfCoreDefs.
 
 Require Import String.
 
@@ -618,40 +619,9 @@ Section TermsAndRules.
     }
   Qed.
   Hint Resolve subst_is_exp : pfcore.
-  
-  Lemma dom_codom_is_exp p
-    : (forall p', is_dom p p' -> is_exp p')
-      /\ (forall p', is_codom p p' -> is_exp p').
-  Proof.
-    induction p; split; intros p' H'; inversion H'; clear H'; crush;
-      try constructor.
-    {
-      revert dependent l0;
-        intro l0; revert pl_l;
-          induction l0; simpl;
-            eauto;
-            intro_to List.Forall2;
-            intro lfa; safe_invert lfa;
-              constructor;
-              intuition; auto.
-    }
-    {
-      revert dependent l0;
-        intro l0; revert pl_r;
-          induction l0; simpl;
-            eauto;
-            intro_to List.Forall2;
-            intro lfa; safe_invert lfa;
-              constructor;
-              intuition; auto.
-    }
-    {
-      intuition;
-      apply subst_is_exp.
-      {
-        TODO: need lang ok
-      eauto.
 
+  (************************************************
+****************************************************)
       
   TODO: need rhs is_exp
   Lemma ax_not_dom p n pfs : ~is_dom p (ax n pfs).
@@ -1462,6 +1432,44 @@ Proof using.
 Qed.
 
 
+
+Lemma dom_codom_is_exp p
+  : (forall p', is_dom p p' -> is_exp p')
+    /\ (forall p', is_codom p p' -> is_exp p').
+Proof.
+  induction p; split; intros p' H'; inversion H'; clear H'; crush;
+    try constructor.
+  {
+    revert dependent l0;
+      intro l0; revert pl_l;
+        induction l0; simpl;
+          eauto;
+          intro_to List.Forall2;
+          intro lfa; safe_invert lfa;
+            constructor;
+            intuition; auto.
+  }
+  {
+    revert dependent l0;
+    intro l0; revert pl_r;
+    induction l0; simpl;
+    eauto;
+    intro_to List.Forall2;
+    intro lfa; safe_invert lfa;
+    constructor;
+    intuition; auto.
+  }
+  {
+    intuition;
+    apply subst_is_exp.
+    {
+      TODO: need lang ok
+                 eauto.
+
+
+      (***********************************************************
+********************************************************************)
+
 Lemma check_lang_okP l : reflect (lang_ok l) (check_lang_ok l).
 Proof using.
   induction l; intros; break; simpl; repeat constructor;
@@ -1813,63 +1821,7 @@ Fixpoint included {A: eqType} (l1 l2 : list A): bool :=
     (a\in l2) && (included l1' l2)
   end.
 
-Lemma is_includedP {A:eqType} (l1 l2 : list A)
-  : reflect (is_included l1 l2) (included l1 l2).
-Proof.
-  unfold is_included.
-  induction l1; simpl.
-  { constructor; auto. }
-  {
-    solve_reflect_norec.    
-    my_case H (included l1 l2); simpl; auto.
-    all: constructor.
-    { intro x; rewrite in_cons.
-      move /orP => [/eqP ->|].
-      rewrite <-Heqb; done.
-      generalize x.
-      apply /IHl1.
-      done.
-    }
-    {
-      intro fls; specialize (fls a);
-      rewrite in_cons in fls.
-      rewrite <- Heqb in fls.
-      rewrite /eq_refl in fls.
-Admitted.
 
-Lemma included_rest {A:eqType} l1 l2 (a:A)
-  : included l1 l2 -> included l1 (a::l2).
-Proof.
-  move /is_includedP; intros.
-  apply /is_includedP.
-  unfold is_included in *.
-  intros; rewrite in_cons; apply /orP; right; eauto.
-Qed.
-
-
-Lemma included_app {A:eqType} (l1 l1' l2 : list A)
-  : included (l1 ++ l1') l2 = included l1 l2 && included l1' l2.
-Proof.
-  induction l1; simpl; auto.
-  rewrite <- Bool.andb_assoc.
-  f_equal.
-  assumption.
-Qed.
-  
-Lemma included_flatmap {A B:eqType} l1 l2 (f : A -> list B)
-    : (forall x, x \in l1 -> included (f x) l2)->
-      included (flat_map f l1) l2.
-Proof.  
-  induction l1; simpl; auto.
-  intro fall.
-  rewrite included_app; eauto.
-  apply /andP; split.
-  apply fall; apply mem_head.
-  apply IHl1; intros.
-  apply fall.
-  rewrite in_cons.
-  apply /orP; right; auto.
-Qed.
   
 
 
