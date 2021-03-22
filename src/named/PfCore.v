@@ -7,144 +7,10 @@ Set Bullet Behavior "Strict Subproofs".
 From Utils Require Import Utils.
 From Named Require Import Pf.
 From Named Require Export PfCoreDefs.
+Import OptionMonad.
 
 Require Import String.
 
-
-Create HintDb pfcore discriminated.
-
-
-
-(*TODO: put in utils*)
-Lemma in_all_fresh_same {A:eqType} (a b : A) l s
-  : all_fresh l -> (s,a) \in l -> (s,b) \in l -> a = b.
-Proof.
-  induction l; simpl; intros; break;
-    repeat match goal with
-           | [H : is_true (_\in [::])|- _] =>
-             solve[ inversion H]
-           | [H : is_true (_\in _::_)|- _] =>
-             rewrite in_cons in H;
-               move: H => /orP []; intros; break
-           | [H : is_true ((_,_) == (_,_))|- _] =>
-             move: H => /eqP []; intros; subst
-           end; simpl in *; auto.
-  eapply fresh_neq_in in H2; eauto;
-  exfalso;  move: H2 => /eqP; auto.
-  eapply fresh_neq_in in H2; eauto;
-  exfalso;  move: H2 => /eqP; auto.
-Qed.
-
-
-Lemma eq_sym {A :eqType} (a b :A) : (a == b) = (b == a).
-Proof.
-  case ab: (a==b);
-    move: ab => /eqP ab; subst;
-    [ by rewrite eq_refl
-    | case ba: (b==a);
-      move: ba => /eqP ba; auto].
-Qed.          
-  
-(*TODO: move to utils *)
-Lemma named_list_lookup_err_none {A} (l : named_list A) n
-  : n \notin (map fst l) ->
-    named_list_lookup_err l n = None.
-Proof.
-  elim: l; simpl; auto.
-  intros; break; simpl.
-  rewrite in_cons in H0.
-  move: H0 => /norP []; simpl; intros.
-  apply negbTE in a0;
-    change (n =? s = false)%string in a0;
-    rewrite a0.
-  auto.
-Qed.
-  
-Lemma named_list_lookup_err_inb {A : eqType} l x (v:A)
-  : all_fresh l ->
-    named_list_lookup_err l x == Some v = ((x,v) \in l).
-Proof.
-  induction l; break; [by compute | simpl]; intros; break.
-  case_match.
-  {
-    match goal with
-      [H : true = (?a =? ?b)%string |-_]=>
-      symmetry in H; change (is_true (a == b)) in H;
-        move: H => /eqP H; subst
-    end.
-    case veqs0: (s0 == v).
-    {
-      move:veqs0 => /eqP veqs0; subst.
-      rewrite in_cons.
-      rewrite !eq_refl.
-      by compute.
-    }
-    {
-      rewrite in_cons.
-      cbn.
-      rewrite veqs0 eqb_refl.
-      rewrite eq_sym in veqs0.
-      rewrite veqs0.
-      simpl.
-      simpl in IHl.
-      rewrite <- IHl; auto.
-      rewrite named_list_lookup_err_none; auto.
-    }
-  }
-  {
-      rewrite in_cons.
-      cbn.
-      rewrite <- HeqH1.
-      cbn.
-      auto.
-  }
-Qed.
-
-Lemma named_list_lookup_none {A:eqType} l s (a:A)
-  : None = named_list_lookup_err l s ->
-    (s, a) \notin l.
-Proof.
-  induction l; break; simpl in *; auto.
-  case seqs0: (s=?s0)%string.
-  {
-    intro fls; inversion fls.
-  }
-  {
-    intros; rewrite in_cons; apply /orP.
-    intro c; destruct c.
-    {
-      cbn in *.
-      rewrite seqs0 in H0; move: H0 => /andP [] //.
-    }
-    {
-      apply IHl in H.
-      rewrite H0 in H.
-      inversion H.
-    }
-  }
-Qed.
-
-(* Denotes when a proof represents
-     an expression (as opposed to a relation
-     between 2 expressions)
- *)
-Inductive is_exp : pf -> Prop :=
-| var_is_exp x : is_exp (pvar x)
-| con_is_exp name s
-  : List.Forall is_exp s ->
-    is_exp (pcon name s)
-| conv_is_exp pt p
-  : is_exp p ->
-    is_exp (conv pt p).
-Hint Constructors is_exp : pfcore.
-
-Fixpoint check_is_exp e : bool :=
-  match e with
-  | pvar _ => true
-  | pcon _ s => List.forallb check_is_exp s
-  | conv _ p => check_is_exp p
-  | _ => false
-  end.
 
 Lemma check_is_expP e : reflect (is_exp e) (check_is_exp e).
 Proof using.
@@ -196,177 +62,166 @@ Proof using.
     intro H'; inversion H'; auto.
   }
 Qed.  
-  
+
+(*TODO: pull/duplicate appropriate hints outside the section*)
 Section TermsAndRules.
   Context (l : pf_lang).
-
-  Inductive is_dom : pf -> pf -> Prop :=
-  | dom_var x : is_dom (pvar x) (pvar x)
-  | dom_con n pl pl_l
-    : List.Forall2 is_dom pl pl_l ->
-      is_dom (pcon n pl) (pcon n pl_l)
-  | dom_ax_sort n pl pl_l c p' p_r
-    : List.Forall2 is_dom pl pl_l ->
-      (n, sort_le_pf c p' p_r) \in l ->
-      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
-  | dom_ax_term n pl pl_l c p' p_r t
-    : List.Forall2 is_dom pl pl_l ->
-      (n, term_le_pf c p' p_r t) \in l ->
-      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
-  | dom_sym p p_r
-    : is_codom p p_r ->
-      is_dom (sym p) p_r
-  | dom_trans p1 p2 p1_l
-    : is_dom p1 p1_l ->
-      is_dom (trans p1 p2) p1_l
-  | dom_conv pt p p_l
-    : is_dom p p_l ->
-      is_dom (conv pt p) (conv pt p_l)
-  with is_codom : pf -> pf -> Prop :=
-  | codom_var x : is_codom (pvar x) (pvar x)
-  | codom_con n pl pl_r
-    : List.Forall2 is_codom pl pl_r ->
-      is_codom (pcon n pl) (pcon n pl_r)
-  | codom_ax_sort n pl pl_r c p' p_l
-    : List.Forall2 is_codom pl pl_r ->
-      (n, sort_le_pf c p_l p') \in l ->
-      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
-  | codom_ax_term n pl pl_r c p' p_l t
-    : List.Forall2 is_codom pl pl_r ->
-      (n, term_le_pf c p_l p' t) \in l ->
-      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
-  | codom_sym p p_r
-    : is_dom p p_r ->
-      is_codom (sym p) p_r
-  | codom_trans p1 p2 p2_r
-    : is_codom p2 p2_r ->
-      is_codom (trans p1 p2) p2_r
-  | codom_conv pt p p_r
-    : is_codom p p_r ->
-      is_codom (conv pt p) (conv pt p_r).
-  Hint Constructors is_dom is_codom : pfcore.
+  Context (l_ok : lang_ok l).
 
   
+  Lemma lang_ok_all_fresh : all_fresh l.
+  Proof.
+    revert l_ok; induction l; break; simpl in *;
+      intro H; inversion H; subst; break_goal; auto.
+  Qed.
+  Hint Resolve lang_ok_all_fresh : pfcore.
+
+  Local Notation is_dom := (@is_dom l).
+  Local Notation is_codom := (@is_codom l).
+  Local Notation dom := (@dom l).
+  Local Notation codom := (@codom l).
+
+  (*
+    Congruence lemmas for rewriting
+    TODO: go in Pf?
+   *)
+  Lemma pvar_cong x y : pvar x = pvar y <-> x = y.
+  Proof.
+    intuition; inversion H; eauto with pfcore.
+  Qed.
+  Hint Rewrite pvar_cong : pfcore.
+  Lemma pcon_cong n1 n2 pl1 pl2 : pcon n1 pl1 = pcon n2 pl2 <-> (n1 = n2 /\ pl1 = pl2).
+  Proof.
+    intuition; subst; try inversion H; eauto with pfcore.
+  Qed.
+  Hint Rewrite pcon_cong : pfcore.
+    
   (*Inversion lemmas for rewriting is_dom and is_codom
     when we know the top-level structure of their arguments
    *)
-  Lemma invert_is_dom_var x y : is_dom (pvar x) (pvar y) <-> x = y.
+  Lemma invert_is_dom_var x p : is_dom (pvar x) p <-> p = pvar x.
   Proof.
     split; [intro H; inversion H| intros; subst];
       eauto with pfcore.
   Qed.
   Hint Rewrite invert_is_dom_var : pfcore.
-  Lemma invert_is_dom_con n1 n2 pl pl_r
-    : is_dom (pcon n1 pl) (pcon n2 pl_r)
-      <-> (n1 = n2 /\ (List.Forall2 is_dom pl pl_r)).
+  Lemma invert_is_dom_con n1 p pl
+    : is_dom (pcon n1 pl) p
+      <-> (exists pl_r, (p = pcon n1 pl_r) /\ (List.Forall2 is_dom pl pl_r)).
   Proof.
-    split; [intro H; inversion H| intuition ; subst];
-      eauto with pfcore.
+    split.
+    - intro H; inversion H; eauto with pfcore.
+    - firstorder; subst; eauto with pfcore.
   Qed.
   Hint Rewrite invert_is_dom_con : pfcore.
-  (*TODO
-  Lemma invert_is_dom_ax n pl p
-    : is_dom (ax n pl) p
-      <-> (match named_list_lookup_err l n with
-           | sort_le_pf c _ p' =>
-             ?
-           | term_le_pf c _ p' _ =>
-             ?
+  
+  Lemma invert_is_dom_ax n pfs p'
+    : is_dom (ax n pfs) p' <->
+      (exists r, (n,r) \in l /\ 
+                 match r with
+                 | sort_le_pf c p _
+                 | term_le_pf c p _ _ =>
+                   exists pl_r, p' = pf_subst (with_names_from c pl_r) p /\
+                                List.Forall2 is_dom pfs pl_r
+                 | _ => False
+                 end).
+  Proof.
+    split.
+    - intro H; inversion H; subst;
+      match goal with [H : is_true((_, ?r) \in _)|-_] =>
+                        exists r
+        end; eauto with pfcore.
+    - move => [r [rin ]].
+      destruct r; cbn; try easy;
+      move => [pl_r [ peq fall]]; subst; eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_dom_ax : pfcore.
+  
+  Lemma invert_is_dom_sym p p' : is_dom (sym p) p' <-> is_codom p p'.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_dom_sym : pfcore.
+  
+  Lemma invert_is_dom_trans p1 p2 p' : is_dom (trans p1 p2) p' <-> is_dom p1 p'.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_dom_trans : pfcore.
+  
+  Lemma invert_is_dom_conv pt p p'
+    : is_dom (conv pt p) p' <->
+      exists p'', p' = (conv pt p'') /\ is_dom p p''.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      firstorder; subst;
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_dom_conv : pfcore.
 
-        (n, sort_le_pf c p_l p') \in l )
-           \/ _).
-  Proof.
-    split; [intro H; inversion H| intuition ; subst];
-      eauto with pfcore.
-  Qed.
-  Hint Rewrite invert_is_dom_con : pfcore.
-   *)
-  Lemma invert_is_codom_var x y : is_codom (pvar x) (pvar y) <-> x = y.
+  Lemma invert_is_codom_var x p : is_codom (pvar x) p <-> p = pvar x.
   Proof.
     split; [intro H; inversion H| intros; subst];
       eauto with pfcore.
   Qed.
   Hint Rewrite invert_is_codom_var : pfcore.
-  Lemma invert_is_codom_con n1 n2 pl pl_r
-    : is_codom (pcon n1 pl) (pcon n2 pl_r)
-      <-> (n1 = n2 /\ (List.Forall2 is_codom pl pl_r)).
+  Lemma invert_is_codom_con n1 p pl
+    : is_codom (pcon n1 pl) p
+      <-> (exists pl_r, (p = pcon n1 pl_r) /\ (List.Forall2 is_codom pl pl_r)).
   Proof.
-    split; [intro H; inversion H| intuition ; subst];
-      eauto with pfcore.
+    split.
+    - intro H; inversion H; eauto with pfcore.
+    - firstorder; subst; eauto with pfcore.
   Qed.
   Hint Rewrite invert_is_codom_con : pfcore.
-      
-  (*TODO: move to OptionMonad *)
-  Import OptionMonad.
-  Fixpoint Mmap {A B} (f : A -> option B) (l_a : list A) : option (list B) :=
-    match l_a with
-    | [::] => do ret [::]
-    | a::l_a' =>
-      do l_b' <- Mmap f l_a';
-         b <- f a;
-         ret (b::l_b')
-    end.              
+  
+  Lemma invert_is_codom_ax n pfs p'
+    : is_codom (ax n pfs) p' <->
+      (exists r, (n,r) \in l /\ 
+                 match r with
+                 | sort_le_pf c _ p
+                 | term_le_pf c _ p _ =>
+                   exists pl_r, p' = pf_subst (with_names_from c pl_r) p /\
+                                List.Forall2 is_codom pfs pl_r
+                 | _ => False
+                 end).
+  Proof.
+    split.
+    - intro H; inversion H; subst;
+      match goal with [H : is_true((_, ?r) \in _)|-_] =>
+                        exists r
+        end; eauto with pfcore.
+    - move => [r [rin ]].
+      destruct r; cbn; try easy;
+      move => [pl_r [ peq fall]]; subst; eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_codom_ax : pfcore.
 
-  Section DomInnerLoop.
-    (*For some reason I need two copies of Mmap
-      for the mutual recursion to go through below.
-     *)
-    Context (dom : pf -> option pf)
-            (codom : pf -> option pf).
-    Fixpoint dom_args (pl : list pf) :=
-      match pl with
-      | [::] => do ret [::]
-      | a::pl' =>
-        do pl'_dom <- dom_args pl';
-           b <- dom a;
-           ret (b::pl'_dom)
-      end.
-
-    Fixpoint codom_args (pl : list pf) :=
-         match pl with
-         | [::] => do ret [::]
-         | a::pl' =>
-           do pl'_codom <- codom_args pl';
-              b <- codom a;
-              ret (b::pl'_codom)
-         end.
-  End DomInnerLoop.
-    
-  (*Pressupposition: p is ok *)
-  Fixpoint dom (p:pf) :=
-    match p with
-    | pvar x => do ret (pvar x)
-    | pcon name pl => omap (pcon name) (dom_args dom pl)
-    | ax name pl =>
-      match named_list_lookup_err l name with
-      | Some (sort_le_pf c p' _)
-      | Some (term_le_pf c p' _ _) =>
-        do pl' <- dom_args dom pl;
-        ret pf_subst (with_names_from c pl') p'
-      | _ => None
-      end
-    | sym p => codom p
-    | trans p1 p2 => dom p1
-    | conv pt p' => omap (conv pt) (dom p')
-    end               
- (*Pressupposition: p is ok *)
-  with codom (p:pf) :=
-    match p with
-    | pvar x => do ret (pvar x)
-    | pcon name pl => omap (pcon name) (codom_args codom pl)
-    | ax name pl =>
-      match named_list_lookup_err l name with
-      | Some (sort_le_pf c _ p')
-      | Some (term_le_pf c _ p' _) =>
-        do pl' <- codom_args codom pl;
-        ret pf_subst (with_names_from c pl') p'
-      | _ => None
-      end
-    | sym p => dom p
-    | trans p1 p2 => codom p2
-    | conv pt p' => omap (conv pt) (codom p')
-    end.
-
+   Lemma invert_is_codom_sym p p' : is_codom (sym p) p' <-> is_dom p p'.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_codom_sym : pfcore.
+  
+  Lemma invert_is_codom_trans p1 p2 p' : is_codom (trans p1 p2) p' <-> is_codom p2 p'.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_codom_trans : pfcore.
+  
+  Lemma invert_is_codom_conv pt p p'
+    : is_codom (conv pt p) p' <->
+      exists p'', p' = (conv pt p'') /\ is_codom p p''.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      firstorder; subst;
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_is_codom_conv : pfcore.
 
   (*TODO: move to utils*)
   Lemma rewrite_string_eqb s1 s2
@@ -381,6 +236,12 @@ Section TermsAndRules.
     reflexivity.
   Qed.
   Hint Rewrite rewrite_opt_eq_eqb : bool_utils.
+  Lemma rewrite_eqseq_eqb (A:eqType) (a b : list A)
+    : (eqseq a b) = (a == b).
+  Proof.
+    reflexivity.
+  Qed.
+  Hint Rewrite rewrite_eqseq_eqb : bool_utils.
   Lemma rewrite_true_equal a
     : (true = a) <-> (is_true a).
   Proof.
@@ -452,9 +313,17 @@ Section TermsAndRules.
     | _ => subst
     end.
 
-  Ltac prepare_crush :=
+
+  (*Stubbed out until we have the right lemmas*)
+  Ltac reflect_rewrite_pred t := idtac.
+
+  Ltac prepare_crush_rewrites :=
     autorewrite with utils bool_utils pfcore in *;
     subst.
+    
+  Ltac prepare_crush :=
+    try reflect_rewrite_pred prepare_crush_rewrites;
+    prepare_crush_rewrites.
   
   (*TODO: separate inversion database,
     custom plugin to greedily run database
@@ -531,9 +400,10 @@ Section TermsAndRules.
   
   Ltac crush_n n := prepare_crush; eauto n with pfcore bool_utils.
   Ltac crush := crush_n integer:(5).
-
-  (*TODO: do I need all_fresh l? *)
-  Context (l_fresh : all_fresh l).
+  
+  (*TODO: do I need all_fresh l?
+    TODO: if necessary, prove lemma at the right place
+  Context (l_fresh : all_fresh l). *)
 
 
 
@@ -618,270 +488,304 @@ Section TermsAndRules.
         eauto.
     }
   Qed.
+  (*TODO probably want to change structure of assumptions for automation*)
   Hint Resolve subst_is_exp : pfcore.
 
-  (************************************************
-****************************************************)
-      
-  TODO: need rhs is_exp
-  Lemma ax_not_dom p n pfs : ~is_dom p (ax n pfs).
-  Proof.
-    intro H; inversion H.
   
+  Lemma sort_le_in_left_is_exp n c p p_r
+    : (n, sort_le_pf c p p_r)\in l -> is_exp p.
+  Proof.
+    induction l_ok; simpl; try easy.
+    rewrite in_cons.
+    move => /orP [/eqP []|]; intros; subst; eauto.
+      by inversion H0.
+  Qed.
+  
+  Lemma sort_le_in_right_is_exp n c p p_l
+    : (n, sort_le_pf c p_l p)\in l -> is_exp p.
+  Proof.
+    induction l_ok; simpl; try easy.
+    rewrite in_cons.
+    move => /orP [/eqP []|]; intros; subst; eauto.
+      by inversion H0.
+  Qed.
+    
+  Lemma term_le_in_left_is_exp n c p p_r t
+    : (n, term_le_pf c p p_r t)\in l -> is_exp p.
+  Proof.
+    induction l_ok; simpl; try easy.
+    rewrite in_cons.
+    move => /orP [/eqP []|]; intros; subst; eauto.
+      by inversion H0.
+  Qed.
+    
+  Lemma term_le_in_right_is_exp n c p_l p t
+    : (n, term_le_pf c p_l p t)\in l -> is_exp p.
+  Proof.
+    induction l_ok; simpl; try easy.
+    rewrite in_cons.
+    move => /orP [/eqP []|]; intros; subst; eauto.
+      by inversion H0.
+  Qed.
+    
+  Lemma dom_codom_is_exp p
+    : (forall p', is_dom p p' -> is_exp p')
+      /\ (forall p', is_codom p p' -> is_exp p').
+  Proof.
+    induction p; split; intros p' H'; inversion H'; clear H'; crush;
+      try constructor; intuition;
+      try match goal with
+      | [H : List.Forall2 _ ?l0 ?pl_l |- List.Forall _ ?pl_l] =>
+      revert dependent l0;
+        intro l0; revert pl_l;
+          induction l0; simpl;
+            eauto;
+            intro_to List.Forall2;
+            intro lfa; safe_invert lfa;
+              constructor;
+              intuition; solve[auto]
+      | [H : is_true ((_,_) \in _),
+             H' : List.Forall2 _ ?pfs ?pl_l
+        |- is_exp (pf_subst (with_names_from ?c ?pl_l) _)] =>
+      apply subst_is_exp;
+        eauto using
+              sort_le_in_left_is_exp,
+        term_le_in_left_is_exp,
+        term_le_in_right_is_exp,
+        sort_le_in_right_is_exp;
+        clear H;
+        revert dependent pfs;
+        let l0 := fresh l0 in
+        intro l0; revert c pl_l;
+        induction l0; simpl;
+        eauto;
+        intro_to List.Forall2;
+        intro lfa; safe_invert lfa;
+        destruct c; break; simpl;
+          constructor;
+          intuition; solve[auto]
+          end.
+  Qed.
+  
+  Ltac reflect_rewrite_pred t ::=
+    eapply rewrite_reflect;[t; apply iff_refl|].
+
+  Hint Resolve eqP : bool_utils.
+
+  
+  Lemma exists_pcon_eq s pl s' P
+    : (exists pl', pcon s pl = pcon s' pl' /\ P pl')
+      <-> (s = s' /\ P pl).
+  Proof.
+    firstorder; inversion H; eauto with pfcore.
+  Qed.
+  Hint Rewrite exists_pcon_eq : pfcore.
+
+  
+  Lemma reflect_andb_cong A a B b
+    : reflect A a -> reflect B b -> reflect (A /\ B) (a && b).
+  Proof.
+    intros ra rb; inversion ra; inversion rb; cbn; constructor; intuition.
+  Qed.
+  Hint Resolve reflect_andb_cong : bool_utils.
+
+  
+  Lemma invert_Forall2_cons (A B : eqType) R (e : A) es (e' : B) es'
+    : List.Forall2 R (e::es) (e'::es') <-> (R e e' /\ List.Forall2 R es es').
+  Proof.
+    split; intuition.
+  Qed.
+  Hint Rewrite invert_Forall2_cons : utils.
+
+  
+  Lemma invert_Some_eq (A : eqType) (a1 a2 : A)
+    : (Some a1 == Some a2) = (a1 == a2).
+  Proof.
+    split; intuition.
+  Qed.
+  Hint Rewrite invert_Some_eq : bool_utils.
+
+  Local Lemma domP_inner_induction l0 l2
+    : List.fold_right
+        (fun t : pf =>
+           prod {_ : (forall p' : pf, reflect (is_dom t p') (dom t == (do ret p')))
+                     & forall p' : pf, reflect (is_codom t p') (codom t == (do ret p'))}) unit
+        l0 ->
+      reflect (List.Forall2 is_dom l0 l2) (dom_args dom l0 == Some l2).
+  Proof.
+    revert l2; induction l0; cbn; intros l2 H; destruct H;
+      repeat case_match; cbn; first [constructor | destruct l2];
+        cbn; repeat constructor;
+          try (intro H'; safe_invert H');
+          firstorder.
+    {
+      specialize (IHl0 l2 f); crush.
+    }
+    {
+      move: H1 => /x //.
+    }
+    {
+      move: H3 => /IHl0. crush.
+    }
+  Qed.
+  Hint Resolve domP_inner_induction : pfcore.
+
+   Local Lemma codomP_inner_induction l0 l2
+    : List.fold_right
+        (fun t : pf =>
+           prod {_ : (forall p' : pf, reflect (is_dom t p') (dom t == (do ret p')))
+                     & forall p' : pf, reflect (is_codom t p') (codom t == (do ret p'))}) unit
+        l0 ->
+      reflect (List.Forall2 is_codom l0 l2) (codom_args codom l0 == Some l2).
+  Proof.
+    revert l2; induction l0; cbn; intros l2 H; destruct H;
+      repeat case_match; cbn; first [constructor | destruct l2];
+        cbn; repeat constructor;
+          try (intro H'; safe_invert H');
+          firstorder.
+    {
+      specialize (IHl0 l2 f).
+      reflect_rewrite_pred prepare_crush; crush.
+    }
+    {
+      move: H1 => /p //.
+    }
+    {
+      move: H3 => /IHl0; crush.
+    }
+  Qed.
+  Hint Resolve codomP_inner_induction : pfcore.
+
+ 
+  Lemma reflect_exists_as_omap_eq_cong (A B:eqType) P (f : A -> B) a b
+    : (forall c, reflect (P c) (b == Some c)) ->
+      reflect (exists c : A, a = f c /\ P c)
+              (omap f b == Some a).
+  Proof.
+    destruct b; cbn; crush.
+    my_case H (f s == a).
+    all: constructor; try (intros ?); firstorder.
+    {
+      move: H => /eqP; intros; subst.
+      exists s; firstorder.
+      apply /X; auto.
+    }
+    {
+      move: H1 => /X /eqP; intros; subst.
+      rewrite eq_refl in H; easy.
+    }
+    {
+      move: H0 => /X //.
+    }
+  Qed.
+  Hint Resolve reflect_exists_as_omap_eq_cong : pfcore.
+
+  
+  Lemma reflect_exists_as_obind_eq_cong (A B:eqType) P Q (f : A -> option B) a b
+    : (forall c, reflect (P c) (b == Some c)) ->
+      (forall c, reflect (Q c) (f c == Some a)) ->
+      reflect (exists c, P c /\ Q c)
+              (obind f b == Some a).
+  Proof.
+    my_case beq b; cbn; crush.
+    my_case H (f s); cbn; crush.
+    my_case aeq (s0 == a); crush.
+    all: constructor; try (intros ?); firstorder.
+    {
+      move: aeq => /eqP; intros; subst.
+      exists s; firstorder.
+      apply /X; auto.
+      apply /X0; auto.
+      crush.
+    }
+    {
+      move: H0 => /X /eqP H0; subst.
+      move: H1 => /X0 /eqP H1; subst.
+      rewrite H in H1.
+      safe_invert H1.
+      rewrite eq_refl in aeq; easy.
+    }
+    {
+      move: H0 => /X /eqP H0; subst.
+      move: H1 => /X0 /eqP H1; subst.
+      rewrite H in H1.
+      safe_invert H1.
+    }
+    {
+      move: H => /X //.
+    }
+  Qed.
+  Hint Resolve reflect_exists_as_obind_eq_cong : pfcore.
+  
+  Ltac fold_omap :=
+    lazymatch goal with
+      [|- context c[match ?e with Some p => Some (@?f p) | None => None end] ]=>
+      let g := context c [omap f e] in
+      change g
+    end.
+
+  
+  Ltac fold_obind :=
+    lazymatch goal with
+      [|- context c[match ?e with Some p => (@?f p) | None => None end] ]=>
+      let g := context c [obind f e] in
+      change g
+    end.
+   
   Lemma dom_codom_P p
     : { _ :(forall p', reflect (is_dom p p') (dom p == Some p'))
            & (forall p', reflect (is_codom p p') (codom p == Some p'))}.
   Proof.
-    induction p; split; intro p'; destruct p'; cbn;
-                       prepare_crush;
-                       try match goal with
-                         [|- reflect _ false ]=> constructor
-                       end.
-                     eapply rewrite_reflect;
-                       [ prepare_crush; reflexivity|].
-                     exact eqP.
-                     
-                     rewrite invert_is_dom_var.
-                     reflexivity.
-                     repeat case_match; crush.
+    induction p; split; cbn [dom codom]; fold dom; fold codom; intros;
+      firstorder; crush.
     {
-      enough (reflect (List.Forall2 is_dom l0 l1) (dom_args dom l0 == Some l1));
-        [
-        repeat (match goal with
-                | [|- context[omap _ ?e]]=>
-                  let H := fresh in my_case H e; crush
-                | _ => case_match
-                end); crush_n integer:(10)
-        | dom_codom_forall_case l0 l1].
-    }
-    { 
-      enough (reflect (List.Forall2 is_codom l0 l1) (codom_args codom l0 == Some l1)).
+      fold_obind;
+        apply reflect_exists_as_obind_eq_cong.
       {
-        match goal with
-                | [|- context[omap _ ?e]]=>
-                  let H := fresh in my_case H e; crush
-                | _ => case_match
-        end.
-        destruct_reflect_bool.
-        prepare_
-      [
-        repeat (match goal with
-                | [|- context[omap _ ?e]]=>
-                  let H := fresh in my_case H e; crush
-                | _ => case_match
-                end); crush_n integer:(10)
-        | dom_codom_forall_case l0 l1].
-    }
-    {
-      enough (reflect (List.Forall2 is_dom pfs l0) (dom_args dom pfs == Some l0)).
-      {
-        
-        admit.
+        intros.
+        rewrite named_list_lookup_err_inb.
+        apply idP;
+          apply lang_ok_all_fresh.
+        apply lang_ok_all_fresh.
       }
       {
-        dom_codom_forall_case pfs l0.
-      }
-    }
-      
-      cbn.
-      crush.
-      constructor.
-      crush.
-      intro H.
-      inversion H; clear H; subst; crush.
-      {
-        crush.
-        match goal with
-          [ H_fr : all_fresh ?l,
-            H : is_true((?n, ?a) \in ?l),
-            H' : is_true((?n, ?b) \in ?l)
-            |-_]=>
-          assert(a = b); [ eapply in_all_fresh_same; solve[eauto]|]
-        end.
-             crush.
-      safe_invert H.
-        crush.
-      destruct_reflect_bool; crush.
-      
-      repeat case_match.
-      }
-    }
-      {
-        }
-        {
-          destruct_reflect_bool;
-            crush_n integer:(8).
-        }
-          safe_invert He.
-          
-          constructor;
-            crush.
-          specialize (IHl0 l1 H3).
-          crush.
-          intuition.
-          idtac.
-          
-          crush_n integer:(8).
-          destruct X as [[? ?] ?].
-          crush.
-
-          intuition.
-          match goal with
-            
-          apply /x.
-          crush.
-
-          reflexivity.
-          
-        match goal withD
-        crush_n integer:(12).
-        safe_invert H1.
-        crush.
-        match goal with
-                      [H : reflect ?A _, H':?A|-_] =>
-                      move: H' => /H H'
-        end.
-        safe_invert H3.
-        match goal with
-                      [H : reflect ?A _, H':?A|-_] =>
-                      move: H
-                    end.
-        constructor.
-        crush.
-        2:{
-          cbn in *.
-        crush.
-      2:{
-        
-      repeat case_match.
-
-
-      
-      match goal with
-      | [H : List.fold_right _ _ ?l,
-             l' : list pf |-_]=>
-        tryif unify l l' then fail
-        else revert dependent l;
-          intro l; revert l'; induction l;
-          intro l'; destruct l'; cbn
-      end; crush_n integer:(6).
-      {
+        intro c; destruct c;
+        crush; fold_omap;
+        apply reflect_exists_as_omap_eq_cong;
         intros;
-          repeat case_match;
-          crush.
+        apply domP_inner_induction;
+        assumption.
+      }
+    }
+    {
+      fold_obind;
+        apply reflect_exists_as_obind_eq_cong.
+      {
+        intros.
+        rewrite named_list_lookup_err_inb.
+        apply idP;
+          apply lang_ok_all_fresh.
+        apply lang_ok_all_fresh.
       }
       {
-        intros; repeat case_match.
-        destruct X as [[? ?] ?].
-        crush.
-        destruct_reflect_bool; prepare_crush.
-        inversion Heqb; clear Heqb; subst; constructor.
-        constructor;
-          crush.
-        apply /x; crush.
-        match goal with
-          
-        split.
+        intro c; destruct c;
+        crush; fold_omap;
+        apply reflect_exists_as_omap_eq_cong;
+        intros;
+        apply codomP_inner_induction;
+        assumption.
+      }
+    }
+  Qed.
+    
+  Definition is_domP p p' : reflect (is_dom p p') (dom p == Some p') :=
+    projT1 (dom_codom_P p) p'.
+  Hint Resolve is_domP : pfcore.
+  Definition is_codomP p p' : reflect (is_codom p p') (codom p == Some p') :=
+    projT2 (dom_codom_P p) p'.
+  Hint Resolve is_codomP : pfcore.
+  
       
-      debug eauto 8 with pfcore.
-      intro; simple apply ReflectF; unfold not; intro.
-      debug eauto 3 with pfcore.
-      inversion H; subst.
-      
-      destruct_reflect_bool; prepare_crush.
-      simple apply dom_con.
-      Simple apply List
-        revert dependent l;
-          intro l;
-        idtac l
-      end.
-    Focus 2.
-    constructor.
-    intro.
-    
-    
-  Lemma is_domP p p' : reflect (is_dom p p') (dom p == Some p')
-  with is_codomP p p' : reflect (is_codom p p') (codom p == Some p').
-  Proof.
-    
-    all: destruct p; destruct p'; cbn; crush.
-    {
-      let H:= fresh in my_case H (dom_args dom l0); prepare_crush.
-      destruct_reflect_bool; crush.
-
-      {
-        safe_invert Heqb.
-        constructor.
-        revert dependent l1;
-          induction l0;
-          intro l1;
-          destruct l1; simpl in *; crush;
-          repeat case_match; crush.
-        intros H; safe_invert H.
-        constructor; crush.
-        apply /is_domP.
-        Guarded.
-      
-      crush.
-  autorewrite with utils bool_utils in *;
-    subst.
-    destruct_reflect_bool; crush.
-    constructor 2.
-    cbn.
-    unfold omap in *.
-    unfold obind in *.
-    unfold oapp in *.
-    
-    match goal with [H : omap _ ?e = Some _|-_] => let H:=fresh in my_case H e end;
-    autorewrite with utils bool_utils in *; subst.
-    match goal with [H : Some _ = Some _|-_] => safe_invert H end.
-    constructor.
-    destruct l1; destruct l0; crush.
-    Hint Extern 100 (List.Forall2 is_dom ?l ?l') => destruct l; destruct l'.
-    try match goal with
-    | [|- context [_ (dom_args dom ?l) == Some (_ ?l')]] =>
-      assert (List.Forall2 is_dom l l')
-          end.
-    {
-      destruct l0; destruct l1.
-      match goal with
-      |
-    constructor.
-    
-    
-    let H:= fresh in my_case H (dom_args dom l0);
-                       crush.
-                       eauto with pfcore.
-    simpl in *.
-    Hint Extern 1 (omap _ ?e = Some _) => let H:= fresh in my_case H e.
-    eauto with pfcore.
-    solve_reflect_norec.
-    goal.
-    eauto with pfcore.
-    safe_invert H.
-    simple apply Heqb.
-    debug eauto with pfcore.
-    destruct_reflect_bool.
-      autorewrite with bool_utils in *.
-      subst; eauto with pfcore.
-      repeat match goal with
-             | [H : true = false |- _] => inversion H
-             | [H : context [(?s =? ?s)%string] |- _] =>
-               rewrite eqb_refl in H
-            | [|- ~ _] => let fls := fresh "fls" in intro fls; inversion fls; subst; clear fls
-            | [|- is_dom _ _] => constructor
-            | [|- reflect _ true] => constructor
-            | [|- reflect _ false] => constructor
-            | [|- reflect _ (?a =? ?b)%string] =>
-              let Heq := fresh "Heq" in
-              my_case Heq (a =? b)%string;
-                [change (is_true (a == b)) in Heq;
-                 move: Heq => /eqP ->|]
-             end.
-    pose proof l_fresh.
-    Admitted.
-      
-                      
   (*TODO: relate dom to is_dom on ok terms
     TODO: should dom be partial?
     prob. want Inhabited typeclass first,
@@ -1518,13 +1422,6 @@ Proof using.
     simpl in H3; rewrite Heqb in H3; auto.
   }
 Qed.
-
-
-Lemma lang_ok_all_fresh l : lang_ok l -> all_fresh l.
-Proof.
-  induction l; break; simpl in *;
-    intro H; inversion H; subst; break_goal; auto.
-Qed.  
 
 Ltac destruct_is_dom e :=
       destruct e; intros;

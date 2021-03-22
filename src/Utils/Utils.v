@@ -682,3 +682,115 @@ Proof.
   rewrite in_cons.
   apply /orP; right; auto.
 Qed.
+
+
+(*TODO: put in utils*)
+Lemma in_all_fresh_same {A:eqType} (a b : A) l s
+  : all_fresh l -> (s,a) \in l -> (s,b) \in l -> a = b.
+Proof.
+  induction l; simpl; intros; break;
+    repeat match goal with
+           | [H : is_true (_\in [::])|- _] =>
+             solve[ inversion H]
+           | [H : is_true (_\in _::_)|- _] =>
+             rewrite in_cons in H;
+               move: H => /orP []; intros; break
+           | [H : is_true ((_,_) == (_,_))|- _] =>
+             move: H => /eqP []; intros; subst
+           end; simpl in *; auto.
+  eapply fresh_neq_in in H2; eauto;
+  exfalso;  move: H2 => /eqP; auto.
+  eapply fresh_neq_in in H2; eauto;
+  exfalso;  move: H2 => /eqP; auto.
+Qed.
+
+
+Lemma eq_sym {A :eqType} (a b :A) : (a == b) = (b == a).
+Proof.
+  case ab: (a==b);
+    move: ab => /eqP ab; subst;
+    [ by rewrite eq_refl
+    | case ba: (b==a);
+      move: ba => /eqP ba; auto].
+Qed.          
+  
+(*TODO: move to utils *)
+Lemma named_list_lookup_err_none {A} (l : named_list A) n
+  : n \notin (map fst l) ->
+    named_list_lookup_err l n = None.
+Proof.
+  elim: l; simpl; auto.
+  intros; break; simpl.
+  rewrite in_cons in H0.
+  move: H0 => /norP []; simpl; intros.
+  apply negbTE in a0;
+    change (n =? s = false)%string in a0;
+    rewrite a0.
+  auto.
+Qed.
+
+
+  
+Lemma named_list_lookup_err_inb {A : eqType} l x (v:A)
+  : all_fresh l ->
+    named_list_lookup_err l x == Some v = ((x,v) \in l).
+Proof.
+  induction l; break; [by compute | simpl]; intros; break.
+  case_match.
+  {
+    match goal with
+      [H : true = (?a =? ?b)%string |-_]=>
+      symmetry in H; change (is_true (a == b)) in H;
+        move: H => /eqP H; subst
+    end.
+    case veqs0: (s0 == v).
+    {
+      move:veqs0 => /eqP veqs0; subst.
+      rewrite in_cons.
+      rewrite !eq_refl.
+      by compute.
+    }
+    {
+      rewrite in_cons.
+      cbn.
+      rewrite veqs0 eqb_refl.
+      rewrite eq_sym in veqs0.
+      rewrite veqs0.
+      simpl.
+      simpl in IHl.
+      rewrite <- IHl; auto.
+      rewrite named_list_lookup_err_none; auto.
+    }
+  }
+  {
+      rewrite in_cons.
+      cbn.
+      rewrite <- HeqH1.
+      cbn.
+      auto.
+  }
+Qed.
+
+Lemma named_list_lookup_none {A:eqType} l s (a:A)
+  : None = named_list_lookup_err l s ->
+    (s, a) \notin l.
+Proof.
+  induction l; break; simpl in *; auto.
+  case seqs0: (s=?s0)%string.
+  {
+    intro fls; inversion fls.
+  }
+  {
+    intros; rewrite in_cons; apply /orP.
+    intro c; destruct c.
+    {
+      cbn in *.
+      rewrite seqs0 in H0; move: H0 => /andP [] //.
+    }
+    {
+      apply IHl in H.
+      rewrite H0 in H.
+      inversion H.
+    }
+  }
+Qed.

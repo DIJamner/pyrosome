@@ -82,7 +82,6 @@ Section TermsAndRules.
   | codom_conv pt p p_r
     : is_codom p p_r ->
       is_codom (conv pt p) (conv pt p_r).
-  Hint Constructors is_dom is_codom : pfcore.
 
       
   (*TODO: move to OptionMonad *)
@@ -275,8 +274,6 @@ c |- e1 = e2 : t' = t''
       term_ok c e1 t ->
       term_ok c e2 t ->
       rule_ok (term_le_pf c e1 e2 t).
-
-  Hint Constructors sort_ok term_ok subst_ok args_ok ctx_ok rule_ok : pfcore.
   
   Section InnerLoop.
     Context (check_term_ok : pf -> pf -> bool).
@@ -404,26 +401,5 @@ Fixpoint check_lang_ok l :=
       (check_lang_ok l')
     end.
 
-(*TODO: move to Pf*)
-
-Inductive ws_pf {c : list string} : pf -> Prop :=
-| ws_var x : x \in c -> ws_pf (pvar x)
-| ws_con n l : List.Forall ws_pf l -> ws_pf (pcon n l)
-| ws_ax n l : List.Forall ws_pf l -> ws_pf (ax n l)
-| ws_sym p : ws_pf p -> ws_pf (sym p)
-| ws_trans p1 p2 : ws_pf p1 -> ws_pf p2 -> ws_pf (trans p1 p2)
-| ws_conv p1 p2 : ws_pf p1 -> ws_pf p2 -> ws_pf (conv p1 p2).
-
-Arguments ws_pf : clear implicits.
-
-
-(*TODO: move to Pf*)
-Fixpoint fv (p : pf) :=
-  match p with
-  | pvar x => [:: x]
-  | pcon _ l => flat_map fv l
-  | ax _ l => flat_map fv l
-  | sym p => fv p
-  | trans p1 p2 => fv p1 ++ fv p2
-  | conv p1 p2 => fv p1 ++ fv p2
-  end.
+Hint Constructors is_dom is_codom : pfcore.
+Hint Constructors sort_ok term_ok subst_ok args_ok ctx_ok rule_ok lang_ok : pfcore.
