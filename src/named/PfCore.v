@@ -796,260 +796,132 @@ Section TermsAndRules.
       is_ok : t -> Prop
     }
    *)
+ 
 
-  (* Strips components of the proof that we consider
-     irrelevant for the purpose of equality.
-     TODO: generalize this, e.g. (sym (sym x)) ~ x.
-     Probably not necessary as long as this is only
-     used on projections
-   *)
   
-  (*
-    Judgments for checking proofs of relations between programs.
-    Can check wfness of a program by identifying it with its
-    identity relation.
+  Lemma invert_term_ok_var c x t : term_ok l c (pvar x) t <-> (x,t) \in c.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore.
+  Qed.
+  Hint Rewrite invert_term_ok_var : pfcore.
+  Lemma invert_sort_ok_var c x : sort_ok l c (pvar x) <-> False.
+  Proof.
+    split; [intro H; inversion H| intros; subst];
+      eauto with pfcore; easy.
+  Qed.
+  Hint Rewrite invert_sort_ok_var : pfcore.
 
-    All assume lang_ok.
-    All ctxs (other than in ctx_ok) are assumed to satisfy ctx_ok.
-    Judgments whose assumptions take ctxs must ensure they are ok.
-    Sorts are not assumed to be ok; the term judgments should guarantee
-    that their sorts are ok and is_exp.
-   *)
-  
-  Inductive sort_ok : pf_ctx -> pf -> Prop :=
-  | sort_ok_ax : forall c c' name t1 t2 s,
-      (name, sort_le_pf c' t1 t2) \in l ->
-      args_ok c s c' ->
-      sort_ok c (ax name s)
-  | sort_ok_con : forall c name c' args s,
-      (name, (sort_rule_pf c' args)) \in l ->
-      args_ok c s c' ->
-      sort_ok c (pcon name s)
-  | sort_ok_trans : forall c t1 t t2,
-      sort_ok c t1 ->
-      sort_ok c t2 ->
-      is_codom t1 t ->
-      is_dom t2 t ->
-      sort_ok c (trans t1 t2)
-  | sort_ok_sym : forall c t, sort_ok c t -> sort_ok c (sym t)
-  with term_ok : pf_ctx -> pf -> pf -> Prop :=
-  | term_ok_ax : forall c c' name e1 e2 t s t',
-      (name, term_le_pf c' e1 e2 t) \in l ->
-      args_ok c s c' ->
-      (*non-obvious fact: the sort may not be a wfness proof if we don't project;
-        may be a non-identity relation due to s
-       *)
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      term_ok c (ax name s) t'
-  | term_ok_con : forall c name c' args t t' s,
-      (name, (term_rule_pf c' args t)) \in l ->
-      args_ok c s c' ->
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      (* same as above *)
-      term_ok c (pcon name s) t'
-  | term_ok_trans : forall c e1 e e2 t,
-      term_ok c e1 t ->
-      term_ok c e2 t ->
-      is_codom e1 e ->
-      is_dom e2 e ->
-      term_ok c (trans e1 e2) t
-  | term_ok_sym : forall c e t, term_ok c e t -> term_ok c (sym e) t
-  | term_ok_var : forall c x t,
-      (x,t) \in c ->
-      term_ok c (pvar x) t
-  (* Conversion:
-
-c |- e1 = e2 : t = t'
-                 ||
-c |- e1 = e2 : t' = t''
-
-TODO: this rule is no good; 
-want to have output type (proj_r? t'), not trans.
-(note that this interferes w/ removing symmetry if I aim to do that later.)
-The theoretically proper thing to do is to give computation rules to trans, sym,
-e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
-   *)
-  | term_ok_conv : forall c e t tp t',
-      sort_ok c tp ->
-      term_ok c e t ->
-      is_dom tp t ->
-      is_codom tp t' ->
-      term_ok c (conv tp e) t'
-  with args_ok : pf_ctx -> list pf -> pf_ctx -> Prop :=
-  | args_ok_nil : forall c, args_ok c [::] [::]
-  | args_ok_cons : forall c s c' name e t t',
-      args_ok c s c' ->
-      (* assumed because the output ctx is wf: fresh name c' ->*)
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      term_ok c e t' ->
-      args_ok c (e::s) ((name, t)::c').
-  
-  Inductive subst_ok : pf_ctx -> named_list pf -> pf_ctx -> Prop :=
-  | subst_ok_nil : forall c, subst_ok c [::] [::]
-  | subst_ok_cons : forall c s c' name e t t',
-      subst_ok c s c' ->
-      (* assumed because the output ctx is wf: fresh name c' ->*)
-      is_dom (pf_subst s t) t' ->
-      term_ok c e t' ->
-      subst_ok c ((name,e)::s) ((name, t)::c').
-
-  Inductive ctx_ok : pf_ctx -> Prop :=
-  | ctx_ok_nil : ctx_ok [::]
-  | ctx_ok_cons : forall name c v,
-      fresh name c ->
-      ctx_ok c ->
-      sort_ok c v ->
-      ctx_ok ((name,v)::c).
-
-
-  (*TODO: for le's, how to make this
-    correspond to existing fwk; should I?
-    existing defs allow for higher rels in an unfortunate way.
-    e.g:
-    
-    ...
-    --------------------------------------------------
-    stlc_beta G A A' e e' = ... : (G |- A) = (G' |- B)
-    
-    where l[stlc_beta] = ...|- \e e' = e[/e'/]
-   *)
-  Variant rule_ok : rule_pf -> Prop :=
-  | sort_rule_ok : forall c args,
-      ctx_ok c ->
-      subseq args (map fst c) ->
-      rule_ok (sort_rule_pf c args)
-  | term_rule_ok : forall c args t,
-      ctx_ok c ->
-      sort_ok c t ->
-      subseq args (map fst c) ->
-      rule_ok (term_rule_pf c args t)
-  | sort_le_ok : forall c t1 t2,
-      ctx_ok c ->
-      is_exp t1 ->
-      is_exp t2 ->
-      sort_ok c t1 ->
-      sort_ok c t2 ->
-      rule_ok (sort_le_pf c t1 t2)
-  | term_le_ok : forall c e1 e2 t,
-      ctx_ok c ->
-      is_exp e1 ->
-      is_exp e2 ->
-      is_exp t ->
-      sort_ok c t ->
-      term_ok c e1 t ->
-      term_ok c e2 t ->
-      rule_ok (term_le_pf c e1 e2 t).
-
-  Hint Constructors sort_ok term_ok subst_ok args_ok ctx_ok rule_ok : pfcore.
-  
-  Section InnerLoop.
-    Context (check_term_ok : pf -> pf -> bool).
-    Context (lfresh : all_fresh l).
-    Context c (check_term_okP : forall e t, reflect (term_ok c e t) (check_term_ok e t)).
-
-    Fixpoint check_args_ok' (pl : list pf) (c' : pf_ctx) {struct pl} : bool :=
-      match pl, c' with
-      | [::], [::] => true
-      | p::pl', (_,t)::c'' =>
-        (check_term_ok p (pf_subst (with_names_from c'' pl') t)) &&
-        (check_args_ok' pl' c'')
-      |_,_=> false
-    end.
-
-    Fixpoint check_sort_ok' (pt : pf) : bool :=
-      match pt with
-      | pcon name pl =>
-        match named_list_lookup_err l name with
-        | Some (sort_rule_pf c' _) => check_args_ok' pl c'
-        | _ => false
-        end
-      | ax name pl =>
-        match named_list_lookup_err l name with
-        | Some (sort_le_pf c' _ _) => check_args_ok' pl c'
-        | _ => false
-        end
-      | sym p => check_sort_ok' p
-      | trans p1 p2 =>
-        (check_sort_ok' p1) &&
-        (check_sort_ok' p2) &&
-        (*TODO: will need to show that they are not none when the sorts are okay
-          because I am using the ==, but it reads more nicely this way
-         *)
-        (codom p1 == dom p2) 
-      | conv _ _ => false
-      | pvar _ => false
+  Lemma invert_term_ok_con c n pl t
+    : term_ok l c (pcon n pl) t <->
+      exists r, (n,r) \in l /\
+      match r with
+      | term_rule_pf c' args t' =>
+        dom (pf_subst (with_names_from c' pl) t') = Some t /\
+        args_ok l c pl c'
+      | _ => False
       end.
-
-    Hint Constructors reflect : pfcore.
-         
-  End InnerLoop.
-
-  (*computes the sort of the term for any ok term *)
-  (*TODO: unnecessary*)
-  (*Fixpoint sort_of_term (c : pf_ctx) (e : pf) : pf :=
-    let default := ax "ERR" [::] in
-    match e with
-    | pvar x =>
-      match named_list_lookup_err c x with
-      | Some t => t
-      | None => default
-      end
-    | pcon name pl =>
-      match named_list_lookup_err l name with
-      | Some (term_rule_pf c' _ t') => pf_subst (with_names_from c' pl) t'
-      | _ => default
-      end
-    | ax name pl =>
-      match named_list_lookup_err l name with
-      | Some (term_rule_pf c' _ t') => pf_subst (with_names_from c' pl) t'
-      | _ => default
-      end
-    | sym p => sort_of_term c p
-    (*TODO: needs normalization here to be consistent in the right way;
-      otherwise weakens some syntactic identities to semantic ones.
-      Is this a problem?
-      TODO: figure out whether this matters when all ok terms have is_exp sorts
-     *)
-    | trans p1 p2 => sort_of_term c p2
-    | conv pt p' => dom pt
-    end. *)
+  Proof.
+    split; [intro H; inversion H| intros];
+      crush.
+    {
+      exists (term_rule_pf c' args t0); cbn;
+        intuition; crush.
+      apply /eqP; apply /is_domP; assumption.
+    }
+    {
+      move: H => [r [rin H]]; destruct r;
+                 cbn in *; crush; try easy.
+      intuition.
+      move: H0 => /eqP /is_domP H0.
+      crush.
+    }
+  Qed.
+  Hint Rewrite invert_term_ok_con : pfcore.
   
-  Fixpoint synth_term_ok (c : pf_ctx) e {struct e} : option pf :=
-    let check_term_ok e t := synth_term_ok c e == Some t in 
-    match e with
-    | pvar x => named_list_lookup_err c x
-    | pcon name pl =>
-      do (term_rule_pf c' _ t') <- named_list_lookup_err l name;
-         ! check_args_ok' check_term_ok pl c';
-         d <-(codom (pf_subst (with_names_from c' pl) t'));
-         ret d
-    | ax name pl =>
-      do (term_le_pf c' _ _ t') <- named_list_lookup_err l name;
-         ! check_args_ok' check_term_ok pl c';
-         d <-(codom (pf_subst (with_names_from c' pl) t'));
-         ret d
-    | sym p => synth_term_ok c p
-    | trans p1 p2 =>
-      do t1 <- synth_term_ok c p1;
-         t2 <- synth_term_ok c p2;
-         ! codom p1 == dom p2;
-         ! t1 == t2;
-         ret t2
-    | conv pt p' =>
-      do t1 <- synth_term_ok c p';
-         ! check_sort_ok' check_term_ok pt;
-         d <- dom pt;
-         ! t1 == d;
-         cd <- codom pt;
-         ret cd
-  end.
+  Lemma invert_sort_ok_con c n pl
+    : sort_ok l c (pcon n pl) <->
+      exists r, (n,r) \in l /\
+      match r with
+      | sort_rule_pf c' args =>
+        args_ok l c pl c'
+      | _ => False
+      end.
+  Proof.
+    split; [intro H; inversion H| intros];
+      crush.
+    {
+      move: H => [r [rin H]]; destruct r;
+                 cbn in *; crush; try easy.
+    }
+  Qed.
+  Hint Rewrite invert_sort_ok_con : pfcore.
 
-  Definition check_term_ok c e t := synth_term_ok c e == Some t.
-  Definition check_sort_ok c p := check_sort_ok' (check_term_ok c) p.
-  Definition check_args_ok c pl c' := check_args_ok' (check_term_ok c) pl c'.
+  Hint Resolve idP : bool_utils.
 
   
-  (*TODO: build right induction*)
+  Lemma invert_args_ok_cons c a pl s t c'
+    : args_ok l c (a::pl) ((s,t)::c') <->
+      exists t', is_dom (pf_subst (with_names_from c' pl) t) t' /\
+                 term_ok l c a t' /\ args_ok l c pl c'.
+  Proof.
+    split; [intro H; inversion H| intros; subst]; firstorder; crush.
+  Qed.
+  Hint Rewrite invert_args_ok_cons : pfcore.
+
+  
+  Lemma check_args_okP' c pl c'
+    : all_fresh c ->
+      List.fold_right
+        (fun t : pf =>
+           prod
+             (forall c : named_list pf,
+                 all_fresh c -> {_ : forall t0 : pf, reflect (term_ok l c t t0) (check_term_ok l c t t0) & reflect (sort_ok l c t) (check_sort_ok l c t)}))
+        unit pl ->
+      reflect (args_ok l c pl c') (check_args_ok l c pl c').
+  Proof.
+    intro frc.
+    revert c'.
+    induction pl; intro c'; destruct c'; break; cbn; crush.
+    {
+      constructor; intro H'; safe_invert H'.
+    }
+    {
+      firstorder; constructor; intro H'; safe_invert H'.
+    }
+    {
+      firstorder; crush.
+  
+  (*TODO: build right induction;
+    current one duplicates check_argsP pf;
+    is that fine?
+   *)
+  Lemma check_okP c e
+    : all_fresh c ->
+      { _: forall t, reflect (term_ok l c e t) (check_term_ok l c e t)
+        & reflect (sort_ok l c e) (check_sort_ok l c e)}.
+  Proof.
+    revert c.
+    induction e; intros c cfr; split; cbn;
+      fold check_term_ok; fold check_sort_ok;
+        intros;
+      firstorder; crush.
+    {
+      fold_obind.
+      apply reflect_exists_as_obind_eq_cong;
+        intros; crush.
+      destruct c0; crush.
+      fold_omap.
+
+        : 
+      TODO: inner induction
+      
+      crush.
+      cbn.
+      intros.
+    
+
+  
   Lemma check_term_okP c e t
     : all_fresh l ->
       all_fresh c ->
@@ -1197,15 +1069,6 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
     (*Guarded.*)*)
   Admitted.
 
-  Fixpoint check_ctx_ok c :=
-    match c with
-    | [::] => true
-    | (name,t)::c' =>
-      (fresh name c') &&
-      (check_sort_ok c' t) &&
-      (check_ctx_ok c')
-    end.
-
   
   Lemma ctx_ok_all_fresh c
     : ctx_ok c -> all_fresh c.
@@ -1247,30 +1110,6 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
       simpl in H2.
       rewrite <-Heqb in H2; inversion H2.
   Qed.
-    
-  Definition check_rule_ok r :=
-    match r with
-    | sort_rule_pf c args =>
-      (check_ctx_ok c) && (subseq args (map fst c))
-    | term_rule_pf c args t =>
-      (check_ctx_ok c) &&
-      (subseq args (map fst c)) &&
-      (check_sort_ok c t)
-    | sort_le_pf c t1 t2 =>
-      (check_ctx_ok c) &&
-      (check_is_exp t1) &&
-      (check_is_exp t2) &&
-      (check_sort_ok c t1) &&
-      (check_sort_ok c t2)
-    | term_le_pf c e1 e2 t =>
-      (check_ctx_ok c) &&
-      (check_is_exp e1) &&
-      (check_is_exp e2) &&
-      (check_is_exp t) &&
-      (check_term_ok c e1 t) &&
-      (check_term_ok c e2 t) &&
-      (check_sort_ok c t)
-    end.
 
   Lemma check_rule_okP r : all_fresh l -> reflect (rule_ok r) (check_rule_ok r).
   Proof using.
@@ -1311,68 +1150,11 @@ e.g.: sym (trans a b) = trans (sym b) (sym a), sym (var x) = var x
 End TermsAndRules.
 
 
-Inductive lang_ok : pf_lang -> Prop :=
-| lang_ok_nil : lang_ok [::]
-| lang_ok_cons : forall name l r,
-    fresh name l ->
-    lang_ok l ->
-    rule_ok l r ->
-    lang_ok ((name,r)::l).
-
-
-Fixpoint check_lang_ok l :=
-    match l with
-    | [::] => true
-    | (name,r)::l' =>
-      (fresh name l') &&
-      (check_rule_ok l' r) &&
-      (check_lang_ok l')
-    end.
-
-
 Lemma check_lang_ok_all_fresh l : check_lang_ok l -> all_fresh l.
 Proof using.
   induction l; intros; repeat (break; simpl in * ); break_goal; auto.
 Qed.
 
-
-
-Lemma dom_codom_is_exp p
-  : (forall p', is_dom p p' -> is_exp p')
-    /\ (forall p', is_codom p p' -> is_exp p').
-Proof.
-  induction p; split; intros p' H'; inversion H'; clear H'; crush;
-    try constructor.
-  {
-    revert dependent l0;
-      intro l0; revert pl_l;
-        induction l0; simpl;
-          eauto;
-          intro_to List.Forall2;
-          intro lfa; safe_invert lfa;
-            constructor;
-            intuition; auto.
-  }
-  {
-    revert dependent l0;
-    intro l0; revert pl_r;
-    induction l0; simpl;
-    eauto;
-    intro_to List.Forall2;
-    intro lfa; safe_invert lfa;
-    constructor;
-    intuition; auto.
-  }
-  {
-    intuition;
-    apply subst_is_exp.
-    {
-      TODO: need lang ok
-                 eauto.
-
-
-      (***********************************************************
-********************************************************************)
 
 Lemma check_lang_okP l : reflect (lang_ok l) (check_lang_ok l).
 Proof using.

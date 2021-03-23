@@ -282,8 +282,11 @@ c |- e1 = e2 : t' = t''
       match pl, c' with
       | [::], [::] => true
       | p::pl', (_,t)::c'' =>
-        (check_term_ok p (pf_subst (with_names_from c'' pl') t)) &&
-        (check_args_ok' pl' c'')
+        match dom (pf_subst (with_names_from c'' pl') t) with
+        | Some t' => (check_term_ok p t') &&
+                    (check_args_ok' pl' c'')
+        | None => false
+        end
       |_,_=> false
     end.
 
