@@ -794,3 +794,20 @@ Proof.
     }
   }
 Qed.
+
+(* Performs inversion on H exactly when 
+    either: 
+    - no constructors can produce H and the goal is solved
+    - exactly one constructor can produce H and inversion
+      makes progress
+ *)
+Ltac safe_invert H :=
+  let t := type of H in
+  inversion H; clear H;
+  let n := numgoals in
+  guard n <= 1;
+  lazymatch goal with
+  | [ H' : t|-_]=>
+    fail "safe_invert did not make progress"
+  | _ => subst
+  end.

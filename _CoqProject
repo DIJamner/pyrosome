@@ -1,5 +1,6 @@
 -R src/Utils Utils
 src/Utils/Utils.v
+src/Utils/BoolAsProp.v
 src/Utils/Monad.v
 
 -R src/named Named

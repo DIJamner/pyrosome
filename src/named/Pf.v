@@ -678,6 +678,27 @@ Definition eq_pf_term (l : lang) c (p1 p2 : pf) : bool :=
 Definition eq_pf_sort (l : lang) c (p1 p2 : pf) : bool :=
   synth_wf_sort l p1 c == synth_wf_sort l p2 c.
 
+
+(*TODO:
+  conceptual issue:
+  if pfs proves s1 ~ s2 and p proves e1 ~ e2,
+  then pf_subst pfs p should prove e1[/s1/] ~ e2[/s2/].
+  However, in the transitive case, there is an issue:
+  pf_subst pfs (trans p1 p2) = trans (pf_subst pfs p1) (pf_subst pfs p2),
+  but when pfs is not an instance of reflexivity, this 
+  produces proofs which do not connect at their domain/codomain.
+
+  Potential solutions:
+  -make one of the pfs uses a reflexivity proof,
+  either by projecting (which requires the lang in context)
+  or as (map2 trans pfs (map sym pfs)), which may produce large proof terms.
+  -add pf_subst as a constructor; gives up on canonicity of terms wrt substitution
+  but they are already non cannonical due to conversions, etc.
+      +note: might be worth at some point canonicalizing them via reduction for
+       conversions, etc, but both versions may be worth maintaining
+  -attempt to do the same operations that the proof DSL is good for on
+   actual proofs in Prop (may well need to use Ltac2, not Gallina)
+*)
 Fixpoint pf_subst (s : named_list pf) (p : pf) : pf :=
       match p with
       | pvar x => named_list_lookup (pvar x) s x

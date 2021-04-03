@@ -4,64 +4,86 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-From Utils Require Import Utils.
+From Utils Require Import Utils BoolAsProp.
 From Named Require Import Pf.
 From Named Require Export PfCoreDefs.
 Import OptionMonad.
 
 Require Import String.
 
+Lemma invert_is_exp_var x : is_exp (pvar x) <-> True.
+Proof.
+  split; [intro H; inversion H| intros; subst];
+    eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_var : pfcore.
+Lemma invert_is_exp_con n1 pl
+  : is_exp (pcon n1 pl) <-> List.Forall is_exp pl.
+Proof.
+  split.
+  - intro H; inversion H; eauto with pfcore.
+  - firstorder; subst; eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_con : pfcore.  
+Lemma invert_is_exp_ax n pfs
+  : is_exp (ax n pfs) <-> False.
+Proof.
+  split;intro H; inversion H; subst; eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_ax : pfcore.
+
+Lemma invert_is_exp_sym p : is_exp (sym p) <-> False.
+Proof.
+  split; [intro H; inversion H| intros; subst];
+    firstorder;
+    eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_sym : pfcore.
+
+Lemma invert_is_exp_trans p1 p2 : is_exp (trans p1 p2) <-> False.
+Proof.
+  split; [intro H; inversion H| intros; subst]; intuition;
+    eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_trans : pfcore.
+
+Lemma invert_is_exp_conv pt p
+  : is_exp (conv pt p) <-> is_exp p.
+Proof.
+  split; [intro H; inversion H| intros; subst];
+    firstorder; subst;
+      eauto with pfcore.
+Qed.
+Hint Rewrite invert_is_exp_conv : pfcore.
+
+(*TODO: move to utils/rewriting package*)
+Lemma invert_list_Forall_nil A (P : A -> Prop)
+  : List.Forall P [::] <-> True.
+Proof.
+  intuition; intro H; safe_invert H.
+Qed.
+Hint Rewrite invert_list_Forall_nil : utils.
+Lemma invert_list_Forall_cons A (P : A -> Prop) a l
+  : List.Forall P (a::l) <-> P a /\ List.Forall P l.
+Proof.
+  intuition;
+  safe_invert H; auto.  
+Qed.
+Hint Rewrite invert_list_Forall_cons : utils.
+
+
+Lemma check_is_exp_iff e : (check_is_exp e) <-> (is_exp e).
+Proof.
+  induction e; simpl; autorewrite with pfcore bool_utils utils; try solve [intuition].
+  revert H; induction l; simpl; autorewrite with pfcore bool_utils utils in *;
+    intuition.
+Qed.  
+Hint Rewrite check_is_exp_iff : pfcore.
 
 Lemma check_is_expP e : reflect (is_exp e) (check_is_exp e).
 Proof using.
-  induction e; simpl; repeat constructor;
-    try match goal with
-          [|- ~_] => let H := fresh in intro H; inversion H; clear H; subst
-        end.
-  {
-    suff: (reflect (List.Forall is_exp l) (List.forallb check_is_exp l)).
-    {
-      intro lfr.
-      match goal with
-        |- reflect _ ?b =>
-        case alll0: b
-      end; repeat constructor.
-      { apply /lfr; assumption. }
-      {
-        intro H; inversion H; subst; clear H.
-        move: H1 => /lfr.
-        rewrite alll0 => //.
-      }
-    }
-    {
-      revert X; induction l; simpl; [repeat constructor|].
-      intro; break.
-      solve_reflect_norec;
-        [match goal with
-           |- reflect _ ?b =>
-           case alll0: b
-         end|]; repeat constructor.
-      { apply /r; auto. }
-      { apply /IHl; auto. }
-      {
-        intro H; inversion H; subst; clear H.
-        move: H3 => /IHl.
-        rewrite alll0 => //.
-        auto.
-      }
-      {
-        intro H; inversion H; subst; clear H.
-        move: H2 => /r //.
-      }
-    }
-  }
-  {
-    revert IHe2.
-    case ce2: (check_is_exp e2); intro r; constructor; inversion r.
-    constructor; auto.
-    intro H'; inversion H'; auto.
-  }
-Qed.  
+  reflect_from_iff check_is_exp_iff.
+Qed.
 
 (*TODO: pull/duplicate appropriate hints outside the section*)
 Section TermsAndRules.
@@ -107,7 +129,7 @@ Section TermsAndRules.
   Hint Rewrite invert_is_dom_var : pfcore.
   Lemma invert_is_dom_con n1 p pl
     : is_dom (pcon n1 pl) p
-      <-> (exists pl_r, (p = pcon n1 pl_r) /\ (List.Forall2 is_dom pl pl_r)).
+      <-> (exists pl_r, (List.Forall2 is_dom pl pl_r) /\ p = pcon n1 pl_r).
   Proof.
     split.
     - intro H; inversion H; eauto with pfcore.
@@ -121,8 +143,8 @@ Section TermsAndRules.
                  match r with
                  | sort_le_pf c p _
                  | term_le_pf c p _ _ =>
-                   exists pl_r, p' = pf_subst (with_names_from c pl_r) p /\
-                                List.Forall2 is_dom pfs pl_r
+                   exists pl_r, List.Forall2 is_dom pfs pl_r /\
+                                p' = pf_subst (with_names_from c pl_r) p
                  | _ => False
                  end).
   Proof.
@@ -153,7 +175,7 @@ Section TermsAndRules.
   
   Lemma invert_is_dom_conv pt p p'
     : is_dom (conv pt p) p' <->
-      exists p'', p' = (conv pt p'') /\ is_dom p p''.
+      exists p'', is_dom p p'' /\ p' = (conv pt p'') .
   Proof.
     split; [intro H; inversion H| intros; subst];
       firstorder; subst;
@@ -169,7 +191,7 @@ Section TermsAndRules.
   Hint Rewrite invert_is_codom_var : pfcore.
   Lemma invert_is_codom_con n1 p pl
     : is_codom (pcon n1 pl) p
-      <-> (exists pl_r, (p = pcon n1 pl_r) /\ (List.Forall2 is_codom pl pl_r)).
+      <-> exists pl_r, List.Forall2 is_codom pl pl_r /\ p = pcon n1 pl_r.
   Proof.
     split.
     - intro H; inversion H; eauto with pfcore.
@@ -183,8 +205,8 @@ Section TermsAndRules.
                  match r with
                  | sort_le_pf c _ p
                  | term_le_pf c _ p _ =>
-                   exists pl_r, p' = pf_subst (with_names_from c pl_r) p /\
-                                List.Forall2 is_codom pfs pl_r
+                   exists pl_r, List.Forall2 is_codom pfs pl_r /\
+                                p' = pf_subst (with_names_from c pl_r) p                                
                  | _ => False
                  end).
   Proof.
@@ -199,7 +221,7 @@ Section TermsAndRules.
   Qed.
   Hint Rewrite invert_is_codom_ax : pfcore.
 
-   Lemma invert_is_codom_sym p p' : is_codom (sym p) p' <-> is_dom p p'.
+  Lemma invert_is_codom_sym p p' : is_codom (sym p) p' <-> is_dom p p'.
   Proof.
     split; [intro H; inversion H| intros; subst];
       eauto with pfcore.
@@ -215,7 +237,7 @@ Section TermsAndRules.
   
   Lemma invert_is_codom_conv pt p p'
     : is_codom (conv pt p) p' <->
-      exists p'', p' = (conv pt p'') /\ is_codom p p''.
+      exists p'', is_codom p p'' /\ p' = (conv pt p'').
   Proof.
     split; [intro H; inversion H| intros; subst];
       firstorder; subst;
@@ -223,64 +245,6 @@ Section TermsAndRules.
   Qed.
   Hint Rewrite invert_is_codom_conv : pfcore.
 
-  (*TODO: move to utils*)
-  Lemma rewrite_string_eqb s1 s2
-    : (s1 =? s2)%string = (s1 == s2).
-  Proof.
-    reflexivity.
-  Qed.
-  Hint Rewrite rewrite_string_eqb : bool_utils.
-  Lemma rewrite_opt_eq_eqb (A:eqType) (a b : option A)
-    : (opt_eq a b) = (a == b).
-  Proof.
-    reflexivity.
-  Qed.
-  Hint Rewrite rewrite_opt_eq_eqb : bool_utils.
-  Lemma rewrite_eqseq_eqb (A:eqType) (a b : list A)
-    : (eqseq a b) = (a == b).
-  Proof.
-    reflexivity.
-  Qed.
-  Hint Rewrite rewrite_eqseq_eqb : bool_utils.
-  Lemma rewrite_true_equal a
-    : (true = a) <-> (is_true a).
-  Proof.
-    easy.
-  Qed.
-  Hint Rewrite rewrite_true_equal : bool_utils.
-  Lemma rewrite_eqb_equal (A:eqType) (a b : A)
-    : (a == b) <-> (a = b).
-  Proof.
-    split; [move /eqP; auto|intros; apply /eqP => //].
-  Qed.
-  Hint Rewrite rewrite_eqb_equal : bool_utils.
-  Lemma rewrite_false_equal a
-    : (false = a) <-> (~ is_true a).
-  Proof.
-    split.
-    {
-      intro H.
-      rewrite <- H.
-      easy.
-    }
-    {
-      intro H.
-      symmetry.
-      apply /negP.
-      assumption.
-    }
-  Qed.
-  Hint Rewrite rewrite_false_equal : bool_utils.
-  Lemma rewrite_andb_prop a b
-    : (a && b) <-> (a /\ b).
-  Proof.
-    split.
-    move /andP; auto.
-    intros; apply /andP; auto.
-  Qed.
-  Hint Rewrite rewrite_andb_prop : bool_utils.
-  Hint Rewrite Bool.andb_true_r : bool_utils.
-  Hint Rewrite Bool.andb_false_r : bool_utils.
 
   (*We want this as a lemma so it can be part of autorewrite
     instead of using both autorewrite and cbn
@@ -295,38 +259,18 @@ Section TermsAndRules.
   Proof. reflexivity. Qed.
   Hint Rewrite omap_eval_None : utils.
 
-  (* TODO: move to utils
-    Performs inversion on H exactly when 
-    either: 
-    - no constructors can produce H and the goal is solved
-    - exactly one constructor can produce H and inversion
-      makes progress
-   *)
-  Ltac safe_invert H :=
-    let t := type of H in
-    inversion H; clear H;
-    let n := numgoals in
-    guard n <= 1;
-    lazymatch goal with
-    | [ H' : t|-_]=>
-      fail "safe_invert did not make progress"
-    | _ => subst
-    end.
 
-
-  (*Stubbed out until we have the right lemmas*)
-  Ltac reflect_rewrite_pred t := idtac.
-
-  Ltac prepare_crush_rewrites :=
-    autorewrite with utils bool_utils pfcore in *;
-    subst.
-    
   Ltac prepare_crush :=
-    try reflect_rewrite_pred prepare_crush_rewrites;
-    prepare_crush_rewrites.
+    repeat(autorewrite with utils bool_utils pfcore in *;
+           try match goal with
+           | [H : exists _,_|- _] => destruct H
+           | [H : _ /\ _ |- _] => destruct H
+           end;
+           subst).
   
   (*TODO: separate inversion database,
-    custom plugin to greedily run database
+    custom plugin to greedily run database?
+    Or: inversion lemmas, rewriting
    *)
   Hint Extern 1 => match goal with [H : is_dom _ _|-_] => safe_invert H end : pfcore.
   Hint Extern 1 => match goal with [H : is_codom _ _|-_] => safe_invert H end : pfcore.
@@ -336,14 +280,15 @@ Section TermsAndRules.
   Hint Extern 1 => match goal with [H : Some _ = Some _|-_] => safe_invert H end : pfcore.
   Hint Extern 1 => match goal with [H : omap _ ?e = Some _|-_] => let H:=fresh in my_case H e;
                 prepare_crush end : pfcore.
-               
+
+  (*
   Hint Extern 2 (reflect _ (omap _ ?e == _)) =>
   (let H:= fresh in my_case H e; prepare_crush) : pfcore.
   Hint Extern 4 (reflect _ (_ == _)) =>
   (destruct_reflect_bool; prepare_crush) : pfcore.
+   *)
   (*TODO: move to utils*)
-  Create HintDb bool_utils discriminated.
-  Hint Constructors reflect : bool_utils.
+  (*
   Hint Extern 10 => match goal with
                     |[H : forall x, reflect (?A x) _ |- ?A _] =>
                       apply /H; prepare_crush
@@ -356,6 +301,7 @@ Section TermsAndRules.
                     | [H : reflect ?A _, H':?A|-_] =>
                       move: H' => /H H'; prepare_crush
                     end : bool_utils.
+   *)
   
   Lemma dom_args_eval_cons p ps
     : dom_args dom (p :: ps) = do l_dom <- dom_args dom ps; a_dom <- dom p; ret (a_dom::l_dom).
@@ -375,7 +321,7 @@ Section TermsAndRules.
   Lemma named_list_lookup_err_inb' (A:eqType)
     : forall (l0 : named_list A) (x : string) (v : A),
       all_fresh l0 ->
-      (Some v = named_list_lookup_err l0 x) <-> ((x, v) \in l0).
+      (named_list_lookup_err l0 x = Some v) <-> ((x, v) \in l0).
   Proof.
     intros; rewrite <- named_list_lookup_err_inb; auto.
     split.
@@ -400,95 +346,32 @@ Section TermsAndRules.
   
   Ltac crush_n n := prepare_crush; eauto n with pfcore bool_utils.
   Ltac crush := crush_n integer:(5).
-  
-  (*TODO: do I need all_fresh l?
-    TODO: if necessary, prove lemma at the right place
-  Context (l_fresh : all_fresh l). *)
 
-
-
-  Local Ltac dom_codom_forall_case l0 l1 :=
-        revert dependent l0;
-        intro l0; revert l1;
-        induction l0; intro l1; destruct l1; cbn in *; crush;
-          move => [[H1 H2] H3];       
-                    repeat case_match; crush;
-        match goal with
-          [H : forall (x : list pf), ?A -> _, H' : ?A|-_]=>
-          specialize (H l1 H')
-        end;
-        (*TODO: should be part of crush*)
-        destruct_reflect_bool;
-        crush_n integer:(8).
-
-  (*TODO: move to utils*)
-  Definition iff_type (A B : Type) : Prop :=
-    inhabited (A -> B) /\ inhabited (B -> A).
-  Transparent iff_type.
-  Lemma iff_type_refl A : iff_type A A.
-    easy.
-  Qed.
-  Lemma iff_type_sym A B : iff_type A B -> iff_type B A.
-    unfold iff_type; easy.
-  Qed.
-  Lemma iff_type_trans A B C
-    : iff_type A B -> iff_type B C -> iff_type A C.
-    unfold iff_type;intuition.
-    destruct H1; destruct H; auto using inhabits.
-    destruct H3; destruct H2; auto using inhabits.
-  Qed.
-  Add Parametric Relation : Type iff_type
-  reflexivity proved by iff_type_refl
-  symmetry proved by iff_type_sym
-  transitivity proved by iff_type_trans
-  as iff_type_rel.
-  Require Import Setoid Morphisms.
-  Require Import Relations.
-  Add Parametric Morphism : reflect
-      with signature iff ==> eq ==> iff_type as reflect_mor.
-  Proof.
-    intros x y xy b; destruct b;
-    split; constructor; intro H; safe_invert H; constructor;
-      intuition.
-  Qed.
-
-  Lemma rewrite_reflect A B b
-    : (A <-> B) -> reflect B b -> reflect A b.
-  Proof.
-    intros AB Br; inversion Br; constructor; intuition.
-  Qed.
 
   Lemma lookup_is_exp pl x
-    :List.Forall (fun p : string * pf => is_exp p.2) pl ->
+    :List.Forall (fun p => is_exp p) (map snd pl) ->
      is_exp (named_list_lookup (pvar x) pl x).
   Proof.
-    induction 1; simpl; auto with pfcore;
-      break; simpl in *.
-    crush.
-    case_match; auto.
+    induction pl; break; simpl in *; crush.
+    case_match; crush; intuition.
   Qed.
-
     
   Lemma subst_is_exp p pl
     : is_exp p ->
-      List.Forall (fun p=> is_exp p.2) pl ->
+      List.Forall (fun p=> is_exp p) (map snd pl) ->
       is_exp (pf_subst pl p).
   Proof.
-    induction p; simpl; intro ie; inversion ie; clear ie; crush.
+    induction p; simpl; crush.
     {
-        by apply lookup_is_exp.
+        intros; by apply lookup_is_exp.
     }
     {
-      constructor.
       revert dependent l0;
         induction l0;
-        simpl; constructor;
-          intuition;
-        safe_invert H1;
-        eauto.
+        simpl; crush;
+          intuition.
     }
   Qed.
-  (*TODO probably want to change structure of assumptions for automation*)
   Hint Resolve subst_is_exp : pfcore.
 
   
@@ -527,52 +410,59 @@ Section TermsAndRules.
     move => /orP [/eqP []|]; intros; subst; eauto.
       by inversion H0.
   Qed.
-    
+
+  
+  (*TODO: move to utils/rewriting package*)
+  (*TODO: leave generic in second arg or no*)
+  Lemma invert_list_Forall2_nil A B (P : A -> B -> Prop) es
+    : List.Forall2 P [::] es <-> es = [::].
+  Proof.
+    intuition; subst; auto.
+  Qed.
+  Hint Rewrite invert_list_Forall2_nil : utils.
+  Lemma invert_list_Forall2_cons A B (P : A -> B -> Prop) e es lst
+    : List.Forall2 P (e::es) lst <->
+      exists es', List.Forall2 P es es' /\
+      exists e', P e e' /\ lst = e'::es'.
+  Proof.
+    intuition;
+      safe_invert H; firstorder; subst; auto.  
+  Qed.
+  Hint Rewrite invert_list_Forall2_cons : utils.
+
+  Lemma invert_cons_eq A (a a':A) lst lst'
+    : a::lst = a' ::lst' <-> a = a' /\ lst = lst'.
+  Proof.
+    intuition; try safe_invert H; firstorder; subst; auto.
+  Qed.
+  Hint Rewrite invert_cons_eq : utils.
+      
   Lemma dom_codom_is_exp p
     : (forall p', is_dom p p' -> is_exp p')
       /\ (forall p', is_codom p p' -> is_exp p').
   Proof.
-    induction p; split; intros p' H'; inversion H'; clear H'; crush;
-      try constructor; intuition;
-      try match goal with
-      | [H : List.Forall2 _ ?l0 ?pl_l |- List.Forall _ ?pl_l] =>
-      revert dependent l0;
-        intro l0; revert pl_l;
-          induction l0; simpl;
-            eauto;
-            intro_to List.Forall2;
-            intro lfa; safe_invert lfa;
-              constructor;
-              intuition; solve[auto]
-      | [H : is_true ((_,_) \in _),
-             H' : List.Forall2 _ ?pfs ?pl_l
-        |- is_exp (pf_subst (with_names_from ?c ?pl_l) _)] =>
+    induction p; split; intros; crush.
+    1,2:revert dependent l0; intro l0; revert x;
+        induction l0; firstorder; crush.
+    1,2:  destruct x; simpl in *; intuition; crush;
       apply subst_is_exp;
         eauto using
               sort_le_in_left_is_exp,
         term_le_in_left_is_exp,
         term_le_in_right_is_exp,
         sort_le_in_right_is_exp;
-        clear H;
-        revert dependent pfs;
-        let l0 := fresh l0 in
-        intro l0; revert c pl_l;
-        induction l0; simpl;
-        eauto;
-        intro_to List.Forall2;
-        intro lfa; safe_invert lfa;
-        destruct c; break; simpl;
-          constructor;
-          intuition; solve[auto]
-          end.
+      clear H0;
+      revert dependent pfs; intro l0; revert n0 x;
+        induction l0; intros; destruct n0; break;
+          destruct x as [|? x];
+          simpl in *; crush; try easy.
   Qed.
-  
-  Ltac reflect_rewrite_pred t ::=
-    eapply rewrite_reflect;[t; apply iff_refl|].
 
-  Hint Resolve eqP : bool_utils.
-
-  
+  Definition dom_is_exp p := proj1 (dom_codom_is_exp p).
+  Hint Resolve dom_is_exp : pfcore.
+  Definition codom_is_exp p := proj2 (dom_codom_is_exp p).
+  Hint Resolve codom_is_exp : pfcore.
+   
   Lemma exists_pcon_eq s pl s' P
     : (exists pl', pcon s pl = pcon s' pl' /\ P pl')
       <-> (s = s' /\ P pl).
@@ -582,14 +472,6 @@ Section TermsAndRules.
   Hint Rewrite exists_pcon_eq : pfcore.
 
   
-  Lemma reflect_andb_cong A a B b
-    : reflect A a -> reflect B b -> reflect (A /\ B) (a && b).
-  Proof.
-    intros ra rb; inversion ra; inversion rb; cbn; constructor; intuition.
-  Qed.
-  Hint Resolve reflect_andb_cong : bool_utils.
-
-  
   Lemma invert_Forall2_cons (A B : eqType) R (e : A) es (e' : B) es'
     : List.Forall2 R (e::es) (e'::es') <-> (R e e' /\ List.Forall2 R es es').
   Proof.
@@ -597,126 +479,36 @@ Section TermsAndRules.
   Qed.
   Hint Rewrite invert_Forall2_cons : utils.
 
-  
-  Lemma invert_Some_eq (A : eqType) (a1 a2 : A)
-    : (Some a1 == Some a2) = (a1 == a2).
+  (*
+  (*TODO: need to recover level of indirection;
+   what is the best way? make use of hint resolve not rewrite
+   *)
+  Lemma exists_as_omap_eq (A B:eqType) P (f : A -> B) a b
+    : (forall c, P c <-> b = Some c) ->
+      (exists c : A, a = f c /\ P c) <-> omap f b = Some a.
   Proof.
-    split; intuition.
+    destruct b; cbn; firstorder; crush; firstorder.
+    specialize (H x); firstorder; crush.
+    exists s.
+    specialize (H s); firstorder; crush.
+    specialize (H x); firstorder; crush.
   Qed.
-  Hint Rewrite invert_Some_eq : bool_utils.
+  Hint Resolve exists_as_omap_eq : pfcore.
+*)
 
-  Local Lemma domP_inner_induction l0 l2
-    : List.fold_right
-        (fun t : pf =>
-           prod {_ : (forall p' : pf, reflect (is_dom t p') (dom t == (do ret p')))
-                     & forall p' : pf, reflect (is_codom t p') (codom t == (do ret p'))}) unit
-        l0 ->
-      reflect (List.Forall2 is_dom l0 l2) (dom_args dom l0 == Some l2).
+  (*
+  Lemma exists_as_obind_eq (A B:eqType) P Q (f : A -> option B) a b
+    : (forall c, P c <-> b = Some c) ->
+      (forall c, Q c <-> f c = Some a) ->
+      (exists c, P c /\ Q c) <-> obind f b = Some a.
   Proof.
-    revert l2; induction l0; cbn; intros l2 H; destruct H;
-      repeat case_match; cbn; first [constructor | destruct l2];
-        cbn; repeat constructor;
-          try (intro H'; safe_invert H');
-          firstorder.
-    {
-      specialize (IHl0 l2 f); crush.
-    }
-    {
-      move: H1 => /x //.
-    }
-    {
-      move: H3 => /IHl0. crush.
-    }
+    my_case beq b; cbn; firstorder; crush;
+    specialize (H x); specialize (H0 x); firstorder; crush.
   Qed.
-  Hint Resolve domP_inner_induction : pfcore.
+  Hint Resolve exists_as_obind_eq : pfcore.
+*)
 
-   Local Lemma codomP_inner_induction l0 l2
-    : List.fold_right
-        (fun t : pf =>
-           prod {_ : (forall p' : pf, reflect (is_dom t p') (dom t == (do ret p')))
-                     & forall p' : pf, reflect (is_codom t p') (codom t == (do ret p'))}) unit
-        l0 ->
-      reflect (List.Forall2 is_codom l0 l2) (codom_args codom l0 == Some l2).
-  Proof.
-    revert l2; induction l0; cbn; intros l2 H; destruct H;
-      repeat case_match; cbn; first [constructor | destruct l2];
-        cbn; repeat constructor;
-          try (intro H'; safe_invert H');
-          firstorder.
-    {
-      specialize (IHl0 l2 f).
-      reflect_rewrite_pred prepare_crush; crush.
-    }
-    {
-      move: H1 => /p //.
-    }
-    {
-      move: H3 => /IHl0; crush.
-    }
-  Qed.
-  Hint Resolve codomP_inner_induction : pfcore.
-
- 
-  Lemma reflect_exists_as_omap_eq_cong (A B:eqType) P (f : A -> B) a b
-    : (forall c, reflect (P c) (b == Some c)) ->
-      reflect (exists c : A, a = f c /\ P c)
-              (omap f b == Some a).
-  Proof.
-    destruct b; cbn; crush.
-    my_case H (f s == a).
-    all: constructor; try (intros ?); firstorder.
-    {
-      move: H => /eqP; intros; subst.
-      exists s; firstorder.
-      apply /X; auto.
-    }
-    {
-      move: H1 => /X /eqP; intros; subst.
-      rewrite eq_refl in H; easy.
-    }
-    {
-      move: H0 => /X //.
-    }
-  Qed.
-  Hint Resolve reflect_exists_as_omap_eq_cong : pfcore.
-
-  
-  Lemma reflect_exists_as_obind_eq_cong (A B:eqType) P Q (f : A -> option B) a b
-    : (forall c, reflect (P c) (b == Some c)) ->
-      (forall c, reflect (Q c) (f c == Some a)) ->
-      reflect (exists c, P c /\ Q c)
-              (obind f b == Some a).
-  Proof.
-    my_case beq b; cbn; crush.
-    my_case H (f s); cbn; crush.
-    my_case aeq (s0 == a); crush.
-    all: constructor; try (intros ?); firstorder.
-    {
-      move: aeq => /eqP; intros; subst.
-      exists s; firstorder.
-      apply /X; auto.
-      apply /X0; auto.
-      crush.
-    }
-    {
-      move: H0 => /X /eqP H0; subst.
-      move: H1 => /X0 /eqP H1; subst.
-      rewrite H in H1.
-      safe_invert H1.
-      rewrite eq_refl in aeq; easy.
-    }
-    {
-      move: H0 => /X /eqP H0; subst.
-      move: H1 => /X0 /eqP H1; subst.
-      rewrite H in H1.
-      safe_invert H1.
-    }
-    {
-      move: H => /X //.
-    }
-  Qed.
-  Hint Resolve reflect_exists_as_obind_eq_cong : pfcore.
-  
+  (*
   Ltac fold_omap :=
     lazymatch goal with
       [|- context c[match ?e with Some p => Some (@?f p) | None => None end] ]=>
@@ -731,60 +523,183 @@ Section TermsAndRules.
       let g := context c [obind f e] in
       change g
     end.
+    *)
+  (*
+  Lemma rewrite_pair_exists A B P
+    : (exists (a:A) (b: B), P a b) <-> exists (p : A * B), P p.1 p.2.
+  Proof.
+    firstorder.
+    exists (x,x0); simpl; auto.
+  Qed.
+  Hint Rewrite rewrite_pair_exists : utils. *)
+
+  (*
+  Lemma rewrite_exists_match_cons (A:eqType) (Q : A -> _ -> Prop) x
+    : (exists a b, x = a::b /\ Q a b) <-> match x with
+                                          | [::] => False
+                                          | a::b => Q a b
+                                          end.
+  Proof.
+    destruct x; simpl; firstorder; safe_invert H; auto.
+  Qed.
+   *)
+
+
+  (*TODO: go back to all rules, review;
+    want to rewrite computations to props
+   *)
+  Lemma match_some_eq (A B: eqType) (ma : option A) f (b :B)
+    : match ma with Some a => f a | None => None end = Some b
+      <-> match ma with Some a => f a = Some b | None => False end.
+  Proof.
+    destruct ma; intuition; crush.
+  Qed.
+  Hint Rewrite match_some_eq : pfcore.
+  
+  Lemma some_to_exists_equal A (ma : option A) P
+    : match ma with
+      | Some e => P e
+      | None => False
+      end
+      <-> (exists e, ma = Some e /\ P e).
+  Proof.
+    destruct ma; simpl; firstorder; crush.
+  Qed.
+  Hint Rewrite some_to_exists_equal : pfcore.
+
+  
+  Lemma list_to_exists_equal A (ma : list A) P
+    : match ma with
+      | e::es => P e es
+      | [::] => False
+      end
+      <-> (exists e es, ma = e::es /\ P e es).
+  Proof.
+    destruct ma; simpl; firstorder; crush.
+    inversion H.
+  Qed.
+  Hint Rewrite list_to_exists_equal : pfcore.
+
+  
+  
+  Lemma rewrite_pair_let_to_proj A B (p : A*B) (P : A -> B -> Prop)
+    : (let (a,b) := p in P a b)
+      <-> P p.1 p.2 .
+  Proof.
+    destruct p; simpl; firstorder; crush.
+  Qed.
+  Hint Rewrite rewrite_pair_let_to_proj : pfcore.
+
+
+
+  
+  Ltac safe_specialize :=
+    match goal with
+      [ H : forall x, ?A -> _, H' : ?A|-_] =>
+      let H1 := fresh in
+      rename H into H1;
+        pose proof (fun x => H1 x H') as H;
+        clear H1
+    end.
+
+  Hint Extern 20 => match goal with
+       [ H : forall x, _ <-> _ |- _] =>
+       rewrite !H
+     end : bool_utils.
+
+  Local Lemma domP_inner_induction l0 l2
+    : List.fold_right
+        (fun t : pf =>
+           and ((forall p' : pf, (dom t = Some p') <-> (is_dom t p')) /\
+                 forall p' : pf, (codom t = Some p') <-> (is_codom t p'))) True
+        l0 ->
+      (dom_args dom l0 = Some l2) <->
+      (List.Forall2 is_dom l0 l2).
+  Proof.
+    revert l2; induction l0; cbn; intros; prepare_crush; repeat safe_specialize; crush.
+    apply peel_exists_iff; intro; crush.
+    apply and_iff_compat; crush.
+    apply peel_exists_iff; intro; crush.
+  Qed.
+  Hint Rewrite domP_inner_induction : pfcore.
+  
+   Local Lemma codomP_inner_induction l0 l2
+    : List.fold_right
+        (fun t : pf =>
+           and ((forall p' : pf, (dom t = Some p') <-> (is_dom t p')) /\
+                 forall p' : pf, (codom t = Some p') <-> (is_codom t p'))) True
+        l0 ->
+      (codom_args codom l0 = Some l2) <->
+      (List.Forall2 is_codom l0 l2).
+  Proof.
+    revert l2; induction l0; cbn; intros; prepare_crush; repeat safe_specialize; crush.
+    apply peel_exists_iff; intro; crush.
+    apply and_iff_compat; crush.
+    apply peel_exists_iff; intro; crush.
+  Qed.
+  Hint Rewrite codomP_inner_induction : pfcore.
+ 
+  Lemma omap_eq_some A B (f : A -> B) ma b
+    : injective f ->
+      omap f ma = Some b <-> exists a, ma = Some a /\ f a = b.
+  Proof.
+    intro injf.
+    destruct ma; simpl; intuition; crush.
+  Qed.
+  Hint Rewrite omap_eq_some : pfcore.
+
+
+  Ltac injective_constructor :=
+    let H := fresh in intros ? ? H; safe_invert H; reflexivity.
+
+  
+  Hint Extern 1 (injective _) => injective_constructor : pfcore.
+
+  Lemma rewrite_none_eq_some A (a :A)
+    : None = Some a <-> False.
+  Proof.
+    intuition.
+  Qed.
+  Hint Rewrite rewrite_none_eq_some : pfcore.
    
-  Lemma dom_codom_P p
-    : { _ :(forall p', reflect (is_dom p p') (dom p == Some p'))
-           & (forall p', reflect (is_codom p p') (codom p == Some p'))}.
+  Lemma dom_codomP p
+    :(forall p', (dom p = Some p') <-> (is_dom p p'))
+       /\ (forall p', (codom p = Some p') <-> (is_codom p p')).
   Proof.
     induction p; split; cbn [dom codom]; fold dom; fold codom; intros;
-      firstorder; crush.
-    {
-      fold_obind;
-        apply reflect_exists_as_obind_eq_cong.
-      {
-        intros.
-        rewrite named_list_lookup_err_inb.
-        apply idP;
-          apply lang_ok_all_fresh.
-        apply lang_ok_all_fresh.
-      }
-      {
-        intro c; destruct c;
-        crush; fold_omap;
-        apply reflect_exists_as_omap_eq_cong;
-        intros;
-        apply domP_inner_induction;
-        assumption.
-      }
-    }
-    {
-      fold_obind;
-        apply reflect_exists_as_obind_eq_cong.
-      {
-        intros.
-        rewrite named_list_lookup_err_inb.
-        apply idP;
-          apply lang_ok_all_fresh.
-        apply lang_ok_all_fresh.
-      }
-      {
-        intro c; destruct c;
-        crush; fold_omap;
-        apply reflect_exists_as_omap_eq_cong;
-        intros;
-        apply codomP_inner_induction;
-        assumption.
-      }
-    }
-  Qed.
+      crush;
+      try match goal with
+        [H : forall p', ?P p' <-> _ |- ?P _ <-> _] =>
+        rewrite H; crush
+          end;
+      (*TODO: why not auto?*)
+      apply peel_exists_iff; intro; crush.
+    all: apply and_iff_compat; crush.
+    all: destruct e; crush.
     
-  Definition is_domP p p' : reflect (is_dom p p') (dom p == Some p') :=
-    projT1 (dom_codom_P p) p'.
-  Hint Resolve is_domP : pfcore.
-  Definition is_codomP p p' : reflect (is_codom p p') (codom p == Some p') :=
-    projT2 (dom_codom_P p) p'.
-  Hint Resolve is_codomP : pfcore.
-  
+    all: apply peel_exists_iff; intro; crush.
+  Qed.
+
+  Definition rewrite_dom_eq p := proj1 (dom_codomP p).
+  Hint Rewrite rewrite_dom_eq : pfcore.
+  Definition rewrite_codom_eq p := proj2 (dom_codomP p).
+  Hint Rewrite rewrite_codom_eq : pfcore.
+
+    
+  Lemma is_domP p p' : reflect (is_dom p p') (dom p == Some p').
+  Proof.
+    eapply rewrite_reflect.
+    rewrite <- rewrite_dom_eq.
+    apply iff_refl.
+    apply eqP.
+  Qed.
+  Definition is_codomP p p' : reflect (is_codom p p') (codom p == Some p').
+  Proof.
+    eapply rewrite_reflect.
+    rewrite <- rewrite_codom_eq.
+    apply iff_refl.
+    apply eqP.
+  Qed.  
       
   (*TODO: relate dom to is_dom on ok terms
     TODO: should dom be partial?
@@ -817,7 +732,7 @@ Section TermsAndRules.
       exists r, (n,r) \in l /\
       match r with
       | term_rule_pf c' args t' =>
-        dom (pf_subst (with_names_from c' pl) t') = Some t /\
+        is_dom (pf_subst (with_names_from c' pl) t') t /\
         args_ok l c pl c'
       | _ => False
       end.
@@ -827,14 +742,9 @@ Section TermsAndRules.
     {
       exists (term_rule_pf c' args t0); cbn;
         intuition; crush.
-      apply /eqP; apply /is_domP; assumption.
     }
     {
-      move: H => [r [rin H]]; destruct r;
-                 cbn in *; crush; try easy.
-      intuition.
-      move: H0 => /eqP /is_domP H0.
-      crush.
+      destruct x; cbn in *; crush.
     }
   Qed.
   Hint Rewrite invert_term_ok_con : pfcore.
@@ -849,238 +759,359 @@ Section TermsAndRules.
       end.
   Proof.
     split; [intro H; inversion H| intros];
-      crush.
-    {
-      move: H => [r [rin H]]; destruct r;
-                 cbn in *; crush; try easy.
-    }
+      intuition crush.
+    destruct x; crush.
   Qed.
   Hint Rewrite invert_sort_ok_con : pfcore.
 
   Hint Resolve idP : bool_utils.
 
   
-  Lemma invert_args_ok_cons c a pl s t c'
-    : args_ok l c (a::pl) ((s,t)::c') <->
-      exists t', is_dom (pf_subst (with_names_from c' pl) t) t' /\
-                 term_ok l c a t' /\ args_ok l c pl c'.
+  Lemma invert_args_ok_nil c c'
+    : args_ok l c [::] c' <-> c' = [::].
+  Proof.
+    intuition crush.
+    safe_invert H; crush.
+  Qed.
+  Hint Rewrite invert_args_ok_nil : pfcore.
+
+  (*TODO: handle cases on snd arg?*)
+  Lemma invert_args_ok_cons c a pl c'
+    : args_ok l c (a::pl) c' <->
+      exists p c'', c' = p::c'' /\
+      exists t', is_dom (pf_subst (with_names_from c'' pl) p.2) t' /\
+                 term_ok l c a t' /\ args_ok l c pl c''.
   Proof.
     split; [intro H; inversion H| intros; subst]; firstorder; crush.
+    {
+      exists (name,t).
+      exists c'0.
+      split; crush.
+    }
+    {
+      destruct x; simpl in *; econstructor; crush.
+    }
   Qed.
   Hint Rewrite invert_args_ok_cons : pfcore.
 
+  
+  Lemma is_true_match_some A (ma : option A) f b
+    : is_true(match ma with Some a => f a | None => b end)
+      = match ma with Some a => is_true (f a) | None => is_true b end.
+  Proof.
+    destruct ma; reflexivity.
+  Qed.
+  Hint Rewrite is_true_match_some : bool_utils.
+
+  
+  Lemma is_true_match_list A (ma : list A) f b
+    : is_true(match ma with | a::ma' => f a ma' | [::] => b end)
+      = match ma with | a::ma' => is_true (f a ma') | [::] => is_true b end.
+  Proof.
+    destruct ma; reflexivity.
+  Qed.
+  Hint Rewrite is_true_match_list : bool_utils.
+
+
+  
+  Lemma rewrite_cons_eq_nil A (a : A) lst
+    : a::lst = [::] <-> False.
+  Proof.
+    intuition; inversion H.
+  Qed.
+  Hint Rewrite rewrite_cons_eq_nil : bool_utils.
+
+  (*A hack to get around rewrites that aren't working
+    under the match
+   *)
+  Lemma TMP_match_list_to_bool A (P : A -> list A -> Prop) c'
+    : match c' with
+      | [::] => false
+      | a0 :: ma' => P a0 ma'
+      end <->
+      match c' with
+      | [::] => False
+      | a0 :: ma' => P a0 ma'
+      end.
+  Proof.
+    destruct c'; simpl; crush.
+  Qed.
+
+  
+  Lemma TMP_match_option_to_bool A (P : A -> Prop) c'
+    : match c' with
+      | None => false
+      | Some a0 => P a0
+      end <->
+      match c' with
+      | None => False
+      | Some a => P a
+      end.
+  Proof.
+    destruct c'; simpl; crush.
+  Qed.
+  
   
   Lemma check_args_okP' c pl c'
     : all_fresh c ->
       List.fold_right
         (fun t : pf =>
-           prod
+           and
              (forall c : named_list pf,
-                 all_fresh c -> {_ : forall t0 : pf, reflect (term_ok l c t t0) (check_term_ok l c t t0) & reflect (sort_ok l c t) (check_sort_ok l c t)}))
-        unit pl ->
-      reflect (args_ok l c pl c') (check_args_ok l c pl c').
+                 all_fresh c -> (forall t0 : pf,(check_term_ok l c t t0) <->  (term_ok l c t t0))/\
+                                ((check_sort_ok l c t) <-> (sort_ok l c t))))
+        True pl ->
+      (check_args_ok l c pl c') <-> (args_ok l c pl c').
   Proof.
     intro frc.
     revert c'.
-    induction pl; intro c'; destruct c'; break; cbn; crush.
+    induction pl; intro c'; cbn; crush.
     {
-      constructor; intro H'; safe_invert H'.
+      destruct c'; intuition crush.
+      inversion H0.
     }
     {
-      firstorder; constructor; intro H'; safe_invert H'.
+      intros; crush.
+      (*TODO: why does rewrite fail?
+      setoid_rewrite false_False.*)
+      rewrite TMP_match_list_to_bool.
+      crush.
+      apply peel_exists_iff; intro; crush.
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat; crush.
+      crush.
+      (*TODO: get working?
+      rewrite rewrite_pair_let_to_proj *)
+      destruct e; crush.
+      rewrite TMP_match_option_to_bool.
+      crush.
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat;
+        safe_specialize;
+        crush.
+      specialize (H c frc).
+      destruct H as [H H'].
+      crush.
+      specialize (H e); crush.
     }
-    {
-      firstorder; crush.
+  Qed.
+
   
-  (*TODO: build right induction;
-    current one duplicates check_argsP pf;
-    is that fine?
-   *)
+  Lemma rewrite_if_eq_some A (a : A) (b : bool) c
+    : (if b then c else None) = Some a <-> (c = Some a) /\ b.
+  Proof.
+    destruct b; simpl; intuition crush.
+  Qed.
+  Hint Rewrite rewrite_if_eq_some : bool_utils.
+
+  
+  Lemma invert_term_ok_ax c n pfs t'
+    : term_ok l c (ax n pfs) t' <->
+      exists r, (n, r) \in l /\
+                           match r with
+                           | term_le_pf c' _ _ t =>
+                             is_dom (pf_subst (with_names_from c' pfs) t) t' /\
+                             args_ok l c pfs c'
+                           | _ => False
+                           end.
+  Proof.
+    intuition crush; inversion H; clear H; subst.
+    exists (term_le_pf c' e1 e2 t); intuition; crush.
+    destruct x; crush.
+  Qed.
+  Hint Rewrite invert_term_ok_ax : pfcore.
+
+  
+  Lemma invert_sort_ok_ax c n pfs
+    : sort_ok l c (ax n pfs) <->
+      exists r, (n, r) \in l /\
+                           match r with
+                           | sort_le_pf c' _ _ =>
+                             args_ok l c pfs c'
+                           | _ => False
+                           end.
+  Proof.
+    intuition crush; inversion H; clear H; subst.
+    exists (sort_le_pf c' t1 t2); intuition; crush.
+    destruct x; crush.
+  Qed.
+  Hint Rewrite invert_sort_ok_ax : pfcore.
+
+  Lemma invert_term_ok_sym c e t
+    : term_ok l c (sym e) t <-> term_ok l c e t.
+  Proof.
+    intuition crush; inversion H; crush.
+  Qed.
+  Hint Rewrite invert_term_ok_sym : pfcore.
+  
+  Lemma invert_sort_ok_sym c t
+    : sort_ok l c (sym t) <-> sort_ok l c t.
+  Proof.
+    intuition crush; inversion H; crush.
+  Qed.
+  Hint Rewrite invert_sort_ok_sym : pfcore.
+
+  Lemma invert_term_ok_trans c e1 e2 t
+    : term_ok l c (trans e1 e2) t <->
+      (term_ok l c e1 t /\
+       term_ok l c e2 t /\
+      exists e, is_codom e1 e /\ is_dom e2 e).
+  Proof.
+    intuition crush;
+    inversion H; crush.
+  Qed.
+  Hint Rewrite invert_term_ok_trans : pfcore.
+
+  
+  Lemma invert_sort_ok_trans c t1 t2
+    : sort_ok l c (trans t1 t2) <->
+      (sort_ok l c t1 /\
+       sort_ok l c t2 /\
+      exists t, is_codom t1 t /\ is_dom t2 t).
+  Proof.
+    intuition crush;
+    inversion H; crush.
+  Qed.
+  Hint Rewrite invert_sort_ok_trans : pfcore.
+
+  
+  Lemma invert_sort_ok_conv c pt p
+    : sort_ok l c (conv pt p) <-> False.
+ Proof.
+    intuition crush;
+    inversion H; crush.
+  Qed.
+  Hint Rewrite invert_sort_ok_conv : pfcore.
+  
+  Lemma rewrite_exists_snd_determined_from_injectivity A B (f : A -> B) P x
+    : injective f -> (exists e : A, P e /\ f e = f x) <-> P x.
+  Proof.
+    intros ?.
+    firstorder crush.
+  Qed.
+  Hint Rewrite rewrite_exists_snd_determined_from_injectivity : bool_utils.
+
+  Lemma fold_eq_pf p1 p2 : eq_pf p1 p2 = (p1 == p2).
+  Proof.
+    reflexivity.
+  Qed.
+  Hint Rewrite fold_eq_pf : pfcore.
+  
   Lemma check_okP c e
     : all_fresh c ->
-      { _: forall t, reflect (term_ok l c e t) (check_term_ok l c e t)
-        & reflect (sort_ok l c e) (check_sort_ok l c e)}.
+      (forall t, check_term_ok l c e t <-> term_ok l c e t)
+        /\ (check_sort_ok l c e <-> sort_ok l c e).
   Proof.
     revert c.
-    induction e; intros c cfr; split; cbn;
-      fold check_term_ok; fold check_sort_ok;
-        intros;
-      firstorder; crush.
+    induction e; intros c cfr; split;
+      cbn;intros; crush; simpl; crush.  (*TODO: figure out why simpl *)
     {
-      fold_obind.
-      apply reflect_exists_as_obind_eq_cong;
-        intros; crush.
-      destruct c0; crush.
-      fold_omap.
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat; crush.
+      destruct e; simpl; crush.
+      rewrite check_args_okP'; crush.
+    }
+    {
+      rewrite TMP_match_option_to_bool; crush.
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat; crush.
+      destruct e; crush.
+      rewrite check_args_okP'; crush.
+    }
+    {                      
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat; crush.
+      destruct e; crush.
+      rewrite check_args_okP'; crush.
+    }
+    {
+      rewrite TMP_match_option_to_bool; crush.
+      apply peel_exists_iff; intro; crush.
+      apply and_iff_compat; crush.
+      destruct e; crush.
+      rewrite check_args_okP'; crush.
+    }
+    {
+      unfold check_term_ok in *.
+      specialize (IHe c cfr); destruct IHe as [IHe1 IHe2].
+      specialize (IHe1 t); crush.
+    }
+    {
+      specialize (IHe c cfr); destruct IHe as [IHe1 IHe2]; crush.
+    }
+    {
+      etransitivity.
+      apply peel_exists_iff; intro.
+      apply and_iff_compat.
+      specialize (IHe1 c cfr); destruct IHe1 as [IHe11 IHe12].
+      specialize (IHe11 e); unfold check_term_ok in *; prepare_crush.
+      rewrite IHe11; crush.
+      prepare_crush.
+      apply peel_exists_iff; intro.
+      apply and_iff_compat.
+      specialize (IHe2 c cfr); destruct IHe2 as [IHe21 IHe22].
+      specialize (IHe21 e0); unfold check_term_ok in *; prepare_crush.
+      rewrite IHe21; crush.
+      prepare_crush.
+      apply peel_exists_iff; intro.
+      apply and_iff_compat.
+      rewrite rewrite_codom_eq; reflexivity.
+      prepare_crush.
+      apply peel_exists_iff; intro.
+      apply and_iff_compat.
+      rewrite rewrite_dom_eq; reflexivity.
+      rewrite rewrite_if_eq_some.
+      rewrite rewrite_if_eq_some.
+      reflexivity.
+      simpl.
+      intuition crush.
+      exists t; split; crush.
+      exists t; split; crush.
+      exists x; split; crush.
+      exists x; split; crush.
+    }
+  Admitted.    
 
-        : 
-      TODO: inner induction
-      
-      crush.
-      cbn.
-      intros.
-    
+  Definition rewrite_term_okP c e (fr : all_fresh c) :=
+    proj1 (check_okP e fr).
+  Hint Rewrite rewrite_term_okP : pfcore.
 
+  Definition rewrite_sort_okP c e (fr : all_fresh c) :=
+    proj2 (check_okP e fr).
+  Hint Rewrite rewrite_sort_okP : pfcore.
   
   Lemma check_term_okP c e t
-    : all_fresh l ->
-      all_fresh c ->
-      reflect (term_ok c e t) (check_term_ok c e t)
-  with check_args_okP c pl c'
-       : all_fresh l ->
-         all_fresh c ->
-         reflect (args_ok c pl c') (check_args_ok c pl c')
-  with check_sort_okP c t
+    : all_fresh c ->
+      reflect (term_ok l c e t) (check_term_ok l c e t).
+  Proof using l_ok.
+    pose proof (@check_okP c e).
+    intuition.
+    eapply rewrite_reflect; [| apply idP].
+    rewrite H; reflexivity.
+  Qed.
+    
+  Lemma check_sort_okP c t
       : all_fresh l ->
         all_fresh c ->
-        reflect (sort_ok c t) (check_sort_ok c t).
-  Proof using.
-    (* TODO: may need updates for == vs eq_pf_irr and dom/codom
-    all: unfold check_sort_ok in *; unfold check_args_ok in *; unfold check_term_ok in *.
-    all: intros frl frc.
-    all: match goal with
-    | [|- reflect (term_ok _ ?e _) _]=> destruct e
-    | [|- reflect (sort_ok _ ?t) _]=> destruct t
-    | [|- reflect (args_ok _ ?s _) _]=> destruct s
-    end; intros; repeat (break; simpl in *; try case_match);
-      repeat lazymatch goal with
-    | [|- args_ok _ [::] [::]] => by constructor
-    | [|- args_ok _ (_::_) (_::_)] => constructor
-    | [|- sort_ok _ (sym _)] => apply sort_ok_sym
-    | [|- sort_ok _ (trans _ _)] => apply sort_ok_trans
-     (*Recursive cases; proceed w/ caution*)
-    | [H : is_true(synth_term_ok _ ?e == Some ?t) |- term_ok _ ?e ?t]=>
-      apply /check_term_okP; auto
-    | [H : is_true(check_args_ok' _ ?e ?t) |- args_ok _ ?e ?t]=>
-      apply /check_args_okP; auto
-    | [H : is_true(check_sort_ok' _ ?t) |- sort_ok _ ?t]=>
-      apply /check_sort_okP; auto
-    (* end of recursive cases *)
-    | [ H: ?P |- ?P] => exact H
-    | [ H: ?P, Hf : ~?P |- _] => exfalso; exact (Hf H)
-    | [|- is_true(?a == ?a)]=> apply /eqP
-    | [H : ~(is_true(?a == ?a)) |-_]=>
-      exfalso; exact (H (eq_refl a))
-    | [|- ?a = ?a]=> reflexivity
-    | [H : term_le_pf _ _ _ _ = _ |-_]=> inversion H; subst; clear H
-    | [H : sort_le_pf _ _ _ = _ |-_]=> inversion H; subst; clear H
-    | [H : sort_rule_pf _ _ = _ |-_]=> inversion H; subst; clear H
-    | [H : term_rule_pf _ _ _ = _ |-_]=> inversion H; subst; clear H
-    | [H : true = true |-_]=> clear H
-    | [H : true = ?a |-_]=> symmetry in H
-    | [H : (?a)=true |-_]=> change (is_true a) in H
-    | [H : false = false |-_]=> clear H
-    | [H : false = ?a |-_]=> symmetry in H
-    | [H : None = Some _ |-_]=> inversion H
-    | [H : Some _ = Some _ |-_]=> inversion H; subst; clear H
-    | [H : is_true(_&&_) |-_]=> break
-    | [|-is_true(_&&_)]=> break_goal
-    | [H : is_true(_==_) |-_]=> move: H => /eqP H; subst
-    | [H : (?e==?e)=false |-_]=> rewrite eq_refl in H; inversion H
-    | [H : ?a = false, H': is_true ?a |-_]=> rewrite H in H'; inversion H'
-    | [|- reflect _ true]=> constructor
-    | [|- reflect _ false]=> constructor
-    | [|- reflect _ ?p]=>
-      let H := fresh in my_case H p
-    | [|- ~_]=> let H:= fresh in intro H; inversion H; subst; clear H; auto
-    |[_:~_, _:~_|-_] => idtac "two possible negations"
-    |[H:~_|-False] => apply H 
-    | [H : (do ret ?t) = synth_term_ok ?c ?e|- _] => symmetry in H
-    | [H : synth_term_ok ?c ?e = (do ret _)|- term_ok ?c ?e _] =>
-      move: H => /eqP /check_term_okP; auto
-    | [|- rule_ok _]=> constructor; auto
-    | [|- term_ok _ (trans _ _) _]=> eapply term_ok_trans
-    | [|- term_ok _ _ _]=> constructor
-    | [|- ctx_ok _]=> apply /check_ctx_okP; auto
-    | [H : ~(is_true(check_args_ok' _ ?e ?t)), H' : args_ok _ ?e ?t|- _]=>
-      move: H => /negP /check_args_okP H;
-      exfalso; apply H; auto
-    | [H : ~(is_true(check_term_ok _ ?e ?t)), H' : term_ok _ ?e ?t|- _]=>
-      move: H => /negP /check_term_okP H;
-      exfalso; apply H; auto
-    | [H : ~(is_true(check_sort_ok' _ ?t)), H' : sort_ok _ ?t|- _]=>
-      move: H => /negP /check_sort_okP H;
-      exfalso; apply H; auto
-    | [H : (synth_term_ok _ ?e == Some ?t) = false, H' : term_ok _ ?e ?t|- _]=>
-      move: H' => /check_term_okP; rewrite H; auto
-    | [H : check_args_ok' _ ?e ?t = false, H' : args_ok _ ?e ?t|- _]=>
-      move: H' => /check_args_okP; rewrite H; auto
-    | [H : check_sort_ok' _ ?t = false, H' : sort_ok _ ?t|- _]=>
-      move: H' => /check_sort_okP; rewrite H; auto
-    | [H : check_is_exp ?e = false, H' : is_exp ?e|- _]=>
-      move: H' => /check_is_expP; rewrite H; auto
-    | [|- is_exp _]=> apply /check_is_expP; auto
-    | [|- is_true (_\in_)]=> by apply named_list_lookup_err_in
-    | [H: Some _ = named_list_lookup_err _ _|- _]=>
-      apply named_list_lookup_err_in in H
-    | [H1 : is_true((?n,?a)\in ?l),
-       H2 : is_true((?n,?b)\in ?l),
-       Hfr : is_true(all_notin (map fst ?l))
-                       |- _]=>
-      let H' := fresh in
-      pose proof (in_all_fresh_same Hfr H1 H2) as H';
-        clear H2;
-        move: H' => /eqP H'; subst
-    | [H: None = named_list_lookup_err _ ?n,
-       H' : is_true((?n,_)\in _) |- _]=>
-      eapply named_list_lookup_none in H;
-      erewrite H' in H; simpl in H; inversion H
-    | [H: ~(is_true(_&&_)) |-_]=>
-       move: H => /negP /nandP [] H
-    | [H: (_&&_)=false |-_]=>
-       move: H => /nandP [] H
-    |[H:is_true(~~_)|-_] => move: H => /negP H
-    |[H :context [(named_list_lookup_err _ _ == (do ret _))] |- _] =>
-     rewrite named_list_lookup_err_inb in H
-             end.
-    { (*TODO: automate*)
-      eapply term_ok_con.
-      apply named_list_lookup_err_in; eauto.
-      apply /check_args_okP; auto.
-    }
-    { (*TODO: automate*)
-      eapply term_ok_ax.
-      apply named_list_lookup_err_in; eauto.
-      apply /check_args_okP; auto.
-    }
-    admit (*TODO: need to fix t in theorem for induction*).
-    admit (*TODO: need to fix t in theorem for induction*).
-    {
-      rewrite HeqH0 in H.
-      move: H => /check_term_okP H; apply H; auto.
-    }
-    
-    (* TODO: finish (might still have bugs)
-    eapply term_ok_trans.
-    constructor.
-    TODO: false case for term_ok
-    { (*TODO: automate*)
-      move: H => /eqP H.
-      eapply sort_ok_con; eauto.
-      apply /check_args_ok'P; auto.
-    }
-    { (*TODO: automate*)
-      eapply sort_ok_ax; eauto.
-      apply /check_args_ok'P; auto.
-    }*)
-   (* TODO: break 2 directions up to make the fixpoint go through?
-                reflection harder to reason about wrt termination
-      prob not necessary w/ right recursion*)
-    (*Guarded.*)*)
-  Admitted.
-
+        reflect (sort_ok l c t) (check_sort_ok l c t).
+  Proof using l_ok.
+    pose proof (@check_okP c t).
+    intuition.
+    eapply rewrite_reflect; [| apply idP].
+    intuition.
+  Qed.
   
   Lemma ctx_ok_all_fresh c
-    : ctx_ok c -> all_fresh c.
+    : ctx_ok l c -> all_fresh c.
   Proof using.
     induction c; intro cok; inversion cok; subst; clear cok; break; simpl in *;
       break_goal; auto.
   Qed.
   Hint Resolve ctx_ok_all_fresh : pfcore.
 
-  Lemma check_ctx_okP c : all_fresh l -> reflect (ctx_ok c) (check_ctx_ok c).
-  Proof using.
-    intro frl.
+  
+  Lemma check_ctx_okP c : reflect (ctx_ok l c) (check_ctx_ok l c).
+  Proof using l_ok.
     induction c; intros; break; simpl; repeat constructor.
     repeat lazymatch goal with
            | [|- reflect _ (_&&_)]=>
@@ -1094,116 +1125,142 @@ Section TermsAndRules.
     {
       constructor;
       inversion IHc; auto.
-      apply /check_sort_okP; auto using ctx_ok_all_fresh.
+      apply /check_sort_okP; auto using ctx_ok_all_fresh with pfcore.
     }
     all: intro cok; inversion cok; subst; clear cok.
       match goal with
         [ H : reflect _ false |-_]=> inversion H
       end; auto using ctx_ok_all_fresh.
-      match goal with
-        [ frl : is_true(all_fresh l),
-          H : false = check_sort_ok ?c ?p,
-          H' : sort_ok ?c ?p |-_]=>
-        move: H' => /(check_sort_okP); intro H';
-        rewrite <-H in H'; auto using ctx_ok_all_fresh
-      end.
-      simpl in H2.
-      rewrite <-Heqb in H2; inversion H2.
+      {
+        rewrite <- rewrite_sort_okP in H4; eauto with pfcore.
+      }
+      eauto with pfcore.
   Qed.
 
-  Lemma check_rule_okP r : all_fresh l -> reflect (rule_ok r) (check_rule_ok r).
-  Proof using.
-    intro frl.
+  
+  Lemma rewrite_ctx_okP c : (check_ctx_ok l c) <-> (ctx_ok l c).
+  Proof using l_ok.
+    split.
+    - move /check_ctx_okP; auto.
+    - intros; apply /check_ctx_okP; auto.
+  Qed.
+  Hint Rewrite rewrite_ctx_okP : pfcore.
+  
+  Lemma invert_sort_rule_ok c args
+    : rule_ok l (sort_rule_pf c args) <-> ctx_ok l c /\ subseq args (map fst c).
+  Proof.
+    intuition ;inversion H; crush.
+  Qed.
+  Hint Rewrite invert_sort_rule_ok : pfcore.
+
+  
+  Lemma invert_term_rule_ok c args t
+    : rule_ok l (term_rule_pf c args t) <-> ctx_ok l c /\ subseq args (map fst c) /\ sort_ok l c t.
+  Proof.
+    intuition ;inversion H; crush.
+  Qed.
+  Hint Rewrite invert_term_rule_ok : pfcore.
+  
+  Lemma invert_sort_le_ok c t1 t2
+    : rule_ok l (sort_le_pf c t1 t2) <->
+      ctx_ok l c /\ sort_ok l c t1 /\ sort_ok l c t2 /\
+      is_exp t1 /\ is_exp t2.
+  Proof.
+    intuition;
+    inversion H; crush.
+  Qed.
+  Hint Rewrite invert_sort_le_ok : pfcore.
+
+  
+  Lemma invert_term_le_ok c e1 e2 t
+    : rule_ok l (term_le_pf c e1 e2 t) <->
+      ctx_ok l c /\ term_ok l c e1 t /\ term_ok l c e2 t /\ sort_ok l c t /\
+      is_exp e1 /\ is_exp e2 /\ is_exp t.
+  Proof.
+    intuition;
+    inversion H; crush.      
+  Qed.
+  Hint Rewrite invert_term_le_ok : pfcore.
+  
+  Lemma rewrite_rule_okP r : (check_rule_ok l r) <-> (rule_ok l r).
+  Proof using l_ok.
     pose proof ctx_ok_all_fresh.
-    destruct r; intros; break; simpl; repeat constructor;
-    solve_reflect_norec;
-    repeat lazymatch goal with
-    | [H : true = true |-_]=> clear H
-    | [H : true = ?a |-_]=> symmetry in H
-    | [H : ?a=true |-_]=> change (is_true a) in H
-    | [H : false = false |-_]=> clear H
-    | [H : false = ?a |-_]=> symmetry in H
-    | [H : ?a = false, H': is_true ?a |-_]=> rewrite H in H'; inversion H'
-    | [|- reflect _ true]=> constructor
-    | [|- reflect _ false]=> constructor
-    | [|- reflect _ ?p]=>
-      let H := fresh in my_case H p
-    | [|- ~_]=> let H:= fresh in intro H; inversion H; subst; clear H; auto
-    | [|- rule_ok _]=> constructor; auto
-    | [|- term_ok _ _ _]=> apply /check_term_okP; auto
-    | [|- sort_ok _ _]=> apply /check_sort_okP; auto
-    | [|- ctx_ok _]=> apply /check_ctx_okP; auto
-    | [H : check_term_ok _ ?e ?t = false, H' : term_ok _ ?e ?t|- _]=>
-      move: H' => /check_term_okP; rewrite H; auto
-    | [H : check_sort_ok _ ?t = false, H' : sort_ok _ ?t|- _]=>
-      move: H' => /check_sort_okP; rewrite H; auto
-    | [H : check_ctx_ok _ = false, H' : ctx_ok _|- _]=>
-      move: H' => /check_ctx_okP; rewrite H; auto
-    | [H : check_is_exp ?e = false, H' : is_exp ?e|- _]=>
-      move: H' => /check_is_expP; rewrite H; auto
-    | [H : is_true(check_ctx_ok _)|- _]=>
-      move: H => /check_ctx_okP H
-    | [|- is_exp _]=> apply /check_is_expP; auto
-    end; auto.
+    destruct r; intros; break; simpl.
+    all: intuition.
+    crush.
+    crush.
+    {
+      (*TODO: why does crush have an issue?*)
+      autorewrite with utils bool_utils in *;
+      intuition.
+      autorewrite with pfcore in *; eauto with pfcore.
+    }
+    {
+      (*TODO: why does crush have an issue?*)
+      autorewrite with utils bool_utils in *;
+      intuition;
+      autorewrite with pfcore in *; intuition; eauto with pfcore.
+      inversion H0; auto.
+    }
+    {
+      (*TODO: why does crush have an issue?*)
+      autorewrite with utils bool_utils in *;
+      intuition;
+      autorewrite with pfcore in *; intuition; eauto with pfcore.
+    }
+    crush.
+    {
+      (*TODO: why does crush have an issue?*)
+      autorewrite with utils bool_utils in *;
+      intuition;
+      autorewrite with pfcore in *; intuition; eauto with pfcore.
+    }
+    {
+      my_case H' (check_ctx_ok l n); simpl;
+      crush; intuition crush.
+      move: H' => /negP.
+      crush.
+    }
+  Qed.
+  Hint Rewrite rewrite_rule_okP : pfcore.
+  
+  
+  Lemma check_rule_okP r : reflect (rule_ok l r) (check_rule_ok l r).
+  Proof using l_ok.
+    reflect_from_iff rewrite_rule_okP.
   Qed.
   
 End TermsAndRules.
 
+(*TODO: pull crush out of section*)
 
 Lemma check_lang_ok_all_fresh l : check_lang_ok l -> all_fresh l.
 Proof using.
   induction l; intros; repeat (break; simpl in * ); break_goal; auto.
 Qed.
+Hint Resolve check_lang_ok_all_fresh : pfcore.
 
+Lemma rewrite_lang_okP l : check_lang_ok l <-> lang_ok l.
+Proof.
+  induction l; intros; break; simpl.
+  split; eauto with pfcore.
+  autorewrite with bool_utils.
+  rewrite IHl.
+  intuition.
+  {
+    constructor; eauto.
+    unfold fresh; autorewrite with bool_utils; auto.
+    apply /check_rule_okP; auto.
+  }
+  all: inversion H1; subst; auto.
+  apply /check_rule_okP; auto.
+Qed.
 
 Lemma check_lang_okP l : reflect (lang_ok l) (check_lang_ok l).
 Proof using.
-  induction l; intros; break; simpl; repeat constructor;
-    repeat lazymatch goal with
-    | [H : true = true |-_]=> clear H
-    | [H : true = ?a |-_]=> symmetry in H
-    | [H : ?a=true |-_]=> change (is_true a) in H
-    | [H : false = false |-_]=> clear H
-    | [H : false = ?a |-_]=> symmetry in H
-    | [H : ?a = false, H': is_true ?a |-_]=> rewrite H in H'; inversion H'
-    | [|- reflect _ true]=> constructor
-    | [|- reflect _ false]=> constructor
-    | [H:reflect ?a false, H' : ?a|-_]=>
-      move: H' => /H H'; inversion H'
-    | [|- reflect _ (_&&_)]=>
-      (destruct_reflect_andb_l; simpl)
-    | [|- reflect _ ?p]=>
-      let H := fresh in my_case H p
-    | [|- ~_]=> let H:= fresh in intro H; inversion H; subst; clear H; auto
-    | [|- rule_ok _]=> constructor; auto
-    | [|- term_ok _ _ _]=> apply /check_term_okP; auto
-    | [|- sort_ok _ _]=> apply /check_sort_okP; auto
-    | [|- ctx_ok _]=> apply /check_ctx_okP; auto
-    | [H : check_term_ok _ ?e ?t = false, H' : term_ok _ ?e ?t|- _]=>
-      move: H' => /check_term_okP; rewrite H; auto
-    | [H : check_sort_ok _ ?t = false, H' : sort_ok _ ?t|- _]=>
-      move: H' => /check_sort_okP; rewrite H; auto
-    | [H : check_ctx_ok _ = false, H' : ctx_ok _|- _]=>
-      move: H' => /check_ctx_okP; rewrite H; auto
-    | [H : check_rule_ok _ _ = false, H' : rule_ok _ _|- _]=>
-      move: H' => /check_rule_okP; rewrite H; auto
-    | [H : check_is_exp ?e = false, H' : is_exp ?e|- _]=>
-      move: H' => /check_is_expP; rewrite H; auto
-    | [H : is_true(check_ctx_ok _)|- _]=>
-      move: H => /check_ctx_okP H
-    | [|- is_exp _]=> apply /check_is_expP; auto
-    | [|- lang_ok (_::_)]=> constructor
-           end; auto.
-  apply /IHl; auto.
-  apply /check_rule_okP; auto.
-  apply check_lang_ok_all_fresh; auto.
-  {
-    move: H4 => /IHl /check_lang_ok_all_fresh; auto.
-  }
-  {
-    simpl in H3; rewrite Heqb in H3; auto.
-  }
+    reflect_from_iff rewrite_lang_okP.
 Qed.
+  
 
 Ltac destruct_is_dom e :=
       destruct e; intros;
@@ -1383,6 +1440,25 @@ Proof.
   revert c; induction s; intro c; destruct c; break; simpl; auto.
   f_equal; eauto.
 Qed.
+
+
+Lemma is_dom_unique l p p1 p2
+  : lang_ok l -> is_dom l p p1 -> is_dom l p p2 -> p1 = p2.
+Proof.
+  intro lok.
+  move /(is_domP lok) /eqP => d1.
+  move /(is_domP lok) /eqP => d2.
+  congruence.
+Qed.
+
+Lemma is_codom_unique l p p1 p2
+  : lang_ok l -> is_codom l p p1 -> is_codom l p p2 -> p1 = p2.
+Proof.
+  intro lok.
+  move /(is_codomP lok) /eqP => d1.
+  move /(is_codomP lok) /eqP => d2.
+  congruence.
+Qed.
   
 Lemma is_dom_and_codom_subst_monotonicity l tc t td sc s sd
   : is_dom l t td -> is_codom l t tc ->
@@ -1449,26 +1525,6 @@ Proof.
 Admitted.
 
 
-Lemma is_dom_unique l p p1 p2
-  : all_fresh l -> is_dom l p p1 -> is_dom l p p2 -> p1 = p2.
-Proof.
-  intro allf.
-  move /is_domP /eqP => d1.
-  move /is_domP /eqP => d2.
-  intuition.
-  move: H H0 => -> [] //.
-Qed.
-
-Lemma is_codom_unique l p p1 p2
-  : all_fresh l -> is_codom l p p1 -> is_codom l p p2 -> p1 = p2.
-Proof.
-  intro allf.
-  move /is_codomP /eqP => d1.
-  move /is_codomP /eqP => d2.
-  intuition.
-  move: H H0 => -> [] //.
-Qed.
-
 (*TODO: move to utils*)
 (*redefined to use the right concatenation*)
 Definition flat_map {A B} (f : A -> list B) :=
@@ -1489,19 +1545,6 @@ Fixpoint fv (p : pf) :=
   | conv p1 p2 => fv p1 ++ fv p2
   end.
 
-(*TODO: move to utils*)
-Definition is_included {A: eqType} (l1 l2 : list A) :=
-  forall x, x \in l1 -> x \in l2.
-(*TODO: relate*)
-Fixpoint included {A: eqType} (l1 l2 : list A): bool :=
-  match l1 with
-  | [::] => true
-  | a::l1' =>
-    (a\in l2) && (included l1' l2)
-  end.
-
-
-  
 
 
 Lemma fv_term_ok l c e t
@@ -1588,7 +1631,7 @@ Proof.
 Qed.
 
 Lemma term_ok_lookup l c' s c t x
-  : all_fresh l ->
+  : lang_ok l ->
     ctx_ok l c ->
     subst_ok l c' s c ->
     (x,t) \in c ->
@@ -1596,7 +1639,7 @@ Lemma term_ok_lookup l c' s c t x
     is_dom l (pf_subst s t) t' ->
     term_ok l c' (named_list_lookup (pvar x) s x) t'.
 Proof.
-  intros allfl allf.
+  intros lok allf.
   induction 1; simpl in *; break; try easy.
   rewrite in_cons.
   cbn.
@@ -1609,7 +1652,7 @@ Proof.
     {
       replace (pf_subst ((name,e)::s) t0) with (pf_subst s t0).
       intro isd.
-      pose proof (is_dom_unique allfl H0 isd); subst; auto.
+      pose proof (is_dom_unique lok H0 isd); subst; auto.
       symmetry; apply strengthen_pf_subst;
         erewrite subst_ok_names_eq; eauto.
       eapply fv_sort_ok; eauto.
@@ -1629,6 +1672,95 @@ Proof.
   }
 Qed.
 
+
+Lemma Forall2_pair_from_maps A B P Q (l1 l2 : list (A*B))
+  : List.Forall2 P (map fst l1) (map fst l2) ->
+    List.Forall2 Q (map snd l1) (map snd l2) ->
+    List.Forall2 (fun p1 p2 => P p1.1 p2.1 /\ Q p1.2 p2.2) l1 l2.
+Proof.
+  revert l2; induction l1; intro l2; destruct l2;
+    break;
+    simpl;
+    intro lfp; inversion lfp;
+      intro lfq; inversion lfq;
+        subst;auto.
+Qed.
+
+
+Lemma Forall2_eq_refl A (lst : list A) : List.Forall2 eq lst lst.
+Proof.
+  induction lst; simpl; eauto.
+Qed.
+
+(* TODO: move to utils? need more general types to do so*)
+Lemma map_fst_with_names_from (A B:Set) (c:named_list_set A) (s : list B)
+  : size s = size c -> map fst (with_names_from c s) = map fst c.
+Proof using .
+  elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
+  { inversion H0. }
+  {
+    f_equal; auto.
+  }
+Qed.
+
+
+Lemma map_snd_with_names_from (A B:Set) (c:named_list_set A) (s : list B)
+  : size s = size c -> map snd (with_names_from c s) = s.
+Proof using .
+  elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
+  { inversion H. }
+  {
+    f_equal; auto.
+  }
+Qed.
+
+
+Lemma is_dom_codom_exists_sort l c p
+  : sort_ok l c p ->
+    (exists p', is_dom l p p') /\
+    (exists p', is_codom l p p')
+with is_dom_codom_exists_term l c p t
+  : term_ok l c p t ->
+    (exists p', is_dom l p p') /\
+    (exists p', is_codom l p p').
+Proof.
+Admitted.
+
+Lemma is_dom_codom_exists_args l c pfs c'
+  : args_ok l c pfs c' ->
+    (exists p', List.Forall2 (is_dom l) pfs p') /\
+    (exists p', List.Forall2 (is_codom l) pfs p').
+Proof.
+  induction 1; simpl; firstorder.
+  eexists; constructor; eauto with pfcore.
+  eexists; constructor; eauto with pfcore.
+  destruct (is_dom_codom_exists_term H1); firstorder.
+  eauto.
+  destruct (is_dom_codom_exists_term H1); firstorder.
+  eauto.
+Qed.
+
+
+Lemma with_names_from_subst_ok l c s c'
+  : subst_ok l c s c' -> map fst s = map fst c'.
+Proof.
+  induction 1; break; simpl; f_equal; eauto.
+Qed.
+
+Lemma subst_ok_args_ok l c s c'
+  : subst_ok l c s c' -> args_ok l c (map snd s) c'.
+Proof.
+  induction 1; simpl; eauto with pfcore.
+  econstructor; eauto with pfcore.
+  replace (with_names_from c' (map snd s)) with s; auto.
+    
+  erewrite with_names_from_names_eq.
+  symmetry.
+  apply with_names_from_snd.
+  symmetry; eapply with_names_from_subst_ok; eauto.
+Qed.
+Hint Resolve subst_ok_args_ok.  
+
 (*TODO: figure out which ctxs need to be ok (could be all)
 *)
 Lemma sort_subst_monotonicity l c t c' s
@@ -1646,10 +1778,53 @@ with args_subst_monotonicity l c ss c' s c''
     args_ok l c'' (map (pf_subst s) ss) c'.
 Proof.
   {
-    intro sok;
-      destruct_sort_ok sok; fold pf_subst; eauto;
-        [ apply is_codom_subst_monotonicity; eauto
-        | apply is_dom_subst_monotonicity; eauto].
+    intros sok cok c'ok subok.
+    pose proof (is_dom_codom_exists_args (subst_ok_args_ok subok)).
+    revert cok c'ok subok H.
+    destruct sok; intuition.
+
+    {
+      eapply sort_ok_ax; eauto.
+    }
+    {
+      eapply sort_ok_con; eauto.
+    }
+    {
+      eapply sort_ok_trans; eauto; fold pf_subst.
+      known issue:
+        when applying a subst to a trans, need to project left or right out
+      alternatives/ideas:
+          embed l and r terms in ax to avoid lang in pf_subst
+          lean into non-canonical proofs, make pf_subst a constructor
+          may want to re-separate proof-terms
+    }
+    | eapply sort_ok_con | eapply sort_ok_trans | eapply sort_ok_sym ]
+    apply 
+    destruct_sort_ok sok; fold pf_subst;
+    eauto.
+        [ apply is_codom_subst_monotonicity; intuition; firstorder; eauto
+        | apply is_dom_subst_monotonicity; intuition; firstorder; eauto].
+      {
+        let x := open_constr:(with_names_from s _) in
+        instantiate (1:=x).
+        apply Forall2_pair_from_maps.
+        rewrite map_fst_with_names_from.
+        apply Forall2_eq_refl.
+        2: rewrite map_snd_with_names_from; eauto.
+        admit.
+        admit. (*TODO: size lemma*)
+      }
+      {
+        TODO: why the same x?
+        apply Forall2_pair_from_maps.
+        rewrite map_fst_with_names_from.
+        apply Forall2_eq_refl.
+        2: rewrite map_snd_with_names_from; eauto.
+        TODO: what is x0; 
+        admit.
+        admit. (*TODO: size lemma*)
+      }
+        
     admit
     (*TODO: need existence of dom/codom
       for substitutions

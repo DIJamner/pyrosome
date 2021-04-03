@@ -323,18 +323,24 @@ c |- e1 = e2 : t' = t''
     | pcon name pl =>
       do (term_rule_pf c' _ t') <- named_list_lookup_err l name;
          ! check_args_ok' check_term_ok pl c';
-         d <-(codom (pf_subst (with_names_from c' pl) t'));
+         d <-(dom (pf_subst (with_names_from c' pl) t'));
          ret d
     | ax name pl =>
       do (term_le_pf c' _ _ t') <- named_list_lookup_err l name;
          ! check_args_ok' check_term_ok pl c';
-         d <-(codom (pf_subst (with_names_from c' pl) t'));
+         d <-(dom (pf_subst (with_names_from c' pl) t'));
          ret d
     | sym p => synth_term_ok c p
     | trans p1 p2 =>
       do t1 <- synth_term_ok c p1;
          t2 <- synth_term_ok c p2;
+         (* would be nicer to write it like this, but it makes proofs harder:
          ! codom p1 == dom p2;
+         TODO: figure out for case above
+          *)
+         cd1 <- codom p1;
+         d2 <- dom p2;
+         !cd1 == d2;
          ! t1 == t2;
          ret t2
     | conv pt p' =>

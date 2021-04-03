@@ -691,7 +691,7 @@ Proof using .
   by fold_Substable.
 Qed.
 
-(* TODO: move to utils? need more general types to do so*)
+(* TODO: move to utils! need more general types to do so; given in PfCore*)
 Lemma map_fst_with_names_from (c:ctx) (s : list exp)
   : size s = size c -> map fst (with_names_from c s) = map fst c.
 Proof using .
