@@ -14,6 +14,23 @@ Require Import String.
 Variant compiler_case := con_case (e:wfexp) | ax_case (p : pf).
 Definition compiler := named_list compiler_case. 
 
+Definition eq_compiler_case cc1 cc2 : bool :=
+  match cc1, cc2 with
+  | con_case e1, con_case e2 => e1 == e2
+  | ax_case p1, ax_case p2 => p1 == p2
+  | _,_ => false
+  end.
+
+Lemma eq_compiler_caseP cc1 cc2 : reflect (cc1 = cc2) (eq_compiler_case cc1 cc2).
+Proof using .
+  destruct cc1; destruct cc2; simpl; solve_reflect_norec.
+Qed.
+
+Definition compiler_case_eqMixin := Equality.Mixin eq_compiler_caseP.
+
+Canonical compiler_case_eqType := @Equality.Pack compiler_case compiler_case_eqMixin.
+
+
 (*TODO: find right place for this *)
 Definition get_rule_ctx r :=
   match r with
@@ -179,12 +196,8 @@ Fixpoint check_preserving tgt (cmp:compiler) src : bool :=
 Lemma fresh_compile_ctx x s cmp c
   : fresh x c -> fresh x (compile_ctx s cmp c).
 Proof.
-  induction c; break; simpl in *; intros; break; break_goal; auto.
-  rewrite in_cons.
-  rewrite in_cons in H.
-  apply /norP;
-    move: H => /norP H;
-  break; break_goal; auto.
+  induction c; break; simpl in *; intros; break; break_goal;
+    autorewrite with utils bool_utils in *; intuition auto.
 Qed.
 
 
@@ -273,91 +286,19 @@ Proof.
 Qed.
 *)
 
-(*TODO: move to PfCoreDefs*)
-Scheme le_sort_ind' := Minimality for le_sort Sort Prop
-  with le_term_ind' := Minimality for le_term Sort Prop
-  with le_subst_ind' := Minimality for le_subst Sort Prop
-  with wf_sort_ind' := Minimality for wf_sort Sort Prop
-  with wf_term_ind' := Minimality for wf_term Sort Prop
-  with wf_args_ind' := Minimality for wf_args Sort Prop
-  with wf_ctx_ind' := Minimality for wf_ctx Sort Prop.
-Combined Scheme judge_ind
-         from le_sort_ind', le_term_ind', le_subst_ind',
-              wf_sort_ind', wf_term_ind', wf_args_ind',
-              wf_ctx_ind'.
-
-(*TODO: move to PfCore*)
-Lemma invert_wf_lang_cons l r n
-  : wf_lang ((n,r)::l) <-> wf_lang l /\ wf_rule l r /\ fresh n l.
-Proof.  
-  intuition; try inversion H; eauto with pfcore.
-Qed.
-Hint Rewrite invert_wf_lang_cons : pfcore.
-
-
-Lemma invert_wf_rule_sort l c args
-  : wf_rule l (Pf.wf_sort_rule c args) <-> wf_ctx l c /\ subseq args (map fst c).
-Proof.  
-  intuition; try inversion H; eauto with pfcore.
-Qed.
-Hint Rewrite invert_wf_rule_sort : pfcore.
-
-Lemma invert_wf_rule_term l c args t
-  : wf_rule l (Pf.wf_term_rule c args t) <-> wf_ctx l c /\ wf_sort l c t /\ subseq args (map fst c).
-Proof.  
-  intuition; try inversion H; eauto with pfcore.
-Qed.
-Hint Rewrite invert_wf_rule_term : pfcore.
-
-Lemma invert_wf_rule_le_sort l c t1 t2
-  : wf_rule l (Pf.wf_sort_le c t1 t2) <-> wf_ctx l c /\ wf_sort l c t1 /\ wf_sort l c t2.
-Proof.  
-  intuition; try inversion H; eauto with pfcore.
-Qed.
-Hint Rewrite invert_wf_rule_le_sort : pfcore.
-
-Lemma invert_wf_rule_le_term l c t e1 e2
-  : wf_rule l (Pf.wf_term_le c e1 e2 t) <->
-    wf_ctx l c /\ wf_sort l c t /\ wf_term l c e1 t /\ wf_term l c e2 t.
-Proof.  intuition; try inversion H; eauto with pfcore. Qed.
-Hint Rewrite invert_wf_rule_le_term : pfcore.
-
-Lemma invert_rule_eq_sort_term c args c' args' t'
-  : Pf.wf_sort_rule c args = Pf.wf_term_rule c' args' t' <-> False.
-Proof.  intuition; try inversion H; eauto with pfcore. Qed.
-Hint Rewrite invert_rule_eq_sort_term : pfcore.
-
-
-Lemma invert_rule_eq_sort_le_term c t1 t2 c' args' t'
-  : Pf.wf_sort_le c t1 t2 = Pf.wf_term_rule c' args' t' <-> False.
-Proof.  intuition; try inversion H; eauto with pfcore. Qed.
-Hint Rewrite invert_rule_eq_sort_le_term : pfcore.
-
-Lemma invert_rule_eq_sort_le_sort c t1 t2 c' args'
-  : Pf.wf_sort_le c t1 t2 = Pf.wf_sort_rule c' args' <-> False.
-Proof.  intuition; try inversion H; eauto with pfcore. Qed.
-Hint Rewrite invert_rule_eq_sort_le_sort : pfcore.
-
-Lemma invert_rule_eq_sort_le_term_le c t1 t2 c' t' e1' e2'
-  : Pf.wf_sort_le c t1 t2 = Pf.wf_term_le c' t' e1' e2' <-> False.
-Proof.  intuition; try inversion H; eauto with pfcore. Qed.
-Hint Rewrite invert_rule_eq_sort_le_term_le : pfcore.
-
-Lemma invert_rule_eq_sort_le c t1 t2 c' t1' t2'
-  : Pf.wf_sort_le c t1 t2 = Pf.wf_sort_le c' t1' t2' <-> c = c' /\ t1 = t1' /\ t2 = t2'.
-Proof. intuition; try inversion H; repeat f_equal; eauto with pfcore. Qed.
-Hint Rewrite invert_rule_eq_sort_le : pfcore.
-
-
-
-(*TODO: where is the right place for these? Utils rewrite base?*)
-Hint Rewrite in_cons : utils.
 
 Lemma invert_pair_eq A B (a1 a2 : A) (b1 b2 : B)
   : (a1, b1) = (a2, b2) <-> a1 = a2 /\ b1 = b2.
 Proof.  intuition; try inversion H; subst; eauto with pfcore. Qed.
 Hint Rewrite invert_pair_eq : utils.
 
+
+Lemma compile_strengthen_term l cmp c e t n r cc
+  : wf_term l c e t ->
+    fresh n l ->
+    fresh n cmp ->
+    compile ((n,r)::l) ((n,cc)::cmp) e = compile l cmp e.
+Admitted.
 
 Lemma compile_strengthen_sort l cmp c t n r cc
   : wf_sort l c t ->
@@ -373,6 +314,12 @@ Lemma compile_strengthen_sort_pf l cmp c p t1 t2 n r cc
     compile_pf ((n,r)::l) ((n,cc)::cmp) p = compile_pf l cmp p.
 Admitted.
 
+Lemma compile_strengthen_term_pf l cmp c p e1 e2 t n r cc
+  : le_term l c p t e1 e2 ->
+    fresh n l ->
+    fresh n cmp ->
+    compile_pf ((n,r)::l) ((n,cc)::cmp) p = compile_pf l cmp p.
+Admitted.
 
 Lemma compile_strengthen_ctx l cmp c n r cc
   : wf_ctx l c ->
@@ -381,14 +328,6 @@ Lemma compile_strengthen_ctx l cmp c n r cc
     compile_ctx ((n,r)::l) ((n,cc)::cmp) = compile_ctx l cmp.
 Admitted.
 
-
-(*TODO: put in utils, add nil lemma *)
-Lemma fresh_cons A n m (e:A) es : fresh n ((m,e)::es) <-> (~ n = m) /\ fresh n es.
-Proof.
-  repeat (simpl; autorewrite with bool_utils pfcore utils); intuition auto.
-Qed.
-Hint Rewrite fresh_cons : utils.
-Arguments fresh : simpl never.
 
 
 Lemma fresh_lang_fresh_cmp lt cmp l n
@@ -401,36 +340,189 @@ Proof.
 Qed.
 Hint Resolve fresh_lang_fresh_cmp : pfcore.
 
+Ltac rewrite_strengthen :=
+  match goal with
+  | [H : wf_ctx _ _ |-_] =>
+    rewrite (compile_strengthen_ctx _ _ H); eauto with pfcore
+  | [H : wf_sort _ _ _|-_] =>
+    rewrite (compile_strengthen_sort _ _ H); eauto with pfcore
+  | [H : wf_term _ _ _ _ |-_] =>
+    rewrite (compile_strengthen_term _ _ H); eauto with pfcore
+  | [H : le_sort _ _ _ _ _|-_] =>
+    solve[erewrite (compile_strengthen_sort_pf); eauto with pfcore]
+  | [H : le_term _ _ _ _ _ _ |-_] =>
+    solve[erewrite (compile_strengthen_term_pf); eauto with pfcore]
+  end.
+
+Ltac inductive_implies_semantic_rule :=
+intros wfl pr wfl';
+  revert wfl'; induction pr; simpl; [easy|..];
+    repeat (simpl; autorewrite with bool_utils pfcore utils);
+    intuition; subst;
+      try match goal with
+          | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
+            let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
+          end;
+      repeat rewrite_strengthen; [];
+  cbn [compile_pf]; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils);
+  assumption.
+  
 
 Lemma inductive_implies_semantic_sort_axiom ls lt cmp name c t1 t2
   : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
     (name, wf_sort_le c t1 t2) \in ls ->
     le_sort lt (compile_ctx ls cmp c) (compile_pf ls cmp (ax name)) (compile ls cmp t1) (compile ls cmp t2).
 Proof.
-  intros wfl pr wfl'.
-  revert wfl'; induction pr; simpl; [easy|..];
-    repeat (simpl; autorewrite with bool_utils pfcore utils).
-  all: intuition; subst.
-  all: try match goal with
-    | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
-      let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
-    end.
-  all: erewrite ?compile_strengthen_ctx; eauto with pfcore.
-  all: erewrite ?compile_strengthen_sort; eauto with pfcore.  
-  all: try solve [erewrite ?compile_strengthen_sort_pf; eauto with pfcore].
-
-  cbn [compile_pf]; 
-    repeat (simpl; autorewrite with bool_utils pfcore utils).
-  assumption.
+  inductive_implies_semantic_rule.
 Qed.
- 
+
+
+Lemma inductive_implies_semantic_term_axiom ls lt cmp name c e1 e2 t
+  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+    (name, wf_term_le c e1 e2 t) \in ls ->
+    le_term lt (compile_ctx ls cmp c) (compile_pf ls cmp (ax name))
+            (compile ls cmp t) (compile ls cmp e1) (compile ls cmp e2).
+Proof.
+  inductive_implies_semantic_rule.
+Qed.
+
+
+Lemma inductive_implies_semantic_sort ls lt cmp name c c' args s
+  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+    (name, Pf.wf_sort_rule c' args) \in ls ->
+    wf_args ls c s c' ->
+    wf_sort lt (compile_ctx ls cmp c) (compile ls cmp (wf_con name s)).
+Proof.
+  intros wfl pr wfl';
+    revert wfl'; induction pr; simpl; [easy|..].
+
+  intros.
+  cbn.
+  my_case Hn (name =? n)%string.
+  TODO: need wfexp_subst monotonicity
+  
+  
+  all: repeat (simpl; autorewrite with bool_utils pfcore utils);
+    intuition; subst;
+      try match goal with
+          | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
+            let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
+          end.
+  all: repeat rewrite_strengthen.
+  
+  (* TODO: need subst monotonicity *)
+
+  all: repeat (simpl; autorewrite with bool_utils pfcore utils);
+    intuition; subst;
+      try match goal with
+          | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
+            let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
+          end.
+2:{  assert (name == 
+all: repeat rewrite_strengthen.
+{
+  cbn [compile]; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils).
+  
+  assumption.
+  inductive_implies_semantic_rule.
+Qed.
+
+  
+
+Lemma compile_named_list_lookup ls cmp s n
+  : compile ls cmp (named_list_lookup (wf_var n) s n)
+  = named_list_lookup (wf_var n) (compile_subst ls cmp s) n.
+Proof.
+  induction s; break; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils); eauto with pfcore.
+  case_match; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils); eauto with pfcore.
+Qed.
+
+Lemma compile_wfexp_subst ls cmp s e
+  : (compile ls cmp (wfexp_subst s e))
+    = wfexp_subst (compile_subst ls cmp s) (compile ls cmp e).
+Proof.
+  induction e; cbn.
+  {
+    apply compile_named_list_lookup.
+  }
+Admitted.
+Hint Rewrite compile_wfexp_subst : pfcore.
+
+(*TODO: will this arrangement be useful?
+Lemma named_list_lookup_err_in_some {A:eqType} l x (v:A)
+  : all_fresh l -> ((x, v) \in l) -> named_list_lookup_err l x = Some v.
+Proof.
+  intros ?.
+  rewrite <- named_list_lookup_err_inb;
+    autorewrite with bool_utils; auto.
+Qed.  *)
+
+
+Lemma term_le_in_lang_proof_in_compiler name lt cmp ls c e1 e2 t
+  : preserving_compiler lt cmp ls ->
+    (name, wf_term_le c e1 e2 t) \in ls ->
+    exists p, (name, ax_case p) \in cmp.
+Proof.
+  induction 1; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils); eauto with pfcore.
+  all: intuition.
+  all: try match goal with [H : exists _,_|-_] => destruct H end.
+  all: try solve[exists x; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils); by eauto with pfcore].
+  exists eeq;
+    repeat (simpl; autorewrite with bool_utils pfcore utils); by eauto with pfcore.
+  Unshelve.
+  exact (ax "").
+Qed.
 
 Lemma inductive_implies_semantic ls lt cmp
   : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
     semantics_preserving ls lt cmp.
 Proof.
-  intros; apply judge_ind; intros; simpl in *; eauto with pfcore.
+  intros; apply judge_ind; intros;
+    repeat (simpl; autorewrite with bool_utils pfcore utils in * ); eauto with pfcore.
   {
     apply inductive_implies_semantic_sort_axiom; assumption.
   }
+  {
+    apply inductive_implies_semantic_term_axiom; assumption.
+  }
+  {
+    
+    TODO: why is there s and es?
+Proof.
+  inductive_implies_semantic_rule.
+Qed.
+    TODO: con lemma
+    constructor; eauto.
+    
+    rewrite compile_wfexp_subst in H5.
+    
+    
+    clear H4 H5.
+    match goal with
+    |
+    strategy: separate lemma?
+     -context population tactic for adding e1, e2 wf, etc
+    all: repeat match goal with
+                | [H : wf_ctx _ _ |-_] =>
+                  rewrite (compile_strengthen_ctx _ _ H); eauto with pfcore
+                | [H : wf_sort _ _ _|-_] =>
+                  rewrite (compile_strengthen_sort _ _ H); eauto with pfcore
+                | [H : wf_term _ _ _ _ |-_] =>
+                  rewrite (compile_strengthen_term _ _ H); eauto with pfcore
+                | [H : le_sort _ _ _ _ _|-_] =>
+                  solve[erewrite (compile_strengthen_sort_pf); eauto with pfcore]
+                | [H : le_term _ _ _ _ _ _ |-_] =>
+                  solve[erewrite (compile_strengthen_term_pf); eauto with pfcore]
+                end.
+ 
+  cbn [compile_pf]; 
+    repeat (simpl; autorewrite with bool_utils pfcore utils).
+  assumption.
+    
 Abort.

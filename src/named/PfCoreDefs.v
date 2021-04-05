@@ -209,10 +209,10 @@ c |- e1 = e2 : t'
         le_term c p (wfexp_subst s2 t) e1 e2 ->
         le_subst c ((name, t)::c') ((name,p)::pfs) ((name,e1)::s1) ((name,e2)::s2)
   with wf_term : wfexp_ctx -> wfexp -> wfexp (*sort*) -> Prop :=
-  | wf_term_by : forall c n s args es c' t,
+  | wf_term_by : forall c n s args c' t,
       (n, wf_term_rule c' args t) \in l ->
-      wf_args c es c' ->
-      wf_term c (wf_con n s) (wfexp_subst (with_names_from c' es) t)
+      wf_args c s c' ->
+      wf_term c (wf_con n s) (wfexp_subst (with_names_from c' s) t)
   | wf_term_conv : forall c p e t t',
       (* We add this condition so that we satisfy the assumptions of le_sort
          TODO: necessary? not based on current judgment scheme.
@@ -235,9 +235,9 @@ c |- e1 = e2 : t'
       wf_args c es c' ->
       wf_args c (e::es) ((name,t)::c')
   with wf_sort : wfexp_ctx -> wfexp (*sort*) -> Prop :=
-  | wf_sort_by : forall c n s args es c',
+  | wf_sort_by : forall c n s args c',
       (n, (wf_sort_rule c' args)) \in l ->
-      wf_args c es c' ->
+      wf_args c s c' ->
       wf_sort c (wf_con n s)
   with wf_ctx : wfexp_ctx -> Prop :=
   | wf_ctx_nil : wf_ctx [::]
@@ -437,3 +437,15 @@ Hint Constructors is_dom is_codom : pfcore.
 
 Hint Constructors le_sort le_term le_subst (*le_args*)
      wf_sort wf_term wf_subst wf_args wf_ctx wf_rule wf_lang : pfcore.
+
+Scheme le_sort_ind' := Minimality for le_sort Sort Prop
+  with le_term_ind' := Minimality for le_term Sort Prop
+  with le_subst_ind' := Minimality for le_subst Sort Prop
+  with wf_sort_ind' := Minimality for wf_sort Sort Prop
+  with wf_term_ind' := Minimality for wf_term Sort Prop
+  with wf_args_ind' := Minimality for wf_args Sort Prop
+  with wf_ctx_ind' := Minimality for wf_ctx Sort Prop.
+Combined Scheme judge_ind
+         from le_sort_ind', le_term_ind', le_subst_ind',
+              wf_sort_ind', wf_term_ind', wf_args_ind',
+              wf_ctx_ind'.
