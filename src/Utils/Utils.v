@@ -811,3 +811,17 @@ Ltac safe_invert H :=
     fail "safe_invert did not make progress"
   | _ => subst
   end.
+
+
+Import OptionMonad.
+Fixpoint get_subseq {A} (args : list string) (l : named_list A) :=
+  match args, l with
+  | [::],_ => do ret [::]
+  | x::args', (x',e)::l' =>
+    if x == x'
+    then do sq <- get_subseq args' l';
+         ret (x,e)::sq
+    else get_subseq args l'
+  | _::_,[::]=> None
+  end.
+

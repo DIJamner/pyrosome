@@ -11,46 +11,19 @@ Require Import String.
 
 
 Create HintDb pfcore discriminated.
-
-
-(* Denotes when a proof represents
-     an expression (as opposed to a relation
-     between 2 expressions)
- *)
-Inductive is_exp : pf -> Prop :=
-| var_is_exp x : is_exp (pvar x)
-| con_is_exp name s
-  : List.Forall is_exp s ->
-    is_exp (pcon name s)
-| conv_is_exp pt p
-  : is_exp p ->
-    is_exp (conv pt p).
-Hint Constructors is_exp : pfcore.
-
-Fixpoint check_is_exp e : bool :=
-  match e with
-  | pvar _ => true
-  | pcon _ s => List.forallb check_is_exp s
-  | conv _ p => check_is_exp p
-  | _ => false
-  end.
   
 Section TermsAndRules.
-  Context (l : pf_lang).
+  Context (l : wfexp_lang).
 
-  Inductive is_dom : pf -> pf -> Prop :=
-  | dom_var x : is_dom (pvar x) (pvar x)
-  | dom_con n pl pl_l
-    : List.Forall2 is_dom pl pl_l ->
-      is_dom (pcon n pl) (pcon n pl_l)
-  | dom_ax_sort n pl pl_l c p' p_r
-    : List.Forall2 is_dom pl pl_l ->
-      (n, sort_le_pf c p' p_r) \in l ->
-      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
-  | dom_ax_term n pl pl_l c p' p_r t
-    : List.Forall2 is_dom pl pl_l ->
-      (n, term_le_pf c p' p_r t) \in l ->
-      is_dom (ax n pl) (pf_subst (with_names_from c pl_l) p')
+
+  Inductive is_dom : pf -> wfexp -> Prop :=
+  | dom_refl e : is_dom (pf_refl e) e
+  | dom_ax_sort n c p' p_r
+    : (n, wf_sort_le c p' p_r) \in l ->
+      is_dom (ax n) p_r
+  | dom_ax_term n c p' p_r t
+    : (n, wf_term_le c p' p_r t) \in l ->
+      is_dom (ax n) p_r
   | dom_sym p p_r
     : is_codom p p_r ->
       is_dom (sym p) p_r
@@ -59,29 +32,32 @@ Section TermsAndRules.
       is_dom (trans p1 p2) p1_l
   | dom_conv pt p p_l
     : is_dom p p_l ->
-      is_dom (conv pt p) (conv pt p_l)
-  with is_codom : pf -> pf -> Prop :=
-  | codom_var x : is_codom (pvar x) (pvar x)
-  | codom_con n pl pl_r
-    : List.Forall2 is_codom pl pl_r ->
-      is_codom (pcon n pl) (pcon n pl_r)
-  | codom_ax_sort n pl pl_r c p' p_l
-    : List.Forall2 is_codom pl pl_r ->
-      (n, sort_le_pf c p_l p') \in l ->
-      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
-  | codom_ax_term n pl pl_r c p' p_l t
-    : List.Forall2 is_codom pl pl_r ->
-      (n, term_le_pf c p_l p' t) \in l ->
-      is_codom (ax n pl) (pf_subst (with_names_from c pl_r) p')
+      is_dom (pf_conv pt p) (wf_conv pt p_l)
+  | dom_subst p e s s'
+    : List.Forall2 is_dom (map snd s) s' ->
+      is_dom p e ->
+      is_dom (pf_subst s p) (wfexp_subst (with_names_from s s') e)
+  with is_codom : pf -> wfexp -> Prop :=
+  | codom_refl e : is_codom (pf_refl e) e
+  | codom_ax_sort n c p' p_r
+    : (n, wf_sort_le c p' p_r) \in l ->
+      is_codom (ax n) p_r
+  | codom_ax_term n c p' p_r t
+    : (n, wf_term_le c p' p_r t) \in l ->
+      is_codom (ax n) p_r
   | codom_sym p p_r
     : is_dom p p_r ->
       is_codom (sym p) p_r
-  | codom_trans p1 p2 p2_r
-    : is_codom p2 p2_r ->
-      is_codom (trans p1 p2) p2_r
-  | codom_conv pt p p_r
-    : is_codom p p_r ->
-      is_codom (conv pt p) (conv pt p_r).
+  | codom_trans p1 p2 p1_l
+    : is_codom p1 p1_l ->
+      is_codom (trans p1 p2) p1_l
+  | codom_conv pt p p_l
+    : is_codom p p_l ->
+      is_codom (pf_conv pt p) (wf_conv pt p_l)
+  | codom_subst p e s s'
+    : List.Forall2 is_codom (map snd s) s' ->
+      is_codom p e ->
+      is_codom (pf_subst s p) (wfexp_subst (with_names_from s s') e).
 
       
   (*TODO: move to OptionMonad *)
@@ -100,181 +76,226 @@ Section TermsAndRules.
     (*For some reason I need two copies of Mmap
       for the mutual recursion to go through below.
      *)
-    Context (dom : pf -> option pf)
-            (codom : pf -> option pf).
-    Fixpoint dom_args (pl : list pf) :=
+    Context (dom : pf -> option wfexp)
+            (codom : pf -> option wfexp).
+    Fixpoint dom_args (pl : subst_pf) :=
       match pl with
       | [::] => do ret [::]
-      | a::pl' =>
+      | (n,a)::pl' =>
         do pl'_dom <- dom_args pl';
            b <- dom a;
-           ret (b::pl'_dom)
+           ret ((n,b)::pl'_dom)
       end.
 
-    Fixpoint codom_args (pl : list pf) :=
+    Fixpoint codom_args (pl : subst_pf) :=
          match pl with
          | [::] => do ret [::]
-         | a::pl' =>
+         | (n,a)::pl' =>
            do pl'_codom <- codom_args pl';
               b <- codom a;
-              ret (b::pl'_codom)
+              ret ((n,b)::pl'_codom)
          end.
   End DomInnerLoop.
     
   (*Pressupposition: p is ok and l is ok *)
   Fixpoint dom (p:pf) :=
     match p with
-    | pvar x => do ret (pvar x)
-    | pcon name pl => omap (pcon name) (dom_args dom pl)
-    | ax name pl =>
+    | pf_refl e => do ret e
+    | ax name =>
       match named_list_lookup_err l name with
-      | Some (sort_le_pf c p' _)
-      | Some (term_le_pf c p' _ _) =>
-        do pl' <- dom_args dom pl;
-        ret pf_subst (with_names_from c pl') p'
+      | Some (wf_sort_le c p' _)
+      | Some (wf_term_le c p' _ _) =>
+        do ret p'
       | _ => None
       end
     | sym p => codom p
     | trans p1 p2 => dom p1
-    | conv pt p' => omap (conv pt) (dom p')
-    end               
+    | pf_conv pt p' => omap (wf_conv pt) (dom p')
+    | pf_subst s p' => 
+      do s' <- dom_args dom s;
+         e <- dom p';
+      ret wfexp_subst s' e
+    end
  (*Pressupposition: p is ok and l is ok *)
   with codom (p:pf) :=
     match p with
-    | pvar x => do ret (pvar x)
-    | pcon name pl => omap (pcon name) (codom_args codom pl)
-    | ax name pl =>
+    | pf_refl e => do ret e
+    | ax name =>
       match named_list_lookup_err l name with
-      | Some (sort_le_pf c _ p')
-      | Some (term_le_pf c _ p' _) =>
-        do pl' <- codom_args codom pl;
-        ret pf_subst (with_names_from c pl') p'
+      | Some (wf_sort_le c _ p')
+      | Some (wf_term_le c _ p' _) =>
+        do ret p'
       | _ => None
       end
     | sym p => dom p
-    | trans p1 p2 => codom p2
-    | conv pt p' => omap (conv pt) (codom p')
-    end.
-  
-  (*
-    Judgments for checking proofs of relations between programs.
-    Can check wfness of a program by identifying it with its
-    identity relation.
+    | trans p1 p2 => codom p1
+    | pf_conv pt p' => omap (wf_conv pt) (codom p')
+    | pf_subst s p' => 
+      do s' <- codom_args codom s;
+         e <- codom p';
+      ret wfexp_subst s' e
+      end.
 
-    All assume lang_ok.
-    All ctxs (other than in ctx_ok) are assumed to satisfy ctx_ok.
-    Judgments whose assumptions take ctxs must ensure they are ok.
-    Sorts are not assumed to be ok; the term judgments should guarantee
-    that their sorts are ok and is_exp.
+  (*All assume wf_lang.
+    All ctxs (other than in wf_ctx) are assumed to satisfy wf_ctx.
+    Judgments whose assumptions take ctxs must ensure they are wf.
+    Sorts are not assumed to be wf; the term judgments should guarantee
+    that their sorts are wf.
    *)
-  
-  Inductive sort_ok : pf_ctx -> pf -> Prop :=
-  | sort_ok_ax : forall c c' name t1 t2 s,
-      (name, sort_le_pf c' t1 t2) \in l ->
-      args_ok c s c' ->
-      sort_ok c (ax name s)
-  | sort_ok_con : forall c name c' args s,
-      (name, (sort_rule_pf c' args)) \in l ->
-      args_ok c s c' ->
-      sort_ok c (pcon name s)
-  | sort_ok_trans : forall c t1 t t2,
-      sort_ok c t1 ->
-      sort_ok c t2 ->
-      is_codom t1 t ->
-      is_dom t2 t ->
-      sort_ok c (trans t1 t2)
-  | sort_ok_sym : forall c t, sort_ok c t -> sort_ok c (sym t)
-  with term_ok : pf_ctx -> pf -> pf -> Prop :=
-  | term_ok_ax : forall c c' name e1 e2 t s t',
-      (name, term_le_pf c' e1 e2 t) \in l ->
-      args_ok c s c' ->
-      (*non-obvious fact: the sort may not be a wfness proof if we don't project;
-        may be a non-identity relation due to s
+
+  (* TODO: not using dom/codom here is probably easier for my current
+     purposes, but should I reconsider later? can always connect 2 relations
+     via proofs
+     TODO: double-check definitions
+   *)
+  Inductive le_sort : wfexp_ctx -> pf -> wfexp -> wfexp -> Prop :=
+  | le_sort_by : forall c name t1 t2,
+      (name, wf_sort_le c t1 t2) \in l ->
+      le_sort c (ax name) t1 t2
+  | le_sort_subst : forall c ps pt s1 s2 c' t1' t2',
+      (* Need to assert wf_ctx c here to satisfy
+         assumptions' presuppositions
        *)
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      term_ok c (ax name s) t'
-  | term_ok_con : forall c name c' args t t' s,
-      (name, (term_rule_pf c' args t)) \in l ->
-      args_ok c s c' ->
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      (* same as above *)
-      term_ok c (pcon name s) t'
-  | term_ok_trans : forall c e1 e e2 t,
-      term_ok c e1 t ->
-      term_ok c e2 t ->
-      is_codom e1 e ->
-      is_dom e2 e ->
-      term_ok c (trans e1 e2) t
-  | term_ok_sym : forall c e t, term_ok c e t -> term_ok c (sym e) t
-  | term_ok_var : forall c x t,
-      (x,t) \in c ->
-      term_ok c (pvar x) t
+      wf_ctx c' ->
+      le_subst c c' ps s1 s2 ->
+      le_sort c' pt t1' t2' ->
+      le_sort c (pf_subst ps pt) (wfexp_subst s1 t1') (wfexp_subst s2 t2')
+  | le_sort_refl : forall c t,
+      wf_sort c t ->
+      le_sort c (pf_refl t) t t
+  | le_sort_trans : forall c p1 p2 t1 t12 t2,
+      le_sort c p1 t1 t12 ->
+      le_sort c p2 t12 t2 ->
+      le_sort c (trans p1 p2) t1 t2
+  | le_sort_sym : forall c p t1 t2, le_sort c p t1 t2 -> le_sort c (sym p) t2 t1
+  with le_term : wfexp_ctx -> pf -> wfexp (*sort*) -> wfexp -> wfexp -> Prop :=
+  | le_term_subst : forall c s1 s2 c' ps p t e1 e2,
+      (* Need to assert wf_ctx c' here to satisfy
+         assumptions' presuppositions
+       *)
+      wf_ctx c' ->
+      le_subst c c' ps s1 s2 ->
+      le_term c' p t e1 e2 ->
+      le_term c (pf_subst ps p) (wfexp_subst s2 t)
+              (wfexp_subst s1 e1) (wfexp_subst s2 e2)
+  | le_term_by : forall c name t e1 e2,
+      (name,wf_term_le c e1 e2 t) \in l ->
+      le_term c (ax name) t e1 e2
+  | le_term_refl : forall c e t,
+      wf_term c e t ->
+      le_term c (pf_refl e) t e e
+  | le_term_trans : forall c t p1 p2 e1 e12 e2,
+      le_term c p1 t e1 e12 ->
+      le_term c p2 t e12 e2 ->
+      le_term c (trans p1 p2) t e1 e2
+  | le_term_sym : forall c p t e1 e2, le_term c p t e1 e2 -> le_term c (sym p) t e2 e1
   (* Conversion:
 
-c |- e1 = e2 : t = t'
-                 ||
-c |- e1 = e2 : t' = t''
-
+c |- e1 = e2 : t 
+               ||
+c |- e1 = e2 : t'
    *)
-  | term_ok_conv : forall c e t tp t',
-      sort_ok c tp ->
-      term_ok c e t ->
-      is_dom tp t ->
-      is_codom tp t' ->
-      term_ok c (conv tp e) t'
-  with args_ok : pf_ctx -> list pf -> pf_ctx -> Prop :=
-  | args_ok_nil : forall c, args_ok c [::] [::]
-  | args_ok_cons : forall c s c' name e t t',
-      args_ok c s c' ->
-      (* assumed because the output ctx is wf: fresh name c' ->*)
-      is_dom (pf_subst (with_names_from c' s) t) t' ->
-      term_ok c e t' ->
-      args_ok c (e::s) ((name, t)::c').
-  
-  Inductive subst_ok : pf_ctx -> named_list pf -> pf_ctx -> Prop :=
-  | subst_ok_nil : forall c, subst_ok c [::] [::]
-  | subst_ok_cons : forall c s c' name e t t',
-      subst_ok c s c' ->
-      (* assumed because the output ctx is wf: fresh name c' ->*)
-      is_dom (pf_subst s t) t' ->
-      term_ok c e t' ->
-      subst_ok c ((name,e)::s) ((name, t)::c').
+  | le_term_conv : forall c t t' pt p,
+      le_sort c pt t t' ->
+      forall e1 e2,
+        le_term c p t e1 e2 ->
+        le_term c (pf_conv pt p) t' (wf_conv pt e1) (wf_conv pt e2)
+  with le_subst : wfexp_ctx -> wfexp_ctx -> subst_pf -> subst_wf -> subst_wf -> Prop :=
+  | le_subst_nil : forall c, le_subst c [::] [::] [::] [::]
+  | le_subst_cons : forall c c' pfs s1 s2,
+      le_subst c c' pfs s1 s2 ->
+      forall name p t e1 e2,
+        (* assumed because the output ctx is wf: fresh name c' ->*)
+        le_term c p (wfexp_subst s2 t) e1 e2 ->
+        le_subst c ((name, t)::c') ((name,p)::pfs) ((name,e1)::s1) ((name,e2)::s2)
+  with wf_term : wfexp_ctx -> wfexp -> wfexp (*sort*) -> Prop :=
+  | wf_term_by : forall c n s args es c' t,
+      (n, wf_term_rule c' args t) \in l ->
+      wf_args c es c' ->
+      wf_term c (wf_con n s) (wfexp_subst (with_names_from c' es) t)
+  | wf_term_conv : forall c p e t t',
+      (* We add this condition so that we satisfy the assumptions of le_sort
+         TODO: necessary? not based on current judgment scheme.
+         wf_term c e t should imply wf_sort c t,
+         and le_sort c t t' should imply wf_sort c t
 
-  Inductive ctx_ok : pf_ctx -> Prop :=
-  | ctx_ok_nil : ctx_ok [::]
-  | ctx_ok_cons : forall name c v,
+
+      wf_sort c t -> 
+       *)
+      wf_term c e t ->
+      le_sort c p t t' ->
+      wf_term c (wf_conv p e) t'
+  | wf_term_var : forall c n t,
+      (n, t) \in c ->
+                 wf_term c (wf_var n) t
+  with wf_args : wfexp_ctx -> list wfexp -> wfexp_ctx -> Prop :=
+  | wf_args_nil : forall c, wf_args c [::] [::]
+  | wf_args_cons_ex : forall c es c' name e t,
+      wf_term c e (wfexp_subst (with_names_from c' es) t) ->
+      wf_args c es c' ->
+      wf_args c (e::es) ((name,t)::c')
+  with wf_sort : wfexp_ctx -> wfexp (*sort*) -> Prop :=
+  | wf_sort_by : forall c n s args es c',
+      (n, (wf_sort_rule c' args)) \in l ->
+      wf_args c es c' ->
+      wf_sort c (wf_con n s)
+  with wf_ctx : wfexp_ctx -> Prop :=
+  | wf_ctx_nil : wf_ctx [::]
+  | wf_ctx_cons : forall name c v,
       fresh name c ->
-      ctx_ok c ->
-      sort_ok c v ->
-      ctx_ok ((name,v)::c).
+      wf_ctx c ->
+      wf_sort c v ->
+      wf_ctx ((name,v)::c).
 
-  Variant rule_ok : rule_pf -> Prop :=
-  | sort_rule_ok : forall c args,
-      ctx_ok c ->
+  Inductive wf_subst c : subst_wf -> wfexp_ctx -> Prop :=
+  | wf_subst_nil : wf_subst c [::] [::]
+  | wf_subst_cons : forall s c' name e t,
+      (* assumed because the output ctx is wf: fresh name c' ->*)
+      wf_subst c s c' ->
+      wf_term c e (wfexp_subst s t) ->
+      wf_subst c ((name,e)::s) ((name,t)::c').
+
+  (*
+  Inductive le_args : ctx -> ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
+  | le_args_nil : forall c, le_args c [::] [::] [::] [::] [::] [::]
+  | le_args_cons_ex : forall c c' s1 s2 args es1 es2,
+      le_args c c' s1 s2 args es1 es2 ->
+      forall name t e1 e2,
+        (* assumed because the output ctx is wf: fresh name c' ->*)
+        le_term c t[/with_names_from c' es2/] e1 e2 ->
+        le_args c ((name, t)::c') (e1::s1) (e2::s2) (name::args) (e1::es1) (e2::es2)
+  | le_args_cons_im : forall c c' s1 s2 args es1 es2,
+      le_args c c' s1 s2 args es1 es2 ->
+      forall name t e1 e2,
+        (* assumed because the output ctx is wf: fresh name c' ->*)
+        le_term c t[/with_names_from c' es2/] e1 e2 ->
+        le_args c ((name, t)::c') s1 s2 args (e1::es1) (e2::es2)
+   *)
+
+  (*TODO: fix naming*)
+  Variant wf_rule : wfexp_rule -> Prop :=
+  | wf_sort_rule : forall c args,
+      wf_ctx c ->
       subseq args (map fst c) ->
-      rule_ok (sort_rule_pf c args)
-  | term_rule_ok : forall c args t,
-      ctx_ok c ->
-      sort_ok c t ->
+      wf_rule (wf_sort_rule c args)
+  | wf_term_rule : forall c args t,
+      wf_ctx c ->
+      wf_sort c t ->
       subseq args (map fst c) ->
-      rule_ok (term_rule_pf c args t)
-  | sort_le_ok : forall c t1 t2,
-      ctx_ok c ->
-      is_exp t1 ->
-      is_exp t2 ->
-      sort_ok c t1 ->
-      sort_ok c t2 ->
-      rule_ok (sort_le_pf c t1 t2)
-  | term_le_ok : forall c e1 e2 t,
-      ctx_ok c ->
-      is_exp e1 ->
-      is_exp e2 ->
-      is_exp t ->
-      sort_ok c t ->
-      term_ok c e1 t ->
-      term_ok c e2 t ->
-      rule_ok (term_le_pf c e1 e2 t).
-  
+      wf_rule (wf_term_rule c args t)
+  | le_sort_rule : forall c t1 t2,
+      wf_ctx c ->
+      wf_sort c t1 ->
+      wf_sort c t2 ->
+      wf_rule (wf_sort_le c t1 t2)
+  | le_term_rule : forall c e1 e2 t,
+      wf_ctx c ->
+      wf_sort c t ->
+      wf_term c e1 t ->
+      wf_term c e2 t ->
+      wf_rule (wf_term_le c e1 e2 t).
+
+  (*
   Section InnerLoop.
     Context (check_term_ok : pf -> pf -> bool).
 
@@ -389,18 +410,19 @@ c |- e1 = e2 : t' = t''
       (check_term_ok c e2 t) &&
       (check_sort_ok c t)
     end.
+*)
   
 End TermsAndRules.
 
-Inductive lang_ok : pf_lang -> Prop :=
-| lang_ok_nil : lang_ok [::]
+Inductive wf_lang : wfexp_lang -> Prop :=
+| lang_ok_nil : wf_lang [::]
 | lang_ok_cons : forall name l r,
     fresh name l ->
-    lang_ok l ->
-    rule_ok l r ->
-    lang_ok ((name,r)::l).
+    wf_lang l ->
+    wf_rule l r ->
+    wf_lang ((name,r)::l).
 
-
+(*
 Fixpoint check_lang_ok l :=
     match l with
     | [::] => true
@@ -409,6 +431,9 @@ Fixpoint check_lang_ok l :=
       (check_rule_ok l' r) &&
       (check_lang_ok l')
     end.
+*)
 
 Hint Constructors is_dom is_codom : pfcore.
-Hint Constructors sort_ok term_ok subst_ok args_ok ctx_ok rule_ok lang_ok : pfcore.
+
+Hint Constructors le_sort le_term le_subst (*le_args*)
+     wf_sort wf_term wf_subst wf_args wf_ctx wf_rule wf_lang : pfcore.

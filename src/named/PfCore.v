@@ -11,50 +11,6 @@ Import OptionMonad.
 
 Require Import String.
 
-Lemma invert_is_exp_var x : is_exp (pvar x) <-> True.
-Proof.
-  split; [intro H; inversion H| intros; subst];
-    eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_var : pfcore.
-Lemma invert_is_exp_con n1 pl
-  : is_exp (pcon n1 pl) <-> List.Forall is_exp pl.
-Proof.
-  split.
-  - intro H; inversion H; eauto with pfcore.
-  - firstorder; subst; eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_con : pfcore.  
-Lemma invert_is_exp_ax n pfs
-  : is_exp (ax n pfs) <-> False.
-Proof.
-  split;intro H; inversion H; subst; eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_ax : pfcore.
-
-Lemma invert_is_exp_sym p : is_exp (sym p) <-> False.
-Proof.
-  split; [intro H; inversion H| intros; subst];
-    firstorder;
-    eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_sym : pfcore.
-
-Lemma invert_is_exp_trans p1 p2 : is_exp (trans p1 p2) <-> False.
-Proof.
-  split; [intro H; inversion H| intros; subst]; intuition;
-    eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_trans : pfcore.
-
-Lemma invert_is_exp_conv pt p
-  : is_exp (conv pt p) <-> is_exp p.
-Proof.
-  split; [intro H; inversion H| intros; subst];
-    firstorder; subst;
-      eauto with pfcore.
-Qed.
-Hint Rewrite invert_is_exp_conv : pfcore.
 
 (*TODO: move to utils/rewriting package*)
 Lemma invert_list_Forall_nil A (P : A -> Prop)
@@ -71,38 +27,20 @@ Proof.
 Qed.
 Hint Rewrite invert_list_Forall_cons : utils.
 
-
-Lemma check_is_exp_iff e : (check_is_exp e) <-> (is_exp e).
-Proof.
-  induction e; simpl; autorewrite with pfcore bool_utils utils; try solve [intuition].
-  revert H; induction l; simpl; autorewrite with pfcore bool_utils utils in *;
-    intuition.
-Qed.  
-Hint Rewrite check_is_exp_iff : pfcore.
-
-Lemma check_is_expP e : reflect (is_exp e) (check_is_exp e).
-Proof using.
-  reflect_from_iff check_is_exp_iff.
-Qed.
-
 (*TODO: pull/duplicate appropriate hints outside the section*)
 Section TermsAndRules.
-  Context (l : pf_lang).
-  Context (l_ok : lang_ok l).
+  Context (l : wfexp_lang).
+  Context (l_ok : wf_lang l).
 
   
-  Lemma lang_ok_all_fresh : all_fresh l.
+  Lemma wf_lang_all_fresh : all_fresh l.
   Proof.
     revert l_ok; induction l; break; simpl in *;
       intro H; inversion H; subst; break_goal; auto.
   Qed.
-  Hint Resolve lang_ok_all_fresh : pfcore.
+  Hint Resolve wf_lang_all_fresh : pfcore.
 
-  Local Notation is_dom := (@is_dom l).
-  Local Notation is_codom := (@is_codom l).
-  Local Notation dom := (@dom l).
-  Local Notation codom := (@codom l).
-
+  
   (*
     Congruence lemmas for rewriting
     TODO: go in Pf?

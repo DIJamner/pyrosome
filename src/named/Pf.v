@@ -9,19 +9,31 @@ From Utils Require Import Utils.
 From Named Require Import Exp ARule Matches ImCore.
 Import OptionMonad.
 
-(* Proofs of relatedness; todo: separate sort from term pf? *)
+(* Proofs of wfness and relatedness
+
+   Note: wfexps are not canonical due to wfconv,
+   so there are pairs of wfexp that should be considered
+   equivalent but are not equal.
+   TODO: weaken properties appropriately to take this
+   into account
+ *)
 Unset Elimination Schemes.
-Inductive pf : Set :=
+(*using one datatype for terms and sorts*)
+Inductive wfexp : Set :=
 (* variable name; congruence for variables *)
-| pvar : string -> pf
+| wf_var : string -> wfexp
 (* Rule label, list of subterms*)
 (* congruence for constructors *)
-| pcon : string -> list pf -> pf
+| wf_con : string -> list wfexp -> wfexp
+| wf_conv : pf -> wfexp -> wfexp
+with pf : Set :=
 (* appealing to a language axiom *)
-| ax : string -> list pf -> pf
+| ax : string -> pf
+| pf_refl : wfexp -> pf
 | sym : pf -> pf
 | trans : pf -> pf -> pf
-| conv : pf (*term*) -> pf (*sort*) -> pf.
+| pf_subst : named_list_set pf -> pf -> pf
+| pf_conv : pf -> pf -> pf.
 Set Elimination Schemes.
 
 Ltac break_monadic_do :=
@@ -50,48 +62,100 @@ Ltac break_monadic_do :=
                                        remember e as e'; destruct e'
           end; subst; simpl in * ).
 
-(*Stronger induction principle w/ better subterm knowledge
+(*Stronger induction principles w/ better subterm knowledge.
+  The default inductions for wfexp and pf are independent of
+  eachother since to do mutual induction, you likely need
+  a combined scheme anyway.
+  
  *)
-Fixpoint pf_ind
-         (P : pf -> Prop)
-         (IHV : forall n, P(pvar n))
-         (IHC : forall n l,
-             List.fold_right (fun t => and (P t)) True l ->
-             P (pcon n l))
-         (IHA : forall n pfs, 
-             List.fold_right (fun p => and (P p)) True pfs -> P(ax n pfs))
-         (IHSY : forall e', P e' -> P (sym e'))
-         (IHT : forall e1 e2,
-             P e1 -> P e2 -> P (trans e1 e2))
-         (IHCV : forall e1 e2,
-             P e1 -> P e2 -> P (conv e1 e2))
-         (e : pf) { struct e} : P e :=
-  match e with
-  | pvar n => IHV n
-  | pcon n l =>
-    let fix loop l :=
-        match l return List.fold_right (fun t => and (P t)) True l with
-        | [::] => I
-        | e' :: l' => conj (pf_ind IHV IHC IHA IHSY IHT IHCV e') (loop l')
-        end in
-    IHC n l (loop l)
-  | ax n pfs => 
-    let fix loop l :=
-        match l return List.fold_right (fun t => and (P t)) True l with
-        | [::] => I
-        | e' :: l' => conj (pf_ind IHV IHC IHA IHSY IHT IHCV e') (loop l')
-        end in
-    IHA n pfs (loop pfs)
-  | sym e' =>
-    IHSY e' (pf_ind IHV IHC IHA IHSY IHT IHCV e')
-  | trans e1 e2 =>
-    IHT e1 e2 (pf_ind IHV IHC IHA IHSY IHT IHCV e1)
-        (pf_ind IHV IHC IHA IHSY IHT IHCV e2)
-  | conv e1 e2 =>
-    IHCV e1 e2 (pf_ind IHV IHC IHA IHSY IHT IHCV e1)
-        (pf_ind IHV IHC IHA IHSY IHT IHCV e2)
-  end.
+Section Induction.
+  Context (P : wfexp -> Prop)
+         (IHV : forall n, P(wf_var n))
+         (IHC : forall n l, List.Forall P l -> P (wf_con n l))
 
+         (Q : pf -> Prop)
+         (IHA : forall n, Q(ax n))
+         (IHSY : forall e', Q e' -> Q (sym e'))
+         (IHT : forall e1 e2,
+             Q e1 -> Q e2 -> Q (trans e1 e2))
+         (IHS : forall p s,
+             Q p ->
+             List.Forall Q (map snd s) ->
+             Q (pf_subst s p))
+         (IHCVP : forall p e, Q p -> Q e -> Q (pf_conv p e)).
+
+    Context
+    (IHCV : forall p e, Q p -> P e -> P (wf_conv p e))
+    (IHR : forall e, P e -> Q(pf_refl e)).
+
+   Fixpoint wfexp_ind' (e : wfexp) { struct e} : P e :=
+    match e with
+    | wf_var n => IHV n
+    | wf_con n l =>
+      let fix loop l :=
+          match l return List.Forall P l with
+          | [::] => List.Forall_nil _
+          | e' :: l' => List.Forall_cons _ (wfexp_ind' e') (loop l')
+          end in
+      IHC n (loop l)
+    | wf_conv e1 e2 => IHCV (pf_ind' e1) (wfexp_ind' e2)
+    end
+   with pf_ind' (e : pf) { struct e} : Q e :=
+    match e with
+    | ax n => IHA n
+    | pf_refl e => IHR (wfexp_ind' e)
+    | sym e' => IHSY (pf_ind' e')
+    | trans e1 e2 => IHT (pf_ind' e1) (pf_ind' e2)
+    | pf_subst s p =>
+      let fix loop l :=
+          match l return List.Forall Q (map snd l) with
+          | [::] => List.Forall_nil _
+          | p :: l' => List.Forall_cons _ (pf_ind' p.2) (loop l')
+          end in
+      IHS (pf_ind' p) (loop s)
+    | pf_conv e1 e2 => IHCVP (pf_ind' e1) (pf_ind' e2)
+    end.
+
+   Definition combined_wfexp_pf_ind
+     : (forall e, P e) /\ (forall p, Q p) :=
+     conj wfexp_ind' pf_ind'.
+
+   Context
+         (IHCV_no_mut : forall p e, P e -> P (wf_conv p e))
+         (IHR_no_mut : forall e, Q(pf_refl e)).
+  
+  Fixpoint wfexp_ind (e : wfexp) { struct e} : P e :=
+    match e with
+    | wf_var n => IHV n
+    | wf_con n l =>
+      let fix loop l :=
+          match l return List.Forall P l with
+          | [::] => List.Forall_nil _
+          | e' :: l' => List.Forall_cons _ (wfexp_ind e') (loop l')
+          end in
+      IHC n (loop l)
+    | wf_conv e1 e2 => IHCV_no_mut e1 (wfexp_ind e2)
+    end.
+
+  Fixpoint pf_ind (e : pf) { struct e} : Q e :=
+    match e with
+    | ax n => IHA n
+    | pf_refl e => IHR_no_mut e
+    | sym e' => IHSY (pf_ind e')
+    | trans e1 e2 => IHT (pf_ind e1) (pf_ind e2)
+    | pf_subst s p =>
+      let fix loop l :=
+          match l return List.Forall Q (map snd l) with
+          | [::] => List.Forall_nil _
+          | p :: l' => List.Forall_cons _ (pf_ind p.2) (loop l')
+          end in
+      IHS (pf_ind p) (loop s)
+    | pf_conv e1 e2 => IHCVP (pf_ind e1) (pf_ind e2)
+    end.
+End Induction.
+
+(*
+  TODO: non-prop induction schemes
 Fixpoint pf_rect
          (P : pf -> Type)
          (IHV : forall n, P(pvar n))
@@ -135,23 +199,14 @@ Fixpoint pf_rect
 Definition pf_rec := 
 [eta pf_rect]
      : forall P : pf -> Set, _.
+*)
 
+
+Definition subst_wf : Set := named_list_set wfexp.
 Definition subst_pf : Set := named_list_set pf.
 
 
-(*TODO:move to Utils*)
-Fixpoint get_subseq {A} (args : list string) (l : named_list A) :=
-  match args, l with
-  | [::],_ => do ret [::]
-  | x::args', (x',e)::l' =>
-    if x == x'
-    then do sq <- get_subseq args' l';
-         ret (x,e)::sq
-    else get_subseq args l'
-  | _::_,[::]=> None
-  end.
-
-                 
+(*TODO:move to Utils        
 Lemma get_subseq_exact (s : subst)
   : Some s = get_subseq (map fst s) s.
 Proof.
@@ -165,7 +220,9 @@ Lemma get_subseq_nil (s : subst)
 Proof.
   destruct s; simpl; reflexivity.
 Qed.
-             
+*)
+
+(* TODO: recover at some point
 Section RuleChecking.
   Context (l : lang) (wfl : wf_lang l).
 
@@ -549,17 +606,19 @@ Section RuleChecking.
    Qed.
    
    Hint Resolve synth_wf_ctx_related : imcore.
+ *)
 
-   Variant rule_pf : Set :=
-   | sort_rule_pf : named_list_set pf -> list string -> rule_pf
-   | term_rule_pf : named_list_set pf -> list string -> pf -> rule_pf
-   | sort_le_pf : named_list_set pf -> pf -> pf -> rule_pf
-   | term_le_pf : named_list_set pf -> pf -> pf -> pf (*sort; TODO: not needed*)-> rule_pf.
+Variant wfexp_rule : Set :=
+ | wf_sort_rule : named_list_set wfexp -> list string -> wfexp_rule
+ | wf_term_rule : named_list_set wfexp -> list string -> wfexp -> wfexp_rule
+ | wf_sort_le : named_list_set wfexp -> wfexp -> wfexp -> wfexp_rule
+ | wf_term_le : named_list_set wfexp -> wfexp -> wfexp -> wfexp (*sort; TODO: not needed*)-> wfexp_rule.
 
    
-   Definition pf_lang := named_list rule_pf.
-   Definition pf_ctx := named_list pf.
-   
+Definition wfexp_lang := named_list wfexp_rule.
+Definition wfexp_ctx := named_list wfexp.
+
+(*
    Definition synth_wf_rule rp : option rule :=
     match rp with
     | sort_rule_pf pl args =>
@@ -596,27 +655,117 @@ Section RuleChecking.
    Hint Resolve synth_wf_rule_related : imcore.
        
 End RuleChecking.
+*)
 
-Fixpoint eq_pf e1 e2 {struct e1} : bool :=
+Fixpoint eq_wfexp e1 e2 {struct e1} : bool :=
   match e1, e2 with
-  | pvar x, pvar y => eqb x y
-  | pcon n1 l1, pcon n2 l2 =>
-    (eqb n1 n2) && (all2 eq_pf l1 l2)
-  | ax n1 l1, ax n2 l2 =>
-    (eqb n1 n2) && (all2 eq_pf l1 l2)
+  | wf_var x, wf_var y => x == y
+  | wf_con n1 l1, wf_con n2 l2 =>
+    (eqb n1 n2) && (all2 eq_wfexp l1 l2)
+  | wf_conv p1a p1b, wf_conv p2a p2b => (eq_pf p1a p2a) && (eq_wfexp p1b p2b)
+  | _,_ => false
+  end
+with eq_pf e1 e2 {struct e1} : bool :=
+  match e1, e2 with
+  | ax n1, ax n2 => n1 == n2
+  | pf_refl e1', pf_refl e2' => eq_wfexp e1' e2'
   | sym p1', sym p2' => (eq_pf p1' p2')
   | trans p1a p1b, trans p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
-  | conv p1a p1b, conv p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | pf_conv p1a p1b, pf_conv p2a p2b => (eq_pf p1a p2a) && (eq_pf p1b p2b)
+  | pf_subst s1 p1, pf_subst s2 p2 =>
+    (eq_pf p1 p2) && (all2 (eq_pr String.eqb eq_pf) s1 s2)
   | _,_ => false
   end.
 
+Require Import Utils.BoolAsProp.
+
+Ltac solve_rewrite_goal :=
+  solve [intuition; try match goal with [H:_=_|-_]=>inversion H end; f_equal; eauto].
+
+Ltac rewrite_by_hyp :=
+  match goal with
+    [H : forall x, _ <-> _ |- _] =>
+    rewrite H
+  end.
+
+(*TODO: move to bool utils*)
+Lemma invert_cons A (e :A) es e' es'
+  : e::es = e'::es' <-> e = e' /\ es = es'.
+Proof.
+  solve_rewrite_goal.
+Qed.
+Hint Rewrite invert_cons : bool_utils.
+Lemma invert_pair A B (a a': A) (b b' : B)
+  : (a,b) = (a',b') <-> a = a' /\ b = b'.
+Proof.
+  solve_rewrite_goal.
+Qed.
+Hint Rewrite invert_pair : bool_utils.
+
+Local Lemma rewrite_eqs_combined
+  : (forall e1 e2, eq_wfexp e1 e2 <-> e1 = e2)
+    /\ (forall e1 e2, eq_pf e1 e2 <-> e1 = e2).
+Proof.
+  apply combined_wfexp_pf_ind; intros;
+    match goal with
+      [|- _ <-> _ = ?e2] =>
+      destruct e2
+    end;
+    simpl;
+    autorewrite with bool_utils.
+  all: repeat rewrite_by_hyp; try solve_rewrite_goal.
+  {
+    let H := fresh in 
+    enough (all2 eq_wfexp l l0 <-> l = l0) as H;
+      [rewrite H; solve_rewrite_goal|].
+
+    revert l0; induction l; intro l0; destruct l0; simpl;
+      autorewrite with bool_utils; try solve_rewrite_goal.
+    inversion H.
+    rewrite H2.
+    rewrite IHl; eauto.
+    solve_rewrite_goal.
+  }
+  {
+    let H := fresh in 
+    enough (all2 (eq_pr eqb eq_pf) s n <-> s = n) as H;
+      [rewrite H; solve_rewrite_goal|].
+
+    revert n; induction s; intro l0; destruct l0; break; simpl;
+      autorewrite with bool_utils; try solve_rewrite_goal.
+    inversion H0.
+    rewrite H3.
+    rewrite IHs; eauto.
+    solve_rewrite_goal.
+  }
+Qed.
+
+Definition rewrite_eq_wfexp : forall e1 e2, eq_wfexp e1 e2 <-> e1 = e2
+  := proj1 rewrite_eqs_combined.
+Hint Rewrite rewrite_eq_wfexp : imcore.
+Definition rewrite_eq_pf : forall e1 e2, eq_pf e1 e2 <-> e1 = e2
+  := proj2 rewrite_eqs_combined.
+Hint Rewrite rewrite_eq_pf : imcore. 
+    
+
 Lemma eq_pfP : forall e1 e2, reflect (e1 = e2) (eq_pf e1 e2).
-Admitted.
+  intros; apply Bool.iff_reflect; symmetry; apply rewrite_eq_pf.
+Qed.
      
 Definition pf_eqMixin := Equality.Mixin eq_pfP.
 
 Canonical pf_eqType := @Equality.Pack pf pf_eqMixin.
 
+
+Lemma eq_wfexpP : forall e1 e2, reflect (e1 = e2) (eq_wfexp e1 e2).
+  intros; apply Bool.iff_reflect; symmetry; apply rewrite_eq_wfexp.
+Qed.
+     
+Definition wfexp_eqMixin := Equality.Mixin eq_wfexpP.
+
+Canonical wfexp_eqType := @Equality.Pack wfexp wfexp_eqMixin.
+
+(*
 
 Fixpoint synth_wf_lang rpl : option lang :=
   match rpl with
@@ -637,7 +786,7 @@ Proof.
     break_monadic_do; constructor; eauto with imcore.
   eapply synth_wf_rule_related; eauto with imcore.
 Qed.
-
+*)
 
 Lemma with_names_from_names_eq {A B C:Set}
       (l1 : named_list A) (l1' : named_list B) (l2 : list C)
@@ -672,47 +821,23 @@ Proof.
   rewrite with_names_from_snd; auto.
 Qed.  
 
+(*
 (*Determines whether the proofs represent equal expressions *)
 Definition eq_pf_term (l : lang) c (p1 p2 : pf) : bool :=
   synth_wf_term l p1 c == synth_wf_term l p2 c.
 Definition eq_pf_sort (l : lang) c (p1 p2 : pf) : bool :=
   synth_wf_sort l p1 c == synth_wf_sort l p2 c.
-
-
-(*TODO:
-  conceptual issue:
-  if pfs proves s1 ~ s2 and p proves e1 ~ e2,
-  then pf_subst pfs p should prove e1[/s1/] ~ e2[/s2/].
-  However, in the transitive case, there is an issue:
-  pf_subst pfs (trans p1 p2) = trans (pf_subst pfs p1) (pf_subst pfs p2),
-  but when pfs is not an instance of reflexivity, this 
-  produces proofs which do not connect at their domain/codomain.
-
-  Potential solutions:
-  -make one of the pfs uses a reflexivity proof,
-  either by projecting (which requires the lang in context)
-  or as (map2 trans pfs (map sym pfs)), which may produce large proof terms.
-  -add pf_subst as a constructor; gives up on canonicity of terms wrt substitution
-  but they are already non cannonical due to conversions, etc.
-      +note: might be worth at some point canonicalizing them via reduction for
-       conversions, etc, but both versions may be worth maintaining
-  -attempt to do the same operations that the proof DSL is good for on
-   actual proofs in Prop (may well need to use Ltac2, not Gallina)
 *)
-Fixpoint pf_subst (s : named_list pf) (p : pf) : pf :=
+
+Fixpoint wfexp_subst (s : named_list wfexp) (p : wfexp) : wfexp :=
       match p with
-      | pvar x => named_list_lookup (pvar x) s x
-      | pcon name pl =>
-        pcon name (map (pf_subst s) pl)
-      | ax name pl => 
-        ax name (map (pf_subst s) pl)
-      | sym p => sym (pf_subst s p)
-      | trans p1 p2 =>
-        trans (pf_subst s p1) (pf_subst s p2)
-      | conv pt p => conv (pf_subst s pt) (pf_subst s p)
+      | wf_var x => named_list_lookup (wf_var x) s x
+      | wf_con name pl =>
+        wf_con name (map (wfexp_subst s) pl)
+      | wf_conv pt p => wf_conv (pf_subst (named_map pf_refl s) pt) (wfexp_subst s p)
   end.
 
-
+(*
 Definition check_le_sort l pf c t t' :=
   Some(t',t) = synth_le_sort l (synth_le_term l) pf c.
 
@@ -729,6 +854,7 @@ Definition check_le_subst l pf c (c':ctx) s1 s2 :=
     (with_names_from c' es2 == s2)
   | None => false
   end.
+*)
 
 (*
 Lemma check_le_subst_false_cons_nil_l l p ps c c' s2
@@ -823,12 +949,12 @@ Proof.
 
 Definition eq_rule_pf r1 r2 : bool :=
   match r1, r2 with
-  | sort_rule_pf c1 args1, sort_rule_pf c2 args2 => (c1 == c2) && (args1 == args2)
-  | term_rule_pf c1 args1 t1, term_rule_pf c2 args2 t2 =>
+  | wf_sort_rule c1 args1, wf_sort_rule c2 args2 => (c1 == c2) && (args1 == args2)
+  | wf_term_rule c1 args1 t1, wf_term_rule c2 args2 t2 =>
     (c1 == c2) && (args1 == args2) && (t1 == t2)
-  | sort_le_pf c1 t1 t1', sort_le_pf c2 t2 t2' =>
+  | wf_sort_le c1 t1 t1', wf_sort_le c2 t2 t2' =>
     (c1 == c2) && (t1 == t2) && (t1' == t2')
-  | term_le_pf c1 e1 e1' t1, term_le_pf c2 e2 e2' t2 =>
+  | wf_term_le c1 e1 e1' t1, wf_term_le c2 e2 e2' t2 =>
     (c1 == c2) && (e1 == e2) && (e1' == e2') && (t1 == t2)
   | _,_ => false
   end.
@@ -840,61 +966,101 @@ Qed.
 
 Definition rule_pf_eqMixin := Equality.Mixin eq_rule_pfP.
 
-Canonical rule_pf_eqType := @Equality.Pack rule_pf rule_pf_eqMixin.
+Canonical rule_pf_eqType := @Equality.Pack wfexp_rule rule_pf_eqMixin.
 
 
 Module Notations.
 
+  
+  Declare Custom Entry wfexp.
   Declare Custom Entry pf.
 
-  Declare Custom Entry pf_ctx.
-  Declare Custom Entry pf_ctx_binding.
+  Declare Custom Entry wfexp_ctx.
+  Declare Custom Entry wfexp_ctx_binding.
 
   (* Since contexts are regular lists, 
      we need a scope to determine when to print them *)
-  Declare Scope pf_ctx_scope.
-  Bind Scope pf_ctx_scope with pf_ctx.
+  Declare Scope wfexp_ctx_scope.
+  Bind Scope wfexp_ctx_scope with wfexp_ctx.
+
   
+  Notation "'{{wf' e }}" := (e) (at level 0,e custom wfexp at level 100).
   Notation "'{{p' e }}" := (e) (at level 0,e custom pf at level 100).
   
+  Notation "{ x }" :=
+    x (in custom wfexp at level 0, x constr).
+  (* TODO: issues; fix *)
   Notation "{ x }" :=
     x (in custom pf at level 0, x constr).
   (* TODO: issues; fix *)
   Notation "{ x }" :=
-    x (in custom pf_ctx at level 0, x constr).
+    x (in custom wfexp_ctx at level 0, x constr).
+
+  
+  Notation "( e )" := e (in custom wfexp at level 0, e custom wfexp at level 100).
+  Notation "( e )" := e (in custom pf at level 0, e custom pf at level 100).
   
   Notation "# c" :=
-    (pcon c%string [::])
-      (right associativity,in custom pf at level 0, c constr at level 0,
+    (wf_con c%string [::])
+      (right associativity,in custom wfexp at level 0, c constr at level 0,
                               format "# c").
-  (*TODO: ax? really should just merge w/ pcon *)
   
-  Definition pf_constr_app e e' :=
+  Definition wf_constr_app e e' :=
     match e with
-    | pcon c l => pcon c (e'::l)
-    | ax c l => ax c (e'::l)
-    | _ => pcon "ERR" [::]
+    | wf_con c l => wf_con c (e'::l)
+    | _ => wf_con "ERR" [::]
     end.
 
   Notation "c e" :=
-    (pf_constr_app c e)
-      (left associativity, in custom pf at level 10,
-                              c custom pf, e custom pf at level 9).
+    (wf_constr_app c e)
+      (left associativity, in custom wfexp at level 10,
+                              c custom wfexp, e custom wfexp at level 9).
 
-  Notation "( e )" := e (in custom pf at level 0, e custom pf at level 100).
+  
+  Notation "< p > e" :=
+    (wf_conv p e)
+      (left associativity, in custom wfexp at level 9,
+                              p custom pf, e custom wfexp at level 8).
+  (*TODO: subst notation*)
 
   Notation "% x" :=
-    (pvar x%string)
-      (in custom pf at level 0, x constr at level 0, format "% x").
+    (wf_var x%string)
+      (in custom wfexp at level 0, x constr at level 0, format "% x").
 
-
-  Check {{p #"foo" }}.
-  Check {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Notation "! c" :=
+    (ax c%string)
+      (right associativity,in custom pf at level 0, c constr at level 0,
+                              format "! c").
   
-  Eval compute in {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Notation "e" :=
+    (pf_refl e)
+      (right associativity,in custom pf at level 5, e custom wfexp at level 5,
+                              format "e").
+
+  Notation "p1 , p2" :=
+    (trans p1 p2)
+      (left associativity, in custom pf at level 30,
+                              p1 custom pf, p2 custom pf at level 29).
+
+  Notation "~ p1" :=
+    (sym p1)
+      (right associativity, in custom pf at level 25, p1 custom pf).
+  
+  Notation "< p > e" :=
+    (pf_conv p e)
+      (left associativity, in custom pf at level 9,
+                              p custom pf, e custom pf at level 8).
+  (*TODO: subst notation*)
+
+  Check {{wf #"foo" }}.
+  Check {{wf #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Check {{wf <!"beta">(#"baz" %"y")}}.
+  Check {{wf < <!"t_beta">!"beta", ~(#"baz" %"y"), (#"baz" %"y") >(#"baz" %"y")}}.
+  
+  Eval compute in {{wf #"foo" (#"bar" %"x") #"baz" %"y"}}.
   
   Notation "# c e1 .. en"
-    := (pcon c (cons en .. (cons e1 nil) ..))
+    := (wf_con c (cons en .. (cons e1 nil) ..))
       (left associativity,
          in custom pf at level 10,
             c constr at level 0,
@@ -902,34 +1068,37 @@ Module Notations.
             en custom pf at level 9,
             only printing, format "# c  e1  ..  en").
   
-  Eval compute in {{p #"foo" (#"bar" %"x") #"baz" %"y"}}.
-  Eval compute in {{p #"foo" }}.
+  Eval compute in {{wf #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Eval compute in {{wf #"foo" }}.
 
-  Notation "'{{pc' }}" := nil (at level 0) : pf_ctx_scope.
+  Notation "'{{pc' }}" := nil (at level 0) : wfexp_ctx_scope.
   Notation "'{{pc' bd , .. , bd' '}}'" :=
     (cons bd' .. (cons bd nil)..)
-      (at level 0, bd custom pf_ctx_binding at level 100,
-          format "'[' {{pc '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : pf_ctx_scope.
+      (at level 0, bd custom wfexp_ctx_binding at level 100,
+       format "'[' {{pc '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'")
+    : wfexp_ctx_scope.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)
-      (in custom pf_ctx at level 100, bd custom pf_ctx_binding at level 100,
-          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : pf_ctx_scope.
+      (in custom wfexp_ctx at level 100, bd custom wfexp_ctx_binding at level 100,
+          format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : wfexp_ctx_scope.
 
-  Notation "" := nil (*(@nil (string*sort))*) (in custom pf_ctx at level 0) : pf_ctx_scope.
+  Notation "" := nil (*(@nil (string*sort))*)
+                   (in custom wfexp_ctx at level 0) : wfexp_ctx_scope.
 
   Notation "x : t" :=
     (x%string, t)
-      (in custom pf_ctx_binding at level 100, x constr at level 0,
-          t custom pf at level 100).
+      (in custom wfexp_ctx_binding at level 100, x constr at level 0,
+          t custom wfexp at level 100).
 
-  Local Definition as_ctx (c:pf_ctx) :=c.
+  Local Definition as_ctx (c:wfexp_ctx) :=c.
   Check (as_ctx {{pc }}).
   Check (as_ctx {{pc "x" : #"env"}}).
   Check (as_ctx {{pc "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}).
 
 End Notations.
 
+(*
 Inductive ws_pf {c : list string} : pf -> Prop :=
 | ws_var x : x \in c -> ws_pf (pvar x)
 | ws_con n l : List.Forall ws_pf l -> ws_pf (pcon n l)
@@ -949,3 +1118,4 @@ Fixpoint fv (p : pf) :=
   | trans p1 p2 => fv p1 ++ fv p2
   | conv p1 p2 => fv p1 ++ fv p2
   end.
+*)
