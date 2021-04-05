@@ -40,6 +40,7 @@ Section TermsAndRules.
   Qed.
   Hint Resolve wf_lang_all_fresh : pfcore.
 
+  (*
   
   (*
     Congruence lemmas for rewriting
@@ -1167,11 +1168,14 @@ Section TermsAndRules.
   Proof using l_ok.
     reflect_from_iff rewrite_rule_okP.
   Qed.
+  *)
   
 End TermsAndRules.
+Hint Resolve wf_lang_all_fresh : pfcore.
 
 (*TODO: pull crush out of section*)
 
+(*
 Lemma check_lang_ok_all_fresh l : check_lang_ok l -> all_fresh l.
 Proof using.
   induction l; intros; repeat (break; simpl in * ); break_goal; auto.
@@ -1801,3 +1805,10 @@ Proof.
     destruct lea; constructor; eauto.
   }
 Qed.
+*)
+
+
+(*TODO: prove!!!!!!!!!!!!!!!!!!!!!!!!!!*)
+Lemma rule_in_wf l r name
+  : wf_lang l -> (name,r) \in l -> wf_rule l r.
+Admitted.

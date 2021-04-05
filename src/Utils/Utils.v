@@ -825,3 +825,39 @@ Fixpoint get_subseq {A} (args : list string) (l : named_list A) :=
   | _::_,[::]=> None
   end.
 
+(* TODO: move to utils*)
+(* decomposes the way you want \in to on all_fresh lists*)
+Fixpoint in_once {A:eqType} n e (l : named_list A) : bool :=
+  match l with
+  | [::] => false
+  | (n',e')::l' =>
+    ((n == n') && (e == e')) || ((n != n')&&(in_once n e l'))
+  end.
+
+Arguments in_once {A} n e !l/.
+
+Lemma in_once_notin {A:eqType} n (e : A) l
+  : n \notin (map fst l) -> ~~(in_once n e l).
+Proof using .
+  elim: l; auto; intros; break; simpl in *.
+  rewrite ?in_cons in H0.
+  move: H0.
+  case neq: (n==s); auto.
+Qed.
+
+
+Lemma all_fresh_in_once {A:eqType} n (e : A) l
+  : all_fresh l -> ((n,e) \in l) = in_once n e l.
+Proof using .
+  elim: l; simpl; auto; intros; repeat (break; simpl in * ).
+  rewrite in_cons.
+  rewrite H; auto.
+  change ((n,e)==(s,s0)) with ((n==s)&&(e==s0)).
+  case neq: (n == s); simpl; auto.
+  rewrite Bool.orb_false_r.
+  case eeq:(e==s0); simpl; auto.
+  apply /negP.
+  apply /negP.
+  move: neq => /eqP ->.
+  by apply in_once_notin.
+Qed.  
