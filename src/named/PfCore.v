@@ -252,3 +252,49 @@ Proof using.
   (*
     TODO: prove subst_assoc*)
 Admitted.
+
+Definition wf_sort_subst_monotonicity l name r
+  := proj1 (wf_subst_mono l name r).
+#[export] Hint Resolve wf_sort_subst_monotonicity : pfcore.
+
+Definition wf_term_subst_monotonicity l name r
+  := proj1 (proj2 (lang_mono l name r)).
+#[export] Hint Resolve wf_term_subst_monotonicity : pfcore.
+
+Definition wf_args_subst_monotonicity l name r
+  := proj1 (proj2 (proj2 (lang_mono l name r))).
+#[export] Hint Resolve wf_args_subst_monotonicity : pfcore.
+
+
+
+Lemma le_sort_wf l c p t1 t2
+  : wf_lang l ->
+    le_sort l c p t1 t2 ->
+    (wf_sort l c t1 /\ wf_sort l c t2).
+Proof.
+  intro wfl.
+  induction 1; pfcore_crush.
+  {
+    (*TODO: put in non-repeated crush phase*)
+    apply rule_in_wf in H;
+    pfcore_crush.
+  }
+  {
+    (*TODO: put in non-repeated crush phase*)
+    apply rule_in_wf in H;
+    pfcore_crush.
+  }
+  {
+    eapply wf_sort_subst_monotonicity; eauto.
+    admit (*TODO: need sim. thms for term, subst*).
+  }
+  {
+    eapply wf_sort_subst_monotonicity; eauto.
+    admit (*TODO: need sim. thms for term, subst*).
+  }
+Admitted.
+
+Definition le_sort_l_wf l c p t1 t2 wfl les := proj1 (@le_sort_wf l c p t1 t2 wfl les).
+Hint Resolve le_sort_l_wf : pfcore.
+Definition le_sort_r_wf l c p t1 t2 wfl les := proj2 (@le_sort_wf l c p t1 t2 wfl les).
+Hint Resolve le_sort_r_wf : pfcore.
