@@ -1,18 +1,18 @@
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
+Require Import List String.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Exp.
+(*TODO: why does this generate warnings?*)
 Import Exp.Notations.
-Require Import String.
 
-(* terms form a category over sorts w/ (empty or constant?) Γ *)
-Inductive rule : Type :=
-| sort_rule :  ctx -> seq string (*explicit args*) -> rule
-| term_rule :  ctx -> seq string (*explicit args*) -> sort -> rule
+Inductive rule : Set :=
+| sort_rule :  ctx -> list string (*explicit args*) -> rule
+| term_rule :  ctx -> list string (*explicit args*) -> sort -> rule
 | sort_le : ctx -> sort -> sort -> rule
 | term_le : ctx -> exp -> exp -> sort -> rule.
 
@@ -73,13 +73,12 @@ Notation "'[s|' G ----------------------------------------------- cc 'srt' ]" :=
 
 
 Notation "'[s|' G ----------------------------------------------- # n 'srt' ]" :=
-  (n%string, sort_rule G [::])
+  (n%string, sort_rule G [])
     (n constr at level 0,
      G custom ctx at level 100,
      format "'[' [s|  '[' G '//' ----------------------------------------------- '//' # n  'srt' ']' '//' ] ']'",
     only printing)
   : arule_scope.
-
 
 Notation "'[s|' G ----------------------------------------------- # n a .. a' 'srt' ]" :=
   (n%string, sort_rule G (cons a' .. (cons a nil) .. )%string)
@@ -116,7 +115,7 @@ Notation "[:| G ----------------------------------------------- cc : t ]" :=
      format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' cc  '/' :  t ']' ']' '//' ] ']'") : arule_scope.
 
 Notation "'[:|' G ----------------------------------------------- # n : t ]" :=
-  (n%string, term_rule G [::] t)
+  (n%string, term_rule G [] t)
     (n constr at level 0,
      G custom ctx at level 100, t custom sort at level 100,
      format "'[' [:|  '[' G '//' ----------------------------------------------- '//' # n  :  t ']' '//' ] ']'",
@@ -215,54 +214,27 @@ Definition ws_lang : lang -> bool := List.forallb ws_rule.
 *)
 *)
 
-Definition eq_rule r1 r2 : bool :=
-  match r1, r2 with
-  | sort_rule c1 args1, sort_rule c2 args2 => (c1 == c2) && (args1 == args2)
-  | term_rule c1 args1 t1, term_rule c2 args2 t2 =>
-    (c1 == c2) && (args1 == args2) && (t1 == t2)
-  | sort_le c1 t1 t1', sort_le c2 t2 t2' =>
-    (c1 == c2) && (t1 == t2) && (t1' == t2')
-  | term_le c1 e1 e1' t1, term_le c2 e2 e2' t2 =>
-    (c1 == c2) && (e1 == e2) && (e1' == e2') && (t1 == t2)
-  | _,_ => false
-  end.
 
-Lemma eq_ruleP r1 r2 : reflect (r1 = r2) (eq_rule r1 r2).
-Proof using .
-  destruct r1; destruct r2; simpl; solve_reflect_norec.
-Qed.
-
-Definition rule_eqMixin := Equality.Mixin eq_ruleP.
-
-Canonical rule_eqType := @Equality.Pack rule rule_eqMixin.
-
-
-Definition ws_rule r : bool :=
+Definition ws_rule r : Prop :=
   match r with
-  | sort_rule c args => subseq args (map fst c) && ws_ctx c
-  | term_rule c args t => subseq args (map fst c) && (ws_ctx c) && (well_scoped (map fst c) t)
+  | sort_rule c args => sublist args (map fst c) /\ ws_ctx c
+  | term_rule c args t => sublist args (map fst c) /\ (ws_ctx c) /\ (well_scoped (map fst c) t)
   | sort_le c t t'=>
-    (ws_ctx c) && (well_scoped (map fst c) t)
-    && (well_scoped (map fst c) t')
+    (ws_ctx c) /\ (well_scoped (map fst c) t)
+    /\ (well_scoped (map fst c) t')
   | term_le c e e' t =>
-    (ws_ctx c) && (well_scoped (map fst c) e)
-    && (well_scoped (map fst c) e') && (well_scoped (map fst c) t)
+    (ws_ctx c) /\ (well_scoped (map fst c) e)
+    /\ (well_scoped (map fst c) e') /\ (well_scoped (map fst c) t)
   end.
 
-Definition ws_lang (l : lang) : bool :=
-  (all_fresh l) && (all ws_rule (map snd l)).
+Definition ws_lang (l : lang) : Prop :=
+  (all_fresh l) /\ (all ws_rule (map snd l)).
 
 Arguments ws_lang !l/.
 
-Lemma rule_in_ws l n r : ws_lang l -> (n,r) \in l -> ws_rule r.
+Lemma rule_in_ws l n r : ws_lang l -> In (n,r) l -> ws_rule r.
 Proof using .
-  elim: l; intros; break; simpl in *; break; auto.
-  match goal with [H : is_true(_ \in _::_)|- _]=>
-                  move: H;rewrite in_cons; move /orP => [] end.
-  {
-    move /eqP => []; intros; by subst.
-  }
-  {
-    apply H; unfold ws_lang; break_goal; auto.
-  }
+  induction l; 
+    basic_goal_prep;
+    basic_exp_crush.
 Qed.

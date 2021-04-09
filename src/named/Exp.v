@@ -1,11 +1,13 @@
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String.
+Require Import List String.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
+
+Create HintDb exp discriminated.
 
 Unset Elimination Schemes.
 Inductive exp : Set :=
@@ -22,8 +24,7 @@ Set Elimination Schemes.
 Fixpoint exp_ind
          (P : exp -> Prop)
          (IHV : forall n, P(var n))
-         (IHC : forall n l,
-             List.fold_right (fun t => and (P t)) True l ->
+         (IHC : forall n l, all P l ->
              P (con n l))
          (e : exp) { struct e} : P e :=
   match e with
@@ -31,8 +32,8 @@ Fixpoint exp_ind
   | con n l =>
     let fix loop l :=
         match l return List.fold_right (fun t => and (P t)) True l with
-        | [::] => I
-        | e' :: l' => conj (exp_ind IHV IHC e') (loop l')
+        | [] => I
+        | e' :: l' => conj (exp_ind _ IHV IHC e') (loop l')
         end in
     IHC n l (loop l)
   end.
@@ -49,14 +50,14 @@ Fixpoint exp_rect
   | con n l =>
     let fix loop l :=
         match l return List.fold_right (fun t => prod (P t)) unit l with
-        | [::] => tt
-        | e' :: l' => (exp_rect IHV IHC e', loop l')
+        | [] => tt
+        | e' :: l' => (exp_rect _ IHV IHC e', loop l')
         end in
     IHC n l (loop l)
   end.
 
 Definition exp_rec := 
-[eta exp_rect]
+  exp_rect
      : forall P : exp -> Set,
        (forall n, P (var n)) ->
        (forall n l,
@@ -75,7 +76,7 @@ Definition subst_lookup (s : subst) (n : string) : exp :=
 Arguments subst_lookup !s n/.
 
 Definition ctx_lookup (c: ctx) (n : string) : sort :=
-  named_list_lookup (scon "" [::]) c n.
+  named_list_lookup (scon "" []) c n.
 
 Arguments ctx_lookup !c n/.
 
@@ -99,118 +100,104 @@ Arguments subst_cmp s1 s2 /.
 (* Well-scoped languages
    Written as functions that decide the properties
    determines that variables (but not constructor symbols) are well-scoped
+
+   Note: we could write this in bool using a decidable In (which is fine
+   because strings have decidable equality)
  *)
-Fixpoint ws_exp (args : seq string) (e : exp) : bool :=
+Fixpoint ws_exp (args : list string) (e : exp) : Prop :=
   match e with
-  | var x => x \in args
+  | var x => In x args
   | con _ s => all (ws_exp args) s
   end.
 Arguments ws_exp args !e/.
 
-Definition ws_args args : list exp -> bool := all (ws_exp args).
+Definition ws_args args : list exp -> Prop := all (ws_exp args).
 Arguments ws_args args !s/.
 
-Fixpoint ws_subst args (s : subst) : bool :=
+Fixpoint ws_subst args (s : subst) : Prop :=
   match s with
-  | [::] => true
-  | (n,e)::s' => fresh n s' && ws_exp args e && ws_subst args s'
+  | [] => True
+  | (n,e)::s' => fresh n s' /\ ws_exp args e /\ ws_subst args s'
   end.
 Arguments ws_subst args !s/.
 
-Definition ws_sort args (t : sort) : bool :=
+Definition ws_sort args (t : sort) : Prop :=
   match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
 
-Fixpoint ws_ctx (c : ctx) : bool :=
+Fixpoint ws_ctx (c : ctx) : Prop :=
   match c with
-  | [::] => true
-  | (n,t) :: c' => fresh n c' && ws_sort (map fst c') t && ws_ctx c'
+  | [] => True
+  | (n,t) :: c' => fresh n c' /\ ws_sort (map fst c') t /\ ws_ctx c'
   end.
 Arguments ws_ctx !c/.
 
 Lemma ws_all_fresh_ctx c
   : ws_ctx c -> all_fresh c.
 Proof using .
-  elim: c; simpl; auto.
-  case; intros; simpl in *.
-  move: H0.
-  move => /andP [] /andP [] fr wss wsc.
-  apply /andP; split; auto.
+  induction c; basic_goal_prep; basic_utils_crush.
 Qed.
 
-Class Substable (A : Set) : Set :=
+Class Substable (A : Type) : Type :=
   {
   apply_subst : subst -> A -> A;
-  well_scoped : list string -> A -> bool;
+  well_scoped : list string -> A -> Prop;
   subst_assoc : forall s1 s2 a,
       well_scoped (map fst s2) a ->
       apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a
 (* TODO: identity law*)
   }.
 
-Arguments well_scoped {A}%type_scope {Substable} _%seq_scope !_.
-Arguments apply_subst {A}%type_scope {Substable} _%seq_scope !_.
+Arguments well_scoped {A}%type_scope {Substable} _%list_scope !_.
+Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
+Hint Rewrite @subst_assoc : exp.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
-Lemma exp_subst_nil e : exp_subst [::] e = e.
-Proof using .
-  elim: e; simpl; auto.
-  intro n.
-  elim;simpl; auto.
-  intros e s IH.
-  case; intros eeq IHfold.
-  move: (IH IHfold); case => ->.
-  repeat f_equal; assumption.
-Qed. 
-
-Lemma named_map_subst_nil s : named_map (exp_subst [::]) s = s.
-Proof using .
-  elim s; simpl; auto.
-  case; intros.
-  simpl; f_equal.
-  f_equal; rewrite exp_subst_nil; reflexivity.
-  done.
+Lemma exp_subst_nil e : exp_subst [] e = e.
+Proof using .  
+  induction e; basic_goal_prep; basic_utils_crush.
+  f_equal.
+  revert H.
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.
+Hint Rewrite exp_subst_nil : exp.
+
+
+Ltac basic_exp_crush := let x := autorewrite with utils exp in * in
+                                  let y := eauto with utils exp in
+                                          generic_crush x y.
+
+Lemma named_map_subst_nil s : named_map (exp_subst []) s = s.
+Proof using .
+  induction s; basic_goal_prep;basic_exp_crush.
+Qed.
+Hint Rewrite named_map_subst_nil : exp.
 
 Lemma subst_lookup_map s1 s2 n
-  : n \in (map fst s2) ->
+  : In n (map fst s2) ->
           exp_subst s1 (subst_lookup s2 n) = subst_lookup (named_map (exp_subst s1) s2) n.
 Proof using .
-  elim: s2; intro_to is_true; simpl in *.
-  { inversion. }
-  {
-    destruct a; simpl.
-    rewrite in_cons.
-    case neqs:(n==s); simpl.
-    {
-      move: neqs => /eqP => neq; subst.
-      by rewrite !eqb_refl.
-    }
-    {
-      move /H.
-      cbn in neqs.
-      by rewrite !neqs.
-    }
-  }
+  induction s2; basic_goal_prep;
+  basic_exp_crush.
+  case_match; basic_exp_crush.
 Qed.
+Hint Rewrite subst_lookup_map : exp.
   
 Lemma exp_subst_assoc : forall s1 s2 a,
     ws_exp (map fst s2) a ->
     exp_subst s1 (exp_subst s2 a)
     = exp_subst (subst_cmp s1 s2) a.
 Proof using .
-  intros s1 s2 a.
-  elim: a s1 s2; intros; simpl in *.
-  { by apply subst_lookup_map. }
-  {
-    f_equal.
-    elim: l H H0; intros; simpl in *; auto.
-    move: H1 => /andP [] wse wsl.
-    destruct H0.
-    f_equal; eauto.
-  }
-Qed.  
+  induction a; basic_goal_prep;
+    basic_exp_crush.
+  f_equal.
+  revert dependent l;
+    induction l;
+    basic_goal_prep;
+    basic_exp_crush.
+Qed.
+Hint Rewrite exp_subst_assoc : exp.
 
 Instance substable_exp : Substable exp :=
   {
@@ -224,11 +211,8 @@ Lemma subst_subst_assoc : forall s1 s2 a,
     subst_cmp s1 (subst_cmp s2 a)
     = subst_cmp (subst_cmp s1 s2) a.
 Proof using .
-  intros s1 s2 a.
-  elim: a s1 s2; intros; simpl in *; auto.
-  destruct a; simpl in *.
-  move: H0 => /andP [] /andP []; intros.
-  f_equal; eauto; f_equal; eauto using exp_subst_assoc.
+  induction a; basic_goal_prep;
+    basic_exp_crush.
 Qed.
 
 Instance substable_subst : Substable subst :=
@@ -246,10 +230,8 @@ Lemma args_subst_assoc : forall s1 s2 a,
     args_subst s1 (args_subst s2 a)
     = args_subst (subst_cmp s1 s2) a.
 Proof using .
-  intros s1 s2 a.
-  elim: a s1 s2; intros; simpl in *; auto.
-  move: H0 => /andP []; intros.
-  f_equal; eauto using exp_subst_assoc.
+  induction a; basic_goal_prep;
+    basic_exp_crush.
 Qed.
 
 Instance substable_args : Substable (list exp) :=
@@ -268,8 +250,8 @@ Lemma sort_subst_assoc : forall s1 s2 a,
     sort_subst s1 (sort_subst s2 a)
     = sort_subst (subst_cmp s1 s2) a.
 Proof using .
-  intros s1 s2; case; intros; simpl.
-  f_equal; eauto using subst_assoc.
+  destruct a; basic_goal_prep;
+    basic_exp_crush.
 Qed.
 
 Instance substable_sort : Substable sort :=
@@ -284,105 +266,14 @@ Fixpoint eq_exp e1 e2 {struct e1} : bool :=
   | _,_ => false
   end.
 
-
-Lemma eq_exp_refl : forall e, eq_exp e e.
-Proof.
-  elim; simpl; auto.
-  move => n.
-  apply eqb_refl.
-  intro n.
-  elim; simpl; auto.
-  rewrite eqb_refl; auto.
-  intro_to and.
-  case => eqaa fld.
-  apply /andP.
-  split; auto.
-  apply /eqb_refl.
-  move: (H fld) => H'; break; break_goal; auto.
-Qed.
-
-Lemma all2_eq_exp_refl : forall l, all2 eq_exp l l.
-  pose eqer := eq_exp_refl.
-  elim; simpl; auto.
-  intros; apply /andP; split; auto.
-Qed.
-
-
-Lemma eq_expP : forall e1 e2, reflect (e1 = e2) (eq_exp e1 e2).
-  intro e1.
-  induction e1; intro e2; destruct e2; simpl; try by constructor.
-  {
-    destruct_reflect_bool.
-    f_equal; apply /eqP; symmetry; assumption.
-    case => /eqP.
-    change (?n == ?s) with (n=? s)%string.
-    rewrite - Heqb.
-    inversion.
-  }
-  {
-    destruct_reflect_andb_l; simpl;
-      [|constructor;
-        case; intros; subst;
-        rewrite eqb_refl in Heqb;
-        inversion Heqb ].
-    symmetry in Heqb.
-    move: Heqb =>/eqP ->.
-    suff: (reflect (l=l0) (all2 eq_exp l l0)).
-    {
-      move => lP; destruct_reflect_bool.
-      {
-        f_equal.
-        by apply /lP.
-      }
-      {
-        case.
-        move /lP; inversion.
-      }
-    }
-    {
-      clear n s.
-      revert l0 X.
-      induction l; intro l0; destruct l0; simpl; try by constructor.
-      intros; break.
-      destruct_reflect_andb_l.
-      symmetry in Heqb.
-      {
-        move: Heqb => /r Heqb; subst; simpl.
-        destruct_reflect_bool; [f_equal | inversion].
-        {
-          symmetry in Heqb.
-          move: Heqb => /IHl; auto.
-        }
-        {
-          subst.
-          rewrite all2_eq_exp_refl in Heqb.
-          inversion Heqb.
-        }
-      }
-      {
-        constructor.
-        inversion; subst.
-        rewrite eq_exp_refl in Heqb.
-        inversion Heqb.
-      }
-    }
-  }
-Qed.          
-     
-Definition exp_eqMixin := Equality.Mixin eq_expP.
-
-Canonical exp_eqType := @Equality.Pack exp exp_eqMixin.
-
+(*
 Definition eq_sort (t1 t2 : sort) :=
   let (n1, s1) := t1 in
   let (n2, s2) := t2 in
   (n1 == n2) && (s1 == s2).
+*)
 
-Lemma eq_sortP s1 s2 : reflect (s1 = s2) (eq_sort s1 s2).
-  destruct s1; destruct s2; simpl; solve_reflect_norec.
-Qed.
-
-Canonical sort_eqType := @Equality.Pack sort (Equality.Mixin eq_sortP).
+(* TODO: rest of the expression lemmas
 
 (* TODO: how many of these should be part of the substable class?*)
 Lemma ws_exp_mono s (v : exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
@@ -556,6 +447,8 @@ Proof.
   elim: l; simpl; intros; break; f_equal; eauto using id_subst_reduce.
 Qed.
 
+*)
+
 Module Notations.
 
   Declare Custom Entry exp.
@@ -582,18 +475,18 @@ Module Notations.
     x (in custom ctx at level 0, x constr).
   
   Notation "# c" :=
-    (con c%string [::])
+    (con c%string [])
       (right associativity,in custom exp at level 0, c constr at level 0,
                               format "# c").
   Notation "# c" :=
-    (scon c%string [::])
+    (scon c%string [])
       (right associativity,in custom sort at level 0, c constr at level 0,
                               format "# c").
 
   Definition exp_constr_app e e' :=
     match e with
     | con c l => con c (e'::l)
-    | _ => con "ERR" [::]
+    | _ => con "ERR" []
     end.
 
   Definition srt_constr_app t e' :=
@@ -686,11 +579,14 @@ End Notations.
 Lemma with_names_from_args_subst (c':ctx) s' (s : list exp)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof using .
-  elim: c' s; intros until s; case: s; intros; break; simpl in *; auto.
-  f_equal; auto.
-  by fold_Substable.
+  revert s.
+  induction c';
+    destruct s;
+    basic_goal_prep;
+    basic_exp_crush.
 Qed.
 
+(* TODO: check whether these are in utils; move if not
 (* TODO: move to utils! need more general types to do so; given in PfCore*)
 Lemma map_fst_with_names_from (c:ctx) (s : list exp)
   : size s = size c -> map fst (with_names_from c s) = map fst c.
@@ -711,3 +607,4 @@ Proof using .
     f_equal; auto.
   }
 Qed.
+*)

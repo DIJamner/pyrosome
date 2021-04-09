@@ -1,9 +1,11 @@
-
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
+
+Require Import List Bool String.
+Import ListNotations.
+Import BoolNotations.
+Open Scope string.
+Open Scope list.
 
 (***************
  Tactics 
@@ -22,21 +24,6 @@ Tactic Notation "intro_to" constr(ty) :=
          | |- _ -> _ => intro
          | |- _ => fail 2 "could not find argument with head" ty
          end.
-
-
-Ltac construct_with t :=
-  constructor; apply: t; eauto.
-
-
-Tactic Notation "inversion" :=
-  let H := fresh in
-  move => H; inversion H.
-
-Tactic Notation "swap" :=
-  let H := fresh in
-  let H' := fresh in
-  move => H H';
-  move: H' H.
   
 
 
@@ -47,125 +34,37 @@ Definitions
 (* grouped right with the fixpoint for better decreasing argument analysis*)
 Definition all2 := 
 fun (S T : Type) (r : S -> T -> bool) =>
-fix all2 (s : seq S) (t : seq T) {struct s} : bool :=
+fix all2 (s : list S) (t : list T) {struct s} : bool :=
   match s, t with
-  | [::], [::] => true
+  | [], [] => true
   | x :: s0, y::t0 => r x y && all2 s0 t0
   | _,_ => false
   end.
 
-Lemma all2P {T} eqb (l1 l2 : seq T)
-  : (forall e1 e2, reflect (e1 = e2) (eqb e1 e2)) ->
-    reflect (l1 = l2) (all2 eqb l1 l2).
-Proof.
-  move => eqbP.
-  elim: l1 l2.
-  - case; simpl; [by constructor|].
-    intros.
-    constructor; eauto.
-    move => H; inversion H.
-  - move => a l IH.
-    case; simpl.
-    constructor; move => H; inversion H.
-    intros.
-    move: (eqbP a a0).
-    case (eqb a a0); simpl.
-    move: (IH l0); case:(all2 eqb l l0); simpl.
-    + constructor.
-      inversion IH0; inversion eqbP0; by subst.
-    + constructor.
-      move => lfl.
-      inversion lfl.
-      inversion IH0; eauto.
-    + constructor; move => lfl.
-      inversion lfl; inversion eqbP0; auto.
-Qed.
 
-
- (*Todo: whichs more useful?*)
-(*Definition nth_level {A} l n : option A :=
-  if n <= size l then List.nth_error l (size l - n.+1) else None.*)
-Definition nth_level {A} a l n : A :=
-  if n < size l then nth a l (size l - n.+1) else a.
-Definition is_nth_level {A:eqType} (l : seq A) n x : bool :=
-   (n < size l) && (List.nth_error l (size l - n.+1) == Some x).
-
-Lemma is_nth_level_to_fn {A:eqType} a (l : seq A) n x
-  : is_nth_level l n x -> (nth_level a l n == x).
-Proof using .
-  unfold nth_level; unfold is_nth_level.
-  case: (n < size l); simpl; auto.
-  generalize (size l - n.+1) as y.
-  move => y; move: y l.
-  elim; intros until l; case: l; simpl; auto.
-Qed.
-
-Lemma fn_to_is_nth_level {A:eqType} a (l : seq A) n x
-  : n < size l -> is_nth_level l n x = (nth_level a l n == x).
-Proof using .
-  unfold nth_level; unfold is_nth_level.
-  move => nlt.
-  rewrite nlt; simpl.
-  suff: (size l - n.+1 < size l).
-  generalize (size l - n.+1) => y.
-  clear nlt.
-  elim: y l; intros until l; case: l; easy.
-  move: nlt. generalize (size l) as sz.
-  case; try easy.  
-  intros.
-  rewrite subSS.
-  by apply sub_ord_proof.
-Qed.
-
-Lemma ListIn_in {A:eqType} (x : A) l : List.In x l -> x\in l.
-Proof using .
-  elim: l => //=.
-  move => a l IH.
-  rewrite in_cons.
-  case.
-  - move ->; apply /orP.
-    left; by apply /eqP.
-  - move /IH => IH'; apply /orP; by right.
-Qed.
-
-Lemma is_nth_level_in  {A:eqType} (l : seq A) n x
-  : is_nth_level l n x -> x \in l.
-Proof using .
-  unfold is_nth_level; case /andP => _.
-  generalize (size l - n) as m.
-  move => m.
-  elim: m l.
-  - case; simpl; auto.
-    move => a l.
-    move /eqP => H.
-    apply List.nth_error_In in H.
-    by apply ListIn_in.
-  - move => m IH; case; simpl; auto; intro_to is_true.
-Qed.
-
-Require Import String.
 
 Definition named_list_set (A : Set) :=list (string * A).
 Definition named_list (A : Type) :=list (string * A).
 
 Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
   match l with
-  | [::] => default
+  | [] => default
   | (s', v)::l' =>
     if eqb s s' then v else named_list_lookup default l' s
   end.
 
+(*
 Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool :=
   match l with
-  | [::] => false
+  | [] => false
   | (s', v)::l' =>
     if eqb s s' then v == e else named_list_check l' s e
   end.
-
+*)
 
 
 Inductive len_eq {A} {B} : list A -> list B -> Type :=
-| len_eq_nil : len_eq [::] [::]
+| len_eq_nil : len_eq [] []
 | len_eq_cons : forall a a' l l',
     len_eq l l' -> len_eq (a::l) (a'::l').
 
@@ -173,17 +72,28 @@ Definition pair_map_snd {A B C} (f : B -> C) (p : A * B) :=
   let (a,b) := p in (a, f b).
 Arguments pair_map_snd {A B C} f !p/.
 
-Definition named_map {A B : Set} (f : A -> B) : named_list A -> named_list B
+Definition named_map {A B} (f : A -> B) : named_list A -> named_list B
   := map (pair_map_snd f).
 Arguments named_map {A B} f !l/.
 
-Canonical str_eqType := @Equality.Pack string (Equality.Mixin eqb_spec).
+Definition fresh {A} n (nl : named_list A) : Prop :=
+  ~ List.In n (map fst nl).
+Arguments fresh : simpl never.
 
-Definition fresh {A} n (nl : named_list A) : bool :=
-  (n \notin map fst nl).
+(* These two lemmas should totally define fresh *)
+Lemma fresh_cons A n m (e:A) es : fresh n ((m,e)::es) <-> ~ n = m /\ fresh n es.
+Proof.
+  unfold fresh.
+  firstorder eauto.
+Qed.
+Hint Rewrite fresh_cons : utils.
 
-Arguments fresh/.
+Lemma fresh_nil A n : fresh n (@nil (_*A)%type) <-> True.
+Proof.
+  unfold fresh; firstorder eauto.
+Qed.
 
+(*
 Lemma fresh_tail {A} n (l1 l2 : named_list A)
   : fresh n (l1 ++ l2) -> fresh n l2.
 Proof using .
@@ -239,69 +149,42 @@ Proof using .
     by symmetry.
   }
 Qed.
+ *)
 
-Fixpoint all_notin (l : list string) : bool :=
+Fixpoint all_notin (l : list string) : Prop :=
   match l with
-  | [::] => true
-  | n::l' => (n \notin l') && all_notin l'
+  | [] => True
+  | n::l' => (~ List.In n l') /\ all_notin l'
   end.
 
-Definition all_fresh {A} (l : named_list A) : bool :=
+Definition all_fresh {A} (l : named_list A) :=
   all_notin (map fst l).
 Arguments all_fresh /.
 
-Lemma pair_fst_in {N A : eqType} l (n: N) (a : A)
-  : (n,a) \in l -> n \in (map fst l).
-Proof using.
-  elim: l; simpl.
-  { inversion. }
-  {
-    case.
-    intros; simpl in *.
-    move: H0.
-    rewrite !in_cons.
-    move /orP; case.
-    {
-      move /eqP; case => -> _.
-      rewrite eq_refl; done.
-    }
-    {
-      intros; apply /orP; auto.
-    }
-  }
-Qed.
-
-Ltac break_andbs :=
-  repeat match goal with
-           [H : is_true(_&&_)|-_]=>
-           let H' := fresh H in
-           move: H => /andP [H' H]
-         end.
 Ltac break :=
   repeat match goal with
          | [H: unit|-_]=> destruct H
          | [H: _*_|-_]=> destruct H
          | [H: _/\_|-_]=> destruct H
-         | [H : is_true(_&&_)|-_]=>
-           let H' := fresh H in
-           move: H => /andP [H' H]
-         end.
-
-Ltac break_goal :=
-  repeat match goal with
-         | [|- _*_]=> split
-         | [|- _/\_]=> split
-         | [|-is_true(_&&_)]=>
-           apply /andP; split
          end.
 
 
-Lemma named_map_fst_eq {A B: Set} (f : A -> B) l
+Hint Rewrite pair_equal_spec : utils.
+
+Lemma pair_fst_in {N A} l (n: N) (a : A)
+  : In (n,a) l -> In n (map fst l).
+Proof using.
+  induction l; break; simpl; autorewrite with utils; firstorder eauto.
+Qed.
+Hint Resolve pair_fst_in : utils.
+
+Lemma named_map_fst_eq {A B} (f : A -> B) l
   : map fst (named_map f l) = map fst l.
-Proof using .  
-  elim: l; intros; break; simpl in *; f_equal; auto.
+Proof using .
+  induction l; intros; break; simpl in *; f_equal; eauto.
 Qed.
 
+(*
 Lemma in_map_snd {A B : eqType} e (l : list (A*B))
   : e \in (map snd l) -> exists n, (n,e) \in l.
 Proof using .
@@ -322,7 +205,9 @@ Proof using .
     rewrite in_cons; apply /orP; right; done.
   }
 Qed.
+*)
 
+(*
 Module OptionMonad.
   (* TODO: use general monad instead of duplicating*)
   Declare Custom Entry monadic_do.
@@ -346,204 +231,151 @@ Module OptionMonad.
     (if e then b else None)
       (in custom monadic_do at level 90, left associativity, e constr, b custom monadic_do).
 End OptionMonad.
+*)
 
 Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
   match l with
-  | [::] => None
+  | [] => None
   | (s', v) :: l' => if (s =? s')%string then Some v else named_list_lookup_err l' s
   end.
-
-
-
-Definition eq_pr {A B} eq_a eq_b (p1 p2 : A*B) : bool :=
-  let (a1,b1) := p1 in
-  let (a2,b2) := p2 in
-  (eq_a a1 a2) && (eq_b b1 b2).
-
 
 Ltac case_match :=match goal with
   | [|- context[match ?e with _ => _ end]]
     => let e':= fresh in remember e as e'; destruct e'
   end.
 
-Ltac destruct_reflect_bool :=
-  match goal with
-  | [|- reflect _ ?b] =>
-    let b' := fresh "b" in
-    remember b as b';
-      destruct b';
-      constructor
-  end.
+Lemma invert_none_some A (x:A)
+  : None = Some x <-> False.
+Proof.
+  firstorder.
+  inversion H.
+Qed.
+Hint Rewrite invert_none_some : utils.
 
-Ltac get_andb_leftmost b :=
-  lazymatch b with
-  | ?b'&&_ =>
-    get_andb_leftmost b'
-  | _ => b
-  end.
+Lemma invert_some_none A (x:A)
+  : Some x = None <-> False.
+Proof.
+  firstorder.
+  inversion H.
+Qed.
+Hint Rewrite invert_some_none : utils.
+Lemma invert_some_some A (x y:A)
+  : Some x = Some y <-> x = y.
+Proof.
+  firstorder;
+  inversion H; subst; eauto.
+Qed.
+Hint Rewrite invert_some_some : utils.
 
-Ltac destruct_reflect_andb_l :=
-  match goal with
-  | [|- reflect _ (?b)] =>
-    let bb := get_andb_leftmost b in
-    let b' := fresh "b" in
-    remember bb as b';
-      destruct b'
-  end.
+Ltac my_case eqnname exp :=
+  let casevar := fresh "casevar" in
+  remember exp as casevar eqn:eqnname;
+  destruct casevar; symmetry in eqnname.
+
+Hint Rewrite eqb_eq : utils.
+Hint Rewrite eqb_neq : utils.
+Hint Rewrite eqb_refl : utils.
 
 
-Ltac format_eq_hyps :=
-  repeat match goal with
-  | [H : true = (_==_)|-_] =>
-    symmetry in H; move: H => /eqP H
-  end.
+Ltac generic_crush rewrite_tac hint_auto :=
+  subst; rewrite_tac;
+  firstorder (subst; rewrite_tac;hint_auto;
+              try (solve [ exfalso; hint_auto
+                         | repeat (f_equal; hint_auto)])).
 
-Ltac clear_neq_hyps :=
-  match goal with
-  | [H : false = (?a==?a)|-_] =>
-    rewrite eq_refl in H; by inversion H
-  end.
+(*TODO: generalize this to something that works nicely for generic_crush
+Tactic Notation "text" ident(u) := eauto with u.
+*)
 
-Ltac solve_reflect_norec :=
-   repeat match goal with
-         | [|- reflect _ (_&&_)] =>
-           destruct_reflect_andb_l; simpl
-         | [|- reflect _ true] => constructor
-         | [|- reflect _ false] =>
-           constructor; inversion; subst; clear_neq_hyps
-         | [|- reflect _ (_==_)]=>
-           destruct_reflect_bool;
-             [ format_eq_hyps; subst; reflexivity
-              |inversion; subst; clear_neq_hyps]
-          end.
+Ltac basic_utils_crush := let x := autorewrite with utils in * in
+                                  let y := eauto with utils in
+                                          generic_crush x y.
 
-Lemma named_list_lookup_err_in {A : eqType} c n (t : A)
-  : Some t = named_list_lookup_err c n -> (n,t) \in c.
+Ltac basic_goal_prep := intros; break; simpl in *.
+
+Lemma named_list_lookup_err_in {A} c n (t : A)
+  : Some t = named_list_lookup_err c n -> In (n,t) c.
 Proof using .
-  elim: c.
-  {
-    intro eqn; inversion eqn.
-  }
-  {
-    intros p c IH.
-    destruct p as [n' t'].
-    simpl.
-    rewrite in_cons.
-    case neq: (n=? n')%string.
-    {
-      case.
-      intro; subst.
-      apply /orP.
-      left.
-      apply /eqP; f_equal.
-      by apply /eqP.
-    }
-    {
-      move /IH ->.
-      apply /orP; by right.
-    }
-  }
+  induction c; basic_goal_prep.
+  basic_utils_crush.
+  my_case Heq (n =? s); basic_utils_crush.
 Qed.
 
+Lemma all_fresh_named_list_lookup_err_in {A} c n (t : A)
+  : all_fresh c -> Some t = named_list_lookup_err c n <-> In (n,t) c.
+Proof using .
+  induction c; basic_goal_prep.
+  basic_utils_crush.
+  my_case Heq (n =? s); basic_utils_crush.  
+Qed.
 
-Fixpoint with_names_from {A B:Set} (c : named_list_set A) (l : list B) : named_list_set B :=
+Fixpoint with_names_from {A B} (c : named_list A) (l : list B) : named_list B :=
   match c, l with
-  | [::],_ => [::]
-  | _,[::] => [::]
+  | [],_ => []
+  | _,[] => []
   | (n,_)::c',e::l' =>
     (n,e)::(with_names_from c' l')
   end.
-Transparent with_names_from.
 
-Fixpoint subseq {A : eqType} (s l : list A) : bool :=
+Fixpoint sublist {A} (s l : list A) : Prop :=
   match s,l with
-  | [::],_ => true
-  | sa::s', [::] => false
+  | [],_ => True
+  | sa::s', [] => False
   | sa::s', la::l' =>
-    ((sa == la) && (subseq s' l')) || (subseq s l')
+    ((sa = la) /\ (sublist s' l')) \/ (sublist s l')
   end.
 
-Lemma subseq_cons_rest {A:eqType} (a:A) l1 l2
-  : subseq (a::l1) l2 -> subseq l1 l2.
+Lemma subseq_cons_rest {A} (a:A) l1 l2
+  : sublist (a::l1) l2 -> sublist l1 l2.
 Proof using.
-  induction l2.
-  { simpl; intro fls; inversion fls. }
-  {
-    simpl.
-    move /orP => [].
-    {
-      move /andP => [] /eqP <-.
-      case l1; auto.
-      intros; apply /orP; right; auto.
-    }
-    {
-      move /IHl2 => IH.
-      clear IHl2.
-      case: l1 IH; auto.
-      intros; apply /orP; right; auto.
-    }
-  }
+  induction l2; destruct l1; basic_goal_prep; basic_utils_crush.
+Qed.
+(*TODO: want as hint or no?*)
+
+Lemma subseq_cons_first {A} (a:A) l1 l2
+  : sublist (a::l1) l2 -> In a l2.
+Proof using.
+  induction l2; basic_goal_prep; basic_utils_crush.
 Qed.
 
-Lemma subseq_cons_first {A:eqType} (a:A) l1 l2
-  : subseq (a::l1) l2 -> a \in l2.
-Proof using.
-  induction l2.
-  { simpl; intro fls; inversion fls. }
-  {
-    simpl.
-    move /orP => [].
-    {
-      move /andP => [] /eqP <-.
-      intros _.
-      apply mem_head.
-    }
-    {
-      move /IHl2 => IH.
-      clear IHl2.
-      rewrite in_cons.
-      apply /orP; right; assumption.
-    }
-  }
-Qed.
-
-Lemma subseq_refl {A:eqType} l : @subseq A l l.
+(*TODO: better as a rewrite?*)
+Lemma subseq_refl {A} l : @sublist A l l.
 Proof.
-  elim: l; intros; simpl; eauto.
-  rewrite eq_refl; rewrite H; reflexivity.
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.
+Hint Resolve subseq_refl : utils.
   
-Lemma subseq_l_cons_l {A:eqType} (a:A) l
-  : subseq l (a::l).
+Lemma subseq_l_cons_l {A} (a:A) l
+  : sublist l (a::l).
 Proof.
   simpl.
-  case: l; auto.
-  intros; apply /orP; right. 
-  apply subseq_refl.
+  destruct l;
+  basic_utils_crush.
 Qed.
 
 (* Reduce size of language terms for smaller goals *)
 Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
   match n,l with
   | 0,_ => l
-  | S_,[::]=> [::]
+  | S_,[]=> []
   | S n', _::l'=> nth_tail n' l'
   end.
 
 Arguments nth_tail : simpl never.
 
-(* TODO: put with nth_tail*)
-Lemma nth_tail_nil {A} n : @nth_tail A n [::] = [::].
+Lemma nth_tail_nil A n : @nth_tail A n [] = [].
 Proof.
   destruct n; simpl; reflexivity.
 Qed.
+Hint Rewrite nth_tail_nil : utils.
 
-
-Lemma nth_tail_S_cons {A} n (e:A) l : nth_tail n.+1 (e::l) = nth_tail n l.
+Lemma nth_tail_S_cons A n (e:A) l : nth_tail (S n) (e::l) = nth_tail n l.
 Proof.
   reflexivity.
-Qed.      
+Qed.
+Hint Rewrite nth_tail_S_cons : utils.
 
+(*
 Lemma nth_tail_cons_eq {A} (a:A) l n l'
   : a::l = nth_tail n l' -> l = nth_tail n.+1 l'.
 Proof.
@@ -567,9 +399,12 @@ Proof.
     }
   }
 Qed.
+*)
 
+(*
 Lemma nth_tail_0 {A} (l : list A) : nth_tail 0 l = l.
 Proof. reflexivity. Qed.
+
       
 Lemma nth_tail_show_hd {A} (default:A) n l
   : size l > n ->
@@ -589,85 +424,17 @@ Proof.
     apply H; exact H0.
   }
 Qed.    
+*)
 
-
-
-Ltac my_case eqnname exp :=
-  let casevar := fresh "casevar" in
-  remember exp as casevar eqn:eqnname;
-  destruct casevar; symmetry in eqnname.
-
-
-
-Definition is_included {A: eqType} (l1 l2 : list A) :=
-  forall x, x \in l1 -> x \in l2.
-(*TODO: relate*)
-Fixpoint included {A: eqType} (l1 l2 : list A): bool :=
-  match l1 with
-  | [::] => true
-  | a::l1' =>
-    (a\in l2) && (included l1' l2)
-  end.
-
-(*
-Lemma is_includedP {A:eqType} (l1 l2 : list A)
-  : reflect (is_included l1 l2) (included l1 l2).
-Proof.
-  unfold is_included.
-  induction l1; simpl.
-  { constructor; auto. }
-  {
-    solve_reflect_norec.    
-    my_case H (included l1 l2); simpl; auto.
-    all: constructor.
-    { intro x; rewrite in_cons.
-      move /orP => [/eqP ->|].
-      rewrite <-Heqb; done.
-      generalize x.
-      apply /IHl1.
-      done.
-    }
-    {
-      intro fls; specialize (fls a);
-      rewrite in_cons in fls.
-      rewrite <- Heqb in fls.
-      rewrite /eq_refl in fls.
-Admitted.
- *)
-
-Context (is_includedP
-         : forall {A:eqType} (l1 l2 : list A),
-            reflect (is_included l1 l2) (included l1 l2)).
-
-Lemma included_rest {A:eqType} l1 l2 (a:A)
-  : included l1 l2 -> included l1 (a::l2).
-Proof.
-  move /is_includedP; intros.
-  apply /is_includedP.
-  unfold is_included in *.
-  intros; rewrite in_cons; apply /orP; right; eauto.
-Qed.
-
-
-Lemma included_app {A:eqType} (l1 l1' l2 : list A)
-  : included (l1 ++ l1') l2 = included l1 l2 && included l1' l2.
-Proof.
-  induction l1; simpl; auto.
-  rewrite <- Bool.andb_assoc.
-  f_equal.
-  assumption.
-Qed.
-
-
-(*TODO: move to utils*)
 (*redefined to use the right concatenation*)
 Definition flat_map {A B} (f : A -> list B) :=
   fix flat_map l :=
   match l with
-  | [::] => [::]
+  | [] => []
   | x :: t => (f x ++ flat_map t)
   end.
 
+(*
 Lemma included_flatmap {A B:eqType} l1 l2 (f : A -> list B)
     : (forall x, x \in l1 -> included (f x) l2)->
       included (flat_map f l1) l2.
@@ -682,39 +449,16 @@ Proof.
   rewrite in_cons.
   apply /orP; right; auto.
 Qed.
+*)
 
 
-(*TODO: put in utils*)
-Lemma in_all_fresh_same {A:eqType} (a b : A) l s
-  : all_fresh l -> (s,a) \in l -> (s,b) \in l -> a = b.
-Proof.
-  induction l; simpl; intros; break;
-    repeat match goal with
-           | [H : is_true (_\in [::])|- _] =>
-             solve[ inversion H]
-           | [H : is_true (_\in _::_)|- _] =>
-             rewrite in_cons in H;
-               move: H => /orP []; intros; break
-           | [H : is_true ((_,_) == (_,_))|- _] =>
-             move: H => /eqP []; intros; subst
-           end; simpl in *; auto.
-  eapply fresh_neq_in in H2; eauto;
-  exfalso;  move: H2 => /eqP; auto.
-  eapply fresh_neq_in in H2; eauto;
-  exfalso;  move: H2 => /eqP; auto.
+Lemma in_all_fresh_same {A} (a b : A) l s
+  : all_fresh l -> In (s,a) l -> In (s,b) l -> a = b.
+Proof.  
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.
 
-
-Lemma eq_sym {A :eqType} (a b :A) : (a == b) = (b == a).
-Proof.
-  case ab: (a==b);
-    move: ab => /eqP ab; subst;
-    [ by rewrite eq_refl
-    | case ba: (b==a);
-      move: ba => /eqP ba; auto].
-Qed.          
-  
-(*TODO: move to utils *)
+(*
 Lemma named_list_lookup_err_none {A} (l : named_list A) n
   : n \notin (map fst l) ->
     named_list_lookup_err l n = None.
@@ -770,29 +514,14 @@ Proof.
       auto.
   }
 Qed.
+*)
 
-Lemma named_list_lookup_none {A:eqType} l s (a:A)
+Lemma named_list_lookup_none {A} l s (a:A)
   : None = named_list_lookup_err l s ->
-    (s, a) \notin l.
+    ~ In (s, a) l.
 Proof.
-  induction l; break; simpl in *; auto.
-  case seqs0: (s=?s0)%string.
-  {
-    intro fls; inversion fls.
-  }
-  {
-    intros; rewrite in_cons; apply /orP.
-    intro c; destruct c.
-    {
-      cbn in *.
-      rewrite seqs0 in H0; move: H0 => /andP [] //.
-    }
-    {
-      apply IHl in H.
-      rewrite H0 in H.
-      inversion H.
-    }
-  }
+  induction l; basic_goal_prep; basic_utils_crush.
+  my_case Hs (s=? s0); basic_goal_prep; basic_utils_crush.
 Qed.
 
 (* Performs inversion on H exactly when 
@@ -813,51 +542,37 @@ Ltac safe_invert H :=
   end.
 
 
-Import OptionMonad.
-Fixpoint get_subseq {A} (args : list string) (l : named_list A) :=
-  match args, l with
-  | [::],_ => do ret [::]
-  | x::args', (x',e)::l' =>
-    if x == x'
-    then do sq <- get_subseq args' l';
-         ret (x,e)::sq
-    else get_subseq args l'
-  | _::_,[::]=> None
-  end.
-
-(* TODO: move to utils*)
 (* decomposes the way you want \in to on all_fresh lists*)
-Fixpoint in_once {A:eqType} n e (l : named_list A) : bool :=
+Fixpoint in_once {A} n e (l : named_list A) : Prop :=
   match l with
-  | [::] => false
+  | [] => False
   | (n',e')::l' =>
-    ((n == n') && (e == e')) || ((n != n')&&(in_once n e l'))
+    ((n = n') /\ (e = e')) \/ ((~n = n') /\ (in_once n e l'))
   end.
 
 Arguments in_once {A} n e !l/.
 
-Lemma in_once_notin {A:eqType} n (e : A) l
-  : n \notin (map fst l) -> ~~(in_once n e l).
+Lemma in_once_notin {A} n (e : A) l
+  : ~ In n (map fst l) -> ~(in_once n e l).
 Proof using .
-  elim: l; auto; intros; break; simpl in *.
-  rewrite ?in_cons in H0.
-  move: H0.
-  case neq: (n==s); auto.
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.
 
 
-Lemma all_fresh_in_once {A:eqType} n (e : A) l
-  : all_fresh l -> ((n,e) \in l) = in_once n e l.
+Lemma all_fresh_in_once {A} n (e : A) l
+  : all_fresh l -> (In (n,e) l) <-> in_once n e l.
 Proof using .
-  elim: l; simpl; auto; intros; repeat (break; simpl in * ).
-  rewrite in_cons.
-  rewrite H; auto.
-  change ((n,e)==(s,s0)) with ((n==s)&&(e==s0)).
-  case neq: (n == s); simpl; auto.
-  rewrite Bool.orb_false_r.
-  case eeq:(e==s0); simpl; auto.
-  apply /negP.
-  apply /negP.
-  move: neq => /eqP ->.
-  by apply in_once_notin.
+  induction l; basic_goal_prep; basic_utils_crush.
 Qed.  
+
+Section All.
+  Context {A} (P : A -> Prop).
+  
+  (* A Fixpoint version of List.Forall *)
+  Fixpoint all l : Prop :=
+    match l with
+    | [] => True
+    | e::l' => P e /\ all l'
+    end.
+End All.
+
