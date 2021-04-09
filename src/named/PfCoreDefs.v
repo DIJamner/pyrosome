@@ -177,7 +177,11 @@ Section TermsAndRules.
       le_subst c c' ps s1 s2 ->
       le_term c' p t e1 e2 ->
       le_term c (pf_subst ps p) (wfexp_subst s2 t)
-              (wfexp_subst s1 e1) (wfexp_subst s2 e2)
+              (*TODO: put conv here or no?
+                feels like if I put conv here,
+                I need to allow for conv removal somewhere
+               *)
+              (wf_conv (wfexp_subst s1 e1)) (wfexp_subst s2 e2)
   | le_term_by : forall c name t e1 e2,
       (name,wf_term_le c e1 e2 t) \in l ->
       le_term c (ax name) t e1 e2

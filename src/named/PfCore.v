@@ -267,6 +267,24 @@ Definition wf_args_subst_monotonicity l name r
 
 
 
+(*TODO: warning; lhs may need a conv for this to be true*)
+Lemma le_term_wf l c p e1 e2 t
+  : wf_lang l ->
+    le_term l c p t e1 e2 ->
+    (wf_term l c e1 t /\ wf_term l c e2 t).
+Proof.
+  intro wfl.
+  induction 1; pfcore_crush.
+  {
+    (*TODO: definitely need a conv on lhs*)
+Abort.
+
+
+Definition le_sort_l_wf l c p t1 t2 wfl les := proj1 (@le_sort_wf l c p t1 t2 wfl les).
+Hint Resolve le_sort_l_wf : pfcore.
+Definition le_sort_r_wf l c p t1 t2 wfl les := proj2 (@le_sort_wf l c p t1 t2 wfl les).
+Hint Resolve le_sort_r_wf : pfcore.
+
 Lemma le_sort_wf l c p t1 t2
   : wf_lang l ->
     le_sort l c p t1 t2 ->
