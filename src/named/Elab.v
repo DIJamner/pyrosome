@@ -56,13 +56,13 @@ Section TermsAndRules.
       elab_ctx c c' ->
       elab_sort t1 t1' ->
       elab_sort t2 t2' ->
-      elab_rule (sort_le c t1 t2) (sort_le c' t1' t2')
+      elab_rule (sort_eq_rule c t1 t2) (sort_eq_rule c' t1' t2')
   | elab_le_term_rule : forall c c' e1 e1' e2 e2' t t',
       elab_ctx c c' ->
       elab_sort t t' ->
       elab_term e1 e1' ->
       elab_term e2 e2' ->
-      elab_rule (term_le c e1 e2 t) (term_le c' e1' e2' t').
+      elab_rule (term_eq_rule c e1 e2 t) (term_eq_rule c' e1' e2' t').
 End TermsAndRules.
   
 Inductive elab_lang : lang -> lang -> Prop :=

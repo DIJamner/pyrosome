@@ -13,10 +13,53 @@ Import Exp.Notations.
 Inductive rule : Set :=
 | sort_rule :  ctx -> list string (*explicit args*) -> rule
 | term_rule :  ctx -> list string (*explicit args*) -> sort -> rule
-| sort_le : ctx -> sort -> sort -> rule
-| term_le : ctx -> exp -> exp -> sort -> rule.
+| sort_eq_rule : ctx -> sort -> sort -> rule
+| term_eq_rule : ctx -> exp -> exp -> sort -> rule.
+Hint Constructors rule : exp.
 
 Definition lang := named_list rule.
+
+Lemma invert_eq_sort_rule_sort_rule c c' args args'
+  : sort_rule c args = sort_rule c' args' <-> c = c' /\ args = args'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_rule_sort_rule : exp.
+  
+Lemma invert_eq_sort_rule_term_rule c c' args args' t'
+  : sort_rule c args = term_rule c' args' t' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_rule_term_rule : exp.
+
+Lemma invert_eq_sort_rule_sort_eq_rule c c' args t1' t2'
+  : sort_rule c args = sort_eq_rule c' t1' t2' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_rule_sort_eq_rule : exp.
+
+Lemma invert_eq_sort_rule_term_eq_rule c c' args e1' e2' t
+  : sort_rule c args = term_eq_rule c' e1' e2' t <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_rule_term_eq_rule : exp.
+  
+Lemma invert_eq_term_rule_sort_rule c c' args args' t
+  : term_rule c args t = sort_rule c' args' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_rule_sort_rule : exp.
+
+Lemma invert_eq_term_rule_term_rule c c' args args' t t'
+  : term_rule c args t = term_rule c' args' t' <-> c = c' /\ args = args' /\ t = t'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_rule_term_rule : exp.
+
+Lemma invert_eq_term_rule_sort_eq_rule c c' args t t1' t2'
+  : term_rule c args t = sort_eq_rule c' t1' t2' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_rule_sort_eq_rule : exp.
+
+Lemma invert_eq_term_rule_term_eq_rule c c' args t e1' e2' t'
+  : term_rule c args t = term_eq_rule c' e1' e2' t' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_rule_term_eq_rule : exp.
+
+(*TODO: 2 more sets of lemmas*)
 
 Module Notations.
 
@@ -163,7 +206,7 @@ Check [:| "G" : #"env",
            #"lam" "e" : #"el" (#"->" %"A" %"B") ]%arule.
 
 Notation "'[s>' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
-  (s%string, sort_le G e1 e2)
+  (s%string, sort_eq_rule G e1 e2)
     (s constr at level 0, G custom ctx at level 100,
      e1 custom sort at level 100, e2 custom sort at level 100,
      format "'[' [s>  '[' G '//' -----------------------------------------------  ( s ) '//' '[' e1 '/'  =  e2 ']' ']' '//' ] ']'")
@@ -177,7 +220,7 @@ Check [s> "G" : #"env", "A" : #"ty" %"G", "B" : #"ty" %"G",
       ]%arule.
            
 Notation "[:> G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
-  (s%string, term_le G e1 e2 t)
+  (s%string, term_eq_rule G e1 e2 t)
     (s constr at level 0, G custom ctx at level 100,
      t custom sort at level 100,
      e1 custom exp at level 100, e2 custom exp at level 100, 
@@ -219,10 +262,10 @@ Definition ws_rule r : Prop :=
   match r with
   | sort_rule c args => sublist args (map fst c) /\ ws_ctx c
   | term_rule c args t => sublist args (map fst c) /\ (ws_ctx c) /\ (well_scoped (map fst c) t)
-  | sort_le c t t'=>
+  | sort_eq_rule c t t'=>
     (ws_ctx c) /\ (well_scoped (map fst c) t)
     /\ (well_scoped (map fst c) t')
-  | term_le c e e' t =>
+  | term_eq_rule c e e' t =>
     (ws_ctx c) /\ (well_scoped (map fst c) e)
     /\ (well_scoped (map fst c) e') /\ (well_scoped (map fst c) t)
   end.

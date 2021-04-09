@@ -24,8 +24,32 @@ Tactic Notation "intro_to" constr(ty) :=
          | |- _ -> _ => intro
          | |- _ => fail 2 "could not find argument with head" ty
          end.
-  
 
+
+(* Performs inversion on H exactly when 
+    either: 
+    - no constructors can produce H and the goal is solved
+    - exactly one constructor can produce H and inversion
+      makes progress
+ *)
+Ltac safe_invert H :=
+  let t := type of H in
+  inversion H; clear H;
+  let n := numgoals in
+  guard n <= 1;
+  lazymatch goal with
+  | [ H' : t|-_]=>
+    fail "safe_invert did not make progress"
+  | _ => subst
+  end.
+
+Ltac solve_invert_constr_eq_lemma :=
+  firstorder
+   repeat match goal with
+  | [H : _ _ = _ _|-_] =>
+    safe_invert H
+  | [|- _ _ = _ _] => f_equal
+  end; subst; reflexivity.
 
 (****************
 Definitions
@@ -151,15 +175,20 @@ Proof using .
 Qed.
  *)
 
+(*
 Fixpoint all_notin (l : list string) : Prop :=
   match l with
   | [] => True
   | n::l' => (~ List.In n l') /\ all_notin l'
   end.
+*)
 
-Definition all_fresh {A} (l : named_list A) :=
-  all_notin (map fst l).
-Arguments all_fresh /.
+Fixpoint all_fresh {A} (l : named_list A) :=
+  match l with
+  | [] => True
+  | (n,_)::l' => fresh n l' /\ all_fresh l'
+  end.
+Arguments all_fresh {_} !_ /.
 
 Ltac break :=
   repeat match goal with
@@ -247,23 +276,20 @@ Ltac case_match :=match goal with
 Lemma invert_none_some A (x:A)
   : None = Some x <-> False.
 Proof.
-  firstorder.
-  inversion H.
+  solve_invert_constr_eq_lemma.
 Qed.
 Hint Rewrite invert_none_some : utils.
 
 Lemma invert_some_none A (x:A)
   : Some x = None <-> False.
 Proof.
-  firstorder.
-  inversion H.
+  solve_invert_constr_eq_lemma.
 Qed.
 Hint Rewrite invert_some_none : utils.
 Lemma invert_some_some A (x y:A)
   : Some x = Some y <-> x = y.
 Proof.
-  firstorder;
-  inversion H; subst; eauto.
+  solve_invert_constr_eq_lemma.
 Qed.
 Hint Rewrite invert_some_some : utils.
 
@@ -524,23 +550,6 @@ Proof.
   my_case Hs (s=? s0); basic_goal_prep; basic_utils_crush.
 Qed.
 
-(* Performs inversion on H exactly when 
-    either: 
-    - no constructors can produce H and the goal is solved
-    - exactly one constructor can produce H and inversion
-      makes progress
- *)
-Ltac safe_invert H :=
-  let t := type of H in
-  inversion H; clear H;
-  let n := numgoals in
-  guard n <= 1;
-  lazymatch goal with
-  | [ H' : t|-_]=>
-    fail "safe_invert did not make progress"
-  | _ => subst
-  end.
-
 
 (* decomposes the way you want \in to on all_fresh lists*)
 Fixpoint in_once {A} n e (l : named_list A) : Prop :=
@@ -576,3 +585,4 @@ Section All.
     end.
 End All.
 
+Hint Rewrite pair_equal_spec : utils.
