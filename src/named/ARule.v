@@ -59,7 +59,46 @@ Lemma invert_eq_term_rule_term_eq_rule c c' args t e1' e2' t'
 Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_term_rule_term_eq_rule : exp.
 
-(*TODO: 2 more sets of lemmas*)
+
+Lemma invert_eq_sort_eq_rule_sort_rule c c' args' t1 t2
+  : sort_eq_rule c t1 t2 = sort_rule c' args' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_eq_rule_sort_rule : exp.
+
+Lemma invert_eq_sort_eq_rule_term_rule c c' args' t1 t2 t'
+  : sort_eq_rule c t1 t2 = term_rule c' args' t' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_eq_rule_term_rule : exp.
+
+Lemma invert_eq_sort_eq_rule_sort_eq_rule c c' t1 t1' t2 t2'
+  : sort_eq_rule c t1 t2 = sort_eq_rule c' t1' t2' <-> c = c' /\ t1 = t1' /\ t2 = t2'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_eq_rule_sort_eq_rule : exp.
+
+Lemma invert_eq_sort_eq_rule_term_eq_rule c c' t1 t2 e1' e2' t'
+  : sort_eq_rule c t1 t2 = term_eq_rule c' e1' e2' t' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_sort_eq_rule_term_eq_rule : exp.
+  
+Lemma invert_eq_term_eq_rule_sort_rule c c' e1 e2 args' t
+  : term_eq_rule c e1 e2 t = sort_rule c' args' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_eq_rule_sort_rule : exp.
+
+Lemma invert_eq_term_eq_rule_term_rule c c' args' t e1 e2 t'
+  : term_eq_rule c e1 e2 t = term_rule c' args' t' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_eq_rule_term_rule : exp.
+
+Lemma invert_eq_term_eq_rule_sort_eq_rule c c' e1 e2 t t1' t2'
+  : term_eq_rule c e1 e2 t = sort_eq_rule c' t1' t2' <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_eq_rule_sort_eq_rule : exp.
+
+Lemma invert_eq_term_eq_rule_term_eq_rule c c' e1 e2 e1' e2' t t'
+  : term_eq_rule c e1 e2 t = term_eq_rule c' e1' e2' t' <-> c = c' /\ e1 = e1' /\ e2 = e2' /\ t = t'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_term_eq_rule_term_eq_rule : exp.
 
 Module Notations.
 

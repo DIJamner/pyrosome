@@ -44,12 +44,24 @@ Ltac safe_invert H :=
   end.
 
 Ltac solve_invert_constr_eq_lemma :=
-  firstorder
-   repeat match goal with
-  | [H : _ _ = _ _|-_] =>
-    safe_invert H
-  | [|- _ _ = _ _] => f_equal
-  end; subst; reflexivity.
+   match goal with
+    [|- ?lhs <-> _] =>
+    firstorder (match goal with
+                    | [H : lhs |-_] => inversion H; subst; easy
+                    | _ => solve[ constructor; assumption | f_equal; assumption]
+                    end)
+   end.
+
+
+Ltac generic_crush rewrite_tac hint_auto :=
+  subst; rewrite_tac;
+  firstorder (subst; rewrite_tac;hint_auto;
+              try (solve [ exfalso; hint_auto
+                         | repeat (f_equal; hint_auto)])).
+
+(*TODO: generalize this to something that works nicely for generic_crush
+Tactic Notation "text" ident(u) := eauto with u.
+ *)
 
 (****************
 Definitions
@@ -86,6 +98,10 @@ Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool 
   end.
 *)
 
+
+Hint Resolve in_nil : utils.
+Hint Resolve in_eq : utils.
+Hint Resolve in_cons : utils.
 
 Inductive len_eq {A} {B} : list A -> list B -> Type :=
 | len_eq_nil : len_eq [] []
@@ -288,9 +304,7 @@ Qed.
 Hint Rewrite invert_some_none : utils.
 Lemma invert_some_some A (x y:A)
   : Some x = Some y <-> x = y.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
+Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_some_some : utils.
 
 Ltac my_case eqnname exp :=
@@ -301,17 +315,6 @@ Ltac my_case eqnname exp :=
 Hint Rewrite eqb_eq : utils.
 Hint Rewrite eqb_neq : utils.
 Hint Rewrite eqb_refl : utils.
-
-
-Ltac generic_crush rewrite_tac hint_auto :=
-  subst; rewrite_tac;
-  firstorder (subst; rewrite_tac;hint_auto;
-              try (solve [ exfalso; hint_auto
-                         | repeat (f_equal; hint_auto)])).
-
-(*TODO: generalize this to something that works nicely for generic_crush
-Tactic Notation "text" ident(u) := eauto with u.
-*)
 
 Ltac basic_utils_crush := let x := autorewrite with utils in * in
                                   let y := eauto with utils in
@@ -327,13 +330,17 @@ Proof using .
   my_case Heq (n =? s); basic_utils_crush.
 Qed.
 
-Lemma all_fresh_named_list_lookup_err_in {A} c n (t : A)
+Lemma all_fresh_named_list_lookup_err_in A c n (t : A)
   : all_fresh c -> Some t = named_list_lookup_err c n <-> In (n,t) c.
 Proof using .
   induction c; basic_goal_prep.
   basic_utils_crush.
   my_case Heq (n =? s); basic_utils_crush.  
 Qed.
+(*Note: this is a bit dangerous since the list might not be all-fresh,
+  but in this project all lists should be
+*)
+Hint Rewrite all_fresh_named_list_lookup_err_in : utils.
 
 Fixpoint with_names_from {A B} (c : named_list A) (l : list B) : named_list B :=
   match c, l with
@@ -351,33 +358,35 @@ Fixpoint sublist {A} (s l : list A) : Prop :=
     ((sa = la) /\ (sublist s' l')) \/ (sublist s l')
   end.
 
-Lemma subseq_cons_rest {A} (a:A) l1 l2
+Lemma sublist_cons_rest {A} (a:A) l1 l2
   : sublist (a::l1) l2 -> sublist l1 l2.
 Proof using.
   induction l2; destruct l1; basic_goal_prep; basic_utils_crush.
 Qed.
-(*TODO: want as hint or no?*)
+Hint Resolve sublist_cons_rest : utils.
 
-Lemma subseq_cons_first {A} (a:A) l1 l2
+Lemma sublist_cons_first {A} (a:A) l1 l2
   : sublist (a::l1) l2 -> In a l2.
 Proof using.
   induction l2; basic_goal_prep; basic_utils_crush.
 Qed.
+Hint Resolve sublist_cons_first : utils.
 
 (*TODO: better as a rewrite?*)
-Lemma subseq_refl {A} l : @sublist A l l.
+Lemma sublist_refl {A} l : @sublist A l l.
 Proof.
   induction l; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve subseq_refl : utils.
+Hint Resolve sublist_refl : utils.
   
-Lemma subseq_l_cons_l {A} (a:A) l
+Lemma sublist_l_cons_l {A} (a:A) l
   : sublist l (a::l).
 Proof.
   simpl.
   destruct l;
   basic_utils_crush.
 Qed.
+Hint Resolve sublist_l_cons_l : utils.
 
 (* Reduce size of language terms for smaller goals *)
 Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
@@ -549,7 +558,7 @@ Proof.
   induction l; basic_goal_prep; basic_utils_crush.
   my_case Hs (s=? s0); basic_goal_prep; basic_utils_crush.
 Qed.
-
+Hint Resolve named_list_lookup_none : utils.
 
 (* decomposes the way you want \in to on all_fresh lists*)
 Fixpoint in_once {A} n e (l : named_list A) : Prop :=

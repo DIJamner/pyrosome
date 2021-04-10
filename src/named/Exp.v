@@ -138,19 +138,40 @@ Proof using .
   induction c; basic_goal_prep; basic_utils_crush.
 Qed.
 
+
+Definition id_args {A} (c : named_list A) : list exp :=
+  map var (map fst c).
+
+Arguments id_args : simpl never.
+
+(*Defined as a notation so that the definition 
+does not get in the way of automation *)
+Notation id_subst c := (with_names_from c (id_args c)).
+
+Lemma id_args_cons A n (a :A) c
+  : id_args ((n,a)::c) = (var n)::(id_args c).
+Proof.
+  reflexivity.
+Qed.
+Hint Rewrite id_args_cons : exp.
+
 Class Substable (A : Type) : Type :=
   {
   apply_subst : subst -> A -> A;
   well_scoped : list string -> A -> Prop;
   subst_assoc : forall s1 s2 a,
       well_scoped (map fst s2) a ->
-      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a
-(* TODO: identity law*)
+      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a;
+  subst_id : forall {A} (c : named_list A) a,
+      (* Not necessary because of our choice of default
+        well_scoped (map fst c) a ->*)
+      apply_subst (id_subst c) a = a
   }.
 
 Arguments well_scoped {A}%type_scope {Substable} _%list_scope !_.
 Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
 Hint Rewrite @subst_assoc : exp.
+Hint Rewrite @subst_id : exp.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
@@ -199,11 +220,38 @@ Proof using .
 Qed.
 Hint Rewrite exp_subst_assoc : exp.
 
+Lemma subst_lookup_id A (c : named_list A) n
+  : subst_lookup (id_subst c) n = var n.
+Proof.
+  induction c; basic_goal_prep;
+    basic_exp_crush.
+  (*TODO: get rid of need for symmetry*)
+  case_match; symmetry in HeqH;
+    basic_goal_prep;
+    basic_exp_crush.
+Qed.
+Hint Rewrite subst_lookup_id : exp.
+
+Lemma exp_subst_id
+  : forall A (c : named_list A) a,
+    exp_subst (id_subst c) a = a.
+Proof.
+  induction a; basic_goal_prep;
+    basic_exp_crush.
+  f_equal.
+  revert dependent l;
+    induction l;
+    basic_goal_prep;
+    basic_exp_crush.
+Qed.
+Hint Rewrite exp_subst_id : exp.
+
 Instance substable_exp : Substable exp :=
   {
   apply_subst := exp_subst;
   well_scoped := ws_exp;
   subst_assoc := exp_subst_assoc;
+  subst_id := exp_subst_id;
   }.
  
 Lemma subst_subst_assoc : forall s1 s2 a,
@@ -215,11 +263,20 @@ Proof using .
     basic_exp_crush.
 Qed.
 
+Lemma subst_subst_id
+  : forall A (c : named_list A) a,
+    subst_cmp (id_subst c) a = a.
+Proof using .
+  induction a; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+
 Instance substable_subst : Substable subst :=
   {
   apply_subst := subst_cmp;
   well_scoped := ws_subst;
   subst_assoc := subst_subst_assoc;
+  subst_id := subst_subst_id;
   }.
 
 Definition args_subst s (a : list exp) := map (apply_subst s) a.
@@ -234,11 +291,20 @@ Proof using .
     basic_exp_crush.
 Qed.
 
+Lemma args_subst_id
+  : forall A (c : named_list A) a,
+    args_subst (id_subst c) a = a.
+Proof using .
+  induction a; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+
 Instance substable_args : Substable (list exp) :=
   {
   apply_subst := args_subst;
   well_scoped := ws_args;
   subst_assoc := args_subst_assoc;
+  subst_id := args_subst_id;
   }.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
@@ -254,8 +320,19 @@ Proof using .
     basic_exp_crush.
 Qed.
 
+
+Lemma sort_subst_id
+  : forall A (c : named_list A) a,
+    sort_subst (id_subst c) a = a.
+Proof using .
+  destruct a; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+
+
 Instance substable_sort : Substable sort :=
-  { subst_assoc := sort_subst_assoc }.
+  { subst_assoc := sort_subst_assoc;
+    subst_id := sort_subst_id }.
 
 
 Fixpoint eq_exp e1 e2 {struct e1} : bool :=
@@ -265,6 +342,8 @@ Fixpoint eq_exp e1 e2 {struct e1} : bool :=
     (eqb n1 n2) && (all2 eq_exp l1 l2)
   | _,_ => false
   end.
+
+
 
 (*
 Definition eq_sort (t1 t2 : sort) :=
