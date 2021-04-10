@@ -48,7 +48,7 @@ Ltac solve_invert_constr_eq_lemma :=
     [|- ?lhs <-> _] =>
     firstorder (match goal with
                     | [H : lhs |-_] => inversion H; subst; easy
-                    | _ => solve[ constructor; assumption | f_equal; assumption]
+                    | _ => solve[ subst;constructor; assumption | f_equal; assumption]
                     end)
    end.
 
@@ -89,15 +89,11 @@ Fixpoint named_list_lookup {A} default (l : named_list A) (s : string) : A :=
     if eqb s s' then v else named_list_lookup default l' s
   end.
 
-(*
-Fixpoint named_list_check {A : eqType} (l : named_list A) (s : string) e : bool :=
-  match l with
-  | [] => false
-  | (s', v)::l' =>
-    if eqb s s' then v == e else named_list_check l' s e
-  end.
-*)
-
+Lemma eqb_eq' n m : true = (n =? m) <-> n = m.
+Proof.
+  rewrite <- eqb_eq; intuition.
+Qed.
+Hint Rewrite eqb_eq' : utils.
 
 Hint Resolve in_nil : utils.
 Hint Resolve in_eq : utils.

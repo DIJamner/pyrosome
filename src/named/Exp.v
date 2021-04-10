@@ -427,6 +427,7 @@ Proof using .
   break_goal; auto using ws_exp_subst.
   by rewrite named_map_fst_eq.
 Qed.  
+*)
 
 Ltac fold_Substable :=
   try change (named_map (exp_subst ?s') ?s) with s[/s'/];
@@ -436,7 +437,7 @@ Ltac fold_Substable :=
   try change (subst_cmp ?s ?e) with e[/s/];
   try change (map (exp_var_map (subst_lookup ?s')) ?s) with s[/s'/].
 
-
+(*
 Lemma ws_subst_args args (s : subst)
   : well_scoped args s = (all_fresh s) && (well_scoped args (map snd s)).
 Proof using .
