@@ -805,3 +805,132 @@ Definition wf_args_subst_monotonicity l (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (subst_mono wfl)))))).
 #[export] Hint Resolve wf_args_subst_monotonicity : lang_core.
 
+
+Local Lemma checked_subproperties l
+  : wf_lang l ->
+    (forall c t1 t2,
+        eq_sort l c t1 t2 ->
+        wf_ctx l c ->
+        wf_sort l c t1 /\ wf_sort l c t2)
+    /\ (forall c t e1 e2,
+           eq_term l c t e1 e2 ->
+           wf_ctx l c ->
+           wf_term l c e1 t /\ wf_term l c e2 t /\ wf_sort l c t)
+    /\ (forall c c' s1 s2,
+           eq_subst l c c' s1 s2 ->
+           wf_ctx l c ->
+           wf_ctx l c' ->
+           wf_subst l c s1 c' /\ wf_subst l c s2 c')
+    /\ (forall c t,
+           wf_sort l c t -> True)
+    /\ (forall c e t,
+           wf_term l c e t -> 
+           wf_ctx l c ->
+           wf_sort l c t)
+    /\ (forall c s c',
+           wf_args l c s c' -> True)
+    /\ (forall c,
+           wf_ctx l c -> True).
+Proof using.
+  intros; apply judge_ind; basic_goal_prep;
+    with_rule_in_wf_crush.
+Qed.
+
+Lemma eq_sort_wf_l l c t1 t2
+  : wf_lang l ->
+    wf_ctx l c ->
+    eq_sort l c t1 t2 ->
+    wf_sort l c t1.
+Proof.
+  intros wfl wfc eqt.
+  pose proof (proj1 (checked_subproperties wfl)
+                    _ _ _ eqt wfc).
+  intuition.
+Qed.
+#[export] Hint Resolve eq_sort_wf_l : lang_core.
+
+Lemma eq_sort_wf_r l c t1 t2
+  : wf_lang l ->
+    wf_ctx l c ->
+    eq_sort l c t1 t2 ->
+    wf_sort l c t2.
+Proof.
+  intros wfl wfc eqt.
+  pose proof (proj1 (checked_subproperties wfl)
+                    _ _ _ eqt wfc).
+  intuition.
+Qed.
+#[export] Hint Resolve eq_sort_wf_r : lang_core.
+
+Lemma eq_term_wf_l l c e1 e2 t
+  : wf_lang l ->
+    wf_ctx l c ->
+    eq_term l c t e1 e2 ->
+    wf_term l c e1 t.
+Proof.
+  intros wfl wfc eqt.
+  pose proof (proj1 (proj2 (checked_subproperties wfl))
+                    _ _ _ _ eqt wfc).
+  intuition.
+Qed.
+#[export] Hint Resolve eq_term_wf_l : lang_core.
+
+Lemma eq_term_wf_r l c e1 e2 t
+  : wf_lang l ->
+    wf_ctx l c ->
+    eq_term l c t e1 e2 ->
+    wf_term l c e2 t.
+Proof.
+  intros wfl wfc eqt.
+  pose proof (proj1 (proj2 (checked_subproperties wfl))
+                    _ _ _ _ eqt wfc).
+  intuition.
+Qed.
+#[export] Hint Resolve eq_term_wf_l : lang_core.
+
+Lemma eq_term_wf_sort l c e1 e2 t
+  : wf_lang l ->
+    wf_ctx l c ->
+    eq_term l c t e1 e2 ->
+    wf_sort l c t.
+Proof.
+  intros wfl wfc eqt.
+  pose proof (proj1 (proj2 (checked_subproperties wfl))
+                    _ _ _ _ eqt wfc).
+  intuition.
+Qed.
+#[export] Hint Resolve eq_term_wf_sort : lang_core.
+
+Lemma eq_subst_wf_l l c c' s1 s2
+  : wf_lang l ->
+    wf_ctx l c ->
+    wf_ctx l c' ->
+    eq_subst l c c' s1 s2 ->
+    wf_subst l c s1 c'.
+Proof.
+  intros wfl wfc wfc' eqt.
+  pose proof (proj1 (proj2 (proj2 (checked_subproperties wfl)))
+                    _ _ _ _ eqt wfc wfc').
+  intuition.
+Qed.
+#[export] Hint Resolve eq_subst_wf_l : lang_core.
+
+Lemma eq_subst_wf_r l c c' s1 s2
+  : wf_lang l ->
+    wf_ctx l c ->
+    wf_ctx l c' ->
+    eq_subst l c c' s1 s2 ->
+    wf_subst l c s2 c'.
+Proof.
+  intros wfl wfc wfc' eqt.
+  pose proof (proj1 (proj2 (proj2 (checked_subproperties wfl)))
+                    _ _ _ _ eqt wfc wfc').
+  intuition.
+Qed.
+#[export] Hint Resolve eq_subst_wf_r : lang_core.
+
+Scheme wf_sort_ind'' := Minimality for wf_sort Sort Prop
+  with wf_term_ind'' := Minimality for wf_term Sort Prop
+  with wf_args_ind'' := Minimality for wf_args Sort Prop.
+Combined Scheme wf_judge_ind
+         from wf_sort_ind'', wf_term_ind'', wf_args_ind''.

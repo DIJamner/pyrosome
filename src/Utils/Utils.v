@@ -671,3 +671,20 @@ Proof.
     basic_utils_crush.
 Qed.
 Hint Rewrite combine_map_fst_is_with_names_from : utils.
+
+Lemma named_map_length A B (f : A -> B) l
+  : length (named_map f l) = length l.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Rewrite named_map_length : utils.
+Hint Rewrite map_length : utils.
+
+
+Lemma fresh_notin A n (a:A) l
+  : fresh n l -> ~In (n,a) l.
+Proof.
+  unfold fresh.
+  intuition eauto using pair_fst_in.
+Qed.
+Hint Resolve fresh_notin : utils.

@@ -327,3 +327,10 @@ Proof.
   eauto.
 Qed.
 #[export] Hint Resolve reconstruct_ws_lang : exp.
+
+Lemma ws_lang_all_ws_rule l
+  : ws_lang l -> all ws_rule (map snd l).
+Proof.
+  unfold ws_lang; intuition.
+Qed.
+Hint Resolve ws_lang_all_ws_rule : lang_core.

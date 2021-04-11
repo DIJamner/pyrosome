@@ -187,12 +187,6 @@ Proof.
 Qed.
 Hint Resolve all_fresh_compiler : lang_core. 
 
-(*TODO: move to Core*)
-Scheme wf_sort_ind' := Minimality for wf_sort Sort Prop
-  with wf_term_ind' := Minimality for wf_term Sort Prop
-  with wf_args_ind' := Minimality for wf_args Sort Prop.
-Combined Scheme wf_judge_ind
-         from wf_sort_ind', wf_term_ind', wf_args_ind'.
 
 Local Lemma compile_strengthen tgt cmp src n cc
   : preserving_compiler tgt cmp src ->
@@ -502,15 +496,6 @@ Qed.
 Hint Resolve term_case_in_preserving_well_scoped : lang_core.
 
 
-(*TODO: move to utils*)
-Lemma named_map_length A B (f : A -> B) l
-  : length (named_map f l) = length l.
-Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
-Qed.
-Hint Rewrite named_map_length : utils.
-Hint Rewrite map_length : utils.
-
 Local Lemma distribute_compile_subst tgt cmp src s
   : preserving_compiler tgt cmp src ->
     all_fresh src ->
@@ -630,15 +615,6 @@ Proof.
     eapply named_list_lookup_none; eauto.
   }
 Qed.
-
-(*TODO: move to utils*)
-Lemma fresh_notin A n (a:A) l
-  : fresh n l -> ~In (n,a) l.
-Proof.
-  unfold fresh.
-  intuition eauto using pair_fst_in.
-Qed.
-Hint Resolve fresh_notin : utils.
   
 Lemma lang_compiler_conflict_sort_term lt cmp ls n c args args' e
   : preserving_compiler lt cmp ls ->
@@ -713,24 +689,7 @@ Proof.
   }
 Qed.
 
-(*
-Lemma term_eq_in_lang_proof_in_compiler name lt cmp ls c e1 e2 t
-  : preserving_compiler lt cmp ls ->
-    (name, wf_term_eq c e1 e2 t) \in ls ->
-    exists p, (name, ax_case p) \in cmp.
-Proof.
-  induction 1; 
-    repeat (simpl; autorewrite with bool_utils pfcore utils); eauto with pfcore.
-  all: intuition.
-  all: try match goal with [H : exists _,_|-_] => destruct H end.
-  all: try solve[exists x; 
-    repeat (simpl; autorewrite with bool_utils pfcore utils); by eauto with pfcore].
-  exists eeq;
-    repeat (simpl; autorewrite with bool_utils pfcore utils); by eauto with pfcore.
-  Unshelve.
-  exact (ax "").
-Qed.
-*)
+        
 
 Theorem inductive_implies_semantic lt cmp ls
   : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
@@ -743,8 +702,11 @@ Proof.
     eapply inductive_implies_semantic_sort_axiom; eassumption.
   }
   {
-    erewrite !compile_sort_subst; eauto.
+    erewrite !compile_sort_subst; eauto;
     basic_core_crush.
+    basic_core_crush.
+    (*TODO: why is this not automated?*)
+    apply ws_lang_all_ws_rule ; eauto with lang_core.
     all: admit (*simple side conditions*).
   }
   {
