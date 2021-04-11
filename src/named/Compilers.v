@@ -257,17 +257,6 @@ Proof.
 Qed.
 
 
-(*TODO: move to utils*)
-Lemma with_names_from_map_is_named_map A B C (f : A -> B) (l1 : named_list C) l2
-  : with_names_from l1 (map f l2) = named_map f (with_names_from l1 l2).
-Proof.
-  revert l2; induction l1;
-    destruct l2; break; subst; simpl; f_equal; eauto.
-Qed.
-(* TODO: do I want to rewrite like this?
-  Hint Rewrite with_names_from_map_is_named_map : utils.*)
-
-
 Lemma with_names_from_compile_ctx (A:Set) cmp c (s : list A)
   : with_names_from (compile_ctx cmp c) s
     = with_names_from c s.
@@ -303,17 +292,6 @@ Proof.
   induction c; break; simpl; f_equal; auto.
 Qed.
 
-
-(*TODO: move to utils*)
-Lemma combine_map_fst_is_with_names_from A B (c : named_list A) (s : list B)
-  : combine (map fst c) s = with_names_from c s.
-Proof.
-  revert s; induction c; destruct s;
-    basic_goal_prep;
-    basic_core_crush.
-Qed.
-Hint Rewrite combine_map_fst_is_with_names_from : utils.
-
 Lemma all_fresh_compiler lt cmp l
   : preserving_compiler lt cmp l ->
     all_fresh l ->
@@ -342,40 +320,6 @@ Proof.
   }
 Qed.
 
-(*TODO: move to utils*)
-Lemma invert_eq_0_S x : 0 = S x <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_0_S : utils.
-Lemma invert_eq_S_0 x : S x = 0 <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_S_0 : utils.
-
-Lemma invert_eq_S_S x y : S x = S y <-> x = y.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_S_S : utils.
-
-
-Lemma invert_eq_cons_nil A (e:A) es : e::es = [] <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_cons_nil : utils.
-Lemma invert_eq_nil_cons A (e:A) es : [] =e::es <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_nil_cons : utils.
-Lemma invert_eq_cons_cons A (e e':A) es es' : e::es = e'::es' <-> e = e' /\ es = es'.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_cons_cons : utils.
 
 
 Lemma lookup_in_dom s n
@@ -484,6 +428,7 @@ Proof.
     basic_goal_prep; repeat case_match; try reflexivity.
   (*TODO: needs lemma above*)
 Admitted.
+Hint Rewrite compile_sort_subst : lang_core.
 
 Lemma compile_subst_with_names_from A cmp (c':named_list A) s
   : (compile_subst cmp (with_names_from c' s)) = with_names_from c' (map (compile cmp) s).
@@ -515,99 +460,50 @@ Proof.
     eapply named_list_lookup_none; eauto.
   }
 Qed.
-  
+
+(*TODO: do the same thing for terms*)
 Lemma inductive_implies_semantic_sort_rule ls lt cmp name c c' args s
   : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
     In (name, sort_rule c' args) ls ->
     (*wf_args ls c s c' ->*)
+    wf_ctx lt (compile_ctx cmp c') ->
     wf_args lt (compile_ctx cmp c) (compile_args cmp s) (compile_ctx cmp c') ->
     wf_sort lt (compile_ctx cmp c) (compile_sort cmp (scon name s)).
 Proof.
   intros.
   replace (scon name s) with (scon name (id_args c'))[/(with_names_from c' s)/].
-  erewrite compile_sort_subst; 
+  erewrite compile_sort_subst; try eassumption.
+  2:{
+    econstructor; [eassumption |].
     basic_core_crush.
-  eapply wf_sort_subst_monotonicity; basic_core_crush.
+  }
+  eapply wf_sort_subst_monotonicity; simpl; auto.
   {
-    erewrite id_subst_id_args.
-               cbn; pfcore_crush.
-    pfcore_crush.
+    repeat case_match; basic_core_crush.
+    admit (*TODO: lang and compiler confilct; add automation*).
+    eapply wf_sort_subst_monotonicity; auto.
+    admit (*TODO: derive from case of preserving_compiler from 2 ins*).
+    admit (*TODO: derive from case of preserving_compiler from 2 ins*).
+    
+    admit (*TODO: derive args0 = map fst c', then automatic*).
+    admit (*TODO: lang and term confilct; add automation*).
+  }
   2:{
     rewrite compile_subst_with_names_from.
-    erewrite with_names_from_names_eq.
-    eapply wf_subst_from_wf_args; pfcore_crush.
-    unfold compile_ctx; rewrite named_map_fst_eq.
-    reflexivity.
-  }
-  
-.
-    
-  TODO: need the right rewrites
-  eapply inductive_implies_semantic_sort_rule_id
-  
-  
-  intros wfl pr wfl';
-    revert wfl'; induction pr; simpl; [easy|..].
-  all: pfcore_crush.
-  {    
-    safe_invert H0; pfcore_crush.      
-    cbn; pfcore_crush.
     erewrite <- with_names_from_compile_ctx.
-    eapply wf_sort_subst_monotonicity; pfcore_crush.
-    apply wf_subst_from_wf_args.
-    replace (compile_ctx l cmp c0)
-      with (compile_ctx ((n, Pf.wf_sort_rule c0 args0) :: l) ((n, con_case t) :: cmp) c0);
-      auto.
-    erewrite compile_strengthen_ctx; pfcore_crush.
+    eapply wf_subst_from_wf_args; basic_core_crush.
   }
-  {
-    (*Note: name != n*)
-    TODO: issue is that substitution s can use n
-                                                  
-                                                    
-    assert (wf_sort l c0 (wf_con name s)).
-    rewrite_strengthen.
-    
-    
-Fail Admitted.
-(*  
-  
-  all: repeat (simpl; autorewrite with bool_utils pfcore utils);
-    intuition; subst;
-      try match goal with
-          | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
-            let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
-          end.
-  all: repeat rewrite_strengthen.
-  
-  (* TODO: need subst monotonicity *)
-
-  all: repeat (simpl; autorewrite with bool_utils pfcore utils);
-    intuition; subst;
-      try match goal with
-          | [wfl : wf_lang ?l, H: is_true((_,_) \in ?l)|-_] =>
-            let H':= fresh in pose proof (rule_in_wf wfl H) as H'; safe_invert H'
-          end.
-2:{  assert (name == 
-all: repeat rewrite_strengthen.
-{
-  cbn [compile]; 
-    repeat (simpl; autorewrite with bool_utils pfcore utils).
-  
   assumption.
-  inductive_implies_semantic_rule.
-Qed.*)
-
-(*TODO: will this arrangement be useful?
-Lemma named_list_lookup_err_in_some {A:eqType} l x (v:A)
-  : all_fresh l -> ((x, v) \in l) -> named_list_lookup_err l x = Some v.
-Proof.
-  intros ?.
-  rewrite <- named_list_lookup_err_inb;
-    autorewrite with bool_utils; auto.
-Qed.  *)
+  admit (*TODO: lemma map fst with_names_from *).
+  {
+    simpl; f_equal.
+    admit (*TODO: prove the commented lemma above*).
+  }
+  Unshelve. basic_core_crush.
+Admitted.
 
 
+(*
 Lemma term_eq_in_lang_proof_in_compiler name lt cmp ls c e1 e2 t
   : preserving_compiler lt cmp ls ->
     (name, wf_term_eq c e1 e2 t) \in ls ->
@@ -624,52 +520,38 @@ Proof.
   Unshelve.
   exact (ax "").
 Qed.
+*)
 
-Lemma inductive_implies_semantic ls lt cmp
+Lemma inductive_implies_semantic lt cmp ls
   : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
-    semantics_preserving ls lt cmp.
+    semantics_preserving lt cmp ls.
 Proof.
-  intros; apply judge_ind; intros;
-    repeat (simpl; autorewrite with bool_utils pfcore utils in * ); eauto with pfcore.
+  intros; apply judge_ind; 
+    basic_goal_prep;
+    basic_core_crush.
   {
-    apply inductive_implies_semantic_sort_axiom; assumption.
+    eapply inductive_implies_semantic_sort_axiom; eassumption.
   }
   {
-    apply inductive_implies_semantic_term_axiom; assumption.
+    erewrite !compile_sort_subst; eauto.
+    basic_core_crush.
+    all: admit (*simple side conditions*).
   }
   {
-    
-    
-    TODO: why is there s and es?
-Proof.
-  inductive_implies_semantic_rule.
-Qed.
-    TODO: con lemma
-    constructor; eauto.
-    
-    rewrite compile_wfexp_subst in H5.
-    
-    
-    clear H4 H5.
-    match goal with
-    |
-    strategy: separate lemma?
-     -context population tactic for adding e1, e2 wf, etc
-    all: repeat match goal with
-                | [H : wf_ctx _ _ |-_] =>
-                  rewrite (compile_strengthen_ctx _ _ H); eauto with pfcore
-                | [H : wf_sort _ _ _|-_] =>
-                  rewrite (compile_strengthen_sort _ _ H); eauto with pfcore
-                | [H : wf_term _ _ _ _ |-_] =>
-                  rewrite (compile_strengthen_term _ _ H); eauto with pfcore
-                | [H : le_sort _ _ _ _ _|-_] =>
-                  solve[erewrite (compile_strengthen_sort_pf); eauto with pfcore]
-                | [H : eq_term _ _ _ _ _ _ |-_] =>
-                  solve[erewrite (compile_strengthen_term_pf); eauto with pfcore]
-                end.
- 
-  cbn [compile_pf]; 
-    repeat (simpl; autorewrite with bool_utils pfcore utils).
-  assumption.
-    
+    (*TODO: same for terms
+    erewrite !compile_term_subst; eauto.
+    basic_core_crush.*)
+    admit.
+  }
+  {
+    eapply inductive_implies_semantic_term_axiom; eassumption.
+  }
+  {
+    admit (*TODO*).
+  }
+  {
+    eapply inductive_implies_semantic_sort_rule; try eassumption.
+    (*TODO: figure out whether this is necessary/ add it  to lemma if so*)
+    admit.
+  }  
 Abort.

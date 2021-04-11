@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List String.
+Require Import String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -396,6 +396,23 @@ Lemma eq_subst_dom_eq_r l c c' s1 s2
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
+Hint Resolve eq_subst_dom_eq_r : lang_core.
+     
+Lemma eq_subst_dom_eq_l l c c' s1 s2
+  : eq_subst l c c' s1 s2 ->
+    map fst s1 = map fst c'.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve eq_subst_dom_eq_l : lang_core.
+     
+Lemma wf_subst_dom_eq l c c' s
+  : wf_subst l c s c' ->
+    map fst s = map fst c'.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve wf_subst_dom_eq : lang_core.
 
 
 Lemma eq_subst_refl l c c' s : wf_subst l c s c' -> eq_subst l c c' s s.
@@ -404,25 +421,288 @@ Proof.
 Qed.
 Hint Resolve eq_subst_refl : lang_core.
 
+
+Lemma subst_name_fresh_from_ctx l c s c' n
+  : wf_subst l c s c' -> fresh n c' -> fresh n s.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve subst_name_fresh_from_ctx : lang_core.
+
+Lemma eq_subst_name_fresh_l_from_ctx l c s1 s2 c' n
+  : eq_subst l c c' s1 s2 -> fresh n c' -> fresh n s1.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve eq_subst_name_fresh_l_from_ctx : lang_core.
+
+Lemma eq_subst_name_fresh_r_from_ctx l c s1 s2 c' n
+  : eq_subst l c c' s1 s2 -> fresh n c' -> fresh n s2.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
+
+(*Not a strictly syntactic inversion lemma,
+  so the proof is not fully automated
+*)
+Lemma invert_wf_term l c n t
+  : wf_ctx l c ->
+    wf_term l c (var n) t <-> exists t', In (n,t') c /\ eq_sort l c t t'.
+Proof.
+  split.
+  {
+    remember (var n) as e.
+    intro wft; revert Heqe.
+    induction wft; inversion 1; basic_goal_prep; basic_core_crush.
+    exists t; basic_core_crush.
+    constructor.
+    (*TODO: need type in ctx wf; would be a circularity*)
+Abort.
+
+Lemma in_all_named_list {A} P (l : named_list A) n a
+  : all P (map snd l) -> In (n,a) l -> P a.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+Arguments in_all_named_list {_} [_] {_} {_} {_}.
+
+Lemma wf_ctx_all_fresh l c
+  : wf_ctx l c -> all_fresh c.
+Proof.
+  induction 1; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Resolve wf_ctx_all_fresh : lang_core.
+  
+Local Lemma wf_implies_ws l
+  : ws_lang l ->
+    (forall c t1 t2,
+        eq_sort l c t1 t2 ->
+        well_scoped (map fst c) t1 /\
+        well_scoped (map fst c) t2)
+    /\ (forall c t e1 e2,
+           eq_term l c t e1 e2 ->
+           well_scoped (map fst c) e1 /\
+           well_scoped (map fst c) e2)
+    /\ (forall c c' s1 s2,
+           eq_subst l c c' s1 s2 ->
+           all_fresh c' ->
+           well_scoped (map fst c) s1 /\
+           well_scoped (map fst c) s2)
+    /\ (forall c t,
+           wf_sort l c t ->
+           well_scoped (map fst c) t)
+    /\ (forall c e t,
+           wf_term l c e t ->
+           well_scoped (map fst c) e)
+    /\ (forall c s c',
+           wf_args l c s c' ->
+           well_scoped (map fst c) s)
+    /\ (forall c,
+           wf_ctx l c -> ws_ctx c).
+Proof using.
+  intros; apply judge_ind; basic_goal_prep;
+    basic_core_crush.
+  all:
+    (*TODO: how to automate better/get into crush?*)
+    try match goal with
+        | [H0 : In (_,_) ?l, H1 : all _ (map snd ?l) |- _] =>
+          let H' := fresh in
+          pose proof (in_all_named_list H1 H0) as H';
+            simpl in H'; basic_core_crush
+        | [H : eq_subst _ _ ?c' ?s _|- well_scoped _ _[/?s/]] =>
+          apply well_scoped_subst;    
+            basic_core_crush;
+            replace (map fst s) with (map fst c'); try symmetry;
+              basic_core_crush
+                
+        | [H : eq_subst _ _ ?c' _ ?s |- well_scoped _ _[/?s/]] =>
+          apply well_scoped_subst;    
+            basic_core_crush;
+            replace (map fst s) with (map fst c'); try symmetry;
+              basic_core_crush
+        end.
+  (*TODO: what to do; eauto doesn't work well with A -> B /\ C*)
+  { apply H3; eauto with lang_core. }
+  { apply H3; eauto with lang_core. }
+  { apply H3; eauto with lang_core. }
+  { apply H3; eauto with lang_core. }  
+Qed.
+
+Lemma eq_sort_implies_ws_l l c t1 t2
+  : ws_lang l -> eq_sort l c t1 t2 -> well_scoped (map fst c) t1.
+Proof.
+  intros wsl eqs; apply (proj1 (proj1 (wf_implies_ws wsl) _ _ _ eqs)).
+Qed.
+#[export] Hint Resolve eq_sort_implies_ws_l : lang_core.
+
+Lemma eq_sort_implies_ws_r l c t1 t2
+  : ws_lang l -> eq_sort l c t1 t2 -> well_scoped (map fst c) t2.
+Proof.
+  intros wsl eqs; apply (proj2 (proj1 (wf_implies_ws wsl) _ _ _ eqs)).
+Qed.
+#[export] Hint Resolve eq_sort_implies_ws_r : lang_core.
+
+
+Lemma eq_term_implies_ws_l l c t e1 e2
+  : ws_lang l -> eq_term l c t e1 e2 -> well_scoped (map fst c) e1.
+Proof.
+  intros wsl eqs; apply (proj1 (proj1 (proj2 (wf_implies_ws wsl)) _ _ _ _ eqs)).
+Qed.
+#[export] Hint Resolve eq_term_implies_ws_l : lang_core.
+
+Lemma eq_term_implies_ws_r l c t e1 e2
+  : ws_lang l -> eq_term l c t e1 e2 -> well_scoped (map fst c) e2.
+Proof.
+  intros wsl eqs; apply (proj2 (proj1 (proj2 (wf_implies_ws wsl)) _ _ _ _ eqs)).
+Qed.
+#[export] Hint Resolve eq_term_implies_ws_r : lang_core.
+
+
+Lemma eq_subst_implies_ws_l l c c' s1 s2
+  : ws_lang l -> all_fresh c' -> eq_subst l c  c' s1 s2 -> well_scoped (map fst c) s1.
+Proof.
+  intros wsl allc eqs; apply (proj1 (proj1 (proj2 (proj2 (wf_implies_ws wsl))) _ _ _ _ eqs allc)).
+Qed.
+#[export] Hint Resolve eq_subst_implies_ws_l : lang_core.
+
+Lemma eq_subst_implies_ws_r l c c' s1 s2
+  : ws_lang l -> all_fresh c' -> eq_subst l c  c' s1 s2 -> well_scoped (map fst c) s2.
+Proof.
+  intros wsl allc eqs; apply (proj2 (proj1 (proj2 (proj2 (wf_implies_ws wsl))) _ _ _ _ eqs allc)).
+Qed.
+#[export] Hint Resolve eq_subst_implies_ws_r : lang_core.
+
+Definition wf_sort_implies_ws l (wsl : ws_lang l)
+  := proj1 (proj2 (proj2 (proj2 (wf_implies_ws wsl)))).
+#[export] Hint Resolve wf_sort_implies_ws : lang_core.
+
+Definition wf_term_implies_ws l  (wsl : ws_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (wf_implies_ws wsl))))).
+#[export] Hint Resolve wf_term_implies_ws : lang_core.
+
+Definition wf_args_implies_ws l (wsl : ws_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (wf_implies_ws wsl)))))).
+#[export] Hint Resolve wf_args_implies_ws : lang_core.
+
+Definition wf_ctx_implies_ws l (wsl : ws_lang l)
+  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (wf_implies_ws wsl)))))).
+#[export] Hint Resolve wf_ctx_implies_ws : lang_core.
+
+
+Lemma wf_rule_implies_ws l r
+  : ws_lang l ->
+    wf_rule l r ->
+    ws_rule r.
+Proof.
+  inversion 2; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_rule_implies_ws : lang_core.
+
+Lemma wf_lang_implies_ws l
+  : wf_lang l -> ws_lang l.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_lang_implies_ws : lang_core.
+
+
+Local Lemma ctx_mono l name t'
+  : wf_lang l ->
+    (forall c t1 t2,
+        eq_sort l c t1 t2 ->
+        eq_sort l ((name,t')::c) t1 t2)
+    /\ (forall c t e1 e2,
+           eq_term l c t e1 e2 ->
+           eq_term l ((name,t')::c) t e1 e2)
+    /\ (forall c c' s1 s2,
+           eq_subst l c c' s1 s2 ->
+           eq_subst l ((name,t')::c) c' s1 s2)
+    /\ (forall c t,
+           wf_sort l c t ->
+           wf_sort l ((name,t')::c) t)
+    /\ (forall c e t,
+           wf_term l c e t ->
+           wf_term l ((name,t')::c) e t)
+    /\ (forall c s c',
+           wf_args l c s c' ->
+           wf_args l ((name,t')::c) s c')
+    /\ (forall c,
+           wf_ctx l c -> True).
+Proof using.
+  intro wfl.
+  apply judge_ind; basic_goal_prep; basic_core_crush.
+  {
+    replace t1 with t1[/id_subst c/]; [|basic_core_crush].
+    replace t2 with t2[/id_subst c/]; [|basic_core_crush].
+    eapply eq_sort_subst; [|with_rule_in_wf_crush..].
+    with_rule_in_wf_crush.
+  }
+  {
+    replace t with t[/id_subst c/]; [|basic_core_crush].
+    replace e1 with e1[/id_subst c/]; [|basic_core_crush].
+    replace e2 with e2[/id_subst c/]; [|basic_core_crush].
+    eapply eq_term_subst; [|with_rule_in_wf_crush..].
+    with_rule_in_wf_crush.
+  }
+Qed.
+
+Definition eq_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (ctx_mono name t' wfl).
+#[export] Hint Resolve eq_sort_ctx_monotonicity : lang_core.
+
+Definition eq_term_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (proj2 (ctx_mono name t' wfl)).
+#[export] Hint Resolve eq_term_ctx_monotonicity : lang_core.
+
+Definition eq_subst_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (ctx_mono name t' wfl))).
+#[export] Hint Resolve eq_subst_ctx_monotonicity : lang_core.
+
+Definition wf_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))).
+#[export] Hint Resolve wf_sort_ctx_monotonicity : lang_core.
+
+Definition wf_term_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl))))).
+#[export] Hint Resolve wf_term_ctx_monotonicity : lang_core.
+
+Definition wf_args_ctx_monotonicity l name t' (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))))).
+#[export] Hint Resolve wf_args_ctx_monotonicity : lang_core.
+
+Lemma in_ctx_wf l c n t
+  : wf_lang l ->
+    wf_ctx l c ->
+    In (n,t) c ->
+    wf_sort l c t.
+Proof.
+  induction 2; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve in_ctx_wf : lang_core.
+
 Lemma wf_term_lookup l c s c'
-  : wf_subst l c s c' ->
+  : wf_lang l ->
+    wf_subst l c s c' ->
     wf_ctx l c' ->
     forall n t,
     In (n,t) c' ->
     wf_term l c (subst_lookup s n) t [/s /].
 Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-  {
-    admit (*TODO: subst strengthening*).
-  }
+  (*TODO: debug; why is it needed twice?*)
+  induction 2; basic_goal_prep; basic_core_crush; basic_core_crush.
   {
     case_match; basic_goal_prep; basic_core_crush.
-    admit(*TODO: need type_in_wf *).
   }
-Admitted.
-Hint Resolve wf_term_lookup : lang_core.
-  
-  
+  {
+    (*TODO: why isn't this automatic?*)
+    eapply well_scoped_change_args; [basic_core_crush|].
+    eapply wf_subst_dom_eq; basic_core_crush.
+  }
+Qed.
+Hint Resolve wf_term_lookup : lang_core.  
+
+
 (*Not all cases are necessary here,
   so I just use True instead of generating
   a new induction scheme
@@ -473,9 +753,8 @@ Proof.
       eapply eq_term_subst; [|basic_core_crush..]; auto.
       replace (map fst s2) with (map fst c'); 
         basic_core_crush.
-      admit
-      (*TODO: need wf_is_ws_sort*).
-      erewrite eq_subst_dom_eq_r; eauto.
+      (*TODO: why isn't this automatic? Make symmetric version?*)
+      erewrite eq_subst_dom_eq_r; basic_core_crush.
     }
   }
   {
@@ -487,6 +766,7 @@ Proof.
     rewrite with_names_from_args_subst.
     rewrite <- !subst_assoc.
     eapply eq_sort_subst; [| basic_core_crush..]; auto.
+    
     admit.
     admit.
     admit.
@@ -520,68 +800,3 @@ Definition wf_args_subst_monotonicity l (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (subst_mono wfl)))))).
 #[export] Hint Resolve wf_args_subst_monotonicity : lang_core.
 
-
-Local Lemma ctx_mono l name t'
-  : wf_lang l ->
-    (forall c t1 t2,
-        eq_sort l c t1 t2 ->
-        eq_sort l ((name,t')::c) t1 t2)
-    /\ (forall c t e1 e2,
-           eq_term l c t e1 e2 ->
-           eq_term l ((name,t')::c) t e1 e2)
-    /\ (forall c c' s1 s2,
-           eq_subst l c c' s1 s2 ->
-           eq_subst l ((name,t')::c) c' s1 s2)
-    /\ (forall c t,
-           wf_sort l c t ->
-           wf_sort l ((name,t')::c) t)
-    /\ (forall c e t,
-           wf_term l c e t ->
-           wf_term l ((name,t')::c) e t)
-    /\ (forall c s c',
-           wf_args l c s c' ->
-           wf_args l ((name,t')::c) s c')
-    /\ (forall c,
-           wf_ctx l c -> True).
-Proof using.
-  intro wfl.
-  apply judge_ind; basic_goal_prep; basic_core_crush.
-  {
-    replace t1 with t1[/id_subst c/]; [|basic_core_crush].
-    replace t2 with t2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_sort_subst; [|with_rule_in_wf_crush..].
-    with_rule_in_wf_crush.
-  }
-  {
-    replace t with t[/id_subst c/]; [|basic_core_crush].
-    replace e1 with e1[/id_subst c/]; [|basic_core_crush].
-    replace e2 with e2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_term_subst; [|with_rule_in_wf_crush..].
-    with_rule_in_wf_crush.
-  }
-Qed.
-
-
-Definition eq_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (ctx_mono name t' wfl).
-#[export] Hint Resolve eq_sort_ctx_monotonicity : lang_core.
-
-Definition eq_term_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (proj2 (ctx_mono name t' wfl)).
-#[export] Hint Resolve eq_term_ctx_monotonicity : lang_core.
-
-Definition eq_subst_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (ctx_mono name t' wfl))).
-#[export] Hint Resolve eq_subst_ctx_monotonicity : lang_core.
-
-Definition wf_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))).
-#[export] Hint Resolve wf_sort_ctx_monotonicity : lang_core.
-
-Definition wf_term_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl))))).
-#[export] Hint Resolve wf_term_ctx_monotonicity : lang_core.
-
-Definition wf_args_ctx_monotonicity l name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))))).
-#[export] Hint Resolve wf_args_ctx_monotonicity : lang_core.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List Bool String.
+Require Import Bool String List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.
@@ -303,6 +303,44 @@ Lemma invert_some_some A (x y:A)
 Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_some_some : utils.
 
+Lemma invert_false_true : false = true <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_false_true : utils.
+
+Lemma invert_eq_0_S x : 0 = S x <-> False.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_0_S : utils.
+Lemma invert_eq_S_0 x : S x = 0 <-> False.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_S_0 : utils.
+
+Lemma invert_eq_S_S x y : S x = S y <-> x = y.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_S_S : utils.
+
+
+Lemma invert_eq_cons_nil A (e:A) es : e::es = [] <-> False.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_cons_nil : utils.
+Lemma invert_eq_nil_cons A (e:A) es : [] =e::es <-> False.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_nil_cons : utils.
+Lemma invert_eq_cons_cons A (e e':A) es es' : e::es = e'::es' <-> e = e' /\ es = es'.
+Proof.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite invert_eq_cons_cons : utils.
+
 Ltac my_case eqnname exp :=
   let casevar := fresh "casevar" in
   remember exp as casevar eqn:eqnname;
@@ -338,6 +376,14 @@ Qed.
 *)
 Hint Rewrite all_fresh_named_list_lookup_err_in : utils.
 
+Lemma fresh_named_map A B l (f : A -> B) n
+  : fresh n (named_map f l) <-> fresh n l.
+Proof.
+  induction l; basic_goal_prep;
+    basic_utils_crush.
+Qed.
+Hint Rewrite fresh_named_map : utils.
+
 Fixpoint with_names_from {A B} (c : named_list A) (l : list B) : named_list B :=
   match c, l with
   | [],_ => []
@@ -345,6 +391,15 @@ Fixpoint with_names_from {A B} (c : named_list A) (l : list B) : named_list B :=
   | (n,_)::c',e::l' =>
     (n,e)::(with_names_from c' l')
   end.
+
+
+Lemma map_fst_with_names_from A B (c : named_list A) (l : list B)
+  : length c = length l -> map fst (with_names_from c l) = map fst c.
+Proof.
+  revert l; induction c; destruct l; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Rewrite map_fst_with_names_from : utils.
+
 
 Fixpoint sublist {A} (s l : list A) : Prop :=
   match s,l with
@@ -482,7 +537,6 @@ Proof.
 Qed.
 *)
 
-
 Lemma in_all_fresh_same {A} (a b : A) l s
   : all_fresh l -> In (s,a) l -> In (s,b) l -> a = b.
 Proof.  
@@ -590,4 +644,30 @@ Section All.
     end.
 End All.
 
+Lemma in_all {A} {P : A -> Prop} l a
+  : all P l -> In a l -> P a.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+
 Hint Rewrite pair_equal_spec : utils.
+
+
+
+Lemma with_names_from_map_is_named_map A B C (f : A -> B) (l1 : named_list C) l2
+  : with_names_from l1 (map f l2) = named_map f (with_names_from l1 l2).
+Proof.
+  revert l2; induction l1;
+    destruct l2; break; subst; simpl; f_equal; eauto.
+Qed.
+(* TODO: do I want to rewrite like this?
+  Hint Rewrite with_names_from_map_is_named_map : utils.*)
+
+Lemma combine_map_fst_is_with_names_from A B (c : named_list A) (s : list B)
+  : combine (map fst c) s = with_names_from c s.
+Proof.
+  revert s; induction c; destruct s;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+Hint Rewrite combine_map_fst_is_with_names_from : utils.

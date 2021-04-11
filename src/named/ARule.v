@@ -320,3 +320,10 @@ Proof using .
     basic_goal_prep;
     basic_exp_crush.
 Qed.
+
+Lemma reconstruct_ws_lang l
+  : all_fresh l /\ all ws_rule (map snd l) -> ws_lang l.
+Proof.
+  eauto.
+Qed.
+#[export] Hint Resolve reconstruct_ws_lang : exp.

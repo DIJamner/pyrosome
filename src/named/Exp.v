@@ -18,8 +18,7 @@ Inductive exp : Set :=
 Set Elimination Schemes.
 
 
-(*Stronger induction principle w/ better subterm knowledge 
-  TODO: not so necessary anymore I think? remove?
+(*Stronger induction principle w/ better subterm knowledge
  *)
 Fixpoint exp_ind
          (P : exp -> Prop)
@@ -165,13 +164,24 @@ Class Substable (A : Type) : Type :=
   subst_id : forall {A} (c : named_list A) a,
       (* Not necessary because of our choice of default
         well_scoped (map fst c) a ->*)
-      apply_subst (id_subst c) a = a
+      apply_subst (id_subst c) a = a;
+  strengthen_subst
+  : forall s a n e,
+      well_scoped (map fst s) a ->
+      fresh n s ->
+      apply_subst ((n,e)::s) a= apply_subst s a;
+  well_scoped_subst args s a
+    : ws_subst args s ->
+      well_scoped (map fst s) a ->
+      well_scoped args (apply_subst s a)
   }.
 
 Arguments well_scoped {A}%type_scope {Substable} _%list_scope !_.
 Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
 Hint Rewrite @subst_assoc : exp.
 Hint Rewrite @subst_id : exp.
+Hint Rewrite @strengthen_subst : exp.
+Hint Resolve well_scoped_subst : exp.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
@@ -246,12 +256,52 @@ Proof.
 Qed.
 Hint Rewrite exp_subst_id : exp.
 
+Lemma exp_strengthen_subst s a n e
+  : ws_exp (map fst s) a ->
+    fresh n s ->
+    exp_subst ((n,e)::s) a = exp_subst s a.
+Proof.
+  induction a; basic_goal_prep; try case_match;
+    basic_exp_crush.
+  f_equal.
+
+  revert dependent l.
+  induction l; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+
+Lemma ws_exp_subst_lookup args s n
+  : ws_subst args s ->
+    In n (map fst s) ->
+    ws_exp args (subst_lookup s n).
+Proof.
+  induction s; basic_goal_prep; try case_match;
+    basic_exp_crush.
+Qed.
+Hint Resolve ws_exp_subst_lookup : exp.
+  
+Lemma exp_well_scoped_subst args s a
+    : ws_subst args s ->
+      ws_exp (map fst s) a ->
+      ws_exp args (exp_subst s a).
+Proof.
+  induction a; basic_goal_prep; try case_match;
+    basic_exp_crush.
+
+  revert dependent l.
+  induction l; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+Local Hint Resolve exp_well_scoped_subst : exp.
+  
 Instance substable_exp : Substable exp :=
   {
   apply_subst := exp_subst;
   well_scoped := ws_exp;
   subst_assoc := exp_subst_assoc;
   subst_id := exp_subst_id;
+  strengthen_subst := exp_strengthen_subst;
+  well_scoped_subst := exp_well_scoped_subst;
   }.
  
 Lemma subst_subst_assoc : forall s1 s2 a,
@@ -271,12 +321,34 @@ Proof using .
     basic_exp_crush.
 Qed.
 
+Lemma subst_strengthen_subst s a n e
+  : ws_subst (map fst s) a ->
+    fresh n s ->
+    subst_cmp ((n,e)::s) a = subst_cmp s a.
+Proof.
+  induction a; basic_goal_prep; f_equal;
+    basic_exp_crush.
+  apply exp_strengthen_subst; auto.
+Qed.
+
+Lemma subst_well_scoped_subst args s a
+    : ws_subst args s ->
+      ws_subst (map fst s) a ->
+      ws_subst args (subst_cmp s a).
+Proof.
+  induction a; basic_goal_prep; try case_match;
+    basic_exp_crush.
+Qed.
+Local Hint Resolve subst_well_scoped_subst : exp.
+
 Instance substable_subst : Substable subst :=
   {
   apply_subst := subst_cmp;
   well_scoped := ws_subst;
   subst_assoc := subst_subst_assoc;
   subst_id := subst_subst_id;
+  strengthen_subst := subst_strengthen_subst;
+  well_scoped_subst := subst_well_scoped_subst;
   }.
 
 Definition args_subst s (a : list exp) := map (apply_subst s) a.
@@ -299,12 +371,33 @@ Proof using .
     basic_exp_crush.
 Qed.
 
+Lemma args_strengthen_subst s a n e
+  : ws_args (map fst s) a ->
+    fresh n s ->
+    args_subst ((n,e)::s) a = args_subst s a.
+Proof.
+  induction a; basic_goal_prep; f_equal;
+    basic_exp_crush.
+Qed.
+
+Lemma args_well_scoped_subst args s a
+    : ws_subst args s ->
+      ws_args (map fst s) a ->
+      ws_args args (args_subst s a).
+Proof.
+  induction a; basic_goal_prep; try case_match;
+    basic_exp_crush.
+Qed.
+Local Hint Resolve args_well_scoped_subst : exp.
+
 Instance substable_args : Substable (list exp) :=
   {
   apply_subst := args_subst;
   well_scoped := ws_args;
   subst_assoc := args_subst_assoc;
   subst_id := args_subst_id;
+  strengthen_subst := args_strengthen_subst;
+  well_scoped_subst := args_well_scoped_subst;
   }.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
@@ -330,9 +423,31 @@ Proof using .
 Qed.
 
 
+Lemma sort_strengthen_subst s a n e
+  : ws_sort (map fst s) a ->
+    fresh n s ->
+    sort_subst ((n,e)::s) a = sort_subst s a.
+Proof.
+  destruct a; basic_goal_prep;
+    basic_exp_crush.
+Qed.
+
+Lemma sort_well_scoped_subst args s a
+    : ws_subst args s ->
+      ws_sort (map fst s) a ->
+      ws_sort args (sort_subst s a).
+Proof.
+  destruct a; basic_goal_prep; try case_match;
+    basic_exp_crush.
+Qed.
+
 Instance substable_sort : Substable sort :=
-  { subst_assoc := sort_subst_assoc;
-    subst_id := sort_subst_id }.
+  {
+  subst_assoc := sort_subst_assoc;
+  subst_id := sort_subst_id;
+  strengthen_subst := sort_strengthen_subst;
+  well_scoped_subst := sort_well_scoped_subst;
+  }.
 
 
 Fixpoint eq_exp e1 e2 {struct e1} : bool :=
@@ -666,25 +781,11 @@ Proof using .
     basic_exp_crush.
 Qed.
 
-(* TODO: check whether these are in utils; move if not
-(* TODO: move to utils! need more general types to do so; given in PfCore*)
-Lemma map_fst_with_names_from (c:ctx) (s : list exp)
-  : size s = size c -> map fst (with_names_from c s) = map fst c.
-Proof using .
-  elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
-  { inversion H0. }
-  {
-    f_equal; auto.
-  }
+Lemma well_scoped_change_args A `{Substable A} (a:A) args args'
+  : well_scoped args' a ->
+    args = args' ->
+    well_scoped args a.
+Proof.  
+  intros; subst; auto.
 Qed.
-
-Lemma map_snd_with_names_from  (c:ctx) (s : list exp)
-  : size s = size c -> map snd (with_names_from c s) = s.
-Proof using .
-  elim: c s; intros until s; case: s; intros; break;simpl in *; auto.
-  { inversion H. }
-  {
-    f_equal; auto.
-  }
-Qed.
-*)
+#[export] Hint Resolve well_scoped_change_args : exp.
