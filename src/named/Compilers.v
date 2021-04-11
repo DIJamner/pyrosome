@@ -149,21 +149,21 @@ Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
 
 
 Lemma fresh_compile_ctx x cmp c
-  : fresh x c -> fresh x (compile_ctx cmp c).
+  : fresh x (compile_ctx cmp c) <-> fresh x c.
 Proof.
   induction c; basic_goal_prep;
     basic_core_crush.
 Qed.
-Hint Resolve fresh_compile_ctx : lang_core.
+Hint Rewrite fresh_compile_ctx : lang_core.
 
 
 Lemma all_fresh_compile_ctx cmp c
-  : all_fresh c -> all_fresh (compile_ctx cmp c).
+  : all_fresh (compile_ctx cmp c) <-> all_fresh c.
 Proof.
   induction c; basic_goal_prep;
     basic_core_crush.
 Qed.
-Hint Resolve all_fresh_compile_ctx : pfcore.
+Hint Rewrite all_fresh_compile_ctx : lang_core.
 
 
 Lemma compile_strengthen_term src tgt cmp c e t n cc
@@ -200,11 +200,11 @@ Hint Resolve fresh_lang_fresh_cmp : lang_core.
 Ltac rewrite_strengthen :=
   match goal with
   | [H : wf_ctx _ _, pr : preserving_compiler _ _ _ |-_] =>
-    rewrite (compile_strengthen_ctx _ H pr); eauto with pfcore
+    rewrite (compile_strengthen_ctx _ H pr); eauto with lang_core
   | [H : wf_sort _ _ _, pr : preserving_compiler _ _ _ |-_] =>
-    rewrite (compile_strengthen_sort _ H pr); eauto with pfcore
+    rewrite (compile_strengthen_sort _ H pr); eauto with lang_core
   | [H : wf_term _ _ _ _, pr : preserving_compiler _ _ _ |-_] =>
-    rewrite (compile_strengthen_term _ H pr); eauto with pfcore
+    rewrite (compile_strengthen_term _ H pr); eauto with lang_core
   end.
 
 (* TODO: work on
@@ -345,19 +345,31 @@ Proof.
   
   rewrite IHc.
   unfold args_subst.
-  
-Lemma wf_con_id_args_subst A name (c' : named_list A) s
-  : length c' = length s -> (con name (id_args c'))[/with_names_from c' s/] = (con name s).
+*)
+
+
+Lemma strengthen_fresh_name A n e (c' : named_list A) s
+  : fresh n c' ->
+    (map var (map fst c'))[/(n, e) :: s/]
+    = (map var (map fst c'))[/s/].
 Proof.
-  intros ?.
-  simpl; f_equal.
-  unfold id_args.
-  revert dependent s.
+  induction c'; 
+    basic_goal_prep; auto.
+  case_match; basic_utils_crush.
+Qed.
+  
+Lemma wf_con_id_args_subst A (c' : named_list A) s
+  : all_fresh c' ->
+    length c' = length s ->
+    (id_args c')[/with_names_from c' s/] = s.
+Proof.
+  revert s.
   induction c'; destruct s;
       basic_goal_prep; try f_equal;
-      with_rule_in_wf_crush.
-Admitted.
-*)
+        with_rule_in_wf_crush.
+  rewrite strengthen_fresh_name; auto.
+Qed.
+Hint Rewrite wf_con_id_args_subst : lang_core.
 
 Lemma compile_subst_lookup cmp s n
   : compile cmp (subst_lookup s n)
@@ -461,6 +473,68 @@ Proof.
   }
 Qed.
 
+(*TODO: move to utils*)
+Lemma fresh_notin A n (a:A) l
+  : fresh n l -> ~In (n,a) l.
+Proof.
+  unfold fresh.
+  intuition eauto using pair_fst_in.
+Qed.
+Hint Resolve fresh_notin : utils.
+  
+Lemma lang_compiler_conflict_sort_term lt cmp ls n c args args' e
+  : preserving_compiler lt cmp ls ->
+    all_fresh ls ->
+    In (n, sort_rule c args) ls ->
+    In (n, term_case args' e) cmp ->
+    False.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+  pose proof (fresh_lang_fresh_cmp H H1).
+  eauto with utils.
+Qed.
+Hint Resolve lang_compiler_conflict_sort_term : lang_core.
+
+
+  
+Lemma lang_compiler_conflict_term_sort lt cmp ls n c args args' e t
+  : preserving_compiler lt cmp ls ->
+    all_fresh ls ->
+    In (n, term_rule c args t) ls ->
+    In (n, sort_case args' e) cmp ->
+    False.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+  pose proof (fresh_lang_fresh_cmp H H1).
+  eauto with utils.
+Qed.
+Hint Resolve lang_compiler_conflict_term_sort : lang_core.
+
+  
+Lemma lang_compiler_sort_case_args_eq lt cmp ls n c args args' e
+  : preserving_compiler lt cmp ls ->
+    all_fresh ls ->
+    In (n, sort_rule c args) ls ->
+    In (n, sort_case args' e) cmp ->
+    args' = map fst c.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+  pose proof (fresh_lang_fresh_cmp H H1).
+  exfalso.
+  eauto with utils.
+Qed.
+Hint Resolve lang_compiler_sort_case_args_eq : lang_core.
+
+(*TODO: move to utils*)
+Lemma named_map_length A B (f : A -> B) l
+  : length (named_map f l) = length l.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Rewrite named_map_length : utils.
+Hint Rewrite map_length : utils.
+  
+  
 (*TODO: do the same thing for terms*)
 Lemma inductive_implies_semantic_sort_rule ls lt cmp name c c' args s
   : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
@@ -477,31 +551,34 @@ Proof.
     econstructor; [eassumption |].
     basic_core_crush.
   }
-  eapply wf_sort_subst_monotonicity; simpl; auto.
+  eapply wf_sort_subst_monotonicity; auto.
   {
-    repeat case_match; basic_core_crush.
-    admit (*TODO: lang and compiler confilct; add automation*).
-    eapply wf_sort_subst_monotonicity; auto.
-    admit (*TODO: derive from case of preserving_compiler from 2 ins*).
-    admit (*TODO: derive from case of preserving_compiler from 2 ins*).
-    
-    admit (*TODO: derive args0 = map fst c', then automatic*).
-    admit (*TODO: lang and term confilct; add automation*).
+    eapply inductive_implies_semantic_sort_rule_id; eauto.
   }
-  2:{
+  all: basic_core_crush.
+  {
     rewrite compile_subst_with_names_from.
     erewrite <- with_names_from_compile_ctx.
     eapply wf_subst_from_wf_args; basic_core_crush.
   }
-  assumption.
-  admit (*TODO: lemma map fst with_names_from *).
+  {
+    pose proof (wf_args_length_eq H4).
+    unfold compile_args in H5.
+    unfold compile_ctx in H5.
+    basic_core_crush.
+  }
   {
     simpl; f_equal.
-    admit (*TODO: prove the commented lemma above*).
+    rewrite wf_con_id_args_subst; basic_core_crush.
+    rewrite <- all_fresh_compile_ctx.
+    eauto with lang_core.
+    pose proof (wf_args_length_eq H4).
+    unfold compile_args in H5.
+    unfold compile_ctx in H5.
+    basic_core_crush.
   }
-  Unshelve. basic_core_crush.
-Admitted.
-
+Qed.
+Print Assumptions inductive_implies_semantic_sort_rule.
 
 (*
 Lemma term_eq_in_lang_proof_in_compiler name lt cmp ls c e1 e2 t
@@ -522,7 +599,7 @@ Proof.
 Qed.
 *)
 
-Lemma inductive_implies_semantic lt cmp ls
+Theorem inductive_implies_semantic lt cmp ls
   : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
     semantics_preserving lt cmp ls.
 Proof.
@@ -555,3 +632,4 @@ Proof.
     admit.
   }  
 Abort.
+
