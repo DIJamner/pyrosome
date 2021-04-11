@@ -173,7 +173,7 @@ Proof.
   induction 1; basic_goal_prep;
     basic_core_crush.
 Qed.
-Hint Resolve fresh_lang_fresh_cmp : lang_core.
+#[export] Hint Resolve fresh_lang_fresh_cmp : lang_core.
 
 
 Lemma all_fresh_compiler lt cmp l
@@ -185,7 +185,7 @@ Proof.
     basic_goal_prep;
     basic_core_crush.
 Qed.
-Hint Resolve all_fresh_compiler : lang_core. 
+#[export] Hint Resolve all_fresh_compiler : lang_core. 
 
 
 Local Lemma compile_strengthen tgt cmp src n cc
@@ -453,7 +453,7 @@ Proof.
   exfalso.
   eauto with utils.
 Qed.
-Hint Resolve lang_compiler_sort_case_args_eq : lang_core.
+#[export] Hint Resolve lang_compiler_sort_case_args_eq : lang_core.
 
 Lemma lang_compiler_term_case_args_eq lt cmp ls n c args args' e t
   : preserving_compiler lt cmp ls ->
@@ -467,7 +467,7 @@ Proof.
   exfalso.
   eauto with utils.
 Qed.
-Hint Resolve lang_compiler_term_case_args_eq : lang_core.
+#[export] Hint Resolve lang_compiler_term_case_args_eq : lang_core.
 
 
 Lemma sort_case_in_preserving_well_scoped tgt cmp src n args t
@@ -480,7 +480,7 @@ Proof.
   erewrite <- compile_ctx_fst_equal.
   eapply wf_sort_implies_ws; eauto; eauto with exp lang_core.
 Qed.
-Hint Resolve sort_case_in_preserving_well_scoped : lang_core.
+#[export] Hint Resolve sort_case_in_preserving_well_scoped : lang_core.
 
 
 Lemma term_case_in_preserving_well_scoped tgt cmp src n args t
@@ -493,7 +493,7 @@ Proof.
   erewrite <- compile_ctx_fst_equal.
   eapply wf_term_implies_ws; eauto; eauto with exp lang_core.
 Qed.
-Hint Resolve term_case_in_preserving_well_scoped : lang_core.
+#[export] Hint Resolve term_case_in_preserving_well_scoped : lang_core.
 
 
 Local Lemma distribute_compile_subst tgt cmp src s
@@ -627,7 +627,7 @@ Proof.
   pose proof (fresh_lang_fresh_cmp H H1).
   eauto with utils.
 Qed.
-Hint Resolve lang_compiler_conflict_sort_term : lang_core.
+#[export] Hint Resolve lang_compiler_conflict_sort_term : lang_core.
 
 
   
@@ -642,7 +642,7 @@ Proof.
   pose proof (fresh_lang_fresh_cmp H H1).
   eauto with utils.
 Qed.
-Hint Resolve lang_compiler_conflict_term_sort : lang_core.
+#[export] Hint Resolve lang_compiler_conflict_term_sort : lang_core.
   
   
 (*TODO: do the same thing for terms*)
@@ -705,8 +705,6 @@ Proof.
     erewrite !compile_sort_subst; eauto;
     basic_core_crush.
     basic_core_crush.
-    (*TODO: why is this not automated?*)
-    apply ws_lang_all_ws_rule ; eauto with lang_core.
     all: admit (*simple side conditions*).
   }
   {

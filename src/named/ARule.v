@@ -333,4 +333,4 @@ Lemma ws_lang_all_ws_rule l
 Proof.
   unfold ws_lang; intuition.
 Qed.
-Hint Resolve ws_lang_all_ws_rule : lang_core.
+#[export] Hint Resolve ws_lang_all_ws_rule : exp.

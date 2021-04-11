@@ -181,7 +181,7 @@ Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
 Hint Rewrite @subst_assoc : exp.
 Hint Rewrite @subst_id : exp.
 Hint Rewrite @strengthen_subst : exp.
-Hint Resolve well_scoped_subst : exp.
+#[export] Hint Resolve well_scoped_subst : exp.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
@@ -278,7 +278,7 @@ Proof.
   induction s; basic_goal_prep; try case_match;
     basic_exp_crush.
 Qed.
-Hint Resolve ws_exp_subst_lookup : exp.
+#[export] Hint Resolve ws_exp_subst_lookup : exp.
   
 Lemma exp_well_scoped_subst args s a
     : ws_subst args s ->

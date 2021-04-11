@@ -346,7 +346,7 @@ Lemma rule_in_wf l r name
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve rule_in_wf : lang_core.
+#[export] Hint Resolve rule_in_wf : lang_core.
 
 Ltac use_rule_in_wf :=
   match goal with
@@ -371,7 +371,7 @@ Lemma wf_subst_from_wf_args l c s c'
 Proof.
   induction 1; basic_core_crush.
 Qed.
-Hint Resolve wf_subst_from_wf_args : lang_core.
+#[export] Hint Resolve wf_subst_from_wf_args : lang_core.
 
 Lemma id_args_wf l c
   : forall c', sublist c c' -> wf_args l c' (id_args c) c.
@@ -380,7 +380,7 @@ Proof.
   (*TODO: why is constructor necessary?*)
   constructor; basic_core_crush.
 Qed.
-Hint Resolve id_args_wf : lang_core.
+#[export] Hint Resolve id_args_wf : lang_core.
 
 
   
@@ -388,7 +388,7 @@ Lemma wf_lang_all_fresh l : wf_lang l -> all_fresh l.
 Proof.
   induction l; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve wf_lang_all_fresh : lang_core.
+#[export] Hint Resolve wf_lang_all_fresh : lang_core.
 
 Lemma eq_subst_dom_eq_r l c c' s1 s2
   : eq_subst l c c' s1 s2 ->
@@ -396,7 +396,7 @@ Lemma eq_subst_dom_eq_r l c c' s1 s2
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve eq_subst_dom_eq_r : lang_core.
+#[export] Hint Resolve eq_subst_dom_eq_r : lang_core.
      
 Lemma eq_subst_dom_eq_l l c c' s1 s2
   : eq_subst l c c' s1 s2 ->
@@ -404,7 +404,7 @@ Lemma eq_subst_dom_eq_l l c c' s1 s2
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve eq_subst_dom_eq_l : lang_core.
+#[export] Hint Resolve eq_subst_dom_eq_l : lang_core.
      
 Lemma wf_subst_dom_eq l c c' s
   : wf_subst l c s c' ->
@@ -412,14 +412,14 @@ Lemma wf_subst_dom_eq l c c' s
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve wf_subst_dom_eq : lang_core.
+#[export] Hint Resolve wf_subst_dom_eq : lang_core.
 
 
 Lemma eq_subst_refl l c c' s : wf_subst l c s c' -> eq_subst l c c' s s.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve eq_subst_refl : lang_core.
+#[export] Hint Resolve eq_subst_refl : lang_core.
 
 
 Lemma subst_name_fresh_from_ctx l c s c' n
@@ -427,21 +427,21 @@ Lemma subst_name_fresh_from_ctx l c s c' n
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve subst_name_fresh_from_ctx : lang_core.
+#[export] Hint Resolve subst_name_fresh_from_ctx : lang_core.
 
 Lemma eq_subst_name_fresh_l_from_ctx l c s1 s2 c' n
   : eq_subst l c c' s1 s2 -> fresh n c' -> fresh n s1.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve eq_subst_name_fresh_l_from_ctx : lang_core.
+#[export] Hint Resolve eq_subst_name_fresh_l_from_ctx : lang_core.
 
 Lemma eq_subst_name_fresh_r_from_ctx l c s1 s2 c' n
   : eq_subst l c c' s1 s2 -> fresh n c' -> fresh n s2.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
+#[export] Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
 
 (*Not a strictly syntactic inversion lemma,
   so the proof is not fully automated
@@ -472,7 +472,7 @@ Lemma wf_ctx_all_fresh l c
 Proof.
   induction 1; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve wf_ctx_all_fresh : lang_core.
+#[export] Hint Resolve wf_ctx_all_fresh : lang_core.
   
 Local Lemma wf_implies_ws l
   : ws_lang l ->
@@ -700,7 +700,7 @@ Proof.
     eapply wf_subst_dom_eq; basic_core_crush.
   }
 Qed.
-Hint Resolve wf_term_lookup : lang_core.  
+#[export] Hint Resolve wf_term_lookup : lang_core.  
 
 
 Lemma wf_args_length_eq l c s c'
@@ -709,7 +709,7 @@ Lemma wf_args_length_eq l c s c'
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve wf_args_length_eq : lang_core.
+#[export] Hint Resolve wf_args_length_eq : lang_core.
 
 (*Not all cases are necessary here,
   so I just use True instead of generating

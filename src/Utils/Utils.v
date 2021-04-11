@@ -95,9 +95,9 @@ Proof.
 Qed.
 Hint Rewrite eqb_eq' : utils.
 
-Hint Resolve in_nil : utils.
-Hint Resolve in_eq : utils.
-Hint Resolve in_cons : utils.
+#[export] Hint Resolve in_nil : utils.
+#[export] Hint Resolve in_eq : utils.
+#[export] Hint Resolve in_cons : utils.
 
 Inductive len_eq {A} {B} : list A -> list B -> Type :=
 | len_eq_nil : len_eq [] []
@@ -217,7 +217,7 @@ Lemma pair_fst_in {N A} l (n: N) (a : A)
 Proof using.
   induction l; break; simpl; autorewrite with utils; firstorder eauto.
 Qed.
-Hint Resolve pair_fst_in : utils.
+#[export] Hint Resolve pair_fst_in : utils.
 
 Lemma named_map_fst_eq {A B} (f : A -> B) l
   : map fst (named_map f l) = map fst l.
@@ -414,21 +414,21 @@ Lemma sublist_cons_rest {A} (a:A) l1 l2
 Proof using.
   induction l2; destruct l1; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve sublist_cons_rest : utils.
+#[export] Hint Resolve sublist_cons_rest : utils.
 
 Lemma sublist_cons_first {A} (a:A) l1 l2
   : sublist (a::l1) l2 -> In a l2.
 Proof using.
   induction l2; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve sublist_cons_first : utils.
+#[export] Hint Resolve sublist_cons_first : utils.
 
 (*TODO: better as a rewrite?*)
 Lemma sublist_refl {A} l : @sublist A l l.
 Proof.
   induction l; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve sublist_refl : utils.
+#[export] Hint Resolve sublist_refl : utils.
   
 Lemma sublist_l_cons_l {A} (a:A) l
   : sublist l (a::l).
@@ -437,7 +437,7 @@ Proof.
   destruct l;
   basic_utils_crush.
 Qed.
-Hint Resolve sublist_l_cons_l : utils.
+#[export] Hint Resolve sublist_l_cons_l : utils.
 
 (* Reduce size of language terms for smaller goals *)
 Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
@@ -608,7 +608,7 @@ Proof.
   induction l; basic_goal_prep; basic_utils_crush.
   my_case Hs (s=? s0); basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Resolve named_list_lookup_none : utils.
+#[export] Hint Resolve named_list_lookup_none : utils.
 
 (* decomposes the way you want \in to on all_fresh lists*)
 Fixpoint in_once {A} n e (l : named_list A) : Prop :=
@@ -687,4 +687,4 @@ Proof.
   unfold fresh.
   intuition eauto using pair_fst_in.
 Qed.
-Hint Resolve fresh_notin : utils.
+#[export] Hint Resolve fresh_notin : utils.
