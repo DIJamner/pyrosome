@@ -703,6 +703,14 @@ Qed.
 Hint Resolve wf_term_lookup : lang_core.  
 
 
+Lemma wf_args_length_eq l c s c'
+  : wf_args l c s c' ->
+    length c' = length s.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+Hint Resolve wf_args_length_eq : lang_core.
+
 (*Not all cases are necessary here,
   so I just use True instead of generating
   a new induction scheme
@@ -766,12 +774,9 @@ Proof.
     rewrite with_names_from_args_subst.
     rewrite <- !subst_assoc.
     eapply eq_sort_subst; [| basic_core_crush..]; auto.
-    
-    admit.
-    admit.
-    admit.
+    basic_core_crush.
+    basic_core_crush.
   }
-  admit.
   {
     constructor; fold_Substable; eauto.
     {
@@ -779,10 +784,10 @@ Proof.
       rewrite <- subst_assoc.
       (*TODO remove associativity hint?*)
       apply H0; basic_core_crush.
-      admit.
+      basic_core_crush.
     }
   }
-Admitted.
+Qed.
 
 Definition eq_subst_subst_monotonicity l (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (subst_mono wfl))).
