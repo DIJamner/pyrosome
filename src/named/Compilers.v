@@ -78,32 +78,41 @@ Section CompileFn.
      then inductively on the compiler. TODO: prove equivalent
    *)
   Definition sort_wf_preserving_sem :=
-    forall c t, wf_sort src c t ->
-                wf_sort tgt (compile_ctx c) (compile_sort t).
+    forall c t,
+      wf_sort src c t ->
+      wf_ctx src c ->
+      wf_sort tgt (compile_ctx c) (compile_sort t).
 
   Definition term_wf_preserving_sem :=
     forall c e t,
       wf_term src c e t ->
+      wf_ctx src c ->
       wf_term tgt (compile_ctx c) (compile e) (compile_sort t).
 
   Definition sort_eq_preserving_sem :=
     forall c t1 t2,
       eq_sort src c t1 t2 ->
+      wf_ctx src c ->
       eq_sort tgt (compile_ctx c) (compile_sort t1) (compile_sort t2).
   
   Definition term_eq_preserving_sem :=
     forall c t e1 e2,
       eq_term src c t e1 e2 ->
+      wf_ctx src c ->
       eq_term tgt (compile_ctx c) (compile_sort t) (compile e1) (compile e2).
 
   Definition args_wf_preserving_sem :=
     forall c s c',
       wf_args src c s c' ->
+      wf_ctx src c ->
+      wf_ctx src c' ->
       wf_args tgt (compile_ctx c) (compile_args s) (compile_ctx c').
 
   Definition subst_eq_preserving_sem :=
     forall c c' s1 s2,
       eq_subst src c c' s1 s2 ->
+      wf_ctx src c ->
+      wf_ctx src c' ->
       eq_subst tgt (compile_ctx c) (compile_ctx c') (compile_subst s1) (compile_subst s2).
    
   Definition ctx_wf_preserving_sem :=
@@ -187,7 +196,8 @@ Proof.
 Qed.
 #[export] Hint Resolve all_fresh_compiler : lang_core. 
 
-
+(*TODO: superceded by later lemma; remove
+*)
 Local Lemma compile_strengthen tgt cmp src n cc
   : preserving_compiler tgt cmp src ->
     all_fresh src ->
@@ -251,6 +261,76 @@ Lemma compile_strengthen_ctx src tgt cmp c n cc
     compile_ctx ((n,cc)::cmp) c = compile_ctx cmp c.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+
+Fixpoint all_constructors P e :=
+  match e with
+  | var _ => True
+  | con n s => P n /\ all (all_constructors P) s
+  end.
+
+Definition all_constructors_sort P t :=
+  match t with
+  | scon n s => P n /\ all (all_constructors P) s
+  end.
+
+Lemma compile_strengthen_term' cmp n cc e
+  : fresh n cmp ->
+    all_fresh cmp ->
+    all_constructors (fun n => In n (map fst cmp)) e ->
+    compile ((n,cc)::cmp) e = compile cmp e.
+Proof.
+  induction e; basic_goal_prep; basic_core_crush.
+  my_case Heq (n0 =? n); basic_goal_prep;
+    basic_core_crush.
+  case_match; basic_goal_prep;
+      basic_core_crush.
+  case_match; basic_goal_prep;
+    basic_core_crush.
+  f_equal.
+  f_equal.
+
+  revert dependent l.
+  induction l; basic_goal_prep; basic_core_crush.
+Qed.
+
+Lemma compile_strengthen_args' cmp n cc e
+  : fresh n cmp ->
+    all_fresh cmp ->
+    all (all_constructors (fun n => In n (map fst cmp))) e ->
+    compile_args ((n,cc)::cmp) e = compile_args cmp e.
+Proof.
+  induction e; basic_goal_prep; basic_core_crush.
+  apply compile_strengthen_term'; assumption.
+Qed.
+
+Lemma compile_strengthen_sort' cmp n cc e
+  : fresh n cmp ->
+    all_fresh cmp ->
+    all_constructors_sort (fun n => In n (map fst cmp)) e ->
+    compile_sort ((n,cc)::cmp) e = compile_sort cmp e.
+Proof.
+  destruct e; basic_goal_prep; basic_core_crush.
+  my_case Heq (s =? n); basic_goal_prep;
+    basic_core_crush.
+  case_match; basic_goal_prep;
+      basic_core_crush.
+  case_match; basic_goal_prep;
+    basic_core_crush.
+  f_equal.
+  f_equal.
+  apply compile_strengthen_args'; assumption.
+Qed.
+
+
+Lemma compile_strengthen_ctx' cmp n cc c
+  : fresh n cmp ->
+    all_fresh cmp ->
+    all (fun '(_,t) => all_constructors_sort (fun n => In n (map fst cmp)) t) c ->
+    compile_ctx ((n,cc)::cmp) c = compile_ctx cmp c.
+Proof.
+  induction c; basic_goal_prep; f_equal; basic_core_crush.
+  apply compile_strengthen_sort'; assumption.
 Qed.
 
 
@@ -354,6 +434,25 @@ Lemma inductive_implies_semantic_sort_rule_id ls lt cmp name c args
   : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
     In (name, sort_rule c args) ls ->
     wf_sort lt (compile_ctx cmp c) (compile_sort cmp (scon name (id_args c))).
+Proof.
+  intros wfl pr wfl';
+    revert wfl'; induction pr;
+      basic_goal_prep;
+      with_rule_in_wf_crush.
+  {
+    my_case Hname (name =? n);[|case_match]; basic_core_crush.
+  }
+  {
+    my_case Hname (name =? n);[|case_match]; basic_core_crush.
+  }
+Qed.
+
+
+
+Lemma inductive_implies_semantic_term_rule_id ls lt cmp name c args t
+  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+    In (name, term_rule c args t) ls ->
+    wf_term lt (compile_ctx cmp c) (compile cmp (con name (id_args c))) (compile_sort cmp t).
 Proof.
   intros wfl pr wfl';
     revert wfl'; induction pr;
@@ -649,7 +748,6 @@ Qed.
 Lemma inductive_implies_semantic_sort_rule ls lt cmp name c c' args s
   : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
     In (name, sort_rule c' args) ls ->
-    (*wf_args ls c s c' ->*)
     wf_ctx lt (compile_ctx cmp c') ->
     wf_args lt (compile_ctx cmp c) (compile_args cmp s) (compile_ctx cmp c') ->
     wf_sort lt (compile_ctx cmp c) (compile_sort cmp (scon name s)).
@@ -689,10 +787,121 @@ Proof.
   }
 Qed.
 
-        
+Lemma inductive_implies_semantic_term_rule ls lt cmp name c c' args t s
+  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+    In (name, term_rule c' args t) ls ->
+    wf_ctx lt (compile_ctx cmp c') ->
+    wf_args lt (compile_ctx cmp c) (compile_args cmp s) (compile_ctx cmp c') ->
+    wf_term lt (compile_ctx cmp c) (compile cmp (con name s)) (compile_sort cmp t)[/compile_subst cmp (with_names_from c' s)/].
+Proof.
+  intros.
+  replace (con name s) with (con name (id_args c'))[/(with_names_from c' s)/].
+  erewrite compile_term_subst; try eassumption; eauto with lang_core.
+  2:{
+    econstructor; [eassumption |].
+    basic_core_crush.
+  }
+  eapply wf_term_subst_monotonicity; auto.
+  {
+    eapply inductive_implies_semantic_term_rule_id; eauto.
+  }
+  {
+    basic_core_crush.
+  }
+  {
+    rewrite compile_subst_with_names_from.
+    erewrite <- with_names_from_compile_ctx.
+    eapply wf_subst_from_wf_args; basic_core_crush.
+  }
+  {
+    pose proof (wf_args_length_eq H4).
+    unfold compile_args in H5.
+    unfold compile_ctx in H5.
+    basic_core_crush.
+  }
+  {
+    simpl; f_equal.
+    fold_Substable.
+    rewrite wf_con_id_args_subst; basic_core_crush.
+    rewrite <- all_fresh_compile_ctx.
+    eauto with lang_core.
+    pose proof (wf_args_length_eq H4).
+    unfold compile_args in H5.
+    unfold compile_ctx in H5.
+    basic_core_crush.
+  }
+Qed.
 
-Theorem inductive_implies_semantic lt cmp ls
-  : wf_lang ls -> wf_lang lt -> preserving_compiler lt cmp ls ->
+
+(*TODO: move to utils*)
+Lemma in_named_map A B (f : A -> B) l n x
+  : In (n,x) l -> In (n, f x) (named_map f l).
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Resolve in_named_map : utils.
+
+(*TODO: maybe not necessary with better strengthening lemma?
+  See what happens when I use the better one
+*)
+Variant rule_compiles_with {lt cmp} : rule -> Prop :=
+| sort_rule_compiles_with c args
+  : wf_ctx lt (compile_ctx cmp c) -> rule_compiles_with (sort_rule c args)
+| term_rule_compiles_with c args t
+  : wf_ctx lt (compile_ctx cmp c) ->
+    wf_sort lt (compile_ctx cmp c) (compile_sort cmp t) ->
+    rule_compiles_with (term_rule c args t)
+(*Similar properties are not necessary for eq rules*)
+| sort_eq_rule_compiles_with c t1 t2 : rule_compiles_with (sort_eq_rule c t1 t2)
+| term_eq_rule_compiles_with c e1 e2 t : rule_compiles_with (term_eq_rule c e1 e2 t).
+Arguments rule_compiles_with : clear implicits.
+                       
+Definition lang_compiles_with lt cmp : lang -> Prop :=
+  all (fun p => rule_compiles_with lt cmp (snd p)).
+
+
+Lemma lang_compiles_with_sort_ctx_in lt cmp ls n c' args
+  : lang_compiles_with lt cmp ls ->
+    In (n, sort_rule c' args) ls ->
+    wf_ctx lt (compile_ctx cmp c').
+Proof.
+  induction ls; 
+    basic_goal_prep;
+    basic_core_crush.
+  inversion H; subst; auto.
+Qed.
+Local Hint Resolve lang_compiles_with_sort_ctx_in : lang_core.
+
+Lemma lang_compiles_with_term_ctx_in lt cmp ls n c' args t
+  : lang_compiles_with lt cmp ls ->
+    In (n, term_rule c' args t) ls ->
+    wf_ctx lt (compile_ctx cmp c').
+Proof.
+  induction ls; 
+    basic_goal_prep;
+    basic_core_crush.
+  inversion H; subst; auto.
+Qed.
+Local Hint Resolve lang_compiles_with_term_ctx_in : lang_core.
+
+Lemma lang_compiles_with_term_sort_in lt cmp ls n c' args t
+  : lang_compiles_with lt cmp ls ->
+    In (n, term_rule c' args t) ls ->
+    wf_sort lt (compile_ctx cmp c') (compile_sort cmp t).
+Proof.
+  induction ls; 
+    basic_goal_prep;
+    basic_core_crush.
+  inversion H; subst; auto.
+Qed.
+Local Hint Resolve lang_compiles_with_term_sort_in : lang_core.
+
+
+Local Lemma inductive_implies_semantic' lt cmp ls
+  : wf_lang ls ->
+    wf_lang lt ->
+    preserving_compiler lt cmp ls ->
+    lang_compiles_with lt cmp ls ->
     semantics_preserving lt cmp ls.
 Proof.
   intros; apply judge_ind; 
@@ -702,27 +911,148 @@ Proof.
     eapply inductive_implies_semantic_sort_axiom; eassumption.
   }
   {
-    erewrite !compile_sort_subst; eauto;
-    basic_core_crush.
-    basic_core_crush.
-    all: admit (*simple side conditions*).
+    erewrite !compile_sort_subst.
+    all: try match goal with
+               [|- map fst _ = map fst _] =>
+               symmetry; eauto with lang_core
+             end.
+    all: basic_core_crush.
   }
   {
-    (*TODO: same for terms
-    erewrite !compile_term_subst; eauto.
-    basic_core_crush.*)
-    admit.
+    erewrite !compile_sort_subst.
+    erewrite !compile_term_subst.
+    all: try match goal with
+               [|- map fst _ = map fst _] =>
+               symmetry; eauto with lang_core
+             end.
+    all: basic_core_crush.
   }
   {
     eapply inductive_implies_semantic_term_axiom; eassumption.
   }
   {
-    admit (*TODO*).
+    constructor; basic_core_crush.
+    erewrite !compile_sort_subst in H6.
+    all: try match goal with
+               [|- map fst _ = map fst _] =>
+               symmetry; eauto with lang_core
+             end.
+    all: basic_core_crush.
   }
   {
     eapply inductive_implies_semantic_sort_rule; try eassumption.
-    (*TODO: figure out whether this is necessary/ add it  to lemma if so*)
-    admit.
-  }  
-Abort.
+    eapply lang_compiles_with_sort_ctx_in; with_rule_in_wf_crush.
+    with_rule_in_wf_crush.
+  }
+  {
+    erewrite compile_sort_subst; eauto.
+    all: try match goal with
+               [|- map fst _ = map fst _] =>
+               symmetry; eauto with lang_core
+             end.
+    all: basic_core_crush.
+    assert (wf_ctx ls c') by with_rule_in_wf_crush.
+    eapply inductive_implies_semantic_term_rule; try (auto;eassumption).
+    eapply lang_compiles_with_term_ctx_in; with_rule_in_wf_crush.
+    with_rule_in_wf_crush.
+  }
+  {
+    constructor.
+    apply in_named_map; assumption.
+  }
+  {
+    constructor; basic_core_crush.
+    erewrite !compile_sort_subst in H4.
+    all: try match goal with
+               [|- map fst _ = map fst _] =>
+               symmetry; eauto with lang_core
+             end.
+    all: basic_core_crush.
+    rewrite compile_subst_with_names_from in H4.
+    rewrite with_names_from_compile_ctx.
+    assumption.
+  }
+Qed.
 
+Local Lemma inductive_implies_semantic_ctx' lt cmp ls
+  : wf_lang ls ->
+    wf_lang lt ->
+    preserving_compiler lt cmp ls ->
+    lang_compiles_with lt cmp ls ->
+    forall c : ctx, wf_ctx ls c -> wf_ctx lt (compile_ctx cmp c).
+Proof.
+  intros wfs wft pc lcw.
+  apply inductive_implies_semantic'; eauto.
+Qed.
+Local Hint Resolve inductive_implies_semantic_ctx' : lang_core.
+
+
+Local Hint Constructors rule_compiles_with : lang_core.
+
+Definition all_constructors_rule P r :=
+  match r with
+  | sort_rule c _ => all (fun '(_, t) => all_constructors_sort P t) c
+  | term_rule c _ t =>
+    (all (fun '(_, t) => all_constructors_sort P t) c)
+    /\ (all_constructors_sort P t)
+  | _ => True
+  end.
+
+Local Lemma rule_compiles_extend_fresh lt cmp r n cc
+  : rule_compiles_with lt cmp r ->
+    all_constructors_rule (fun n0 : string => In n0 (map fst cmp)) r ->
+    fresh n cmp ->
+    all_fresh cmp ->
+    rule_compiles_with lt ((n,cc)::cmp) r.
+Proof.
+  inversion 1; basic_goal_prep; with_rule_in_wf_crush.
+  all: constructor.
+  all: try rewrite compile_strengthen_ctx'; eauto.
+  all: try rewrite compile_strengthen_sort'; eauto.
+Qed. 
+  
+Local Lemma lang_compiles_extend_fresh lt cmp ls n cc
+  : lang_compiles_with lt cmp ls ->
+    all (fun '(_,r) => all_constructors_rule (fun n0 : string => In n0 (map fst cmp)) r) ls ->
+    fresh n cmp ->
+    all_fresh cmp ->
+    lang_compiles_with lt ((n,cc)::cmp) ls.
+Proof.
+  unfold lang_compiles_with.
+  induction ls; basic_goal_prep; with_rule_in_wf_crush.
+  eapply rule_compiles_extend_fresh; eauto.
+Qed.  
+
+Local Lemma wf_lang_implies_all_constructors lt cmp l
+  : wf_lang l ->
+    preserving_compiler lt cmp l ->
+    all (fun '(_,r) => all_constructors_rule (fun n0 : string => In n0 (map fst cmp)) r) l.
+Admitted.
+
+
+
+Local Lemma preserving_compiler_to_lang_compiles_with lt ls
+  : wf_lang ls ->
+    wf_lang lt ->
+    forall cmp,
+    preserving_compiler lt cmp ls ->
+    lang_compiles_with lt cmp ls.
+Proof.
+  induction 1; inversion 2; basic_goal_prep; with_rule_in_wf_crush.
+  all: try solve [constructor; rewrite_strengthen].
+  {
+    apply lang_compiles_extend_fresh; basic_core_crush.
+    eapply wf_lang_implies_all_constructors; eauto.
+  }
+  {
+    apply rule_compiles_extend_fresh; basic_core_crush.
+    eapply wf_lang_implies_all_constructors; eauto.
+  }
+    TODO: wf implies all_constrs
+    constructor.
+    rewrite_strengthen.
+  }
+    apply inductive_implies_semantic'.
+
+  
+Print Assumptions inductive_implies_semantic'.
