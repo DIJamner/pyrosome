@@ -688,3 +688,46 @@ Proof.
   intuition eauto using pair_fst_in.
 Qed.
 #[export] Hint Resolve fresh_notin : utils.
+
+
+Definition fresh_dec {A} x (l : named_list A) : {fresh x l} + {~ fresh x l}.
+  refine(if in_dec string_dec x (map fst l) then right _ else left _);
+    basic_utils_crush.
+Defined.
+
+Definition compute_fresh {A} x (l : named_list A)  := if fresh_dec x l then true else false.
+
+Lemma use_compute_fresh {A} x (l : named_list A) 
+  : compute_fresh x l = true -> fresh x l.
+Proof.
+  unfold compute_fresh.
+  destruct (fresh_dec x l); easy.
+Qed.
+
+
+Lemma sublist_nil A (l : list A) : sublist [] l.
+Proof.
+  destruct l; simpl; easy.
+Qed.
+Hint Resolve sublist_nil : utils.
+
+Fixpoint compute_sublist {A} (dec : forall x y : A, {x = y} + {x <> y}) (s l : list A) {struct l} :=
+  match s,l with
+  | [],_ => true
+  | sa::s', [] => false
+  | sa::s', la::l' => if dec sa la then compute_sublist dec s' l' else compute_sublist dec s l'
+  end.
+
+Lemma use_compute_sublist {A} (dec : forall x y : A, {x = y} + {x <> y}) (s l : list A)
+  : compute_sublist dec s l = true -> sublist s l.
+Proof.
+  revert s; induction l; destruct s; basic_goal_prep; try easy.
+  revert H. case_match; basic_utils_crush.
+Qed.
+
+Lemma as_nth_tail: forall (A : Type) (l : list A), l = nth_tail 0 l.
+Proof.
+  intros; unfold nth_tail; reflexivity.
+Qed.
+
+

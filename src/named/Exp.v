@@ -789,3 +789,9 @@ Proof.
   intros; subst; auto.
 Qed.
 #[export] Hint Resolve well_scoped_change_args : exp.
+
+
+Ltac cbn_substs :=
+  cbn [apply_subst with_names_from exp_subst subst_cmp args_subst sort_subst
+                   substable_sort substable_args substable_exp substable_subst map
+      exp_var_map subst_lookup named_list_lookup String.eqb Ascii.eqb Bool.eqb].

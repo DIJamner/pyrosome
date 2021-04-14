@@ -4,23 +4,7 @@ src/Utils/Utils.v
 -R src/named Named
 src/named/Exp.v
 src/named/ARule.v
-src/named/Elab.v
 src/named/Core.v
+src/named/Elab.v
 src/named/Compilers.v
-src/named/Matches.v
-src/named/Pf.v
-src/named/PfCoreDefs.v
-src/named/PfCore.v
-src/named/PfElab.v
-src/named/PfCompilers.v
-src/named/SimpleSubst.v
-src/named/SimpleSTLC.v
-src/named/Compilers.v
-src/named/IsPfOf.v
-src/named/PfMatches.v
-src/named/ParStep.v
-src/named/RuleStep.v
-src/named/SimpleCPS.v
 src/named/SimpleVSubst.v
-src/named/SimpleVSTLC.v
-src/named/SimpleVCPS.v
