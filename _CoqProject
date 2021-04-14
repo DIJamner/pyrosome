@@ -8,3 +8,4 @@ src/named/Core.v
 src/named/Elab.v
 src/named/Compilers.v
 src/named/SimpleVSubst.v
+src/named/SimpleVSTLC.v

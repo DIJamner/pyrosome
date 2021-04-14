@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab Compilers.
+From Named Require Import Core Elab.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
