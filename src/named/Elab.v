@@ -151,6 +151,12 @@ Section TermsAndRules.
  
 End TermsAndRules.
 
+Hint Constructors elab_sort elab_term elab_args elab_ctx : lang_core.
+ Hint Resolve elab_sort_implies_wf : lang_core.
+ Hint Resolve elab_term_implies_wf : lang_core.
+ Hint Resolve elab_args_implies_wf : lang_core.
+ Hint Resolve elab_ctx_implies_wf : lang_core.
+
 Inductive elab_lang : lang -> lang -> Prop :=
 | elab_lang_nil : elab_lang [] []
 | elab_lang_cons : forall l el n r er,

@@ -1,19 +1,15 @@
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-
-From Ltac2 Require Import Ltac2.
+Require Import String List.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Pf PfCore.
-Require Import String PfMatches.
-
-
-Set Default Proof Mode "Ltac2".
-
+From Named Require Import Core Matches.
+Import Core.Notations.
 Import OptionMonad.
+
 
 (*
 (* 0 or more parallel steps (involving disjoint parts of the AST) *)
@@ -42,22 +38,21 @@ with args_steps_par (l:lang) : list pf -> ctx ->
       args_steps_par l ((ename,t)::c') (args1') (args2') (args) (e::s1) (e::s2).
 *)
 
-(*If the LHS a rule directly applies to e, return the proof.
+(*If the LHS of a term eq rule directly applies to e, return the proof.
   Rules are scanned from the root of the language.
   Works for both terms and sorts
  *)
-Fixpoint step_redex (l : pf_lang) (e : pf) : option pf :=
-  match l with
-  | [::] => None
-  | (n,sort_le_pf c e1 e2)::l'
-  | (n,term_le_pf c e1 e2 _)::l' =>
-    match step_redex l' e with
-    | Some t' => Some t'
-    | None => do s <- matches e e1 (map fst c);
-              ret (ax n s)
-    end
-  | _::l' => step_redex l' e
-  end.
+Fixpoint step_redex_term (l : lang) (e : exp) : option (exists c t e', eq_term l c t e e').
+  refine (match l with
+          | [] => None
+          | (n,term_eq_rule c e1 e2 t)::l' =>
+            match step_redex_term l' e with
+            | Some t' => Some _
+            | None => do s <- matches e e1 (map fst c);
+                         ret (ax n s)
+            end
+         | _::l' => step_redex l' e
+         end).
 
 
 (* TODO: define as option or iterate to a fixed point? *)

@@ -248,7 +248,7 @@ Proof using .
 Qed.
 *)
 
-(*
+
 Module OptionMonad.
   (* TODO: use general monad instead of duplicating*)
   Declare Custom Entry monadic_do.
@@ -272,7 +272,7 @@ Module OptionMonad.
     (if e then b else None)
       (in custom monadic_do at level 90, left associativity, e constr, b custom monadic_do).
 End OptionMonad.
-*)
+
 
 Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
   match l with

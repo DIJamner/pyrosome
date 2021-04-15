@@ -1,23 +1,15 @@
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-
-From Ltac2 Require Import Ltac2.
-Set Default Proof Mode "Classic".
+Require Import String List.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore Pf PfCore Compilers
-     PfCompilers PfMatches ParStep IsPfOf.
-Require Import String.
-Require Import SimpleVSubst SimpleVSTLC.
-Import Exp.Notations ARule.Notations Pf.Notations.
-
+From Named Require Import Core Compilers Elab ElabCompilers SimpleVSTLC Matches.
+Import Core.Notations.
 
 Require Coq.derive.Derive.
-
-Set Default Proof Mode "Classic".
 
 Definition stlc_bot :=
   ([:| 
@@ -25,179 +17,17 @@ Definition stlc_bot :=
       #"bot" : #"ty"
   ])%arule:: stlc.
 
-Import OptionMonad.
-Fixpoint simple_subst_to_pf_ty (e:exp) : option pf :=
-  match e with
-  | var x => Some (pvar x)
-  | con "->" [:: B; A] =>
-    do pA <- simple_subst_to_pf_ty A;
-       pB <- simple_subst_to_pf_ty B;
-       ret (pcon "->" [:: pB; pA])
-  | con "bot" [::] => Some (pcon "bot" [::])
-  | _ => None
-  end.
 
 
-Fixpoint simple_subst_to_pf_env (e:exp) : option pf :=
-  match e with
-  | var x => Some (pvar x)
-  | con "emp" [::] => Some (pcon "emp" [::])
-  | con "ext" [:: A; G] =>
-    do pa <- simple_subst_to_pf_ty A;
-       pG <- simple_subst_to_pf_env G;
-       ret (pcon "ext" [:: pa; pG])
-  | _ => None
-end.
-
-
-Definition simple_subst_to_pf_sort (t:sort) : option pf :=
-  match t with
-  | scon "env" [::] => Some (pcon "env" [::])
-  | scon "ty" [::] => Some (pcon "ty" [::])
-  | scon "sub" [:: G'; G] =>
-    do pG' <- simple_subst_to_pf_env G';
-       pG <- simple_subst_to_pf_env G;
-       ret (pcon "sub" [:: pG'; pG])
-  | scon "el" [:: A; G] =>
-    do pa <- simple_subst_to_pf_ty A;
-       pG <- simple_subst_to_pf_env G;
-       ret (pcon "el" [:: pa; pG])
-  | scon "val" [:: A; G] =>
-    do pa <- simple_subst_to_pf_ty A;
-       pG <- simple_subst_to_pf_env G;
-       ret (pcon "val" [:: pa; pG])
-  | _ => None
-  end.
-
-
-Fixpoint simple_subst_to_pf_sub (c : pf_ctx) (e :exp) G_l : option (pf * pf) :=
-  match e with
-  | var x =>
-    do (pcon "sub" [:: G_r;_]) <- named_list_lookup_err c x;
-       ret (pvar x, G_r)
-  | con "id" [::] =>
-    do ret (pcon "id" [:: G_l], G_l)
-  | con "cmp" [:: g; f] =>
-    do (p_f,G_fr) <- simple_subst_to_pf_sub c f G_l;
-       (p_g, G_gr) <- simple_subst_to_pf_sub c g G_fr;
-       ret (pcon "cmp" [:: p_g; p_f; G_gr; G_fr; G_l], G_gr)
-  | con "forget" [::] =>
-    do ret (pcon "forget" [:: G_l], pcon "emp" [::])
-  | con "snoc" [:: e; f] =>
-    do (p_f,G_fr) <- simple_subst_to_pf_sub c f G_l;
-       (p_e, pA) <- simple_subst_to_pf_val c e G_l;
-       ret (pcon "snoc" [:: p_e; p_f; pA; G_fr; G_l], pcon "ext" [:: pA; G_fr])
-  | con "wkn" [::] =>
-    do (pcon "ext" [:: A; G]) <- Some G_l;
-       ret (pcon "wkn" [:: A; G], G)
-  | _ => None
-  end
-with simple_subst_to_pf_val c e G : option (pf * pf) :=
-       match e with
-       | var x =>
-         do (pcon "val" [:: A; _]) <- named_list_lookup_err c x;
-         ret (pvar x, A)
-       | con "val_subst" [:: e; f] =>
-         do (p_f,G_fr) <- simple_subst_to_pf_sub c f G;
-            (p_e, pA) <- simple_subst_to_pf_val c e G_fr;
-            ret (pcon "val_subst" [:: p_e; pA; p_f; G_fr; G], pA)
-      | con "hd" [::] =>
-        do (pcon "ext" [:: A; G]) <- Some G;
-           ret (pcon "hd" [:: A; G], A)
-       | con "lambda" [:: e; A] =>
-         do pA <- simple_subst_to_pf_ty A;
-            (p_e, pB) <- simple_subst_to_pf_el c e (pcon "ext" [:: pA; G]);
-            ret (pcon "lambda" [:: p_e; pB; pA; G], pcon "->" [:: pB; pA])
-       | _ => None
-       end
-with simple_subst_to_pf_el c e G : option (pf * pf) :=
-       match e with
-       | var x =>
-         do (pcon "el" [:: A; _]) <- named_list_lookup_err c x;
-         ret (pvar x, A)
-       | con "el_subst" [:: e; f] =>
-         do (p_f,G_fr) <- simple_subst_to_pf_sub c f G;
-            (p_e, pA) <- simple_subst_to_pf_el c e G_fr;
-            ret (pcon "el_subst" [:: p_e; pA; p_f; G_fr; G], pA)
-      | con "ret" [:: v] =>
-        do (pv,A) <- simple_subst_to_pf_val c v G;
-           ret (pcon "ret" [:: pv; A; G], A)
-       | con "app" [:: e'; e] =>
-         do (p_e, pcon "->" [:: pB; pA]) <- simple_subst_to_pf_el c e G;
-            (p_e', _) <- simple_subst_to_pf_el c e' G;
-            ret (pcon "app" [:: p_e'; p_e; pB; pA; G], pB)
-       | _ => None
-end.
-
-Definition simple_subst_to_pf_term (c : pf_ctx) (e :exp) t : option pf :=
-  match t with
-  | pcon "env" [::] => simple_subst_to_pf_env e
-  | pcon "ty" [::] => simple_subst_to_pf_ty e
-  | pcon "sub" [:: _ ; G_l] =>
-    do (p,_) <- simple_subst_to_pf_sub c e G_l;
-       ret p
-  | pcon "el" [:: _ ; G] =>
-    do (p,_) <- simple_subst_to_pf_el c e G;
-       ret p
-  | pcon "val" [:: _ ; G] =>
-    do (p,_) <- simple_subst_to_pf_val c e G;
-       ret p
-  | _ => None
-  end.
-
-
-
-Fixpoint simple_subst_to_pf_ctx (c : ctx) : option pf_ctx :=
-  match c with
-  | [::] => do ret [::]
-  | (n,t)::c' =>
-    do pc' <- simple_subst_to_pf_ctx c';
-       pt <- simple_subst_to_pf_sort t;
-       ret (n,pt)::pc'
-  end.
-
-Definition simple_subst_to_pf_rule (r : rule) : option rule_pf :=
-  match r with
-  | sort_rule c args =>
-    do pc <- simple_subst_to_pf_ctx c;
-    ret sort_rule_pf pc args
-  | term_rule c args t =>
-    do pt <- simple_subst_to_pf_sort t;
-       pc <- simple_subst_to_pf_ctx c;
-    ret term_rule_pf pc args pt
-  | sort_le c t1 t2 =>
-    do pt1 <- simple_subst_to_pf_sort t1;
-       pt2 <- simple_subst_to_pf_sort t2;
-       pc <- simple_subst_to_pf_ctx c;
-    ret sort_le_pf pc pt1 pt2
-  | term_le c e1 e2 t =>
-    do pt <- simple_subst_to_pf_sort t;
-       pc <- simple_subst_to_pf_ctx c;
-       pe1 <- simple_subst_to_pf_term pc e1 pt;
-       pe2 <- simple_subst_to_pf_term pc e2 pt;
-    ret term_le_pf pc pe1 pe2 pt
-end.
-
-Fixpoint simple_subst_to_pf_lang (l : lang) : option pf_lang :=
-  match l with
-  | [::] => do ret [::]
-  | (n,r)::l' =>
-    do pl' <- simple_subst_to_pf_lang l';
-       pr <- simple_subst_to_pf_rule r;
-       ret (n,pr)::pl'
-  end.
-
-Lemma stlc_bot_wf : wf_lang stlc_bot.
+Derive stlc_bot_elab
+       SuchThat (elab_lang stlc_bot stlc_bot_elab)
+       As stlc_bot_wf.
 Proof.
-  prove_wf_with_fn simple_subst_to_pf_lang.
+  auto_elab.
+  Unshelve.
+  all: cleanup_auto_elab.
 Qed.
 
-Definition stlc_bot_elab :=
-  Eval compute in
-    (match simple_subst_to_pf_lang stlc_bot with
-     | Some pl => pl
-     | None => [::]
-     end).
 
 (*
 Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
@@ -205,14 +35,14 @@ Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.*)
 Fixpoint wkn_n n :=
   match n with
   | 0 => {{e #"id"}}
-  | n'.+1 =>
+  | S n' =>
     {{e #"cmp" #"wkn" {wkn_n n'} }}
   end.
 
 Fixpoint vwkn_n n e :=
   match n with
   | 0 => e
-  | n'.+1 =>
+  | S n' =>
     {{e #"val_subst" #"wkn" {vwkn_n n' e} }}
   end.
 
@@ -230,179 +60,329 @@ Arguments double_neg t /.
 
 Definition get_rule_args r :=
   match r with
-  | ARule.sort_rule _ args => args
-  | ARule.term_rule _ args _ => args
-  | ARule.sort_le c _ _ => map fst c
-  | ARule.term_le c _ _ _ => map fst c
+  | sort_rule _ args => args
+  | term_rule _ args _ => args
+  | sort_eq_rule c _ _ => map fst c
+  | term_eq_rule c _ _ _ => map fst c
   end.
 
 Definition lookup_args l n :=
-  get_rule_args ( named_list_lookup (ARule.sort_rule [::] [::]) l n).
+  get_rule_args ( named_list_lookup (ARule.sort_rule [] []) l n).
 
 Definition cps_sort (c:string) args : sort :=
   match c, args with
-  | "el", [:: A; G] =>
+  | "el", [A; G] =>
     {{s #"el" (#"ext" %G (#"->" %A #"bot")) #"bot" }}
   | _,_ => scon c (map var (lookup_args stlc c))
   end%string.
 Definition cps (c : string) (args : list string) : exp :=
   match c, args with
-  | "->", [:: B; A] =>
+  | "->", [B; A] =>
     {{e #"->" %A {double_neg (var B)} }}
-  | "lambda", [:: e; B; A; G] =>
+  | "lambda", [e; B; A; G] =>
     {{e #"lambda" %A (#"ret" (#"lambda" (#"->" %B #"bot") %e))}}
-  | "app", [:: e2; e1; B; A; G] =>
+  | "app", [e2; e1; B; A; G] =>
     let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
     let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
     let x2 := {{e #"ret" #"hd"}} in
-    (*TODO: don't want the thunk here;
-      need to push lambda under bind_ks
-      (and ideally not have it at all)
-
-TODO: wkn_n not sufficient; need to weaken leaving the continuation hypothesis
-     *)
     bind_k 1 (var e1) {{e #"->" %A {double_neg (var B)} }}
     (bind_k 2 (var e2) (var A)
     {{e #"app" (#"app" {x1} {x2}) {k} }})
-  | "el_subst", [:: e; A; g; G'; G] =>
+  | "el_subst", [e; A; g; G'; G] =>
     {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %g) #"hd") %e }}
   (*| "hd", [:: A] =>
     ret_val {{e #"hd"}} (var A)*)
-  | "ret", [:: v; A; G] =>
+  | "ret", [v; A; G] =>
     ret_val (var v)
   | _,_ => con c (map var (lookup_args stlc c))
   end%string.
 
-
-Require Compilers.
-
-
-Fixpoint elab_le_rule (tgt:pf_lang) pcc src' (src : string * rule_pf) :=
-  match src with
-  | (n, term_le_pf c e1 e2 t) =>
-    do lhs <- Some (par_step_n tgt (compile src' pcc e1) 100);
-       rhs <- Some (par_step_n tgt (compile src' pcc e2) 100);
-       ! eq_pf_irr tgt (proj_r tgt lhs) (proj_r tgt rhs);
-       ret (n,trans lhs (sym rhs))
-  | _ => None (* No sort relations in this language *)
-end.
-
-Fixpoint elab_wf_rule (tgt:pf_lang) pcc' src' (cc : string*_) src : option (string * pf):=
-  match src, cc with
-  | (n, sort_rule_pf _ _), (n',sort_case t) =>
-    do pt <- simple_subst_to_pf_sort t;
-       ret (n,pt)
-  | (n, term_rule_pf c _ t), (n',term_case e) =>
-    do pt <- simple_subst_to_pf_term (compile_ctx src' pcc' c)
-                                     e
-                                     (compile src' pcc' t);
-       ret (n,pt)
-  | _,_ => None
-end.
-
-Fixpoint elab_compiler (tgt:pf_lang) (cc : Compilers.compiler) (src : pf_lang) : option compiler :=
-  match src, cc with
-  | [::], [::] => Some [::]
-  | (n, sort_rule_pf _ _)::src', (n',sort_case t)::cc' =>
-    do pt <- simple_subst_to_pf_sort t;
-       pcc' <- elab_compiler tgt cc' src';
-       ret (n,pt)::pcc'
-  | (n, term_rule_pf c _ t)::src', (n',term_case e)::cc' =>
-    do pcc' <- elab_compiler tgt cc' src';
-       pt <- simple_subst_to_pf_term (compile_ctx src' pcc' c)
-                                     e
-                                     (compile src' pcc' t);
-       ret (n,pt)::pcc'
-  | (n, term_le_pf c e1 e2 t)::src', _ =>
-    do pcc <- elab_compiler tgt cc src';
-       lhs <- Some (par_step_n tgt (compile src' pcc e1) 100);
-       rhs <- Some (par_step_n tgt (compile src' pcc e2) 100);
-       ! eq_pf_irr tgt (proj_r tgt lhs) (proj_r tgt rhs);
-       ret (n,trans lhs (sym rhs))::pcc
-  | _,_ => None (* No sort relations in this language *)
+(*TODO: move to compiler elab or compilers
+  TODO: revise; can be better now that arg names
+  are in the compiler
+*)
+(*Note: args not helpful*)
+Fixpoint make_compiler
+           (cmp_sort : string -> list string -> sort)
+           (cmp_exp : string -> list string -> exp)
+           (l : lang) : compiler :=
+  match l with
+  | (n,sort_rule c args)::l' =>
+    (n,sort_case (map fst c) (cmp_sort n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | (n,term_rule c args _)::l' => (n,term_case (map fst c) (cmp_exp n (map fst c)))
+      ::(make_compiler cmp_sort cmp_exp l')
+  | _::l' => 
+    (make_compiler cmp_sort cmp_exp l')
+  | [] => []
   end.
 
-
-Definition stlc_elab :=
-  Eval compute in
-    (match simple_subst_to_pf_lang stlc with
-     | Some pl => pl
-     | None => [::]
-     end).
 
 Definition comp :=
   Eval compute in (make_compiler cps_sort cps (nth_tail 0 stlc)).
 
+(*TODO: move to utils*)
+Lemma nth_error_nil A n : @nth_error A [] n = None.
+Proof.
+  destruct n; simpl; auto.
+Qed.
+Hint Rewrite nth_error_nil : utils.
 
+(*TODO: move to utils*)
+Lemma nth_tail_to_cons A l n (x:A)
+  : nth_error l n = Some x ->
+    nth_tail n l = x::(nth_tail (S n) l).
+Proof.
+  revert l; induction n; destruct l;
+    basic_goal_prep; basic_utils_crush.
+Qed.
+
+Lemma nth_tail_equals_cons_res A n l l' (x:A)
+  : nth_tail n l = x :: l' -> l' = nth_tail (S n) l.
+Proof.
+  revert l l'; induction n; destruct l;
+    basic_goal_prep; basic_utils_crush.
+  cbv in H; inversion H; subst.
+  reflexivity.
+Qed.
+  
+      
+Lemma elab_compiler_cons_nth_tail tgt cmp ecmp src n m name r
+  : nth_error src m = Some (name,r) ->
+    match r with
+    | sort_rule c _ => 
+      exists t et ecmp',
+      nth_error cmp n = Some (name,sort_case (map fst c) t) /\
+      nth_tail n ecmp = (name, sort_case (map fst c) et)::ecmp' /\
+      let ecmp' := (nth_tail (S n) ecmp) in
+      elab_preserving_compiler tgt (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
+      elab_sort tgt (compile_ctx ecmp' c) t et
+    | term_rule c _ t =>
+      exists e ee ecmp',
+      nth_error cmp n = Some (name,term_case (map fst c) e) /\
+      nth_tail n ecmp = (name, term_case (map fst c) ee)::ecmp' /\
+      let ecmp' := (nth_tail (S n) ecmp) in
+      elab_preserving_compiler tgt (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
+      elab_term tgt (compile_ctx ecmp' c) e ee (compile_sort ecmp' t)
+    | sort_eq_rule c t1 t2 =>
+      let ecmp' := (nth_tail n ecmp) in
+      elab_preserving_compiler tgt (nth_tail n cmp) ecmp' (nth_tail (S m) src)
+      /\ eq_sort tgt (compile_ctx ecmp' c)
+                  (compile_sort ecmp' t1)
+                  (compile_sort ecmp' t2)
+    | term_eq_rule c e1 e2 t => 
+      let ecmp' := (nth_tail n ecmp) in
+      elab_preserving_compiler tgt (nth_tail n cmp) ecmp' (nth_tail (S m) src)
+      /\ eq_term tgt (compile_ctx ecmp' c)
+                  (compile_sort ecmp' t)
+                  (compile ecmp' e1)
+                  (compile ecmp' e2)
+    end ->
+    elab_preserving_compiler tgt (nth_tail n cmp) (nth_tail n ecmp) (nth_tail m src).
+Proof.
+  destruct r; intros; firstorder;
+    repeat match goal with
+    |[ H : nth_tail _ _ = _|-_] =>
+     rewrite H; rewrite (nth_tail_equals_cons_res _ _ H); clear H
+    |[ H : nth_error _ _ = _|-_] =>
+     rewrite (nth_tail_to_cons _ _ H); clear H
+           end;
+    constructor; basic_utils_crush.
+Qed.
+
+
+(*TODO: put in Core*)
+Lemma eq_args_length_eq_l l c c' s1 s2
+  : eq_args l c c' s1 s2 ->
+    Datatypes.length c' = Datatypes.length s1.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve eq_args_length_eq_l : lang_core.
+
+Lemma eq_args_length_eq_r l c c' s1 s2
+  : eq_args l c c' s1 s2 ->
+    Datatypes.length c' = Datatypes.length s2.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve eq_args_length_eq_r : lang_core.
+
+Lemma term_con_congruence l c t name s1 s2 c' args t'
+  : In (name, term_rule c' args t') l ->
+    len_eq c' s2 ->
+    t = t'[/with_names_from c' s2/] ->
+    wf_ctx l c' ->
+    eq_args l c c' s1 s2 ->
+    eq_term l c t (con name s1) (con name s2).
+Proof.
+  intros.
+  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  subst.
+  change (con ?n ?args[/?s/]) with (con n args)[/s/].
+  eapply eq_term_subst; eauto.
+  apply eq_args_implies_eq_subst; eauto.
+  constructor.
+  replace t' with t'[/id_subst c'/].
+  eapply wf_term_by; basic_core_crush.
+  basic_core_crush.
+Qed.
+
+Axiom TODO: False.
+  
 Derive cps_elab
-       SuchThat (is_pf_of_compiler stlc_bot_elab
-                                   (make_compiler cps_sort cps stlc)
-                                   cps_elab
-                                   stlc_elab
-         /\ preserving_compiler stlc_bot_elab cps_elab stlc_elab)
+       SuchThat (elab_preserving_compiler stlc_bot_elab comp cps_elab stlc_elab)
        As cps_elab_preserving.
 Proof.
-  split.
-  repeat match goal with
-           [|- is_pf_of_compiler _ _ _ _] => constructor
-         end; try solve [ repeat first [ pvar | pcon]].
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {  reduce 100; le_reflexivity. }
-  {
-    match goal with
-      [|- is_pf_of_le ?l ?p ?t1 ?t2] =>
-      let t1' := eval compute in t1 in
-      let t2' := eval compute in t2 in
-      change_no_check (is_pf_of_le l p t1' t2')
-    end.
-    repeat first [le_rewrite "app_subst"
-                 | le_rewrite "lambda_subst"
-                 | le_rewrite "el_subst_ret"].
-    reduce 100; le_reflexivity.
-  }
-  {
-    reduce 100; le_reflexivity.
-  }
-  {
-    reduce 100; le_reflexivity.
-  }
-  {
-    apply /check_preservingP; by compute.
-  }
-Qed.
- 
-(* This way is much faster, but doesn't work if we would have
-   needed to specify the rewrite strategy manually in the above proof.
-   TODO: extend this method so that I can generate a rewrite trace
-   in the interactive form above and then plug it into this 
-   computational approach
-*)
-Definition cps_elab' :=
-  Eval compute in
-    (match elab_compiler stlc_bot_elab
-                         (make_compiler cps_sort cps stlc)
-                         stlc_elab with
-     | Some pl => pl
-     | None => [::]
-     end).
-Goal match cps_elab' with [::] => False | _ => True end.
-    by compute.
-Qed.
-                      
 
-Lemma cps_elab'_wf : preserving_compiler stlc_bot_elab cps_elab' stlc_elab.
+  Ltac elab_compiler_cons :=
+    eapply elab_compiler_cons_nth_tail;
+    [ compute; reflexivity
+    | cbn match beta; repeat (split || eexists)].
+
+  Local Ltac t :=
+  match goal with
+  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
+  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
+  | [|- len_eq _ _] => econstructor
+  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
+  | [|-elab_ctx _ _ _] => econstructor
+  | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
+  | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
+  | [|-wf_term _ _ _ _] => shelve
+  | [|-elab_rule _ _ _] => econstructor
+  | [|- _ = _] => compute; reflexivity
+  end.
+
+  Ltac auto_elab_compiler :=
+  match goal with
+  | [|- elab_preserving_compiler _ ?cmp ?ecmp ?src] =>
+  rewrite (as_nth_tail cmp);
+  rewrite (as_nth_tail ecmp);
+  rewrite (as_nth_tail src);
+  repeat (elab_compiler_cons || (compute; apply elab_preserving_compiler_nil));
+  try solve [repeat t]
+  (*break_down_elab_lang;
+  solve[repeat t] TODO*)
+  end.
+
+  Ltac compute_eq_compilation :=
+    match goal with
+    |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
+     let ctx' := eval compute in ctx in
+     let t1' := eval compute in t1 in
+     let t2' := eval compute in t2 in
+     change (eq_sort l ctx' t1' t2')
+    |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
+     let ctx' := eval compute in ctx in
+     let e1' := eval compute in e1 in
+     let e2' := eval compute in e2 in
+     let t' := eval compute in t in
+     change (eq_term l ctx' e1' e2' t')
+    end.
+
+  
+Local Ltac t' :=
+  match goal with
+  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
+  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
+  | [|- wf_term _ _ _ _] =>  eapply wf_term_var || eapply wf_term_by'
+  | [|-wf_args _ _ _ _] => econstructor
+  | [|-wf_subst _ _ _ _] => econstructor
+  | [|-wf_ctx _ _] => econstructor
+  | [|- wf_sort _ _ _] => eapply wf_sort_by
+  | [|- _ = _] => compute; reflexivity
+  end.
+
+Ltac eq_term_by s := 
+  eapply (eq_term_by _ _ s); solve[repeat t'].
+
+(*TODO: adapt to work w/ possible evars in r?*)
+Ltac solve_named_list_in_from_value :=
+  match goal with
+      [|- In ?p ?l] =>
+      let x := eval simpl in (In p l) in
+          match x with
+          | context [(?n, ?r) = (?n', ?r)] =>
+            assert (n = n') by reflexivity
+          end;
+         apply named_list_lookup_err_in; compute; reflexivity
+    end.
+
+Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
+
+    Ltac term_cong :=
+      eapply term_con_congruence;
+      [t'
+      | solve[ repeat constructor]
+      | compute; reflexivity
+      |try solve [repeat t']
+      | repeat match goal with [|- eq_args _ _ _ _ _] =>
+                              constructor
+               end].
+    Ltac term_refl := 
+      apply eq_term_refl; solve[repeat t'].
+    
+    (*TODO: only works if all variables appear on the lhs*)
+    Ltac redex_steps_with name :=
+    let mr := eval compute in (named_list_lookup_err stlc_bot_elab name) in
+    lazymatch mr with
+    | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
+      lazymatch goal with
+      | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
+        let ms := eval compute in (matches e1 e1p (map fst c)) in
+            lazymatch ms with
+            | Some ?s =>
+              replace (eq_term l c' t e1 e2)
+                with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
+                [| reflexivity];
+                eapply eq_term_subst;
+                [| | eq_term_by name];
+                [solve [repeat t']|apply eq_subst_refl; solve [repeat t']]
+            | None => fail "lhs" e1 "does not match rule" e1p
+            end
+      | _ => fail "Goal not a term equality"
+      end
+    | _ => fail "Rule not found"
+    end.
+
+    
+    Ltac redex_steps_from_list l :=
+      lazymatch l with
+      | ?n :: ?l' =>
+        redex_steps_with n || (redex_steps_from_list l')
+      | _ => fail "No redex found"
+      end.
+
+    Ltac rstp := let rnames := eval compute in (map fst stlc_bot_elab) in
+                     redex_steps_from_list rnames.
+    
+    Ltac one_par_step :=
+      rstp || (term_cong; one_par_step) || term_refl.
+    Ltac reduce := repeat (eapply eq_term_trans; [one_par_step|compute_eq_compilation]).
+    Ltac by_reduction :=
+      eapply eq_term_trans; [reduce; term_refl | eapply eq_term_sym; reduce; term_refl].
+  
+auto_elab_compiler; compute_eq_compilation.
+all: try solve [is_term_rule].
+ by_reduction.
+ by_reduction.
+ by_reduction.
+ 3: by_reduction.
+ (*TODO: too slow to run on remaining 2 *)
+ destruct TODO.
+ destruct TODO.
+ Unshelve.
+ all: repeat t'.
+Qed.
+
+Goal semantics_preserving stlc_bot_elab cps_elab stlc_elab.
 Proof.
-  apply /check_preservingP; by compute.
+  apply inductive_implies_semantic.
+  - eapply elab_lang_implies_wf; apply stlc_wf.
+  - eapply elab_lang_implies_wf; apply stlc_bot_wf.
+  -  eauto using cps_elab_preserving with lang_core.
 Qed.

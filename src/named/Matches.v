@@ -1,32 +1,30 @@
 (* 
  Gallina functions for matching an expression against a pattern
-*)
-Require Import mathcomp.ssreflect.all_ssreflect.
+ *)
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-
-From Ltac2 Require Import Ltac2.
-Set Default Proof Mode "Classic".
+Require Import String List.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Exp ARule ImCore.
-Require Import String.
+From Named Require Import Core.
+Import Core.Notations.
 Import OptionMonad.
 
-Require Coq.derive.Derive.
-
+(*
 Set Default Proof Mode "Ltac2".
+*)
 
 
 (* constructs the union of the two lists viewed as maps,
    choosing the second list when they disagree*)
-Fixpoint unordered_merge_unsafe {A : eqType} (l1 l2 : named_list A) :=
+Fixpoint unordered_merge_unsafe {A} (l1 l2 : named_list A) :=
   match l1 with
-  | [::] => l2
+  | [] => l2
   | (n,e)::l1' =>
-    (if fresh n l2 then [:: (n,e)] else [::])
+    (if compute_fresh n l2 then [(n,e)] else [])
       ++ (unordered_merge_unsafe l1' l2)
   end.
 
@@ -34,7 +32,7 @@ Section InnerLoop.
   Context (matches_unordered : forall (e pat : exp), option subst).
   Fixpoint args_match_unordered (s pat : list exp) : option subst :=
        match pat, s with
-       | [::],[::] => do ret [::]
+       | [],[] => do ret []
        | pe::pat',e::s' =>
          do res_e <- matches_unordered e pe;
             res_s <- args_match_unordered s' pat';
@@ -43,15 +41,29 @@ Section InnerLoop.
        end.
 End InnerLoop.
 
+(* TODO: move to exp*)
+Fixpoint exp_dec (x y : exp) {struct x} : {x = y} + {~ x = y}.
+  refine (match x,y with
+          | var n, var m => if string_dec n m then left _ else right _
+          | con n s, con n' s' =>
+            if string_dec n n'
+            then if list_eq_dec exp_dec s s' then left _ else right _
+            else right _
+          | _, _ => right _
+          end).
+  all: try let H := fresh in intro H; inversion H; clear H; subst.
+  all: basic_exp_crush.
+Defined.
+
 (* Finds the subst s such that s >= acc, e = pat[/s/]
    and (map fst s) = FV(e) U (map fst acc), if such a substitution exists.
    Behavior intentionally unspecified otherwise.
 *)
 Fixpoint matches_unordered (e pat : exp) : option subst :=
   match pat, e with
-  | var px, _ => Some ([:: (px,e)])
+  | var px, _ => Some ([(px,e)])
   | con pn ps, con n s =>
-    if pn == n then args_match_unordered matches_unordered s ps else None
+    if string_dec pn n then args_match_unordered matches_unordered s ps else None
   | _,_ => None
 end.
 
@@ -64,7 +76,7 @@ Definition matches_unordered e pat :=
 
 Fixpoint order_subst' s args : option subst :=
   match args with
-  | [::] => do ret [::]
+  | [] => do ret []
   | x::args' =>
     do e <- named_list_lookup_err s x;
        s' <- order_subst' s args';
@@ -105,7 +117,7 @@ Definition order_subst s args :=
   (*guarantees that args is a permutation of (map fst s)
     if this function returns a result.
    *)
-  if size s == size args then order_subst' s args else None.
+  if Nat.eqb (length s) (length args) then order_subst' s args else None.
 
 (*
 Lemma order_subst_vals s args s' p
@@ -141,7 +153,7 @@ Proof.
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
   | scon n s, scon n_pat s_pat =>
-    if n == n_pat then
+    if string_dec n n_pat then
       (* multiply depth by 2 because each level consumes 1 fuel for exp
      and 1 for its args
        *)
@@ -156,7 +168,7 @@ Definition matches (e pat : exp) (args : list string) : option subst :=
   do s <- matches_unordered e pat;
      s' <- order_subst s args;
      (* this condition can fail because merge doesn't check for conflicts *)
-     !e == pat[/s'/];
+     !exp_dec e pat[/s'/];
      ret s'.
 
 
@@ -169,30 +181,31 @@ Lemma matches_recognizes e pat args s
     e = pat[/s/].
 Proof.
   unfold matches.
-  ltac1:(case_match;[|inversion]).
-  ltac1:(case_match;[|inversion]).
-  ltac1:(case_match;[|inversion]).
+  (case_match;[|inversion 1]).
+  (case_match;[|inversion 1]).
+  (case_match;[|inversion 1]).
   symmetry in HeqH1.
   intro seq; inversion seq; subst.
-  ltac1:(apply /eqP); assumption.
+  eauto.
 Qed.
+
 
 Lemma order_subst_args s args s'
   : order_subst s args = Some s' ->
     args = map fst s'.
 Proof.
   unfold order_subst.
-  ltac1:(case_match;[|inversion]).
+  case_match;[|inversion 1].
   clear HeqH.
   revert s'.
   induction args; intro s'; simpl.
   {
-    ltac1:(inversion); subst; reflexivity.
+    inversion 1; subst; reflexivity.
   }
   {
-    ltac1:(case_match;[|inversion]).
-    ltac1:(case_match;[|inversion]).
-    ltac1:(inversion).
+    case_match;[|inversion 1].
+    case_match;[|inversion 1].
+    inversion 1.
     simpl in *.
     f_equal.
     eauto.
@@ -204,22 +217,23 @@ Lemma matches_args e pat args s
     args = map fst s.
 Proof.
   unfold matches.
-  ltac1:(case_match;[|inversion]).
-  ltac1:(case_match;[|inversion]).
-  ltac1:(case_match;[|inversion]).
-  ltac1:(inversion); subst.
+  case_match;[|inversion 1].
+  case_match;[|inversion 1].
+  case_match;[|inversion 1].
+  inversion 1.
+  subst.
   eapply order_subst_args.
   symmetry; eauto.
 Qed.
 
-
+Definition is_some {A} (x:option A) := if x then True else False.
 Goal
-  (let e:= con "foo" [:: con "quox" [::]; con "bar" [:: con "baz"[::]]; var "b"]in
-   matches e  (con "foo" [:: con "quox" [::]; var "b"; var "a"]) [::"b";"a"])%string.
-  vm_compute.
-  reflexivity.
+  (let e:= con "foo" [ con "quox" []; con "bar" [ con "baz"[]]; var "b"]in
+   is_some (matches e  (con "foo" [ con "quox" []; var "b"; var "a"]) ["b";"a"])).
+  vm_compute; exact I.
 Qed.
 
+(*
 Variant matchable := match_exp (e:exp) | match_sort (s : sort).
 
 Coercion match_exp : exp >-> matchable.
@@ -231,7 +245,7 @@ Coercion match_sort : sort >-> matchable.
  *)
 Fixpoint match_all_unordered (l_exp l_pat : list matchable): option subst :=
   match l_exp, l_pat with
-  | [::], [::] => do ret [::]
+  | [], [] => do ret []
   | (match_exp e)::l'_exp, (match_exp pat)::l'_pat =>
     do s <- matches_unordered e pat;
        s' <- match_all_unordered l'_exp l'_pat;
@@ -245,7 +259,7 @@ Fixpoint match_all_unordered (l_exp l_pat : list matchable): option subst :=
 
 Fixpoint check_all (l_exp l_pat : list matchable) s :=
   match l_exp, l_pat with
-  | [::],[::] => true
+  | [],[] => true
   | (match_exp e)::l'_exp, (match_exp pat)::l'_pat =>
     (e == pat[/s/]) && (check_all l'_exp l'_pat s)
   | (match_sort e)::l'_exp, (match_sort pat)::l'_pat =>
@@ -374,10 +388,10 @@ Qed.
 
 Definition apply_le_term l n (e1 e2 : exp) (t : sort) : option (subst * subst*ctx) :=
   do (term_le c pat1 pat2 patt) <- named_list_lookup_err l n;
-  (s1,s2) <- match_all_le [:: e1:matchable]
-                          [:: pat1 : matchable]
-                          [:: t:matchable; e2:matchable]
-                          [:: patt:matchable; pat2:matchable]
+  (s1,s2) <- match_all_le [ e1:matchable]
+                          [ pat1 : matchable]
+                          [ t:matchable; e2:matchable]
+                          [ patt:matchable; pat2:matchable]
                           (map fst c);
   ret (s1,s2,c).
 
@@ -423,10 +437,10 @@ Arguments apply_le_term_recognizes n%string_scope [l c e1 e2 t s1 s2 c'].
 
 (*
 Goal match_all_unordered
-            [:: Exp.con "ty_subst"
-                  [:: Exp.var "A"; Exp.con "id" [:: Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable]
-            [:: Exp.con "ty_subst"
-                [:: Exp.var "A"; Exp.con "id" [:: Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable].
+            [ Exp.con "ty_subst"
+                  [ Exp.var "A"; Exp.con "id" [ Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable]
+            [ Exp.con "ty_subst"
+                [ Exp.var "A"; Exp.con "id" [ Exp.var "G"]; Exp.var "G"; Exp.var "G"]:matchable].
 Proof.
   unfold match_all_unordered.
   ltac1:(case_match).
@@ -462,4 +476,5 @@ beta: C |- (\x.e) e'~ e[e'/x]
 ------------------ beta
 (\x.(x,x)) 4 ~ (2+2,4)
 
+*)
 *)
