@@ -90,20 +90,6 @@ c |- e1 = e2 : t'
         (* assumed because the output ctx is wf: fresh name c' ->*)
         eq_term c t[/s2/] e1 e2 ->
         eq_subst c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2)
-  with eq_args : ctx -> ctx -> list exp -> list exp -> list string -> list exp -> list exp -> Prop :=
-  | eq_args_nil : forall c, eq_args c [] [] [] [] [] []
-  | eq_args_cons_ex : forall c c' s1 s2 args es1 es2,
-      eq_args c c' s1 s2 args es1 es2 ->
-      forall name t e1 e2,
-        (* assumed because the output ctx is wf: fresh name c' ->*)
-        eq_term c t[/with_names_from c' es2/] e1 e2 ->
-        eq_args c ((name, t)::c') (e1::s1) (e2::s2) (name::args) (e1::es1) (e2::es2)
-  | eq_args_cons_im : forall c c' s1 s2 args es1 es2,
-      eq_args c c' s1 s2 args es1 es2 ->
-      forall name t e1 e2,
-        (* assumed because the output ctx is wf: fresh name c' ->*)
-        eq_term c t[/with_names_from c' es2/] e1 e2 ->
-        eq_args c ((name, t)::c') s1 s2 args (e1::es1) (e2::es2)
   with wf_term : ctx -> exp -> sort -> Prop :=
   | wf_term_by : forall c n s args c' t,
       In (n, term_rule c' args t) l ->
@@ -144,6 +130,15 @@ c |- e1 = e2 : t'
       wf_ctx c ->
       wf_sort c v ->
       wf_ctx ((name,v)::c).
+
+  Inductive eq_args : ctx -> ctx -> list exp -> list exp -> Prop :=
+  | eq_args_nil : forall c, eq_args c [] [] []
+  | eq_args_cons : forall c c' es1 es2,
+      eq_args c c' es1 es2 ->
+      forall name t e1 e2,
+        (* assumed because the output ctx is wf: fresh name c' ->*)
+        eq_term c t[/with_names_from c' es2/] e1 e2 ->
+        eq_args c ((name, t)::c') (e1::es1) (e2::es2).
   
   Inductive wf_subst c : subst -> ctx -> Prop :=
   | wf_subst_nil : wf_subst c [] []
@@ -934,3 +929,10 @@ Scheme wf_sort_ind'' := Minimality for wf_sort Sort Prop
   with wf_args_ind'' := Minimality for wf_args Sort Prop.
 Combined Scheme wf_judge_ind
          from wf_sort_ind'', wf_term_ind'', wf_args_ind''.
+
+Lemma eq_args_implies_eq_subst l c c' s1 s2
+  : eq_args l c c' s1 s2 ->
+    eq_subst l c c' (with_names_from c' s1) (with_names_from c' s2).
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
