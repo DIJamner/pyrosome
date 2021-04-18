@@ -15,7 +15,7 @@ Inductive rule : Set :=
 | term_rule :  ctx -> list string (*explicit args*) -> sort -> rule
 | sort_eq_rule : ctx -> sort -> sort -> rule
 | term_eq_rule : ctx -> exp -> exp -> sort -> rule.
-Hint Constructors rule : exp.
+#[export] Hint Constructors rule : exp.
 
 Definition lang := named_list rule.
 
@@ -100,6 +100,12 @@ Lemma invert_eq_term_eq_rule_term_eq_rule c c' e1 e2 e1' e2' t t'
 Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_term_eq_rule : exp.
 
+
+(*Moved out of the module because Coq seems
+  to include them at the the top level anyway
+ *)
+Declare Custom Entry constr_conclusion.
+
 Module Notations.
 
 (*
@@ -124,9 +130,6 @@ Check [TMP ------------------------------------------------].
 
 Definition with_rule_bar (rb : rule_bar) (r : string*rule) := r.
  *)
-
-  Declare Custom Entry constr_conclusion.
-
   
   Declare Scope arule_scope.
   Delimit Scope arule_scope with arule.

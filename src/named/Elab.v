@@ -151,11 +151,11 @@ Section TermsAndRules.
  
 End TermsAndRules.
 
-Hint Constructors elab_sort elab_term elab_args elab_ctx : lang_core.
- Hint Resolve elab_sort_implies_wf : lang_core.
- Hint Resolve elab_term_implies_wf : lang_core.
- Hint Resolve elab_args_implies_wf : lang_core.
- Hint Resolve elab_ctx_implies_wf : lang_core.
+#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx : lang_core.
+#[export] Hint Resolve elab_sort_implies_wf : lang_core.
+#[export] Hint Resolve elab_term_implies_wf : lang_core.
+#[export] Hint Resolve elab_args_implies_wf : lang_core.
+#[export] Hint Resolve elab_ctx_implies_wf : lang_core.
 
 Inductive elab_lang : lang -> lang -> Prop :=
 | elab_lang_nil : elab_lang [] []
@@ -173,7 +173,7 @@ Lemma elab_lang_preserves_fresh c ec n
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
-Hint Resolve elab_lang_preserves_fresh : lang_core.
+#[export] Hint Resolve elab_lang_preserves_fresh : lang_core.
 
 
 Local Hint Resolve elab_rule_implies_wf : lang_core.

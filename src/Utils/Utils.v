@@ -26,6 +26,14 @@ Tactic Notation "intro_to" constr(ty) :=
          end.
 
 
+Ltac break :=
+  repeat match goal with
+         | [H: unit|-_]=> destruct H
+         | [H: _*_|-_]=> destruct H
+         | [H: _/\_|-_]=> destruct H
+         | [H: exists x, _|-_]=> destruct H
+         end.
+
 (* Performs inversion on H exactly when 
     either: 
     - no constructors can produce H and the goal is solved
@@ -54,10 +62,12 @@ Ltac solve_invert_constr_eq_lemma :=
 
 
 Ltac generic_crush rewrite_tac hint_auto :=
-  subst; rewrite_tac;
-  firstorder (subst; rewrite_tac;hint_auto;
-              try (solve [ exfalso; hint_auto
-                         | repeat (f_equal; hint_auto)])).
+  repeat (intuition break; subst; rewrite_tac;
+          firstorder unshelve hint_auto).
+(*try (solve [ repeat (unshelve f_equal; hint_auto)])). *)
+
+#[export] Hint Extern 100 => exfalso : utils.
+#[export] Hint Extern 100 (_ _ = _ _) => f_equal : utils.
 
 (*TODO: generalize this to something that works nicely for generic_crush
 Tactic Notation "text" ident(u) := eauto with u.
@@ -202,13 +212,6 @@ Fixpoint all_fresh {A} (l : named_list A) :=
   end.
 Arguments all_fresh {_} !_ /.
 
-Ltac break :=
-  repeat match goal with
-         | [H: unit|-_]=> destruct H
-         | [H: _*_|-_]=> destruct H
-         | [H: _/\_|-_]=> destruct H
-         end.
-
 
 Hint Rewrite pair_equal_spec : utils.
 
@@ -249,9 +252,13 @@ Qed.
 *)
 
 
+(*Moved out of the module because Coq seems
+  to include them at the the top level anyway
+ *)
+Declare Custom Entry monadic_do.
+
 Module OptionMonad.
   (* TODO: use general monad instead of duplicating*)
-  Declare Custom Entry monadic_do.
   
   Notation "'do' e" := (e) (at level 92, e custom monadic_do).
 
@@ -610,6 +617,14 @@ Proof.
 Qed.
 #[export] Hint Resolve named_list_lookup_none : utils.
 
+
+Lemma in_named_map A B (f : A -> B) l n x
+  : In (n,x) l -> In (n, f x) (named_map f l).
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+#[export] Hint Resolve in_named_map : utils.
+
 (* decomposes the way you want \in to on all_fresh lists*)
 Fixpoint in_once {A} n e (l : named_list A) : Prop :=
   match l with
@@ -623,9 +638,9 @@ Arguments in_once {A} n e !l/.
 Lemma in_once_notin {A} n (e : A) l
   : ~ In n (map fst l) -> ~(in_once n e l).
 Proof using .
-  induction l; basic_goal_prep; basic_utils_crush.
+  induction l; basic_goal_prep;
+  basic_utils_crush.
 Qed.
-
 
 Lemma all_fresh_in_once {A} n (e : A) l
   : all_fresh l -> (In (n,e) l) <-> in_once n e l.
@@ -709,7 +724,7 @@ Lemma sublist_nil A (l : list A) : sublist [] l.
 Proof.
   destruct l; simpl; easy.
 Qed.
-Hint Resolve sublist_nil : utils.
+#[export] Hint Resolve sublist_nil : utils.
 
 Fixpoint compute_sublist {A} (dec : forall x y : A, {x = y} + {x <> y}) (s l : list A) {struct l} :=
   match s,l with
@@ -730,4 +745,28 @@ Proof.
   intros; unfold nth_tail; reflexivity.
 Qed.
 
+Lemma fresh_app A s (l1 l2 : named_list A)
+  : fresh s (l1 ++ l2) <-> fresh s l1 /\ fresh s l2.
+Proof.
+  induction l1; basic_goal_prep; basic_utils_crush.
+Qed.
+Hint Rewrite fresh_app : utils.
+Hint Rewrite in_app_iff : utils.
 
+
+Lemma all_fresh_insert_is_fresh A (a:A) l1 l2 s
+  : all_fresh (l1++(s,a)::l2) ->
+    fresh s l1.
+Proof.
+  induction l1; basic_goal_prep;
+  basic_utils_crush.  
+Qed.
+Local Hint Resolve all_fresh_insert_is_fresh : utils.
+
+Lemma all_fresh_insert_rest_is_fresh A (a:A) l1 l2 s
+  : all_fresh (l1++(s,a)::l2) ->
+    all_fresh (l1++l2).
+Proof.
+  induction l1; basic_goal_prep; basic_utils_crush.
+Qed.
+#[export] Hint Resolve all_fresh_insert_rest_is_fresh : utils.

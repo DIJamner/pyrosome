@@ -172,6 +172,20 @@ Definition matches (e pat : exp) (args : list string) : option subst :=
      ret s'.
 
 
+(*TODO: move to exp*)
+Definition sort_dec : forall x y : sort, {x = y} + {~ x = y}.
+  decide equality.
+  - apply (list_eq_dec exp_dec).
+  - apply string_dec.
+Defined.
+
+Definition matches_sort t pat (args : list string) : option subst :=
+  do s <- matches_unordered_sort t pat;
+     s' <- order_subst s args;
+     (* this condition can fail because merge doesn't check for conflicts *)
+     !sort_dec t pat[/s'/];
+     ret s'.
+
 (* This lemma is pretty much trivial, but it's the useful property.
    A 'completeness' lemma is much harder, but also not as useful
    for proofs of positive statements.
@@ -181,6 +195,20 @@ Lemma matches_recognizes e pat args s
     e = pat[/s/].
 Proof.
   unfold matches.
+  (case_match;[|inversion 1]).
+  (case_match;[|inversion 1]).
+  (case_match;[|inversion 1]).
+  symmetry in HeqH1.
+  intro seq; inversion seq; subst.
+  eauto.
+Qed.
+
+
+Lemma matches_sort_recognizes e pat args s
+  : matches_sort e pat args = Some s ->
+    e = pat[/s/].
+Proof.
+  unfold matches_sort.
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).

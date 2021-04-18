@@ -459,91 +459,6 @@ Fixpoint eq_exp e1 e2 {struct e1} : bool :=
   end.
 
 
-
-(*
-Definition eq_sort (t1 t2 : sort) :=
-  let (n1, s1) := t1 in
-  let (n2, s2) := t2 in
-  (n1 == n2) && (s1 == s2).
-*)
-
-(* TODO: rest of the expression lemmas
-
-(* TODO: how many of these should be part of the substable class?*)
-Lemma ws_exp_mono s (v : exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
-Proof using .
-  elim: v; intros; simpl in *.
-  {
-    suff: (n0 =? n = false)%string.
-    { by move ->. }
-    {
-      apply /negP.
-      apply /negP.
-      eapply fresh_neq_in_fst; eauto.
-    }
-  }
-  {
-    f_equal.
-    elim: l H H1; intros; simpl in *; auto.
-    move: H2 => /andP []; intros.
-    move: H1 => []; intros.
-    f_equal; eauto.
-  }
-Qed.
-
-Lemma ws_args_mono s (v : list exp) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
-Proof using .
-  elim: v; intros; simpl in *; auto.
-  {
-    move: H1 => /andP []; intros.
-    f_equal; eauto using ws_exp_mono.
-  }
-Qed.
-
-Lemma ws_sort_mono s (v : sort) n e : fresh n s -> well_scoped (map fst s) v -> v[/(n,e)::s/] = v[/s/].
-Proof using .
-  case: v; intros; simpl in *.
-  f_equal; eauto using ws_args_mono.
-Qed.
-
-Lemma ws_subst_lookup args s n
-  : well_scoped args s -> n \in map fst s -> well_scoped args (subst_lookup s n).
-Proof using .
-  elim: s; intros; simpl in *; break; auto.
-  move: H1; rewrite in_cons; cbn.  
-  case neq : (n=?s)%string; simpl; auto.
-Qed.
-  
-Lemma ws_exp_subst args s (v : exp)
-  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
-Proof using .
-  elim: v; intros; simpl in *; auto using ws_subst_lookup.
-  elim: l H H1; intros; simpl in *; break; auto.
-  break_goal; auto.
-Qed.  
-
-Lemma ws_args_subst args s (v : list exp)
-  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
-Proof using .
-  elim: v; intros; simpl in *; auto; break.
-  break_goal; auto using ws_exp_subst.
-Qed.
-
-Lemma ws_sort_subst args s (v : sort)
-  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
-Proof using .
-  case: v; intros; simpl in *; break; auto using ws_args_subst.
-Qed.
-
-Lemma ws_subst_subst args s (v : subst)
-  : well_scoped args s -> well_scoped (map fst s) v -> well_scoped args v[/s/].
-Proof using .
-  elim: v; intros; break; simpl in *; break; auto.
-  break_goal; auto using ws_exp_subst.
-  by rewrite named_map_fst_eq.
-Qed.  
-*)
-
 Ltac fold_Substable :=
   try change (named_map (exp_subst ?s') ?s) with s[/s'/];
   try change (exp_subst ?s ?e) with e[/s/];
@@ -552,106 +467,19 @@ Ltac fold_Substable :=
   try change (subst_cmp ?s ?e) with e[/s/];
   try change (map (exp_var_map (subst_lookup ?s')) ?s) with s[/s'/].
 
-(*
-Lemma ws_subst_args args (s : subst)
-  : well_scoped args s = (all_fresh s) && (well_scoped args (map snd s)).
-Proof using .
-  elim: s; simpl; auto.
-  case; intros n0 e0 s IH; simpl.
-  unfold well_scoped in IH; simpl in *.
-  rewrite IH.
-  ring.
-Qed.
-
-Lemma ws_exp_ext_ctx args n (e : exp)
-  : well_scoped args e -> well_scoped (n::args) e.
-Proof using .
-  elim: e.
-  {
-    intros; simpl in *.
-    rewrite in_cons.
-    apply /orP; by right.
-  }
-  {
-    intros until l.
-    elim: l; intros; simpl in *; break; auto.
-    break_goal; auto.
-  }
-Qed.
-
-Lemma ws_args_ext_ctx args n (l : list exp)
-  : well_scoped args l -> well_scoped (n::args) l.
-Proof using .
-  elim: l; intros; simpl in *; break; auto.
-  break_goal; auto using ws_exp_ext_ctx.
-Qed.
-
-Lemma ws_sort_ext_ctx args n (e : sort)
-  : well_scoped args e -> well_scoped (n::args) e.
-Proof using .
-  case: e; intros; simpl; auto using ws_args_ext_ctx.
-Qed.
-    
-Lemma sort_in_ws c n t : ws_ctx c -> (n,t) \in c -> ws_sort (map fst c) t.
-Proof using .
-  elim: c; intros; break; simpl in *; break; auto.
-  match goal with [H : is_true(_ \in _::_)|- _]=>
-                  move: H;rewrite in_cons; move /orP => [] end.
-  {
-    move /eqP => []; intros; subst.
-    auto using ws_sort_ext_ctx.
-  }
-  {
-    intros.
-    auto using ws_sort_ext_ctx.
-  }
-Qed.
-
-Definition id_subst args : subst := map (fun x => (x,var x)) args.
-
-Lemma id_subst_reduce args (e : exp)
-  : e[/id_subst args/] = e.
-Proof.
-  elim: e.
-  {
-    intros; cbn.
-    elim args.
-    { reflexivity. }
-    {
-      intros; simpl.
-      case_match.
-      symmetry in HeqH0.
-      move: HeqH0 => /eqP -> //=.
-      exact H.
-    }
-  }
-  {
-    intros; cbn; f_equal.
-    elim: l H; simpl; intros; break; f_equal.
-    exact H0.
-    auto.
-  }
-Qed.
 
 
-Lemma id_subst_reduce_sort args (e : sort)
-  : e[/id_subst args/] = e.
-Proof.
-  destruct e.
-  intros; cbn; f_equal.
-  elim: l; simpl; intros; break; f_equal; eauto using id_subst_reduce.
-Qed.
+(*Moved out of the module because Coq seems
+  to include them at the the top level anyway
+ *)
+Declare Custom Entry exp.
+Declare Custom Entry sort.
 
-*)
+
+Declare Custom Entry ctx.
+Declare Custom Entry ctx_binding.
 
 Module Notations.
-
-  Declare Custom Entry exp.
-  Declare Custom Entry sort.
-  
-
-  Declare Custom Entry ctx.
-  Declare Custom Entry ctx_binding.
 
   (* Since contexts are regular lists, 
      we need a scope to determine when to print them *)

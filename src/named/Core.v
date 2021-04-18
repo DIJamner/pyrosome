@@ -180,7 +180,7 @@ Inductive wf_lang : lang -> Prop :=
     wf_rule l r ->
     wf_lang ((n,r)::l).
   
-Hint Constructors eq_sort eq_term eq_subst eq_args
+#[export] Hint Constructors eq_sort eq_term eq_subst eq_args
      wf_sort wf_term wf_subst wf_args wf_ctx
      wf_rule wf_lang : lang_core.
 
@@ -350,16 +350,6 @@ Ltac use_rule_in_wf :=
     pose proof (rule_in_wf _ _ H Hin)
   end.
 
-(*TODO: come up w/ a more systematic way of constructing this*)
-Ltac with_rule_in_wf_crush :=
-  let rewrite_tac := autorewrite with utils exp lang_core in * in
-  let hint_auto := eauto with utils exp lang_core in
-          subst; rewrite_tac; firstorder;
-                   try use_rule_in_wf; rewrite_tac;
-  firstorder (subst; rewrite_tac; hint_auto;
-              try (solve [ exfalso; hint_auto
-                         | repeat (f_equal; hint_auto)])).
-
 Lemma wf_subst_from_wf_args l c s c'
   : wf_args l c s c' ->
     wf_subst l c (with_names_from c' s) c'.
@@ -497,7 +487,7 @@ Local Lemma wf_implies_ws l
            wf_ctx l c -> ws_ctx c).
 Proof using.
   intros; apply judge_ind; basic_goal_prep;
-    basic_core_crush.
+        basic_core_crush.
   all:
     (*TODO: how to automate better/get into crush?*)
     try match goal with
@@ -630,15 +620,15 @@ Proof using.
   {
     replace t1 with t1[/id_subst c/]; [|basic_core_crush].
     replace t2 with t2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_sort_subst; [|with_rule_in_wf_crush..].
-    with_rule_in_wf_crush.
+    eapply eq_sort_subst; [|basic_core_crush..].
+    use_rule_in_wf; basic_core_crush.
   }
   {
     replace t with t[/id_subst c/]; [|basic_core_crush].
     replace e1 with e1[/id_subst c/]; [|basic_core_crush].
     replace e2 with e2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_term_subst; [|with_rule_in_wf_crush..].
-    with_rule_in_wf_crush.
+    eapply eq_term_subst; [|basic_core_crush..].
+    use_rule_in_wf; basic_core_crush.
   }
 Qed.
 
@@ -747,7 +737,7 @@ Local Lemma subst_mono l
 Proof.
   intro wfl.
   apply judge_ind; basic_goal_prep; 
-    with_rule_in_wf_crush.
+    try use_rule_in_wf;basic_core_crush.
   {
     constructor; fold_Substable.
     { basic_core_crush. }
@@ -778,7 +768,7 @@ Proof.
       rewrite with_names_from_args_subst.
       rewrite <- subst_assoc.
       (*TODO remove associativity hint?*)
-      apply H0; basic_core_crush.
+      eauto with utils lang_core.
       basic_core_crush.
     }
   }
@@ -828,7 +818,7 @@ Local Lemma checked_subproperties l
            wf_ctx l c -> True).
 Proof using.
   intros; apply judge_ind; basic_goal_prep;
-    with_rule_in_wf_crush.
+    try use_rule_in_wf;basic_core_crush.
 Qed.
 
 Lemma eq_sort_wf_l l c t1 t2
@@ -935,4 +925,103 @@ Lemma eq_args_implies_eq_subst l c c' s1 s2
     eq_subst l c c' (with_names_from c' s1) (with_names_from c' s2).
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+
+Lemma wf_rule_lang_monotonicity_app l l' r
+  : wf_rule l r -> wf_rule (l' ++ l) r.
+Proof.
+  induction l'; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
+
+
+Local Lemma lang_insert_mono l' l name r
+  : (forall c t1 t2,
+        eq_sort (l' ++ l) c t1 t2 ->
+        eq_sort (l'++(name,r)::l) c t1 t2)
+    /\ (forall c t e1 e2,
+           eq_term (l' ++ l) c t e1 e2 ->
+           eq_term (l'++(name,r)::l) c t e1 e2)
+    /\ (forall c c' s1 s2,
+           eq_subst (l' ++ l) c c' s1 s2 ->
+           eq_subst (l'++(name,r)::l) c c' s1 s2)
+    /\ (forall c t,
+           wf_sort (l' ++ l) c t ->
+           wf_sort (l'++(name,r)::l) c t)
+    /\ (forall c e t,
+           wf_term (l' ++ l) c e t ->
+           wf_term (l'++(name,r)::l) c e t)
+    /\ (forall c s c',
+           wf_args (l' ++ l) c s c' ->
+           wf_args (l'++(name,r)::l) c s c')
+    /\ (forall c,
+           wf_ctx (l' ++ l) c ->
+           wf_ctx (l'++(name,r)::l) c).
+Proof using.
+  apply judge_ind; basic_goal_prep; basic_core_crush.
+  1,2: eapply eq_sort_by; basic_core_crush.
+  1,2: eapply eq_term_by; basic_core_crush.
+  1,2: eapply wf_sort_by; basic_core_crush.
+  1,2: eapply wf_term_by; basic_core_crush.
+Qed.
+
+Definition eq_sort_lang_insert_monotonicity l' l name r
+  := proj1 (lang_insert_mono l' l name r).
+#[export] Hint Resolve eq_sort_lang_insert_monotonicity : lang_core.
+
+Definition eq_term_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (lang_insert_mono l' l name r)).
+#[export] Hint Resolve eq_term_lang_insert_monotonicity : lang_core.
+
+Definition eq_subst_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (proj2 (lang_insert_mono l' l name r))).
+#[export] Hint Resolve eq_subst_lang_insert_monotonicity : lang_core.
+
+Definition wf_sort_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))).
+#[export] Hint Resolve wf_sort_lang_insert_monotonicity : lang_core.
+
+Definition wf_term_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r))))).
+#[export] Hint Resolve wf_term_lang_insert_monotonicity : lang_core.
+
+Definition wf_args_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))))).
+#[export] Hint Resolve wf_args_lang_insert_monotonicity : lang_core.
+
+Definition wf_ctx_lang_insert_monotonicity l' l name r
+  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))))).
+#[export] Hint Resolve wf_ctx_lang_insert_monotonicity : lang_core.
+
+Lemma wf_rule_lang_insert_monotonicity l' l name r' r
+  : wf_rule (l'++l) r -> wf_rule (l'++(name, r') :: l) r.
+Proof.
+  inversion 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_rule_lang_insert_monotonicity : lang_core.
+
+
+Lemma lang_insert_wf l' l r s
+  : fresh s (l'++l) ->
+    wf_rule l r ->
+    wf_lang (l' ++ l) ->
+    wf_lang (l' ++ (s,r)::l).
+Proof.
+  induction l'; inversion 3; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve lang_insert_wf : lang_core.
+
+
+Theorem lang_sum_wf l1 l2 l_pre
+  : all_fresh (l1++l2) ->
+    wf_lang (l1++l_pre) ->
+    wf_lang (l2++l_pre) ->
+    wf_lang (l1++l2++l_pre).
+Proof.
+  induction l2; inversion 3; basic_goal_prep; basic_core_crush.
+  apply lang_insert_wf; basic_core_crush.
+  (*Not included in auto hints because it could trigger too often.
+    TODO: assess whether this really impacts performance.
+   *)
+  eapply all_fresh_insert_is_fresh; eauto.
 Qed.

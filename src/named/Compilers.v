@@ -208,9 +208,11 @@ Definition all_constructors_sort P t :=
   | scon n s => P n /\ all (all_constructors P) s
   end.
 
-Definition all_constructors_ctx P (c : ctx) :=
-  all (fun '(_,t) => all_constructors_sort P t) c.
-Arguments all_constructors_ctx /.
+(*We use a notation so that auto recognizes it after
+  reduction
+*) 
+Notation all_constructors_ctx P c :=
+  (all (fun '(_,t) => all_constructors_sort P t) c).
 
 Lemma compile_strengthen_term cmp n cc e
   : fresh n cmp ->
@@ -380,10 +382,8 @@ Proof.
     basic_goal_prep; try use_rule_in_wf;
       basic_core_crush.
   (*TODO: why is this needed? should be automated*)
-  all: intuition eauto with lang_core.
   all: use_rule_in_wf;autorewrite with lang_core in *;
     intuition eauto with lang_core.
-  all: eapply all_constructors_ctx_from_wf; eauto with lang_core.
 Qed.
 
 
@@ -394,11 +394,11 @@ Lemma inductive_implies_semantic_term_axiom ls lt cmp name c e1 e2 t
 Proof.
   induction 2;
     basic_goal_prep;
-    with_rule_in_wf_crush.
+    try use_rule_in_wf;
+    basic_core_crush.
   (*TODO: why is this needed? should be automated*)
   all: use_rule_in_wf;autorewrite with lang_core in *;
     intuition eauto with lang_core.
-  all: eapply all_constructors_ctx_from_wf; eauto with lang_core.
 Qed.
 
 
@@ -472,8 +472,8 @@ Proof.
   intros wfl pr wfl';
     revert wfl'; induction pr;
       basic_goal_prep;
-      with_rule_in_wf_crush.
-  all: try eapply all_constructors_ctx_from_wf; eauto with lang_core.
+      try use_rule_in_wf;
+      basic_core_crush.
   all: try solve [use_rule_in_wf; basic_core_crush].
   {
     my_case Hname (name =? n);[|case_match]; basic_core_crush.
@@ -565,9 +565,12 @@ Lemma lang_compiler_sort_case_args_eq lt cmp ls n c args args' e
     args' = map fst c.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
-  pose proof (fresh_lang_fresh_cmp H H1).
-  exfalso.
-  eauto with utils.
+  match goal with
+    [Hp : preserving_compiler _ _ _,
+          H : fresh _ _|-_]=>
+    pose proof (fresh_lang_fresh_cmp Hp H)
+  end.
+  basic_core_crush.
 Qed.
 #[export] Hint Resolve lang_compiler_sort_case_args_eq : lang_core.
 
@@ -579,9 +582,12 @@ Lemma lang_compiler_term_case_args_eq lt cmp ls n c args args' e t
     args' = map fst c.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
-  pose proof (fresh_lang_fresh_cmp H H1).
-  exfalso.
-  eauto with utils.
+  match goal with
+    [Hp : preserving_compiler _ _ _,
+          H : fresh _ _|-_]=>
+    pose proof (fresh_lang_fresh_cmp Hp H)
+  end.
+  basic_core_crush.
 Qed.
 #[export] Hint Resolve lang_compiler_term_case_args_eq : lang_core.
 
@@ -639,8 +645,11 @@ Proof using.
       basic_core_crush.
     {
       fold_Substable.
-      unfold compile_args in H4.
-      rewrite H4.
+      match goal with
+        [H : compile_args _ _ = _|-_] =>
+        unfold compile_args in H;
+          rewrite H
+      end.
       rewrite with_names_from_args_subst.
       reflexivity.
     }
@@ -652,8 +661,11 @@ Proof using.
       basic_core_crush.
     {
       fold_Substable.
-      unfold compile_args in H4.
-      rewrite H4.
+      match goal with
+        [H : compile_args _ _ = _|-_] =>
+        unfold compile_args in H;
+          rewrite H
+      end.
       rewrite with_names_from_args_subst.
       reflexivity.
     }
@@ -704,7 +716,7 @@ Hint Rewrite compile_args_subst : lang_core.
 Lemma compile_subst_with_names_from A cmp (c':named_list A) s
   : (compile_subst cmp (with_names_from c' s)) = with_names_from c' (map (compile cmp) s).
 Proof.
-  unfold compile_subst. Locate with_names_from_map_is_named_map.
+  unfold compile_subst.
   rewrite <- with_names_from_map_is_named_map.
   reflexivity.
 Qed.
@@ -740,11 +752,14 @@ Lemma lang_compiler_conflict_sort_term lt cmp ls n c args args' e
     False.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
-  pose proof (fresh_lang_fresh_cmp H H1).
-  eauto with utils.
+  match goal with
+    [Hp : preserving_compiler _ _ _,
+          H : fresh _ _|-_]=>
+    pose proof (fresh_lang_fresh_cmp Hp H)
+  end.
+  basic_core_crush.
 Qed.
 #[export] Hint Resolve lang_compiler_conflict_sort_term : lang_core.
-
 
   
 Lemma lang_compiler_conflict_term_sort lt cmp ls n c args args' e t
@@ -755,7 +770,11 @@ Lemma lang_compiler_conflict_term_sort lt cmp ls n c args args' e t
     False.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
-  pose proof (fresh_lang_fresh_cmp H H1).
+  match goal with
+    [Hp : preserving_compiler _ _ _,
+          H : fresh _ _|-_]=>
+    pose proof (fresh_lang_fresh_cmp Hp H)
+  end.
   eauto with utils.
 Qed.
 #[export] Hint Resolve lang_compiler_conflict_term_sort : lang_core.
@@ -850,14 +869,6 @@ Proof.
 Qed.
 
 
-(*TODO: move to utils*)
-Lemma in_named_map A B (f : A -> B) l n x
-  : In (n,x) l -> In (n, f x) (named_map f l).
-Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
-Qed.
-Hint Resolve in_named_map : utils.
-
 (*TODO: maybe not necessary with better strengthening lemma?
   See what happens when I use the better one
 *)
@@ -885,7 +896,11 @@ Proof.
   induction ls; 
     basic_goal_prep;
     basic_core_crush.
-  inversion H; subst; auto.
+  (*TODO: This could be automated w/ an inversion lemma*)
+  match goal with
+    [H : rule_compiles_with _ _ _ |-_]=>
+    inversion H; basic_core_crush
+  end.
 Qed.
 Local Hint Resolve lang_compiles_with_sort_ctx_in : lang_core.
 
@@ -897,7 +912,11 @@ Proof.
   induction ls; 
     basic_goal_prep;
     basic_core_crush.
-  inversion H; subst; auto.
+  (*TODO: This could be automated w/ an inversion lemma*)
+  match goal with
+    [H : rule_compiles_with _ _ _ |-_]=>
+    inversion H; basic_core_crush
+  end.
 Qed.
 Local Hint Resolve lang_compiles_with_term_ctx_in : lang_core.
 
@@ -909,7 +928,11 @@ Proof.
   induction ls; 
     basic_goal_prep;
     basic_core_crush.
-  inversion H; subst; auto.
+  (*TODO: This could be automated w/ an inversion lemma*)
+  match goal with
+    [H : rule_compiles_with _ _ _ |-_]=>
+    inversion H; basic_core_crush
+  end.
 Qed.
 Local Hint Resolve lang_compiles_with_term_sort_in : lang_core.
 
@@ -949,7 +972,10 @@ Proof.
   }
   {
     constructor; basic_core_crush.
-    erewrite !compile_sort_subst in H6.
+    match goal with
+      [ H : eq_term _ _ (compile_sort _ _) _ _|-_] =>
+      erewrite !compile_sort_subst in H
+    end.
     all: try match goal with
                [|- map fst _ = map fst _] =>
                symmetry; eauto with lang_core
@@ -958,8 +984,7 @@ Proof.
   }
   {
     eapply inductive_implies_semantic_sort_rule; try eassumption.
-    eapply lang_compiles_with_sort_ctx_in; with_rule_in_wf_crush.
-    with_rule_in_wf_crush.
+    all: try use_rule_in_wf; basic_core_crush.
   }
   {
     erewrite compile_sort_subst; eauto.
@@ -968,10 +993,9 @@ Proof.
                symmetry; eauto with lang_core
              end.
     all: basic_core_crush.
-    assert (wf_ctx ls c') by with_rule_in_wf_crush.
+    assert (wf_ctx ls c') by (use_rule_in_wf; basic_core_crush).
     eapply inductive_implies_semantic_term_rule; try (auto;eassumption).
-    eapply lang_compiles_with_term_ctx_in; with_rule_in_wf_crush.
-    with_rule_in_wf_crush.
+    all: try use_rule_in_wf; basic_core_crush.
   }
   {
     constructor.
@@ -979,13 +1003,19 @@ Proof.
   }
   {
     constructor; basic_core_crush.
-    erewrite !compile_sort_subst in H4.
+    match goal with
+      [ H : wf_term _ _ _ (compile_sort _ _) |-_] =>
+      erewrite !compile_sort_subst in H
+    end.
     all: try match goal with
                [|- map fst _ = map fst _] =>
                symmetry; eauto with lang_core
              end.
     all: basic_core_crush.
-    rewrite compile_subst_with_names_from in H4.
+    match goal with
+      [H : context [compile_subst _ (with_names_from _ _)]|-_] =>
+      rewrite compile_subst_with_names_from in H
+    end.
     rewrite with_names_from_compile_ctx.
     assumption.
   }
@@ -1089,7 +1119,7 @@ Proof.
 Qed.
 #[export] Hint Resolve all_constructors_sort_weaken : lang_core.
 
-Lemma all_constructors_ctx_weaken (P Q : _ -> Prop) c
+Lemma all_constructors_ctx_weaken (P Q : _ -> Prop) (c : ctx)
   : (forall n, P n -> Q n) ->
     all_constructors_ctx P c ->
     all_constructors_ctx Q c.
