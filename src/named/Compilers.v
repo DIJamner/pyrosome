@@ -155,7 +155,7 @@ Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
     (* Notable: only uses the previous parts of the compiler on c *)
     eq_term target (compile_ctx cmp c) (compile_sort cmp t) (compile cmp e1) (compile cmp e2) ->
     preserving_compiler target cmp ((n,term_eq_rule c e1 e2 t) :: l).
-
+#[export] Hint Constructors preserving_compiler : lang_core.
 
 Lemma fresh_compile_ctx x cmp c
   : fresh x (compile_ctx cmp c) <-> fresh x c.

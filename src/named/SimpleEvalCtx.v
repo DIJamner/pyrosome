@@ -1,25 +1,21 @@
-
-Require Import mathcomp.ssreflect.all_ssreflect.
 Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 Set Bullet Behavior "Strict Subproofs".
 
-
-From Ltac2 Require Import Ltac2.
-Set Default Proof Mode "Classic".
+Require Import String List.
+Import ListNotations.
+Open Scope string.
+Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Exp ARule.
-From Named Require Import ImCore Pf PfCore.
-From Named Require Import SimpleVSubst SimpleVSTLC IsPfOf.
-Import Exp.Notations ARule.Notations.
-Require Import String.
+From Named Require Import Core Elab SimpleVSubst SimpleVSTLC Matches.
+Import Core.Notations.
+
+Require Coq.derive.Derive.
 
 Set Default Proof Mode "Classic".
 
 (*An extension to subst_lang *)
 Definition subst_eval_ctx :=
-  [:: (* TODO: do I want a substitution eval ctx? I think no
+  [(* TODO: do I want a substitution eval ctx? I think no
          [:> "G1" : #"env", "G2" : #"env", "G3" : #"env", "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3", "A" : #"ty", "e" : #"el" %"G3" %"A"
         ----------------------------------------------- ("el_subst_cmp")
         #"el_subst" %"f" (#"el_subst" %"g" %"e") = #"el_subst" (#"cmp" %"f" %"g") %"e" : #"el" %"G1" %"A"
@@ -54,9 +50,58 @@ Definition subst_eval_ctx :=
      ]
   ]%arule.
 
-(*TODO: should be proven in subst file*)
-Lemma is_pf_of_wf_lang_vsubst : is_pf_of_wf_lang subst_lang vsubst_elab.
-Admitted.
+
+
+Ltac break_down_elab_lang' :=
+  repeat ((eapply elab_lang_cons_nth_tail; [compute; reflexivity | compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
+  [solve [assumption | compute; apply elab_lang_nil]|..].
+
+Local Ltac t :=
+  match goal with
+  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
+  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
+  | [|- len_eq _ _] => econstructor
+  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
+  | [|-elab_ctx _ _ _] => econstructor
+  | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
+  | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
+  | [|-wf_term _ _ _ _] => shelve
+  | [|-elab_rule _ _ _] => econstructor
+  | [|- _ = _] => compute; reflexivity
+  end.
+
+
+Ltac auto_elab' :=
+  match goal with
+  | [|- elab_lang ?l ?el] =>
+  rewrite (as_nth_tail l);
+  rewrite (as_nth_tail el);
+  break_down_elab_lang';
+  unshelve solve[repeat t];
+  cleanup_auto_elab
+  end.
+
+Derive subst_eval_ctx_elab
+       SuchThat (elab_lang (subst_eval_ctx++subst_lang) (subst_eval_ctx_elab ++ subst_elab))
+       As subst_eval_ctx_wf.
+Proof.
+  pose proof subst_lang_wf.
+  TODO: nth_tail and app
+  match goal with
+  | [|- elab_lang ?l ?el] =>
+  rewrite (as_nth_tail l);
+    rewrite (as_nth_tail el)
+  end.
+  
+  break_down_elab_lang'.
+  unshelve solve[repeat t];
+  cleanup_auto_elab
+  end.
+  auto_elab.
+  Unshelve.
+  all: cleanup_auto_elab.
+Qed.
 
 Derive subst_eval_ctx_elab
        SuchThat (is_pf_of_wf_lang (subst_eval_ctx ++ subst_lang) (subst_eval_ctx_elab ++ vsubst_elab)

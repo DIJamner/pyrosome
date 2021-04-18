@@ -220,7 +220,7 @@ Qed.
 
 Ltac break_down_elab_lang :=
   repeat ((eapply elab_lang_cons_nth_tail; [compute; reflexivity | compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
-  [compute; apply elab_lang_nil|..].
+  [solve [assumption | compute; apply elab_lang_nil]|..].
 
 
 Lemma elab_term_by' l c n (s es : list exp) args c' t t'
