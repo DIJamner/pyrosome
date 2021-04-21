@@ -286,8 +286,8 @@ Set Default Proof Mode "Classic".
 Lemma wf_args_cons2
      : forall (l : lang) (c : ctx) (s : list exp) (c' : named_list sort) 
          (name name': string) (e e': exp) (t t' : sort),
-       wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
        wf_term l c e t [/with_names_from c' s /] ->
+       wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
        wf_args l c s c' -> wf_args l c (e'::e :: s) ((name',t')::(name, t) :: c').
 Proof.
   eauto with lang_core.
@@ -296,9 +296,9 @@ Qed.
 Lemma eq_args_cons2
      : forall (l : lang) (c : ctx) (s1 s2 : list exp) (c' : named_list sort) 
          (name name': string) (e1 e2 e1' e2': exp) (t t' : sort),
-       eq_term l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
-       eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
        eq_args l c c' s1 s2 ->
+       eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
+       eq_term l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
        eq_args l c ((name',t')::(name, t) :: c') (e1'::e1 :: s1) (e2'::e2 :: s2) .
 Proof.
   eauto with lang_core.
@@ -316,11 +316,6 @@ Proof.
   with_rule_in_wf_crush.
 Qed.
   
-Derive cps_elab
-       SuchThat (elab_preserving_compiler stlc_bot_elab comp cps_elab stlc_elab)
-       As cps_elab_preserving.
-Proof.
-
   Ltac elab_compiler_cons :=
     eapply elab_compiler_cons_nth_tail;
     [ compute; reflexivity
@@ -371,7 +366,7 @@ Proof.
 
   Ltac solve_in := apply named_list_lookup_err_in; compute; reflexivity.
 
-  Ltac lookup_wf_lang := admit (*TODO: add to ctx beforehand, use assumption here*).
+  Ltac lookup_wf_lang := assumption (*TODO: add to ctx beforehand, use assumption here*).
   
 (*TODO: optimize where this is used so that I don't
   duplicate work?
@@ -418,14 +413,12 @@ Ltac term_cong :=
       | compute; reflexivity
       | lookup_wf_lang
       | repeat match goal with [|- eq_args _ _ _ _ _] =>
-                               constructor
-               (*
                 simple apply eq_args_nil
-                           || simple eapply eq_args_cons2
-                           || simple eapply eq_args_cons*)
+                || simple eapply eq_args_cons2
+                           || simple eapply eq_args_cons
                end].
     Ltac term_refl := 
-      apply eq_term_refl; admit (*TODO: solve[repeat t']*).
+      apply eq_term_refl; shelve (*TODO: solve[repeat t']*).
     
     (*TODO: only works if all variables appear on the lhs*)
     Ltac redex_steps_with name :=
@@ -455,31 +448,8 @@ Ltac term_cong :=
         | [|- eq_term ?l ?c _ _ _] =>
           assert (eq_term $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
           apply (@eq_term_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); solve [repeat ltac1:(t')]
-          (*
-          eapply (@eq_term_subst $l $c $s $s $c')>
-          [repeat ltac1:(t'); shelve()
-          | eapply eq_subst_refl; repeat ltac1:(t'); shelve()
-          | eapply (@eq_term_by $l $c' $name); repeat ltac1:(t'); shelve()]
-*)
         end.
-(*      lazy_match! goal with
-      | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-        let ms := Std.eval_vm None constr:(matches $e1 $e1p (map fst $c)) in
-            lazy_match! ms with
-            | Some ?s =>
-              assert (eq_term $l $c' $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| assumption]
-            | None => backtrack_tactic_failure "lhs does not match rule"
-            end
-      | [|-_] => backtrack_tactic_failure "Goal not a term equality"
-      end.
-*)
-(*
-  
-                [| reflexivity];
-                eapply eq_term_subst;
-                [| | eq_term_by name];
-                [solve [repeat t']|apply eq_subst_refl; solve [repeat t']]
- *)
+
     Ltac2 get_goal_lang () :=
       lazy_match! goal with
       |[|- eq_term ?l _ _ _ _ ] => l
@@ -519,175 +489,352 @@ Ltac term_cong :=
       
     Ltac2 step () :=
       step_by_instructions (get_step_instructions ()).
+    Ltac2 print_steps () :=
+      print (of_constr (get_step_instructions())).
   
-    Ltac par_step :=
-      lazymatch goal with
-        [|- eq_term ?l ?c ?t ?e1 ?e2] =>
-        let mns := eval compute in (step_term l e1) in
-            lazymatch mns with
-            | Some (redex_instr ?name ?c' ?tp ?e1p ?e2p ?s) =>
-              replace (eq_term l c t e1 e2)
-                with (eq_term l c tp[/s/] e1p[/s/] e2p[/s/]);
-                [| reflexivity];
-                apply (@eq_term_subst l c s s c' tp e1p e2p);
-                [solve [repeat t']| | eq_term_by name];[];
-                apply eq_subst_refl; solve [repeat t']             
-            | None => fail "No redex found"
-            end
-      | _ => fail "Goal not a term equality"
-      end.
-    
-    Ltac redex_step :=
-      lazymatch goal with
-        [|- eq_term ?l ?c ?t ?e1 ?e2] =>
-        let mns := eval compute in (step_redex_term l e1) in
-            lazymatch mns with
-            | Some (redex_instr ?name ?c' ?tp ?e1p ?e2p ?s) =>
-              replace (eq_term l c t e1 e2)
-                with (eq_term l c tp[/s/] e1p[/s/] e2p[/s/]);
-                [| reflexivity];
-                apply (@eq_term_subst l c s s c' tp e1p e2p);
-                [solve [repeat t']| | eq_term_by name];[];
-                apply eq_subst_refl; solve [repeat t']             
-            | None => fail "No redex found"
-            end
-      | _ => fail "Goal not a term equality"
-      end.
-    
-    (*TODO: Coq fn that does this computation
-      TODO: what should that fn return?
-     *)
-    Ltac one_par_step :=
-      redex_step || (term_cong; one_par_step) || term_refl.
-    Ltac reduce := repeat (progress (eapply eq_term_trans; [ltac2:(step())|])); term_refl.
+    Ltac reduce :=
+      repeat (eapply eq_term_trans; [ltac2:(step())|compute_eq_compilation]);
+      term_refl.
     Ltac by_reduction :=
       eapply eq_term_trans; [reduce | eapply eq_term_sym; reduce].
+
+Lemma cps_beta_preserved :
+eq_term stlc_bot_elab
+    {{c"G" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e"
+       : # "el" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+         #"bot",
+       "e'" : # "el" (# "ext" %"G" (# "->" %"A" #"bot")) #"bot",
+       "G'" : #"env",
+       "g" : # "sub" %"G'" %"G"}} {{s# "el" (# "ext" %"G'" (# "->" %"B" #"bot")) #"bot"}}
+    {{e# "el_subst" (# "ext" %"G'" (# "->" %"B" #"bot")) (# "ext" %"G" (# "->" %"B" #"bot"))
+       (# "snoc" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G" (# "->" %"B" #"bot")
+        (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G"
+         (# "wkn" %"G'" (# "->" %"B" #"bot")) %"g") (# "hd" %"G'" (# "->" %"B" #"bot"))) #"bot"
+       (# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
+        (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+        (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
+         (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
+         (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G" (# "wkn" %"G" (# "->" %"B" #"bot"))
+          (# "id" %"G"))
+         (# "lambda" (# "ext" %"G" (# "->" %"B" #"bot"))
+          (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
+          (# "el_subst"
+           (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"A" #"bot"))
+           (# "snoc"
+            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G" (# "->" %"A" #"bot")
+            (# "cmp"
+             (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+             (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
+             (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
+              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+             (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G"
+              (# "wkn" %"G" (# "->" %"B" #"bot")) (# "id" %"G")))
+            (# "lambda"
+             (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
+             (# "app"
+              (# "ext"
+               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+              # "->" %"B" #"bot") #"bot"
+              (# "app"
+               (# "ext"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+               (# "->" (# "->" %"B" #"bot") #"bot")
+               (# "ret"
+                (# "ext"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+                (# "val_subst"
+                 (# "ext"
+                  (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                   (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                 (# "wkn"
+                  (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                   (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+                 (# "hd" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
+               (# "ret"
+                (# "ext"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+                (# "hd"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
+              (# "ret"
+               (# "ext"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+               # "->" %"B" #"bot")
+               (# "val_subst"
+                (# "ext"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                (# "wkn"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+                # "->" %"B" #"bot")
+                (# "val_subst"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                 (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
+                 (# "hd" %"G" (# "->" %"B" #"bot")))))))) #"bot" %"e'"))) #"bot" %"e")}}
+    {{e# "el_subst" (# "ext" %"G'" (# "->" %"B" #"bot"))
+       (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+       (# "snoc" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'"
+        (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
+        (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G'"
+         (# "wkn" %"G'" (# "->" %"B" #"bot")) (# "id" %"G'"))
+        (# "lambda" (# "ext" %"G'" (# "->" %"B" #"bot"))
+         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
+         (# "el_subst"
+          (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+           (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G'" (# "->" %"A" #"bot"))
+          (# "snoc"
+           (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G'" (# "->" %"A" #"bot")
+           (# "cmp"
+            (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+            (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'"
+            (# "wkn" (# "ext" %"G'" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+            (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G'"
+             (# "wkn" %"G'" (# "->" %"B" #"bot")) (# "id" %"G'")))
+           (# "lambda"
+            (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
+            (# "app"
+             (# "ext"
+              (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+             # "->" %"B" #"bot") #"bot"
+             (# "app"
+              (# "ext"
+               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+              (# "->" (# "->" %"B" #"bot") #"bot")
+              (# "ret"
+               (# "ext"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+               (# "val_subst"
+                (# "ext"
+                 (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                (# "wkn"
+                 (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+                (# "hd" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
+              (# "ret"
+               (# "ext"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+               (# "hd"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
+             (# "ret"
+              (# "ext"
+               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+              # "->" %"B" #"bot")
+              (# "val_subst"
+               (# "ext"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+               (# "wkn"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+               # "->" %"B" #"bot")
+               (# "val_subst"
+                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                (# "ext" %"G'" (# "->" %"B" #"bot"))
+                (# "wkn" (# "ext" %"G'" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
+                (# "hd" %"G'" (# "->" %"B" #"bot")))))))) #"bot"
+          (# "el_subst" (# "ext" %"G'" (# "->" %"A" #"bot")) (# "ext" %"G" (# "->" %"A" #"bot"))
+           (# "snoc" (# "ext" %"G'" (# "->" %"A" #"bot")) %"G" (# "->" %"A" #"bot")
+            (# "cmp" (# "ext" %"G'" (# "->" %"A" #"bot")) %"G'" %"G"
+             (# "wkn" %"G'" (# "->" %"A" #"bot")) %"g") (# "hd" %"G'" (# "->" %"A" #"bot"))) #"bot"
+           %"e'")))) #"bot"
+       (# "el_subst"
+        (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+        (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+        (# "snoc" (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+         %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
+         (# "cmp" (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+          %"G'" %"G"
+          (# "wkn" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")) %"g")
+         (# "hd" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))) #"bot"
+        %"e")}}.
+Proof.
+  pose proof (elab_lang_implies_wf stlc_bot_wf).
+  solve[by_reduction].
+  Unshelve.
+  all: repeat t'.
+Qed.
+
+Lemma cps_subst_preserved
+  : eq_term stlc_bot_elab
+    {{c"G" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e" : # "el" (# "ext" (# "ext" %"G" %"A") (# "->" %"B" #"bot")) #"bot",
+       "v" : # "val" %"G" %"A"}} {{s# "el" (# "ext" %"G" (# "->" %"B" #"bot")) #"bot"}}
+    {{e# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
+       (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+       (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
+        (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
+        (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G" (# "wkn" %"G" (# "->" %"B" #"bot"))
+         (# "id" %"G"))
+        (# "lambda" (# "ext" %"G" (# "->" %"B" #"bot"))
+         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
+         (# "el_subst"
+          (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+           (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"A" #"bot"))
+          (# "snoc"
+           (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G" (# "->" %"A" #"bot")
+           (# "cmp"
+            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"B" #"bot"))
+            %"G"
+            (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+            (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G"
+             (# "wkn" %"G" (# "->" %"B" #"bot")) (# "id" %"G")))
+           (# "lambda"
+            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
+            (# "app"
+             (# "ext"
+              (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+             # "->" %"B" #"bot") #"bot"
+             (# "app"
+              (# "ext"
+               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+              (# "->" (# "->" %"B" #"bot") #"bot")
+              (# "ret"
+               (# "ext"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+               (# "val_subst"
+                (# "ext"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                (# "wkn"
+                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+                (# "hd" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
+              (# "ret"
+               (# "ext"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
+               (# "hd"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
+             (# "ret"
+              (# "ext"
+               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+              # "->" %"B" #"bot")
+              (# "val_subst"
+               (# "ext"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
+               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+               (# "wkn"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
+               # "->" %"B" #"bot")
+               (# "val_subst"
+                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
+                (# "ext" %"G" (# "->" %"B" #"bot"))
+                (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
+                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
+                (# "hd" %"G" (# "->" %"B" #"bot")))))))) #"bot"
+          (# "app" (# "ext" %"G" (# "->" %"A" #"bot")) %"A" #"bot"
+           (# "ret" (# "ext" %"G" (# "->" %"A" #"bot")) (# "->" %"A" #"bot")
+            (# "hd" %"G" (# "->" %"A" #"bot")))
+           (# "ret" (# "ext" %"G" (# "->" %"A" #"bot")) %"A"
+            (# "val_subst" (# "ext" %"G" (# "->" %"A" #"bot")) %"G"
+             (# "wkn" %"G" (# "->" %"A" #"bot")) %"A" %"v")))))) #"bot"
+       (# "app" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+        (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
+        (# "ret" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+         (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
+         (# "hd" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")))
+        (# "ret" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+         (# "val_subst"
+          (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")) %"G"
+          (# "wkn" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
+          (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
+          (# "lambda" %"G" %"A" (# "->" (# "->" %"B" #"bot") #"bot")
+           (# "ret" (# "ext" %"G" %"A") (# "->" (# "->" %"B" #"bot") #"bot")
+            (# "lambda" (# "ext" %"G" %"A") (# "->" %"B" #"bot") #"bot" %"e"))))))}}
+    {{e# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
+       (# "ext" (# "ext" %"G" %"A") (# "->" %"B" #"bot"))
+       (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) (# "ext" %"G" %"A") (
+        # "->" %"B" #"bot")
+        (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" (# "ext" %"G" %"A")
+         (# "wkn" %"G" (# "->" %"B" #"bot")) (# "snoc" %"G" %"G" %"A" (# "id" %"G") %"v"))
+        (# "hd" %"G" (# "->" %"B" #"bot"))) #"bot" %"e"}}.
+Proof.
+  pose proof (elab_lang_implies_wf stlc_bot_wf).
+  solve[by_reduction].
+  Unshelve.
+  all: repeat t'.
+Qed.
   
-auto_elab_compiler; compute_eq_compilation.
-all: try solve [is_term_rule].
 
-Set Ltac Profiling.
-solve[by_reduction].
-solve[by_reduction].
-solve[by_reduction].
-Show Ltac Profile.
-(*solve[by_reduction].
-solve[by_reduction].
-3:solve[by_reduction].*)
-(*TODO: haven't solved the perf. issues; do some analysis*)
-3:{
-  eapply eq_term_trans.
-  {
-    Set Ltac Profiling.
-    (*TODO: how to make sure I only assert things
-      about intermediate contexts once?
-      alt: use rule_in_wf?
-      better lemmas?
-     *)
-    time (progress (eapply eq_term_trans;[ltac2:(step())|])).
-    Show Ltac Profile.
-
-    progress (eapply eq_term_trans;[ltac2:(step())|]).
-    progress (eapply eq_term_trans;[ltac2:(step())|]).
-    progress (eapply eq_term_trans;[ltac2:(step())|]).
-    compute_eq_compilation.
-    progress (eapply eq_term_trans;[ltac2:(step())|]).
-    progress (eapply eq_term_trans;[ltac2:(step())|]).
-  term_refl.
-}
-    ltac2:(step()).
-    {
-      compute_eq_compilation.
-      term_cong.
-      ltac2:(step()).
-      ltac2:(step()).
-      ltac2:(step()).
-      {
-        ltac2:(step()).
-        eapply eq_term_subst.
-        compute_eq_compilation.
-        2:{
-          cbn in H.
-          compute_eq_compilation.
-          exact H.
-        ltac2:(let i := (get_step_instructions()) in
-               lazy_match! i with
-               | redex_instr ?name ?c' ?tp ?e1p ?e2p ?s =>
-                 step_redex name c' tp e1p e2p s; solve []
-               | _ => backtrack_tactic_failure "input not an evaluated instruction"
-               end
-              ).
-        Definition ctxid (c:ctx) := c.
-        ltac2:(step_redex
-                 constr:("id_right")
-                 constr:(ctxid {{c"G" : #"env", "G'" : #"env", "f" : # "sub" %"G" %"G'"}})
-                 constr:({{s# "sub" %"G" %"G'"}})
-                          constr:({{e# "cmp" %"G" %"G'" %"G'" %"f" (# "id" %"G'")}})
-                                   constr:({{e%"f"}})
-                 constr:([("f", {{e# "wkn" %"G" (# "->" %"A" #"bot")}}); ("G'", {{e%"G"}});
-   ("G", {{e# "ext" %"G" (# "->" %"A" #"bot")}})])).
-      ltac2:(step()).
-    
-    {
-      ltac2:(print (of_constr (get_step_instructions()) )).
-    
-      ltac2:(step()).
-      
-    ltac2:(lazy_match! goal with
-     | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-       let mi := Std.eval_vm None constr:(step_term $l $e1) in
-       lazy_match! mi with
-       | Some ?i => print (of_constr i)
-       | None =>  backtrack_tactic_failure "could not generate step instructions"
-       end
-     | [|-_] => backtrack_tactic_failure "goal not a term equality"
-  end).
-      ltac2:(step()).
-    (*TODO: understand what isn't focussed and why*)
-    term_cong;
-      ltac2:(dispatch [
-                 (fun () => try ltac1:(term_refl));
-                 (fun () => try ltac1:(term_refl));
-                 (fun () => try ltac1:(term_refl));
-                 (fun () => try ltac1:(term_refl));
-                 (fun () => try ltac1:(term_refl))]).                 
-  }
-  
-  term_cong.
-  term_refl.
-  {
-    compute_eq_compilation.
-    term_cong.
-    term_refl.
-    
-
-  term_cong;
-    [term_refl
-    | term_cong; solve[fail]
-    | term_cong;
-      [ term_cong; [term_cong; [term_cong; solve[fail]| term_refl] | term_refl]
-      | (*TODO*)
-      | term_cong; [term
-    ]].
-  (cong_instr
-   [refl_instr; cong_instr [];
-   cong_instr
-     [cong_instr [cong_instr [cong_instr []; refl_instr]; refl_instr];
-     redex_instr "id_right" {{c"G" : #"env", "G'" : #"env", "f" : # "sub" %"G" %"G'"}} {{s# "sub" %"G" %"G'"}}
-       {{e# "cmp" %"G" %"G'" %"G'" %"f" (# "id" %"G'")}} {{e%"f"}}
-       [("f", {{e# "wkn" %"G" (# "->" %"A" #"bot")}}); ("G'", {{e%"G"}}); ("G", {{e# "ext" %"G" (# "->" %"A" #"bot")}})];
-     cong_instr [cong_instr []; refl_instr]; refl_instr; cong_instr [cong_instr [cong_instr []; refl_instr]; refl_instr]];
-   cong_instr [cong_instr [cong_instr []; refl_instr]; refl_instr]; cong_instr [cong_instr [cong_instr []; refl_instr]; refl_instr]])
-by_reduction.
-by_reduction.
-by_reduction.
-3: by_reduction.
-by_reduction.
- (*TODO: too slow to run on remaining 2*)
- destruct TODO.
- destruct TODO.
- Unshelve.
- all: repeat t'.
+Derive cps_elab
+       SuchThat (elab_preserving_compiler stlc_bot_elab comp cps_elab stlc_elab)
+       As cps_elab_preserving.
+Proof.
+  pose proof (elab_lang_implies_wf stlc_bot_wf).
+  auto_elab_compiler; compute_eq_compilation.
+  all: try solve [is_term_rule].
+  solve[by_reduction].
+  solve[by_reduction].
+  solve[by_reduction].
+  apply cps_subst_preserved.
+  apply cps_beta_preserved.
+  solve[by_reduction].
+  Unshelve.
+  all: repeat t'.
 Qed.
 
 Goal semantics_preserving stlc_bot_elab cps_elab stlc_elab.
