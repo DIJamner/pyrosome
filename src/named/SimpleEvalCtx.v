@@ -50,10 +50,61 @@ Definition subst_eval_ctx :=
      ]
   ]%arule.
 
+(*TODO: move to utils*)
+Lemma nth_tail_length_app A (l1 l2 : list A) n
+  : n = length l1 ->
+    nth_tail n (l1++l2) = l2.
+Proof.
+  intros; subst.
+  induction l1; basic_goal_prep; basic_utils_crush.
+Qed.
 
+Lemma nth_tail_app A n (l l' : list A)
+  : n < length l ->
+    nth_tail n (l++l') = (nth_tail n l)++l'.
+Admitted.
 
+Lemma nth_tail_is_cons_bounds_n A n (l l' : list A) p
+  : nth_tail n l = p::l' ->
+    n < length l.
+Admitted.
+
+(*TODO: move to elab*)
+Lemma elab_lang_cons_nth_tail_app
+     : forall (n : nat) (l el l' el' el'' : list (string * rule)) (name : string) (r er : rule),
+       nth_error l n = Some (name, r) ->
+       nth_tail n el = (name, er) :: el'' ->
+       fresh name (nth_tail (S n) (l++l')) ->
+       elab_lang (nth_tail (S n) (l++l')) (nth_tail (S n) (el++el')) ->
+       elab_rule (nth_tail (S n) (el++el')) r er ->
+       elab_lang (nth_tail n (l++l')) (nth_tail n (el++el')).
+Proof.
+  intros.
+  eapply elab_lang_cons_nth_tail; eauto.
+  {
+    rewrite nth_error_app1; eauto.
+    apply nth_error_Some.
+    intro H'.
+    rewrite H in H'.
+    inversion H'.
+  }
+  {
+    rewrite nth_tail_app.
+    rewrite H0.
+    reflexivity.
+    eapply nth_tail_is_cons_bounds_n; eauto.
+  }
+Qed.
+    
+
+(*TODO: move back to elab*)
 Ltac break_down_elab_lang' :=
-  repeat ((eapply elab_lang_cons_nth_tail; [compute; reflexivity | compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
+  repeat ((eapply elab_lang_cons_nth_tail_app
+           || eapply elab_lang_cons_nth_tail);
+              [compute; reflexivity
+              | compute; reflexivity
+              | apply use_compute_fresh; compute; reflexivity
+              | ..]);
   [solve [assumption | compute; apply elab_lang_nil]|..].
 
 Local Ltac t :=
@@ -87,47 +138,36 @@ Derive subst_eval_ctx_elab
        As subst_eval_ctx_wf.
 Proof.
   pose proof subst_lang_wf.
-  TODO: nth_tail and app
   match goal with
   | [|- elab_lang ?l ?el] =>
   rewrite (as_nth_tail l);
     rewrite (as_nth_tail el)
   end.
+  repeat ((eapply elab_lang_cons_nth_tail_app
+           || eapply elab_lang_cons_nth_tail);
+              [compute; reflexivity
+              | compute; reflexivity
+              | apply use_compute_fresh; compute; reflexivity
+              | ..]).
   
-  break_down_elab_lang'.
-  unshelve solve[repeat t];
-  cleanup_auto_elab
+  rewrite !nth_tail_length_app; [assumption|..].
+  cbn.
+  match goal with
+    [ |-context [length ?emp]] => unify emp (@nil (string*rule))
   end.
-  auto_elab.
-  Unshelve.
-  all: cleanup_auto_elab.
+  reflexivity.
+  reflexivity.
+  
+  all:unshelve solve[repeat t];
+  cleanup_auto_elab.
+  
 Qed.
 
-Derive subst_eval_ctx_elab
-       SuchThat (is_pf_of_wf_lang (subst_eval_ctx ++ subst_lang) (subst_eval_ctx_elab ++ vsubst_elab)
-         /\ lang_ok (subst_eval_ctx_elab ++ vsubst_elab))
-       As subst_eval_ctx_elab_ok.
-Proof.
-  split.
-  {
-    simpl.
-     repeat match goal with
-             |[|- is_pf_of_wf_lang (_::_) (?el ++_)] =>
-             let x := open_constr:(_::_) in unify el x; simpl; constructor
-            end.
-     match goal with
-       [|- is_pf_of_wf_lang _ (?g ++ vsubst_elab)]=> unify g (@nil (string * rule_pf)%type); apply is_pf_of_wf_lang_vsubst
-     end.
-     all: try solve [repeat constructor; repeat first [pcon | pvar | by compute]].
-  }
-  {
-    apply /check_lang_okP; by compute.
-  }
-Qed.
+Axiom TODO : False.
 
 (*an extension to subst_eval_ctx++stlc*)
 Definition Estlc :=  
-  [::
+  [
      [:> "G" : #"env",
        "A" : #"ty",
        "B" : #"ty",
@@ -172,31 +212,34 @@ Definition Estlc :=
   ]]%arule.
 
 
-(*Should be proven using above and embedding properties*)
-Lemma tmp : is_pf_of_wf_lang (subst_eval_ctx ++ stlc) (subst_eval_ctx_elab ++ vstlc_elab).
-Admitted.
-
 Derive Estlc_elab
-       SuchThat (is_pf_of_wf_lang (Estlc ++ subst_eval_ctx ++ stlc) (Estlc_elab ++ subst_eval_ctx_elab ++ vstlc_elab)
-         /\ lang_ok (Estlc_elab ++ subst_eval_ctx_elab ++ vstlc_elab))
-       As Estlc_elab_ok.
+       SuchThat (elab_lang (Estlc++subst_eval_ctx++stlc)
+                           (Estlc_elab++subst_eval_ctx_elab ++ stlc_elab))
+       As subst_Estlc_wf.
 Proof.
-  Arguments subst_eval_ctx : simpl never.
-  Arguments subst_eval_ctx_elab : simpl never.
-  split.
-  {
-    cbn -[subst_eval_ctx subst_eval_ctx_elab stlc vstlc_elab].
-    repeat match goal with
-           |[|-is_pf_of_wf_lang (subst_eval_ctx ++ stlc) (?g ++ subst_eval_ctx_elab ++ vstlc_elab)]=>
-            unify g (@nil (string * rule_pf)%type);  cbn -[subst_eval_ctx subst_eval_ctx_elab stlc vstlc_elab]; apply tmp
-           |[|- is_pf_of_wf_lang (_::_) (?el ++_)] =>
-             let x := open_constr:(_::_) in unify el x;  cbn -[subst_eval_ctx subst_eval_ctx_elab stlc vstlc_elab]; constructor
-           end.
-    
-    all: try solve [repeat constructor; simpl; repeat first [pcon | pvar | by compute]].
-  }
-  {
-    apply /check_lang_okP; by compute.
-  }
-Qed.
+  assert (elab_lang (subst_eval_ctx ++ stlc)
+                    (subst_eval_ctx_elab ++ stlc_elab)).
+  destruct TODO (*TODO: extension lemma for elab*).
+  match goal with
+  | [|- elab_lang ?l ?el] =>
+  rewrite (as_nth_tail l);
+    rewrite (as_nth_tail el)
+  end.
+  repeat ((eapply elab_lang_cons_nth_tail_app
+           || eapply elab_lang_cons_nth_tail);
+              [compute; reflexivity
+              | compute; reflexivity
+              | apply use_compute_fresh; compute; reflexivity
+              | ..]).
+  
+  rewrite !nth_tail_length_app; [assumption|..].
+  cbn.
+  match goal with
+    [ |-context [length ?emp]] => unify emp (@nil (string*rule))
+  end.
+  reflexivity.
+  reflexivity.
 
+  all:(unshelve solve[repeat t];
+  cleanup_auto_elab).
+Qed.

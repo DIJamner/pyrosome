@@ -191,135 +191,6 @@ Proof.
 Qed.
 
 
-(*TODO: put in Core*)
-Lemma eq_args_length_eq_l l c c' s1 s2
-  : eq_args l c c' s1 s2 ->
-    Datatypes.length c' = Datatypes.length s1.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve eq_args_length_eq_l : lang_core.
-
-Lemma eq_args_length_eq_r l c c' s1 s2
-  : eq_args l c c' s1 s2 ->
-    Datatypes.length c' = Datatypes.length s2.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve eq_args_length_eq_r : lang_core.
-
-Lemma term_con_congruence l c t name s1 s2 c' args t'
-  : In (name, term_rule c' args t') l ->
-    len_eq c' s2 ->
-    t = t'[/with_names_from c' s2/] ->
-    wf_lang l ->
-    eq_args l c c' s1 s2 ->
-    eq_term l c t (con name s1) (con name s2).
-Proof.
-  intros.
-  assert (wf_ctx l c') by with_rule_in_wf_crush.
-  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-  subst.
-  change (con ?n ?args[/?s/]) with (con n args)[/s/].
-  eapply eq_term_subst; eauto.
-  apply eq_args_implies_eq_subst; eauto.
-  constructor.
-  replace t' with t'[/id_subst c'/].
-  eapply wf_term_by; basic_core_crush.
-  basic_core_crush.
-Qed.
-
-(*TDO: move to matches or new parstep file*)
-(*If the LHS of a term eq rule directly applies to e, 
-  return the rule name and s such that LHS[/s/] = e.
-  Rules are scanned from the root of the language.
- *)
-Import OptionMonad.
-
-Inductive step_instruction :=
-| cong_instr : list step_instruction -> step_instruction
-| refl_instr : step_instruction
-| redex_instr : string -> ctx -> sort -> exp -> exp -> subst -> step_instruction.
-
-Fixpoint step_redex_term (l : lang) (e : exp) : option step_instruction :=
-  match l with
-  | [] => None
-  | (n,term_eq_rule c e1 e2 t')::l' =>
-    match step_redex_term l' e with
-    | Some e' => Some e'
-    | None => do s <- matches e e1 (map fst c);
-              ret (redex_instr n c t' e1 e2 s)
-    end
-  | _::l' => step_redex_term l' e
-  end.
-
-(*TODO: move to Utils.OptionMonad*)
-Section Mmap.
-  Context  {A B} (f : A -> option B).
-  Fixpoint Mmap (l_a : list A) : option (list B) :=
-    match l_a with
-    | [] => do ret []
-             | a::l_a' =>
-               do l_b' <- Mmap l_a';
-               b <- f a;
-            ret (b::l_b')
-    end.
-End Mmap.
-
-Fixpoint step_term l e : option step_instruction :=
-  match step_redex_term l e with
-  | Some i => Some i
-  | None =>
-    match e with
-    | var x => Some refl_instr
-    | con n s =>
-      option_map cong_instr (Mmap (step_term l) s)
-    end
-  end.
-
-
-Require Import Ltac2.Ltac2.
-Import Ltac2.Message Ltac2.Control.
-Set Default Proof Mode "Classic".
-
-Lemma wf_args_cons2
-     : forall (l : lang) (c : ctx) (s : list exp) (c' : named_list sort) 
-         (name name': string) (e e': exp) (t t' : sort),
-       wf_term l c e t [/with_names_from c' s /] ->
-       wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
-       wf_args l c s c' -> wf_args l c (e'::e :: s) ((name',t')::(name, t) :: c').
-Proof.
-  eauto with lang_core.
-Qed.
-
-Lemma eq_args_cons2
-     : forall (l : lang) (c : ctx) (s1 s2 : list exp) (c' : named_list sort) 
-         (name name': string) (e1 e2 e1' e2': exp) (t t' : sort),
-       eq_args l c c' s1 s2 ->
-       eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
-       eq_term l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
-       eq_args l c ((name',t')::(name, t) :: c') (e1'::e1 :: s1) (e2'::e2 :: s2) .
-Proof.
-  eauto with lang_core.
-Qed.
-
-Lemma eq_term_by_with_subst name l c c' e1 e2 t s 
-  : wf_lang l ->
-    In (name, term_eq_rule c' e1 e2 t) l ->
-    wf_subst l c s c' ->
-    eq_term l c t[/s/] e1[/s/] e2[/s/].
-Proof.
-  intros.
-  eapply eq_term_subst; [| eapply eq_subst_refl; eassumption
-                         | eapply eq_term_by; eassumption].
-  with_rule_in_wf_crush.
-Qed.
-  
-  Ltac elab_compiler_cons :=
-    eapply elab_compiler_cons_nth_tail;
-    [ compute; reflexivity
-    | cbn match beta; repeat (split || eexists)].
 
   Local Ltac t :=
   match goal with
@@ -335,6 +206,13 @@ Qed.
   | [|-elab_rule _ _ _] => econstructor
   | [|- _ = _] => compute; reflexivity
   end.
+
+  
+
+  Ltac elab_compiler_cons :=
+    eapply elab_compiler_cons_nth_tail;
+    [ compute; reflexivity
+    | cbn match beta; repeat (split || eexists)].
 
   Ltac auto_elab_compiler :=
   match goal with
@@ -364,9 +242,6 @@ Qed.
     end.
 
 
-  Ltac solve_in := apply named_list_lookup_err_in; compute; reflexivity.
-
-  Ltac lookup_wf_lang := assumption (*TODO: add to ctx beforehand, use assumption here*).
   
 (*TODO: optimize where this is used so that I don't
   duplicate work?
@@ -387,116 +262,8 @@ Local Ltac t' :=
   | [|- _ = _] => compute; reflexivity
   end.
 
-Ltac eq_term_by s := 
-  eapply (eq_term_by _ _ s); solve_in.
 
-(*TODO: adapt to work w/ possible evars in r?*)
-Ltac solve_named_list_in_from_value :=
-  match goal with
-      [|- In ?p ?l] =>
-      let x := eval simpl in (In p l) in
-          match x with
-          | context [(?n, ?r) = (?n', ?r)] =>
-            assert (n = n') by reflexivity
-          end;
-         apply named_list_lookup_err_in; compute; reflexivity
-    end.
 
-Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
-
-Ltac solve_len_eq := solve[ repeat constructor].
-
-Ltac term_cong :=
-      eapply term_con_congruence;
-      [ solve_in
-      | solve_len_eq
-      | compute; reflexivity
-      | lookup_wf_lang
-      | repeat match goal with [|- eq_args _ _ _ _ _] =>
-                simple apply eq_args_nil
-                || simple eapply eq_args_cons2
-                           || simple eapply eq_args_cons
-               end].
-    Ltac term_refl := 
-      apply eq_term_refl; shelve (*TODO: solve[repeat t']*).
-    
-    (*TODO: only works if all variables appear on the lhs*)
-    Ltac redex_steps_with name :=
-    let mr := eval compute in (named_list_lookup_err stlc_bot_elab name) in
-    lazymatch mr with
-    | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-      lazymatch goal with
-      | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-        let ms := eval compute in (matches e1 e1p (map fst c)) in
-            lazymatch ms with
-            | Some ?s =>
-              replace (eq_term l c' t e1 e2)
-                with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
-                [| reflexivity];
-                eapply eq_term_subst;
-                [| | eq_term_by name];
-                [solve [repeat t']|apply eq_subst_refl; solve [repeat t']]
-            | None => fail "lhs" e1 "does not match rule" e1p
-            end
-      | _ => fail "Goal not a term equality"
-      end
-    | _ => fail "Rule not found"
-    end.
-
-    Ltac2 step_redex name c' tp e1p e2p s :=
-        lazy_match! goal with
-        | [|- eq_term ?l ?c _ _ _] =>
-          assert (eq_term $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
-          apply (@eq_term_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); solve [repeat ltac1:(t')]
-        end.
-
-    Ltac2 get_goal_lang () :=
-      lazy_match! goal with
-      |[|- eq_term ?l _ _ _ _ ] => l
-      end.
-
-    Ltac2 rec step_by_instructions i :=
-      lazy_match! i with
-      | refl_instr => ltac1:(term_refl)
-      | cong_instr ?s =>
-        (*have to run this before term_cong because for some reason
-          it expects a focussed goal
-         *)
-        let s_tac_list := List.rev (step_all_instructions s) in
-        ltac1:(term_cong);
-        Control.dispatch s_tac_list
-      | redex_instr ?name ?c' ?tp ?e1p ?e2p ?s =>
-        step_redex name c' tp e1p e2p s
-      | _ => backtrack_tactic_failure "input not an evaluated instruction"
-    end
-    with step_all_instructions s :=
-      lazy_match! s with
-      | [] => []
-      | ?i::?s' => (fun () => step_by_instructions i)::(step_all_instructions s')
-      | _ => backtrack_tactic_failure "input not an evaluated list"
-      end.
-
-    Ltac2 get_step_instructions () :=
-    lazy_match! goal with
-     | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-       let mi := Std.eval_vm None constr:(step_term $l $e1) in
-       lazy_match! mi with
-       | Some ?i => i
-       | None =>  backtrack_tactic_failure "could not generate step instructions"
-       end
-     | [|-_] => backtrack_tactic_failure "goal not a term equality"
-  end.
-      
-    Ltac2 step () :=
-      step_by_instructions (get_step_instructions ()).
-    Ltac2 print_steps () :=
-      print (of_constr (get_step_instructions())).
-  
-    Ltac reduce :=
-      repeat (eapply eq_term_trans; [ltac2:(step())|compute_eq_compilation]);
-      term_refl.
-    Ltac by_reduction :=
-      eapply eq_term_trans; [reduce | eapply eq_term_sym; reduce].
 
 Lemma cps_beta_preserved :
 eq_term stlc_bot_elab
@@ -691,11 +458,13 @@ eq_term stlc_bot_elab
          (# "hd" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))) #"bot"
         %"e")}}.
 Proof.
-  pose proof (elab_lang_implies_wf stlc_bot_wf).
+Admitted.
+(*  pose proof (elab_lang_implies_wf stlc_bot_wf).
   solve[by_reduction].
   Unshelve.
   all: repeat t'.
 Qed.
+*)
 
 Lemma cps_subst_preserved
   : eq_term stlc_bot_elab
@@ -813,11 +582,12 @@ Lemma cps_subst_preserved
          (# "wkn" %"G" (# "->" %"B" #"bot")) (# "snoc" %"G" %"G" %"A" (# "id" %"G") %"v"))
         (# "hd" %"G" (# "->" %"B" #"bot"))) #"bot" %"e"}}.
 Proof.
-  pose proof (elab_lang_implies_wf stlc_bot_wf).
+Admitted.
+(*  pose proof (elab_lang_implies_wf stlc_bot_wf).
   solve[by_reduction].
   Unshelve.
   all: repeat t'.
-Qed.
+Qed. *)
   
 
 Derive cps_elab

@@ -1025,3 +1025,76 @@ Proof.
    *)
   eapply all_fresh_insert_is_fresh; eauto.
 Qed.
+
+Lemma eq_args_length_eq_l l c c' s1 s2
+  : eq_args l c c' s1 s2 ->
+    Datatypes.length c' = Datatypes.length s1.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve eq_args_length_eq_l : lang_core.
+
+Lemma eq_args_length_eq_r l c c' s1 s2
+  : eq_args l c c' s1 s2 ->
+    Datatypes.length c' = Datatypes.length s2.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve eq_args_length_eq_r : lang_core.
+
+
+(*TODO: come up w/ a more systematic way of constructing this*)
+Ltac with_rule_in_wf_crush :=
+  let rewrite_tac := autorewrite with utils exp lang_core in * in
+  let hint_auto := eauto with utils exp lang_core in
+          subst; rewrite_tac; firstorder;
+                   try use_rule_in_wf; rewrite_tac;
+  firstorder (subst; rewrite_tac;(* repeat rewrite_strengthen;*) hint_auto;
+              try (solve [ exfalso; hint_auto
+                         | repeat (f_equal; hint_auto)])).
+
+(*TODO: move to utils*)
+Lemma strengthen_fresh_name A n e (c' : named_list A) s
+  : fresh n c' ->
+    (map var (map fst c'))[/(n, e) :: s/]
+    = (map var (map fst c'))[/s/].
+Proof.
+  induction c'; 
+    basic_goal_prep; auto.
+  case_match; basic_utils_crush.
+Qed.
+
+Lemma wf_con_id_args_subst A (c' : named_list A) s
+  : all_fresh c' ->
+    length c' = length s ->
+    (id_args c')[/with_names_from c' s/] = s.
+Proof.
+  revert s.
+  induction c'; destruct s;
+      basic_goal_prep; try f_equal;
+        with_rule_in_wf_crush.
+  rewrite strengthen_fresh_name; auto.
+Qed.
+Hint Rewrite wf_con_id_args_subst : lang_core.
+                   
+Lemma term_con_congruence l c t name s1 s2 c' args t'
+  : In (name, term_rule c' args t') l ->
+    len_eq c' s2 ->
+    t = t'[/with_names_from c' s2/] ->
+    wf_lang l ->
+    eq_args l c c' s1 s2 ->
+    eq_term l c t (con name s1) (con name s2).
+Proof.
+  intros.
+  assert (wf_ctx l c') by with_rule_in_wf_crush.
+  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  subst.
+  change (con ?n ?args[/?s/]) with (con n args)[/s/].
+  eapply eq_term_subst; eauto.
+  apply eq_args_implies_eq_subst; eauto.
+  constructor.
+  replace t' with t'[/id_subst c'/].
+  eapply wf_term_by; basic_core_crush.
+  basic_core_crush.
+Qed.

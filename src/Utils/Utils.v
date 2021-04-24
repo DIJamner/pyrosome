@@ -278,6 +278,18 @@ Module OptionMonad.
   Notation "! e ; b" :=
     (if e then b else None)
       (in custom monadic_do at level 90, left associativity, e constr, b custom monadic_do).
+
+  Section Mmap.
+    Context  {A B} (f : A -> option B).
+    Fixpoint Mmap (l_a : list A) : option (list B) :=
+      match l_a with
+      | [] => do ret []
+               | a::l_a' =>
+                 do l_b' <- Mmap l_a';
+                 b <- f a;
+              ret (b::l_b')
+      end.
+  End Mmap.
 End OptionMonad.
 
 
@@ -770,3 +782,24 @@ Proof.
   induction l1; basic_goal_prep; basic_utils_crush.
 Qed.
 #[export] Hint Resolve all_fresh_insert_rest_is_fresh : utils.
+
+
+Definition set_eq {A} (l1 l2 : list A) :=
+  incl l1 l2 /\ incl l2 l1.
+
+
+Lemma incl_nil A  (l : list A)
+  : incl l [] <-> l = [].
+Proof.
+  split; intros; subst;
+    eauto using incl_l_nil,
+    incl_nil_l.
+Qed.  
+Hint Rewrite incl_nil : utils.
+
+Lemma incl_cons A (a:A) l1 l2
+  : incl (a::l1) l2 <-> In a l2 /\ incl l1 l2.
+Proof.
+  split; intros; break; eauto using incl_cons, incl_cons_inv.
+Qed.
+Hint Rewrite incl_cons : utils.

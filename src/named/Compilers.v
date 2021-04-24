@@ -304,16 +304,6 @@ intros wfl pr wfl';
 *)
   
 
-(*TODO: come up w/ a more systematic way of constructing this*)
-Ltac with_rule_in_wf_crush :=
-  let rewrite_tac := autorewrite with utils exp lang_core in * in
-  let hint_auto := eauto with utils exp lang_core in
-          subst; rewrite_tac; firstorder;
-                   try use_rule_in_wf; rewrite_tac;
-  firstorder (subst; rewrite_tac;(* repeat rewrite_strengthen;*) hint_auto;
-              try (solve [ exfalso; hint_auto
-                         | repeat (f_equal; hint_auto)])).
-
 
 Lemma sort_name_in_cmp tgt cmp src c' args n
   : preserving_compiler tgt cmp src ->
@@ -510,29 +500,6 @@ Proof.
   unfold args_subst.
 *)
 
-
-Lemma strengthen_fresh_name A n e (c' : named_list A) s
-  : fresh n c' ->
-    (map var (map fst c'))[/(n, e) :: s/]
-    = (map var (map fst c'))[/s/].
-Proof.
-  induction c'; 
-    basic_goal_prep; auto.
-  case_match; basic_utils_crush.
-Qed.
-  
-Lemma wf_con_id_args_subst A (c' : named_list A) s
-  : all_fresh c' ->
-    length c' = length s ->
-    (id_args c')[/with_names_from c' s/] = s.
-Proof.
-  revert s.
-  induction c'; destruct s;
-      basic_goal_prep; try f_equal;
-        with_rule_in_wf_crush.
-  rewrite strengthen_fresh_name; auto.
-Qed.
-Hint Rewrite wf_con_id_args_subst : lang_core.
 
 Lemma compile_subst_lookup cmp s n
   : compile cmp (subst_lookup s n)

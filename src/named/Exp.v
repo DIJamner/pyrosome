@@ -623,3 +623,40 @@ Ltac cbn_substs :=
   cbn [apply_subst with_names_from exp_subst subst_cmp args_subst sort_subst
                    substable_sort substable_args substable_exp substable_subst map
       exp_var_map subst_lookup named_list_lookup String.eqb Ascii.eqb Bool.eqb].
+
+
+
+Lemma invert_con n n' s s'
+  : con n s = con n' s' <-> n = n' /\ s = s'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_con : exp.
+
+Lemma invert_var_con n s x
+  : var x = con n s <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_var_con : exp.
+
+Lemma invert_con_var n s x
+  : con n s = var x <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_var_con : exp.
+
+
+Lemma invert_scon n n' s s'
+  : scon n s = scon n' s' <-> n = n' /\ s = s'.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_scon : exp.
+
+(*TODO: put in substable?*)
+(*TODO: guarentee all_fresh or no?*)
+Fixpoint fv e : list string :=
+  match e with
+  | var x => [x]
+  | con _ s => flat_map fv s
+  end.
+
+Definition fv_args := flat_map fv.
+
+Definition fv_sort (t:sort) :=
+  let (_,s) := t in
+  fv_args s.
