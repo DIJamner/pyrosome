@@ -596,7 +596,7 @@ Derive cps_elab
 Proof.
   pose proof (elab_lang_implies_wf stlc_bot_wf).
   auto_elab_compiler; compute_eq_compilation.
-  all: try solve [is_term_rule].
+  (*all: try solve [is_term_rule].*)
   solve[by_reduction].
   solve[by_reduction].
   solve[by_reduction].

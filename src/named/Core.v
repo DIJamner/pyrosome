@@ -1098,3 +1098,22 @@ Proof.
   eapply wf_term_by; basic_core_crush.
   basic_core_crush.
 Qed.
+                   
+Lemma sort_con_congruence l c name s1 s2 c' args
+  : In (name, sort_rule c' args) l ->
+    len_eq c' s2 ->
+    wf_lang l ->
+    eq_args l c c' s1 s2 ->
+    eq_sort l c (scon name s1) (scon name s2).
+Proof.
+  intros.
+  assert (wf_ctx l c') by with_rule_in_wf_crush.
+  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  subst.
+  change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
+  eapply eq_sort_subst; eauto.
+  apply eq_args_implies_eq_subst; eauto.
+  constructor.
+  eapply wf_sort_by; basic_core_crush.
+Qed.
