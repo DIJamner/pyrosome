@@ -22,11 +22,7 @@ Definition stlc_bot :=
 Derive stlc_bot_elab
        SuchThat (elab_lang stlc_bot stlc_bot_elab)
        As stlc_bot_wf.
-Proof.
-  auto_elab.
-  Unshelve.
-  all: cleanup_auto_elab.
-Qed.
+Proof.  auto_elab. Qed.
 
 
 (*
@@ -596,7 +592,7 @@ Derive cps_elab
 Proof.
   pose proof (elab_lang_implies_wf stlc_bot_wf).
   auto_elab_compiler; compute_eq_compilation.
-  (*all: try solve [is_term_rule].*)
+  all: try solve [is_term_rule].
   solve[by_reduction].
   solve[by_reduction].
   solve[by_reduction].

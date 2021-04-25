@@ -6,10 +6,11 @@ src/named/Exp.v
 src/named/ARule.v
 src/named/Core.v
 src/named/Elab.v
+src/named/Matches.v
+src/named/Subst.v
 src/named/SimpleVSubst.v
 src/named/SimpleVSTLC.v
 src/named/Compilers.v
-src/named/Matches.v
 src/named/ElabCompilers.v
 src/named/SimpleVCPS.v
 src/named/SimpleEvalCtx.v

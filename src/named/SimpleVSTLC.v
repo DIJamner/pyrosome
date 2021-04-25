@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab SimpleVSubst.
+From Named Require Import Core Elab Matches SimpleVSubst.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -66,9 +66,5 @@ Definition stlc :=
 Derive stlc_elab
        SuchThat (elab_lang stlc stlc_elab)
        As stlc_wf.
-Proof.
-  auto_elab.
-  Unshelve.
-  all: cleanup_auto_elab.
-Qed.
+Proof. auto_elab. Qed.
 

@@ -195,7 +195,8 @@ Lemma elab_lang_cons_nth_tail n l el name r er el'
     nth_tail n el = (name, er)::el' ->
     fresh name (nth_tail (S n) l) ->
     elab_lang (nth_tail (S n) l) (nth_tail (S n) el) ->
-    elab_rule (nth_tail (S n) el) r er ->
+    (elab_lang (nth_tail (S n) l) (nth_tail (S n) el) ->
+     elab_rule (nth_tail (S n) el) r er) ->
     elab_lang (nth_tail n l) (nth_tail n el).
 Proof.
   revert el n el'.
@@ -221,6 +222,39 @@ Qed.
 Ltac break_down_elab_lang :=
   repeat ((eapply elab_lang_cons_nth_tail; [compute; reflexivity | compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
   [solve [assumption | compute; apply elab_lang_nil]|..].
+
+Ltac setup_elab_lang_proof :=
+  match goal with
+  | |- elab_lang ?l ?el =>
+    rewrite (as_nth_tail l); rewrite (as_nth_tail el); break_down_elab_lang;
+      let ell := fresh "ell" in intro ell; pose proof (elab_lang_implies_wf ell); clear ell
+  end.
+
+
+Ltac solve_fresh := apply use_compute_fresh; compute; reflexivity.
+Ltac solve_sublist := apply (use_compute_sublist string_dec); compute; reflexivity.
+
+
+Ltac break_eq_args :=
+  (apply eq_args_cons;[break_eq_args|])
+  || apply eq_args_nil.
+
+
+
+Ltac solve_in := apply named_list_lookup_err_in; compute; reflexivity.
+Ltac solve_len_eq := solve[ repeat constructor].
+
+(*TODO: move to the right place*)
+Ltac sort_cong :=
+  eapply sort_con_congruence;
+  [ solve_in
+  | solve_len_eq
+  | assumption || fail "could not find lang wf assumption" (*TODO: make work w/ nth_tail*)
+  | break_eq_args].
+
+Ltac compute_everywhere e :=
+  let e' := eval compute in e in
+      change e with e' in *.
 
 
 Lemma elab_term_by' l c n (s es : list exp) args c' t t'
@@ -268,25 +302,4 @@ Local Ltac t :=
   | [|- _ = _] => compute; reflexivity
   end.
 
-Ltac auto_elab :=
-  match goal with
-  | [|- elab_lang ?l ?el] =>
-  rewrite (as_nth_tail l);
-  rewrite (as_nth_tail el);
-  break_down_elab_lang;
-  solve[repeat t]
-  end.
 
-
-Local Ltac t' :=
-  match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
-  | [|- wf_term _ _ _ _] =>  eapply wf_term_var || eapply wf_term_by'
-  | [|-wf_args _ _ _ _] => econstructor
-  | [|- _ = _] => compute; reflexivity
-  end.
-
-Ltac cleanup_auto_elab :=
-  solve [ repeat t'].

@@ -356,8 +356,6 @@ Proof.
 Qed.
 
 
-Ltac solve_in := apply named_list_lookup_err_in; compute; reflexivity.
-
 Ltac lookup_wf_lang := assumption (*TODO: add to ctx beforehand, use assumption here*).
 
 
@@ -375,7 +373,6 @@ Ltac solve_named_list_in_from_value :=
 
 Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
 
-Ltac solve_len_eq := solve[ repeat constructor].
 
 Ltac term_cong :=
   eapply term_con_congruence;
@@ -528,7 +525,76 @@ Local Ltac t' :=
 
 
 
+Ltac process_eq_term :=
+  simpl;
+  match goal with
+  (* in general not valid, but (pretty much) always good*)
+  | [|- eq_term _ _ _ (var _) _] => term_refl
+  (* might be more problematic w/ my left-to-right discipline*)
+  | [|- eq_term _ _ _ _ (var _)] => term_refl
+  | [|- eq_term ?l _ _ ?e1 ?e2] =>
+    tryif is_evar e1; is_evar e2 then shelve
+    else (try solve [compute_everywhere l; by_reduction])
+  end.
 
+(* elab_term -> maybe (eq_sort * list elab_term)
+           should never fail
+           shelves goal if both exp and elaborated exp are evars
+           otherwise returns goal connecting derived sort to given sort
+           and elab_term goals for alll subterms
+ *)
+Ltac try_break_elab_term :=
+  simpl;
+  lazymatch goal with
+    [|- elab_term _ _ ?e ?ee ?t] =>
+    tryif is_evar e; is_evar ee then shelve else
+      eapply elab_term_conv;
+    [ (eapply elab_term_var; [solve_in])
+      || (eapply elab_term_by;[solve_in | break_down_elab_args])
+    | try (sort_cong; process_eq_term)
+           (*TODO: try because if we have an evar with a subst applied to it, the tactic fails;
+                      should be able to make it succeed
+                     *)
+      (*TODO: assumes lang has no sort equations*)]
+  end with
+(*elab_args -> list elab_term; should never fail.
+        returns goals for explicit terms,
+        shelves goals for implicit terms *)
+ break_down_elab_args :=
+  (eapply elab_args_cons_ex'; [solve_len_eq |repeat try_break_elab_term | break_down_elab_args])
+  || (eapply elab_args_cons_im; [break_down_elab_args | shelve (*TODO: what to run here?*)])
+  || eapply elab_args_nil.
+
+
+
+Ltac break_elab_sort :=
+  eapply elab_sort_by; [solve_in |break_down_elab_args].
+
+(*elab_ctx -> list elab_sort; should never fail*)
+Ltac break_down_elab_ctx :=
+  (eapply elab_ctx_cons;[solve_fresh| break_down_elab_ctx | break_elab_sort] || eapply elab_ctx_nil).
+
+Ltac break_elab_rule :=
+  match goal with
+  | [|- elab_rule _ (sort_rule _ _) _] =>
+    eapply elab_sort_rule; [break_down_elab_ctx | solve_sublist]
+  | [|- elab_rule _ (term_rule _ _ _) _] =>
+    eapply elab_term_rule; [break_down_elab_ctx | break_elab_sort | solve_sublist]
+  | [|- elab_rule _ (term_eq_rule _ _ _ _) _] =>
+  eapply eq_term_rule;[ break_down_elab_ctx | break_elab_sort| try_break_elab_term | try_break_elab_term]    
+  end.
+
+
+Ltac cleanup_auto_elab :=
+  solve [ repeat t'].
+(*TODO: t' is temporary/not general enough*)
+Ltac auto_elab :=
+  setup_elab_lang_proof; unshelve solve [break_elab_rule];
+    try match goal with
+     | [|- eq_term _ _ _ _ _] =>
+       apply eq_term_refl
+        end;
+    cleanup_auto_elab.
 (* TODO: something like this is necessary for
    a reflective stepper. 
    The only other option is for the stepper to
