@@ -173,9 +173,6 @@ Definition subst_lang : lang :=
       #"ty" "G" srt
    ]]%arule++cat_lang.
 
-(*TODO: move to elab or core*)
-(*TODO: nth_tail wf*)
-
 
 
 Derive subst_lang_elab
