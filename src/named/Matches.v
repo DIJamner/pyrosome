@@ -454,7 +454,7 @@ Local Ltac t' :=
         lazy_match! goal with
         | [|- eq_term ?l ?c _ _ _] =>
           assert (eq_term $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
-          apply (@eq_term_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); solve [repeat ltac1:(t')]
+          apply (@eq_term_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); shelve()
         end.
 
     Ltac2 get_goal_lang () :=
@@ -551,7 +551,7 @@ Ltac try_break_elab_term :=
       eapply elab_term_conv;
     [ (eapply elab_term_var; [solve_in])
       || (eapply elab_term_by;[solve_in | break_down_elab_args])
-    | try (sort_cong; process_eq_term)
+    | try (sort_cong; repeat process_eq_term)
            (*TODO: try because if we have an evar with a subst applied to it, the tactic fails;
                       should be able to make it succeed
                      *)
