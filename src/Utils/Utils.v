@@ -803,3 +803,17 @@ Proof.
   split; intros; break; eauto using incl_cons, incl_cons_inv.
 Qed.
 Hint Rewrite incl_cons : utils.
+
+Fixpoint compute_all_fresh {A} (l : named_list A) : bool :=
+  match l with
+  | [] => true
+  | (x,_)::l' => (compute_fresh x l') && (compute_all_fresh l')
+  end.
+Hint Rewrite Bool.andb_true_iff : utils.
+
+Lemma use_compute_all_fresh A (l : named_list A)
+  : compute_all_fresh l = true -> all_fresh l.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+  apply use_compute_fresh; eauto.
+Qed.

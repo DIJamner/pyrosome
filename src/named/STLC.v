@@ -68,45 +68,15 @@ Definition stlc :=
   [:| "G" : #"env", "t" : #"ty" %"G", "t'": #"ty" %"G"
       -----------------------------------------------
       #"->" "t" "t'" : #"ty" %"G"
-  ]]%arule++subst_lang.
-
-Import OptionMonad.
+  ]]%arule.
 
 
 Derive stlc_elab
-       SuchThat (elab_lang stlc stlc_elab)
+       SuchThat (Pre.elab_lang (subst_lang_elab++cat_lang_elab) stlc stlc_elab)
        As stlc_wf.
 Proof.
-  
-  setup_elab_lang_proof.
+  setup_elab_lang.
 
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
-  solve [ break_elab_rule ].
   solve [ break_elab_rule ].
   solve [ break_elab_rule ].
   solve [ break_elab_rule ].
@@ -319,7 +289,4 @@ Proof.
   cleanup_auto_elab.
   }
 Qed.  
-     
-(*TODO: currently re-proves subst_lang correct;
-  develop machinery to reuse
-*)
+#[export] Hint Resolve stlc_wf : elab_pfs.

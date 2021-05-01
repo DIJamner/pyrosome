@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List String.
+Require Import String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -151,12 +151,6 @@ Section TermsAndRules.
  
 End TermsAndRules.
 
-#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx : lang_core.
-#[export] Hint Resolve elab_sort_implies_wf : lang_core.
-#[export] Hint Resolve elab_term_implies_wf : lang_core.
-#[export] Hint Resolve elab_args_implies_wf : lang_core.
-#[export] Hint Resolve elab_ctx_implies_wf : lang_core.
-
 Inductive elab_lang : lang -> lang -> Prop :=
 | elab_lang_nil : elab_lang [] []
 | elab_lang_cons : forall l el n r er,
@@ -164,6 +158,13 @@ Inductive elab_lang : lang -> lang -> Prop :=
     elab_lang l el ->
     elab_rule el r er ->
     elab_lang ((n,r)::l) ((n,er)::el).
+
+
+#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang : lang_core.
+#[export] Hint Resolve elab_sort_implies_wf : lang_core.
+#[export] Hint Resolve elab_term_implies_wf : lang_core.
+#[export] Hint Resolve elab_args_implies_wf : lang_core.
+#[export] Hint Resolve elab_ctx_implies_wf : lang_core.
 
 
 Lemma elab_lang_preserves_fresh c ec n
@@ -185,9 +186,112 @@ Proof using.
 Qed.
 #[export] Hint Resolve elab_lang_implies_wf : lang_core.
 
-#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx
- elab_rule elab_lang : lang_core.
 
+Local Lemma elab_lang_insert_mono l' l name r
+  : (forall c t et,
+           elab_sort (l' ++ l) c t et ->
+           elab_sort (l'++(name,r)::l) c t et)
+    /\ (forall c e ee t,
+           elab_term (l' ++ l) c e ee t ->
+           elab_term (l'++(name,r)::l) c e ee t)
+    /\ (forall c s args es c',
+           elab_args (l' ++ l) c s args es c' ->
+           elab_args (l'++(name,r)::l) c s args es c')
+    /\ (forall c ec,
+           elab_ctx (l' ++ l) c ec ->
+           elab_ctx (l'++(name,r)::l) c ec).
+Proof using.
+  apply elab_ind; basic_goal_prep; basic_core_crush.
+  1,2: eapply elab_sort_by; basic_core_crush.
+  1,2: eapply elab_term_by; basic_core_crush.
+Qed.
+
+Definition elab_sort_lang_insert_monotonicity l' l name r
+  := proj1 (elab_lang_insert_mono l' l name r).
+#[export] Hint Resolve elab_sort_lang_insert_monotonicity : lang_core.
+
+Definition elab_term_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (elab_lang_insert_mono l' l name r)).
+#[export] Hint Resolve elab_term_lang_insert_monotonicity : lang_core.
+
+Definition elab_args_lang_insert_monotonicity l' l name r
+  := proj1 (proj2 (proj2 (elab_lang_insert_mono l' l name r))).
+#[export] Hint Resolve elab_args_lang_insert_monotonicity : lang_core.
+
+Definition elab_ctx_lang_insert_monotonicity l' l name r
+  := proj2 (proj2 (proj2 (elab_lang_insert_mono l' l name r))).
+#[export] Hint Resolve elab_ctx_lang_insert_monotonicity : lang_core.
+
+Lemma elab_rule_lang_insert_monotonicity l' l name r' r er
+  : elab_rule (l'++l) r er -> elab_rule (l'++(name, r') :: l) r er.
+Proof.
+  inversion 1; basic_goal_prep; basic_core_crush.
+  (*TODO: why isn't this already solved?*)
+  constructor; basic_core_crush.
+Qed.
+#[export] Hint Resolve elab_rule_lang_insert_monotonicity : lang_core.
+
+(*TODO: move to utils*)
+Lemma invert_empty_app A (a b : list A)
+  : [] = a++b <-> a = [] /\ b = [].
+Proof.
+  destruct a; simpl; firstorder congruence.
+Qed.
+Hint Rewrite invert_empty_app : utils.
+
+
+Lemma length_0_is_empty A (a : list A)
+  : 0 = List.length a <-> a = [].
+Proof.
+  destruct a; simpl; firstorder congruence.
+Qed.
+Hint Rewrite length_0_is_empty : utils.
+Hint Rewrite app_nil_l : utils.
+
+(*TODO: length side condition is awkward;
+  make a more ergonomic interface?
+*)
+Lemma elab_lang_insert_wf l' el' l el r er s
+  : fresh s (l'++l) ->
+    elab_rule el r er ->
+    length l' = length el' ->
+    elab_lang (l' ++ l) (el' ++ el) ->
+    elab_lang (l' ++ (s,r)::l) (el' ++ (s,er)::el).
+Proof.
+  revert el'.
+  induction l'; inversion 3; basic_goal_prep; basic_core_crush.
+  destruct el'; simpl in *; inversion H1.
+  basic_goal_prep.
+  inversion H2; subst.
+  constructor; basic_core_crush.
+  apply IHl'; basic_core_crush.
+Qed.
+#[export] Hint Resolve elab_lang_insert_wf : lang_core.
+
+Theorem elab_lang_sum_wf l1 l2 l_pre el1 el2 el_pre
+  : all_fresh (l1++l2) ->
+    length l1 = length el1 ->
+    elab_lang (l1++l_pre) (el1++el_pre) ->
+    length l2 = length el2 ->
+    elab_lang (l2++l_pre) (el2++el_pre) ->
+    elab_lang (l1++l2++l_pre) (el1++el2++el_pre).
+Proof.
+  revert el2.
+  induction l2; inversion 3; basic_goal_prep; basic_core_crush.
+  {
+    apply invert_empty_app in H3;
+    apply  invert_empty_app in H4.
+    basic_core_crush.
+  }
+  inversion H8; subst.
+  destruct el2; inversion H7; basic_goal_prep.
+  inversion H12; subst.
+  apply elab_lang_insert_wf; basic_core_crush.
+  (*Not included in auto hints because it could trigger too often.
+    TODO: assess whether this really impacts performance.
+   *)
+  eapply all_fresh_insert_is_fresh; eauto.
+Qed.
 
 
 Lemma elab_lang_cons_nth_tail n l el name r er el'
@@ -249,7 +353,7 @@ Ltac sort_cong :=
   eapply sort_con_congruence;
   [ solve_in
   | solve_len_eq
-  | assumption || fail "could not find lang wf assumption" (*TODO: make work w/ nth_tail*)
+  | assumption || fail 2 "could not find lang wf assumption"
   | break_eq_args].
 
 Ltac compute_everywhere e :=
@@ -301,5 +405,3 @@ Local Ltac t :=
   | [|-elab_rule _ _ _] => econstructor
   | [|- _ = _] => compute; reflexivity
   end.
-
-

@@ -85,6 +85,7 @@ Definition subst_lang : lang :=
        = #"ret" (#"val_subst" %"g" %"v")
        : #"el" %"G1" %"A"
   ];
+   
   [:| "G" : #"env", "A" : #"ty", "v" : #"val" %"G" %"A"
        -----------------------------------------------
        #"ret" "v" : #"el" %"G" %"A"
@@ -176,7 +177,7 @@ Definition subst_lang : lang :=
 
 
 Derive subst_elab
-       SuchThat (elab_lang subst_lang subst_elab)
+       SuchThat (Pre.elab_lang [] subst_lang subst_elab)
        As subst_lang_wf.
 Proof. auto_elab. Qed.
-
+#[export] Hint Resolve subst_lang_wf : elab_pfs.

@@ -10,6 +10,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Elab.
+From Named Require ElabWithPrefix.
+Module Pre := ElabWithPrefix.
 Import Core.Notations.
 Import OptionMonad.
 
@@ -526,7 +528,7 @@ Local Ltac t' :=
 
 
 Ltac process_eq_term :=
-  simpl;
+  cbn -[nth_tail];
   match goal with
   (* in general not valid, but (pretty much) always good*)
   | [|- eq_term _ _ _ (var _) _] => term_refl
@@ -544,7 +546,7 @@ Ltac process_eq_term :=
            and elab_term goals for alll subterms
  *)
 Ltac try_break_elab_term :=
-  simpl;
+  cbn -[nth_tail];
   lazymatch goal with
     [|- elab_term _ _ ?e ?ee ?t] =>
     tryif is_evar e; is_evar ee then shelve else
@@ -588,13 +590,57 @@ Ltac break_elab_rule :=
 Ltac cleanup_auto_elab :=
   solve [ repeat t'].
 (*TODO: t' is temporary/not general enough*)
+
+
+Create HintDb elab_pfs discriminated.
+Create HintDb auto_elab discriminated.
+#[export] Hint Resolve elab_lang_nil : auto_elab.
+#[export] Hint Resolve ElabWithPrefix.elab_prefix_implies_elab_lang : auto_elab.
+#[export] Hint Resolve Pre.elab_prefix_monotonicity_lang : auto_elab.
+
+Lemma elab_with_prefix_nil_implies_elab l el
+  : ElabWithPrefix.elab_lang [] l el ->
+    elab_lang l el.
+Proof.
+  intro.
+  rewrite (app_nil_end l).
+  rewrite (app_nil_end el).
+  apply ElabWithPrefix.elab_implies_elab_prefix_lang;
+    basic_core_crush.
+Qed.
+#[export] Hint Resolve elab_with_prefix_nil_implies_elab : auto_elab.
+
+#[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; compute; reflexivity : auto_elab.
+
+Ltac split_rule_elab :=
+  eapply Pre.elab_lang_cons_nth_tail;
+  [ compute; reflexivity
+  | compute; reflexivity
+  | apply use_compute_fresh; compute; reflexivity
+  | solve[eauto with elab_pfs auto_elab]
+    || fail 2 "could not find elaboration proof for prefix"
+  | try solve [ compute; apply Pre.elab_lang_nil ] |].
+
+
+Ltac setup_elab_lang :=
+  lazymatch goal with
+  | |- Pre.elab_lang ?pre ?l ?el =>
+    rewrite (as_nth_tail l);
+    rewrite (as_nth_tail el)
+  | _ => fail "Not a language extension wfness goal"
+  end;
+  repeat split_rule_elab;
+  (let ell := fresh "ell" in
+   intro ell; pose proof (elab_lang_implies_wf ell); clear ell).
+
 Ltac auto_elab :=
-  setup_elab_lang_proof; unshelve solve [break_elab_rule];
-    try match goal with
-     | [|- eq_term _ _ _ _ _] =>
-       apply eq_term_refl
-        end;
-    cleanup_auto_elab.
+  setup_elab_lang;
+   unshelve (solve [ break_elab_rule ]);
+   try match goal with
+       | |- eq_term _ _ _ _ _ => apply eq_term_refl
+       end; cleanup_auto_elab.
+
+
 (* TODO: something like this is necessary for
    a reflective stepper. 
    The only other option is for the stepper to

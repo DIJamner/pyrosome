@@ -56,13 +56,10 @@ Definition cat_lang : lang :=
 
     
 Derive cat_lang_elab
-       SuchThat (elab_lang cat_lang cat_lang_elab)
+       SuchThat (Pre.elab_lang [] cat_lang cat_lang_elab)
        As cat_lang_wf.
-Proof.
-  auto_elab.
-  Unshelve.
-  all: cleanup_auto_elab.
-Qed.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve cat_lang_wf : elab_pfs.
 
 
 Definition subst_lang : lang :=
@@ -171,11 +168,12 @@ Definition subst_lang : lang :=
   [s| "G" : #"env" 
       -----------------------------------------------
       #"ty" "G" srt
-   ]]%arule++cat_lang.
+   ]]%arule.
 
 
 
 Derive subst_lang_elab
-       SuchThat (elab_lang subst_lang subst_lang_elab)
+       SuchThat (Pre.elab_lang cat_lang_elab subst_lang subst_lang_elab)
        As subst_lang_wf.
 Proof. auto_elab. Qed.
+#[export] Hint Resolve subst_lang_wf : elab_pfs.

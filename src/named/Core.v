@@ -969,6 +969,15 @@ Definition eq_sort_lang_insert_monotonicity l' l name r
   := proj1 (lang_insert_mono l' l name r).
 #[export] Hint Resolve eq_sort_lang_insert_monotonicity : lang_core.
 
+
+Lemma eq_sort_lang_insert_monotonicity_n l' l l'' c t1 t2
+  :  eq_sort (l' ++ l) c t1 t2 ->
+        eq_sort (l'++l''++l) c t1 t2.
+Proof.
+  induction l''; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve eq_sort_lang_insert_monotonicity_n : lang_core.
+
 Definition eq_term_lang_insert_monotonicity l' l name r
   := proj1 (proj2 (lang_insert_mono l' l name r)).
 #[export] Hint Resolve eq_term_lang_insert_monotonicity : lang_core.
@@ -984,6 +993,15 @@ Definition wf_sort_lang_insert_monotonicity l' l name r
 Definition wf_term_lang_insert_monotonicity l' l name r
   := proj1 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r))))).
 #[export] Hint Resolve wf_term_lang_insert_monotonicity : lang_core.
+
+
+Lemma wf_term_lang_insert_monotonicity_n l' l l'' c e t
+  : wf_term (l' ++ l) c e t ->
+    wf_term (l'++l''++l) c e t.
+Proof.
+  induction l''; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_term_lang_insert_monotonicity_n : lang_core.
 
 Definition wf_args_lang_insert_monotonicity l' l name r
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))))).
@@ -1025,6 +1043,19 @@ Proof.
    *)
   eapply all_fresh_insert_is_fresh; eauto.
 Qed.
+
+(*TODO: prove strengthened version?
+Theorem lang_sum_wf l1 l2 l_pre
+  : all_fresh (l1++l2++l_pre) ->
+    wf_lang l_pre ->
+    wf_lang (l1++l_pre1) ->
+    wf_lang (l2++l_pre2) ->
+    incl l_pre1 l_pre ->
+    incl l_pre2 l_pre ->
+    wf_lang (l1++l2++l_pre).
+Proof.
+*)
+
 
 Lemma eq_args_length_eq_l l c c' s1 s2
   : eq_args l c c' s1 s2 ->

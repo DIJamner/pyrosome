@@ -6,28 +6,32 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers SimpleVSTLC Matches.
+From Named Require Import Core Compilers Elab ElabCompilers SimpleVSubst SimpleVSTLC Matches.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-Definition stlc_bot :=
-  ([:| 
+Definition bot_ty :=
+  [[:| 
       -----------------------------------------------
       #"bot" : #"ty"
-  ])%arule:: stlc.
+  ]]%arule.
 
 
 
-Derive stlc_bot_elab
-       SuchThat (elab_lang stlc_bot stlc_bot_elab)
-       As stlc_bot_wf.
-Proof.  auto_elab. Qed.
+Derive bot_ty_elab
+       SuchThat (Pre.elab_lang subst_elab bot_ty bot_ty_elab)
+       As bot_ty_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve bot_ty_wf : elab_pfs.
 
+(*TODO: move hint to Matches*)
+Hint Resolve elab_lang_implies_wf : auto_elab.
 
-(*
-Definition twkn g a b := {{#"ty_subst"(#"ext"(g,a),g,#"wkn"(g,a),b)}}.
-Definition ewkn g a b e := {{#"el_subst"(#"ext"(g,a),g,#"wkn"(g,a),b,e)}}.*)
+Definition stlc_bot := bot_ty_elab ++ stlc_elab ++ subst_elab.
+Lemma stlc_bot_wf : wf_lang stlc_bot.
+Proof. eauto 7 with auto_elab elab_pfs. Qed.
+
 Fixpoint wkn_n n :=
   match n with
   | 0 => {{e #"id"}}
@@ -69,7 +73,7 @@ Definition cps_sort (c:string) args : sort :=
   match c, args with
   | "el", [A; G] =>
     {{s #"el" (#"ext" %G (#"->" %A #"bot")) #"bot" }}
-  | _,_ => scon c (map var (lookup_args stlc c))
+  | _,_ => scon c (map var (lookup_args stlc_bot c))
   end%string.
 Definition cps (c : string) (args : list string) : exp :=
   match c, args with
@@ -90,7 +94,7 @@ Definition cps (c : string) (args : list string) : exp :=
     ret_val {{e #"hd"}} (var A)*)
   | "ret", [v; A; G] =>
     ret_val (var v)
-  | _,_ => con c (map var (lookup_args stlc c))
+  | _,_ => con c (map var (lookup_args stlc_bot c))
   end%string.
 
 (*TODO: move to compiler elab or compilers
@@ -115,7 +119,7 @@ Fixpoint make_compiler
 
 
 Definition comp :=
-  Eval compute in (make_compiler cps_sort cps (nth_tail 0 stlc)).
+  Eval compute in (make_compiler cps_sort cps (nth_tail 1 stlc_bot)).
 
 (*TODO: move to utils*)
 Lemma nth_error_nil A n : @nth_error A [] n = None.
@@ -262,7 +266,7 @@ Local Ltac t' :=
 
 
 Lemma cps_beta_preserved :
-eq_term stlc_bot_elab
+eq_term stlc_bot
     {{c"G" : #"env",
        "A" : #"ty",
        "B" : #"ty",
@@ -463,7 +467,7 @@ Qed.
 *)
 
 Lemma cps_subst_preserved
-  : eq_term stlc_bot_elab
+  : eq_term stlc_bot
     {{c"G" : #"env",
        "A" : #"ty",
        "B" : #"ty",
@@ -587,26 +591,53 @@ Qed. *)
   
 
 Derive cps_elab
-       SuchThat (elab_preserving_compiler stlc_bot_elab comp cps_elab stlc_elab)
+       SuchThat (elab_preserving_compiler stlc_bot comp cps_elab (nth_tail 1 stlc_bot))
        As cps_elab_preserving.
 Proof.
-  pose proof (elab_lang_implies_wf stlc_bot_wf).
-  auto_elab_compiler; compute_eq_compilation.
-  all: try solve [is_term_rule].
-  solve[by_reduction].
-  solve[by_reduction].
-  solve[by_reduction].
-  apply cps_subst_preserved.
-  apply cps_beta_preserved.
-  solve[by_reduction].
+  pose proof stlc_bot_wf.
+ match goal with
+  | |- elab_preserving_compiler _ ?cmp ?ecmp ?src =>
+        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src)
+ end.
+ Ltac safe_eexists :=
+   lazymatch goal with
+     [|- exists _,_]=> eexists
+   end.
+ Ltac elab_compiler_cons::=
+ eapply elab_compiler_cons_nth_tail;
+ [ compute; reflexivity | cbn beta match; repeat (apply conj || safe_eexists) ].
+
+ Ltac break_preserving :=
+   (elab_compiler_cons; try reflexivity; [ break_preserving |..])
+   || (compute; apply elab_preserving_compiler_nil).
+
+ break_preserving.
+
+ all: try solve[ repeat t; repeat t'].
+ all: try solve [is_term_rule].
+
+ solve[ compute_eq_compilation;by_reduction].
+ solve[ compute_eq_compilation;by_reduction].
+ solve[ compute_eq_compilation;by_reduction].
+ apply cps_subst_preserved.
+ apply cps_beta_preserved.
+
+ solve[ compute_eq_compilation;by_reduction].
   Unshelve.
   all: repeat t'.
 Qed.
 
-Goal semantics_preserving stlc_bot_elab cps_elab stlc_elab.
+
+Local Lemma stlc_wf' : wf_lang (nth_tail 1 stlc_bot).
+Proof.
+  change (nth_tail 1 stlc_bot) with (stlc_elab ++ subst_elab).
+  eauto 7 with auto_elab elab_pfs.
+Qed.
+
+Goal semantics_preserving stlc_bot cps_elab (nth_tail 1 stlc_bot).
 Proof.
   apply inductive_implies_semantic.
-  - eapply elab_lang_implies_wf; apply stlc_wf.
-  - eapply elab_lang_implies_wf; apply stlc_bot_wf.
-  -  eauto using cps_elab_preserving with lang_core.
+  - apply stlc_wf'.
+  - apply stlc_bot_wf.
+  - eauto using cps_elab_preserving with lang_core.
 Qed.

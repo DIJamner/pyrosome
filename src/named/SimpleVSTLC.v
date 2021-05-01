@@ -7,10 +7,11 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Elab Matches SimpleVSubst.
+From Named Require ElabWithPrefix.
+Module Pre := ElabWithPrefix.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
-
 
 Definition stlc :=
   [[:> "G" : #"env", "A" : #"ty", "B" : #"ty",
@@ -60,11 +61,11 @@ Definition stlc :=
   [:| "t" : #"ty", "t'": #"ty"
       -----------------------------------------------
       #"->" "t" "t'" : #"ty"
-  ]]%arule++subst_lang.
-
+  ]]%arule.
 
 Derive stlc_elab
-       SuchThat (elab_lang stlc stlc_elab)
+       SuchThat (Pre.elab_lang subst_elab stlc stlc_elab)
        As stlc_wf.
 Proof. auto_elab. Qed.
+#[export] Hint Resolve stlc_wf : elab_pfs.
 
