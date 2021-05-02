@@ -142,11 +142,17 @@ Definition gen_rule (cmp : compiler) (p : string * rule) : named_list compiler_c
   let (n,r) := p in
   match r with
   | sort_rule c args =>
-    (*TODO: use arg names from c so that renaming works?*)
-    [(n,named_list_lookup (sort_case (map fst c) (scon n (map var args))) cmp n)]
+    match named_list_lookup (sort_case (map fst c) (scon n (map var args))) cmp n with
+    | sort_case args' t =>
+      [(n,sort_case (map fst c) t[/combine args' (map var (map fst c))/])]
+    | _ => [(n,sort_case [] {{s#"ERR: expected sort case"}})]
+    end
   | term_rule c args t => 
-    (*TODO: use arg names from c so that renaming works?*)
-    [(n,named_list_lookup (term_case (map fst c) (con n (map var args))) cmp n)]
+    match named_list_lookup (term_case (map fst c) (con n (map var args))) cmp n with
+    | term_case args' e =>
+      [(n,term_case (map fst c) e[/combine args' (map var (map fst c))/])]
+    | _ => [(n,sort_case [] {{s#"ERR: expected term case"}})]
+    end
   | sort_eq_rule _ _ _
   | term_eq_rule _ _ _ _ => []
   end.
@@ -163,8 +169,7 @@ Notation "'match' # 'from' l 'with' case_1 .. case_n 'end'" :=
 Definition cps : compiler :=
   match # from (stlc_elab ++ subst_elab) with
   | {{s #"el" "G" "A"}} => {{s #"el" (#"ext" %"G" (#"->" %"A" #"bot")) #"bot" }}
-                             (*TODO: change def so that t,t' are A B*)
-  | {{e #"->" "t" "t'"}} => {{e #"->" %"t" {double_neg (var "t'")} }}
+  | {{e #"->" "A" "B"}} => {{e #"->" %"A" {double_neg (var "B")} }}
   | {{e #"lambda" "G" "A" "B" "e"}} =>
     {{e #"lambda" %"A" (#"ret" (#"lambda" (#"->" %"B" #"bot") %"e"))}}
   | {{e #"app" "G" "A" "B" "e" "e'"}} =>
