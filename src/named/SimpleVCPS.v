@@ -69,33 +69,6 @@ Definition get_rule_args r :=
 Definition lookup_args l n :=
   get_rule_args ( named_list_lookup (ARule.sort_rule [] []) l n).
 
-Definition cps_sort (c:string) args : sort :=
-  match c, args with
-  | "el", [A; G] =>
-    {{s #"el" (#"ext" %G (#"->" %A #"bot")) #"bot" }}
-  | _,_ => scon c (map var (lookup_args stlc_bot c))
-  end%string.
-Definition cps (c : string) (args : list string) : exp :=
-  match c, args with
-  | "->", [B; A] =>
-    {{e #"->" %A {double_neg (var B)} }}
-  | "lambda", [e; B; A; G] =>
-    {{e #"lambda" %A (#"ret" (#"lambda" (#"->" %B #"bot") %e))}}
-  | "app", [e2; e1; B; A; G] =>
-    let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
-    let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
-    let x2 := {{e #"ret" #"hd"}} in
-    bind_k 1 (var e1) {{e #"->" %A {double_neg (var B)} }}
-    (bind_k 2 (var e2) (var A)
-    {{e #"app" (#"app" {x1} {x2}) {k} }})
-  | "el_subst", [e; A; g; G'; G] =>
-    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %g) #"hd") %e }}
-  (*| "hd", [:: A] =>
-    ret_val {{e #"hd"}} (var A)*)
-  | "ret", [v; A; G] =>
-    ret_val (var v)
-  | _,_ => con c (map var (lookup_args stlc_bot c))
-  end%string.
 
 (*TODO: move to compiler elab or compilers
   TODO: revise; can be better now that arg names
@@ -118,8 +91,95 @@ Fixpoint make_compiler
   end.
 
 
-Definition comp :=
-  Eval compute in (make_compiler cps_sort cps (nth_tail 1 stlc_bot)).
+(*TODO: put in compiler notations module*)
+(*TODO: here and for rule notations, add % consistently or remove everywhere*)
+Declare Custom Entry comp_case.
+
+Notation "| '{{s' # constr }} => t " :=
+  (constr, sort_case nil t)
+    (in custom comp_case at level 50,
+        left associativity,
+        constr constr at level 0,
+        t constr,
+        format "|  '{{s' # constr }}  =>  t").
+
+Notation "| '{{e' # constr }} => e " :=
+  (constr, term_case nil e)
+    (in custom comp_case at level 50,
+        left associativity,
+        constr constr at level 0,
+        e constr,
+        format "|  '{{e' # constr }}  =>  e").
+
+Notation "| '{{s' # constr x .. y }} => t" :=
+  (constr, sort_case (cons y .. (cons x nil) ..) t)
+    (in custom comp_case at level 50,
+        left associativity,
+        constr constr at level 0,
+        x constr at level 0,
+        y constr at level 0,
+        t constr,
+        format "|  '{{s' # constr  x  ..  y }}  =>  t").
+
+Notation "| '{{e' # constr x .. y }} => e " :=
+  (constr, term_case (cons y .. (cons x nil) ..) e)
+    (in custom comp_case at level 50,
+        left associativity,
+        constr constr at level 0,
+        x constr at level 0,
+        y constr at level 0,
+        e constr,
+        format "|  '{{e' # constr  x  ..  y }}  =>  e").
+
+Notation "'match' # 'with' case_1 .. case_n 'end'" :=
+  (cons case_n .. (cons case_1 nil) ..)
+    (left associativity, at level 50,
+     case_1 custom comp_case,
+     case_n custom comp_case,
+     format "'[' 'match'  #  'with' '//' '[v' case_1 '//' .. '//' case_n ']'  '//' 'end' ']'").
+
+Definition gen_rule (cmp : compiler) (p : string * rule) : named_list compiler_case :=
+  let (n,r) := p in
+  match r with
+  | sort_rule c args =>
+    (*TODO: use arg names from c so that renaming works?*)
+    [(n,named_list_lookup (sort_case (map fst c) (scon n (map var args))) cmp n)]
+  | term_rule c args t => 
+    (*TODO: use arg names from c so that renaming works?*)
+    [(n,named_list_lookup (term_case (map fst c) (con n (map var args))) cmp n)]
+  | sort_eq_rule _ _ _
+  | term_eq_rule _ _ _ _ => []
+  end.
+    
+
+Notation "'match' # 'from' l 'with' case_1 .. case_n 'end'" :=
+  (flat_map (gen_rule (cons case_n .. (cons case_1 nil) ..)) l)
+    (left associativity, at level 50,
+     case_1 custom comp_case,
+     case_n custom comp_case,
+     format "'[' 'match'  #  'from'  l  'with' '//' '[v' case_1 '//' .. '//' case_n ']' '//' 'end' ']'").
+
+
+Definition cps : compiler :=
+  match # from (stlc_elab ++ subst_elab) with
+  | {{s #"el" "G" "A"}} => {{s #"el" (#"ext" %"G" (#"->" %"A" #"bot")) #"bot" }}
+                             (*TODO: change def so that t,t' are A B*)
+  | {{e #"->" "t" "t'"}} => {{e #"->" %"t" {double_neg (var "t'")} }}
+  | {{e #"lambda" "G" "A" "B" "e"}} =>
+    {{e #"lambda" %"A" (#"ret" (#"lambda" (#"->" %"B" #"bot") %"e"))}}
+  | {{e #"app" "G" "A" "B" "e" "e'"}} =>
+    let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
+    let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
+    let x2 := {{e #"ret" #"hd"}} in
+    bind_k 1 (var "e") {{e #"->" %"A" {double_neg (var "B")} }}
+    (bind_k 2 (var "e'") (var "A")
+    {{e #"app" (#"app" {x1} {x2}) {k} }})
+  | {{e #"el_subst" "G" "G'" "g" "A" "e" }} =>
+    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e" }}
+  | {{e #"ret" "G" "A" "v"}} =>
+    ret_val (var "v")
+  end.
+
 
 (*TODO: move to utils*)
 Lemma nth_error_nil A n : @nth_error A [] n = None.
@@ -591,7 +651,7 @@ Qed. *)
   
 
 Derive cps_elab
-       SuchThat (elab_preserving_compiler stlc_bot comp cps_elab (nth_tail 1 stlc_bot))
+       SuchThat (elab_preserving_compiler stlc_bot cps cps_elab (nth_tail 1 stlc_bot))
        As cps_elab_preserving.
 Proof.
   pose proof stlc_bot_wf.
@@ -623,8 +683,9 @@ Proof.
  apply cps_beta_preserved.
 
  solve[ compute_eq_compilation;by_reduction].
-  Unshelve.
-  all: repeat t'.
+ Unshelve.
+ compute in cps_elab.
+ all: repeat t'.
 Qed.
 
 
@@ -641,3 +702,8 @@ Proof.
   - apply stlc_bot_wf.
   - eauto using cps_elab_preserving with lang_core.
 Qed.
+
+(*
+TODO: make proof generate fully evalled cps_elab to print w/ the notation
+Eval compute in cps_elab.
+*)
