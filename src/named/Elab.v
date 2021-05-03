@@ -306,10 +306,6 @@ Proof.
   revert el n el'.
   induction l; destruct el; basic_goal_prep; basic_core_crush.
   {
-    apply nth_error_In in H.
-    basic_utils_crush.
-  }
-  {
     destruct n.
     {
       rewrite <-!as_nth_tail in *.

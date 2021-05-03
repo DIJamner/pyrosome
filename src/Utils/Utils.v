@@ -817,3 +817,27 @@ Proof.
   induction l; basic_goal_prep; basic_utils_crush.
   apply use_compute_fresh; eauto.
 Qed.
+
+Lemma nth_tail_to_cons A l n (x:A)
+  : nth_error l n = Some x ->
+    nth_tail n l = x::(nth_tail (S n) l).
+Proof.
+  revert l; induction n; destruct l;
+    basic_goal_prep; basic_utils_crush.
+Qed.
+
+Lemma nth_tail_equals_cons_res A n l l' (x:A)
+  : nth_tail n l = x :: l' -> l' = nth_tail (S n) l.
+Proof.
+  revert l l'; induction n; destruct l;
+    basic_goal_prep; basic_utils_crush.
+  cbv in H; inversion H; subst.
+  reflexivity.
+Qed.
+  
+
+Lemma nth_error_nil A n : @nth_error A [] n = None.
+Proof.
+  destruct n; simpl; auto.
+Qed.
+Hint Rewrite nth_error_nil : utils.

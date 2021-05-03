@@ -597,6 +597,7 @@ Create HintDb auto_elab discriminated.
 #[export] Hint Resolve elab_lang_nil : auto_elab.
 #[export] Hint Resolve ElabWithPrefix.elab_prefix_implies_elab_lang : auto_elab.
 #[export] Hint Resolve Pre.elab_prefix_monotonicity_lang : auto_elab.
+#[export] Hint Resolve elab_lang_implies_wf : auto_elab.
 
 Lemma elab_with_prefix_nil_implies_elab l el
   : ElabWithPrefix.elab_lang [] l el ->
