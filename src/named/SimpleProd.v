@@ -121,4 +121,22 @@ Derive prod_elab
 Proof. auto_elab. Qed.
 #[export] Hint Resolve prod_wf : elab_pfs.
 
+(*Note that because the projections aren't values,
+  we can't put the eta law directly at the value level
+*)
+Definition prod_eta :=
+  [
+     [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" %"G" (#"prod" %"A" %"B")
+      ----------------------------------------------- ("prod_eta")
+      #"ret" %"v"
+      = #"pair" (#".1" (#"ret" %"v")) (#".2" (#"ret" %"v"))
+      : #"el" %"G" (#"prod" %"A" %"B")
+  ]]%arule.
 
+
+Derive prod_eta_elab
+       SuchThat (Pre.elab_lang (prod_elab ++ subst_elab) prod_eta prod_eta_elab)
+       As prod_eta_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve prod_eta_wf : elab_pfs.
