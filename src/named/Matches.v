@@ -606,7 +606,7 @@ Proof.
   intro.
   rewrite (app_nil_end l).
   rewrite (app_nil_end el).
-  apply ElabWithPrefix.elab_implies_elab_prefix_lang;
+  apply ElabWithPrefix.elab_prefix_implies_elab_lang;
     basic_core_crush.
 Qed.
 #[export] Hint Resolve elab_with_prefix_nil_implies_elab : auto_elab.

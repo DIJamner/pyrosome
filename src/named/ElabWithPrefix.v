@@ -207,7 +207,10 @@ Section WithPrefix.
     constructor; basic_core_crush.
   Qed.
 
-  
+  (*TODO: 2 versions of the same lemma.
+    This one should be flipped.
+    Since it's not used though, do we need it?
+
   Lemma elab_implies_elab_prefix_lang lp l el
     : Elab.elab_lang lp l_pre ->
       elab_lang l el ->
@@ -216,6 +219,7 @@ Section WithPrefix.
     induction 2; basic_goal_prep; basic_core_crush.
     constructor; basic_core_crush.
   Qed.  
+   *)
 
 End WithPrefix.
 
@@ -356,6 +360,6 @@ Proof.
   intros.
   apply elab_implies_elab_prefix_rule.
   apply H4.
-  apply elab_implies_elab_prefix_lang;
+  apply elab_prefix_implies_elab_lang;
   assumption.
 Qed.  
