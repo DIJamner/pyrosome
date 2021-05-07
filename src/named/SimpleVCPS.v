@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers SimpleVSubst SimpleVSTLC Matches.
+From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix SimpleVSubst SimpleVSTLC Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -404,31 +404,20 @@ Qed. *)
   
 
 Derive cps_elab
-       SuchThat (elab_preserving_compiler stlc_bot cps cps_elab (nth_tail 1 stlc_bot))
+       SuchThat (elab_preserving_compiler [] stlc_bot cps cps_elab (nth_tail 1 stlc_bot))
        As cps_elab_preserving.
 Proof.
   pose proof stlc_bot_wf.
- match goal with
-  | |- elab_preserving_compiler _ ?cmp ?ecmp ?src =>
-        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src)
- end.
+  setup_elab_compiler.
 
-
- break_preserving.
-
- all: try solve[ repeat t; repeat t'].
- all: try solve [is_term_rule].
-
- solve[ compute_eq_compilation;by_reduction].
- solve[ compute_eq_compilation;by_reduction].
- solve[ compute_eq_compilation;by_reduction].
+  all: try solve[ repeat t; repeat t'].
+  
+  1-14:solve[ compute_eq_compilation;by_reduction].
  apply cps_subst_preserved.
  apply cps_beta_preserved.
-
  solve[ compute_eq_compilation;by_reduction].
  Unshelve.
- compute in cps_elab.
- all: repeat t'.
+ all: repeat t'. 
 Qed.
 
 
@@ -443,7 +432,11 @@ Proof.
   apply inductive_implies_semantic.
   - apply stlc_wf'.
   - apply stlc_bot_wf.
-  - eauto using cps_elab_preserving with lang_core.
+  - eapply elab_compiler_implies_preserving.
+    change  (nth_tail 1 stlc_bot) with  (nth_tail 1 stlc_bot ++ []).
+    change (cps_elab) with (cps_elab ++[]).
+    eapply elab_compiler_prefix_implies_elab;
+    eauto using cps_elab_preserving with lang_core.
 Qed.
 
 (*

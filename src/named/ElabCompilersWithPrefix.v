@@ -10,7 +10,6 @@ From Named Require Import Core Compilers Elab.
 From Named Require ElabCompilers.
 (*TODO: why does this generate warnings?*)
 Import Core.Notations.
-Module EC := ElabCompilers.
 
 Section WithPrefix.
   Context (src_pre : lang) (*assumed to already be elaborated*)
@@ -47,9 +46,9 @@ Section WithPrefix.
   Hint Constructors elab_preserving_compiler : lang_core.
 
   Lemma elab_compiler_prefix_implies_elab cmp' target cmp ecmp src
-    : EC.elab_preserving_compiler target cmp' cmp_pre src_pre ->
+    : ElabCompilers.elab_preserving_compiler target cmp' cmp_pre src_pre ->
       elab_preserving_compiler target cmp ecmp src ->
-      EC.elab_preserving_compiler target (cmp++cmp') (ecmp++cmp_pre) (src++src_pre).
+      ElabCompilers.elab_preserving_compiler target (cmp++cmp') (ecmp++cmp_pre) (src++src_pre).
   Proof using.
     induction 2; basic_goal_prep; basic_core_crush.
     all: constructor; basic_core_crush.
@@ -147,19 +146,6 @@ End WithPrefix.
    (elab_compiler_cons; try reflexivity; [ break_preserving |..])
    || (compute; apply elab_preserving_compiler_nil).
 
-
-  Ltac auto_elab_compiler :=
-  match goal with
-  | [|- elab_preserving_compiler _ ?cmp ?ecmp ?src] =>
-  rewrite (as_nth_tail cmp);
-  rewrite (as_nth_tail ecmp);
-  rewrite (as_nth_tail src);
-  repeat (elab_compiler_cons || (compute; apply elab_preserving_compiler_nil));
-  try solve [repeat t]
-  (*break_down_elab_lang;
-  solve[repeat t] TODO*)
-  end.
-
   Ltac compute_eq_compilation :=
     match goal with
     |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
@@ -198,4 +184,15 @@ Ltac t' :=
   | [|- _ = _] => compute; reflexivity
   end.
 
+Ltac setup_elab_compiler :=
+  match goal with
+  | |- elab_preserving_compiler _ _ ?cmp ?ecmp ?src =>
+    rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src)
+  end; break_preserving.
 
+Ltac auto_elab_compiler :=
+  unshelve (setup_elab_compiler;
+  repeat t;
+  solve[ compute_eq_compilation;by_reduction]);
+  repeat t';
+  eauto with elab_pfs auto_elab.

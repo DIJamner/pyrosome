@@ -113,24 +113,32 @@ Derive closure_elab
 Proof. auto_elab. Qed.
 #[export] Hint Resolve closure_wf : elab_pfs.
 
-
+(*TODO: write with target having a single type as its context.
+   - Change lang above to match
+   - collapses the diff. between a subst and a term
+  TODO: complex values make sub a value; desirable or no?
+*)
 Definition cc : compiler :=
   match # from (stlc_elab ++ subst_elab) with
-  | {{s #"el" "G" "A"}} => {{s #"el" (#"ext" %"G" (#"->" %"A" #"bot")) #"bot" }}
-  | {{e #"->" "A" "B"}} => {{e #"->" %"A" {double_neg (var "B")} }}
+  | {{s #"env" }} => {{s #"ty"}}
+  | {{s #"sub" "G" "G'"}} => {{s #"val" %"G" %"G'"}}
+  | {{e #"id" "G"}} => {{e #"id"}}
+  | {{e #"cmp" "G1" "G2" "G3" "f" "g"}} => {{e #"cmp_val" %"f" %"g"}}
+  | {{s #"el" "G" "A"}} => {{s #"el" %"G" %"A" }}
+  | {{e #"el_subst" "G1" "G2" "f" "A" "e"}} => {{e #"cmp" %"f" %"e"}}
+  | {{s #"val" "G" "A"}} => {{s #"val" %"G" %"A" }}
+  | {{e #"val_subst" "G1" "G2" "f" "A" "v"}} => {{e #"cmp_val" %"f" %"v"}}
+  | {{e #"ret" "G" "A" "v" }} => {{e #"ret" %"v"}}
+  | {{e #"ext" "G" "A"}} => {{e #"prod" %"G" %"A" }}
+  | {{e #"snoc" "G" "G'" "A" "g" "v"}} => {{e #"pair_val" %"g" %"v"}}
+  (*Note that we need complex values here to accommodate this projection *)
+  | {{e #"wkn" "G" "A"}} => {{e #".1_val" #"id" }}
+  | {{e #"hd" "G" "A"}} => {{e #".2_val" #"id" }}
+  | {{e #"->" "A" "B"}} => {{e #"clo" %"A" %"B" }}
   | {{e #"lambda" "G" "A" "B" "e"}} =>
-    {{e #"lambda" %"A" (#"ret" (#"lambda" (#"->" %"B" #"bot") %"e"))}}
+    {{e #"closure_val" %"A" %"e" #"id"}}
   | {{e #"app" "G" "A" "B" "e" "e'"}} =>
-    let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
-    let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
-    let x2 := {{e #"ret" #"hd"}} in
-    bind_k 1 (var "e") {{e #"->" %"A" {double_neg (var "B")} }}
-    (bind_k 2 (var "e'") (var "A")
-    {{e #"app" (#"app" {x1} {x2}) {k} }})
-  | {{e #"el_subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e" }}
-  | {{e #"ret" "G" "A" "v"}} =>
-    ret_val (var "v")
+    {{e #"clo_app" %"e" %"e'"}}
   end.
 
 
