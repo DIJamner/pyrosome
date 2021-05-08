@@ -53,9 +53,9 @@ Definition subst_lang : lang :=
   ];
   [:| "G" : #"env", "G'" : #"env", "A" : #"ty",
       "g" : #"sub" %"G" %"G'",
-      "e" : #"val" %"G" %"A" (*we restrict substitutions to values *)
+      "v" : #"val" %"G" %"A" (*we restrict substitutions to values *)
        -----------------------------------------------
-       #"snoc" "g" "e" : #"sub" %"G" (#"ext" %"G'" %"A")
+       #"snoc" "g" "v" : #"sub" %"G" (#"ext" %"G'" %"A")
   ];
   [:| "G" : #"env", "A": #"ty"
        -----------------------------------------------
