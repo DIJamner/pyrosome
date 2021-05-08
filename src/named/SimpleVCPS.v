@@ -77,6 +77,9 @@ Definition cps : compiler :=
     ret_val (var "v")
   end.
 
+(* Use these admitted lemmas when this file is under development
+   to make the proof take a tolerable amount of time and space.
+
 
 Lemma cps_beta_preserved :
 eq_term stlc_bot
@@ -401,13 +404,20 @@ Admitted.
   Unshelve.
   all: repeat t'.
 Qed. *)
-  
+*)
 
 Derive cps_elab
-       SuchThat (elab_preserving_compiler [] stlc_bot cps cps_elab (nth_tail 1 stlc_bot))
+       SuchThat (elab_preserving_compiler [] stlc_bot cps cps_elab (stlc_elab ++ subst_elab))
        As cps_elab_preserving.
 Proof.
+  (*TODO: eliminate the need for this*)
   pose proof stlc_bot_wf.
+  auto_elab_compiler.
+Qed.
+#[export] Hint Resolve cps_elab_preserving : elab_pfs.
+  (*
+  pose proof stlc_bot_wf.
+
   setup_elab_compiler.
 
   all: try solve[ repeat t; repeat t'].
@@ -417,8 +427,8 @@ Proof.
  apply cps_beta_preserved.
  solve[ compute_eq_compilation;by_reduction].
  Unshelve.
- all: repeat t'. 
-Qed.
+ all: repeat t'.
+Qed.*)
 
 
 Local Lemma stlc_wf' : wf_lang (nth_tail 1 stlc_bot).
@@ -437,9 +447,4 @@ Proof.
     change (cps_elab) with (cps_elab ++[]).
     eapply elab_compiler_prefix_implies_elab;
     eauto using cps_elab_preserving with lang_core.
-Qed.
-
-(*
-TODO: make proof generate fully evalled cps_elab to print w/ the notation
-Eval compute in cps_elab.
-*)
+Abort.
