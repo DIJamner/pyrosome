@@ -841,3 +841,10 @@ Proof.
   destruct n; simpl; auto.
 Qed.
 Hint Rewrite nth_error_nil : utils.
+
+
+#[export] Hint Resolve incl_appr : utils.
+#[export] Hint Resolve incl_refl : utils.
+#[export] Hint Resolve incl_app : utils.
+#[export] Hint Resolve incl_appl : utils.
+#[export] Hint Resolve incl_tl : utils.

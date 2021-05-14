@@ -273,7 +273,78 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 
-Local Lemma lang_mono l name r
+Local Lemma lang_mono l l'
+  : incl l l' ->
+    (forall c t1 t2,
+        eq_sort l c t1 t2 ->
+        eq_sort l' c t1 t2)
+    /\ (forall c t e1 e2,
+           eq_term l c t e1 e2 ->
+           eq_term l' c t e1 e2)
+    /\ (forall c c' s1 s2,
+           eq_subst l c c' s1 s2 ->
+           eq_subst l' c c' s1 s2)
+    /\ (forall c t,
+           wf_sort l c t ->
+           wf_sort l' c t)
+    /\ (forall c e t,
+           wf_term l c e t ->
+           wf_term l' c e t)
+    /\ (forall c s c',
+           wf_args l c s c' ->
+           wf_args l' c s c')
+    /\ (forall c,
+           wf_ctx l c ->
+           wf_ctx l' c).
+Proof using.
+  intro lincll.
+  apply judge_ind; basic_goal_prep; basic_core_crush.
+Qed.
+
+(*TODO: these make for bad hints.
+  keep old statements (in addition) for the hint db?
+  or just add none of them?
+*)
+
+Definition eq_sort_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (lang_mono lincll' ).
+Local Hint Resolve eq_sort_lang_monotonicity : lang_core.
+
+Definition eq_term_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (proj2 (lang_mono lincll')).
+Local Hint Resolve eq_term_lang_monotonicity : lang_core.
+
+Definition eq_subst_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (proj2 (proj2 (lang_mono lincll'))).
+Local Hint Resolve eq_subst_lang_monotonicity : lang_core.
+
+Definition wf_sort_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (proj2 (proj2 (proj2 (lang_mono lincll')))).
+Local Hint Resolve wf_sort_lang_monotonicity : lang_core.
+
+Definition wf_term_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll'))))).
+Local Hint Resolve wf_term_lang_monotonicity : lang_core.
+
+Definition wf_args_lang_monotonicity l l' (lincll' : incl l l')
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll')))))).
+Local Hint Resolve wf_args_lang_monotonicity : lang_core.
+
+Definition wf_ctx_lang_monotonicity l l' (lincll' : incl l l')
+  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll')))))).
+Local Hint Resolve wf_ctx_lang_monotonicity : lang_core.
+
+Lemma wf_rule_lang_monotonicity l l' r
+  : incl l l' -> wf_rule l r -> wf_rule l' r.
+Proof.
+  inversion 2; basic_goal_prep; basic_core_crush.
+Qed.
+Local Hint Resolve wf_rule_lang_monotonicity : lang_core.
+
+(*
+  Some common special cases that are good for proof automation
+*)
+Local Lemma lang_mono_cons l name r
   : (forall c t1 t2,
         eq_sort l c t1 t2 ->
         eq_sort ((name,r)::l) c t1 t2)
@@ -296,43 +367,107 @@ Local Lemma lang_mono l name r
            wf_ctx l c ->
            wf_ctx ((name,r)::l) c).
 Proof using.
-  apply judge_ind; basic_goal_prep; basic_core_crush.
+  apply lang_mono.
+  basic_utils_crush.
 Qed.
 
-Definition eq_sort_lang_monotonicity l name r
-  := proj1 (lang_mono l name r).
-#[export] Hint Resolve eq_sort_lang_monotonicity : lang_core.
+Definition eq_sort_lang_monotonicity_cons l name r
+  := proj1 (lang_mono_cons l name r).
+#[export] Hint Resolve eq_sort_lang_monotonicity_cons : lang_core.
 
-Definition eq_term_lang_monotonicity l name r
-  := proj1 (proj2 (lang_mono l name r)).
-#[export] Hint Resolve eq_term_lang_monotonicity : lang_core.
+Definition eq_term_lang_monotonicity_cons l name r
+  := proj1 (proj2 (lang_mono_cons l name r)).
+#[export] Hint Resolve eq_term_lang_monotonicity_cons : lang_core.
 
-Definition eq_subst_lang_monotonicity l name r
-  := proj1 (proj2 (proj2 (lang_mono l name r))).
-#[export] Hint Resolve eq_subst_lang_monotonicity : lang_core.
+Definition eq_subst_lang_monotonicity_cons l name r
+  := proj1 (proj2 (proj2 (lang_mono_cons l name r))).
+#[export] Hint Resolve eq_subst_lang_monotonicity_cons : lang_core.
 
-Definition wf_sort_lang_monotonicity l name r
-  := proj1 (proj2 (proj2 (proj2 (lang_mono l name r)))).
-#[export] Hint Resolve wf_sort_lang_monotonicity : lang_core.
+Definition wf_sort_lang_monotonicity_cons l name r
+  := proj1 (proj2 (proj2 (proj2 (lang_mono_cons l name r)))).
+#[export] Hint Resolve wf_sort_lang_monotonicity_cons : lang_core.
 
-Definition wf_term_lang_monotonicity l name r
-  := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono l name r))))).
-#[export] Hint Resolve wf_term_lang_monotonicity : lang_core.
+Definition wf_term_lang_monotonicity_cons l name r
+  := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono_cons l name r))))).
+#[export] Hint Resolve wf_term_lang_monotonicity_cons : lang_core.
 
-Definition wf_args_lang_monotonicity l name r
-  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono l name r)))))).
-#[export] Hint Resolve wf_args_lang_monotonicity : lang_core.
+Definition wf_args_lang_monotonicity_cons l name r
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_cons l name r)))))).
+#[export] Hint Resolve wf_args_lang_monotonicity_cons : lang_core.
 
-Definition wf_ctx_lang_monotonicity l name r
-  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono l name r)))))).
-#[export] Hint Resolve wf_ctx_lang_monotonicity : lang_core.
+Definition wf_ctx_lang_monotonicity_cons l name r
+  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_cons l name r)))))).
+#[export] Hint Resolve wf_ctx_lang_monotonicity_cons : lang_core.
 
-Lemma wf_rule_lang_monotonicity l name r' r
+Lemma wf_rule_lang_monotonicity_cons l name r' r
   : wf_rule l r -> wf_rule ((name, r') :: l) r.
 Proof.
   inversion 1; basic_goal_prep; basic_core_crush.
 Qed.
-#[export] Hint Resolve wf_rule_lang_monotonicity : lang_core.
+#[export] Hint Resolve wf_rule_lang_monotonicity_cons : lang_core.
+
+Local Lemma lang_mono_app l l'
+  : (forall c t1 t2,
+        eq_sort l c t1 t2 ->
+        eq_sort (l'++l) c t1 t2)
+    /\ (forall c t e1 e2,
+           eq_term l c t e1 e2 ->
+           eq_term (l'++l) c t e1 e2)
+    /\ (forall c c' s1 s2,
+           eq_subst l c c' s1 s2 ->
+           eq_subst (l'++l) c c' s1 s2)
+    /\ (forall c t,
+           wf_sort l c t ->
+           wf_sort (l'++l) c t)
+    /\ (forall c e t,
+           wf_term l c e t ->
+           wf_term (l'++l) c e t)
+    /\ (forall c s c',
+           wf_args l c s c' ->
+           wf_args (l'++l) c s c')
+    /\ (forall c,
+           wf_ctx l c ->
+           wf_ctx (l'++l) c).
+Proof using.
+  apply lang_mono.
+  eauto with utils.
+ (*TODO: why does this fail: basic_utils_crush *)
+Qed.
+
+Definition eq_sort_lang_monotonicity_app l l'
+  := proj1 (lang_mono_app l l').
+#[export] Hint Resolve eq_sort_lang_monotonicity_app : lang_core.
+
+Definition eq_term_lang_monotonicity_app l l'
+  := proj1 (proj2 (lang_mono_app l l')).
+#[export] Hint Resolve eq_term_lang_monotonicity_app : lang_core.
+
+Definition eq_subst_lang_monotonicity_app l l'
+  := proj1 (proj2 (proj2 (lang_mono_app l l'))).
+#[export] Hint Resolve eq_subst_lang_monotonicity_app : lang_core.
+
+Definition wf_sort_lang_monotonicity_app l l'
+  := proj1 (proj2 (proj2 (proj2 (lang_mono_app l l')))).
+#[export] Hint Resolve wf_sort_lang_monotonicity_app : lang_core.
+
+Definition wf_term_lang_monotonicity_app l l'
+  := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l'))))).
+#[export] Hint Resolve wf_term_lang_monotonicity_app : lang_core.
+
+Definition wf_args_lang_monotonicity_app l l'
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l')))))).
+#[export] Hint Resolve wf_args_lang_monotonicity_app : lang_core.
+
+Definition wf_ctx_lang_monotonicity_app l l'
+  := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l')))))).
+#[export] Hint Resolve wf_ctx_lang_monotonicity_app : lang_core.
+
+Lemma wf_rule_lang_monotonicity_app l l' r
+  : wf_rule l r -> wf_rule (l'++ l) r.
+Proof.
+  inversion 1; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
 
 
@@ -927,14 +1062,6 @@ Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
 
-Lemma wf_rule_lang_monotonicity_app l l' r
-  : wf_rule l r -> wf_rule (l' ++ l) r.
-Proof.
-  induction l'; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
-
-
 Local Lemma lang_insert_mono l' l name r
   : (forall c t1 t2,
         eq_sort (l' ++ l) c t1 t2 ->
@@ -958,11 +1085,8 @@ Local Lemma lang_insert_mono l' l name r
            wf_ctx (l' ++ l) c ->
            wf_ctx (l'++(name,r)::l) c).
 Proof using.
-  apply judge_ind; basic_goal_prep; basic_core_crush.
-  1,2: eapply eq_sort_by; basic_core_crush.
-  1,2: eapply eq_term_by; basic_core_crush.
-  1,2: eapply wf_sort_by; basic_core_crush.
-  1,2: eapply wf_term_by; basic_core_crush.
+  apply lang_mono.
+  eauto with utils.
 Qed.
 
 Definition eq_sort_lang_insert_monotonicity l' l name r
