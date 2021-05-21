@@ -6,10 +6,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers ElabWithPrefix ElabCompilersWithPrefix.
+From Named Require Import Core Compilers Elab ElabCompilersWithPrefix.
 Import Exp.Notations.
-
-Definition renaming := named_list string.
 
 
 (*TODO: move to utils*)
@@ -46,12 +44,6 @@ Qed.
 Section RenameFromFn.
   Context (f : string -> string).
 
-  Fixpoint renaming_from_fn (l : lang) : renaming :=
-    match l with
-    | [] => []
-    | (n,_)::l => (n,f n)::(renaming_from_fn l)
-    end.
-
   Fixpoint compiler_from_fn (l : lang) :=
     match l with
     | [] => []
@@ -63,9 +55,9 @@ Section RenameFromFn.
   Fixpoint elab_compiler_from_fn (l : lang) :=
     match l with
     | [] => []
-    | (n,sort_rule c _)::l => (n, sort_case (map fst c) (scon (f n) (map var (map fst c))))::(compiler_from_fn l)
-    | (n,term_rule c _ _)::l => (n, term_case (map fst c) (con (f n) (map var (map fst c))))::(compiler_from_fn l)
-    | _::l => compiler_from_fn l
+    | (n,sort_rule c _)::l => (n, sort_case (map fst c) (scon (f n) (map var (map fst c))))::(elab_compiler_from_fn l)
+    | (n,term_rule c _ _)::l => (n, term_case (map fst c) (con (f n) (map var (map fst c))))::(elab_compiler_from_fn l)
+    | _::l => elab_compiler_from_fn l
     end.
 
   Fixpoint rename_exp e :=
@@ -160,9 +152,6 @@ Section RenameFromFn.
   Qed.
   Local Hint Resolve in_rename : lang_core.
 
-  Context (l : lang).
-    
-
   Lemma with_names_from_rename_ctx A c (s : list A)
     : with_names_from (rename_ctx c) s = with_names_from c s.
   Proof.
@@ -170,7 +159,7 @@ Section RenameFromFn.
     induction c; destruct s; basic_goal_prep; basic_exp_crush.
   Qed.
   
-  Local Lemma rename_mono
+  Local Lemma rename_mono l
     : (forall c t1 t2,
           eq_sort l c t1 t2 ->
           eq_sort (rename_lang l) (rename_ctx c) (rename_sort t1) (rename_sort t2))
@@ -221,10 +210,74 @@ Section RenameFromFn.
       assumption.
     }
   Qed.
+                                                   
+  Local Lemma elab_rename_mono l
+    : (forall c t et,
+          elab_sort l c t et ->
+          elab_sort (rename_lang l) (rename_ctx c) (rename_sort t) (rename_sort et))
+      /\ (forall c e ee t,
+             elab_term l c e ee t ->
+             elab_term (rename_lang l) (rename_ctx c) (rename_exp e) (rename_exp ee) (rename_sort t))
+      /\ (forall c s args es c',
+             elab_args l c s args es c' ->
+             elab_args (rename_lang l)  (rename_ctx c) (rename_args s) args (rename_args es) (rename_ctx c'))
+      /\ (forall c ec,
+             elab_ctx l c ec ->
+             elab_ctx (rename_lang l) (rename_ctx c) (rename_ctx ec)).
+  Proof using.
+    apply elab_ind; basic_goal_prep; 
+      try match goal with
+            [ H : In _ l |- _] =>
+            apply in_rename in H; simpl in H
+          end;      
+      basic_core_crush.
+    {
+      rewrite <- with_names_from_rename_ctx.
+      basic_core_crush.
+    }
+    {
+      apply (proj1 (rename_mono l)) in H1.
+      basic_core_crush.      
+    }
+    {
+      eapply in_map in H.
+      constructor.
+      exact H.
+    }
+    {
+      constructor.
+      basic_core_crush.
+      rewrite with_names_from_rename_ctx.
+      basic_core_crush.
+      basic_core_crush.
+    }
+    {
+      constructor.
+      basic_core_crush.
+     (* TODO: rw backwards, apply earlier lem*)
+  Admitted.                    
+
 
 End RenameFromFn.
 
 Hint Rewrite rename_subst_lookup : exp.
+
+             
+Definition elab_sort_lang_rename_monotonicity f l
+  := proj1 (elab_rename_mono f l).
+#[export] Hint Resolve elab_sort_lang_rename_monotonicity : lang_core.
+
+Definition elab_term_lang_rename_monotonicity f l
+  := proj1 (proj2 (elab_rename_mono f l)).
+#[export] Hint Resolve elab_term_lang_rename_monotonicity : lang_core.
+
+Definition elab_args_lang_rename_monotonicity f l
+  := proj1 (proj2 (proj2 (elab_rename_mono f l))).
+#[export] Hint Resolve elab_args_lang_rename_monotonicity : lang_core.
+
+Definition elab_ctx_lang_rename_monotonicity f l
+  := proj2 (proj2 (proj2 (elab_rename_mono f l))).
+#[export] Hint Resolve elab_ctx_lang_rename_monotonicity : lang_core.
 
 
 Definition eq_sort_lang_monotonicity_rename f l
@@ -285,3 +338,17 @@ Qed.
 #[export] Hint Resolve wf_lang_rename : lang_core.
 
 (*TODO: compilers part *)
+(*
+Theorem renaming_preserving f tgt cmp l
+  : incl (rename_lang f l) tgt -> elab_preserving_compiler cmp tgt (compiler_from_fn f l) (elab_compiler_from_fn f l) l.
+Proof.
+  induction l; basic_goal_prep.
+  basic_core_crush.
+  destruct r; basic_goal_prep; basic_core_crush.
+  {
+    constructor; auto.
+    
+    basic_core_crush.
+    
+    TODO: need renaming for Elab.elab
+*)
