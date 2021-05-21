@@ -8,6 +8,8 @@ src/named/Core.v
 src/named/Elab.v
 src/named/ElabWithPrefix.v
 src/named/Matches.v
+src/named/Cat.v
+src/named/CatProd.v
 src/named/SimpleSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
@@ -20,6 +22,7 @@ src/named/CompilerDefs.v
 src/named/Compilers.v
 src/named/ElabCompilers.v
 src/named/ElabCompilersWithPrefix.v
+src/named/SimpleClosureConv.v
 src/named/Renaming.v
 src/named/PureToComplexValue.v
 src/named/CompilerForExt.v
