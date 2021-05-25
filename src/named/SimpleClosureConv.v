@@ -27,7 +27,7 @@ expr extension
 *)
 Definition closure_lang :=
   [
-  [:> "G" : #"ty",
+  (*[:> "G" : #"ty",
       "A" : #"ty",
       "B" : #"ty",
       "A_fvs" : #"ty",
@@ -37,7 +37,7 @@ Definition closure_lang :=
       (#"closure" %"A" %"e" (#"ret" %"fvs"))
       = #"ret" (#"closure_val" %"A" %"e" %"fvs")
       : #"exp" %"G" (#"clo" %"A" %"B")
-  ];
+  ];*)
   [:> "G" : #"ty",
       "A" : #"ty",
       "B" : #"ty",
@@ -46,11 +46,12 @@ Definition closure_lang :=
       "fvs" : #"val" %"G" %"A_fvs",
       "G'" : #"ty",
       "g" : #"val" %"G'" %"G"
-      ----------------------------------------------- ("closure_val_subst")
-      #"val_subst" %"g" (#"closure_val" %"A" %"e" %"fvs")
-      = #"closure_val" %"A" %"e" (#"val_subst" %"g" %"fvs")
+      ----------------------------------------------- ("closure_subst")
+      #"val_subst" %"g" (#"closure" %"A" %"e" %"fvs")
+      = #"closure" %"A" %"e" (#"val_subst" %"g" %"fvs")
       : #"val" %"G'" (#"clo" %"A" %"B")
   ];
+  (*
   [:> "G" : #"ty",
       "A" : #"ty",
       "B" : #"ty",
@@ -60,10 +61,10 @@ Definition closure_lang :=
       "G'" : #"ty",
       "g" : #"val" %"G'" %"G"
       ----------------------------------------------- ("closure_subst")
-      #"el_subst" %"g" (#"closure" %"A" %"e" %"fvs")
+      #"el_subst" %"g" (#"closure_exp" %"A" %"e" %"fvs")
       = #"closure" %"A" %"e" (#"el_subst" %"g" %"fvs")
       : #"exp" %"G'" (#"clo" %"A" %"B")
-  ];
+  ];*)
   [:> "G" : #"ty", "A" : #"ty", "B" : #"ty",
       "e" : #"exp" %"G" (#"clo" %"A" %"B"),
       "e'" : #"exp" %"G" %"A",
@@ -79,7 +80,7 @@ Definition closure_lang :=
       "B" : #"ty",
       "v" : #"val" %"G" (#"clo" %"A" %"B")
       ----------------------------------------------- ("clo_eta")
-      (#"closure_val" %"A"
+      (#"closure" %"A"
         (#"clo_app" (#"ret" (#"val_subst" #".1" %"v")) (#"ret" #".2"))
         #"id")
       = %"v"
@@ -93,7 +94,7 @@ Definition closure_lang :=
       "fvs" : #"val" %"G" %"A_fvs",
       "v" : #"val" %"G" %"A"
       ----------------------------------------------- ("clo_beta")
-      #"clo_app" (#"ret" (#"closure_val" %"A" %"e" %"fvs")) (#"ret" %"v")
+      #"clo_app" (#"ret" (#"closure" %"A" %"e" %"fvs")) (#"ret" %"v")
       = #"el_subst" (#"pair" %"fvs" %"v") %"e"
       : #"exp" %"G" %"B"
   ];
@@ -112,9 +113,9 @@ Definition closure_lang :=
        "e" : #"exp" (#"prod" %"A_fvs" %"A") %"B",
        "fvs" : #"val" %"G" %"A_fvs"
        -----------------------------------------------
-       #"closure_val" "A" "e" "fvs" : #"val" %"G" (#"clo" %"A" %"B")
+       #"closure" "A" "e" "fvs" : #"val" %"G" (#"clo" %"A" %"B")
   ];
-    (* have an expression closure to evaluate fvs*)
+    (* we could add an expression closure to evaluate fvs
   [:| "G" : #"ty",
        "A" : #"ty",
        "B" : #"ty",
@@ -122,8 +123,8 @@ Definition closure_lang :=
        "e" : #"exp" (#"prod" %"A_fvs" %"A") %"B",
        "fvs" : #"exp" %"G" %"A_fvs"
        -----------------------------------------------
-       #"closure" "A" "e" "fvs" : #"exp" %"G" (#"clo" %"A" %"B")
-  ];
+       #"closure_exp" "A" "e" "fvs" : #"exp" %"G" (#"clo" %"A" %"B")
+  ];*)
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------
       #"clo" "A" "B" : #"ty"
@@ -302,7 +303,7 @@ Definition cc : compiler :=
   | {{e #"hd" "G" "A"}} => {{e #".2" }}
   | {{e #"->" "A" "B"}} => {{e #"clo" %"A" %"B" }}
   | {{e #"lambda" "G" "A" "B" "e"}} =>
-    {{e #"closure_val" %"A" %"e" #"id"}}
+    {{e #"closure" %"A" %"e" #"id"}}
   | {{e #"app" "G" "A" "B" "e" "e'"}} =>
     {{e #"clo_app" %"e" %"e'"}}
   end.
@@ -422,3 +423,306 @@ Proof.
    with elab_pfs auto_elab.
 Qed.
 #[export] Hint Resolve cc_elab_preserving : elab_pfs.
+
+
+(*TODO: move to right place*)
+Lemma elab_preserving_embed tgt' tgt cmp cmp_elab src
+  : incl tgt tgt' ->
+    ElabCompilers.elab_preserving_compiler tgt cmp cmp_elab src ->
+    ElabCompilers.elab_preserving_compiler tgt' cmp cmp_elab src.
+Proof.
+  induction 2; basic_goal_prep; constructor; basic_core_crush.
+  eauto using eq_sort_lang_monotonicity.
+  eauto using eq_term_lang_monotonicity.
+Qed.
+
+Require Import CompilerForExt SimpleEvalCtx.
+
+Lemma cc_with_eval_ctx
+  : (ElabCompilers.elab_preserving_compiler (compile_ext cc_elab eval_ctx_elab ++ closure_elab)
+                                           (ext_id eval_ctx_elab ++ cc)
+                                           (ext_id_elab eval_ctx_elab ++ cc_elab)
+                                           (eval_ctx_elab ++ stlc_elab ++ subst_elab)).
+Proof.
+  apply elab_compiler_prefix_implies_elab.
+  2: {
+    apply extension_preservation.
+    apply use_compute_lang_args_sublist.
+    compute; reflexivity.
+  }
+  eapply elab_preserving_embed.
+  2:{
+    rewrite (app_nil_end cc).
+    rewrite (app_nil_end cc_elab).
+    rewrite (app_nil_end (stlc_elab ++ subst_elab)).
+    apply elab_compiler_prefix_implies_elab.
+    constructor.
+    apply cc_elab_preserving.
+  }
+  apply incl_appr.
+  basic_utils_crush.
+Qed.
+
+Eval compute in (compile_ext cc subst_eval_ctx).
+
+Definition clo_ctx : lang :=
+  [
+  [:> "G" : #"ty",
+       "A" : #"ty",
+       "B" : #"ty",
+       "C" : #"ty",
+       "E" : #"Ectx" %"G" %"C" %"A",
+       "v" : #"val" %"G" (#"clo" %"A" %"B"),
+       "e" : #"exp" %"G" %"C"
+       ----------------------------------------------- ("plug clo_app_r")
+       #"plug" (#"Eclo_app_r" %"v" %"E") %"e"
+       = #"clo_app" (#"ret" %"v") (#"plug" %"E" %"e")
+      : #"exp" %"G" %"B"
+  ];
+     [:> "G" : #"ty",
+       "A" : #"ty",
+       "B" : #"ty",
+       "C" : #"ty",
+       "E" : #"Ectx" %"G" %"C" (#"clo" %"A" %"B"),
+       "e'" : #"exp" %"G" %"A",
+       "e" : #"exp" %"G" %"C"
+       ----------------------------------------------- ("plug app_l")
+       #"plug" (#"Eclo_app_l" %"E" %"e'") %"e"
+       = #"clo_app" (#"plug" %"E" %"e") %"e'"
+      : #"exp" %"G" %"B"
+  ];
+  [:| "G" : #"ty",
+       "A" : #"ty",
+       "B" : #"ty",
+       "C" : #"ty",
+       "v" : #"val" %"G" (#"clo" %"A" %"B"),
+       "E" : #"Ectx" %"G" %"C" %"A"
+       -----------------------------------------------
+       #"Eclo_app_r" "v" "E" : #"Ectx" %"G" %"C" %"B"
+  ];
+  [:| "G" : #"ty",
+       "A" : #"ty",
+       "B" : #"ty",
+       "C" : #"ty",
+       "E" : #"Ectx" %"G" %"C" (#"clo" %"A" %"B"),
+       "e'" : #"exp" %"G" %"A"
+       -----------------------------------------------
+       #"Eclo_app_l" "E" "e'" : #"Ectx" %"G" %"C" %"B"
+  ];
+  [:> "G" : #"ty", "A" : #"ty", "e" : #"exp" %"G" %"A"
+     ----------------------------------------------- ("plug hole")
+     #"plug" #"[ ]" %"e" = %"e" : #"exp" %"G" %"A"
+ ];
+[:| "G" : #"ty", "A" : #"ty", "B" : #"ty", "E" : #"Ectx" %"G" %"A" %"B", "e" : #"exp" %"G" %"A"
+    -----------------------------------------------
+    #"plug" "E" "e" : #"exp" %"G" %"B"
+];
+  [:| "G" : #"ty", "A" : #"ty"
+             -----------------------------------------------
+             #"[ ]" : #"Ectx" %"G" %"A" %"A"
+         ];
+  [s| "G" : #"ty", "A" : #"ty", "B" : #"ty"
+                      -----------------------------------------------
+                      #"Ectx" "G" "A" "B" srt
+                  ]
+  ]%arule.
+
+
+(*TODO: to do this in a more principled way and use properties of compile_ext,
+  need a lemma that compile_ext is wf 
+ *)
+Derive clo_ctx_elab
+       SuchThat (Pre.elab_lang closure_elab
+                               clo_ctx
+                               clo_ctx_elab)
+       As clo_ctx_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve clo_ctx_wf : elab_pfs.
+
+Definition cc_ctx : compiler :=
+  match # from (Estlc_elab ++ eval_ctx_elab) with
+  | {{e #"Eapp_l" "G" "A" "B" "C" "E" "e'"}} =>
+    {{e #"Eclo_app_l" %"E" %"e'"}}
+  | {{e #"Eapp_r" "G" "A" "B" "C" "v" "E"}} =>
+    {{e #"Eclo_app_r" %"v" %"E"}}
+  end.
+
+Eval compute in cc_ctx.
+
+Derive cc_ctx_elab
+       SuchThat (elab_preserving_compiler cc_elab
+                                          (clo_ctx_elab ++ closure_elab)
+                                          cc_ctx cc_ctx_elab (Estlc_elab ++ eval_ctx_elab))
+       As cc_ctx_elab_preserving.
+Proof.
+  auto_elab_compiler.
+Qed.
+#[export] Hint Resolve cc_ctx_elab_preserving : elab_pfs.
+
+
+(*
+TODO: use compilerforext to pull this through
+via theorems, not copying
+
+ *)
+
+Definition bool_lang_cc :=
+  [
+    (*TODO: add if; add subst rules*)
+    [:| "G" : #"ty"
+        -----------------------------------------------
+        #"false" : #"val" %"G" #"bool"
+     ];
+    [:| "G" : #"ty"
+        -----------------------------------------------
+        #"true" : #"val" %"G" #"bool"
+     ];
+    [:| 
+        -----------------------------------------------
+        #"bool" : #"ty"
+  ]]%arule.
+
+Derive bool_elab_cc
+       SuchThat (Pre.elab_lang closure_elab bool_lang_cc bool_elab_cc)
+       As bool_lang_cc_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve bool_lang_cc_wf : elab_pfs.
+
+
+(*depends on bool, eval_ctx*)
+Definition global_cell_cc :=
+  [
+  [:> "S" : #"val" #"unit" #"bool",
+      "v" : #"val" #"unit" #"bool",
+      "A" : #"ty",            
+      "E" : #"Ectx" #"unit" #"bool" %"A"
+      ----------------------------------------------- ("eval_swap")
+      #"mk_config" %"S" (#"plug" %"E" (#"swap" %"v"))
+      = #"mk_config" %"v" (#"plug" %"E" (#"ret" %"S"))
+      : #"config" %"A"
+  ];
+  [:> "S" : #"val" #"unit" #"bool",
+      "A" : #"ty",            
+      "E" : #"Ectx" #"unit" #"bool" %"A"
+      ----------------------------------------------- ("eval_get")
+      #"mk_config" %"S" (#"plug" %"E" #"get")
+      = #"mk_config" %"S" (#"plug" %"E" (#"ret" %"S"))
+      : #"config" %"A"
+  ];
+    [:| "S" : #"val" #"unit" #"bool",
+        "A" : #"ty", "e" : #"exp" #"unit" %"A"                    
+       -----------------------------------------------
+       #"mk_config" "S" "e" : #"config" %"A"
+  ];
+    [s| "A" : #"ty"                   
+       -----------------------------------------------
+       #"config" "A" srt
+  ];
+  [:> "G" : #"ty",
+      "v" : #"val" %"G" #"bool",
+      "G'" : #"ty",
+      "g" : #"val" %"G'" %"G"
+      ----------------------------------------------- ("swap_subst")
+      #"el_subst" %"g" (#"swap" %"v")
+      = #"swap" (#"val_subst" %"g" %"v")
+      : #"exp" %"G'" #"bool"
+  ];
+  [:> "G" : #"ty",
+      "G'" : #"ty",
+      "g" : #"val" %"G'" %"G"
+      ----------------------------------------------- ("get_subst")
+      #"el_subst" %"g" (#"get") = #"get" : #"exp" %"G'" #"bool"
+  ];
+  [:| "G" : #"ty", "v" : #"val" %"G" #"bool"
+       -----------------------------------------------
+       #"swap" "v" : #"exp" %"G" #"bool"
+  ];
+     [:| "G" : #"ty"
+       -----------------------------------------------
+       #"get" : #"exp" %"G" #"bool"
+  ]]%arule.
+
+Derive global_cell_elab_cc
+       SuchThat (Pre.elab_lang (bool_elab_cc ++ clo_ctx_elab ++ closure_elab)
+                               global_cell_cc
+                               global_cell_elab_cc)
+       As global_cell_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve global_cell_wf : elab_pfs.
+
+
+(*TODO: make an empty match work?*)
+Definition cc_global_cell : compiler :=
+  match # from (global_cell_elab_cc ++ bool_elab_cc) with
+  | {{e #"bool"}} => {{e#"bool"}}
+  end.
+
+Eval compute in cc_global_cell.
+
+Require Import GlobalCell.
+
+Derive cc_global_cell_elab
+       SuchThat (elab_preserving_compiler (cc_ctx_elab ++ cc_elab)
+                                          (global_cell_elab_cc ++ bool_elab_cc ++ clo_ctx_elab ++ closure_elab)
+                                          cc_global_cell cc_global_cell_elab (global_cell_elab ++ bool_elab))
+       As cc_global_cell_elab_preserving.
+Proof.  
+  auto_elab_compiler.
+  eauto 8 with elab_pfs auto_elab.
+  eauto 8 with elab_pfs auto_elab.
+  eauto 8 with elab_pfs auto_elab.
+  eauto 8 with elab_pfs auto_elab.
+Qed.
+#[export] Hint Resolve cc_global_cell_elab_preserving : elab_pfs.
+
+Eval compute in cc_global_cell_elab.
+
+(*TODO: move*)
+Lemma elab_prefix_implies_elab_compiler tgt cmp ecmp src cmp' ecmp' src'
+  : ElabCompilers.elab_preserving_compiler tgt cmp ecmp src ->
+    elab_preserving_compiler ecmp tgt cmp' ecmp' src' ->
+    ElabCompilers.elab_preserving_compiler tgt (cmp'++cmp) (ecmp'++ecmp) (src'++src).
+Proof.
+  induction 2; basic_goal_prep; basic_core_crush.
+  all: constructor; basic_core_crush.
+Qed.
+
+(*TODO: move somewhere*)
+Lemma elab_prefix_implies_elab_compiler' tgt cmp ecmp src tgt' cmp' ecmp' src'
+  : ElabCompilers.elab_preserving_compiler tgt cmp ecmp src ->
+    elab_preserving_compiler ecmp tgt' cmp' ecmp' src' ->
+    incl tgt tgt' ->
+    ElabCompilers.elab_preserving_compiler tgt' (cmp'++cmp) (ecmp'++ecmp) (src'++src).
+Proof.
+  intros.
+  pose proof (elab_preserving_embed H1 H).
+  apply elab_prefix_implies_elab_compiler; assumption.
+Qed.
+Hint Resolve elab_prefix_implies_elab_compiler' : auto_elab.
+
+(* TODO: move somewhere*)
+Lemma elab_prefix_implies_elab_compiler_nil tgt cmp ecmp src
+  : elab_preserving_compiler [] tgt cmp ecmp src ->
+    ElabCompilers.elab_preserving_compiler tgt cmp ecmp src.
+Proof.
+  rewrite (app_nil_end cmp) at 2.
+  rewrite (app_nil_end ecmp) at 2.
+  rewrite (app_nil_end src) at 2.
+  eapply elab_prefix_implies_elab_compiler.
+  constructor.
+Qed.
+#[export] Hint Resolve elab_prefix_implies_elab_compiler_nil : auto_elab.
+#[export] Hint Resolve elab_prefix_implies_elab_compiler' : auto_elab.
+#[export] Hint Resolve ElabCompilers.elab_compiler_implies_preserving : auto_elab.
+
+Lemma sum_compiler
+  : preserving_compiler (global_cell_elab_cc ++ bool_elab_cc ++ clo_ctx_elab ++ closure_elab)
+                        ((cc_global_cell_elab ++ cc_ctx_elab ++ cc_elab))
+                        (((global_cell_elab ++ bool_elab)
+                            ++ (Estlc_elab ++ eval_ctx_elab)
+                            ++ (stlc_elab ++ subst_elab))).
+Proof.
+  eauto 10 with elab_pfs auto_elab utils.
+Qed.
+
+Eval compute in ((cc_global_cell_elab ++ cc_ctx_elab ++ cc_elab)).

@@ -186,6 +186,52 @@ Proof using.
 Qed.
 #[export] Hint Resolve elab_lang_implies_wf : lang_core.
 
+(*TODO: improve connection between elab, prefix elab, and wf
+  so that wf theorems can be ported to the others.
+  Avoids duplication
+*)
+Local Lemma elab_lang_mono l' l
+  : incl l l' ->
+    (forall c t et,
+           elab_sort l c t et ->
+           elab_sort l' c t et)
+    /\ (forall c e ee t,
+           elab_term l c e ee t ->
+           elab_term l' c e ee t)
+    /\ (forall c s args es c',
+           elab_args l c s args es c' ->
+           elab_args l' c s args es c')
+    /\ (forall c ec,
+           elab_ctx l c ec ->
+           elab_ctx l' c ec).
+Proof using.
+  intros.
+  apply elab_ind; basic_goal_prep; basic_core_crush.
+  eapply elab_term_conv; basic_core_crush.
+  (*TODO: why does crush not work?*)
+  eauto using eq_sort_lang_monotonicity.
+  constructor; basic_core_crush.
+  (*TODO: why does crush not work?*)
+  eauto using wf_term_lang_monotonicity.
+Qed.
+
+
+Definition elab_sort_lang_monotonicity l' l (lincll' : incl l l')
+  := proj1 (elab_lang_mono lincll').
+#[export] Hint Resolve elab_sort_lang_monotonicity : lang_core.
+
+Definition elab_term_lang_monotonicity l' l (lincll' : incl l l')
+  := proj1 (proj2 (elab_lang_mono lincll')).
+#[export] Hint Resolve elab_term_lang_monotonicity : lang_core.
+
+Definition elab_args_lang_monotonicity l' l (lincll' : incl l l')
+  := proj1 (proj2 (proj2 (elab_lang_mono lincll'))).
+#[export] Hint Resolve elab_args_lang_monotonicity : lang_core.
+
+Definition elab_ctx_lang_monotonicity l' l (lincll' : incl l l')
+  := proj2 (proj2 (proj2 (elab_lang_mono lincll'))).
+#[export] Hint Resolve elab_ctx_lang_monotonicity : lang_core.
+
 
 Local Lemma elab_lang_insert_mono l' l name r
   : (forall c t et,
