@@ -20,6 +20,7 @@ src/named/STLC.v
 src/named/VSubst.v
 src/named/CompilerDefs.v
 src/named/Compilers.v
+src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
 src/named/ElabCompilersWithPrefix.v
 src/named/SimpleClosureConv.v
