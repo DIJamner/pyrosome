@@ -13,58 +13,60 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-Definition stlc :=
-  [[:> "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"el" (#"ext" %"G" %"A") %"B",
-      "G'" : #"env",
-      "g" : #"sub" %"G'" %"G"
-      ----------------------------------------------- ("lambda_subst")
-      #"val_subst" %"g" (#"lambda" %"A" %"e")
-      = #"lambda" %"A" (#"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
-      : #"val" %"G'" (#"->" %"A" %"B")
+Definition stlc_def : lang :=
+  [[l
+  [:| "t" : #"ty", "t'": #"ty"
+      -----------------------------------------------
+      #"->" "t" "t'" : #"ty"
   ];
-  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"el"%"G" (#"->" %"A" %"B"),
-      "e'" : #"el" %"G" %"A",
-      "G'" : #"env",
-      "g" : #"sub" %"G'" %"G"
-      ----------------------------------------------- ("app_subst")
-      #"el_subst" %"g" (#"app" %"e" %"e'")
-      = #"app" (#"el_subst" %"g" %"e") (#"el_subst" %"g" %"e'")
-      : #"el" %"G'" %"B"
+  [:| "G" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e" : #"exp" (#"ext" %"G" %"A") %"B"
+       -----------------------------------------------
+       #"lambda" "A" "e" : #"val" %"G" (#"->" %"A" %"B")
+  ];
+  [:| "G" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e" : #"exp" %"G" (#"->" %"A" %"B"),
+       "e'" : #"exp" %"G" %"A"
+       -----------------------------------------------
+       #"app" "e" "e'" : #"exp" %"G" %"B"
   ];
   [:> "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"el" (#"ext" %"G" %"A") %"B",
+      "e" : #"exp" (#"ext" %"G" %"A") %"B",
       "v" : #"val" %"G" %"A"
       ----------------------------------------------- ("STLC_beta")
       #"app" (#"ret" (#"lambda" %"A" %"e")) (#"ret" %"v")
-      = #"el_subst" (#"snoc" #"id" %"v") %"e"
-      : #"el" %"G" %"B"
+      = #"exp_subst" (#"snoc" #"id" %"v") %"e"
+      : #"exp" %"G" %"B"
   ];
-  [:| "G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "e" : #"el" %"G" (#"->" %"A" %"B"),
-       "e'" : #"el" %"G" %"A"
-       -----------------------------------------------
-       #"app" "e" "e'" : #"el" %"G" %"B"
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"exp"%"G" (#"->" %"A" %"B"),
+      "e'" : #"exp" %"G" %"A",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("app_subst")
+      #"exp_subst" %"g" (#"app" %"e" %"e'")
+      = #"app" (#"exp_subst" %"g" %"e") (#"exp_subst" %"g" %"e'")
+      : #"exp" %"G'" %"B"
   ];
-  [:| "G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "e" : #"el" (#"ext" %"G" %"A") %"B"
-       -----------------------------------------------
-       #"lambda" "A" "e" : #"val" %"G" (#"->" %"A" %"B")
-  ];
-  [:| "t" : #"ty", "t'": #"ty"
-      -----------------------------------------------
-      #"->" "t" "t'" : #"ty"
-  ]]%arule.
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"exp" (#"ext" %"G" %"A") %"B",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("lambda_subst")
+      #"val_subst" %"g" (#"lambda" %"A" %"e")
+      = #"lambda" %"A" (#"exp_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
+      : #"val" %"G'" (#"->" %"A" %"B")
+  ]
+  ]].
 
-Derive stlc_elab
-       SuchThat (Pre.elab_lang subst_elab stlc stlc_elab)
+Derive stlc
+       SuchThat (Pre.elab_lang (exp_subst++value_subst) stlc_def stlc)
        As stlc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.

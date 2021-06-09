@@ -272,23 +272,24 @@ Qed.
 Import OptionMonad.
 
 Inductive step_instruction :=
-| cong_instr : list step_instruction -> step_instruction
-| refl_instr : step_instruction
+| cong_instr : list (list step_instruction) -> step_instruction
 | redex_instr : string -> ctx -> sort -> exp -> exp -> subst -> step_instruction.
 
-Fixpoint step_redex_term (l : lang) (e : exp) : option step_instruction :=
+(* if the top level of the term takes a step, return it *)
+Fixpoint step_redex_term (l : lang) (e : exp)
+  : option (step_instruction * exp) :=
   match l with
   | [] => None
   | (n,term_eq_rule c e1 e2 t')::l' =>
     match step_redex_term l' e with
     | Some e' => Some e'
     | None => do s <- matches e e1 (map fst c);
-              ret (redex_instr n c t' e1 e2 s)
+              ret (redex_instr n c t' e1 e2 s, e2[/s/])
     end
   | _::l' => step_redex_term l' e
   end.
 
-
+(*
 Inductive wf_term_no_conv l : ctx -> exp -> sort -> Prop :=
   | wf_term_by_no_conv : forall c n s args c' t,
       In (n, term_rule c' args t) l ->
@@ -304,20 +305,76 @@ Lemma wf_term_peel_convs l c e t
 Proof.
   induction 1; basic_core_crush.
 Qed.
+*)
 
 
-
-
-Fixpoint step_term l e : option step_instruction :=
+(* takes steps starting from the root of the tree
+   and only proceeding once the root does not reduce
+*)
+Fixpoint step_term_outwards_in l e : list step_instruction :=
   match step_redex_term l e with
-  | Some i => Some i
+  | Some (i,_) => [i]
   | None =>
     match e with
-    | var x => Some refl_instr
+    | var x => []
     | con n s =>
-      option_map cong_instr (Mmap (step_term l) s)
+      [cong_instr (map (step_term_outwards_in l) s)]
     end
   end.
+
+(*TODO: following 2 fns should be merged;
+cannot generate, e.g.
+[beta; cong [id_right; ...]; ...]
+*)
+Fixpoint step_redex_term_n l e n :=
+  match step_redex_term l e, n with
+  | None, _ => []
+  | Some (s,e'), 0 => [(s,e')]
+  | Some (s,e'), S n' => (s,e')::(step_redex_term_n l e' n')
+  end.
+
+Section StepTermInner.
+  Context (step_term_n : exp -> list step_instruction * exp)
+          (l : lang).
+
+  (*invariant: if it returns cong l,
+   then l contains a nonempty list *)
+  Definition step_subterm e : option (step_instruction * exp) :=
+    match e with
+    | var x => None
+    | con name s =>
+    let '(arg_steps, args) := split (map step_term_n s) in
+    if forallb (fun (l: list _) =>
+                  if l then true else false)
+               arg_steps
+    then None
+    else Some (cong_instr arg_steps, con name args)
+    end.
+
+  Definition step_term_one_traversal e
+    : option (step_instruction * exp) :=
+    match step_subterm e with
+    | Some p => Some p
+    | None => step_redex_term l e
+    end.
+
+End StepTermInner.
+      
+
+Fixpoint step_term' l n e {struct n}
+  : list step_instruction * exp :=
+  match n with
+  | 0 => ([], e)
+  | S n' =>
+    match step_term_one_traversal (step_term' l n') l e with
+    | Some (step,e') =>
+      let '(rst_steps, e'') := (step_term' l n' e') in
+      (step::rst_steps, e'')
+    | None => ([], e)
+    end
+  end.
+
+Definition step_term l e n := fst (step_term' l n e).
 
 
 Require Import Ltac2.Ltac2.
@@ -464,43 +521,7 @@ Local Ltac t' :=
       |[|- eq_term ?l _ _ _ _ ] => l
       end.
 
-    Ltac2 rec step_by_instructions i :=
-      lazy_match! i with
-      | refl_instr => ltac1:(term_refl)
-      | cong_instr ?s =>
-        (*have to run this before term_cong because for some reason
-          it expects a focussed goal
-         *)
-        let s_tac_list := List.rev (step_all_instructions s) in
-        ltac1:(term_cong);
-        Control.dispatch s_tac_list
-      | redex_instr ?name ?c' ?tp ?e1p ?e2p ?s =>
-        step_redex name c' tp e1p e2p s
-      | _ => backtrack_tactic_failure "input not an evaluated instruction"
-    end
-    with step_all_instructions s :=
-      lazy_match! s with
-      | [] => []
-      | ?i::?s' => (fun () => step_by_instructions i)::(step_all_instructions s')
-      | _ => backtrack_tactic_failure "input not an evaluated list"
-      end.
-
-    Ltac2 get_step_instructions () :=
-    lazy_match! goal with
-     | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-       let mi := Std.eval_vm None constr:(step_term $l $e1) in
-       lazy_match! mi with
-       | Some ?i => i
-       | None =>  backtrack_tactic_failure "could not generate step instructions"
-       end
-     | [|-_] => backtrack_tactic_failure "goal not a term equality"
-  end.
-      
-    Ltac2 step () :=
-      step_by_instructions (get_step_instructions ()).
-    Ltac2 print_steps () :=
-      print (of_constr (get_step_instructions())).
-
+    
   Ltac compute_eq_compilation :=
     match goal with
     |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
@@ -516,15 +537,66 @@ Local Ltac t' :=
      change (eq_term l ctx' e1' e2' t')
     end.
 
+
+    Ltac2 rec step_by_instructions i :=
+      (*TODO: this may need to go in a different/additional place?*)
+      ltac1:(compute_eq_compilation);
+      lazy_match! i with
+      | cong_instr ?s =>
+        (*have to run this before term_cong because for some reason
+          it expects a focused goal
+         *)
+        let s_tac_list := List.rev (step_all_instructions s) in
+        ltac1:(term_cong);
+        Control.dispatch s_tac_list
+      | redex_instr ?name ?c' ?tp ?e1p ?e2p ?s =>
+        step_redex name c' tp e1p e2p s
+      | _ => backtrack_tactic_failure "input not an evaluated instruction"
+      end
+    with step_by_instructions_list l :=
+      lazy_match! l with
+      | [] => ltac1:(term_refl)
+      | ?i::?l' =>
+        eapply eq_term_trans> [step_by_instructions i |step_by_instructions_list l' ]
+      | _ => backtrack_tactic_failure "input not an evaluated list"
+      end
+    with step_all_instructions s :=
+      lazy_match! s with
+      | [] => []
+      | ?l::?s' => (fun () => step_by_instructions_list l)
+                     ::(step_all_instructions s')
+      | _ => backtrack_tactic_failure "input not an evaluated list"
+      end.
+
+
+    Ltac2 get_step_instructions () :=
+    lazy_match! goal with
+    | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
+      (*TODO: 100 is a magic number; make it an input*)
+      Std.eval_vm None constr:(step_term $l $e1 100)
+     | [|-_] => backtrack_tactic_failure "goal not a term equality"
+  end.
+
+    (*TODO: this should now give the whole reduction
+     sequence; check and if so rename *)
+    Ltac2 step () :=
+      step_by_instructions_list (get_step_instructions ()).
+    Ltac2 print_steps () :=
+      print (of_constr (get_step_instructions())).
+  
+  Ltac lhs_concrete :=
+    lazymatch goal with
+    | [|- eq_term _ _ _ ?lhs _] =>
+      tryif has_evar lhs then fail 0 "subject" lhs "contains evars"  else idtac
+    end.
+
+  Ltac step_if_concrete :=
+    tryif lhs_concrete then ltac2:(step ()) else term_refl.
     
-    Ltac reduce :=
-      repeat (eapply eq_term_trans; [ltac2:(step())|compute_eq_compilation]);
-      term_refl.
-    Ltac by_reduction :=
-      eapply eq_term_trans; [reduce | eapply eq_term_sym; reduce].
-
-
-
+  Ltac by_reduction :=
+    eapply eq_term_trans;
+    [ step_if_concrete
+    | eapply eq_term_sym;step_if_concrete].
 
 
 Ltac process_eq_term :=
@@ -636,11 +708,11 @@ Ltac setup_elab_lang :=
 
 Ltac auto_elab :=
   setup_elab_lang;
-   unshelve (solve [ break_elab_rule ]);
-   try match goal with
-       | |- eq_term _ _ _ _ _ => apply eq_term_refl
-       end; cleanup_auto_elab.
-
+  unshelve(solve [ break_elab_rule;
+                   apply eq_term_refl;
+                   cleanup_auto_elab ]);
+  try apply eq_term_refl;
+  cleanup_auto_elab.
 
 (* TODO: something like this is necessary for
    a reflective stepper. 

@@ -13,31 +13,124 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
-Definition bot_ty :=
-  [[:| 
-      -----------------------------------------------
-      #"bot" : #"ty"
-  ]]%arule.
 
+Definition block_subst_def : lang :=
+  [[l
+      [s| "G" : #"env"
+          -----------------------------------------------
+          #"blk" "G" srt
+      ];
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'",
+      "e" : #"blk" %"G'"
+       -----------------------------------------------
+       #"blk_subst" "g" "e" : #"blk" %"G"
+  ];
+  [:> "G" : #"env", "e" : #"blk" %"G"
+       ----------------------------------------------- ("blk_subst_id")
+       #"blk_subst" #"id" %"e" = %"e" : #"blk" %"G"
+  ]; 
+  [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
+       "e" : #"blk" %"G3"
+       ----------------------------------------------- ("blk_subst_cmp")
+       #"blk_subst" %"f" (#"blk_subst" %"g" %"e")
+       = #"blk_subst" (#"cmp" %"f" %"g") %"e"
+       : #"blk" %"G1"
+  ]
+  (*TODO: any reason to add halt?
+  [:| "G" : #"env", "v" : #"val" %"G" %"A"
+       -----------------------------------------------
+       #"ret" "v" : #"blk" %"G" %"A"
+  ];
+   
+  [:> "G1" : #"env", "G2" : #"env",
+       "g" : #"sub" %"G1" %"G2",
+       "A" : #"ty", "v" : #"val" %"G2" %"A"
+       ----------------------------------------------- ("blk_subst_ret")
+       #"blk_subst" %"g" (#"ret" %"v")
+       = #"ret" (#"val_subst" %"g" %"v")
+       : #"blk" %"G1" %"A"
+  ]*)
+  ]].
 
-
-Derive bot_ty_elab
-       SuchThat (Pre.elab_lang subst_elab bot_ty bot_ty_elab)
-       As bot_ty_wf.
+Derive block_subst
+       SuchThat (Pre.elab_lang value_subst block_subst_def block_subst)
+       As block_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve bot_ty_wf : elab_pfs.
+#[export] Hint Resolve block_subst_wf : elab_pfs.
 
 
-Definition stlc_bot := bot_ty_elab ++ stlc_elab ++ subst_elab.
-Lemma stlc_bot_wf : wf_lang stlc_bot.
-Proof. eauto 7 with auto_elab elab_pfs. Qed.
+Definition cps_lang_def : lang :=
+  [[l
+      [:| "A" : #"ty"
+          -----------------------------------------------
+          #"neg" "A" : #"ty"
+      ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "e" : #"blk" (#"ext" %"G" %"A")
+      -----------------------------------------------
+      #"cont" "A" "e" : #"val" %"G" (#"neg" %"A")
+   ];
+   [:| "G" : #"env",
+       "A" : #"ty",
+       "v1" : #"val" %"G" (#"neg" %"A"),
+       "v2" : #"val" %"G" %"A"
+      -----------------------------------------------
+      #"jmp" "v1" "v2" : #"blk" %"G"
+   ];
+  [:> "G" : #"env",
+      "A" : #"ty",
+      "e" : #"blk" (#"ext" %"G" %"A"),
+      "v" : #"val" %"G" %"A"
+      ----------------------------------------------- ("jmp_beta")
+      #"jmp" (#"cont" %"A" %"e") %"v"
+      = #"blk_subst" (#"snoc" #"id" %"v") %"e"
+      : #"blk" %"G"
+  ];
+  [:> "G" : #"env", "A" : #"ty",
+      "v1" : #"val" %"G" (#"neg" %"A"),
+      "v2" : #"val" %"G" %"A",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("jmp_subst")
+      #"blk_subst" %"g" (#"jmp" %"v1" %"v2")
+      = #"jmp" (#"val_subst" %"g" %"v1") (#"val_subst" %"g" %"v2")
+      : #"blk" %"G'"
+  ];  
+  [:> "G" : #"env", "A" : #"ty",
+      "e" : #"blk" (#"ext" %"G" %"A"),
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("cont_subst")
+      #"val_subst" %"g" (#"cont" %"A" %"e")
+      = #"cont" %"A" (#"blk_subst"
+                       (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e")
+      : #"val" %"G'" (#"neg" %"A")
+  ]
+  ]].
+
+
+Derive cps_lang
+       SuchThat (Pre.elab_lang (block_subst ++ value_subst)
+                               cps_lang_def
+                               cps_lang)
+       As cps_lang_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve cps_lang_wf : elab_pfs.
+
+
 
 Fixpoint wkn_n n :=
   match n with
   | 0 => {{e #"id"}}
+  | 1 => {{e #"wkn"}}
   | S n' =>
     {{e #"cmp" #"wkn" {wkn_n n'} }}
   end.
+
+Definition ovar n :=
+    {{e #"val_subst" {wkn_n n} #"hd" }}.  
 
 Fixpoint vwkn_n n e :=
   match n with
@@ -46,405 +139,187 @@ Fixpoint vwkn_n n e :=
     {{e #"val_subst" #"wkn" {vwkn_n n' e} }}
   end.
 
-(*n is how many wknings to do on e*)
+(*g is the necessary weakening of e *)
 Definition bind_k n e A k :=
-  {{e #"el_subst" (#"snoc" {wkn_n n} (#"lambda" {A} {k})) {e} }}.
+  {{e #"blk_subst" (#"snoc" {wkn_n n} (#"cont" {A} {k})) {e} }}.
 Arguments bind_k n e A k/.
 
-Definition ret_val v :=
-  {{e #"app" (#"ret" #"hd") (#"ret" {vwkn_n 1 v})}}.
-
-Definition double_neg t : exp :=
-  {{e #"->" (#"->" {t} #"bot") #"bot"}}.
-Arguments double_neg t /.
-
-Definition cps : compiler :=
-  match # from (stlc_elab ++ subst_elab) with
-  | {{s #"el" "G" "A"}} => {{s #"el" (#"ext" %"G" (#"->" %"A" #"bot")) #"bot" }}
-  | {{e #"->" "A" "B"}} => {{e #"->" %"A" {double_neg (var "B")} }}
-  | {{e #"lambda" "G" "A" "B" "e"}} =>
-    {{e #"lambda" %"A" (#"ret" (#"lambda" (#"->" %"B" #"bot") %"e"))}}
-  | {{e #"app" "G" "A" "B" "e" "e'"}} =>
-    let k := {{e #"ret" {vwkn_n 2 {{e #"hd"}} } }} in
-    let x1 := {{e #"ret" {vwkn_n 1 {{e #"hd"}} } }} in
-    let x2 := {{e #"ret" #"hd"}} in
-    bind_k 1 (var "e") {{e #"->" %"A" {double_neg (var "B")} }}
-    (bind_k 2 (var "e'") (var "A")
-    {{e #"app" (#"app" {x1} {x2}) {k} }})
-  | {{e #"el_subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"el_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e" }}
+(*TODO: extract the identity compiler for vals*)
+(*TODO: depends on products*)
+Definition cps_subst_def : compiler :=
+  match # from (exp_subst ++ value_subst) with
+  | {{s #"exp" "G" "A"}} =>
+    {{s #"blk" (#"ext" %"G" (#"neg" %"A")) }}
+  | {{e #"exp_subst" "G" "G'" "g" "A" "e" }} =>
+    {{e #"blk_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e" }}
   | {{e #"ret" "G" "A" "v"}} =>
-    ret_val (var "v")
+    {{e #"jmp" #"hd" (#"val_subst" #"wkn" %"v")}}
   end.
 
-(* Use these admitted lemmas when this file is under development
-   to make the proof take a tolerable amount of time and space.
-
-
-Lemma cps_beta_preserved :
-eq_term stlc_bot
-    {{c"G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "e"
-       : # "el" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-         #"bot",
-       "e'" : # "el" (# "ext" %"G" (# "->" %"A" #"bot")) #"bot",
-       "G'" : #"env",
-       "g" : # "sub" %"G'" %"G"}} {{s# "el" (# "ext" %"G'" (# "->" %"B" #"bot")) #"bot"}}
-    {{e# "el_subst" (# "ext" %"G'" (# "->" %"B" #"bot")) (# "ext" %"G" (# "->" %"B" #"bot"))
-       (# "snoc" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G" (# "->" %"B" #"bot")
-        (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G"
-         (# "wkn" %"G'" (# "->" %"B" #"bot")) %"g") (# "hd" %"G'" (# "->" %"B" #"bot"))) #"bot"
-       (# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
-        (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-        (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
-         (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
-         (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G" (# "wkn" %"G" (# "->" %"B" #"bot"))
-          (# "id" %"G"))
-         (# "lambda" (# "ext" %"G" (# "->" %"B" #"bot"))
-          (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
-          (# "el_subst"
-           (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"A" #"bot"))
-           (# "snoc"
-            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G" (# "->" %"A" #"bot")
-            (# "cmp"
-             (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-             (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
-             (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
-              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-             (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G"
-              (# "wkn" %"G" (# "->" %"B" #"bot")) (# "id" %"G")))
-            (# "lambda"
-             (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-              (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
-             (# "app"
-              (# "ext"
-               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-              # "->" %"B" #"bot") #"bot"
-              (# "app"
-               (# "ext"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-               (# "->" (# "->" %"B" #"bot") #"bot")
-               (# "ret"
-                (# "ext"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-                (# "val_subst"
-                 (# "ext"
-                  (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                   (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                 (# "wkn"
-                  (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                   (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-                 (# "hd" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
-               (# "ret"
-                (# "ext"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-                (# "hd"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
-              (# "ret"
-               (# "ext"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-               # "->" %"B" #"bot")
-               (# "val_subst"
-                (# "ext"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                (# "wkn"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-                # "->" %"B" #"bot")
-                (# "val_subst"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                 (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
-                 (# "hd" %"G" (# "->" %"B" #"bot")))))))) #"bot" %"e'"))) #"bot" %"e")}}
-    {{e# "el_subst" (# "ext" %"G'" (# "->" %"B" #"bot"))
-       (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-       (# "snoc" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'"
-        (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
-        (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G'"
-         (# "wkn" %"G'" (# "->" %"B" #"bot")) (# "id" %"G'"))
-        (# "lambda" (# "ext" %"G'" (# "->" %"B" #"bot"))
-         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
-         (# "el_subst"
-          (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-           (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G'" (# "->" %"A" #"bot"))
-          (# "snoc"
-           (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G'" (# "->" %"A" #"bot")
-           (# "cmp"
-            (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-            (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'"
-            (# "wkn" (# "ext" %"G'" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-            (# "cmp" (# "ext" %"G'" (# "->" %"B" #"bot")) %"G'" %"G'"
-             (# "wkn" %"G'" (# "->" %"B" #"bot")) (# "id" %"G'")))
-           (# "lambda"
-            (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
-            (# "app"
-             (# "ext"
-              (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-             # "->" %"B" #"bot") #"bot"
-             (# "app"
-              (# "ext"
-               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-              (# "->" (# "->" %"B" #"bot") #"bot")
-              (# "ret"
-               (# "ext"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-               (# "val_subst"
-                (# "ext"
-                 (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                (# "wkn"
-                 (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-                (# "hd" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
-              (# "ret"
-               (# "ext"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-               (# "hd"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
-             (# "ret"
-              (# "ext"
-               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-              # "->" %"B" #"bot")
-              (# "val_subst"
-               (# "ext"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-               (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-               (# "wkn"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-               # "->" %"B" #"bot")
-               (# "val_subst"
-                (# "ext" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                (# "ext" %"G'" (# "->" %"B" #"bot"))
-                (# "wkn" (# "ext" %"G'" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
-                (# "hd" %"G'" (# "->" %"B" #"bot")))))))) #"bot"
-          (# "el_subst" (# "ext" %"G'" (# "->" %"A" #"bot")) (# "ext" %"G" (# "->" %"A" #"bot"))
-           (# "snoc" (# "ext" %"G'" (# "->" %"A" #"bot")) %"G" (# "->" %"A" #"bot")
-            (# "cmp" (# "ext" %"G'" (# "->" %"A" #"bot")) %"G'" %"G"
-             (# "wkn" %"G'" (# "->" %"A" #"bot")) %"g") (# "hd" %"G'" (# "->" %"A" #"bot"))) #"bot"
-           %"e'")))) #"bot"
-       (# "el_subst"
-        (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-        (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-        (# "snoc" (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-         %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
-         (# "cmp" (# "ext" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-          %"G'" %"G"
-          (# "wkn" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")) %"g")
-         (# "hd" %"G'" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))) #"bot"
-        %"e")}}.
+Derive cps_subst
+       SuchThat (elab_preserving_compiler []
+                                          (cps_lang
+                                             ++ block_subst
+                                             ++ value_subst)
+                                          cps_subst_def
+                                          cps_subst
+                                          (exp_subst ++ value_subst))
+       As cps_subst_preserving.
 Proof.
-Admitted.
-(*  pose proof (elab_lang_implies_wf stlc_bot_wf).
-  solve[by_reduction].
-  Unshelve.
-  all: repeat t'.
-Qed.
-*)
-
-Lemma cps_subst_preserved
-  : eq_term stlc_bot
-    {{c"G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "e" : # "el" (# "ext" (# "ext" %"G" %"A") (# "->" %"B" #"bot")) #"bot",
-       "v" : # "val" %"G" %"A"}} {{s# "el" (# "ext" %"G" (# "->" %"B" #"bot")) #"bot"}}
-    {{e# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
-       (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-       (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) %"G"
-        (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
-        (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G" (# "wkn" %"G" (# "->" %"B" #"bot"))
-         (# "id" %"G"))
-        (# "lambda" (# "ext" %"G" (# "->" %"B" #"bot"))
-         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
-         (# "el_subst"
-          (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-           (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"A" #"bot"))
-          (# "snoc"
-           (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-            (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"G" (# "->" %"A" #"bot")
-           (# "cmp"
-            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "ext" %"G" (# "->" %"B" #"bot"))
-            %"G"
-            (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-            (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" %"G"
-             (# "wkn" %"G" (# "->" %"B" #"bot")) (# "id" %"G")))
-           (# "lambda"
-            (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-             (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A" #"bot"
-            (# "app"
-             (# "ext"
-              (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-             # "->" %"B" #"bot") #"bot"
-             (# "app"
-              (# "ext"
-               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-              (# "->" (# "->" %"B" #"bot") #"bot")
-              (# "ret"
-               (# "ext"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-               (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-               (# "val_subst"
-                (# "ext"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                (# "wkn"
-                 (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                  (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-                (# "hd" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))))
-              (# "ret"
-               (# "ext"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") %"A"
-               (# "hd"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")))
-             (# "ret"
-              (# "ext"
-               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-              # "->" %"B" #"bot")
-              (# "val_subst"
-               (# "ext"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A")
-               (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-               (# "wkn"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) %"A") (
-               # "->" %"B" #"bot")
-               (# "val_subst"
-                (# "ext" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")))
-                (# "ext" %"G" (# "->" %"B" #"bot"))
-                (# "wkn" (# "ext" %"G" (# "->" %"B" #"bot"))
-                 (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))) (# "->" %"B" #"bot")
-                (# "hd" %"G" (# "->" %"B" #"bot")))))))) #"bot"
-          (# "app" (# "ext" %"G" (# "->" %"A" #"bot")) %"A" #"bot"
-           (# "ret" (# "ext" %"G" (# "->" %"A" #"bot")) (# "->" %"A" #"bot")
-            (# "hd" %"G" (# "->" %"A" #"bot")))
-           (# "ret" (# "ext" %"G" (# "->" %"A" #"bot")) %"A"
-            (# "val_subst" (# "ext" %"G" (# "->" %"A" #"bot")) %"G"
-             (# "wkn" %"G" (# "->" %"A" #"bot")) %"A" %"v")))))) #"bot"
-       (# "app" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-        (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"
-        (# "ret" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-         (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")
-         (# "hd" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")))
-        (# "ret" (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-         (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-         (# "val_subst"
-          (# "ext" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot")) %"G"
-          (# "wkn" %"G" (# "->" (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot")) #"bot"))
-          (# "->" %"A" (# "->" (# "->" %"B" #"bot") #"bot"))
-          (# "lambda" %"G" %"A" (# "->" (# "->" %"B" #"bot") #"bot")
-           (# "ret" (# "ext" %"G" %"A") (# "->" (# "->" %"B" #"bot") #"bot")
-            (# "lambda" (# "ext" %"G" %"A") (# "->" %"B" #"bot") #"bot" %"e"))))))}}
-    {{e# "el_subst" (# "ext" %"G" (# "->" %"B" #"bot"))
-       (# "ext" (# "ext" %"G" %"A") (# "->" %"B" #"bot"))
-       (# "snoc" (# "ext" %"G" (# "->" %"B" #"bot")) (# "ext" %"G" %"A") (
-        # "->" %"B" #"bot")
-        (# "cmp" (# "ext" %"G" (# "->" %"B" #"bot")) %"G" (# "ext" %"G" %"A")
-         (# "wkn" %"G" (# "->" %"B" #"bot")) (# "snoc" %"G" %"G" %"A" (# "id" %"G") %"v"))
-        (# "hd" %"G" (# "->" %"B" #"bot"))) #"bot" %"e"}}.
-Proof.
-Admitted.
-(*  pose proof (elab_lang_implies_wf stlc_bot_wf).
-  solve[by_reduction].
-  Unshelve.
-  all: repeat t'.
-Qed. *)
-*)
-
-Derive cps_elab
-       SuchThat (elab_preserving_compiler [] stlc_bot cps cps_elab (stlc_elab ++ subst_elab))
-       As cps_elab_preserving.
-Proof.
-  (*TODO: eliminate the need for this*)
-  pose proof stlc_bot_wf.
-  auto_elab_compiler.
-Qed.
-#[export] Hint Resolve cps_elab_preserving : elab_pfs.
-  (*
-  pose proof stlc_bot_wf.
+  (*TODO: make specialized tactic that doesn't need depth*)
+  assert (wf_lang (cps_lang ++ block_subst ++ value_subst))
+    by eauto 8 with auto_elab elab_pfs.
 
   setup_elab_compiler.
 
-  all: try solve[ repeat t; repeat t'].
-  
-  1-14:solve[ compute_eq_compilation;by_reduction].
- apply cps_subst_preserved.
- apply cps_beta_preserved.
- solve[ compute_eq_compilation;by_reduction].
- Unshelve.
- all: repeat t'.
-Qed.*)
-
-
-Local Lemma stlc_wf' : wf_lang (nth_tail 1 stlc_bot).
-Proof.
-  change (nth_tail 1 stlc_bot) with (stlc_elab ++ subst_elab).
-  eauto 7 with auto_elab elab_pfs.
+  all: repeat t.
+  all: solve[by_reduction].
+    Unshelve.
+    all: repeat t'; eauto with elab_pfs auto_elab.
+    all: simpl.
+    all: repeat t'; eauto with elab_pfs auto_elab.
+    (*TODO: why isn't everything simplified already?*)
 Qed.
+(*
+  auto_elab_compiler.
+Qed.
+*)
+#[export] Hint Resolve cps_subst_preserving : elab_pfs.
 
-Goal semantics_preserving stlc_bot cps_elab (nth_tail 1 stlc_bot).
+(*TODO: separate file*)
+Definition val_prod_lang_def : lang :=
+  [
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" %"G" (#"prod" %"A" %"B"),
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("proj_2_subst")
+      #"val_subst" %"g" (#".2" %"e")
+      = #".2" (#"val_subst" %"g" %"e")
+      : #"val" %"G'" %"B"
+  ];
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" %"G" (#"prod" %"A" %"B"),
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("proj_1_subst")
+      #"val_subst" %"g" (#".1" %"e")
+      = #".1" (#"val_subst" %"g" %"e")
+      : #"val" %"G'" %"A"
+  ];
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" %"G" %"A",
+      "e'" : #"val" %"G" %"B",
+      "G'" : #"env",
+      "g" : #"sub" %"G'" %"G"
+      ----------------------------------------------- ("pair_subst")
+      #"val_subst" %"g" (#"pair" %"e" %"e'")
+      = #"pair" (#"val_subst" %"g" %"e") (#"val_subst" %"g" %"e'")
+      : #"val" %"G'" (#"prod" %"A" %"B")
+  ];
+  [:> "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" %"G" (#"prod" %"A" %"B")
+      ----------------------------------------------- ("prod_eta")
+      #"pair" (#".1" %"v") (#".2" %"v") = %"v"
+      : #"val" %"G" (#"prod" %"A" %"B")
+  ];
+  [:> "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v1" : #"val" %"G" %"A",
+      "v2" : #"val" %"G" %"B"
+      ----------------------------------------------- ("project 2")
+      #".2" (#"pair" %"v1" %"v2") = %"v2"
+      : #"val" %"G" %"B"
+  ];
+  [:> "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v1" : #"val" %"G" %"A",
+      "v2" : #"val" %"G" %"B"
+      ----------------------------------------------- ("project 1")
+      #".1" (#"pair" %"v1" %"v2") = %"v1"
+      : #"val" %"G" %"A"
+  ];
+    [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"val" %"G" (#"prod" %"A" %"B")
+      -----------------------------------------------
+      #".2" "e" : #"val" %"G" %"B"
+   ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"val" %"G" (#"prod" %"A" %"B")
+      -----------------------------------------------
+      #".1" "e" : #"val" %"G" %"A"
+   ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e1" : #"val" %"G" %"A",
+      "e2" : #"val" %"G" %"B"
+      -----------------------------------------------
+      #"pair" "e1" "e2" : #"val" %"G" (#"prod" %"A" %"B")
+   ];
+  [:| "A" : #"ty", "B": #"ty"
+      -----------------------------------------------
+      #"prod" "A" "B" : #"ty"
+  ] ]%arule.
+
+Derive val_prod_lang
+       SuchThat (Pre.elab_lang value_subst val_prod_lang_def val_prod_lang)
+       As val_prod_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve val_prod_wf : elab_pfs.
+
+
+Definition cps_def : compiler :=
+  match # from (stlc) with
+  | {{s #"exp" "G" "A"}} =>
+    {{s #"blk" (#"ext" %"G" (#"neg" %"A")) }}
+  | {{e #"->" "A" "B"}} =>
+    {{e #"neg" (#"prod" %"A" (#"neg" %"B")) }}
+  | {{e #"lambda" "G" "A" "B" "e"}} =>
+    (*TODO: use value product or exp-projection product?*)
+    {{e #"cont" (#"prod" %"A" (#"neg" %"B"))
+        (#"blk_subst" (#"snoc" (#"snoc" #"wkn" (#".1" #"hd")) (#".2" #"hd")) %"e") }}
+  | {{e #"app" "G" "A" "B" "e" "e'"}} =>
+    bind_k 1 (var "e") {{e #"neg" (#"prod" %"A" (#"neg" %"B"))}}
+    (bind_k 2 (var "e'") (var "A")
+    {{e #"jmp" {ovar 1} (#"pair" {ovar 0} {ovar 2}) }})
+  | {{e #"exp_subst" "G" "G'" "g" "A" "e" }} =>
+    {{e #"blk_subst" (#"snoc" (#"cmp" #"wkn" %"g") #"hd") %"e" }}
+  | {{e #"ret" "G" "A" "v"}} =>
+    {{e #"jmp" #"hd" (#"val_subst" #"wkn" %"v")}}
+  end.
+
+Derive cps
+       SuchThat (elab_preserving_compiler cps_subst
+                                          (val_prod_lang
+                                             ++ cps_lang
+                                             ++ block_subst
+                                             ++ value_subst)
+                                          cps_def
+                                          cps
+                                          stlc)
+       As cps_preserving.
 Proof.
-  apply inductive_implies_semantic.
-  - apply stlc_wf'.
-  - apply stlc_bot_wf.
-  - eapply elab_compiler_implies_preserving.
-    change  (nth_tail 1 stlc_bot) with  (nth_tail 1 stlc_bot ++ []).
-    change (cps_elab) with (cps_elab ++[]).
-    eapply elab_compiler_prefix_implies_elab;
-    eauto using cps_elab_preserving with lang_core.
-Abort.
+  (*TODO: make specialized tactic that doesn't need depth*)
+  assert (wf_lang (val_prod_lang ++ cps_lang ++ block_subst ++ value_subst))
+    by eauto 8 with auto_elab elab_pfs.
+
+  setup_elab_compiler; repeat t.
+  solve [by_reduction].
+  solve [by_reduction].
+  solve [by_reduction].
+  Unshelve.
+  all: repeat t'; eauto with elab_pfs auto_elab.
+  all: simpl.
+  all: repeat t'; eauto with elab_pfs auto_elab.
+(*
+  auto_elab_compiler.
+*)
+Qed.
+#[export] Hint Resolve cps_preserving : elab_pfs.

@@ -208,10 +208,10 @@ Proof using.
   intros.
   apply elab_ind; basic_goal_prep; basic_core_crush.
   eapply elab_term_conv; basic_core_crush.
-  (*TODO: why does crush not work?*)
+  (*TODO: add to db?*)
   eauto using eq_sort_lang_monotonicity.
   constructor; basic_core_crush.
-  (*TODO: why does crush not work?*)
+  (*TODO: add to db?*)
   eauto using wf_term_lang_monotonicity.
 Qed.
 
