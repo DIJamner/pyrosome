@@ -11,16 +11,9 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-(*TODO: move to ARule*)
-Declare Scope lang_scope.
-Bind Scope lang_scope with lang.
-
-Notation "[[l r1 ; .. ; r2 ]]" := ((cons r2 .. (cons r1 nil) ..)%arule)
-          (format "'[' [[l '[hv' r1 ; '/' .. ; '/' r2 ']' ]] ']'") : lang_scope.
 
 Definition value_subst_def : lang :=
-  [[l
-      
+  {[l   
   [s|
       -----------------------------------------------
       #"env" srt
@@ -31,31 +24,31 @@ Definition value_subst_def : lang :=
   ];
   [:| "G" : #"env" 
        -----------------------------------------------
-       #"id" : #"sub" %"G" %"G"
+       #"id" : #"sub" "G" "G"
   ];
   [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" %"G1" %"G2",
-       "g" : #"sub" %"G2" %"G3"
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3"
        -----------------------------------------------
-       #"cmp" "f" "g" : #"sub" %"G1" %"G3"
+       #"cmp" "f" "g" : #"sub" "G1" "G3"
   ];
-  [:> "G" : #"env", "G'" : #"env", "f" : #"sub" %"G" %"G'"
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
       ----------------------------------------------- ("id_right")
-      #"cmp" %"f" #"id" = %"f" : #"sub" %"G" %"G'"
+      #"cmp" "f" #"id" = "f" : #"sub" "G" "G'"
   ]; 
-  [:> "G" : #"env", "G'" : #"env", "f" : #"sub" %"G" %"G'"
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
        ----------------------------------------------- ("id_left")
-       #"cmp" #"id" %"f" = %"f" : #"sub" %"G"%"G'"
+       #"cmp" #"id" "f" = "f" : #"sub" "G" "G'"
   ];
-   [:> "G1" : #"env",
+   [:= "G1" : #"env",
          "G2" : #"env",
          "G3" : #"env",
          "G4" : #"env",
-         "f" : #"sub" %"G1" %"G2",
-         "g" : #"sub" %"G2" %"G3",
-         "h" : #"sub"%"G3" %"G4"
+         "f" : #"sub" "G1" "G2",
+         "g" : #"sub" "G2" "G3",
+         "h" : #"sub" "G3" "G4"
          ----------------------------------------------- ("cmp_assoc")
-         #"cmp" %"f" (#"cmp" %"g" %"h") = #"cmp" (#"cmp" %"f" %"g") %"h" : #"sub" %"G1" %"G4"
+         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
   ]; 
   [s|  
       -----------------------------------------------
@@ -65,22 +58,22 @@ Definition value_subst_def : lang :=
       -----------------------------------------------
       #"val" "G" "A" srt
   ];
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'",
-       "A" : #"ty", "v" : #"val" %"G'" %"A"
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+       "A" : #"ty", "v" : #"val" "G'" "A"
        -----------------------------------------------
-       #"val_subst" "g" "v" : #"val" %"G" %"A"
+       #"val_subst" "g" "v" : #"val" "G" "A"
   ];
-  [:> "G" : #"env", "A" : #"ty", "e" : #"val" %"G" %"A"
+  [:= "G" : #"env", "A" : #"ty", "e" : #"val" "G" "A"
        ----------------------------------------------- ("val_subst_id")
-       #"val_subst" #"id" %"e" = %"e" : #"val" %"G" %"A"
+       #"val_subst" #"id" "e" = "e" : #"val" "G" "A"
   ]; 
-  [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
-       "A" : #"ty", "v" : #"val" %"G3" %"A"
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "A" : #"ty", "v" : #"val" "G3" "A"
        ----------------------------------------------- ("val_subst_cmp")
-       #"val_subst" %"f" (#"val_subst" %"g" %"v")
-       = #"val_subst" (#"cmp" %"f" %"g") %"v"
-       : #"val" %"G1" %"A"
+       #"val_subst" "f" (#"val_subst" "g" "v")
+       = #"val_subst" (#"cmp" "f" "g") "v"
+       : #"val" "G1" "A"
   ]; 
   [:| 
       -----------------------------------------------
@@ -88,13 +81,13 @@ Definition value_subst_def : lang :=
   ];
   [:| "G" : #"env" 
       -----------------------------------------------
-      #"forget" : #"sub" %"G" #"emp"
+      #"forget" : #"sub" "G" #"emp"
   ];
-  [:> "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'"
+  [:= "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'"
        ----------------------------------------------- ("cmp_forget")
-       #"cmp" %"g" #"forget" = #"forget" : #"sub" %"G" #"emp"
+       #"cmp" "g" #"forget" = #"forget" : #"sub" "G" #"emp"
   ];
-  [:> 
+  [:= 
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
   ];
@@ -103,49 +96,49 @@ Definition value_subst_def : lang :=
        #"ext" "G" "A" : #"env"
   ];
   [:| "G" : #"env", "G'" : #"env", "A" : #"ty",
-      "g" : #"sub" %"G" %"G'",
-      "v" : #"val" %"G" %"A" (*we restrict substitutions to values *)
+      "g" : #"sub" "G" "G'",
+      "v" : #"val" "G" "A" (*we restrict substitutions to values *)
        -----------------------------------------------
-       #"snoc" "g" "v" : #"sub" %"G" (#"ext" %"G'" %"A")
+       #"snoc" "g" "v" : #"sub" "G" (#"ext" "G'" "A")
   ];
   [:| "G" : #"env", "A" : #"ty"
        -----------------------------------------------
-       #"wkn" : #"sub" (#"ext" %"G" %"A") %"G"
+       #"wkn" : #"sub" (#"ext" "G" "A") "G"
   ];
   [:| "G" : #"env", "A" : #"ty"
        -----------------------------------------------
-       #"hd" : #"val" (#"ext" %"G" %"A") %"A"
+       #"hd" : #"val" (#"ext" "G" "A") "A"
   ];
-   [:> "G" : #"env", "G'" : #"env",
-      "g" : #"sub" %"G" %"G'",
+   [:= "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
       "A" : #"ty",
-      "v" : #"val" %"G" %"A"
+      "v" : #"val" "G" "A"
       ----------------------------------------------- ("wkn_snoc")
-      #"cmp" (#"snoc" %"g" %"v") #"wkn" = %"g" : #"sub" %"G" %"G'"
+      #"cmp" (#"snoc" "g" "v") #"wkn" = "g" : #"sub" "G" "G'"
   ];
-   [:> "G" : #"env", "G'" : #"env",
-       "g" : #"sub" %"G" %"G'",
+   [:= "G" : #"env", "G'" : #"env",
+       "g" : #"sub" "G" "G'",
        "A" : #"ty",
-       "v" : #"val" %"G" %"A"
+       "v" : #"val" "G" "A"
        ----------------------------------------------- ("snoc_hd")
-       #"val_subst" (#"snoc" %"g" %"v") #"hd" = %"v"
-       : #"val" %"G" %"A"
+       #"val_subst" (#"snoc" "g" "v") #"hd" = "v"
+       : #"val" "G" "A"
   ];
-   [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" %"G1" %"G2",
-       "g" : #"sub" %"G2" %"G3",
+   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3",
        "A" : #"ty",
-       "v" : #"val" %"G2" %"A"
+       "v" : #"val" "G2" "A"
        ----------------------------------------------- ("cmp_snoc")
-       #"cmp" %"f" (#"snoc" %"g" %"v")
-       = #"snoc" (#"cmp" %"f" %"g") (#"val_subst" %"f" %"v")
-       : #"sub" %"G1" (#"ext" %"G3" %"A")
+       #"cmp" "f" (#"snoc" "g" "v")
+       = #"snoc" (#"cmp" "f" "g") (#"val_subst" "f" "v")
+       : #"sub" "G1" (#"ext" "G3" "A")
    ];
-      [:> "G" : #"env", "A" : #"ty"
+      [:= "G" : #"env", "A" : #"ty"
        ----------------------------------------------- ("snoc_wkn_hd")
-        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" %"G" %"A") (#"ext" %"G" %"A")
+        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G" "A") (#"ext" "G" "A")
    ]
-   ]].
+   ]}.
 
 
 Derive value_subst
@@ -156,41 +149,41 @@ Proof. auto_elab. Qed.
 
 
 Definition exp_subst_def : lang :=
-  [[l
+  {[l
       [s| "G" : #"env", "A" : #"ty"
           -----------------------------------------------
           #"exp" "G" "A" srt
       ];
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" %"G" %"G'",
-       "A" : #"ty", "e" : #"exp" %"G'" %"A"
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+       "A" : #"ty", "e" : #"exp" "G'" "A"
        -----------------------------------------------
-       #"exp_subst" "g" "e" : #"exp" %"G" %"A"
+       #"exp_subst" "g" "e" : #"exp" "G" "A"
   ];
-  [:> "G" : #"env", "A" : #"ty", "e" : #"exp" %"G" %"A"
+  [:= "G" : #"env", "A" : #"ty", "e" : #"exp" "G" "A"
        ----------------------------------------------- ("exp_subst_id")
-       #"exp_subst" #"id" %"e" = %"e" : #"exp" %"G" %"A"
+       #"exp_subst" #"id" "e" = "e" : #"exp" "G" "A"
   ]; 
-  [:> "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" %"G1" %"G2", "g" : #"sub" %"G2" %"G3",
-       "A" : #"ty", "e" : #"exp" %"G3" %"A"
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "A" : #"ty", "e" : #"exp" "G3" "A"
        ----------------------------------------------- ("exp_subst_cmp")
-       #"exp_subst" %"f" (#"exp_subst" %"g" %"e")
-       = #"exp_subst" (#"cmp" %"f" %"g") %"e"
-       : #"exp" %"G1" %"A"
+       #"exp_subst" "f" (#"exp_subst" "g" "e")
+       = #"exp_subst" (#"cmp" "f" "g") "e"
+       : #"exp" "G1" "A"
   ];    
-  [:| "G" : #"env", "A" : #"ty", "v" : #"val" %"G" %"A"
+  [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
        -----------------------------------------------
-       #"ret" "v" : #"exp" %"G" %"A"
+       #"ret" "v" : #"exp" "G" "A"
   ];
-  [:> "G1" : #"env", "G2" : #"env",
-       "g" : #"sub" %"G1" %"G2",
-       "A" : #"ty", "v" : #"val" %"G2" %"A"
+  [:= "G1" : #"env", "G2" : #"env",
+       "g" : #"sub" "G1" "G2",
+       "A" : #"ty", "v" : #"val" "G2" "A"
        ----------------------------------------------- ("exp_subst_ret")
-       #"exp_subst" %"g" (#"ret" %"v")
-       = #"ret" (#"val_subst" %"g" %"v")
-       : #"exp" %"G1" %"A"
+       #"exp_subst" "g" (#"ret" "v")
+       = #"ret" (#"val_subst" "g" "v")
+       : #"exp" "G1" "A"
   ]
-  ]].
+  ]}.
 
 
 Derive exp_subst

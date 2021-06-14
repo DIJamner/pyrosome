@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Compilers ElabWithPrefix ElabCompilersWithPrefix.
-Import Exp.Notations.
+Import Core.Notations.
 
 (*TODO: probably should move this to compilerDefs*)
 Definition compile_rule cmp r :=
@@ -113,7 +113,7 @@ Definition compute_lang_args_sublist : lang -> bool :=
 Lemma use_compute_rule_args_sublist r
   : compute_rule_args_sublist r = true -> rule_args_sublist r.
 Proof.
-  destruct r; basic_goal_prep; basic_exp_crush.
+  destruct r; basic_goal_prep; basic_term_crush.
   all: eapply use_compute_sublist; eauto.
 Qed.
   
@@ -130,7 +130,7 @@ Lemma in_lang_args_sublist l n r
     rule_args_sublist r.
 Proof.
   induction l; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 (* TODO: phrase compiler extension preservation like lang extension elab *)

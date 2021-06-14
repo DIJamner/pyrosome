@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core.
-Import Exp.Notations.
+Import Core.Notations.
 (*TODO: rename this to compiler proofs and have a separate export-only file?*)
 Require Export CompilerDefs.
 
@@ -421,7 +421,7 @@ Lemma sort_case_in_preserving_well_scoped tgt cmp src n args t
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   erewrite <- compile_ctx_fst_equal.
-  eapply wf_sort_implies_ws; eauto; eauto with exp lang_core.
+  eapply wf_sort_implies_ws; eauto; eauto with term lang_core.
 Qed.
 #[export] Hint Resolve sort_case_in_preserving_well_scoped : lang_core.
 
@@ -434,7 +434,7 @@ Lemma term_case_in_preserving_well_scoped tgt cmp src n args t
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   erewrite <- compile_ctx_fst_equal.
-  eapply wf_term_implies_ws; eauto; eauto with exp lang_core.
+  eapply wf_term_implies_ws; eauto; eauto with term lang_core.
 Qed.
 #[export] Hint Resolve term_case_in_preserving_well_scoped : lang_core.
 
@@ -491,7 +491,7 @@ Proof using.
       reflexivity.
     }
     {
-      eapply term_case_in_preserving_well_scoped; eauto; eauto with exp.
+      eapply term_case_in_preserving_well_scoped; eauto; eauto with term.
     }
   }  
 Qed.

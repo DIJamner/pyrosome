@@ -7,7 +7,6 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core.
-(*TODO: why does this generate warnings?*)
 Import Core.Notations.
 
 
@@ -22,7 +21,7 @@ Section TermsAndRules.
     that their sorts are wf.
    *)
   
- Inductive elab_term : ctx -> exp -> exp -> sort -> Prop :=
+ Inductive elab_term : ctx -> term -> term -> sort -> Prop :=
   | elab_term_by : forall c n s es args c' t,
       In (n, term_rule c' args t) l ->
       elab_args c s args es c' ->
@@ -34,7 +33,7 @@ Section TermsAndRules.
   | elab_term_var : forall c n t,
       In (n, t) c ->
       elab_term c (var n) (var n) t
-  with elab_args : ctx -> list exp -> list string -> list exp -> ctx -> Prop :=
+  with elab_args : ctx -> list term -> list string -> list term -> ctx -> Prop :=
   | elab_args_nil : forall c, elab_args c [] [] [] []
   | elab_args_cons_ex : forall c s args es c' name e ee t,
       elab_term c e ee t[/with_names_from c' es/] ->
@@ -403,7 +402,7 @@ Ltac compute_everywhere e :=
       change e with e' in *.
 
 
-Lemma elab_term_by' l c n (s es : list exp) args c' t t'
+Lemma elab_term_by' l c n (s es : list term) args c' t t'
   : In (n, term_rule c' args t') l ->
     elab_args l c s args es c' ->
     t = t' [/with_names_from c' es /] ->
@@ -412,7 +411,7 @@ Proof.
   intros; subst; eauto with lang_core.
 Qed.
 
-Lemma wf_term_by' l c n (es : list exp) args c' t t'
+Lemma wf_term_by' l c n (es : list term) args c' t t'
   : In (n, term_rule c' args t') l ->
     wf_args l c es c' ->
     t = t' [/with_names_from c' es /] ->

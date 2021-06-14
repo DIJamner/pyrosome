@@ -6,16 +6,13 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Export Exp ARule.
-
-(*TODO: why does this generate warnings?*)
-Import Exp.Notations.
-Import ARule.Notations.
+From Named Require Export Term Rule.
 
 Module Notations.
-  Export Exp.Notations.
-  Export ARule.Notations.
+  Export Term.Notations.
+  Export Rule.Notations.
 End Notations.
+Import Notations.
 
 Create HintDb lang_core discriminated.
 
@@ -49,7 +46,7 @@ Section TermsAndRules.
       eq_sort c t12 t2 ->
       eq_sort c t1 t2
   | eq_sort_sym : forall c t1 t2, eq_sort c t1 t2 -> eq_sort c t2 t1
-  with eq_term : ctx -> sort -> exp -> exp -> Prop :=
+  with eq_term : ctx -> sort -> term -> term -> Prop :=
   | eq_term_subst : forall c s1 s2 c' t e1 e2,
       (* Need to assert wf_ctx c' here to satisfy
          assumptions' presuppositions
@@ -90,7 +87,7 @@ c |- e1 = e2 : t'
         (* assumed because the output ctx is wf: fresh name c' ->*)
         eq_term c t[/s2/] e1 e2 ->
         eq_subst c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2)
-  with wf_term : ctx -> exp -> sort -> Prop :=
+  with wf_term : ctx -> term -> sort -> Prop :=
   | wf_term_by : forall c n s args c' t,
       In (n, term_rule c' args t) l ->
       wf_args c s c' ->
@@ -110,7 +107,7 @@ c |- e1 = e2 : t'
   | wf_term_var : forall c n t,
       In (n, t) c ->
       wf_term c (var n) t
-  with wf_args : ctx -> list exp -> ctx -> Prop :=
+  with wf_args : ctx -> list term -> ctx -> Prop :=
   | wf_args_nil : forall c, wf_args c [] []
   | wf_args_cons : forall c s c' name e t,
       wf_term c e t[/with_names_from c' s/] ->
@@ -131,7 +128,7 @@ c |- e1 = e2 : t'
       wf_sort c v ->
       wf_ctx ((name,v)::c).
 
-  Inductive eq_args : ctx -> ctx -> list exp -> list exp -> Prop :=
+  Inductive eq_args : ctx -> ctx -> list term -> list term -> Prop :=
   | eq_args_nil : forall c, eq_args c [] [] []
   | eq_args_cons : forall c c' es1 es2,
       eq_args c c' es1 es2 ->
@@ -201,11 +198,11 @@ Combined Scheme judge_ind
 (*Used before a rewrite hint is added to get around
   the fact that rewrite dbs can't be created
 *)
-Local Ltac pre_rewrite_core_crush := let x := autorewrite with utils exp in * in
-                                  let y := eauto with utils exp lang_core in
+Local Ltac pre_rewrite_core_crush := let x := autorewrite with utils term in * in
+                                  let y := eauto with utils term lang_core in
                                           generic_crush x y.
-Ltac basic_core_crush := let x := autorewrite with utils exp lang_core in * in
-                                  let y := eauto with utils exp lang_core in
+Ltac basic_core_crush := let x := autorewrite with utils term lang_core in * in
+                                  let y := eauto with utils term lang_core in
                                           generic_crush x y.
 
                                            
@@ -1200,8 +1197,8 @@ Qed.
 
 (*TODO: come up w/ a more systematic way of constructing this*)
 Ltac with_rule_in_wf_crush :=
-  let rewrite_tac := autorewrite with utils exp lang_core in * in
-  let hint_auto := eauto with utils exp lang_core in
+  let rewrite_tac := autorewrite with utils term lang_core in * in
+  let hint_auto := eauto with utils term lang_core in
           subst; rewrite_tac; firstorder;
                    try use_rule_in_wf; rewrite_tac;
   firstorder (subst; rewrite_tac;(* repeat rewrite_strengthen;*) hint_auto;

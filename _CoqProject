@@ -1,9 +1,9 @@
--R src/Utils Utils
+-Q src/Utils Utils
 src/Utils/Utils.v
 
 -R src/named Named
-src/named/Exp.v
-src/named/ARule.v
+src/named/Term.v
+src/named/Rule.v
 src/named/Core.v
 src/named/Elab.v
 src/named/ElabWithPrefix.v
@@ -15,9 +15,6 @@ src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleProd.v
 src/named/SimpleVSTLC.v
-src/named/Subst.v
-src/named/STLC.v
-src/named/VSubst.v
 src/named/CompilerDefs.v
 src/named/Compilers.v
 src/named/CompilerTransitivity.v
@@ -28,5 +25,6 @@ src/named/Renaming.v
 src/named/PureToComplexValue.v
 src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
+src/named/SimpleVCC.v
 src/named/SimpleEvalCtx.v
 src/named/GlobalCell.v

@@ -31,8 +31,8 @@ Fixpoint unordered_merge_unsafe {A} (l1 l2 : named_list A) :=
   end.
 
 Section InnerLoop.
-  Context (matches_unordered : forall (e pat : exp), option subst).
-  Fixpoint args_match_unordered (s pat : list exp) : option subst :=
+  Context (matches_unordered : forall (e pat : term), option subst).
+  Fixpoint args_match_unordered (s pat : list term) : option subst :=
        match pat, s with
        | [],[] => do ret []
        | pe::pat',e::s' =>
@@ -43,25 +43,25 @@ Section InnerLoop.
        end.
 End InnerLoop.
 
-(* TODO: move to exp*)
-Fixpoint exp_dec (x y : exp) {struct x} : {x = y} + {~ x = y}.
+(* TODO: move to term*)
+Fixpoint term_dec (x y : term) {struct x} : {x = y} + {~ x = y}.
   refine (match x,y with
           | var n, var m => if string_dec n m then left _ else right _
           | con n s, con n' s' =>
             if string_dec n n'
-            then if list_eq_dec exp_dec s s' then left _ else right _
+            then if list_eq_dec term_dec s s' then left _ else right _
             else right _
           | _, _ => right _
           end).
   all: try let H := fresh in intro H; inversion H; clear H; subst.
-  all: basic_exp_crush.
+  all: basic_term_crush.
 Defined.
 
 (* Finds the subst s such that s >= acc, e = pat[/s/]
    and (map fst s) = FV(e) U (map fst acc), if such a substitution exists.
    Behavior intentionally unspecified otherwise.
 *)
-Fixpoint matches_unordered (e pat : exp) : option subst :=
+Fixpoint matches_unordered (e pat : term) : option subst :=
   match pat, e with
   | var px, _ => Some ([(px,e)])
   | con pn ps, con n s =>
@@ -71,7 +71,7 @@ end.
 
 (*
 Definition matches_unordered e pat :=
-  do s <- matches_unordered_fuel (exp_depth pat) e pat;
+  do s <- matches_unordered_fuel (term_depth pat) e pat;
      ! e == pat[/s/]; (* since we don't check merges, we check post-hoc *)
      ret s.
  *)
@@ -156,7 +156,7 @@ Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
   | scon n s, scon n_pat s_pat =>
     if string_dec n n_pat then
-      (* multiply depth by 2 because each level consumes 1 fuel for exp
+      (* multiply depth by 2 because each level consumes 1 fuel for term
      and 1 for its args
        *)
       args_match_unordered matches_unordered s s_pat
@@ -166,18 +166,18 @@ Definition matches_unordered_sort (t pat : sort) :=
 (* Note that 'args' is critical to getting the order of the output subst correct.
    FV(pat) must be a permutation of args to get a result.
  *)
-Definition matches (e pat : exp) (args : list string) : option subst :=
+Definition matches (e pat : term) (args : list string) : option subst :=
   do s <- matches_unordered e pat;
      s' <- order_subst s args;
      (* this condition can fail because merge doesn't check for conflicts *)
-     !exp_dec e pat[/s'/];
+     !term_dec e pat[/s'/];
      ret s'.
 
 
-(*TODO: move to exp*)
+(*TODO: move to term*)
 Definition sort_dec : forall x y : sort, {x = y} + {~ x = y}.
   decide equality.
-  - apply (list_eq_dec exp_dec).
+  - apply (list_eq_dec term_dec).
   - apply string_dec.
 Defined.
 
@@ -273,11 +273,11 @@ Import OptionMonad.
 
 Inductive step_instruction :=
 | cong_instr : list (list step_instruction) -> step_instruction
-| redex_instr : string -> ctx -> sort -> exp -> exp -> subst -> step_instruction.
+| redex_instr : string -> ctx -> sort -> term -> term -> subst -> step_instruction.
 
 (* if the top level of the term takes a step, return it *)
-Fixpoint step_redex_term (l : lang) (e : exp)
-  : option (step_instruction * exp) :=
+Fixpoint step_redex_term (l : lang) (e : term)
+  : option (step_instruction * term) :=
   match l with
   | [] => None
   | (n,term_eq_rule c e1 e2 t')::l' =>
@@ -290,7 +290,7 @@ Fixpoint step_redex_term (l : lang) (e : exp)
   end.
 
 (*
-Inductive wf_term_no_conv l : ctx -> exp -> sort -> Prop :=
+Inductive wf_term_no_conv l : ctx -> term -> sort -> Prop :=
   | wf_term_by_no_conv : forall c n s args c' t,
       In (n, term_rule c' args t) l ->
       wf_args l c s c' ->
@@ -334,12 +334,12 @@ Fixpoint step_redex_term_n l e n :=
   end.
 
 Section StepTermInner.
-  Context (step_term_n : exp -> list step_instruction * exp)
+  Context (step_term_n : term -> list step_instruction * term)
           (l : lang).
 
   (*invariant: if it returns cong l,
    then l contains a nonempty list *)
-  Definition step_subterm e : option (step_instruction * exp) :=
+  Definition step_subterm e : option (step_instruction * term) :=
     match e with
     | var x => None
     | con name s =>
@@ -352,7 +352,7 @@ Section StepTermInner.
     end.
 
   Definition step_term_one_traversal e
-    : option (step_instruction * exp) :=
+    : option (step_instruction * term) :=
     match step_subterm e with
     | Some p => Some p
     | None => step_redex_term l e
@@ -362,7 +362,7 @@ End StepTermInner.
       
 
 Fixpoint step_term' l n e {struct n}
-  : list step_instruction * exp :=
+  : list step_instruction * term :=
   match n with
   | 0 => ([], e)
   | S n' =>
@@ -382,8 +382,8 @@ Import Ltac2.Message Ltac2.Control.
 Set Default Proof Mode "Classic".
 
 Lemma wf_args_cons2
-     : forall (l : lang) (c : ctx) (s : list exp) (c' : named_list sort) 
-         (name name': string) (e e': exp) (t t' : sort),
+     : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort) 
+         (name name': string) (e e': term) (t t' : sort),
        wf_term l c e t [/with_names_from c' s /] ->
        wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
        wf_args l c s c' -> wf_args l c (e'::e :: s) ((name',t')::(name, t) :: c').
@@ -392,8 +392,8 @@ Proof.
 Qed.
 
 Lemma eq_args_cons2
-     : forall (l : lang) (c : ctx) (s1 s2 : list exp) (c' : named_list sort) 
-         (name name': string) (e1 e2 e1' e2': exp) (t t' : sort),
+     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
+         (name name': string) (e1 e2 e1' e2': term) (t t' : sort),
        eq_args l c c' s1 s2 ->
        eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
        eq_term l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->

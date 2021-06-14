@@ -7,69 +7,70 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 
-Create HintDb exp discriminated.
+Create HintDb term discriminated.
 
 Unset Elimination Schemes.
-Inductive exp : Set :=
+Inductive term : Set :=
 (* variable name *)
-| var : string -> exp
+| var : string -> term
 (* Rule label, list of subterms*)
-| con : string -> list exp -> exp.
+| con : string -> list term -> term.
 Set Elimination Schemes.
 
+Coercion var : string >-> term.
 
 (*Stronger induction principle w/ better subterm knowledge
  *)
-Fixpoint exp_ind
-         (P : exp -> Prop)
+Fixpoint term_ind
+         (P : term -> Prop)
          (IHV : forall n, P(var n))
          (IHC : forall n l, all P l ->
              P (con n l))
-         (e : exp) { struct e} : P e :=
+         (e : term) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
         match l return List.fold_right (fun t => and (P t)) True l with
         | [] => I
-        | e' :: l' => conj (exp_ind _ IHV IHC e') (loop l')
+        | e' :: l' => conj (term_ind _ IHV IHC e') (loop l')
         end in
     IHC n l (loop l)
   end.
 
-Fixpoint exp_rect
-         (P : exp -> Type)
+Fixpoint term_rect
+         (P : term -> Type)
          (IHV : forall n, P(var n))
          (IHC : forall n l,
              List.fold_right (fun t => prod (P t)) unit l ->
              P (con n l))
-         (e : exp) { struct e} : P e :=
+         (e : term) { struct e} : P e :=
   match e with
   | var n => IHV n
   | con n l =>
     let fix loop l :=
         match l return List.fold_right (fun t => prod (P t)) unit l with
         | [] => tt
-        | e' :: l' => (exp_rect _ IHV IHC e', loop l')
+        | e' :: l' => (term_rect _ IHV IHC e', loop l')
         end in
     IHC n l (loop l)
   end.
 
-Definition exp_rec := 
-  exp_rect
-     : forall P : exp -> Set,
+Definition term_rec := 
+  term_rect
+     : forall P : term -> Set,
        (forall n, P (var n)) ->
        (forall n l,
              List.fold_right (fun t => prod (P t)) unit l ->
-             P (con n l))-> forall e : exp, P e.
+             P (con n l))-> forall e : term, P e.
 
-Variant sort : Set := scon : string -> list exp -> sort.
+Variant sort : Set := scon : string -> list term -> sort.
 
 Definition ctx : Set := named_list_set sort.
 
-Definition subst : Set := named_list_set exp.
+Definition subst : Set := named_list_set term.
 
-Definition subst_lookup (s : subst) (n : string) : exp :=
+Definition subst_lookup (s : subst) (n : string) : term :=
   named_list_lookup (var n) s n.
 
 Arguments subst_lookup !s n/.
@@ -80,20 +81,20 @@ Definition ctx_lookup (c: ctx) (n : string) : sort :=
 Arguments ctx_lookup !c n/.
 
 
-Fixpoint exp_var_map (f : string -> exp) (e : exp) : exp :=
+Fixpoint term_var_map (f : string -> term) (e : term) : term :=
   match e with
   | var n => f n
-  | con n l => con n (map (exp_var_map f) l)
+  | con n l => con n (map (term_var_map f) l)
   end.
 
-Arguments exp_var_map f !e /.
+Arguments term_var_map f !e /.
 
-Definition exp_subst (s : subst) e : exp :=
-  exp_var_map (subst_lookup s) e.
+Definition term_subst (s : subst) e : term :=
+  term_var_map (subst_lookup s) e.
 
-Arguments exp_subst s !e /.
+Arguments term_subst s !e /.
 
-Definition subst_cmp s1 s2 : subst := named_map (exp_subst s1) s2.
+Definition subst_cmp s1 s2 : subst := named_map (term_subst s1) s2.
 Arguments subst_cmp s1 s2 /.
 
 (* Well-scoped languages
@@ -103,20 +104,20 @@ Arguments subst_cmp s1 s2 /.
    Note: we could write this in bool using a decidable In (which is fine
    because strings have decidable equality)
  *)
-Fixpoint ws_exp (args : list string) (e : exp) : Prop :=
+Fixpoint ws_term (args : list string) (e : term) : Prop :=
   match e with
   | var x => In x args
-  | con _ s => all (ws_exp args) s
+  | con _ s => all (ws_term args) s
   end.
-Arguments ws_exp args !e/.
+Arguments ws_term args !e/.
 
-Definition ws_args args : list exp -> Prop := all (ws_exp args).
+Definition ws_args args : list term -> Prop := all (ws_term args).
 Arguments ws_args args !s/.
 
 Fixpoint ws_subst args (s : subst) : Prop :=
   match s with
   | [] => True
-  | (n,e)::s' => fresh n s' /\ ws_exp args e /\ ws_subst args s'
+  | (n,e)::s' => fresh n s' /\ ws_term args e /\ ws_subst args s'
   end.
 Arguments ws_subst args !s/.
 
@@ -138,7 +139,7 @@ Proof using .
 Qed.
 
 
-Definition id_args {A} (c : named_list A) : list exp :=
+Definition id_args {A} (c : named_list A) : list term :=
   map var (map fst c).
 
 Arguments id_args : simpl never.
@@ -152,7 +153,7 @@ Lemma id_args_cons A n (a :A) c
 Proof.
   reflexivity.
 Qed.
-Hint Rewrite id_args_cons : exp.
+Hint Rewrite id_args_cons : term.
 
 Class Substable (A : Type) : Type :=
   {
@@ -178,130 +179,130 @@ Class Substable (A : Type) : Type :=
 
 Arguments well_scoped {A}%type_scope {Substable} _%list_scope !_.
 Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
-Hint Rewrite @subst_assoc : exp.
-Hint Rewrite @subst_id : exp.
-Hint Rewrite @strengthen_subst : exp.
-#[export] Hint Resolve well_scoped_subst : exp.
+Hint Rewrite @subst_assoc : term.
+Hint Rewrite @subst_id : term.
+Hint Rewrite @strengthen_subst : term.
+#[export] Hint Resolve well_scoped_subst : term.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
-Lemma exp_subst_nil e : exp_subst [] e = e.
+Lemma term_subst_nil e : term_subst [] e = e.
 Proof using .  
   induction e; basic_goal_prep; basic_utils_crush.
   f_equal.
   revert H.
   induction l; basic_goal_prep; basic_utils_crush.
 Qed.
-Hint Rewrite exp_subst_nil : exp.
+Hint Rewrite term_subst_nil : term.
 
 
-Ltac basic_exp_crush := let x := autorewrite with utils exp in * in
-                                  let y := eauto with utils exp in
+Ltac basic_term_crush := let x := autorewrite with utils term in * in
+                                  let y := eauto with utils term in
                                           generic_crush x y.
 
-Lemma named_map_subst_nil s : named_map (exp_subst []) s = s.
+Lemma named_map_subst_nil s : named_map (term_subst []) s = s.
 Proof using .
-  induction s; basic_goal_prep;basic_exp_crush.
+  induction s; basic_goal_prep;basic_term_crush.
 Qed.
-Hint Rewrite named_map_subst_nil : exp.
+Hint Rewrite named_map_subst_nil : term.
 
 Lemma subst_lookup_map s1 s2 n
   : In n (map fst s2) ->
-          exp_subst s1 (subst_lookup s2 n) = subst_lookup (named_map (exp_subst s1) s2) n.
+          term_subst s1 (subst_lookup s2 n) = subst_lookup (named_map (term_subst s1) s2) n.
 Proof using .
   induction s2; basic_goal_prep;
-  basic_exp_crush.
-  case_match; basic_exp_crush.
+  basic_term_crush.
+  case_match; basic_term_crush.
 Qed.
-Hint Rewrite subst_lookup_map : exp.
+Hint Rewrite subst_lookup_map : term.
   
-Lemma exp_subst_assoc : forall s1 s2 a,
-    ws_exp (map fst s2) a ->
-    exp_subst s1 (exp_subst s2 a)
-    = exp_subst (subst_cmp s1 s2) a.
+Lemma term_subst_assoc : forall s1 s2 a,
+    ws_term (map fst s2) a ->
+    term_subst s1 (term_subst s2 a)
+    = term_subst (subst_cmp s1 s2) a.
 Proof using .
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
   f_equal.
   revert dependent l;
     induction l;
     basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Hint Rewrite exp_subst_assoc : exp.
+Hint Rewrite term_subst_assoc : term.
 
 Lemma subst_lookup_id A (c : named_list A) n
   : subst_lookup (id_subst c) n = var n.
 Proof.
   induction c; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
   (*TODO: get rid of need for symmetry*)
   case_match; symmetry in HeqH;
     basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Hint Rewrite subst_lookup_id : exp.
+Hint Rewrite subst_lookup_id : term.
 
-Lemma exp_subst_id
+Lemma term_subst_id
   : forall A (c : named_list A) a,
-    exp_subst (id_subst c) a = a.
+    term_subst (id_subst c) a = a.
 Proof.
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
   f_equal.
   revert dependent l;
     induction l;
     basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Hint Rewrite exp_subst_id : exp.
+Hint Rewrite term_subst_id : term.
 
-Lemma exp_strengthen_subst s a n e
-  : ws_exp (map fst s) a ->
+Lemma term_strengthen_subst s a n e
+  : ws_term (map fst s) a ->
     fresh n s ->
-    exp_subst ((n,e)::s) a = exp_subst s a.
+    term_subst ((n,e)::s) a = term_subst s a.
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
   f_equal.
 
   revert dependent l.
   induction l; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
-Lemma ws_exp_subst_lookup args s n
+Lemma ws_term_subst_lookup args s n
   : ws_subst args s ->
     In n (map fst s) ->
-    ws_exp args (subst_lookup s n).
+    ws_term args (subst_lookup s n).
 Proof.
   induction s; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-#[export] Hint Resolve ws_exp_subst_lookup : exp.
+#[export] Hint Resolve ws_term_subst_lookup : term.
   
-Lemma exp_well_scoped_subst args s a
+Lemma term_well_scoped_subst args s a
     : ws_subst args s ->
-      ws_exp (map fst s) a ->
-      ws_exp args (exp_subst s a).
+      ws_term (map fst s) a ->
+      ws_term args (term_subst s a).
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
 
   revert dependent l.
   induction l; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Local Hint Resolve exp_well_scoped_subst : exp.
+Local Hint Resolve term_well_scoped_subst : term.
   
-Instance substable_exp : Substable exp :=
+Instance substable_term : Substable term :=
   {
-  apply_subst := exp_subst;
-  well_scoped := ws_exp;
-  subst_assoc := exp_subst_assoc;
-  subst_id := exp_subst_id;
-  strengthen_subst := exp_strengthen_subst;
-  well_scoped_subst := exp_well_scoped_subst;
+  apply_subst := term_subst;
+  well_scoped := ws_term;
+  subst_assoc := term_subst_assoc;
+  subst_id := term_subst_id;
+  strengthen_subst := term_strengthen_subst;
+  well_scoped_subst := term_well_scoped_subst;
   }.
  
 Lemma subst_subst_assoc : forall s1 s2 a,
@@ -310,7 +311,7 @@ Lemma subst_subst_assoc : forall s1 s2 a,
     = subst_cmp (subst_cmp s1 s2) a.
 Proof using .
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma subst_subst_id
@@ -318,7 +319,7 @@ Lemma subst_subst_id
     subst_cmp (id_subst c) a = a.
 Proof using .
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma subst_strengthen_subst s a n e
@@ -327,8 +328,8 @@ Lemma subst_strengthen_subst s a n e
     subst_cmp ((n,e)::s) a = subst_cmp s a.
 Proof.
   induction a; basic_goal_prep; f_equal;
-    basic_exp_crush.
-  apply exp_strengthen_subst; auto.
+    basic_term_crush.
+  apply term_strengthen_subst; auto.
 Qed.
 
 Lemma subst_well_scoped_subst args s a
@@ -337,9 +338,9 @@ Lemma subst_well_scoped_subst args s a
       ws_subst args (subst_cmp s a).
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Local Hint Resolve subst_well_scoped_subst : exp.
+Local Hint Resolve subst_well_scoped_subst : term.
 
 Instance substable_subst : Substable subst :=
   {
@@ -351,7 +352,7 @@ Instance substable_subst : Substable subst :=
   well_scoped_subst := subst_well_scoped_subst;
   }.
 
-Definition args_subst s (a : list exp) := map (apply_subst s) a.
+Definition args_subst s (a : list term) := map (apply_subst s) a.
 Arguments args_subst s !a/.
 
 Lemma args_subst_assoc : forall s1 s2 a,
@@ -360,7 +361,7 @@ Lemma args_subst_assoc : forall s1 s2 a,
     = args_subst (subst_cmp s1 s2) a.
 Proof using .
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma args_subst_id
@@ -368,7 +369,7 @@ Lemma args_subst_id
     args_subst (id_subst c) a = a.
 Proof using .
   induction a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma args_strengthen_subst s a n e
@@ -377,7 +378,7 @@ Lemma args_strengthen_subst s a n e
     args_subst ((n,e)::s) a = args_subst s a.
 Proof.
   induction a; basic_goal_prep; f_equal;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma args_well_scoped_subst args s a
@@ -386,11 +387,11 @@ Lemma args_well_scoped_subst args s a
       ws_args args (args_subst s a).
 Proof.
   induction a; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
-Local Hint Resolve args_well_scoped_subst : exp.
+Local Hint Resolve args_well_scoped_subst : term.
 
-Instance substable_args : Substable (list exp) :=
+Instance substable_args : Substable (list term) :=
   {
   apply_subst := args_subst;
   well_scoped := ws_args;
@@ -410,7 +411,7 @@ Lemma sort_subst_assoc : forall s1 s2 a,
     = sort_subst (subst_cmp s1 s2) a.
 Proof using .
   destruct a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 
@@ -419,7 +420,7 @@ Lemma sort_subst_id
     sort_subst (id_subst c) a = a.
 Proof using .
   destruct a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 
@@ -429,7 +430,7 @@ Lemma sort_strengthen_subst s a n e
     sort_subst ((n,e)::s) a = sort_subst s a.
 Proof.
   destruct a; basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma sort_well_scoped_subst args s a
@@ -438,7 +439,7 @@ Lemma sort_well_scoped_subst args s a
       ws_sort args (sort_subst s a).
 Proof.
   destruct a; basic_goal_prep; try case_match;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Instance substable_sort : Substable sort :=
@@ -450,30 +451,33 @@ Instance substable_sort : Substable sort :=
   }.
 
 
-Fixpoint eq_exp e1 e2 {struct e1} : bool :=
+Fixpoint eq_term e1 e2 {struct e1} : bool :=
   match e1, e2 with
   | var x, var y => eqb x y
   | con n1 l1, con n2 l2 =>
-    (eqb n1 n2) && (all2 eq_exp l1 l2)
+    (eqb n1 n2) && (all2 eq_term l1 l2)
   | _,_ => false
   end.
 
 
 Ltac fold_Substable :=
-  try change (named_map (exp_subst ?s') ?s) with s[/s'/];
-  try change (exp_subst ?s ?e) with e[/s/];
+  try change (named_map (term_subst ?s') ?s) with s[/s'/];
+  try change (term_subst ?s ?e) with e[/s/];
   try change (sort_subst ?s ?e) with e[/s/];
   try change (args_subst ?s ?e) with e[/s/];
   try change (subst_cmp ?s ?e) with e[/s/];
-  try change (map (exp_var_map (subst_lookup ?s')) ?s) with s[/s'/].
+  try change (map (term_var_map (subst_lookup ?s')) ?s) with s[/s'/].
 
 
 
 (*Moved out of the module because Coq seems
   to include them at the the top level anyway
  *)
-Declare Custom Entry exp.
+Declare Custom Entry term.
 Declare Custom Entry sort.
+
+Declare Custom Entry arg_list.
+Declare Custom Entry arg.
 
 
 Declare Custom Entry ctx.
@@ -486,102 +490,102 @@ Module Notations.
   Declare Scope ctx_scope.
   Bind Scope ctx_scope with ctx.
   
-  Notation "'{{e' e }}" := (e) (at level 0,e custom exp at level 100).
-  Notation "'{{s' e }}" := (e) (at level 0,e custom sort at level 100).
+  Notation "'{{e' e }}" :=
+    (e) (at level 0,
+         e custom term at level 100,
+         format "'[' '{{e'  e '}}' ']'").
+  Notation "'{{s' e }}" :=
+    (e) (at level 0,
+         e custom sort at level 100,
+         format "'[' '{{s'  e '}}' ']'").
   
   Notation "{ x }" :=
-    x (in custom exp at level 0, x constr).
+    x (in custom term at level 0, x constr).
+  Notation "{ x }" :=
+    x (in custom arg at level 0, x constr).
   Notation "{ x }" :=
     x (in custom sort at level 0, x constr).
   (* TODO: issues; fix *)
-  Notation "{ x }" :=
+  (*
+    Notation "{ x }" :=
     x (in custom ctx at level 0, x constr).
+  *)
   
   Notation "# c" :=
     (con c%string [])
-      (right associativity,in custom exp at level 0, c constr at level 0,
+      (right associativity,in custom arg at level 0, c constr at level 0,
                               format "# c").
-  Notation "# c" :=
-    (scon c%string [])
-      (right associativity,in custom sort at level 0, c constr at level 0,
-                              format "# c").
+  Notation "( e )" := e (in custom arg at level 0, e custom term at level 100).
 
-  Definition exp_constr_app e e' :=
-    match e with
-    | con c l => con c (e'::l)
-    | _ => con "ERR" []
-    end.
-
-  Definition srt_constr_app t e' :=
-    match t with
-    | scon c l => scon c (e'::l)
-    end.
-
-  Notation "c e" :=
-    (exp_constr_app c e)
-      (left associativity, in custom exp at level 10,
-                              c custom exp, e custom exp at level 9).
-  Notation "c e" :=
-    (srt_constr_app c e)
-      (left associativity, in custom sort at level 10,
-                              c custom sort, e custom exp at level 9).
-
-  Notation "( e )" := e (in custom exp at level 0, e custom exp at level 100).
-  Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
-
-  Notation "% x" :=
+  Notation "" := [] (in custom arg_list at level 0).
+  Notation "a1 .. an" :=
+    (cons an .. (cons a1 nil) ..)
+      (right associativity,
+        in custom arg_list at level 50,
+           a1 custom arg, an custom arg,
+           format " '[hv' a1  ..  an ']'"
+      ).
+  
+  Notation "# c al" :=
+    (con c%string al)
+      (right associativity,
+        in custom term at level 60,
+           c constr at level 0,
+           al custom arg_list,
+           format "'[' # c al ']'").
+  
+  Notation "# c al" :=
+    (scon c%string al)
+      (right associativity,
+        in custom sort at level 60,
+           c constr at level 0,
+           al custom arg_list,
+           format "'[' # c al ']'").
+  
+  Notation "x" :=
     (var x%string)
-      (in custom exp at level 0, x constr at level 0, format "% x").
+      (in custom term at level 0, x constr at level 0, format "x").
+  
+  Notation "x" :=
+    (var x%string)
+      (in custom arg at level 0, x constr at level 0, format "x").
+
+  
+  (* TODO: allow redundant parens?
+  Notation "( e )" := e (in custom term at level 0, e custom term at level 100).
+  Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
+   *)
 
 
   Check {{e #"foo" }}.
-  Check {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
+  Check {{e #"foo" (#"bar" "x") #"baz" "y"}}.
   Check {{s #"foo" }}.
-  Check {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
-
-  
-  Eval compute in {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
-  
-  Notation "# c e1 .. en"
-    := (con c (cons en .. (cons e1 nil) ..))
-      (left associativity,
-         in custom exp at level 10,
-            c constr at level 0,
-            e1 custom exp at level 9,
-            en custom exp at level 9,
-            only printing).
-
-  Notation "# c e1 .. en"
-    := (scon c (cons en .. (cons e1 nil) ..))
-      (left associativity,
-         in custom sort at level 10,
-            c constr at level 0,
-            e1 custom exp at level 9,
-            en custom exp at level 9,
-            only printing).
-  
-  Eval compute in {{e #"foo" (#"bar" %"x") #"baz" %"y"}}.
-  Eval compute in {{s #"foo" (#"bar" %"x") #"baz" %"y"}}.
-  Eval compute in {{s #"foo" }}.
+  Check {{s #"foo" (#"bar" "x") #"baz" "y"}}.
+  Check (fun n s => con n [s]).
                                
   Bind Scope ctx_scope with ctx.
 
-  Notation "'{{c' }}" := nil (at level 0) : ctx_scope.
+  Notation "'{{c' }}" :=
+    nil
+      (at level 0, format "'[' '{{c'  '}}' ']'")
+    : ctx_scope.
   Notation "'{{c' bd , .. , bd' '}}'" :=
     (cons bd' .. (cons bd nil)..)
       (at level 0, bd custom ctx_binding at level 100,
-          format "'[' {{c '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : ctx_scope.
+          format "'[' {{c  '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : ctx_scope.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)
       (in custom ctx at level 100, bd custom ctx_binding at level 100,
           format "'[hv' bd ,  '/' .. ,  '/' bd' ']'") : ctx_scope.
 
-  (* TODO: temporary holdover until { c } works*)
+  (*
+  (* TODO: find uses and update*)
   Notation "! c" :=
     (c)
       (in custom ctx at level 0,
           c constr at level 0) : ctx_scope.
+   *)
 
   Notation "" := nil (*(@nil (string*sort))*) (in custom ctx at level 0) : ctx_scope.
 
@@ -593,20 +597,20 @@ Module Notations.
   Local Definition as_ctx (c:ctx) :=c.
   Check (as_ctx {{c }}).
   Check (as_ctx {{c "x" : #"env"}}).
-  Check (as_ctx {{c "x" : #"env", "y" : #"ty" %"x", "z" : #"ty" %"x"}}).
+  Check (as_ctx {{c "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"}}).
 
 End Notations.
 
 
 
-Lemma with_names_from_args_subst (c':ctx) s' (s : list exp)
+Lemma with_names_from_args_subst (c':ctx) s' (s : list term)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof using .
   revert s.
   induction c';
     destruct s;
     basic_goal_prep;
-    basic_exp_crush.
+    basic_term_crush.
 Qed.
 
 Lemma well_scoped_change_args A `{Substable A} (a:A) args args'
@@ -616,36 +620,36 @@ Lemma well_scoped_change_args A `{Substable A} (a:A) args args'
 Proof.  
   intros; subst; auto.
 Qed.
-#[export] Hint Resolve well_scoped_change_args : exp.
+#[export] Hint Resolve well_scoped_change_args : term.
 
 
 Ltac cbn_substs :=
-  cbn [apply_subst with_names_from exp_subst subst_cmp args_subst sort_subst
-                   substable_sort substable_args substable_exp substable_subst map
-      exp_var_map subst_lookup named_list_lookup String.eqb Ascii.eqb Bool.eqb].
+  cbn [apply_subst with_names_from term_subst subst_cmp args_subst sort_subst
+                   substable_sort substable_args substable_term substable_subst map
+      term_var_map subst_lookup named_list_lookup String.eqb Ascii.eqb Bool.eqb].
 
 
 
 Lemma invert_con n n' s s'
   : con n s = con n' s' <-> n = n' /\ s = s'.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_con : exp.
+Hint Rewrite invert_con : term.
 
 Lemma invert_var_con n s x
   : var x = con n s <-> False.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_var_con : exp.
+Hint Rewrite invert_var_con : term.
 
 Lemma invert_con_var n s x
   : con n s = var x <-> False.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_var_con : exp.
+Hint Rewrite invert_var_con : term.
 
 
 Lemma invert_scon n n' s s'
   : scon n s = scon n' s' <-> n = n' /\ s = s'.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_scon : exp.
+Hint Rewrite invert_scon : term.
 
 (*TODO: put in substable?*)
 (*TODO: guarentee all_fresh or no?*)

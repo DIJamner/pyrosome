@@ -7,12 +7,12 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core.
-Import Exp.Notations.
+Import Core.Notations.
 
 
 (* each element is the image for that constructor or axiom*)
 Variant compiler_case :=
- | term_case (args : list string) (e:exp)
+ | term_case (args : list string) (e:term)
  | sort_case (args : list string) (t:sort).
 Definition compiler := named_list compiler_case.
 
@@ -42,7 +42,8 @@ Section CompileFn.
           (src : lang).
 
   (* does not use src or tgt, only cmp *)
-  Fixpoint compile (e : exp) : exp :=
+  (*TODO: notations do a poor job of spacing this*)
+  Fixpoint compile (e : term) : term :=
     match e with
     | var x => var x
     | con n s =>
@@ -70,7 +71,7 @@ Section CompileFn.
   
   Definition compile_args := map compile.
 
-  Definition compile_subst (s : named_list exp) := named_map compile s.
+  Definition compile_subst (s : named_list term) := named_map compile s.
 
   Definition compile_ctx (c:named_list sort) := named_map compile_sort c.
 
