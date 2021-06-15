@@ -20,13 +20,15 @@ Require Coq.derive.Derive.
 
 Definition ptcv : compiler :=
   match # from (S.subst_elab) with
-  | {{s #"exp" "G" "A"}} => {{s #"val" %"G" %"A" }}
+  | {{s #"exp" "G" "A"}} => {{s #"val" "G" "A" }}
   | {{e #"subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"val_subst" %"g" %"e" }}
+    {{e #"val_subst" "g" "e" }}
   end.
 
+Eval compute in ptcv.
+
 Derive ptcv_elab
-       SuchThat (elab_preserving_compiler [] VS.subst_elab ptcv ptcv_elab S.subst_elab)
+       SuchThat (elab_preserving_compiler [] (VS.exp_subst++VS.value_subst) ptcv ptcv_elab S.subst_elab)
        As ptcv_elab_preserving.
 Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve ptcv_elab_preserving : elab_pfs.

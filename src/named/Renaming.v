@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Compilers Elab ElabCompilersWithPrefix.
-Import Exp.Notations.
+Import Core.Notations.
 
 
 (*TODO: move to utils*)
@@ -60,63 +60,63 @@ Section RenameFromFn.
     | _::l => elab_compiler_from_fn l
     end.
 
-  Fixpoint rename_exp e :=
+  Fixpoint rename_term e :=
     match e with
     | var x => var x
-    | con n s => con (f n) (map rename_exp s)
+    | con n s => con (f n) (map rename_term s)
     end.
 
   Definition rename_sort t :=
     match t with
-    | scon n s => scon (f n) (map rename_exp s)
+    | scon n s => scon (f n) (map rename_term s)
     end.
 
   Definition rename_ctx c := named_map rename_sort c.
   
-  Definition rename_subst s := named_map rename_exp s.
-  Definition rename_args s := map rename_exp s.
+  Definition rename_subst s := named_map rename_term s.
+  Definition rename_args s := map rename_term s.
 
   Lemma rename_subst_lookup s n
-    : rename_exp (subst_lookup s n) = subst_lookup (rename_subst s) n.
+    : rename_term (subst_lookup s n) = subst_lookup (rename_subst s) n.
   Proof.
-    induction s; basic_goal_prep; basic_exp_crush.
+    induction s; basic_goal_prep; basic_term_crush.
     my_case H (n=? s0);
-      basic_exp_crush.
+      basic_term_crush.
   Qed.
-  Hint Rewrite rename_subst_lookup : exp.
+  Hint Rewrite rename_subst_lookup : term.
   
-  Lemma rename_exp_subst_comm e s
-    : rename_exp e[/s/] = (rename_exp e)[/rename_subst s/].
+  Lemma rename_term_subst_comm e s
+    : rename_term e[/s/] = (rename_term e)[/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_exp_crush.
+    induction e; basic_goal_prep; basic_term_crush.
     revert dependent l.
-    induction l; basic_goal_prep; basic_exp_crush.
+    induction l; basic_goal_prep; basic_term_crush.
   Qed.
-  Hint Rewrite rename_exp_subst_comm : exp.
+  Hint Rewrite rename_term_subst_comm : term.
 
   
   Lemma rename_args_subst_comm e s
     : rename_args e[/s/] = (rename_args e)[/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_exp_crush.
+    induction e; basic_goal_prep; basic_term_crush.
   Qed.
-  Hint Rewrite rename_args_subst_comm : exp.
+  Hint Rewrite rename_args_subst_comm : term.
 
   
   Lemma rename_sort_subst_comm e s
     : rename_sort e[/s/] = (rename_sort e)[/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_exp_crush.
+    induction e; basic_goal_prep; basic_term_crush.
   Qed.
-  Hint Rewrite rename_sort_subst_comm : exp.
+  Hint Rewrite rename_sort_subst_comm : term.
 
   
   Lemma rename_subst_subst_comm e s
     : rename_subst e[/s/] = (rename_subst e)[/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_exp_crush.
+    induction e; basic_goal_prep; basic_term_crush.
   Qed.
-  Hint Rewrite rename_subst_subst_comm : exp.
+  Hint Rewrite rename_subst_subst_comm : term.
 
   
   Lemma rename_subst_with_names_from A (c : named_list A) s
@@ -125,9 +125,9 @@ Section RenameFromFn.
     revert s.
     induction c;
       destruct s;
-      basic_goal_prep; basic_exp_crush.
+      basic_goal_prep; basic_term_crush.
   Qed.
-  Hint Rewrite rename_subst_with_names_from : exp.
+  Hint Rewrite rename_subst_with_names_from : term.
     
   
   Definition rename_rule r :=
@@ -135,7 +135,7 @@ Section RenameFromFn.
     | sort_rule c args => sort_rule (rename_ctx c) args
     | term_rule c args t => term_rule (rename_ctx c) args (rename_sort t)
     | sort_eq_rule c t1 t2 => sort_eq_rule (rename_ctx c) (rename_sort t1) (rename_sort t2)
-    | term_eq_rule c e1 e2 t => term_eq_rule (rename_ctx c) (rename_exp e1) (rename_exp e2) (rename_sort t)
+    | term_eq_rule c e1 e2 t => term_eq_rule (rename_ctx c) (rename_term e1) (rename_term e2) (rename_sort t)
     end.
 
   Definition rename_lang (l : lang) : lang :=
@@ -156,7 +156,7 @@ Section RenameFromFn.
     : with_names_from (rename_ctx c) s = with_names_from c s.
   Proof.
     revert s.
-    induction c; destruct s; basic_goal_prep; basic_exp_crush.
+    induction c; destruct s; basic_goal_prep; basic_term_crush.
   Qed.
   
   Local Lemma rename_mono l
@@ -165,7 +165,7 @@ Section RenameFromFn.
           eq_sort (rename_lang l) (rename_ctx c) (rename_sort t1) (rename_sort t2))
       /\ (forall c t e1 e2,
              eq_term l c t e1 e2 ->
-             eq_term (rename_lang l) (rename_ctx c) (rename_sort t) (rename_exp e1) (rename_exp e2))
+             eq_term (rename_lang l) (rename_ctx c) (rename_sort t) (rename_term e1) (rename_term e2))
       /\ (forall c c' s1 s2,
              eq_subst l c c' s1 s2 ->
              eq_subst (rename_lang l) (rename_ctx c) (rename_ctx c') (rename_subst s1) (rename_subst s2))
@@ -174,7 +174,7 @@ Section RenameFromFn.
              wf_sort (rename_lang l) (rename_ctx c) (rename_sort t))
       /\ (forall c e t,
              wf_term l c e t ->
-             wf_term (rename_lang l) (rename_ctx c) (rename_exp e) (rename_sort t))
+             wf_term (rename_lang l) (rename_ctx c) (rename_term e) (rename_sort t))
       /\ (forall c s c',
              wf_args l c s c' ->
              wf_args (rename_lang l) (rename_ctx c) (rename_args s) (rename_ctx c'))
@@ -217,7 +217,7 @@ Section RenameFromFn.
           elab_sort (rename_lang l) (rename_ctx c) (rename_sort t) (rename_sort et))
       /\ (forall c e ee t,
              elab_term l c e ee t ->
-             elab_term (rename_lang l) (rename_ctx c) (rename_exp e) (rename_exp ee) (rename_sort t))
+             elab_term (rename_lang l) (rename_ctx c) (rename_term e) (rename_term ee) (rename_sort t))
       /\ (forall c s args es c',
              elab_args l c s args es c' ->
              elab_args (rename_lang l)  (rename_ctx c) (rename_args s) args (rename_args es) (rename_ctx c'))
@@ -260,7 +260,7 @@ Section RenameFromFn.
 
 End RenameFromFn.
 
-Hint Rewrite rename_subst_lookup : exp.
+Hint Rewrite rename_subst_lookup : term.
 
              
 Definition elab_sort_lang_rename_monotonicity f l
@@ -322,7 +322,7 @@ Proof.
   unfold bijective_on.
   simpl.
   induction l; basic_goal_prep.
-  basic_exp_crush.
+  basic_term_crush.
   firstorder.
 Qed.
 
