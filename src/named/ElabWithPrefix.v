@@ -228,6 +228,64 @@ End WithPrefix.
 #[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang : lang_core.
 
 Local Lemma elab_prefix_monotonicity l_pre l_pre' l
+  : incl l_pre l_pre' ->
+    (forall c t et,
+        elab_sort l_pre l c t et ->
+        elab_sort l_pre' l c t et)
+    /\ (forall c e ee t,
+           elab_term l_pre l c e ee t ->
+           elab_term l_pre' l c e ee t)
+    /\ (forall c s args es c',
+           elab_args l_pre l c s args es c' ->
+           elab_args l_pre' l c s args es c')
+    /\ (forall c ec,
+           elab_ctx l_pre l c ec ->
+           elab_ctx l_pre' l c ec).
+Proof using.
+  intro.
+  apply elab_ind; basic_goal_prep; basic_core_crush.
+  1,2: eapply elab_sort_by; basic_core_crush.
+  1,2: eapply elab_term_by; basic_core_crush.
+  {
+    eapply elab_term_conv; eauto.
+    eapply eq_sort_lang_monotonicity; eauto.
+    (*TODO: automate*)
+    apply incl_app.
+    apply incl_appl.
+    basic_utils_crush.    
+    apply incl_appr.
+    auto.
+  }
+  {
+    constructor; basic_core_crush.
+    eapply wf_term_lang_monotonicity; eauto.
+    (*TODO: automate*)
+    apply incl_app.
+    apply incl_appl.
+    basic_utils_crush.    
+    apply incl_appr.
+    auto.
+  }
+Qed.
+
+
+Definition elab_prefix_monotonicity_sort l_pre l_pre' l (incll : incl l_pre l_pre')
+  := proj1 (elab_prefix_monotonicity l incll).
+#[export] Hint Resolve elab_prefix_monotonicity_sort : lang_core.
+
+Definition elab_prefix_monotonicity_term l_pre l_pre' l (incll : incl l_pre l_pre')
+  := proj1 (proj2 (elab_prefix_monotonicity l incll)).
+#[export] Hint Resolve elab_prefix_monotonicity_term : lang_core.
+
+Definition elab_prefix_monotonicity_args l_pre l_pre' l (incll : incl l_pre l_pre')
+  := proj1 (proj2 (proj2 (elab_prefix_monotonicity l incll))).
+#[export] Hint Resolve elab_prefix_monotonicity_args : lang_core.
+
+Definition elab_prefix_monotonicity_ctx l_pre l_pre' l (incll : incl l_pre l_pre')
+  := (proj2 (proj2 (proj2 (elab_prefix_monotonicity l incll)))).
+#[export] Hint Resolve elab_prefix_monotonicity_ctx : lang_core.
+
+Local Lemma elab_prefix_monotonicity_app l_pre l_pre' l
   : (forall c t et,
         elab_sort l_pre l c t et ->
         elab_sort (l_pre'++l_pre) l c t et)
@@ -246,34 +304,55 @@ Proof using.
   1,2: eapply elab_term_by; basic_core_crush.
 Qed.
 
-Definition elab_prefix_monotonicity_sort l_pre l_pre' l
-  := proj1 (elab_prefix_monotonicity l_pre l_pre' l).
-#[export] Hint Resolve elab_prefix_monotonicity_sort : lang_core.
+Definition elab_prefix_monotonicity_app_sort l_pre l_pre' l
+  := proj1 (elab_prefix_monotonicity_app l_pre l_pre' l).
+#[export] Hint Resolve elab_prefix_monotonicity_app_sort : lang_core.
 
-Definition elab_prefix_monotonicity_term l_pre l_pre' l
-  := proj1 (proj2 (elab_prefix_monotonicity l_pre l_pre' l)).
-#[export] Hint Resolve elab_prefix_monotonicity_term : lang_core.
+Definition elab_prefix_monotonicity_app_term l_pre l_pre' l
+  := proj1 (proj2 (elab_prefix_monotonicity_app l_pre l_pre' l)).
+#[export] Hint Resolve elab_prefix_monotonicity_app_term : lang_core.
 
-Definition elab_prefix_monotonicity_args l_pre l_pre' l
-  := proj1 (proj2 (proj2 (elab_prefix_monotonicity l_pre l_pre' l))).
-#[export] Hint Resolve elab_prefix_monotonicity_args : lang_core.
+Definition elab_prefix_monotonicity_app_args l_pre l_pre' l
+  := proj1 (proj2 (proj2 (elab_prefix_monotonicity_app l_pre l_pre' l))).
+#[export] Hint Resolve elab_prefix_monotonicity_app_args : lang_core.
 
-Definition elab_prefix_monotonicity_ctx l_pre l_pre' l
-  := (proj2 (proj2 (proj2 (elab_prefix_monotonicity l_pre l_pre' l)))).
-#[export] Hint Resolve elab_prefix_monotonicity_ctx : lang_core.
+Definition elab_prefix_monotonicity_app_ctx l_pre l_pre' l
+  := (proj2 (proj2 (proj2 (elab_prefix_monotonicity_app l_pre l_pre' l)))).
+#[export] Hint Resolve elab_prefix_monotonicity_app_ctx : lang_core.
 
 
 Lemma elab_prefix_monotonicity_rule l_pre l_pre' l r er
-  : elab_rule l_pre l r er ->
-    elab_rule (l_pre'++l_pre) l r er.
+  : incl l_pre l_pre' ->
+    elab_rule l_pre l r er ->
+    elab_rule l_pre' l r er.
 Proof.
-  inversion 1; basic_core_crush.
+  inversion 2; basic_core_crush.
   constructor; basic_core_crush.
 Qed.
 #[export] Hint Resolve elab_prefix_monotonicity_rule : lang_core.
 
 
+Lemma elab_prefix_monotonicity_app_rule l_pre l_pre' l r er
+  : elab_rule l_pre l r er ->
+    elab_rule (l_pre'++l_pre) l r er.
+Proof.
+  inversion 1; basic_core_crush.
+Qed.
+#[export] Hint Resolve elab_prefix_monotonicity_app_rule : lang_core.
+
+
 Lemma elab_prefix_monotonicity_lang l_pre l_pre' l el
+  : incl l_pre l_pre' ->
+    all_fresh (el ++ l_pre') ->
+    elab_lang l_pre l el ->
+    elab_lang l_pre' l el.
+Proof.
+  induction 3; basic_goal_prep; basic_core_crush.
+  constructor; basic_core_crush.
+Qed.
+#[export] Hint Resolve elab_prefix_monotonicity_lang : lang_core.
+
+Lemma elab_prefix_monotonicity_app_lang l_pre l_pre' l el
   : all_fresh (l_pre' ++ l_pre) ->
     all_fresh (l_pre' ++ el) ->
     elab_lang l_pre l el ->
@@ -283,7 +362,7 @@ Proof.
   constructor; basic_core_crush.
   eapply all_fresh_insert_is_fresh; eauto.
 Qed.
-#[export] Hint Resolve elab_prefix_monotonicity_lang : lang_core.
+#[export] Hint Resolve elab_prefix_monotonicity_app_lang : lang_core.
 
 
 Lemma elab_lang_preserves_fresh l_pre c ec n

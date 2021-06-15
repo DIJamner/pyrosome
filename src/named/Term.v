@@ -6,6 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
+Import SumboolNotations.
 
 Create HintDb term discriminated.
 
@@ -65,6 +66,21 @@ Definition term_rec :=
              P (con n l))-> forall e : term, P e.
 
 Variant sort : Set := scon : string -> list term -> sort.
+
+Lemma invert_eq_var_var x y
+  : var x = var y <-> x = y.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_var_var : term.
+
+Lemma invert_eq_var_con x n s
+  : var x = con n s <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_var_con : term.
+
+Lemma invert_eq_con_var n s y
+  : con n s = var y <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite invert_eq_con_var : term.
 
 Definition ctx : Set := named_list_set sort.
 
@@ -664,3 +680,23 @@ Definition fv_args := flat_map fv.
 Definition fv_sort (t:sort) :=
   let (_,s) := t in
   fv_args s.
+
+
+Fixpoint term_eq_dec (e1 e2 : term) {struct e1} : {e1 = e2} + {~ e1 = e2}.
+  refine(match e1, e2 with
+         | var x, var y => SB! string_dec x y
+         | con n s, con n' s' =>
+           SB! (string_dec n n') SB& (list_eq_dec term_eq_dec s s')
+         | _, _ => right _
+         end); basic_term_crush.
+Defined.
+
+
+Definition sort_eq_dec (e1 e2 : sort) : {e1 = e2} + {~ e1 = e2}.
+  refine(match e1, e2 with
+         | scon n s, scon n' s' =>
+           SB! (string_dec n n') SB& (list_eq_dec term_eq_dec s s')
+         end); basic_term_crush.
+Defined.
+
+Definition ctx_eq_dec := list_eq_dec (pair_eq_dec string_dec sort_eq_dec).

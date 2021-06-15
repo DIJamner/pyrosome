@@ -848,3 +848,34 @@ Hint Rewrite nth_error_nil : utils.
 #[export] Hint Resolve incl_app : utils.
 #[export] Hint Resolve incl_appl : utils.
 #[export] Hint Resolve incl_tl : utils.
+
+
+Module SumboolNotations.
+  Notation "SB! e" :=
+    (if e then left _ else right _)
+      (at level 90).
+  Notation "e1 'SB&' e2" :=
+    (Sumbool.sumbool_and _ _ _ _ e1 e2)
+      (at level 58, left associativity).
+End SumboolNotations.
+Import SumboolNotations.
+
+Definition pair_eq_dec {A B}
+           (A_eq_dec : forall s1 s2 : A, {s1 = s2} + {s1 <> s2})
+           (B_eq_dec : forall s1 s2 : B, {s1 = s2} + {s1 <> s2})
+           (p1 p2 : A*B)
+  : {p1 = p2} + {~p1 = p2}.
+  refine (match p1, p2 with
+          | (a1,b1),(a2,b2) =>
+            SB! (A_eq_dec a1 a2) SB& (B_eq_dec b1 b2)
+          end); basic_utils_crush.
+Defined.
+
+Fixpoint incl_dec {A} (eq_dec : forall s1 s2 : A, {s1 = s2} + {s1 <> s2})
+         (l1 l2 : list A) {struct l1} : {incl l1 l2} + {~ incl l1 l2}.
+  refine(match l1 with
+         | [] => left _
+         | a::l1' =>
+           SB! (in_dec eq_dec a l2) SB& (incl_dec _ _ l1' l2)
+         end); basic_utils_crush.
+Defined.

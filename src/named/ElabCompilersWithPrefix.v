@@ -165,10 +165,11 @@ End WithPrefix.
   
 (*TODO: optimize where this is used so that I don't
   duplicate work?
-  TODO: remove dependency on Matches?
+  TODO: remove dependency on Matches or no?
  *)
 Require Import Matches.
 Ltac t' :=
+  try compute_wf_subjects;
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
@@ -180,7 +181,7 @@ Ltac t' :=
   | [|-wf_subst _ _ _ _] => constructor
   | [|-wf_ctx _ _] => assumption || constructor
   | [|- wf_sort _ _ _] => eapply wf_sort_by
-  | [|- wf_lang _] => lookup_wf_lang
+  | [|- wf_lang _] => solve[prove_from_known_elabs]
   | [|- _ = _] => compute; reflexivity
   end.
 

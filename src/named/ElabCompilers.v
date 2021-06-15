@@ -165,7 +165,7 @@ Ltac t' :=
   | [|-wf_subst _ _ _ _] => constructor
   | [|-wf_ctx _ _] => assumption || constructor
   | [|- wf_sort _ _ _] => eapply wf_sort_by
-  | [|- wf_lang _] => lookup_wf_lang
+  | [|- wf_lang _] => solve[prove_from_known_elabs]
   | [|- _ = _] => compute; reflexivity
   end.
 
