@@ -14,61 +14,293 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
+
+Definition blk_subst_def : lang :=
+  {[l
+      [s| "G" : #"env"
+          -----------------------------------------------
+          #"blk" "G" srt
+      ];
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+      "e" : #"blk" "G'"
+      -----------------------------------------------
+      #"blk_subst" "g" "e" : #"blk" "G"
+  ];
+  [:= "G" : #"env", "e" : #"blk" "G"
+       ----------------------------------------------- ("blk_subst_id")
+       #"blk_subst" #"id" "e" = "e" : #"blk" "G"
+  ]; 
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "e" : #"blk" "G3"
+       ----------------------------------------------- ("blk_subst_cmp")
+       #"blk_subst" "f" (#"blk_subst" "g" "e")
+       = #"blk_subst" (#"cmp" "f" "g") "e"
+       : #"blk" "G1"
+  ];
+  (* TODO: do I want halting?*)
+  [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
+       -----------------------------------------------
+       #"halt" "v" : #"blk" "G"
+  ];
+  [:= "G1" : #"env", "G2" : #"env",
+       "g" : #"sub" "G1" "G2",
+       "A" : #"ty", "v" : #"val" "G2" "A"
+       ----------------------------------------------- ("blk_subst_ret")
+       #"blk_subst" "g" (#"halt" "v")
+       = #"halt" (#"val_subst" "g" "v")
+       : #"blk" "G1"
+  ]
+  ]}.
+
+
+Derive blk_subst
+       SuchThat (Pre.elab_lang value_subst blk_subst_def blk_subst)
+       As blk_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve blk_subst_wf : elab_pfs.
+
+
 Definition text_segment_def : lang :=
   {[l
-  [s|
+  [:| "A" : #"ty"
       -----------------------------------------------
-      #"ty" srt
+      #"box" "A" : #"ty"
   ];
-  [s| 
+  [s| "G" : #"env", "G'" : #"env"
       -----------------------------------------------
-      #"textty" srt
+      #"text" "G" "G'" srt
   ];
-  [s| "TT" : #"textty"
+  [:| "G" : #"env"
       -----------------------------------------------
-      #"text" "TT" srt
+      #"Temp" : #"text" "G" #"emp"
   ];
-  [s| "TT" : #"textty", "A" : #"ty"
+  [:| "G" : #"env", "G'" : #"env", "T" : #"text" "G" "G'",
+      "A" : #"ty", "v" : #"val" "G" "A"
       -----------------------------------------------
-      #"blk" "TT" "A" srt
+      #"Tcons" "T" "v" : #"text" "G" (#"ext" "G'" (#"box" "A"))
   ];
-  [:| 
+  [:| "G" : #"env", "G'" : #"env", "T" : #"text" "G" "G'",
+      "A" : #"ty", "v" : #"val" "G'" (#"box" "A")
       -----------------------------------------------
-      #"Temp_ty" : #"textty"
+      #"lookup" "T" "v" : #"val" "G" "A"
   ];
-  [:| 
-      -----------------------------------------------
-      #"Temp" : #"text" #"Temp_ty"
-  ];
-  [:| "TT" : #"textty", "A" : #"ty"
-      -----------------------------------------------
-      #"Tcons_ty" "TT" "A" : #"textty"
-  ];
-  [:| "TT" : #"textty", "T" : #"text" "TT",
-      "A" : #"ty", "e" : #"blk" "TT" "A"
-      -----------------------------------------------
-      #"Tcons" "T" "e" : #"text" (#"Tcons_ty" "TT" "A")
-  ];
-  [s| "A" : #"ty"
-      -----------------------------------------------
-      #"program" "A" srt
-  ];
-  [:| "TT" : #"textty",
-      "T" : #"text" "TT",
+  [:= "G" : #"env", "G'" : #"env",
       "A" : #"ty",
-      "e" : #"blk" "TT" "A"             
+      "T" : #"text" "G" "G'",
+      "v" : #"val" "G" "A"
+      ----------------------------------------------- ("lookup hd")
+      #"lookup" (#"Tcons" "T" "v") #"hd" = "v" : #"val" "G" "A"
+  ];
+  [:= "G" : #"env", "G'" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "T" : #"text" "G" "G'",
+      "v" : #"val" "G" "B",
+      "x" : #"val" "G'" (#"box" "A")
+      ----------------------------------------------- ("lookup wkn")
+      #"lookup" (#"Tcons" "T" "v") (#"val_subst" #"wkn" "x")
+      = #"lookup" "T" "x"
+      : #"val" "G" "A"
+  ];
+  [s| -----------------------------------------------
+      #"program" srt
+  ];
+  [:| "G" : #"env",
+      "T" : #"text" "G" "G",
+      "e" : #"blk" "G"            
       -----------------------------------------------
-      #"prog" "T" "e" : #"program" "A"
+      #"prog" "T" "e" : #"program"
   ]
   ]}.
 
 Derive text_segment
-       SuchThat (Pre.elab_lang []
+       SuchThat (Pre.elab_lang (blk_subst ++ value_subst)
                                text_segment_def
                                text_segment)
        As text_segment_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve text_segment_wf : elab_pfs.
+
+Definition prod_lang :=
+  [
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" "G" (#"prod" "A" "B"),
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("proj_2_subst")
+      #"val_subst" "g" (#".2" "e")
+      = #".2" (#"val_subst" "g" "e")
+      : #"val" "G'" "B"
+  ];
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" "G" (#"prod" "A" "B"),
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("proj_1_subst")
+      #"val_subst" "g" (#".1" "e")
+      = #".1" (#"val_subst" "g" "e")
+      : #"val" "G'" "A"
+  ];
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"val" "G" "A",
+      "e'" : #"val" "G" "B",
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("pair_subst")
+      #"val_subst" "g" (#"pair" "e" "e'")
+      = #"pair" (#"val_subst" "g" "e") (#"val_subst" "g" "e'")
+      : #"val" "G'" (#"prod" "A" "B")
+  ];
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G" (#"prod" "A" "B")
+      ----------------------------------------------- ("prod_eta")
+      #"pair" (#".1" "v") (#".2" "v") = "v"
+      : #"val" "G" (#"prod" "A" "B")
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v1" : #"val" "G" "A",
+      "v2" : #"val" "G" "B"
+      ----------------------------------------------- ("project 2")
+      #".2" (#"pair" "v1" "v2") = "v2"
+      : #"val" "G" "B"
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v1" : #"val" "G" "A",
+      "v2" : #"val" "G" "B"
+      ----------------------------------------------- ("project 1")
+      #".1" (#"pair" "v1" "v2") = "v1"
+      : #"val" "G" "A"
+  ];
+    [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"val" "G" (#"prod" "A" "B")
+      -----------------------------------------------
+      #".2" "e" : #"val" "G" "B"
+   ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"val" "G" (#"prod" "A" "B")
+      -----------------------------------------------
+      #".1" "e" : #"val" "G" "A"
+   ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e1" : #"val" "G" "A",
+      "e2" : #"val" "G" "B"
+      -----------------------------------------------
+      #"pair" "e1" "e2" : #"val" "G" (#"prod" "A" "B")
+   ];
+  [:| "A" : #"ty", "B": #"ty"
+      -----------------------------------------------
+      #"prod" "A" "B" : #"ty"
+  ]]%rule.
+
+Derive prod_elab
+       SuchThat (Pre.elab_lang value_subst prod_lang prod_elab)
+       As prod_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve prod_wf : elab_pfs.
+
+
+(*TODO: relies on product type*)
+Definition hoisted_closure_def : lang :=
+  {[l
+  [:| "A" : #"ty"
+      -----------------------------------------------
+      #"neg" "A" : #"ty"
+  ];
+  (*essentially behaves as a specialized existential
+    since we don't want to deal with type variables
+   *)
+   (*
+     TODO: can still be written inline;
+     disallow somehow
+    *)
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
+      "v" : #"val" "G" "A"
+      -----------------------------------------------
+      #"closure" "B" "e" "v" : #"val" "G" (#"neg" "B")
+  ];
+   (*TODO: val_subst for deref*)
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" (#"box" "A")
+      -----------------------------------------------
+      #"deref" "v" : #"val" "G" "A"
+  ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "v1" : #"val" "G" (#"neg" "A"),
+      "v2" : #"val" "G" "A"
+      -----------------------------------------------
+      #"jmp" "v1" "v2" : #"blk" "G"
+  ];
+  (*TODO: I'm special casing this to 1 eval ctx;
+          need generic eval ctxs
+   *)
+  [:= "G" : #"env",
+      "T" : #"text" "G" "G",
+      "A" : #"ty",
+      "B" : #"ty",
+      "x" : #"val" "G" (#"box" (#"neg" "A")),
+      "v" : #"val" "G" "A"
+      ----------------------------------------------- ("jmp_deref_beta")
+      #"prog" "T" (#"jmp" (#"deref" "x") "v")
+      = #"prog" "T" (#"jmp" (#"lookup" "T" "x") "v")
+      : #"program"
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
+      "v" : #"val" "G" "A",
+      "v'" : #"val" "G" "B"
+      ----------------------------------------------- ("jmp_beta")
+      #"jmp" (#"closure" "B" "e" "v") "v'"
+      = #"blk_subst" (#"snoc" #"forget" (#"pair" "v" "v'")) "e"
+      : #"blk" "G"
+  ];
+  [:= "G" : #"env", "A" : #"ty",
+      "v1" : #"val" "G" (#"neg" "A"),
+      "v2" : #"val" "G" "A",
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("jmp_subst")
+      #"blk_subst" "g" (#"jmp" "v1" "v2")
+      = #"jmp" (#"val_subst" "g" "v1") (#"val_subst" "g" "v2")
+      : #"blk" "G'"
+  ];  
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
+      "v" : #"val" "G" "A",
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("clo_subst")
+      #"val_subst" "g" (#"closure" "B" "e" "v")
+      = #"closure" "B" "e" (#"val_subst" "g" "v")
+      : #"val" "G'" (#"neg" "B")
+  ]]}.
+
+
+Derive hoisted_closure
+       SuchThat (Pre.elab_lang (prod_elab++ text_segment++ blk_subst ++ value_subst)
+                               hoisted_closure_def
+                               hoisted_closure)
+       As hoisted_closure_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve hoisted_closure_wf : elab_pfs.
+
 
 Definition hoisted_value_def : lang :=
   {[l
@@ -390,3 +622,13 @@ Derive hoisted_closure
        As hoisted_closure_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve hoisted_closure_wf : elab_pfs.
+
+(*TODO: add text*val syntax *)
+(*TODO: split up?*)
+Definition hoist_def : compiler :=
+  match # from (cc_lang ++  block_cc_subst ++ prod_cc ++ value_cc_subst) with
+  | {{s #"blk" "G"}} =>
+    {{s #"program" "G"}}
+  | {{s #"val" "G"}} =>
+    {{s #"val & text" "G"}}
+  | {{
