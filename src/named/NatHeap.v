@@ -64,6 +64,13 @@ Definition nat_exp_def : lang :=
   [:|  "G" : #"env", "n": #"natural"
        -----------------------------------------------
        #"nv" "n" : #"val" "G" #"nat"
+  ];
+  [:=  "G" : #"env", "G'" : #"env", "n": #"natural",
+       "g" : #"sub" "G" "G'"
+       ----------------------------------------------- ("nv subst")
+       #"val_subst" "g" (#"nv" "n")
+       = #"nv" "n"
+       : #"val" "G" #"nat"
   ]
   ]}.
 
@@ -155,6 +162,7 @@ Proof. auto_elab. Qed.
 
 (*simple heap operations w/axioms avoiding an explicit heap 
   TODO: depends on let, unit, natural numbers, nat-as-exp
+  TODO: subst rules
 *)
 Definition heap_ops_def : lang :=
   {[l
