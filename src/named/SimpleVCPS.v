@@ -88,6 +88,14 @@ Definition cps_lang_def : lang :=
       = #"blk_subst" (#"snoc" #"id" "v") "e"
       : #"blk" "G"
   ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" (#"neg" "A")
+      ----------------------------------------------- ("cont_eta")
+      #"cont" "A" (#"jmp" (#"val_subst" #"wkn" "v") #"hd")
+      = "v"
+      : #"val" "G" (#"neg" "A")
+  ];
   [:= "G" : #"env", "A" : #"ty",
       "v1" : #"val" "G" (#"neg" "A"),
       "v2" : #"val" "G" "A",

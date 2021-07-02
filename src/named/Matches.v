@@ -763,3 +763,41 @@ Ltac auto_elab :=
                    cleanup_auto_elab ]);
   try apply eq_term_refl;
   cleanup_auto_elab.
+
+(*TODO: duplicated; find & remove duplicates*)
+Ltac unify_evar_fst_eq :=
+  match goal with
+  | [|- (let (x,_) := ?p in x) = ?y] =>
+    let p':= open_constr:((y,_:term)) in
+    unify p p';
+    compute;
+    reflexivity
+  end.
+Ltac unify_var_names s c :=
+  let H' := fresh in
+  assert (len_eq s c) as H';
+  [ solve[repeat constructor]| clear H'];
+  assert (map fst s = map fst c) as H';
+  [ compute; repeat f_equal; unify_evar_fst_eq| clear H'].
+
+
+Ltac eredex_steps_with lang name :=
+  let mr := eval compute in (named_list_lookup_err lang name) in
+      lazymatch mr with
+      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
+        lazymatch goal with
+        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
+          let s := open_constr:(_:subst) in
+          first [unify_var_names s c | fail 100 "could not unify var names"];
+          first [ replace (eq_term l c' t e1 e2)
+                    with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
+                  [| f_equal; compute; reflexivity (*TODO: is this general?*)]
+                | fail 100 "could not replace with subst"];
+          eapply (@eq_term_subst l c' s s c);
+          [ try solve [cleanup_auto_elab]
+          | eapply eq_subst_refl; try solve [cleanup_auto_elab]
+          | eapply (@eq_term_by l c name tp e1p e2p); try solve [cleanup_auto_elab]]
+        end
+      | None =>
+        fail 100 "rule not found in lang"
+      end.

@@ -14,6 +14,8 @@ Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
 
 
+
+
 Definition value_cc_subst_def : lang :=
   {[l
       
@@ -414,6 +416,7 @@ Derive cc
        As cc_preserving.
 Proof.
   setup_elab_compiler; repeat t.
+  solve[by_reduction].
   solve[by_reduction].
   solve[by_reduction].
   {

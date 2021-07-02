@@ -26,6 +26,7 @@ src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
 src/named/SimpleVCC.v
 src/named/SimpleEvalCtx.v
+src/named/SimpleEvalCtxCPS.v
 src/named/NatHeap.v
 src/named/SimpleVExn.v
 src/named/SimpleVCPSHeap.v
