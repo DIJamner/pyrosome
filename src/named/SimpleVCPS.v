@@ -175,8 +175,8 @@ Derive cps_subst
 Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve cps_subst_preserving : elab_pfs.
 
-(*TODO: separate file*)
-Definition val_prod_lang_def : lang :=
+(*TODO: separate file?*)
+Definition cps_prod_lang_def : lang :=
   {[l
       
   [:| "A" : #"ty", "B": #"ty"
@@ -190,44 +190,33 @@ Definition val_prod_lang_def : lang :=
       "e2" : #"val" "G" "B"
       -----------------------------------------------
       #"pair" "e1" "e2" : #"val" "G" (#"prod" "A" "B")
-   ];
-  [:| "G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "e" : #"val" "G" (#"prod" "A" "B")
-      -----------------------------------------------
-      #".1" "e" : #"val" "G" "A"
   ];
   [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"val" "G" (#"prod" "A" "B")
+      "v" : #"val" "G" (#"prod" "A" "B"),
+      "e" : #"blk" (#"ext" (#"ext" "G" "A") "B")
       -----------------------------------------------
-      #".2" "e" : #"val" "G" "B"
+      #"pm_pair" "v" "e" : #"blk" "G"
   ];
   [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
       "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 1")
-      #".1" (#"pair" "v1" "v2") = "v1"
-      : #"val" "G" "A"
-  ];
-  [:= "G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 2")
-      #".2" (#"pair" "v1" "v2") = "v2"
-      : #"val" "G" "B"
+      "v2" : #"val" "G" "B",
+      "e" : #"blk" (#"ext" (#"ext" "G" "A") "B")
+      ----------------------------------------------- ("eval pm_pair")
+      #"pm_pair" (#"pair" "v1" "v2") "e"
+      = #"blk_subst" (#"snoc" (#"snoc" #"id" "v1") "v2") "e"
+      : #"blk" "G"
   ];
   [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G" (#"prod" "A" "B")
+      "v" : #"val" "G" (#"prod" "A" "B"),
+      "e" : #"blk" (#"ext" "G" (#"prod" "A" "B"))
       ----------------------------------------------- ("prod_eta")
-      #"pair" (#".1" "v") (#".2" "v") = "v"
-      : #"val" "G" (#"prod" "A" "B")
+      #"pm_pair" "v" (#"blk_subst" (#"snoc" (#"cmp" #"wkn" #"wkn") (#"pair" {ovar 1} {ovar 0})) "e")
+      = #"blk_subst" (#"snoc" #"id" "v") "e"
+      : #"blk" "G"
   ];
   [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
       "e" : #"val" "G" "A",
@@ -240,34 +229,29 @@ Definition val_prod_lang_def : lang :=
       : #"val" "G'" (#"prod" "A" "B")
   ];
   [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"val" "G" (#"prod" "A" "B"),
+      "v" : #"val" "G" (#"prod" "A" "B"),
+      "e" : #"blk" (#"ext" (#"ext" "G" "A") "B"),
       "G'" : #"env",
       "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("proj_1_subst")
-      #"val_subst" "g" (#".1" "e")
-      = #".1" (#"val_subst" "g" "e")
-      : #"val" "G'" "A"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"val" "G" (#"prod" "A" "B"),
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("proj_2_subst")
-      #"val_subst" "g" (#".2" "e")
-      = #".2" (#"val_subst" "g" "e")
-      : #"val" "G'" "B"
+      ----------------------------------------------- ("pm_pair_subst")
+      #"blk_subst" "g" (#"pm_pair" "v" "e")
+      = #"pm_pair" (#"val_subst" "g" "v")
+         (#"blk_subst" (#"snoc" (#"cmp" #"wkn" (#"snoc" (#"cmp" #"wkn" "g") #"hd")) #"hd") "e")
+      : #"blk" "G'"
   ]
   ]}.
 
 
     
-Derive val_prod_lang
-       SuchThat (Pre.elab_lang value_subst val_prod_lang_def val_prod_lang)
-       As val_prod_wf.
+Derive cps_prod_lang
+       SuchThat (Pre.elab_lang (block_subst ++value_subst) cps_prod_lang_def cps_prod_lang)
+       As cps_prod_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve val_prod_wf : elab_pfs.
+#[export] Hint Resolve cps_prod_wf : elab_pfs.
 
-
+Definition under s :=
+  {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
+  
 Definition cps_def : compiler :=
   match # from (stlc) with
   | {{s #"exp" "G" "A"}} =>
@@ -275,9 +259,9 @@ Definition cps_def : compiler :=
   | {{e #"->" "A" "B"}} =>
     {{e #"neg" (#"prod" "A" (#"neg" "B")) }}
   | {{e #"lambda" "G" "A" "B" "e"}} =>
-    (*TODO: use value product or exp-projection product?*)
     {{e #"cont" (#"prod" "A" (#"neg" "B"))
-        (#"blk_subst" (#"snoc" (#"snoc" #"wkn" (#".1" #"hd")) (#".2" #"hd")) "e") }}
+        (#"pm_pair" #"hd"
+          (#"blk_subst" {under (under {{e #"wkn"}})} "e"))}}
   | {{e #"app" "G" "A" "B" "e" "e'"}} =>
     bind_k 1 (var "e") {{e #"neg" (#"prod" "A" (#"neg" "B"))}}
     (bind_k 2 (var "e'") (var "A")
@@ -288,9 +272,10 @@ Definition cps_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
+
 Derive cps
        SuchThat (elab_preserving_compiler cps_subst
-                                          (val_prod_lang
+                                          (cps_prod_lang
                                              ++ cps_lang
                                              ++ block_subst
                                              ++ value_subst)
