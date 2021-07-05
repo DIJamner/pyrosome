@@ -123,7 +123,6 @@ Proof.
   solve [ compute_eq_compilation; by_reduction ].
   solve [ compute_eq_compilation; by_reduction ].
   {
-    compute_eq_compilation.
     eredex_steps_with heap "heap_comm".
     repeat apply wf_subst_cons.
     constructor.
@@ -131,21 +130,18 @@ Proof.
   }
   solve [ compute_eq_compilation; by_reduction ].
   {
-    compute_eq_compilation.
     eredex_steps_with heap "lookup_miss".
     repeat apply wf_subst_cons.
     constructor.
     all: repeat t.
   }
   {
-    compute_eq_compilation.
     eredex_steps_with heap "lookup_empty".
     repeat apply wf_subst_cons.
     constructor.
     all: repeat t.
   }
   {
-    compute_eq_compilation.
     eredex_steps_with unit_lang "tt_subst".
   }
   Unshelve.
@@ -189,23 +185,15 @@ Proof.
   setup_elab_compiler.
   all: repeat t.
   {
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    ltac2:(step()).
-    compute_eq_compilation.
-    eapply eq_term_trans.
+    reduce.
     eredex_steps_with heap_cps_ops "eval get".
     {
-      repeat apply wf_subst_cons.
-      constructor.
-      repeat t.
-      repeat t.
-      repeat t.
-      repeat t.
-      repeat t.
+      (*TODO: roll into above tactic*)
+      repeat apply wf_subst_cons;
+        [ constructor|..];
+        repeat t.
     }
-    compute_eq_compilation.
-    by_reduction.
+    solve [ compute_eq_compilation; by_reduction ].
   }
   solve [ compute_eq_compilation; by_reduction ].
 
@@ -259,35 +247,31 @@ Derive heap_ctx_cps
 Proof.
   setup_elab_compiler.
   all: repeat t.
-  solve [ compute_eq_compilation; by_reduction ].
-  solve [ compute_eq_compilation; by_reduction ].
-  solve [ compute_eq_compilation; by_reduction ].
+  unshelve (solve [ compute_eq_compilation; by_reduction ]);
+    repeat t';
+    eauto with elab_pfs auto_elab.
+  unshelve (solve [ compute_eq_compilation; by_reduction ]);
+    repeat t';
+    eauto with elab_pfs auto_elab.
+  unshelve (solve [ compute_eq_compilation; by_reduction ]);
+    repeat t';
+    eauto with elab_pfs auto_elab.
   {
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    ltac2:(step()).
-    eapply eq_term_sym.
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    ltac2:(step()).
-    eapply eq_term_sym.
-    compute_eq_compilation.
+    reduce.
     eredex_steps_with heap_cps_ops "eval get".
     {
-      repeat apply wf_subst_cons.
-      constructor.
-      repeat t.
-      repeat t.
-      repeat t.
-      repeat t.
-      repeat t.
+      (*TODO: roll into above tactic*)
+      repeat apply wf_subst_cons;
+        [ constructor|..];
+        repeat t.
     }
   }
   solve [ compute_eq_compilation; by_reduction ].
   Unshelve.
-  (*TODO: computationally intensive? or emacs issues?*)
-  all: repeat t';
+  (*TODO: why is this computationally intensive? *)
+  all:  repeat t';
     eauto with elab_pfs auto_elab.
   simpl; intuition.
 Qed.
 #[export] Hint Resolve heap_ctx_cps_preserving : elab_pfs.
+

@@ -974,6 +974,23 @@ Ltac lhs_concrete :=
 
 Ltac step_if_concrete := tryif lhs_concrete then use_term_nocheck;ltac2:(step()) else term_refl.
 
+
+Ltac reduce_lhs :=
+  compute_eq_compilation;
+  eapply eq_term_trans;
+  [step_if_concrete|];
+  compute_eq_compilation.
+
+
+Ltac reduce_rhs :=
+  compute_eq_compilation;
+  eapply eq_term_trans;
+  [|eapply eq_term_sym;
+    step_if_concrete];
+  compute_eq_compilation.
+
+Ltac reduce := reduce_lhs; reduce_rhs.
+
 Ltac by_reduction :=
   eapply eq_term_trans; [ step_if_concrete | eapply eq_term_sym; step_if_concrete ].
 
