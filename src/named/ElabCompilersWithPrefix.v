@@ -187,8 +187,9 @@ Ltac t' :=
 
 Ltac setup_elab_compiler :=
   match goal with
-  | |- elab_preserving_compiler _ _ ?cmp ?ecmp ?src =>
-    rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src)
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
+      assert (wf_lang tgt) by prove_from_known_elabs
   end; break_preserving.
 
 Ltac auto_elab_compiler :=

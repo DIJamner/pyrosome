@@ -9,7 +9,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab.
+From Named Require Import Core Elab ComputeWf.
 From Named Require ElabWithPrefix.
 Module Pre := ElabWithPrefix.
 Import Core.Notations.
@@ -814,7 +814,8 @@ Local Ltac t :=
   | [|-elab_ctx _ _ _] => econstructor
   | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
   | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
-  | [|-wf_term _ _ _ _] => shelve
+  | [|-wf_term _ _ _ _] => 
+    tryif match goal with [|- ?g] => has_evar g end then shelve else compute_noconv_term_wf
   | [|-elab_rule _ _ _] => econstructor
   | [|- _ = _] => compute; reflexivity
   end.
@@ -912,7 +913,7 @@ Ltac2 step_redex name c' tp e1p e2p s :=
   lazy_match! goal with
   | [|- eq_term_nocheck ?l ?c _ _ _] =>
     assert (eq_term_nocheck $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
-    apply (@eq_term_nocheck_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); shelve()
+    apply (@eq_term_nocheck_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); shelve() (*TODO: these goals are the dominating perf. bottleneck*)
   end.
 
 Ltac2 rec step_by_instructions i :=
