@@ -15,6 +15,7 @@ src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleProd.v
 src/named/SimpleVSTLC.v
+src/named/SimpleVFix.v
 src/named/CompilerDefs.v
 src/named/Compilers.v
 src/named/CompilerTransitivity.v
