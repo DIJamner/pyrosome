@@ -14,6 +14,7 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
+
 Definition fix_cps_lang_def : lang :=
   {[l
   [:| "G" : #"env",
@@ -44,7 +45,6 @@ Definition fix_cps_lang_def : lang :=
   ]}.
 
 
-
 Derive fix_cps_lang
        SuchThat (Pre.elab_lang (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
        As fix_wf.
@@ -64,7 +64,7 @@ Definition fix_cps_def : compiler :=
 
 Derive fix_cps
        SuchThat (elab_preserving_compiler (cps++cps_subst)
-                                          ( fix_cps_lang
+                                          (fix_cps_lang
                                               ++ cps_prod_lang
                                              ++ cps_lang
                                              ++ block_subst
@@ -72,20 +72,6 @@ Derive fix_cps
                                           fix_cps_def
                                           fix_cps
                                           fix_lang)
-       As cps_preserving.
-Proof.
-  setup_elab_compiler.
-  all: repeat t.
-  unshelve (solve [ compute_eq_compilation; by_reduction ]);
-  repeat t'; eauto with elab_pfs auto_elab.
-  unshelve (solve [ compute_eq_compilation; by_reduction ]);
-  repeat t'; eauto with elab_pfs auto_elab.
-  solve [ compute_eq_compilation; by_reduction ].
-  Unshelve.
-
-   unshelve (setup_elab_compiler; repeat t; (solve [ compute_eq_compilation; by_reduction ])); repeat t'; eauto
-                                                                                                            with elab_pfs auto_elab
-
-
-                                                                                                                 auto_elab_compiler. Qed.
-#[export] Hint Resolve cps_preserving : elab_pfs.
+       As fix_cps_preserving.
+Proof. auto_elab_compiler. Qed.
+#[export] Hint Resolve fix_cps_preserving : elab_pfs.

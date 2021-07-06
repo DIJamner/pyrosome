@@ -272,7 +272,6 @@ Definition cps_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
-
 Derive cps
        SuchThat (elab_preserving_compiler cps_subst
                                           (cps_prod_lang

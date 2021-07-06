@@ -365,7 +365,7 @@ Proof.
 Qed.
 
 Ltac break_down_elab_lang :=
-  repeat ((eapply elab_lang_cons_nth_tail; [compute; reflexivity | compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
+  repeat ((eapply elab_lang_cons_nth_tail; [vm_compute; reflexivity | vm_compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
   [solve [assumption | compute; apply elab_lang_nil]|..].
 
 Ltac setup_elab_lang_proof :=
@@ -376,8 +376,8 @@ Ltac setup_elab_lang_proof :=
   end.
 
 
-Ltac solve_fresh := apply use_compute_fresh; compute; reflexivity.
-Ltac solve_sublist := apply (use_compute_sublist string_dec); compute; reflexivity.
+Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.
+Ltac solve_sublist := apply (use_compute_sublist string_dec); vm_compute; reflexivity.
 
 
 Ltac break_eq_args :=
@@ -386,7 +386,7 @@ Ltac break_eq_args :=
 
 
 
-Ltac solve_in := apply named_list_lookup_err_in; compute; reflexivity.
+Ltac solve_in := apply named_list_lookup_err_in; vm_compute; reflexivity.
 Ltac solve_len_eq := solve[ repeat constructor].
 
 (*TODO: move to the right place*)
@@ -398,7 +398,7 @@ Ltac sort_cong :=
   | break_eq_args].
 
 Ltac compute_everywhere e :=
-  let e' := eval compute in e in
+  let e' := eval vm_compute in e in
       change e with e' in *.
 
 
@@ -431,18 +431,3 @@ Lemma elab_args_cons_ex' l c s args es c' name e ee t
 Proof.
   eauto with lang_core.
 Qed.
-
-Local Ltac t :=
-  match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
-  | [|- len_eq _ _] => econstructor
-  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
-  | [|-elab_ctx _ _ _] => econstructor
-  | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
-  | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
-  | [|-wf_term _ _ _ _] => shelve
-  | [|-elab_rule _ _ _] => econstructor
-  | [|- _ = _] => compute; reflexivity
-  end.

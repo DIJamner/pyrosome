@@ -146,44 +146,11 @@ End WithPrefix.
    (elab_compiler_cons; try reflexivity; [ break_preserving |..])
    || (compute; apply elab_preserving_compiler_nil).
 
-  Ltac compute_eq_compilation :=
-    match goal with
-    |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
-     let ctx' := eval compute in ctx in
-     let t1' := eval compute in t1 in
-     let t2' := eval compute in t2 in
-     change (eq_sort l ctx' t1' t2')
-    |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
-     let ctx' := eval compute in ctx in
-     let e1' := eval compute in e1 in
-     let e2' := eval compute in e2 in
-     let t' := eval compute in t in
-     change (eq_term l ctx' e1' e2' t')
-    end.
-
-
   
-(*TODO: optimize where this is used so that I don't
-  duplicate work?
+(*
   TODO: remove dependency on Matches or no?
  *)
 Require Import Matches.
-Ltac t' :=
-  try compute_wf_subjects;
-  match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> solve_in
-  | [|- wf_term _ _ _ _] => assumption || eapply wf_term_var || eapply wf_term_by'
-  | [|-wf_args _ _ _ _] => simple apply wf_args_nil
-                           || simple eapply wf_args_cons2
-                           || simple eapply wf_args_cons
-  | [|-wf_subst _ _ _ _] => constructor
-  | [|-wf_ctx _ _] => assumption || constructor
-  | [|- wf_sort _ _ _] => eapply wf_sort_by
-  | [|- wf_lang _] => solve[prove_from_known_elabs]
-  | [|- _ = _] => compute; reflexivity
-  end.
 
 Ltac setup_elab_compiler :=
   match goal with

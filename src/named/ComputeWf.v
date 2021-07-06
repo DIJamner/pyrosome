@@ -244,8 +244,19 @@ Qed.
 
 
 
+Ltac solve_wf_ctx :=
+  (apply compute_noconv_wf_ctx_sound with (fuel := 100); [ assumption | vm_compute; reflexivity ]).
+
+Ltac compute_noconv_subst_wf :=
+  apply compute_noconv_wf_subst_sound with (fuel := 100);
+  [ assumption
+  | solve_wf_ctx
+  | solve_wf_ctx
+  | vm_compute; reflexivity ].
+
+
 Ltac compute_noconv_term_wf :=  
     apply compute_noconv_wf_term_sound with (fuel := 100);
-      [assumption
-      | apply compute_noconv_wf_ctx_sound with (fuel := 100);[assumption| compute; reflexivity]
-      | compute; reflexivity].
+    [assumption
+    | solve_wf_ctx
+    | vm_compute; reflexivity].

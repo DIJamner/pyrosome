@@ -474,10 +474,10 @@ Ltac prove_from_known_elabs :=
       eapply elab_lang_implies_wf
      |[|- elab_lang _ _] =>
       eapply elab_prefix_implies_elab_lang'; [| shelve | |]
-     |[|- all_fresh _] => apply use_compute_all_fresh; compute; reflexivity
+     |[|- all_fresh _] => apply use_compute_all_fresh; vm_compute; reflexivity
      end));
   solve [auto with utils
-        | apply use_compute_incl_lang; compute; reflexivity].
+        | apply use_compute_incl_lang; vm_compute; reflexivity].
 
 
 (*TODO: export in Core; already proven*)
@@ -723,7 +723,6 @@ Definition no_check_term l (wfl : wf_lang l) :=
          
 Lemma term_con_congruence_nocheck l c t name s1 s2 c' args t'
   : In (name, term_rule c' args t') l ->
-    len_eq c' s2 ->
     t = t'[/with_names_from c' s2/] ->
     eq_args_nocheck l c c' s1 s2 ->
     eq_term_nocheck l c t (con name s1) (con name s2).
@@ -758,7 +757,7 @@ Ltac term_cong :=
   eapply term_con_congruence;
   [ solve_in
   | solve_len_eq
-  | compute; reflexivity
+  | vm_compute; reflexivity
   | solve[prove_from_known_elabs]
   | repeat match goal with [|- eq_args _ _ _ _ _] =>
                            simple apply eq_args_nil
@@ -771,44 +770,59 @@ Ltac term_refl :=
 Ltac compute_wf_subjects :=
   match goal with
   | [|- wf_term ?l ?c ?e ?t] =>
-    let c' := eval compute in c in
-        let e' := eval compute in e in
-            let t' := eval compute in t in
+    let c' := eval vm_compute in c in
+        let e' := eval vm_compute in e in
+            let t' := eval vm_compute in t in
                 change (wf_term l c' e' t')
   | [|- wf_sort ?l ?c ?t] =>
-    let c' := eval compute in c in
-        let t' := eval compute in t in
+    let c' := eval vm_compute in c in
+        let t' := eval vm_compute in t in
             change (wf_sort l c' t')
   | [|- wf_ctx ?l ?c] =>
-    let c' := eval compute in c in
+    let c' := eval vm_compute in c in
         change (wf_ctx l c')
   end.
 
 (*TODO: optimize where this is used so that I don't
   duplicate work?
  *)
-Local Ltac t' :=
+ Ltac t' :=
   try compute_wf_subjects;
   match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
+  | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
   | [|- In _ _ ]=> solve_in
-  | [|- wf_term _ _ _ _] => assumption || eapply wf_term_var || eapply wf_term_by'
+  | |- wf_term ?l ?c ?e ?t =>
+        let c' := eval vm_compute in c in
+        let e' := eval vm_compute in e in
+        let t' := eval vm_compute in t in
+        change (wf_term l c' e' t');
+    tryif has_evar c' || has_evar e' || has_evar t'
+    then assumption || eapply wf_term_var || eapply wf_term_by'
+    else compute_noconv_term_wf
   | [|-wf_args _ _ _ _] => simple apply wf_args_nil
                            || simple eapply wf_args_cons2
                            || simple eapply wf_args_cons
   | [|-wf_subst _ _ _ _] => constructor
-  | [|-wf_ctx _ _] => assumption || constructor
-  | [|- wf_sort _ _ _] => eapply wf_sort_by
+  | |- wf_ctx ?l ?c =>
+    let c' := eval vm_compute in c in
+        change (wf_ctx l c');
+    tryif has_evar c'
+    then assumption || constructor
+    else solve_wf_ctx
+  | |- wf_sort ?l ?c ?t =>
+        let c' := eval vm_compute in c in
+        let t' := eval vm_compute in t in
+        change (wf_sort l c' t'); eapply wf_sort_by
   | [|- wf_lang _] => solve[prove_from_known_elabs]
-  | [|- _ = _] => compute; reflexivity
+  | [|- _ = _] => vm_compute; reflexivity
   end.
 
 Local Ltac t :=
   match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
+  | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
+  | [|- In _ _ ]=> apply named_list_lookup_err_in; vm_compute; reflexivity
   | [|- len_eq _ _] => econstructor
   | [|-elab_sort _ _ _ _] => eapply elab_sort_by
   | [|-elab_ctx _ _ _] => econstructor
@@ -817,18 +831,18 @@ Local Ltac t :=
   | [|-wf_term _ _ _ _] => 
     tryif match goal with [|- ?g] => has_evar g end then shelve else compute_noconv_term_wf
   | [|-elab_rule _ _ _] => econstructor
-  | [|- _ = _] => compute; reflexivity
+  | [|- _ = _] => vm_compute; reflexivity
   end.
 
 
 (*TODO: only works if all variables appear on the lhs*)
 Ltac redex_steps_with lang name :=
-  let mr := eval compute in (named_list_lookup_err lang name) in
+  let mr := eval vm_compute in (named_list_lookup_err lang name) in
       lazymatch mr with
       | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
         lazymatch goal with
         | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-          let ms := eval compute in (matches e1 e1p (map fst c)) in
+          let ms := eval vm_compute in (matches e1 e1p (map fst c)) in
               lazymatch ms with
               | Some ?s =>
                 replace (eq_term l c' t e1 e2)
@@ -872,21 +886,21 @@ Qed.
 Ltac compute_eq_compilation :=
   match goal with
   |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
-   let ctx' := eval compute in ctx in
-       let t1' := eval compute in t1 in
-           let t2' := eval compute in t2 in
+   let ctx' := eval vm_compute in ctx in
+       let t1' := eval vm_compute in t1 in
+           let t2' := eval vm_compute in t2 in
                change (eq_sort l ctx' t1' t2')
   |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
-   let ctx' := eval compute in ctx in
-       let e1' := eval compute in e1 in
-           let e2' := eval compute in e2 in
-               let t' := eval compute in t in
+   let ctx' := eval vm_compute in ctx in
+       let e1' := eval vm_compute in e1 in
+           let e2' := eval vm_compute in e2 in
+               let t' := eval vm_compute in t in
                    change (eq_term l ctx' e1' e2' t')
   |[|- eq_term_nocheck ?l ?ctx ?e1 ?e2 ?t] =>
-   let ctx' := eval compute in ctx in
-       let e1' := eval compute in e1 in
-           let e2' := eval compute in e2 in
-               let t' := eval compute in t in
+   let ctx' := eval vm_compute in ctx in
+       let e1' := eval vm_compute in e1 in
+           let e2' := eval vm_compute in e2 in
+               let t' := eval vm_compute in t in
                    change (eq_term_nocheck l ctx' e1' e2' t')
   end.
 
@@ -897,16 +911,32 @@ Ltac use_term_nocheck :=
   | solve[repeat t']
   | solve[repeat t']].
 
+
+Ltac2 rec evar_args_for c :=
+  lazy_match! c with
+  | _::?c' =>
+    let s' := evar_args_for c' in
+    open_constr:(_::$s')
+  | [] => open_constr:([])
+  end.
+
+Ltac2 match_arg_evar_len () :=
+  lazy_match! goal with
+    [|- _ = _ [/with_names_from ?c ?s/]] =>
+    let s' := evar_args_for c in
+    unify $s $s'
+  end.
+
 Ltac term_cong_nocheck :=
   eapply term_con_congruence_nocheck;
   [ solve_in
-  | solve_len_eq
-  | compute; reflexivity
-  |repeat match goal with [|- eq_args_nocheck _ _ _ _ _] =>
-                          simple apply eq_args_nocheck_nil
-                          || simple eapply eq_args_cons2_nocheck
-                          || simple eapply eq_args_nocheck_cons
-          end].
+  | ltac2:( match_arg_evar_len ()); vm_compute; reflexivity
+  | repeat
+      match goal with
+      | |- eq_args_nocheck _ _ _ _ _ =>
+        simple apply eq_args_nocheck_nil ||
+               simple eapply eq_args_cons2_nocheck || simple eapply eq_args_nocheck_cons
+      end].
 
 
 Ltac2 step_redex name c' tp e1p e2p s :=
@@ -1077,7 +1107,7 @@ Create HintDb auto_elab discriminated.
 #[export] Hint Resolve elab_lang_implies_wf : auto_elab.
 #[export] Hint Resolve elab_with_prefix_nil_implies_elab : auto_elab.
 
-#[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; compute; reflexivity : auto_elab.
+#[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; vm_compute; reflexivity : auto_elab.
 
 Ltac split_rule_elab :=
   eapply Pre.elab_lang_cons_nth_tail;
@@ -1126,7 +1156,7 @@ Ltac unify_var_names s c :=
 
 
 Ltac eredex_steps_with lang name :=
-  let mr := eval compute in (named_list_lookup_err lang name) in
+  let mr := eval vm_compute in (named_list_lookup_err lang name) in
       lazymatch mr with
       | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
         lazymatch goal with
@@ -1135,7 +1165,7 @@ Ltac eredex_steps_with lang name :=
           first [unify_var_names s c | fail 100 "could not unify var names"];
           first [ replace (eq_term l c' t e1 e2)
                     with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
-                  [| f_equal; compute; reflexivity (*TODO: is this general?*)]
+                  [| f_equal; vm_compute; reflexivity (*TODO: is this general?*)]
                 | fail 100 "could not replace with subst"];
           eapply (@eq_term_subst l c' s s c);
           [ try solve [cleanup_auto_elab]
