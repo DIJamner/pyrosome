@@ -146,27 +146,3 @@ Qed.
      change (eq_term l ctx' e1' e2' t')
     end.
 
-
-  
-(*TODO: optimize where this is used so that I don't
-  duplicate work?
-  TODO: remove dependency on Matches?
- *)
-Require Import Matches.
-Ltac t' :=
-  match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> solve_in
-  | [|- wf_term _ _ _ _] => assumption || eapply wf_term_var || eapply wf_term_by'
-  | [|-wf_args _ _ _ _] => simple apply wf_args_nil
-                           || simple eapply wf_args_cons2
-                           || simple eapply wf_args_cons
-  | [|-wf_subst _ _ _ _] => constructor
-  | [|-wf_ctx _ _] => assumption || constructor
-  | [|- wf_sort _ _ _] => eapply wf_sort_by
-  | [|- wf_lang _] => solve[prove_from_known_elabs]
-  | [|- _ = _] => compute; reflexivity
-  end.
-
-

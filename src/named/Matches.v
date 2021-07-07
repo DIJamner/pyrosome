@@ -773,21 +773,20 @@ Ltac compute_wf_subjects :=
     let c' := eval vm_compute in c in
         let e' := eval vm_compute in e in
             let t' := eval vm_compute in t in
-                change (wf_term l c' e' t')
+                change_no_check (wf_term l c' e' t')
   | [|- wf_sort ?l ?c ?t] =>
     let c' := eval vm_compute in c in
         let t' := eval vm_compute in t in
-            change (wf_sort l c' t')
+            change_no_check (wf_sort l c' t')
   | [|- wf_ctx ?l ?c] =>
     let c' := eval vm_compute in c in
-        change (wf_ctx l c')
+        change_no_check (wf_ctx l c')
   end.
 
 (*TODO: optimize where this is used so that I don't
   duplicate work?
  *)
  Ltac t' :=
-  try compute_wf_subjects;
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
@@ -796,8 +795,8 @@ Ltac compute_wf_subjects :=
         let c' := eval vm_compute in c in
         let e' := eval vm_compute in e in
         let t' := eval vm_compute in t in
-        change (wf_term l c' e' t');
-    tryif has_evar c' || has_evar e' || has_evar t'
+            change_no_check (wf_term l c' e' t');
+    tryif first [has_evar c'| has_evar e' | has_evar t']
     then assumption || eapply wf_term_var || eapply wf_term_by'
     else compute_noconv_term_wf
   | [|-wf_args _ _ _ _] => simple apply wf_args_nil
@@ -806,14 +805,14 @@ Ltac compute_wf_subjects :=
   | [|-wf_subst _ _ _ _] => constructor
   | |- wf_ctx ?l ?c =>
     let c' := eval vm_compute in c in
-        change (wf_ctx l c');
+        change_no_check (wf_ctx l c');
     tryif has_evar c'
     then assumption || constructor
     else solve_wf_ctx
   | |- wf_sort ?l ?c ?t =>
         let c' := eval vm_compute in c in
         let t' := eval vm_compute in t in
-        change (wf_sort l c' t'); eapply wf_sort_by
+        change_no_check (wf_sort l c' t'); eapply wf_sort_by
   | [|- wf_lang _] => solve[prove_from_known_elabs]
   | [|- _ = _] => vm_compute; reflexivity
   end.
@@ -889,19 +888,19 @@ Ltac compute_eq_compilation :=
    let ctx' := eval vm_compute in ctx in
        let t1' := eval vm_compute in t1 in
            let t2' := eval vm_compute in t2 in
-               change (eq_sort l ctx' t1' t2')
+               change_no_check (eq_sort l ctx' t1' t2')
   |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
    let ctx' := eval vm_compute in ctx in
        let e1' := eval vm_compute in e1 in
            let e2' := eval vm_compute in e2 in
                let t' := eval vm_compute in t in
-                   change (eq_term l ctx' e1' e2' t')
+                   change_no_check (eq_term l ctx' e1' e2' t')
   |[|- eq_term_nocheck ?l ?ctx ?e1 ?e2 ?t] =>
    let ctx' := eval vm_compute in ctx in
        let e1' := eval vm_compute in e1 in
            let e2' := eval vm_compute in e2 in
                let t' := eval vm_compute in t in
-                   change (eq_term_nocheck l ctx' e1' e2' t')
+                   change_no_check (eq_term_nocheck l ctx' e1' e2' t')
   end.
 
 Ltac use_term_nocheck :=

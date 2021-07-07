@@ -10,6 +10,9 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
+(*TODO: curr. runs out of mem*)
+Fail.
+
 Definition exn_def : lang :=
   {[l
   [:|  "G" : #"env",
@@ -118,8 +121,7 @@ Derive cps
                                           cps
                                           stlc)
        As cps_preserving.
-Proof.
-  Fail.
+Proof. auto_elab_compiler. Qed.
   setup_elab_compiler.
   all: repeat t.
   Optimize Heap.

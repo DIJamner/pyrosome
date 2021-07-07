@@ -123,7 +123,7 @@ Proof.
   solve [ compute_eq_compilation; by_reduction ].
   solve [ compute_eq_compilation; by_reduction ].
   {
-    eredex_steps_with heap "heap_comm".
+    eredex_steps_with heap "heap_comm".   
     repeat apply wf_subst_cons.
     constructor.
     all: repeat t.
