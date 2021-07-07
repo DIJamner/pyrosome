@@ -85,35 +85,6 @@ Fixpoint order_subst' s args : option subst :=
        ret ((x,e)::s')
   end.
 
-(*
-Lemma order_subst'_vals s args s' p
-  : all_fresh s ->
-    order_subst' s args = Some s' ->
-    p \in s ->
-    p.1 \in args ->
-    p \in s'.             
-Proof.
-  simpl in *.
-  ltac1:(break); simpl.
-  revert s'.
-  induction args; intro s'; simpl.
-  {    
-    intros _ _ _ absurd; inversion absurd.
-  }
-  {
-    intro.
-    ltac1:(case_match;[|inversion]).
-    ltac1:(case_match;[|inversion]).
-    intro s'eq; inversion s'eq; clear s'eq; subst.
-    rewrite !in_cons.
-    intro.
-    ltac1:(move /orP; case).
-    {
-      ltac1:(move /eqP); intro s0eq; subst.
-      (*Lemma lookup_in
-       *)
-Admitted.
-*)
 
 Definition order_subst s args :=
   (*guarantees that args is a permutation of (map fst s)
@@ -121,36 +92,6 @@ Definition order_subst s args :=
    *)
   if Nat.eqb (length s) (length args) then order_subst' s args else None.
 
-(*
-Lemma order_subst_vals s args s' p
-  : all_fresh s ->
-    order_subst s args = Some s' ->
-    p \in s ->
-    p.1 \in args ->
-    p \in s'.             
-Proof.
-  intro.
-  unfold order_subst.
-  ltac1:(case_match;[|inversion]).
-  eauto using order_subst'_vals.
-Qed.
-*)
-
-(*
-Lemma matches_unordered_fuel_all_fresh e pat fuel s
-  : matches_unordered_fuel fuel e pat = Some s ->
-    all_fresh s.
-Proof.
-  unfold matches_unordered.
-*)
-
-(*
-Lemma matches_unordered_all_fresh e pat s
-  : matches_unordered e pat = Some s ->
-    all_fresh s.
-Proof.
-  unfold matches_unordered.
-  *)
 
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
@@ -288,24 +229,6 @@ Fixpoint step_redex_term (l : lang) (e : term)
     end
   | _::l' => step_redex_term l' e
   end.
-
-(*
-Inductive wf_term_no_conv l : ctx -> term -> sort -> Prop :=
-  | wf_term_by_no_conv : forall c n s args c' t,
-      In (n, term_rule c' args t) l ->
-      wf_args l c s c' ->
-      wf_term_no_conv l c (con n s) t[/(with_names_from c' s)/]
-  | wf_term_var_no_conv : forall c n t,
-      In (n, t) c ->
-      wf_term_no_conv l c (var n) t.
-Local Hint Constructors wf_term_no_conv : lang_core.
-
-Lemma wf_term_peel_convs l c e t
-  : wf_term l c e t -> exists t', wf_term_no_conv l c e t'.
-Proof.
-  induction 1; basic_core_crush.
-Qed.
-*)
 
 
 (* takes steps starting from the root of the tree
@@ -480,16 +403,6 @@ Ltac prove_from_known_elabs :=
         | apply use_compute_incl_lang; vm_compute; reflexivity].
 
 
-(*TODO: export in Core; already proven*)
-
-Lemma wf_term_wf_sort l c e t
-  : wf_lang l ->
-    wf_ctx l c ->
-    wf_term l c e t ->
-    wf_sort l c t.
-Proof.
-Admitted.
-#[export] Hint Resolve wf_term_wf_sort : lang_core.
 (*TODO: for removing redundant goals from term_cong*)
 Lemma term_sorts_eq l c e t1
   : wf_lang l ->
@@ -532,60 +445,7 @@ Proof using .
 Qed.
 Hint Rewrite sort_subst_nil : term.
 
-(*
-Lemma covering_term_wf l e
-  : wf_lang l ->
-    forall t c', wf_term l c' e t ->
-                 forall c s,
-                   incl (map fst s) (fv e) ->
-                   all_fresh s ->
-                   map fst s = map fst c' ->
-                   wf_term l c e[/s/] t[/s/] ->
-                         wf_subst l c s c'.
-Proof.
-  induction 2.
-  {
-    basic_goal_prep.
-    use_rule_in_wf.
-    safe_invert H6.
-    admit(*TODO: need mutual w/ subst*).
-  }
-  {
-    basic_goal_prep.
-    apply IHwf_term; eauto.
-    admit(*TODO: need mutual w/ sort*).
-  }
-  {
-    destruct c; destruct s; basic_goal_prep.
-    basic_core_crush.
-    basic_core_crush.
-    basic_core_crush.
-    safe_invert H3.
-    destruct H2.
-    destruct s; basic_goal_prep.
-    destruct c; basic_goal_prep.
-    {
-      intuition idtac.
-      safe_invert H5.
-      constructor.
-      constructor.
-      rewrite eqb_refl in H4.
-      basic_core_crush.
-    destruct s; basic_goal_prep;
-      basic_core_crush.
-    exists [(s0,t)]; basic_core_crush.
-  }
-  {
-    basic_goal_prep.
-    erewrite sort_subst_nil.
-    
-  simpl.
-  intros.
-  remember e[/s/] as e'.
-  revert Heqe'.
-  induction H0.
-  
-*)
+(**)
 
 (*weakened form for use in reduction that has much smaller proofs*)
 Inductive eq_term_nocheck l : ctx -> sort -> term -> term -> Prop :=
@@ -790,7 +650,7 @@ Ltac compute_wf_subjects :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
-  | [|- In _ _ ]=> solve_in
+  | |- In _ _ => solve [solve_in | simpl; intuition fail]
   | |- wf_term ?l ?c ?e ?t =>
         let c' := eval vm_compute in c in
         let e' := eval vm_compute in e in
@@ -814,23 +674,26 @@ Ltac compute_wf_subjects :=
         let t' := eval vm_compute in t in
         change_no_check (wf_sort l c' t'); eapply wf_sort_by
   | [|- wf_lang _] => solve[prove_from_known_elabs]
-  | [|- _ = _] => vm_compute; reflexivity
+  (*Don't use vm_compute here*)
+  | [|- _ = _] => compute; reflexivity
   end.
 
-Local Ltac t :=
+Ltac t :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
-  | [|- In _ _ ]=> apply named_list_lookup_err_in; vm_compute; reflexivity
+  (*Don't use vm_compute here*)
+  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
   | [|- len_eq _ _] => econstructor
   | [|-elab_sort _ _ _ _] => eapply elab_sort_by
   | [|-elab_ctx _ _ _] => econstructor
   | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
   | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
-  | [|-wf_term _ _ _ _] => 
-    tryif match goal with [|- ?g] => has_evar g end then shelve else compute_noconv_term_wf
+  | [|-wf_term _ _ _ _] => shelve
   | [|-elab_rule _ _ _] => econstructor
-  | [|- _ = _] => vm_compute; reflexivity
+  | |- wf_subst _ _ _ _ => apply wf_subst_cons || apply wf_subst_nil
+  (*Don't use vm_compute here*)
+  | [|- _ = _] => compute; reflexivity
   end.
 
 
@@ -1021,6 +884,7 @@ Ltac reduce_rhs :=
 Ltac reduce := reduce_lhs; reduce_rhs.
 
 Ltac by_reduction :=
+  compute_eq_compilation;
   eapply eq_term_trans; [ step_if_concrete | eapply eq_term_sym; step_if_concrete ].
 
 
@@ -1173,4 +1037,4 @@ Ltac eredex_steps_with lang name :=
         end
       | None =>
         fail 100 "rule not found in lang"
-      end.
+      end; repeat t.

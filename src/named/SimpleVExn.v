@@ -121,12 +121,44 @@ Derive cps
                                           cps
                                           stlc)
        As cps_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof.
   setup_elab_compiler.
   all: repeat t.
-  Optimize Heap.
+  Set Ltac Profiling.
+  {
+    reduce_rhs.
+    Locate auto_elab_compiler.
+    compute_eq_compilation.
+    eapply eq_term_sym.
+    eapply eq_term_trans.
+    {
+      reduce_lhs.
+      term_cong.
+      term_refl.
+      term_refl.
+      compute_eq_compilation.
+      term_cong.
+      term_refl.
+      term_refl.
+      term_refl.
+      compute_eq_compilation.
+      term_cong.
+      term_refl.
+      term_refl.
+      term_refl.
+      term_refl.
+      term_cong.
+      term_refl.
+      term_refl.
+      term_refl.
+      compute_eq_compilation.
+      ltac2:(step()).
+      
+    ltac2:(print_steps()).
+    reduce.
   unshelve(solve [ compute_eq_compilation; by_reduction ]); repeat t'; eauto
    with elab_pfs auto_elab.
+  Show Ltac Profile.
   TODO: Still too much ram
   compute_eq_compilation.
     eapply eq_term_trans. 

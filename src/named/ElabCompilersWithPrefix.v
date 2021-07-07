@@ -159,9 +159,10 @@ Ltac setup_elab_compiler :=
       assert (wf_lang tgt) by prove_from_known_elabs
   end; break_preserving.
 
+Tactic Notation "cleanup_elab_after" tactic(tc) :=
+  unshelve tc; repeat t'; eauto with elab_pfs auto_elab.
+
+
 Ltac auto_elab_compiler :=
-  unshelve (setup_elab_compiler;
-  repeat t;
-  solve[ compute_eq_compilation;by_reduction]);
-  repeat t';
-  eauto with elab_pfs auto_elab.
+  (cleanup_elab_after (setup_elab_compiler; repeat t));
+  cleanup_elab_after try solve[by_reduction].

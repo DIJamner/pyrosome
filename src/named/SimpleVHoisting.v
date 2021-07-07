@@ -261,6 +261,57 @@ Definition hoist_helpers_def : lang :=
       ----------------------------------------------- ("project v&t val")
       #"v&t val" (#"v&t" "T" "v") = "v" : #"val" "G" "A"
   ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "vt" : #"val&text" "G" "A"       
+      ----------------------------------------------- ("v&t eta")
+      #"v&t" (#"v&t text" "vt") (#"v&t val" "vt")
+      = "vt" : #"val&text" "G" "A"
+  ];
+  [s| "G" : #"env", "G'" : #"env"
+      -----------------------------------------------
+      #"sub&text" "G" "G'" srt
+  ];
+  [:| "T" : #"text",
+      "G" : #"env",
+      "G'" : #"env",
+      "g" : #"sub" "G" "G'"            
+      -----------------------------------------------
+      #"s&t" "T" "g" : #"sub&text" "G" "G'"
+  ];
+  [:| "G" : #"env",
+      "G'" : #"env",
+      "gt" : #"sub&text" "G" "G'"    
+      -----------------------------------------------
+      #"s&t text" "gt" : #"text"
+  ];
+  [:| "G" : #"env",
+      "G'" : #"env",
+      "gt" : #"sub&text" "G" "G'"    
+      -----------------------------------------------
+      #"s&t sub" "gt" : #"sub" "G" "G'"
+  ];
+  [:= "T" : #"text",
+      "G" : #"env",
+      "G'" : #"env",
+      "g" : #"sub" "G" "G'"            
+      ----------------------------------------------- ("project s&t text")
+      #"s&t text" (#"s&t" "T" "g") = "T" : #"text"
+  ];
+  [:= "T" : #"text",
+      "G" : #"env",
+      "G'" : #"env",
+      "g" : #"sub" "G" "G'"            
+      ----------------------------------------------- ("project s&t sub")
+      #"s&t sub" (#"s&t" "T" "g") = "g" : #"sub" "G" "G'"
+  ];
+  [:= "G" : #"env",
+      "G'" : #"env",
+      "gt" : #"sub&text" "G" "G'"       
+      ----------------------------------------------- ("s&t eta")
+      #"s&t" (#"s&t text" "gt") (#"s&t sub" "gt")
+      = "gt" : #"sub&text" "G" "G'"
+  ];
   [:| "G" : #"env",
       "p" : #"program" "G"    
       -----------------------------------------------
@@ -283,24 +334,225 @@ Definition hoist_helpers_def : lang :=
       "e" : #"blk" "G"        
       ----------------------------------------------- ("project prog block")
       #"prog blk" (#"prog" "T" "e") = "e" : #"blk" "G"
+  ];
+  [:= "G" : #"env",
+      "gt" : #"program" "G"     
+      ----------------------------------------------- ("prog eta")
+      #"prog" (#"prog text" "gt") (#"prog blk" "gt")
+      = "gt" : #"program" "G"
+  ];
+  [:| "n" : #"natural",
+      "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" "A"            
+      -----------------------------------------------
+      #"val_ptr_shift" "n" "v" : #"val" "G" "A"
+  ];
+  [:| "n" : #"natural",
+      "G" : #"env",
+      "e" : #"blk" "G"            
+      -----------------------------------------------
+      #"blk_ptr_shift" "n" "e" : #"blk" "G"
+  ];
+  [:| "n" : #"natural",
+      "T" : #"text"            
+      -----------------------------------------------
+      #"text_ptr_shift" "n" "T" : #"text"
+  ];
+(*TODO: move to nat_lang*)
+  [:| "n" : #"natural",
+      "m" : #"natural"         
+      -----------------------------------------------
+      #"+" "n" "m" : #"natural"
+  ];
+  [:= "n" : #"natural",
+      "m" : #"natural"         
+      ----------------------------------------------- ("+ 1+")
+      #"+" (#"1+" "n") "m" = #"1+" (#"+" "n" "m") : #"natural"
+  ];
+  [:= "m" : #"natural"         
+      ----------------------------------------------- ("+ 0")
+      #"+" #"0" "m" = "m" : #"natural"
+  ];
+  [:= "n" : #"natural",
+      "G" : #"env",
+      "A" : #"ty",
+      "m" : #"natural"         
+      ----------------------------------------------- ("ptr_shift")
+      #"val_ptr_shift" "n" (#"ptr" "A" "m")
+      = #"ptr" "A" (#"+" "n" "m")
+      : #"val" "G" (#"box" "A")
+  ]; (*TODO: eqns for other shifts*)
+  [:= "n" : #"natural"        
+      ----------------------------------------------- ("Temp_shift")
+      #"text_ptr_shift" "n" #"Temp" = #"Temp" : #"text"
+  ]; (*TODO: eqns for other shifts*)
+  [:= "n" : #"natural",
+      "T" : #"text",
+      "A" : #"ty", "v" : #"val" #"emp" "A"
+      ----------------------------------------------- ("Tcons_shift")
+      #"text_ptr_shift" "n" (#"Tcons" "T" "v")
+      = #"Tcons" (#"text_ptr_shift" "n" "T") (#"val_ptr_shift" "n" "v")
+      : #"text"
+  ]; (*TODO: eqns for other shifts*)
+  [:| "T" : #"text"        
+      -----------------------------------------------
+      #"Tlen" "T" : #"natural"
+  ];
+  [:= "T" : #"text",
+      "A" : #"ty", "v" : #"val" #"emp" "A"         
+      ----------------------------------------------- ("Tlen cons")
+      #"Tlen" (#"Tcons" "T" "v") = #"1+" (#"Tlen" "T") : #"natural"
+  ];
+  [:=         
+      ----------------------------------------------- ("Tlen emp")
+      #"Tlen" #"Temp" = #"0" : #"natural"
+  ];
+  [:| "T" : #"text", "T'" : #"text"        
+      -----------------------------------------------
+      #"Tapp" "T" "T'" : #"text"
+  ];
+  [:= "T" : #"text", "T'" : #"text",
+      "A" : #"ty", "v" : #"val" #"emp" "A"         
+      ----------------------------------------------- ("Tapp cons")
+      #"Tapp" "T" (#"Tcons" "T'" "v")
+      = #"Tcons" (#"Tapp" "T" "T'") "v"
+      : #"text"
+  ];
+  [:= "T" : #"text"      
+      ----------------------------------------------- ("Tapp emp right")
+      #"Tapp" "T" #"Temp" = "T" : #"text"
+  ];
+  [:= "T" : #"text"      
+      ----------------------------------------------- ("Tapp emp left")
+      #"Tapp" #"Temp" "T" = "T" : #"text"
   ]
   ]}.
 
 
 Derive hoist_helpers
-       SuchThat (Pre.elab_lang (text_segment ++ nat_lang++ prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+       SuchThat (Pre.elab_lang (text_segment ++ nat_lang ++ block_subst ++value_subst)
                                hoist_helpers_def
                                hoist_helpers)
        As hoist_helpers_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve hoist_helpers_wf : elab_pfs.
 
+(*TODO: merge w/ above*)
+Definition hoist_helpers2_def : lang :=
+  {[l
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" "A"            
+      ----------------------------------------------- ("val_ptr_shift 0")
+      #"val_ptr_shift" #"0" "v" = "v" : #"val" "G" "A"
+  ];
+  [:= "G" : #"env",
+      "e" : #"blk" "G"         
+      ----------------------------------------------- ("blk_ptr_shift 0")
+      #"blk_ptr_shift" #"0" "e" = "e" : #"blk" "G"
+  ];
+  [:= "T" : #"text"            
+      ----------------------------------------------- ("text_ptr_shift 0")
+      #"text_ptr_shift" #"0" "T" = "T" : #"text"
+  ]
+  ]}.
+
+
+Derive hoist_helpers2
+       SuchThat (Pre.elab_lang (hoist_helpers ++ text_segment ++ nat_lang ++ block_subst ++value_subst)
+                               hoist_helpers2_def
+                               hoist_helpers2)
+       As hoist_helpers2_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve hoist_helpers2_wf : elab_pfs.
+
+Definition plain_sub s := {{e #"s&t" #"Temp" {s} }}.
+Definition plain_val s := {{e #"v&t" #"Temp" {s} }}.
+
+Definition hoist_subst_def : compiler :=
+  match # from (block_subst ++value_subst) with
+  | {{s #"blk" "G"}} =>
+    {{s #"program" "G"}}
+  | {{s #"val" "G" "A"}} =>
+    {{s #"val&text" "G" "A"}}
+  | {{s #"sub" "G" "G'"}} =>
+    {{s #"sub&text" "G" "G'"}}
+  | {{e #"id" "G"}} =>
+    plain_sub {{e #"id"}}
+  | {{e #"snoc" "G" "G'" "A" "g" "v"}} =>
+    {{e #"s&t" (#"Tapp" (#"text_ptr_shift" (#"Tlen" (#"s&t text" "g")) (#"v&t text" "v"))
+                       (#"s&t text" "g"))
+        (#"snoc" (#"s&t sub" "g") (#"v&t val" "v")) }}
+  | {{e #"wkn" "G" "A"}} =>
+    plain_sub {{e #"wkn"}}
+  | {{e #"hd" "G" "A"}} =>
+    plain_val {{e #"hd"}}
+  | {{e #"cmp" "G1" "G2" "G3" "g" "h"}} =>
+    {{e #"s&t" (#"Tapp" (#"text_ptr_shift" (#"Tlen" (#"s&t text" "g")) (#"s&t text" "h"))
+                       (#"s&t text" "g"))
+        (#"cmp" (#"s&t sub" "g") (#"s&t sub" "h")) }}
+  | {{e #"val_subst" "G" "G'" "g" "A" "v"}} =>
+    {{e #"v&t" (#"Tapp" (#"text_ptr_shift" (#"Tlen" (#"s&t text" "g")) (#"v&t text" "v"))
+                       (#"s&t text" "g"))
+        (#"val_subst" (#"s&t sub" "g") (#"v&t val" "v")) }}
+  | {{e #"forget" "G"}} =>
+    plain_sub {{e #"forget"}}
+  end.
+
+Derive hoist_subst
+       SuchThat (elab_preserving_compiler []
+                                          (hoist_helpers2
+                                             ++ hoist_helpers
+                                             ++ text_segment
+                                             ++ nat_lang
+                                             ++ block_subst
+                                             ++value_subst)
+                                          hoist_subst_def
+                                          hoist_subst
+                                          (block_subst++value_subst))
+       As hoist_subst_preserving.
+Proof.
+  setup_elab_compiler.
+  all: repeat t.
+  solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  {
+    reduce.
+    solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  solve [ compute_eq_compilation; by_reduction ].
+  {
+    reduce.
+    
+    solve [ compute_eq_compilation; by_reduction ].
+  
+  unshelve (setup_elab_compiler; repeat t; (solve [ compute_eq_compilation; by_reduction ])); repeat t'; eauto
+   with elab_pfs auto_elab.
+
+  Qed.
+
 (*TODO: add text*val syntax *)
 (*TODO: split up?*)
 Definition hoist_def : compiler :=
-  match # from (cc_lang ++  block_cc_subst ++ prod_cc ++ value_cc_subst) with
+  match # from (cc_lang
+                  ++ forget_eq_wkn
+                  ++ unit_eta
+                  ++ unit_lang
+                  ++ prod_cc
+                  ++ cps_prod_lang
+                  ++ block_subst
+                  ++value_subst) with
   | {{s #"blk" "G"}} =>
     {{s #"program" "G"}}
-  | {{s #"val" "G"}} =>
-    {{s #"val & text" "G"}}
-  | {{
+  | {{s #"val" "G" "A"}} =>
+    {{s #"val & text" "G" "A"}}
+  | {{e #"closure" "G" "A" "B" "e" "v"}} =>
+    {{e #"v&t" (#"Tcons"
+                 ("Tapp" (#"text_ptr_shift" (#"1+" (#"Tlen" (#"prog text" "e"))) (#"v&t text" "v"))
+                         (#"text_ptr_shift" (#"1+" #"0") (#"prog text" "e")))
+                 (#"code_block" (#"blk_ptr_shift" (#"1+" #"0")  (#"prog blk" "e"))))
+        (#"closure" "B" (#"ptr" (#"code" (#"prod" "A" "B")) #"0") (#"v&t val" "v")}}

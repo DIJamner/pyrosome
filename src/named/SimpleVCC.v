@@ -163,7 +163,7 @@ Definition cc_lang_def : lang :=
       ----------------------------------------------- ("clo_eta")
       #"closure" "B"
         (#"jmp" (#"val_subst" (#"snoc" #"wkn" (#".1" #"hd")) "v") (#".2" #"hd"))
-        #"hd"(*TODO: should really be env-capturing tuple*)
+        #"hd"
       = "v"
       : #"val" (#"ext" #"emp" "A") (#"neg" "B")
   ];
@@ -240,16 +240,9 @@ Derive subst_cc
                                           (block_subst++value_subst))
        As subst_cc_preserving.
 Proof.
-
-  setup_elab_compiler.
-  all: try solve [repeat t].
-  all: try solve [ compute_eq_compilation; by_reduction ].
-  {
-    reduce.
-    eredex_steps_with unit_eta "unit eta".
-  }
-  Unshelve.
-  all: repeat t'; eauto with elab_pfs auto_elab.
+  auto_elab_compiler.
+  cleanup_elab_after
+    (reduce; eredex_steps_with unit_eta "unit eta").
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
@@ -355,19 +348,13 @@ Derive cc
                                           cps_lang)
        As cc_preserving.
 Proof.
-  setup_elab_compiler; repeat t.    
-  solve[compute_eq_compilation;by_reduction].
-  solve[compute_eq_compilation;by_reduction].
-  solve[compute_eq_compilation;by_reduction].
-  {
-    reduce.
-    eapply eq_term_trans.  
-    eapply eq_term_sym.
-    eredex_steps_with cc_lang "clo_eta".
-    by_reduction.
-  }
-  Unshelve.
-  all: repeat t'; eauto with elab_pfs auto_elab.
+  auto_elab_compiler.
+  cleanup_elab_after
+  (reduce;
+   eapply eq_term_trans;  
+   [eapply eq_term_sym;
+   eredex_steps_with cc_lang "clo_eta"|];
+   by_reduction).
 Qed.
 #[export] Hint Resolve cc_preserving : elab_pfs.
 

@@ -27,6 +27,7 @@ Definition ptcv : compiler :=
 
 Eval compute in ptcv.
 
+(*TODO: code rot; fix up*)
 Derive ptcv_elab
        SuchThat (elab_preserving_compiler [] (VS.exp_subst++VS.value_subst) ptcv ptcv_elab S.subst_elab)
        As ptcv_elab_preserving.

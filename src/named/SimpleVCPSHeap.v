@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix
-     SimpleVSubst SimpleVCPS SimpleEvalCtxCPS SimpleUnit NatHeap Matches.
+     SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -118,35 +118,10 @@ Derive heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As cps_preserving.
 Proof.
-  setup_elab_compiler.
-  all: repeat t.
-  solve [ compute_eq_compilation; by_reduction ].
-  solve [ compute_eq_compilation; by_reduction ].
-  {
-    eredex_steps_with heap "heap_comm".   
-    repeat apply wf_subst_cons.
-    constructor.
-    all: repeat t.
-  }
-  solve [ compute_eq_compilation; by_reduction ].
-  {
-    eredex_steps_with heap "lookup_miss".
-    repeat apply wf_subst_cons.
-    constructor.
-    all: repeat t.
-  }
-  {
-    eredex_steps_with heap "lookup_empty".
-    repeat apply wf_subst_cons.
-    constructor.
-    all: repeat t.
-  }
-  {
-    eredex_steps_with unit_lang "tt_subst".
-  }
-  Unshelve.
-  all: repeat t'.
-  all: compute; intuition fail.
+  auto_elab_compiler.
+  cleanup_elab_after eredex_steps_with heap "heap_comm".
+  cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  cleanup_elab_after eredex_steps_with heap "lookup_empty".
 Qed.
 #[export] Hint Resolve heap_id : elab_pfs.
 
@@ -182,25 +157,12 @@ Derive heap_cps
                                           heap_ops)
        As heap_cps_preserving.
 Proof.
-  setup_elab_compiler.
-  all: repeat t.
-  {
-    reduce.
-    eredex_steps_with heap_cps_ops "eval get".
-    {
-      (*TODO: roll into above tactic*)
-      repeat apply wf_subst_cons;
-        [ constructor|..];
-        repeat t.
-    }
-    solve [ compute_eq_compilation; by_reduction ].
-  }
-  solve [ compute_eq_compilation; by_reduction ].
-
-  Unshelve.
-  all: repeat t';
-    eauto with elab_pfs auto_elab.
-  simpl; intuition.
+  auto_elab_compiler.
+  cleanup_elab_after
+    (reduce;
+    eapply eq_term_trans;
+    [eredex_steps_with heap_cps_ops "eval get"|];
+    by_reduction).
 Qed.
 #[export] Hint Resolve heap_cps_preserving : elab_pfs.
 
@@ -229,7 +191,6 @@ Definition heap_ctx_cps_def : compiler :=
     {{e #"set" (#"val_subst" {wkn_n 2} "v") {ovar 0} (#"jmp" {ovar 1} #"tt")}}
   end.    
 
-Require Import SimpleEvalCtx.
 Derive heap_ctx_cps
        SuchThat (elab_preserving_compiler (Ectx_cps++heap_cps++heap_id++cps_subst)
                                           (heap_cps_ops
@@ -245,33 +206,12 @@ Derive heap_ctx_cps
                                           heap_ctx)
        As heap_ctx_cps_preserving.
 Proof.
-  setup_elab_compiler.
-  all: repeat t.
-  unshelve (solve [ compute_eq_compilation; by_reduction ]);
-    repeat t';
-    eauto with elab_pfs auto_elab.
-  unshelve (solve [ compute_eq_compilation; by_reduction ]);
-    repeat t';
-    eauto with elab_pfs auto_elab.
-  unshelve (solve [ compute_eq_compilation; by_reduction ]);
-    repeat t';
-    eauto with elab_pfs auto_elab.
-  {
-    reduce.
-    eredex_steps_with heap_cps_ops "eval get".
-    {
-      (*TODO: roll into above tactic*)
-      repeat apply wf_subst_cons;
-        [ constructor|..];
-        repeat t.
-    }
-  }
-  solve [ compute_eq_compilation; by_reduction ].
-  Unshelve.
-  (*TODO: why is this computationally intensive? *)
-  all:  repeat t';
-    eauto with elab_pfs auto_elab.
-  simpl; intuition.
+  auto_elab_compiler.
+  cleanup_elab_after
+    (reduce;
+     eapply eq_term_trans;
+     [eredex_steps_with heap_cps_ops "eval get"|];
+     by_reduction).
 Qed.
 #[export] Hint Resolve heap_ctx_cps_preserving : elab_pfs.
 
