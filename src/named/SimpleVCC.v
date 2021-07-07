@@ -15,7 +15,7 @@ Require Coq.derive.Derive.
 
 
 
-
+(*
 Definition value_cc_subst_def : lang :=
   {[l
       
@@ -64,115 +64,66 @@ Derive value_cc_subst
        As value_cc_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve value_cc_subst_wf : elab_pfs.
+*)
 
 Definition prod_cc_def : lang :=
   {[l
-
-  [:| 
-      -----------------------------------------------
-      #"unit" : #"ty"
-  ];
-  [:| "G" : #"ty" 
-      -----------------------------------------------
-      #"tt" : #"val" "G" #"unit"
-  ];
-  [:= "G" : #"ty", "G'" : #"ty", "g" : #"val" "G" "G'"
-       ----------------------------------------------- ("subst_tt")
-       #"val_subst" "g" #"tt" = #"tt" : #"val" "G" #"unit"
-  ];
-  [:= 
-      ----------------------------------------------- ("tt_id_eta")
-      #"id" = #"tt" : #"val" #"unit" #"unit"
-  ];
-  [:| "G" : #"ty", "A": #"ty"
+  [:| "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G" (#"prod" "A" "B")
        -----------------------------------------------
-       #"prod" "G" "A" : #"ty"
+       #".1" "v" : #"val" "G" "A"
   ];
-  [:| "G" : #"ty", "G'" : #"ty", "A" : #"ty",
-      "g" : #"val" "G" "G'",
-      "v" : #"val" "G" "A"
+  [:| "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G" (#"prod" "A" "B")
        -----------------------------------------------
-       #"pair" "g" "v" : #"val" "G" (#"prod" "G'" "A")
+       #".2" "v" : #"val" "G" "B"
   ];
-  [:| "G" : #"ty", "A" : #"ty"
-       -----------------------------------------------
-       #".1" : #"val" (#"prod" "G" "A") "G"
-  ];
-  [:| "G" : #"ty", "A" : #"ty"
-       -----------------------------------------------
-       #".2" : #"val" (#"prod" "G" "A") "A"
-  ];
-   [:= "G" : #"ty", "G'" : #"ty",
-      "g" : #"val" "G" "G'",
-      "A" : #"ty",
-      "v" : #"val" "G" "A"
+   [:= "G" : #"env", "A" : #"ty",
+      "g" : #"val" "G" "A",
+      "B" : #"ty",
+      "v" : #"val" "G" "B"
       ----------------------------------------------- ("proj 1")
-      #"val_subst" (#"pair" "g" "v") #".1" = "g" : #"val" "G" "G'"
+      #".1" (#"pair" "g" "v") = "g" : #"val" "G" "A"
   ];
-   [:= "G" : #"ty", "G'" : #"ty",
-       "g" : #"val" "G" "G'",
-       "A" : #"ty",
-       "v" : #"val" "G" "A"
-       ----------------------------------------------- ("proj 2")
-       #"val_subst" (#"pair" "g" "v") #".2" = "v"
+  [:= "G" : #"env", "A" : #"ty",
+      "g" : #"val" "G" "A",
+      "B" : #"ty",
+      "v" : #"val" "G" "B"
+      ----------------------------------------------- ("proj 2")
+      #".2" (#"pair" "g" "v") = "v" : #"val" "G" "B"
+  ];
+  [:= "G" : #"env", "A" : #"ty",
+      "B" : #"ty",
+      "v" : #"val" "G" (#"prod" "A" "B")
+      ----------------------------------------------- ("negative pair eta")
+      #"pair" (#".1" "v") (#".2" "v") = "v" : #"val" "G" (#"prod" "A" "B")
+  ];
+  [:= "G" : #"env", "G'" : #"env",
+      "f" : #"sub" "G" "G'",
+      "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G'" (#"prod" "A" "B")
+      ----------------------------------------------- ("subst .1")
+       #"val_subst" "f" (#".1" "v")
+       = #".1" (#"val_subst" "f" "v")
        : #"val" "G" "A"
   ];
-   [:= "G1" : #"ty", "G2" : #"ty", "G3" : #"ty",
-       "f" : #"val" "G1" "G2",
-       "g" : #"val" "G2" "G3",
-       "A" : #"ty",
-       "v" : #"val" "G2" "A"
-       ----------------------------------------------- ("subst pair")
-       #"val_subst" "f" (#"pair" "g" "v")
-       = #"pair" (#"val_subst" "f" "g") (#"val_subst" "f" "v")
-       : #"val" "G1" (#"prod" "G3" "A")
-   ];
-      [:= "G" : #"ty", "A" : #"ty"
-       ----------------------------------------------- ("pair eta")
-        #"pair" #".1" #".2" = #"id" : #"val" (#"prod" "G" "A") (#"prod" "G" "A")
-   ]
+  [:= "G" : #"env", "G'" : #"env",
+      "f" : #"sub" "G" "G'",
+      "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G'" (#"prod" "A" "B")
+      ----------------------------------------------- ("subst .2")
+       #"val_subst" "f" (#".2" "v")
+       = #".2" (#"val_subst" "f" "v")
+       : #"val" "G" "B"
+  ]
   ]}.
 
 
 Derive prod_cc
-       SuchThat (Pre.elab_lang value_cc_subst prod_cc_def prod_cc)
+       SuchThat (Pre.elab_lang (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
        As prod_cc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve prod_cc_wf : elab_pfs.
-
-(*TODO: use same def for here and for VCPS
-  via CompilerForExt
-*)
-Definition block_cc_subst_def : lang :=
-  {[l
-      [s| "G" : #"ty"
-          -----------------------------------------------
-          #"blk" "G" srt
-      ];
-  [:| "G" : #"ty", "G'" : #"ty", "g" : #"val" "G" "G'",
-      "e" : #"blk" "G'"
-       -----------------------------------------------
-       #"blk_subst" "g" "e" : #"blk" "G"
-  ];
-  [:= "G" : #"ty", "e" : #"blk" "G"
-       ----------------------------------------------- ("blk_subst_id")
-       #"blk_subst" #"id" "e" = "e" : #"blk" "G"
-  ]; 
-  [:= "G1" : #"ty", "G2" : #"ty", "G3" : #"ty",
-       "f" : #"val" "G1" "G2", "g" : #"val" "G2" "G3",
-       "e" : #"blk" "G3"
-       ----------------------------------------------- ("blk_subst_val_subst")
-       #"blk_subst" "f" (#"blk_subst" "g" "e")
-       = #"blk_subst" (#"val_subst" "f" "g") "e"
-       : #"blk" "G1"
-  ]
-  ]}.
-
-Derive block_cc_subst
-       SuchThat (Pre.elab_lang value_cc_subst block_cc_subst_def block_cc_subst)
-       As block_cc_subst_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve block_cc_subst_wf : elab_pfs.
 
 Definition cc_lang_def : lang :=
   {[l
@@ -180,57 +131,61 @@ Definition cc_lang_def : lang :=
           -----------------------------------------------
           #"neg" "A" : #"ty"
       ];
-  [:| "G" : #"ty",
+  [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"blk" (#"prod" "A" "B"),
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
       "v" : #"val" "G" "A"
       -----------------------------------------------
       #"closure" "B" "e" "v" : #"val" "G" (#"neg" "B")
    ];
-   [:| "G" : #"ty",
+   [:| "G" : #"env",
        "A" : #"ty",
        "v1" : #"val" "G" (#"neg" "A"),
        "v2" : #"val" "G" "A"
       -----------------------------------------------
       #"jmp" "v1" "v2" : #"blk" "G"
    ];
-  [:= "G" : #"ty",
+  [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"blk" (#"prod" "A" "B"),
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
       "v" : #"val" "G" "A",
       "v'" : #"val" "G" "B"
       ----------------------------------------------- ("jmp_beta")
       #"jmp" (#"closure" "B" "e" "v") "v'"
-      = #"blk_subst" (#"pair" "v" "v'") "e"
+      = #"blk_subst" (#"snoc" #"forget" (#"pair" "v" "v'")) "e"
       : #"blk" "G"
   ];
-  [:= "G" : #"ty",
-      "A" : #"ty",
-      "v" : #"val" "G" (#"neg" "A")
+  [:= "A" : #"ty",
+      "B" : #"ty",
+      "v" : #"val" (#"ext" #"emp" "A") (#"neg" "B")
       ----------------------------------------------- ("clo_eta")
-      #"closure" "A"
-        (#"jmp" (#"val_subst" #".1" "v") #".2")
-        #"id"
+      #"closure" "B"
+        (#"jmp" (#"val_subst" (#"snoc" #"wkn" (#".1" #"hd")) "v") (#".2" #"hd"))
+        #"hd"(*TODO: should really be env-capturing tuple*)
       = "v"
-      : #"val" "G" (#"neg" "A")
+      : #"val" (#"ext" #"emp" "A") (#"neg" "B")
   ];
-  [:= "G" : #"ty", "A" : #"ty",
+   (*
+  TODO: what is the proper eta law?
+  use subst as closure arg?
+    *)
+  [:= "G" : #"env", "A" : #"ty",
       "v1" : #"val" "G" (#"neg" "A"),
       "v2" : #"val" "G" "A",
-      "G'" : #"ty",
-      "g" : #"val" "G'" "G"
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
       ----------------------------------------------- ("jmp_subst")
       #"blk_subst" "g" (#"jmp" "v1" "v2")
       = #"jmp" (#"val_subst" "g" "v1") (#"val_subst" "g" "v2")
       : #"blk" "G'"
   ];  
-  [:= "G" : #"ty", "A" : #"ty", "B" : #"ty",
-      "e" : #"blk" (#"prod" "A" "B"),
+  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
       "v" : #"val" "G" "A",
-      "G'" : #"ty",
-      "g" : #"val" "G'" "G"
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
       ----------------------------------------------- ("clo_subst")
       #"val_subst" "g" (#"closure" "B" "e" "v")
       = #"closure" "B" "e" (#"val_subst" "g" "v")
@@ -240,7 +195,7 @@ Definition cc_lang_def : lang :=
 
 
 Derive cc_lang
-       SuchThat (Pre.elab_lang (block_cc_subst ++ prod_cc ++ value_cc_subst)
+       SuchThat (Pre.elab_lang (prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
                                cc_lang_def
                                cc_lang)
        As cc_lang_wf.
@@ -248,41 +203,72 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve cc_lang_wf : elab_pfs.
 
 
-Definition value_cc_def : compiler :=
-  match # from (value_subst) with
+Definition subst_cc_def : compiler :=
+  match # from (block_subst ++ value_subst) with
   | {{s #"env" }} => {{s #"ty"}}
-  | {{s #"sub" "A" "B"}} => {{s #"val" "A" "B"}}
+  | {{s #"val" "G" "B"}} => {{s #"val" (#"ext" #"emp" "G") "B"}}
+  | {{s #"blk" "G"}} => {{s #"blk" (#"ext" #"emp" "G")}}
+  | {{s #"sub" "G" "G'"}} => {{s #"val" (#"ext" #"emp" "G") "G'"}}
   | {{e #"cmp" "G" "G'" "A" "g" "g'"}} =>
-    {{e #"val_subst" "g" "g'"}}
+    {{e #"val_subst" (#"snoc" #"wkn" "g") "g'"}}
   | {{e #"emp"}} => {{e#"unit"}}
   | {{e #"forget"}} => {{e# "tt"}}
   | {{e #"ext" "A" "B" }} => {{e #"prod" "A" "B"}}
   | {{e #"snoc" "G" "G'" "A" "g" "v"}} =>
     {{e #"pair" "g" "v"}}
-  | {{e #"hd" "G" "A"}} => {{e #".2"}}
-  | {{e #"wkn" "G" "A"}} => {{e #".1"}}
+  | {{e #"id" "G"}} => {{e #"hd"}}
+  | {{e #"hd" "G" "A"}} => {{e #".2" #"hd"}}
+  | {{e #"wkn" "G" "A"}} => {{e #".1" #"hd"}}
+  | {{e #"val_subst" "G" "G'" "g" "A" "v"}} =>
+    {{e #"val_subst" (#"snoc" #"wkn" "g") "v"}}
+  | {{e #"blk_subst" "G" "G'" "g" "e"}} =>
+    {{e #"blk_subst" (#"snoc" #"wkn" "g") "e"}}
   end.
 
+Require Import SimpleUnit.
 
-Derive value_cc
+Derive subst_cc
        SuchThat (elab_preserving_compiler []
-                                          (prod_cc ++ value_cc_subst)
-                                          value_cc_def
-                                          value_cc
-                                          value_subst)
-       As value_cc_preserving.
-Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve value_cc_preserving : elab_pfs.
+                                          (unit_eta
+                                             ++ unit_lang
+                                             ++ prod_cc
+                                             ++ cps_prod_lang
+                                             ++ block_subst
+                                             ++value_subst)
+                                          subst_cc_def
+                                          subst_cc
+                                          (block_subst++value_subst))
+       As subst_cc_preserving.
+Proof.
+
+  setup_elab_compiler.
+  all: try solve [repeat t].
+  all: try solve [ compute_eq_compilation; by_reduction ].
+  {
+    reduce.
+    eredex_steps_with unit_eta "unit eta".
+  }
+  Unshelve.
+  all: repeat t'; eauto with elab_pfs auto_elab.
+Qed.
+#[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
 
-
+(*TODO: redo for positive products *)
 Definition prod_cc_compile_def : compiler :=
-  match # from (val_prod_lang) with
-  | {{e #".1" "G" "A" "B" "v"}} => {{e #"val_subst" "v" #".1"}}
-  | {{e #".2" "G" "A" "B" "v"}} => {{e #"val_subst" "v" #".2"}}
+  match # from cps_prod_lang with
+  | {{e #"pm_pair" "G" "A" "B" "v" "e"}} =>
+    {{e #"blk_subst"
+        (#"snoc" #"wkn" (#"pair" (#"pair" {ovar 0} (#".1" "v")) (#".2" "v")))
+        "e"}}
+    (*{{e #"pm_pair" "v"
+        (#"blk_subst"
+          (#"snoc" #"forget" (#"pair" (#"pair" {ovar 2} {ovar 1}) {ovar 0}))
+          "e")}}*)
   end.
 
-
+(*
+TODO: should be supersceded by eredex_steps_with
 (*TODO: only works if all variables appear on the rhs*)
 Ltac redex_steps_with_rhs lang name :=
   let mr := eval compute in (named_list_lookup_err lang name) in
@@ -305,127 +291,77 @@ Ltac redex_steps_with_rhs lang name :=
         end
       | _ => fail "Rule not found"
       end.
+ *)
+
+(*TODO: move to value_subst? could conflict w/ cmp_forget
+  not currently used
+*)
+(*TODO: generalize? reverse for tactics?*)
+Definition forget_eq_wkn_def : lang :=
+  {[l
+      [:= "A" : #"ty"
+         ----------------------------------------------- ("wkn_emp_forget")
+         #"forget" = #"wkn"
+         : #"sub" (#"ext" #"emp" "A") #"emp"
+      ]
+  ]}.
+Derive forget_eq_wkn
+       SuchThat (Pre.elab_lang value_subst
+                               forget_eq_wkn_def
+                               forget_eq_wkn)
+       As forget_eq_wkn_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve forget_eq_wkn_wf : elab_pfs.
+
 
 Derive prod_cc_compile
-       SuchThat (elab_preserving_compiler value_cc
-                                          (prod_cc ++ value_cc_subst)
+       SuchThat (elab_preserving_compiler subst_cc
+                                          ( unit_eta
+                                             ++ unit_lang
+                                             ++ prod_cc
+                                             ++ cps_prod_lang
+                                             ++ block_subst
+                                             ++value_subst)
                                           prod_cc_compile_def
                                           prod_cc_compile
-                                          val_prod_lang)
+                                          cps_prod_lang)
        As prod_cc_preserving.
-Proof.
-  setup_elab_compiler.
-
-  all: repeat t.
-  solve[by_reduction].
-  solve[by_reduction].
-  {
-    compute_eq_compilation.
-      
-    eapply eq_term_trans.
-    eapply eq_term_sym.
-    redex_steps_with_rhs prod_cc "subst pair".
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    {
-      term_cong.
-      term_refl.
-      term_refl.
-      term_refl.
-      term_refl.
-      compute_eq_compilation.
-      redex_steps_with prod_cc "pair eta".
-    }
-    by_reduction.
-  }
-  all: solve[by_reduction].
-  Unshelve.
-  all: repeat t'; eauto with elab_pfs auto_elab.
-Qed.
-#[export] Hint Resolve prod_cc_preserving : elab_pfs.
-
-
-Definition block_cc_def : compiler :=
-  match # from (block_subst) with
-  | {{s #"blk" "G"}} => {{s #"blk" "G"}}
-  end.
-
-
-Derive block_cc
-       SuchThat (elab_preserving_compiler value_cc
-                                          (block_cc_subst ++ value_cc_subst)
-                                          block_cc_def
-                                          block_cc
-                                          block_subst)
-       As block_cc_preserving.
 Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve block_cc_preserving : elab_pfs.
+#[export] Hint Resolve prod_cc_preserving : elab_pfs.
 
 
 Definition cc_def : compiler :=
   match # from (cps_lang) with
   | {{e #"neg" "A" }} => {{e #"neg" "A"}}
   | {{e #"cont" "G" "A" "e"}} =>
-    {{e #"closure" "A" "e" #"id"}}
+    {{e #"closure" "A" "e" #"hd"}}
   | {{e #"jmp" "G" "A" "v1" "v2"}} =>
     {{e #"jmp" "v1" "v2" }}
   end.
 
-(*TODO: move to matches*)
-Ltac unify_evar_fst_eq :=
-  match goal with
-  | [|- (let (x,_) := ?p in x) = ?y] =>
-    let p':= open_constr:((y,_:term)) in
-    unify p p';
-    compute;
-    reflexivity
-  end.
-Ltac unify_var_names s c :=
-  let H' := fresh in
-  assert (len_eq s c) as H';
-  [ solve[repeat constructor]| clear H'];
-  assert (map fst s = map fst c) as H';
-  [ compute; repeat f_equal; unify_evar_fst_eq| clear H'].
-
-(*TODO: requires one side or the other to be concrete *)
-Ltac eredex_steps_with lang name :=
-  let mr := eval compute in (named_list_lookup_err lang name) in
-      lazymatch mr with
-      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-        lazymatch goal with
-        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-          let s := open_constr:(_:subst) in
-          first [unify_var_names s c | fail 100 "could not unify var names"];
-          first [ replace (eq_term l c' t e1 e2)
-                    with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
-                  [| f_equal; compute; reflexivity (*TODO: is this general?*)]
-                | fail 100 "could not replace with subst"];
-          eapply (@eq_term_subst l c' s s c);
-          [ solve [repeat t']
-          | solve [eapply eq_subst_refl; repeat t']
-          | solve [eapply (@eq_term_by l c name tp e1p e2p); t']]
-        end
-      end.
-
+ 
 Derive cc
-       SuchThat (elab_preserving_compiler (block_cc ++ value_cc)
-                                          (cc_lang ++  block_cc_subst ++ prod_cc ++ value_cc_subst)
+       SuchThat (elab_preserving_compiler (prod_cc_compile++subst_cc)
+                                          (cc_lang
+                                             ++ forget_eq_wkn
+                                             ++ unit_eta
+                                             ++ unit_lang
+                                             ++ prod_cc
+                                             ++ cps_prod_lang
+                                             ++ block_subst
+                                             ++value_subst)
                                           cc_def
                                           cc
                                           cps_lang)
        As cc_preserving.
 Proof.
-  setup_elab_compiler; repeat t.
-  solve[by_reduction].
-  solve[by_reduction].
-  solve[by_reduction].
+  setup_elab_compiler; repeat t.    
+  solve[compute_eq_compilation;by_reduction].
+  solve[compute_eq_compilation;by_reduction].
+  solve[compute_eq_compilation;by_reduction].
   {
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    redex_steps_with cc_lang "clo_subst".
-    (*TODO: why does this error? step_if_concrete.*)
-    compute_eq_compilation.
-    eapply eq_term_trans.
+    reduce.
+    eapply eq_term_trans.  
     eapply eq_term_sym.
     eredex_steps_with cc_lang "clo_eta".
     by_reduction.
