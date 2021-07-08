@@ -32,17 +32,6 @@ Definition fix_cc_lang_def : lang :=
       = #"jmp" "v" (#"pair" (#"fix" "v") "v'")
       : #"blk" "G"
   ];
-  (*
-  [:= "A" : #"ty",
-      "B" : #"ty",
-      "v" : #"val" (#"ext" #"emp" "A") (#"neg" "B")
-      ----------------------------------------------- ("fix_clo_eta")
-      #"fix_clo" "B"
-        (#"jmp" (#"val_subst" (#"snoc" #"wkn" (#".1" (#".1" #"hd"))) "v") (#".2" #"hd"))
-        #"hd"
-      = "v"
-      : #"val" (#"ext" #"emp" "A") (#"neg" "B")
-  ];*)
   [:= "G" : #"env",
       "B" : #"ty",
       "v" : #"val" "G" (#"neg" (#"prod" (#"neg" "B") "B")),
