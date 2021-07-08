@@ -30,5 +30,6 @@ src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
 src/named/NatHeap.v
 src/named/SimpleVCC.v
+src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/GlobalCell.v
