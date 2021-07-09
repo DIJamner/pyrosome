@@ -9,12 +9,8 @@ src/named/Elab.v
 src/named/ElabWithPrefix.v
 src/named/Matches.v
 src/named/ComputeWf.v
-src/named/Cat.v
-src/named/CatProd.v
-src/named/SimpleSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
-src/named/SimpleProd.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
 src/named/CompilerDefs.v
@@ -26,10 +22,10 @@ src/named/CompilerTools.v
 src/named/Renaming.v
 src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
-src/named/Let.v
-src/named/SimpleVFixCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
+src/named/Let.v
+src/named/SimpleVFixCPS.v
 src/named/NatHeap.v
 src/named/SimpleVCC.v
 src/named/SimpleVFixCC.v
