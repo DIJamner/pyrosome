@@ -22,9 +22,11 @@ src/named/Compilers.v
 src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
 src/named/ElabCompilersWithPrefix.v
+src/named/CompilerTools.v
 src/named/Renaming.v
 src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
+src/named/Let.v
 src/named/SimpleVFixCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
@@ -32,4 +34,5 @@ src/named/NatHeap.v
 src/named/SimpleVCC.v
 src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
+src/named/SimpleVCCHeap.v
 src/named/GlobalCell.v
