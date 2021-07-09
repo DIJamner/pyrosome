@@ -281,6 +281,22 @@ Proof.
   apply full_cps_compiler_preserving.
   solve_incl.
 Qed.
+
+Lemma full_compiler_semantic
+  : semantics_preserving
+      (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
+                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
+                   forget_eq_wkn'++
+                   cps_prod_lang ++ block_subst ++ value_subst)
+      (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
+                   (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
+      (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).
+Proof.
+  apply inductive_implies_semantic.
+  (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
+  (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
+  apply full_compiler_preserving.
+Qed.
   
 (*TODO: let expressions too*)
 Definition swapfun :=
