@@ -79,7 +79,9 @@ Definition heap_cc_def : compiler :=
     {{e #"get" "v" (#"blk_subst" (#"snoc" #"forget" (#"pair" {ovar 1} #"hd")) "e")}}
   | {{e #"set" "G" "v" "v'" "e" }} =>
     {{e #"set" "v" "v'" "e" }} 
-  end.    
+  end.
+
+Require Import CompilerTools.
 
 (*TODO: make proof brief*)
 Derive heap_cc
@@ -119,32 +121,6 @@ Proof.
     reduce.
     repeat (term_cong; try term_refl; compute_eq_compilation).
     eapply eq_term_trans; cycle 1.
-    Ltac estep_under lang rule :=
-      eredex_steps_with lang rule
-      || (compute_eq_compilation; term_cong; (estep_under lang rule|| term_refl)).
-
-    Ltac eredex_steps_with lang name ::=
-  let mr := eval vm_compute in (named_list_lookup_err lang name) in
-  lazymatch mr with
-  | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-      lazymatch goal with
-      | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
-            let s := open_constr:((_ : subst)) in
-            (first [ unify_var_names s c | fail 100 "could not unify var names" ]); (first
-             [ replace (eq_term l c' t e1 e2) with (eq_term l c' tp [/s /] e1p [/s /] e2p [/s /]);
-                [  | f_equal; vm_compute; reflexivity ]
-             | fail 2 "could not replace with subst" ]);
-             eapply (eq_term_subst (l:=l) (c:=c') (s1:=s) (s2:=s) (c':=c));
-             [ try (solve [ cleanup_auto_elab ])
-             | eapply eq_subst_refl; try (solve [ cleanup_auto_elab ])
-             | eapply (eq_term_by l c name tp e1p e2p); try (solve [ cleanup_auto_elab ]) ]
-      end
-  | None => fail 100 "rule not found in lang"
-  end; repeat t.
-    Ltac rewrite_leftwards lang name :=
-      first [ eapply eq_term_trans; [estep_under lang name |]
-            | eapply eq_term_trans; [|estep_under lang name ]];
-      compute_eq_compilation.
     estep_under forget_eq_wkn' "forget_eq_wkn".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.

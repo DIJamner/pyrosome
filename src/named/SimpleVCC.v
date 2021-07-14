@@ -14,58 +14,6 @@ Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
 
 
-
-(*
-Definition value_cc_subst_def : lang :=
-  {[l
-      
-  [s|  
-      -----------------------------------------------
-      #"ty" srt
-  ];
-  [s| "G" : #"ty", "A" : #"ty"
-      -----------------------------------------------
-      #"val" "G" "A" srt
-  ];
-  [:| "G" : #"ty" 
-       -----------------------------------------------
-       #"id" : #"val" "G" "G"
-  ];
-  [:| "G" : #"ty", "G'" : #"ty", "g" : #"val" "G" "G'",
-       "A" : #"ty", "v" : #"val" "G'" "A"
-       -----------------------------------------------
-       #"val_subst" "g" "v" : #"val" "G" "A"
-  ];
-   
-  [:= "G" : #"ty", "A" : #"ty", "e" : #"val" "G" "A"
-       ----------------------------------------------- ("id_left")
-       #"val_subst" #"id" "e" = "e" : #"val" "G" "A"
-  ]; 
-  [:= "G" : #"ty", "A" : #"ty", "e" : #"val" "G" "A"
-       ----------------------------------------------- ("id_right")
-       #"val_subst" "e" #"id" = "e" : #"val" "G" "A"
-  ]; 
-   [:= "G1" : #"ty",
-         "G2" : #"ty",
-         "G3" : #"ty",
-         "G4" : #"ty",
-         "f" : #"val" "G1" "G2",
-         "g" : #"val" "G2" "G3",
-         "h" : #"val" "G3" "G4"
-         ----------------------------------------------- ("val_subst_assoc")
-         #"val_subst" "f" (#"val_subst" "g" "h") = #"val_subst" (#"val_subst" "f" "g") "h" : #"val" "G1" "G4"
-  ] ]}.
-
-
-Derive value_cc_subst
-       SuchThat (Pre.elab_lang []
-                               value_cc_subst_def
-                               value_cc_subst)
-       As value_cc_subst_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve value_cc_subst_wf : elab_pfs.
-*)
-
 Definition prod_cc_def : lang :=
   {[l
   [:| "G" : #"env", "A" : #"ty", "B" : #"ty",
@@ -167,10 +115,6 @@ Definition cc_lang_def : lang :=
       = "v"
       : #"val" (#"ext" #"emp" "A") (#"neg" "B")
   ];
-   (*
-  TODO: what is the proper eta law?
-  use subst as closure arg?
-    *)
   [:= "G" : #"env", "A" : #"ty",
       "v1" : #"val" "G" (#"neg" "A"),
       "v2" : #"val" "G" "A",
@@ -254,37 +198,8 @@ Definition prod_cc_compile_def : compiler :=
     {{e #"blk_subst"
         (#"snoc" #"wkn" (#"pair" (#"pair" {ovar 0} (#".1" "v")) (#".2" "v")))
         "e"}}
-    (*{{e #"pm_pair" "v"
-        (#"blk_subst"
-          (#"snoc" #"forget" (#"pair" (#"pair" {ovar 2} {ovar 1}) {ovar 0}))
-          "e")}}*)
   end.
 
-(*
-TODO: should be supersceded by eredex_steps_with
-(*TODO: only works if all variables appear on the rhs*)
-Ltac redex_steps_with_rhs lang name :=
-  let mr := eval compute in (named_list_lookup_err lang name) in
-      lazymatch mr with
-      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-        lazymatch goal with
-        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-          let ms := eval compute in (matches e2 e2p (map fst c)) in
-              lazymatch ms with
-              | Some ?s =>
-                replace (eq_term l c' t e1 e2)
-                  with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
-                [| reflexivity];
-                eapply eq_term_subst;
-                [| | eq_term_by name];
-                [solve [repeat t']|apply eq_subst_refl; solve [repeat t'] ]
-              | None => fail "rhs" e2 "does not match rule" e2p
-              end
-        | _ => fail "Goal not a term equality"
-        end
-      | _ => fail "Rule not found"
-      end.
- *)
 
 (*TODO: move to value_subst? could conflict w/ cmp_forget
   not currently used
