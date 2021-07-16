@@ -169,17 +169,9 @@ c |- e1 = e2 : t'
   
 End TermsAndRules.
 
-Inductive wf_lang : lang -> Prop :=
-| wf_lang_nil : wf_lang []
-| wf_lang_cons : forall l n r,
-    fresh n l ->
-    wf_lang l ->
-    wf_rule l r ->
-    wf_lang ((n,r)::l).
-  
 #[export] Hint Constructors eq_sort eq_term eq_subst eq_args
      wf_sort wf_term wf_subst wf_args wf_ctx
-     wf_rule wf_lang : lang_core.
+     wf_rule : lang_core.
 
 Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
   with eq_term_ind' := Minimality for eq_term Sort Prop
@@ -192,6 +184,7 @@ Combined Scheme judge_ind
          from eq_sort_ind', eq_term_ind', eq_subst_ind',
               wf_sort_ind', wf_term_ind', wf_args_ind',
               wf_ctx_ind'.
+  
 
 (*TODO: separate file for properties?*)
 
@@ -236,17 +229,6 @@ Lemma invert_wf_ctx_cons l c n t
   : wf_ctx l ((n,t)::c) <-> fresh n c /\ wf_ctx l c /\ wf_sort l c t.
 Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_wf_ctx_cons : lang_core.
-
-
-Lemma invert_wf_lang_nil
-  : wf_lang [] <-> True.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_lang_nil : lang_core.
-
-Lemma invert_wf_lang_cons n r l
-  : wf_lang ((n,r)::l) <-> fresh n l /\ wf_lang l /\ wf_rule l r.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_lang_cons : lang_core.
 
 
 Lemma invert_wf_sort_rule l c args
@@ -467,21 +449,6 @@ Qed.
 #[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
 
-
-Lemma rule_in_wf l r name
-  : wf_lang l -> In (name,r) l -> wf_rule l r.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve rule_in_wf : lang_core.
-
-Ltac use_rule_in_wf :=
-  match goal with
-    [ H : wf_lang ?l,
-          Hin : In (_,_) ?l |-_] =>
-    pose proof (rule_in_wf _ _ H Hin)
-  end.
-
 Lemma wf_subst_from_wf_args l c s c'
   : wf_args l c s c' ->
     wf_subst l c (with_names_from c' s) c'.
@@ -498,14 +465,6 @@ Proof.
   constructor; basic_core_crush.
 Qed.
 #[export] Hint Resolve id_args_wf : lang_core.
-
-
-  
-Lemma wf_lang_all_fresh l : wf_lang l -> all_fresh l.
-Proof.
-  induction l; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve wf_lang_all_fresh : lang_core.
 
 Lemma eq_subst_dom_eq_r l c c' s1 s2
   : eq_subst l c c' s1 s2 ->
@@ -716,13 +675,90 @@ Proof.
 Qed.
 #[export] Hint Resolve wf_rule_implies_ws : lang_core.
 
-Lemma wf_lang_implies_ws l
-  : wf_lang l -> ws_lang l.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
+Section Extension.
+  Context (l_pre : lang).
+
+  Inductive wf_lang_ext : lang -> Prop :=
+  | wf_lang_nil : wf_lang_ext []
+  | wf_lang_cons : forall l n r,
+      fresh n (l++l_pre) ->
+      wf_lang_ext l ->
+      wf_rule (l++l_pre) r ->
+      wf_lang_ext ((n,r)::l).
+  Hint Constructors wf_lang_ext : lang_core.
+
+  Lemma invert_wf_lang_nil
+    : wf_lang_ext [] <-> True.
+  Proof. solve_invert_constr_eq_lemma. Qed.
+  Hint Rewrite invert_wf_lang_nil : lang_core.
+
+  Lemma invert_wf_lang_cons n r l
+    : wf_lang_ext ((n,r)::l) <-> fresh n (l++l_pre) /\ wf_lang_ext l /\ wf_rule (l++l_pre) r.
+  Proof. solve_invert_constr_eq_lemma. Qed.
+  Hint Rewrite invert_wf_lang_cons : lang_core.
+
+  Lemma rule_in_wf l r name
+    : wf_lang_ext l -> In (name,r) l -> wf_rule (l ++ l_pre) r.
+  Proof.
+    induction 1; basic_goal_prep; basic_core_crush.
+  Qed.
+  Hint Resolve rule_in_wf : lang_core.
+  
+  Lemma wf_lang_ext_all_fresh l : wf_lang_ext l -> all_fresh l.
+  Proof.
+    induction l; basic_goal_prep; basic_core_crush.
+  Qed.
+  Hint Resolve wf_lang_ext_all_fresh : lang_core.
+  
+  Lemma wf_lang_ext_all_fresh_with_pre l
+    : all_fresh l_pre ->
+      wf_lang_ext l ->
+      all_fresh (l ++ l_pre).
+  Proof.
+    induction l; basic_goal_prep; basic_core_crush.
+  Qed.
+  Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
+
+  Lemma wf_lang_implies_ws l
+    : ws_lang l_pre -> wf_lang_ext l -> ws_lang (l++l_pre).
+  Proof.
+    induction 2; basic_goal_prep; basic_core_crush.
+  Qed.
+  Hint Resolve wf_lang_implies_ws : lang_core.
+
+End Extension.
+#[export] Hint Constructors wf_lang_ext : lang_core.
+#[export] Hint Rewrite invert_wf_lang_nil : lang_core.
+#[export] Hint Rewrite invert_wf_lang_cons : lang_core.
+#[export] Hint Resolve rule_in_wf : lang_core.
+#[export] Hint Resolve wf_lang_ext_all_fresh : lang_core.
+#[export] Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
 #[export] Hint Resolve wf_lang_implies_ws : lang_core.
 
+Ltac use_rule_in_wf :=
+    match goal with
+      [ H : wf_lang_ext _ ?l,
+            Hin : In (_,_) ?l |-_] =>
+      pose proof (rule_in_wf _ _ H Hin)
+    end.
+(*Notation so that extension lemmas still apply *)
+Notation wf_lang l := (wf_lang_ext [] l).
+
+
+Lemma wf_lang_implies_ws_noext l
+  : wf_lang l -> ws_lang l.
+Proof.
+  intro.
+  rewrite <- (app_nil_r l).
+  eauto with lang_core.
+  apply  wf_lang_implies_ws; auto.
+  compute; auto.
+Qed.
+Hint Resolve wf_lang_implies_ws_noext : lang_core.
+
+(*TODOTODOTODOTODO*)
+(*TODO: move to utils*)
+Hint Rewrite app_nil_r : utils.
 
 Local Lemma ctx_mono l name t'
   : wf_lang l ->
