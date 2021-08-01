@@ -138,11 +138,12 @@ Definition value_subst_def : lang :=
        ----------------------------------------------- ("snoc_wkn_hd")
         #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G" "A") (#"ext" "G" "A")
    ]
-   ]}.
+  ]}.
 
 
+(*TODO: use elab_lang notation?*)
 Derive value_subst
-       SuchThat (Pre.elab_lang [] value_subst_def value_subst)
+       SuchThat (elab_lang_ext [] value_subst_def value_subst)
        As value_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve value_subst_wf : elab_pfs.
@@ -187,7 +188,7 @@ Definition exp_subst_def : lang :=
 
 
 Derive exp_subst
-       SuchThat (Pre.elab_lang value_subst exp_subst_def exp_subst)
+       SuchThat (elab_lang_ext value_subst exp_subst_def exp_subst)
        As exp_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.

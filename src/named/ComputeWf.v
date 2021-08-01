@@ -63,7 +63,7 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
       eapply compute_noconv_wf_args_sound; eauto.
       use_rule_in_wf.
       safe_invert H.
-      auto.
+      basic_core_crush.
     }
     {
       destruct s; destruct c'; destruct fuel; basic_goal_prep; basic_core_crush.
@@ -142,7 +142,7 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
     eapply compute_noconv_wf_args_sound; eauto.
     use_rule_in_wf.
     safe_invert H.
-    auto.
+    basic_core_crush.
   Qed.
 
   Fixpoint compute_noconv_wf_ctx c fuel : option unit :=

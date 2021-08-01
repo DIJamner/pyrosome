@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core.
 Import Core.Notations.
-
+ 
 
 
 Section TermsAndRules.
@@ -150,39 +150,76 @@ Section TermsAndRules.
  
 End TermsAndRules.
 
-Inductive elab_lang : lang -> lang -> Prop :=
-| elab_lang_nil : elab_lang [] []
-| elab_lang_cons : forall l el n r er,
-    fresh n l ->
-    elab_lang l el ->
-    elab_rule el r er ->
-    elab_lang ((n,r)::l) ((n,er)::el).
+Section Extension.
+  Context (l_pre : lang).
+  
+  Inductive elab_lang_ext : lang -> lang -> Prop :=
+  | elab_lang_nil : elab_lang_ext [] []
+  | elab_lang_cons : forall l el n r er,
+      fresh n (el ++ l_pre) ->
+      elab_lang_ext l el ->
+      elab_rule (el++l_pre) r er ->
+      elab_lang_ext ((n,r)::l) ((n,er)::el).
+  Hint Constructors elab_lang_ext : lang_core.
 
+  Lemma elab_lang_preserves_fresh l el n
+    : elab_lang_ext l el ->
+      fresh n l ->
+      fresh n el.
+  Proof.
+    induction 1; basic_goal_prep; basic_core_crush.
+  Qed.
+  Local Hint Resolve elab_lang_preserves_fresh : lang_core.
+  
+  Local Hint Resolve elab_rule_implies_wf : lang_core.
+  
+  Lemma elab_lang_implies_wf l el
+    : elab_lang_ext l el ->
+      wf_lang_ext l_pre el.
+  Proof using.
+    induction 1; basic_goal_prep; basic_core_crush.
+  Qed.
+  Hint Resolve elab_lang_implies_wf : lang_core.
+  
+  Lemma elab_lang_cons_nth_tail n l el name r er el'
+    : nth_error l n = Some (name,r) ->
+      nth_tail n el = (name, er)::el' ->
+      fresh name (nth_tail (S n) l ++ l_pre) ->
+      elab_lang_ext (nth_tail (S n) l) (nth_tail (S n) el) ->
+      wf_lang l_pre ->
+      (wf_lang (nth_tail (S n) el++l_pre) ->
+       elab_rule (nth_tail (S n) el++ l_pre) r er) ->
+      elab_lang_ext (nth_tail n l) (nth_tail n el).
+  Proof.
+    revert el n el'.
+    induction l; destruct el; basic_goal_prep; basic_core_crush.
+    {
+      destruct n.
+      {
+        rewrite <-!as_nth_tail in *.
+        basic_goal_prep;
+          basic_core_crush.
+        constructor; basic_core_crush.
+      }
+      {
+        rewrite !nth_tail_S_cons in *.
+        eapply IHl; basic_core_crush.
+      }
+    }
+  Qed.
 
-#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang : lang_core.
+End Extension.
+
+#[export] Hint Resolve elab_lang_preserves_fresh : lang_core.
+
+#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang_ext : lang_core.
+(* TODO: are these hints worth it?
 #[export] Hint Resolve elab_sort_implies_wf : lang_core.
 #[export] Hint Resolve elab_term_implies_wf : lang_core.
 #[export] Hint Resolve elab_args_implies_wf : lang_core.
 #[export] Hint Resolve elab_ctx_implies_wf : lang_core.
-
-
-Lemma elab_lang_preserves_fresh c ec n
-  : elab_lang c ec ->
-    fresh n c ->
-    fresh n ec.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
-#[export] Hint Resolve elab_lang_preserves_fresh : lang_core.
-
-
-Local Hint Resolve elab_rule_implies_wf : lang_core.
-Lemma elab_lang_implies_wf l el
-  : elab_lang l el ->
-    wf_lang el.
-Proof using.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
+  Hint Resolve elab_rule_implies_wf : lang_core.
+*)
 #[export] Hint Resolve elab_lang_implies_wf : lang_core.
 
 (*TODO: improve connection between elab, prefix elab, and wf
@@ -231,7 +268,7 @@ Definition elab_ctx_lang_monotonicity l' l (lincll' : incl l l')
   := proj2 (proj2 (proj2 (elab_lang_mono lincll'))).
 #[export] Hint Resolve elab_ctx_lang_monotonicity : lang_core.
 
-
+(* TODO replace all of these with inclusion
 Local Lemma elab_lang_insert_mono l' l name r
   : (forall c t et,
            elab_sort (l' ++ l) c t et ->
@@ -275,7 +312,7 @@ Proof.
   constructor; basic_core_crush.
 Qed.
 #[export] Hint Resolve elab_rule_lang_insert_monotonicity : lang_core.
-
+                                                                
 (*TODO: move to utils*)
 Lemma invert_empty_app A (a b : list A)
   : [] = a++b <-> a = [] /\ b = [].
@@ -296,12 +333,12 @@ Hint Rewrite app_nil_l : utils.
 (*TODO: length side condition is awkward;
   make a more ergonomic interface?
 *)
-Lemma elab_lang_insert_wf l' el' l el r er s
-  : fresh s (l'++l) ->
+Lemma elab_lang_insert_wf l_pre l' el' l el r er s
+  : fresh s (l'++l++l_pre) ->
     elab_rule el r er ->
-    length l' = length el' ->
-    elab_lang (l' ++ l) (el' ++ el) ->
-    elab_lang (l' ++ (s,r)::l) (el' ++ (s,er)::el).
+    elab_lang_ext l_pre l el ->
+    elab_lang_ext (el++l_pre) l' el'->
+    elab_lang_ext l_pre (l' ++ (s,r)::l) (el' ++ (s,er)::el).
 Proof.
   revert el'.
   induction l'; inversion 3; basic_goal_prep; basic_core_crush.
@@ -312,7 +349,7 @@ Proof.
   apply IHl'; basic_core_crush.
 Qed.
 #[export] Hint Resolve elab_lang_insert_wf : lang_core.
-
+                                                                
 Theorem elab_lang_sum_wf l1 l2 l_pre el1 el2 el_pre
   : all_fresh (l1++l2) ->
     length l1 = length el1 ->
@@ -337,43 +374,12 @@ Proof.
    *)
   eapply all_fresh_insert_is_fresh; eauto.
 Qed.
+*)
 
-
-Lemma elab_lang_cons_nth_tail n l el name r er el'
-  : nth_error l n = Some (name,r) ->
-    nth_tail n el = (name, er)::el' ->
-    fresh name (nth_tail (S n) l) ->
-    elab_lang (nth_tail (S n) l) (nth_tail (S n) el) ->
-    (elab_lang (nth_tail (S n) l) (nth_tail (S n) el) ->
-     elab_rule (nth_tail (S n) el) r er) ->
-    elab_lang (nth_tail n l) (nth_tail n el).
-Proof.
-  revert el n el'.
-  induction l; destruct el; basic_goal_prep; basic_core_crush.
-  {
-    destruct n.
-    {
-      rewrite <-!as_nth_tail in *.
-      basic_goal_prep;
-        basic_core_crush.
-    }
-    {
-      rewrite !nth_tail_S_cons in *.
-      eauto.
-    }
-  }
-Qed.
 
 Ltac break_down_elab_lang :=
   repeat ((eapply elab_lang_cons_nth_tail; [vm_compute; reflexivity | vm_compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
   [solve [assumption | compute; apply elab_lang_nil]|..].
-
-Ltac setup_elab_lang_proof :=
-  match goal with
-  | |- elab_lang ?l ?el =>
-    rewrite (as_nth_tail l); rewrite (as_nth_tail el); break_down_elab_lang;
-      let ell := fresh "ell" in intro ell; pose proof (elab_lang_implies_wf ell); clear ell
-  end.
 
 
 Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.

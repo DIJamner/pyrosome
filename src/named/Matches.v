@@ -10,8 +10,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Elab ComputeWf.
-From Named Require ElabWithPrefix.
-Module Pre := ElabWithPrefix.
+
 Import Core.Notations.
 Import OptionMonad.
 
@@ -357,19 +356,7 @@ Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
 Ltac eq_term_by s := 
   eapply (eq_term_by _ _ s); solve_in.
 
-
-Lemma elab_with_prefix_nil_implies_elab l el
-  : ElabWithPrefix.elab_lang [] l el ->
-    elab_lang l el.
-Proof.
-  intro.
-  rewrite (app_nil_end l).
-  rewrite (app_nil_end el).
-  apply ElabWithPrefix.elab_prefix_implies_elab_lang;
-    basic_core_crush.
-Qed.
-
-
+(*
 Lemma elab_prefix_implies_elab_lang'
   : forall l_pre lp  l_pre' l el : lang,
     elab_lang lp l_pre ->
@@ -382,30 +369,29 @@ Proof.
   apply ElabWithPrefix.elab_prefix_implies_elab_lang; auto.
   eapply ElabWithPrefix.elab_prefix_monotonicity_lang; eauto.
 Qed.  
+*)
 
 
 (*TODO: this is still a tactic performance bottleneck;
   reduce number of calls to it
-*)
-Ltac prove_from_known_elabs :=
+ *)
+(*TODO: fix implementation*)
+Ltac prove_from_known_elabs := 
   unshelve
     (repeat
-    (try solve [apply elab_with_prefix_nil_implies_elab; eauto 1 with elab_pfs];
-     eauto 1 with elab_pfs;
-     match goal with
-     |[|- wf_lang _] =>
-      eapply elab_lang_implies_wf
-     |[|- elab_lang _ _] =>
-      eapply elab_prefix_implies_elab_lang'; [| shelve | |]
-     |[|- all_fresh _] => apply use_compute_all_fresh; vm_compute; reflexivity
-     end));
+       (eauto 1 with elab_pfs;
+        match goal with
+        |[|- wf_lang _] =>
+         eapply elab_lang_implies_wf
+        |[|- all_fresh _] => apply use_compute_all_fresh; vm_compute; reflexivity
+        end));
   solve [auto with utils
         | apply use_compute_incl_lang; vm_compute; reflexivity].
 
 
 (*TODO: for removing redundant goals from term_cong*)
 Lemma term_sorts_eq l c e t1
-  : wf_lang l ->
+  : wf_lang l -> (*TODO: can I weaken this?*)
     wf_ctx l c ->
     wf_term l c e t1 ->
     forall t2, wf_term l c e t2 ->
@@ -417,7 +403,7 @@ Proof.
     intros t2 wfe; revert t2 wfe Heqe.
     induction 1; basic_goal_prep;
     basic_core_crush.
-    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_all_fresh H) H3 H1) as H'.
+    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh H) H3 H1) as H'.
     safe_invert H'.
     basic_core_crush.
   }
@@ -544,7 +530,7 @@ Proof.
     induction H3;
       basic_goal_prep;
       basic_core_crush.
-    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_all_fresh wfl) H3 H) as H'.
+    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) H3 H) as H'.
     safe_invert H'.
 
     eapply eq_term_conv.
@@ -965,33 +951,36 @@ Create HintDb elab_pfs discriminated.
 (*TODO: is this still needed?*)
 Create HintDb auto_elab discriminated.
 #[export] Hint Resolve elab_lang_nil : auto_elab.
-#[export] Hint Resolve ElabWithPrefix.elab_prefix_implies_elab_lang : auto_elab.
-#[export] Hint Resolve Pre.elab_prefix_monotonicity_lang : auto_elab.
+(*TODO: do I need this?*)
+(* #[export] Hint Resolve Pre.elab_prefix_monotonicity_lang : auto_elab. *)
 #[export] Hint Resolve elab_lang_implies_wf : auto_elab.
-#[export] Hint Resolve elab_with_prefix_nil_implies_elab : auto_elab.
 
 #[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; vm_compute; reflexivity : auto_elab.
 
+
+
+Lemma elab_lang_nil_nth_tail l_pre l el
+  : l = [] ->
+    el = [] ->
+    elab_lang_ext l_pre l el.
+Proof.
+  intros; subst; constructor.
+Qed.
+
 Ltac split_rule_elab :=
-  eapply Pre.elab_lang_cons_nth_tail;
+  eapply elab_lang_cons_nth_tail;
   [ compute; reflexivity
   | compute; reflexivity
-  | apply use_compute_fresh; compute; reflexivity
-  | solve[prove_from_known_elabs]
-    || fail 2 "could not find elaboration proof for prefix"
-  | try solve [ compute; apply Pre.elab_lang_nil ] |].
-
+  | apply use_compute_fresh; compute; reflexivity |
+  | prove_from_known_elabs |].
 
 Ltac setup_elab_lang :=
   lazymatch goal with
-  | |- Pre.elab_lang ?pre ?l ?el =>
-    rewrite (as_nth_tail l);
-    rewrite (as_nth_tail el)
+  | |- elab_lang_ext ?pre ?l ?el => rewrite (as_nth_tail l); rewrite (as_nth_tail el)
   | _ => fail "Not a language extension wfness goal"
-  end;
-  repeat split_rule_elab;
-  (let ell := fresh "ell" in
-   intro ell; pose proof (elab_lang_implies_wf ell); clear ell).
+  end; repeat split_rule_elab;
+  [apply elab_lang_nil_nth_tail; compute; reflexivity | intro.. ].
+
 
 Ltac auto_elab :=
   setup_elab_lang;

@@ -735,6 +735,7 @@ End Extension.
 #[export] Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
 #[export] Hint Resolve wf_lang_implies_ws : lang_core.
 
+
 Ltac use_rule_in_wf :=
     match goal with
       [ H : wf_lang_ext _ ?l,
@@ -744,6 +745,15 @@ Ltac use_rule_in_wf :=
 (*Notation so that extension lemmas still apply *)
 Notation wf_lang l := (wf_lang_ext [] l).
 
+
+Lemma wf_lang_concat l1 l2
+  : wf_lang l1 ->
+    wf_lang_ext l1 l2 ->
+    wf_lang (l2 ++ l1).
+Proof.
+  induction 2; basic_goal_prep; basic_core_crush.
+Qed.
+#[export] Hint Resolve wf_lang_concat : lang_core.
 
 Lemma wf_lang_implies_ws_noext l
   : wf_lang l -> ws_lang l.
