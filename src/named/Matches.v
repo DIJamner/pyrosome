@@ -376,8 +376,15 @@ Qed.
   reduce number of calls to it
  *)
 (*TODO: fix implementation*)
-Ltac prove_from_known_elabs := 
-  unshelve
+Ltac prove_from_known_elabs :=  
+  repeat (lazymatch goal with
+          | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) =>
+            apply wf_lang_concat
+          | |- wf_lang_ext _ _ =>
+            solve[eapply elab_lang_implies_wf; eauto 1 with elab_pfs]
+          | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
+          end).
+  (*unshelve
     (repeat
        (eauto 1 with elab_pfs;
         match goal with
@@ -386,7 +393,7 @@ Ltac prove_from_known_elabs :=
         |[|- all_fresh _] => apply use_compute_all_fresh; vm_compute; reflexivity
         end));
   solve [auto with utils
-        | apply use_compute_incl_lang; vm_compute; reflexivity].
+        | apply use_compute_incl_lang; vm_compute; reflexivity].*)
 
 
 (*TODO: for removing redundant goals from term_cong*)
