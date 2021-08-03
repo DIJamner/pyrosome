@@ -132,34 +132,47 @@ First we define an inductively provable (and in fact decidable) property
 of elaborated compilers.
 *)
 
-(*TODO: this is an equal or stronger property (which?); includes le principles;
+Section Extension.
+  Context (cmp_pre : compiler).
+  (*TODO: this is an equal or stronger property (which?); includes le principles;
   formalize the relationship to those above and le semantic statements *)
-Inductive preserving_compiler (target : lang) : compiler -> lang -> Prop :=
-| preserving_compiler_nil : preserving_compiler target [] []
-| preserving_compiler_sort : forall cmp l n c args t,
-    preserving_compiler target cmp l ->
-    (* Notable: only uses the previous parts of the compiler on c *)
-    wf_sort target (compile_ctx cmp c) t ->
-    preserving_compiler target ((n,sort_case (map fst c) t)::cmp) ((n,sort_rule c args) :: l)
-| preserving_compiler_term : forall cmp l n c args e t,
-    preserving_compiler target cmp l ->
-    (* Notable: only uses the previous parts of the compiler on c, t *)
-    wf_term target (compile_ctx cmp c) e (compile_sort cmp t) ->
-    preserving_compiler target ((n, term_case (map fst c) e)::cmp) ((n,term_rule c args t) :: l)
-| preserving_compiler_sort_eq : forall cmp l n c t1 t2,
-    preserving_compiler target cmp l ->
-    (* Notable: only uses the previous parts of the compiler on c *)
-    eq_sort target (compile_ctx cmp c) (compile_sort cmp t1) (compile_sort cmp t2) ->
-    preserving_compiler target cmp ((n,sort_eq_rule c t1 t2) :: l)
-| preserving_compiler_term_eq : forall cmp l n c e1 e2 t,
-    preserving_compiler target cmp l ->
-    (* Notable: only uses the previous parts of the compiler on c *)
-    eq_term target (compile_ctx cmp c) (compile_sort cmp t) (compile cmp e1) (compile cmp e2) ->
-    preserving_compiler target cmp ((n,term_eq_rule c e1 e2 t) :: l).
-#[export] Hint Constructors preserving_compiler : lang_core.
+  Inductive preserving_compiler_ext (target : lang) : compiler -> lang -> Prop :=
+  | preserving_compiler_nil : preserving_compiler_ext target [] []
+  | preserving_compiler_sort : forall cmp l n c args t,
+      preserving_compiler_ext target cmp l ->
+      (* Notable: only uses the previous parts of the compiler on c *)
+      wf_sort target (compile_ctx (cmp ++ cmp_pre) c) t ->
+      preserving_compiler_ext target
+                              ((n,sort_case (map fst c) t)::cmp)
+                              ((n,sort_rule c args) :: l)
+  | preserving_compiler_term : forall cmp l n c args e t,
+      preserving_compiler_ext target cmp l ->
+      (* Notable: only uses the previous parts of the compiler on c, t *)
+      wf_term target (compile_ctx (cmp ++ cmp_pre) c) e (compile_sort (cmp ++ cmp_pre) t) ->
+      preserving_compiler_ext target
+                              ((n, term_case (map fst c) e)::cmp)
+                              ((n,term_rule c args t) :: l)
+  | preserving_compiler_sort_eq : forall cmp l n c t1 t2,
+      preserving_compiler_ext target cmp l ->
+      (* Notable: only uses the previous parts of the compiler on c *)
+      eq_sort target (compile_ctx (cmp ++ cmp_pre) c)
+              (compile_sort (cmp ++ cmp_pre) t1)
+              (compile_sort (cmp ++ cmp_pre) t2) ->
+      preserving_compiler_ext target cmp ((n,sort_eq_rule c t1 t2) :: l)
+  | preserving_compiler_term_eq : forall cmp l n c e1 e2 t,
+      preserving_compiler_ext target cmp l ->
+      (* Notable: only uses the previous parts of the compiler on c *)
+      eq_term target (compile_ctx (cmp ++ cmp_pre) c)
+              (compile_sort (cmp ++ cmp_pre) t)
+              (compile (cmp ++ cmp_pre) e1)
+              (compile (cmp ++ cmp_pre) e2) ->
+      preserving_compiler_ext target cmp ((n,term_eq_rule c e1 e2 t) :: l).
 
-(*TODO: put in compiler notations module*)
-(*TODO: here and for rule notations, add % consistently or remove everywhere*)
+End Extension.
+#[export] Hint Constructors preserving_compiler_ext : lang_core.
+
+(*TODO: add preserving_compiler notation once other files are updated *)
+
 Declare Custom Entry comp_case.
 
 Module Notations.
