@@ -344,6 +344,8 @@ Proof.
 Qed.
 Hint Resolve elab_preserving_compiler_monotonicity : auto_elab.
 
+Require Import Matches.
+
    Ltac estep_under lang rule :=
       eredex_steps_with lang rule
       || (compute_eq_compilation; term_cong; (estep_under lang rule|| term_refl)).
@@ -370,3 +372,84 @@ Hint Resolve elab_preserving_compiler_monotonicity : auto_elab.
       first [ eapply eq_term_trans; [estep_under lang name |]
             | eapply eq_term_trans; [|estep_under lang name ]];
       compute_eq_compilation.
+
+    
+(*TODO: put in right place*)
+
+Import SumboolNotations.
+
+Definition case_eq_dec (r1 r2 : compiler_case) : {r1 = r2} + {~ r1 = r2}.
+  refine(match r1, r2 with
+         | sort_case args t, sort_case args' t' =>
+           SB! (list_eq_dec string_dec args args') SB&
+           (sort_eq_dec t t')
+         | term_case args t, term_case args' t' =>
+           SB! (list_eq_dec string_dec args args') SB&
+           (term_eq_dec t t')
+         | _,_ => _
+         end); autorewrite with utils lang_core; try intuition fail.
+  all: right.
+  all: intros; basic_core_crush.
+Defined.
+
+Definition compute_incl_compiler (l1 l2 : compiler) :=
+  if incl_dec (pair_eq_dec string_dec case_eq_dec) l1 l2 then true else false.
+
+Lemma use_compute_incl_compiler l1 l2
+  : compute_incl_compiler l1 l2 = true -> incl l1 l2.
+Proof.
+  unfold compute_incl_compiler.
+  destruct (incl_dec _ l1 l2); easy.
+Qed.
+
+Ltac solve_incl := 
+  solve [auto with utils
+        | apply use_compute_incl_compiler; vm_compute; reflexivity
+        | apply use_compute_incl_lang; vm_compute; reflexivity].
+
+Ltac use_preserving_hint :=
+  eapply elab_preserving_compiler_embed;
+  [eapply elab_preserving_compiler_monotonicity;[shelve| | shelve |..];
+   [ eauto with elab_pfs| solve_incl|apply use_compute_all_fresh; vm_compute; reflexivity]
+  | solve_incl].
+    
+
+  Ltac solve_leaf :=    
+    eapply elab_preserving_compiler_embed;
+    [ solve[ eauto 1 with elab_pfs auto_elab] | solve_incl].
+
+  Ltac build_compiler_setup :=
+  eapply elab_compiler_implies_preserving;
+  [repeat eapply elab_compiler_prefix_implies_elab; eauto with elab_pfs auto_elab].
+
+  
+  Ltac solve_side_goal :=
+    lazymatch goal with
+    | [|- wf_lang _] =>
+      rewrite <-?app_assoc; solve[prove_from_known_elabs]
+    | [|- incl _ _ ] => solve_incl
+    | [|- all_fresh _ ] => apply use_compute_all_fresh; vm_compute; reflexivity
+    end.
+
+  
+  Ltac after_mono :=       
+       repeat lazymatch goal with
+              | [|-  ElabCompilers.elab_preserving_compiler _ _  (_++_) _] =>
+                eapply elab_compiler_prefix_implies_elab
+              | [|-  ElabCompilers.elab_preserving_compiler _ _  ?cmp _] =>
+                change cmp with (cmp++[]);
+                  eapply elab_compiler_prefix_implies_elab;
+                  [ solve [ constructor] |]
+              end;
+       solve_leaf.
+
+  Ltac solve_level2 :=    
+    eapply elab_preserving_compiler_monotonicity;
+      [|eapply elab_preserving_compiler_embed; [solve_leaf | ..] |..];
+      [ after_mono | solve_side_goal ..].
+
+  Ltac build_compiler :=
+    build_compiler_setup;
+    (solve_leaf || solve_level2).
+
+  
