@@ -174,6 +174,9 @@ Definition intrec {A} base rec i : A :=
 
 
 Module PArrayList <: (ArrayList Int63Natlike).
+
+  
+  Module Import Notations := (NatlikeNotations Int63Natlike).
   
   Record array_rec (A : Type) :=
     MkArr {
@@ -193,28 +196,31 @@ Module PArrayList <: (ArrayList Int63Natlike).
 
   Definition get {A} l := @get A l.(arr).
 
-  Definition copyNth {A} l i (l' : PArray.array A) : PArray.array A :=
+  Definition copy_nth {A} l i (l' : PArray.array A) : PArray.array A :=
     l'.[i <- l.[i]].
   
-  Definition copyUpTo {A} (l l' : PArray.array A) : int -> PArray.array A :=
-    intrec l (copyNth l').
+  Definition copy_up_to {A} (l l' : PArray.array A) : int -> PArray.array A :=
+    intrec l (copy_nth l').
 
   (*TODO: duplicated; refactor*)
   Definition max (x y : int) :=
-    if leb x y then y else x.
+    if x <=? y then y else x.
 
-  (*TODO: separate order notations so that I can use them here*)
-  Definition expandToContain {A} i '(MkArr l len_l) : array A :=
+  (* len_l is the length of the initiazed segment of l *)
+  Definition expand_to_len_parray {A} l old_len new_len : PArray.array A :=
     let backed_len := length l in
-    if ltb i backed_len then MkArr l (max i len_l)
-    else
-      let backed_len' := max (2 * backed_len)%int63 i in
+    if new_len <? backed_len then l else
+      let backed_len' := max (2 * backed_len)%int63 new_len in
       let default := PArray.get l backed_len in
-      MkArr (copyUpTo (PArray.make backed_len' default) l len_l) i.    
+      (copy_up_to (PArray.make backed_len' default) l old_len).
+  
+  Definition expand_to_contain {A} i '(MkArr l old_len) : array A :=
+    let new_len := max (i+1) old_len in
+    MkArr (expand_to_len_parray l new_len old_len) new_len.    
   
   (* Dynamically grows the array as necessary *)
   Definition set {A} l i (a : A) :=
-    let '(MkArr l len_l) := (expandToContain (i+1) l) in
+    let '(MkArr l len_l) := (expand_to_contain i l) in
     MkArr (set l i a) len_l.
 
   Definition length := @len.
@@ -224,19 +230,135 @@ Module PArrayList <: (ArrayList Int63Natlike).
 End PArrayList.
 
 (* TODO: prove ArrayList properties *)
+Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
 
-(*Testing*)
-Import PArrayList.
-Module Import N := (ArrayNotations Int63Natlike PArrayList).
+  Import PArrayList.
+  Import Int63Natlike.
 
-Open Scope int63.
-Compute make 4.
-Time Compute
-  let '(_,l) := (alloc (make 3) 2) in
-  let '(_,l) := (alloc l 2) in
-  let '(_,l) := (alloc l 2) in
-  let '(_,l) := (alloc l 2) in
-  let '(_,l) := (alloc l 2) in
-  l.
-Time Compute (make 0).[6555 <- 5]%int63.
+  Module Import Notations :=
+    (NatlikeNotations Int63Natlike)
+      <+ (ArrayNotations Int63Natlike PArrayList).
+
+  
+  Lemma length_copy_nth A (l l' : PArray.array A) i
+    : PArray.length (copy_nth l' i l) = PArray.length l.
+  Proof.
+    unfold copy_nth.
+    apply PArray.length_set.
+  Qed.
+
+  Lemma peano_rect_length A (l : PArray.array A) f p
+    : (forall p l, PArray.length (f p l) = PArray.length l) ->
+      PArray.length (Pos.peano_rect _ l f p) = PArray.length l.
+  Proof.
+    intros.
+    revert l.
+    revert dependent f.
+    induction p; intros; simpl in *; auto.
+    all: rewrite ?H;
+      rewrite !IHp;
+      [ apply H |];
+      intros;
+      rewrite !H;
+      reflexivity.
+  Qed.      
+    
+    
+  Lemma length_copy_up_to A (l l' : PArray.array A) i
+    : PArray.length (copy_up_to l l' i) = PArray.length l.
+  Proof.
+    unfold copy_up_to.
+    unfold intrec.
+    generalize (to_Z i) as z.
+    clear i.
+    destruct z; unfold posZrec; simpl; auto.
+    revert l l'.
+    eapply Pos.peano_rect.
+    all: intros; simpl in *; auto.
+    rewrite peano_rect_length;
+      intros; apply length_set.
+  Qed.
+
+  (*TODO: going to run into max_length here.
+    How should I work around? Refinements probably slow in vm_compute.
+   *)
+  Lemma expand_to_len_parray_length A (l : PArray.array A) old_len new_len
+    : le new_len (PArray.length (expand_to_len_parray l old_len new_len)).
+  Proof.
+    unfold expand_to_len_parray.
+    remember (new_len <? PArray.length l) as b; destruct b.
+    {
+      symmetry in Heqb.
+      rewrite ltb_lt in Heqb.
+      unfold lt in *; unfold le; lia.
+    }
+    {
+      rewrite length_copy_up_to.
+      rewrite length_make.
+      TODO: need new_len to be le max_length
+    case_match.
+    
+  
+  Lemma get_set_same : forall A t i (a:A), t.[i<-a].[i] = a.
+  Proof.
+    intros.
+    unfold set.
+    unfold get.
+    remember (expandToContain (i+1) t) as t'; destruct t'; simpl.
+    rewrite PArray.get_set_same; auto.
+
+    Lemma expandToContain_backed_len
+      : MkArr l len_l := expandToContain
+    simpl.
+    
+    
+  Axiom get_set_other : forall A t i j (a:A), i <> j -> t.[i<-a].[j] = t.[j].
+  
+  Axiom get_make : forall A (a:A) i, (make a).[i] = a.
+
+  Axiom get_alloc_same
+    : forall A l (a:A) l' i,
+      (i,l') = alloc l a ->
+      l'.[i] = a.
+
+  Axiom alloc_fresh
+    : forall A l (a:A) l' i,
+      (i,l') = alloc l a ->
+      (exists i', Idx.lt (length l) i') ->
+      Idx.lt (length l) i.
+
+  (*TODO: move to the right place*)
+  Definition max (x y : Idx.t) :=
+    if x <=? y then y else x.
+
+  Axiom length_set :
+    forall A t i (a : A),
+      length t.[i <- a] = max (length t) (i.+1).
+
+  Axiom length_make : forall A (a:A), length (make a) = Idx.zero.
+
+  (*
+   *
+   *
+   *
+   *
+   *
+   *)
+
+  
+  (*Testing*)
+
+  Open Scope int63.
+  Compute make 4.
+  Time Compute
+       let '(_,l) := (alloc (make 3) 2) in
+       let '(_,l) := (alloc l 2) in
+       let '(_,l) := (alloc l 2) in
+       let '(_,l) := (alloc l 2) in
+       let '(_,l) := (alloc l 2) in
+       l.
+  Time Compute (make 0).[6555 <- 5]%int63.
+
+End PArrayListProperties.
+  
 
