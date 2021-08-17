@@ -77,7 +77,7 @@ Module Type ArrayListSpec
     : forall A l (a:A) l' i,
       (i,l') = alloc l a ->
       (exists i', Idx.lt (length l) i') ->
-      Idx.lt (length l) i.
+      Idx.eq i (length l).
 
   (*TODO: move to the right place*)
   Definition max (x y : Idx.t) :=
