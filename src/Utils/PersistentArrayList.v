@@ -487,20 +487,77 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     clear len.
     intros.
     unfold posZrec.
+     
     destruct z;
       [pose proof (to_Z_bounded i); lia | | lia].
-    unfold N.recursion.
-    simpl.
+
     revert dependent i.
-    revert H.
-    revert l l_src.
-    induction p; intros; simpl in *; auto.
+    remember (N.pos p) as n.
+    revert dependent p.
+    apply N.right_induction with (z:=0%N) (n:= n); try lia.
     {
-      rewrite get_copy_nth_other.
-      rewrite copy_nth_comm.
-      (*
-      TODO: generalize one of the l_srcs?
-      generalize the fn? *)
+      intros x y Heq; subst.
+      reflexivity.
+    }
+    {
+      intros; simpl in *.
+      destruct n0; simpl in *.
+      {
+        enough (i = 0).
+        {
+          subst.
+          unfold copy_nth.
+          rewrite PArray.get_set_same; auto.
+          admit (*TODO: something about defaults?*).
+        }
+        {
+          destruct p; inversion Heqn; subst; clear Heqn.
+          apply to_Z_inj.
+          pose proof (to_Z_bounded i).
+          rewrite to_Z_0.
+          lia.
+        }
+      }
+      {
+        rewrite Pos.peano_rect_succ.
+        inversion Heqn; subst; clear Heqn.
+        case_order_fn (eqb i (of_pos p0)).
+        {
+          unfold eq in *; subst.
+          unfold copy_nth.
+          rewrite PArray.get_set_same.
+          reflexivity.
+
+          rewrite peano_rect_length.
+          rewrite length_set.
+          admit (*TODO: something about defaults?*).
+
+          intros.
+          rewrite length_set.
+          reflexivity.
+        }
+        {
+          unfold eq in *.
+          unfold copy_nth.
+          rewrite PArray.get_set_other; auto.
+          erewrite H0.
+          eauto.
+          2: eauto.
+          lia.
+          pose proof (fun pf => Heqb (to_Z_inj _ _ pf)).
+          (*A hack because change didn't work*)
+          remember (of_Z (Z.pos p0)) as b.
+          assert (b = of_pos p0).
+          rewrite Heqb0; simpl; reflexivity.
+          rewrite Heqb0 in H4.
+          rewrite <- H4 in H3.
+          rewrite of_Z_spec in H3.
+          rewrite Zmod_small in H3.
+          lia.
+          lia.
+        }
+      }
+    }
   Admitted.
 
   
