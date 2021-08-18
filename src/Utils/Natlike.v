@@ -32,6 +32,10 @@ Module Type Natlike.
   Axiom isTop_spec
     : forall a, isTop a = false <-> (exists b, lt a b).
 
+  Axiom natlike_ind
+    : forall P : t -> Prop,
+      P zero -> (forall n, P n -> P (succ n)) -> forall n, P n.
+
 End Natlike.
 
 (* Notations for conveniently working with natlike elements *)

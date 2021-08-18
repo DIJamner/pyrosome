@@ -156,6 +156,54 @@ Module Int63Natlike <: Natlike.
     lia.
   Qed.
 
+  
+  Lemma natlike_ind
+    : forall P : t -> Prop,
+      P zero -> (forall n, P n -> P (succ n)) -> forall n, P n.
+  Proof.
+    intros.
+    unfold zero in *.
+    rewrite <- of_to_Z.
+    assert (forall z, (0 <= z < wB)%Z -> P (of_Z z) -> P (of_Z (z+1)))%int63.
+    {
+      intros.
+      replace (of_Z (z+1)) with  (of_Z z + 1)%int63; eauto.
+      replace z with (z mod wB)%Z at 2.
+      rewrite <- of_Z_spec at 1.
+      replace (of_Z (φ (of_Z z)%int63 + 1)) with (of_Z (((φ (of_Z z)%int63 + 1) mod wB))).
+      rewrite <- to_Z_1.
+      rewrite <- add_spec; eauto.
+      rewrite of_to_Z; auto.
+      {
+        rewrite of_Z_spec.
+        rewrite <- of_to_Z .
+        rewrite of_Z_spec.
+        reflexivity.
+      }
+      rewrite Zmod_small; lia.
+    }
+    clear H0.
+    pose proof (to_Z_bounded n).
+    revert H0.
+    generalize (to_Z n).
+    intros z H0.
+    pose proof H0 as H2; revert H2.
+    apply Z.right_induction with (z := 0%Z) (n:=z).
+    {
+      intros x y xeq; subst; reflexivity.
+    }
+    intros; assumption.
+    2:lia.
+    {
+      clear z H0.
+      intros z Hnneg IH H0.
+      specialize (H1 z ltac:(lia)).
+      apply H1.
+      apply IH.
+      lia.
+    }
+  Qed.
+
 End Int63Natlike.
 
 
@@ -472,12 +520,29 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       }
     }
   Qed.
+
+
+  Lemma default_peano_rect A f p (l : PArray.array A)
+    : (forall p l,  default (f p l) = default l) ->
+      default (Pos.peano_rect _  l f p) = default l.
+  Proof.
+    revert f l; induction p; intros; simpl in *; auto;
+      rewrite ?H; rewrite IHp; intros; rewrite ?H; auto.
+  Qed.
+
+
+  (* needed to make Qed terminate reasonably*)
+  Local Strategy 1 [of_pos].
   
   Lemma get_copy_up_to_in_bounds A i len l l_src
-    : lt i len ->
+    : default l = default l_src ->
+      (forall i, le (PArray.length l) i ->
+                 PArray.get l_src i = default l) ->
+      lt i len ->
       PArray.get (copy_up_to l l_src len) i
       = @PArray.get A l_src i.
   Proof.
+    intros Hdefault_eq Hdefault_len.
     unfold copy_up_to.
     unfold intrec.
     unfold lt.
@@ -507,8 +572,23 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
         {
           subst.
           unfold copy_nth.
-          rewrite PArray.get_set_same; auto.
-          admit (*TODO: something about defaults?*).
+          case_order_fn ((0 <? PArray.length l)).
+          rewrite PArray.get_set_same; try rewrite ltb_lt; auto.
+          rewrite PArray.get_out_of_bounds.
+          {
+            case_order_fn ((0 <? PArray.length l_src)).
+            rewrite Hdefault_len.
+            rewrite default_set.
+            reflexivity.
+            unfold le in *; unfold lt in *; lia.
+            rewrite default_set.
+            rewrite PArray.get_out_of_bounds; auto.
+            rewrite <- ltb_lt in Heqb0.
+            apply Bool.not_true_is_false in Heqb0; auto.
+          }
+          rewrite length_set.
+          rewrite <- ltb_lt in Heqb.
+          apply Bool.not_true_is_false in Heqb; auto.
         }
         {
           destruct p; inversion Heqn; subst; clear Heqn.
@@ -525,16 +605,40 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
         {
           unfold eq in *; subst.
           unfold copy_nth.
-          rewrite PArray.get_set_same.
-          reflexivity.
 
-          rewrite peano_rect_length.
-          rewrite length_set.
-          admit (*TODO: something about defaults?*).
+          (*Need due to possible compute bug*)
+          remember (of_pos p0) as p0i.
+          case_order_fn ((p0i <? PArray.length l)).
+          {
+            rewrite PArray.get_set_same.
+            reflexivity.
+            rewrite peano_rect_length.
+            rewrite length_set.
+            rewrite ltb_lt; auto.
+            intros.
+            rewrite length_set.
+            reflexivity.
+          }
+          {
+            rewrite get_out_of_bounds.
+            rewrite default_set.
+            {
+              rewrite default_peano_rect.
+              rewrite default_set.
+              rewrite Hdefault_len; eauto.
+              unfold le; unfold lt in *; lia.
 
-          intros.
-          rewrite length_set.
-          reflexivity.
+              intros.
+              rewrite default_set; auto.
+            }
+            rewrite length_set.
+            rewrite peano_rect_length.
+            rewrite length_set.            
+            rewrite <- ltb_lt in Heqb.
+            apply Bool.not_true_is_false in Heqb; auto.
+            intros.
+            rewrite length_set; auto.
+          }
         }
         {
           unfold eq in *.
@@ -558,7 +662,37 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
         }
       }
     }
-  Admitted.
+  Qed.
+
+
+  
+  Lemma intrec_succ {A}
+    : forall (a : A) (f : int -> A -> A),
+      forall n, lt n max_int -> (intrec a f (succ n)) = (f n (intrec a f n)).
+  Proof.
+    intros a f n.
+    unfold intrec.
+    unfold posZrec.
+    rewrite succ_spec.
+    rewrite <- (of_to_Z n) at 1 3.
+    pose proof (to_Z_bounded n) as H; revert H.
+    generalize (to_Z n).
+    clear n.
+    destruct z; intros; try solve [lia | simpl in *; auto].
+    unfold lt in *.
+    replace ((Z.pos p + 1) mod wB)%Z with ((Z.pos p + 1))%Z.
+    simpl.
+    rewrite Pos.add_1_r; auto.
+    rewrite Pos.peano_rect_succ; auto.
+    
+    rewrite of_Z_spec in H0.
+    let x := eval vm_compute in (to_Z max_int) in 
+        change (to_Z max_int) with x in *.
+    let x := eval vm_compute in wB in 
+        change wB with x in *.
+    rewrite Zmod_small in H0; try lia.
+    rewrite Zmod_small; lia.
+  Qed.
 
   
   Lemma get_copy_up_to_out_of_bounds A i len l l_src
@@ -566,7 +700,59 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       PArray.get (copy_up_to l l_src len) i
       = @PArray.get A l i.
   Proof.
-  Admitted.
+    unfold copy_up_to.
+    unfold intrec.
+    unfold lt.
+    pose proof (to_Z_bounded len) as H.
+    revert H.
+    generalize (to_Z len).
+    clear len.
+    intros.
+    unfold posZrec.
+     
+    destruct z;
+      [pose proof (to_Z_bounded i); auto; lia | | lia].
+
+    revert dependent i.
+    remember (N.pos p) as n.
+    revert dependent p.
+    apply N.right_induction with (z:=0%N) (n:= n); try lia.
+    {
+      intros x y Heq; subst.
+      reflexivity.
+    }
+    {
+      intros.
+      rewrite N.recursion_succ; auto.
+      2: intros x y Heq; subst; reflexivity.
+
+      destruct n0.
+      {
+        simpl in *.
+        inversion Heqn; clear Heqn; subst.
+        unfold copy_nth.
+        rewrite PArray.get_set_other; auto.
+        intro H'.
+        enough (to_Z 0 <> to_Z i).
+        apply H3; f_equal; auto.
+        rewrite to_Z_0.
+        lia.
+      }
+      {
+        simpl in Heqn; inversion Heqn; subst; clear Heqn.
+        unfold copy_nth.
+        rewrite PArray.get_set_other.
+        erewrite H0.
+        3: eauto.
+        all: auto; try lia.
+        simpl.
+        intro; subst.
+        change (of_pos p0) with (of_Z (Z.pos p0)) in H2.
+        rewrite of_Z_spec in H2.
+        rewrite Zmod_small in H2; lia.
+      }
+    }
+  Qed.
 
   Lemma get_expand_parray A (l : PArray.array A) new_len i
     : PArray.get (expand_to_len_parray l (PArray.length l) new_len) i = PArray.get l i.
@@ -575,12 +761,25 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     case_order_fn (new_len <? PArray.length l).
     reflexivity.
     case_order_fn (i <? PArray.length l).
-    rewrite get_copy_up_to_in_bounds; auto.
-    rewrite get_copy_up_to_out_of_bounds; auto.
-    rewrite get_make.
-    rewrite !get_out_of_bounds; auto.
-    admit.
-    admit.
+    {
+      rewrite get_copy_up_to_in_bounds; auto.
+      rewrite default_make.
+      rewrite get_out_of_bounds; auto.
+      admit (*easy*).
+      {
+        intro i0.
+        rewrite !length_make.
+        rewrite default_make.
+        admit (*medium*).
+      }
+    }
+    {
+      rewrite get_copy_up_to_out_of_bounds; auto.
+      rewrite get_make.
+      rewrite !get_out_of_bounds; auto.
+      admit.
+      admit.
+    }
 Admitted.   
 
     
