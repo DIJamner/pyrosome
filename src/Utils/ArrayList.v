@@ -62,9 +62,28 @@ Module Type ArrayListSpec
        (Import AO : (ArrayList Idx)).
 
   Module Import Notations := (NatlikeNotations Idx) <+ (ArrayNotations Idx AO).
+
+  (* Include an arbitrary predicate for specifying a well-formed subset of the array type.
+     Ideally we would prove a parametricity result that shows all arrays constructed from
+     the arraylist interface have this property,
+     but this is difficult to do internally to Coq.
+     We could include the property in each array as a refinement type,
+     but this would include it in computations, which are supposed to be fast.
+   *)
+  Parameter well_formed : forall {A}, array A -> Prop.
+
+  Axiom make_well_formed : forall A (a:A), well_formed (make a).
+
+  Axiom set_well_formed : forall A t i (a:A), well_formed t -> well_formed t.[i<-a].
+
+  Axiom alloc_well_formed
+    : forall A t (a:A) i t',
+      well_formed t ->
+      (i,t') = alloc t a ->
+      well_formed t'.
   
-  Axiom get_set_same : forall A t i (a:A), t.[i<-a].[i] = a.
-  Axiom get_set_other : forall A t i j (a:A), i <> j -> t.[i<-a].[j] = t.[j].
+  Axiom get_set_same : forall A t i (a:A), well_formed t -> t.[i<-a].[i] = a.
+  Axiom get_set_other : forall A t i j (a:A), well_formed t -> i <> j -> t.[i<-a].[j] = t.[j].
   
   Axiom get_make : forall A (a:A) i, (make a).[i] = a.
 
@@ -88,6 +107,12 @@ Module Type ArrayListSpec
       length t.[i <- a] = max (length t) (i.+1).
 
   Axiom length_make : forall A (a:A), length (make a) = Idx.zero.
+
+  Axiom length_alloc
+    : forall A l (a:A) l' i,
+      (i,l') = alloc l a ->
+      (exists i', Idx.lt (length l) i') ->
+      Idx.eq (length l') (Idx.succ (length l)).
 
   (*TODO: rest of array axioms as necessary *)
   

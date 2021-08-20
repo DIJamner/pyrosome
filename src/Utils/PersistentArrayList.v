@@ -44,18 +44,114 @@ Module Int63Natlike <: Natlike.
     apply to_Z_bounded.
   Qed.
 
+
+  
+  (*TODO: move to a better location*)
+
+  Ltac2 pose_int_bounds () :=
+    let pose_bound_if_int hp :=
+        match hp with
+        | (i, _, ty) =>
+          let ic := hyp i in
+          lazy_match! ty with
+          | int => ltac1:(ic|- pose proof (to_Z_bounded ic)) (Ltac1.of_constr ic)
+          | PArray.array _ =>
+            ltac1:(ic|-
+                   pose proof (to_Z_bounded (PArray.length ic));
+                   let H := fresh "Hlen" in
+                   pose proof (leb_length _ ic) as H;
+                   rewrite leb_le in H)
+                             (Ltac1.of_constr ic)
+          | _ => ()
+          end
+        end in
+    List.iter pose_bound_if_int (hyps()).
+  
+  Ltac rewrite_ops :=
+    repeat lazymatch goal with
+           | [H : context [to_Z (succ _)]|-_] =>
+             rewrite succ_spec in H;
+             rewrite Zmod_small in H
+           | [H : context [to_Z (_+_)]|-_] =>
+             rewrite add_spec in H;
+             rewrite Zmod_small in H
+           | [H : context [to_Z (_*_)]|-_] =>
+             rewrite mul_spec in H;
+             rewrite Zmod_small in H
+           | [H : context [to_Z 1]|-_] =>
+             rewrite to_Z_1 in H
+           | [H : context [to_Z 0]|-_] =>
+             rewrite to_Z_1 in H
+           | [|- context [to_Z (succ _)]] =>
+             rewrite succ_spec;
+             rewrite Zmod_small
+           | [|- context [to_Z (_+_)]] =>
+             rewrite add_spec;
+             rewrite Zmod_small
+           | [|- context [to_Z (_*_)]] =>
+             rewrite mul_spec;
+             rewrite Zmod_small
+           | [|- context [to_Z 1]] =>
+             rewrite to_Z_1
+           | [|- context [to_Z 0]] =>
+             rewrite to_Z_1
+           end.
+
+  Ltac eval_const c :=
+    let x := eval vm_compute in c in 
+        change c with x in *.
+
+  Ltac eval_int_consts :=
+    eval_const (to_Z max_int);
+    eval_const (to_Z max_length);
+    eval_const (to_Z zero);
+    eval_const (to_Z 32);
+    eval_const (to_Z 2);
+    eval_const (to_Z 1);
+    eval_const (to_Z 0);
+    eval_const wB.
+
+  Ltac coerce_goal :=
+    lazymatch goal with
+    | [|- Int63.ltb _ _ = true] =>
+      rewrite ltb_lt
+    | [|- Int63.leb _ _ = true] =>
+      rewrite leb_le
+    | [|- Int63.eqb _ _ = true] =>
+      rewrite eqb_eq
+    | [|- Int63.eqb _ _ = false] =>
+      rewrite <-Bool.not_true_iff_false;
+      rewrite eqb_eq
+    | [|- Int63.ltb _ _ = false] =>
+      rewrite <-Bool.not_true_iff_false;
+      rewrite ltb_lt
+    | [|- Int63.leb _ _ = false] =>
+      rewrite <-Bool.not_true_iff_false;
+      rewrite leb_le
+    | [|- (?a = _)] =>
+      lazymatch type of a with
+      | int => apply to_Z_inj
+      | _ => idtac
+      end
+    | _ => idtac
+    end.
+    
+  Ltac int_lia_prep :=
+    coerce_goal;
+    unfold t in *;
+    ltac2:(enter pose_int_bounds);
+    unfold lt in*;
+    unfold eq in *;
+    unfold le in *;
+    (rewrite_ops + idtac);
+    eval_int_consts.
+
+  Ltac int_lia := int_lia_prep; lia.
   
   Lemma max_int_greatest
     : forall a, le a max_int.
   Proof.
-    unfold le.
-    intro a.
-    let x := eval vm_compute in  φ (max_int)%int63 in 
-        change ( φ (max_int)%int63) with x.
-    pose proof (to_Z_bounded a).
-    let x := eval vm_compute in  wB in 
-        change wB with x in H.
-    lia.
+    intros; int_lia.
   Qed.
 
   Lemma eq_max_int_no_greater
@@ -66,21 +162,14 @@ Module Int63Natlike <: Natlike.
     split; intros.
     {
       exists max_int.
-      unfold lt.
       pose proof (fun p => H (to_Z_inj _ _ p)).
-      change (?a -> False) with (not a) in H0.
-      pose proof (max_int_greatest a).
-      unfold le in*.
-      lia.
+      int_lia.
     }
     {
-      unfold lt in *.
       firstorder.
       intro.
       subst.
-      pose proof (max_int_greatest x).
-      unfold le in *.
-      lia.
+      int_lia.
     }
   Qed.
   
@@ -91,10 +180,8 @@ Module Int63Natlike <: Natlike.
   Proof.
     intro a.
     rewrite eq_max_int_no_greater.
-    unfold lt; split; [ intros [b H] | exists max_int; auto].
-    pose proof (max_int_greatest b).
-    unfold le in *.
-    lia.
+    split; [ intros [b H] | exists max_int; auto].
+    int_lia.
   Qed. 
 
   Lemma isTop_spec
@@ -104,22 +191,10 @@ Module Int63Natlike <: Natlike.
   Proof.
     intro a.
     rewrite <- eq_max_int_no_greater.
-    remember (isTop a) as b.
     unfold isTop in *.
-    destruct b; split; try intuition congruence.
-    {
-      symmetry in Heqb.
-      rewrite eqb_eq in Heqb.
-      unfold eq in *.
-      subst.
-      tauto.
-    }
-    {
-      intros _.
-      intro Heq; rewrite <- eqb_eq in Heq.
-      rewrite Heq in Heqb.
-      inversion Heqb.
-    }
+    rewrite <-Bool.not_true_iff_false.
+    rewrite eqb_eq.
+    intuition int_lia.
   Qed.
   
   Lemma succ_greater
@@ -130,17 +205,7 @@ Module Int63Natlike <: Natlike.
     intro a.
     rewrite <- eq_max_int_no_greater.
     rewrite neq_max_int_lt.
-    unfold lt.
-    rewrite succ_spec.
-    intros.
-    rewrite Z.mod_small.
-    lia.
-    let x := eval vm_compute in  φ (max_int)%int63 in 
-        change ( φ (max_int)%int63) with x in H.
-    pose proof (to_Z_bounded a).
-    let x := eval vm_compute in  wB in 
-        change wB with x.
-    lia.
+    intros; int_lia.
   Qed.
   
   Lemma succ_least
@@ -148,43 +213,47 @@ Module Int63Natlike <: Natlike.
       lt a b ->
       le (succ a) b.
   Proof.
-    unfold lt.
-    unfold le.
-    unfold succ.
-    unfold Int63.succ.
     intros.
-    rewrite add_spec.
-    pose proof (to_Z_bounded a).
-    rewrite to_Z_1.
-    pose proof (Z.mod_le (φ (a)%int63 + 1) wB ltac:(lia) wB_pos).
-    lia.
+    pose proof (Z.mod_le (φ (a)%int63 + 1) wB ltac:(int_lia) wB_pos).
+    int_lia.
   Qed.
-
   
   Lemma natlike_ind
     : forall P : t -> Prop,
-      P zero -> (forall n, P n -> P (succ n)) -> forall n, P n.
+      P zero -> (forall n, isTop n = false -> P n -> P (succ n)) -> forall n, P n.
   Proof.
     intros.
-    unfold zero in *.
+    (*TODO: handle in int_lia*)
+    unfold isTop in *.
     rewrite <- of_to_Z.
-    assert (forall z, (0 <= z < wB)%Z -> P (of_Z z) -> P (of_Z (z+1)))%int63.
+    assert (forall z, (0 <= z < wB - 1)%Z -> P (of_Z z) -> P (of_Z (z+1)))%int63.
     {
       intros.
-      replace (of_Z (z+1)) with  (of_Z z + 1)%int63; eauto.
-      replace z with (z mod wB)%Z at 2.
-      rewrite <- of_Z_spec at 1.
-      replace (of_Z (φ (of_Z z)%int63 + 1)) with (of_Z (((φ (of_Z z)%int63 + 1) mod wB))).
-      rewrite <- to_Z_1.
-      rewrite <- add_spec; eauto.
-      rewrite of_to_Z; auto.
-      {
-        rewrite of_Z_spec.
-        rewrite <- of_to_Z .
-        rewrite of_Z_spec.
-        reflexivity.
+      (*TODO: handle of_Z in int_lia*)
+      replace (of_Z (z+1)) with  (of_Z z + 1)%int63.
+      2:{        
+        replace z with (z mod wB)%Z at 2.
+        rewrite <- of_Z_spec at 1.
+        replace (of_Z (φ (of_Z z)%int63 + 1)) with (of_Z (((φ (of_Z z)%int63 + 1) mod wB))).
+        rewrite <- to_Z_1.
+        rewrite <- add_spec; eauto.
+        rewrite of_to_Z; auto.
+        {
+          rewrite of_Z_spec.
+          rewrite <- of_to_Z .
+          rewrite of_Z_spec.
+          reflexivity.
+        }
+        rewrite Zmod_small; lia.
       }
-      rewrite Zmod_small; lia.
+      apply H0; auto.
+      rewrite <-Bool.not_true_iff_false.
+      rewrite eqb_eq.
+      int_lia_prep.
+      rewrite neq_max_int_lt.
+      unfold lt.
+      rewrite of_Z_spec.
+      rewrite Zmod_small; try int_lia.
     }
     clear H0.
     pose proof (to_Z_bounded n).
@@ -285,8 +354,9 @@ Module PArrayList <: (ArrayList Int63Natlike).
       (copy_up_to (PArray.make backed_len' default) l old_len).
   
   Definition expand_to_contain {A} i '(MkArr l old_len extra) : array A :=
-    let new_len := max (i+1) old_len in
-    MkArr (expand_to_len_parray l (length l) new_len) new_len extra.    
+    (* extra max is in case i =? max_int *)
+    let new_len := max i (max (i+1) old_len) in
+    MkArr (expand_to_len_parray l old_len new_len) new_len extra.    
   
   (* Dynamically grows the array as necessary *)
   Definition set {A} l i (a : A) :=
@@ -341,62 +411,9 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     (NatlikeNotations Int63Natlike)
       <+ (ArrayNotations Int63Natlike PArrayList).
 
-  (*TODO: move to a better location*)
-
-  Ltac2 pose_int_bounds () :=
-    let pose_bound_if_int hp :=
-        match hp with
-        | (i, _, ty) =>
-          let ic := hyp i in
-          lazy_match! ty with
-          | int => ltac1:(ic|- pose proof (to_Z_bounded ic)) (Ltac1.of_constr ic)
-          | _ => ()
-          end
-        end in
-    List.iter pose_bound_if_int (hyps()).
-  
-  Ltac rewrite_ops :=
-    repeat lazymatch goal with
-           | [H : context [to_Z (_.+1)]|-_] =>
-             rewrite succ_spec in H;
-             rewrite Zmod_small in H
-           | [H : context [to_Z (_+_)]|-_] =>
-             rewrite add_spec in H;
-             rewrite Zmod_small in H
-           | [H : context [to_Z 1]|-_] =>
-             rewrite to_Z_1 in H
-           | [H : context [to_Z 0]|-_] =>
-             rewrite to_Z_1 in H
-           | [|- context [to_Z (_.+1)]] =>
-             rewrite succ_spec;
-             rewrite Zmod_small
-           | [|- context [to_Z (_+_)]] =>
-             rewrite add_spec;
-             rewrite Zmod_small
-           | [|- context [to_Z 1]] =>
-             rewrite to_Z_1
-           | [|- context [to_Z 0]] =>
-             rewrite to_Z_1
-           end.
-
-  Ltac eval_const c :=
-    let x := eval vm_compute in c in 
-        change c with x in *.
-  
-  Ltac int_lia_prep :=
-    unfold t in *;
-    ltac2:(enter pose_int_bounds);
-    unfold lt in*;
-    unfold eq in *;
-    unfold le in *;
-    rewrite_ops;
-    eval_const (to_Z max_int);
-    eval_const (to_Z max_length);
-    eval_const (to_Z zero);
-    eval_const (to_Z 0);
-    eval_const wB.
-
-  Ltac int_lia := int_lia_prep; lia.
+  Definition well_formed {A} '(MkArr l len_l _ : array A) :=
+    (le len_l (PArray.length l) /\ (forall i, le len_l i -> PArray.get l i = default l)) \/
+    (lt PArray.max_length len_l).
 
   
   Lemma length_copy_nth A (l l' : PArray.array A) i
@@ -469,7 +486,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
   (*TODO: going to run into max_length here.
     How should I work around? Refinements probably slow in vm_compute.
    *)
-  Lemma expand_to_len_parray_length A (l : PArray.array A) old_len new_len
+  Lemma expand_to_len_parray_length_old A (l : PArray.array A) old_len new_len
     : le (min new_len max_length) (PArray.length (expand_to_len_parray l old_len new_len)).
   Proof.
     unfold expand_to_len_parray.
@@ -477,6 +494,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     case_order_fn (new_len <=? max_length).
     {
       case_order_fn (new_len <? PArray.length l).
+      int_lia_prep.
       rewrite length_copy_up_to.
       rewrite length_make.
       case_order_fn (max (2 * PArray.length l) new_len <=? max_length).
@@ -492,57 +510,43 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       unfold max.
       case_order_fn ((2 * PArray.length l)%int63 <=? new_len).
     }
-  Qed.  
+  Qed.
+
   
-  Lemma get_set_same : forall A t i (a:A), t.[i<-a].[i] = a.
+  Lemma expand_to_len_parray_length A (l : PArray.array A) old_len new_len
+    : (PArray.length (expand_to_len_parray l old_len new_len))
+      = let backed_len := PArray.length l in
+        if new_len <? backed_len
+        then backed_len
+        else min (max (2 * backed_len) new_len) max_length.
+  Proof.
+    unfold expand_to_len_parray.
+    unfold min.
+    unfold max.
+    case_match_order_fn.
+    rewrite length_copy_up_to.
+    rewrite length_make.
+    repeat case_match_order_fn.
+  Qed.
+
+  
+  Lemma get_set_same : forall A t i (a:A), well_formed t -> t.[i<-a].[i] = a.
   Proof.
     intros A [] i a.
     unfold set.
     unfold get.
     unfold expand_to_contain.
     simpl.
-    unfold max.
-    
-    case_order_fn (i =? max_int).
-    {
-      unfold eq in *; subst; simpl.
-      case_order_fn (0 <=? len0); simpl; auto.
-    }
-    unfold eq in *.
-    case_match_order_fn.
-    case_order_fn (i+1 <=? len0).
-    case_match_order_fn.
-    {
-      apply PArray.get_set_same.
-      rewrite ltb_lt.
-      pose proof (expand_to_len_parray_length _ arr0 (PArray.length arr0) len0).
-      revert H.
-      unfold min.
-      case_match_order_fn.
-    }
-    {
-      assert (i <? i + 1 = true).
-      {
-        rewrite ltb_lt.
-        pose proof (fun pf => Heqb (to_Z_inj i max_int pf)).
-        int_lia.        
-      }
-      rewrite H.
-      apply PArray.get_set_same.
-      rewrite ltb_lt.
-      pose proof (expand_to_len_parray_length _ arr0 (PArray.length arr0) (i+1)).
-      revert H0.
-      unfold min.
-      rewrite ltb_lt in H.
-      case_match_order_fn; intro.
-    }
-    {
-      simpl.
-      rewrite eqb_refl.
-      reflexivity.
-    }
-  Qed.
-  
+    unfold max; unfold min;
+      intuition repeat case_match_order_fn.
+    all: try (simpl; rewrite eqb_refl; reflexivity).
+    all: try(
+      apply PArray.get_set_same;
+      rewrite expand_to_len_parray_length;
+      unfold max; unfold min;
+      intuition repeat case_match_order_fn).
+    all: revert Heqb1; repeat case_match_order_fn.  
+  Qed.  
 
   Lemma get_copy_nth_other A l_src l i j
     : i <> j -> @PArray.get A (copy_nth l_src i l) j = PArray.get l j.
@@ -749,7 +753,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
         rewrite intrec_succ; auto.
         unfold copy_nth at 1.
         rewrite PArray.get_set_other.
-        rewrite H; auto.
+        rewrite H0; auto.
         int_lia.
         assert (to_Z n <> to_Z i) by int_lia.
         congruence.
@@ -757,9 +761,12 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     }
   Qed.
 
-  Lemma get_expand_parray A (l : PArray.array A) new_len i
-    : PArray.get (expand_to_len_parray l (PArray.length l) new_len) i = PArray.get l i.
+  Lemma get_expand_parray A (l : PArray.array A) old_len new_len i
+    : lt i old_len ->
+      le old_len (PArray.length l) ->
+      PArray.get (expand_to_len_parray l old_len new_len) i = PArray.get l i.
   Proof.
+    intros.
     unfold expand_to_len_parray.
     case_order_fn (new_len <? PArray.length l).
     reflexivity.
@@ -784,7 +791,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
           rewrite ltb_lt.
           int_lia.
         }
-        revert H.
+        revert H1.
         unfold max.
         pose proof (leb_length _ l) as Hlen; rewrite leb_le in Hlen.
         case_order_fn (2 * PArray.length l <=? new_len);
@@ -795,63 +802,350 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
           int_lia.
       }
     }
-    {
-      rewrite get_copy_up_to_out_of_bounds; auto.
-      rewrite get_make.
-      rewrite !get_out_of_bounds; auto.
-      {
-        rewrite <-Bool.not_true_iff_false;
-          rewrite ltb_lt;
-          int_lia.
-      }
-      {
-        rewrite <-Bool.not_true_iff_false;
-          rewrite ltb_lt;
-          int_lia.
-      }
-    }
-  Qed. 
-    
-  Lemma get_set_other : forall A t i j (a:A), i <> j -> t.[i<-a].[j] = t.[j].
-  Proof.
-    intros A [] i j a Hij.
-    unfold set.
-    unfold get.
-    unfold expand_to_contain.
-    simpl.
-    case_order_fn (j <? max_length).
-    {
-      rewrite PArray.get_set_other; auto.
-      case_order_fn (j <? len0).
-      {
-        assert (j <? max (i + 1) len0 = true).
-        {
-          rewrite ltb_lt.
-          unfold max.
-          case_match_order_fn.
-          (*TODO: int lia should solve*) auto.
-          unfold le in*; unfold lt in *; lia.
-        }
-        rewrite H.
-        rewrite get_expand_parray; auto.
-      }
-      {
-        case_match_order_fn.
-        {
-          rewrite get_expand_parray.
-          rewrite !get_out_of_bounds; auto.
-          (*TODO: can't prove from here*)
-          admit.
-        }
-        rewrite default_set.
-        admit (*TODO: default lemma*).
-      }
-    }
-    {
-      admit (*TODO*).
-    }
-  Admitted.
+  Qed.
 
+  (*
+  Lemma get_expand_parray_out_of_bounds A (l : PArray.array A) old_len new_len i
+    : ~lt i old_len ->
+      le old_len (PArray.length l) ->
+      PArray.get (expand_to_len_parray l old_len new_len) i = PArray.default l.
+  Proof.
+    intros.
+    unfold expand_to_len_parray.
+    case_order_fn (new_len <? PArray.length l).
+    {
+      apply get_out_of_bounds.
+      int_lia.
+    }
+    case_order_fn (i <? PArray.length l).
+    {
+      rewrite get_copy_up_to_in_bounds; auto.
+      apply get_out_of_bounds; int_lia.
+      rewrite default_make.
+      rewrite get_out_of_bounds; auto; int_lia.
+      {
+        intro i0.
+        rewrite !length_make.
+        rewrite default_make.
+        intro.
+        rewrite !get_out_of_bounds; auto; try int_lia.
+        revert H1.
+        unfold max.
+        pose proof (leb_length _ l) as Hlen; rewrite leb_le in Hlen.
+        case_order_fn (2 * PArray.length l <=? new_len);
+          case_match_order_fn;
+          intros;
+          rewrite <-Bool.not_true_iff_false;
+          rewrite ltb_lt;
+          int_lia.
+      }
+      int_lia.
+      repeat case_match_order_fn.
+    }
+  Qed.
+   *)
+
+  
+  (*Well-formedness lemmas*)
+  Lemma make_well_formed : forall A (a:A), well_formed (make a).
+  Proof.
+    simpl; intros.
+    left.
+    rewrite length_make.
+    intuition repeat case_match_order_fn; try int_lia.
+    rewrite get_make; rewrite default_make; auto.
+  Qed.
+
+  
+  Lemma default_copy_nth A l l' i
+    : @default A (copy_nth l' i l) = default l.
+  Proof.
+    unfold copy_nth.
+    rewrite default_set; auto.
+  Qed.
+  
+  Lemma default_intrec A l f i
+    : (forall i l', default (f i l') = default l') ->
+      @default A (intrec l f i) = default l.
+  Proof.
+    revert l f; apply natlike_ind with (n:= i);
+      intros.
+    cbn; auto.
+
+    unfold isTop in *.
+    rewrite <-Bool.not_true_iff_false in H.
+    rewrite eqb_eq in H.
+    unfold eq in H.
+    rewrite neq_max_int_lt in H.
+    rewrite intrec_succ; try int_lia.
+    rewrite H1.
+    rewrite H0; auto.
+  Qed.
+    
+  Lemma default_copy_up_to A l l' len0
+    : @default A (copy_up_to l l' len0) = default l.
+  Proof.
+    revert l l'; apply natlike_ind with (n:= len0);
+      intros.
+    cbn; auto.
+    unfold copy_up_to.
+    unfold isTop in *.
+    
+    rewrite <-Bool.not_true_iff_false in H.
+    rewrite eqb_eq in H.
+    unfold eq in H.
+    rewrite neq_max_int_lt in H.
+    rewrite intrec_succ; try int_lia.
+    rewrite default_copy_nth.
+    rewrite default_intrec; auto.
+    {
+      intros; apply default_copy_nth.
+    }
+  Qed.
+  
+  Lemma set_well_formed : forall A t i (a:A), well_formed t -> well_formed t.[i<-a].
+  Proof.
+    intros A [] i a; simpl; intros.
+    rewrite length_set.
+    simpl; intros.
+    rewrite expand_to_len_parray_length; simpl.
+    unfold min in *; unfold max in *.
+    intuition idtac.
+    {
+      case_order_fn (i+1 <=? len0).
+      {
+        case_order_fn (i <=? len0).
+        {
+          left; intuition idtac.
+          repeat case_match_order_fn.
+          {
+            rewrite get_set_other.
+            (*TODO: make int_lia work directly*)
+            2:assert (to_Z i <> to_Z i0) by int_lia;
+              intro H'; apply H2; f_equal; exact H'.
+            rewrite default_set.
+            unfold expand_to_len_parray.
+            case_match_order_fn; eauto.
+            rewrite get_copy_up_to_out_of_bounds; try int_lia.
+            rewrite default_copy_up_to.
+            rewrite get_make.
+            rewrite default_make.
+            auto.
+          }
+        }
+        {
+          case_order_fn (max_int <=? i).
+        }
+      }
+      {
+        case_order_fn (max_int <=? i).
+        {
+          assert (i = max_int) by (apply to_Z_inj; int_lia); subst.
+          right; cbn; int_lia.
+        }
+        {
+          repeat (case_match_order_fn;[]).
+          case_order_fn (max_length <? i+1).
+          left.
+          case_match_order_fn.
+          {
+            split.
+            int_lia.
+            intros.
+            rewrite get_set_other.
+            (*TODO: make int_lia work directly*)
+            2:assert (to_Z i <> to_Z i0) by int_lia;
+              intro H'; apply H2; f_equal; exact H'.
+            rewrite default_set.
+            unfold expand_to_len_parray.
+            case_match_order_fn; eauto.
+            apply H1; int_lia.
+          }
+          {
+            split.
+            repeat case_match_order_fn.
+
+            intros.
+            rewrite get_set_other.
+            (*TODO: make int_lia work directly*)
+            2:assert (to_Z i <> to_Z i0) by int_lia;
+              intro H'; apply H2; f_equal; exact H'.
+            rewrite default_set.
+            unfold expand_to_len_parray.
+            case_match_order_fn; eauto.
+            rewrite get_copy_up_to_out_of_bounds; try int_lia.
+            rewrite default_copy_up_to.
+            rewrite get_make.
+            rewrite default_make.
+            auto.
+          }
+        }
+      }
+    }
+    {
+      repeat case_match_order_fn;
+      case_order_fn (max_length <? i);
+      left;
+      split; try int_lia; intros.
+      all: revert Heqb.
+      all: repeat case_match_order_fn.
+    }
+  Qed.
+
+  Lemma alloc_well_formed
+    : forall A t (a:A) i t',
+      well_formed t ->
+      (i,t') = alloc t a ->
+      well_formed t'.
+  Proof.
+    intros A t a i t'; unfold alloc; simpl.
+    intro wft; intro H; inversion H; subst; clear H.
+    apply set_well_formed; auto.
+  Qed.    
+
+  
+  Lemma get_set_other : forall A t i j (a:A), well_formed t -> i <> j -> t.[i<-a].[j] = t.[j].
+  Proof.
+    unfold well_formed.
+    unfold set.
+    unfold get.    
+    unfold expand_to_contain.
+    intros A [] i j a wft Hij.
+    simpl; intuition repeat (case_match_order_fn; simpl).
+    all: try(rewrite PArray.get_set_other;[| assumption]).
+    solve [rewrite get_expand_parray; auto].
+    all: rewrite ?default_set.
+    {
+      unfold expand_to_len_parray.
+      repeat case_match_order_fn.
+      apply H1; int_lia.
+      rewrite get_copy_up_to_out_of_bounds; auto; try int_lia.
+      rewrite get_make.
+      rewrite get_out_of_bounds; auto; int_lia.
+    }
+    {
+      unfold expand_to_len_parray.
+      repeat case_match_order_fn.
+      revert Heqb0; revert Heqb2; unfold max;
+        repeat case_match_order_fn.
+      revert Heqb0; repeat case_match_order_fn.
+    }
+    {
+      unfold expand_to_len_parray.
+      revert Heqb0; unfold max;
+        repeat case_match_order_fn; auto;
+        rewrite default_copy_up_to;
+        rewrite default_make;
+        intros; rewrite get_out_of_bounds; auto; int_lia.
+    }
+    {
+      f_equal.
+      rewrite !get_out_of_bounds.
+      {
+        unfold expand_to_len_parray.
+        repeat case_match_order_fn; auto;
+        rewrite default_copy_up_to;
+        rewrite default_make;
+        intros; rewrite get_out_of_bounds; auto; int_lia.
+      }
+      int_lia.
+      {
+        rewrite expand_to_len_parray_length.
+        simpl.
+        unfold min; unfold max.
+        repeat case_match_order_fn; auto.
+      }
+    }
+    {
+      unfold eq in *; subst; tauto.
+    }
+    {
+      f_equal.
+      rewrite !get_out_of_bounds.
+      {
+        unfold expand_to_len_parray.
+        repeat case_match_order_fn; auto;
+        rewrite default_copy_up_to;
+        rewrite default_make;
+        intros; rewrite get_out_of_bounds; auto; int_lia.
+      }
+      int_lia.
+      {
+        rewrite expand_to_len_parray_length.
+        simpl.
+        unfold min; unfold max.
+        repeat case_match_order_fn; auto.
+      }
+    }
+    {
+      unfold expand_to_len_parray.
+      repeat case_match_order_fn; auto.
+      rewrite get_copy_up_to_in_bounds; auto.
+      {
+        rewrite default_make.
+        rewrite get_out_of_bounds; auto; int_lia.
+      }
+      {
+        rewrite length_make.
+        rewrite default_make.
+        intros.
+        rewrite !get_out_of_bounds; auto; try int_lia.
+        revert H0; unfold max.
+        case_order_fn (i + 1 <=? len0).
+        case_order_fn (i <=? len0).
+        case_order_fn (2 * PArray.length arr0 <=? len0);
+          repeat case_match_order_fn; intros; auto; try int_lia.
+        repeat case_match_order_fn; intros; auto; try int_lia.
+        repeat case_match_order_fn; intros; auto; try int_lia.
+        revert Heqb5; 
+          repeat case_match_order_fn; intros; auto.
+      }
+    }
+    {
+      exfalso.
+      revert Heqb0; unfold max.
+      repeat case_match_order_fn; intros; auto.
+      revert Heqb0; unfold max.
+      repeat case_match_order_fn; intros; auto.
+    }
+    {
+      f_equal.
+      rewrite !get_out_of_bounds.
+      {
+        unfold expand_to_len_parray.
+        repeat case_match_order_fn; auto;
+        rewrite default_copy_up_to;
+        rewrite default_make;
+        intros; rewrite get_out_of_bounds; auto; int_lia.
+      }
+      int_lia.
+      {
+        rewrite expand_to_len_parray_length.
+        simpl.
+        unfold min; unfold max.
+        repeat case_match_order_fn; auto.
+      }
+    }
+    {
+      f_equal.
+      rewrite !get_out_of_bounds.
+      {
+        unfold expand_to_len_parray.
+        repeat case_match_order_fn; auto;
+        rewrite default_copy_up_to;
+        rewrite default_make;
+        intros; rewrite get_out_of_bounds; auto; int_lia.
+      }
+      int_lia.
+      {
+        rewrite expand_to_len_parray_length.
+        simpl.
+        unfold min; unfold max.
+        repeat case_match_order_fn; auto.
+      }
+    }
+    }
+  Qed.
           
   
   Lemma get_make : forall A (a:A) i, (make a).[i] = a.
@@ -863,22 +1157,19 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     rewrite get_out_of_bounds.
     apply default_make.
     compute.
-    rewrite <-Bool.not_true_iff_false;
-      rewrite ltb_lt;
-      int_lia_prep.
-    change (to_Z 32) with 32%Z.
-    lia.
+    int_lia.
   Qed.
 
   Lemma get_alloc_same
     : forall A l (a:A) l' i,
+      well_formed l ->
       (i,l') = alloc l a ->
       l'.[i] = a.
   Proof.
-    intros A l a l' i.
+    intros A l a l' i wfl.
     unfold alloc.
     intro H; inversion H; subst.
-    apply get_set_same.
+    apply get_set_same; auto.
   Qed.
 
   Lemma alloc_fresh
@@ -902,13 +1193,16 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     unfold max; repeat case_match_order_fn;
     unfold le in *; apply to_Z_inj; lia.
   Qed.    
-  
+
+  (*TODO: gets broken by max_int. TODO: some prior theorems are a bit too permissive
+   and work by happenstance.*)
   Lemma length_set :
     forall A t i (a : A),
-      length t.[i <- a] = max (length t) (i.+1).
+      length t.[i <- a] = (max i max (length t) (i.+1).
   Proof.
     intros A [] i a; unfold set; unfold length; simpl.
-    apply max_comm.
+    TODO: update 
+    rewrite <- max_comm.
   Qed.
 
   

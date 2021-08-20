@@ -34,7 +34,7 @@ Module Type Natlike.
 
   Axiom natlike_ind
     : forall P : t -> Prop,
-      P zero -> (forall n, P n -> P (succ n)) -> forall n, P n.
+      P zero -> (forall n, isTop n = false -> P n -> P (succ n)) -> forall n, P n.
 
 End Natlike.
 
