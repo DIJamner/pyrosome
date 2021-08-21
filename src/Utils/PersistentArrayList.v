@@ -1127,6 +1127,9 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       }
     }
     {
+      unfold eq in *; subst; tauto.
+    }
+    {
       f_equal.
       rewrite !get_out_of_bounds.
       {
@@ -1143,7 +1146,6 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
         unfold min; unfold max.
         repeat case_match_order_fn; auto.
       }
-    }
     }
   Qed.
           
@@ -1194,22 +1196,36 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     unfold le in *; apply to_Z_inj; lia.
   Qed.    
 
-  (*TODO: gets broken by max_int. TODO: some prior theorems are a bit too permissive
-   and work by happenstance.*)
   Lemma length_set :
     forall A t i (a : A),
-      length t.[i <- a] = (max i max (length t) (i.+1).
+      (exists i', lt i i') ->
+      length t.[i <- a] = max (length t) (i.+1).
   Proof.
-    intros A [] i a; unfold set; unfold length; simpl.
-    TODO: update 
-    rewrite <- max_comm.
+    intros A [] i a not_top; unfold set; unfold length; simpl.
+    rewrite <- isTop_spec in not_top.
+    unfold isTop in *.
+    simpl in *.
+    rewrite <-Bool.not_true_iff_false in not_top.
+    rewrite eqb_eq in not_top.
+    unfold max; repeat case_match_order_fn;
+      apply to_Z_inj;
+      unfold succ in *;
+      unfold Int63.succ in *;
+      try int_lia.
+    revert Heqb.
+    
+    unfold max; repeat case_match_order_fn; intros; try int_lia;
+      try (enough (lt i (i+1)) by int_lia;
+           apply succ_greater;
+           rewrite <- eq_max_int_no_greater; auto).
+    {
+      revert Heqb; repeat case_match_order_fn; intros.
+      enough (lt i (i+1)) by int_lia.
+      apply succ_greater.
+      rewrite <- eq_max_int_no_greater.
+      auto.
+    }
   Qed.
-
-  
-  (*TODO: move to the right place*)
-  Definition max (x y : int) :=
-    if x <=? y then y else x.
-
 
   Lemma length_make : forall A (a:A), length (make a) = zero.
   Proof.
@@ -1239,6 +1255,38 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
   Time Compute (make 0).[6555 <- 5]%int63.
    *)
 
+  
+  Lemma length_alloc
+    : forall A l (a:A) l' i,
+      (i,l') = alloc l a ->
+      (exists i', lt (length l) i') ->
+      eq (length l') (succ (length l)).
+  Proof.
+    intros A l a l' i.
+    unfold alloc.
+    intro H; inversion H; subst; clear H.
+    intro Htop.
+    rewrite length_set; auto.
+    rewrite <- isTop_spec in Htop.
+    unfold isTop in *.
+    rewrite <-Bool.not_true_iff_false in Htop.
+    rewrite eqb_eq in Htop.
+    unfold max.
+    destruct l; simpl in *.
+    case_match_order_fn; unfold eq; auto.
+    apply to_Z_inj.
+    unfold succ in *.
+    unfold Int63.succ in *.
+    enough (lt len0 (len0+1)) by int_lia.
+    apply succ_greater.
+    rewrite <- eq_max_int_no_greater.
+    auto.
+  Qed.
+    
+  (*TODO: move to the right place*)
+  Definition max x y :=
+    if x <=? y then y else x.
+  
 End PArrayListProperties.
   
 

@@ -82,13 +82,22 @@ Module Type ArrayListSpec
       (i,t') = alloc t a ->
       well_formed t'.
   
-  Axiom get_set_same : forall A t i (a:A), well_formed t -> t.[i<-a].[i] = a.
+  Axiom get_set_same : forall A t i (a:A),
+      well_formed t ->
+      (* Not needed for current implementations,
+         but should probably be added anyway.
+         Assigning to the top element should not be relied on.
+        (exists i', Idx.lt (length l) i') ->
+       *)
+      t.[i<-a].[i] = a.
+  
   Axiom get_set_other : forall A t i j (a:A), well_formed t -> i <> j -> t.[i<-a].[j] = t.[j].
   
   Axiom get_make : forall A (a:A) i, (make a).[i] = a.
 
   Axiom get_alloc_same
     : forall A l (a:A) l' i,
+      well_formed l ->
       (i,l') = alloc l a ->
       l'.[i] = a.
 
@@ -104,6 +113,7 @@ Module Type ArrayListSpec
 
   Axiom length_set :
     forall A t i (a : A),
+      (exists i', Idx.lt i i') ->
       length t.[i <- a] = max (length t) (i.+1).
 
   Axiom length_make : forall A (a:A), length (make a) = Idx.zero.
