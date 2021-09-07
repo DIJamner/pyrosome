@@ -1,3 +1,6 @@
+(*
+  Implementation based on Egg: https://dl.acm.org/doi/pdf/10.1145/3434304
+*)
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
@@ -106,9 +109,23 @@ Module ListOrderedType(O:OrderedType) <: OrderedType.
 
 End ListOrderedType.
 
+Fixpoint list_ltb {A} (ltb : A -> A -> bool) (a b : list A) : bool :=
+    match a,b with
+    | [], [] => false
+    | [], _ => true
+    | _, [] => false
+    | (a::x), (b::y) =>
+      (ltb a b) && (list_ltb ltb x y)
+    end.
+
 Module IntListOT := ListOrderedType Int63Natlike.
-Module ENode : OrderedType :=
-  PairOrderedType String_as_OT IntListOT.
+Module ENode.
+  Include (PairOrderedType String_as_OT IntListOT).
+
+  Definition ltb '(n1, args1) '(n2,args2) :=
+    (String.ltb n1 n2) && (list_ltb Int63.ltb args1 args2).
+    
+End ENode.
 
 Module EClass := MSets.MSetAVL.Make ENode.
 
@@ -155,7 +172,7 @@ End Int63Map.
 Module ENodeMap.
   (* Make this an instance so we can use single-curly-braces so we don't need to qualify field-names with [SortedList.parameters.] *)
   Import ENode.
-  Local Instance enode_strict_order: @SortedList.parameters.strict_order _ ltb.
+  Local Instance enode_strict_order: @SortedList.parameters.strict_order _ ENode.ltb.
   Admitted (*TODO: use existing strorder?*).
   
   Definition Build_parameters T :=
@@ -169,7 +186,9 @@ Module ENodeMap.
   
 End ENodeMap.
 
+
 Instance eclass_map_ty : Interface.map.map Int63Natlike.t EClass.t := Int63Map.map _.
+Instance hashcons_ty : Interface.map.map ENode.t Int63Natlike.t := ENodeMap.map _.
 
 Record egraph :=
   MkEGraph {
@@ -178,5 +197,103 @@ Record egraph :=
       hashcons : ENodeMap.map Int63Natlike.t
   }.
 
+Require Import Utils.Monad.
+
+Definition ST S A := S -> (S * A).
+
+Instance state_monad {S} : Monad (ST S) :=
+  {
+  Mret _ a := fun s => (s,a);
+  Mbind _ _ f ma :=
+    fun s =>
+      let (s,a) := ma s in
+      f a s
+  }.
+
+Fixpoint list_Mmap {M A B} `{Monad M} (f : A -> M B) (l : list A) : M (list B) :=
+  match l with
+  | [] => do ret []
+  | a::al' =>
+    do let b <- f a in
+       let bl' <- list_Mmap f al' in
+       ret (b::bl')
+       end.
+
+Definition unwrap_with_default {A} (default : A) ma :=
+  match ma with None => default | Some a => a end.
+  
+Section EGraphOps.
+
+  Local Notation "'ST'" := (ST egraph).
 
 
+  Definition find a : ST int :=
+    fun g =>
+    let (uf, fa) := UnionFind.find g.(id_equiv) a in
+    (MkEGraph uf g.(eclass_map) g.(hashcons), fa).
+
+  (*TODO: check this*)
+  Definition alloc : ST int :=
+    fun g =>
+    let (uf, a) := UnionFind.alloc g.(id_equiv) in
+    (MkEGraph uf g.(eclass_map) g.(hashcons), a).
+
+  Definition hashcons_lookup (n : ENode.t) : ST (option int) :=
+    fun g =>
+      let mi := map.get g.(hashcons) n in
+      (g, mi).
+
+  Definition set_eclass i (c : EClass.t) : ST unit :=
+    fun '(MkEGraph U M H) =>
+      let M := map.put M i c in
+      (MkEGraph U M H,tt).
+
+  Definition union_ids a b : ST unit :=
+    fun '(MkEGraph U M H) =>
+      let U := UnionFind.union U a b in
+      (MkEGraph U M H,tt).
+
+  (* return a default value rather than none
+     for ease-of-use
+   *)
+  Definition get_eclass i : ST EClass.t :=
+    fun g => (g, unwrap_with_default EClass.empty (map.get g.(eclass_map) i)).    
+
+  Definition canonicalize '(n,args) : ST ENode.t :=
+    do let args' <- list_Mmap find args in
+       ret (n,args').
+      
+  Definition eqb_ids a b : ST bool :=
+    do let fa <- (find a) in
+       let fb <- (find b) in
+       ret eqb fa fb.
+
+       
+  Definition lookup n : ST (option int) :=
+    do let n <- canonicalize n in
+       (hashcons_lookup n).
+       
+  Definition add (n : ENode.t) : ST int :=
+    do let mn <- lookup n in
+       match mn with
+       | Some i => do ret i
+       | None => 
+         do let i <- alloc in
+            let tt <- set_eclass i (EClass.singleton n) in
+            ret i
+            end.
+
+  Definition merge (a b : int) : ST unit :=
+    do let tt <- union_ids a b in
+       let ca <- get_eclass a in
+       let cb <- get_eclass b in
+       let c := EClass.union ca cb in
+       let tt <- set_eclass a c in
+       (set_eclass b c).
+
+  Definition match_result := list (named_list int * EClass.t).
+       
+  (*Definition ematch (e : term) : ST match_result *)
+    
+
+    
