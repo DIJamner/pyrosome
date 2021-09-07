@@ -323,7 +323,74 @@ Module Int63Natlike <: Natlike.
       cbv; intros; congruence.
     }
   Qed.
+
+  Lemma eq_equiv : Equivalence eq.
+  Proof.
+    unfold eq.
+    repeat constructor; auto.
+    congruence.
+  Qed.
+
   
+  Ltac case_order_fn e :=
+    let b := fresh "b" in
+    let H := fresh "Heqb" in
+    remember e as b eqn:H; destruct b; symmetry in H;
+    [| let H' := fresh in
+       rename H into H';
+       assert (~ e = true) as H by (rewrite H'; auto);
+       clear H'
+    ];
+    first [ rewrite leb_le in H
+          | rewrite ltb_lt in H
+          | rewrite eqb_eq in H];
+    try (int_lia).
+
+  
+  Ltac case_match_order_fn :=
+    match goal with
+    | [|- context[match ?e with _ => _ end]]
+      => case_order_fn e
+    end.
+
+  Lemma lt_strorder : StrictOrder lt.
+  Proof.
+    unfold lt.
+    repeat constructor; intros x y; int_lia.
+  Qed.
+
+  Lemma lt_compat : Proper (eq ==> eq ==> iff) lt.
+  Proof.
+    unfold lt.
+    unfold eq.
+    repeat constructor; intros; subst; try int_lia.
+  Qed.
+
+  Lemma eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
+  Proof.
+    intros.
+    unfold eq.
+    case_order_fn (x =? y)%int63; unfold eq in *; subst; auto.
+  Qed.
+
+  Lemma le_lteq : forall x y : t, le x y <-> lt x y \/ eq x y.
+  Proof.
+    intros; split; intros.
+    {
+      case_order_fn (eqb x y); eauto; left.
+      assert (to_Z x <> to_Z y).
+      {
+        intro.
+        apply Heqb.
+        apply to_Z_inj; auto.
+      }
+      int_lia.
+    }
+    {
+      intuition try int_lia.
+      unfold eq in *; subst; int_lia.
+    }
+  Qed.
 
 End Int63Natlike.
 
@@ -509,27 +576,6 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
   Definition min (x y : int) :=
     if x <=? y then x else y.
 
-  
-  Ltac case_order_fn e :=
-    let b := fresh "b" in
-    let H := fresh "Heqb" in
-    remember e as b eqn:H; destruct b; symmetry in H;
-    [| let H' := fresh in
-       rename H into H';
-       assert (~ e = true) as H by (rewrite H'; auto);
-       clear H'
-    ];
-    first [ rewrite leb_le in H
-          | rewrite ltb_lt in H
-          | rewrite eqb_eq in H];
-    try (int_lia).
-
-  
-  Ltac case_match_order_fn :=
-    match goal with
-    | [|- context[match ?e with _ => _ end]]
-      => case_order_fn e
-    end.
   
   (*TODO: going to run into max_length here.
     How should I work around? Refinements probably slow in vm_compute.

@@ -1,3 +1,5 @@
+-Q coqutil/src/coqutil coqutil
+
 -Q src/Utils Utils
 src/Utils/Utils.v
 src/Utils/Natlike.v
@@ -5,11 +7,12 @@ src/Utils/ArrayList.v
 src/Utils/PersistentArrayList.v
 src/Utils/UnionFind.v
 
--R src/named Named
+-Q src/named Named
 src/named/Term.v
 src/named/Rule.v
 src/named/Core.v
 src/named/Elab.v
+src/named/egraph/Defs.v
 src/named/Matches.v
 src/named/ComputeWf.v
 src/named/SimpleVSubst.v

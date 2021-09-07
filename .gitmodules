@@ -1,0 +1,3 @@
+[submodule "coqutil"]
+	path = coqutil
+	url = https://github.com/mit-plv/coqutil
