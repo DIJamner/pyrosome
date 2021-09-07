@@ -277,6 +277,54 @@ Module Int63Natlike <: Natlike.
     }
   Qed.
 
+  
+  Definition to_N i :=
+    match Int63.to_Z i with
+    | Z0 => 0%N
+    | Zpos p => Npos p
+    | Zneg _ => 0%N
+    end.
+
+  (*TODO: move to Natlike*)
+  (*TODO: may rely on lazy eval for short-circuiting performance.
+    Check behavior of vm_compute.
+   *)
+  Definition iter {A} (default : A)
+             (f : A -> A)
+             (idx : t): A :=
+    N.recursion default (fun _ => f) (to_N idx).
+
+  Lemma iter_zero : forall A (a:A) f, iter a f zero = a.
+  Proof.
+    reflexivity.
+  Qed.
+
+  Lemma to_N_succ i
+    : (exists b, lt i b) -> to_N (succ i) = N.succ (to_N i).
+  Proof.
+    intros.
+    destruct H.
+    unfold to_N.
+    remember (to_Z (succ i)) as z.
+    replace (to_Z (succ i)) with ((to_Z) i + 1)%Z in Heqz by int_lia.
+    destruct z; try int_lia.
+    remember (to_Z i) as z.
+    destruct z; try int_lia.
+  Qed.
+
+  Lemma iter_succ
+    : forall A (a:A) f i, (exists b, lt i b) -> iter a f (succ i) = f (iter a f i).
+  Proof.
+    intros.
+    unfold iter.
+    rewrite to_N_succ; auto.
+    rewrite N.recursion_succ; eauto.
+    {
+      cbv; intros; congruence.
+    }
+  Qed.
+  
+
 End Int63Natlike.
 
 
@@ -849,7 +897,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
   (*Well-formedness lemmas*)
   Lemma make_well_formed : forall A (a:A), well_formed (make a).
   Proof.
-    simpl; intros.
+    unfold well_formed; intros.
     left.
     rewrite length_make.
     intuition repeat case_match_order_fn; try int_lia.
@@ -1155,11 +1203,10 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     unfold get.
     unfold make.
     intros.
-    repeat (case_match_order_fn; simpl; auto).
+    repeat (case_match_order_fn; auto);
     rewrite get_out_of_bounds.
     apply default_make.
-    compute.
-    int_lia.
+    all:simpl in *; compute; auto; int_lia.
   Qed.
 
   Lemma get_alloc_same

@@ -19,6 +19,11 @@ Module Type Natlike.
    *)
   Parameter isTop : t -> bool.
 
+  (* short-circuiting iteration*)
+  Parameter iter
+    : forall {A},
+      A -> (A -> A) -> t -> A.
+
   Axiom zero_spec
     : forall a, le zero a.
 
@@ -32,6 +37,12 @@ Module Type Natlike.
   Axiom isTop_spec
     : forall a, isTop a = false <-> (exists b, lt a b).
 
+  Axiom iter_zero
+    : forall A (a:A) f, iter a f zero = a.
+
+  Axiom iter_succ
+    : forall A (a:A) f i, (exists b, lt i b) -> iter a f (succ i) = f (iter a f i).
+  
   Axiom natlike_ind
     : forall P : t -> Prop,
       P zero -> (forall n, isTop n = false -> P n -> P (succ n)) -> forall n, P n.

@@ -3,6 +3,7 @@ src/Utils/Utils.v
 src/Utils/Natlike.v
 src/Utils/ArrayList.v
 src/Utils/PersistentArrayList.v
+src/Utils/UnionFind.v
 
 -R src/named Named
 src/named/Term.v
