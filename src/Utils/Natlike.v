@@ -6,9 +6,9 @@ Require Import Orders.
 *)
 Module Type Natlike.
   
-  Include EqLtLe. (* subsumes HasT *)
+  Include OrderedTypeFull. (* subsumes HasT *)
   
-  Include OrderFunctions.
+  Include HasBoolOrdFuns <+ BoolOrdSpecs.
 
   Parameter zero : t.
   
