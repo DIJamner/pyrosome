@@ -72,21 +72,22 @@ Module UnionFind
   Definition max (x y : t) :=
     if leb x y then y else x.
 
+  (*TODO: needs to return the root id*)
   Definition union h x y :=
     let (h, cx) := find h x in
     let (h, cy) := find h y in
-    if eqb cx cy then h else
+    if eqb cx cy then (h, cx) else
       let (ra, pa, mr) := h in
       let rx := ra.[cx] in
       let ry := ra.[cy] in
       if ltb ry rx then
-        MkUF ra pa.[cy <- cx] mr
+        (MkUF ra pa.[cy <- cx] mr, cx)
       else if ltb rx ry then
-             MkUF ra pa.[cx <- cy] mr
+             (MkUF ra pa.[cx <- cy] mr, cy)
            else
-             MkUF ra.[cx <- succ rx]
+             (MkUF ra.[cx <- succ rx]
                   pa.[cy <- cx]
-                       (max mr (succ rx)).
+                       (max mr (succ rx)), cx).
 End UnionFind.
 
 (*TODO*)
@@ -109,7 +110,7 @@ Time Eval vm_compute in
                           (fun _  uf =>
                              let (uf, i) := alloc uf in
                              if ltb i 10 then uf else
-                               let uf := union uf i (sub i 10) in
+                               let (uf,_) := union uf i (sub i 10) in
                                uf)
                           100000 in
      snd (find uf 64828%int63).

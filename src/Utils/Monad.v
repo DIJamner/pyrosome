@@ -29,6 +29,12 @@ Notation "'let' p := e 'in' b" :=
   (let p := e in b)
     (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
+
+Notation "'if' c 'then' b1 'else' b2" :=
+  (if c then b1 else b2)
+    (in custom monadic_do at level 200, left associativity,
+        c constr, b1 custom monadic_do, b2 custom monadic_do).
+
 Notation "'ret' e" := (Mret e) (in custom monadic_do at level 90, e constr).
 
 Notation "e" := e (in custom monadic_do at level 90, e constr at level 0).

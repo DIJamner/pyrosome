@@ -127,7 +127,12 @@ Module ENode.
     
 End ENode.
 
-Module EClass := MSets.MSetAVL.Make ENode.
+
+Module NodeSets := MSets.MSetAVL.Make ENode.
+(*
+Module Parents := PairOrderedType ENode Int63Natlike.
+Module ParentSets := MSets.MSetAVL.Make Parents.
+*)
 
 
 Module Int63Map.
@@ -186,15 +191,35 @@ Module ENodeMap.
   
 End ENodeMap.
 
+Instance hashcons_ty : Interface.map.map ENode.t Int63Natlike.t := ENodeMap.map _.
+
+Module EClass.
+
+  (* Include a parent map in each eclass *)
+  Definition t : Type := NodeSets.t * ENodeMap.map Int63Natlike.t.
+
+  (*Definition union '(ns1,ps1) '(ns2,ps2) : t :=
+    (NodeSets.union ns1 ns2, (*TODO: need map union?*)map.union ps1 ps2).*)
+
+  Definition empty : t := (NodeSets.empty,map.empty).
+
+  (* Assumes no parents *)
+  Definition singleton n : t := (NodeSets.singleton n, map.empty).
+
+  Definition add_parent '(ns,ps) '(pn,pi) : t := (ns, map.put ps pn pi).
+  
+End EClass.
+
 
 Instance eclass_map_ty : Interface.map.map Int63Natlike.t EClass.t := Int63Map.map _.
-Instance hashcons_ty : Interface.map.map ENode.t Int63Natlike.t := ENodeMap.map _.
+
 
 Record egraph :=
   MkEGraph {
       id_equiv : UnionFind.union_find;
       eclass_map : Int63Map.map EClass.t;
-      hashcons : ENodeMap.map Int63Natlike.t
+      hashcons : ENodeMap.map Int63Natlike.t;
+      worklist : list Int63Natlike.t
   }.
 
 Require Import Utils.Monad.
@@ -218,9 +243,34 @@ Fixpoint list_Mmap {M A B} `{Monad M} (f : A -> M B) (l : list A) : M (list B) :
        let bl' <- list_Mmap f al' in
        ret (b::bl')
        end.
+       
+Fixpoint list_Miter {M A} `{Monad M} (f : A -> M unit) (l : list A) : M unit :=
+  match l with
+  | [] => do ret tt
+  | a::al' =>
+    do let b <- f a in
+       let tt <- list_Miter f al' in
+       ret tt
+       end.
 
 Definition unwrap_with_default {A} (default : A) ma :=
   match ma with None => default | Some a => a end.
+
+
+Definition map_Mfold {S K V A}
+           {MP : map.map K V}
+           (f : K -> V -> A -> ST S A)
+           (p : @map.rep _ _ MP) a : ST S A :=
+  fun g =>
+    map.fold
+      (fun '(g, a) k v => f k v a g)
+      (g, a) p.
+
+Definition map_Miter {S K V}
+           {MP : map.map K V}
+           (f : K -> V -> ST S unit)
+           (p : @map.rep _ _ MP) : ST S unit :=
+  map_Mfold (fun k v _ => f k v) p tt.
   
 Section EGraphOps.
 
@@ -228,36 +278,62 @@ Section EGraphOps.
 
 
   Definition find a : ST int :=
-    fun g =>
-    let (uf, fa) := UnionFind.find g.(id_equiv) a in
-    (MkEGraph uf g.(eclass_map) g.(hashcons), fa).
+    fun '(MkEGraph U M H W) =>
+      let (U, i) := UnionFind.find U a in
+      (MkEGraph U M H W,i).
 
-  (*TODO: check this*)
   Definition alloc : ST int :=
-    fun g =>
-    let (uf, a) := UnionFind.alloc g.(id_equiv) in
-    (MkEGraph uf g.(eclass_map) g.(hashcons), a).
+    fun '(MkEGraph U M H W) =>
+      let (U, i) := UnionFind.alloc U in
+      (MkEGraph U M H W,i).
 
   Definition hashcons_lookup (n : ENode.t) : ST (option int) :=
     fun g =>
       let mi := map.get g.(hashcons) n in
       (g, mi).
 
-  Definition set_eclass i (c : EClass.t) : ST unit :=
-    fun '(MkEGraph U M H) =>
+  Definition set_hashcons n i : ST unit :=
+    fun '(MkEGraph U M H W) =>
+      let H := map.put H n i in
+      (MkEGraph U M H W,tt).
+  
+  Definition remove_hashcons n : ST unit :=
+    fun '(MkEGraph U M H W) =>
+      let H := map.remove H n in
+      (MkEGraph U M H W,tt).
+  
+  Definition set_eclass (i: int) (c : EClass.t) : ST unit :=
+    fun '(MkEGraph U M H W) =>
       let M := map.put M i c in
-      (MkEGraph U M H,tt).
+      (MkEGraph U M H W,tt).
 
-  Definition union_ids a b : ST unit :=
-    fun '(MkEGraph U M H) =>
-      let U := UnionFind.union U a b in
-      (MkEGraph U M H,tt).
+  Definition union_ids a b : ST int :=
+    fun '(MkEGraph U M H W) =>
+      let (U, i) := UnionFind.union U a b in
+      (MkEGraph U M H W, i).
 
   (* return a default value rather than none
      for ease-of-use
    *)
-  Definition get_eclass i : ST EClass.t :=
-    fun g => (g, unwrap_with_default EClass.empty (map.get g.(eclass_map) i)).    
+  Definition get_eclass (i : int) : ST EClass.t :=
+    fun g => (g, unwrap_with_default EClass.empty (map.get g.(eclass_map) i)).
+
+  Definition add_to_worklist (i : int) : ST unit :=
+    fun '(MkEGraph U M H W) =>
+      let W := i::W in
+      (MkEGraph U M H W, tt).
+
+  (* Returns the worklist for iteration and removes it from the egraph *)
+  Definition pull_worklist : ST (list int) :=
+    fun '(MkEGraph U M H W) =>
+      (MkEGraph U M H [], W).
+    
+
+  (*adds (n,p) as a parent to i*)
+  Definition add_parent n p i : ST unit :=
+    do let ci : EClass.t <- get_eclass i in
+       (set_eclass i (EClass.add_parent ci (n,p))).
+       
 
   Definition canonicalize '(n,args) : ST ENode.t :=
     do let args' <- list_Mmap find args in
@@ -280,17 +356,78 @@ Section EGraphOps.
        | None => 
          do let i <- alloc in
             let tt <- set_eclass i (EClass.singleton n) in
+            (*TODO: something is off about add parent wrt the paper*)
+            let tt <- list_Miter (add_parent n i) (snd n) in
+            let tt <- set_hashcons n i in
             ret i
             end.
 
-  Definition merge (a b : int) : ST unit :=
-    do let tt <- union_ids a b in
-       let ca <- get_eclass a in
-       let cb <- get_eclass b in
-       let c := EClass.union ca cb in
-       let tt <- set_eclass a c in
-       (set_eclass b c).
+  Definition merge (a b : int) : ST int :=
+    do let ca <- find a in
+       let cb <- find b in
+       if eqb ca cb
+       then ret ca
+       else let i <- union_ids a b in
+            let tt <- add_to_worklist i in
+            ret i.
 
+       (*TODO: put in  Monad.v*)
+       Definition seq {M} `{Monad M} {A B} (mu : M A) (ma : M B) : M B :=
+         Mbind (fun _ => ma) mu.
+
+       Notation "e1 ; e2" :=
+         (seq e1 e2)
+           (in custom monadic_do at level 100, left associativity,
+               e1 custom monadic_do,
+               e2 custom monadic_do).
+
+
+       (*TODO: generalize, put in Monad.v*)
+       Notation "'for' kp vp 'from' m 'in' b" :=
+         (*TODO: remove need for explicit instance*)
+         (map_Miter (MP:=hashcons_ty) (fun kp vp => b) m)                       
+           (in custom monadic_do at level 200, left associativity,
+               kp pattern at level 0,
+               vp pattern at level 0,
+               m constr, b custom monadic_do).
+       
+       Notation "'for/fold' kp vp 'from' m [[ acc := a ]] 'in' b" :=
+         (*TODO: remove need for explicit instance*)
+         (map_Mfold (MP:=hashcons_ty) (fun kp vp acc => b) a m)                       
+           (in custom monadic_do at level 200, left associativity,
+               kp pattern at level 0,
+               vp pattern at level 0,
+               acc pattern at level 0,
+               m constr, b custom monadic_do).
+       
+  Definition repair i : ST unit :=
+    do let c <- get_eclass i in
+       let parents := snd c in
+       let tt <- do for pn pi from parents in
+                 let tt <- remove_hashcons pn in
+                 let pn <- canonicalize pn in
+                 let ci <- find pi in
+                 (set_hashcons pn ci) in
+       let new_parents <- do for/fold pn pi from parents
+                                [[new_parents := (map.empty : hashcons_ty)]] in
+                          let pn <- canonicalize pn in
+                          match map.get new_parents pn : option int return ST map.rep with
+                          | Some np => seq (merge pi np) (do ret new_parents)
+                          | None =>
+                            do let ci <- find pi in
+                               ret (map.put new_parents pn ci)
+                          end in
+       (set_eclass i (fst c, new_parents)).
+       
+  Definition rebuild : ST unit :=
+    do let W <- pull_worklist in
+       (*TODO: should worklist be a set? Egg has a dedup step.
+         For now we are not deduplicating here, but we probably should at some point
+        *)
+       let cW <- list_Mmap find W in
+       (list_Miter repair cW).
+       
+    
   Definition match_result := list (named_list int * EClass.t).
        
   (*Definition ematch (e : term) : ST match_result *)
