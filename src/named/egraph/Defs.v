@@ -4,7 +4,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool String List Orders.
+Require Import Bool String List Orders ZArith.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -119,11 +119,63 @@ Fixpoint list_ltb {A} (ltb : A -> A -> bool) (a b : list A) : bool :=
     end.
 
 Module IntListOT := ListOrderedType Int63Natlike.
-Module ENode.
-  Include (PairOrderedType String_as_OT IntListOT).
+
+
+Variant enode :=
+(*TODO: look into efficient ways to optimize empty if looking for a little performance(null?)*)
+| ctx_empty_node : enode
+| ctx_cons_node : string -> (*sort*) int -> (*tail*) int -> enode
+| con_node : string -> (*ctx *) int -> (*sort*) int -> list int -> enode
+| scon_node : string -> (*ctx *) int -> list int -> enode
+| var_node : string -> (*ctx *) int -> (*sort*) int -> enode.
+
+
+Axiom TODO: forall {A}, A.
+Module ENode <: OrderedType.
+  (*TODO: have separate scon node or optional type?*)
+
+  Definition t := enode.
+
+  (*TODO
+  Definition eq n1 n2 :=
+    match n1, n2 with
+    | ctx_empty_node, ctx_empty_node => true
+    | ctx_cons_node var1 srt1 tl1, ctx_cons_node var2 srt2 tl2 => 
+    | con_node : string -> (*ctx *) int -> (*sort*) int -> list int -> enode
+    | acon_node : string -> (*ctx *) int -> list int -> enode
+    | var_node : string -> (*ctx *) int -> (*sort*) int -> enode.
+      
 
   Definition ltb '(n1, args1) '(n2,args2) :=
     (String.ltb n1 n2) && (list_ltb Int63.ltb args1 args2).
+   *)
+
+  Definition eq := @eq t.
+  Definition eq_equiv : Equivalence eq := TODO.
+  Definition lt : t -> t -> Prop := TODO.
+
+  #[global]
+   Instance lt_strorder : StrictOrder lt.
+  Proof.
+  Admitted.
+
+  #[global]
+   Instance lt_compat : Proper (eq==>eq==>iff) lt.
+  Proof.
+  Admitted.
+
+  Definition compare : t -> t -> comparison := TODO.
+
+  Lemma compare_spec : forall x y, CompSpec eq lt x y (compare x y).
+  Proof.
+  Admitted.
+  
+  Definition eq_dec : forall x y, { eq x y }+{ ~eq x y }.
+  Proof.
+  Admitted.
+
+  Definition ltb : t -> t -> bool.
+  Admitted.
     
 End ENode.
 
@@ -327,18 +379,38 @@ Section EGraphOps.
   Definition pull_worklist : ST (list int) :=
     fun '(MkEGraph U M H W) =>
       (MkEGraph U M H [], W).
-    
+  
+  Definition is_worklist_empty : ST bool :=
+    fun g => (g, match g.(worklist) with [] => true | _ => false end).    
 
   (*adds (n,p) as a parent to i*)
   Definition add_parent n p i : ST unit :=
     do let ci : EClass.t <- get_eclass i in
        (set_eclass i (EClass.add_parent ci (n,p))).
        
+  Definition canonicalize n : ST ENode.t :=
+    match n with
+    | ctx_empty_node => do ret ctx_empty_node
+    | ctx_cons_node x srt tl =>
+      do let srt <- find srt in
+         let tl <- find tl in
+         ret ctx_cons_node x srt tl      
+    | con_node name ctx srt args =>
+      do let ctx <- find ctx in
+         let srt <- find srt in
+         let args <- list_Mmap find args in       
+         ret con_node name ctx srt args     
+    | scon_node name ctx args =>
+      do let ctx <- find ctx in
+         let args <- list_Mmap find args in       
+         ret scon_node name ctx args
+    | var_node x ctx srt =>
+      do let ctx <- find ctx in
+         let srt <- find srt in      
+         ret var_node x ctx srt
+    end.
 
-  Definition canonicalize '(n,args) : ST ENode.t :=
-    do let args' <- list_Mmap find args in
-       ret (n,args').
-      
+         
   Definition eqb_ids a b : ST bool :=
     do let fa <- (find a) in
        let fb <- (find b) in
@@ -348,6 +420,28 @@ Section EGraphOps.
   Definition lookup n : ST (option int) :=
     do let n <- canonicalize n in
        (hashcons_lookup n).
+
+  Definition add_parent_to_children n i : ST unit :=
+    match n with
+    | ctx_empty_node => do ret tt
+    | ctx_cons_node x srt tl =>
+      do let tt <- add_parent n i srt in
+         let tt <- add_parent n i tl in
+         ret tt     
+    | con_node name ctx srt args =>
+      do let tt <- add_parent n i ctx in
+         let tt <- add_parent n i srt in
+         let args <- list_Miter (add_parent n i) args in
+         ret tt
+    | scon_node name ctx args =>
+      do let tt <- add_parent n i ctx in
+         let args <- list_Miter (add_parent n i) args in
+         ret tt
+    | var_node x ctx srt =>
+      do let tt <- add_parent n i ctx in
+         let tt <- add_parent n i srt in
+         ret tt
+    end.
        
   Definition add (n : ENode.t) : ST int :=
     do let mn <- lookup n in
@@ -357,7 +451,7 @@ Section EGraphOps.
          do let i <- alloc in
             let tt <- set_eclass i (EClass.singleton n) in
             (*TODO: something is off about add parent wrt the paper*)
-            let tt <- list_Miter (add_parent n i) (snd n) in
+            let tt <- add_parent_to_children n i in
             let tt <- set_hashcons n i in
             ret i
             end.
@@ -418,19 +512,109 @@ Section EGraphOps.
                                ret (map.put new_parents pn ci)
                           end in
        (set_eclass i (fst c, new_parents)).
-       
-  Definition rebuild : ST unit :=
-    do let W <- pull_worklist in
-       (*TODO: should worklist be a set? Egg has a dedup step.
-         For now we are not deduplicating here, but we probably should at some point
-        *)
-       let cW <- list_Mmap find W in
-       (list_Miter repair cW).
-       
-    
-  Definition match_result := list (named_list int * EClass.t).
-       
-  (*Definition ematch (e : term) : ST match_result *)
-    
 
-    
+  Definition rebuild_aux : N -> ST unit :=
+    N.recursion
+      (Mret tt)
+      (fun _ rec =>
+         do let (is_empty : bool) <- is_worklist_empty in
+            if is_empty then ret tt
+            else
+              let tt <- rec in
+              let W <- pull_worklist in
+              (*TODO: should worklist and/or cW be a set? Egg has a dedup step.
+                For now we are not deduplicating here, but we probably should at some point
+               *)
+              let cW <- list_Mmap find W in
+              (list_Miter repair cW)).
+                               
+  (* TODO: need to track  I = ~=\=_node to use as fuel
+   *)
+  Definition rebuild : ST unit :=
+    do let incong_bound := 100 in
+       (rebuild_aux 100).
+       
+  Definition esubst := named_list int.
+  Definition match_result := list (esubst * EClass.t).
+
+  
+
+  (*Used as an intermediate form in equality saturation *)
+  Unset Elimination Schemes.
+  Inductive eterm : Set :=
+  (* variable name *)
+  | evar : string -> eterm
+  (* Rule label, list of subterms*)
+  | econ : string -> list eterm -> eterm
+  (* reference to an existing node in the egraph *)
+  | eref : int -> eterm.
+  Set Elimination Schemes.
+
+  (* TODO: zero is a questionable default*)
+  Definition esubst_lookup (s : esubst) (n : string) : int :=
+    named_list_lookup Int63Natlike.zero s n.
+
+  Arguments esubst_lookup !s n/.
+
+  
+  Fixpoint to_eterm_var_map (f : string -> eterm) (e : term) : eterm :=
+    match e with
+    | var x => f x
+    | con n s => econ n (map (to_eterm_var_map f) s)
+    end.
+
+  Arguments to_eterm_var_map f !e /.
+
+  Definition eterm_subst (s : esubst) e : eterm :=
+    to_eterm_var_map (fun n => eref (esubst_lookup s n)) e.
+
+  Arguments eterm_subst s !e /.
+
+  
+  Fixpoint add_eterm (e : eterm) : ST int :=
+    match e with
+    | evar x => do ret Int63Natlike.zero(*TODO: how to treat adding a var?*)
+    | econ n s =>
+      do let args <- list_Mmap add_eterm s in
+         (add (n,args))
+    | eref i => do ret i
+    end.
+                       
+  Axiom TODO : forall {A}, A.
+
+
+  (*TODO: how to treat type info on vars? *)
+  (*TODO: use sections earlier to make list_Mmap termination check work *)
+  Fixpoint ematch (e : term) : ST match_result :=
+    match e with
+    | var x => TODO
+    | con n s =>
+      do let ematch_s <- list_Mmap ematch s in
+         TODO
+         end.
+
+
+                                    
+         (*Queries I want in the end:*)
+
+         (* uses egraph saturate_and_compare_eq to determine equivalences,
+            checks wfness of each subterm, and adds if wf
+
+            w/ this API, ctx nodes seem reasonable
+          *)
+         Parameter add_and_check_wf_term : lang -> ctx -> term -> ST (option int).
+         Parameter add_and_check_wf_sort : lang -> ctx -> term -> ST (option int).
+         Parameter get_term : int -> ST (option term).
+         Parameter get_ctx_of_term : int -> ST (option ctx).
+         Parameter get_sort_of_term : int -> ST (option sort).
+         Parameter get_sort : int -> ST (option sort).
+
+         (* one of these two *)
+         Parameter saturate : lang -> ST unit.
+         Parameter saturate_until_eq : lang -> int -> int -> ST bool.
+
+         (* assumes saturation *)
+         Definition compare_eq l i1 i2 : ST bool :=
+           do let ci1 <- find i1 in
+              let ci2 <- find i2 in
+              ret (eqb i1 i2).

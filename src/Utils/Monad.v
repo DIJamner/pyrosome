@@ -24,7 +24,7 @@ Notation "p <?- e ; b" :=
     (in custom monadic_do at level 90, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 *)
 
-
+(*TODO: this notation prints too readily*)
 Notation "'let' p := e 'in' b" :=
   (let p := e in b)
     (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
