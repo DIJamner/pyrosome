@@ -24,9 +24,9 @@ Module Int63Natlike <: Natlike.
     destruct (BinInt.Z.compare_spec φ (x)%int63 φ (y)%int63); auto using to_Z_inj.
   Qed.
 
-  Definition eqb := eqb.
-  Definition ltb := ltb.
-  Definition leb := leb.
+  Definition eqb := Int63.eqb.
+  Definition ltb := Int63.ltb.
+  Definition leb := Int63.leb.
   
   Definition eqb_eq : forall x y : int, eqb x y = true <-> eq x y := eqb_spec.
   Definition ltb_lt : forall x y : int, ltb x y = true <-> lt x y := ltb_spec.
@@ -34,9 +34,9 @@ Module Int63Natlike <: Natlike.
 
   Definition zero : int := 0.
 
-  Definition succ : int -> int := succ.
+  Definition succ : int -> int := Int63.succ.
 
-  Definition isTop i :=
+  Definition is_top i :=
     eqb i max_int.
 
   Lemma zero_spec : forall i, le zero i.
@@ -184,14 +184,14 @@ Module Int63Natlike <: Natlike.
     int_lia.
   Qed. 
 
-  Lemma isTop_spec
+  Lemma is_top_spec
     : forall a,
-      isTop a = false
+      is_top a = false
       <-> (exists b, lt a b).
   Proof.
     intro a.
     rewrite <- eq_max_int_no_greater.
-    unfold isTop in *.
+    unfold is_top in *.
     rewrite <-Bool.not_true_iff_false.
     rewrite eqb_eq.
     intuition int_lia.
@@ -220,11 +220,11 @@ Module Int63Natlike <: Natlike.
   
   Lemma natlike_ind
     : forall P : t -> Prop,
-      P zero -> (forall n, isTop n = false -> P n -> P (succ n)) -> forall n, P n.
+      P zero -> (forall n, is_top n = false -> P n -> P (succ n)) -> forall n, P n.
   Proof.
     intros.
     (*TODO: handle in int_lia*)
-    unfold isTop in *.
+    unfold is_top in *.
     rewrite <- of_to_Z.
     assert (forall z, (0 <= z < wB - 1)%Z -> P (of_Z z) -> P (of_Z (z+1)))%int63.
     {
@@ -392,6 +392,18 @@ Module Int63Natlike <: Natlike.
     }
   Qed.
 
+  
+  Instance natlike_ops : Ops.NatlikeOps t :=
+    {
+    eqb := eqb;
+    ltb := ltb;
+    leb := leb;
+    zero := zero;
+    succ := succ;
+    is_top := is_top;
+    iter := @iter
+    }.
+  
 End Int63Natlike.
 
 
@@ -443,11 +455,11 @@ Module PArrayList <: (ArrayList Int63Natlike).
 
   (* initial headspace is hardcoded. 
      TODO: profile for best size *)
-  Definition make {A} default := MkArr (@make A (32)%int63 default) 0 nil.
+  Definition make {A} default := MkArr (@PArray.make A (32)%int63 default) 0 nil.
 
   Definition get {A} l i :=
     if i <? max_length
-    then if i <? l.(len) then @get A l.(arr) i else default l.(arr)
+    then if i <? l.(len) then @PArray.get A l.(arr) i else default l.(arr)
     else lookup_assoc_list l.(arr).[i] l.(extra) i.
 
   Definition copy_nth {A} l i (l' : PArray.array A) : PArray.array A :=
@@ -481,6 +493,16 @@ Module PArrayList <: (ArrayList Int63Natlike).
   Definition length {A} := @len A.
   
   Definition alloc {A} l (a : A) := (l.(len),set l l.(len) a).
+
+  
+  Instance arraylist_ops : Ops.ArrayListOps int array :=
+    {
+    make := @make;
+    get := @get;
+    set := @set;
+    length := @length;
+    alloc := @alloc;
+    }.
 
 End PArrayList.
 
@@ -966,7 +988,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       intros.
     cbn; auto.
 
-    unfold isTop in *.
+    unfold is_top in *.
     rewrite <-Bool.not_true_iff_false in H.
     rewrite eqb_eq in H.
     unfold eq in H.
@@ -983,7 +1005,7 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       intros.
     cbn; auto.
     unfold copy_up_to.
-    unfold isTop in *.
+    unfold is_top in *.
     
     rewrite <-Bool.not_true_iff_false in H.
     rewrite eqb_eq in H.
@@ -1295,8 +1317,8 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
       length t.[i <- a] = max (length t) (i.+1).
   Proof.
     intros A [] i a not_top; unfold set; unfold length; simpl.
-    rewrite <- isTop_spec in not_top.
-    unfold isTop in *.
+    rewrite <- is_top_spec in not_top.
+    unfold is_top in *.
     simpl in *.
     rewrite <-Bool.not_true_iff_false in not_top.
     rewrite eqb_eq in not_top.
@@ -1360,8 +1382,8 @@ Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
     intro H; inversion H; subst; clear H.
     intro Htop.
     rewrite length_set; auto.
-    rewrite <- isTop_spec in Htop.
-    unfold isTop in *.
+    rewrite <- is_top_spec in Htop.
+    unfold is_top in *.
     rewrite <-Bool.not_true_iff_false in Htop.
     rewrite eqb_eq in Htop.
     unfold max.

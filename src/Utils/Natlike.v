@@ -1,5 +1,24 @@
 Require Import Orders.
 
+
+Module Ops.
+(* Make typeclasses out of the important features of Natlike 
+   since passing some instances to functors breaks the VM
+   (issue #12519)
+ *)
+Class NatlikeOps t :=
+  {
+  eqb : t -> t -> bool;
+  ltb : t -> t -> bool;
+  leb : t -> t -> bool;
+  zero : t;
+  succ : t -> t;
+  is_top : t -> bool;
+  iter : forall {A},
+      A -> (A -> A) -> t -> A
+  }.
+End Ops.
+
 (* All of the properties we expect from indices,
    primarily a computable comparison operation,
    zero element, and successor operation.
@@ -17,7 +36,7 @@ Module Type Natlike.
   (* checks whether an element is the greatest element.
      If there is no greatest element, this will be a constant function.
    *)
-  Parameter isTop : t -> bool.
+  Parameter is_top : t -> bool.
 
   (* short-circuiting iteration*)
   Parameter iter
@@ -34,8 +53,8 @@ Module Type Natlike.
   Axiom succ_least
     : forall a b, lt a b -> le (succ a) b.
 
-  Axiom isTop_spec
-    : forall a, isTop a = false <-> (exists b, lt a b).
+  Axiom is_top_spec
+    : forall a, is_top a = false <-> (exists b, lt a b).
 
   Axiom iter_zero
     : forall A (a:A) f, iter a f zero = a.
@@ -45,7 +64,18 @@ Module Type Natlike.
   
   Axiom natlike_ind
     : forall P : t -> Prop,
-      P zero -> (forall n, isTop n = false -> P n -> P (succ n)) -> forall n, P n.
+      P zero -> (forall n, is_top n = false -> P n -> P (succ n)) -> forall n, P n.
+
+  Instance natlike_ops : Ops.NatlikeOps t :=
+    {
+    eqb := eqb;
+    ltb := ltb;
+    leb := leb;
+    zero := zero;
+    succ := succ;
+    is_top := is_top;
+    iter := @iter
+    }.
 
 End Natlike.
 
@@ -60,3 +90,4 @@ Module NatlikeNotations (Import NL : Natlike).
   Notation "i .+1" := (succ i) (at level 70, no associativity).
 
 End NatlikeNotations.
+

@@ -12,22 +12,23 @@
 Require Import Equalities Orders ZArith.
 
 From Utils Require Import Natlike ArrayList.
+Import Natlike.Ops ArrayList.Ops.
 
 
-(* All definitions and proofs need to be generic over arraylist implementations.
-   Use the following code to test functions with a specific implementation: *)
 
-Module UnionFind
-       (* TODO: can't abstract for now due to issue #14849
-       (Import NL : Natlike)
-       (Import AL : ArrayList NL)*).
-  (*Temporary imports*)
-  From Utils Require PersistentArrayList.
-  Module NL := PersistentArrayList.Int63Natlike.
-  Module AL := PersistentArrayList.PArrayList.
-  
-  Module Ntns := (ArrayNotations NL AL).
+(* Use typeclasses since passing some instances to functors breaks the VM
+   (issue #12519)
+ *)
+Section UnionFind.
+  Context {t : Type}
+          {idx_ops : NatlikeOps t}
+          {array : Type -> Type}
+          {array_ops : ArrayListOps t array}.
+
+  (*TODO: make notations use ops*)
+  (*Module Ntns := (ArrayNotations NL AL).
   Import NL AL Ntns.
+   *)
 
   Record union_find :=
     MkUF {
@@ -47,19 +48,19 @@ Module UnionFind
   Definition alloc '(MkUF ra pa mr) :=
     let (i,pa) := alloc pa zero in
     (*We don't need to initialize rank since default of 0 is correct*)
-    (MkUF ra pa.[i<-i] mr, i).
+    (MkUF ra (set pa i i) mr, i).
 
   Definition find_aux
     : t -> array t -> t -> array t * t :=
     iter
       (fun f i => (f,i))
       (fun find_aux f i =>         
-      let fi := f.[i] in
+      let fi := get f i in
       if eqb fi i then
         (f,i)
       else
         let (f, r) := find_aux f fi in
-        let f := f.[i<-r] in
+        let f := set f i r in
         (f,r)
       ).
 
@@ -78,15 +79,15 @@ Module UnionFind
     let (h, cy) := find h y in
     if eqb cx cy then (h, cx) else
       let (ra, pa, mr) := h in
-      let rx := ra.[cx] in
-      let ry := ra.[cy] in
+      let rx := get ra cx in
+      let ry := get ra cy in
       if ltb ry rx then
-        (MkUF ra pa.[cy <- cx] mr, cx)
+        (MkUF ra (set pa cy cx) mr, cx)
       else if ltb rx ry then
-             (MkUF ra pa.[cx <- cy] mr, cy)
+             (MkUF ra (set pa cx cy) mr, cy)
            else
-             (MkUF ra.[cx <- succ rx]
-                  pa.[cy <- cx]
+             (MkUF (set ra cx (succ rx))
+                  (set pa cy cx)
                        (max mr (succ rx)), cx).
 End UnionFind.
 
@@ -97,13 +98,16 @@ Module UnionFindSpec
        (Import ALS : ArrayListSpec NL AL).
 End UnionFindSpec.
 
+
+(* All definitions and proofs need to be generic over arraylist implementations.
+   Use the following code to test functions with a specific implementation: *)
+
 (*Testing *)
-From Utils Require PersistentArrayList.
+From Utils Require Import PersistentArrayList.
+#[local] Existing Instance PArrayList.arraylist_ops.
+#[local] Existing Instance Int63Natlike.natlike_ops.
 
-Module UF63 := UnionFind.
-Import Int63 UF63.
-Import UF63.Ntns.
-
+Import Int63.
 
 Time Eval vm_compute in
      let uf :=N.recursion empty
