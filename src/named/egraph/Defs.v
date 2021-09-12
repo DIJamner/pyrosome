@@ -120,14 +120,16 @@ Fixpoint list_ltb {A} (ltb : A -> A -> bool) (a b : list A) : bool :=
 
 Module IntListOT := ListOrderedType Int63Natlike.
 
-
+(*TODO: use string -> int mapping to convert lang, ctx so that the egraph
+  does not store strings
+*)
 Variant enode :=
 (*TODO: look into efficient ways to optimize empty if looking for a little performance(null?)*)
 | ctx_empty_node : enode
 | ctx_cons_node : string -> (*sort*) int -> (*tail*) int -> enode
-| con_node : string -> (*ctx *) int -> (*sort*) int -> list int -> enode
-| scon_node : string -> (*ctx *) int -> list int -> enode
-| var_node : string -> (*ctx *) int -> (*sort*) int -> enode.
+| con_node : string ->  list int -> enode
+| scon_node : string -> list int -> enode
+| var_node : string -> enode.
 
 
 Axiom TODO: forall {A}, A.
@@ -225,6 +227,16 @@ Module Int63Map.
 End Int63Map.
 
 
+  (*TODO: representation choice: each eclass should only need a single sort, ctx
+    currently, each enode has them.
+    Fix?
+    Related: Do I want one eclass per context for closed terms like 'true'?
+    or one eclass for all things equal to 'true'?
+    The latter doesn't seem sound, but the former might be a bit expensive
+    Related: how to work w/ meta-level substitutions in egraphs?
+
+    Optimal solution prob. involves special treatment/eqns for metavar substs
+   *)
 
 Module ENodeMap.
   (* Make this an instance so we can use single-curly-braces so we don't need to qualify field-names with [SortedList.parameters.] *)
@@ -245,20 +257,41 @@ End ENodeMap.
 
 Instance hashcons_ty : Interface.map.map ENode.t Int63Natlike.t := ENodeMap.map _.
 
+(* TODO : could split off ctx classes here,
+   since they behave differently (no direct eqns, only unified as parents of subterms).
+   Think about efficiency
+*)
+Record eclass : Type :=
+  MkEClass {
+      nodes : NodeSets.t;
+      parents : ENodeMap.map Int63Natlike.t;
+      (* value is unused if the class represents a ctx
+         TODO: is this the best way?
+       *)
+      ectx : int;
+      (* value is unused if the class represents a ctx or sort
+         TODO: is this the best way?
+       *)
+      esrt : int;
+    }.
+
 Module EClass.
 
   (* Include a parent map in each eclass *)
-  Definition t : Type := NodeSets.t * ENodeMap.map Int63Natlike.t.
+  Definition t : Type := eclass.
 
   (*Definition union '(ns1,ps1) '(ns2,ps2) : t :=
     (NodeSets.union ns1 ns2, (*TODO: need map union?*)map.union ps1 ps2).*)
 
-  Definition empty : t := (NodeSets.empty,map.empty).
+  Definition empty ctx srt : t :=
+    MkEClass NodeSets.empty map.empty ctx srt.
 
   (* Assumes no parents *)
-  Definition singleton n : t := (NodeSets.singleton n, map.empty).
+  Definition singleton n ctx srt : t := 
+    MkEClass (NodeSets.singleton n) map.empty ctx srt.
 
-  Definition add_parent '(ns,ps) '(pn,pi) : t := (ns, map.put ps pn pi).
+  Definition add_parent '(MkEClass ns ps ntx nsrt) '(pn,pi) : t :=
+    MkEClass ns (map.put ps pn pi) ntx nsrt.
   
 End EClass.
 
@@ -287,14 +320,19 @@ Instance state_monad {S} : Monad (ST S) :=
       f a s
   }.
 
-Fixpoint list_Mmap {M A B} `{Monad M} (f : A -> M B) (l : list A) : M (list B) :=
-  match l with
-  | [] => do ret []
-  | a::al' =>
-    do let b <- f a in
-       let bl' <- list_Mmap f al' in
-       ret (b::bl')
-       end.
+Section MonadListMap.
+  Context {M A B} `{Monad M}
+          (f : A -> M B).
+
+  Fixpoint list_Mmap (l : list A) : M (list B) :=
+    match l with
+    | [] => do ret []
+             | a::al' =>
+               do let b <- f a in
+                  let bl' <- list_Mmap al' in
+                  ret (b::bl')
+                  end.
+End MonadListMap.
        
 Fixpoint list_Miter {M A} `{Monad M} (f : A -> M unit) (l : list A) : M unit :=
   match l with
@@ -368,7 +406,13 @@ Section EGraphOps.
      for ease-of-use
    *)
   Definition get_eclass (i : int) : ST EClass.t :=
-    fun g => (g, unwrap_with_default EClass.empty (map.get g.(eclass_map) i)).
+    (*TODO: using a meaningless default here.
+      Decide if an option is better.
+      If I want empty as the default,
+      I need to decide that ctx and srt don't matter if empty,
+      which seems wrong
+     *)
+    fun g => (g, unwrap_with_default (EClass.empty 0 0) (map.get g.(eclass_map) i)).
 
   Definition add_to_worklist (i : int) : ST unit :=
     fun '(MkEGraph U M H W) =>
@@ -395,19 +439,14 @@ Section EGraphOps.
       do let srt <- find srt in
          let tl <- find tl in
          ret ctx_cons_node x srt tl      
-    | con_node name ctx srt args =>
-      do let ctx <- find ctx in
-         let srt <- find srt in
-         let args <- list_Mmap find args in       
-         ret con_node name ctx srt args     
-    | scon_node name ctx args =>
-      do let ctx <- find ctx in
-         let args <- list_Mmap find args in       
-         ret scon_node name ctx args
-    | var_node x ctx srt =>
-      do let ctx <- find ctx in
-         let srt <- find srt in      
-         ret var_node x ctx srt
+    | con_node name args =>
+      do let args <- list_Mmap find args in       
+         ret con_node name args     
+    | scon_node name args =>
+      do let args <- list_Mmap find args in       
+         ret scon_node name args
+    | var_node x =>
+      do ret var_node x
     end.
 
          
@@ -428,30 +467,54 @@ Section EGraphOps.
       do let tt <- add_parent n i srt in
          let tt <- add_parent n i tl in
          ret tt     
-    | con_node name ctx srt args =>
-      do let tt <- add_parent n i ctx in
-         let tt <- add_parent n i srt in
-         let args <- list_Miter (add_parent n i) args in
+    | con_node name args =>
+      do let args <- list_Miter (add_parent n i) args in
          ret tt
-    | scon_node name ctx args =>
-      do let tt <- add_parent n i ctx in
-         let args <- list_Miter (add_parent n i) args in
+    | scon_node name args =>
+      do let args <- list_Miter (add_parent n i) args in
          ret tt
-    | var_node x ctx srt =>
-      do let tt <- add_parent n i ctx in
-         let tt <- add_parent n i srt in
-         ret tt
+    | var_node x => do ret tt
     end.
-       
-  Definition add (n : ENode.t) : ST int :=
+
+  (* Does not check that the ctx and srt are correct if n already exists
+     TODO: generalize this and 2 sim. fns?
+   *)
+  Definition add_term (n : ENode.t) (ctx srt : int) : ST int :=
     do let mn <- lookup n in
        match mn with
        | Some i => do ret i
        | None => 
          do let i <- alloc in
-            let tt <- set_eclass i (EClass.singleton n) in
-            (*TODO: something is off about add parent wrt the paper*)
+            let tt <- set_eclass i (EClass.singleton n ctx srt) in
             let tt <- add_parent_to_children n i in
+            let tt <- add_parent n i srt in
+            let tt <- add_parent n i ctx in
+            let tt <- set_hashcons n i in
+            ret i
+            end.
+
+  
+  Definition add_ctx (n : ENode.t) : ST int :=
+    do let mn <- lookup n in
+       match mn with
+       | Some i => do ret i
+       | None => 
+         do let i <- alloc in
+            let tt <- set_eclass i (EClass.singleton n 0 0) in
+            let tt <- add_parent_to_children n i in
+            let tt <- set_hashcons n i in
+            ret i
+            end.
+            
+  Definition add_sort (n : ENode.t) ctx : ST int :=
+    do let mn <- lookup n in
+       match mn with
+       | Some i => do ret i
+       | None => 
+         do let i <- alloc in
+            let tt <- set_eclass i (EClass.singleton n ctx 0) in
+            let tt <- add_parent_to_children n i in
+            let tt <- add_parent n i ctx in
             let tt <- set_hashcons n i in
             ret i
             end.
@@ -493,16 +556,23 @@ Section EGraphOps.
                vp pattern at level 0,
                acc pattern at level 0,
                m constr, b custom monadic_do).
-       
+
+  (*TODO: use coq-record-update?*)
+  Definition set_class_parents '(MkEClass ns _ ntx nsrt) ps :=
+    MkEClass ns ps ntx nsrt.
+
+  (*TODO: think about parents wrt srt, ctx
+    if c |- e : t, then e is a parent of c, t
+    need to set those somewhere
+   *)
   Definition repair i : ST unit :=
     do let c <- get_eclass i in
-       let parents := snd c in
-       let tt <- do for pn pi from parents in
+       let tt <- do for pn pi from c.(parents) in
                  let tt <- remove_hashcons pn in
                  let pn <- canonicalize pn in
                  let ci <- find pi in
                  (set_hashcons pn ci) in
-       let new_parents <- do for/fold pn pi from parents
+       let new_parents <- do for/fold pn pi from c.(parents)
                                 [[new_parents := (map.empty : hashcons_ty)]] in
                           let pn <- canonicalize pn in
                           match map.get new_parents pn : option int return ST map.rep with
@@ -511,7 +581,7 @@ Section EGraphOps.
                             do let ci <- find pi in
                                ret (map.put new_parents pn ci)
                           end in
-       (set_eclass i (fst c, new_parents)).
+       (set_eclass i (set_class_parents c new_parents)).
 
   Definition rebuild_aux : N -> ST unit :=
     N.recursion
@@ -550,7 +620,7 @@ Section EGraphOps.
   | eref : int -> eterm.
   Set Elimination Schemes.
 
-  (* TODO: zero is a questionable default*)
+  (* TODO: zero is a questionable default unless I implement null idea*)
   Definition esubst_lookup (s : esubst) (n : string) : int :=
     named_list_lookup Int63Natlike.zero s n.
 
@@ -571,13 +641,63 @@ Section EGraphOps.
   Arguments eterm_subst s !e /.
 
   
-  Fixpoint add_eterm (e : eterm) : ST int :=
+  Definition lookup_sort (tm : int) : ST int :=
+    do let c <- get_eclass tm in
+       ret c.(esrt).
+       
+  Definition lookup_ctx (tm : int) : ST int :=
+    do let c <- get_eclass tm in
+       ret c.(ectx).
+
+  
+       
+
+  (* assumes that the context and sort have already been added *)
+  (* TODO: think about read/write separation & invariants *)
+  Fixpoint add_eterm_no_check (ctx (*srt*): int) (e : eterm) : ST (option int) :=
     match e with
-    | evar x => do ret Int63Natlike.zero(*TODO: how to treat adding a var?*)
+    | evar x =>
+      (*TODO: need to look up sort
+       and check, if srt is provided*)
+      add_term (var_node x) ctx srt
     | econ n s =>
-      do let args <- list_Mmap add_eterm s in
-         (add (n,args))
-    | eref i => do ret i
+      (*TODO: generalize list_Mmap to composition of ST and option.
+        Requires monad transformers to be nice
+       *)
+      do let margs <- list_Mmap add_eterm s in
+         match List.option_all margs with
+         | Some args =>
+           (*TODO: check wfness of top-level constructor here*)
+           (*TODO: think about what needs to be canonicalized here *)
+           (add (con_node n ctx srt)
+         | None => None
+         end
+    | eref i => (*TODO: check? only if srt provided. write sep. helper?*) do ret i
+   end.
+
+                                                                             
+  (* assumes that the context and sort have already been added *)
+  (* TODO: think about read/write separation & invariants *)
+  (*TODO: does this need to take an eterm? *)
+  Fixpoint check_and_add_eterm (ctx (*srt*): int) (e : eterm) : ST (option int) :=
+    match e with
+    | evar x =>
+      (*TODO: need to look up sort
+       and check, if srt is provided*)
+      add (var_node x ctx srt)
+    | econ n s =>
+      (*TODO: generalize list_Mmap to composition of ST and option.
+        Requires monad transformers to be nice
+       *)
+      do let margs <- list_Mmap add_eterm s in
+         match List.option_all margs with
+         | Some args =>
+           (*TODO: check wfness of top-level constructor here*)
+           (*TODO: think about what needs to be canonicalized here *)
+           (add (con_node n ctx srt)
+         | None => None
+         end
+    | eref i => (*TODO: check? only if srt provided. write sep. helper?*) do ret i
     end.
                        
   Axiom TODO : forall {A}, A.
