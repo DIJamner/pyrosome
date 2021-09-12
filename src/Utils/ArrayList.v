@@ -2,10 +2,21 @@ Require Import Orders.
 
 From Utils Require Import Natlike.
 
-(* HasT modules provide a type t and operations on elements of that type. *)
-Module Type HasT.
-  Parameter t : Type.
-End HasT.
+
+Module Ops.
+  (* Make typeclasses out of the important features of Natlike 
+   since passing some instances to functors breaks the VM
+   (issue #12519)
+   *)
+  Class ArrayListOps idx (array : Type -> Type) :=
+    {
+    make : forall {A}, A -> array A;
+    get : forall {A}, array A -> idx -> A;
+    set : forall {A}, array A -> idx -> A -> array A;
+    length : forall {A}, array A -> idx;
+    alloc : forall {A}, array A -> A -> idx * array A;
+    }.
+End Ops.
 
 (* Modules that satisfy (ArrayListOps Idx) provide a type 'array A' and operations on that type
    such that elements of 'array A' can be used as growable arrays indexed by elements of Idx.t.
@@ -13,7 +24,7 @@ End HasT.
 
    Properties of these operations are separated into another module.
 *)
-Module Type ArrayList (Idx : HasT).
+Module Type ArrayList (Idx : Natlike).
 
   Parameter array : Type -> Type.
 
@@ -35,6 +46,15 @@ Module Type ArrayList (Idx : HasT).
   Parameter length : forall {A}, array A -> Idx.t.
   
   Parameter alloc : forall {A}, array A -> A -> Idx.t * array A.
+
+  Instance arraylist_ops : Ops.ArrayListOps Idx.t array :=
+    {
+    make := @make;
+    get := @get;
+    set := @set;
+    length := @length;
+    alloc := @alloc;
+    }.
 
 End ArrayList.
   
