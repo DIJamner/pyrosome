@@ -10,7 +10,13 @@ Open Scope string.
 Open Scope list.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
-From Utils Require Import Utils PersistentArrayList UnionFind.
+From Utils Require Import
+     Utils
+     Natlike
+     ArrayList
+     PersistentArrayList UnionFind.
+Import Natlike.Ops ArrayList.Ops.
+
 From Named Require Import Term.
 (*Import Core.Notations.*)
 
@@ -20,7 +26,6 @@ Require MSets.
 (*TODO: parameterize by ArrayList impl;
   depends on UnionFind coq bug
  *)
-Import Int63.
 Import OrdersEx.
 
 (*TODO: move anything not touching terms or nodes to utils, nodes to sep. file*)
@@ -120,19 +125,31 @@ Fixpoint list_ltb {A} (ltb : A -> A -> bool) (a b : list A) : bool :=
 
 Module IntListOT := ListOrderedType Int63Natlike.
 
+
+Section EGraph.
+  Context {idx : Type}
+          {idx_ops : NatlikeOps idx}
+          {array : Type -> Type}
+          {array_ops : ArrayListOps idx array}.
+
 (*TODO: use string -> int mapping to convert lang, ctx so that the egraph
   does not store strings
 *)
 Variant enode :=
 (*TODO: look into efficient ways to optimize empty if looking for a little performance(null?)*)
 | ctx_empty_node : enode
-| ctx_cons_node : string -> (*sort*) int -> (*tail*) int -> enode
-| con_node : string ->  list int -> enode
-| scon_node : string -> list int -> enode
+| ctx_cons_node : string -> (*sort*) idx -> (*tail*) idx -> enode
+| con_node : string ->  list idx -> enode
+| scon_node : string -> list idx -> enode
 | var_node : string -> enode.
 
+(*TODO: figure out module stuff, then move later*)
+End EGraph.
 
-Axiom TODO: forall {A}, A.
+
+
+(*TODO: move outside section
+*)
 Module ENode <: OrderedType.
   (*TODO: have separate scon node or optional type?*)
 
@@ -298,10 +315,10 @@ End EClass.
 
 Instance eclass_map_ty : Interface.map.map Int63Natlike.t EClass.t := Int63Map.map _.
 
-
+  
 Record egraph :=
   MkEGraph {
-      id_equiv : UnionFind.union_find;
+      id_equiv : @UnionFind.union_find idx array;
       eclass_map : Int63Map.map EClass.t;
       hashcons : ENodeMap.map Int63Natlike.t;
       worklist : list Int63Natlike.t
@@ -367,12 +384,12 @@ Section EGraphOps.
   Local Notation "'ST'" := (ST egraph).
 
 
-  Definition find a : ST int :=
+  Definition find a : ST idx :=
     fun '(MkEGraph U M H W) =>
       let (U, i) := UnionFind.find U a in
       (MkEGraph U M H W,i).
 
-  Definition alloc : ST int :=
+  Definition alloc : ST idx :=
     fun '(MkEGraph U M H W) =>
       let (U, i) := UnionFind.alloc U in
       (MkEGraph U M H W,i).
@@ -397,7 +414,7 @@ Section EGraphOps.
       let M := map.put M i c in
       (MkEGraph U M H W,tt).
 
-  Definition union_ids a b : ST int :=
+  Definition union_ids a b : ST idx :=
     fun '(MkEGraph U M H W) =>
       let (U, i) := UnionFind.union U a b in
       (MkEGraph U M H W, i).
