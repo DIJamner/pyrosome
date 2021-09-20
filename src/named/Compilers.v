@@ -29,8 +29,8 @@ Qed.
 Hint Rewrite all_fresh_compile_ctx : lang_core.
 
 
-Lemma fresh_lang_fresh_cmp lt cmp l n
-  : preserving_compiler lt cmp l ->
+Lemma fresh_lang_fresh_cmp cmp_pre lt cmp l n
+  : preserving_compiler_ext cmp_pre lt cmp l ->
     fresh n l -> fresh n cmp.
 Proof.
   induction 1; basic_goal_prep;
@@ -40,7 +40,7 @@ Qed.
 
 
 Lemma all_fresh_compiler lt cmp l
-  : preserving_compiler lt cmp l ->
+  : preserving_compiler_ext [] lt cmp l ->
     all_fresh l ->
     all_fresh cmp.
 Proof.
@@ -159,8 +159,8 @@ intros wfl pr wfl';
   
 
 
-Lemma sort_name_in_cmp tgt cmp src c' args n
-  : preserving_compiler tgt cmp src ->
+Lemma sort_name_in_cmp cmp_pre tgt cmp src c' args n
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     In (n, sort_rule c' args) src ->
     In n (map fst cmp).
 Proof.
@@ -169,8 +169,8 @@ Proof.
 Qed.
 Local Hint Resolve sort_name_in_cmp : lang_core.
 
-Lemma term_name_in_cmp tgt cmp src c' args t n
-  : preserving_compiler tgt cmp src ->
+Lemma term_name_in_cmp cmp_pre tgt cmp src c' args t n
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     In (n, term_rule c' args t) src ->
     In n (map fst cmp).
 Proof.
@@ -180,7 +180,7 @@ Qed.
 Local Hint Resolve term_name_in_cmp : lang_core.
                    
 Local Lemma all_constructors_from_wf tgt cmp src
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     (forall c t,
         wf_sort src c t ->
         all_constructors_sort (fun n0 : string => In n0 (map fst cmp)) t)
@@ -195,20 +195,20 @@ Proof using.
     with_rule_in_wf_crush.
 Qed.
 
-Definition all_constructors_sort_from_wf tgt cmp src (pr : preserving_compiler tgt cmp src)
+Definition all_constructors_sort_from_wf tgt cmp src (pr : preserving_compiler_ext [] tgt cmp src)
   := proj1 (all_constructors_from_wf pr).
 #[export] Hint Resolve all_constructors_sort_from_wf : lang_core.
 
-Definition all_constructors_term_from_wf tgt cmp src (pr : preserving_compiler tgt cmp src)
+Definition all_constructors_term_from_wf tgt cmp src (pr : preserving_compiler_ext [] tgt cmp src)
   := proj1 (proj2 (all_constructors_from_wf pr)).
 #[export] Hint Resolve all_constructors_term_from_wf : lang_core.
 
-Definition all_constructors_args_from_wf tgt cmp src (pr : preserving_compiler tgt cmp src)
+Definition all_constructors_args_from_wf tgt cmp src (pr : preserving_compiler_ext [] tgt cmp src)
   := proj2 (proj2 (all_constructors_from_wf pr)).
 #[export] Hint Resolve all_constructors_args_from_wf : lang_core.
 
 Lemma all_constructors_ctx_from_wf tgt cmp src c
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     wf_ctx src c ->
     all_constructors_ctx (fun n0 : string => In n0 (map fst cmp)) c.
 Proof.
@@ -216,9 +216,10 @@ Proof.
     with_rule_in_wf_crush.
 Qed.
 #[export] Hint Resolve all_constructors_ctx_from_wf : lang_core.
-                   
+
+(*TODO: think about whether this should be generalized*)
 Lemma inductive_implies_semantic_sort_axiom ls lt cmp name c t1 t2
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, sort_eq_rule c t1 t2) ls ->
     eq_sort lt (compile_ctx cmp c) (compile_sort cmp t1) (compile_sort cmp t2).
 Proof.
@@ -226,13 +227,13 @@ Proof.
     basic_goal_prep; try use_rule_in_wf;
       basic_core_crush.
   (*TODO: why is this needed? should be automated*)
-  all: use_rule_in_wf;autorewrite with lang_core in *;
+  all: use_rule_in_wf;autorewrite with lang_core utils in *;
     intuition eauto with lang_core.
 Qed.
 
 
 Lemma inductive_implies_semantic_term_axiom ls lt cmp name c e1 e2 t
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, term_eq_rule c e1 e2 t) ls ->
     eq_term lt (compile_ctx cmp c) (compile_sort cmp t) (compile cmp e1) (compile cmp e2).
 Proof.
@@ -241,7 +242,7 @@ Proof.
     try use_rule_in_wf;
     basic_core_crush.
   (*TODO: why is this needed? should be automated*)
-  all: use_rule_in_wf;autorewrite with lang_core in *;
+  all: use_rule_in_wf;autorewrite with lang_core utils in *;
     intuition eauto with lang_core.
 Qed.
 
@@ -283,7 +284,7 @@ Qed.
  
 
 Lemma inductive_implies_semantic_sort_rule_id ls lt cmp name c args
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, sort_rule c args) ls ->
     wf_sort lt (compile_ctx cmp c) (compile_sort cmp (scon name (id_args c))).
 Proof.
@@ -309,7 +310,7 @@ Qed.
 
 
 Lemma inductive_implies_semantic_term_rule_id ls lt cmp name c args t
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, term_rule c args t) ls ->
     wf_term lt (compile_ctx cmp c) (compile cmp (con name (id_args c))) (compile_sort cmp t).
 Proof.
@@ -378,8 +379,8 @@ Proof.
 Qed.
 
 
-Lemma lang_compiler_sort_case_args_eq lt cmp ls n c args args' e
-  : preserving_compiler lt cmp ls ->
+Lemma lang_compiler_sort_case_args_eq cmp_pre lt cmp ls n c args args' e
+  : preserving_compiler_ext cmp_pre lt cmp ls ->
     all_fresh ls ->
     In (n, sort_rule c args) ls ->
     In (n, sort_case args' e) cmp ->
@@ -387,7 +388,7 @@ Lemma lang_compiler_sort_case_args_eq lt cmp ls n c args args' e
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   match goal with
-    [Hp : preserving_compiler _ _ _,
+    [Hp : preserving_compiler_ext _ _ _ _,
           H : fresh _ _|-_]=>
     pose proof (fresh_lang_fresh_cmp Hp H)
   end.
@@ -395,8 +396,8 @@ Proof.
 Qed.
 #[export] Hint Resolve lang_compiler_sort_case_args_eq : lang_core.
 
-Lemma lang_compiler_term_case_args_eq lt cmp ls n c args args' e t
-  : preserving_compiler lt cmp ls ->
+Lemma lang_compiler_term_case_args_eq cmp_pre lt cmp ls n c args args' e t
+  : preserving_compiler_ext cmp_pre lt cmp ls ->
     all_fresh ls ->
     In (n, term_rule c args t) ls ->
     In (n, term_case args' e) cmp ->
@@ -404,7 +405,7 @@ Lemma lang_compiler_term_case_args_eq lt cmp ls n c args args' e t
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   match goal with
-    [Hp : preserving_compiler _ _ _,
+    [Hp : preserving_compiler_ext _ _ _ _,
           H : fresh _ _|-_]=>
     pose proof (fresh_lang_fresh_cmp Hp H)
   end.
@@ -413,8 +414,8 @@ Qed.
 #[export] Hint Resolve lang_compiler_term_case_args_eq : lang_core.
 
 
-Lemma sort_case_in_preserving_well_scoped tgt cmp src n args t
-  : preserving_compiler tgt cmp src ->
+Lemma sort_case_in_preserving_well_scoped cmp_pre tgt cmp src n args t
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     ws_lang tgt ->
     In (n, sort_case args t) cmp ->
     well_scoped args t.
@@ -426,8 +427,8 @@ Qed.
 #[export] Hint Resolve sort_case_in_preserving_well_scoped : lang_core.
 
 
-Lemma term_case_in_preserving_well_scoped tgt cmp src n args t
-  : preserving_compiler tgt cmp src ->
+Lemma term_case_in_preserving_well_scoped cmp_pre tgt cmp src n args t
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     ws_lang tgt ->
     In (n, term_case args t) cmp ->
     well_scoped args t.
@@ -440,7 +441,7 @@ Qed.
 
 
 Local Lemma distribute_compile_subst tgt cmp src s
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     all_fresh src ->
     ws_lang tgt ->
     (forall c t,
@@ -497,7 +498,7 @@ Proof using.
 Qed.
 
 Lemma compile_term_subst tgt cmp src s c e t
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     all_fresh src ->
     ws_lang tgt ->
     wf_term src c e t ->
@@ -510,7 +511,7 @@ Hint Rewrite compile_term_subst : lang_core.
 
 
 Lemma compile_sort_subst tgt cmp src s c t
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     all_fresh src ->
     ws_lang tgt ->
     wf_sort src c t ->
@@ -523,7 +524,7 @@ Hint Rewrite compile_sort_subst : lang_core.
 
 
 Lemma compile_args_subst tgt cmp src s c s' c'
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     all_fresh src ->
     ws_lang tgt ->
     wf_args src c s' c' ->
@@ -565,8 +566,8 @@ Proof.
   }
 Qed.
   
-Lemma lang_compiler_conflict_sort_term lt cmp ls n c args args' e
-  : preserving_compiler lt cmp ls ->
+Lemma lang_compiler_conflict_sort_term cmp_pre lt cmp ls n c args args' e
+  : preserving_compiler_ext cmp_pre lt cmp ls ->
     all_fresh ls ->
     In (n, sort_rule c args) ls ->
     In (n, term_case args' e) cmp ->
@@ -574,7 +575,7 @@ Lemma lang_compiler_conflict_sort_term lt cmp ls n c args args' e
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   match goal with
-    [Hp : preserving_compiler _ _ _,
+    [Hp : preserving_compiler_ext _ _ _ _,
           H : fresh _ _|-_]=>
     pose proof (fresh_lang_fresh_cmp Hp H)
   end.
@@ -583,8 +584,8 @@ Qed.
 #[export] Hint Resolve lang_compiler_conflict_sort_term : lang_core.
 
   
-Lemma lang_compiler_conflict_term_sort lt cmp ls n c args args' e t
-  : preserving_compiler lt cmp ls ->
+Lemma lang_compiler_conflict_term_sort cmp_pre lt cmp ls n c args args' e t
+  : preserving_compiler_ext cmp_pre lt cmp ls ->
     all_fresh ls ->
     In (n, term_rule c args t) ls ->
     In (n, sort_case args' e) cmp ->
@@ -592,7 +593,7 @@ Lemma lang_compiler_conflict_term_sort lt cmp ls n c args args' e t
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
   match goal with
-    [Hp : preserving_compiler _ _ _,
+    [Hp : preserving_compiler_ext _ _ _ _,
           H : fresh _ _|-_]=>
     pose proof (fresh_lang_fresh_cmp Hp H)
   end.
@@ -603,7 +604,7 @@ Qed.
   
 (*TODO: do the same thing for terms*)
 Lemma inductive_implies_semantic_sort_rule ls lt cmp name c c' args s
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, sort_rule c' args) ls ->
     wf_ctx lt (compile_ctx cmp c') ->
     wf_args lt (compile_ctx cmp c) (compile_args cmp s) (compile_ctx cmp c') ->
@@ -645,7 +646,7 @@ Proof.
 Qed.
 
 Lemma inductive_implies_semantic_term_rule ls lt cmp name c c' args t s
-  : wf_lang lt -> preserving_compiler lt cmp ls -> wf_lang ls ->
+  : wf_lang lt -> preserving_compiler_ext [] lt cmp ls -> wf_lang ls ->
     In (name, term_rule c' args t) ls ->
     wf_ctx lt (compile_ctx cmp c') ->
     wf_args lt (compile_ctx cmp c) (compile_args cmp s) (compile_ctx cmp c') ->
@@ -761,7 +762,7 @@ Local Hint Resolve lang_compiles_with_term_sort_in : lang_core.
 Local Lemma inductive_implies_semantic' lt cmp ls
   : wf_lang ls ->
     wf_lang lt ->
-    preserving_compiler lt cmp ls ->
+    preserving_compiler_ext [] lt cmp ls ->
     lang_compiles_with lt cmp ls ->
     semantics_preserving lt cmp ls.
 Proof.
@@ -845,7 +846,7 @@ Qed.
 Local Lemma inductive_implies_semantic_ctx' lt cmp ls
   : wf_lang ls ->
     wf_lang lt ->
-    preserving_compiler lt cmp ls ->
+    preserving_compiler_ext [] lt cmp ls ->
     lang_compiles_with lt cmp ls ->
     forall c : ctx, wf_ctx ls c -> wf_ctx lt (compile_ctx cmp c).
 Proof.
@@ -893,7 +894,7 @@ Qed.
 
 (*TODO: move to core with like lemmas above*)
 Lemma all_constructors_rule_from_wf tgt cmp src r
-  : preserving_compiler tgt cmp src ->
+  : preserving_compiler_ext [] tgt cmp src ->
     wf_rule src r ->
     all_constructors_rule (fun n0 : string => In n0 (map fst cmp)) r.
 Proof.
@@ -976,17 +977,17 @@ Qed.
 Lemma wf_lang_implies_all_constructors lt l
   : wf_lang l ->
     forall cmp,
-    preserving_compiler lt cmp l ->
+    preserving_compiler_ext [] lt cmp l ->
     all (fun '(_,r) => all_constructors_rule (fun n0 : string => In n0 (map fst cmp)) r) l.
 Proof.
   induction 1; basic_goal_prep;
     with_rule_in_wf_crush.
   (*TODO: break down cmp*)
   inversion H2; subst.
-  1,2:specialize (IHwf_lang cmp0).
-  3,4:specialize (IHwf_lang cmp).
+  1,2:specialize (IHwf_lang_ext cmp0).
+  3,4:specialize (IHwf_lang_ext cmp).
   all:eapply all_constructors_lang_weaken.
-  all: try apply IHwf_lang; auto.
+  all: try apply IHwf_lang_ext; auto.
   all:basic_goal_prep; basic_core_crush.
 Qed.
 
@@ -995,7 +996,7 @@ Local Lemma preserving_compiler_to_lang_compiles_with lt ls
   : wf_lang ls ->
     wf_lang lt ->
     forall cmp,
-    preserving_compiler lt cmp ls ->
+    preserving_compiler_ext [] lt cmp ls ->
     lang_compiles_with lt cmp ls.
 Proof.
   induction 1; inversion 2; basic_goal_prep; with_rule_in_wf_crush.
@@ -1011,7 +1012,7 @@ Qed.
 Theorem inductive_implies_semantic lt cmp ls
   : wf_lang ls ->
     wf_lang lt ->
-    preserving_compiler lt cmp ls ->
+    preserving_compiler_ext [] lt cmp ls ->
     semantics_preserving lt cmp ls.
 Proof.
   intros; apply inductive_implies_semantic';
