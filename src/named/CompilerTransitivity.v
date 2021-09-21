@@ -6,8 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers
- CatProd.
+From Named Require Import Core Compilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -345,13 +344,13 @@ Qed.
 Hint Rewrite compile_ctx_cmp_distributes : lang_core.   
 
 
-Lemma preserving_is_well_scoped tgt cmp ir
+Lemma preserving_is_well_scoped cmp_pre tgt cmp ir
   : ws_lang tgt ->
-    preserving_compiler tgt cmp ir ->
+    preserving_compiler_ext cmp_pre tgt cmp ir ->
     all ws_ccase (map snd cmp).
 Proof.
   induction 2; basic_goal_prep; intuition;
-    replace (map fst c) with (map fst (compile_ctx cmp c)).
+    replace (map fst c) with (map fst (compile_ctx (cmp++cmp_pre) c)).
   eapply wf_sort_implies_ws; eauto.
   apply named_map_fst_eq; eauto.
   eapply wf_term_implies_ws; eauto.
@@ -360,8 +359,8 @@ Qed.
 #[export] Hint Resolve preserving_is_well_scoped : lang_core.
 
 
-Lemma sort_in_preserving_lang_in_cmp tgt cmp src n c' args
-  : preserving_compiler tgt cmp src ->
+Lemma sort_in_preserving_lang_in_cmp cmp_pre tgt cmp src n c' args
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     In (n, sort_rule c' args) src ->
     exists t, In (n, sort_case (map fst c') t) cmp.
 Proof.
@@ -369,8 +368,8 @@ Proof.
     basic_core_crush.
 Qed.
 
-Lemma term_in_preserving_lang_in_cmp tgt cmp src n c' args t
-  : preserving_compiler tgt cmp src ->
+Lemma term_in_preserving_lang_in_cmp cmp_pre tgt cmp src n c' args t
+  : preserving_compiler_ext cmp_pre tgt cmp src ->
     In (n, term_rule c' args t) src ->
     exists e, In (n, term_case (map fst c') e) cmp.
 Proof.
@@ -380,8 +379,8 @@ Qed.
 
 
 
-Lemma wf_in_domain tgt cmp src
-  : preserving_compiler tgt cmp src ->    
+Lemma wf_in_domain cmp_pre tgt cmp src
+  : preserving_compiler_ext cmp_pre tgt cmp src ->    
     (forall c t,
         wf_sort src c t ->
         sort_in_cmp_domain cmp t)
@@ -412,8 +411,8 @@ Proof.
 Qed.
 
   
-Lemma wf_term_in_domain tgt cmp ir c e t
-  : preserving_compiler tgt cmp ir ->
+Lemma wf_term_in_domain cmp_pre tgt cmp ir c e t
+  : preserving_compiler_ext cmp_pre tgt cmp ir ->
     wf_term ir c e t ->
     term_in_cmp_domain cmp e.
 Proof.
@@ -421,8 +420,8 @@ Proof.
 Qed.
 #[export] Hint Resolve wf_term_in_domain : lang_core.
 
-Lemma wf_sort_in_domain tgt cmp ir c t
-  : preserving_compiler tgt cmp ir ->
+Lemma wf_sort_in_domain cmp_pre tgt cmp ir c t
+  : preserving_compiler_ext cmp_pre tgt cmp ir ->
     wf_sort ir c t ->
     sort_in_cmp_domain cmp t.
 Proof.
@@ -430,8 +429,8 @@ Proof.
 Qed.
 #[export] Hint Resolve wf_sort_in_domain : lang_core.
 
-Lemma wf_ctx_in_domain tgt cmp ir c
-  : preserving_compiler tgt cmp ir ->
+Lemma wf_ctx_in_domain cmp_pre tgt cmp ir c
+  : preserving_compiler_ext cmp_pre tgt cmp ir ->
     wf_ctx ir c ->
     all (sort_in_cmp_domain cmp) (map snd c).
 Proof.
@@ -439,9 +438,9 @@ Proof.
 Qed.
 #[export] Hint Resolve wf_ctx_in_domain : lang_core.
   
-Lemma preserving_in_domain tgt cmp ir cmp' src
-  : preserving_compiler tgt cmp ir ->
-    preserving_compiler ir cmp' src ->
+Lemma preserving_in_domain cmp_pre tgt cmp ir cmp' src
+  : preserving_compiler_ext cmp_pre tgt cmp ir ->
+    preserving_compiler_ext [] ir cmp' src ->
     all (ccase_in_cmp_domain cmp) (map snd cmp').
 Proof.
   intro pres_cmp.
@@ -451,21 +450,21 @@ Proof.
 Qed.
 #[export] Hint Resolve preserving_in_domain : lang_core.
   
-
+(*TODO: can cmp be generalized w/ a cmp_pre?*)
 Theorem preservation_transitivity src ir tgt cmp cmp'
   : wf_lang src ->
     wf_lang ir ->
     wf_lang tgt ->
-    preserving_compiler tgt cmp ir ->
-    preserving_compiler ir cmp' src ->
-    preserving_compiler tgt (compile_cmp cmp cmp') src.
+    preserving_compiler_ext [] tgt cmp ir ->
+    preserving_compiler_ext [] ir cmp' src ->
+    preserving_compiler_ext [] tgt (compile_cmp cmp cmp') src.
 Proof using .
   intros wfsrc wfir wftgt pres_cmp pres_cmp'.
   pose proof (inductive_implies_semantic wfir wftgt pres_cmp).
   firstorder.
   revert wfsrc.
   induction pres_cmp'; basic_goal_prep; constructor;
-    autorewrite with lang_core in *; firstorder eauto.
+    autorewrite with lang_core utils in *; firstorder eauto.
   1,8,21,40:solve [apply inductive_implies_semantic in pres_cmp'; firstorder].
   all: eauto with lang_core.
   all: try match goal with [|- all_fresh _] => basic_core_crush end.
