@@ -12,7 +12,7 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 
 Definition unit_lang_def : lang :=
-  {[l
+  {[l/subst
   [:|
      -----------------------------------------------
       #"unit" : #"ty"
@@ -20,16 +20,8 @@ Definition unit_lang_def : lang :=
   [:| "G" : #"env"
       -----------------------------------------------
       #"tt" : #"val" "G" #"unit"
-    ];
-  [:= "G" : #"env",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("tt_subst")
-      #"val_subst" "g" #"tt" = #"tt"
-      : #"val" "G'" #"unit"
-  ]
+    ]
   ]}.
-
 
 Derive unit_lang
        SuchThat (elab_lang_ext value_subst unit_lang_def unit_lang)

@@ -11,8 +11,9 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
+
 Definition stlc_def : lang :=
-  {[l
+  {[l/subst
   [:| "t" : #"ty", "t'": #"ty"
       -----------------------------------------------
       #"->" "t" "t'" : #"ty"
@@ -37,29 +38,10 @@ Definition stlc_def : lang :=
       "B" : #"ty",
       "e" : #"exp" (#"ext" "G" "A") "B",
       "v" : #"val" "G" "A"
-      ----------------------------------------------- ("STLC_beta")
+      ----------------------------------------------- ("STLC-beta")
       #"app" (#"ret" (#"lambda" "A" "e")) (#"ret" "v")
       = #"exp_subst" (#"snoc" #"id" "v") "e"
       : #"exp" "G" "B"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"exp" "G" (#"->" "A" "B"),
-      "e'" : #"exp" "G" "A",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("app_subst")
-      #"exp_subst" "g" (#"app" "e" "e'")
-      = #"app" (#"exp_subst" "g" "e") (#"exp_subst" "g" "e'")
-      : #"exp" "G'" "B"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"exp" (#"ext" "G" "A") "B",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("lambda_subst")
-      #"val_subst" "g" (#"lambda" "A" "e")
-      = #"lambda" "A" (#"exp_subst" (#"snoc" (#"cmp" #"wkn" "g") #"hd") "e")
-      : #"val" "G'" (#"->" "A" "B")
   ]
   ]}.
 

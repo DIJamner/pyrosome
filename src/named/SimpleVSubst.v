@@ -192,3 +192,92 @@ Derive exp_subst
        As exp_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.
+
+
+(*TODO: make this actually pick a fresh name*)
+Definition choose_fresh : string ->ctx ->string := fun s _ => s.
+
+(*TODO: duplicated*)
+Definition under s :=
+  {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
+
+Definition get_subst_constr s :=
+  match s with
+  | "exp" => Some "exp_subst"
+  | "val" => Some "val_subst"
+  | _ => None
+  end.
+
+Section GenRHSSubterms.
+  Context (G : string)
+          (g : string).
+
+  (*TODO: careful! _ in patterns does bad things (treated as a var)
+   document &/or fix *)
+  Fixpoint gen_arg_subst s :=
+    match s with
+    | {{e#"emp"}} => {{e#"forget"}}
+    | var G' => if G =? G' then var g else {{e#"ERR1"}}
+    | {{e#"ext" {s'} {_} }} => under (gen_arg_subst s')
+    | _ => {{e#"ERR2" {s} }}
+    end.
+  
+  Fixpoint gen_rhs_subterms c args {struct c} :=
+    match c, args with
+    | (n1,t)::c', n2::args' =>
+      if n1 =? n2
+      then
+        match t with
+        | scon name [_;G'] =>
+          match get_subst_constr name with
+          | Some subst_constr =>
+            let s := gen_arg_subst G' in
+            let e := {{e #subst_constr {s} n1 }} in
+            e::(gen_rhs_subterms c' args')
+          | _ => (var n1)::(gen_rhs_subterms c' args')
+          end
+        | _ => (var n1)::(gen_rhs_subterms c' args')
+        end
+      else gen_rhs_subterms c' args
+    | _, _ => []
+    end.
+End GenRHSSubterms.
+
+Definition substable_constr name c args t : option lang :=
+  match t with
+  (*TODO: assumes arbitrary G below the line. Is that the behavior I want or can I generalize?*)
+  | scon s [A; var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "G'" c in
+      let g := choose_fresh "g" c in
+      let c' := (g,{{s#"sub" G' G }})
+                  ::(G', {{s#"env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [A; var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  | _ => None
+  end.
+
+Definition sc '(n,r) :=
+  match r with
+  |term_rule c args t =>
+   match substable_constr n c args t with
+   | Some l => l
+   | None => [(n,r)]
+   end
+  | r => [(n,r)]
+  end.
+
+
+Notation "'{[l/subst' r1 ; .. ; r2 ]}" :=
+  (List.flat_map sc (cons r2 .. (cons r1 nil) ..))%rule
+  (format "'[' {[l/subst '[hv' r1 ; '/' .. ; '/' r2 ']' ]} ']'") : lang_scope.

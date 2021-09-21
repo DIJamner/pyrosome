@@ -12,7 +12,7 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 
 Definition fix_def : lang :=
-  {[l
+  {[l/subst
   [:| "G" : #"env",
        "A" : #"ty",
        "B" : #"ty",
@@ -29,15 +29,6 @@ Definition fix_def : lang :=
       #"app" (#"ret" (#"fix" "A" "e")) (#"ret" "v")
       = #"exp_subst" (#"snoc" (#"snoc" #"id" (#"fix" "A" "e")) "v") "e"
       : #"exp" "G" "B"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"exp" (#"ext" (#"ext" "G" (#"->" "A" "B")) "A") "B",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("fix_subst")
-      #"val_subst" "g" (#"fix" "A" "e")
-      = #"fix" "A" (#"exp_subst" (#"snoc" (#"cmp" #"wkn" (#"snoc" (#"cmp" #"wkn" "g") #"hd")) #"hd") "e")
-      : #"val" "G'" (#"->" "A" "B")
   ]
   ]}.
 
