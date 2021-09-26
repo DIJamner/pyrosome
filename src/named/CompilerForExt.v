@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers ElabWithPrefix ElabCompilersWithPrefix.
+From Named Require Import Core Compilers Elab ElabCompilers.
 Import Core.Notations.
 
 (*TODO: probably should move this to compilerDefs*)
@@ -58,10 +58,10 @@ Fixpoint compile_ext cmp ext :=
   end.
 
 (*TODO: move to elabwithprefix*)
-Lemma elab_identity_args l_pre l c' c args
+Lemma elab_identity_args l c' c args
   : sublist args (map fst c) ->
     sublist c c' ->
-    elab_args l_pre l c' (map var args) args (map var (map fst c)) c.
+    elab_args l c' (map var args) args (map var (map fst c)) c.
 Proof.
   revert args; induction c; basic_goal_prep.
   {
@@ -156,7 +156,6 @@ Proof.
       auto.
     }
     erewrite <- compile_ctx_fst_equal.
-    apply elab_prefix_implies_elab_args.
     apply elab_identity_args.
     rewrite compile_ctx_fst_equal; auto.
     basic_utils_crush.
@@ -173,7 +172,6 @@ Proof.
         auto.
       }
       erewrite <- compile_ctx_fst_equal.
-      apply elab_prefix_implies_elab_args.
       apply elab_identity_args.
       rewrite compile_ctx_fst_equal; auto.
       basic_utils_crush.

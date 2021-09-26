@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilersWithPrefix.
+From Named Require Import Core Compilers Elab ElabCompilers.
 Import Core.Notations.
 
 
