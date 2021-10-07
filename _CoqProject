@@ -13,6 +13,7 @@ src/named/Term.v
 src/named/Rule.v
 src/named/Core.v
 src/named/Elab.v
+src/named/egraph/NatlikeTerm.v
 src/named/egraph/Defs.v
 src/named/Matches.v
 src/named/ComputeWf.v

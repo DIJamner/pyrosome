@@ -12,18 +12,19 @@
 Require Import Equalities Orders ZArith.
 
 From Utils Require Import Natlike ArrayList.
-Import Natlike.Ops ArrayList.Ops.
 
 
 
 (* Use typeclasses since passing some instances to functors breaks the VM
    (issue #12519)
  *)
-Section UnionFind.
-  Context {t : Type}
+Module UnionFind
+       (Import NL : Natlike)
+       (Import AL : ArrayList NL).
+(*  Context {t : Type}
           {idx_ops : NatlikeOps t}
           {array : Type -> Type}
-          {array_ops : ArrayListOps t array}.
+          {array_ops : ArrayListOps t array}.*)
 
   (*TODO: make notations use ops*)
   (*Module Ntns := (ArrayNotations NL AL).
@@ -103,11 +104,45 @@ End UnionFindSpec.
    Use the following code to test functions with a specific implementation: *)
 
 (*Testing *)
-From Utils Require Import PersistentArrayList.
+(*
 #[local] Existing Instance PArrayList.arraylist_ops.
 #[local] Existing Instance Int63Natlike.natlike_ops.
+*)
 
-Import Int63.
+Module CBVUnionFind.
+  
+  From Utils Require Import PersistentArrayList.
+
+  Module M := UnionFind Int63Natlike PArrayList. 
+
+  
+  (*TODO make exhaustive*)
+  Ltac avoid_int63_bug c :=
+    let x := eval cbv delta
+                  [Int63Natlike.eqb
+                     Int63Natlike.leb
+                     Int63Natlike.ltb
+                     M.find_aux
+                     M.find
+                     M.max
+                     M.union                     
+                  ] in c in
+        exact x.
+
+  (* Use defns from m when I don't need to work around the bug*)
+  Export M.
+
+
+  Definition find := ltac:(avoid_int63_bug find).
+  Definition max := ltac:(avoid_int63_bug max).
+  Definition union := ltac:(avoid_int63_bug union).
+End CBVUnionFind.
+
+(*TODO: this seems slower than not using the cbv delta trick.
+  Because find is unfolded in union?
+  Not enough to preclude it though
+ *)
+Import Int63 CBVUnionFind.
 
 Time Eval vm_compute in
      let uf :=N.recursion empty

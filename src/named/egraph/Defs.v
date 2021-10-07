@@ -12,6 +12,7 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 From Utils Require Import Utils PersistentArrayList UnionFind.
 From Named Require Import Term.
+From Named.egraph Require Import NatlikeTerm.
 (*Import Core.Notations.*)
 
 Require MSets.
@@ -120,16 +121,23 @@ Fixpoint list_ltb {A} (ltb : A -> A -> bool) (a b : list A) : bool :=
 
 Module IntListOT := ListOrderedType Int63Natlike.
 
+(*Define aliases for int so that at least the type annotations are more descriptive*)
+Definition var_idx := int.
+Definition constr_idx := int.
+Definition srt_idx := int.
+Definition ctx_idx := int.
+Definition tm_idx := int.
+
 (*TODO: use string -> int mapping to convert lang, ctx so that the egraph
   does not store strings
 *)
 Variant enode :=
 (*TODO: look into efficient ways to optimize empty if looking for a little performance(null?)*)
 | ctx_empty_node : enode
-| ctx_cons_node : string -> (*sort*) int -> (*tail*) int -> enode
-| con_node : string ->  list int -> enode
-| scon_node : string -> list int -> enode
-| var_node : string -> enode.
+| ctx_cons_node : (*context length*) N -> var_idx -> srt_idx -> ctx_idx -> enode
+| con_node : constr_idx ->  list tm_idx -> enode
+| scon_node : constr_idx -> list tm_idx -> enode
+| var_node : var_idx -> enode.
 
 
 Axiom TODO: forall {A}, A.
@@ -183,6 +191,7 @@ End ENode.
 
 
 Module NodeSets := MSets.MSetAVL.Make ENode.
+
 (*
 Module Parents := PairOrderedType ENode Int63Natlike.
 Module ParentSets := MSets.MSetAVL.Make Parents.
@@ -257,7 +266,7 @@ End ENodeMap.
 
 Instance hashcons_ty : Interface.map.map ENode.t Int63Natlike.t := ENodeMap.map _.
 
-(* TODO : could split off ctx classes here,
+(* TODO : could split off ctx classes here or even further (a separate pool)
    since they behave differently (no direct eqns, only unified as parents of subterms).
    Think about efficiency
 *)
@@ -298,10 +307,11 @@ End EClass.
 
 Instance eclass_map_ty : Interface.map.map Int63Natlike.t EClass.t := Int63Map.map _.
 
+Module UF := CBVUnionFind.
 
 Record egraph :=
   MkEGraph {
-      id_equiv : UnionFind.union_find;
+      id_equiv : UF.M.union_find;
       eclass_map : Int63Map.map EClass.t;
       hashcons : ENodeMap.map Int63Natlike.t;
       worklist : list Int63Natlike.t
@@ -369,12 +379,12 @@ Section EGraphOps.
 
   Definition find a : ST int :=
     fun '(MkEGraph U M H W) =>
-      let (U, i) := UnionFind.find U a in
+      let (U, i) := UF.find U a in
       (MkEGraph U M H W,i).
 
   Definition alloc : ST int :=
     fun '(MkEGraph U M H W) =>
-      let (U, i) := UnionFind.alloc U in
+      let (U, i) := UF.M.alloc U in
       (MkEGraph U M H W,i).
 
   Definition hashcons_lookup (n : ENode.t) : ST (option int) :=
@@ -399,7 +409,7 @@ Section EGraphOps.
 
   Definition union_ids a b : ST int :=
     fun '(MkEGraph U M H W) =>
-      let (U, i) := UnionFind.union U a b in
+      let (U, i) := UF.union U a b in
       (MkEGraph U M H W, i).
 
   (* return a default value rather than none
@@ -435,10 +445,10 @@ Section EGraphOps.
   Definition canonicalize n : ST ENode.t :=
     match n with
     | ctx_empty_node => do ret ctx_empty_node
-    | ctx_cons_node x srt tl =>
+    | ctx_cons_node n x srt tl =>
       do let srt <- find srt in
          let tl <- find tl in
-         ret ctx_cons_node x srt tl      
+         ret ctx_cons_node n x srt tl      
     | con_node name args =>
       do let args <- list_Mmap find args in       
          ret con_node name args     
@@ -463,7 +473,7 @@ Section EGraphOps.
   Definition add_parent_to_children n i : ST unit :=
     match n with
     | ctx_empty_node => do ret tt
-    | ctx_cons_node x srt tl =>
+    | ctx_cons_node _ x srt tl =>
       do let tt <- add_parent n i srt in
          let tt <- add_parent n i tl in
          ret tt     
@@ -603,40 +613,57 @@ Section EGraphOps.
   Definition rebuild : ST unit :=
     do let incong_bound := 100 in
        (rebuild_aux 100).
-       
-  Definition esubst := named_list int.
+
+  (* TODO: is it worth using a more efficient structure?
+     If we assume that the max length is ~10, maybe not
+   *)
+  Definition esubst := list (int*int).
   Definition match_result := list (esubst * EClass.t).
 
   
 
   (*Used as an intermediate form in equality saturation *)
   Unset Elimination Schemes.
+  (*TODO: parameterize; replace int with Idx.t*)
   Inductive eterm : Set :=
   (* variable name *)
-  | evar : string -> eterm
+  | evar : int -> eterm
   (* Rule label, list of subterms*)
-  | econ : string -> list eterm -> eterm
+  | econ : int -> list eterm -> eterm
   (* reference to an existing node in the egraph *)
   | eref : int -> eterm.
   Set Elimination Schemes.
 
+
   (* TODO: zero is a questionable default unless I implement null idea*)
-  Definition esubst_lookup (s : esubst) (n : string) : int :=
-    named_list_lookup Int63Natlike.zero s n.
+  Fixpoint esubst_lookup (s : esubst) (n : int) : int :=
+    match s with
+    | [] => 0%int63
+    | (s', v)::l' =>
+      if eqb n s' then v else esubst_lookup l' n
+    end.
 
   Arguments esubst_lookup !s n/.
 
-  
-  Fixpoint to_eterm_var_map (f : string -> eterm) (e : term) : eterm :=
+  Import Int63Term.
+  (*TODO: take in an actual map for constr_map?*)
+  Fixpoint to_eterm (e : term) : eterm :=
     match e with
-    | var x => f x
-    | con n s => econ n (map (to_eterm_var_map f) s)
+    | var x => evar x
+    | con n s => econ n (map to_eterm s)
     end.
 
-  Arguments to_eterm_var_map f !e /.
+  Arguments to_eterm !e /.
 
-  Definition eterm_subst (s : esubst) e : eterm :=
-    to_eterm_var_map (fun n => eref (esubst_lookup s n)) e.
+  (* TODO: should I work out how to apply substs to refs?
+     necessary if e can be an eterm
+   *)
+  Fixpoint eterm_subst (s : esubst) (e : term) : eterm :=
+    match e with
+    | var x => eref (esubst_lookup s x)
+    | con n s' =>
+      econ n (map (eterm_subst s) s')
+    end.
 
   Arguments eterm_subst s !e /.
 
@@ -649,30 +676,62 @@ Section EGraphOps.
     do let c <- get_eclass tm in
        ret c.(ectx).
 
-  
-       
+
+  Definition lookup_sort_in_ctx'
+            (rec : ctx_idx -> var_idx -> ST (option srt_idx))
+            (ctx : ctx_idx)
+            (x : var_idx) : ST (option srt_idx) :=
+    do let c <- get_eclass ctx in
+       match NodeSets.choose c.(nodes) with
+       | Some (ctx_cons_node _ x' srt tl) =>
+         if eqb x x' then do ret Some srt
+         else rec tl x
+       | _ => do ret None
+       end.
+
+  (*TODO: try to collapse 2 defs*)
+  Definition lookup_sort_in_ctx (ctx x : int) : ST (option srt_idx) :=
+    do let c <- get_eclass ctx in
+       match NodeSets.choose c.(nodes) with
+       | Some (ctx_cons_node n x' srt tl) =>
+         if eqb x x' then do ret Some srt
+         else N.recursion (fun _ _ => do ret None) (fun _ => lookup_sort_in_ctx') n tl x
+       | _ => do ret None
+       end.       
+
+  (*TODO: want this to be fast.
+    Build lang into egraph?
+    identify c w/ term c[/id/] and do regular lookup?
+    how to know the arity of id though?
+    middle option: "lang" is already compiled, just another node type?
+    what to do with equivalence rules then? drop? need to remember at least the names
+   *)
+  Definition get_term_ctx_and_sort (l : lang) (c : constr_idx) : option (ctx*sort) :=
+    match named_list_lookup_err l c with
+    | Some (term_rule c t
 
   (* assumes that the context and sort have already been added *)
   (* TODO: think about read/write separation & invariants *)
-  Fixpoint add_eterm_no_check (ctx (*srt*): int) (e : eterm) : ST (option int) :=
+  (* TODO: needs lang as input to generate the sort *)
+  Fixpoint add_eterm_no_check lang (ctx (*srt*): int) (e : eterm) : ST (option int) :=
     match e with
     | evar x =>
-      (*TODO: need to look up sort
-       and check, if srt is provided*)
-      add_term (var_node x) ctx srt
+      do let srt <- lookup_sort_in_ctx ctx x in
+         (add_term (var_node x) ctx srt)
     | econ n s =>
       (*TODO: generalize list_Mmap to composition of ST and option.
         Requires monad transformers to be nice
        *)
       do let margs <- list_Mmap add_eterm s in
+         let srt <- 
          match List.option_all margs with
          | Some args =>
            (*TODO: check wfness of top-level constructor here*)
            (*TODO: think about what needs to be canonicalized here *)
-           (add (con_node n ctx srt)
+           (add_term (con_node n args) ctx srt)
          | None => None
          end
-    | eref i => (*TODO: check? only if srt provided. write sep. helper?*) do ret i
+    | eref i => do ret i
    end.
 
                                                                              
@@ -682,6 +741,8 @@ Section EGraphOps.
   Fixpoint check_and_add_eterm (ctx (*srt*): int) (e : eterm) : ST (option int) :=
     match e with
     | evar x =>
+      do let srt <- lookup_sort_in_ctx ctx x in
+         (add_term (var_node x) ctx srt)
       (*TODO: need to look up sort
        and check, if srt is provided*)
       add (var_node x ctx srt)
@@ -694,6 +755,7 @@ Section EGraphOps.
          | Some args =>
            (*TODO: check wfness of top-level constructor here*)
            (*TODO: think about what needs to be canonicalized here *)
+           (add_term (con_node n args) ctx srt)
            (add (con_node n ctx srt)
          | None => None
          end
@@ -738,3 +800,4 @@ Section EGraphOps.
            do let ci1 <- find i1 in
               let ci2 <- find i2 in
               ret (eqb i1 i2).
+y
