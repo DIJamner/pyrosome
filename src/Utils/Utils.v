@@ -721,3 +721,5 @@ Fixpoint incl_dec {A} (eq_dec : forall s1 s2 : A, {s1 = s2} + {s1 <> s2})
          end); basic_utils_firstorder_crush.
 Defined.
 
+
+#[export] Hint Rewrite app_nil_r : utils.

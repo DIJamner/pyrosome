@@ -492,17 +492,6 @@ Fixpoint eq_term e1 e2 {struct e1} : bool :=
   | _,_ => false
   end.
 
-
-Ltac fold_Substable :=
-  try change (named_map (term_subst ?s') ?s) with s[/s'/];
-  try change (term_subst ?s ?e) with e[/s/];
-  try change (sort_subst ?s ?e) with e[/s/];
-  try change (args_subst ?s ?e) with e[/s/];
-  try change (subst_cmp ?s ?e) with e[/s/];
-  try change (map (term_var_map (subst_lookup ?s')) ?s) with s[/s'/].
-
-
-
 Lemma with_names_from_args_subst (c':ctx) s' (s : list term)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof.
@@ -521,13 +510,6 @@ Proof.
   intros; subst; auto.
 Qed.
 Hint Resolve well_scoped_change_args : term.
-
-
-Ltac cbn_substs :=
-  cbn [apply_subst with_names_from term_subst subst_cmp args_subst sort_subst
-                   substable_sort substable_args substable_term substable_subst map
-      term_var_map subst_lookup named_list_lookup eqb String.eqb Ascii.eqb Bool.eqb].
-
 
 
 Lemma invert_con n n' s s'
@@ -608,10 +590,49 @@ End WithVar.
 #[export] Hint Rewrite invert_var_con : term.
 #[export] Hint Rewrite invert_scon : term.
 
-Existing Instance substable_term.
-Existing Instance substable_sort.
-Existing Instance substable_args.
-Existing Instance substable_subst.
+#[export] Existing Instance substable_term.
+#[export] Existing Instance substable_sort.
+#[export] Existing Instance substable_args.
+#[export] Existing Instance substable_subst.
+
+
+(*Defined as a notation so that the definition 
+does not get in the way of automation *)
+Notation id_subst c := (with_names_from c (id_args c)).
+Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
+Arguments well_scoped [V]%type_scope {V_Eqb} {A}%type_scope {Substable} _%list_scope !_.
+Arguments apply_subst [V]%type_scope {V_Eqb} {A}%type_scope {Substable} _%list_scope !_.
+
+
+Ltac fold_Substable :=
+  try change (named_map (term_subst ?s') ?s) with s[/s'/];
+  try change (term_subst ?s ?e) with e[/s/];
+  try change (sort_subst ?s ?e) with e[/s/];
+  try change (args_subst ?s ?e) with e[/s/];
+  try change (subst_cmp ?s ?e) with e[/s/];
+  try change (map (term_var_map (subst_lookup ?s')) ?s) with s[/s'/].
+
+(*TODO: specialized to strings*)
+Ltac cbn_substs :=
+  cbn [apply_subst with_names_from term_subst subst_cmp args_subst sort_subst
+                   substable_sort substable_args substable_term substable_subst map
+      term_var_map subst_lookup named_list_lookup eqb String.eqb Ascii.eqb Bool.eqb].
+
+
+Arguments subst_lookup [V]%type_scope {V_Eqb} !s n/.
+Arguments ctx_lookup [V]%type_scope {V_Eqb V_default} !c n/.
+Arguments term_var_map [V]%type_scope f !e /.
+Arguments term_subst [V]%type_scope {V_Eqb} s !e /.
+Arguments subst_cmp [V]%type_scope {V_Eqb} s1 s2 /.
+
+
+Arguments ws_term [V]%type_scope args !e/.
+Arguments ws_args [V]%type_scope args !s/.
+Arguments ws_subst [V]%type_scope args !s/.
+Arguments ws_ctx [V]%type_scope !c/.
+Arguments id_args : simpl never.
+Arguments args_subst [V]%type_scope {V_Eqb} s !a/.
+Arguments sort_subst [V]%type_scope {V_Eqb} s !t/.
 
 (*Moved out of the module because Coq seems
   to include them at the the top level anyway
@@ -707,7 +728,6 @@ Module Notations.
   Check {{e #"foo" (#"bar" "x") #"baz" "y"}}.
   Check {{s #"foo" }}.
   Check {{s #"foo" (#"bar" "x") #"baz" "y"}}.
-  Check (fun n s => con n [s]).
                                
   Bind Scope ctx_scope with ctx.
 
