@@ -70,12 +70,16 @@ Ltac solve_invert_constr_eq_lemma :=
 
 Ltac generic_crush rewrite_tac hint_auto :=
   repeat (intuition break; subst; rewrite_tac;
+          (*TODO: is this the best place for this?*)
+          try typeclasses eauto;
           intuition unshelve hint_auto).
 (* Uses firstorder, which can have strange edge cases
    and interacts poorly with terms
  *)
 Ltac generic_firstorder_crush rewrite_tac hint_auto :=
   repeat (intuition break; subst; rewrite_tac;
+          (*TODO: is this the best place for this?*)
+          try typeclasses eauto;
           firstorder unshelve hint_auto).
 (*try (solve [ repeat (unshelve f_equal; hint_auto)])). *)
 
@@ -194,7 +198,7 @@ Hint Rewrite invert_eq_cons_cons : utils.
 
 (*TODO: does this exist somewhere I can use?
   TODO: include minimum necessary to prove the given properties
-*)
+*) 
 Class Eqb (A : Type) :=
   {
   eqb : A -> A -> bool;
@@ -207,10 +211,23 @@ Class Eqb (A : Type) :=
 #[export] Hint Rewrite @eqb_neq : utils.
 #[export] Hint Rewrite @eqb_refl : utils.
 
+#[export] Instance string_Eqb : Eqb string :=
+  {|
+  eqb := String.eqb;
+  eqb_eq := String.eqb_eq;
+  eqb_neq := String.eqb_neq;
+  eqb_refl := String.eqb_refl;
+  Eqb_dec := string_dec
+  |}.
+
 (* Not defined as a record so that firstorder doesn't mess with it*)
 Definition WithDefault (A : Type) := A.
 Definition default {A} {d : WithDefault A} := d.
 Existing Class WithDefault.
+
+#[export] Instance string_default : WithDefault string := "".
+(* TODO: is this bad practice? *)
+Hint Extern 10 (WithDefault _) => solve [typeclasses eauto].
 
 (* TODO: separate file? *)
 Section NamedList.

@@ -9,11 +9,24 @@ From Utils Require Import Utils.
 From Named Require Import Core.
 Import Core.Notations.
 
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+
+  Notation named_list := (@named_list V).
+  Notation named_map := (@named_map V).
+  Notation term := (@term V).
+  Notation ctx := (@ctx V).
+  Notation sort := (@sort V).
+  Notation subst := (@subst V).
+  Notation rule := (@rule V).
+  Notation lang := (@lang V).
 
 (* each element is the image for that constructor or axiom*)
 Variant compiler_case :=
- | term_case (args : list string) (e:term)
- | sort_case (args : list string) (t:sort).
+ | term_case (args : list V) (e:term)
+ | sort_case (args : list V) (t:sort).
 Definition compiler := named_list compiler_case.
 
 Lemma invert_eq_term_case_term_case args args' e e'
@@ -41,18 +54,20 @@ Section CompileFn.
           (cmp : compiler)
           (src : lang).
 
+  (*TODO: move to Term.v*)
+  Existing Instance term_default.
+  Existing Instance sort_default.
+  
   (* does not use src or tgt, only cmp *)
   (*TODO: notations do a poor job of spacing this*)
   Fixpoint compile (e : term) : term :=
     match e with
     | var x => var x
     | con n s =>
-      (*TODO: return Some and use default typeclass?*)
-      let default := con "ERR" [] in
       let arg_terms := map compile s in
       match named_list_lookup_err cmp n with
       | Some (term_case args e) => e[/combine args arg_terms/]
-      | _ => default
+      | _ => default : term
       end
     end.
   
@@ -60,8 +75,6 @@ Section CompileFn.
   Definition compile_sort (t : sort) : sort :=
     match t with
     | scon n s =>
-      (*TODO: return Some and use default typeclass?*)
-      let default := scon "ERR" [] in
       let arg_terms := map compile s in
       match named_list_lookup_err cmp n with
       | Some (sort_case args t) => t[/combine args arg_terms/]
@@ -169,6 +182,12 @@ Section Extension.
       preserving_compiler_ext target cmp ((n,term_eq_rule c e1 e2 t) :: l).
 
 End Extension.
+
+End WithVar.
+#[export] Hint Rewrite invert_eq_term_case_term_case : lang_core.
+#[export] Hint Rewrite invert_eq_term_case_sort_case : lang_core.
+#[export] Hint Rewrite invert_eq_sort_case_term_case : lang_core.
+#[export] Hint Rewrite invert_eq_sort_case_sort_case : lang_core.
 #[export] Hint Constructors preserving_compiler_ext : lang_core.
 
 (*TODO: add preserving_compiler notation once other files are updated *)
@@ -224,19 +243,20 @@ Module Notations.
        case_n custom comp_case,
        format "'[' 'match'  #  'with' '//' '[v' case_1 '//' .. '//' case_n ']'  '//' 'end' ']'").
 
-  Definition gen_rule (cmp : compiler) (p : string * rule) : named_list compiler_case :=
+  (*TODO: specialized to strings. Generalize.*)
+  Definition gen_rule (cmp : compiler string) (p : string * rule string) : named_list (compiler_case string) :=
     let (n,r) := p in
     match r with
     | sort_rule c args =>
-      match named_list_lookup (sort_case (map fst c) (scon n (map var args))) cmp n with
+      match named_list_lookup (sort_case (map fst c) (scon n (map (@var string) args))) cmp n with
       | sort_case args' t =>
-        [(n,sort_case (map fst c) t[/combine args' (map var (map fst c))/])]
+        [(n,sort_case (map fst c) t[/combine args' (map (@var string) (map fst c))/])]
       | _ => [(n,sort_case [] {{s#"ERR: expected sort case"}})]
       end
     | term_rule c args t => 
-      match named_list_lookup (term_case (map fst c) (con n (map var args))) cmp n with
+      match named_list_lookup (term_case (map fst c) (con n (map (@var string) args))) cmp n with
       | term_case args' e =>
-        [(n,term_case (map fst c) e[/combine args' (map var (map fst c))/])]
+        [(n,term_case (map fst c) e[/combine args' (map (@var string) (map fst c))/])]
       | _ => [(n,sort_case [] {{s#"ERR: expected term case"}})]
       end
     | sort_eq_rule _ _ _

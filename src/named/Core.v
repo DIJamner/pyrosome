@@ -1397,14 +1397,14 @@ Arguments in_all_named_list [V]%type_scope {A}%type_scope
 #[export] Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
 #[export] Hint Resolve wf_lang_implies_ws : lang_core.
 
-(*TODO: added 2 _s for V VEqb, check that it still works*)
+(*TODO: duplicated to use outside of section; deduplicate? *)
 Ltac use_rule_in_wf :=
     match goal with
       [ H : wf_lang_ext _ ?l,
             Hin : In (_,_) ?l |-_] =>
-      pose proof (rule_in_wf _ _ _ _ H Hin)
+      pose proof (rule_in_wf _ _ H Hin)
     end.
-(*TODO: check that this works w/ V*)
+
 (*Notation so that extension lemmas still apply *)
 Notation wf_lang l := (wf_lang_ext [] l).
 
@@ -1423,6 +1423,18 @@ Notation wf_lang l := (wf_lang_ext [] l).
 #[export] Hint Resolve wf_term_lookup : lang_core.
 
 #[export] Hint Resolve wf_args_length_eq : lang_core.
+
+
+#[export] Hint Rewrite invert_wf_subst_nil_cons : lang_core.
+#[export] Hint Rewrite invert_wf_subst_cons_nil : lang_core.
+#[export] Hint Rewrite invert_wf_subst_nil_nil : lang_core.
+#[export] Hint Rewrite invert_wf_subst_cons_cons : lang_core.
+#[export] Hint Rewrite invert_wf_ctx_nil : lang_core.
+#[export] Hint Rewrite invert_wf_ctx_cons : lang_core.
+#[export] Hint Rewrite invert_wf_sort_rule : lang_core.
+#[export] Hint Rewrite invert_wf_term_rule : lang_core.
+#[export] Hint Rewrite invert_wf_sort_eq_rule : lang_core.
+#[export] Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 #[export] Hint Constructors wf_lang_ext : lang_core.
 #[export] Hint Rewrite invert_wf_lang_nil : lang_core.
@@ -1465,3 +1477,15 @@ Notation wf_lang l := (wf_lang_ext [] l).
 #[export] Hint Resolve eq_args_length_eq_r : lang_core.
 
 #[export] Hint Rewrite wf_con_id_args_subst : lang_core.
+
+
+
+(*TODO: duplicated; dedup?*)
+Ltac with_rule_in_wf_crush :=
+  let rewrite_tac := autorewrite with utils term lang_core in * in
+  let hint_auto := eauto with utils term lang_core in
+          subst; rewrite_tac; firstorder;
+                   try use_rule_in_wf; rewrite_tac;
+  firstorder (subst; rewrite_tac;(* repeat rewrite_strengthen;*) hint_auto;
+              try (solve [ exfalso; hint_auto
+                         | repeat (f_equal; hint_auto)])).

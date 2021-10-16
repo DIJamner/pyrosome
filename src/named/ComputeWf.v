@@ -8,6 +8,19 @@ Import Core.Notations.
 
 Import OptionMonad.
 
+
+(*
+TODO: generalize to arbitrary identifiers
+ *)
+Notation named_list := (@named_list string).
+Notation named_map := (@named_map string).
+Notation term := (@term string).
+Notation ctx := (@ctx string).
+Notation sort := (@sort string).
+Notation subst := (@subst string).
+Notation rule := (@rule string).
+Notation lang := (@lang string).
+
 Section Terms.
   Context (l : lang).
   

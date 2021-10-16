@@ -9,7 +9,17 @@ From Utils Require Import Utils.
 From Named Require Import Core.
 Import Core.Notations.
  
-
+(*
+TODO: generalize to arbitrary identifiers
+*)
+Notation named_list := (@named_list string).
+Notation named_map := (@named_map string).
+Notation term := (@term string).
+Notation ctx := (@ctx string).
+Notation sort := (@sort string).
+Notation subst := (@subst string).
+Notation rule := (@rule string).
+Notation lang := (@lang string).
 
 Section TermsAndRules.
   Context (l : lang).
@@ -75,7 +85,7 @@ Section TermsAndRules.
      fresh n c ->
      fresh n ec.
  Proof.
-   induction 1; basic_goal_prep; basic_core_crush.
+   induction 1; basic_goal_prep; basic_core_firstorder_crush.
  Qed.
  Hint Resolve elab_ctx_preserves_fresh : lang_core.
  
