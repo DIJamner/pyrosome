@@ -222,7 +222,7 @@ Class Eqb (A : Type) :=
 
 (* Not defined as a record so that firstorder doesn't mess with it*)
 Definition WithDefault (A : Type) := A.
-Definition default {A} {d : WithDefault A} := d.
+Definition default {A} {d : WithDefault A} : A := d.
 Existing Class WithDefault.
 
 #[export] Instance string_default : WithDefault string := "".

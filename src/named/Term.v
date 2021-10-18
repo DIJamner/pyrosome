@@ -35,7 +35,7 @@ Set Elimination Schemes.
 
 Coercion var : V >-> term.
 
-Instance term_default : WithDefault term := var default.
+Instance term_default : WithDefault term := con default [].
 
 (*Stronger induction principle w/ better subterm knowledge
  *)
@@ -569,6 +569,8 @@ Definition ctx_eq_dec := list_eq_dec (pair_eq_dec Eqb_dec sort_eq_dec).
 
 End WithVar.
 
+Arguments var {V}%type_scope _.
+Arguments con {V}%type_scope _ _%list_scope.
 
 #[export] Hint Rewrite @subst_assoc : term.
 #[export] Hint Rewrite @subst_id : term.
