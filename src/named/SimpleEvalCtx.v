@@ -35,7 +35,7 @@ Definition subst_eval_ctx_def : lang :=
   ]]}.
        
 Derive eval_ctx
-       SuchThat (Pre.elab_lang (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
+       SuchThat (elab_lang_ext (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
        As eval_ctx_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve eval_ctx_wf : elab_pfs.
@@ -87,8 +87,9 @@ Definition Estlc_def :lang :=
   ]]}.
 
 
+
 Derive Estlc
-       SuchThat (Pre.elab_lang (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
+       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
        As Estlc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve Estlc_wf : elab_pfs.

@@ -371,29 +371,31 @@ Proof.
 Qed.  
 *)
 
+(*TODO: put in core; really should already exist *)
+Lemma lang_ext_monotonicity l1 l2 l
+  : wf_lang_ext l1 l -> incl l1 l2 -> all_fresh (l ++ l2) -> wf_lang_ext l2 l.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+  eapply wf_rule_lang_monotonicity; eauto.
+  eauto with utils.
+Qed.
+
+Ltac prove_ident_from_known_elabs :=
+  eapply lang_ext_monotonicity;
+  [typeclasses eauto with auto_elab elab_pfs
+  | auto with utils
+  | eapply use_compute_all_fresh; compute; reflexivity].
 
 (*TODO: this is still a tactic performance bottleneck;
   reduce number of calls to it
  *)
-(*TODO: fix implementation*)
-Ltac prove_from_known_elabs :=  
-  repeat (lazymatch goal with
-          | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) =>
-            apply wf_lang_concat
-          | |- wf_lang_ext _ _ =>
-            solve[eapply elab_lang_implies_wf; eauto 1 with elab_pfs]
-          | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
-          end).
-  (*unshelve
-    (repeat
-       (eauto 1 with elab_pfs;
-        match goal with
-        |[|- wf_lang _] =>
-         eapply elab_lang_implies_wf
-        |[|- all_fresh _] => apply use_compute_all_fresh; vm_compute; reflexivity
-        end));
-  solve [auto with utils
-        | apply use_compute_incl_lang; vm_compute; reflexivity].*)
+Ltac prove_from_known_elabs :=
+  repeat
+    lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
+    end.
 
 
 (*TODO: for removing redundant goals from term_cong*)
@@ -536,7 +538,7 @@ Proof.
     revert Heqe_i.
     induction H3;
       basic_goal_prep;
-      basic_core_crush.
+      basic_core_firstorder_crush.
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) H3 H) as H'.
     safe_invert H'.
 
@@ -559,7 +561,7 @@ Proof.
     intros.
     safe_invert H4.
     safe_invert H5.
-    constructor; basic_goal_prep; basic_core_crush.
+    constructor; basic_goal_prep; basic_core_firstorder_crush.
     apply H0.
     eapply wf_term_conv; eauto.
     eapply eq_sort_subst.
@@ -979,7 +981,7 @@ Ltac split_rule_elab :=
   [ compute; reflexivity
   | compute; reflexivity
   | apply use_compute_fresh; compute; reflexivity |
-  | prove_from_known_elabs |].
+  | solve[prove_from_known_elabs] |].
 
 Ltac setup_elab_lang :=
   lazymatch goal with
