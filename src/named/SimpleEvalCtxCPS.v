@@ -7,11 +7,12 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Elab SimpleVSubst SimpleVSTLC SimpleEvalCtx SimpleVCPS Matches
-Compilers ElabCompilersWithPrefix.
+Compilers ElabCompilers.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
 
+Notation compiler := (compiler string).
 
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.

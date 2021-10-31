@@ -6,13 +6,15 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix
+From Named Require Import Core Compilers Elab ElabCompilers
      SimpleVSubst SimpleVSTLC SimpleVCPS SimpleVFix Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
+
+Notation compiler := (compiler string).
 
 
 Definition fix_cps_lang_def : lang :=

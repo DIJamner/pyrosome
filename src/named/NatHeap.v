@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core ElabWithPrefix
+From Named Require Import Core Elab
      SimpleVSubst SimpleUnit SimpleEvalCtx
      Matches.
 Import Core.Notations.
@@ -48,9 +48,7 @@ Definition nat_lang_def : lang :=
 
 
 Derive nat_lang
-       SuchThat (Pre.elab_lang []
-                               nat_lang_def
-                               nat_lang)
+       SuchThat (elab_lang_ext [] nat_lang_def nat_lang)
        As nat_lang_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve nat_lang_wf : elab_pfs.
@@ -76,7 +74,7 @@ Definition nat_exp_def : lang :=
 
 
 Derive nat_exp
-       SuchThat (Pre.elab_lang (nat_lang ++ value_subst)
+       SuchThat (elab_lang_ext (nat_lang ++ value_subst)
                                nat_exp_def
                                nat_exp)
        As nat_exp_wf.
@@ -153,7 +151,7 @@ Definition heap_def : lang :=
 
 
 Derive heap
-       SuchThat (Pre.elab_lang nat_lang
+       SuchThat (elab_lang_ext nat_lang
                                heap_def
                                heap)
        As heap_wf.
@@ -208,7 +206,7 @@ Definition heap_ops_def : lang :=
   ]}.
 
 Derive heap_ops
-       SuchThat (Pre.elab_lang (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst)
+       SuchThat (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst)
                                heap_ops_def
                                heap_ops)
        As heap_ops_wf.
@@ -291,7 +289,7 @@ Definition heap_ctx_def : lang :=
   ]}.
 
 Derive heap_ctx
-       SuchThat (Pre.elab_lang (eval_ctx ++ heap_ops
+       SuchThat (elab_lang_ext (eval_ctx ++ heap_ops
                                   ++ unit_lang
                                   ++ heap ++ nat_exp
                                   ++ nat_lang ++ exp_subst

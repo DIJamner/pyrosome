@@ -395,6 +395,7 @@ Ltac prove_from_known_elabs :=
     | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
     | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
     | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
+    | |- incl _ _ => simple eapply use_compute_incl_lang; compute; reflexivity
     end.
 
 
@@ -981,7 +982,8 @@ Ltac split_rule_elab :=
   [ compute; reflexivity
   | compute; reflexivity
   | apply use_compute_fresh; compute; reflexivity |
-  | solve[prove_from_known_elabs] |].
+  (*fail 2 since this will be used in a repeat *)
+  | solve [ prove_from_known_elabs ] || fail 2 "Could not prove base language wf" |].
 
 Ltac setup_elab_lang :=
   lazymatch goal with

@@ -7,12 +7,16 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core Compilers Elab ElabCompilers
-     ElabCompilersWithPrefix SimpleVSubst SimpleVCPS Matches.
-Module Pre := ElabWithPrefix.
+      SimpleVSubst SimpleVCPS Matches.
 Import Core.Notations.
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
+
+Let svar := @var string.
+Coercion svar : string >-> term.
+
+Notation compiler := (compiler string).
 
 Definition let_lang_def : lang :=
   {[l
@@ -50,7 +54,7 @@ Definition let_lang_def : lang :=
   ]}.
 
 Derive let_lang
-       SuchThat (Pre.elab_lang (exp_subst++value_subst) let_lang_def let_lang)
+       SuchThat (elab_lang_ext (exp_subst++value_subst) let_lang_def let_lang)
        As let_lang_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve let_lang_wf : elab_pfs.

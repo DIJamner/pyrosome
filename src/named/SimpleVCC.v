@@ -6,13 +6,12 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix SimpleVSubst SimpleVCPS Matches.
+From Named Require Import Core Compilers Elab ElabCompilers SimpleVSubst SimpleVCPS Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
-
 
 Definition prod_cc_def : lang :=
   {[l
@@ -68,7 +67,7 @@ Definition prod_cc_def : lang :=
 
 
 Derive prod_cc
-       SuchThat (Pre.elab_lang (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
+       SuchThat (elab_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
        As prod_cc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve prod_cc_wf : elab_pfs.
@@ -139,7 +138,7 @@ Definition cc_lang_def : lang :=
 
 
 Derive cc_lang
-       SuchThat (Pre.elab_lang (prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+       SuchThat (elab_lang_ext (prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
                                cc_lang_def
                                cc_lang)
        As cc_lang_wf.
@@ -214,7 +213,7 @@ Definition forget_eq_wkn_def : lang :=
       ]
   ]}.
 Derive forget_eq_wkn
-       SuchThat (Pre.elab_lang value_subst
+       SuchThat (elab_lang_ext value_subst
                                forget_eq_wkn_def
                                forget_eq_wkn)
        As forget_eq_wkn_wf.
