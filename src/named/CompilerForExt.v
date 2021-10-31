@@ -9,6 +9,28 @@ From Utils Require Import Utils.
 From Named Require Import Core Compilers Elab ElabCompilers.
 Import Core.Notations.
 
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+
+  
+  Notation named_list := (@named_list V).
+  Notation named_map := (@named_map V).
+  Notation term := (@term V).
+  Notation ctx := (@ctx V).
+  Notation sort := (@sort V).
+  Notation subst := (@subst V).
+  Notation rule := (@rule V).
+  Notation lang := (@lang V).
+  Notation compiler := (@compiler V).
+  Notation compiler_case := (@compiler_case V).
+
+  (*TODO: move to CompilerDefs.v *)
+  Arguments term_case {V}%type_scope args%list_scope e.
+  Arguments sort_case {V}%type_scope args%list_scope t.
+
 (*TODO: probably should move this to compilerDefs*)
 Definition compile_rule cmp r :=
   match r with
@@ -26,7 +48,7 @@ Definition compile_rule cmp r :=
   end.
 
 (* the identity compiler maps an extension to its lowering *)
-Fixpoint ext_id ext :=
+Fixpoint ext_id (ext : lang) :=
   match ext with
   | [] => []
   | (n,sort_rule c args)::ext' =>
@@ -37,7 +59,7 @@ Fixpoint ext_id ext :=
   end.
 
 (* The elaborated version *)
-Fixpoint ext_id_elab ext :=
+Fixpoint ext_id_elab (ext : lang) :=
   match ext with
   | [] => []
   | (n,sort_rule c args)::ext' =>
@@ -80,14 +102,14 @@ Proof.
   {
       simpl.
       constructor;
-      basic_core_crush.
+      basic_core_firstorder_crush.
   }
 Qed.
 
 
 
 (*TODO: move to ARule.v*)
-Definition rule_args_sublist r :=
+Definition rule_args_sublist (r : rule) :=
   match r with
   | sort_rule c args => sublist args (map fst c)
   | term_rule c args _ => sublist args (map fst c)
@@ -98,10 +120,10 @@ Definition rule_args_sublist r :=
 Definition lang_args_sublist : lang -> Prop :=
   all (fun p => rule_args_sublist (snd p)).
 
-Definition compute_rule_args_sublist r :=
+Definition compute_rule_args_sublist (r : rule) :=
   match r with
-  | sort_rule c args => compute_sublist string_dec args (map fst c)
-  | term_rule c args _ => compute_sublist string_dec args (map fst c)
+  | sort_rule c args => compute_sublist Eqb_dec args (map fst c)
+  | term_rule c args _ => compute_sublist Eqb_dec args (map fst c)
   | sort_eq_rule _ _ _ => true
   | term_eq_rule _ _ _ _ => true
   end.
@@ -143,7 +165,7 @@ Lemma extension_preservation' ext text tgt cmp_elab
                   (ext_id ext)
                   (ext_id_elab ext) ext.
 Proof.
-  induction ext; basic_goal_prep; basic_core_crush.
+  induction ext; basic_goal_prep; basic_core_firstorder_crush.
   destruct r; basic_goal_prep; constructor; eauto.
   {
     econstructor.
@@ -180,7 +202,7 @@ Proof.
       rewrite <- combine_map_fst_is_with_names_from.
       rewrite compile_ctx_fst_equal.
       rewrite combine_map_fst_is_with_names_from.
-      rewrite sort_subst_id.
+      rewrite subst_id.
       reflexivity.
     }
   }
@@ -198,8 +220,8 @@ Lemma compile_ext_preserves_args_sublist cmp_elab ext
   :  lang_args_sublist ext ->
      lang_args_sublist (compile_ext cmp_elab ext).
 Proof.
-  induction ext; basic_goal_prep; basic_core_crush.
-  destruct r; basic_goal_prep; basic_core_crush.
+  induction ext; basic_goal_prep; basic_core_firstorder_crush.
+  destruct r; basic_goal_prep; basic_core_firstorder_crush.
   rewrite compile_ctx_fst_equal; auto.
   rewrite compile_ctx_fst_equal; auto.
 Qed.  
@@ -213,3 +235,5 @@ Proof.
   intros; apply extension_preservation'; basic_utils_crush.
   apply compile_ext_preserves_args_sublist; auto.
 Qed.
+
+End WithVar.

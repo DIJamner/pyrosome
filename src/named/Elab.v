@@ -8,18 +8,21 @@ Open Scope list.
 From Utils Require Import Utils.
 From Named Require Import Core.
 Import Core.Notations.
- 
-(*
-TODO: generalize to arbitrary identifiers
-*)
-Notation named_list := (@named_list string).
-Notation named_map := (@named_map string).
-Notation term := (@term string).
-Notation ctx := (@ctx string).
-Notation sort := (@sort string).
-Notation subst := (@subst string).
-Notation rule := (@rule string).
-Notation lang := (@lang string).
+
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+  
+Notation named_list := (@named_list V).
+Notation named_map := (@named_map V).
+Notation term := (@term V).
+Notation ctx := (@ctx V).
+Notation sort := (@sort V).
+Notation subst := (@subst V).
+Notation rule := (@rule V).
+Notation lang := (@lang V).
 
 Section TermsAndRules.
   Context (l : lang).
@@ -43,7 +46,7 @@ Section TermsAndRules.
   | elab_term_var : forall c n t,
       In (n, t) c ->
       elab_term c (var n) (var n) t
-  with elab_args : ctx -> list term -> list string -> list term -> ctx -> Prop :=
+  with elab_args : ctx -> list term -> list V -> list term -> ctx -> Prop :=
   | elab_args_nil : forall c, elab_args c [] [] [] []
   | elab_args_cons_ex : forall c s args es c' name e ee t,
       elab_term c e ee t[/with_names_from c' es/] ->
@@ -220,9 +223,9 @@ Section Extension.
 
 End Extension.
 
-#[export] Hint Resolve elab_lang_preserves_fresh : lang_core.
+Hint Resolve elab_lang_preserves_fresh : lang_core.
 
-#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang_ext : lang_core.
+Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang_ext : lang_core.
 (* TODO: are these hints worth it?
 #[export] Hint Resolve elab_sort_implies_wf : lang_core.
 #[export] Hint Resolve elab_term_implies_wf : lang_core.
@@ -230,7 +233,7 @@ End Extension.
 #[export] Hint Resolve elab_ctx_implies_wf : lang_core.
   Hint Resolve elab_rule_implies_wf : lang_core.
 *)
-#[export] Hint Resolve elab_lang_implies_wf : lang_core.
+Hint Resolve elab_lang_implies_wf : lang_core.
 
 (*TODO: improve connection between elab, prefix elab, and wf
   so that wf theorems can be ported to the others.
@@ -264,158 +267,20 @@ Qed.
 
 Definition elab_sort_lang_monotonicity l' l (lincll' : incl l l')
   := proj1 (elab_lang_mono lincll').
-#[export] Hint Resolve elab_sort_lang_monotonicity : lang_core.
+Hint Resolve elab_sort_lang_monotonicity : lang_core.
 
 Definition elab_term_lang_monotonicity l' l (lincll' : incl l l')
   := proj1 (proj2 (elab_lang_mono lincll')).
-#[export] Hint Resolve elab_term_lang_monotonicity : lang_core.
+Hint Resolve elab_term_lang_monotonicity : lang_core.
 
 Definition elab_args_lang_monotonicity l' l (lincll' : incl l l')
   := proj1 (proj2 (proj2 (elab_lang_mono lincll'))).
-#[export] Hint Resolve elab_args_lang_monotonicity : lang_core.
+Hint Resolve elab_args_lang_monotonicity : lang_core.
 
 Definition elab_ctx_lang_monotonicity l' l (lincll' : incl l l')
   := proj2 (proj2 (proj2 (elab_lang_mono lincll'))).
-#[export] Hint Resolve elab_ctx_lang_monotonicity : lang_core.
+Hint Resolve elab_ctx_lang_monotonicity : lang_core.
 
-(* TODO replace all of these with inclusion
-Local Lemma elab_lang_insert_mono l' l name r
-  : (forall c t et,
-           elab_sort (l' ++ l) c t et ->
-           elab_sort (l'++(name,r)::l) c t et)
-    /\ (forall c e ee t,
-           elab_term (l' ++ l) c e ee t ->
-           elab_term (l'++(name,r)::l) c e ee t)
-    /\ (forall c s args es c',
-           elab_args (l' ++ l) c s args es c' ->
-           elab_args (l'++(name,r)::l) c s args es c')
-    /\ (forall c ec,
-           elab_ctx (l' ++ l) c ec ->
-           elab_ctx (l'++(name,r)::l) c ec).
-Proof using.
-  apply elab_ind; basic_goal_prep; basic_core_crush.
-  1,2: eapply elab_sort_by; basic_core_crush.
-  1,2: eapply elab_term_by; basic_core_crush.
-Qed.
-
-Definition elab_sort_lang_insert_monotonicity l' l name r
-  := proj1 (elab_lang_insert_mono l' l name r).
-#[export] Hint Resolve elab_sort_lang_insert_monotonicity : lang_core.
-
-Definition elab_term_lang_insert_monotonicity l' l name r
-  := proj1 (proj2 (elab_lang_insert_mono l' l name r)).
-#[export] Hint Resolve elab_term_lang_insert_monotonicity : lang_core.
-
-Definition elab_args_lang_insert_monotonicity l' l name r
-  := proj1 (proj2 (proj2 (elab_lang_insert_mono l' l name r))).
-#[export] Hint Resolve elab_args_lang_insert_monotonicity : lang_core.
-
-Definition elab_ctx_lang_insert_monotonicity l' l name r
-  := proj2 (proj2 (proj2 (elab_lang_insert_mono l' l name r))).
-#[export] Hint Resolve elab_ctx_lang_insert_monotonicity : lang_core.
-
-Lemma elab_rule_lang_insert_monotonicity l' l name r' r er
-  : elab_rule (l'++l) r er -> elab_rule (l'++(name, r') :: l) r er.
-Proof.
-  inversion 1; basic_goal_prep; basic_core_crush.
-  (*TODO: why isn't this already solved?*)
-  constructor; basic_core_crush.
-Qed.
-#[export] Hint Resolve elab_rule_lang_insert_monotonicity : lang_core.
-                                                                
-(*TODO: move to utils*)
-Lemma invert_empty_app A (a b : list A)
-  : [] = a++b <-> a = [] /\ b = [].
-Proof.
-  destruct a; simpl; firstorder congruence.
-Qed.
-Hint Rewrite invert_empty_app : utils.
-
-
-Lemma length_0_is_empty A (a : list A)
-  : 0 = List.length a <-> a = [].
-Proof.
-  destruct a; simpl; firstorder congruence.
-Qed.
-Hint Rewrite length_0_is_empty : utils.
-Hint Rewrite app_nil_l : utils.
-
-(*TODO: length side condition is awkward;
-  make a more ergonomic interface?
-*)
-Lemma elab_lang_insert_wf l_pre l' el' l el r er s
-  : fresh s (l'++l++l_pre) ->
-    elab_rule el r er ->
-    elab_lang_ext l_pre l el ->
-    elab_lang_ext (el++l_pre) l' el'->
-    elab_lang_ext l_pre (l' ++ (s,r)::l) (el' ++ (s,er)::el).
-Proof.
-  revert el'.
-  induction l'; inversion 3; basic_goal_prep; basic_core_crush.
-  destruct el'; simpl in *; inversion H1.
-  basic_goal_prep.
-  inversion H2; subst.
-  constructor; basic_core_crush.
-  apply IHl'; basic_core_crush.
-Qed.
-#[export] Hint Resolve elab_lang_insert_wf : lang_core.
-                                                                
-Theorem elab_lang_sum_wf l1 l2 l_pre el1 el2 el_pre
-  : all_fresh (l1++l2) ->
-    length l1 = length el1 ->
-    elab_lang (l1++l_pre) (el1++el_pre) ->
-    length l2 = length el2 ->
-    elab_lang (l2++l_pre) (el2++el_pre) ->
-    elab_lang (l1++l2++l_pre) (el1++el2++el_pre).
-Proof.
-  revert el2.
-  induction l2; inversion 3; basic_goal_prep; basic_core_crush.
-  {
-    apply invert_empty_app in H3;
-    apply  invert_empty_app in H4.
-    basic_core_crush.
-  }
-  inversion H8; subst.
-  destruct el2; inversion H7; basic_goal_prep.
-  inversion H12; subst.
-  apply elab_lang_insert_wf; basic_core_crush.
-  (*Not included in auto hints because it could trigger too often.
-    TODO: assess whether this really impacts performance.
-   *)
-  eapply all_fresh_insert_is_fresh; eauto.
-Qed.
-*)
-
-
-Ltac break_down_elab_lang :=
-  repeat ((eapply elab_lang_cons_nth_tail; [vm_compute; reflexivity | vm_compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
-  [solve [assumption | compute; apply elab_lang_nil]|..].
-
-
-Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.
-Ltac solve_sublist := apply (use_compute_sublist string_dec); vm_compute; reflexivity.
-
-
-Ltac break_eq_args :=
-  (apply eq_args_cons;[break_eq_args|])
-  || apply eq_args_nil.
-
-
-
-Ltac solve_in := apply named_list_lookup_err_in; vm_compute; reflexivity.
-Ltac solve_len_eq := solve[ repeat constructor].
-
-(*TODO: move to the right place*)
-Ltac sort_cong :=
-  eapply sort_con_congruence;
-  [ solve_in
-  | solve_len_eq
-  | assumption || fail 2 "could not find lang wf assumption"
-  | break_eq_args].
-
-Ltac compute_everywhere e :=
-  let e' := eval vm_compute in e in
-      change e with e' in *.
 
 
 Lemma elab_term_by' l c n (s es : list term) args c' t t'
@@ -447,3 +312,50 @@ Lemma elab_args_cons_ex' l c s args es c' name e ee t
 Proof.
   eauto with lang_core.
 Qed.
+
+End WithVar.
+
+#[export] Hint Resolve elab_ctx_preserves_fresh : lang_core.
+#[export] Hint Resolve elab_sort_implies_wf : lang_core.
+#[export] Hint Resolve elab_term_implies_wf : lang_core.
+#[export] Hint Resolve elab_args_implies_wf : lang_core.
+#[export] Hint Resolve elab_ctx_implies_wf : lang_core.
+#[export] Hint Resolve elab_rule_implies_wf : lang_core.
+#[export] Hint Resolve elab_lang_implies_wf : lang_core.
+#[export] Hint Resolve elab_lang_preserves_fresh : lang_core.
+#[export] Hint Constructors elab_sort elab_term elab_args elab_ctx elab_rule elab_lang_ext : lang_core.
+#[export] Hint Resolve elab_sort_lang_monotonicity : lang_core.
+#[export] Hint Resolve elab_term_lang_monotonicity : lang_core.
+#[export] Hint Resolve elab_args_lang_monotonicity : lang_core.
+#[export] Hint Resolve elab_ctx_lang_monotonicity : lang_core.
+
+
+Ltac break_down_elab_lang :=
+  repeat ((eapply elab_lang_cons_nth_tail; [vm_compute; reflexivity | vm_compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
+  [solve [assumption | compute; apply elab_lang_nil]|..].
+
+
+Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.
+Ltac solve_sublist := apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity.
+
+
+Ltac break_eq_args :=
+  (apply eq_args_cons;[break_eq_args|])
+  || apply eq_args_nil.
+
+
+
+Ltac solve_in := apply named_list_lookup_err_in; vm_compute; reflexivity.
+Ltac solve_len_eq := solve[ repeat constructor].
+
+(*TODO: move to the right place*)
+Ltac sort_cong :=
+  eapply sort_con_congruence;
+  [ solve_in
+  | solve_len_eq
+  | assumption || fail 2 "could not find lang wf assumption"
+  | break_eq_args].
+
+Ltac compute_everywhere e :=
+  let e' := eval vm_compute in e in
+      change e with e' in *.

@@ -11,6 +11,22 @@ From Named Require Import Core Compilers Elab.
 Import Core.Notations.
 
 
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+
+  
+  Notation named_list := (@named_list V).
+  Notation named_map := (@named_map V).
+  Notation term := (@term V).
+  Notation ctx := (@ctx V).
+  Notation sort := (@sort V).
+  Notation subst := (@subst V).
+  Notation rule := (@rule V).
+  Notation lang := (@lang V).
+  Notation compiler := (@compiler V).
+  Notation compiler_case := (@compiler_case V).
 
 Section Extension.
   Context (src_pre : lang) (*assumed to already be elaborated*)
@@ -53,10 +69,6 @@ Section Extension.
   Proof using.
     induction 1; basic_goal_prep; basic_core_crush.
     all:constructor; basic_core_crush.
-    (*TODO: why isn't this picked up by the automation?*)
-    eapply elab_sort_implies_wf; eauto.
-    (*TODO: why isn't this picked up by the automation?*)
-    eapply elab_term_implies_wf; eauto.
   Qed.
   
   (*TODO: check that this works w/ prefix *)
@@ -104,8 +116,9 @@ Section Extension.
   Qed.
 
 End Extension.
-#[export] Hint Constructors elab_preserving_compiler : lang_core.
-#[export] Hint Resolve elab_compiler_implies_preserving : lang_core.
+
+
+End WithVar.
 
 (*TODO: review how much of the following code is necessary/ put in better places*)
 
@@ -136,6 +149,10 @@ End Extension.
  Ltac break_preserving :=
    (elab_compiler_cons; try reflexivity; [ break_preserving |..])
    || (compute; apply elab_preserving_compiler_nil).
+
+#[export] Hint Constructors elab_preserving_compiler : lang_core.
+#[export] Hint Constructors elab_preserving_compiler : lang_core.
+#[export] Hint Resolve elab_compiler_implies_preserving : lang_core.
 
   
 (*

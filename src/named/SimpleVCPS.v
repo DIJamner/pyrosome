@@ -6,12 +6,14 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix SimpleVSubst SimpleVSTLC Matches.
+From Named Require Import Core Compilers Elab ElabCompilers SimpleVSubst SimpleVSTLC Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
+
+Local Notation compiler := (compiler string).
 
 
 Definition block_subst_def : lang :=
@@ -54,7 +56,7 @@ Definition block_subst_def : lang :=
   ]}.
 
 Derive block_subst
-       SuchThat (Pre.elab_lang value_subst block_subst_def block_subst)
+       SuchThat (elab_lang_ext value_subst block_subst_def block_subst)
        As block_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
@@ -120,7 +122,7 @@ Definition cps_lang_def : lang :=
 
 
 Derive cps_lang
-       SuchThat (Pre.elab_lang (block_subst ++ value_subst)
+       SuchThat (elab_lang_ext (block_subst ++ value_subst)
                                cps_lang_def
                                cps_lang)
        As cps_lang_wf.
@@ -244,7 +246,7 @@ Definition cps_prod_lang_def : lang :=
 
     
 Derive cps_prod_lang
-       SuchThat (Pre.elab_lang (block_subst ++value_subst) cps_prod_lang_def cps_prod_lang)
+       SuchThat (elab_lang_ext (block_subst ++value_subst) cps_prod_lang_def cps_prod_lang)
        As cps_prod_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve cps_prod_wf : elab_pfs.

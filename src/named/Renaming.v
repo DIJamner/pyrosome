@@ -21,6 +21,8 @@ Fixpoint no_repeats {A} (l : list A) :=
 Definition bijective_on {A B} (f : A -> B) l : Prop :=
   no_repeats (map f l).
 
+(*Arguments bijective_on {_} {_} _ !_ /. *)
+
 (*TODO: move to utils*)
 #[export] Hint Resolve in_map : utils.
 
@@ -30,7 +32,7 @@ Lemma bijective_fn_injective {A B} (f : A -> B) l
                 In y l ->
                 f x = f y -> x = y.
 Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
+  induction l; basic_goal_prep; basic_utils_firstorder_crush.
   {
     rewrite H2 in H.
     basic_utils_crush.
@@ -41,8 +43,27 @@ Proof.
   }
 Qed.
 
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+
+  
+  Notation named_list := (@named_list V).
+  Notation named_map := (@named_map V).
+  Notation term := (@term V).
+  Notation ctx := (@ctx V).
+  Notation sort := (@sort V).
+  Notation subst := (@subst V).
+  Notation rule := (@rule V).
+  Notation lang := (@lang V).
+  Notation compiler := (@compiler V).
+  Notation compiler_case := (@compiler_case V).
+
 Section RenameFromFn.
-  Context (f : string -> string).
+  (*TODO: renamings from V1 to V2*)
+  Context (f : V -> V).
 
   Fixpoint compiler_from_fn (l : lang) :=
     match l with
@@ -80,7 +101,7 @@ Section RenameFromFn.
     : rename_term (subst_lookup s n) = subst_lookup (rename_subst s) n.
   Proof.
     induction s; basic_goal_prep; basic_term_crush.
-    my_case H (n=? s0);
+    my_case H (eqb n v);
       basic_term_crush.
   Qed.
   Hint Rewrite rename_subst_lookup : term.
@@ -114,7 +135,7 @@ Section RenameFromFn.
   Lemma rename_subst_subst_comm e s
     : rename_subst e[/s/] = (rename_subst e)[/rename_subst s/].
   Proof.
-    induction e; basic_goal_prep; basic_term_crush.
+    induction e; basic_goal_prep; fold_Substable; basic_term_crush.
   Qed.
   Hint Rewrite rename_subst_subst_comm : term.
 
@@ -181,16 +202,16 @@ Section RenameFromFn.
       /\ (forall c,
              wf_ctx l c ->
              wf_ctx (rename_lang l) (rename_ctx c)).
-  Proof using.
+  Proof.
     apply judge_ind; basic_goal_prep;
       try match goal with
             [ H : In _ l |- _] =>
             apply in_rename in H; simpl in H
           end;      
-      basic_core_crush.
+      basic_core_firstorder_crush.
     {
       rewrite <- with_names_from_rename_ctx.
-      basic_core_crush.
+      basic_core_firstorder_crush.
     }
     {
       eapply in_map in H.
@@ -199,7 +220,7 @@ Section RenameFromFn.
     }
     {
       constructor.
-      basic_core_crush.
+      basic_core_firstorder_crush.
       rewrite with_names_from_rename_ctx.
       basic_core_crush.
       basic_core_crush.
@@ -230,14 +251,14 @@ Section RenameFromFn.
             [ H : In _ l |- _] =>
             apply in_rename in H; simpl in H
           end;      
-      basic_core_crush.
+      basic_core_firstorder_crush.
     {
       rewrite <- with_names_from_rename_ctx.
-      basic_core_crush.
+      basic_core_firstorder_crush.
     }
     {
       apply (proj1 (rename_mono l)) in H1.
-      basic_core_crush.      
+      basic_core_firstorder_crush.      
     }
     {
       eapply in_map in H.
@@ -246,7 +267,7 @@ Section RenameFromFn.
     }
     {
       constructor.
-      basic_core_crush.
+      basic_core_firstorder_crush.
       rewrite with_names_from_rename_ctx.
       basic_core_crush.
       basic_core_crush.
@@ -255,14 +276,14 @@ Section RenameFromFn.
       constructor.
       basic_core_crush.
      (* TODO: rw backwards, apply earlier lem*)
-  Admitted.                    
+  Abort.                  
 
 
 End RenameFromFn.
 
 Hint Rewrite rename_subst_lookup : term.
 
-             
+(*         
 Definition elab_sort_lang_rename_monotonicity f l
   := proj1 (elab_rename_mono f l).
 #[export] Hint Resolve elab_sort_lang_rename_monotonicity : lang_core.
@@ -278,43 +299,43 @@ Definition elab_args_lang_rename_monotonicity f l
 Definition elab_ctx_lang_rename_monotonicity f l
   := proj2 (proj2 (proj2 (elab_rename_mono f l))).
 #[export] Hint Resolve elab_ctx_lang_rename_monotonicity : lang_core.
-
+*)
 
 Definition eq_sort_lang_monotonicity_rename f l
   := proj1 (rename_mono f l).
-#[export] Hint Resolve eq_sort_lang_monotonicity_rename : lang_core.
+Hint Resolve eq_sort_lang_monotonicity_rename : lang_core.
 
 Definition eq_term_lang_monotonicity_rename f l
   := proj1 (proj2 (rename_mono f l)).
-#[export] Hint Resolve eq_term_lang_monotonicity_rename : lang_core.
+Hint Resolve eq_term_lang_monotonicity_rename : lang_core.
 
 Definition eq_subst_lang_monotonicity_rename f l
   := proj1 (proj2 (proj2 (rename_mono f l))).
-#[export] Hint Resolve eq_subst_lang_monotonicity_rename : lang_core.
+Hint Resolve eq_subst_lang_monotonicity_rename : lang_core.
 
 Definition wf_sort_lang_monotonicity_rename f l
   := proj1 (proj2 (proj2 (proj2 (rename_mono f l)))).
-#[export] Hint Resolve wf_sort_lang_monotonicity_rename : lang_core.
+Hint Resolve wf_sort_lang_monotonicity_rename : lang_core.
 
 Definition wf_term_lang_monotonicity_rename f l
   := proj1 (proj2 (proj2 (proj2 (proj2 (rename_mono f l))))).
-#[export] Hint Resolve wf_term_lang_monotonicity_rename : lang_core.
+Hint Resolve wf_term_lang_monotonicity_rename : lang_core.
 
 Definition wf_args_lang_monotonicity_rename f l
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (rename_mono f l)))))).
-#[export] Hint Resolve wf_args_lang_monotonicity_rename : lang_core.
+Hint Resolve wf_args_lang_monotonicity_rename : lang_core.
 
 Definition wf_ctx_lang_monotonicity_rename f l
   := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (rename_mono f l)))))).
-#[export] Hint Resolve wf_ctx_lang_monotonicity_rename : lang_core.
+Hint Resolve wf_ctx_lang_monotonicity_rename : lang_core.
 
 Lemma wf_rule_lang_monotonicity_rename f l r
   : wf_rule l r -> wf_rule (rename_lang f l) (rename_rule f r).
 Proof.
-  inversion 1; basic_goal_prep; unfold rename_ctx; basic_core_crush.
+  inversion 1; basic_goal_prep; unfold rename_ctx; basic_core_firstorder_crush.
   all: rewrite !named_map_fst_eq; auto.
 Qed.
-#[export] Hint Resolve wf_rule_lang_monotonicity_rename : lang_core.
+Hint Resolve wf_rule_lang_monotonicity_rename : lang_core.
 
 Local Lemma fresh_rename f n l
   : bijective_on f (n::map fst l) -> fresh n l -> fresh (f n) (rename_lang f l).
@@ -329,13 +350,13 @@ Qed.
 Lemma wf_lang_rename f l
   : bijective_on f (map fst l) -> wf_lang l -> wf_lang (rename_lang f l).
 Proof.
-  induction 2; basic_goal_prep; basic_core_crush.
+  induction 2; basic_goal_prep; basic_core_firstorder_crush.
   apply  fresh_rename; eauto.
   unfold bijective_on.
   simpl.
   firstorder.
 Qed.  
-#[export] Hint Resolve wf_lang_rename : lang_core.
+Hint Resolve wf_lang_rename : lang_core.
 
 (*TODO: compilers part *)
 (*
@@ -352,3 +373,6 @@ Proof.
     
     TODO: need renaming for Elab.elab
 *)
+
+End WithVar.
+(*TODO: export hints*)
