@@ -14,6 +14,22 @@ From Named Require Import Core Elab ComputeWf.
 Import Core.Notations.
 Import OptionMonad.
 
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+  
+Notation named_list := (@named_list V).
+Notation named_map := (@named_map V).
+Notation term := (@term V).
+Notation ctx := (@ctx V).
+Notation sort := (@sort V).
+Notation subst := (@subst V).
+Notation rule := (@rule V).
+Notation lang := (@lang V).
+
+
 (*
 Set Default Proof Mode "Ltac2".
 *)
@@ -45,9 +61,9 @@ End InnerLoop.
 (* TODO: move to term*)
 Fixpoint term_dec (x y : term) {struct x} : {x = y} + {~ x = y}.
   refine (match x,y with
-          | var n, var m => if string_dec n m then left _ else right _
+          | var n, var m => if Eqb_dec n m then left _ else right _
           | con n s, con n' s' =>
-            if string_dec n n'
+            if Eqb_dec n n'
             then if list_eq_dec term_dec s s' then left _ else right _
             else right _
           | _, _ => right _
@@ -64,7 +80,7 @@ Fixpoint matches_unordered (e pat : term) : option subst :=
   match pat, e with
   | var px, _ => Some ([(px,e)])
   | con pn ps, con n s =>
-    if string_dec pn n then args_match_unordered matches_unordered s ps else None
+    if Eqb_dec pn n then args_match_unordered matches_unordered s ps else None
   | _,_ => None
 end.
 
@@ -95,7 +111,7 @@ Definition order_subst s args :=
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
   | scon n s, scon n_pat s_pat =>
-    if string_dec n n_pat then
+    if Eqb_dec n n_pat then
       (* multiply depth by 2 because each level consumes 1 fuel for term
      and 1 for its args
        *)
@@ -106,7 +122,7 @@ Definition matches_unordered_sort (t pat : sort) :=
 (* Note that 'args' is critical to getting the order of the output subst correct.
    FV(pat) must be a permutation of args to get a result.
  *)
-Definition matches (e pat : term) (args : list string) : option subst :=
+Definition matches (e pat : term) (args : list V) : option subst :=
   do s <- matches_unordered e pat;
      s' <- order_subst s args;
      (* this condition can fail because merge doesn't check for conflicts *)
@@ -118,10 +134,10 @@ Definition matches (e pat : term) (args : list string) : option subst :=
 Definition sort_dec : forall x y : sort, {x = y} + {~ x = y}.
   decide equality.
   - apply (list_eq_dec term_dec).
-  - apply string_dec.
+  - apply Eqb_dec.
 Defined.
 
-Definition matches_sort t pat (args : list string) : option subst :=
+Definition matches_sort t pat (args : list V) : option subst :=
   do s <- matches_unordered_sort t pat;
      s' <- order_subst s args;
      (* this condition can fail because merge doesn't check for conflicts *)
@@ -197,11 +213,6 @@ Proof.
 Qed.
 
 Definition is_some {A} (x:option A) := if x then True else False.
-Goal
-  (let e:= con "foo" [ con "quox" []; con "bar" [ con "baz"[]]; var "b"]in
-   is_some (matches e  (con "foo" [ con "quox" []; var "b"; var "a"]) ["b";"a"])).
-  vm_compute; exact I.
-Qed.
 
 
 (*TODO: move to matches or new parstep file*)
@@ -213,7 +224,7 @@ Import OptionMonad.
 
 Inductive step_instruction :=
 | cong_instr : list (list step_instruction) -> step_instruction
-| redex_instr : string -> ctx -> sort -> term -> term -> subst -> step_instruction.
+| redex_instr : V -> ctx -> sort -> term -> term -> subst -> step_instruction.
 
 (* if the top level of the term takes a step, return it *)
 Fixpoint step_redex_term (l : lang) (e : term)
@@ -299,13 +310,9 @@ Fixpoint step_term' l n e {struct n}
 Definition step_term l e n := fst (step_term' l n e).
 
 
-Require Import Ltac2.Ltac2.
-Import Ltac2.Message Ltac2.Control.
-Set Default Proof Mode "Classic".
-
 Lemma wf_args_cons2
      : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort) 
-         (name name': string) (e e': term) (t t' : sort),
+         (name name': V) (e e': term) (t t' : sort),
        wf_term l c e t [/with_names_from c' s /] ->
        wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
        wf_args l c s c' -> wf_args l c (e'::e :: s) ((name',t')::(name, t) :: c').
@@ -315,7 +322,7 @@ Qed.
 
 Lemma eq_args_cons2
      : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
-         (name name': string) (e1 e2 e1' e2': term) (t t' : sort),
+         (name name': V) (e1 e2 e1' e2': term) (t t' : sort),
        eq_args l c c' s1 s2 ->
        eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
        eq_term l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
@@ -337,40 +344,6 @@ Proof.
 Qed.
 
 
-(*TODO: adapt to work w/ possible evars in r?*)
-Ltac solve_named_list_in_from_value :=
-  match goal with
-    [|- In ?p ?l] =>
-    let x := eval simpl in (In p l) in
-        match x with
-        | context [(?n, ?r) = (?n', ?r)] =>
-          assert (n = n') by reflexivity
-        end;
-                           apply named_list_lookup_err_in; compute; reflexivity
-  end.
-
-Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
-
-
-
-Ltac eq_term_by s := 
-  eapply (eq_term_by _ _ s); solve_in.
-
-(*
-Lemma elab_prefix_implies_elab_lang'
-  : forall l_pre lp  l_pre' l el : lang,
-    elab_lang lp l_pre ->
-    incl l_pre' l_pre ->
-    all_fresh (el ++ l_pre) ->
-    ElabWithPrefix.elab_lang l_pre' l el ->
-    elab_lang (l ++ lp) (el ++ l_pre).
-Proof.
-  intros.
-  apply ElabWithPrefix.elab_prefix_implies_elab_lang; auto.
-  eapply ElabWithPrefix.elab_prefix_monotonicity_lang; eauto.
-Qed.  
-*)
-
 (*TODO: put in core; really should already exist *)
 Lemma lang_ext_monotonicity l1 l2 l
   : wf_lang_ext l1 l -> incl l1 l2 -> all_fresh (l ++ l2) -> wf_lang_ext l2 l.
@@ -379,24 +352,6 @@ Proof.
   eapply wf_rule_lang_monotonicity; eauto.
   eauto with utils.
 Qed.
-
-Ltac prove_ident_from_known_elabs :=
-  eapply lang_ext_monotonicity;
-  [typeclasses eauto with auto_elab elab_pfs
-  | auto with utils
-  | eapply use_compute_all_fresh; compute; reflexivity].
-
-(*TODO: this is still a tactic performance bottleneck;
-  reduce number of calls to it
- *)
-Ltac prove_from_known_elabs :=
-  repeat
-    lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
-    | |- incl _ _ => simple eapply use_compute_incl_lang; compute; reflexivity
-    end.
 
 
 (*TODO: for removing redundant goals from term_cong*)
@@ -412,7 +367,7 @@ Proof.
     remember (con n s) as e.
     intros t2 wfe; revert t2 wfe Heqe.
     induction 1; basic_goal_prep;
-    basic_core_crush.
+    basic_core_firstorder_crush.
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh H) H3 H1) as H'.
     safe_invert H'.
     basic_core_crush.
@@ -425,7 +380,7 @@ Proof.
     remember (var n) as e.
     intros t2 wfe; revert t2 wfe Heqe.
     induction 1; basic_goal_prep;
-    basic_core_crush.
+    basic_core_firstorder_crush.
     pose proof (in_all_fresh_same _ _ _ _ (wf_ctx_all_fresh H0) H2 H1) as H'.
     basic_core_crush.
   }
@@ -479,7 +434,7 @@ with eq_args_nocheck l : ctx -> ctx -> list term -> list term -> Prop :=
       eq_args_nocheck l c ((name, t)::c') (e1::es1) (e2::es2).
 
   
-#[export] Hint Constructors eq_term_nocheck eq_args_nocheck : lang_core.
+Hint Constructors eq_term_nocheck eq_args_nocheck : lang_core.
 
 
 Scheme eq_term_nocheck_ind' := Minimality for eq_term_nocheck Sort Prop
@@ -497,8 +452,8 @@ Local Lemma term_con_congruence' l c t name s1 s2 c' args t'
 Proof.
   intros.
   assert (wf_ctx l c') by with_rule_in_wf_crush.
-  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_firstorder_crush..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_firstorder_crush..].
   subst.
   change (con ?n ?args[/?s/]) with (con n args)[/s/].
   eapply eq_term_subst; eauto.
@@ -588,25 +543,90 @@ Proof.
   eapply eq_term_nocheck_cong; eauto.
 Qed.
 
+Lemma eq_args_cons2_nocheck
+     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
+         (name name': V) (e1 e2 e1' e2': term) (t t' : sort),
+       eq_args_nocheck l c c' s1 s2 ->
+       eq_term_nocheck l c t [/with_names_from c' s2 /] e1 e2 ->
+       eq_term_nocheck l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
+       eq_args_nocheck l c ((name',t')::(name, t) :: c') (e1'::e1 :: s1) (e2'::e2 :: s2) .
+Proof.
+  eauto with lang_core.
+Qed.
 
-Definition unit_lang_def : lang :=
-  {[l
-  [:|
-     -----------------------------------------------
-      #"unit" : #"ty"
-  ];
-  [:| "G" : #"env"
-      -----------------------------------------------
-      #"tt" : #"val" "G" #"unit"
-    ];
-  [:= "G" : #"env",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("tt_subst")
-      #"val_subst" "g" #"tt" = #"tt"
-      : #"val" "G'" #"unit"
-  ]
-  ]}.
+
+Lemma eq_term_nocheck_by_with_subst name l c c' e1 e2 t s
+  : In (name, term_eq_rule c' e1 e2 t) l ->
+    wf_subst l c s c' ->
+    eq_term_nocheck l c t [/s /] e1 [/s /] e2 [/s /].
+Proof.
+  intros; eapply eq_term_nocheck_by; eauto with lang_core.
+Qed.
+  
+
+Lemma elab_lang_nil_nth_tail l_pre l el
+  : l = [] ->
+    el = [] ->
+    elab_lang_ext l_pre l el.
+Proof.
+  intros; subst; constructor.
+Qed.
+
+
+End WithVar.
+
+
+#[export] Hint Rewrite sort_subst_nil : term.
+#[export] Hint Constructors eq_term_nocheck eq_args_nocheck : lang_core.
+
+Require Import Ltac2.Ltac2.
+Import Ltac2.Message Ltac2.Control.
+Set Default Proof Mode "Classic".
+
+
+(*TODO: adapt to work w/ possible evars in r?*)
+Ltac solve_named_list_in_from_value :=
+  match goal with
+    [|- In ?p ?l] =>
+    let x := eval simpl in (In p l) in
+        match x with
+        | context [(?n, ?r) = (?n', ?r)] =>
+          assert (n = n') by reflexivity
+        end;
+                           apply named_list_lookup_err_in; compute; reflexivity
+  end.
+
+Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
+
+
+
+Ltac eq_term_by s := 
+  eapply (eq_term_by _ _ s); solve_in.
+
+
+
+Ltac prove_ident_from_known_elabs :=
+  eapply lang_ext_monotonicity;
+  [typeclasses eauto with auto_elab elab_pfs
+  | auto with utils
+  | eapply use_compute_all_fresh; compute; reflexivity].
+
+(*TODO: this is still a tactic performance bottleneck;
+  reduce number of calls to it
+ *)
+Ltac prove_from_known_elabs :=
+  (*TODO: is this what I want, or something more general?*)
+  rewrite <- ?as_nth_tail;
+  repeat
+    lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
+    | |- incl _ _ => simple eapply use_compute_incl_lang; compute; reflexivity
+    end.
+
+
+(*TODO*)
 
 
 Ltac term_cong :=
@@ -645,7 +665,7 @@ Ltac compute_wf_subjects :=
  Ltac t' :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity
   | |- In _ _ => solve [solve_in | simpl; intuition fail]
   | |- wf_term ?l ?c ?e ?t =>
         let c' := eval vm_compute in c in
@@ -677,7 +697,7 @@ Ltac compute_wf_subjects :=
 Ltac t :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity
   (*Don't use vm_compute here*)
   | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
   | [|- len_eq _ _] => econstructor
@@ -715,30 +735,6 @@ Ltac redex_steps_with lang name :=
         end
       | _ => fail "Rule not found"
       end.
-
-
-
-
-Lemma eq_args_cons2_nocheck
-     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
-         (name name': string) (e1 e2 e1' e2': term) (t t' : sort),
-       eq_args_nocheck l c c' s1 s2 ->
-       eq_term_nocheck l c t [/with_names_from c' s2 /] e1 e2 ->
-       eq_term_nocheck l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
-       eq_args_nocheck l c ((name',t')::(name, t) :: c') (e1'::e1 :: s1) (e2'::e2 :: s2) .
-Proof.
-  eauto with lang_core.
-Qed.
-
-
-Lemma eq_term_nocheck_by_with_subst name l c c' e1 e2 t s
-  : In (name, term_eq_rule c' e1 e2 t) l ->
-    wf_subst l c s c' ->
-    eq_term_nocheck l c t [/s /] e1 [/s /] e2 [/s /].
-Proof.
-  intros; eapply eq_term_nocheck_by; eauto with lang_core.
-Qed.
-
 
 
 Ltac compute_eq_compilation :=
@@ -968,14 +964,6 @@ Create HintDb auto_elab discriminated.
 #[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; vm_compute; reflexivity : auto_elab.
 
 
-
-Lemma elab_lang_nil_nth_tail l_pre l el
-  : l = [] ->
-    el = [] ->
-    elab_lang_ext l_pre l el.
-Proof.
-  intros; subst; constructor.
-Qed.
 
 Ltac split_rule_elab :=
   eapply elab_lang_cons_nth_tail;

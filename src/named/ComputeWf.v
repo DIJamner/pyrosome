@@ -9,17 +9,20 @@ Import Core.Notations.
 Import OptionMonad.
 
 
-(*
-TODO: generalize to arbitrary identifiers
- *)
-Notation named_list := (@named_list string).
-Notation named_map := (@named_map string).
-Notation term := (@term string).
-Notation ctx := (@ctx string).
-Notation sort := (@sort string).
-Notation subst := (@subst string).
-Notation rule := (@rule string).
-Notation lang := (@lang string).
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+  
+Notation named_list := (@named_list V).
+Notation named_map := (@named_map V).
+Notation term := (@term V).
+Notation ctx := (@ctx V).
+Notation sort := (@sort V).
+Notation subst := (@subst V).
+Notation rule := (@rule V).
+Notation lang := (@lang V).
 
 Section Terms.
   Context (l : lang).
@@ -64,10 +67,10 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
   Proof.
     all: intros wfl wfc.
     {
-      destruct e; destruct fuel; basic_goal_prep; basic_core_crush.
+      destruct e; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
       
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
-      destruct r; basic_goal_prep; basic_core_crush.
+      destruct r; basic_goal_prep; basic_core_firstorder_crush.
       
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
 
@@ -79,7 +82,7 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
       basic_core_crush.
     }
     {
-      destruct s; destruct c'; destruct fuel; basic_goal_prep; basic_core_crush.
+      destruct s; destruct c'; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
       revert H0.
       case_match; basic_goal_prep; [|basic_core_crush].
       revert H0.
@@ -100,7 +103,7 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
        | [], _ => None
        | (name,t)::c'', [] => None
        | (name,t')::c'', (name',e)::s' =>
-         do ! string_dec name name';
+         do ! Eqb_dec name name';
             t <- compute_noconv_wf_term c e fuel;
             !(sort_eq_dec t t'[/ s'/]);
             tt <- compute_noconv_wf_subst c s' c'' fuel; 
@@ -143,10 +146,10 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
   Proof.
     intros wfl wfc.
     
-    destruct t; destruct fuel; basic_goal_prep; basic_core_crush.
+    destruct t; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
     
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    destruct r; basic_goal_prep; basic_core_crush.
+    destruct r; basic_goal_prep; basic_core_firstorder_crush.
     
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
 
@@ -179,7 +182,7 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
-    basic_core_crush.
+    basic_core_firstorder_crush.
     apply use_compute_fresh; congruence.
     eapply compute_noconv_wf_sort_sound; eauto.
   Qed.
@@ -188,11 +191,11 @@ with compute_noconv_wf_args c s c' fuel : option unit :=
   Definition compute_noconv_wf_rule r fuel : option unit :=
     match r with
     | sort_rule c args =>
-      do ! compute_sublist string_dec args (map fst c);
+      do ! compute_sublist Eqb_dec args (map fst c);
          tt <- compute_noconv_wf_ctx c fuel; 
          ret tt
     | term_rule c args t =>
-      do ! compute_sublist string_dec args (map fst c);
+      do ! compute_sublist Eqb_dec args (map fst c);
          tt <- compute_noconv_wf_ctx c fuel; 
          tt <- compute_noconv_wf_sort c t fuel; 
          ret tt
@@ -254,6 +257,7 @@ Proof.
   eapply compute_noconv_wf_rule_sound; eauto.
 Qed.
 
+End WithVar.
 
 
 
