@@ -27,7 +27,7 @@ Defined.
 
 Notation named_list := (@named_list (list string)).
 Notation named_map := (@named_map (list string)).
-Notation term := (@term (list string)).
+Notation term := (@term (list string)). 
 Notation ctx := (@ctx (list string)).
 Notation sort := (@sort (list string)).
 Notation subst := (@subst (list string)).
@@ -105,11 +105,12 @@ Section CompileFn.
   
   Definition compile_args s := flat_map (fun cname => map (compile cname) s) (fst cmp).
 
+  (*TODO: needs renaming*)
   Definition compile_subst (s : named_list term) :=
-    flat_map (fun cname => named_map (compile cname) s) (fst cmp).
+    flat_map (fun cname => map (fun '(n, e) => (cname::n,compile cname e)) s) (fst cmp).
 
   Definition compile_ctx (c:named_list sort) := 
-    flat_map (fun cname => named_map (compile_sort cname) c) (fst cmp).
+    flat_map (fun cname => map (fun '(n, t) => (cname::n,compile_sort cname t)) c) (fst cmp).
 
   (* First we specify the properties semantically,
      then inductively on the compiler. TODO: prove equivalent
