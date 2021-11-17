@@ -70,16 +70,16 @@ Section CompileFn.
   Existing Instance sort_default.
 
   Definition env_args args : list (list string) :=
-    flat_map (fun c => map (fun x => c::x) args) (fst cmp).
+    flat_map (fun x => map (fun c => c::x) (fst cmp)) args.
   
   (* does not use src or tgt, only cmp *)
   (*TODO: notations do a poor job of spacing this*)
   Fixpoint compile cname e : term :=
     match e with
-    | var x => var x
+    | var x => var (cname::x)
     | con n s =>
-      let arg_terms :=
-          flat_map (fun cname => map (compile cname) s) (fst cmp) in
+        let arg_terms :=
+          flat_map (fun x => map (fun cname => compile cname x) (fst cmp)) s in
       match named_list_lookup_err (snd cmp) n with
       | Some (term_case args el) =>
         let e := named_list_lookup default (combine (fst cmp) el) cname in
@@ -88,13 +88,13 @@ Section CompileFn.
       end
     end.
 
+  Definition compile_args s := flat_map (fun x => map (fun cname => compile cname x) (fst cmp)) s.
   
   (* does not use src or tgt, only cmp *)
   Definition compile_sort cname (t : sort) : sort :=
     match t with
     | scon n s =>
-      let arg_terms :=
-          flat_map (fun cname => map (compile cname) s) (fst cmp) in
+      let arg_terms := compile_args s in
       match named_list_lookup_err (snd cmp) n with
       | Some (sort_case args el) =>
         let e := named_list_lookup default (combine (fst cmp) el) cname in
@@ -102,15 +102,13 @@ Section CompileFn.
       | _ => default
       end
     end. 
-  
-  Definition compile_args s := flat_map (fun cname => map (compile cname) s) (fst cmp).
 
   (*TODO: needs renaming*)
-  Definition compile_subst (s : named_list term) :=
-    flat_map (fun cname => map (fun '(n, e) => (cname::n,compile cname e)) s) (fst cmp).
+  Definition compile_subst (s : named_list term) : named_list term :=
+    flat_map (fun '(n, e) => map (fun cname => (cname::n,compile cname e)) (fst cmp)) s.
 
   Definition compile_ctx (c:named_list sort) := 
-    flat_map (fun cname => map (fun '(n, t) => (cname::n,compile_sort cname t)) c) (fst cmp).
+    flat_map (fun '(n, t) => map (fun cname => (cname::n,compile_sort cname t)) (fst cmp)) c.
 
   (* First we specify the properties semantically,
      then inductively on the compiler. TODO: prove equivalent
@@ -192,6 +190,8 @@ Section Extension.
       preserving_compiler_ext target cmp l ->
       (* Notable: only uses the previous parts of the compiler on c *)
       all (wf_sort target (compile_ctx (extend_cmp cmp cmp_pre) c)) t ->
+      (* make sure combine doesn't truncate *)
+      length t = length (fst cmp_pre) ->
       preserving_compiler_ext target
                               ((n,sort_case (map fst c) t)::cmp)
                               ((n,sort_rule c args) :: l)
@@ -201,7 +201,9 @@ Section Extension.
       all (fun '(cname,e) =>
              wf_term target (compile_ctx (extend_cmp cmp cmp_pre) c) e
                      (compile_sort (extend_cmp cmp cmp_pre) cname t))
-      (combine (fst cmp_pre) e) ->
+          (combine (fst cmp_pre) e) ->
+      (* make sure combine doesn't truncate *)
+      length e = length (fst cmp_pre) ->
       preserving_compiler_ext target
                               ((n, term_case (map fst c) e)::cmp)
                               ((n,term_rule c args t) :: l)
