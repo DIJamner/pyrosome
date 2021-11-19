@@ -10,17 +10,40 @@ From Named Require Import Core.
 Import Core.Notations.
 
 
-(* TODO: finish, move to Utils*)
 
-Axiom TODO : forall {A}, A.
+Lemma true_false_inv : true = false <-> False.
+Proof. solve_invert_constr_eq_lemma. Qed.
+Hint Rewrite true_false_inv : utils.
+  
+(* TODO: Extract proofs outside Defined?
+   TODO: finish, move to Utils*)
 #[export, refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
   {|
   eqb := all2 eqb;
   Eqb_dec := @list_eq_dec _ Eqb_dec;
   |}.
 Proof.
-  all: apply TODO.
+  {
+    induction n; destruct m; basic_goal_prep; basic_utils_firstorder_crush. 
+  }
+  {
+    induction x; destruct y; basic_goal_prep; basic_utils_firstorder_crush.
+    my_case Heq (eqb a a0); simpl; auto.
+    basic_utils_firstorder_crush.
+  }
+  {
+    induction x; basic_goal_prep; basic_utils_firstorder_crush.
+  }
 Defined.
+
+(*TODO: move to Utils*)
+
+Fixpoint all_unique {A} (l : list A) :=
+  match l with
+  | [] => True
+  | n::l' => ~ In n l' /\ all_unique l'
+  end.
+Arguments all_unique {_} !_ /.
 
 (*TODO: move to Utils*)
 #[export] Instance list_default {A} : WithDefault (list A) := [].
@@ -185,7 +208,7 @@ Section Extension.
   formalize the relationship to those above and le semantic statements *)
   Inductive preserving_compiler_ext (target : lang)
     : named_list compiler_case -> lang -> Prop :=
-  | preserving_compiler_nil : preserving_compiler_ext target [] []
+  | preserving_compiler_nil : all_unique (fst cmp_pre) -> preserving_compiler_ext target [] []
   | preserving_compiler_sort : forall cmp l n c args t,
       preserving_compiler_ext target cmp l ->
       (* Notable: only uses the previous parts of the compiler on c *)

@@ -1343,9 +1343,98 @@ Proof.
     basic_utils_firstorder_crush.
 Qed.
 
+Lemma extend_ctx_with_map
+  : forall {A} (l:lang) (lst : list A) c,
+    wf_lang l->
+    wf_ctx l c ->
+    forall f,
+      (forall x, In x lst -> wf_sort l c (snd (f x))) ->
+      all_fresh ((map f lst) ++ c) ->
+      wf_ctx l (map f lst ++ c).
+Proof.
+  intros A l lst c wfl wfc f.
+  induction lst; basic_goal_prep; basic_utils_crush.
+  remember H as H'.
+  clear HeqH'.
+  specialize (H' a ltac:(intuition)).
+  revert H' H0; generalize (f a); basic_goal_prep.
+  constructor; auto.
+  (*TODO: hack to get around missing lemma*)
+  revert wfl H'.
+  clear.
+  generalize (map f lst).
+  induction l0; basic_goal_prep; basic_core_firstorder_crush.
+Qed.
+
+Lemma preserving_implies_unique_names cnames cmp_pre lt cmp ls
+  : preserving_compiler_ext (cnames,cmp_pre) lt cmp ls ->
+    all_unique cnames.
+Proof.
+  induction 1; eauto.
+Qed.
+
+
+Lemma in_namespaced a name cnames l
+  : In (a :: l) (map (fun x : string => x :: name) cnames) <->
+      (l = name /\ In a cnames).
+Proof.
+  induction cnames;
+    basic_goal_prep; basic_utils_crush.
+Qed.
+
+(*TODO: replace all_fresh entirely?*)
+Lemma all_fresh_as_all_unique {V A} (l : @Utils.named_list V A)
+  : all_fresh l <-> all_unique (map fst l).
+Proof.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+
+
+Lemma map_flat_map  {A B C} (f : B -> C) (g : A -> list B) l
+  : map f (flat_map g l) = flat_map (fun x => map f (g x)) l.
+Proof.
+  induction l; 
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+
+
+Lemma all_unique_flat_map_inj {A B} (f : A -> list B) l
+  : (forall x y z, In z (f x) -> In z (f y) -> x = y) ->
+    all_unique l ->
+    all_unique (flat_map f l).
+Proof.
+  intro.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+  specialize (H a).
+  assert (forall b z, In b l -> In z (f a) -> ~ In z (f b)) by admit.
+  revert H3.
+  generalize (f a) as l'; induction l';
+    basic_goal_prep;
+    basic_utils_crush.
+Admitted.
+
+(*TODO: move to core*)
+Lemma eq_subst_ctx_monotonicity_app
+     : forall (V : Type) (V_Eqb : Eqb V) (l : Rule.lang V) c_ext (t' : Term.sort V),
+       wf_lang l ->
+       forall (c c' : Term.ctx V) (s1 s2 : Term.subst V),
+       eq_subst l c c' s1 s2 -> eq_subst l (c_ext ++ c) c' s1 s2.
+Proof.
+  intros; induction c_ext;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
 Local Lemma inductive_implies_semantic' cnames lt cmp ls
   : wf_lang ls ->
     wf_lang lt ->
+    (* TODO: need cnames unique
+    all_fresh cnames ->*)
     preserving_compiler_ext (cnames,[]) lt cmp ls ->
     lang_compiles_with lt (cnames,cmp) ls ->
     semantics_preserving lt (cnames,cmp) ls.
@@ -1377,7 +1466,32 @@ Proof.
     eapply inductive_implies_semantic_term_axiom; eassumption.
   }
   {
-    admit (*TODO: eq_subst app/induction on cnames?*).
+    revert H4.
+    assert (incl cnames cnames) by basic_utils_crush.
+    revert H4.
+    enough (forall cnames', incl cnames' cnames ->
+  (forall cname : string,
+   In cname cnames' ->
+   eq_term lt (compile_ctx (cnames, cmp) c) (compile_sort (cnames, cmp) cname t [/s2 /])
+     (compile (cnames, cmp) cname e1) (compile (cnames, cmp) cname e2)) ->
+  eq_subst lt (compile_ctx (cnames, cmp) c)
+    (map (fun cname : string => (cname :: name, compile_sort (cnames, cmp) cname t)) cnames' ++
+     compile_ctx (cnames, cmp) c')
+    (map (fun cname : string => (cname :: name, compile (cnames, cmp) cname e1)) cnames' ++
+     compile_subst (cnames, cmp) s1)
+    (map (fun cname : string => (cname :: name, compile (cnames, cmp) cname e2)) cnames' ++
+     compile_subst (cnames, cmp) s2)) by eauto.
+    induction cnames'; basic_goal_prep;
+      basic_core_firstorder_crush.
+    constructor; eauto.
+    clear H13.
+    assert ((compile_sort (cnames, cmp) a t)
+    [/map (fun cname : string => (cname :: name, compile (cnames, cmp) cname e2)) cnames' ++
+      compile_subst (cnames, cmp) s2 /]
+            = (compile_sort (cnames, cmp) a t)[/compile_subst (cnames, cmp) s2 /]) by admit.
+    rewrite H13.
+    erewrite <- compile_sort_subst; basic_core_firstorder_crush.
+    symmetry; eapply eq_subst_dom_eq_r; eauto.
   } 
   {
     eapply inductive_implies_semantic_sort_rule; try eassumption.
@@ -1405,7 +1519,72 @@ Proof.
     admit (*wf_args app*).
   }
   {
-    admit (*wf_ctx app*).
+    eapply extend_ctx_with_map; eauto.
+    apply wf_ctx_all_fresh in H5.
+    pose proof (preserving_implies_unique_names H1) as H7.
+    {
+      rewrite all_fresh_as_all_unique in *.
+      rewrite map_app.
+      erewrite <- env_args_as_fst_ctx in * by reflexivity.
+      rewrite map_map.
+      simpl.
+      unfold env_args in *.
+      simpl.
+      change
+        (all_unique
+           (flat_map (fun x : list string => map (fun c0 : string => c0 :: x) cnames) (name ::map fst c))).
+      Lemma all_unique_flat_map_inj
+        : (forall x y, f x = f y -> x = y) ->
+          all_unique l ->
+          all_unique (flat_map f l).
+      rewrite map_flat_map.
+      erewrite flat_map_funext.
+      2:{
+        basic_goal_prep.
+        rewrite map_map.
+        simpl.
+        instantiate
+          (1:= fun p => map (fun x : string => x :: fst p) cnames).
+        reflexivity.
+      }
+      simpl.
+      
+      
+    revert H7 H5 H3; clear; intros.
+    basic_utils_crush.
+    simpl in *.
+    revert H7.
+    induction cnames;
+      basic_goal_prep;
+      basic_utils_crush.
+    { rewrite in_namespaced in *; intuition. }
+    {
+      revert H3 H2; clear.
+      unfold compile_ctx.
+      rewrite map_flat_map.
+      erewrite flat_map_funext.
+      2:{
+        basic_goal_prep.
+        rewrite map_map.
+        simpl.
+        instantiate
+          (1:= fun p => (a :: (fst p)) :: map (fun x : string => x :: (fst p)) cnames).
+        reflexivity.
+      }
+      {
+        induction c;
+        basic_goal_prep;
+        basic_utils_crush.
+        rewrite in_namespaced in *; intuition.
+      }
+    }
+    erewrite <- env_args_as_fst_ctx in * by reflexivity.(*
+    TODO: need all_unique reordering! a better way?
+        rewrite 
+          apply H.
+    
+    TODO: cname freshness reasoning*)
+  }
   }
 Admitted.
 
