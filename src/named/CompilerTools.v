@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers.
+From Named Require Import Core AllConstructors Compilers Elab ElabCompilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -384,33 +384,3 @@ Hint Resolve elab_preserving_compiler_monotonicity : auto_elab.
          *).
 
 End WithVar.
-
-
-(*TODO: move tactics? *)
-Require Import Matches.
-   Ltac estep_under lang rule :=
-      eredex_steps_with lang rule
-      || (compute_eq_compilation; term_cong; (estep_under lang rule|| term_refl)).
-
-    Ltac eredex_steps_with lang name ::=
-  let mr := eval vm_compute in (named_list_lookup_err lang name) in
-  lazymatch mr with
-  | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-      lazymatch goal with
-      | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
-            let s := open_constr:((_ : subst)) in
-            (first [ unify_var_names s c | fail 100 "could not unify var names" ]); (first
-             [ replace (eq_term l c' t e1 e2) with (eq_term l c' tp [/s /] e1p [/s /] e2p [/s /]);
-                [  | f_equal; vm_compute; reflexivity ]
-             | fail 2 "could not replace with subst" ]);
-             eapply (eq_term_subst (l:=l) (c:=c') (s1:=s) (s2:=s) (c':=c));
-             [ try (solve [ cleanup_auto_elab ])
-             | eapply eq_subst_refl; try (solve [ cleanup_auto_elab ])
-             | eapply (eq_term_by l c name tp e1p e2p); try (solve [ cleanup_auto_elab ]) ]
-      end
-  | None => fail 100 "rule not found in lang"
-  end; repeat t.
-    Ltac rewrite_leftwards lang name :=
-      first [ eapply eq_term_trans; [estep_under lang name |]
-            | eapply eq_term_trans; [|estep_under lang name ]];
-      compute_eq_compilation.

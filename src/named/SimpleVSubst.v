@@ -2,6 +2,7 @@ Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
 Require Import String List.
+Require Import Coq.Strings.Ascii.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -204,8 +205,51 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.
 
 
-(*TODO: make this actually pick a fresh name*)
-Definition choose_fresh : string ->ctx ->string := fun s _ => s.
+
+Definition block_subst_def : lang :=
+  {[l
+      [s| "G" : #"env"
+          -----------------------------------------------
+          #"blk" "G" srt
+      ];
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+      "e" : #"blk" "G'"
+       -----------------------------------------------
+       #"blk_subst" "g" "e" : #"blk" "G"
+  ];
+  [:= "G" : #"env", "e" : #"blk" "G"
+       ----------------------------------------------- ("blk_subst_id")
+       #"blk_subst" #"id" "e" = "e" : #"blk" "G"
+  ]; 
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "e" : #"blk" "G3"
+       ----------------------------------------------- ("blk_subst_cmp")
+       #"blk_subst" "f" (#"blk_subst" "g" "e")
+       = #"blk_subst" (#"cmp" "f" "g") "e"
+       : #"blk" "G1"
+  ]
+  ]}.
+
+Derive block_subst
+       SuchThat (elab_lang_ext value_subst block_subst_def block_subst)
+       As block_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve block_subst_wf : elab_pfs.
+
+
+Fixpoint notinb (s : string) (l : list string) :=
+  match l with
+  | [] => true
+  | s'::l' => if eqb s s' then false else notinb s l'
+  end.
+
+Definition definitely_fresh (s : string) (l : list string) :=
+  let len := List.fold_left max (map String.length l) 0 in
+  String.append s (string_of_list_ascii (repeat ("'"%char : ascii) len)).
+
+Definition choose_fresh (s : string) (c:ctx) :=
+  if notinb s (map fst c) then s else definitely_fresh s (map fst c).
 
 (*TODO: duplicated*)
 Definition under s :=
@@ -215,6 +259,7 @@ Definition get_subst_constr s :=
   match s with
   | "exp" => Some "exp_subst"
   | "val" => Some "val_subst"
+  | "blk" => Some "blk_subst"
   | _ => None
   end.
 
@@ -238,6 +283,7 @@ Section GenRHSSubterms.
       if n1 =? n2
       then
         match t with
+        | scon name [G']
         | scon name [_;G'] =>
           match get_subst_constr name with
           | Some subst_constr =>
@@ -269,6 +315,25 @@ Definition substable_constr name c args t : option lang :=
       let lhs := {{e #subst_constr g {blank_term} }} in
       let rhs := con name (gen_rhs_subterms G g c args) in
       let t' := scon s [A; var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  (*TODO: duplicated work for blocks since there is no A*)
+  | scon s [var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "G'" c in
+      let g := choose_fresh "g" c in
+      let c' := (g,{{s#"sub" G' G }})
+                  ::(G', {{s#"env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [var G'] in
       let subst_rule :=
           term_eq_rule c' lhs rhs t' in
       Some [(append name "-subst",subst_rule);(name, constr_rule)]

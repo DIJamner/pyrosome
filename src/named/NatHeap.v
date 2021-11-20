@@ -54,7 +54,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve nat_lang_wf : elab_pfs.
 
 Definition nat_exp_def : lang :=
-  {[l
+  {[l/subst
   [:|
       -----------------------------------------------
       #"nat" : #"ty"
@@ -62,15 +62,7 @@ Definition nat_exp_def : lang :=
   [:|  "G" : #"env", "n": #"natural"
        -----------------------------------------------
        #"nv" "n" : #"val" "G" #"nat"
-  ];
-  [:=  "G" : #"env", "G'" : #"env", "n": #"natural",
-       "g" : #"sub" "G" "G'"
-       ----------------------------------------------- ("nv subst")
-       #"val_subst" "g" (#"nv" "n")
-       = #"nv" "n"
-       : #"val" "G" #"nat"
-  ]
-  ]}.
+  ]]}.
 
 
 Derive nat_exp
@@ -163,7 +155,7 @@ Proof. auto_elab. Qed.
   TODO: subst rules
 *)
 Definition heap_ops_def : lang :=
-  {[l
+  {[l/subst
   [:|  "G" : #"env",
        "e" : #"exp" "G" #"nat",
        "e'" : #"exp" "G" #"nat"

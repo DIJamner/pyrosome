@@ -18,7 +18,7 @@ Notation compiler := (compiler string).
 
 
 Definition fix_cps_lang_def : lang :=
-  {[l
+  {[l/subst
   [:| "G" : #"env",
       "A" : #"ty",
       "e" : #"blk" (#"ext" (#"ext" "G" (#"neg" "A")) "A")
@@ -33,22 +33,11 @@ Definition fix_cps_lang_def : lang :=
       #"jmp" (#"fix" "A" "e") "v"
       = #"blk_subst" (#"snoc" (#"snoc" #"id" (#"fix" "A" "e")) "v") "e"
       : #"blk" "G"
-  ];
-  [:= "G" : #"env", "A" : #"ty",
-      "e" : #"blk" (#"ext" (#"ext" "G" (#"neg" "A")) "A"),
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("fix_subst")
-      #"val_subst" "g" (#"fix" "A" "e")
-      = #"fix" "A" (#"blk_subst"
-                       (#"snoc" (#"cmp" #"wkn" (#"snoc" (#"cmp" #"wkn" "g") #"hd")) #"hd") "e")
-      : #"val" "G'" (#"neg" "A")
-  ]
-  ]}.
+  ] ]}.
 
 
 Derive fix_cps_lang
-       SuchThat (Pre.elab_lang (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
+       SuchThat (elab_lang_ext (cps_lang ++ block_subst ++ value_subst) fix_cps_lang_def fix_cps_lang)
        As fix_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve fix_wf : elab_pfs.

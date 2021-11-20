@@ -19,7 +19,7 @@ Coercion svar : string >-> term.
 Notation compiler := (compiler string).
 
 Definition let_lang_def : lang :=
-  {[l
+  {[l/subst
   [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
@@ -37,21 +37,7 @@ Definition let_lang_def : lang :=
       #"let" (#"ret" "v") "e"
       = #"exp_subst" (#"snoc" #"id" "v") "e"
       : #"exp" "G" "B"
-  ];
-  [:= "G" : #"env", 
-      "A" : #"ty",
-      "B" : #"ty",
-      "e" : #"exp" "G" "A",
-      "e'" : #"exp" (#"ext" "G" "A") "B",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("let_subst")
-      #"exp_subst" "g" (#"let" "e" "e'")
-      = #"let" (#"exp_subst" "g" "e")
-         (#"exp_subst" (#"snoc" (#"cmp" #"wkn" "g") #"hd") "e'")
-      : #"exp" "G'" "B"
-  ]
-  ]}.
+  ] ]}.
 
 Derive let_lang
        SuchThat (elab_lang_ext (exp_subst++value_subst) let_lang_def let_lang)

@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix
+From Named Require Import Core Compilers Elab ElabCompilers
      SimpleVSubst SimpleVSTLC SimpleVCPS SimpleVFix SimpleVFixCPS SimpleVCC Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -16,7 +16,7 @@ Require Coq.derive.Derive.
 
 
 Definition fix_cc_lang_def : lang :=
-  {[l
+  {[l/subst
   [:| "G" : #"env",
       "B" : #"ty",
       "vf" : #"val" "G" (#"neg" (#"prod" (#"neg" "B") "B"))
@@ -31,21 +31,10 @@ Definition fix_cc_lang_def : lang :=
       #"jmp" (#"fix" "v") "v'"
       = #"jmp" "v" (#"pair" (#"fix" "v") "v'")
       : #"blk" "G"
-  ];
-  [:= "G" : #"env",
-      "B" : #"ty",
-      "v" : #"val" "G" (#"neg" (#"prod" (#"neg" "B") "B")),
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("fix_subst")
-      #"val_subst" "g" (#"fix" "v")
-      = #"fix" (#"val_subst" "g" "v")
-      : #"val" "G'" (#"neg" "B")
-  ]
-  ]}.
+  ]]}.
 
 Derive fix_cc_lang
-       SuchThat (Pre.elab_lang (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+       SuchThat (elab_lang_ext (cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
                                fix_cc_lang_def
                                fix_cc_lang)
        As fix_cc_wf.

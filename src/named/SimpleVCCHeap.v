@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix
+From Named Require Import Core Compilers Elab ElabCompilers
      SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -62,7 +62,7 @@ Definition forget_eq_wkn'_def : lang :=
       ]
   ]}.
 Derive forget_eq_wkn'
-       SuchThat (Pre.elab_lang value_subst
+       SuchThat (elab_lang_ext value_subst
                                forget_eq_wkn'_def
                                forget_eq_wkn')
        As forget_eq_wkn'_wf.
@@ -105,20 +105,6 @@ Proof.
   auto_elab_compiler.
   {
     reduce.
-    eapply eq_term_trans.
-    eredex_steps_with heap_cps_ops "eval get".
-    reduce.
-    repeat (term_cong; try term_refl; compute_eq_compilation).
-    eapply eq_term_trans.
-    eapply eq_term_sym.
-    eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    2:eredex_steps_with value_subst "id_right".
-    by_reduction.
-  }
-  {
-    reduce.
     repeat (term_cong; try term_refl; compute_eq_compilation).
     eapply eq_term_trans; cycle 1.
     estep_under forget_eq_wkn' "forget_eq_wkn".
@@ -136,6 +122,20 @@ Proof.
     eapply eq_term_sym.
     estep_under value_subst "id_right".
     compute_eq_compilation.
+    by_reduction.
+  }
+  {
+    reduce.
+    eapply eq_term_trans.
+    eredex_steps_with heap_cps_ops "eval get".
+    reduce.
+    repeat (term_cong; try term_refl; compute_eq_compilation).
+    eapply eq_term_trans.
+    eapply eq_term_sym.
+    eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
+    compute_eq_compilation.
+    eapply eq_term_trans.
+    2:eredex_steps_with value_subst "id_right".
     by_reduction.
   }
   Unshelve.

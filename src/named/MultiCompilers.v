@@ -1430,6 +1430,175 @@ Proof.
     basic_core_crush.
 Qed.
 
+(*TODO: replace defn in Utils*)
+
+Lemma in_all {A} {P : A -> Prop} l
+  : all P l <-> forall a, In a l -> P a.
+Proof.
+  induction l; basic_goal_prep; basic_utils_crush.
+Qed.
+
+(*TODO: generalize, move to Substable TC*)
+Lemma well_scoped_monotonicity_term l l' (a:term)
+  : incl l l' -> well_scoped l a -> well_scoped l' a.
+Proof.
+  induction a; 
+    basic_goal_prep;
+    basic_term_firstorder_crush.
+  rewrite !in_all in *.
+  rewrite in_all in H1.
+  rewrite in_all in H.
+  unfold well_scoped,substable_term in *; eauto.
+Qed.
+
+Lemma well_scoped_monotonicity_args l l' (a:list term)
+  : incl l l' -> well_scoped l a -> well_scoped l' a.
+Proof.
+  induction a; 
+    basic_goal_prep;
+    basic_term_firstorder_crush.
+  eapply well_scoped_monotonicity_term; eauto.
+Qed.
+  
+Lemma well_scoped_monotonicity l l' (a:sort)
+  : incl l l' -> well_scoped l a -> well_scoped l' a.
+Proof.
+  induction a; 
+    basic_goal_prep;
+    basic_term_firstorder_crush.
+  eapply well_scoped_monotonicity_args; eauto.
+Qed.
+
+
+Lemma compile_well_scoped_term c t cmp cname
+  : In cname (fst cmp) ->
+    well_scoped (map fst c) t ->
+    well_scoped (map fst (compile_ctx cmp c)) (compile cmp cname t).
+Proof.
+  intro incmp.
+  induction t;
+    basic_goal_prep;
+    basic_term_firstorder_crush.
+  {
+    erewrite <- env_args_as_fst_ctx; auto.
+    unfold env_args.
+    simpl.
+    eapply in_flat_map; eauto.
+    rewrite in_namespaced; intuition.
+  }
+  {
+    case_match;
+    basic_goal_prep; auto.
+    case_match;
+    basic_goal_prep; auto.
+Abort.
+(*
+TODO: above lemma needs compiler wsness as a preise, haven't defined yet
+Lemma compile_well_scoped c t cmp cname
+  : well_scoped (map fst c) t ->
+    well_scoped (map fst (compile_ctx cmp c)) (compile_sort cmp cname t).
+Lemma compile_well_scoped c t cmp cname
+  : well_scoped (map fst c) t ->
+    well_scoped (map fst (compile_ctx cmp c)) (compile_sort cmp cname t).*)
+
+
+Lemma env_args_as_fst_subst cmp1 cmp2 c
+  : fst cmp1 = fst cmp2 ->
+    (env_args cmp1 (map fst c))
+    = (map fst (compile_subst cmp2 c)).
+Proof.
+  induction c; basic_goal_prep; basic_core_firstorder_crush.
+Qed.
+
+
+(*helpers for weaken_all_unique*)
+Inductive count_elem {A} a : list A -> nat -> Prop :=
+| countZ : count_elem a [] 0
+| countHit l n : count_elem a l n -> count_elem a (a::l) (S n)
+| countMiss b l n : a<>b -> count_elem a l n -> count_elem a (b::l) n.
+Hint Constructors count_elem : utils.
+
+Lemma notin_impl_count_0 {A} (l:list A) a
+  : ~In a l -> count_elem a l 0.
+Proof.
+  induction l; basic_goal_prep; basic_utils_firstorder_crush.
+Qed.
+Hint Resolve notin_impl_count_0 : utils.
+
+Lemma double_neg_excluded_middle {A : Prop}
+  : ~~(A \/ ~A).
+Proof.
+  tauto.
+Qed.
+  
+Lemma count_0_impl_notin {A} (l:list A)
+  : forall a, count_elem a l 0 -> ~ In a l.
+Proof.
+  induction l; basic_goal_prep; basic_utils_firstorder_crush.
+  inversion H; subst; eauto.
+  apply (@double_neg_excluded_middle (a0 = a)); intuition subst.
+  {
+    inversion H; subst; auto.
+  }
+  {
+    inversion H; subst; eauto.
+  }
+Qed.
+Hint Resolve count_0_impl_notin : utils.
+
+  
+Lemma all_unique_impl_count_1 {A} (l:list A)
+  : all_unique l <-> forall a, In a l -> count_elem a l 1.
+Proof.
+  induction l; basic_goal_prep; basic_utils_firstorder_crush.
+  {
+    constructor.
+    intro; subst; tauto.
+    eauto.
+  }
+  {
+    pose proof (H1 a ltac:(tauto)).
+    inversion H3; subst; eauto.
+    clear H3.
+    apply count_0_impl_notin in H6.
+    basic_utils_crush.
+  }
+  {
+    apply H0; intros.
+    specialize (H1 a0 ltac:(tauto)).
+    inversion H1; subst; auto.
+    apply count_0_impl_notin in H4; tauto.
+  }
+Qed.
+
+
+Lemma weaken_in_sublist {A} (l1 l2 : list A)
+  : sublist l1 l2 ->
+    forall a, In a l1 ->
+              In a l2.
+Proof.
+  revert l1.
+  induction l2;basic_goal_prep;
+    basic_utils_firstorder_crush.
+  destruct l1; tauto.
+  destruct l1;
+    basic_utils_firstorder_crush.
+Qed.
+  
+Lemma weaken_all_unique {A} (l1 l2 : list A)
+  : sublist l1 l2 ->
+    all_unique l2 ->
+    all_unique l1.
+Proof.
+  revert l1.
+  induction l2;basic_goal_prep;
+    basic_utils_firstorder_crush.
+  destruct l1; tauto.
+  destruct l1;
+    basic_utils_firstorder_crush.
+  eauto using weaken_in_sublist.
+Qed.  
+
 Local Lemma inductive_implies_semantic' cnames lt cmp ls
   : wf_lang ls ->
     wf_lang lt ->
@@ -1467,9 +1636,9 @@ Proof.
   }
   {
     revert H4.
-    assert (incl cnames cnames) by basic_utils_crush.
+    assert (sublist cnames cnames) by basic_utils_crush.
     revert H4.
-    enough (forall cnames', incl cnames' cnames ->
+    enough (forall cnames', sublist cnames' cnames ->
   (forall cname : string,
    In cname cnames' ->
    eq_term lt (compile_ctx (cnames, cmp) c) (compile_sort (cnames, cmp) cname t [/s2 /])
@@ -1483,12 +1652,36 @@ Proof.
      compile_subst (cnames, cmp) s2)) by eauto.
     induction cnames'; basic_goal_prep;
       basic_core_firstorder_crush.
+    pose proof (sublist_cons_rest _ _ _ H4).
     constructor; eauto.
-    clear H13.
+    clear IHcnames'.
     assert ((compile_sort (cnames, cmp) a t)
     [/map (fun cname : string => (cname :: name, compile (cnames, cmp) cname e2)) cnames' ++
       compile_subst (cnames, cmp) s2 /]
-            = (compile_sort (cnames, cmp) a t)[/compile_subst (cnames, cmp) s2 /]) by admit.
+            = (compile_sort (cnames, cmp) a t)[/compile_subst (cnames, cmp) s2 /]).
+    {(*TODO: should really be a separate lemma?*)
+      assert (well_scoped (map fst (compile_subst (cnames, cmp) s2)) (compile_sort (cnames, cmp) a t))
+             by admit (*
+                        TODO: needs ws_compiler to prove easily
+                       *).          
+      set (map (fun cname : string => (cname :: name, compile (cnames, cmp) cname e2)) cnames') as s_ext.
+      assert (all_fresh (s_ext ++  compile_subst (cnames, cmp) s2)).
+      {
+        rewrite all_fresh_as_all_unique in *.
+        rewrite map_app.
+        erewrite <- env_args_as_fst_subst by reflexivity.
+        erewrite eq_subst_dom_eq_r with (s2:=s2); eauto.
+        subst s_ext.
+        unfold env_args.
+        rewrite map_map.
+        simpl.
+        eapply weaken_all_unique; admit.
+      }
+      induction s_ext;basic_goal_prep; auto.
+      rewrite strengthen_subst; intuition.
+      eapply well_scoped_monotonicity; eauto.
+      basic_utils_crush.
+    }
     rewrite H13.
     erewrite <- compile_sort_subst; basic_core_firstorder_crush.
     symmetry; eapply eq_subst_dom_eq_r; eauto.
@@ -1533,7 +1726,7 @@ Proof.
       change
         (all_unique
            (flat_map (fun x : list string => map (fun c0 : string => c0 :: x) cnames) (name ::map fst c))).
-      Lemma all_unique_flat_map_inj
+     (* Lemma all_unique_flat_map_inj
         : (forall x y, f x = f y -> x = y) ->
           all_unique l ->
           all_unique (flat_map f l).
@@ -1585,7 +1778,7 @@ Proof.
     
     TODO: cname freshness reasoning*)
   }
-  }
+  } *)
 Admitted.
 
 Local Lemma inductive_implies_semantic_ctx' lt cmp ls cnames
@@ -1697,9 +1890,9 @@ Proof.
     eauto using preserving_compiler_to_lang_compiles_with.
 Qed.
 
-
+(*
 #[export] Hint Rewrite fresh_compile_ctx : lang_core.
-#[export] Hint Rewrite all_fresh_compile_ctx : lang_core.
+#[export] Hint Rewrite all_fresh_compile_ctx : lang_core.*)
 #[export] Hint Resolve fresh_lang_fresh_cmp : lang_core.
 #[export] Hint Resolve all_fresh_compiler : lang_core.
 
@@ -1713,7 +1906,7 @@ Qed.
 #[export] Hint Resolve all_constructors_term_from_wf : lang_core.
 #[export] Hint Resolve all_constructors_args_from_wf : lang_core.
 #[export] Hint Resolve all_constructors_ctx_from_wf : lang_core.
-#[export] Hint Rewrite compile_id_args : lang_core.
+(*#[export] Hint Rewrite compile_id_args : lang_core.*)
 #[export] Hint Rewrite compile_subst_lookup : lang_core.
 
 #[export] Hint Resolve lang_compiler_sort_case_args_eq : lang_core.

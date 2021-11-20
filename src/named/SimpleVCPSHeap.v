@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers ElabCompilersWithPrefix
+From Named Require Import Core Compilers Elab ElabCompilers
      SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap Matches.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -15,11 +15,9 @@ Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
 
 
-(*simple heap operations w/axioms avoiding an explicit heap 
-  TODO: substitution rules
-*)
+(*simple heap operations w/axioms avoiding an explicit heap *)
 Definition heap_cps_ops_def : lang :=
-  {[l
+  {[l/subst
   [:|  "G" : #"env",
        "vl" : #"val" "G" #"nat",
        "vn" : #"val" "G" #"nat",
@@ -62,33 +60,10 @@ Definition heap_cps_ops_def : lang :=
        #"config" "H" (#"set" (#"nv" "l") (#"nv" "n") "e")
        = #"config" (#"hset" "H" "l" "n") "e"
        : #"configuration" "G"
-  ];
-  [:=  "G" : #"env", "G'" : #"env",
-       "v" : #"val" "G'" #"nat",
-       "e" : #"blk" (#"ext" "G'" #"nat"),
-       "g" : #"sub" "G" "G'"
-       ----------------------------------------------- ("subst get")
-       #"blk_subst" "g" (#"get" "v" "e")
-       = #"get" (#"val_subst" "g" "v")
-          (#"blk_subst" (#"snoc" (#"cmp" #"wkn" "g") #"hd") "e")
-       : #"blk" "G"
-  ];
-  [:=  "G" : #"env", "G'" : #"env",
-       "vl" : #"val" "G'" #"nat",
-       "vn" : #"val" "G'" #"nat",
-       "e" : #"blk" "G'",
-       "g" : #"sub" "G" "G'"
-       ----------------------------------------------- ("subst set")
-       #"blk_subst" "g" (#"set" "vl" "vn" "e")
-       = #"set" (#"val_subst" "g" "vl")
-          (#"val_subst" "g" "vn")
-          (#"blk_subst" "g" "e")
-       : #"blk" "G"
-  ]
-  ]}.
+  ] ]}.
 
 Derive heap_cps_ops
-       SuchThat (Pre.elab_lang (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
+       SuchThat (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
                                heap_cps_ops_def
                                heap_cps_ops)
        As heap_cps_ops_wf.

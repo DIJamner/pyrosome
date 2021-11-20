@@ -13,8 +13,11 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
+
+Notation compiler := (compiler string).
+
 Definition prod_cc_def : lang :=
-  {[l
+  {[l/subst
   [:| "G" : #"env", "A" : #"ty", "B" : #"ty",
       "v" : #"val" "G" (#"prod" "A" "B")
        -----------------------------------------------
@@ -44,26 +47,7 @@ Definition prod_cc_def : lang :=
       "v" : #"val" "G" (#"prod" "A" "B")
       ----------------------------------------------- ("negative pair eta")
       #"pair" (#".1" "v") (#".2" "v") = "v" : #"val" "G" (#"prod" "A" "B")
-  ];
-  [:= "G" : #"env", "G'" : #"env",
-      "f" : #"sub" "G" "G'",
-      "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G'" (#"prod" "A" "B")
-      ----------------------------------------------- ("subst .1")
-       #"val_subst" "f" (#".1" "v")
-       = #".1" (#"val_subst" "f" "v")
-       : #"val" "G" "A"
-  ];
-  [:= "G" : #"env", "G'" : #"env",
-      "f" : #"sub" "G" "G'",
-      "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G'" (#"prod" "A" "B")
-      ----------------------------------------------- ("subst .2")
-       #"val_subst" "f" (#".2" "v")
-       = #".2" (#"val_subst" "f" "v")
-       : #"val" "G" "B"
-  ]
-  ]}.
+  ]]}.
 
 
 Derive prod_cc
@@ -73,7 +57,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve prod_cc_wf : elab_pfs.
 
 Definition cc_lang_def : lang :=
-  {[l
+  {[l/subst
       [:| "A" : #"ty"
           -----------------------------------------------
           #"neg" "A" : #"ty"
@@ -113,28 +97,7 @@ Definition cc_lang_def : lang :=
         #"hd"
       = "v"
       : #"val" (#"ext" #"emp" "A") (#"neg" "B")
-  ];
-  [:= "G" : #"env", "A" : #"ty",
-      "v1" : #"val" "G" (#"neg" "A"),
-      "v2" : #"val" "G" "A",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("jmp_subst")
-      #"blk_subst" "g" (#"jmp" "v1" "v2")
-      = #"jmp" (#"val_subst" "g" "v1") (#"val_subst" "g" "v2")
-      : #"blk" "G'"
-  ];  
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "e" : #"blk" (#"ext" #"emp" (#"prod" "A" "B")),
-      "v" : #"val" "G" "A",
-      "G'" : #"env",
-      "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("clo_subst")
-      #"val_subst" "g" (#"closure" "B" "e" "v")
-      = #"closure" "B" "e" (#"val_subst" "g" "v")
-      : #"val" "G'" (#"neg" "B")
-  ]
-  ]}.
+  ]]}.
 
 
 Derive cc_lang

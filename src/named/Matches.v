@@ -760,7 +760,8 @@ Ltac compute_eq_compilation :=
 
 Ltac use_term_nocheck :=
   apply no_check_term;
-  [ solve[prove_from_known_elabs]
+  [ typeclasses eauto
+  | solve[prove_from_known_elabs]
   |
   | solve[repeat t']
   | solve[repeat t']].
@@ -797,7 +798,7 @@ Ltac2 step_redex name c' tp e1p e2p s :=
   lazy_match! goal with
   | [|- eq_term_nocheck ?l ?c _ _ _] =>
     assert (eq_term_nocheck $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
-    apply (@eq_term_nocheck_by_with_subst $name $l $c $c' $e1p $e2p $tp $s); shelve() (*TODO: these goals are the dominating perf. bottleneck*)
+    apply (@eq_term_nocheck_by_with_subst _ _ $name $l $c $c' $e1p $e2p $tp $s); shelve() (*TODO: these goals are the dominating perf. bottleneck*)
   end.
 
 Ltac2 rec step_by_instructions i :=
@@ -990,39 +991,49 @@ Ltac auto_elab :=
   cleanup_auto_elab.
 
 (*TODO: duplicated; find & remove duplicates*)
-Ltac unify_evar_fst_eq :=
-  match goal with
+Ltac unify_evar_fst_eq V :=
+  lazymatch goal with
   | [|- (let (x,_) := ?p in x) = ?y] =>
-    let p':= open_constr:((y,_:term)) in
+    let p':= open_constr:((y,_:term V)) in
     unify p p';
     compute;
     reflexivity
   end.
-Ltac unify_var_names s c :=
+
+Ltac unify_var_names V s c :=
   let H' := fresh in
   assert (len_eq s c) as H';
   [ solve[repeat constructor]| clear H'];
   assert (map fst s = map fst c) as H';
-  [ compute; repeat f_equal; unify_evar_fst_eq| clear H'].
-
+  [ compute; repeat f_equal; unify_evar_fst_eq V | clear H'].
 
 Ltac eredex_steps_with lang name :=
   let mr := eval vm_compute in (named_list_lookup_err lang name) in
       lazymatch mr with
       | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
         lazymatch goal with
-        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-          let s := open_constr:(_:subst) in
-          first [unify_var_names s c | fail 100 "could not unify var names"];
+        | [|- @eq_term ?V _ ?l ?c' ?t ?e1 ?e2] =>
+          let s := open_constr:(_:subst V) in
+          first [unify_var_names V s c | fail 2 "could not unify var names"];
           first [ replace (eq_term l c' t e1 e2)
-                    with (eq_term l c' tp[/s/] e1p[/s/] e2p[/s/]);
+                    with (@eq_term V _ l c' tp[/s/] e1p[/s/] e2p[/s/]);
                   [| f_equal; vm_compute; reflexivity (*TODO: is this general?*)]
-                | fail 100 "could not replace with subst"];
-          eapply (@eq_term_subst l c' s s c);
+                | fail 2 "could not replace with subst"];
+          eapply (@eq_term_subst V _ l c' s s c);
           [ try solve [cleanup_auto_elab]
           | eapply eq_subst_refl; try solve [cleanup_auto_elab]
-          | eapply (@eq_term_by l c name tp e1p e2p); try solve [cleanup_auto_elab]]
+          |eapply (@eq_term_by V _ l c name tp e1p e2p); try solve [cleanup_auto_elab]]
         end
       | None =>
         fail 100 "rule not found in lang"
-      end; repeat t.
+      end.
+
+Ltac estep_under lang rule :=
+  eredex_steps_with lang rule
+  || (compute_eq_compilation; term_cong; (estep_under lang rule|| term_refl)).
+
+
+Ltac rewrite_leftwards lang name :=
+  first [ eapply eq_term_trans; [estep_under lang name |]
+        | eapply eq_term_trans; [|estep_under lang name ]];
+  compute_eq_compilation.
