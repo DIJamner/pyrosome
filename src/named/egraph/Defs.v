@@ -8,14 +8,24 @@ Require Import Bool String List Orders ZArith.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
+(*TODO: link coqutil
 From coqutil Require Import Map.Interface.
-From coqutil Require Map.SortedList.
-From Utils Require Import Utils PersistentArrayList UnionFind.
+From coqutil Require Map.SortedList.*)
+From Utils Require Import Utils PersistentArrayList UnionFind Natlike.
 From Named Require Import Term.
-From Named.egraph Require Import NatlikeTerm.
 (*Import Core.Notations.*)
 
 Require MSets.
+
+(*TODO: eqb from natlike *)
+#[refine]
+ Instance eqb_natlike A `{Ops.NatlikeOps A} : Eqb A :=
+  {|
+    eqb := Ops.eqb
+  |}.
+Proof.
+Admitted.
+    
 
 
 (*TODO: parameterize by ArrayList impl;
@@ -371,7 +381,19 @@ Definition map_Miter {S K V}
            (f : K -> V -> ST S unit)
            (p : @map.rep _ _ MP) : ST S unit :=
   map_Mfold (fun k v _ => f k v) p tt.
+
+(*TODO: double check this is the right name*)
+(* backtracks the state if ma returns None *)       
+Definition try_with_backtrack {S A B}
+           (ma : ST S (Option A)) : ST S (Option A) :=
+  fun g =>
+    match ma g with
+    | (g', Some a) => (g', Some a)
+    | (_, None) => (g, None)
+    end.
+
   
+       
 Section EGraphOps.
 
   Local Notation "'ST'" := (ST egraph).
@@ -736,7 +758,12 @@ Section EGraphOps.
 
                                                                              
   (* assumes that the context and sort have already been added *)
-  (* TODO: think about read/write separation & invariants *)
+  (* TODO: think about read/write separation & invariants;
+     have it return a list of sort equations to prove and backtrack if they fail?
+     hard to do that though since egraph won't be 'good'.
+     Generate equations first? traversing the term is cheap
+     ^ TODO: do this
+   *)
   (*TODO: does this need to take an eterm? *)
   Fixpoint check_and_add_eterm (ctx (*srt*): int) (e : eterm) : ST (option int) :=
     match e with
@@ -767,6 +794,7 @@ Section EGraphOps.
 
   (*TODO: how to treat type info on vars? *)
   (*TODO: use sections earlier to make list_Mmap termination check work *)
+  (*TODO: a larget effort to implement, move to sep file*)
   Fixpoint ematch (e : term) : ST match_result :=
     match e with
     | var x => TODO
@@ -800,4 +828,32 @@ Section EGraphOps.
            do let ci1 <- find i1 in
               let ci2 <- find i2 in
               ret (eqb i1 i2).
-y
+
+              
+(*critical properties*)
+
+(*TODO: need to carry a subst*)
+(* basic idea: parallel to core? *)
+Inductive egraph_matches_term
+          (g : egraph) (s : named_list V term)
+          (ep e : term) t : Prop :=
+| egraph_contains_var : 
+  In (i,e) s ->
+  (*in_egraph g t = true ->*)
+  egraph_sort_of g e t ->
+  egraph_contains_term g (var i) e t.
+
+(*Prove for empty egraph, each operation preserves*)
+Definition egraph_sound_in_lang g l :=
+  (forall c t, in_egraph_sort g c t = true ->
+               wf_sort l c t)...
+  /\(forall c t, eq_egraph_sort g c t1 t2 = true ->
+               eq_sort l c t1 t2)...
+
+Definition ematch_term_sound g : Prop :=
+  forall c e t c' s,
+    In (c',s) (set_map (materialize g) (ematch g c e t)) ->
+    in_egraph g c' e[/s/] t[/s/] = true.
+(*corollary: 
+  egraph_sound_in_lang g l ->
+  wf_subst l c' s c *)
