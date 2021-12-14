@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Named Require Import Core AllConstructors.
 Import Core.Notations.
 (*TODO: rename this to compiler proofs and have a separate export-only file?*)
-Require Export CompilerDefs.
+From Named Require Export CompilerDefs.
 
 Section WithVar.
   Context (V : Type)

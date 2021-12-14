@@ -6,8 +6,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers
-     SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC Matches.
+From Named Require Import Core Compilers Elab ElabCompilers Matches CompilerTools
+     SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
+     SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -80,8 +81,6 @@ Definition heap_cc_def : compiler :=
   | {{e #"set" "G" "v" "v'" "e" }} =>
     {{e #"set" "v" "v'" "e" }} 
   end.
-
-Require Import CompilerTools.
 
 (*TODO: make proof brief*)
 Derive heap_cc

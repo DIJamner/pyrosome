@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Named Require Import Core AllConstructors.
 Import Core.Notations.
 (*TODO: rename this to compiler proofs and have a separate export-only file?*)
-Require Export MultiCompilerDefs.
+From Named Require Export MultiCompilerDefs.
 
 
 Lemma flat_map_all_empty {A B} (f : A -> list B) l

@@ -6,8 +6,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers
-     SimpleVSubst SimpleVSTLC SimpleVCPS SimpleVFix SimpleVFixCPS SimpleVCC Matches.
+From Named Require Import Core Compilers Elab ElabCompilers Matches
+     SimpleVSubst SimpleVSTLC SimpleVCPS SimpleVFix SimpleVFixCPS SimpleVCC SimpleUnit.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -55,8 +55,6 @@ Definition fix_cc_def : compiler :=
                                    (#".2" (#".2" #"hd"))))
                                  "e") #"hd")}}
   end.
-
-Require Import SimpleUnit.
  
 Derive fix_cc
        SuchThat (elab_preserving_compiler (cc++prod_cc_compile++subst_cc)

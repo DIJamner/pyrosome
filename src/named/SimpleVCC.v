@@ -6,7 +6,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers Elab ElabCompilers SimpleVSubst SimpleVCPS Matches.
+From Named Require Import Core Compilers Elab ElabCompilers Matches
+     SimpleVSubst SimpleVCPS SimpleUnit.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -130,8 +131,6 @@ Definition subst_cc_def : compiler :=
   | {{e #"blk_subst" "G" "G'" "g" "e"}} =>
     {{e #"blk_subst" (#"snoc" #"wkn" "g") "e"}}
   end.
-
-Require Import SimpleUnit.
 
 Derive subst_cc
        SuchThat (elab_preserving_compiler []

@@ -195,8 +195,6 @@ Proof.
 Qed.
 Hint Resolve all_constructors_ctx_from_wf : lang_core.
 
-Require Import Compilers.
-
 
 
 Lemma strengthen_named_list_lookup' {A} (ecmp cmp : named_list A) n

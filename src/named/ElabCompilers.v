@@ -158,7 +158,7 @@ End WithVar.
 (*
   TODO: remove dependency on Matches or no?
  *)
-Require Import Matches.
+From Named Require Import Matches.
 
 Ltac setup_elab_compiler :=
   match goal with
