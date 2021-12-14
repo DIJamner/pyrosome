@@ -9,22 +9,22 @@
    In ACM SIGPLAN Workshop on ML, 37–45. Freiburg, Germany, October 2007. ACM Press.
    URL: https://www.lri.fr/~filliatr/ftp/publis/puf-wml07.pdf.
 *)
-Require Import Equalities Orders ZArith.
 
-From Utils Require Import Natlike ArrayList.
+From Utils Require Import Utils Natlike ArrayList.
 
 
 
 (* Use typeclasses since passing some instances to functors breaks the VM
    (issue #12519)
  *)
-Module UnionFind
-       (Import NL : Natlike)
-       (Import AL : ArrayList NL).
-(*  Context {t : Type}
-          {idx_ops : NatlikeOps t}
+Section UnionFind.
+  
+  Context {idx : Type}
+          `{Natlike idx}
           {array : Type -> Type}
-          {array_ops : ArrayListOps t array}.*)
+          `{ArrayList idx array}.
+
+  Notation zero := (zero : idx).
 
   (*TODO: make notations use ops*)
   (*Module Ntns := (ArrayNotations NL AL).
@@ -33,10 +33,10 @@ Module UnionFind
 
   Record union_find :=
     MkUF {
-        rank : array t;
-        parent : array t;
+        rank : array idx;
+        parent : array idx;
         (* we include an upper bound on the rank for purposes of termination *)
-        max_rank : t
+        max_rank : idx
       }.
 
   Definition length uf := length uf.(parent).
@@ -52,7 +52,7 @@ Module UnionFind
     (MkUF ra (set pa i i) mr, i).
 
   Definition find_aux
-    : t -> array t -> t -> array t * t :=
+    : idx -> array idx -> idx -> array idx * idx :=
     iter
       (fun f i => (f,i))
       (fun find_aux f i =>         
@@ -71,7 +71,7 @@ Module UnionFind
 
   
   (*TODO: move to the right place*)
-  Definition max (x y : t) :=
+  Definition max (x y : idx) :=
     if leb x y then y else x.
 
   (*TODO: needs to return the root id*)
@@ -93,11 +93,7 @@ Module UnionFind
 End UnionFind.
 
 (*TODO*)
-Module UnionFindSpec
-       (Import NL : Natlike)
-       (Import AL : ArrayList NL)
-       (Import ALS : ArrayListSpec NL AL).
-End UnionFindSpec.
+Class UnionFind_ok := {}.
 
 
 (* All definitions and proofs need to be generic over arraylist implementations.
@@ -109,49 +105,50 @@ End UnionFindSpec.
 #[local] Existing Instance Int63Natlike.natlike_ops.
 *)
 
-Module CBVUnionFind.
-  
+Module Int63UnionFind.
+
+  Require Import Int63 ZArith.
   From Utils Require Import PersistentArrayList.
 
-  Module M := UnionFind Int63Natlike PArrayList. 
-
+  Axiom TODO : forall A, A.
   
-  (*TODO make exhaustive*)
-  Ltac avoid_int63_bug c :=
-    let x := eval cbv delta
-                  [Int63Natlike.eqb
-                     Int63Natlike.leb
-                     Int63Natlike.ltb
-                     M.find_aux
-                     M.find
-                     M.max
-                     M.union                     
-                  ] in c in
-        exact x.
+  #[refine] Instance int63eqb : Eqb int := { eqb := Int63Natlike.eqb}.
+  exact Int63Natlike.eqb_eq.
+  apply TODO.  apply TODO.
+  exact Int63Natlike.eq_dec.
+  Defined.
 
-  (* Use defns from m when I don't need to work around the bug*)
-  Export M.
+  Instance natlike_int63 : Natlike int :=
+    {
+      natlike_eqb := int63eqb;
+      ltb := Int63Natlike.ltb;
+      leb := Int63Natlike.leb;
+      zero := Int63Natlike.zero;
+      succ := Int63Natlike.succ;
+      is_top := Int63Natlike.is_top;
+      iter := @Int63Natlike.iter;
+    }.
 
+  Instance arraylist_parraylist : ArrayList int PArrayList.array :=
+    {
+    make := @PArrayList.make;
+    get := @PArrayList.get;
+    set := @PArrayList.set;
+    length := @PArrayList.length;
+    alloc := @PArrayList.alloc;
+    }.
 
-  Definition find := ltac:(avoid_int63_bug find).
-  Definition max := ltac:(avoid_int63_bug max).
-  Definition union := ltac:(avoid_int63_bug union).
-End CBVUnionFind.
+  (* takes around 7s
+  Time Eval vm_compute in
+    let uf :=N.recursion empty
+                         (fun _  uf =>
+                            let (uf, i) := alloc uf in
+                            if ltb i 10 then uf else
+                              let (uf,_) := union uf i (sub i 10) in
+                              uf)
+                         1000000 in
+    snd (find uf 604828%int63).
+   *)
 
-(*TODO: this seems slower than not using the cbv delta trick.
-  Because find is unfolded in union?
-  Not enough to preclude it though
- *)
-Import Int63 CBVUnionFind.
-
-Time Eval vm_compute in
-     let uf :=N.recursion empty
-                          (fun _  uf =>
-                             let (uf, i) := alloc uf in
-                             if ltb i 10 then uf else
-                               let (uf,_) := union uf i (sub i 10) in
-                               uf)
-                          100000 in
-     snd (find uf 64828%int63).
-
+End Int63UnionFind.
   

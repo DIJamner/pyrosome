@@ -1,29 +1,61 @@
 Require Import Orders.
 
+From Utils Require Import Utils.
 
-Module Ops.
-(* Make typeclasses out of the important features of Natlike 
-   since passing some instances to functors breaks the VM
-   (issue #12519)
- *)
-Class NatlikeOps t :=
+
+Class Natlike t :=
   {
-  eqb : t -> t -> bool;
+  natlike_eqb :> Eqb t;
   ltb : t -> t -> bool;
   leb : t -> t -> bool;
-  zero : t;
+  zero :> WithDefault t;
   succ : t -> t;
   is_top : t -> bool;
   iter : forall {A},
       A -> (A -> A) -> t -> A
   }.
-End Ops.
 
+Section WithNatlike.
+  Context (t : Type)
+          `{Natlike t}.
+
+  (*TODO: include specs of ltb, leb*)
+  (*TODO: replace module below w/ this*)
+  Class Natlike_ok : Type :=
+    {
+      (* Note that the behavior of succ is unspecified on the top element *)
+      succ_greater
+      : forall a : t, (exists b, ltb a b = true) -> ltb a (succ a) = true;
+      
+      succ_least
+      : forall (a b : t), ltb a b = true -> leb (succ a) b = true;
+
+      is_top_spec
+      : forall (a : t), is_top a = false <-> (exists b, ltb a b = true);
+
+      iter_zero
+      : forall A (a:A) f, iter a f (zero : t) = a;
+
+      iter_succ
+      : forall A (a:A) f (i : t),
+        (exists b, ltb i b = true) -> iter a f (succ i) = f (iter a f i);
+      
+      natlike_ind
+      : forall P : t -> Prop,
+        P zero -> (forall n, is_top n = false -> P n -> P (succ n)) -> forall n, P n;   
+    }.
+End WithNatlike.
+
+
+(*TODO: deprecated; use the typeclass interface,
+  not the module one since passing some instances to functors breaks the VM
+   (issue #12519)
+*)
 (* All of the properties we expect from indices,
    primarily a computable comparison operation,
    zero element, and successor operation.
 *)
-Module Type Natlike.
+Module Type __Natlike.
   
   Include OrderedTypeFull. (* subsumes HasT *)
   
@@ -66,21 +98,11 @@ Module Type Natlike.
     : forall P : t -> Prop,
       P zero -> (forall n, is_top n = false -> P n -> P (succ n)) -> forall n, P n.
 
-  Instance natlike_ops : Ops.NatlikeOps t :=
-    {
-    eqb := eqb;
-    ltb := ltb;
-    leb := leb;
-    zero := zero;
-    succ := succ;
-    is_top := is_top;
-    iter := @iter
-    }.
+End __Natlike.
 
-End Natlike.
-
+(*TODO: deprecated*)
 (* Notations for conveniently working with natlike elements *)
-Module NatlikeNotations (Import NL : Natlike).
+Module __NatlikeNotations (Import NL : __Natlike).
 
   (*TODO: add a number notation?*)
   
@@ -89,5 +111,5 @@ Module NatlikeNotations (Import NL : Natlike).
   Infix "<=?" := leb (at level 70, no associativity).
   Notation "i .+1" := (succ i) (at level 70, no associativity).
 
-End NatlikeNotations.
+End __NatlikeNotations.
 

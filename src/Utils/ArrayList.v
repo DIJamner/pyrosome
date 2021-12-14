@@ -3,28 +3,29 @@ Require Import Orders.
 From Utils Require Import Natlike.
 
 
-Module Ops.
-  (* Make typeclasses out of the important features of Natlike 
+(* Make typeclasses out of the important features of Natlike 
    since passing some instances to functors breaks the VM
    (issue #12519)
-   *)
-  Class ArrayListOps idx (array : Type -> Type) :=
-    {
+ *)
+Class ArrayList idx (array : Type -> Type) :=
+  {
     make : forall {A}, A -> array A;
     get : forall {A}, array A -> idx -> A;
     set : forall {A}, array A -> idx -> A -> array A;
     length : forall {A}, array A -> idx;
     alloc : forall {A}, array A -> A -> idx * array A;
-    }.
-End Ops.
+  }.
 
+(*TODO: class for arraylist properties*)
+
+(*TODO: deprecated; replace *)
 (* Modules that satisfy (ArrayListOps Idx) provide a type 'array A' and operations on that type
    such that elements of 'array A' can be used as growable arrays indexed by elements of Idx.t.
    Note that if Idx.t is finite, arrays may not support unlimited concatenation.
 
    Properties of these operations are separated into another module.
 *)
-Module Type ArrayList (Idx : Natlike).
+Module Type __ArrayList (Idx : __Natlike).
 
   Parameter array : Type -> Type.
 
@@ -47,22 +48,13 @@ Module Type ArrayList (Idx : Natlike).
   
   Parameter alloc : forall {A}, array A -> A -> Idx.t * array A.
 
-  Instance arraylist_ops : Ops.ArrayListOps Idx.t array :=
-    {
-    make := @make;
-    get := @get;
-    set := @set;
-    length := @length;
-    alloc := @alloc;
-    }.
-
-End ArrayList.
+End __ArrayList.
   
 
 (*Copied and modified from primitive arrays*)
-Module ArrayNotations
-       (Idx : Natlike)
-       (Import AO : (ArrayList Idx)).
+Module __ArrayNotations
+       (Idx : __Natlike)
+       (Import AO : (__ArrayList Idx)).
   
   Notation "t .[ i ]" :=
     (get t i)
@@ -74,14 +66,14 @@ Module ArrayNotations
     (alloc t a)
       (at level 60, right associativity, format "new! a :: t").
 
-End ArrayNotations.
+End __ArrayNotations.
 
 (* The properties that should hold about ArrayList operations *)
-Module Type ArrayListSpec
-       (Idx : Natlike)
-       (Import AO : (ArrayList Idx)).
+Module Type __ArrayListSpec
+       (Idx : __Natlike)
+       (Import AO : (__ArrayList Idx)).
 
-  Module Import Notations := (NatlikeNotations Idx) <+ (ArrayNotations Idx AO).
+  Module Import Notations := (__NatlikeNotations Idx) <+ (__ArrayNotations Idx AO).
 
   (* Include an arbitrary predicate for specifying a well-formed subset of the array type.
      Ideally we would prove a parametricity result that shows all arrays constructed from
@@ -146,4 +138,4 @@ Module Type ArrayListSpec
 
   (*TODO: rest of array axioms as necessary *)
   
-End ArrayListSpec.  
+End __ArrayListSpec.  

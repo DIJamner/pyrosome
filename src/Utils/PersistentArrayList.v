@@ -1,12 +1,13 @@
 Require Import Orders ZArith Int63 PArray Lia.
 
-From Utils Require Import Natlike ArrayList.
+From Utils Require Import Natlike.
+From Utils Require ArrayList.
 
 Require Import Ltac2.Ltac2.
 Import Ltac2.Message Ltac2.Control.
 Set Default Proof Mode "Classic".
 
-Module Int63Natlike <: Natlike.
+Module Int63Natlike <: __Natlike.
 
   Definition t := int.
   Definition eq : int -> int -> Prop := @eq int.
@@ -391,18 +392,6 @@ Module Int63Natlike <: Natlike.
       unfold eq in *; subst; int_lia.
     }
   Qed.
-
-  
-  Instance natlike_ops : Ops.NatlikeOps t :=
-    {
-    eqb := eqb;
-    ltb := ltb;
-    leb := leb;
-    zero := zero;
-    succ := succ;
-    is_top := is_top;
-    iter := @iter
-    }.
   
 End Int63Natlike.
 
@@ -429,10 +418,10 @@ Fixpoint lookup_assoc_list {A} (default:A) l i : A :=
   end.
 
 
-Module PArrayList <: (ArrayList Int63Natlike).
+Module PArrayList <: (ArrayList.__ArrayList Int63Natlike).
 
   
-  Module Import Notations := (NatlikeNotations Int63Natlike).
+  Module Import Notations := (__NatlikeNotations Int63Natlike).
   
   Record array_rec (A : Type) :=
     MkArr {
@@ -471,7 +460,7 @@ Module PArrayList <: (ArrayList Int63Natlike).
   (*TODO: duplicated; refactor*)
   Definition max (x y : int) :=
     if x <=? y then y else x.
-
+  
   (* len_l is the length of the initiazed segment of l *)
   Definition expand_to_len_parray {A} l old_len new_len : PArray.array A :=
     let backed_len := length l in
@@ -493,16 +482,6 @@ Module PArrayList <: (ArrayList Int63Natlike).
   Definition length {A} := @len A.
   
   Definition alloc {A} l (a : A) := (l.(len),set l l.(len) a).
-
-  
-  Instance arraylist_ops : Ops.ArrayListOps int array :=
-    {
-    make := @make;
-    get := @get;
-    set := @set;
-    length := @length;
-    alloc := @alloc;
-    }.
 
 End PArrayList.
 
@@ -538,15 +517,15 @@ End PArrayList.
   Qed.
 
 (* TODO: prove ArrayList properties *)
-Module PArrayListProperties : ArrayListSpec Int63Natlike PArrayList.
+Module PArrayListProperties : ArrayList.__ArrayListSpec Int63Natlike PArrayList.
 
   Import PArrayList.
   Import Int63Natlike.
   Open Scope int63.
 
   Module Import Notations :=
-    (NatlikeNotations Int63Natlike)
-      <+ (ArrayNotations Int63Natlike PArrayList).
+    (__NatlikeNotations Int63Natlike)
+      <+ (ArrayList.__ArrayNotations Int63Natlike PArrayList).
 
   Definition well_formed {A} '(MkArr l len_l _ : array A) :=
     (le len_l (PArray.length l) /\ (forall i, le len_l i -> PArray.get l i = default l)) \/
