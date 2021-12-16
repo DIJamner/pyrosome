@@ -60,7 +60,7 @@ TODO: add fail
 *)
 
 Generalizable Variable M.
-Definition Mfmap `{mmon:Monad M} {A B:Set} (f : A -> B) (ma: M A) : M B :=
+Definition Mfmap `{mmon:Monad M} {A B} (f : A -> B) (ma: M A) : M B :=
   @! let a <- ma in ret f a.
 
 (*TODO: move these into separate files? *)
