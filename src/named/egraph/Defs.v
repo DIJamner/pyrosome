@@ -229,14 +229,44 @@ Section __.
       (* TODO: add union to interface *)
       Axiom union : forall {A} {s : set A}, s -> s -> s.
 
+      (*TODO: profile state monad and writer monad performance *)
+      Definition Checker A := ST (option (A * eqn_set)).
+      
+      (*TODO:
+          machinery for monad transformers?
+       *)
+      Instance state_monad : Monad Checker :=
+        {
+          Mret _ a := fun s => (s,Some (a,map.empty));
+          Mbind _ _ f ma :=
+          fun s =>
+            let (s,ma) := ma s in
+            match ma with
+            | Some (a,eqns) =>
+                let (s, ma) := f a s in
+                (s, option_map (pair_map_snd (union eqns)) ma)
+            | None => (s, None) end
+        }.
+
+      Definition require_equal p : Checker unit :=
+        Mret (M:=ST) (Some (tt, map.singleton p tt)).
+
+      Definition liftST {A} : ST A -> Checker A :=
+        Mfmap (fun a => Some (a,map.empty)).
+      Definition liftOpt {A} (ma : option A) : Checker A :=
+        Mret (M:=ST) (option_map (fun a => (a,map.empty)) ma).
+
+      Instance option_default {A} : WithDefault (option A) := None.
+      Instance ST_default {A} `{WithDefault A} : WithDefault (ST A) :=
+        fun s => (s,default).
+      
+      (*TODO: move to Monad once tested *)
+      Notation "'let' p <?- e 'in' b" :=
+        (Mbind (fun x => match x with p => b | _ => default end) e)
+          (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
       
       Section Inner.
-        Context (add_sort' : named_list idx -> sort -> ST (option (idx * eqn_set))).
-        
-        (*  sub is a map from vars to ids with the egraph's ctx as its domain.
-            We need this argument for processing sorts from the language
-         *)
-        Context (sub : named_list idx).
+        Context (add_sort' : named_list (idx * idx) -> sort -> Checker idx).
 
         (* breaks the term down into nodes, computes their sorts,
          and adds them to the egraph.
@@ -254,42 +284,98 @@ Section __.
          Thus, if for all (i1, i2) in the eqn_set we have find i1 = find i2,
          then the added term is well-typed.
          *)
+        Section Inner2.
+          Context (add_term' : term -> Checker (idx * idx)).
 
-        (*TODO:
-          machinery for monad transformers
+          (*TODO: return pair of lists or list of pairs?*)
+          Fixpoint add_args' (s : list term) (c : ctx) {struct s}
+            : Checker (list (idx * idx)) :=
+            match s, c with
+            | [],[] => @! ret []
+            | e::s, (_,t)::c =>
+                @! let sci <- add_args' s c in
+                   let (ei, ti) <- add_term' e in
+                   (* sort given by c *)
+                   let ti' <- add_sort' (with_names_from c sci) t in
+                   let tt <- require_equal (ti, ti') in
+                   ret (ei, ti)::sci
+            | _,_ => @! ret None
+            end.
+        End Inner2.
+
+        
+        (*  sub is a map from vars to id pairs with the egraph's ctx as its domain.
+            We need this argument for processing sorts from the language
+            
+            The range is pairs of (eid,tid) where eid is a term id and tid
+            is a sort id.
          *)
+        Context (sub_and_ctx : named_list (idx * idx)).
         
-        (*TODO: move to Monad once tested *)
-        Notation "'let' p <?- e 'in' b" :=
-          (Mbind (fun x => match x with p => b | _ => default end) e)
-            (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
-        
-        Fixpoint add_term' (e : term)
-          : ST (option (idx * eqn_set)) :=
+        Fixpoint add_term' (e : term) {struct e} : Checker (idx * idx) :=
           match e with
-          | var x =>
-              @! let i <- @! ret named_list_lookup_err sub x in
-                 ret (i, map.empty)      
+          | var x => liftOpt (named_list_lookup_err sub_and_ctx x)
           | con n s =>
-              @! let term_rule c _ t <?- @!ret named_list_lookup_err l n in
-                 let (s_ids, ids) <- Mfmap Some (add_args s c) in
-                 let ids' := fold_left add_elt s_ids ids in
-                 let (t_id, srt_ids) <- add_sort' (with_names_from c s_ids) t in
-                 let i <- Mfmap Some (add_node_unchecked
-                                        (con_node n (t_id::s_ids))) in
-                 ret (i, union ids' srt_ids)
-          end
-        with add_args (s : list term) c : ST (option (list idx * idx_set)) :=
-               (*TODO: use a for/map notation for this?*)
-               match s with
-               | [] => @! ret ([], map.empty)
-               | e::s =>
-                   @! let (s', ids) <- add_args s in
-                      let i <- add_term e in
-                      foo
-               | _ , _ => @! ret None (*return none? *)
-               end.
+              @! let term_rule c _ t <?- liftOpt (named_list_lookup_err l n) in
+                 let sci  <- add_args' add_term' s c in
+                 (* sort generated from sort of n rule *)
+                 let t_id <- add_sort' (with_names_from c sci) t in
+                 let i <- liftST (add_node_unchecked
+                                    (con_node n (t_id::(map fst sci)))) in
+                 ret (i,t_id)
+          end.
+      End Inner.
 
+      Let add_args'
+          (add_sort' : named_list (idx * idx) -> sort -> Checker idx)
+          (sub_and_ctx : named_list (idx * idx))
+        : list term -> ctx -> Checker (list (idx * idx)) :=
+            add_args' add_sort' (add_term' add_sort' sub_and_ctx).
+      
+      (*Use fuel here equal to the length of the language.
+        This is sufficient since the fuel is used when a term checks its sort,
+        given in either t or c of a rule c|- (n x...) : t
+        and all sorts must be defined before they are used.
+        
+        TODO: check that it's actually sufficient
+       *)
+      Fixpoint add_sort' (fuel : nat)
+               (sub_and_ctx : named_list (idx * idx))
+               (t : sort) : Checker idx :=
+        match fuel with
+        | 0 => @! ret None (* Hitting this case means the input was malformed *)
+        | S fuel' =>
+          match t with
+          | scon n s =>
+              @! let sort_rule c _ <?- liftOpt (named_list_lookup_err l n) in
+                 let sci  <- add_args' (add_sort' fuel') sub_and_ctx s c in
+                 let i <- liftST (add_node_unchecked
+                                    (con_node n (map fst sci))) in
+                 ret i
+          end            
+        end.
+
+      Fixpoint sub_and_ctx_from_ectx (acc : idx) (ectx : named_list idx)
+        : named_list (idx * idx) :=
+        match ectx with
+        | [] => []
+        | (x,ti)::ectx' =>
+            (x,(acc,ti))::(sub_and_ctx_from_ectx (succ acc) ectx')
+        end.
+      
+      Definition add_sort (t : sort) : Checker idx :=
+        @! let ectx <- liftST get_ectx in
+           (add_sort' (length l) (sub_and_ctx_from_ectx zero ectx) t).
+
+      Definition add_term (e : term) : Checker (idx*idx) :=
+        @! let ectx <- liftST get_ectx in
+           (add_term' (add_sort' (length l)) (sub_and_ctx_from_ectx zero ectx) e).
+
+      
+
+
+
+      
     (*
       Notes about the safety of adding unchecked nodes:
       - If the node is wf, then it can be kept as-added
