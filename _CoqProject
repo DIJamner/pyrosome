@@ -7,6 +7,8 @@ src/Utils/Natlike.v
 src/Utils/ArrayList.v
 src/Utils/PersistentArrayList.v
 src/Utils/UnionFind.v
+src/Utils/ExtraMaps.v
+src/Utils/RelationalDB.v
 
 -Q src/named Named
 src/named/Term.v
