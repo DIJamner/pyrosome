@@ -35,6 +35,34 @@ Section __.
   Notation lang := (@lang idx).
 
   Notation union_find := (@UnionFind.union_find idx array).
+
+  (**************************************************
+   Big TODO:
+   Do I need to include the sorts in the terms?
+   reasons I currently include them:
+   1. so I can answer queries of the form "What is the type of the term with id x
+   2. (intuitively) so that I can track conversions when destructing wf terms
+
+   For 1:
+   - Used for typechecking
+   - can be re-constituted by adding the sort from the node's term rule
+   - should just be a hashcons lookup, O(n). Worse than O(1), but probably fine
+
+   For 2:
+   If for each instance of a conversion, we add the lhs and rhs sorts 
+   and rewrite until they are equal, then we should be able to produce a wfness proof
+   for any term in the egraph if we can prove 2 invariants:
+
+   (for sorts)
+   Invariant 1: let id1 <- add(t1); id2 <- add(t2). If id1 = id2 then c |- t1 = t2.
+
+   (for terms)
+   Invariant 2: If find(add(e1)) = find (add(e2)), c |- e1 : t1, and c |- e2 : t2, 
+   then c |- t1 = t2 and c|- e1 = e2 : t1
+
+
+   **************************************************)
+
   
   Variant enode :=
     (* CONVENTION: for terms, first element of args is the sort *)
@@ -217,6 +245,64 @@ Section __.
                 ret i
          end.
 
+    
+
+    Definition merge (a b : idx) : ST idx :=
+      @! let ca <- find a in
+         let cb <- find b in
+         if eqb ca cb
+         then ret ca
+         else let i <- union_ids a b in
+              let tt <- add_to_worklist i in
+              ret i.
+
+
+    (*TODO: think about parents wrt srt, ctx
+    if c |- e : t, then e is a parent of t
+    need to set those somewhere
+     *)
+    Definition repair (i : idx) : ST unit :=
+      @! let c <- get_eclass i in
+         let tt <- @! for pn pi from c.(parents) in
+         let tt <- remove_hashcons pn in
+         let pn <- canonicalize pn in
+         let ci <- find pi in
+         (set_hashcons pn ci) in
+           let new_parents <-
+                 @! for/fold pn pi
+                    from c.(parents)
+                             [[new_parents := (map.empty : node_map)]] in
+           let pn <- canonicalize pn in
+           match map.get new_parents pn : option idx return ST map.rep with
+             
+           | Some np => Mseq (merge pi np) (@! ret new_parents)
+           | None =>
+               @! let ci <- find pi in
+                  ret (map.put new_parents pn ci)
+           end in
+             (set_eclass i (set_class_parents c new_parents)).
+
+    Definition rebuild_aux : N -> ST unit :=
+      N.recursion
+        (Mret tt)
+        (fun _ rec =>
+           @! let (is_empty : bool) <- is_worklist_empty in
+              if is_empty then ret tt
+              else
+                let tt <- rec in
+                let W <- pull_worklist in
+                (*TODO: should worklist and/or cW be a set? Egg has a dedup step.
+                For now we are not deduplicating here, but we probably should at some poidx
+                 *)
+                let cW <- list_Mmap find W in
+                (list_Miter repair cW)).
+    
+    (* TODO: need to track  I = ~=\=_node to use as fuel
+     *)
+    Definition rebuild : ST unit :=
+      @! let incong_bound := 100 in
+         (rebuild_aux 100).
+
 
     Context {idx_set : set idx}
             {eqn_set : set (idx*idx)}.
@@ -371,11 +457,6 @@ Section __.
         @! let ectx <- liftST get_ectx in
            (add_term' (add_sort' (length l)) (sub_and_ctx_from_ectx zero ectx) e).
 
-      
-
-
-
-      
     (*
       Notes about the safety of adding unchecked nodes:
       - If the node is wf, then it can be kept as-added
@@ -392,198 +473,83 @@ Section __.
       - check that all equations satisfy reflexivity
      *)
 
-    
-            Fail.
-    (*
-      This datatype helps with terminaton arguments.
-      TODO: fuse generation and consumption?
-     *)
-    Unset Elimination Schemes.
-    Inductive sorted_term : Type :=
-    (* variable name *)
-    | sd_var : idx -> sorted_sort -> sorted_term
-    (* Rule label, list of subterms*)
-    | sd_con : idx -> list sorted_term -> sorted_sort -> sorted_term
-    with sorted_sort : Type := sd_scon : idx -> list sorted_term -> sorted_sort.
-    Set Elimination Schemes.
 
-    (*    
-    Fixpoint lookup_term_with_subst s e : ST (option 
-    Definition lookup_sort_with_subst s t
-     *)
+    Section EqualitySaturation.
+      Context {A} (update : A -> ST A) (pred : A -> bool).
 
-    Section WithChecking.
+      Axiom (db : Type).
 
-      Context (l : lang).
+      (*TODO: implement*)
+      Axiom generate_db : ST db.
 
-      (* Annotate all of the sorts indicated by the language,
-         regardless of whether they line up.
+      (*TODO: currently only rewrites left-to-right.
+        Evaluate whether this is sufficient.
        *)
-      Fixpoint to_sorted_term (c : named_list sorted_sort) (e : term) :=
-        match e with
-        | Term.var x => sd_var x (named_list_lookup default c x)
-        | Term.con n l =>
-            let t := match named_list_lookup default l n with
-                     | term_rule c' _ t =>
-                         (*TODO: here is the tricky bit of the process*)
-                         to_sorted_sort t
-                     | _ => default
-                     end in
-            sd_con n (map (to_sorted_term c) l) t
-        end.
+      Definition try_rewrite (d : db) (r : rule) : ST unit :=
+        match r with
+        (* TODO: what to do with C? Needs to be used by ematch.
 
+           Consider heap lookup miss,
+           where a, inequality premise is not used in the equation.
+           How to handle this?
+           - implement pluggable term generators/deciders for specific sorts?
+           Hard to deal with; ignore for now?
+           How does egg deal with side conditions?
 
-      Fixpoint check_node_arguments (c : ctx) (l : list idx) : ST bool :=
-        match c, l with
-        | [], [] => @! ret true
-        | [], _ => @! ret false
-        | _, [] => @! ret false
-        | (_,t)::c', i::l' =>
-            (*TODO: lookup doesn't suffice; have to add, run saturation? *)
-            @! let Some i' <- lookup_sort_with_subst (with_names_from c' l') t in
-               if eqb i i' then (check_node_arguments c' l') else ret false
+           Vague idea: if using relational e-matching, turn C into part of the query.
+           
+
+         *)
+        | sort_eq_rule c t1 t2 =>
+            list_Miter (fun '(sub,cid) =>
+                          @! let cid' <- add_sort_unchecked sub c t2 in
+                             (merge cid cid'))
+                       (ematch_sort d c t1)
+        | term_eq_rule c e1 e2 t =>
+            (* TODO: add_unchecked seems like it would expect the rhs to include sorts.
+               Do we need a lang with all-annotated terms?
+             *)
+            list_Miter (fun '(sub,cid) =>
+                          @! let cid' <- add_term_unchecked sub c e2 t in
+                             (merge cid cid'))
+                       (ematch d c e1 t)
+        | _ => @!ret tt (* not a rewrite rule *)
         end.
       
       (*
-      checks if a given node is valid in the language,
-      assuming every node in the egraph is valid.
-      Has no effect if the node is invalid.      
+      Iteratively applies rewrite rules to the egraph
+      until either:
+      - the egraph is saturated (*TODO: implement*)
+      - the accumulator satisfies the predicate
+      - the fuel runs out
+
+      TODO: encode the termination type in the output?
+      TODO: fuel : N
        *)
-      Definition check_sort_node (n : enode) : ST bool :=
-        match n with
-        | var_node x => @! ret None 
-        | con_node n l =>
-            match named_list_lookup l n with
-            | Some (sort_rule c _) => @! ret check_node_arguments c l
-            | None => @! ret false
-            end
+      Fixpoint equality_saturation (acc: A) (fuel : nat) : ST A :=
+        match fuel with
+        | 0 => @! ret acc
+        | S fuel' =>
+            if pred acc then @! ret acc
+            else
+              @! let db <- generate_db in
+                 (*TODO: filter lang once before this fixpoint starts *)
+                 (* Main rewrite loop
+                    Since DB is separate, we  don't have to separate reads and writes
+                    and still only need one rebuild
+                  *)
+                 let tt <- list_Miter (try_rewrite db) l in
+                 let tt <- rebuild in
+                 let acc' <- update acc in
+                 (equality_saturation acc' fuel')
         end.
+                                    
+
+
+                                          
+    End WithLang.
       
-                    (*
-                      For a in args, (x,t) in c:
-                          assert (typeof a = t)
-                          
-                      TODO: expects l to be 1 layer deep like nodes;
-                      that is, c should be a named list of idxs
-                     *)
-            
-            
-      (*
-        Like add_sort_node for terms, but also returns the sort of the term
-       *)
-      Definition add_term_node (n : enode) : ST (option (idx (*term*)* idx(*sort*))) :=
-        match n with
-        | var x =>
-            (*TODO: mediate between sorts in ctx and idxs; should they be in the graph?*)
-            @! _ <- nth 
-        | con_node n (srt::args) =>
-        | _ => @! ret None
-      
-    
-    Fail.
-
-    (* adds node n at sort srt
-     *)
-    Definition add_term_node (n : enode) (srt : idx) : ST (option idx) :=
-      @! let mn <- lookup n in
-         match mn with
-         | Some i =>
-             @! 
-         | None => 
-             @! let i <- alloc in
-                let tt <- set_eclass i (eclass_singleton n srt) in
-                let tt <- add_parent_to_children n i in
-                (*TODO: should the sort be a parent?
-                  would make more sense to include it in 'get_parents'
-                  rather than saving it twice.
-                  Note that this might interact with the bogus value for sort nodes
-                 *)
-                let tt <- add_parent n i srt in
-                let tt <- set_hashcons n i in
-                ret i
-         end.
-    
-    Definition add_sort_node (n : enode) : ST idx :=
-      @! let mn <- lookup n in
-         match mn with
-         | Some i => @! ret i
-         | None => 
-             @! let i <- alloc in
-                let tt <- set_eclass i (eclass_singleton n zero) in
-                let tt <- add_parent_to_children n i in
-                let tt <- set_hashcons n i in
-                ret i
-         end.
-
-    Definition merge (a b : idx) : ST idx :=
-      @! let ca <- find a in
-         let cb <- find b in
-         if eqb ca cb
-         then ret ca
-         else let i <- union_ids a b in
-              let tt <- add_to_worklist i in
-              ret i.
-
-
-    (*TODO: think about parents wrt srt, ctx
-    if c |- e : t, then e is a parent of t
-    need to set those somewhere
-     *)
-    Definition repair (i : idx) : ST unit :=
-      @! let c <- get_eclass i in
-         let tt <- @! for pn pi from c.(parents) in
-         let tt <- remove_hashcons pn in
-         let pn <- canonicalize pn in
-         let ci <- find pi in
-         (set_hashcons pn ci) in
-           let new_parents <-
-                 @! for/fold pn pi
-                    from c.(parents)
-                             [[new_parents := (map.empty : node_map)]] in
-           let pn <- canonicalize pn in
-           match map.get new_parents pn : option idx return ST map.rep with
-             
-           | Some np => Mseq (merge pi np) (@! ret new_parents)
-           | None =>
-               @! let ci <- find pi in
-                  ret (map.put new_parents pn ci)
-           end in
-             (set_eclass i (set_class_parents c new_parents)).
-
-    Definition rebuild_aux : N -> ST unit :=
-      N.recursion
-        (Mret tt)
-        (fun _ rec =>
-           @! let (is_empty : bool) <- is_worklist_empty in
-              if is_empty then ret tt
-              else
-                let tt <- rec in
-                let W <- pull_worklist in
-                (*TODO: should worklist and/or cW be a set? Egg has a dedup step.
-                For now we are not deduplicating here, but we probably should at some poidx
-                 *)
-                let cW <- list_Mmap find W in
-                (list_Miter repair cW)).
-    
-    (* TODO: need to track  I = ~=\=_node to use as fuel
-     *)
-    Definition rebuild : ST unit :=
-      @! let incong_bound := 100 in
-         (rebuild_aux 100).
-
-    Context {arg_map : map.map idx idx}.
-    
-    (* Higher-level term operations*)
-
-    (* Concept: add all terms at once, good or not,
-       and equate them incrementally.
-       In proofs, need to keep track of which ids are dangerous.
-       Allows us to write the full tree, then do reads for the sort equations
-     *)
-    
-
-
-      Fail.
+   (* Context {arg_map : map.map idx idx}.*)
 
   (* TODO: is it worth using a more efficient structure?
      If we assume that the max length is ~10, maybe not
@@ -591,19 +557,6 @@ Section __.
   Definition esubst := list (idx*idx).
   Definition match_result := list (esubst * eclass).
   
-
-  (*Used as an intermediate form in equality saturation *)
-  Unset Elimination Schemes.
-  (*TODO: parameterize; replace idx with Idx.t*)
-  Inductive eterm : Set :=
-  (* variable name *)
-  | evar : idx -> eterm
-  (* Rule label, list of subterms*)
-  | econ : idx -> list eterm -> eterm
-  (* new constructor: *)
-  (* reference to an existing node in the egraph *)
-  | eref : idx -> eterm.
-  Set Elimination Schemes.
 
 
   (* TODO: zero is a questionable default unless I implement null idea*)
