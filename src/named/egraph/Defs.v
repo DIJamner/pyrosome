@@ -12,12 +12,26 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Natlike ExtraMaps Monad RelationalDB.
 Import Sets.
 From Utils Require ArrayList UnionFind.
-From Named Require Import Term Rule.
+From Named Require Import Term Rule Core.
 (*Import Core.Notations.*)
 
 (*TODO: move to utils*)
 Definition unwrap_with_default {A} (default : A) ma :=
   match ma with None => default | Some a => a end.
+
+(*TODO: move to Monad once tested *)
+Notation "'let' p <?- e 'in' b" :=
+  (Mbind (fun x => match x with p => b | _ => default end) e)
+    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
+
+Instance option_monad : Monad option :=
+  {
+    Mret _ := Some;
+    Mbind _ _ f ma := match ma with Some a => f a | None => None end;
+  }.
+
+
+Instance option_default {A} : WithDefault (option A) := None.
 
 Section __.
   Context {idx : Type}
@@ -63,10 +77,31 @@ Section __.
 
    **************************************************)
 
+  (*possibly poor naming*)
+  Definition principal_sort l c e : option sort :=
+    match e with
+    | var x => named_list_lookup_err c x
+    | con n s =>
+        @! let (term_rule c' _ t) <?- named_list_lookup_err l n in
+           ret t[/with_names_from c' s/]
+    end.
+
+  (* If this is provable, then I can quickly compute the sort as described above.
+     This means that terms don't need to store their sorts
+     TODO: prove
+*)
+  Axiom principal_sort_equiv
+    : forall  l c e t pt, wf_term l c e t ->
+      principal_sort l c e = Some pt ->
+      eq_sort l c t pt.
+
+  
+
+
+  (*******)
+
   
   Variant enode :=
-    (* CONVENTION: for terms, first element of args is the sort *)
-    (* TODO: determine if this is a good way to do it *)
     | con_node : idx -> list idx -> enode
     (*TODO: separate constructor for sorts?  | scon_node : list idx -> enode *)
     | var_node : (*(* sort id*) idx ->*) (* var *) idx -> enode.
@@ -342,15 +377,10 @@ Section __.
       Definition liftOpt {A} (ma : option A) : Checker A :=
         Mret (M:=ST) (option_map (fun a => (a,map.empty)) ma).
 
-      Instance option_default {A} : WithDefault (option A) := None.
       Instance ST_default {A} `{WithDefault A} : WithDefault (ST A) :=
         fun s => (s,default).
       
-      (*TODO: move to Monad once tested *)
-      Notation "'let' p <?- e 'in' b" :=
-        (Mbind (fun x => match x with p => b | _ => default end) e)
-          (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
-      
+     
       Section Inner.
         Context (add_sort' : named_list (idx * idx) -> sort -> Checker idx).
 
@@ -369,6 +399,9 @@ Section __.
 
          Thus, if for all (i1, i2) in the eqn_set we have find i1 = find i2,
          then the added term is well-typed.
+         *)
+        (*
+          TODO: make sort to be checked against an input, not an output?
          *)
         Section Inner2.
           Context (add_term' : term -> Checker (idx * idx)).
@@ -407,7 +440,7 @@ Section __.
                  (* sort generated from sort of n rule *)
                  let t_id <- add_sort' (with_names_from c sci) t in
                  let i <- liftST (add_node_unchecked
-                                    (con_node n (t_id::(map fst sci)))) in
+                                    (con_node n (map fst sci))) in
                  ret (i,t_id)
           end.
       End Inner.
@@ -457,6 +490,42 @@ Section __.
         @! let ectx <- liftST get_ectx in
            (add_term' (add_sort' (length l)) (sub_and_ctx_from_ectx zero ectx) e).
 
+      Fixpoint add_term_unchecked (e : term) {struct e} : ST idx :=
+          match e with
+          | var x => add_node_unchecked (var_node x)
+          | con n s =>
+              @! let si  <- list_Mmap add_term_unchecked s in
+                 (add_node_unchecked (con_node n si))
+          end.
+      
+      Definition add_sort_unchecked (t: sort) : ST idx :=
+          match t with
+          | scon n s =>
+              @! let si  <- list_Mmap add_term_unchecked s in
+                 (add_node_unchecked (con_node n si))
+          end.
+
+      Section UncheckedSub.
+        
+        Context (sub : named_list idx).
+      
+        Fixpoint add_term_unchecked_sub (e : term) {struct e} : ST idx :=
+          match e with
+          | var x => @!ret named_list_lookup default sub x
+          | con n s =>
+              @! let si  <- list_Mmap add_term_unchecked s in
+                 (add_node_unchecked (con_node n si))
+          end.
+      
+      Definition add_sort_unchecked_sub (t: sort) : ST idx :=
+          match t with
+          | scon n s =>
+              @! let si  <- list_Mmap add_term_unchecked_sub s in
+                 (add_node_unchecked (con_node n si))
+          end.
+
+      End UncheckedSub.
+
     (*
       Notes about the safety of adding unchecked nodes:
       - If the node is wf, then it can be kept as-added
@@ -474,13 +543,16 @@ Section __.
      *)
 
 
-    Section EqualitySaturation.
-      Context {A} (update : A -> ST A) (pred : A -> bool).
+      Section EqualitySaturation.
+        Context  {subst_set : set (named_list idx)}.
+        Context {A} (update : A -> ST A) (pred : A -> bool).
 
-      Axiom (db : Type).
+        Axiom (db : Type).
 
-      (*TODO: implement*)
-      Axiom generate_db : ST db.
+        (*TODO: implement*)
+        Axiom generate_db : ST db.
+        Axiom ematch : db -> term -> subst_set.
+        Axiom ematch_sort : db -> sort -> subst_set.
 
       (*TODO: currently only rewrites left-to-right.
         Evaluate whether this is sufficient.
@@ -501,18 +573,28 @@ Section __.
 
          *)
         | sort_eq_rule c t1 t2 =>
-            list_Miter (fun '(sub,cid) =>
-                          @! let cid' <- add_sort_unchecked sub c t2 in
-                             (merge cid cid'))
-                       (ematch_sort d c t1)
+            map_Miter (fun sub _ =>
+                          @! let cid <- add_sort_unchecked_sub sub t1 in
+                             let cid' <- add_sort_unchecked_sub sub t2 in
+                             let _ <- merge cid cid' in
+                             ret tt)
+                       (ematch_sort d t1)
         | term_eq_rule c e1 e2 t =>
             (* TODO: add_unchecked seems like it would expect the rhs to include sorts.
                Do we need a lang with all-annotated terms?
+               
+               TODO: expose add_with_subst to use here
+               TODO: is it safe to add unchecked here?
+                     - means that there might be conversions in added term
+                       that are not represented in the egraph
+                     (only applies if sorts are removed from nodes)
              *)
-            list_Miter (fun '(sub,cid) =>
-                          @! let cid' <- add_term_unchecked sub c e2 t in
-                             (merge cid cid'))
-                       (ematch d c e1 t)
+            map_Miter (fun sub _ =>
+                          @! let cid <- add_term_unchecked_sub sub e1 in
+                             let cid' <- add_term_unchecked_sub sub e2 in
+                             let _ <- merge cid cid' in
+                             ret tt)
+                       (ematch d e1)
         | _ => @!ret tt (* not a rewrite rule *)
         end.
       
@@ -538,226 +620,21 @@ Section __.
                     Since DB is separate, we  don't have to separate reads and writes
                     and still only need one rebuild
                   *)
-                 let tt <- list_Miter (try_rewrite db) l in
+                 let tt <- list_Miter (try_rewrite db) (map snd l) in
                  let tt <- rebuild in
                  let acc' <- update acc in
                  (equality_saturation acc' fuel')
         end.
                                     
-
+      End EqualitySaturation.
 
                                           
     End WithLang.
-      
-   (* Context {arg_map : map.map idx idx}.*)
 
-  (* TODO: is it worth using a more efficient structure?
-     If we assume that the max length is ~10, maybe not
-   *)
-  Definition esubst := list (idx*idx).
-  Definition match_result := list (esubst * eclass).
+    
+    (* assumes saturation *)
+    Definition compare_eq i1 i2 : ST bool :=
+      @! let ci1 <- find i1 in
+         let ci2 <- find i2 in
+         ret (eqb i1 i2).
   
-
-
-  (* TODO: zero is a questionable default unless I implement null idea*)
-  Fixpoidx esubst_lookup (s : esubst) (n : idx) : idx :=
-    match s with
-    | [] => 0%idx63
-    | (s', v)::l' =>
-      if eqb n s' then v else esubst_lookup l' n
-    end.
-
-  Arguments esubst_lookup !s n/.
-
-  Import Idx63Term.
-  (*TODO: take in an actual map for constr_map?*)
-  Fixpoint to_eterm (e : term) : eterm :=
-    match e with
-    | var x => evar x
-    | con n s => econ n (map to_eterm s)
-    end.
-
-  Arguments to_eterm !e /.
-
-  (* TODO: should I work out how to apply substs to refs?
-     necessary if e can be an eterm
-   *)
-  Fixpoint eterm_subst (s : esubst) (e : term) : eterm :=
-    match e with
-    | var x => eref (esubst_lookup s x)
-    | con n s' =>
-      econ n (map (eterm_subst s) s')
-    end.
-
-  Arguments eterm_subst s !e /.
-
-  
-  Definition lookup_sort (tm : idx) : ST idx :=
-    @! let c <- get_eclass tm in
-       ret c.(esrt).
-       
-  Definition lookup_ctx (tm : int) : ST idx :=
-    @! let c <- get_eclass tm in
-       ret c.(ectx).
-
-
-  Definition lookup_sort_in_ctx'
-            (rec : ctx_idx -> var_idx -> ST (option srt_idx))
-            (ctx : ctx_idx)
-            (x : var_idx) : ST (option srt_idx) :=
-    @! let c <- get_eclass ctx in
-       match NodeSets.choose c.(nodes) with
-       | Some (ctx_cons_node _ x' srt tl) =>
-         if eqb x x' then @! ret Some srt
-         else rec tl x
-       | _ => @! ret None
-       end.
-
-  (*TODO: try to collapse 2 defs*)
-  Definition lookup_sort_in_ctx (ctx x : idx) : ST (option srt_idx) :=
-    @! let c <- get_eclass ctx in
-       match NodeSets.choose c.(nodes) with
-       | Some (ctx_cons_node n x' srt tl) =>
-         if eqb x x' then @! ret Some srt
-         else N.recursion (fun _ _ => @! ret None) (fun _ => lookup_sort_in_ctx') n tl x
-       | _ => @! ret None
-       end.       
-
-  (*TODO: want this to be fast.
-    Build lang into egraph?
-    identify c w/ term c[/id/] and do regular lookup?
-    how to know the arity of id though?
-    middle option: "lang" is already compiled, just another node type?
-    what to do with equivalence rules then? drop? need to remember at least the names
-   *)
-  Definition get_term_ctx_and_sort (l : lang) (c : constr_idx) : option (ctx*sort) :=
-    match named_list_lookup_err l c with
-    | Some (term_rule c t
-
-  (* assumes that the context and sort have already been added *)
-  (* TODO: think about read/write separation & invariants *)
-  (* TODO: needs lang as input to generate the sort *)
-  Fixpoint add_eterm_no_check lang (ctx (*srt*): idx) (e : eterm) : ST (option idx) :=
-    match e with
-    | evar x =>
-      @! let srt <- lookup_sort_in_ctx ctx x in
-         (add_term (var_node x) ctx srt)
-    | econ n s =>
-      (*TODO: generalize list_Mmap to composition of ST and option.
-        Requires monad transformers to be nice
-       *)
-      @! let margs <- list_Mmap add_eterm s in
-         let srt <- 
-         match List.option_all margs with
-         | Some args =>
-           (*TODO: check wfness of top-level constructor here*)
-           (*TODO: think about what needs to be canonicalized here *)
-           (add_term (con_node n args) ctx srt)
-         | None => None
-         end
-    | eref i => @! ret i
-   end.
-
-                                                                             
-  (* assumes that the context and sort have already been added *)
-  (* TODO: think about read/write separation & invariants;
-     have it return a list of sort equations to prove and backtrack if they fail?
-     hard to do that though since egraph won't be 'good'.
-     Generate equations first? traversing the term is cheap
-     ^ TODO: do this
-   *)
-  (*TODO: does this need to take an eterm? *)
-  Fixpoint check_and_add_eterm (ctx (*srt*): idx) (e : eterm) : ST (option int) :=
-    match e with
-    | evar x =>
-      @! let srt <- lookup_sort_in_ctx ctx x in
-         (add_term (var_node x) ctx srt)
-      (*TODO: need to look up sort
-       and check, if srt is provided*)
-      add (var_node x ctx srt)
-    | econ n s =>
-      (*TODO: generalize list_Mmap to composition of ST and option.
-        Requires monad transformers to be nice
-       *)
-      @! let margs <- list_Mmap add_eterm s in
-         match List.option_all margs with
-         | Some args =>
-           (*TODO: check wfness of top-level constructor here*)
-           (*TODO: think about what needs to be canonicalized here *)
-           (add_term (con_node n args) ctx srt)
-           (add (con_node n ctx srt)
-         | None => None
-         end
-    | eref i => (*TODO: check? only if srt provided. write sep. helper?*) do ret i
-    end.
-                       
-  Axiom TODO : forall {A}, A.
-
-
-  (*TODO: how to treat type info on vars? *)
-  (*TODO: use sections earlier to make list_Mmap termination check work *)
-  (*TODO: a larget effort to implement, move to sep file*)
-  Fixpoint ematch (e : term) : ST match_result :=
-    match e with
-    | var x => TODO
-    | con n s =>
-      @! let ematch_s <- list_Mmap ematch s in
-         TODO
-         end.
-
-
-                                    
-         (*Queries I want in the end:*)
-
-         (* uses egraph saturate_and_compare_eq to determine equivalences,
-            checks wfness of each subterm, and adds if wf
-
-            w/ this API, ctx nodes seem reasonable
-          *)
-         Parameter add_and_check_wf_term : lang -> ctx -> term -> ST (option idx).
-         Parameter add_and_check_wf_sort : lang -> ctx -> term -> ST (option idx).
-         Parameter get_term : idx -> ST (option term).
-         Parameter get_ctx_of_term : idx -> ST (option ctx).
-         Parameter get_sort_of_term : idx -> ST (option sort).
-         Parameter get_sort : idx -> ST (option sort).
-
-         (* one of these two *)
-         Parameter saturate : lang -> ST unit.
-         Parameter saturate_until_eq : lang -> idx -> idx -> ST bool.
-
-         (* assumes saturation *)
-         Definition compare_eq l i1 i2 : ST bool :=
-           do let ci1 <- find i1 in
-              let ci2 <- find i2 in
-              ret (eqb i1 i2).
-
-              
-(*critical properties*)
-
-(*TODO: need to carry a subst*)
-(* basic idea: parallel to core? *)
-Inductive egraph_matches_term
-          (g : egraph) (s : named_list V term)
-          (ep e : term) t : Prop :=
-| egraph_contains_var : 
-  In (i,e) s ->
-  (*in_egraph g t = true ->*)
-  egraph_sort_of g e t ->
-  egraph_contains_term g (var i) e t.
-
-(*Prove for empty egraph, each operation preserves*)
-Definition egraph_sound_in_lang g l :=
-  (forall c t, in_egraph_sort g c t = true ->
-               wf_sort l c t)...
-  /\(forall c t, eq_egraph_sort g c t1 t2 = true ->
-               eq_sort l c t1 t2)...
-
-Definition ematch_term_sound g : Prop :=
-  forall c e t c' s,
-    In (c',s) (set_map (materialize g) (ematch g c e t)) ->
-    in_egraph g c' e[/s/] t[/s/] = true.
-(*corollary: 
-  egraph_sound_in_lang g l ->
-  wf_subst l c' s c *)
-
-*)
