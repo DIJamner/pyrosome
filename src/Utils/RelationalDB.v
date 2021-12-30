@@ -10,6 +10,49 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Natlike ArrayList ExtraMaps.
 Import Sets.
 
+Section QueryTrie.
+
+  Context (A : Type).
+  
+  (*TODO: determine whether to generalize idx/elt or just use positive*)
+  (* PTree has positive keys, which means elt = positive to use it
+   Then idx = positive with the only instantiation I intend to use
+   *)
+  (*TODO: use something other than list? for our uses list might be optimal,
+    depending on how it's generated
+   *)
+  Inductive query_trie :=
+  | qt_nil
+  (* an optimization for cases where the variable doesn't appear in the relation
+     TODO: use or no? it's a bit tricky
+  | qt_unconstrained : query_trie -> query_trie
+   *)
+  | qt_tree : @named_list A query_trie -> query_trie.
+
+  
+  Definition values_of_next_var (t : query_trie) : list A :=
+    match t with
+    | qt_tree l => map fst l
+    | _ => []
+    end.
+
+  Context `{Eqb A}.
+  
+  Definition choose_next_val (v:A) (t : query_trie) : query_trie :=
+    match t with
+    | qt_nil => qt_nil
+    | qt_tree l => named_list_lookup qt_nil l v
+    end.
+
+End QueryTrie.
+
+Arguments values_of_next_var {_}.
+Arguments choose_next_val {_}%type {_}.
+
+Arguments qt_nil {_}%type_scope.
+Arguments qt_tree {_}%type_scope _.
+
+
 Section WithIdx.
   (*Idx type used for relation ids and variables *)
   Context (Idx : Type) {natlike_idx : Natlike Idx}.
@@ -26,10 +69,8 @@ Section WithIdx.
 
   (* We establish a type for conjunctive queries *)
 
-  (* we need constants for residual queries in generic_join *)
-  Variant argument := const_arg (c : elt) | var_arg (x : Idx).
   (*TODO: use primitive pair?*)
-  Definition atom : Type := Idx (*Relation id*) * list argument.
+  Definition atom : Type := Idx (*Relation id*) * list Idx.
   Record query :=
     {
       free_vars : list Idx;
@@ -38,75 +79,91 @@ Section WithIdx.
     }.
 
 
-  
-  Lemma invert_const_const x y
-    : const_arg x = const_arg y <-> x = y.
-  Proof. solve_invert_constr_eq_lemma. Qed.
-  Hint Rewrite invert_const_const : utils.
-  Lemma invert_const_var x y
-    : const_arg x = var_arg y <-> False.
-  Proof. solve_invert_constr_eq_lemma. Qed.
-  Hint Rewrite invert_const_var : utils.
-  Lemma invert_var_const x y
-    : var_arg x = const_arg y <-> False.
-  Proof. solve_invert_constr_eq_lemma. Qed.
-  Hint Rewrite invert_var_const : utils.
-  Lemma invert_var_var x y
-    : var_arg x = var_arg y <-> x = y.
-  Proof. solve_invert_constr_eq_lemma. Qed.
-  Hint Rewrite invert_var_var : utils.
-  
-  #[refine]
-   Instance eqb_argument : Eqb argument :=
-    {|
-      eqb a b := match a, b with
-                 | const_arg ca, const_arg cb => eqb ca cb
-                 | var_arg xa, var_arg xb => eqb xa xb
-                 | _ , _ => false
-                 end
-    |}.
-  {
-    destruct n; destruct m; simpl; basic_utils_crush.
-  }
-  {
-    destruct x; destruct y; simpl; basic_utils_crush.
-  }
-  {
-    destruct x; simpl; basic_utils_crush.
-  }
-  Admitted.
 
   Context {arg_map : map.map Idx elt}
           {id_set : set Idx}
           {elt_set : set elt}
           {subst_set : set arg_map}.
 
-  Axiom (trie : Type).
-  Context (trie_map : map.map Idx trie).
-
-  Axiom value_of_next_var : trie -> elt.
-
-  Axiom choose_next_val : elt -> trie -> trie.
+  
   Axiom union : subst_set -> subst_set -> subst_set.
 
-  Axiom trie_map_map : (trie -> trie) -> trie_map -> trie_map.
+  Axiom trie_map_map : (query_trie elt -> query_trie elt) ->
+                       @named_list Idx (query_trie elt) ->
+                       @named_list Idx (query_trie elt).
 
-  Fixpoint generic_join' (tries : trie_map) (vars : list Idx) (acc : arg_map) : subst_set :=
+  Fixpoint generic_join' (tries : @named_list Idx (query_trie elt))
+           (vars : list Idx) (acc : arg_map) : subst_set :=
     match vars with
     | [] => map.singleton acc tt
     | (x::vars') =>
-        let Dx := map.fold (fun l _ v => (value_of_next_var v)::l) [] tries in
+        let Dx := fold_left (fun l '(_,v) => (values_of_next_var v)++l) tries [] in
         fold_left union
             (map (fun v => generic_join' (trie_map_map (choose_next_val v) tries) vars' (map.put acc x v)) Dx)
             map.empty
     end.
 
-  Axiom build_tries : list Idx -> list atom -> trie_map.
+  
+
+  (* we need constants for residual queries in generic_join *)
+  Variant argument := const_arg (c : elt) | var_arg (x : Idx).
+
+  Fixpoint match_args_put (x : Idx) (e : elt) l :=
+    match l with
+    | [] => [(x,e)]
+    | (x',e') ::l =>
+        if eqb x x' then if eqb e e' then (x',e')::l else []
+        else (x',e')::(match_args_put x e l)
+    end.
+  
+  Fixpoint match_args args tuple :=
+    match args, tuple with
+    | [], _ => []
+    | _,[] => []
+    | (var_arg x)::args, e::tuple =>
+        match_args_put x e (match_args args tuple)
+    | (const_arg c)::args, e::tuple =>
+        if eqb c e then match_args args tuple else []
+    end.
+
+
+  Definition find_values_in_relation x (rel : relation) args :=
+    map.fold (fun acc tuple _ =>
+                match named_list_lookup_err (match_args args tuple) x with
+                | Some e => e::acc
+                | _ => acc
+                end) [] rel.
+
+  Definition arg_subst v x a :=
+    match a with
+    | const_arg c => const_arg c
+    | var_arg x' =>
+        if eqb x x' then const_arg v else var_arg x'
+    end.
+  
+  (*TODO: filter rel on recursive calls?*)
+  Fixpoint build_trie' (rel: relation) (vars : list Idx) (args : list argument) : (query_trie elt) :=
+    match vars with
+    | [] => qt_nil
+    | x::vars' =>
+        let vs := find_values_in_relation x rel args in
+        qt_tree (map (fun v => (v, build_trie' rel vars' (map (arg_subst v x) args))) vs)
+    end.
+
+  Definition build_trie (d:db) (vars : list Idx) (clause : atom) : Idx * (query_trie elt) :=
+    let rel_id := fst clause in
+    match map.get d rel_id with
+    | Some rel => (rel_id,build_trie' rel vars (map var_arg (snd clause)))
+    | None => (rel_id, qt_nil)
+    end.
+  
+  Definition build_tries (d:db) (vars : list Idx) (clauses : list atom) : @named_list Idx (query_trie elt) :=
+    map (build_trie d vars) clauses.
            
   Definition generic_join (d : db) (q : query) : subst_set :=
-    let tries := build_tries q.(free_vars) q.(clauses) in
+    let tries := build_tries d q.(free_vars) q.(clauses) in
     generic_join' tries q.(free_vars) map.empty.
   
-End WithIdx.
+End WithIdx. 
 
-Arguments generic_join {_ _}%type {_ _ _ _}.
+Arguments generic_join {_}%type {_} {_}%type {_ _ _ _ _} _ _.
