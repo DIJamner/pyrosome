@@ -85,9 +85,6 @@ Section WithIdx.
           {elt_set : set elt}
           {subst_set : set arg_map}.
 
-  
-  Axiom union : subst_set -> subst_set -> subst_set.
-
   Axiom trie_map_map : (query_trie elt -> query_trie elt) ->
                        @named_list Idx (query_trie elt) ->
                        @named_list Idx (query_trie elt).
