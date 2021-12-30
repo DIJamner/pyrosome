@@ -85,9 +85,6 @@ Section WithIdx.
           {elt_set : set elt}
           {subst_set : set arg_map}.
 
-  Axiom trie_map_map : (query_trie elt -> query_trie elt) ->
-                       @named_list Idx (query_trie elt) ->
-                       @named_list Idx (query_trie elt).
 
   Fixpoint generic_join' (tries : @named_list Idx (query_trie elt))
            (vars : list Idx) (acc : arg_map) : subst_set :=
@@ -96,7 +93,7 @@ Section WithIdx.
     | (x::vars') =>
         let Dx := fold_left (fun l '(_,v) => (values_of_next_var v)++l) tries [] in
         fold_left union
-            (map (fun v => generic_join' (trie_map_map (choose_next_val v) tries) vars' (map.put acc x v)) Dx)
+            (map (fun v => generic_join' (named_map (choose_next_val v) tries) vars' (map.put acc x v)) Dx)
             map.empty
     end.
 
