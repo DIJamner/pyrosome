@@ -346,9 +346,6 @@ Section __.
 
       Context (l : lang).
 
-      
-      (* TODO: add union to interface *)
-      Axiom union : forall {A} {s : set A}, s -> s -> s.
 
       (*TODO: profile state monad and writer monad performance *)
       Definition Checker A := ST (option (A * eqn_set)).
@@ -547,12 +544,80 @@ Section __.
         Context  {subst_set : set (named_list idx)}.
         Context {A} (update : A -> ST A) (pred : A -> bool).
 
-        Axiom (db : Type).
 
+
+        Context (relation : set (list idx))
+                (db : map.map idx relation)
+                (arg_map : map.map idx idx)
+                (subst_set' : set arg_map).
+
+        
         (*TODO: implement*)
-        Axiom generate_db : ST db.
-        Axiom ematch : db -> term -> subst_set.
-        Axiom ematch_sort : db -> sort -> subst_set.
+        Axiom generate_db' : forall (g : egraph), db.
+          
+        
+        Definition generate_db : ST db :=
+          fun g => (g, generate_db' g).
+
+        (* returns (max_var, root, list of atoms)*)
+        Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list (atom idx) :=
+          match p with
+          | con f s =>
+              let '(max_var, s_vars, atoms) :=
+                fold_left (fun '(max_var, s_vars, atoms) p =>
+                             let '(max_var, x, atoms') :=
+                               compile_term_aux max_var p in
+                             (max_var,x::s_vars, atoms'++atoms))
+                          s
+                          (max_var, [], []) in
+              let x := succ max_var in
+              (x, x, (f,s_vars)::atoms)
+          | var x => (max_var, x, [])
+          end.
+
+        (* returns (max_var, root, list of atoms)*)
+        Definition compile_sort_aux (max_var : idx) p :=
+          match p with
+          | scon f s =>
+              let '(max_var, s_vars, atoms) :=
+                fold_left (fun '(max_var, s_vars, atoms) p =>
+                             let '(max_var, x, atoms') :=
+                               compile_term_aux max_var p in
+                             (max_var,x::s_vars, atoms'++atoms))
+                          s
+                          (max_var, [], []) in
+              let x := succ max_var in
+              (x, x, (f,s_vars)::atoms)
+          end.
+
+        (*TODO: move to natlike.v*)
+        Definition max {A} `{Natlike A} (a b : A) : A :=
+          if ltb b a then a else b.
+        
+        Definition compile_term_pattern (p : term) : query idx :=
+          (*TODO: remove duplicates in fv *)
+          let vars := fv p in
+          let max_var := fold_left max vars zero in
+          let '(_,root, atoms) := compile_term_aux max_var p in
+          Build_query _ (root::vars) atoms.
+        
+        Definition compile_sort_pattern (p : sort) : query idx :=
+          (*TODO: remove duplicates in fv *)
+          let vars := fv_sort p in
+          let max_var := fold_left max vars zero in
+          let '(_,root, atoms) := compile_sort_aux max_var p in
+          Build_query _ (root::vars) atoms.
+
+        
+        (*TODO: output type*)
+        Definition ematch (d : db) (p : term) :=
+          let q := compile_term_pattern p in
+          generic_join d q.
+        
+        Definition ematch_sort (d : db) (p : sort) :=
+          let q := compile_sort_pattern p in
+          generic_join d q.
+        
 
       (*TODO: currently only rewrites left-to-right.
         Evaluate whether this is sufficient.
@@ -628,13 +693,38 @@ Section __.
                                     
       End EqualitySaturation.
 
-                                          
-    End WithLang.
+      (*TODO: move to Monad.v*)
+      
+      Definition map_Mandmap {K V}
+                 {MP : map.map K V}
+                 (f : K -> V -> ST bool)
+                 (p : @map.rep _ _ MP) : ST bool :=
+        map_Mfold (fun k v b => @! let b' <-  (f k v) in ret (andb b' b)) p true.
 
-    
+      
     (* assumes saturation *)
     Definition compare_eq i1 i2 : ST bool :=
       @! let ci1 <- find i1 in
          let ci2 <- find i2 in
          ret (eqb i1 i2).
+      
+      (* should be called under a try_with_backtrack?*)
+      Definition resolve_checker' (c : Checker unit)  (fuel : nat): ST bool :=
+        @! let meqns <- c in
+           match meqns with
+           | Some (_, eqns) =>
+           let ?? <- equality_saturation eqns fuel...
+               map_Mandmap (fun '(id1,id2) _ => compare_eq id1 id2)
+                         eqns
+                         true
+           | None => @! ret false
+           end.
+      
+    End WithLang.
+
+    
+    
+  End EGraphOps.
+
   
+End __.
