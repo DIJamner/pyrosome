@@ -225,10 +225,16 @@ Definition WithDefault (A : Type) := A.
 Definition default {A} {d : WithDefault A} : A := d.
 Existing Class WithDefault.
 
+
+#[export] Instance option_default {A} : WithDefault (option A) := None.
 #[export] Instance string_default : WithDefault string := "".
 (* TODO: is this bad practice? *)
 Hint Extern 10 (WithDefault _) => solve [typeclasses eauto].
 
+                   
+Definition unwrap_with_default {A} (default : A) ma :=
+  match ma with None => default | Some a => a end.
+                   
 (* TODO: separate file? *)
 Section NamedList.
   Context {S : Type}
@@ -496,6 +502,8 @@ End NamedList.
 #[export] Hint Rewrite Bool.andb_true_iff : utils.
 #[export] Hint Rewrite @eqb_eq' : utils.
 
+(*
+TODO: remove once the project builds without it
 
 (*Moved out of the module because Coq seems
   to include them at the the top level anyway
@@ -536,6 +544,7 @@ Module OptionMonad.
       end.
   End Mmap.
 End OptionMonad.
+*)
 
 
 

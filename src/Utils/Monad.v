@@ -2,6 +2,7 @@ Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
 Require List.
+From Utils Require Import Utils.
 
 Class Monad (M : Type -> Type) : Type :=
   {
@@ -34,6 +35,18 @@ Notation "'let' p := e 'in' b" :=
   (let p := e in b)
     (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
+
+
+(*TODO: move to Monad once tested *)
+Notation "'let' p <?- e 'in' b" :=
+  (Mbind (fun x => match x with p => b | _ => default end) e)
+    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
+
+Instance option_monad : Monad option :=
+  {
+    Mret _ := Some;
+    Mbind _ _ f ma := match ma with Some a => f a | None => None end;
+  }.
 
 Notation "'if' c 'then' b1 'else' b2" :=
   (if c then b1 else b2)

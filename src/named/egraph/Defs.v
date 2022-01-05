@@ -15,23 +15,6 @@ From Utils Require ArrayList UnionFind.
 From Named Require Import Term Rule Core.
 (*Import Core.Notations.*)
 
-(*TODO: move to utils*)
-Definition unwrap_with_default {A} (default : A) ma :=
-  match ma with None => default | Some a => a end.
-
-(*TODO: move to Monad once tested *)
-Notation "'let' p <?- e 'in' b" :=
-  (Mbind (fun x => match x with p => b | _ => default end) e)
-    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
-
-Instance option_monad : Monad option :=
-  {
-    Mret _ := Some;
-    Mbind _ _ f ma := match ma with Some a => f a | None => None end;
-  }.
-
-
-Instance option_default {A} : WithDefault (option A) := None.
 
 Section __.
   Context {idx : Type}
