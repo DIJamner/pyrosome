@@ -1,5 +1,7 @@
 -Q coqutil/src/coqutil coqutil
 
+-Q canonical-binary-tries Tries
+
 -Q src/Utils Utils
 src/Utils/Utils.v
 src/Utils/Monad.v
