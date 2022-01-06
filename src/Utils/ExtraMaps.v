@@ -51,6 +51,14 @@ Module Sets.
     
   End __.
 
+  (* Implements union and intersection as folds. *)
+  Local Instance set_from_map {A} (m : map.map A unit) : set A :=
+    {
+      set_as_map := m;
+      intersection m1 := map.fold (fun acc k _ => if map.get m1 k then map.put acc k tt else acc) map.empty;
+      union := map.fold map.put;
+    }.
+
 End Sets.
 Global Coercion Sets.set_as_map : Sets.set >-> map.map.
 

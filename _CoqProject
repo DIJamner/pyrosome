@@ -3,9 +3,11 @@
 -Q canonical-binary-tries Tries
 
 -Q src/Utils Utils
+src/Utils/TrieMap.v
 src/Utils/Utils.v
 src/Utils/Monad.v
 src/Utils/Natlike.v
+src/Utils/NatlikePos.v
 src/Utils/ArrayList.v
 src/Utils/PersistentArrayList.v
 src/Utils/UnionFind.v

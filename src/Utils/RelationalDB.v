@@ -82,21 +82,23 @@ Section WithIdx.
 
   Context {arg_map : map.map Idx elt}
           {id_set : set Idx}
-          {elt_set : set elt}
-          {subst_set : set arg_map}.
+          {elt_set : set elt}.
+  (* TODO: figure out whether this can have duplicates
+     {subst_set : set arg_map}.
+   *)
+  Definition subst_set := list arg_map.
 
 
   Fixpoint generic_join' (tries : @named_list Idx (query_trie elt))
            (vars : list Idx) (acc : arg_map) : subst_set :=
     match vars with
-    | [] => map.singleton acc tt
+    | [] => [acc]
     | (x::vars') =>
         let Dx := fold_left (fun l '(_,v) => (values_of_next_var v)++l) tries [] in
-        fold_left union
-            (map (fun v => generic_join' (named_map (choose_next_val v) tries) vars' (map.put acc x v)) Dx)
-            map.empty
+        flat_map (fun v => generic_join' (named_map (choose_next_val v) tries) vars'
+                                         (map.put acc x v))
+                 Dx
     end.
-
   
 
   (* we need constants for residual queries in generic_join *)
@@ -160,4 +162,103 @@ Section WithIdx.
   
 End WithIdx. 
 
-Arguments generic_join {_}%type {_} {_}%type {_ _ _ _ _} _ _.
+Arguments generic_join {_}%type {_} {_}%type {_ _ _ _} _ _.
+
+
+From coqutil Require Map.SortedList.
+From Utils Require TrieMap NatlikePos.
+
+Module MinimalPositiveInstantiation.
+
+  Fixpoint list_compare l1 l2 :=
+    match l1, l2 with
+    | [],[] => Eq
+    | [], _ => Lt
+    | _, [] => Gt
+    | x1::l1, x2::l2 =>
+        match BinPosDef.Pos.compare x1 x2 with
+        | Eq => list_compare l1 l2
+        | c => c
+        end
+    end.
+
+  Axiom TODO: forall {A},A.
+  
+  Definition list_ltb l1 l2 :=
+    match list_compare l1 l2 with
+    | Lt => true
+    | _ => false
+    end.
+  
+  (* Make this an instance so we can use single-curly-braces so we don't need to qualify field-names with [SortedList.parameters.] *)
+  Local Instance list_strict_order: @SortedList.parameters.strict_order _ list_ltb
+    := { ltb_antirefl := TODO
+       ; ltb_trans := TODO
+       ; ltb_total := TODO }.
+
+  
+  Definition relation_map : map.map (list positive) unit :=
+    SortedList.map (SortedList.parameters.Build_parameters (list positive) unit list_ltb)
+                   list_strict_order.
+
+
+  Definition relation : set (list positive) := set_from_map relation_map.
+
+  Definition db : map.map positive relation := TrieMap.map _.
+
+  Notation query := (query positive).
+
+  Definition arg_map : map.map positive positive := TrieMap.map _.
+  
+  Definition generic_join : db -> query -> list arg_map :=
+    @generic_join _ _ _ _ _ _ _.
+
+  Module Examples.
+    Open Scope positive.
+
+    Definition r1 : relation :=
+      Sets.add_elt
+        (Sets.add_elt
+           map.empty
+           [10; 20; 20])
+        [6; 4; 5].
+
+    
+    Definition r2 : relation :=
+      Sets.add_elt
+        (Sets.add_elt
+           (Sets.add_elt
+              map.empty
+              [4; 56])
+           [4; 52])
+        [7; 65].
+
+    
+    Definition r3 : relation :=
+      Sets.add_elt
+        (Sets.add_elt
+           map.empty
+           [10; 20; 30])
+        [4; 4; 8].
+    
+    Definition db_ex : db :=
+      Eval compute in (map.put
+                         (map.put
+                            (map.put
+                               map.empty
+                               1 r1)
+                            2 r2)
+                         3 r3).
+
+    Definition q1 : query :=
+      Build_query _
+                  [(*1; 2; 3;*) 4; 5]
+                  [(*(1,[1;2;3]); *)(2, [4;5])].
+
+    (*TODO: seems bugged on 2nd clause*)
+    Compute (generic_join db_ex q1).
+  End Examples.
+           
+  
+End MinimalPositiveInstantiation.
+
