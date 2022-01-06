@@ -1,24 +1,38 @@
-Require Import Coq.Numbers.BinNums.
+Require Import ZArith.
 Require Import coqutil.Map.Interface.
 Require Import Tries.Canonical.
 Import PTree.
 
-Fixpoint trie_fold' {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.tree' B) (num : positive) : A :=
+(* positives consed when they should be appended*)
+Fixpoint trie_fold' {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.tree' B)
+         (*TODO: find a better way*)
+         (num : positive -> positive) : A :=
   match m with
-  | Node001 r => trie_fold' f acc r (xI num)
-  | Node010 y => f acc num y
-  | Node011 y r => trie_fold' f (f acc num y) r (xI num)
-  | Node100 l => trie_fold' f acc l (xO num)
-  | Node101 l r => trie_fold' f (trie_fold' f acc r (xI num)) l (xO num)
-  | Node110 l y => trie_fold' f (f acc num y) l (xO num)
-  | Node111 l y r => trie_fold' f (trie_fold' f (f acc num y) r (xI num)) l (xO num)
+  | Node001 r => trie_fold' f acc r (fun a => num (xI a))
+  | Node010 y => f acc (num xH) y
+  | Node011 y r =>
+      let acc := f acc (num xH) y in
+      trie_fold' f acc r (fun a => num (xI a))
+  | Node100 l => trie_fold' f acc l (fun a => num (xO a))
+  | Node101 l r =>      
+      let acc := trie_fold' f acc r (fun a => num (xI a)) in
+      trie_fold' f acc l (fun a => num (xO a))
+  | Node110 l y => 
+      let acc := f acc (num xH) y in
+      trie_fold' f acc l (fun a => num (xO a))
+  | Node111 l y r =>
+      let acc := f acc (num xH) y in
+      let acc := trie_fold' f acc r (fun a => num (xI a)) in
+      trie_fold' f acc l (fun a => num (xO a))
 end.
+
 
 Definition trie_fold {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.t B) : A :=
   match m with
   | Empty => acc
-  | Nodes m' => trie_fold' f acc m' xH
+  | Nodes m' => trie_fold' f acc m' id
   end.
+  
 
 Section __.
 
@@ -37,3 +51,4 @@ Section __.
     |}.
   (* TODO: prove map.ok *)
 End __.
+
