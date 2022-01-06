@@ -23,9 +23,9 @@ Section QueryTrie.
    *)
   Inductive query_trie :=
   | qt_nil
-  (* an optimization for cases where the variable doesn't appear in the relation
-     TODO: use or no? it's a bit tricky
-  | qt_unconstrained : query_trie -> query_trie
+  (* TODO: use map from A to tries?
+     Currently includes duplication
+     TODO: need to expose map impl or inductive is not strictly positive
    *)
   | qt_tree : @named_list A query_trie -> query_trie.
 
@@ -163,6 +163,8 @@ Section WithIdx.
 End WithIdx. 
 
 Arguments generic_join {_}%type {_} {_}%type {_ _ _ _} _ _.
+Arguments free_vars {_}%type.
+Arguments clauses {_}%type.
 
 
 From coqutil Require Map.SortedList.
@@ -252,11 +254,18 @@ Module MinimalPositiveInstantiation.
 
     Definition q1 : query :=
       Build_query _
-                  [(*1; 2; 3;*) 4; 5]
-                  [(*(1,[1;2;3]); *)(2, [4;5])].
+                  [(*1; 2; 3;*) 1; 2]
+                  [(*(1,[1;2;3]); *)(2, [1;2])].
 
+
+    Compute (build_tries _ _ db_ex q1.(free_vars) q1.(clauses)). 
+    
+    Definition as_list {A} :=
+      TrieMap.trie_fold (B:=A) (fun m k v => (k,v)::m) [].
+    (*TODO: duplicates some results; should actually use a set?*)
     (*TODO: seems bugged on 2nd clause*)
-    Compute (generic_join db_ex q1).
+    Compute (map as_list (generic_join db_ex q1)).
+
   End Examples.
            
   
