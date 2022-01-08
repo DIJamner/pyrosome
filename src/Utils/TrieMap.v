@@ -3,6 +3,8 @@ Require Import coqutil.Map.Interface.
 Require Import Tries.Canonical.
 Import PTree.
 
+Require Utils.ArrayList.
+
 (* positives consed when they should be appended*)
 Fixpoint trie_fold' {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.tree' B)
          (*TODO: find a better way*)
@@ -52,3 +54,22 @@ Section __.
   (* TODO: prove map.ok *)
 End __.
 
+
+Module TrieArrayList.
+
+  Open Scope positive.
+
+  Definition trie_array A : Type := positive * (map A) * A.
+  #[global] Instance trie_arraylist : ArrayList.ArrayList positive trie_array :=
+    {
+      make _ a := (1, map.empty, a);
+      get _ '(_,m,a) i := match map.get m i with Some a' => a' | None => a end;
+      set _ '(p,m,a) i a' := (Pos.max (p+1) i, map.put m p a', a);
+      length _ '(p,_,_) := p;
+    (*TODO: wrong since positive has no true zero. Should be p-1.
+      Use N instead of positive?
+     *)
+      alloc _ '(p,m,a) a' := (p,(p+1, map.put m p a',a));
+    }.
+
+End TrieArrayList.

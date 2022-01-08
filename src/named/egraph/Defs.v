@@ -11,16 +11,13 @@ Open Scope list.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Natlike ExtraMaps Monad RelationalDB.
 Import Sets.
-From Utils Require ArrayList UnionFind.
+From Utils Require ArrayList UnionFind TrieMap.
 From Named Require Import Term Rule Core.
 (*Import Core.Notations.*)
 
 
-Section __.
-  Context {idx : Type}
-          `{Natlike idx}
-          {array : Type -> Type}
-          `{ArrayList.ArrayList idx array}.
+Definition idx := positive.
+Definition array := TrieMap.TrieArrayList.trie_array.
   
   Notation named_list := (@named_list idx).
   Notation named_map := (@named_map idx).
@@ -442,7 +439,7 @@ Section __.
                (sub_and_ctx : named_list (idx * idx))
                (t : sort) : Checker idx :=
         match fuel with
-        | 0 => @! ret None (* Hitting this case means the input was malformed *)
+        | O => @! ret None (* Hitting this case means the input was malformed *)
         | S fuel' =>
           match t with
           | scon n s =>
@@ -487,11 +484,12 @@ Section __.
 
       Section UncheckedSub.
         
-        Context (sub : named_list idx).
+        Context (sub : arg_map).
       
         Fixpoint add_term_unchecked_sub (e : term) {struct e} : ST idx :=
           match e with
-          | var x => @!ret named_list_lookup default sub x
+          | var x =>
+              @! ret unwrap_with_default default (map.get sub x)
           | con n s =>
               @! let si  <- list_Mmap add_term_unchecked s in
                  (add_node_unchecked (con_node n si))
@@ -524,26 +522,46 @@ Section __.
 
 
       Section EqualitySaturation.
-        Context  {subst_set : set (named_list idx)}.
         Context {A} (update : A -> ST A) (pred : A -> bool).
 
 
 
-        Context (relation : set (list idx))
-                (db : map.map idx relation)
-                (arg_map : map.map idx idx)
-                (subst_set' : set arg_map).
+        Definition get_eclasses : ST eclass_map :=
+          fun g => (g, g.(eclasses)).
 
-        
-        (*TODO: implement*)
-        Axiom generate_db' : forall (g : egraph), db.
-          
+
+        Definition db_append (m : db) x v :=
+          match map.get m x with
+          | None => map.put m x (map.singleton v tt)
+          | Some l => map.put m x (add_elt l v)
+          end.
+            
         
         Definition generate_db : ST db :=
-          fun g => (g, generate_db' g).
+          @! let classes <- get_eclasses in
+             for/fold i cls from classes [[acc:=map.empty]] in
+               (* all nodes in a class have identical index up to find *)
+               let i' <- find i in
+               for/fold node _ from cls.(nodes) [[acc:=acc]] in
+                 match node with
+                 | con_node n s =>
+                     @!let s' : list idx <- list_Mmap find s in
+                     ret db_append acc n (i'::s')
+                 | var_node x =>
+                     (*TODO: how to index into DB for vars vs con?
+                       for now, require them to use disjoint names
+                       works, but feels awkward and causes issues later
 
+                       The best thing would be to index based off of
+                       bool * positive rather than positive
+                      *)
+                     @! ret db_append acc x [i]
+                     
+                 end.
+
+        
         (* returns (max_var, root, list of atoms)*)
-        Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list (atom idx) :=
+        Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list atom :=
           match p with
           | con f s =>
               let '(max_var, s_vars, atoms) :=
@@ -577,19 +595,19 @@ Section __.
         Definition max {A} `{Natlike A} (a b : A) : A :=
           if ltb b a then a else b.
         
-        Definition compile_term_pattern (p : term) : query idx :=
+        Definition compile_term_pattern (p : term) : query :=
           (*TODO: remove duplicates in fv *)
           let vars := fv p in
           let max_var := fold_left max vars zero in
           let '(_,root, atoms) := compile_term_aux max_var p in
-          Build_query _ (root::vars) atoms.
+          Build_query (root::vars) atoms.
         
-        Definition compile_sort_pattern (p : sort) : query idx :=
+        Definition compile_sort_pattern (p : sort) : query :=
           (*TODO: remove duplicates in fv *)
           let vars := fv_sort p in
           let max_var := fold_left max vars zero in
           let '(_,root, atoms) := compile_sort_aux max_var p in
-          Build_query _ (root::vars) atoms.
+          Build_query (root::vars) atoms.
 
         
         (*TODO: output type*)
@@ -621,7 +639,7 @@ Section __.
 
          *)
         | sort_eq_rule c t1 t2 =>
-            map_Miter (fun sub _ =>
+            list_Miter (fun sub =>
                           @! let cid <- add_sort_unchecked_sub sub t1 in
                              let cid' <- add_sort_unchecked_sub sub t2 in
                              let _ <- merge cid cid' in
@@ -637,7 +655,7 @@ Section __.
                        that are not represented in the egraph
                      (only applies if sorts are removed from nodes)
              *)
-            map_Miter (fun sub _ =>
+            list_Miter (fun sub =>
                           @! let cid <- add_term_unchecked_sub sub e1 in
                              let cid' <- add_term_unchecked_sub sub e2 in
                              let _ <- merge cid cid' in
@@ -658,7 +676,7 @@ Section __.
        *)
       Fixpoint equality_saturation (acc: A) (fuel : nat) : ST A :=
         match fuel with
-        | 0 => @! ret acc
+        | O => @! ret acc
         | S fuel' =>
             if pred acc then @! ret acc
             else

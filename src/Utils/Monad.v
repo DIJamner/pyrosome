@@ -158,7 +158,7 @@ Module StateMonad.
           m constr, b custom monadic_do).
   
   Notation "'for/fold' kp vp 'from' m [[ acc := a ]] 'in' b" :=
-    (map_Mfold (fun kp vp acc => b) a m)                       
+    (map_Mfold (fun kp vp acc => b) m a)                       
       (in custom monadic_do at level 200, left associativity,
           kp pattern at level 0,
           vp pattern at level 0,
