@@ -36,11 +36,13 @@ Notation "'let' p := e 'in' b" :=
     (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
 
-
-(*TODO: move to Monad once tested *)
 Notation "'let' p <?- e 'in' b" :=
   (Mbind (fun x => match x with p => b | _ => default end) e)
     (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
+
+Notation "'let' ! e 'in' b" :=
+  (if e then b else default)
+    (in custom monadic_do at level 200, left associativity, e constr, b custom monadic_do).
 
 Instance option_monad : Monad option :=
   {
