@@ -86,8 +86,66 @@ Definition array := TrieMap.TrieArrayList.trie_array.
     (*TODO: separate constructor for sorts?  | scon_node : list idx -> enode *)
     | var_node : (*(* sort id*) idx ->*) (* var *) idx -> enode.
 
-  Context {node_set : set enode}
-          {node_map : map.map enode idx}.
+(* TODO: make sets fast*)
+
+Fixpoint list_eqb {A} `{Eqb A} (l1 l2 : list A) :=
+  match l1, l2 with
+  | [], [] => true
+  | a1::l1, a2::l2 =>
+      (eqb a1 a2) && (list_eqb l1 l2)
+  | _, _ => false
+  end.
+
+(*TODO: move to Utils once implemented *)
+#[refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
+  {
+    eqb := list_eqb
+  }.
+all: apply TODO.
+Defined.
+
+#[refine] Instance enode_eqb : Eqb enode :=
+  {
+    eqb n1 n2 :=
+    match n1, n2 with
+    | var_node x, var_node y => eqb x y
+    | con_node n1 s1, con_node n2 s2 =>
+        (eqb n1 n2) && (eqb s1 s2)
+    | _,_=>false
+    end;
+  }.
+all: apply TODO.
+Defined.
+
+Fixpoint named_list_put {A B} `{Eqb A} (l : @Utils.named_list A B) k v :=
+  match l with
+  | [] => [(k,v)]
+  | (k',v')::l =>
+      if eqb k k' then (k,v)::l else (k',v')::(named_list_put l k v)
+  end.
+
+Fixpoint named_list_remove {A B} `{Eqb A} (l : @Utils.named_list A B) k :=
+  match l with
+  | [] => []
+  | (k',v')::l =>
+      if eqb k k' then l else (k',v')::(named_list_remove l k)
+  end.
+  
+Section __.
+(* Not fast, but will run*)
+Local Instance named_list_map A B `{Eqb A} : map.map A B :=
+  {
+    rep := @Utils.named_list A B;
+    get := named_list_lookup_err;
+    empty := [];
+    put := named_list_put;
+    remove := named_list_remove;
+    fold _ f acc l := List.fold_left (fun acc '(k, v) => f acc k v) l acc;
+  }.
+End __.
+
+Definition node_set := set_from_map (@named_list_map enode unit _).
+Definition node_map := (@named_list_map enode idx _).
 
 
   (* TODO : separate sort eclasses? it would avoid awkwardness around esort dummy value
@@ -102,7 +160,8 @@ Definition array := TrieMap.TrieArrayList.trie_array.
         esort : idx;*)
       }.
 
-  Context {eclass_map : map.map idx eclass}.
+Definition eclass_map := TrieMap.map eclass.
+
   (*{idx_map : map.map idx idx}*)
 
   (* Fix a specific context that the egraph is operating in.
@@ -319,8 +378,18 @@ Definition array := TrieMap.TrieArrayList.trie_array.
          (rebuild_aux 100).
 
 
-    Context {idx_set : set idx}
-            {eqn_set : set (idx*idx)}.
+    Definition idx_set := trie_set.
+
+    (*TODO: move to Utils once implemented *)
+    #[refine] Instance pair_Eqb {A} `{Eqb A} {B} `{Eqb B} : Eqb (A * B) :=
+      {
+        eqb '(a1,a2) '(b1,b2) := (eqb a1 b1) && (eqb a2 b2);
+      }.
+    all: apply TODO.
+    Defined.
+
+    (* TODO: make pair sets just like pair maps to avoid set_from_map*)
+    Definition eqn_set := set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
     
     Section WithLang.
 
@@ -708,17 +777,25 @@ Definition array := TrieMap.TrieArrayList.trie_array.
       @! let ci1 <- find i1 in
          let ci2 <- find i2 in
          ret (eqb i1 i2).
+
+      Definition is_empty {A} := (existsb (A:=A) (fun _ => true)).
       
       (* should be called under a try_with_backtrack?*)
       Definition resolve_checker' (c : Checker unit)  (fuel : nat): ST bool :=
-        @! let meqns <- c in
+        @! let meqns : (option (unit * eqn_set)) <- c in
            match meqns with
            | Some (_, eqns) =>
-           let ?? <- equality_saturation eqns fuel...
-               map_Mandmap (fun '(id1,id2) _ => compare_eq id1 id2)
-                         eqns
-                         true
-           | None => @! ret false
+               ((@! let eqns' : eqn_set <-
+                        equality_saturation
+                          (fun eqns : eqn_set =>
+                             @! let eqns : eqn_set <-
+                                      list_Mmap (fun '((a,b),_) => (find a, find b)) eqns in
+                                ret filter(fun '((a,b),_) => negb (eqb a b))  eqns)
+                          is_empty
+                          eqns
+                          fuel in
+                  ret (is_empty eqns')) : ST bool)
+           | None => (@! ret false) : ST bool
            end.
       
     End WithLang.

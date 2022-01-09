@@ -62,3 +62,36 @@ Module Sets.
 End Sets.
 Global Coercion Sets.set_as_map : Sets.set >-> map.map.
 
+Require Import Utils.Monad.
+(*TODO: is this the right place for this?*)
+Section __.
+
+  
+  Context {A B value : Type}.
+  Context {B_map : map.map B value}.
+  Context {A_map : map.map A B_map}.
+
+  
+  
+  Local Instance pair_map : map.map (A * B) value :=
+    {
+      map.rep := A_map;
+      map.empty := map.empty;
+      map.get m '(ka, kb) :=
+      Mbind (fun mb => map.get mb kb) (map.get m ka);
+      map.put m '(ka, kb) v :=
+      match map.get m ka with
+      | None => map.put m ka (map.singleton kb v)
+      | Some mb => map.put m ka (map.put mb kb v)
+      end;
+      map.remove m '(ka,kb) :=
+      match map.get m ka with
+      | None => m
+      | Some mb => map.put m ka (map.remove mb kb)
+      end;
+      map.fold _ f :=
+        map.fold (fun acc ka mb =>
+                    map.fold (fun acc kb v => f acc (ka,kb) v) acc mb)
+    }.
+
+End __.
