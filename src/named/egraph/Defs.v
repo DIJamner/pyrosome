@@ -389,7 +389,8 @@ Definition eclass_map := TrieMap.map eclass.
     Defined.
 
     (* TODO: make pair sets just like pair maps to avoid set_from_map*)
-    Definition eqn_set := set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
+    Instance eqn_set : set (idx*idx) :=
+      set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
     
     Section WithLang.
 
@@ -779,6 +780,8 @@ Definition eclass_map := TrieMap.map eclass.
          ret (eqb i1 i2).
 
       Definition is_empty {A} := (existsb (A:=A) (fun _ => true)).
+      Definition is_empty_map {K V} {m : map.map K V} :=
+        (map.forallb (map:=m) (fun _ _ => false)).
       
       (* should be called under a try_with_backtrack?*)
       Definition resolve_checker' (c : Checker unit)  (fuel : nat): ST bool :=
@@ -788,13 +791,20 @@ Definition eclass_map := TrieMap.map eclass.
                ((@! let eqns' : eqn_set <-
                         equality_saturation
                           (fun eqns : eqn_set =>
-                             @! let eqns : eqn_set <-
-                                      list_Mmap (fun '((a,b),_) => (find a, find b)) eqns in
-                                ret filter(fun '((a,b),_) => negb (eqb a b))  eqns)
-                          is_empty
+                             map_Mfold (fun '(a,b) _ eqns =>
+                                          (@! let a' <- find a in
+                                              let b' <- find b in
+                                              if eqb a' b' then ret eqns
+                                              else ret add_elt eqns (a',b')))
+                                       eqns
+                                       map.empty)
+                          (*Note: this is delicate since the map is non-canonical
+                            (e.g. when a |-> Empty)
+                           *)
+                          is_empty_map
                           eqns
                           fuel in
-                  ret (is_empty eqns')) : ST bool)
+                  ret (is_empty_map eqns')) : ST bool)
            | None => (@! ret false) : ST bool
            end.
       
@@ -804,5 +814,3 @@ Definition eclass_map := TrieMap.map eclass.
     
   End EGraphOps.
 
-  
-End __.
