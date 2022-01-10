@@ -8,12 +8,10 @@ Require Import String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils Monad.
 From Named Require Import Core Elab ComputeWf.
 
 Import Core.Notations.
-Import OptionMonad.
-
 
 Section WithVar.
   Context (V : Type)
@@ -49,10 +47,10 @@ Section InnerLoop.
   Context (matches_unordered : forall (e pat : term), option subst).
   Fixpoint args_match_unordered (s pat : list term) : option subst :=
        match pat, s with
-       | [],[] => do ret []
+       | [],[] => @! ret []
        | pe::pat',e::s' =>
-         do res_e <- matches_unordered e pe;
-            res_s <- args_match_unordered s' pat';
+         @! let res_e <- matches_unordered e pe in
+            let res_s <- args_match_unordered s' pat' in
             ret (unordered_merge_unsafe res_e res_s)                          
        | _,_ => None
        end.
@@ -86,17 +84,17 @@ end.
 
 (*
 Definition matches_unordered e pat :=
-  do s <- matches_unordered_fuel (term_depth pat) e pat;
+  @! s <- matches_unordered_fuel (term_depth pat) e pat;
      ! e == pat[/s/]; (* since we don't check merges, we check post-hoc *)
      ret s.
  *)
 
 Fixpoint order_subst' s args : option subst :=
   match args with
-  | [] => do ret []
+  | [] => @! ret []
   | x::args' =>
-    do e <- named_list_lookup_err s x;
-       s' <- order_subst' s args';
+    @! let e <- named_list_lookup_err s x in
+       let s' <- order_subst' s args' in
        ret ((x,e)::s')
   end.
 
@@ -123,10 +121,10 @@ Definition matches_unordered_sort (t pat : sort) :=
    FV(pat) must be a permutation of args to get a result.
  *)
 Definition matches (e pat : term) (args : list V) : option subst :=
-  do s <- matches_unordered e pat;
-     s' <- order_subst s args;
+  @! let s <- matches_unordered e pat in
+     let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     !term_dec e pat[/s'/];
+     let !term_dec e pat[/s'/] in
      ret s'.
 
 
@@ -138,10 +136,10 @@ Definition sort_dec : forall x y : sort, {x = y} + {~ x = y}.
 Defined.
 
 Definition matches_sort t pat (args : list V) : option subst :=
-  do s <- matches_unordered_sort t pat;
-     s' <- order_subst s args;
+  @! let s <- matches_unordered_sort t pat in
+     let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     !sort_dec t pat[/s'/];
+     let !sort_dec t pat[/s'/] in
      ret s'.
 
 (* This lemma is pretty much trivial, but it's the useful property.
@@ -153,6 +151,7 @@ Lemma matches_recognizes e pat args s
     e = pat[/s/].
 Proof.
   unfold matches.
+  simpl.
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).
@@ -167,6 +166,7 @@ Lemma matches_sort_recognizes e pat args s
     e = pat[/s/].
 Proof.
   unfold matches_sort.
+  simpl.
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).
   (case_match;[|inversion 1]).
@@ -203,6 +203,7 @@ Lemma matches_args e pat args s
     args = map fst s.
 Proof.
   unfold matches.
+  simpl.
   case_match;[|inversion 1].
   case_match;[|inversion 1].
   case_match;[|inversion 1].
@@ -215,12 +216,10 @@ Qed.
 Definition is_some {A} (x:option A) := if x then True else False.
 
 
-(*TODO: move to matches or new parstep file*)
 (*If the LHS of a term eq rule directly applies to e, 
   return the rule name and s such that LHS[/s/] = e.
   Rules are scanned from the root of the language.
  *)
-Import OptionMonad.
 
 Inductive step_instruction :=
 | cong_instr : list (list step_instruction) -> step_instruction
@@ -234,7 +233,7 @@ Fixpoint step_redex_term (l : lang) (e : term)
   | (n,term_eq_rule c e1 e2 t')::l' =>
     match step_redex_term l' e with
     | Some e' => Some e'
-    | None => do s <- matches e e1 (map fst c);
+    | None => @! let s <- matches e e1 (map fst c) in
               ret (redex_instr n c t' e1 e2 s, e2[/s/])
     end
   | _::l' => step_redex_term l' e
@@ -457,10 +456,14 @@ Proof.
   subst.
   change (con ?n ?args[/?s/]) with (con n args)[/s/].
   eapply eq_term_subst; eauto.
-  apply eq_args_implies_eq_subst; eauto.
+  {
+    apply eq_args_implies_eq_subst; eauto.
+  }
   constructor.
   replace t' with t'[/id_subst c'/].
-  eapply wf_term_by; basic_core_crush.
+  {
+    eapply wf_term_by; basic_core_crush.
+  }
   basic_core_crush.
 Qed.
 
@@ -503,18 +506,17 @@ Proof.
       eapply eq_sort_sym.
       eapply eq_sort_subst.
       3: eapply eq_sort_refl; basic_core_crush.
-      basic_core_crush.
-      eapply eq_args_implies_eq_subst.
-      eauto.
+      - basic_core_crush.
+      - eapply eq_args_implies_eq_subst.
+        eauto.
     }
     eapply term_con_congruence'; eauto.
   }
-  solve[basic_goal_prep; basic_core_crush].
-  solve[basic_goal_prep; basic_core_crush].
-  solve[basic_goal_prep; basic_core_crush].
-  solve[basic_goal_prep; basic_core_crush].
-  {
-    intros.
+  - solve[basic_goal_prep; basic_core_crush].
+  - solve[basic_goal_prep; basic_core_crush].
+  - solve[basic_goal_prep; basic_core_crush].
+  - solve[basic_goal_prep; basic_core_crush].
+  - intros.
     safe_invert H4.
     safe_invert H5.
     constructor; basic_goal_prep; basic_core_firstorder_crush.
@@ -522,10 +524,9 @@ Proof.
     eapply wf_term_conv; eauto.
     eapply eq_sort_subst.
     3: eapply eq_sort_refl; basic_core_crush.
-    basic_core_crush.
-    eapply eq_args_implies_eq_subst.
-    eauto.
-  }
+    + basic_core_crush.
+    + eapply eq_args_implies_eq_subst.
+      eauto.
 Qed.
 
 Definition no_check_term l (wfl : wf_lang l) :=
