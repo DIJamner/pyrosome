@@ -30,7 +30,7 @@ Definition array := TrieMap.TrieArrayList.trie_array.
 
   Notation union_find := (@UnionFind.union_find idx array).
 
-  (**************************************************
+  (* *************************************************
    Big TODO:
    Do I need to include the sorts in the terms?
    reasons I currently include them:
@@ -55,7 +55,7 @@ Definition array := TrieMap.TrieArrayList.trie_array.
    then c |- t1 = t2 and c|- e1 = e2 : t1
 
 
-   **************************************************)
+   ************************************************* *)
 
   (*possibly poor naming*)
   Definition principal_sort l c e : option sort :=
@@ -196,10 +196,13 @@ Definition eclass_map := TrieMap.map eclass.
   Definition eclass_add_parent '(MkEClass ns ps) '(pn,pi) : eclass :=
     MkEClass ns (map.put ps pn pi).
   
-  (*TODO: use coq-record-update?*)
+  (*TODO: use coq-record-update? *)
   Definition set_class_parents '(MkEClass ns _) ps :=
     MkEClass ns ps.
 
+Definition empty_egraph :=
+  MkEGraph [] UnionFind.empty map.empty map.empty [].
+  
   
   Section EGraphOps.
     Import StateMonad.
@@ -267,6 +270,11 @@ Definition eclass_map := TrieMap.map eclass.
     (* Returns the egraph's context *)
     Definition get_ectx : ST (named_list idx) :=
       fun g => (g, g.(ectx)).
+    
+    Definition ectx_cons x (i: idx) : ST unit :=
+      fun '(MkEGraph ctx U M H W) =>
+        let ctx := (x,i)::ctx in
+        (MkEGraph ctx U M H W,tt).
     
     Definition is_worklist_empty : ST bool :=
       fun g => (g, match g.(worklist) with [] => true | _ => false end).    
@@ -480,7 +488,9 @@ Definition eclass_map := TrieMap.map eclass.
         
         Fixpoint add_term' (e : term) {struct e} : Checker (idx * idx) :=
           match e with
-          | var x => liftOpt (named_list_lookup_err sub_and_ctx x)
+          | var x =>
+              @! let x' <- liftST (add_node_unchecked (var_node x)) in
+              (liftOpt (named_list_lookup_err sub_and_ctx x'))
           | con n s =>
               @! let term_rule c _ t <?- liftOpt (named_list_lookup_err l n) in
                  let sci  <- add_args' add_term' s c in
@@ -561,7 +571,7 @@ Definition eclass_map := TrieMap.map eclass.
           | var x =>
               @! ret unwrap_with_default default (map.get sub x)
           | con n s =>
-              @! let si  <- list_Mmap add_term_unchecked s in
+              @! let si  <- list_Mmap add_term_unchecked_sub s in
                  (add_node_unchecked (con_node n si))
           end.
       
@@ -628,7 +638,7 @@ Definition eclass_map := TrieMap.map eclass.
                      @! ret db_append acc x [i]
                      
                  end.
-
+ 
         
         (* returns (max_var, root, list of atoms)*)
         Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list atom :=
@@ -773,40 +783,74 @@ Definition eclass_map := TrieMap.map eclass.
         map_Mfold (fun k v b => @! let b' <-  (f k v) in ret (andb b' b)) p true.
 
       
-    (* assumes saturation *)
-    Definition compare_eq i1 i2 : ST bool :=
-      @! let ci1 <- find i1 in
-         let ci2 <- find i2 in
-         ret (eqb i1 i2).
 
       Definition is_empty {A} := (existsb (A:=A) (fun _ => true)).
       Definition is_empty_map {K V} {m : map.map K V} :=
         (map.forallb (map:=m) (fun _ _ => false)).
       
       (* should be called under a try_with_backtrack?*)
-      Definition resolve_checker' (c : Checker unit)  (fuel : nat): ST bool :=
-        @! let meqns : (option (unit * eqn_set)) <- c in
+      Definition resolve_checker' {A} (c : Checker A)  (fuel : nat): ST (option A) :=
+        @! let meqns : (option (_ * eqn_set)) <- c in
            match meqns with
-           | Some (_, eqns) =>
-               ((@! let eqns' : eqn_set <-
-                        equality_saturation
-                          (fun eqns : eqn_set =>
-                             map_Mfold (fun '(a,b) _ eqns =>
-                                          (@! let a' <- find a in
-                                              let b' <- find b in
-                                              if eqb a' b' then ret eqns
-                                              else ret add_elt eqns (a',b')))
-                                       eqns
-                                       map.empty)
-                          (*Note: this is delicate since the map is non-canonical
+           | Some (a, eqns) =>
+               @! let eqns' : eqn_set <-
+                                equality_saturation
+                                  (fun eqns : eqn_set =>
+                                     map_Mfold (fun '(a,b) _ eqns =>
+                                                  (@! let a' <- find a in
+                                                      let b' <- find b in
+                                                      if eqb a' b' then ret eqns
+                                                      else ret add_elt eqns (a',b')))
+                                               eqns
+                                               map.empty)
+                                  (*Note: this is delicate since the map is non-canonical
                             (e.g. when a |-> Empty)
-                           *)
-                          is_empty_map
-                          eqns
-                          fuel in
-                  ret (is_empty_map eqns')) : ST bool)
-           | None => (@! ret false) : ST bool
+                                   *)
+                                  is_empty_map
+                                  eqns
+                                  fuel in
+                  ret if is_empty_map eqns' then Some a else None
+           | None => @! ret None
            end.
+
+      Let fuel := 100%nat.
+      
+      Definition add_and_check_term (e : term) : ST (option (idx *idx)) :=
+        try_with_backtrack (resolve_checker' (add_term e) fuel).
+
+      (*TODO: should this check that x is fresh?*)
+      Definition add_and_check_ctx_cons x t : ST bool :=
+        @! let midx <- try_with_backtrack (resolve_checker' (add_sort t) fuel) in
+           match midx with
+           | Some idx =>
+               @! let x' <- add_node_unchecked (var_node x) in
+                  let _ <- ectx_cons x' idx in
+                  ret true
+           | None => @!ret false
+           end.
+
+      
+    (* assumes saturation *)
+    Definition saturated_compare_eq i1 i2 : ST bool :=
+      @! let ci1 <- find i1 in
+         let ci2 <- find i2 in
+         ret (eqb i1 i2).
+        
+
+      
+      Fixpoint check_ctx' (c : ctx) : option egraph :=
+        match c with
+        | [] => Some empty_egraph
+        | (x,t)::c =>
+            @! let ! compute_fresh x c in
+               let g <- check_ctx' c in
+               let (g',b) := add_and_check_ctx_cons x t g in
+               let ! b in
+               ret g'
+        end.
+
+      Definition check_ctx c := if check_ctx' c then true else false.
+        
       
     End WithLang.
 
@@ -814,3 +858,159 @@ Definition eclass_map := TrieMap.map eclass.
     
   End EGraphOps.
 
+From Named Require Import SimpleVSubst SimpleVSTLC.
+
+(*TODO: move to Renaming.v*)
+Section Renaming.
+  Context {A B : Type}
+          `{Eqb A}
+          `{Natlike B}.
+  Import StateMonad.
+
+  Definition fresh_stb : ST B B :=
+    fun b => (succ b, b).
+
+  Section WithConstrMap.
+    Context (constr_map : @Utils.named_list A B).
+
+    
+    Section WithVarMap.
+      Context (var_map : @Utils.named_list A B).
+
+      Fixpoint rename_term e :=
+        match e with
+        | var x => var (named_list_lookup default var_map x)
+        | con n s => con (named_list_lookup default constr_map n) (map rename_term s)
+        end.
+
+      Definition rename_sort t :=
+        match t with
+        | scon n s => scon (named_list_lookup default constr_map n) (map rename_term s)
+        end.
+
+      End WithVarMap.
+    
+    Definition fresh_stnlb : ST (@Utils.named_list A B * B) B :=
+      fun '(s,b) => (s,succ b, b).
+    
+    Definition get_var_map : ST (@Utils.named_list A B * B) _ :=
+      fun '(s,b) => (s,b, s).
+    
+    Definition set_var x xb : ST (@Utils.named_list A B * B) _ :=
+      fun '(s,b) => ((x,xb)::s,b, tt).
+    
+    Fixpoint auto_rename_ctx c : ST (@Utils.named_list A B * B) (Term.ctx B) :=
+      match c with
+      | [] => @!ret []
+      | (x,t)::c =>
+          @! let c' <- auto_rename_ctx c in
+             let var_map <- get_var_map in
+             let t' := rename_sort var_map t in
+             let xb <- fresh_stnlb in
+             let _ <- set_var x xb in
+             ret (xb,t')::c'
+      end.
+
+
+    Definition rename_args vs (args : list A) : list B :=
+      map (named_list_lookup default vs) args.
+    
+    Definition auto_rename_rule r fresh_id : _ * Rule.rule _ :=
+      match r with
+      | sort_rule c args =>
+          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+          let args' := rename_args vs args in
+          (fresh_id', sort_rule c' args')
+      | term_rule c args t =>
+          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+          let args' := rename_args vs args in
+          let t' := rename_sort vs t in
+          (fresh_id', term_rule c' args' t')
+      | sort_eq_rule c t1 t2 =>
+          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+          let t1' := rename_sort vs t1 in
+          let t2' := rename_sort vs t2 in
+          (fresh_id', sort_eq_rule c' t1' t2')
+      | term_eq_rule c e1 e2 t =>
+          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+          let e1' := rename_term vs e1 in
+          let e2' := rename_term vs e2 in
+          let t' := rename_sort vs t in
+          (fresh_id', term_eq_rule c' e1' e2' t')
+      end.
+
+  End WithConstrMap.
+
+  
+  Definition get_constr_map : ST (@Utils.named_list A B * B) _ :=
+    fun '(s,b) => (s,b, s).
+  Definition set_constr x xb : ST (@Utils.named_list A B * B) _ :=
+    fun '(s,b) => ((x,xb)::s,b, tt).
+
+  Definition lift_auto_rename_rule r
+    : ST (@Utils.named_list A B * B) (Rule.rule _) :=
+    fun '(sb,fr) =>
+      let '(fr',r') := auto_rename_rule sb r fr in
+      (sb,fr',r').
+  
+  Fixpoint rename_lang_ext l : ST (@Utils.named_list A B * B) (Rule.lang _) :=
+    match l with
+    | [] => @!ret []
+    | (x,r)::l =>
+        @! let l' <- rename_lang_ext l in
+           let r' <- lift_auto_rename_rule r in
+           let x' <- fresh_stnlb in
+           let _ <- set_constr x x' in
+           ret (x',r')::l'
+    end.
+
+  Definition rename_lang (l : Rule.lang A) : Rule.lang _ :=
+    snd (rename_lang_ext l ([],zero)).
+
+  Definition rename_constr_subst (l : Rule.lang A) :=
+    fst (fst (rename_lang_ext l ([],zero))).
+
+  
+Definition rename_ctx (constr_map : @Utils.named_list A B)
+           (ctx : Term.ctx _) fr :=
+  snd (auto_rename_ctx constr_map ctx ([],fr)).
+  
+End Renaming.
+
+
+Import Term.Notations.
+
+Definition pos_value_subst : Rule.lang positive :=
+  Eval compute in (rename_lang value_subst).
+(*TODO: are vars different?*)
+Definition constr_rename : named_list positive :=
+  Eval compute in (rename_constr_subst value_subst).
+
+Definition test_ctx :=
+  Eval compute in (rename_ctx constr_rename
+                              {{c "G" : #"env",
+                                    "A" : #"ty",
+                                      "B" : #"ty"}}
+                              100).
+
+Definition initial_egraph :=
+  Eval compute in
+    (match check_ctx' pos_value_subst test_ctx with
+     | Some g => g
+     | None => empty_egraph
+     end).
+
+Definition test_ctx_var_map :=
+  [("B", 102);("A",101);("G",100)].
+
+Definition test_term :=
+  Eval compute in
+    (rename_term constr_rename test_ctx_var_map
+                 {{e #"ext" "G" "G"}}).
+
+Print test_term.
+(*TODO: should return none*)
+Eval compute in (add_and_check_term
+                   pos_value_subst
+                   test_term
+                initial_egraph).
