@@ -25,6 +25,7 @@ src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
+src/named/egraph/Defs.v
 src/named/CompilerDefs.v
 src/named/MultiCompilerDefs.v
 src/named/AllConstructors.v
@@ -44,4 +45,3 @@ src/named/SimpleVCC.v
 src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/SimpleVCCHeap.v
-src/named/egraph/Defs.v

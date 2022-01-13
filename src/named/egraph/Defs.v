@@ -34,11 +34,11 @@ Section __.
 
   Notation union_find := (@UnionFind.union_find idx array).
   
-  (* *************************************************
+  (*
    Big TODO:
    Do I need to include the sorts in the terms?
    reasons I currently include them:
-   1. so I can answer queries of the form "What is the type of the term with id x
+   1. so I can answer queries of the form "What is the type of the term with id x"
    2. (intuitively) so that I can track conversions when destructing wf terms
 
    For 1:
@@ -59,31 +59,7 @@ Section __.
    then c |- t1 = t2 and c|- e1 = e2 : t1
 
 
-   ************************************************* *)
-
-  (*possibly poor naming*)
-  Definition principal_sort l c e : option sort :=
-    match e with
-    | var x => named_list_lookup_err c x
-    | con n s =>
-        @! let (term_rule c' _ t) <?- named_list_lookup_err l n in
-           ret t[/with_names_from c' s/]
-    end.
-
-  (* If this is provable, then I can quickly compute the sort as described above.
-     This means that terms don't need to store their sorts
-     TODO: prove
    *)
-  Axiom principal_sort_equiv
-    : forall  l c e t pt, wf_term l c e t ->
-                          principal_sort l c e = Some pt ->
-                          eq_sort l c t pt.
-
-  
-
-
-  (*******)
-
   
   Variant enode :=
     | con_node : idx -> list idx -> enode
@@ -102,7 +78,7 @@ Section __.
 
   Axiom TODO: forall {A} , A.
 
-  (* TODO: move to Utils once implemented *)
+  (* TODO: move to Utils.v once implemented *)
 
   #[refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
     {
