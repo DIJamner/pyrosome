@@ -11,13 +11,17 @@ Open Scope list.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Natlike ExtraMaps Monad RelationalDB.
 Import Sets.
-From Utils Require ArrayList UnionFind TrieMap.
+From Utils Require ArrayList UnionFind.
 From Named Require Import Term Rule Core.
 (*Import Core.Notations.*)
 
 
-Definition idx := positive.
-Definition array := TrieMap.TrieArrayList.trie_array.
+
+Section __.
+  Context {idx : Type}
+          `{Natlike idx}
+          {array : Type -> Type}
+          `{ArrayList.ArrayList idx array}.
   
   Notation named_list := (@named_list idx).
   Notation named_map := (@named_map idx).
@@ -29,7 +33,7 @@ Definition array := TrieMap.TrieArrayList.trie_array.
   Notation lang := (@lang idx).
 
   Notation union_find := (@UnionFind.union_find idx array).
-
+  
   (* *************************************************
    Big TODO:
    Do I need to include the sorts in the terms?
@@ -96,6 +100,7 @@ Fixpoint list_eqb {A} `{Eqb A} (l1 l2 : list A) :=
   | _, _ => false
   end.
 
+  Axiom TODO: forall {A} , A.
 (*TODO: move to Utils once implemented *)
 #[refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
   {
@@ -160,7 +165,7 @@ Definition node_map := (@named_list_map enode idx _).
         esort : idx;*)
       }.
 
-Definition eclass_map := TrieMap.map eclass.
+  Context (eclass_map : map.map idx eclass).
 
   (*{idx_map : map.map idx idx}*)
 
@@ -386,7 +391,7 @@ Definition empty_egraph :=
          (rebuild_aux 100).
 
 
-    Definition idx_set := trie_set.
+    Context (idx_set : set idx).
 
     (*TODO: move to Utils once implemented *)
     #[refine] Instance pair_Eqb {A} `{Eqb A} {B} `{Eqb B} : Eqb (A * B) :=
@@ -396,9 +401,7 @@ Definition empty_egraph :=
     all: apply TODO.
     Defined.
 
-    (* TODO: make pair sets just like pair maps to avoid set_from_map*)
-    Instance eqn_set : set (idx*idx) :=
-      set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
+    Context (eqn_set : set (idx*idx)).
     
     Section WithLang.
 
@@ -562,6 +565,19 @@ Definition empty_egraph :=
                  (add_node_unchecked (con_node n si))
           end.
 
+
+      
+      (*Parameterize by query trie since the inductive can't be defined generically *)
+      Context (query_trie : Type)
+              (qt_unconstrained : query_trie -> query_trie)
+              (trie_map : map.map idx query_trie)
+              (qt_tree : trie_map -> query_trie)
+              (values_of_next_var : query_trie -> set_with_top idx_set)
+              (choose_next_val : idx -> query_trie -> query_trie).
+      Context (relation : set (list idx))
+              (db : map.map idx relation)
+              (arg_map : map.map idx idx).
+      
       Section UncheckedSub.
         
         Context (sub : arg_map).
@@ -641,7 +657,7 @@ Definition empty_egraph :=
  
         
         (* returns (max_var, root, list of atoms)*)
-        Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list atom :=
+        Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list (atom _) :=
           match p with
           | con f s =>
               let '(max_var, s_vars, atoms) :=
@@ -675,22 +691,25 @@ Definition empty_egraph :=
         Definition max {A} `{Natlike A} (a b : A) : A :=
           if ltb b a then a else b.
         
-        Definition compile_term_pattern (p : term) : query :=
+        Definition compile_term_pattern (p : term) : query _ :=
           (*TODO: remove duplicates in fv *)
           let vars := fv p in
           let max_var := fold_left max vars zero in
           let '(_,root, atoms) := compile_term_aux max_var p in
-          Build_query (root::vars) atoms.
+          Build_query _ (root::vars) atoms.
         
-        Definition compile_sort_pattern (p : sort) : query :=
+        Definition compile_sort_pattern (p : sort) : query _ :=
           (*TODO: remove duplicates in fv *)
           let vars := fv_sort p in
           let max_var := fold_left max vars zero in
           let '(_,root, atoms) := compile_sort_aux max_var p in
-          Build_query (root::vars) atoms.
+          Build_query _ (root::vars) atoms.
 
+        Local Notation generic_join :=
+          (generic_join idx idx
+                        idx_set query_trie qt_unconstrained _ qt_tree
+                        values_of_next_var choose_next_val relation db arg_map).
         
-        (*TODO: output type*)
         Definition ematch (d : db) (p : term) :=
           let q := compile_term_pattern p in
           generic_join d q.
@@ -858,6 +877,22 @@ Definition empty_egraph :=
     
   End EGraphOps.
 
+End __.
+
+Module PositiveInstantiation.
+
+  Import RelationalDB.PositiveInstantiation.
+  
+  Definition eclass_map := TrieMap.map (@eclass positive _).
+
+  Definition idx_set := trie_set.
+
+      
+    (* TODO: make pair sets just like pair maps to avoid set_from_map*)
+    Instance eqn_set : set (positive*positive) :=
+      set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
+
+
 From Named Require Import SimpleVSubst SimpleVSTLC.
 
 (*TODO: move to Renaming.v*)
@@ -993,11 +1028,27 @@ Definition test_ctx :=
                                       "B" : #"ty"}}
                               100).
 
+  Definition check_ctx' l :=
+    check_ctx' (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
+               eclass_map eqn_set l
+               qt_unconstrained _ qt_tree
+               values_of_next_var choose_next_val relation db arg_map.
+  
+  Definition add_and_check_term l :=
+    add_and_check_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
+               (eclass_map:=eclass_map) eqn_set l
+               qt_unconstrained _ qt_tree
+               values_of_next_var choose_next_val relation db arg_map.
+  
+  Definition add_term :=
+    add_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
+               (eclass_map:=eclass_map) eqn_set.
+  
 Definition initial_egraph :=
   Eval compute in
     (match check_ctx' pos_value_subst test_ctx with
      | Some g => g
-     | None => empty_egraph
+     | None => empty_egraph _
      end).
 
 Definition test_ctx_var_map :=
@@ -1009,8 +1060,57 @@ Definition test_term :=
                  {{e #"ext" "G" "G"}}).
 
 Print test_term.
-(*TODO: should return none*)
-Eval compute in (add_and_check_term
+(*TODO: should return none
+
+ add_term eqns look right,
+ but checking still passes. Why?
+*)
+Definition egraph1 :=
+  Eval compute in (fst (add_and_check_term
                    pos_value_subst
                    test_term
-                initial_egraph).
+                initial_egraph)).
+Eval compute in (add_term
+                   pos_value_subst
+                   test_term
+                   initial_egraph).
+
+
+(*TODO: move to extramaps/Triemap *)
+Definition as_list {A} :=
+  TrieMap.trie_fold (B:=A) (fun m k v => (k,v)::m) [].
+
+Compute
+  (Utils.named_map as_list (as_list ( Canonical.PTree.Nodes
+           (Canonical.PTree.Node010
+              (Canonical.PTree.Nodes
+                 (Canonical.PTree.Node011 tt
+                                          (Canonical.PTree.Node100 (Canonical.PTree.Node010 tt)))))))).
+
+
+(*Testing running this on something more complicated*)
+
+
+Definition term1 :=
+  Eval compute in
+    (rename_term constr_rename test_ctx_var_map
+                  {{e #"cmp" "G1" "G2" (#"ext" "G3" "A") "f" (#"snoc" "G2" "G3" "A" "g" "v")}}).
+
+Print test_term.
+(*TODO: should return none
+
+ add_term eqns look right,
+ but checking still passes. Why?
+*)
+Definition egraph2 :=
+  Eval compute in (fst (add_and_check_term
+                   pos_value_subst
+                   test_term
+                initial_egraph)).
+
+
+
+
+
+
+
