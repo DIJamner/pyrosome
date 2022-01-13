@@ -1,6 +1,6 @@
 (*
   Implementation based on Egg: https://dl.acm.org/doi/pdf/10.1145/3434304
-*)
+ *)
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
@@ -73,11 +73,11 @@ Section __.
   (* If this is provable, then I can quickly compute the sort as described above.
      This means that terms don't need to store their sorts
      TODO: prove
-*)
+   *)
   Axiom principal_sort_equiv
     : forall  l c e t pt, wf_term l c e t ->
-      principal_sort l c e = Some pt ->
-      eq_sort l c t pt.
+                          principal_sort l c e = Some pt ->
+                          eq_sort l c t pt.
 
   
 
@@ -90,67 +90,69 @@ Section __.
     (*TODO: separate constructor for sorts?  | scon_node : list idx -> enode *)
     | var_node : (*(* sort id*) idx ->*) (* var *) idx -> enode.
 
-(* TODO: make sets fast*)
+  (* TODO: make sets fast*)
 
-Fixpoint list_eqb {A} `{Eqb A} (l1 l2 : list A) :=
-  match l1, l2 with
-  | [], [] => true
-  | a1::l1, a2::l2 =>
-      (eqb a1 a2) && (list_eqb l1 l2)
-  | _, _ => false
-  end.
+  Fixpoint list_eqb {A} `{Eqb A} (l1 l2 : list A) :=
+    match l1, l2 with
+    | [], [] => true
+    | a1::l1, a2::l2 =>
+        (eqb a1 a2) && (list_eqb l1 l2)
+    | _, _ => false
+    end.
 
   Axiom TODO: forall {A} , A.
-(*TODO: move to Utils once implemented *)
-#[refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
-  {
-    eqb := list_eqb
-  }.
-all: apply TODO.
-Defined.
 
-#[refine] Instance enode_eqb : Eqb enode :=
-  {
-    eqb n1 n2 :=
-    match n1, n2 with
-    | var_node x, var_node y => eqb x y
-    | con_node n1 s1, con_node n2 s2 =>
-        (eqb n1 n2) && (eqb s1 s2)
-    | _,_=>false
-    end;
-  }.
-all: apply TODO.
-Defined.
+  (* TODO: move to Utils once implemented *)
 
-Fixpoint named_list_put {A B} `{Eqb A} (l : @Utils.named_list A B) k v :=
-  match l with
-  | [] => [(k,v)]
-  | (k',v')::l =>
-      if eqb k k' then (k,v)::l else (k',v')::(named_list_put l k v)
-  end.
+  #[refine] Instance list_Eqb {A} `{Eqb A} : Eqb (list A) :=
+    {
+      eqb := list_eqb
+    }.
+  all: apply TODO.
+  Defined.
 
-Fixpoint named_list_remove {A B} `{Eqb A} (l : @Utils.named_list A B) k :=
-  match l with
-  | [] => []
-  | (k',v')::l =>
-      if eqb k k' then l else (k',v')::(named_list_remove l k)
-  end.
+  #[refine] Instance enode_eqb : Eqb enode :=
+    {
+      eqb n1 n2 :=
+      match n1, n2 with
+      | var_node x, var_node y => eqb x y
+      | con_node n1 s1, con_node n2 s2 =>
+          (eqb n1 n2) && (eqb s1 s2)
+      | _,_=>false
+      end;
+    }.
+  all: apply TODO.
+  Defined.
+
+  Fixpoint named_list_put {A B} `{Eqb A} (l : @Utils.named_list A B) k v :=
+    match l with
+    | [] => [(k,v)]
+    | (k',v')::l =>
+        if eqb k k' then (k,v)::l else (k',v')::(named_list_put l k v)
+    end.
+
+  Fixpoint named_list_remove {A B} `{Eqb A} (l : @Utils.named_list A B) k :=
+    match l with
+    | [] => []
+    | (k',v')::l =>
+        if eqb k k' then l else (k',v')::(named_list_remove l k)
+    end.
   
-Section __.
-(* Not fast, but will run*)
-Local Instance named_list_map A B `{Eqb A} : map.map A B :=
-  {
-    rep := @Utils.named_list A B;
-    get := named_list_lookup_err;
-    empty := [];
-    put := named_list_put;
-    remove := named_list_remove;
-    fold _ f acc l := List.fold_left (fun acc '(k, v) => f acc k v) l acc;
-  }.
-End __.
+  Section __.
+    (* Not fast, but will run*)
+    Local Instance named_list_map A B `{Eqb A} : map.map A B :=
+      {
+        rep := @Utils.named_list A B;
+        get := named_list_lookup_err;
+        empty := [];
+        put := named_list_put;
+        remove := named_list_remove;
+        fold _ f acc l := List.fold_left (fun acc '(k, v) => f acc k v) l acc;
+      }.
+  End __.
 
-Definition node_set := set_from_map (@named_list_map enode unit _).
-Definition node_map := (@named_list_map enode idx _).
+  Definition node_set := set_from_map (@named_list_map enode unit _).
+  Definition node_map := (@named_list_map enode idx _).
 
 
   (* TODO : separate sort eclasses? it would avoid awkwardness around esort dummy value
@@ -205,8 +207,8 @@ Definition node_map := (@named_list_map enode idx _).
   Definition set_class_parents '(MkEClass ns _) ps :=
     MkEClass ns ps.
 
-Definition empty_egraph :=
-  MkEGraph [] UnionFind.empty map.empty map.empty [].
+  Definition empty_egraph :=
+    MkEGraph [] UnionFind.empty map.empty map.empty [].
   
   
   Section EGraphOps.
@@ -230,9 +232,9 @@ Definition empty_egraph :=
         (g, mi).
 
     Definition set_hashcons n i : ST unit :=
-    fun '(MkEGraph ctx U M H W) =>
-      let H := map.put H n i in
-      (MkEGraph ctx U M H W,tt).
+      fun '(MkEGraph ctx U M H W) =>
+        let H := map.put H n i in
+        (MkEGraph ctx U M H W,tt).
     
     Definition remove_hashcons n : ST unit :=
       fun '(MkEGraph ctx U M H W) =>
@@ -438,7 +440,7 @@ Definition empty_egraph :=
       Instance ST_default {A} `{WithDefault A} : WithDefault (ST A) :=
         fun s => (s,default).
       
-     
+      
       Section Inner.
         Context (add_sort' : named_list (idx * idx) -> sort -> Checker idx).
 
@@ -493,7 +495,7 @@ Definition empty_egraph :=
           match e with
           | var x =>
               @! let x' <- liftST (add_node_unchecked (var_node x)) in
-              (liftOpt (named_list_lookup_err sub_and_ctx x'))
+                 (liftOpt (named_list_lookup_err sub_and_ctx x'))
           | con n s =>
               @! let term_rule c _ t <?- liftOpt (named_list_lookup_err l n) in
                  let sci  <- add_args' add_term' s c in
@@ -524,14 +526,14 @@ Definition empty_egraph :=
         match fuel with
         | O => @! ret None (* Hitting this case means the input was malformed *)
         | S fuel' =>
-          match t with
-          | scon n s =>
-              @! let sort_rule c _ <?- liftOpt (named_list_lookup_err l n) in
-                 let sci  <- add_args' (add_sort' fuel') sub_and_ctx s c in
-                 let i <- liftST (add_node_unchecked
-                                    (con_node n (map fst sci))) in
-                 ret i
-          end            
+            match t with
+            | scon n s =>
+                @! let sort_rule c _ <?- liftOpt (named_list_lookup_err l n) in
+                   let sci  <- add_args' (add_sort' fuel') sub_and_ctx s c in
+                   let i <- liftST (add_node_unchecked
+                                      (con_node n (map fst sci))) in
+                   ret i
+            end            
         end.
 
       Fixpoint sub_and_ctx_from_ectx (acc : idx) (ectx : named_list idx)
@@ -551,19 +553,19 @@ Definition empty_egraph :=
            (add_term' (add_sort' (length l)) (sub_and_ctx_from_ectx zero ectx) e).
 
       Fixpoint add_term_unchecked (e : term) {struct e} : ST idx :=
-          match e with
-          | var x => add_node_unchecked (var_node x)
-          | con n s =>
-              @! let si  <- list_Mmap add_term_unchecked s in
-                 (add_node_unchecked (con_node n si))
-          end.
+        match e with
+        | var x => add_node_unchecked (var_node x)
+        | con n s =>
+            @! let si  <- list_Mmap add_term_unchecked s in
+               (add_node_unchecked (con_node n si))
+        end.
       
       Definition add_sort_unchecked (t: sort) : ST idx :=
-          match t with
-          | scon n s =>
-              @! let si  <- list_Mmap add_term_unchecked s in
-                 (add_node_unchecked (con_node n si))
-          end.
+        match t with
+        | scon n s =>
+            @! let si  <- list_Mmap add_term_unchecked s in
+               (add_node_unchecked (con_node n si))
+        end.
 
 
       
@@ -581,7 +583,7 @@ Definition empty_egraph :=
       Section UncheckedSub.
         
         Context (sub : arg_map).
-      
+        
         Fixpoint add_term_unchecked_sub (e : term) {struct e} : ST idx :=
           match e with
           | var x =>
@@ -590,8 +592,8 @@ Definition empty_egraph :=
               @! let si  <- list_Mmap add_term_unchecked_sub s in
                  (add_node_unchecked (con_node n si))
           end.
-      
-      Definition add_sort_unchecked_sub (t: sort) : ST idx :=
+        
+        Definition add_sort_unchecked_sub (t: sort) : ST idx :=
           match t with
           | scon n s =>
               @! let si  <- list_Mmap add_term_unchecked_sub s in
@@ -600,7 +602,7 @@ Definition empty_egraph :=
 
       End UncheckedSub.
 
-    (*
+      (*
       Notes about the safety of adding unchecked nodes:
       - If the node is wf, then it can be kept as-added
         + Specifically, it can keep its sort since by proving it wf,
@@ -614,7 +616,7 @@ Definition empty_egraph :=
       - record (TODO: how) all equations that must be proven
       - iterate to saturation (or step bound)
       - check that all equations satisfy reflexivity
-     *)
+       *)
 
 
       Section EqualitySaturation.
@@ -631,7 +633,7 @@ Definition empty_egraph :=
           | None => map.put m x (map.singleton v tt)
           | Some l => map.put m x (add_elt l v)
           end.
-            
+        
         
         Definition generate_db : ST db :=
           @! let classes <- get_eclasses in
@@ -642,7 +644,7 @@ Definition empty_egraph :=
                  match node with
                  | con_node n s =>
                      @!let s' : list idx <- list_Mmap find s in
-                     ret db_append acc n (i'::s')
+                       ret db_append acc n (i'::s')
                  | var_node x =>
                      (*TODO: how to index into DB for vars vs con?
                        for now, require them to use disjoint names
@@ -652,9 +654,9 @@ Definition empty_egraph :=
                        bool * positive rather than positive
                       *)
                      @! ret db_append acc x [i]
-                     
+                        
                  end.
- 
+        
         
         (* returns (max_var, root, list of atoms)*)
         Fixpoint compile_term_aux (max_var : idx) p : idx * idx * list (atom _) :=
@@ -719,12 +721,12 @@ Definition empty_egraph :=
           generic_join d q.
         
 
-      (*TODO: currently only rewrites left-to-right.
+        (*TODO: currently only rewrites left-to-right.
         Evaluate whether this is sufficient.
-       *)
-      Definition try_rewrite (d : db) (r : rule) : ST unit :=
-        match r with
-        (* TODO: what to do with C? Needs to be used by ematch.
+         *)
+        Definition try_rewrite (d : db) (r : rule) : ST unit :=
+          match r with
+          (* TODO: what to do with C? Needs to be used by ematch.
 
            Consider heap lookup miss,
            where a, inequality premise is not used in the equation.
@@ -736,16 +738,16 @@ Definition empty_egraph :=
            Vague idea: if using relational e-matching, turn C into part of the query.
            
 
-         *)
-        | sort_eq_rule c t1 t2 =>
-            list_Miter (fun sub =>
-                          @! let cid <- add_sort_unchecked_sub sub t1 in
-                             let cid' <- add_sort_unchecked_sub sub t2 in
-                             let _ <- merge cid cid' in
-                             ret tt)
-                       (ematch_sort d t1)
-        | term_eq_rule c e1 e2 t =>
-            (* TODO: add_unchecked seems like it would expect the rhs to include sorts.
+           *)
+          | sort_eq_rule c t1 t2 =>
+              list_Miter (fun sub =>
+                            @! let cid <- add_sort_unchecked_sub sub t1 in
+                               let cid' <- add_sort_unchecked_sub sub t2 in
+                               let _ <- merge cid cid' in
+                               ret tt)
+                         (ematch_sort d t1)
+          | term_eq_rule c e1 e2 t =>
+              (* TODO: add_unchecked seems like it would expect the rhs to include sorts.
                Do we need a lang with all-annotated terms?
                
                TODO: expose add_with_subst to use here
@@ -753,17 +755,17 @@ Definition empty_egraph :=
                      - means that there might be conversions in added term
                        that are not represented in the egraph
                      (only applies if sorts are removed from nodes)
-             *)
-            list_Miter (fun sub =>
-                          @! let cid <- add_term_unchecked_sub sub e1 in
-                             let cid' <- add_term_unchecked_sub sub e2 in
-                             let _ <- merge cid cid' in
-                             ret tt)
-                       (ematch d e1)
-        | _ => @!ret tt (* not a rewrite rule *)
-        end.
-      
-      (*
+               *)
+              list_Miter (fun sub =>
+                            @! let cid <- add_term_unchecked_sub sub e1 in
+                               let cid' <- add_term_unchecked_sub sub e2 in
+                               let _ <- merge cid cid' in
+                               ret tt)
+                         (ematch d e1)
+          | _ => @!ret tt (* not a rewrite rule *)
+          end.
+        
+        (*
       Iteratively applies rewrite rules to the egraph
       until either:
       - the egraph is saturated (*TODO: implement*)
@@ -772,25 +774,25 @@ Definition empty_egraph :=
 
       TODO: encode the termination type in the output?
       TODO: fuel : N
-       *)
-      Fixpoint equality_saturation (acc: A) (fuel : nat) : ST A :=
-        match fuel with
-        | O => @! ret acc
-        | S fuel' =>
-            if pred acc then @! ret acc
-            else
-              @! let db <- generate_db in
-                 (*TODO: filter lang once before this fixpoint starts *)
-                 (* Main rewrite loop
+         *)
+        Fixpoint equality_saturation (acc: A) (fuel : nat) : ST A :=
+          match fuel with
+          | O => @! ret acc
+          | S fuel' =>
+              if pred acc then @! ret acc
+              else
+                @! let db <- generate_db in
+                   (*TODO: filter lang once before this fixpoint starts *)
+                   (* Main rewrite loop
                     Since DB is separate, we  don't have to separate reads and writes
                     and still only need one rebuild
-                  *)
-                 let tt <- list_Miter (try_rewrite db) (map snd l) in
-                 let tt <- rebuild in
-                 let acc' <- update acc in
-                 (equality_saturation acc' fuel')
-        end.
-                                    
+                    *)
+                   let tt <- list_Miter (try_rewrite db) (map snd l) in
+                   let tt <- rebuild in
+                   let acc' <- update acc in
+                   (equality_saturation acc' fuel')
+          end.
+        
       End EqualitySaturation.
 
       (*TODO: move to Monad.v*)
@@ -849,12 +851,12 @@ Definition empty_egraph :=
            end.
 
       
-    (* assumes saturation *)
-    Definition saturated_compare_eq i1 i2 : ST bool :=
-      @! let ci1 <- find i1 in
-         let ci2 <- find i2 in
-         ret (eqb i1 i2).
-        
+      (* assumes saturation *)
+      Definition saturated_compare_eq i1 i2 : ST bool :=
+        @! let ci1 <- find i1 in
+           let ci2 <- find i2 in
+           ret (eqb i1 i2).
+      
 
       
       Fixpoint check_ctx' (c : ctx) : option egraph :=
@@ -869,7 +871,7 @@ Definition empty_egraph :=
         end.
 
       Definition check_ctx c := if check_ctx' c then true else false.
-        
+      
       
     End WithLang.
 
@@ -887,146 +889,146 @@ Module PositiveInstantiation.
 
   Definition idx_set := trie_set.
 
+  
+  (* TODO: make pair sets just like pair maps to avoid set_from_map*)
+  Instance eqn_set : set (positive*positive) :=
+    set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
+
+
+  From Named Require Import SimpleVSubst SimpleVSTLC.
+
+  (*TODO: move to Renaming.v*)
+  Section Renaming.
+    Context {A B : Type}
+            `{Eqb A}
+            `{Natlike B}.
+    Import StateMonad.
+
+    Definition fresh_stb : ST B B :=
+      fun b => (succ b, b).
+
+    Section WithConstrMap.
+      Context (constr_map : @Utils.named_list A B).
+
       
-    (* TODO: make pair sets just like pair maps to avoid set_from_map*)
-    Instance eqn_set : set (positive*positive) :=
-      set_from_map (@pair_map _ _ _ trie_set (TrieMap.map _)).
+      Section WithVarMap.
+        Context (var_map : @Utils.named_list A B).
 
+        Fixpoint rename_term e :=
+          match e with
+          | var x => var (named_list_lookup default var_map x)
+          | con n s => con (named_list_lookup default constr_map n) (map rename_term s)
+          end.
 
-From Named Require Import SimpleVSubst SimpleVSTLC.
-
-(*TODO: move to Renaming.v*)
-Section Renaming.
-  Context {A B : Type}
-          `{Eqb A}
-          `{Natlike B}.
-  Import StateMonad.
-
-  Definition fresh_stb : ST B B :=
-    fun b => (succ b, b).
-
-  Section WithConstrMap.
-    Context (constr_map : @Utils.named_list A B).
-
-    
-    Section WithVarMap.
-      Context (var_map : @Utils.named_list A B).
-
-      Fixpoint rename_term e :=
-        match e with
-        | var x => var (named_list_lookup default var_map x)
-        | con n s => con (named_list_lookup default constr_map n) (map rename_term s)
-        end.
-
-      Definition rename_sort t :=
-        match t with
-        | scon n s => scon (named_list_lookup default constr_map n) (map rename_term s)
-        end.
+        Definition rename_sort t :=
+          match t with
+          | scon n s => scon (named_list_lookup default constr_map n) (map rename_term s)
+          end.
 
       End WithVarMap.
+      
+      Definition fresh_stnlb : ST (@Utils.named_list A B * B) B :=
+        fun '(s,b) => (s,succ b, b).
+      
+      Definition get_var_map : ST (@Utils.named_list A B * B) _ :=
+        fun '(s,b) => (s,b, s).
+      
+      Definition set_var x xb : ST (@Utils.named_list A B * B) _ :=
+        fun '(s,b) => ((x,xb)::s,b, tt).
+      
+      Fixpoint auto_rename_ctx c : ST (@Utils.named_list A B * B) (Term.ctx B) :=
+        match c with
+        | [] => @!ret []
+        | (x,t)::c =>
+            @! let c' <- auto_rename_ctx c in
+               let var_map <- get_var_map in
+               let t' := rename_sort var_map t in
+               let xb <- fresh_stnlb in
+               let _ <- set_var x xb in
+               ret (xb,t')::c'
+        end.
+
+
+      Definition rename_args vs (args : list A) : list B :=
+        map (named_list_lookup default vs) args.
+      
+      Definition auto_rename_rule r fresh_id : _ * Rule.rule _ :=
+        match r with
+        | sort_rule c args =>
+            let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+            let args' := rename_args vs args in
+            (fresh_id', sort_rule c' args')
+        | term_rule c args t =>
+            let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+            let args' := rename_args vs args in
+            let t' := rename_sort vs t in
+            (fresh_id', term_rule c' args' t')
+        | sort_eq_rule c t1 t2 =>
+            let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+            let t1' := rename_sort vs t1 in
+            let t2' := rename_sort vs t2 in
+            (fresh_id', sort_eq_rule c' t1' t2')
+        | term_eq_rule c e1 e2 t =>
+            let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
+            let e1' := rename_term vs e1 in
+            let e2' := rename_term vs e2 in
+            let t' := rename_sort vs t in
+            (fresh_id', term_eq_rule c' e1' e2' t')
+        end.
+
+    End WithConstrMap.
+
     
-    Definition fresh_stnlb : ST (@Utils.named_list A B * B) B :=
-      fun '(s,b) => (s,succ b, b).
-    
-    Definition get_var_map : ST (@Utils.named_list A B * B) _ :=
+    Definition get_constr_map : ST (@Utils.named_list A B * B) _ :=
       fun '(s,b) => (s,b, s).
-    
-    Definition set_var x xb : ST (@Utils.named_list A B * B) _ :=
+    Definition set_constr x xb : ST (@Utils.named_list A B * B) _ :=
       fun '(s,b) => ((x,xb)::s,b, tt).
+
+    Definition lift_auto_rename_rule r
+      : ST (@Utils.named_list A B * B) (Rule.rule _) :=
+      fun '(sb,fr) =>
+        let '(fr',r') := auto_rename_rule sb r fr in
+        (sb,fr',r').
     
-    Fixpoint auto_rename_ctx c : ST (@Utils.named_list A B * B) (Term.ctx B) :=
-      match c with
+    Fixpoint rename_lang_ext l : ST (@Utils.named_list A B * B) (Rule.lang _) :=
+      match l with
       | [] => @!ret []
-      | (x,t)::c =>
-          @! let c' <- auto_rename_ctx c in
-             let var_map <- get_var_map in
-             let t' := rename_sort var_map t in
-             let xb <- fresh_stnlb in
-             let _ <- set_var x xb in
-             ret (xb,t')::c'
+      | (x,r)::l =>
+          @! let l' <- rename_lang_ext l in
+             let r' <- lift_auto_rename_rule r in
+             let x' <- fresh_stnlb in
+             let _ <- set_constr x x' in
+             ret (x',r')::l'
       end.
 
+    Definition rename_lang (l : Rule.lang A) : Rule.lang _ :=
+      snd (rename_lang_ext l ([],zero)).
 
-    Definition rename_args vs (args : list A) : list B :=
-      map (named_list_lookup default vs) args.
+    Definition rename_constr_subst (l : Rule.lang A) :=
+      fst (fst (rename_lang_ext l ([],zero))).
+
     
-    Definition auto_rename_rule r fresh_id : _ * Rule.rule _ :=
-      match r with
-      | sort_rule c args =>
-          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
-          let args' := rename_args vs args in
-          (fresh_id', sort_rule c' args')
-      | term_rule c args t =>
-          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
-          let args' := rename_args vs args in
-          let t' := rename_sort vs t in
-          (fresh_id', term_rule c' args' t')
-      | sort_eq_rule c t1 t2 =>
-          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
-          let t1' := rename_sort vs t1 in
-          let t2' := rename_sort vs t2 in
-          (fresh_id', sort_eq_rule c' t1' t2')
-      | term_eq_rule c e1 e2 t =>
-          let '(vs, fresh_id', c') := auto_rename_ctx c ([],fresh_id) in
-          let e1' := rename_term vs e1 in
-          let e2' := rename_term vs e2 in
-          let t' := rename_sort vs t in
-          (fresh_id', term_eq_rule c' e1' e2' t')
-      end.
-
-  End WithConstrMap.
-
-  
-  Definition get_constr_map : ST (@Utils.named_list A B * B) _ :=
-    fun '(s,b) => (s,b, s).
-  Definition set_constr x xb : ST (@Utils.named_list A B * B) _ :=
-    fun '(s,b) => ((x,xb)::s,b, tt).
-
-  Definition lift_auto_rename_rule r
-    : ST (@Utils.named_list A B * B) (Rule.rule _) :=
-    fun '(sb,fr) =>
-      let '(fr',r') := auto_rename_rule sb r fr in
-      (sb,fr',r').
-  
-  Fixpoint rename_lang_ext l : ST (@Utils.named_list A B * B) (Rule.lang _) :=
-    match l with
-    | [] => @!ret []
-    | (x,r)::l =>
-        @! let l' <- rename_lang_ext l in
-           let r' <- lift_auto_rename_rule r in
-           let x' <- fresh_stnlb in
-           let _ <- set_constr x x' in
-           ret (x',r')::l'
-    end.
-
-  Definition rename_lang (l : Rule.lang A) : Rule.lang _ :=
-    snd (rename_lang_ext l ([],zero)).
-
-  Definition rename_constr_subst (l : Rule.lang A) :=
-    fst (fst (rename_lang_ext l ([],zero))).
-
-  
-Definition rename_ctx (constr_map : @Utils.named_list A B)
-           (ctx : Term.ctx _) fr :=
-  snd (auto_rename_ctx constr_map ctx ([],fr)).
-  
-End Renaming.
+    Definition rename_ctx (constr_map : @Utils.named_list A B)
+               (ctx : Term.ctx _) fr :=
+      snd (auto_rename_ctx constr_map ctx ([],fr)).
+    
+  End Renaming.
 
 
-Import Term.Notations.
+  Import Term.Notations.
 
-Definition pos_value_subst : Rule.lang positive :=
-  Eval compute in (rename_lang value_subst).
-(*TODO: are vars different?*)
-Definition constr_rename : named_list positive :=
-  Eval compute in (rename_constr_subst value_subst).
+  Definition pos_value_subst : Rule.lang positive :=
+    Eval compute in (rename_lang value_subst).
+  (*TODO: are vars different?*)
+  Definition constr_rename : named_list positive :=
+    Eval compute in (rename_constr_subst value_subst).
 
-Definition test_ctx :=
-  Eval compute in (rename_ctx constr_rename
-                              {{c "G" : #"env",
-                                    "A" : #"ty",
-                                      "B" : #"ty"}}
-                              100).
+  Definition test_ctx :=
+    Eval compute in (rename_ctx constr_rename
+                                {{c "G" : #"env",
+                                      "A" : #"ty",
+                                        "B" : #"ty"}}
+                                100).
 
   Definition check_ctx' l :=
     check_ctx' (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
@@ -1036,79 +1038,79 @@ Definition test_ctx :=
   
   Definition add_and_check_term l :=
     add_and_check_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
-               (eclass_map:=eclass_map) eqn_set l
-               qt_unconstrained _ qt_tree
-               values_of_next_var choose_next_val relation db arg_map.
+                       (eclass_map:=eclass_map) eqn_set l
+                       qt_unconstrained _ qt_tree
+                       values_of_next_var choose_next_val relation db arg_map.
   
   Definition add_term :=
     add_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
-               (eclass_map:=eclass_map) eqn_set.
+             (eclass_map:=eclass_map) eqn_set.
   
-Definition initial_egraph :=
-  Eval compute in
-    (match check_ctx' pos_value_subst test_ctx with
-     | Some g => g
-     | None => empty_egraph _
-     end).
+  Definition initial_egraph :=
+    Eval compute in
+      (match check_ctx' pos_value_subst test_ctx with
+       | Some g => g
+       | None => empty_egraph _
+       end).
 
-Definition test_ctx_var_map :=
-  [("B", 102);("A",101);("G",100)].
+  Definition test_ctx_var_map :=
+    [("B", 102);("A",101);("G",100)].
 
-Definition test_term :=
-  Eval compute in
-    (rename_term constr_rename test_ctx_var_map
-                 {{e #"ext" "G" "G"}}).
+  Definition test_term :=
+    Eval compute in
+      (rename_term constr_rename test_ctx_var_map
+                   {{e #"ext" "G" "G"}}).
 
-Print test_term.
-(*TODO: should return none
-
- add_term eqns look right,
- but checking still passes. Why?
-*)
-Definition egraph1 :=
-  Eval compute in (fst (add_and_check_term
-                   pos_value_subst
-                   test_term
-                initial_egraph)).
-Eval compute in (add_term
-                   pos_value_subst
-                   test_term
-                   initial_egraph).
-
-
-(*TODO: move to extramaps/Triemap *)
-Definition as_list {A} :=
-  TrieMap.trie_fold (B:=A) (fun m k v => (k,v)::m) [].
-
-Compute
-  (Utils.named_map as_list (as_list ( Canonical.PTree.Nodes
-           (Canonical.PTree.Node010
-              (Canonical.PTree.Nodes
-                 (Canonical.PTree.Node011 tt
-                                          (Canonical.PTree.Node100 (Canonical.PTree.Node010 tt)))))))).
-
-
-(*Testing running this on something more complicated*)
-
-
-Definition term1 :=
-  Eval compute in
-    (rename_term constr_rename test_ctx_var_map
-                  {{e #"cmp" "G1" "G2" (#"ext" "G3" "A") "f" (#"snoc" "G2" "G3" "A" "g" "v")}}).
-
-Print test_term.
-(*TODO: should return none
+  Print test_term.
+  (*TODO: should return none
 
  add_term eqns look right,
  but checking still passes. Why?
-*)
-Definition egraph2 :=
-  Eval compute in (fst (add_and_check_term
-                   pos_value_subst
-                   test_term
-                initial_egraph)).
+   *)
+  Definition egraph1 :=
+    Eval compute in (fst (add_and_check_term
+                            pos_value_subst
+                            test_term
+                            initial_egraph)).
+  Eval compute in (add_term
+                     pos_value_subst
+                     test_term
+                     initial_egraph).
 
 
+  (*TODO: move to extramaps/Triemap *)
+  Definition as_list {A} :=
+    TrieMap.trie_fold (B:=A) (fun m k v => (k,v)::m) [].
+
+  Compute
+    (Utils.named_map as_list (as_list ( Canonical.PTree.Nodes
+                                          (Canonical.PTree.Node010
+                                             (Canonical.PTree.Nodes
+                                                (Canonical.PTree.Node011 tt
+                                                                         (Canonical.PTree.Node100 (Canonical.PTree.Node010 tt)))))))).
+
+
+  (*Testing running this on something more complicated*)
+
+
+  Definition term1 :=
+    Eval compute in
+      (rename_term constr_rename test_ctx_var_map
+                   {{e #"cmp" "G1" "G2" (#"ext" "G3" "A") "f" (#"snoc" "G2" "G3" "A" "g" "v")}}).
+
+  Print test_term.
+  (*TODO: should return none
+
+ add_term eqns look right,
+ but checking still passes. Why?
+   *)
+  Definition egraph2 :=
+    Eval compute in (fst (add_and_check_term
+                            pos_value_subst
+                            test_term
+                            initial_egraph)).
+
+End PositiveInstantiation.
 
 
 
