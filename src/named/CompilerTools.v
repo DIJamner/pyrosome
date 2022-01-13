@@ -37,8 +37,8 @@ Lemma elab_preserving_compiler_embed cmp_pre tgt cmp ecmp src tgt'
       elab_preserving_compiler cmp_pre tgt' cmp ecmp src.
 Proof.
   induction 1; basic_goal_prep; constructor; basic_core_firstorder_crush.
-  eapply eq_sort_lang_monotonicity; eauto.
-  eapply eq_term_lang_monotonicity; eauto.
+  - eapply eq_sort_lang_monotonicity; eauto.
+  - eapply eq_term_lang_monotonicity; eauto.
 Qed.
 Hint Resolve elab_preserving_compiler_embed : auto_elab.
 
@@ -139,9 +139,9 @@ Proof.
   (*TODO: fix automation for this*)
   repeat intuition break.
   all:autorewrite with utils term lang_core in *.
-  intuition (subst; unshelve eauto 1 with utils term lang_core).
-  case_match;
-  intuition (subst; unshelve eauto  4 with utils term lang_core).
+  - intuition (subst; unshelve eauto 1 with utils term lang_core).
+  - case_match;
+      intuition (subst; unshelve eauto  4 with utils term lang_core).
 Qed.
 Hint Resolve sort_rule_in_constructor_names : lang_core.
 
@@ -153,9 +153,9 @@ Proof.
   (*TODO: fix automation for this*)
   repeat intuition break.
   all:autorewrite with utils term lang_core in *.
-  intuition (subst; unshelve eauto 1 with utils term lang_core).
-  case_match;
-  intuition (subst; unshelve eauto  4 with utils term lang_core).
+  - intuition (subst; unshelve eauto 1 with utils term lang_core).
+  - case_match;
+      intuition (subst; unshelve eauto  4 with utils term lang_core).
 Qed.
 Hint Resolve term_rule_in_constructor_names : lang_core.
 
@@ -204,8 +204,8 @@ Lemma strengthen_named_list_lookup' {A} (ecmp cmp : named_list A) n
                  named_list_lookup_err (ecmp++cmp') n = named_list_lookup_err (ecmp++cmp) n.
 Proof.
   induction ecmp; basic_goal_prep; basic_utils_crush.
-  eapply strengthen_named_list_lookup; eauto.
-  my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  - eapply strengthen_named_list_lookup; eauto.
+  - my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
 Qed.
 
 

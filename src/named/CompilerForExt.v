@@ -169,7 +169,7 @@ Proof.
   destruct r; basic_goal_prep; constructor; eauto.
   {
     econstructor.
-    basic_core_crush.
+    { basic_core_crush. }
     assert (sublist l (map fst c)).
     {
       pose proof (in_lang_args_sublist _ _ _ H H0).
@@ -179,12 +179,12 @@ Proof.
     }
     erewrite <- compile_ctx_fst_equal.
     apply elab_identity_args.
-    rewrite compile_ctx_fst_equal; auto.
-    basic_utils_crush.
+    - rewrite compile_ctx_fst_equal; auto.
+    - basic_utils_crush.
   }
   {
     eapply Elab.elab_term_by'.
-    basic_core_crush.
+    { basic_core_crush. }
     {
       assert (sublist l (map fst c)).
       {
@@ -195,8 +195,8 @@ Proof.
       }
       erewrite <- compile_ctx_fst_equal.
       apply elab_identity_args.
-      rewrite compile_ctx_fst_equal; auto.
-      basic_utils_crush.
+      - rewrite compile_ctx_fst_equal; auto.
+      - basic_utils_crush.
     }
     {
       rewrite <- combine_map_fst_is_with_names_from.
@@ -222,8 +222,8 @@ Lemma compile_ext_preserves_args_sublist cmp_elab ext
 Proof.
   induction ext; basic_goal_prep; basic_core_firstorder_crush.
   destruct r; basic_goal_prep; basic_core_firstorder_crush.
-  rewrite compile_ctx_fst_equal; auto.
-  rewrite compile_ctx_fst_equal; auto.
+  - rewrite compile_ctx_fst_equal; auto.
+  - rewrite compile_ctx_fst_equal; auto.
 Qed.  
 
 Theorem extension_preservation ext tgt cmp_elab
