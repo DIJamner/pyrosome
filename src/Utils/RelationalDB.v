@@ -3,7 +3,7 @@
    TODO: profile, optimize performance.
    Use PArrays instead of lists in various spots 
    (can be fixed size, so don't need ArrayList, but that might be easiest first)
-*)
+ *)
 Require Import Equalities Orders ZArith List.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
@@ -104,128 +104,128 @@ Section __.
     }.
 
 
-(* TODO: figure out whether this can have duplicates
+  (* TODO: figure out whether this can have duplicates
      {subst_set : set arg_map}.
- *)
-Definition subst_set := list arg_map.
+   *)
+  Definition subst_set := list arg_map.
 
-Fixpoint generic_join' (tries : @named_list idx query_trie)
-         (vars : list idx) (acc : arg_map) : subst_set :=
-  match vars with
-  | [] => [acc]
-  | (x::vars') =>
-      let Rxs :=
-        map (fun '(_,v) => values_of_next_var v) tries in
-      let Dx := fold_left set_with_top_intersection Rxs all_elements in
-      (*
+  Fixpoint generic_join' (tries : @named_list idx query_trie)
+           (vars : list idx) (acc : arg_map) : subst_set :=
+    match vars with
+    | [] => [acc]
+    | (x::vars') =>
+        let Rxs :=
+          map (fun '(_,v) => values_of_next_var v) tries in
+        let Dx := fold_left set_with_top_intersection Rxs all_elements in
+        (*
         If Dx is all_positives, then the variable is unconstrained.
         We will probably only guarentee the behavior of generic_join
         when all free variables appear, so the result in this case doesn't matter
-       *)
-      match Dx with
-      | finite_set Dx =>
-          map.fold
-            (fun l v _ =>
-               (generic_join' (named_map (choose_next_val v) tries) vars'
-                              (map.put acc x v))
-                 ++l)
-            []
-            Dx
-      | all_positives => []
-      end
-  end.
+         *)
+        match Dx with
+        | finite_set Dx =>
+            map.fold
+              (fun l v _ =>
+                 (generic_join' (named_map (choose_next_val v) tries) vars'
+                                (map.put acc x v))
+                   ++l)
+              []
+              Dx
+        | all_positives => []
+        end
+    end.
 
 
-(* we need constants for residual queries in generic_join *)
-Variant argument := const_arg (c : elt) | var_arg (x : idx).
+  (* we need constants for residual queries in generic_join *)
+  Variant argument := const_arg (c : elt) | var_arg (x : idx).
 
-Fixpoint match_args args tuple : option arg_map :=
-  match args, tuple with
-  | [], _ => Some map.empty
-  | _,[] => Some map.empty
-  | (var_arg x)::args, e::tuple =>
-      @! let m <- match_args args tuple in
-         match map.get m x with
-         | Some e' => if eqb e e' then Some m else None
-         | None => Some (map.put m x e)
-         end
-  | (const_arg c)::args, e::tuple =>
-      if eqb c e then match_args args tuple else None
-  end.
+  Fixpoint match_args args tuple : option arg_map :=
+    match args, tuple with
+    | [], _ => Some map.empty
+    | _,[] => Some map.empty
+    | (var_arg x)::args, e::tuple =>
+        @! let m <- match_args args tuple in
+           match map.get m x with
+           | Some e' => if eqb e e' then Some m else None
+           | None => Some (map.put m x e)
+           end
+    | (const_arg c)::args, e::tuple =>
+        if eqb c e then match_args args tuple else None
+    end.
 
-Definition match_args_and_lookup args tuple (x : idx) : option elt :=
-  @! let m <- match_args args tuple in
-     let e <- map.get m x in
-     ret e.
+  Definition match_args_and_lookup args tuple (x : idx) : option elt :=
+    @! let m <- match_args args tuple in
+       let e <- map.get m x in
+       ret e.
 
-Definition find_values_in_relation' (x : idx) (rel : relation) args :=
-  map.fold (fun acc tuple _ =>
-              match match_args_and_lookup args tuple x with
-              | Some e => e::acc
-              | None => acc
-              end) [] rel.
+  Definition find_values_in_relation' (x : idx) (rel : relation) args :=
+    map.fold (fun acc tuple _ =>
+                match match_args_and_lookup args tuple x with
+                | Some e => e::acc
+                | None => acc
+                end) [] rel.
 
-#[refine]
- Instance eqb_argument : Eqb argument :=
-  {
-    eqb a b :=
-    match a,b with
-    | var_arg ax, var_arg bx => eqb ax bx
-    | const_arg ac, const_arg bc => eqb ac bc
-    | _,_ => false
-    end;
-  }.
-all: eapply TODO.
-Defined.
+  #[refine]
+   Instance eqb_argument : Eqb argument :=
+    {
+      eqb a b :=
+      match a,b with
+      | var_arg ax, var_arg bx => eqb ax bx
+      | const_arg ac, const_arg bc => eqb ac bc
+      | _,_ => false
+      end;
+    }.
+  all: eapply TODO.
+  Defined.
 
-(*handle unconstrained variables*)
-Definition find_values_in_relation (x : idx) (rel : relation) args :=
-  if existsb (eqb (var_arg x)) args
-  then Some (find_values_in_relation' x rel args)
-  else None.
+  (*handle unconstrained variables*)
+  Definition find_values_in_relation (x : idx) (rel : relation) args :=
+    if existsb (eqb (var_arg x)) args
+    then Some (find_values_in_relation' x rel args)
+    else None.
 
-Definition arg_subst v x a :=
-  match a with
-  | const_arg c => const_arg c
-  | var_arg x' =>
-      if eqb x x' then const_arg v else var_arg x'
-  end.
+  Definition arg_subst v x a :=
+    match a with
+    | const_arg c => const_arg c
+    | var_arg x' =>
+        if eqb x x' then const_arg v else var_arg x'
+    end.
 
 
-(*TODO: filter rel on recursive calls?*)
-(* TODO: if a variable is unconstrained, need to handle it specially *)
-Fixpoint build_trie' (rel: relation) (vars : list idx) (args : list argument)
-  : query_trie :=
-  match vars with
-  | [] => qt_nil
-  | x::vars' =>
-      let vs := find_values_in_relation x rel args in
-      match vs with
-      | Some vs =>
-          qt_tree (fold_left
-                     (fun m v =>
-                        map.put m v (build_trie' rel vars' (map (arg_subst v x) args)))
-                     vs
-                     map.empty)
-      | None  =>
-          qt_unconstrained (build_trie' rel vars' args)
-      end
-  end.
+  (*TODO: filter rel on recursive calls?*)
+  (* TODO: if a variable is unconstrained, need to handle it specially *)
+  Fixpoint build_trie' (rel: relation) (vars : list idx) (args : list argument)
+    : query_trie :=
+    match vars with
+    | [] => qt_nil
+    | x::vars' =>
+        let vs := find_values_in_relation x rel args in
+        match vs with
+        | Some vs =>
+            qt_tree (fold_left
+                       (fun m v =>
+                          map.put m v (build_trie' rel vars' (map (arg_subst v x) args)))
+                       vs
+                       map.empty)
+        | None  =>
+            qt_unconstrained (build_trie' rel vars' args)
+        end
+    end.
 
-Definition build_trie (d:db) (vars : list idx) (clause : atom) : idx * query_trie :=
-  let rel_id := fst clause in
-  match map.get d rel_id with
-  | Some rel => (rel_id,build_trie' rel vars (map var_arg (snd clause)))
-  | None => (rel_id, qt_nil)
-  end.
+  Definition build_trie (d:db) (vars : list idx) (clause : atom) : idx * query_trie :=
+    let rel_id := fst clause in
+    match map.get d rel_id with
+    | Some rel => (rel_id,build_trie' rel vars (map var_arg (snd clause)))
+    | None => (rel_id, qt_nil)
+    end.
 
-Definition build_tries (d:db) (vars : list idx) (clauses : list atom)
-  : @named_list idx query_trie :=
-  map (build_trie d vars) clauses.
+  Definition build_tries (d:db) (vars : list idx) (clauses : list atom)
+    : @named_list idx query_trie :=
+    map (build_trie d vars) clauses.
 
-Definition generic_join (d : db) (q : query) : subst_set :=
-  let tries := build_tries d q.(free_vars) q.(clauses) in
-  generic_join' tries q.(free_vars) map.empty.
+  Definition generic_join (d : db) (q : query) : subst_set :=
+    let tries := build_tries d q.(free_vars) q.(clauses) in
+    generic_join' tries q.(free_vars) map.empty.
 
 End __.
 
