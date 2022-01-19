@@ -13,6 +13,37 @@ From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps NatlikePos.
 From Utils Require TrieMap.
 Import Sets.
 
+
+(*TODO: move to utils*)
+Lemma invert_Forall2_nil_nil {A B} (f : A -> B -> Prop)
+  : Forall2 f [] [] <-> True.
+Proof using.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite @invert_Forall2_nil_nil : utils.
+
+Lemma invert_Forall2_nil_cons {A B} (f : A -> B -> Prop) e x
+  : Forall2 f [] (e :: x) <-> False.
+Proof using.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite @invert_Forall2_nil_cons : utils.
+
+Lemma invert_Forall2_cons_nil {A B} (f : A -> B -> Prop) e x
+  : Forall2 f (e :: x) [] <-> False.
+Proof using.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite @invert_Forall2_cons_nil : utils.
+
+Lemma invert_Forall2_cons_cons {A B} (f : A -> B -> Prop) e x e' x'
+  : Forall2 f (e :: x) (e'::x')
+    <-> (f e e') /\ Forall2 f x x'.
+Proof using.
+  solve_invert_constr_eq_lemma.
+Qed.
+Hint Rewrite @invert_Forall2_cons_cons : utils.
+
 Section SetWithTop.
   Context {A : Type}
           {A_set : set A}.
@@ -226,6 +257,347 @@ Section __.
   Definition generic_join (d : db) (q : query) : subst_set :=
     let tries := build_tries d q.(free_vars) q.(clauses) in
     generic_join' tries q.(free_vars) map.empty.
+
+  (*Properties*)
+
+  (*TODO: mention fvs? *)
+  Definition satisfies_query d q (m : arg_map) :=
+    forall i args,
+      In (i,args) q.(clauses) ->
+      exists R,
+        map.get d i = Some R ->
+        exists tuple,
+          List.Forall2 (fun a e => map.get m a = Some e) args tuple ->
+          member R tuple = true.
+
+  
+
+  Inductive sound_trie_for_relation
+            (R : relation) (args : _)
+    : _ -> list idx -> Prop :=
+  | sound_trie_qt_nil tuple :
+    map const_arg tuple = args ->
+    member R tuple = true ->
+    sound_trie_for_relation R args qt_nil []
+  | sound_trie_qt_tree m x vars
+    : (forall v t, map.get m v = Some t ->
+                   sound_trie_for_relation R (map (arg_subst v x) args) t vars) ->
+      sound_trie_for_relation R args (qt_tree m) (x::vars)
+  | sound_trie_qt_unconstrained t x vars
+    : (forall v, sound_trie_for_relation R (map (arg_subst v x) args) t vars) ->
+      sound_trie_for_relation R args (qt_unconstrained t) (x::vars).
+
+  (*TODO: new hintdb?*)
+  Hint Constructors sound_trie_for_relation : utils.
+  
+  Definition trie_sound_for_atom (d : db) vars '(i,t) '(i',args) :=
+    i = i' /\
+      forall R,
+        map.get d i = Some R ->
+        (sound_trie_for_relation R (map var_arg args) t vars).
+
+  Definition arg_from_vars vars a :=
+    match a with
+    | const_arg _ => True
+    | var_arg x => In x vars
+    end.
+
+  Lemma all_args_from_empty_is_const args
+    : all (arg_from_vars []) args ->
+      exists tuple, map const_arg tuple = args.
+  Proof.
+    induction args; 
+      basic_goal_prep; basic_utils_crush.
+    - exists []; basic_utils_crush.
+    - destruct a;
+        basic_utils_crush.
+      exists (c::x);
+        basic_utils_crush.
+  Qed.
+
+  Definition one_arg_can_match a c :=
+    match a with
+    | var_arg _ => True
+    | const_arg c' => c = c'
+    end.
+
+  Definition args_can_match R args :=
+    exists tuple,
+      member R tuple = true
+      /\ Forall2 one_arg_can_match args tuple.
+
+  
+  Lemma args_match_const_eq tuple tuple'
+    : Forall2 one_arg_can_match (map const_arg tuple') tuple ->
+      tuple' = tuple.
+  Proof.
+    revert tuple;
+      induction tuple';
+      destruct tuple;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  (*TODO: move somewhere*)
+  Hint Rewrite @map.get_empty : utils.
+
+  Context (arg_map_ok : map.ok arg_map).
+
+  
+  Lemma match_args_sound' args tuple m
+    : List.length args = List.length tuple ->
+      Some m = match_args args tuple ->
+      forall m',
+        (forall x c, map.get m x = Some c -> map.get m' x = Some c) ->
+      Forall2 (fun a c =>
+                 match a with
+                 | const_arg c' => c = c'
+                 | var_arg x => map.get m' x = Some c
+                 end)
+              args
+              tuple.
+  Proof.
+    revert m.
+    revert tuple; induction args;
+      destruct tuple;
+      basic_goal_prep;
+      autorewrite with utils in*;
+      subst;
+      auto 1.
+    destruct a;
+      basic_goal_prep.
+    {
+      revert H0; 
+        case_match; [|congruence].
+      basic_utils_crush.
+    }
+    {
+      revert H0; 
+        case_match; [|congruence].
+      case_match.
+      {
+        case_match; [|congruence].
+        basic_goal_prep;
+          basic_utils_crush.
+      }
+      {
+        basic_goal_prep;
+          basic_utils_crush.
+        - apply H1.
+          apply map.get_put_same.
+        - eapply IHargs; eauto.
+          intros; apply H1.
+          admit (*TODO: map solver*).
+      }
+    }
+  Admitted.
+
+  
+  Lemma match_args_sound args tuple m
+    : List.length args = List.length tuple ->
+      Some m = match_args args tuple ->
+      Forall2 (fun a c =>
+                 match a with
+                 | const_arg c' => c = c'
+                 | var_arg x => map.get m x = Some c
+                 end)
+              args
+              tuple.
+  Proof.
+    intros; eapply match_args_sound'; eauto.
+  Qed.
+      
+  
+  Lemma match_args_and_lookup_sound args k i e
+    : List.length args = List.length k ->
+      Some e = match_args_and_lookup args k i ->
+      Forall2 one_arg_can_match (map (arg_subst e i) args) k.
+  Proof.
+    unfold match_args_and_lookup.
+    simpl.
+    case_match; [|congruence].
+    case_match; [|congruence].
+    intros Hlen H'; inversion H'; clear H'; subst.
+    pose proof (match_args_sound _ _ _ Hlen HeqH) as H.
+    revert H.
+    clear Hlen HeqH.
+    revert dependent r.
+    revert dependent k.
+    revert args.
+    induction args;
+      destruct k;
+      basic_goal_prep;
+      try destruct a;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      case_match;
+      basic_goal_prep;
+        basic_utils_crush.
+      congruence.
+    }
+  Qed.
+
+  (*TODO: move to the right place*)
+  Definition set_incl S S' := forall x, member S x = true -> member S' x = true.
+  Lemma set_put_monotone m k
+    : set_incl m (map.put m k tt).
+  Proof.
+    intro.
+    unfold member in *.
+    case_match; try congruence.
+    intros _.
+    (*TODO: implement/import list eqb*)
+    assert (Eqb (list elt)) by admit.
+    my_case Heq (eqb x k).
+    {
+      basic_goal_prep;
+        basic_utils_crush.
+      now erewrite map.get_put_same.
+    }
+    {
+      basic_goal_prep;
+        basic_utils_crush.
+      erewrite map.get_put_diff; auto.
+      now rewrite <- HeqH.      
+    }
+  Admitted.
+  
+  Lemma find_values_in_relation_some_sound i R args elts
+    : args_can_match R args ->
+      find_values_in_relation i R args = Some elts ->
+      forall e, In e elts ->
+                forall R', set_incl R R' ->
+                args_can_match R' (map (arg_subst e i) args).
+  Proof.
+    unfold find_values_in_relation.
+    case_match; try congruence.
+    intros acm fv; inversion fv; clear fv.
+    clear HeqH elts H0.
+    intros e.
+    unfold find_values_in_relation'.
+    eapply map.fold_spec.
+    { basic_utils_crush. }
+    intros.
+    revert H1.     
+    case_match.
+    {
+      my_case Heqe (eqb e e0);
+        basic_goal_prep;
+        autorewrite with utils in *; subst.
+      {
+        clear H0 H1.
+        eapply match_args_and_lookup_sound in HeqH1.
+        {
+          exists k;
+            basic_goal_prep;
+            basic_utils_crush.
+          apply H2.
+          unfold member; now erewrite map.get_put_same.
+        }
+        admit (*TODO: relation arity*).
+      }
+      {
+        destruct H1; try now intuition.
+        eapply H0; auto.
+        intros x mem.
+        eapply H2.
+        now eapply set_put_monotone.
+      }
+    }
+    {
+      intros; eapply H0; eauto.
+      intros x mem.
+      eapply H2.
+      destruct v.
+      now eapply set_put_monotone.
+    }
+  Admitted.
+
+  Lemma build_trie'_sound R args vars
+    : args_can_match R args ->
+      all (arg_from_vars vars) args ->
+      sound_trie_for_relation R args (build_trie' R vars args) vars.
+  Proof.
+    revert args; induction vars;
+      basic_goal_prep.
+    {
+      eapply all_args_from_empty_is_const in H0;
+        destruct H0.
+      econstructor; eauto.
+      destruct H as [? [? ?]].
+      rewrite <- H0 in H1.
+      pose proof (args_match_const_eq _ _ H1).
+      now subst.
+    }
+    {
+                                
+    }
+  
+  Lemma build_trie_sound d vars a
+    : trie_sound_for_atom d vars (build_trie d vars a) a.
+  Proof.
+    unfold build_trie, atom in *.
+    basic_goal_prep.
+    case_match;
+      unfold trie_sound_for_atom;
+      intuition try congruence.
+    rewrite H in HeqH; inversion HeqH; clear HeqH; subst.
+  
+  Lemma build_trie'_sound R args vars
+    : sound_trie_for_relation R args (build_trie' R vars args) vars.
+  Proof.
+    TODO: lemma for build_trie'
+  
+  
+  Theorem generic_join_sound d q m
+    : In m (generic_join d q) ->
+      satisfies_query d q m.
+  Proof.
+    unfold generic_join.
+    set (build_tries _ _ _).
+
+
+
+
+      forall i t,
+
+        
+        In (i,t) (build_tries d fv cls) ->
+        exists R,
+          mag.get d i = Some R
+          /\ (forall args, (i,args
+            sound_trie_for_relation R (map ? t ?
+
+
+        
+      
+    
+    (*needs to reason about arguments*)
+    Inductive sound_trie_for_atom (d : db) i
+      : query_trie -> list idx -> list argument -> Prop :=
+    | trie_for_atom_nil args : trie_for_atom d t i qt_nil [] args
+    | trie_for_atom_unconstrained 
+      : trie_for_atom d t i TODO
+    | trie_for_atom_tree m
+      : (forall e t', map.get m e = Some t' ->
+                      
+      trie_for_atom d t i qt_nil [] args
+    | 
+                                             
+      
+      
+      
+    
+    Lemma build_tries_sound
+      : forall i t,
+        In (i,t) (build_tries d fv cls) ->
+        
+        
+    
+    TODO: build_trie lemma
+
+                     
 
 End __.
 
