@@ -102,6 +102,8 @@ Module PositiveQueryTrie.
     (* shouldn't normally hit this case *)
     | qt_nil => qt_nil
     end.
+
+  
 End PositiveQueryTrie.
 
 
@@ -263,7 +265,7 @@ Section __.
     let rel_id := fst clause in
     match map.get d rel_id with
     | Some rel => (rel_id,build_trie' rel vars (map var_arg (snd clause)))
-    | None => (rel_id, qt_nil)
+    | None => (rel_id, qt_empty)
     end.
 
   Definition build_tries (d:db) (vars : list idx) (clauses : list atom)
@@ -281,9 +283,11 @@ Section __.
     forall i args,
       In (i,args) q.(clauses) ->
       exists R,
-        map.get d i = Some R ->
+        map.get d i = Some R
+        /\
         exists tuple,
-          List.Forall2 (fun a e => map.get m a = Some e) args tuple ->
+          List.Forall2 (fun a e => map.get m a = Some e) args tuple
+          /\
           member R tuple = true.
 
   
@@ -291,8 +295,25 @@ Section __.
     exists tuple,
       map const_arg tuple = args
       /\ member R tuple = true.
-    
 
+  
+  (* TODO: try using this? *)
+  Inductive denote_query_trie : list idx -> query_trie -> arg_map -> Prop :=
+  | denote_qt_nil : denote_query_trie [] qt_nil map.empty
+  (* TODO: this does complicate things since it requires cross-trie reasoning
+     To show that some trie fixes the value
+   *)
+  | denote_qt_unconstrained vars t m x v
+    : denote_query_trie vars t m ->
+      denote_query_trie (x::vars) (qt_unconstrained t) (map.put m x v)
+  | denote_qt_cons vars t m x tm v
+    : map.get tm v = Some t ->
+      denote_query_trie vars t m ->
+      denote_query_trie (x::vars) (qt_tree tm) (map.put m x v).
+  (*TODO: new hintdb?*)
+  Hint Constructors denote_query_trie : utils.
+
+  (* TODO: still use anywhere?
   Inductive sound_trie_for_relation
             (R : relation) (args : _)
     : _ -> list idx -> Prop :=
@@ -310,14 +331,15 @@ Section __.
       sound_trie_for_relation R args (qt_unconstrained t) (x::vars).
 
   (*TODO: new hintdb?*)
-  Hint Constructors sound_trie_for_relation : utils.
+  Hint Constructors sound_trie_for_relation : utils. 
 
   
   Definition trie_sound_for_atom (d : db) vars '(i,t) '(i',args) :=
     i = i' /\
-      forall R,
-        map.get d i = Some R ->
+      exists R,
+        map.get d i = Some R /\
         (sound_trie_for_relation R (map var_arg args) t vars).
+*)
 
   Definition arg_from_vars vars a :=
     match a with
@@ -666,72 +688,183 @@ Section __.
       }
     }
   Admitted.
-  
-  (*TODO: what about empty R? assumptions too strong
 
-TODO!!!!!: how to handle patterns that don't match R at all?
-query_tree should have empty and full nodes at the leaves,
-not just qt_nil
-*)
+  Definition maps_arg_to (m : arg_map) a e :=
+    match a with
+    | const_arg e' => e = e'
+    | var_arg x => map.get m x = Some e
+    end.
+
+  Definition arg_map_sound_for_relation (R : relation) args (m : arg_map) :=
+    exists tuple,
+      Forall2 (maps_arg_to m) args tuple
+      /\ member R tuple = true.
+
+  Definition trie_sound_for_relation (R : relation) vars args t :=
+    forall m, denote_query_trie vars t m ->
+              arg_map_sound_for_relation R args m.
+    
+  Lemma const_args_map x0 args m
+    : map const_arg x0 = args -> Forall2 (maps_arg_to m) args x0.
+  Proof.
+    revert x0; induction args; destruct x0;
+      basic_goal_prep; unfold  maps_arg_to; basic_utils_crush.
+  Qed.
+  Local Hint Resolve const_args_map : core.
+
+  (*TODO: prove above*)
+  Context (invert_qt_nil_tree : forall m, qt_nil = qt_tree m <-> False).
+  Hint Rewrite invert_qt_nil_tree : utils.
+  Context (invert_qt_unconstrained_tree : forall t m, qt_unconstrained t = qt_tree m <-> False).
+  Hint Rewrite invert_qt_unconstrained_tree : utils.
+  Context (invert_qt_tree_unconstrained : forall t m, qt_tree m = qt_unconstrained t <-> False).
+  Hint Rewrite invert_qt_tree_unconstrained : utils.
+  
+  Context (invert_qt_tree_tree : forall m m', qt_tree m = qt_tree m' <-> m = m').
+  Hint Rewrite invert_qt_tree_tree : utils.
+  Context (invert_qt_unconstrained_unconstrained
+            : forall t t', qt_unconstrained t = qt_unconstrained t' <-> t = t').
+  Hint Rewrite invert_qt_unconstrained_unconstrained : utils.
+
+  Lemma empty_trie_sound R vars args
+    : trie_sound_for_relation R vars args qt_empty.
+  Proof.
+    unfold trie_sound_for_relation.
+    intros m dqt.
+    inversion dqt;
+      autorewrite with utils in *;
+      try tauto.
+    subst.
+    rewrite map.get_empty in H0.
+    congruence.
+  Qed.
+  Local Hint Resolve empty_trie_sound : utils.
+
+  
+  Lemma arg_map_sound_subst R v x args m
+    : arg_map_sound_for_relation R (map (arg_subst v x) args) m ->
+      arg_map_sound_for_relation R args (map.put m x v).
+  Proof.
+    unfold arg_map_sound_for_relation.
+    intro H'; destruct H' as [tuple [? ?]].
+    exists tuple.
+    split; auto.
+    revert H.
+    clear H0.
+    unfold maps_arg_to.
+    revert tuple; induction args;
+      destruct tuple;
+      basic_goal_prep;
+      try destruct a;
+      basic_utils_crush.
+    clear IHargs H1.
+    revert H0.
+    unfold arg_subst.
+    my_case Heqb (eqb x x0);
+      basic_utils_crush.
+    - now rewrite map.get_put_same.
+    - rewrite map.get_put_diff; eauto.
+  Qed.
+  
+  Lemma tree_trie_sound R vars args x m
+    : (forall v t, map.get m v = Some t ->
+                   trie_sound_for_relation R vars (map (arg_subst v x) args) t) ->
+    trie_sound_for_relation R (x::vars) args
+                              (qt_tree m).
+  Proof.
+    unfold trie_sound_for_relation.
+    intros H m' dqt.
+    inversion dqt;
+      autorewrite with utils in *;
+      try tauto; subst.
+    apply  arg_map_sound_subst.
+    eapply H; eauto.
+  Qed.
+  Local Hint Resolve tree_trie_sound : utils.
+
+  Lemma unconstrained_trie_sound R vars args t a
+    : ~ In a vars ->
+      all (arg_from_vars vars) args ->
+      trie_sound_for_relation R vars args t ->
+      trie_sound_for_relation R (a :: vars) args (qt_unconstrained t).
+  Proof.
+    unfold trie_sound_for_relation.
+    intros Hdup Hargs IH m' dqt.
+    inversion dqt; clear dqt;
+      autorewrite with utils in *;
+      try tauto; subst.
+    specialize (IH _ H3).
+    destruct IH as [tuple [? ?]].
+    exists tuple; split; auto.
+    revert H.
+    clear H0.
+    revert tuple; induction args;
+      destruct tuple;
+      basic_goal_prep;
+      basic_utils_crush.
+    unfold maps_arg_to.
+    destruct a0; auto; intros.
+    
+    assert (a <> x).
+    {
+      intro; subst.
+      apply Hdup.
+      apply H0.
+    }
+    rewrite map.get_put_diff; auto.
+  Qed.
+  Local Hint Resolve unconstrained_trie_sound : utils.
+
+  (*TODO: move to Utils.v*)
+  Lemma invert_NoDup_cons {A} x (a:A)
+    : NoDup (a::x) <-> ~ In a x /\ NoDup x.
+  Proof. solve_invert_constr_eq_lemma. Qed.
+  Hint Rewrite @invert_NoDup_cons : utils.
+  
   Lemma build_trie'_sound R args vars
-    : all (arg_from_vars vars) args ->
-      sound_trie_for_relation R args (build_trie' R vars args) vars.
+    : NoDup vars ->
+      all (arg_from_vars vars) args ->
+      trie_sound_for_relation R vars args (build_trie' R vars args).
   Proof.
     revert args; induction vars;
       basic_goal_prep.
     {
-      eapply all_args_from_empty_is_const in H;
-        destruct H.
+      eapply all_args_from_empty_is_const in H0;
+        destruct H0.
       case_match.
       {
-        symmetry in HeqH0.
-        apply args_in_rel_sound in HeqH0.
-        eauto with utils.
+        symmetry in HeqH1.
+        apply args_in_rel_sound in HeqH1.
+        unfold trie_sound_for_relation.
+        intros m dqt.
+        unfold const_args_in_rel in *.
+        unfold arg_map_sound_for_relation.
+        destruct HeqH1 as [? [? ?]].
+        exists x0; split; auto.
       }
       {
-        eapply sound_trie_qt_empty.
+        eapply empty_trie_sound.
       }
     }
     case_match.
     {
-      symmetry in HeqH0.
-      constructor.
+      eapply tree_trie_sound.
       intros.
       enough (t=(build_trie' R vars (map (arg_subst v a) args)));[subst|].
       {
-        eapply find_values_in_relation_some_sound with (e:=v) in HeqH0.
-        3: refine (fun _ x => x).
-        {
-          specialize (IHvars (map (arg_subst v a) args)).
-          subst.
-          eapply IHvars.
-          apply all_arg_from_vars_subst; assumption.
-        }
-        {
-          revert H0.
-          eapply map.fold_spec.
-          { basic_goal_prep; basic_utils_crush. }
-          {
-            intros.
-            destruct v0.
-            change ((map.put m k tt)) with (add_elt m k);
-              erewrite member_add_elt;basic_utils_crush.
-            my_case Heqb (eqb k v); basic_utils_crush.
-            right.
-            apply H1.
-            rewrite map.get_put_diff in H2; eauto.
-          }
-        }
+        autorewrite with utils in H; destruct H.
+        eapply IHvars; eauto.
+        eapply all_arg_from_vars_subst.
+        auto.
       }
       {     
-        revert H0.
+        revert H1.
         clear.
         set map.empty.
         assert (map.get r0 v = None).
         {
           unfold r0.
-          basic_utils_crush.
-          shelve.
+          erewrite map.get_empty; auto.
         }
         revert H.
         eapply map.fold_spec.
@@ -739,65 +872,152 @@ not just qt_nil
         {
           basic_goal_prep.
           intuition subst.
-          my_case Heqk (eqb k v);
-            autorewrite with utils in *;
-            subst.
-          {
+          my_case Heqk (eqb k v).
+          { rewrite eqb_eq in Heqk; subst.
             erewrite map.get_put_same in H2.
             congruence.
           }
-          {shelve. }
           {
+            rewrite eqb_neq in Heqk.
             apply not_eq_sym in Heqk.
             erewrite map.get_put_diff in H2;
-            tauto.
+              tauto.
           }
-        {shelve.}
-      }
+        }
       }
     }
     {
-      constructor.
-      intros.
-      assert (args = (map (arg_subst v a) args)).
+      eapply unconstrained_trie_sound;
+        autorewrite with utils in *; try now intuition.
       {
-        admit (*TODO: since a notin args*).
+        admit (*TODO: strengthen since a notin args*).
       }
-      rewrite H0 at 2.
-      eapply IHvars; eauto.
+      eapply IHvars; eauto; try now intuition.
       {
-        rewrite <- H0.
         admit (*TODO: strengthen since a notin args*).
       }
   Admitted.
 
+  (*TODO: move to utils*)
+  Lemma all_map {A B} P (f : A -> B) l
+    : all P (map f l) = all (fun x => P (f x)) l.
+  Proof.
+    induction l;
+      basic_goal_prep; basic_utils_crush.
+  Qed.
+      
+  
+  Definition trie_sound_for_atom (d : db) vars '(i,t) '(i',args) :=
+    i = i' /\
+      let R := unwrap_with_default map.empty (map.get d i) in
+      trie_sound_for_relation R vars (map var_arg args) t.
   
   Lemma build_trie_sound d vars a
-    : all (fun x => In x vars) (snd a) ->
+    : NoDup vars ->
+      all (fun x => In x vars) (snd a) ->
       trie_sound_for_atom d vars (build_trie d vars a) a.
   Proof.
     unfold build_trie, atom in *.
     basic_goal_prep.
     case_match;
       unfold trie_sound_for_atom;
-      try intuition congruence.
-    split; [reflexivity|intros].
-    rewrite H0 in HeqH0; inversion HeqH0; clear HeqH0; subst.
-    apply build_trie'_sound.
-    revert H; clear; induction l;
-      basic_goal_prep; basic_utils_crush.
+      split; auto;
+      unfold unwrap_with_default;
+      rewrite <- HeqH1.
+    {
+      apply build_trie'_sound; auto.
+      rewrite all_map.
+      assumption.
+    }
+    {
+      unfold unwrap_with_default.
+      apply empty_trie_sound.
+    }
   Qed.
+  Local Hint Resolve build_trie_sound : utils.
+
   
+  Lemma build_tries_sound d vars clauses
+    : NoDup vars ->
+      all (fun a => all (fun x => In x vars) (snd a)) clauses ->
+      Forall2 (trie_sound_for_atom d vars) (build_tries d vars clauses) clauses.
+  Proof.
+    induction clauses;
+      basic_goal_prep;
+      try now basic_utils_crush.
+    destruct H0.
+    constructor; eauto with utils.
+  Qed.
+      
+
+  Definition well_scoped_query q :=
+    NoDup q.(free_vars) /\
+    all (fun a => all (fun x => In x q.(free_vars)) (snd a)) q.(clauses).
+                                     
   
+  Theorem generic_join'_sound d m tries vars clauses am
+    : Forall2 (trie_sound_for_atom d vars) tries clauses ->
+      (*TODO: what do I need to know about am? *)
+      In m (generic_join' tries vars am) ->
+      (*TODO: use single q for query*)
+      satisfies_query d (Build_query vars clauses) m.
+  Proof.
+    unfold satisfies_query.
+    simpl.
+    revert tries am clauses.
+    induction vars;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      revert dependent clauses0.
+      revert tries.
+      induction clauses0;
+        destruct tries;
+      basic_goal_prep;
+        basic_utils_crush.
+      {
+        destruct H2 as [? [? [? ?]]]; subst.
+        assert (x = x0) by congruence; subst.
+        exists x0; split; auto.
+        inversion H2; subst.
+        {
+          destruct H as [? [? ?]].
+          exists x; split; auto.
+          destruct x; destruct args; simpl in *;
+            now basic_utils_crush.
+        }
+        {
+          
+        }
+                                               
+        exists 
+        TODO: forall vs exists; predicates don't agree
+    }
+    simpl.
+    generalize (clauses q), (free_vars q).
+    clear q.
+    intros.
+    
+    
   Theorem generic_join_sound d q m
-    : In m (generic_join d q) ->
+    : well_scoped_query q ->
+      In m (generic_join d q) ->
       satisfies_query d q m.
   Proof.
-    unfold generic_join.
-    set (build_tries _ _ _).
-
-
-
+    unfold generic_join, well_scoped_query.
+    intro Hwsq.
+    match goal with
+    | [|- context[build_tries ?d ?vars ?a]] =>
+        pose proof (build_tries_sound d vars a Hwsq)
+    end.
+    clear Hwsq (*TODO: is this needed anymore?*).
+    revert H.
+    generalize (build_tries d (free_vars q) (clauses q)).
+    unfold satisfies_query.
+    generalize (clauses q), (free_vars q).
+    clear q.
+    intros.
+    TODO: reason about generic_join'
 
       forall i t,
 
