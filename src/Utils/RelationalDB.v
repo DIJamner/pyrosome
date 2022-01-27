@@ -62,6 +62,36 @@ End SetWithTop.
 Arguments set_with_top {A}%type_scope A_set.
 
 
+(*TODO: move to sets*)
+Lemma member_empty {A} {m : set A} {_ :map.ok m} (e : A)
+  : member (map.empty (map:=m)) e = false.
+Proof.
+  unfold member.
+  erewrite map.get_empty.
+  reflexivity.    
+Qed.
+Hint Rewrite @member_empty : utils.
+
+Lemma member_add_elt {A} `{Eqb A} {S : set A} {_ :map.ok S} (s : S) (e e' : A)
+  : member (add_elt s e) e' = ((eqb e e') || (member s e'))%bool.
+Proof.
+  unfold member.
+  unfold add_elt.
+  my_case Heqb (eqb e e');
+    basic_goal_prep;
+    basic_utils_crush.
+  { rewrite map.get_put_same; reflexivity. }
+  { rewrite map.get_put_diff; auto. }
+Qed.
+Hint Rewrite @member_add_elt : utils.
+
+(*TODO: do I want this in utils?*)
+Hint Rewrite Bool.orb_true_iff : utils.
+
+Definition set_flat_map {A B} {S : set A} (f : A -> list B) (s : S) : list B :=
+  map.fold (fun l v _ => f v ++ l) [] s.
+
+
 (* We need to expose the map implelementation or query_trie is not strictly positive.
    We cordon it off into its own module so that the rest can be parametric over idx and elt.
  *)
@@ -154,6 +184,10 @@ Section __.
   Fixpoint generic_join' (tries : @named_list idx query_trie)
            (vars : list idx) (acc : arg_map) : subst_set :=
     match vars with
+    (* Note: can function incorrectly on trivial clauses (e.g. (1,[])).
+       We don't use trivial clauses in the egraph solver, so they
+       are just disallowed in the theorems.
+     *)
     | [] => [acc]
     | (x::vars') =>
         let Rxs :=
@@ -166,13 +200,9 @@ Section __.
          *)
         match Dx with
         | finite_set Dx =>
-            map.fold
-              (fun l v _ =>
-                 (generic_join' (named_map (choose_next_val v) tries) vars'
-                                (map.put acc x v))
-                   ++l)
-              []
-              Dx
+            set_flat_map (fun v => generic_join' (named_map (choose_next_val v) tries) vars'
+                                                 (map.put acc x v))
+                         Dx
         | all_positives => []
         end
     end.
@@ -274,7 +304,13 @@ Section __.
 
   Definition generic_join (d : db) (q : query) : subst_set :=
     let tries := build_tries d q.(free_vars) q.(clauses) in
-    generic_join' tries q.(free_vars) map.empty.
+    (* require all queries to have at least one variable.
+       This avoids edge cases with degenerate clauses,
+       e.g. Q() = R() where R ={} in d
+
+       TODO: implement the empty branch which decides whether the result should be [] or [empty]
+     *)
+    if q.(free_vars) then [] else generic_join' tries q.(free_vars) map.empty.
 
   (*Properties*)
 
@@ -485,6 +521,8 @@ Section __.
   Qed.
 
   (*TODO: move to the right place*)
+  Definition map_incl {A B} {m : map.map A B} (S S' : m) := forall x v, map.get S x = Some v -> map.get S' x = Some v.
+
   Definition set_incl S S' := forall x, member S x = true -> member S' x = true.
   Lemma set_put_monotone m k
     : set_incl m (map.put m k tt).
@@ -509,31 +547,6 @@ Section __.
     }
   Admitted.
 
-  (*TODO: move to sets*)
-  Lemma member_empty {A} {m : set A} {_ :map.ok m} (e : A)
-    : member (map.empty (map:=m)) e = false.
-  Proof.
-    unfold member.
-    erewrite map.get_empty.
-    reflexivity.    
-  Qed.
-  Hint Rewrite @member_empty : utils.
-  
-  Lemma member_add_elt {A} `{Eqb A} {S : set A} {_ :map.ok S} (s : S) (e e' : A)
-    : member (add_elt s e) e' = ((eqb e e') || (member s e'))%bool.
-  Proof.
-    unfold member.
-    unfold add_elt.
-    my_case Heqb (eqb e e');
-      basic_goal_prep;
-        basic_utils_crush.
-    { rewrite map.get_put_same; reflexivity. }
-    { rewrite map.get_put_diff; auto. }
-  Qed.
-  Hint Rewrite @member_add_elt : utils.
-
-  (*TODO: do I want this in utils?*)
-  Hint Rewrite Bool.orb_true_iff : utils.
 
   (*TODO: move up?*)
   Context {elt_set_ok : map.ok elt_set}.
@@ -950,31 +963,214 @@ Section __.
   Qed.
       
 
-  Definition well_scoped_query q :=
+  Definition well_scoped_query (d:db) q :=
     NoDup q.(free_vars) /\
-    all (fun a => all (fun x => In x q.(free_vars)) (snd a)) q.(clauses).
+      all (fun a => all (fun x => In x q.(free_vars)) (snd a)
+                    /\ exists R, map.get d (fst a) = Some R)
+          q.(clauses).
                                      
   
-  Theorem generic_join'_sound d m tries vars clauses am
-    : Forall2 (trie_sound_for_atom d vars) tries clauses ->
-      (*TODO: what do I need to know about am? *)
-      In m (generic_join' tries vars am) ->
-      (*TODO: use single q for query*)
-      satisfies_query d (Build_query vars clauses) m.
+  (*TODO: mention fvs? *)
+  Definition might_satisfy_query d (clauses : list atom) (m : arg_map) :=
+    forall i args,
+      In (i,args) clauses ->
+      exists R,
+        map.get d i = Some R
+        /\
+          exists tuple,
+            (*This line differs from satisfies_query*)
+            List.Forall2 (fun a e => forall e', map.get m a = Some e' -> e = e') args tuple
+            /\
+              member R tuple = true.
+
+  
+  Definition no_trivial_clauses q :=
+    all (fun p => Exists (fun _ => True) (snd p)) q.(clauses).
+
+  Definition might_be_inhabited (d : db) (a : atom) :=
+      exists R,
+        map.get d (fst a) = Some R
+        /\
+          exists tuple,
+            (*we include the length condition here since we aren't maintaining arity invariants yet*)
+            Forall2 (fun _ _ => True) (snd a) tuple
+            /\
+              member R tuple = true.
+  
+  Definition all_clauses_might_be_inhabited d q :=
+    all (might_be_inhabited d) q.(clauses).
+
+  Lemma empty_might_satisfy d q
+    : well_scoped_query d q ->
+      all_clauses_might_be_inhabited d q ->
+      might_satisfy_query d q.(clauses) map.empty.
   Proof.
-    unfold satisfies_query.
+    destruct q;
+      unfold well_scoped_query, all_clauses_might_be_inhabited, might_satisfy_query;
+      simpl;
+      basic_goal_prep.
+    pose proof (in_all _ _ H2 H1) as H'; simpl in H'; basic_goal_prep.
+    pose proof (in_all _ _ H0 H1) as H'; unfold might_be_inhabited in H'; simpl in H'; basic_goal_prep.
+    assert (x = x0) by congruence; subst.
+    exists x0; split; auto.
+    exists x1; split; auto.
+    eapply List.Forall2_impl_strong.
+    {
+      intros x y P _ _ e.
+      rewrite map.get_empty.
+      congruence.
+    }
+    eassumption.
+  Qed.
+    
+  
+  Lemma might_satisfy_empty_vars_satisfies d q m
+    : well_scoped_query d q ->
+      q.(free_vars) = [] ->
+      might_satisfy_query d q.(clauses) m ->
+      satisfies_query d q m.
+  Proof.
+    unfold might_satisfy_query, satisfies_query, well_scoped_query.
+    destruct q; basic_goal_prep; subst.
+    specialize (H1 _ _ H2).
+    break.
+
+    exists x; split; auto.
+    exists x0; split; auto.
+    
+    assert (args = []).
+    {
+      revert dependent clauses0.
+      clear.
+      induction clauses0; basic_goal_prep; intuition subst; simpl in *; eauto.
+      destruct args; simpl in *; intuition.
+    }
+    subst.
+    inversion H1; subst; clear H1; eauto.
+  Qed.
+
+  Lemma in_map_flat_map x f m
+    :  In x
+          (map.fold
+             (fun (l : list arg_map) (v : elt) (_ : unit) =>
+                f v ++ l) [] m) ->
+       exists v, (member m v = true /\ In x (f v)).
+  Proof.
+    eapply map.fold_spec;
+      basic_goal_prep;
+      try now basic_utils_crush.
+    autorewrite with utils in *.
+    destruct H1.
+    {
+      exists k;
+        intuition idtac.
+      change ((map.put ?m ?k tt)) with (add_elt m k);
+        erewrite member_add_elt;basic_utils_crush.
+    }
+    {
+      destruct (H0 H1) as [v [? ?]].
+      exists v; intuition.
+      change ((map.put ?m ?k tt)) with (add_elt m k);
+        erewrite member_add_elt;basic_utils_crush.
+    }
+  Qed.
+
+  Definition member_with_top {A} {S : set A} (s : set_with_top S) v :=
+    match s with
+    | all_elements => true
+    | finite_set s' => member s' v
+    end.
+  Axiom values_of_next_var_sound
+    : forall t (v : elt) x vars m, member_with_top (values_of_next_var t) v = true ->
+                  denote_query_trie (x::vars) t m ->
+                  denote_query_trie vars (choose_next_val v t) (map.put m x v).
+
+    
+  Lemma generic_join'_sound d m tries vars clauses acc
+    : (*well_scoped_query d (Build_query vars clauses) ->*)
+      Forall2 (trie_sound_for_atom d vars) tries clauses ->
+      In m (generic_join' tries vars acc) ->
+      (*TODO: is this necessary?
+      all_clauses_might_be_inhabited d (Build_query vars clauses) ->*)
+      (*TODO: what do I need to know about acc? *)
+      might_satisfy_query d clauses acc ->
+      might_satisfy_query d clauses m.
+    (*
+      (*TODO: use single q for query?*)
+      satisfies_query d (Build_query vars clauses) m.*)
+  Proof.
     simpl.
-    revert tries am clauses.
+    revert tries acc.
     induction vars;
       basic_goal_prep;
       basic_utils_crush.
-    {
+    simpl in *;
+        intros.
+(*    destruct H.
+    basic_goal_prep.
+    inversion H; clear H; subst.
+  *)  
+    revert H0; case_match.
+    2:admit (*TODO: add hypotheses to make this case unreachable*).
+    {     (* 
+      intro H'; apply in_map_flat_map in H'.
+      basic_goal_prep.
+      assert (forall i t, In (i,t) tries ->
+                          member_with_top (values_of_next_var t) x = true).
+      {
+        revert HeqH0; clear; induction tries;
+          basic_goal_prep; try now intuition.
+        
+          basic_utils_crush.
+      (*TODO: show x in denotation of all tries*)
+      eapply IHvars; eauto.
+      1:(*TODO: show x in next vals of all tries*) idtac.
+      2:{ (* same as above*)
+
+    }
+      intro H'; apply in_map_flat_map in H'.
+      basic_goal_prep.
+      inversion H; clear H; subst.
+      eapply IHvars.
+      { split; eauto.
+      specialize (IHvars _ _ _ ltac:(eauto)).
+      destruct H' as [v [? ?]].
+      eapply IHvars in H3.
+
+      TODO: generalize conclusion to something like might_satisfy_query before induction?
+                       apply acc to clauses?
+
+      Lemma satisfies_query_subst
+        : (forall v, ??? -> satisfies_query d {| free_vars := vars; clauses := (clauses_subst a v clauses0) |} m) ->
+        satisfies_query d {| free_vars := a :: vars; clauses := clauses0 |} m
+      TODO: subst lemmas
+    }
+    }
+      might_satisfy_empty_vars_satisfies
+      specialize (H1 _ _ H2).
+      destruct H1 as [R [? [tuple [? ?]]]].
+      exists R; split; auto.
+      exists tuple; split; auto.
+      revert H1;
+
+    }
+      revert dependent tries.
       revert dependent clauses0.
-      revert tries.
       induction clauses0;
         destruct tries;
       basic_goal_prep;
         basic_utils_crush.
+      destruct H1; subst.
+      revert H0.
+      simpl.
+      clear tries clauses0 IHclauses0 H2.
+      unfold unwrap_with_default.
+      case_match; intros TS.
+      2:{
+        TODO: missing connection between m and q
+        
+      inversion TS.
+      
       {
         destruct H2 as [? [? [? ?]]]; subst.
         assert (x = x0) by congruence; subst.
@@ -997,27 +1193,32 @@ Section __.
     generalize (clauses q), (free_vars q).
     clear q.
     intros.
+           *)
+  Admitted.
     
     
   Theorem generic_join_sound d q m
-    : well_scoped_query q ->
+    : well_scoped_query d q ->
       In m (generic_join d q) ->
       satisfies_query d q m.
   Proof.
     unfold generic_join, well_scoped_query.
-    intro Hwsq.
+    destruct q; simpl in *.
+    destruct free_vars0; [basic_goal_prep; basic_utils_crush| generalize (i::free_vars0) as free_vars1].
+    intros fvs [H_nodups Hwsq].
     match goal with
-    | [|- context[build_tries ?d ?vars ?a]] =>
-        pose proof (build_tries_sound d vars a Hwsq)
+    | [Hwsq : all ?P ?clauses0 |- context[build_tries ?d ?vars ?a]] =>
+        let Hwsq' := fresh Hwsq in
+        assert (all (fun a : idx * list idx => all (fun x : idx => In x vars) (snd a)) clauses0) as Hwsq' by admit;
+        pose proof (build_tries_sound d vars a ltac:(assumption) Hwsq')
     end.
     clear Hwsq (*TODO: is this needed anymore?*).
     revert H.
-    generalize (build_tries d (free_vars q) (clauses q)).
+    generalize (build_tries d fvs clauses0).
     unfold satisfies_query.
-    generalize (clauses q), (free_vars q).
-    clear q.
     intros.
-    TODO: reason about generic_join'
+    simpl in *.
+    (*TODO: reason about generic_join'
 
       forall i t,
 
@@ -1029,34 +1230,8 @@ Section __.
             sound_trie_for_relation R (map ? t ?
 
 
-        
-      
-    
-    (*needs to reason about arguments*)
-    Inductive sound_trie_for_atom (d : db) i
-      : query_trie -> list idx -> list argument -> Prop :=
-    | trie_for_atom_nil args : trie_for_atom d t i qt_nil [] args
-    | trie_for_atom_unconstrained 
-      : trie_for_atom d t i TODO
-    | trie_for_atom_tree m
-      : (forall e t', map.get m e = Some t' ->
-                      
-      trie_for_atom d t i qt_nil [] args
-    | 
-                                             
-      
-      
-      
-    
-    Lemma build_tries_sound
-      : forall i t,
-        In (i,t) (build_tries d fv cls) ->
-        
-        
-    
-    TODO: build_trie lemma
-
-                     
+        *)
+  Admitted.                     
 
 End __.
 
@@ -1105,7 +1280,7 @@ Export PositiveQueryTrie.
 
 Definition generic_join (d : db) (q : query _) : subst_set _ _ arg_map :=
   generic_join positive positive
-               trie_set query_trie qt_unconstrained _ qt_tree
+               trie_set query_trie qt_unconstrained _ qt_tree qt_nil
                values_of_next_var choose_next_val relation db arg_map d q.
 
 #[global] Notation atom := (atom positive).
