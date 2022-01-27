@@ -550,6 +550,7 @@ Section __.
               (qt_unconstrained : query_trie -> query_trie)
               (trie_map : map.map idx query_trie)
               (qt_tree : trie_map -> query_trie)
+              (qt_nil : query_trie)
               (values_of_next_var : query_trie -> set_with_top idx_set)
               (choose_next_val : idx -> query_trie -> query_trie).
       Context (relation : set (list idx))
@@ -685,7 +686,7 @@ Section __.
 
         Local Notation generic_join :=
           (generic_join idx idx
-                        idx_set query_trie qt_unconstrained _ qt_tree
+                        idx_set query_trie qt_unconstrained _ qt_tree qt_nil
                         values_of_next_var choose_next_val relation db arg_map).
         
         Definition ematch (d : db) (p : term) :=
@@ -1009,13 +1010,13 @@ Module PositiveInstantiation.
   Definition check_ctx' l :=
     check_ctx' (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
                eclass_map eqn_set l
-               qt_unconstrained _ qt_tree
+               qt_unconstrained _ qt_tree qt_nil
                values_of_next_var choose_next_val relation db arg_map.
   
   Definition add_and_check_term l :=
     add_and_check_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
                        (eclass_map:=eclass_map) eqn_set l
-                       qt_unconstrained _ qt_tree
+                       qt_unconstrained _ qt_tree qt_nil
                        values_of_next_var choose_next_val relation db arg_map.
   
   Definition add_term :=
