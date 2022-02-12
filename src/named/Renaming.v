@@ -5,7 +5,7 @@ Require Import String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils Monad Gensym.
 From Named Require Import Core Compilers Elab ElabCompilers.
 Import Core.Notations.
 
@@ -45,45 +45,45 @@ Qed.
 
 
 Section WithVar.
-  Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+  Context (V1 : Type)
+          {V1_Eqb : Eqb V1}
+          {V1_default : WithDefault V1}.
+  Context (V2 : Type)
+          {V2_Eqb : Eqb V2}
+          {V2_default : WithDefault V2}.
 
-  
-  Notation named_list := (@named_list V).
-  Notation named_map := (@named_map V).
-  Notation term := (@term V).
-  Notation ctx := (@ctx V).
-  Notation sort := (@sort V).
-  Notation subst := (@subst V).
-  Notation rule := (@rule V).
-  Notation lang := (@lang V).
-  Notation compiler := (@compiler V).
-  Notation compiler_case := (@compiler_case V).
 
 Section RenameFromFn.
   (*TODO: renamings from V1 to V2*)
-  Context (f : V -> V).
+  Context (f : V1 -> V2).
 
-  Fixpoint compiler_from_fn (l : lang) :=
+  Fixpoint compiler_from_fn (l : lang V1) : compiler V2 :=
     match l with
     | [] => []
-    | (n,sort_rule c args)::l => (n, sort_case (map fst c) (scon (f n) (map var args)))::(compiler_from_fn l)
-    | (n,term_rule c args _)::l => (n, term_case (map fst c) (con (f n) (map var args)))::(compiler_from_fn l)
+    | (n,sort_rule c args)::l =>
+        (f n, sort_case (map f (map fst c)) (scon (f n) (map var (map f args))))::(compiler_from_fn l)
+    | (n,term_rule c args _)::l =>
+        (f n, term_case (map f (map fst c)) (con (f n) (map var (map f args))))::(compiler_from_fn l)
     | _::l => compiler_from_fn l
     end.
 
-  Fixpoint elab_compiler_from_fn (l : lang) :=
+  Fixpoint elab_compiler_from_fn (l : lang V1) :=
     match l with
     | [] => []
-    | (n,sort_rule c _)::l => (n, sort_case (map fst c) (scon (f n) (map var (map fst c))))::(elab_compiler_from_fn l)
-    | (n,term_rule c _ _)::l => (n, term_case (map fst c) (con (f n) (map var (map fst c))))::(elab_compiler_from_fn l)
+    | (n,sort_rule c _)::l =>
+        let args := map f (map fst c) in
+        (f n, sort_case args (scon (f n) (map var args)))
+          ::(elab_compiler_from_fn l)
+    | (n,term_rule c _ _)::l =>
+        let args := map f (map fst c) in
+        (f n, term_case args (con (f n) (map var args)))
+          ::(elab_compiler_from_fn l)
     | _::l => elab_compiler_from_fn l
     end.
 
   Fixpoint rename_term e :=
     match e with
-    | var x => var x
+    | var x => var (f x)
     | con n s => con (f n) (map rename_term s)
     end.
 
@@ -92,17 +92,23 @@ Section RenameFromFn.
     | scon n s => scon (f n) (map rename_term s)
     end.
 
-  Definition rename_ctx c := named_map rename_sort c.
+  Definition rename_and_map {A B} (g : A -> B): named_list A -> named_list B :=
+    map (fun '(n,v)=> (f n, g v)).
+             
+  Definition rename_ctx (c : ctx V1) : ctx V2 := rename_and_map rename_sort c.
   
-  Definition rename_subst s := named_map rename_term s.
-  Definition rename_args s := map rename_term s.
+  Definition rename_subst (s : subst V1) : subst V2 := rename_and_map rename_term s.
+  Definition rename_args (s : list (term V1)) := map rename_term s.
 
-  Lemma rename_subst_lookup s n
-    : rename_term (subst_lookup s n) = subst_lookup (rename_subst s) n.
+  Lemma rename_subst_lookup (s : subst V1) n
+    : rename_term (subst_lookup s n) = subst_lookup (rename_subst s) (f n).
   Proof.
     induction s; basic_goal_prep; basic_term_crush.
     my_case H (eqb n v);
       basic_term_crush.
+    my_case H' (eqb (f n) (f v));
+      basic_term_crush.
+    TODO: need bijectivity
   Qed.
   Hint Rewrite rename_subst_lookup : term.
   
@@ -220,9 +226,11 @@ Section RenameFromFn.
     }
     {
       constructor.
-      basic_core_firstorder_crush.
-      rewrite with_names_from_rename_ctx.
-      basic_core_crush.
+      {
+        basic_core_firstorder_crush.
+        rewrite with_names_from_rename_ctx.
+        basic_core_crush.
+      }
       basic_core_crush.
     }
     {
@@ -267,14 +275,16 @@ Section RenameFromFn.
     }
     {
       constructor.
-      basic_core_firstorder_crush.
-      rewrite with_names_from_rename_ctx.
-      basic_core_crush.
-      basic_core_crush.
+      {
+        basic_core_firstorder_crush.
+        rewrite with_names_from_rename_ctx.
+        basic_core_crush.
+      }
+      { basic_core_crush. }
     }
     {
       constructor.
-      basic_core_crush.
+      { basic_core_crush.
      (* TODO: rw backwards, apply earlier lem*)
   Abort.                  
 
@@ -343,8 +353,8 @@ Proof.
   unfold bijective_on.
   simpl.
   induction l; basic_goal_prep.
-  basic_term_crush.
-  firstorder.
+  { basic_term_crush. }
+  { firstorder. }
 Qed.
 
 Lemma wf_lang_rename f l
@@ -358,6 +368,7 @@ Proof.
 Qed.  
 Hint Resolve wf_lang_rename : lang_core.
 
+  
 (*TODO: compilers part *)
 (*
 Theorem renaming_preserving f tgt cmp l
@@ -374,5 +385,12 @@ Proof.
     TODO: need renaming for Elab.elab
 *)
 
+End RenameFromFn.
+
+Section RenameFromList.
+  Context (rn : @named_list V V'
+  
+
+Fail
 End WithVar.
 (*TODO: export hints*)
