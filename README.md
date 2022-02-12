@@ -1,4 +1,17 @@
-Must be built with Coq 8.14 or higher. Only tested on Coq master, commit 2ac6eec2fe66341548879369882f0b79faaf1375.
+Must be built with Coq 8.14 or higher.
+
+You can clone this repository with
+
+    git clone --recursive https://github.com/dijamner/pyrosome
+
+Git submodules are used for some dependencies. If you did not clone with `--recursive`, run
+
+    git submodule update --init --recursive
+
+from inside the repository.
+
+To build the project, run `./build.sh <t>` where `<t>` is the number of threads to use.
+
 
 Important/representative files:
 
