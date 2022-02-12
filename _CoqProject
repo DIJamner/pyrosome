@@ -7,6 +7,7 @@ src/Utils/TrieMap.v
 src/Utils/Utils.v
 src/Utils/Monad.v
 src/Utils/Natlike.v
+src/Utils/Gensym.v
 src/Utils/NatlikePos.v
 src/Utils/ArrayList.v
 src/Utils/PersistentArrayList.v
@@ -23,9 +24,10 @@ src/named/Matches.v
 src/named/ComputeWf.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
+src/named/SimpleVProd.v
+src/named/SimpleVSum.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
-src/named/egraph/Defs.v
 src/named/CompilerDefs.v
 src/named/MultiCompilerDefs.v
 src/named/AllConstructors.v
@@ -33,6 +35,8 @@ src/named/Compilers.v
 src/named/MultiCompilers.v
 src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
+src/named/Renaming.v
+src/named/egraph/Defs.v
 src/named/CompilerTools.v
 src/named/CompilerForExt.v
 src/named/SimpleVCPS.v

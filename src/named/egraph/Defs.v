@@ -1023,6 +1023,10 @@ Module PositiveInstantiation.
     add_term (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
              (eclass_map:=eclass_map) eqn_set.
   
+  Definition find :=
+    find (idx:=positive) (array := TrieMap.TrieArrayList.trie_array)
+             (eclass_map:=eclass_map).
+  
   Definition initial_egraph :=
     Eval compute in
       (match check_ctx' pos_value_subst test_ctx with
@@ -1075,18 +1079,24 @@ Module PositiveInstantiation.
       (rename_term constr_rename test_ctx_var_map
                    {{e #"cmp" "G1" "G2" (#"ext" "G3" "A") "f" (#"snoc" "G2" "G3" "A" "g" "v")}}).
 
-  Print test_term.
+  Print test_term. (*{{e #61 100 100}}*)
   (*TODO: should return none
 
  add_term eqns look right,
  but checking still passes. Why?
    *)
+    Eval compute in (add_term
+                            pos_value_subst
+                            test_term
+                            initial_egraph).
   Definition egraph2 :=
     Eval compute in (fst (add_and_check_term
                             pos_value_subst
                             test_term
                             initial_egraph)).
-
+  Print egraph2.
+  
+Fail
 End PositiveInstantiation.
 
 
