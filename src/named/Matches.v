@@ -9,7 +9,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad.
-From Named Require Import Core Elab ComputeWf.
+From Named Require Import Core Elab ComputeWf Linter.
 
 Import Core.Notations.
 
@@ -977,7 +977,9 @@ Ltac split_rule_elab :=
 
 Ltac setup_elab_lang :=
   lazymatch goal with
-  | |- elab_lang_ext ?pre ?l ?el => rewrite (as_nth_tail l); rewrite (as_nth_tail el)
+  | |- elab_lang_ext ?pre ?l ?el =>
+      lint_lang_ext pre l;
+      rewrite (as_nth_tail l); rewrite (as_nth_tail el)
   | _ => fail "Not a language extension wfness goal"
   end; repeat split_rule_elab;
   [apply elab_lang_nil_nth_tail; compute; reflexivity | intro.. ].

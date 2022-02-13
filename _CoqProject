@@ -6,6 +6,7 @@
 src/Utils/TrieMap.v
 src/Utils/Utils.v
 src/Utils/Monad.v
+src/Utils/SumMonad.v
 src/Utils/Natlike.v
 src/Utils/Gensym.v
 src/Utils/NatlikePos.v
@@ -18,6 +19,7 @@ src/Utils/RelationalDB.v
 -Q src/named Named
 src/named/Term.v
 src/named/Rule.v
+src/named/Linter.v
 src/named/Core.v
 src/named/Elab.v
 src/named/Matches.v
