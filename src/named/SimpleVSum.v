@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab SimpleVSubst Matches.
+From Named Require Import Core Elab SimpleVSubst Matches Linter.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -19,7 +19,7 @@ Definition sum_def : lang :=
 
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------
-      #"sum" "A" "B" : #"ty"
+      #"prod" "A" "B" : #"ty"
   ];
   [:| "G" : #"env",
       "A" : #"ty",
@@ -27,7 +27,7 @@ Definition sum_def : lang :=
       "e1" : #"exp" "G" "A",
       "e2" : #"exp" "G" "B"
       -----------------------------------------------
-      #"pair" "e1" "e2" : #"exp" "G" (#"prod" "A" "B")
+      #"pair" "e1" "e2" : #"exp" "G" (#"prod" "A" "C" "B")
    ];
   [:| "G" : #"env",
       "A" : #"ty",

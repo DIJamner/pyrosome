@@ -767,5 +767,15 @@ Module Notations.
   Check (as_ctx {{c "x" : #"env"}}).
   Check (as_ctx {{c "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"}}).
 
+  
+  (* Used to print arguments in the order the appear in a term *)
+  Definition argument_seq_marker {V} (s : list (term V)) := s.
+  
+  Notation "al" :=
+    (argument_seq_marker al)
+      (at level 0,
+        al custom arg_list,
+        only printing).
+
 End Notations.
 
