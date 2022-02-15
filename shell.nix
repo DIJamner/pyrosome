@@ -2,5 +2,5 @@
 
 with pkgs;
 mkShell {
-  buildInputs = [ coq_8_13 ];
+  buildInputs = [ coq_8_14 ];
 }
