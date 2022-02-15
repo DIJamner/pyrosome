@@ -3,4 +3,4 @@
 	url = https://github.com/mit-plv/coqutil
 [submodule "canonical-binary-tries"]
 	path = canonical-binary-tries
-	url = https://github.com/xavierleroy/canonical-binary-tries/blob/main/LICENSE
+	url = https://github.com/xavierleroy/canonical-binary-tries
