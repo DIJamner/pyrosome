@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Export Term Rule.
+From Named Require Export Substable Term Rule.
 
 Module Notations.
   Export Term.Notations.

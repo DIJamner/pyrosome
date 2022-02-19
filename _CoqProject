@@ -17,6 +17,7 @@ src/Utils/ExtraMaps.v
 src/Utils/RelationalDB.v
 
 -Q src/named Named
+src/named/Substable.v
 src/named/Term.v
 src/named/Rule.v
 src/named/Linter.v

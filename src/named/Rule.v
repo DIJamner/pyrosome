@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Term.
+From Named Require Import Substable Term.
 (*TODO: why does this generate warnings?*)
 Import Term.Notations.
 Import SumboolNotations.
@@ -115,8 +115,8 @@ Lemma invert_eq_term_eq_rule_term_eq_rule c c' e1 e2 e1' e2' t t'
 Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_term_eq_rule : term.
 
-Notation well_scoped := (@well_scoped V V_Eqb).
-
+Notation well_scoped := (well_scoped (V:=V) (A:=term) (Substable0:=@substable_term V V_Eqb)).
+  
 Definition ws_rule r : Prop :=
   match r with
   | sort_rule c args => sublist args (map fst c) /\ ws_ctx c

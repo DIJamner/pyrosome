@@ -6,6 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
+From Named Require Import Substable.
 Import SumboolNotations.
 
 Create HintDb term discriminated.
@@ -24,6 +25,9 @@ Section WithVar.
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
+  
+  Notation Substable0 := (Substable0 V).
+  Notation Substable := (@Substable V).
   
 Unset Elimination Schemes.
 Inductive term : Type :=
@@ -129,8 +133,7 @@ Definition term_subst (s : subst) e : term :=
 
 Arguments term_subst s !e /.
 
-Definition subst_cmp s1 s2 : subst := named_map (term_subst s1) s2.
-Arguments subst_cmp s1 s2 /.
+Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
 
 (* Well-scoped languages
    Written as functions that decide the properties
@@ -149,13 +152,6 @@ Arguments ws_term args !e/.
 Definition ws_args args : list term -> Prop := all (ws_term args).
 Arguments ws_args args !s/.
 
-Fixpoint ws_subst args (s : subst) : Prop :=
-  match s with
-  | [] => True
-  | (n,e)::s' => fresh n s' /\ ws_term args e /\ ws_subst args s'
-  end.
-Arguments ws_subst args !s/.
-
 Definition ws_sort args (t : sort) : Prop :=
   match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
@@ -173,53 +169,26 @@ Proof using .
   induction c; basic_goal_prep; basic_utils_crush.
 Qed.
 
+  
+   Instance substable_term : Substable0 term :=
+    {
+      inj_var := var;
+      apply_subst0 := term_subst;
+      well_scoped0 := ws_term;
+    }.
 
-Definition id_args {A} (c : named_list A) : list term :=
-  map var (map fst c).
-
-Arguments id_args : simpl never.
-
-(*Defined as a notation so that the definition 
-does not get in the way of automation *)
-Notation id_subst c := (with_names_from c (id_args c)).
 
 Lemma id_args_cons A n (a :A) c
   : id_args ((n,a)::c) = (var n)::(id_args c).
 Proof.
   reflexivity.
 Qed.
+  
 Hint Rewrite id_args_cons : term.
-
-Class Substable (A : Type) : Type :=
-  {
-  apply_subst : subst -> A -> A;
-  well_scoped : list V -> A -> Prop;
-  subst_assoc : forall s1 s2 a,
-      well_scoped (map fst s2) a ->
-      apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a;
-  subst_id : forall {A} (c : named_list A) a,
-      (* Not necessary because of our choice of default
-        well_scoped (map fst c) a ->*)
-      apply_subst (id_subst c) a = a;
-  strengthen_subst
-  : forall s a n e,
-      well_scoped (map fst s) a ->
-      fresh n s ->
-      apply_subst ((n,e)::s) a= apply_subst s a;
-  well_scoped_subst args s a
-    : ws_subst args s ->
-      well_scoped (map fst s) a ->
-      well_scoped args (apply_subst s a)
-  }.
-
-Arguments well_scoped {A}%type_scope {Substable} _%list_scope !_.
-Arguments apply_subst {A}%type_scope {Substable} _%list_scope !_.
 Hint Rewrite @subst_assoc : term.
 Hint Rewrite @subst_id : term.
 Hint Rewrite @strengthen_subst : term.
 Hint Resolve well_scoped_subst : term.
-
-Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
 
 Lemma term_subst_nil e : term_subst [] e = e.
 Proof.  
@@ -303,6 +272,7 @@ Proof.
     basic_term_crush.
 Qed.
 
+
 Lemma ws_term_subst_lookup args s n
   : ws_subst args s ->
     In n (map fst s) ->
@@ -327,15 +297,13 @@ Proof.
 Qed.
 Local Hint Resolve term_well_scoped_subst : term.
   
-Instance substable_term : Substable term :=
-  {
-  apply_subst := term_subst;
-  well_scoped := ws_term;
-  subst_assoc := term_subst_assoc;
-  subst_id := term_subst_id;
-  strengthen_subst := term_strengthen_subst;
-  well_scoped_subst := term_well_scoped_subst;
-  }.
+  Instance substable_term_ok : Substable0_ok term :=
+    {
+      subst_assoc0 := term_subst_assoc;
+      subst_id0 := term_subst_id;
+      strengthen_subst0 := term_strengthen_subst;
+      well_scoped_subst0 := term_well_scoped_subst;
+    }.
  
 Lemma subst_subst_assoc : forall s1 s2 a,
     ws_subst (map fst s2) a ->
@@ -376,10 +344,10 @@ Proof.
 Qed.
 Local Hint Resolve subst_well_scoped_subst : term.
 
-Instance substable_subst : Substable subst :=
+Instance substable_subst : Substable term subst :=
   {
-  apply_subst := subst_cmp;
-  well_scoped := ws_subst;
+  apply_subst := subst_cmp (V:=V) (A:=term);
+  well_scoped := @ws_subst _ _ _;
   subst_assoc := subst_subst_assoc;
   subst_id := subst_subst_id;
   strengthen_subst := subst_strengthen_subst;
@@ -425,7 +393,7 @@ Proof.
 Qed.
 Local Hint Resolve args_well_scoped_subst : term.
 
-Instance substable_args : Substable (list term) :=
+Instance substable_args : Substable _ (list term) :=
   {
   apply_subst := args_subst;
   well_scoped := ws_args;
@@ -476,7 +444,7 @@ Proof.
     basic_term_crush.
 Qed.
 
-Instance substable_sort : Substable sort :=
+Instance substable_sort : Substable term sort :=
   {
   subst_assoc := sort_subst_assoc;
   subst_id := sort_subst_id;
@@ -502,7 +470,7 @@ Proof.
     basic_term_crush.
 Qed.
 
-Lemma well_scoped_change_args A `{Substable A} (a:A) args args'
+Lemma well_scoped_change_args A `{Substable term A} (a:A) args args'
   : well_scoped args' a ->
     args = args' ->
     well_scoped args a.
@@ -593,17 +561,10 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite invert_scon : term.
 
 #[export] Existing Instance substable_term.
+#[export] Existing Instance substable_term_ok.                   
 #[export] Existing Instance substable_sort.
 #[export] Existing Instance substable_args.
 #[export] Existing Instance substable_subst.
-
-
-(*Defined as a notation so that the definition 
-does not get in the way of automation *)
-Notation id_subst c := (with_names_from c (id_args c)).
-Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
-Arguments well_scoped [V]%type_scope {V_Eqb} {A}%type_scope {Substable} _%list_scope !_.
-Arguments apply_subst [V]%type_scope {V_Eqb} {A}%type_scope {Substable} _%list_scope !_.
 
 
 Ltac fold_Substable :=
@@ -625,12 +586,12 @@ Arguments subst_lookup [V]%type_scope {V_Eqb} !s n/.
 Arguments ctx_lookup [V]%type_scope {V_Eqb V_default} !c n/.
 Arguments term_var_map [V]%type_scope f !e /.
 Arguments term_subst [V]%type_scope {V_Eqb} s !e /.
-Arguments subst_cmp [V]%type_scope {V_Eqb} s1 s2 /.
+Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
 
 
 Arguments ws_term [V]%type_scope args !e/.
 Arguments ws_args [V]%type_scope args !s/.
-Arguments ws_subst [V]%type_scope args !s/.
+Arguments ws_subst [V]%type_scope {A}%type_scope {Substable0} args !s/.
 Arguments ws_ctx [V]%type_scope !c/.
 Arguments id_args : simpl never.
 Arguments args_subst [V]%type_scope {V_Eqb} s !a/.
