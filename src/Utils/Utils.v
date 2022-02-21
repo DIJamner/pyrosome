@@ -315,7 +315,8 @@ Qed.
 
 Lemma fresh_named_map A B l (f : A -> B) n
   : fresh n (named_map f l) <-> fresh n l.
-Proof.
+Proof using .
+  clear H.
   induction l; basic_goal_prep;
     basic_utils_firstorder_crush.
 Qed.

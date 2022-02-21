@@ -149,9 +149,21 @@ Fixpoint ws_term (args : list V) (e : term) : Prop :=
   end.
 Arguments ws_term args !e/.
 
-Definition ws_args args : list term -> Prop := all (ws_term args).
-Arguments ws_args args !s/.
+  Local Hint Resolve args_well_scoped_subst : term.
 
+  Instance substable_term : Substable0 term :=
+    {
+      inj_var := var;
+      apply_subst0 := term_subst;
+      well_scoped0 := ws_term;
+    }.
+
+  Notation ws_args := (ws_args (V:=V) (A:=term)).
+
+  (*TODO: I have a false dependency on Eqb V here
+    due to the structure of Substable0.
+    Could eliminate it by parameterizing apply_subst0 by Eqb V.
+*)
 Definition ws_sort args (t : sort) : Prop :=
   match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
@@ -169,13 +181,6 @@ Proof using .
   induction c; basic_goal_prep; basic_utils_crush.
 Qed.
 
-  
-   Instance substable_term : Substable0 term :=
-    {
-      inj_var := var;
-      apply_subst0 := term_subst;
-      well_scoped0 := ws_term;
-    }.
 
 
 Lemma id_args_cons A n (a :A) c
@@ -314,54 +319,7 @@ Local Hint Resolve term_well_scoped_subst : term.
       well_scoped_subst0 := term_well_scoped_subst;
     }.
  
-Lemma subst_subst_assoc : forall s1 s2 a,
-    ws_subst (map fst s2) a ->
-    subst_cmp s1 (subst_cmp s2 a)
-    = subst_cmp (subst_cmp s1 s2) a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma subst_subst_id
-  : forall A (c : named_list A) a,
-    subst_cmp (id_subst c) a = a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma subst_strengthen_subst s a n e
-  : ws_subst (map fst s) a ->
-    fresh n s ->
-    subst_cmp ((n,e)::s) a = subst_cmp s a.
-Proof using V V_Eqb V_default.
-  induction a; basic_goal_prep; f_equal;
-    try (solve [basic_term_crush]).
-  f_equal.
-  apply term_strengthen_subst; auto.
-  basic_term_crush.
-Qed.
-
-Lemma subst_well_scoped_subst args s a
-    : ws_subst args s ->
-      ws_subst (map fst s) a ->
-      ws_subst args (subst_cmp s a).
-Proof.
-  induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
-Qed.
 Local Hint Resolve subst_well_scoped_subst : term.
-
-Instance substable_subst : Substable term subst :=
-  {
-  apply_subst := subst_cmp (V:=V) (A:=term);
-  well_scoped := @ws_subst _ _ _;
-  subst_assoc := subst_subst_assoc;
-  subst_id := subst_subst_id;
-  strengthen_subst := subst_strengthen_subst;
-  well_scoped_subst := subst_well_scoped_subst;
-  }.
 
 Definition args_subst s (a : list term) := map (apply_subst s) a.
 Arguments args_subst s !a/.
@@ -600,9 +558,7 @@ Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
 
 
 Arguments ws_term [V]%type_scope args !e/.
-Arguments ws_args [V]%type_scope args !s/.
-Arguments ws_subst [V]%type_scope {A}%type_scope {Substable0} args !s/.
-Arguments ws_ctx [V]%type_scope !c/.
+Arguments ws_ctx [V]%type_scope {V_Eqb} !c/.
 Arguments id_args : simpl never.
 Arguments args_subst [V]%type_scope {V_Eqb} s !a/.
 Arguments sort_subst [V]%type_scope {V_Eqb} s !t/.
