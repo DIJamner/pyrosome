@@ -183,7 +183,16 @@ Lemma id_args_cons A n (a :A) c
 Proof.
   reflexivity.
 Qed.
+
   
+  (*TODO: move to Substable.v*)
+  Lemma id_args_nil {A} `{Substable0 A} B'
+    : @id_args V A _ B' [] = [].
+  Proof.
+    reflexivity.
+  Qed.
+  
+Hint Rewrite id_args_nil : term.  
 Hint Rewrite id_args_cons : term.
 Hint Rewrite @subst_assoc : term.
 Hint Rewrite @subst_id : term.
@@ -544,6 +553,7 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite @subst_id : term.
 #[export] Hint Rewrite @strengthen_subst : term.
 #[export] Hint Resolve well_scoped_subst : term.
+#[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
 #[export] Hint Rewrite invert_eq_con_var : term.
 #[export] Hint Rewrite invert_eq_var_con : term.

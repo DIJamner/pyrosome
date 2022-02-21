@@ -23,6 +23,18 @@ Notation sort := (@sort V).
 Notation subst := (@subst V).
 Notation rule := (@rule V).
 Notation lang := (@lang V).
+  
+  
+  Notation eq_subst l :=
+    (eq_subst (Model:= core_model l)).
+  Notation eq_args l :=
+    (eq_args (Model:= core_model l)).
+  Notation wf_subst l :=
+    (wf_subst (Model:= core_model l)).
+  Notation wf_args l :=
+    (wf_args (Model:= core_model l)).
+  Notation wf_ctx l :=
+    (wf_ctx (Model:= core_model l)).
 
 Section TermsAndRules.
   Context (l : lang).
