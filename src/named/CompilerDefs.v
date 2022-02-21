@@ -22,11 +22,33 @@ Section WithVar.
   Notation subst := (@subst V).
   Notation rule := (@rule V).
   Notation lang := (@lang V).
+  
+  Notation eq_subst l :=
+    (eq_subst (Model:= core_model l)).
+  Notation eq_args l :=
+    (eq_args (Model:= core_model l)).
+  Notation wf_subst l :=
+    (wf_subst (Model:= core_model l)).
+  Notation wf_args l :=
+    (wf_args (Model:= core_model l)).
+  Notation wf_ctx l :=
+    (wf_ctx (Model:= core_model l)).
+
+  (* Compilers can target an arbitrary model.
+     They do not have to target syntax.
+   *)
+
+  Section WithModel.
+    Context {tgt_term tgt_sort : Type}
+            {tgt_Model : @Model V tgt_term tgt_sort}
+            (*TODO: should I make it so that these aren't necessary?*)
+            `{WithDefault tgt_term}
+            `{WithDefault tgt_sort}.
 
 (* each element is the image for that constructor or axiom*)
 Variant compiler_case :=
- | term_case (args : list V) (e:term)
- | sort_case (args : list V) (t:sort).
+ | term_case (args : list V) (e:tgt_term)
+ | sort_case (args : list V) (t:tgt_sort).
 Definition compiler := named_list compiler_case.
 
 Lemma invert_eq_term_case_term_case args args' e e'
@@ -50,8 +72,7 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_sort_case_sort_case : lang_core.
 
 Section CompileFn.
-  Context (tgt : lang)
-          (cmp : compiler)
+  Context (cmp : compiler)
           (src : lang).
 
   (*TODO: move to Term.v*)
@@ -60,19 +81,19 @@ Section CompileFn.
   
   (* does not use src or tgt, only cmp *)
   (*TODO: notations do a poor job of spacing this*)
-  Fixpoint compile (e : term) : term :=
+  Fixpoint compile (e : term) : tgt_term :=
     match e with
-    | var x => var x
+    | var x => inj_var x
     | con n s =>
       let arg_terms := map compile s in
       match named_list_lookup_err cmp n with
       | Some (term_case args e) => e[/combine args arg_terms/]
-      | _ => default : term
+      | _ => default
       end
     end.
   
-  (* does not use src or tgt, only cmp *)
-  Definition compile_sort (t : sort) : sort :=
+  (* does not use src, only cmp *)
+  Definition compile_sort (t : sort) : tgt_sort :=
     match t with
     | scon n s =>
       let arg_terms := map compile s in
@@ -95,42 +116,42 @@ Section CompileFn.
     forall c t,
       wf_sort src c t ->
       wf_ctx src c ->
-      wf_sort tgt (compile_ctx c) (compile_sort t).
+      Model.wf_sort (compile_ctx c) (compile_sort t).
 
   Definition term_wf_preserving_sem :=
     forall c e t,
       wf_term src c e t ->
       wf_ctx src c ->
-      wf_term tgt (compile_ctx c) (compile e) (compile_sort t).
+      Model.wf_term (compile_ctx c) (compile e) (compile_sort t).
 
   Definition sort_eq_preserving_sem :=
     forall c t1 t2,
       eq_sort src c t1 t2 ->
       wf_ctx src c ->
-      eq_sort tgt (compile_ctx c) (compile_sort t1) (compile_sort t2).
+      Model.eq_sort (compile_ctx c) (compile_sort t1) (compile_sort t2).
   
   Definition term_eq_preserving_sem :=
     forall c t e1 e2,
       eq_term src c t e1 e2 ->
       wf_ctx src c ->
-      eq_term tgt (compile_ctx c) (compile_sort t) (compile e1) (compile e2).
+      Model.eq_term (compile_ctx c) (compile_sort t) (compile e1) (compile e2).
 
   Definition args_wf_preserving_sem :=
     forall c s c',
       wf_args src c s c' ->
       wf_ctx src c ->
       wf_ctx src c' ->
-      wf_args tgt (compile_ctx c) (compile_args s) (compile_ctx c').
+      Model.wf_args (compile_ctx c) (compile_args s) (compile_ctx c').
 
   Definition subst_eq_preserving_sem :=
     forall c c' s1 s2,
       eq_subst src c c' s1 s2 ->
       wf_ctx src c ->
       wf_ctx src c' ->
-      eq_subst tgt (compile_ctx c) (compile_ctx c') (compile_subst s1) (compile_subst s2).
+      Model.eq_subst (compile_ctx c) (compile_ctx c') (compile_subst s1) (compile_subst s2).
    
   Definition ctx_wf_preserving_sem :=
-    forall c, wf_ctx src c -> wf_ctx tgt (compile_ctx c).
+    forall c, wf_ctx src c -> Model.wf_ctx (compile_ctx c).
 
   (*Set up to match the combined scheme for the judgment inductives *)
   Definition semantics_preserving :=
@@ -149,40 +170,40 @@ Section Extension.
   Context (cmp_pre : compiler).
   (*TODO: this is an equal or stronger property (which?); includes le principles;
   formalize the relationship to those above and le semantic statements *)
-  Inductive preserving_compiler_ext (target : lang) : compiler -> lang -> Prop :=
-  | preserving_compiler_nil : preserving_compiler_ext target [] []
+  Inductive preserving_compiler_ext : compiler -> lang -> Prop :=
+  | preserving_compiler_nil : preserving_compiler_ext [] []
   | preserving_compiler_sort : forall cmp l n c args t,
-      preserving_compiler_ext target cmp l ->
+      preserving_compiler_ext cmp l ->
       (* Notable: only uses the previous parts of the compiler on c *)
-      wf_sort target (compile_ctx (cmp ++ cmp_pre) c) t ->
-      preserving_compiler_ext target
-                              ((n,sort_case (map fst c) t)::cmp)
+      Model.wf_sort (compile_ctx (cmp ++ cmp_pre) c) t ->
+      preserving_compiler_ext ((n,sort_case (map fst c) t)::cmp)
                               ((n,sort_rule c args) :: l)
   | preserving_compiler_term : forall cmp l n c args e t,
-      preserving_compiler_ext target cmp l ->
+      preserving_compiler_ext cmp l ->
       (* Notable: only uses the previous parts of the compiler on c, t *)
-      wf_term target (compile_ctx (cmp ++ cmp_pre) c) e (compile_sort (cmp ++ cmp_pre) t) ->
-      preserving_compiler_ext target
-                              ((n, term_case (map fst c) e)::cmp)
+      Model.wf_term (compile_ctx (cmp ++ cmp_pre) c) e (compile_sort (cmp ++ cmp_pre) t) ->
+      preserving_compiler_ext ((n, term_case (map fst c) e)::cmp)
                               ((n,term_rule c args t) :: l)
   | preserving_compiler_sort_eq : forall cmp l n c t1 t2,
-      preserving_compiler_ext target cmp l ->
+      preserving_compiler_ext cmp l ->
       (* Notable: only uses the previous parts of the compiler on c *)
-      eq_sort target (compile_ctx (cmp ++ cmp_pre) c)
+      Model.eq_sort (compile_ctx (cmp ++ cmp_pre) c)
               (compile_sort (cmp ++ cmp_pre) t1)
               (compile_sort (cmp ++ cmp_pre) t2) ->
-      preserving_compiler_ext target cmp ((n,sort_eq_rule c t1 t2) :: l)
+      preserving_compiler_ext cmp ((n,sort_eq_rule c t1 t2) :: l)
   | preserving_compiler_term_eq : forall cmp l n c e1 e2 t,
-      preserving_compiler_ext target cmp l ->
+      preserving_compiler_ext cmp l ->
       (* Notable: only uses the previous parts of the compiler on c *)
-      eq_term target (compile_ctx (cmp ++ cmp_pre) c)
+      Model.eq_term (compile_ctx (cmp ++ cmp_pre) c)
               (compile_sort (cmp ++ cmp_pre) t)
               (compile (cmp ++ cmp_pre) e1)
               (compile (cmp ++ cmp_pre) e2) ->
-      preserving_compiler_ext target cmp ((n,term_eq_rule c e1 e2 t) :: l).
+      preserving_compiler_ext cmp ((n,term_eq_rule c e1 e2 t) :: l).
 
 End Extension.
 
+End WithModel.
+    
 End WithVar.
 #[export] Hint Rewrite invert_eq_term_case_term_case : lang_core.
 #[export] Hint Rewrite invert_eq_term_case_sort_case : lang_core.
@@ -191,6 +212,9 @@ End WithVar.
 #[export] Hint Constructors preserving_compiler_ext : lang_core.
 
 (*TODO: add preserving_compiler notation once other files are updated *)
+(*TODO: shouth the RHS be in the constr entry?
+  Probably not now that compilers are more general.
+*)
 
 Declare Custom Entry comp_case.
 
