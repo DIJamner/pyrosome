@@ -29,7 +29,6 @@ Section WithVar.
         ctx := named_list sort;
         subst := named_list term;
         term_substable :> Substable0 term;
-        term_substable_ok :> Substable0_ok term;
         sort_substable :> Substable term sort;
         eq_sort : ctx -> sort -> sort -> Prop;
         eq_term : ctx -> sort -> term -> term -> Prop;
@@ -86,6 +85,8 @@ Section WithVar.
       (* TODO: put this class in a separate module for better imports? *)
       Class Model_ok :=
         {
+          term_substable_ok :> Substable0_ok term;
+          sort_substable_ok :> Substable_ok term sort;
           eq_sort_subst : forall c s1 s2 c' t1' t2',
             (* Need to assert wf_ctx c here to satisfy
                assumptions' presuppositions

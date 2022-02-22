@@ -37,7 +37,6 @@ Hint Resolve wf_ctx_all_fresh : lang_core.
 Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
     {|
       term_substable := _;
-      term_substable_ok := _;
       sort_substable := _;
       eq_sort := eq_sort;
       (*TODO: rename the conflict*)
@@ -748,10 +747,20 @@ Proof using.
             replace (map fst s) with (map fst c'); try symmetry;
               basic_core_crush
         end.
-  { apply H3; eauto with model. }
-  { apply H3; eauto with model. }
-  { apply H3; eauto with model. }
-  { apply H3; eauto with model. }
+  all: specialize (H3 ltac:(basic_core_crush)).
+  all: break.
+  { eapply well_scoped_subst; try typeclasses eauto.
+    eauto with model.
+    basic_core_crush. }
+  { eapply well_scoped_subst; try typeclasses eauto.
+    eauto with model.
+    basic_core_crush. }
+  { eapply well_scoped_subst; try typeclasses eauto.
+    eauto with model.
+    basic_core_crush. }
+  { eapply well_scoped_subst; try typeclasses eauto.
+    eauto with model.
+    basic_core_crush. }
 Qed.
 
 Lemma eq_sort_implies_ws_l l c t1 t2
@@ -1025,12 +1034,20 @@ Proof.
     basic_core_firstorder_crush;
     basic_core_firstorder_crush.
   {
-    case_match; basic_goal_prep; basic_core_crush.
+    (* TODO: Substable/Substable_ok split less frientdly to rewriting, needs erewrite *)
+    erewrite strengthen_subst;
+    try typeclasses eauto;
+      eauto;
+      basic_core_crush.
   }
   {
-    (*TODO: why isn't this automatic?*)
-    eapply well_scoped_change_args; [basic_core_crush|].
-    eapply wf_subst_dom_eq; basic_core_crush.
+    case_match; basic_goal_prep; basic_core_crush.
+    change ((named_list_lookup (var n) s n)) with (subst_lookup s n).
+    
+    erewrite strengthen_subst;
+      try typeclasses eauto;
+      eauto;
+      basic_core_crush.
   }
 Qed.
 Hint Resolve wf_term_lookup : lang_core.  
@@ -1099,11 +1116,14 @@ Proof.
         basic_core_crush.
       (*TODO: why isn't this automatic? Make symmetric version?*)
       erewrite eq_subst_dom_eq_r; basic_core_crush.
+      (*TODO: why isn't this automatic? Make symmetric version?*)
+      erewrite eq_subst_dom_eq_r; basic_core_crush.
     }
   }
   {
     fold_Substable.
-    rewrite <- with_names_from_args_subst.
+    erewrite subst_assoc; try typeclasses eauto; [| basic_core_crush]; fold_Substable.
+    erewrite <- with_names_from_args_subst.
     econstructor; simpl; fold_Substable; basic_core_crush.
   }
   {
@@ -1116,6 +1136,7 @@ Proof.
       erewrite <- subst_assoc.
       (*TODO remove associativity hint?*)
       eauto with utils lang_core.
+      basic_core_crush.
       basic_core_crush.
     }
   }

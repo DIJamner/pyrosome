@@ -321,54 +321,6 @@ Local Hint Resolve term_well_scoped_subst : term.
  
 Local Hint Resolve subst_well_scoped_subst : term.
 
-Definition args_subst s (a : list term) := map (apply_subst s) a.
-Arguments args_subst s !a/.
-
-Lemma args_subst_assoc : forall s1 s2 a,
-    ws_args (map fst s2) a ->
-    args_subst s1 (args_subst s2 a)
-    = args_subst (subst_cmp s1 s2) a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma args_subst_id
-  : forall A (c : named_list A) a,
-    args_subst (id_subst c) a = a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma args_strengthen_subst s a n e
-  : ws_args (map fst s) a ->
-    fresh n s ->
-    args_subst ((n,e)::s) a = args_subst s a.
-Proof.
-  induction a; basic_goal_prep; f_equal;
-    basic_term_crush.
-Qed.
-
-Lemma args_well_scoped_subst args s a
-    : ws_subst args s ->
-      ws_args (map fst s) a ->
-      ws_args args (args_subst s a).
-Proof.
-  induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
-Qed.
-Local Hint Resolve args_well_scoped_subst : term.
-
-Instance substable_args : Substable _ (list term) :=
-  {
-  apply_subst := args_subst;
-  well_scoped := ws_args;
-  subst_assoc := args_subst_assoc;
-  subst_id := args_subst_id;
-  strengthen_subst := args_strengthen_subst;
-  well_scoped_subst := args_well_scoped_subst;
-  }.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
   let (c, s') := t in scon c s'[/s/].
@@ -381,6 +333,9 @@ Lemma sort_subst_assoc : forall s1 s2 a,
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  erewrite subst_assoc; eauto.
+  typeclasses eauto.
 Qed.
 
 
@@ -400,6 +355,9 @@ Lemma sort_strengthen_subst s a n e
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  erewrite strengthen_subst; eauto.
+  typeclasses eauto.
 Qed.
 
 Lemma sort_well_scoped_subst args s a
@@ -409,15 +367,25 @@ Lemma sort_well_scoped_subst args s a
 Proof.
   destruct a; basic_goal_prep; try case_match;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  change (ws_args ?c ?a) with (well_scoped c a) in *.
+  eapply well_scoped_subst; eauto.
+  typeclasses eauto.
 Qed.
 
-Instance substable_sort : Substable term sort :=
-  {
-  subst_assoc := sort_subst_assoc;
-  subst_id := sort_subst_id;
-  strengthen_subst := sort_strengthen_subst;
-  well_scoped_subst := sort_well_scoped_subst;
-  }.
+  #[export] Instance substable_sort : Substable term sort :=
+    {
+      apply_subst := sort_subst;
+      well_scoped := ws_sort;
+    }.
+  
+  #[export] Instance substable_sort_ok : Substable_ok term sort :=
+    {
+      subst_assoc := sort_subst_assoc;
+      subst_id := sort_subst_id;
+      strengthen_subst := sort_strengthen_subst;
+      well_scoped_subst := sort_well_scoped_subst;
+    }.
 
 Fixpoint eq_term e1 e2 {struct e1} : bool :=
   match e1, e2 with
@@ -560,7 +528,6 @@ Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
 Arguments ws_term [V]%type_scope args !e/.
 Arguments ws_ctx [V]%type_scope {V_Eqb} !c/.
 Arguments id_args : simpl never.
-Arguments args_subst [V]%type_scope {V_Eqb} s !a/.
 Arguments sort_subst [V]%type_scope {V_Eqb} s !t/.
 
 (*Moved out of the module because Coq seems

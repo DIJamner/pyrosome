@@ -80,6 +80,10 @@ Section WithVar.
       {
         apply_subst : subst -> B -> B;
         well_scoped : list V -> B -> Prop;
+      }.
+    
+    Class Substable_ok (B : Type) {Substable : Substable B} : Type :=
+      {
         subst_assoc : forall s1 s2 a,
           well_scoped (map fst s2) a ->
           apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a;
@@ -97,16 +101,24 @@ Section WithVar.
           well_scoped (map fst s) a ->
           well_scoped args (apply_subst s a)
       }.
+    Arguments Substable_ok B%type_scope {Substable}.
     
     Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
-    
-    Context {Substable0_ok : Substable0_ok}.
+
     
     #[export] Instance substable0_is_substable
       : Substable A :=
       {
         apply_subst := apply_subst0;
         well_scoped := well_scoped0;
+      }.
+    
+    
+    Context {Substable0_ok : Substable0_ok}.
+    
+    #[export] Instance substable0_is_substable_ok
+      : Substable_ok A :=
+      {
         subst_assoc :=  subst_assoc0;
         subst_id := @subst_id0 _;
         strengthen_subst := strengthen_subst0;
@@ -160,6 +172,9 @@ Section WithVar.
       {
         apply_subst := args_subst;
         well_scoped := ws_args;
+      }.
+    #[export] Instance substable_args_ok : Substable_ok (list A) :=
+      {
         subst_assoc := args_subst_assoc;
         subst_id := args_subst_id;
         strengthen_subst := args_strengthen_subst;
@@ -208,6 +223,10 @@ Section WithVar.
       {
         apply_subst := subst_cmp;
         well_scoped := ws_subst;
+      }.
+    
+   #[export] Instance substable_subst_ok : Substable_ok (named_list A) :=
+      {
         subst_assoc := subst_subst_assoc;
         subst_id := subst_subst_id;
         strengthen_subst := subst_strengthen_subst;
@@ -243,10 +262,11 @@ Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
 Arguments ws_subst [V]%type_scope {A}%type_scope {Substable0} args !s/.
 
 Arguments Substable0_ok [V]%type_scope _%type_scope {_}.
-Arguments Substable {V}%type_scope _%type_scope {_} _%type_scope.
+Arguments Substable [V]%type_scope A%type_scope _%type_scope.
+Arguments Substable_ok [V]%type_scope A%type_scope {Substable0} B%type_scope {Substable}.
 
-Arguments well_scoped [V]%type_scope {A}%type_scope {_} {B}%type_scope {_} _%list_scope !_.
-Arguments apply_subst [V]%type_scope {A}%type_scope {_} {B}%type_scope {_} _%list_scope !_.
+Arguments well_scoped [V]%type_scope {A B}%type_scope {_} _%list_scope !_.
+Arguments apply_subst [V]%type_scope {A B}%type_scope {_} _%list_scope !_.
 
 Arguments args_subst [V]%type_scope {A}%type_scope {Substable0} s !a%list_scope/.
 Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
