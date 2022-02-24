@@ -53,12 +53,12 @@ Definition sum_def : lang :=
       "A" : #"ty",
       "B" : #"ty",
       "C" : #"ty",
-      "case_l" : #"exp" (#"SOMETHING" "G" (#"SOMETHING" "a" "A")) "C",
-      "case_r" : #"exp" (#"SOMETHING" "G" (#"SOMETHING" "b" "B")) "C",
-      "e" : #"exp" "G" (#"sum" "A" "B")
+      "e" : #"exp" "G" (#"sum" "A" "B"),
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
       -----------------------------------------------
-      #"case" "e" "a" "case_l" "b" "case_r" : #"exp" "G" "C"
-  ];     
+      #"case" "e" "case_l" "case_r" : #"exp" "G" "C"
+  ];
      (*TODO: autogenerate somehow *)
      [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
       "v" : #"val" "G" "A"
@@ -73,39 +73,37 @@ Definition sum_def : lang :=
       #"inr" (#"ret" "v")
       = #"ret" (#"inr_val" "v" )
       : #"exp" "G" (#"sum" "A" "B")
-     ]; 
-  [:="G" : #"env",
+     ];
+  [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 1")
-      #".1" (#"ret" (#"pair_val" "v1" "v2"))
-      = #"ret" "v1"
-      : #"exp" "G" "A"
+      "C" : #"ty",
+      "v" : #"val" "G" "A",
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
+      ----------------------------------------------- ("case_l ret")
+      #"case" (#"ret" (#"inl_val" "v")) "case_l" "case_r"
+      = #"exp_subst" (#"snoc" #"id" "v") "case_l"
+      : #"exp" "G" "C"
   ];
   [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 2")
-      #".2" (#"ret" (#"pair_val" "v1" "v2"))
-      = #"ret" "v2"
-      : #"exp" "G" "B"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G" (#"prod" "A" "B")
-      ----------------------------------------------- ("prod_eta")
-      #"ret" "v"
-      = #"pair" (#".1" (#"ret" "v")) (#".2" (#"ret" "v"))
-      : #"exp" "G" (#"prod" "A" "B")
-     ]
+      "C" : #"ty",
+      "v" : #"val" "G" "B",
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
+      ----------------------------------------------- ("case_r ret")
+      #"case" (#"ret" (#"inr_val" "v")) "case_l" "case_r"
+      = #"exp_subst" (#"snoc" #"id" "v") "case_r"
+      : #"exp" "G" "C"
+  ]
     ]}.
 
 
 Derive sum
-       SuchThat (elab_lang_ext (exp_subst++value_subst) sum_def sum)
+       
+SuchThat (elab_lang_ext (exp_subst++value_subst) sum_def sum)
        As sum_wf.
 Proof.
 
@@ -130,7 +128,10 @@ Proof.
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
+  - break_elab_rule.
+    + apply eq_term_refl.
+      
+    solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
   - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
