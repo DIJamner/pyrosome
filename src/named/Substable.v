@@ -58,6 +58,7 @@ Section WithVar.
 
     Class Substable0_ok : Type :=
       {
+        subst_var `{Eqb V} : forall s x, apply_subst0 s (inj_var x) = subst_lookup s x;
         subst_assoc0 : forall s1 s2 a,
           well_scoped0 (map fst s2) a ->
           apply_subst0 s1 (apply_subst0 s2 a) = apply_subst0 (subst_cmp s1 s2) a;

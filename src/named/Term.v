@@ -19,9 +19,7 @@ Ltac basic_term_firstorder_crush :=
                   generic_firstorder_crush x y.
 
 Section WithVar.
-  Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+  Context (V : Type).
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -38,8 +36,6 @@ Inductive term : Type :=
 Set Elimination Schemes.
 
 Coercion var : V >-> term.
-
-Instance term_default : WithDefault term := con default [].
 
 (*Stronger induction principle w/ better subterm knowledge
  *)
@@ -88,8 +84,6 @@ Definition term_rec :=
 
 Variant sort : Type := scon : V -> list term -> sort.
 
-Instance sort_default : WithDefault sort := scon default [].
-
 Lemma invert_eq_var_var x y
   : var x = var y <-> x = y.
 Proof. solve_invert_constr_eq_lemma. Qed.
@@ -109,15 +103,13 @@ Definition ctx : Type := named_list sort.
 
 Definition subst : Type := named_list term.
 
-Definition subst_lookup (s : subst) (n : V) : term :=
+Definition subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
   named_list_lookup (var n) s n.
 
-Arguments subst_lookup !s n/.
+Arguments subst_lookup {_} !s n/.
 
-Definition ctx_lookup (c: ctx) (n : V) : sort :=
-  named_list_lookup default c n.
-
-Arguments ctx_lookup !c n/.
+Section WithEqb.  
+  Context {V_Eqb : Eqb V}.
 
 
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
@@ -168,6 +160,12 @@ Definition ws_sort args (t : sort) : Prop :=
   match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
 
+(* TODO: currently duplicated in Model.v
+   What's the best way to organize the code to avoid?
+   Maybe the following:
+   Rule -> |- RuleDefs , CoreDefs |- Rule
+   Core -> RuleDefs |- CoreDefs, RuleDefs,Rule, CoreDefs|- Core
+ *)
 Fixpoint ws_ctx (c : ctx) : Prop :=
   match c with
   | [] => True
@@ -180,8 +178,6 @@ Lemma ws_all_fresh_ctx c
 Proof using .
   induction c; basic_goal_prep; basic_utils_crush.
 Qed.
-
-
 
 Lemma id_args_cons A n (a :A) c
   : id_args ((n,a)::c) = (var n)::(id_args c).
@@ -309,10 +305,16 @@ Proof.
   induction l; basic_goal_prep;
     basic_term_crush.
 Qed.
-Local Hint Resolve term_well_scoped_subst : term.
+  Local Hint Resolve term_well_scoped_subst : term.
+
+  (*TODO: Prove*)
+  Lemma subst_var `{EqbV: Eqb V}
+    : forall s x, apply_subst0 s (inj_var x) = subst_lookup (V_Eqb:=EqbV) s x.
+  Admitted.
   
   Instance substable_term_ok : Substable0_ok term :=
     {
+      subst_var := @subst_var;
       subst_assoc0 := term_subst_assoc;
       subst_id0 := term_subst_id;
       strengthen_subst0 := term_strengthen_subst;
@@ -470,6 +472,23 @@ Defined.
 
 Definition ctx_eq_dec := list_eq_dec (pair_eq_dec Eqb_dec sort_eq_dec).
 
+  Section WithDefault.
+    
+    Context {V_default : WithDefault V}.
+    
+    Instance term_default : WithDefault term := con default [].
+    Instance sort_default : WithDefault sort := scon default [].
+
+
+    Definition ctx_lookup (c: ctx) (n : V) : sort :=
+      named_list_lookup default c n.
+
+    Arguments ctx_lookup !c n/.
+
+  End WithDefault.
+    
+  End WithEqb.
+  
 End WithVar.
 
 Arguments var {V}%type_scope _.

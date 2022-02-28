@@ -78,6 +78,21 @@ Section CompileFn.
   (*TODO: move to Term.v*)
   Existing Instance term_default.
   Existing Instance sort_default.
+
+  (*TODO: is this the right choice? 
+    It's the same as combine for wf terms,
+    but it makes some theorems easier
+    at the expense of requiring a default instance for V
+   *)
+  Fixpoint combine_r_padded {A B : Type} `{WithDefault B}
+           (l : list A) (l' : list B) {struct l} : list (A * B) :=
+  match l, l' with
+  | [],_ => []
+  | x :: tl, [] => (x, default) :: combine_r_padded tl []
+  | x :: tl, y :: tl' => (x, y) :: combine_r_padded tl tl'
+  end.
+
+Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
   
   (* does not use src or tgt, only cmp *)
   (*TODO: notations do a poor job of spacing this*)
@@ -87,7 +102,7 @@ Section CompileFn.
     | con n s =>
       let arg_terms := map compile s in
       match named_list_lookup_err cmp n with
-      | Some (term_case args e) => e[/combine args arg_terms/]
+      | Some (term_case args e) => e[/combine_r_padded args arg_terms/]
       | _ => default
       end
     end.
@@ -98,7 +113,7 @@ Section CompileFn.
     | scon n s =>
       let arg_terms := map compile s in
       match named_list_lookup_err cmp n with
-      | Some (sort_case args t) => t[/combine args arg_terms/]
+      | Some (sort_case args t) => t[/combine_r_padded args arg_terms/]
       | _ => default
       end
     end.  

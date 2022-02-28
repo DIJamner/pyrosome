@@ -38,6 +38,19 @@ Section WithVar.
 
     Section WithModel.
       Context {Model : Model}.
+
+      Fixpoint ws_ctx (c : ctx) : Prop :=
+        match c with
+        | [] => True
+        | (n,t) :: c' => fresh n c' /\ well_scoped (map fst c') t /\ ws_ctx c'
+        end.
+      Arguments ws_ctx !c/.
+
+      Lemma ws_all_fresh_ctx c
+        : ws_ctx c -> all_fresh c.
+      Proof using .
+        induction c; basic_goal_prep; basic_utils_crush.
+      Qed.
       
       Inductive eq_subst
         : ctx -> ctx -> subst -> subst -> Prop :=
@@ -87,6 +100,8 @@ Section WithVar.
         {
           term_substable_ok :> Substable0_ok term;
           sort_substable_ok :> Substable_ok term sort;
+
+          (* Syntactic constructors *)
           eq_sort_subst : forall c s1 s2 c' t1' t2',
             (* Need to assert wf_ctx c here to satisfy
                assumptions' presuppositions
@@ -138,6 +153,23 @@ Section WithVar.
           wf_term_var : forall c n t,
             In (n, t) c ->
             wf_term c (inj_var n) t;
+
+          (* Syntactic Lemmas *)
+          wf_sort_subst_monotonicity
+          : forall (c : ctx) (t : sort),
+              wf_sort c t ->
+              wf_ctx c ->
+              forall (c'' : ctx) (s : subst), wf_subst c'' s c -> wf_sort c'' t [/s /];
+          wf_term_subst_monotonicity
+          : forall (c : ctx) (e : term) (t : sort),
+            wf_term c e t ->
+            wf_ctx c ->
+            forall (c'' : ctx) (s : subst),
+              wf_subst c'' s c -> wf_term c'' e [/s /] t [/s /];
+          wf_sort_implies_ws
+          : forall c t, wf_sort c t -> well_scoped (map fst c) t;
+          wf_term_implies_ws
+          : forall c e t, wf_term c e t -> well_scoped (map fst c) e;
         }.
 
     End WithModel.
@@ -148,6 +180,8 @@ End WithVar.
 
 Arguments Model (V term sort)%type_scope.
 Arguments Model_ok {V term sort}%type_scope Model : rename.
+
+Arguments ws_ctx {V term sort}%type_scope {Model} !c/.
 
 (*TODO: separate hints from core? *)
 Create HintDb model discriminated.
