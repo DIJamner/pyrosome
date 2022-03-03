@@ -114,27 +114,7 @@ Proof.
      to see what's wrong.
      Make sure to check variable and constructor names, it's easy to typo them.
    *)
-  setup_elab_lang.
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - break_elab_rule.
-    + apply eq_term_refl.
-      
-    solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
+  auto_elab.
 Qed.
 #[export] Hint Resolve sum_wf : elab_pfs.
 
