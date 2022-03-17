@@ -15,6 +15,7 @@ src/Utils/PersistentArrayList.v
 src/Utils/UnionFind.v
 src/Utils/ExtraMaps.v
 src/Utils/RelationalDB.v
+src/Utils/GoalDisplay.v
 
 -Q src/named Named
 src/named/Substable.v
@@ -23,20 +24,18 @@ src/named/Term.v
 src/named/Rule.v
 src/named/Linter.v
 src/named/Core.v
+src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleVProd.v
-src/named/SimpleVSum.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
 src/named/CompilerDefs.v
-src/named/MultiCompilerDefs.v
 src/named/AllConstructors.v
 src/named/Compilers.v
-src/named/MultiCompilers.v
 src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
 src/named/Renaming.v

@@ -520,6 +520,9 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Existing Instance substable_sort.
 #[export] Existing Instance substable_args.
 #[export] Existing Instance substable_subst.
+  
+#[export] Existing Instance term_default.
+#[export] Existing Instance sort_default.
 
 
 Ltac fold_Substable :=

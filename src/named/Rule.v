@@ -188,6 +188,62 @@ Proof.
   destruct (incl_dec _ l1 l2); easy.
 Qed.
 
+  
+    (*TODO: move to Utils?*)
+    (* Note: does not error out on bad inputs *)
+    Fixpoint select_sublist {A} (s : @Utils.named_list V A) (filter : list V) :=
+      match s, filter with
+      | [], _ | _, [] => []
+      | (n,a)::s', n'::filter' =>
+          if eqb n n' then a::(select_sublist s' filter')
+          else (select_sublist s' filter)
+      end.
+
+  (* Converts an elaborated term/sort/etc to an unelaborated one.
+     Used for more readable goals. *)
+  Section HideImplicits.
+    Context (l : lang).
+    
+    Fixpoint hide_term_implicits (e : Term.term V) :=
+      match e with
+      | var x => var x
+      | con n s =>
+          match named_list_lookup_err l n with
+          | Some (term_rule c args _) =>
+              con n (select_sublist (combine (map fst c) (map hide_term_implicits s)) args)
+          | _ => default
+          end
+      end.
+
+    Definition hide_sort_implicits t :=
+      match t with
+      | scon n s =>
+          match named_list_lookup_err l n with
+          | Some (sort_rule c args) =>
+              scon n (select_sublist (combine (map fst c) (map hide_term_implicits s)) args)
+          | _ => default
+          end
+      end.
+
+    Definition hide_ctx_implicits : ctx -> ctx := named_map hide_sort_implicits.
+
+    Definition hide_rule_implicits r :=
+      match r with
+      | sort_rule c args => sort_rule (hide_ctx_implicits c) args
+      | term_rule c args t => term_rule (hide_ctx_implicits c) args (hide_sort_implicits t)
+      | sort_eq_rule c t t'=>
+          sort_eq_rule (hide_ctx_implicits c) (hide_sort_implicits t) (hide_sort_implicits t')
+      | term_eq_rule c e e' t =>
+          term_eq_rule (hide_ctx_implicits c)
+                       (hide_term_implicits e)
+                       (hide_term_implicits e')
+                       (hide_sort_implicits t)
+      end.
+
+    (* TODO: doesn't work properly (input needs to be in base *)
+    Definition hide_lang_implicits : lang -> lang := named_map hide_rule_implicits.
+
+  End HideImplicits.
 
 End WithVar.
 #[export] Hint Constructors rule : term.
