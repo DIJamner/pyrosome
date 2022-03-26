@@ -213,8 +213,9 @@ Section __.
 
   Fixpoint match_args args tuple : option arg_map :=
     match args, tuple with
-    | [], _ => Some map.empty
-    | _,[] => Some map.empty
+    | [], [] => Some map.empty
+    | _,[] => None
+    | [],_ => None
     | (var_arg x)::args, e::tuple =>
         @! let m <- match_args args tuple in
            match map.get m x with
@@ -427,7 +428,7 @@ Section __.
 
   
   Lemma match_args_sound' args tuple m
-    : List.length args = List.length tuple ->
+    : (*List.length args = List.length tuple ->*)
       Some m = match_args args tuple ->
       forall m',
         (forall x c, map.get m x = Some c -> map.get m' x = Some c) ->
@@ -446,15 +447,20 @@ Section __.
       autorewrite with utils in*;
       subst;
       auto 1.
+    {
+      destruct a;
+        basic_goal_prep;
+        congruence.
+    }    
     destruct a;
       basic_goal_prep.
     {
-      revert H0; 
+      revert H; 
         case_match; [|congruence].
       basic_utils_crush.
     }
     {
-      revert H0; 
+      revert H; 
         case_match; [|congruence].
       case_match.
       {
@@ -465,19 +471,18 @@ Section __.
       {
         basic_goal_prep;
           basic_utils_crush.
-        - apply H1.
+        - apply H0.
           apply map.get_put_same.
         - eapply IHargs; eauto.
-          intros; apply H1.
-          admit (*TODO: map solver*).
+          intros; apply H0.
+          rewrite map.get_put_diff; eauto.
+          congruence.
       }
     }
-  Admitted.
-
+  Qed.
   
   Lemma match_args_sound args tuple m
-    : List.length args = List.length tuple ->
-      Some m = match_args args tuple ->
+    : Some m = match_args args tuple ->
       Forall2 (fun a c =>
                  match a with
                  | const_arg c' => c = c'
@@ -491,18 +496,17 @@ Section __.
       
   
   Lemma match_args_and_lookup_sound args k i e
-    : List.length args = List.length k ->
-      Some e = match_args_and_lookup args k i ->
+    : Some e = match_args_and_lookup args k i ->
       Forall2 one_arg_can_match (map (arg_subst e i) args) k.
   Proof.
     unfold match_args_and_lookup.
     simpl.
     case_match; [|congruence].
     case_match; [|congruence].
-    intros Hlen H'; inversion H'; clear H'; subst.
-    pose proof (match_args_sound _ _ _ Hlen HeqH) as H.
+    intros H'; inversion H'; clear H'; subst.
+    pose proof (match_args_sound _ _ _ HeqH) as H.
     revert H.
-    clear Hlen HeqH.
+    clear HeqH.
     revert dependent r.
     revert dependent k.
     revert args.
@@ -523,7 +527,21 @@ Section __.
   (*TODO: move to the right place*)
   Definition map_incl {A B} {m : map.map A B} (S S' : m) := forall x v, map.get S x = Some v -> map.get S' x = Some v.
 
+  (*TODO: move to utils*)
+  (*TODO: implement/import list eqb*)
+  Axiom TODO: forall {A}, A.
+  #[refine]
+  Instance list_eqb {A} `{Eqb A} : Eqb (list A) :=
+    {
+      eqb := all2 eqb
+    }.
+  all: apply TODO.
+  Defined.
+  
   Definition set_incl S S' := forall x, member S x = true -> member S' x = true.
+
+  Context {relation_ok : Sets.ok relation}.
+
   Lemma set_put_monotone m k
     : set_incl m (map.put m k tt).
   Proof.
@@ -531,25 +549,24 @@ Section __.
     unfold member in *.
     case_match; try congruence.
     intros _.
-    (*TODO: implement/import list eqb*)
-    assert (Eqb (list elt)) by admit.
     my_case Heq (eqb x k).
     {
       basic_goal_prep;
+        change (eqb x k = true) in Heq;
         basic_utils_crush.
       now erewrite map.get_put_same.
     }
     {
       basic_goal_prep;
+      change (eqb x k = false) in Heq;
         basic_utils_crush.
       erewrite map.get_put_diff; auto.
       now rewrite <- HeqH.      
     }
-  Admitted.
-
+  Qed.    
 
   (*TODO: move up?*)
-  Context {elt_set_ok : map.ok elt_set}.
+  Context {elt_set_ok : Sets.ok elt_set}.
   
   Lemma find_values_in_relation_some_sound i R args elts
     : find_values_in_relation i R args = Some elts ->
@@ -582,7 +599,6 @@ Section __.
           apply H2.
           unfold member; now erewrite map.get_put_same.
         }
-        admit (*TODO: relation arity*).
       }
       {
         erewrite member_add_elt in H1.
@@ -602,7 +618,7 @@ Section __.
       destruct v.
       now eapply set_put_monotone.
     }
-  Admitted.
+  Qed.
 
   (*TODO: what is the right property here?
   Lemma find_values_in_relation_none_sound i R args
@@ -700,7 +716,7 @@ Section __.
           try destruct a; basic_utils_crush.
       }
     }
-  Admitted.
+  Qed.
 
   Definition maps_arg_to (m : arg_map) a e :=
     match a with
@@ -833,6 +849,53 @@ Section __.
     : NoDup (a::x) <-> ~ In a x /\ NoDup x.
   Proof. solve_invert_constr_eq_lemma. Qed.
   Hint Rewrite @invert_NoDup_cons : utils.
+
+  (* TODO: move to Utils.v*)
+  Lemma invert_negb_true b
+    : negb b = true <-> ~(b = true).
+  Proof.
+    destruct b; simpl; intuition congruence.
+  Qed.
+  Hint Rewrite invert_negb_true : utils.
+  
+  Lemma invert_existsb_true {A} P (l : list A)
+    : existsb P l = true <-> exists x, In x l /\ P x = true.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.    
+  Hint Rewrite @invert_existsb_true : utils. 
+  
+  Lemma args_from_vars_strengthen a R args vars
+    : None = find_values_in_relation a R args ->
+      all (arg_from_vars (a :: vars)) args ->
+      all (arg_from_vars vars) args.
+  Proof.
+    unfold find_values_in_relation.
+    case_match; [congruence|].
+    intros.
+    symmetry in HeqH.
+    revert HeqH.
+    rewrite <- Bool.negb_true_iff.
+    rewrite invert_negb_true.
+    rewrite invert_existsb_true.
+    revert H0; induction args;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert HeqH H1.
+    clear.
+    unfold arg_from_vars.
+    destruct a0; simpl;
+      intuition.
+    subst.
+    exfalso.
+    apply HeqH.
+    exists (var_arg x).
+    intuition.
+    apply eqb_refl.
+  Qed.
+
   
   Lemma build_trie'_sound R args vars
     : NoDup vars ->
@@ -872,7 +935,6 @@ Section __.
       }
       {     
         revert H1.
-        clear.
         set map.empty.
         assert (map.get r0 v = None).
         {
@@ -887,13 +949,13 @@ Section __.
           intuition subst.
           my_case Heqk (eqb k v).
           { rewrite eqb_eq in Heqk; subst.
-            erewrite map.get_put_same in H2.
+            erewrite map.get_put_same in H4.
             congruence.
           }
           {
             rewrite eqb_neq in Heqk.
             apply not_eq_sym in Heqk.
-            erewrite map.get_put_diff in H2;
+            erewrite map.get_put_diff in H4;
               tauto.
           }
         }
@@ -903,13 +965,14 @@ Section __.
       eapply unconstrained_trie_sound;
         autorewrite with utils in *; try now intuition.
       {
-        admit (*TODO: strengthen since a notin args*).
+        eapply args_from_vars_strengthen; eauto.
       }
       eapply IHvars; eauto; try now intuition.
       {
-        admit (*TODO: strengthen since a notin args*).
+        eapply args_from_vars_strengthen; eauto.
       }
-  Admitted.
+    }
+  Qed.
 
   (*TODO: move to utils*)
   Lemma all_map {A B} P (f : A -> B) l
