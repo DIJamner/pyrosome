@@ -269,6 +269,6 @@ Compute eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
 
 (* Prod Language *)
 Compute eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
-                       ; ("pair", "Epair_r", ["E2; v1"])
+                       ; ("pair", "Epair_r", ["E2"; "v1"])
                        ; (".1", "E.1", ["E"])
                        ; (".2", "E.2", ["E"])] prod_def.
