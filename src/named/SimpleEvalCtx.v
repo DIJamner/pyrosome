@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab SimpleVSubst SimpleVSTLC Matches.
+From Named Require Import Core Elab SimpleVSubst SimpleVSTLC Matches SimpleVSum SimpleVProd.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -202,8 +202,12 @@ Definition generate_eval_ctx_plug_rule (renamings : evctx_renamings) (original_n
   | _ => None
   end.
 
-
-Definition simple_generate_eval_ctx_lang'  (renamings : evctx_renamings) (term_name H_ty n : string) (r : rule) : lang :=
+Definition simple_generate_eval_ctx_lang'  (renamings : evctx_renamings) (term_name n : string) (r : rule) : lang :=
+  let context := match r with
+                 | term_rule c _ _ => c
+                 | _ => []
+                 end in
+  let H_ty := choose_fresh "C" context in
   let term_rule := generate_eval_ctx_term_rule renamings H_ty r in
   let plug_rule := generate_eval_ctx_plug_rule renamings n term_name H_ty r in
   match term_rule, plug_rule with
@@ -233,40 +237,38 @@ Fixpoint get_renamings (hint : list string) (original : list string) : evctx_ren
       end
   end.
 
-Definition simple_generate_eval_ctx_lang (hint : list string) (term_name H_ty : string) (rule : string * rule) :=
+Definition simple_generate_eval_ctx_lang (hint : list string) (term_name : string) (rule : string * rule) :=
   match rule with
   | (n, term_rule c args t) =>
     let renamings := get_renamings hint args in
-    simple_generate_eval_ctx_lang' renamings term_name H_ty n (term_rule c args t)
+    simple_generate_eval_ctx_lang' renamings term_name n (term_rule c args t)
   | _ => []
   end.
 
-
-Definition dummy_lang : lang := [].
-Definition dummy_rule : rule := sort_rule [] [].
-
-Definition app_rule := nth 2 stlc_def ("", dummy_rule).
-
-Definition original :=
-  match app_rule with
-  | (n, term_rule c args t) => args
-  | _ => []
+Fixpoint eval_ctx_lang (hints : list (string * string * list string)) (l : lang) :=
+  match hints with
+  | (old_name, term_name, hint) :: hints' =>
+      let new_rules :=
+        match find (fun x => match x with (n, r) => n =? old_name end) l with
+        | Some (n, r) => simple_generate_eval_ctx_lang hint term_name (n, r)
+        | None => []
+        end
+      in
+      new_rules ++ eval_ctx_lang hints' l
+  | [] => []
   end.
-
-Compute original.
-
+    
 Definition Eapp_l_hint := ["e'"; "E"].
 Definition Eapp_r_hint := ["E"; "v"].
 
-Definition renaming_l := get_renamings Eapp_l_hint original.
-Compute substitute_eval_ctx_in_args renaming_l original.
-Compute rename_variable renaming_l "e'".
-Compute get_renamings Eapp_r_hint original.
+Compute eval_ctx_lang [("app", "Eapp_l", Eapp_l_hint);
+    ("app", "Eapp_r", Eapp_r_hint)] stlc_def.
 
-(* TODO: Use choose fresh for "C" variable*)
-(* TODO: User pass in whole language, do rule lookup *)
-(* TODO: git pull and push *)
-Compute simple_generate_eval_ctx_lang Eapp_l_hint "Eapp_l" "C" app_rule.
-Compute simple_generate_eval_ctx_lang Eapp_r_hint "Eapp_r" "C" app_rule.
+(* Sum Language *)
+Compute eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
 
-(* TODO: Use this for Sum Language and check if it works *)
+(* Prod Language *)
+Compute eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
+                       ; ("pair", "Epair_r", ["E2; v1"])
+                       ; (".1", "E.1", ["E"])
+                       ; (".2", "E.2", ["E"])] prod_def.
