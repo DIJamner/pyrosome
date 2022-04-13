@@ -211,7 +211,7 @@ Definition simple_generate_eval_ctx_lang'  (renamings : evctx_renamings) (term_n
   let term_rule := generate_eval_ctx_term_rule renamings H_ty r in
   let plug_rule := generate_eval_ctx_plug_rule renamings n term_name H_ty r in
   match term_rule, plug_rule with
-  | Some tr, Some pr  => [(term_name, tr); (append "plug " term_name, pr)]
+  | Some tr, Some pr  => [(append "plug " term_name, pr); (term_name, tr)]
   | _, _ => []
   end.
 
@@ -261,14 +261,34 @@ Fixpoint eval_ctx_lang (hints : list (string * string * list string)) (l : lang)
 Definition Eapp_l_hint := ["e'"; "E"].
 Definition Eapp_r_hint := ["E"; "v"].
 
-Compute eval_ctx_lang [("app", "Eapp_l", Eapp_l_hint);
+Definition auto_Estlc_def :=
+  eval_ctx_lang [("app", "Eapp_l", Eapp_l_hint);
     ("app", "Eapp_r", Eapp_r_hint)] stlc_def.
 
+Derive Estlc'
+       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) auto_Estlc_def Estlc')
+       As Estlc_wf'.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve Estlc_wf : elab_pfs.
+
+
 (* Sum Language *)
-Compute eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
+Definition Esum_def := eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
+
+Derive Esum
+       SuchThat (elab_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum)
+       As Esum_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve Esum_wf : elab_pfs.
 
 (* Prod Language *)
-Compute eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
+Definition Eprod_def := eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
                        ; ("pair", "Epair_r", ["E2"; "v1"])
                        ; (".1", "E.1", ["E"])
                        ; (".2", "E.2", ["E"])] prod_def.
+
+Derive Eprod
+       SuchThat (elab_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod)
+       As Eprod_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve Eprod_wf : elab_pfs.
