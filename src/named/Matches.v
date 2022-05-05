@@ -648,7 +648,7 @@ Ltac term_cong :=
   | solve_len_eq
   | vm_compute; reflexivity
   | solve[prove_from_known_elabs]
-  | repeat match goal with [|- eq_args _ _ _ _ _] =>
+  | repeat match goal with [|- eq_args _ _ _ _] =>
                            simple apply eq_args_nil
                            || simple eapply eq_args_cons2
                            || simple eapply eq_args_cons
@@ -680,6 +680,7 @@ Ltac compute_wf_subjects :=
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity
   | |- In _ _ => solve [solve_in | simpl; intuition fail]
+  | |- Model.wf_term _ _ _ => cbn [Model.wf_term core_model]
   | |- wf_term ?l ?c ?e ?t =>
         let c' := eval vm_compute in c in
         let e' := eval vm_compute in e in
@@ -691,10 +692,10 @@ Ltac compute_wf_subjects :=
   | [|-wf_args _ _ _ _] => simple apply wf_args_nil
                            || simple eapply wf_args_cons2
                            || simple eapply wf_args_cons
-  | [|-wf_subst _ _ _ _] => constructor
-  | |- wf_ctx ?l ?c =>
+  | [|-wf_subst _ _ _] => constructor
+  | |- wf_ctx (Model:= ?m) ?c =>
     let c' := eval vm_compute in c in
-        change_no_check (wf_ctx l c');
+        change_no_check (wf_ctx (Model:= m) c');
     tryif has_evar c'
     then assumption || constructor
     else solve_wf_ctx

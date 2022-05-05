@@ -133,8 +133,7 @@ Definition heap_def : lang :=
        : #"natural"
   ];
   [:=  "H" : #"heap",
-       "l" : #"natural",
-       "n" : #"natural"
+       "l" : #"natural"
        ----------------------------------------------- ("lookup_empty")
        #"lookup" #"hempty" "l" = #"0"
        : #"natural"
