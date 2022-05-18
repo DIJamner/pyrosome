@@ -350,86 +350,97 @@ Fixpoint match_wkn_n (t : term) : option nat :=
   end.
 
 
-Fixpoint term_to_bind_term (t : term) : bind_term :=
-  match t with
-  | var v => bvar v
-  | con "blk_subst" l => 
-      let default := bcon "blk_subst" (map (fun x => term_to_bind_term x) l) in
-      match l with
-      | [e; s] =>
-        match s with
-        | con "snoc" [con "cont" [k; A]; w] =>
-            match match_wkn_n w with
-            | None => default
-            | Some n =>
-                let e := term_to_bind_term e in
-                let A := term_to_bind_term A in
-                let k := term_to_bind_term k in
-                bbind_k n e A k
-            end
-        | _ => default
-        end
-      | _ => default
-      end
-  | con n l => bcon n (map (fun x => term_to_bind_term x) l)
+(* Fixpoint term_to_bind_term (t : term) : bind_term := *)
+(*   match t with *)
+(*   | var v => bvar v *)
+(*   | con "blk_subst" l =>  *)
+(*       let default := bcon "blk_subst" (map (fun x => term_to_bind_term x) l) in *)
+(*       match l with *)
+(*       | [e; s] => *)
+(*         match s with *)
+(*         | con "snoc" [con "cont" [k; A]; w] => *)
+(*             match match_wkn_n w with *)
+(*             | None => default *)
+(*             | Some n => *)
+(*                 let e := term_to_bind_term e in *)
+(*                 let A := term_to_bind_term A in *)
+(*                 let k := term_to_bind_term k in *)
+(*                 bbind_k n e A k *)
+(*             end *)
+(*         | _ => default *)
+(*         end *)
+(*       | _ => default *)
+(*       end *)
+(*   | con n l => bcon n (map (fun x => term_to_bind_term x) l) *)
+(*   end. *)
+
+
+
+(* Compute term_to_bind_term original_app_rule_term. *)
+
+(* Fixpoint bind_term_to_term (t : bind_term) : term := *)
+(*   match t with *)
+(*   | bvar v => var v *)
+(*   | bcon n l => con n (map (fun x => bind_term_to_term x) l) *)
+(*   | bbind_k n e A k => *)
+(*       let e := bind_term_to_term e in *)
+(*       let A := bind_term_to_term A in *)
+(*       let k := bind_term_to_term k in *)
+(*       {{e #"blk_subst" (#"snoc" {wkn_n n} (#"cont" {A} {k})) {e} }} *)
+(*   end. *)
+
+(* Compute bind_term_to_term (term_to_bind_term original_app_rule_term). *)
+(* Compute original_app_rule_term. *)
+
+(* Fixpoint substitute_ctx_bind_term (renamings : evctx_renamings) (e : bind_term) := *)
+(*   match e with *)
+(*   | bvar n => bvar (rename_variable renamings n) *)
+(*   | bcon l args => bcon l (map (substitute_ctx_bind_term renamings) args) *)
+(*   | bbind_k n e' A k => *)
+(*       let A' := substitute_ctx_bind_term renamings A in *)
+(*       let k' := substitute_ctx_bind_term renamings k in *)
+(*       let e'' := match e' with *)
+(*                 | bvar v =>  *)
+(*                     match find (fun x => eqb v x.(from)) renamings.(vals) with *)
+(*                     | Some replace_val => *)
+(*                         let v := replace_val.(to) in *)
+(*                         term_to_bind_term {{e #"jmp" #"hd" (#"val_subst" #"wkn" v)}} *)
+(*                     | None => substitute_ctx_bind_term renamings e' *)
+(*                     end *)
+(*                  | _ => substitute_ctx_bind_term renamings e' *)
+(*                  end *)
+(*       in *)
+(*       bbind_k n e'' A' k' *)
+(*   end. *)
+
+
+Fixpoint generate_compiler_subst (hint : list string) (original : list string) : subst :=
+  match hint, original with
+  | new :: hint', old :: original' =>
+      let tail_subst := generate_compiler_subst hint' original' in
+      if eqb new old
+      then tail_subst
+      else
+        let first_letter := substring 0 1 new in
+        if eqb first_letter "v"
+        then (old, {{e #"jmp" #"hd" (#"val_subst" #"wkn" new)}}) :: tail_subst
+        else (old, var new) :: tail_subst
+  | _, _ => []
   end.
 
-
-
-Compute term_to_bind_term original_app_rule_term.
-
-Fixpoint bind_term_to_term (t : bind_term) : term :=
-  match t with
-  | bvar v => var v
-  | bcon n l => con n (map (fun x => bind_term_to_term x) l)
-  | bbind_k n e A k =>
-      let e := bind_term_to_term e in
-      let A := bind_term_to_term A in
-      let k := bind_term_to_term k in
-      {{e #"blk_subst" (#"snoc" {wkn_n n} (#"cont" {A} {k})) {e} }}
-  end.
-
-Compute bind_term_to_term (term_to_bind_term original_app_rule_term).
-Compute original_app_rule_term.
-
-Fixpoint substitute_ctx_bind_term (renamings : evctx_renamings) (e : bind_term) :=
-  match e with
-  | bvar n => bvar (rename_variable renamings n)
-  | bcon l args => bcon l (map (substitute_ctx_bind_term renamings) args)
-  | bbind_k n e' A k =>
-      let A' := substitute_ctx_bind_term renamings A in
-      let k' := substitute_ctx_bind_term renamings k in
-      let e'' := match e' with
-                | bvar v => 
-                    match find (fun x => eqb v x.(from)) renamings.(vals) with
-                    | Some replace_val =>
-                        let v := replace_val.(to) in
-                        term_to_bind_term {{e #"jmp" #"hd" (#"val_subst" #"wkn" v)}}
-                    | None => substitute_ctx_bind_term renamings e'
-                    end
-                 | _ => substitute_ctx_bind_term renamings e'
-                 end
-      in
-      bbind_k n e'' A' k'
-  end.
-
-
-Definition substitute_ctx_term (renamings : evctx_renamings) (e : term) :=
-  bind_term_to_term (substitute_ctx_bind_term renamings (term_to_bind_term e)).
-
-
-Definition simple_generate_eval_ctx_compiler_case'  (renamings : evctx_renamings) (case : compiler_case string) : option (compiler_case string) :=
-  match case with
-  | sort_case _ _ => None
-  | term_case args e => let args' := substitute_eval_ctx_in_args renamings args in
-                       let e' := substitute_ctx_term renamings e in
-                       Some (term_case args' e')
-  end.
 
 Definition simple_generate_eval_ctx_compiler_case (hint : list string) (case : compiler_case string) (lang_rule : rule) : option (compiler_case string) :=
   match lang_rule with
-  | term_rule n args _ => let renamings := get_renamings hint args in
-                         simple_generate_eval_ctx_compiler_case' renamings case
+  | term_rule n args _ => 
+      match case with
+      | sort_case _ _ => None
+      | term_case comp_args e =>
+          let renamings := get_renamings hint args in
+          let args' := substitute_eval_ctx_in_args renamings comp_args in
+          let sub := generate_compiler_subst hint args in
+          let e' := e[/sub/] in
+          Some (term_case args' e')
+      end
   | _ => None
   end.
 
@@ -440,21 +451,19 @@ Definition to_named_list {A : Type} (n : string) (x : option A) : named_list A :
   end.
 
 
-Fixpoint eval_ctx_compiler (hints : list (string * string * list string)) (c : compiler string) (l : lang) : compiler string :=
-  match hints with
-  | (old_name, term_name, hint) :: hints' =>
-      let new_rules :=
-        match find (fun x => match x with (n, r) => n =? old_name end) l with
-        | Some (rn, r) =>
-            match find (fun x => match x with (n, r) => n =? old_name end) c with
-            | Some (cn, cr) => to_named_list term_name (simple_generate_eval_ctx_compiler_case hint cr r)
-            | None => []
-            end
-        | None => []
-        end
-      in
-      new_rules ++ eval_ctx_compiler hints' c l
-  | [] => []
-  end.
+Definition eval_ctx_compiler (hints : list (string * string * list string)) (c : compiler string) (l : lang) : compiler string :=
+  flat_map (fun x =>
+         match x with
+         | (old_name, term_name, hint) =>
+             match find (fun x => match x with (n, r) => n =? old_name end) l with
+             | Some (rn, r) =>
+                 match find (fun x => match x with (n, r) => n =? old_name end) c with
+                 | Some (cn, cr) => to_named_list term_name (simple_generate_eval_ctx_compiler_case hint cr r)
+                 | None => []
+                 end
+             | None => []
+             end
+         end
+      ) hints.
 
 Compute eval_ctx_compiler Estlc_hints app_compiler stlc_def.
