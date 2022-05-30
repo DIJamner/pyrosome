@@ -72,34 +72,6 @@ Definition ch8_def : lang :=
       ----------------------------------------------- ("eval_var")
       #"eval" "H" (#"hvar" "n") = #"lookup" "H" "n" : #"natural"
     ]
-    (* [:| "HT" : #"heapty", *)
-    (*    "H" : #"heap" "HT", *)
-    (*     "c" : #"cmd" *)
-    (*   ----------------------------------------------- *)
-    (*   #"bigstep" "H" "c" : #"heap" "HT" *)
-    (* ]; *)
-    (* [:= "H" : #"heap" *)
-    (*   ----------------------------------------------- ("bs_skip") *)
-    (*   #"bigstep" "H" #"skip" = "H" : #"heap" *)
-    (* ]; *)
-    (* [:= "H" : #"heap", *)
-    (*     "e" : #"exp", *)
-    (*     "x" : #"natural" *)
-    (*   ----------------------------------------------- ("bs_assign") *)
-    (*   #"bigstep" "H" (#"assign" "x" "e") = "H" : #"heap" *)
-    (* ]; *)
-    (* [:= "H" : #"heap", *)
-    (*     "c1" : #"cmd", *)
-    (*     "c2" : #"cmd" *)
-    (*   ----------------------------------------------- ("bs_assign") *)
-    (*   #"bigstep" "H" (#"seq" "c1" "c2") = #"bigstep" (#"bigstep" "H" "c1") "c2" : #"heap" *)
-    (* ]; *)
-    (* [:= "H" : #"heap", *)
-    (*     "e" : #"exp", *)
-    (*     "x" : #"natural" *)
-    (*   ----------------------------------------------- ("bs_assign") *)
-    (*   #"bigstep" "H" (#"seq" "c1" "c2") = #"bigstep" (#"bigstep" "H" "c1") "c2" : #"heap" *)
-    (* ] *)
     ]}.
 
 Derive ch8
@@ -144,48 +116,14 @@ Definition ch8_config_def : lang :=
       #"config" "H" "c" : #"configuration"
     ];
     [:= "H" : #"heap",
-        "e" : #"exp",
-        "x" : #"natural"
-      ----------------------------------------------- ("ss_assign")
-      #"config" "H" (#"assign" "x" "e")
-      = #"config" (#"hset" "H" "x" (#"eval" "H" "e")) #"skip" : #"configuration"
-    ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
-        "t" : #"cmd",
-        "f" : #"cmd",
-        "p_neq" : #"neq" #"0" (#"eval" "H" "e")
-      ----------------------------------------------- ("ss_if_true")
-      #"config" "H" (#"if" "e" "t" "f") = #"config" "H" "t" : #"configuration"
-    ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
-        "t" : #"cmd",
-        "f" : #"cmd",
-        "p_eq" : #"eq" #"0" (#"eval" "H" "e")
-      ----------------------------------------------- ("ss_if_false")
-      #"config" "H" (#"if" "e" "t" "f") = #"config" "H" "f" : #"configuration"
-    ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
-        "c" : #"cmd",
-        "p_neq" : #"neq" #"0" (#"eval" "H" "e")
-      ----------------------------------------------- ("ss_while_true")
-      #"config" "H" (#"while" "e" "c")
-      = #"config" "H" (#"seq" "c" (#"while" "e" "c")) : #"configuration"
-    ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
-        "c" : #"cmd",
-        "p_eq" : #"eq" #"0" (#"eval" "H" "e")
-      ----------------------------------------------- ("ss_while_false")
-      #"config" "H" (#"while" "e" "c")
-      = #"config" "H" #"skip" : #"configuration"
-    ];
-    [:= "H" : #"heap",
         "c" : #"cmd"
       ----------------------------------------------- ("ss_seq_skip")
       #"config" "H" (#"seq" #"skip" "c") = #"config" "H" "c" : #"configuration"
+    ];
+    [:= "H" : #"heap",
+        "c" : #"cmd"
+      ----------------------------------------------- ("ss_skip_seq")
+      #"config" "H" (#"seq" "c" #"skip") = #"config" "H" "c" : #"configuration"
     ];
     (* TODO: The following rules are a hacky workaround for not being able to
      express (H, c1) -> (H', c1') in the context. This should be improved. *)
