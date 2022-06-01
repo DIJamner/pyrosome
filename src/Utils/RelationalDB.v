@@ -92,7 +92,7 @@ Definition set_flat_map {A B} {S : set A} (f : A -> list B) (s : S) : list B :=
   map.fold (fun l v _ => f v ++ l) [] s.
 
 
-(* We need to expose the map implelementation or query_trie is not strictly positive.
+(* We need to expose the map implementation or query_trie is not strictly positive.
    We cordon it off into its own module so that the rest can be parametric over idx and elt.
  *)
 Module PositiveQueryTrie.
@@ -130,7 +130,7 @@ Module PositiveQueryTrie.
         match map.get m v with Some t => t | None => qt_empty end
     | qt_unconstrained t => t 
     (* shouldn't normally hit this case *)
-    | qt_nil => qt_nil
+    | qt_nil => qt_empty
     end.
 
   
@@ -157,7 +157,42 @@ Section __.
           (values_of_next_var : query_trie -> set_with_top elt_set)
           (choose_next_val : elt -> query_trie -> query_trie).
 
+  Axiom (query_trie_ind
+     : forall P : query_trie -> Prop,
+       (forall q : query_trie, P q -> P (qt_unconstrained q)) ->
+       (forall r : trie_map, P (qt_tree r)) -> P qt_nil -> forall q : query_trie, P q).
+  Axiom (query_trie_rec
+     : forall P : query_trie -> Type,
+       (forall q : query_trie, P q -> P (qt_unconstrained q)) ->
+       (forall r : trie_map, P (qt_tree r)) -> P qt_nil -> forall q : query_trie, P q).
+  
   Notation qt_empty := (qt_tree map.empty).
+  
+  (*TODO: move the abstraction boundary?*)
+  Context (get_keys : trie_map -> elt_set).
+  Axiom member_get_keys
+    : forall r x, member (get_keys r) x = true <-> if map.get r x then True else False.
+  
+  Axiom (values_of_next_var_tree
+            : forall m, values_of_next_var (qt_tree m) = finite_set (get_keys m)).
+  Axiom (values_of_next_var_unconstrained
+            : forall t, values_of_next_var (qt_unconstrained t) = all_elements).
+  Axiom (values_of_next_var_nil
+          : values_of_next_var qt_nil = finite_set map.empty).
+
+  Axiom (choose_next_val_tree
+          : forall v m, choose_next_val v (qt_tree m) = match map.get m v with Some t => t | None => qt_empty end).
+  Axiom (choose_next_val_unconstrained
+          : forall v t, choose_next_val v (qt_unconstrained t) = t).
+  Axiom (choose_next_val_nil
+          : forall v, choose_next_val v qt_nil = qt_empty).
+
+  Hint Rewrite values_of_next_var_tree : utils.
+  Hint Rewrite values_of_next_var_unconstrained : utils.
+  Hint Rewrite values_of_next_var_nil : utils.
+  Hint Rewrite choose_next_val_tree : utils.
+  Hint Rewrite choose_next_val_unconstrained : utils.
+  Hint Rewrite choose_next_val_nil : utils.
 
   Context (relation : set (list elt))
           (db : map.map idx relation)
@@ -1143,15 +1178,387 @@ Section __.
     | all_elements => true
     | finite_set s' => member s' v
     end.
-  Axiom values_of_next_var_sound
+  (*Axiom values_of_next_var_sound
     : forall t (v : elt) x vars m, member_with_top (values_of_next_var t) v = true ->
                   denote_query_trie (x::vars) t m ->
-                  denote_query_trie vars (choose_next_val v t) (map.put m x v).
+                  denote_query_trie vars (choose_next_val v t) (map.put m x v).*)
+
+
+  (*TODO: move to Sets*)
+  Lemma in_set_flat_map {A B} `{Eqb A} {S : set A} {S_ok : Sets.ok S} (f : A -> list B) b (s : S)
+    : In b (set_flat_map f s) ->
+      exists a, In b (f a) /\ member s a = true.
+  Proof.
+    unfold set_flat_map.
+    eapply map.fold_spec;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      exists k; simpl.
+      change (map.put m k tt) with (add_elt m k).
+      rewrite member_add_elt.
+      basic_utils_crush.
+    }
+    {
+      exists x; intuition.
+      change (map.put m k tt) with (add_elt m k).
+      rewrite member_add_elt.
+      basic_utils_crush.
+    }
+  Qed.
+
+  
+    Lemma member_intersection_l (m m' : elt_set) x
+      : member (intersection m m') x = true -> member m x = true.
+  Proof using.
+    unfold member;
+      case_match;
+      try congruence.
+    intros _.
+    erewrite <- get_intersect_same.
+    {
+      erewrite <- HeqH; auto.
+    }
+  Admitted.
+
+  
+    Lemma member_intersection_r (m m' : elt_set) x
+      : member (intersection m m') x = true -> member m' x = true.
+  Proof using.
+  Admitted.
+    
+  
+  Lemma fold_left_intersect_subset s (m0 m1 : elt_set)
+    : finite_set m0 = fold_left set_with_top_intersection s (finite_set m1) ->
+      (forall x, member m0 x = true -> member m1 x = true).
+  Proof using choose_next_val elt elt_default elt_set qt_nil query_trie relation values_of_next_var.
+    revert m0 m1;
+      induction s;
+      basic_goal_prep;
+      basic_utils_crush.
+    1:congruence.
+    revert H; case_match; subst; eauto.
+    intros.
+    eapply member_intersection_l.
+    eauto.
+  Qed.
+  
+  Lemma in_fold_left_tries {A} m0 (tries : @named_list A query_trie) x base
+    : finite_set m0 =
+        fold_left set_with_top_intersection (map (fun '(_, v) => values_of_next_var v) tries) base ->
+      member m0 x = true ->
+      forall n m, In (n,m) tries -> member_with_top (values_of_next_var m) x = true.
+  Proof.
+    revert m0 base.
+    induction tries;
+      basic_goal_prep;
+      try now basic_utils_crush.
+    destruct H1; eauto.
+    safe_invert H1.
+    clear IHtries.
+    unfold member_with_top;
+      case_match; auto.
+    destruct base; simpl in *;
+      eapply fold_left_intersect_subset in H; eauto.
+    eapply member_intersection_r; eauto.
+  Qed.
+
+  
+  Lemma might_satisfy_cons_weaken d y l' acc
+    : might_satisfy_query d (y :: l') acc ->
+      might_satisfy_query d l' acc.
+  Proof.
+    unfold might_satisfy_query.
+    simpl in *.
+    firstorder.
+  Qed.
+
+  (*TODO: move to Utils.v?*)
+  Lemma map_put_remove' {A B} `{Eqb A} {M : map.map A B} {ok : map.ok M} (m : M) a x
+    : map.get m a = Some x ->
+      map.put (map.remove m a) a x = m.
+  Proof.
+    intros.
+    eapply map.map_ext; intros.
+    destruct (Eqb_dec k a); subst.
+    {
+      rewrite map.get_put_same; auto.
+    }
+    {
+      rewrite map.get_put_diff; auto.
+      rewrite map.get_remove_diff; auto.
+    }
+  Qed.
+
+  Lemma map_put_remove {A B} `{Eqb A} {M : map.map A B} {ok : map.ok M} (m : M) a x
+    : map.put (map.remove m a) a x = map.put m a x.
+  Proof.
+    intros.
+    eapply map.map_ext; intros.
+    destruct (Eqb_dec k a); subst.
+    {
+      rewrite !map.get_put_same; auto.
+    }
+    {
+      rewrite !map.get_put_diff; auto.
+      rewrite map.get_remove_diff; auto.
+    }
+  Qed.
+
+(*
+  Lemma denote_query_trie_choose vars x q m a
+    : denote_query_trie vars (choose_next_val x q) m ->
+      denote_query_trie (a :: vars) q (map.remove m a).
+  Proof.
+    induction q using query_trie_ind;
+      autorewrite with utils in *.
+    {
+      intros.
+      constructor.*)
+
+ 
+  Lemma next_val_sound_for_atom d a i q vars y x
+    : ~ In a (snd y) ->
+      trie_sound_for_atom d (a :: vars) (i, q) y ->
+      member_with_top (values_of_next_var q) x = true ->
+      trie_sound_for_atom d vars (i, choose_next_val x q) y.
+  Proof.
+    unfold trie_sound_for_atom.
+    destruct y.
+    intuition subst.
+    unfold trie_sound_for_relation in *;
+      intros.
+    unfold arg_map_sound_for_relation in *.
+    simpl in *.
+    
+    eassert (denote_query_trie (a :: vars) q _).
+    {
+      revert H1 H0; induction q using query_trie_ind;
+        autorewrite with utils;
+        basic_goal_prep.
+      {
+        constructor; eauto.
+      }
+      {
+        apply member_get_keys in H1.
+        revert H1; case_match; [intros _|tauto].
+        econstructor; eauto.
+      }
+      {
+        exfalso.
+        rewrite member_empty in H1;
+          inversion H1.
+      }
+    }
+    specialize (H3 _ H2).
+    break.
+    eexists; split; eauto.
+    clear H4.
+    revert dependent x0.
+    revert dependent l.
+    induction l;
+      destruct x0;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      revert H6; unfold maps_arg_to;
+        rewrite map.get_put_diff; eauto.
+    }
+  Qed.
+(*    {
+      eapply H; eauto.
+      
+      need a notin l
 
     
+        unfold 
+        compute in H0.
+        constructor; eauto.
+    eapply H2; clear H2.
+    revert H0 H.
+    induction q using query_trie_ind;
+      simpl;
+      autorewrite with utils;
+      intros.
+    {
+      erewrite <- (map_put_remove m).
+      {
+        constructor; eauto.
+        TODO: m -> m seems wrong, why aren't they different?
+      let x := open_constr:(map.put (map.remove m a) a x) in
+      enough (m = x) as Hmeq; [rewrite Hmeq|].
+      {
+        constructor.
+        eauto.
+      }
+      TODO: where to go from here? 
+      co
+    }
+    destruct q; simpl in *.
+      unfold denote_query_trie in *.
+ *)
+
+  
+
+  Definition might_map_arg_to (m : arg_map) a e :=
+    match a with
+    | const_arg e' => e = e'
+    | var_arg x =>
+        match map.get m x with
+        | Some e' => e = e'
+        | None => True
+        end
+    end.
+
+  Definition arg_map_might_be_sound_for_relation (R : relation) args (m : arg_map) :=
+    exists tuple,
+      Forall2 (might_map_arg_to m) args tuple
+      /\ member R tuple = true.
+
+
+  Definition trie_might_be_sound_for_relation (R : relation) vars args t :=
+    forall m m', denote_query_trie vars t m' ->
+                 map_incl m m' ->
+                 arg_map_might_be_sound_for_relation R args m.
+  
+  
+  Definition trie_might_be_sound_for_atom (d : db) vars '(i,t) '(i',args) :=
+    i = i' /\
+      let R := unwrap_with_default map.empty (map.get d i) in
+      trie_might_be_sound_for_relation R vars (map var_arg args) t.
+
+  (*TOOD: replace case_match with this?*)
+  Ltac case_match' :=
+    try lazymatch goal with
+          [ H :  context [ match ?e with
+                           | _ => _
+                           end] |- _ ] => revert H
+        end;
+    case_match.
+
+  Lemma denote_empty vars m : denote_query_trie vars qt_empty m <-> False.
+  Proof.
+    intuition subst.
+    inversion H; subst; basic_utils_crush.
+  Qed.
+  Hint Rewrite denote_empty : utils.
+
+  Hint Rewrite member_get_keys : utils.
+  
+  Lemma denote_choose_next vars x q m a
+    : denote_query_trie vars (choose_next_val x q) m ->
+      member_with_top ( values_of_next_var q) x = true ->
+      denote_query_trie (a :: vars) q (map.put m a x).
+  Proof.
+    unfold member_with_top.
+    revert m.
+    induction q using query_trie_ind;
+      basic_goal_prep;
+      autorewrite with utils in *;
+      repeat case_match';
+      basic_utils_crush.
+  Qed.
+
+
+  Lemma denote_query_trie_domain vars q m a x
+    : denote_query_trie vars q m ->
+      map.get m a = Some x ->
+      In a vars.
+  Proof.
+    intro H; induction H; subst;
+      basic_utils_crush.
+    {
+      destruct (Eqb_dec a x0);
+        subst;
+        basic_utils_crush.
+      right.
+      rewrite map.get_put_diff in H0; eauto.
+    }
+    {
+      destruct (Eqb_dec a x0);
+        subst;
+        basic_utils_crush.
+      right.
+      rewrite map.get_put_diff in H1; eauto.
+    }
+  Qed.
+  
+  Lemma trie_might_be_sound_choose_next_val d a vars tries clauses x
+    : Forall2 (trie_might_be_sound_for_atom d (a :: vars)) tries clauses ->
+      ~ In a vars ->
+      (*TODO: need values_of_next_var fact*)
+      Forall2 (trie_might_be_sound_for_atom d vars) (named_map (choose_next_val x) tries) clauses.
+  Proof.
+    revert clauses;
+      induction tries;
+      intro clauses;
+      destruct clauses;
+      basic_goal_prep;
+      try now basic_utils_crush.
+
+    autorewrite with utils in *;
+      break.
+    split; try now basic_utils_crush.
+    revert H.
+    (*TODO: can't use intuition*)
+    unfold trie_might_be_sound_for_atom;
+      intros; break; subst; split; auto.
+
+    revert H2.
+    unfold trie_might_be_sound_for_relation;
+      intros; break; subst.
+
+    eapply H2.
+    {
+      eapply denote_choose_next; eauto.
+      admit(*TODO: add add'l assumption*).
+    }
+    admit (*map reasoning*).
+  Admitted.
+    
+
+  
+(*TODO: move to Utils*)
+
+Fixpoint all_unique {A} (l : list A) :=
+  match l with
+  | [] => True
+  | n::l' => ~ In n l' /\ all_unique l'
+  end.
+Arguments all_unique {_} !_ /.
+
+  
+  Lemma might_satisfy_query_put d clauses acc a x
+    :  might_satisfy_query d clauses acc ->
+       map.get acc a = None ->
+       (*TODO: what hyps?*)
+       might_satisfy_query d clauses (map.put acc a x).
+  Proof.
+    unfold might_satisfy_query;
+      intuition.
+    specialize (H i args); intuition break; subst.
+    exists x0; intuition.
+    exists x1; intuition.
+    clear H3 H1.
+    revert H2;
+      revert x1;
+      induction args;
+      destruct x1;
+      basic_goal_prep;
+      basic_utils_crush.
+    (*
+    TODO: want an /\ instead of an implication here?
+    destruct (Eqb_dec a a0); subst.
+    {
+      rewrite map.get_put_same in H2.
+
+      *)
+                                    Abort.
+  
   Lemma generic_join'_sound d m tries vars clauses acc
     : (*well_scoped_query d (Build_query vars clauses) ->*)
-      Forall2 (trie_sound_for_atom d vars) tries clauses ->
+    all_unique vars ->
+      Forall2 (trie_might_be_sound_for_atom d vars) tries clauses ->
       In m (generic_join' tries vars acc) ->
       (*TODO: is this necessary?
       all_clauses_might_be_inhabited d (Build_query vars clauses) ->*)
@@ -1163,18 +1570,97 @@ Section __.
       satisfies_query d (Build_query vars clauses) m.*)
   Proof.
     simpl.
-    revert tries acc.
+    revert tries acc m.
     induction vars;
       basic_goal_prep;
       basic_utils_crush.
-    simpl in *;
-        intros.
+    
 (*    destruct H.
     basic_goal_prep.
     inversion H; clear H; subst.
-  *)  
-    revert H0; case_match.
-    2:admit (*TODO: add hypotheses to make this case unreachable*).
+ *)
+    
+    case_match'.
+    2: intro H'; now safe_invert H'.
+    intro H'; apply in_set_flat_map in H'.
+    break.
+    
+    (*
+
+    (*
+    TODO: need output clauses of IHvars to have subst on it?
+               or need to weaken trie_sound_for_atom?
+     *)
+
+    eapply IHvars; eauto.
+    {
+      eapply trie_might_be_sound_choose_next_val; eauto.  
+*)    
+
+   (*
+        pose proof (in_fold_left_tries _ _ _ _ HeqH0 H2).
+        revert H3 H.
+        clear m H0 IHvars HeqH0.
+        revert clauses H1.
+        induction tries;
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          safe_invert H; eauto.
+          (*TODO: automate*)
+        }
+        {
+          safe_invert H.
+          constructor; eauto.
+          2:{
+            eapply IHtries; eauto.
+            eapply might_satisfy_cons_weaken; eauto.
+          }
+    *)
+    (*
+    }
+    {
+                             -
+    }
+*)
+          (*
+
+
+    
+    apply IHvars in H0; auto.
+    2:admit (*TODO: lemma*).
+    {
+      {
+        pose proof (in_fold_left_tries _ _ _ _ HeqH0 H2).
+        revert H3 H.
+        clear m H0 IHvars HeqH0.
+        revert clauses H1.
+        induction tries;
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          safe_invert H; eauto.
+          (*TODO: automate*)
+        }
+        {
+          safe_invert H.
+          constructor; eauto.
+          2:{
+            eapply IHtries; eauto.
+            eapply might_satisfy_cons_weaken; eauto.
+          }
+          specialize (H3 i q ltac:(intuition)).
+          TODO: missing subst on y/l' (need a notin?)
+           next_val_sound_for_atom 
+          TODO: choose_next_val invariant
+
+        1,4: shelve.
+        intros.
+
+        unfold member_with_top.
+    }
+    TODO: use values_of_next_var_sound?
+    Fail.
     {     (* 
       intro H'; apply in_map_flat_map in H'.
       basic_goal_prep.
@@ -1256,7 +1742,7 @@ Section __.
     generalize (clauses q), (free_vars q).
     clear q.
     intros.
-           *)
+           *)*)
   Admitted.
     
     
