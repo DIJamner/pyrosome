@@ -9,7 +9,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad.
-From Named Require Import Core Elab ComputeWf Linter.
+From Named Require Import Core Elab ComputeWf Linter TreeProofs.
 
 Import Core.Notations.
 
@@ -26,6 +26,7 @@ Notation sort := (@sort V).
 Notation subst := (@subst V).
 Notation rule := (@rule V).
 Notation lang := (@lang V).
+Notation pf := (@pf V).
 
   
   Notation eq_subst l :=
@@ -233,20 +234,24 @@ Definition is_some {A} (x:option A) := if x then True else False.
   Rules are scanned from the root of the language.
  *)
 
-Inductive step_instruction :=
-| cong_instr : list (list step_instruction) -> step_instruction
-| redex_instr : V -> ctx -> sort -> term -> term -> subst -> step_instruction.
+  
+  (*TODO: move to TreeProofs?*)
+  Fixpoint pf_refl e : pf :=
+    match e with
+    | var x => pvar x
+    | con n s => pcon n (map pf_refl s)
+    end.
 
 (* if the top level of the term takes a step, return it *)
 Fixpoint step_redex_term (l : lang) (e : term)
-  : option (step_instruction * term) :=
+  : option (pf * term) :=
   match l with
   | [] => None
   | (n,term_eq_rule c e1 e2 t')::l' =>
     match step_redex_term l' e with
     | Some e' => Some e'
     | None => @! let s <- matches e e1 (map fst c) in
-              ret (redex_instr n c t' e1 e2 s, e2[/s/])
+              ret (pcon n (map pf_refl (map snd s)), e2[/s/])
     end
   | _::l' => step_redex_term l' e
   end.
@@ -255,14 +260,13 @@ Fixpoint step_redex_term (l : lang) (e : term)
 (* takes steps starting from the root of the tree
    and only proceeding once the root does not reduce
 *)
-Fixpoint step_term_outwards_in l e : list step_instruction :=
+Fixpoint step_term_outwards_in l e : pf :=
   match step_redex_term l e with
-  | Some (i,_) => [i]
+  | Some (i,_) => i
   | None =>
     match e with
-    | var x => []
-    | con n s =>
-      [cong_instr (map (step_term_outwards_in l) s)]
+    | var x => pf_refl (var x)
+    | con n s => pcon n (map (step_term_outwards_in l) s)
     end
   end.
 
@@ -270,56 +274,63 @@ Fixpoint step_term_outwards_in l e : list step_instruction :=
 cannot generate, e.g.
 [beta; cong [id_right; ...]; ...]
 *)
-Fixpoint step_redex_term_n l e n :=
-  match step_redex_term l e, n with
-  | None, _ => []
-  | Some (s,e'), 0 => [(s,e')]
-  | Some (s,e'), S n' => (s,e')::(step_redex_term_n l e' n')
-  end.
+  Fixpoint step_redex_term_n l e n : option _ :=
+    @! let (s,e') <- step_redex_term l e in
+       match n with
+       | 0 => @!ret (s,e')
+       | S n =>
+           @! let (s',e'') <- step_redex_term_n l e' n in
+              ret (ptrans s s', e'')
+       end.
 
 Section StepTermInner.
-  Context (step_term_n : term -> list step_instruction * term)
+  Context (step_term_n : term -> option (pf * term))
           (l : lang).
 
   (*invariant: if it returns cong l,
    then l contains a nonempty list *)
-  Definition step_subterm e : option (step_instruction * term) :=
+  Definition step_subterm e : option (pf * term) :=
     match e with
     | var x => None
     | con name s =>
-    let '(arg_steps, args) := split (map step_term_n s) in
-    if forallb (fun (l: list _) =>
-                  if l then true else false)
-               arg_steps
-    then None
-    else Some (cong_instr arg_steps, con name args)
+        let osteps := map step_term_n s in
+        if forallb (fun (l: option _) => if l then false else true) osteps
+        then None
+        else
+          let refls := map (fun e : term => (pf_refl e, e)) s in
+          let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
+          let (arg_steps, args) := split steps in
+          Some (pcon name arg_steps, con name args)
     end.
 
   Definition step_term_one_traversal e
-    : option (step_instruction * term) :=
+    : option (pf * term) :=
     match step_subterm e with
     | Some p => Some p
     | None => step_redex_term l e
     end.
 
 End StepTermInner.
-      
 
-Fixpoint step_term' l n e {struct n}
-  : list step_instruction * term :=
-  match n with
-  | 0 => ([], e)
-  | S n' =>
-    match step_term_one_traversal (step_term' l n') l e with
-    | Some (step,e') =>
-      let '(rst_steps, e'') := (step_term' l n' e') in
-      (step::rst_steps, e'')
-    | None => ([], e)
-    end
-  end.
 
-Definition step_term l e n := fst (step_term' l n e).
+  Fixpoint step_term' l n e {struct n}
+    : option _ :=
+    match n with
+    | 0 => None
+    | S n' =>
+        @! let (step,e') <- step_term_one_traversal (step_term' l n') l e in
+           match step_term' l n' e' with
+           | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
+           | None => @! ret (step, e')
+           end
+    end.
 
+  Definition step_term l e n :=
+    match step_term' l n e with
+    | Some (pf,_) => pf
+    | _ => pf_refl e
+    end.
+         
 
 Lemma wf_args_cons2
      : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort) 
@@ -814,7 +825,7 @@ Ltac2 step_redex name c' tp e1p e2p s :=
     assert (eq_term_nocheck $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
     apply (@eq_term_nocheck_by_with_subst _ _ $name $l $c $c' $e1p $e2p $tp $s); shelve() (*TODO: these goals are the dominating perf. bottleneck*)
   end.
-
+(*
 Ltac2 rec step_by_instructions i :=
   (*TODO: this may need to go in a different/additional place?*)
   ltac1:(compute_eq_compilation);
@@ -844,7 +855,7 @@ Ltac2 rec step_by_instructions i :=
                      ::(step_all_instructions s')
       | _ => backtrack_tactic_failure "input not an evaluated list"
       end.
-
+*)
 
 Ltac2 get_step_instructions () :=
   lazy_match! goal with
@@ -857,10 +868,22 @@ Ltac2 get_step_instructions () :=
   | [|-_] => backtrack_tactic_failure "goal not a term equality"
   end.
 
+
+
+
+
+(**Tree-proof version sketch***)
+
+
+
+
+(*****)
+
 (*TODO: this should now give the whole reduction
      sequence; check and if so rename *)
+(*
 Ltac2 step () :=
-  step_by_instructions_list (get_step_instructions ()).
+  step_by_instructions_list (get_step_instructions ()).*)
 Ltac2 print_steps () :=
   print (of_constr (get_step_instructions())).
 
@@ -871,8 +894,18 @@ Ltac lhs_concrete :=
     tryif has_evar lhs then fail 0 "subject" lhs "contains evars"  else idtac
   end.
 
-Ltac step_if_concrete := tryif lhs_concrete then use_term_nocheck;ltac2:(step()) else term_refl.
 
+Ltac step_if_concrete :=
+  tryif lhs_concrete
+  then lazymatch goal with
+       | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
+           (*TODO: 100 is a magic number; make it an input*)
+           let x := eval compute in (step_term l e1 100) in
+             let y := constr:(step_term l e1 100) in
+             eapply TreeProofs.pf_checker_sound with(p:=x);
+             [assumption | compute; reflexivity]
+       end
+  else term_refl.
 
 Ltac reduce_lhs :=
   compute_eq_compilation;
@@ -893,7 +926,6 @@ Ltac reduce := reduce_lhs; reduce_rhs.
 Ltac by_reduction :=
   compute_eq_compilation;
   eapply eq_term_trans; [ step_if_concrete | eapply eq_term_sym; step_if_concrete ].
-
 
 
 Ltac2 get_goal_lang () :=

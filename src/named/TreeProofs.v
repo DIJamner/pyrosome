@@ -37,7 +37,7 @@ Section WithVar.
   
     (*TODO: backport these to core.v?*)
     
-    Lemma term_con_congruence l c t name s1 s2 c' args t'
+    Local Lemma term_con_congruence l c t name s1 s2 c' args t'
       : In (name, term_rule c' args t') l ->
         t = t'[/with_names_from c' s2/] ->
         wf_lang l ->
@@ -62,7 +62,7 @@ Section WithVar.
       }
     Qed.
     
-    Lemma sort_con_congruence l c name s1 s2 c' args
+    Local Lemma sort_con_congruence l c name s1 s2 c' args
       : In (name, sort_rule c' args) l ->
         wf_lang l ->
         eq_args l c c' s1 s2 ->
