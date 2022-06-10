@@ -44,6 +44,15 @@ Proof using.
 Qed.
 Hint Rewrite @invert_Forall2_cons_cons : utils.
 
+Lemma Forall2_combine {A B} (op : A -> B -> Prop) l1 l2
+  : List.length l1 = List.length l2 -> Forall2 op l1 l2 <-> all (fun '(a,b) => op a b) (combine l1 l2).
+Proof using.
+  revert l2; induction l1; destruct l2;
+    basic_goal_prep;
+    basic_utils_crush.
+  all: eapply IHl1; eauto.
+Qed.
+
 Section SetWithTop.
   Context {A : Type}
           {A_set : set A}.
@@ -1210,7 +1219,7 @@ Section __.
   
     Lemma member_intersection_l (m m' : elt_set) x
       : member (intersection m m') x = true -> member m x = true.
-  Proof using.
+  Proof using elt_set_ok.
     unfold member;
       case_match;
       try congruence.
@@ -1219,12 +1228,26 @@ Section __.
     {
       erewrite <- HeqH; auto.
     }
-  Admitted.
+    epose proof (Option.option_eq_dec _ (fun _ _ => true) _
+                                          _ (map.get m x) (map.get m' x)) as H'.
+    destruct H';auto.
+    exfalso.
+    erewrite get_intersect_diff in HeqH; eauto.
+    congruence.
+    Unshelve.
+    {
+      intros; break; reflexivity.
+    }
+    {
+      intros; break; reflexivity.
+    }
+  Qed.
 
   
     Lemma member_intersection_r (m m' : elt_set) x
       : member (intersection m m') x = true -> member m' x = true.
-  Proof using.
+  Proof using elt_set_ok.
+    TODO: get_intersect_same is left-biased, need commutativity or stronger axiom
   Admitted.
     
   
@@ -1527,10 +1550,13 @@ Fixpoint all_unique {A} (l : list A) :=
   end.
 Arguments all_unique {_} !_ /.
 
-  
+  Context (idx_dec : forall (a b : idx), {a=b}+{~a=b}).
+
+  (*assumption too strong
   Lemma might_satisfy_query_put d clauses acc a x
     :  might_satisfy_query d clauses acc ->
-       map.get acc a = None ->
+       (forall c, In c clauses -> ~ In a (snd c)) ->
+       (*map.get acc a = None ->*)
        (*TODO: what hyps?*)
        might_satisfy_query d clauses (map.put acc a x).
   Proof.
@@ -1539,24 +1565,108 @@ Arguments all_unique {_} !_ /.
     specialize (H i args); intuition break; subst.
     exists x0; intuition.
     exists x1; intuition.
-    clear H3 H1.
-    revert H2;
-      revert x1;
-      induction args;
-      destruct x1;
-      basic_goal_prep;
-      basic_utils_crush.
-    (*
-    TODO: want an /\ instead of an implication here?
-    destruct (Eqb_dec a a0); subst.
-    {
-      rewrite map.get_put_same in H2.
+    revert H2.
+    eapply List.Forall2_impl_strong.
 
-      *)
-                                    Abort.
+    intros.
+    eapply H2.
+    rewrite map.get_put_diff in H6; auto.
+    intro; subst.
+    eapply H0; eauto.
+  Qed.*)
+
   
+  Definition elt_sound_for_query d (clauses : list atom) (x : idx) (e :elt) :=
+    forall i args,
+      In (i,args) clauses ->
+      exists R,
+        map.get d i = Some R
+        /\
+          forall tuple,
+             member R tuple = true ->
+            (*This line differs from satisfies_query*)
+            List.Forall2 (fun a e' => a = x -> e = e') args tuple.
+
+  Lemma Forall2_len_eq {A B} (op : A -> B -> Prop) l1 l2
+    : Forall2 op l1 l2 -> List.length l1 = List.length l2.
+  Proof.
+    revert l2; induction l1; destruct l2; basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  
+  Lemma all_weaken {A} (l : list A) (P Q : _ -> Prop)
+    : (forall x, In x l -> P x -> Q x) ->
+      all P l -> all Q l.
+  Proof.
+    induction l; basic_goal_prep; basic_utils_crush.
+  Qed.
+  
+  Lemma might_satisfy_query_put d clauses acc a x
+    :  might_satisfy_query d clauses acc ->
+       elt_sound_for_query d clauses a x ->
+       (*map.get acc a = None ->*)
+       (*TODO: what hyps?*)
+       might_satisfy_query d clauses (map.put acc a x).
+  Proof.
+    unfold might_satisfy_query;
+      basic_goal_prep.
+    specialize (H i args ltac:(auto)).
+    break; subst.
+    exists x0; intros; break; split; auto.
+    exists x1; intros; break; split; auto.
+    assert (List.length args = List.length x1) by eauto using Forall2_len_eq.      
+    revert H2.
+    rewrite !Forall2_combine by assumption.
+    eapply all_weaken.
+    basic_goal_prep.
+    basic_goal_prep.
+    destruct (idx_dec a i0); subst.
+    {
+      rewrite map.get_put_same in H6;
+        inversion H6; subst; clear H6.
+      specialize (H0 i args ltac:(auto)).
+      break.
+      assert (x = x0) by congruence; subst.
+      specialize (H6 x1 H3).
+      rewrite !Forall2_combine in H6 by assumption.
+      pose proof (in_all _ _ H6 H2) as H'.
+      simpl in H'.
+      symmetry; auto.
+    }
+    {
+      eapply H5.
+      rewrite map.get_put_diff in H6; auto.
+    }
+  Qed.
+
+  (*
+  Lemma might_be_sound_clause_free_vars d vars trie clause
+    : trie_might_be_sound_for_atom d vars trie clause ->
+      forall x, In x (snd clause) -> In x vars.
+  Proof.
+    unfold trie_might_be_sound_for_atom; intuition (break;subst).
+    simpl in *.
+    unfold trie_might_be_sound_for_relation in *; intuition (break; subst).
+   *)
+
+  Definition well_scoped_clause vars (c : atom) :=
+    all (fun x => In x vars) (snd c).
+
+  
+  Lemma next_var_sound_for_query d a vars tries clauses x m0
+    : Forall2 (trie_might_be_sound_for_atom d (a :: vars)) tries clauses ->
+      finite_set m0 =
+        fold_left set_with_top_intersection (map (fun '(_, v) => values_of_next_var v) tries) all_elements ->
+      member m0 x = true ->
+      elt_sound_for_query d clauses a x.
+  Proof.
+    unfold elt_sound_for_query;
+      basic_goal_prep.
+  Admitted.
+    
+    
   Lemma generic_join'_sound d m tries vars clauses acc
-    : (*well_scoped_query d (Build_query vars clauses) ->*)
+      : (*well_scoped_query d (Build_query vars clauses) ->*)
     all_unique vars ->
       Forall2 (trie_might_be_sound_for_atom d vars) tries clauses ->
       In m (generic_join' tries vars acc) ->
@@ -1584,45 +1694,10 @@ Arguments all_unique {_} !_ /.
     2: intro H'; now safe_invert H'.
     intro H'; apply in_set_flat_map in H'.
     break.
+    eapply IHvars; eauto using trie_might_be_sound_choose_next_val.
+    eapply might_satisfy_query_put; eauto using next_var_sound_for_query.
+  Qed.
     
-    (*
-
-    (*
-    TODO: need output clauses of IHvars to have subst on it?
-               or need to weaken trie_sound_for_atom?
-     *)
-
-    eapply IHvars; eauto.
-    {
-      eapply trie_might_be_sound_choose_next_val; eauto.  
-*)    
-
-   (*
-        pose proof (in_fold_left_tries _ _ _ _ HeqH0 H2).
-        revert H3 H.
-        clear m H0 IHvars HeqH0.
-        revert clauses H1.
-        induction tries;
-          basic_goal_prep;
-          basic_utils_crush.
-        {
-          safe_invert H; eauto.
-          (*TODO: automate*)
-        }
-        {
-          safe_invert H.
-          constructor; eauto.
-          2:{
-            eapply IHtries; eauto.
-            eapply might_satisfy_cons_weaken; eauto.
-          }
-    *)
-    (*
-    }
-    {
-                             -
-    }
-*)
           (*
 
 
@@ -1743,8 +1818,16 @@ Arguments all_unique {_} !_ /.
     clear q.
     intros.
            *)*)
-  Admitted.
-    
+  
+  Lemma NoDup_all_unique {A} (l : list A)
+    : NoDup l <-> all_unique l.
+  Proof.
+    induction l; basic_goal_prep; basic_utils_crush.
+    - constructor.
+    - inversion H1; tauto.
+    - inversion H1; tauto.
+    - constructor; tauto.
+  Qed.
     
   Theorem generic_join_sound d q m
     : well_scoped_query d q ->
@@ -1752,6 +1835,8 @@ Arguments all_unique {_} !_ /.
       satisfies_query d q m.
   Proof.
     unfold generic_join, well_scoped_query.
+    
+    assert (all_clauses_might_be_inhabited d q) by admit.
     destruct q; simpl in *.
     destruct free_vars0; [basic_goal_prep; basic_utils_crush| generalize (i::free_vars0) as free_vars1].
     intros fvs [H_nodups Hwsq].
@@ -1767,6 +1852,40 @@ Arguments all_unique {_} !_ /.
     unfold satisfies_query.
     intros.
     simpl in *.
+    rewrite NoDup_all_unique in H_nodups.
+    assert (might_satisfy_query d clauses0 m).
+    {
+      eapply generic_join'_sound; eauto.
+      2: {
+        eapply empty_might_satisfy with (d:=d) (q:= {| free_vars := fvs; clauses := clauses0 |}).
+        {
+          unfold well_scoped_query.
+          rewrite NoDup_all_unique; split; simpl; intuition auto.
+          clear H2.
+          revert dependent clauses0.
+          induction clauses0; repeat basic_goal_prep;
+            auto.
+          inversion H0; subst; clear H0.
+          unfold all_clauses_might_be_inhabited, might_be_inhabited in *.
+          repeat basic_goal_prep.
+          repeat (specialize (IHclauses0 ltac:(auto))).
+          intuition subst.
+          eexists; eauto.
+        }
+        {
+          exact H.
+        }
+      }
+      {
+        
+        TODO: what is n???
+      }
+        ; eauto.
+    (*TODO: only use the latter*)
+    
+    pose proof (generic_join'_sound _ _ _ _ _ _ H_nodups ltac:(shelve) H1
+                                    (empty_might_satisfy _ _ ltac:(eauto) H)).
+    TODO: use lemma above
     (*TODO: reason about generic_join'
 
       forall i t,
