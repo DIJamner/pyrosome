@@ -246,21 +246,13 @@ Definition target_eval_ctx_def : lang :=
     ]
   ]}.
 
-Definition forget2 blk :=
-  {{e #"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {blk} }}.
-
 Definition env_with_context :=
   {{e #"ext "#"emp" (#"neg" #"unit")}}.
 
 Definition if0_exp e z nz :=
-  {{e #"blk_subst"
-      { e }
-      (#"jmp"
-        (#"closure"
-          #"natural"
-          (#"if0" (#".2" #"hd") {forget2 z }  {forget2 nz })
-          #"tt")
-        #"hd")}}.
+  {{e #"blk_subst" { e }
+      (#"if0" #"hd" (#"blk_subst" #"wkn" {z})  (#"blk_subst" #"wkn" {nz}))
+  }}.
 
 Definition ch8_cc_def : compiler :=
   match # from (ch8_config ++ nat_eq ++ ch8 ++ heap ++ nat_lang) with
@@ -270,7 +262,9 @@ Definition ch8_cc_def : compiler :=
   | {{e #"value" "n"}} => {{e #"snoc" #"id" "n"}}
   | {{e #"hvar" "n"}} => {{e  #"snoc" #"id" (#"hvar" "n")}}
   | {{e #"skip"}} => jmp_hd
-  | {{e #"assign" "x" "e" }} => {{e #"set" "x" "e" {jmp_hd} }}
+  | {{e #"assign" "x" "e" }} =>
+      {{e #"blk_subst" "e"
+          (#"set" "x" #"hd" (#"blk_subst" #"wkn" { jmp_hd } )) }}
   | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} (seq {{e "cmd2"}} jmp_hd)
   | {{e #"if0" "e" "z" "nz"}} => seq (if0_exp {{e "e"}} {{e "n"}} {{e "nz"}}) jmp_hd
   | {{e #"while" "e" "c"}} =>
@@ -285,7 +279,7 @@ Definition ch8_cc_def : compiler :=
                    #"tt")
           #"tt"
       }}
-  | {{e #"eval" "H" "e"}} => {{e #"get" "H" "e"}}
+  | {{e #"eval" "H" "e"}} => {{e #"0"}}
   | {{e #"config" "H" "c"}} => {{e #"config" "H" "c"}}
   end.
 
@@ -295,7 +289,7 @@ Definition target_lang : lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
-Compute target_lang.
+Print auto_elab_compiler.
 
 Derive ch8_cc
        SuchThat (elab_preserving_compiler
@@ -306,7 +300,7 @@ Derive ch8_cc
                    (ch8_config++nat_eq++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-auto_elab_compiler.
+  auto_elab_compiler.
   cleanup_elab_after
     (reduce; eredex_steps_with unit_eta "unit eta").
 Qed.
