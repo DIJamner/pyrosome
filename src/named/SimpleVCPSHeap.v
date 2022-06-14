@@ -60,7 +60,48 @@ Definition heap_cps_ops_def : lang :=
        #"config" "H" (#"set" (#"nv" "l") (#"nv" "n") "e")
        = #"config" (#"hset" "H" "l" "n") "e"
        : #"configuration" "G"
-  ] ]}.
+  ];
+  [:|  "G" : #"env",
+       "v" : #"val" "G" #"nat",
+       "z" : #"blk" "G",
+       "nz" : #"blk" "G"
+       -----------------------------------------------
+       #"if0" "v" "z" "nz" : #"blk" "G"
+  ];
+
+  [:=  "H" : #"heap",
+       "G" : #"env",
+       "n" : #"natural",
+       "z" : #"blk" "G",
+       "nz" : #"blk" "G"
+       ----------------------------------------------- ("if nonzero")
+       #"config" "H" (#"if0" (#"nv" (#"1+" "n")) "z" "nz") =
+         #"config" "H" "nz" : #"configuration" "G"
+  ];
+  [:=  "H" : #"heap",
+       "G" : #"env",
+       "z" : #"blk" "G",
+       "nz" : #"blk" "G"
+       ----------------------------------------------- ("if zero")
+       #"config" "H" (#"if0" (#"nv" #"0") "z" "nz") =
+         #"config" "H" "z" : #"configuration" "G"
+  ];
+  [:|  "G" : #"env",
+       "v" : #"natural"
+       -----------------------------------------------
+       #"hvar" "v" : #"val" "G" #"nat"
+  ];
+  [:=  "H" : #"heap",
+       "G" : #"env",
+       "G'" : #"env",
+       "g" : #"sub" "G" "G'",
+       "v" : #"natural",
+       "e" : #"blk" (#"ext" "G'" #"nat")
+       ----------------------------------------------- ("eval hvar")
+       #"config" "H" (#"blk_subst" (#"snoc" "g" (#"hvar" "v")) "e") =
+         #"config" "H" (#"blk_subst" (#"snoc" "g" (#"nv" (#"lookup" "H" "v"))) "e") : #"configuration" "G"
+  ]
+  ]}.
 
 Derive heap_cps_ops
        SuchThat (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
@@ -69,7 +110,6 @@ Derive heap_cps_ops
        As heap_cps_ops_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve heap_cps_ops_wf : elab_pfs.
-
 
 Definition heap_id_def : compiler :=
   match # from (unit_lang ++ heap ++ nat_exp++ nat_lang) with
@@ -92,11 +132,11 @@ Derive heap_id
                                           heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As cps_preserving.
-Proof.
+P
   auto_elab_compiler.
-  cleanup_elab_after eredex_steps_with heap "heap_comm".
-  cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  cleanup_elab_after eredex_steps_with heap "lookup_empty".
+  + cleanup_elab_after eredex_steps_with heap "heap_comm".
+  + cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  + cleanup_elab_after eredex_steps_with heap "lookup_empty".
 Qed.
 #[export] Hint Resolve heap_id : elab_pfs.
 
