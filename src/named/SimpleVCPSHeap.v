@@ -85,21 +85,6 @@ Definition heap_cps_ops_def : lang :=
        ----------------------------------------------- ("if zero")
        #"config" "H" (#"if0" (#"nv" #"0") "z" "nz") =
          #"config" "H" "z" : #"configuration" "G"
-  ];
-  [:|  "G" : #"env",
-       "v" : #"natural"
-       -----------------------------------------------
-       #"hvar" "v" : #"val" "G" #"nat"
-  ];
-  [:=  "H" : #"heap",
-       "G" : #"env",
-       "G'" : #"env",
-       "g" : #"sub" "G" "G'",
-       "v" : #"natural",
-       "e" : #"blk" (#"ext" "G'" #"nat")
-       ----------------------------------------------- ("eval hvar")
-       #"config" "H" (#"blk_subst" (#"snoc" "g" (#"hvar" "v")) "e") =
-         #"config" "H" (#"blk_subst" (#"snoc" "g" (#"nv" (#"lookup" "H" "v"))) "e") : #"configuration" "G"
   ]
   ]}.
 

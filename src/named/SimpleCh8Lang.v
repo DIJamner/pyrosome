@@ -9,11 +9,8 @@ From Utils Require Import Utils.
 From Named Require Import Core Elab SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS Matches NatHeap Linter Compilers ElabCompilers.
 Import Core.Notations.
 Import CompilerDefs.Notations.
-Local Notation compiler := (compiler string).
-
 Require Coq.derive.Derive.
-
-Locate nat_exp.
+Notation compiler := (compiler string).
 
 Definition ch8_def : lang :=
   {[l
@@ -197,55 +194,6 @@ Definition jmp_hd :=
 Definition seq c1 c2 :=
   {{e #"blk_subst" (#"snoc" #"wkn" (#"closure" #"unit" {c2} #"hd")) {c1} }}.
 
-Definition target_eval_ctx_def : lang :=
-  {[l
-    [s|
-      -----------------------------------------------
-      #"Ectx" srt
-    ];
-    [:|
-      -----------------------------------------------
-      #"[ ]" : #"Ectx"
-    ];
-    [:|
-      "E" : #"Ectx",
-      "e" : #"exp" #"emp" #"natural"
-      ----------------------------------------------- 
-      #"plug" "E" "e" : #"exp" #"emp" #"natural"
-    ];
-    [s|
-      -----------------------------------------------
-      #"Sctx" srt
-    ];
-    [:|
-      "B" : #"Bctx",
-      "e" : #"exp" #"emp" #"natural"
-      ----------------------------------------------- 
-      #"plug" "B" "e" : #"blk" (#"ext" #"emp" (#"neg" #"unit"))
-    ];
-    [:|
-      "E" : #"Ectx",
-      "z" : #"blk",
-      "nz" : #"blk"
-      -----------------------------------------------
-      #"Eif0" "E" "z" "nz" : #"Bctx"
-    ];
-    [:|
-      "vl" : #"val" #"emp" #"nat",
-      "E" : #"Ectx",
-      "e" : #"blk" (#"ext" #"emp" (#"neg" #"unit"))
-      -----------------------------------------------
-      #"Eset" "vl" "E" "e" : #"Bctx"
-    ];
-
-    [:|
-      "x" : #"natural",
-      "E" : #"Ectx"
-      -----------------------------------------------
-      #"Eset" "x" "E" : #"Bctx"
-    ]
-  ]}.
-
 Definition env_with_context :=
   {{e #"ext "#"emp" (#"neg" #"unit")}}.
 
@@ -254,27 +202,33 @@ Definition if0_exp e z nz :=
       (#"if0" #"hd" (#"blk_subst" #"wkn" {z})  (#"blk_subst" #"wkn" {nz}))
   }}.
 
+Definition plug_exp e c :=
+  {{e #"blk_subst"
+      (#"snoc" #"wkn" (#"closure" #"natural" {c} #"tt"))
+      {e} }}.
+
 Definition ch8_cc_def : compiler :=
   match # from (ch8_config ++ nat_eq ++ ch8 ++ heap ++ nat_lang) with
-  | {{s #"exp"}} => {{s #"sub" {env_with_context} (#"ext" {env_with_context} #"natural") }}
+  | {{s #"exp"}} => {{s #"blk" (#"ext" #"emp" (#"neg" #"natural"))}}
   | {{s #"cmd"}} => {{s #"blk" {env_with_context} }}
   | {{s #"configuration"}} => {{s #"configuration" {env_with_context} }}
-  | {{e #"value" "n"}} => {{e #"snoc" #"id" "n"}}
-  | {{e #"hvar" "n"}} => {{e  #"snoc" #"id" (#"hvar" "n")}}
+  | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
+  | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"wkn" #"hd") #"hd")}}
   | {{e #"skip"}} => jmp_hd
-  | {{e #"assign" "x" "e" }} =>
-      {{e #"blk_subst" "e"
-          (#"set" "x" #"hd" (#"blk_subst" #"wkn" { jmp_hd } )) }}
+  | {{e #"assign" "x" "e" }} => plug_exp {{e "e"}} {{e #"set" (#"nv" "x") (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")}}
   | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} (seq {{e "cmd2"}} jmp_hd)
-  | {{e #"if0" "e" "z" "nz"}} => seq (if0_exp {{e "e"}} {{e "n"}} {{e "nz"}}) jmp_hd
+  | {{e #"if0" "e" "z" "nz"}} => seq (plug_exp {{e "e"}} {{e #"if0" (#".2" #"hd") "z" "nz"}}) jmp_hd
   | {{e #"while" "e" "c"}} =>
       {{e #"jmp" (#"fix"
                    (#"closure"
                      (#"pair" (#"neg" #"unit") #"unit")
-                     {if0_exp
+                     {plug_exp
                         {{e "e"}}
-                        jmp_hd
-                        (seq {{e "c" }} {{e #"jmp" (#".1" #"hd") #"tt" }})}
+                        {{e #"if0" (#".2" #"hd")
+                           {jmp_hd}
+                           {seq {{e "c"}} {{e #"jmp" (#".1" #"hd") #"tt" }} }
+                        }}
+                     }
                      #"tt")
                    #"tt")
           #"tt"
