@@ -242,94 +242,236 @@ Definition is_some {A} (x:option A) := if x then True else False.
     | con n s => pcon n (map pf_refl s)
     end.
 
-(* if the top level of the term takes a step, return it *)
-Fixpoint step_redex_term (l : lang) (e : term)
-  : option (pf * term) :=
-  match l with
-  | [] => None
-  | (n,term_eq_rule c e1 e2 t')::l' =>
-    match step_redex_term l' e with
-    | Some e' => Some e'
-    | None => @! let s <- matches e e1 (map fst c) in
-              ret (pcon n (map pf_refl (map snd s)), e2[/s/])
-    end
-  | _::l' => step_redex_term l' e
-  end.
+  Section WithCtx.
 
+    Context (l : lang).
+    Context (c : ctx).
 
-(* takes steps starting from the root of the tree
+    
+    Fixpoint project_term_r p :=
+      match p with
+      | pcon n s =>
+          let s' := map project_term_r s in
+          match named_list_lookup_err l n with
+          | Some (term_rule c' _ _) =>
+              con n s'
+          | Some (term_eq_rule c' _ e _) =>
+              e[/with_names_from c' s'/]
+          | _ => default
+          end
+      | ptrans p1 p2 => project_term_r p2
+      | psym p1 => project_term_l p1
+      | pconv p _ => project_term_r p
+      | pvar x => var x
+      end
+    with project_term_l p :=
+           match p with
+           | pcon n s =>
+               let s' := map project_term_l s in
+               match named_list_lookup_err l n with
+               | Some (term_rule c' _ _) =>
+                   con n s'
+               | Some (term_eq_rule c' e1 _ _) =>
+                   e1[/with_names_from c' s'/]
+               | _ => default
+               end
+           | ptrans p1 p2 => project_term_l p1
+           | psym p1 => project_term_r p1
+           | pconv p _ => project_term_l p
+           | pvar x => var x
+           end.
+    
+    Fixpoint project_sort_r p :=
+      match p with
+      | pcon n s =>
+          let s' := map project_term_r s in
+          match named_list_lookup_err l n with
+          | Some (sort_rule c' _) =>
+              scon n s'
+          | Some (sort_eq_rule c' t1 t2) =>
+              t2[/with_names_from c' s'/]
+          | _ => default
+          end
+      | ptrans p1 p2 => project_sort_r p2
+      | psym p1 => project_sort_l p1
+      | pconv p _ => default
+      | pvar x => default
+      end
+        with project_sort_l p :=
+      match p with
+      | pcon n s =>
+          let s' := map project_term_l s in
+          match named_list_lookup_err l n with
+          | Some (sort_rule c' _) =>
+              scon n s'
+          | Some (sort_eq_rule c' t1 t2) =>
+              t1[/with_names_from c' s'/]
+          | _ => default
+          end
+      | ptrans p1 p2 =>  project_sort_l p1
+      | psym p1 => project_sort_r p1
+      | pconv p _ => default
+      | pvar x => default
+      end.
+    
+      
+    
+    (*TODO: move to term or treeproofs*)
+    (*TODO: requires c, thread through*)
+    (* returns the sort of a term, _assuming it is well-formed_ *)
+    Fixpoint sort_of p : sort :=
+      match p with
+      | pvar x => named_list_lookup default c x
+      | pcon n s =>
+          let s' := map project_term_r s in
+          match named_list_lookup_err l n with
+          | Some (term_rule c' _ t) => t[/with_names_from c' s'/]
+          | Some (term_eq_rule c' _ _ t) => t[/with_names_from c' s'/]
+          | _ => default
+          end
+      | ptrans p1 p2 => sort_of p1
+      | psym p1 => sort_of p1
+      | pconv p _ => project_sort_r p
+      end.
+
+  Section Inner.
+    Context (step_term : term -> sort -> pf).
+
+    (*TODO: return option?*)
+    Fixpoint step_args (s: list term) (c':ctx) : list pf :=
+      match s, c' with
+      | [], _ => []
+      | _,[] => []
+      | e::s, (n,t)::c' =>
+          (step_term e t[/with_names_from c' s/])::(step_args s c')
+      end.
+
+    (* TODO: use sort eqns *)
+    (* TODO: make option?*)
+    Definition step_sort t : option pf :=
+      match t with
+      | scon n s =>
+          @!let (sort_rule c' _) <?- named_list_lookup_err l n in
+            ret pcon n (step_args s c')
+      end.
+
+    Definition cast_by_step t2 p : option pf :=
+      let t1 := sort_of p in
+      (*branch is an optimization, not necessary for correctness*)
+      if sort_eq_dec t1 t2 then Some p
+      else @! let p1 <- step_sort t1 in
+              let p2 <- step_sort t2 in
+              ret pconv (ptrans p1 (psym p2)) p.
+  
+    (* if the top level of the term takes a step, return it *)
+    (*
+    TODO: parameterize by e's type?
+    need to wrap recursively w/ pconvs to reduce types
+     *)
+    Fixpoint step_redex_term (l' : lang) (c : ctx) (e : term)
+      : option (pf * term) :=
+      match l' with
+      | [] => None
+      | (n,term_eq_rule c' e1 e2 t')::l' =>
+          match step_redex_term l' c e with
+          | Some e' => Some e'
+          | None => @! let s <- matches e e1 (map fst c') in
+                       let s' <- list_Mmap (fun '(n,e) =>
+                                        cast_by_step (named_list_lookup default c' n)[/s/] (pf_refl e))
+                                     s in
+                       (*
+                         for (n,t) & e in c&s:
+                         let t := t[/s/]
+                         let t' := typeof e
+                         cast_by_step l t' t e
+                        *)
+                       (*todo: pconv for type*)
+                       ret (pcon n s', e2[/s/])
+          end
+      | _::l' => step_redex_term l' c e
+      end.
+
+    (* takes steps starting from the root of the tree
    and only proceeding once the root does not reduce
-*)
-Fixpoint step_term_outwards_in l e : pf :=
-  match step_redex_term l e with
-  | Some (i,_) => i
-  | None =>
-    match e with
-    | var x => pf_refl (var x)
-    | con n s => pcon n (map (step_term_outwards_in l) s)
-    end
-  end.
+     *)
+    Fixpoint step_term_outwards_in e : pf :=
+      match step_redex_term l c e with
+      | Some (i,_) => i
+      | None =>
+          match e with
+          | var x => pf_refl (var x)
+          | con n s => pcon n (map step_term_outwards_in s)
+          end
+      end.
 
-(*TODO: following 2 fns should be merged;
+    (*TODO: following 2 fns should be merged;
 cannot generate, e.g.
 [beta; cong [id_right; ...]; ...]
-*)
-  Fixpoint step_redex_term_n l e n : option _ :=
-    @! let (s,e') <- step_redex_term l e in
-       match n with
-       | 0 => @!ret (s,e')
-       | S n =>
-           @! let (s',e'') <- step_redex_term_n l e' n in
-              ret (ptrans s s', e'')
-       end.
+     *)
+    Fixpoint step_redex_term_n e n : option _ :=
+      @! let (s,e') <- step_redex_term l c e in
+         match n with
+         | 0 => @!ret (s,e')
+         | S n =>
+             @! let (s',e'') <- step_redex_term_n e' n in
+                ret (ptrans s s', e'')
+         end.
 
-Section StepTermInner.
-  Context (step_term_n : term -> option (pf * term))
-          (l : lang).
+      Section StepTermInner.
+        Context (step_term_n : term -> option (pf * term)).
 
-  (*invariant: if it returns cong l,
+        (*invariant: if it returns cong l,
    then l contains a nonempty list *)
-  Definition step_subterm e : option (pf * term) :=
-    match e with
-    | var x => None
-    | con name s =>
-        let osteps := map step_term_n s in
-        if forallb (fun (l: option _) => if l then false else true) osteps
-        then None
-        else
-          let refls := map (fun e : term => (pf_refl e, e)) s in
-          let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
-          let (arg_steps, args) := split steps in
-          Some (pcon name arg_steps, con name args)
-    end.
+        Definition step_subterm e : option (pf * term) :=
+          match e with
+          | var x => None
+          | con name s =>
+              let osteps := map step_term_n s in
+              if forallb (fun (l: option _) => if l then false else true) osteps
+              then None
+              else
+                let refls := map (fun e : term => (pf_refl e, e)) s in
+                let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
+                let (arg_steps, args) := split steps in
+                Some (pcon name arg_steps, con name args)
+          end.
 
-  Definition step_term_one_traversal e
-    : option (pf * term) :=
-    match step_subterm e with
-    | Some p => Some p
-    | None => step_redex_term l e
-    end.
+        Definition step_term_one_traversal e
+          : option (pf * term) :=
+          match step_subterm e with
+          | Some p => Some p
+          | None => step_redex_term l c e
+          end.
 
-End StepTermInner.
+      End StepTermInner.
 
 
-  Fixpoint step_term' l n e {struct n}
-    : option _ :=
+      Fixpoint step_term' n e {struct n}
+        : option _ :=
+        match n with
+        | 0 => None
+        | S n' =>
+            @! let (step,e') <- step_term_one_traversal (step_term' n') e in
+               match step_term' n' e' with
+               | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
+               | None => @! ret (step, e')
+               end
+        end.
+
+  End Inner.
+
+  Fixpoint step_term (n : nat) (e : term) (t : sort) {struct n} : pf :=
     match n with
-    | 0 => None
-    | S n' =>
-        @! let (step,e') <- step_term_one_traversal (step_term' l n') l e in
-           match step_term' l n' e' with
-           | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
-           | None => @! ret (step, e')
-           end
+    | 0 => pf_refl e
+    | S n =>
+        match step_term' (step_term n) n e with
+        | Some (pf,_) => pf
+        | _ => pf_refl e
+        end
     end.
 
-  Definition step_term l e n :=
-    match step_term' l n e with
-    | Some (pf,_) => pf
-    | _ => pf_refl e
-    end.
+    
+  End WithCtx.
          
 
 Lemma wf_args_cons2
@@ -900,7 +1042,7 @@ Ltac step_if_concrete :=
   then lazymatch goal with
        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
            (*TODO: 100 is a magic number; make it an input*)
-           let x := eval compute in (step_term l e1 100) in
+           let x := eval compute in (step_term l c' 100 e1 t) in
              eapply TreeProofs.pf_checker_sound with(p:=x);
              [assumption | compute; reflexivity]
        end
