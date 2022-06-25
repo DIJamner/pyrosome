@@ -318,9 +318,11 @@ Definition ovar n :=
 Definition original_app_rule_term : term := 
   (bind_k 1 (var "e") {{e #"neg" (#"prod" "A" (#"neg" "B"))}}
     (bind_k 2 (var "e'") (var "A")
-    {{e #"jmp" {ovar 1} (#"pair" {ovar 0} {ovar 2}) }})).
+       {{e #"jmp" {ovar 1} (#"pair" {ovar 0} {ovar 2}) }})).
 
-Definition original_app_rule : compiler_case string :=
+Local Notation compiler_case := (@compiler_case string term sort).
+
+Definition original_app_rule : compiler_case :=
   term_case ["e'"; "e"; "B"; "A"; "G"] original_app_rule_term.
 
 Definition app_compiler : compiler string :=
@@ -429,7 +431,7 @@ Fixpoint generate_compiler_subst (hint : list string) (original : list string) :
   end.
 
 
-Definition simple_generate_eval_ctx_compiler_case (hint : list string) (case : compiler_case string) (lang_rule : rule) : option (compiler_case string) :=
+Definition simple_generate_eval_ctx_compiler_case (hint : list string) (case : compiler_case) (lang_rule : rule) : option (compiler_case) :=
   match lang_rule with
   | term_rule n args _ => 
       match case with

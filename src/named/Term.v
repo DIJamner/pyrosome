@@ -19,9 +19,7 @@ Ltac basic_term_firstorder_crush :=
                   generic_firstorder_crush x y.
 
 Section WithVar.
-  Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+  Context (V : Type).
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -38,8 +36,6 @@ Inductive term : Type :=
 Set Elimination Schemes.
 
 Coercion var : V >-> term.
-
-Instance term_default : WithDefault term := con default [].
 
 (*Stronger induction principle w/ better subterm knowledge
  *)
@@ -88,8 +84,6 @@ Definition term_rec :=
 
 Variant sort : Type := scon : V -> list term -> sort.
 
-Instance sort_default : WithDefault sort := scon default [].
-
 Lemma invert_eq_var_var x y
   : var x = var y <-> x = y.
 Proof. solve_invert_constr_eq_lemma. Qed.
@@ -109,15 +103,13 @@ Definition ctx : Type := named_list sort.
 
 Definition subst : Type := named_list term.
 
-Definition subst_lookup (s : subst) (n : V) : term :=
+Definition subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
   named_list_lookup (var n) s n.
 
-Arguments subst_lookup !s n/.
+Arguments subst_lookup {_} !s n/.
 
-Definition ctx_lookup (c: ctx) (n : V) : sort :=
-  named_list_lookup default c n.
-
-Arguments ctx_lookup !c n/.
+Section WithEqb.  
+  Context {V_Eqb : Eqb V}.
 
 
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
@@ -149,13 +141,31 @@ Fixpoint ws_term (args : list V) (e : term) : Prop :=
   end.
 Arguments ws_term args !e/.
 
-Definition ws_args args : list term -> Prop := all (ws_term args).
-Arguments ws_args args !s/.
+  Local Hint Resolve args_well_scoped_subst : term.
 
+  Instance substable_term : Substable0 term :=
+    {
+      inj_var := var;
+      apply_subst0 := term_subst;
+      well_scoped0 := ws_term;
+    }.
+
+  Notation ws_args := (ws_args (V:=V) (A:=term)).
+
+  (*TODO: I have a false dependency on Eqb V here
+    due to the structure of Substable0.
+    Could eliminate it by parameterizing apply_subst0 by Eqb V.
+*)
 Definition ws_sort args (t : sort) : Prop :=
   match t with scon _ s => ws_args args s end.
 Arguments ws_sort args !t/.
 
+(* TODO: currently duplicated in Model.v
+   What's the best way to organize the code to avoid?
+   Maybe the following:
+   Rule -> |- RuleDefs , CoreDefs |- Rule
+   Core -> RuleDefs |- CoreDefs, RuleDefs,Rule, CoreDefs|- Core
+ *)
 Fixpoint ws_ctx (c : ctx) : Prop :=
   match c with
   | [] => True
@@ -169,21 +179,21 @@ Proof using .
   induction c; basic_goal_prep; basic_utils_crush.
 Qed.
 
-  
-   Instance substable_term : Substable0 term :=
-    {
-      inj_var := var;
-      apply_subst0 := term_subst;
-      well_scoped0 := ws_term;
-    }.
-
-
 Lemma id_args_cons A n (a :A) c
   : id_args ((n,a)::c) = (var n)::(id_args c).
 Proof.
   reflexivity.
 Qed.
+
   
+  (*TODO: move to Substable.v*)
+  Lemma id_args_nil {A} `{Substable0 A} B'
+    : @id_args V A _ B' [] = [].
+  Proof.
+    reflexivity.
+  Qed.
+  
+Hint Rewrite id_args_nil : term.  
 Hint Rewrite id_args_cons : term.
 Hint Rewrite @subst_assoc : term.
 Hint Rewrite @subst_id : term.
@@ -295,113 +305,24 @@ Proof.
   induction l; basic_goal_prep;
     basic_term_crush.
 Qed.
-Local Hint Resolve term_well_scoped_subst : term.
+  Local Hint Resolve term_well_scoped_subst : term.
+
+  (*TODO: Prove*)
+  Lemma subst_var `{EqbV: Eqb V}
+    : forall s x, apply_subst0 s (inj_var x) = subst_lookup (V_Eqb:=EqbV) s x.
+  Admitted.
   
   Instance substable_term_ok : Substable0_ok term :=
     {
+      subst_var := @subst_var;
       subst_assoc0 := term_subst_assoc;
       subst_id0 := term_subst_id;
       strengthen_subst0 := term_strengthen_subst;
       well_scoped_subst0 := term_well_scoped_subst;
     }.
  
-Lemma subst_subst_assoc : forall s1 s2 a,
-    ws_subst (map fst s2) a ->
-    subst_cmp s1 (subst_cmp s2 a)
-    = subst_cmp (subst_cmp s1 s2) a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma subst_subst_id
-  : forall A (c : named_list A) a,
-    subst_cmp (id_subst c) a = a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma subst_strengthen_subst s a n e
-  : ws_subst (map fst s) a ->
-    fresh n s ->
-    subst_cmp ((n,e)::s) a = subst_cmp s a.
-Proof using V V_Eqb V_default.
-  induction a; basic_goal_prep; f_equal;
-    try (solve [basic_term_crush]).
-  f_equal.
-  apply term_strengthen_subst; auto.
-  basic_term_crush.
-Qed.
-
-Lemma subst_well_scoped_subst args s a
-    : ws_subst args s ->
-      ws_subst (map fst s) a ->
-      ws_subst args (subst_cmp s a).
-Proof.
-  induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
-Qed.
 Local Hint Resolve subst_well_scoped_subst : term.
 
-Instance substable_subst : Substable term subst :=
-  {
-  apply_subst := subst_cmp (V:=V) (A:=term);
-  well_scoped := @ws_subst _ _ _;
-  subst_assoc := subst_subst_assoc;
-  subst_id := subst_subst_id;
-  strengthen_subst := subst_strengthen_subst;
-  well_scoped_subst := subst_well_scoped_subst;
-  }.
-
-Definition args_subst s (a : list term) := map (apply_subst s) a.
-Arguments args_subst s !a/.
-
-Lemma args_subst_assoc : forall s1 s2 a,
-    ws_args (map fst s2) a ->
-    args_subst s1 (args_subst s2 a)
-    = args_subst (subst_cmp s1 s2) a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma args_subst_id
-  : forall A (c : named_list A) a,
-    args_subst (id_subst c) a = a.
-Proof.
-  induction a; basic_goal_prep;
-    basic_term_crush.
-Qed.
-
-Lemma args_strengthen_subst s a n e
-  : ws_args (map fst s) a ->
-    fresh n s ->
-    args_subst ((n,e)::s) a = args_subst s a.
-Proof.
-  induction a; basic_goal_prep; f_equal;
-    basic_term_crush.
-Qed.
-
-Lemma args_well_scoped_subst args s a
-    : ws_subst args s ->
-      ws_args (map fst s) a ->
-      ws_args args (args_subst s a).
-Proof.
-  induction a; basic_goal_prep; try case_match;
-    basic_term_crush.
-Qed.
-Local Hint Resolve args_well_scoped_subst : term.
-
-Instance substable_args : Substable _ (list term) :=
-  {
-  apply_subst := args_subst;
-  well_scoped := ws_args;
-  subst_assoc := args_subst_assoc;
-  subst_id := args_subst_id;
-  strengthen_subst := args_strengthen_subst;
-  well_scoped_subst := args_well_scoped_subst;
-  }.
 
 Definition sort_subst (s : subst) (t : sort) : sort :=
   let (c, s') := t in scon c s'[/s/].
@@ -414,6 +335,9 @@ Lemma sort_subst_assoc : forall s1 s2 a,
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  erewrite subst_assoc; eauto.
+  typeclasses eauto.
 Qed.
 
 
@@ -433,6 +357,9 @@ Lemma sort_strengthen_subst s a n e
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  erewrite strengthen_subst; eauto.
+  typeclasses eauto.
 Qed.
 
 Lemma sort_well_scoped_subst args s a
@@ -442,15 +369,25 @@ Lemma sort_well_scoped_subst args s a
 Proof.
   destruct a; basic_goal_prep; try case_match;
     basic_term_crush.
+  (* TODO: the automation should get this *)
+  change (ws_args ?c ?a) with (well_scoped c a) in *.
+  eapply well_scoped_subst; eauto.
+  typeclasses eauto.
 Qed.
 
-Instance substable_sort : Substable term sort :=
-  {
-  subst_assoc := sort_subst_assoc;
-  subst_id := sort_subst_id;
-  strengthen_subst := sort_strengthen_subst;
-  well_scoped_subst := sort_well_scoped_subst;
-  }.
+  #[export] Instance substable_sort : Substable term sort :=
+    {
+      apply_subst := sort_subst;
+      well_scoped := ws_sort;
+    }.
+  
+  #[export] Instance substable_sort_ok : Substable_ok term sort :=
+    {
+      subst_assoc := sort_subst_assoc;
+      subst_id := sort_subst_id;
+      strengthen_subst := sort_strengthen_subst;
+      well_scoped_subst := sort_well_scoped_subst;
+    }.
 
 Fixpoint eq_term e1 e2 {struct e1} : bool :=
   match e1, e2 with
@@ -535,6 +472,23 @@ Defined.
 
 Definition ctx_eq_dec := list_eq_dec (pair_eq_dec Eqb_dec sort_eq_dec).
 
+  Section WithDefault.
+    
+    Context {V_default : WithDefault V}.
+    
+    Instance term_default : WithDefault term := con default [].
+    Instance sort_default : WithDefault sort := scon default [].
+
+
+    Definition ctx_lookup (c: ctx) (n : V) : sort :=
+      named_list_lookup default c n.
+
+    Arguments ctx_lookup !c n/.
+
+  End WithDefault.
+    
+  End WithEqb.
+  
 End WithVar.
 
 Arguments var {V}%type_scope _.
@@ -544,6 +498,7 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite @subst_id : term.
 #[export] Hint Rewrite @strengthen_subst : term.
 #[export] Hint Resolve well_scoped_subst : term.
+#[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
 #[export] Hint Rewrite invert_eq_con_var : term.
 #[export] Hint Rewrite invert_eq_var_con : term.
@@ -565,6 +520,9 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Existing Instance substable_sort.
 #[export] Existing Instance substable_args.
 #[export] Existing Instance substable_subst.
+  
+#[export] Existing Instance term_default.
+#[export] Existing Instance sort_default.
 
 
 Ltac fold_Substable :=
@@ -590,11 +548,8 @@ Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
 
 
 Arguments ws_term [V]%type_scope args !e/.
-Arguments ws_args [V]%type_scope args !s/.
-Arguments ws_subst [V]%type_scope {A}%type_scope {Substable0} args !s/.
-Arguments ws_ctx [V]%type_scope !c/.
+Arguments ws_ctx [V]%type_scope {V_Eqb} !c/.
 Arguments id_args : simpl never.
-Arguments args_subst [V]%type_scope {V_Eqb} s !a/.
 Arguments sort_subst [V]%type_scope {V_Eqb} s !t/.
 
 (*Moved out of the module because Coq seems

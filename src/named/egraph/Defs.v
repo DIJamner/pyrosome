@@ -1042,7 +1042,7 @@ Module PositiveInstantiation.
       (rename_term constr_rename test_ctx_var_map
                    {{e #"ext" "G" "G"}}).
 
-  Print test_term.
+  (*Print test_term.*)
   (*TODO: should return none
 
  add_term eqns look right,
@@ -1063,12 +1063,12 @@ Module PositiveInstantiation.
   Definition as_list {A} :=
     TrieMap.trie_fold (B:=A) (fun m k v => (k,v)::m) [].
 
-  Compute
+  (*Compute
     (Utils.named_map as_list (as_list ( Canonical.PTree.Nodes
                                           (Canonical.PTree.Node010
                                              (Canonical.PTree.Nodes
                                                 (Canonical.PTree.Node011 tt
-                                                                         (Canonical.PTree.Node100 (Canonical.PTree.Node010 tt)))))))).
+                                                                         (Canonical.PTree.Node100 (Canonical.PTree.Node010 tt)))))))).*)
 
 
   (*Testing running this on something more complicated*)
@@ -1079,7 +1079,7 @@ Module PositiveInstantiation.
       (rename_term constr_rename test_ctx_var_map
                    {{e #"cmp" "G1" "G2" (#"ext" "G3" "A") "f" (#"snoc" "G2" "G3" "A" "g" "v")}}).
 
-  Print test_term. (*{{e #61 100 100}}*)
+  (*Print test_term.*) (*{{e #61 100 100}}*)
   (*TODO: should return none
 
  add_term eqns look right,
@@ -1094,9 +1094,8 @@ Module PositiveInstantiation.
                             pos_value_subst
                             test_term
                             initial_egraph)).
-  Print egraph2.
-  
-Fail
+  (*Print egraph2.*)
+
 End PositiveInstantiation.
 
 

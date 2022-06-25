@@ -13,7 +13,7 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
-
+(*TODO:currently broken
 
 Section WithVar.
   Context (V : Type)
@@ -55,6 +55,8 @@ Proof.
   basic_core_crush.
 Qed.
 
+  Section AllModels.
+    Context {Mterm Msort} (model : Model (V:= V)).
 Lemma compile_strengthen_term_incl cmp e
   : all_constructors (fun n => In n (map fst cmp)) e ->
     forall cmp', incl cmp cmp' ->
@@ -382,3 +384,4 @@ Hint Resolve elab_preserving_compiler_monotonicity : auto_elab.
          *).
 
 End WithVar.
+*)

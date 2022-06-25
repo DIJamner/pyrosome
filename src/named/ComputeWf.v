@@ -22,6 +22,18 @@ Section WithVar.
   Notation rule := (@rule V).
   Notation lang := (@lang V).
 
+  
+  Notation eq_subst l :=
+    (eq_subst (Model:= core_model l)).
+  Notation eq_args l :=
+    (eq_args (Model:= core_model l)).
+  Notation wf_subst l :=
+    (wf_subst (Model:= core_model l)).
+  Notation wf_args l :=
+    (wf_args (Model:= core_model l)).
+  Notation wf_ctx l :=
+    (wf_ctx (Model:= core_model l)).
+
   Section Terms.
     Context (l : lang).
 
@@ -49,6 +61,7 @@ Section WithVar.
 
     Arguments compute_noconv_wf_term c !e !fuel /.
     Arguments compute_noconv_wf_args c !s !c' !fuel/.
+
     
     Lemma compute_noconv_wf_term_sound c e t fuel
       : wf_lang l ->

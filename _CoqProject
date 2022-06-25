@@ -15,30 +15,33 @@ src/Utils/PersistentArrayList.v
 src/Utils/UnionFind.v
 src/Utils/ExtraMaps.v
 src/Utils/RelationalDB.v
+src/Utils/GoalDisplay.v
 
 -Q src/named Named
 src/named/Substable.v
+src/named/Model.v
 src/named/Term.v
 src/named/Rule.v
 src/named/Linter.v
 src/named/Core.v
+src/named/TreeProofs.v
+src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
+src/named/VSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
-src/named/SimpleVProd.v
 src/named/SimpleVSum.v
+src/named/SimpleVProd.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
 src/named/CompilerDefs.v
-src/named/MultiCompilerDefs.v
 src/named/AllConstructors.v
 src/named/Compilers.v
-src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
+src/named/egraph/Defs.v
 src/named/CompilerTools.v
-src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
@@ -49,6 +52,3 @@ src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/SimpleVCCHeap.v
 src/named/SimpleVFixCPS.v
-src/named/MultiCompilers.v
-src/named/Renaming.v
-src/named/egraph/Defs.v
