@@ -231,7 +231,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.
 
 
-(*
+
 Definition block_subst_def : lang :=
   {[l
       [s| "G" : #"env"
@@ -262,7 +262,7 @@ Derive block_subst
        As block_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
-*)
+
 
 Fixpoint notinb (s : string) (l : list string) :=
   match l with
@@ -285,6 +285,7 @@ Definition get_subst_constr s :=
   match s with
   | "exp" => Some "exp_subst"
   | "val" => Some "val_subst"
+  | "ty" => Some "ty_subst"
   | "blk" => Some "blk_subst"
   | _ => None
   end.
@@ -340,7 +341,7 @@ Definition substable_constr name c args t : option lang :=
       let blank_term := con name (map var args) in
       let lhs := {{e #subst_constr g {blank_term} }} in
       let rhs := con name (gen_rhs_subterms G g c args) in
-      let t' := scon s [A; var G'] in
+      let t' := scon s [{{e#"ty_subst" g {A} }}; var G'] in
       let subst_rule :=
           term_eq_rule c' lhs rhs t' in
       Some [(append name "-subst",subst_rule);(name, constr_rule)]
