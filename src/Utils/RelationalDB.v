@@ -1247,14 +1247,14 @@ Section __.
     Lemma member_intersection_r (m m' : elt_set) x
       : member (intersection m m') x = true -> member m' x = true.
   Proof using elt_set_ok.
-    TODO: get_intersect_same is left-biased, need commutativity or stronger axiom
+    (*TODO: get_intersect_same is left-biased, need commutativity or stronger axiom*)
   Admitted.
     
   
   Lemma fold_left_intersect_subset s (m0 m1 : elt_set)
     : finite_set m0 = fold_left set_with_top_intersection s (finite_set m1) ->
       (forall x, member m0 x = true -> member m1 x = true).
-  Proof using choose_next_val elt elt_default elt_set qt_nil query_trie relation values_of_next_var.
+  Proof using choose_next_val elt elt_default elt_set qt_nil query_trie relation values_of_next_var elt_set_ok.
     revert m0 m1;
       induction s;
       basic_goal_prep;
@@ -1877,7 +1877,7 @@ Arguments all_unique {_} !_ /.
         }
       }
       {
-        
+        (*
         TODO: what is n???
       }
         ; eauto.
@@ -1898,7 +1898,7 @@ Arguments all_unique {_} !_ /.
             sound_trie_for_relation R (map ? t ?
 
 
-        *)
+        *)*)
   Admitted.                     
 
 End __.
