@@ -29,6 +29,7 @@ src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
+src/named/VSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleVProd.v
