@@ -38,12 +38,9 @@ src/named/SimpleVFix.v
 src/named/CompilerDefs.v
 src/named/AllConstructors.v
 src/named/Compilers.v
-src/named/CompilerTransitivity.v
 src/named/ElabCompilers.v
-src/named/Renaming.v
 src/named/egraph/Defs.v
 src/named/CompilerTools.v
-src/named/CompilerForExt.v
 src/named/SimpleVCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
@@ -54,3 +51,4 @@ src/named/SimpleVCC.v
 src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/SimpleVCCHeap.v
+src/named/Renaming.v
