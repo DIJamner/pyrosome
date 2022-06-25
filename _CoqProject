@@ -32,6 +32,7 @@ src/named/ComputeWf.v
 src/named/VSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
+src/named/SimpleVSum.v
 src/named/SimpleVProd.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
@@ -45,10 +46,9 @@ src/named/SimpleVCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
 src/named/Let.v
-src/named/SimpleVFixCPS.v
 src/named/NatHeap.v
 src/named/SimpleVCC.v
 src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/SimpleVCCHeap.v
-src/named/Renaming.v
+src/named/SimpleVFixCPS.v

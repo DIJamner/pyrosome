@@ -19,79 +19,91 @@ Definition sum_def : lang :=
 
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------
-      #"prod" "A" "B" : #"ty"
+      #"sum" "A" "B" : #"ty"
   ];
   [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e1" : #"exp" "G" "A",
-      "e2" : #"exp" "G" "B"
+      "e" : #"exp" "G" "A"
       -----------------------------------------------
-      #"pair" "e1" "e2" : #"exp" "G" (#"prod" "A" "C" "B")
-   ];
-  [:| "G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      -----------------------------------------------
-      #"pair_val" "v1" "v2" : #"val" "G" (#"prod" "A" "B")
+      #"inl" "e" : #"exp" "G" (#"sum" "A" "B")
   ];
   [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"exp" "G" (#"prod" "A" "B")
+      "e" : #"exp" "G" "B"
       -----------------------------------------------
-      #".1" "e" : #"exp" "G" "A"
-   ];     
-    [:| "G" : #"env",
+      #"inr" "e" : #"exp" "G" (#"sum" "A" "B")
+  ];
+  [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"exp" "G" (#"prod" "A" "B")
+      "v" : #"val" "G" "A"
       -----------------------------------------------
-      #".2" "e" : #"exp" "G" "B"
-    ];
+      #"inl_val" "v" : #"val" "G" (#"sum" "A" "B")
+  ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v" : #"val" "G" "B"
+      -----------------------------------------------
+      #"inr_val" "v" : #"val" "G" (#"sum" "A" "B")
+  ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "C" : #"ty",
+      "e" : #"exp" "G" (#"sum" "A" "B"),
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
+      -----------------------------------------------
+      #"case" "e" "case_l" "case_r" : #"exp" "G" "C"
+  ];
      (*TODO: autogenerate somehow *)
      [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G" "A",
-      "v'" : #"val" "G" "B"
-      ----------------------------------------------- ("ret_pair")
-      #"pair" (#"ret" "v") (#"ret" "v'")
-      = #"ret" (#"pair_val" "v" "v'")
-      : #"exp" "G" (#"prod" "A" "B")
+      "v" : #"val" "G" "A"
+      ----------------------------------------------- ("retl")
+      #"inl" (#"ret" "v")
+      = #"ret" (#"inl_val" "v" )
+      : #"exp" "G" (#"sum" "A" "B")
      ]; 
-  [:="G" : #"env",
+     [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
+      "v" : #"val" "G" "B"
+      ----------------------------------------------- ("retr")
+      #"inr" (#"ret" "v")
+      = #"ret" (#"inr_val" "v" )
+      : #"exp" "G" (#"sum" "A" "B")
+     ];
+  [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 1")
-      #".1" (#"ret" (#"pair_val" "v1" "v2"))
-      = #"ret" "v1"
-      : #"exp" "G" "A"
+      "C" : #"ty",
+      "v" : #"val" "G" "A",
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
+      ----------------------------------------------- ("case_l ret")
+      #"case" (#"ret" (#"inl_val" "v")) "case_l" "case_r"
+      = #"exp_subst" (#"snoc" #"id" "v") "case_l"
+      : #"exp" "G" "C"
   ];
   [:= "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "v1" : #"val" "G" "A",
-      "v2" : #"val" "G" "B"
-      ----------------------------------------------- ("project 2")
-      #".2" (#"ret" (#"pair_val" "v1" "v2"))
-      = #"ret" "v2"
-      : #"exp" "G" "B"
-  ];
-  [:= "G" : #"env", "A" : #"ty", "B" : #"ty",
-      "v" : #"val" "G" (#"prod" "A" "B")
-      ----------------------------------------------- ("prod_eta")
-      #"ret" "v"
-      = #"pair" (#".1" (#"ret" "v")) (#".2" (#"ret" "v"))
-      : #"exp" "G" (#"prod" "A" "B")
-     ]
+      "C" : #"ty",
+      "v" : #"val" "G" "B",
+      "case_l" : #"exp" (#"ext" "G" "A") "C",
+      "case_r" : #"exp" (#"ext" "G" "B") "C"
+      ----------------------------------------------- ("case_r ret")
+      #"case" (#"ret" (#"inr_val" "v")) "case_l" "case_r"
+      = #"exp_subst" (#"snoc" #"id" "v") "case_r"
+      : #"exp" "G" "C"
+  ]
     ]}.
 
 
 Derive sum
-       SuchThat (elab_lang_ext (exp_subst++value_subst) sum_def sum)
+       
+SuchThat (elab_lang_ext (exp_subst++value_subst) sum_def sum)
        As sum_wf.
 Proof.
 
@@ -102,24 +114,7 @@ Proof.
      to see what's wrong.
      Make sure to check variable and constructor names, it's easy to typo them.
    *)
-  setup_elab_lang.
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
-  - solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ].
+  auto_elab.
 Qed.
 #[export] Hint Resolve sum_wf : elab_pfs.
 
