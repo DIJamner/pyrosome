@@ -39,7 +39,7 @@ Definition ch8_def : lang :=
         "e" : #"exp"
         -----------------------------------------------
       #"assign" "x" "e" : #"cmd"
-  ];
+    ];
     [:| 
         "cmd1" : #"cmd",
         "cmd2" : #"cmd"
@@ -52,26 +52,10 @@ Definition ch8_def : lang :=
       -----------------------------------------------
       #"if0" "e" "z" "nz" : #"cmd"
     ];
-
     [:| "e" : #"exp", 
         "c" : #"cmd"
       -----------------------------------------------
       #"while" "e" "c" : #"cmd"
-    ];
-    [:| "H" : #"heap",
-        "e" : #"exp"
-      -----------------------------------------------
-      #"eval" "H" "e" : #"natural"
-    ];
-    [:= "H" : #"heap",
-        "n" : #"natural"
-      ----------------------------------------------- ("eval_value")
-      #"eval" "H" (#"value" "n") = "n" : #"natural"
-    ];
-    [:= "H" : #"heap",
-        "n" : #"natural"
-      ----------------------------------------------- ("eval_var")
-      #"eval" "H" (#"hvar" "n") = #"lookup" "H" "n" : #"natural"
     ]
     ]}.
 
@@ -127,49 +111,47 @@ Definition ch8_config_def : lang :=
       #"config" "H" (#"seq" "c" #"skip") = #"config" "H" "c" : #"configuration"
     ];
     [:= "H" : #"heap",
-        "e" : #"exp",
+        "v" : #"natural",
         "x" : #"natural",
         "c" : #"cmd"
       ----------------------------------------------- ("ss_seq_assign")
-      #"config" "H" (#"seq" (#"assign" "x" "e") "c")
-      = #"config" (#"hset" "H" "x" (#"eval" "H" "e")) "c" : #"configuration"
+      #"config" "H" (#"seq" (#"assign" "x" (#"value" "v")) "c")
+      = #"config" (#"hset" "H" "x" "v") "c" : #"configuration"
     ];
     [:= "H" : #"heap",
         "e" : #"exp",
         "z" : #"cmd",
         "nz" : #"cmd",
         "c" : #"cmd",
-        "p_neq" : #"neq" #"0" (#"eval" "H" "e")
+        "n" : #"natural"
       ----------------------------------------------- ("ss_seq_if_nonzero")
-      #"config" "H" (#"seq" (#"if0" "e" "z" "nz") "c")
+      #"config" "H" (#"seq" (#"if0" (#"value" (#"1+" "n"))"z" "nz") "c")
       = #"config" "H" (#"seq" "nz" "c"): #"configuration"
     ];
     [:= "H" : #"heap",
         "e" : #"exp",
         "z" : #"cmd",
         "nz" : #"cmd",
-        "c" : #"cmd",
-        "p_eq" : #"eq" #"0" (#"eval" "H" "e")
+        "c" : #"cmd"
       ----------------------------------------------- ("ss_seq_if_zero")
-      #"config" "H" (#"seq" (#"if0" "e" "z" "nz") "c")
+      #"config" "H" (#"seq" (#"if0" (#"value" #"0") "z" "nz") "c")
       = #"config" "H" (#"seq" "z" "c") : #"configuration"
     ];
     [:= "H" : #"heap",
         "e" : #"exp",
         "c1" : #"cmd",
         "c2" : #"cmd",
-        "p_neq" : #"neq" #"0" (#"eval" "H" "e")
+        "n" : #"natural"
       ----------------------------------------------- ("ss_seq_while_true")
-      #"config" "H" (#"seq" (#"while" "e" "c1") "c2")
+      #"config" "H" (#"seq" (#"while" (#"value" (#"1+" "n")) "c1") "c2")
       = #"config" "H" (#"seq" "c1" (#"seq" (#"while" "e" "c1") "c2")) : #"configuration"
     ];
     [:= "H" : #"heap",
         "e" : #"exp",
         "c1" : #"cmd",
-        "c2" : #"cmd",
-        "p_eq" : #"eq" #"0" (#"eval" "H" "e")
+        "c2" : #"cmd"
       ----------------------------------------------- ("ss_seq_while_false")
-      #"config" "H" (#"seq" (#"while" "e" "c1") "c2")
+      #"config" "H" (#"seq" (#"while" (#"value" #"0") "c1") "c2")
       = #"config" "H" "c2" : #"configuration"
     ];
     [:= "H" : #"heap",
@@ -188,53 +170,154 @@ Derive ch8_config
 Proof.  auto_elab. Qed.
 #[export] Hint Resolve ch8_config_wf : elab_pfs.
 
+
+Definition ch8_ectx_def : lang := 
+  {[l
+    [s|
+      -----------------------------------------------
+      #"Ectx" srt
+    ];
+    [:|
+       -----------------------------------------------
+      #"[ ]" : #"Ectx"
+    ];
+    [s|
+      -----------------------------------------------
+      #"Cctx" srt
+    ];
+    [:| "x" : #"natural",
+        "E" : #"Ectx"
+        -----------------------------------------------
+        #"Eassign" "x" "E" : #"Cctx"
+    ];
+    [:| "E" : #"Ectx", 
+        "z" : #"cmd",
+        "nz" : #"cmd"
+      -----------------------------------------------
+      #"Eif0" "E" "z" "nz" : #"Cctx"
+    ];
+    [:| "E" : #"Ectx", 
+        "c" : #"cmd"
+      -----------------------------------------------
+      #"Ewhile" "E" "c" : #"Cctx"
+    ];
+    [:| "C" : #"Cctx", 
+        "e" : #"exp"
+      -----------------------------------------------
+      #"Cplug" "C" "e" : #"cmd"
+    ];
+    [:| "E" : #"Ectx", 
+        "e" : #"exp"
+      -----------------------------------------------
+      #"Eplug" "E" "e" : #"exp"
+    ];
+    [:= "e" : #"exp"
+      ----------------------------------------------- ("Eplug hole")
+      #"Eplug" #"[ ]" "e" = "e" : #"exp"
+    ];
+    [:= "x" : #"natural",
+        "E" : #"Ectx",
+        "e" : #"exp"
+      ----------------------------------------------- ("Cplug assign")
+      #"Cplug" (#"Eassign" "x" "E") "e" = #"assign" "x" (#"Eplug" "E" "e") : #"cmd"
+    ];
+    [:= "E" : #"Ectx",
+        "z" : #"cmd",
+        "nz" : #"cmd",
+        "e" : #"exp"
+      ----------------------------------------------- ("Cplug if0")
+      #"Cplug" (#"Eif0" "E" "z" "nz") "e" = #"if0" (#"Eplug" "E" "e") "z" "nz" : #"cmd"
+    ];
+    [:= "E" : #"Ectx",
+        "c" : #"cmd",
+        "e" : #"exp"
+      ----------------------------------------------- ("Cplug while")
+      #"Cplug" (#"Ewhile" "E" "c") "e" = #"while" (#"Eplug" "E" "e") "c" : #"cmd"
+    ];
+    [:= "H" : #"heap",
+        "C" : #"Cctx",
+        "n" : #"natural"
+      ----------------------------------------------- ("plug hvar lookup")
+      #"config" "H" (#"Cplug" "C" (#"hvar" "n")) =
+           #"config" "H" (#"Cplug" "C" (#"value" (#"lookup" "H" "n"))) : #"configuration"
+    ]
+  ]}.
+
+Derive ch8_ectx
+       SuchThat (elab_lang_ext (ch8_config ++ nat_eq ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
+       As ch8_ectx_wf.
+Proof.  auto_elab. Qed.
+#[export] Hint Resolve ch8_ectx_wf : elab_pfs.
+
 Definition jmp_hd :=
   {{e #"jmp" #"hd" #"tt" }}.
 
 Definition seq c1 c2 :=
   {{e #"blk_subst" (#"snoc" #"wkn" (#"closure" #"unit" {c2} #"hd")) {c1} }}.
 
-Definition env_with_context :=
-  {{e #"ext "#"emp" (#"neg" #"unit")}}.
+Definition cmd_env :=
+  {{e #"ext" #"emp" (#"neg" #"unit")}}.
 
-Definition if0_exp e z nz :=
-  {{e #"blk_subst" { e }
-      (#"if0" #"hd" (#"blk_subst" #"wkn" {z})  (#"blk_subst" #"wkn" {nz}))
-  }}.
+Definition exp_env :=
+  {{e #"ext" #"emp" (#"neg" #"natural")}}.
 
 Definition plug_exp e c :=
   {{e #"blk_subst"
       (#"snoc" #"wkn" (#"closure" #"natural" {c} #"tt"))
       {e} }}.
 
+Definition assign x e :=
+  plug_exp e {{e #"set" (#"nv" {x}) (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")}}.
+
+Definition if0 e z nz :=
+  seq (plug_exp e {{e #"if0" (#".2" #"hd") {z} {nz} }}) jmp_hd.
+
+Definition while e c :=
+  {{e #"jmp" (#"fix"
+               (#"closure"
+                 (#"pair" (#"neg" #"unit") #"unit")
+                 {plug_exp
+                    e
+                    {{e #"if0" (#".2" #"hd")
+                        {jmp_hd}
+                        {seq c {{e #"jmp" (#".1" #"hd") #"tt" }} }
+                    }}
+                 }
+                 #"tt")
+               #"tt")
+      #"tt"
+  }}.
+
+Definition blk_to_val b :=
+  {{e #"closure" #"unit" (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {b}) #"hd"}}.
+
+Definition plug E v :=
+  {{e #"jmp" (#"closure" (#"neg" #"unit") (#"blk_subst" (#"snoc" (#"snoc" #"wkn" (#".2" #"hd")) (#".1" #"hd")) {E}) #"hd") {v} }}.
+
 Definition ch8_cc_def : compiler :=
   match # from (ch8_config ++ nat_eq ++ ch8 ++ heap ++ nat_lang) with
-  | {{s #"exp"}} => {{s #"blk" (#"ext" #"emp" (#"neg" #"natural"))}}
-  | {{s #"cmd"}} => {{s #"blk" {env_with_context} }}
-  | {{s #"configuration"}} => {{s #"configuration" {env_with_context} }}
+  | {{s #"exp"}} => {{s #"blk" {exp_env} }}
+  | {{s #"cmd"}} => {{s #"blk" {cmd_env} }}
+  | {{s #"configuration"}} => {{s #"configuration" {cmd_env} }}
+  | {{s #"Ectx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"natural")) }}
+  | {{s #"Cctx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"unit")) }}
   | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
   | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"wkn" #"hd") #"hd")}}
   | {{e #"skip"}} => jmp_hd
-  | {{e #"assign" "x" "e" }} => plug_exp {{e "e"}} {{e #"set" (#"nv" "x") (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")}}
+  | {{e #"assign" "x" "e" }} => assign {{e "x"}} {{e "e"}}
   | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} (seq {{e "cmd2"}} jmp_hd)
-  | {{e #"if0" "e" "z" "nz"}} => seq (plug_exp {{e "e"}} {{e #"if0" (#".2" #"hd") "z" "nz"}}) jmp_hd
-  | {{e #"while" "e" "c"}} =>
-      {{e #"jmp" (#"fix"
-                   (#"closure"
-                     (#"pair" (#"neg" #"unit") #"unit")
-                     {plug_exp
-                        {{e "e"}}
-                        {{e #"if0" (#".2" #"hd")
-                           {jmp_hd}
-                           {seq {{e "c"}} {{e #"jmp" (#".1" #"hd") #"tt" }} }
-                        }}
-                     }
-                     #"tt")
-                   #"tt")
-          #"tt"
-      }}
-  | {{e #"eval" "H" "e"}} => {{e #"0"}}
+  | {{e #"if0" "e" "z" "nz"}} => if0 {{e "e"}} {{e "z"}} {{e "nz"}}
+  | {{e #"while" "e" "c"}} => while {{e "e"}} {{e "c"}}
   | {{e #"config" "H" "c"}} => {{e #"config" "H" "c"}}
+  | {{e #"[ ]"}} => {{e #"jmp" (#"closure" (#"neg" #"unit") (#"jmp" (#".2" #"hd") #"tt") #"tt") (#"val_subst" #"wkn" #"hd") }}
+  | {{e #"Eassign" "x" "E"}} =>
+      assign {{e "x"}} (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}})
+  | {{e #"Eif0" "E" "z" "nz"}} =>
+      if0 (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}}) {{e "z"}} {{e "nz"}}
+  | {{e #"Ewhile" "E" "c"}} =>
+      while (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}}) {{e "c"}}
+  | {{e #"Cplug" "C" "e"}} => plug {{e "C"}} (blk_to_val {{e "e"}})
+  | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} (blk_to_val {{e "e"}})
   end.
 
 Definition target_lang : lang :=
@@ -242,8 +325,6 @@ Definition target_lang : lang :=
                                 ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
-
-Print auto_elab_compiler.
 
 Derive ch8_cc
        SuchThat (elab_preserving_compiler
@@ -254,8 +335,22 @@ Derive ch8_cc
                    (ch8_config++nat_eq++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
+  Print auto_elab_compiler.
+  Print setup_elab_compiler.
+  Ltac prove_from_known_elabs := admit.
+  cleanup_elab_after (match goal with
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp);
+         rewrite (as_nth_tail src);
+         assert (wf_lang tgt) by prove_from_known_elabs
+  end; break_preserving); repeat Matches.t.
+  Print auto_elab_compiler.
+  all : cleanup_elab_after try (solve [ by_reduction ]) .
+  Print auto_elab_compiler.
+  setup_elab_compiler.
+  cleanup_elab_after setup_elab_compiler.
   auto_elab_compiler.
-  cleanup_elab_after
+  cleanup_elab_after setup_elab_compiler.
     (reduce; eredex_steps_with unit_eta "unit eta").
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
