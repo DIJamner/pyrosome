@@ -335,6 +335,7 @@ Derive ch8_cc
                    (ch8_config++nat_eq++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
+
   Print auto_elab_compiler.
   Print setup_elab_compiler.
   Ltac prove_from_known_elabs := admit.
