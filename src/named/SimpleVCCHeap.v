@@ -42,9 +42,9 @@ Derive heap_id'
        As heap_id'_preserving.
 Proof.
   auto_elab_compiler.
-  cleanup_elab_after eredex_steps_with heap "heap_comm".
-  cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  cleanup_elab_after eredex_steps_with heap "lookup_empty".
+  - cleanup_elab_after eredex_steps_with heap "heap_comm".
+  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
 Qed.
 #[export] Hint Resolve heap_id'_preserving : elab_pfs.
 
@@ -106,38 +106,172 @@ Proof.
     reduce.
     repeat (term_cong; try term_refl; compute_eq_compilation).
     eapply eq_term_trans; cycle 1.
-    estep_under forget_eq_wkn' "forget_eq_wkn".
+    1:estep_under forget_eq_wkn' "forget_eq_wkn".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
-    estep_under value_subst "cmp_snoc".
+    1:estep_under value_subst "cmp_snoc".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
-    estep_under forget_eq_wkn' "forget_eq_wkn".
+    1:estep_under forget_eq_wkn' "forget_eq_wkn".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
-    estep_under value_subst "id_emp_forget".
+    1:estep_under value_subst "id_emp_forget".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
+    {
+     eapply eq_term_sym.
+     estep_under value_subst "id_right".
+    }
+    compute_eq_compilation.
+    
+    
+Ltac compute_eq_compilation ::=
+  repeat lazymatch goal with
+  |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
+   let ctx' := eval vm_compute in ctx in
+       let t1' := eval vm_compute in t1 in
+           let t2' := eval vm_compute in t2 in
+               change_no_check (eq_sort l ctx' t1' t2')
+  |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
+   let ctx' := eval vm_compute in ctx in
+       let e1' := eval vm_compute in e1 in
+           let e2' := eval vm_compute in e2 in
+               let t' := eval vm_compute in t in
+                   change_no_check (eq_term l ctx' e1' e2' t')
+  |[|- Model.eq_term _ _ _ _] => unfold Model.eq_term
+  |[|- eq_term_nocheck ?l ?ctx ?e1 ?e2 ?t] =>
+   let ctx' := eval vm_compute in ctx in
+       let e1' := eval vm_compute in e1 in
+           let e2' := eval vm_compute in e2 in
+               let t' := eval vm_compute in t in
+                   change_no_check (eq_term_nocheck l ctx' e1' e2' t')
+  end.
+
+term_cong; try term_refl; compute_eq_compilation.
+term_cong; try term_refl; compute_eq_compilation.
+term_cong; try term_refl; compute_eq_compilation.
+term_cong; try term_refl; compute_eq_compilation.
+term_cong; try term_refl; compute_eq_compilation.
+
+(*TODO: automatically decompose forgets*)
+eapply eq_term_trans; cycle 1.
+{
+  term_cong.
+  - term_refl.
+  - term_refl.
+  - term_refl.
+  - compute_eq_compilation.
+    eapply eq_term_trans; cycle 1.
+    {
+      eredex_steps_with value_subst "cmp_forget".
+      compute_eq_compilation.
+      instantiate (1:={{e #"ext" #"emp" "G'"}}).
+      instantiate (1:={{e #"wkn" (#"ext" #"emp" "G'") #"nat"}}).
+      repeat t'.
+    }
+    eapply eq_term_trans; cycle 1.
+    {
+      compute_eq_compilation.
+      term_cong.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - compute_eq_compilation.
+        eredex_steps_with value_subst "cmp_forget".
+        compute_eq_compilation.
+        instantiate (1:={{e #"emp"}}).
+        instantiate (1:={{e #"wkn" #"emp" "G'"}}).
+        repeat t'.
+    }
+    {
+      compute_eq_compilation.
+      term_cong.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - term_cong.
+        + term_refl.
+        + term_refl.
+        + term_refl.
+        + term_refl.
+        + compute_eq_compilation.
+          eredex_steps_with value_subst "id_emp_forget".
+    }
+  - term_refl.
+}
+compute_eq_compilation.
+eapply eq_term_trans; cycle 1.
+{
+  eredex_steps_with value_subst "cmp_snoc".
+}
+compute_eq_compilation.
+
+eapply eq_term_trans.
+{
+  eapply eq_term_sym.
+  eredex_steps_with value_subst "id_right".
+}
+compute_eq_compilation.
+term_cong; try term_refl; compute_eq_compilation.
+
+eapply eq_term_trans; cycle 1.
+{
+  term_cong.
+  - term_refl.
+  - term_refl.
+  - term_refl.
+  - compute_eq_compilation.
     eapply eq_term_sym.
-    estep_under value_subst "id_right".
-    compute_eq_compilation.
-    by_reduction.
+    eredex_steps_with value_subst "id_right".
+  - term_refl.
+}
+compute_eq_compilation.
+eapply eq_term_sym.
+eredex_steps_with value_subst "snoc_wkn_hd".
   }
-  {
+{
     reduce.
     eapply eq_term_trans.
-    eredex_steps_with heap_cps_ops "eval get".
+    {
+      eredex_steps_with heap_cps_ops "eval get".
+    }
+    compute_eq_compilation.
+
+    term_cong; try term_refl; compute_eq_compilation.
     reduce.
-    repeat (term_cong; try term_refl; compute_eq_compilation).
+    term_cong; try term_refl; compute_eq_compilation.
+    term_cong; try term_refl; compute_eq_compilation.
     eapply eq_term_trans.
-    eapply eq_term_sym.
-    eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
+    {
+      eapply eq_term_sym.
+      eredex_steps_with value_subst "cmp_forget".
+      instantiate (1:={{e #"emp"}}).
+      instantiate (1:={{e #"wkn" #"emp" "G"}}).
+      repeat t'.
+    }
     compute_eq_compilation.
     eapply eq_term_trans.
-    2:eredex_steps_with value_subst "id_right".
-    by_reduction.
-  }
-  Unshelve.
+    {
+      term_cong.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - compute_eq_compilation.
+        eapply eq_term_sym.
+        eredex_steps_with value_subst "id_emp_forget".
+    }
+    compute_eq_compilation.
+    eapply eq_term_trans.
+    {
+      eredex_steps_with value_subst "id_right".
+    }
+    compute_eq_compilation.
+    term_refl.
+}
+Unshelve.
   all: repeat t'.
 Qed.
 #[export] Hint Resolve heap_cc_preserving : elab_pfs.

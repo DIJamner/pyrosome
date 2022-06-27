@@ -25,8 +25,20 @@ Section WithVar.
   Notation subst := (@subst V).
   Notation rule := (@rule V).
   Notation lang := (@lang V).
-  Notation compiler := (@compiler V).
-  Notation compiler_case := (@compiler_case V).
+  Notation compiler_case := (@compiler_case V term sort).
+  Notation compiler := (@compiler V term sort).
+
+  
+  Notation eq_subst l :=
+    (eq_subst (Model:= core_model l)).
+  Notation eq_args l :=
+    (eq_args (Model:= core_model l)).
+  Notation wf_subst l :=
+    (wf_subst (Model:= core_model l)).
+  Notation wf_args l :=
+    (wf_args (Model:= core_model l)).
+  Notation wf_ctx l :=
+    (wf_ctx (Model:= core_model l)).
 
 Section Extension.
   Context (src_pre : lang) (*assumed to already be elaborated*)
@@ -36,43 +48,51 @@ Section Extension.
   Notation compile_sort cmp := (compile_sort (cmp++cmp_pre)).
   Notation compile_ctx cmp := (compile_ctx (cmp++cmp_pre)).
 
-  Inductive elab_preserving_compiler (target : lang) : compiler -> compiler -> lang -> Prop :=
-  | elab_preserving_compiler_nil : elab_preserving_compiler target [] [] []
+
+  Section WithModel.
+    Context (target : lang).
+
+    (* TODO: is there a nicer way of doing this? *)
+    Let model := core_model target.
+    Existing Instance model.
+    Existing Instance term_default.
+    Existing Instance sort_default.
+
+  Inductive elab_preserving_compiler : compiler -> compiler -> lang -> Prop :=
+  | elab_preserving_compiler_nil : elab_preserving_compiler [] [] []
   | elab_preserving_compiler_sort : forall cmp ecmp l n c args t et,
-      elab_preserving_compiler target cmp ecmp l ->
+      elab_preserving_compiler cmp ecmp l ->
       elab_sort target (compile_ctx ecmp c) t et ->
-      elab_preserving_compiler target
-                               ((n,sort_case (map fst c) t)::cmp)
+      elab_preserving_compiler ((n,sort_case (map fst c) t)::cmp)
                                ((n,sort_case (map fst c) et)::ecmp)
                                ((n,sort_rule c args) :: l)
   | elab_preserving_compiler_term : forall cmp ecmp l n c args e ee t,
-      elab_preserving_compiler target cmp ecmp l ->
+      elab_preserving_compiler cmp ecmp l ->
       elab_term target (compile_ctx ecmp c) e ee (compile_sort ecmp t) ->
-      elab_preserving_compiler target
+      elab_preserving_compiler
                                ((n, term_case (map fst c) e)::cmp)
                                ((n, term_case (map fst c) ee)::ecmp)
                                ((n,term_rule c args t) :: l)
   | elab_preserving_compiler_sort_eq : forall cmp ecmp l n c t1 t2,
-      elab_preserving_compiler target cmp ecmp l ->
+      elab_preserving_compiler cmp ecmp l ->
       eq_sort target (compile_ctx ecmp c) (compile_sort ecmp t1) (compile_sort ecmp t2) ->
-      elab_preserving_compiler target cmp ecmp ((n,sort_eq_rule c t1 t2) :: l)
+      elab_preserving_compiler cmp ecmp ((n,sort_eq_rule c t1 t2) :: l)
   | elab_preserving_compiler_term_eq : forall cmp ecmp l n c e1 e2 t,
-      elab_preserving_compiler target cmp ecmp l ->
+      elab_preserving_compiler cmp ecmp l ->
       eq_term target (compile_ctx ecmp c) (compile_sort ecmp t) (compile ecmp e1) (compile ecmp e2) ->
-      elab_preserving_compiler target cmp ecmp ((n,term_eq_rule c e1 e2 t) :: l).
+      elab_preserving_compiler cmp ecmp ((n,term_eq_rule c e1 e2 t) :: l).
   Hint Constructors elab_preserving_compiler : lang_core.
-
   
-  Lemma elab_compiler_implies_preserving target cmp ecmp src
-    : elab_preserving_compiler target cmp ecmp src ->
-      preserving_compiler_ext cmp_pre target ecmp src.
-  Proof using.
+  Lemma elab_compiler_implies_preserving cmp ecmp src
+    : elab_preserving_compiler cmp ecmp src ->
+      preserving_compiler_ext cmp_pre ecmp src.
+    Proof using.
     induction 1; basic_goal_prep; basic_core_crush.
-    all:constructor; basic_core_crush.
+    all:constructor; simpl; basic_core_crush.
   Qed.
   
   (*TODO: check that this works w/ prefix *)
-  Lemma elab_compiler_cons_nth_tail tgt cmp ecmp src n m name r
+  Lemma elab_compiler_cons_nth_tail cmp ecmp src n m name r
     : nth_error src m = Some (name,r) ->
       match r with
       | sort_rule c _ => 
@@ -80,30 +100,30 @@ Section Extension.
         nth_error cmp n = Some (name,sort_case (map fst c) t) /\
         nth_tail n ecmp = (name, sort_case (map fst c) et)::ecmp' /\
         let ecmp' := (nth_tail (S n) ecmp) in
-        elab_preserving_compiler tgt (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
-        elab_sort tgt (compile_ctx ecmp' c) t et
+        elab_preserving_compiler (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
+        elab_sort target (compile_ctx ecmp' c) t et
       | term_rule c _ t =>
         exists e ee ecmp',
         nth_error cmp n = Some (name,term_case (map fst c) e) /\
         nth_tail n ecmp = (name, term_case (map fst c) ee)::ecmp' /\
         let ecmp' := (nth_tail (S n) ecmp) in
-        elab_preserving_compiler tgt (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
-        elab_term tgt (compile_ctx ecmp' c) e ee (compile_sort ecmp' t)
+        elab_preserving_compiler (nth_tail (S n) cmp) ecmp' (nth_tail (S m) src) /\
+        elab_term target (compile_ctx ecmp' c) e ee (compile_sort ecmp' t)
       | sort_eq_rule c t1 t2 =>
         let ecmp' := (nth_tail n ecmp) in
-        elab_preserving_compiler tgt (nth_tail n cmp) ecmp' (nth_tail (S m) src)
-        /\ eq_sort tgt (compile_ctx ecmp' c)
+        elab_preserving_compiler (nth_tail n cmp) ecmp' (nth_tail (S m) src)
+        /\ eq_sort target (compile_ctx ecmp' c)
                    (compile_sort ecmp' t1)
                    (compile_sort ecmp' t2)
       | term_eq_rule c e1 e2 t => 
         let ecmp' := (nth_tail n ecmp) in
-        elab_preserving_compiler tgt (nth_tail n cmp) ecmp' (nth_tail (S m) src)
-        /\ eq_term tgt (compile_ctx ecmp' c)
+        elab_preserving_compiler (nth_tail n cmp) ecmp' (nth_tail (S m) src)
+        /\ eq_term target (compile_ctx ecmp' c)
                    (compile_sort ecmp' t)
                    (compile ecmp' e1)
                    (compile ecmp' e2)
       end ->
-      elab_preserving_compiler tgt (nth_tail n cmp) (nth_tail n ecmp) (nth_tail m src).
+      elab_preserving_compiler (nth_tail n cmp) (nth_tail n ecmp) (nth_tail m src).
   Proof.
     destruct r; intros; firstorder;
       repeat match goal with
@@ -112,9 +132,11 @@ Section Extension.
              |[ H : nth_error _ _ = _|-_] =>
               rewrite (nth_tail_to_cons _ _ H); clear H
              end;
-      constructor; basic_utils_crush.
+      constructor; simpl; basic_utils_crush.
   Qed.
 
+End WithModel.
+    
 End Extension.
 
 
@@ -122,6 +144,7 @@ End WithVar.
 
 (*TODO: review how much of the following code is necessary/ put in better places*)
 
+(*TODO: tactics might need fixing up below this line*)
  Ltac t :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity

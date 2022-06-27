@@ -203,6 +203,8 @@ Ltac print_linting_err e :=
   | arity_mismatch ?n ?a ?s =>
       let s' := constr:(argument_seq_marker s) in
       fail "Constructor" n "expects" a "explicit arguments, but has arguments" s'
+  | arg_unbound_in_context ?c ?x =>
+      fail "Argument" x "unbound in" c
   end.
 
 Ltac lint_lang_ext base l :=

@@ -117,11 +117,11 @@ Derive heap_id
                                           heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As cps_preserving.
-P
+Proof.
   auto_elab_compiler.
-  + cleanup_elab_after eredex_steps_with heap "heap_comm".
-  + cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  + cleanup_elab_after eredex_steps_with heap "lookup_empty".
+  - cleanup_elab_after eredex_steps_with heap "heap_comm".
+  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
 Qed.
 #[export] Hint Resolve heap_id : elab_pfs.
 
