@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Elab SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS Matches NatHeap Linter Compilers ElabCompilers.
+From Named Require Import Core Elab SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS Matches NatHeap Linter Compilers ElabCompilers TreeProofs.
 Import Core.Notations.
 Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
@@ -65,29 +65,29 @@ Derive ch8
 Proof. auto_elab. Qed.
 #[export] Hint Resolve ch8_wf : elab_pfs.
 
-Definition nat_eq_def : lang :=
-  {[l
-    [s| "n" : #"natural",
-        "m" : #"natural"
-      -----------------------------------------------
-      #"eq" "n" "m" srt
-    ];
-    [:| "n": #"natural"
-      -----------------------------------------------
-      #"eq_0_0" : #"eq" #"0" #"0"
-    ];
-    [:| "n": #"natural", "m": #"natural",
-        "p" : #"eq" "n" "m"
-      -----------------------------------------------
-      #"eq_1+" "p" : #"eq" (#"1+" "n") (#"1+" "m")
-    ]
-  ]}.
+(* Definition nat_eq_def : lang := *)
+(*   {[l *)
+(*     [s| "n" : #"natural", *)
+(*         "m" : #"natural" *)
+(*       ----------------------------------------------- *)
+(*       #"eq" "n" "m" srt *)
+(*     ]; *)
+(*     [:| "n": #"natural" *)
+(*       ----------------------------------------------- *)
+(*       #"eq_0_0" : #"eq" #"0" #"0" *)
+(*     ]; *)
+(*     [:| "n": #"natural", "m": #"natural", *)
+(*         "p" : #"eq" "n" "m" *)
+(*       ----------------------------------------------- *)
+(*       #"eq_1+" "p" : #"eq" (#"1+" "n") (#"1+" "m") *)
+(*     ] *)
+(*   ]}. *)
 
-Derive nat_eq
-       SuchThat (elab_lang_ext (nat_lang) nat_eq_def nat_eq)
-       As nat_eq_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve nat_eq_wf : elab_pfs.
+(* Derive nat_eq *)
+(*        SuchThat (elab_lang_ext (nat_lang) nat_eq_def nat_eq) *)
+(*        As nat_eq_wf. *)
+(* Proof. auto_elab. Qed. *)
+(* #[export] Hint Resolve nat_eq_wf : elab_pfs. *)
 
 Definition ch8_config_def : lang := 
   {[l
@@ -165,7 +165,7 @@ Definition ch8_config_def : lang :=
   ]}.
 
 Derive ch8_config
-       SuchThat (elab_lang_ext (nat_eq ++ ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
+       SuchThat (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
        As ch8_config_wf.
 Proof.  auto_elab. Qed.
 #[export] Hint Resolve ch8_config_wf : elab_pfs.
@@ -244,47 +244,66 @@ Definition ch8_ectx_def : lang :=
   ]}.
 
 Derive ch8_ectx
-       SuchThat (elab_lang_ext (ch8_config ++ nat_eq ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
+       SuchThat (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
        As ch8_ectx_wf.
 Proof.  auto_elab. Qed.
 #[export] Hint Resolve ch8_ectx_wf : elab_pfs.
 
+(* blk [... ; ~unit] *)
 Definition jmp_hd :=
   {{e #"jmp" #"hd" #"tt" }}.
 
+(*
+ c2 : blk [~unit]
+ c1 : blk [... ; ~unit]
+ blk [... ; ~unit] *)
 Definition seq c1 c2 :=
-  {{e #"blk_subst" (#"snoc" #"wkn" (#"closure" #"unit" {c2} #"hd")) {c1} }}.
+  {{e #"blk_subst" (#"snoc" #"wkn" (#"closure" #"unit" (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {c2}) #"hd")) {c1} }}.
 
+(* env ([~unit]) *)
 Definition cmd_env :=
   {{e #"ext" #"emp" (#"neg" #"unit")}}.
 
+(* env ([~nat]) *)
 Definition exp_env :=
-  {{e #"ext" #"emp" (#"neg" #"natural")}}.
+  {{e #"ext" #"emp" (#"neg" #"nat")}}.
 
+(* e : blk [... ; ~nat]
+   c : blk [(A ; nat)]
+   blk [... ; A] *)
 Definition plug_exp e c :=
   {{e #"blk_subst"
-      (#"snoc" #"wkn" (#"closure" #"natural" {c} #"tt"))
+      (#"snoc" #"wkn" (#"closure" #"nat" {c} #"hd"))
       {e} }}.
 
+(* x : natural
+   e : blk [... ; ~nat]
+   blk [... ; ~unit] *)
 Definition assign x e :=
   plug_exp e {{e #"set" (#"nv" {x}) (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")}}.
 
+(* e : blk [~nat]
+   z : blk [~unit]
+   nz : blk[~unit]
+   blk [... ; ~unit] *)
 Definition if0 e z nz :=
-  seq (plug_exp e {{e #"if0" (#".2" #"hd") {z} {nz} }}) jmp_hd.
+  seq (plug_exp e {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}) jmp_hd.
 
+(* e : blk [... ; ~nat]
+   c : blk [... ; ~unit]
+   blk [... ; ~unit] *) 
 Definition while e c :=
   {{e #"jmp" (#"fix"
                (#"closure"
                  (#"pair" (#"neg" #"unit") #"unit")
-                 {plug_exp
+                 {plug_exp (* blk [(~unit, (~unit, unit))] *)
                     e
                     {{e #"if0" (#".2" #"hd")
-                        {jmp_hd}
-                        {seq c {{e #"jmp" (#".1" #"hd") #"tt" }} }
+                        (#"jmp" (#".1" (#".2" (#".1" #"hd"))) #"tt")
+                        {seq c {{e #"jmp" (#".1" (#".1" #"hd")) #"tt" }} }
                     }}
                  }
-                 #"tt")
-               #"tt")
+                 #"hd"))
       #"tt"
   }}.
 
@@ -295,11 +314,11 @@ Definition plug E v :=
   {{e #"jmp" (#"closure" (#"neg" #"unit") (#"blk_subst" (#"snoc" (#"snoc" #"wkn" (#".2" #"hd")) (#".1" #"hd")) {E}) #"hd") {v} }}.
 
 Definition ch8_cc_def : compiler :=
-  match # from (ch8_config ++ nat_eq ++ ch8 ++ heap ++ nat_lang) with
+  match # from (ch8_config ++ ch8 ++ heap ++ nat_lang) with
   | {{s #"exp"}} => {{s #"blk" {exp_env} }}
   | {{s #"cmd"}} => {{s #"blk" {cmd_env} }}
   | {{s #"configuration"}} => {{s #"configuration" {cmd_env} }}
-  | {{s #"Ectx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"natural")) }}
+  | {{s #"Ectx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"nat")) }}
   | {{s #"Cctx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"unit")) }}
   | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
   | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"wkn" #"hd") #"hd")}}
@@ -326,33 +345,138 @@ Definition target_lang : lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
+Ltac step_backward lang name :=
+  eapply eq_term_trans;
+  eapply eq_term_sym;
+  try eredex_steps_with lang name;
+  repeat (term_cong; repeat apply eq_args_cons; try apply eq_args_nil; simpl; try by_reduction);
+  eapply eq_term_sym.
+
+Ltac setup_elab_compiler' :=
+  match goal with
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+      rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp);
+      rewrite (as_nth_tail src);
+      assert (wf_lang tgt) by admit
+  end; break_preserving.
+
+Ltac reduce :=
+  eapply eq_term_trans;
+  try cleanup_elab_after step_if_concrete;
+  repeat (try (term_cong; simpl; try by_reduction; let n := numgoals in (match n with | 0 => idtac | 1 => idtac | _ => fail end))).
+
 Derive ch8_cc
        SuchThat (elab_preserving_compiler
                    []
                    target_lang
                    ch8_cc_def
                    ch8_cc
-                   (ch8_config++nat_eq++ch8++heap++nat_lang))
+                   (ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
+  Print auto_elab_compiler.
+  setup_elab_compiler'; repeat Matches.t.
+  
+  - by_reduction.
+  - cleanup_elab_after eredex_steps_with heap "heap_comm".
+  - by_reduction.
+  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
+  - admit.
+  - admit.
+  - admit.
+  - compute_eq_compilation.
+    reduce.
+    term_cong; simpl; try by_reduction; let n := numgoals in idtac n.
+    ; (match numgoals with | 0 => idtac numgoals | 1 => idtac numgoals | _ => fail end)).
+    eapply eq_term_sym.
+    step_backward block_subst "blk_subst_id".
+    step_backward value_subst "snoc_wkn_hd".
+    step_backward cc_lang "clo_eta".
+    eredex_steps_with unit_eta "unit eta".
+  - compute_eq_compilation.
+    reduce.
+    eapply eq_term_sym.
+    step_backward block_subst "blk_subst_id".
+    step_backward value_subst "snoc_wkn_hd".
+    step_backward cc_lang "clo_eta".
+    eredex_steps_with unit_eta "unit eta".
+  - compute_eq_compilation.
+    reduce.
+    eapply eq_term_sym.
+    step_backward block_subst "blk_subst_id".
+    step_backward value_subst "snoc_wkn_hd".
+    step_backward cc_lang "clo_eta".
+    eredex_steps_with unit_eta "unit eta".
+  - compute_eq_compilation.
+    eapply eq_term_trans.
+    1: cleanup_elab_after step_if_concrete.
+    term_cong; simpl; try by_reduction.
+    term_cong; simpl; try by_reduction.
+    term_cong; simpl; try by_reduction.
+    eapply eq_term_trans.
+    1: cleanup_elab_after step_if_concrete.
+    term_cong; simpl; try by_reduction.
+    (* term_cong; simpl; try by_reduction. *)
+    repeat (term_cong; simpl; try by_reduction).
+    eapply eq_term_sym.
+    step_backward block_subst "blk_subst_id".
+    step_backward value_subst "snoc_wkn_hd".
+    step_backward cc_lang "clo_eta".
+    eredex_steps_with unit_eta "unit eta".
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
+  - cleanup_elab_after eredex_steps_with heap "heap_comm".
+  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
+  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
+  - simpl.
+    admit.
+  - admit.
+  - admit.
+  - admit.
+  - reduce.
+    cleanup_elab_after eredex_steps_with heap "".
+  - cleanup_elab_after eredex_steps_with heap "".
+  - cleanup_elab_after eredex_steps_with heap "".
+  - cleanup_elab_after eredex_steps_with heap "".
+  - cleanup_elab_after eredex_steps_with heap "".
+  - cleanup_elab_after eredex_steps_with heap "".
 
-  Print auto_elab_compiler.
-  Print setup_elab_compiler.
-  Ltac prove_from_known_elabs := admit.
-  cleanup_elab_after (match goal with
-  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
-        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp);
-         rewrite (as_nth_tail src);
-         assert (wf_lang tgt) by prove_from_known_elabs
-  end; break_preserving); repeat Matches.t.
-  Print auto_elab_compiler.
-  all : cleanup_elab_after try (solve [ by_reduction ]) .
-  Print auto_elab_compiler.
-  setup_elab_compiler.
-  cleanup_elab_after setup_elab_compiler.
-  auto_elab_compiler.
-  cleanup_elab_after setup_elab_compiler.
-    (reduce; eredex_steps_with unit_eta "unit eta").
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
