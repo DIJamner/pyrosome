@@ -143,16 +143,8 @@ Definition ch8_config_def : lang :=
         "c2" : #"cmd",
         "n" : #"natural"
       ----------------------------------------------- ("ss_seq_while_true")
-      #"config" "H" (#"seq" (#"while" (#"value" (#"1+" "n")) "c1") "c2")
-      = #"config" "H" (#"seq" "c1" (#"seq" (#"while" "e" "c1") "c2")) : #"configuration"
-    ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
-        "c1" : #"cmd",
-        "c2" : #"cmd"
-      ----------------------------------------------- ("ss_seq_while_false")
-      #"config" "H" (#"seq" (#"while" (#"value" #"0") "c1") "c2")
-      = #"config" "H" "c2" : #"configuration"
+      #"config" "H" (#"seq" (#"while" "e" "c1") "c2")
+      = #"config" "H" (#"seq" (#"if0" "e" #"skip" (#"seq" "c1" (#"while" "e" "c1") )) "c2") : #"configuration"
     ];
     [:= "H" : #"heap",
         "c1" : #"cmd",
@@ -287,7 +279,7 @@ Definition assign x e :=
    nz : blk[~unit]
    blk [... ; ~unit] *)
 Definition if0 e z nz :=
-  seq (plug_exp e {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}) jmp_hd.
+  plug_exp e {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}.
 
 (* e : blk [... ; ~nat]
    c : blk [... ; ~unit]
@@ -295,48 +287,53 @@ Definition if0 e z nz :=
 Definition while e c :=
   {{e #"jmp" (#"fix"
                (#"closure"
-                 (#"pair" (#"neg" #"unit") #"unit")
+                 (#"prod" (#"neg" #"unit") #"unit")
                  {plug_exp (* blk [(~unit, (~unit, unit))] *)
                     e
-                    {{e #"if0" (#".2" #"hd")
-                        (#"jmp" (#".1" (#".2" (#".1" #"hd"))) #"tt")
-                        {seq c {{e #"jmp" (#".1" (#".1" #"hd")) #"tt" }} }
+                    {{e #"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
+                        (#"jmp" (#".1" (#".1" #"hd")) #"tt")
+                        (#"blk_subst" (#"snoc" #"wkn" (#".1" (#".2" (#".1" #"hd")))) {c})
                     }}
                  }
                  #"hd"))
       #"tt"
   }}.
 
+(* b : blk [~nat]
+   val [] ~~nat *)
 Definition blk_to_val b :=
-  {{e #"closure" #"unit" (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {b}) #"hd"}}.
+  {{e #"closure" (#"neg" #"nat") (#"blk_subst" (#"snoc" #"wkn" (#".2" #"hd")) {b}) #"tt"}}.
 
-Definition plug E v :=
-  {{e #"jmp" (#"closure" (#"neg" #"unit") (#"blk_subst" (#"snoc" (#"snoc" #"wkn" (#".2" #"hd")) (#".1" #"hd")) {E}) #"hd") {v} }}.
+(* E : blk [A ; ~~nat]
+   e : blk [~nat]
+   blk [A] *)
+Definition plug E e :=
+  {{e #"blk_subst" (#"snoc" #"id" (#"val_subst" #"forget" {blk_to_val e} )) {E} }}.
 
 Definition ch8_cc_def : compiler :=
-  match # from (ch8_config ++ ch8 ++ heap ++ nat_lang) with
+  match # from (ch8_ectx ++ ch8_config ++ ch8 ++ heap ++ nat_lang) with
   | {{s #"exp"}} => {{s #"blk" {exp_env} }}
   | {{s #"cmd"}} => {{s #"blk" {cmd_env} }}
   | {{s #"configuration"}} => {{s #"configuration" {cmd_env} }}
-  | {{s #"Ectx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"nat")) }}
-  | {{s #"Cctx"}} => {{s #"blk" (#"ext" {cmd_env} (#"neg" #"unit")) }}
+  | {{s #"Ectx"}} => {{s #"blk" (#"ext" (#"ext" (#"emp" (#"neg" #"nat"))) (#"neg" (#"neg" #"nat"))) }}
+  | {{s #"Cctx"}} => {{s #"blk" (#"ext" (#"ext" (#"emp" (#"neg" #"unit"))) (#"neg" (#"neg" #"nat"))) }}
   | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
-  | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"wkn" #"hd") #"hd")}}
+  | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"val_subst" #"wkn" #"hd") #"hd")}}
   | {{e #"skip"}} => jmp_hd
   | {{e #"assign" "x" "e" }} => assign {{e "x"}} {{e "e"}}
-  | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} (seq {{e "cmd2"}} jmp_hd)
+  | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} {{e "cmd2"}}
   | {{e #"if0" "e" "z" "nz"}} => if0 {{e "e"}} {{e "z"}} {{e "nz"}}
   | {{e #"while" "e" "c"}} => while {{e "e"}} {{e "c"}}
   | {{e #"config" "H" "c"}} => {{e #"config" "H" "c"}}
   | {{e #"[ ]"}} => {{e #"jmp" (#"closure" (#"neg" #"unit") (#"jmp" (#".2" #"hd") #"tt") #"tt") (#"val_subst" #"wkn" #"hd") }}
   | {{e #"Eassign" "x" "E"}} =>
-      assign {{e "x"}} (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}})
+      {{e #"blk_subst" (#"snoc" (#"snoc" #"forget" (#"closure" #"nat" (#"set" (#"nv" "x") (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")) (#"val_subst" #"wkn" #"hd"))) #"hd") "E" }}
   | {{e #"Eif0" "E" "z" "nz"}} =>
       if0 (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}}) {{e "z"}} {{e "nz"}}
   | {{e #"Ewhile" "E" "c"}} =>
       while (plug {{e "E"}} {{e #"val_subst" #"wkn" #"hd"}}) {{e "c"}}
-  | {{e #"Cplug" "C" "e"}} => plug {{e "C"}} (blk_to_val {{e "e"}})
-  | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} (blk_to_val {{e "e"}})
+  | {{e #"Cplug" "C" "e"}} => plug {{e "C"}} {{e "e"}}
+  | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} {{e "e"}}
   end.
 
 Definition target_lang : lang :=
@@ -345,11 +342,14 @@ Definition target_lang : lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
+Ltac try_term_cong :=
+  repeat (try (term_cong; repeat (try apply eq_args_cons); try apply eq_args_nil; simpl; try term_refl; let n := numgoals in guard n <= 1)).
+
 Ltac step_backward lang name :=
   eapply eq_term_trans;
   eapply eq_term_sym;
   try eredex_steps_with lang name;
-  repeat (term_cong; repeat apply eq_args_cons; try apply eq_args_nil; simpl; try by_reduction);
+  try_term_cong;
   eapply eq_term_sym.
 
 Ltac setup_elab_compiler' :=
@@ -361,69 +361,136 @@ Ltac setup_elab_compiler' :=
   end; break_preserving.
 
 Ltac reduce :=
-  eapply eq_term_trans;
-  try cleanup_elab_after step_if_concrete;
-  repeat (try (term_cong; simpl; try by_reduction; let n := numgoals in (match n with | 0 => idtac | 1 => idtac | _ => fail end))).
+  repeat (
+      eapply eq_term_trans;
+      (try cleanup_elab_after step_if_concrete);
+      try_term_cong).
+
+From Utils Require Import Utils.
+From Utils Require Export GoalDisplay.
+From Named Require Import Core.
+Import Core.Notations.
+
+
+Definition as_ctx {V} (c:ctx V) :=c.
+Notation "'{{c' c }}" := (as_ctx c) (at level 0, c custom ctx, only printing).
+
+Ltac hide_implicits :=
+  lazymatch goal with
+  | |- eq_term ?l ?c ?t ?e1 ?e2 =>
+      let c' := eval compute in (hide_ctx_implicits l c) in
+        let t' := eval compute in (hide_sort_implicits l t) in
+          let e1' := eval compute in (hide_term_implicits l e1) in
+            let e2' := eval compute in (hide_term_implicits l e2) in
+              change (eq_term l (lie_to_user (real:=c) (as_ctx c'))
+                        (lie_to_user (real:=t) t')
+                        (lie_to_user (real:=e1) e1')
+                        (lie_to_user (real:=e2) e2'))
+  end.
+
+(*Use: `hide_implicits` shows the pre-elaboration terms,
+  and `wysiwyg` shows the actual goal again.
+ *)
 
 Derive ch8_cc
+
        SuchThat (elab_preserving_compiler
                    []
                    target_lang
                    ch8_cc_def
                    ch8_cc
-                   (ch8_config++ch8++heap++nat_lang))
+                   (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-  Print auto_elab_compiler.
   setup_elab_compiler'; repeat Matches.t.
+  28: {
+    compute_eq_compilation.
+    hide_implicits.
+    reduce.
+    hide_implicits.
+    
   
   - by_reduction.
   - cleanup_elab_after eredex_steps_with heap "heap_comm".
   - by_reduction.
   - cleanup_elab_after eredex_steps_with heap "lookup_miss".
   - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-  - admit.
-  - admit.
-  - admit.
-  - compute_eq_compilation.
-    reduce.
-    term_cong; simpl; try by_reduction; let n := numgoals in idtac n.
-    ; (match numgoals with | 0 => idtac numgoals | 1 => idtac numgoals | _ => fail end)).
-    eapply eq_term_sym.
-    step_backward block_subst "blk_subst_id".
-    step_backward value_subst "snoc_wkn_hd".
-    step_backward cc_lang "clo_eta".
-    eredex_steps_with unit_eta "unit eta".
+  - by_reduction.
   - compute_eq_compilation.
     reduce.
     eapply eq_term_sym.
     step_backward block_subst "blk_subst_id".
     step_backward value_subst "snoc_wkn_hd".
     step_backward cc_lang "clo_eta".
+    reduce.
     eredex_steps_with unit_eta "unit eta".
+  - by_reduction.
+  - by_reduction.
+  - by_reduction.
   - compute_eq_compilation.
     reduce.
+    hide_implicits.
     eapply eq_term_sym.
-    step_backward block_subst "blk_subst_id".
-    step_backward value_subst "snoc_wkn_hd".
-    step_backward cc_lang "clo_eta".
-    eredex_steps_with unit_eta "unit eta".
-  - compute_eq_compilation.
     eapply eq_term_trans.
-    1: cleanup_elab_after step_if_concrete.
-    term_cong; simpl; try by_reduction.
-    term_cong; simpl; try by_reduction.
-    term_cong; simpl; try by_reduction.
-    eapply eq_term_trans.
-    1: cleanup_elab_after step_if_concrete.
-    term_cong; simpl; try by_reduction.
-    (* term_cong; simpl; try by_reduction. *)
-    repeat (term_cong; simpl; try by_reduction).
+    { eredex_steps_with block_subst "blk_subst_cmp". }
+    simpl; hide_implicits.
+    reduce.
+    hide_implicits.
     eapply eq_term_sym.
-    step_backward block_subst "blk_subst_id".
-    step_backward value_subst "snoc_wkn_hd".
+    reduce.
+    hide_implicits.
     step_backward cc_lang "clo_eta".
+    reduce.
+    hide_implicits.
+    eapply eq_term_sym.
+    step_backward cc_lang "clo_eta".
+    reduce.
+    hide_implicits.
+    admit.
+  - compute_eq_compilation.
+    reduce.
+    step_backward cc_lang "clo_eta".
+    by_reduction.
+  - simpl.
+
+    step_backward cc_lang "clo_eta".
+    hide_implicits.
+    reduce.
+    hide_implicits.
+
+    simpl.
+    hide_implicits.
+    eapply eq_term_sym.
+    reduce; hide_implicits.
+    step_backward cc_lang "clo_eta".
+    reduce; hide_implicits.
+    eapply eq_term_sym.
+    step_backward cc_lang "clo_eta".
+    reduce; hide_implicits.
+    step_backward cc_lang "clo_eta".
+    reduce; hide_implicits.
+    eapply eq_term_sym.
+    step_backward cc_lang "clo_eta".
+    hide_implicits.
     eredex_steps_with unit_eta "unit eta".
+  - simpl.
+    admit.
+  - simpl.
+    admit.
+  - simpl.
+    admit.
+  - 
+    
+    
+    by_reduction.
+         step_if_concrete.
+
+         
+    1: eredex_steps_with cc_lang "clo_eta".
+    step_backward cc_lang "clo_eta".
+    hide_implicits.
+    
+    Print by_reduction.
   - by_reduction.
   - by_reduction.
   - by_reduction.
