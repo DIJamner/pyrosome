@@ -100,15 +100,13 @@ Definition ch8_config_def : lang :=
       ----------------------------------------------- 
       #"config" "H" "c" : #"configuration"
     ];
-    [:= "H" : #"heap",
-        "c" : #"cmd"
+    [:= "c" : #"cmd"
       ----------------------------------------------- ("ss_seq_skip")
-      #"config" "H" (#"seq" #"skip" "c") = #"config" "H" "c" : #"configuration"
+      #"seq" #"skip" "c" ="c" : #"cmd"
     ];
-    [:= "H" : #"heap",
-        "c" : #"cmd"
+    [:= "c" : #"cmd"
       ----------------------------------------------- ("ss_skip_seq")
-      #"config" "H" (#"seq" "c" #"skip") = #"config" "H" "c" : #"configuration"
+      #"seq" "c" #"skip" = "c" : #"cmd"
     ];
     [:= "H" : #"heap",
         "v" : #"natural",
@@ -118,41 +116,38 @@ Definition ch8_config_def : lang :=
       #"config" "H" (#"seq" (#"assign" "x" (#"value" "v")) "c")
       = #"config" (#"hset" "H" "x" "v") "c" : #"configuration"
     ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
+    [:= "e" : #"exp",
         "z" : #"cmd",
         "nz" : #"cmd",
         "c" : #"cmd",
         "n" : #"natural"
       ----------------------------------------------- ("ss_seq_if_nonzero")
-      #"config" "H" (#"seq" (#"if0" (#"value" (#"1+" "n"))"z" "nz") "c")
-      = #"config" "H" (#"seq" "nz" "c"): #"configuration"
+      #"seq" (#"if0" (#"value" (#"1+" "n"))"z" "nz") "c"
+      = #"seq" "nz" "c" : #"cmd"
     ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
+    [:= "e" : #"exp",
         "z" : #"cmd",
         "nz" : #"cmd",
         "c" : #"cmd"
       ----------------------------------------------- ("ss_seq_if_zero")
-      #"config" "H" (#"seq" (#"if0" (#"value" #"0") "z" "nz") "c")
-      = #"config" "H" (#"seq" "z" "c") : #"configuration"
+      #"seq" (#"if0" (#"value" #"0") "z" "nz") "c"
+      = #"seq" "z" "c" : #"cmd"
     ];
-    [:= "H" : #"heap",
-        "e" : #"exp",
+    [:= "e" : #"exp",
         "c1" : #"cmd",
         "c2" : #"cmd",
         "n" : #"natural"
       ----------------------------------------------- ("ss_seq_while_true")
-      #"config" "H" (#"seq" (#"while" "e" "c1") "c2")
-      = #"config" "H" (#"seq" (#"if0" "e" #"skip" (#"seq" "c1" (#"while" "e" "c1") )) "c2") : #"configuration"
+      #"seq" (#"while" "e" "c1") "c2"
+      = #"seq" (#"if0" "e" #"skip" (#"seq" "c1" (#"while" "e" "c1") )) "c2"
+      : #"cmd"
     ];
-    [:= "H" : #"heap",
-        "c1" : #"cmd",
+    [:= "c1" : #"cmd",
         "c2" : #"cmd",
         "c3" : #"cmd"
       ----------------------------------------------- ("ss_seq_seq")
-      #"config" "H" (#"seq" (#"seq" "c1" "c2") "c3")
-      = #"config" "H" (#"seq" "c1" (#"seq" "c2" "c3")) : #"configuration"
+      #"seq" (#"seq" "c1" "c2") "c3"
+      = #"seq" "c1" (#"seq" "c2" "c3") : #"cmd"
     ]
   ]}.
 
@@ -194,6 +189,11 @@ Definition ch8_ectx_def : lang :=
       #"Ewhile" "E" "c" : #"Cctx"
     ];
     [:| "C" : #"Cctx", 
+        "c" : #"cmd"
+      -----------------------------------------------
+      #"Cseq" "C" "c" : #"Cctx"
+    ];
+    [:| "C" : #"Cctx", 
         "e" : #"exp"
       -----------------------------------------------
       #"Cplug" "C" "e" : #"cmd"
@@ -225,6 +225,12 @@ Definition ch8_ectx_def : lang :=
         "e" : #"exp"
       ----------------------------------------------- ("Cplug while")
       #"Cplug" (#"Ewhile" "E" "c") "e" = #"while" (#"Eplug" "E" "e") "c" : #"cmd"
+    ];
+    [:= "C" : #"Cctx",
+        "c" : #"cmd",
+        "e" : #"exp"
+      ----------------------------------------------- ("Cplug seq")
+      #"Cplug" (#"Cseq" "C" "c") "e" = #"seq" (#"Cplug" "C" "e") "c" : #"cmd"
     ];
     [:= "H" : #"heap",
         "C" : #"Cctx",
@@ -358,7 +364,7 @@ Definition ch8_cc_def : compiler :=
   | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} {{e "e"}}
   end.
 
-Definition target_lang : lang :=
+Notation target_lang :=
 (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
                                 ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
                                 forget_eq_wkn'++
@@ -424,13 +430,14 @@ Derive ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-  setup_elab_compiler'; repeat Matches.t.
-  - by_reduction.
+  auto_elab_compiler.
+  1:shelve (*TODO: what is this?*).
+  1:shelve (*TODO: what is this?*).
+  1:shelve (*TODO: what is this?*).
+  1:shelve (*TODO: what is this?*).
   - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - by_reduction.
   - cleanup_elab_after eredex_steps_with heap "lookup_miss".
   - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-  - by_reduction.
   - compute_eq_compilation.
     reduce.
     eapply eq_term_sym.

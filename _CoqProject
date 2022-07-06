@@ -52,3 +52,4 @@ src/named/SimpleVFixCC.v
 src/named/SimpleVCPSHeap.v
 src/named/SimpleVCCHeap.v
 src/named/SimpleVFixCPS.v
+src/named/SimpleCh8Lang.v

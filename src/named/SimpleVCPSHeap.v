@@ -69,22 +69,18 @@ Definition heap_cps_ops_def : lang :=
        #"if0" "v" "z" "nz" : #"blk" "G"
   ];
 
-  [:=  "H" : #"heap",
-       "G" : #"env",
+  [:=  "G" : #"env",
        "n" : #"natural",
        "z" : #"blk" "G",
        "nz" : #"blk" "G"
        ----------------------------------------------- ("if nonzero")
-       #"config" "H" (#"if0" (#"nv" (#"1+" "n")) "z" "nz") =
-         #"config" "H" "nz" : #"configuration" "G"
+       #"if0" (#"nv" (#"1+" "n")) "z" "nz" = "nz" : #"blk" "G"
   ];
-  [:=  "H" : #"heap",
-       "G" : #"env",
+  [:=  "G" : #"env",
        "z" : #"blk" "G",
        "nz" : #"blk" "G"
        ----------------------------------------------- ("if zero")
-       #"config" "H" (#"if0" (#"nv" #"0") "z" "nz") =
-         #"config" "H" "z" : #"configuration" "G"
+       #"if0" (#"nv" #"0") "z" "nz" = "z" : #"blk" "G"
   ]
   ]}.
 
