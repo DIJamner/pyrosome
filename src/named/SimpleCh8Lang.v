@@ -191,7 +191,7 @@ Definition ch8_ectx_def : lang :=
     [:| "C" : #"Cctx", 
         "c" : #"cmd"
       -----------------------------------------------
-      #"Cseq" "C" "c" : #"Cctx"
+      #"Eseq" "C" "c" : #"Cctx"
     ];
     [:| "C" : #"Cctx", 
         "e" : #"exp"
@@ -230,7 +230,7 @@ Definition ch8_ectx_def : lang :=
         "c" : #"cmd",
         "e" : #"exp"
       ----------------------------------------------- ("Cplug seq")
-      #"Cplug" (#"Cseq" "C" "c") "e" = #"seq" (#"Cplug" "C" "e") "c" : #"cmd"
+      #"Cplug" (#"Eseq" "C" "c") "e" = #"seq" (#"Cplug" "C" "e") "c" : #"cmd"
     ];
     [:= "H" : #"heap",
         "C" : #"Cctx",
@@ -360,6 +360,10 @@ Definition ch8_cc_def : compiler :=
                  )
           #"tt"
   }}
+  | {{e #"Eseq" "E" "cmd2"}} => 
+      {{e #"blk_subst" {under {{e #"snoc" #"wkn" (#"closure" #"unit"
+                                          (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) "cmd2") #"hd")}} }
+          "E" }}
   | {{e #"Cplug" "C" "e"}} => plug {{e "C"}} {{e "e"}}
   | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} {{e "e"}}
   end.
@@ -431,10 +435,17 @@ Derive ch8_cc
        As ch8_cc_preserving.
 Proof.
   auto_elab_compiler.
-  1:shelve (*TODO: what is this?*).
-  1:shelve (*TODO: what is this?*).
-  1:shelve (*TODO: what is this?*).
-  1:shelve (*TODO: what is this?*).
+  
+  Ltac clo_eta_cong :=
+    eapply eq_term_trans;
+    [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
+    compute_eq_compilation;
+    reduce_lhs;
+    eapply eq_term_trans; cycle 1;
+    [ now eredex_steps_with cc_lang "clo_eta"|];
+    reduce_rhs;
+    repeat (term_cong; try term_refl;[]).
+  
   - cleanup_elab_after eredex_steps_with heap "heap_comm".
   - cleanup_elab_after eredex_steps_with heap "lookup_miss".
   - cleanup_elab_after eredex_steps_with heap "lookup_empty".
@@ -446,36 +457,38 @@ Proof.
     step_backward cc_lang "clo_eta".
     reduce.
     eredex_steps_with unit_eta "unit eta".
-  - by_reduction.
-  - by_reduction.
-  - by_reduction.
-  (* - compute_eq_compilation. *)
-  (*   reduce. *)
-  (*   hide_implicits. *)
-  (*   eapply eq_term_sym. *)
-  (*   eapply eq_term_trans. *)
-  (*   { eredex_steps_with block_subst "blk_subst_cmp". } *)
-  (*   simpl; hide_implicits. *)
-  (*   reduce. *)
-  (*   hide_implicits. *)
-  (*   eapply eq_term_sym. *)
-  (*   reduce. *)
-  (*   hide_implicits. *)
-  (*   step_backward cc_lang "clo_eta". *)
-  (*   reduce. *)
-  (*   hide_implicits. *)
-  (*   eapply eq_term_sym. *)
-  (*   step_backward cc_lang "clo_eta". *)
-  (*   reduce. *)
-  (*   hide_implicits. *)
-  - admit.
+  - compute_eq_compilation.
+    Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    unfold Model.eq_term.
+    compute_eq_compilation.
+    (*TODO: why aren't all unit terms reduced to tt?
+    Matches.reduce.*)
+    eredex_steps_with unit_eta "unit eta".
   - compute_eq_compilation.
     reduce.
     step_backward cc_lang "clo_eta".
     by_reduction.
-  - by_reduction.
-  - by_reduction.
-  - by_reduction.
+  - compute_eq_compilation.
+    Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    term_refl.
+  - compute_eq_compilation.
+    Matches.reduce.
+    hide_implicits.
+    (*TODO:
+      Not true!!! we don't know that C evaluates the closure first
+need to apply get rule.
+      Requires that I split the eval ctx out somewhere
+      TODO: ideally, this could be done with a fn of the ectx spec
+     *)
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    unfold Model.eq_term.
+    compute_eq_compilation.
+    hide_implicits.
   - admit.
   (* - compute_eq_compilation. *)
   (*   hide_implicits. *)
