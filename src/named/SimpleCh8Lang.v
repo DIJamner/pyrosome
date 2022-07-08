@@ -183,11 +183,12 @@ Definition ch8_ectx_def : lang :=
       -----------------------------------------------
       #"Eif0" "E" "z" "nz" : #"Cctx"
     ];
+    (* Note: including this is incorrect
     [:| "E" : #"Ectx", 
         "c" : #"cmd"
       -----------------------------------------------
       #"Ewhile" "E" "c" : #"Cctx"
-    ];
+    ];*)
     [:| "C" : #"Cctx", 
         "c" : #"cmd"
       -----------------------------------------------
@@ -202,7 +203,7 @@ Definition ch8_ectx_def : lang :=
         "e" : #"exp"
       -----------------------------------------------
       #"Eplug" "E" "e" : #"exp"
-    ](*;
+    ];
     [:= "e" : #"exp"
       ----------------------------------------------- ("Eplug hole")
       #"Eplug" #"[ ]" "e" = "e" : #"exp"
@@ -219,13 +220,13 @@ Definition ch8_ectx_def : lang :=
         "e" : #"exp"
       ----------------------------------------------- ("Cplug if0")
       #"Cplug" (#"Eif0" "E" "z" "nz") "e" = #"if0" (#"Eplug" "E" "e") "z" "nz" : #"cmd"
-    ];
+    ];(*
     [:= "E" : #"Ectx",
         "c" : #"cmd",
         "e" : #"exp"
       ----------------------------------------------- ("Cplug while")
       #"Cplug" (#"Ewhile" "E" "c") "e" = #"while" (#"Eplug" "E" "e") "c" : #"cmd"
-    ];
+    ];*)
     [:= "C" : #"Cctx",
         "c" : #"cmd",
         "e" : #"exp"
@@ -238,7 +239,7 @@ Definition ch8_ectx_def : lang :=
       ----------------------------------------------- ("plug hvar lookup")
       #"config" "H" (#"Cplug" "C" (#"hvar" "n")) =
            #"config" "H" (#"Cplug" "C" (#"value" (#"lookup" "H" "n"))) : #"configuration"
-    ]*)
+    ]
   ]}.
 
 Derive ch8_ectx
@@ -340,7 +341,7 @@ Definition plug_Ectx e c :=
 Definition Eif0 E z nz :=
   plug_Ectx E {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}.
 
-
+(*
 (* E : blk [ ~nat x nat]
    c : blk [... ; ~unit]
    blk [... ; ~unit x nat] *) 
@@ -366,6 +367,7 @@ Definition Ewhile E c :=
                    #"hd"))
       #"tt"
   }}.
+*)
    (*   {{e #"jmp" (#"fix"
                    (#"closure"
                      (#"prod" (#"neg" #"unit") #"unit")
@@ -414,7 +416,7 @@ Definition ch8_cc_def : compiler :=
   | {{e #"[ ]"}} => {{e #"jmp" (#".1" #"hd") (#".2" #"hd") }}
   | {{e #"Eassign" "x" "E"}} => Eassign {{e "x"}} {{e "E"}}
   | {{e #"Eif0" "E" "z" "nz"}} => Eif0 {{e "E"}} {{e "z"}} {{e "nz"}}
-  | {{e #"Ewhile" "E" "c"}} => Ewhile {{e "E"}} {{e "c"}}
+  (*| {{e #"Ewhile" "E" "c"}} => Ewhile {{e "E"}} {{e "c"}}*)
   | {{e #"Eseq" "E" "cmd2"}} => 
       {{e #"blk_subst" (#"snoc" #"wkn"
                           (#"pair" (#"closure" #"unit"
@@ -441,13 +443,6 @@ Ltac step_backward lang name :=
   try_term_cong;
   eapply eq_term_sym.
 
-Ltac setup_elab_compiler' :=
-  match goal with
-  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
-      rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp);
-      rewrite (as_nth_tail src);
-      assert (wf_lang tgt) by admit
-  end; break_preserving.
 
 Ltac reduce :=
   repeat (
@@ -491,75 +486,6 @@ Derive ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-  setup_elab_compiler.
-  all: try now repeat Matches.t.
-  13:{
-    repeat Matches.t.
-    compute.
-    {
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    {
-      Matches.t; try now repeat Matches.t.
-      compute.
-    Matches.t; try now repeat Matches.t.
-      
-      compute.
-  {{s #"val" {?a1} (#"neg" (#"prod" (#"neg" {?a0}) {?a0}))}} =
-  {{s #"val" (#"ext" {?ee} (#"prod" (#"neg" #"unit") #"nat")) (#"neg" #"unit")}}
-      Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    Matches.t; try now repeat Matches.t.
-    repeat Matches.t.
-    compute.
-    
-  {{e #"jmp" (#"fix"
-                (#"closure"
-                   #"unit"
-                   (*
-                     [(~unit * nat) * unit]
-                    *)
-                   (#"blk_subst"
-                      (#"snoc" #"wkn"
-                         (#"pair" (#"closure" #"nat"
-                                     (#"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
-                                        (#"jmp" (#".1" #"hd") #"tt")
-                                        (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {c}))
-                                     (#".1" (#".1" #"hd"))) (#".2" (#".1" #"hd"))))
-                      {E})
-                   #"hd"))
-      #"tt"
-(*    TODO: cmp wkn seems wrong
-              want hd.1 hd.2*)
-    Matches.t; try now repeat Matches.t.
-    {
-      compute.
-      Matches.t; try now repeat Matches.t.
-      Matches.t; try now repeat Matches.t.
-      compute.
-      Matches.t; try now repeat Matches.t.
-      {
-        Matches.t; try now repeat Matches.t.
-        Matches.t; try now repeat Matches.t.
-        { Matches.t; try now repeat Matches.t.
-          Matches.t; try now repeat Matches.t.
-      constructor.
-      {
-        compute.
-      now repeat Matches.t.
-      repeat Matches.t.
-    1:compute.
-    TODO: neg unit = nat?
-    Matches.t.
-    TODO: ext ext when should be prod in Eassign
-    1: solve_in.
-    compute.
-    cbn -[nth_tail ch8_cc].
   auto_elab_compiler.
   
   Ltac clo_eta_cong :=
@@ -600,52 +526,81 @@ Proof.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
     repeat clo_eta_cong.
-    term_refl.
+    eapply eq_term_trans.
+    {
+      term_cong.
+      - term_refl.
+      - term_refl.
+      - term_cong.
+        + term_refl.
+        + term_refl.
+        + term_refl.
+        + term_refl.
+        + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).
+          unfold Model.eq_term.
+          eapply eq_term_trans; cycle 1.
+          {
+            compute_eq_compilation.
+            eredex_steps_with cc_lang "clo_eta".
+          }
+          compute_eq_compilation.
+          term_cong.
+          *term_refl.
+          *term_refl.
+          *term_refl.
+          * unfold Model.eq_term.
+            compute_eq_compilation.
+            Matches.reduce.
+            term_refl.
+          * unfold Model.eq_term.
+            compute_eq_compilation.
+            Matches.reduce.
+            term_refl.
+      - term_refl.
+    }
+    Matches.by_reduction.
   - compute_eq_compilation.
     Matches.reduce.
-    hide_implicits.
-    (*TODO:
-      Not true!!! we don't know that C evaluates the closure first
-need to apply get rule.
-      Requires that I split the eval ctx out somewhere
-      TODO: ideally, this could be done with a fn of the ectx spec
-     *)
     repeat (term_cong; try term_refl;[]).
     repeat clo_eta_cong.
     unfold Model.eq_term.
     compute_eq_compilation.
     hide_implicits.
-  - admit.
-  (* - compute_eq_compilation. *)
-  (*   hide_implicits. *)
-  (*   eapply eq_term_trans; *)
-  (*     (try cleanup_elab_after step_if_concrete). *)
-  (*   eapply eq_term_sym. *)
-  (*   eapply eq_term_trans; *)
-  (*     (try cleanup_elab_after step_if_concrete). *)
-  (*   hide_implicits. *)
-  (*   eapply eq_term_trans. *)
-  (*   1: { term_cong. *)
-  (*        - reduce. *)
-  (*        - reduce. *)
-  (*        - simpl. *)
-           
+    term_refl.
+  - compute_eq_compilation.
+    Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    term_refl.
+    (*
+  - compute_eq_compilation.
+    Matches.reduce.
+    admit Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    unfold Model.eq_term.
+    compute_eq_compilation.
+    hide_implicits.
+    term_refl.*)
+  - compute_eq_compilation.
+    Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    term_refl.
+  - compute_eq_compilation.
+    Matches.reduce.
+    unfold Model.eq_term.
+    compute_eq_compilation.
+    hide_implicits.
+    eapply eq_term_trans.
+    {
+      eredex_steps_with heap_cps_ops "eval get".
+    }
+    
+    Matches.by_reduction.
 
-  (*          e *)
-  (*          term_cong. *)
-  (*          + reduce. *)
-  (*          + reduce. *)
-  (*          +  *)
-  (*          Matches.reduce. *)
-
-
-  (*            reduce. *)
-  (*        - apply eq_term_refl. *)
-  (*   1: eapply eq_term_sym; eredex_steps_with heap_cps_ops "eval get". *)
-  - admit.
-
-
-
+    Unshelve.
+    all: repeat Matches.t'.
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
