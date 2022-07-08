@@ -202,7 +202,7 @@ Definition ch8_ectx_def : lang :=
         "e" : #"exp"
       -----------------------------------------------
       #"Eplug" "E" "e" : #"exp"
-    ];
+    ](*;
     [:= "e" : #"exp"
       ----------------------------------------------- ("Eplug hole")
       #"Eplug" #"[ ]" "e" = "e" : #"exp"
@@ -238,7 +238,7 @@ Definition ch8_ectx_def : lang :=
       ----------------------------------------------- ("plug hvar lookup")
       #"config" "H" (#"Cplug" "C" (#"hvar" "n")) =
            #"config" "H" (#"Cplug" "C" (#"value" (#"lookup" "H" "n"))) : #"configuration"
-    ]
+    ]*)
   ]}.
 
 Derive ch8_ectx
@@ -310,34 +310,63 @@ Definition while e c :=
 Definition blk_to_val b :=
   {{e #"closure" (#"neg" #"nat") (#"blk_subst" (#"snoc" #"wkn" (#".2" #"hd")) {b}) #"tt"}}.
 
-(* E : blk [A ; ~~nat]
+(* E : blk [A x nat]
    e : blk [~nat]
-   blk [A] *)
-Definition plug E e :=
-  {{e #"blk_subst" (#"snoc" #"id" {blk_to_val e} ) {E} }}.
+   blk [A]
 
-Definition ch8_cc_def : compiler :=
-  match # from (ch8_ectx ++ ch8_config ++ ch8 ++ heap ++ nat_lang) with
-  | {{s #"exp"}} => {{s #"blk" {exp_env} }}
-  | {{s #"cmd"}} => {{s #"blk" {cmd_env} }}
-  | {{s #"configuration"}} => {{s #"configuration" {cmd_env} }}
-  | {{s #"Ectx"}} => {{s #"blk" (#"ext" (#"ext" #"emp" (#"neg" #"nat")) (#"neg" (#"neg" #"nat"))) }}
-  | {{s #"Cctx"}} => {{s #"blk" (#"ext" (#"ext" #"emp" (#"neg" #"unit")) (#"neg" (#"neg" #"nat"))) }}
-  | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
-  | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"val_subst" #"wkn" #"hd") #"hd")}}
-  | {{e #"skip"}} => jmp_hd
-  | {{e #"assign" "x" "e" }} => assign {{e "x"}} {{e "e"}}
-  | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} {{e "cmd2"}}
-  | {{e #"if0" "e" "z" "nz"}} => if0 {{e "e"}} {{e "z"}} {{e "nz"}}
-  | {{e #"while" "e" "c"}} => while {{e "e"}} {{e "c"}}
-  | {{e #"config" "H" "c"}} => {{e #"config" "H" "c"}}
-  | {{e #"[ ]"}} => {{e #"jmp" #"hd" (#"val_subst" #"wkn" #"hd") }}
-  | {{e #"Eassign" "x" "E"}} =>
-      {{e #"blk_subst" (#"snoc" (#"snoc" #"forget" (#"closure" #"nat" (#"set" (#"nv" "x") (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")) (#"val_subst" #"wkn" #"hd"))) #"hd") "E" }}
-  | {{e #"Eif0" "E" "z" "nz"}} =>
-      {{e #"blk_subst" (#"snoc" (#"snoc" #"forget" (#"closure" #"nat" (#"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) "z") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) "nz")) (#"val_subst" #"wkn" #"hd"))) #"hd") "E" }}
-  | {{e #"Ewhile" "E" "c"}} => 
-      {{e #"jmp" (#"fix"
+E[e] = e[/g/]
+where g : [A] => [~nat]
+g = snoc id v
+where v : val [A] ~nat
+v = clo <b,hd>
+where b : [A x nat]
+b = E[(0,1)/0]
+
+E[e] = e[/<id,clo<E[(0,1)/0],hd>>/]
+ *)
+Definition plug E e :=
+  {{e #"blk_subst" (#"snoc" #"wkn" (#"closure" #"nat" {E} #"hd"))
+      {e} }}.
+
+Definition plug_Ectx e c :=
+  {{e #"blk_subst"
+      (#"snoc" #"wkn" (#"pair" (#"closure" #"nat" {c} (#".1" #"hd")) (#".2" #"hd")))
+      {e} }}.
+
+(* e : blk [A x ~nat]
+   z : blk [~unit]
+   nz : blk[~unit]
+   blk [... ; ~unit] *)
+Definition Eif0 E z nz :=
+  plug_Ectx E {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}.
+
+
+(* E : blk [ ~nat x nat]
+   c : blk [... ; ~unit]
+   blk [... ; ~unit x nat] *) 
+Definition Ewhile E c :=
+  {{e #"jmp" (#"fix"
+                (#"closure"
+                   (#"prod" (#"neg" #"unit") #"unit")
+                   (*
+                     [(~unit * nat) * (~unit * unit)]
+                    *)
+                   (#"blk_subst"
+                      (#"snoc" #"wkn"
+                         (#"pair" (#"closure" #"nat"
+                                     (*
+                                        [(k : ~unit * loop : ~unit ) * nat]
+                                      *)
+                                     (#"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
+                                        (#"jmp" (#".1" (#".1" #"hd")) #"tt")
+                                        (#"blk_subst" (#"snoc" #"wkn" (#".2" (#".1" #"hd"))) {c}))
+                                     (#"pair" (#".1" (#".1" #"hd")) (#".1" (#".2" #"hd"))))
+                            (#".2" (#".1" #"hd")) ))
+                      {E})
+                   #"hd"))
+      #"tt"
+  }}.
+   (*   {{e #"jmp" (#"fix"
                    (#"closure"
                      (#"prod" (#"neg" #"unit") #"unit")
                      (#"blk_subst" (* [((~nat, ~~nat), (~unit, unit))] *)
@@ -359,10 +388,38 @@ Definition ch8_cc_def : compiler :=
                    )
                  )
           #"tt"
-  }}
+  }}*)
+
+(* x : natural
+   e : blk [... ; ~nat]
+   blk [... ; ~unit] *)
+Definition Eassign x e :=
+  plug_Ectx e {{e #"set" (#"nv" {x}) (#".2" #"hd") (#"jmp" (#".1" #"hd") #"tt")}}.
+
+Definition ch8_cc_def : compiler :=
+  match # from (ch8_ectx ++ ch8_config ++ ch8 ++ heap ++ nat_lang) with
+  | {{s #"exp"}} => {{s #"blk" {exp_env} }}
+  | {{s #"cmd"}} => {{s #"blk" {cmd_env} }}
+  | {{s #"configuration"}} => {{s #"configuration" {cmd_env} }}
+  | {{s #"Ectx"}} => {{s #"blk" (#"ext" #"emp" (#"prod" (#"neg" #"nat") #"nat")) }}
+  | {{s #"Cctx"}} => {{s #"blk" (#"ext" #"emp" (#"prod" (#"neg" #"unit") #"nat")) }}
+  | {{e #"value" "n"}} => {{e #"jmp" #"hd" (#"nv" "n")}}
+  | {{e #"hvar" "n"}} => {{e  #"get" (#"nv" "n") (#"jmp" (#"val_subst" #"wkn" #"hd") #"hd")}}
+  | {{e #"skip"}} => jmp_hd
+  | {{e #"assign" "x" "e" }} => assign {{e "x"}} {{e "e"}}
+  | {{e #"seq" "cmd1" "cmd2"}} => seq {{e "cmd1"}} {{e "cmd2"}}
+  | {{e #"if0" "e" "z" "nz"}} => if0 {{e "e"}} {{e "z"}} {{e "nz"}}
+  | {{e #"while" "e" "c"}} => while {{e "e"}} {{e "c"}}
+  | {{e #"config" "H" "c"}} => {{e #"config" "H" "c"}}
+  | {{e #"[ ]"}} => {{e #"jmp" (#".1" #"hd") (#".2" #"hd") }}
+  | {{e #"Eassign" "x" "E"}} => Eassign {{e "x"}} {{e "E"}}
+  | {{e #"Eif0" "E" "z" "nz"}} => Eif0 {{e "E"}} {{e "z"}} {{e "nz"}}
+  | {{e #"Ewhile" "E" "c"}} => Ewhile {{e "E"}} {{e "c"}}
   | {{e #"Eseq" "E" "cmd2"}} => 
-      {{e #"blk_subst" {under {{e #"snoc" #"wkn" (#"closure" #"unit"
-                                          (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) "cmd2") #"hd")}} }
+      {{e #"blk_subst" (#"snoc" #"wkn"
+                          (#"pair" (#"closure" #"unit"
+                                      (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) "cmd2") (#".1" #"hd"))
+                             (#".2" #"hd")))
           "E" }}
   | {{e #"Cplug" "C" "e"}} => plug {{e "C"}} {{e "e"}}
   | {{e #"Eplug" "E" "e"}} => plug {{e "E"}} {{e "e"}}
@@ -434,6 +491,75 @@ Derive ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
+  setup_elab_compiler.
+  all: try now repeat Matches.t.
+  13:{
+    repeat Matches.t.
+    compute.
+    {
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    {
+      Matches.t; try now repeat Matches.t.
+      compute.
+    Matches.t; try now repeat Matches.t.
+      
+      compute.
+  {{s #"val" {?a1} (#"neg" (#"prod" (#"neg" {?a0}) {?a0}))}} =
+  {{s #"val" (#"ext" {?ee} (#"prod" (#"neg" #"unit") #"nat")) (#"neg" #"unit")}}
+      Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    Matches.t; try now repeat Matches.t.
+    repeat Matches.t.
+    compute.
+    
+  {{e #"jmp" (#"fix"
+                (#"closure"
+                   #"unit"
+                   (*
+                     [(~unit * nat) * unit]
+                    *)
+                   (#"blk_subst"
+                      (#"snoc" #"wkn"
+                         (#"pair" (#"closure" #"nat"
+                                     (#"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
+                                        (#"jmp" (#".1" #"hd") #"tt")
+                                        (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {c}))
+                                     (#".1" (#".1" #"hd"))) (#".2" (#".1" #"hd"))))
+                      {E})
+                   #"hd"))
+      #"tt"
+(*    TODO: cmp wkn seems wrong
+              want hd.1 hd.2*)
+    Matches.t; try now repeat Matches.t.
+    {
+      compute.
+      Matches.t; try now repeat Matches.t.
+      Matches.t; try now repeat Matches.t.
+      compute.
+      Matches.t; try now repeat Matches.t.
+      {
+        Matches.t; try now repeat Matches.t.
+        Matches.t; try now repeat Matches.t.
+        { Matches.t; try now repeat Matches.t.
+          Matches.t; try now repeat Matches.t.
+      constructor.
+      {
+        compute.
+      now repeat Matches.t.
+      repeat Matches.t.
+    1:compute.
+    TODO: neg unit = nat?
+    Matches.t.
+    TODO: ext ext when should be prod in Eassign
+    1: solve_in.
+    compute.
+    cbn -[nth_tail ch8_cc].
   auto_elab_compiler.
   
   Ltac clo_eta_cong :=

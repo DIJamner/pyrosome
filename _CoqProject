@@ -42,6 +42,7 @@ src/named/Compilers.v
 src/named/ElabCompilers.v
 src/named/egraph/Defs.v
 src/named/CompilerTools.v
+src/named/CompilerTransitivity.v
 src/named/SimpleVCPS.v
 src/named/SimpleEvalCtx.v
 src/named/SimpleEvalCtxCPS.v
