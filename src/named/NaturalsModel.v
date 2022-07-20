@@ -111,6 +111,17 @@ Section WithEqb.
     try unfold ws_term in *;
     try unfold id_substable in *.
 
+  Lemma eqb_eq_eqb : forall (H1 H2 : Eqb V) (x y : V), eqb (Eqb:=H1) x y = eqb (Eqb:=H2) x y.
+    Proof.
+      intros.
+      case_eq (eqb x y); intros.
+      apply eqb_eq in H.
+      apply eqb_eq.
+      trivial.
+      apply eqb_neq in H.
+      apply eqb_neq.
+      trivial.
+Qed.
 
   Lemma subst_var : forall (H : Eqb V) (s : named_list term) (x : V),
       term_subst s (inj_var x) = subst_lookup s x.
@@ -125,10 +136,10 @@ Section WithEqb.
     trivial.
     unfold pair_map_snd.
     destruct a.
-    assert (eqb (Eqb:=V_Eqb) x v = eqb (Eqb:=H) x v) by admit.
+    assert (eqb (Eqb:=V_Eqb) x v = eqb (Eqb:=H) x v)by apply eqb_eq_eqb.
     rewrite H0.
     case (eqb x v); trivial.
-Admitted.
+Qed.
 
   Lemma lookup_found {A} : forall (l1 l2 : named_list A) d (e : V), In e (map fst l1) -> named_list_lookup d (l1 ++ l2) e = named_list_lookup d l1 e.
   Proof.
