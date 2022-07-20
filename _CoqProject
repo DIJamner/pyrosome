@@ -29,6 +29,9 @@ src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
+src/named/CompilerDefs.v
+src/named/AllConstructors.v
+src/named/Compilers.v
 src/named/VSubst.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
@@ -36,9 +39,6 @@ src/named/SimpleVSum.v
 src/named/SimpleVProd.v
 src/named/SimpleVSTLC.v
 src/named/SimpleVFix.v
-src/named/CompilerDefs.v
-src/named/AllConstructors.v
-src/named/Compilers.v
 src/named/ElabCompilers.v
 src/named/egraph/Defs.v
 src/named/CompilerTools.v

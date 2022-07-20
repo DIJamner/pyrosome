@@ -255,6 +255,7 @@ Hint Rewrite subst_lookup_id : term.
 
 Lemma term_subst_id
   : forall A (c : named_list A) a,
+    ws_term (map fst c) a ->
     term_subst (id_subst c) a = a.
 Proof.
   induction a; basic_goal_prep;
@@ -343,6 +344,7 @@ Qed.
 
 Lemma sort_subst_id
   : forall A (c : named_list A) a,
+    ws_sort (map fst c) a ->
     sort_subst (id_subst c) a = a.
 Proof.
   destruct a; basic_goal_prep;

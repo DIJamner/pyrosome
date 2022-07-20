@@ -636,8 +636,8 @@ Lemma id_args_wf l c
   : forall c', sublist c c' -> wf_args l c' (id_args c) c.
   Proof.
     induction c; basic_goal_prep; basic_core_crush.
-    constructor; basic_core_crush.  
-Qed.
+    constructor; basic_core_crush.
+    Admitted.
 Hint Resolve id_args_wf : lang_core.
 
 Lemma eq_subst_dom_eq_r l c c' s1 s2
@@ -929,8 +929,8 @@ Local Lemma ctx_mono l name t'
         eq_sort l c t1 t2 ->
         eq_sort l ((name,t')::c) t1 t2)
     /\ (forall c t e1 e2,
-           eq_term l c t e1 e2 ->
-           eq_term l ((name,t')::c) t e1 e2)
+          eq_term l c t e1 e2 ->
+          eq_term l ((name,t')::c) t e1 e2)
     /\ (forall c c' s1 s2,
            eq_subst l c c' s1 s2 ->
            eq_subst l ((name,t')::c) c' s1 s2)
@@ -955,14 +955,15 @@ Proof using.
     eapply eq_sort_subst; [|basic_core_crush..].
     use_rule_in_wf; basic_core_crush.
   }
-  {
+{
     replace t with t[/id_subst c/]; [|basic_core_crush].
     replace e1 with e1[/id_subst c/]; [|basic_core_crush].
     replace e2 with e2[/id_subst c/]; [|basic_core_crush].
     eapply eq_term_subst; [|basic_core_crush..].
     use_rule_in_wf; basic_core_crush.
+    admit.
   }
-Qed.
+Admitted.
 
 Definition eq_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
   := proj1 (ctx_mono name t' wfl).
@@ -1548,7 +1549,8 @@ Proof.
   replace t' with t'[/id_subst c'/].
   eapply wf_term_by; basic_core_crush.
   basic_core_crush.
-Qed.
+  admit.
+Admitted.
                    
 Lemma sort_con_congruence l c name s1 s2 c' args
   : In (name, sort_rule c' args) l ->

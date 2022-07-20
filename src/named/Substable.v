@@ -63,8 +63,7 @@ Section WithVar.
           well_scoped0 (map fst s2) a ->
           apply_subst0 s1 (apply_subst0 s2 a) = apply_subst0 (subst_cmp s1 s2) a;
         subst_id0 : forall {B} (c : named_list B) a,
-          (* Not necessary because of our choice of default
-        well_scoped (map fst c) a ->*)
+        well_scoped0 (map fst c) a ->
           apply_subst0 (id_subst c) a = a;
         strengthen_subst0
         : forall s a n e,
@@ -89,8 +88,7 @@ Section WithVar.
           well_scoped (map fst s2) a ->
           apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a;
         subst_id : forall {B} (c : named_list B) a,
-          (* Not necessary because of our choice of default
-        well_scoped (map fst c) a ->*)
+        well_scoped (map fst c) a ->
           apply_subst (id_subst c) a = a;
         strengthen_subst
         : forall s a n e,
@@ -116,6 +114,8 @@ Section WithVar.
     
     
     Context {Substable0_ok : Substable0_ok}.
+
+    Check subst_id0.
     
     #[export] Instance substable0_is_substable_ok
       : Substable_ok A :=
@@ -145,6 +145,7 @@ Section WithVar.
 
     Lemma args_subst_id
       : forall A (c : named_list A) a,
+        ws_args (map fst c) a ->
         args_subst (id_subst c) a = a.
     Proof.
       induction a; basic_goal_prep;
@@ -194,6 +195,7 @@ Section WithVar.
 
     Lemma subst_subst_id
       : forall A (c : named_list A) a,
+        ws_subst (map fst c) a ->
         subst_cmp (id_subst c) a = a.
     Proof.
       induction a; basic_goal_prep;

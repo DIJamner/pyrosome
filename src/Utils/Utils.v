@@ -240,7 +240,7 @@ Section NamedList.
   Context {S : Type}
           `{Eqb S}.
 
-Definition named_list (A : Type) :=list (S * A).
+Polymorphic Definition named_list (A : Type) :=list (S * A).
 
 Fixpoint named_list_lookup {A} default (l : named_list A) (s : S) : A :=
   match l with
