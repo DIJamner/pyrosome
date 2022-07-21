@@ -141,7 +141,7 @@ Qed.
     case (eqb x v); trivial.
 Qed.
 
-  Lemma lookup_found {A} : forall (l1 l2 : named_list A) d (e : V), In e (map fst l1) -> named_list_lookup d (l1 ++ l2) e = named_list_lookup d l1 e.
+  Lemma lookup_found {A} : forall (l1 l2 : named_list A) d1 d2 (e : V), In e (map fst l1) -> named_list_lookup d1 (l1 ++ l2) e = named_list_lookup d2 l1 e.
   Proof.
     intros.
     induction l1.
@@ -517,6 +517,224 @@ Qed.
     + apply wf_term_subst_monotonicity with (c := c); trivial.
 Qed.
 
+
+  Inductive iterm : Type :=
+  | ival : nat -> iterm
+  | ivar : V -> iterm
+  | ibinop : (nat -> nat -> nat) -> iterm -> iterm -> iterm
+  .
+
+  Fixpoint iterm_to_term (i : iterm) :=
+    match i with
+    | ival n => val n
+    | ivar n => inj_var n
+    | ibinop op i1 i2 => bin_op op (iterm_to_term i1) (iterm_to_term i2)
+    end.
+
+  Fixpoint scope (i : iterm) :=
+    match i with
+    | ival n => []
+    | ivar n => [n]
+    | ibinop op i1 i2 => scope i1 ++ scope i2
+    end.
+
+  Ltac cases x :=
+    case_eq x; intros;
+    match goal with
+    | [ H : eqb _ _ = true |- _ ] => apply eqb_eq in H; rewrite H
+    | [ H : eqb _ _ = false |- _ ] => apply eqb_neq in H
+    | _ => idtac
+    end.
+
+  Ltac if_refl :=
+    match goal with
+    | [ H : ?a = ?b |- (if eqb ?a ?b then _ else _) = _ ] => rewrite H
+    | [ H : ?b = ?a |- (if eqb ?a ?b then _ else _) = _ ] => rewrite H
+    | _ => idtac
+    end;
+    match goal with
+    | [ |- (if eqb ?a ?a then _ else _) = _ ] => replace (eqb a a) with (true); try (symmetry; apply eqb_refl)
+    | _ => idtac
+    end.
+
+
+  Lemma ws_iterm_to_term : forall i, ws_term (scope i) (iterm_to_term i).
+  Proof.
+    induction i; constructor; intros; simpl; trivial.
+    - unfold_defs; trivial.
+    - apply H0; left; trivial.
+    - unfold id_substable.
+      intros.
+      unfold_defs.
+      apply functional_extensionality; intros.
+      induction c; trivial.
+      destruct a.
+      simpl.
+      cases (eqb v v0).
+      trivial.
+      apply IHc.
+    - unfold bin_op.
+      f_equal.
+      + destruct IHi1.
+        clear H2.
+        clear IHi2.
+        remember (map (fun x => (x, named_list_lookup 0 s x)) (scope i1)) as s1.
+        specialize (H1 s1).
+        rewrite <- H1.
+        2: {
+          rewrite Heqs1.
+          rewrite map_map.
+          simpl.
+          apply map_id.
+        }
+        2: {
+          intros.
+          clear H1.
+          rewrite Heqs1.
+          clear Heqs1.
+          induction (scope i1); destruct H2.
+          { 
+            simpl.
+            if_refl.
+            trivial.
+          } 
+          {
+            simpl.
+            cases (eqb arg a); trivial.
+            apply IHl; trivial.
+          }
+        }
+        apply H1.
+        rewrite Heqs1.
+        rewrite map_map.
+        simpl.
+        apply map_id.
+        intros.
+        clear H1.
+        rewrite Heqs1.
+        clear Heqs1.
+        simpl in *.
+        clear H.
+        induction (scope i1).
+        destruct H2.
+        destruct H2.
+        simpl.
+        if_refl.
+        apply H0.
+        simpl; left.
+        trivial.
+        simpl.
+        cases (eqb arg a).
+        apply H0.
+        simpl; left;trivial.
+        apply IHl.
+        intros.
+        apply H0.
+        simpl; right; trivial.
+        trivial.
+      + destruct IHi2.
+        clear H2.
+        clear IHi1.
+        remember (map (fun x => (x, named_list_lookup 0 s x)) (scope i2)) as s2.
+        specialize (H1 s2).
+        rewrite <- H1.
+        2: {
+          rewrite Heqs2.
+          rewrite map_map.
+          simpl.
+          apply map_id.
+        }
+        2: {
+          intros.
+          clear H1.
+          rewrite Heqs2.
+          clear Heqs2.
+          induction (scope i2); destruct H2.
+          { 
+            simpl.
+            if_refl.
+            trivial.
+          } 
+          {
+            simpl.
+            cases (eqb arg a); trivial.
+            apply IHl; trivial.
+          }
+        }
+        apply H1.
+        rewrite Heqs2.
+        rewrite map_map.
+        simpl.
+        apply map_id.
+        intros.
+        clear H1.
+        rewrite Heqs2.
+        clear Heqs2.
+        simpl in *.
+        clear H.
+        induction (scope i2).
+        destruct H2.
+        destruct H2.
+        simpl.
+        if_refl.
+        apply H0.
+        Search (In _ (_ ++ _)).
+        apply in_or_app; right.
+        simpl; left; trivial.
+        simpl.
+        cases (eqb arg a).
+        apply H0.
+        apply in_or_app; right.
+        simpl; left;trivial.
+        apply IHl.
+        intros.
+        apply H0.
+        apply in_or_app.
+        apply in_app_or in H2.
+        assert (In arg0 l -> In arg0 (scope i1) \/ In arg0 (a :: l)).
+        intros.
+        simpl; right; right; trivial.
+        assert (In arg0 (scope i1) -> In arg0 (scope i1) \/ In arg0 (a :: l)).
+        intros.
+        simpl; left; trivial.
+        apply (or_ind H4 H3 H2).
+        trivial.
+    - unfold id_substable.
+      intros.
+      unfold bin_op.
+      apply functional_extensionality.
+      intros.
+      unfold term_subst.
+      f_equal.
+      destruct IHi1.
+      unfold id_substable in H0.
+      unfold term_subst in H0.
+      specialize (H0 B c).
+      eapply fun_app_eq in H0.
+      apply H0.
+      destruct IHi2.
+      unfold id_substable in H0.
+      unfold term_subst in H0.
+      specialize (H0 B c).
+      eapply fun_app_eq in H0.
+      apply H0.
+Qed.
+
+
+
+
+        
+
+
+
+
+
+
+
+
+      
+
+      
 
 
 
