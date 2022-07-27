@@ -25,7 +25,6 @@ Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
 
 Context {V : Type}.
 
-Locate named_list.
 Notation named_list := (@named_list V).
 Notation Substable0 := (Substable0 V).
 Notation Substable := (@Substable V).
@@ -58,22 +57,6 @@ Section WithEqb.
       e ((named_map (fun (t : term) => t s') s) ++ s').
 
   Definition inj_var := var (val 0).
-
-  (* Inductive ws_term : list V -> (list (V * nat) -> nat) -> Prop := *)
-  (* | ws_term_cons : forall args e, *)
-  (*     (forall s1 s2, map fst s2 = args -> *)
-  (*               term_subst s1 (term_subst s2 e) = *)
-  (*                 term_subst (named_map (term_subst s1) s2) e) *)
-  (*     -> (forall (B : Type) (c : named_list B), *)
-  (*           map fst c = args -> *)
-  (*           term_subst (with_names_from c (map inj_var (map fst c))) e = e) *)
-  (*     -> (forall s n a, map fst s = args -> fresh n s -> term_subst ((n, a) :: s) e = term_subst s e) *)
-      (* -> (forall arg s, ws_subst arg s -> map fst s = args -> ws_term arg (term_subst s e)) *)
-      (* -> ws_term args e *)
-  (* with ws_subst : list V -> Substable.subst V -> Prop := *)
-  (* | ws_subst_nil : forall args, ws_subst args [] *)
-  (* | ws_subst_cons : forall args n e s, fresh n s -> ws_term args e -> ws_subst args s -> ws_subst args ((n, e) :: s) *)
-  (* . *)
 
   Definition id_args {B} (c : named_list B) :=
       map inj_var (map fst c).
@@ -372,7 +355,6 @@ Qed.
 
   #[export] Instance model : Model := mut_mod eq_sort eq_term wf_sort wf_term.
 
-
   Lemma term_subst_id_eq {A} : forall (c : named_list A) n, term_subst (with_names_from c (map inj_var (map fst c))) (var (val 0) n) = var (val 0) n.
     Proof.
     intros.
@@ -391,8 +373,6 @@ Qed.
     rewrite H; trivial.
     apply IHc.
   Qed.
-
-  Print Model_ok.
 
   Lemma eq_term_subst : forall (c : ctx) (s1 s2 : subst)
                       (c' : ctx) (t : sort) 
@@ -439,8 +419,6 @@ Qed.
       trivial.
       apply IHc0.
   Qed.
-
-Print Model_ok.
 
   Lemma wf_subst_same_name : forall c' s c, wf_subst c' s c -> map fst c = map fst s.
   Proof.
