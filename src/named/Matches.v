@@ -1046,6 +1046,7 @@ Ltac step_if_concrete :=
            (*TODO: 100 is a magic number; make it an input*)
            let x := eval compute in (step_term l c' 100 e1 t) in
              eapply TreeProofs.pf_checker_sound with(p:=x);
+             try typeclasses eauto;
              [assumption | compute; reflexivity]
        end
   else term_refl.
