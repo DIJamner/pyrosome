@@ -798,6 +798,7 @@ Ltac prove_from_known_elabs :=
 
 Ltac term_cong :=
   eapply term_con_congruence;
+  try typeclasses eauto;
   [ solve_in
   | solve_len_eq
   | vm_compute; reflexivity
