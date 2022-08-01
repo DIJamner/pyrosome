@@ -629,9 +629,8 @@ Proof.
   {
     eapply wf_term_by; basic_core_crush.
   }
-  (* basic_core_crush. *)
-  admit.
-Admitted.
+  basic_core_crush.
+Qed.
 
 Local Lemma no_check_sufficient l
   : wf_lang l ->
