@@ -7,49 +7,53 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Substable Model Compilers.
+From Named Require Import Substable Model GeneralModel Compilers.
 From Named Require Term.
 Require Import Coq.Logic.FunctionalExtensionality.
 
-Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
-    {|
-      term_substable := _;
-      sort_substable := _;
-      Model.eq_sort := eq_sort;
-      (*TODO: rename the conflict*)
-      Model.eq_term := eq_term;
-      Model.wf_sort := wf_sort;
-      Model.wf_term := wf_term;
-    |}.
+Inductive out_ty :=
+| ty : Type -> out_ty
+| arr : out_ty -> out_ty -> out_ty.
 
-Definition exp G A := G -> A.
+Definition env_ty := list out_ty.
 
-Definition subst G G' := G -> G'.
 
-Definition emp : Type := unit.
-Definition ext G A : Type := G * A.
-Check ext.
+Fixpoint out (t : out_ty) :=
+  match t with
+  | ty t' => t'
+  | arr t1 t2 => (out t1) -> (out t2)
+  end.
+
+Definition env (t : env_ty) := fold_right prod unit (map out t).
+
+Definition exp G A := env G -> out A.
+
+Definition subst G G' := env G -> env G'.
+
+Definition emp : env_ty := [].
+Definition ext (G : env_ty) (A : out_ty) : env_ty := A :: G.
 Arguments ext G A : clear implicits.
 
-Definition wkn {G} {A} : subst (ext G A) G := fst.
+Definition wkn {G} {A} : subst (ext G A) G := snd.
 
-Definition hd {G A} : exp (ext G A) A := snd.
+Definition hd {G A} : exp (ext G A) A := fst.
 
 Definition term_subst {G G' A} (g : subst G G') (e : exp G' A) :=
   fun x => e (g x).
 
-Definition ty_subst {G G'} (g : subst G G') (t : G' -> Type) :=
+Definition ty_subst {G G'} (g : subst G G') (t : env G' -> Type) :=
   fun x => t (g x).
 
 Definition forget {G} : subst G emp := fun _ => tt.
 
 Definition snoc {G G' A} (g : subst G G') (e : exp G' A) : subst G (ext G' A) :=
-  fun x => let x' := g x in (x', e x').
+  fun x => let x' := g x in (e x', x').
 
-Definition lam G A B (e : exp (ext G A) B) : exp G (A -> B) :=
-  fun g a => e (g, a).
+(* TODO : ws lemmas for each def *)
+Definition lam G A B (e : exp (ext G A) B) : exp G (arr A B) :=
+  fun g a => e (a, g).
 
-Definition app G A B (e1 : exp G (A -> B)) (e2 : exp G A) : exp G B :=
+Definition app G A B (e1 : exp G (arr A B)) (e2 : exp G A) : exp G B :=
   fun g => e1 g (e2 g).
 
 Lemma beta G A B (e : exp (ext G A) B) (e' : exp G A)
@@ -58,19 +62,117 @@ Lemma beta G A B (e : exp (ext G A) B) (e' : exp G A)
   intuition.
 Qed. 
 
-Context {V : Type}
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
-
-Notation named_list := (@named_list V).
-
 Definition gexp := {G & {A & exp G A}}.
 
-Definition meta_subst := named_list gexp.
+Context {V : Type}
+        {V_Eqb : Eqb V}
+        {V_default : WithDefault V}.
 
-Definition term := meta_subst -> gexp.
+Notation named_list := (@named_list V).
+Notation Substable0 := (Substable0 V).
+Notation Substable := (@Substable V).
+Notation term := (@GeneralModel.term V gexp).
+Notation meta_subst := (@GeneralModel.meta_subst V gexp).
 
-Definition sort := Type.
+Definition term_lam (e : term) : term :=
+  fun ms : meta_subst =>
+    let e_ms := e ms in
+    let (G, p) := e_ms in
+    let (B, e') := p in
+    match G as g return (G = g -> gexp) with
+    | [] => fun _ => e ms
+    | A :: G' =>
+        (fun H =>
+           let e' := eq_rect G (fun G1 => exp G1 B) e' (A :: G') H in
+           existT _ G' (existT _ (arr A B) (lam e')))
+    end eq_refl.
+
+Definition default_emp : gexp :=
+  existT _ emp
+  (existT (fun A => exp emp A) (ty unit)
+     (fun _ => tt)).
+
+Fixpoint out_ty_eq (t1 t2 : out_ty) :=
+  match t1, t2 with
+  | ty t1, ty t2 => t1 = t2
+  | arr t11 t12, arr t21 t22 => (out_ty_eq t11 t21) /\ (out_ty_eq t12 t22)
+  | _, _ => True
+  end.
+
+Definition term_env_ty (e : term) (ms : meta_subst) : env_ty :=
+  let e_ms := e ms in
+  let (G, p) := e_ms in G.
+
+Definition term_out_ty (e : term) (ms : meta_subst) : out_ty :=
+  let e_ms := e ms in
+  let (G, p) := e_ms in
+  let (A, _) := p in A.
+
+
+Definition term_app
+           (e1 e2 : term)
+           (pf : forall ms, term_env_ty e1 ms = term_env_ty e2 ms)
+           (pf' : forall ms, term_out_ty e1 ms = arr A )
+  : term.
+unfold term in *.
+intros.
+specialize (pf X).
+unfold term_env_ty in pf.
+unfold gexp.
+remember (e1 X) as e1'.
+remember (e2 X) as e2'.
+clear Heqe1'.
+clear Heqe2'.
+clear e1.
+clear e2.
+unfold gexp in e1', e2'.
+destruct e1', e2'.
+rename x into G.
+rename x0 into G'.
+inversion s; clear s.
+rename x into T1.
+rename X0 into e1.
+inversion s0; clear s0.
+rename x into T2.
+rename X0 into e2.
+destruct T1.
+apply default_emp.
+rewrite <- pf in *.
+
+apply (app e1 e2).
+
+
+Search (Eqb _).
+repeat econstructor.
+
+Definition term_app (e1 : term) (e2 : term) : term :=
+  fun ms : meta_subst =>
+    let e1_ms := e1 ms in
+    let e2_ms := e2 ms in
+    let (G1, p1) := e1_ms in
+    let (T1, e1') := p1 in
+    let (G2, p2) := e2_ms in
+    let (T2, e2') := p2 in
+    match T1 as t1 return (T1 = t1 -> gexp) with
+    | ty t1' => default_emp
+    | arr A B =>
+        (fun H =>
+           let e' := eq_rect G (fun G1 => exp G1 B) e' (A :: G') H in
+           existT _ G (existT _ (arr A B) (lam e')))
+    end eq_refl.
+
+
+Notation id_substable := (GeneralModel.id_substable (exp := gexp) default_emp).
+Print GeneralModel.id_substable.
+Check id_substable.
+
+Lemma lam_id_substable {G A B} : forall e, id_substable (existT _ (ext G A) (existT _ B e)) -> id_substable (lam e).
+
+
+
+Definition model := (GeneralModel.model).
+
+
 
 Notation Substable0 := (Substable0 V).
 Notation Substable := (@Substable V).
@@ -93,6 +195,8 @@ Definition default_emp : gexp :=
 
 Definition inj_var (v : V) : term :=
   var default_emp v.
+
+Instance model : Model term := GeneralModel.mut_mod.
 
 Definition id_args {B} (c : named_list B) :=
   map inj_var (map fst c).
@@ -542,4 +646,3 @@ Qed.
     + apply wf_term_var; trivial; eapply in_fst; apply H.
     + apply wf_term_subst_monotonicity with (c := c); trivial.
 Qed.
-

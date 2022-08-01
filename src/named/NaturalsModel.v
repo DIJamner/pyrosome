@@ -33,7 +33,6 @@ Definition sort := Type.
 
 Definition term : sort := named_list nat -> nat.
 
-Notation Model := (@Model V term sort).
 Definition subst : Type := named_list term.
 Definition ctx : Type := named_list sort.
 
@@ -353,6 +352,7 @@ Qed.
 
   Definition wf_term (c : ctx) t (_ : sort) := ws_term (map fst c) t.
 
+Notation Model := (@Model V term sort).
   #[export] Instance model : Model := mut_mod eq_sort eq_term wf_sort wf_term.
 
   Lemma term_subst_id_eq {A} : forall (c : named_list A) n, term_subst (with_names_from c (map inj_var (map fst c))) (var (val 0) n) = var (val 0) n.

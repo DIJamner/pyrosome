@@ -23,11 +23,11 @@ Definition unit_lang_def : lang :=
     ]
   ]}.
 
-Derive unit_lang
-       SuchThat (elab_lang_ext value_subst unit_lang_def unit_lang)
-       As unit_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve unit_wf : elab_pfs.
+(* Derive unit_lang *)
+(*        SuchThat (elab_lang_ext value_subst unit_lang_def unit_lang) *)
+(*        As unit_wf. *)
+(* Proof. auto_elab. Qed. *)
+(* #[export] Hint Resolve unit_wf : elab_pfs. *)
 
 Definition unit_eta_def :lang :=
   {[l [:= "G" : #"env",
@@ -38,8 +38,8 @@ Definition unit_eta_def :lang :=
   ] ]}.
 
 
-Derive unit_eta
-       SuchThat (elab_lang_ext (unit_lang ++ value_subst) unit_eta_def unit_eta)
-       As unit_eta_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve unit_eta_wf : elab_pfs.
+(* Derive unit_eta *)
+(*        SuchThat (elab_lang_ext (unit_lang ++ value_subst) unit_eta_def unit_eta) *)
+(*        As unit_eta_wf. *)
+(* Proof. auto_elab. Qed. *)
+(* #[export] Hint Resolve unit_eta_wf : elab_pfs. *)

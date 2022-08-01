@@ -36,6 +36,8 @@ Definition wkn {G} {A} : subst (ext G A) G := fun g => projT1 g.
 Definition term_subst {G G' A} (g : subst G G') (e : gterm G' A) :=
   fun x => e (g x).
 
+Check term_subst.
+
 Definition ty_subst {G G'} (g : subst G G') (t : G' -> Type) :=
   fun x => t (g x).
 
