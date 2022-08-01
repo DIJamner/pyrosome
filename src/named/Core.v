@@ -637,7 +637,7 @@ Lemma id_args_wf l c
   Proof.
     induction c; basic_goal_prep; basic_core_crush.
     constructor; basic_core_crush.
-    Qed.
+  Qed.
 Hint Resolve id_args_wf : lang_core.
 
 Lemma eq_subst_dom_eq_r l c c' s1 s2

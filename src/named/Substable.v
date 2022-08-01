@@ -114,8 +114,6 @@ Section WithVar.
     
     
     Context {Substable0_ok : Substable0_ok}.
-
-    Check subst_id0.
     
     #[export] Instance substable0_is_substable_ok
       : Substable_ok A :=
