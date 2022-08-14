@@ -1,14 +1,6 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
-
-Require Import String List.
-Require Vector.
-Import ListNotations.
-Open Scope string.
-Open Scope list.
-From Utils Require Import Utils.
-From Named Require Import Substable Model Compilers.
-From Named Require Term.
+Set Universe Polymorphism.
 
 
 (* What I want:
@@ -145,3 +137,168 @@ Proof.
     eapply IHn.
   }
 Qed.
+
+
+(* TODO: make a version with a good definition for computing*)
+Lemma subst_rect {P : forall {c : ctx}, subst c -> Type}
+  (P_nil : P subst_nil)
+  (P_cons : forall c (s : subst c) A e, P s -> P (subst_cons c s A e))
+  : forall c (s : subst c), P s.
+Proof.
+  destruct c as [n c].
+  revert c.
+  induction n; simpl; intros.
+  {
+    destruct c.
+    destruct s.
+    eapply P_nil.
+  }
+  {
+    destruct c as [c A].
+    destruct s as [c' [Heq [s e]]].
+    destruct c'.
+    simpl in *.
+    pose proof (Heq' := Heq).
+    apply JMeq_eq in Heq'.
+    inversion Heq'.
+    subst.
+    clear H1.
+    assert (A = T) by (apply Eqdep.EqdepTheory.inj_pair2 in Heq'; auto).
+    subst.
+    clear Heq'.
+    rewrite (JMeq_UIP_refl Heq).
+    clear Heq.
+    
+    specialize (P_cons (existT _ n x) s).
+    eapply P_cons.
+    eapply IHn.
+  }
+Defined.
+
+(*TODO: naming on closed vs open subst*)
+
+
+Notation sort c := (subst c -> Type).
+
+Notation term c t := (forall s : subst c, t s).
+
+Notation msubst c c' := (subst c -> subst c').
+
+
+Notation "|# #|" := ctx_nil.
+                               
+Notation "|# x1 ; .. ; xn #|" :=
+  (ctx_cons .. (ctx_cons ctx_nil x1) .. xn)
+    (format "'|#'  '[hv' x1 ;  .. ;  xn ']'  '#|'").
+
+
+(* TODO: make a version with a good definition for computing*)
+Definition mwkn : forall (c : ctx) A, subst (ctx_cons c A) -> subst c.
+  intro c.
+  refine (let (n, c') as c return forall A : subst c -> Type, subst (ctx_cons c A) -> subst c := c in _).
+  intros A s.
+  unfold subst in *.
+  simpl in *.
+  refine (let (c, s0) := s in _).
+  destruct c.
+  destruct s0.
+  (*TODO: lemma for inverting JMeq*)
+  simpl in *.
+  
+    pose proof (Heq' := x0).
+    apply JMeq_eq in Heq'.
+    inversion Heq'.
+    subst.
+    destruct s0; auto.
+    (*TODO: Universes
+Defined.*)
+Admitted.
+Arguments mwkn {_} {_}.
+
+Require Import Program.Basics.
+
+Local Open Scope program_scope.
+
+(*TODO: return an option?*)
+Definition ctx_tl' n : ctx_n subst_n n -> ctx_n subst_n (pred n) :=
+  match n as n' return ctx_n subst_n n' -> ctx_n subst_n (pred n') with
+  | 0 => fun c => tt
+  | S _ => @projT1 _ _
+  end.
+
+Definition ctx_tl (c : ctx) : ctx :=
+  let (n, c') := c in
+  {# pred n; ctx_tl' n c' #}.
+
+
+Definition ctx_hd' n
+  : forall (c : ctx_n subst_n n),
+    sort {# pred n; ctx_tl' n c #} :=
+    match n as n
+          return forall (c : ctx_n subst_n n),
+        sort {# pred n; ctx_tl' n c #}
+    with
+    | 0 => fun c s => False
+    | S _ => @projT2 _ _
+    end.
+
+Definition ctx_hd : forall (c : ctx), sort (ctx_tl c) :=
+  fun c =>
+  let (n, c') as c' return sort (ctx_tl c') := c in ctx_hd' _ _.
+
+Definition subst_tl (c : ctx) : subst c -> subst (ctx_tl c)
+
+TODO: subst projections
+
+(*TODO: difference between meta- and object-level substs. Need to make env sim. to ctx, but w/ open metavars.
+Trying to reuse meta defns here.
+ *)
+Definition env : sort |##| := fun s => ctx.
+(*TODO: need explicit weakening at the meta-level*)
+Definition sub : sort |# env; env ∘ mwkn #|.
+refine (fun s => _).
+unfold subst in *.
+simpl in *.
+                                          
+
+
+Definition hd : forall (c: ctx) A, term (ctx_cons c A) (ty_subst wkn A)
+  
+  refine (let '{# c; Heq; s; _ #} := s in _).
+  
+
+Definition wkn c A : subst (ctx_cons c A) -> subst c.
+  refine 
+  intro s.
+  
+  refine (let '{# c; Heq; s; _ #} := s in _).
+  refine (subst_rect (P:=fun _ _ => subst c) _ _ _ s).
+  {
+    admit.
+  }
+  {
+    auto.
+  }
+  Show Proof.
+  unfold subst in *.
+  simpl in *.
+  intro s.
+  refine (let '{# c'; Heq; s'; _ #} := s in _).
+  destruct c'; simpl in *.
+  inversion Heq.
+  inversion H0.
+  exact s'.
+  refine (
+  Show Proof.
+  constructor.
+
+Definition wkn c A : subst (ctx_cons c A) -> subst c.
+  refine (let (n, c) as s return  subst (ctx_cons s A) -> subst s := c in _).
+  destruct c.
+  simpl.
+  Show Proof.
+  intro s.
+  unfold ctx_cons in *.
+  simpl.
+  destruct s.
+    as [s _].
