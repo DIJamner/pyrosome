@@ -101,7 +101,6 @@ Definition subst_cons : forall (c : ctx) (s : subst c) (A : subst c -> Type) (e 
  *)
 Axiom JMeq_UIP_refl
   : forall (U : Type) (x : U) (p : JMeq x x), p = JMeq_refl.
-  
 
 Lemma subst_ind {P : forall {c : ctx}, subst c -> Prop}
   (P_nil : P subst_nil)
@@ -192,29 +191,6 @@ Notation "|# x1 ; .. ; xn #|" :=
     (format "'|#'  '[hv' x1 ;  .. ;  xn ']'  '#|'").
 
 
-(* TODO: make a version with a good definition for computing*)
-Definition mwkn : forall (c : ctx) A, subst (ctx_cons c A) -> subst c.
-  intro c.
-  refine (let (n, c') as c return forall A : subst c -> Type, subst (ctx_cons c A) -> subst c := c in _).
-  intros A s.
-  unfold subst in *.
-  simpl in *.
-  refine (let (c, s0) := s in _).
-  destruct c.
-  destruct s0.
-  (*TODO: lemma for inverting JMeq*)
-  simpl in *.
-  
-    pose proof (Heq' := x0).
-    apply JMeq_eq in Heq'.
-    inversion Heq'.
-    subst.
-    destruct s0; auto.
-    (*TODO: Universes
-Defined.*)
-Admitted.
-Arguments mwkn {_} {_}.
-
 Require Import Program.Basics.
 
 Local Open Scope program_scope.
@@ -246,9 +222,77 @@ Definition ctx_hd : forall (c : ctx), sort (ctx_tl c) :=
   fun c =>
   let (n, c') as c' return sort (ctx_tl c') := c in ctx_hd' _ _.
 
-Definition subst_tl (c : ctx) : subst c -> subst (ctx_tl c)
+Definition subst_tl' n
+  : forall (c : ctx_n subst_n n),
+    msubst {# n; c #} (ctx_tl {# n; c #}).
+  refine (
+    match n as n
+          return forall (c : ctx_n subst_n n),
+        msubst {# n; c #} (ctx_tl {# n; c #})
+    with
+    | 0 => fun c => id
+    | S _ => fun c => _
+    end).
+  simpl in c.
+  refine
+    (let (c, A) as c return msubst {# S n0; c #} (ctx_tl {# S n0; c #})
+       := c in  _).
+  simpl in *.
+  intro s.
+  unfold subst in *.
+  clear c0.
+  simpl in *.
+  destruct s.
+  destruct x.
+  destruct s.
+  assert (c = x).
+  {
+    refine (match x0 in JMeq {# c; A #} {# x; T #}
+                  return c = x with
+            | _ => _
+            end).
+    destruct x0.
+    inversion x0.
+  in
+  refine (let (n,c') as c return msubst c (ctx_tl c) := c in _)
+  
+  refine (projT2 _).
+  {
+    simpl.
+    e
+  refine (fun c => _).
+  refine (let (n,c') as c return msubst c (ctx_tl c) := c in _).
+  
+Definition subst_tl : forall (c : ctx), msubst c (ctx_tl c).
+  refine (fun c => _).
+  refine (let (n,c') as c return msubst c (ctx_tl c) := c in _).
+  refine (fun s => _).
+  simpl.
 
-TODO: subst projections
+
+(* TODO: make a version with a good definition for computing*)
+Definition mwkn : forall (c : ctx) A, subst (ctx_cons c A) -> subst c.
+  intro c.
+  refine (let (n, c') as c return forall A : subst c -> Type, subst (ctx_cons c A) -> subst c := c in _).
+  intros A s.
+  unfold subst in *.
+  simpl in *.
+  refine (let (c, s0) := s in _).
+  destruct c.
+  destruct s0.
+  (*TODO: lemma for inverting JMeq*)
+  simpl in *.
+  
+    pose proof (Heq' := x0).
+    apply JMeq_eq in Heq'.
+    inversion Heq'.
+    subst.
+    destruct s0; auto.
+    (*TODO: Universes
+Defined.*)
+Admitted.
+Arguments mwkn {_} {_}.
+  
 
 (*TODO: difference between meta- and object-level substs. Need to make env sim. to ctx, but w/ open metavars.
 Trying to reuse meta defns here.
