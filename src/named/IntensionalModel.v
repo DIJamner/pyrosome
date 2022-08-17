@@ -78,6 +78,27 @@ Proof.
   }
 Qed.
 
+(*TODO: make a better defn for computation*)
+Definition ctx_rect {P : _ -> Type}
+  (P_nil : P ctx_nil)
+  (P_cons : forall c A, P c -> P (@ctx_cons c A))
+  : forall c : ctx, P c.
+Proof.
+  destruct c as [n c].
+  revert c.
+  induction n; simpl; intros.
+  {
+    destruct c.
+    eapply P_nil.
+  }
+  {
+    destruct c.
+    specialize (P_cons (existT _ n x)).
+    eapply P_cons.
+    eauto.
+  }
+Defined.
+
 (*
 Lemma eq_conv_refl {A} {a : A} : eq_conv a a.
 Proof.
@@ -266,14 +287,34 @@ Definition subst_tl' n
   simpl.
   eapply projT1.
 Defined.
-  
+
 Definition subst_tl : forall (c : ctx), msubst c (ctx_tl c).
   refine (fun c => _).
-  refine (let (n,c') as c return msubst c (ctx_tl c) := c in _).
+  destruct c.
+  (*TODO: universe issues with this:
+  refine (let (n,c') as c return msubst c (ctx_tl c) := c in _).*)
   refine (fun s => _).
   eapply subst_tl'; eauto.
-  TODO: universe issues
 Defined.
+
+
+
+(* for convenience so that code can use names, not projections *)
+Definition open : forall (c : ctx) (A : sort c), Type :=
+  (ctx_rect (fun A => A subst_nil)
+   (fun c (B : sort c) open (A : sort (ctx_cons c B)) =>
+      open (fun s : subst c => forall x : B s, A (subst_cons c s B x)))).
+
+Definition apply_subst : forall (c : ctx) (s : subst c) (A : sort c), open _ A -> A s.
+  refine (subst_rect (fun A oa => oa) (fun c =>_)).
+  destruct c.
+(*  refine (let (n,c) as c return forall (s : subst c) (A : sort c) (e : A s),
+                           (forall A0 : sort c, open c A0 -> A0 s) ->
+                           forall A0 : sort (ctx_cons c A), open (ctx_cons c A) A0 -> A0 (subst_cons c s A e) := c in _).*)
+  intros s A e apply_subst B OB.
+  refine (apply_subst _ OB _).
+Defined.
+
 
 
 (* TODO: make a version with a good definition for computing*)
