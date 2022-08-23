@@ -17,6 +17,7 @@ Section WithVar.
   Class Substable0 (A : Type) : Type :=
     {
       inj_var : V -> A;
+      eq_term0 : list V -> A -> A -> Prop;
       apply_subst0 : named_list A -> A -> A;
       well_scoped0 : list V -> A -> Prop;
     }.
@@ -32,6 +33,14 @@ Section WithVar.
     (*Defined as a notation so that the definition 
       does not get in the way of automation *)
     Notation id_subst c := (with_names_from c (id_args c)).
+
+    Fixpoint eq_subst args (s1 s2 : subst) :=
+      match s1, s2 with
+      | (v1, x1) :: s1', (v2, x2) :: s2' => v1 = v2 /\ eq_term0 args x1 x2 /\ eq_subst args s1' s2'
+      | [], [] => True
+      | _, _ => False
+      end.
+
     
     Definition subst_cmp (s1 s2 : subst) := named_map (apply_subst0 s1) s2.
 
@@ -45,6 +54,15 @@ Section WithVar.
     (* TODO: make sure that using apply_subst0 here isn't a problem for automation.
        The alternative is to split Substable into defs and properties like Substable0
      *)
+
+    Fixpoint eq_args args a1 a2 :=
+      match a1, a2 with
+      | x1 :: a1', x2 :: a2' => eq_term0 args x1 x2 /\ eq_args args a1' a2'
+      | [], [] => True
+      | _, _ => False
+      end.
+
+
     Definition args_subst s (a : list A) := map (apply_subst0 s) a.
     Arguments args_subst s !a/.
 
@@ -58,18 +76,19 @@ Section WithVar.
 
     Class Substable0_ok : Type :=
       {
-        subst_var `{Eqb V} : forall s x, apply_subst0 s (inj_var x) = subst_lookup s x;
+        subst_var `{Eqb V} : forall s x args, well_scoped0 args (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup s x);
         subst_assoc0 : forall s1 s2 a,
           well_scoped0 (map fst s2) a ->
-          apply_subst0 s1 (apply_subst0 s2 a) = apply_subst0 (subst_cmp s1 s2) a;
+          forall args, eq_term0 args (apply_subst0 s1 (apply_subst0 s2 a)) (apply_subst0 (subst_cmp s1 s2) a);
         subst_id0 : forall {B} (c : named_list B) a,
         well_scoped0 (map fst c) a ->
-          apply_subst0 (id_subst c) a = a;
+        forall args, well_scoped0 args a ->
+          eq_term0 args (apply_subst0 (id_subst c) a) a;
         strengthen_subst0
         : forall s a n e,
           well_scoped0 (map fst s) a ->
           fresh n s ->
-          apply_subst0 ((n,e)::s) a = apply_subst0 s a;
+          forall args, eq_term0 args (apply_subst0 ((n,e)::s) a) (apply_subst0 s a);
         well_scoped_subst0 args s a
         : ws_subst args s ->
           well_scoped0 (map fst s) a ->
@@ -79,6 +98,7 @@ Section WithVar.
     Class Substable (B : Type) : Type :=
       {
         apply_subst : subst -> B -> B;
+        eq_term : list V -> B -> B -> Prop;
         well_scoped : list V -> B -> Prop;
       }.
     
@@ -86,15 +106,16 @@ Section WithVar.
       {
         subst_assoc : forall s1 s2 a,
           well_scoped (map fst s2) a ->
-          apply_subst s1 (apply_subst s2 a) = apply_subst (subst_cmp s1 s2) a;
+          forall args, eq_term args (apply_subst s1 (apply_subst s2 a)) (apply_subst (subst_cmp s1 s2) a);
         subst_id : forall {B} (c : named_list B) a,
         well_scoped (map fst c) a ->
-          apply_subst (id_subst c) a = a;
+        forall args, well_scoped args a ->
+          eq_term args (apply_subst (id_subst c) a) a;
         strengthen_subst
         : forall s a n e,
           well_scoped (map fst s) a ->
           fresh n s ->
-          apply_subst ((n,e)::s) a= apply_subst s a;
+          forall args, eq_term args (apply_subst ((n,e)::s) a) (apply_subst s a);
         well_scoped_subst args s a
         : ws_subst args s ->
           well_scoped (map fst s) a ->
@@ -109,6 +130,7 @@ Section WithVar.
       : Substable A :=
       {
         apply_subst := apply_subst0;
+        eq_term := eq_term0;
         well_scoped := well_scoped0;
       }.
     
@@ -126,16 +148,16 @@ Section WithVar.
     
 
     (*TODO: use separate DB*)
-    Local Hint Rewrite subst_assoc0 : utils.
+    Local Hint Resolve subst_assoc0 : utils.
     Arguments subst_id0 {Substable0_ok} B%type_scope _ _.
-    Local Hint Rewrite subst_id0 : utils.
-    Local Hint Rewrite strengthen_subst0 : utils.
+    Local Hint Resolve subst_id0 : utils.
+    Local Hint Resolve strengthen_subst0 : utils.
     Local Hint Resolve well_scoped_subst0 : utils.
 
     Lemma args_subst_assoc : forall s1 s2 a,
         ws_args (map fst s2) a ->
-        args_subst s1 (args_subst s2 a)
-        = args_subst (subst_cmp s1 s2) a.
+        forall args, eq_args args (args_subst s1 (args_subst s2 a))
+         (args_subst (subst_cmp s1 s2) a).
     Proof.
       induction a; basic_goal_prep;
         basic_utils_crush.
@@ -144,7 +166,8 @@ Section WithVar.
     Lemma args_subst_id
       : forall A (c : named_list A) a,
         ws_args (map fst c) a ->
-        args_subst (id_subst c) a = a.
+        forall args, ws_args args a ->
+        eq_args args (args_subst (id_subst c) a) a.
     Proof.
       induction a; basic_goal_prep;
         basic_utils_crush.
@@ -153,7 +176,7 @@ Section WithVar.
     Lemma args_strengthen_subst s a n e
       : ws_args (map fst s) a ->
         fresh n s ->
-        args_subst ((n,e)::s) a = args_subst s a.
+        forall args, eq_args args (args_subst ((n,e)::s) a) (args_subst s a).
     Proof.
       induction a; basic_goal_prep; f_equal;
         basic_utils_crush.
@@ -171,6 +194,7 @@ Section WithVar.
     #[export] Instance substable_args : Substable (list A) :=
       {
         apply_subst := args_subst;
+        eq_term := eq_args;
         well_scoped := ws_args;
       }.
     #[export] Instance substable_args_ok : Substable_ok (list A) :=
@@ -184,8 +208,8 @@ Section WithVar.
     
     Lemma subst_subst_assoc : forall s1 s2 a,
         ws_subst (map fst s2) a ->
-        subst_cmp s1 (subst_cmp s2 a)
-        = subst_cmp (subst_cmp s1 s2) a.
+        forall args, eq_subst args (subst_cmp s1 (subst_cmp s2 a))
+        (subst_cmp (subst_cmp s1 s2) a).
     Proof.
       induction a; basic_goal_prep;
         basic_utils_crush.
@@ -194,7 +218,8 @@ Section WithVar.
     Lemma subst_subst_id
       : forall A (c : named_list A) a,
         ws_subst (map fst c) a ->
-        subst_cmp (id_subst c) a = a.
+        forall args, ws_subst args a ->
+        eq_subst args (subst_cmp (id_subst c) a) a.
     Proof.
       induction a; basic_goal_prep;
         basic_utils_crush.
@@ -203,7 +228,7 @@ Section WithVar.
     Lemma subst_strengthen_subst s a n e
       : ws_subst (map fst s) a ->
         fresh n s ->
-        subst_cmp ((n,e)::s) a = subst_cmp s a.
+        forall args, eq_subst args (subst_cmp ((n,e)::s) a) (subst_cmp s a).
     Proof.
       induction a; basic_goal_prep; f_equal;
         solve [basic_utils_crush].
@@ -223,6 +248,7 @@ Section WithVar.
    #[export] Instance substable_subst : Substable (named_list A) :=
       {
         apply_subst := subst_cmp;
+        eq_term := eq_subst;
         well_scoped := ws_subst;
       }.
     

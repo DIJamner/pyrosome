@@ -7,14 +7,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Substable Model Compilers NatLang.
-(* From Named Require Term. *)
+From Named Require Import Substable Model Compilers.
+From Named Require Term.
 Require Import Coq.Logic.FunctionalExtensionality.
-
-(* Import CompilerDefs.Notations. *)
-
-Require Coq.derive.Derive.
-
 
 Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
     {|
@@ -27,70 +22,75 @@ Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
       Model.wf_term := wf_term;
     |}.
 
-Section WithV.
+
 Context {V : Type}.
 
+Locate named_list.
 Notation named_list := (@named_list V).
 Notation Substable0 := (Substable0 V).
 Notation Substable := (@Substable V).
 
 Definition sort := Type.
 
-Definition term : sort := named_list nat -> nat.
+Definition term' : sort := named_list nat -> nat.
 
-Definition subst : Type := named_list term.
+Notation Model' := (@Model V term' sort).
+Definition subst' : Type := named_list term'.
 Definition ctx : Type := named_list sort.
 
 Section WithEqb.
   Context {V_Eqb : Eqb V}.
 
-  Print named_list_lookup.
-  Definition var (default : term) (n : V) : term :=
+  Definition term_subst' (s : subst') e : term' :=
+    fun (s' : named_list nat) =>
+      e ((named_map (fun (t : term') => t s') s) ++ s').
+
+  Definition var' (default : term') (n : V) : term' :=
     fun (s : named_list nat) =>
       named_list_lookup (default s) s n.
 
-  Definition val (v : nat) : term :=
+  Definition val' (v : nat) : term' :=
     fun _ => v.
 
-  Definition bin_op (op : nat -> nat -> nat) (t1 t2 : term) : term :=
+  Definition bin_op (op : nat -> nat -> nat) (t1 t2 : term') : term' :=
     fun (s : named_list nat) =>
       op (t1 s) (t2 s).
 
-  Definition term_subst (s : subst) e : term :=
-    fun (s' : named_list nat) =>
-      e ((named_map (fun (t : term) => t s') s) ++ s').
+  Definition inj_var' := var' (val' 0).
+  Definition id_args' {B} (c : named_list B) :=
+      map inj_var' (map fst c).
 
-  Definition inj_var := var (val 0).
+  Notation id_subst c := (with_names_from c (id_args' c)).
 
-  Definition id_args {B} (c : named_list B) :=
-      map inj_var (map fst c).
+  Definition id_substable (e : term') :=
+    forall (c c' : named_list nat), (forall x, named_list_lookup 0 c x = named_list_lookup 0 c' x) -> e c = e c'.
 
-  Notation id_subst c := (with_names_from c (id_args c)).
+  Definition term := { x : term' | id_substable x}.
 
-  Definition id_substable {B} (e : term) :=
-    forall (c : named_list B), e = term_subst (id_subst c) e.
-
-  Lemma val_id_substable {B : Type} : forall v, id_substable (B:=B) (val v).
-  Proof.
-    unfold id_substable, term_subst; intros.
-    induction c; trivial.
+  Definition val (v : nat) : term.
+    apply exist with (x := val' v).
+    unfold id_substable, val'.
+    trivial.
   Qed.
 
-  Lemma inj_var_id_substable {B : Type} : forall (n : V), id_substable (B:=B) (inj_var n).
-  Proof.
-    unfold id_substable, term_subst, inj_var, var, val; intros.
-    induction c; trivial.
-    destruct a.
-    simpl.
-    case_eq (eqb n v).
-    - intros; apply eqb_eq in H.
-      unfold inj_var, var, val.
-      rewrite H.
-      trivial.
-    - intros.
-      unfold id_args in IHc.
-      apply IHc.
-  Qed.
+  Ltac cases x :=
+    case_eq x; intros;
+    match goal with
+    | [ H : eqb _ _ = true |- _ ] => apply eqb_eq in H; rewrite H
+    | [ H : eqb _ _ = false |- _ ] => apply eqb_neq in H
+    | _ => idtac
+    end.
+
+  Ltac if_refl :=
+    match goal with
+    | [ H : ?a = ?b |- (if eqb ?a ?b then _ else _) = _ ] => rewrite H
+    | [ H : ?b = ?a |- (if eqb ?a ?b then _ else _) = _ ] => rewrite H
+    | _ => idtac
+    end;
+    match goal with
+    | [ |- (if eqb ?a ?a then _ else _) = _ ] => replace (eqb a a) with (true); try (symmetry; apply eqb_refl)
+    | _ => idtac
+    end.
 
   Lemma fun_app_eq {A B} : forall (f g : A -> B) (a : A), f = g -> f a = g a.
   Proof.
@@ -99,32 +99,51 @@ Section WithEqb.
     trivial.
   Qed.
 
-  Lemma bin_op_id_substable {B : Type} : forall op t1 t2, id_substable (B := B) t1 -> id_substable (B := B) t2 -> id_substable (B:=B) (bin_op op t1 t2).
-  Proof.
-    unfold id_substable, term_subst, bin_op, inj_var, var, val; intros.
-    apply functional_extensionality; intros.
-    specialize (H c).
-    specialize (H0 c).
-    apply fun_app_eq with (a := x) in H, H0.
-    f_equal.
-    - apply H.
-    - apply H0.
+  Lemma inj_var_ok : forall (v : V), id_substable (inj_var' v).
+    intros.
+    unfold id_substable.
+    intros.
+    unfold inj_var, var', val', term_subst'.
+    apply H.
   Qed.
 
-  Definition args_scoped args e :=
-    forall s, map fst s = args ->
-         forall s', (forall arg, In arg args -> named_list_lookup 0 s arg = named_list_lookup 0 s' arg) ->
-           e s = e s'.
-    
+  Definition inj_var (v : V) : term :=
+    exist _ (inj_var' v) (inj_var_ok v).
 
-  Definition eq_term0 e1 e2 :=
-    forall args, (args_scoped args e1 <-> args_scoped args e2).
+  Definition subst : Type := named_list term.
+
+  Lemma term_subst_ok : forall (s : subst) (e : term), id_substable
+    (term_subst' (named_map (fun t : term => proj1_sig t) s) (proj1_sig e)).
+  Proof.
+    intros.
+    destruct e.
+    simpl.
+    unfold term_subst'.
+    unfold id_substable, term_subst' in *.
+    intros.
+    apply i.
+    intros.
+    induction s.
+    trivial.
+    simpl.
+    destruct a; simpl.
+    case (eqb x0 v); trivial.
+    unfold proj1_sig.
+    destruct t.
+    unfold id_substable in i0.
+    apply i0.
+    trivial.
+Defined.
+  
+  Definition term_subst (s : subst) (e : term) : term :=
+    exist (fun x : term' => id_substable x)
+          (term_subst' (named_map (fun t : term => proj1_sig t) s) (proj1_sig e))
+          (term_subst_ok s e).
 
   Definition ws_term args (e : term) :=
-    (forall s, map fst s = args ->
-         forall s', (forall arg, In arg args -> named_list_lookup 0 s arg = named_list_lookup 0 s' arg) ->
-           e s = e s')
-  /\ forall B, id_substable (B:=B) e.
+    forall s, map fst s = args ->
+         forall s', (forall arg, In arg args -> named_list_lookup 0 s arg = named_list_lookup 0 s' arg)
+               -> (proj1_sig e) s = (proj1_sig e) s'.
 
   Instance substable_term : Substable0 term :=
     {
@@ -140,22 +159,16 @@ Section WithEqb.
     }.
 
   Ltac unfold_defs :=
-    try unfold inj_var in *;
-    try unfold var in *;
-    try unfold val in *;
-    try unfold apply_subst in *; simpl;
-    try unfold term_subst in *;
-    try unfold ws_term in *;
-    try unfold id_substable in *.
+    try unfold inj_var, var', val', apply_subst, term_subst, ws_term, id_substable in *.
 
   Lemma eqb_eq_eqb : forall (H1 H2 : Eqb V) (x y : V), eqb (Eqb:=H1) x y = eqb (Eqb:=H2) x y.
     Proof.
       intros.
       case_eq (eqb x y); intros.
-      - apply eqb_eq in H.
+      apply eqb_eq in H.
       apply eqb_eq.
       trivial.
-      - apply eqb_neq in H.
+      apply eqb_neq in H.
       apply eqb_neq.
       trivial.
 Qed.
@@ -168,29 +181,39 @@ Qed.
     unfold subst_lookup.
     simpl.
     unfold inj_var.
-    unfold var.
-    induction s; simpl; trivial.
+    induction s; simpl.
+    f_equal.
     unfold pair_map_snd.
     destruct a.
-    assert (eqb (Eqb:=V_Eqb) x v = eqb (Eqb:=H) x v)by apply eqb_eq_eqb.
-    rewrite H0.
     case (eqb x v); trivial.
-Qed.
+    destruct t.
+    simpl.
+    unfold term_subst'.
+    unfold inj_var'.
+    (* apply functional_extensionality. *)
+    (* intros. *)
+    (* simpl. *)
+    (* f_equal. *)
+    (* assert (eqb (Eqb:=V_Eqb) x v = eqb (Eqb:=H) x v)by apply eqb_eq_eqb. *)
+    Admitted.
 
   Lemma lookup_found {A} : forall (l1 l2 : named_list A) d1 d2 (e : V), In e (map fst l1) -> named_list_lookup d1 (l1 ++ l2) e = named_list_lookup d2 l1 e.
   Proof.
     intros.
     induction l1.
-    - inversion H.
-    - simpl in *.
-      destruct H; destruct a; simpl in *.
-    + rewrite H.
-      assert (eqb e e = true); try apply eqb_eq; trivial.
-      rewrite H0; simpl.
-      trivial.
-    + case (eqb e v); trivial.
-      apply IHl1.
-      apply H.
+    inversion H.
+    simpl in *.
+    destruct H; destruct a; simpl in *.
+    rewrite H.
+    assert (eqb e e = true).
+    apply eqb_eq.
+    trivial.
+    rewrite H0; simpl.
+    trivial.
+    case (eqb e v).
+    trivial.
+    apply IHl1.
+    apply H.
 Qed.
 
   Lemma named_map_cons_eq {A B} : forall l (n : V) (e : A) (f : A -> B),
@@ -202,33 +225,36 @@ Qed.
    Lemma named_map_cmp {A B C} : forall (f : B -> C) (g : A -> B) h (l : named_list A), (forall x, f (g x) = h x) -> named_map f (named_map g l) = named_map h l.
   Proof.
     intros.
-    induction l; trivial.
+    induction l.
+    trivial.
     destruct a.
     repeat rewrite named_map_cons_eq.
     apply invert_eq_cons_cons.
-    constructor; try rewrite H; trivial.
+    constructor.
+    rewrite H; trivial.
+    trivial.
 Qed.
 
   Lemma ws_term_append : forall (args : list V) (l1 l2 : named_list nat) (a : term),
-      ws_term args a -> args = map fst l1 -> a (l1 ++ l2) = a l1.
+      ws_term args a -> args = map fst l1 -> (proj1_sig a) (l1 ++ l2) = (proj1_sig a) l1.
   Proof.
     intros.
     unfold ws_term in  H.
     symmetry in H0.
-    destruct H.
     specialize (H l1 H0 (l1 ++ l2)).
     symmetry.
     apply H.
     intros.
     symmetry.
     apply lookup_found.
-    rewrite <- H0 in H2; trivial.
+    rewrite <- H0 in H1; trivial.
   Qed.
 
   Lemma named_map_fst {A B} : forall (l : named_list A) (f : A -> B), map fst l = map fst (named_map f l).
     Proof.
       intros.
-      induction l; trivial.
+      induction l.
+      trivial.
       destruct a.
       rewrite named_map_cons_eq.
       repeat rewrite map_cons.
@@ -279,12 +305,13 @@ Qed.
   Lemma in_fst {A} : forall n (e : A) (l : named_list A), In (n, e) l -> In n (map fst l).
   Proof.
     intros.
-    induction l; trivial.
+    induction l.
+    trivial.
     inversion H; rewrite map_cons; simpl.
-    - left.
+    left.
     rewrite H0.
     trivial.
-    - apply IHl in H0.
+    apply IHl in H0.
     right.
     trivial.
 Qed.
@@ -315,15 +342,14 @@ Qed.
     unfold fresh in H0.
     rewrite named_map_cons_eq.
     case_eq (eqb arg n); intros.
-    - apply eqb_eq in H3.
+    apply eqb_eq in H3.
     rewrite H3 in H2.
     apply H0 in H2; contradiction.
-    - simpl.
+    simpl.
     rewrite H3.
     symmetry; apply lookup_found.
     rewrite nmf; trivial.
 Qed.
-
 
   Lemma well_scoped_subst0 : forall (args : list V) (s : subst) (a : term),
       ws_subst args s ->
@@ -336,8 +362,8 @@ Qed.
       f_equal.
       clear H0.
       induction s.
-      - trivial.
-      - destruct a0.
+      trivial.
+      destruct a0.
       repeat rewrite named_map_cons_eq.
       destruct H.
       destruct H0.
@@ -352,7 +378,8 @@ Qed.
       repeat erewrite ws_term_append; cleanup_ws_append.
       clear H0.
       f_equal.
-      induction s; trivial.
+      induction s.
+      trivial.
       destruct a0.
       repeat rewrite named_map_cons_eq.
       destruct H.
@@ -391,8 +418,8 @@ Qed.
 
   Definition wf_term (c : ctx) t (_ : sort) := ws_term (map fst c) t.
 
-Notation Model := (@Model V term sort).
   #[export] Instance model : Model := mut_mod eq_sort eq_term wf_sort wf_term.
+
 
   Lemma term_subst_id_eq {A} : forall (c : named_list A) n, term_subst (with_names_from c (map inj_var (map fst c))) (var (val 0) n) = var (val 0) n.
     Proof.
@@ -403,14 +430,17 @@ Notation Model := (@Model V term sort).
     unfold inj_var in *.
     unfold var in *.
     unfold val in *.
-    induction c; trivial.
+    induction c.
+    trivial.
     destruct a.
     simpl.
     case_eq (eqb n v); intros.
-    - apply eqb_eq in H.
+    apply eqb_eq in H.
     rewrite H; trivial.
-    - apply IHc.
+    apply IHc.
   Qed.
+
+  Print Model_ok.
 
   Lemma eq_term_subst : forall (c : ctx) (s1 s2 : subst)
                       (c' : ctx) (t : sort) 
@@ -427,14 +457,15 @@ Notation Model := (@Model V term sort).
       rewrite H0.
       f_equal.
       apply app_inv_tail_iff.
-      induction H; trivial.
+      induction H.
+      trivial.
       repeat rewrite named_map_cons_eq.
       apply invert_eq_cons_cons; constructor.
-      - simpl in H1.
+      simpl in H1.
       unfold eq_term in H1.
       rewrite H1.
       trivial.
-      - apply IHeq_subst.
+      apply IHeq_subst.
     Qed.
 
   Lemma wf_term_var : forall (c : list V) (n : V),
@@ -445,16 +476,19 @@ Notation Model := (@Model V term sort).
     - apply H1; trivial.
     - apply functional_extensionality.
       intros.
-      induction c0; trivial.
+      induction c0.
+      trivial.
       destruct a.
       unfold term_subst.
       simpl in *.
       case_eq (eqb n v); intros.
-      + apply eqb_eq in H0.
+      apply eqb_eq in H0.
       rewrite H0.
       trivial.
-      + apply IHc0.
+      apply IHc0.
   Qed.
+
+Print Model_ok.
 
   Lemma wf_subst_same_name : forall c' s c, wf_subst c' s c -> map fst c = map fst s.
   Proof.
@@ -480,16 +514,17 @@ Notation Model := (@Model V term sort).
       repeat erewrite ws_term_append; cleanup_ws_append.
       clear H.
       f_equal.
-      induction H1; trivial.
+      induction H1.
+      trivial.
       inversion H0.
       simpl.
       rewrite IHwf_subst.
-      - inversion H.
+      inversion H.
       specialize (H10 s0 H2 s' H3).
       rewrite H10.
       trivial.
-      - trivial.
-      - eapply wf_subst_same_name; apply H1.
+      trivial.
+      eapply wf_subst_same_name; apply H1.
     + unfold_defs.
       unfold wf_term in H.
       intros.
@@ -503,14 +538,14 @@ Notation Model := (@Model V term sort).
       simpl.
       inversion H0.
       rewrite IHwf_subst; trivial.
-      - inversion H.
+      inversion H.
       unfold id_substable in H9.
       specialize (H9 B c0).
       unfold term_subst in H9.
       apply fun_app_eq with (a := x) in H9.
       rewrite H9.
       trivial.
-      - apply wf_subst_same_name in H1.
+      apply wf_subst_same_name in H1.
       trivial.
 Qed.
 
@@ -530,51 +565,218 @@ Qed.
     + apply wf_term_subst_monotonicity with (c := c); trivial.
 Qed.
 
-End WithEqb.
-End WithV.
 
-Local Notation compiler V := (compiler V (tgt_term := term (V:=V)) (tgt_sort := sort)).
+  Inductive iterm : Type :=
+  | ival : nat -> iterm
+  | ivar : V -> iterm
+  | ibinop : (nat -> nat -> nat) -> iterm -> iterm -> iterm
+  .
 
-Print nat_lang.
+  Fixpoint iterm_to_term (i : iterm) :=
+    match i with
+    | ival n => val n
+    | ivar n => inj_var n
+    | ibinop op i1 i2 => bin_op op (iterm_to_term i1) (iterm_to_term i2)
+    end.
 
-  Definition nat_lang_model_def : compiler string :=
-    [
-      ("plus", term_case ["b"; "a"] (bin_op plus (inj_var "a") (inj_var "b")));
-      ("1+", term_case ["n"] (bin_op plus (inj_var "n") (val 1)));
-      ("0", term_case [] (val 0));
-      ("natural", sort_case [] (nat : Type))
-    ].
+  Fixpoint scope (i : iterm) :=
+    match i with
+    | ival n => []
+    | ivar n => [n]
+    | ibinop op i1 i2 => scope i1 ++ scope i2
+    end.
 
-Ltac break_preserving_compiler :=
-  repeat match goal with
-  | [ |- preserving_compiler_ext _ ?H _] => unfold H
-  | [ |- preserving_compiler_ext _ _ ?H] => unfold H
-  | [ |- preserving_compiler_ext _ _ ((_, Rule.term_rule ?a _ _) :: _)] => apply (CompilerDefs.preserving_compiler_term _ a)
-  | [ |- preserving_compiler_ext _ _ ((_, Rule.sort_rule ?a _) :: _)] => apply (CompilerDefs.preserving_compiler_sort _ a)
-  | [ |- preserving_compiler_ext _ _ ((_, Rule.term_eq_rule _ _ _ _) :: _)] => apply CompilerDefs.preserving_compiler_term_eq
-  | [ |- preserving_compiler_ext _ _ ((_, Rule.sort_eq_rule _ _) :: _)] => apply CompilerDefs.preserving_compiler_sort_eq
-  | [ |- preserving_compiler_ext _ [] []] => apply CompilerDefs.preserving_compiler_nil
-  | _ => idtac
-  end.
 
-Ltac auto_preserving :=
-  break_preserving_compiler;
-  simpl; unfold wf_sort, wf_term, ws_term, eq_term, apply_subst;
-  simpl; unfold term_subst;
-  repeat
-    (simpl; trivial; intros;
-     match goal with
-     | [ |- _ /\ _] => constructor
-     | [ |- id_substable (val _)] => apply val_id_substable
-     | [ |- id_substable (inj_var _)] => apply inj_var_id_substable
-     | [ |- id_substable (bin_op _ _ _)] => apply bin_op_id_substable
-     | [ |- _ = _] => unfold bin_op, inj_var, var, val
-     | _ => idtac
-     end; auto).
 
-  Lemma nat_lang_model_preserving :
-    (preserving_compiler_ext (V:=string) (H := fun _ => 0) (H0 := nat) (tgt_Model := model) [] nat_lang_model_def nat_lang).
+  Lemma ws_iterm_to_term : forall i, ws_term (scope i) (iterm_to_term i).
   Proof.
-    auto_preserving.
-    - rewrite PeanoNat.Nat.add_shuffle0; apply PeanoNat.Nat.add_assoc.
-  Qed.
+    induction i; constructor; intros; simpl; trivial.
+    - unfold_defs; trivial.
+    - apply H0; left; trivial.
+    - unfold id_substable.
+      intros.
+      unfold_defs.
+      apply functional_extensionality; intros.
+      induction c; trivial.
+      destruct a.
+      simpl.
+      cases (eqb v v0).
+      trivial.
+      apply IHc.
+    - unfold bin_op.
+      f_equal.
+      + destruct IHi1.
+        clear H2.
+        clear IHi2.
+        remember (map (fun x => (x, named_list_lookup 0 s x)) (scope i1)) as s1.
+        specialize (H1 s1).
+        rewrite <- H1.
+        2: {
+          rewrite Heqs1.
+          rewrite map_map.
+          simpl.
+          apply map_id.
+        }
+        2: {
+          intros.
+          clear H1.
+          rewrite Heqs1.
+          clear Heqs1.
+          induction (scope i1); destruct H2.
+          { 
+            simpl.
+            if_refl.
+            trivial.
+          } 
+          {
+            simpl.
+            cases (eqb arg a); trivial.
+            apply IHl; trivial.
+          }
+        }
+        apply H1.
+        rewrite Heqs1.
+        rewrite map_map.
+        simpl.
+        apply map_id.
+        intros.
+        clear H1.
+        rewrite Heqs1.
+        clear Heqs1.
+        simpl in *.
+        clear H.
+        induction (scope i1).
+        destruct H2.
+        destruct H2.
+        simpl.
+        if_refl.
+        apply H0.
+        simpl; left.
+        trivial.
+        simpl.
+        cases (eqb arg a).
+        apply H0.
+        simpl; left;trivial.
+        apply IHl.
+        intros.
+        apply H0.
+        simpl; right; trivial.
+        trivial.
+      + destruct IHi2.
+        clear H2.
+        clear IHi1.
+        remember (map (fun x => (x, named_list_lookup 0 s x)) (scope i2)) as s2.
+        specialize (H1 s2).
+        rewrite <- H1.
+        2: {
+          rewrite Heqs2.
+          rewrite map_map.
+          simpl.
+          apply map_id.
+        }
+        2: {
+          intros.
+          clear H1.
+          rewrite Heqs2.
+          clear Heqs2.
+          induction (scope i2); destruct H2.
+          { 
+            simpl.
+            if_refl.
+            trivial.
+          } 
+          {
+            simpl.
+            cases (eqb arg a); trivial.
+            apply IHl; trivial.
+          }
+        }
+        apply H1.
+        rewrite Heqs2.
+        rewrite map_map.
+        simpl.
+        apply map_id.
+        intros.
+        clear H1.
+        rewrite Heqs2.
+        clear Heqs2.
+        simpl in *.
+        clear H.
+        induction (scope i2).
+        destruct H2.
+        destruct H2.
+        simpl.
+        if_refl.
+        apply H0.
+        Search (In _ (_ ++ _)).
+        apply in_or_app; right.
+        simpl; left; trivial.
+        simpl.
+        cases (eqb arg a).
+        apply H0.
+        apply in_or_app; right.
+        simpl; left;trivial.
+        apply IHl.
+        intros.
+        apply H0.
+        apply in_or_app.
+        apply in_app_or in H2.
+        assert (In arg0 l -> In arg0 (scope i1) \/ In arg0 (a :: l)).
+        intros.
+        simpl; right; right; trivial.
+        assert (In arg0 (scope i1) -> In arg0 (scope i1) \/ In arg0 (a :: l)).
+        intros.
+        simpl; left; trivial.
+        apply (or_ind H4 H3 H2).
+        trivial.
+    - unfold id_substable.
+      intros.
+      unfold bin_op.
+      apply functional_extensionality.
+      intros.
+      unfold term_subst.
+      f_equal.
+      destruct IHi1.
+      unfold id_substable in H0.
+      unfold term_subst in H0.
+      specialize (H0 B c).
+      eapply fun_app_eq in H0.
+      apply H0.
+      destruct IHi2.
+      unfold id_substable in H0.
+      unfold term_subst in H0.
+      specialize (H0 B c).
+      eapply fun_app_eq in H0.
+      apply H0.
+Qed.
+
+
+     End Eqb.
+
+
+
+        
+
+
+
+
+
+
+
+
+      
+
+      
+
+
+
+
+
+
+
+
+
+
+
+
+

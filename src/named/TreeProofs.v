@@ -58,8 +58,9 @@ Section WithVar.
         constructor.
         replace t' with t'[/id_subst c'/].
         - eapply wf_term_by; basic_core_crush.
+        - admit.
       }
-    Qed.
+    Admitted.
     
     Local Lemma sort_con_congruence l c name s1 s2 c' args
       : In (name, sort_rule c' args) l ->

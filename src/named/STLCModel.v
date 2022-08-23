@@ -11,6 +11,11 @@ From Named Require Import Substable Model GeneralModel Compilers.
 From Named Require Term.
 Require Import Coq.Logic.FunctionalExtensionality.
 
+(* compile_exp : term -> { (G,A) : term * term & gterm (compile_ctx G) (compile_ty A)} *)
+(* compile_ty {{e #"nat"}} = nat *)
+(* The example below is wrong! *)
+(* compile : term -> { (G,A) : term * term & gterm (compile G) (compile A)} *)
+
 Inductive out_ty :=
 | ty : Type -> out_ty
 | arr : out_ty -> out_ty -> out_ty.
@@ -31,6 +36,7 @@ Definition exp G A := env G -> out A.
 Definition subst G G' := env G -> env G'.
 
 Definition emp : env_ty := [].
+Hint Unfold emp.
 Definition ext (G : env_ty) (A : out_ty) : env_ty := A :: G.
 Arguments ext G A : clear implicits.
 
@@ -63,6 +69,25 @@ Lemma beta G A B (e : exp (ext G A) B) (e' : exp G A)
 Qed. 
 
 Definition gexp := {G & {A & exp G A}}.
+
+Definition gexp_env_ty (e : gexp) : env_ty :=
+  let (G, p) := e in G.
+
+Definition gexp_out_ty (e : gexp) : out_ty :=
+  let (G, p) := e in
+  let (A, _) := p in A.
+
+Definition plug_env {G A} (e : gexp) (g : env G) (pf : gexp_env_ty e = G /\ gexp_out_ty e = A): out A.
+unfold gexp in e.
+destruct e.
+destruct s.
+destruct pf.
+simpl in *.
+rewrite H in *.
+rewrite H0 in *.
+apply e in g.
+apply g.
+Defined.
 
 Context {V : Type}
         {V_Eqb : Eqb V}
@@ -108,16 +133,17 @@ Definition term_out_ty (e : term) (ms : meta_subst) : out_ty :=
   let (G, p) := e_ms in
   let (A, _) := p in A.
 
-
-Definition term_app
+Definition term_app {A}
            (e1 e2 : term)
            (pf : forall ms, term_env_ty e1 ms = term_env_ty e2 ms)
-           (pf' : forall ms, term_out_ty e1 ms = arr A )
+           (pf' : forall ms, term_out_ty e1 ms = arr (term_out_ty e2 ms) A)
   : term.
 unfold term in *.
 intros.
 specialize (pf X).
+specialize (pf' X).
 unfold term_env_ty in pf.
+unfold term_out_ty in pf'.
 unfold gexp.
 remember (e1 X) as e1'.
 remember (e2 X) as e2'.
@@ -129,45 +155,65 @@ unfold gexp in e1', e2'.
 destruct e1', e2'.
 rename x into G.
 rename x0 into G'.
-inversion s; clear s.
+destruct s, s0.
 rename x into T1.
-rename X0 into e1.
-inversion s0; clear s0.
-rename x into T2.
-rename X0 into e2.
-destruct T1.
-apply default_emp.
+rename e into e1.
+rename x0 into T2.
+rename e0 into e2.
 rewrite <- pf in *.
+rewrite pf' in *.
+apply (existT _ G (existT _ A (app e1 e2))).
+Defined.
 
-apply (app e1 e2).
+Definition term_hd {G : env_ty} {A : out_ty} : term.
+unfold term.
+intros.
+apply (existT _ (ext G A) (existT _ A hd)).
+Defined.
 
+Example ex := term_lam (term_hd (G := emp) (A := ty unit)).
 
-Search (Eqb _).
-repeat econstructor.
+Example pf : gexp_env_ty (ex []) = [] /\ gexp_out_ty (ex []) = arr (ty unit) (ty unit) := conj eq_refl eq_refl.
 
-Definition term_app (e1 : term) (e2 : term) : term :=
-  fun ms : meta_subst =>
-    let e1_ms := e1 ms in
-    let e2_ms := e2 ms in
-    let (G1, p1) := e1_ms in
-    let (T1, e1') := p1 in
-    let (G2, p2) := e2_ms in
-    let (T2, e2') := p2 in
-    match T1 as t1 return (T1 = t1 -> gexp) with
-    | ty t1' => default_emp
-    | arr A B =>
-        (fun H =>
-           let e' := eq_rect G (fun G1 => exp G1 B) e' (A :: G') H in
-           existT _ G (existT _ (arr A B) (lam e')))
-    end eq_refl.
+Example x := (plug_env (G := [])(ex []) tt pf).
 
+Section WithB.
+  Context {B : Type}.
 
-Notation id_substable := (GeneralModel.id_substable (exp := gexp) default_emp).
-Print GeneralModel.id_substable.
-Check id_substable.
+Notation id_substable := (GeneralModel.id_substable (B := B) (exp := gexp) default_emp).
 
-Lemma lam_id_substable {G A B} : forall e, id_substable (existT _ (ext G A) (existT _ B e)) -> id_substable (lam e).
+Lemma lam_id_substable : forall e, id_substable e -> id_substable (term_lam e).
+  Proof.
+    unfold id_substable in *.
+    intros.
+    unfold term_lam.
+    unfold apply_subst in *.
+    apply functional_extensionality.
+    eapply GeneralModel.fun_app_eq in H.
+    rewrite <- H.
+    trivial.
+Qed.
 
+  Lemma app_id_substable {A} :
+    forall e1 e2
+      (pf : forall ms, term_env_ty e1 ms = term_env_ty e2 ms)
+      (pf' : forall ms, term_out_ty e1 ms = arr (term_out_ty e2 ms) A),
+      id_substable e1 -> id_substable e2
+      -> id_substable (term_app e1 e2 pf pf').
+  Proof.
+    unfold id_substable in *.
+    intros.
+    unfold term_app.
+    unfold apply_subst in *.
+    apply functional_extensionality; intros.
+    specialize (H c).
+    specialize (H0 c).
+    apply GeneralModel.fun_app_eq with (a := x0) in H.
+    apply GeneralModel.fun_app_eq with (a := x0) in H0.
+    destruct H0.
+    rewrite <- H0.
+    intros.
+    rewrite <- H.
 
 
 Definition model := (GeneralModel.model).

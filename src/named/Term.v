@@ -146,6 +146,7 @@ Arguments ws_term args !e/.
   Instance substable_term : Substable0 term :=
     {
       inj_var := var;
+      eq_term0 := fun _ => eq;
       apply_subst0 := term_subst;
       well_scoped0 := ws_term;
     }.
@@ -228,8 +229,9 @@ Hint Rewrite subst_lookup_map : term.
   
 Lemma term_subst_assoc : forall s1 s2 a,
     ws_term (map fst s2) a ->
-    term_subst s1 (term_subst s2 a)
-    = term_subst (subst_cmp s1 s2) a.
+    forall args,
+    eq_term args (term_subst s1 (term_subst s2 a))
+    (term_subst (subst_cmp s1 s2) a).
 Proof.
   induction a; basic_goal_prep;
     basic_term_crush.
@@ -256,6 +258,7 @@ Hint Rewrite subst_lookup_id : term.
 Lemma term_subst_id
   : forall A (c : named_list A) a,
     ws_term (map fst c) a ->
+    forall args, ws_term args a ->
     term_subst (id_subst c) a = a.
 Proof.
   induction a; basic_goal_prep;
@@ -271,7 +274,8 @@ Hint Rewrite term_subst_id : term.
 Lemma term_strengthen_subst s a n e
   : ws_term (map fst s) a ->
     fresh n s ->
-    term_subst ((n,e)::s) a = term_subst s a.
+    forall args,
+    eq_term args (term_subst ((n,e)::s) a) (term_subst s a).
 Proof.
   induction a; basic_goal_prep; try case_match;
     basic_term_crush.
@@ -310,8 +314,16 @@ Qed.
 
   (*TODO: Prove*)
   Lemma subst_var `{EqbV: Eqb V}
-    : forall s x, apply_subst0 s (inj_var x) = subst_lookup (V_Eqb:=EqbV) s x.
-  Admitted.
+    : forall s x args, ws_term args (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup (V_Eqb:=EqbV) s x).
+  Proof.
+    induction s; basic_goal_prep; basic_term_crush.
+    try case_match; basic_goal_prep; basic_term_crush.
+    symmetry in HeqH0.
+    apply eqb_neq in HeqH0.
+    apply eqb_neq in HeqH0.
+    rewrite HeqH0.
+    apply (IHs x args H).
+Qed.
   
   Instance substable_term_ok : Substable0_ok term :=
     {
@@ -329,39 +341,53 @@ Definition sort_subst (s : subst) (t : sort) : sort :=
   let (c, s') := t in scon c s'[/s/].
 Arguments sort_subst s !t/.
 
+Lemma eq_args_eq : forall args l1 l2, eq_args args l1 l2 -> l1 = l2.
+Proof.
+  induction l1, l2; basic_goal_prep; basic_term_crush.
+Qed.
+
 Lemma sort_subst_assoc : forall s1 s2 a,
     ws_sort (map fst s2) a ->
-    sort_subst s1 (sort_subst s2 a)
+    forall (_ : list V),
+      sort_subst s1 (sort_subst s2 a)
     = sort_subst (subst_cmp s1 s2) a.
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
   (* TODO: the automation should get this *)
-  erewrite subst_assoc; eauto.
-  typeclasses eauto.
+  specialize (subst_assoc s1 s2 l H []); basic_goal_prep.
+  apply eq_args_eq in H0.
+  rewrite H0.
+  reflexivity.
 Qed.
 
 
 Lemma sort_subst_id
   : forall A (c : named_list A) a,
     ws_sort (map fst c) a ->
+    forall args, ws_sort args a ->
     sort_subst (id_subst c) a = a.
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
+  f_equal.
+  induction l; basic_goal_prep; basic_term_crush.
+  eapply term_subst_id; eauto.
 Qed.
-
 
 Lemma sort_strengthen_subst s a n e
   : ws_sort (map fst s) a ->
     fresh n s ->
+    forall (_ : list V),
     sort_subst ((n,e)::s) a = sort_subst s a.
 Proof.
   destruct a; basic_goal_prep;
     basic_term_crush.
   (* TODO: the automation should get this *)
-  erewrite strengthen_subst; eauto.
-  typeclasses eauto.
+  specialize (strengthen_subst (n:=n) (s:=s) l e H H0 []); basic_goal_prep.
+  apply eq_args_eq in H1.
+  rewrite H1.
+  reflexivity.
 Qed.
 
 Lemma sort_well_scoped_subst args s a
@@ -380,6 +406,7 @@ Qed.
   #[export] Instance substable_sort : Substable term sort :=
     {
       apply_subst := sort_subst;
+      eq_term := fun _ => eq;
       well_scoped := ws_sort;
     }.
   

@@ -433,15 +433,16 @@ Hint Rewrite compile_subst_lookup : lang_core.
           (*TODO: wrap subst_var for better rewriting*)
           unfold apply_subst.
           simpl.
-          erewrite Substable.subst_var; try typeclasses eauto.
-          intros; apply compile_subst_lookup.
+          (* erewrite Substable.subst_var; try typeclasses eauto. *)
+          (* intros; apply compile_subst_lookup. *)
+          admit.
         }
         {
           simpl.
           intros.
           case_match; auto.
           case_match; auto.
-          erewrite subst_assoc; try typeclasses eauto.
+          (* erewrite subst_assoc; try typeclasses eauto.
           2:{                                              
             rewrite map_fst_combine_r_padded.
             apply named_list_lookup_err_in in HeqH5.
@@ -461,9 +462,10 @@ Hint Rewrite compile_subst_lookup : lang_core.
           }
           {
             apply term_default_subst.
-          }
+          }*)
+          admit.
         }
-      Qed.
+      Admitted.
       Hint Rewrite distribute_compile_subst_term : lang_core.
 
       Local Lemma distribute_compile_subst_args cmp (s : subst) e
@@ -491,7 +493,7 @@ Hint Rewrite compile_subst_lookup : lang_core.
           intros.
           case_match; auto.
           case_match; auto.
-          erewrite subst_assoc; try typeclasses eauto.
+          (* erewrite subst_assoc; try typeclasses eauto.
           2:{                                              
             rewrite map_fst_combine_r_padded.
             apply named_list_lookup_err_in in HeqH4.
@@ -512,9 +514,10 @@ Hint Rewrite compile_subst_lookup : lang_core.
           }
           {
             apply term_default_subst.
-          }
+          }*)
+          admit.
         }
-      Qed.
+      Admitted.
       Hint Rewrite distribute_compile_subst_sort : lang_core.
 
       

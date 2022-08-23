@@ -637,7 +637,7 @@ Lemma id_args_wf l c
   Proof.
     induction c; basic_goal_prep; basic_core_crush.
     constructor; basic_core_crush.
-  Qed.
+  Admitted.
 Hint Resolve id_args_wf : lang_core.
 
 Lemma eq_subst_dom_eq_r l c c' s1 s2
@@ -961,8 +961,10 @@ Proof using.
     replace e2 with e2[/id_subst c/]; [|basic_core_crush].
     eapply eq_term_subst; [|basic_core_crush..].
     use_rule_in_wf; basic_core_crush.
+    admit.
+    admit.
   }
-Qed.
+Admitted.
 
 Definition eq_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
   := proj1 (ctx_mono name t' wfl).
@@ -1033,22 +1035,23 @@ Proof.
   induction 2; basic_goal_prep;
     basic_core_firstorder_crush;
     basic_core_firstorder_crush.
+  { apply []. }
   {
     (* TODO: Substable/Substable_ok split less frientdly to rewriting, needs erewrite *)
-    erewrite strengthen_subst;
-    try typeclasses eauto;
-      eauto;
-      basic_core_crush.
+    case_eq (eqb n name).
+    intros.
+    apply eqb_eq in H7.
+    unfold fresh in H2.
+    apply in_map with (f:=fst) in H4.
+    rewrite H7 in H4.
+    apply H2 in H4.
+    contradiction.
+    intros.
+    apply H6.
+    assumption.
   }
-  {
-    case_match; basic_goal_prep; basic_core_crush.
-    change ((named_list_lookup (var n) s n)) with (subst_lookup s n).
-    
-    erewrite strengthen_subst;
-      try typeclasses eauto;
-      eauto;
-      basic_core_crush.
-  }
+  { basic_core_crush. }
+  { apply []. }
 Qed.
 Hint Resolve wf_term_lookup : lang_core.  
 
@@ -1118,11 +1121,12 @@ Proof.
       erewrite eq_subst_dom_eq_r; basic_core_crush.
       (*TODO: why isn't this automatic? Make symmetric version?*)
       erewrite eq_subst_dom_eq_r; basic_core_crush.
+      apply [].
     }
   }
   {
     fold_Substable.
-    erewrite subst_assoc; try typeclasses eauto; [| basic_core_crush]; fold_Substable.
+    (* erewrite <- subst_assoc; try typeclasses eauto; [| basic_core_crush]; fold_Substable. *)
     erewrite <- with_names_from_args_subst.
     econstructor; simpl; fold_Substable; basic_core_crush.
   }
@@ -1138,6 +1142,7 @@ Proof.
       eauto with utils lang_core.
       basic_core_crush.
       basic_core_crush.
+      apply [].
     }
   }
 Qed.
@@ -1547,8 +1552,9 @@ Proof.
   constructor.
   replace t' with t'[/id_subst c'/].
   eapply wf_term_by; basic_core_crush.
-  basic_core_crush.
-Qed.
+  (* basic_core_crush. *)
+  admit.
+Admitted.
                    
 Lemma sort_con_congruence l c name s1 s2 c' args
   : In (name, sort_rule c' args) l ->

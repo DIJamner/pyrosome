@@ -180,7 +180,7 @@ Definition cps_def : compiler :=
     (bind_k 2 (var "e'") (var "A")
     {{e #"jmp" {ovar 1} (#"pair" {ovar 0} {ovar 2}) }})
   | {{e #"exp_subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"blk_subst" (#"snoc" (#"cmp" #"wkn" "g") #"hd") "e" }}
+
   | {{e #"ret" "G" "A" "v"}} =>
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.

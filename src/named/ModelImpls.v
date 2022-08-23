@@ -90,6 +90,7 @@ Section WithVar.
     Instance list_term_subst : Substable0 (list V) (list term) :=
       {
         inj_var x := map (fun n => var (n::x)) fn_names;
+        eq_term0 := fun _ => eq;
         apply_subst0 s e := map (fun '(e,s) => e[/s/]) (combine e (split_subst s));
         well_scoped0 args e :=
         length e = arity /\
