@@ -32,17 +32,31 @@ Section Inner.
 
 End Inner.
 
-Definition conv {A B} (Heq : A = B) : A -> B :=
-  match Heq in _ = B return A -> B with eq_refl => @id _ end.
+Set Definitional UIP.
+
+Inductive seq {A} (a:A) : A -> SProp :=
+  srefl : seq a a.
+
+Arguments srefl {_ _}.
+
+
+Definition conv {A B} (Heq : seq A B) : A -> B :=
+  match Heq in seq _ B return A -> B with srefl => @id _ end.
+
+Inductive sigST (A : SProp) (P : A -> Type) : Type :=  existST : forall x : A, P x -> @sigST A P.
+
+Arguments sigST [A]%type_scope P%type_scope.
+Arguments existST [A]%type_scope P%function_scope x _.
 
 Fixpoint subst_n (n : nat) A (a : A) {struct n} : Type :=
   let ctx_n := ctx_n subst_n in
   match n with
   | 0 => unit
   | S n' =>
-      {Heq : A = ctx_n (S n') &
+      @sigST (seq A (ctx_n (S n')))
+            (fun Heq =>
                let c := conv Heq a in
-               {s : subst_n n' (projT1 c) & projT2 c s}}
+               {s : subst_n n' (projT1 c) & projT2 c s})
   end.
 
 
@@ -115,13 +129,13 @@ Notation "{# x1 ; .. ; xn ; xr #}" :=
 Definition subst_nil : subst ctx_nil := tt.
 Definition subst_cons : forall (c : ctx) (s : subst c) (A : subst c -> Type) (e : A s), subst (@ctx_cons c A) :=
   fun c : ctx =>
-    let (n, c) as s return (forall (s0 : subst s) (A : subst s -> Type),
-                        A s0 -> subst (ctx_cons s A)) :=
-      c
-    in fun s _ e => {#eq_refl; s; e #}.
+    let (n, c) as c return (forall (s : subst c) (A : subst c -> Type),
+                        A s -> subst (ctx_cons c A)) := c
+    in fun s _ e => existST _ srefl {#s; e #}.
 
+(*
 Require Import Eqdep.
-Import EqdepTheory.
+Import EqdepTheory.*)
 (*
 Lemma conv_id {A} (p : A = A) x : conv p x = x.
 Proof.
@@ -148,42 +162,17 @@ Proof.
     destruct c as [c A].
     destruct s as [Heq [s e]].
 
+    simpl in Heq.
+    match goal with
+      [Heq : seq ?A ?A |- _] =>
+        change Heq with (@srefl _ A) in *
+    end.
     simpl in *.
-    revert Heq s e.
-    refine (Streicher_K _ _ _ _).
-    simpl.
-    intros.
-    change {# eq_refl; s; e #} with (subst_cons {# n; c #} s A e).
-    change {# S n; c; A #} with (ctx_cons {# n; c #} A).
+    specialize (P_cons {#n;c#} s A e).
     eapply P_cons.
     eapply IHn.
   }
 Qed.
-
-Definition eq_rect_r
-  : forall (A : Type) (x : A) (P : A -> Type), P x -> forall y : A, y = x -> P y :=
-  fun (A : Type) (x : A) P (H : P x) (y : A) (H0 : y = x) =>
-    eq_rect x (fun y0 : A => P y0) H y (eq_sym H0).
-
-Definition Type_Streicher_K_on_ := 
-fun (U : Type) (x : U) (P : x = x -> Type) => P eq_refl -> forall p : x = x, P p.
-
-Definition Type_UIP_refl_on__Streicher_K_on
-  : forall (U : Type) (x : U) (P : x = x -> Type), UIP_refl_on_ U x -> Type_Streicher_K_on_ P
-  := 
-  fun (U : Type) (x : U) P (UIP_refl : UIP_refl_on_ U x) (H : P eq_refl) (p : x = x) =>
-    eq_rect_r P H (UIP_refl p).
-
-Definition Type_Streicher_K_ := fun U : Type => forall (x : U) (P : x = x -> Type), Type_Streicher_K_on_ P.
-
-Definition Type_UIP_refl__Streicher_K
-  : forall U : Type, UIP_refl_ U -> Type_Streicher_K_ U
-  := 
-  fun (U : Type) (UIP_refl : UIP_refl_ U) (x : U) (P : x = x -> Type) =>
-    Type_UIP_refl_on__Streicher_K_on P (UIP_refl x).
-
-Definition Type_Streicher_K : forall (U : Type) (x : U) (P : x = x -> Type), P eq_refl -> forall p : x = x, P p :=
-  fun U : Type => Type_UIP_refl__Streicher_K (UIP_refl U).
 
 (* TODO: make a version with a good definition for computing*)
 Lemma subst_rect {P : forall {c : ctx}, subst c -> Type}
@@ -191,6 +180,7 @@ Lemma subst_rect {P : forall {c : ctx}, subst c -> Type}
   (P_cons : forall c (s : subst c) A e, P s -> P (subst_cons c s A e))
   : forall c (s : subst c), P s.
 Proof.
+  
   destruct c as [n c].
   revert c.
   induction n; simpl; intros.
@@ -203,18 +193,17 @@ Proof.
     destruct c as [c A].
     destruct s as [Heq [s e]].
 
+    simpl in Heq.
+    match goal with
+      [Heq : seq ?A ?A |- _] =>
+        change Heq with (@srefl _ A) in *
+    end.
     simpl in *.
-    revert Heq s e.
-    refine (Type_Streicher_K _ _).
-    simpl.
-    intros.
-    change {# eq_refl; s; e #} with (subst_cons {# n; c #} s A e).
-    change {# S n; c; A #} with (ctx_cons {# n; c #} A).
+    specialize (P_cons {#n;c#} s A e).
     eapply P_cons.
     eapply IHn.
   }
 Defined.
-
 (*TODO: naming on closed vs open subst*)
 
 
@@ -263,6 +252,7 @@ Definition ctx_hd : forall (c : ctx), sort (ctx_tl c) :=
   fun c =>
   let (n, c') as c' return sort (ctx_tl c') := c in ctx_hd' _ _.
 
+(*
 (*TODO: check that this computes*)
 Definition subst_tl' n
   : forall (c : ctx_n subst_n n),
@@ -283,7 +273,6 @@ Definition subst_tl' n
   simpl.
   destruct s.
   revert x s.
-  refine (Type_Streicher_K _ _).
   simpl.
   eapply projT1.
 Defined.
@@ -296,10 +285,15 @@ Definition subst_tl : forall (c : ctx), msubst c (ctx_tl c).
   refine (fun s => _).
   eapply subst_tl'; eauto.
 Defined.
+*)
 
 
+(* for convenience so that code can use names, not projections
+open [nat;fun s => Vec (proj2 s)] (fun s => len (proj2 s) = proj2 (proj1 s))
+=>
+forall (x : nat) (v : Vec x), len v = x
 
-(* for convenience so that code can use names, not projections *)
+ *)
 Definition open : forall (c : ctx) (A : sort c), Type :=
   (ctx_rect (fun A => A subst_nil)
    (fun c (B : sort c) open (A : sort (ctx_cons c B)) =>
@@ -315,7 +309,34 @@ Definition apply_subst : forall (c : ctx) (s : subst c) (A : sort c), open _ A -
   refine (apply_subst _ OB _).
 Defined.
 
+Lemma open_ctx_cons c B A
+  : open (ctx_cons c B) A = open _ (fun s : subst c => forall x : B s, A (subst_cons c s B x)).
+Proof.
+  destruct c.
+  simpl.
+  reflexivity.
+Qed.
 
+Definition term_to_open : forall (c : ctx) (A : sort c), term c A -> open _ A.
+  refine (ctx_rect (fun _ b => b _) _).
+  destruct c.
+  intros A term_to_open B e.
+  eapply term_to_open.
+  intros s a.
+  eapply e.
+Defined.
+
+
+Definition open_to_term : forall (c : ctx) (A : sort c), open _ A -> term c A.
+  intros; eapply apply_subst; eassumption.
+Defined.
+
+Notation "## |- A" := A (at level 80).
+
+Check (open |##| (open_to_term |##| _ nat)).
+(*TODO: does not compute away as I'd want; blocked on UIP_refl*)
+Require Fin.
+Compute (open |# (fun _ => nat) #| (open_to_term |# fun _ => nat #| _ (fun n => Fin.t n))).
 
 (* TODO: make a version with a good definition for computing*)
 Definition mwkn : forall (c : ctx) A, subst (ctx_cons c A) -> subst c.
