@@ -1,5 +1,6 @@
 #todo: clean if makefile exists
 coq_makefile -f _CoqProject -o Makefile
+git submodule update --init
 cd ./canonical-binary-tries
 make -j$1
 cd ..
