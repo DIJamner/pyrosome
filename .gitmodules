@@ -4,3 +4,6 @@
 [submodule "canonical-binary-tries"]
 	path = canonical-binary-tries
 	url = https://github.com/xavierleroy/canonical-binary-tries
+[submodule "bedrock2"]
+	path = bedrock2
+	url = https://github.com/mit-plv/bedrock2
