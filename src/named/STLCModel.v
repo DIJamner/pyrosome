@@ -22,6 +22,7 @@ Inductive out_ty :=
 
 Definition env_ty := list out_ty.
 
+Print Named.Term.term.
 
 Fixpoint out (t : out_ty) :=
   match t with
@@ -98,6 +99,50 @@ Notation Substable0 := (Substable0 V).
 Notation Substable := (@Substable V).
 Notation term := (@GeneralModel.term V gexp).
 Notation meta_subst := (@GeneralModel.meta_subst V gexp).
+Notation string_meta_subst := (@GeneralModel.meta_subst string gexp).
+
+Fixpoint compile_ty (t : Term.term string) (ms : string_meta_subst) : Type :=
+  match t with 
+  | Term.con "->" [b ; a] => compile_ty a ms -> compile_ty b ms
+  | Term.con "nat" [] => nat
+  | Term.var v => unit
+  | Term.con _ _ => unit
+  end.
+
+Definition type_of_exp (e : Term.term string) (ms : string_meta_subst) : Type :=
+  match e with
+  | Term.con "app" [b; a; B; A; G] => compile_ty B ms
+  | Term.con "ret" [v; A; G] => compile_ty A ms
+  | Term.con _ _ => unit
+  | Term.var v => unit
+  end.
+
+Definition type_of_val (e : Term.term string) (ms : string_meta_subst) : Type :=
+  match e with
+  | Term.con "lam" [a; B; A; G] => compile_ty A ms -> compile_ty B ms
+  | Term.con "0" [] => nat
+  | Term.con _ _ => unit
+  | Term.var v => unit
+  end.
+
+Fixpoint compile_val (os : env_ty) : forall (e : Term.term string) (ms : string_meta_subst), type_of_val e ms :=
+  fun e =>
+    match e as e' return (forall (ms : string_meta_subst), env_ty -> type_of_val e' ms) with
+    | Term.con "lam" [a; B; A; G] => fun ms g p => (compile_val os a ms) g
+    | Term.con "0" [] => fun ms g => 0
+    | Term.var v => fun ms g => tt
+    | Term.con _ _ => fun ms g => tt
+    end.
+
+
+Fixpoint compile_exp (os : env_ty) : forall (e : Term.term string) (ms : @GeneralModel.meta_subst string gexp), type_of_exp e ms :=
+  fun e ms => 
+  match e with 
+  | Term.con "app" [b; a; B; A; G] => fun e ms => (compile_exp a ms e) (compile_exp b ms e)
+  | Term.con "ret" [v; A; G] => fun e ms => compile_val v ms e
+  | Term.var v => named_list_lookup default ms v
+  end.
+
 
 Definition term_lam (e : term) : term :=
   fun ms : meta_subst =>

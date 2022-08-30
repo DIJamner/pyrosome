@@ -41,14 +41,6 @@ Definition sort := meta_subst -> Type.
 
 Definition ctx : Type := named_list sort.
 
-  Definition eq_sort (_ : ctx) (s1 s2 : sort) :=
-    s1 = s2.
-
-  Definition wf_sort (_ : ctx) (_ : sort) := True.
-
-  Definition eq_term (c : ctx) (_ : sort) (t1 t2 : term) :=
-    (* TODO: check if this is the right way around *)
-    forall (s : named_list exp), NoDup (map fst s) -> incl (map fst c) (map fst s) -> t1 s = t2 s.
 
 Notation Substable0 := (Substable0 V).
 Notation Substable := (@Substable V).
@@ -68,26 +60,26 @@ Definition id_args {B} (c : named_list B) :=
 Notation id_subst c := (with_names_from c (id_args c)).
 
 (* TODO change to eq_term *)
-Definition eq_term0 args (e1 e2 : term) :=
+Definition eq_term args (e1 e2 : term) :=
   forall ms, map fst ms = args -> e1 ms = e2 ms.
 
-Lemma eq_term0_refl : forall args e1, eq_term0 args e1 e1.
+Lemma eq_term_refl : forall args e1, eq_term args e1 e1.
 Proof.
-  unfold eq_term0.
+  unfold eq_term.
   trivial.
 Qed.
 
-Lemma eq_term0_trans : forall args e1 e2 e3, eq_term0 args e1 e2 -> eq_term0 args e2 e3 -> eq_term0 args e1 e3.
+Lemma eq_term_trans : forall args e1 e2 e3, eq_term args e1 e2 -> eq_term args e2 e3 -> eq_term args e1 e3.
 Proof.
-  unfold eq_term0.
+  unfold eq_term.
   intros.
   rewrite H; trivial.
   apply H0; trivial.
 Qed.
 
-Lemma eq_term0_comm : forall args e1 e2, eq_term0 args e1 e2 -> eq_term0 args e2 e1.
+Lemma eq_term_comm : forall args e1 e2, eq_term args e1 e2 -> eq_term args e2 e1.
 Proof.
-  unfold eq_term0.
+  unfold eq_term.
   symmetry.
   apply H; trivial.
 Qed.
@@ -102,33 +94,46 @@ Definition id_substable {B} (e : term) :=
   forall (c : named_list B),
     ws_term (map fst c) e
     -> forall args, ws_term args e
-              -> eq_term0 args e (apply_subst (id_subst c) e).
+              -> eq_term args e (apply_subst (id_subst c) e).
 
 Definition wf_term (c : ctx) t (_ : sort) := ws_term (map fst c) t.
 
 Instance substable_term : Substable0 term :=
   {
     inj_var := inj_var;
-    eq_term0 := eq_term0;
+    eq_term0 := eq_term;
     apply_subst0 := apply_subst;
     well_scoped0 := ws_term
   }.
 
+Definition eq_sort args (s1 s2 : sort) :=
+  forall ms, map fst ms = args -> s1 ms = s2 ms.
+
+Definition apply_sort_subst (l : named_list term) (s : sort) : sort :=
+  fun (ms' : meta_subst) =>
+    s ((named_map (fun x => x ms') l)).
+
+Definition ws_sort args (e : sort) :=
+  NoDup args /\
+  forall s, map fst s = args -> forall s', NoDup (map fst s') -> incl s s' -> e s' = e s.
+
+Definition id_substable_sort {B} (s : sort) :=
+  forall (c : named_list B),
+    ws_sort (map fst c) s
+    -> forall args, ws_sort args s
+              -> eq_sort args s (apply_sort_subst (id_subst c) s).
+
 Instance substable_sort : Substable term sort :=
   {
-    apply_subst := fun _ B => B;
-    eq_term := fun _ => eq;
-    well_scoped := fun _ _ => True
+    apply_subst := apply_sort_subst;
+    eq_term := eq_sort;
+    well_scoped := ws_sort
   }.
-
-Notation Model := (@Model V term sort).
-
-#[export] Instance model : Model := mut_mod eq_sort eq_term wf_sort wf_term.
 
 Ltac unfold_all :=
   repeat (
-      unfold ws_term, apply_subst, inj_var, subst_lookup, pair_map_snd,
-      wf_term, Substable.apply_subst, eq_term0 in *;
+      unfold ws_term, apply_subst, apply_sort_subst, inj_var, subst_lookup, pair_map_snd,
+      wf_term, Substable.apply_subst, eq_term, eq_sort in *;
       simpl in *).
 
 Ltac cases x :=
@@ -371,7 +376,7 @@ Qed.
     id_substable (B:=B) e.
   Proof.
     unfold id_substable.
-    unfold eq_term0.
+    unfold eq_term.
     model_crush.
     specialize (H3 (named_map (fun x : meta_subst -> exp => x ms) (id_subst c))).
     specialize (H2 ms H1).
@@ -410,7 +415,7 @@ Qed.
   Lemma subst_var : forall (H : Eqb V) (s : named_list term) (x : V),
       In x (map fst s) ->
       forall args,
-      eq_term0 args (apply_subst s (inj_var x)) (subst_lookup s x).
+      eq_term args (apply_subst s (inj_var x)) (subst_lookup s x).
   Proof.
     model_crush.
     induction s; model_crush.
@@ -448,10 +453,9 @@ Qed.
 
   Lemma subst_assoc0 : forall (s1 s2 : named_list term) (a : term),
       ws_term (map fst s2) a -> forall args,
-        eq_term0 args (apply_subst s1 (apply_subst s2 a)) (apply_subst (subst_cmp s1 s2) a).
+        eq_term args (apply_subst s1 (apply_subst s2 a)) (apply_subst (subst_cmp s1 s2) a).
   Proof.
     model_crush.
-    repeat erewrite ws_term_append; model_crush.
     f_equal.
     symmetry.
     apply named_map_cmp.
@@ -459,11 +463,11 @@ Qed.
   Qed.
 
   Lemma subst_id0 {B} : forall (c : named_list B) (a : term),
-      ws_term (map fst c) a -> forall args, ws_term args a -> eq_term0 args (apply_subst (id_subst c) a) a.
+      ws_term (map fst c) a -> forall args, ws_term args a -> eq_term args (apply_subst (id_subst c) a) a.
   Proof.
     intros.
     pose proof (id_substable_pf (B := B) (e := a) c) as id_sub.
-    apply eq_term0_comm.
+    apply eq_term_comm.
     apply id_sub; model_crush.
 Qed.
 
@@ -484,7 +488,7 @@ Qed.
   Lemma strengthen_subst0 : forall (s : named_list term) (e a : term) (n : V),
       ws_term (map fst s) a -> fresh n s ->
       forall args,
-      eq_term0 args (apply_subst ((n, e) :: s) a) (apply_subst s a).
+      eq_term args (apply_subst ((n, e) :: s) a) (apply_subst s a).
   Proof.
     model_crush.
     apply H1; simpl; try rewrite <- named_map_fst in *; simpl; trivial.
@@ -543,13 +547,52 @@ constructor; intros.
   admit.
 Admitted.
 
-Instance substable_sort_ok : Substable_ok term sort.
+Lemma subst_assoc : forall (s1 : Substable.subst V) (s2 : list (V * term)) (a : sort),
+    well_scoped (map fst s2) a ->
+    forall args : list V,
+      Substable.eq_term args a [/s2 /] [/s1 /] a [/subst_cmp s1 s2 /].
 Proof.
-  constructor;
-  model_crush.
+    model_crush.
+    f_equal.
+    symmetry.
+    apply named_map_cmp.
+    trivial.
 Qed.
 
+Lemma subst_id : forall (B : Type) (c : named_list B) (a : sort),
+  well_scoped (map fst c) a ->
+  forall args : list V,
+  well_scoped args a -> Substable.eq_term args a [/Substable.id_subst c /] a.
+Proof.
+    intros.
+    admit.
+Admitted.
 
+    (* pose proof (id_substable_pf (B := B) (e := a) c) as id_sub. *)
+    (* apply eq_term_comm. *)
+    (* apply id_sub; model_crush. *)
+
+Instance substable_sort_ok : Substable_ok term sort.
+Proof.
+  constructor.
+  - apply subst_assoc.
+  - admit.
+  - admit.
+  - admit.
+Admitted.
+
+  Definition eq_sort' (c : ctx) (s1 s2 : sort) :=
+    forall ms, s1 ms = s2 ms.
+
+  Definition wf_sort (_ : ctx) (_ : sort) := True.
+
+  Definition eq_term' (c : ctx) (_ : sort) (t1 t2 : term) :=
+    (* TODO: check if this is the right way around *)
+    forall (s : named_list exp), NoDup (map fst s) -> incl (map fst c) (map fst s) -> t1 s = t2 s.
+
+Notation Model := (@Model V term sort).
+
+#[export] Instance model : Model := mut_mod eq_sort' eq_term' wf_sort wf_term.
 
   (* Lemma term_subst_id_eq {A} : forall (c : named_list A) n, apply_subst (with_names_from c (map inj_var (map fst c))) (inj_var n) = inj_var n. *)
   (*   Proof. *)
@@ -567,17 +610,16 @@ Qed.
                       (e1 e2 : term),
                     NoDup (map fst c') ->
                     eq_subst c c' s1 s2 ->
-                    eq_term c' t e1 e2 ->
-                    eq_term c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
+                    eq_term' c' t e1 e2 ->
+                    eq_term' c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
     Proof.
-      unfold eq_term in *.
+      unfold eq_term' in *.
       unfold Substable.apply_subst.
       model_crush.
       rewrite H1; model_crush.
       f_equal.
       clear H1.
       induction H0; model_crush.
-      unfold eq_term in H1.
       apply H1; trivial.
       apply IHeq_subst; trivial.
       apply NoDup_cons_iff in H; model_crush.
@@ -725,14 +767,15 @@ Qed.
     constructor; intros; trivial; simpl in *.
     + apply substable_term_ok.
     + apply substable_sort_ok.
-    + unfold eq_sort; trivial.
-    + unfold eq_sort in *; inversion H; inversion H0; trivial.
-    + unfold eq_sort in *; symmetry; trivial.
+    + admit.
+    + admit.
+    + admit.
+    + admit.
     + apply eq_term_subst with (c' := c'); trivial.
       admit.
-    + unfold eq_term in *; trivial.
-    + unfold eq_term in *; intros; rewrite H; trivial; apply H0; model_crush.
-    + unfold eq_term in *; symmetry; trivial; apply H; model_crush.
+    + unfold eq_term' in *; trivial.
+    + unfold eq_term' in *; intros; rewrite H; trivial; apply H0; model_crush.
+    + unfold eq_term' in *; symmetry; trivial; apply H; model_crush.
     + apply wf_term_var; trivial.
       admit.
       eapply in_fst; apply H.
@@ -745,3 +788,5 @@ Class Model_from_exp :=
     subst_term := substable_term;
     subst_sort := substable_sort
 }.
+
+      End WithExp.
