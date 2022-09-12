@@ -3,6 +3,8 @@ Set Bullet Behavior "Strict Subproofs".
 Set Universe Polymorphism.
 
 
+Require Import List.
+
 (* What I want:
 Inductive ctx : Type :=
 | ctx_nil : ctx
@@ -72,53 +74,6 @@ Fail Definition ctx_cons' (c : ctx) : (subst c -> Type) -> ctx :=
   let (n, cn) as c return ((subst c -> Type) -> ctx) := c in
   (fun A => existT _ (S n) (existT _ cn A)).
 
-Lemma ctx_ind {P : _ -> Prop}
-  (P_nil : P ctx_nil)
-  (P_cons : forall c A, P c -> P (@ctx_cons c A))
-  : forall c : ctx, P c.
-Proof.
-  destruct c as [n c].
-  revert c.
-  induction n; simpl; intros.
-  {
-    destruct c.
-    eapply P_nil.
-  }
-  {
-    destruct c.
-    specialize (P_cons (existT _ n x)).
-    eapply P_cons.
-    eauto.
-  }
-Qed.
-
-(*TODO: make a better defn for computation*)
-Definition ctx_rect {P : _ -> Type}
-  (P_nil : P ctx_nil)
-  (P_cons : forall c A, P c -> P (@ctx_cons c A))
-  : forall c : ctx, P c.
-Proof.
-  destruct c as [n c].
-  revert c.
-  induction n; simpl; intros.
-  {
-    destruct c.
-    eapply P_nil.
-  }
-  {
-    destruct c.
-    specialize (P_cons (existT _ n x)).
-    eapply P_cons.
-    eauto.
-  }
-Defined.
-
-(*
-Lemma eq_conv_refl {A} {a : A} : eq_conv a a.
-Proof.
-  unshelve esplit; reflexivity.
-(* TODO: It might be important to use defined here for dependently-typed computation. Check*)
-Qed.*)
 
 Notation "{# x1 #}" := x1.
                                
@@ -133,92 +88,119 @@ Definition subst_cons : forall (c : ctx) (s : subst c) (A : subst c -> Type) (e 
                         A s -> subst (ctx_cons c A)) := c
     in fun s _ e => existST _ srefl {#s; e #}.
 
-(*
-Require Import Eqdep.
-Import EqdepTheory.*)
-(*
-Lemma conv_id {A} (p : A = A) x : conv p x = x.
-Proof.
-  unfold conv.
-  replace p with (eq_refl A); auto.
-  apply UIP.
-Qed.
-*)
 
-Lemma subst_ind {P : forall {c : ctx}, subst c -> Prop}
-  (P_nil : P subst_nil)
-  (P_cons : forall c (s : subst c) A e, P s -> P (subst_cons c s A e))
-  : forall c (s : subst c), P s.
-Proof.
-  destruct c as [n c].
-  revert c.
-  induction n; simpl; intros.
-  {
-    destruct c.
-    destruct s.
-    eapply P_nil.
-  }
-  {
-    destruct c as [c A].
-    destruct s as [Heq [s e]].
+Section Elimination.
+  Context {P_ctx : ctx -> Type}
+      {P_subst : forall {c : ctx}, P_ctx c -> subst c -> Type}
+      (P_ctx_nil : P_ctx ctx_nil)
+      (P_ctx_cons : forall {c} A, P_ctx c -> P_ctx (@ctx_cons c A))
+      (P_subst_nil : P_subst P_ctx_nil subst_nil)
+      (P_subst_cons : forall {c} (P_c : P_ctx c) (s : subst c) A e,
+          P_subst P_c s ->
+          P_subst (P_ctx_cons A P_c) (subst_cons c s A e)).
 
-    simpl in Heq.
-    match goal with
-      [Heq : seq ?A ?A |- _] =>
-        change Heq with (@srefl _ A) in *
+  Fixpoint ctx_rect' (n : nat) : forall (c : ctx_n _ n), P_ctx {# n; c#} :=
+    match n as n return forall (c : ctx_n _ n), P_ctx {# n; c#} with
+    | 0 => fun 'tt => P_ctx_nil
+    | S n' => fun '{#c'; A #} => P_ctx_cons (c := {#n';c'#}) A (ctx_rect' n' c')
     end.
-    simpl in *.
-    specialize (P_cons {#n;c#} s A e).
-    eapply P_cons.
-    eapply IHn.
-  }
-Qed.
-
-(* TODO: make a version with a good definition for computing*)
-Lemma subst_rect {P : forall {c : ctx}, subst c -> Type}
-  (P_nil : P subst_nil)
-  (P_cons : forall c (s : subst c) A e, P s -> P (subst_cons c s A e))
-  : forall c (s : subst c), P s.
-Proof.
   
+  Definition ctx_rect (c : ctx) : P_ctx c :=
+    let (n, c) as c return P_ctx c := c in
+    ctx_rect' n c.
+
+  (*TODO: make better for computation*)
+  Lemma subst_rect : forall c (s : subst c), P_subst (ctx_rect c) s.
+Proof.
   destruct c as [n c].
   revert c.
   induction n; simpl; intros.
   {
     destruct c.
     destruct s.
-    eapply P_nil.
+    eapply P_subst_nil.
   }
   {
     destruct c as [c A].
     destruct s as [Heq [s e]].
-
     simpl in Heq.
     match goal with
       [Heq : seq ?A ?A |- _] =>
         change Heq with (@srefl _ A) in *
     end.
     simpl in *.
-    specialize (P_cons {#n;c#} s A e).
-    eapply P_cons.
+    eapply (@P_subst_cons {#n;c#} _ s A e).
     eapply IHn.
   }
 Defined.
+
+End Elimination.
+
+Section SimpleElimination.
+
+  (*Simple elmination is the same for contexts *)
+  Context
+    {P_subst : forall {c : ctx}, subst c -> Type}
+      (P_subst_nil : P_subst subst_nil)
+      (P_subst_cons : forall {c} (s : subst c) A e,
+          P_subst s ->
+          P_subst (subst_cons c s A e)).
+
+  
+  Lemma simple_subst_rect : forall c (s : subst c), P_subst c s.
+  Proof.
+    apply @subst_rect with (P_ctx := fun _ => unit) (P_subst := fun c _ => P_subst c);
+      auto.
+    constructor.
+  Defined.
+
+End SimpleElimination.
+
+  
+Section Induction.
+  Context {P_ctx : ctx -> Prop}
+      {P_subst : forall {c : ctx}, P_ctx c -> subst c -> Prop}
+      (P_ctx_nil : P_ctx ctx_nil)
+      (P_ctx_cons : forall {c} A, P_ctx c -> P_ctx (@ctx_cons c A))
+      (P_subst_nil : P_subst P_ctx_nil subst_nil)
+      (P_subst_cons : forall {c} (P_c : P_ctx c) (s : subst c) A e,
+          P_subst P_c s ->
+          P_subst (P_ctx_cons A P_c) (subst_cons c s A e)).
+
+  
+Lemma ctx_ind : forall c : ctx, P_ctx c.
+Proof.
+  apply ctx_rect; assumption.
+Defined.
+
+Lemma subst_ind : forall c (s : subst c), P_subst (ctx_ind c) s.
+Proof.
+  apply subst_rect; assumption.
+Qed.
+
+End Induction.
+
+Section SimpleInduction.
+
+  (*Simple elmination is the same for contexts *)
+  Context
+    {P_subst : forall {c : ctx}, subst c -> Prop}
+      (P_subst_nil : P_subst subst_nil)
+      (P_subst_cons : forall {c} (s : subst c) A e,
+          P_subst s ->
+          P_subst (subst_cons c s A e)).
+
+  
+  Lemma simple_subst_ind : forall c (s : subst c), P_subst c s.
+  Proof.
+    apply simple_subst_rect; assumption.
+  Qed.
+
+End SimpleInduction.
+
+
 (*TODO: naming on closed vs open subst*)
 
-
-Notation sort c := (subst c -> Type).
-
-Notation term c t := (forall s : subst c, t s).
-
-Notation msubst c c' := (subst c -> subst c').
-
-
-Notation "|# #|" := ctx_nil.
-                               
-Notation "|# x1 ; .. ; xn #|" :=
-  (ctx_cons .. (ctx_cons ctx_nil x1) .. xn)
-    (format "'|#'  '[hv' x1 ;  .. ;  xn ']'  '#|'").
 
 (*
 Require Import Program.Basics.
@@ -239,18 +221,18 @@ Definition ctx_tl (c : ctx) : ctx :=
 
 Definition ctx_hd' n
   : forall (c : ctx_n subst_n n),
-    sort {# pred n; ctx_tl' n c #} :=
+    subst {# pred n; ctx_tl' n c #} -> Type :=
     match n as n
           return forall (c : ctx_n subst_n n),
-        sort {# pred n; ctx_tl' n c #}
+        subst {# pred n; ctx_tl' n c #} -> Type
     with
     | 0 => fun c s => False
     | S _ => @projT2 _ _
     end.
 
-Definition ctx_hd : forall (c : ctx), sort (ctx_tl c) :=
+Definition ctx_hd : forall (c : ctx), subst (ctx_tl c) -> Type :=
   fun c =>
-  let (n, c') as c' return sort (ctx_tl c') := c in ctx_hd' _ _.
+  let (n, c') as c' return subst (ctx_tl c') -> Type := c in ctx_hd' _ _.
 
 (*
 (*TODO: check that this computes*)
@@ -294,13 +276,13 @@ open [nat;fun s => Vec (proj2 s)] (fun s => len (proj2 s) = proj2 (proj1 s))
 forall (x : nat) (v : Vec x), len v = x
 
  *)
-Definition open : forall (c : ctx) (A : sort c), Type :=
+Definition open : forall (c : ctx) (A : subst c -> Type), Type :=
   (ctx_rect (fun A => A subst_nil)
-   (fun c (B : sort c) open (A : sort (ctx_cons c B)) =>
+   (fun c (B : subst c -> Type) open (A : subst (ctx_cons c B) -> Type) =>
       open (fun s : subst c => forall x : B s, A (subst_cons c s B x)))).
 
-Definition apply_subst : forall (c : ctx) (s : subst c) (A : sort c), open _ A -> A s.
-  refine (subst_rect (fun A oa => oa) (fun c =>_)).
+Definition apply_subst : forall (c : ctx) (s : subst c) (A : subst c -> Type), open _ A -> A s.
+  refine (simple_subst_rect (fun A oa => oa) (fun c =>_)).
   destruct c.
 (*  refine (let (n,c) as c return forall (s : subst c) (A : sort c) (e : A s),
                            (forall A0 : sort c, open c A0 -> A0 s) ->
@@ -317,7 +299,8 @@ Proof.
   reflexivity.
 Qed.
 
-Definition term_to_open : forall (c : ctx) (A : sort c), term c A -> open _ A.
+
+Definition term_to_open : forall (c : ctx) (A : subst c -> Type), (forall s: subst c, A s) -> open _ A.
   refine (ctx_rect (fun _ b => b _) _).
   destruct c.
   intros A term_to_open B e.
@@ -327,17 +310,178 @@ Definition term_to_open : forall (c : ctx) (A : sort c), term c A -> open _ A.
 Defined.
 
 
-Definition open_to_term : forall (c : ctx) (A : sort c), open _ A -> term c A.
+Definition open_to_term : forall (c : ctx) (A : subst c -> Type), open _ A -> forall s : subst c, A s.
   intros; eapply apply_subst; eassumption.
 Defined.
 
-Notation "## |- A" := A (at level 80).
 
-Check (open |##| (open_to_term |##| _ nat)).
+
+
+Definition open_ty c := open c (fun _ => Type).
+Definition open' c (A : open_ty c) := open c (open_to_term _ _ A).
+
+Definition ctx_cons' : forall c : ctx, open_ty c -> ctx.
+  intros.
+  eapply ctx_cons.
+  apply (open_to_term _ _ X).
+Defined.
+
+Notation "|# #|" := ctx_nil.
+                               
+Notation "|# x1 ; .. ; xn #|" :=
+  (ctx_cons' .. (ctx_cons' ctx_nil x1) .. xn)
+    (format "'|#'  '[hv' x1 ;  .. ;  xn ']'  '#|'").
+
+
+
+Declare Custom Entry open.
+Notation "#! e !#" :=
+  (let (c, A) := e in
+  open' c A)
+    (e custom open).
+(*
+Notation "b1 .. bn |- A" :=
+
+Notation "x : T , A" :=
+  {# ctx_cons' (projT1 A) T ; fun x => projT2 A #}
+    (in custom open at level 0, right associativity, x name, T constr).
+
+
+Notation "|- A" := {# ctx_nil; A#} (in custom open at level 70, A constr).
+
+
+Check #! x : nat , |- nat !#.*)
+
+Check (open' |##| nat).
 (*TODO: does not compute away as I'd want; blocked on UIP_refl*)
 Require Fin.
-Compute (open |# (fun _ => nat) #| (open_to_term |# fun _ => nat #| _ (fun n => Fin.t n))).
+Compute (open' |# nat #| (fun n => Fin.t n)).
+Compute (open' |# nat; fun n => Fin.t n #| (fun n f => f = f)).
 
+Notation msubst c c' := (open c (fun _ => subst c')).
+Notation sort c := (open c (fun _ => Type)).
+Notation term c A := (open c A).
+
+ *)
+
+Arguments apply_subst c s {A}%function_scope _.
+
+(*                      
+Definition msubst_to_fn
+  : forall (c c' : ctx) (s : msubst c c'),
+    subst c -> subst c'.
+  intros c c'.
+  refine (open_to_term _ _).
+Defined.
+                      
+Definition apply_tysubst : forall (c c' : ctx) (s : msubst c c'), sort c' -> sort c.
+  intros.
+  apply term_to_open.
+  intro s'.
+  apply open_to_term in X.
+  exact X.
+  apply open_to_term in s; auto.
+Defined.
+
+Arguments apply_tysubst {c c'} s _.
+
+
+Definition apply_msubst
+  : forall (c c' : ctx) (s : msubst c c') A,
+    open c' A -> open c (fun s' => A (open_to_term _ _ s s')).
+  intros.
+  eapply term_to_open.
+  intros s'.
+  eapply open_to_term in X.
+  apply X.
+Defined.
+
+
+Example test : open |##| (fun _ => Type).
+ *)
+Require Import List.
+Import ListNotations.
+Open Scope list.
+From Utils Require Import Utils.
+From Named Require Core.
+Import Core.Notations.
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+
+  Notation named_list := (@named_list V).
+  Notation named_map := (@named_map V).
+  Notation Sterm := (@Term.term V).
+  Notation Sctx := (@Term.ctx V).
+  Notation Ssort := (@Term.sort V).
+  Notation Ssubst := (@Term.subst V).
+  Notation rule := (@Rule.rule V).
+  Notation lang := (@Rule.lang V).
+
+  Section Inner.
+    Context (compile_ctx : Sctx -> ctx).
+    Context (compile_sort : forall c : Sctx, Ssort -> subst (compile_ctx c) -> Type).
+    Context (compile_term : forall (c : Sctx) (t : Ssort),
+                Sterm -> forall s : subst (compile_ctx c), compile_sort c t s).
+
+    Variant compiler_case : rule -> Type :=
+      | sort_case c args
+        : (subst (compile_ctx c) -> Type) ->
+          (compiler_case (Rule.sort_rule c args))
+      | term_case c args t 
+        : (forall s : subst (compile_ctx c), compile_sort c t s) ->
+          (compiler_case (Rule.term_rule c args t))
+      (* TODO: generalize to setoids *)
+      | sort_eq_case c t1 t2
+        : (forall s : subst (compile_ctx c), compile_sort c t1 s = compile_sort c t2 s) ->
+          (compiler_case (Rule.sort_eq_rule c t1 t2))
+      | term_eq_case c e1 e2 t
+        : (forall s : subst (compile_ctx c),
+              compile_term c t e1 s = compile_term c t e2 s) ->
+          (compiler_case (Rule.term_eq_rule c e1 e2 t)).
+    (*TODO: will probably need equality cases*)
+
+    
+  
+  Fixpoint compile_lang (l : lang) : Type :=
+    match l with
+    | [] => unit
+    | (_, r)::l' =>
+        (* TODO: constrain this string or no? *)
+        compiler_case r * compile_lang l'
+    end.
+
+  Instance rule_default : WithDefault rule := Rule.sort_rule [] [].
+  
+  Fixpoint cmp_lookup l n
+    : compile_lang l -> compiler_case (named_list_lookup default l n) :=
+    match l with
+    | [] => fun _ => sort_case [] [] (fun _ => True)
+    | (x,r)::l' =>
+        fun '(c,cmp) =>
+          match eqb n x as cond
+                return compiler_case (if cond then r else named_list_lookup default l' n)
+          with true => c | false => cmp_lookup l' n cmp end
+    end.
+    
+  End Inner.
+
+  Section WithCompiler.
+
+    Context (l : lang)
+              (*TODO: need my induction-recursion trick again*)
+    (cmp : compile_lang _ _ l).
+
+  
+  
+
+  
+  
+  Print Assumptions compile_lang.
+
+            
 (* TODO: make a version with a good definition for computing*)
 Definition mwkn : forall (c : ctx) A, subst (ctx_cons c A) -> subst c.
   intro c.
