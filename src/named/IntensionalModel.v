@@ -109,30 +109,20 @@ Section Elimination.
     let (n, c) as c return P_ctx c := c in
     ctx_rect' n c.
 
-  (*TODO: make better for computation*)
-  Lemma subst_rect : forall c (s : subst c), P_subst (ctx_rect c) s.
-Proof.
-  destruct c as [n c].
-  revert c.
-  induction n; simpl; intros.
-  {
-    destruct c.
-    destruct s.
-    eapply P_subst_nil.
-  }
-  {
-    destruct c as [c A].
-    destruct s as [Heq [s e]].
-    simpl in Heq.
-    match goal with
-      [Heq : seq ?A ?A |- _] =>
-        change Heq with (@srefl _ A) in *
-    end.
-    simpl in *.
-    eapply (@P_subst_cons {#n;c#} _ s A e).
-    eapply IHn.
-  }
-Defined.
+  
+  Fixpoint subst_rect' (n : nat)
+    : forall c (s : subst_n n c), P_subst (ctx_rect' n c) s :=
+    match n as n return forall c (s : subst_n n c),
+        P_subst (ctx_rect' n c) s with
+    | 0 => fun 'tt 'tt => P_subst_nil
+    | S n' => fun '{#c'; A#} '(existST _ Heq {# s'; e#})=>
+                P_subst_cons (c:={#n';c'#}) _ _ (subst_rect' _ _ _)
+    end.    
+
+  Definition subst_rect (c : ctx)
+    : forall (s : subst c), P_subst (ctx_rect c) s :=
+    let (n, c) as c return forall (s : subst c), P_subst (ctx_rect c) s := c in
+    subst_rect' n c.
 
 End Elimination.
 
