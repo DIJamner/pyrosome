@@ -9,6 +9,47 @@ From Utils Require Import Utils.
 From Named Require Import Substable.
 Import SumboolNotations.
 
+(*TODO:  this is a hack, discharge it properly *)
+  Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
+    : forall a b, eqb (Eqb:=Heqb1) a b = eqb (Eqb:=Heqb2) a b.
+  Proof.
+    intros.
+    destruct (Eqb_dec a b); subst.
+    {
+      rewrite !eqb_refl.
+      reflexivity.
+    }
+    {
+      match goal with
+        |- ?lhs = ?rhs =>
+          remember lhs as lhsb;
+          remember rhs as rhsb;
+          destruct lhsb; destruct rhsb; try tauto
+      end.
+      {
+        symmetry in Heqlhsb.
+        rewrite eqb_eq in Heqlhsb.
+        tauto.
+      }
+      {
+        symmetry in Heqrhsb.
+        rewrite eqb_eq in Heqrhsb.
+        tauto.
+      }
+    }
+  Qed.
+
+  
+  Lemma Eqb_unique_named_list_lookup {A B} (Heqb1 Heqb2 : Eqb A)
+    : forall x y (s : @named_list A B), named_list_lookup (H := Heqb1) x s y
+                  = named_list_lookup (H := Heqb2)x s y.
+  Proof.
+    induction s; basic_goal_prep; basic_utils_crush.
+    rewrite Eqb_eqb_extensionally_unique with (Heqb1:= Heqb1) (Heqb2:= Heqb2).
+    rewrite IHs.
+    reflexivity.
+  Qed.
+
 Create HintDb term discriminated.
 Ltac basic_term_crush := let x := autorewrite with utils term in * in
                                   let y := eauto with utils term in
@@ -307,10 +348,17 @@ Proof.
 Qed.
   Local Hint Resolve term_well_scoped_subst : term.
 
+  
+  
   (*TODO: Prove*)
   Lemma subst_var `{EqbV: Eqb V}
     : forall s x, apply_subst0 s (inj_var x) = subst_lookup (V_Eqb:=EqbV) s x.
-  Admitted.
+  Proof.
+    intros.
+    simpl.
+    unfold subst_lookup.
+    eapply Eqb_unique_named_list_lookup.
+  Qed.    
   
   Instance substable_term_ok : Substable0_ok term :=
     {
