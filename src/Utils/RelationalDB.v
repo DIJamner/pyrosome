@@ -4,13 +4,13 @@
    Use PArrays instead of lists in various spots 
    (can be fixed size, so don't need ArrayList, but that might be easiest first)
  *)
-Require Import Equalities Orders ZArith List.
+Require Import Equalities Orders ZArith List Int63.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps NatlikePos.
-From Utils Require TrieMap.
+From Utils Require TrieMap TrieMapInt63.
 Import Sets.
 
 
@@ -144,6 +144,47 @@ Module PositiveQueryTrie.
 
   
 End PositiveQueryTrie.
+
+Module Int63QueryTrie.
+  
+  Open Scope int63.
+  Inductive query_trie :=
+  (*Necessary for when a variable does not appear in a clause *)
+  | qt_unconstrained : query_trie -> query_trie
+  (* need to expose map impl or inductive is not strictly positive *)
+  | qt_tree : TrieMapInt63.map query_trie -> query_trie
+  (* used when there are no more variables left *)
+  | qt_nil : query_trie.
+
+  (* used when there are no possible instantiations *)
+  Notation qt_empty := (qt_tree (PTree.Empty)).
+
+  #[export] Instance trie_set : set int :=
+    {
+      set_as_map := TrieMapInt63.map _;
+      intersection := PTree.combine (fun a b => if a then b else None);
+      union := PTree.combine (fun a b => if a then Some tt else b);
+    }.
+
+  Definition values_of_next_var (t : query_trie) : set_with_top trie_set :=
+    match t with
+    | qt_tree m => finite_set (PTree.map_filter (fun _ => Some tt) m)
+    | qt_unconstrained _ => all_elements
+    (* shouldn't normally hit this case *)
+    | qt_nil => finite_set map.empty
+    end.
+
+  Definition choose_next_val (v:int) (t : query_trie) : query_trie :=
+    match t with
+    | qt_tree m => 
+        match map.get m v with Some t => t | None => qt_empty end
+    | qt_unconstrained t => t 
+    (* shouldn't normally hit this case *)
+    | qt_nil => qt_empty
+    end.
+
+  
+End Int63QueryTrie.
 
 
 (* Make all functions parametric over the indices and elements *)

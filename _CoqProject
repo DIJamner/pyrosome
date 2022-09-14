@@ -16,6 +16,8 @@ src/Utils/UnionFind.v
 src/Utils/ExtraMaps.v
 src/Utils/RelationalDB.v
 src/Utils/GoalDisplay.v
+src/Utils/DenseInt63Map.v
+src/Utils/TrieMapInt63.v
 
 -Q src/named Named
 src/named/Substable.v
@@ -25,6 +27,7 @@ src/named/Rule.v
 src/named/Linter.v
 src/named/Core.v
 src/named/TreeProofs.v
+src/named/egraph/UnionFindExplained.v
 src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v

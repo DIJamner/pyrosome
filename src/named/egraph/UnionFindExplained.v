@@ -16,7 +16,41 @@ Robert Nieuwenhuis and Albert Oliveras. Proof-producing congruence closure. 2005
 https://www.cs.upc.edu/~oliveras/rta05.pdf
 *)
 
-From Utils Require Import Utils Natlike ArrayList.
+Require Import List Int63 ZArith.
+Import ListNotations.
+Open Scope int63.
+From Utils Require Import Utils Natlike ArrayList PersistentArrayList.
+Import PArrayList (array, length).
+
+(*TODO: move these instances to the right places*)
+#[refine] Instance int63eqb : Eqb int := { eqb := Int63Natlike.eqb}.
+exact Int63Natlike.eqb_eq.
+exact Uint63.eqb_false_spec.
+exact Uint63.eqb_refl.
+exact Int63Natlike.eq_dec.
+Defined.
+
+Instance natlike_int63 : Natlike int :=
+  {
+    natlike_eqb := int63eqb;
+    ltb := Int63Natlike.ltb;
+    leb := Int63Natlike.leb;
+    zero := Int63Natlike.zero;
+    succ := Int63Natlike.succ;
+    is_top := Int63Natlike.is_top;
+    iter := @Int63Natlike.iter;
+  }.
+
+Instance arraylist_parraylist : ArrayList int array :=
+  {
+    make := @PArrayList.make;
+    get := @PArrayList.get;
+    set := @PArrayList.set;
+    length := @PArrayList.length;
+    alloc := @PArrayList.alloc;
+  }.
+
+Notation make := (make (ArrayList := arraylist_parraylist)).
 
 
 
@@ -24,22 +58,25 @@ From Utils Require Import Utils Natlike ArrayList.
    (issue #12519)
  *)
 Section UnionFind.
-  
-  Context {idx : Type}
-          `{Natlike idx}
-          {array : Type -> Type}
-          `{ArrayList idx array}.
-  (* TODO: figure out what features explanations need *)
-  Context {expl : Type}
-    (*TODO: this doesn't work so well w/ current proof structure
-      since reflexivity requires the term as input.
-      Fixing this ties into ideas around putting the proof terms in the egraph
-     *)
-    (refl : expl)
-    (symmetry : expl -> expl)
-    (transitivity : expl -> expl -> expl).
 
-  Notation zero := (zero : idx).
+  (*TODO: what to instantiate this with?
+    I'm tempted to keep this data in egraph nodes
+ 
+  Context (pf : Type)
+    (pf_symmetry : pf -> pf).
+   *)
+  Definition pf : Set := int + int.
+  Definition pf_symmetry (a : pf) :=
+    match a with
+    | inl i => inr i
+    | inr i => inl i
+    end.
+
+  Definition expl := list pf.
+
+  Definition refl : expl := [].
+  Definition symmetry (e : expl) := rev e.
+  Definition transitivity : expl -> expl -> expl := @app _.
 
   (*TODO: make notations use ops*)
   (*Module Ntns := (ArrayNotations NL AL).
@@ -48,17 +85,17 @@ Section UnionFind.
 
   Record union_find :=
     MkUF {
-        rank : array idx;
-        parent : array idx;
+        rank : array int;
+        parent : array int;
         explanation : array expl;
         (* we include an upper bound on the rank for purposes of termination *)
-        max_rank : idx
+        max_rank : int
       }.
 
   Definition length uf := length uf.(parent).
   
   Definition empty : union_find :=
-    MkUF (make zero) (make zero) (make refl) zero.
+    MkUF (make 0) (make 0) (make refl) 0.
 
   (*TODO: write w/ state monad for clarity?*)
   Definition alloc '(MkUF ra pa ea mr) :=
@@ -68,9 +105,8 @@ Section UnionFind.
      *)
     (MkUF ra (set pa i i) ea mr, i).
   
-  (*TODO: need to modify the explanation*)
   Definition find_aux
-    : idx -> array idx -> array expl -> idx -> array idx * array expl * idx :=
+    : int -> array int -> array expl -> int -> array int * array expl * int :=
     iter
       (fun f e i => (f,e, i))
       (fun find_aux f e i =>         
@@ -101,7 +137,7 @@ Section UnionFind.
   
   
   (*TODO: move to the right place*)
-  Definition max (x y : idx) :=
+  Definition max (x y : int) :=
     if leb x y then y else x.
 
   (*TODO: check explanation works*)
@@ -127,51 +163,7 @@ Section UnionFind.
                        (max mr (succ rx)), cx).
 End UnionFind.
 
-(*TODO*)
-Class UnionFind_ok := {}.
 
-
-(* All definitions and proofs need to be generic over arraylist implementations.
-   Use the following code to test functions with a specific implementation: *)
-
-(*Testing *)
-(*
-#[local] Existing Instance PArrayList.arraylist_ops.
-#[local] Existing Instance Int63Natlike.natlike_ops.
-*)
-
-Module Int63UnionFind.
-
-  Require Import Int63 ZArith.
-  From Utils Require Import PersistentArrayList.
-
-  Axiom TODO : forall A, A.
-  
-  #[refine] Instance int63eqb : Eqb int := { eqb := Int63Natlike.eqb}.
-  exact Int63Natlike.eqb_eq.
-  apply TODO.  apply TODO.
-  exact Int63Natlike.eq_dec.
-  Defined.
-
-  Instance natlike_int63 : Natlike int :=
-    {
-      natlike_eqb := int63eqb;
-      ltb := Int63Natlike.ltb;
-      leb := Int63Natlike.leb;
-      zero := Int63Natlike.zero;
-      succ := Int63Natlike.succ;
-      is_top := Int63Natlike.is_top;
-      iter := @Int63Natlike.iter;
-    }.
-
-  Instance arraylist_parraylist : ArrayList int PArrayList.array :=
-    {
-    make := @PArrayList.make;
-    get := @PArrayList.get;
-    set := @PArrayList.set;
-    length := @PArrayList.length;
-    alloc := @PArrayList.alloc;
-    }.
 
   (* takes around 7s
   Time Eval vm_compute in
@@ -185,5 +177,4 @@ Module Int63UnionFind.
     snd (find uf 604828%int63).
    *)
 
-End Int63UnionFind.
-  
+
