@@ -372,7 +372,7 @@ Module Int63Natlike <: __Natlike.
     intros.
     unfold eq.
     case_order_fn (x =? y)%int63; unfold eq in *; subst; auto.
-  Qed.
+  Defined.
 
   Lemma le_lteq : forall x y : t, le x y <-> lt x y \/ eq x y.
   Proof.

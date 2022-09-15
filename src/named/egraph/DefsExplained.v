@@ -1014,10 +1014,10 @@ Notation lang := (@lang int).
 
   Import Term.Notations.
 
-  Definition pos_value_subst : Rule.lang positive :=
+  Definition int_value_subst : Rule.lang int :=
     Eval compute in (rename_lang value_subst).
   (*TODO: are vars different?*)
-  Definition constr_rename : named_list positive :=
+  Definition constr_rename : named_list int :=
     Eval compute in (rename_constr_subst value_subst).
 
   Definition test_ctx :=
@@ -1026,33 +1026,17 @@ Notation lang := (@lang int).
                                       "A" : #"ty",
                                         "B" : #"ty"}}
                                 100).
-
-  Definition check_ctx' l :=
-    check_ctx' (int:=positive) (array := TrieMap.TrieArrayList.trie_array)
-               eclass_map eqn_set l
-               qt_unconstrained _ qt_tree qt_nil
-               values_of_next_var choose_next_val relation db arg_map.
-  
-  Definition add_and_check_term l :=
-    add_and_check_term (int:=positive) (array := TrieMap.TrieArrayList.trie_array)
-                       (eclass_map:=eclass_map) eqn_set l
-                       qt_unconstrained _ qt_tree qt_nil
-                       values_of_next_var choose_next_val relation db arg_map.
-  
-  Definition add_term :=
-    add_term (int:=positive) (array := TrieMap.TrieArrayList.trie_array)
-             (eclass_map:=eclass_map) eqn_set.
-  
-  Definition find :=
-    find (int:=positive) (array := TrieMap.TrieArrayList.trie_array)
-             (eclass_map:=eclass_map).
-  
   Definition initial_egraph :=
     Eval compute in
-      (match check_ctx' pos_value_subst test_ctx with
+      (match check_ctx' int_value_subst test_ctx with
        | Some g => g
-       | None => empty_egraph _
+       | None => empty_egraph
        end).
+  
+  (*TODO: instant at size = 2, stalls at size =3
+  TODO: slow even when fuel is 0
+  TODO: why is this slow? Probably a union-find thing? maybe a sets thing?
+*)
 
   Definition test_ctx_var_map :=
     [("B", 102);("A",101);("G",100)].
@@ -1070,11 +1054,11 @@ Notation lang := (@lang int).
    *)
   Definition egraph1 :=
     Eval compute in (fst (add_and_check_term
-                            pos_value_subst
+                            int_value_subst
                             test_term
                             initial_egraph)).
   Eval compute in (add_term
-                     pos_value_subst
+                     int_value_subst
                      test_term
                      initial_egraph).
 
@@ -1106,17 +1090,16 @@ Notation lang := (@lang int).
  but checking still passes. Why?
    *)
     Eval compute in (add_term
-                            pos_value_subst
-                            test_term
+                            int_value_subst
+                            term1
                             initial_egraph).
   Definition egraph2 :=
     Eval compute in (fst (add_and_check_term
-                            pos_value_subst
+                            int_value_subst
                             test_term
                             initial_egraph)).
   (*Print egraph2.*)
 
-End PositiveInstantiation.
 
 
 
