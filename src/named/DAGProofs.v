@@ -1,10 +1,13 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import NArith List.
 Import ListNotations.
-Open Scope string.
 Open Scope list.
+
+Require Import Tries.Canonical.
+Import PTree.
+
 From Utils Require Import Utils Monad.
 From Named Require Import Core.
 Import Core.Notations.
@@ -34,20 +37,18 @@ Section WithVar.
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
-  (*TODO: use something other than nat for indices, probably N
-   *)
   Variant node : Type :=
     (* variable name *)
     | tn_var : V -> node
     (* Rule label, list of subterms*)
-    | tn_con : V -> list nat -> node
-    | tn_trans : nat -> nat -> node
-    | tn_sym : nat -> node
-    | tn_conv : nat -> nat -> node
+    | tn_con : V -> list positive -> node
+    | tn_trans : positive -> positive -> node
+    | tn_sym : positive -> node
+    | tn_conv : positive -> positive -> node
     (* sort variants *)
-    | sn_con : V -> list nat -> node
-    | sn_trans : nat -> nat -> node
-    | sn_sym : nat -> node.
+    | sn_con : V -> list positive -> node
+    | sn_trans : positive -> positive -> node
+    | sn_sym : positive -> node.
 
   (* We assume that the head is the root by default.
      Invariant: all indices of the head are < length of the tail
@@ -125,14 +126,14 @@ Section WithVar.
     
   Section Inner.
 
-    Context (proof_result : list node_result).
+    Context (proof_result : tree node_result).
     
-    Fixpoint check_args_proof (args : list nat) (c' : ctx) :=
+    Fixpoint check_args_proof (args : list positive) (c' : ctx) :=
       match args, c' with
       | [], [] => Some ([],[])
       | p::args, (_,t)::c'=>
           @! let (lhs, rhs) <- check_args_proof args c' in
-            let (term_eq_result e1 e2 t') <?- nth_error proof_result p in
+            let (term_eq_result e1 e2 t') <?- get p proof_result in
             (*TODO: use Eqb instance*)
             let ! sort_eq_dec t[/with_names_from c' rhs/] t' in
             ret (e1::lhs, e2::rhs)
@@ -159,17 +160,17 @@ Section WithVar.
              | _ => None
              end
       | tn_trans p0 p1 =>
-          @! let (term_eq_result e1 e2 t) <?- nth_error proof_result p0 in
-             let (term_eq_result e1' e2' t') <?- nth_error proof_result p1 in
+          @! let (term_eq_result e1 e2 t) <?- get p0 proof_result in
+             let (term_eq_result e1' e2' t') <?- get p1 proof_result in
              let ! sort_eq_dec t t' in
              let ! term_eq_dec e2 e1' in
              ret (term_eq_result e1 e2' t)
       | tn_sym p =>
-          @! let (term_eq_result e1 e2 t) <?- nth_error proof_result p in
+          @! let (term_eq_result e1 e2 t) <?- get p proof_result in
              ret (term_eq_result e2 e1 t)
       | tn_conv p0 p1 =>
-          @! let (sort_eq_result t1 t2) <?- nth_error proof_result p0 in
-             let (term_eq_result e1 e2 t) <?- nth_error proof_result p1 in
+          @! let (sort_eq_result t1 t2) <?- get p0 proof_result in
+             let (term_eq_result e1 e2 t) <?- get p1 proof_result in
              let ! sort_eq_dec t t1 in
              ret (term_eq_result e1 e2 t2)
                  
@@ -187,12 +188,12 @@ Section WithVar.
              | _ => None
              end
       | sn_trans p0 p1 =>
-          @! let (sort_eq_result t1 t2) <?- nth_error proof_result p0 in
-             let (sort_eq_result t1' t2') <?- nth_error proof_result p1 in
+          @! let (sort_eq_result t1 t2) <?- get p0 proof_result in
+             let (sort_eq_result t1' t2') <?- get p1 proof_result in
              let ! sort_eq_dec t2 t1' in
              ret (sort_eq_result t1 t2')
       | sn_sym p =>
-          @! let (sort_eq_result t1 t2) <?- nth_error proof_result p in
+          @! let (sort_eq_result t1 t2) <?- get p proof_result in
              ret (sort_eq_result t2 t1)
       end.
 
@@ -203,8 +204,11 @@ Section WithVar.
        | sort_eq_result t1 t2 => eq_sort l c t1 t2
        end.
 
+     (* TODO: move somewhere? *)
+     Definition tree_all {A} (P : A -> Prop) t :=
+       forall n a, get n t = Some a -> P a.
 
-     Context (history_sound : all node_result_sound proof_result).
+     Context (history_sound : tree_all node_result_sound proof_result).
 
      
      Lemma check_args_proof_sound args c' a1 a2
@@ -225,9 +229,8 @@ Section WithVar.
        - constructor.
        - constructor; eauto.
          symmetry in HeqH1.
-         eapply nth_error_In in HeqH1.
-         pose proof (in_all _ _ history_sound HeqH1).
-         exact H.
+         eapply history_sound in HeqH1.
+         exact HeqH1.
        - safe_invert H.
        - safe_invert H.
      Qed.
@@ -249,16 +252,14 @@ Section WithVar.
           end;
          basic_goal_prep;
            repeat lazymatch goal with
-           | [H : Some (term_eq_result ?e1 ?e2 ?t) = _,
-                 hist : all node_result_sound _ |- _] =>
+           | [H : Some (term_eq_result _ _ _) = _,
+                 hist : tree_all node_result_sound _ |- _] =>
                symmetry in H;
-               eapply nth_error_In in H;
-               pose proof (in_all _ _ hist H); clear H
+               eapply hist in H
            | [H : Some (sort_eq_result _ _) = _,
-                 hist : all node_result_sound _ |- _] =>
+                 hist : tree_all node_result_sound _ |- _] =>
                symmetry in H;
-               eapply nth_error_In in H;
-               pose proof (in_all _ _ hist H); clear H
+               eapply hist in H
            end; simpl in *; eauto with term lang_core.
        - constructor; constructor.
          apply named_list_lookup_err_in; auto.
@@ -290,25 +291,60 @@ Section WithVar.
            eapply check_args_proof_sound; eauto.
      Qed.
   End Inner.
-    
-  Fixpoint check_proof' (p : pf) : option (list node_result) :=
+
+  (*TODO: use named_list for pf instead of list?*)
+  Fixpoint check_proof' (p : pf) : option (tree node_result * positive) :=
     match p with
-    | [] => Some []
+    | [] => Some (empty _, 1%positive)
     | n::p' =>
-        @! let p_res <- check_proof' p' in
-          let n_res <- check_node p_res n in
-          ret n_res::p_res
+        @! let (p_res, next) <- check_proof' p' in
+           let n_res <- check_node p_res n in
+           ret (set next n_res p_res, next + 1)%positive
     end.
 
   Definition check_proof (p : pf) : option (term * term * sort) :=
-    @! let (term_eq_result e1 e2 t :: _) <?- check_proof' p in
+    @! let (m, next) <- check_proof' p in
+      let (term_eq_result e1 e2 t) <?- get (next - 1)%positive m in
       ret (e1,e2,t).
 
-  Lemma check_proof'_sound p res
-    : check_proof' p = Some res ->
-       all node_result_sound res.
+      Require Import Lia.
+      Open Scope positive.
+  
+  Lemma check_proof'_fresh' p res next
+    : check_proof' p = Some (res, next) ->
+      forall n', n' >= next ->
+      get n' res = None.
   Proof.
-    revert res; induction p;
+    revert res next; induction p;
+      unfold tree_all;
+      basic_goal_prep;
+      repeat lazymatch goal with
+        | [H : default = Some _ |- _ ] => safe_invert H
+        | [H : Some _ = Some _ |- _ ] => safe_invert H
+        end;
+      basic_goal_prep;
+      eauto;
+      repeat case_match';
+      basic_goal_prep;
+      try congruence.
+    safe_invert H.
+    rewrite gso by lia.
+    eapply IHp; eauto; lia.
+  Qed.
+  
+  Lemma check_proof'_fresh p res next
+    : check_proof' p = Some (res, next) ->
+      get next res = None.
+  Proof.
+    intros; eapply check_proof'_fresh'; eauto; lia.
+  Qed.
+    
+  Lemma check_proof'_sound p res next
+    : check_proof' p = Some (res, next) ->
+      tree_all node_result_sound res.
+  Proof.
+    revert res next; induction p;
+      unfold tree_all;
       basic_goal_prep;
         repeat lazymatch goal with
         | [H : default = Some _ |- _ ] => safe_invert H
@@ -320,8 +356,16 @@ Section WithVar.
       basic_goal_prep;
       try congruence.
     safe_invert H; simpl.
-    intuition.
-    eauto using check_node_sound.
+    safe_invert HeqH0.
+    destruct (Pos.eq_dec n p0).
+    {
+      subst.
+      rewrite gss in H0.
+      safe_invert H0.
+      eapply check_node_sound; eauto.      
+    }
+    rewrite gso in H0; eauto.
+    eapply IHp; eauto.
   Qed.
 
   Theorem check_proof_sound p e1 e2 t
@@ -331,15 +375,20 @@ Section WithVar.
     unfold check_proof.
     remember (check_proof' p) as check.
     destruct check; simpl; try congruence.
-    destruct l0; simpl; try congruence.
-    - intro H; inversion H.
-    - destruct n; simpl; [| intro H; inversion H].
-      symmetry in Heqcheck.
-      apply check_proof'_sound in Heqcheck.
-      simpl in *.
-      intro H; safe_invert H.
-      basic_goal_prep.
-      eauto.
+    destruct p0; simpl; try congruence.
+    repeat case_match;
+      basic_goal_prep;
+        repeat lazymatch goal with
+        | [H : default = Some _ |- _ ] => safe_invert H
+        | [H : Some _ = Some _ |- _ ] => safe_invert H
+          end;
+      try congruence.
+    symmetry in Heqcheck.
+    apply check_proof'_sound in Heqcheck.
+    simpl in *.
+    symmetry in HeqH.
+    specialize (Heqcheck _ _ HeqH).
+    eauto.
   Qed.
 
   End WithLang.
