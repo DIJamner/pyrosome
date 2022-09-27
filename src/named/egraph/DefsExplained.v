@@ -21,8 +21,8 @@ Import Int63QueryTrie.
       
 From Utils Require ArrayList DenseInt63Map TrieMapInt63.
 From Named Require Import Term Rule Core.
-From Named.egraph Require UnionFindExplained.
-Import UnionFindExplained (union_find).
+From Named.egraph Require UnionFindExplained UFProofs.
+Import UnionFindExplained (union_find, enode(..)).
 (*Import Core.Notations.*)
 
 
@@ -34,6 +34,15 @@ Notation sort := (@sort int).
 Notation subst := (@subst int).
 Notation rule := (@rule int).
 Notation lang := (@lang int).
+
+(*
+  Explanation architecture:
+  -explanations need node-level addressing since explain (a,b) /= explain (find a, find b) (which is refl or None)
+  Congruence:
+  -how do I gen congruences? seems like I need node ids, but only have class ids
+
+ *)
+
 
   (*
    Big TODO:
@@ -61,11 +70,6 @@ Notation lang := (@lang int).
 
 
    *)
-  
-  Variant enode :=
-    | con_node : int -> list int -> enode
-    (*TODO: separate constructor for sorts?  | scon_node : list int -> enode *)
-    | var_node : (*(* sort id*) int ->*) (* var *) int -> enode.
 
   (* TODO: make sets fast*)
 
@@ -128,8 +132,11 @@ Notation lang := (@lang int).
       }.
   End __.
 
+  (*TODO: these two aren't very efficient*)
   Definition node_set := set_from_map (@named_list_map enode unit _).
   Definition node_map := (@named_list_map enode int _).
+  (* nat is the index into the parent *)
+  Definition parent_map := (@named_list_map enode (int*nat) _).
 
 
   (* TODO : separate sort eclasses? it would avoid awkwardness around esort dummy value
@@ -137,7 +144,7 @@ Notation lang := (@lang int).
   Record eclass : Type :=
     MkEClass {
         nodes : node_set;
-        parents : node_map;
+        parents : parent_map;
         (* value is unused if the class represents a sort
          TODO: is this the best way? could also fix it as 0
         
@@ -165,7 +172,11 @@ Notation lang := (@lang int).
         id_equiv : union_find;
         eclasses : eclass_map;
         hashcons : node_map;
-        worklist : list int
+        worklist : list (int* UnionFindExplained.expl);
+        (* The inverse of the hashcons.
+           Used to generate congruence proofs.
+         *)
+        node_lookup : array enode;
       }.
 
 
@@ -194,42 +205,44 @@ Notation lang := (@lang int).
   Section EGraphOps.
     Import StateMonad.
 
-    Local Notation "'ST'" := (ST egraph).
+    Local Notation "'ST'" := (state egraph).
 
     Definition find a : ST int :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let (U, i) := UnionFindExplained.find U a in
-        (MkEGraph ctx U M H W,i).
+        (i,MkEGraph ctx U M H W N).
 
     Definition alloc : ST int :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let (U, i) := UnionFindExplained.alloc U in
-        (MkEGraph ctx U M H W,i).
+        (i, MkEGraph ctx U M H W N).
 
     Definition hashcons_lookup (n : enode) : ST (option int) :=
       fun g =>
         let mi := map.get g.(hashcons) n in
-        (g, mi).
+        (mi,g).
 
     Definition set_hashcons n i : ST unit :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let H := map.put H n i in
-        (MkEGraph ctx U M H W,tt).
-    
+        let N := ArrayList.set N i n in
+        (tt,MkEGraph ctx U M H W N).
+
+    (*TODO: is there a point in removing from N?*)
     Definition remove_hashcons n : ST unit :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let H := map.remove H n in
-        (MkEGraph ctx U M H W,tt).
+        (tt,MkEGraph ctx U M H W N).
     
     Definition set_eclass (i: int) (c : eclass) : ST unit :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let M := map.put M i c in
-        (MkEGraph ctx U M H W,tt).
+        (tt,MkEGraph ctx U M H W N).
 
     Definition union_ids a b expl : ST int :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let (U, i) := UnionFindExplained.union U a b expl in
-        (MkEGraph ctx U M H W, i).
+        (i,MkEGraph ctx U M H W N).
 
     (* return a default value rather than none
      for ease-of-use
@@ -241,35 +254,35 @@ Notation lang := (@lang int).
       I need to decide that ctx and srt don't matter if empty,
       which seems wrong
        *)
-      fun g => (g, unwrap_with_default eclass_empty (map.get g.(eclasses) i)).
+      fun g => (unwrap_with_default eclass_empty (map.get g.(eclasses) i),g).
 
-    Definition add_to_worklist (i : int) : ST unit :=
-      fun '(MkEGraph ctx U M H W) =>
-        let W := i::W in
-        (MkEGraph ctx U M H W, tt).
+    Definition add_to_worklist (i : int) expl : ST unit :=
+      fun '(MkEGraph ctx U M H W N) =>
+        let W := (i,expl)::W in
+        (tt, MkEGraph ctx U M H W N).
 
     (* Returns the worklist for iteration and removes it from the egraph *)
-    Definition pull_worklist : ST (list int) :=
-      fun '(MkEGraph ctx U M H W) =>
-        (MkEGraph ctx U M H [], W).
+    Definition pull_worklist : ST (list (int * UnionFindExplained.expl)) :=
+      fun '(MkEGraph ctx U M H W N) =>
+        (W, MkEGraph ctx U M H [] N).
 
     
     (* Returns the egraph's context *)
     Definition get_ectx : ST (named_list int) :=
-      fun g => (g, g.(ectx)).
+      fun g => (g.(ectx),g).
     
     Definition ectx_cons x (i: int) : ST unit :=
-      fun '(MkEGraph ctx U M H W) =>
+      fun '(MkEGraph ctx U M H W N) =>
         let ctx := (x,i)::ctx in
-        (MkEGraph ctx U M H W,tt).
+        (tt,MkEGraph ctx U M H W N).
     
     Definition is_worklist_empty : ST bool :=
-      fun g => (g, match g.(worklist) with [] => true | _ => false end).    
+      fun g => (match g.(worklist) with [] => true | _ => false end,g).    
 
     (*adds (n,p) as a parent to i*)
-    Definition add_parent n p i : ST unit :=
+    Definition add_parent n p pos i : ST unit :=
       @! let ci <- get_eclass i in
-         (set_eclass i (eclass_add_parent ci (n,p))).
+         (set_eclass i (eclass_add_parent ci (n,(p,pos)))).
     
     Definition canonicalize n : ST enode :=
       match n with     
@@ -291,10 +304,10 @@ Notation lang := (@lang int).
       @! let n <- canonicalize n in
          (hashcons_lookup n).
 
-    Definition add_parent_to_children n i : ST unit :=
+    Definition add_parent_to_children n (i : int) : ST unit :=
       match n with
       | con_node name args =>
-          @! let args <- list_Miter (add_parent n i) args in
+          @! let args <- list_Miter_idx (add_parent n i) args in
              ret tt
       | var_node x => @! ret tt
       end.
@@ -322,11 +335,13 @@ Notation lang := (@lang int).
          if eqb ca cb
          then ret ca
          else let i <- union_ids a b expl in
-              let tt <- add_to_worklist i in
+              (*TODO: should put expl in the worklist*)
+              let tt <- add_to_worklist i expl in
               ret i.
 
+    (*
     Definition ERR_EXPL : UnionFindExplained.expl :=
-      [inl (B:=int) 0%int63].
+      [inl (B:=int) 0%int63].*)
 
 
     (*TODO: think about parents wrt srt, ctx
@@ -335,21 +350,38 @@ Notation lang := (@lang int).
 
     TODO: provide congruence proof for merge
      *)
-    Definition repair (i : int) : ST unit :=
+    Definition repair '(i,expl) : ST unit :=
       @! let c <- get_eclass i in
-         let tt <- @! for pn pi from c.(parents) in
+        let tt <- @! for pn pi from c.(parents) in
+        (*TODO: removing from the hashcons is concerning.
+          It's what egg does, but (esp. w/ proof modifications)
+          can it leave a dangling pointer?
+         *)
          let tt <- remove_hashcons pn in
          let pn <- canonicalize pn in
          let ci <- find pi in
          (set_hashcons pn ci) in
-           let new_parents <-
+        let new_parents <-
                  @! for/fold pn pi
                     from c.(parents)
                              [[new_parents := (map.empty : node_map)]] in
            let pn <- canonicalize pn in
            match map.get new_parents pn : option int return ST map.rep with
-             (*TODO: provide congruence proof for merge*)
-           | Some np => Mseq (merge pi np ERR_EXPL) (@! ret new_parents)
+           (*TODO: provide congruence proof for merge
+             How to track cong pfs?
+             need to recover original enode
+             idea: store index(s) in parent list
+             -Note: how does this work when parent has 2 copies of this?
+             - makes sense w/out proofs, but how does it construct the one w/ proofs?
+
+            Invariant: can always explain from node to its canonicalization
+            difference w/ proofs: need to merge with non-canonical node to connect the proof at the right point
+            *)
+           | Some np =>
+               (* In the congruence case, we can just use the node as the proof  *)
+               @! let pf := pn in
+                 let tt <- (merge pi np pf) in
+                 ret new_parents
            | None =>
                @! let ci <- find pi in
                   ret (map.put new_parents pn ci)
@@ -732,12 +764,15 @@ Notation lang := (@lang int).
         Definition ematch_sort (d : db) (p : sort) :=
           let q := compile_sort_pattern p in
           generic_join d q.
-        
 
+
+        Definition order_by_ctx (sub : arg_map) (c : ctx) :=
+          unwrap_with_default [] (map.getmany_of_list sub (map fst c)).
+        
         (*TODO: currently only rewrites left-to-right.
         Evaluate whether this is sufficient.
          *)
-        Definition try_rewrite (d : db) (r : rule) : ST unit :=
+        Definition try_rewrite (d : db) (name : int) (r : rule) : ST unit :=
           match r with
           (* TODO: what to do with C? Needs to be used by ematch.
 
@@ -755,8 +790,9 @@ Notation lang := (@lang int).
           | sort_eq_rule c t1 t2 =>
               list_Miter (fun sub =>
                             @! let cid <- add_sort_unchecked_sub sub t1 in
-                               let cid' <- add_sort_unchecked_sub sub t2 in
-                               let _ <- merge cid cid' ERR_EXPL in
+                              let cid' <- add_sort_unchecked_sub sub t2 in
+                              (*TODO: where is pf_refl implemented?*)
+                               let _ <- merge cid cid' [TreeProofs.pcon name (map pf_refl (order_by_ctx c sub))] in
                                ret tt)
                          (ematch_sort d t1)
           | term_eq_rule c e1 e2 t =>

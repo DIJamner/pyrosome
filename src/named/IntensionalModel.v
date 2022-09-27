@@ -325,10 +325,27 @@ Notation "|# x1 ; .. ; xn #|" :=
 
 
 Declare Custom Entry open.
-Notation "#! e !#" :=
-  (let (c, A) := e in
-  open' c A)
+Notation "#! e !#" := e
     (e custom open).
+
+Notation "|- B" := (open' |##| B) (in custom open at level 90, B constr). 
+Notation "x1 : A1 |- B" :=
+  (open' |# A1%type #| (fun  (x1 : A1%type) => B%type))
+     (in custom open at level 0, x1 name, A1 constr, B constr).
+
+Notation "x1 : A1 , x2 : A2 |- B" :=
+  (open' |# A1%type; fun  (x1 : A1%type) => A2%type #|
+         (fun (x1 : A1%type) (x2 : A2%type) => B%type))
+    (in custom open at level 0,
+        x1 name, A1 constr, x2 name, A2 constr, B constr).
+
+Notation "x1 : A1 , x2 : A2 , x3 : A3 |- B" :=
+  (open' |# A1%type;
+            fun (x1 : A1%type) => A2%type;
+            fun (x1 : A1%type) (x2 : A2%type) => A2%type #|
+     (fun (x1 : A1%type) (x2 : A2%type) (x3 : A3%type) => B%type))
+    (in custom open at level 0,
+        x1 name, A1 constr, x2 name, A2 constr, x3 name, A3 constr, B constr).
 (*
 Notation "b1 .. bn |- A" :=
 
@@ -343,10 +360,10 @@ Notation "|- A" := {# ctx_nil; A#} (in custom open at level 70, A constr).
 Check #! x : nat , |- nat !#.*)
 
 Check (open' |##| nat).
-(*TODO: does not compute away as I'd want; blocked on UIP_refl*)
 Require Fin.
 Compute (open' |# nat #| (fun n => Fin.t n)).
 Compute (open' |# nat; fun n => Fin.t n #| (fun n f => f = f)).
+Compute #! n : nat, f : Fin.t n |- f = f !#.
 
 Notation msubst c c' := (open c (fun _ => subst c')).
 Notation sort c := (open c (fun _ => Type)).

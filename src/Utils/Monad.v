@@ -44,12 +44,6 @@ Notation "'let' ! e 'in' b" :=
   (if e then b else default)
     (in custom monadic_do at level 200, left associativity, e constr, b custom monadic_do).
 
-Instance option_monad : Monad option :=
-  {
-    Mret _ := Some;
-    Mbind _ _ f ma := match ma with Some a => f a | None => None end;
-  }.
-
 Notation "'if' c 'then' b1 'else' b2" :=
   (if c then b1 else b2)
     (in custom monadic_do at level 200, left associativity,
@@ -102,55 +96,117 @@ Section MonadListOps.
            let tt <- list_Miter f al' in
            ret tt
     end.
+
+  
+  Fixpoint list_Miter_idx' (f : nat -> A -> M unit) (l : list A) n : M unit :=
+    match l with
+    | [] => @! ret tt
+    | a::al' =>
+        @! let b <- f n a in
+           let tt <- list_Miter_idx' f al' (S n) in
+           ret tt
+    end.
+
+  Definition list_Miter_idx  (f : nat -> A -> M unit) (l : list A) := list_Miter_idx' f l 0.
+  
 End MonadListOps.
 
+
+
+Class MonadTrans (T : (Type -> Type) -> Type -> Type) : Type :=
+  {
+    transformer_monad :> forall `{Monad M}, Monad (T M);
+    lift : forall `{Monad M} {A}, M A -> T M A
+  }.
+
+Instance id_monad : Monad id :=
+  {
+    Mret _ a := a;
+    Mbind _ _ f := f;
+  }.
+
+
+Definition optionT (M : Type -> Type) A := M (option A).
+
+Instance optionT_trans : MonadTrans optionT :=
+  {|
+    transformer_monad M _ :=
+      {|
+        Mret _ a := (Mret (Some a));
+        Mbind _ _ f :=
+          Mbind (M:=M) (fun ma => match ma with
+                                      | Some a => f a
+                                      | None => Mret None
+                                      end)
+      |};
+  lift M _ A ma := @! let a <- ma in ret Some a
+  |}.
+
+
+Definition option_monad : Monad option :=
+  Eval cbv in (optionT_trans.(transformer_monad) : Monad (optionT id)).
+#[export] Existing Instance option_monad.
 
 From coqutil Require Map.Interface.
 
 Module StateMonad.
 
-  Definition ST S A := S -> (S * A).
+  Section WithS.
 
-  Instance state_monad {S} : Monad (ST S) :=
-    {
-      Mret _ a := fun s => (s,a);
-      Mbind _ _ f ma :=
-      fun s =>
-        let (s,a) := ma s in
-        f a s
-    }.
+  Context {S : Type}.
+
+  Definition stateT M A := S -> M (A * S)%type.
+
+  Instance stateT_trans : MonadTrans stateT :=
+    {|
+      transformer_monad M _ :=
+        {|      
+          Mret _ a := fun s => Mret (a,s);
+          Mbind _ _ f :=
+            Basics.compose (Mbind (uncurry f))
+        |};
+      lift M _ A ma s := Mbind  (fun x => Mret (x,s)) ma
+    |}.
+
+  Definition state := Eval cbv in stateT id.
+  
+  Definition state_monad : Monad state :=
+    Eval cbv in (stateT_trans.(transformer_monad) : Monad (stateT id)).
+  #[export] Existing Instance state_monad.
 
   
   (*TODO: double check this is the right name*)
   (* backtracks the state if ma returns None *)       
-  Definition try_with_backtrack {S A}
-             (ma : ST S (option A)) : ST S (option A) :=
+  Definition try_with_backtrack {A}
+             (ma : optionT (stateT id) A) :  optionT (stateT id) A :=
     fun g =>
       match ma g with
-      | (g', Some a) => (g', Some a)
-      | (_, None) => (g, None)
+      | (Some a, g') => (Some a, g')
+      | (None,_) => (None, g)
       end.
   
   Section MapOps.
     
     Import Map.Interface.
     
-    Definition map_Mfold {S K V A}
+    Definition map_Mfold {K V A}
                {MP : map.map K V}
-               (f : K -> V -> A -> ST S A)
-               (p : @map.rep _ _ MP) a : ST S A :=
+               (f : K -> V -> A -> state A)
+               (p : @map.rep _ _ MP) a : state A :=
       fun g =>
         map.fold
-          (fun '(g, a) k v => f k v a g)
-          (g, a) p.
+          (fun '(a, g) k v => f k v a g)
+          (a, g) p.
 
-    Definition map_Miter {S K V}
+    Definition map_Miter {K V}
                {MP : map.map K V}
-               (f : K -> V -> ST S unit)
-               (p : @map.rep _ _ MP) : ST S unit :=
+               (f : K -> V -> state unit)
+               (p : @map.rep _ _ MP) : state unit :=
       map_Mfold (fun k v _ => f k v) p tt.
 
   End MapOps.
+
+  End WithS.
 
   Notation "'for' kp vp 'from' m 'in' b" :=
     (map_Miter (fun kp vp => b) m)                       
@@ -166,5 +222,9 @@ Module StateMonad.
           vp pattern at level 0,
           acc pattern at level 0,
           m constr, b custom monadic_do).
-
+  
+  Arguments stateT S%type_scope M%function_scope A%type_scope : clear implicits.
+  Arguments state S%type_scope A%type_scope : clear implicits.
+  
 End StateMonad.
+

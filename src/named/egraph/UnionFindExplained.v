@@ -21,14 +21,16 @@ Import ListNotations.
 Open Scope int63.
 From Utils Require Import Utils Natlike ArrayList PersistentArrayList.
 Import PArrayList (array, length).
+Require Named.TreeProofs.
 
 (*TODO: move these instances to the right places*)
-#[refine] Instance int63eqb : Eqb int := { eqb := Int63Natlike.eqb}.
-exact Int63Natlike.eqb_eq.
-exact Uint63.eqb_false_spec.
-exact Uint63.eqb_refl.
-exact Int63Natlike.eq_dec.
-Defined.
+Instance int63eqb : Eqb int := {
+    eqb := Int63Natlike.eqb;
+    eqb_eq := Int63Natlike.eqb_eq;
+    eqb_neq := Uint63.eqb_false_spec;
+    eqb_refl := Uint63.eqb_refl;
+    Eqb_dec := Int63Natlike.eq_dec;
+  }.
 
 Instance natlike_int63 : Natlike int :=
   {
@@ -52,7 +54,13 @@ Instance arraylist_parraylist : ArrayList int array :=
 
 Notation make := (make (ArrayList := arraylist_parraylist)).
 
-
+(*TODO: where to put this?
+  Should probably properly separate defs from code, have this in defs
+ *)
+  Variant enode :=
+    | con_node : int -> list int -> enode
+    (*TODO: separate constructor for sorts?  | scon_node : list int -> enode *)
+    | var_node : (*(* sort id*) int ->*) (* var *) int -> enode.
 
 (* Use typeclasses since passing some instances to functors breaks the VM
    (issue #12519)
@@ -65,17 +73,23 @@ Section UnionFind.
   Context (pf : Type)
     (pf_symmetry : pf -> pf).
    *)
+  (*
   Definition pf : Set := int + int.
   Definition pf_symmetry (a : pf) :=
     match a with
     | inl i => inr i
     | inr i => inl i
-    end.
+    end.*)
+  Notation pf := enode.
+  (*We don't need symmetry b/c it's inherent in a union-find proof*)
+  (*Definition pf_symmetry := TreeProofs.psym.*)
 
   Definition expl := list pf.
 
   Definition refl : expl := [].
+  (* symmetry is inherent
   Definition symmetry (e : expl) := rev e.
+   *)
   Definition transitivity : expl -> expl -> expl := @app _.
 
   (*TODO: make notations use ops*)
@@ -132,7 +146,7 @@ Section UnionFind.
     let '(uf, fx) := find uf x in
     let '(uf, fy) := find uf y in
     if eqb fx fy
-    then Some (transitivity (get_expl uf x) (symmetry (get_expl uf y)))
+    then Some (transitivity (get_expl uf x) (*(symmetry*) (get_expl uf y))
     else None.
   
   
@@ -150,7 +164,7 @@ Section UnionFind.
       let ry := get ra cy in
       if ltb ry rx then
         (MkUF ra (set pa cy cx)
-           (set ea cy (symmetry expl))
+           (set ea cy (*(symmetry*) expl)
            mr, cx)
       else if ltb rx ry then
              (MkUF ra (set pa cx cy) 
@@ -159,7 +173,7 @@ Section UnionFind.
            else
              (MkUF (set ra cx (succ rx))
                   (set pa cy cx)
-                  (set ea cy (symmetry expl))
+                  (set ea cy (*(symmetry*) expl)
                        (max mr (succ rx)), cx).
 End UnionFind.
 

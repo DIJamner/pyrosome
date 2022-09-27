@@ -10,9 +10,9 @@ Section __.
   Context {S : Type}
           `{Natlike S}.
 
-  Local Notation ST := (ST S).
+  Local Notation state := (state S).
 
-  Definition gensym : ST S :=
+  Definition gensym : state S :=
     fun s => (succ s, s).
 
 End __.

@@ -4,6 +4,7 @@
 
 -Q src/Utils Utils
 src/Utils/TrieMap.v
+src/Utils/SymmetricInduction.v
 src/Utils/Utils.v
 src/Utils/Monad.v
 src/Utils/SumMonad.v
@@ -27,6 +28,7 @@ src/named/Rule.v
 src/named/Linter.v
 src/named/Core.v
 src/named/TreeProofs.v
+src/named/egraph/UFProofs.v
 src/named/egraph/UnionFindExplained.v
 src/named/egraph/DefsExplained.v
 src/named/ModelImpls.v

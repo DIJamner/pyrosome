@@ -64,7 +64,7 @@ Module TrieArrayList.
     {
       make _ a := (1, map.empty, a);
       get _ '(_,m,a) i := match map.get m i with Some a' => a' | None => a end;
-      set _ '(p,m,a) i a' := (Pos.max (p+1) i, map.put m p a', a);
+      set _ '(p,m,a) i a' := (Pos.max p (i+1), map.put m p a', a);
       length _ '(p,_,_) := p;
     (*TODO: wrong since positive has no true zero. Should be p-1.
       Use N instead of positive?
