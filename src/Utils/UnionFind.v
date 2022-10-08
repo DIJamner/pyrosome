@@ -92,11 +92,12 @@ Section UnionFind.
   
   Import ListNotations.
   
-  Inductive path_at (pa : tree positive) : positive -> list positive -> Prop :=
-  | path_at_root i : Some i = get i pa -> path_at pa i []
-  | path_at_cons p i j : path_at pa i p -> i<>j -> Some i = get j pa -> path_at pa j (i::p).
+  Inductive exact_rank (pa : tree positive) : positive -> nat -> Prop :=
+  | rank_0 i : Some i = get i pa -> exact_rank pa i 0
+  | rank_S n i j : exact_rank pa j n -> i<>j -> Some j = get i pa -> exact_rank pa i (S n).
+  Hint Constructors exact_rank : utils.
 
-
+(*
   Lemma path_unique pa i l1
     : path_at pa i l1 -> forall l2, path_at pa i l2 -> l1 = l2.
   Proof.
@@ -107,16 +108,25 @@ Section UnionFind.
       try congruence.
     assert (i = i0) by congruence; subst.
     erewrite IHpath_at; eauto.
-  Qed.
+  Qed.*)
 
   Definition is_parent u x y : Prop :=
     get y u.(parent) = Some x.
 
-  Definition rank_lt ra i j :=
-    match get i ra, get j ra with
-    | Some ir, Some jr => (ir < jr)%nat
-    | _,_ => False
-    end.
+  (* equivalent to exists + and if i,j have ranks*)
+  Definition rank_lt pa i j :=
+    forall n m,
+      exact_rank pa i n ->
+      exact_rank pa j m ->
+      (n < m)%nat.
+  
+  (* equivalent to exists + and if i,j have ranks*)
+  Definition rank_le pa i j :=
+    forall n m,
+      exact_rank pa i n ->
+      exact_rank pa j m ->
+      (n <= m)%nat.
+
 
   
   (* Holds when a has values for exactly the positives less than bound *)
@@ -129,24 +139,88 @@ Section UnionFind.
       | _, _ => False
       end.
 
-  Definition bounded_paths pa ra :=
-    forall i, exists l, path_at pa i l
-                        /\ exists ir, Some ir = get i ra
-                                      /\ (List.length l <= ir)%nat.
+  Definition bounded_paths pa l :=
+    forall i, i < l -> exists n, exact_rank pa i n.
   
   Record union_find_ok (u : union_find) :=
     {
       max_rank_ok : forall i j,
         (get i u.(rank)) = Some j ->
         (j <= u.(max_rank))%nat;
-      ranks_ok : forall i j,
-        get i u.(parent) = Some j ->
-        i = j \/ rank_lt u.(rank) j i;
-      parents_ok : bounded_paths (parent u) (rank u) ;
+      ranks_ok : forall i ir n,
+        get i u.(rank) = Some ir ->
+        exact_rank u.(parent) i n -> (n <= ir)%nat;
+      parents_ok : bounded_paths (parent u) u.(length);
+      (*1/2 implied by above*)
       parents_dense : dense u.(parent) u.(length);
       rank_dense : dense u.(rank) u.(length);
     }.
+
+
+  Lemma exact_rank_implies_parent_in_dom pa i n
+    : exact_rank pa i n ->
+      forall j,
+        get i pa = Some j ->
+        if get j pa then True else False.
+  Proof.
+    inversion 1; subst;
+      basic_goal_prep;
+      case_match; basic_utils_crush;
+      try congruence.
+    assert (j0 = j) by congruence; subst.
+    inversion H0; congruence.
+  Qed.
   
+  Lemma bounded_paths_all_lt pa l
+    : bounded_paths pa l ->
+      dense pa l ->
+      forall i j,
+        get i pa = Some j ->
+        j < l.
+  Proof.
+    unfold bounded_paths.
+    intros.
+    enough (if get j pa then True else False).
+    {
+      revert H2.
+      pose proof (H0 j).
+      case_match; try tauto.
+      intros _.
+      destruct (Pos.compare_spec j l); Lia.lia.
+    }
+    {
+      case_match; try tauto.
+      assert (i < l).
+      {
+        pose proof (H0 i).        
+        destruct (Pos.compare_spec i l); subst; rewrite H1 in H2; try Lia.lia.
+      }
+      apply H in H2.
+      break.
+      inversion H2; subst; clear H2; try congruence.
+      assert (j = j0) by congruence; subst.
+      inversion H3; subst; clear H3; try congruence.
+    }
+  Qed.
+
+  Lemma rank_pred pa i n
+    : exact_rank pa i n ->
+      forall j,
+      get i pa = Some j ->
+      exact_rank pa j (pred n).
+  Proof.
+    induction 1;
+      basic_goal_prep; basic_utils_crush.
+    {
+      assert (i = j) by congruence; subst.
+      basic_utils_crush.
+    }
+    {
+      assert (j = j0) by congruence; subst.
+      inversion H; subst; eauto with utils.
+    }
+  Qed.
+    
      
   Lemma find_aux_preserves_dense l mr pa i pa' i'
     : dense pa l ->
@@ -205,14 +279,610 @@ Section UnionFind.
   Qed.
 
   
-(*TODO: move to Utils*)
+  Lemma rank_unique pa i m n
+    : exact_rank pa i n -> exact_rank pa i m -> n = m.
+    intro H.
+    revert m.
+    induction H;
+      inversion 1;
+      basic_goal_prep;
+      basic_utils_crush;
+      try congruence.
+    assert (j = j0) by congruence; subst.
+    apply IHexact_rank; eauto.
+  Qed.
+    
+  Lemma rank_le_refl pa i
+    : rank_le pa i i.
+  Proof.
+    intros m n He1 He2.
+    enough (m = n) by Lia.lia.
+    eauto using rank_unique.
+  Qed.
+  Hint Resolve rank_le_refl : utils.
+  
+  
+  Lemma rank_le_parent p i pa
+    : Some p = get i pa ->
+      rank_le pa p i.
+  Proof.
+    unfold rank_le.
+    intros.
+    revert dependent p.
+    revert n.
+    induction H1;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      assert (p = i) by congruence; subst.
+      enough (n = 0)%nat by Lia.lia.
+      eapply rank_unique; eauto with utils.      
+    }
+    {
+      assert (j = p) by congruence; subst.
+      assert (n = n0) by eauto using rank_unique; subst.
+      Lia.lia.
+    }
+  Qed.
 
-Fixpoint all_unique {A} (l : list A) :=
-  match l with
-  | [] => True
-  | n::l' => ~ In n l' /\ all_unique l'
-  end.
-Arguments all_unique {_} !_ /.
+  Lemma rank_le_trans pa l i j k
+    : bounded_paths pa l ->
+      j < l ->
+      rank_le pa i j ->
+      rank_le pa j k ->
+      rank_le pa i k.
+  Proof.
+    unfold rank_le;
+      intuition.
+    specialize (H _ H0).
+    break.
+    etransitivity.
+    - eapply H1; eauto.
+    - eapply H2; eauto.
+  Qed.
+
+  (*
+  Lemma exact_rank_set_same pa i ri
+    : exact_rank pa i ri ->
+      forall i' ri',
+      exact_rank pa i' ri' ->
+      (ri' <= ri)%nat ->
+      exists n, exact_rank (set i i' pa) i n.
+  Proof.
+    induction 1.
+    {
+      intros.
+      destruct (Pos.eq_dec i i'); subst.
+      {
+        exists 0%nat; constructor; rewrite gss; eauto.
+      }
+      exists (S ri').
+        ex
+      
+  
+  Lemma exact_rank_set pa j rj
+    (*TODO: what hyps needed?*)
+    : (*dense pa l ->
+      i < l ->
+      i' < l ->*)
+    exact_rank pa j rj ->
+    forall i i' ri ri',
+      exact_rank pa i ri ->
+      exact_rank pa i' ri' ->
+      (ri' <= ri)%nat ->
+      exists n, exact_rank (set i i' pa) j n.
+  Proof.
+    induction 1.
+    {
+      intros.
+      destruct (Pos.eq_dec i0 i); subst.
+      {
+        destruct (Pos.eq_dec i i'); subst.
+        {
+          exists 0%nat; constructor; rewrite gss; eauto.
+        }
+        exists (S ri').
+        econstructor 2; eauto.
+        - econstructor; rewrite gso; eauto.
+          assert (exact_rank pa i 0)%nat by basic_utils_crush.
+          specialize (H2 _ _ H6 H7).
+          assert (x = 0)%nat by Lia.lia; subst.
+          inversion H6; eauto.
+        - rewrite gss; eauto.
+      }
+      {
+        exists 0%nat; constructor; rewrite gso; eauto.
+      }
+    }
+    {
+      destruct (Pos.eq_dec i j).
+    {
+      intros; subst.
+    }
+   *)
+
+  
+  Lemma exact_rank_set_le' pa i i' j n m
+    : exact_rank pa j n ->
+      exact_rank pa i m ->
+      (n <= m)%nat ->
+      i <> j ->
+      exact_rank (set i i' pa) j n.
+  Proof.
+    intro H; revert i i' m.
+    induction H;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      econstructor; eauto.
+      rewrite gso; eauto.
+    }
+    {
+      econstructor; cycle 2.
+      { rewrite gso; eauto. }
+      2:{ eauto. }
+      eapply IHexact_rank; eauto.
+      { Lia.lia. }
+      intro; subst.
+      pose proof (rank_unique _ _ _ _ H H2).
+      Lia.lia.
+    }
+  Qed.
+  
+  Lemma exact_rank_set_le pa i i' n m
+    : exact_rank pa i' n ->
+      exact_rank pa i m ->
+      (n <= m)%nat ->
+      i <> i' ->
+      exact_rank (set i i' pa) i (S n).
+  Proof.
+    intros H1 H2.
+    revert n i' H1.
+    induction H2.
+    {
+      inversion 1; subst; try Lia.lia.
+      intros _ H3.
+      econstructor; eauto.
+      2: now rewrite gss.
+      constructor; eauto.
+      rewrite gso; eauto.
+    }
+    {
+      intros.
+      econstructor; cycle 2.
+      { rewrite gss;eauto. }
+      2:{ auto. }
+      inversion H1; subst; clear H1.
+      {
+        econstructor; eauto.
+        rewrite gso; eauto.
+      }
+      {
+        econstructor; cycle 2.
+        { rewrite gso; eauto. }
+        2:{ auto. }
+        assert (j0 <> i).
+        {
+          intro; subst.
+          pose proof (rank_S _ _ _ _ H2 H H0).
+          assert (n1 = S n) by eauto using rank_unique.
+          Lia.lia.
+        }
+        eapply exact_rank_set_le'; [auto | | | auto].
+        {
+          econstructor 2; cycle 2; eauto.
+        }
+        Lia.lia.        
+      }      
+    }
+    (*TODO: did I do induction? probably has a simpler proof*)
+  Qed.
+  
+  Lemma bounded_paths_set pa i i' l
+    : rank_le pa i' i ->
+      bounded_paths pa l ->
+      dense pa l ->
+      i < l ->
+      i' < l ->
+      bounded_paths (set i i' pa) l.
+  Proof.
+    unfold bounded_paths.
+    intros.
+    revert dependent i.
+    revert dependent i'.
+    pose proof (H0 _ H4); break.
+    induction H; basic_goal_prep; basic_utils_crush.
+    {
+      
+      destruct (Pos.eq_dec i0 i).
+      {
+        subst.
+        pose proof (H0 _ H3); break.
+        destruct (Pos.eq_dec i i'); subst.
+        {
+          exists 0%nat; constructor; rewrite gss; eauto.
+        }
+        exists 1%nat; econstructor 2; eauto.
+        - econstructor; rewrite gso; eauto.
+          assert (exact_rank pa i 0)%nat by basic_utils_crush.
+          specialize (H2 _ _ H6 H7).
+          assert (x = 0)%nat by Lia.lia; subst.
+          inversion H6; eauto.
+        - rewrite gss; eauto.
+      }
+      {
+        exists 0%nat; constructor; rewrite gso; eauto.
+      }
+    }
+    {
+      specialize (IHexact_rank ltac:(eapply bounded_paths_all_lt; eauto)).
+      specialize (IHexact_rank _ H5).
+      pose proof (IHexact_rank _ H6 H7); break.
+      destruct (Pos.eq_dec i0 i).
+      2:{        
+        exists (S x); econstructor; eauto.
+        rewrite gso; eauto.
+      }
+      subst.
+      pose proof (H0 _ H5).
+      break.
+      destruct (Pos.eq_dec i i'); subst.
+      {
+        exists 0%nat; constructor; rewrite gss; eauto.
+      }
+      exists (S x0).
+      econstructor; cycle 1; eauto.
+      { rewrite gss; auto. }
+      eapply exact_rank_set_le'.
+      { eauto. }
+      { econstructor 2; cycle 2; eauto. }
+      {
+        assert (exact_rank pa i (S n)); basic_utils_crush.
+      }
+      { eauto. }
+    }
+  Qed.
+
+  
+  Lemma dense_set_le {A} (a : tree A) l i i'
+    : dense a l ->
+      i < l ->
+      dense (set i i' a) l.
+  Proof.
+    unfold dense.
+    intros Hd Hlt i0.
+    specialize (Hd i0).
+    revert Hd.
+    destruct (Pos.eq_dec i0 i); subst;
+      [rewrite !gss | rewrite !gso]; auto.
+    destruct (Pos.compare_spec i l); Lia.lia.
+  Qed.
+
+  Lemma find_aux_preserves_bounds mr l pa i pa' i'
+    : bounded_paths pa l ->
+      dense pa l ->
+      i < l ->
+      find_aux mr pa i = Some (pa', i') ->
+      (i' < l /\ dense pa' l /\ bounded_paths pa' l /\ (rank_le pa' i' i) /\ (forall j, j < l -> rank_le pa i j -> i <> j -> get j pa = get j pa')).
+  Proof.
+    revert pa i pa' i'.
+    induction mr;
+      basic_goal_prep.
+    { basic_utils_crush. }
+    {
+      revert H2.
+      case_match; try congruence.
+      case_match.
+      {
+        basic_goal_prep;basic_utils_crush.
+      }
+      case_match; try congruence.
+      basic_goal_prep.
+      safe_invert H2.
+
+      symmetry in HeqH1.
+      assert (p < l) by eauto using bounded_paths_all_lt.
+      specialize (IHmr _ _ _ _ H H0 H2 HeqH1).
+      break.
+      assert (rank_le t0 i' i).
+      {
+        eapply rank_le_trans; eauto.
+        intros m n Hem Hen.
+        pose proof (rank_le_parent _ _ _ HeqH2).
+        symmetry in HeqH0.
+        apply Pos.eqb_neq in HeqH0.
+        specialize (H7 _ H1 H8 HeqH0).
+        rewrite H7 in HeqH2.
+        symmetry in HeqH2.
+        pose proof (rank_pred _ _ _ Hen _ HeqH2).
+        assert (m = pred n) by eauto using rank_unique; subst; Lia.lia.
+      }
+      intuition eauto using dense_set_le, bounded_paths_set.
+      2:{ rewrite gso; eauto.
+          symmetry in HeqH0.
+          rewrite Pos.eqb_neq in HeqH0.
+          pose proof (H _ H1).          
+          pose proof (H _ H9).
+          break.
+          inversion H12; subst; try congruence.
+          assert (j0 = p) by congruence; subst.
+          apply H7; eauto.
+          {            
+            intros m' n' Hm Hn.
+            assert (x = n') by eauto using rank_unique; subst.
+            assert (n = m') by eauto using rank_unique; subst.
+            specialize (H10 _ _ H12 Hn).
+            Lia.lia.
+          }
+          intro; subst.
+          specialize (H10 _ _ H12 H14).
+          Lia.lia.
+      }
+      {
+        destruct (Pos.eq_dec i i'); subst; eauto with utils.
+        intros m' n' Hm Hn.
+        inversion Hn; subst; eauto with utils.
+        {
+          rewrite gss in *; eauto; congruence.
+        }
+        {
+          rewrite gss in H11; safe_invert H11.
+          assert (m' = n0) by eauto using rank_unique.
+          Lia.lia.
+        }
+      }
+    }
+  Qed.
+  
+  (*TODO: move to Utils.v*)
+  Section Closure.
+    Context {A : Type}
+      (R : A -> A -> Prop).
+    Inductive equivalence_closure : A -> A -> Prop :=
+    | eq_clo_base a b : R a b -> equivalence_closure a b
+    | eq_clo_refl a : equivalence_closure a a
+    | eq_clo_trans a b c : equivalence_closure a b -> equivalence_closure b c -> equivalence_closure a c
+    | eq_clo_sym a b : equivalence_closure a b -> equivalence_closure b a.
+    Hint Constructors equivalence_closure : utils.
+
+    Inductive TR_closure : A -> A -> Prop :=
+    | TR_refl a : TR_closure a a
+    | trans_clo_succ a b c : R a b -> TR_closure b c -> TR_closure a c.
+    Hint Constructors TR_closure : utils.
+
+    Lemma TR_closure_trans a b c
+      : TR_closure a b ->
+        TR_closure b c ->
+        TR_closure a c.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    
+  Lemma TR_implies_equiv a b
+    : TR_closure a b ->
+      equivalence_closure a b.
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  End Closure.
+
+    Hint Constructors equivalence_closure : utils.
+    Hint Constructors TR_closure : utils.
+    Hint Resolve TR_closure_trans TR_implies_equiv : utils.
+
+  
+  Definition Prop2_equiv {A B} (R1 R2 : A -> B -> Prop) :=
+    forall a b, R1 a b <-> R2 a b.
+
+  
+  Notation pa_rel pa := (fun x y => Some x = get y pa).
+
+  
+  (*TODO: move to Utils*)
+
+  Fixpoint all_unique {A} (l : list A) :=
+    match l with
+    | [] => True
+    | n::l' => ~ In n l' /\ all_unique l'
+    end.
+  Arguments all_unique {_} !_ /.
+
+  Definition represents_sem (pa : tree positive) (f : positive -> positive) :=
+    forall a b, equivalence_closure (pa_rel pa) a b <-> f a = f b.
+
+  Inductive represents : tree positive -> (positive -> positive) -> Prop :=
+  | repr_empty : represents PTree.empty id
+  | repr_set pa f i j
+    : represents pa f ->
+      represents (set i j pa) (fun x => if x =? i then f j else f x).
+
+  Lemma empty_represents
+    : represents_sem PTree.empty id.
+  Proof.
+    unfold represents_sem, id; intros;
+      simpl;
+      basic_goal_prep; basic_utils_crush.
+    induction H; congruence.
+  Qed.
+
+  Lemma find_aux_represents mr pa f i pa' i'
+    : represents pa f ->
+      Some (pa', i') = find_aux mr pa i ->
+      represents pa f.
+  
+  (*TODO: want sets instead of lists.
+    Will it be a problem?
+   *)
+  Inductive parent_tree_containing (pa : tree positive)
+    : positive -> list positive -> Prop :=
+  | parent_tree_root i : parent_tree_containing pa i []
+  | parent_tree_branch i li j lj
+    : parent_tree_containing pa i li ->
+      parent_tree_containing pa j lj ->
+      Some j = get i pa ->
+      parent_tree_containing pa j (i::li++lj).
+
+  Inductive parent_forest pa :=
+  | empty_forest : parent_forest pa
+  
+  Definition parent_forest pa (roots : list positive) l :=
+    forall i, i < l ->
+              exists r lst, In r roots
+
+  (*TODO: not true w/out cycle conditions*)
+  Lemma pa_rel_set pa a b i j
+    : equivalence_closure (pa_rel pa) a b ->
+      TR_closure (pa_rel pa) j i ->
+      equivalence_closure (pa_rel (set i j pa)) a b.
+  Proof.
+    intro H; revert j i; induction H;
+      basic_goal_prep;
+      basic_utils_crush.
+    destruct (Pos.eq_dec b i);
+      subst;
+      basic_utils_crush.
+    {
+      inversion H0; subst.
+      erewrite gss.
+      econstructor 1.
+    
+    
+
+  Lemma find_aux_preserves_rel mr pa i pa' i'
+    : Some (pa', i') = find_aux mr pa i ->
+      (forall a b, TR_closure (pa_rel pa) a b
+                   <-> TR_closure (pa_rel pa') a b)
+      /\ TR_closure (pa_rel pa) i' i.
+  Proof.
+    revert pa i pa' i'.
+    induction mr;
+      basic_goal_prep.
+    { basic_utils_crush. }
+    {
+      revert H.
+      case_match; try congruence.
+      destruct (Pos.eq_dec p i); subst.
+      {
+        rewrite Pos.eqb_refl.
+        basic_utils_crush.
+      }
+      {
+        pose proof n as Hneq;
+          apply Pos.eqb_neq in Hneq;
+          rewrite Hneq.
+        case_match; try congruence.
+        break.
+        intro H'; safe_invert H'.
+        specialize (IHmr _ _ _ _ HeqH0).
+        basic_utils_crush.
+        {
+          assert (TR_closure (pa_rel pa) p0 i) by eauto with utils.
+          rewrite H in *.
+        (*TODO: only true when i < i' *)
+        2:{        
+  
+  Lemma find_aux_reduces_rank mr l pa i pa' i'
+    : bounded_paths pa l ->
+      dense pa l ->
+      i < l ->
+      Some (pa', i') = find_aux mr pa i ->
+      forall j m,
+        exact_rank pa j m ->
+        exists n, exact_rank pa' j n /\ (n <= m)%nat.
+  Proof.
+    revert pa i pa' i'.
+    induction mr;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H2; case_match; try congruence.
+    destruct (Pos.eq_dec p i); subst;
+      [ rewrite Pos.eqb_refl;intro H'; safe_invert H'; eauto|].
+    apply Pos.eqb_neq in n; rewrite n.
+    case_match; try congruence; eauto.
+    break.
+    intro H'; safe_invert H'.
+    assert (p < l) by eauto using bounded_paths_all_lt.
+    specialize (IHmr _ _ _ _ H H0 H2 HeqH0 _ _ H3).
+    break.
+    symmetry in HeqH0.
+    pose proof (find_aux_preserves_bounds _ _ _ _ _ _ H H0 H2 HeqH0).
+    break.
+    apply Pos.eqb_neq in n.
+    destruct (Pos.eq_dec i j); subst.
+    {
+      pose proof HeqH2.
+      rewrite H10 in H11; eauto; cycle 1.
+      {
+        intros m' n' Hm Hn.
+        inversion Hn; subst; try congruence.
+        assert (p = j0) by congruence; subst.
+        assert (m' = n0) by eauto using rank_unique; subst.
+        Lia.lia.
+      }
+      pose proof (H8 _ H2); break.
+      pose proof (H8 _ H6); break.
+      assert (j <> p0).
+      {
+        intro; subst.
+        assert (exact_rank t0 p0 (S x0)) by eauto with utils.
+        specialize (H9 _ _ H14 H12); Lia.lia.
+      }
+      eexists; split.
+      {
+        eapply exact_rank_set_le.
+        1: eauto.
+        1: eauto.
+        2: eauto.
+        eapply H9; eauto.
+        2:eauto.
+        3:eauto.
+        eauto.
+        
+        apply exact_rank_set_le'.
+    eauto.
+    {
+      
+      .
+        eexists; split; eauto.
+      
+
+  Lemma empty_ok : union_find_ok empty.
+  Proof.
+    unfold empty; constructor; simpl;
+      unfold bounded_paths, dense;
+      eauto;
+      try congruence;
+      try Lia.lia;
+      intro i;
+      rewrite ?gempty;
+      destruct (Pos.compare_spec i 1); subst; eauto;
+      Lia.lia.
+  Qed.
+
+  Lemma find_ok u u' i j
+    : union_find_ok u ->
+      (*Note: can relax this if max_rank > 1/sim conditions*)
+      i < u.(length) ->
+      Some (u', j) = find u i ->
+      union_find_ok u'.
+  Proof.
+    unfold find.
+    destruct u; simpl.
+    intro H; destruct H; simpl in *.
+    case_match; try congruence.
+    break.
+    intros Hlt H; safe_invert H.
+    symmetry in HeqH.
+    pose proof (find_aux_preserves_bounds _ _ _ _ _ _ parents_ok0 parents_dense0 Hlt HeqH).
+    break.
+    constructor; simpl; eauto.
+  
 
 Lemma in_split_path pa i l
   : path_at pa i l ->
