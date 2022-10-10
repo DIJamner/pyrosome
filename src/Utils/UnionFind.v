@@ -21,6 +21,42 @@ From Utils Require Import Utils Monad.
 From Utils Require NatlikePos.
 (*From Utils Require TrieMap NatlikePos.*)
 
+
+Hint Rewrite gempty : utils.
+Hint Rewrite Pos.eqb_refl : utils.
+Hint Rewrite gss : utils.
+Hint Rewrite grs : utils.
+
+
+Lemma set_set_same {A} a (b : A) p
+  : (set a b (set a b p)) = (set a b p).
+Proof.
+  eapply extensionality.
+  intro i;
+    destruct (Pos.eq_dec i a);
+    subst;
+    basic_utils_crush.
+  rewrite !gso; eauto.
+Qed.
+Hint Rewrite @set_set_same : utils.
+
+
+Lemma remove_remove_same A (t : tree A) i
+  : remove i (remove i t) = remove i t.
+Proof.
+  apply extensionality;
+    intro j;
+    destruct (Pos.eq_dec i j);
+    subst;
+    rewrite ?grs;
+    rewrite ?gro by eauto;
+    auto.
+Qed.
+Hint Rewrite remove_remove_same : utils.
+
+
+Hint Rewrite grs : utils.
+
 Section UnionFind.
 
   Local Arguments empty {_}%type_scope.
@@ -161,7 +197,6 @@ Section UnionFind.
     forall a b, R1 a b <-> R2 a b.
 
 
-  Hint Rewrite Pos.eqb_refl : utils.
   
   Notation pa_rel pa := (fun x y => Some x = get y pa).
 
@@ -188,7 +223,6 @@ Section UnionFind.
            | None => None
            end).
 
-  Hint Rewrite gss : utils.
   
   Definition disjoint_sum {A} (t1 t2 t12: tree A) : Prop :=
     forall i,
@@ -204,11 +238,17 @@ Section UnionFind.
     exists t1 t2, disjoint_sum t1 t2 t12 /\ (P1 t1) /\ (P2 t2).
 
   Notation singleton i j := (set i j PTree.empty).
+
+  
+  Definition has_key {A} i (t : tree A) :=
+    if get i t then True else False.
+  Hint Unfold has_key : utils.
   
   Inductive tree_pointing_to : positive -> tree positive -> Prop :=
   | empty_points j : tree_pointing_to j PTree.empty
   | successor_points pa1 i1 i2 pa
     : i1 <> i2 ->
+      ~ has_key i2 pa1 ->
       tree_pointing_to i1 pa1 ->
       disjoint_sum pa1 (singleton i1 i2) pa ->
       tree_pointing_to i2 pa
@@ -288,17 +328,6 @@ Section UnionFind.
   Qed.
 
   
-  Lemma set_set_same {A} a (b : A) p
-    : (set a b (set a b p)) = (set a b p).
-  Proof.
-    eapply extensionality.
-    intro i;
-      destruct (Pos.eq_dec i a);
-      subst;
-      basic_utils_crush.
-    rewrite !gso; eauto.
-  Qed.
-  Hint Rewrite @set_set_same : utils.
 
   
   Lemma set_set_comm {A} a c (b d : A) p
@@ -396,11 +425,12 @@ Section UnionFind.
     : i <> j -> tree_pointing_to j (singleton i j).
   Proof.
     econstructor 2;
+      unfold has_key;
+      basic_utils_crush.
       eauto with utils.
   Qed.
   Hint Resolve singleton_points : utils.
 
-  Hint Rewrite gempty : utils.
 
   
   Lemma disjoint_remove A i1 i2 (pa : tree A)
@@ -500,7 +530,6 @@ Section UnionFind.
     {
    *)
 
-  Hint Rewrite grs : utils.
   
 (*
   Lemma disjoint_sum_remove A (pa1 pa2 pa : tree A) i
@@ -519,22 +548,6 @@ Section UnionFind.
         repeat (case_match; basic_utils_crush;
               rewrite ?gro in * by eauto; try tauto; try congruence).*)
 
-  Lemma remove_remove_same A (t : tree A) i
-    : remove i (remove i t) = remove i t.
-  Proof.
-    apply extensionality;
-      intro j;
-      destruct (Pos.eq_dec i j);
-      subst;
-      rewrite ?grs;
-      rewrite ?gro by eauto;
-      auto.
-  Qed.
-  Hint Rewrite remove_remove_same : utils.
-
-  Definition has_key {A} i (t : tree A) :=
-    if get i t then True else False.
-  Hint Unfold has_key : utils.
 
   
   Lemma disjoint_sum_has_key_l A (pa1 pa2 pa : tree A) k
@@ -576,25 +589,25 @@ Section UnionFind.
       intros;
       basic_utils_crush.
     {
-      pose proof H1.
-      specialize (H1 j);
-        revert H1.
-      rewrite <- !H2.
+      pose proof H2.
+      specialize (H2 j);
+        revert H2.
+      rewrite <- !H3.
       basic_utils_crush.
       destruct (Pos.eq_dec i1 j); subst.
       {
-        revert H1;
+        revert H2;
           basic_utils_crush.
-        revert H1;
+        revert H2;
           case_match; auto; tauto.
       }
       {
-        revert H1;
+        revert H2;
           case_match;
           rewrite !gso, !gempty by eauto;
           auto; try tauto.
         intro; subst.
-        apply IHtree_pointing_to in HeqH1.
+        apply IHtree_pointing_to in HeqH2.
         right.
         intuition subst.
         {
@@ -690,7 +703,6 @@ Section UnionFind.
               try congruence).
   Qed.
   
-  Hint Rewrite grs : utils.
   
   Lemma remove_set_diff A i j (k:A) pa
     : i <> j -> remove i (set j k pa) = set j k (remove i pa).
@@ -761,34 +773,88 @@ Section UnionFind.
       intro H'; eapply disjoint_sum_has_key in H'; eauto.
       destruct H'.
       2:{
-        revert H2; unfold has_key.
+        revert H3; unfold has_key.
         destruct (Pos.eq_dec j i1);
           basic_utils_crush.
-        rewrite gso in H2; eauto.
+        rewrite gso in H3; eauto.
       }
       {
-        specialize (IHtree_pointing_to H2).
+        specialize (IHtree_pointing_to H3).
         
         intuition subst.
         
       intuition subst.
+      }
     }
-      unfo
-    }
+  Qed.
+
+  Definition and1 {A} (P1 P2 : A -> Prop) a : Prop :=
+    P1 a /\ P2 a.
+  
+  Definition not1 {A} (P : A -> Prop) a : Prop :=
+    ~ P a.
+
+  
+  Lemma disjoint_remove_left A (pa1 pa2 pa : tree A) j
+    : has_key j pa1 ->
+      disjoint_sum pa1 pa2 pa ->
+      disjoint_sum (remove j pa1) pa2 (remove j pa).
+  Proof.
+    intros Hk H i;
+      specialize (H i);
+      destruct (Pos.eq_dec i j);
+      unfold has_key in *;
+      revert Hk;
+      basic_utils_crush;
+      revert H Hk;
+      repeat (case_match;
+              subst;
+              autorewrite with utils;
+              try tauto;
+              try congruence);
+      intros;
+      rewrite ?gro in * by eauto;
+      try congruence.
+  Qed.
+  Hint Resolve disjoint_remove_left : utils.
     
-      2: {
+  Lemma disjoint_sum_comm A (pa1 pa2 pa : tree A)
+    : disjoint_sum pa1 pa2 pa ->
+      disjoint_sum pa2 pa1 pa.
+  Proof.
+    intros H i;
+      specialize (H i);
+      revert H;
+      repeat (case_match;
+              subst;
+              autorewrite with utils;
+              try tauto;
+              try congruence).
+  Qed.      
+      
+  Lemma disjoint_sum_assoc A (pa1 pa2 pa pa11 pa12 : tree A)
+    : disjoint_sum pa1 pa2 pa ->
+      disjoint_sum pa11 pa12 pa1 ->
+      exists pa2',
+        disjoint_sum pa11 pa2 pa2'
+        /\ disjoint_sum pa12 pa2' pa.
+  Proof.
+    (*TODO: really want concat here *)
+  Admitted.
 
   Lemma tree_split pa i
     : tree_pointing_to i pa ->
        forall j,
          has_key j pa ->
-         sep (tree_pointing_to i) (tree_pointing_to j) (remove j pa).
+         sep (tree_pointing_to i)
+           (and1 (not1 (has_key i)) (tree_pointing_to j)) (remove j pa).
   Proof.
+    unfold and1, not1.
     induction 1;
       intros;
       basic_utils_crush.
     {
-      pose proof (disjoint_remove' _ _ _ _ _ H1);
+      pose proof (disjoint_remove' _ _ _ _ _ H2);
         subst.
       destruct (Pos.eq_dec j i1); subst.
       {
@@ -796,20 +862,20 @@ Section UnionFind.
         intuition eauto with utils.
       }
       {
-        eapply disjoint_sum_has_key in H2; eauto.
+        eapply disjoint_sum_has_key in H3; eauto.
         unfold has_key in *; rewrite gso, gempty in * by eauto;
           intuition subst.
-        apply IHtree_pointing_to in H3.
+        apply IHtree_pointing_to in H4.
         unfold sep in *; break.
         exists (set i1 i2 x), x0;
           intuition eauto with utils.
         {
-          erewrite remove_remove_diff in H2; eauto.
+          erewrite remove_remove_diff in H3; eauto.
           replace (remove j pa) with (set i1 i2 (remove i1 (remove j pa))).
           {
             eapply disjoint_sum_set_left; auto.
-            specialize (H2 i1);
-              repeat (revert H2;
+            specialize (H3 i1);
+              repeat (revert H3;
                       case_match;
                       basic_utils_crush;
                       try tauto; try congruence).
@@ -830,16 +896,59 @@ Section UnionFind.
           }            
         }
         {
-          econstructor 2; eauto.
-          eapply disjoint_sum_set_right';
-            eauto with utils.
-          specialize (H2 i1);
-              repeat (revert H2;
-                      case_match;
-                      basic_utils_crush;
-                      try tauto; try congruence).
-          rewrite gro in HeqH1 by eauto.
-          rewrite grs in HeqH1; congruence.
+          assert (~ has_key i1 x).
+          {
+            unfold has_key.
+            specialize (H3 i1);
+              revert H3.
+            case_match; try tauto; subst.
+            rewrite gro; eauto.
+            rewrite grs.
+            case_match; auto.
+          }
+          econstructor 2; cycle 3.
+          {
+            eapply disjoint_sum_set_right';
+              eauto with utils.
+            revert H7;
+              unfold has_key;
+              case_match; try tauto.
+          }              
+          1:eauto.
+          {
+            unfold has_key.
+            revert H0.
+            rewrite gro; eauto.
+
+            case_match; subst; try tauto.
+            intros _.
+            case_match; subst; try tauto.
+            intros _.
+            specialize (H3 i2);
+              revert H3.
+            rewrite <- !HeqH1.
+            destruct (Pos.eq_dec i2 j); subst;
+              basic_utils_crush;
+              revert H3;  case_match; try tauto.
+            rewrite ! gro by eauto.
+            rewrite <- HeqH0.
+            auto.
+          }
+          {
+            auto.
+          }
+        }
+        {
+          specialize (H3 i2);
+            revert H7 H0 H3.
+          repeat (case_match; subst;
+                  autorewrite with utils; try tauto;
+                  try congruence).
+          intros _ _ ?; subst.
+          destruct (Pos.eq_dec i2 j);
+            basic_utils_crush.
+          rewrite gro in HeqH3 by eauto.
+          congruence.
         }
       }
     }
@@ -851,146 +960,135 @@ Section UnionFind.
         unfold sep in *; break.
         assert (tree_pointing_to i (set j i x0)).
         {
-          econstructor 2; eauto.
+          econstructor 2; eauto with utils.
+          {
+            intro; subst;
+              eapply key_not_root.
+            - apply H.
+            - apply H3.
+            - auto.
+          }
+          {
+            apply disjoint_sum_set_right';
+              basic_utils_crush.
+            enough (~ has_key j x0).
+            {
+              revert H7; unfold has_key; case_match; tauto.
+            }
+            intro Hk.
+            eapply key_not_root.
+            - apply H6.
+            - apply Hk.
+            - auto.
+          }
+        }
+        {
+          assert (disjoint_sum (remove j pa1) pa2 (remove j pa))
+            by eauto with utils.
+          epose proof (disjoint_sum_assoc _ _ _ _ _ _ H8 H2);
+            break.
+          exists x1, x0; repeat split; auto.
+          2:{
+            econstructor 3; cycle 2; eauto.
+          }
+          apply disjoint_sum_comm; auto.
         }
       }
-      eauto with utils.
+      {
+        pose proof (IHtree_pointing_to2 _ H3).
+        unfold sep in *; break.
+        assert (tree_pointing_to i (set j i x0)).
+        {
+          econstructor 2; eauto with utils.
+          {
+            intro; subst;
+              eapply key_not_root.
+            - apply H0.
+            - apply H3.
+            - auto.
+          }
+          {
+            apply disjoint_sum_set_right';
+              basic_utils_crush.
+            enough (~ has_key j x0).
+            {
+              revert H7; unfold has_key; case_match; tauto.
+            }
+            intro Hk.
+            eapply key_not_root.
+            - apply H6.
+            - apply Hk.
+            - auto.
+          }
+        }
+        {
+          assert (disjoint_sum pa1 (remove j pa2) (remove j pa)).
+          {
+            eapply disjoint_sum_comm.
+            eapply disjoint_remove_left; eauto.
+            eapply disjoint_sum_comm.
+            auto.
+          }
+          eapply disjoint_sum_comm in H8.
+          epose proof (disjoint_sum_assoc _ _ _ _ _ _ H8 H2);
+            break.
+          exists x1, x0; repeat split; auto.
+          2:{
+            econstructor 3; cycle 2; eauto.
+          }
+          apply disjoint_sum_comm; auto.
+        }
+      }
+        
     }
-    
+  Qed.
+
+  
+  Lemma set_remove_same A i (j:A) pa
+    : set i j (remove i pa) = set i j pa.
+  Proof.
+    apply extensionality;
+      intro i';
+      destruct (Pos.eq_dec i i');
+      subst;
+      basic_utils_crush;
+      rewrite ?gso, ?gro by eauto;
+      basic_utils_crush.
+  Qed.      
+
   Lemma path_compression' i pa j
     : i <> j ->
+      has_key j pa ->
       tree_pointing_to i pa ->
         tree_pointing_to i (set j i pa).
   Proof.
-    Human reasoning:
-      split tree at j; reconnect
-    induction 2;
-      intros.
+    intros Hij Hk H.
+    eapply tree_split with (j:=j) in H; eauto.
     {
-      basic_utils_crush.
+      unfold sep in H; break.
+      destruct H1.
+      econstructor 3.
+      1: apply H0.
+      {
+        econstructor 2.
+        3: apply H2.
+        3:{
+          apply disjoint_sum_set_right';
+          basic_utils_crush.
+          admit.
+        }
+        1: eauto.
+        admit.
+      }
+      {
+        rewrite <- (set_remove_same _ j i pa).
+        apply disjoint_sum_set_right;
+          basic_utils_crush.
+        admit.        
+      }
     }
-    {
-      assert (set i1 i2 pa = pa).
-      {
-        apply extensionality.
-        intro i;
-          specialize (H2 i);
-          revert H2.
-        destruct (Pos.eq_dec i i1);
-          basic_utils_crush;
-          rewrite ?gso in* by eauto;
-          auto.
-        repeat
-          (revert H2;
-           case_match;
-           basic_utils_crush;
-           try tauto;
-           try congruence).
-      }
-      pose proof (disjoint_remove' _ _ _ _ _ H2);
-        subst.
-      (*successor*)
-      destruct (Pos.eq_dec j i1); subst.
-      {
-        rewrite <- H3 in H2 at 2.        
-        econstructor 2; eauto.
-      }
-      {
-        specialize (IHtree_pointing_to ltac:(auto)).
-        assert (tree_pointing_to i2 (set i1 i2 (set j i1 (remove i1 pa)))).
-        {
-          econstructor 2; cycle 2.
-          {
-            apply disjoint_remove.
-          }
-          1:eauto.
-          {
-            rewrite remove_set_diff by auto.
-            basic_utils_crush.
-          }
-        }
-        {
-          rewrite set_set_comm in H4 by eauto.
-          replace (set i1 i2 (remove i1 pa)) with pa in *.
-          {
-            econstructor 2.
-          }
-          rewrite srs in H4.
-        }
-              Lemma remove
-            replace (remove i1 (set j i1 (remove i1 pa)))
-              with (set j i1 (remove i1 pa)); auto.
-            apply extensionality;
-              intros.
-            
-          }
-          [ | apply H1 |];
-            eauto.
-          
-        }
-        
-          ccycle 2.
-          {
-            apply disjoint_sum_set_left; cycle 1;
-            eauto.
-          rewrite gso; eauto.
-        }
-        1:eauto.
-        {
-          
-          TODO: not the right sum
-          apply disjoint_sum_set_left.
-          
-        ; cycle 1.
-        { apply singleton_points.
-          clear H0.
-          eauto.
-        }
-        {
-          1: rewrite gss. gempty by auto; auto.
-          eassumption.
-        }
-        { econstructor 2; cycle 1; eauto. }
-        {
-            
-          rewrite 
-        ; eauto.
-      }
-      pose proof H0 as H';
-        apply disjoint_remove' in H';
-        subst.
-      econstructor 2; eauto.
-      basic_utils_crush.
-      econstructor.
-      1: eapply singleton_points.
-      rewrite gempty in *.
-      rewrite gso in*; eauto.
-      simpl in *; congruence.
-    }
-    {
-      destruct (Pos.eq_dec j i1);
-        subst;
-        basic_utils_crush.
-      {
-        rewrite gso in *; eauto.
-        rewrite set_set_comm by eauto.
-        pose proof (disjoint_get_some _ _ _ _ _ _ H1 H3) as H'.
-        destruct H' as [H' | H'].
-        2:{
-          pose proof H'.
-          apply IHparent_tree_at2 in H4; eauto.
-          econstructor; eauto.
-          eapply disjoint_sum_update_right; eauto.
-        }
-        {
-          pose proof H'.
-          apply IHparent_tree_at1 in H4; eauto.
-          econstructor; eauto.
-          eapply disjoint_sum_update_right; eauto.
-          
-          
-eauto        Lemma set_comm
-        
+  Admitted.
+    
     
   Lemma path_compression i pa
     : parent_tree_at i pa ->
@@ -998,6 +1096,16 @@ eauto        Lemma set_comm
         Some k = get j pa ->
         parent_tree_at i (set j i pa).
   Proof.
+    intros.
+    destruct H.
+    econstructor.
+    {
+      apply path_compression'.
+      3: eauto.
+      
+    cycle 1.
+    2
+    1:eauto.
     induction 1;
       intros;
       unfold singleton.
