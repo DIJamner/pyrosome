@@ -243,29 +243,102 @@ Section UnionFind.
   Definition has_key {A} i (t : tree A) :=
     if get i t then True else False.
   Hint Unfold has_key : utils.
+
   
+  Definition and1 {A} (P1 P2 : A -> Prop) a : Prop :=
+    P1 a /\ P2 a.
+  Hint Unfold and1 : utils.
+  
+  Definition not1 {A} (P : A -> Prop) a : Prop :=
+    ~ P a.
+  Hint Unfold not1 : utils.
+
+  Definition impl1 {A} (P1 P2 : A -> Prop) a :=
+    P1 a -> P2 a.
+  Hint Unfold impl1 : utils.
+  
+  Notation Uimpl1 P1 P2 := (forall a, P1 a -> P2 a) (only parsing).
+  
+  Lemma sep_impl {A} {P1 P1' P2 P2' : tree A -> Prop}
+    : Uimpl1 P1 P1' ->
+      Uimpl1 P2 P2' ->
+      Uimpl1 (sep P1 P2) (sep P1' P2').
+  Proof.
+    intros; unfold sep in *;
+      break.
+    exists x, x0; basic_utils_crush.
+  Qed.
+  
+  Local Lemma sep_impl_def {A} {P1 P1' P2 P2' : tree A -> Prop}
+    : Uimpl1 P1 P1' ->
+      Uimpl1 P2 P2' ->
+      Uimpl1 (sep P1 P2) (sep P1' P2').
+  Proof.
+    intros; unfold sep in *;
+      break.
+    exists x, x0; basic_utils_crush.
+  Defined.
+
+  Unset Elimination Schemes.
   Inductive tree_pointing_to : positive -> tree positive -> Prop :=
   | empty_points j : tree_pointing_to j PTree.empty
-  | successor_points pa1 i1 i2 pa
+  | successor_points i1 i2 pa
     : i1 <> i2 ->
-      ~ has_key i2 pa1 ->
-      tree_pointing_to i1 pa1 ->
-      disjoint_sum pa1 (singleton i1 i2) pa ->
+      sep (and1 (not1 (has_key i2)) (tree_pointing_to i1))
+          (eq (singleton i1 i2)) pa ->
       tree_pointing_to i2 pa
-  | branch_points pa1 pa2 i pa
-    : tree_pointing_to i pa1 ->
-      tree_pointing_to i pa2 ->
-      disjoint_sum pa1 pa2 pa ->
+  | branch_points i pa
+    : sep (tree_pointing_to i) (tree_pointing_to i) pa ->
       tree_pointing_to i pa.
+  Set Elimination Schemes.
   Hint Constructors tree_pointing_to : utils.
-  
-  Variant parent_tree_at i pa : Prop :=
-    | rooted_tree pa1
-      : tree_pointing_to i pa1 ->
-        disjoint_sum pa1 (singleton i i) pa ->
-        parent_tree_at i pa.
-  Hint Constructors parent_tree_at : utils.
 
+  Section TreePointingToInd.
+    Context  (P : positive -> tree positive -> Prop)
+      (Hempty : forall j : positive, P j PTree.empty)
+      (Hsucc : forall (i1 i2 : positive) (pa : tree positive),
+          i1 <> i2 ->
+          sep (and1 (and1 (not1 (has_key i2)) (tree_pointing_to i1)) (P i1))
+            (eq (singleton i1 i2)) pa ->
+          P i2 pa)
+      (Hbranch : forall (i : positive) (pa : tree positive),
+          sep (and1 (tree_pointing_to i) (P i))
+            (and1 (tree_pointing_to i) (P i)) pa -> P i pa).
+
+    Fixpoint tree_pointing_to_ind (p : positive) (t : tree positive)
+      (pf : tree_pointing_to p t) {struct pf} : P p t.
+    Proof.
+      refine (match pf with
+              | empty_points j => Hempty j
+              | successor_points i1 i2 pa Hneq pf' =>
+                  Hsucc i1 i2 pa Hneq _
+              | branch_points i pa pf' => _
+              end).
+      {
+        eapply sep_impl_def.
+        3: eauto.
+        2: eauto.
+        intros.
+        split; eauto.
+        apply tree_pointing_to_ind.
+        destruct H; eauto.
+      }
+      {
+        eapply Hbranch.
+        eapply sep_impl_def.
+        3: eauto.
+        all:
+        intros;
+        split; eauto;
+        apply tree_pointing_to_ind;
+        eapply (proj2).
+      }
+    Qed.
+  End TreePointingToInd.
+  
+  Definition parent_tree_at i pa : Prop :=
+    sep (tree_pointing_to i)
+      (eq (singleton i i)) pa.
 
   Lemma disjoint_sum_right A pa1 pa2 pa i (j : A)
     : disjoint_sum pa1 pa2 pa ->
@@ -298,37 +371,8 @@ Section UnionFind.
     case_match; try tauto.
     congruence.
   Qed.
-  
-  Lemma root_cycle i pa
-    : parent_tree_at i pa ->
-      Some i = get i pa.
-  Proof.
-    destruct 1;
-    specialize (H0 i);
-      revert H0;
-      repeat 
-        (case_match;
-         rewrite ?gss;
-         try tauto; try congruence).
-  Qed.
-  
-  Lemma roots_disjoint pa1 pa2 i1 i2 pa
-    : parent_tree_at i1 pa1 ->
-      parent_tree_at i2 pa2 ->
-      disjoint_sum pa1 pa2 pa ->
-      i1 <> i2.
-  Proof.
-    intros.
-    intro Heq; subst.
-    apply root_cycle in H, H0.
-
-    specialize (H1 i2).
-    rewrite <- H, <- H0 in H1.
-    auto.
-  Qed.
 
   
-
   
   Lemma set_set_comm {A} a c (b d : A) p
     : a <>c -> (set a b (set c d p)) = (set c d (set a b p)).
@@ -421,16 +465,49 @@ Section UnionFind.
   Qed.
   Hint Resolve disjoint_empty_right : utils.
 
-  Lemma singleton_points i j
-    : i <> j -> tree_pointing_to j (singleton i j).
+  
+  Lemma sep_get_r A P1 P2 t (j:A) i
+    : sep P1 P2 t ->
+      (forall t', P2 t' -> Some j = get i t') ->
+      Some j = get i t.
   Proof.
-    econstructor 2;
-      unfold has_key;
-      basic_utils_crush.
-      eauto with utils.
+    unfold sep;
+      intros; break.
+    specialize (H i);
+      specialize (H0 _ H2);
+      rewrite <- H0 in H;
+      revert H.
+    repeat (case_match; autorewrite with utils; try tauto).
   Qed.
-  Hint Resolve singleton_points : utils.
+  
+  
+  Lemma root_cycle i pa
+    : parent_tree_at i pa ->
+      Some i = get i pa.
+  Proof.
+    unfold parent_tree_at.
+    intros; eapply sep_get_r; eauto.
+    basic_utils_crush.
+  Qed.
 
+  (*
+  Lemma roots_disjoint pa1 pa2 i1 i2 pa
+    : parent_tree_at i1 pa1 ->
+      parent_tree_at i2 pa2 ->
+      disjoint_sum pa1 pa2 pa ->
+      i1 <> i2.
+  Proof.
+    intros.
+    intro Heq; subst.
+    apply root_cycle in H, H0.
+
+    specialize (H1 i2).
+    rewrite <- H, <- H0 in H1.
+    auto.
+  Qed.
+   *)
+
+  
 
   
   Lemma disjoint_remove A i1 i2 (pa : tree A)
@@ -486,7 +563,60 @@ Section UnionFind.
       revert H H0;
       repeat (case_match; try tauto; try congruence).
   Qed.
+
   
+  Lemma disjoint_sum_comm A (pa1 pa2 pa : tree A)
+    : disjoint_sum pa1 pa2 pa ->
+      disjoint_sum pa2 pa1 pa.
+  Proof.
+    intros H i;
+      specialize (H i);
+      revert H;
+      repeat (case_match;
+              subst;
+              autorewrite with utils;
+              try tauto;
+              try congruence).
+  Qed.
+  
+
+  Lemma sep_empty_left A (P1 P2 : _ -> Prop) (t : tree A)
+    : P1 PTree.empty -> P2 t -> sep P1 P2 t.
+  Proof.
+    intros; exists PTree.empty, t;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve sep_empty_left : utils.
+  
+  Lemma sep_empty_right A (P1 P2 : _ -> Prop) (t : tree A)
+    : P2 PTree.empty -> P1 t -> sep P1 P2 t.
+  Proof.
+    intros; exists t, PTree.empty;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve sep_empty_right : utils.
+
+  
+  Lemma not_has_key_empty A j
+    : ~ has_key j (@PTree.empty A).
+  Proof.
+    unfold has_key;
+      case_match;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve not_has_key_empty : utils.
+
+  Hint Unfold and1 : utils.
+  Hint Unfold not1 : utils.
+
+  
+  Lemma singleton_points i j
+    : i <> j -> tree_pointing_to j (singleton i j).
+  Proof.
+    econstructor 2; basic_utils_crush.
+  Qed.
+  Hint Resolve singleton_points : utils.
+
   Lemma disjoint_remove' A i1 i2 (pa1 pa : tree A)
     : disjoint_sum pa1 (singleton i1 i2) pa ->
       pa1 = remove i1 pa.
@@ -579,7 +709,8 @@ Section UnionFind.
             try tauto; try congruence).
   Qed.
   Hint Resolve disjoint_sum_has_key_r : utils.
-      
+
+  (*
   Lemma tree_pointing_to_get_in_tree i pa
     : tree_pointing_to i pa ->
       forall j k, Some k = get j pa ->
@@ -626,6 +757,7 @@ Section UnionFind.
       firstorder eauto with utils.
     }
   Qed.
+*)
         
     (*
   (*can use above + induction on size of pa?
@@ -702,6 +834,24 @@ Section UnionFind.
             try tauto;
               try congruence).
   Qed.
+
+  
+  
+  Lemma disjoint_sum_set_left' A pa1 pa2 pa i (j : A)
+    : None = get i pa ->
+      disjoint_sum pa1 pa2 pa ->
+      disjoint_sum (set i j pa1) pa2 (set i j pa).
+  Proof.
+    intros.
+    enough (None = get i pa2) by eauto using disjoint_sum_set_left.
+    specialize (H0 i);
+      rewrite <- H in H0;
+      repeat (revert H0;
+              case_match;
+            basic_utils_crush;
+            try tauto;
+              try congruence).
+  Qed.
   
   
   Lemma remove_set_diff A i j (k:A) pa
@@ -754,6 +904,45 @@ Section UnionFind.
   Hint Resolve disjoint_sum_has_key : utils.
 
   
+  Lemma sep_implies_not_has_key A P1 P2 (t : tree A) i
+    : sep P1 P2 t ->
+      (forall t, P1 t -> ~ has_key i t) ->
+      (forall t, P2 t -> ~ has_key i t) ->
+      ~ has_key i t.
+  Proof.
+    unfold sep;
+      intros;
+      break.
+    intro Hk.
+    eapply disjoint_sum_has_key in H; eauto.
+    firstorder.
+  Qed.
+
+  
+  Lemma has_key_singleton A i j (k : A)
+    : has_key i (singleton j k) <-> i = j.
+  Proof.
+    unfold has_key.
+    destruct (Pos.eq_dec i j); subst;
+      basic_utils_crush.
+    rewrite gso, gempty in *; tauto.
+  Qed.
+  Hint Rewrite has_key_singleton : utils.
+
+  
+  Lemma has_key_sep_distr A P1 P2 (t : tree A) j
+    : has_key j t ->
+      sep P1 P2 t ->
+      sep (and1 P1 (has_key j)) P2 t
+      \/ sep P1 (and1 P2 (has_key j)) t.
+  Proof.
+    unfold sep; intros; break.
+    pose proof (disjoint_sum_has_key _ _ _ _ _ H0 H).
+    destruct H3; [left | right];
+      exists x, x0;
+      basic_utils_crush.
+  Qed.
+  
   Lemma key_not_root i pa j
     : tree_pointing_to i pa ->
       has_key j pa ->
@@ -766,33 +955,21 @@ Section UnionFind.
       basic_utils_crush;
       try tauto; try congruence.
     }
-    2:{
-      intro H'; eapply disjoint_sum_has_key in H'; eauto; intuition.
+    {
+      intros Hk Heq; subst.
+      eapply sep_implies_not_has_key;
+        unfold and1 in *;
+        basic_utils_crush.
     }
     {
-      intro H'; eapply disjoint_sum_has_key in H'; eauto.
-      destruct H'.
-      2:{
-        revert H3; unfold has_key.
-        destruct (Pos.eq_dec j i1);
-          basic_utils_crush.
-        rewrite gso in H3; eauto.
-      }
-      {
-        specialize (IHtree_pointing_to H3).
-        
-        intuition subst.
-        
-      intuition subst.
-      }
+      intro Hk.
+      pose proof (has_key_sep_distr _ _ _ _ _ Hk H).
+      clear H Hk; destruct H0;
+        unfold sep, and1 in *; break;
+        eauto.
     }
   Qed.
 
-  Definition and1 {A} (P1 P2 : A -> Prop) a : Prop :=
-    P1 a /\ P2 a.
-  
-  Definition not1 {A} (P : A -> Prop) a : Prop :=
-    ~ P a.
 
   
   Lemma disjoint_remove_left A (pa1 pa2 pa : tree A) j
@@ -818,19 +995,6 @@ Section UnionFind.
   Qed.
   Hint Resolve disjoint_remove_left : utils.
     
-  Lemma disjoint_sum_comm A (pa1 pa2 pa : tree A)
-    : disjoint_sum pa1 pa2 pa ->
-      disjoint_sum pa2 pa1 pa.
-  Proof.
-    intros H i;
-      specialize (H i);
-      revert H;
-      repeat (case_match;
-              subst;
-              autorewrite with utils;
-              try tauto;
-              try congruence).
-  Qed.      
       
   Lemma disjoint_sum_assoc A (pa1 pa2 pa pa11 pa12 : tree A)
     : disjoint_sum pa1 pa2 pa ->
@@ -849,7 +1013,7 @@ Section UnionFind.
          sep (tree_pointing_to i)
            (and1 (not1 (has_key i)) (tree_pointing_to j)) (remove j pa).
   Proof.
-    unfold and1, not1.
+    Admitted (*TODO: fix up
     induction 1;
       intros;
       basic_utils_crush.
@@ -1041,8 +1205,7 @@ Section UnionFind.
       }
         
     }
-  Qed.
-
+  Qed.*).
   
   Lemma set_remove_same A i (j:A) pa
     : set i j (remove i pa) = set i j pa.
@@ -1054,8 +1217,82 @@ Section UnionFind.
       basic_utils_crush;
       rewrite ?gso, ?gro by eauto;
       basic_utils_crush.
-  Qed.      
+  Qed.
 
+  
+  
+  Lemma sep_set_right A (P1 P2 P2' : _ -> Prop) i (j:A) t
+    : ~ has_key i t ->
+      sep P1 P2' t ->
+      (forall t, P2' t -> P2 (set i j t)) ->
+      sep P1 P2 (set i j t).
+  Proof.
+    intros Hk Hs H.
+    unfold sep in *; break.
+    exists x, (set i j x0).
+    basic_utils_crush.
+    eapply disjoint_sum_set_right'; auto.
+    revert Hk;
+      unfold has_key;
+      case_match;
+      basic_utils_crush;
+      try tauto.
+  Qed.
+  
+  Lemma sep_set_left A (P1 P2 P1' : _ -> Prop) i (j:A) t
+    : ~ has_key i t ->
+      sep P1' P2 t ->
+      (forall t, P1' t -> P1 (set i j t)) ->
+      sep P1 P2 (set i j t).
+  Proof.
+    intros Hk Hs H.
+    unfold sep in *; break.
+    exists (set i j x), x0.
+    basic_utils_crush.
+    eapply disjoint_sum_set_left'; auto.
+    revert Hk;
+      unfold has_key;
+      case_match;
+      basic_utils_crush;
+      try tauto.
+  Qed.
+
+  Lemma not_has_key_remove A i (t : tree A)
+    : has_key i (remove i t) -> False.
+  Proof.
+    unfold has_key;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve not_has_key_remove : utils.
+
+  
+  Lemma remove_not_has_key A i (t : tree A)
+    : ~ has_key i t ->
+      remove i t = t.
+  Proof.
+    intros.
+    apply extensionality.
+    intro i';
+      revert H; unfold has_key;
+      destruct (Pos.eq_dec i i');
+      basic_utils_crush.
+    {
+      revert H; case_match; try tauto.
+    }
+    {
+      rewrite gro; eauto.
+    }
+  Qed.
+
+
+  Lemma tree_does_not_contain_root i t
+    : tree_pointing_to i t -> ~ has_key i t.
+  Proof.
+    intros H Hk.
+    eapply key_not_root; eauto.
+  Qed.
+  Hint Resolve tree_does_not_contain_root : utils.
+  
   Lemma path_compression' i pa j
     : i <> j ->
       has_key j pa ->
@@ -1065,51 +1302,98 @@ Section UnionFind.
     intros Hij Hk H.
     eapply tree_split with (j:=j) in H; eauto.
     {
-      unfold sep in H; break.
-      destruct H1.
       econstructor 3.
-      1: apply H0.
+      rewrite <- set_remove_same.
+      eapply sep_set_right;
+        basic_utils_crush.
+      econstructor 2; eauto.
+      rewrite <- (set_remove_same _ _ _ t0).
+      eapply sep_set_right.
+      1: basic_utils_crush.
       {
-        econstructor 2.
-        3: apply H2.
-        3:{
-          apply disjoint_sum_set_right';
+        eapply sep_empty_right;
           basic_utils_crush.
-          admit.
-        }
-        1: eauto.
-        admit.
+        1: exact eq_refl.
+        destruct H0.
+        assert (~ has_key j t0) by eauto with utils.
+        rewrite remove_not_has_key; eauto.
+        basic_utils_crush.
       }
       {
-        rewrite <- (set_remove_same _ j i pa).
-        apply disjoint_sum_set_right;
-          basic_utils_crush.
-        admit.        
+        basic_utils_crush.
       }
     }
-  Admitted.
-    
+  Qed.
+
+  
+  Lemma sep_set_left' A (P1 P2 P1' : _ -> Prop) i (j:A) t
+    : sep P1' P2 t ->
+      (forall t', (has_key i t <-> has_key i t') -> P1' t' -> P1 (set i j t')) ->
+      (forall t', P2 t' -> ~ has_key i t') ->
+      sep P1 P2 (set i j t).
+  Proof.
+    intros Hk Hs H.
+    unfold sep in *; break.
+    exists (set i j x), x0.
+    basic_utils_crush.
+    {
+      eapply disjoint_sum_set_left; auto.
+      specialize (H _ H2).
+      revert H;
+        unfold has_key;
+        case_match;
+        basic_utils_crush;
+        try tauto.
+    }
+    {
+      eapply Hs; eauto.
+      specialize (H _ H2).
+      specialize (H0 i).
+      unfold has_key in *.
+      revert H H0;
+        repeat (case_match; subst; autorewrite with utils;
+                try tauto; try congruence).
+    }
+  Qed.
+  
     
   Lemma path_compression i pa
     : parent_tree_at i pa ->
-      forall j k,
-        Some k = get j pa ->
+      forall j,
+        has_key j pa ->
         parent_tree_at i (set j i pa).
   Proof.
     intros.
-    destruct H.
-    econstructor.
+    unfold parent_tree_at in *.
+    destruct (Pos.eq_dec i j);
+      subst.
     {
-      apply path_compression'.
-      3: eauto.
+      (*
+      assert (k = j).
+      {
+        enough (Some j = get j pa) by congruence.
+        eapply sep_get_r;
+          basic_utils_crush.
+      }
+      subst.*)
+      replace (set j j pa) with pa; eauto.
+      apply extensionality;
+        intro i;
+        destruct (Pos.eq_dec i j);
+        subst;
+        basic_utils_crush.
+      2:rewrite gso; eauto.
+      symmetry.
+      eapply sep_get_r; eauto.
+      basic_utils_crush.
+    }
+    {
+      eapply sep_set_left';
+        basic_utils_crush.
+      eapply path_compression'; eauto.
+    }
+  Qed.
       
-    cycle 1.
-    2
-    1:eauto.
-    induction 1;
-      intros;
-      unfold singleton.
-      basic_goal_prep.
 
   Definition emp {A} (t : tree A) := t = PTree.empty.
   
@@ -1119,7 +1403,53 @@ Section UnionFind.
     | i::l => sep (parent_tree_at i) (forest l)
     end.
 
-  
+  Lemma find_aux_spec mr i j R pa i' pa'
+    : (sep (and1 (has_key j) (parent_tree_at i)) R) pa ->
+      Some (pa', i') = find_aux mr pa j ->
+      i' = i
+      /\ (sep (and1 (has_key j) (parent_tree_at i)) R) pa'.
+  Proof.
+    revert i j pa i' pa'.
+    induction mr;
+      basic_goal_prep;
+      [ basic_utils_crush |].
+    {
+      revert H0;
+        case_match;
+        try congruence;
+        subst.
+      destruct (Pos.eq_dec p j).
+      {
+        subst;
+          autorewrite with utils.
+        intros; break; subst; intuition.
+        admit (*only look is i*).
+      }
+      {
+        pose proof n;
+        rewrite <- Pos.eqb_neq in n; rewrite n.
+        case_match; try congruence; break.
+        intro H'; safe_invert H'.
+        assert (has_key p pa).
+        {
+          unfold has_key.
+          revert HeqH1; destruct mr; simpl; try congruence.
+          case_match; try congruence.j
+        pose proof (tree_
+
+
+        TODO: tree split at p, move p tree into R
+                                    
+
+        
+        unfold sep, and1 in H; break.
+        inversion H3.
+        destr
+
+        eapply IHmr; eauto.
+        TODO: seprewrite via path compression
+        TODO: rephrase path compression for above
+        TODO: IH not giving me the right mr
   
   Lemma repr_no_cycles
     : repr pa f ->
