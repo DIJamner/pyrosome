@@ -77,9 +77,10 @@ Section UnionFind.
     MkUF empty empty 0 1.
 
   (*TODO: write w/ state monad for clarity?*)
-  
+
+  (* allocates a distinct identifier at the end *)
   Definition alloc '(MkUF ra pa mr l) :=
-    (MkUF (set l 0%nat ra) (set l l pa), mr, l+1).
+    (MkUF (set l 0%nat ra) (set l l pa) mr (l+1), l).
 
   (*TODO: should also decrease ranks for performance*)
   Fixpoint find_aux (mr : nat) f i : option (tree positive * positive) :=
@@ -336,9 +337,9 @@ Section UnionFind.
     Qed.
   End TreePointingToInd.
   
-  Definition parent_tree_at i pa : Prop :=
+  Definition parent_tree_at i : tree _ -> Prop :=
     sep (tree_pointing_to i)
-      (eq (singleton i i)) pa.
+      (eq (singleton i i)).
 
   Lemma disjoint_sum_right A pa1 pa2 pa i (j : A)
     : disjoint_sum pa1 pa2 pa ->
@@ -475,6 +476,21 @@ Section UnionFind.
       intros; break.
     specialize (H i);
       specialize (H0 _ H2);
+      rewrite <- H0 in H;
+      revert H.
+    repeat (case_match; autorewrite with utils; try tauto).
+  Qed.
+
+  
+  Lemma sep_get_l A P1 P2 t (j:A) i
+    : sep P1 P2 t ->
+      (forall t', P1 t' -> Some j = get i t') ->
+      Some j = get i t.
+  Proof.
+    unfold sep;
+      intros; break.
+    specialize (H i);
+      specialize (H0 _ H1);
       rewrite <- H0 in H;
       revert H.
     repeat (case_match; autorewrite with utils; try tauto).
@@ -1403,6 +1419,408 @@ Section UnionFind.
     | i::l => sep (parent_tree_at i) (forest l)
     end.
 
+  
+  Lemma pointing_no_cycles i pa
+    : tree_pointing_to i pa ->
+      forall j k,
+      Some k = get j pa ->
+      j <> k.
+  Proof.
+    induction 1;
+      unfold sep, and1, not1 in *;
+      basic_utils_crush.
+    {
+      specialize (H0 k);
+        revert H0;
+        rewrite <- H1.
+      case_match;
+        destruct (Pos.eq_dec k i1);
+        basic_utils_crush;
+        revert H0;
+        rewrite gso; eauto.
+    }
+    {
+      specialize (H k);
+        revert H;
+        rewrite <- H0.
+      case_match;
+        case_match;
+        eauto.
+    }
+  Qed.
+
+  Lemma cycles_are_root j pa
+    : parent_tree_at j pa ->
+      forall i,
+      Some i = get i pa ->
+      i = j.
+  Proof.
+    unfold parent_tree_at.
+    intros.
+    destruct (Pos.eq_dec i j);
+      basic_utils_crush.
+    exfalso.
+    unfold sep in *; break.
+    pose proof (disjoint_get_some _ _ _ _ _ _  H H0).
+    subst.
+    rewrite gso, gempty in *; eauto.
+    intuition try congruence.
+    eapply pointing_no_cycles; eauto.
+  Qed.
+
+  (*TODO: ~has_key length condition is a bit awkward*)
+  Lemma alloc_spec (R : _ -> Prop) u u' i
+    : ~ has_key u.(length) u.(parent) ->
+      R u.(parent) ->
+      (u', i) = alloc u ->
+      sep (parent_tree_at i) R u'.(parent).
+  Proof.
+    destruct u; simpl;
+      intros.
+    safe_invert H1; simpl.
+    unfold parent_tree_at.
+    simpl.
+    eapply sep_impl.
+    1: eauto.
+    {
+      intros a Pa.
+      let T := type of Pa in
+      unify T (and1 (not1 (has_key length0)) R a).
+      eapply (proj2 Pa).
+    }
+    eapply sep_set_left'.
+    {
+      eapply sep_empty_left; basic_utils_crush.
+      exact eq_refl.
+    }
+    {
+      intros; subst.
+      eapply sep_empty_left; basic_utils_crush.
+    }
+    {
+      basic_utils_crush.
+      destruct H1; eauto.
+    }
+  Qed.
+
+  Definition submap {A} (t1 t2 : tree A) :=
+    forall j k, Some k = get j t1 ->
+                Some k = get j t2.
+
+  
+  Lemma disjoint_sum_submap_l A (x x0 t : tree A)
+    : disjoint_sum x x0 t ->
+      submap x t.
+  Proof.
+    intros H j k;
+      specialize (H j);
+      revert H;
+      repeat case_match;
+      try tauto;
+      basic_utils_crush;
+      try congruence.
+  Qed.
+  Hint Resolve disjoint_sum_submap_l : utils.
+  
+  Lemma disjoint_sum_submap_r A (x x0 t : tree A)
+    : disjoint_sum x x0 t ->
+      submap x0 t.
+  Proof.
+    intros H j k;
+      specialize (H j);
+      revert H;
+      repeat case_match;
+      try tauto;
+      basic_utils_crush;
+      try congruence.
+  Qed.
+  Hint Resolve disjoint_sum_submap_r : utils.
+  
+  Lemma sep_impl_submap {A} {P1 P1' P2 P2' : tree A -> Prop} t
+    : (forall t', submap t' t -> P1 t' -> P1' t') ->
+      (forall t', submap t' t -> P2 t' -> P2' t') ->
+      sep P1 P2 t -> sep P1' P2' t.
+  Proof.
+    intros; unfold sep in *;
+      break.
+    exists x, x0; basic_utils_crush.
+  Qed.
+
+  Lemma sep_by_left A P1 P2 (t : tree A) (Q : Prop)
+    : sep P1 P2 t ->
+      (forall t', P1 t' -> Q) ->
+      Q.
+  Proof.
+    unfold sep; firstorder.
+  Qed.
+
+  
+  Lemma sep_by_right A P1 P2 (t : tree A) (Q : Prop)
+    : sep P1 P2 t ->
+      (forall t', P2 t' -> Q) ->
+      Q.
+  Proof.
+    unfold sep; firstorder.
+  Qed.
+
+
+  
+  Lemma find_aux_has_key mr pa p t0 p0
+    : Some (t0, p0) = find_aux mr pa p ->
+      has_key p pa.
+  Proof.
+    unfold has_key.
+    destruct mr;
+      simpl; try congruence.
+    case_match; try tauto.
+    congruence.
+  Qed.
+
+  
+  Lemma find_aux_end_loop mr pa p t0 p0
+    : Some (t0, p0) = find_aux mr pa p ->
+      Some p0 = get p0 pa.
+  Proof.
+    revert pa p t0 p0.
+    induction mr;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H.
+    case_match; try congruence.
+    destruct (Pos.eq_dec p1 p);
+      basic_utils_crush.
+    revert H.
+    pose proof n; apply Pos.eqb_neq in n; rewrite n.
+    case_match;
+      basic_utils_crush.
+  Qed.
+
+  Ltac destruct_pos_eqb i j :=
+    let Hneq := fresh "Hneq" in
+    let Hneq' := fresh "Hneq" in
+    destruct (Pos.eq_dec i j) as [? | Hneq];
+    [ subst; rewrite Pos.eqb_refl
+    | pose proof Hneq as Hneq'; apply Pos.eqb_neq in Hneq'; rewrite Hneq'].
+
+  (* TODO: seems doable but challenging to deal with cycles
+  Lemma pa_closure_set' t0 p0 i
+    : equivalence_closure (pa_rel (set i p0 t0)) p0 i.
+  Proof.
+    constructor 1; basic_utils_crush.
+  Qed.
+    
+  Lemma pa_closure_set t0 a b p0 i
+    : Some p0 = get p0 t0 ->
+      equivalence_closure (pa_rel t0) a b ->
+      equivalence_closure (pa_rel t0) p0 i ->
+      equivalence_closure (pa_rel (set i p0 t0)) a b.
+  Proof.
+    intros Hg Heq; revert p0 i Hg.
+    induction Heq;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      destruct (Pos.eq_dec b i); subst.
+      {
+        TODO: what if I decide eq closure?
+        constructor 1.
+        eapply eq_clo_trans.
+        {
+          constructor 1; eauto.
+        }
+        
+        eapply eq_clo_trans.
+        1:eapply eq_clo_sym; eauto.
+        constructor 1; eauto.
+      }
+      
+        a
+        
+  
+  lemma find_aux_preserves_rel mr pa i pa' i'
+    : Some (pa', i') = find_aux mr pa i ->
+      (forall a b, equivalence_closure (pa_rel pa) a b
+                   <-> equivalence_closure (pa_rel pa') a b)
+      /\ equivalence_closure (pa_rel pa) i' i.
+  Proof.
+    revert pa i pa' i'.
+    induction mr;
+      basic_goal_prep.
+    { basic_utils_crush. }
+    {
+      revert H.
+      case_match; try congruence.
+      destruct_pos_eqb p i.
+      { basic_utils_crush. }
+      case_match; try congruence.
+      break.
+      apply IHmr in HeqH0.
+      break.
+      basic_utils_crush.
+      {
+        rewrite H in H2.
+        assert ( equivalence_closure (pa_rel pa) p0 i).
+        { basic_utils_crush. }
+        rewrite H in H1.
+      2:{
+   *)
+  
+  Lemma sep_has_key_right A P1 P2 (t : tree A) i
+    : sep P1 P2 t ->
+      (forall t', submap t' t -> P2 t' -> has_key i t') ->
+      has_key i t.
+  Proof.
+    unfold sep;
+      intros; break.
+    assert (submap x0 t) by eauto with utils.
+    specialize (H i);
+      specialize (H0 _ H3 H2).
+    revert H H0;
+      unfold has_key.
+    repeat case_match; autorewrite with utils; try tauto.
+  Qed.
+
+  
+  Lemma sep_has_key_left A P1 P2 (t : tree A) i
+    : sep P1 P2 t ->
+      (forall t', submap t' t -> P1 t' -> has_key i t') ->
+      has_key i t.
+  Proof.
+    unfold sep;
+      intros; break.
+    assert (submap x t) by eauto with utils.
+    specialize (H i);
+      specialize (H0 _ H3 H1).
+    revert H H0;
+      unfold has_key.
+    repeat case_match; autorewrite with utils; try tauto.
+  Qed.
+
+  
+  
+  Lemma pointing_to_has_next_key i t j k
+    :  tree_pointing_to i t ->
+       Some k = get j t ->
+       k = i \/ has_key k t.
+  Proof.
+    intro H; revert j k;
+      induction H;
+      intros.
+    { basic_utils_crush. }
+    {
+      destruct (Pos.eq_dec j i1); subst.
+      {
+        left.
+        eapply sep_get_r in H0; cycle 1.
+        {
+          intros; subst.
+          erewrite gss.
+          reflexivity.
+        }
+        congruence.
+      }
+      {
+        apply has_key_sep_distr with (j:=j) in H0.
+        2:{ unfold has_key; rewrite <- H1; eauto. }
+        destruct H0.
+        2:{
+          exfalso.
+          eapply sep_by_right; eauto.
+          intros.
+          destruct H2; basic_utils_crush.
+        }
+        right.
+        {
+          destruct H0; unfold and1 in*; break.
+          unfold has_key in H4;
+            revert H4; case_match; try tauto.
+          subst.
+          pose proof (disjoint_get_some _ _ _ _ _ _ H0 H1).
+          rewrite gso,gempty in H3; eauto.
+          intuition try congruence.
+          assert (k = p) by congruence; subst.
+          specialize (H5 _ _ HeqH4).
+          intuition subst.
+          {
+            eapply disjoint_sum_has_key_r; eauto.
+            basic_utils_crush.
+          }
+          {
+            eapply disjoint_sum_has_key_l; eauto.
+          }            
+        }
+      }
+    }
+    {
+      unfold sep, and1 in *.
+      break.
+      assert (has_key j pa) by (unfold has_key; rewrite <- H0; eauto).
+      pose proof (disjoint_sum_has_key _ _ _ _ _ H H5).
+      destruct H6 as [H6 | H6];
+        revert H6; unfold has_key; case_match; try tauto;
+        intros _.
+      {
+        pose proof (disjoint_sum_submap_l _ _ _ _ H _ _ HeqH6).
+        assert (k = p) by congruence; subst.
+        apply H4 in HeqH6.
+        intuition; right.
+        revert H7;
+          unfold has_key;
+          repeat case_match; try tauto.
+        pose proof (disjoint_sum_submap_l _ _ _ _ H _ _ HeqH7).
+        congruence.
+      }
+      {
+        pose proof (disjoint_sum_submap_r _ _ _ _ H _ _ HeqH6).
+        assert (k = p) by congruence; subst.
+        apply H3 in HeqH6.
+        intuition; right.
+        revert H7;
+          unfold has_key;
+          repeat case_match; try tauto.
+        pose proof (disjoint_sum_submap_r _ _ _ _ H _ _ HeqH7).
+        congruence.
+      }
+    }
+  Qed.
+  
+  Lemma tree_at_has_next_key i t j k
+    :  parent_tree_at i t ->
+       Some k = get j t ->
+       has_key k t.
+  Proof.
+    intros.
+    unfold parent_tree_at in *.
+    unfold sep in *; break; subst.
+    assert (has_key i t).
+    {
+      subst.
+      eapply disjoint_sum_has_key_r; eauto.
+      basic_utils_crush.
+    }
+    destruct (Pos.eq_dec k i); subst; eauto.
+    {
+      pose proof (H j) as H';
+      revert H';
+      repeat case_match;
+      basic_utils_crush;
+        try tauto.
+      {
+        pose proof (pointing_to_has_next_key _ _ _ _ H1 HeqH3).
+        intuition subst; eauto.
+        eapply disjoint_sum_has_key_l; eauto.
+      }
+      {
+        destruct (Pos.eq_dec j i); subst;
+          basic_utils_crush.
+        rewrite gso, gempty in HeqH0; subst; eauto.
+        congruence.
+      }
+
+    }
+  Qed.
+    
+
   Lemma find_aux_spec mr i j R pa i' pa'
     : (sep (and1 (has_key j) (parent_tree_at i)) R) pa ->
       Some (pa', i') = find_aux mr pa j ->
@@ -1423,20 +1841,57 @@ Section UnionFind.
         subst;
           autorewrite with utils.
         intros; break; subst; intuition.
-        admit (*only look is i*).
+        eapply sep_impl_submap in H.
+        3: eauto.
+        2:{
+          intros.
+          let g := match goal with |- ?g => g end in
+          unify g (and1 (fun pa => Some j = get j pa) (parent_tree_at i) t').
+          destruct H1; split; eauto with utils.
+          unfold submap in H0.
+          unfold has_key in H1;
+            revert H1; case_match;
+            try tauto.
+          apply H0 in HeqH1.
+          congruence.
+        }
+        eapply sep_by_left; eauto.
+        intros.
+        destruct H0.
+        eapply cycles_are_root; eauto.
       }
       {
         pose proof n;
         rewrite <- Pos.eqb_neq in n; rewrite n.
         case_match; try congruence; break.
         intro H'; safe_invert H'.
-        assert (has_key p pa).
-        {
-          unfold has_key.
-          revert HeqH1; destruct mr; simpl; try congruence.
-          case_match; try congruence.j
-        pose proof (tree_
+        assert (has_key p pa) by (eapply find_aux_has_key; eauto).
+        pose proof (fun pf => tree_split pa i pf _ H1).
+        pose proof (find_aux_end_loop _ _ _ _ _ HeqH1).
 
+        eapply IHmr in HeqH1.
+        2:{
+          eapply sep_impl_submap; cycle 2; eauto.
+          unfold and1; basic_utils_crush.
+        split.
+        {
+          eapply sep_impl_submap in H.
+          eapply cycles_are_root.
+          
+          eauto.
+          
+        assert (Some i = get i pa).
+        {
+          revert H; clear.
+          intro H.
+          unfold parent_tree_at in *.
+          eapply sep_get_l; eauto.
+          clear H.
+          intros t' H; destruct H.
+          eapply sep_get_r; eauto.
+          basic_utils_crush.
+        }
+        ass
 
         TODO: tree split at p, move p tree into R
                                     
@@ -1450,221 +1905,34 @@ Section UnionFind.
         TODO: seprewrite via path compression
         TODO: rephrase path compression for above
         TODO: IH not giving me the right mr
-  
-  Lemma repr_no_cycles
-    : repr pa f ->
-      
 
-  
-  Lemma repr_spec pa f
-    :  repr pa f ->
-       forall i j,
-         get i pa = Some j ->
-         exists k, f i = Some k
-                   /\ f j = Some k
-                   /\ (f k = Some k)
-                   /\ (i = j -> k = i).
-  Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      pose proof n.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      rewrite gso in *; eauto.
-      apply IHrepr in H1; break.
-      eexists; intuition eauto.
-      destruct (Pos.eq_dec j i); subst;
-        basic_utils_crush;
-        try congruence.
-      pose proof n0.
-      apply Pos.eqb_neq in n0; rewrite n0 in*.
-      eauto.      
-    }
-    {
-      pose proof (IHrepr _ _ H0); break.
-      assert (x = k) by congruence; subst.
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      {
-        eexists; intuition eauto.
-      destruct (Pos.eq_dec i j); subst;
-        basic_utils_crush;
-        try congruence.
-        destru
-      }
-      pose proof n.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      rewrite gso in *; eauto.
-      apply IHrepr in H1; break.
-      eexists; intuition eauto.
-      destruct (Pos.eq_dec j i); subst;
-        basic_utils_crush;
-        try congruence.
-      pose proof n0.
-      apply Pos.eqb_neq in n0; rewrite n0 in*.
-      eauto.  
-      
-    }
-      
-  
-    Lemma repr_root pa f k
-    :  repr pa f ->
-       get k pa = Some k ->
-       f k = Some k.
-    intro H; revert k; induction H;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      destruct (Pos.eq_dec k i); subst;
-        basic_utils_crush.
-      pose proof n.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      rewrite gso in *; eauto.
-    }
-    {
-      destruct (Pos.eq_dec k0 i); subst;
-        basic_utils_crush.
-      
-    }
-      {
-        basic
-    
-  Lemma repr_parent  pa f
-    :  repr pa f ->
-       forall i j,
-       get i pa = Some j ->
-       f i = f j.
-  Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      rewrite gso in *; eauto.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      apply IHrepr in H1.
-      rewrite H1.
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush;
-        try congruence.
-      destruct (Pos.eq_dec j i); subst;
-        basic_utils_crush;
-        try congruence.
-      
-      - cong.
 
-        
-  Lemma repr_exists pa f
-    :  repr pa f ->
-       forall i,
-         match f i, get i pa with
-         | Some _, Some _
-         | None, None => True
-         | _, _ => False
-         end          
-  Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      rewrite gso in *; eauto.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      apply IHrepr.
-    }
-    {
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      rewrite gso in *; eauto.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      apply IHrepr.
-    }
-      
-    }
-  
+  Lemma union_spec
+    : sep (sep (parent_tree_at i) (parent_tree_at j)) R u.( ->
+      Some (u'
 
-      
-  Lemma repr_idempotent pa f
-    : repr pa f ->
-      forall i, option_map f (f i) = f i.
-  Proof.
-    unfold option_map.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      case_match; auto.
-      destruct (Pos.eq_dec i0 i); subst;
-        basic_utils_crush.
-      apply Pos.eqb_neq in n; rewrite n in*.
-      specialize (IHrepr i0).
-      rewrite <- HeqH1 in *.
-      destruct (Pos.eq_dec p i); subst;
-        basic_utils_crush.
-      apply Pos.eqb_neq in n0; rewrite n0 in*;
-        auto.
-    }
-    {
-      pose proof (IHrepr i0).
-      my_case H' (f i0); auto.
-      destruct (Pos.eq_dec p i); subst;
-        basic_utils_crush.
-      {
-        assert (f k = Some k).
-    }
-  
-  Definition represents (pa : tree positive) (f : positive -> positive) :=
-    (forall i j, Some j = get i pa -> f i = f j)
-    /\ (forall i, Some i = get i pa -> f i = i)
-    /\ (forall i, None = get i pa -> f i = i).
 
-  Lemma represents_empty : represents PTree.empty id.
-  Proof.
-    unfold represents.
-    firstorder;
-      (rewrite gempty in *; congruence).
-  Qed.
-
-  Lemma represents_idempotent pa f
-    : represents pa f ->
-      forall i, f (f i) = f i.
-  Proof.
-    unfold represents.
-    firstorder.
-    my_case H' (get i pa).
-    2:{
-      symmetry in H'; apply H1 in H'; congruence.
-    }
-    {
-      symmetry in H'.
-      assert (f i = f p) by eauto.
-      
-      specialize (H _ _ H').
-      specialize (H p).
-      [ rewrite H0 | rewrite H1]; eauto.
-  
-  Lemma represents_compress pa f i
-    : represents pa f ->
-      represents (set i (f i) pa) f.
-  Proof.
-    unfold represents.
-    firstorder subst.
-    {
-      destruct (Pos.eq_dec i0 i); subst.
-      {
-        rewrite gss in *;
-          basic_utils_crush.
-      pose proof (H i0 j).
-      rewrite H.
-    }
-      (rewrite ?gss in *; try congruence).
-  Qed.
-  
+          Definition union h x y : option _ :=
+    @! let (h, cx) <- find h x in
+      let (h, cy) <- find h y in
+      if eqb cx cy then ret (h, cx) else
+      (*  let '(ra, pa, mr, l) := h in*)
+        let rx <- get cx h.(rank) in
+        let ry <- get cy h.(rank) in
+        match Nat.compare ry rx with
+        | Lt => @!ret (MkUF (h.(rank))
+                         (set cy cx h.(parent))
+                         (h.(max_rank))
+                         h.(length), cx)
+        | Gt => @!ret (MkUF (h.(rank))
+                         (set cx cy h.(parent)) 
+                         (h.(max_rank))
+                         (h.(length)), cy)
+        | Eq => @!ret (MkUF (set cx (Nat.succ rx) h.(rank))
+                         (set cy cx h.(parent))
+                         (max h.(max_rank) (Nat.succ rx))
+                         h.(length), cx)
+        end.
   
 
   (* equivalent to exists + and if i,j have ranks*)
