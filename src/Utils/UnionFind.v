@@ -1010,7 +1010,98 @@ Section UnionFind.
       try congruence.
   Qed.
   Hint Resolve disjoint_remove_left : utils.
+
+  
+  Definition node_to_opt_K {A B} (t : tree' A)
+    (k : tree A -> option A -> tree A -> B) :=
+    match t with
+    | Node001 tr => k Empty None (Nodes tr)
+    | Node010 x => k Empty (Some x) Empty
+    | Node011 x tr => k Empty (Some x) (Nodes tr)
+    | Node100 tl => k (Nodes tl) None Empty
+    | Node101 tl tr => k (Nodes tl) None (Nodes tr)
+    | Node110 tl x => k (Nodes tl) (Some x) Empty
+    | Node111 tl x tr => k (Nodes tl) (Some x) (Nodes tr)
+    end.
+
+  
+  Definition node_to_opt_K' {A B C} (t : tree' A)
+    (k : tree A -> option A -> tree A -> B -> C) :=
+    fun b =>
+    match t with
+    | Node001 tr => k Empty None (Nodes tr) b
+    | Node010 x => k Empty (Some x) Empty b 
+    | Node011 x tr => k Empty (Some x) (Nodes tr) b
+    | Node100 tl => k (Nodes tl) None Empty b 
+    | Node101 tl tr => k (Nodes tl) None (Nodes tr) b
+    | Node110 tl x => k (Nodes tl) (Some x) Empty b
+    | Node111 tl x tr => k (Nodes tl) (Some x) (Nodes tr) b
+    end.
+
+  Section Inner.
+    Context {A : Type}.
+    Context (tree'_merge : tree' A -> tree' A -> tree' A).
+    (*Used in the empty case, which disappears in evaluation*)
+    Context (default : tree' A).
+
+    Definition option_fst (x y : option A) :=
+      match x, y with
+      | Some x, Some y => Some x
+      | Some x, None => Some x
+      | None, Some y => Some y
+      | None, None => None
+      end.
     
+    Definition tree_op (x y : tree A) :=
+      match x, y with
+      | Nodes x, Nodes y => Nodes (tree'_merge x y)
+      | Nodes x, Empty => Nodes x
+      | Empty, Nodes y => Nodes y
+      | Empty, Empty => Empty
+      end.        
+
+    Definition merge_help t1l (x1 : option A) t1r '(t2l,x2, t2r) :=
+      match tree_op t1l t2l,
+        option_fst x1 x2,
+        tree_op t1r t2r with
+      (* Never happens *)
+      | Empty, None, Empty => default
+      | Empty, None, Nodes tr => (Node001 tr)
+      | Empty, Some x, Empty => (Node010 x)
+      | Empty, Some x, Nodes tr => (Node011 x tr)
+      | Nodes tl, None, Empty => (Node100 tl)
+      | Nodes tl, None, Nodes tr => (Node101 tl tr)
+      | Nodes tl, Some x, Empty => (Node110 tl x)
+      | Nodes tl, Some x, Nodes tr => (Node111 tl x tr)
+      end.
+
+    
+    Definition body (t1 t2 : tree' A) : tree' A :=
+    (node_to_opt_K t2
+      (fun a b c => node_to_opt_K' t1 merge_help (a,b,c))).
+
+    Definition body' :=
+      Eval cbv [merge_help tree_op option_fst body node_to_opt_K' node_to_opt_K]
+        in body.
+  End Inner.
+
+  
+  
+  (*TODO: can be generalized into a map2*)
+  (* left-biased *)
+  
+  Fixpoint tree'_merge' {A} (t1 t2 : tree' A) {struct t1} : tree' A :=
+    body' tree'_merge' t1 t2.
+
+  Definition tree'_merge := Eval cbv [tree'_merge' body'] in @tree'_merge'.
+  
+  Definition tree_merge A (t1 t2 : tree A) :=
+    match t1, t2 with
+    | Empty, _ => t2
+    | Nodes t', Empty => Nodes t'
+    | Nodes t1', Nodes t2' =>
+        Nodes (tree'_merge t1' t2')
+    end.
       
   Lemma disjoint_sum_assoc A (pa1 pa2 pa pa11 pa12 : tree A)
     : disjoint_sum pa1 pa2 pa ->
@@ -1819,92 +1910,185 @@ Section UnionFind.
 
     }
   Qed.
-    
 
-  Lemma find_aux_spec mr i j R pa i' pa'
-    : (sep (and1 (has_key j) (parent_tree_at i)) R) pa ->
+  
+  
+  Lemma has_key_sep_distr' A P1 P2 (t : tree A) j
+    : has_key j t ->
+      sep P1 P2 t ->
+      sep (and1 P1 (has_key j)) (and1 P2 (not1 (has_key j))) t
+      \/ sep (and1 P1 (not1 (has_key j))) (and1 P2 (has_key j)) t.
+  Proof.
+    unfold sep; intros; break.
+    pose proof (disjoint_sum_has_key _ _ _ _ _ H0 H).
+    destruct H3; [left | right];
+      exists x, x0;
+      basic_utils_crush.
+    all: unfold and1; split; eauto.
+    all: intro Hk;
+      basic_utils_crush.
+  Qed.
+
+  
+  Lemma has_key_from_parent_left A pa1 pa2 pa j (k:A)
+    : disjoint_sum pa1 pa2 pa ->
+      has_key j pa1 ->
+      Some k = get j pa ->
+      Some k = get j pa1.
+  Proof.
+    intros.
+    revert H0; unfold has_key.
+    specialize (H j); revert H;
+      rewrite <- H1; repeat case_match; try tauto.
+    congruence.
+  Qed.
+  Hint Resolve has_key_from_parent_left  : utils.
+
+
+  Lemma find_aux_same_keys mr i i' pa pa'
+    : Some (pa', i') = find_aux mr pa i ->
+      forall j, has_key j pa -> has_key j pa'.
+  Proof.
+    revert i i' pa pa'.
+    induction mr;
+      basic_goal_prep;
+      [ basic_utils_crush |].
+    revert H0 H.
+    unfold has_key.
+    repeat case_match; try tauto; try congruence.
+    basic_utils_crush.
+    eapply IHmr with (j:=j) in HeqH2.
+    {
+      destruct (Pos.eq_dec j i);
+        basic_utils_crush.
+      rewrite gso in HeqH4; auto.
+      revert HeqH2; unfold has_key; rewrite <- HeqH4.
+      auto.
+    }
+    {
+      unfold has_key; rewrite <- HeqH; auto.
+    }
+  Qed.
+  
+  Lemma find_aux_spec' mr i j pa1 pa2 pa i' pa'
+    : disjoint_sum pa1 pa2 pa ->
+      has_key j pa1 ->
+      parent_tree_at i pa1 ->
       Some (pa', i') = find_aux mr pa j ->
       i' = i
-      /\ (sep (and1 (has_key j) (parent_tree_at i)) R) pa'.
+      /\ (sep (and1 (has_key j) (parent_tree_at i)) (eq pa2)) pa'.
   Proof.
     revert i j pa i' pa'.
     induction mr;
       basic_goal_prep;
       [ basic_utils_crush |].
     {
-      revert H0;
+      revert H2;
         case_match;
         try congruence;
         subst.
-      destruct (Pos.eq_dec p j).
+      destruct_pos_eqb p j.
       {
-        subst;
-          autorewrite with utils.
-        intros; break; subst; intuition.
-        eapply sep_impl_submap in H.
-        3: eauto.
-        2:{
-          intros.
-          let g := match goal with |- ?g => g end in
-          unify g (and1 (fun pa => Some j = get j pa) (parent_tree_at i) t').
-          destruct H1; split; eauto with utils.
-          unfold submap in H0.
-          unfold has_key in H1;
-            revert H1; case_match;
-            try tauto.
-          apply H0 in HeqH1.
-          congruence.
-        }
-        eapply sep_by_left; eauto.
-        intros.
-        destruct H0.
-        eapply cycles_are_root; eauto.
+        autorewrite with utils.
+        intros; break; subst; unfold sep, and1; intuition.
+        1:eapply cycles_are_root; basic_utils_crush.
+        exists pa1, pa2; intuition.
       }
       {
-        pose proof n;
-        rewrite <- Pos.eqb_neq in n; rewrite n.
-        case_match; try congruence; break.
+        case_match; try congruence.
+        break.
         intro H'; safe_invert H'.
-        assert (has_key p pa) by (eapply find_aux_has_key; eauto).
-        pose proof (fun pf => tree_split pa i pf _ H1).
-        pose proof (find_aux_end_loop _ _ _ _ _ HeqH1).
-
-        eapply IHmr in HeqH1.
-        2:{
-          eapply sep_impl_submap; cycle 2; eauto.
-          unfold and1; basic_utils_crush.
-        split.
+        assert (has_key p pa1).
         {
-          eapply sep_impl_submap in H.
-          eapply cycles_are_root.
-          
-          eauto.
-          
-        assert (Some i = get i pa).
-        {
-          revert H; clear.
-          intro H.
-          unfold parent_tree_at in *.
-          eapply sep_get_l; eauto.
-          clear H.
-          intros t' H; destruct H.
-          eapply sep_get_r; eauto.
-          basic_utils_crush.
+          eapply tree_at_has_next_key; basic_utils_crush.
         }
-        ass
+        specialize (IHmr _ p _ _ _ H H2 H1 HeqH0).
+        intuition subst.
+        unfold sep, and1 in *; break.
+        subst.
+        exists (set j i x), x0.
+        intuition.
+        {
+          eapply disjoint_sum_set_left; eauto.
+          specialize (H j); revert H;
+            rewrite <- HeqH2;
+            revert H0;
+            unfold has_key;
+            repeat case_match; try tauto.
+        }
+        1:unfold has_key;basic_utils_crush.
+        eapply path_compression; eauto.
+        basic_utils_crush.
+        assert (has_key j t0).
+        {
+          eapply find_aux_same_keys; eauto.
+          unfold has_key; rewrite <- HeqH2; auto.
+        }
+        unfold has_key in H5.
+        revert H5.
+        case_match; try tauto.
+        intros _.
+        eapply disjoint_get_some in HeqH5; eauto.
+        intuition subst.
+        {
+          unfold has_key; rewrite <- H5; auto.
+        }
+        {
+          exfalso.
+          specialize (H j).
+          revert H.
+          rewrite <- ! H5.
+          revert H0.
+          unfold has_key;
+            repeat case_match; try tauto.
+        }
+      }
+    }
+  Qed.
 
-        TODO: tree split at p, move p tree into R
-                                    
+  
+  Lemma find_aux_spec mr i j R pa i' pa'
+    : (sep (and1 (has_key j) (parent_tree_at i)) R) pa ->
+      Some (pa', i') = find_aux mr pa j ->
+      i' = i
+      /\ (sep (and1 (has_key j) (parent_tree_at i)) R) pa'.
+  Proof.
+    intros.
+    unfold sep, and1 in H; break.
+    pose proof (find_aux_spec' _ _ _ _ _ _ _ _ H H1 H3 H0).
+    intuition.
+    eapply sep_impl; cycle 2;eauto.
+    intros; subst; auto.
+  Qed.
 
-        
-        unfold sep, and1 in H; break.
-        inversion H3.
-        destr
-
-        eapply IHmr; eauto.
-        TODO: seprewrite via path compression
-        TODO: rephrase path compression for above
-        TODO: IH not giving me the right mr
+  (*TODO: relate to equiv closure*)
+  Lemma find_spec canonical u i u' i'
+    : forest canonical u.(parent) ->
+      Some (u', i') = find u i ->
+      In i' canonical
+      /\ forest canonical u'.(parent).
+  Proof.
+    unfold find.
+    destruct u; cbn [parent Mbind Mret option_monad].
+    case_match; try congruence; break.
+    intros Hf H'; safe_invert H'.
+    simpl.
+    pose proof (find_aux_has_key _ _ _ _ _ HeqH).
+    Lemma has_key_in_forest
+      : has_key i t ->
+        forest l
+      
+    TODO: awkward w/ canonical order
+    revert HeqH.
+    case_match; try congruence.
+    
+  Lemma equivalence_closure_tree
+  
+  lemma find_aux_preserves_rel mr pa i pa' i'
+    : Some (pa', i') = find_aux mr pa i ->
+      (forall a b, equivalence_closure (pa_rel pa) a b
+                   <-> equivalence_closure (pa_rel pa') a b)
+      /\ equivalence_closure (pa_rel pa) i' i.
 
 
   Lemma union_spec
