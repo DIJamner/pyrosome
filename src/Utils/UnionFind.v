@@ -1095,13 +1095,53 @@ Section UnionFind.
 
   Definition tree'_merge := Eval cbv [tree'_merge' body'] in @tree'_merge'.
   
-  Definition tree_merge A (t1 t2 : tree A) :=
+  Definition tree_merge {A} (t1 t2 : tree A) :=
     match t1, t2 with
     | Empty, _ => t2
     | Nodes t', Empty => Nodes t'
     | Nodes t1', Nodes t2' =>
-        Nodes (tree'_merge t1' t2')
+        Nodes (tree'_merge' t1' t2')
     end.
+
+  
+  
+  Definition disjoint {A} (t1 t2: tree A) : Prop :=
+    forall i,
+      match get i t1, get i t2 with
+      | None, None
+      | Some _, None
+      | None, Some _ => True
+      | Some _, Some _ => False
+      end.
+  
+  Lemma disjoint_sum_implies_disjoint A (t1 t2 t3: tree A)
+    : disjoint_sum t1 t2 t3 ->
+      disjoint t1 t2.
+  Proof.
+    intros H i; specialize (H i); revert H;
+      repeat case_match; tauto.
+  Qed.
+
+  Lemma disjoint_tree_merge A (t1 t2: tree A)
+    : disjoint t1 t2 ->
+      disjoint_sum t1 t2 (tree_merge t1 t2).
+  Proof.
+    intros H i; specialize (H i); revert H.
+    destruct t1; destruct t2;
+      unfold tree_merge;
+      simpl;
+      try congruence.
+    1,2: intros _; case_match; tauto.
+    case_match; case_match; try tauto;
+      revert dependent t1;
+        revert dependent t0;
+      induction i;
+        destruct t0; destruct t1;
+        simpl in *;
+      intros; try congruence;
+      rewrite <- ?HeqH, <- ?HeqH0; auto;
+      eapply IHi; eauto.
+  Qed.
       
   Lemma disjoint_sum_assoc A (pa1 pa2 pa pa11 pa12 : tree A)
     : disjoint_sum pa1 pa2 pa ->
@@ -1110,6 +1150,14 @@ Section UnionFind.
         disjoint_sum pa11 pa2 pa2'
         /\ disjoint_sum pa12 pa2' pa.
   Proof.
+    exists (tree_merge pa11 pa2); split.
+    {
+      apply disjoint_tree_merge.
+      admit.
+    }
+    {
+      
+      
     (*TODO: really want concat here *)
   Admitted.
 
