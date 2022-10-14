@@ -8,13 +8,18 @@
    Sylvain Conchon and Jean-Christophe Filliâtre. A persistent union-find data structure.
    In ACM SIGPLAN Workshop on ML, 37–45. Freiburg, Germany, October 2007. ACM Press.
    URL: https://www.lri.fr/~filliatr/ftp/publis/puf-wml07.pdf.
-*)
+ *)
 
-Require Import ZArith List.
-Open Scope positive.
+
+
+Require Import ZArith List Setoid Equivalence.
 
 From Tries Require Import Canonical.
 Import PTree.
+
+Import ListNotations.
+Open Scope positive.
+
 
 From Utils Require Import Utils Monad.
 (*TODO: I think the eq instance is already defined somewhere*)
@@ -26,6 +31,9 @@ Hint Rewrite gempty : utils.
 Hint Rewrite Pos.eqb_refl : utils.
 Hint Rewrite gss : utils.
 Hint Rewrite grs : utils.
+
+  
+Local Arguments empty {_}%type_scope.
 
 
 Lemma set_set_same {A} a (b : A) p
@@ -57,172 +65,6 @@ Hint Rewrite remove_remove_same : utils.
 
 Hint Rewrite grs : utils.
 
-Section UnionFind.
-
-  Local Arguments empty {_}%type_scope.
-  
-  Record union_find :=
-    MkUF {
-        (* We use nats for rank because we do recursion on them.
-           TODO: all ranks or just max rank?
-         *)
-        rank : tree nat;
-        parent : tree positive;
-        (* we include an upper bound on the rank for purposes of termination *)
-        max_rank : nat;
-        length : positive;
-      }.
-  
-  Definition empty : union_find :=
-    MkUF empty empty 0 1.
-
-  (*TODO: write w/ state monad for clarity?*)
-
-  (* allocates a distinct identifier at the end *)
-  Definition alloc '(MkUF ra pa mr l) :=
-    (MkUF (set l 0%nat ra) (set l l pa) mr (l+1), l).
-
-  (*TODO: should also decrease ranks for performance*)
-  Fixpoint find_aux (mr : nat) f i : option (tree positive * positive) :=
-    match mr with
-    | O => None
-    | S mr =>
-          @! let fi <- get i f in
-            if eqb fi i then
-              ret (f,i)
-            else
-              let (f, r) <- find_aux mr f fi in
-              let f := set i r f in
-              ret (f,r)
-    end.
-
-                   
-  
-  Definition find '(MkUF ra pa mr l) x  : option _ :=
-    @! let (f,cx) <- find_aux (S mr) pa x in
-      ret (MkUF ra f mr l, cx).
-
-  (*TODO: needs to return the root id (check)*)
-  (* Note: returns None if either id is not in the map *)
-  Definition union h x y : option _ :=
-    @! let (h, cx) <- find h x in
-      let (h, cy) <- find h y in
-      if eqb cx cy then ret (h, cx) else
-      (*  let '(ra, pa, mr, l) := h in*)
-        let rx <- get cx h.(rank) in
-        let ry <- get cy h.(rank) in
-        match Nat.compare ry rx with
-        | Lt => @!ret (MkUF (h.(rank))
-                         (set cy cx h.(parent))
-                         (h.(max_rank))
-                         h.(length), cx)
-        | Gt => @!ret (MkUF (h.(rank))
-                         (set cx cy h.(parent)) 
-                         (h.(max_rank))
-                         (h.(length)), cy)
-        | Eq => @!ret (MkUF (set cx (Nat.succ rx) h.(rank))
-                         (set cy cx h.(parent))
-                         (max h.(max_rank) (Nat.succ rx))
-                         h.(length), cx)
-        end.
-
-  
-  Import ListNotations.
-  
-  Inductive exact_rank (pa : tree positive) : positive -> nat -> Prop :=
-  | rank_0 i : Some i = get i pa -> exact_rank pa i 0
-  | rank_S n i j : exact_rank pa j n -> i<>j -> Some j = get i pa -> exact_rank pa i (S n).
-  Hint Constructors exact_rank : utils.
-
-(*
-  Lemma path_unique pa i l1
-    : path_at pa i l1 -> forall l2, path_at pa i l2 -> l1 = l2.
-  Proof.
-    induction 1;
-      destruct 1;
-      basic_goal_prep;
-      basic_utils_crush;
-      try congruence.
-    assert (i = i0) by congruence; subst.
-    erewrite IHpath_at; eauto.
-  Qed.*)
-
-  Definition is_parent u x y : Prop :=
-    get y u.(parent) = Some x.
-
-  
-  (*TODO: move to Utils.v*)
-  Section Closure.
-    Context {A : Type}
-      (R : A -> A -> Prop).
-    Inductive equivalence_closure : A -> A -> Prop :=
-    | eq_clo_base a b : R a b -> equivalence_closure a b
-    | eq_clo_refl a : equivalence_closure a a
-    | eq_clo_trans a b c : equivalence_closure a b -> equivalence_closure b c -> equivalence_closure a c
-    | eq_clo_sym a b : equivalence_closure a b -> equivalence_closure b a.
-    Hint Constructors equivalence_closure : utils.
-
-    Inductive TR_closure : A -> A -> Prop :=
-    | TR_refl a : TR_closure a a
-    | trans_clo_succ a b c : R a b -> TR_closure b c -> TR_closure a c.
-    Hint Constructors TR_closure : utils.
-
-    Lemma TR_closure_trans a b c
-      : TR_closure a b ->
-        TR_closure b c ->
-        TR_closure a c.
-    Proof.
-      induction 1;
-        basic_goal_prep;
-        basic_utils_crush.
-    Qed.
-
-    
-  Lemma TR_implies_equiv a b
-    : TR_closure a b ->
-      equivalence_closure a b.
-  Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  End Closure.
-
-    Hint Constructors equivalence_closure : utils.
-    Hint Constructors TR_closure : utils.
-    Hint Resolve TR_closure_trans TR_implies_equiv : utils.
-
-  
-  Definition Prop2_equiv {A B} (R1 R2 : A -> B -> Prop) :=
-    forall a b, R1 a b <-> R2 a b.
-
-
-  
-  Notation pa_rel pa := (fun x y => Some x = get y pa).
-
-  (* Defined thinking about separation logic *)
-  Inductive repr :  tree positive -> (positive -> option positive) -> Prop :=
-  | repr_emp  : repr PTree.empty (fun _ => None)
-  | repr_alloc pa f i
-    : repr pa f ->
-      f i = None ->
-      repr (set i i pa) (fun x => if x =? i then Some i else f x)
-  | repr_compress pa f i j k
-    : repr pa f ->
-      get i pa = Some j ->
-      f j = Some k ->
-      repr (set i k pa) f
-  | repr_union pa f i k
-    : repr pa f ->
-      get i pa = Some i ->
-      get k pa = Some k ->
-      repr (set i k pa)
-        (fun x =>
-           match f x with
-           | Some j => if j =? i then Some k else f x
-           | None => None
-           end).
 
   
   Definition disjoint_sum {A} (t1 t2 t12: tree A) : Prop :=
@@ -269,79 +111,8 @@ Section UnionFind.
       break.
     exists x, x0; basic_utils_crush.
   Qed.
-  
-  Local Lemma sep_impl_def {A} {P1 P1' P2 P2' : tree A -> Prop}
-    : Uimpl1 P1 P1' ->
-      Uimpl1 P2 P2' ->
-      Uimpl1 (sep P1 P2) (sep P1' P2').
-  Proof.
-    intros; unfold sep in *;
-      break.
-    exists x, x0; basic_utils_crush.
-  Defined.
 
-  Unset Elimination Schemes.
-  Inductive tree_pointing_to : positive -> tree positive -> Prop :=
-  | empty_points j : tree_pointing_to j PTree.empty
-  | successor_points i1 i2 pa
-    : i1 <> i2 ->
-      sep (and1 (not1 (has_key i2)) (tree_pointing_to i1))
-          (eq (singleton i1 i2)) pa ->
-      tree_pointing_to i2 pa
-  | branch_points i pa
-    : sep (tree_pointing_to i) (tree_pointing_to i) pa ->
-      tree_pointing_to i pa.
-  Set Elimination Schemes.
-  Hint Constructors tree_pointing_to : utils.
-
-  Section TreePointingToInd.
-    Context  (P : positive -> tree positive -> Prop)
-      (Hempty : forall j : positive, P j PTree.empty)
-      (Hsucc : forall (i1 i2 : positive) (pa : tree positive),
-          i1 <> i2 ->
-          sep (and1 (and1 (not1 (has_key i2)) (tree_pointing_to i1)) (P i1))
-            (eq (singleton i1 i2)) pa ->
-          P i2 pa)
-      (Hbranch : forall (i : positive) (pa : tree positive),
-          sep (and1 (tree_pointing_to i) (P i))
-            (and1 (tree_pointing_to i) (P i)) pa -> P i pa).
-
-    Fixpoint tree_pointing_to_ind (p : positive) (t : tree positive)
-      (pf : tree_pointing_to p t) {struct pf} : P p t.
-    Proof.
-      refine (match pf with
-              | empty_points j => Hempty j
-              | successor_points i1 i2 pa Hneq pf' =>
-                  Hsucc i1 i2 pa Hneq _
-              | branch_points i pa pf' => _
-              end).
-      {
-        eapply sep_impl_def.
-        3: eauto.
-        2: eauto.
-        intros.
-        split; eauto.
-        apply tree_pointing_to_ind.
-        destruct H; eauto.
-      }
-      {
-        eapply Hbranch.
-        eapply sep_impl_def.
-        3: eauto.
-        all:
-        intros;
-        split; eauto;
-        apply tree_pointing_to_ind;
-        eapply (proj2).
-      }
-    Qed.
-  End TreePointingToInd.
-  
-  Definition parent_tree_at i : tree _ -> Prop :=
-    sep (tree_pointing_to i)
-      (eq (singleton i i)).
-
-  Lemma disjoint_sum_right A pa1 pa2 pa i (j : A)
+ Lemma disjoint_sum_right A pa1 pa2 pa i (j : A)
     : disjoint_sum pa1 pa2 pa ->
       Some j = get i pa2 ->
       Some j = get i pa.
@@ -446,7 +217,6 @@ Section UnionFind.
       all: revert H1; case_match;intros; subst; try tauto; try congruence.
     }
   Qed.
-
   
   Lemma disjoint_empty_left A (a : tree A)
     : disjoint_sum PTree.empty a a.
@@ -465,6 +235,31 @@ Section UnionFind.
     case_match; subst; auto.
   Qed.
   Hint Resolve disjoint_empty_right : utils.
+
+  
+  Lemma disjoint_empty_left' A (a b : tree A)
+    : disjoint_sum PTree.empty a b <-> a = b.
+  Proof.
+    split; subst; basic_utils_crush.
+    apply extensionality.
+    intro i.
+    specialize (H i); revert H.
+    rewrite gempty.
+    repeat case_match; intros; subst; auto; try tauto.
+  Qed.
+  Hint Rewrite disjoint_empty_left' : utils.
+  
+  Lemma disjoint_empty_right' A (a b : tree A)
+    : disjoint_sum a PTree.empty b <-> a = b.
+  Proof.
+    split; subst; basic_utils_crush.
+    apply extensionality.
+    intro i.
+    specialize (H i); revert H.
+    rewrite gempty.
+    repeat case_match; intros; subst; auto; try tauto.
+  Qed.
+  Hint Rewrite disjoint_empty_right' : utils.
 
   
   Lemma sep_get_r A P1 P2 t (j:A) i
@@ -495,35 +290,7 @@ Section UnionFind.
       revert H.
     repeat (case_match; autorewrite with utils; try tauto).
   Qed.
-  
-  
-  Lemma root_cycle i pa
-    : parent_tree_at i pa ->
-      Some i = get i pa.
-  Proof.
-    unfold parent_tree_at.
-    intros; eapply sep_get_r; eauto.
-    basic_utils_crush.
-  Qed.
 
-  (*
-  Lemma roots_disjoint pa1 pa2 i1 i2 pa
-    : parent_tree_at i1 pa1 ->
-      parent_tree_at i2 pa2 ->
-      disjoint_sum pa1 pa2 pa ->
-      i1 <> i2.
-  Proof.
-    intros.
-    intro Heq; subst.
-    apply root_cycle in H, H0.
-
-    specialize (H1 i2).
-    rewrite <- H, <- H0 in H1.
-    auto.
-  Qed.
-   *)
-
-  
 
   
   Lemma disjoint_remove A i1 i2 (pa : tree A)
@@ -625,14 +392,6 @@ Section UnionFind.
   Hint Unfold and1 : utils.
   Hint Unfold not1 : utils.
 
-  
-  Lemma singleton_points i j
-    : i <> j -> tree_pointing_to j (singleton i j).
-  Proof.
-    econstructor 2; basic_utils_crush.
-  Qed.
-  Hint Resolve singleton_points : utils.
-
   Lemma disjoint_remove' A i1 i2 (pa1 pa : tree A)
     : disjoint_sum pa1 (singleton i1 i2) pa ->
       pa1 = remove i1 pa.
@@ -653,49 +412,9 @@ Section UnionFind.
         repeat (case_match; basic_utils_crush; try tauto; try congruence).
   Qed.
 
-  (*
-  (*TODO: should I require a self loop here?*)
-  Lemma tree_split pa i
-    : tree_pointing_to i pa ->
-       forall j k,
-         Some k = get j pa ->
-         j <> i ->
-         sep (tree_pointing_to i) (tree_pointing_to j) (set j j pa).
-  Proof.
-    unfold sep.
-    induction 1;
-      intros;
-      basic_utils_crush.
-    {
-      pose proof (disjoint_remove' _ _ _ _ _ H0); subst.
-      destruct (Pos.eq_dec j i1); subst.
-      {
-        
-      rewrite ?gso in * by eauto; simpl in*; congruence.
-    }
-    {
-   *)
-
   
-(*
-  Lemma disjoint_sum_remove A (pa1 pa2 pa : tree A) i
-    :  disjoint_sum pa1 pa2 pa ->
-       disjoint_sum (remove i pa) (remove i pa) (remove i pa).
-  Proof.
-    intros H i'.
-    destruct (Pos.eq_dec i i'); subst.
-    {
-      basic_utils_crush.
-      case_match.
-      repeat (case_match; basic_utils_crush;
-              rewrite ?gro in * by eauto; try tauto; try congruence).
-      {
-        revert H; 
-        repeat (case_match; basic_utils_crush;
-              rewrite ?gro in * by eauto; try tauto; try congruence).*)
 
 
-  
   Lemma disjoint_sum_has_key_l A (pa1 pa2 pa : tree A) k
     : disjoint_sum pa1 pa2 pa ->
       has_key k pa1 ->
@@ -726,74 +445,7 @@ Section UnionFind.
   Qed.
   Hint Resolve disjoint_sum_has_key_r : utils.
 
-  (*
-  Lemma tree_pointing_to_get_in_tree i pa
-    : tree_pointing_to i pa ->
-      forall j k, Some k = get j pa ->
-                  k = i \/ has_key k pa.
-  Proof.
-    induction 1;
-      intros;
-      basic_utils_crush.
-    {
-      pose proof H2.
-      specialize (H2 j);
-        revert H2.
-      rewrite <- !H3.
-      basic_utils_crush.
-      destruct (Pos.eq_dec i1 j); subst.
-      {
-        revert H2;
-          basic_utils_crush.
-        revert H2;
-          case_match; auto; tauto.
-      }
-      {
-        revert H2;
-          case_match;
-          rewrite !gso, !gempty by eauto;
-          auto; try tauto.
-        intro; subst.
-        apply IHtree_pointing_to in HeqH2.
-        right.
-        intuition subst.
-        {
-          eapply disjoint_sum_has_key_r; eauto.
-          unfold has_key.
-          rewrite gss.
-          auto.
-        }
-        {
-          eapply disjoint_sum_has_key_l; eauto.
-        }
-      }
-    }
-    {
-      pose proof (disjoint_get_some _ _ _ _ _ _ H1 H2).
-      firstorder eauto with utils.
-    }
-  Qed.
-*)
-        
-    (*
-  (*can use above + induction on size of pa?
-    issue: removing the wrong node breaks invariants
-   *)
-  Lemma tree_pointing_to_get_diff i pa
-    : tree_pointing_to i pa ->
-      forall j k, Some k = get j pa ->
-                  j <> i.
-  Proof.    
-    induction 1;
-      intros;
-      basic_utils_crush.
-    {
-      eapply IHtree_pointing_to; eauto.
-    }
-    {
-    }*)
-
-
+  
   Lemma disjoint_sum_set_left A pa1 pa2 pa i (j : A)
     : None = get i pa2 ->
       disjoint_sum pa1 pa2 pa ->
@@ -920,6 +572,8 @@ Section UnionFind.
   Hint Resolve disjoint_sum_has_key : utils.
 
   
+
+
   Lemma sep_implies_not_has_key A P1 P2 (t : tree A) i
     : sep P1 P2 t ->
       (forall t, P1 t -> ~ has_key i t) ->
@@ -933,18 +587,6 @@ Section UnionFind.
     eapply disjoint_sum_has_key in H; eauto.
     firstorder.
   Qed.
-
-  
-  Lemma has_key_singleton A i j (k : A)
-    : has_key i (singleton j k) <-> i = j.
-  Proof.
-    unfold has_key.
-    destruct (Pos.eq_dec i j); subst;
-      basic_utils_crush.
-    rewrite gso, gempty in *; tauto.
-  Qed.
-  Hint Rewrite has_key_singleton : utils.
-
   
   Lemma has_key_sep_distr A P1 P2 (t : tree A) j
     : has_key j t ->
@@ -958,35 +600,8 @@ Section UnionFind.
       exists x, x0;
       basic_utils_crush.
   Qed.
+
   
-  Lemma key_not_root i pa j
-    : tree_pointing_to i pa ->
-      has_key j pa ->
-      i <> j.
-  Proof.
-    induction 1.
-    {
-      unfold has_key;
-      case_match;
-      basic_utils_crush;
-      try tauto; try congruence.
-    }
-    {
-      intros Hk Heq; subst.
-      eapply sep_implies_not_has_key;
-        unfold and1 in *;
-        basic_utils_crush.
-    }
-    {
-      intro Hk.
-      pose proof (has_key_sep_distr _ _ _ _ _ Hk H).
-      clear H Hk; destruct H0;
-        unfold sep, and1 in *; break;
-        eauto.
-    }
-  Qed.
-
-
   
   Lemma disjoint_remove_left A (pa1 pa2 pa : tree A) j
     : has_key j pa1 ->
@@ -1156,10 +771,499 @@ Section UnionFind.
       admit.
     }
     {
-      
-      
-    (*TODO: really want concat here *)
+     
   Admitted.
+
+  
+  Section All1.
+    Context {A B}
+      (P : A -> B -> Prop).
+    
+    (* A Fixpoint version of List.Forall *)
+    Fixpoint all1 l : B -> Prop :=
+      match l with
+      | [] => fun _ => True
+      | e::l' => and1 (P e) (all1 l')
+      end.
+  End All1.
+
+  
+  Definition emp {A} (t : tree A) := t = PTree.empty.
+  
+  Section SepAll.
+    Context {A B}
+      (P : A -> tree B -> Prop).
+    
+    (* A Fixpoint version of List.Forall *)
+    Fixpoint sep_all l : tree B -> Prop :=
+      match l with
+      | [] => emp
+      | e::l' => sep (P e) (sep_all l')
+      end.
+  End SepAll.
+
+  
+  
+  Definition iff1 {A} (P1 P2 : A -> Prop) :=
+    forall a, P1 a <-> P2 a.
+  
+  Add Parametric Relation {A} : (A -> Prop) (@iff1 A)
+  reflexivity proved by (fun P a => iff_refl (P a))
+  symmetry proved by (fun P1 P2 pf a => iff_sym (pf a))
+  transitivity proved by (fun P1 P2 P3 pf1 pf2 a => iff_trans (pf1 a) (pf2 a))
+      as iff1_instance.
+  
+  Add Parametric Morphism {A} :
+    (@sep A) with signature
+      @iff1 (tree A) ==> @iff1 (tree A) ==> @iff1 (tree A)
+        as sep_partial_mor.
+  Proof.
+    unfold iff1; firstorder.
+  Qed.
+
+  
+  Add Parametric Morphism {A} :
+    (@sep A) with signature
+      @iff1 (tree A) ==> @iff1 (tree A) ==> @eq (tree A) ==> @iff
+        as sep_full_mor.
+  Proof.
+    unfold iff1; firstorder.
+  Qed.
+
+  
+  Add Parametric Morphism {A} :
+    (@and1 A) with signature
+      @iff1 A ==> @iff1 A ==> @iff1 A
+        as and1_partial_mor.
+  Proof.
+    unfold iff1; firstorder.
+  Qed.
+
+  
+  Add Parametric Morphism {A} :
+    (@and1 A) with signature
+      @iff1 A ==> @iff1 A ==> @eq A ==> @iff
+        as and1_full_mor.
+  Proof.
+    unfold iff1; firstorder.
+  Qed.
+
+  (* TODO: requires lifting iff1 to funext/iff2
+  Add Parametric Morphism {A} :
+    (@sep_all A) with signature
+      @iff2 (tree A) ==> @eq (list _) ==> @eq (tree A) ==> @iff
+        as sep_full_mor.
+  Proof.
+    unfold iff1; firstorder.
+  Qed.
+   *)
+
+  Notation "A <=> B" := (iff1 A B) (at level 95, no associativity) : type_scope.
+  
+  Lemma sep_emp_l A (P : tree A -> Prop)
+    : sep emp P <=> P.
+  Proof.
+    unfold sep, emp;
+      firstorder subst;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite sep_emp_l : utils.
+  
+  Lemma sep_emp_r A (P : tree A -> Prop)
+    : sep P emp <=> P.
+  Proof.
+    unfold sep, emp;
+      firstorder subst;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite sep_emp_r : utils.
+  
+  Lemma sep_assoc A (P1 P2 P3 : tree A -> Prop)
+    : sep (sep P1 P2) P3 <=> sep P1 (sep P2 P3).
+  Proof.
+    unfold sep, emp, iff1;
+      intuition (break; subst).
+    {
+      eapply disjoint_sum_comm in H0.
+      pose proof (disjoint_sum_assoc _ _ _ _ _ _ H H0).
+      break.
+      exists x1.
+      eexists; repeat split;eauto.
+    }
+    {
+      eapply disjoint_sum_comm in H.
+      pose proof (disjoint_sum_assoc _ _ _ _ _ _ H H1).
+      break.
+      eexists.
+      exists x2.
+      split; [ eapply disjoint_sum_comm; eauto|].
+      repeat split; eauto; eexists; eexists; repeat split; cycle 2; eauto.
+      eapply disjoint_sum_comm; auto.
+    }
+  Qed.
+  Hint Rewrite sep_assoc : utils.
+
+  
+  Lemma sep_emp_l_app A (P : tree A -> Prop)
+    : forall t, sep emp P t <-> P t.
+  Proof.
+    unfold sep, emp;
+      firstorder subst;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite sep_emp_l_app : utils.
+  
+  Lemma sep_emp_r_app A (P : tree A -> Prop)
+    : forall t, sep P emp t <-> P t.
+  Proof.
+    unfold sep, emp;
+      firstorder subst;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite sep_emp_r_app : utils.
+
+Section UnionFind.
+
+  
+  Record union_find :=
+    MkUF {
+        (* We use nats for rank because we do recursion on them.
+           TODO: all ranks or just max rank?
+         *)
+        rank : tree nat;
+        parent : tree positive;
+        (* we include an upper bound on the rank for purposes of termination *)
+        max_rank : nat;
+        length : positive;
+      }.
+  
+  Definition empty : union_find :=
+    MkUF empty empty 0 1.
+
+  (*TODO: write w/ state monad for clarity?*)
+
+  (* allocates a distinct identifier at the end *)
+  Definition alloc '(MkUF ra pa mr l) :=
+    (MkUF (set l 0%nat ra) (set l l pa) mr (l+1), l).
+
+  (*TODO: should also decrease ranks for performance*)
+  Fixpoint find_aux (mr : nat) f i : option (tree positive * positive) :=
+    match mr with
+    | O => None
+    | S mr =>
+          @! let fi <- get i f in
+            if eqb fi i then
+              ret (f,i)
+            else
+              let (f, r) <- find_aux mr f fi in
+              let f := set i r f in
+              ret (f,r)
+    end.
+
+                   
+  
+  Definition find '(MkUF ra pa mr l) x  : option _ :=
+    @! let (f,cx) <- find_aux (S mr) pa x in
+      ret (MkUF ra f mr l, cx).
+
+  (*TODO: needs to return the root id (check)*)
+  (* Note: returns None if either id is not in the map *)
+  Definition union h x y : option _ :=
+    @! let (h, cx) <- find h x in
+      let (h, cy) <- find h y in
+      if eqb cx cy then ret (h, cx) else
+      (*  let '(ra, pa, mr, l) := h in*)
+        let rx <- get cx h.(rank) in
+        let ry <- get cy h.(rank) in
+        match Nat.compare ry rx with
+        | Lt => @!ret (MkUF (h.(rank))
+                         (set cy cx h.(parent))
+                         (h.(max_rank))
+                         h.(length), cx)
+        | Gt => @!ret (MkUF (h.(rank))
+                         (set cx cy h.(parent)) 
+                         (h.(max_rank))
+                         (h.(length)), cy)
+        | Eq => @!ret (MkUF (set cx (Nat.succ rx) h.(rank))
+                         (set cy cx h.(parent))
+                         (max h.(max_rank) (Nat.succ rx))
+                         h.(length), cx)
+        end.
+
+  
+  Import ListNotations.
+  
+  Inductive exact_rank (pa : tree positive) : positive -> nat -> Prop :=
+  | rank_0 i : Some i = get i pa -> exact_rank pa i 0
+  | rank_S n i j : exact_rank pa j n -> i<>j -> Some j = get i pa -> exact_rank pa i (S n).
+  Hint Constructors exact_rank : utils.
+
+(*
+  Lemma path_unique pa i l1
+    : path_at pa i l1 -> forall l2, path_at pa i l2 -> l1 = l2.
+  Proof.
+    induction 1;
+      destruct 1;
+      basic_goal_prep;
+      basic_utils_crush;
+      try congruence.
+    assert (i = i0) by congruence; subst.
+    erewrite IHpath_at; eauto.
+  Qed.*)
+
+  Definition is_parent u x y : Prop :=
+    get y u.(parent) = Some x.
+
+  
+  (*TODO: move to Utils.v*)
+  Section Closure.
+    Context {A : Type}
+      (R : A -> A -> Prop).
+    Inductive equivalence_closure : A -> A -> Prop :=
+    | eq_clo_base a b : R a b -> equivalence_closure a b
+    | eq_clo_refl a : equivalence_closure a a
+    | eq_clo_trans a b c : equivalence_closure a b -> equivalence_closure b c -> equivalence_closure a c
+    | eq_clo_sym a b : equivalence_closure a b -> equivalence_closure b a.
+    Hint Constructors equivalence_closure : utils.
+
+    Inductive TR_closure : A -> A -> Prop :=
+    | TR_refl a : TR_closure a a
+    | trans_clo_succ a b c : R a b -> TR_closure b c -> TR_closure a c.
+    Hint Constructors TR_closure : utils.
+
+    Lemma TR_closure_trans a b c
+      : TR_closure a b ->
+        TR_closure b c ->
+        TR_closure a c.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    
+  Lemma TR_implies_equiv a b
+    : TR_closure a b ->
+      equivalence_closure a b.
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  End Closure.
+
+    Hint Constructors equivalence_closure : utils.
+    Hint Constructors TR_closure : utils.
+    Hint Resolve TR_closure_trans TR_implies_equiv : utils.
+
+  
+  Definition Prop2_equiv {A B} (R1 R2 : A -> B -> Prop) :=
+    forall a b, R1 a b <-> R2 a b.
+
+
+  
+  Notation pa_rel pa := (fun x y => Some x = get y pa).
+
+  Unset Elimination Schemes.
+  Inductive parent_tree : Set :=
+  | pt_points : positive -> list parent_tree -> parent_tree.
+  Set Elimination Schemes.
+
+  (*Stronger induction principle w/ better subterm knowledge
+   *)
+  Fixpoint parent_tree_ind
+    (P : parent_tree -> Prop)
+    (IHC : forall n l, all P l ->
+                       P (pt_points n l))
+    (e : parent_tree) { struct e} : P e :=
+    match e with
+    | pt_points n l =>
+        let fix loop l :=
+          match l return List.fold_right (fun t => and (P t)) True l with
+          | [] => I
+          | e' :: l' => conj (parent_tree_ind _ IHC e') (loop l')
+          end in
+        IHC n l (loop l)
+    end.
+
+  Fixpoint parent_tree_rect
+    (P : parent_tree -> Type)
+    (IHC : forall n l,
+        List.fold_right (fun t => prod (P t)) unit l ->
+        P (pt_points n l))
+    (e : parent_tree) { struct e} : P e :=
+    match e with
+    | pt_points n l =>
+        let fix loop l :=
+          match l return List.fold_right (fun t => prod (P t)) unit l with
+          | [] => tt
+          | e' :: l' => (parent_tree_rect _ IHC e', loop l')
+          end in
+        IHC n l (loop l)
+    end.
+
+  Definition points_to (t : parent_tree) :=
+    let (i,l) := t in i.
+
+  Definition maps {A} i j (pa : tree A) := Some i = get j pa.
+
+  Definition pure {A} P (_:tree A) : Prop := P.
+
+  Notation "x //\\ y" := (and1 x y) (at level 80, right associativity).
+
+  Notation "%% p" := (pure p) (at level 76, right associativity).
+  
+  Fixpoint tree_pointing_to (t : parent_tree) : tree positive -> Prop :=
+    let (i, l) := t in
+    sep (sep_all (fun j => %%i <> j //\\ maps i j) (map points_to l))
+      (sep_all tree_pointing_to l).
+
+  Definition parent_tree_at t : tree _ -> Prop :=
+    sep (tree_pointing_to t)
+      (eq (singleton (points_to t) (points_to t))). 
+  
+  Lemma root_cycle i pa
+    : parent_tree_at i pa ->
+      Some (points_to i) = get (points_to i) pa.
+  Proof.
+    unfold parent_tree_at.
+    intros; eapply sep_get_r; eauto.
+    basic_utils_crush.
+  Qed.
+
+  Definition single_tree i j := pt_points j [pt_points i []].
+
+  Hint Unfold pure maps : utils.
+  Lemma singleton_points i j
+    : i <> j -> tree_pointing_to (single_tree i j) (singleton i j).
+  Proof.
+    cbn -[get set]; basic_utils_crush.
+    unfold and1, pure, maps.
+    basic_utils_crush.
+  Qed.
+  Hint Resolve singleton_points : utils.
+
+  
+  Lemma has_key_singleton A i j (k : A)
+    : has_key i (singleton j k) <-> i = j.
+  Proof.
+    unfold has_key.
+    destruct (Pos.eq_dec i j); subst;
+      basic_utils_crush.
+    rewrite gso, gempty in *; tauto.
+  Qed.
+  Hint Rewrite has_key_singleton : utils.
+
+  
+  Lemma emp_empty A (t : tree A)
+    : emp t <-> t = PTree.empty.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite emp_empty : utils.
+
+
+  Lemma pure_true_l A (P : tree A -> Prop)
+    : %% True //\\ P <=> P.
+  Proof.
+    unfold pure.
+    firstorder.
+  Qed.
+  Hint Rewrite pure_true_l : utils.
+
+  Lemma iff1_reflexive_rew A (P : A -> Prop) : P <=> P <-> True.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite iff1_reflexive_rew: utils.
+  
+  Lemma sep_and_pure_l A P (Q R : tree A -> Prop)
+    : sep (%% P //\\ Q) R <=> %%P //\\ sep Q R.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite sep_and_pure_l: utils.
+  
+  Lemma sep_and_pure_r A P (Q R : tree A -> Prop)
+    : sep R (%% P //\\ Q) <=> %%P //\\ sep R Q.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite sep_and_pure_r: utils.
+
+  (*TODO: which way to rew?*)
+  Lemma and1_pure A P Q
+    : %% (P /\ Q) <=> @pure A P //\\ %% Q.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite and1_pure: utils.
+
+  Lemma and1_assoc A (P Q R : A -> Prop)
+    : (P //\\ Q) //\\ R <=> P //\\Q //\\R.
+  Proof.
+    firstorder.
+  Qed.
+  Hint Rewrite and1_assoc: utils.
+
+    
+  Lemma sep_all_pure_l A B P (Q : A -> tree B -> Prop) (l : list A)
+    : sep_all (fun j => %% P j //\\ Q j) l
+        <=> %%(all P l) //\\ sep_all Q l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite IHl.
+    basic_utils_crush.
+  Qed.
+  Hint Rewrite sep_all_pure_l : utils.
+  
+  Lemma key_not_root i pa j
+    : tree_pointing_to i pa ->
+      has_key j pa ->
+      points_to i <> j.
+  Proof.
+    revert pa.
+    induction i.
+    {
+      revert H; induction l;
+        basic_goal_prep.
+      1:basic_utils_crush.
+      break.
+      specialize (IHl ltac:(assumption)).
+      basic_utils_crush.
+      eapply iff1_instance_Transitive in H0.
+      3:{
+        symmetry.
+        simple eapply sep_and_pure_l.
+      }
+      2:{
+        
+        eapply sep_partial_mor; [| reflexivity].
+        
+      2: eapply sep_mor_Proper.
+      etransitivity in H0.
+      rewrite sep_and_pure_l in H0.
+      try tauto; try congruence.
+    }
+    {
+      intros Hk Heq; subst.
+      eapply sep_implies_not_has_key;
+        unfold and1 in *;
+        basic_utils_crush.
+    }
+    {
+      intro Hk.
+      pose proof (has_key_sep_distr _ _ _ _ _ Hk H).
+      clear H Hk; destruct H0;
+        unfold sep, and1 in *; break;
+        eauto.
+    }
+  Qed.
+
+
 
   Lemma tree_split pa i
     : tree_pointing_to i pa ->
@@ -1550,7 +1654,6 @@ Section UnionFind.
   Qed.
       
 
-  Definition emp {A} (t : tree A) := t = PTree.empty.
   
   Fixpoint forest (l : list positive) : tree positive -> Prop :=
     match l with
