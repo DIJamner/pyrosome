@@ -1092,7 +1092,7 @@ Section UnionFind.
     (IHC : forall n l,
         List.fold_right (fun t => prod (P t)) unit l ->
         P (pt_points n l))
-    (e : parent_tree) { struct e} : P e :=
+    (e : parent_tree) {struct e} : P e :=
     match e with
     | pt_points n l =>
         let fix loop l :=
@@ -1102,9 +1102,29 @@ Section UnionFind.
           end in
         IHC n l (loop l)
     end.
+    
 
   Definition points_to (t : parent_tree) :=
     let (i,l) := t in i.
+
+  (*TODO: move to Utils.v*)
+  Section Some.
+    Context {A : Type}
+      (P : A -> Prop).
+    Fixpoint some (l : list A) :=
+      match l with
+      | [] => False
+      | a::l => P a \/ some l
+      end.
+  End Some.
+
+  Fixpoint In_tree i (p : parent_tree) : Prop :=
+    let (j,l) := p in
+    i = j \/ some (In_tree i) l.
+
+  
+  Definition parent_tree_equiv (p1 p2: parent_tree) :=
+    (forall i, In_tree i p1 <-> In_tree i p2).
 
   Definition maps {A} i j (pa : tree A) := Some i = get j pa.
 
@@ -1240,7 +1260,7 @@ Section UnionFind.
         simple eapply sep_and_pure_l.
       }
       2:{
-        
+        (*
         eapply sep_partial_mor; [| reflexivity].
         
       2: eapply sep_mor_Proper.
@@ -1262,9 +1282,33 @@ Section UnionFind.
         eauto.
     }
   Qed.
+         *)
+        Admitted.
 
 
 
+(*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
   Lemma tree_split pa i
     : tree_pointing_to i pa ->
        forall j,
@@ -4202,335 +4246,61 @@ parent_path_len
       eapply find_aux_preserves_dense; eauto.
     }
   Qed.
+*)
         
 End UnionFind.
 
-  
-Module PositiveUnionFind.
-  Import ZArith.
-  Import TrieMap.TrieArrayList.
-  Open Scope positive.
-
-  Notation union_find := (@UnionFind.union_find positive trie_array).
-
-  
-  Definition is_parent '(MkUF ra pa mr : union_find) x y : Prop :=
-    get pa y = x.
-
-  (* TODO: will there be issues w/ positive overflowing here?
-     TODO: if we assume is_top = false, do the issues go away?
-   *)
-  Inductive parent_degree (pa : trie_array positive) : positive -> positive -> Prop :=
-  | pdegree_0 i : get pa i = i -> parent_degree pa i 1
-  | pdegree_S i j n : get pa i = j -> parent_degree pa j n -> parent_degree pa i (succ n).
-  
-  Inductive parent_degree_bound (pa : trie_array positive) : positive -> positive -> Prop :=
-  | pdegree_b0_bound i n : get pa i = i -> parent_degree_bound pa i n
-  | pdegree_S_bound i j n m
-    : get pa i = j ->
-      parent_degree_bound pa j n ->
-      n < m ->
-      parent_degree_bound pa i m.
-  
-  Record trie_array_ok {A} (a : trie_array A) :=
-    {
-      len_gt_max_key : forall i e,
-        PTree.get i (snd (fst a)) = Some e ->
-        fst (fst a) > i
-    }.
-
-  Definition dense {A} (a : trie_array A) :=
-    forall i, i < fst (fst a) ->
-              if PTree.get i (snd (fst a)) then True else False.
-  
-  Record union_find_ok (u : union_find) :=
-    {
-      max_rank_ok : forall i, (get u.(rank) i) <= u.(max_rank);
-      ranks_ok : forall i, parent_degree_bound u.(parent) i (get u.(rank) i);
-      len_same : ArrayList.length u.(parent) = ArrayList.length u.(rank);
-      parents_ok : trie_array_ok u.(parent);
-      parents_dense : dense u.(parent);
-      rank_ok : trie_array_ok u.(rank);
-      rank_dense : dense u.(rank);
-    }.
-
-  (*TODO: move to Utils.v*)
-  Inductive equivalence_closure {A} (R : A -> A -> Prop) : A -> A -> Prop :=
-  | eq_clo_base a b : R a b -> equivalence_closure R a b
-  | eq_clo_refl a : equivalence_closure R a a
-  | eq_clo_trans a b c : equivalence_closure R a b -> equivalence_closure R b c -> equivalence_closure R a c
-  | eq_clo_sym a b : equivalence_closure R a b -> equivalence_closure R b a.
-
-  Hint Constructors equivalence_closure : utils.
-
-  Inductive parent_path (pa : trie_array positive) : positive -> positive -> Prop :=
-  | ppath_0 i : parent_path pa i i
-  | ppath_S i j k : get pa i = j -> parent_path pa j k -> parent_path pa i k.
-  Hint Constructors parent_path : utils.
-
-  Let uf_clo uf := equivalence_closure (is_parent uf).
-  
-  Lemma find_preserves_len_parents (uf : union_find) i uf' i'
-    : find uf i = (uf', i') ->
-      i < ArrayList.length uf.(parent) ->
-      ArrayList.length uf.(parent) =  ArrayList.length uf'.(parent).
-  Proof.    
-    destruct uf as [ra pa mr].
-    revert ra pa i uf' i'.
-    eapply Pos.peano_ind with (p:=mr);
-      intros;
-      destruct uf' as [ra' pa' mr'];
-      unfold trie_array in *; break; simpl in *.
-    {
-      revert H; case_match.
-      repeat (revert HeqH;case_match); simpl in *;
-        basic_goal_prep;
-          basic_utils_crush;
-        try congruence;
-        safe_invert H3;
-        rewrite Pos.max_l; Lia.lia.
-    }
-  Abort.
-
-  (*
-    
-  Lemma find_preserves_ok uf i uf' i'
-    : union_find_ok uf ->
-      find uf i = (uf', i') ->
-      (*TODO: do I want this condition?*)
-      i < ArrayList.length uf.(parent) ->
-      union_find_ok uf'.
-  Proof.
-    
-    destruct uf as [ra pa mr].
-    revert ra pa i uf' i'.
-    eapply Pos.peano_ind with (p:=mr);
-      intros; unfold trie_array in *; break.
-    {
-      destruct H;
-        revert H0; simpl in *.
-      case_match;
-      revert HeqH.
-      case_match;
-        revert HeqH.
-      {
-        case_match;
-          intro H'; symmetry in H'; apply Pos.eqb_eq in H'; subst;
-          intro H'; safe_invert H';
-          intro H'; safe_invert H';
-          constructor; eauto.
-      }
-      {
-        case_match.
-        {
-          intros _.
-          intro H'; safe_invert H';
-            intro H'; safe_invert H'.
-          assert (Pos.max p1 (i + 1) = p1).
-          {
-            eapply Pos.max_l.
-            destruct parents_ok0.
-            simpl in *.
-            symmetry in HeqH.
-            apply len_gt_max_key0 in HeqH.
-            Lia.lia.
-          }
-          {
-            constructor; simpl; eauto.
-            
-            simpl.
-      }
-        }
-        {
-          
-        }
-          
-    
-  Lemma find_preserves_relation uf i uf' i'
-    : union_find_ok uf ->
-      find uf i = (uf', i') ->
-      (forall x y, uf_clo uf x y <-> uf_clo uf' x y)
-      /\ (uf_clo uf i i').
-  Proof.
-    destruct uf as [ra pa mr].
-    revert ra pa i uf' i'.
-    eapply Pos.peano_ind with (p:=mr);
-      intros; unfold trie_array in *; break.
-    {
-      simpl in *.
-      revert H.
-      my_case Hir (PTree.get i r).
-      2:{
-      case_match.
-      revert HeqH.
-      case_match.
-    }
-  
-  (*TODO: not true because arrays are non-canonical due to default elt*)
-  Lemma get_set_same_existing (pa : trie_array positive) i
-    :  trie_array_ok pa ->
-       i < ArrayList.length pa -> set pa i (get pa i) = pa.
-  Proof.
-    destruct pa as [[? ?] ?]; simpl.
-    intros [?] iltp; simpl in *.
-    f_equal; f_equal.
-    {
-      unfold Pos.max.
-      destruct (Pos.compare_spec p (i+1)); try Lia.lia.
-    }
-    case_match.
-    2:{
-    [|f_equal].
-    cbn 
-    unfold get, set.
-    
-
-  Lemma find_aux_path pa mr
-    : forall i i' pa',
-      i < ArrayList.length pa ->
-        find_aux mr pa i = (pa', i') ->
-        parent_path pa i i'.
-  Proof.
-    cbn [find_aux Natlike.iter NatlikePos.natlike_positive].
-    revert pa.
-    
-    eapply Pos.peano_ind with (p:=mr);
-      intros; break.
-    {
-      cbn -[get set] in H0.
-      revert H0; case_match.
-      {        
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-      {
-        destruct 
-      }
-    rewrite iter_succ in *; eauto.
-    2:{
-      apply is_top_spec; eauto.
-    }
-    revert H4; case_match.
-    { 
-      basic_goal_prep;
-        basic_utils_crush.
-    }
-    remember (iter _ _ _ _ _) as loop.
-    destruct loop.
-    basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  Lemma max_rank_upper_bound u
-    : union_find_ok u ->
-      forall i, parent_degree_bound u.(parent) i u.(max_rank).
-  Proof.
-    intro H'; destruct H'.
-    intro i.
-    specialize (ranks_ok0 i).
-    specialize (max_rank_ok0 i).
-    clear len_same0.
-    revert ranks_ok0 max_rank_ok0.
-    generalize (get (rank u) i).
-    induction 1.
-    {
-      constructor; eauto.
-    }
-    {
-      econstructor 2; eauto.
-      
-    }
-
-  Lemma find_aux_degree pa mr
-    : forall i i' pa',
-      find_aux mr pa i = (pa', i') ->
-      (get pa' i = i' /\
-      forall n j,
-      parent_degree_bound pa j n ->
-      parent_degree_bound pa' j n).
-  Proof.
-    revert pa.
-    unfold find_aux.
-    eapply natlike_ind with (n:=mr); auto;
-      [ rewrite iter_zero in * |];
-      basic_goal_prep;
-      basic_utils_crush.
-    rewrite iter_succ in *; eauto.
-    2:{
-      apply is_top_spec; eauto.
-    }
-    revert H4; case_match.
-    { 
-      basic_goal_prep;
-        basic_utils_crush.
-    }
-    remember (iter _ _ _ _ _) as loop.
-    destruct loop.
-    basic_goal_prep;
-      basic_utils_crush.
-    symmetry in Heqloop.
-    eapply H3 in Heqloop; eauto.
-    TODO: need to know about i, i'
-
-    Lemma decreasing_parent_degree_bound
-      : parent_degree_bound pa j n ->
-        parent_degree_bound (set pa i i') j n.
-                             
-
-    
-  Lemma find_aux_sound pa mr
-    : (forall i j, parent_degree pa i j -> leb j mr = true) ->
-      forall i i' pa',
-        find_aux mr pa i = (pa', i') ->
-        equivalence_closure (fun a b => get pa a = b) i i'.
-  Proof.
-    unfold find_aux.
-    revert pa.
-    eapply natlike_ind with (n:=mr); auto;
-      [ rewrite iter_zero in * |];
-      basic_goal_prep;
-      basic_utils_crush.
-    rewrite iter_succ in *; eauto.
-    2:{
-      apply is_top_spec; eauto.
-    }
-    {
-      revert H5; case_match.
-      { 
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-      remember (iter _ _ _ _ _) as loop.
-      destruct loop.
-      basic_goal_prep;
-        basic_utils_crush.
-      eapply H3; eauto.
-      case_match'.
-      eapply eq_clo_trans.
-      rewrite iter_zero in H3.
-      
-      simpl in *.
-    }
-    auto.
-    
-    induction mr.
- 
-  Lemma find_sound u i u' i'
-    : union_find_ok u -> find u i = (u', i') -> EqClo u i i'.
-  Proof.
-    destruct u.
-    unfold find.
-    unfold find_aux, union_find_ok.
-    simpl.
-    revert max_rank0 rank0 parent0.
-    eapply natlike_ind; eauto.
-    intros.
-      with (n:=max_rank0).
-
-    induction max_rank0.
 
 
-  TODO: generalize proofs to any unionfind
+Definition forest_equiv (f1 f2 : list parent_tree) :=
+  exists f1', Permutation.Permutation f1 f1'
+              /\ Forall2 parent_tree_equiv f1' f2.
+
+Definition equiv_by_forest f i1 i2 :=
+  exists t, In t f
+            /\ In_tree i1 t
+            /\ In_tree i2 t.
+
+(*Temporary axioms for use in fleshing out the rest*)
+Parameter (uf_ok : union_find -> list parent_tree -> Prop).
+Axiom (empty_ok : uf_ok empty []).
+Axiom (find_spec
+        : forall f u i u' i',
+          uf_ok u f ->
+          Some (u', i') = find u i ->
+          equiv_by_forest f i i'
+          /\ exists f', forest_equiv f f' /\ uf_ok u' f').
+
+
+Definition forest_subrel (f1 f2 : list parent_tree) :=
+  (* f1 small eq, so can have more trees *)
+  forall i1 i2, equiv_by_forest f1 i1 i2 -> equiv_by_forest f2 i1 i2.
+
+Axiom (union_spec
+        : forall u i j u' i' f,
+          uf_ok u f ->
+          Some (u', i') = union u i j ->
+          exists f', forest_subrel f f'
+                     /\ equiv_by_forest f' i i'
+                     /\ equiv_by_forest f' j i'
+                     /\ uf_ok u' f').
+(*
+Axiom (union_spec
+        : forall u i j u' i' f,
+          uf_ok u f ->
+          Some (u', i') = union u i j ->
+          (* How to say ti, tj in f, remove?
+             Also: what if they are the same?
+           *)
+          exists ti tj,
+             In ti f
+            /\ In tj f
+            /\ In_tree i ti
+            /\ In_tree j tj
+            /\ exists  ti' f',
+              points_to ti' = i'
+              (*Not a full spec, but enough for soundness *)
+              /\ (forall tk, In tk f' -> (tk = ti') \/ (tk <> ti /\ tk <> tj /\ In tk f))
+              /\ (forall k, In_tree k ti' <-> (In_tree k ti \/ In_tree k tj))
+              /\ uf_ok u' (ti'::f)).
 *)
-
-End PositiveUnionFind.
