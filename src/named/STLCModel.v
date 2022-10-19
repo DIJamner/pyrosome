@@ -128,7 +128,7 @@ Definition type_of_val (e : Term.term string) (ms : string_meta_subst) : Type :=
 Fixpoint compile_val (os : env_ty) : forall (e : Term.term string) (ms : string_meta_subst), type_of_val e ms :=
   fun e =>
     match e as e' return (forall (ms : string_meta_subst), env_ty -> type_of_val e' ms) with
-    | Term.con "lam" [a; B; A; G] => fun ms g p => (compile_val os a ms) g
+    | Term.con "lam" [a; B; A; G] => fun ms g p => (compile_val os a ms) p
     | Term.con "0" [] => fun ms g => 0
     | Term.var v => fun ms g => tt
     | Term.con _ _ => fun ms g => tt

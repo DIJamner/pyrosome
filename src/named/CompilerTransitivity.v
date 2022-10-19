@@ -166,6 +166,7 @@ Proof.
   clear x x0 H0 H2 HeqH4.
   revert dependent l0.
   induction l0; basic_goal_prep; basic_core_crush.
+  trivial.
 Qed.
 Hint Rewrite compile_term_subst : lang_core.
 
@@ -207,6 +208,7 @@ Proof.
   f_equal.
   apply compile_args_subst; eauto.
   reflexivity.
+  trivial.
 Qed.
 Hint Rewrite compile_sort_subst : lang_core.
 

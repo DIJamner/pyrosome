@@ -10,7 +10,7 @@ Open Scope list.
 From bedrock2 Require Import Syntax.
 
 From Utils Require Import Utils.
-From Named Require Import Substable Model.
+From Named Require Import Substable Model GeneralModel.
 From Named Require Import Term Rule.
 
 
@@ -44,3 +44,28 @@ Notation lang := (@lang string).
 Variant bedrock_term :=
   | bedrock_expr (e : expr)
   | bedrock_cmd (c : cmd).
+
+Variant bedrock_sort :=
+  | br_expr
+  | br_cmd.
+
+Print Substable0.
+Print Model.Model.
+
+Print Model.Model_ok.
+Print Substable.subst.
+Set Printing Implicit.
+Print GeneralModel.model.
+
+Check (GeneralModel.model (V := string)).
+
+(* Need to supply eq_sort, eq_term, wf_sort, wf_term on lcosed terms here *)
+Definition bedrock_model := GeneralModel.model (V := string) bedrock_term.
+Definition bedrock_model_ok : Model.Model_ok bedrock_model := GeneralModel.model_ok bedrock_term bedrock_sort.
+
+Check GeneralModel.model.
+Check Model.Model.
+Check bedrock_model.
+Definition get_substable (m : Model.Model) : Substable.Substable.
+
+  (* Make a pyrosome language with a limited subset of the bedrock language *)
