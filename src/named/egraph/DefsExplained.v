@@ -361,7 +361,7 @@ Notation lang := (@lang int).
          let pn <- canonicalize pn in
          let ci <- find pi in
          (set_hashcons pn ci) in
-        let new_parents <-
+        let {ST} new_parents <-
                  @! for/fold pn pi
                     from c.(parents)
                              [[new_parents := (map.empty : node_map)]] in

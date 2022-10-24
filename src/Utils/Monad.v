@@ -59,6 +59,23 @@ Notation "'ret' e" := (Mret e) (in custom monadic_do at level 90, e constr).
 
 Notation "e" := e (in custom monadic_do at level 90, e constr at level 0).
 
+(* For disambiguation (usually debugging) *)
+Notation "'ret' { M } e" :=
+  (Mret (M:=M) e)
+    (in custom monadic_do at level 90, e constr, only parsing).
+
+Notation "'let' { M } p <- e 'in' b" :=
+  (Mbind (M:=M) (fun p => b) e)
+    (in custom monadic_do at level 200, left associativity,
+        p pattern at level 0, e constr, b custom monadic_do,
+        only parsing).
+
+Notation "'let' { M } p <?- e 'in' b" :=
+  (Mbind (M:=M) (fun x => match x with p => b | _ => default end) e)
+    (in custom monadic_do at level 200, left associativity,
+        p pattern at level 0, e constr, b custom monadic_do,
+        only parsing).
+
 (*Notation "e" := (e) (in custom monadic_do at level 80, e constr at level 80).*)
 
 (*
@@ -124,6 +141,11 @@ Instance id_monad : Monad id :=
     Mret _ a := a;
     Mbind _ _ f := f;
   }.
+
+
+Notation "'let' p <^- e 'in' b" :=
+  (Mbind (fun p => b) (lift e))
+    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
 
 
 Definition optionT (M : Type -> Type) A := M (option A).

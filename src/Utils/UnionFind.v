@@ -4276,31 +4276,24 @@ Definition forest_subrel (f1 f2 : list parent_tree) :=
   (* f1 small eq, so can have more trees *)
   forall i1 i2, equiv_by_forest f1 i1 i2 -> equiv_by_forest f2 i1 i2.
 
+Definition tree_union_l (t1 t2 : parent_tree) :=
+  let (i, l) := t1 in
+  pt_points i (t2::l).
+
 Axiom (union_spec
         : forall u i j u' i' f,
           uf_ok u f ->
           Some (u', i') = union u i j ->
-          exists f', forest_subrel f f'
-                     /\ equiv_by_forest f' i i'
-                     /\ equiv_by_forest f' j i'
-                     /\ uf_ok u' f').
-(*
-Axiom (union_spec
-        : forall u i j u' i' f,
-          uf_ok u f ->
-          Some (u', i') = union u i j ->
-          (* How to say ti, tj in f, remove?
-             Also: what if they are the same?
-           *)
-          exists ti tj,
-             In ti f
-            /\ In tj f
-            /\ In_tree i ti
-            /\ In_tree j tj
-            /\ exists  ti' f',
-              points_to ti' = i'
-              (*Not a full spec, but enough for soundness *)
-              /\ (forall tk, In tk f' -> (tk = ti') \/ (tk <> ti /\ tk <> tj /\ In tk f))
-              /\ (forall k, In_tree k ti' <-> (In_tree k ti \/ In_tree k tj))
-              /\ uf_ok u' (ti'::f)).
-*)
+          (*accounts for the case where i ~ j already
+           so that we can assume they have separate trees in the other branch*)
+          (u' = u /\ equiv_by_forest f i i' /\ equiv_by_forest f j i')
+          \/ exists f' it jt,
+              Permutation.Permutation f (jt::it::f')
+              /\ In_tree i it
+              /\ In_tree j jt
+              /\ exists ijt',
+                (ijt' = (tree_union_l it jt)
+                 \/ ijt' = tree_union_l jt it)
+                /\ uf_ok u' (ijt'::f')
+                /\ points_to ijt' = i').
+
