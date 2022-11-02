@@ -234,14 +234,6 @@ Definition is_some {A} (x:option A) := if x then True else False.
   Rules are scanned from the root of the language.
  *)
 
-  
-  (*TODO: move to TreeProofs?*)
-  Fixpoint pf_refl e : pf :=
-    match e with
-    | var x => pvar x
-    | con n s => pcon n (map pf_refl s)
-    end.
-
   Section WithCtx.
 
     Context (l : lang).
@@ -362,6 +354,31 @@ Definition is_some {A} (x:option A) := if x then True else False.
       else @! let p1 <- step_sort t1 in
               let p2 <- step_sort t2 in
               ret pconv (ptrans p1 (psym p2)) p.
+
+    
+    Fixpoint cast_args_by_step c' s pfs : option (list pf) :=
+      match c', s, pfs with
+      | [], [], [] => Some []
+      | (n,t)::c', e::s, p::pfs =>
+          @! let pfs' <- cast_args_by_step c' s pfs in
+            let p' <- cast_by_step t[/with_names_from c' s/] p in
+            ret p'::pfs'
+      | _, _, _ => None
+      end.
+    
+    Fixpoint pf_refl e : pf :=
+      match e with
+      | var x => pvar x
+      | con n s =>
+          (*TODO: copied from below*)
+          let refls := map pf_refl s in
+          (*TODO: hacky; should probably be in option*)
+          let pfs' :=
+            unwrap_with_default refls
+              (@! let (term_rule c' _ _) <?- named_list_lookup_err l n in
+                 (cast_args_by_step c' s refls)) in
+          pcon n pfs'
+      end.
   
     (* if the top level of the term takes a step, return it *)
     (*
@@ -391,30 +408,21 @@ Definition is_some {A} (x:option A) := if x then True else False.
       | _::l' => step_redex_term l' c e
       end.
 
-    (* takes steps starting from the root of the tree
-   and only proceeding once the root does not reduce
-     *)
-    Fixpoint step_term_outwards_in e : pf :=
-      match step_redex_term l c e with
-      | Some (i,_) => i
-      | None =>
-          match e with
-          | var x => pf_refl (var x)
-          | con n s => pcon n (map step_term_outwards_in s)
-          end
-      end.
+
 
     (*TODO: following 2 fns should be merged;
 cannot generate, e.g.
 [beta; cong [id_right; ...]; ...]
      *)
-    Fixpoint step_redex_term_n e n : option _ :=
+    Fixpoint step_redex_term_n e t n : option _ :=
       @! let (s,e') <- step_redex_term l c e in
          match n with
-         | 0 => @!ret (s,e')
+         | 0 => @!let st <- cast_by_step t s in
+                  ret (st,e')
          | S n =>
-             @! let (s',e'') <- step_redex_term_n e' n in
-                ret (ptrans s s', e'')
+             @! let (s',e'') <- step_redex_term_n e' t n in
+               let st <- cast_by_step t s in
+                ret (ptrans st s', e'')
          end.
 
       Section StepTermInner.
@@ -433,7 +441,12 @@ cannot generate, e.g.
                 let refls := map (fun e : term => (pf_refl e, e)) s in
                 let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
                 let (arg_steps, args) := split steps in
-                Some (pcon name arg_steps, con name args)
+              (*TODO: hacky; should probably be in option*)
+              let pfs' :=
+                unwrap_with_default arg_steps 
+                  (@! let (term_rule c' _ _) <?- named_list_lookup_err l name in
+                  (cast_args_by_step c' s arg_steps)) in
+                Some (pcon name pfs', con name args)
           end.
 
         Definition step_term_one_traversal e
@@ -452,7 +465,8 @@ cannot generate, e.g.
         | 0 => None
         | S n' =>
             @! let (step,e') <- step_term_one_traversal (step_term' n') e in
-               match step_term' n' e' with
+              match step_term' n' e' with
+                (*TODO: transitivity casts*)
                | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
                | None => @! ret (step, e')
                end
@@ -460,13 +474,15 @@ cannot generate, e.g.
 
   End Inner.
 
+  (*TODO: what to do with T; currently unused, but probably shouldn't be*)
   Fixpoint step_term (n : nat) (e : term) (t : sort) {struct n} : pf :=
     match n with
-    | 0 => pf_refl e
+      (*TODO: do I care if the 0 case is valid?*)
+    | 0 => pf_refl (fun e _ => pvar default) e
     | S n =>
         match step_term' (step_term n) n e with
         | Some (pf,_) => pf
-        | _ => pf_refl e
+        | _ => pf_refl (step_term n) e
         end
     end.
 

@@ -35,7 +35,9 @@ Section WithVar.
     (wf_ctx (Model:= core_model l)).
 
   
-    (*TODO: backport these to core.v?*)
+  (*TODO: backport these to core.v?
+    Variation: t = t'
+   *)
     
     Local Lemma term_con_congruence l c t name s1 s2 c' args t'
       : In (name, term_rule c' args t') l ->
@@ -59,25 +61,6 @@ Section WithVar.
         replace t' with t'[/id_subst c'/].
         - eapply wf_term_by; basic_core_crush.
         - basic_core_crush.
-      }
-    Qed.
-    
-    Local Lemma sort_con_congruence l c name s1 s2 c' args
-      : In (name, sort_rule c' args) l ->
-        wf_lang l ->
-        eq_args l c c' s1 s2 ->
-        eq_sort l c (scon name s1) (scon name s2).
-    Proof.
-      intros.
-      assert (wf_ctx l c') by with_rule_in_wf_crush.
-      rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-      subst.
-      change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
-      eapply eq_sort_subst; eauto.
-      { apply eq_args_implies_eq_subst; eauto. }
-      { constructor.
-        eapply wf_sort_by; basic_core_crush.
       }
     Qed.
 
@@ -240,6 +223,131 @@ Section WithVar.
           @! let (t1,t2) <- check_sort_proof p in
              ret (t2,t1)
       | pconv _ _ => None
+      end.
+
+    (*TODO: move to Monad.v*)
+    Instance sum_monad {Err} : Monad (sum Err) :=
+      {
+        Mret _ := inr;
+        Mbind _ _ f ma :=
+          match ma with
+          | inr a => f a
+          | inl p => inl p
+          end
+      }.
+
+    (*TODO: use of default will make error reporting worse*)
+    Instance sum_default Err `{WithDefault Err} {A} : WithDefault (Err + A) :=
+      inl default.
+
+    Instance pf_default : WithDefault pf := pcon default [].
+
+    Definition lift_err {Err} (e:Err) {A} (o : option A) :=
+      match o with
+      | Some x => inr x
+      | None => inl e
+      end.
+
+    (*TODO: generalize to MonadErr M E*)
+    Notation "'let' ! e |-> err 'in' b" :=
+      (if e then b else inl err)
+        (in custom monadic_do at level 200, left associativity,
+            e constr, b custom monadic_do, err constr at level 100).
+
+    Inductive tp_err :=
+    | lang_lookup_err (n : V)
+    | ctx_lookup_err (c' : ctx) (x : V)
+    | sort_eq_err (t1 t2 : sort)
+    | arg_length_err (p : pf)
+    (*extra info*)
+    | addl_err (e : tp_err) {A} (s : A)
+    (* catchall*)
+    | pf_invalid_err (p : pf).
+    (*TODO: use of default will make error reporting worse*)
+    Instance tp_err_default : WithDefault tp_err :=
+      pf_invalid_err default.
+    
+    Section Inner.
+      Context (check_proof_err : pf -> tp_err + (term * term * sort)).
+      Context (err : pf).
+      Fixpoint check_args_proof_err (args : list pf) (c' : ctx) : tp_err + _ :=
+        match args, c' with
+        | [], [] => inr ([],[])
+        | p::args, (_,t)::c'=>
+            @! let {(sum _)} (lhs, rhs) <- check_args_proof_err args c' in
+               let {(sum _)} (e1, e2, t') <- (check_proof_err p) in
+               (*TODO: use Eqb instance*)
+               (*TODO: sorts don't line up here*)
+               let ! sort_eq_dec t[/with_names_from c' rhs/] t' |->
+                     addl_err (addl_err (sort_eq_err t[/with_names_from c' rhs/] t') "in args checking for: ")
+                     err in
+               ret {(sum _)} (e1::lhs, e2::rhs)
+        | _,_=> inl (arg_length_err err)
+        end.
+    End Inner.
+    
+    Fixpoint check_proof_err (p : pf) : tp_err+ (term * term * sort) :=
+      match p with
+      | pvar n =>
+          @! let t <- lift_err (ctx_lookup_err c n) (named_list_lookup_err c n) in
+             ret (var n, var n, t)
+      | pcon n s =>
+          @! let r <- lift_err (lang_lookup_err n) (named_list_lookup_err l n) in
+             match r with
+             | term_rule c' _ t =>
+                 @! let (lhs, rhs) <- check_args_proof_err check_proof_err p s c' in
+                    ret (con n lhs, con n rhs, t[/with_names_from c' rhs/])
+             | term_eq_rule c' e1 e2 t =>
+                 @! let (lhs, rhs) <- check_args_proof_err check_proof_err p s c' in
+                    let lsub := with_names_from c' lhs in
+                    let rsub := with_names_from c' rhs in
+                    ret (e1[/lsub/],e2[/rsub/],t[/rsub/])
+             | _ => inl (addl_err (lang_lookup_err n) "expected term rule")
+             end
+      | ptrans p0 p1 =>
+          @! let (e1, e2, t) <- check_proof_err p0 in
+             let (e1', e2', t') <- check_proof_err p1 in
+             let ! sort_eq_dec t t' |->
+                   addl_err (sort_eq_err t t') "sorts of term transitivity don't match" in
+             let ! term_eq_dec e2 e1' in
+             ret (e1, e2', t)
+      | psym p =>
+          @! let (e1, e2, t) <- check_proof_err p in
+             ret (e2, e1, t)
+      | pconv p0 p1 =>
+          @! let (t1, t2) <- check_sort_proof_err p0 in
+             let (e1, e2, t) <- check_proof_err p1 in
+             let ! sort_eq_dec t t1 |->
+                   addl_err (sort_eq_err t t1) "LHS of conv does not match term" in
+             ret (e1, e2, t2)
+      end
+    
+    with check_sort_proof_err (p : pf) : tp_err + (sort * sort) :=
+      match p return sum _ _ with
+      | pvar n => inl (addl_err (pf_invalid_err p) "vars are not sorts")
+      | pcon n s =>
+          @! let r <- lift_err (ctx_lookup_err c n) (named_list_lookup_err l n) in
+             match r with
+             | sort_rule c' _ =>
+                 @! let (lhs, rhs) <- check_args_proof_err check_proof_err p s c' in
+                    ret (scon n lhs, scon n rhs)
+             | sort_eq_rule c' t1 t2 =>
+                 @! let (lhs, rhs) <- check_args_proof_err check_proof_err p s c' in
+                    let lsub := with_names_from c' lhs in
+                    let rsub := with_names_from c' rhs in
+                    ret (t1[/lsub/], t2[/rsub/])
+             | _ => inl (addl_err (lang_lookup_err n) "expected sort rule")
+             end
+      | ptrans p0 p1 =>
+          @! let (t1, t2) <- check_sort_proof_err p0 in
+             let (t1', t2') <- check_sort_proof_err p1 in
+             let ! sort_eq_dec t2 t1' |->
+                   addl_err (sort_eq_err t2 t1') "sort transitivity failed" in
+             ret (t1, t2')
+      | psym p =>
+          @! let (t1,t2) <- check_sort_proof_err p in
+             ret (t2,t1)
+      | pconv _ _ => inl (addl_err (pf_invalid_err p) "cannot conv a sort")
       end.
 
     Context (wfl : wf_lang l)

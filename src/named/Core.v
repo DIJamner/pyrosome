@@ -1527,11 +1527,10 @@ Proof.
   rewrite strengthen_fresh_name; auto.
 Qed.
 Hint Rewrite wf_con_id_args_subst : lang_core.
-                   
+
 Lemma term_con_congruence l c t name s1 s2 c' args t'
   : In (name, term_rule c' args t') l ->
-    len_eq c' s2 ->
-    t = t'[/with_names_from c' s2/] ->
+    eq_sort l c t t'[/with_names_from c' s2/] ->
     wf_lang l ->
     eq_args l c c' s1 s2 ->
     eq_term l c t (con name s1) (con name s2).
@@ -1540,19 +1539,23 @@ Proof.
   assert (wf_ctx l c') by with_rule_in_wf_crush.
   rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
   rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-  subst.
+  eapply eq_term_conv; [eapply eq_sort_sym; eauto|].
   change (con ?n ?args[/?s/]) with (con n args)[/s/].
   eapply eq_term_subst; eauto.
-  apply eq_args_implies_eq_subst; eauto.
-  constructor.
-  replace t' with t'[/id_subst c'/].
-  eapply wf_term_by; basic_core_crush.
-  basic_core_crush.
+  {
+    apply eq_args_implies_eq_subst; eauto.
+  }
+  {
+    constructor.
+    replace t' with t'[/id_subst c'/].
+    - eapply wf_term_by; basic_core_crush.
+    - basic_core_crush.
+  }
 Qed.
-                   
+
+
 Lemma sort_con_congruence l c name s1 s2 c' args
   : In (name, sort_rule c' args) l ->
-    len_eq c' s2 ->
     wf_lang l ->
     eq_args l c c' s1 s2 ->
     eq_sort l c (scon name s1) (scon name s2).
@@ -1564,9 +1567,10 @@ Proof.
   subst.
   change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
   eapply eq_sort_subst; eauto.
-  apply eq_args_implies_eq_subst; eauto.
-  constructor.
-  eapply wf_sort_by; basic_core_crush.
+  { apply eq_args_implies_eq_subst; eauto. }
+  { constructor.
+    eapply wf_sort_by; basic_core_crush.
+  }
 Qed.
 
 End WithVar.

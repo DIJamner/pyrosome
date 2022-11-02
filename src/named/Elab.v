@@ -364,7 +364,6 @@ Ltac solve_len_eq := solve[ repeat constructor].
 Ltac sort_cong :=
   eapply sort_con_congruence;
   [ solve_in
-  | solve_len_eq
   | assumption || fail 2 "could not find lang wf assumption"
   | break_eq_args].
 
