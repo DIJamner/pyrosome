@@ -76,7 +76,7 @@ Section WithVar.
 
     Class Substable0_ok : Type :=
       {
-        subst_var `{Eqb V} : forall s x args, well_scoped0 args (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup s x);
+        subst_var `{Eqb V} : forall s x args, well_scoped0 (map fst s) (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup s x);
         subst_assoc0 : forall s1 s2 a,
           well_scoped0 (map fst s2) a ->
           forall args, eq_term0 args (apply_subst0 s1 (apply_subst0 s2 a)) (apply_subst0 (subst_cmp s1 s2) a);
@@ -90,7 +90,8 @@ Section WithVar.
           fresh n s ->
           forall args, eq_term0 args (apply_subst0 ((n,e)::s) a) (apply_subst0 s a);
         well_scoped_subst0 args s a
-        : ws_subst args s ->
+        : NoDup args ->
+          ws_subst args s ->
           well_scoped0 (map fst s) a ->
           well_scoped0 args (apply_subst0 s a)
       }.
@@ -117,7 +118,8 @@ Section WithVar.
           fresh n s ->
           forall args, eq_term args (apply_subst ((n,e)::s) a) (apply_subst s a);
         well_scoped_subst args s a
-        : ws_subst args s ->
+        : NoDup args ->
+          ws_subst args s ->
           well_scoped (map fst s) a ->
           well_scoped args (apply_subst s a)
       }.
@@ -183,7 +185,8 @@ Section WithVar.
     Qed.
 
     Lemma args_well_scoped_subst args s a
-      : ws_subst args s ->
+      : NoDup args ->
+        ws_subst args s ->
         ws_args (map fst s) a ->
         ws_args args (args_subst s a).
     Proof.
@@ -235,7 +238,8 @@ Section WithVar.
     Qed.
 
     Lemma subst_well_scoped_subst args s a
-      : ws_subst args s ->
+      : NoDup args ->
+        ws_subst args s ->
         ws_subst (map fst s) a ->
         ws_subst args (subst_cmp s a).
     Proof.

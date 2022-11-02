@@ -7,7 +7,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Substable Model Compilers.
+From Named Require Import Substable Model.
 From Named Require Term.
 Require Import Coq.Logic.FunctionalExtensionality.
 
@@ -526,19 +526,343 @@ Qed.
       case_eq (eqb x y); model_crush.
 Qed.
 
+  Fixpoint rem_dups' {A} (s : named_list A) (l : list V) :=
+  match s with
+  | [] => []
+  | a :: s' => if (inb (fst a) l)
+              then rem_dups' s' l
+              else a :: rem_dups' s' ((fst a) :: l)
+  end.
+
+  Definition rem_dups {A} (s : named_list A) := rem_dups' s [].
+
+  Lemma rem_dups_NoDup' {A} : forall (s : named_list A) l, NoDup (map fst (rem_dups' s l)) /\ (forall v, In v l -> ~In v (map fst (rem_dups' s l))).
+  Proof.
+    induction s; model_crush.
+    apply NoDup_nil.
+    unfold not; trivial.
+    all: cases (inb v l); model_crush.
+    specialize (IHs l).
+    destruct IHs.
+    apply H0.
+    specialize (IHs (v :: l)).
+    destruct IHs.
+    apply NoDup_cons.
+    apply H1.
+    apply in_eq.
+    trivial.
+    specialize (IHs l).
+    destruct IHs.
+    apply H2; trivial.
+    unfold not.
+    intros.
+    destruct H1.
+    model_crush.
+    apply inb_not_in in H0.
+    apply H0 in H; trivial.
+    specialize (IHs (v :: l)).
+    destruct IHs.
+    apply H3 in H1.
+    trivial.
+    apply in_cons.
+    apply H.
+Qed.    
+
+  Lemma rem_dups_NoDup {A} : forall (s : named_list A), NoDup (map fst (rem_dups s)).
+    Proof.
+      intros.
+      specialize (rem_dups_NoDup' s []).
+      model_crush.
+    Qed.
+
+  Lemma rem_dups_not_In {A} : forall (s : named_list A) l (v : V), In v l -> ~In v (map fst (rem_dups' s l)).
+    Proof.
+      intros.
+      specialize (rem_dups_NoDup' s).
+      model_crush.
+      apply H0.
+      apply H.
+    Qed.
+
+
+  Lemma rem_dups_lookup : forall (s : named_list exp) x l, ~In x l -> eq_exp (named_list_lookup default s x) (named_list_lookup default (rem_dups' s l) x).
+    Proof.
+    induction s; model_crush.
+    cases (eqb x v);
+    cases (inb v l).
+    rewrite H0 in H.
+    apply inb_in in H1.
+    apply H in H1; contradiction.
+    model_crush.
+    cases (eqb v v).
+    trivial.
+    destruct H2.
+    trivial.
+    apply IHs.
+    trivial.
+    model_crush.
+    cases (eqb x v).
+    model_crush.
+    apply IHs.
+    unfold not; intros.
+    destruct H3; model_crush.
+    apply H in H3.
+    trivial.
+Qed.
+
+  Lemma eqb_eq_lookup : forall (H : Eqb V) x s, named_list_lookup (H := V_Eqb) default s x = named_list_lookup (H := H) default s x.
+    Proof.
+      induction s; model_crush.
+    Qed.
+
+  (* Lemma rem_dups'_change_order {A} : forall (s : named_list A) v1 v2 l, rem_dups' s (v1 :: v2 :: l) = rem_dups' s (v2 :: v1 :: l). *)
+  (* Proof. *)
+  (*   induction s; model_crush. *)
+  (*   Search ((_ || _)%bool). *)
+  (*   rewrite Bool.orb_assoc in H. *)
+  (*   rewrite Bool.orb_comm with (b1 := eqb v v1) in H. *)
+  (*   rewrite <- Bool.orb_assoc in H. *)
+  (*   rewrite H in H0. *)
+  (*   contradict H0. *)
+  (*   apply Bool.diff_true_false. *)
+  (*   rewrite Bool.orb_assoc in H. *)
+  (*   rewrite Bool.orb_comm with (b1 := eqb v v1) in H. *)
+  (*   rewrite <- Bool.orb_assoc in H. *)
+  (*   rewrite H in H0. *)
+  (*   contradict H0. *)
+  (*   apply Bool.diff_false_true. *)
+
+
+
+  (* Lemma rem_dups'_append_l {A} : forall (s : named_list A) v, ~In v (map fst s) -> forall l, rem_dups' s l = rem_dups' s (v :: l). *)
+  (* Proof. *)
+  (*   induction s; model_crush. *)
+  (*   apply IHs. *)
+  (*   unfold not in *. *)
+  (*   intros. *)
+  (*   apply H. *)
+  (*   right. *)
+  (*   apply H2. *)
+  (*   contradict H1. *)
+  (*   rewrite Bool.orb_true_r. *)
+  (*   apply Bool.diff_true_false. *)
+  (*   rewrite Bool.orb_false_r in H1. *)
+  (*   contradict H. *)
+  (*   left. *)
+  (*   apply eqb_eq. *)
+  (*   trivial. *)
+  (*   repeat rewrite <- IHs; model_crush. *)
+
+  Lemma rem_dups_no_add {A} : forall (s : named_list A) l v, ~In v (map fst s) -> ~In v (map fst (rem_dups' s l)).
+  Proof.
+    induction s; model_crush.
+    cases (inb v0 l).
+    apply IHs.
+    apply Decidable.not_or in H.
+    apply H.
+    apply Decidable.not_or in H.
+    destruct H.
+    eapply IHs in H1.
+    Search (~ In _ (_ :: _)).
+    simpl.
+    apply not_in_cons.
+    constructor.
+    apply not_eq_sym.
+    apply H.
+    apply H1.
+  Qed.
+
+  Lemma not_in_concat' {A} : forall x (l1 : list A), ~In x l1 -> forall l2, ~In x l2 -> ~ In x (l1 ++ l2).
+  Proof.
+    induction l1; model_crush; try apply Decidable.not_or in H; destruct H.
+    apply not_or; model_crush.
+    apply IHl1; model_crush.
+  Qed.
+
+  Lemma not_in_concat_1 {A} : forall x (l1 l2 : list A), ~ In x (l1 ++ l2) -> ~In x l1.
+  Proof.
+    induction l2; model_crush.
+    rewrite app_nil_r in H.
+    apply H.
+    apply IHl2.
+    clear IHl2.
+    induction l1.
+    rewrite app_nil_l in H.
+    rewrite app_nil_l.
+    Search (~ In _ (_ :: _)).
+    apply not_in_cons in H.
+    apply H.
+    Search ((_ :: _) ++ _).
+    rewrite <- app_comm_cons.
+    apply not_in_cons.
+    constructor.
+    rewrite <- app_comm_cons in H.
+    apply not_in_cons in H.
+    apply H.
+    rewrite <- app_comm_cons in H.
+    apply not_in_cons in H.
+    apply IHl1.
+    apply H.
+Qed.
+
+  Lemma not_in_concat_2 {A} : forall x (l1 l2 : list A), ~ In x (l1 ++ l2) -> ~In x l2.
+  Proof.
+    induction l1; model_crush.
+    apply IHl1.
+    apply Decidable.not_or in H.
+    apply H.
+  Qed.
+
+
+  Lemma NoDup_order_swap_1 {A} : forall l1 l2 (v: A), NoDup (v :: l1 ++ l2) -> NoDup (l1 ++ v :: l2).
+  Proof.
+    induction l1; model_crush.
+    apply NoDup_cons.
+    inversion H; inversion H3.
+    apply not_in_concat'.
+    apply not_in_concat_1 in H6.
+    apply H6.
+    apply not_in_concat_2 in H6.
+    apply not_in_cons.
+    constructor.
+    apply not_in_cons in H2.
+    apply not_eq_sym.
+    apply H2.
+    trivial.
+    apply IHl1.
+    apply NoDup_cons; inversion H.
+    apply not_in_cons in H2.
+    apply H2.
+    inversion H3.
+    trivial.
+Qed.
+
+  Lemma NoDup_order_swap_2 {A} : forall l1 l2 (v : A), NoDup (l1 ++ v :: l2) -> NoDup (v :: l1 ++ l2).
+  Proof.
+    induction l1; model_crush.
+    inversion H.
+    apply IHl1 in H3.
+    apply NoDup_cons.
+    - apply not_in_cons; constructor; model_crush.
+      apply not_in_concat_2 in H2.
+      apply not_in_cons in H2.
+      apply not_eq_sym.
+      apply H2.
+      inversion H3.
+      apply H6.
+    - assert (a :: l1 ++ v :: l2 = (a :: l1) ++ v :: l2) by trivial.
+      rewrite H4 in H.
+      apply NoDup_remove in H.
+      apply H.
+  Qed.
+
+  Lemma rem_dups_NoDup_id {A} : forall (s : named_list A) l, NoDup (map fst s ++ l) -> s = rem_dups' s l.
+  Proof.
+    induction s; model_crush.
+    inversion H.
+    apply not_in_concat_2 in H3.
+    apply inb_in in H0.
+    apply H3 in H0.
+    contradiction H0.
+    apply IHs.
+    apply NoDup_order_swap_1.
+    apply H.
+  Qed.
+
+  Lemma rem_dups_in {A} : forall (l : named_list A) s v a, ~In v s -> NoDup (map fst l) -> In (v, a) l -> In (v, a) (rem_dups' l s).
+  Proof.
+    induction l; model_crush.
+    cases (inb v s); model_crush.
+    apply inb_in in H3.
+    apply H in H3; contradiction.
+    left; trivial.
+    cases (inb v0 s).
+    apply IHl; model_crush.
+    apply in_cons.
+    apply IHl; model_crush.
+    apply not_or.
+    inversion H0.
+    apply in_fst in H1.
+    unfold not; intros.
+    rewrite H7 in *.
+    apply H5.
+    apply H1.
+    trivial.
+  Qed.
+
+  Lemma incl_rem_cons {A} : forall (l1 : named_list A) s, NoDup (s ++ (map fst l1)) -> forall l2, NoDup (map fst l2) -> incl l1 l2 -> incl l1 (rem_dups' l2 s).
+  Proof.
+    induction l1; model_crush.
+    apply incl_cons.
+    constructor.
+    apply incl_cons in H1.
+    destruct H1.
+    apply rem_dups_in; model_crush.
+    apply NoDup_order_swap_2 in H.
+    inversion H.
+    apply not_in_concat_1 in H5.
+    trivial.
+    apply IHl1; model_crush.
+    apply NoDup_order_swap_2 in H.
+    inversion H; trivial.
+    apply incl_cons in H1.
+    apply H1.
+Qed.
+
+Lemma eq_subst_eq_fst : forall s1 s2, eq_subst' s1 s2 -> map fst s1 = map fst s2.
+Proof.
+  model_crush.
+  induction H; model_crush.
+Qed.
+
+
   Lemma subst_var : forall (H : Eqb V) (s : named_list term) (x : V),
-      In x (map fst s) ->
       forall args,
+        ws_term (map fst s) (inj_var x) ->
       eq_term_sub args (apply_subst s (inj_var x)) (subst_lookup s x).
   Proof.
+    induction s. model_crush.
+    specialize H1 with (s := []) (s' := []) (s'' := rem_dups ms); model_crush.
+    eapply eq_exp_trans.
+    apply H1; model_crush.
+    apply eq_subst_nil.
+    apply rem_dups_NoDup.
+    apply eq_exp_symm.
+    apply rem_dups_lookup.
+    model_crush; unfold not; trivial.
     model_crush.
-    induction s; model_crush.
-    cases (eqb x x); model_crush.
-    cases (eqb (Eqb :=V_Eqb) x x); model_crush; apply eq_term_sub_refl.
     cases (eqb x v); model_crush; cases (eqb (Eqb := V_Eqb) x v); model_crush.
     cases (eqb (Eqb := V_Eqb) v v); model_crush; apply eq_term_sub_refl.
-    apply IHs.
-    model_crush.
+    eapply IHs; model_crush.
+    apply eq_exp_trans with (e2 := named_list_lookup (H := V_Eqb) default ((v, default) :: s0) x).
+    simpl.
+    cases (eqb (Eqb := V_Eqb) x v).
+    contradiction.
+    trivial.
+    apply eq_exp_trans with (e2 := named_list_lookup (H := V_Eqb) default (rem_dups ((v, default) :: s'')) x).
+    - apply H2 with (s' := (v, default) :: s'); model_crush.
+      apply eq_subst_cons; trivial.
+      apply NoDup_cons.
+      apply rem_dups_not_In.
+      simpl; left; trivial.
+      apply rem_dups_NoDup'.
+      apply incl_cons.
+      constructor.
+      model_crush.
+      left; model_crush.
+      unfold rem_dups; simpl.
+      apply incl_tl.
+      apply incl_rem_cons; model_crush.
+      apply eq_subst_eq_fst in H6.
+      model_crush.
+    - model_crush.
+      cases (eqb (Eqb := V_Eqb) x v); model_crush.
+      apply eq_exp_symm.
+      apply rem_dups_lookup.
+      model_crush.
+      apply not_or; model_crush.
+      apply not_eq_sym; model_crush.
+      auto.
 Qed.
 
   Lemma lookup_found {A} : forall (l1 l2 : named_list A) d1 d2 (e : V), In e (map fst l1) -> named_list_lookup d1 (l1 ++ l2) e = named_list_lookup d2 l1 e.
@@ -669,16 +993,13 @@ Qed.
 
 Instance substable_term_ok : Substable0_ok term.
 constructor; intros.
-- apply subst_var; trivial.
-  (* Try to return the same garbage each side *)
-  admit.
+- cbv [Substable.inj_var substable_term inj_var subst_lookup apply_subst0 apply_subst].
+  apply subst_var; trivial.
 - apply subst_assoc0; trivial.
 - apply subst_id0; constructor; destruct H, H0; trivial.
 - apply strengthen_subst0; trivial.
 - apply well_scoped_subst0; trivial.
-  (* Add NoDup to definition of Substable_ok *)
-  admit.
-Admitted.
+Qed.
 
 Instance substable_sort_ok : Substable_ok term sort.
 Proof.
@@ -691,12 +1012,6 @@ Definition wf_sort (_ : named_list sort) (s : sort) := True.
 
 Definition eq_term_model (c : ctx) (s : sort) (e1 e2 : term) :=
   forall ms1 ms2, map fst ms1 = map fst c -> eq_subst' ms1 ms2 -> eq_exp (e1 ms1) (e2 ms2).
-
-Lemma eq_subst_eq_fst : forall s1 s2, eq_subst' s1 s2 -> map fst s1 = map fst s2.
-Proof.
-  model_crush.
-  induction H; model_crush.
-Qed.
 
 Lemma eq_term_model_refl : forall c t e, wf_term c e t -> eq_term_model c t e e.
 Proof.
@@ -937,6 +1252,14 @@ Inductive wf_subst' : list V -> subst -> Prop :=
       + apply IHwf_subst.
   Qed.
 
+  Lemma wf_ctx_NoDup : forall c, wf_ctx c -> NoDup (map fst c).
+  Proof.
+    model_crush.
+    induction H; model_crush.
+    apply NoDup_nil.
+    apply NoDup_cons; trivial.
+  Qed.
+
   Instance model_ok : Model_ok model.
  Proof.
     constructor; intros; repeat (unfold eq_sort in *; trivial; simpl in *).
@@ -945,17 +1268,15 @@ Inductive wf_subst' : list V -> subst -> Prop :=
     + rewrite H; trivial.
     + rewrite H; trivial.
     + apply eq_term_subst with (c' := c'); trivial.
-      admit.
+      apply wf_ctx_NoDup; trivial.
     + apply eq_term_model_refl; trivial.
     + apply eq_term_model_trans with (e12); trivial.
     + apply eq_term_model_symm; trivial.
     + rewrite <- H0; trivial.
     + apply wf_term_var; trivial.
-      admit.
     + apply wf_term_subst_monotonicity with (c := c); trivial.
-      admit.
     + model_crush.
-Admitted.
+Qed.
 
 Class Model_from_exp :=
   {

@@ -277,7 +277,11 @@ Section WithVar.
         | [H : Some _ = Some _ |- _ ] => safe_invert H
                end.
       - constructor; constructor.
-        eapply named_list_lookup_err_in; eauto.
+        + clear HeqH; induction wfc; simpl.
+          * apply NoDup_nil.
+          * apply NoDup_cons; trivial.
+            apply IHw; trivial.
+        + eapply named_list_lookup_err_in; eauto.
       - safe_invert HeqH3.
         eapply sort_con_congruence; eauto.
         + eapply named_list_lookup_err_in; eauto.

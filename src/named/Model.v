@@ -151,6 +151,7 @@ Section WithVar.
             eq_sort c t t' ->
             wf_term c e t';
           wf_term_var : forall c n t,
+            NoDup (map fst c) ->
             In (n, t) c ->
             wf_term c (inj_var n) t;
 
@@ -165,6 +166,7 @@ Section WithVar.
             wf_term c e t ->
             wf_ctx c ->
             forall (c'' : ctx) (s : subst),
+              NoDup (map fst c'') ->
               wf_subst c'' s c -> wf_term c'' e [/s /] t [/s /];
           wf_sort_implies_ws
           : forall c t, wf_sort c t -> well_scoped (map fst c) t;

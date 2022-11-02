@@ -299,7 +299,8 @@ Qed.
 Hint Resolve ws_term_subst_lookup : term.
   
 Lemma term_well_scoped_subst args s a
-    : ws_subst args s ->
+  : NoDup args ->
+    ws_subst args s ->
       ws_term (map fst s) a ->
       ws_term args (term_subst s a).
 Proof.
@@ -314,15 +315,15 @@ Qed.
 
   (*TODO: Prove*)
   Lemma subst_var `{EqbV: Eqb V}
-    : forall s x args, ws_term args (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup (V_Eqb:=EqbV) s x).
+    : forall s x args, ws_term (map fst s) (inj_var x) -> eq_term0 args (apply_subst0 s (inj_var x)) (subst_lookup (V_Eqb:=EqbV) s x).
   Proof.
     induction s; basic_goal_prep; basic_term_crush.
     try case_match; basic_goal_prep; basic_term_crush.
-    symmetry in HeqH0.
-    apply eqb_neq in HeqH0.
-    apply eqb_neq in HeqH0.
-    rewrite HeqH0.
-    apply (IHs x args H).
+    symmetry in HeqH.
+    apply eqb_neq in HeqH.
+    apply eqb_neq in HeqH.
+    rewrite HeqH.
+    apply (IHs x args H0).
 Qed.
   
   Instance substable_term_ok : Substable0_ok term :=
@@ -391,7 +392,8 @@ Proof.
 Qed.
 
 Lemma sort_well_scoped_subst args s a
-    : ws_subst args s ->
+  : NoDup args ->
+    ws_subst args s ->
       ws_sort (map fst s) a ->
       ws_sort args (sort_subst s a).
 Proof.
