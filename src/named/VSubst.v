@@ -264,6 +264,65 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 
 
+Definition tyext_def : lang :=
+  {[l
+      (*TODO: eqns for tyext*)
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"tyext" "G" : #"env"
+  ];
+  [:| "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"ty" "G"
+       -----------------------------------------------
+       #"tysnoc" "g" "A" : #"sub" "G" (#"tyext" "G'")
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"tywkn" : #"sub" (#"tyext" "G") "G"
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"tyhd" : #"ty" (#"tyext" "G")
+  ];
+  [:= "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"ty" "G"
+      ----------------------------------------------- ("tywkn_snoc")
+      #"cmp" (#"tysnoc" "g" "A") #"tywkn" = "g" : #"sub" "G" "G'"
+  ];
+   [:= "G" : #"env", "G'" : #"env",
+       "g" : #"sub" "G" "G'",
+       "A" : #"ty" "G"
+       ----------------------------------------------- ("tysnoc_hd")
+       #"ty_subst" (#"tysnoc" "g" "A") #"tyhd" = "A"
+       : #"ty" "G"
+  ];
+   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3",
+       "A" : #"ty" "G2"
+       ----------------------------------------------- ("tycmp_snoc")
+       #"cmp" "f" (#"tysnoc" "g" "A")
+       = #"tysnoc" (#"cmp" "f" "g") (#"ty_subst" "f" "A")
+       : #"sub" "G1" (#"tyext" "G3")
+   ];
+    
+    [:= "G" : #"env"
+       ----------------------------------------------- ("tysnoc_wkn_hd")
+       #"tysnoc" #"tywkn" #"tyhd" = #"id" : #"sub" (#"tyext" "G") (#"tyext" "G")
+   ]
+   ]}.
+
+     
+Derive tyext
+       SuchThat (elab_lang_ext value_subst tyext_def tyext)
+       As tyext_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve tyext_wf : elab_pfs.
+
+
+
 Fixpoint notinb (s : string) (l : list string) :=
   match l with
   | [] => true
@@ -280,6 +339,9 @@ Definition choose_fresh (s : string) (c:ctx) :=
 (*TODO: duplicated*)
 Definition under s :=
   {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
+
+Definition tyunder s :=
+  {{e #"tysnoc" (#"cmp" #"tywkn" {s}) #"tyhd"}}.
 
 Definition get_subst_constr s :=
   match s with
@@ -301,6 +363,7 @@ Section GenRHSSubterms.
     | {{e#"emp"}} => {{e#"forget"}}
     | var G' => if G =? G' then var g else {{e#"ERR1"}}
     | {{e#"ext" {s'} {_} }} => under (gen_arg_subst s')
+    | {{e#"tyext" {s'} }} => tyunder (gen_arg_subst s')
     | _ => {{e#"ERR2" {s} }}
     end.
   
