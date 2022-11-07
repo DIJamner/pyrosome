@@ -578,51 +578,7 @@ Hint Rewrite sort_subst_nil : term.
 
 (**)
 
-(*weakened form for use in reduction that has much smaller proofs*)
-Inductive eq_term_nocheck l : ctx -> sort -> term -> term -> Prop :=
-| eq_term_nocheck_by : forall c name t e1 e2 c' s1 s2,
-    In (name,term_eq_rule c' e1 e2 t) l ->
-    eq_subst l c c' s1 s2 ->
-    eq_term_nocheck l c t[/s2/] e1[/s1/] e2[/s2/]
-| eq_term_nocheck_cong : forall c args name t c' s1 s2,
-    In (name,term_rule c' args t) l ->
-    eq_args_nocheck l c c' s1 s2 ->
-    eq_term_nocheck l c t[/with_names_from c' s2/] (con name s1) (con name s2)
-| eq_term_nocheck_refl : forall c e t,
-    eq_term_nocheck l c t e e
-| eq_term_nocheck_trans : forall c t e1 e12 e2,
-    eq_term_nocheck l c t e1 e12 ->
-    eq_term_nocheck l c t e12 e2 ->
-    eq_term_nocheck l c t e1 e2
-(* Conversion:
-
-c |- e1 = e2 : t 
-               ||
-c |- e1 = e2 : t'
- *)
-| eq_term_nocheck_conv : forall c t t',
-    eq_sort l c t t' ->
-    forall e1 e2,
-      eq_term_nocheck l c t e1 e2 ->
-      eq_term_nocheck l c t' e1 e2
-with eq_args_nocheck l : ctx -> ctx -> list term -> list term -> Prop :=
-| eq_args_nocheck_nil : forall c, eq_args_nocheck l c [] [] []
-| eq_args_nocheck_cons : forall c c' es1 es2,
-    eq_args_nocheck l c c' es1 es2 ->
-    forall name t e1 e2,
-      eq_term_nocheck l c t[/with_names_from c' es2/] e1 e2 ->
-      eq_args_nocheck l c ((name, t)::c') (e1::es1) (e2::es2).
-
-  
-Hint Constructors eq_term_nocheck eq_args_nocheck : lang_core.
-
-
-Scheme eq_term_nocheck_ind' := Minimality for eq_term_nocheck Sort Prop
-  with eq_args_nocheck_ind' := Minimality for eq_args_nocheck Sort Prop.
-Combined Scheme nocheck_ind
-         from eq_term_nocheck_ind', eq_args_nocheck_ind'.
-
-
+(*TODO: use the version in Core.v or move this one there *)
 Local Lemma term_con_congruence' l c t name s1 s2 c' args t'
   : In (name, term_rule c' args t') l ->
     t = t'[/with_names_from c' s2/] ->
@@ -646,105 +602,7 @@ Proof.
     eapply wf_term_by; basic_core_crush.
   }
   basic_core_crush.
-Qed.
-
-Local Lemma no_check_sufficient l
-  : wf_lang l ->
-    (forall (c : ctx) (s : sort) (t t0 : term),
-        eq_term_nocheck l c s t t0 ->
-        wf_ctx l c ->
-        wf_term l c t s  ->
-        eq_term l c s t t0) /\
-    (forall (c c0 : ctx) s s0,
-        eq_args_nocheck l c c0 s s0 ->
-        wf_ctx l c ->
-        wf_ctx l c0 ->
-        wf_args l c s c0 ->
-        eq_args l c c0 s s0).
-Proof.
-  intro wfl.
-  apply nocheck_ind.
-  {
-    intros.
-    use_rule_in_wf.
-    safe_invert H3.
-    basic_core_crush.
-  }
-  {
-    intros.
-    use_rule_in_wf.
-    safe_invert H4.
-    remember (con name s1) as e_i.
-    revert Heqe_i.
-    induction H3;
-      basic_goal_prep;
-      basic_core_firstorder_crush.
-    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh wfl) H3 H) as H'.
-    safe_invert H'.
-
-    eapply eq_term_conv.
-    {
-      eapply eq_sort_sym.
-      eapply eq_sort_subst.
-      3: eapply eq_sort_refl; basic_core_crush.
-      - basic_core_crush.
-      - eapply eq_args_implies_eq_subst.
-        eauto.
-    }
-    eapply term_con_congruence'; eauto.
-  }
-  - solve[basic_goal_prep; basic_core_crush].
-  - solve[basic_goal_prep; basic_core_crush].
-  - solve[basic_goal_prep; basic_core_crush].
-  - solve[basic_goal_prep; basic_core_crush].
-  - intros.
-    safe_invert H4.
-    safe_invert H5.
-    constructor; basic_goal_prep; basic_core_firstorder_crush.
-    apply H0.
-    eapply wf_term_conv; eauto.
-    eapply eq_sort_subst.
-    3: eapply eq_sort_refl; basic_core_crush.
-    + basic_core_crush.
-    + eapply eq_args_implies_eq_subst.
-      eauto.
-Qed.
-
-Definition no_check_term l (wfl : wf_lang l) :=
-  proj1 (no_check_sufficient wfl).
-
-         
-Lemma term_con_congruence_nocheck l c t name s1 s2 c' args t'
-  : In (name, term_rule c' args t') l ->
-    t = t'[/with_names_from c' s2/] ->
-    eq_args_nocheck l c c' s1 s2 ->
-    eq_term_nocheck l c t (con name s1) (con name s2).
-Proof.
-  intros.
-  subst.
-  eapply eq_term_nocheck_cong; eauto.
-Qed.
-
-Lemma eq_args_cons2_nocheck
-     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
-         (name name': V) (e1 e2 e1' e2': term) (t t' : sort),
-       eq_args_nocheck l c c' s1 s2 ->
-       eq_term_nocheck l c t [/with_names_from c' s2 /] e1 e2 ->
-       eq_term_nocheck l c t' [/with_names_from ((name,t)::c') (e2::s2) /] e1' e2'->
-       eq_args_nocheck l c ((name',t')::(name, t) :: c') (e1'::e1 :: s1) (e2'::e2 :: s2) .
-Proof.
-  eauto with lang_core.
-Qed.
-
-
-Lemma eq_term_nocheck_by_with_subst name l c c' e1 e2 t s
-  : In (name, term_eq_rule c' e1 e2 t) l ->
-    wf_subst l c s c' ->
-    eq_term_nocheck l c t [/s /] e1 [/s /] e2 [/s /].
-Proof.
-  intros; eapply eq_term_nocheck_by; eauto with lang_core.
-Qed.
-  
+Qed.  
 
 Lemma elab_lang_nil_nth_tail l_pre l el
   : l = [] ->
@@ -754,16 +612,10 @@ Proof.
   intros; subst; constructor.
 Qed.
 
-
 End WithVar.
 
 
 #[export] Hint Rewrite sort_subst_nil : term.
-#[export] Hint Constructors eq_term_nocheck eq_args_nocheck : lang_core.
-
-Require Import Ltac2.Ltac2.
-Import Ltac2.Message Ltac2.Control.
-Set Default Proof Mode "Classic".
 
 
 (*TODO: adapt to work w/ possible evars in r?*)
@@ -933,118 +785,7 @@ Ltac compute_eq_compilation :=
            let e2' := eval vm_compute in e2 in
                let t' := eval vm_compute in t in
                    change_no_check (eq_term l ctx' e1' e2' t')
-  |[|- eq_term_nocheck ?l ?ctx ?e1 ?e2 ?t] =>
-   let ctx' := eval vm_compute in ctx in
-       let e1' := eval vm_compute in e1 in
-           let e2' := eval vm_compute in e2 in
-               let t' := eval vm_compute in t in
-                   change_no_check (eq_term_nocheck l ctx' e1' e2' t')
   end.
-
-Ltac use_term_nocheck :=
-  apply no_check_term;
-  [ typeclasses eauto
-  | solve[prove_from_known_elabs]
-  |
-  | solve[repeat t']
-  | solve[repeat t']].
-
-
-Ltac2 rec evar_args_for c :=
-  lazy_match! c with
-  | _::?c' =>
-    let s' := evar_args_for c' in
-    open_constr:(_::$s')
-  | [] => open_constr:([])
-  end.
-
-Ltac2 match_arg_evar_len () :=
-  lazy_match! goal with
-    [|- _ = _ [/with_names_from ?c ?s/]] =>
-    let s' := evar_args_for c in
-    unify $s $s'
-  end.
-
-Ltac term_cong_nocheck :=
-  eapply term_con_congruence_nocheck;
-  [ solve_in
-  | ltac2:( match_arg_evar_len ()); vm_compute; reflexivity
-  | repeat
-      match goal with
-      | |- eq_args_nocheck _ _ _ _ _ =>
-        simple apply eq_args_nocheck_nil ||
-               simple eapply eq_args_cons2_nocheck || simple eapply eq_args_nocheck_cons
-      end].
-
-
-Ltac2 step_redex name c' tp e1p e2p s :=
-  lazy_match! goal with
-  | [|- eq_term_nocheck ?l ?c _ _ _] =>
-    assert (eq_term_nocheck $l $c $tp[/$s/] $e1p[/$s/] $e2p[/$s/])> [| ltac1:(eassumption)];
-    apply (@eq_term_nocheck_by_with_subst _ _ $name $l $c $c' $e1p $e2p $tp $s); shelve() (*TODO: these goals are the dominating perf. bottleneck*)
-  end.
-(*
-Ltac2 rec step_by_instructions i :=
-  (*TODO: this may need to go in a different/additional place?*)
-  ltac1:(compute_eq_compilation);
-  lazy_match! i with
-  | cong_instr ?s =>
-    (*have to run this before term_cong because for some reason
-          it expects a focused goal
-     *)
-    let s_tac_list := List.rev (step_all_instructions s) in
-    ltac1:(term_cong_nocheck);
-    Control.dispatch s_tac_list
-  | redex_instr ?name ?c' ?tp ?e1p ?e2p ?s =>
-    step_redex name c' tp e1p e2p s
-  | _ => backtrack_tactic_failure "input not an evaluated instruction"
-  end
-      with step_by_instructions_list l :=
-    lazy_match! l with
-    | [] => apply eq_term_nocheck_refl
-    | ?i::?l' =>
-      eapply eq_term_nocheck_trans> [step_by_instructions i |step_by_instructions_list l' ]
-    | _ => backtrack_tactic_failure "input not an evaluated list"
-    end
-        with step_all_instructions s :=
-      lazy_match! s with
-      | [] => []
-      | ?l::?s' => (fun () => step_by_instructions_list l)
-                     ::(step_all_instructions s')
-      | _ => backtrack_tactic_failure "input not an evaluated list"
-      end.
-*)
-
-Ltac2 get_step_instructions () :=
-  lazy_match! goal with
-  | [|- eq_term_nocheck ?l ?c' ?t ?e1 ?e2] =>
-    (*TODO: 100 is a magic number; make it an input*)
-    Std.eval_vm None constr:(step_term $l $e1 100)
-  | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
-    (*TODO: 100 is a magic number; make it an input*)
-    Std.eval_vm None constr:(step_term $l $e1 100)
-  | [|-_] => backtrack_tactic_failure "goal not a term equality"
-  end.
-
-
-
-
-
-(**Tree-proof version sketch***)
-
-
-
-
-(*****)
-
-(*TODO: this should now give the whole reduction
-     sequence; check and if so rename *)
-(*
-Ltac2 step () :=
-  step_by_instructions_list (get_step_instructions ()).*)
-Ltac2 print_steps () :=
-  print (of_constr (get_step_instructions())).
-
 
 Ltac lhs_concrete :=
   lazymatch goal with
@@ -1083,12 +824,6 @@ Ltac reduce := reduce_lhs; reduce_rhs.
 Ltac by_reduction :=
   compute_eq_compilation;
   eapply eq_term_trans; [ step_if_concrete | eapply eq_term_sym; step_if_concrete ].
-
-
-Ltac2 get_goal_lang () :=
-  lazy_match! goal with
-  |[|- eq_term ?l _ _ _ _ ] => l
-  end.
 
 
 Ltac process_eq_term :=
