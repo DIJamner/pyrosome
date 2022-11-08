@@ -691,6 +691,33 @@ Ltac compute_eq_compilation :=
                    change_no_check (eq_term l ctx' e1' e2' t')
   end.
 
+
+Ltac cbn_eq_goal :=
+  unfold Model.eq_sort, Model.eq_term;
+  lazymatch goal with
+  |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
+     let ctx' := eval cbn in ctx in
+       let t1' := eval cbn in t1 in
+         let t2' := eval cbn in t2 in
+           change_no_check (eq_sort l ctx' t1' t2')
+  |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
+     let ctx' := eval cbn in ctx in
+       let e1' := eval cbn in e1 in
+         let e2' := eval cbn in e2 in
+           let t' := eval cbn in t in
+             change_no_check (eq_term l ctx' e1' e2' t')
+  end.
+
+Ltac cbn_elab_goal :=
+  lazymatch goal with
+  | [|- elab_term ?l ?ctx ?e ?ee ?t] =>
+      let ctx' := eval cbn in ctx in
+        let e' := eval cbn in e in
+          let ee' := eval cbn in ee in
+            let t' := eval cbn in t in
+              change_no_check (elab_term l ctx' e' ee' t')
+  end.
+
 Ltac lhs_concrete :=
   lazymatch goal with
   | [|- eq_term _ _ _ ?lhs _] =>
@@ -731,7 +758,7 @@ Ltac by_reduction :=
 
 
 Ltac process_eq_term :=
-  cbn -[nth_tail];
+  cbn_eq_goal;
   match goal with
   (* in general not valid, but (pretty much) always good*)
   | [|- eq_term _ _ _ (var _) _] => term_refl
@@ -749,7 +776,7 @@ Ltac process_eq_term :=
            and elab_term goals for alll subterms
  *)
 Ltac try_break_elab_term :=
-  cbn -[nth_tail];
+  cbn_elab_goal;
   lazymatch goal with
     [|- elab_term _ _ ?e ?ee ?t] =>
     tryif is_evar e; is_evar ee then shelve else
