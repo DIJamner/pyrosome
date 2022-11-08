@@ -69,20 +69,6 @@ Section InnerLoop.
        end.
 End InnerLoop.
 
-(* TODO: move to term*)
-Fixpoint term_dec (x y : term) {struct x} : {x = y} + {~ x = y}.
-  refine (match x,y with
-          | var n, var m => if Eqb_dec n m then left _ else right _
-          | con n s, con n' s' =>
-            if Eqb_dec n n'
-            then if list_eq_dec term_dec s s' then left _ else right _
-            else right _
-          | _, _ => right _
-          end).
-  all: try let H := fresh in intro H; inversion H; clear H; subst.
-  all: basic_term_crush.
-Defined.
-
 (* Finds the subst s such that s >= acc, e = pat[/s/]
    and (map fst s) = FV(e) U (map fst acc), if such a substitution exists.
    Behavior intentionally unspecified otherwise.
@@ -91,7 +77,7 @@ Fixpoint matches_unordered (e pat : term) : option subst :=
   match pat, e with
   | var px, _ => Some ([(px,e)])
   | con pn ps, con n s =>
-    if Eqb_dec pn n then args_match_unordered matches_unordered s ps else None
+    if eqb pn n then args_match_unordered matches_unordered s ps else None
   | _,_ => None
 end.
 
@@ -122,7 +108,7 @@ Definition order_subst s args :=
 Definition matches_unordered_sort (t pat : sort) :=
   match t, pat with
   | scon n s, scon n_pat s_pat =>
-    if Eqb_dec n n_pat then
+    if eqb n n_pat then
       (* multiply depth by 2 because each level consumes 1 fuel for term
      and 1 for its args
        *)
@@ -137,97 +123,15 @@ Definition matches (e pat : term) (args : list V) : option subst :=
   @! let s <- matches_unordered e pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     let !term_dec e pat[/s'/] in
+     let !Term.eq_term e pat[/s'/] in
      ret s'.
-
-
-(*TODO: move to term*)
-Definition sort_dec : forall x y : sort, {x = y} + {~ x = y}.
-  decide equality.
-  - apply (list_eq_dec term_dec).
-  - apply Eqb_dec.
-Defined.
 
 Definition matches_sort t pat (args : list V) : option subst :=
   @! let s <- matches_unordered_sort t pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     let !sort_dec t pat[/s'/] in
+     let !Term.eq_sort t pat[/s'/] in
      ret s'.
-
-(* This lemma is pretty much trivial, but it's the useful property.
-   A 'completeness' lemma is much harder, but also not as useful
-   for proofs of positive statements.
-*)
-Lemma matches_recognizes e pat args s
-  : matches e pat args = Some s ->
-    e = pat[/s/].
-Proof.
-  unfold matches.
-  simpl.
-  (case_match;[|inversion 1]).
-  (case_match;[|inversion 1]).
-  (case_match;[|inversion 1]).
-  symmetry in HeqH1.
-  intro seq; inversion seq; subst.
-  eauto.
-Qed.
-
-
-Lemma matches_sort_recognizes e pat args s
-  : matches_sort e pat args = Some s ->
-    e = pat[/s/].
-Proof.
-  unfold matches_sort.
-  simpl.
-  (case_match;[|inversion 1]).
-  (case_match;[|inversion 1]).
-  (case_match;[|inversion 1]).
-  symmetry in HeqH1.
-  intro seq; inversion seq; subst.
-  eauto.
-Qed.
-
-
-Lemma order_subst_args s args s'
-  : order_subst s args = Some s' ->
-    args = map fst s'.
-Proof.
-  unfold order_subst.
-  case_match;[|inversion 1].
-  clear HeqH.
-  revert s'.
-  induction args; intro s'; simpl.
-  {
-    inversion 1; subst; reflexivity.
-  }
-  {
-    case_match;[|inversion 1].
-    case_match;[|inversion 1].
-    inversion 1.
-    simpl in *.
-    f_equal.
-    eauto.
-  }
-Qed.
-
-Lemma matches_args e pat args s
-  : matches e pat args = Some s ->
-    args = map fst s.
-Proof.
-  unfold matches.
-  simpl.
-  case_match;[|inversion 1].
-  case_match;[|inversion 1].
-  case_match;[|inversion 1].
-  inversion 1.
-  subst.
-  eapply order_subst_args.
-  symmetry; eauto.
-Qed.
-
-Definition is_some {A} (x:option A) := if x then True else False.
-
 
 (*If the LHS of a term eq rule directly applies to e, 
   return the rule name and s such that LHS[/s/] = e.
@@ -350,7 +254,7 @@ Definition is_some {A} (x:option A) := if x then True else False.
     Definition cast_by_step t2 p : option pf :=
       let t1 := sort_of p in
       (*branch is an optimization, not necessary for correctness*)
-      if sort_eq_dec t1 t2 then Some p
+      if Term.eq_sort t1 t2 then Some p
       else @! let p1 <- step_sort t1 in
               let p2 <- step_sort t2 in
               ret pconv (ptrans p1 (psym p2)) p.
