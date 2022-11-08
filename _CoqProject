@@ -26,6 +26,7 @@ src/named/Model.v
 src/named/Term.v
 src/named/Rule.v
 src/named/Linter.v
+src/named/ComputeRenaming.v
 src/named/Core.v
 src/named/TreeProofs.v
 src/named/egraph/UFProofs.v
