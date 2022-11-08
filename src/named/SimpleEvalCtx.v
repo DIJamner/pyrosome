@@ -328,11 +328,6 @@ Definition original_app_rule : compiler_case :=
 Definition app_compiler : compiler string :=
   [("app", original_app_rule)].
 
-Compute original_app_rule.
-
-
-Check bind_k.
-
 Inductive bind_term : Type :=
 | bvar : string -> bind_term
 | bcon : string -> list bind_term -> bind_term
@@ -468,4 +463,6 @@ Definition eval_ctx_compiler (hints : list (string * string * list string)) (c :
          end
       ) hints.
 
+(*
 Compute eval_ctx_compiler Estlc_hints app_compiler stlc_def.
+*)
