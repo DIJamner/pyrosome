@@ -38,7 +38,8 @@ Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
     {|
       term_substable := _;
       sort_substable := _;
-      eq_sort := eq_sort;
+      (*TODO: rename the conflict*)
+      Model.eq_sort := eq_sort;
       (*TODO: rename the conflict*)
       Model.eq_term := eq_term;
       wf_sort := wf_sort;

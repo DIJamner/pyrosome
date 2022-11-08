@@ -445,6 +445,11 @@ Fixpoint eq_term e1 e2 {struct e1} : bool :=
   | _,_ => false
   end.
 
+Definition eq_sort (t1 t2 : sort) : bool :=
+  let (n1, l1) := t1 in
+  let (n2, l2) := t2 in
+    (eqb n1 n2) && (all2 eq_term l1 l2).
+
 Lemma with_names_from_args_subst (c':ctx) s' (s : list term)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof.
