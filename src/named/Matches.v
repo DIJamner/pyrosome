@@ -753,9 +753,26 @@ Ltac reduce_rhs :=
 Ltac reduce := reduce_lhs; reduce_rhs.
 
 Ltac by_reduction :=
-  compute_eq_compilation;
-  eapply eq_term_trans; [ step_if_concrete | eapply eq_term_sym; step_if_concrete ].
-
+    compute_eq_compilation;
+    lazymatch goal with
+    | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
+        tryif is_ground e1 then
+          tryif is_ground e2 then
+                let pf_lhs := eval compute in (step_term l c' 100 e1 t) in
+                  let pf_rhs := eval compute in (step_term l c' 100 e2 t) in
+                    let pf_both := constr:(TreeProofs.ptrans pf_lhs
+                                             (TreeProofs.psym pf_rhs)) in
+                  eapply TreeProofs.pf_checker_sound with (p := pf_both);
+                                              [ assumption | vm_compute; reflexivity ]
+          else let pf_lhs := eval compute in (step_term l c' 100 e1 t) in
+                  eapply TreeProofs.pf_checker_sound with (p := pf_lhs);
+                                              [ assumption | vm_compute; reflexivity ] 
+        else tryif is_ground e2 then
+                let pf_rhs := eval compute in (step_term l c' 100 e2 t) in
+                  eapply TreeProofs.pf_checker_sound with (p := TreeProofs.psym pf_rhs);
+                                              [ assumption | vm_compute; reflexivity ] 
+          else term_refl
+    end.
 
 Ltac process_eq_term :=
   cbn_eq_goal;
