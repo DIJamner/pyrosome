@@ -324,6 +324,7 @@ Section __.
                 | None => acc
                 end) map.empty rel.
 
+  Axiom TODO:forall {A} ,A.
   #[refine]
    Instance eqb_argument : Eqb argument :=
     {
@@ -614,7 +615,6 @@ Section __.
 
   (*TODO: move to utils*)
   (*TODO: implement/import list eqb*)
-  Axiom TODO: forall {A}, A.
   #[refine]
   Instance list_eqb {A} `{Eqb A} : Eqb (list A) :=
     {

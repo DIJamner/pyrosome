@@ -3,14 +3,12 @@ Require Import ZArith Lia.
 From Utils Require Import Utils Natlike.
 
 (*TODO: decouple Eqb from Eqb_ok*)
-Axiom TODO : forall {A}, A.
-
 #[global] Instance eqb_positive : Eqb positive :=
   {
     eqb := Pos.eqb;
-    eqb_eq := TODO;
-    eqb_neq := TODO;
-    eqb_refl := TODO;
+    eqb_eq := Pos.eqb_eq;
+    eqb_neq := Pos.eqb_neq;
+    eqb_refl := Pos.eqb_refl;
     Eqb_dec := Pos.eq_dec;
   }.
 
