@@ -395,6 +395,27 @@ Module Int63Natlike <: __Natlike.
   
 End Int63Natlike.
 
+(*TODO: move these instances to the right places*)
+Require Utils.Utils.
+Instance int63eqb : Utils.Eqb int := {
+    eqb := Int63.eqb;
+    eqb_eq := Int63Natlike.eqb_eq;
+    eqb_neq := Uint63.eqb_false_spec;
+    eqb_refl := Uint63.eqb_refl;
+    Eqb_dec := Int63Natlike.eq_dec;
+  }.
+
+Instance natlike_int63 : Natlike int :=
+  {
+    natlike_eqb := int63eqb;
+    ltb := Int63.ltb;
+    leb := Int63.leb;
+    zero := Int63Natlike.zero;
+    succ := Int63Natlike.succ;
+    is_top := Int63Natlike.is_top;
+    iter := @Int63Natlike.iter;
+  }.
+
 
 (*TODO: small inefficiency by going through N.recursion*)
 Definition posZrec {A} base rec z : A :=
