@@ -5,6 +5,8 @@ Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
 Require Import String List Int63.
+Require PArray.
+Import PArray (array, get, set).
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -137,18 +139,18 @@ Definition matches_sort t pat (args : list int) : option subst :=
 
   Section WithCtx.
 
-    Context (l : lang).
-    Context (c : ctx).
+    Context (l : array rule).
+    Context (c : array sort).
 
     
     Fixpoint project_term_r p :=
       match p with
       | pcon n s =>
           let s' := map project_term_r s in
-          match named_list_lookup_err l n with
-          | Some (term_rule c' _ _) =>
+          match get l n with
+          | (term_rule c' _ _) =>
               con n s'
-          | Some (term_eq_rule c' _ e _) =>
+          | (term_eq_rule c' _ e _) =>
               e[/with_names_from c' s'/]
           | _ => default
           end
@@ -161,10 +163,10 @@ Definition matches_sort t pat (args : list int) : option subst :=
            match p with
            | pcon n s =>
                let s' := map project_term_l s in
-               match named_list_lookup_err l n with
-               | Some (term_rule c' _ _) =>
+               match get l n with
+               | (term_rule c' _ _) =>
                    con n s'
-               | Some (term_eq_rule c' e1 _ _) =>
+               | (term_eq_rule c' e1 _ _) =>
                    e1[/with_names_from c' s'/]
                | _ => default
                end
@@ -178,10 +180,10 @@ Definition matches_sort t pat (args : list int) : option subst :=
       match p with
       | pcon n s =>
           let s' := map project_term_r s in
-          match named_list_lookup_err l n with
-          | Some (sort_rule c' _) =>
+          match get l n with
+          | (sort_rule c' _) =>
               scon n s'
-          | Some (sort_eq_rule c' t1 t2) =>
+          | (sort_eq_rule c' t1 t2) =>
               t2[/with_names_from c' s'/]
           | _ => default
           end
@@ -194,10 +196,10 @@ Definition matches_sort t pat (args : list int) : option subst :=
       match p with
       | pcon n s =>
           let s' := map project_term_l s in
-          match named_list_lookup_err l n with
-          | Some (sort_rule c' _) =>
+          match get l n with
+          | (sort_rule c' _) =>
               scon n s'
-          | Some (sort_eq_rule c' t1 t2) =>
+          | (sort_eq_rule c' t1 t2) =>
               t1[/with_names_from c' s'/]
           | _ => default
           end
@@ -214,12 +216,12 @@ Definition matches_sort t pat (args : list int) : option subst :=
     (* returns the sort of a term, _assuming it is well-formed_ *)
     Fixpoint sort_of p : sort :=
       match p with
-      | pvar x => named_list_lookup default c x
+      | pvar x => get c x
       | pcon n s =>
           let s' := map project_term_r s in
-          match named_list_lookup_err l n with
-          | Some (term_rule c' _ t) => t[/with_names_from c' s'/]
-          | Some (term_eq_rule c' _ _ t) => t[/with_names_from c' s'/]
+          match get l n with
+          | (term_rule c' _ t) => t[/with_names_from c' s'/]
+          | (term_eq_rule c' _ _ t) => t[/with_names_from c' s'/]
           | _ => default
           end
       | ptrans p1 p2 => sort_of p1
@@ -244,8 +246,10 @@ Definition matches_sort t pat (args : list int) : option subst :=
     Definition step_sort t : option pf :=
       match t with
       | scon n s =>
-          @!let (sort_rule c' _) <?- named_list_lookup_err l n in
-            ret pcon n (step_args s c')
+          match get l n with
+          | sort_rule c' _ => Some (pcon n (step_args s c'))
+          | _ => None
+          end
       end.
 
     Definition cast_by_step t2 p : option pf :=
@@ -271,7 +275,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
       match e with
       | var x => Some (pvar x)
       | con n s =>
-          @! let (term_rule c' _ _) <?- named_list_lookup_err l n in
+          @! let (term_rule c' _ _) <?- Some (get l n) in
             let refls <- list_Mmap pf_refl s in
             let pfs' <- cast_args_by_step c' s refls in
             ret pcon n pfs'
@@ -282,12 +286,12 @@ Definition matches_sort t pat (args : list int) : option subst :=
     TODO: parameterize by e's type?
     need to wrap recursively w/ pconvs to reduce types
      *)
-    Fixpoint step_redex_term (l' : lang) (c : ctx) (e : term)
+    Fixpoint step_redex_term (l' : lang) (e : term)
       : option (pf * term) :=
       match l' with
       | [] => None
       | (n,term_eq_rule c' e1 e2 t')::l' =>
-          match step_redex_term l' c e with
+          match step_redex_term l' e with
           | Some e' => Some e'
           | None => @! let s <- matches e e1 (map fst c') in
                       let s' <- list_Mmap (fun '(n,e) =>
@@ -303,25 +307,8 @@ Definition matches_sort t pat (args : list int) : option subst :=
                        (*todo: pconv for type*)
                        ret (pcon n s', e2[/s/])
           end
-      | _::l' => step_redex_term l' c e
+      | _::l' => step_redex_term l' e
       end.
-
-
-
-    (*TODO: following 2 fns should be merged;
-cannot generate, e.g.
-[beta; cong [id_right; ...]; ...]
-     *)
-    Fixpoint step_redex_term_n e t n : option _ :=
-      @! let (s,e') <- step_redex_term l c e in
-         match n with
-         | 0 => @!let st <- cast_by_step t s in
-                  ret (st,e')
-         | S n =>
-             @! let (s',e'') <- step_redex_term_n e' t n in
-               let st <- cast_by_step t s in
-                ret (ptrans st s', e'')
-         end.
 
       Section StepTermInner.
         Context (step_term_n : term -> option (pf * term)).
@@ -333,10 +320,10 @@ cannot generate, e.g.
           | var x => None
           | con name s =>
               let osteps := map step_term_n s in
-              if forallb (fun (l: option _) => if l then false else true) osteps
+              if forallb (fun (ma: option _) => if ma then false else true) osteps
               then None
               else
-                @! let (term_rule c' _ _) <?- named_list_lookup_err l name in
+                @! let (term_rule c' _ _) <?- Some (get l name) in
                   let refls <- list_Mmap (fun e => option_map (fun p => (p, e)) (pf_refl e)) s in
                   let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
                   let (arg_steps, args) := split steps in
@@ -344,23 +331,23 @@ cannot generate, e.g.
                   ret (pcon name pfs', con name args)
           end.
 
-        Definition step_term_one_traversal e
+        Definition step_term_one_traversal l e
           : option (pf * term) :=
           match step_subterm e with
           | Some p => Some p
-          | None => step_redex_term l c e
+          | None => step_redex_term l e
           end.
 
       End StepTermInner.
 
 
-      Fixpoint step_term' n e {struct n}
+      Fixpoint step_term_opt l n e {struct n}
         : option _ :=
         match n with
         | 0 => None
         | S n' =>
-            @! let (step,e') <- step_term_one_traversal (step_term' n') e in
-              match step_term' n' e' with
+            @! let (step,e') <- step_term_one_traversal (step_term_opt l n') l e in
+              match step_term_opt l n' e' with
                 (*TODO: transitivity casts*)
                | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
                | None => @! ret (step, e')
@@ -370,20 +357,31 @@ cannot generate, e.g.
   End Inner.
 
   (*TODO: what to do with T; currently unused, but probably shouldn't be*)
-  Fixpoint step_term (n : nat) (e : term) (t : sort) {struct n} : pf :=
+  Fixpoint step_term' l (n : nat) (e : term) (t : sort) {struct n} : pf :=
     match n with
       (*TODO: do I care if the 0 case is valid?*)
     | 0 => pcon default []
     | S n =>
-        match step_term' (step_term n) n e with
+        match step_term_opt (step_term' l n) l n e with
         | Some (pf,_) => pf
         (*TODO: check that the unwrap always succeeds*)
-        | _ => unwrap_with_default (pcon default []) (pf_refl (step_term n) e)
+        | _ => unwrap_with_default (pcon default []) (pf_refl (step_term' l n) e)
         end
     end.
-
     
   End WithCtx.
+  
+  (*TODO: find a better location for this?*)
+  Definition named_list_to_array {A} `{WithDefault A} (l : named_list A) : array A :=
+    let sz := add (fold_left PArrayList.max (map fst l) 0) 1 in
+    let acc := PArray.make sz default in
+    fold_left (fun acc '(i,a) => set acc i a) l acc.
+  
+  Definition step_term (l : lang) (c : ctx) (n : nat) e t : pf :=
+    let l_arr := named_list_to_array (H:= sort_rule [] []) l in
+    let c_arr := named_list_to_array c in
+    step_term' l_arr c_arr l n e t. 
+  
 
 End Int63Matches.
   
