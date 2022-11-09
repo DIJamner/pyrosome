@@ -4,29 +4,26 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String List Int63.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad.
-From Named Require Import Core Elab ComputeWf Linter TreeProofs.
+From Utils Require Import Utils Monad (*TODO: better dep*) PersistentArrayList.
+From Named Require Import Core Elab ComputeWf Linter TreeProofs Int63Renaming.
 
 Import Core.Notations.
 
-Section WithVar.
-  Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+Section Int63Matches.
   
-Notation named_list := (@named_list V).
-Notation named_map := (@named_map V).
-Notation term := (@term V).
-Notation ctx := (@ctx V).
-Notation sort := (@sort V).
-Notation subst := (@subst V).
-Notation rule := (@rule V).
-Notation lang := (@lang V).
-Notation pf := (@pf V).
+Notation named_list := (@named_list int).
+Notation named_map := (@named_map int).
+Notation term := (@term int).
+Notation ctx := (@ctx int).
+Notation sort := (@sort int).
+Notation subst := (@subst int).
+Notation rule := (@rule int).
+Notation lang := (@lang int).
+Notation pf := (@pf int).
 
   
   Notation eq_subst l :=
@@ -40,11 +37,11 @@ Notation pf := (@pf V).
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
-
-(*
-Set Default Proof Mode "Ltac2".
-*)
-
+  
+  (*TODO: move to Utils.v, use instead of compute_fresh for performance *)
+  Definition inb {A} `{Eqb A} (a : A) (l : list A) : bool := existsb (eqb a) l.
+    
+Definition freshb {A} x (l : named_list A) : bool := negb (inb x (map fst l)).
 
 (* constructs the union of the two lists viewed as maps,
    choosing the second list when they disagree*)
@@ -52,7 +49,7 @@ Fixpoint unordered_merge_unsafe {A} (l1 l2 : named_list A) :=
   match l1 with
   | [] => l2
   | (n,e)::l1' =>
-    (if compute_fresh n l2 then [(n,e)] else [])
+    (if freshb n l2 then [(n,e)] else [])
       ++ (unordered_merge_unsafe l1' l2)
   end.
 
@@ -119,14 +116,14 @@ Definition matches_unordered_sort (t pat : sort) :=
 (* Note that 'args' is critical to getting the order of the output subst correct.
    FV(pat) must be a permutation of args to get a result.
  *)
-Definition matches (e pat : term) (args : list V) : option subst :=
+Definition matches (e pat : term) (args : list int) : option subst :=
   @! let s <- matches_unordered e pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
      let !Term.eq_term e pat[/s'/] in
      ret s'.
 
-Definition matches_sort t pat (args : list V) : option subst :=
+Definition matches_sort t pat (args : list int) : option subst :=
   @! let s <- matches_unordered_sort t pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
@@ -387,7 +384,52 @@ cannot generate, e.g.
 
     
   End WithCtx.
-         
+
+End Int63Matches.
+  
+
+Section WithVar.
+  Context (V : Type)
+          {V_Eqb : Eqb V}
+          {V_default : WithDefault V}.
+  
+Notation named_list := (@named_list V).
+Notation named_map := (@named_map V).
+Notation term := (@term V).
+Notation ctx := (@ctx V).
+Notation sort := (@sort V).
+Notation subst := (@subst V).
+Notation rule := (@rule V).
+Notation lang := (@lang V).
+Notation pf := (@pf V).
+
+  
+  Notation eq_subst l :=
+    (eq_subst (Model:= core_model l)).
+  Notation eq_args l :=
+    (eq_args (Model:= core_model l)).
+  Notation wf_subst l :=
+    (wf_subst (Model:= core_model l)).
+  Notation wf_args l :=
+    (wf_args (Model:= core_model l)).
+  Notation wf_ctx l :=
+    (wf_ctx (Model:= core_model l)).
+  
+  Import StateMonad.
+  Definition step_term_V' (l : lang) (c : ctx) n e t : state (renaming V) _ :=
+    @! let l' <- rename_lang l in
+      let c' <- rename_ctx c in
+      let e' <- rename_term e in
+      let t' <- rename_sort t in
+      ret step_term l' c' n e' t'.
+
+  Definition step_term_V (l : lang) (c : ctx) n e t : pf :=
+    (*TODO: magic number*)
+    let ren := empty_rename 500 in
+    let (p,ren') := step_term_V' l c n e t ren in
+    unrename_pf ren' p.
+  
+  
 
 Lemma wf_args_cons2
      : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort) 
@@ -725,7 +767,7 @@ Ltac step_if_concrete :=
   then lazymatch goal with
        | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
            (*TODO: 100 is a magic number; make it an input*)
-           let x := eval compute in (step_term l c' 100 e1 t) in
+           let x := eval compute in (step_term_V l c' 100 e1 t) in
              eapply TreeProofs.pf_checker_sound with(p:=x);
              [assumption | compute; reflexivity]
        end
@@ -753,17 +795,17 @@ Ltac by_reduction :=
     | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
         tryif is_ground e1 then
           tryif is_ground e2 then
-                let pf_lhs := eval compute in (step_term l c' 100 e1 t) in
-                  let pf_rhs := eval compute in (step_term l c' 100 e2 t) in
+                let pf_lhs := eval compute in (step_term_V l c' 100 e1 t) in
+                  let pf_rhs := eval compute in (step_term_V l c' 100 e2 t) in
                     let pf_both := constr:(TreeProofs.ptrans pf_lhs
                                              (TreeProofs.psym pf_rhs)) in
                   eapply TreeProofs.pf_checker_sound with (p := pf_both);
                                               [ assumption | vm_compute; reflexivity ]
-          else let pf_lhs := eval compute in (step_term l c' 100 e1 t) in
+          else let pf_lhs := eval compute in (step_term_V l c' 100 e1 t) in
                   eapply TreeProofs.pf_checker_sound with (p := pf_lhs);
                                               [ assumption | vm_compute; reflexivity ] 
         else tryif is_ground e2 then
-                let pf_rhs := eval compute in (step_term l c' 100 e2 t) in
+                let pf_rhs := eval compute in (step_term_V l c' 100 e2 t) in
                   eapply TreeProofs.pf_checker_sound with (p := TreeProofs.psym pf_rhs);
                                               [ assumption | vm_compute; reflexivity ] 
           else term_refl
@@ -867,11 +909,11 @@ Ltac setup_elab_lang :=
 
 Ltac auto_elab :=
   setup_elab_lang;
-  unshelve(solve [ break_elab_rule;
-                   apply eq_term_refl;
-                   cleanup_auto_elab ]);
-  try apply eq_term_refl;
-  cleanup_auto_elab.
+  first [ unshelve(solve [ break_elab_rule;
+                           apply eq_term_refl;
+                           cleanup_auto_elab ]);
+          try apply eq_term_refl;
+          cleanup_auto_elab].
 
 (*TODO: duplicated; find & remove duplicates*)
 Ltac unify_evar_fst_eq V :=

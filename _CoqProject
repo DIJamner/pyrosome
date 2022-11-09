@@ -27,6 +27,7 @@ src/named/Term.v
 src/named/Rule.v
 src/named/Linter.v
 src/named/PositiveRenaming.v
+src/named/Int63Renaming.v
 src/named/Core.v
 src/named/TreeProofs.v
 src/named/DAGProofs.v
