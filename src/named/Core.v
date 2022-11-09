@@ -750,9 +750,9 @@ Proof using.
             replace (map fst s) with (map fst c'); try symmetry;
               basic_core_crush
         end.
-  all: assert (NoDup (map fst c)) as NoDupH by admit.
   all: specialize (H3 ltac:(basic_core_crush)).
   all: break.
+  all: assert (NoDup (map fst c)) as NoDupH by admit.
   { eapply well_scoped_subst; try typeclasses eauto.
     trivial.
     eauto with model.

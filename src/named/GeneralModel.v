@@ -1288,8 +1288,6 @@ Class Model_from_exp :=
 
 
       (* TODO:
-         - Update NatModel to use this GeneralModel
-         - Write a simple example of a constant folding algorithm
          - Equality within Pyrosome -> compile to this model
          - Bedrock model (how to define equality of bedrock terms)
       *)
