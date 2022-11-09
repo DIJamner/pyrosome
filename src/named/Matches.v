@@ -270,18 +270,14 @@ Definition matches_sort t pat (args : list V) : option subst :=
       | _, _, _ => None
       end.
     
-    Fixpoint pf_refl e : pf :=
+    Fixpoint pf_refl e : option pf :=
       match e with
-      | var x => pvar x
+      | var x => Some (pvar x)
       | con n s =>
-          (*TODO: copied from below*)
-          let refls := map pf_refl s in
-          (*TODO: hacky; should probably be in option*)
-          let pfs' :=
-            unwrap_with_default refls
-              (@! let (term_rule c' _ _) <?- named_list_lookup_err l n in
-                 (cast_args_by_step c' s refls)) in
-          pcon n pfs'
+          @! let (term_rule c' _ _) <?- named_list_lookup_err l n in
+            let refls <- list_Mmap pf_refl s in
+            let pfs' <- cast_args_by_step c' s refls in
+            ret pcon n pfs'
       end.
   
     (* if the top level of the term takes a step, return it *)
@@ -297,8 +293,9 @@ Definition matches_sort t pat (args : list V) : option subst :=
           match step_redex_term l' c e with
           | Some e' => Some e'
           | None => @! let s <- matches e e1 (map fst c') in
-                       let s' <- list_Mmap (fun '(n,e) =>
-                                        cast_by_step (named_list_lookup default c' n)[/s/] (pf_refl e))
+                      let s' <- list_Mmap (fun '(n,e) =>
+                                             @!let ep <- pf_refl e in
+                                               (cast_by_step (named_list_lookup default c' n)[/s/] ep))
                                      s in
                        (*
                          for (n,t) & e in c&s:
@@ -342,15 +339,12 @@ cannot generate, e.g.
               if forallb (fun (l: option _) => if l then false else true) osteps
               then None
               else
-                let refls := map (fun e : term => (pf_refl e, e)) s in
-                let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
-                let (arg_steps, args) := split steps in
-              (*TODO: hacky; should probably be in option*)
-              let pfs' :=
-                unwrap_with_default arg_steps 
-                  (@! let (term_rule c' _ _) <?- named_list_lookup_err l name in
-                  (cast_args_by_step c' s arg_steps)) in
-                Some (pcon name pfs', con name args)
+                @! let (term_rule c' _ _) <?- named_list_lookup_err l name in
+                  let refls <- list_Mmap (fun e => option_map (fun p => (p, e)) (pf_refl e)) s in
+                  let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
+                  let (arg_steps, args) := split steps in
+                  let pfs' <- cast_args_by_step c' s arg_steps in
+                  ret (pcon name pfs', con name args)
           end.
 
         Definition step_term_one_traversal e
@@ -382,11 +376,12 @@ cannot generate, e.g.
   Fixpoint step_term (n : nat) (e : term) (t : sort) {struct n} : pf :=
     match n with
       (*TODO: do I care if the 0 case is valid?*)
-    | 0 => pf_refl (fun e _ => pvar default) e
+    | 0 => pcon default []
     | S n =>
         match step_term' (step_term n) n e with
         | Some (pf,_) => pf
-        | _ => pf_refl (step_term n) e
+        (*TODO: check that the unwrap always succeeds*)
+        | _ => unwrap_with_default (pcon default []) (pf_refl (step_term n) e)
         end
     end.
 
