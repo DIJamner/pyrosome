@@ -39,6 +39,7 @@ src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
 src/named/VSubst.v
+src/named/VSTLC.v
 src/named/SimpleVSubst.v
 src/named/SimpleUnit.v
 src/named/SimpleVSum.v
