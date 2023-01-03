@@ -277,8 +277,23 @@ Section WithVar.
         | [H : Some _ = Some _ |- _ ] => safe_invert H
                end.
       - constructor; constructor.
-        + clear HeqH; induction wfc; simpl.
-          * apply NoDup_nil.
+        + induction wfc; simpl.
+          * inversion HeqH.
+          * case_eq (eqb name n); intros.
+            {
+              apply eqb_eq in H1; rewrite H1 in *.
+              left.
+              apply pair_equal_spec; constructor; trivial.
+              simpl in *.
+              rewrite eqb_refl in HeqH.
+              inversion HeqH.
+              trivial.
+            }
+            {
+              apply eqb_neq in H1.
+              right.
+            }
+            apply NoDup_nil.
           * apply NoDup_cons; trivial.
             apply IHw; trivial.
         + eapply named_list_lookup_err_in; eauto.

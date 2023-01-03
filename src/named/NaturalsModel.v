@@ -7,7 +7,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Substable Model GeneralModel Term.
+From Named Require Import Substable Model GeneralModel Term CompilerDefs.
 Require Import Coq.Logic.FunctionalExtensionality.
 
 (* Import CompilerDefs.Notations. *)
@@ -27,11 +27,14 @@ Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
     |}.
 
 Section WithV.
-Context {V : Type}.
+(* Context {V : Type}. *)
 
-Notation named_list := (@named_list V).
-Notation Substable0 := (Substable0 V).
-Notation Substable := (@Substable V).
+(* Notation named_list := (@named_list V). *)
+(* Notation Substable0 := (Substable0 V). *)
+(* Notation Substable := (@Substable V). *)
+Notation named_list := (@named_list string).
+Notation Substable0 := (Substable0 string).
+Notation Substable := (@Substable string).
 
 Definition sort := Type.
 
@@ -58,8 +61,8 @@ Proof.
   auto.
 Qed.
 
-Section WithEqb.
-  Context {V_Eqb : Eqb V}.
+(* Section WithEqb. *)
+(*   Context {V_Eqb : Eqb V}. *)
 
 Instance model : Model := GeneralModel.model 0 eq_exp wf_exp.
 Instance model_ok : Model_ok model := GeneralModel.model_ok 0 eq_exp exp_symm exp_trans exp_refl wf_exp.
@@ -68,22 +71,24 @@ Instance model_ok : Model_ok model := GeneralModel.model_ok 0 eq_exp exp_symm ex
    Gallina Fixpoint function operating on Terms from nat_lang_def
  *)
 
-Notation term := (term string).
+Notation pyrosome_term := (term string).
+Notation nat_term := (GeneralModel.term (V := string) nat).
+Print GeneralModel.term.
 
-Fixpoint is_constant (t : term) : bool :=
+Fixpoint is_constant (t : pyrosome_term) : bool :=
   match t with
-  | con "+1" [a] => is_constant a
+  | con "1+" [a] => is_constant a
   | con "0" [] => true
   | _ => false
   end.
 
-Fixpoint add_constants (a b : term) : term :=
+Fixpoint add_constants (a b : pyrosome_term) : pyrosome_term :=
   match a with
-  | con "+1" [a'] => add_constants a' (con "+1" [b])
+  | con "1+" [a'] => add_constants a' (con "1+" [b])
   | _ => b
   end.
 
-Fixpoint constant_fold (t : term) : term :=
+Fixpoint constant_fold (t : pyrosome_term) : pyrosome_term :=
   match t with
   | con "plus" [a; b] =>
       let a := constant_fold a in
@@ -94,31 +99,51 @@ Fixpoint constant_fold (t : term) : term :=
   | _ => t
   end.
 
-Definition plus a b : term := con "plus" [a; b].
+Definition plus a b : pyrosome_term := con "plus" [a; b].
 
-Definition var : term := var "test".
+Definition var : pyrosome_term := var "test".
 
-Fixpoint num n : term :=
+Fixpoint num n : pyrosome_term :=
   match n with
   | 0 => con "0" []
-  | S n' => con "+1" [num n']
+  | S n' => con "1+" [num n']
   end.
 
 Definition example := (plus (plus (plus (num 1) (num 2)) var) (plus (plus (num 2) (plus (num 0) (num 1))) (num 2))).
 
 Compute (constant_fold example).
 
-Local Notation compiler V := (compiler V (tgt_term := term (V:=V)) (tgt_sort := sort)).
+Local Notation compiler := (compiler string (tgt_term := nat_term) (tgt_sort := sort)).
 
-Print nat_lang.
+Definition bin_op (op : nat -> nat -> nat) (t1 t2 : nat_term) : nat_term := fun ms => op (t1 ms) (t2 ms).
 
-  Definition nat_lang_model_def : compiler string :=
-    [
-      ("plus", term_case ["b"; "a"] (bin_op plus (inj_var "a") (inj_var "b")));
-      ("1+", term_case ["n"] (bin_op plus (inj_var "n") (val 1)));
-      ("0", term_case [] (val 0));
-      ("natural", sort_case [] (nat : Type))
-    ].
+Definition val (n : nat) : nat_term := fun _ => n.
+
+Notation inj_var := (inj_var (V := string) 0).
+
+Definition nat_lang_compiler : compiler :=
+  [
+    ("plus", term_case ["b"; "a"] (bin_op Nat.add (inj_var "a") (inj_var "b")));
+    ("1+", term_case ["n"] (bin_op Nat.add (inj_var "n") (val 1)));
+    ("0", term_case [] (val 0));
+    ("natural", sort_case [] (nat : Type))
+  ].
+
+(* Check (preserving_compiler_ext nat_lang_compiler nat_lang). *)
+
+Check Core.eq_term.
+
+Notation compile :=(compile (V := string) (V_Eqb := string_Eqb)
+                                     (tgt_term := nat_term) (H := val 0) nat_lang_compiler).
+
+Example compiled_example := compile example.
+
+Compute (compiled_example [("test", 1)]).
+
+(* TODO:
+   Prove compiler preserving
+   Code below copied from elsewhere and will not work since it isn't made for compilers targetting a model outside of pyrosome.
+*)
 
 Ltac break_preserving_compiler :=
   repeat match goal with

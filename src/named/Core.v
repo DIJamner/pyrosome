@@ -153,7 +153,7 @@ c |- e1 = e2 : t'
       eq_sort c t t' ->
       wf_term c e t'
   | wf_term_var : forall c n t,
-      NoDup (map fst c) ->
+      (* NoDup (map fst c) -> *)
       In (n, t) c ->
       wf_term c (var n) t
   with wf_sort : ctx -> sort -> Prop :=
@@ -358,7 +358,7 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
                f13 n args t0 i w0 (wf_args_ind' wf_term_ind' w0)
            | wf_term_conv w0 e0 =>
                f14 w0 (wf_term_ind' w0) e0 (eq_sort_ind' e0)
-           | wf_term_var _ c0 n t0 _ i => f15 c0 n t0 i
+           | wf_term_var _ c0 n t0 i => f15 c0 n t0 i
            end.
 
     
@@ -445,9 +445,7 @@ Local Lemma lang_mono l l'
 Proof using.
   intro lincll.
   apply judge_ind; basic_goal_prep; basic_core_crush.
-  assert (NoDup (map fst c)) by admit.
-  basic_core_crush.
-Admitted.
+Qed.
 
 (*TODO: these make for bad hints.
   keep old statements (in addition) for the hint db?
@@ -1343,7 +1341,7 @@ Scheme wf_sort_ind'' := Minimality for wf_sort Sort Prop
            | @wf_term_by _ c0 n s0 args c' t0 i w0 =>
                f0 n args t0 i w0 (wf_args_ind''' wf_term_ind'' w0)
            | @wf_term_conv _ c0 e t0 t' w0 e0 => f1 w0 (wf_term_ind'' w0) e0
-           | wf_term_var _ c0 n t0 _ i => f2 c0 n t0 i
+           | wf_term_var _ c0 n t0 i => f2 c0 n t0 i
            end.
     
     Definition wf_sort_ind'' (c : ctx) (s : sort) (w : wf_sort l c s) : P c s :=
