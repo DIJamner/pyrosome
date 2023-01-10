@@ -38,6 +38,7 @@ src/named/ModelImpls.v
 src/named/Elab.v
 src/named/Matches.v
 src/named/ComputeWf.v
+src/named/Subst.v
 src/named/VSubst.v
 src/named/VSTLC.v
 src/named/SimpleVSubst.v
