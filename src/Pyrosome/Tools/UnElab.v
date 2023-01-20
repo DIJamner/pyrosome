@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Utils Require Export GoalDisplay.
-From Named Require Import Core.
+From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
 (*TODO: move to the right place*)

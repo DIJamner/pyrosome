@@ -33,6 +33,7 @@ src/Pyrosome/Elab/Elab.v
 src/Pyrosome/Proof/TreeProofs.v
 src/Pyrosome/Proof/DAGProofs.v
 
+src/Pyrosome/Tools/UnElab.v
 src/Pyrosome/Tools/Linter.v
 src/Pyrosome/Tools/PositiveRenaming.v
 src/Pyrosome/Tools/Int63Renaming.v
