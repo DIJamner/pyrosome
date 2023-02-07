@@ -27,6 +27,7 @@ src/Pyrosome/Theory/Model.v
 src/Pyrosome/Theory/Term.v
 src/Pyrosome/Theory/Rule.v
 src/Pyrosome/Theory/Core.v
+src/Pyrosome/Theory/Renaming.v
 
 src/Pyrosome/Elab/Elab.v
 
