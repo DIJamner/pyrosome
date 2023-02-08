@@ -55,7 +55,22 @@ Definition fix_cc_def : compiler :=
                                    (#".2" (#".2" #"hd"))))
                                  "e") #"hd")}}
   end.
- 
+
+
+(*
+Lemma term_rw_lhs_nth {V} `{Eqb V} (l : Rule.lang V) c t t'' s1 e e1 e2 s1_pre s1_post name
+  : wf_lang l ->
+    s1 = s1_pre ++ e1::s1_post ->
+    eq_term l c t'' e1 e2 ->
+    eq_term l c t (con name (s1_pre ++ e2::s1_post)) e ->
+    eq_term l c t (con name s1) e.
+Proof.
+  intros; subst.
+  eapply eq_term_trans; eauto.
+  (*TODO: conv-stable inversion*)
+Admitted.
+ *)
+
 Derive fix_cc
        SuchThat (elab_preserving_compiler (cc++prod_cc_compile++subst_cc)
                                           (fix_cc_lang
@@ -76,6 +91,7 @@ Proof.
   cleanup_elab_after
     (reduce;
      term_cong; try term_refl;
+     unfold Model.eq_term;
      eapply eq_term_trans;
      [eapply eq_term_sym;
       eredex_steps_with cc_lang "clo_eta"|];

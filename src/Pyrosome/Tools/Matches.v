@@ -606,8 +606,8 @@ Ltac prove_from_known_elabs :=
 Ltac term_cong :=
   eapply term_con_congruence;
   [ solve_in
-  | solve_len_eq
-  | vm_compute; reflexivity
+  (*| solve_len_eq*)
+  | try (right; vm_compute; reflexivity)
   | solve[prove_from_known_elabs]
   | repeat match goal with [|- eq_args _ _ _ _] =>
                            simple apply eq_args_nil
