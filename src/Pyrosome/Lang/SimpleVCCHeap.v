@@ -105,173 +105,100 @@ Proof.
   auto_elab_compiler.
   {
     reduce.
-    repeat (term_cong; try term_refl; compute_eq_compilation).
+    repeat (term_cong; unfold Model.eq_term; try term_refl; compute_eq_compilation).
     eapply eq_term_trans; cycle 1.
-    1:estep_under forget_eq_wkn' "forget_eq_wkn".
+    {
+      term_cong; unfold Model.eq_term.
+      - term_refl.
+      - term_refl.
+      - term_refl.
+      - compute_eq_compilation.        
+        estep_under forget_eq_wkn' "forget_eq_wkn".
+      - term_refl.
+    }
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
     1:estep_under value_subst "cmp_snoc".
     compute_eq_compilation.
     eapply eq_term_trans; cycle 1.
-    1:estep_under forget_eq_wkn' "forget_eq_wkn".
-    compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
-    1:estep_under value_subst "id_emp_forget".
-    compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
     {
-     eapply eq_term_sym.
-     estep_under value_subst "id_right".
-    }
-    compute_eq_compilation.
-    
-    
-Ltac compute_eq_compilation ::=
-  repeat lazymatch goal with
-  |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
-   let ctx' := eval vm_compute in ctx in
-       let t1' := eval vm_compute in t1 in
-           let t2' := eval vm_compute in t2 in
-               change_no_check (eq_sort l ctx' t1' t2')
-  |[|- eq_term ?l ?ctx ?e1 ?e2 ?t] =>
-   let ctx' := eval vm_compute in ctx in
-       let e1' := eval vm_compute in e1 in
-           let e2' := eval vm_compute in e2 in
-               let t' := eval vm_compute in t in
-                   change_no_check (eq_term l ctx' e1' e2' t')
-  |[|- Model.eq_term _ _ _ _] => unfold Model.eq_term
-  |[|- eq_term_nocheck ?l ?ctx ?e1 ?e2 ?t] =>
-   let ctx' := eval vm_compute in ctx in
-       let e1' := eval vm_compute in e1 in
-           let e2' := eval vm_compute in e2 in
-               let t' := eval vm_compute in t in
-                   change_no_check (eq_term_nocheck l ctx' e1' e2' t')
-  end.
-
-term_cong; try term_refl; compute_eq_compilation.
-term_cong; try term_refl; compute_eq_compilation.
-term_cong; try term_refl; compute_eq_compilation.
-term_cong; try term_refl; compute_eq_compilation.
-term_cong; try term_refl; compute_eq_compilation.
-
-(*TODO: automatically decompose forgets*)
-eapply eq_term_trans; cycle 1.
-{
-  term_cong.
-  - term_refl.
-  - term_refl.
-  - term_refl.
-  - compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
-    {
-      eredex_steps_with value_subst "cmp_forget".
-      compute_eq_compilation.
-      instantiate (1:={{e #"ext" #"emp" "G'"}}).
-      instantiate (1:={{e #"wkn" (#"ext" #"emp" "G'") #"nat"}}).
-      repeat t'.
-    }
-    eapply eq_term_trans; cycle 1.
-    {
-      compute_eq_compilation.
-      term_cong.
+      term_cong; unfold Model.eq_term.
       - term_refl.
       - term_refl.
       - term_refl.
       - term_refl.
       - compute_eq_compilation.
-        eredex_steps_with value_subst "cmp_forget".
+        eapply eq_term_trans; cycle 1.
+        {
+          term_cong; unfold Model.eq_term.
+          - term_refl.
+          - term_refl.
+          - term_refl.
+          - 
+            eapply eq_term_trans; cycle 1.
+            {
+              compute_eq_compilation.
+              eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
+            }
+            compute_eq_compilation.
+            {
+              term_cong; unfold Model.eq_term.
+              - term_refl.
+              - term_refl.
+              - term_refl.
+              - term_refl.
+              - compute_eq_compilation.
+                eredex_steps_with value_subst "id_emp_forget".
+            }
+          - term_refl.
+        }
         compute_eq_compilation.
-        instantiate (1:={{e #"emp"}}).
-        instantiate (1:={{e #"wkn" #"emp" "G'"}}).
-        repeat t'.
+        eapply eq_term_trans; cycle 1.
+        {
+          term_cong; unfold Model.eq_term.
+          - term_refl.
+          - term_refl.
+          - term_refl.
+          - eapply eq_term_sym.
+            eredex_steps_with value_subst "id_right".
+          - term_refl.
+        }
+        compute_eq_compilation.
+        by_reduction.
     }
+    eapply eq_term_trans; cycle 1.
     {
-      compute_eq_compilation.
-      term_cong.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - term_cong.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + compute_eq_compilation.
-          eredex_steps_with value_subst "id_emp_forget".
+      eapply eq_term_sym.
+      eredex_steps_with value_subst "id_right".
     }
-  - term_refl.
-}
-compute_eq_compilation.
-eapply eq_term_trans; cycle 1.
-{
-  eredex_steps_with value_subst "cmp_snoc".
-}
-compute_eq_compilation.
-
-eapply eq_term_trans.
-{
-  eapply eq_term_sym.
-  eredex_steps_with value_subst "id_right".
-}
-compute_eq_compilation.
-term_cong; try term_refl; compute_eq_compilation.
-
-eapply eq_term_trans; cycle 1.
-{
-  term_cong.
-  - term_refl.
-  - term_refl.
-  - term_refl.
-  - compute_eq_compilation.
-    eapply eq_term_sym.
-    eredex_steps_with value_subst "id_right".
-  - term_refl.
-}
-compute_eq_compilation.
-eapply eq_term_sym.
-eredex_steps_with value_subst "snoc_wkn_hd".
+    compute_eq_compilation.
+    term_refl.
   }
-{
-    reduce.
+  {
+    compute_eq_compilation.
     eapply eq_term_trans.
     {
       eredex_steps_with heap_cps_ops "eval get".
     }
     compute_eq_compilation.
-
-    term_cong; try term_refl; compute_eq_compilation.
     reduce.
-    term_cong; try term_refl; compute_eq_compilation.
-    term_cong; try term_refl; compute_eq_compilation.
+    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
+    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
+    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
     eapply eq_term_trans.
-    {
+    {      
       eapply eq_term_sym.
-      eredex_steps_with value_subst "cmp_forget".
-      instantiate (1:={{e #"emp"}}).
-      instantiate (1:={{e #"wkn" #"emp" "G"}}).
-      repeat t'.
-    }
+      eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
+    }      
     compute_eq_compilation.
-    eapply eq_term_trans.
-    {
-      term_cong.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - compute_eq_compilation.
-        eapply eq_term_sym.
-        eredex_steps_with value_subst "id_emp_forget".
-    }
-    compute_eq_compilation.
-    eapply eq_term_trans.
+    eapply eq_term_trans; cycle 1.
     {
       eredex_steps_with value_subst "id_right".
     }
     compute_eq_compilation.
-    term_refl.
-}
+    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
+    by_reduction.
+  }
 Unshelve.
   all: repeat t'.
 Qed.
