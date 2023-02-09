@@ -11,8 +11,6 @@ From Pyrosome.Lang Require Import SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPS
 Import Core.Notations.
 Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
-Notation lang := (lang string).
-Notation compiler := (compiler string).
 
 Definition ch8_def : lang :=
   {[l
@@ -452,22 +450,6 @@ Ltac reduce :=
       (try cleanup_elab_after step_if_concrete);
       try_term_cong).
 
-Definition as_ctx {V} (c:ctx V) :=c.
-Notation "'{{c' c }}" := (as_ctx c) (at level 0, c custom ctx, only printing).
-
-Ltac hide_implicits :=
-  lazymatch goal with
-  | |- eq_term ?l ?c ?t ?e1 ?e2 =>
-      let c' := eval compute in (hide_ctx_implicits l c) in
-        let t' := eval compute in (hide_sort_implicits l t) in
-          let e1' := eval compute in (hide_term_implicits l e1) in
-            let e2' := eval compute in (hide_term_implicits l e2) in
-              change (eq_term l (lie_to_user (real:=c) (as_ctx c'))
-                        (lie_to_user (real:=t) t')
-                        (lie_to_user (real:=e1) e1')
-                        (lie_to_user (real:=e2) e2'))
-  end.
-
 (*Use: `hide_implicits` shows the pre-elaboration terms,
   and `wysiwyg` shows the actual goal again.
  *)
@@ -492,7 +474,9 @@ Proof.
     eapply eq_term_trans; cycle 1;
     [ now eredex_steps_with cc_lang "clo_eta"|];
     reduce_rhs;
-    repeat (term_cong; try term_refl;[]).
+    repeat (term_cong; 
+            unfold Model.eq_term;
+            try term_refl;[]).
   
   - cleanup_elab_after eredex_steps_with heap "heap_comm".
   - cleanup_elab_after eredex_steps_with heap "lookup_miss".
@@ -508,8 +492,8 @@ Proof.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
+    (*TODO: expensive*)
     repeat clo_eta_cong.
-    unfold Model.eq_term.
     compute_eq_compilation.
     (*TODO: why aren't all unit terms reduced to tt?
     Matches.reduce.*)
@@ -524,10 +508,12 @@ Proof.
     repeat clo_eta_cong.
     eapply eq_term_trans.
     {
-      term_cong.
+      term_cong;unfold Model.eq_term.
+      - right; compute; reflexivity.
       - term_refl.
       - term_refl.
       - term_cong.
+        + right; compute; reflexivity.
         + term_refl.
         + term_refl.
         + term_refl.
@@ -561,7 +547,6 @@ Proof.
     repeat clo_eta_cong.
     unfold Model.eq_term.
     compute_eq_compilation.
-    hide_implicits.
     term_refl.
   - compute_eq_compilation.
     Matches.reduce.
@@ -587,7 +572,6 @@ Proof.
     Matches.reduce.
     unfold Model.eq_term.
     compute_eq_compilation.
-    hide_implicits.
     eapply eq_term_trans.
     {
       eredex_steps_with heap_cps_ops "eval get".
@@ -598,6 +582,6 @@ Proof.
     Unshelve.
     all: repeat Matches.t'.
 Qed.
-#[export] Hint Resolve subst_cc_preserving : elab_pfs.
+#[export] Hint Resolve ch8_cc_preserving : elab_pfs.
 
 
