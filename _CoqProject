@@ -5,7 +5,13 @@
 -Q src/Utils Utils
 src/Utils/TrieMap.v
 src/Utils/SymmetricInduction.v
+src/Utils/Base.v
+src/Utils/Booleans.v
+src/Utils/Props.v
+src/Utils/Eqb.v
+src/Utils/Default.v
 src/Utils/Utils.v
+src/Utils/Infinite.v
 src/Utils/Monad.v
 src/Utils/SumMonad.v
 src/Utils/Natlike.v

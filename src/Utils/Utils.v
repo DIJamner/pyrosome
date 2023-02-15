@@ -7,113 +7,13 @@ Import BoolNotations.
 Open Scope string.
 Open Scope list.
 
-(***************
- Tactics 
-****************)
-
-Tactic Notation "intro_to" constr(ty) :=
-  repeat match goal with
-         | |- ty -> _ => idtac
-         | |- ty _ -> _ => idtac
-         | |- ty _ _-> _ => idtac
-         | |- ty _ _ _ -> _ => idtac
-         | |- ty _ _ _ _ -> _ => idtac
-         | |- ty _ _ _ _ _ -> _ => idtac
-         | |- ty _ _ _ _ _ _ -> _ => idtac
-         | |- ty _ _ _ _ _ _ _ -> _ => idtac
-         | |- _ -> _ => intro
-         | |- _ => fail 2 "could not find argument with head" ty
-         end.
-
-
-Ltac break :=
-  repeat match goal with
-         | [H: unit|-_]=> destruct H
-         | [H: _*_|-_]=> destruct H
-         | [H: _/\_|-_]=> destruct H
-         | [H: exists x, _|-_]=> destruct H
-         end.
-
-
-Ltac my_case eqnname exp :=
-  let casevar := fresh "casevar" in
-  remember exp as casevar eqn:eqnname;
-  destruct casevar; symmetry in eqnname.
-
-
-(* Performs inversion on H exactly when 
-    either: 
-    - no constructors can produce H and the goal is solved
-    - exactly one constructor can produce H and inversion
-      makes progress
- *)
-Ltac safe_invert H :=
-  let t := type of H in
-  inversion H; clear H;
-  let n := numgoals in
-  guard n <= 1;
-  lazymatch goal with
-  | [ H' : t|-_]=>
-    fail "safe_invert did not make progress"
-  | _ => subst
-  end.
-
-Ltac solve_invert_constr_eq_lemma :=
-   match goal with
-    [|- ?lhs <-> _] =>
-    firstorder (match goal with
-                    | [H : lhs |-_] => inversion H; subst; easy
-                    | _ => solve[ subst;constructor; assumption | f_equal; assumption]
-                    end)
-   end.
-
-
-Ltac generic_crush rewrite_tac hint_auto :=
-  repeat (intuition break; subst; rewrite_tac;
-          (*TODO: is this the best place for this?*)
-          try typeclasses eauto;
-          intuition unshelve hint_auto).
-(* Uses firstorder, which can have strange edge cases
-   and interacts poorly with terms
- *)
-Ltac generic_firstorder_crush rewrite_tac hint_auto :=
-  repeat (intuition break; subst; rewrite_tac;
-          (*TODO: is this the best place for this?*)
-          try typeclasses eauto;
-          firstorder unshelve hint_auto).
-(*try (solve [ repeat (unshelve f_equal; hint_auto)])). *)
-
-#[export] Hint Extern 100 => exfalso : utils.
-#[export] Hint Extern 100 (_ _ = _ _) => f_equal : utils.
-
-(*TODO: generalize this to something that works nicely for generic_crush
-Tactic Notation "text" ident(u) := eauto with u.
- *)
+From Utils Require Export Base Booleans Props Eqb Default.
 
 (****************
 Definitions
 *****************)
 
-(* grouped right with the fixpoint for better decreasing argument analysis*)
-Definition all2 := 
-fun (S T : Type) (r : S -> T -> bool) =>
-fix all2 (s : list S) (t : list T) {struct s} : bool :=
-  match s, t with
-  | [], [] => true
-  | x :: s0, y::t0 => r x y && all2 s0 t0
-  | _,_ => false
-  end.
 
-
-Ltac basic_utils_crush := let x := autorewrite with utils in * in
-                                  let y := eauto with utils in
-                                          generic_crush x y.
-Ltac basic_utils_firstorder_crush :=
-  let x := autorewrite with utils in * in
-          let y := eauto with utils in
-                  generic_firstorder_crush x y.
-
-Ltac basic_goal_prep := intros; break; simpl in *.
 
 
 #[export] Hint Resolve in_nil : utils.
@@ -134,11 +34,6 @@ Proof using.
 Qed.
 #[export] Hint Resolve pair_fst_in : utils.
 
-
-Ltac case_match :=match goal with
-  | [|- context[match ?e with _ => _ end]]
-    => let e':= fresh in remember e as e'; destruct e'
-  end.
 
 Lemma invert_none_some A (x:A)
   : None = Some x <-> False.
@@ -196,49 +91,23 @@ Proof.
 Qed.
 Hint Rewrite invert_eq_cons_cons : utils.
 
-(*TODO: does this exist somewhere I can use?
-  TODO: include minimum necessary to prove the given properties
-*) 
-Class Eqb (A : Type) :=
-  {
-  eqb : A -> A -> bool;
-  eqb_eq : forall n m : A, eqb n m = true <-> n = m;
-  eqb_neq : forall x y : A, (eqb x y) = false <-> x <> y;
-  eqb_refl : forall x : A, (eqb x x) = true;
-  Eqb_dec : forall (s1 s2 : A), {s1 = s2} + {s1 <> s2}
-  }.
-#[export] Hint Rewrite @eqb_eq : utils.
-#[export] Hint Rewrite @eqb_neq : utils.
-#[export] Hint Rewrite @eqb_refl : utils.
-
-#[export] Instance string_Eqb : Eqb string :=
-  {|
-  eqb := String.eqb;
-  eqb_eq := String.eqb_eq;
-  eqb_neq := String.eqb_neq;
-  eqb_refl := String.eqb_refl;
-  Eqb_dec := string_dec
-  |}.
-
-(* Not defined as a record so that firstorder doesn't mess with it*)
-Definition WithDefault (A : Type) := A.
-Definition default {A} {d : WithDefault A} : A := d.
-Existing Class WithDefault.
 
 
-#[export] Instance option_default {A} : WithDefault (option A) := None.
-#[export] Instance string_default : WithDefault string := "".
-(* TODO: is this bad practice? *)
-Hint Extern 10 (WithDefault _) => solve [typeclasses eauto].
+(*TODO: move to standard library? *)
+Lemma string_of_list_ascii_length l
+  : String.length (string_of_list_ascii l) = List.length l.
+Proof.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
 
-                   
-Definition unwrap_with_default {A} (default : A) ma :=
-  match ma with None => default | Some a => a end.
-                   
+
 (* TODO: separate file? *)
 Section NamedList.
   Context {S : Type}
-          `{Eqb S}.
+    {EqbS : Eqb S}
+    {EqbS_ok : Eqb_ok EqbS}.
 
 Definition named_list (A : Type) :=list (S * A).
 
@@ -299,15 +168,16 @@ Fixpoint named_list_lookup_err {A} (l : named_list A) s : option A :=
 
 Lemma named_list_lookup_err_in {A} c n (t : A)
   : Some t = named_list_lookup_err c n -> In (n,t) c.
-Proof using .
+Proof using EqbS_ok.
   induction c; basic_goal_prep.
   basic_utils_crush.
-  my_case Heq (eqb n s); basic_utils_crush.
+  my_case Heq (eqb n s);
+    basic_utils_crush.
 Qed.
 
 Lemma all_fresh_named_list_lookup_err_in A c n (t : A)
   : all_fresh c -> Some t = named_list_lookup_err c n <-> In (n,t) c.
-Proof using .
+Proof using EqbS_ok.
   induction c; basic_goal_prep.
   basic_utils_crush.
   my_case Heq (eqb n s); basic_utils_crush.  
@@ -316,7 +186,6 @@ Qed.
 Lemma fresh_named_map A B l (f : A -> B) n
   : fresh n (named_map f l) <-> fresh n l.
 Proof using .
-  clear H.
   induction l; basic_goal_prep;
     basic_utils_firstorder_crush.
 Qed.
@@ -415,9 +284,11 @@ Proof.
   intuition eauto using pair_fst_in.
 Qed.
 
+Context `{DecS : DecidableEq S}.
+
 
 Definition fresh_dec {A} x (l : named_list A) : {fresh x l} + {~ fresh x l}.
-  refine(if in_dec Eqb_dec x (map fst l) then right _ else left _);
+  refine(if in_dec (dec) x (map fst l) then right _ else left _);
     basic_utils_crush.
 Defined.
 
@@ -430,6 +301,7 @@ Proof.
   unfold compute_fresh.
   destruct (fresh_dec x l); easy.
 Qed.
+Hint Resolve use_compute_fresh : utils.
 
 
 Lemma fresh_app A s (l1 l2 : named_list A)
@@ -470,16 +342,6 @@ Lemma use_compute_all_fresh A (l : named_list A)
   : compute_all_fresh l = true -> all_fresh l.
 Proof.
   induction l; basic_goal_prep; basic_utils_crush.
-  apply use_compute_fresh; eauto.
-Qed.
-
-
-(* TODO: shouldn't be needed if I flip order equations reliably
-   TODO: should be in a different location
-*)
-Lemma eqb_eq' n m : true = (eqb n m) <-> n = m.
-Proof.
-  rewrite <- eqb_eq; intuition.
 Qed.
 
 End NamedList.
@@ -500,8 +362,6 @@ End NamedList.
 #[export] Hint Rewrite @fresh_app : utils.
 #[export] Hint Rewrite in_app_iff : utils.
 #[export] Hint Resolve @all_fresh_insert_rest_is_fresh : utils.
-#[export] Hint Rewrite Bool.andb_true_iff : utils.
-#[export] Hint Rewrite @eqb_eq' : utils.
 
 (*
 TODO: remove once the project builds without it
