@@ -10,44 +10,29 @@ From Pyrosome.Theory Require Import Substable.
 Import SumboolNotations.
 
 (*TODO:  this is a hack, discharge it properly *)
-  Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
-    : forall a b, eqb (Eqb:=Heqb1) a b = eqb (Eqb:=Heqb2) a b.
+Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
+  {_ : Eqb_ok Heqb1}
+  {_ : Eqb_ok Heqb2}
+  : forall a b, eqb (Impl:=Heqb1) a b = eqb (Impl:=Heqb2) a b.
   Proof.
     intros.
-    destruct (Eqb_dec a b); subst.
-    {
-      rewrite !eqb_refl.
-      reflexivity.
-    }
-    {
-      match goal with
-        |- ?lhs = ?rhs =>
-          remember lhs as lhsb;
-          remember rhs as rhsb;
-          destruct lhsb; destruct rhsb; try tauto
-      end.
-      {
-        symmetry in Heqlhsb.
-        rewrite eqb_eq in Heqlhsb.
-        tauto.
-      }
-      {
-        symmetry in Heqrhsb.
-        rewrite eqb_eq in Heqrhsb.
-        tauto.
-      }
-    }
+    specialize (H a b).
+    specialize (H0 a b).
+    revert H H0; repeat case_match; basic_goal_prep; basic_utils_crush.
   Qed.
 
   
   Lemma Eqb_unique_named_list_lookup {A B} (Heqb1 Heqb2 : Eqb A)
-    : forall x y (s : @named_list A B), named_list_lookup (H := Heqb1) x s y
-                  = named_list_lookup (H := Heqb2)x s y.
+  {_ : Eqb_ok Heqb1}
+  {_ : Eqb_ok Heqb2}
+    : forall x y (s : @named_list A B), named_list_lookup (EqbS := Heqb1) x s y
+                  = named_list_lookup (EqbS := Heqb2) x s y.
   Proof.
     induction s; basic_goal_prep; basic_utils_crush.
     rewrite Eqb_eqb_extensionally_unique with (Heqb1:= Heqb1) (Heqb2:= Heqb2).
     rewrite IHs.
     reflexivity.
+    all: assumption.
   Qed.
 
 Create HintDb term discriminated.
@@ -150,7 +135,9 @@ Definition subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
 Arguments subst_lookup {_} !s n/.
 
 Section WithEqb.  
-  Context {V_Eqb : Eqb V}.
+  Context {V_Eqb : Eqb V}
+    {V_Eqb_ok : Eqb_ok V_Eqb}.
+  
 
 
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
@@ -236,10 +223,6 @@ Qed.
   
 Hint Rewrite id_args_nil : term.  
 Hint Rewrite id_args_cons : term.
-Hint Rewrite @subst_assoc : term.
-Hint Rewrite @subst_id : term.
-Hint Rewrite @strengthen_subst : term.
-Hint Resolve well_scoped_subst : term.
 
 Lemma term_subst_nil e : term_subst [] e = e.
 Proof.  
@@ -349,20 +332,28 @@ Qed.
   Local Hint Resolve term_well_scoped_subst : term.
 
   
-  
-  (*TODO: Prove*)
-  Lemma subst_var `{EqbV: Eqb V}
-    : forall s x, apply_subst0 s (inj_var x) = subst_lookup (V_Eqb:=EqbV) s x.
+  Lemma subst_var : forall s x, apply_subst0 s (inj_var x) = subst_lookup s x.
   Proof.
     intros.
     simpl.
     unfold subst_lookup.
-    eapply Eqb_unique_named_list_lookup.
+    eapply Eqb_unique_named_list_lookup;
+      typeclasses eauto.
   Qed.    
-  
+
+  Lemma subst_var_internal
+     : forall (s : Utils.named_list term) (x : V),
+         named_list_lookup_prop (inj_var x) s x (apply_subst0 s (inj_var x)).
+  Proof.
+    intros.
+    rewrite named_list_lookup_prop_correct.
+    rewrite subst_var.
+    reflexivity.
+  Qed.
+      
   Instance substable_term_ok : Substable0_ok term :=
     {
-      subst_var := @subst_var;
+      subst_var_internal := subst_var_internal;
       subst_assoc0 := term_subst_assoc;
       subst_id0 := term_subst_id;
       strengthen_subst0 := term_strengthen_subst;
@@ -505,12 +496,12 @@ Definition fv_sort (t:sort) :=
   let (_,s) := t in
   fv_args s.
 
-
+Context `{DecidableEq V}.
 Fixpoint term_eq_dec (e1 e2 : term) {struct e1} : {e1 = e2} + {~ e1 = e2}.
   refine(match e1, e2 with
-         | var x, var y => SB! Eqb_dec x y
+         | var x, var y => SB! dec x y
          | con n s, con n' s' =>
-           SB! (Eqb_dec n n') SB& (list_eq_dec term_eq_dec s s')
+           SB! (dec n n') SB& (list_eq_dec term_eq_dec s s')
          | _, _ => right _
          end); basic_term_crush.
 Defined.
@@ -519,11 +510,11 @@ Defined.
 Definition sort_eq_dec (e1 e2 : sort) : {e1 = e2} + {~ e1 = e2}.
   refine(match e1, e2 with
          | scon n s, scon n' s' =>
-           SB! (Eqb_dec n n') SB& (list_eq_dec term_eq_dec s s')
+           SB! (dec n n') SB& (list_eq_dec term_eq_dec s s')
          end); basic_term_crush.
 Defined.
 
-Definition ctx_eq_dec := list_eq_dec (pair_eq_dec Eqb_dec sort_eq_dec).
+Definition ctx_eq_dec := list_eq_dec (pair_eq_dec dec sort_eq_dec).
 
   Section WithDefault.
     

@@ -24,20 +24,27 @@ Section WithVar.
        TODO: separate into two classes, implement first in Term
              to avoid duplicating ctx?
      *)
-    Class Model :=
+    Class PreModel :=
       {
-        ctx := named_list sort;
-        subst := named_list term;
         term_substable :> Substable0 term;
         sort_substable :> Substable term sort;
-        eq_sort : ctx -> sort -> sort -> Prop;
-        eq_term : ctx -> sort -> term -> term -> Prop;
-        wf_sort : ctx -> sort -> Prop;
-        wf_term : ctx -> term -> sort -> Prop;
       }.
 
-    Section WithModel.
-      Context {Model : Model}.
+    Local Notation ctx := (named_list sort).
+    Local Notation subst := (named_list term).
+
+    
+      Class Model :=
+        {
+          premodel :> PreModel;
+          eq_sort : ctx -> sort -> sort -> Prop;
+          eq_term : ctx -> sort -> term -> term -> Prop;
+          wf_sort : ctx -> sort -> Prop;
+          wf_term : ctx -> term -> sort -> Prop;
+        }.
+
+      Section WithPreModel.
+      Context {PreModel : PreModel}.
 
       Fixpoint ws_ctx (c : ctx) : Prop :=
         match c with
@@ -51,6 +58,10 @@ Section WithVar.
       Proof using .
         induction c; basic_goal_prep; basic_utils_crush.
       Qed.
+      End WithPreModel.
+
+      Section WithModel.
+        Context {Model : Model}.
       
       Inductive eq_subst
         : ctx -> ctx -> subst -> subst -> Prop :=
@@ -178,10 +189,11 @@ Section WithVar.
 
 End WithVar.
 
-Arguments Model (V term sort)%type_scope.
+Arguments PreModel (V term sort)%type_scope.
+Arguments Model {V term sort}%type_scope.
 Arguments Model_ok {V term sort}%type_scope Model : rename.
 
-Arguments ws_ctx {V term sort}%type_scope {Model} !c/.
+Arguments ws_ctx {V term sort}%type_scope {PreModel} !c/.
 
 (*TODO: separate hints from core? *)
 Create HintDb model discriminated.

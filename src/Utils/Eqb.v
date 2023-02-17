@@ -83,7 +83,7 @@ Section __.
 
   (* TODO: monitor the effects of this rewrite on performance *)
   Lemma eqb_ineq_false
-    : forall a b, (a <> b \/ b <> a) -> eqb a b = false.
+    : forall a b, ((a <> b) \/ (b <> a)) -> eqb a b = false.
   Proof.
     intros a b Hneq.
     specialize (H0 a b); revert H0.
@@ -95,7 +95,7 @@ Section __.
   
   #[local] Hint Rewrite eqb_prop_iff : utils.
   #[local] Hint Rewrite eqb_refl_true : utils.
-  #[local] Hint Rewrite eqb_ineq_false using (left || right); assumption : utils.
+  #[local] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
   
   Definition inb x := existsb (eqb x).
 
@@ -115,7 +115,8 @@ Arguments dec {A}%type_scope {DecidableEq} s1 s2.
    
 #[export] Hint Rewrite eqb_prop_iff : utils.
 #[export] Hint Rewrite eqb_refl_true : utils.
-#[export] Hint Rewrite eqb_ineq_false using (left || right); assumption : utils.
+(*TODO: also account for _=_->False *)
+#[export] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
 
 
 #[export] Hint Rewrite inb_is_In : utils.

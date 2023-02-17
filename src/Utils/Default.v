@@ -20,6 +20,9 @@ Section __.
 
 End __.
 
+
+Arguments default {A}%type_scope {d}.
+
 #[export] Instance option_default {A} : WithDefault (option A) := None.
 #[export] Instance string_default : WithDefault string := "".
 

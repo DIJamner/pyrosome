@@ -65,8 +65,8 @@ Ltac solve_invert_constr_eq_lemma :=
 
 Ltac generic_crush rewrite_tac hint_auto :=
   repeat (intuition break; subst; rewrite_tac;
-          (*TODO: is this the best place for this?*)
-          try typeclasses eauto;
+          (*TODO: is this the best place for this? Maybe hints should handle it *)
+          (*try typeclasses eauto;*)
           intuition unshelve hint_auto).
 (* Uses firstorder, which can have strange edge cases
    and interacts poorly with terms
@@ -74,7 +74,7 @@ Ltac generic_crush rewrite_tac hint_auto :=
 Ltac generic_firstorder_crush rewrite_tac hint_auto :=
   repeat (intuition break; subst; rewrite_tac;
           (*TODO: is this the best place for this?*)
-          try typeclasses eauto;
+          (*try typeclasses eauto;*)
           firstorder unshelve hint_auto).
 (*try (solve [ repeat (unshelve f_equal; hint_auto)])). *)
 

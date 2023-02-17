@@ -44,7 +44,7 @@ Proof.
     basic_utils_crush.
   intuition congruence.
 Qed.
-#[export] Hint Rewrite eq_true_to_Is_true : utils.
+#[export] Hint Rewrite true_eq_to_Is_true : utils.
 
 
 Lemma eq_false_to_Is_true b
@@ -52,7 +52,6 @@ Lemma eq_false_to_Is_true b
 Proof.
   destruct b; basic_goal_prep;
     basic_utils_crush.
-  intuition congruence.
 Qed.
 #[export] Hint Rewrite eq_false_to_Is_true : utils.
 
@@ -63,7 +62,7 @@ Proof.
   destruct b; basic_goal_prep;
     basic_utils_crush.
 Qed.
-#[export] Hint Rewrite eq_false_to_Is_true : utils.
+#[export] Hint Rewrite false_eq_to_Is_true : utils.
 
 Lemma orb_prop_iff
   : forall a b : bool, Is_true (a || b) <-> Is_true a \/ Is_true b.

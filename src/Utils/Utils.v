@@ -109,7 +109,15 @@ Section NamedList.
     {EqbS : Eqb S}
     {EqbS_ok : Eqb_ok EqbS}.
 
-Definition named_list (A : Type) :=list (S * A).
+  Definition named_list (A : Type) :=list (S * A).
+
+  (* A helper for stating theorems about named lists without depending on Eqb *)
+Fixpoint named_list_lookup_prop {A} default (l : named_list A) (s : S) (a : A) : Prop :=
+  match l with
+  | [] => default = a
+  | (s', v)::l' =>
+      (s = s'/\ v = a) \/ (s <> s' /\ named_list_lookup_prop default l' s a)
+  end.
 
 Fixpoint named_list_lookup {A} default (l : named_list A) (s : S) : A :=
   match l with
@@ -118,6 +126,17 @@ Fixpoint named_list_lookup {A} default (l : named_list A) (s : S) : A :=
     if eqb s s' then v else named_list_lookup default l' s
   end.
 
+(*TODO: add hints for this?*)
+Lemma named_list_lookup_prop_correct {A} (d : A) l s a
+  :  named_list_lookup_prop d l s a <-> named_list_lookup d l s = a.
+Proof.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+  my_case Heqb (eqb s s0);
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
 
 
 Definition pair_map_snd {A B C} (f : B -> C) (p : A * B) :=

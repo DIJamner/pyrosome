@@ -156,14 +156,14 @@ Proof.
 Qed.
 Hint Resolve ws_lang_all_ws_rule : term.
 
-
+Context `{DecidableEq V}.
 Definition rule_eq_dec (r1 r2 : rule) : {r1 = r2} + {~ r1 = r2}.
   refine(match r1, r2 with
          | sort_rule c args, sort_rule c' args' =>
-           SB! (ctx_eq_dec c c') SB& (list_eq_dec Eqb_dec args args')
+           SB! (ctx_eq_dec c c') SB& (list_eq_dec dec args args')
          | term_rule c args t, term_rule c' args' t' =>
            SB! (ctx_eq_dec c c') SB&
-           (list_eq_dec Eqb_dec args args') SB&
+           (list_eq_dec dec args args') SB&
            (sort_eq_dec t t')
          | sort_eq_rule c t1 t2, sort_eq_rule c' t1' t2' =>
            SB! (ctx_eq_dec c c') SB&
@@ -179,7 +179,7 @@ Definition rule_eq_dec (r1 r2 : rule) : {r1 = r2} + {~ r1 = r2}.
 Defined.
 
 Definition compute_incl_lang (l1 l2 : lang) :=
-  if incl_dec (pair_eq_dec Eqb_dec rule_eq_dec) l1 l2 then true else false.
+  if incl_dec (pair_eq_dec dec rule_eq_dec) l1 l2 then true else false.
 
 Lemma use_compute_incl_lang (l1 l2 : lang)
   : compute_incl_lang l1 l2 = true -> incl l1 l2.

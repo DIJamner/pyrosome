@@ -51,14 +51,10 @@ Section WithVar.
     Definition ws_args args : list A -> Prop := all (well_scoped0 args).
     Arguments ws_args args !s/.
 
-    Definition subst_lookup `{Eqb V} (s : subst) (n : V) : A :=
-      named_list_lookup (inj_var n) s n.
-
-    Arguments subst_lookup {_} !s n/.
-
     Class Substable0_ok : Type :=
       {
-        subst_var `{Eqb V} : forall s x, apply_subst0 s (inj_var x) = subst_lookup s x;
+        (* Stated like this so that the class declaration doesn't depend on Eqb *)
+        subst_var_internal : forall s x, named_list_lookup_prop (inj_var x) s x (apply_subst0 s (inj_var x));
         subst_assoc0 : forall s1 s2 a,
           well_scoped0 (map fst s2) a ->
           apply_subst0 s1 (apply_subst0 s2 a) = apply_subst0 (subst_cmp s1 s2) a;
@@ -76,6 +72,21 @@ Section WithVar.
           well_scoped0 (map fst s) a ->
           well_scoped0 args (apply_subst0 s a)
       }.
+    
+    Definition subst_lookup `{Eqb V} (s : subst) (n : V) : A :=
+      named_list_lookup (inj_var n) s n.
+
+    Arguments subst_lookup {_} !s n/.
+    
+    Lemma subst_var `{Eqb_ok V} `{Substable0_ok}
+      : forall s x, apply_subst0 s (inj_var x) = subst_lookup s x.
+    Proof.
+      intros.
+      unfold subst_lookup.
+      symmetry.
+      erewrite <- named_list_lookup_prop_correct.
+      unshelve eapply subst_var_internal.
+    Qed.      
 
     Class Substable (B : Type) : Type :=
       {
@@ -271,14 +282,13 @@ Arguments apply_subst [V]%type_scope {A B}%type_scope {_} _%list_scope !_.
 
 Arguments args_subst [V]%type_scope {A}%type_scope {Substable0} s !a%list_scope/.
 Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
-Arguments subst_id0 [V]%type_scope {A}%type_scope {Substable0 Substable0_ok} B%type_scope _ _.
+Arguments subst_id0 [V]%type_scope {A}%type_scope {Substable0 Substable0_ok} B%type_scope _ _ : rename.
 
 
 
-(*TODO: add'l arguments, fix these hints*)
-#[global] Hint Rewrite @subst_assoc : term.
-#[global] Hint Rewrite @subst_id : term.
-#[global] Hint Rewrite @strengthen_subst : term.
+#[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite subst_id using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite strengthen_subst using solve[typeclasses eauto] : term.
 #[global] Hint Resolve well_scoped_subst : term.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
