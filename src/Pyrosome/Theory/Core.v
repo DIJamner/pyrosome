@@ -16,10 +16,10 @@ Import Notations.
 
 Create HintDb lang_core discriminated.
 
-Ltac basic_core_crush := let x := autorewrite with utils term lang_core in * in
-                                  let y := eauto 7 with utils term lang_core  model in
+Ltac basic_core_crush := let x := autorewrite with utils term lang_core model in * in
+                                  let y := eauto 7 with utils term lang_core model in
                                           generic_crush x y.
-Ltac basic_core_firstorder_crush := let x := autorewrite with utils term lang_core in * in
+Ltac basic_core_firstorder_crush := let x := autorewrite with utils term lang_core model in * in
                                   let y := eauto with utils term lang_core  model in
                                       generic_firstorder_crush x y.
 
@@ -32,24 +32,13 @@ Hint Unfold Model.wf_sort : lang_core.
 Hint Unfold Model.eq_sort : lang_core.
 *)
 
-Hint Resolve wf_ctx_all_fresh : lang_core.
-                                           
-Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
-    {|
-      term_substable := _;
-      sort_substable := _;
-      (*TODO: rename the conflict*)
-      Model.eq_sort := eq_sort;
-      (*TODO: rename the conflict*)
-      Model.eq_term := eq_term;
-      wf_sort := wf_sort;
-      wf_term := wf_term;
-    |}.
+
 
 Section WithVar.
   Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+    {V_Eqb : Eqb V}
+    {V_Eqb_ok : Eqb_ok V_Eqb}
+    {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -62,7 +51,27 @@ Section WithVar.
   Notation rule := (@rule V).
   Notation lang := (@lang V).
 
-  Notation Model := (@Model V term sort).
+
+  Notation PreModel := (@PreModel V term sort).
+
+  
+  #[export] Instance syntax_model : PreModel :=
+    {|
+      term_substable := _;
+      sort_substable := _;
+    |}.
+
+  
+Local Notation mut_mod eq_sort eq_term wf_sort wf_term :=
+  {|
+    premodel := syntax_model;
+      (*TODO: rename the conflict*)
+      Model.eq_sort := eq_sort;
+      (*TODO: rename the conflict*)
+      Model.eq_term := eq_term;
+      wf_sort := wf_sort;
+      wf_term := wf_term;
+    |}.
 
 Section TermsAndRules.
   Context (l : lang).
@@ -82,7 +91,7 @@ Section TermsAndRules.
       (* Need to assert wf_ctx c here to satisfy
          assumptions' presuppositions
        *)
-      wf_ctx c' ->
+      wf_ctx (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c' ->
       eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
       eq_sort c' t1' t2' ->
       eq_sort c t1'[/s1/] t2'[/s2/]
@@ -99,7 +108,7 @@ Section TermsAndRules.
       (* Need to assert wf_ctx c' here to satisfy
          assumptions' presuppositions
        *)
-      wf_ctx c' ->
+      wf_ctx (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c' ->
       eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
       eq_term c' t e1 e2 ->
       eq_term c t[/s2/] e1[/s1/] e2[/s2/]
@@ -196,9 +205,23 @@ c |- e1 = e2 : t'
   
 End TermsAndRules.
 
+(* TODO: assess benefits of retaining symmetry, transitivity
 Hint Constructors eq_sort eq_term eq_subst eq_args
      wf_sort wf_term wf_subst wf_args wf_ctx
      wf_rule : lang_core.
+ *)
+
+Hint Constructors eq_subst eq_args
+     wf_sort wf_term wf_subst wf_args wf_ctx
+     wf_rule : lang_core.
+
+Hint Resolve eq_sort_by : lang_core.
+Hint Resolve eq_sort_subst : lang_core.
+Hint Resolve eq_sort_refl : lang_core.
+Hint Resolve eq_term_by : lang_core.
+Hint Resolve eq_term_subst : lang_core.
+Hint Resolve eq_term_refl : lang_core.
+Hint Resolve eq_term_conv : lang_core.
 
   
   Notation eq_subst l :=
@@ -636,8 +659,7 @@ Hint Extern 5 (Model.eq_sort _ _ _) => unfold Model.eq_sort : lang_core.
 Lemma id_args_wf l c
   : forall c', sublist c c' -> wf_args l c' (id_args c) c.
   Proof.
-    induction c; basic_goal_prep; basic_core_crush.
-    constructor; basic_core_crush.  
+    induction c; basic_goal_prep; basic_core_crush. 
 Qed.
 Hint Resolve id_args_wf : lang_core.
 
@@ -726,11 +748,13 @@ Local Lemma wf_implies_ws l
            well_scoped (map fst c) s)
     /\ (forall c,
            wf_ctx l c -> ws_ctx c).
-Proof using.
+Proof using V_Eqb_ok.
   intros; apply judge_ind; basic_goal_prep;
-        basic_core_firstorder_crush.
+    basic_core_firstorder_crush.
   all:
-    (*TODO: how to automate better/get into crush?*)
+    (*TODO: how to automate better/get into crush?
+      Just prove lemmas about each element of each rule_in?
+     *)
     try match goal with
         | [H0 : In (_,_) ?l, H1 : all _ (map snd ?l) |- _] =>
           let H' := fresh in
@@ -858,7 +882,9 @@ Section Extension.
   Lemma rule_in_wf l r name
     : wf_lang_ext l -> In (name,r) l -> wf_rule (l ++ l_pre) r.
   Proof.
-    induction 1; basic_goal_prep; basic_core_crush.
+    (*TODO: why is intuition slow here? *)
+    induction 1; basic_goal_prep;
+      basic_core_firstorder_crush.
   Qed.
   Hint Resolve rule_in_wf : lang_core.
   
@@ -876,11 +902,13 @@ Section Extension.
     induction l; basic_goal_prep; basic_core_crush.
   Qed.
   Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
-
+      
+  
   Lemma wf_lang_implies_ws l
     : ws_lang l_pre -> wf_lang_ext l -> ws_lang (l++l_pre).
   Proof.
-    induction 2; basic_goal_prep; basic_core_firstorder_crush.
+    induction 2; basic_goal_prep;
+    basic_core_crush.
   Qed.
   Hint Resolve wf_lang_implies_ws : lang_core.
 

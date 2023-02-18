@@ -135,6 +135,22 @@ Definition ws_lang (l : lang) : Prop :=
 
 Arguments ws_lang !l/.
 
+
+Lemma ws_lang_nil_inv
+  : ws_lang [] <-> True.
+Proof.
+  cbv [ws_lang]; basic_goal_prep;
+  basic_term_crush.
+Qed.
+
+Lemma ws_lang_cons_inv n r l
+  : ws_lang ((n, r) :: l)
+    <-> fresh n l /\ ws_rule r /\ ws_lang l.
+Proof.
+  cbv [ws_lang]; basic_goal_prep;
+  basic_term_crush.
+Qed.
+
 Lemma rule_in_ws l n r : ws_lang l -> In (n,r) l -> ws_rule r.
 Proof using .
   induction l; 
@@ -263,6 +279,9 @@ End WithVar.
 #[export] Hint Rewrite invert_eq_term_eq_rule_term_rule : term.
 #[export] Hint Rewrite invert_eq_term_eq_rule_sort_eq_rule : term.
 #[export] Hint Rewrite invert_eq_term_eq_rule_term_eq_rule : term.
+(* `using assumption` necessary to choose a V *)
+#[export] Hint Rewrite ws_lang_nil_inv using assumption : term.
+#[export] Hint Rewrite  ws_lang_cons_inv : term.
 #[export] Hint Resolve reconstruct_ws_lang : term.
 #[export] Hint Resolve ws_lang_all_ws_rule : term.
 

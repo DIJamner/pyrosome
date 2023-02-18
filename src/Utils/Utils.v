@@ -303,25 +303,6 @@ Proof.
   intuition eauto using pair_fst_in.
 Qed.
 
-Context `{DecS : DecidableEq S}.
-
-
-Definition fresh_dec {A} x (l : named_list A) : {fresh x l} + {~ fresh x l}.
-  refine(if in_dec (dec) x (map fst l) then right _ else left _);
-    basic_utils_crush.
-Defined.
-
-Definition compute_fresh {A} x (l : named_list A)  :=
-  if fresh_dec x l then true else false.
-
-Lemma use_compute_fresh {A} x (l : named_list A) 
-  : compute_fresh x l = true -> fresh x l.
-Proof.
-  unfold compute_fresh.
-  destruct (fresh_dec x l); easy.
-Qed.
-Hint Resolve use_compute_fresh : utils.
-
 
 Lemma fresh_app A s (l1 l2 : named_list A)
   : fresh s (l1 ++ l2) <-> fresh s l1 /\ fresh s l2.
@@ -333,12 +314,13 @@ Qed.
 #[local] Hint Resolve fresh_notin : utils.
 #[local] Hint Rewrite fresh_app : utils.
 #[local] Hint Rewrite in_app_iff : utils.
+#[local] Hint Rewrite fresh_cons : utils.
 Lemma all_fresh_insert_is_fresh A (a:A) l1 l2 s
   : all_fresh (l1++(s,a)::l2) ->
     fresh s l1.
 Proof.
   induction l1; basic_goal_prep;
-  basic_utils_firstorder_crush.  
+    basic_utils_crush.
 Qed.
 Local Hint Resolve all_fresh_insert_is_fresh : utils.
 
@@ -346,22 +328,49 @@ Lemma all_fresh_insert_rest_is_fresh A (a:A) l1 l2 s
   : all_fresh (l1++(s,a)::l2) ->
     all_fresh (l1++l2).
 Proof.
-  induction l1; basic_goal_prep; basic_utils_firstorder_crush.
+  induction l1; basic_goal_prep; basic_utils_crush.
 Qed.
 
+Section ComputeFresh.
+  Context `{DecS : DecidableEq S}.
+
+
+  Definition fresh_dec {A} x (l : named_list A) : {fresh x l} + {~ fresh x l}.
+    refine(if in_dec (dec) x (map fst l) then right _ else left _);
+      basic_utils_crush.
+  Defined.
+
+  (*TODO: define more efficiently *)
+  Definition compute_fresh {A} x (l : named_list A)  :=
+    if fresh_dec x l then true else false.
+
+  Lemma use_compute_fresh {A} x (l : named_list A) 
+    : Is_true (compute_fresh x l) -> fresh x l.
+  Proof.
+    unfold compute_fresh.
+    destruct (fresh_dec x l); easy.
+  Qed.
+
+  
 
 Fixpoint compute_all_fresh {A} (l : named_list A) : bool :=
   match l with
   | [] => true
   | (x,_)::l' => (compute_fresh x l') && (compute_all_fresh l')
   end.
-#[local] Hint Rewrite Bool.andb_true_iff : utils.
+
+
+#[local] Hint Resolve use_compute_fresh : utils.
 
 Lemma use_compute_all_fresh A (l : named_list A)
   : compute_all_fresh l = true -> all_fresh l.
 Proof.
   induction l; basic_goal_prep; basic_utils_crush.
 Qed.
+  
+End ComputeFresh.
+  
+
 
 End NamedList.
 

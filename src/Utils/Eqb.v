@@ -113,13 +113,13 @@ Arguments Eqb_ok {A}%type_scope H.
 Arguments eqb_spec {A}%type_scope {Impl Pf} a b.
 Arguments dec {A}%type_scope {DecidableEq} s1 s2.
    
-#[export] Hint Rewrite eqb_prop_iff : utils.
-#[export] Hint Rewrite eqb_refl_true : utils.
+#[export] Hint Rewrite eqb_prop_iff using solve[typeclasses eauto] : utils.
+#[export] Hint Rewrite eqb_refl_true using solve[typeclasses eauto] : utils.
 (*TODO: also account for _=_->False *)
 #[export] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
 
 
-#[export] Hint Rewrite inb_is_In : utils.
+#[export] Hint Rewrite inb_is_In using solve[typeclasses eauto] : utils.
 
 
 #[export] Instance string_Eqb : Eqb string := String.eqb.

@@ -113,17 +113,17 @@ Variant sort : Type := scon : V -> list term -> sort.
 Lemma invert_eq_var_var x y
   : var x = var y <-> x = y.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_eq_var_var : term.
+#[local] Hint Rewrite invert_eq_var_var : term.
 
 Lemma invert_eq_var_con x n s
   : var x = con n s <-> False.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_eq_var_con : term.
+#[local] Hint Rewrite invert_eq_var_con : term.
 
 Lemma invert_eq_con_var n s y
   : con n s = var y <-> False.
 Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_eq_con_var : term.
+#[local] Hint Rewrite invert_eq_con_var : term.
 
 Definition ctx : Type := named_list sort.
 
@@ -221,8 +221,8 @@ Qed.
     reflexivity.
   Qed.
   
-Hint Rewrite id_args_nil : term.  
-Hint Rewrite id_args_cons : term.
+#[local] Hint Rewrite id_args_nil : term.  
+#[local] Hint Rewrite id_args_cons : term.
 
 Lemma term_subst_nil e : term_subst [] e = e.
 Proof.  
@@ -538,10 +538,6 @@ End WithVar.
 Arguments var {V}%type_scope _.
 Arguments con {V}%type_scope _ _%list_scope.
 
-#[export] Hint Rewrite @subst_assoc : term.
-#[export] Hint Rewrite @subst_id : term.
-#[export] Hint Rewrite @strengthen_subst : term.
-#[export] Hint Resolve well_scoped_subst : term.
 #[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
 #[export] Hint Rewrite invert_eq_con_var : term.
