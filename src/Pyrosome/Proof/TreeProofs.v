@@ -12,6 +12,7 @@ Import Core.Notations.
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
@@ -47,12 +48,12 @@ Section WithVar.
         eq_term l c t (con name s1) (con name s2).
     Proof.
       intros.
-      assert (wf_ctx l c') by with_rule_in_wf_crush.
       rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+      rewrite <- (wf_con_id_args_subst c' s2); [| solve[eauto with lang_core]..].
       subst.
       change (con ?n ?args[/?s/]) with (con n args)[/s/].
       eapply eq_term_subst; eauto.
+      2:
       {
         apply eq_args_implies_eq_subst; eauto.
       }
@@ -62,6 +63,7 @@ Section WithVar.
         - eapply wf_term_by; basic_core_crush.
         - basic_core_crush.
       }
+      basic_core_crush.
     Qed.
 
 

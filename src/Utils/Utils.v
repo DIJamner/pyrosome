@@ -7,18 +7,13 @@ Import BoolNotations.
 Open Scope string.
 Open Scope list.
 
-From Utils Require Export Base Booleans Props Eqb Default.
+From Utils Require Export Base Booleans Props Eqb Lists Default.
 
 (****************
 Definitions
 *****************)
 
 
-
-
-#[export] Hint Resolve in_nil : utils.
-#[export] Hint Resolve in_eq : utils.
-#[export] Hint Resolve in_cons : utils.
 
 Inductive len_eq {A} {B} : list A -> list B -> Type :=
 | len_eq_nil : len_eq [] []
@@ -73,23 +68,6 @@ Proof.
   solve_invert_constr_eq_lemma.
 Qed.
 Hint Rewrite invert_eq_S_S : utils.
-
-
-Lemma invert_eq_cons_nil A (e:A) es : e::es = [] <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_cons_nil : utils.
-Lemma invert_eq_nil_cons A (e:A) es : [] =e::es <-> False.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_nil_cons : utils.
-Lemma invert_eq_cons_cons A (e e':A) es es' : e::es = e'::es' <-> e = e' /\ es = es'.
-Proof.
-  solve_invert_constr_eq_lemma.
-Qed.
-Hint Rewrite invert_eq_cons_cons : utils.
 
 
 
@@ -385,10 +363,8 @@ End NamedList.
 #[export] Hint Resolve @in_named_map : utils.
 #[export] Hint Rewrite @combine_map_fst_is_with_names_from : utils.
 #[export] Hint Rewrite @named_map_length : utils.
-#[export] Hint Rewrite map_length : utils.
 #[export] Hint Resolve @fresh_notin : utils.
 #[export] Hint Rewrite @fresh_app : utils.
-#[export] Hint Rewrite in_app_iff : utils.
 #[export] Hint Resolve @all_fresh_insert_rest_is_fresh : utils.
 
 (*
@@ -438,43 +414,6 @@ End OptionMonad.
 
 
 
-Fixpoint sublist {A} (s l : list A) : Prop :=
-  match s,l with
-  | [],_ => True
-  | sa::s', [] => False
-  | sa::s', la::l' =>
-    ((sa = la) /\ (sublist s' l')) \/ (sublist s l')
-  end.
-
-Lemma sublist_cons_rest {A} (a:A) l1 l2
-  : sublist (a::l1) l2 -> sublist l1 l2.
-Proof using.
-  induction l2; destruct l1; basic_goal_prep; basic_utils_crush.
-Qed.
-#[export] Hint Resolve sublist_cons_rest : utils.
-
-Lemma sublist_cons_first {A} (a:A) l1 l2
-  : sublist (a::l1) l2 -> In a l2.
-Proof using.
-  induction l2; basic_goal_prep; basic_utils_crush.
-Qed.
-#[export] Hint Resolve sublist_cons_first : utils.
-
-(*TODO: better as a rewrite?*)
-Lemma sublist_refl {A} l : @sublist A l l.
-Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
-Qed.
-#[export] Hint Resolve sublist_refl : utils.
-  
-Lemma sublist_l_cons_l {A} (a:A) l
-  : sublist l (a::l).
-Proof.
-  simpl.
-  destruct l;
-  basic_utils_crush.
-Qed.
-#[export] Hint Resolve sublist_l_cons_l : utils.
 
 (*TODO: redefine as skipn?*)
 (* Reduce size of language terms for smaller goals *)
@@ -500,79 +439,14 @@ Qed.
 Hint Rewrite nth_tail_S_cons : utils.
 
 
-(*redefined to use the right concatenation*)
-Definition flat_map {A B} (f : A -> list B) :=
-  fix flat_map l :=
-  match l with
-  | [] => []
-  | x :: t => (f x ++ flat_map t)
-  end.
-
-Section All.
-  Context {A} (P : A -> Prop).
-  
-  (* A Fixpoint version of List.Forall *)
-  Fixpoint all l : Prop :=
-    match l with
-    | [] => True
-    | e::l' => P e /\ all l'
-    end.
-End All.
-
-Lemma in_all {A} {P : A -> Prop} l a
-  : all P l -> In a l -> P a.
-Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
-Qed.
-
 Hint Rewrite pair_equal_spec : utils.
 
-
-
-Lemma sublist_nil A (l : list A) : sublist [] l.
-Proof.
-  destruct l; simpl; easy.
-Qed.
-#[export] Hint Resolve sublist_nil : utils.
-
-Fixpoint compute_sublist {A} (dec : forall x y : A, {x = y} + {x <> y}) (s l : list A) {struct l} :=
-  match s,l with
-  | [],_ => true
-  | sa::s', [] => false
-  | sa::s', la::l' => if dec sa la then compute_sublist dec s' l' else compute_sublist dec s l'
-  end.
-
-Lemma use_compute_sublist {A} (dec : forall x y : A, {x = y} + {x <> y}) (s l : list A)
-  : compute_sublist dec s l = true -> sublist s l.
-Proof.
-  revert s; induction l; destruct s; basic_goal_prep; try easy.
-  revert H. case_match; basic_utils_crush.
-Qed.
 
 Lemma as_nth_tail: forall (A : Type) (l : list A), l = nth_tail 0 l.
 Proof.
   intros; unfold nth_tail; reflexivity.
 Qed.
 
-Definition set_eq {A} (l1 l2 : list A) :=
-  incl l1 l2 /\ incl l2 l1.
-
-
-Lemma incl_nil A  (l : list A)
-  : incl l [] <-> l = [].
-Proof.
-  split; intros; subst;
-    eauto using incl_l_nil,
-    incl_nil_l.
-Qed.  
-Hint Rewrite incl_nil : utils.
-
-Lemma incl_cons A (a:A) l1 l2
-  : incl (a::l1) l2 <-> In a l2 /\ incl l1 l2.
-Proof.
-  split; intros; break; eauto using incl_cons, incl_cons_inv.
-Qed.
-Hint Rewrite incl_cons : utils.
 
 Lemma nth_tail_to_cons A l n (x:A)
   : nth_error l n = Some x ->
@@ -597,13 +471,6 @@ Proof.
   destruct n; simpl; auto.
 Qed.
 Hint Rewrite nth_error_nil : utils.
-
-
-#[export] Hint Resolve incl_appr : utils.
-#[export] Hint Resolve incl_refl : utils.
-#[export] Hint Resolve incl_app : utils.
-#[export] Hint Resolve incl_appl : utils.
-#[export] Hint Resolve incl_tl : utils.
 
 
 Module SumboolNotations.
@@ -636,5 +503,3 @@ Fixpoint incl_dec {A} (eq_dec : forall s1 s2 : A, {s1 = s2} + {s1 <> s2})
          end); basic_utils_firstorder_crush.
 Defined.
 
-
-#[export] Hint Rewrite app_nil_r : utils.

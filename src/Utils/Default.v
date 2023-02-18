@@ -25,6 +25,7 @@ Arguments default {A}%type_scope {d}.
 
 #[export] Instance option_default {A} : WithDefault (option A) := None.
 #[export] Instance string_default : WithDefault string := "".
+#[export] Instance unit_default : WithDefault unit := tt.
 
 (* TODO: determine why this was added and remove
 Hint Extern 10 (WithDefault _) => solve [typeclasses eauto].

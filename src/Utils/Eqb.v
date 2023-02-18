@@ -97,16 +97,6 @@ Section __.
   #[local] Hint Rewrite eqb_refl_true : utils.
   #[local] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
   
-  Definition inb x := existsb (eqb x).
-
-  Lemma inb_is_In a l
-    : Is_true (inb a l) <-> In a l.
-  Proof.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  
 End __.
 
 Arguments Eqb_ok {A}%type_scope H.
@@ -118,10 +108,6 @@ Arguments dec {A}%type_scope {DecidableEq} s1 s2.
 (*TODO: also account for _=_->False *)
 #[export] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
 
-
-#[export] Hint Rewrite inb_is_In using solve[typeclasses eauto] : utils.
-
-
 #[export] Instance string_Eqb : Eqb string := String.eqb.
 
 #[export] Instance string_Eqb_ok : Eqb_ok string_Eqb.
@@ -130,6 +116,3 @@ Proof.
   unfold eqb, string_Eqb.
   destruct (String.eqb_spec a b); auto.
 Qed.
-
-
-

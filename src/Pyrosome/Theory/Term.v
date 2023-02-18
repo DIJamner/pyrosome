@@ -9,7 +9,9 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Substable.
 Import SumboolNotations.
 
-(*TODO:  this is a hack, discharge it properly *)
+(*TODO: this is a hack, discharge it properly
+  TODO: Check whether this is still used
+ *)
 Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
   {_ : Eqb_ok Heqb1}
   {_ : Eqb_ok Heqb2}
@@ -110,6 +112,11 @@ Definition term_rec :=
 
 Variant sort : Type := scon : V -> list term -> sort.
 
+Lemma invert_eq_con_con n1 n2 s1 s2
+  : con n1 s1 = con n2 s2 <-> (n1 = n2 /\ s1 = s2).
+Proof. solve_invert_constr_eq_lemma. Qed.
+#[local] Hint Rewrite invert_eq_con_con : term.
+
 Lemma invert_eq_var_var x y
   : var x = var y <-> x = y.
 Proof. solve_invert_constr_eq_lemma. Qed.
@@ -138,8 +145,70 @@ Section WithEqb.
   Context {V_Eqb : Eqb V}
     {V_Eqb_ok : Eqb_ok V_Eqb}.
   
+#[export] Instance term_eqb : Eqb term :=
+  fix term_eqb (e1 e2 : term) :=
+    match e1, e2 with
+    | var n1, var n2 => eqb n1 n2
+    | con n1 s1, con n2 s2 =>
+        andb (eqb n1 n2) (all2 term_eqb s1 s2)
+    | _, _ => false
+    end.
 
+#[export] Instance sort_eqb : Eqb sort :=
+  fun e1 e2 =>
+    let (n1,s1) := e1 in
+    let (n2,s2) := e2 in
+    andb (eqb n1 n2) (eqb s1 s2).
 
+#[local] Lemma term_eqb_refl e : Bool.Is_true (term_eqb e e).
+Proof.
+  induction e;
+    basic_goal_prep;
+    basic_term_crush.
+  revert H;
+    induction l;
+    basic_goal_prep;
+    basic_term_crush.
+Qed.
+
+(*TODO: there is definitely an easier way to prove this
+  using list_eqb_ok.
+ *)
+#[export] Instance term_eqb_ok : Eqb_ok term_eqb.
+Proof.
+  unfold Eqb_ok;
+    unfold eqb.
+  induction a;
+    destruct b;
+    basic_goal_prep;
+    basic_term_crush.
+  {
+    case_match;
+      basic_term_crush.
+  }
+  {
+    my_case Hn (eqb n v);
+      basic_goal_prep;
+      basic_term_crush.
+    revert l0 H; induction l;
+      destruct l0;
+      basic_goal_prep;
+      basic_term_crush.
+    my_case Ha (term_eqb a t);
+      basic_goal_prep;
+      basic_term_crush.
+    2: solve [eauto using term_eqb_refl].
+    specialize (IHl l0).
+    case_match;
+      basic_goal_prep;
+      basic_term_crush.
+    specialize (H0 t).
+    revert H0; case_match;
+      basic_goal_prep;
+      basic_term_crush.
+  }
+Qed.
+  
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
   match e with
   | var n => f n
@@ -257,7 +326,6 @@ Lemma term_subst_assoc : forall s1 s2 a,
 Proof.
   induction a; basic_goal_prep;
     basic_term_crush.
-  f_equal.
   revert dependent l;
     induction l;
     basic_goal_prep;
@@ -298,8 +366,6 @@ Lemma term_strengthen_subst s a n e
 Proof.
   induction a; basic_goal_prep; try case_match;
     basic_term_crush.
-    
-  f_equal.
 
   revert dependent l.
   induction l; basic_goal_prep;

@@ -9,6 +9,7 @@ src/Utils/Base.v
 src/Utils/Booleans.v
 src/Utils/Props.v
 src/Utils/Eqb.v
+src/Utils/Lists.v
 src/Utils/Default.v
 src/Utils/Utils.v
 src/Utils/Infinite.v

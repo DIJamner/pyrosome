@@ -10,19 +10,6 @@ From Pyrosome.Theory Require Import Term Rule.
 Import Term.Notations.
 Import Rule.Notations.
 
-(*TOOD: move to Utils.v*)
-Definition inb {A} `{Eqb A} x := existsb (eqb x).
-
-Instance unit_default : WithDefault unit := tt.
-
-Fixpoint sublistb {A} `{Eqb A} (s l : list A) : bool :=
-  match s,l with
-  | [],_ => true
-  | sa::s', [] => false
-  | sa::s', la::l' =>
-      if eqb sa la then sublistb s' l' else sublistb s l'
-  end.
-
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}

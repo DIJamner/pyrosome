@@ -341,6 +341,8 @@ End WithVar.
 #[export] Hint Resolve elab_args_lang_monotonicity : lang_core.
 #[export] Hint Resolve elab_ctx_lang_monotonicity : lang_core.
 
+(* TODO: refactor/move/delete all of these tactics *)
+
 
 Ltac break_down_elab_lang :=
   repeat ((eapply elab_lang_cons_nth_tail; [vm_compute; reflexivity | vm_compute; reflexivity| apply use_compute_fresh; compute; reflexivity | ..]));
@@ -348,7 +350,9 @@ Ltac break_down_elab_lang :=
 
 
 Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.
-Ltac solve_sublist := apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity.
+Ltac solve_sublist := apply use_sublistb;
+                      try typeclasses eauto;
+                      vm_compute; reflexivity.
 
 
 Ltac break_eq_args :=

@@ -1,11 +1,14 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
+Require Import Ltac2.Ltac2.
+Set Default Proof Mode "Classic".
+
 Require Import String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils SymmetricInduction.
 From Pyrosome.Theory Require Export Substable Model Term Rule.
 
 Module Notations.
@@ -441,92 +444,6 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 
-Require Import Ltac2.Ltac2 Ltac2.Constr Ltac2.Message.
-
-Ltac2 rec head (x:constr) : constr :=
-  match Unsafe.kind x with
-  | Unsafe.App x _ => head x
-  | _ => x
-  end.
-
-Ltac2 rec range_inclusive (a : int) (b : int) :=
-  if Int.gt a b then [] else a::range_inclusive (Int.add a 1) b.
-
-(*TODO: generalize symmetric induction to allow for these variations*)
-Ltac2 constr_ind (x : constr) :=
-  Std.induction true [
-      {
-        Std.indcl_arg := Std.ElimOnConstr (fun ()=>(x,Std.NoBindings));
-        Std.indcl_eqn := None;
-        Std.indcl_as := None;
-        Std.indcl_in := None;                                        
-    }] None.
-
-Ltac2 rec nonneg_int_to_nat (i : int) :=
-  match Int.equal i 0 with
-  | true => constr:(O)
-  | false =>
-      let n := nonneg_int_to_nat (Int.sub i 1) in
-      constr:(S $n)
-  end.
-
-Ltac2 rec nat_to_int (n : constr) : int :=
-  lazy_match! n with
-  | O => 0
-  | S ?n => Int.add 1 (nat_to_int n)
-  end.
-
-Variant use_constuctor_next (n : nat) A : Type := use_constr_proof  (a : A).
-
-Lemma wrap_use_constuctor_next n A
-  : use_constuctor_next n A -> A.
-Proof.
-  destruct 1; auto.
-Qed.
-
-
-Ltac2 constructor_range (x : constr) :=
-  match Unsafe.kind (head x) with
-  | Unsafe.Ind ind l =>
-      let ind_data := Ind.data ind in
-      let constr_count := Ind.nconstructors ind_data in
-      (range_inclusive 1 constr_count)
-  | _ => Control.backtrack_tactic_failure "not a value of inductive type"
-  end.
-
-(* TODO: pass in n or no? Does ltac2 have numgoals? *)
-Ltac2 enter_counting_constructors (l : constr list) (tac : int -> unit) :=
-  Control.dispatch (List.map (fun n () => tac n) (List.flat_map constructor_range l)).
-
-Ltac2 pose_constructor_range i :=
-  let n := nonneg_int_to_nat i in
-  apply (@wrap_use_constuctor_next $n).
-
-
-Ltac2 mutual_numbered_induction (lem : constr) (types : constr list) tac :=
-  apply $lem;
-  enter_counting_constructors types tac.
-
-Ltac2 use_constructor () :=
-  lazy_match! goal with
-    [ |- use_constuctor_next ?n _ ] =>
-      let i := nat_to_int n in
-      apply use_constr_proof;
-      constructor i
-  end.
-
-Hint Extern 0 (use_constuctor_next _ _) => ltac2:(use_constructor ()) : utils.
-
-
-Variant ConstructorIndex (n : nat) := ConstructorIndexPf.
-
-Ltac2 apply_indexed_constructor () :=
-  lazy_match! goal with
-  | [_ : ConstructorIndex ?n |- _] =>
-      let i := nat_to_int n in
-      econstructor i
-  end.
-
 (* TODO: currently hard-coded to one induction scheme
    and repeats the internals of crush tactics
  *)
@@ -572,8 +489,6 @@ Ltac symmetric_firstorder_judge_ind :=
   try ltac2:(apply_indexed_constructor());
   firstorder unshelve (eauto  7 with utils term lang_core model).
 
-(*TODO: reorganize tactics *)
-Set Default Proof Mode "Classic".
 
 Local Lemma lang_mono l l'
   : incl l l' ->
@@ -1065,7 +980,7 @@ Proof.
   pose proof (rule_in_wf _ _ H H0);
   inversion H1; basic_core_crush.
 Qed.
-(* TODO: duplicate as export *)
+
 Hint Extern 2 (wf_ctx _ _) => (eapply rule_in_ctx_wf; [eassumption ..| reflexivity]) : lang_core.
 
 Ltac use_rule_in_wf :=
@@ -1891,6 +1806,9 @@ Notation wf_lang l := (wf_lang_ext [] l).
 
 #[export] Hint Rewrite wf_con_id_args_subst : lang_core.
 
+
+#[export] Hint Extern 2 (wf_ctx _) =>
+  (eapply rule_in_ctx_wf; [eassumption ..| reflexivity]) : lang_core.
 
 
 (*TODO: duplicated; dedup?*)

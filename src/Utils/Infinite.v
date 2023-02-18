@@ -5,7 +5,9 @@ Require Import List String Ascii.
 From Utils Require Import Utils.
 
 (* A class for using the infiniteness of types,
-   designed to be convenient to use constructively.
+   designed to be convenient to use constructively
+   via an implementation of choice for the complement
+   of finite subsets of V.
    Note: this class is still for proof purposes
    and instances may have poor performance
  *)
@@ -13,11 +15,42 @@ Class Infinite (V : Type) := {
     gensym : list V -> V
   }.
 
-Class Infinite_ok (V : Type) `{Infinite V} := {
-    gensym_ok : forall l, ~ In (gensym l) l
-  }.
+Section WithInstance.
+  Context (V : Type)
+    {Inf : Infinite V}.
 
-Arguments Infinite_ok V%type_scope {H}.
+  Existing Instance Inf.
+
+  Class Infinite_ok := {
+      gensym_ok : forall l, ~ In (gensym l) l
+    }.
+
+  Context {Inf_ok : Infinite_ok}.
+
+  Existing Instance Inf_ok.
+
+  (* Useful when a concrete name is expected to be free,
+   but would require a nontrivial proof.
+   *)
+  Definition gensym' `{Eqb V} (v : V) l :=
+    if inb v l then gensym l else v.
+
+  Lemma gensym'_ok `{Eqb_ok V}
+    : forall (v : V) l, ~ In (gensym' v l) l.
+  Proof.
+    unfold gensym'.
+    intros.
+    case_match; basic_utils_crush.
+    eapply gensym_ok; eauto.
+  Qed.
+
+End WithInstance.
+
+
+#[export] Hint Resolve gensym_ok : utils.
+
+  
+Arguments Infinite_ok V%type_scope {Inf}.
  
 #[export] Instance string_infinite : Infinite string :=
   {
@@ -26,14 +59,6 @@ Arguments Infinite_ok V%type_scope {H}.
       string_of_list_ascii (repeat "!"%char len)
   }.
 
-(*TODO: move to Utils.v*)
-Lemma string_of_list_ascii_length l
-  : length (string_of_list_ascii l) = List.length l.
-Proof.
-  induction l;
-    basic_goal_prep;
-    basic_utils_crush.
-Qed.
 
 #[export] Instance string_infinite_ok : Infinite_ok string.
 Proof.
