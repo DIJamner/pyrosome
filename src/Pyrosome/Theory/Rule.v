@@ -172,38 +172,47 @@ Proof.
 Qed.
 Hint Resolve ws_lang_all_ws_rule : term.
 
-Context `{DecidableEq V}.
-Definition rule_eq_dec (r1 r2 : rule) : {r1 = r2} + {~ r1 = r2}.
-  refine(match r1, r2 with
-         | sort_rule c args, sort_rule c' args' =>
-           SB! (ctx_eq_dec c c') SB& (list_eq_dec dec args args')
-         | term_rule c args t, term_rule c' args' t' =>
-           SB! (ctx_eq_dec c c') SB&
-           (list_eq_dec dec args args') SB&
-           (sort_eq_dec t t')
-         | sort_eq_rule c t1 t2, sort_eq_rule c' t1' t2' =>
-           SB! (ctx_eq_dec c c') SB&
-           (sort_eq_dec t1 t1') SB&
-           (sort_eq_dec t2 t2')
-         | term_eq_rule c e1 e2 t, term_eq_rule c' e1' e2' t' =>
-           SB! (ctx_eq_dec c c') SB&
-           (term_eq_dec e1 e1') SB&
-           (term_eq_dec e2 e2') SB&
-           (sort_eq_dec t t')
-         | _,_ => _
-         end); basic_term_crush.
-Defined.
+Section RuleDec.
+  Context `{DecidableEq V}.
+  Definition rule_eq_dec (r1 r2 : rule) : {r1 = r2} + {~ r1 = r2}.
+    refine(match r1, r2 with
+           | sort_rule c args, sort_rule c' args' =>
+               SB! (ctx_eq_dec c c') SB& (list_eq_dec dec args args')
+           | term_rule c args t, term_rule c' args' t' =>
+               SB! (ctx_eq_dec c c') SB&
+                 (list_eq_dec dec args args') SB&
+                 (sort_eq_dec t t')
+           | sort_eq_rule c t1 t2, sort_eq_rule c' t1' t2' =>
+               SB! (ctx_eq_dec c c') SB&
+                 (sort_eq_dec t1 t1') SB&
+                 (sort_eq_dec t2 t2')
+           | term_eq_rule c e1 e2 t, term_eq_rule c' e1' e2' t' =>
+               SB! (ctx_eq_dec c c') SB&
+                 (term_eq_dec e1 e1') SB&
+                 (term_eq_dec e2 e2') SB&
+                 (sort_eq_dec t t')
+           | _,_ => _
+           end); basic_term_crush.
+  Defined.
 
-Definition compute_incl_lang (l1 l2 : lang) :=
-  if incl_dec (pair_eq_dec dec rule_eq_dec) l1 l2 then true else false.
+  Definition compute_incl_lang (l1 l2 : lang) :=
+    if incl_dec (pair_eq_dec dec rule_eq_dec) l1 l2 then true else false.
 
-Lemma use_compute_incl_lang (l1 l2 : lang)
-  : compute_incl_lang l1 l2 = true -> incl l1 l2.
-Proof.
-  unfold compute_incl_lang.
-  destruct (incl_dec _ l1 l2); easy.
-Qed.
+  Lemma use_compute_incl_lang (l1 l2 : lang)
+    : compute_incl_lang l1 l2 = true -> incl l1 l2.
+  Proof.
+    unfold compute_incl_lang.
+    destruct (incl_dec _ l1 l2); easy.
+  Qed.
+End RuleDec.
 
+Definition get_ctx (r : rule) :=
+  match r with
+  | sort_rule c _
+  | term_rule c _ _
+  | sort_eq_rule c _ _
+  | term_eq_rule c _ _ _ => c
+  end.
   
     (*TODO: move to Utils?*)
     (* Note: does not error out on bad inputs *)

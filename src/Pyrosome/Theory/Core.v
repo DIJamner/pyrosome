@@ -88,12 +88,12 @@ Section TermsAndRules.
       In (name, sort_eq_rule c t1 t2) l ->
       eq_sort c t1 t2
   | eq_sort_subst : forall c s1 s2 c' t1' t2',
+      eq_sort c' t1' t2' ->
+      eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
       (* Need to assert wf_ctx c here to satisfy
          assumptions' presuppositions
        *)
       wf_ctx (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c' ->
-      eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
-      eq_sort c' t1' t2' ->
       eq_sort c t1'[/s1/] t2'[/s2/]
   | eq_sort_refl : forall c t,
       wf_sort c t ->
@@ -105,12 +105,12 @@ Section TermsAndRules.
   | eq_sort_sym : forall c t1 t2, eq_sort c t1 t2 -> eq_sort c t2 t1
   with eq_term : ctx -> sort -> term -> term -> Prop :=
   | eq_term_subst : forall c s1 s2 c' t e1 e2,
+      eq_term c' t e1 e2 ->
+      eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
       (* Need to assert wf_ctx c' here to satisfy
          assumptions' presuppositions
        *)
       wf_ctx (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c' ->
-      eq_subst (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c c' s1 s2 ->
-      eq_term c' t e1 e2 ->
       eq_term c t[/s2/] e1[/s1/] e2[/s2/]
   | eq_term_by : forall c name t e1 e2,
       In (name,term_eq_rule c e1 e2 t) l ->
@@ -129,11 +129,10 @@ c |- e1 = e2 : t
                ||
 c |- e1 = e2 : t'
    *)
-  | eq_term_conv : forall c t t',
+  | eq_term_conv : forall c e1 e2 t t',
+      eq_term c t e1 e2 ->
       eq_sort c t t' ->
-      forall e1 e2,
-        eq_term c t e1 e2 ->
-        eq_term c t' e1 e2
+      eq_term c t' e1 e2
                 (*
   (* TODO: do I want to allow implicit elements in substitutions? *)
   (* TODO: do I want to define this in terms of eq_args? *)
@@ -350,7 +349,7 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
     Fixpoint eq_sort_ind' (c : ctx) (s s0 : sort) (e : eq_sort l c s s0) : P c s s0 :=
       match e in (eq_sort _ c0 s1 s2) return (P c0 s1 s2) with
       | eq_sort_by _ c0 name t1 t2 i => f c0 name t1 t2 i
-      | eq_sort_subst w e0 e1 =>
+      | eq_sort_subst e1 e0 w =>
           f0 w (wf_ctx_ind' wf_sort_ind' w) e0
              (eq_subst_ind' eq_term_ind' e0) e1 (eq_sort_ind' e1)
       | eq_sort_refl w => f1 w (wf_sort_ind' w)
@@ -359,7 +358,7 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
       end
     with eq_term_ind' (c : ctx) (s : sort) (t t0 : term) (e : eq_term l c s t t0) : P0 c s t t0 :=
            match e in (eq_term _ c0 s0 t1 t2) return (P0 c0 s0 t1 t2) with
-           | eq_term_subst w e0 e3 =>
+           | eq_term_subst e3 e0 w =>
                f4 w (wf_ctx_ind' wf_sort_ind' w)
                   e0 (eq_subst_ind' eq_term_ind' e0) e3 (eq_term_ind' e3)
            | eq_term_by _ c0 name t1 e1 e2 i => f5 c0 name t1 e1 e2 i
@@ -367,7 +366,7 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
            | eq_term_trans e0 e3 =>
                f7 e0 (eq_term_ind' e0) e3 (eq_term_ind' e3)
            | eq_term_sym e0 => f8 e0 (eq_term_ind' e0)
-           | eq_term_conv e0 e3 =>
+           | eq_term_conv e3 e0 =>
                f9 e0 (eq_sort_ind' e0) e3 (eq_term_ind' e3)
            end
     with wf_sort_ind' (c : ctx) (s : sort) (w : wf_sort l c s) {struct w} : P2 c s :=
@@ -442,6 +441,140 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 
+Require Import Ltac2.Ltac2 Ltac2.Constr Ltac2.Message.
+
+Ltac2 rec head (x:constr) : constr :=
+  match Unsafe.kind x with
+  | Unsafe.App x _ => head x
+  | _ => x
+  end.
+
+Ltac2 rec range_inclusive (a : int) (b : int) :=
+  if Int.gt a b then [] else a::range_inclusive (Int.add a 1) b.
+
+(*TODO: generalize symmetric induction to allow for these variations*)
+Ltac2 constr_ind (x : constr) :=
+  Std.induction true [
+      {
+        Std.indcl_arg := Std.ElimOnConstr (fun ()=>(x,Std.NoBindings));
+        Std.indcl_eqn := None;
+        Std.indcl_as := None;
+        Std.indcl_in := None;                                        
+    }] None.
+
+Ltac2 rec nonneg_int_to_nat (i : int) :=
+  match Int.equal i 0 with
+  | true => constr:(O)
+  | false =>
+      let n := nonneg_int_to_nat (Int.sub i 1) in
+      constr:(S $n)
+  end.
+
+Ltac2 rec nat_to_int (n : constr) : int :=
+  lazy_match! n with
+  | O => 0
+  | S ?n => Int.add 1 (nat_to_int n)
+  end.
+
+Variant use_constuctor_next (n : nat) A : Type := use_constr_proof  (a : A).
+
+Lemma wrap_use_constuctor_next n A
+  : use_constuctor_next n A -> A.
+Proof.
+  destruct 1; auto.
+Qed.
+
+
+Ltac2 constructor_range (x : constr) :=
+  match Unsafe.kind (head x) with
+  | Unsafe.Ind ind l =>
+      let ind_data := Ind.data ind in
+      let constr_count := Ind.nconstructors ind_data in
+      (range_inclusive 1 constr_count)
+  | _ => Control.backtrack_tactic_failure "not a value of inductive type"
+  end.
+
+(* TODO: pass in n or no? Does ltac2 have numgoals? *)
+Ltac2 enter_counting_constructors (l : constr list) (tac : int -> unit) :=
+  Control.dispatch (List.map (fun n () => tac n) (List.flat_map constructor_range l)).
+
+Ltac2 pose_constructor_range i :=
+  let n := nonneg_int_to_nat i in
+  apply (@wrap_use_constuctor_next $n).
+
+
+Ltac2 mutual_numbered_induction (lem : constr) (types : constr list) tac :=
+  apply $lem;
+  enter_counting_constructors types tac.
+
+Ltac2 use_constructor () :=
+  lazy_match! goal with
+    [ |- use_constuctor_next ?n _ ] =>
+      let i := nat_to_int n in
+      apply use_constr_proof;
+      constructor i
+  end.
+
+Hint Extern 0 (use_constuctor_next _ _) => ltac2:(use_constructor ()) : utils.
+
+
+Variant ConstructorIndex (n : nat) := ConstructorIndexPf.
+
+Ltac2 apply_indexed_constructor () :=
+  lazy_match! goal with
+  | [_ : ConstructorIndex ?n |- _] =>
+      let i := nat_to_int n in
+      econstructor i
+  end.
+
+(* TODO: currently hard-coded to one induction scheme
+   and repeats the internals of crush tactics
+ *)
+Ltac symmetric_judge_ind :=
+  ltac2:(let types := [constr:(@eq_sort);
+                       constr:(@eq_term);
+                       constr:(@Model.eq_subst);
+                       constr:(@wf_sort);
+                       constr:(@wf_term);
+                       constr:(@Model.wf_args);
+                       constr:(@Model.wf_ctx)] in
+         apply judge_ind;
+         enter_counting_constructors types
+           (fun i => let n  := nonneg_int_to_nat i in
+                     assert (ConstructorIndex $n) by exact (ConstructorIndexPf $n)));
+  basic_goal_prep;
+  repeat intuition break;
+  subst;
+  autorewrite with utils term lang_core model in *;
+  try ltac2:(apply_indexed_constructor());
+  intuition unshelve (eauto  7 with utils term lang_core model).
+
+
+(* TODO: currently hard-coded to one induction scheme
+   and repeats the internals of crush tactics
+ *)
+Ltac symmetric_firstorder_judge_ind :=
+  ltac2:(let types := [constr:(@eq_sort);
+                       constr:(@eq_term);
+                       constr:(@Model.eq_subst);
+                       constr:(@wf_sort);
+                       constr:(@wf_term);
+                       constr:(@Model.wf_args);
+                       constr:(@Model.wf_ctx)] in
+         apply judge_ind;
+         enter_counting_constructors types
+           (fun i => let n  := nonneg_int_to_nat i in
+                     assert (ConstructorIndex $n) by exact (ConstructorIndexPf $n)));
+  basic_goal_prep;
+  repeat intuition break;
+  subst;
+  autorewrite with utils term lang_core model in *;
+  try ltac2:(apply_indexed_constructor());
+  firstorder unshelve (eauto  7 with utils term lang_core model).
+
+(*TODO: reorganize tactics *)
+Set Default Proof Mode "Classic".
+
 Local Lemma lang_mono l l'
   : incl l l' ->
     (forall c t1 t2,
@@ -467,7 +600,7 @@ Local Lemma lang_mono l l'
            wf_ctx l' c).
 Proof using.
   intro lincll.
-  apply judge_ind; basic_goal_prep; basic_core_crush.
+  symmetric_judge_ind.
 Qed.
 
 (*TODO: these make for bad hints.
@@ -922,14 +1055,25 @@ Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
 Hint Resolve wf_lang_implies_ws : lang_core.
 
 
+(*Notation so that extension lemmas still apply *)
+Notation wf_lang l := (wf_lang_ext [] l).
+
+Lemma rule_in_ctx_wf l name r c
+  : wf_lang l -> In (name,r) l -> c = (get_ctx r) -> wf_ctx l c.
+Proof.
+  intros; subst.
+  pose proof (rule_in_wf _ _ H H0);
+  inversion H1; basic_core_crush.
+Qed.
+(* TODO: duplicate as export *)
+Hint Extern 2 (wf_ctx _ _) => (eapply rule_in_ctx_wf; [eassumption ..| reflexivity]) : lang_core.
+
 Ltac use_rule_in_wf :=
     match goal with
       [ H : wf_lang_ext _ ?l,
             Hin : In (_,_) ?l |-_] =>
       pose proof (rule_in_wf _ _ H Hin)
     end.
-(*Notation so that extension lemmas still apply *)
-Notation wf_lang l := (wf_lang_ext [] l).
 
 
 Lemma wf_lang_concat l1 l2
@@ -974,22 +1118,32 @@ Local Lemma ctx_mono l name t'
            wf_args l ((name,t')::c) s c')
     /\ (forall c,
            wf_ctx l c -> True).
-Proof using.
+Proof using V_Eqb_ok.
   intro wfl.
   (*Intuition crush is much slower here than firstorder for some reason *)
   apply judge_ind; basic_goal_prep; basic_core_firstorder_crush.
   {
     replace t1 with t1[/id_subst c/]; [|basic_core_crush].
     replace t2 with t2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_sort_subst; [|basic_core_crush..].
-    use_rule_in_wf; basic_core_crush.
+    eapply eq_sort_subst; basic_core_crush.
+  }
+  {
+    eapply eq_sort_trans; eauto.
+  }
+  {
+    eapply eq_sort_sym; eauto.
   }
   {
     replace t with t[/id_subst c/]; [|basic_core_crush].
     replace e1 with e1[/id_subst c/]; [|basic_core_crush].
     replace e2 with e2[/id_subst c/]; [|basic_core_crush].
-    eapply eq_term_subst; [|basic_core_crush..].
-    use_rule_in_wf; basic_core_crush.
+    eapply eq_term_subst; basic_core_crush.
+  }
+  {
+    eapply eq_term_trans; eauto.
+  }
+  {
+    eapply eq_term_sym; eauto.
   }
 Qed.
 
@@ -1033,8 +1187,7 @@ Hint Resolve in_ctx_wf : lang_core.
 Lemma subst_lookup_hd n e s : (subst_lookup ((n, e) :: s) n) = e.
 Proof.
   unfold subst_lookup; simpl.
-  rewrite eqb_refl.
-  reflexivity.
+  basic_utils_crush.
 Qed.
 (*TODO: move to Term and export?*)
 Hint Rewrite subst_lookup_hd : term.
@@ -1044,9 +1197,7 @@ Lemma subst_lookup_tl n m e s
 Proof.
   unfold subst_lookup; simpl.
   intros.
-  rewrite <- eqb_neq in H.
-  rewrite H.
-  reflexivity.
+  basic_utils_crush.
 Qed.
 
 Lemma wf_term_lookup l c s c'
@@ -1060,13 +1211,11 @@ Proof.
   
   (*TODO: debug; why is it needed twice?*)
   induction 2; basic_goal_prep;
-    basic_core_firstorder_crush;
     basic_core_firstorder_crush.
   {
     (* TODO: Substable/Substable_ok split less frientdly to rewriting, needs erewrite *)
     erewrite strengthen_subst;
     try typeclasses eauto;
-      eauto;
       basic_core_crush.
   }
   {
@@ -1133,20 +1282,18 @@ Proof.
   apply judge_ind; basic_goal_prep; 
     try use_rule_in_wf;basic_core_firstorder_crush.
   {
-    constructor; fold_Substable.
+    
+    fold_Substable.
+    (*TODO: make this smoother*)
+    unfold apply_subst at 2.
+    unfold substable_subst.
+    rewrite <- subst_assoc; try typeclasses eauto.
     { basic_core_crush. }
     {
-      (*TODO: make this smoother*)
-      unfold apply_subst at 2.
-      unfold substable_subst.
-      rewrite <- subst_assoc.
-      eapply eq_term_subst; [|basic_core_crush..]; auto.
       replace (map fst s2) with (map fst c'); 
         basic_core_crush.
-      (*TODO: why isn't this automatic? Make symmetric version?*)
-      erewrite eq_subst_dom_eq_r; basic_core_crush.
-      (*TODO: why isn't this automatic? Make symmetric version?*)
-      erewrite eq_subst_dom_eq_r; basic_core_crush.
+      symmetry.
+      basic_core_crush.
     }
   }
   {
@@ -1156,18 +1303,16 @@ Proof.
     econstructor; simpl; fold_Substable; basic_core_crush.
   }
   {
-    constructor; fold_Substable; eauto.
-    {
-      erewrite with_names_from_args_subst.
-      (*TODO: make this smoother*)
-      unfold apply_subst at 3.
-      unfold substable_subst.
-      erewrite <- subst_assoc.
-      (*TODO remove associativity hint?*)
-      eauto with utils lang_core.
-      basic_core_crush.
-      basic_core_crush.
-    }
+    fold_Substable.
+    
+    erewrite with_names_from_args_subst.
+    (*TODO: make this smoother*)
+    unfold apply_subst at 3.
+    unfold substable_subst.
+    erewrite <- subst_assoc; try typeclasses eauto.
+    (*TODO remove associativity hint?*)
+    eauto with utils lang_core.
+    basic_core_crush.
   }
 Qed.
 
@@ -1212,9 +1357,15 @@ Local Lemma checked_subproperties l
            wf_args l c s c' -> True)
     /\ (forall c,
            wf_ctx l c -> True).
-Proof using V V_Eqb V_default.
+Proof using V V_Eqb V_Eqb_ok V_default.
   intros; apply judge_ind; basic_goal_prep;
     try use_rule_in_wf;basic_core_crush.
+  (* TODO: no longer automatic b/c symmetry is not automatic.
+     Make + use a tactic variant w/ symmetry?
+   *)
+  eapply wf_term_conv; eauto.
+  eapply eq_sort_sym.
+  basic_core_crush.
 Qed.
 
 Lemma eq_sort_wf_l l c t1 t2
@@ -1559,7 +1710,7 @@ Hint Rewrite wf_con_id_args_subst : lang_core.
 
 Lemma term_con_congruence l c t name s1 s2 c' args t'
   : In (name, term_rule c' args t') l ->
-    eq_sort l c t t'[/with_names_from c' s2/] ->
+    (eq_sort l c t t'[/with_names_from c' s2/] \/ t = t'[/with_names_from c' s2/]) ->
     wf_lang l ->
     eq_args l c c' s1 s2 ->
     eq_term l c t (con name s1) (con name s2).
@@ -1568,18 +1719,13 @@ Proof.
   assert (wf_ctx l c') by with_rule_in_wf_crush.
   rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
   rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-  eapply eq_term_conv; [eapply eq_sort_sym; eauto|].
-  change (con ?n ?args[/?s/]) with (con n args)[/s/].
+  destruct H0; [ eapply eq_term_conv; [| eapply eq_sort_sym; eauto] | subst ];
+  change (con ?n ?args[/?s/]) with (con n args)[/s/];
   eapply eq_term_subst; eauto.
-  {
-    apply eq_args_implies_eq_subst; eauto.
-  }
-  {
-    constructor.
-    replace t' with t'[/id_subst c'/].
-    - eapply wf_term_by; basic_core_crush.
-    - basic_core_crush.
-  }
+  2,4: apply eq_args_implies_eq_subst; eauto.
+  all: constructor;
+    replace t' with t'[/id_subst c'/];
+    try eapply wf_term_by; basic_core_crush.
 Qed.
 
 
@@ -1596,10 +1742,11 @@ Proof.
   subst.
   change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
   eapply eq_sort_subst; eauto.
-  { apply eq_args_implies_eq_subst; eauto. }
-  { constructor.
+  {
+    constructor.
     eapply wf_sort_by; basic_core_crush.
   }
+  { apply eq_args_implies_eq_subst; eauto. }
 Qed.
 
 End WithVar.
