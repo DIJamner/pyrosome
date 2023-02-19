@@ -10,8 +10,9 @@ Import Core.Notations.
 
 Section WithVar.
   Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+    {V_Eqb : Eqb V}
+    {V_Eqb_ok : Eqb_ok V_Eqb}
+    {V_default : WithDefault V}.
   
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -54,7 +55,7 @@ Section WithVar.
            | (name,t')::c'', e::s' =>
                @! let (S fuel') <?- @! ret fuel in
                   let t <- compute_noconv_wf_term c e fuel' in
-                  let !(sort_eq_dec t t'[/with_names_from c'' s'/]) in
+                  let !(eqb t t'[/with_names_from c'' s'/]) in
                   let tt <- compute_noconv_wf_args c s' c'' fuel' in
                   ret tt
            end.
@@ -62,7 +63,7 @@ Section WithVar.
     Arguments compute_noconv_wf_term c !e !fuel /.
     Arguments compute_noconv_wf_args c !s !c' !fuel/.
 
-    
+    (*TODO: deprecate when feasible? *)
     Lemma compute_noconv_wf_term_sound c e t fuel
       : wf_lang l ->
         wf_ctx l c ->
@@ -78,32 +79,38 @@ Section WithVar.
       all: intros wfl wfc.
       {
         destruct e; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
-        
         revert H; case_match; basic_goal_prep; [|basic_core_crush].
-        destruct r; basic_goal_prep; basic_core_firstorder_crush.
-        
-        revert H; case_match; basic_goal_prep; [|basic_core_crush].
-
-        safe_invert H.
-        eapply wf_term_by; eauto.
-        eapply compute_noconv_wf_args_sound; eauto.
-        use_rule_in_wf.
-        safe_invert H.
-        basic_core_crush.
+        (*TODO: Some = default rewrite?*)
+        unfold default, option_default in H.
+        revert H; case_match; basic_goal_prep; try congruence.
+        revert H; case_match; basic_goal_prep; try congruence.
+        (*TODO: why is this slow? basic_core_firstorder_crush.*)
+        autorewrite with utils in *.
+        subst.
+        eapply wf_term_by;
+          eauto with lang_core model utils.
       }
       {
-        destruct s; destruct c'; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
+        destruct s; destruct c'; destruct fuel;
+          basic_goal_prep;
+          intuition break;
+          autorewrite with utils model term lang_core in *;
+          try tauto.
+        (*TODO: automation for pushing props under matches?
+          What about rewriting matches to existential or?
+          The latter is probably bad.
+         *)
         revert H0.
         case_match; basic_goal_prep; [|basic_core_crush].
         revert H0.
         case_match; basic_goal_prep; [|basic_core_crush].
         revert H0.
         case_match; basic_goal_prep; [|basic_core_crush].
+        (* TODO: why does this take a long time?
+          basic_core_crush. *)
+        autorewrite with utils model term lang_core in *.
         subst.
-        clear HeqH1 H0.
-        constructor.
-        - eapply compute_noconv_wf_term_sound; eauto.
-        - eapply compute_noconv_wf_args_sound; eauto.
+        split; eauto.
       }
     Qed.
 
@@ -113,9 +120,9 @@ Section WithVar.
       | [], _ => None
       | (name,t)::c'', [] => None
       | (name,t')::c'', (name',e)::s' =>
-          @! let ! Eqb_dec name name' in
+          @! let ! eqb name name' in
              let t <- compute_noconv_wf_term c e fuel in
-             let !(sort_eq_dec t t'[/ s'/]) in
+             let !(eqb t t'[/ s'/]) in
              let tt <- compute_noconv_wf_subst c s' c'' fuel in
              ret tt
       end.
@@ -126,16 +133,15 @@ Section WithVar.
         wf_ctx l c' ->
         Some tt = compute_noconv_wf_subst c s c' fuel ->
         wf_subst l c s c'.
-    Proof using.
+    Proof using V_Eqb_ok.
       intros wfl wfc.
       revert c'.
       induction s; destruct c'; basic_goal_prep; [basic_core_crush..|].
       repeat (revert H0; case_match; basic_goal_prep; [|basic_core_crush]).
+      autorewrite with utils model term lang_core in *.
       subst.
-      clear HeqH2 H0.
-      constructor.
-      - basic_core_crush.
-      - eapply compute_noconv_wf_term_sound; eauto.
+      intuition eauto.
+      eapply compute_noconv_wf_term_sound; eauto.
     Qed.
     
     
@@ -164,10 +170,8 @@ Section WithVar.
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
 
       safe_invert H.
-      eapply wf_sort_by; eauto.
+      eapply wf_sort_by; eauto with utils.
       eapply compute_noconv_wf_args_sound; eauto.
-      use_rule_in_wf.
-      safe_invert H.
       basic_core_crush.
     Qed.
 
@@ -175,7 +179,7 @@ Section WithVar.
       match c with
       | [] => @! ret tt
       | (name,t)::c' =>
-          @! let ! compute_fresh name c' in
+          @! let ! freshb name c' in
              let tt <- compute_noconv_wf_sort c' t fuel in
              let tt <- compute_noconv_wf_ctx c' fuel in
              ret tt
@@ -201,11 +205,11 @@ Section WithVar.
     Definition compute_noconv_wf_rule r fuel : option unit :=
       match r with
       | sort_rule c args =>
-          @! let ! compute_sublist Eqb_dec args (map fst c) in
+          @! let ! sublistb args (map fst c) in
              let tt <- compute_noconv_wf_ctx c fuel in
              ret tt
       | term_rule c args t =>
-          @! let ! compute_sublist Eqb_dec args (map fst c) in
+          @! let ! sublistb args (map fst c) in
              let tt <- compute_noconv_wf_ctx c fuel in
              let tt <- compute_noconv_wf_sort c t fuel in 
              ret tt
@@ -219,8 +223,8 @@ Section WithVar.
              let tt <- compute_noconv_wf_sort c t fuel in
              let t1 <- compute_noconv_wf_term c e fuel in
              let t2 <- compute_noconv_wf_term c e' fuel in 
-             let ! sort_eq_dec t1 t in
-             let ! sort_eq_dec t2 t in
+             let ! eqb t1 t in
+             let ! eqb t2 t in
              ret tt
       end.
 
@@ -233,11 +237,14 @@ Section WithVar.
       intro wfl.
       destruct r; basic_goal_prep.
       all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
-      all: constructor; subst;
-        eauto using compute_noconv_wf_ctx_sound,
+
+      all:autorewrite with lang_core utils in *.
+      all:subst.
+      
+      all: intuition eauto using compute_noconv_wf_ctx_sound,
         compute_noconv_wf_sort_sound,
         compute_noconv_wf_term_sound,
-        use_compute_sublist.
+        use_sublistb.
     Qed.
 
   End Terms.  
@@ -247,7 +254,7 @@ Section WithVar.
     match l with
     | [] => @! ret tt
     | (name,t)::l' =>
-        @! let ! (compute_fresh name l') in
+        @! let ! (freshb name l') in
            let tt <- compute_noconv_wf_rule l' t fuel in
            let tt <- compute_noconv_wf_lang l' fuel in
            ret tt

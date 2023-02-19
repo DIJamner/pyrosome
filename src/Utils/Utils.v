@@ -309,45 +309,33 @@ Proof.
   induction l1; basic_goal_prep; basic_utils_crush.
 Qed.
 
-Section ComputeFresh.
-  Context `{DecS : DecidableEq S}.
+
+Definition freshb {A} x (l : named_list A) : bool :=
+  negb (inb x (map fst l)).
+
+Lemma use_compute_fresh {A} x (l : named_list A) 
+  : Is_true (freshb x l) -> fresh x l.
+Proof.
+  unfold freshb.
+  unfold fresh.
+  basic_utils_crush.
+Qed.
 
 
-  Definition fresh_dec {A} x (l : named_list A) : {fresh x l} + {~ fresh x l}.
-    refine(if in_dec (dec) x (map fst l) then right _ else left _);
-      basic_utils_crush.
-  Defined.
-
-  (*TODO: define more efficiently *)
-  Definition compute_fresh {A} x (l : named_list A)  :=
-    if fresh_dec x l then true else false.
-
-  Lemma use_compute_fresh {A} x (l : named_list A) 
-    : Is_true (compute_fresh x l) -> fresh x l.
-  Proof.
-    unfold compute_fresh.
-    destruct (fresh_dec x l); easy.
-  Qed.
-
-  
-
-Fixpoint compute_all_fresh {A} (l : named_list A) : bool :=
+Fixpoint all_freshb {A} (l : named_list A) : bool :=
   match l with
   | [] => true
-  | (x,_)::l' => (compute_fresh x l') && (compute_all_fresh l')
+  | (x,_)::l' => (freshb x l') && (all_freshb l')
   end.
 
 
 #[local] Hint Resolve use_compute_fresh : utils.
 
 Lemma use_compute_all_fresh A (l : named_list A)
-  : compute_all_fresh l = true -> all_fresh l.
+  : Is_true (all_freshb l) -> all_fresh l.
 Proof.
   induction l; basic_goal_prep; basic_utils_crush.
 Qed.
-  
-End ComputeFresh.
-  
 
 
 End NamedList.
@@ -357,8 +345,11 @@ End NamedList.
 #[export] Hint Rewrite @map_fst_with_names_from : utils.
 (*Note: this is a bit dangerous since the list might not be all-fresh,
   but in this project all lists should be
-*)
+
+TODO: reassess whether it's necessary
+
 #[export] Hint Rewrite @all_fresh_named_list_lookup_err_in : utils.
+*)
 #[export] Hint Resolve @named_list_lookup_none : utils.
 #[export] Hint Resolve @in_named_map : utils.
 #[export] Hint Rewrite @combine_map_fst_is_with_names_from : utils.
@@ -366,6 +357,8 @@ End NamedList.
 #[export] Hint Resolve @fresh_notin : utils.
 #[export] Hint Rewrite @fresh_app : utils.
 #[export] Hint Resolve @all_fresh_insert_rest_is_fresh : utils.
+#[export] Hint Resolve @named_list_lookup_err_in : utils.
+
 
 (*
 TODO: remove once the project builds without it

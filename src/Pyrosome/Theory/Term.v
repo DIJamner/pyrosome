@@ -132,6 +132,13 @@ Lemma invert_eq_con_var n s y
 Proof. solve_invert_constr_eq_lemma. Qed.
 #[local] Hint Rewrite invert_eq_con_var : term.
 
+
+Lemma invert_eq_scon_scon n1 n2 s1 s2
+  : scon n1 s1 = scon n2 s2 <-> (n1 = n2 /\ s1 = s2).
+Proof. solve_invert_constr_eq_lemma. Qed.
+#[local] Hint Rewrite invert_eq_scon_scon : term.
+
+
 Definition ctx : Type := named_list sort.
 
 Definition subst : Type := named_list term.
@@ -207,6 +214,21 @@ Proof.
       basic_goal_prep;
       basic_term_crush.
   }
+Qed.
+
+
+#[export] Instance sort_eqb_ok : Eqb_ok sort_eqb.
+Proof.
+  unfold Eqb_ok;
+    unfold eqb.
+  destruct a;
+    destruct b;
+    simpl.
+  my_case Hv (eqb v v0);
+    simpl;
+    basic_term_crush.
+  case_match; basic_goal_prep;
+    basic_term_crush.
 Qed.
   
 Fixpoint term_var_map (f : V -> term) (e : term) : term :=
@@ -606,9 +628,11 @@ Arguments con {V}%type_scope _ _%list_scope.
 
 #[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
+#[export] Hint Rewrite invert_eq_con_con : term.
 #[export] Hint Rewrite invert_eq_con_var : term.
 #[export] Hint Rewrite invert_eq_var_con : term.
 #[export] Hint Rewrite invert_eq_var_var : term.
+#[export] Hint Rewrite invert_eq_scon_scon : term.
 #[export] Hint Rewrite term_subst_nil : term.
 #[export] Hint Rewrite named_map_subst_nil : term.
 #[export] Hint Rewrite subst_lookup_map : term.

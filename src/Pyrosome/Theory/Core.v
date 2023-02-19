@@ -1808,7 +1808,9 @@ Notation wf_lang l := (wf_lang_ext [] l).
 
 
 #[export] Hint Extern 2 (wf_ctx _) =>
-  (eapply rule_in_ctx_wf; [eassumption ..| reflexivity]) : lang_core.
+  (eapply rule_in_ctx_wf;
+   [(apply named_list_lookup_err_in + idtac); eassumption ..
+   | reflexivity]) : lang_core.
 
 
 (*TODO: duplicated; dedup?*)
