@@ -29,8 +29,10 @@ Definition Injective {A B : Type} (f : A -> B) := forall a a', f a = f a' -> a =
 
 Section Injective.
   Context (A B : Type)
-    `{Eqb A}
-    `{Eqb B}
+    {Eqb_A : Eqb A}
+    {Eqb_B : Eqb B}
+    {Eqb_ok_A : Eqb_ok Eqb_A}
+    {Eqb_ok_B : Eqb_ok Eqb_B}
     (f : A -> B)
     (f_inj : Injective f).
 
@@ -79,8 +81,6 @@ Section Injective.
     : rename (subst_lookup s n) = subst_lookup (rename_subst s) (f n).
   Proof.
     induction s; basic_goal_prep; repeat case_match; basic_term_crush.
-    symmetry in HeqH1.
-    basic_utils_crush.
   Qed.
 
   (*TODO: make this export?*)
@@ -93,7 +93,7 @@ Section Injective.
     : rename e[/s/] = (rename e) [/rename_subst s/].
   Proof.
     induction e; basic_goal_prep; basic_term_crush.
-    revert H1.
+    revert H.
     induction l; basic_goal_prep; basic_term_crush.
   Qed.
   
@@ -154,7 +154,7 @@ Section Injective.
       /\ (forall c,
              wf_ctx l c ->
              wf_ctx (rename_lang l) (rename_ctx c)).
-  Proof using f_inj.
+  Proof using f_inj Eqb_ok_A Eqb_ok_B.
     apply judge_ind; basic_goal_prep.
     all:
       let l := lazymatch goal with l : lang _ |- _ => l end in
@@ -164,33 +164,32 @@ Section Injective.
         end.
     {
       eapply eq_sort_by.
-      exact H1.
+      exact H.
     }
     all: basic_core_crush.
     {
       eapply eq_term_by.
-      exact H1.
+      exact H.
     }
     {
       eapply wf_sort_by; eauto.
-      exact H1.
+      exact H.
     }
     {
       eapply wf_term_by; eauto.
-      exact H1.
+      exact H.
     }
     {
       eapply wf_term_var; eauto.
-      eapply in_map in H1.
-      exact H1.
+      eapply in_map in H.
+      exact H.
     }
     {
       intro.
-      apply H1.
+      apply H.
       eapply injective_in.
-      revert H6.
-      unfold rename_ctx.
-      rewrite !map_map; simpl; auto.
+      unfold rename_ctx in *.
+      rewrite !map_map in *; simpl in *; auto.
     }
   Qed.
   
@@ -215,7 +214,7 @@ Section Inverse.
     : rename g (rename f e) = e.
   Proof.
     induction e; basic_goal_prep; repeat case_match; basic_term_crush.
-    revert H1.
+    revert H.
     induction l; basic_goal_prep; repeat case_match; basic_term_crush.
   Qed.
 

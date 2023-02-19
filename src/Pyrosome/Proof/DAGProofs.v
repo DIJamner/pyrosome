@@ -15,6 +15,7 @@ Import Core.Notations.
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
@@ -59,53 +60,6 @@ Section WithVar.
   Variant node_result :=
     | term_eq_result : term -> term -> sort ->  node_result
     | sort_eq_result : sort -> sort -> node_result.
-
-  (*TODO: backport these to core.v. Copied from TreeProofs.v*)
-    
-    Local Lemma term_con_congruence l c t name s1 s2 c' args t'
-      : In (name, term_rule c' args t') l ->
-        t = t'[/with_names_from c' s2/] ->
-        wf_lang l ->
-        eq_args l c c' s1 s2 ->
-        eq_term l c t (con name s1) (con name s2).
-    Proof.
-      intros.
-      assert (wf_ctx l c') by with_rule_in_wf_crush.
-      rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-      subst.
-      change (con ?n ?args[/?s/]) with (con n args)[/s/].
-      eapply eq_term_subst; eauto.
-      {
-        apply eq_args_implies_eq_subst; eauto.
-      }
-      {
-        constructor.
-        replace t' with t'[/id_subst c'/].
-        - eapply wf_term_by; basic_core_crush.
-        - basic_core_crush.
-      }
-    Qed.
-
-    
-    Local Lemma sort_con_congruence l c name s1 s2 c' args
-      : In (name, sort_rule c' args) l ->
-        wf_lang l ->
-        eq_args l c c' s1 s2 ->
-        eq_sort l c (scon name s1) (scon name s2).
-    Proof.
-      intros.
-      assert (wf_ctx l c') by with_rule_in_wf_crush.
-      rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
-      subst.
-      change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
-      eapply eq_sort_subst; eauto.
-      { apply eq_args_implies_eq_subst; eauto. }
-      { constructor.
-        eapply wf_sort_by; basic_core_crush.
-      }
-    Qed.
   
   Section WithLang.
 
@@ -134,8 +88,7 @@ Section WithVar.
       | p::args, (_,t)::c'=>
           @! let (lhs, rhs) <- check_args_proof args c' in
             let (term_eq_result e1 e2 t') <?- get p proof_result in
-            (*TODO: use Eqb instance*)
-            let ! sort_eq_dec t[/with_names_from c' rhs/] t' in
+            let ! eqb t[/with_names_from c' rhs/] t' in
             ret (e1::lhs, e2::rhs)
       | _,_=> None
       end.
@@ -162,8 +115,8 @@ Section WithVar.
       | tn_trans p0 p1 =>
           @! let (term_eq_result e1 e2 t) <?- get p0 proof_result in
              let (term_eq_result e1' e2' t') <?- get p1 proof_result in
-             let ! sort_eq_dec t t' in
-             let ! term_eq_dec e2 e1' in
+             let ! eqb t t' in
+             let ! eqb e2 e1' in
              ret (term_eq_result e1 e2' t)
       | tn_sym p =>
           @! let (term_eq_result e1 e2 t) <?- get p proof_result in
@@ -171,7 +124,7 @@ Section WithVar.
       | tn_conv p0 p1 =>
           @! let (sort_eq_result t1 t2) <?- get p0 proof_result in
              let (term_eq_result e1 e2 t) <?- get p1 proof_result in
-             let ! sort_eq_dec t t1 in
+             let ! eqb t t1 in
              ret (term_eq_result e1 e2 t2)
                  
       | sn_con n s =>
@@ -190,7 +143,7 @@ Section WithVar.
       | sn_trans p0 p1 =>
           @! let (sort_eq_result t1 t2) <?- get p0 proof_result in
              let (sort_eq_result t1' t2') <?- get p1 proof_result in
-             let ! sort_eq_dec t2 t1' in
+             let ! eqb t2 t1' in
              ret (sort_eq_result t1 t2')
       | sn_sym p =>
           @! let (sort_eq_result t1 t2) <?- get p proof_result in
@@ -230,7 +183,8 @@ Section WithVar.
        - constructor; eauto.
          symmetry in HeqH1.
          eapply history_sound in HeqH1.
-         exact HeqH1.
+         basic_goal_prep;
+           basic_utils_crush.
        - safe_invert H.
        - safe_invert H.
      Qed.
@@ -268,27 +222,36 @@ Section WithVar.
          + apply named_list_lookup_err_in; eauto.
          + eapply check_args_proof_sound; eauto.
        - eapply eq_term_subst.
-         3: eapply eq_term_by;
-         apply named_list_lookup_err_in; eauto.
-         + apply named_list_lookup_err_in in HeqH.
-           use_rule_in_wf.
-           inversion H; subst.
-           basic_utils_crush.
-         + eapply eq_args_implies_eq_subst.
+         {
+           eapply eq_term_by;
+             apply named_list_lookup_err_in; eauto.
+         }
+         {
+           eapply eq_args_implies_eq_subst.
            eapply check_args_proof_sound; eauto.
-       - safe_invert HeqH2; subst.
-         eapply sort_con_congruence; eauto.
-         + apply named_list_lookup_err_in; eauto.
-         + eapply check_args_proof_sound; eauto.
+         }
+         {
+           basic_core_crush.
+         }           
+       - basic_utils_crush.
+         eapply eq_term_trans; eauto.
+       - basic_core_crush.
+       - basic_utils_crush.
+         eapply sort_con_congruence; basic_core_crush.
+         eapply check_args_proof_sound; eauto.
        - eapply eq_sort_subst.
-         3: eapply eq_sort_by;
-         apply named_list_lookup_err_in; eauto.
-         + apply named_list_lookup_err_in in HeqH.
-           use_rule_in_wf.
-           inversion H; subst.
-           basic_utils_crush.
-         + eapply eq_args_implies_eq_subst.
+         {
+           eapply eq_sort_by;
+             apply named_list_lookup_err_in; eauto.
+         }
+         {
+           eapply eq_args_implies_eq_subst.
            eapply check_args_proof_sound; eauto.
+         }
+         {
+           basic_core_crush.
+         }
+       - eapply eq_sort_trans; basic_core_crush.
      Qed.
   End Inner.
 

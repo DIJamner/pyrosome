@@ -160,7 +160,7 @@ Section WithVar.
             @! let (lhs, rhs) <- check_args_proof args c' in
                let (e1, e2, t') <- check_proof p in
                (*TODO: use Eqb instance*)
-               let ! sort_eq_dec t[/with_names_from c' rhs/] t' in
+               let ! eqb t[/with_names_from c' rhs/] t' in
                ret (e1::lhs, e2::rhs)
         | _,_=> None
         end.
@@ -187,8 +187,8 @@ Section WithVar.
       | ptrans p0 p1 =>
           @! let (e1, e2, t) <- check_proof p0 in
              let (e1', e2', t') <- check_proof p1 in
-             let ! sort_eq_dec t t' in
-             let ! term_eq_dec e2 e1' in
+             let ! eqb t t' in
+             let ! eqb e2 e1' in
              ret (e1, e2', t)
       | psym p =>
           @! let (e1, e2, t) <- check_proof p in
@@ -196,7 +196,7 @@ Section WithVar.
       | pconv p0 p1 =>
           @! let (t1, t2) <- check_sort_proof p0 in
              let (e1, e2, t) <- check_proof p1 in
-             let ! sort_eq_dec t t1 in
+             let ! eqb t t1 in
              ret (e1, e2, t2)
       end
     
@@ -219,7 +219,7 @@ Section WithVar.
       | ptrans p0 p1 =>
           @! let (t1, t2) <- check_sort_proof p0 in
              let (t1', t2') <- check_sort_proof p1 in
-             let ! sort_eq_dec t2 t1' in
+             let ! eqb t2 t1' in
              ret (t1, t2')
       | psym p =>
           @! let (t1,t2) <- check_sort_proof p in
@@ -280,7 +280,7 @@ Section WithVar.
                let {(sum _)} (e1, e2, t') <- (check_proof_err p) in
                (*TODO: use Eqb instance*)
                (*TODO: sorts don't line up here*)
-               let ! sort_eq_dec t[/with_names_from c' rhs/] t' |->
+               let ! eqb t[/with_names_from c' rhs/] t' |->
                      addl_err (addl_err (sort_eq_err t[/with_names_from c' rhs/] t') "in args checking for: ")
                      err in
                ret {(sum _)} (e1::lhs, e2::rhs)
@@ -309,9 +309,9 @@ Section WithVar.
       | ptrans p0 p1 =>
           @! let (e1, e2, t) <- check_proof_err p0 in
              let (e1', e2', t') <- check_proof_err p1 in
-             let ! sort_eq_dec t t' |->
+             let ! eqb t t' |->
                    addl_err (sort_eq_err t t') "sorts of term transitivity don't match" in
-             let ! term_eq_dec e2 e1' in
+             let ! eqb e2 e1' in
              ret (e1, e2', t)
       | psym p =>
           @! let (e1, e2, t) <- check_proof_err p in
@@ -319,7 +319,7 @@ Section WithVar.
       | pconv p0 p1 =>
           @! let (t1, t2) <- check_sort_proof_err p0 in
              let (e1, e2, t) <- check_proof_err p1 in
-             let ! sort_eq_dec t t1 |->
+             let ! eqb t t1 |->
                    addl_err (sort_eq_err t t1) "LHS of conv does not match term" in
              ret (e1, e2, t2)
       end
@@ -343,7 +343,7 @@ Section WithVar.
       | ptrans p0 p1 =>
           @! let (t1, t2) <- check_sort_proof_err p0 in
              let (t1', t2') <- check_sort_proof_err p1 in
-             let ! sort_eq_dec t2 t1' |->
+             let ! eqb t2 t1' |->
                    addl_err (sort_eq_err t2 t1') "sort transitivity failed" in
              ret (t1, t2')
       | psym p =>
@@ -400,13 +400,11 @@ Section WithVar.
               try congruence;
               basic_goal_prep;
               basic_core_crush.
-            constructor; eauto.
             eapply H2; auto.
           }
       - safe_invert HeqH3.
-        eapply eq_sort_subst; cycle 2.
+        eapply eq_sort_subst.
         + basic_core_crush.
-        + with_rule_in_wf_crush.
         + clear HeqH0.
           revert H c0 l3 l4 HeqH2.
           induction l0;
@@ -415,8 +413,8 @@ Section WithVar.
             try congruence;
             basic_goal_prep;
             basic_core_crush.
-          constructor; eauto.
           eapply H2; auto.
+        + basic_core_crush.
       - safe_invert HeqH3.
         eapply term_con_congruence; eauto.
         + eapply named_list_lookup_err_in; eauto.
@@ -429,13 +427,11 @@ Section WithVar.
               try congruence;
               basic_goal_prep;
               basic_core_crush.
-            constructor; eauto.
             eapply H2; auto.
           }
       - safe_invert HeqH3.
-        eapply eq_term_subst; cycle 2.
+        eapply eq_term_subst.
         + basic_core_crush.
-        + with_rule_in_wf_crush.
         + clear HeqH0.
           revert H c0 l3 l4 HeqH2.
           induction l0;
@@ -444,10 +440,9 @@ Section WithVar.
             try congruence;
             basic_goal_prep;
             basic_core_crush.
-          constructor; eauto.
           eapply H2; auto.
-      - safe_invert HeqH2.
-        eapply eq_sort_trans; eauto.
+        + basic_core_crush.
+      - eapply eq_sort_trans; basic_utils_crush.
       - inversion H.
       - autorewrite with utils in *.
         intuition subst.
