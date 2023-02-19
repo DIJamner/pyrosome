@@ -38,9 +38,9 @@ Section WithVar.
      They do not have to target syntax.
    *)
 
-  Section WithModel.
+  Section WithPreModel.
     Context {tgt_term tgt_sort : Type}
-            {tgt_Model : @Model V tgt_term tgt_sort}
+            {tgt_Model : @PreModel V tgt_term tgt_sort}
             (*TODO: should I make it so that these aren't necessary?*)
             `{WithDefault tgt_term}
             `{WithDefault tgt_sort}.
@@ -53,27 +53,26 @@ Definition compiler := named_list compiler_case.
 
 Lemma invert_eq_term_case_term_case args args' e e'
   : term_case args e = term_case args' e' <-> args = args' /\ e = e'.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_term_case_term_case : lang_core.
 
 Lemma invert_eq_term_case_sort_case args args' e e'
   : term_case args e = sort_case args' e' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_term_case_sort_case : lang_core.
 
 Lemma invert_eq_sort_case_term_case args args' e e'
   : sort_case args e = term_case args' e' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_sort_case_term_case : lang_core.
 
 Lemma invert_eq_sort_case_sort_case args args' e e'
   : sort_case args e = sort_case args' e' <-> args = args' /\ e = e'.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. solve_invert_constr_eq_lemma. Qed.
 Hint Rewrite invert_eq_sort_case_sort_case : lang_core.
 
 Section CompileFn.
-  Context (cmp : compiler)
-          (src : lang).
+  Context (cmp : compiler).
 
   (*TODO: move to Term.v*)
   Existing Instance term_default.
@@ -94,7 +93,6 @@ Section CompileFn.
 
 Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
   
-  (* does not use src or tgt, only cmp *)
   (*TODO: notations do a poor job of spacing this*)
   Fixpoint compile (e : term) : tgt_term :=
     match e with
@@ -106,8 +104,7 @@ Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
       | _ => default
       end
     end.
-  
-  (* does not use src, only cmp *)
+
   Definition compile_sort (t : sort) : tgt_sort :=
     match t with
     | scon n s =>
@@ -124,6 +121,33 @@ Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
 
   Definition compile_ctx (c:named_list sort) := named_map compile_sort c.
 
+End CompileFn.
+End WithPreModel.
+
+  
+  Section WithModel.
+    Context {tgt_term tgt_sort : Type}
+      {tgt_Model : @Model V tgt_term tgt_sort}
+      (*TODO: should I make it so that these aren't necessary?*)
+      `{WithDefault tgt_term}
+      `{WithDefault tgt_sort}.
+
+    Existing Instance tgt_Model.
+
+    Notation compiler :=
+      (compiler (tgt_term:=tgt_term)
+         (tgt_sort:=tgt_sort)).
+    
+Section CompileJudgment.
+  Context (cmp : compiler)
+    (src : lang).
+
+  Notation compile := (compile cmp).
+  Notation compile_sort := (compile_sort cmp).
+  Notation compile_ctx := (compile_ctx cmp).
+  Notation compile_args := (compile_args cmp).
+  Notation compile_subst := (compile_subst cmp).
+  
    (* First we specify the properties semantically,
      then inductively on the compiler. TODO: prove equivalent
    *)
@@ -174,7 +198,7 @@ Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
     /\ sort_wf_preserving_sem /\ term_wf_preserving_sem /\ args_wf_preserving_sem
     /\ ctx_wf_preserving_sem.
 
-End CompileFn.
+End CompileJudgment.
 
 (*
 First we define an inductively provable (and in fact decidable) property 

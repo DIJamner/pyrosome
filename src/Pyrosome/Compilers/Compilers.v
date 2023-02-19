@@ -13,6 +13,7 @@ From Pyrosome.Compilers Require Export CompilerDefs.
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
@@ -44,11 +45,15 @@ Section WithVar.
             `{WithDefault tgt_term}
             `{WithDefault tgt_sort}.
 
-    Notation compile := (compile (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model)).
-    Notation compile_sort := (compile_sort (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model)).
-    Notation compile_args := (compile_args (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model)).
-    Notation compile_subst := (compile_subst (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model)).
-    Notation compile_ctx := (compile_ctx (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model)).
+    Notation compile := (compile (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
+    Notation compile_sort :=
+      (compile_sort (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
+    Notation compile_args :=
+      (compile_args (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
+    Notation compile_subst :=
+      (compile_subst (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
+    Notation compile_ctx :=
+      (compile_ctx (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
 
 
   (* Adds some facts that can be derived from wfness of the language
@@ -299,9 +304,9 @@ Hint Resolve all_constructors_ctx_from_wf : lang_core.
     Definition ws_compiler_case (c : compiler_case V) :=
       match c with
       | sort_case c t =>
-          well_scoped (Substable:=sort_substable (Model:=tgt_Model)) c t
+          well_scoped (Substable:=sort_substable (PreModel:=tgt_Model.(premodel))) c t
       | term_case c e =>
-          well_scoped (Substable:= @substable0_is_substable _ _ (term_substable (Model:=tgt_Model))) c e
+          well_scoped (Substable:= @substable0_is_substable _ _ (term_substable (PreModel:=tgt_Model.(premodel)))) c e
       end.
 
     Definition ws_compiler : compiler V -> Prop :=
@@ -444,7 +449,7 @@ Hint Rewrite compile_subst_lookup : lang_core.
           2:{                                              
             rewrite map_fst_combine_r_padded.
             apply named_list_lookup_err_in in HeqH5.
-            exact (in_all _ _ H2 HeqH5).
+            exact (in_all _ _ _ H2 HeqH5).
           }
           f_equal.
           unfold subst_cmp.
@@ -494,7 +499,7 @@ Hint Rewrite compile_subst_lookup : lang_core.
           2:{                                              
             rewrite map_fst_combine_r_padded.
             apply named_list_lookup_err_in in HeqH4.
-            exact (in_all _ _ H1 HeqH4).
+            exact (in_all _ _ _ H1 HeqH4).
           }
           f_equal.
           unfold subst_cmp.
@@ -594,7 +599,6 @@ Definition lang_compiles_with cmp : lang -> Prop :=
         induction l; basic_goal_prep; basic_utils_crush.
         cbv; intuition.
         my_case Hs (eqb s v); basic_goal_prep; basic_utils_crush.
-        my_case Hs (eqb s v); basic_goal_prep; basic_utils_crush.
       Qed.
       
       Lemma strengthening cmp' cmp l
@@ -614,10 +618,14 @@ Definition lang_compiles_with cmp : lang -> Prop :=
         all: repeat case_match; auto;
             autorewrite with utils term lang_core in *; eauto.
         all: basic_utils_crush.
-        all: try (pose proof (in_all_fresh_same _ _ _ _ H6 HeqH1 H7) as H';
+        all: try rewrite all_fresh_named_list_lookup_err_in in HeqH1 by assumption.
+        all: try rewrite all_fresh_named_list_lookup_err_in in HeqH7 by assumption.
+        all: try (pose proof (in_all_fresh_same _ _ _ _ H2
+                                (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
                   now inversion H').
         {
-          pose proof (in_all_fresh_same _ _ _ _ H6 HeqH1 H7) as H';
+          pose proof (in_all_fresh_same _ _ _ _ H2
+                        (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
             inversion H'; clear H'; subst.
           unfold compile_args in H5; rewrite H5.
           reflexivity.
@@ -627,23 +635,25 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           eapply named_list_lookup_none in HeqH1.
           intuition eauto;
             pose proof (sort_name_in_cmp _ _ _ H1 H3).
-          eapply in_twice_appended_all_fresh; eauto.
-        }
-        {
-          exfalso.
-          eapply named_list_lookup_none in HeqH1.
-          pose proof (sort_name_in_cmp _ _ _ H1 H3).
-          basic_utils_crush.
+          apply HeqH1 in H7; auto.
         }
         {
           exfalso.
           eapply named_list_lookup_none in HeqH7.
+          pose proof (sort_name_in_cmp _ _ _ H1 H3).
+          basic_utils_crush.
+        }
+       (* {
+          exfalso.
+          basic_utils_crush.
+          eapply named_list_lookup_none in HeqH7.
           intuition eauto;
             pose proof (sort_name_in_cmp _ _ _ H1 H3).
           basic_utils_crush.
-        }
+        }*)
         {
-          pose proof (in_all_fresh_same _ _ _ _ H6 HeqH1 H7) as H';
+          pose proof (in_all_fresh_same _ _ _ _ H2
+                        (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
             inversion H'; clear H'; subst.
           unfold compile_args in H5; rewrite H5.
           reflexivity.
@@ -653,13 +663,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           eapply named_list_lookup_none in HeqH1.
           intuition eauto;
             pose proof (term_name_in_cmp _ _ _ _ H1 H3).
-          eapply in_twice_appended_all_fresh; eauto.
-        }
-        {
-          exfalso.
-          eapply named_list_lookup_none in HeqH1.
-          pose proof (term_name_in_cmp _ _ _ _ H1 H3).
-          basic_utils_crush.
+          apply HeqH1 in H7; auto.
         }
         {
           exfalso.
@@ -746,7 +750,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           basic_goal_prep;
           autorewrite with utils term lang_core in *;
           try assumption;
-          try tauto.
+          try tauto;
+          try typeclasses eauto.
         {
           destruct H5; destruct H6; break; subst.
           now eauto.
@@ -758,36 +763,26 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           exfalso; now eauto using pair_fst_in.
           now eauto.
         }
-        basic_core_crush.
-        basic_core_crush.
+        clear H5 H6; solve[basic_core_crush].
+        {          
+          autorewrite with utils lang_core term in H4.  
+          intuition eauto with lang_core.
+          (*TODO: why is this slow?
+            clear H5 H6; solve[basic_core_crush]. *)
+        }
         {
           eapply all_constructors_ctx_from_wf; eauto.
-          intuition subst;
-            autorewrite with utils lang_core term in *;
-            break;
-            subst.
-          all: try assumption.
-          {
-            use_rule_in_wf.
-            basic_core_crush.
-          }
-          {
-            use_rule_in_wf.
-            basic_core_crush.
-          }
+          autorewrite with utils term model lang_core in *.
+          intuition subst; eauto with lang_core.
         }
         {
-            destruct H5; destruct H6; break; subst.
-            now eauto.
-            {
-              exfalso.
-              eapply fresh_lang_fresh_cmp in H4; eauto.
-            }
-            exfalso; now eauto using pair_fst_in.
-            now eauto.
+          (* TODO: why does this take a long time?
+          basic_core_crush. *)
+          destruct H5; destruct H6; break; subst; try tauto.
+          now eauto.
         }
-        now basic_core_crush. 
-        now basic_core_crush.
+        clear H5 H6; now basic_core_crush. 
+        clear H5 H6; now basic_core_crush.
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -796,10 +791,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
             subst.
           all: try assumption.
           all: try tauto.
-          {
-            use_rule_in_wf.
-            basic_core_crush.
-          }
+          basic_core_crush.
         }
         {
           destruct H5; try tauto; break; eauto.
@@ -834,8 +826,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           exfalso; now eauto using pair_fst_in.
           now eauto.
         }
-        basic_core_crush.
-        basic_core_crush.
+        now basic_core_crush.
+        now basic_core_crush.
          {
           eapply all_constructors_sort_from_wf; eauto.
           intuition subst;
@@ -858,20 +850,22 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           all: try assumption.
           all: try tauto.
           {
-            use_rule_in_wf.
             basic_core_crush.
           }
         }
         {
-            destruct H5; destruct H6; break; subst.
-            now eauto.
-            {
-              exfalso.
-              eapply fresh_lang_fresh_cmp in H4; eauto.
-              now eauto using pair_fst_in.
-            }
-            exfalso; now eauto using pair_fst_in.
-            now eauto.
+          destruct H5; destruct H6; break; subst; try tauto.
+          {
+            exfalso.
+            eapply fresh_lang_fresh_cmp; eauto.
+            basic_utils_crush.
+          }
+          {
+            exfalso; basic_core_crush.
+          }
+          {
+            eapply IHpreserving_compiler_plus; eauto.
+          }
         }
         now basic_core_crush. 
         now basic_core_crush.
@@ -980,7 +974,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           constructor.
         }
         {
-          autorewrite with lang_core in *; intuition eauto with lang_core term.
+          autorewrite with model lang_core in *; intuition eauto with lang_core term.
         }
         {
           repeat case_match.
@@ -993,14 +987,13 @@ Definition lang_compiles_with cmp : lang -> Prop :=
             assert (all_fresh cmp) by basic_core_crush.
             assert (wf_ctx ls c') by (use_rule_in_wf; basic_core_crush).
             autorewrite with utils in *.
-            2: basic_core_crush.
             pose proof (sort_case_in_preserving
                           n  
                           ltac:(eassumption)
                                  ltac:(eassumption)
                                         _ _ _ _                       
                                         ltac:(eassumption)
-                                               ltac:(eassumption)).
+                                               ltac:(eauto with utils)).
             break; subst.
             eapply Model.wf_sort_subst_monotonicity; cycle 2.
             {
@@ -1012,7 +1005,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
               basic_core_crush.
             }
             {
-              eapply sort_case_in_preserving; eauto.
+              eapply sort_case_in_preserving; eauto with utils.
             }
             assumption.
           }
@@ -1047,7 +1040,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
                                  ltac:(eassumption)
                                         _ _ _ _ _                     
                                         ltac:(eassumption)
-                                               ltac:(eassumption)).
+                                               ltac:(eauto with utils)).
             break.
             rewrite distribute_compile_subst_sort;
               [| eauto with lang_core..].
@@ -1079,9 +1072,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
                                                  ltac:(eassumption)
                                                         ltac:(eauto with lang_core)
                                                                ltac:(eassumption)
-                                                                      ltac:(eassumption)) as H';
+                                                                      ltac:(eauto with utils)) as H';
               destruct H'.
-            basic_core_crush.            
           }
           {
             rewrite named_list_lookup_none in HeqH7.
@@ -1123,14 +1115,17 @@ Definition lang_compiles_with cmp : lang -> Prop :=
     rewrite with_names_from_map_is_named_map.
     rewrite with_names_from_compile_ctx.
     assumption.
-    rewrite map_fst_with_names_from;
-      eauto with utils lang_core.
+    basic_core_crush.    
+    rewrite map_fst_with_names_from.
+    2:eauto with utils lang_core.
+    safe_invert H8.
+    eauto with utils lang_core.
   }
   {
     constructor.
   }
   {
-    autorewrite with lang_core in *;
+    autorewrite with model utils lang_core in *;
     [| intuition eauto with lang_core term utils..].
     intuition eauto with lang_core term utils.
   }

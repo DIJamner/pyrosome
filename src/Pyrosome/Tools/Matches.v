@@ -10,9 +10,10 @@ Import PArray (array, get, set).
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad (*TODO: better dep*) PersistentArrayList.
+From Utils Require Import Utils Monad.
 (*TODO: deprecate computewf at some point (in favor of more general tactic based on reduction proofs) *)
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.ComputeWf Tools.Linter Proof.TreeProofs Tools.Int63Renaming.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.ComputeWf Tools.Linter
+  Proof.TreeProofs Tools.Int63Renaming.
 
 Import Core.Notations.
 
@@ -40,11 +41,10 @@ Notation pf := (@pf int).
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
-  
-  (*TODO: move to Utils.v, use instead of compute_fresh for performance *)
-  Definition inb {A} `{Eqb A} (a : A) (l : list A) : bool := existsb (eqb a) l.
-    
-Definition freshb {A} x (l : named_list A) : bool := negb (inb x (map fst l)).
+  (*TODO: move to Eqb.v *)
+  Instance int_eqb : Eqb int := Int63.eqb.
+  (*TODO: move to Default*)
+  Instance int_default : WithDefault int := 0%int63.
 
 (* constructs the union of the two lists viewed as maps,
    choosing the second list when they disagree*)
@@ -311,6 +311,10 @@ Definition matches_sort t pat (args : list int) : option subst :=
       | _::l' => step_redex_term l' e
       end.
 
+    (*TODO: move to Utils.v*)
+    Definition unwrap {A} d (ma : option A) : A :=
+      match ma with Some a => a | None => d end.
+    
       Section StepTermInner.
         Context (step_term_n : term -> option (pf * term)).
 
@@ -326,7 +330,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
               else
                 @! let (term_rule c' _ _) <?- Some (get l name) in
                   let refls <- list_Mmap (fun e => option_map (fun p => (p, e)) (pf_refl e)) s in
-                  let steps := map (uncurry unwrap_with_default) (combine refls osteps) in
+                  let steps := map (uncurry unwrap) (combine refls osteps) in
                   let (arg_steps, args) := split steps in
                   let pfs' <- cast_args_by_step c' s arg_steps in
                   ret (pcon name pfs', con name args)
@@ -366,15 +370,19 @@ Definition matches_sort t pat (args : list int) : option subst :=
         match step_term_opt (step_term' l n) l n e with
         | Some (pf,_) => pf
         (*TODO: check that the unwrap always succeeds*)
-        | _ => unwrap_with_default (pcon default []) (pf_refl (step_term' l n) e)
+        | _ => unwrap (pcon default []) (pf_refl (step_term' l n) e)
         end
     end.
     
   End WithCtx.
+
+  (*TODO: duplicated; refactor*)
+  Definition max (x y : int) :=
+    if (x <=? y)%int63 then y else x.
   
   (*TODO: find a better location for this?*)
   Definition named_list_to_array {A} `{WithDefault A} (l : named_list A) : array A :=
-    let sz := add (fold_left PArrayList.max (map fst l) 0) 1 in
+    let sz := add (fold_left max (map fst l) 0) 1 in
     let acc := PArray.make sz default in
     fold_left (fun acc '(i,a) => set acc i a) l acc.
   
@@ -390,6 +398,7 @@ End Int63Matches.
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
   
 Notation named_list := (@named_list V).
@@ -458,9 +467,10 @@ Lemma eq_term_by_with_subst name l c c' e1 e2 t s
     eq_term l c t[/s/] e1[/s/] e2[/s/].
 Proof.
   intros.
-  eapply eq_term_subst; [| eapply eq_subst_refl; eassumption
-                         | eapply eq_term_by; eassumption].
-  with_rule_in_wf_crush.
+  eapply eq_term_subst; [ eapply eq_term_by; eassumption
+                        | eapply eq_subst_refl; eassumption
+                        |].
+  basic_core_crush.
 Qed.
 
 
@@ -534,14 +544,16 @@ Proof.
   change (con ?n ?args[/?s/]) with (con n args)[/s/].
   eapply eq_term_subst; eauto.
   {
+    replace t' with t'[/id_subst c'/].
+    {
+      constructor.
+      eapply wf_term_by; basic_core_crush.
+    }
+    basic_core_crush.
+  }
+  {
     apply eq_args_implies_eq_subst; eauto.
   }
-  constructor.
-  replace t' with t'[/id_subst c'/].
-  {
-    eapply wf_term_by; basic_core_crush.
-  }
-  basic_core_crush.
 Qed.  
 
 Lemma elab_lang_nil_nth_tail l_pre l el
@@ -639,7 +651,7 @@ Ltac compute_wf_subjects :=
  Ltac t' :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   | |- In _ _ => solve [solve_in | simpl; intuition fail]
   | |- Model.wf_term _ _ _ => cbn [Model.wf_term core_model]
   | |- wf_term ?l ?c ?e ?t =>
@@ -672,7 +684,7 @@ Ltac compute_wf_subjects :=
 Ltac t :=
   match goal with
   | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist Eqb_dec); vm_compute; reflexivity
+  | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   (*Don't use vm_compute here*)
   | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
   | [|- len_eq _ _] => econstructor

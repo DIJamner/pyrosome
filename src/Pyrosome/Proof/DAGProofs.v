@@ -1,7 +1,8 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import NArith List.
+Require Import NArith List Lia.
+Open Scope positive.
 Import ListNotations.
 Open Scope list.
 
@@ -270,8 +271,6 @@ Section WithVar.
       let (term_eq_result e1 e2 t) <?- get (next - 1)%positive m in
       ret (e1,e2,t).
 
-      Require Import Lia.
-      Open Scope positive.
   
   Lemma check_proof'_fresh' p res next
     : check_proof' p = Some (res, next) ->

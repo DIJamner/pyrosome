@@ -55,7 +55,9 @@ Ltac safe_invert H :=
 
 Ltac solve_invert_constr_eq_lemma :=
    match goal with
-    [|- ?lhs <-> _] =>
+     [|- ?lhs <-> _] =>
+       (* prevents false dependencies *)
+       clear;
     firstorder (match goal with
                     | [H : lhs |-_] => inversion H; subst; easy
                     | _ => solve[ subst;constructor; assumption | f_equal; assumption]
