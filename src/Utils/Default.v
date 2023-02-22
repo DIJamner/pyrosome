@@ -23,7 +23,6 @@ End __.
 
 Arguments default {A}%type_scope {d}.
 
-#[export] Instance option_default {A} : WithDefault (option A) := None.
 #[export] Instance string_default : WithDefault string := "".
 #[export] Instance unit_default : WithDefault unit := tt.
 

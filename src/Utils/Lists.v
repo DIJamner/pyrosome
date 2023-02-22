@@ -6,7 +6,7 @@ Import ListNotations.
 Import BoolNotations.
 Open Scope list.
 
-From Utils Require Import Base Booleans Eqb.
+From Utils Require Import Base Booleans Eqb Default.
 
 Section __.
   Context (A : Type).
@@ -139,6 +139,8 @@ Section __.
   Qed.
   Hint Rewrite incl_cons : utils.
 
+  
+  #[export] Instance list_default : WithDefault (list A) := [].
 
   Section Eqb.
 
@@ -188,6 +190,28 @@ Section __.
       revert s; induction l; destruct s; basic_goal_prep; try easy.
       revert H1. case_match; basic_utils_crush.
     Qed.
+
+    
+    Fixpoint inclb (l1 l2 : list A) {struct l1} : bool :=
+      match l1 with
+      | [] => true
+      | a::l1' =>
+          (inb a l2) && (inclb l1' l2)
+      end.
+
+    
+    #[local] Hint Resolve incl_nil_l : utils.
+    #[local] Hint Rewrite incl_cons : utils.
+    #[local] Hint Rewrite inb_is_In : utils.
+
+    Lemma use_inclb (l1 l2 : list A)
+      : Is_true (inclb l1 l2) -> incl l1 l2.
+    Proof.
+      induction l1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+                 
     
   End Eqb.
 
@@ -221,6 +245,8 @@ Arguments all {A}%type_scope P%function_scope l%list_scope.
 Arguments set_eq {A}%type_scope (l1 l2)%list_scope.
 
 Arguments sublistb {A}%type_scope {Eqb_A} (s l)%list_scope : rename.
+
+Arguments use_inclb {A}%type_scope {H H0} (l1 l2)%list_scope _ a _.
 
 #[export] Hint Rewrite invert_eq_cons_nil : utils.
 #[export] Hint Rewrite invert_eq_nil_cons : utils.

@@ -23,7 +23,7 @@ Open Scope positive.
 
 From Utils Require Import Utils Monad.
 (*TODO: I think the eq instance is already defined somewhere*)
-From Utils Require NatlikePos.
+(*From Utils Require NatlikePos.*)
 (*From Utils Require TrieMap NatlikePos.*)
 
 
