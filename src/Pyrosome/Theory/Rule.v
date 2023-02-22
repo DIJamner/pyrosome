@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List String.
+Require Import List String Bool.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -145,7 +145,7 @@ Proof.
   basic_term_crush.
 Qed.
 
-Lemma ws_lang_cons_inv n r l
+Lemma ws_lang_cons_inv n r (l : lang)
   : ws_lang ((n, r) :: l)
     <-> fresh n l /\ ws_rule r /\ ws_lang l.
 Proof.
@@ -153,60 +153,69 @@ Proof.
   basic_term_crush.
 Qed.
 
-Lemma rule_in_ws l n r : ws_lang l -> In (n,r) l -> ws_rule r.
+Lemma rule_in_ws (l : lang) n r : ws_lang l -> In (n,r) l -> ws_rule r.
 Proof using .
   induction l; 
     basic_goal_prep;
     basic_term_firstorder_crush.
 Qed.
 
-Lemma reconstruct_ws_lang l
+Lemma reconstruct_ws_lang (l : lang)
   : all_fresh l /\ all ws_rule (map snd l) -> ws_lang l.
 Proof.
   eauto.
 Qed.
 Hint Resolve reconstruct_ws_lang : term.
 
-Lemma ws_lang_all_ws_rule l
+Lemma ws_lang_all_ws_rule (l : lang)
   : ws_lang l -> all ws_rule (map snd l).
 Proof.
   unfold ws_lang; intuition.
 Qed.
 Hint Resolve ws_lang_all_ws_rule : term.
 
-Section RuleDec.
-  Context `{DecidableEq V}.
-  Definition rule_eq_dec (r1 r2 : rule) : {r1 = r2} + {~ r1 = r2}.
-    refine(match r1, r2 with
-           | sort_rule c args, sort_rule c' args' =>
-               SB! (ctx_eq_dec c c') SB& (list_eq_dec dec args args')
-           | term_rule c args t, term_rule c' args' t' =>
-               SB! (ctx_eq_dec c c') SB&
-                 (list_eq_dec dec args args') SB&
-                 (sort_eq_dec t t')
-           | sort_eq_rule c t1 t2, sort_eq_rule c' t1' t2' =>
-               SB! (ctx_eq_dec c c') SB&
-                 (sort_eq_dec t1 t1') SB&
-                 (sort_eq_dec t2 t2')
-           | term_eq_rule c e1 e2 t, term_eq_rule c' e1' e2' t' =>
-               SB! (ctx_eq_dec c c') SB&
-                 (term_eq_dec e1 e1') SB&
-                 (term_eq_dec e2 e2') SB&
-                 (sort_eq_dec t t')
-           | _,_ => _
-           end); basic_term_crush.
-  Defined.
+#[export] Instance rule_eqb : Eqb rule :=
+  fun r1 r2 =>
+    match r1, r2 with
+    | sort_rule c args, sort_rule c' args' =>
+        (eqb c c') && (eqb args args')
+    | term_rule c args t, term_rule c' args' t' =>
+        (eqb c c') &&
+          (eqb args args') &&
+          (eqb t t')
+    | sort_eq_rule c t1 t2, sort_eq_rule c' t1' t2' =>
+        (eqb c c') &&
+          (eqb t1 t1') &&
+          (eqb t2 t2')
+    | term_eq_rule c e1 e2 t, term_eq_rule c' e1' e2' t' =>
+        (eqb c c') &&
+          (eqb e1 e1') &&
+          (eqb e2 e2') &&
+          (eqb t t')
+    | _,_ => false
+    end.
 
-  Definition compute_incl_lang (l1 l2 : lang) :=
-    if incl_dec (pair_eq_dec dec rule_eq_dec) l1 l2 then true else false.
+Context {Eqb_V_ok : Eqb_ok V_Eqb}.
 
-  Lemma use_compute_incl_lang (l1 l2 : lang)
-    : compute_incl_lang l1 l2 = true -> incl l1 l2.
-  Proof.
-    unfold compute_incl_lang.
-    destruct (incl_dec _ l1 l2); easy.
-  Qed.
-End RuleDec.
+#[export] Instance rule_eqb_ok : Eqb_ok rule_eqb.
+Proof.
+  intros a b.
+  unfold eqb.
+  unfold rule_eqb.
+  destruct a;
+    destruct b;
+    try case_match;
+    basic_term_crush.
+Qed.
+
+(*TODO: eliminate alias and call inclb lemma directly *)
+Lemma use_compute_incl_lang (l1 l2 : lang)
+    : inclb l1 l2 = true -> incl l1 l2.
+Proof.
+  intros.
+  eapply use_inclb; rewrite H; exact I.
+Qed.
+
 
 Definition get_ctx (r : rule) :=
   match r with
@@ -218,7 +227,7 @@ Definition get_ctx (r : rule) :=
   
     (*TODO: move to Utils?*)
     (* Note: does not error out on bad inputs *)
-    Fixpoint select_sublist {A} (s : @Utils.named_list V A) (filter : list V) :=
+    Fixpoint select_sublist {A} (s : named_list A) (filter : list V) :=
       match s, filter with
       | [], _ | _, [] => []
       | (n,a)::s', n'::filter' =>

@@ -168,8 +168,20 @@ Section Injective.
     }
     all: basic_core_crush.
     {
+      eapply eq_sort_trans; eauto.
+    }
+    {
+      eapply eq_sort_sym; eauto.
+    }
+    {
       eapply eq_term_by.
       exact H.
+    }
+    {
+      eapply eq_term_trans; eauto.
+    }
+    {
+      eapply eq_term_sym; eauto.
     }
     {
       eapply wf_sort_by; eauto.
@@ -239,5 +251,5 @@ Section Inverse.
 End Inverse.
   
 
-    (*TODO: rules about renaming inverses*)
+(*TODO: rules about renaming inverses*)
 

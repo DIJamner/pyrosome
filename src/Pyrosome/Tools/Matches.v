@@ -650,7 +650,7 @@ Ltac compute_wf_subjects :=
  *)
  Ltac t' :=
   match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
+  | [|- fresh _ _ ]=> apply (use_compute_fresh _); vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   | |- In _ _ => solve [solve_in | simpl; intuition fail]
   | |- Model.wf_term _ _ _ => cbn [Model.wf_term core_model]
@@ -683,7 +683,7 @@ Ltac compute_wf_subjects :=
 
 Ltac t :=
   match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; vm_compute; reflexivity
+  | [|- fresh _ _ ]=> apply (use_compute_fresh _); vm_compute; reflexivity
   | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   (*Don't use vm_compute here*)
   | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
@@ -780,7 +780,7 @@ Ltac step_if_concrete :=
            (*TODO: 100 is a magic number; make it an input*)
            let x := eval compute in (step_term_V l c' 100 e1 t) in
              eapply TreeProofs.pf_checker_sound with(p:=x);
-             [assumption | compute; reflexivity]
+             [typeclasses eauto | assumption | compute; reflexivity]
        end
   else term_refl.
 
@@ -811,14 +811,20 @@ Ltac by_reduction :=
                     let pf_both := constr:(TreeProofs.ptrans pf_lhs
                                              (TreeProofs.psym pf_rhs)) in
                   eapply TreeProofs.pf_checker_sound with (p := pf_both);
-                                              [ assumption | vm_compute; reflexivity ]
+                  [ typeclasses eauto
+                  | assumption
+                  | vm_compute; reflexivity ]
           else let pf_lhs := eval compute in (step_term_V l c' 100 e1 t) in
                   eapply TreeProofs.pf_checker_sound with (p := pf_lhs);
-                                              [ assumption | vm_compute; reflexivity ] 
+                  [ typeclasses eauto
+                  | assumption
+                  | vm_compute; reflexivity ]
         else tryif is_ground e2 then
                 let pf_rhs := eval compute in (step_term_V l c' 100 e2 t) in
                   eapply TreeProofs.pf_checker_sound with (p := TreeProofs.psym pf_rhs);
-                                              [ assumption | vm_compute; reflexivity ] 
+                  [ typeclasses eauto
+                  | assumption
+                  | vm_compute; reflexivity ]
           else term_refl
     end.
 
@@ -872,7 +878,7 @@ Ltac break_down_elab_ctx :=
   (eapply elab_ctx_cons;[solve_fresh| break_down_elab_ctx | break_elab_sort] || eapply elab_ctx_nil).
 
 Ltac break_elab_rule :=
-  match goal with
+  lazymatch goal with
   | [|- elab_rule _ (sort_rule _ _) _] =>
     eapply elab_sort_rule; [break_down_elab_ctx | solve_sublist]
   | [|- elab_rule _ (term_rule _ _ _) _] =>
@@ -904,7 +910,7 @@ Ltac split_rule_elab :=
   eapply elab_lang_cons_nth_tail;
   [ compute; reflexivity
   | compute; reflexivity
-  | apply use_compute_fresh; compute; reflexivity |
+  | apply (use_compute_fresh _); compute; reflexivity |
   (*fail 2 since this will be used in a repeat *)
   | solve [ prove_from_known_elabs ] || fail 2 "Could not prove base language wf" |].
 

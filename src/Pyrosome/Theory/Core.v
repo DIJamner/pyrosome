@@ -225,6 +225,22 @@ Hint Resolve eq_term_subst : lang_core.
 Hint Resolve eq_term_refl : lang_core.
 Hint Resolve eq_term_conv : lang_core.
 
+#[local] Hint Mode wf_ctx - - - - ! : lang_core.
+#[local] Hint Mode wf_ctx - - - - ! : model.
+
+#[local] Hint Mode wf_args - - - - ! - - : model.
+#[local] Hint Mode wf_args - - - - - ! - : model.
+#[local] Hint Mode wf_args - - - - - - ! : model.
+#[local] Hint Mode wf_args - - - - ! - - : lang_core.
+#[local] Hint Mode wf_args - - - - - ! - : lang_core.
+#[local] Hint Mode wf_args - - - - - - ! : lang_core.
+
+#[local] Hint Mode eq_sort - - ! - : lang_core.
+#[local] Hint Mode eq_sort - - - ! : lang_core.
+#[local] Hint Mode eq_term - - - ! - : lang_core.
+#[local] Hint Mode eq_term - - - - ! : lang_core.
+#[local] Hint Mode wf_term - - ! - : lang_core.
+#[local] Hint Mode wf_sort - - ! : lang_core.
   
   Notation eq_subst l :=
     (eq_subst (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
@@ -490,7 +506,7 @@ Ltac symmetric_firstorder_judge_ind :=
   firstorder unshelve (eauto  7 with utils term lang_core model).
 
 
-Local Lemma lang_mono l l'
+Local Lemma lang_mono (l l': lang) 
   : incl l l' ->
     (forall c t1 t2,
         eq_sort l c t1 t2 ->
@@ -521,37 +537,37 @@ Qed.
 (*TODO: these make for bad hints.
   keep old statements (in addition) for the hint db?
   or just add none of them?
-*)
+ *)
 
-Definition eq_sort_lang_monotonicity l l' (lincll' : incl l l')
+Definition eq_sort_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (lang_mono lincll' ).
 Local Hint Resolve eq_sort_lang_monotonicity : lang_core.
 
-Definition eq_term_lang_monotonicity l l' (lincll' : incl l l')
+Definition eq_term_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (proj2 (lang_mono lincll')).
 Local Hint Resolve eq_term_lang_monotonicity : lang_core.
 
-Definition eq_subst_lang_monotonicity l l' (lincll' : incl l l')
+Definition eq_subst_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (proj2 (proj2 (lang_mono lincll'))).
 Local Hint Resolve eq_subst_lang_monotonicity : lang_core.
 
-Definition wf_sort_lang_monotonicity l l' (lincll' : incl l l')
+Definition wf_sort_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (proj2 (proj2 (proj2 (lang_mono lincll')))).
 Local Hint Resolve wf_sort_lang_monotonicity : lang_core.
 
-Definition wf_term_lang_monotonicity l l' (lincll' : incl l l')
+Definition wf_term_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll'))))).
 Local Hint Resolve wf_term_lang_monotonicity : lang_core.
 
-Definition wf_args_lang_monotonicity l l' (lincll' : incl l l')
+Definition wf_args_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll')))))).
 Local Hint Resolve wf_args_lang_monotonicity : lang_core.
 
-Definition wf_ctx_lang_monotonicity l l' (lincll' : incl l l')
+Definition wf_ctx_lang_monotonicity (l l' : lang) (lincll' : incl l l')
   := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono lincll')))))).
 Local Hint Resolve wf_ctx_lang_monotonicity : lang_core.
 
-Lemma wf_rule_lang_monotonicity l l' r
+Lemma wf_rule_lang_monotonicity (l l' : lang) r
   : incl l l' -> wf_rule l r -> wf_rule l' r.
 Proof.
   inversion 2; basic_goal_prep; basic_core_crush.
@@ -561,7 +577,7 @@ Local Hint Resolve wf_rule_lang_monotonicity : lang_core.
 (*
   Some common special cases that are good for proof automation
 *)
-Local Lemma lang_mono_cons l name r
+Local Lemma lang_mono_cons (l : lang) name r
   : (forall c t1 t2,
         eq_sort l c t1 t2 ->
         eq_sort ((name,r)::l) c t1 t2)
@@ -624,7 +640,7 @@ Qed.
 Hint Resolve wf_rule_lang_monotonicity_cons : lang_core.
 
 
-Local Lemma lang_mono_app l l'
+Local Lemma lang_mono_app (l l' : lang)
   : (forall c t1 t2,
         eq_sort l c t1 t2 ->
         eq_sort (l'++l) c t1 t2)
@@ -652,42 +668,42 @@ Proof using.
  (*TODO: why does this fail: basic_utils_crush *)
 Qed.
 
-Definition eq_sort_lang_monotonicity_app l l'
+Definition eq_sort_lang_monotonicity_app (l l' : lang)
   := proj1 (lang_mono_app l l').
 Hint Resolve eq_sort_lang_monotonicity_app : lang_core.
 
-Definition eq_term_lang_monotonicity_app l l'
+Definition eq_term_lang_monotonicity_app (l l' : lang)
   := proj1 (proj2 (lang_mono_app l l')).
 Hint Resolve eq_term_lang_monotonicity_app : lang_core.
 
-Definition eq_subst_lang_monotonicity_app l l'
+Definition eq_subst_lang_monotonicity_app (l l' : lang)
   := proj1 (proj2 (proj2 (lang_mono_app l l'))).
 Hint Resolve eq_subst_lang_monotonicity_app : lang_core.
 
-Definition wf_sort_lang_monotonicity_app l l'
+Definition wf_sort_lang_monotonicity_app (l l' : lang)
   := proj1 (proj2 (proj2 (proj2 (lang_mono_app l l')))).
 Hint Resolve wf_sort_lang_monotonicity_app : lang_core.
 
-Definition wf_term_lang_monotonicity_app l l'
+Definition wf_term_lang_monotonicity_app (l l' : lang)
   := proj1 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l'))))).
 Hint Resolve wf_term_lang_monotonicity_app : lang_core.
 
-Definition wf_args_lang_monotonicity_app l l'
+Definition wf_args_lang_monotonicity_app (l l' : lang)
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l')))))).
 Hint Resolve wf_args_lang_monotonicity_app : lang_core.
 
-Definition wf_ctx_lang_monotonicity_app l l'
+Definition wf_ctx_lang_monotonicity_app (l l' : lang)
   := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_mono_app l l')))))).
 Hint Resolve wf_ctx_lang_monotonicity_app : lang_core.
 
-Lemma wf_rule_lang_monotonicity_app l l' r
+Lemma wf_rule_lang_monotonicity_app (l l' : lang) r
   : wf_rule l r -> wf_rule (l'++ l) r.
 Proof.
   inversion 1; basic_goal_prep; basic_core_crush.
 Qed.
 Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
-Lemma wf_subst_from_wf_args l c s c'
+Lemma wf_subst_from_wf_args (l : lang) c s c'
   : wf_args l c s c' ->
     wf_subst l c (with_names_from c' s) c'.
 Proof.
@@ -704,14 +720,14 @@ Hint Extern 5 (Model.eq_term _ _ _ _) => unfold Model.eq_term : lang_core.
 Hint Extern 5 (Model.wf_sort _ _) => unfold Model.wf_sort : lang_core.
 Hint Extern 5 (Model.eq_sort _ _ _) => unfold Model.eq_sort : lang_core.
 
-Lemma id_args_wf l c
+Lemma id_args_wf (l : lang) c
   : forall c', sublist c c' -> wf_args l c' (id_args c) c.
   Proof.
     induction c; basic_goal_prep; basic_core_crush. 
 Qed.
 Hint Resolve id_args_wf : lang_core.
 
-Lemma eq_subst_dom_eq_r l c c' s1 s2
+Lemma eq_subst_dom_eq_r (l : lang) c c' s1 s2
   : eq_subst l c c' s1 s2 ->
     map fst s2 = map fst c'.
 Proof.
@@ -719,7 +735,7 @@ Proof.
 Qed.
 Hint Resolve eq_subst_dom_eq_r : lang_core.
      
-Lemma eq_subst_dom_eq_l l c c' s1 s2
+Lemma eq_subst_dom_eq_l (l : lang) c c' s1 s2
   : eq_subst l c c' s1 s2 ->
     map fst s1 = map fst c'.
 Proof.
@@ -727,7 +743,7 @@ Proof.
 Qed.
 Hint Resolve eq_subst_dom_eq_l : lang_core.
      
-Lemma wf_subst_dom_eq l c c' s
+Lemma wf_subst_dom_eq (l : lang) c c' s
   : wf_subst l c s c' ->
     map fst s = map fst c'.
 Proof.
@@ -735,7 +751,7 @@ Proof.
 Qed.
 Hint Resolve wf_subst_dom_eq : lang_core.
 
-Lemma eq_subst_refl l c c' s : wf_subst l c s c' -> eq_subst l c c' s s.
+Lemma eq_subst_refl (l : lang) c c' s : wf_subst l c s c' -> eq_subst l c c' s s.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
@@ -762,15 +778,8 @@ Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
 Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
-
-Lemma in_all_named_list {A} P (l : named_list A) n a
-  : all P (map snd l) -> In (n,a) l -> P a.
-Proof.
-  induction l; basic_goal_prep; basic_utils_crush.
-Qed.
-Arguments in_all_named_list {A} [_] {_} {_} {_}.
   
-Local Lemma wf_implies_ws l
+Local Lemma wf_implies_ws (l : lang)
   : ws_lang l ->
     (forall c t1 t2,
         eq_sort l c t1 t2 ->
@@ -916,6 +925,7 @@ Section Extension.
       wf_rule (l++l_pre) r ->
       wf_lang_ext ((n,r)::l).
   Hint Constructors wf_lang_ext : lang_core.
+  #[local] Hint Mode wf_lang_ext ! : lang_core.
 
   Lemma invert_wf_lang_nil
     : wf_lang_ext [] <-> True.
@@ -942,7 +952,7 @@ Section Extension.
   Qed.
   Hint Resolve wf_lang_ext_all_fresh : lang_core.
   
-  Lemma wf_lang_ext_all_fresh_with_pre l
+  Lemma wf_lang_ext_all_fresh_with_pre (l : lang)
     : all_fresh l_pre ->
       wf_lang_ext l ->
       all_fresh (l ++ l_pre).
@@ -952,7 +962,7 @@ Section Extension.
   Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
       
   
-  Lemma wf_lang_implies_ws l
+  Lemma wf_lang_implies_ws (l : lang)
     : ws_lang l_pre -> wf_lang_ext l -> ws_lang (l++l_pre).
   Proof.
     induction 2; basic_goal_prep;
@@ -962,6 +972,7 @@ Section Extension.
 
 End Extension.
 Hint Constructors wf_lang_ext : lang_core.
+#[local] Hint Mode wf_lang_ext - ! : lang_core.
 Hint Rewrite invert_wf_lang_nil : lang_core.
 Hint Rewrite invert_wf_lang_cons : lang_core.
 Hint Resolve rule_in_wf : lang_core.
@@ -973,7 +984,7 @@ Hint Resolve wf_lang_implies_ws : lang_core.
 (*Notation so that extension lemmas still apply *)
 Notation wf_lang l := (wf_lang_ext [] l).
 
-Lemma rule_in_ctx_wf l name r c
+Lemma rule_in_ctx_wf (l : lang) name r c
   : wf_lang l -> In (name,r) l -> c = (get_ctx r) -> wf_ctx l c.
 Proof.
   intros; subst.
@@ -981,7 +992,7 @@ Proof.
   inversion H1; basic_core_crush.
 Qed.
 
-Hint Extern 2 (wf_ctx _ _) => (eapply rule_in_ctx_wf; [eassumption ..| reflexivity]) : lang_core.
+Hint Resolve rule_in_ctx_wf : lang_core.
 
 Ltac use_rule_in_wf :=
     match goal with
@@ -991,7 +1002,7 @@ Ltac use_rule_in_wf :=
     end.
 
 
-Lemma wf_lang_concat l1 l2
+Lemma wf_lang_concat (l1 l2 : lang)
   : wf_lang l1 ->
     wf_lang_ext l1 l2 ->
     wf_lang (l2 ++ l1).
@@ -1062,31 +1073,31 @@ Proof using V_Eqb_ok.
   }
 Qed.
 
-Definition eq_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition eq_sort_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (ctx_mono name t' wfl).
 Hint Resolve eq_sort_ctx_monotonicity : lang_core.
 
-Definition eq_term_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition eq_term_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (proj2 (ctx_mono name t' wfl)).
 Hint Resolve eq_term_ctx_monotonicity : lang_core.
 
-Definition eq_subst_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition eq_subst_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (ctx_mono name t' wfl))).
 Hint Resolve eq_subst_ctx_monotonicity : lang_core.
 
-Definition wf_sort_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition wf_sort_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))).
 Hint Resolve wf_sort_ctx_monotonicity : lang_core.
 
-Definition wf_term_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition wf_term_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl))))).
 Hint Resolve wf_term_ctx_monotonicity : lang_core.
 
-Definition wf_args_ctx_monotonicity l name t' (wfl : wf_lang l)
+Definition wf_args_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))))).
 Hint Resolve wf_args_ctx_monotonicity : lang_core.
 
-Lemma in_ctx_wf l c n t
+Lemma in_ctx_wf (l : lang) c n t
   : wf_lang l ->
     wf_ctx l c ->
     In (n,t) c ->
@@ -1096,26 +1107,7 @@ Proof.
 Qed.
 Hint Resolve in_ctx_wf : lang_core.
 
-(*TODO: figure out why I need this here?
-  Should I include it in other places?
- *)
-Lemma subst_lookup_hd n e s : (subst_lookup ((n, e) :: s) n) = e.
-Proof.
-  unfold subst_lookup; simpl.
-  basic_utils_crush.
-Qed.
-(*TODO: move to Term and export?*)
-Hint Rewrite subst_lookup_hd : term.
-
-Lemma subst_lookup_tl n m e s
-  : m <> n -> subst_lookup ((n, e) :: s) m = subst_lookup s m.
-Proof.
-  unfold subst_lookup; simpl.
-  intros.
-  basic_utils_crush.
-Qed.
-
-Lemma wf_term_lookup l c s c'
+Lemma wf_term_lookup (l : lang) c s c'
   : wf_lang l ->
     wf_subst l c s c' ->
     wf_ctx l c' ->
@@ -1124,12 +1116,10 @@ Lemma wf_term_lookup l c s c'
     wf_term l c (subst_lookup s n) t [/s /].
 Proof.
   
-  (*TODO: debug; why is it needed twice?*)
   induction 2; basic_goal_prep;
     basic_core_firstorder_crush.
   {
-    (* TODO: Substable/Substable_ok split less frientdly to rewriting, needs erewrite *)
-    erewrite strengthen_subst;
+    rewrite strengthen_subst with (Substable0 := _);
     try typeclasses eauto;
       basic_core_crush.
   }
@@ -1146,7 +1136,7 @@ Qed.
 Hint Resolve wf_term_lookup : lang_core.  
 
 
-Lemma wf_args_length_eq l c s c'
+Lemma wf_args_length_eq (l : lang) c s c'
   : wf_args l c s c' ->
     length c' = length s.
 Proof.
@@ -1231,19 +1221,19 @@ Proof.
   }
 Qed.
 
-Definition eq_subst_subst_monotonicity l (wfl : wf_lang l)
+Definition eq_subst_subst_monotonicity (l : lang) (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (subst_mono wfl))).
 Hint Resolve eq_subst_subst_monotonicity : lang_core.
 
-Definition wf_sort_subst_monotonicity l (wfl : wf_lang l)
+Definition wf_sort_subst_monotonicity (l : lang) (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (subst_mono wfl)))).
 Hint Resolve wf_sort_subst_monotonicity : lang_core.
 
-Definition wf_term_subst_monotonicity l (wfl : wf_lang l)
+Definition wf_term_subst_monotonicity (l : lang) (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (subst_mono wfl))))).
 Hint Resolve wf_term_subst_monotonicity : lang_core.
 
-Definition wf_args_subst_monotonicity l (wfl : wf_lang l)
+Definition wf_args_subst_monotonicity (l : lang) (wfl : wf_lang l)
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (subst_mono wfl)))))).
 Hint Resolve wf_args_subst_monotonicity : lang_core.
 
@@ -1283,7 +1273,7 @@ Proof using V V_Eqb V_Eqb_ok V_default.
   basic_core_crush.
 Qed.
 
-Lemma eq_sort_wf_l l c t1 t2
+Lemma eq_sort_wf_l (l : lang) c t1 t2
   : wf_lang l ->
     wf_ctx l c ->
     eq_sort l c t1 t2 ->
@@ -1296,7 +1286,7 @@ Proof.
 Qed.
 Hint Resolve eq_sort_wf_l : lang_core.
 
-Lemma eq_sort_wf_r l c t1 t2
+Lemma eq_sort_wf_r (l : lang) c t1 t2
   : wf_lang l ->
     wf_ctx l c ->
     eq_sort l c t1 t2 ->
@@ -1309,7 +1299,7 @@ Proof.
 Qed.
 Hint Resolve eq_sort_wf_r : lang_core.
 
-Lemma eq_term_wf_l l c e1 e2 t
+Lemma eq_term_wf_l (l : lang) c e1 e2 t
   : wf_lang l ->
     wf_ctx l c ->
     eq_term l c t e1 e2 ->
@@ -1322,7 +1312,7 @@ Proof.
 Qed.
 Hint Resolve eq_term_wf_l : lang_core.
 
-Lemma eq_term_wf_r l c e1 e2 t
+Lemma eq_term_wf_r (l : lang) c e1 e2 t
   : wf_lang l ->
     wf_ctx l c ->
     eq_term l c t e1 e2 ->
@@ -1335,7 +1325,7 @@ Proof.
 Qed.
 Hint Resolve eq_term_wf_r : lang_core.
 
-Lemma eq_term_wf_sort l c e1 e2 t
+Lemma eq_term_wf_sort (l : lang) c e1 e2 t
   : wf_lang l ->
     wf_ctx l c ->
     eq_term l c t e1 e2 ->
@@ -1348,7 +1338,7 @@ Proof.
 Qed.
 Hint Resolve eq_term_wf_sort : lang_core.
 
-Lemma eq_subst_wf_l l c c' s1 s2
+Lemma eq_subst_wf_l (l : lang) c c' s1 s2
   : wf_lang l ->
     wf_ctx l c ->
     wf_ctx l c' ->
@@ -1362,7 +1352,7 @@ Proof.
 Qed.
 Hint Resolve eq_subst_wf_l : lang_core.
 
-Lemma eq_subst_wf_r l c c' s1 s2
+Lemma eq_subst_wf_r (l : lang) c c' s1 s2
   : wf_lang l ->
     wf_ctx l c ->
     wf_ctx l c' ->
@@ -1450,7 +1440,7 @@ Proof.
   induction 1; basic_goal_prep; basic_core_crush.
 Qed.
 
-Local Lemma lang_insert_mono l' l name r
+Local Lemma lang_insert_mono (l' l : lang) name r
   : (forall c t1 t2,
         eq_sort (l' ++ l) c t1 t2 ->
         eq_sort (l'++(name,r)::l) c t1 t2)
@@ -1477,12 +1467,12 @@ Proof using.
   eauto with utils.
 Qed.
 
-Definition eq_sort_lang_insert_monotonicity l' l name r
+Definition eq_sort_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (lang_insert_mono l' l name r).
 Hint Resolve eq_sort_lang_insert_monotonicity : lang_core.
 
 
-Lemma eq_sort_lang_insert_monotonicity_n l' l l'' c t1 t2
+Lemma eq_sort_lang_insert_monotonicity_n (l' l l'' : lang) c t1 t2
   :  eq_sort (l' ++ l) c t1 t2 ->
         eq_sort (l'++l''++l) c t1 t2.
 Proof.
@@ -1490,24 +1480,24 @@ Proof.
 Qed.
 Hint Resolve eq_sort_lang_insert_monotonicity_n : lang_core.
 
-Definition eq_term_lang_insert_monotonicity l' l name r
+Definition eq_term_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (proj2 (lang_insert_mono l' l name r)).
 Hint Resolve eq_term_lang_insert_monotonicity : lang_core.
 
-Definition eq_subst_lang_insert_monotonicity l' l name r
+Definition eq_subst_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (proj2 (proj2 (lang_insert_mono l' l name r))).
 Hint Resolve eq_subst_lang_insert_monotonicity : lang_core.
 
-Definition wf_sort_lang_insert_monotonicity l' l name r
+Definition wf_sort_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))).
 Hint Resolve wf_sort_lang_insert_monotonicity : lang_core.
 
-Definition wf_term_lang_insert_monotonicity l' l name r
+Definition wf_term_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r))))).
 Hint Resolve wf_term_lang_insert_monotonicity : lang_core.
 
 
-Lemma wf_term_lang_insert_monotonicity_n l' l l'' c e t
+Lemma wf_term_lang_insert_monotonicity_n (l' l l'' : lang) c e t
   : wf_term (l' ++ l) c e t ->
     wf_term (l'++l''++l) c e t.
 Proof.
@@ -1515,15 +1505,15 @@ Proof.
 Qed.
 Hint Resolve wf_term_lang_insert_monotonicity_n : lang_core.
 
-Definition wf_args_lang_insert_monotonicity l' l name r
+Definition wf_args_lang_insert_monotonicity (l' l : lang) name r
   := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))))).
 Hint Resolve wf_args_lang_insert_monotonicity : lang_core.
 
-Definition wf_ctx_lang_insert_monotonicity l' l name r
+Definition wf_ctx_lang_insert_monotonicity (l' l : lang) name r
   := proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (lang_insert_mono l' l name r)))))).
 Hint Resolve wf_ctx_lang_insert_monotonicity : lang_core.
 
-Lemma wf_rule_lang_insert_monotonicity l' l name r' r
+Lemma wf_rule_lang_insert_monotonicity (l' l : lang) name r' r
   : wf_rule (l'++l) r -> wf_rule (l'++(name, r') :: l) r.
 Proof.
   inversion 1; basic_goal_prep; basic_core_crush.
@@ -1531,7 +1521,7 @@ Qed.
 Hint Resolve wf_rule_lang_insert_monotonicity : lang_core.
 
 
-Lemma lang_insert_wf l' l r s
+Lemma lang_insert_wf (l' l : lang) r s
   : fresh s (l'++l) ->
     wf_rule l r ->
     wf_lang (l' ++ l) ->
@@ -1541,7 +1531,7 @@ Proof.
 Qed.
 Hint Resolve lang_insert_wf : lang_core.
 
-Theorem lang_sum_wf l1 l2 l_pre
+Theorem lang_sum_wf (l1 l2 l_pre : lang)
   : all_fresh (l1++l2) ->
     wf_lang (l1++l_pre) ->
     wf_lang (l2++l_pre) ->
@@ -1568,7 +1558,7 @@ Proof.
 *)
 
 
-Lemma eq_args_length_eq_l l c c' s1 s2
+Lemma eq_args_length_eq_l (l : lang) c c' s1 s2
   : eq_args l c c' s1 s2 ->
     Datatypes.length c' = Datatypes.length s1.
 Proof.
@@ -1576,7 +1566,7 @@ Proof.
 Qed.
 Hint Resolve eq_args_length_eq_l : lang_core.
 
-Lemma eq_args_length_eq_r l c c' s1 s2
+Lemma eq_args_length_eq_r (l : lang) c c' s1 s2
   : eq_args l c c' s1 s2 ->
     Datatypes.length c' = Datatypes.length s2.
 Proof.
@@ -1623,7 +1613,7 @@ Proof.
 Qed.
 Hint Rewrite wf_con_id_args_subst : lang_core.
 
-Lemma term_con_congruence l c t name s1 s2 c' args t'
+Lemma term_con_congruence (l : lang) (c : ctx) t name s1 s2 c' args t'
   : In (name, term_rule c' args t') l ->
     (eq_sort l c t t'[/with_names_from c' s2/] \/ t = t'[/with_names_from c' s2/]) ->
     wf_lang l ->
@@ -1644,7 +1634,7 @@ Proof.
 Qed.
 
 
-Lemma sort_con_congruence l c name s1 s2 c' args
+Lemma sort_con_congruence (l : lang) (c : ctx) name s1 s2 c' args
   : In (name, sort_rule c' args) l ->
     wf_lang l ->
     eq_args l c c' s1 s2 ->
@@ -1666,11 +1656,52 @@ Qed.
 
 End WithVar.
 
-
-                                           
+(* TODO: assess benefits of symmetry and transitivity in hints
 #[export] Hint Constructors eq_sort eq_term eq_subst eq_args
      wf_sort wf_term wf_subst wf_args wf_ctx
      wf_rule : lang_core.
+*)
+
+#[export] Hint Constructors eq_subst eq_args
+     wf_sort wf_term wf_subst wf_args wf_ctx
+     wf_rule : lang_core.
+
+#[export] Hint Resolve eq_sort_by : lang_core.
+#[export] Hint Resolve eq_sort_subst : lang_core.
+#[export] Hint Resolve eq_sort_refl : lang_core.
+#[export] Hint Resolve eq_term_by : lang_core.
+#[export] Hint Resolve eq_term_subst : lang_core.
+#[export] Hint Resolve eq_term_refl : lang_core.
+(*TODO: include this hint or no? *)
+#[export] Hint Resolve eq_term_conv : lang_core.
+                         
+
+(*
+  TODO: wf_ctx_lang_insert_monotonicity gets applied more than once
+  in an auto proof tree when the lang is existential (e.g. `fresh n c` goals)
+  Does this hold for all monotonicity lemmas? might be a major slowdown.
+
+  See if changing hint modes improves things.
+ *)
+
+#[export] Hint Mode wf_lang_ext - - - ! : lang_core.
+
+#[export] Hint Mode wf_ctx - - - - ! : lang_core.
+#[export] Hint Mode wf_ctx - - - - ! : model.
+
+#[export] Hint Mode wf_args - - - - ! - - : model.
+#[export] Hint Mode wf_args - - - - - ! - : model.
+#[export] Hint Mode wf_args - - - - - - ! : model.
+#[export] Hint Mode wf_args - - - - ! - - : lang_core.
+#[export] Hint Mode wf_args - - - - - ! - : lang_core.
+#[export] Hint Mode wf_args - - - - - - ! : lang_core.
+
+#[export] Hint Mode eq_sort - - - - ! - : lang_core.
+#[export] Hint Mode eq_sort - - - - - ! : lang_core.
+#[export] Hint Mode eq_term - - - - - ! - : lang_core.
+#[export] Hint Mode eq_term - - - - - - ! : lang_core.
+#[export] Hint Mode wf_term - - - - ! - : lang_core.
+#[export] Hint Mode wf_sort - - - - ! : lang_core.
 
 #[export] Hint Resolve eq_sort_lang_monotonicity_cons : lang_core.
 #[export] Hint Resolve eq_term_lang_monotonicity_cons : lang_core.
@@ -1701,10 +1732,6 @@ End WithVar.
 #[export] Hint Resolve subst_name_fresh_from_ctx : lang_core.
 #[export] Hint Resolve eq_subst_name_fresh_l_from_ctx : lang_core.
 #[export] Hint Resolve eq_subst_name_fresh_r_from_ctx : lang_core.
-Arguments in_all_named_list [V]%type_scope {A}%type_scope 
-  [P]%function_scope {_} {_} {_}.
-
-#[export] Hint Resolve wf_ctx_all_fresh : lang_core.
 
 #[export] Hint Resolve eq_sort_implies_ws_l : lang_core.
 #[export] Hint Resolve eq_sort_implies_ws_r : lang_core.
@@ -1806,11 +1833,15 @@ Notation wf_lang l := (wf_lang_ext [] l).
 
 #[export] Hint Rewrite wf_con_id_args_subst : lang_core.
 
-
+Arguments rule_in_ctx_wf {V}%type_scope {V_Eqb} [l]%lang_scope 
+  name r [c]%ctx_scope _ _ _.
+#[export] Hint Resolve rule_in_ctx_wf : lang_core.
+(* TODO: consider the following for performance:
 #[export] Hint Extern 2 (wf_ctx _) =>
   (eapply rule_in_ctx_wf;
    [(apply named_list_lookup_err_in + idtac); eassumption ..
    | reflexivity]) : lang_core.
+ *)
 
 
 (*TODO: duplicated; dedup?*)

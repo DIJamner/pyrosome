@@ -349,8 +349,8 @@ Ltac break_down_elab_lang :=
   [solve [assumption | compute; apply elab_lang_nil]|..].
 
 
-Ltac solve_fresh := apply use_compute_fresh; vm_compute; reflexivity.
-Ltac solve_sublist := apply use_sublistb;
+Ltac solve_fresh := eapply use_compute_fresh; vm_compute; reflexivity.
+Ltac solve_sublist := eapply use_sublistb;
                       try typeclasses eauto;
                       vm_compute; reflexivity.
 
@@ -367,7 +367,8 @@ Ltac solve_len_eq := solve[ repeat constructor].
 (*TODO: move to the right place*)
 Ltac sort_cong :=
   eapply sort_con_congruence;
-  [ solve_in
+  [ typeclasses eauto
+  | solve_in
   | assumption || fail 2 "could not find lang wf assumption"
   | break_eq_args].
 

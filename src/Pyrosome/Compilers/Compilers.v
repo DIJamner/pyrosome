@@ -404,7 +404,7 @@ Hint Rewrite compile_subst_lookup : lang_core.
       Lemma named_map_combine_r_padded {A B C} `{WithDefault B} `{WithDefault C}
             (l1 : list A) (l2 : list B) (f : B -> C)
         : f default = default ->
-          Utils.named_map f (combine_r_padded l1 l2) = combine_r_padded l1 (map f l2).
+          NamedList.named_map f (combine_r_padded l1 l2) = combine_r_padded l1 (map f l2).
       Proof.
         intros; revert l2; induction l1; destruct l2; basic_goal_prep; basic_utils_crush.
         f_equal; [ congruence|].
@@ -778,7 +778,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
         {
           (* TODO: why does this take a long time?
           basic_core_crush. *)
-          destruct H5; destruct H6; break; subst; try tauto.
+          break; subst; try tauto.
           now eauto.
         }
         clear H5 H6; now basic_core_crush. 
@@ -793,12 +793,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           all: try tauto.
           basic_core_crush.
         }
-        {
-          destruct H5; try tauto; break; eauto.
-        }
-        {
-          destruct H5; try tauto; break; eauto.
-        }
+        { break; eauto. }
+        { break; eauto. }
       Qed.
 
       Lemma term_case_in_preserving cmp ls name
@@ -817,17 +813,11 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           try assumption;
           try tauto.
         {
-          destruct H5; destruct H6; break; subst.
-          now eauto.
-          {
-            exfalso.
-            eapply fresh_lang_fresh_cmp in H4; eauto.
-          }
-          exfalso; now eauto using pair_fst_in.
+          break; subst.
           now eauto.
         }
-        now basic_core_crush.
-        now basic_core_crush.
+        clear H5 H6; now basic_core_crush.
+        clear H5 H6; now basic_core_crush.
          {
           eapply all_constructors_sort_from_wf; eauto.
           intuition subst;
@@ -895,12 +885,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
           all: use_rule_in_wf;
             basic_core_crush.
         }
-        {
-          destruct H5; try tauto; break; eauto.
-        }
-        {
-          destruct H5; try tauto; break; eauto.
-        }
+        { break; eauto. }
+        { break; eauto. }
       Qed.
 
       Lemma inductive_implies_semantic' cmp ls

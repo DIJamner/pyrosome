@@ -307,7 +307,7 @@ Module Notations.
        format "'[' 'match'  #  'with' '//' '[v' case_1 '//' .. '//' case_n ']'  '//' 'end' ']'").
 
   (*TODO: specialized to strings. Generalize.*)
-  Definition gen_rule (cmp : compiler string) (p : string * rule string) : named_list (compiler_case string) :=
+  Definition gen_rule (cmp : compiler string) (p : string * rule string) : named_list string (compiler_case string) :=
     let (n,r) := p in
     match r with
     | sort_rule c args =>

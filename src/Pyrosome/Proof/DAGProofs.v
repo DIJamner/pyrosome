@@ -217,15 +217,14 @@ Section WithVar.
                eapply hist in H
            end; simpl in *; eauto with term lang_core.
        - constructor; constructor.
-         apply named_list_lookup_err_in; auto.
+         eapply named_list_lookup_err_in; auto.
        - safe_invert HeqH2; subst.
          eapply term_con_congruence; eauto.
-         + apply named_list_lookup_err_in; eauto.
+         + eapply named_list_lookup_err_in; eauto.
          + eapply check_args_proof_sound; eauto.
        - eapply eq_term_subst.
          {
-           eapply eq_term_by;
-             apply named_list_lookup_err_in; eauto.
+           basic_core_crush.
          }
          {
            eapply eq_args_implies_eq_subst.
@@ -233,10 +232,11 @@ Section WithVar.
          }
          {
            basic_core_crush.
-         }           
+         }  
        - basic_utils_crush.
          eapply eq_term_trans; eauto.
-       - basic_core_crush.
+       - eapply eq_term_sym; auto.
+       - eapply eq_term_conv; basic_utils_crush.
        - basic_utils_crush.
          eapply sort_con_congruence; basic_core_crush.
          eapply check_args_proof_sound; eauto.
@@ -253,6 +253,7 @@ Section WithVar.
            basic_core_crush.
          }
        - eapply eq_sort_trans; basic_core_crush.
+       - eapply eq_sort_sym; basic_core_crush.
      Qed.
   End Inner.
 

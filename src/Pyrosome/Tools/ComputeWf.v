@@ -197,7 +197,8 @@ Section WithVar.
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
       basic_core_firstorder_crush.
-      - apply use_compute_fresh; congruence.
+      - apply (use_compute_fresh _).
+        congruence.
       - eapply compute_noconv_wf_sort_sound; eauto.
     Qed.
 
@@ -270,7 +271,7 @@ Section WithVar.
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     basic_core_crush.
-    - apply use_compute_fresh; congruence.
+    - apply (use_compute_fresh _); congruence.
     - eapply compute_noconv_wf_rule_sound; eauto.
   Qed.
 
@@ -279,7 +280,8 @@ End WithVar.
 
 
 Ltac solve_wf_ctx :=
-  (apply compute_noconv_wf_ctx_sound with (fuel := 100); [ assumption | vm_compute; reflexivity ]).
+  (apply compute_noconv_wf_ctx_sound with (fuel := 100);
+   [ typeclasses eauto | assumption | vm_compute; reflexivity ]).
 
 Ltac compute_noconv_subst_wf :=
   apply compute_noconv_wf_subst_sound with (fuel := 100);
@@ -291,6 +293,7 @@ Ltac compute_noconv_subst_wf :=
 
 Ltac compute_noconv_term_wf :=  
     apply compute_noconv_wf_term_sound with (fuel := 100);
-    [assumption
+    [typeclasses eauto
+    | assumption
     | solve_wf_ctx
     | vm_compute; reflexivity].

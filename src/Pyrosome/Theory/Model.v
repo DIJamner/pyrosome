@@ -11,7 +11,7 @@ From Pyrosome.Theory Require Import Substable.
 Section WithVar.
   Context {V : Type}.
 
-  Notation named_list := (@named_list V).
+  Notation named_list := (named_list V).
   Notation named_map := (@named_map V).
   
   Notation Substable0 := (Substable0 V).
@@ -195,7 +195,6 @@ Arguments Model_ok {V term sort}%type_scope Model : rename.
 
 Arguments ws_ctx {V term sort}%type_scope {PreModel} !c/.
 
-(*TODO: separate hints from core? *)
 Create HintDb model discriminated.
 
 Lemma wf_ctx_all_fresh {V term sort} {Model : @Model V term sort} c
@@ -203,7 +202,7 @@ Lemma wf_ctx_all_fresh {V term sort} {Model : @Model V term sort} c
 Proof.
   induction 1; basic_goal_prep; basic_utils_crush.
 Qed.
-#[export] Hint Extern 1 (all_fresh _) => simple eapply wf_ctx_all_fresh : model.
+#[export] Hint Resolve wf_ctx_all_fresh : model.
 
 Lemma invert_wf_ctx_nil V term sort (Model : @Model V term sort)
   : wf_ctx [] <-> True.

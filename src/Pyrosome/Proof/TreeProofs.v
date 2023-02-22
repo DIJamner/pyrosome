@@ -40,7 +40,8 @@ Section WithVar.
     Variation: t = t'
    *)
     
-    Local Lemma term_con_congruence l c t name s1 s2 c' args t'
+  Local Lemma term_con_congruence (l : lang) (c c' : ctx)
+    t name s1 s2 args t'
       : In (name, term_rule c' args t') l ->
         t = t'[/with_names_from c' s2/] ->
         wf_lang l ->
@@ -48,8 +49,8 @@ Section WithVar.
         eq_term l c t (con name s1) (con name s2).
     Proof.
       intros.
-      rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-      rewrite <- (wf_con_id_args_subst c' s2); [| solve[eauto with lang_core]..].
+      rewrite <- (wf_con_id_args_subst c' s1); [|basic_core_crush..].
+      rewrite <- (wf_con_id_args_subst c' s2); [| basic_core_crush..].
       subst.
       change (con ?n ?args[/?s/]) with (con n args)[/s/].
       eapply eq_term_subst; eauto.
@@ -58,10 +59,9 @@ Section WithVar.
         apply eq_args_implies_eq_subst; eauto.
       }
       {
-        constructor.
-        replace t' with t'[/id_subst c'/].
-        - eapply wf_term_by; basic_core_crush.
-        - basic_core_crush.
+        replace t' with t'[/id_subst c'/] by basic_core_crush.
+        (* can't use basic_core_crush because it rewrites id subst *)
+        eauto with utils model term lang_core.
       }
       basic_core_crush.
     Qed.
@@ -386,14 +386,13 @@ Section WithVar.
         repeat lazymatch goal with
         | [H : Some _ = Some _ |- _ ] => safe_invert H
                end.
-      - constructor; constructor.
-        eapply named_list_lookup_err_in; eauto.
+      - basic_core_crush.
       - safe_invert HeqH3.
         eapply sort_con_congruence; eauto.
-        + eapply named_list_lookup_err_in; eauto.
+        + basic_core_crush.
         + {
             clear HeqH0.
-            revert H c0 l4 l5 HeqH2.
+            revert H n0 l4 l5 HeqH2.
             induction l0;
               basic_goal_prep;
               repeat case_match';
@@ -406,7 +405,7 @@ Section WithVar.
         eapply eq_sort_subst.
         + basic_core_crush.
         + clear HeqH0.
-          revert H c0 l3 l4 HeqH2.
+          revert H n0 l3 l4 HeqH2.
           induction l0;
             basic_goal_prep;
             repeat case_match';
@@ -417,10 +416,10 @@ Section WithVar.
         + basic_core_crush.
       - safe_invert HeqH3.
         eapply term_con_congruence; eauto.
-        + eapply named_list_lookup_err_in; eauto.
+        + basic_core_crush.
         + {
             clear HeqH0.
-            revert H c0 l4 l5 HeqH2.
+            revert H n0 l4 l5 HeqH2.
             induction l0;
               basic_goal_prep;
               repeat case_match';
@@ -433,7 +432,7 @@ Section WithVar.
         eapply eq_term_subst.
         + basic_core_crush.
         + clear HeqH0.
-          revert H c0 l3 l4 HeqH2.
+          revert H n0 l3 l4 HeqH2.
           induction l0;
             basic_goal_prep;
             repeat case_match';

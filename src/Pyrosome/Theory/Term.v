@@ -139,9 +139,9 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 #[local] Hint Rewrite invert_eq_scon_scon : term.
 
 
-Definition ctx : Type := named_list sort.
+#[local] Notation ctx := (named_list sort).
 
-Definition subst : Type := named_list term.
+#[local] Notation subst := (named_list term).
 
 Definition subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
   named_list_lookup (var n) s n.
@@ -151,6 +151,21 @@ Arguments subst_lookup {_} !s n/.
 Section WithEqb.  
   Context {V_Eqb : Eqb V}
     {V_Eqb_ok : Eqb_ok V_Eqb}.
+
+  Lemma subst_lookup_hd n e s : (subst_lookup ((n, e) :: s) n) = e.
+  Proof.
+    unfold subst_lookup; simpl.
+    basic_utils_crush.
+  Qed.
+
+  Lemma subst_lookup_tl n m e s
+    : m <> n -> subst_lookup ((n, e) :: s) m = subst_lookup s m.
+  Proof.
+    unfold subst_lookup; simpl.
+    intros.
+    basic_utils_crush.
+  Qed.
+
   
 #[export] Instance term_eqb : Eqb term :=
   fix term_eqb (e1 e2 : term) :=
@@ -430,7 +445,7 @@ Qed.
   Qed.    
 
   Lemma subst_var_internal
-     : forall (s : Utils.named_list term) (x : V),
+     : forall (s : named_list term) (x : V),
          named_list_lookup_prop (inj_var x) s x (apply_subst0 s (inj_var x)).
   Proof.
     intros.
@@ -636,6 +651,7 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite term_subst_nil : term.
 #[export] Hint Rewrite named_map_subst_nil : term.
 #[export] Hint Rewrite subst_lookup_map : term.
+#[export] Hint Rewrite subst_lookup_hd : term.
 #[export] Hint Rewrite term_subst_assoc : term.
 #[export] Hint Rewrite subst_lookup_id : term.
 #[export] Hint Rewrite term_subst_id : term.
@@ -653,6 +669,11 @@ Arguments con {V}%type_scope _ _%list_scope.
   
 #[export] Existing Instance term_default.
 #[export] Existing Instance sort_default.
+
+
+Notation ctx V := (@named_list V (sort V)).
+
+Notation subst V := (@named_list V (term V)).
 
 
 Ltac fold_Substable :=
