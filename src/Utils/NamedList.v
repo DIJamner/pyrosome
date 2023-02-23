@@ -287,6 +287,15 @@ End __.
 Arguments fresh {S A}%type_scope n nl%list_scope : simpl never.
 Arguments all_fresh {S A}%type_scope !_%list_scope /.
 
+
+Arguments use_compute_fresh {S}%type_scope {EqbS EqbS_ok} 
+  [A]%type_scope x l%list_scope _ _.
+Ltac compute_fresh := eapply use_compute_fresh; vm_compute; exact I.
+
+Arguments use_compute_all_fresh {S}%type_scope {EqbS EqbS_ok} 
+  [A]%type_scope l _.
+Ltac compute_all_fresh := eapply use_compute_all_fresh; vm_compute; exact I.
+
 Arguments in_once {S A}%type_scope n e !l%list_scope /.
 
 Arguments in_all_named_list {S A}%type_scope [_]%function_scope {_} {_} {_}.

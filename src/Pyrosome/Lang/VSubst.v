@@ -330,7 +330,7 @@ Fixpoint notinb (s : string) (l : list string) :=
   end.
 
 Definition definitely_fresh (s : string) (l : list string) :=
-  let len := List.fold_left max (map String.length l) 0 in
+  let len := List.fold_left Nat.max (map String.length l) 0 in
   String.append s (string_of_list_ascii (repeat ("'"%char : ascii) len)).
 
 Definition choose_fresh (s : string) (c:ctx) :=

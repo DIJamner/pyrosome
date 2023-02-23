@@ -378,7 +378,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
 
   (*TODO: duplicated; refactor*)
   Definition max (x y : int) :=
-    if (x <=? y)%int63 then y else x.
+    if leb x y then y else x.
   
   (*TODO: find a better location for this?*)
   Definition named_list_to_array {A} `{WithDefault A} (l : named_list A) : array A :=
@@ -484,7 +484,29 @@ Proof.
 Qed.
 
 
-(*TODO: for removing redundant goals from term_cong*)
+(* TODO: move to Core.v *)
+Lemma term_rule_in_sort_wf (l : lang) name c args t
+  : wf_lang l ->
+    In (name,term_rule c args t) l ->
+    wf_sort l c t.
+Proof.
+  intros; subst.
+  pose proof (rule_in_wf _ _ H H0) as H1;
+  inversion H1; basic_core_crush.
+Qed.
+Lemma term_eq_rule_in_sort_wf (l : lang) name c e1 e2 t
+  : wf_lang l ->
+    In (name,term_eq_rule c e1 e2 t) l ->
+    wf_sort l c t.
+Proof.
+  intros; subst.
+  pose proof (rule_in_wf _ _ H H0) as H1;
+  inversion H1; basic_core_crush.
+Qed.
+
+Hint Resolve term_eq_rule_in_sort_wf term_rule_in_sort_wf : lang_core.
+
+(*TODO: move to a more suitable location (Core.v?)*)
 Lemma term_sorts_eq l c e t1
   : wf_lang l -> (*TODO: can I weaken this?*)
     wf_ctx l c ->
@@ -497,26 +519,37 @@ Proof.
     remember (con n s) as e.
     intros t2 wfe; revert t2 wfe Heqe.
     induction 1; basic_goal_prep;
-    basic_core_firstorder_crush.
+      basic_core_firstorder_crush.
+    2:{
+      (* TODO: include congruence for eq_sort, eq_term as separate procedure
+         in tactics?
+       *)
+      eapply eq_sort_trans; eauto.
+    }
     pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh H) H3 H1) as H'.
     safe_invert H'.
-    basic_core_crush.
+    (*TODO: why is this proof at depth 6? Should be less than that *)
+    eauto 6 with utils model term lang_core.
   }
   {
     intros; 
-    basic_core_crush.
+      basic_core_crush.
+    eauto using eq_sort_trans, eq_sort_sym.
   }
   {
     remember (var n) as e.
     intros t2 wfe; revert t2 wfe Heqe.
     induction 1; basic_goal_prep;
     basic_core_firstorder_crush.
+    {
+      eapply eq_sort_trans; eauto.
+    }
     pose proof (in_all_fresh_same _ _ _ _ (wf_ctx_all_fresh H0) H2 H1) as H'.
     basic_core_crush.
   }
 Qed.
 
-
+(*TODO: move to Term.v*)
 Lemma sort_subst_nil (t:sort) : t[/[]/] = t.
 Proof using .  
   induction t; basic_goal_prep; basic_utils_crush.
@@ -525,8 +558,6 @@ Proof using .
   apply term_subst_nil.
 Qed.
 Hint Rewrite sort_subst_nil : term.
-
-(**)
 
 (*TODO: use the version in Core.v or move this one there *)
 Local Lemma term_con_congruence' l c t name s1 s2 c' args t'
@@ -595,7 +626,7 @@ Ltac prove_ident_from_known_elabs :=
   eapply lang_ext_monotonicity;
   [typeclasses eauto with auto_elab elab_pfs
   | auto with utils
-  | eapply use_compute_all_fresh; compute; reflexivity].
+  | compute_all_fresh].
 
 (*TODO: this is still a tactic performance bottleneck;
   reduce number of calls to it
@@ -606,8 +637,9 @@ Ltac prove_from_known_elabs :=
   repeat
     lazymatch goal with
     | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
     | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => apply use_compute_all_fresh; vm_compute; reflexivity
+    | |- all_fresh _ => compute_all_fresh
     | |- incl _ _ => simple eapply use_compute_incl_lang; compute; reflexivity
     end.
 
@@ -650,7 +682,7 @@ Ltac compute_wf_subjects :=
  *)
  Ltac t' :=
   match goal with
-  | [|- fresh _ _ ]=> apply (use_compute_fresh _); vm_compute; reflexivity
+  | [|- fresh _ _ ]=> compute_fresh
   | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   | |- In _ _ => solve [solve_in | simpl; intuition fail]
   | |- Model.wf_term _ _ _ => cbn [Model.wf_term core_model]
@@ -683,7 +715,7 @@ Ltac compute_wf_subjects :=
 
 Ltac t :=
   match goal with
-  | [|- fresh _ _ ]=> apply (use_compute_fresh _); vm_compute; reflexivity
+  | [|- fresh _ _ ]=> compute_fresh
   | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
   (*Don't use vm_compute here*)
   | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
@@ -875,7 +907,7 @@ Ltac break_elab_sort :=
 
 (*elab_ctx -> list elab_sort; should never fail*)
 Ltac break_down_elab_ctx :=
-  (eapply elab_ctx_cons;[solve_fresh| break_down_elab_ctx | break_elab_sort] || eapply elab_ctx_nil).
+  (eapply elab_ctx_cons;[compute_fresh| break_down_elab_ctx | break_elab_sort] || eapply elab_ctx_nil).
 
 Ltac break_elab_rule :=
   lazymatch goal with
@@ -902,7 +934,7 @@ Create HintDb auto_elab discriminated.
 (* #[export] Hint Resolve Pre.elab_prefix_monotonicity_lang : auto_elab. *)
 #[export] Hint Resolve elab_lang_implies_wf : auto_elab.
 
-#[export] Hint Extern 1 (all_fresh _) => apply use_compute_all_fresh; vm_compute; reflexivity : auto_elab.
+#[export] Hint Extern 1 (all_fresh _) => compute_all_fresh : auto_elab.
 
 
 
