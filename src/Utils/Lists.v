@@ -246,7 +246,12 @@ Arguments set_eq {A}%type_scope (l1 l2)%list_scope.
 
 Arguments sublistb {A}%type_scope {Eqb_A} (s l)%list_scope : rename.
 
+Arguments use_sublistb {A}%type_scope {H H0} (s l)%list_scope _.
+Ltac compute_sublist := apply use_sublistb; vm_compute; exact I.
+
+
 Arguments use_inclb {A}%type_scope {H H0} (l1 l2)%list_scope _ a _.
+Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 
 #[export] Hint Rewrite invert_eq_cons_nil : utils.
 #[export] Hint Rewrite invert_eq_nil_cons : utils.

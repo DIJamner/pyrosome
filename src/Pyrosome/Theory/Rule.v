@@ -208,15 +208,6 @@ Proof.
     basic_term_crush.
 Qed.
 
-(*TODO: eliminate alias and call inclb lemma directly *)
-Lemma use_compute_incl_lang (l1 l2 : lang)
-    : inclb l1 l2 = true -> incl l1 l2.
-Proof.
-  intros.
-  eapply use_inclb; rewrite H; exact I.
-Qed.
-
-
 Definition get_ctx (r : rule) :=
   match r with
   | sort_rule c _

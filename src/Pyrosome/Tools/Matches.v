@@ -640,7 +640,7 @@ Ltac prove_from_known_elabs :=
     | |- wf_lang_ext _ [] => apply wf_lang_nil
     | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
     | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => simple eapply use_compute_incl_lang; compute; reflexivity
+    | |- incl _ _ => compute_incl
     end.
 
 
@@ -994,9 +994,11 @@ Ltac eredex_steps_with lang name :=
                   [| f_equal; vm_compute; reflexivity (*TODO: is this general?*)]
                 | fail 2 "could not replace with subst"];
           eapply (@eq_term_subst V _ l c' s s c);
-          [ try solve [cleanup_auto_elab]
+          [eapply (@eq_term_by V _ l c name tp e1p e2p);
+           try solve [cleanup_auto_elab]
           | eapply eq_subst_refl; try solve [cleanup_auto_elab]
-          |eapply (@eq_term_by V _ l c name tp e1p e2p); try solve [cleanup_auto_elab]]
+          | try solve [cleanup_auto_elab]
+          ]
         end
       | None =>
         fail 100 "rule not found in lang"

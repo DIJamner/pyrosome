@@ -14,6 +14,7 @@ Import Core.Notations.
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
   
@@ -146,10 +147,12 @@ End WithVar.
 
 (*TODO: tactics might need fixing up below this line*)
  Ltac t :=
-  match goal with
-  | [|- fresh _ _ ]=> apply use_compute_fresh; compute; reflexivity
-  | [|- sublist _ _ ]=> apply (use_compute_sublist string_dec); compute; reflexivity
-  | [|- In _ _ ]=> apply named_list_lookup_err_in; compute; reflexivity
+   match goal with
+  | [|- fresh _ _ ]=> compute_fresh
+  | [|- sublist _ _ ]=> compute_sublist
+   (* TODO: if this works, use this pattern for other typeclass occurances *)
+   | [|- In _ _ ]=> apply named_list_lookup_err_in with (EqbS_ok := _)
+                    ; compute; reflexivity
   | [|- len_eq _ _] => econstructor
   | [|-elab_sort _ _ _ _] => eapply elab_sort_by
   | [|-elab_ctx _ _ _] => econstructor

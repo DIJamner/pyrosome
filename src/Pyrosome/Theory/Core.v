@@ -1794,7 +1794,6 @@ Notation wf_lang l := (wf_lang_ext [] l).
 #[export] Hint Constructors wf_lang_ext : lang_core.
 #[export] Hint Rewrite invert_wf_lang_nil : lang_core.
 #[export] Hint Rewrite invert_wf_lang_cons : lang_core.
-#[export] Hint Resolve rule_in_wf : lang_core.
 #[export] Hint Resolve wf_lang_ext_all_fresh : lang_core.
 #[export] Hint Resolve wf_lang_ext_all_fresh_with_pre : lang_core.
 #[export] Hint Resolve wf_lang_implies_ws : lang_core.
@@ -1836,12 +1835,10 @@ Notation wf_lang l := (wf_lang_ext [] l).
 Arguments rule_in_ctx_wf {V}%type_scope {V_Eqb} [l]%lang_scope 
   name r [c]%ctx_scope _ _ _.
 #[export] Hint Resolve rule_in_ctx_wf : lang_core.
-(* TODO: consider the following for performance:
-#[export] Hint Extern 2 (wf_ctx _) =>
-  (eapply rule_in_ctx_wf;
-   [(apply named_list_lookup_err_in + idtac); eassumption ..
-   | reflexivity]) : lang_core.
- *)
+
+Arguments term_con_congruence {V}%type_scope {V_Eqb V_Eqb_ok} 
+  [l]%lang_scope [c]%ctx_scope [t] name [s1 s2]%list_scope 
+  [c']%ctx_scope args%list_scope t' _ _ _ _.
 
 
 (*TODO: duplicated; dedup?*)
