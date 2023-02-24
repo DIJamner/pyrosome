@@ -21,14 +21,9 @@ src/Utils/Monad.v
 src/Utils/SumMonad.v
 src/Utils/Natlike.v
 src/Utils/Gensym.v
-src/Utils/NatlikePos.v
 src/Utils/ArrayList.v
-src/Utils/PersistentArrayList.v
-src/Utils/UnionFind.v
 src/Utils/ExtraMaps.v
-src/Utils/RelationalDB.v
 src/Utils/GoalDisplay.v
-src/Utils/DenseInt63Map.v
 src/Utils/TrieMapInt63.v
 
 
@@ -47,7 +42,6 @@ src/Pyrosome/Proof/DAGProofs.v
 
 src/Pyrosome/Tools/UnElab.v
 src/Pyrosome/Tools/Linter.v
-src/Pyrosome/Tools/PositiveRenaming.v
 src/Pyrosome/Tools/Int63Renaming.v
 src/Pyrosome/Tools/ComputeWf.v
 src/Pyrosome/Tools/Matches.v
@@ -60,7 +54,6 @@ src/Pyrosome/Elab/ElabCompilers.v
 
 src/Pyrosome/Lang/Subst.v
 src/Pyrosome/Lang/VSubst.v
-src/Pyrosome/Lang/VSTLC.v
 src/Pyrosome/Lang/SimpleVSubst.v
 src/Pyrosome/Lang/SimpleUnit.v
 src/Pyrosome/Lang/SimpleVSum.v
@@ -79,10 +72,3 @@ src/Pyrosome/Lang/SimpleVFixCC.v
 src/Pyrosome/Lang/SimpleVCPSHeap.v
 src/Pyrosome/Lang/SimpleVCCHeap.v
 src/Pyrosome/Lang/SimpleCh8Lang.v
-
-
--Q src/WIP WIP
-
-src/WIP/EGraph/UFProofs.v
-src/WIP/EGraph/UnionFindExplained.v
-
