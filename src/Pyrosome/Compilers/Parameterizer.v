@@ -20,6 +20,7 @@ Proof.
     auto.
 Qed.
 
+
 Notation "'{B' x & c }" :=
   (sigT (fun x => Is_true c))
     (x binder, format "'[' '{B'  x  &  c } ']'").
@@ -34,6 +35,37 @@ Proof.
   apply is_true_unique.
 Qed.
 
+
+(*TODO: make Injective a typeclass?*)
+Lemma is_true_subset_proj_Injective {A} (f : A -> _)
+  : Injective (projT1 (P:= fun x => Is_true (f x))).
+Proof.
+  intros a b; apply is_true_subset_eq.
+Qed.
+#[export] Hint Resolve is_true_subset_proj_Injective : utils.
+
+(*TODO: split proofs out/split Eqb?*)
+#[export] Instance is_true_subset_Eqb A f `{Eqb A} : Eqb {B x : A & f x} :=
+  fun a b => eqb (projT1 a) (projT1 b).
+
+#[export] Instance is_true_subset_Eqb_ok A f `{Eqb_ok A}
+  : Eqb_ok (is_true_subset_Eqb f).
+Proof.
+  intros a b.
+  unfold eqb, is_true_subset_Eqb.
+  destruct a, b; simpl;
+    case_match;
+    basic_utils_crush.
+  {
+    f_equal; 
+    apply is_true_unique.
+  }
+  {
+    safe_invert H1.
+    auto.
+  }
+Qed.
+
 (*TODO: move to Monad.v *)
 Definition named_list_Mmap {M V A B} `{Monad M} (f : A -> M B)
   : @named_list V A -> M (@named_list V B) :=
@@ -42,6 +74,7 @@ Definition named_list_Mmap {M V A B} `{Monad M} (f : A -> M B)
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}
   (*{V_inf : Infinite V}*).
   
@@ -74,39 +107,33 @@ Section WithVar.
       - preserve lang vars (w/out proof they are in the lang)
      *)
     Context (p_name : V)
-      (p_sort : sort)
-      (* assume a renaming where p_name isn't in the codomain *)
-      (f : V -> V)
-      (*TODO: make Injective a typeclass?*)
-      {f_inj : Injective f}
-      {p_name_fresh : forall x, f x <> p_name}.
+      (p_sort : sort).
 
-    Lemma p_name_freshb x : Is_true (negb (eqb (f x) p_name)).
-    Proof.
-      apply negb_prop_intro.
-      intro H.
-      apply p_name_fresh with (x:=x).
-      revert H; unfold Is_true; case_match;
-        basic_utils_crush.
-    Qed.
-    
-    (*TODO: move to Renaming?*)
-    Definition f' x : {B x & negb (eqb x p_name)} :=
-      existT _ (f x) (p_name_freshb x).
+      Section WithInjection.
+        Context
+          (V' : Type)
+          (* assume a renaming where p_name isn't in the codomain *)
+          (f : V' -> V)
+            (*TODO: make Injective a typeclass?*)
+            {f_inj : Injective f}
+            {p_name_fresh : forall x, f x <> p_name}.
+
+    (* the names of the rules in the language prefix *)
+    Context (untouched_constructors : list V).
     
     Fixpoint parameterize_term (e : term) : term :=
       match e with
       | var x => var x
       | con n s =>
           let s' := map parameterize_term s in
-          con n (s'++[var p_name])
+          con n (s'++if inb n untouched_constructors then [] else [var p_name])
       end.
     
     Definition parameterize_sort (e : sort) : sort :=
       match e with
       | scon n s =>
           let s' := map parameterize_term s in
-          scon n (s'++[var p_name])
+          scon n (s'++if inb n untouched_constructors then [] else [var p_name])
       end.
 
     (*TODO: double-check when delta should be added.
@@ -166,14 +193,7 @@ Section WithVar.
       induction s;
         basic_goal_prep;
         basic_term_crush.
-      {
-        apply eqb_neq in H.
-        rewrite H.
-        reflexivity.
-      }
-      {
-        case_match; auto.
-      }
+      case_match; basic_utils_crush.
     Qed.
 
     Lemma subst_lookup_p_name s
@@ -183,10 +203,6 @@ Section WithVar.
       induction s;
         basic_goal_prep;
         basic_term_crush.
-      {
-        case_match;
-          basic_utils_crush.
-      }
     Qed.
 
     
@@ -242,9 +258,27 @@ Section WithVar.
         }
         {
           f_equal.
+          case_match; simpl; auto.
           rewrite subst_lookup_p_name; auto.
           apply p_name_fresh_in_subst.
         }
+      }
+    Qed.
+
+    
+    Lemma map_parameterize_term_subst e s
+      : map parameterize_term (map (rename f) e) [/rename_subst f s /]
+        = (map parameterize_term (map (rename f) e)) [/parameterize_sub (rename_subst f s) /].
+    Proof.
+      induction e;
+        basic_goal_prep;
+        basic_term_crush.
+     
+      {
+        cbn.
+        fold_Substable.
+        f_equal; auto.
+        rewrite !parameterize_term_subst; eauto.
       }
     Qed.
     
@@ -269,69 +303,136 @@ Section WithVar.
       }
     Qed.
 
+    (*TODO: move to Term.v*)
+    Lemma subst_app_args (l1 l2 : list term) s
+      : (l1 ++ l2)[/s/] = l1[/s/] ++ l2[/s/].
+    Proof.
+      unfold apply_subst, substable_args, args_subst.
+      rewrite map_app.
+      reflexivity.
+    Qed.
+    
     Lemma parameterize_sort_subst e s
       : parameterize_sort (rename_sort f e) [/rename_subst f s /]
         = (parameterize_sort (rename_sort f e)) [/parameterize_sub (rename_subst f s) /].
     Proof.
       destruct e;
-        basic_goal_prep.
-      pose proof parameterize_args_subst as H';
-        unfold parameterize_args in H';
-        rewrite H'; eauto.
+        basic_goal_prep;
+        basic_term_crush.
+      case_match; basic_utils_crush.
+      {
+        apply map_parameterize_term_subst.
+      }
+      {
+        apply parameterize_args_subst.
+      }
     Qed.
 
-    (*TODO: move to Rule.v*)
-    Definition get_ctx (r : rule) :=
-      match r with
-      | sort_rule c _
-      | term_rule c _ _
-      | sort_eq_rule c _ _
-      | term_eq_rule c _ _ _ => c
-      end.
+      End WithInjection.
 
-    Lemma parameterization_monotonicity
-      l lp (l':= (parameterize_lang (rename_lang f l))++lp)
+      
+      Section WithInjection.
+        Context
+          (* assume a renaming where p_name isn't in the codomain *)
+          (f : V -> V)
+            (*TODO: make Injective a typeclass?*)
+            {f_inj : Injective f}
+            {p_name_fresh : forall x, f x <> p_name}.
+
+    Lemma p_name_freshb x : Is_true (negb (eqb (f x) p_name)).
+    Proof.
+      apply negb_prop_intro.
+      intro H.
+      apply p_name_fresh with (x:=x).
+      revert H; unfold Is_true; case_match;
+        basic_utils_crush.
+    Qed.
+
+    (*TODO: move to Renaming?*)
+    Local Notation V' := {B x & negb (eqb x p_name)}.
+    Definition f' x : V' :=
+      existT _ (f x) (p_name_freshb x).
+    
+    Notation term' := (@Term.term V').
+    Notation ctx' := (@Term.ctx V').
+    Notation sort' := (@Term.sort V').
+    Notation subst' := (@Term.subst V').
+    Notation rule' := (@Rule.rule V').
+    Notation lang' := (@Rule.lang V').
+
+    Lemma V'_proj_not_p_name : forall x : V', projT1 x <> p_name.
+    Proof.
+      destruct x; simpl;
+        basic_utils_crush.
+    Qed.
+      
+
+    (* the names of the rules in the language prefix *)
+    Context (untouched_constructors : list V).
+    
+    Notation parameterize_lang :=
+      (named_map (parameterize_rule (map f untouched_constructors))).
+    Notation parameterize_sort :=
+      (parameterize_sort (map f untouched_constructors)).
+    Notation parameterize_term :=
+      (parameterize_term (map f untouched_constructors)).
+    Notation parameterize_ctx :=
+      (parameterize_ctx (map f untouched_constructors)).
+    Notation parameterize_sub :=
+      (parameterize_sub (map f untouched_constructors)).
+    Notation parameterize_args :=
+      (parameterize_args (map f untouched_constructors)).
+
+    (*
+    Lemma parameterization_monotonicity'
+      (P := fun x => Is_true (negb (eqb (Impl := V_Eqb) x p_name)))
+      (l : lang') lp
+      (l':= (parameterize_lang (rename_lang (@projT1 V P) l))++lp)
       : all_fresh l' ->
+     (*   untouched_constructors = (map fst lp) ->*)
         (forall c t1 t2,
-            eq_sort l c t1 t2 ->
-            eq_sort l' (parameterize_ctx (rename_ctx f c))
-              (parameterize_sort (rename_sort f t1))
-              (parameterize_sort (rename_sort f t2)))
+            (*TODO: rename lp*)
+            eq_sort (V:=V') (l ++ lp) c t1 t2 ->
+            eq_sort l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+              (parameterize_sort (rename_sort (@projT1 V P) t1))
+              (parameterize_sort (rename_sort (@projT1 V P) t2)))
         /\ (forall c t e1 e2,
-               eq_term l c t e1 e2 ->
-               eq_term l' (parameterize_ctx (rename_ctx f c))
-                 (parameterize_sort (rename_sort f t))
-                 (parameterize_term (rename f e1))
-                 (parameterize_term (rename f e2)))
+               eq_term (l ++ lp) c t e1 e2 ->
+               eq_term l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+                 (parameterize_sort (rename_sort (@projT1 V P) t))
+                 (parameterize_term (rename (@projT1 V P) e1))
+                 (parameterize_term (rename (@projT1 V P) e2)))
         /\ (forall c c' s1 s2,
-               eq_subst l c c' s1 s2 ->
-               eq_subst l' (parameterize_ctx (rename_ctx f c))
-                 (parameterize_ctx (rename_ctx f c'))
-                 (parameterize_sub (rename_subst f s1))
-                 (parameterize_sub (rename_subst f s2)))
+               eq_subst (l ++ lp) c c' s1 s2 ->
+               eq_subst l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+                 (parameterize_ctx (rename_ctx (@projT1 V P) c'))
+                 (parameterize_sub (rename_subst (@projT1 V P) s1))
+                 (parameterize_sub (rename_subst (@projT1 V P) s2)))
         /\ (forall c t,
-               wf_sort l c t ->
-               wf_sort l' (parameterize_ctx (rename_ctx f c))
-                 (parameterize_sort (rename_sort f t)))
+               wf_sort (l ++ lp) c t ->
+               wf_sort l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+                 (parameterize_sort (rename_sort (@projT1 V P) t)))
         /\ (forall c e t,
-               wf_term l c e t ->
-               wf_term l' (parameterize_ctx (rename_ctx f c))
-                 (parameterize_term (rename f e))
-                 (parameterize_sort (rename_sort f t)))
+               wf_term (l ++ lp) c e t ->
+               wf_term l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+                 (parameterize_term (rename (@projT1 V P) e))
+                 (parameterize_sort (rename_sort (@projT1 V P) t)))
         /\ (forall c s c',
-               wf_args l c s c' ->
-               wf_args l' (parameterize_ctx (rename_ctx f c))
-                 (parameterize_args (map (rename f) s))
-                 (parameterize_ctx (rename_ctx f c)))
+               wf_args (l ++ lp) c s c' ->
+               wf_args l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
+                 (parameterize_args (map (rename (@projT1 V P)) s))
+                 (parameterize_ctx (rename_ctx (@projT1 V P) c)))
         /\ (forall c,
-               wf_ctx l c ->
-               wf_ctx l' (parameterize_ctx (rename_ctx f c))).
+               wf_ctx (l ++ lp) c ->
+               wf_ctx l' (parameterize_ctx (rename_ctx (@projT1 V P) c))).
 Proof using.
   intros all_fresh.
   apply judge_ind; basic_goal_prep.
   all: try solve [constructor; eauto].
-  all: erewrite ?rename_sort_distr_subst, ?rename_distr_subst by assumption.
-  all: rewrite ?parameterize_term_subst, ?parameterize_sort_subst.
+  all: erewrite ?rename_sort_distr_subst, ?rename_distr_subst in *
+    by apply is_true_subset_proj_Injective.
+  all:rewrite ?parameterize_term_subst, ?parameterize_sort_subst with (f:= projT1 (P:=P)) in *
+    by apply V'_proj_not_p_name.
   {
     subst l'.
     eapply eq_sort_by.
@@ -340,10 +441,9 @@ Proof using.
     rewrite map_map; simpl.
     eapply in_map in H; exact H.
   }
-  1:basic_core_crush.
-  1:basic_core_crush.
+  1:solve[basic_core_crush].
+  1:solve[basic_core_crush].
   1:solve [basic_core_crush].
-  
   {
     subst l'.
     eapply eq_term_by.
@@ -368,7 +468,28 @@ Proof using.
   {
     cbn.
     constructor; basic_core_crush.
-    TODO: need hypothesis to be in terms of V = V - p_name
+  }
+  {
+    TODO: should have n in l', not l?
+    subst l'.
+    case_match.
+    eapply wf_sort_by.
+    {
+      eapply in_or_app; left.
+    unfold parameterize_lang, rename_lang.
+    rewrite map_map; simpl.
+    eapply in_map in H; exact H.
+    }  
+    {
+      TODO: 
+        case_match;
+      basic_core_crush.
+    1:unfold parameterize_ctx.
+    TODO: false; ctx always extended, but args not always extended
+    TODO: important case; when we do/don't have D appended
+    TODO: need wf
+    eapply sort_con_congruence.
+  }
   1:solve [basic_core_crush].
   1:solve [basic_core_crush].
   1:solve [basic_core_crush].
@@ -397,13 +518,29 @@ Proof using.
     rewrite parameterize_sort_subst; eauto.
       TODO: commute w/ subst
 Qed.
-    
+     *)
+
+      End WithInjection.
+      
     End WithParameter.
 
 End WithVar.
 
-Require Import Pyrosome.Lang.SimpleVSubst.
+From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
+
+Notation parameterize_lang p_name p_sort := (named_map (parameterize_rule p_name p_sort [])).
 
 Compute (parameterize_lang "D" {{s #"ty_env"}}
-           value_subst
-        ).
+           (stlc++exp_subst ++value_subst)      ).
+
+Require Import Pyrosome.Elab.Elab.
+Require Import Pyrosome.Tools.Matches.
+(*TODO: use elab_lang notation?*)
+Goal
+  let l := (parameterize_lang "D" {{s #"ty_env"}} value_subst
+              ++ [("ty_env",sort_rule [] [])]) in
+  (elab_lang_ext [] (hide_lang_implicits [] l) l
+              ).
+Proof. auto_elab Qed.
+#[export] Hint Resolve value_subst_wf : elab_pfs.
+
