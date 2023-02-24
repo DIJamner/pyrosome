@@ -13,8 +13,6 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
-Let svar := @var string.
-Coercion svar : string >-> term.
 
 Notation compiler := (compiler string).
 
@@ -48,7 +46,7 @@ Proof. auto_elab. Qed.
 Definition let_cps_def : compiler :=
   match # from (let_lang) with
   | {{e #"let" "G" "A" "B" "e" "e'"}} =>
-    bind_k 1 "e" "A"
+    bind_k 1 (var "e") (var "A")
     {{e#"blk_subst" (#"snoc" (#"snoc" {wkn_n 2} #"hd") {ovar 1}) "e'"}}
   end.
 

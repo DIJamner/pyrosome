@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool String List.
+Require Import Bool String List Int63.
 Import ListNotations.
 
 (* TODO: add/cut dep on Booleans? *)
@@ -116,3 +116,6 @@ Proof.
   unfold eqb, string_Eqb.
   destruct (String.eqb_spec a b); auto.
 Qed.
+
+
+#[export] Instance int_eqb : Eqb int := Int63.eqb.

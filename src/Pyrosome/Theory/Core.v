@@ -1654,6 +1654,76 @@ Proof.
   { apply eq_args_implies_eq_subst; eauto. }
 Qed.
 
+Lemma lang_ext_monotonicity l1 l2 l
+  : wf_lang_ext l1 l -> incl l1 l2 -> all_fresh (l ++ l2) -> wf_lang_ext l2 l.
+Proof.
+  induction 1; basic_goal_prep; basic_core_crush.
+Qed.
+
+Lemma term_rule_in_sort_wf (l : lang) name c args t
+  : wf_lang l ->
+    In (name,term_rule c args t) l ->
+    wf_sort l c t.
+Proof.
+  intros; subst.
+  pose proof (rule_in_wf _ _ H H0) as H1;
+  inversion H1; basic_core_crush.
+Qed.
+Lemma term_eq_rule_in_sort_wf (l : lang) name c e1 e2 t
+  : wf_lang l ->
+    In (name,term_eq_rule c e1 e2 t) l ->
+    wf_sort l c t.
+Proof.
+  intros; subst.
+  pose proof (rule_in_wf _ _ H H0) as H1;
+  inversion H1; basic_core_crush.
+Qed.
+
+Hint Resolve term_eq_rule_in_sort_wf term_rule_in_sort_wf : lang_core.
+
+(*TODO: move to a more suitable location (Core.v?)*)
+Lemma term_sorts_eq l c e t1
+  : wf_lang l -> (*TODO: can I weaken this?*)
+    wf_ctx l c ->
+    wf_term l c e t1 ->
+    forall t2, wf_term l c e t2 ->
+               eq_sort l c t1 t2.
+Proof.
+  induction 3.
+  {
+    remember (con n s) as e.
+    intros t2 wfe; revert t2 wfe Heqe.
+    induction 1; basic_goal_prep;
+      basic_core_firstorder_crush.
+    2:{
+      (* TODO: include congruence for eq_sort, eq_term as separate procedure
+         in tactics?
+       *)
+      eapply eq_sort_trans; eauto.
+    }
+    pose proof (in_all_fresh_same _ _ _ _ (wf_lang_ext_all_fresh H) H3 H1) as H'.
+    safe_invert H'.
+    (*TODO: why is this proof at depth 6? Should be less than that *)
+    eauto 6 with utils model term lang_core.
+  }
+  {
+    intros; 
+      basic_core_crush.
+    eauto using eq_sort_trans, eq_sort_sym.
+  }
+  {
+    remember (var n) as e.
+    intros t2 wfe; revert t2 wfe Heqe.
+    induction 1; basic_goal_prep;
+    basic_core_firstorder_crush.
+    {
+      eapply eq_sort_trans; eauto.
+    }
+    pose proof (in_all_fresh_same _ _ _ _ (wf_ctx_all_fresh H0) H2 H1) as H'.
+    basic_core_crush.
+  }
+Qed.
+
 End WithVar.
 
 (* TODO: assess benefits of symmetry and transitivity in hints

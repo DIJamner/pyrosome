@@ -38,13 +38,13 @@ Section WithVar.
   
 
   Local Notation ST := (state renaming).
-  
+
   Definition alloc (n : V) : ST int :=
     fun r =>
       (r.(next_id),
         MkRenaming (set r.(p_to_v) r.(next_id) n)
           ((n,r.(next_id))::r.(v_to_p))
-          (r.(next_id)+1)).
+          (add r.(next_id) 1)).
 
   Definition to_p (v : V) : ST int :=
     fun r =>

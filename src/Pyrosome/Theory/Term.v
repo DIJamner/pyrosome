@@ -277,7 +277,7 @@ Arguments ws_term args !e/.
 
   Local Hint Resolve args_well_scoped_subst : term.
 
-  Instance substable_term : Substable0 term :=
+  #[export] Instance substable_term : Substable0 term :=
     {
       inj_var := var;
       apply_subst0 := term_subst;
@@ -454,7 +454,7 @@ Qed.
     reflexivity.
   Qed.
       
-  Instance substable_term_ok : Substable0_ok term :=
+  #[export] Instance substable_term_ok : Substable0_ok term :=
     {
       subst_var_internal := subst_var_internal;
       subst_assoc0 := term_subst_assoc;
@@ -530,6 +530,15 @@ Qed.
       strengthen_subst := sort_strengthen_subst;
       well_scoped_subst := sort_well_scoped_subst;
     }.
+
+  Lemma sort_subst_nil (t:sort) : t[/[]/] = t.
+  Proof using .  
+    induction t; basic_goal_prep; basic_utils_crush.
+    f_equal.
+    induction l; basic_goal_prep; basic_utils_crush.
+    apply term_subst_nil.
+  Qed.
+  #[local] Hint Rewrite sort_subst_nil : term.
 
 Fixpoint eq_term e1 e2 {struct e1} : bool :=
   match e1, e2 with
@@ -660,6 +669,9 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite invert_con : term.
 #[export] Hint Rewrite invert_var_con : term.
 #[export] Hint Rewrite invert_scon : term.
+
+
+#[export] Hint Rewrite sort_subst_nil : term.
 
 #[export] Existing Instance substable_term.
 #[export] Existing Instance substable_term_ok.                   

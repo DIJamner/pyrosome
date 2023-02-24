@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String.
+Require Import String Int63.
 Local Open Scope string_scope.
 
 From Utils Require Import Base.
@@ -26,7 +26,4 @@ Arguments default {A}%type_scope {d}.
 #[export] Instance string_default : WithDefault string := "".
 #[export] Instance unit_default : WithDefault unit := tt.
 
-(* TODO: determine why this was added and remove
-Hint Extern 10 (WithDefault _) => solve [typeclasses eauto].
-
- *)
+#[export] Instance int_default : WithDefault int := 0%int63.
