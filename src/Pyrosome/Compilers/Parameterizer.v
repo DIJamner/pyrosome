@@ -118,46 +118,97 @@ Section WithVar.
             {f_inj : Injective f}
             {p_name_fresh : forall x, f x <> p_name}.
 
-    (* the names of the rules in the language prefix *)
-    Context (untouched_constructors : list V).
+        (* the names of the rules in the language prefix *)
+        (*TODO: also record the name here, gen a fresh one when processing rule*)
+    Context (parameterize_list : named_list nat).
     
     Fixpoint parameterize_term (e : term) : term :=
       match e with
       | var x => var x
       | con n s =>
           let s' := map parameterize_term s in
-          con n (s'++if inb n untouched_constructors then [] else [var p_name])
+          con n
+            match named_list_lookup_err parameterize_list n with
+            | None => s'
+            | Some n => (firstn n s') ++ (var p_name)::(skipn n s')
+            end
       end.
     
     Definition parameterize_sort (e : sort) : sort :=
       match e with
       | scon n s =>
           let s' := map parameterize_term s in
-          scon n (s'++if inb n untouched_constructors then [] else [var p_name])
+          scon n
+               (*Note: this is a shortcut for using the base lang and finding the ctx*)
+            match named_list_lookup_err parameterize_list n with
+            | None => s'
+            | Some n => (firstn n s') ++ (var p_name)::(skipn n s')
+            end
       end.
-
+    
     (*TODO: double-check when delta should be added.
           E.G. sort w/ parametric arg must be parameterized
           simple sort should not
+          Should be like above, insert on first use
      *)
-    Definition parameterize_ctx (c : ctx) : ctx :=
-      (named_map parameterize_sort c)++[(p_name, p_sort)].
+
+    
+    Fixpoint insert_parameter (c : ctx) : option ctx :=
+      match c with
+      | [] => None
+      | (x,t)::c' =>
+          match insert_parameter c' with
+          | Some c'' => Some ((x, t)::c'')
+          | None =>
+              if eqb t (parameterize_sort t)
+              then None
+              else Some ((x,t)::(p_name, p_sort)::c')
+          end
+      end.
+    
+    Definition parameterize_ctx c :=
+      match insert_parameter c with
+      | Some c' => named_map parameterize_sort c'
+      | None => c
+      end.
+    
+    Definition parameterize_ctx_always c :=
+      match insert_parameter c with
+      | Some c' => named_map parameterize_sort c'
+      | None => (p_name, p_sort)::c
+      end.
+
+    (*
+    Fixpoint insert_parameter_sub (c : ctx) : option ctx :=
+      match c with
+      | [] => None
+      | (x,t)::c' =>
+          match insert_parameter c' with
+          | Some c'' => Some ((x, t)::c'')
+          | None =>
+              if uses_parameter_sort t
+              then Some ((x,t)::(p_name, p_sort)::c')
+              else None
+          end
+      end.
 
     Definition parameterize_sub s :=
       (named_map parameterize_term s)++[(p_name, var p_name)].
     
     Definition parameterize_args s :=
       (map parameterize_term s)++[var p_name].
+     *)
 
     Definition parameterize_rule (r : rule) : rule :=
       match r with
       | sort_rule c args =>
           (*TODO: making p implicit in terms but not args is heuristic.
                 Give the user more control.
+                TODO: make sure p goes at the right places
            *)
-          sort_rule (parameterize_ctx c) (args++[p_name])
+          sort_rule (parameterize_ctx_always c) (args++[p_name])
       | term_rule c args t =>
-          term_rule (parameterize_ctx c) args (parameterize_sort t)
+          term_rule (parameterize_ctx_always c) args (parameterize_sort t)
       | sort_eq_rule c t1 t2 =>
           sort_eq_rule (parameterize_ctx c)
             (parameterize_sort t1)
@@ -196,6 +247,7 @@ Section WithVar.
       case_match; basic_utils_crush.
     Qed.
 
+    (*
     Lemma subst_lookup_p_name s
       : fresh p_name s ->
         subst_lookup (parameterize_sub s) p_name = var p_name.
@@ -231,8 +283,9 @@ Section WithVar.
       rewrite <- map_map.
       apply p_name_not_in_map.
     Qed.
+     *)
 
-
+    (*
     
     Lemma parameterize_term_subst e s
       : parameterize_term (rename f e) [/rename_subst f s /]
@@ -366,11 +419,36 @@ Section WithVar.
         basic_utils_crush.
     Qed.
       
-
-    (* the names of the rules in the language prefix *)
-    Context (untouched_constructors : list V).
+     *)
     
-    Notation parameterize_lang :=
+      End WithInjection.
+      
+  End WithParameter.
+  (*TODO: should be option?*)
+  Fixpoint idx_of {A} `{Eqb A} (a:A) l : nat :=
+    match l with
+    | [] => 0 (*should never happen, but out of bounds if it does*)
+    | a'::l =>
+        if eqb a a' then 0 else S (idx_of a l)
+    end.
+         
+  Context (p_name : V)
+            (p_sort : sort).
+    Fixpoint parameterize_lang' l parameterize_list :=
+      match l with
+      | [] => (parameterize_list, [])
+      | (n,r)::l =>
+          let (pl',l') := parameterize_lang' l parameterize_list in
+          let r' := parameterize_rule p_name p_sort pl' r in
+          let pl'' :=
+          (*TODO: do this in a more idiomatic way?*)
+            if eqb r r'
+            then pl'
+            else (n,idx_of p_name (map fst (get_ctx r)))::pl' in
+          (pl'', (n,r')::l')
+      end.
+    Definition parameterize_lang l := snd (parameterize_lang' l []).
+(*    Notation parameterize_lang :=
       (named_map (parameterize_rule (map f untouched_constructors))).
     Notation parameterize_sort :=
       (parameterize_sort (map f untouched_constructors)).
@@ -382,7 +460,7 @@ Section WithVar.
       (parameterize_sub (map f untouched_constructors)).
     Notation parameterize_args :=
       (parameterize_args (map f untouched_constructors)).
-
+*)
     (*
     Lemma parameterization_monotonicity'
       (P := fun x => Is_true (negb (eqb (Impl := V_Eqb) x p_name)))
@@ -520,18 +598,27 @@ Proof using.
 Qed.
      *)
 
-      End WithInjection.
-      
-    End WithParameter.
 
 End WithVar.
 
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
 
-Notation parameterize_lang p_name p_sort := (named_map (parameterize_rule p_name p_sort [])).
+(*Notation parameterize_lang p_name p_sort l_ext := (named_map (parameterize_rule p_name p_sort (map fst l_ext))).*)
+Compute (parameterize_lang' "D" {{s #"ty_env"}}
+           (value_subst)  []   ).
+TODO: adding to whitelist isn't working
+TODO: whitelisting future rules is awkward
+Compute (insert_parameter "D" {{s #"ty_env"}} [] [("G" ,{{s #"env"}})]).
+           (snd(     [s|"G" : #"env", "G'" : #"env"
+           -----------------------------------------------
+           #"sub" "G" "G'" srt
+             ]%rule))).
+idea: pass sublist of names
+Q: take the closure before/manually or in parameterization?                                 
+                      
+TODO: D still always at the front
+        TODO: emp incorrectly given D
 
-Compute (parameterize_lang "D" {{s #"ty_env"}}
-           (stlc++exp_subst ++value_subst)      ).
 
 Require Import Pyrosome.Elab.Elab.
 Require Import Pyrosome.Tools.Matches.
@@ -544,3 +631,4 @@ Goal
 Proof. auto_elab Qed.
 #[export] Hint Resolve value_subst_wf : elab_pfs.
 
+*)
