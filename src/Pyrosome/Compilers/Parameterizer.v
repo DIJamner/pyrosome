@@ -529,6 +529,20 @@ Section WithVar.
     (*should never happen*)
     | _, _, _ => 0
     end.
+
+  Definition no_param_needed (ps : param_spec) r : bool :=
+    match r with
+    | sort_rule _ _ => true
+    | term_rule _ _ t => eqb t (parameterize_sort p_name ps t)
+    | sort_eq_rule c t1 t2 =>
+        andb (eqb t1 (parameterize_sort p_name ps t1))
+         (eqb t2 (parameterize_sort p_name ps t2))
+    | term_eq_rule c e1 e2 t =>
+        andb (eqb e1 (parameterize_term p_name ps e1))
+        (andb (eqb e2 (parameterize_term p_name ps e2))
+         (eqb t (parameterize_sort p_name ps t)))
+    end.
+      
   
   Fixpoint elab_param (l : lang) (pa : param_generator) : param_spec :=
       match l with
@@ -548,7 +562,14 @@ Section WithVar.
           | None =>
               match calc_param_pos ps c with
               | Some n => (x,(n, false))::ps
-              | None => ps
+              | None =>
+                  (* Account for cases where ctx doesn't need param
+                     but sort or terms do
+                     TODO: broken; debug & fix
+                   *)
+                  if no_param_needed ps r
+                  then ps
+                  else (x,(0, false))::ps
               end
           end
       end.
@@ -744,56 +765,206 @@ Qed.
 
 End WithVar.
 
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
-
-(*Notation parameterize_lang p_name p_sort l_ext := (named_map (parameterize_rule p_name p_sort (map fst l_ext))).*)
-
-Let vs_param :=
-      Eval compute in
-      (*TODO: why does this take "D"?*)
-      (elab_param "D" value_subst
-         [("val",Some 2);("ty",Some 0);("sub",Some 2);("env",Some 0)]).
-Compute (parameterize_lang "D" {{s #"ty_env"}}
-           vs_param
-           (value_subst)  ).
-TODO: off-by-one; inserting after when it should be before or something?
-  ctx not extended on implicits
-
-  vs_param = 
-[("snoc_wkn_hd", (1, false)); ("cmp_snoc", (6, false));
-("snoc_hd", (4, false)); ("wkn_snoc", (4, false)); ("hd", (1, false));
-("wkn", (1, false)); ("snoc", (4, false)); ("ext", (1, false));
-("cmp_forget", (2, false)); ("forget", (0, false));
-("val_subst_cmp", (6, false)); ("val_subst_id", (2, false));
-("val_subst", (4, false)); ("val", (2, true)); ("cmp_assoc", (6, false));
-("id_left", (2, false)); ("id_right", (2, false)); ("cmp", (4, false));
-("id", (0, false)); ("sub", (2, true)); ("env", (0, true))]
-     : list (string * (nat * bool))
-
-TODO: arguments after param deleted
-TODO: adding to whitelist isn't working
-TODO: whitelisting future rules is awkward
-Compute (insert_parameter "D" {{s #"ty_env"}} [] [("G" ,{{s #"env"}})]).
-           (snd(     [s|"G" : #"env", "G'" : #"env"
-           -----------------------------------------------
-           #"sub" "G" "G'" srt
-             ]%rule))).
-idea: pass sublist of names
-Q: take the closure before/manually or in parameterization?                                 
-                      
-TODO: D still always at the front
-        TODO: emp incorrectly given D
 
 
-Require Import Pyrosome.Elab.Elab.
-Require Import Pyrosome.Tools.Matches.
-(*TODO: use elab_lang notation?*)
-Goal
-  let l := (parameterize_lang "D" {{s #"ty_env"}} value_subst
-              ++ [("ty_env",sort_rule [] [])]) in
-  (elab_lang_ext [] (hide_lang_implicits [] l) l
-              ).
-Proof. auto_elab Qed.
-#[export] Hint Resolve value_subst_wf : elab_pfs.
+From Pyrosome Require Import Tools.Matches Elab.Elab.
 
-*)
+
+Definition obj_subst_def : lang _ :=
+  {[l   
+  [s|
+      -----------------------------------------------
+      #"env" srt
+  ];
+  [s| "G" : #"env", "G'" : #"env" 
+      -----------------------------------------------
+      #"sub" "G" "G'" srt                     
+  ];
+  [:| "G" : #"env" 
+       -----------------------------------------------
+       #"id" : #"sub" "G" "G"
+  ];
+  [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3"
+       -----------------------------------------------
+       #"cmp" "f" "g" : #"sub" "G1" "G3"
+  ];
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+      ----------------------------------------------- ("id_right")
+      #"cmp" "f" #"id" = "f" : #"sub" "G" "G'"
+  ]; 
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+       ----------------------------------------------- ("id_left")
+       #"cmp" #"id" "f" = "f" : #"sub" "G" "G'"
+  ];
+   [:= "G1" : #"env",
+         "G2" : #"env",
+         "G3" : #"env",
+         "G4" : #"env",
+         "f" : #"sub" "G1" "G2",
+         "g" : #"sub" "G2" "G3",
+         "h" : #"sub" "G3" "G4"
+         ----------------------------------------------- ("cmp_assoc")
+         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
+  ];
+  [s| "G" : #"env"
+      -----------------------------------------------
+      #"obj" "G" srt
+  ];
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+       "A" : #"obj" "G'"
+       -----------------------------------------------
+       #"subst" "g" "A" : #"obj" "G"
+  ];
+  [:= "G" : #"env", "A" : #"obj" "G"
+       ----------------------------------------------- ("subst_id")
+       #"subst" #"id" "A" = "A" : #"obj" "G"
+  ]; 
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "A" : #"obj" "G3"
+       ----------------------------------------------- ("subst_cmp")
+       #"subst" "f" (#"subst" "g" "A")
+       = #"subst" (#"cmp" "f" "g") "A"
+       : #"obj" "G1"
+  ]; 
+  [:| 
+      -----------------------------------------------
+      #"emp" : #"env"
+  ];
+  [:| "G" : #"env"
+      -----------------------------------------------
+      #"forget" : #"sub" "G" #"emp"
+  ];
+  [:= "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'"
+       ----------------------------------------------- ("cmp_forget")
+       #"cmp" "g" #"forget" = #"forget" : #"sub" "G" #"emp"
+  ];
+  [:= 
+      ----------------------------------------------- ("id_emp_forget")
+      #"id" = #"forget" : #"sub" #"emp" #"emp"
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"ext" "G" : #"env"
+  ];
+  [:| "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"obj" "G"
+       -----------------------------------------------
+       #"snoc" "g" "A" : #"sub" "G" (#"ext" "G'")
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"wkn" : #"sub" (#"ext" "G") "G"
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"hd" : #"obj" (#"ext" "G")
+  ];
+   [:= "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"obj" "G"
+      ----------------------------------------------- ("wkn_snoc")
+      #"cmp" (#"snoc" "g" "A") #"wkn" = "g" : #"sub" "G" "G'"
+  ];
+   [:= "G" : #"env", "G'" : #"env",
+       "g" : #"sub" "G" "G'",
+       "A" : #"obj" "G"
+       ----------------------------------------------- ("snoc_hd")
+       #"subst" (#"snoc" "g" "A") #"hd" = "A"
+       : #"obj" "G"
+  ];
+   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3",
+       "A" : #"obj" "G2"
+       ----------------------------------------------- ("cmp_snoc")
+       #"cmp" "f" (#"snoc" "g" "A")
+       = #"snoc" (#"cmp" "f" "g") (#"subst" "f" "A")
+       : #"sub" "G1" (#"ext" "G3")
+   ];
+      [:= "G" : #"env"
+       ----------------------------------------------- ("snoc_wkn_hd")
+        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G") (#"ext" "G")
+   ]
+  ]}.
+
+Require Import Pyrosome.Theory.Renaming Ascii.
+
+Derive obj_subst
+       SuchThat (elab_lang_ext [] obj_subst_def obj_subst)
+       As obj_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve obj_subst_wf : elab_pfs.
+
+Definition ty_subst :=
+  Eval compute in
+  (rename_lang
+    (fun s =>
+       match s with
+       | "obj" => "ty"
+       | String "G"%char s => String "D"%char s
+       | String "A"%char s => String "A"%char s
+       | "f" =>"f"
+       | "g" =>"g"
+       | "h" =>"h"
+       | s => ("ty_" ++ s)%string
+       end)
+    obj_subst).
+
+
+Definition pre_val_subst :=
+  Eval compute in
+  (rename_lang
+    (fun s =>
+       match s with
+       | "obj" => "val"
+       | "env" => "env"
+       | "sub" => "sub"
+       | "ext" => "ext"
+       | "cmp" => "cmp"
+       | "snoc" => "snoc"
+       | "wkn" => "wkn"
+       | "hd" => "hd"
+       | "emp" => "emp"
+       | "id" => "id"
+       | String "G"%char s => String "G"%char s
+       | String "A"%char s => String "v"%char s
+       | String "g"%char s => String "g"%char s
+       | String "f"%char s => String "f"%char s
+       | String "h"%char s => String "h"%char s
+       | s => ("val_" ++ s)%string
+       end)
+    obj_subst).
+
+Definition val_subst' :=
+  Eval compute in
+  let ps := (elab_param "A" pre_val_subst
+               [("ext", Some 0); ("val",Some 0)]) in
+  (parameterize_lang "A" {{s #"ty"}}
+    ps pre_val_subst).
+
+(*TODO: prove wf (need unelab_lang)*)
+
+Definition val_subst_ty_param :=
+  Eval compute in
+  let ps := (elab_param "D" (val_subst'++[("ty",sort_rule[][])])
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps val_subst'.
+
+Definition poly_val_subst :=
+  val_subst_ty_param ++ ty_subst.
+
+Definition poly_subst_def :=
+  Eval compute in Rule.hide_lang_implicits poly_val_subst poly_val_subst.
+
+Lemma poly_subst_wf : elab_lang_ext [] poly_subst_def poly_val_subst.
+Proof.
+  auto_elab. Qed.
+#[export] Hint Resolve poly_subst_wf : elab_pfs.
