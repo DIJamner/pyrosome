@@ -99,6 +99,15 @@ Section WithVar.
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
+  
+  (*TODO: should be option?*)
+  Fixpoint idx_of {A} `{Eqb A} (a:A) l : nat :=
+    match l with
+    | [] => 0 (*should never happen, but out of bounds if it does*)
+    | a'::l =>
+        if eqb a a' then 0 else S (idx_of a l)
+    end.
+
   Section WithParameter.
 
     (*TODO: how to handle p_name freshness?
@@ -109,6 +118,43 @@ Section WithVar.
     Context (p_name : V)
       (p_sort : sort).
 
+
+    (*c idx * is_explicit*)
+    Definition param_spec := named_list (nat * bool).
+
+    
+
+    Definition get_args (r : rule) :=
+      match r with
+        sort_rule _ args
+      | term_rule _ args _ => args 
+      | sort_eq_rule c _ _ 
+      | term_eq_rule c _ _ _ => map fst c
+      end.
+
+    Section PairMap.
+      Context {A1 A2 B1 B2}
+        (f : A1 -> A2)
+        (g : B1 -> B2).
+    (* TODO: move to utils*)
+      Definition pairmap p := (f (fst p), g (snd p)).
+    End PairMap.
+
+    Fixpoint get_rule_indices n args (c : ctx) :=
+      match n, args, c with
+      | S n', x'::args', (xc,_)::c' =>
+          if eqb x' xc
+          then pairmap S S (get_rule_indices n' args' c')
+          else pairmap S id (get_rule_indices n' args c')
+      | _, _, _ => (0,0)
+      end.
+    
+    Definition elab_param_rule r args :=
+      let args' := get_args r in
+      let c := get_ctx r in
+      get_rule_indices args args' c.
+
+
       Section WithInjection.
         Context
           (V' : Type)
@@ -118,9 +164,15 @@ Section WithVar.
             {f_inj : Injective f}
             {p_name_fresh : forall x, f x <> p_name}.
 
-        (* the names of the rules in the language prefix *)
-        (*TODO: also record the name here, gen a fresh one when processing rule*)
-    Context (parameterize_list : named_list nat).
+        (* the context indices of the rules
+           that have been parameterized so far *)
+        (*TODO: also record the name here?,
+          can gen a fresh one when processing rule*)
+        Context (parameterize_list : param_spec).
+
+        (*TODO: move to List.v*)
+        Definition insert {A} n (a : A) l :=
+          (firstn n l) ++ a :: (skipn n l).
     
     Fixpoint parameterize_term (e : term) : term :=
       match e with
@@ -130,7 +182,7 @@ Section WithVar.
           con n
             match named_list_lookup_err parameterize_list n with
             | None => s'
-            | Some n => (firstn n s') ++ (var p_name)::(skipn n s')
+            | Some n => insert (fst n) (var p_name) s'
             end
       end.
     
@@ -142,7 +194,7 @@ Section WithVar.
                (*Note: this is a shortcut for using the base lang and finding the ctx*)
             match named_list_lookup_err parameterize_list n with
             | None => s'
-            | Some n => (firstn n s') ++ (var p_name)::(skipn n s')
+            | Some n => insert (fst n) (var p_name) s'
             end
       end.
     
@@ -152,7 +204,7 @@ Section WithVar.
           Should be like above, insert on first use
      *)
 
-    
+    (*
     Fixpoint insert_parameter (c : ctx) : option ctx :=
       match c with
       | [] => None
@@ -164,20 +216,15 @@ Section WithVar.
               then None
               else Some ((x,t)::(p_name, p_sort)::c')
           end
-      end.
+      end.*)
     
-    Definition parameterize_ctx c :=
-      match insert_parameter c with
-      | Some c' => named_map parameterize_sort c'
-      | None => c
-      end.
+    Definition parameterize_ctx (mn : option (_*bool)) c :=
+      let c' := named_map parameterize_sort c in
+        match mn with
+        | Some n => insert (fst n) (p_name, p_sort) c'
+        | None => c'
+        end.
     
-    Definition parameterize_ctx_always c :=
-      match insert_parameter c with
-      | Some c' => named_map parameterize_sort c'
-      | None => (p_name, p_sort)::c
-      end.
-
     (*
     Fixpoint insert_parameter_sub (c : ctx) : option ctx :=
       match c with
@@ -199,22 +246,45 @@ Section WithVar.
       (map parameterize_term s)++[var p_name].
      *)
 
-    Definition parameterize_rule (r : rule) : rule :=
+    Fixpoint parameterize_args' n (c : ctx) args :=
+      match n, c, args with
+      | 0, _, _ => p_name::args
+      | S n, (x,_)::c, [] =>
+          parameterize_args' n c []
+      | S n, (x,_)::c, x'::args' =>
+          if eqb x x'
+          then x'::parameterize_args' n c args'
+          else parameterize_args' n c args
+      (* should never hit this case *)
+      | S _, [] , _ => args
+      end.
+
+    Definition parameterize_args (mn : option (_*bool)) :=
+      match mn with
+      | Some n => if (snd n) then parameterize_args' (fst n) else fun _ => id
+      | None => fun _ => id
+      end.
+
+    Definition parameterize_rule '(n,r) : rule :=
+      let mn := named_list_lookup_err parameterize_list  n in
       match r with
       | sort_rule c args =>
           (*TODO: making p implicit in terms but not args is heuristic.
                 Give the user more control.
                 TODO: make sure p goes at the right places
            *)
-          sort_rule (parameterize_ctx_always c) (args++[p_name])
+          sort_rule (parameterize_ctx mn c)
+            (parameterize_args mn c args)
       | term_rule c args t =>
-          term_rule (parameterize_ctx_always c) args (parameterize_sort t)
+          term_rule (parameterize_ctx mn c) 
+            (parameterize_args mn c args)
+            (parameterize_sort t)
       | sort_eq_rule c t1 t2 =>
-          sort_eq_rule (parameterize_ctx c)
+          sort_eq_rule (parameterize_ctx mn c)
             (parameterize_sort t1)
             (parameterize_sort t2)
       | term_eq_rule c e1 e2 t =>
-          term_eq_rule (parameterize_ctx c)
+          term_eq_rule (parameterize_ctx mn c)
             (parameterize_term e1)
             (parameterize_term e2)
             (parameterize_sort t)
@@ -424,19 +494,73 @@ Section WithVar.
       End WithInjection.
       
   End WithParameter.
-  (*TODO: should be option?*)
-  Fixpoint idx_of {A} `{Eqb A} (a:A) l : nat :=
-    match l with
-    | [] => 0 (*should never happen, but out of bounds if it does*)
-    | a'::l =>
-        if eqb a a' then 0 else S (idx_of a l)
-    end.
+
          
   Context (p_name : V)
-            (p_sort : sort).
-    Fixpoint parameterize_lang' l parameterize_list :=
+    (p_sort : sort).
+
+  Definition parameterize_lang (pl : param_spec) : lang -> lang :=
+    map (fun p => (fst p, parameterize_rule p_name p_sort pl p)).
+
+  
+    (*args idx*)
+  Definition param_generator := named_list (option nat).
+
+  Fixpoint calc_param_pos ps (c : ctx) : option nat :=
+    match c with
+    | [] => None
+    | (_,t)::c =>
+        match calc_param_pos ps c with
+        | Some n => Some (S n)
+        | None =>
+            if eqb t (parameterize_sort p_name ps t)
+            then None
+            else Some 1
+        end
+    end.
+
+  Fixpoint arg_n_to_ctx_n n args (c : ctx) :=
+    match n, args, c with
+    | 0, _, _ => 0
+    | S n', x::args', (xc,_)::c' =>
+        S (if eqb x xc
+           then arg_n_to_ctx_n n' args' c'
+           else arg_n_to_ctx_n n args c')
+    (*should never happen*)
+    | _, _, _ => 0
+    end.
+  
+  Fixpoint elab_param (l : lang) (pa : param_generator) : param_spec :=
       match l with
-      | [] => (parameterize_list, [])
+      | [] => []
+      | (x,r)::l =>
+          let ps := elab_param l pa in
+          let c := get_ctx r in
+          let args := get_args r in
+          match named_list_lookup_err pa x with
+          | Some (Some n) => (x,(arg_n_to_ctx_n n args c, true))::ps
+          | Some None =>
+              match calc_param_pos ps c with
+              | Some n => (x,(n, false))::ps
+              (*TODO: check this case*)
+              | None => (x,(0,false))::ps
+              end
+          | None =>
+              match calc_param_pos ps c with
+              | Some n => (x,(n, false))::ps
+              | None => ps
+              end
+          end
+      end.
+(*
+
+    
+    Definition parameterize_rule_if_in_list '(n,r) :=
+      if inb n (map fst parameterize_list)
+    
+    Fixpoint parameterize_lang l :=
+      match l with
+      | [] => []
       | (n,r)::l =>
           let (pl',l') := parameterize_lang' l parameterize_list in
           let r' := parameterize_rule p_name p_sort pl' r in
@@ -447,7 +571,26 @@ Section WithVar.
             else (n,idx_of p_name (map fst (get_ctx r)))::pl' in
           (pl'', (n,r')::l')
       end.
-    Definition parameterize_lang l := snd (parameterize_lang' l []).
+
+    Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
+      
+    Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
+*)
+(*
+    Fixpoint elab_param_spec l (g : param_generator) : param_spec :=
+      match l, g with
+      | (n,r)::l', (n', args)::g' =>
+          if eqb n n'
+           then (n, elab_param_rule r args):: (elab_param_spec l' g')
+          else
+            let s := (elab_param_spec l' g) in
+            
+            algorithm:
+          if r needs to be parameterized (should we just assume this? sufficient, but less convenient), determine how
+            (elab_param_spec l' g)            
+      | _, _ => []
+      end.
+*)
 (*    Notation parameterize_lang :=
       (named_map (parameterize_rule (map f untouched_constructors))).
     Notation parameterize_sort :=
@@ -604,8 +747,30 @@ End WithVar.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC.
 
 (*Notation parameterize_lang p_name p_sort l_ext := (named_map (parameterize_rule p_name p_sort (map fst l_ext))).*)
-Compute (parameterize_lang' "D" {{s #"ty_env"}}
-           (value_subst)  []   ).
+
+Let vs_param :=
+      Eval compute in
+      (*TODO: why does this take "D"?*)
+      (elab_param "D" value_subst
+         [("val",Some 2);("ty",Some 0);("sub",Some 2);("env",Some 0)]).
+Compute (parameterize_lang "D" {{s #"ty_env"}}
+           vs_param
+           (value_subst)  ).
+TODO: off-by-one; inserting after when it should be before or something?
+  ctx not extended on implicits
+
+  vs_param = 
+[("snoc_wkn_hd", (1, false)); ("cmp_snoc", (6, false));
+("snoc_hd", (4, false)); ("wkn_snoc", (4, false)); ("hd", (1, false));
+("wkn", (1, false)); ("snoc", (4, false)); ("ext", (1, false));
+("cmp_forget", (2, false)); ("forget", (0, false));
+("val_subst_cmp", (6, false)); ("val_subst_id", (2, false));
+("val_subst", (4, false)); ("val", (2, true)); ("cmp_assoc", (6, false));
+("id_left", (2, false)); ("id_right", (2, false)); ("cmp", (4, false));
+("id", (0, false)); ("sub", (2, true)); ("env", (0, true))]
+     : list (string * (nat * bool))
+
+TODO: arguments after param deleted
 TODO: adding to whitelist isn't working
 TODO: whitelisting future rules is awkward
 Compute (insert_parameter "D" {{s #"ty_env"}} [] [("G" ,{{s #"env"}})]).
