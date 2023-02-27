@@ -204,8 +204,68 @@ Section Injective.
       rewrite !map_map in *; simpl in *; auto.
     }
   Qed.
+
+  (*TODO: move to Lists.v*)  
+  Lemma combine_map_projections {C D} (n : list (C * D))
+    : (combine (map fst n) (map snd n)) = n.
+  Proof.
+    induction n;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
   
+  Lemma sublist_map {C D} (g : C -> D) l1 l2
+    : sublist l1 l2 ->
+      sublist (map g l1) (map g l2).
+  Proof.
+    revert l1;
+      induction l2;
+      destruct l1;
+      basic_goal_prep;
+      basic_utils_crush.
+    change ((g c :: map g l1)) with (map g (c::l1)).
+    eauto.
+  Qed.
+  #[local] Hint Resolve sublist_map : utils.
+  
+  Lemma rename_rule_mono l r
+    : wf_rule l r ->
+      wf_rule (rename_lang l) (rename_rule r).
+  Proof.
+    destruct r;
+      basic_goal_prep;
+      basic_core_crush.
+    all: try eapply rename_mono; auto.
+    all: unfold rename_ctx;
+      rewrite !map_map;
+      simpl.
+    all: rewrite <- map_map with (f:=fst).
+    all: eauto with utils.
+  Qed.
+
+  Lemma rename_lang_mono l
+    : wf_lang l -> wf_lang (rename_lang l).
+  Proof.
+    induction l; basic_goal_prep;
+      basic_core_crush.
+    2: eauto using rename_rule_mono.
+    clear H1.
+    unfold rename_lang.
+    unfold fresh in *.
+    intro H'; apply H0.
+    basic_utils_crush.
+    rewrite in_map_iff in H'; break.
+    simpl in *.
+    apply f_inj in H1; subst.
+    eapply pair_fst_in; eauto.
+  Qed.
+    
 End Injective.
+
+
+Arguments rename_lang_mono {A B}%type_scope {Eqb_A Eqb_B Eqb_ok_A Eqb_ok_B}
+  [f]%function_scope f_inj [l]%lang_scope _.
+#[export] Hint Resolve rename_lang_mono : lang_core.
 
 Section Inverse.
   
