@@ -769,129 +769,429 @@ End WithVar.
 
 From Pyrosome Require Import Tools.Matches Elab.Elab.
 
-
-Definition obj_subst_def : lang _ :=
-  {[l   
+Definition cat_def : lang _ :=
+  {[l  
   [s|
       -----------------------------------------------
-      #"env" srt
+      #"obj" srt
   ];
-  [s| "G" : #"env", "G'" : #"env" 
+  [s| "G" : #"obj", "G'" : #"obj" 
       -----------------------------------------------
-      #"sub" "G" "G'" srt                     
+      #"arr" "G" "G'" srt                     
   ];
-  [:| "G" : #"env" 
+  [:| "G" : #"obj" 
        -----------------------------------------------
-       #"id" : #"sub" "G" "G"
+       #"id" : #"arr" "G" "G"
   ];
-  [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" "G1" "G2",
-       "g" : #"sub" "G2" "G3"
+  [:| "G1" : #"obj", "G2" : #"obj", "G3" : #"obj",
+       "f" : #"arr" "G1" "G2",
+       "g" : #"arr" "G2" "G3"
        -----------------------------------------------
-       #"cmp" "f" "g" : #"sub" "G1" "G3"
+       #"cmp" "f" "g" : #"arr" "G1" "G3"
   ];
-  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+  [:= "G" : #"obj", "G'" : #"obj", "f" : #"arr" "G" "G'"
       ----------------------------------------------- ("id_right")
-      #"cmp" "f" #"id" = "f" : #"sub" "G" "G'"
+      #"cmp" "f" #"id" = "f" : #"arr" "G" "G'"
   ]; 
-  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+  [:= "G" : #"obj", "G'" : #"obj", "f" : #"arr" "G" "G'"
        ----------------------------------------------- ("id_left")
-       #"cmp" #"id" "f" = "f" : #"sub" "G" "G'"
+       #"cmp" #"id" "f" = "f" : #"arr" "G" "G'"
   ];
-   [:= "G1" : #"env",
-         "G2" : #"env",
-         "G3" : #"env",
-         "G4" : #"env",
-         "f" : #"sub" "G1" "G2",
-         "g" : #"sub" "G2" "G3",
-         "h" : #"sub" "G3" "G4"
+   [:= "G1" : #"obj",
+         "G2" : #"obj",
+         "G3" : #"obj",
+         "G4" : #"obj",
+         "f" : #"arr" "G1" "G2",
+         "g" : #"arr" "G2" "G3",
+         "h" : #"arr" "G3" "G4"
          ----------------------------------------------- ("cmp_assoc")
-         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
-  ];
-  [s| "G" : #"env"
-      -----------------------------------------------
-      #"obj" "G" srt
-  ];
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-       "A" : #"obj" "G'"
-       -----------------------------------------------
-       #"subst" "g" "A" : #"obj" "G"
-  ];
-  [:= "G" : #"env", "A" : #"obj" "G"
-       ----------------------------------------------- ("subst_id")
-       #"subst" #"id" "A" = "A" : #"obj" "G"
-  ]; 
-  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
-       "A" : #"obj" "G3"
-       ----------------------------------------------- ("subst_cmp")
-       #"subst" "f" (#"subst" "g" "A")
-       = #"subst" (#"cmp" "f" "g") "A"
-       : #"obj" "G1"
-  ]; 
-  [:| 
-      -----------------------------------------------
-      #"emp" : #"env"
-  ];
-  [:| "G" : #"env"
-      -----------------------------------------------
-      #"forget" : #"sub" "G" #"emp"
-  ];
-  [:= "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'"
-       ----------------------------------------------- ("cmp_forget")
-       #"cmp" "g" #"forget" = #"forget" : #"sub" "G" #"emp"
-  ];
-  [:= 
-      ----------------------------------------------- ("id_emp_forget")
-      #"id" = #"forget" : #"sub" #"emp" #"emp"
-  ];
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"ext" "G" : #"env"
-  ];
-  [:| "G" : #"env", "G'" : #"env",
-      "g" : #"sub" "G" "G'",
-      "A" : #"obj" "G"
-       -----------------------------------------------
-       #"snoc" "g" "A" : #"sub" "G" (#"ext" "G'")
-  ];
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"wkn" : #"sub" (#"ext" "G") "G"
-  ];
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"hd" : #"obj" (#"ext" "G")
-  ];
-   [:= "G" : #"env", "G'" : #"env",
-      "g" : #"sub" "G" "G'",
-      "A" : #"obj" "G"
-      ----------------------------------------------- ("wkn_snoc")
-      #"cmp" (#"snoc" "g" "A") #"wkn" = "g" : #"sub" "G" "G'"
-  ];
-   [:= "G" : #"env", "G'" : #"env",
-       "g" : #"sub" "G" "G'",
-       "A" : #"obj" "G"
-       ----------------------------------------------- ("snoc_hd")
-       #"subst" (#"snoc" "g" "A") #"hd" = "A"
-       : #"obj" "G"
-  ];
-   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" "G1" "G2",
-       "g" : #"sub" "G2" "G3",
-       "A" : #"obj" "G2"
-       ----------------------------------------------- ("cmp_snoc")
-       #"cmp" "f" (#"snoc" "g" "A")
-       = #"snoc" (#"cmp" "f" "g") (#"subst" "f" "A")
-       : #"sub" "G1" (#"ext" "G3")
-   ];
-      [:= "G" : #"env"
-       ----------------------------------------------- ("snoc_wkn_hd")
-        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G") (#"ext" "G")
+         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"arr" "G1" "G4"
    ]
   ]}.
 
+
+
+Require Import Coq.derive.Derive.
+
+Derive cat
+       SuchThat (elab_lang_ext [] cat_def cat)
+       As cat_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve cat_wf : elab_pfs.
+
+(* TODO: beyond this point there are some category-theoretic
+   names that could be used but which I would get wrong in choosing.
+ *)
+Definition obj_consumer_def : lang _ :=
+  {[l
+  [s| "G" : #"obj"
+      -----------------------------------------------
+      #"unit" "G" srt
+  ]
+  ]}.
+
+
+Derive obj_consumer
+       SuchThat (elab_lang_ext cat obj_consumer_def obj_consumer)
+       As obj_consumer_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve obj_consumer_wf : elab_pfs.
+
+Definition unit_action_def : lang _ :=
+  {[l
+  [:| "G" : #"obj", "G'" : #"obj", "g" : #"arr" "G" "G'",
+       "u" : #"unit" "G'"
+       -----------------------------------------------
+       #"act" "g" "u" : #"unit" "G"
+  ];
+  [:= "G" : #"obj", "u" : #"unit" "G"
+       ----------------------------------------------- ("act_id")
+       #"act" #"id" "u" = "u" : #"unit" "G"
+  ]; 
+  [:= "G1" : #"obj", "G2" : #"obj", "G3" : #"obj",
+       "f" : #"arr" "G1" "G2", "g" : #"arr" "G2" "G3",
+       "u" : #"unit" "G3"
+       ----------------------------------------------- ("act_cmp")
+       #"act" "f" (#"act" "g" "u")
+       = #"act" (#"cmp" "f" "g") "u"
+       : #"unit" "G1"
+  ]
+  ]}.
+
+Derive unit_action
+       SuchThat (elab_lang_ext (obj_consumer++cat) unit_action_def unit_action)
+       As unit_action_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve unit_action_wf : elab_pfs.
+
+
+Definition unit_cartesian_def : lang _ :=
+{[l
+  [:| 
+      -----------------------------------------------
+      #"emp" : #"obj"
+  ];
+  [:| "G" : #"obj"
+      -----------------------------------------------
+      #"forget" : #"arr" "G" #"emp"
+  ];
+  [:= "G" : #"obj", "G'" : #"obj", "g" : #"arr" "G" "G'"
+       ----------------------------------------------- ("cmp_forget")
+       #"cmp" "g" #"forget" = #"forget" : #"arr" "G" #"emp"
+  ];
+  [:= 
+      ----------------------------------------------- ("id_emp_forget")
+      #"id" = #"forget" : #"arr" #"emp" #"emp"
+  ];
+  [:| "G" : #"obj"
+       -----------------------------------------------
+       #"ext" "G" : #"obj"
+  ];
+  [:| "G" : #"obj", "G'" : #"obj",
+      "g" : #"arr" "G" "G'",
+      "u" : #"unit" "G"
+       -----------------------------------------------
+       #"snoc" "g" "u" : #"arr" "G" (#"ext" "G'")
+  ];
+  [:| "G" : #"obj"
+       -----------------------------------------------
+       #"wkn" : #"arr" (#"ext" "G") "G"
+  ];
+  [:| "G" : #"obj"
+       -----------------------------------------------
+       #"hd" : #"unit" (#"ext" "G")
+  ];
+   [:= "G" : #"obj", "G'" : #"obj",
+      "g" : #"arr" "G" "G'",
+      "u" : #"unit" "G"
+      ----------------------------------------------- ("wkn_snoc")
+      #"cmp" (#"snoc" "g" "u") #"wkn" = "g" : #"arr" "G" "G'"
+  ];
+   [:= "G" : #"obj", "G'" : #"obj",
+       "g" : #"arr" "G" "G'",
+       "u" : #"unit" "G"
+       ----------------------------------------------- ("snoc_hd")
+       #"act" (#"snoc" "g" "u") #"hd" = "u"
+       : #"unit" "G"
+  ];
+   [:= "G1" : #"obj", "G2" : #"obj", "G3" : #"obj",
+       "f" : #"arr" "G1" "G2",
+       "g" : #"arr" "G2" "G3",
+       "u" : #"unit" "G2"
+       ----------------------------------------------- ("cmp_snoc")
+       #"cmp" "f" (#"snoc" "g" "u")
+       = #"snoc" (#"cmp" "f" "g") (#"act" "f" "u")
+       : #"arr" "G1" (#"ext" "G3")
+   ];
+      [:= "G" : #"obj"
+       ----------------------------------------------- ("snoc_wkn_hd")
+        #"snoc" #"wkn" #"hd" = #"id" : #"arr" (#"ext" "G") (#"ext" "G")
+   ]
+]}.
+
+
+Derive unit_cartesian
+  SuchThat (elab_lang_ext (unit_action++obj_consumer++cat)
+              unit_cartesian_def unit_cartesian)
+       As unit_cartesian_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve unit_cartesian_wf : elab_pfs.
+
+
+(*TODO: careful; parameterize doesn't check freshness*)
+Definition elt_cartesian_rename (n : string) : string :=
+  match n with
+  | "unit" => "elt"
+  | "u" => "v"
+  | _ => n
+  end.
+
+
+Let elt_cartesian_in := (rename_lang elt_cartesian_rename
+            (unit_cartesian ++ unit_action ++ obj_consumer)).
+Let elt_cartesian_ps := (elab_param "A" elt_cartesian_in
+                           [("ext", Some 0); ("elt",Some 0)]).
+
+
+(* TODO: beyond this point there are some category-theoretic
+   names that could be used but which I would get wrong in choosing.
+ *)
+Definition typed_consumer : lang _ :=
+  Eval compute in
+  (parameterize_lang "A" {{s #"ty"}}
+     elt_cartesian_ps
+     (rename_lang elt_cartesian_rename (obj_consumer))).
+
+  
+Definition elt_action :=
+  Eval compute in
+  (parameterize_lang "A" {{s #"ty"}}
+     elt_cartesian_ps
+     (rename_lang elt_cartesian_rename (unit_action))).
+                      
+Definition elt_cartesian :=
+  Eval compute in
+  (parameterize_lang "A" {{s #"ty"}}
+     elt_cartesian_ps
+     (rename_lang elt_cartesian_rename unit_cartesian)).
+
+
+Definition typed_consumer_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (typed_consumer
+                       ++[("ty",sort_rule [] [])]++cat)
+                    typed_consumer.
+
+Definition elt_action_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (elt_action++typed_consumer
+                       ++[("ty",sort_rule [] [])]++cat)
+                    elt_action.
+
+Definition elt_cartesian_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (elt_cartesian++elt_action++typed_consumer
+                       ++[("ty",sort_rule [] [])]++cat)
+                    elt_cartesian.
+
+Lemma simple_sort_wf {V} `{Eqb V} (n : V)
+  : wf_lang_ext [] [(n,sort_rule [] [])].
+Proof.
+  constructor;
+    basic_core_crush.
+Qed.
+#[export] Hint Resolve simple_sort_wf : elab_pfs.
+
+Lemma typed_consumer_wf
+  : elab_lang_ext ([("ty",sort_rule [] [])]++cat)
+      typed_consumer_def typed_consumer.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve typed_consumer_wf : elab_pfs.
+
+Lemma elt_action_wf
+  : elab_lang_ext (typed_consumer++[("ty",sort_rule [] [])]++cat)
+      elt_action_def elt_action.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve elt_action_wf : elab_pfs.
+
+Lemma elt_cartesian_wf
+  : elab_lang_ext (elt_action++typed_consumer++[("ty",sort_rule [] [])]++cat)
+      elt_cartesian_def elt_cartesian.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve elt_cartesian_wf : elab_pfs.
+
+
 Require Import Pyrosome.Theory.Renaming Ascii.
+
+Definition ty_subst_lang :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "ty_env"
+       | "arr" => "ty_subst"
+       | "unit" => "ty"
+       | "u" => "A"
+       | "g"
+       | "f"
+       | "h" => n 
+       | String "G"%char s => String "D" s
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("ty_"++ n)%string
+       end)
+    (unit_cartesian ++ unit_action++obj_consumer++cat).
+
+
+Lemma ty_subst_wf
+  : wf_lang ty_subst_lang.
+Proof.
+apply Renaming.rename_lang_mono.
+2:now prove_from_known_elabs.
+(*TODO: injectivity machinery*)
+Admitted.
+#[export] Hint Resolve ty_subst_wf : elab_pfs.
+
+Definition val_subst :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "env"
+       | "arr" => "sub"
+       | "elt" => "val"
+       | String "a" (String "c" (String "t" s)) => ("val_subst" ++ s)%string
+       (*needed for injectivity; currently not sufficient, but not important*)
+       | "env" => "_env"
+       | "sub" => "_sub"
+       | "val_subst" => "_val_subst"
+       | String "_"%char _ => ("_"++n)%string
+       (**)
+       | _ => n
+       end)
+    (elt_cartesian++elt_action++typed_consumer++cat).
+
+Lemma val_subst_wf
+  : wf_lang_ext [("ty",sort_rule [] [])] val_subst.
+Proof.
+  (*TODO: generalize to lang_ext
+eapply Renaming.rename_lang_mono.
+2:now prove_from_known_elabs.
+(*TODO: injectivity machinery*)*)
+Admitted.
+#[export] Hint Resolve val_subst_wf : elab_pfs.
+
+Definition exp_subst_base :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "env"
+       | "arr" => "sub"
+       | "elt" => "exp"
+       | "v" => "e"
+       | String "a" (String "c" (String "t" s)) => ("exp_subst" ++ s)%string
+       (*needed for injectivity; currently not sufficient, but not important*)
+       | "env" => "_env"
+       | "sub" => "_sub"
+       | "val_subst" => "_val_subst"
+       | String "_"%char _ => ("_"++n)%string
+       (**)
+       | _ => n
+       end)
+    (elt_action++typed_consumer).
+
+Lemma exp_subst_base_wf
+  : wf_lang_ext (val_subst++[("ty",sort_rule [] [])]) exp_subst_base.
+Proof.
+  (*TODO: generalize to lang_ext
+eapply Renaming.rename_lang_mono.
+2:now prove_from_known_elabs.
+(*TODO: injectivity machinery*)*)
+Admitted.
+#[export] Hint Resolve exp_subst_base_wf : elab_pfs.
+
+Require Import Pyrosome.Lang.SimpleVSubst.
+
+Definition exp_ret_def : lang :=
+  {[l/subst
+  [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
+       -----------------------------------------------
+       #"ret" "v" : #"exp" "G" "A"
+    ] ]}.
+
+
+
+Derive exp_ret
+  SuchThat (elab_lang_ext (exp_subst_base++val_subst++[("ty",sort_rule [] [])])
+              exp_ret_def exp_ret)
+       As exp_ret_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_ret_wf : elab_pfs.
+
+(* TODO: note about ordering: have to gen G subst coherence rules
+   before parameterizing w/ D?
+ *)
+
+
+Definition ty_action :=
+  Eval compute in
+  (parameterize_lang "D" {{s #"ty_env"}}
+     ???
+     (rename_lang ??? (_action))).
+
+Compute  exp_subst_base.
+TODO: how best to add more substs to existing sorts? e.g. exp_ty_subst
+  want ext_subst_base w/out exp sort built-in
+  Add wrinkle: extra arguments/parameters
+  Easiest to define a template for 3-parameter substs?
+
+Lemma exp_subst_wf
+  : wf_lang_ext (val_subst++[("ty",sort_rule [] [])]) val_subst_lang.
+Proof.
+  (*TODO: generalize to lang_ext
+eapply Renaming.rename_lang_mono.
+2:now prove_from_known_elabs.
+(*TODO: injectivity machinery*)*)
+Admitted.
+
+Definition exp_core_def : lang _ :=
+      [s| "G" : #"env", "A" : #"ty"
+          -----------------------------------------------
+          #"exp" "G" "A" srt
+      ];
+  
+  [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
+       -----------------------------------------------
+       #"ret" "v" : #"exp" "G" "A"
+  ];
+
+TODO: need an arrow groupoid action
+TODO: re-separate elt_cartesian, rename non-sub portion for exps?
+
+
+Exp next
+
+
+Definition val_subst' :=
+  Eval compute in
+  let ps := (elab_param "A" pre_val_subst
+               [("ext", Some 0); ("val",Some 0)]) in
+  (parameterize_lang "A" {{s #"ty"}}
+     ps pre_val_subst).
+
+
+
+(*TODO: prove wf (need unelab_lang)*)
+
+Definition val_subst_ty_param :=
+  Eval compute in
+  let ps := (elab_param "D" (exp_subst ++ val_subst'++[("ty",sort_rule[][])])
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_subst ++val_subst').
 
 Derive obj_subst
        SuchThat (elab_lang_ext [] obj_subst_def obj_subst)
@@ -939,24 +1239,34 @@ Definition pre_val_subst :=
        end)
     obj_subst).
 
+(*TODO: how to generate exp?
+  Need to separate 2 things: subst calc for things in subst
+  and subst calc extension to other input
+ *)
+
+Require Import Pyrosome.Lang.SimpleVSubst.
+
+
 Definition val_subst' :=
   Eval compute in
   let ps := (elab_param "A" pre_val_subst
                [("ext", Some 0); ("val",Some 0)]) in
   (parameterize_lang "A" {{s #"ty"}}
-    ps pre_val_subst).
+     ps pre_val_subst).
+
+
 
 (*TODO: prove wf (need unelab_lang)*)
 
 Definition val_subst_ty_param :=
   Eval compute in
-  let ps := (elab_param "D" (val_subst'++[("ty",sort_rule[][])])
+  let ps := (elab_param "D" (exp_subst ++ val_subst'++[("ty",sort_rule[][])])
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
                 ("val",Some 2)]) in
   parameterize_lang "D" {{s #"ty_env"}}
-    ps val_subst'.
+    ps (exp_subst ++val_subst').
 
 Definition poly_val_subst :=
   val_subst_ty_param ++ ty_subst.
@@ -968,3 +1278,172 @@ Lemma poly_subst_wf : elab_lang_ext [] poly_subst_def poly_val_subst.
 Proof.
   auto_elab. Qed.
 #[export] Hint Resolve poly_subst_wf : elab_pfs.
+
+Compute (map fst (poly_subst_def)).
+
+
+Section gen_ty_subst_rules.
+
+  
+(*TODO: duplicated*)
+Definition ty_under s :=
+  {{e #"ty_snoc" (#"ty_cmp" #"ty_wkn" {s}) #"ty_hd"}}.
+
+Definition get_subst_constr s :=
+  match s with
+  | "exp" => Some "exp_ty_subst"
+  | "val" => Some "val_ty_subst"
+  | "env" => Some "env_ty_subst"
+  | "sub" => Some "sub_ty_subst"
+  | _ => None
+  end.
+
+Section GenRHSSubterms.
+  Context (G : string)
+          (g : string).
+
+  (*TODO: careful! _ in patterns does bad things (treated as a var)
+   document &/or fix *)
+  Fixpoint gen_arg_subst s :=
+    match s with
+    | {{e#"ty_emp"}} => {{e#"ty_forget"}}
+    | var G' => if G =? G' then var g else {{e#"ERR1"}}
+    | {{e#"ty_ext" {s'} }} => under (gen_arg_subst s')
+    | _ => {{e#"ERR2" {s} }}
+    end.
+  
+  Fixpoint gen_rhs_subterms c args {struct c} :=
+    match c, args with
+    | (n1,t)::c', n2::args' =>
+      if n1 =? n2
+      then
+        match t with
+        | scon name [G']
+        | scon name [_;G'] =>
+          match get_subst_constr name with
+          | Some subst_constr =>
+            let s := gen_arg_subst G' in
+            let e := {{e #subst_constr {s} n1 }} in
+            e::(gen_rhs_subterms c' args')
+          | _ => (var n1)::(gen_rhs_subterms c' args')
+          end
+        | _ => (var n1)::(gen_rhs_subterms c' args')
+        end
+      else gen_rhs_subterms c' args
+    | _, _ => []
+    end.
+End GenRHSSubterms.
+
+Definition substable_constr name c args t : option lang :=
+  match t with
+  (*TODO: assumes arbitrary G below the line. Is that the behavior I want or can I generalize?*)
+  | scon s [A; var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "D'" c in
+      let g := choose_fresh "d" c in
+      let c' := (g,{{s#"ty_sub" G' G }})
+                  ::(G', {{s#"ty_env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [A; var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-ty_subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  (*TODO: duplicated work for blocks since there is no A*)
+  | scon s [var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "D'" c in
+      let g := choose_fresh "d" c in
+      let c' := (g,{{s#"ty_sub" G' G }})
+                  ::(G', {{s#"ty_env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-ty_subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  | _ => None
+  end.
+
+Definition sc '(n,r) :=
+  match r with
+  |term_rule c args t =>
+   match substable_constr n c args t with
+   | Some l => l
+   | None => [(n,r)]
+   end
+  | r => [(n,r)]
+  end.
+
+
+
+Definition poly_subst'_def :=
+  Eval compute in
+    List.flat_map sc
+      (Rule.hide_lang_implicits
+      poly_val_subst
+      (val_subst_ty_param)).
+
+TODO: generated subst rules don't traverse different sorts? e.g. ret
+
+Lemma poly_subst_wf : elab_lang_ext [] poly_subst_def poly_val_subst.
+Proof.
+  auto_elab. Qed.
+#[export] Hint Resolve poly_subst_wf : elab_pfs.
+
+Compute (map fst (poly_subst_def)).
+
+
+
+(*TODO: generate fully-typed rules *)
+List.flat_map sc 
+
+(*TODO: autogenerate ty_subst rules that apply to all existing rules*)
+
+(*usage pattern: only bring 1 into (local) scope as an instance at a time*)
+Class subst_renaming V : Type :=
+  {
+    env : V;
+    sub : V;
+    id : V;
+    cmp : V;
+    obj : V;
+    subst : V;
+    emp : V;
+    forget : V;
+    ext : V;
+    snoc : V;
+    wkn : V;
+    hd : V;
+  }.
+
+Definition renaming_of_fn { B : Type} (f : string -> B) : subst_renaming B :=
+  {|
+    env := f "env";
+    sub := f "sub";
+    id := f "id";
+    cmp := f "cmp";
+    obj := f "obj";
+    subst := f "subst";
+    emp := f "emp";
+    forget := f "forget";
+    ext := f "ext";
+    snoc := f "snoc";
+    wkn := f "wkn";
+    hd := f "hd";
+  |}.
+
+Section gen_subst_rules.
+  
