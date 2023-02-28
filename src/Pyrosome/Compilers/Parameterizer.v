@@ -1028,7 +1028,8 @@ Definition ty_subst_lang :=
     (fun n =>
        match n with
        | "obj" => "ty_env"
-       | "arr" => "ty_subst"
+       | "arr" => "ty_sub"
+       | "act" => "ty_subst"
        | "unit" => "ty"
        | "u" => "A"
        | "g"
@@ -1131,13 +1132,195 @@ Proof. auto_elab. Qed.
 (* TODO: note about ordering: have to gen G subst coherence rules
    before parameterizing w/ D?
  *)
+(*
+issue: if  I parameterize elt_action as normal, what to do about G, A?
+-both should be parameterized by D
+-both should have substs applied to them by coherence rules
+
+For now: writing one manually to see how it goes
+*)
+                           
+Definition exp_and_val_parameterized :=
+  Eval compute in
+    let ps := (elab_param "D" (exp_ret ++ exp_subst_base
+                                 ++ val_subst++[("ty",sort_rule[][])])
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_ret ++ exp_subst_base ++ val_subst).
 
 
+Definition exp_and_val_parameterized_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (exp_and_val_parameterized
+                       ++ty_subst_lang)
+                    exp_and_val_parameterized.
+
+Lemma exp_and_val_parameterized_wf
+  : elab_lang_ext ty_subst_lang
+      exp_and_val_parameterized_def
+      exp_and_val_parameterized.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_and_val_parameterized_wf : elab_pfs.
+
+Compute ty_subst_lang.
+
+Definition env_ty_subst_rename :=
+    (fun n =>
+       match n with
+       | "obj" => "ty_env"
+       | "arr" => "ty_sub"
+       | "act" => "env_ty_subst"
+       | "unit" => "env"
+       | "u" => "G"
+       | "g"
+       | "f"
+       | "h" => n 
+       | String "G"%char s => String "D" s
+       | "act_cmp" => "env_ty_act_cmp"
+       | "act_id" => "env_ty_act_id"
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("ty_"++ n)%string
+       end).
+
+(*TODO: autogenerate coherence rules*)
+Definition env_ty_subst :=
+  Eval compute in
+    (rename_lang env_ty_subst_rename (unit_action)).
+
+
+(*TODO: add & generate coherence rules*)
+Definition exp_ty_subst_def : lang :=
+  {[l
+       [:| "D" : #"ty_env",
+           "D'" : #"ty_env",
+           "g" : #"ty_sub" "D" "D'",
+           "G" : #"env" "D'",
+           "A" : #"ty" "D'",
+           "e" : #"exp" "D'" "G" "A" 
+           -----------------------------------------------
+           #"exp_ty_subst" "g" "e"
+           : #"exp" "D" (#"env_ty_subst" "g" "G") (#"ty_subst" "g" "A")
+       ]
+      ]}.
+
+
+Definition env_ty_subst_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (env_ty_subst++
+                       exp_and_val_parameterized
+                       ++ty_subst_lang)
+                    (env_ty_subst).
+
+
+Lemma env_ty_subst_wf
+  : elab_lang_ext (exp_and_val_parameterized++ty_subst_lang)
+      env_ty_subst_def
+      (env_ty_subst).
+Proof. auto_elab. Qed.
+#[export] Hint Resolve env_ty_subst_wf : elab_pfs.  
+
+
+Derive exp_ty_subst
+  SuchThat (elab_lang_ext (env_ty_subst
+                             ++exp_and_val_parameterized
+                             ++ty_subst_lang)
+      exp_ty_subst_def
+      exp_ty_subst)
+       As exp_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
+
+Definition poly_def : lang :=
+  {[l/subst
+  [:| "D" : #"ty_env", "A" : #"ty" (#"ty_ext" "D")
+      -----------------------------------------------
+      #"All" "A" : #"ty" "D"
+  ];
+    [:| "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" (#"ty_ext" "D"),
+       "e" : #"exp" (#"ty_ext" "D") (#"env_ty_subst" #"ty_wkn" "G") "A"
+       -----------------------------------------------
+       #"Lam" "e" : #"val" "D" "G" (#"All" "A")
+  ];
+  [:| "D" : #"ty_env",
+      "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+       "e" : #"exp" "D" "G" (#"All" "A"),
+       "B" : #"ty" "D"
+       -----------------------------------------------
+       #"@" "e" "B"
+       : #"exp" "D" "G"
+         (#"ty_subst" (#"ty_snoc" #"ty_id" "B") "A")
+  ];
+  [:=  "D" : #"ty_env",
+      "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+       "e" : #"exp" (#"ty_ext" "D") (#"env_ty_subst" #"ty_wkn" "G") "A",
+       "B" : #"ty" "D"
+      ----------------------------------------------- ("Lam-beta")
+      #"@" (#"ret" (#"Lam" "e")) "B"
+      = #"exp_ty_subst" (#"ty_snoc" #"ty_id" "B") "e"
+      : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "B") "A")
+  ]
+  ]}.
+
+
+Derive poly
+  SuchThat (elab_lang_ext (exp_ty_subst
+                             ++env_ty_subst
+                             ++exp_and_val_parameterized
+                             ++ty_subst_lang)
+              poly_def poly)
+       As poly_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
+
+Steps:
+  -prove one more base lang wf
+  -prove poly def wf
+  -autogenerate subst coherence rules for all substs
+  -parameterize compilers (better elab?)
+  -re-prove (parameterized) compilers
+  -fix up combined thm
+  -add to paper
+  -discuss DimSum in related work
+
+Definition exptysubst_rename :=
+    (fun n =>
+       match n with
+       | "obj" => "ty_env"
+       | "arr" => "ty_subst"
+       | "unit" => "ty"
+       | "v" =>
+       | "A" =>
+       | "g"
+       | "f"
+       | "h" => n 
+       | String "G"%char s => String "D" s
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("ty_"++ n)%string
+       end).
 Definition ty_action :=
   Eval compute in
+  let ps := (elab_param "D" (exp_subst ++ val_subst'++[("ty",sort_rule[][])])
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2)]) in
   (parameterize_lang "D" {{s #"ty_env"}}
      ???
-     (rename_lang ??? (_action))).
+     (rename_lang exptysubst_rename (elt_action))).
 
 Compute  exp_subst_base.
 TODO: how best to add more substs to existing sorts? e.g. exp_ty_subst
