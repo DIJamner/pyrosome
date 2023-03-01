@@ -49,11 +49,13 @@ src/Pyrosome/Tools/AllConstructors.v
 
 src/Pyrosome/Compilers/CompilerDefs.v
 src/Pyrosome/Compilers/Compilers.v
+src/Pyrosome/Compilers/Parameterizer.v
 
 src/Pyrosome/Elab/ElabCompilers.v
 
 src/Pyrosome/Lang/Subst.v
 src/Pyrosome/Lang/VSubst.v
+src/Pyrosome/Lang/PolySubst.v
 src/Pyrosome/Lang/SimpleVSubst.v
 src/Pyrosome/Lang/SimpleUnit.v
 src/Pyrosome/Lang/SimpleVSum.v
