@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import Ascii String List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -265,9 +265,6 @@ Lemma elt_cartesian_wf
 Proof. auto_elab. Qed.
 #[export] Hint Resolve elt_cartesian_wf : elab_pfs.
 
-
-Require Import Pyrosome.Theory.Renaming Ascii.
-
 Definition ty_subst_lang :=
   rename_lang
     (fun n =>
@@ -290,13 +287,19 @@ Definition ty_subst_lang :=
     (unit_cartesian ++ unit_action++obj_consumer++cat).
 
 
+
+Definition ty_subst_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (ty_subst_lang)
+                    ty_subst_lang.
+
 Lemma ty_subst_wf
-  : wf_lang ty_subst_lang.
-Proof.
-apply Renaming.rename_lang_mono.
+  : elab_lang_ext [] ty_subst_def ty_subst_lang.
+Proof. auto_elab. Qed.
+(*apply Renaming.rename_lang_mono.
 2:now prove_from_known_elabs.
 (*TODO: injectivity machinery*)
-Admitted.
+Admitted.*)
 #[export] Hint Resolve ty_subst_wf : elab_pfs.
 
 Definition val_subst :=
@@ -317,14 +320,15 @@ Definition val_subst :=
        end)
     (elt_cartesian++elt_action++typed_consumer++cat).
 
+
+Definition val_subst_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (val_subst++[("ty",sort_rule [] [])])
+                    val_subst.
+
 Lemma val_subst_wf
-  : wf_lang_ext [("ty",sort_rule [] [])] val_subst.
-Proof.
-  (*TODO: generalize to lang_ext
-eapply Renaming.rename_lang_mono.
-2:now prove_from_known_elabs.
-(*TODO: injectivity machinery*)*)
-Admitted.
+  : elab_lang_ext [("ty",sort_rule [] [])] val_subst_def val_subst.
+Proof. auto_elab. Qed.
 #[export] Hint Resolve val_subst_wf : elab_pfs.
 
 Definition exp_subst_base :=
@@ -346,19 +350,134 @@ Definition exp_subst_base :=
        end)
     (elt_action++typed_consumer).
 
+
+Definition exp_subst_base_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (exp_subst_base ++ val_subst++[("ty",sort_rule [] [])])
+                    exp_subst_base.
+
 Lemma exp_subst_base_wf
-  : wf_lang_ext (val_subst++[("ty",sort_rule [] [])]) exp_subst_base.
-Proof.
-  (*TODO: generalize to lang_ext
-eapply Renaming.rename_lang_mono.
-2:now prove_from_known_elabs.
-(*TODO: injectivity machinery*)*)
-Admitted.
+  : elab_lang_ext (val_subst++[("ty",sort_rule [] [])])
+      exp_subst_base_def exp_subst_base.
+Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_base_wf : elab_pfs.
 
-Require Import Pyrosome.Lang.SimpleVSubst.
 
-Definition exp_ret_def : lang :=
+Definition definitely_fresh (s : string) (l : list string) :=
+  let len := List.fold_left Nat.max (map String.length l) 0 in
+  String.append s (string_of_list_ascii (repeat ("'"%char : ascii) len)).
+
+Definition choose_fresh (s : string) (c:ctx string) :=
+  if negb (inb s (map fst c)) then s else definitely_fresh s (map fst c).
+
+(*TODO: duplicated*)
+Definition under s :=
+  {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
+
+Definition get_subst_constr s :=
+  match s with
+  | "exp" => Some "exp_subst"
+  | "val" => Some "val_subst"
+  | "blk" => Some "blk_subst"
+  | _ => None
+  end.
+
+Section GenRHSSubterms.
+  Context (G : string)
+          (g : string).
+
+  (*TODO: careful! _ in patterns does bad things (treated as a var)
+   document &/or fix *)
+  Fixpoint gen_arg_subst s :=
+    match s with
+    | {{e#"emp"}} => {{e#"forget"}}
+    | var G' => if G =? G' then var g else {{e#"ERR1"}}
+    | {{e#"ext" {s'} {_} }} => under (gen_arg_subst s')
+    | _ => {{e#"ERR2" {s} }}
+    end.
+  
+  Fixpoint gen_rhs_subterms c args {struct c} :=
+    match c, args with
+    | (n1,t)::c', n2::args' =>
+      if n1 =? n2
+      then
+        match t with
+        | scon name [G']
+        | scon name [_;G'] =>
+          match get_subst_constr name with
+          | Some subst_constr =>
+            let s := gen_arg_subst G' in
+            let e := {{e #subst_constr {s} n1 }} in
+            e::(gen_rhs_subterms c' args')
+          | _ => (var n1)::(gen_rhs_subterms c' args')
+          end
+        | _ => (var n1)::(gen_rhs_subterms c' args')
+        end
+      else gen_rhs_subterms c' args
+    | _, _ => []
+    end.
+End GenRHSSubterms.
+
+Definition substable_constr name c args t : option (lang _) :=
+  match t with
+  (*TODO: assumes arbitrary G below the line. Is that the behavior I want or can I generalize?*)
+  | scon s [A; var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "G'" c in
+      let g := choose_fresh "g" c in
+      let c' := (g,{{s#"sub" G' G }})
+                  ::(G', {{s#"env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [A; var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  (*TODO: duplicated work for blocks since there is no A*)
+  | scon s [var G] =>
+    match get_subst_constr s with
+    | Some subst_constr =>      
+      let constr_rule := term_rule c args t in
+      let G' := choose_fresh "G'" c in
+      let g := choose_fresh "g" c in
+      let c' := (g,{{s#"sub" G' G }})
+                  ::(G', {{s#"env"}})
+                  ::c in
+      let blank_term := con name (map var args) in
+      let lhs := {{e #subst_constr g {blank_term} }} in
+      let rhs := con name (gen_rhs_subterms G g c args) in
+      let t' := scon s [var G'] in
+      let subst_rule :=
+          term_eq_rule c' lhs rhs t' in
+      Some [(append name "-subst",subst_rule);(name, constr_rule)]
+    | None => None
+    end
+  | _ => None
+  end.
+
+Definition sc '(n,r) :=
+  match r with
+  |term_rule c args t =>
+   match substable_constr n c args t with
+   | Some l => l
+   | None => [(n,r)]
+   end
+  | r => [(n,r)]
+  end.
+
+
+Notation "'{[l/subst' r1 ; .. ; r2 ]}" :=
+  (List.flat_map sc (cons r2 .. (cons r1 nil) ..))%rule
+  (format "'[' {[l/subst '[hv' r1 ; '/' .. ; '/' r2 ']' ]} ']'") : lang_scope.
+
+
+Definition exp_ret_def : lang _ :=
   {[l/subst
   [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
        -----------------------------------------------
@@ -441,7 +560,7 @@ Definition env_ty_subst :=
 
 
 (*TODO: add & generate coherence rules*)
-Definition exp_ty_subst_def : lang :=
+Definition exp_ty_subst_def : lang _ :=
   {[l
        [:| "D" : #"ty_env",
            "D'" : #"ty_env",
@@ -482,7 +601,7 @@ Derive exp_ty_subst
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
 
-Definition poly_def : lang :=
+Definition poly_def : lang _ :=
   {[l/subst
   [:| "D" : #"ty_env", "A" : #"ty" (#"ty_ext" "D")
       -----------------------------------------------
@@ -528,14 +647,68 @@ Derive poly
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
 
+
+Definition block_subst : lang _ :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "env"
+       | "arr" => "sub"
+       | String "a" (String "c" (String "t" s)) => ("blk_subst" ++ s)%string
+       | "unit" => "blk"
+       | "id" => "id"
+       | "cmp" => "cmp"
+       | "u" => "e"
+       | String "G"%char _
+       | "g"
+       | "f"
+       | "h" => n 
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("blk_"++ n)%string
+       end)
+    ( unit_action++obj_consumer).
+
+
+Definition block_subst_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (block_subst ++ val_subst ++[("ty",sort_rule [] [])])
+                    block_subst.
+
+Lemma block_subst_wf
+  : elab_lang_ext (val_subst ++[("ty",sort_rule [] [])])
+      block_subst_def block_subst.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve block_subst_wf : elab_pfs.
+
+
 (*
 Steps:
-  -refactor subst langs out of here
-  -derive blk subst sim. to existing langs
   -autogenerate subst coherence rules for all substs
   -parameterize compilers (better elab?)
   -re-prove (parameterized) compilers
   -fix up combined thm
   -add to paper
   -discuss DimSum in related work
+*)
+
+(*
+Fixpoint find_differing {X A} `{Eqb X} `{Eqb A} `{WithDefault A}
+  (l1 l2 : @NamedList.named_list X A) :=
+  match l1 with
+  | [] => []
+  | p::l1 =>
+      (if inb p l2
+       then []
+       else [[snd p;named_list_lookup default l2 (fst p)]])
+        ++find_differing l1 l2
+  end.
+
+Eval vm_compute in (find_differing (exp_subst_base ++
+                    val_subst ++
+                    [("ty",sort_rule [] [])])
+         (SimpleVSubst.exp_subst ++ SimpleVSubst.value_subst)).
+Eval vm_compute in (find_differing blk_subst SimpleVSubst.block_subst).
 *)
