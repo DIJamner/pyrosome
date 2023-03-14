@@ -53,6 +53,8 @@ src/Pyrosome/Compilers/Parameterizer.v
 
 src/Pyrosome/Elab/ElabCompilers.v
 
+src/Pyrosome/Tools/CompilerTools.v
+
 src/Pyrosome/Lang/Subst.v
 src/Pyrosome/Lang/VSubst.v
 src/Pyrosome/Lang/PolySubst.v
