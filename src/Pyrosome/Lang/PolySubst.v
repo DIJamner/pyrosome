@@ -192,9 +192,9 @@ Definition elt_cartesian_rename (n : string) : string :=
   end.
 
 
-Let elt_cartesian_in := (rename_lang elt_cartesian_rename
+#[local] Definition elt_cartesian_in := (rename_lang elt_cartesian_rename
             (unit_cartesian ++ unit_action ++ obj_consumer)).
-Let elt_cartesian_ps := (elab_param "A" elt_cartesian_in
+#[local] Definition elt_cartesian_ps := (elab_param "A" elt_cartesian_in
                            [("ext", Some 0); ("elt",Some 0)]).
 
 
@@ -361,7 +361,6 @@ Lemma exp_subst_base_wf
       exp_subst_base_def exp_subst_base.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_base_wf : elab_pfs.
-
 
 Definition definitely_fresh (s : string) (l : list string) :=
   let len := List.fold_left Nat.max (map String.length l) 0 in
@@ -530,8 +529,6 @@ Lemma exp_and_val_parameterized_wf
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_and_val_parameterized_wf : elab_pfs.
 
-Compute ty_subst_lang.
-
 Definition env_ty_subst_rename :=
     (fun n =>
        match n with
@@ -634,6 +631,16 @@ Definition poly_def : lang _ :=
       = #"exp_ty_subst" (#"ty_snoc" #"ty_id" "B") "e"
       : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "B") "A")
   ]
+    (*
+  [:= "D" : #"ty_env",
+      "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+       "v" : #"val" "D" "G" (#"All" "A")
+        ----------------------------------------------- ("Lam-eta")
+      #"Lam" (#"@" (#"ret" "v") (#"ret" #"ty_hd"))
+      = "v"
+      : #"val" "D" "G" (#"All" "A")
+  ] *)
   ]}.
 
 
@@ -684,15 +691,33 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 
 
-(*
-Steps:
-  -autogenerate subst coherence rules for all substs
-  -parameterize compilers (better elab?)
-  -re-prove (parameterized) compilers
-  -fix up combined thm
-  -add to paper
-  -discuss DimSum in related work
-*)
+                        
+Definition block_and_val_parameterized :=
+  Eval compute in
+    let ps := (elab_param "D" (block_subst
+                                 ++ val_subst++[("ty",sort_rule[][])])
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (block_subst ++ val_subst).
+
+
+Definition block_and_val_parameterized_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (block_and_val_parameterized
+                       ++ty_subst_lang)
+                    block_and_val_parameterized.
+
+Lemma block_and_val_parameterized_wf
+  : elab_lang_ext ty_subst_lang
+      block_and_val_parameterized_def
+      block_and_val_parameterized.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve block_and_val_parameterized_wf : elab_pfs.
+
 
 (*
 Fixpoint find_differing {X A} `{Eqb X} `{Eqb A} `{WithDefault A}

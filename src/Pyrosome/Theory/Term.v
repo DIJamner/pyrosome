@@ -143,28 +143,15 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 
 #[local] Notation subst := (named_list term).
 
-Definition subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
+Definition term_subst_lookup `{V_Eqb : Eqb V} (s : subst) (n : V) : term :=
   named_list_lookup (var n) s n.
 
-Arguments subst_lookup {_} !s n/.
+Arguments term_subst_lookup {_} !s n/.
 
 Section WithEqb.  
   Context {V_Eqb : Eqb V}
     {V_Eqb_ok : Eqb_ok V_Eqb}.
 
-  Lemma subst_lookup_hd n e s : (subst_lookup ((n, e) :: s) n) = e.
-  Proof.
-    unfold subst_lookup; simpl.
-    basic_utils_crush.
-  Qed.
-
-  Lemma subst_lookup_tl n m e s
-    : m <> n -> subst_lookup ((n, e) :: s) m = subst_lookup s m.
-  Proof.
-    unfold subst_lookup; simpl.
-    intros.
-    basic_utils_crush.
-  Qed.
 
   
 #[export] Instance term_eqb : Eqb term :=
@@ -255,7 +242,7 @@ Fixpoint term_var_map (f : V -> term) (e : term) : term :=
 Arguments term_var_map f !e /.
 
 Definition term_subst (s : subst) e : term :=
-  term_var_map (subst_lookup s) e.
+  term_var_map (term_subst_lookup s) e.
 
 Arguments term_subst s !e /.
 
@@ -285,6 +272,25 @@ Arguments ws_term args !e/.
     }.
 
   Notation ws_args := (ws_args (V:=V) (A:=term)).
+
+  (* TODO: make sure term_subst_lookup doesn't appear in goals *)
+  Lemma term_subst_lookup_to_subst_lookup n s
+    : term_subst_lookup s n = subst_lookup s n.
+  Proof. reflexivity. Qed.
+  
+  Lemma subst_lookup_hd n e s : (subst_lookup ((n, e) :: s) n) = e.
+  Proof.
+    unfold subst_lookup; simpl.
+    basic_utils_crush.
+  Qed.
+
+  Lemma subst_lookup_tl n m e s
+    : m <> n -> subst_lookup ((n, e) :: s) m = subst_lookup s m.
+  Proof.
+    unfold subst_lookup; simpl.
+    intros.
+    basic_utils_crush.
+  Qed.
 
   (*TODO: I have a false dependency on Eqb V here
     due to the structure of Substable0.
@@ -661,6 +667,7 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite named_map_subst_nil : term.
 #[export] Hint Rewrite subst_lookup_map : term.
 #[export] Hint Rewrite subst_lookup_hd : term.
+#[export] Hint Rewrite term_subst_lookup_to_subst_lookup : term.
 #[export] Hint Rewrite term_subst_assoc : term.
 #[export] Hint Rewrite subst_lookup_id : term.
 #[export] Hint Rewrite term_subst_id : term.
@@ -703,7 +710,6 @@ Ltac cbn_substs :=
       term_var_map subst_lookup named_list_lookup eqb String.eqb Ascii.eqb Bool.eqb].
 
 
-Arguments subst_lookup [V]%type_scope {V_Eqb} !s n/.
 Arguments ctx_lookup [V]%type_scope {V_Eqb V_default} !c n/.
 Arguments term_var_map [V]%type_scope f !e /.
 Arguments term_subst [V]%type_scope {V_Eqb} s !e /.

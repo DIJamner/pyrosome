@@ -290,20 +290,27 @@ Section WithVar.
             (parameterize_sort t)
       end.
 
-    
-    Definition parameterize_ccase (c : compiler_case V) : compiler_case V :=
-      match c with
-      | sort_case args t =>
-          sort_case (args++[p_name]) (parameterize_sort t)
-      | term_case args e =>
-          term_case (args++[p_name]) (parameterize_term e)
-      end.
+    Section Compilers.
+      Context (src_parameterize_list : param_spec).
+    (*TODO: also need to parameterize the source language*)
+      Definition parameterize_ccase '(n,c) : compiler_case V :=
+        let p_args args :=
+          match named_list_lookup_err src_parameterize_list n with
+          | None => args
+          | Some n => insert (fst n) p_name args
+          end in
+        match c with
+        | sort_case args t =>
+            sort_case (p_args args) (parameterize_sort t)
+        | term_case args e =>
+            term_case (p_args args) (parameterize_term e)
+        end.
 
-    Definition parameterize_compiler : _ -> compiler V :=
-      named_map parameterize_ccase.
+      
+      Definition parameterize_compiler : compiler _ -> compiler _ :=
+        map (fun p => (fst p, parameterize_ccase p)).
 
-    Notation parameterize_lang := (named_map parameterize_rule).
-
+    End Compilers.
     
     Lemma parameterize_subst_lookup s n e
       : n <> p_name ->

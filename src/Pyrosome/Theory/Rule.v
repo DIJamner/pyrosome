@@ -356,13 +356,20 @@ Notation "'[s|' G ----------------------------------------------- # s args 'srt'
      format "'[' [s|  '[' G '//' ----------------------------------------------- '//' '[' # s args  'srt' ']' ']' '//' ] ']'")
   : rule_scope.
 
-Check [s| "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"
+(* Use this pattern instead of `Check` to avoid polluting the output of `make` *)
+Goal let x :=
+       [s| "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"
           -----------------------------------------------
-          #"foo" "y" "z" srt                             ]%rule.
+          #"foo" "y" "z" srt                             ]%rule
+     in False.
+Abort.
 
-Check [s| 
+Goal let x : _* rule string :=
+       [s| 
           -----------------------------------------------
-            #"env" srt                                   ]%rule.
+            #"env" srt                                   ]%rule
+     in False.
+Abort.
 
           
 Notation "[:| G ----------------------------------------------- # s args : t ]" :=
@@ -372,29 +379,34 @@ Notation "[:| G ----------------------------------------------- # s args : t ]" 
      G custom ctx at level 100, t custom sort at level 100,
      format "'[' [:|  '[' G '//' ----------------------------------------------- '//' '[' # s args  '/' :  t ']' ']' '//' ] ']'") : rule_scope.
 
-Check [:| "G" : #"env",
+Goal let x :=
+       [:| "G" : #"env",
           "A" : #"ty" "G",
           "B" : #"ty" "x",
           "e" : #"el" (#"wkn" "A" "B")
           -----------------------------------------------
-          #"lam" "A" "e" : #"el" (#"->" "A" "B")         ]%rule.
+          #"lam" "A" "e" : #"el" (#"->" "A" "B")         ]%rule
+     in False.
+Abort.
 
 
-Check [:|
+Goal let x :=
+       [:|
           -----------------------------------------------
-                      #"emp" : #"env"                     ]%rule.
+                      #"emp" : #"env"                     ]%rule
+     in False.
+Abort.
 
-Eval compute in
-     [:|
-          -----------------------------------------------
-                      #"emp" : #"env"                    ]%rule.
 
-Check [:| "G" : #"env",
+Goal let x :=
+        [:| "G" : #"env",
            "A" : #"ty" "G",
            "B" : #"ty" "x",
            "e" : #"el" (#"wkn" "A" "B")
            -----------------------------------------------
-           #"lam" "e" : #"el" (#"->" "A" "B")             ]%rule.
+           #"lam" "e" : #"el" (#"->" "A" "B")             ]%rule
+     in False.
+Abort.
 
 Notation "'[s=' G ----------------------------------------------- ( s ) e1 = e2 ]" :=
   (s%string, sort_eq_rule G e1 e2)
@@ -404,11 +416,15 @@ Notation "'[s=' G ----------------------------------------------- ( s ) e1 = e2 
   : rule_scope.
 
 
-Check [s= "G" : #"env", "A" : #"ty" "G", "B" : #"ty" "G",
+
+Goal let x :=
+        [s= "G" : #"env", "A" : #"ty" "G", "B" : #"ty" "G",
           "eq" : #"ty_eq" "G" "A" "B" 
           ----------------------------------------------- ("ty_eq_sort")
           #"ty" "G" "A" = #"ty" "G" "B"
-      ]%rule.
+        ]%rule
+     in False.
+Abort.
            
 Notation "[:= G ----------------------------------------------- ( s ) e1 = e2 : t ]" :=
   (s%string, term_eq_rule G e1 e2 t)
@@ -419,10 +435,14 @@ Notation "[:= G ----------------------------------------------- ( s ) e1 = e2 : 
   : rule_scope.
 
 
-Check [:= "G" : #"env", "A" : #"ty" "G", "B" : #"ty" "G",
+
+Goal let x :=
+        [:= "G" : #"env", "A" : #"ty" "G", "B" : #"ty" "G",
           "eq" : #"ty_eq" "G" "A" "B" 
           ----------------------------------------------- ("ty_eq_sort")
           "A" = "B" : #"ty" "G"
-      ]%rule.
+        ]%rule
+     in False.
+Abort.
 
 End Notations.
