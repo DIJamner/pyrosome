@@ -36,7 +36,37 @@ Section WithVar.
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
+  Section WithPreModel.
+    Context {tgt_term tgt_sort : Type}
+            {tgt_Model : @PreModel V tgt_term tgt_sort}
+            (*TODO: should I make it so that these aren't necessary?*)
+            `{WithDefault tgt_term}
+            `{WithDefault tgt_sort}.
 
+    
+    Lemma compile_subst_lookup cmp s n
+      : compile cmp (subst_lookup s n)
+        = Substable.subst_lookup (compile_subst cmp s) n.
+    Proof.
+      induction s;
+        basic_goal_prep;
+        basic_core_crush.
+      case_match; basic_core_crush.
+    Qed.
+    Hint Rewrite compile_subst_lookup : lang_core.
+
+    
+    Lemma with_names_from_compile_ctx (A:Type) cmp c (s : list A)
+      : with_names_from (compile_ctx cmp c) s
+        = with_names_from c s.
+    Proof.
+      revert s; induction c;
+        destruct s; break; basic_core_crush.
+      cbn.
+      f_equal; basic_core_crush.
+    Qed.
+    
+  End WithPreModel.
 
   Section WithModel.
     Context {tgt_term tgt_sort : Type}
@@ -55,6 +85,8 @@ Section WithVar.
     Notation compile_ctx :=
       (compile_ctx (V_Eqb:=V_Eqb) (tgt_Model:=tgt_Model.(premodel))).
 
+    
+    Hint Rewrite compile_subst_lookup : lang_core.
 
   (* Adds some facts that can be derived from wfness of the language
      for a full compiler (not an extension)
@@ -382,16 +414,6 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
       Qed.
 
-Lemma compile_subst_lookup cmp s n
-  : compile cmp (subst_lookup s n)
-  = Substable.subst_lookup (compile_subst cmp s) n.
-Proof.
-  induction s;
-    basic_goal_prep;
-    basic_core_crush.
-  case_match; basic_core_crush.
-Qed.
-Hint Rewrite compile_subst_lookup : lang_core.
 
       (*TODO: move to Utils.v*)
       Lemma map_fst_combine_r_padded {A B} `{WithDefault B} (l1 : list A) (l2 : list B)
@@ -522,85 +544,6 @@ Hint Rewrite compile_subst_lookup : lang_core.
       Hint Rewrite distribute_compile_subst_sort : lang_core.
 
       
-Lemma with_names_from_compile_ctx (A:Type) cmp c (s : list A)
-  : with_names_from (compile_ctx cmp c) s
-    = with_names_from c s.
-Proof.
-  revert s; induction c;
-    destruct s; break; basic_core_crush.
-  cbn.
-  f_equal; basic_core_crush.
-Qed.
-
-      (* TODO: duplicated in Core. Move both to Model*)
-Lemma wf_subst_from_wf_args c s c'
-  : Model.wf_args c s c' ->
-    Model.wf_subst c (with_names_from c' s) c'.
-Proof.
-  induction 1; basic_core_crush.
-Qed.
-      Hint Resolve wf_subst_from_wf_args : lang_core.
-
-(*      
-(*TODO: maybe not necessary with better strengthening lemma?
-  See what happens when I use the better one
-*)
-Variant rule_compiles_with {cmp} : rule -> Prop :=
-| sort_rule_compiles_with c args
-  : Model.wf_ctx (compile_ctx cmp c) -> rule_compiles_with (sort_rule c args)
-| term_rule_compiles_with c args t
-  : Model.wf_ctx (compile_ctx cmp c) ->
-    Model.wf_sort (compile_ctx cmp c) (compile_sort cmp t) ->
-    rule_compiles_with (term_rule c args t)
-(*Similar properties are not necessary for eq rules*)
-| sort_eq_rule_compiles_with c t1 t2 : rule_compiles_with (sort_eq_rule c t1 t2)
-| term_eq_rule_compiles_with c e1 e2 t : rule_compiles_with (term_eq_rule c e1 e2 t).
-Arguments rule_compiles_with : clear implicits.
-                       
-Definition lang_compiles_with cmp : lang -> Prop :=
-  all (fun p => rule_compiles_with cmp (snd p)).
-*)
-
-      Lemma wf_lang_tail l' l
-        : wf_lang (l' ++ l) -> wf_lang l.
-      Proof.
-        induction l';
-          basic_goal_prep;
-          basic_core_crush.
-      Qed.
-
-      Lemma all_fresh_tail {A} (l1 l2: named_list A)
-        : all_fresh (l1++l2) -> all_fresh l2.
-      Proof.
-        induction l1; basic_goal_prep; basic_utils_crush.
-      Qed.
-
-      Lemma all_fresh_conflict_impossible {A} (l1 l2: named_list A) n a1 a2
-        : all_fresh (l1++l2) -> In (n,a1) l1 -> In (n,a2) l2 -> False.
-      Proof.
-        induction l1; basic_goal_prep; basic_utils_crush.
-      Qed.
-      Hint Resolve all_fresh_conflict_impossible : utils.
-
-       Lemma in_twice_appended_all_fresh {A} (l1 l2: named_list A) n a
-              : all_fresh (l1++l2) ->
-                In (n,a) l1 ->
-                ~In n (map fst l2).
-      Proof.
-        induction l1;
-          basic_goal_prep;
-          basic_utils_crush.
-      Qed.
-
-      (*TODO: this is better than the one in utils*)
-      Lemma named_list_lookup_none {A} (l : named_list A) s
-        : None = named_list_lookup_err l s <-> fresh s l.
-      Proof.
-        induction l; basic_goal_prep; basic_utils_crush.
-        cbv; intuition.
-        my_case Hs (eqb s v); basic_goal_prep; basic_utils_crush.
-      Qed.
-      
       Lemma strengthening cmp' cmp l
         : preserving_compiler_plus cmp l ->
           all_fresh (cmp'++cmp) ->
@@ -632,21 +575,21 @@ Definition lang_compiles_with cmp : lang -> Prop :=
         }
         {
           exfalso.
-          eapply named_list_lookup_none in HeqH1.
+          eapply named_list_lookup_none_iff in HeqH1.
           intuition eauto;
             pose proof (sort_name_in_cmp _ _ _ H1 H3).
           apply HeqH1 in H7; auto.
         }
         {
           exfalso.
-          eapply named_list_lookup_none in HeqH7.
+          eapply named_list_lookup_none_iff in HeqH7.
           pose proof (sort_name_in_cmp _ _ _ H1 H3).
           basic_utils_crush.
         }
        (* {
           exfalso.
           basic_utils_crush.
-          eapply named_list_lookup_none in HeqH7.
+          eapply named_list_lookup_none_iff in HeqH7.
           intuition eauto;
             pose proof (sort_name_in_cmp _ _ _ H1 H3).
           basic_utils_crush.
@@ -660,14 +603,14 @@ Definition lang_compiles_with cmp : lang -> Prop :=
         }
         {
           exfalso.
-          eapply named_list_lookup_none in HeqH1.
+          eapply named_list_lookup_none_iff in HeqH1.
           intuition eauto;
             pose proof (term_name_in_cmp _ _ _ _ H1 H3).
           apply HeqH1 in H7; auto.
         }
         {
           exfalso.
-          eapply named_list_lookup_none in HeqH7.
+          eapply named_list_lookup_none_iff in HeqH7.
           pose proof (term_name_in_cmp _ _ _ _ H1 H3).
           basic_utils_crush.
         }
@@ -985,8 +928,8 @@ Definition lang_compiles_with cmp : lang -> Prop :=
             {
               rewrite combine_r_padded_eq_len.
               rewrite combine_map_fst_is_with_names_from.
-              erewrite <- with_names_from_compile_ctx.
-              eapply wf_subst_from_wf_args.
+              erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
+              eapply @wf_subst_from_wf_args with (Model:= tgt_Model).
               eauto.
               basic_core_crush.
             }
@@ -996,7 +939,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
             assumption.
           }
           {
-            rewrite named_list_lookup_none in HeqH7.
+            rewrite named_list_lookup_none_iff in HeqH7.
 
             (*TODO: lost indentation
             TODO: need another conclusion of lemma
@@ -1037,7 +980,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
             rewrite with_names_from_map_is_named_map.
             eapply Model.wf_term_subst_monotonicity; eauto.
             rewrite <- with_names_from_map_is_named_map.
-            erewrite <- with_names_from_compile_ctx.
+            erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
             eapply wf_subst_from_wf_args; eauto.
             eapply H5; eauto.
             {
@@ -1062,7 +1005,7 @@ Definition lang_compiles_with cmp : lang -> Prop :=
               destruct H'.
           }
           {
-            rewrite named_list_lookup_none in HeqH7.
+            rewrite named_list_lookup_none_iff in HeqH7.
 
             (*TODO: lost indentation
             TODO: need another conclusion of lemma

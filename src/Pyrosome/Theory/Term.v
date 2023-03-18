@@ -810,11 +810,12 @@ Module Notations.
   Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
    *)
 
-
-  Check {{e #"foo" }}.
-  Check {{e #"foo" (#"bar" "x") #"baz" "y"}}.
-  Check {{s #"foo" }}.
-  Check {{s #"foo" (#"bar" "x") #"baz" "y"}}.
+Goal False.
+  pose {{e #"foo" }}.
+  pose {{e #"foo" (#"bar" "x") #"baz" "y"}}.
+  pose {{s #"foo" }}.
+  pose {{s #"foo" (#"bar" "x") #"baz" "y"}}.
+Abort.
                                
   Bind Scope ctx_scope with ctx.
 
@@ -848,10 +849,12 @@ Module Notations.
           t custom sort at level 100).
 
   Local Definition as_ctx {V} (c:ctx V) :=c.
-  Check (as_ctx {{c }}).
-  Check (as_ctx {{c "x" : #"env"}}).
-  Check (as_ctx {{c "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"}}).
 
+  Goal False.
+    epose (as_ctx {{c }}).
+    epose (as_ctx {{c "x" : #"env"}}).
+    epose (as_ctx {{c "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"}}).
+  Abort.
   
   (* Used to print arguments in the order the appear in a term *)
   Definition argument_seq_marker {V} (s : list (term V)) := s.

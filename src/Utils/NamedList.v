@@ -281,6 +281,50 @@ Section __.
 (* TODO: do I want to rewrite like this?
   Hint Rewrite with_names_from_map_is_named_map : utils.*)
 
+  
+  Lemma all_fresh_tail {A} (l1 l2: named_list A)
+    : all_fresh (l1++l2) -> all_fresh l2.
+  Proof.
+    induction l1; basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  
+  Hint Resolve @fresh_notin : utils.
+  Hint Rewrite @fresh_app : utils.
+  Lemma all_fresh_conflict_impossible {A} (l1 l2: named_list A) n a1 a2
+    : all_fresh (l1++l2) -> In (n,a1) l1 -> In (n,a2) l2 -> False.
+  Proof.
+    induction l1; basic_goal_prep; basic_utils_crush.
+    (*TODO: what later-proven lemma is missing here? (should be automatic)*)
+    eapply fresh_notin in H5.
+    basic_utils_crush.
+  Qed.
+  (* TODO: a bit problematic as a hint. See where (in Compilers.v)
+     leaving this hint out fails.
+   *)
+  Hint Resolve all_fresh_conflict_impossible : utils.
+
+  Lemma in_twice_appended_all_fresh {A} (l1 l2: named_list A) n a
+    : all_fresh (l1++l2) ->
+      In (n,a) l1 ->
+      ~In n (map fst l2).
+  Proof.
+    induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Hint Rewrite fresh_cons : utils.
+  (*TODO: this is better than the non-iff version. Entirely replace? *)
+  Lemma named_list_lookup_none_iff {A} (l : named_list A) s
+    : None = named_list_lookup_err l s <-> fresh s l.
+  Proof.
+    induction l.
+    1: basic_goal_prep; basic_utils_crush.
+    break; simpl.
+    case_match; basic_goal_prep; basic_utils_crush.
+  Qed.
+
 End __.
 
 
@@ -308,6 +352,8 @@ Arguments named_list_lookup_err_in {S}%type_scope {EqbS EqbS_ok}
 
 Arguments named_list_lookup_prop_correct {S}%type_scope 
   {EqbS EqbS_ok} [A]%type_scope d l s a.
+
+Arguments named_list_lookup_none_iff {S}%type_scope {EqbS EqbS_ok} {A}%type_scope l%list_scope s.
 
 #[export] Hint Resolve pair_fst_in : utils.
 

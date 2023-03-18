@@ -136,7 +136,7 @@ Class MonadTrans (T : (Type -> Type) -> Type -> Type) : Type :=
     lift : forall `{Monad M} {A}, M A -> T M A
   }.
 
-Instance id_monad : Monad id :=
+#[export] Instance id_monad : Monad id :=
   {
     Mret _ a := a;
     Mbind _ _ f := f;
@@ -150,7 +150,7 @@ Notation "'let' p <^- e 'in' b" :=
 
 Definition optionT (M : Type -> Type) A := M (option A).
 
-Instance optionT_trans : MonadTrans optionT :=
+#[export] Instance optionT_trans : MonadTrans optionT :=
   {|
     transformer_monad M _ :=
       {|
@@ -179,7 +179,7 @@ Module StateMonad.
 
   Definition stateT M A := S -> M (A * S)%type.
 
-  Instance stateT_trans : MonadTrans stateT :=
+  #[export] Instance stateT_trans : MonadTrans stateT :=
     {|
       transformer_monad M _ :=
         {|      

@@ -1,5 +1,5 @@
 Require Import ZArith Int63.
-Open Scope int63.
+Open Scope uint63.
 Require Import coqutil.Map.Interface.
 Require Import Tries.Canonical.
 Import PTree.
@@ -49,8 +49,8 @@ Definition trie_fold {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.t 
 Local Definition int_to_nat (i : int) := Z.to_nat (Uint63.to_Z i).
 
 Fixpoint get' {A} (p: int) (m: tree' A) (msb : nat) : option A :=
-  let q := p >> 1 in
-  match msb, m, is_zero (p land 1) with
+  let q := lsr p 1 in
+  match msb, m, is_zero (Int63.land p 1) with
   | O, Node001 _, _ => None
   | O, Node010 x, _ => Some x
   | O, Node011 x _, _ => Some x
@@ -77,7 +77,7 @@ Fixpoint get' {A} (p: int) (m: tree' A) (msb : nat) : option A :=
 (* TODO: we always use int_to_nat (msb p). Should we implement that directly?
    It would probably be faster.
  *)
-Definition msb i := digits - (head0 i).
+Definition msb i := sub digits (head0 i).
 
 Definition get {A} (m : tree A) (p: int) : option A :=
   match m with
@@ -86,16 +86,16 @@ Definition get {A} (m : tree A) (p: int) : option A :=
   end.
 
 Fixpoint set0 {A} (p: int) (x: A) (msb : nat) : tree' A :=
-  let q := p >> 1 in
-  match msb, is_zero (p land 1) with
+  let q := lsr p 1 in
+  match msb, is_zero (Int63.land p 1) with
   | O, _ => Node010 x
   | S msb, true => Node100 (set0 q x msb)
   | S msb, false => Node001 (set0 q x msb)
   end.
 
 Fixpoint set' {A} (p: int) (x: A) (m: tree' A) (msb : nat) : tree' A :=
-  let q := p >> 1 in
-match msb, m, is_zero (p land 1) with
+  let q := lsr p 1 in
+match msb, m, is_zero (Int63.land p 1) with
 | O, Node001 r, _ => Node011 x r
 | O, Node010 _, _ => Node010 x
 | O, Node011 _ r, _ => Node011 x r
@@ -127,8 +127,8 @@ end.
 
 
 Fixpoint rem' {A} (p: int) (m: tree' A) (msb : nat) : tree A :=
-  let q := p >> 1 in
-  match msb, m, is_zero (p land 1) with
+  let q := lsr p 1 in
+  match msb, m, is_zero (Int63.land p 1) with
   | O, Node001 r,_ => Nodes m
   | O, Node010 _,_ => Empty
   | O, Node011 _ r,_ => Nodes (Node001 r)
@@ -209,8 +209,8 @@ Section __.
       (*0 bit ~> left
         1 bit ~> right
        *)
-      let i'_l := i << 1 in
-      let i'_r := i'_l lor 1 in
+      let i'_l := lsr i 1 in
+      let i'_r := Int63.lor i'_l 1 in
       match m with
       | Node001 r => fold' acc r i'_r
       | Node010 v => f acc i v

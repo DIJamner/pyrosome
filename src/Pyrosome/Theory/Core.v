@@ -703,14 +703,6 @@ Proof.
 Qed.
 Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
-Lemma wf_subst_from_wf_args (l : lang) c s c'
-  : wf_args l c s c' ->
-    wf_subst l c (with_names_from c' s) c'.
-Proof.
-  induction 1; basic_core_crush.
-Qed.
-  Hint Resolve wf_subst_from_wf_args : lang_core.
-
 (* TODO: Don't always want this hint? but need it here
    Probably best to gate this behind a submodule import.
    TODO: other unfolds
@@ -1681,7 +1673,6 @@ Qed.
 
 Hint Resolve term_eq_rule_in_sort_wf term_rule_in_sort_wf : lang_core.
 
-(*TODO: move to a more suitable location (Core.v?)*)
 Lemma term_sorts_eq l c e t1
   : wf_lang l -> (*TODO: can I weaken this?*)
     wf_ctx l c ->
@@ -1723,6 +1714,16 @@ Proof.
     basic_core_crush.
   }
 Qed.
+
+
+Lemma wf_lang_tail l' l
+  : wf_lang (l' ++ l) -> wf_lang l.
+Proof.
+  induction l';
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
 
 End WithVar.
 
@@ -1792,7 +1793,6 @@ End WithVar.
 #[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
 
-#[export] Hint Resolve wf_subst_from_wf_args : lang_core.
 #[export] Hint Resolve id_args_wf : lang_core.
 #[export] Hint Resolve eq_subst_dom_eq_r : lang_core.
 #[export] Hint Resolve eq_subst_dom_eq_l : lang_core.
