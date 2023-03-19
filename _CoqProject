@@ -33,6 +33,7 @@ src/Pyrosome/Theory/Model.v
 src/Pyrosome/Theory/Term.v
 src/Pyrosome/Theory/Rule.v
 src/Pyrosome/Theory/Core.v
+src/Pyrosome/Theory/ModelImpls.v
 src/Pyrosome/Theory/Renaming.v
 
 src/Pyrosome/Elab/Elab.v
@@ -49,6 +50,7 @@ src/Pyrosome/Tools/AllConstructors.v
 
 src/Pyrosome/Compilers/CompilerDefs.v
 src/Pyrosome/Compilers/Compilers.v
+src/Pyrosome/Compilers/CompilerTransitivity.v
 src/Pyrosome/Compilers/Parameterizer.v
 
 src/Pyrosome/Elab/ElabCompilers.v
