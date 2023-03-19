@@ -7,11 +7,10 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Tools.Matches Tools.CompilerTools.
+  Tools.Matches Tools.CompilerTools Compilers.CompilerTransitivity.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
   SimpleUnit NatHeap SimpleVCPSHeap
   SimpleVFixCPS SimpleVFixCC SimpleVCC SimpleVSTLC SimpleVCCHeap SimpleVFix.
-(*TODO: fix these or replace them CompilerTransitivity CompilerTools.*)
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -62,11 +61,11 @@ Ltac use_preserving_hint :=
 *)
 
 (*TODO: put these hints with their subjects*)
-Hint Resolve cps_preserving : elab_pfs.
-Hint Resolve Ectx_cps_preserving : elab_pfs.
-Hint Resolve fix_cps_preserving : elab_pfs.
+#[local] Hint Resolve cps_preserving : elab_pfs.
+#[local] Hint Resolve Ectx_cps_preserving : elab_pfs.
+#[local] Hint Resolve fix_cps_preserving : elab_pfs.
 
-Hint Resolve ElabCompilers.elab_preserving_compiler_nil : auto_elab.
+#[local] Hint Resolve ElabCompilers.elab_preserving_compiler_nil : auto_elab.
 
 
 Lemma preserving_compiler_embed {V} `{Eqb_ok V} `{WithDefault V} cmp_pre (tgt : Rule.lang V) cmp src tgt'
@@ -80,11 +79,11 @@ Proof.
   - eapply eq_sort_lang_monotonicity; eauto.
   - eapply eq_term_lang_monotonicity; eauto.
 Qed.
-Hint Resolve preserving_compiler_embed : auto_elab.
+#[local] Hint Resolve preserving_compiler_embed : auto_elab.
 
 Require Import Pyrosome.Tools.AllConstructors.
 
-Hint Resolve incl_nil_l : utils.
+#[local] Hint Resolve incl_nil_l : utils.
 Lemma incl_map_first {A B} (a b : list (A * B))
   : incl a b ->
     incl (map fst a) (map fst b).
@@ -183,7 +182,7 @@ Proof.
   induction 2; basic_goal_prep; basic_core_firstorder_crush.
   rewrite <- app_assoc; auto.
 Qed.
-Hint Resolve wf_lang_concat : lang_core.
+#[local] Hint Resolve wf_lang_concat : lang_core.
 
 (*TODO: duplicated; backport above lemma*)
 Ltac prove_from_known_elabs :=
@@ -258,24 +257,31 @@ Proof.
         with (ir:=(fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
                                ++cps_lang++cps_prod_lang++(block_subst ++ value_subst)++[])).
   all: try (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
-  apply full_cc_compiler_preserving.
-  eapply preserving_compiler_embed.
-  apply full_cps_compiler_preserving.
-  solve_incl.
+  all: try typeclasses eauto; try reflexivity.
+  {
+    apply full_cc_compiler_preserving.
+  }
+  {
+    eapply preserving_compiler_embed.
+    1: apply full_cps_compiler_preserving.
+    compute_incl.
+  }
 Qed.
 
 Lemma full_compiler_semantic
   : semantics_preserving
-      (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
+      (tgt_Model:= core_model (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
                    ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
                    forget_eq_wkn'++
-                   cps_prod_lang ++ block_subst ++ value_subst)
+                   cps_prod_lang ++ block_subst ++ value_subst))
       (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
                    (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
       (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).
 Proof.
-  apply inductive_implies_semantic.
-  (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
-  (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
+  apply inductive_implies_semantic; try typeclasses eauto;
+    eauto using ModelImpls.core_model_ok; try reflexivity.
+  1: apply ModelImpls.core_model_ok; try typeclasses eauto.
+  1: solve [prove_from_known_elabs].
+  1: solve [prove_from_known_elabs].
   apply full_compiler_preserving.
 Qed.
