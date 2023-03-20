@@ -121,11 +121,11 @@ Definition natural_logic_def : lang :=
       -----------------------------------------------
       #"abs" "e": #"entails" "G" (#"imp" "A" "B")
   ];
-  [:| "G": #"env", "H": #"env", "A": #"prop", "B": #"prop",
+  [:| "G": #"env", "A": #"prop", "B": #"prop",
       "f": #"entails" "G" (#"imp" "A" "B"),
-      "x": #"entails" "H" "A"
+      "x": #"entails" "G" "A"
       -----------------------------------------------
-      #"app" "f" "x": #"entails" (#"concat" "G" "H") "B"
+      #"app" "f" "x": #"entails" "G" "B"
   ];
 
   [:| "A": #"prop", "B": #"prop"
