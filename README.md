@@ -1,4 +1,6 @@
-Must be built with Coq 8.14 or higher.
+#Build
+
+Tested with Coq 8.15, but may work with subsequent versions.
 
 You can clone this repository with
 
@@ -6,25 +8,49 @@ You can clone this repository with
 
 Git submodules are used for some dependencies. If you did not clone with `--recursive`, run
 
-    git submodule update --init --recursive
+    make clone_all
 
 from inside the repository.
 
-To build the project, run `./build.sh <t>` where `<t>` is the number of threads to use.
+Once the necessary dependencies are cloned, run `make -jN` to build the project,
+where `N` is the number of threads to use. This project benefits substantially from
+parallel builds, so higher `N` is likely to build much faster, especially for `N <= 4`.
+There are some files that take a while to build, so don't be surprised if building takes
+an hour or more the first time, even with high `N`.
 
 
-Important/representative files:
+#Organization
 
-Metatheory:
-Term.v - contains basic term syntax definitions
-Rule.v - contains basic rule and language syntax definitions
-Core.v - contains judgment forms and monotonicity properties
-CompilerDefs.v - contains definitions related to compiler metatheory
-Compilers.v - contains the proof of the inductive-implies-semantic theorem
+The source code is split into a `Utils` folder that contains generic library features such
+as properties of lists and some useful typeclasses, and a `Pyrosome` folder that contains
+all of the code specific to this project. Here's an incomplete outline of the `Pyrosome` directory:
 
-Case Study:
-SimpleVSubst.v - the substitution calculus
-SimpleVCPS.v - the CPS transformation for STLC
-SimpleVCC.v - the core closure conversion pass
-SimpleVCPSHeap.v - the CPS transformation for heap operations
-CombinedThm.v - The combined corectness result about the full compiler
+
+
+##Theory
+
+- Term.v contains basic term syntax definitions
+- Rule.v contains basic rule and language syntax definitions
+- Core.v contains judgment forms and monotonicity properties
+
+##Compilers
+
+- CompilerDefs.v contains definitions related to compiler metatheory
+- Compilers.v contains the proof of the central inductive-implies-semantic theorem
+
+##Elab
+
+- Elab.v contains an elaboration judgment for use in filling in object-language implicits
+- ElabCompilers.v is like Elab.v, but for compiler correctness
+
+##Tools
+
+- Matches.v contains most of the tactics for working with Pyrosome judgments
+
+##Lang
+- PolySubst.v contains code that generates simply-typed and polymorphic substitution calculi
+- Subst.v contains a dependently-typed substitution calculus
+- SimpleVCPS.v contains the CPS transformation for STLC
+- SimpleVCC.v contains the core closure conversion pass
+- SimpleVCPSHeap.v contains the CPS transformation for heap operations
+- CombinedThm.v contains the combined corectness result about the full case study compiler
