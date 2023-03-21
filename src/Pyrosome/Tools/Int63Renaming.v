@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List Int63 PArray.
+Require Import Lists.List Int63 PArray.
 Import ListNotations.
 Open Scope list.
 Open Scope uint63_scope.

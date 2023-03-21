@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -268,12 +268,16 @@ Local Lemma elab_lang_mono l' l
 Proof using.
   intros.
   apply elab_ind; basic_goal_prep; basic_core_crush.
-  eapply elab_term_conv; basic_core_crush.
-  (*TODO: add to db?*)
-  eauto using eq_sort_lang_monotonicity.
-  constructor; basic_core_crush.
-  (*TODO: add to db?*)
-  eauto using wf_term_lang_monotonicity.
+  {
+    eapply elab_term_conv; basic_core_crush.
+    (*TODO: add to db?*)
+    eauto using eq_sort_lang_monotonicity.
+  }
+  {
+    constructor; basic_core_crush.
+    (*TODO: add to db?*)
+    eauto using wf_term_lang_monotonicity.
+  }
 Qed.
 
 

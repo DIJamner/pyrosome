@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -374,18 +374,22 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
     Proof.
       induction 1; basic_goal_prep; basic_core_crush.
       {
-        eapply well_scoped_change_args.
-        typeclasses eauto.
-        eapply Model.wf_sort_implies_ws; eauto.
-        unfold compile_ctx.
-        rewrite named_map_fst_eq.
-        reflexivity.
+        eapply well_scoped_change_args;
+          try typeclasses eauto.
+        {
+          eapply Model.wf_sort_implies_ws; eauto.
+        }
+        {
+          unfold compile_ctx.
+          rewrite named_map_fst_eq.
+          reflexivity.
+        }
       }
       {
         eapply well_scoped_change_args.
-        typeclasses eauto.
-        eapply Model.wf_term_implies_ws; eauto.
-        unfold compile_ctx.
+        - typeclasses eauto.
+        - eapply Model.wf_term_implies_ws; eauto.
+        - unfold compile_ctx.
         rewrite named_map_fst_eq.
         reflexivity.
       }
@@ -697,16 +701,16 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           try typeclasses eauto.
         {
           destruct H5; destruct H6; break; subst.
-          now eauto.
+          { now eauto. }
           {
             exfalso.
             eapply fresh_lang_fresh_cmp in H4; eauto.
             exfalso; eauto using pair_fst_in.
           }
-          exfalso; now eauto using pair_fst_in.
-          now eauto.
+          { exfalso; now eauto using pair_fst_in. }
+          { now eauto. }
         }
-        clear H5 H6; solve[basic_core_crush].
+        { clear H5 H6; solve[basic_core_crush]. }
         {          
           autorewrite with utils lang_core term in H4.  
           intuition eauto with lang_core.
@@ -724,8 +728,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           break; subst; try tauto.
           now eauto.
         }
-        clear H5 H6; now basic_core_crush. 
-        clear H5 H6; now basic_core_crush.
+        { clear H5 H6; now basic_core_crush. }
+        { clear H5 H6; now basic_core_crush. }
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -759,9 +763,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           break; subst.
           now eauto.
         }
-        clear H5 H6; now basic_core_crush.
-        clear H5 H6; now basic_core_crush.
-         {
+        { clear H5 H6; now basic_core_crush. }
+        { clear H5 H6; now basic_core_crush. }
+        {
           eapply all_constructors_sort_from_wf; eauto.
           intuition subst;
             autorewrite with utils lang_core term in *;
@@ -772,8 +776,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           use_rule_in_wf.
           basic_core_crush.
         }
-        now basic_core_crush.
-        now basic_core_crush.
+        { now basic_core_crush. }
+        { now basic_core_crush. }
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -800,10 +804,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             eapply IHpreserving_compiler_plus; eauto.
           }
         }
-        now basic_core_crush. 
-        now basic_core_crush.
-        
-         {
+        { now basic_core_crush. }
+        { now basic_core_crush. }
+        {
           eapply all_constructors_sort_from_wf; eauto.
           intuition subst;
             autorewrite with utils lang_core term in *;
@@ -815,8 +818,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           all:use_rule_in_wf;
             basic_core_crush.
         }
-        now basic_core_crush. 
-        now basic_core_crush.
+        { now basic_core_crush. }
+        { now basic_core_crush. }
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -856,7 +859,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
         {
           autorewrite with utils lang_core in *.
-          eapply Model.eq_sort_subst; eauto.
+          { eapply Model.eq_sort_subst; eauto. }
           all: basic_core_crush.
         }
         {
@@ -870,7 +873,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
         {
           autorewrite with utils lang_core in *.
-          eapply Model.eq_term_subst; eauto.
+          { eapply Model.eq_term_subst; eauto. }
           all: basic_core_crush.
         }
         {
@@ -927,10 +930,12 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             eapply Model.wf_sort_subst_monotonicity; cycle 2.
             {
               rewrite combine_r_padded_eq_len.
-              rewrite combine_map_fst_is_with_names_from.
-              erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
-              eapply @wf_subst_from_wf_args with (Model:= tgt_Model).
-              eauto.
+              {
+                rewrite combine_map_fst_is_with_names_from.
+                erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
+                eapply @wf_subst_from_wf_args with (Model:= tgt_Model).
+                eauto.
+              }
               basic_core_crush.
             }
             {
@@ -960,7 +965,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
         {
           case_match.
-          case_match.
+          1:case_match.
           {
             autorewrite with utils in *; [| basic_core_crush..].
             pose proof (term_case_in_preserving
@@ -973,27 +978,27 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             break.
             rewrite distribute_compile_subst_sort;
               [| eauto with lang_core..].
-            rewrite combine_r_padded_eq_len.
-            subst.
-            rewrite combine_map_fst_is_with_names_from.
-            unfold compile_subst.
-            rewrite with_names_from_map_is_named_map.
-            eapply Model.wf_term_subst_monotonicity; eauto.
-            rewrite <- with_names_from_map_is_named_map.
-            erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
-            eapply wf_subst_from_wf_args; eauto.
-            eapply H5; eauto.
-            {
-              use_rule_in_wf; basic_core_crush.
-            }
-            {
-              subst; basic_core_crush.
+            { rewrite combine_r_padded_eq_len; subst.
+              {
+                rewrite combine_map_fst_is_with_names_from.
+                unfold compile_subst.
+                rewrite with_names_from_map_is_named_map.
+                eapply Model.wf_term_subst_monotonicity; eauto.
+                rewrite <- with_names_from_map_is_named_map.
+                erewrite <- @with_names_from_compile_ctx with (tgt_Model:= tgt_Model.(premodel)).
+                eapply wf_subst_from_wf_args; eauto.
+                eapply H5; eauto.
+                use_rule_in_wf; basic_core_crush.
+              }
+              {
+                subst; basic_core_crush.
+              }
             }
             {
               rewrite map_fst_with_names_from.
               2:basic_core_crush.
               use_rule_in_wf; basic_core_crush.              
-                                                        }
+            }
           }
           {
             autorewrite with utils in *.
@@ -1038,13 +1043,17 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
   {
     autorewrite with lang_core in *;
     [| intuition eauto with lang_core term utils..].
-    constructor; intuition eauto with lang_core term utils.
-    unfold compile_subst in *.
-    unfold compile_args.
-    rewrite with_names_from_map_is_named_map.
-    rewrite with_names_from_compile_ctx.
-    assumption.
-    basic_core_crush.    
+    {
+      constructor; intuition eauto with lang_core term utils.
+      {
+        unfold compile_subst in *.
+        unfold compile_args.
+        rewrite with_names_from_map_is_named_map.
+        rewrite with_names_from_compile_ctx.
+        assumption.
+      }
+      basic_core_crush.
+    }
     rewrite map_fst_with_names_from.
     2:eauto with utils lang_core.
     safe_invert H8.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -226,6 +226,9 @@ Proof.
        {
          reduce.
          elab_ty_subst.
+         reduce.
+         term_cong.
+         eapply eq_term_refl.
          by_reduction.
        }
        all: try by_reduction.

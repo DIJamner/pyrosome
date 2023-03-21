@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import List String.
+Require Import Lists.List String.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -31,10 +31,9 @@ Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
                   = named_list_lookup (EqbS := Heqb2) x s y.
   Proof.
     induction s; basic_goal_prep; basic_utils_crush.
-    rewrite Eqb_eqb_extensionally_unique with (Heqb1:= Heqb1) (Heqb2:= Heqb2).
+    rewrite Eqb_eqb_extensionally_unique with (Heqb1:= Heqb1) (Heqb2:= Heqb2); try assumption.
     rewrite IHs.
     reflexivity.
-    all: assumption.
   Qed.
 
 Create HintDb term discriminated.

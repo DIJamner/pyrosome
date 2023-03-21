@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import NArith List Lia.
+Require Import NArith Lists.List micromega.Lia.
 Open Scope positive.
 Import ListNotations.
 Open Scope list.

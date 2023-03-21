@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -205,8 +205,10 @@ Proof.
   f_equal.
   unfold subst_cmp.
   rewrite named_map_combine_r_padded.
-  f_equal.
-  apply compile_args_subst; eauto.
+  {
+    f_equal.
+    apply compile_args_subst; eauto.
+  }
   reflexivity.
 Qed.
 Hint Rewrite compile_sort_subst : lang_core.
@@ -251,11 +253,13 @@ Proof.
   {
     rewrite all_fresh_named_list_lookup_err_in.
     2: unfold compile_cmp; basic_utils_crush.
-    rewrite all_fresh_named_list_lookup_err_in in H4; eauto.
-    unfold compile_cmp.
-    change (term_case x (compile cmp x0))
-      with (compile_ccase cmp (term_case x x0)).
-    eapply in_named_map; eauto.
+    {
+      rewrite all_fresh_named_list_lookup_err_in in H4; eauto.
+      unfold compile_cmp.
+      change (term_case x (compile cmp x0))
+        with (compile_ccase cmp (term_case x x0)).
+      eapply in_named_map; eauto.
+    }
     unfold compile_cmp; basic_core_crush.
   }
   rewrite <- H5.
@@ -331,11 +335,13 @@ Proof.
   {
     rewrite all_fresh_named_list_lookup_err_in.
     2: unfold compile_cmp; basic_utils_crush.
-    rewrite all_fresh_named_list_lookup_err_in in H3; eauto.
-    unfold compile_cmp.
-    change (sort_case x (compile_sort cmp x0))
-      with (compile_ccase cmp (sort_case x x0)).
-    eapply in_named_map; eauto.
+    {
+      rewrite all_fresh_named_list_lookup_err_in in H3; eauto.
+      unfold compile_cmp.
+      change (sort_case x (compile_sort cmp x0))
+        with (compile_ccase cmp (sort_case x x0)).
+      eapply in_named_map; eauto.
+    }
     unfold compile_cmp; basic_core_crush.
   }
   rewrite <- H4.
@@ -345,14 +351,15 @@ Proof.
     f_equal.
     unfold compile_subst.
     rewrite named_map_combine_r_padded.
-    f_equal.
-    
+    {
+      f_equal.    
 
-    (*nested induction*)
-    clear x x0 H1 H0 H3 H4.
-    revert dependent l.
-    induction l; basic_goal_prep; basic_core_crush.
-    all: auto.
+      (*nested induction*)
+      clear x x0 H1 H0 H3 H4.
+      revert dependent l.
+      induction l; basic_goal_prep; basic_core_crush.
+    }
+    now auto.
   }
   {
     assert  (ccase_in_cmp_domain cmp (sort_case x x0)).
@@ -394,10 +401,10 @@ Lemma preserving_is_well_scoped cmp_pre tgt cmp ir
 Proof.
   induction 2; basic_goal_prep; intuition;
     replace (map fst c) with (map fst (compile_ctx (cmp++cmp_pre) c)).
-  eapply wf_sort_implies_ws; eauto.
-  apply named_map_fst_eq; eauto.
-  eapply wf_term_implies_ws; eauto.
-  apply named_map_fst_eq; eauto.
+  - eapply wf_sort_implies_ws; eauto.
+  - apply named_map_fst_eq; eauto.
+  - eapply wf_term_implies_ws; eauto.
+  - apply named_map_fst_eq; eauto.
 Qed.
 Hint Resolve preserving_is_well_scoped : lang_core.
 
@@ -488,8 +495,8 @@ Lemma preserving_in_domain cmp_pre tgt cmp ir cmp' src
 Proof.
   intro pres_cmp.
   induction 1; basic_goal_prep; intuition.
-  eapply wf_sort_in_domain; eauto.
-  eapply wf_term_in_domain; eauto.
+  - eapply wf_sort_in_domain; eauto.
+  - eapply wf_term_in_domain; eauto.
 Qed.
 Hint Resolve preserving_in_domain : lang_core.
 

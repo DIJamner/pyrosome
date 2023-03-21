@@ -4,7 +4,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List Int63.
+Require Import String Lists.List Int63.
 Require PArray.
 Import PArray (array, get, set).
 Import ListNotations.
