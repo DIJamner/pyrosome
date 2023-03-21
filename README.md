@@ -1,4 +1,4 @@
-#Build
+# Build
 
 Tested with Coq 8.15, but may work with subsequent versions.
 
@@ -18,8 +18,14 @@ parallel builds, so higher `N` is likely to build much faster, especially for `N
 There are some files that take a while to build, so don't be surprised if building takes
 an hour or more the first time, even with high `N`.
 
+# Issues
 
-#Organization
+This project is in active (and early) development, so if you use it you will run into situations
+that we either have not yet addressed or have not documented the solutions to.
+If you encounter a feature that you want to have or any bugs (including user-facing tactics with
+poor error messages), please reach out or just submit an issue on this repository.
+
+# Organization
 
 The source code is split into a `Utils` folder that contains generic library features such
 as properties of lists and some useful typeclasses, and a `Pyrosome` folder that contains
@@ -27,27 +33,27 @@ all of the code specific to this project. Here's an incomplete outline of the `P
 
 
 
-##Theory
+## Theory
 
 - Term.v contains basic term syntax definitions
 - Rule.v contains basic rule and language syntax definitions
 - Core.v contains judgment forms and monotonicity properties
 
-##Compilers
+## Compilers
 
 - CompilerDefs.v contains definitions related to compiler metatheory
 - Compilers.v contains the proof of the central inductive-implies-semantic theorem
 
-##Elab
+## Elab
 
 - Elab.v contains an elaboration judgment for use in filling in object-language implicits
 - ElabCompilers.v is like Elab.v, but for compiler correctness
 
-##Tools
+## Tools
 
 - Matches.v contains most of the tactics for working with Pyrosome judgments
 
-##Lang
+## Lang
 - PolySubst.v contains code that generates simply-typed and polymorphic substitution calculi
 - Subst.v contains a dependently-typed substitution calculus
 - SimpleVCPS.v contains the CPS transformation for STLC
