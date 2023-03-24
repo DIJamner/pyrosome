@@ -83,6 +83,7 @@ Definition cnot (a : cProp) :=
   | cEmbed P => cEmbed (lift1 not P)
   end.
 
+(* TODO: deprecated; replaced w/ cforall *)
 Definition cimpl (a b : cProp) :=
   match a, b with
   | cTrue, _ => b
@@ -106,6 +107,16 @@ Definition ciff (a b : cProp) :=
   | cEmbed P1, cEmbed P2 => cEmbed (lift2 iff P1 P2)
   end.
 
+
+#[export] Instance Prop_corresponds : cCorresponds cTrue (fun t => inhabited Prop).
+Proof.  
+  unfold cCorresponds in *;
+    cbn;
+    intuition idtac.
+  constructor; eauto.
+  apply True.
+Qed.
+
 Section WithParams.
   Context (cB' cB : cProp) (B' B : forall x : A, (*E x ->*) Prop)
     (B'_corr : cCorresponds cB' B')
@@ -126,6 +137,28 @@ Proof. solve_corresponds. Qed.
 
 #[export] Instance ciff_corresponds : cCorresponds (ciff cB' cB) (lift2 iff B' B).
 Proof. solve_corresponds. Qed.
+
+(*TODO: where to put this?*)
+Lemma inhabited_prop C : C <-> inhabited C.
+Proof.
+  intuition eauto using inhabits.
+  destruct H; auto.
+Qed.
+
+#[export] Instance inhabited_prop_corresponds : cCorresponds cB (lift1 inhabited B).
+Proof using B_corr.
+  clear B'_corr cB' B'.
+   unfold cCorresponds in *; repeat lazymatch goal with
+                                   | P:cProp |- _ => destruct P; try clear P
+                                   end; cbn in *; intros a;
+   repeat match goal with
+          | H:forall a, _ |- _ => specialize (H a)
+     end.
+   all: try solve[intuition eauto using inhabited_prop].
+   all: rewrite <- inhabited_prop; intuition fail.
+Qed.
+     
+
 
 End WithParams.
 
@@ -154,43 +187,48 @@ Arguments cProp_ex {cA} {A}%type_scope {c_Corr} _ : rename.
 #[export] Hint Extern 100 (cCorresponds _ ?A) => apply cembed_corresponds : typeclass_instances.
 
 
-Definition cforall T A (cP : cProp {t : T & A t}) : cProp T :=
-  match cP with
-  | cTrue _ => cTrue _
-  (* must check the inhabitance of A
-     Question: should I design this to assume A inhabited?
-   *)
-  | cFalse _ => cEmbed (fun t => A t -> False)
-  | cEmbed P => cEmbed (fun t => forall x : A t, P (existT _ t x))
+Definition cforall T A cA (cP : cProp {t : T & A t}) : cProp T :=
+  match cA, cP with
+  | cFalse _, _
+  | _ , cTrue _ => cTrue _
+  | cTrue _, cFalse _ => cFalse _
+  | cEmbed P, cFalse _ => cEmbed (lift1 not P)
+  | cTrue _, cEmbed P
+  | cEmbed _, cEmbed P => cEmbed (fun t => forall x : A t, P (existT _ t x))
   end.
 
-Lemma cforall_corresponds T A cB (B : forall t : T, A t -> Prop)
+
+Instance cforall_corresponds T A cA cB (B : forall t : T, A t -> Prop)
+  `{cCorresponds T cA (fun t => inhabited (A t))}
   `{cCorresponds (sigT A)%type cB (fun t' => B (projT1 t') (projT2 t'))}
-  : cCorresponds (cforall A cB) (fun t => forall x : A t, B t x).
+  : cCorresponds (cforall A cA cB) (fun t => forall x : A t, B t x).
 Proof.
-  
+  (*
   unfold cCorresponds in*;
   repeat lazymatch goal with [P : cProp _ |- _] => destruct P;try clear P end;
-    cbn in *; intros a.
+    cbn in *; intros a;
+    repeat match goal with [H : forall a (* (e : E a)*), _ |- _] => specialize (H a) end.
   {
-    pose proof (fun a' => H (existT _ a a')).
+    pose proof (fun a' => H0 (existT _ a a')).
     intuition idtac.
-    specialize (H0 x).
+    specialize (H1 x).
     intuition idtac.
   }
   {
-    pose proof (fun a' => H (existT _ a a')).
+    pose proof (fun a' => H0 (existT _ a a')).
     intuition idtac.
-    eapply H with (a:=existT _ _ _).
-    eapply H1.
+    eapply H0 with (a:=existT _ _ _); eauto.
+  }
+    eapply H2.
   }
   {
-    pose proof (fun a' => H (existT _ a a')).
+    pose proof (fun a' => H0 (existT _ a a')).
     intuition idtac.
     {
-       eapply H with (a:=existT _ _ _).
-       eapply H1.
+       eapply H0 with (a:=existT _ _ _).
+       eapply H2.
     }
+  }
     {
       apply H0; simpl; eauto.
     }
@@ -199,22 +237,23 @@ Proof.
   auto.
 Qed.
 #[export] Hint Extern 90 (cCorresponds _ (fun t => forall x : _, _))
-=> simple eapply cforall_corresponds : typeclass_instances.
+=> simple eapply cforall_corresponds : typeclass_instances.*)
+Admitted.
 
 
-Definition cexists T A (cP : cProp {t : T & A t}) : cProp T :=
+Definition cexists T A (cA : cProp T) (cP : cProp {t : T & A t}) : cProp T :=
   match cP with
-  | cTrue _ => cEmbed (fun t => inhabited (A t))
+  | cTrue _ => cA
   (* must check the inhabitance of A
      Question: should I design this to assume A inhabited?
    *)
   | cFalse _ => cFalse _
   | cEmbed P => cEmbed (fun t => exists x : A t, P (existT _ t x))
   end.
-
+(*
 #[export] Instance cexist_corresponds T A cB (B : forall t : T, A t -> Prop)
   `{cCorresponds (sigT A)%type cB (fun t' => B (projT1 t') (projT2 t'))}
-  : cCorresponds (cexists A cB) (fun t => exists x : A t, B t x).
+  : cCorresponds (cexists A cA cB) (fun t => exists x : A t, B t x).
 Proof.
   
   unfold cCorresponds in*;
@@ -238,6 +277,7 @@ Proof.
     firstorder.
   }
 Qed.
+*)
 
 Goal (forall A B C, C /\ False /\ A -> True /\ B /\ C).
 Proof.
@@ -254,43 +294,11 @@ Abort.
 
 Goal (forall A B C, C /\ False /\ A -> True /\ B /\ C).
 Proof.
-  eapply @cProp_intro.
-  {
-    eapply cforall_corresponds.
-    eapply cforall_corresponds.
-    eapply cforall_corresponds.
-    typeclasses eauto.
-  }
-  cbn.
-  intros A B C.
-  (*TODO: need cforall to trigger later than cimpl?
-    If I handle inhabitance properly, maybe eventually merge them?
-   *)
   eapply cProp_intro.
-  cbn in *.
-  Fail.
+  cbn.
   tauto.
-Abort.
-
-(* Deals w/ top-level forall only *)
-Lemma under_forall A R Q
-  :(forall (x : A), Q x) -> (forall x, Q x -> R x)  -> forall (x : A), R x.
-Proof.
-  firstorder.
 Qed.
 
-Goal (forall A B C, C /\ False /\ A -> True /\ B /\ C) -> False.
-Proof.
-  intros.
-  epose proof (under_forall _ _ H).
-
-  eapply under_forall in H.
-  
-  eapply cProp_ex in H.
-  intros A B C.
-  cbn in *.
-  tauto.
-Abort.
 
 
 Definition cIs_true (b : bool) := if b then cTrue else cFalse.
