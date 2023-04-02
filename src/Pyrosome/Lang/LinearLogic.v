@@ -61,10 +61,10 @@ Definition linear_logic_def : lang :=
       #"ext" (#"ext" "G" "A") "A" =
       #"ext" "G" "A" : #"env"
   ]; *)
-  [:= "G": #"env", "A": #"prop", "B": #"prop", "H": #"env"
+  [:= "G": #"env", "A": #"prop", "B": #"prop"
       ----------------------------------------------- ("exchange")
-      #"concat" (#"ext" (#"ext" "G" "A") "B") "H" =
-      #"concat" (#"ext" (#"ext" "G" "B") "A") "H" : #"env"
+      #"ext" (#"ext" "G" "A") "B" =
+      #"ext" (#"ext" "G" "B") "A" : #"env"
   ];
 
   [s| "G": #"env", "A": #"prop"
@@ -89,6 +89,15 @@ Definition linear_logic_def : lang :=
       #"hyp": #"entails" (#"ext" #"emp" "A") "A"
   ];
 
+  [:| "A": #"prop"
+      -----------------------------------------------
+      #"dual" "A": #"prop"
+  ];
+  [:= "A": #"prop"
+      ----------------------------------------------- ("dual_dual")
+      #"dual" (#"dual" "A") = "A": #"prop"
+  ];
+
   [:| "A": #"prop", "B": #"prop"
       -----------------------------------------------
       #"times" "A" "B": #"prop"
@@ -96,7 +105,7 @@ Definition linear_logic_def : lang :=
   [:| "G": #"env", "H": #"env",
       "A": #"prop", "B": #"prop",
       "a": #"entails" "G" "A",
-      "b": #"entails" "G" "B"
+      "b": #"entails" "H" "B"
       -----------------------------------------------
       #"timesI" "a" "b": #"entails" (#"concat" "G" "H") (#"times" "A" "B")
   ];
@@ -198,14 +207,57 @@ Definition linear_logic_def : lang :=
   ];
 
   [:| -----------------------------------------------
-      #"zero": #"prop"
+      #"null": #"prop"
   ];
   [:| "G": #"env", "H": #"env",
       "C": #"prop",
-      "z": #"entails" "G" #"zero"
+      "z": #"entails" "G" #"null"
       -----------------------------------------------
-      #"zeroE" "z": #"entails" (#"concat" "G" "H") "C"
+      #"nullE" "z": #"entails" (#"concat" "G" "H") "C"
   ]
+(*
+  [:= "A": #"prop", "B": #"prop"
+      ----------------------------------------------- ("times_dual")
+      #"dual" (#"times" "A" "B") = #"par" (#"dual" "A") (#"dual" "B")
+      : #"prop"
+  ];
+  [:= "A": #"prop", "B": #"prop"
+      ----------------------------------------------- ("par_dual")
+      #"dual" (#"par" "A" "B") = #"times" (#"dual" "A") (#"dual" "B")
+      : #"prop"
+  ];
+  [:= "A": #"prop", "B": #"prop"
+      ----------------------------------------------- ("with_dual")
+      #"dual" (#"with" "A" "B") = #"plus" (#"dual" "A") (#"dual" "B")
+      : #"prop"
+  ];
+  [:= "A": #"prop", "B": #"prop"
+      ----------------------------------------------- ("plus_dual")
+      #"dual" (#"plus" "A" "B") = #"with" (#"dual" "A") (#"dual" "B")
+      : #"prop"
+  ];
+
+  [:= ----------------------------------------------- ("unit_dual")
+      #"dual" #"unit" = #"bot": #"prop"
+  ];
+  [:= ----------------------------------------------- ("bot_dual")
+      #"dual" #"bot" = #"unit": #"prop"
+  ];
+  [:= ----------------------------------------------- ("top_dual")
+      #"dual" #"top" = #"null": #"prop"
+  ];
+  [:= ----------------------------------------------- ("null_dual")
+      #"dual" #"null" = #"top": #"prop"
+  ]
+
+  [:= "A": #"prop"
+      ----------------------------------------------- ("!_dual")
+      #"dual" (#"!" "A") = #"?" (#"dual" "A"): #"prop"
+  ];
+  [:= "A": #"prop"
+      ----------------------------------------------- ("?_dual")
+      #"dual" (#"?" "A") = #"!" (#"dual" "A"): #"prop"
+  ] *)
 
   ]}.
 
