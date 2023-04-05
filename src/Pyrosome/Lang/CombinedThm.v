@@ -285,3 +285,44 @@ Proof.
   1: solve [prove_from_known_elabs].
   apply full_compiler_preserving.
 Qed.
+
+Definition full_compiler :=
+  (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
+     (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[])).
+
+Require Import Pyrosome.Compilers.PartialEval.
+
+Definition compile_fn l c t e :=
+  partial_eval _ l (compile_ctx full_compiler c) (compile_sort full_compiler t) 100 (compile full_compiler e).
+
+Lemma full_compiler_with_opt_pres_eq
+  (src := (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]))
+  (tgt := (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
+                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
+                   forget_eq_wkn'++
+                   cps_prod_lang ++ block_subst ++ value_subst))
+  : forall c t e1 e2,
+      eq_term src c t e1 e2 ->
+      wf_ctx (Model:=core_model src) c ->
+      eq_term tgt (compile_ctx full_compiler c) (compile_sort full_compiler t)
+        (compile_fn tgt c t e1) (compile_fn tgt c t e2).
+Proof.
+  intros.
+  unfold compile_fn.
+  unshelve (eapply eq_term_trans; [eapply eq_term_trans; [eapply eq_term_sym|shelve]|];
+            eapply partial_eval_correct;
+            try eapply full_compiler_semantic;
+            eauto; try typeclasses eauto).
+  {
+    eapply full_compiler_semantic; eauto.
+  }
+  1,3:subst tgt; prove_from_known_elabs.
+  {
+    eapply eq_term_wf_l; eauto; try typeclasses eauto.
+    prove_from_known_elabs.
+  }
+  {
+    eapply eq_term_wf_r; eauto; try typeclasses eauto.
+    prove_from_known_elabs.
+  }
+Qed.
