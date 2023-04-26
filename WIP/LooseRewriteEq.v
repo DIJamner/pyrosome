@@ -408,6 +408,22 @@ Section TermsAndRules.
   Qed.
 
   
+  Lemma wkn_well_scoped_incl_sort
+    : forall (x : V) (args args' : list V) (e : sort),
+      incl args args' -> well_scoped args e -> well_scoped args' e.
+  Proof.
+    (* Note: a different proof should work for the generic version *)
+    induction e;
+      basic_goal_prep;
+      basic_term_crush.
+    revert dependent l0.
+    induction l0;
+      basic_goal_prep;
+      basic_term_crush.
+    eapply wkn_well_scoped_incl; eauto.
+  Qed.
+
+  
   (* TODO: move to Utils*)
   Lemma named_list_lookup_None_default A (d:A) lst n
     :  None = named_list_lookup_err lst n ->
@@ -627,45 +643,332 @@ Section TermsAndRules.
       basic_core_crush.
   Qed.
 
-  Inductive subterm_of e : term -> Prop :=
-  | sub_eq : subterm_of e e
-  | sub_cong n s
-    : Exists (subterm_of e) s ->
-      subterm_of e (con n s).
-  Hint Constructors subterm_of : lang_core.
+
+  Notation eq_sortR c t t' := (t = t' \/ Core.eq_sort l c t t').
+
   
-  Lemma subterm_wf' e t
-    : let P c e :=
-        forall e',
-          (*makes the proof easier to solve this case first *)
-          e <> e' ->
-          subterm_of e' e ->
-          exists t', wf_term l c e' t'
+  Lemma invert_wf_term_by_mod_conv n c' args t s t'
+    : In (n, term_rule c' args t) l ->
+      wf_term l c (Term.con n s) t' ->
+      wf_args l c s c'
+      /\ eq_sortR c t [/with_names_from c' s /] t'.
+  Proof.
+    intros Hin H.
+    remember (con n s) as e.
+    revert Heqe.
+    induction H;
+      basic_goal_prep;
+      basic_core_crush.
+    {
+      pose proof (in_all_fresh_same _ _ _ _ ltac:(eauto with lang_core) Hin H) as H3.
+      safe_invert H3.
+      assumption.
+    }
+    {
+      pose proof (in_all_fresh_same _ _ _ _ ltac:(eauto with lang_core) Hin H) as H3.
+      safe_invert H3.
+      intuition idtac.
+    }
+    {
+      right.
+      eapply eq_sort_trans; eassumption.
+    }
+  Qed.
+
+
+  Lemma with_names_from_app A B (l1 : named_list A) (l2 : list B) l1' l2'
+    : length l1 = length l2 ->
+      with_names_from (l1++l1') (l2++l2')
+      =with_names_from l1 l2
+         ++ with_names_from l1' l2'.
+  Proof.
+    revert l2;
+      induction l1;
+      destruct l2;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma ctx_strengthen' c'0 name e0
+    : wf_ctx l c'0 ->
+      forall c'1 s' s,
+        (*all_fresh (c'1++c'0) ->*)
+        fresh name (c'1++c'0) ->
+        length c'1 = length s' ->
+        length c'0 = length s ->
+        map (fun t1 : sort => t1 [/(name, e0) :: with_names_from (c'1++c'0) (s'++s) /])
+          (map snd c'0)
+        = map (fun t1 : sort => t1 [/with_names_from (c'1++c'0) (s'++s) /])
+            (map snd c'0).
+  Proof.
+    induction 1;
+      destruct s;
+      basic_goal_prep;
+      basic_term_crush.
+    {
+      erewrite strengthen_subst with (a:=v);
+        eauto;
+        try typeclasses eauto.
+      2:{
+        rewrite with_names_from_app; eauto.
+        basic_goal_prep.
+        basic_utils_crush.
+        all:rewrite fresh_with_names_from; eauto.
+      }
+      {
+        basic_goal_prep.
+        rewrite map_fst_with_names_from; eauto.
+        2: {
+          rewrite !app_length; simpl; congruence.
+        }
+        eapply wkn_well_scoped_incl_sort; eauto.
+        {
+          rewrite map_app.
+          eapply incl_appr.
+          simpl.
+          eapply incl_tl.
+          eapply incl_refl.
+        }
+        basic_core_crush.
+      }
+    }
+    {
+      repeat lazymatch goal with
+               |- context ctx [?l1 ++ ?e::?l2] =>
+                 let x' := context ctx [l1++[e]++l2] in
+                 change x'
+             end.
+      rewrite ! app_assoc.
+      rewrite IHwf_ctx; eauto.
+      {
+        rewrite <- app_assoc; simpl.
+        basic_utils_crush.
+      }
+      {
+        rewrite !app_length.
+        basic_utils_crush.
+      }
+    }
+  Qed.
+
+   
+  Lemma ctx_strengthen c'0 name e0
+    : wf_ctx l c'0 ->
+      forall s,
+        fresh name c'0 ->
+        length c'0 = length s ->
+        map (fun t1 : sort => t1 [/(name, e0) :: with_names_from c'0 s /])
+          (map snd c'0)
+        = map (fun t1 : sort => t1 [/with_names_from c'0 s /])
+            (map snd c'0).
+  Proof.
+    intros.
+    eapply ctx_strengthen' with (c'1:=[]) (s':=[]); simpl; eauto.
+  Qed.
+
+  End TermsAndRules.
+
+
+Fixpoint concretize (s : list term) (c : ctx) {struct c} :=
+  match s, c with
+  | [], [] => []
+  | _::s', (_,t)::c' =>
+      t[/with_names_from c' s'/]::(concretize s' c')
+  (* should never happen *)
+  | _,_ => []
+  end.
+
+Lemma wf_ctx_skipn l c'
+  : wf_ctx l c' ->
+    forall n,
+    wf_ctx l (skipn n c').
+Proof.
+  induction 1;
+    destruct n;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
+  Lemma subterms_wf_if_in l c e t (s : subst) c' e' t' x c_in
+    : wf_lang l ->
+      wf_ctx l c ->
+      wf_ctx l c' ->
+      fresh x c' ->
+      wf_sort l c' t' ->
+      wf_subst l c s c' ->
+      let P c_in e t :=
+        c_in = (x,t'):: c' ->
+        wf_term l c e[/(x,e')::s/] t[/(x,e')::s/] ->
+        In x (fv e) ->
+        wf_term l c e' t'[/s/]
+      in
+      wf_term l c_in e t -> P c_in e t.
+  Proof.   
+    intros until P.
+    eapply wf_judge_ind
+      with (P := fun _ _=> True)
+           (P0 := P)
+           (P1 := fun c s c' => Forall2 (P c) s (concretize s c'));
+      subst P;
+      repeat basic_goal_prep; auto.
+    {
+      use_rule_in_wf.
+      autorewrite with utils model lang_core term in *.
+      break.
+      lazymatch goal with
+        H : wf_term _ _ (con _ _) ?t [/with_names_from ?c ?s/] [/?s0/] |- _=>
+          revert H;
+          replace t [/with_names_from c s/] [/s0/]
+            with t[/with_names_from c (s[/s0/])/];
+          [| erewrite Substable.with_names_from_args_subst, subst_assoc;
+             try typeclasses eauto;
+             eauto;
+             rewrite map_fst_with_names_from;
+             basic_core_crush]
+      end.
+      intro H'.      
+      pose proof (invert_wf_term_by_mod_conv H H0 _ _ _ H5 H') as H''.
+      destruct H'' as [H'' _].
+     (* subst c0.*)
+      revert H8 H'' H7 H10 H11.
+      clear H' H13 t0 H5 args H12.
+      let H := lazymatch goal with H : Model.wf_args _ _ _|- _=> H end in
+      induction H;
+        basic_goal_prep;
+        try tauto.
+      subst.
+      autorewrite with utils model lang_core term in *.
+      safe_invert H7.
+      break.
+      destruct H10; eauto.
+      eapply H13; eauto.
+      erewrite subst_assoc; eauto; try typeclasses eauto.
+      2:{ rewrite map_fst_with_names_from; basic_core_crush. }
+      fold_Substable.
+      rewrite <- with_names_from_args_subst.
+      exact H12.
+    }
+    {
+      eapply H6; auto.
+                        
+      (*TDO: how to handle?*)
+      replace t0 with t'0 by admit.
+      eauto.
+    }
+    {
+      intuition subst.
+      basic_goal_prep.
+      basic_utils_crush.
+      unfold term_subst_lookup in *.
+      basic_goal_prep.
+      basic_utils_crush.
+      erewrite strengthen_subst in H7; eauto;
+        try typeclasses eauto.
+      all: basic_core_crush.
+    }
+  Qed.
+
+
+
+
+
+
+  Inductive Exists2 (A B : Type) (P : A -> B -> Prop) : list A -> list B -> Prop :=
+    Exists2_cons_hd : forall x y l1 l2, P x y -> Exists2 P (x :: l1) (y::l2)
+  | Exists2_cons_tl : forall x y l1 l2, Exists2 P l1 l2 -> Exists2 P (x :: l1) (y::l2).
+
+  
+  (* TODO: typing info *)
+  Inductive subterms_of c : list (term * sort) -> (term * sort) -> Prop :=
+  | sub_singleton e t t' : eq_sortR c t t' -> subterms_of c [(e,t)] (e,t')
+  | sub_cong s n c' args t' t2 subs
+    : In (n, term_rule c' args t') l ->
+      eq_sortR c t'[/with_names_from c' s/] t2 ->
+      let sorts := (map (fun t => t[/with_names_from c' s/])
+                                    (map snd c')) in
+      Forall2 (subterms_of c) subs (combine s sorts) ->
+      subterms_of c (concat subs) (con n s, t2).
+  Hint Constructors subterms_of : lang_core.
+
+  
+  Lemma all_app A P (l1 l2 : list A) : all P (l1++l2) <-> all P l1 /\ all P l2.
+  Proof.
+    induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma subterms_wf' e t
+    : let P c e t :=
+        forall subs,
+          subterms_of c subs (e,t) ->
+          all (fun p => wf_term l c (fst p) (snd p)) subs
       in
       wf_term l c e t ->
-      P c e.
+      P c e t.
   Proof.
     intro P.
     eapply wf_judge_ind
       with (P := fun _ _=> True)
-           (P0 := fun c e _ => P c e)
-           (P1 := fun c s _ => all (P c) s);
+           (P0 := P)
+           (P1 := fun c s c' => Forall2 (P c) s (map snd c'));
       subst P;
       (* TODO: tactic bug requiring repeat *)
       repeat basic_goal_prep;
       try lazymatch goal with
-      | H : subterm_of _ _ |- _ => inversion H; subst; clear H
+      | H : subterms_of _ _ _ |- _ => inversion H; subst; clear H
       end;
+      repeat basic_goal_prep; intuition subst.
+    {
       basic_core_crush.
-    revert V_Eqb_ok V_default H0 H5 H1.
-    clear.
-    induction 3;
-      basic_goal_prep;
-      lazymatch goal with
-      | H : Exists _ _ |- _ => inversion H; subst; clear H
-      end;
+    }
+    {
+      eapply wf_term_conv.
+      2: eapply eq_sort_sym; eassumption.
       basic_core_crush.
-    
+    }
+    {
+      pose proof (in_all_fresh_same _ _ _ _ ltac:(eauto with lang_core) H H7) as H3.
+      inversion H3; subst; clear H3 H H7 H2.
+      subst sorts.
+      
+      revert subs0 H1 H9.
+      clear t' args0.
+      induction H0;
+        basic_goal_prep;
+        repeat lazymatch goal with
+        | H : Forall2 _ [] _ |- _ => inversion H; subst; clear H
+        | H : Forall2 _ _ [] |- _ => inversion H; subst; clear H
+        | H : Forall2 _ (_::_) _ |- _ => inversion H; subst; clear H
+        | H : Forall2 _ _ (_::_) |- _ => inversion H; subst; clear H
+          end;
+        basic_goal_prep;
+        basic_core_crush.
+      rewrite all_app;
+        split.
+      2:{
+        eapply IHwf_args; eauto.
+        TODO: want subst in Forall here to be incl?
+        eauto.
+      apply H1.
+      TODO: why is it x::l0?
+      revert V_Eqb_ok V_default H0 H8 H1.
+      clear.
+      induction 3;
+        basic_goal_prep.
+      {
+        inversion H8.
+      }
+      {
+        inversion H1; subst; clear H1.
+        lazymatch goal with
+        | H : Exists2 _ _ _ |- _ => inversion H; subst; clear H
+        | H : Forall2 _ _ _ |- _ => inversion H; subst; clear H
+        end;
+        basic_core_crush.
+      {
+        
+        eapply IHwf_args; eauto.
     pose proof (eqb_spec e e').
     destruct (eqb e e'); subst; eauto.
   Qed.
