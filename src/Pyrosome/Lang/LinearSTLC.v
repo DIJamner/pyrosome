@@ -87,9 +87,9 @@ Definition linear_stlc_def : lang :=
       "e'" : #"exp" "G" "A",
       "G'" : #"env",
       "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("app-subst")
-      #"exp_subst" "g" (#"app" "e" "e'")
-       = #"app" (#"exp_subst" "g" "e") (#"exp_subst" "g" "e'")
+      ----------------------------------------------- ("linear_app-subst")
+      #"exp_subst" "g" (#"linear_app" "e" "e'")
+       = #"linear_app" (#"exp_subst" "g" "e") (#"exp_subst" "g" "e'")
        : #"exp" "G'" "B"
   ];
   [:= "G" : #"env",
@@ -98,10 +98,10 @@ Definition linear_stlc_def : lang :=
       "e" : #"exp" (#"ext" "G" "A") "B",
       "G'" : #"env",
       "g" : #"sub" "G'" "G"
-      ----------------------------------------------- ("lambda-subst")
-      #"val_subst" "g" (#"lambda" "A" "e")
-      = #"lambda" "A" (#"exp_subst" (#"csub" "g" #"id") "e")
-      : #"val" "G'" (#"->" "A" "B")
+      ----------------------------------------------- ("linear_lambda-subst")
+      #"val_subst" "g" (#"linear_lambda" "A" "e")
+      = #"linear_lambda" "A" (#"exp_subst" (#"csub" "g" #"id") "e")
+      : #"val" "G'" (#"lolli" "A" "B")
   ]
   ]}.
 
