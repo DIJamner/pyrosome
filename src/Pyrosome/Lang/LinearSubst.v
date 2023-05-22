@@ -195,7 +195,6 @@ Definition linear_value_subst_def : lang :=
   ]}.
 
 (*TODO: use elab_lang notation?*)
-(*
 Derive linear_value_subst
        SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
        As linear_value_subst_wf.
