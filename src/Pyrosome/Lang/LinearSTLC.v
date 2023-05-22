@@ -11,6 +11,40 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
+Definition linear_stlc_no_subst_def : lang :=
+  {[l (* /lin_subst *)
+  [:| "t" : #"ty", "t'": #"ty"
+      -----------------------------------------------
+      #"lolli" "t" "t'" : #"ty"
+  ];
+  [:| "G" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e" : #"exp" (#"ext" "G" "A") "B"
+       -----------------------------------------------
+       #"linear_lambda" "A" "e" : #"val" "G" (#"lolli" "A" "B")
+  ];
+  [:| "G" : #"env",
+      "H" : #"env",
+       "A" : #"ty",
+       "B" : #"ty",
+       "e" : #"exp" "G" (#"lolli" "A" "B"),
+       "e'" : #"exp" "H" "A"
+       -----------------------------------------------
+       #"linear_app" "e" "e'" : #"exp" (#"conc" "G" "H") "B"
+  ];
+  [:= "G" : #"env",
+      "H" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"exp" (#"ext" "G" "A") "B",
+      "v" : #"val" "H" "A"
+      ----------------------------------------------- ("Linear-STLC-beta")
+      #"linear_app" (#"ret" (#"linear_lambda" "A" "e")) (#"ret" "v")
+      = #"exp_subst" (#"snoc" #"id" "v") "e"
+      : #"exp" (#"conc" "G" "H") "B"
+  ]
+  ]}.
 
 Definition linear_stlc_def : lang :=
   {[l (* /lin_subst *)
@@ -44,6 +78,30 @@ Definition linear_stlc_def : lang :=
       #"linear_app" (#"ret" (#"linear_lambda" "A" "e")) (#"ret" "v")
       = #"exp_subst" (#"snoc" #"id" "v") "e"
       : #"exp" (#"conc" "G" "H") "B"
+  ];
+
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"exp" "G" (#"lolli" "A" "B"),
+      "e'" : #"exp" "G" "A",
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("app-subst")
+      #"exp_subst" "g" (#"app" "e" "e'")
+       = #"app" (#"exp_subst" "g" "e") (#"exp_subst" "g" "e'")
+       : #"exp" "G'" "B"
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "e" : #"exp" (#"ext" "G" "A") "B",
+      "G'" : #"env",
+      "g" : #"sub" "G'" "G"
+      ----------------------------------------------- ("lambda-subst")
+      #"val_subst" "g" (#"lambda" "A" "e")
+      = #"lambda" "A" (#"exp_subst" (#"csub" "g" #"id") "e")
+      : #"val" "G'" (#"->" "A" "B")
   ]
   ]}.
 
