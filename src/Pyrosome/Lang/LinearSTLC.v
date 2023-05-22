@@ -13,7 +13,7 @@ Require Coq.derive.Derive.
 
 
 Definition linear_stlc_def : lang :=
-  {[l/lin_subst
+  {[l (* /lin_subst *)
   [:| "t" : #"ty", "t'": #"ty"
       -----------------------------------------------
       #"lolli" "t" "t'" : #"ty"
@@ -32,7 +32,7 @@ Definition linear_stlc_def : lang :=
        "e" : #"exp" "G" (#"lolli" "A" "B"),
        "e'" : #"exp" "H" "A"
        -----------------------------------------------
-       #"linear_app" "e" "e'" : #"exp" (#"concat" "G" "H") "B"
+       #"linear_app" "e" "e'" : #"exp" (#"conc" "G" "H") "B"
   ];
   [:= "G" : #"env",
       "H" : #"env",
@@ -43,12 +43,12 @@ Definition linear_stlc_def : lang :=
       ----------------------------------------------- ("Linear-STLC-beta")
       #"linear_app" (#"ret" (#"linear_lambda" "A" "e")) (#"ret" "v")
       = #"exp_subst" (#"snoc" #"id" "v") "e"
-      : #"exp" "G" "B"
+      : #"exp" (#"conc" "G" "H") "B"
   ]
   ]}.
 
 Derive stlc
-       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_def stlc)
+       SuchThat (elab_lang_ext (exp_subst++value_subst) [] (* stlc_def *) stlc)
        As stlc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.

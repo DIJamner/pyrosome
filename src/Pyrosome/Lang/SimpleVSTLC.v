@@ -51,3 +51,5 @@ Derive stlc
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.
 
+Compute stlc_def.
+
