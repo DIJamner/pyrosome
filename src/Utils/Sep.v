@@ -1,8 +1,13 @@
+From coqutil Require Import Map.Interface.
+Require Import Lists.List.
+Import ListNotations.
 
-From coqutil Require Import Map.Interface Map.Solver.
+Require Import Setoid.
+Require Import Coq.Classes.Morphisms.
 
+Require Import Coq.Sorting.Permutation.
 
-From Utils Require Import Base Props Eqb.
+From Utils Require Import Base Props Eqb Options Lists ExtraMaps.
 
 Section __.
   Context (A : Type)
@@ -10,41 +15,10 @@ Section __.
     (Eqb_A_ok : Eqb_ok Eqb_A)
     (mem : map.map A A)
     (mem_ok : map.ok mem).
-
-  (* TODO: move to Eqb *)
-  #[local] Instance eqb_boolspec
-    : forall x y : A, BoolSpec (x = y) (x <> y) (eqb x y).
-  Proof.
-    intros.
-    pose proof (eqb_spec x y).
-    destruct (eqb x y); constructor; eauto.
-  Qed.
-
-  Ltac maps_equal :=
-    eapply map.map_ext;
-    intros;
-    map_solver_core_impl mem_ok;
-    repeat lazymatch goal with
-      | |- context c [eqb ?a ?b] =>
-          pose proof (eqb_spec a b);
-          destruct (eqb a b)
-      end;
-    subst;
-    try congruence.
-  
-
-  Definition disjoint_sum (t1 t2 t12: mem) : Prop :=
-    forall i,
-      match map.get t1 i, map.get t2 i, map.get t12 i with
-      | None, None, None => True
-      | Some j, None, Some j' => j = j'
-      | None, Some j, Some j' => j = j'
-      | _, _, _ => False
-      end.
   
   Definition sep (P1 : _ -> Prop) (P2 : _ -> Prop)
     (t12 : mem) : Prop :=
-    exists t1 t2, disjoint_sum t1 t2 t12 /\ (P1 t1) /\ (P2 t2).
+    exists t1 t2, map.split t12 t1 t2 /\ (P1 t1) /\ (P2 t2).
 
   Definition lift (P : Prop) (m : mem) := P /\ m = map.empty.
   Definition emp := (lift True).
@@ -71,7 +45,7 @@ Section __.
     if map.get t i then True else False.
   Hint Unfold has_key : utils.
 
-  
+  (*TODO: move A-parameterized things to separate file*)
   Definition and1 {A} (P1 P2 : A -> Prop) a : Prop :=
     P1 a /\ P2 a.
   Hint Unfold and1 : utils.
@@ -84,531 +58,430 @@ Section __.
     P1 a -> P2 a.
   Hint Unfold impl1 : utils.
   
-  Notation Uimpl1 P1 P2 := (forall a, P1 a -> P2 a) (only parsing).
+  Definition Uimpl1 {A} (P1 P2 : A -> Prop) :=
+    forall a, P1 a -> P2 a.
+  Definition Uiff1 {A} (P1 P2 : A -> Prop) :=
+               forall a, P1 a <-> P2 a.
+  
+  Add Parametric Relation A : (A -> Prop) Uiff1
+      reflexivity proved by ltac:(cbn;firstorder)
+      symmetry proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as Uiff1_rel.
+  
+  Add Parametric Relation A : (A -> Prop) Uimpl1
+      reflexivity proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as Uimpl1_rel.
+
+  
+  #[export] Instance impl1_iff1_mor {B}
+    : Proper (@Uiff1 B ==> Uiff1 ==> iff) Uimpl1.
+  Proof.
+    cbv [Proper Basics.impl Uiff1 Uimpl1 respectful].
+    intros; intuition (subst; firstorder eauto).
+  Qed.
+  
+  #[export] Instance app_impl1_mor {B}
+    : Proper (@Uimpl1 B ==> eq ==> Basics.impl) (fun a b => a b).
+  Proof.
+    cbv [Proper Basics.impl Uimpl1 respectful].
+    intros; intuition (subst; eauto).
+  Qed.
+  
+  (*TODO: Doesn't seem to work for `rewrite` *)
+  #[export] Instance app_iff1_mor {B}
+    : Proper (@Uiff1 B ==> eq ==> iff) (fun a b => a b).
+  Proof.
+    cbv [Proper iff Uiff1 respectful].
+    intros; intuition (subst; firstorder eauto).
+  Qed.
+
+  (*TODO: subrelation *)
+  Definition Uiff_to_Uimpl {A} {P1 P2 : A -> Prop}
+    : Uiff1 P1 P2 -> Uimpl1 P1 P2 :=
+    fun eq a => proj1 (eq a).
+    
   
   Lemma sep_impl {P1 P1' P2 P2' : mem -> Prop}
     : Uimpl1 P1 P1' ->
       Uimpl1 P2 P2' ->
       Uimpl1 (sep P1 P2) (sep P1' P2').
   Proof.
+    cbv [Uimpl1];
     intros; unfold sep in *;
       break.
     exists x, x0; basic_utils_crush.
   Qed.
 
-  Lemma disjoint_sym' (pa1 pa2 pa : mem)
-    : disjoint_sum pa1 pa2 pa ->
-      disjoint_sum pa2 pa1 pa.
+  #[export] Instance sep_impl1_mor : Proper (Uimpl1 ==> Uimpl1 ==> Uimpl1) sep.
   Proof.
-    unfold disjoint_sum.
-    intros H i; specialize (H i).
-    repeat case_match; eauto.
+    cbv [Proper Uiff1 respectful].
+    intros; eapply sep_impl; eauto.
   Qed.
-
   
-  Lemma disjoint_sym (pa1 pa2 pa : mem)
-    : disjoint_sum pa1 pa2 pa <->
-      disjoint_sum pa2 pa1 pa.
+  #[export] Instance sep_iff1_mor : Proper (Uiff1 ==> Uiff1 ==> Uiff1) sep.
   Proof.
-    split; apply disjoint_sym'.
+    cbv [Proper Uiff1 respectful].
+    intros; firstorder eauto using sep_impl.
   Qed.
-
-  Lemma sep_sym' P1 P2 : Uimpl1 (sep P1 P2) (sep P2 P1).
+  
+  Lemma sep_comm_impl P1 P2 : Uimpl1 (sep P1 P2) (sep P2 P1).
   Proof.
-    unfold sep;
+    cbv [Uimpl1 sep];
       intros; break.
-    apply disjoint_sym in H.
+    apply Properties.map.split_comm in H.
     eauto.
   Qed.
 
-  (* TODO: lift rewrite w/ Proper instance *)
-  Lemma sep_sym P1 P2 : forall m, sep P1 P2 m <-> sep P2 P1 m.
+  Lemma sep_comm P1 P2 : Uiff1 (sep P1 P2) (sep P2 P1).
   Proof.
-    split; apply sep_sym'.
+    split; apply sep_comm_impl.
   Qed.
-
- Lemma disjoint_sum_right (pa1 pa2 pa : mem) i (j : A)
-    : disjoint_sum pa1 pa2 pa ->
-      Some j = map.get pa2 i ->
-      Some j = map.get pa i.
-  Proof.
-    unfold disjoint_sum;
-      intros H H';
-      specialize (H i).
-    rewrite <- H' in *.
-    revert H.
-    case_match; try tauto.
-    case_match; try tauto.
-    congruence.
-  Qed.
-
-  
-
-  Lemma disjoint_sum_left pa1 pa2 pa i (j : A)
-    : disjoint_sum pa1 pa2 pa ->
-      Some j = map.get pa1 i ->
-      Some j = map.get pa i.
-  Proof.
-    intros; eapply disjoint_sum_right; cycle 1; eauto using disjoint_sym'.
-  Qed.
-
-  
   
   Lemma set_set_comm a c (b d : A) (p : mem)
     : a <> c -> (map.put (map.put p c d) a b) = (map.put (map.put p a b) c d).
   Proof. intros; maps_equal. Qed.
-  
-  Lemma disjoint_get_some (pa1 pa2 pa : mem) (k :A) j
-    : disjoint_sum pa1 pa2 pa ->
-      Some k = map.get pa j ->
-      Some k = map.get pa1 j \/ Some k = map.get pa2 j.
+
+  Fixpoint seps l : mem -> Prop :=
+    match l with
+    | [] => emp
+    | P::l' => sep P (seps l')
+    end.
+
+  Lemma impl1_refl B (P : B -> Prop) : Uimpl1 P P.
   Proof.
-    intro H; specialize (H j); revert H;
-      repeat (case_match; try tauto);
-      intros; subst; (right + left); congruence.
+    reflexivity.
+  Qed.
+  Hint Resolve impl1_refl : utils.
+
+
+  Lemma iff1_refl B (P : B -> Prop) : Uiff1 P P.
+  Proof.
+    reflexivity.
+  Qed.
+  Hint Resolve iff1_refl : utils.
+
+  
+  Lemma sep_consequence (P1 P2 Q1 Q2 : mem -> Prop)
+    : (forall m, P1 m -> P2 m) ->
+      (forall m, Q1 m -> Q2 m) ->
+      forall m, sep P1 Q1 m -> sep P2 Q2 m.
+  Proof.
+    unfold sep; firstorder eauto.
+  Qed.
+
+  Definition seps_Uimpl1 l1 l2 :=
+    Uimpl1 (seps l1) (seps l2).
+  
+  Definition seps_Uiff1 l1 l2 :=
+    Uiff1 (seps l1) (seps l2).
+  
+  #[export] Instance seps_impl1_mor
+    : Proper (seps_Uimpl1 ==> Uimpl1) seps.
+  Proof.
+    cbv; auto.
+  Qed.
+  
+  #[export] Instance seps_iff1_mor
+    : Proper (seps_Uiff1 ==> Uiff1) seps.
+  Proof.
+    cbv; auto.
+  Qed.
+
+  #[export] Instance cons_impl1_mor
+    : Proper (Uimpl1 ==> seps_Uimpl1 ==> seps_Uimpl1) (@cons (mem -> Prop)).
+  Proof.
+    cbv [Proper respectful seps_Uimpl1 Uimpl1].
+    basic_goal_prep;
+      basic_utils_crush.
+    simple eapply sep_consequence; eauto.
+  Qed.
+  
+  #[export] Instance cons_iff1_mor
+    : Proper (Uiff1 ==> seps_Uiff1 ==> seps_Uiff1) (@cons (mem -> Prop)).
+  Proof.
+    cbv [Proper respectful seps_Uiff1 Uiff1].
+    basic_goal_prep;
+      basic_utils_crush.
+    all: revert dependent a.
+    all:simple eapply sep_consequence; firstorder eauto.
   Qed.
 
   
-  Lemma disjoint_sum_update_left (pa1 pa2 pa : mem) j (k : A) i
-    : disjoint_sum pa1 pa2 pa ->
-      Some k = map.get pa1 j ->
-      disjoint_sum (map.put pa1 j i) pa2 (map.put pa j i).
-  Proof.
-    intros H1 H2 j';
-      specialize (H1 j');
-      revert H1;
-      pose proof (eqb_spec j j');
-      destruct (eqb j j');
-      subst;
-      [ rewrite <- !H2 |].
-    {
-      repeat (case_match; intros; subst; try tauto; try congruence).
-      all: rewrite ?map.get_put_same in HeqH0.
-      all: rewrite ?map.get_put_same in HeqH1.
-      all: try congruence.
-    }
-    {
-      repeat (case_match; intros; subst; try tauto; try congruence).
-      all: rewrite ?map.get_put_diff in HeqH1 by eauto; try congruence.
-      all: rewrite ?map.get_put_diff in HeqH3 by eauto; try congruence.
-      all: revert H1; case_match;intros; subst; try tauto; try congruence.
-    }
-  Qed.
+  Add Parametric Relation : (list (mem -> Prop)) seps_Uiff1
+      reflexivity proved by ltac:(cbn;firstorder)
+      symmetry proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as seps_Uiff1_rel.
   
+  Add Parametric Relation : (list (mem -> Prop)) seps_Uimpl1
+      reflexivity proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as seps_Uimpl1_rel.
   
-  Lemma disjoint_sum_update_right (pa1 pa2 pa : mem) j (k : A) i
-    : disjoint_sum pa1 pa2 pa ->
-      Some k = map.get pa2 j ->
-      disjoint_sum pa1 (map.put pa2 j i) (map.put pa j i).
+  Lemma emp_iff (m  : mem) : emp m <-> m = map.empty.
   Proof.
-    eauto using disjoint_sym', disjoint_sum_update_left.
-  Qed.
-  
-  Lemma disjoint_empty_left (a : mem)
-    : disjoint_sum map.empty a a.
-  Proof.
-    intro i.
-    rewrite map.get_empty.
-    case_match; subst; auto.
-  Qed.
-  #[local] Hint Resolve disjoint_empty_left : utils.
-  
-  Lemma disjoint_empty_right (a : mem)
-    : disjoint_sum a map.empty a.
-  Proof.
-    eauto using disjoint_sym', disjoint_empty_left.
-  Qed.
-  #[local] Hint Resolve disjoint_empty_right : utils.
-
-  
-  Lemma disjoint_empty_left' (a b : mem)
-    : disjoint_sum map.empty a b <-> a = b.
-  Proof.
-    split; subst; basic_utils_crush.
-    maps_equal.
-    specialize (H k); revert H.
-    rewrite map.get_empty.
-    repeat case_match; intros; subst; auto; try tauto.
-  Qed.
-  #[local] Hint Rewrite disjoint_empty_left' : utils.
-  
-  Lemma disjoint_empty_right' (a b : mem)
-    : disjoint_sum a map.empty b <-> a = b.
-  Proof.
-    rewrite disjoint_sym, disjoint_empty_left'; intuition idtac.
-  Qed.
-  #[local] Hint Rewrite disjoint_empty_right' : utils.
-
-  
-  Lemma sep_get_r P1 P2 t (j:A) i
-    : sep P1 P2 t ->
-      (forall t', P2 t' -> Some j = map.get t' i) ->
-      Some j = map.get t i.
-  Proof.
-    unfold sep;
-      intros; break.
-    specialize (H i);
-      specialize (H0 _ H2);
-      rewrite <- H0 in H;
-      revert H.
-    repeat (case_match; autorewrite with utils; try tauto).
-    congruence.
-  Qed.
-
-  
-  Lemma sep_get_l P1 P2 t (j:A) i
-    : sep P1 P2 t ->
-      (forall t', P1 t' -> Some j = map.get t' i) ->
-      Some j = map.get t i.
-  Proof.
-    unfold sep;
-      intros; break.
-    specialize (H i);
-      specialize (H0 _ H1);
-      rewrite <- H0 in H;
-      revert H.
-    repeat (case_match; autorewrite with utils; try tauto).
-    congruence.
-  Qed.
-
-
-  (* TODO
-  
-  Lemma disjoint_remove A i1 i2 (pa : mem)
-    : disjoint_sum (remove i1 pa) (singleton i1 i2) (set i1 i2 pa).
-  Proof.
-    intro i.
-    destruct (Pos.eq_dec i i1);
-      subst;
-      rewrite ?gss, ?grs;
-      rewrite ?gso, ?gro by eauto;
-      rewrite ?gempty; eauto.
-    case_match; try tauto.
-  Qed.
-                       
-  Lemma disjoint_unique_l A (t1 t2 t t1' : mem)
-    : disjoint_sum t1 t2 t ->
-      disjoint_sum t1' t2 t ->
-      t1 = t1'.
-  Proof.
-    intros.
-    apply extensionality.
-    intro i;
-      specialize (H i);
-      specialize (H0 i);
-      revert H H0;
-      repeat (case_match; try tauto; try congruence).
-  Qed.
-                   
-  Lemma disjoint_unique_r A (t1 t2 t t2' : mem)
-    : disjoint_sum t1 t2 t ->
-      disjoint_sum t1 t2' t ->
-      t2 = t2'.
-  Proof.
-    intros.
-    apply extensionality.
-    intro i;
-      specialize (H i);
-      specialize (H0 i);
-      revert H H0;
-      repeat (case_match; try tauto; try congruence).
-  Qed.
-                 
-  Lemma disjoint_unique_out A (t1 t2 t t' : mem)
-    : disjoint_sum t1 t2 t ->
-      disjoint_sum t1 t2 t' ->
-      t = t'.
-  Proof.
-    intros.
-    apply extensionality.
-    intro i;
-      specialize (H i);
-      specialize (H0 i);
-      revert H H0;
-      repeat (case_match; try tauto; try congruence).
-  Qed.
-
-  
-  Lemma disjoint_sum_comm A (pa1 pa2 pa : mem)
-    : disjoint_sum pa1 pa2 pa ->
-      disjoint_sum pa2 pa1 pa.
-  Proof.
-    intros H i;
-      specialize (H i);
-      revert H;
-      repeat (case_match;
-              subst;
-              autorewrite with utils;
-              try tauto;
-              try congruence).
-  Qed.
-  
-
-  Lemma sep_empty_left A (P1 P2 : _ -> Prop) (t : mem)
-    : P1 PTree.empty -> P2 t -> sep P1 P2 t.
-  Proof.
-    intros; exists PTree.empty, t;
+    unfold emp, lift;
+      basic_goal_prep;
       basic_utils_crush.
   Qed.
-  Hint Resolve sep_empty_left : utils.
+
+  #[local] Hint Rewrite Properties.map.split_empty_l
+    Properties.map.split_empty_r : utils.
   
-  Lemma sep_empty_right A (P1 P2 : _ -> Prop) (t : mem)
-    : P2 PTree.empty -> P1 t -> sep P1 P2 t.
+  Lemma sep_emp_r P : Uiff1 (sep P emp) P.
   Proof.
-    intros; exists t, PTree.empty;
+    unfold Uiff1, sep;
+      split;
+      basic_goal_prep;
       basic_utils_crush.
+    exists a, map.empty.
+    basic_utils_crush.
   Qed.
-  Hint Resolve sep_empty_right : utils.
+  #[local] Hint Rewrite sep_emp_r : utils.
 
   
-  Lemma not_has_key_empty A j
-    : ~ has_key j (@PTree.empty A).
+  Lemma sep_emp_l P : Uiff1 (sep emp P) P.
   Proof.
-    unfold has_key;
+    rewrite sep_comm; eauto.
+    apply sep_emp_r.
+  Qed.
+  #[local] Hint Rewrite sep_emp_l : utils.
+
+  
+  Lemma seps_tl : Uiff1 (seps []) emp.
+  Proof.
+    reflexivity.
+  Qed.
+  #[local] Hint Rewrite seps_tl : utils.
+
+  Lemma seps_emp_hd l : seps_Uiff1 (emp::l) l.
+  Proof.
+    unfold seps_Uiff1; cbn.
+    basic_utils_crush.
+  Qed.
+  #[local] Hint Rewrite seps_emp_hd : utils.
+
+  
+  Lemma sep_seps_l l P
+    : Uiff1 (sep (seps l) P) (seps (P::l)).
+  Proof.
+    basic_goal_prep.
+    rewrite sep_comm; basic_utils_crush.
+  Qed.
+  #[local] Hint Rewrite sep_seps_l : utils.
+  
+  Lemma sep_seps_r l P
+    : Uiff1 (sep P (seps l)) (seps (P::l)).
+  Proof.
+    basic_goal_prep; basic_utils_crush.
+  Qed.
+  #[local] Hint Rewrite sep_seps_r : utils.
+  
+  
+  #[local] Hint Rewrite @map.get_empty : utils.
+  #[local] Hint Rewrite map.get_put_same : utils.
+  #[local] Hint Rewrite map.get_put_diff using congruence : utils.
+  
+  Lemma map_split_singleton_r (m : mem) x i j
+    : map.split m x (map.singleton i j)
+      <-> map.get x i = None /\ m = map.put x i j.
+  Proof.
+    unfold map.singleton.
+    split;
+      basic_goal_prep.
+    {
+      pose proof H.
+      eapply Properties.map.get_split with (k:=i) in H.
+      assert (map.get x i = None) by basic_utils_crush.
+      intuition idtac;
+        maps_equal;
+        basic_utils_crush.
+      eapply Properties.map.get_split with (k:=k) in H0.
+      basic_utils_crush.
+      congruence.
+    }
+    {
+      basic_utils_crush.
+      apply Properties.map.split_comm.
+      apply Properties.map.split_undef_put.
+      auto.
+    }
+  Qed.
+
+         
+  Lemma map_split_singleton_l (m : mem) x i j
+    : map.split m (map.singleton i j) x
+      <-> map.get x i = None /\ m = map.put x i j.
+  Proof.
+    rewrite Properties.map.split_comm.
+    apply map_split_singleton_r.
+  Qed.
+  
+  Lemma not1_has_key j (m : mem)
+    :  not1 (has_key j) m <-> map.get m j = None.
+  Proof.
+    unfold not1, has_key;
       case_match;
       basic_utils_crush.
   Qed.
-  Hint Resolve not_has_key_empty : utils.
 
-  Hint Unfold and1 : utils.
-  Hint Unfold not1 : utils.
+  
 
-  Lemma disjoint_remove' A i1 i2 (pa1 pa : mem)
-    : disjoint_sum pa1 (singleton i1 i2) pa ->
-      pa1 = remove i1 pa.
+  Lemma seps_impl1_refl l : seps_Uimpl1 l l.
   Proof.
-    intro H; eapply disjoint_unique_l; eauto.
-    pose proof (disjoint_remove _ i1 i2 pa).
-    enough (pa = set i1 i2 pa) as H'
-        by (rewrite <- H' in *; auto).
-    eapply extensionality;
-      intro i.
-    destruct (Pos.eq_dec i i1).
-    2:{ rewrite gso; auto. }
-    basic_utils_crush.
-    specialize (H i1);
-      revert H;
-      repeat (case_match; basic_utils_crush; try tauto; try congruence).
-      revert H;
-        repeat (case_match; basic_utils_crush; try tauto; try congruence).
+    reflexivity.
   Qed.
+  #[local] Hint Resolve seps_impl1_refl : utils.
 
-  
 
-
-  Lemma disjoint_sum_has_key_l A (pa1 pa2 pa : mem) k
-    : disjoint_sum pa1 pa2 pa ->
-      has_key k pa1 ->
-      has_key k pa.
+  Lemma seps_iff1_refl l: seps_Uiff1 l l.
   Proof.
-    intro H;
-      specialize (H k);
-      unfold has_key.
-    repeat (revert H;
-            case_match;
-            basic_utils_crush;
-            try tauto; try congruence).
+    reflexivity.
   Qed.
-  Hint Resolve disjoint_sum_has_key_l : utils.
-  
-  Lemma disjoint_sum_has_key_r A (pa1 pa2 pa : mem) k
-    : disjoint_sum pa1 pa2 pa ->
-      has_key k pa2 ->
-      has_key k pa.
-  Proof.
-    intro H;
-      specialize (H k);
-      unfold has_key.
-    repeat (revert H;
-            case_match;
-            basic_utils_crush;
-            try tauto; try congruence).
-  Qed.
-  Hint Resolve disjoint_sum_has_key_r : utils.
+  Hint Resolve seps_iff1_refl : utils.
 
-  
-  Lemma disjoint_sum_set_left A pa1 pa2 pa i (j : A)
-    : None = get i pa2 ->
-      disjoint_sum pa1 pa2 pa ->
-      disjoint_sum (set i j pa1) pa2 (set i j pa).
+   Lemma sep_assoc P Q H
+    : Uiff1 (sep (sep P Q) H) (sep P (sep Q H)).
   Proof.
-    intros H1 H2 i';
-      specialize (H2 i');
-      revert H2.
-    destruct (Pos.eq_dec i' i); subst;
-      basic_utils_crush;
-      rewrite <- ?H1; auto;
-    rewrite ?gso by eauto;
-      auto;
-    repeat (case_match;
-            basic_utils_crush;
-            try tauto;
-            try congruence).
-  Qed.
-
-  
-  Lemma disjoint_sum_set_right A pa1 pa2 pa i (j : A)
-    : None = get i pa1 ->
-      disjoint_sum pa1 pa2 pa ->
-      disjoint_sum pa1 (set i j pa2) (set i j pa).
-  Proof.
-    intros H1 H2 i';
-      specialize (H2 i');
-      revert H2.
-    destruct (Pos.eq_dec i' i); subst;
-      basic_utils_crush;
-      rewrite <- ?H1; auto;
-    rewrite ?gso by eauto;
-      auto;
-    repeat (case_match;
-            basic_utils_crush;
-            try tauto;
-            try congruence).
-  Qed.
-
-  
-  
-  Lemma disjoint_sum_set_right' A pa1 pa2 pa i (j : A)
-    : None = get i pa ->
-      disjoint_sum pa1 pa2 pa ->
-      disjoint_sum pa1 (set i j pa2) (set i j pa).
-  Proof.
-    intros.
-    enough (None = get i pa1) by eauto using disjoint_sum_set_right.
-    specialize (H0 i);
-      rewrite <- H in H0;
-      repeat (revert H0;
-              case_match;
-            basic_utils_crush;
-            try tauto;
-              try congruence).
-  Qed.
-
-  
-  
-  Lemma disjoint_sum_set_left' A pa1 pa2 pa i (j : A)
-    : None = get i pa ->
-      disjoint_sum pa1 pa2 pa ->
-      disjoint_sum (set i j pa1) pa2 (set i j pa).
-  Proof.
-    intros.
-    enough (None = get i pa2) by eauto using disjoint_sum_set_left.
-    specialize (H0 i);
-      rewrite <- H in H0;
-      repeat (revert H0;
-              case_match;
-            basic_utils_crush;
-            try tauto;
-              try congruence).
-  Qed.
-  
-  
-  Lemma remove_set_diff A i j (k:A) pa
-    : i <> j -> remove i (set j k pa) = set j k (remove i pa).
-  Proof.
-    intros; apply extensionality; intro i'.
-    destruct (Pos.eq_dec i' i); subst;
-      basic_utils_crush;
-      rewrite ?gso by eauto;
+    unfold Uiff1,sep;
+      split;
+      basic_goal_prep.
+    all: unfold map.split in *;
+        basic_goal_prep; subst.
+    1:rewrite Properties.map.disjoint_putmany_l in H6.
+    2:rewrite Properties.map.disjoint_putmany_r in H6.
+    1: exists x1, (map.putmany x2 x0).
+    2: exists (map.putmany x x1), x2.
+    all:basic_goal_prep;
+        basic_utils_crush.
+    all: rewrite ?Properties.map.putmany_assoc; try reflexivity.
+    {
+      rewrite Properties.map.disjoint_putmany_r.
       basic_utils_crush.
-    rewrite gro by eauto.
-    destruct (Pos.eq_dec i' j); subst;
-      basic_utils_crush;
-      rewrite ?gso by eauto;
+    }
+    2:{
+      rewrite Properties.map.disjoint_putmany_l.
       basic_utils_crush.
-    rewrite gro by eauto.
-    auto.
-  Qed.
-  
-  Lemma remove_remove_diff A i j (pa : mem)
-    : i <> j -> remove i (remove j pa) = (remove j (remove i pa)).
-  Proof.
-    intros; apply extensionality; intro i'.
-    destruct (Pos.eq_dec i' i); subst;
-      basic_utils_crush;
-      rewrite ?gro by eauto;
-      basic_utils_crush.
-    destruct (Pos.eq_dec i' j); subst;
-      basic_utils_crush;
-      rewrite ?gso by eauto;
-      basic_utils_crush.
-    rewrite !gro by eauto.
-    auto.
-  Qed.
-
-  
-  Lemma disjoint_sum_has_key A (pa1 pa2 pa : mem) k
-    : disjoint_sum pa1 pa2 pa ->
-      has_key k pa ->
-      has_key k pa1 \/  has_key k pa2.
-  Proof.
-    intro H;
-      specialize (H k);
-      unfold has_key.
-    repeat (revert H;
-            case_match;
-            basic_utils_crush;
-            try tauto; try congruence).
-  Qed.
-  Hint Resolve disjoint_sum_has_key : utils.
-
-  
-
-
-  Lemma sep_implies_not_has_key A P1 P2 (t : mem) i
-    : sep P1 P2 t ->
-      (forall t, P1 t -> ~ has_key i t) ->
-      (forall t, P2 t -> ~ has_key i t) ->
-      ~ has_key i t.
-  Proof.
-    unfold sep;
-      intros;
-      break.
-    intro Hk.
-    eapply disjoint_sum_has_key in H; eauto.
-    firstorder.
-  Qed.
-  
-  Lemma has_key_sep_distr A P1 P2 (t : mem) j
-    : has_key j t ->
-      sep P1 P2 t ->
-      sep (and1 P1 (has_key j)) P2 t
-      \/ sep P1 (and1 P2 (has_key j)) t.
-  Proof.
-    unfold sep; intros; break.
-    pose proof (disjoint_sum_has_key _ _ _ _ _ H0 H).
-    destruct H3; [left | right];
-      exists x, x0;
+    }
+    all: eexists; eexists;
       basic_utils_crush.
   Qed.
 
-  
-  
-  Lemma disjoint_remove_left A (pa1 pa2 pa : mem) j
-    : has_key j pa1 ->
-      disjoint_sum pa1 pa2 pa ->
-      disjoint_sum (remove j pa1) pa2 (remove j pa).
+    Lemma sep_concat l1 l2
+    : Uiff1 (seps (l1++l2)) (sep (seps l1) (seps l2)).
   Proof.
-    intros Hk H i;
-      specialize (H i);
-      destruct (Pos.eq_dec i j);
-      unfold has_key in *;
-      revert Hk;
-      basic_utils_crush;
-      revert H Hk;
-      repeat (case_match;
-              subst;
-              autorewrite with utils;
-              try tauto;
-              try congruence);
-      intros;
-      rewrite ?gro in * by eauto;
-      try congruence.
+    revert l2.
+    induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+    repeat change (seps (?a :: ?l)) with (sep a (seps l)).
+    rewrite sep_assoc.
+    rewrite IHl1.
+    reflexivity.
   Qed.
-  Hint Resolve disjoint_remove_left : utils.
+      
+    
+  Lemma sep_sequent_concat
+    len1 len2 l1 l2
+    : seps_Uimpl1 (firstn len1 l1) (firstn len2 l2) ->
+      seps_Uimpl1 (skipn len1 l1) (skipn len2 l2) ->
+      seps_Uimpl1 l1 l2.
+  Proof.
+    intros Hf Hs.
+    rewrite <- firstn_skipn with (l:=l1) (n:=len1).
+    rewrite <- firstn_skipn with (l:=l2) (n:=len2).
+    (*TODO: fix this rewrite *)
+    unfold seps_Uimpl1.
+    rewrite !sep_concat.
+    rewrite Hf, Hs; reflexivity.
+  Qed.
+  
+
+  Lemma seps_swap x y l
+    : seps_Uiff1 (y :: x :: l) (x :: y :: l).
+  Proof.
+    unfold seps_Uiff1.
+    unfold seps; fold seps.
+    rewrite sep_comm.
+    rewrite !sep_assoc.
+    rewrite sep_comm with (P1:= (seps l)).
+    reflexivity.
+  Qed.
+  
+  Lemma seps_permutation l1 l2
+    : Permutation l1 l2 ->
+      seps_Uiff1 l1 l2.
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      rewrite IHPermutation;
+        reflexivity.
+    }
+    {
+      apply seps_swap.
+    }
+    {
+      rewrite IHPermutation1; eauto.
+    }
+  Qed.
+
+  (*
+  Fixpoint remove_all' perm (l : list A) idx :=
+    match l with
+    | [] => []
+    | a::l' => if inb idx perm
+               then remove_all' perm l' (S idx)
+               else a::remove_all' perm l' (S idx)
+    end.
+  Definition remove_all (l : list A) perm :=
+    remove_all' perm l 0.
+
+  Fixpoint select_all (l : list A) perm:=
+    match perm with
+    | [] => []
+    | n::perm' =>
+        match nth_error l n with
+        | Some a => a::select_all l perm'
+        | None => []
+        end
+    end.
+  
+  (*TODO: if slow, write a version that computes in (near) linear time *)
+  Definition permute (l : list A) (perm : list nat) :=
+    (select_all l perm) ++ (remove_all l perm).
 
   
-*)
+  Lemma remove_all'_nil i l : remove_all' [] l i = l.
+  Proof.
+    revert i.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.    
+  
+  Lemma permute_nil l : permute l [] = l.
+  Proof.
+    unfold permute, remove_all.
+    basic_goal_prep.
+    apply remove_all'_nil.
+  Qed.
+
+  
+  Fixpoint remove_one' n (l : list A) idx :=
+    match l with
+    | [] => []
+    | a::l' => if eqb idx n
+               then remove_one' n l' (S idx)
+               else a::remove_one' n l' (S idx)
+    end.
+  Definition remove_one (l : list A) n :=
+    remove_one' n l 0.
+  *)
+
 
 End __.
 
@@ -617,13 +490,71 @@ Arguments sep {A}%type_scope {mem} (P1 P2)%function_scope t12.
 Arguments ptsto {A}%type_scope {mem} i j m.
 Arguments emp {A}%type_scope {mem} m.
 Arguments lift {A}%type_scope {mem} P%type_scope m.
+Arguments has_key {A}%type_scope {mem} i t.
 
+Arguments seps {A}%type_scope {mem} l%list_scope _ : simpl never.
+
+Arguments seps_Uiff1 {A}%type_scope {mem} (l1 l2)%list_scope.
+Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
+
+#[export] Existing Instance Uimpl1_rel_relation.
+#[export] Existing Instance Uimpl1_rel_Reflexive.
+#[export] Existing Instance Uimpl1_rel_Transitive.
+#[export] Existing Instance Uimpl1_rel.
+
+#[export] Existing Instance Uiff1_rel_relation.
+#[export] Existing Instance Uiff1_rel_Reflexive.
+#[export] Existing Instance Uiff1_rel_Symmetric.
+#[export] Existing Instance Uiff1_rel_Transitive.
+#[export] Existing Instance Uiff1_rel.
+
+#[export] Existing Instance seps_Uimpl1_rel_relation.
+#[export] Existing Instance seps_Uimpl1_rel_Reflexive.
+#[export] Existing Instance seps_Uimpl1_rel_Transitive.
+#[export] Existing Instance seps_Uimpl1_rel.
+
+#[export] Existing Instance seps_Uiff1_rel_relation.
+#[export] Existing Instance seps_Uiff1_rel_Reflexive.
+#[export] Existing Instance seps_Uiff1_rel_Symmetric.
+#[export] Existing Instance seps_Uiff1_rel_Transitive.
+#[export] Existing Instance seps_Uiff1_rel.
+
+#[export] Hint Resolve iff1_refl : utils.
+#[export] Hint Resolve impl1_refl : utils.
+
+#[export] Hint Resolve seps_impl1_refl : utils.
+#[export] Hint Resolve seps_iff1_refl : utils.
 
 #[export] Hint Rewrite emp_inv : utils.
 #[export] Hint Rewrite ptsto_inv : utils.
 
-#[export] Hint Resolve disjoint_empty_left : utils.
-#[export] Hint Resolve disjoint_empty_right : utils.
+#[export] Hint Rewrite sep_emp_r : utils.
+#[export] Hint Rewrite sep_emp_l : utils.
 
-#[export] Hint Rewrite disjoint_empty_left' : utils.
-#[export] Hint Rewrite disjoint_empty_right' : utils.
+#[export] Hint Rewrite seps_tl : utils.
+#[export] Hint Rewrite seps_emp_hd : utils.
+
+
+#[export] Hint Rewrite sep_seps_l : utils.
+#[export] Hint Rewrite sep_seps_r : utils.
+
+
+#[export] Hint Rewrite @Properties.map.split_empty : utils.
+#[export] Hint Rewrite @Properties.map.split_empty_l : utils.
+#[export] Hint Rewrite @Properties.map.split_empty_r : utils.
+
+(*
+#[export] Hint Resolve resolve_split_empty_left : utils.
+#[export] Hint Resolve resolve_split_empty_right : utils.
+*)
+
+#[export] Hint Rewrite emp_iff : utils.
+#[export] Hint Rewrite @map.get_empty : utils.
+#[export] Hint Rewrite @map.get_put_same : utils.
+#[export] Hint Rewrite @map.get_put_diff using congruence : utils.
+
+
+#[export] Hint Rewrite map_split_singleton_r : utils.
+#[export] Hint Rewrite map_split_singleton_l : utils.
+#[export] Hint Rewrite not1_has_key : utils.
+

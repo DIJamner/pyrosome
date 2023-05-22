@@ -2,8 +2,9 @@ Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
 Require Import Bool Lists.List.
+Export Bool (Is_true).
 Import ListNotations.
-Import BoolNotations.
+Export BoolNotations.
 Open Scope list.
 
 Require Import Utils.Base.

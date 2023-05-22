@@ -92,6 +92,13 @@ Section __.
       basic_utils_crush.
   Qed.
 
+  #[export] Instance eqb_boolspec
+    : forall x y : A, BoolSpec (x = y) (x <> y) (eqb x y).
+  Proof.
+    intros.
+    pose proof (eqb_spec x y).
+    destruct (eqb x y); constructor; eauto.
+  Qed.
   
   #[local] Hint Rewrite eqb_prop_iff : utils.
   #[local] Hint Rewrite eqb_refl_true : utils.
@@ -117,5 +124,14 @@ Proof.
   destruct (String.eqb_spec a b); auto.
 Qed.
 
+
+#[export] Instance nat_eqb : Eqb nat := Nat.eqb.
+
+#[export] Instance nat_eqb_ok : Eqb_ok nat_eqb.
+Proof.
+  intros a b.
+  unfold eqb, nat_eqb.
+  destruct (Decidable.Nat.eqb_spec a b); eauto.
+Qed.
 
 #[export] Instance int_eqb : Eqb int := Int63.eqb.

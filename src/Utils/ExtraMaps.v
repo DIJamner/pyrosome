@@ -1,4 +1,7 @@
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Map.Solver.
+
+From Utils Require Import Eqb.
+
 (*
 TODO: implement map with tries?
 Require Import Tries.Canonical.
@@ -95,3 +98,27 @@ Section __.
     }.
 
 End __.
+
+
+Ltac find_map_ok :=
+  let m1 := lazymatch goal with
+              |- ?m1 = _ => m1
+            end in
+  let map := lazymatch type of m1 with
+               @map.rep _ _ ?map => map
+             end in
+  constr:(_ : map.ok map).
+
+
+Ltac maps_equal :=
+  let map_ok := find_map_ok in
+  eapply map.map_ext;
+  intros;
+  Solver.map_solver_core_impl map_ok;
+  repeat lazymatch goal with
+    | |- context c [eqb ?a ?b] =>
+        pose proof (eqb_spec a b);
+        destruct (eqb a b)
+    end;
+  subst;
+  try congruence.
