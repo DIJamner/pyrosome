@@ -14,7 +14,7 @@ Definitions
 *****************)
 
 (* grouped right with the fixpoint for better decreasing argument analysis*)
-Definition all2 := 
+Definition allb2 := 
 fun (S T : Type) (r : S -> T -> bool) =>
 fix all2 (s : list S) (t : list T) {struct s} : bool :=
   match s, t with

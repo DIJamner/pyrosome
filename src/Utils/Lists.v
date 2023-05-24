@@ -160,7 +160,7 @@ Section __.
     Context `{Eqb_ok A}.
     
     (*TODO: rename Booleans.all2 to allb2*)
-    #[export] Instance list_eqb : Eqb (list A) := Booleans.all2 (eqb (A:=A)).
+    #[export] Instance list_eqb : Eqb (list A) := allb2 (eqb (A:=A)).
 
     #[export] Instance list_eqb_ok : Eqb_ok (list_eqb).
     Proof.

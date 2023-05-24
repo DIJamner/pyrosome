@@ -158,7 +158,7 @@ Section WithEqb.
     match e1, e2 with
     | var n1, var n2 => eqb n1 n2
     | con n1 s1, con n2 s2 =>
-        andb (eqb n1 n2) (all2 term_eqb s1 s2)
+        andb (eqb n1 n2) (allb2 term_eqb s1 s2)
     | _, _ => false
     end.
 
@@ -549,14 +549,14 @@ Fixpoint eq_term e1 e2 {struct e1} : bool :=
   match e1, e2 with
   | var x, var y => eqb x y
   | con n1 l1, con n2 l2 =>
-    (eqb n1 n2) && (all2 eq_term l1 l2)
+    (eqb n1 n2) && (allb2 eq_term l1 l2)
   | _,_ => false
   end.
 
 Definition eq_sort (t1 t2 : sort) : bool :=
   let (n1, l1) := t1 in
   let (n2, l2) := t2 in
-    (eqb n1 n2) && (all2 eq_term l1 l2).
+    (eqb n1 n2) && (allb2 eq_term l1 l2).
 
 Lemma with_names_from_args_subst (c':ctx) s' (s : list term)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
