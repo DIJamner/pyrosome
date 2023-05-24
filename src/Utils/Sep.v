@@ -7,7 +7,8 @@ Require Import Coq.Classes.Morphisms.
 
 Require Import Coq.Sorting.Permutation.
 
-From Utils Require Import Base Props Eqb Options Lists ExtraMaps.
+From Utils Require Import Base Booleans Props Eqb Options Lists ExtraMaps
+  Permutation.
 
 Section __.
   Context (A : Type)
@@ -429,62 +430,55 @@ Section __.
     }
   Qed.
 
-  (*
-  Fixpoint remove_all' perm (l : list A) idx :=
-    match l with
-    | [] => []
-    | a::l' => if inb idx perm
-               then remove_all' perm l' (S idx)
-               else a::remove_all' perm l' (S idx)
-    end.
-  Definition remove_all (l : list A) perm :=
-    remove_all' perm l 0.
-
-  Fixpoint select_all (l : list A) perm:=
-    match perm with
-    | [] => []
-    | n::perm' =>
-        match nth_error l n with
-        | Some a => a::select_all l perm'
-        | None => []
-        end
-    end.
-  
-  (*TODO: if slow, write a version that computes in (near) linear time *)
-  Definition permute (l : list A) (perm : list nat) :=
-    (select_all l perm) ++ (remove_all l perm).
+  (* TODO: move to permutation *)
+  Arguments permute {A}%type_scope (l perm)%list_scope.
 
   
-  Lemma remove_all'_nil i l : remove_all' [] l i = l.
+  #[export] Instance seps_Uimpl1_iff1_mor
+    : Proper (seps_Uiff1 ==> seps_Uiff1 ==> iff) seps_Uimpl1.
   Proof.
-    revert i.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.    
-  
-  Lemma permute_nil l : permute l [] = l.
-  Proof.
-    unfold permute, remove_all.
-    basic_goal_prep.
-    apply remove_all'_nil.
+    cbv [Proper respectful seps_Uiff1 seps_Uimpl1].
+    firstorder.
   Qed.
 
   
-  Fixpoint remove_one' n (l : list A) idx :=
-    match l with
-    | [] => []
-    | a::l' => if eqb idx n
-               then remove_one' n l' (S idx)
-               else a::remove_one' n l' (S idx)
-    end.
-  Definition remove_one (l : list A) n :=
-    remove_one' n l 0.
-  *)
+  #[export] Instance seps_Uimpl1_app_mor
+    : Proper (seps_Uimpl1 ==> seps_Uimpl1 ==> seps_Uimpl1) (@app _).
+  Proof.    
+    cbv [Proper respectful]; intros.
+    unfold seps_Uimpl1.
+    rewrite !sep_concat.
+    rewrite H.
+    rewrite H0.
+    reflexivity.
+  Qed.
+
+  Lemma sep_sequent_focus perm1 perm2 l1 l2
+    : Is_true (no_dupb perm1) ->
+      Is_true (no_dupb perm2) ->
+      (forall m, seps (select_all l1 perm1) m ->
+                 seps (select_all l2 perm2) m) ->
+      (forall m, seps (remove_all l1 perm1) m ->
+                 seps (remove_all l2 perm2) m) ->
+      (forall m, seps l1 m -> seps l2 m).
+  Proof.
+    intros Hnd1 Hnd2 Hs Hr.
+    change (seps_Uimpl1 l1 l2).
+    rewrite seps_permutation with (l1:=l1) (l2:= permute l1 perm1),
+        seps_permutation with (l1:=l2) (l2:= permute l2 perm2).
+    { 
+      unfold permute.
+      apply seps_Uimpl1_app_mor; eauto.
+    }
+    all:symmetry;
+      apply permute_is_Permutation.
+    all: apply no_dups_extend_perm_permutation.
+    all: eapply use_no_dupb; eauto; typeclasses eauto.
+  Qed.
+  
 
 
 End __.
-
 
 Arguments sep {A}%type_scope {mem} (P1 P2)%function_scope t12.
 Arguments ptsto {A}%type_scope {mem} i j m.

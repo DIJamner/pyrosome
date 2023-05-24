@@ -778,3 +778,6 @@ Section __.
   Qed.
       
 End __.
+
+
+Arguments select_all {A}%type_scope (l perm)%list_scope.
