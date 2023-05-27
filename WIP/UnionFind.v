@@ -163,8 +163,9 @@ Section __.
   | forest_join i m
     : sep (forest_ptsto i) (forest_ptsto i) m ->
       forest_ptsto i m
-  | forest_node i j m
-    : i <> j -> sep (and1 (forest_ptsto i) (not1 (has_key j))) (ptsto i j) m ->
+  | forest_node i j
+    : i <> j ->
+      forall m, sep (and1 (forest_ptsto i) (not1 (has_key j))) (ptsto i j) m ->
       forest_ptsto j m.
   Set Elimination Schemes.
   Hint Constructors forest_ptsto : utils.
@@ -175,15 +176,19 @@ Section __.
       (P_join : forall (i : idx) (m : idx_map),
           sep (and1 (forest_ptsto i) (P i)) (and1 (forest_ptsto i) (P i)) m ->
           P i m)
-      (P_node : forall (i j : idx) (m : idx_map),
-          i <> j -> sep (and1 (and1 (forest_ptsto i) (not1 (has_key j))) (P i)) (ptsto i j) m ->  P j m).
+      (P_node : forall (i j : idx),
+          i <> j ->
+          forall (m : idx_map),
+            sep (and1 (and1 (forest_ptsto i) (not1 (has_key j))) (P i))
+              (ptsto i j) m ->
+            P j m).
                  
     Fixpoint forest_ptsto_ind
       (i : idx) (r : idx_map) (f2 : forest_ptsto i r) : P i r.
       refine (match f2 in (forest_ptsto i0 r0) return (P i0 r0) with
               | empty_forest i0 => P_empty i0
               | forest_join i0 m x => P_join i0 m _
-              | forest_node i0 j m H x => P_node i0 j m H _
+              | forest_node i0 j H m x => P_node i0 j H m _
               end).
       Proof.
         all: eapply sep_impl_defined; try eassumption; auto.
@@ -257,18 +262,6 @@ Section __.
   Qed.
   Hint Resolve forest_node' : utils.
 
-  
-  Lemma putmany_singleton m (j k : idx)
-    : (map.putmany m (map.singleton j k)) = map.put m j k.
-  Proof.
-    unfold map.singleton.
-    rewrite <- Properties.map.put_putmany_commute,
-      Properties.map.putmany_empty_r.
-    auto.
-  Qed.
-  Hint Rewrite putmany_singleton : utils.
-
-
   Lemma sep_get_split (m : idx_map) k j P Q
     : map.get m j = Some k ->
       sep P Q m ->
@@ -340,77 +333,7 @@ Section __.
   Proof. Admitted.
   *)
   
-  Lemma sep_assoc (P Q H : idx_map -> _)
-    : Uiff1 (sep (sep P Q) H) (sep P (sep Q H)).
-  Proof.
-    unfold Uiff1,sep;
-      split;
-      basic_goal_prep.
-    {
-      exists x1, (map.putmany x2 x0);
-        basic_utils_crush.
-  Admitted.
-  
-  Lemma sep_concat (l1 l2 : list (idx_map -> _))
-    : Uiff1 (seps (l1++l2)) (sep (seps l1) (seps l2)).
-  Proof.
-    revert l2.
-    induction l1;
-      basic_goal_prep;
-      basic_utils_crush.
-    repeat change (seps (?a :: ?l)) with (sep a (seps l)).
-    rewrite sep_assoc.
-    rewrite IHl1.
-    reflexivity.
-  Qed.
-      
-    
-  Lemma sep_sequent_concat
-    len1 len2 (l1 l2 : list (idx_map -> _))
-    : seps_Uimpl1 (firstn len1 l1) (firstn len2 l2) ->
-      seps_Uimpl1 (skipn len1 l1) (skipn len2 l2) ->
-      seps_Uimpl1 l1 l2.
-  Proof.
-    intros Hf Hs.
-    rewrite <- firstn_skipn with (l:=l1) (n:=len1).
-    rewrite <- firstn_skipn with (l:=l2) (n:=len2).
-    (*TODO: fix this rewrite *)
-    unfold seps_Uimpl1.
-    rewrite !sep_concat.
-    rewrite Hf, Hs; reflexivity.
-  Qed.
-  
-  Fixpoint remove_all' {A} perm (l : list A) idx :=
-    match l with
-    | [] => []
-    | a::l' => if inb idx perm
-               then remove_all' perm l' (S idx)
-               else a::remove_all' perm l' (S idx)
-    end.
-  Definition remove_all {A} (l : list A) perm :=
-    remove_all' perm l 0.
-
-  Fixpoint select_all {A} (l : list A) perm:=
-    match perm with
-    | [] => []
-    | n::perm' =>
-        match nth_error l n with
-        | Some a => a::select_all l perm'
-        | None => []
-        end
-    end.
-  
-  (*TODO: if slow, write a version that computes in (near) linear time *)
-  Definition permute {A} (l : list A) (perm : list nat) :=
-    (select_all l perm) ++ (remove_all l perm).
-
-  Import Coq.Sorting.Permutation.
-
-  Lemma permute_permutation A (l : list A) perm
-    : NoDup perm ->
-      Permutation l (permute l perm).
-  Admitted.
-
+(*
 
   Lemma sep_sequent_focus perm1 perm2 l1 l2
     : NoDup perm1 ->
@@ -428,7 +351,7 @@ Section __.
     unfold permute.
     rewrite !sep_concat.
     eapply sep_consequence; eauto.
-  Qed.
+  Qed.*)
 
   (*
     Lemma sep_sequent_apply l1_lem l2_lem
@@ -443,9 +366,10 @@ Section __.
       (forall m, seps l1 m -> seps l2 m).
   Admitted.
     Proof. Admitted.
-    *)
+   *)
 
   
+ (*
   Lemma forest_node'' i j
     : i <> j -> forall m, seps [and1 (forest_ptsto i) (not1 (has_key j)); ptsto i j] m ->
                           forest_ptsto j m.
@@ -453,18 +377,28 @@ Section __.
     intros.
     eapply forest_node; eauto.
     unfold seps in *.
-    eapply sep_consequence; [| | eassumption]; unfold and1 in *;
+    unfold and1 in *;
       basic_utils_crush.
+    seprewrite.
+    rewrite sep_emp_r in H0.
+    autorewrite with utils in *.
+    ; eauto.
+
+    TODO: how to get H0 to rewrite?
+    autorewrite with utils in *.
+    eapply sep_consequence; [| | eassumption];
   Qed.
+  *)
 
   
-  Lemma sep_to_seps P Q m
+  Lemma sep_to_seps P Q (m : idx_map)
     : sep P Q m <-> seps [P; Q] m.
   Proof.
     unfold seps;
       split; eapply sep_consequence;
       basic_goal_prep;
-    basic_utils_crush.
+      seprewrite;
+      basic_utils_crush.
   Qed.
   
   Ltac cancel_prep H :=
@@ -472,10 +406,15 @@ Section __.
     revert H;
     repeat lazymatch goal with H : context [?m] |- _ => clear H end;
     revert m.
+  
+  Arguments sep_sequent_focus {A}%type_scope
+    {Eqb_A Eqb_A_ok mem mem_ok}
+    (perm1 perm2 l1 l2)%list_scope _ _ (_ _)%function_scope 
+    m _.
   Ltac sep_focus p1 p2 :=        
     apply sep_sequent_focus with (perm1:=p1) (perm2:=p2);
-    [ eapply use_no_dupb;[typeclasses eauto | vm_compute; exact I]
-    | eapply use_no_dupb;[typeclasses eauto | vm_compute; exact I]
+    [ vm_compute; exact I
+    | vm_compute; exact I
     | cbn..].
 
   
@@ -496,7 +435,97 @@ Section __.
       basic_utils_crush.
     all: congruence.
   Qed.
+
   
+  Lemma sep_sequent_focus perm1 perm2 l1 l2
+    : Is_true (no_dupb perm1) ->
+      Is_true (no_dupb perm2) ->
+      (seps_Uimpl1 (Permutation.select_all l1 perm1) (Permutation.select_all l2 perm2)) ->
+      (seps_Uimpl1 (Permutation.remove_all l1 perm1) (Permutation.remove_all l2 perm2)) ->
+      (seps_Uimpl1 (mem:=idx_map) l1 l2).
+  Proof.
+  Admitted.
+
+  Ltac sep_focus' p1 p2 :=
+  simple apply sep_sequent_focus with (perm1 := p1) (perm2 := p2);
+   [ vm_compute; exact I | vm_compute; exact I | cbn.. ].
+
+  (*TODO: move to Sep.v*)
+  Ltac sep_apply_focused p1 p2 l :=
+    sep_focus' p1 p2;
+    [  cbv [seps seps_Uimpl1];
+       intros m H; seprewrite;
+       revert m H; solve[simple apply l]
+    |].
+
+  Ltac cancel_prep' H :=
+  let m := lazymatch type of H with
+           | _ ?m => m
+           end in
+  let l1 := lazymatch type of H with seps ?l1 _ => l1 end in
+  let l2 := lazymatch goal with |- seps ?l2 m => l2 end in
+  revert H;
+  repeat lazymatch goal with
+    | H:context [ ?m ] |- _ => clear H
+    end;
+  revert m;
+  change (seps_Uimpl1 l1 l2).
+
+  (*
+  Require Import Setoid.
+  Require Import Coq.Classes.Morphisms.*)
+
+  
+  Lemma distribute_not_has_key (i : idx) P Q
+    : Uiff1 (and1 (not1 (has_key i)) (sep P Q))
+        (sep (and1 P (not1 (has_key i))) (and1 Q (not1 (has_key i)))).
+  Proof.
+    unfold Uiff1, and1, not1, sep, has_key;
+      basic_goal_prep.
+    case_match;
+      split; basic_goal_prep; try tauto.
+    {
+      exfalso.
+      eapply Properties.map.get_split with (k:=i) in H; eauto.
+      destruct H; basic_goal_prep.
+      { rewrite <- H, <-HeqH in H3; tauto. }
+      { rewrite <- H, <-HeqH in H2; tauto. }
+    }
+    {
+      exists x, x0.
+      pose proof H0.
+      eapply Properties.map.get_split with (k:=i) in H0; eauto.
+      destruct H0; basic_goal_prep;rewrite <- H0, <-HeqH;
+        basic_utils_crush.
+      { rewrite H4 in H5; auto. }
+      { rewrite H4 in H5; auto. }
+    }
+    {
+      intuition auto.
+      exists x, x0.
+      pose proof H.
+      eapply Properties.map.get_split with (k:=i) in H; eauto.
+    }
+  Qed.
+  
+  Lemma distribute_not_has_key_seps (i : idx) l
+    : Uiff1 (and1 (not1 (has_key i)) (seps l))
+        (seps (map (and1 (not1 (has_key i))) l)).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    
+    rewrite <- !sep_seps_r; eauto.
+    rewrite distribute_not_has_key.
+    rewrite <- IHl.
+    rewrite and1_comm.
+    rewrite and1_comm with (P:= (seps l)).
+    reflexivity.
+  Qed.
+      
+      
+      
   Lemma forest_ptsto_split i m
     : forest_ptsto i m -> forall j k, map.get m j = Some k -> seps [forest_ptsto j; ptsto j k; forest_ptsto i] m.
   Proof.
@@ -509,23 +538,23 @@ Section __.
       {  
         eapply sep_consequence
           with (P2:= seps [forest_ptsto j; ptsto j k; forest_ptsto i])
-               (Q2:= (forest_ptsto i))in H; [| clear; unfold and1, has_key in *..];
+               (Q2:= (forest_ptsto i))in H; [|  unfold and1, has_key in *..];
           basic_goal_prep; eauto.
-        basic_utils_crush.
-        cancel_prep H.
-        sep_focus [0;3] [2]; [eapply forest_join'|].
-        eauto.
+        seprewrite.        
+        cancel_prep' H.
+        sep_apply_focused [0;3] [2] forest_join.
+        reflexivity.
       }
       {
         eapply sep_consequence with (P2:=forest_ptsto i)
-                                    (Q2:= seps [forest_ptsto j; ptsto j k; forest_ptsto i]) in H.
+                                    (Q2:= seps [forest_ptsto j; ptsto j k; forest_ptsto i]) in H; eauto.
         
         2:{ unfold and1; basic_goal_prep; eauto. }
         2:{ unfold and1; basic_goal_prep; eauto. }
-        change (sep ?P (seps ?l)) with (seps (P::l)) in H.
-        cancel_prep H.
-        sep_focus [0;3] [2]; [eapply forest_join'|].
-        eauto.
+        seprewrite.
+        cancel_prep' H.
+        sep_apply_focused [0;3] [2] forest_join.
+        reflexivity.
       }
     }
     {
@@ -533,129 +562,102 @@ Section __.
         destruct H0 as [H0 | H0];
         apply sep_to_seps in H0.
       2:{
-        TODO: need Proper rw for seps
-      
-      TODO: cases i = j0; include H1 in H0
-      cancel_prep H0.
-      apply (sep_apply_at_n _ _ (forest_node'' i j H)) with (n:= 2); auto; cbn [app firstn skipn].
-      apply cancel_at_ns with (n1:=1) (n2:=3); [ solve [auto] |cbn].
-      
-    }
-  Qed.
-
-Question: incorporate and1 into seps via list-of-lists?
-  eapply sep_apply_at_n_in_H with (n:= 1).
-        
-          (*TODO: cancel H (ptsto i j) *)
-      unfold and1, sep in *; break.
-      basic_utils_crush.
-      
-      pose proof (eqb_spec i j);
-        destruct (eqb i j);
+        seprewrite.
+        cancel_prep' H0.
+        sep_focus' [2;0;1] [0;1;2]; try reflexivity.
+        apply seps_Uimpl1_cons_lift_l.
+        intro.
         basic_utils_crush.
-      {      
-        exists (map.put x j k), map.empty.
+        rewrite Uimpl1_and1_l.
+        rewrite Uimpl1_and1_l.
+        rewrite <- (empty_forest' k).
         basic_utils_crush.
-        1: apply eqb_boolspec; eauto.
-        exists x.
-        eexists; basic_utils_crush.
       }
       {
-        exists (map.put x2 j k), (map.put x1 i j0).
+        cancel_prep' H0.
         basic_utils_crush.
-        1:admit.
-        2: eapply forest_node'; eauto.
-        2:admit.
-        exists x2, (map.singleton j k); basic_utils_crush.
-      }
-    }
-    {
-      unfold and1, sep in *; break.
-      pose proof H as H'.
-      apply Properties.map.get_split with (k:=j) in H;
-        basic_utils_crush.
-      {
-        rewrite H in H0; intuition break.
-        clear H3.
-        eexists; eexists.
-        split; [| split].
-        2:{
-          eexists; eexists.
-          split; [| split].
-          3: eauto.
-          2: eauto.
-          eauto.
+        Require Import Setoid.
+        setoid_replace
+          (and1
+       (and1 (and1 (forest_ptsto i) (not1 (has_key j)))
+          (fun m : idx_map =>
+           forall j1 k0 : idx,
+           map.get m j1 = Some k0 ->
+           seps [forest_ptsto j1; ptsto j1 k0; forest_ptsto i] m))
+       (fun m : idx_map => map.get m j0 = Some k))
+          with (seps [forest_ptsto j0; ptsto j0 k; (and1 (forest_ptsto i) (not1 (has_key j)))])
+               using relation (@Uimpl1 idx_map).
+        {
+          basic_utils_crush.
+          basic_goal_prep.
+          basic_utils_crush.
+          
+          sep_focus' [2;3] [2]; [|reflexivity].
+          unfold seps_Uimpl1, Uimpl1.
+          cbv [seps].
+          basic_goal_prep.
+          seprewrite.
+          eapply forest_node; eauto.
+          seprewrite; eauto.
         }
         {
-          clear H5.
-          instantiate (1:=map.putmany x0 x2).
-          Properties.map.split_disjoint_putmany
-          
-        {
-          rewrite H in H0; intuition break.
-        clear H3.
-        exists (map.putmany (map.putmany x0 x3) x4); exists x2;
+          unfold Uimpl1, and1.
+          basic_goal_prep;
+            basic_utils_crush.
+          apply H2 in H1.
+
+          assert (not1 (has_key j) a).
+          {
+            unfold not1, has_key.
+            rewrite H3; tauto.
+          }
+          clear H2.
+          pose proof (conj H4 H1).
+          pattern a in H2.
+          change (fun r => ?f r /\ ?g r)
+            with (and1 f g) in H2.
+          change (?f ?a) with (sep_app f a) in H2.
+          rewrite distribute_not_has_key_seps in H2.
+          unfold sep_app in *.
+          cancel_prep' H2.
+          basic_goal_prep.
           basic_utils_crush.
-        1:admit.
-        exists ((map.putmany x0 x3))
-        TODO: putmany
-        
-        eauto.
-      congruence.
-      TODO: split in j
-      basic_utils_crush.
-      
-      {
-        apply H3 in H0; break.
-        repeat eexists;
-          basic_utils_crush.
-        {
-          unfold map.singleton.
-          rewrite <- Properties.map.put_putmany_commute,
-            Properties.map.putmany_empty_r.
-          TODO: contradiction in goal
-          cbn.
-          intuition eauto.
-        exists ?, x3.
-        exists (map.put x i j), map.empty.
-        basic_utils_crush.
-        revert j.
-        2: eauto with utils.
-        exists x, x0;
-        intuition eauto.
-      {
-        bas
-        eapply H3 in H0.
-      basic_utils_crush.
-      pose proof (eqb_spec i j0);
-        destruct (eqb i j0);
-        basic_utils_crush.
-      pose proof (eqb_spec i k);
-        destruct (eqb i k);
-        basic_utils_crush.
-      apply H4 in H0; auto.
+          rewrite Uimpl1_and1_r.
+          sep_focus' [2] (@nil nat).
+          {
+            cbv [seps_Uimpl1 lift Uimpl1 seps].
+            basic_goal_prep;
+              seprewrite;
+              basic_utils_crush.
+          }
+          rewrite and1_comm.
+          reflexivity.
+        }
+      }
     }
-    {
-      unfold and1, sep in *; break.
-      pose proof H.
-      eapply Properties.map.get_split with (k:=j) in H.
-      basic_utils_crush.
-      {
-        rewrite H in H0.
-        eapply H5 in H0;
-          basic_utils_crush.
-        firstorder.
-        rewrite H.
-        my_case Hg (map.get x k); auto.
-        
-      
-    }
+  Qed.
 
 
   
   Lemma forest_ptsto_has_next i m
     : forest_ptsto i m -> forall j k, map.get m j = Some k -> i = k \/ has_key k m.
   Proof.
+    intros.
+    eapply forest_ptsto_split in H; eauto.
+    
+    pose proof (eqb_spec i k);
+      destruct (eqb i k); auto; right.
+    TODO: don't have enough info
+    pose proof (conj H0 H).
+    pattern m in H2.
+    change (fun r => ?f r /\ ?g r)
+            with (and1 f g) in H2.
+    change (?f ?a) with (sep_app f a) in H2.
+    (*TODO: *)
+    rewrite distribute_not_has_key_seps in H2.
+          unfold sep_app in *.
+          cancel_prep' H2.
+    
     unfold has_key.
     induction 1;
       basic_goal_prep;

@@ -10,6 +10,99 @@ Require Import Coq.Sorting.Permutation.
 From Utils Require Import Base Booleans Props Eqb Options Lists ExtraMaps
   Permutation.
 
+
+(*TODO: move A-parameterized things to separate file?*)
+Section Lifted.
+  Context (A : Type).
+  
+  Definition and1 (P1 P2 : A -> Prop) a : Prop :=
+    P1 a /\ P2 a.
+  Hint Unfold and1 : utils.
+  
+  Definition not1 (P : A -> Prop) a : Prop :=
+    ~ P a.
+  Hint Unfold not1 : utils.
+
+  Definition impl1 (P1 P2 : A -> Prop) a :=
+    P1 a -> P2 a.
+  Hint Unfold impl1 : utils.
+  
+  Definition Uimpl1 (P1 P2 : A -> Prop) :=
+    forall a, P1 a -> P2 a.
+  Definition Uiff1 (P1 P2 : A -> Prop) :=
+               forall a, P1 a <-> P2 a.
+  
+  Add Parametric Relation : (A -> Prop) Uiff1
+      reflexivity proved by ltac:(cbn;firstorder)
+      symmetry proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as Uiff1_rel.
+  
+  Add Parametric Relation : (A -> Prop) Uimpl1
+      reflexivity proved by ltac:(cbn;firstorder)
+      transitivity proved by ltac:(cbn;firstorder)
+      as Uimpl1_rel.
+
+  Lemma and1_comm (P Q : A -> Prop)
+    : Uiff1 (and1 P Q) (and1 Q P).
+  Proof.
+    cbv; firstorder.
+  Qed.
+
+  #[export] Instance and1_iff1_mor
+    : Proper (Uiff1 ==> Uiff1 ==> Uiff1) and1.
+  Proof.
+    cbv [Proper respectful Uiff1 and1].
+    firstorder.
+  Qed.
+  #[export] Instance and1_impl1_mor
+    : Proper (Uimpl1 ==> Uimpl1 ==> Uimpl1) and1.
+  Proof.
+    cbv [Proper respectful Uimpl1 and1].
+    firstorder.
+  Qed.
+
+    
+  Lemma Uimpl1_and1_l (P Q : A -> _)
+    : Uimpl1 (and1 P Q) P.
+  Proof.
+    cbv; firstorder.
+  Qed.
+  #[local] Hint Resolve Uimpl1_and1_l : utils.
+  
+  Lemma Uimpl1_and1_r (P Q : A -> _)
+    : Uimpl1 (and1 P Q) Q.
+  Proof.
+    cbv; firstorder.
+  Qed.
+  #[local] Hint Resolve Uimpl1_and1_r : utils.
+
+  
+
+End Lifted.
+
+#[export] Existing Instance Uimpl1_rel_relation.
+#[export] Existing Instance Uimpl1_rel_Reflexive.
+#[export] Existing Instance Uimpl1_rel_Transitive.
+#[export] Existing Instance Uimpl1_rel.
+
+#[export] Existing Instance Uiff1_rel_relation.
+#[export] Existing Instance Uiff1_rel_Reflexive.
+#[export] Existing Instance Uiff1_rel_Symmetric.
+#[export] Existing Instance Uiff1_rel_Transitive.
+#[export] Existing Instance Uiff1_rel.
+
+Arguments Uiff1 {A}%type_scope (P1 P2)%function_scope.
+Arguments Uimpl1 {A}%type_scope (P1 P2)%function_scope.
+Arguments and1 {A}%type_scope (P1 P2)%function_scope.
+Arguments not1 {A}%type_scope (P)%function_scope.
+Arguments impl1 {A}%type_scope (P1 P2)%function_scope.
+
+
+#[export] Hint Resolve Uimpl1_and1_l : utils.
+#[export] Hint Resolve Uimpl1_and1_r : utils.
+
+
 Section __.
   Context (A : Type)
     (Eqb_A : Eqb A)
@@ -34,11 +127,20 @@ Section __.
   Qed.
   #[local] Hint Rewrite emp_inv : utils.
 
-  
-  Lemma ptsto_inv i j (m : mem)
+
+  (* TODO: change ptsto to a notation?*)
+  Lemma ptsto_inv i j
+    : Uiff1 (ptsto i j) (@eq mem (map.singleton i j)).
+  Proof. unfold Uiff1, ptsto; intuition subst; auto. Qed.
+  #[local] Hint Rewrite ptsto_inv : utils.
+
+  (* TODO: the prior lemma would cover this if
+     setoid_rewrite worked under application.
+   *)
+  Lemma ptsto_inv_applied i j (m : mem)
     : ptsto i j m <-> m = map.singleton i j.
   Proof.  intuition eauto. Qed.
-  #[local] Hint Rewrite ptsto_inv : utils.
+  #[local] Hint Rewrite ptsto_inv_applied : utils.
 
   Hint Rewrite map.get_empty : utils.
   
@@ -46,34 +148,6 @@ Section __.
     if map.get t i then True else False.
   Hint Unfold has_key : utils.
 
-  (*TODO: move A-parameterized things to separate file*)
-  Definition and1 {A} (P1 P2 : A -> Prop) a : Prop :=
-    P1 a /\ P2 a.
-  Hint Unfold and1 : utils.
-  
-  Definition not1 {A} (P : A -> Prop) a : Prop :=
-    ~ P a.
-  Hint Unfold not1 : utils.
-
-  Definition impl1 {A} (P1 P2 : A -> Prop) a :=
-    P1 a -> P2 a.
-  Hint Unfold impl1 : utils.
-  
-  Definition Uimpl1 {A} (P1 P2 : A -> Prop) :=
-    forall a, P1 a -> P2 a.
-  Definition Uiff1 {A} (P1 P2 : A -> Prop) :=
-               forall a, P1 a <-> P2 a.
-  
-  Add Parametric Relation A : (A -> Prop) Uiff1
-      reflexivity proved by ltac:(cbn;firstorder)
-      symmetry proved by ltac:(cbn;firstorder)
-      transitivity proved by ltac:(cbn;firstorder)
-      as Uiff1_rel.
-  
-  Add Parametric Relation A : (A -> Prop) Uimpl1
-      reflexivity proved by ltac:(cbn;firstorder)
-      transitivity proved by ltac:(cbn;firstorder)
-      as Uimpl1_rel.
 
   
   #[export] Instance impl1_iff1_mor {B}
@@ -456,10 +530,8 @@ Section __.
   Lemma sep_sequent_focus perm1 perm2 l1 l2
     : Is_true (no_dupb perm1) ->
       Is_true (no_dupb perm2) ->
-      (forall m, seps (select_all l1 perm1) m ->
-                 seps (select_all l2 perm2) m) ->
-      (forall m, seps (remove_all l1 perm1) m ->
-                 seps (remove_all l2 perm2) m) ->
+      (seps_Uimpl1 (select_all l1 perm1) (select_all l2 perm2)) ->
+      (seps_Uimpl1 (remove_all l1 perm1) (remove_all l2 perm2)) ->
       (forall m, seps l1 m -> seps l2 m).
   Proof.
     intros Hnd1 Hnd2 Hs Hr.
@@ -475,8 +547,165 @@ Section __.
     all: apply no_dups_extend_perm_permutation.
     all: eapply use_no_dupb; eauto; typeclasses eauto.
   Qed.
+
+
+  (*TODO: move to ExtraMaps.v or some place similar*)
+  
+  Lemma putmany_singleton m (j k : A)
+    : (map.putmany m (map.singleton j k)) = map.put m j k.
+  Proof.
+    unfold map.singleton.
+    rewrite <- Properties.map.put_putmany_commute,
+      Properties.map.putmany_empty_r.
+    auto.
+  Qed.
+  
+  (* TODO: give seps a separate `lift` argument? *)
+  Lemma sep_lift_r P Q (m : mem)
+    : (sep P (lift Q)) m <-> P m /\ Q.
+  Proof.
+    unfold lift, sep;
+      split;
+      basic_goal_prep;
+      subst;
+      rewrite ?Properties.map.split_empty_r in H;
+      subst.
+    { intuition eauto. }
+    {
+      exists m, map.empty.
+      intuition eauto.
+      rewrite ?Properties.map.split_empty_r.
+      eauto.
+    }
+  Qed.
+  #[local] Hint Rewrite sep_lift_r : utils.
+  
+  (* TODO: give seps a separate `lift` argument? *)
+  Lemma sep_lift_l P Q (m : mem)
+    : (sep (lift Q) P) m <-> P m /\ Q.
+  Proof.
+    unfold lift, sep;
+      split;
+      basic_goal_prep;
+      subst;
+      rewrite ?Properties.map.split_empty_l in H;
+      subst.
+    { intuition eauto. }
+    {
+      exists map.empty, m.
+      intuition eauto.
+      rewrite Properties.map.split_empty_l.
+      eauto.
+    }
+  Qed.
+  #[local] Hint Rewrite sep_lift_l : utils.
+
+
+  
+  Lemma and1_eq_l m P
+    : Uiff1 (and1 (@eq mem m) P)
+        (sep (@eq mem m) (lift (P m))).
+  Proof.
+    unfold Uiff1, and1; intuition subst; auto;
+      basic_utils_crush.    
+  Qed.
+  #[local] Hint Rewrite and1_eq_l : utils.
+
+  Lemma and1_eq_r m P
+    : Uiff1 (and1 P (@eq mem m))
+        (sep (@eq mem m) (lift (P m))).
+  Proof.
+    rewrite and1_comm.
+    apply and1_eq_l.
+  Qed.
+  #[local] Hint Rewrite and1_eq_r : utils.
+
+    
+  
+  Lemma seps_Uiff1_cons_sep (P : mem ->Prop) Q l
+    : seps_Uiff1 ((sep P Q)::l) (P::Q::l).
+  Proof.
+    unfold seps_Uiff1;
+      basic_goal_prep.
+    rewrite sep_assoc; eauto.
+    reflexivity.
+  Qed.
+  #[local] Hint Rewrite seps_Uiff1_cons_sep : utils.
+
+  
+  Lemma seps_Uiff1_cons_seps (l' l : list (mem ->Prop))
+    : seps_Uiff1 ((seps l')::l) (l'++l).
+  Proof.
+    unfold seps_Uiff1;
+      basic_goal_prep.
+    induction l';
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite <- !sep_seps_r; eauto.
+    rewrite sep_assoc; eauto.
+    rewrite IHl'.
+    reflexivity.
+  Qed.
+  #[local] Hint Rewrite seps_Uiff1_cons_seps : utils.
+
   
 
+  (*TODO: replace this with something automated.
+    Include a separate lifted section in seps_Uimpl1?
+   *)
+  Lemma seps_Uimpl1_cons_lift_l (P : Prop) (l1 l2 : list (mem->Prop))
+    : (P -> seps_Uimpl1 (l1) l2) ->
+      seps_Uimpl1 (lift P :: l1) l2.
+  Proof.
+    unfold seps_Uimpl1.
+    intro H.
+    change (seps (?x::?l)) with (sep x (seps l)).
+    intros H' m.
+    basic_utils_crush.
+  Qed.
+
+
+  (* TODO: move to a dedicated maps file *)
+  Lemma map_get_singleton (i j j0 k : A)
+    : map.get (map.singleton i j) j0 = Some k
+      <-> (i = j0 /\ j = k).
+  Proof.
+    unfold map.singleton.
+    split; basic_goal_prep.
+    2:basic_utils_crush.
+    pose proof (eqb_spec i j0);
+      destruct (eqb i j0);
+      basic_utils_crush.
+  Qed.
+  #[local] Hint Rewrite map_get_singleton : utils.
+
+  
+  Lemma and1_emp_l P
+    : Uiff1 (and1 emp P)
+        (lift (P map.empty)).
+  Proof.
+    unfold Uiff1, and1, lift; intuition subst; auto;
+      basic_utils_crush.    
+  Qed.
+  #[local] Hint Rewrite and1_emp_l : utils.
+
+    
+  Lemma and1_emp_r P
+    : Uiff1 (and1 P emp)
+        (lift (P map.empty)).
+  Proof.
+    unfold Uiff1, and1, lift; intuition subst; auto;
+      basic_utils_crush.    
+  Qed.
+  #[local] Hint Rewrite and1_emp_r : utils.
+
+  
+  #[export] Instance lift_Uiff1_mor
+    : Proper (iff ==> Uiff1) lift.
+  Proof.
+    cbv [Proper respectful Uimpl1 and1].
+    firstorder.
+  Qed.
 
 End __.
 
@@ -491,16 +720,6 @@ Arguments seps {A}%type_scope {mem} l%list_scope _ : simpl never.
 Arguments seps_Uiff1 {A}%type_scope {mem} (l1 l2)%list_scope.
 Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
 
-#[export] Existing Instance Uimpl1_rel_relation.
-#[export] Existing Instance Uimpl1_rel_Reflexive.
-#[export] Existing Instance Uimpl1_rel_Transitive.
-#[export] Existing Instance Uimpl1_rel.
-
-#[export] Existing Instance Uiff1_rel_relation.
-#[export] Existing Instance Uiff1_rel_Reflexive.
-#[export] Existing Instance Uiff1_rel_Symmetric.
-#[export] Existing Instance Uiff1_rel_Transitive.
-#[export] Existing Instance Uiff1_rel.
 
 #[export] Existing Instance seps_Uimpl1_rel_relation.
 #[export] Existing Instance seps_Uimpl1_rel_Reflexive.
@@ -520,17 +739,20 @@ Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
 #[export] Hint Resolve seps_iff1_refl : utils.
 
 #[export] Hint Rewrite emp_inv : utils.
-#[export] Hint Rewrite ptsto_inv : utils.
-
-#[export] Hint Rewrite sep_emp_r : utils.
-#[export] Hint Rewrite sep_emp_l : utils.
-
-#[export] Hint Rewrite seps_tl : utils.
-#[export] Hint Rewrite seps_emp_hd : utils.
+#[export] Hint Rewrite ptsto_inv ptsto_inv_applied : utils.
 
 
-#[export] Hint Rewrite sep_seps_l : utils.
-#[export] Hint Rewrite sep_seps_r : utils.
+Arguments sep_emp_l A%type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%function_scope a.
+Arguments sep_emp_r A%type_scope {Eqb_A Eqb_A_ok mem mem_ok} P%function_scope a.
+#[export] Hint Rewrite sep_emp_r using typeclasses eauto : utils.
+#[export] Hint Rewrite sep_emp_l using typeclasses eauto : utils.
+
+#[export] Hint Rewrite seps_tl using typeclasses eauto : utils.
+#[export] Hint Rewrite seps_emp_hd using typeclasses eauto : utils.
+
+
+#[export] Hint Rewrite sep_seps_l using typeclasses eauto  : utils.
+#[export] Hint Rewrite sep_seps_r using typeclasses eauto : utils.
 
 
 #[export] Hint Rewrite @Properties.map.split_empty : utils.
@@ -548,7 +770,52 @@ Arguments seps_Uimpl1 {A}%type_scope {mem} (l1 l2)%list_scope.
 #[export] Hint Rewrite @map.get_put_diff using congruence : utils.
 
 
-#[export] Hint Rewrite map_split_singleton_r : utils.
-#[export] Hint Rewrite map_split_singleton_l : utils.
+#[export] Hint Rewrite map_split_singleton_r using typeclasses eauto : utils.
+#[export] Hint Rewrite map_split_singleton_l using typeclasses eauto : utils.
 #[export] Hint Rewrite not1_has_key : utils.
 
+
+#[export] Hint Rewrite putmany_singleton using typeclasses eauto : utils.
+
+
+#[export] Hint Rewrite and1_eq_l and1_eq_r using typeclasses eauto : utils.
+
+#[export] Hint Rewrite sep_lift_r using typeclasses eauto : utils.
+
+#[export] Hint Rewrite seps_Uiff1_cons_sep seps_Uiff1_cons_seps
+  using typeclasses eauto : utils.
+
+
+#[export] Hint Rewrite map_get_singleton using typeclasses eauto : utils.
+
+#[export] Hint Rewrite and1_emp_l and1_emp_r using typeclasses eauto : utils.
+
+
+Arguments seps_Uimpl1_cons_lift_l {A}%type_scope {Eqb_A Eqb_A_ok} 
+  {mem mem_ok} P%type_scope (l1 l2)%list_scope _%function_scope 
+  a _.
+
+(* TODO: obselete this collection of definitions and tactics
+   with a proper way to rewrite under function application.
+ *)
+Definition sep_app {A} (P : A -> Prop) a := P a.
+
+
+#[export] Instance sep_app_mor {B}
+  : Proper (Uiff1 (A:=B) ==> eq ==> iff) (sep_app).
+Proof.    
+  cbv [Proper respectful Uiff1 sep_app]; intros; subst; eauto.
+Qed.
+
+Ltac sep_isolate :=
+  repeat lazymatch goal with
+    | H : sep ?A ?B ?a |- _ => change (sep_app (sep A B) a) in H
+    | H : seps ?l ?a |- _ => change (sep_app (seps l) a) in H
+    | |- sep ?A ?B ?a => change (sep_app (sep A B) a)
+    | |- seps ?l ?a => change (sep_app (seps l) a)
+    end.
+
+Ltac seprewrite :=
+  sep_isolate;
+  autorewrite with utils in *;
+  unfold sep_app in *.
