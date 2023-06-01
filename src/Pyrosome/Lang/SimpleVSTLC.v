@@ -45,11 +45,12 @@ Definition stlc_def : lang :=
   ]
   ]}.
 
+Compute stlc_def.
+
 Derive stlc
        SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_def stlc)
        As stlc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.
 
-Compute stlc_def.
 

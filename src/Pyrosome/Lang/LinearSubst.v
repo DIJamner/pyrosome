@@ -99,7 +99,7 @@ Definition linear_value_subst_def : lang :=
       "g" : #"sub" "G" "G'",
       "v" : #"val" "V" "A" (*we restrict substitutions to values *)
        -----------------------------------------------
-       #"snoc" "g" "v" : #"sub" "G" (#"ext" "G'" "A")
+       #"snoc" "g" "v" : #"sub" (#"conc" "G" "V") (#"ext" "G'" "A")
   ];
   [:|  "A" : #"ty"
        -----------------------------------------------
@@ -179,6 +179,7 @@ Definition linear_value_subst_def : lang :=
       #"sub" (#"conc" (#"ext" (#"ext" "G" "A") "B") "H")
              (#"conc" (#"ext" (#"ext" "G" "B") "A") "H")
   ];
+
   [:= "G": #"env", "H": #"env",
       "V": #"env", "W": #"env",
       "A": #"ty", "B": #"ty",
