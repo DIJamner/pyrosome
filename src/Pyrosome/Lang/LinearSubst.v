@@ -86,6 +86,7 @@ Definition linear_value_subst_def : lang :=
        = #"val_subst" (#"cmp" "f" "g") "v"
        : #"val" "G1" "A"
   ];
+
   [:| -----------------------------------------------
       #"emp" : #"env"
   ];
@@ -94,33 +95,6 @@ Definition linear_value_subst_def : lang :=
        #"ext" "G" "A" : #"env"
   ];
 
-  [:| "G" : #"env", "G'" : #"env", "V": #"env",
-      "A" : #"ty",
-      "g" : #"sub" "G" "G'",
-      "v" : #"val" "V" "A" (*we restrict substitutions to values *)
-       -----------------------------------------------
-       #"snoc" "g" "v" : #"sub" (#"conc" "G" "V") (#"ext" "G'" "A")
-  ];
-  [:|  "A" : #"ty"
-       -----------------------------------------------
-       #"hd" : #"val" (#"ext" #"emp" "A") "A"
-  ];
-  [:= "A" : #"ty",
-      "v" : #"val" #"emp" "A"
-      ----------------------------------------------- ("snoc_hd")
-      #"val_subst" (#"snoc" #"id" "v") #"hd" = "v"
-      : #"val" #"emp" "A"
-  ];
-  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-      "f" : #"sub" "G1" "G2",
-      "g" : #"sub" "G2" "G3",
-      "A" : #"ty",
-      "v" : #"val" "G2" "A"
-      ----------------------------------------------- ("cmp_snoc")
-      #"cmp" "f" (#"snoc" "g" "v")
-      = #"snoc" (#"cmp" "f" "g") (#"val_subst" "f" "v")
-      : #"sub" "G1" (#"ext" "G3" "A")
-  ];
   [:| "G": #"env", "H": #"env"
       -----------------------------------------------
       #"conc" "G" "H": #"env"
@@ -129,10 +103,20 @@ Definition linear_value_subst_def : lang :=
       ----------------------------------------------- ("conc_emp")
       #"conc" "G" #"emp" = "G" : #"env"
   ];
+  [:= "G": #"env"
+      ----------------------------------------------- ("emp_conc")
+      #"conc" #"emp" "G" = "G" : #"env"
+  ];
   [:= "G": #"env", "H": #"env", "A": #"ty"
       ----------------------------------------------- ("conc_ext_right")
       #"conc" "G" (#"ext" "H" "A") =
       #"ext" (#"conc" "G" "H") "A" : #"env"
+  ];
+  [:= "G1": #"env", "G2": #"env", "G3": #"env"
+      ----------------------------------------------- ("conc_assoc")
+      #"conc" (#"conc" "G1" "G2") "G3" =
+      #"conc" "G1" (#"conc" "G2" "G3") : #"env"
+
   ];
 
   [:| "G": #"env", "G'": #"env",
@@ -158,20 +142,56 @@ Definition linear_value_subst_def : lang :=
       #"cmp" (#"csub" "g1" "h1") (#"csub" "g2" "h2"):
       #"sub" (#"conc" "G1" "H1") (#"conc" "G3" "H3")
   ];
+
+  [:| "G" : #"env", "G'" : #"env", "V": #"env",
+      "A" : #"ty",
+      "g" : #"sub" "G" "G'",
+      "v" : #"val" "V" "A" (*we restrict substitutions to values *)
+       -----------------------------------------------
+       #"snoc" "g" "v" : #"sub" (#"conc" "G" "V") (#"ext" "G'" "A")
+  ];
+  [:|  "A" : #"ty"
+       -----------------------------------------------
+       #"hd" : #"val" (#"ext" #"emp" "A") "A"
+  ];
+  [:= "V" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "V" "A"
+      ----------------------------------------------- ("snoc_hd")
+      #"val_subst" (#"snoc" #"id" "v") #"hd" = "v"
+      : #"val" "V" "A"
+  ];
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+      "f" : #"sub" "G1" "G2",
+      "g" : #"sub" "G2" "G3",
+      "V" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "V" "A"
+      ----------------------------------------------- ("cmp_snoc")
+      #"cmp" (#"csub" "f" #"id") (#"snoc" "g" "v")
+      = #"snoc" (#"cmp" "f" "g") "v"
+      : #"sub" (#"conc" "G1" "V") (#"ext" "G3" "A")
+  ];
   [:= "G": #"env", "G'": #"env",
       "H": #"env", "H'": #"env",
       "V": #"env",
       "g": #"sub" "G" "G'",
       "h": #"sub" "H" "H'",
       "A": #"ty",
-      "v": #"val" "H" "A"
-      ----------------------------------------------- ("conc_sub_snoc")
+      "v": #"val" "V" "A"
+      ----------------------------------------------- ("csub_snoc")
       #"csub" "g" (#"snoc" "h" "v") =
       #"snoc" (#"csub" "g" "h") "v":
-      #"sub" (#"conc" "G" "H")
-             (#"conc" "G'" (#"ext" "H'" "A"))
+      #"sub" (#"conc" "G" (#"conc" "H" "V"))
+             (#"ext" (#"conc" "G'" "H'") "A")
   ];
 
+  [:= "G": #"env", "H": #"env",
+      "X": #"env", "Y": #"env"
+      ----------------------------------------------- ("env_exch")
+      #"conc" (#"conc" (#"conc" "G" "X") "Y") "H" =
+      #"conc" (#"conc" (#"conc" "G" "Y") "X") "H" : #"env"
+  ];
   [:| "G": #"env", "H": #"env",
       "A": #"ty", "B": #"ty"
       -----------------------------------------------
@@ -179,24 +199,22 @@ Definition linear_value_subst_def : lang :=
       #"sub" (#"conc" (#"ext" (#"ext" "G" "A") "B") "H")
              (#"conc" (#"ext" (#"ext" "G" "B") "A") "H")
   ];
-
   [:= "G": #"env", "H": #"env",
       "V": #"env", "W": #"env",
       "A": #"ty", "B": #"ty",
       "v": #"val" "V" "A",
       "w": #"val" "W" "B"
-      ----------------------------------------------- ("exch_spec")
+      ----------------------------------------------- ("snoc_exch")
       #"cmp" (#"csub" (#"snoc" (#"snoc" #"id" "v") "w") #"id")
              (#"exch" "G" "H" "A" "B") =
       #"csub" (#"snoc" (#"snoc" #"id" "w") "v") #"id" :
-      #"sub" (#"conc" "G" "H")
+      #"sub" (#"conc" (#"conc" (#"conc" "G" "V") "W") "H")
              (#"conc" (#"ext" (#"ext" "G" "B") "A") "H")
   ]
 
   ]}.
 
 (*TODO: use elab_lang notation?*)
-(*
 Derive linear_value_subst
        SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
        As linear_value_subst_wf.
@@ -304,64 +322,45 @@ setup_elab_lang.
 	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
       try apply eq_term_refl; cleanup_auto_elab ]).
 
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  Print break_elab_rule.
   - eapply eq_term_rule.
     + break_down_elab_ctx.
     + break_elab_sort.
+    + unshelve try_break_elab_term.
+      all: try lazymatch goal with
+             | |- term => shelve
+             | |- wf_term _ _ _ _ => shelve
+           end.
+      3:eredex_steps_with linear_value_subst "conc_emp".
+      3:term_refl.
+      all: term_refl.
     + try_break_elab_term.
-      * eredex_steps_with linear_value_subst "conc_emp".
-      * term_refl.
-    + try_break_elab_term.
-        (* {solve_in. }
-        eapply elab_args_cons_ex; cycle 1.
-        1: eapply elab_args_cons_ex; cycle 1.
-        1: eapply elab_args_cons_im.
-        1: eapply elab_args_cons_im.
-        1: eapply elab_args_cons_im.
-        1: eapply elab_args_cons_im.
-        1: eapply elab_args_nil.
-        -- shelve.
-        -- shelve.
-        -- shelve.
-        -- shelve.
-        -- try_break_elab_term.
-        -- try_break_elab_term.
-      * compute_eq_compilation.
-      * solve_in.
-      * Print elab_args.
-        eapply elab_args_cons_ex.
-         [ break_down_elab_ctx
-         | break_elab_sort
-         | try_break_elab_term
-         | try_break_elab_term ]. *)
-  - Print break_elab_rule.
-    eapply eq_term_rule.
+
+  - (first
+   [ unshelve (solve
+	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
+      try apply eq_term_refl; cleanup_auto_elab ]).
+
+  - (first
+   [ unshelve (solve
+	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
+      try apply eq_term_refl; cleanup_auto_elab ]).
+
+  - (first
+   [ unshelve (solve
+	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
+      try apply eq_term_refl; cleanup_auto_elab ]).
+
+  - eapply eq_term_rule.
     + break_down_elab_ctx.
     + break_elab_sort.
-    + Print try_break_elab_term.
-      Print elab_term.
-      eapply elab_term_conv.
-      *              (eapply elab_term_by; [ solve_in | break_down_elab_args ]).
-      * sort_cong.
-        Print process_eq_term.
-        -- cbn_eq_goal. by_reduction. (* this should work but doesn't *)
-          [ (eapply elab_term_var; [ solve_in ]) ||
-              (eapply elab_term_by; [ solve_in | break_down_elab_args ])
-          | try (sort_cong; repeat process_eq_term) ]
-             [ break_down_elab_ctx
-         | break_elab_sort
-         | try_break_elab_term
-         | try_break_elab_term ].
+    + unshelve try_break_elab_term.
+      all: try lazymatch goal with
+             | |- term => shelve
+             | |- wf_term _ _ _ _ => shelve
+           end.
+      4:eredex_steps_with linear_value_subst "emp_conc".
+      all: term_refl.
+    + try_break_elab_term.
 
   - (first
    [ unshelve (solve
@@ -383,25 +382,26 @@ setup_elab_lang.
 	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
       try apply eq_term_refl; cleanup_auto_elab ]).
 
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
+  - eapply eq_term_rule.
+    + break_down_elab_ctx.
+    + break_elab_sort.
+    + unshelve try_break_elab_term.
+      all: try lazymatch goal with
+             | |- term => shelve
+             | |- wf_term _ _ _ _ => shelve
+           end.
+      all: term_refl.
+    + unshelve try_break_elab_term.
+      all: try lazymatch goal with
+             | |- term => shelve
+             | |- wf_term _ _ _ _ => shelve
+           end.
+      5:eredex_steps_with linear_value_subst "env_exch".
+      all: term_refl.
 
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
+Unshelve.
+all: cleanup_auto_elab.
 
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
 Qed.
 #[export] Hint Resolve linear_value_subst_wf : elab_pfs.
 
@@ -449,4 +449,3 @@ Derive linear_exp_subst
        As linear_exp_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve linear_exp_subst_wf : elab_pfs.
-*)
