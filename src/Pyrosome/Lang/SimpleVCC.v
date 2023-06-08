@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -121,7 +121,7 @@ Definition subst_cc_def : compiler :=
   | {{e #"emp"}} => {{e#"unit"}}
   | {{e #"forget"}} => {{e# "tt"}}
   | {{e #"ext" "A" "B" }} => {{e #"prod" "A" "B"}}
-  | {{e #"snoc" "G" "G'" "A" "g" "v"}} =>
+  | {{e #"snoc" "G" "G'""g" "A" "v"}} =>
     {{e #"pair" "g" "v"}}
   | {{e #"id" "G"}} => {{e #"hd"}}
   | {{e #"hd" "G" "A"}} => {{e #".2" #"hd"}}

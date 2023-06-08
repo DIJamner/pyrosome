@@ -1,23 +1,24 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core AllConstructors Compilers Elab ElabCompilers.
+From Pyrosome Require Import Theory.Core Tools.AllConstructors Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
-(*TODO:currently broken
 
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
   
@@ -50,13 +51,21 @@ Lemma strengthen_named_list_lookup {A} (cmp : named_list A) n
                  named_list_lookup_err cmp' n = named_list_lookup_err cmp n.
 Proof.
   induction cmp; basic_goal_prep;  symmetry; basic_utils_crush.
+  {
+    (* TODO: add as resolve hint? *)
+    apply all_fresh_named_list_lookup_err_in; eauto.
+  }
   my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  {
+    (* TODO: add as resolve hint? *)
+    apply all_fresh_named_list_lookup_err_in; eauto.
+  }
   symmetry.
   basic_core_crush.
 Qed.
 
   Section AllModels.
-    Context {Mterm Msort} (model : Model (V:= V)).
+    Context {Mterm Msort} (model : Model (V:= V) (term:=Mterm) (sort:=Msort)).
 Lemma compile_strengthen_term_incl cmp e
   : all_constructors (fun n => In n (map fst cmp)) e ->
     forall cmp', incl cmp cmp' ->
@@ -80,8 +89,13 @@ Lemma compile_strengthen_args_incl cmp e
                  all_fresh cmp' ->
                  compile_args cmp' e = compile_args cmp e.
 Proof.
-  induction e; basic_goal_prep;
-    f_equal; firstorder eauto using compile_strengthen_term_incl.
+  induction e; basic_goal_prep; f_equal.
+  {
+    apply compile_strengthen_term_incl; firstorder eauto.
+  }
+  {
+    firstorder eauto.
+  }
 Qed.
 Hint Rewrite compile_strengthen_args_incl : lang_core.
 
@@ -92,7 +106,7 @@ Lemma compile_strengthen_sort_incl cmp e
                  all_fresh cmp' ->
                  compile_sort cmp' e = compile_sort cmp e.
 Proof.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; basic_core_crush.
   erewrite strengthen_named_list_lookup; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[basic_core_crush|].
@@ -116,7 +130,9 @@ Lemma compile_strengthen_ctx_incl cmp e
                  compile_ctx cmp' e = compile_ctx cmp e.
 Proof.
   induction e; basic_goal_prep;
-    f_equal; [f_equal|]; firstorder eauto using compile_strengthen_sort_incl.
+    f_equal; [f_equal|];
+    try apply compile_strengthen_sort_incl;
+    firstorder eauto.
 Qed.
 
 Fixpoint constructor_names (l:lang) : list V :=
@@ -127,8 +143,8 @@ Fixpoint constructor_names (l:lang) : list V :=
   |[] => []
   end.
 
-Lemma preserving_compiler_constructor_names cmp_pre  tgt cmp src
-  : preserving_compiler_ext cmp_pre tgt cmp src ->
+Lemma preserving_compiler_constructor_names cmp_pre tgt cmp src
+  : preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src ->
     map fst cmp = constructor_names src.
 Proof.
   induction 1; basic_goal_prep; basic_core_crush.
@@ -169,9 +185,9 @@ Local Lemma all_constructors_from_wf src
            wf_term src c e t ->
            all_constructors (fun n0 => In n0 (constructor_names src)) e)
     /\ (forall c s c',
-           wf_args src c s c' ->
+           wf_args (Model:=core_model src) c s c' ->
            all (all_constructors (fun n0 => In n0 (constructor_names src))) s).
-Proof using.
+Proof using Msort Mterm V V_Eqb V_default model.
   intros; apply wf_judge_ind; basic_goal_prep;
     with_rule_in_wf_crush.  
 Qed.
@@ -189,11 +205,11 @@ Definition all_constructors_args_from_wf src
 Hint Resolve all_constructors_args_from_wf : lang_core.
 
 Lemma all_constructors_ctx_from_wf src c
-  : wf_ctx src c ->
+  : wf_ctx (Model:=core_model src) c ->
     all_constructors_ctx (fun n0 => In n0 (constructor_names src)) c.
-Proof.
+Proof using Msort Mterm V V_Eqb V_default model.
   induction 1; basic_goal_prep;
-    with_rule_in_wf_crush.
+    basic_core_crush.
 Qed.
 Hint Resolve all_constructors_ctx_from_wf : lang_core.
 
@@ -236,7 +252,7 @@ Lemma compile_strengthen_args_incl' ecmp cmp e
                  (compile_args (ecmp ++ cmp') e) = (compile_args (ecmp ++ cmp) e).
 Proof.
   induction e; basic_goal_prep;
-    f_equal; firstorder eauto using compile_strengthen_term_incl'.
+    f_equal; try apply compile_strengthen_term_incl'; firstorder eauto.
 Qed.
 
 
@@ -246,7 +262,7 @@ Lemma compile_strengthen_sort_incl' ecmp cmp e
                  all_fresh cmp' ->
                  compile_sort (ecmp++cmp') e = compile_sort (ecmp++cmp) e.
 Proof.
-  induction e; basic_goal_prep; basic_core_firstorder_crush.
+  induction e; basic_goal_prep; basic_core_crush.
   erewrite strengthen_named_list_lookup'; eauto.
   case_match; basic_goal_prep;[| basic_core_crush].
   case_match; basic_goal_prep;[basic_core_crush|].
@@ -263,7 +279,7 @@ Lemma compile_strengthen_ctx_incl' ecmp cmp e
                  compile_ctx (ecmp++cmp') e = compile_ctx (ecmp++cmp) e.
 Proof.
   induction e; basic_goal_prep;
-    f_equal; [f_equal|]; firstorder eauto using compile_strengthen_sort_incl'.
+    f_equal; [f_equal|]; try apply compile_strengthen_sort_incl'; firstorder eauto.
 Qed.
 
 Lemma constructor_names_app l l'
@@ -272,116 +288,7 @@ Proof.
   induction l; basic_goal_prep; try case_match; basic_goal_prep; basic_core_crush.
 Qed.
 
-
-Lemma elab_preserving_compiler_monotonicity cmp' cmp_pre tgt cmp ecmp src src_pre cmp_pre'
-  : elab_preserving_compiler [] tgt cmp' cmp_pre src_pre ->
-    elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
-    wf_lang (src++src_pre) ->
-    incl cmp_pre cmp_pre' ->
-    all_fresh cmp_pre' ->
-    elab_preserving_compiler cmp_pre' tgt cmp ecmp src.
-Proof.
-  induction 2; basic_goal_prep; autorewrite with utils lang_core in *; try constructor; intuition eauto.
-  Abort (*TODO: update
-  {
-    erewrite compile_strengthen_ctx_incl'; eauto.
-    eapply all_constructors_ctx_weaken; cycle 1.
-    basic_core_crush.
-    simpl; intro.
-    erewrite !preserving_compiler_constructor_names; eauto.
-    eapply elab_compiler_implies_preserving.
-    eapply elab_compiler_prefix_implies_elab; eauto.
-  }
-  {
-    erewrite compile_strengthen_ctx_incl'; eauto.
-    erewrite compile_strengthen_sort_incl'; eauto.
-    {
-      eapply all_constructors_sort_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_ctx_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-  }
-  {
-    erewrite compile_strengthen_ctx_incl'; eauto.
-    erewrite compile_strengthen_sort_incl'; eauto.
-    erewrite (compile_strengthen_sort_incl' ecmp t2); eauto.
-    {
-      eapply all_constructors_sort_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_sort_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_ctx_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-  }
-  {
-    erewrite compile_strengthen_ctx_incl'; eauto.
-    erewrite compile_strengthen_sort_incl'; eauto.
-    erewrite (compile_strengthen_term_incl' ecmp e1); eauto.
-    erewrite (compile_strengthen_term_incl' ecmp e2); eauto.
-    {
-      eapply all_constructors_term_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_term_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_sort_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-    {
-      eapply all_constructors_ctx_weaken; cycle 1.
-      basic_core_crush.
-      simpl; intro.
-      erewrite !preserving_compiler_constructor_names; eauto.
-      eapply elab_compiler_implies_preserving.
-      eapply elab_compiler_prefix_implies_elab; eauto.
-    }
-  }
-Qed.
-Hint Resolve elab_preserving_compiler_monotonicity : auto_elab.
-         *).
+End AllModels.
 
 End WithVar.
-*)
+

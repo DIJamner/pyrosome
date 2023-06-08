@@ -97,7 +97,7 @@ Ltac2 use_constructor () :=
       constructor i
   end.
 
-Hint Extern 0 (use_constuctor_next _ _) => ltac2:(use_constructor ()) : utils.
+#[export] Hint Extern 0 (use_constuctor_next _ _) => ltac2:(use_constructor ()) : utils.
 
 
 Variant ConstructorIndex (n : nat) := ConstructorIndexPf.

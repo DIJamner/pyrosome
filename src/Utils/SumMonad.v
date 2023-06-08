@@ -8,7 +8,7 @@ Section __.
 
   Context {Err : Type}.
   
-  Instance sum_monad : Monad (sum Err) :=
+  #[export] Instance sum_monad : Monad (sum Err) :=
     {
       Mret := @inr _;
       Mbind _ _ f ma :=
@@ -24,5 +24,3 @@ Section __.
     if b then inr default else Merror e.
 
 End __.
-
-Existing Instance sum_monad.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import ZArith List.
+Require Import ZArith Lists.List.
 Import ListNotations.
 Open Scope list.
 Open Scope positive.
@@ -111,8 +111,8 @@ Section WithVar.
 
     Context (r : renaming).
 
-    Definition of_p (p : positive) :=
-      unwrap_with_default default (get p r.(p_to_v)). 
+    Definition of_p (p : positive) : V :=
+      unwrap_with_default (get p r.(p_to_v)). 
 
     Fixpoint unrename_pf p : pf V :=
       match p with

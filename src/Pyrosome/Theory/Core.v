@@ -4,7 +4,7 @@ Set Bullet Behavior "Strict Subproofs".
 Require Import Ltac2.Ltac2.
 Set Default Proof Mode "Classic".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -703,14 +703,6 @@ Proof.
 Qed.
 Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
-Lemma wf_subst_from_wf_args (l : lang) c s c'
-  : wf_args l c s c' ->
-    wf_subst l c (with_names_from c' s) c'.
-Proof.
-  induction 1; basic_core_crush.
-Qed.
-  Hint Resolve wf_subst_from_wf_args : lang_core.
-
 (* TODO: Don't always want this hint? but need it here
    Probably best to gate this behind a submodule import.
    TODO: other unfolds
@@ -831,18 +823,9 @@ Proof using V_Eqb_ok.
         end.
   all: specialize (H3 ltac:(basic_core_crush)).
   all: break.
-  { eapply well_scoped_subst; try typeclasses eauto.
-    eauto with model.
-    basic_core_crush. }
-  { eapply well_scoped_subst; try typeclasses eauto.
-    eauto with model.
-    basic_core_crush. }
-  { eapply well_scoped_subst; try typeclasses eauto.
-    eauto with model.
-    basic_core_crush. }
-  { eapply well_scoped_subst; try typeclasses eauto.
-    eauto with model.
-    basic_core_crush. }
+  all: eapply well_scoped_subst; try typeclasses eauto;
+    eauto with model;
+    basic_core_crush.
 Qed.
 
 Lemma eq_sort_implies_ws_l l c t1 t2
@@ -1216,8 +1199,8 @@ Proof.
     unfold substable_subst.
     erewrite <- subst_assoc; try typeclasses eauto.
     (*TODO remove associativity hint?*)
-    eauto with utils lang_core.
-    basic_core_crush.
+    - eauto with utils lang_core.
+    - basic_core_crush.
   }
 Qed.
 
@@ -1681,7 +1664,6 @@ Qed.
 
 Hint Resolve term_eq_rule_in_sort_wf term_rule_in_sort_wf : lang_core.
 
-(*TODO: move to a more suitable location (Core.v?)*)
 Lemma term_sorts_eq l c e t1
   : wf_lang l -> (*TODO: can I weaken this?*)
     wf_ctx l c ->
@@ -1723,6 +1705,16 @@ Proof.
     basic_core_crush.
   }
 Qed.
+
+
+Lemma wf_lang_tail l' l
+  : wf_lang (l' ++ l) -> wf_lang l.
+Proof.
+  induction l';
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
 
 End WithVar.
 
@@ -1792,7 +1784,6 @@ End WithVar.
 #[export] Hint Resolve wf_rule_lang_monotonicity_app : lang_core.
 
 
-#[export] Hint Resolve wf_subst_from_wf_args : lang_core.
 #[export] Hint Resolve id_args_wf : lang_core.
 #[export] Hint Resolve eq_subst_dom_eq_r : lang_core.
 #[export] Hint Resolve eq_subst_dom_eq_l : lang_core.

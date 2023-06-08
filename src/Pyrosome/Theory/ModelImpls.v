@@ -1,18 +1,19 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Export Substable Model Term Rule Core.
+From Pyrosome Require Import Core.
 
 
 (*TODO: should this be split differently? Model_ok for core should be in Core.v*)
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
+          {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
 
 
@@ -21,19 +22,20 @@ Section WithVar.
             (wfl : wf_lang l).
     Notation core_model := (core_model l). 
 
+    (*TODO: reorder fields on Model_ok to match core Inductives? *)
     Instance core_model_ok : Model_ok core_model :=
       {
         term_substable_ok := substable_term_ok (V:=V);
         sort_substable_ok := substable_sort_ok (V:=V);
-        eq_sort_subst := eq_sort_subst (l:=l);
+        eq_sort_subst := ltac:(intros; eapply eq_sort_subst with (l:=l); eassumption);
         eq_sort_refl := eq_sort_refl (l:=l);
         eq_sort_trans := eq_sort_trans (l:=l);
         eq_sort_sym := eq_sort_sym (l:=l);
-        eq_term_subst := eq_term_subst (l:=l);
+        eq_term_subst := ltac:(intros; eapply eq_term_subst with (l:=l); eassumption);
         eq_term_refl := eq_term_refl (l:=l);
         eq_term_trans := eq_term_trans (l:=l);
         eq_term_sym := eq_term_sym (l:=l);
-        eq_term_conv := eq_term_conv (l:=l);
+        eq_term_conv := ltac:(intros; eapply eq_term_conv with (l:=l); eassumption);
         wf_term_conv := wf_term_conv (l:=l);
         wf_term_var := wf_term_var l;
         wf_sort_subst_monotonicity := wf_sort_subst_monotonicity wfl;

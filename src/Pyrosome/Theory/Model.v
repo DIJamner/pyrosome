@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -105,6 +105,13 @@ Section WithVar.
           wf_subst c s c' ->
           wf_term c e t[/s/] ->
           wf_subst c ((name,e)::s) ((name,t)::c').
+      
+      Lemma wf_subst_from_wf_args c s c'
+        : wf_args c s c' ->
+          wf_subst c (with_names_from c' s) c'.
+      Proof.
+        induction 1; basic_goal_prep; constructor; eauto.
+      Qed.
 
       (* TODO: put this class in a separate module for better imports? *)
       Class Model_ok :=
@@ -297,3 +304,5 @@ Proof. solve_invert_constr_eq_lemma. Qed.
 
 
 #[export] Hint Resolve wf_ctx_all_fresh : model.
+
+#[export] Hint Resolve wf_subst_from_wf_args : model.

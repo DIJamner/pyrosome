@@ -1,12 +1,12 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Named Require Import Core Compilers ModelImpls.
+From Pyrosome Require Import Theory.Core Theory.ModelImpls Compilers.Compilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -14,8 +14,9 @@ Import CompilerDefs.Notations.
  
 Section WithVar.
   Context (V : Type)
-          {V_Eqb : Eqb V}
-          {V_default : WithDefault V}.
+    {V_Eqb : Eqb V}
+    {V_Eqb_ok : Eqb_ok V_Eqb}
+    {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
   Notation named_map := (@named_map V).
@@ -27,26 +28,26 @@ Section WithVar.
   Notation lang := (@lang V).
   Notation compiler_case := (compiler_case V (tgt_term:=term) (tgt_sort:=sort)).
   Notation compiler := (compiler V (tgt_term:=term) (tgt_sort:=sort)).
-  Notation compile l := (compile (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=core_model l)).
-  Notation compile_subst l := (compile_subst (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=core_model l)).
-  Notation compile_ctx l := (compile_ctx (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=core_model l)).
-  Notation compile_args l := (compile_args (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=core_model l)).
-  Notation compile_sort l := (compile_sort (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=core_model l)).
+  Notation compile := (compile (V:=V) (tgt_term:=term) (tgt_sort:=sort)
+                         (tgt_Model:=syntax_model (V:=V))).
+  Notation compile_subst := (compile_subst (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=syntax_model (V:=V))).
+  Notation compile_ctx := (compile_ctx (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=syntax_model (V:=V))).
+  Notation compile_args := (compile_args (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=syntax_model (V:=V))).
+  Notation compile_sort := (compile_sort (V:=V) (tgt_term:=term) (tgt_sort:=sort) (tgt_Model:=syntax_model (V:=V))).
   
-Lemma compile_subst_combine l (cmp : compiler) args s
-  : compile_subst l cmp (combine args s) = combine args (map (compile l cmp) s).
+Lemma compile_subst_combine (cmp : compiler) args s
+  : compile_subst cmp (combine args s) = combine args (map (compile cmp) s).
 Proof.
   revert args; induction s; destruct args; basic_goal_prep; basic_core_crush.
 Qed.
 
 Section CompileFn.
-  Context (tgt : lang).
   Context (cmp : compiler).
 
   Definition compile_ccase (c : compiler_case) :=
     match c with
-    | sort_case args t => sort_case args (compile_sort tgt cmp t)
-    | term_case args e => term_case args (compile tgt cmp e)
+    | sort_case args t => sort_case args (compile_sort cmp t)
+    | term_case args e => term_case args (compile cmp e)
     end.
 
   Definition compile_cmp (c: compiler) := named_map compile_ccase c.
@@ -137,12 +138,12 @@ Qed.
   might help with inductive_implies_semantic last induction?
  *)
 
-Lemma compile_term_subst l (cmp : compiler) e s
+Lemma compile_term_subst (cmp : compiler) e s
   : all_fresh cmp ->
     all ws_ccase (map snd cmp) ->
     term_in_cmp_domain cmp e ->
     well_scoped (map fst s) e ->
-    compile l cmp e[/s/] = (compile l cmp e)[/compile_subst l cmp s/].
+    compile cmp e[/s/] = (compile cmp e)[/compile_subst cmp s/].
 Proof.
   intros allfcmp all_ws.
   induction e; basic_goal_prep; basic_core_firstorder_crush.
@@ -164,30 +165,30 @@ Proof.
 
   (*prove inner induction*)
   clear x x0 H0 H2 HeqH4.
-  revert dependent l0.
-  induction l0; basic_goal_prep; basic_core_crush.
+  revert dependent l.
+  induction l; basic_goal_prep; basic_core_crush.
 Qed.
 Hint Rewrite compile_term_subst : lang_core.
 
 
-Lemma compile_args_subst l cmp e s
+Lemma compile_args_subst cmp e s
   : all_fresh cmp ->
     all ws_ccase (map snd cmp) ->
     all (term_in_cmp_domain cmp) e ->
     well_scoped (map fst s) e ->
-    compile_args l cmp e[/s/] = (compile_args l cmp e)[/compile_subst l cmp s/].
+    compile_args cmp e[/s/] = (compile_args cmp e)[/compile_subst cmp s/].
 Proof.
   induction e; basic_goal_prep; basic_core_crush.
   fold_Substable.
   basic_core_crush.
 Qed.
 
-Lemma compile_sort_subst l cmp e s
+Lemma compile_sort_subst cmp e s
   : all_fresh cmp ->
     all ws_ccase (map snd cmp) ->
     sort_in_cmp_domain cmp e ->
     well_scoped (map fst s) e ->
-    compile_sort l cmp e[/s/] = (compile_sort l cmp e)[/compile_subst l cmp s/].
+    compile_sort cmp e[/s/] = (compile_sort cmp e)[/compile_subst cmp s/].
 Proof.
   intros allfcmp all_ws.
   induction e; basic_goal_prep; basic_core_firstorder_crush.
@@ -204,8 +205,10 @@ Proof.
   f_equal.
   unfold subst_cmp.
   rewrite named_map_combine_r_padded.
-  f_equal.
-  apply compile_args_subst; eauto.
+  {
+    f_equal.
+    apply compile_args_subst; eauto.
+  }
   reflexivity.
 Qed.
 Hint Rewrite compile_sort_subst : lang_core.
@@ -225,18 +228,18 @@ Qed.
 Hint Resolve pair_in_map_snd : utils.
 
 
-Lemma compile_cmp_distributes tgt ir cmp cmp' e
+Lemma compile_cmp_distributes cmp cmp' e
   : 
   (*TODO: find a better way to discharge this*)
-  compile tgt cmp default = default ->
+  compile cmp default = default ->
   all ws_ccase (map snd cmp) ->
     all_fresh cmp ->
     all ws_ccase (map snd cmp') ->
     all_fresh cmp' ->
     all (ccase_in_cmp_domain cmp) (map snd cmp') ->
     term_in_cmp_domain cmp' e ->
-    (compile tgt (compile_cmp tgt cmp cmp') e)
-    = (compile tgt cmp (compile ir cmp' e)).
+    (compile (compile_cmp cmp cmp') e)
+    = (compile cmp (compile cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
   induction e; basic_goal_prep; basic_core_firstorder_crush.
@@ -245,16 +248,19 @@ Proof.
     rewrite all_fresh_named_list_lookup_err_in; eauto.
   }
   rewrite <- H4.
-  assert (Some (term_case x (compile tgt cmp x0))
-          = named_list_lookup_err (compile_cmp tgt cmp cmp') n).
+  assert (Some (term_case x (compile cmp x0))
+          = named_list_lookup_err (compile_cmp cmp cmp') n).
   {
     rewrite all_fresh_named_list_lookup_err_in.
     2: unfold compile_cmp; basic_utils_crush.
-    rewrite all_fresh_named_list_lookup_err_in in H4; eauto.
-    unfold compile_cmp.
-    change (term_case x (compile tgt cmp x0))
-      with (compile_ccase tgt cmp (term_case x x0)).
-    eapply in_named_map; eauto.
+    {
+      rewrite all_fresh_named_list_lookup_err_in in H4; eauto.
+      unfold compile_cmp.
+      change (term_case x (compile cmp x0))
+        with (compile_ccase cmp (term_case x x0)).
+      eapply in_named_map; eauto.
+    }
+    unfold compile_cmp; basic_core_crush.
   }
   rewrite <- H5.
   erewrite compile_term_subst; unfold ws_lang;eauto.
@@ -287,37 +293,35 @@ Qed.
 Hint Rewrite compile_cmp_distributes : lang_core.
 
 
-Lemma compile_args_cmp_distributes tgt ir cmp cmp' e
+Lemma compile_args_cmp_distributes cmp cmp' e
   :  (*TODO: find a better way to discharge this*)
-  compile tgt cmp default = default ->
+  compile cmp default = default ->
   all ws_ccase (map snd cmp) ->
     all_fresh cmp ->
     all ws_ccase (map snd cmp') ->
     all_fresh cmp' ->
     all (ccase_in_cmp_domain cmp) (map snd cmp') ->
     all (term_in_cmp_domain cmp') e ->
-    (compile_args tgt (compile_cmp tgt cmp cmp') e)
-    = (compile_args tgt cmp (compile_args ir cmp' e)).
+    (compile_args (compile_cmp cmp cmp') e)
+    = (compile_args cmp (compile_args cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
   induction e; basic_goal_prep; basic_core_crush.
-
-  eapply compile_cmp_distributes; eauto.
 Qed.
 Hint Rewrite compile_args_cmp_distributes : lang_core.
 
 
-Lemma compile_sort_cmp_distributes tgt ir cmp cmp' e
+Lemma compile_sort_cmp_distributes cmp cmp' e
   :   (*TODO: find a better way to discharge this*)
-  compile tgt cmp default = default ->
+  compile cmp default = default ->
   all ws_ccase (map snd cmp) ->
     all_fresh cmp ->
     all ws_ccase (map snd cmp') ->
     all_fresh cmp' ->
     all (ccase_in_cmp_domain cmp) (map snd cmp') ->
     sort_in_cmp_domain cmp' e ->
-    (compile_sort tgt (compile_cmp tgt cmp cmp') e)
-    = (compile_sort tgt cmp (compile_sort ir cmp' e)).
+    (compile_sort (compile_cmp cmp cmp') e)
+    = (compile_sort cmp (compile_sort cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
   destruct e; basic_goal_prep; basic_core_firstorder_crush.
@@ -326,16 +330,19 @@ Proof.
     rewrite all_fresh_named_list_lookup_err_in; eauto.
   }
   rewrite <- H3.
-  assert (Some (sort_case x (compile_sort tgt cmp x0))
-          = named_list_lookup_err (compile_cmp tgt cmp cmp') v).
+  assert (Some (sort_case x (compile_sort cmp x0))
+          = named_list_lookup_err (compile_cmp cmp cmp') v).
   {
     rewrite all_fresh_named_list_lookup_err_in.
     2: unfold compile_cmp; basic_utils_crush.
-    rewrite all_fresh_named_list_lookup_err_in in H3; eauto.
-    unfold compile_cmp.
-    change (sort_case x (compile_sort tgt cmp x0))
-      with (compile_ccase tgt cmp (sort_case x x0)).
-    eapply in_named_map; eauto.
+    {
+      rewrite all_fresh_named_list_lookup_err_in in H3; eauto.
+      unfold compile_cmp.
+      change (sort_case x (compile_sort cmp x0))
+        with (compile_ccase cmp (sort_case x x0)).
+      eapply in_named_map; eauto.
+    }
+    unfold compile_cmp; basic_core_crush.
   }
   rewrite <- H4.
   erewrite compile_sort_subst; unfold ws_lang;eauto.
@@ -344,16 +351,15 @@ Proof.
     f_equal.
     unfold compile_subst.
     rewrite named_map_combine_r_padded.
-    f_equal.
-    
+    {
+      f_equal.    
 
-    (*nested induction*)
-    clear x x0 H1 H0 H3 H4.
-    revert dependent l.
-    induction l; basic_goal_prep; basic_core_crush.
-    all: auto.
-    
-    eapply compile_cmp_distributes; eauto.
+      (*nested induction*)
+      clear x x0 H1 H0 H3 H4.
+      revert dependent l.
+      induction l; basic_goal_prep; basic_core_crush.
+    }
+    now auto.
   }
   {
     assert  (ccase_in_cmp_domain cmp (sort_case x x0)).
@@ -370,22 +376,20 @@ Qed.
 Hint Rewrite compile_sort_cmp_distributes : lang_core.
 
 
-Lemma compile_ctx_cmp_distributes tgt ir cmp cmp' e
+Lemma compile_ctx_cmp_distributes cmp cmp' e
   :   (*TODO: find a better way to discharge this*)
-  compile tgt cmp default = default ->
+  compile cmp default = default ->
   all ws_ccase (map snd cmp) ->
     all_fresh cmp ->
     all ws_ccase (map snd cmp') ->
     all_fresh cmp' ->
     all (ccase_in_cmp_domain cmp) (map snd cmp') ->
     all (sort_in_cmp_domain cmp') (map snd e) ->
-    (compile_ctx tgt (compile_cmp tgt cmp cmp') e)
-    = (compile_ctx tgt cmp (compile_ctx ir cmp' e)).
+    (compile_ctx (compile_cmp cmp cmp') e)
+    = (compile_ctx cmp (compile_ctx cmp' e)).
 Proof.
   intros all_ws_cmp allfr_cmp all_ws_cmp' allfr_cmp' cmp'_in_dom.
   induction e; basic_goal_prep; basic_core_crush.
-  erewrite compile_sort_cmp_distributes; eauto.
-  erewrite H3; eauto.
 Qed.
 Hint Rewrite compile_ctx_cmp_distributes : lang_core.   
 
@@ -396,11 +400,11 @@ Lemma preserving_is_well_scoped cmp_pre tgt cmp ir
     all ws_ccase (map snd cmp).
 Proof.
   induction 2; basic_goal_prep; intuition;
-    replace (map fst c) with (map fst (compile_ctx tgt (cmp++cmp_pre) c)).
-  eapply wf_sort_implies_ws; eauto.
-  apply named_map_fst_eq; eauto.
-  eapply wf_term_implies_ws; eauto.
-  apply named_map_fst_eq; eauto.
+    replace (map fst c) with (map fst (compile_ctx (cmp++cmp_pre) c)).
+  - eapply wf_sort_implies_ws; eauto.
+  - apply named_map_fst_eq; eauto.
+  - eapply wf_term_implies_ws; eauto.
+  - apply named_map_fst_eq; eauto.
 Qed.
 Hint Resolve preserving_is_well_scoped : lang_core.
 
@@ -491,8 +495,8 @@ Lemma preserving_in_domain cmp_pre tgt cmp ir cmp' src
 Proof.
   intro pres_cmp.
   induction 1; basic_goal_prep; intuition.
-  eapply wf_sort_in_domain; eauto.
-  eapply wf_term_in_domain; eauto.
+  - eapply wf_sort_in_domain; eauto.
+  - eapply wf_term_in_domain; eauto.
 Qed.
 Hint Resolve preserving_in_domain : lang_core.
 
@@ -551,35 +555,46 @@ Hint Resolve all_fresh_compiler : lang_core.
 (*TODO: can cmp be generalized w/ a cmp_pre?*)
 Theorem preservation_transitivity src ir tgt cmp cmp'
   :  (*TODO: find a better way to discharge this*)
-  compile tgt cmp default = default ->
+  compile cmp default = default ->
  wf_lang src ->
     wf_lang ir ->
     wf_lang tgt ->
     (forall s : @Substable.subst V (Term.term V),
   @eq (Term.sort V)
-    (@apply_subst V (Term.term V) (Term.sort V) (@sort_substable V (Term.term V) (Term.sort V) (core_model tgt)) s
+    (@apply_subst V (Term.term V) (Term.sort V) (sort_substable (PreModel:=syntax_model (V:=V))) s
        (default)) (default)) ->
     (forall s : @Substable.subst V (Term.term V),
   @eq (Term.term V)
-    (@apply_subst0 V (Term.term V) (@term_substable V (Term.term V) (Term.sort V) (core_model tgt)) s
+    (@apply_subst0 V (Term.term V) (term_substable (PreModel:=syntax_model (V:=V))) s
        (default)) (default)) ->
     preserving_compiler_ext (tgt_Model:=core_model tgt) [] cmp ir ->
     preserving_compiler_ext (tgt_Model:=core_model ir) [] cmp' src ->
-    preserving_compiler_ext (tgt_Model:=core_model tgt) [] (compile_cmp tgt cmp cmp') src.
-Proof using .
-  intros  compile_default wfsrc wfir wftgt sub_default sub_default' pres_cmp pres_cmp'.
+    preserving_compiler_ext (tgt_Model:=core_model tgt) [] (compile_cmp cmp cmp') src.
+Proof using V_Eqb_ok.
+  intros compile_default wfsrc wfir wftgt sub_default sub_default' pres_cmp pres_cmp'.
   pose proof (inductive_implies_semantic (tgt_Model_ok := core_model_ok wftgt)
                 sub_default sub_default' wfir pres_cmp).
   firstorder.
   revert wfsrc.
-  induction pres_cmp'; basic_goal_prep; constructor;
-    autorewrite with lang_core utils in *; firstorder eauto.
+  induction pres_cmp'; basic_goal_prep; constructor.
+  all: rewrite ?invert_wf_lang_cons in *; break; rewrite app_nil_r in *.
+  all: eauto.
   all:  erewrite ?compile_ctx_cmp_distributes, ?compile_sort_cmp_distributes, ?compile_cmp_distributes.
   all: eauto with lang_core.
   all: pose proof (core_model_ok wfir).
-  all:solve [apply inductive_implies_semantic in pres_cmp'; firstorder; constructor].
-  Unshelve.
-  all: exact tgt.
+  all: try (pose proof pres_cmp' as H'; apply inductive_implies_semantic in H').
+  all: try typeclasses eauto.
+  all: try reflexivity.
+  all: try assumption.
+  all: autorewrite with lang_core model term utils in *.
+  all: break.
+  all: try intuition eauto with lang_core model utils.
+  all: cbn [Model.eq_sort Model.eq_term Model.wf_sort Model.wf_term core_model] in *.
+  1: apply H2; eauto.
+  2: apply H3; eauto.
+  3: apply H; eauto.
+  4: apply H0; eauto.
+  all: apply H'; eauto.
 Qed.
 Hint Resolve preservation_transitivity : lang_core.
 

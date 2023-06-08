@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool String List.
+Require Import Bool String Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.
@@ -80,9 +80,11 @@ Section __.
       : Some t = named_list_lookup_err c n -> In (n,t) c.
     Proof using EqbS_ok.
       induction c; basic_goal_prep.
-      basic_utils_crush.
-      my_case Heq (eqb n s);
-        basic_utils_crush.
+      { basic_utils_crush. }
+      {
+        my_case Heq (eqb n s);
+          basic_utils_crush.
+      }
     Qed.
 
     
@@ -97,8 +99,8 @@ Section __.
       : all_fresh c -> Some t = named_list_lookup_err c n <-> In (n,t) c.
     Proof using EqbS_ok.
       induction c; basic_goal_prep.
-      basic_utils_crush.  
-      my_case Heq (eqb n s); basic_utils_crush.
+      - basic_utils_crush.  
+      - my_case Heq (eqb n s); basic_utils_crush.
     Qed.
 
     
@@ -281,6 +283,50 @@ Section __.
 (* TODO: do I want to rewrite like this?
   Hint Rewrite with_names_from_map_is_named_map : utils.*)
 
+  
+  Lemma all_fresh_tail {A} (l1 l2: named_list A)
+    : all_fresh (l1++l2) -> all_fresh l2.
+  Proof.
+    induction l1; basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  
+  #[local] Hint Resolve fresh_notin : utils.
+  #[local] Hint Rewrite fresh_app : utils.
+  Lemma all_fresh_conflict_impossible {A} (l1 l2: named_list A) n a1 a2
+    : all_fresh (l1++l2) -> In (n,a1) l1 -> In (n,a2) l2 -> False.
+  Proof.
+    induction l1; basic_goal_prep; basic_utils_crush.
+    (*TODO: what later-proven lemma is missing here? (should be automatic)*)
+    eapply fresh_notin in H5.
+    basic_utils_crush.
+  Qed.
+  (* TODO: a bit problematic as a hint. See where (in Compilers.v)
+     leaving this hint out fails.
+   *)
+  #[local] Hint Resolve all_fresh_conflict_impossible : utils.
+
+  Lemma in_twice_appended_all_fresh {A} (l1 l2: named_list A) n a
+    : all_fresh (l1++l2) ->
+      In (n,a) l1 ->
+      ~In n (map fst l2).
+  Proof.
+    induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Hint Rewrite fresh_cons : utils.
+  (*TODO: this is better than the non-iff version. Entirely replace? *)
+  Lemma named_list_lookup_none_iff {A} (l : named_list A) s
+    : None = named_list_lookup_err l s <-> fresh s l.
+  Proof.
+    induction l.
+    1: basic_goal_prep; basic_utils_crush.
+    break; simpl.
+    case_match; basic_goal_prep; basic_utils_crush.
+  Qed.
+
 End __.
 
 
@@ -309,10 +355,13 @@ Arguments named_list_lookup_err_in {S}%type_scope {EqbS EqbS_ok}
 Arguments named_list_lookup_prop_correct {S}%type_scope 
   {EqbS EqbS_ok} [A]%type_scope d l s a.
 
+Arguments named_list_lookup_none_iff {S}%type_scope {EqbS EqbS_ok} {A}%type_scope l%list_scope s.
+
 #[export] Hint Resolve pair_fst_in : utils.
 
 #[export] Hint Rewrite fresh_cons : utils.
-#[export] Hint Rewrite @fresh_named_map : utils.
+
+#[export] Hint Rewrite fresh_named_map : utils.
 #[export] Hint Rewrite @map_fst_with_names_from : utils.
 (*Note: this is a bit dangerous since the list might not be all-fresh,
   but in this project all lists should be
@@ -321,11 +370,12 @@ TODO: reassess whether it's necessary
 
 #[export] Hint Rewrite @all_fresh_named_list_lookup_err_in : utils.
  *)
-#[export] Hint Resolve @named_list_lookup_none : utils.
-#[export] Hint Resolve @in_named_map : utils.
+Arguments named_list_lookup_none {S}%type_scope {EqbS EqbS_ok} [A]%type_scope l s a _ _.
+#[export] Hint Resolve named_list_lookup_none : utils.
+#[export] Hint Resolve in_named_map : utils.
 #[export] Hint Rewrite @combine_map_fst_is_with_names_from : utils.
 #[export] Hint Rewrite @named_map_length : utils.
-#[export] Hint Resolve @fresh_notin : utils.
+#[export] Hint Resolve fresh_notin : utils.
 #[export] Hint Rewrite @fresh_app : utils.
-#[export] Hint Resolve @all_fresh_insert_rest_is_fresh : utils.
+#[export] Hint Resolve all_fresh_insert_rest_is_fresh : utils.
 #[export] Hint Resolve named_list_lookup_err_in : utils.

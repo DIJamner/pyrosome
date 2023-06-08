@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool String List.
+Require Import Bool String Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.
@@ -50,13 +50,13 @@ Lemma nth_tail_nil A n : @nth_tail A n [] = [].
 Proof.
   destruct n; simpl; reflexivity.
 Qed.
-Hint Rewrite nth_tail_nil : utils.
+#[export] Hint Rewrite nth_tail_nil : utils.
 
 Lemma nth_tail_S_cons A n (e:A) l : nth_tail (S n) (e::l) = nth_tail n l.
 Proof.
   reflexivity.
 Qed.
-Hint Rewrite nth_tail_S_cons : utils.
+#[export] Hint Rewrite nth_tail_S_cons : utils.
 
 
 Lemma as_nth_tail: forall (A : Type) (l : list A), l = nth_tail 0 l.
@@ -87,7 +87,7 @@ Lemma nth_error_nil A n : @nth_error A [] n = None.
 Proof.
   destruct n; simpl; auto.
 Qed.
-Hint Rewrite nth_error_nil : utils.
+#[export] Hint Rewrite nth_error_nil : utils.
 
 
 Module SumboolNotations.

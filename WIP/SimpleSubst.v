@@ -22,6 +22,137 @@ Notation subst := (@subst string).
 Notation rule := (@rule string).
 Notation lang := (@lang string).
 
+(*
+  TODO: extend parameterizer to have option to put variable at the end
+  - make a no-types subst, selectively parameterize w/ A for val_subst
+
+  For now, just duplicating
+ *)
+
+Definition ty_subst_def : lang :=
+  {[l   
+  [s|
+      -----------------------------------------------
+      #"env" srt
+  ];
+  [s| "G" : #"env", "G'" : #"env" 
+      -----------------------------------------------
+      #"sub" "G" "G'" srt                     
+  ];
+  [:| "G" : #"env" 
+       -----------------------------------------------
+       #"id" : #"sub" "G" "G"
+  ];
+  [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3"
+       -----------------------------------------------
+       #"cmp" "f" "g" : #"sub" "G1" "G3"
+  ];
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+      ----------------------------------------------- ("id_right")
+      #"cmp" "f" #"id" = "f" : #"sub" "G" "G'"
+  ]; 
+  [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
+       ----------------------------------------------- ("id_left")
+       #"cmp" #"id" "f" = "f" : #"sub" "G" "G'"
+  ];
+   [:= "G1" : #"env",
+         "G2" : #"env",
+         "G3" : #"env",
+         "G4" : #"env",
+         "f" : #"sub" "G1" "G2",
+         "g" : #"sub" "G2" "G3",
+         "h" : #"sub" "G3" "G4"
+         ----------------------------------------------- ("cmp_assoc")
+         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
+  ];
+  [s| "G" : #"env"
+      -----------------------------------------------
+      #"ty" "G" srt
+  ];
+  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+       "A" : #"ty" "G'"
+       -----------------------------------------------
+       #"ty_subst" "g" "v" : #"ty" "G"
+  ];
+  [:= "G" : #"env", "A" : #"ty" "G"
+       ----------------------------------------------- ("ty_subst_id")
+       #"ty_subst" #"id" "A" = "A" : #"ty" "G"
+  ]; 
+  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
+       "A" : #"ty" "G3"
+       ----------------------------------------------- ("ty_subst_cmp")
+       #"ty_subst" "f" (#"ty_subst" "g" "A")
+       = #"ty_subst" (#"cmp" "f" "g") "A"
+       : #"ty" "G1"
+  ]; 
+  [:| 
+      -----------------------------------------------
+      #"emp" : #"env"
+  ];
+  [:| "G" : #"env"
+      -----------------------------------------------
+      #"forget" : #"sub" "G" #"emp"
+  ];
+  [:= "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'"
+       ----------------------------------------------- ("cmp_forget")
+       #"cmp" "g" #"forget" = #"forget" : #"sub" "G" #"emp"
+  ];
+  [:= 
+      ----------------------------------------------- ("id_emp_forget")
+      #"id" = #"forget" : #"sub" #"emp" #"emp"
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"ext" "G" : #"env"
+  ];
+  [:| "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"ty" "G"
+       -----------------------------------------------
+       #"snoc" "g" "A" : #"sub" "G" (#"ext" "G'")
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"wkn" : #"sub" (#"ext" "G") "G"
+  ];
+  [:| "G" : #"env"
+       -----------------------------------------------
+       #"hd" : #"ty" (#"ext" "G")
+  ];
+   [:= "G" : #"env", "G'" : #"env",
+      "g" : #"sub" "G" "G'",
+      "A" : #"ty" "G"
+      ----------------------------------------------- ("wkn_snoc")
+      #"cmp" (#"snoc" "g" "A") #"wkn" = "g" : #"sub" "G" "G'"
+  ];
+   [:= "G" : #"env", "G'" : #"env",
+       "g" : #"sub" "G" "G'",
+       "A" : #"ty" "G"
+       ----------------------------------------------- ("snoc_hd")
+       #"ty_subst" (#"snoc" "g" "A") #"hd" = "A"
+       : #"ty" "G"
+  ];
+   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
+       "f" : #"sub" "G1" "G2",
+       "g" : #"sub" "G2" "G3",
+       "A" : #"ty" "G2"
+       ----------------------------------------------- ("cmp_snoc")
+       #"cmp" "f" (#"snoc" "g" "A")
+       = #"snoc" (#"cmp" "f" "g") (#"ty_subst" "f" "A")
+       : #"sub" "G1" (#"ext" "G3")
+   ];
+      [:= "G" : #"env"
+       ----------------------------------------------- ("snoc_wkn_hd")
+        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G") (#"ext" "G")
+   ]
+  ]}.
+
+Parameterization logic:
+  put parameter before first thing that needs it, if none, at the end
+Note: for this lang, just the none check should be acceptable (but not ideal)
 
 Definition value_subst_def : lang :=
   {[l   
@@ -61,55 +192,31 @@ Definition value_subst_def : lang :=
          ----------------------------------------------- ("cmp_assoc")
          #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
   ]; 
-  [s| "G" : #"env" 
+  [s|  
       -----------------------------------------------
-      #"ty" "G" srt
+      #"ty" srt
   ];
-
-  [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-       "A" : #"ty" "G'"
-       -----------------------------------------------
-       #"ty_subst" "g" "A" : #"ty" "G"
-  ];
-  [:= "G" : #"env", "A" : #"ty" "G"
-       ----------------------------------------------- ("ty_subst_id")
-       #"ty_subst" #"id" "A" = "A" : #"ty" "G"
-  ]; 
-  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
-       "A" : #"ty" "G3"
-       ----------------------------------------------- ("ty_subst_cmp")
-       #"ty_subst" "f" (#"ty_subst" "g" "A")
-       = #"ty_subst" (#"cmp" "f" "g") "A"
-       : #"ty" "G1"
-  ];
-
-
-
-    
-  [s| "G" : #"env", "A" : #"ty" "G"
+  [s| "G" : #"env", "A" : #"ty"
       -----------------------------------------------
       #"val" "G" "A" srt
   ];
   [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-       "A" : #"ty" "G'", "v" : #"val" "G'" "A"
+       "A" : #"ty", "v" : #"val" "G'" "A"
        -----------------------------------------------
-       #"val_subst" "g" "v" : #"val" "G" (#"ty_subst" "g" "A")
+       #"val_subst" "g" "v" : #"val" "G" "A"
   ];
-  [:= "G" : #"env", "A" : #"ty" "G", "v" : #"val" "G" "A"
+  [:= "G" : #"env", "A" : #"ty", "e" : #"val" "G" "A"
        ----------------------------------------------- ("val_subst_id")
-       #"val_subst" #"id" "v" = "v" : #"val" "G" "A"
+       #"val_subst" #"id" "e" = "e" : #"val" "G" "A"
   ]; 
   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
-       "A" : #"ty" "G3", "v" : #"val" "G3" "A"
+       "A" : #"ty", "v" : #"val" "G3" "A"
        ----------------------------------------------- ("val_subst_cmp")
        #"val_subst" "f" (#"val_subst" "g" "v")
        = #"val_subst" (#"cmp" "f" "g") "v"
-       : #"val" "G1" (#"ty_subst" (#"cmp" "f" "g") "A")
-  ];
-
-    
+       : #"val" "G1" "A"
+  ]; 
   [:| 
       -----------------------------------------------
       #"emp" : #"env"
@@ -126,54 +233,52 @@ Definition value_subst_def : lang :=
       ----------------------------------------------- ("id_emp_forget")
       #"id" = #"forget" : #"sub" #"emp" #"emp"
   ];
-  [:| "G" : #"env", "A": #"ty" "G"
+  [:| "G" : #"env", "A": #"ty"
        -----------------------------------------------
        #"ext" "G" "A" : #"env"
   ];
-  [:| "G" : #"env", "G'" : #"env", "A" : #"ty" "G'",
+  [:| "G" : #"env", "G'" : #"env", "A" : #"ty",
       "g" : #"sub" "G" "G'",
-      "v" : #"val" "G" (#"ty_subst" "g" "A") (*we restrict substitutions to values *)
+      "v" : #"val" "G" "A" (*we restrict substitutions to values *)
        -----------------------------------------------
        #"snoc" "g" "v" : #"sub" "G" (#"ext" "G'" "A")
   ];
-
-  [:| "G" : #"env", "A" : #"ty" "G"
+  [:| "G" : #"env", "A" : #"ty"
        -----------------------------------------------
        #"wkn" : #"sub" (#"ext" "G" "A") "G"
   ];
-  [:| "G" : #"env", "A" : #"ty"("G")
+  [:| "G" : #"env", "A" : #"ty"
        -----------------------------------------------
-       #"hd" : #"val" (#"ext" "G" "A") (#"ty_subst" #"wkn" "A")
+       #"hd" : #"val" (#"ext" "G" "A") "A"
   ];
-  [:= "G" : #"env", "G'" : #"env",
+   [:= "G" : #"env", "G'" : #"env",
       "g" : #"sub" "G" "G'",
-      "A" : #"ty" "G'",
-      "v" : #"val" "G" (#"ty_subst" "g" "A")
+      "A" : #"ty",
+      "v" : #"val" "G" "A"
       ----------------------------------------------- ("wkn_snoc")
       #"cmp" (#"snoc" "g" "v") #"wkn" = "g" : #"sub" "G" "G'"
   ];
    [:= "G" : #"env", "G'" : #"env",
        "g" : #"sub" "G" "G'",
-       "A" : #"ty" "G'",
-       "v" : #"val" "G" (#"ty_subst" "g" "A")
+       "A" : #"ty",
+       "v" : #"val" "G" "A"
        ----------------------------------------------- ("snoc_hd")
        #"val_subst" (#"snoc" "g" "v") #"hd" = "v"
-       : #"val" "G" (#"ty_subst" "g" "A")
+       : #"val" "G" "A"
   ];
    [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" "G1" "G2",
        "g" : #"sub" "G2" "G3",
-       "A" : #"ty" "G3",
-       "v" : #"val" "G2" (#"ty_subst" "g" "A")
+       "A" : #"ty",
+       "v" : #"val" "G2" "A"
        ----------------------------------------------- ("cmp_snoc")
        #"cmp" "f" (#"snoc" "g" "v")
        = #"snoc" (#"cmp" "f" "g") (#"val_subst" "f" "v")
        : #"sub" "G1" (#"ext" "G3" "A")
    ];
-    
-    [:= "G" : #"env", "A" : #"ty" "G"
+      [:= "G" : #"env", "A" : #"ty"
        ----------------------------------------------- ("snoc_wkn_hd")
-       #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G" "A") (#"ext" "G" "A")
+        #"snoc" #"wkn" #"hd" = #"id" : #"sub" (#"ext" "G" "A") (#"ext" "G" "A")
    ]
   ]}.
 
@@ -185,41 +290,52 @@ Derive value_subst
 Proof. auto_elab. Qed.
 #[export] Hint Resolve value_subst_wf : elab_pfs.
 
+Compute (map fst value_subst).
+
+                             
+
+Definition subst_lang_renaming prefix signature x :=
+  match x with
+  | "snoc_wkn_hd" =>
+; "cmp_snoc"; "snoc_hd"; "wkn_snoc"; "hd"; "wkn";
+       "snoc"; "ext"; "id_emp_forget"; "cmp_forget"; "forget"; "emp";
+       "val_subst_cmp"; "val_subst_id"; "val_subst"; "val"; "ty";
+       "cmp_assoc"; "id_left"; "id_right"; "cmp"; "id"; "sub"; "env"]
 
 Definition exp_subst_def : lang :=
   {[l
-      [s| "G" : #"env", "A" : #"ty" "G"
+      [s| "G" : #"env", "A" : #"ty"
           -----------------------------------------------
           #"exp" "G" "A" srt
       ];
   [:| "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
-       "A" : #"ty" "G'", "e" : #"exp" "G'" "A"
+       "A" : #"ty", "e" : #"exp" "G'" "A"
        -----------------------------------------------
-       #"exp_subst" "g" "e" : #"exp" "G" (#"ty_subst" "g" "A")
+       #"exp_subst" "g" "e" : #"exp" "G" "A"
   ];
-  [:= "G" : #"env", "A" : #"ty" "G", "e" : #"exp" "G" "A"
+  [:= "G" : #"env", "A" : #"ty", "e" : #"exp" "G" "A"
        ----------------------------------------------- ("exp_subst_id")
        #"exp_subst" #"id" "e" = "e" : #"exp" "G" "A"
-  ];    
+  ]; 
   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
-       "A" : #"ty" "G3", "e" : #"exp" "G3" "A"
+       "A" : #"ty", "e" : #"exp" "G3" "A"
        ----------------------------------------------- ("exp_subst_cmp")
        #"exp_subst" "f" (#"exp_subst" "g" "e")
        = #"exp_subst" (#"cmp" "f" "g") "e"
-       : #"exp" "G1" (#"ty_subst" (#"cmp" "f" "g") "A")
-  ];
-  [:| "G" : #"env", "A" : #"ty" "G", "v" : #"val" "G" "A"
+       : #"exp" "G1" "A"
+  ];    
+  [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
        -----------------------------------------------
        #"ret" "v" : #"exp" "G" "A"
   ];
   [:= "G1" : #"env", "G2" : #"env",
        "g" : #"sub" "G1" "G2",
-       "A" : #"ty" "G2", "v" : #"val" "G2" "A"
+       "A" : #"ty", "v" : #"val" "G2" "A"
        ----------------------------------------------- ("exp_subst_ret")
        #"exp_subst" "g" (#"ret" "v")
        = #"ret" (#"val_subst" "g" "v")
-       : #"exp" "G1" (#"ty_subst" "g" "A")
+       : #"exp" "G1" "A"
   ]
   ]}.
 
@@ -264,65 +380,6 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 
 
-Definition tyext_def : lang :=
-  {[l
-      (*TODO: eqns for tyext*)
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"tyext" "G" : #"env"
-  ];
-  [:| "G" : #"env", "G'" : #"env",
-      "g" : #"sub" "G" "G'",
-      "A" : #"ty" "G"
-       -----------------------------------------------
-       #"tysnoc" "g" "A" : #"sub" "G" (#"tyext" "G'")
-  ];
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"tywkn" : #"sub" (#"tyext" "G") "G"
-  ];
-  [:| "G" : #"env"
-       -----------------------------------------------
-       #"tyhd" : #"ty" (#"tyext" "G")
-  ];
-  [:= "G" : #"env", "G'" : #"env",
-      "g" : #"sub" "G" "G'",
-      "A" : #"ty" "G"
-      ----------------------------------------------- ("tywkn_snoc")
-      #"cmp" (#"tysnoc" "g" "A") #"tywkn" = "g" : #"sub" "G" "G'"
-  ];
-   [:= "G" : #"env", "G'" : #"env",
-       "g" : #"sub" "G" "G'",
-       "A" : #"ty" "G"
-       ----------------------------------------------- ("tysnoc_hd")
-       #"ty_subst" (#"tysnoc" "g" "A") #"tyhd" = "A"
-       : #"ty" "G"
-  ];
-   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-       "f" : #"sub" "G1" "G2",
-       "g" : #"sub" "G2" "G3",
-       "A" : #"ty" "G2"
-       ----------------------------------------------- ("tycmp_snoc")
-       #"cmp" "f" (#"tysnoc" "g" "A")
-       = #"tysnoc" (#"cmp" "f" "g") (#"ty_subst" "f" "A")
-       : #"sub" "G1" (#"tyext" "G3")
-   ];
-    
-    [:= "G" : #"env"
-       ----------------------------------------------- ("tysnoc_wkn_hd")
-       #"tysnoc" #"tywkn" #"tyhd" = #"id" : #"sub" (#"tyext" "G") (#"tyext" "G")
-   ]
-   ]}.
-
-     
-Derive tyext
-       SuchThat (elab_lang_ext value_subst tyext_def tyext)
-       As tyext_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve tyext_wf : elab_pfs.
-
-
-
 Fixpoint notinb (s : string) (l : list string) :=
   match l with
   | [] => true
@@ -340,14 +397,10 @@ Definition choose_fresh (s : string) (c:ctx) :=
 Definition under s :=
   {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
 
-Definition tyunder s :=
-  {{e #"tysnoc" (#"cmp" #"tywkn" {s}) #"tyhd"}}.
-
 Definition get_subst_constr s :=
   match s with
   | "exp" => Some "exp_subst"
   | "val" => Some "val_subst"
-  | "ty" => Some "ty_subst"
   | "blk" => Some "blk_subst"
   | _ => None
   end.
@@ -363,7 +416,6 @@ Section GenRHSSubterms.
     | {{e#"emp"}} => {{e#"forget"}}
     | var G' => if G =? G' then var g else {{e#"ERR1"}}
     | {{e#"ext" {s'} {_} }} => under (gen_arg_subst s')
-    | {{e#"tyext" {s'} }} => tyunder (gen_arg_subst s')
     | _ => {{e#"ERR2" {s} }}
     end.
   
@@ -404,7 +456,7 @@ Definition substable_constr name c args t : option lang :=
       let blank_term := con name (map var args) in
       let lhs := {{e #subst_constr g {blank_term} }} in
       let rhs := con name (gen_rhs_subterms G g c args) in
-      let t' := scon s [{{e#"ty_subst" g {A} }}; var G'] in
+      let t' := scon s [A; var G'] in
       let subst_rule :=
           term_eq_rule c' lhs rhs t' in
       Some [(append name "-subst",subst_rule);(name, constr_rule)]

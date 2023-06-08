@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -111,9 +111,9 @@ Proof.
       term_cong; unfold Model.eq_term.
       - term_refl.
       - term_refl.
-      - term_refl.
       - compute_eq_compilation.        
         estep_under forget_eq_wkn' "forget_eq_wkn".
+      - term_refl.
       - term_refl.
     }
     compute_eq_compilation.
@@ -133,7 +133,6 @@ Proof.
           term_cong; unfold Model.eq_term.
           - term_refl.
           - term_refl.
-          - term_refl.
           - 
             eapply eq_term_trans; cycle 1.
             {
@@ -151,6 +150,7 @@ Proof.
                 eredex_steps_with value_subst "id_emp_forget".
             }
           - term_refl.
+          - term_refl.
         }
         compute_eq_compilation.
         eapply eq_term_trans; cycle 1.
@@ -158,9 +158,9 @@ Proof.
           term_cong; unfold Model.eq_term.
           - term_refl.
           - term_refl.
-          - term_refl.
           - eapply eq_term_sym.
             eredex_steps_with value_subst "id_right".
+          - term_refl.
           - term_refl.
         }
         compute_eq_compilation.
