@@ -142,11 +142,11 @@ Proof. setup_elab_lang.
             { (* process_eq_term. *) (* fails *)
               term_refl. }
             process_eq_term. }
-            eapp
+            (* eapp
       -- solve_in.
       -- eapply elab_args_cons_ex'.
-         2: try_break_elab_term.
-     Qed.
-#[export] Hint Resolve linear_stlc_wf : elab_pfs.
+         2: try_break_elab_term. *)
+Abort.
+(* #[export] Hint Resolve linear_stlc_wf : elab_pfs. *)
 
 

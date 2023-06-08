@@ -74,3 +74,5 @@ src/Pyrosome/Lang/SimpleVFixCC.v
 src/Pyrosome/Lang/SimpleVCPSHeap.v
 src/Pyrosome/Lang/SimpleVCCHeap.v
 src/Pyrosome/Lang/SimpleCh8Lang.v
+
+src/Pyrosome/Lang/LinearSubst.v
