@@ -254,7 +254,6 @@ Qed.
 #[export] Hint Resolve ty_subst_id_compiler_correct : elab_pfs.
      
 
-(*TODO: clean up*)
 Lemma cps_parameterized_correct
   : elab_preserving_compiler ty_subst_cmp
       (ir_parameterized
@@ -265,95 +264,7 @@ Lemma cps_parameterized_correct
       
       (src_parameterized
          ++exp_and_val_parameterized).
-Proof. 
-  match goal with
-  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
-        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
-         assert (wf_lang tgt) by prove_from_known_elabs
-  end.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:elab_compiler_cons; try reflexivity.
-  1:compute; apply elab_preserving_compiler_nil.
-  all: try solve [repeat Matches.t].
-  all: try solve[ by_reduction].
+Proof. auto_elab_compiler.
   - cleanup_elab_after eredex_steps_with ir_parameterized "heap_comm".
   - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_miss".
   - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_empty".
@@ -367,8 +278,6 @@ Proof.
      eapply eq_term_trans;
      [eredex_steps_with ir_parameterized "eval get"|];
      by_reduction).
-    Unshelve.
-    all: try solve [repeat t'].
 Qed.
 #[export] Hint Resolve cps_parameterized_correct : elab_pfs.
 
