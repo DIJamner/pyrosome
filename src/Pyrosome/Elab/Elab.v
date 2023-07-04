@@ -369,13 +369,6 @@ Ltac solve_in := apply named_list_lookup_err_in; vm_compute; reflexivity.
 Ltac solve_len_eq := solve[ repeat constructor].
 
 (*TODO: move to the right place*)
-Ltac sort_cong :=
-  eapply sort_con_congruence;
-  [ typeclasses eauto
-  | solve_in
-  | assumption || fail 2 "could not find lang wf assumption"
-  | break_eq_args].
-
 Ltac compute_everywhere e :=
   let e' := eval vm_compute in e in
       change e with e' in *.

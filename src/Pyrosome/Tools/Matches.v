@@ -507,6 +507,32 @@ Qed.
 End WithVar.
 
 
+(* TODO: move to  Utils *)
+(* Tactic for searching a DB of values *)
+Variant for_db {A} (a : A) : Prop := inst_for_db.
+Ltac in_db db n :=
+  tryif let _ := constr:(ltac:(typeclasses eauto 1 with db)
+                          : for_db n) in
+        idtac
+  then idtac
+  else  fail 0 n "not in the database" db.
+
+(* database of injective contructor names.
+   Note that these names are not namespaced, so use caution when renaming
+   imported languages.
+ *)       
+Create HintDb injective_con discriminated.
+
+(* TODO: temp fix for weird hintdb name scoping*)
+
+Ltac in_db_injective n :=
+  tryif let _ := constr:(ltac:(typeclasses eauto 1 with injective_con)
+                          : for_db n) in
+        idtac
+  then idtac
+  else  fail 0 n "not in the database injective_con".
+
+
 (*TODO: adapt to work w/ possible evars in r?*)
 Ltac solve_named_list_in_from_value :=
   match goal with
@@ -738,10 +764,20 @@ Ltac reduce_rhs :=
 
 Ltac reduce := reduce_lhs; reduce_rhs.
 
+Ltac check_eval_no_evars x :=
+  let x' := eval compute in x in
+    tryif has_evar x' then fail "language contains unresolved evar(s)"
+    else idtac.
+
 Ltac by_reduction :=
     compute_eq_compilation;
     lazymatch goal with
     | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
+        (* This check is defensive programming, protecting against
+           tactics that shelved important goals in earlier rules.
+           TODO: make sure this doesn't have a noticeable performace impact
+         *)
+        check_eval_no_evars l;
         tryif is_ground e1 then
           tryif is_ground e2 then
                 let pf_lhs := eval compute in (step_term_V l c' 100 e1 t) in
@@ -766,6 +802,24 @@ Ltac by_reduction :=
           else term_refl
     end.
 
+
+Ltac sort_cong :=
+  eapply sort_con_congruence;
+  [ typeclasses eauto
+  | solve_in
+  | assumption || fail 2 "could not find lang wf assumption"
+  | break_eq_args].
+
+Ltac try_cong :=
+  lazymatch goal with
+  | |- eq_term _ _ _ (con ?n ?s1) (con ?n ?s2) =>
+      in_db_injective n;
+      eapply term_con_congruence;
+      [solve_in | left; sort_cong | assumption
+      | repeat (eapply eq_args_cons || eapply eq_args_nil)];
+      cbn -[nth_tail]
+  end.
+
 Ltac process_eq_term :=
   cbn_eq_goal;
   match goal with
@@ -774,8 +828,14 @@ Ltac process_eq_term :=
   (* might be more problematic w/ my left-to-right discipline*)
   | [|- eq_term _ _ _ _ (var _)] => term_refl
   | [|- eq_term ?l _ _ ?e1 ?e2] =>
-    tryif is_evar e1; is_evar e2 then shelve
-    else (try solve [compute_everywhere l; by_reduction])
+      (* TODO: this shelve can be too eager;
+         need to make sure to unshelve these goals before exiting
+         the top-level rule case
+       *)
+    tryif is_evar e1 + is_evar e2 then eapply eq_term_refl; [shelve]
+    else
+      tryif has_evar e1 + has_evar e2 then try_cong else
+      (try solve [compute_everywhere l; by_reduction])
   end.
 
 (* elab_term -> maybe (eq_sort * list elab_term)
