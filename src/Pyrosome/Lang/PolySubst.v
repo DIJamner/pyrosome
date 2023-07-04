@@ -460,6 +460,7 @@ Definition substable_constr name c args t : option (lang _) :=
   | _ => None
   end.
 
+(* TODO: generalize *)
 Definition sc '(n,r) :=
   match r with
   |term_rule c args t =>
@@ -643,6 +644,27 @@ Definition poly_def : lang _ :=
   ] *)
   ]}.
 
+Eval compute in ((exp_ty_subst
+                             ++env_ty_subst
+                             ++exp_and_val_parameterized
+                             ++ty_subst_lang)).
+
+#[export] Hint Resolve (inst_for_db "ty_id") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_emp") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_forget") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_ext") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_snoc") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_wkn") : injective_con.
+#[export] Hint Resolve (inst_for_db "ty_hd") : injective_con.
+#[export] Hint Resolve (inst_for_db "id") : injective_con.
+#[export] Hint Resolve (inst_for_db "emp") : injective_con.
+#[export] Hint Resolve (inst_for_db "forget") : injective_con.
+#[export] Hint Resolve (inst_for_db "ext") : injective_con.
+#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
+#[export] Hint Resolve (inst_for_db "wkn") : injective_con.
+#[export] Hint Resolve (inst_for_db "hd") : injective_con.
+#[export] Hint Resolve (inst_for_db "ret") : injective_con.
+#[export] Hint Resolve (inst_for_db "All") : injective_con.
 
 Derive poly
   SuchThat (elab_lang_ext (exp_ty_subst
