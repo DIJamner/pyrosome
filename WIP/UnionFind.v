@@ -13,6 +13,7 @@
 
 
 Require Import Lists.List.
+Require Import Coq.Sorting.Permutation.
 
 From coqutil Require Import Map.Interface.
 Import ListNotations.
@@ -670,7 +671,7 @@ Section __.
 
   Definition mem_order k (l : list idx) : _ -> Prop :=
     and1 (fun _ => ~ In k l)
-    (and1 (fun m => (forall i, In i l <-> has_key i m))
+    (and1 (fun m => Permutation l (map.keys m))
        (fun m => forall i j, map.get m i = Some j ->
                              (in_before l j i \/ j = k))).
 
@@ -858,6 +859,295 @@ Section __.
   Proof.
     firstorder eauto.
   Qed.
+  
+  Lemma map_keys_app (m : idx_map) l
+    : map.keys m ++ l
+      = (map.fold (fun acc k _ => k :: acc) l m).
+  Proof.
+    unfold map.keys.
+    apply Properties.map.fold_two_spec with (r01:=[]) (r02:=l) (m:=m);
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Hint Rewrite @Properties.map.fold_empty : utils.
+
+  (*
+  Lemma map_keys_fold_disjoint (m : idx_map) m'
+    : map.disjoint m m' ->
+      (map.fold (fun (acc : list idx) (k _ : idx) => k :: acc) (map.keys m') m)
+      = map.fold (fun acc k _ =>
+                    if map.get m' k then acc else k :: acc) (map.keys m') m.
+  Proof.
+    apply Properties.map.fold_two_spec with (r01:=(map.keys m')) (r02:=(map.keys m')) (m:=m);
+      basic_goal_prep;
+      basic_utils_crush.
+
+    rewrite !Properties.map.fold_put.
+    {
+      cbv.*)
+
+  Section Perm.
+
+    Context (A B : Type)
+      (f : A -> list B -> list B)
+      (f_comm : forall (a1 a2 : A) r, Permutation (f a1 (f a2 r))
+                                        (f a2 (f a1 r)))
+      (f_cong : forall a b r, Permutation a b ->
+                Permutation (f r a) (f r b)).
+    
+  Lemma fold_right_change_order_equiv
+     : forall l1 l2 : list A,
+       Permutation l1 l2 ->
+       forall r1, Permutation (fold_right f r1 l1) (fold_right f r1 l2).
+  Proof.
+    induction 1; intros.
+    - reflexivity.
+    - simpl. f_equal. eauto.
+    - simpl. apply f_comm.
+    - rewrite IHPermutation1, IHPermutation2. reflexivity.
+  Qed.
+
+  End Perm.
+
+  Section Perm.
+
+    
+  Section Perm.
+
+    Context (A B : Type)
+      (f: list B -> idx -> idx -> list B)
+      (f_comm: forall r k1 v1 k2 v2, Permutation (f (f r k1 v1) k2 v2)
+                                       (f (f r k2 v2) k1 v1))
+      (f_cong : forall a b k v, Permutation a b ->
+                                Permutation (f a k v) (f b k v)).
+       
+    
+  
+  Lemma fold_put_equiv
+      : forall r0 (m : idx_map) k v,
+      map.get m k = None ->
+      Permutation
+        (map.fold f r0 (map.put m k v)) (f (map.fold f r0 m) k v).
+    Proof.
+      intros.
+      do 2 rewrite coqutil.Map.Properties.map.fold_to_tuples_fold.
+      match goal with
+      | |- Permutation ?L (f (List.fold_right ?F r0 (map.tuples m)) k v) =>
+        change (Permutation L (List.fold_right F r0 (cons (k, v) (map.tuples m))))
+      end.
+      
+      eapply fold_right_change_order_equiv.
+      - intros [k1 v1] [k2 v2] r. apply f_comm.
+      - basic_goal_prep; eauto.
+      - apply NoDup_Permutation.
+        + apply Properties.map.tuples_NoDup.
+        + constructor.
+          * pose proof (Properties.map.tuples_spec m k v). intuition congruence.
+          * apply Properties.map.tuples_NoDup.
+        + intros [k0 v0].
+          rewrite (Properties.map.tuples_put m k v H).
+          reflexivity.
+    Qed.
+  End Perm.
+    
+  Lemma map_key_cons_permutation (m : idx_map) k v
+    : map.get m k = None ->
+      Permutation (k ::map.keys m) (map.keys (map.put m k v)).
+  Proof.
+    unfold map.keys.
+    intros.
+    rewrite fold_put_equiv; eauto.
+    basic_goal_prep;
+      basic_utils_crush.
+    apply perm_swap.
+  Qed.
+
+  
+  Lemma fold_right_map_fst A B (l : list (A * B))
+    : fold_right (fun '(k, _) (r : list _) => k :: r) [] l
+      = map fst l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  (*TODO: move to utils*)
+  Hint Resolve incl_nil_l : utils.
+
+  Lemma pair_fst_in_exists:
+  forall [S A : Type] (l : named_list S A) (n : S),
+    In n (map fst l) -> exists a, In (n, a) l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    apply IHl in H0; break.
+    exists x; eauto.
+  Qed.
+
+  Lemma incl_fst_put_tuple i i0
+    :  forall gen0 : idx_map,
+      incl (map fst (map.tuples gen0))
+        (map fst (map.tuples (map.put gen0 i i0))).
+  Proof.
+    intros gen0 i1 Hin.
+    
+    apply pair_fst_in_exists in Hin.
+    break.
+    
+    pose proof (eqb_spec i i1);
+      destruct (eqb i i1); subst.
+    all:eapply pair_fst_in.
+    all: rewrite Properties.map.tuples_spec in *.
+    all: basic_utils_crush.
+  Qed.    
+    
+  
+  Lemma map_split_incl_r (a x x0 : idx_map)
+    : map.split a x x0 ->
+      incl (map.keys x0) (map.keys a).
+  Proof.
+    unfold map.split;
+      basic_goal_prep; subst.
+    unfold map.putmany.
+    unfold map.keys in *.
+    rewrite ! Properties.map.fold_to_tuples_fold.
+    rewrite !fold_right_map_fst.
+    generalize (map.tuples x0).
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      enough (exists z, (In (i,z) (map.tuples
+          (map.put
+             (fold_right (fun '(k, v) (r : idx_map) => map.put r k v) x l) i
+             i0)))).
+      {
+        basic_goal_prep.
+        basic_utils_crush.
+      }
+      {
+        
+        eexists.
+        rewrite Properties.map.tuples_spec.
+        basic_utils_crush.
+      }
+    }
+    {
+      eapply incl_tran; eauto.
+      clear IHl.
+      set (fold_right _ _ _) as gen;
+        generalize gen.
+      clear gen; intro gen.
+      apply incl_fst_put_tuple .
+    }
+  Qed.
+  
+  Lemma map_split_incl1 (a x x0 : idx_map)
+    : map.split a x x0 ->
+      incl (map.keys x ++ map.keys x0) (map.keys a).
+  Proof.
+    intro.
+    apply incl_app; eauto using map_split_incl_r.
+    apply Properties.map.split_comm in H.
+    eauto using map_split_incl_r.
+  Qed.
+
+  Lemma map_keys_in (m : idx_map) k
+    : In k (map.keys m) -> exists v, map.get m k = Some v.
+  Proof.
+    unfold map.keys.
+    rewrite Properties.map.fold_to_tuples_fold.
+    rewrite fold_right_map_fst.
+    intro.
+    
+    apply pair_fst_in_exists in H.
+    break.
+    exists x.
+    apply Properties.map.tuples_spec.
+    auto.
+  Qed.
+  
+  Lemma map_keys_in' (m : idx_map) k
+    : In k (map.keys m) <-> if map.get m k then True else False.
+  Proof.
+    case_match; intuition eauto.
+    {
+      eapply Properties.map.in_keys; eauto.
+    }
+    {
+      eapply map_keys_in in H;
+        basic_goal_prep.
+      congruence.
+    }
+  Qed.
+  
+  Lemma map_split_incl2 (a x x0 : idx_map)
+    : map.split a x x0 ->
+      incl (map.keys a) (map.keys x ++ map.keys x0).
+  Proof.
+    intros Hsplit i Hin.
+    autorewrite with utils.
+    rewrite !map_keys_in' in *.
+    eapply Properties.map.get_split with (k:=i) in Hsplit; eauto.
+    intuition subst.
+    {
+      rewrite H1, <- H0.
+      case_match; eauto.
+    }
+    {
+      rewrite H1, <- H0.
+      case_match; eauto.
+    }
+  Qed.
+
+  Lemma dispoint_notin (x x0 : idx_map)
+    : map.disjoint x x0 ->
+      (forall x1 : idx, In x1 (map.keys x) -> ~ In x1 (map.keys x0)).
+  Proof.
+    unfold map.disjoint.
+    intros.
+    rewrite !map_keys_in' in  *.
+    revert H0; case_match; case_match; intuition eauto.
+  Qed.
+
+  Lemma split_disjoint (a x x0 : idx_map)
+    : map.split a x x0 ->
+      map.disjoint x x0.
+  Proof.
+    unfold map.split.
+    intuition eauto.
+  Qed.
+  Hint Resolve split_disjoint : utils.
+
+  Lemma nodup_split_keys (a x x0 : idx_map)
+    : map.split a x x0 ->
+      NoDup (map.keys x ++ map.keys x0).
+  Proof.
+    intro Hsplit.
+    apply List.NoDup_app_iff.
+    repeat split; eauto using Properties.map.keys_NoDup.
+    all: intros.
+    all: eapply dispoint_notin; eauto with utils.
+    apply Properties.map.split_comm in Hsplit.
+    all: eauto with utils.
+  Qed.
+    
+  Lemma map_split_permutation (a x x0 : idx_map)
+    : map.split a x x0 ->
+      Permutation (map.keys x ++ map.keys x0) (map.keys a).
+  Proof.
+    intros.
+    eapply NoDup_Permutation.
+    - eapply nodup_split_keys; eauto.
+    - apply Properties.map.keys_NoDup.
+    -
+      intros.
+      split; [apply map_split_incl1
+             | apply map_split_incl2]; eauto.
+  Qed.
 
   Lemma mem_order_split i l1 l2
     : Uimpl1 (sep (mem_order i l1) (mem_order i l2)) (mem_order i (l1++l2)).
@@ -880,29 +1170,9 @@ Section __.
     basic_goal_prep.
     split.
     {
-      apply split_all_iff in H0, H1.
-      split;
-      basic_goal_prep;
-        basic_utils_crush.
-      revert H4; unfold has_key.
-      case_match; [|tauto].
-      intros _.
-      
-      apply Properties.map.get_split with (k:=i0) in H;
-        destruct H; basic_goal_prep;
-        [ left | right].
-      {
-        apply H6.
-        unfold has_key.
-        rewrite <- H, <- HeqH4.
-        exact I.
-      }
-      {
-        apply H5.
-        unfold has_key.
-        rewrite <- H, <- HeqH4.
-        exact I.
-      }
+      rewrite <- map_split_permutation; eauto.
+      rewrite H0, H1.
+      reflexivity.
     }
     {
       
@@ -934,7 +1204,13 @@ Section __.
   Lemma has_key_empty (i : idx) : has_key i map.empty <-> False.
   Proof. unfold has_key; basic_utils_crush. Qed.
   Hint Rewrite has_key_empty : utils.
-         
+
+  Lemma map_keys_empty : map.keys (map:=idx_map) map.empty = [].
+  Proof.
+    unfold map.keys.
+    basic_utils_crush.
+  Qed.
+  Hint Rewrite map_keys_empty : utils.
   
   Lemma mem_order_empty i :  mem_order i [] map.empty.
   Proof.
@@ -1031,12 +1307,8 @@ Section __.
       autorewrite with utils in *.
       basic_goal_prep.
       subst.
-
-      pose proof (eqb_spec i i0);
-        destruct (eqb i i0); subst;
-        basic_utils_crush.
-      all: right.
-      all: firstorder fail.
+      rewrite <- map_key_cons_permutation by auto.
+      rewrite H1; eauto.
     }
     {
       cbv [seps_Uimpl1 seps].
@@ -1058,8 +1330,7 @@ Section __.
       basic_utils_crush.
       apply in_before_first; eauto.
       rewrite H2.
-      unfold has_key; rewrite H5.
-      auto.
+      eapply Properties.map.in_keys; eauto.
     }
   Qed.
 
@@ -1074,6 +1345,7 @@ Section __.
       basic_utils_crush.
     rewrite H1 in H3.
     unfold has_key in H3.
+    rewrite map_keys_in' in H3.
     rewrite H0 in H3.
     auto.
   Qed.
@@ -1162,14 +1434,346 @@ Section __.
     unfold mem_order in *.
     unfold and1 in *.
     basic_goal_prep.
-    rewrite <- H3.
     apply H4 in H0.
     intuition (subst; try tauto).
     unfold in_before in *.
     basic_goal_prep.
-    eapply nth_error_In; eauto.
+    
+    eapply nth_error_In in H0,H5; eauto.
+    rewrite H3 in H0, H5.
+    apply map_keys_in'; eauto.
   Qed.
 
+
+  Definition forest_list l : idx_map -> Prop :=
+    seps (map forest_ptsto l).
+  
+  Definition forest_roots l : idx_map -> Prop :=
+    seps (map (fun i => ptsto i i) l).
+
+  Definition forest l :=
+    sep (forest_list l) (forest_roots l).
+
+  
+  (*TODO: move to Sep.v*)
+  Lemma sep_empty (P Q : idx_map -> Prop)
+    : sep P Q map.empty <-> P map.empty /\ Q map.empty.
+  Proof.
+    unfold sep.
+    split; basic_goal_prep.
+    {
+      erewrite Properties.map.split_empty in H.
+      basic_utils_crush.
+    }
+    {
+      exists map.empty, map.empty.
+      basic_utils_crush.
+    }
+  Qed.
+  Hint Rewrite sep_empty : utils.
+
+  
+  (* TODO: move to *)
+  Lemma seps_empty
+    : Uiff1 (seps (mem:=idx_map) []) emp.
+  Proof.
+    cbv [seps].
+    basic_utils_crush.
+  Qed.
+  Hint Rewrite seps_empty : utils.
+  
+  Lemma seps_empty' m
+    : seps (mem:=idx_map) [] m <-> emp m.
+  Proof.
+    cbv [seps].
+    basic_utils_crush.
+  Qed.
+  Hint Rewrite seps_empty' : utils.
+
+  (*TODO: rename the other one*)
+  Lemma empty_forest_rooted : forest [] map.empty.
+  Proof.
+    unfold forest, forest_list, forest_roots.
+    basic_utils_crush.
+    all:cbn.
+    all:basic_utils_crush.
+  Qed.
+
+  
+  Lemma distribute_get_seps (m : idx_map) i j l
+    : map.get m i = Some j ->
+      seps l m ->
+      let H m := map.get m i = Some j in
+      exists l1 l2 x, l = l1++x::l2 /\
+                seps (l1++(and1 x H)::l2) m.
+  Proof.
+    revert m.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    
+    change (seps (?a::?l)) with (sep a (seps l)) in H0.
+    eapply distribute_get in H0; eauto.
+    destruct H0.
+    {
+      exists [], l, a;
+        basic_utils_crush.
+    }
+    {
+      destruct H0 as [? [? [? [? ?]]]].
+      unfold and1 in H3; basic_goal_prep.
+      specialize (IHl _ H4 H3).
+      basic_goal_prep; subst.
+      exists (a::x1), x2, x3.
+      basic_utils_crush.
+      change (sep a (seps (x1 ++ and1 x3 H1 :: x2)) m).
+      exists x, x0; basic_utils_crush.
+    }
+  Qed.
+
+  
+  
+  Lemma distribute_get_seps' (m : idx_map) i j l
+    : map.get m i = Some j ->
+      seps l m ->
+      let H m := map.get m i = Some j in
+      exists x m', In x l /\ (and1 x H) m'.
+  Proof.
+    revert m.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    
+    change (seps (?a::?l)) with (sep a (seps l)) in H0.
+    eapply distribute_get in H0; eauto.
+    destruct H0.
+    {
+      destruct H0 as [? [? [? [? ?]]]].
+      exists a;
+        basic_utils_crush.
+    }
+    {
+      destruct H0 as [? [? [? [? ?]]]].
+      unfold and1 in H3; basic_goal_prep.
+      specialize (IHl _ H4 H3).
+      basic_goal_prep; subst.
+      exists x1, x2.
+      basic_utils_crush.
+    }
+  Qed.
+
+  
+  Lemma in_before_cons_inv A (a:A) l j
+    : a <>j -> in_before (a :: l) j j -> in_before l j j.
+  Proof.
+    unfold in_before;
+      basic_goal_prep.
+    destruct x; cbn in *; [congruence| ].
+    destruct x0; cbn in *; [congruence| ].
+    exists x, x0; basic_utils_crush.
+    Lia.lia.
+  Qed.
+  
+    
+  Lemma in_before_antirefl A l (j:A)
+    : NoDup l -> ~ in_before l j j.
+  Proof.
+    induction l; basic_goal_prep;
+      basic_utils_crush.
+    safe_invert H.
+    apply IHl; auto.
+    eapply in_before_cons_inv; eauto.
+    intro; subst.
+    clear IHl.
+    unfold in_before in*.
+    basic_goal_prep.
+    destruct x0; [Lia.lia|].
+    cbn in *.
+    apply nth_error_In in H0; auto.
+  Qed.
+  
+  Lemma forest_root_loop_canonical l f' j
+    : forest_roots l f' ->
+      Some j = map.get f' j ->
+      In j l.
+  Proof.
+    unfold forest_roots.
+    revert f'.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+         
+    pose proof (eqb_spec a j).
+    destruct (eqb a j); subst; auto; right.
+    change (seps (?a :: ?l)) with (sep a (seps l)) in H.
+    destruct H as [? [? [? [? ?]]]].
+    eapply IHl; eauto.
+    basic_utils_crush.
+  Qed.
+    
+  Lemma forest_loop_canonical l f' j
+    : forest l f' ->
+      Some j = map.get f' j ->
+      In j l.
+  Proof.
+    unfold forest.
+    intros.
+    eapply distribute_get in H; [|eauto].
+    destruct H.
+    {
+      exfalso.
+      destruct H as [? [? [? [? ?]]]].
+      unfold and1 in *; basic_goal_prep;
+        basic_utils_crush.
+      clear H2 H.
+      unfold forest_list in *.
+      eapply  distribute_get_seps' in H1; eauto.
+      basic_goal_prep.
+      rewrite in_map_iff in H.
+      basic_goal_prep.
+      subst.
+      unfold and1 in *;
+        basic_goal_prep.
+      apply forest_ptsto_order in H.
+      destruct H.
+      unfold mem_order, and1 in *.
+      basic_goal_prep.
+      assert (has_key j x2).
+      {
+        unfold has_key; rewrite H1; exact I.
+      }
+      apply H5 in H1.
+      destruct H1;
+        [ eapply in_before_antirefl; eauto | subst].
+      {
+        rewrite H4.
+        apply Properties.map.keys_NoDup.
+      }
+      {
+        apply H.
+        rewrite H4.
+        apply map_keys_in'; eauto.
+      }
+    }
+    {
+      destruct H as [? [? [? [? ?]]]].
+      unfold and1 in *.
+      
+      basic_goal_prep.
+      eapply forest_root_loop_canonical; eauto.      
+    }
+  Qed.
+
+  
+  Lemma forest_list_put l r i j
+    : ~In i l ->
+      forest_list l r ->
+      In j l ->
+      forest_list l (map.put r i j).
+  Proof.
+    unfold forest_list.
+    intros.
+    assert (i <> j) by basic_utils_crush.
+    my_case Hget (map.get r i).
+    2:{
+      clear H.
+      revert dependent r.
+      revert dependent l.
+      induction l;
+        basic_goal_prep.
+      1:basic_utils_crush.
+      destruct H1.
+      {
+        subst.
+        destruct H0 as [? [? [? [? ?]]]].
+        exists x, (map.put x0 i j).
+        split; [| split; eauto].
+        Properties.map.split_undef_put
+      
+    des
+    distribute_get_seps
+    forest_ptsto_split
+
+
+    
+    revert dependent r.
+    revert dependent l.
+    induction l;
+      basic_goal_prep.
+    1:basic_utils_crush.
+    autorewrite with utils in *.
+    basic_goal_prep.
+    destruct H1.
+    {
+      subst.
+      TODO: what I really want is induction on the tree containing i, right?
+      
+    my_case Hget (map.get r i).
+    2:{
+      destruct H0 as [? [? [? [? ?]]]].
+      exists x, (map.put x0 i j).
+      split; [| split; eauto].
+      1:admit (*TODO*).
+      apply IHl; eauto.
+      
+      [basic_utils_crush |].
+      H0.
+    distribute_get
+    cancel_prep' H0.
+    change (seps (?a :: ?l)) with (sep a (seps l)) in *.
+    autorewrite with utils in *.
+    basic_goal_prep.
+    seprewrite.
+    cancel_prep H0.
+    
+    2:{
+    
+    
+  Lemma forest_put l r i j
+    : ~In i l ->
+      forest l r ->
+      In j l ->
+      forest l (map.put r i j).
+  Proof.
+    unfold forest.
+    revert r i j.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    
+      
+  Lemma find_aux_spec l mr f i f' j
+    :  forest l f ->
+       find_aux mr f i = Some (f', j) ->
+       In j l /\ forest l f'.
+  Proof.
+    revert f i f' j.
+    induction mr;
+      basic_goal_prep; [congruence|].
+    revert H0; case_match; [|congruence].
+    case_match; autorewrite with utils in *;
+      subst.
+    {
+      basic_utils_crush.
+      eapply forest_loop_canonical; eauto.
+    }
+    {
+      case_match; [| congruence].
+      basic_goal_prep.
+      autorewrite with utils in *; basic_goal_prep;
+        subst.
+      symmetry in HeqH2.
+      eapply IHmr in HeqH2; eauto.
+      basic_goal_prep; split; eauto.
+
+      
+      basic_utils_crush.
+      TODO: prove ~ In i l (doable)
+    }
+    
+         find_aux (mr : nat) f i : option (idx_map * idx) :=
+
+  (*
   
   (* For specification purposes, does not appear in implementation *)
   Context (idx_set : map.map idx unit)
@@ -1210,6 +1814,8 @@ Section __.
     TODO: key property combining separate orders
     
     intro; subst.
+
+*)
   
   (* includes a list of the ids *)
   Unset Elimination Schemes.
