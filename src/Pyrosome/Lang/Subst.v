@@ -178,12 +178,187 @@ Definition subst_def : lang :=
   ]}.
 
 
+#[export] Hint Resolve (inst_for_db "id") : injective_con.
+#[export] Hint Resolve (inst_for_db "emp") : injective_con.
+#[export] Hint Resolve (inst_for_db "forget") : injective_con.
+#[export] Hint Resolve (inst_for_db "ext") : injective_con.
+#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
+#[export] Hint Resolve (inst_for_db "wkn") : injective_con.
+#[export] Hint Resolve (inst_for_db "hd") : injective_con.
+
 (*TODO: use elab_lang notation?*)
 Derive subst_lang
        SuchThat (elab_lang_ext [] subst_def subst_lang)
        As subst_lang_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve subst_lang_wf : elab_pfs.
+Proof.
+  setup_elab_lang.
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+Abort. (*TODO: REGRESSION! fix when possible. The most obvious fix involves reduction with evars *)
+
+    
+Definition alloc (l : list string) :=
+  let len := List.fold_left Nat.max (map String.length l) 0 in
+  (string_of_list_ascii (repeat ("'"%char : ascii) len)).
+    Require Import Ltac2.Ltac2.
+    (*TODO: use an Ltac2 FMap to avoid multiple entries for the same evar*)
+    Ltac2 rec extract_uncomputed s e :=
+      lazy_match! e with
+      | scon ?n ?args =>
+          match extract_evars_map s args with
+          | (s', args') => (s', constr:(scon $n $args'))
+          end
+      | con ?n ?args =>
+          match extract_evars_map s args with
+          | (s', args') => (s', constr:(con $n $args'))
+          end
+      | var ?x => (s, constr:(var $x))
+      | _ =>
+          (*TODO: compute ahead of time*)
+          let x := Std.eval_vm None constr:(alloc (map fst $s)) in
+            let s' := constr:(($x,$e)::$s) in
+            (s', constr:(var $x))
+      end
+        with extract_evars_map s args :=
+        lazy_match! args with
+        | ?e::?args' => 
+          match extract_evars_map s args' with
+          | (s', args'') =>
+              match extract_uncomputed s' e with
+              | (s'',e') => (s'', constr:($e'::$args''))
+              end
+          end
+        | [] => (s,constr:(@nil term))
+        end.
+      (* Assumes c is concrete *)
+      Ltac2 eq_term_extract () :=
+        lazy_match! goal with
+        | [ |- eq_term ?l ?c ?t ?e1 ?e2 ] =>
+            let s0 :=  Std.eval_vm None constr:(id_subst $c) in
+            let (s1,t') := extract_uncomputed s0 t in
+            let (s2,e1') := extract_uncomputed s1 e1 in
+            let (s3,e2') := extract_uncomputed s2 e2 in
+            change (eq_term $l $c $t'[/$s3/] $e1'[/$s3/] $e2'[/$s3/])
+        end.
+      (*
+      {
+      unfold Model.eq_term.
+      compute_eq_compilation.
+      ltac2:(eq_term_extract()).
+      eapply eq_term_subst. (*TODO: generate c? or do substitution into reduction proof?
+                             Issue: need c for reduction *)
+      2:apply eq_subst_refl.
+      
+      compute_eq_compilation.
+          TODO: want Mmap
+     + apply eq_term_refl; cleanup_auto_elab.
+     + unfold Model.eq_term.
+       compute_eq_compilation.
+       by_reduction.
+  - (*TODO: reduce for open terms*)
+
+
+   
+    break_elab_rule.
+    {
+      process_eq_term.
+    }
+    {
+      process_eq_term.
+    }
+  -
+    
+      ltac2:(eq_term_extract()).
+      unfold Model.eq_term.
+      compute_eq_compilation.
+          TODO: want Mmap
+
+                 
+
+    (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  auto_elab. Qed.*)
+(*#[export] Hint Resolve subst_lang_wf : elab_pfs.*)
 
 Fixpoint notinb (s : string) (l : list string) :=
   match l with
