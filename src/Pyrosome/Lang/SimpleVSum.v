@@ -15,7 +15,7 @@ Require Coq.derive.Derive.
    for the sum type in TAPL.
 *)
 Definition sum_def : lang :=
-  {[l/subst
+  {[l/subst [exp_subst++value_subst]
 
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------

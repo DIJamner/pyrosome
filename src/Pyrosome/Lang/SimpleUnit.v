@@ -12,7 +12,7 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 
 Definition unit_lang_def : lang :=
-  {[l/subst
+  {[l/subst [value_subst]
   [:|
      -----------------------------------------------
       #"unit" : #"ty"

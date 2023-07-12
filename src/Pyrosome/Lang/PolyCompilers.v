@@ -264,7 +264,9 @@ Lemma cps_parameterized_correct
       
       (src_parameterized
          ++exp_and_val_parameterized).
-Proof. auto_elab_compiler.
+Proof.
+  Optimize Heap.
+  auto_elab_compiler.
   - cleanup_elab_after eredex_steps_with ir_parameterized "heap_comm".
   - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_miss".
   - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_empty".
@@ -280,4 +282,3 @@ Proof. auto_elab_compiler.
      by_reduction).
 Qed.
 #[export] Hint Resolve cps_parameterized_correct : elab_pfs.
-

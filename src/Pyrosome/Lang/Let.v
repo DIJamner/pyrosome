@@ -17,7 +17,7 @@ Require Coq.derive.Derive.
 Notation compiler := (compiler string).
 
 Definition let_lang_def : lang :=
-  {[l/subst
+  {[l/subst [exp_subst++value_subst]
   [:| "G" : #"env",
       "A" : #"ty",
       "B" : #"ty",

@@ -8,6 +8,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Compilers.CompilerDefs.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleVSum SimpleVProd.
+From Pyrosome.Lang Require GenericSubst.
+Import GenericSubst (choose_fresh).
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -208,7 +210,7 @@ Definition simple_generate_eval_ctx_lang'  (renamings : evctx_renamings) (term_n
                  | term_rule c _ _ => c
                  | _ => []
                  end in
-  let H_ty := choose_fresh "C" context in
+  let H_ty := choose_fresh "C" (map fst context) in
   let term_rule := generate_eval_ctx_term_rule renamings H_ty r in
   let plug_rule := generate_eval_ctx_plug_rule renamings n term_name H_ty r in
   match term_rule, plug_rule with

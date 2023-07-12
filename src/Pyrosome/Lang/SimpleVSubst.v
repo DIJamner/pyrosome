@@ -10,6 +10,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches
   (*Import as a temporary fill until this file can be removed*)
   Lang.PolySubst.
+From Pyrosome.Lang Require Export GenericSubst.
 Import Core.Notations.
 
 
@@ -52,10 +53,3 @@ Definition block_subst_wf
   block_subst_wf.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 
-
-
-Notation "'{[l/subst' r1 ; .. ; r2 ]}" :=
-  (List.flat_map sc (cons r2 .. (cons r1 nil) ..))%rule
-  (format "'[' {[l/subst '[hv' r1 ; '/' .. ; '/' r2 ']' ]} ']'") : lang_scope.
-
-Definition choose_fresh := choose_fresh.
