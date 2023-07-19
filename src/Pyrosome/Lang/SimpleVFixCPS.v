@@ -18,7 +18,7 @@ Notation compiler := (compiler string).
 
 
 Definition fix_cps_lang_def : lang :=
-  {[l/subst
+  {[l/subst [cps_lang ++ block_subst ++ value_subst]
   [:| "G" : #"env",
       "A" : #"ty",
       "e" : #"blk" (#"ext" (#"ext" "G" (#"neg" "A")) "A")

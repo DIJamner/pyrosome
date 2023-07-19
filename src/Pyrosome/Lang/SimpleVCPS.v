@@ -18,7 +18,7 @@ Local Notation compiler := (compiler string).
 
 
 Definition cps_lang_def : lang :=
-  {[l/subst
+  {[l/subst [block_subst++value_subst]
       [:| "A" : #"ty"
           -----------------------------------------------
           #"neg" "A" : #"ty"
@@ -113,7 +113,7 @@ Proof. auto_elab_compiler. Qed.
 
 (*TODO: separate file?*)
 Definition cps_prod_lang_def : lang :=
-  {[l/subst
+  {[l/subst [block_subst++value_subst]
       
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------

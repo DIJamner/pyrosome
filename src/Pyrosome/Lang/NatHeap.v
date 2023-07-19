@@ -53,7 +53,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve nat_lang_wf : elab_pfs.
 
 Definition nat_exp_def : lang :=
-  {[l/subst
+  {[l/subst [nat_lang ++ value_subst]
   [:|
       -----------------------------------------------
       #"nat" : #"ty"
@@ -153,7 +153,7 @@ Proof. auto_elab. Qed.
   TODO: subst rules
 *)
 Definition heap_ops_def : lang :=
-  {[l/subst
+  {[l/subst [unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst]
   [:|  "G" : #"env",
        "e" : #"exp" "G" #"nat",
        "e'" : #"exp" "G" #"nat"

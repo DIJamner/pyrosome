@@ -118,6 +118,19 @@ Section __.
 
   End All.
 
+
+  Section All2.
+    Context (B : Type) (R : A -> B -> Prop).
+
+    (* A Fixpoint version of List.Forall2 *)
+    Fixpoint all2 l1 l2 : Prop :=
+      match l1, l2 with
+      | [], [] => True
+      | [] , _::_ => False
+      | _::_, [] => False
+      | a::l1', b::l2' => R a b /\ all2 l1' l2'
+      end.
+  End All2.
   
   Definition set_eq (l1 l2 : list A) :=
     incl l1 l2 /\ incl l2 l1.
@@ -146,7 +159,8 @@ Section __.
 
     Context `{Eqb_ok A}.
     
-    #[export] Instance list_eqb : Eqb (list A) := all2 (eqb (A:=A)).
+    (*TODO: rename Booleans.all2 to allb2*)
+    #[export] Instance list_eqb : Eqb (list A) := allb2 (eqb (A:=A)).
 
     #[export] Instance list_eqb_ok : Eqb_ok (list_eqb).
     Proof.
@@ -211,7 +225,22 @@ Section __.
         basic_goal_prep;
         basic_utils_crush.
     Qed.
-                 
+
+    Fixpoint no_dupb (l : list A) : bool :=
+      match l with
+      | [] => true
+      | a::l' => (negb (inb a l')) && (no_dupb l')
+      end.
+
+    #[local] Hint Constructors NoDup : utils.
+    (* TODO: should we use a propositional fixpoint instead of NoDup? *)
+    Lemma use_no_dupb l
+      : Is_true (no_dupb l) -> NoDup l.
+    Proof.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
     
   End Eqb.
 

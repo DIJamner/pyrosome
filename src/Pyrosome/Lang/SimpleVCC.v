@@ -18,7 +18,7 @@ Require Coq.derive.Derive.
 Notation compiler := (compiler string).
 
 Definition prod_cc_def : lang :=
-  {[l/subst
+  {[l/subst [cps_prod_lang ++ block_subst ++value_subst]
   [:| "G" : #"env", "A" : #"ty", "B" : #"ty",
       "v" : #"val" "G" (#"prod" "A" "B")
        -----------------------------------------------
@@ -58,7 +58,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve prod_cc_wf : elab_pfs.
 
 Definition cc_lang_def : lang :=
-  {[l/subst
+  {[l/subst [prod_cc++cps_prod_lang ++ block_subst ++value_subst]
       [:| "A" : #"ty"
           -----------------------------------------------
           #"neg" "A" : #"ty"

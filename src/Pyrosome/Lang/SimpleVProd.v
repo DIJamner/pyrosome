@@ -12,7 +12,7 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 
 Definition prod_def : lang :=
-  {[l/subst
+  {[l/subst [exp_subst++value_subst]
 
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------

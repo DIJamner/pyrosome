@@ -13,7 +13,7 @@ Require Coq.derive.Derive.
 
 
 Definition stlc_def : lang :=
-  {[l/subst
+  {[l/subst [exp_subst++value_subst]
   [:| "t" : #"ty", "t'": #"ty"
       -----------------------------------------------
       #"->" "t" "t'" : #"ty"

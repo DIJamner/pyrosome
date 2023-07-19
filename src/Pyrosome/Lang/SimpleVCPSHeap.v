@@ -17,7 +17,7 @@ Require Coq.derive.Derive.
 
 (*simple heap operations w/axioms avoiding an explicit heap *)
 Definition heap_cps_ops_def : lang :=
-  {[l/subst
+  {[l/subst [(unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)]
   [:|  "G" : #"env",
        "vl" : #"val" "G" #"nat",
        "vn" : #"val" "G" #"nat",

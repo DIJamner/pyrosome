@@ -16,7 +16,7 @@ Require Coq.derive.Derive.
 
 
 Definition fix_cc_lang_def : lang :=
-  {[l/subst
+  {[l/subst [(cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)]
   [:| "G" : #"env",
       "B" : #"ty",
       "vf" : #"val" "G" (#"neg" (#"prod" (#"neg" "B") "B"))
