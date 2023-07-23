@@ -14,3 +14,4 @@ Makefile.coq*
 Makefile.conf
 Makefile.d
 _CoqProject
+.Makefile.coq.d

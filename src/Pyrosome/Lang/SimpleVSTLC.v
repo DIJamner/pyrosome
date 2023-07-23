@@ -45,8 +45,6 @@ Definition stlc_def : lang :=
   ]
   ]}.
 
-Compute stlc_def.
-
 Derive stlc
        SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_def stlc)
        As stlc_wf.

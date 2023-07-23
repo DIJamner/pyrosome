@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import String List.
+Require Import String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -11,8 +11,8 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-Definition linear_stlc_no_subst_def : lang :=
-  {[l (* /lin_subst *)
+Definition linear_stlc_def : lang :=
+  {[l/lin_subst
   [:| "t" : #"ty", "t'": #"ty"
       -----------------------------------------------
       #"lolli" "t" "t'" : #"ty"
@@ -46,6 +46,9 @@ Definition linear_stlc_no_subst_def : lang :=
   ]
   ]}.
 
+Compute linear_stlc_def.
+
+(*
 Definition linear_stlc_def : lang :=
   {[l (* /lin_subst *)
   [:| "t" : #"ty", "t'": #"ty"
@@ -105,14 +108,19 @@ Definition linear_stlc_def : lang :=
       : #"val" "G'" (#"lolli" "A" "B")
   ]
   ]}.
+*)
 
 Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
-Proof. setup_elab_lang.
+Proof.
+setup_elab_lang.
 - break_elab_rule.
 - break_elab_rule.
 - break_elab_rule.
+  all: try term_refl.
+Abort.
+(*
 - break_elab_rule.
 - eapply eq_term_rule.
   + break_down_elab_ctx.
@@ -132,7 +140,8 @@ Proof. setup_elab_lang.
                   try_break_elab_term. }
                 eapply elab_args_cons_ex'.
                 { solve_len_eq. }
-                { (* try_break_elab_term (* this should work *) *)
+                { Print process_eq_term.
+                Print try_break_elab_term. (* this should work *)
                   cbn_elab_goal.
                   eapply elab_term_var.
                   solve_in. }
@@ -148,5 +157,5 @@ Proof. setup_elab_lang.
          2: try_break_elab_term. *)
 Abort.
 (* #[export] Hint Resolve linear_stlc_wf : elab_pfs. *)
-
+*)
 
