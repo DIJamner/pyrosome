@@ -46,8 +46,6 @@ Definition linear_stlc_def : lang :=
   ]
   ]}.
 
-Compute linear_stlc_def.
-
 (*
 Definition linear_stlc_def : lang :=
   {[l (* /lin_subst *)
@@ -114,48 +112,28 @@ Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
 Proof.
-setup_elab_lang.
-- break_elab_rule.
-- break_elab_rule.
-- break_elab_rule.
-  all: try term_refl.
-Abort.
-(*
-- break_elab_rule.
-- eapply eq_term_rule.
-  + break_down_elab_ctx.
-  + break_elab_sort.
-  + eapply elab_term_conv.
-      -- eapply elab_term_by.
-        ++ solve_in.
-        ++ eapply elab_args_cons_ex'.
-           { solve_len_eq. }
-           { cbn_elab_goal.
-              eapply elab_term_conv.
-              { eapply elab_term_by.
-                { solve_in. }
-                eapply elab_args_cons_ex'.
-                { solve_len_eq. }
-                { cbn_elab_goal.
-                  try_break_elab_term. }
-                eapply elab_args_cons_ex'.
-                { solve_len_eq. }
-                { Print process_eq_term.
-                Print try_break_elab_term. (* this should work *)
-                  cbn_elab_goal.
-                  eapply elab_term_var.
-                  solve_in. }
-                 break_down_elab_args. }
-            compute_eq_compilation.
-            sort_cong.
-            { (* process_eq_term. *) (* fails *)
-              term_refl. }
-            process_eq_term. }
-            (* eapp
-      -- solve_in.
-      -- eapply elab_args_cons_ex'.
-         2: try_break_elab_term. *)
-Abort.
-(* #[export] Hint Resolve linear_stlc_wf : elab_pfs. *)
-*)
-
+  setup_elab_lang.
+  - (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  - (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  -  break_elab_rule.
+  all: try now term_refl.
+  unfold Model.eq_term; compute_eq_compilation.
+  by_reduction. (*TODO: why isn't this solved by automation?*)
+  
+  - (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  - (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+      cleanup_auto_elab ]).
+  - (first
+   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
+     cleanup_auto_elab ]).
+    Unshelve.
+    all: repeat t'.
+Qed.
+#[export] Hint Resolve linear_stlc_wf : elab_pfs.
