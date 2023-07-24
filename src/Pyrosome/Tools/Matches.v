@@ -916,19 +916,23 @@ Ltac setup_elab_lang :=
   lazymatch goal with
   | |- elab_lang_ext ?pre ?l ?el =>
       lint_lang_ext pre l;
-      rewrite (as_nth_tail l); rewrite (as_nth_tail el)
+      rewrite (as_nth_tail l); rewrite (as_nth_tail el);
+      repeat split_rule_elab;
+      [apply elab_lang_nil_nth_tail; compute; reflexivity | intro.. ]
+  (* silently do nothing in this case since the goals are already set up *)
+  | |- elab_rule _ _ _ => idtac
   | _ => fail "Not a language extension wfness goal"
-  end; repeat split_rule_elab;
-  [apply elab_lang_nil_nth_tail; compute; reflexivity | intro.. ].
+  end.
 
 
 Ltac auto_elab :=
   setup_elab_lang;
-  first [ unshelve(solve [ break_elab_rule;
-                           apply eq_term_refl;
+  repeat [> unshelve(solve [ break_elab_rule;
+                           try apply eq_term_refl;
+                           try by_reduction;
                            cleanup_auto_elab ]);
           try apply eq_term_refl;
-          cleanup_auto_elab].
+          cleanup_auto_elab | ..].
 
 (*TODO: duplicated; find & remove duplicates*)
 Ltac unify_evar_fst_eq V :=

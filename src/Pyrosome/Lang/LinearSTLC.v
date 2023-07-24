@@ -46,6 +46,8 @@ Definition linear_stlc_def : lang :=
   ]
   ]}.
 
+#[export] Hint Resolve (inst_for_db "lolli") : injective_con.
+
 (*
 Definition linear_stlc_def : lang :=
   {[l (* /lin_subst *)
@@ -112,28 +114,13 @@ Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
 Proof.
-  setup_elab_lang.
-  - (first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  - (first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -  break_elab_rule.
-  all: try now term_refl.
-  unfold Model.eq_term; compute_eq_compilation.
-  by_reduction. (*TODO: why isn't this solved by automation?*)
-  
-  - (first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  - (first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  - (first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-     cleanup_auto_elab ]).
+  auto_elab.
+  {
+    break_elab_rule.
+    unfold Model.eq_term; compute_eq_compilation.
+    by_reduction. (*TODO: why isn't this solved by automation?*)
     Unshelve.
-    all: repeat t'.
+    all: try cleanup_auto_elab.
+  }
 Qed.
 #[export] Hint Resolve linear_stlc_wf : elab_pfs.

@@ -228,175 +228,28 @@ Definition linear_value_subst_def : lang :=
 
   ]}.
 
+#[export] Hint Resolve (inst_for_db "emp") : injective_con.
+#[export] Hint Resolve (inst_for_db "ext") : injective_con.
+#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
+
 (*TODO: use elab_lang notation?*)
 Derive linear_value_subst
        SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
        As linear_value_subst_wf.
 Proof.
-  (* auto_elab. *)
-setup_elab_lang.
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - eapply eq_term_rule.
-    + break_down_elab_ctx.
-    + break_elab_sort.
-    + unshelve try_break_elab_term.
-      all: try lazymatch goal with
-             | |- term => shelve
-             | |- wf_term _ _ _ _ => shelve
-           end.
-      1: cbn; eredex_steps_with linear_value_subst "conc_emp".
-      term_refl.
-    + try_break_elab_term.
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - eapply eq_term_rule.
-    + break_down_elab_ctx.
-    + break_elab_sort.
-    + unshelve try_break_elab_term.
-      all: try lazymatch goal with
-             | |- term => shelve
-             | |- wf_term _ _ _ _ => shelve
-           end.
-      2: cbn; eredex_steps_with linear_value_subst "emp_conc".
-      term_refl.
-    + try_break_elab_term.
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-  - (first
-   [ unshelve (solve
-	  [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab ]).
-
-Unshelve.
-all: cleanup_auto_elab.
-
+  auto_elab.
+  {
+    break_elab_rule.
+    2: term_refl.
+    {
+      cbn.
+      by_reduction.
+    }
+    Unshelve.
+    all: try cleanup_auto_elab.
+    all:shelve.
+  }
+  all:auto_elab.  
 Qed.
 #[export] Hint Resolve linear_value_subst_wf : elab_pfs.
 
