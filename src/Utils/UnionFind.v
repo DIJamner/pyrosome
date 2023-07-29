@@ -14,6 +14,7 @@
 
 Require Import Lists.List.
 Require Import Coq.Sorting.Permutation.
+Require Import Setoid.
 
 From coqutil Require Import Map.Interface.
 Import ListNotations.
@@ -502,9 +503,6 @@ Section __.
   revert m;
   change (seps_Uimpl1 l1 l2).
 
-  (*
-  Require Import Setoid.
-  Require Import Coq.Classes.Morphisms.*)
 
   
   Lemma distribute_not_has_key (i : idx) P Q
@@ -607,7 +605,6 @@ Section __.
       {
         cancel_prep' H0.
         basic_utils_crush.
-        Require Import Setoid.
         setoid_replace
           (and1
        (and1 (and1 (forest_ptsto i) (not1 (has_key j)))
@@ -930,9 +927,6 @@ Section __.
   End Perm.
 
   Section Perm.
-
-    
-    Section Perm.
 
       Context (A B : Type)
         (f: list B -> idx -> idx -> list B)
@@ -4032,6 +4026,40 @@ Section __.
      }
    Qed.
 
+
+   Lemma has_key_putmany (i:idx) m1 m2
+     : has_key i (map.putmany m1 m2) <-> has_key i m1 \/ has_key i m2.
+   Proof.
+     unfold has_key.
+     rewrite Properties.map.get_putmany_dec.
+     my_case H2 (map.get m2 i);
+       [ basic_utils_crush
+       | case_match]; intuition fail.
+   Qed.
+   Hint Rewrite has_key_putmany : utils.
+
+   
+   Lemma remove_put m (i j : idx)
+     : (map.remove (map.put m i j) i) = (map.remove m i).
+   Proof.
+     eapply map.map_ext.
+     intro k.
+     eqb_case k i;
+       basic_utils_crush.
+   Qed.
+   Hint Rewrite remove_put : utils.
+
+   
+   Lemma remove_none (m : idx_map) (i:idx)
+     : map.get m i = None -> (map.remove m i) = m.
+   Proof.
+     intros;
+     eapply map.map_ext.
+     intro k.
+     eqb_case k i;
+       basic_utils_crush.
+   Qed.
+   
    Lemma forest_put_in r i j l
      : i<> j -> In i l -> In j l -> forest l r ->
        forest (List.removeb (eqb (A:=_))i l) (map.put r i j).
@@ -4053,9 +4081,73 @@ Section __.
        change (seps (?a::?l)) with (sep a (seps l)) in *.
        unfold sep in H4; break.
        exists (map.put (map.putmany x3 x) i j), x4.
-       
-       TODO: what about IH? subst for l no good?  
-       
+       basic_utils_crush.
+       {
+         eapply split_put_left'.
+         {
+           basic_utils_crush.
+         }
+         {
+           eapply Properties.map.split_comm; eauto.
+           rewrite Properties.map.putmany_comm.
+           {
+             eapply map_split_3_ways; eauto using Properties.map.split_comm.
+             eapply Properties.map.split_comm; eauto.
+           }
+           eapply Properties.map.sub_domain_disjoint.
+           1: eapply Properties.map.disjoint_comm; eapply split_disjoint; eauto.
+           unfold map.split in H0; break; subst.
+           eapply Properties.map.sub_domain_putmany_r;
+             eapply Properties.map.sub_domain_refl.
+         }
+       }
+       {
+         eapply tree_join.
+         exists x3, (map.put x i j);
+           basic_utils_crush.
+         2:{
+           eapply forest_node; eauto.
+           exists (map.remove x i), (map.singleton i j).
+           basic_utils_crush.
+           unfold and1.
+           unfold tree in *.
+           clear IHl.
+           unfold sep in*.
+           basic_utils_crush.
+           { rewrite remove_none; eauto. }
+           {
+             my_case Hget (map.get x7 j); try tauto.
+             exfalso.
+             eapply split_both_have_key with (x:=j) in H1; eauto;
+               basic_utils_crush.
+             eapply split_has_key_l; eauto.
+             basic_utils_crush.
+           }
+         }
+         rewrite Properties.map.put_putmany_commute.
+         unfold map.split; intuition eauto.
+         assert (map.disjoint x3 x).
+         {           
+           eapply Properties.map.sub_domain_disjoint.
+           1: eapply Properties.map.disjoint_comm; eapply split_disjoint; eauto.
+           unfold map.split in H0; break; subst.
+           eapply Properties.map.sub_domain_putmany_r;
+             eapply Properties.map.sub_domain_refl.
+         }
+         {
+           admit (*Lemma disjoint_proper : Proper (map.same_domain ==> map.same_domain ==> iff) map.disjoint.*).
+         }
+       }
+       {
+         replace ((List.removeb (eqb (A:=idx)) i (x1 ++ x2))) with
+         (x1++x2) by admit.
+         exact H4.
+       }
+     }
+     {
+       cbn.
+       (*TODO: similar to last goal?*)
+   Abort.
   
   Lemma union_spec u x u' y z l
     : forest l u.(parent) ->
@@ -4103,10 +4195,13 @@ Section __.
       basic_goal_prep;
         basic_utils_crush.
       {
-        TODO: need new forest_put; also: where did removeb go?
+        (*TODO: need new forest_put; also: where did removeb go?
         eapply forest_put'.
         apply H4 in H5.
         apply H1 in H2,H5.
-        clear n n0 HeqH7 HeqH0 HeqH1.
-        TODO: lost that i0, z canonical, breaking forest_put
-        
+        clear n n0 HeqH7 HeqH0 HeqH1.*)
+        (*TODO: lost that i0, z canonical, breaking forest_put*)
+  Admitted.
+
+
+  End __.
