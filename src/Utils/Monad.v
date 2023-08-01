@@ -93,15 +93,22 @@ Definition Mfmap `{mmon:Monad M} {A B} (f : A -> B) (ma: M A) : M B :=
 
 Section MonadListOps.
   Import List List.ListNotations.
-  Context {M A B} `{Monad M}
-          (f : A -> M B).
+  Context {M} {A B : Type} `{Monad M}.
 
-  Fixpoint list_Mmap (l : list A) : M (list B) :=
+  Fixpoint list_Mfoldl (f : B -> A -> M B) (l : list A) (acc : B) : M B :=
+    match l with
+    | [] => @! ret acc
+    | a::al' =>
+        @! let fab <- f acc a in
+          (list_Mfoldl f al' fab)
+    end.
+
+  Fixpoint list_Mmap (f : A -> M B) (l : list A) : M (list B) :=
     match l with
     | [] => @! ret []
     | a::al' =>
         @! let b <- f a in
-           let bl' <- list_Mmap al' in
+           let bl' <- list_Mmap f al' in
            ret (b::bl')
     end.
   
