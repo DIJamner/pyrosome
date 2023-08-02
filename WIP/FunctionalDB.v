@@ -28,10 +28,13 @@ Section WithMap.
     (fresh_is_new : forall c, ~ allocated c (fresh c))
     (incr : counter -> counter)
     (fresh_is_next : forall c, allocated (incr c) (fresh c))
-    (elt : Type).
+    (* the type of values in the table. TODO: generalize to a symbol-dependent signature.
+    (elt : Type)
+    We use idx as the sole output type for now since it behaves specially wrt matching
+     *).
   (*(term_args_map : map.map (list idx) elt).*)
 
-  Definition table := (named_list (list idx) elt).
+  Definition table := (named_list (list idx) idx).
   
   (* TODO: is maintaining this as an assoc list be better? queries all perform folds, not gets *)
  Context (node_map : map.map symbol table).
@@ -55,19 +58,18 @@ Section WithMap.
   Definition resolve_arg a :=
     match a with const_arg x => Some x | var_arg _ => None end.
 
-  (*Note: map.fold might be slow.
-    TODO: make sure I have an efficient fold available
+  
+  (* args_locs represents the indices of the arguments we want to match.
+     for functions of the form f(x0..xn) |-> x_n+1, the index i refers to xi.
+     For simplicity, we assume that any index >= n+1 refers to out.
+     (Alternately, this function should only be called w/ indices up to n+1)
 
-    Idea: go from var : list var, DB : cargs |-> id and a : arguments to
-    t : map_tree arg_id id
-    Process of using t: (lazy?) intersect w/ other clauses
-
+     Returns `Some i` if this row has i at indices l0::args_locs,
+     and None if those locations do not all have the same value.
    *)
-
-  Definition match_args (args : list idx) '(loc0,args_locs) : option _ :=
-    @! let (v::vals) <?- list_Mmap (nth_error args) (loc0::args_locs) in
-      let! forallb (eqb v) vals in
-      ret v.
+  Definition match_args (args : list idx) (out : idx) '(l0,args_locs) : option _ :=
+    let v := nth l0 args out in
+    if forallb (fun i => eqb v (nth i args out)) args_locs then Some v else None. 
   
   (*
   Require Import Coq.Sorting.Mergesort.
@@ -84,22 +86,19 @@ Section WithMap.
     NOTE: to avoid forcing an overly strict comparison, may as well also generalize the proofs
     to be wrt an equivalence.
    *)
-  Context (sort : ((list idx) * elt -> (list idx) * elt -> bool) -> table -> table).
+  Context (sort : ((list idx) * idx -> (list idx) * idx -> bool) -> table -> table).
 
   Fixpoint filter_split_sorted' (args_locs : nat * list nat) (tab : table)
     out current current_idx
-    : named_list idx (named_list (list idx) elt) :=
+    : named_list idx (named_list (list idx) idx) :=
     match tab with
     | [] => (current_idx,current)::out
     | (args,e)::tab' =>
-        match match_args args args_locs with
+        match match_args args e args_locs with
         | Some i =>
             if eqb i current_idx
             then filter_split_sorted' args_locs tab' out ((args,e)::current) current_idx
             else filter_split_sorted' args_locs tab' ((current_idx, current)::out) [(args,e)] i
-        (* TODO: may return None for multiple reasons.
-           This match does not properly handle errors (although they aren't supposed to happen)
-         *)
         | None => filter_split_sorted' args_locs tab' out current current_idx
         end
     end.
@@ -108,7 +107,7 @@ Section WithMap.
     match tab with
     | [] => []
     | (args,e)::tab' =>
-        match match_args args args_locs with
+        match match_args args e args_locs with
         | Some i => filter_split_sorted' args_locs tab' [] [(args,e)] i
         (* TODO: Silences errors. Consider proper error propagation *)
         | None => []
@@ -120,7 +119,7 @@ Section WithMap.
 
   Context (idx_leb : idx -> idx -> bool).
   
-  Definition args_order loc0 : list idx * elt -> list idx * elt -> bool :=
+  Definition args_order loc0 : list idx * idx -> list idx * idx -> bool :=
      fun l1 l2 =>
           unwrap_with_default
             (@! let idx1 <- nth_error (fst l1) loc0 in
@@ -143,14 +142,9 @@ Section WithMap.
   Definition indices_of {A} `{Eqb A} (a : A) l : list nat :=
      indices_of' a 0 l.
 
-  Context (tree : map_tree idx_map elt).
-  
-  (* TODO: check these *)
-  #[local] Arguments leaf {key}%type_scope {m}%function_scope {A}%type_scope {map_tree} _.
-  #[local] Arguments top_node {key}%type_scope {m}%function_scope {A}%type_scope {map_tree} _.
-  #[local] Arguments node {key}%type_scope {m}%function_scope {A}%type_scope {map_tree} _.
+  Context (tree : map_tree idx_map).
 
-  Definition ne_table : Type := ((list idx) * elt) * named_list (list idx) elt.
+  Definition ne_table : Type := ((list idx) * idx) * table.
 
   Definition ne_as_table (n : ne_table) := cons (fst n) (snd n).
   
@@ -174,14 +168,16 @@ Section WithMap.
       end.
   
   Fixpoint build_trie' (tab : ne_table) (vars : list idx) (args : list argument)
-    : tree :=
+    : tree _ :=
     match vars with
     | [] =>
         (* Assumes that all arguments must be constant here.
            Implied by fvs(args) <= vars.
 
            Further assumes that the table is functional,
-           i.e. that each key (arg list) appears at most once
+           i.e. that each key (arg list) appears at most once.
+           TODO: figure out whether we need to relax this assumption,
+           e.g. for semi-naive evaluation.
          *)
         leaf (m:= idx_map) (snd (fst tab))
     | x::vars' =>
@@ -210,21 +206,85 @@ Section WithMap.
         end
     end.
 
-  Definition atom :Type := symbol * list idx.
-
+  (*
+    clauses have the form R(x1,...xn) (|-> xn+1)?
+    where xn+1, if provided, binds the output.
+    atom_args should be of length either arity(R) or arity(R)+1
+   *)
+  Record atom :Type :=
+    {
+      atom_fn : symbol;
+      atom_args : list idx;
+    }.
+  
   (* Returns None only if the clause doesn't match any rows.
      Note: may still return Some in such cases.
    *)
   Definition build_trie (nodes:node_map) (vars : list idx) (clause : atom) : option _ :=
-    @! let rel_id := fst clause in
-      let (r1::tab) <?- map.get nodes rel_id in
-      ret (rel_id, build_trie' (r1,tab) vars (map var_arg (snd clause))).
+    @!let (r1::tab) <?- map.get nodes clause.(atom_fn) in
+      ret (build_trie' (r1,tab) vars (map var_arg clause.(atom_args))).
 
+  (* Returns None only if some clause doesn't match any rows.
+     Note: may still return Some in such cases.
+   *)
   Definition build_tries (nodes : node_map) (vars : list idx) (clauses : list atom)
-    : option _ :=
+    : option (list (tree _)) :=
     list_Mmap (build_trie nodes vars) clauses.
 
+(*
+TODO: what is best wrt intersection?
 
+Seems like the sorted-list-style map might be the best here.
+- arrays (when available) are best when the keys are dense
+- Sorted list is better than ptree when you have to iterate over the whole map
+- ptree is better than sorted list when you need to get or to set possibly exisitng keys
+
+Issue: building trie performs unordered insertions
+Question: what dominates: unordered insertions or iteration? probably insertion
+Alternately: should I build a tree then convert to a list?
+2nd alt: can I define an intersection that directly builds sorted lists?
+ *)
+  Context (intersect : forall {A B C}, (A -> B -> C) -> tree A -> tree B -> tree C).
+  Arguments intersect {A B C}%type_scope _%function_scope _ _.
+
+  (*
+    Folding over just the values of a tree map can avoid the overhead of calculating the keys.
+    TODO: add this to an appropriate interface.
+   *)
+  Context (map_tree_fold_values : forall {A B}, (A -> B -> B) -> tree A -> B -> B).
+  Arguments map_tree_fold_values {A B}%type_scope _%function_scope _ _.
+  
+  Fixpoint top_tree {A} var_count : tree (list A) :=
+    match var_count with
+    | 0 => leaf []
+    | S n => top_node (top_tree n)
+    end.
+  
+  (* We implement a simplified generic join by just iteratively intersecting the tries.
+     The primary difference from standard generic join is that we do not record the full
+     substitutions that satisfy the query, only the output of the functions in the query.
+     This should be sufficient for our use-cases and greatly simplifies things.
+   *)                                                              
+  Definition generic_join' {A} (tries : list (tree A)) var_count : list _ :=
+    map_tree_fold_values cons (List.fold_right (intersect cons) (top_tree var_count) tries) [].
+
+  
+  Record query :=
+    {
+      free_vars : list idx;
+      clauses : list atom;
+    }.
+
+  (* Returns a list of all possible outputs of the query's clauses
+     such that the query matches.
+     Note: duplicates are possible.
+   *)
+  Definition generic_join (nodes : node_map) q : list (list idx) :=
+    match build_tries nodes q.(free_vars) q.(clauses) with
+    | None => [] (* short-circuit: includes an empty trie *)
+    | Some tries => generic_join' tries (List.length q.(free_vars))
+    end.
+  
   
 
  (* (*TODO: Does reachable being reflexive cause a problem?
