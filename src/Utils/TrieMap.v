@@ -5,36 +5,77 @@ Import PTree.
 
 Require Utils.ArrayList.
 
-(* positives consed when they should be appended*)
-Fixpoint trie_fold' {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.tree' B)
-         (*TODO: find a better way*)
-         (num : positive -> positive) : A :=
-  match m with
-  | Node001 r => trie_fold' f acc r (fun a => num (xI a))
-  | Node010 y => f acc (num xH) y
-  | Node011 y r =>
-      let acc := f acc (num xH) y in
-      trie_fold' f acc r (fun a => num (xI a))
-  | Node100 l => trie_fold' f acc l (fun a => num (xO a))
-  | Node101 l r =>      
-      let acc := trie_fold' f acc r (fun a => num (xI a)) in
-      trie_fold' f acc l (fun a => num (xO a))
-  | Node110 l y => 
-      let acc := f acc (num xH) y in
-      trie_fold' f acc l (fun a => num (xO a))
-  | Node111 l y r =>
-      let acc := f acc (num xH) y in
-      let acc := trie_fold' f acc r (fun a => num (xI a)) in
-      trie_fold' f acc l (fun a => num (xO a))
-end.
+Section Folds.
+  Context {B A : Type}.
+
+  Section __.
+    Context (f : A -> positive -> B -> A).
+    
+    (* positives consed when they should be appended*)
+    Fixpoint trie_fold' (acc : A) (m : PTree.tree' B)
+      (*TODO: find a better way*)
+      (num : positive -> positive) : A :=
+      match m with
+      | Node001 r => trie_fold' acc r (fun a => num (xI a))
+      | Node010 y => f acc (num xH) y
+      | Node011 y r =>
+          let acc := f acc (num xH) y in
+          trie_fold' acc r (fun a => num (xI a))
+      | Node100 l => trie_fold' acc l (fun a => num (xO a))
+      | Node101 l r =>      
+          let acc := trie_fold' acc r (fun a => num (xI a)) in
+          trie_fold' acc l (fun a => num (xO a))
+      | Node110 l y => 
+          let acc := f acc (num xH) y in
+          trie_fold' acc l (fun a => num (xO a))
+      | Node111 l y r =>
+          let acc := f acc (num xH) y in
+          let acc := trie_fold' acc r (fun a => num (xI a)) in
+          trie_fold' acc l (fun a => num (xO a))
+      end.
 
 
-Definition trie_fold {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.t B) : A :=
-  match m with
-  | Empty => acc
-  | Nodes m' => trie_fold' f acc m' id
-  end.
+    Definition trie_fold (acc : A) (m : PTree.t B) : A :=
+      match m with
+      | Empty => acc
+      | Nodes m' => trie_fold' acc m' id
+      end.
+
+  End __.
   
+
+  Section __.
+    Context (f : B -> A -> A).
+
+    (* A fold over just the values, avoids the issues of rebuilding the keys *)
+    Fixpoint map_fold_values' (m : PTree.tree' B) (acc : A) :=
+      match m with
+      | Node001 r => map_fold_values' r acc
+      | Node010 y => f y acc
+      | Node011 y r =>
+          let acc := f y acc in
+          map_fold_values' r acc
+      | Node100 l => map_fold_values' l acc
+      | Node101 l r =>      
+          let acc := map_fold_values' r acc in
+          map_fold_values' l acc
+      | Node110 l y => 
+          let acc := f y acc in
+          map_fold_values' l acc
+      | Node111 l y r =>
+          let acc := f y acc in
+          let acc := map_fold_values' r acc in
+          map_fold_values' l acc
+      end.
+                                                               
+    Definition map_fold_values (m : PTree.tree B) (acc : A) : A :=
+      match m with
+      | Empty => acc
+      | Nodes m' => map_fold_values' m' acc
+      end.
+  End __.
+
+End Folds.
 
 Section __.
 

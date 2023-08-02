@@ -98,7 +98,7 @@ Section MapIntersect.
   Import Canonical.PTree.
   Arguments empty {A}%type_scope.
                                             
-  Definition intersect' intersect' m1 m2 : tree _ :=
+  Fixpoint intersect' m1 m2 : tree _ :=
     match m1, m2 with
     (* just an element*)                                            
     | Node010 a, Node010 b
@@ -150,51 +150,67 @@ Section MapIntersect.
     | _, _ => empty
     end.
 
-  (* Do I need both for map_tree_intersect to be structural? *)
-  Fixpoint intersect'_l m1 m2 {struct m1} :=
-    intersect' intersect'_l m1 m2.
-  Fixpoint intersect'_r m1 m2 {struct m2} :=
-    intersect' intersect'_r m1 m2.
+  Definition intersect m1 m2 :=
+    match m1, m2 with
+    | Empty, _
+    | _, Empty => empty
+    | Nodes m1', Nodes m2' => intersect' m1' m2'
+    end.
+End MapIntersect.
 
-  Definition intersect_l m1 m2 :=
-    match m1, m2 with
-    | Empty, _
-    | _, Empty => empty
-    | Nodes m1', Nodes m2' => intersect'_l m1' m2'
+(* Specialized tree map to make termination work for map_tree_intersect *)
+Section MapSpecial.
+
+  Import Canonical.PTree.
+  Context {A B C : Type} (mti : A -> B -> C) (b:B).
+
+  Fixpoint map_special' (m: tree' A) : tree' C :=
+    match m with
+    | Node001 r => Node001 (map_special' r)
+    | Node010 x => Node010 (mti x b)
+    | Node011 x r => Node011 (mti x b) (map_special' r)
+    | Node100 l => Node100 (map_special' l)
+    | Node101 l r => Node101 (map_special' l) (map_special' r)
+    | Node110 l x => Node110 (map_special' l) (mti x b)
+    | Node111 l x r => Node111 (map_special' l) (mti x b) (map_special' r)
     end.
-  
-  Definition intersect_r m1 m2 :=
-    match m1, m2 with
-    | Empty, _
-    | _, Empty => empty
-    | Nodes m1', Nodes m2' => intersect'_r m1' m2'
+
+  Definition map_special (m: tree A) : tree C :=
+    match m with
+    | Empty => Empty
+    | Nodes m' => Nodes (map_special' m')
     end.
-  End MapIntersect.
+
+End MapSpecial.
 
 Section MapTreeIntersectPositive.
   Context {A B C : Type} (merge : A -> B -> C).
   Import Canonical.PTree.
 
-  Fail Fixpoint map_tree_intersect_l (t1 : @positive_map_tree' A) (t2 : @positive_map_tree' B) {struct t1}
+  Fixpoint map_tree_intersect (t1 : @positive_map_tree' A) (t2 : @positive_map_tree' B) {struct t1}
   : @positive_map_tree' C :=
     match t1, t2 with
     | pm_leaf a, pm_leaf b => leaf (merge a b)
-    | pm_top_node t1', pm_top_node t2' => top_node (map_tree_intersect_l t1' t2')
-    | pm_node m1, pm_node m2 => node (intersect_l map_tree_intersect_l m1 m2)
-    | pm_node m, pm_top_node t => node (map_filter (fun t' => Some (map_tree_intersect_r t' t)) m)
-    | pm_top_node t, pm_node m => node (map_filter (fun t' => Some (map_tree_intersect_l t t')) m)
-    | _, _ => node map.empty
-    end
-  with map_tree_intersect_r (t1 : @positive_map_tree' A) (t2 : @positive_map_tree' B) {struct t2}
-  : @positive_map_tree' C :=
-    match t1, t2 with
-    | pm_leaf a, pm_leaf b => leaf (merge a b)
-    | pm_top_node t1', pm_top_node t2' => top_node (map_tree_intersect_r t1' t2')
-    | pm_node m1, pm_node m2 => node (intersect_r map_tree_intersect_r m1 m2)
-    | pm_node m, pm_top_node t => node (map_filter (fun t' => Some (map_tree_intersect_r t' t)) m)
-    | pm_top_node t, pm_node m => node (map_filter (fun t' => Some (map_tree_intersect_l t t')) m)
+    | pm_top_node t1', pm_top_node t2' => top_node (map_tree_intersect t1' t2')
+    | pm_node m1, pm_node m2 => node (intersect map_tree_intersect m1 m2)
+    | pm_node m, pm_top_node t => node (map_special map_tree_intersect t m)
+    | pm_top_node t, pm_node m => node (map_filter (fun t' => Some (map_tree_intersect t t')) m)
     | _, _ => node map.empty
     end.
   
 End MapTreeIntersectPositive.                                   
-                                   
+
+Section Folds.
+  Context {A B : Type}
+    (f : A -> B -> B).
+
+  (* Note: does not guarantee anything about order *)
+  Fixpoint map_tree_fold_values (t : positive_map_tree A) acc : B :=
+    match t with
+    | pm_leaf a => f a acc
+    | pm_top_node t' => map_tree_fold_values t' acc
+    | pm_node m =>
+        TrieMap.map_fold_values map_tree_fold_values m acc
+    end.
+  
+End Folds.

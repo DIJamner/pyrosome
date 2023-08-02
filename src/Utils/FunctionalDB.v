@@ -284,6 +284,38 @@ Alternately: should I build a tree then convert to a list?
     end.
 
 End WithMap.
+
+Module PositiveIdx.
+
+  (*TODO: move to Eqb or sim. locaion *)
+  Instance positive_Eqb : Eqb positive := Pos.eqb.
+
+  
+
+  Definition generic_join_pos :=
+    generic_join positive _ positive (TrieMap.map _)
+      TrieMap.map Pos.leb positive_map_tree (@map_tree_intersect)
+      (@map_tree_fold_values).
+
+  Local Open Scope positive.
+  Example db1 : TrieMap.map (table _) :=
+    map.put
+      (map.put map.empty 1 [([2;2;3], 1); ([2;3;3], 10)])
+      2 [([8;4], 3); ([3;1], 2)].
+
+  Local Notation query := (query positive positive).
+
+  Example query1 : query :=
+    Build_query _ _ [3;1;2]
+      [
+        Build_atom _ _ 2 [2;3];
+        Build_atom _ _ 1 [1;1;2;3]
+      ].
+
+  Compute (generic_join_pos db1 query1).
+  (*Example success!*)
+End PositiveIdx.
+
   
 
  (* (*TODO: Does reachable being reflexive cause a problem?
@@ -301,106 +333,3 @@ End WithMap.
                            lookup t2 i = Some i2 ->
                            eq_term l c (sort_of l c t1) t1 t2).
   *)
-  
-
-(*
-Module PositiveInstantiation.
-  
-Fixpoint list_compare l1 l2 :=
-  match l1, l2 with
-  | [],[] => Eq
-  | [], _ => Lt
-  | _, [] => Gt
-  | x1::l1, x2::l2 =>
-      match BinPosDef.Pos.compare x1 x2 with
-      | Eq => list_compare l1 l2
-      | c => c
-      end
-  end.
-
-Axiom TODO: forall {A},A.
-
-Definition list_ltb l1 l2 :=
-  match list_compare l1 l2 with
-  | Lt => true
-  | _ => false
-  end.
-
-(* Make this an instance so we can use single-curly-braces so we don't need to qualify field-names with [SortedList.parameters.] *)
-Local Instance list_strict_order: @SortedList.parameters.strict_order _ list_ltb
-  := { ltb_antirefl := TODO
-     ; ltb_trans := TODO
-     ; ltb_total := TODO }.
-
-
-Definition relation_map : map.map (list positive) unit :=
-  SortedList.map (SortedList.parameters.Build_parameters (list positive) unit list_ltb)
-                 list_strict_order.
-
-
-Definition relation : set (list positive) := set_from_map relation_map.
-
-
-Definition db : map.map positive relation := TrieMap.map _.
-
-Definition arg_map : map.map positive positive := TrieMap.map _.
-
-Export PositiveQueryTrie.
-
-Definition generic_join (d : db) (q : query _) : subst_set _ _ arg_map :=
-  generic_join positive positive
-               trie_set query_trie qt_unconstrained _ qt_tree qt_nil
-               values_of_next_var choose_next_val relation db arg_map d q.
-
-#[global] Notation atom := (atom positive).
-#[global] Notation query := (query positive).
-#[global] Notation Build_query := (Build_query positive).
-
-End PositiveInstantiation.
-
-  
-Module Examples.
-  Open Scope positive.
-  Import PositiveInstantiation.
-
-  Definition r1 : relation :=
-    Sets.add_elt
-      (Sets.add_elt
-         map.empty
-         [10; 20; 20])
-      [6; 4; 5].
-
-
-  
-  Definition r2 : relation :=
-    Sets.add_elt
-      (Sets.add_elt
-         (Sets.add_elt
-            map.empty
-            [4; 56])
-         [4; 52])
-      [7; 65].
-
-  
-  Definition r3 : relation :=
-    Sets.add_elt
-      (Sets.add_elt
-         map.empty
-         [10; 20; 30])
-      [4; 4; 5].
-  
-  Definition db_ex : db :=
-    Eval compute in (map.put
-                       (map.put
-                          (map.put
-                             map.empty
-                             1 r1)
-                          2 r2)
-                       3 r3).
-
-  Definition q1 : query :=
-    Build_query [1;2;3]
-                [(1,[1;2;3]);(3,[2;2;3])].
-  
-End Examples.
-*)
