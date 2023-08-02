@@ -283,6 +283,188 @@ Alternately: should I build a tree then convert to a list?
     | Some tries => generic_join' tries (List.length q.(free_vars))
     end.
 
+  (* Properties *)
+
+  (*TODO: use this here? *)
+  Context `{WithDefault idx}.
+  
+  Definition atom_args_subst args_in fvs : list idx -> list idx :=
+    map (named_list_lookup default (combine args_in fvs)).
+  
+  Definition query_subst (args : list idx) q : list (symbol * list idx) :=
+    List.map (fun clause => (clause.(atom_fn),atom_args_subst args q.(free_vars) clause.(atom_args))) q.(clauses).
+
+  (*TODO: handles the return variable in a somewhat hacky way.
+          Maybe the query should keep it separate at spec-level?
+   *)  
+  Definition nodes_lookup (n : node_map) '(has_ret,(s,args)) : idx :=
+    let table_key := if has_ret : bool then removelast args else args in
+    unwrap_with_default
+      (@! let tab <- map.get n s in
+         (named_list_lookup_err tab table_key)).
+
+
+  (* Note: We don't need completeness for our purposes, but it should hold. *)
+  Theorem generic_join_sound nodes q results
+    : (*wf_query q -> (probably necessary) *)
+    In results (generic_join nodes q) ->
+    exists has_rets args, results = map (nodes_lookup nodes) (combine has_rets (query_subst args q)).
+  Abort.
+
+  Section __.
+    Context (tab : table).
+  Inductive trie_satisfies_clause' : list idx -> list argument -> _ -> Prop :=
+  | empty_satisfies_no_result_match key a atom_args
+    : In (key, a) tab ->
+      atom_args = map const_arg key ->
+      trie_satisfies_clause' [] atom_args (leaf a)
+  | empty_satisfies_result_match key a atom_args
+    : In (key, a) tab ->
+      atom_args = map const_arg (key++[a]) ->
+      trie_satisfies_clause' [] atom_args (leaf a)
+  | cons_satisfies_top x fvs atom_args t
+    (* rather than quantify over an arbitrary v here,
+       we require that x is not in atom_args.
+     *)
+    : trie_satisfies_clause' fvs atom_args t ->
+      trie_satisfies_clause' (x::fvs) atom_args (top_node t)
+  | cons_satisfies_node x fvs atom_args m
+    : (forall v t, map.get m v = Some t -> trie_satisfies_clause' fvs (map (arg_subst x v) atom_args) t) ->
+      trie_satisfies_clause' (x::fvs) atom_args (node m).
+  End __.
+  Hint Constructors trie_satisfies_clause' : utils.
+  
+  Definition trie_satisfies_clause nodes fvs clause trie : Prop :=
+    match map.get nodes clause.(atom_fn) with
+    | Some tab => trie_satisfies_clause' tab fvs (map var_arg clause.(atom_args)) trie
+    | None => False
+    end.
+
+  Definition subst_all_args s args : list argument :=
+    List.fold_right (fun '(x,v) => map (arg_subst x v)) args s.
+  
+  (* has two disjuncts, one for including the result and one for not *)
+  Definition row_can_match (args : list argument) '(key,v) :=
+    exists s, (subst_all_args s args) = map const_arg (key++[v])
+              \/ (subst_all_args s args) = map const_arg key.
+
+  Definition arg_vars :=
+    flat_map (fun x =>
+                match x with
+                | const_arg c => []
+                | var_arg x' => [x']
+                end).
+  
+  Lemma no_vars_means_all_const args
+    :  incl (arg_vars args) [] ->
+       exists cs, args = map const_arg cs.
+  Proof.
+    induction args;
+      basic_goal_prep;
+      [exists []
+       | destruct a (*
+         let x := open_constr:(_::_) in
+         exists x*)];
+      basic_goal_prep;
+      basic_utils_crush.
+    exists (c::x).
+    reflexivity.
+  Qed.
+  
+  Lemma subst_all_args_const x x0
+    : subst_all_args x (map const_arg x0) = (map const_arg x0).
+  Proof.
+    unfold subst_all_args.
+    revert x0.
+    induction x;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite IHx.
+    rewrite map_map.
+    eapply map_ext.
+    intros; reflexivity.
+  Qed.
+
+  (*TODO: move to List.v*)
+  Lemma map_inj A B (f : A -> B)
+    : (forall a a', f a = f a' -> a = a') ->
+      forall l l', map f l = map f l' -> l = l'.
+  Proof.
+    induction l;
+      destruct l';
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  (*TODO: move to Utils*)
+  Hint Resolve incl_tl : utils.
+  
+  Lemma build_trie'_sound r1 tab fvs args
+    : incl (arg_vars args) fvs ->
+      all (row_can_match args) (r1::tab) ->
+      trie_satisfies_clause' (r1::tab) fvs args (build_trie' (r1,tab) fvs args).
+  Proof.
+    revert r1 tab args.
+    induction fvs;
+      basic_goal_prep.
+    {
+      break.
+      
+      eapply no_vars_means_all_const in H0; break; subst.
+      rewrite ! subst_all_args_const in H1.
+      destruct H1 as [H1 | H1];
+        eapply map_inj in H1; subst;
+        basic_goal_prep;
+        try congruence;
+        basic_utils_crush.
+    }
+    {
+      case_match; subst; basic_goal_prep.
+      {
+        econstructor.
+        eapply IHfvs; basic_utils_crush.
+        {
+          (*TODO: how to show?
+                    need to use indices_of!*)
+  Admitted.
+    
+  Lemma build_trie_sound nodes fvs clause tries
+    : incl (arg_vars (map var_arg clause.(atom_args))) fvs ->
+      (forall tab, map.get nodes clause.(atom_fn) = Some tab ->
+                   all (row_can_match (map var_arg clause.(atom_args))) tab) ->
+      build_trie nodes fvs clause = Some tries ->
+      trie_satisfies_clause nodes fvs clause tries.
+  Proof.
+    unfold build_trie, trie_satisfies_clause.
+    case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H2;
+    case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+    eapply build_trie'_sound; eauto.
+  Qed.     
+  
+  (* Only the Some case is necessary in the soundness direction *)
+  Lemma build_tries_sound nodes fvs clauses tries
+    : all (fun c => incl (arg_vars (map var_arg c.(atom_args))) fvs) clauses ->
+      all (fun c => forall tab, map.get nodes c.(atom_fn) = Some tab ->
+                                all (row_can_match (map var_arg c.(atom_args))) tab)
+        clauses ->
+    build_tries nodes fvs clauses = Some tries ->
+      all2 (trie_satisfies_clause nodes fvs) clauses tries.
+  Proof.
+    revert tries; induction clauses;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H2; case_match;
+      basic_utils_crush.
+    revert H2; case_match;
+      basic_utils_crush.
+    eapply build_trie_sound; eauto.
+  Qed.
+
 End WithMap.
 
 Module PositiveIdx.
@@ -306,14 +488,22 @@ Module PositiveIdx.
   Local Notation query := (query positive positive).
 
   Example query1 : query :=
-    Build_query _ _ [3;1;2]
+    Build_query _ _ [3;1;2;4;5;6]
       [
+        Build_atom _ _ 1 [4;5;6];
         Build_atom _ _ 2 [2;3];
         Build_atom _ _ 1 [1;1;2;3]
       ].
-
   Compute (generic_join_pos db1 query1).
-  (*Example success!*)
+  
+  Example query2 : query :=
+    Build_query _ _ [1;2;3]
+      [
+        (*TODO: bug w/ non-first arg as dup? the atom below should match 2;3;3 -> 10*)
+        Build_atom _ _ 1 [1;2;2;3]
+      ].
+
+  Compute (generic_join_pos db1 query2).
 End PositiveIdx.
 
   
