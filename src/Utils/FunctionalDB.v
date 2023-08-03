@@ -12,7 +12,7 @@ Module Merge := Std.Sorting.Mergesort.Sectioned.
 
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind MapTree.
 From Utils Require TrieMap TrieMapInt63.
-From Pyrosome.Theory Require Import Core.
+(*From Pyrosome.Theory Require Import Core.*)
 Import Sets.
 
 Section WithMap.
@@ -118,11 +118,10 @@ Section WithMap.
   Context (idx_leb : idx -> idx -> bool).
   
   Definition args_order loc0 : list idx * idx -> list idx * idx -> bool :=
-     fun l1 l2 =>
-          unwrap_with_default
-            (@! let idx1 <- nth_error (fst l1) loc0 in
-            let idx2 <- nth_error (fst l2) loc0 in
-            ret (idx_leb idx1 idx2)).
+    fun l1 l2 =>
+      let v1 := nth loc0 (fst l1) (snd l1) in 
+      let v2 := nth loc0 (fst l2) (snd l2) in 
+      idx_leb v1 v2.
 
   Definition split_by (args_locs : nat * list nat) (tab : table)
     : named_list idx table :=
@@ -164,6 +163,20 @@ Section WithMap.
       | const_arg ac, const_arg bc => eqb ac bc
       | _,_ => false
       end.
+
+
+  
+  Instance eqb_argument_ok : Eqb_ok eqb_argument.
+  Proof using Eqb_idx_ok.
+    unfold Eqb_ok, eqb, eqb_argument.
+    intros a b;
+      my_case Ha a;
+      my_case Hb b;
+      basic_goal_prep;
+      try congruence.
+    { eqb_case c c0; congruence. }
+    { eqb_case x x0; congruence. }
+  Qed.
   
   Fixpoint build_trie' (tab : ne_table) (vars : list idx) (args : list argument)
     : tree _ :=
@@ -398,7 +411,112 @@ Alternately: should I build a tree then convert to a list?
 
   (*TODO: move to Utils*)
   Hint Resolve incl_tl : utils.
+
+  (*TODO: move to List.v*)
+  Lemma incl_strengthen {A} (a:A) l1 l2
+    : ~ In a l1 ->
+      incl l1 (a::l2) ->
+      incl l1 l2.
+  Proof.
+    unfold incl;
+      basic_goal_prep.
+    pose proof H2.
+    eapply H1 in H2;
+      basic_utils_crush.
+  Qed.
+
+  Lemma not_in_arg_vars a args
+    : ~ In (var_arg a) args ->
+      ~ In a (arg_vars args).
+  Proof.
+    unfold arg_vars.
+    induction args;
+      try case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H5;
+      case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Lemma indices_of_empty A  `{Eqb_ok A} (a:A) l
+    : [] = indices_of a l ->
+      ~ In a l.
+  Proof.
+    unfold indices_of.
+    generalize 0.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    eqb_case a a0;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Require Import Coq.Sorting.Permutation.
+  Import Mergesort.Sectioned.
+
   
+  Lemma filter_split_sorted_sound i0 idxs tab v t
+    : (*TODO: use regular or strong sort? (have both)*)
+    Sorted.Sorted (fun x x0 => is_true (args_order i0 x x0)) tab ->
+    In (v,t) (filter_split_sorted (i0, idxs) tab) ->
+    incl t tab
+    /\ all (fun row => all (fun i => nth i (fst row) (snd row) = v) (i0::idxs)) t.
+  Proof.
+    unfold filter_split_sorted;
+      case_match.
+    {
+      basic_utils_crush.
+    }
+    {
+      subst; break; cbn.
+      set (forallb _ _) as b;
+        my_case Hforallb b;
+        subst b.
+      2:{ basic_utils_crush. }
+      basic_goal_prep.
+      (*TODO: induction invariants for filter_split_sorted'*)
+  Admitted.
+
+  
+  Context (idx_leb_total : forall x y, idx_leb x y = true \/ idx_leb y x = true).
+
+    
+  Lemma args_order_total x y i0
+    : args_order i0 x y = true \/ args_order i0 y x = true.
+  Proof.
+    unfold args_order.
+    eapply idx_leb_total.
+  Qed.
+  
+  Lemma split_by_sound i0 idxs tab v t
+    : In (v,t) (split_by (i0,idxs) tab) ->
+      incl t tab
+      /\ all (fun row => all (fun i => nth i (fst row) (snd row) = v) (i0::idxs)) t.
+  Proof.
+    unfold split_by.
+    set (Merge.sort _ _) as l.
+    assert (Permutation l tab).
+    {
+      symmetry.
+      eapply Permuted_sort.
+    }
+    intro H'.
+    eapply filter_split_sorted_sound in H'.
+    2:{
+      subst l.
+      eapply Merge.Sorted_sort.
+      intros; eapply args_order_total.
+    }
+    intuition eauto.
+    unfold incl.
+    intro.
+    rewrite <- H0.
+    eapply H1.
+  Qed.
+    
   Lemma build_trie'_sound r1 tab fvs args
     : incl (arg_vars args) fvs ->
       all (row_can_match args) (r1::tab) ->
@@ -422,10 +540,49 @@ Alternately: should I build a tree then convert to a list?
       case_match; subst; basic_goal_prep.
       {
         econstructor.
-        eapply IHfvs; basic_utils_crush.
+        assert (incl (arg_vars args) fvs).
         {
-          (*TODO: how to show?
-                    need to use indices_of!*)
+          eapply incl_strengthen; eauto.
+          eapply not_in_arg_vars.
+          eapply indices_of_empty; eauto.
+          typeclasses eauto.
+        }
+        eapply IHfvs; basic_utils_crush.
+        all: unfold row_can_match;
+          exists x.
+        all: [>left | right]; eauto.
+      }
+      {
+        econstructor;
+          basic_goal_prep.
+        assert (t = build_trie' ((l,i), tab) fvs (map (arg_subst a v) args))
+          by admit.
+        {
+          break;subst.
+          eapply IHfvs.
+          1:admit (*arg_vars lemma*).
+       (*   
+        revert H4.
+        lazymatch goal with
+        | |- context [split_by (?i0, ?idxs) ?tab] =>
+            pose proof (split_by_sound i0 idxs tab) as H';
+            revert H';
+            set (split_by _ _)
+        end.
+        intros.
+        intro H4.
+        Set Printing Coercions.
+        cbv in n0.
+        eapply split_by_sound in 
+
+        TODO: nested ind on the split_by?
+        revert t H4.
+        eapply Properties.map.map_ind.
+        TODO: nested map induction
+        eapply IHfvs.
+      }
+    }
+  Qed.*)
   Admitted.
     
   Lemma build_trie_sound nodes fvs clause tries

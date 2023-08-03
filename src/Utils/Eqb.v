@@ -115,6 +115,9 @@ Arguments dec {A}%type_scope {DecidableEq} s1 s2.
 (*TODO: also account for _=_->False *)
 #[export] Hint Rewrite eqb_ineq_false using (try typeclasses eauto; (left || right); assumption) : utils.
 
+Ltac eqb_case i j :=
+  pose proof (eqb_spec i j); destruct (eqb i j);[ subst i |].
+
 #[export] Instance string_Eqb : Eqb string := String.eqb.
 
 #[export] Instance string_Eqb_ok : Eqb_ok string_Eqb.
