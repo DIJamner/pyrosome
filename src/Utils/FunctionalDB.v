@@ -516,6 +516,30 @@ Alternately: should I build a tree then convert to a list?
     rewrite <- H0.
     eapply H1.
   Qed.
+  
+  Lemma row_can_match_subst a v l i args
+    : (forall j, In j (indices_of (var_arg a) args) ->
+                 nth j (l++[i]) v = v) ->
+      row_can_match args (l, i) ->
+      row_can_match (map (arg_subst a v) args) (l, i).
+  Proof.
+    revert l.
+    induction args;
+      destruct l;
+      unfold row_can_match;
+      basic_goal_prep.
+    { exists x; eauto. }
+    {
+      exfalso.
+      revert H1.
+      (*unfold subst_all_args.
+      cbv [fold_right].
+      cbn.
+      cbn in H1. intuition congruence. }
+    
+      basic_utils_crush.*)
+  Admitted.
+    
     
   Lemma build_trie'_sound r1 tab fvs args
     : incl (arg_vars args) fvs ->
@@ -561,6 +585,7 @@ Alternately: should I build a tree then convert to a list?
           break;subst.
           eapply IHfvs.
           1:admit (*arg_vars lemma*).
+          (* TODO:use row_can_match_subst *)
        (*   
         revert H4.
         lazymatch goal with
