@@ -4,6 +4,7 @@ Require Import Tries.Canonical.
 Import PTree.
 
 Require Utils.ArrayList.
+Require Import Utils.ExtraMaps.
 
 Section Folds.
   Context {B A : Type}.
@@ -11,7 +12,12 @@ Section Folds.
   Section __.
     Context (f : A -> positive -> B -> A).
     
-    (* positives consed when they should be appended*)
+    (* positives consed when they should be appended
+
+    TODO: to make folds more efficient at the cost of space,
+    can just include each key at the leaf.
+    To do so: implement map.map positive v for PTree.tree (positive*v)?
+     *)
     Fixpoint trie_fold' (acc : A) (m : PTree.tree' B)
       (*TODO: find a better way*)
       (num : positive -> positive) : A :=
@@ -95,6 +101,80 @@ Section __.
   (* TODO: prove map.ok *)
 End __.
 
+Section MapIntersect.
+  Context {A B C} (elt_intersect : A -> B -> C).
+
+  Import Canonical.PTree.
+  Arguments empty {A}%type_scope.
+                                            
+  Fixpoint intersect' m1 m2 : tree _ :=
+    match m1, m2 with
+    (* just an element*)                                            
+    | Node010 a, Node010 b
+    | Node010 a, Node011 b _
+    | Node010 a, Node110 _ b
+    | Node010 a, Node111 _ b _                                            
+    | Node011 a _, Node010 b                                            
+    | Node110 _ a, Node010 b                                            
+    | Node111 _ a _, Node010 b                                       
+    | Node110 _ a, Node011 b _                                       
+    | Node011 a _, Node110 _ b => Node empty (Some (elt_intersect a b)) empty
+                                                  
+    (* RHS only in result*)
+    | Node001 r1, Node001 r2
+    | Node001 r1, Node011 _ r2
+    | Node001 r1, Node101 _ r2
+    | Node001 r1, Node111 _ _ r2
+    | Node011 _ r1, Node001 r2
+    | Node101 _ r1, Node001 r2
+    | Node111 _ _ r1, Node001 r2
+    | Node011 _ r1, Node101 _ r2
+    | Node101 _ r1, Node011 _ r2 => Node empty None (intersect' r1 r2)
+                                            
+    (* LHS only in result*)
+    | Node100 l1, Node100 l2
+    | Node100 l1, Node110 l2 _
+    | Node100 l1, Node101 l2 _
+    | Node100 l1, Node111 l2 _ _
+    | Node110 l1 _, Node100 l2
+    | Node101 l1 _, Node100 l2
+    | Node111 l1 _ _, Node100 l2
+    | Node110 l1 _, Node101 l2 _
+    | Node101 l1 _, Node110 l2 _ => Node (intersect' l1 l2) None empty
+
+    (* RHS + element *)
+    | Node011 a r1, Node011 b r2
+    | Node011 a r1, Node111 _ b r2
+    | Node111 _ a r1, Node011 b r2 => Node empty (Some (elt_intersect a b)) (intersect' r1 r2)
+                                                
+    (* LHS + element *)
+    | Node110 l1 a, Node110 l2 b
+    | Node110 l1 a, Node111 l2 b _
+    | Node111 l1 a _, Node110 l2 b => Node (intersect' l1 l2) (Some (elt_intersect a b)) empty
+
+    (* everything *)
+    | Node111 l1 a r1, Node111 l2 b r2 => Node (intersect' l1 l2) (Some (elt_intersect a b)) (intersect' r1 r2)
+     
+    (* No overlap *)
+    | _, _ => empty
+    end.
+
+  Definition intersect m1 m2 :=
+    match m1, m2 with
+    | Empty, _
+    | _, Empty => empty
+    | Nodes m1', Nodes m2' => intersect' m1' m2'
+    end.
+End MapIntersect.
+
+
+#[export] Instance ptree_map_plus : map_plus map :=
+  {
+    map_intersect := @intersect;
+    map_fold_values := @map_fold_values;
+    (* TODO: check whether the filter overhead is detectable *)
+    map_map _ _ f := map_filter (fun x => Some (f x));
+  }.
 
 Module TrieArrayList.
 
