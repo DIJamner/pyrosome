@@ -6,6 +6,16 @@ Import PTree.
 Require Utils.ArrayList.
 Require Import Utils.ExtraMaps.
 
+(* TODO: move this somewhere? *)
+(*reverses the bits in a positive number*)
+Fixpoint pos_rev' p acc :=
+  match p with
+  | xH => acc
+  | xO p => pos_rev' p (xO acc)
+  | xI p => pos_rev' p (xI acc)
+  end.
+Definition pos_rev p := pos_rev' p xH.
+
 Section Folds.
   Context {B A : Type}.
 
@@ -19,32 +29,32 @@ Section Folds.
     To do so: implement map.map positive v for PTree.tree (positive*v)?
      *)
     Fixpoint trie_fold' (acc : A) (m : PTree.tree' B)
-      (*TODO: find a better way*)
-      (num : positive -> positive) : A :=
+      (*TODO: find a better way?*)
+      (revnum : positive) : A :=
       match m with
-      | Node001 r => trie_fold' acc r (fun a => num (xI a))
-      | Node010 y => f acc (num xH) y
+      | Node001 r => trie_fold' acc r (xI revnum)
+      | Node010 y => f acc (pos_rev revnum) y
       | Node011 y r =>
-          let acc := f acc (num xH) y in
-          trie_fold' acc r (fun a => num (xI a))
-      | Node100 l => trie_fold' acc l (fun a => num (xO a))
+          let acc := f acc (pos_rev revnum) y in
+          trie_fold' acc r (xI revnum)
+      | Node100 l => trie_fold' acc l (xO revnum)
       | Node101 l r =>      
-          let acc := trie_fold' acc r (fun a => num (xI a)) in
-          trie_fold' acc l (fun a => num (xO a))
+          let acc := trie_fold' acc r (xI revnum) in
+          trie_fold' acc l (xO revnum)
       | Node110 l y => 
-          let acc := f acc (num xH) y in
-          trie_fold' acc l (fun a => num (xO a))
+          let acc := f acc (pos_rev revnum) y in
+          trie_fold' acc l (xO revnum)
       | Node111 l y r =>
-          let acc := f acc (num xH) y in
-          let acc := trie_fold' acc r (fun a => num (xI a)) in
-          trie_fold' acc l (fun a => num (xO a))
+          let acc := f acc (pos_rev revnum) y in
+          let acc := trie_fold' acc r (xI revnum) in
+          trie_fold' acc l (xO revnum)
       end.
 
 
     Definition trie_fold (acc : A) (m : PTree.t B) : A :=
       match m with
       | Empty => acc
-      | Nodes m' => trie_fold' acc m' id
+      | Nodes m' => trie_fold' acc m' xH
       end.
 
   End __.
