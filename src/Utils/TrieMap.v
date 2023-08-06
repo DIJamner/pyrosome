@@ -4,7 +4,7 @@ Require Import Tries.Canonical.
 Import PTree.
 
 Require Utils.ArrayList.
-Require Import Utils.ExtraMaps.
+From Utils Require Import Base ExtraMaps.
 
 (* TODO: move this somewhere? *)
 (*reverses the bits in a positive number*)
@@ -98,8 +98,7 @@ Section __.
   
   Context (value : Type).
 
-  
-  Definition map : map.map positive value :=
+  Definition trie_map : map.map positive value :=
     {|
       map.rep := PTree.t value;
       map.empty := PTree.empty value;
@@ -108,7 +107,26 @@ Section __.
       map.remove m k := PTree.remove k m;
       map.fold := @trie_fold value;
     |}.
+
   (* TODO: prove map.ok *)
+  #[export] Instance trie_map_ok : map.ok trie_map.
+  Proof.
+    constructor; basic_goal_prep.
+    { eapply extensionality; eauto. }
+    { reflexivity. }
+    { eapply gss. }
+    { eapply gso; eauto. }
+    { eapply grs; eauto. }
+    { eapply gro; eauto. }
+    {
+      revert m.
+      eapply tree_ind;
+        basic_goal_prep;
+        basic_utils_crush.
+      destruct l, o, r;
+        basic_goal_prep; try tauto.
+  Abort.
+  
 End __.
 
 Section MapIntersect.
@@ -178,7 +196,7 @@ Section MapIntersect.
 End MapIntersect.
 
 
-#[export] Instance ptree_map_plus : map_plus map :=
+#[export] Instance ptree_map_plus : map_plus trie_map :=
   {
     map_intersect := @intersect;
     map_fold_values := @map_fold_values;
@@ -190,7 +208,7 @@ Module TrieArrayList.
 
   Open Scope positive.
 
-  Definition trie_array A : Type := positive * (map A) * A.
+  Definition trie_array A : Type := positive * (trie_map A) * A.
   #[global] Instance trie_arraylist : ArrayList.ArrayList positive trie_array :=
     {
       make _ a := (1, map.empty, a);

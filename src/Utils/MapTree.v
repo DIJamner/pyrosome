@@ -65,11 +65,11 @@ Section Positive.
   
   Inductive positive_map_tree' {A} :=
   | pm_leaf : A -> positive_map_tree'
-  | pm_node : TrieMap.map positive_map_tree' -> positive_map_tree'
+  | pm_node : TrieMap.trie_map positive_map_tree' -> positive_map_tree'
   | pm_top_node : positive_map_tree' -> positive_map_tree'.
   #[local] Hint Constructors positive_map_tree' : core.
   
-  #[export] Instance positive_map_tree : map_tree TrieMap.map :=
+  #[export] Instance positive_map_tree : map_tree TrieMap.trie_map :=
     {
       rep := @positive_map_tree';
       leaf := @pm_leaf;
@@ -91,72 +91,7 @@ Section Positive.
 End Positive.
 
 
-(*TODO: how to generalize? *)
-Section MapIntersect.
-  Context {A B C} (elt_intersect : A -> B -> C).
 
-  Import Canonical.PTree.
-  Arguments empty {A}%type_scope.
-                                            
-  Fixpoint intersect' m1 m2 : tree _ :=
-    match m1, m2 with
-    (* just an element*)                                            
-    | Node010 a, Node010 b
-    | Node010 a, Node011 b _
-    | Node010 a, Node110 _ b
-    | Node010 a, Node111 _ b _                                            
-    | Node011 a _, Node010 b                                            
-    | Node110 _ a, Node010 b                                            
-    | Node111 _ a _, Node010 b                                       
-    | Node110 _ a, Node011 b _                                       
-    | Node011 a _, Node110 _ b => Node empty (Some (elt_intersect a b)) empty
-                                                  
-    (* RHS only in result*)
-    | Node001 r1, Node001 r2
-    | Node001 r1, Node011 _ r2
-    | Node001 r1, Node101 _ r2
-    | Node001 r1, Node111 _ _ r2
-    | Node011 _ r1, Node001 r2
-    | Node101 _ r1, Node001 r2
-    | Node111 _ _ r1, Node001 r2
-    | Node011 _ r1, Node101 _ r2
-    | Node101 _ r1, Node011 _ r2 => Node empty None (intersect' r1 r2)
-                                            
-    (* LHS only in result*)
-    | Node100 l1, Node100 l2
-    | Node100 l1, Node110 l2 _
-    | Node100 l1, Node101 l2 _
-    | Node100 l1, Node111 l2 _ _
-    | Node110 l1 _, Node100 l2
-    | Node101 l1 _, Node100 l2
-    | Node111 l1 _ _, Node100 l2
-    | Node110 l1 _, Node101 l2 _
-    | Node101 l1 _, Node110 l2 _ => Node (intersect' l1 l2) None empty
-
-    (* RHS + element *)
-    | Node011 a r1, Node011 b r2
-    | Node011 a r1, Node111 _ b r2
-    | Node111 _ a r1, Node011 b r2 => Node empty (Some (elt_intersect a b)) (intersect' r1 r2)
-                                                
-    (* LHS + element *)
-    | Node110 l1 a, Node110 l2 b
-    | Node110 l1 a, Node111 l2 b _
-    | Node111 l1 a _, Node110 l2 b => Node (intersect' l1 l2) (Some (elt_intersect a b)) empty
-
-    (* everything *)
-    | Node111 l1 a r1, Node111 l2 b r2 => Node (intersect' l1 l2) (Some (elt_intersect a b)) (intersect' r1 r2)
-     
-    (* No overlap *)
-    | _, _ => empty
-    end.
-
-  Definition intersect m1 m2 :=
-    match m1, m2 with
-    | Empty, _
-    | _, Empty => empty
-    | Nodes m1', Nodes m2' => intersect' m1' m2'
-    end.
-End MapIntersect.
 
 (* Specialized tree map to make termination work for map_tree_intersect *)
 Section MapSpecial.
@@ -192,7 +127,7 @@ Section MapTreeIntersectPositive.
     match t1, t2 with
     | pm_leaf a, pm_leaf b => leaf (merge a b)
     | pm_top_node t1', pm_top_node t2' => top_node (map_tree_intersect t1' t2')
-    | pm_node m1, pm_node m2 => node (intersect map_tree_intersect m1 m2)
+    | pm_node m1, pm_node m2 => node (TrieMap.intersect map_tree_intersect m1 m2)
     | pm_node m, pm_top_node t => node (map_special map_tree_intersect t m)
     | pm_top_node t, pm_node m => node (map_filter (fun t' => Some (map_tree_intersect t t')) m)
     | _, _ => node map.empty
