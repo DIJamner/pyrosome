@@ -1,7 +1,8 @@
-Require Import NArith.
+Require Import NArith Lists.List.
+Import ListNotations.
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Base ExtraMaps.
+From Utils Require Import Base ExtraMaps Monad.
 From Utils Require TrieMap.
 
 
@@ -22,66 +23,57 @@ Fail Inductive tree {key} {m : forall A, map.map key A} {A} :=
 
 Section __.
   Context {key} {m : forall A, map.map key A}.
-
-  Variant node (child : Type) :=
-    | fin_node : m child -> node child
-    | top_node : child -> node child.
-  Arguments fin_node {child}%type_scope _.
-  Arguments top_node {child}%type_scope _.
-
+  Context (A : Type).
+  Fixpoint ntree n :=
+    match n with
+    | 0 => A
+    | S n => m (ntree n)
+    end.
+                                          
   Section __.
-    Context (A : Type).
-    Fixpoint ntree n :=
+    Context {B} (f : B -> list key -> A -> B).
+
+    (*TODO: benchmark which is better: rev in fold, or rev in get*)
+    Fixpoint ntree_fold' n acc keystack : ntree n -> _ :=
       match n with
-      | 0 => A
-      | S n => node (ntree n)
-      end.    
+      | 0 => f acc (rev keystack)
+      | S n' => map.fold (fun acc k => ntree_fold' n' acc (k::keystack)) acc
+      end.
+    
+    Definition ntree_fold n (t:ntree n) acc :=
+      ntree_fold' n acc [] t.
+
   End __.
 
-  Section MapPlus.
+  (*
+    TODO: determine whether dependent types will cause issues
+    (probably will?)
+   *)
+  Fixpoint ntree_get k : ntree (length k) -> option A :=
+    match k with
+    | [] => fun t => Some t
+    | k1::k' =>
+        fun t =>
+          @! let next <- map.get t k1 in
+            (ntree_get k' next)
+    end.
 
-    Context `{@map_plus key m}.
-
-    
-    Section __.
-    Context {A B C : Type} (merge : A -> B -> C).
-    Definition merge_node (na : node A) (nb : node B) : node C :=
-      match na, nb with
-      | fin_node ma, fin_node mb => fin_node (map_intersect merge ma mb)
-      | top_node c1, top_node c2 => top_node (merge c1 c2)
-      | fin_node m, top_node c => fin_node (map_map (fun a => merge a c) m)
-      | top_node c, fin_node m => fin_node (map_map (merge c) m)
-      end.
-    End __.
-
-    Section __.
-    Context {A B C : Type} (merge : A -> B -> C).
-    
-    Fixpoint ntree_intersect n : ntree A n -> ntree B n -> ntree C n :=
-      match n with
-      | 0 => merge
-      | S n' => merge_node (ntree_intersect n')
-      end.
-    End __.
-
-    Section __.
-      Context {A B : Type}
-        (f : A -> B -> B).
-
-      (* Note: does not guarantee anything about order *)
-      Fixpoint map_tree_fold_values n : ntree A n -> B -> B :=
-        match n with
-        | 0 => f
-        | S n' =>
-            fun b =>
-              match b with
-              | fin_node m => map_fold_values (map_tree_fold_values n') m
-              | top_node c => map_tree_fold_values n' c
-              end
-        end.
-    End __.
-
-    
-  End MapPlus.
+  Fixpoint ntree_singleton k v : ntree (length k) :=
+    match k with
+    | [] => v
+    | k1::k' =>
+        map.singleton k1 (ntree_singleton k' v)
+    end.
+  
+  Fixpoint ntree_set k v : ntree (length k) -> ntree (length k) :=
+    match k with
+    | [] => fun _ => v
+    | k1 :: k' =>
+        fun t =>
+          match map.get t k1 with
+          | Some next => map.put t k1 (ntree_set k' v next)
+          | None => map.put t k1 (ntree_singleton k' v)
+          end
+    end.
   
 End __.
