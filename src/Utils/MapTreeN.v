@@ -46,34 +46,52 @@ Section __.
   End __.
 
   (*
-    TODO: determine whether dependent types will cause issues
-    (probably will?)
+    Assumes k has length exactly n.
    *)
-  Fixpoint ntree_get k : ntree (length k) -> option A :=
-    match k with
-    | [] => fun t => Some t
-    | k1::k' =>
-        fun t =>
-          @! let next <- map.get t k1 in
-            (ntree_get k' next)
+  Fixpoint ntree_get n : ntree n -> _ -> option A :=
+    match n with
+    | 0 => fun t k => Some t
+    | S n' =>
+        fun t k =>
+          match k with
+          | k1::k' =>
+              @! let next <- map.get t k1 in
+                (ntree_get n' next k')
+          | _ => None
+          end
     end.
 
-  Fixpoint ntree_singleton k v : ntree (length k) :=
-    match k with
-    | [] => v
-    | k1::k' =>
-        map.singleton k1 (ntree_singleton k' v)
+  (*
+    Assumes k has length exactly n.
+   *)
+  Fixpoint ntree_singleton n k v : ntree n :=
+    match n with
+    | 0 => v
+    | S n' =>
+        match k with
+        | k1 :: k' => map.singleton k1 (ntree_singleton n' k' v)
+        | _ => map.empty
+        end
     end.
   
-  Fixpoint ntree_set k v : ntree (length k) -> ntree (length k) :=
-    match k with
-    | [] => fun _ => v
-    | k1 :: k' =>
-        fun t =>
-          match map.get t k1 with
-          | Some next => map.put t k1 (ntree_set k' v next)
-          | None => map.put t k1 (ntree_singleton k' v)
+  (*
+    Assumes k has length exactly n
+   *)
+  Fixpoint ntree_set n : ntree n -> list key -> A -> ntree n :=
+    match n with
+    | 0 => fun _ _ a => a
+    | S n' =>
+        fun t k v =>
+          match k with
+          | k1 :: k' =>
+              match map.get t k1 with
+              | Some next => map.put t k1 (ntree_set n' next k' v)
+              | None => map.put t k1 (ntree_singleton n' k' v)
+              end
+          | _ => t
           end
     end.
   
 End __.
+
+Arguments ntree key%type_scope {m}%function_scope A%type_scope n%nat_scope.
