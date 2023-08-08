@@ -10,7 +10,7 @@ Require Import Tries.Canonical.
 Require Std.Sorting.Mergesort.
 Module Merge := Std.Sorting.Mergesort.Sectioned.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind MapTree.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind MapTreeN.
 From Utils Require TrieMap TrieMapInt63.
 (*From Pyrosome.Theory Require Import Core.*)
 Import Sets.
@@ -139,8 +139,6 @@ Section WithMap.
   Definition indices_of {A} `{Eqb A} (a : A) l : list nat :=
      indices_of' a 0 l.
 
-  Context (tree : map_tree idx_map).
-
   Definition ne_table : Type := ((list idx) * idx) * table.
 
   Definition ne_as_table (n : ne_table) := cons (fst n) (snd n).
@@ -177,10 +175,10 @@ Section WithMap.
     { eqb_case c c0; congruence. }
     { eqb_case x x0; congruence. }
   Qed.
-  
+
   Fixpoint build_trie' (tab : ne_table) (vars : list idx) (args : list argument)
-    : tree _ :=
-    match vars with
+    : ntree idx idx (List.length vars) :=
+    match vars as v' return ntree idx idx (List.length v') with
     | [] =>
         (* Assumes that all arguments must be constant here.
            Implied by fvs(args) <= vars.
@@ -190,11 +188,11 @@ Section WithMap.
            TODO: figure out whether we need to relax this assumption,
            e.g. for semi-naive evaluation.
          *)
-        leaf (m:= idx_map) (snd (fst tab))
+        snd (fst tab)
     | x::vars' =>
         match indices_of (var_arg x) args with
         (* unconstrained *)
-        | [] => top_node (build_trie' tab vars' args)
+        | [] => inr (build_trie' tab vars' args)
         | loc0::arg_locs =>
             let split_tab := split_by (loc0,arg_locs) tab in
             let trie_map :=
@@ -213,7 +211,7 @@ Section WithMap.
                    end)
                 split_tab
                 map.empty in
-            node trie_map
+            inl trie_map
         end
     end.
 
@@ -239,7 +237,7 @@ Section WithMap.
      Note: may still return Some in such cases.
    *)
   Definition build_tries (nodes : node_map) (vars : list idx) (clauses : list atom)
-    : option (list (tree _)) :=
+    : option (list _) :=
     list_Mmap (build_trie nodes vars) clauses.
 
 (*
@@ -255,29 +253,25 @@ Question: what dominates: unordered insertions or iteration? probably insertion
 Alternately: should I build a tree then convert to a list?
 2nd alt: can I define an intersection that directly builds sorted lists?
  *)
-  Context (intersect : forall {A B C}, (A -> B -> C) -> tree A -> tree B -> tree C).
-  Arguments intersect {A B C}%type_scope _%function_scope _ _.
 
-  (*
-    Folding over just the values of a tree map can avoid the overhead of calculating the keys.
-    TODO: add this to an appropriate interface.
-   *)
-  Context (map_tree_fold_values : forall {A B}, (A -> B -> B) -> tree A -> B -> B).
-  Arguments map_tree_fold_values {A B}%type_scope _%function_scope _ _.
   
-  Fixpoint top_tree {A} var_count : tree (list A) :=
+  Fixpoint top_tree {A} var_count : ntree idx (list A) var_count :=
     match var_count with
-    | 0 => leaf []
-    | S n => top_node (top_tree n)
+    | 0 => []
+    | S n => inr (top_tree n)
     end.
+
+  Context `{@map_plus idx idx_map}.
   
   (* We implement a simplified generic join by just iteratively intersecting the tries.
      The primary difference from standard generic join is that we do not record the full
      substitutions that satisfy the query, only the output of the functions in the query.
      This should be sufficient for our use-cases and greatly simplifies things.
    *)                                                              
-  Definition generic_join' {A} (tries : list (tree A)) var_count : list _ :=
-    map_tree_fold_values cons (List.fold_right (intersect cons) (top_tree var_count) tries) [].
+  Definition generic_join' {A} var_count (tries : list (ntree idx A var_count)) : list _ :=
+    ntree_fold _ (fun acc k _ => cons k acc)
+      var_count
+      (List.fold_right (ntree_intersect cons var_count) (top_tree var_count) tries) [].
 
   
   Record query :=
@@ -293,7 +287,7 @@ Alternately: should I build a tree then convert to a list?
   Definition generic_join (nodes : node_map) q : list (list idx) :=
     match build_tries nodes q.(free_vars) q.(clauses) with
     | None => [] (* short-circuit: includes an empty trie *)
-    | Some tries => generic_join' tries (List.length q.(free_vars))
+    | Some tries => generic_join' (List.length q.(free_vars)) tries
     end.
 
   (* Properties *)
@@ -324,6 +318,7 @@ Alternately: should I build a tree then convert to a list?
     exists has_rets args, results = map (nodes_lookup nodes) (combine has_rets (query_subst args q)).
   Abort.
 
+  (*
   Section __.
     Context (tab : table).
   Inductive trie_satisfies_clause' : list idx -> list argument -> _ -> Prop :=
@@ -346,6 +341,7 @@ Alternately: should I build a tree then convert to a list?
       trie_satisfies_clause' (x::fvs) atom_args (node m).
   End __.
   Hint Constructors trie_satisfies_clause' : utils.
+
   
   Definition trie_satisfies_clause nodes fvs clause trie : Prop :=
     match map.get nodes clause.(atom_fn) with
@@ -397,6 +393,7 @@ Alternately: should I build a tree then convert to a list?
     eapply map_ext.
     intros; reflexivity.
   Qed.
+*)
 
   (*TODO: move to List.v*)
   Lemma map_inj A B (f : A -> B)
@@ -412,6 +409,7 @@ Alternately: should I build a tree then convert to a list?
   (*TODO: move to Utils*)
   Hint Resolve incl_tl : utils.
 
+  (*
   (*TODO: move to List.v*)
   Lemma incl_strengthen {A} (a:A) l1 l2
     : ~ In a l1 ->
@@ -424,7 +422,8 @@ Alternately: should I build a tree then convert to a list?
     eapply H1 in H2;
       basic_utils_crush.
   Qed.
-
+*)
+(*
   Lemma not_in_arg_vars a args
     : ~ In (var_arg a) args ->
       ~ In a (arg_vars args).
@@ -646,6 +645,7 @@ Alternately: should I build a tree then convert to a list?
       basic_utils_crush.
     eapply build_trie_sound; eauto.
   Qed.
+*)
 
 End WithMap.
 
@@ -657,24 +657,23 @@ Module PositiveIdx.
   
 
   Definition generic_join_pos :=
-    generic_join positive _ positive (TrieMap.map _)
-      TrieMap.map Pos.leb positive_map_tree (@map_tree_intersect)
-      (@map_tree_fold_values).
+    generic_join positive _ positive (TrieMap.trie_map _)
+      TrieMap.trie_map Pos.leb (H:=TrieMap.ptree_map_plus).
 
   Local Open Scope positive.
-  Example db1 : TrieMap.map (table _) :=
+  Example db1 : TrieMap.trie_map (table _) :=
     map.put
-      (map.put map.empty 1 [([2;2;3], 1); ([2;3;3], 10)])
-      2 [([8;4], 3); ([3;1], 2)].
+      (map.put map.empty 10 [([7;7;3], 1); ([7;3;3], 9)])
+      20 [([8;4], 3); ([3;1], 7)].
 
   Local Notation query := (query positive positive).
 
   Example query1 : query :=
     Build_query _ _ [3;1;2;4;5;6]
       [
-        Build_atom _ _ 1 [4;5;6];
-        Build_atom _ _ 2 [2;3];
-        Build_atom _ _ 1 [1;1;2;3]
+        Build_atom _ _ 10 [4;5;6];
+        Build_atom _ _ 20 [2;3];
+        Build_atom _ _ 10 [1;1;2;3]
       ].
   Compute (generic_join_pos db1 query1).
   

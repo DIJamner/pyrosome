@@ -23,11 +23,14 @@ Fail Inductive tree {key} {m : forall A, map.map key A} {A} :=
 
 Section __.
   Context {key} {m : forall A, map.map key A}.
+
+  Section __.
+  
   Context (A : Type).
-  Fixpoint ntree n :=
+  Fixpoint ntree n : Type :=
     match n with
     | 0 => A
-    | S n => m (ntree n)
+    | S n => m (ntree n) + ntree n (*top*)
     end.
                                           
   Section __.
@@ -37,9 +40,13 @@ Section __.
     Fixpoint ntree_fold' n acc keystack : ntree n -> _ :=
       match n with
       | 0 => f acc (rev keystack)
-      | S n' => map.fold (fun acc k => ntree_fold' n' acc (k::keystack)) acc
+      | S n' =>
+          sum_rect _
+            (map.fold (fun acc k => ntree_fold' n' acc (k::keystack)) acc)
+            (fun _ => acc) (*NOTE!!! will return incorrect results in this case. Might be infinite, se we can't fold*)
       end.
-    
+
+    (* NOTE: will return faulty results if the tree contains any top nodes *)
     Definition ntree_fold n (t:ntree n) acc :=
       ntree_fold' n acc [] t.
 
@@ -53,11 +60,12 @@ Section __.
     | 0 => fun t k => Some t
     | S n' =>
         fun t k =>
-          match k with
-          | k1::k' =>
+          match k,t with
+          | k1::k', inl t =>
               @! let next <- map.get t k1 in
                 (ntree_get n' next k')
-          | _ => None
+          | k1::k', inr next => (ntree_get n' next k')
+          | _,_ => None
           end
     end.
 
@@ -69,26 +77,50 @@ Section __.
     | 0 => v
     | S n' =>
         match k with
-        | k1 :: k' => map.singleton k1 (ntree_singleton n' k' v)
-        | _ => map.empty
+        | k1 :: k' => inl (map.singleton k1 (ntree_singleton n' k' v))
+        | _ => inl map.empty
         end
     end.
   
   (*
     Assumes k has length exactly n
+
+    Note: will fail silently if the final node is a top node
    *)
   Fixpoint ntree_set n : ntree n -> list key -> A -> ntree n :=
     match n with
     | 0 => fun _ _ a => a
     | S n' =>
         fun t k v =>
-          match k with
-          | k1 :: k' =>
-              match map.get t k1 with
+          match k, t with
+          | k1 :: k', inl t =>
+              inl match map.get t k1 with
               | Some next => map.put t k1 (ntree_set n' next k' v)
               | None => map.put t k1 (ntree_singleton n' k' v)
               end
-          | _ => t
+          | k1 :: k', inr next =>
+              inr (ntree_set n' next k' v)
+          | _, _ => t
+          end
+    end.
+
+  End __.
+
+  Context {A B C : Type}
+    (merge : A -> B -> C)
+    `{@map_plus key m}.
+  Fixpoint ntree_intersect n : ntree A n -> ntree B n -> ntree C n :=
+    match n with
+    | 0 => merge
+    | S n' =>
+        fun t1 t2 =>
+          match t1,t2 with
+          | inl m1, inl m2 => inl (map_intersect (ntree_intersect n') m1 m2)
+          | inl m, inr c =>
+              inl (map_map (fun c' => ntree_intersect n' c' c) m)
+          | inr c, inl m =>
+              inl (map_map (ntree_intersect n' c) m)
+          | inr c1, inr c2 => inr (ntree_intersect n' c1 c2)
           end
     end.
   
