@@ -1,5 +1,4 @@
 (* An implementation of the core of egglog
-   TODO: figure out how to make the fixpoint-trie generic
  *)
 Require Import Equalities Orders ZArith Lists.List Int63.
 Import ListNotations.
@@ -14,6 +13,7 @@ From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind MapT
 From Utils Require TrieMap TrieMapInt63.
 (*From Pyrosome.Theory Require Import Core.*)
 Import Sets.
+  
 
 Section WithMap.
   Context
@@ -40,20 +40,11 @@ Section WithMap.
 
   Definition table := (named_list (list idx) idx).
   
-  (* TODO: is maintaining this as an assoc list be better? queries all perform folds, not gets *)
- Context (node_map : map.map symbol table).
+ Context (symbol_map : forall A, map.map symbol A).
 
   Context 
       (idx_map : forall A, map.map idx A)
       (idx_map_ok : forall A, map.ok (idx_map A)).
-
-  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
-  
-  Record instance := {
-      DB : node_map;
-      sort_map : idx_map idx;
-      equiv : union_find;
-    }.
 
   (* we need constants for residual queries in generic_join *)
   Variant argument := const_arg (c : idx) | var_arg (x : idx).
@@ -225,6 +216,8 @@ Section WithMap.
       atom_fn : symbol;
       atom_args : list idx;
     }.
+
+  Definition node_map := symbol_map table.
   
   (* Returns None only if the clause doesn't match any rows.
      Note: may still return Some in such cases.
@@ -264,9 +257,9 @@ Alternately: should I build a tree then convert to a list?
   Context `{@map_plus idx idx_map}.
   
   (* We implement a simplified generic join by just iteratively intersecting the tries.
-     The primary difference from standard generic join is that we do not record the full
-     substitutions that satisfy the query, only the output of the functions in the query.
-     This should be sufficient for our use-cases and greatly simplifies things.
+     Note: the running time here is proportional to the second-largest trie in the worst case,
+     whereas it should be proportional to the smallest.
+     Potential solutions: lazy tries &/or special nary-intersect (second seems easier than first)
    *)                                                              
   Definition generic_join' {A} var_count (tries : list (ntree idx A var_count)) : list _ :=
     ntree_fold _ (fun acc k _ => cons k acc)
@@ -294,9 +287,10 @@ Alternately: should I build a tree then convert to a list?
 
   (*TODO: use this here? *)
   Context `{WithDefault idx}.
-  
+
+  (*TODO: is the combine in the right order?*)
   Definition atom_args_subst args_in fvs : list idx -> list idx :=
-    map (named_list_lookup default (combine args_in fvs)).
+    map (named_list_lookup default (combine fvs args_in)).
   
   Definition query_subst (args : list idx) q : list (symbol * list idx) :=
     List.map (fun clause => (clause.(atom_fn),atom_args_subst args q.(free_vars) clause.(atom_args))) q.(clauses).
@@ -645,7 +639,230 @@ Alternately: should I build a tree then convert to a list?
       basic_utils_crush.
     eapply build_trie_sound; eauto.
   Qed.
-*)
+ *)
+
+  Definition db_map := symbol_map {n & (ntree idx idx n)}.
+
+  Context `{@map_plus symbol symbol_map}.
+
+  Definition flatten_db : db_map -> node_map :=
+    map_map (fun p => ntree_to_tuples _ (projT1 p) (projT2 p)).
+    
+  
+  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
+
+  
+  Record instance := {
+      db : db_map;
+      (*sort_map : idx_map idx;*)
+      equiv : union_find;
+      (* TODO: maintain an upper bound on the number of rows in db
+         for the purpose of ensuring termination?
+       
+      size : nat;*)
+    }.
+
+  Import StateMonad.
+
+  Definition table_put n (t : ntree idx idx n) uf ks v :=
+     match ntree_get _ n t ks with
+     | Some v1 =>
+         (*TODO: union shouldn't ever fail? check this &/or make non-option union *)
+         match UnionFind.union _ _ _ _ uf v v1 with
+         | Some (uf',v') =>
+            (* Note: needs rebuilding*)
+             (v', t, uf')
+         | None => (*should never happen if v in uf *) (v, t, uf)  
+         end
+        | None =>
+            let t' := ntree_set _ n t ks v in
+            (v, t', uf)            
+        end.
+
+  (* TODO: assumes idx merge fn. Generalize.
+     TODO: why the option out?
+   *)
+  Definition db_put s ks v i : idx * instance :=
+    match map.get i.(db) s with
+    | Some (existT _ n t) =>
+        let '(v', t', uf') := table_put _ t i.(equiv) ks v in
+        let db' := map.put i.(db) s (existT _ n t') in
+        (v,Build_instance db' uf')
+    | None =>
+        let s_ntree := ntree_singleton _ (List.length ks) ks v in
+        let db' := map.put i.(db) s (existT _ (List.length ks) s_ntree) in
+        (v, Build_instance db' i.(equiv))
+    end.
+
+  Context (idx_succ : idx -> idx).
+  
+  Definition db_get s ks : stateT instance option idx :=
+    fun i =>
+      (* TODO: abstact out the 'mutate value' pattern? *)
+      @! let (existT _ n t) <- map.get i.(db) s in
+        match ntree_get _ n t ks with
+        | Some v => Some (v, i)
+        | None =>
+            let (uf',v) := alloc _ _ _ idx_succ i.(equiv) in
+            let t' := ntree_set _ n t ks v in
+            let db' := map.put i.(db) s (existT _ n t') in
+            Some (v,Build_instance db' uf')            
+        end.
+
+  Definition find' (v : idx) : stateT _ option idx :=
+    fun uf => @!let p <- UnionFind.find _ _ _ _ uf v in ret (snd p, fst p).
+  
+  (*TODO: write instead in terms of node_map?*)
+  Definition rebuild_ntree' (uf : union_find) n (t : ntree idx idx (S n))
+    : (ntree idx idx (S n) * union_find * bool) :=
+    ntree_fold (key:=idx) _ (fun '(t,uf, changed) keys v =>
+                    unwrap_with_default (H:=(t,uf,changed))
+                      (@! let {option} (keys',uf1) <- list_Mmap (M:= stateT _ option) find' keys uf in
+                         let {option} (v', uf2) <- find' v uf1 in
+                         let (_,t', uf') := table_put _ t uf keys' v' in
+                         let changed' := (changed || eqb v v')%bool in
+                         ret {option} (t',uf',changed')))
+       (S n) t (inl map.empty : ntree idx idx (S n),uf,false).
+    
+  (*TODO: `unwrap_with_default` assumes presence in uf. Is this the best way to handle things? *)
+  Definition rebuild_ntree (uf : union_find) n : ntree idx idx n -> (ntree idx idx n * union_find*bool) :=
+    match n with
+    (* can always mark changed as false here, since rebuilding a tree0 needs at most one update *)
+    | 0 => fun x => unwrap_with_default (H:=(x,uf,false)) (Mfmap (fun x => (x,false)) (find' x uf))
+    | S n' => rebuild_ntree' uf n'
+    end.
+                               
+  Definition rebuild_once i : instance * bool :=
+      map.fold (fun '(acc, has_changed) k '(existT _ n v) =>
+                  let '(v', uf', v_has_changed) := rebuild_ntree acc.(equiv) n v in
+                  (Build_instance (map.put acc.(db) k (existT _ n v')) uf',
+                    (has_changed || v_has_changed)%bool))
+        (Build_instance map.empty i.(equiv),false) i.(db).
+
+  Fixpoint rebuild' limit (i : instance) : instance :=
+    match limit with
+    | 0 => i
+    | S n =>
+        let '(i',changed) := rebuild_once i in
+        if changed then rebuild' n i' else i'
+    end.
+
+  (* Note: partial rebuilding is sound but not complete.
+         We use a bound of 100 for now.
+         On strange match failures, check this.
+   *)
+  Definition rebuild (i : instance) : instance := rebuild' 100 i.
+  
+  (*TODO: rebuilding process requires non-functional dbs at intermediate steps
+    once we use non-idx merges
+   *)
+  
+  (*
+    Note: should be able to generate terms (e.g. proofs of internal facts like neq) in addition to equalities!
+   *)
+  Record log_op : Type :=
+    {
+      (*
+        We generalized the conclusion :- assumption ... pattern from core egglog
+        to better support multiple operations being performed on the results of a single match.
+        log_ops behave as follows:
+        - run `assumptions` query
+        - for each substitution in the result:
+          + for each conclusion in order:
+            * if the output var is not in the subst, generate fresh output id & append it to the subst
+            * apply current subst to conclusion & add the result to db
+
+       This is useful for things like recording `sort_of` entries at the same time as terms are added to the db
+
+       TODO: w/ advanced enough optimization, it will be worth generalizing further to a program
+       made up of an (ordered) sequence of queries and conclusions, to take advantage of subqueries.
+       Note: Use the var/const split for this
+       *)
+      conclusions : list (atom * idx);
+      assumptions : query;
+    }.
+  
+  Definition log_program : Type := list log_op.
+
+  Definition opt_to_list {A} o : list A :=
+    match o with Some x => [x] | None => [] end.
+
+  (*
+  Definition make_query l :=
+    let c_vars := (opt_to_list (snd l.(conclusion)) ++ atom_args (fst l.(conclusion))) in
+    let vars := List.dedup (eqb (A:=_))
+                  (List.fold_left (app (A:=_))
+                     (map atom_args l.(assumptions)) c_vars) in
+    Build_query vars l.(assumptions).
+   *)
+
+  (*
+  (*TODO: how to tell arity of conclusion to differentiate val var and no val var?*)
+  Definition apply_join_sub c fvs s : atom * option idx :=
+    let '(Build_atom f args,out) := c in
+    let args' := atom_args_subst s fvs args in
+    (Build_atom f args',Mfmap (named_list_lookup default (combine fvs s)) out).*)
+
+  Definition db_alloc '(Build_instance db equiv) : idx * instance :=
+    let '(equiv',v):= alloc _ _ _ idx_succ equiv in
+    (v, Build_instance db equiv').
+
+  (* TODO: move to Monad.v *)
+  Section __.
+    Context {M : Type -> Type} `{Monad M} {A B : Type} (f : A -> M (list B)).
+    Fixpoint list_Mflatmap (l : list A) : M (list B) :=
+      match l with
+      | [] => @! ret []
+      | a::al' =>
+          @! let b <- f a in
+            let bl' <- list_Mflatmap al' in
+            ret (b++bl')
+      end.
+  End __.
+
+  Definition state_upd {S} (f : S -> S) : state S unit := fun s => (tt, f s).
+  
+  (* TODO: generate differential instance?
+     TODO: track no change
+   *)
+  Definition apply_op changed (l : log_op) : state instance bool :=
+    fun i =>
+    (* TODO: precompute, choose a good var order as part of query optimization *)
+    let q := l.(assumptions) in
+    let subs := generic_join (flatten_db i.(db)) q in
+    (* operation to be performed per sub,cmd pair *)
+    let op_c '(fvs, sub, changed) c :=
+      let '(Build_atom f args,out) := c in
+      let args' := atom_args_subst sub fvs args in
+      match named_list_lookup_err (combine fvs sub) out with
+      | Some out_val =>
+          @! let _ <- db_put f args' out_val in
+            ret (fvs, sub, true)
+      | None =>
+        (* assumes a fixed default behavior for new rows *)
+        @! let fresh_x <- db_alloc in
+          let _ <- db_put f args' fresh_x in
+          (*TODO: why odd tuple? only need true after op_c*)
+          ret (out::fvs, fresh_x::sub, true)
+      end
+    in
+    (* operation to be performed per sub result from the query
+     *)
+    let op_sub changed s := Mfmap snd
+                      (list_Mfoldl op_c l.(conclusions) (q.(free_vars), s, changed)) in
+    (list_Mfoldl op_sub subs changed i).
+    
+  Definition run_once (p : log_program) : state instance bool :=
+    list_Mfoldl apply_op p false.    
+  
+  Fixpoint run (p : log_program) n i : instance :=
+    match n with
+    | 0 => i
+    | S n =>
+        let (changed,i') := run_once p i in
+        if changed then run p n (rebuild i') else i
+    end.
+
 
 End WithMap.
 
@@ -654,10 +871,8 @@ Module PositiveIdx.
   (*TODO: move to Eqb or sim. locaion *)
   Instance positive_Eqb : Eqb positive := Pos.eqb.
 
-  
-
   Definition generic_join_pos :=
-    generic_join positive _ positive (TrieMap.trie_map _)
+    generic_join positive _ positive (TrieMap.trie_map)
       TrieMap.trie_map Pos.leb (H:=TrieMap.ptree_map_plus).
 
   Local Open Scope positive.
@@ -675,13 +890,12 @@ Module PositiveIdx.
         Build_atom _ _ 20 [2;3];
         Build_atom _ _ 10 [1;1;2;3]
       ].
-  Compute (generic_join_pos db1 query1).
+  Time Compute (generic_join_pos db1 query1).
   
   Example query2 : query :=
     Build_query _ _ [1;2;3]
       [
-        (*TODO: bug w/ non-first arg as dup? the atom below should match 2;3;3 -> 10*)
-        Build_atom _ _ 1 [1;2;2;3]
+        Build_atom _ _ 10 [1;2;2;3]
       ].
 
   Compute (generic_join_pos db1 query2).

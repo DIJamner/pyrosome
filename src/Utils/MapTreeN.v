@@ -51,6 +51,30 @@ Section __.
       ntree_fold' n acc [] t.
 
   End __.
+  Import StateMonad.
+  Section __.
+    Context {B ST} (f : B -> list key -> A -> state ST B).
+
+    (*TODO: benchmark which is better: rev in fold, or rev in get*)
+    Fixpoint ntree_Mfold' n (acc :B) keystack : ntree n -> state ST B :=
+      match n with
+      | 0 => f acc (rev keystack)
+      | S n' =>
+          sum_rect _
+            (fun m : map.rep => map_Mfold (fun k v acc => ntree_Mfold' n' acc (k::keystack) v) m acc)
+            (fun _ => Mret acc) (*NOTE!!! will return incorrect results in this case. Might be infinite, se we can't fold*)
+      end.
+
+    (* NOTE: will return faulty results if the tree contains any top nodes *)
+    Definition ntree_Mfold n (t:ntree n) acc :=
+      ntree_Mfold' n acc [] t.
+
+  End __.
+
+
+  
+  Definition ntree_to_tuples n (t : ntree n) : list (list key * A) :=
+    ntree_fold (fun acc k v => cons (k,v) acc) n t [].
 
   (*
     Assumes k has length exactly n.
