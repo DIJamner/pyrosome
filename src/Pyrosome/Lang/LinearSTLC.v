@@ -41,7 +41,7 @@ Definition linear_stlc_def : lang :=
       "v" : #"val" "H" "A"
       ----------------------------------------------- ("Linear-STLC-beta")
       #"linear_app" (#"ret" (#"linear_lambda" "A" "e")) (#"ret" "v")
-      = #"exp_subst" (#"snoc" #"id" "v") "e"
+      = #"exp_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
       : #"exp" (#"conc" "G" "H") "B"
   ]
   ]}.
@@ -110,6 +110,8 @@ Definition linear_stlc_def : lang :=
   ]}.
 *)
 
+Compute linear_stlc_def.
+
 Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
@@ -118,9 +120,10 @@ Proof.
   {
     break_elab_rule.
     unfold Model.eq_term; compute_eq_compilation.
-    by_reduction. (*TODO: why isn't this solved by automation?*)
-    Unshelve.
-    all: try cleanup_auto_elab.
+    by_reduction.
   }
+  break_elab_rule.
+  Unshelve.
+  all: cleanup_auto_elab.
 Qed.
 #[export] Hint Resolve linear_stlc_wf : elab_pfs.

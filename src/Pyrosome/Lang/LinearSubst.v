@@ -35,7 +35,7 @@ Definition linear_value_subst_def : lang :=
   ];
   [:| "G" : #"env"
        -----------------------------------------------
-       #"id" : #"sub" "G" "G"
+       #"id" "G" : #"sub" "G" "G"
   ];
   [:| "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" "G1" "G2",
@@ -45,21 +45,22 @@ Definition linear_value_subst_def : lang :=
   ];
   [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
       ----------------------------------------------- ("id_right")
-      #"cmp" "f" #"id" = "f" : #"sub" "G" "G'"
+      #"cmp" "f" (#"id" "G'") = "f" : #"sub" "G" "G'"
   ];
   [:= "G" : #"env", "G'" : #"env", "f" : #"sub" "G" "G'"
        ----------------------------------------------- ("id_left")
-       #"cmp" #"id" "f" = "f" : #"sub" "G" "G'"
+       #"cmp" (#"id" "G") "f" = "f" : #"sub" "G" "G'"
   ];
-   [:= "G1" : #"env",
-         "G2" : #"env",
-         "G3" : #"env",
-         "G4" : #"env",
-         "f" : #"sub" "G1" "G2",
-         "g" : #"sub" "G2" "G3",
-         "h" : #"sub" "G3" "G4"
-         ----------------------------------------------- ("cmp_assoc")
-         #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h" : #"sub" "G1" "G4"
+  [:= "G1" : #"env",
+      "G2" : #"env",
+      "G3" : #"env",
+      "G4" : #"env",
+      "f" : #"sub" "G1" "G2",
+      "g" : #"sub" "G2" "G3",
+      "h" : #"sub" "G3" "G4"
+      ----------------------------------------------- ("cmp_assoc")
+      #"cmp" "f" (#"cmp" "g" "h") = #"cmp" (#"cmp" "f" "g") "h"
+      : #"sub" "G1" "G4"
   ];
   [s|
       -----------------------------------------------
@@ -76,7 +77,7 @@ Definition linear_value_subst_def : lang :=
   ];
   [:= "G" : #"env", "A" : #"ty", "e" : #"val" "G" "A"
        ----------------------------------------------- ("val_subst_id")
-       #"val_subst" #"id" "e" = "e" : #"val" "G" "A"
+       #"val_subst" (#"id" "G") "e" = "e" : #"val" "G" "A"
   ];
   [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
        "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
@@ -130,8 +131,23 @@ Definition linear_value_subst_def : lang :=
   [:= "G": #"env", "G'": #"env",
       "g": #"sub" "G" "G'"
       ----------------------------------------------- ("csub_emp")
-      #"csub" "g" #"id" = "g":
-      #"sub" "G" (#"conc" "G'" #"emp")
+      #"csub" "g" (#"id" #"emp") = "g":
+      #"sub" "G" "G'"
+  ];
+  [:= "G": #"env", "H": #"env"
+      ----------------------------------------------- ("csub_id")
+      #"csub" (#"id" "G") (#"id" "H") = #"id" (#"conc" "G" "H") :
+      #"sub" (#"conc" "G" "H") (#"conc" "G" "H")
+  ];
+  [:= "G1": #"env", "G1'": #"env", "g1": #"sub" "G1" "G1'",
+      "G2": #"env", "G2'": #"env", "g2": #"sub" "G2" "G2'",
+      "G3": #"env", "G3'": #"env", "g3": #"sub" "G3" "G3'"
+      ----------------------------------------------- ("csub_assoc")
+      #"csub" (#"csub" "g1" "g2") "g3" =
+      #"csub" "g1" (#"csub" "g2" "g3") :
+      #"sub" (#"conc" "G1" (#"conc" "G2" "G3"))
+             (#"conc" "G1'" (#"conc" "G2'" "G3'"))
+
   ];
   [:= "G1": #"env", "G2": #"env", "G3": #"env",
       "H1": #"env", "H2": #"env", "H3": #"env",
@@ -143,47 +159,22 @@ Definition linear_value_subst_def : lang :=
       #"sub" (#"conc" "G1" "H1") (#"conc" "G3" "H3")
   ];
 
-  [:| "G" : #"env", "G'" : #"env", "V": #"env",
-      "A" : #"ty",
-      "g" : #"sub" "G" "G'",
-      "v" : #"val" "V" "A" (*we restrict substitutions to values *)
-       -----------------------------------------------
-       #"snoc" "g" "v" : #"sub" (#"conc" "G" "V") (#"ext" "G'" "A")
-  ];
   [:|  "A" : #"ty"
        -----------------------------------------------
-       #"hd" : #"val" (#"ext" #"emp" "A") "A"
+       #"hd" "A" : #"val" (#"ext" #"emp" "A") "A"
   ];
-  [:= "V" : #"env",
+
+  [:| "G" : #"env",
       "A" : #"ty",
-      "v" : #"val" "V" "A"
-      ----------------------------------------------- ("snoc_hd")
-      #"val_subst" (#"snoc" #"id" "v") #"hd" = "v"
-      : #"val" "V" "A"
+      "v" : #"val" "G" "A" (*we restrict substitutions to values *)
+       -----------------------------------------------
+       #"vsub" "v" : #"sub" "G" (#"ext" #"emp" "A")
   ];
-  [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
-      "f" : #"sub" "G1" "G2",
-      "g" : #"sub" "G2" "G3",
-      "V" : #"env",
-      "A" : #"ty",
-      "v" : #"val" "V" "A"
-      ----------------------------------------------- ("cmp_snoc")
-      #"cmp" (#"csub" "f" #"id") (#"snoc" "g" "v")
-      = #"snoc" (#"cmp" "f" "g") "v"
-      : #"sub" (#"conc" "G1" "V") (#"ext" "G3" "A")
-  ];
-  [:= "G": #"env", "G'": #"env",
-      "H": #"env", "H'": #"env",
-      "V": #"env",
-      "g": #"sub" "G" "G'",
-      "h": #"sub" "H" "H'",
-      "A": #"ty",
-      "v": #"val" "V" "A"
-      ----------------------------------------------- ("csub_snoc")
-      #"csub" "g" (#"snoc" "h" "v") =
-      #"snoc" (#"csub" "g" "h") "v":
-      #"sub" (#"conc" "G" (#"conc" "H" "V"))
-             (#"ext" (#"conc" "G'" "H'") "A")
+
+  [:= "A" : #"ty"
+      ----------------------------------------------- ("vsub_hd")
+      #"vsub" (#"hd" "A") = #"id" (#"ext" #"emp" "A") :
+      #"sub" (#"ext" #"emp" "A") (#"ext" #"emp" "A")
   ];
 
   (* explicit substitution for env*)
@@ -230,7 +221,7 @@ Definition linear_value_subst_def : lang :=
 
 #[export] Hint Resolve (inst_for_db "emp") : injective_con.
 #[export] Hint Resolve (inst_for_db "ext") : injective_con.
-#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
+#[export] Hint Resolve (inst_for_db "vsub") : injective_con.
 
 (*TODO: use elab_lang notation?*)
 Derive linear_value_subst
@@ -238,18 +229,6 @@ Derive linear_value_subst
        As linear_value_subst_wf.
 Proof.
   auto_elab.
-  {
-    break_elab_rule.
-    2: term_refl.
-    {
-      cbn.
-      by_reduction.
-    }
-    Unshelve.
-    all: try cleanup_auto_elab.
-    all:shelve.
-  }
-  all:auto_elab.  
 Qed.
 #[export] Hint Resolve linear_value_subst_wf : elab_pfs.
 
@@ -267,7 +246,7 @@ Definition linear_exp_subst_def : lang :=
     ];
     [:= "G" : #"env", "A" : #"ty", "e" : #"exp" "G" "A"
         ----------------------------------------------- ("exp_subst_id")
-        #"exp_subst" #"id" "e" = "e" : #"exp" "G" "A"
+        #"exp_subst" (#"id" "G") "e" = "e" : #"exp" "G" "A"
     ];
     [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
         "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
@@ -312,7 +291,7 @@ Definition linear_block_subst_def : lang :=
     ];
     [:= "G" : #"env", "e" : #"blk" "G"
         ----------------------------------------------- ("blk_subst_id")
-        #"blk_subst" #"id" "e" = "e" : #"blk" "G"
+        #"blk_subst" (#"id" "G") "e" = "e" : #"blk" "G"
     ];
     [:= "G1" : #"env", "G2" : #"env", "G3" : #"env",
         "f" : #"sub" "G1" "G2", "g" : #"sub" "G2" "G3",
@@ -338,11 +317,14 @@ Definition definitely_fresh (s : string) (l : list string) :=
 Definition choose_fresh (s : string) (c : ctx) :=
   if negb (inb s (map fst c)) then s else definitely_fresh s (map fst c).
 
-Definition under s :=
-  {{e #"snoc" {s} #"hd"}}.
+Definition only t := {{e #"ext" #"emp" {t} }}.
+
+Definition under s t :=
+  {{e #"csub" {s} (#"id" {only t})}}.
 
 Definition get_subst_constr s :=
   match s with
+  | "blk" => Some "blk_subst"
   | "exp" => Some "exp_subst"
   | "val" => Some "val_subst"
   | _ => None
@@ -366,9 +348,9 @@ Section GenRHSSubterms.
    document &/or fix *)
   Fixpoint gen_arg_subst s :=
     match s with
-    | {{e#"emp"}} => {{e#"id"}}
+    | {{e#"emp"}} => {{e #"id" #"emp"}}
     | var G' => subst_for Gs gs G'
-    | {{e#"ext" {s'} {_} }} => under (gen_arg_subst s')
+    | {{e#"ext" {s'} {t} }} => under (gen_arg_subst s') t
     | _ => {{e#"ERR2" {s} }}
     end.
 
@@ -410,7 +392,7 @@ Fixpoint lower G :=
     | String a s => String (lower_ascii a) (lower s)
     end.
 
-Fixpoint make_fresh_subs Gs c : list string * list string * ctx :=
+Fixpoint make_fresh_subs Gs c :=
     match Gs with
     | [] => ([], [], c)
     | G::Gs' =>
