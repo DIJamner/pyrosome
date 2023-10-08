@@ -689,6 +689,9 @@ Ltac redex_steps_with lang name :=
 
 
 Ltac compute_eq_compilation :=
+  try lazymatch goal with
+    | |- Model.eq_term _ _ _ _ => unfold Model.eq_term
+    end;
   match goal with
   |[|- eq_sort ?l ?ctx ?t1 ?t2] =>
    let ctx' := eval vm_compute in ctx in
@@ -718,16 +721,6 @@ Ltac cbn_eq_goal :=
          let e2' := eval cbn in e2 in
            let t' := eval cbn in t in
              change_no_check (eq_term l ctx' e1' e2' t')
-  end.
-
-Ltac cbn_elab_goal :=
-  lazymatch goal with
-  | [|- elab_term ?l ?ctx ?e ?ee ?t] =>
-      let ctx' := eval cbn in ctx in
-        let e' := eval cbn in e in
-          let ee' := eval cbn in ee in
-            let t' := eval cbn in t in
-              change_no_check (elab_term l ctx' e' ee' t')
   end.
 
 Ltac lhs_concrete :=
@@ -861,7 +854,10 @@ Ltac try_break_elab_term :=
         (*elab_args -> list elab_term; should never fail.
         returns goals for explicit terms,
         shelves goals for implicit terms *)
-        break_down_elab_args :=
+    break_down_elab_args :=
+    (*TODO: this is the rare case; for performance make it go later
+      (requires converting the others to simple eapply?) *)
+    (simple eapply elab_args_cons_im_ann; [ solve_len_eq | repeat try_break_elab_term | break_down_elab_args ]) ||
     (eapply elab_args_cons_ex'; [solve_len_eq |repeat try_break_elab_term | break_down_elab_args])
     || (eapply elab_args_cons_im; [break_down_elab_args | shelve (*TODO: what to run here?*)])
     || eapply elab_args_nil.
@@ -906,7 +902,7 @@ Create HintDb auto_elab discriminated.
 
 Ltac split_rule_elab :=
   eapply elab_lang_cons_nth_tail;
-  [ compute; reflexivity
+  [ cbn - [ann_cons annotation]; reflexivity
   | compute; reflexivity
   | apply (use_compute_fresh _); compute; reflexivity |
   (*fail 2 since this will be used in a repeat *)
