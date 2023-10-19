@@ -129,8 +129,7 @@ auto_elab_compiler; try compute_eq_compilation.
   + eredex_steps_with linear_value_subst "exch_cmp".
   + compute_eq_compilation. term_refl.
 - cbv. (* should generate eq_sort goal instead *) kill.
-- kill.
-  (* hide_implicits.
+- hide_implicits.
   eapply eq_term_trans; cycle 1.
   { eredex_steps_with linear_block_subst "blk_subst_id". }
   compute_eq_compilation.
@@ -155,9 +154,9 @@ auto_elab_compiler; try compute_eq_compilation.
   + econstructor. { econstructor. }
     unfold Model.eq_term.
     instantiate (1 := {{s #"sub" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) }}).
-    kill.
     compute_eq_compilation.
     eapply eq_term_trans.
+    Print eq_term_subst.
     { eredex_steps_with linear_value_subst "csub_id". }
 
 
@@ -194,7 +193,7 @@ auto_elab_compiler; try compute_eq_compilation.
     - cleanup_auto_elab. }
 
     eapply eq_term_trans; cycle 1.
-    { eredex_steps_with linear_value_subst "conc_ext". } *)
+    { eredex_steps_with linear_value_subst "conc_ext". }
 - hide_implicits. kill.
 - cbv. (* should generate eq_sort *) kill.
 - hide_implicits. kill.
@@ -236,7 +235,7 @@ Definition linear_cps_prod_lang_def : lang :=
       "e" : #"blk" (#"ext" (#"ext" "K" "A") "B")
       ----------------------------------------------- ("eval pm_pair")
       #"pm_pair" (#"pair" "v1" "v2") "e"
-      = #"blk_subst" (#"snoc" (#"snoc" #"id" "v1") "v2") "e"
+      = #"blk_subst" (#"csub" (#"id" "K") (#"csub" (#"vsub" "v1") (#"vsub" "v2"))) "e"
       : #"blk" (#"conc" "K" (#"conc" "G" "H"))
   ];
   [:= "G" : #"env", "H" : #"env",
@@ -244,8 +243,8 @@ Definition linear_cps_prod_lang_def : lang :=
       "v" : #"val" "H" (#"prod" "A" "B"),
       "e" : #"blk" (#"ext" "G" (#"prod" "A" "B"))
       ----------------------------------------------- ("prod_eta")
-      #"pm_pair" "v" (#"blk_subst" (#"snoc" #"id" (#"pair" #"hd" #"hd")) "e")
-      = #"blk_subst" (#"snoc" #"id" "v") "e"
+      #"pm_pair" "v" (#"blk_subst" (#"csub" (#"id" "G") (#"vsub" (#"pair" (#"hd" "A") (#"hd" "B")))) "e")
+      = #"blk_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
       : #"blk" (#"conc" "G" "H")
   ] ]}.
 
@@ -255,12 +254,9 @@ Derive linear_cps_prod_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
        As linear_cps_prod_wf.
 Proof. auto_elab.
-  {
-    break_elab_rule.
-    { term_refl. }
-    all: unfold Model.eq_term; compute_eq_compilation;
-    by_reduction.
-  }
+  break_elab_rule.
+  all: unfold Model.eq_term; compute_eq_compilation;
+  by_reduction.
   Unshelve.
   all: cleanup_auto_elab.
 Qed.
