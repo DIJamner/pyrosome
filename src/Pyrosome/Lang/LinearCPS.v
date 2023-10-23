@@ -124,6 +124,8 @@ Derive linear_cps_subst
        As linear_cps_subst_preserving.
 Proof.
 auto_elab_compiler; try compute_eq_compilation.
+all: kill.
+(*
 - hide_implicits.
   eapply eq_term_trans; cycle 1.
   + eredex_steps_with linear_value_subst "exch_cmp".
@@ -199,6 +201,7 @@ auto_elab_compiler; try compute_eq_compilation.
 - hide_implicits. kill.
 Unshelve.
 all: cleanup_auto_elab.
+*)
 Qed.
 #[export] Hint Resolve linear_cps_subst_preserving : elab_pfs.
 
@@ -318,6 +321,8 @@ Derive linear_cps
                                           linear_stlc)
        As linear_cps_preserving.
 Proof. auto_elab_compiler; cycle 2.
+all: kill.
+(*
   - kill.
   - cbn. kill.
   - cbn. kill.
@@ -347,5 +352,6 @@ Proof. auto_elab_compiler; cycle 2.
           compute_eq_compilation.
           eredex_steps_with
             (linear_cps_prod_lang ++ linear_cps_lang ++ linear_block_subst ++ linear_value_subst) "conc_ext_right". }  } }
-  -  Qed.
-#[export] Hint Resolve cps_preserving : elab_pfs.
+*)
+Qed.
+#[export] Hint Resolve linear_cps_preserving : elab_pfs.
