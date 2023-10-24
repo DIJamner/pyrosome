@@ -329,6 +329,25 @@ Proof.
   eauto with lang_core.
 Qed.
 
+
+Definition annotation (x : V) (e : term) : option term := None.
+Definition ann_cons an l : list term :=
+  match an with
+  | Some e => e::l
+  | None => l
+  end.
+
+Lemma elab_args_cons_im_ann : forall (l : lang) c s args es c' name e ee t,
+    len_eq es c' ->
+    elab_term l c e ee t[/with_names_from c' es/] ->
+    elab_args l c s args es c' ->
+    elab_args l c (ann_cons (annotation name e) s) args (ee::es) ((name,t)::c').
+Proof.
+  intros.
+  cbv [ann_cons annotation].
+  eapply elab_args_cons_im; eauto using elab_term_implies_wf.
+Qed.
+
 End WithVar.
 
 #[export] Hint Resolve elab_ctx_preserves_fresh : lang_core.
@@ -372,3 +391,56 @@ Ltac solve_len_eq := solve[ repeat constructor].
 Ltac compute_everywhere e :=
   let e' := eval vm_compute in e in
       change e with e' in *.
+
+Declare Custom Entry ann_arg.
+Declare Custom Entry ann_arg_list.
+
+Notation "a" := (Some a) (in custom ann_arg at level 40, a custom arg).
+Notation "@( x ':=' e )" :=
+  (annotation x e)
+    (in custom ann_arg at level 0,
+        e custom term at level 99,
+        x constr at level 0,
+        format "'[hv' @( x  :=  e ) ']'").
+
+
+  Notation "@ c al" :=
+    (con c%string al)
+      (right associativity,
+        in custom term at level 60,
+           c constr at level 0,
+           al custom ann_arg_list,
+           format "'[' @ c al ']'").
+  
+  Notation "@ c al" :=
+    (scon c%string al)
+      (right associativity,
+        in custom sort at level 60,
+           c constr at level 0,
+           al custom ann_arg_list,
+           format "'[' @ c al ']'").
+
+Notation "a1 .. an" :=
+  (ann_cons an .. (ann_cons a1 nil) ..)
+    (right associativity,
+      in custom ann_arg_list at level 50,
+        a1 custom ann_arg, an custom ann_arg,
+        format " '[hv' a1  ..  an ']'").
+
+
+Goal False.
+  pose {{e @"foo" "bar" #"baz" @("x" := #"5") #"qux" }}.
+  pose {{e @"hd" @("A" := "A") }}.
+  pose {{e @"foo" "bar" #"baz" @("y" := #"f" "x") @("x" := #"5") #"qux" }}.
+Abort.
+
+Ltac cbn_elab_goal :=
+  lazymatch goal with
+  | |- elab_term ?l ?ctx ?e ?ee ?t =>
+      let ctx' := eval cbn - [ann_cons annotation] in ctx in
+        let e' := eval cbn - [ann_cons annotation] in e in
+          let ee' := eval cbn - [ann_cons annotation] in ee in
+            let t' := eval cbn - [ann_cons annotation] in t in
+              change_no_check (elab_term l ctx' e' ee' t')
+  end.
+

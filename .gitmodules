@@ -4,3 +4,6 @@
 [submodule "canonical-binary-tries"]
 	path = canonical-binary-tries
 	url = https://github.com/xavierleroy/canonical-binary-tries
+[submodule "coq-stdlib-edits"]
+	path = coq-stdlib-edits
+	url = https://github.com/DIJamner/coq-stdlib-edits

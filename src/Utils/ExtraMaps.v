@@ -122,3 +122,25 @@ Ltac maps_equal :=
     end;
   subst;
   try congruence.
+
+
+Section __.
+
+  Context {key : Type}.
+  Context (m : forall A, map.map key A).
+  
+  (* TODO: define map_plus_ok *)
+  (* Extra features that are generally easy to implement on a map,
+     but can be implemented more efficiently directly than by map.fold
+   *)
+  Class map_plus : Type := {
+      map_intersect : forall {A B C}, (A -> B -> C) -> m A -> m B -> m C;
+      map_fold_values : forall {A B}, (A -> B -> B) -> m A -> B -> B;
+      map_map : forall {A B}, (A -> B) -> m A -> m B;
+    }.
+
+End __.
+
+Arguments map_intersect {key}%type_scope {m}%function_scope {map_plus} {A B C}%type_scope _%function_scope _ _.
+Arguments map_fold_values {key}%type_scope {m}%function_scope {map_plus} {A B}%type_scope _%function_scope _ _.
+Arguments map_map {key}%type_scope {m}%function_scope {map_plus} {A B}%type_scope _%function_scope _.

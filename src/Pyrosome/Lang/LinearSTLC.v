@@ -115,15 +115,5 @@ Compute linear_stlc_def.
 Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
-Proof.
-  auto_elab.
-  {
-    break_elab_rule.
-    unfold Model.eq_term; compute_eq_compilation.
-    by_reduction.
-  }
-  break_elab_rule.
-  Unshelve.
-  all: cleanup_auto_elab.
-Qed.
+Proof. auto_elab. Qed.
 #[export] Hint Resolve linear_stlc_wf : elab_pfs.

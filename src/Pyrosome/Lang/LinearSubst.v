@@ -227,9 +227,7 @@ Definition linear_value_subst_def : lang :=
 Derive linear_value_subst
        SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
        As linear_value_subst_wf.
-Proof.
-  auto_elab.
-Qed.
+Proof. auto_elab. Qed.
 #[export] Hint Resolve linear_value_subst_wf : elab_pfs.
 
 

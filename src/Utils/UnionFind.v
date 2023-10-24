@@ -1996,10 +1996,6 @@ Section __.
 
     Hint Rewrite map.get_remove_same : utils.
     Hint Rewrite map.get_remove_diff using congruence : utils.
-
-    
-    Ltac eqb_case i j :=
-      pose proof (eqb_spec i j); destruct (eqb i j);[ subst i |].
     
     Lemma disjoint_put_remove (x x0 : idx_map) i j
       : map.disjoint x x0 ->
