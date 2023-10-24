@@ -66,12 +66,7 @@ Derive linear_cps_lang
                                linear_cps_lang)
        As cps_lang_wf.
 Proof.
-  auto_elab;
-  break_elab_rule;
-  unfold Model.eq_term;
-  by_reduction.
-  Unshelve.
-  all: cleanup_auto_elab.
+  auto_elab.
 Qed.
 
 #[export] Hint Resolve cps_lang_wf : elab_pfs.
@@ -256,13 +251,7 @@ Definition linear_cps_prod_lang_def : lang :=
 Derive linear_cps_prod_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
        As linear_cps_prod_wf.
-Proof. auto_elab.
-  break_elab_rule.
-  all: unfold Model.eq_term; compute_eq_compilation;
-  by_reduction.
-  Unshelve.
-  all: cleanup_auto_elab.
-Qed.
+Proof. auto_elab. Qed.
 #[export] Hint Resolve linear_cps_prod_wf : elab_pfs.
 
 Print linear_cps_lang.
