@@ -977,6 +977,34 @@ Qed.
 
 Hint Resolve rule_in_ctx_wf : lang_core.
 
+
+Lemma eq_term_step (l : lang) name c e1 e2 t s c' e1' e2' (t' : sort)
+  : wf_lang l ->
+    In (name, term_eq_rule c e1 e2 t) l ->
+    len_eq s c ->
+    let s := combine (map fst c) s in
+    t' = t [/s /] \/ eq_sort l c' t [/s/] t' ->
+    e1' = e1 [/s /] \/ eq_term l c' t [/s/]  e1 [/s/] e1' ->
+    e2' = e2 [/s /] \/ eq_term l c' t [/s/]  e2 [/s/] e2' ->
+    wf_subst l c' s c ->
+    eq_term l c' t' e1' e2'.
+Proof.
+  intros; subst.
+  intuition subst.
+  all:lazymatch goal with
+      | |- eq_term _ _ ?t ?e1 ?e2 =>
+          lazymatch t with _ [/ _ /] => idtac
+                      | _ => eapply eq_term_conv; eauto using eq_sort_sym;[] end;
+          lazymatch e1 with _ [/ _ /] => idtac
+                       | _ => eapply eq_term_trans; [ now eauto using eq_term_sym|]
+          end;
+          lazymatch e2 with _ [/ _ /] => idtac
+                       | _ => eapply eq_term_trans; [| now eauto using eq_term_sym]
+          end;
+          eapply eq_term_subst; basic_core_crush
+      end.
+Qed.
+
 Ltac use_rule_in_wf :=
     match goal with
       [ H : wf_lang_ext _ ?l,
