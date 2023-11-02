@@ -72,6 +72,6 @@ clean: Makefile.coq
 	find . -type f \( -name '*~' -o -name '*.glob' -o -name '*.aux' -o -name '.lia.cache' -o -name '.nia.cache' \) -delete
 	rm -f Makefile.coq Makefile.coq.conf _CoqProject
 
-clean_deps: clean_coqutil clean_tries
+clean_deps: clean_coqutil clean_tries clean_stdlib
 
 clean_all: clean_deps clean
