@@ -190,6 +190,102 @@ Section WithVar.
           : forall c e t, wf_term c e t -> well_scoped (map fst c) e;
         }.
 
+       Context (Model_ok : Model_ok).
+       
+       (* The library version of this tactic is defined later, in Term.v*)
+       Local Ltac fold_Substable :=
+         try change (args_subst ?s ?e) with e[/s/];
+         try change (subst_cmp ?s ?e) with e[/s/];
+         try change (apply_subst0 ?s ?e) with e[/s/].
+
+       
+       Lemma eq_args_length_eq_l c c' s1 s2
+         : eq_args c c' s1 s2 ->
+           Datatypes.length c' = Datatypes.length s1.
+       Proof.
+         induction 1; basic_goal_prep; basic_utils_crush.
+       Qed.
+       #[local] Hint Resolve eq_args_length_eq_l : utils.
+
+       Lemma eq_args_length_eq_r c c' s1 s2
+         : eq_args c c' s1 s2 ->
+           Datatypes.length c' = Datatypes.length s2.
+       Proof.
+         induction 1; basic_goal_prep; basic_utils_crush.
+       Qed.
+       #[local] Hint Resolve eq_args_length_eq_r : utils.
+
+       Lemma eq_args_subst_monotonicity
+         : forall c c' s1 s2,
+           eq_args c c' s1 s2 ->
+           wf_ctx c -> 
+           wf_ctx c' -> 
+           forall c'' s1' s2',
+             eq_subst c'' c s1' s2' ->
+             eq_args c'' c' s1[/s1'/] s2[/s2'/].
+       Proof.
+         induction 1;
+           basic_goal_prep;
+           constructor.
+         {
+           fold_Substable.
+           safe_invert H2.
+           basic_utils_crush.
+         }
+         {
+           fold_Substable.
+           safe_invert H2.
+           rewrite with_names_from_args_subst.
+           unfold apply_subst at 2; cbn.
+           rewrite <- subst_assoc; eauto; try typeclasses eauto.
+           2:{
+             rewrite map_fst_with_names_from.
+             1:eapply wf_sort_implies_ws; eauto.
+             basic_utils_crush.
+           }
+           eapply eq_term_subst; cycle 1; eauto.
+         }
+       Qed.
+
+       
+       Lemma wf_subst_dom_eq c c' s
+         : wf_subst c s c' ->
+           map fst s = map fst c'.
+       Proof.
+         induction 1; basic_goal_prep; basic_utils_crush.
+       Qed.
+       #[local] Hint Resolve wf_subst_dom_eq : utils.
+       
+       Lemma wf_subst_subst_monotonicity
+         : forall c c' s,
+           wf_subst c s c' ->
+           wf_ctx c -> 
+           wf_ctx c' -> 
+           forall c'' s',
+             wf_subst c'' s' c ->
+             wf_subst c'' s[/s'/] c'.
+       Proof.
+         induction 1;
+           basic_goal_prep;
+           constructor.
+         {
+           fold_Substable.
+           safe_invert H2.
+           basic_utils_crush.
+         }
+         {
+           fold_Substable.
+           safe_invert H2.
+           unfold apply_subst at 3; cbn.
+           rewrite <- subst_assoc; eauto; try typeclasses eauto.
+           2:{
+             erewrite wf_subst_dom_eq; eauto.
+             eapply wf_sort_implies_ws; eauto.
+           }
+           eapply wf_term_subst_monotonicity; eauto.
+         }
+       Qed.         
+
     End WithModel.
 
   End WithModelArgs.

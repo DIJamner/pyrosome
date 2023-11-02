@@ -735,12 +735,6 @@ Proof.
 Qed.
 Hint Resolve eq_subst_dom_eq_l : lang_core.
      
-Lemma wf_subst_dom_eq (l : lang) c c' s
-  : wf_subst l c s c' ->
-    map fst s = map fst c'.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
 Hint Resolve wf_subst_dom_eq : lang_core.
 
 Lemma eq_subst_refl (l : lang) c c' s : wf_subst l c s c' -> eq_subst l c c' s s.
@@ -1568,21 +1562,7 @@ Theorem lang_sum_wf l1 l2 l_pre
 Proof.
 *)
 
-
-Lemma eq_args_length_eq_l (l : lang) c c' s1 s2
-  : eq_args l c c' s1 s2 ->
-    Datatypes.length c' = Datatypes.length s1.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
 Hint Resolve eq_args_length_eq_l : lang_core.
-
-Lemma eq_args_length_eq_r (l : lang) c c' s1 s2
-  : eq_args l c c' s1 s2 ->
-    Datatypes.length c' = Datatypes.length s2.
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
 Hint Resolve eq_args_length_eq_r : lang_core.
 
 
