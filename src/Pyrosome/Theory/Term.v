@@ -768,7 +768,8 @@ Module Notations.
     (con c%string [])
       (right associativity,in custom arg at level 0, c constr at level 0,
                               format "# c").
-  Notation "( e )" := e (in custom arg at level 0, e custom term at level 100).
+  Notation "( e )" := e (in custom arg at level 0, e custom term at level 100, 
+           format "'[' ( e ) ']'").
 
   Notation "" := [] (in custom arg_list at level 0).
   Notation "a1 .. an" :=
