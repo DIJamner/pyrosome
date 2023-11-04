@@ -1438,13 +1438,6 @@ Scheme wf_sort_ind'' := Minimality for wf_sort Sort Prop
              from wf_sort_ind'', wf_term_ind'', wf_args_ind''''.
   End WFJudgeInd.
 
-Lemma eq_args_implies_eq_subst l c c' s1 s2
-  : eq_args l c c' s1 s2 ->
-    eq_subst l c c' (with_names_from c' s1) (with_names_from c' s2).
-Proof.
-  induction 1; basic_goal_prep; basic_core_crush.
-Qed.
-
 Local Lemma lang_insert_mono (l' l : lang) name r
   : (forall c t1 t2,
         eq_sort (l' ++ l) c t1 t2 ->
