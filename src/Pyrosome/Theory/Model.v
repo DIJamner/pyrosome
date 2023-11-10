@@ -338,6 +338,35 @@ Section WithVar.
            }
          }
        Qed.
+       
+       Lemma eq_args_sym c c' s1 s2
+         : wf_ctx c' ->
+           eq_args c c' s1 s2 ->
+           eq_args c c' s2 s1.
+       Proof.
+         intros Hctx H'; revert Hctx;
+           induction H';
+           subst;
+           basic_goal_prep;
+           constructor.
+         {
+           safe_invert Hctx.
+           eauto.
+         }
+         {
+           safe_invert Hctx.
+           eapply eq_term_sym;
+           eapply eq_term_conv; eauto.
+           eapply eq_sort_subst; eauto.
+           2:{
+             eapply eq_sort_refl; eauto.
+           }
+           {
+             eapply eq_args_implies_eq_subst.
+             eauto.
+           }
+         }
+       Qed.
 
     End WithModel.
 
