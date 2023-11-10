@@ -416,6 +416,8 @@ c |- e1 = e2 : t'
       basic_core_crush.
   Qed.
   Hint Resolve eq_args_implies_eq_subst : lang_core.
+
+  
   
 (*
   Lemma cut_admissible1
@@ -529,14 +531,14 @@ c |- e1 = e2 : t'
 
   Definition weak_subst_cut_admissible c c' s1 s2 :=
     wf_ctx c -> ctx_cut_admissible c ->
-    wf_ctx c' ->
+    wf_ctx c' -> ctx_cut_admissible c' ->
     forall (c'' : Term.ctx V) (s1' s2' : Term.subst V),
       eq_subst c'' c s1' s2' ->
       eq_subst c'' c' s1 [/s1' /] s2 [/s2' /].
   
   Definition weak_args_cut_admissible c c' s1 s2 :=
     wf_ctx c -> ctx_cut_admissible c ->
-    wf_ctx c' ->
+    wf_ctx c' -> ctx_cut_admissible c' ->
     forall (c'' : Term.ctx V) s1' s2',
       eq_subst c'' c s1' s2' ->
       eq_args c'' c' s1 [/s1' /] s2 [/s2' /].
@@ -654,8 +656,6 @@ c |- e1 = e2 : t'
     eapply H2; eauto.
   Qed.
 
-  
-  (**)
   Lemma refl_term_lookup c0 c s1 s2 n t
     : eq_subst c0 c s1 s2 ->
       wf_ctx c ->
@@ -690,6 +690,74 @@ c |- e1 = e2 : t'
   }
 Qed.
 Hint Resolve refl_term_lookup : lang_core.  
+
+
+Lemma eq_subst_map_fst_r c0 c s0 s3
+  : eq_subst c0 c s0 s3 -> map fst s3 = map fst c.
+Proof.
+  induction 1;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+#[local] Hint Rewrite eq_subst_map_fst_r using eassumption : lang_core.
+
+Lemma eq_subst_map_fst_l c0 c s0 s3
+  : eq_subst c0 c s0 s3 -> map fst s0 = map fst c.
+Proof.
+  induction 1;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+#[local] Hint Rewrite eq_subst_map_fst_l using eassumption : lang_core.
+
+
+Lemma eq_subst_fresh_r c0 c s0 s3 n
+  : eq_subst c0 c s0 s3 -> fresh n c -> fresh n s3.
+Proof.
+  unfold fresh; intros.
+  erewrite eq_subst_map_fst_r; eauto.
+Qed.
+#[local] Hint Resolve eq_subst_fresh_r : lang_core.
+
+Lemma eq_subst_fresh_l c0 c s0 s3 n
+  : eq_subst c0 c s0 s3 -> fresh n c -> fresh n s0.
+Proof.
+  unfold fresh; intros.
+  erewrite eq_subst_map_fst_l; eauto.
+Qed.
+#[local] Hint Resolve eq_subst_fresh_l : lang_core.
+
+Lemma ctx_admissible_in c n t
+  : wf_ctx c ->
+    ctx_cut_admissible c ->
+    In (n, t) c ->
+    sort_cut_admissible c t t.
+Proof.
+  induction 1;
+    basic_goal_prep;
+    basic_core_crush.
+  {
+    clear H3.
+    unfold sort_cut_admissible in *;
+      intros.
+    safe_invert H2.
+    erewrite !strengthen_subst;
+      try typeclasses eauto;
+      eauto.
+    all: basic_core_crush.
+  }
+  {
+    clear H4.      
+    unfold sort_cut_admissible in *;
+      intros.
+    safe_invert H3.
+    erewrite !strengthen_subst;
+      try typeclasses eauto;
+      eauto.
+    all: basic_core_crush.
+  }
+Qed.
+    
     
   
   Lemma weak_cut_admissible
@@ -717,36 +785,24 @@ Hint Resolve refl_term_lookup : lang_core.
             /\ weak_args_cut_admissible c c' s2 s2).
   Proof.
     simple eapply cut_ind.
-    all: unfold weak_term_cut_admissible, weak_sort_cut_admissible, weak_subst_cut_admissible.
+    all: unfold weak_term_cut_admissible, weak_sort_cut_admissible, weak_subst_cut_admissible, weak_args_cut_admissible.
     all: basic_goal_prep.
     all: repeat split.
     all: basic_goal_prep.
     all: erewrite ?subst_assoc; try typeclasses eauto;[|shelve..].
     all: fold_Substable.
+    all: try lazymatch goal with
+    | H : In _ ?l, lang_admissible : all _ (map snd ?l) |- _ =>
+        eapply in_all_named_list in lang_admissible; eauto;
+        cbn in lang_admissible
+    end.
     all: eauto with lang_core.
+    1: basic_core_crush.
+    1: basic_core_crush.
+    1: basic_core_crush.
+    1: basic_core_crush.
+    1: basic_core_crush.
     {
-      eapply eq_sort_sym.
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
-      eapply lang_admissible.
-      2: basic_core_crush.
-      eapply H2; eauto.
-      2:eapply eq_subst_sym'; eauto.
-      basic_core_crush.
-    }
-    {
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
-      basic_core_crush.
-    }
-    {
-      eapply eq_sort_sym; eauto.
-      eapply H0; eauto.
-      eapply eq_subst_sym'; eauto.
-    }
-    {
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
       eapply eq_term_conv.
       {
         basic_core_crush.
@@ -755,20 +811,12 @@ Hint Resolve refl_term_lookup : lang_core.
         basic_core_crush.
       }
     }
-    {
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
-      basic_core_crush.
-    }
-    {
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
-      basic_core_crush.
-    }
+    1:basic_core_crush.
+    1:basic_core_crush.
     {
       rewrite <- !Substable.with_names_from_args_subst.
       eapply eq_term_cong; eauto.
-      eapply H1; eauto.
+      eapply H1; intuition eauto.
       basic_core_crush.
     }
     {
@@ -776,17 +824,15 @@ Hint Resolve refl_term_lookup : lang_core.
       eapply eq_term_conv.
       {
         eapply eq_term_cong; eauto.
-        eapply H2; eauto.
+        eapply H2; intuition eauto.
         basic_core_crush.
       }
       {
-        eapply in_all_named_list in lang_admissible; eauto.
-        cbn in *.
         eapply lang_admissible; eauto.
         2:basic_core_crush.
         eapply eq_args_implies_eq_subst.
         eapply H1; eauto.
-        all: eauto with lang_core.
+        all: intuition eauto with lang_core.
       }     
     }
     {
@@ -794,31 +840,27 @@ Hint Resolve refl_term_lookup : lang_core.
       eapply eq_term_conv.
       {
         eapply eq_term_cong; eauto.
-        eapply H3; eauto.
+        eapply H3; intuition eauto.
         basic_core_crush.
       }
       {
-        eapply in_all_named_list in lang_admissible; eauto.
-        cbn in *.
         eapply lang_admissible; eauto.
         2:basic_core_crush.
         eapply eq_args_implies_eq_subst.
-        eapply H3; eauto.
+        eapply H3; intuition eauto.
         all: eauto with lang_core.
       }     
     }
     {
-      eapply in_all_named_list in lang_admissible; eauto.
-      cbn in *.
       eapply lang_admissible.
       2:basic_core_crush.
       rewrite <- !Substable.with_names_from_args_subst.
       eapply eq_args_implies_eq_subst.
-      eapply H3; eauto.
+      eapply H3; intuition eauto.
       all: eauto with lang_core.
     }
     {
-      admit (*TODO: use ctx_admissible*).
+      eapply ctx_admissible_in; eauto.
     }
     {
       eapply eq_term_sym.
@@ -846,10 +888,11 @@ Hint Resolve refl_term_lookup : lang_core.
           basic_core_crush.
         }
         {
-        erewrite subst_assoc; try typeclasses eauto; eauto.
-        2:basic_core_crush.
-        admit (*TODO: use ctx_admissible*).
-        
+          erewrite subst_assoc; try typeclasses eauto; eauto.
+          2:basic_core_crush.
+          fold_Substable.
+          safe_invert H10.
+          eauto using eq_subst_sym', eq_subst_refl_right.
         }
       }
     }      
@@ -859,47 +902,68 @@ Hint Resolve refl_term_lookup : lang_core.
         basic_core_crush.
       }
       {
-        TODO: e2 e2 hyp
         eapply eq_term_conv.
         {
           basic_core_crush.
         }
         {
-        erewrite subst_assoc; try typeclasses eauto; eauto.
-        2:basic_core_crush.
-        admit (*TODO: use ctx_admissible*).
-        
+          erewrite subst_assoc; try typeclasses eauto; eauto.
+          2:basic_core_crush.
+          fold_Substable.
+          safe_invert H10.
+          eauto using eq_subst_sym', eq_subst_refl_right.
         }
       }
-    }   
+    }
+    all: constructor; [basic_core_crush|].
+    all: eapply eq_term_conv; [basic_core_crush|].
     {
-      constructor.
+      rewrite !Substable.with_names_from_args_subst.
+      unfold apply_subst at 4.
+      unfold substable_subst.      
+      erewrite <- subst_assoc; try typeclasses eauto; eauto.
       {
-        eapply H0; eauto.
-        safe_invert H5; eauto.
+        eapply H5; eauto using eq_subst_refl_right.
       }
-      {
-        admit.
-      }
+      basic_core_crush.
     }
-    Fail.
-    all: intuition subst.
-    all: eauto with lang_core.
+    {
+      erewrite subst_assoc; try typeclasses eauto; eauto.
+      2:{
+        basic_core_crush.
+      }
+      eapply H11.
+      2:basic_core_crush.
+      fold_Substable.
+      rewrite <- !Substable.with_names_from_args_subst.
+      eapply eq_subst_sym'; eauto; [|basic_core_crush].
+      eapply eq_args_implies_eq_subst.
+      basic_core_crush.
+    }
+    {
+      erewrite subst_assoc; try typeclasses eauto; eauto.
+      2:{
+        basic_core_crush.
+      }
+      eapply H11.
+      2:basic_core_crush.
+      fold_Substable.
+      rewrite <- !Substable.with_names_from_args_subst.
+      eapply eq_args_implies_eq_subst.
+      basic_core_crush.
+    }
 
-    all: basic_core_crush.
-    4:{
-      eapply eq_sort_sym; eapply H0; eauto.
-      intuition.
-    }
-            eapply eq_subst_sym.
-      eapply eq_sort_trans.
-      { eapply H0; eauto. }
-      { eapply cut_admissible1; eauto.
-        TODO: issue: relies on core-implies-cut?term_by case is tricky.
-        smart idea: trans + sym w/ same rule end-to-end!
-        eapply H2; eauto.
-        admit (*TODO: need eq_args_refl, add'l hyp; custom induction? *).
-  Qed.
+
+    Unshelve.
+    all: rewrite ?map_fst_with_names_from.
+    all: erewrite ?eq_subst_map_fst_r by eassumption.
+    all: erewrite ?eq_subst_map_fst_l by eassumption.
+    all: eauto with lang_core.
+    all: use_rule_in_wf.
+    all: autorewrite with utils lang_core in *.
+    all: break.
+    all: eauto with lang_core.
+  Qed.    
            
   Lemma core_implies_cut
     : (forall c t1 t2,
@@ -934,6 +998,11 @@ Hint Resolve refl_term_lookup : lang_core.
       eapply cut_id_subst_refl.
     }
     {
+      TODO: c' is arbitrary; how to get cut-admissibility for it?.
+      Question: can I tie the loop on admissibility w/o core_implies_cut via an alternate wf_ctx?
+                    
+                                                          
+      eapply weak_cut_admissible; eauto.
       admit (*TODO: depends on cut admissibility*).
     }
     {
