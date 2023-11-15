@@ -658,88 +658,6 @@ c |- e1 = e2 : t'
   Qed.
   Hint Resolve cut_id_subst_refl : lang_core.
 
-  Definition sort_cut_admissible c' t1' t2' :=
-    forall c s1 s2,
-      eq_subst c c' s1 s2 ->
-      wf_ctx c' ->
-      eq_sort c t1' [/s1 /] t2' [/s2 /].
-  Definition term_cut_admissible c' t e1 e2 :=
-    forall c s1 s2,
-      eq_subst c c' s1 s2 ->
-      wf_ctx c' -> eq_term c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
-
-  (* TODO: this is the easier one to prove, connect via weakening*)
-  Fixpoint ctx_cut_admissible c :=
-    match c with
-    | [] => True
-    | (_,t)::c' =>
-        sort_cut_admissible c' t t
-        /\ ctx_cut_admissible c'
-    end.
-  (*
-  Definition ctx_all_admissible c :=
-    forall n t, In (n,t) c -> sort_cut_admissible c t t.*)
-
-  (* avoids a mutual definition to have separate weak version*)
-  Definition weak_sort_cut_admissible c' t1' t2' :=
-    forall c s1 s2,
-      eq_subst c c' s1 s2 ->
-      wf_ctx c' -> ctx_cut_admissible c' ->
-      eq_sort c t1' [/s1 /] t2' [/s2 /].
-  Definition weak_term_cut_admissible c' t e1 e2 :=
-    forall c s1 s2,
-      eq_subst c c' s1 s2 ->
-      wf_ctx c' -> ctx_cut_admissible c' ->
-      eq_term c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
-
-  Definition weak_subst_cut_admissible c c' s1 s2 :=
-    wf_ctx c -> ctx_cut_admissible c ->
-    wf_ctx c' -> ctx_cut_admissible c' ->
-    forall (c'' : Term.ctx V) (s1' s2' : Term.subst V),
-      eq_subst c'' c s1' s2' ->
-      eq_subst c'' c' s1 [/s1' /] s2 [/s2' /].
-  
-  Definition weak_args_cut_admissible c c' s1 s2 :=
-    wf_ctx c -> ctx_cut_admissible c ->
-    wf_ctx c' -> ctx_cut_admissible c' ->
-    forall (c'' : Term.ctx V) s1' s2',
-      eq_subst c'' c s1' s2' ->
-      eq_args c'' c' s1 [/s1' /] s2 [/s2' /].
-
-  Definition rule_cut_admissible r :=
-    match r with
-    | sort_eq_rule c t1 t2 =>
-        ctx_cut_admissible c
-        /\ sort_cut_admissible c t1 t1
-        /\ sort_cut_admissible c t2 t2
-    | term_eq_rule c e1 e2 t =>
-        ctx_cut_admissible c
-        /\ sort_cut_admissible c t t
-        /\ term_cut_admissible c t e1 e1
-        /\ term_cut_admissible c t e2 e2
-    | sort_rule c args =>
-        ctx_cut_admissible c
-    | term_rule c args t =>
-        ctx_cut_admissible c
-        /\ sort_cut_admissible c t t
-    end.
-  
-  Lemma eq_subst_sym' c c' s1 s2
-    : eq_subst c c' s1 s2 -> wf_ctx c' -> ctx_cut_admissible c' -> eq_subst c c' s2 s1.
-  Proof using .
-    induction 1; intros.
-    1:basic_core_crush.
-    constructor.
-    all:basic_goal_prep.
-    1: basic_core_crush.
-    
-    eapply eq_term_conv; eauto using eq_term_sym.
-    break.
-    safe_invert H1.
-    eapply H2; eauto.
-  Qed.
-
-
   Variant wf_rule : rule -> Prop :=
   | wf_sort_rule : forall c args,
       wf_ctx c ->
@@ -808,49 +726,7 @@ c |- e1 = e2 : t'
         autorewrite with utils term lang_core in *;
         intuition eauto with lang_core.
     Qed.
-
-    
-    Lemma ctx_admissible_in c n t
-      : wf_ctx c ->
-        ctx_cut_admissible c ->
-        In (n, t) c ->
-        sort_cut_admissible c t t.
-    Proof using V_Eqb_ok wsl.
-      induction 1;
-        basic_goal_prep;
-        basic_core_crush.
-      {
-        clear H3.
-        unfold sort_cut_admissible in *;
-          intros.
-        safe_invert H2.
-        safe_invert H3.
-        erewrite !strengthen_subst;
-          try typeclasses eauto;
-          eauto.
-        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
-        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
-        all: try (eapply eq_subst_fresh_l; now eauto).
-        all: try (eapply eq_subst_fresh_r; now eauto).
-        all: eapply eq_sort_implies_ws_r; eauto with lang_core.
-      }
-      {
-        clear H4.      
-        unfold sort_cut_admissible in *;
-          intros.
-        safe_invert H3.
-        eapply in_ctx_wf in H2; eauto.
-        erewrite !strengthen_subst;
-          try typeclasses eauto;
-          eauto.
-        2,4:basic_core_crush.
-        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
-        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
-        all: eauto with lang_core.
-      }
-    Qed.
-
-    
+   
     
     Lemma refl_term_lookup c0 c s1 s2 n t
       : eq_subst c0 c s1 s2 ->
@@ -928,7 +804,6 @@ Hint Rewrite invert_wf_term_rule : lang_core.
 Hint Rewrite invert_wf_sort_eq_rule : lang_core.
 Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
-
 Section LangMono.
   Context (l l': lang).
   Context (Hincl : incl l l').
@@ -992,8 +867,6 @@ End LangMono.
 
 
 
-
-
 Inductive wf_lang : lang -> Prop :=
 | wf_lang_nil : wf_lang []
 | wf_lang_cons : forall l n r,
@@ -1014,6 +887,310 @@ Hint Resolve wf_lang_implies_ws : lang_core.
 
 
 
+Section CutDefs.
+  Context (l : lang).
+
+  Definition sort_cut_admissible c' t1' t2' :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      eq_sort l c t1' [/s1 /] t2' [/s2 /].
+  Definition term_cut_admissible c' t e1 e2 :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      wf_ctx l c' -> eq_term l c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
+
+  Definition subst_cut_admissible c c' s1 s2 :=
+      forall (c'' : Term.ctx V) (s1' s2' : Term.subst V),
+        eq_subst l c'' c s1' s2' ->
+        eq_subst l c'' c' s1 [/s1' /] s2 [/s2' /].
+  
+  Definition args_cut_admissible c c' s1 s2 :=
+      forall (c'' : Term.ctx V) s1' s2',
+        eq_subst l c'' c s1' s2' ->
+        eq_args l c'' c' s1 [/s1' /] s2 [/s2' /].
+
+  (* TODO: this is the easier one to prove, connect via weakening*)
+  Fixpoint ctx_cut_admissible c :=
+    match c with
+    | [] => True
+    | (_,t)::c' =>
+        sort_cut_admissible c' t t
+        /\ ctx_cut_admissible c'
+    end.
+
+  Definition rule_cut_admissible r :=
+    match r with
+    | sort_eq_rule c t1 t2 =>
+        ctx_cut_admissible c
+        /\ sort_cut_admissible c t1 t1
+        /\ sort_cut_admissible c t2 t2
+    | term_eq_rule c e1 e2 t =>
+        ctx_cut_admissible c
+        /\ sort_cut_admissible c t t
+        /\ term_cut_admissible c t e1 e1
+        /\ term_cut_admissible c t e2 e2
+    | sort_rule c args =>
+        ctx_cut_admissible c
+    | term_rule c args t =>
+        ctx_cut_admissible c
+        /\ sort_cut_admissible c t t
+    end.
+  
+  Lemma eq_subst_sym' c c' s1 s2
+    : wf_lang l ->
+      eq_subst l c c' s1 s2 -> wf_ctx l c' -> ctx_cut_admissible c' -> eq_subst l c c' s2 s1.
+  Proof using .
+    induction 2; intros.
+    1:basic_core_crush.
+    constructor.
+    all:basic_goal_prep.
+    1: basic_core_crush.
+    
+    eapply eq_term_conv; eauto using eq_term_sym.
+    break.
+    safe_invert H2.
+    eapply H3; eauto with utils.
+  Qed.
+
+  
+    
+    Lemma ctx_admissible_in c n t
+      : wf_lang l -> wf_ctx l c ->
+        ctx_cut_admissible c ->
+        In (n, t) c ->
+        sort_cut_admissible c t t.
+    Proof using V_Eqb_ok.
+      intro wsl.
+      induction 1;
+        basic_goal_prep;
+        basic_core_crush.
+      {
+        clear H3.
+        unfold sort_cut_admissible in *;
+          intros.
+        
+        autorewrite with lang_core in *.
+        lazymatch goal with
+        | H : eq_subst _ _ (_::_) _ _ |- _ =>
+            safe_invert H
+        end.
+        break.
+        erewrite !strengthen_subst;
+          try typeclasses eauto;
+          eauto.
+        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
+        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
+        all: try (eapply eq_subst_fresh_l; now eauto).
+        all: try (eapply eq_subst_fresh_r; now eauto).
+        all: eapply eq_sort_implies_ws_r; eauto with lang_core.
+      }
+      {
+        clear H4.      
+        unfold sort_cut_admissible in *;
+          intros.
+        
+        autorewrite with lang_core in *.
+        lazymatch goal with
+        | H : eq_subst _ _ (_::_) _ _ |- _ =>
+            safe_invert H
+        end.
+        break.
+        eapply in_ctx_wf in H2; [| cbn; intuition eauto].
+        erewrite !strengthen_subst;
+          try typeclasses eauto;
+          eauto.
+        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
+        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
+        all: eauto with lang_core.
+        (*{
+          eapply H6; eauto.
+          eapply ctx_lang_mono; eauto.
+        }*)
+        all: try (eapply eq_subst_fresh_l; now eauto).
+        all: try (eapply eq_subst_fresh_r; now eauto).        
+      }
+    Qed.
+
+End CutDefs.
+
+
+Definition lang_cut_admissible (l : lang) :=
+  (*all (fun r => forall l', incl l' l -> rule_cut_admissible l) (map snd l).*)
+  forall l', wf_lang l' -> incl l  l' -> all (rule_cut_admissible l') (map snd l).
+(*  match l with
+  | [] => True
+  | (_, r) :: l' => rule_cut_admissible l_orig r /\ lang_cut_admissible' l_orig l'
+  end.
+
+Definition lang_cut_admissible l := lang_cut_admissible l
+*)
+(*
+Section Weak1Defs.
+  Context (l : lang).
+
+  Definition weak1_sort_cut_admissible c' t1' t2' :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      wf_ctx l c' ->
+      eq_sort l c t1' [/s1 /] t2' [/s2 /].
+  Definition weak1_term_cut_admissible c' t e1 e2 :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      wf_ctx l c' -> eq_term l c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
+
+  Definition weak1_subst_cut_admissible c c' s1 s2 :=
+      wf_ctx l c ->
+      wf_ctx l c' ->
+      forall (c'' : Term.ctx V) (s1' s2' : Term.subst V),
+        eq_subst l c'' c s1' s2' ->
+        eq_subst l c'' c' s1 [/s1' /] s2 [/s2' /].
+  
+  Definition weak1_args_cut_admissible c c' s1 s2 :=
+      wf_ctx l c ->
+      wf_ctx l c' ->
+      forall (c'' : Term.ctx V) s1' s2',
+        eq_subst l c'' c s1' s2' ->
+        eq_args l c'' c' s1 [/s1' /] s2 [/s2' /].
+
+  (* TODO: this is the easier one to prove, connect via weakening*)
+  Fixpoint weak1_ctx_cut_admissible c :=
+    match c with
+    | [] => True
+    | (_,t)::c' =>
+        weak1_sort_cut_admissible c' t t
+        /\ weak1_ctx_cut_admissible c'
+    end.
+
+  Definition weak1_rule_cut_admissible r :=
+    match r with
+    | sort_eq_rule c t1 t2 =>
+        weak1_ctx_cut_admissible c
+        /\ weak1_sort_cut_admissible c t1 t1
+        /\ weak1_sort_cut_admissible c t2 t2
+    | term_eq_rule c e1 e2 t =>
+        weak1_ctx_cut_admissible c
+        /\ weak1_sort_cut_admissible c t t
+        /\ weak1_term_cut_admissible c t e1 e1
+        /\ weak1_term_cut_admissible c t e2 e2
+    | sort_rule c args =>
+        weak1_ctx_cut_admissible c
+    | term_rule c args t =>
+        weak1_ctx_cut_admissible c
+        /\ weak1_sort_cut_admissible c t t
+    end.
+  
+  Lemma weak1_eq_subst_sym' c c' s1 s2
+    : wf_lang l -> lang_cut_admissible l ->
+      eq_subst l c c' s1 s2 -> wf_ctx l c' -> weak1_ctx_cut_admissible c' -> eq_subst l c c' s2 s1.
+  Proof using .
+    intros wfl Hla.
+    induction 1; intros.
+    1:basic_core_crush.
+    constructor.
+    all:basic_goal_prep.
+    1: basic_core_crush.
+    
+    eapply eq_term_conv; eauto using eq_term_sym.
+    break.
+    safe_invert H1.
+    eapply H2; eauto with utils.
+  Qed.
+
+  
+    
+    Lemma weak1_ctx_admissible_in c n t
+      : wf_lang l -> lang_cut_admissible l ->
+        wf_ctx l c ->
+        weak1_ctx_cut_admissible c ->
+        In (n, t) c ->
+        weak1_sort_cut_admissible c t t.
+    Proof using V_Eqb_ok.
+      intros wsl Hla.
+      induction 1;
+        basic_goal_prep;
+        basic_core_crush.
+      {
+        unfold weak1_sort_cut_admissible in *;
+          intros.
+        autorewrite with lang_core in *.
+        lazymatch goal with
+        | H : eq_subst _ _ (_::_) _ _ |- _ =>
+            safe_invert H
+        end.
+        break.
+        erewrite !strengthen_subst;
+          try typeclasses eauto;
+          eauto.
+        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
+        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
+        all: try (eapply eq_subst_fresh_l; now eauto).
+        all: try (eapply eq_subst_fresh_r; now eauto).
+        all: eapply eq_sort_implies_ws_r; eauto with lang_core.
+      }
+      {
+        unfold weak1_sort_cut_admissible in *;
+          intros.
+        lazymatch goal with
+        | H : eq_subst _ _ (_::_) _ _ |- _ =>
+            safe_invert H
+        end.
+        autorewrite with lang_core in *.
+        break.
+        eapply in_ctx_wf in H2; [| cbn; intuition eauto].
+        erewrite !strengthen_subst;
+          try typeclasses eauto;
+          eauto.
+        all: try erewrite eq_subst_map_fst_l by eassumption; eauto.
+        all: try erewrite eq_subst_map_fst_r by eassumption; eauto.
+        all: eauto with lang_core.
+        all: try (eapply eq_subst_fresh_l; now eauto).
+        all: try (eapply eq_subst_fresh_r; now eauto).        
+      }
+    Qed.
+
+End Weak1Defs.
+*)
+
+(*
+Fixpoint weak1_lang_cut_admissible l :=
+  match l with
+  | [] => True
+  | (_, r) :: l' => weak1_rule_cut_admissible l' r /\ weak1_lang_cut_admissible l'
+  end.
+*)
+(*
+Section Weak2Defs.
+  Context (l : lang).
+  
+  (* avoids a mutual definition to have separate weak version*)
+  Definition weak2_sort_cut_admissible c' t1' t2' :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      wf_ctx l c -> ctx_cut_admissible l c ->
+      eq_sort l c t1' [/s1 /] t2' [/s2 /].
+  Definition weak2_term_cut_admissible c' t e1 e2 :=
+    forall c s1 s2,
+      eq_subst l c c' s1 s2 ->
+      wf_ctx l c -> ctx_cut_admissible l c ->
+      eq_term l c t [/s2 /] e1 [/s1 /] e2 [/s2 /].
+
+  Definition weak2_subst_cut_admissible c c' s1 s2 :=
+    wf_ctx l c -> ctx_cut_admissible l c ->
+    wf_ctx l c' -> ctx_cut_admissible l c' ->
+    forall (c'' : Term.ctx V) (s1' s2' : Term.subst V),
+      eq_subst l c'' c s1' s2' ->
+      eq_subst l c'' c' s1 [/s1' /] s2 [/s2' /].
+  
+  Definition weak2_args_cut_admissible c c' s1 s2 :=
+    wf_ctx l c -> ctx_cut_admissible l c ->
+    wf_ctx l c' -> ctx_cut_admissible l c' ->
+    forall (c'' : Term.ctx V) s1' s2',
+      eq_subst l c'' c s1' s2' ->
+      eq_args l c'' c' s1 [/s1' /] s2 [/s2' /].
+
+End Weak2Defs.*)
+
+
 Lemma rule_in_wf l name r
   : wf_lang l -> In (name, r) l -> wf_rule l r.
 Proof.
@@ -1030,6 +1207,105 @@ Local Ltac use_rule_in_wf :=
   | H:wf_lang ?l, Hin:In (_, _) ?l |- _ => pose proof (rule_in_wf _ _ _ H Hin)
   end.
 
+(*TODO: Weak1 is a dup now*)
+(*
+Lemma ctx_cut_admissible_mono l l' c
+  : incl l l' -> ctx_cut_admissible l c -> ctx_cut_admissible l' c.
+Proof.
+  induction c;
+    basic_goal_prep;
+    intuition subst.
+  unfold sort_cut_admissible in *.
+  intuition eauto.
+  eapply H1; eauto.
+  eapply incl_tran; eauto.
+Qed.
+*)
+
+(*
+Lemma rule_cut_admissible_mono l l' r
+  : incl l l' -> rule_cut_admissible l r -> rule_cut_admissible l' r.
+Proof.
+  unfold rule_cut_admissible,
+    term_cut_admissible, sort_cut_admissible,
+    subst_cut_admissible, args_cut_admissible in *.
+  destruct r;
+    basic_goal_prep;
+    intuition eauto using ctx_cut_admissible_mono.
+  all: try now (eapply H1; eauto using incl_tran).
+  all: try now (eapply H2; eauto using incl_tran).
+  all: try now (eapply H3; eauto using incl_tran).
+Qed.
+
+Lemma lang_admissible_in l n r
+  : wf_lang l ->
+    lang_cut_admissible l ->
+    In (n, r) l ->
+    rule_cut_admissible l r.
+Proof using V_Eqb_ok.
+  induction 1;
+    basic_goal_prep;
+    basic_core_crush.
+  all: eapply rule_cut_admissible_mono; eauto.
+  all: basic_utils_crush.
+Qed.
+*)
+
+(*
+Lemma ctx_cut_admissible_mono l l' c
+  : incl l l' -> ctx_cut_admissible l c -> ctx_cut_admissible l' c.
+Proof.
+  induction c;
+    basic_goal_prep;
+    intuition subst.
+  unfold sort_cut_admissible in *.
+  intuition eauto.
+  eapply H1; eauto.
+  eapply incl_tran; eauto.
+Qed.
+
+Lemma rule_cut_admissible_mono l l' r
+  : incl l l' -> rule_cut_admissible l r -> rule_cut_admissible l' r.
+Proof.
+  unfold rule_cut_admissible,
+    term_cut_admissible, sort_cut_admissible,
+    subst_cut_admissible, args_cut_admissible in *.
+  destruct r;
+    basic_goal_prep;
+    intuition eauto using ctx_cut_admissible_mono.
+  all: try now (eapply H1; eauto using incl_tran).
+  all: try now (eapply H2; eauto using incl_tran).
+  all: try now (eapply H3; eauto using incl_tran).
+Qed.
+*)
+
+Lemma lang_admissible_in l n r
+  : wf_lang l ->
+    lang_cut_admissible l ->
+    In (n, r) l ->
+    forall l', wf_lang l' -> incl l l' ->
+    rule_cut_admissible l' r.
+Proof using V_Eqb_ok.
+  unfold lang_cut_admissible.
+  intros.
+  eapply H0 in H2; eauto.
+  clear H0.
+  revert dependent l.
+  induction l;
+    basic_goal_prep;
+    basic_core_crush.
+  eapply in_all_named_list in H4; eauto.
+Qed.
+
+(*
+Lemma ctx_admissible_implies_weak l c
+  : ctx_cut_admissible l c -> ctx_cut_admissible l c.
+Proof.
+  induction c; basic_goal_prep; intuition eauto.
+  (*unfold sort_cut_admissible, sort_cut_admissible; intuition eauto.*)
+Qed.
+Hint Resolve ctx_admissible_implies_weak : lang_core.*)
+
 Section WithLang.
   Context (l : lang)
     (wfl : wf_lang l).
@@ -1039,42 +1315,60 @@ Section WithLang.
   Local Notation eq_term c' t e1 e2 := (eq_term l c' t e1 e2).
   Local Notation eq_subst c c' s1' s2' := (eq_subst l c c' s1' s2').
   Local Notation eq_args c c' s1' s2' := (eq_args l c c' s1' s2').
-  
-  Local Notation weak_sort_cut_admissible c' t1' t2' := (weak_sort_cut_admissible l c' t1' t2').
-  Local Notation weak_term_cut_admissible c' t e1 e2 := (weak_term_cut_admissible l c' t e1 e2).
-  Local Notation weak_subst_cut_admissible c c' s1' s2' := (weak_subst_cut_admissible l c c' s1' s2').
-  Local Notation weak_args_cut_admissible c c' s1' s2' := (weak_args_cut_admissible l c c' s1' s2').
 
-  Context (Hla : all (rule_cut_admissible l) (map snd l)).
+  (*
+  Local Notation weak2_sort_cut_admissible c' t1' t2' := (weak2_sort_cut_admissible l c' t1' t2').
+  Local Notation weak2_term_cut_admissible c' t e1 e2 := (weak2_term_cut_admissible l c' t e1 e2).
+  Local Notation weak2_subst_cut_admissible c c' s1' s2' := (weak2_subst_cut_admissible l c c' s1' s2').
+  Local Notation weak2_args_cut_admissible c c' s1' s2' := (weak2_args_cut_admissible l c c' s1' s2').
+*)
+
+  Context (Hla : lang_cut_admissible l).
+  Context (l' : lang)
+    (wsl' : wf_lang l')
+    (Hincl : incl l l').
+
+  Section WithCtx.
   Context (c : ctx).
   Context (wfc : wf_ctx c).
-  Context (Hca : ctx_cut_admissible l c).
+  Context (Hca1 : ctx_cut_admissible l c).
+  Context (Hca2 : ctx_cut_admissible l' c).
+
+  
+  Hint Resolve eq_sort_lang_mono : lang_core.
+  Hint Resolve eq_term_lang_mono : lang_core.
+  Hint Resolve eq_args_lang_mono : lang_core.
+  Hint Resolve eq_subst_lang_mono : lang_core.
+  Hint Resolve ctx_lang_mono : lang_core.
+
 
   Lemma weak_cut_admissible
     : (forall t1' t2',
           eq_sort c t1' t2' ->
-          weak_sort_cut_admissible c t1' t2'
-             /\ weak_sort_cut_admissible c t1' t1'
-             /\ weak_sort_cut_admissible c t2' t2')
+          sort_cut_admissible l' c t1' t2'
+             /\ sort_cut_admissible l' c t1' t1'
+             /\ sort_cut_admissible l' c t2' t2')
       /\ (forall (t : Term.sort V) (e1 e2 : Term.term V),
              eq_term c t e1 e2 ->
-             weak_term_cut_admissible c t e1 e2
-             /\ weak_term_cut_admissible c t e1 e1
-             /\ weak_term_cut_admissible c t e2 e2
-             /\ weak_sort_cut_admissible c t t)
+             term_cut_admissible l' c t e1 e2
+             /\ term_cut_admissible l' c t e1 e1
+             /\ term_cut_admissible l' c t e2 e2
+             /\ sort_cut_admissible l' c t t)
       /\ (forall (c' : Term.ctx V) (s1 s2 : Term.subst V),
             eq_subst c c' s1 s2 ->
-            weak_subst_cut_admissible c c' s1 s2
-            /\ weak_subst_cut_admissible c c' s1 s1
-            /\ weak_subst_cut_admissible c c' s2 s2)
+            wf_ctx c' -> ctx_cut_admissible l c' -> ctx_cut_admissible l' c' ->
+            subst_cut_admissible l' c c' s1 s2
+            /\ subst_cut_admissible l' c c' s1 s1
+            /\ subst_cut_admissible l' c c' s2 s2)
       /\ (forall c' (s1 s2 : list term),
             eq_args c c' s1 s2 ->
-            weak_args_cut_admissible c c' s1 s2
-            /\ weak_args_cut_admissible c c' s1 s1
-            /\ weak_args_cut_admissible c c' s2 s2).
+            wf_ctx c' -> ctx_cut_admissible l c' -> ctx_cut_admissible l' c' ->
+            args_cut_admissible l' c c' s1 s2
+            /\ args_cut_admissible l' c c' s1 s1
+            /\ args_cut_admissible l' c c' s2 s2).
   Proof.
     simple eapply cut_ind.
-    all: unfold weak_term_cut_admissible, weak_sort_cut_admissible, weak_subst_cut_admissible, weak_args_cut_admissible.
+    all: unfold term_cut_admissible, sort_cut_admissible, subst_cut_admissible, args_cut_admissible.
     all: basic_goal_prep.
     all: try use_rule_in_wf; autorewrite with lang_core utils in *.
     all: repeat split.
@@ -1082,33 +1376,100 @@ Section WithLang.
     all: erewrite ?subst_assoc; try typeclasses eauto;[|shelve..].
     all: fold_Substable.
     all: try lazymatch goal with
-    | H : In _ ?l, lang_admissible : all _ (map snd ?l) |- _ =>
-        eapply in_all_named_list in lang_admissible; eauto;
-        cbn in lang_admissible
-    end.
-    all: try now intuition eauto with lang_core.
+           | H : lang_cut_admissible ?l, H' : In _ ?l |- _ =>
+               let Hl := fresh H in
+               pose proof H as Hl;
+              eapply lang_admissible_in in H ; [| eassumption | exact H' | eassumption | eassumption];
+              cbn in H;
+               eapply lang_admissible_in in Hl;
+               [| eassumption | exact H' |  | eapply incl_refl];
+               [|eassumption];
+              cbn in Hl
+           end.
+    (*
+    all: repeat lazymatch goal with
+           | H : incl ?l _, H' : forall l', incl ?l l' -> _ |- _ =>
+               specialize (H' _ H)
+           end.
+     *)
+   (* all:
+      lazymatch goal with
+      | Hincl : incl l ?l' |- _ =>
+      repeat match goal with
+           | H : wf_ctx ?c |- _ =>
+               tryif lazymatch goal with H : WithVar.wf_ctx l' c |- _ => idtac end
+               then fail
+               else pose proof H; eapply ctx_lang_mono in H; [| eassumption]
+           | H : eq_sort ?c ?t1 ?t2 |- _ =>
+               tryif lazymatch goal with H : WithVar.eq_sort l' c t1 t2 |- _ => idtac end
+               then fail
+               else pose proof H; 
+               eapply eq_sort_lang_mono in H; [| eassumption]
+           | H : eq_term ?c ?t ?e1 ?e2 |- _ =>
+               tryif lazymatch goal with H : WithVar.eq_term l' c t e1 e2 |- _ => idtac end
+               then fail
+               else pose proof H;                
+               eapply eq_sort_lang_mono in H; [| eassumption]
+           (*| H : ctx_cut_admissible _ _ |- _ =>
+               eapply ctx_cut_admissible_mono in H; [| eassumption]*)
+        end
+      end.*)
+    all: repeat match goal with
+           | H : ?A, H' : ?A -> _ |- _ =>
+               let x := type of A in
+               unify x Prop;
+               specialize (H' H)
+           | H : ?A /\ _, H' : ?A -> _ |- _ =>
+               let x := type of A in
+               unify x Prop;
+               specialize (H' (proj1 H))
+           | H' : ctx_cut_admissible ?l ?c -> _ |- _ =>
+               specialize (H' ltac:(intuition eauto))
+           | H : (_ -> _) /\ _ |- _ =>
+               destruct H
+           | H : wf_ctx ?c, H' : WithVar.wf_ctx _ ?c -> _ |- _ =>
+               specialize (H' ltac:(eauto using ctx_lang_mono))
+           end.
+    all: try eapply eq_sort_cong; eauto.
+    all: try now intuition eauto using eq_sort_by, eq_sort_cong with lang_core.
+
+    (*
+    all: repeat lazymatch goal with
+           | H' : forall (l' : list (V * rule)), _ |- _ =>
+               specialize (H' l')
+           end.
+     *)
     {
       eapply eq_sort_trans; intuition eauto using eq_sort_by, eq_subst_refl_right.
     }
     {
-      eapply eq_sort_sym; intuition eauto using eq_subst_refl_right, eq_subst_sym'.
+      eapply eq_sort_sym;
+        intuition eauto using eq_subst_refl_right, eq_subst_sym' with lang_core.
+      (*eapply H0.
+      admit (*Not provable: make sym admissible & add conclusion here?*).*)
     }
+    (*
+    {
+      eapply eq_term_by; eauto.
+      eapply H1; intuition eauto using ctx_cut_admissible_mono with lang_core.
+      }
+     *)
     {
       eapply eq_term_conv;
         try now intuition eauto with lang_core.
-      eapply Hla;  intuition eauto using eq_subst_refl_right.
+      eapply Hla; intuition eauto using eq_subst_refl_right with lang_core.
     }
     {
       rewrite <- !Substable.with_names_from_args_subst.
       eapply eq_term_cong; eauto.
-      eapply H1; intuition eauto.
+      eapply H1; intuition eauto using ctx_cut_admissible_mono with lang_core.
     }
     {
       rewrite <- !Substable.with_names_from_args_subst.
       eapply eq_term_conv.
       {
         eapply eq_term_cong; eauto.
-        eapply H2; intuition eauto.
+        eapply H7; intuition eauto using ctx_cut_admissible_mono with lang_core.
       }
       {
         eapply Hla; eauto.
@@ -1122,107 +1483,338 @@ Section WithLang.
       eapply eq_term_conv.
       {
         eapply eq_term_cong; eauto.
-        eapply H3; intuition eauto.
+        eapply H8; intuition eauto using ctx_cut_admissible_mono with lang_core.
       }
       {
         eapply Hla; eauto.
         eapply eq_args_implies_eq_subst.
-        eapply H3; intuition eauto.
+        eapply H8; intuition eauto.
         all: intuition eauto using eq_subst_refl_right with lang_core.
       }     
     }
     {
-      eapply Hla.
-      2:basic_core_crush.
+      eapply Hla; eauto.
       rewrite <- !Substable.with_names_from_args_subst.
       eapply eq_args_implies_eq_subst.
-      eapply H3; intuition eauto.
+      eapply H7; intuition eauto using ctx_cut_admissible_mono with lang_core.
     }
     {
-      eapply ctx_admissible_in; eauto with lang_core.
+      eapply ctx_admissible_in; try eassumption.
+        eauto using eq_subst_refl_right, eq_subst_sym'
+        with lang_core utils.
     }
     {
       eapply eq_term_trans; intuition eauto using eq_sort_by, eq_subst_refl_right.
     }
     {
       eapply eq_term_sym.
-      eapply eq_term_conv; eauto using eq_subst_sym'.
+      eapply eq_term_conv; 
+        eauto using eq_subst_refl_right, eq_subst_sym'
+        with lang_core utils.
     }
     1-3:eapply eq_term_conv; now eauto using eq_subst_refl_right.
-    all: constructor; eauto.
+    all: constructor; [basic_core_crush |].
     all: eapply eq_term_conv; [basic_core_crush|].
     all: unfold sort_cut_admissible in *.
     1-3: erewrite subst_assoc; try typeclasses eauto; eauto;
     erewrite ?eq_subst_map_fst_r by eassumption;
     [|basic_core_crush].
     all: fold_Substable.
-    all:eauto using eq_subst_sym', eq_subst_refl_right,eq_args_implies_eq_subst.
+    1-3: unfold apply_subst at 2 4.
+    all: unfold substable_subst.
+    all: autorewrite with lang_core in *.
+    all: break.
     2:{
-      erewrite subst_assoc; try typeclasses eauto; eauto using eq_subst_refl_right.
-      {
-        fold_Substable.
-        eapply H11; eauto.
-        rewrite <- !Substable.with_names_from_args_subst.
-        eapply eq_subst_sym'; eauto.
-        eapply eq_args_implies_eq_subst.
-        eauto using eq_subst_refl_right.
-      }
-      rewrite ?map_fst_with_names_from.
-      1:basic_core_crush.
-      erewrite eq_args_len_eq_r; eauto.
-    }
+      fold_Substable.
+      eapply H5; eauto with utils.
+      eapply eq_subst_sym';
+           eauto using ctx_lang_mono.
+      eapply H0; eauto using eq_subst_refl_right.
+    }     
+    all: try erewrite <- !subst_assoc; try typeclasses eauto; eauto using  eq_subst_refl_right.
+    1,2:shelve.
+    all: try erewrite subst_assoc; try typeclasses eauto; eauto using eq_subst_refl_right; [| shelve].
     all: rewrite !Substable.with_names_from_args_subst.
-    all: unfold apply_subst at 4.
-    all: unfold substable_subst.      
-    all: erewrite <- subst_assoc; try typeclasses eauto; eauto using eq_subst_refl_right.
+    all: eapply H5; eauto with utils.
+    all: fold_Substable.
+    all: rewrite <- !Substable.with_names_from_args_subst.
+    all: autorewrite with lang_core in *.
+    2: eapply eq_subst_sym';    
+      intuition eauto using eq_subst_refl_right, eq_subst_sym', ctx_lang_mono.
+    all: eapply eq_args_implies_eq_subst;
+      intuition eauto using eq_subst_refl_right, eq_subst_sym', ctx_lang_mono.
     Unshelve.
     all: rewrite ?map_fst_with_names_from.
     all: erewrite ?eq_subst_map_fst_r by eassumption.
     all: erewrite ?eq_subst_map_fst_l by eassumption.
+    all: autorewrite with lang_core in *.
     all: eauto with lang_core.
-    all: erewrite eq_args_len_eq_r; eauto.
+    all: try erewrite eq_args_len_eq_r; intuition eauto with lang_core.
   Qed.
+  End WithCtx.
 
-  Lemma ctx_cut_admissible c
+  Lemma ctx_cut_is_admissible c
     : wf_ctx c ->
-      ctx_cut_admissible c.
+      ctx_cut_admissible l' c .
   Proof.
     induction 1;
-      basic_goal_prep
-      
-      /\ (forall c c' (s1 s2 : list term),
-            eq_args c c' s1 s2 ->
-            weak_args_cut_admissible c c' s1 s2
-            /\ weak_args_cut_admissible c c' s1 s1
-            /\ weak_args_cut_admissible c c' s2 s2).
+      basic_goal_prep;
+      intuition subst.
+    all:intros ? ? ? ?.
+    all:eapply (proj1 (weak_cut_admissible c _ _)); eauto.
+    Unshelve.
+    all:eauto.
+  Qed.
+
+End WithLang.
 
 
+Section WithLang.
+  Context (l : lang)
+    (wfl : wf_lang l).
+  Context (l' : lang)
+    (wfl' : wf_lang l')
+    (Hincl : incl l l').
 
-  Context (wfl : wf_lang l).
+  Context (Hla : lang_cut_admissible l).
+
+  Lemma cut_admissible' c
+    : wf_ctx l c ->
+      (forall t1' t2',
+          eq_sort l c t1' t2' ->
+          sort_cut_admissible l' c t1' t2'
+             /\ sort_cut_admissible l' c t1' t1'
+             /\ sort_cut_admissible l' c t2' t2')
+      /\ (forall (t : Term.sort V) (e1 e2 : Term.term V),
+             eq_term l c t e1 e2 ->
+             term_cut_admissible l' c t e1 e2
+             /\ term_cut_admissible l' c t e1 e1
+             /\ term_cut_admissible l' c t e2 e2
+             /\ sort_cut_admissible l' c t t)
+      /\ (forall (c' : Term.ctx V) (s1 s2 : Term.subst V),
+            eq_subst l c c' s1 s2 ->
+            wf_ctx l c' ->
+            subst_cut_admissible l' c c' s1 s2
+            /\ subst_cut_admissible l' c c' s1 s1
+            /\ subst_cut_admissible l' c c' s2 s2)
+      /\ (forall c' (s1 s2 : list term),
+            eq_args l c c' s1 s2 ->
+            wf_ctx l c' ->
+            args_cut_admissible l' c c' s1 s2
+            /\ args_cut_admissible l' c c' s1 s1
+            /\ args_cut_admissible l' c c' s2 s2).
+  Proof.
+    intro wfc.
+    assert (ctx_cut_admissible l c) as Hca
+             by  intuition eauto using ctx_cut_is_admissible with lang_core utils.
+    assert (ctx_cut_admissible l' c) as Hca'
+             by  intuition eauto using ctx_cut_is_admissible with lang_core utils.
+    pose proof (weak_cut_admissible l wfl Hla l' wfl' Hincl c wfc Hca') as Hweak.
+    (*pose proof (weak_cut_admissible l wfl Hla l wfl (incl_refl l) c wfc Hca).*)
+    unfold term_cut_admissible, sort_cut_admissible,
+      subst_cut_admissible, args_cut_admissible in *.
+    intuition.
+    all: lazymatch goal with
+         | Hsub : eq_subst l _ ?c' ?s1 ?s2,
+             Hctx : wf_ctx l ?c'
+           |- eq_subst l' _ ?c' _ _ =>
+             specialize (H0 _ _ _ Hsub Hctx ltac:(eauto using ctx_cut_is_admissible with lang_core utils)
+                                                   ltac:(eauto using ctx_cut_is_admissible with lang_core utils))
+         | Hsub : eq_args l _ ?c' ?s1 ?s2,
+             Hctx : wf_ctx l ?c'
+           |- eq_args l' _ ?c' _ _ =>
+             specialize (H3 _ _ _ Hsub Hctx ltac:(eauto using ctx_cut_is_admissible with lang_core utils)
+                                                   ltac:(eauto using ctx_cut_is_admissible with lang_core utils))
+           end; now intuition.
+(*    {
+      intuition.
+    repeat split; intros.
+    all: eapply H in H0; clear H.
+    all: intuition eauto using ctx_cut_is_admissible.*)
+(*    all: eapply H || eapply H0 || eapply H7; eauto using ctx_cut_is_admissible, ctx_cut_admissible_mono.
+    all: eapply ctx_cut_is_admissible; eauto.
+    all: eapply ctx_cut_admissible_mono; eauto.
+    TODO: build incl into ctx_cut? wrong direction...
+    all: eapply ctx_cut_is_admissible; eauto.
+    TODO: need l' wf
+    issue: admissible for l, but have wf_ctx for l'*)
+  Qed.
+
+  Lemma rule_admissible r
+    : wf_rule l r -> rule_cut_admissible l' r.
+  Proof.
+    unfold rule_cut_admissible;
+      destruct 1;
+      intuition eauto using ctx_cut_is_admissible;
+      try now (eapply (proj1 (cut_admissible' _ ltac:(eassumption))); eauto).
+    all: (eapply (proj1 (proj2 (cut_admissible' _ ltac:(eassumption)))); eauto).
+  Qed.
+
+End WithLang.
+
+(*
+Section WithLang.
+  Context (l : lang)
+    (wfl : wf_lang l).
+
+  Context (Hla : lang_cut_admissible l).
+  Context (c : ctx)
+    (wfc : wf_ctx l c).
+
+  Lemma cut_admissible'
+    : (forall t1' t2',
+          eq_sort l c t1' t2' ->
+          forall c' s1 s2,
+          eq_subst l c' c s1 s2 -> wf_ctx l c' -> eq_sort l c' t1' [/s1 /] t2' [/s2 /])
+      /\ (forall (t : Term.sort V) (e1 e2 : Term.term V),
+             eq_term l c t e1 e2 ->
+             forall c' s1 s2,
+             eq_subst l c' c s1 s2 -> wf_ctx l c' -> eq_term l c' t [/s2 /] e1 [/s1 /] e2 [/s2 /])
+      /\ (forall (c' : Term.ctx V) (s1 s2 : Term.subst V),
+             eq_subst l c c' s1 s2 ->
+             wf_ctx l c' ->
+             forall (c'' : named_list sort) (s1' s2' : named_list term),
+               eq_subst l c'' c s1' s2' -> eq_subst l c'' c' s1 [/s1' /] s2 [/s2' /])
+      /\ (forall c' (s1 s2 : list term),
+             eq_args l c c' s1 s2 ->
+             wf_ctx l c' ->
+             forall (c'' : named_list sort) (s1' s2' : named_list term),
+               eq_subst l c'' c s1' s2' -> eq_args l c'' c' s1 [/s1' /] s2 [/s2' /]).
+  Proof.
+    pose proof (cut_admissible l wfl Hla c wfc).
+    unfold weak2_term_cut_admissible, weak2_sort_cut_admissible,
+      weak2_subst_cut_admissible, weak2_args_cut_admissible,
+      term_cut_admissible, sort_cut_admissible,
+      subst_cut_admissible, args_cut_admissible in *.
+    repeat split; intros.
+    all: eapply H in H0; clear H.
+    all: eapply H0; eauto with utils.
+  Qed.
+
+  (*
+  Lemma rule_admissible r
+    : wf_rule l r -> rule_cut_admissible l r.
+  Proof.
+    unfold rule_cut_admissible;
+      destruct 1;
+      intuition eauto using ctx_cut_is_admissible;
+      try now (eapply (proj1 (cut_admissible _ ltac:(eassumption))); eauto).
+    all: (eapply (proj1 (proj2 (cut_admissible _ ltac:(eassumption)))); eauto).
+  Qed.*)
+
+End WithLang.
+*)
+
+
+(*
+Lemma rule_cut_admissible_mono l l' r
+  : incl l l' -> rule_cut_admissible l r -> rule_cut_admissible l' r.
+Proof.
+  unfold rule_cut_admissible, ctx_cut_admissible
+    term_cut_admissible, sort_cut_admissible,
+    subst_cut_admissible, args_cut_admissible in *.
+  destruct r;
+    basic_goal_prep.
+ *)
+
+(*
+Lemma lang_cut_admissible' l l'
+  : wf_lang l -> wf_lang l' -> incl l l' -> all (rule_cut_admissible l') (map snd l).
+Proof.
+  induction 1;
+    basic_goal_prep;
+    [tauto|].
+  basic_utils_crush.
+  unfold rule_cut_admissible.
+  eapply rule_admissible'; eauto.
+  basic
+ *)
+
+(*
+Lemma rule_admissible l r
+  : wf_lang l -> lang_cut_admissible l ->
+    wf_rule l r -> rule_cut_admissible l r.
+Proof.
+  unfold rule_cut_admissible;
+    destruct 3.
+    intuition eauto using ctx_cut_is_admissible;
+    try now (eapply (proj1 (cut_admissible _ ltac:(eassumption))); eauto).
+  all: (eapply (proj1 (proj2 (cut_admissible _ ltac:(eassumption)))); eauto).
+Qed.*)
+
+Lemma lang_is_cut_admissible l
+  : wf_lang l ->  lang_cut_admissible l.
+Proof.
+  unfold lang_cut_admissible.
+  induction 1;
+    basic_goal_prep;
+    basic_core_crush.
+  eapply rule_admissible.
+  4: eauto.
+  all: eauto.
+Qed.
+
+Section WithLang.
+  Context (l : lang)
+    (wfl : wf_lang l).
+
+  Section WithCtx.
+  Context (c : ctx)
+    (wfc : wf_ctx l c).
+
+  Theorem cut_admissible
+    : (forall t1' t2',
+          eq_sort l c t1' t2' ->
+          sort_cut_admissible l c t1' t2')
+      /\ (forall (t : Term.sort V) (e1 e2 : Term.term V),
+             eq_term l c t e1 e2 ->
+             term_cut_admissible l c t e1 e2)
+      /\ (forall (c' : Term.ctx V) (s1 s2 : Term.subst V),
+            eq_subst l c c' s1 s2 ->
+            wf_ctx l c' ->
+            subst_cut_admissible l c c' s1 s2)
+      /\ (forall c' (s1 s2 : list term),
+            eq_args l c c' s1 s2 ->
+            wf_ctx l c' ->
+            args_cut_admissible l c c' s1 s2).
+  Proof.
+    intuition; eapply cut_admissible'; eauto using lang_is_cut_admissible with utils.
+  Qed.
+
+  End WithCtx.
+
+  Section CoreWfLang.
+    Context (wfl_core : Core.wf_lang l).
   
-  Local Lemma cut_implies_core 
-    : (forall c t1 t2,
-          eq_sort c t1 t2 ->
+  Section WithCtx.
+  Context (c : ctx)
+    (wfc_core : Model.wf_ctx (Model:= core_model l) c).
+                 
+  Lemma cut_implies_core 
+    : (forall t1 t2,
+          eq_sort l c t1 t2 ->
           Core.eq_sort l c t1 t2)
-      /\ (forall c t e1 e2,
-             eq_term c t e1 e2 ->
+      /\ (forall t e1 e2,
+             eq_term l c t e1 e2 ->
              Core.eq_term l c t e1 e2)
-      /\ (forall c c' s1 s2,
-             eq_subst c c' s1 s2 ->
+      /\ (forall c' s1 s2,
+             eq_subst l c c' s1 s2 ->
              Model.eq_subst (Model := core_model l) c c' s1 s2)
-      /\ (forall c c' s1 s2,
-             eq_args c c' s1 s2 ->
+      /\ (forall c' s1 s2,
+             eq_args l c c' s1 s2 ->
              Model.eq_args (Model := core_model l) c c' s1 s2).
-  Proof using V_Eqb_ok wfl.
+  Proof using V_Eqb_ok wfl_core wfc_core.
     simple eapply cut_ind;
       basic_goal_prep;
-      basic_core_crush.
+      autorewrite with utils term model lang_core in *.
     all: eauto using
            sort_con_congruence,
         Core.eq_sort_trans, Core.eq_sort_sym,
         term_con_congruence,
-        Core.eq_term_trans, Core.eq_term_sym.
+        Core.eq_term_trans, Core.eq_term_sym
+      with lang_core.      
   Qed.
+
 
   Definition eq_sort_cut_implies_core := proj1 cut_implies_core.
   Local Hint Resolve eq_sort_cut_implies_core : lang_core.
@@ -1235,40 +1827,45 @@ Section WithLang.
   
   Definition eq_args_cut_implies_core := proj2 (proj2 (proj2 cut_implies_core)).
   Local Hint Resolve eq_args_cut_implies_core : lang_core.
+
+  End WithCtx.
     
   Lemma core_implies_cut
     : (forall c t1 t2,
           Core.eq_sort l c t1 t2 ->
-          eq_sort c t1 t2)
+          eq_sort l c t1 t2)
       /\ (forall c t e1 e2,
              Core.eq_term l c t e1 e2 ->
-             eq_term c t e1 e2)
+             eq_term l c t e1 e2)
       /\ (forall c c' s1 s2,
              Model.eq_subst (Model:= core_model l) c c' s1 s2 ->
-             eq_subst c c' s1 s2)
+             eq_subst l c c' s1 s2)
       /\ (forall c t,
              wf_sort l c t ->
-             eq_sort c t t)
+             eq_sort l c t t)
       /\ (forall c e t,
              wf_term l c e t ->
-             eq_term c t e e)
+             eq_term l c t e e)
       /\ (forall c s c',
              wf_args (Model:= core_model l) c s c' ->
-             eq_args c c' s s)
+             eq_args l c c' s s)
       /\ (forall c,
-             Model.wf_ctx (Model:= core_model l) c -> True).
-  Proof using (* V_Eqb_ok wfl *).
+             Model.wf_ctx (Model:= core_model l) c -> wf_ctx l c).
+  Proof using V_Eqb_ok wfl wfc.
     simple eapply judge_ind.
     all: basic_goal_prep.
     all: basic_core_crush.
     {
-      erewrite <- sort_subst_id with (c:=c) (a:= t1) by typeclasses eauto.
-      erewrite <- sort_subst_id with (c:=c) (a:= t2) by typeclasses eauto.
+      erewrite <- sort_subst_id with (c:=c0) (a:= t1) by typeclasses eauto.
+      erewrite <- sort_subst_id with (c:=c0) (a:= t2) by typeclasses eauto.
       fold_Substable.
       eapply eq_sort_by; eauto.
       eapply cut_id_subst_refl.
     }
     {
+      eapply cut_admissible.
+      TODO: separate section
+      eauto.
       TODO: c' is arbitrary; how to get cut-admissibility for it?.
       Question: can I tie the loop on admissibility w/o core_implies_cut via an alternate wf_ctx?
                     
