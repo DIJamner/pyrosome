@@ -35,22 +35,6 @@ Section WithVar.
 
     Local Notation eq_subst := (eq_subst (Model:= core_model l) c).
     Local Notation eq_args := (eq_args (Model:= core_model l) c).
-
-    
-    (*TODO: move to CutElim.v*)
-    Local Lemma eq_args_iff_cut
-      : forall c' s1 s2,
-        CutElim.eq_args _ l c c' s1 s2 <->
-          eq_args c' s1 s2.
-    Proof.
-      split; induction 1;
-        basic_goal_prep;
-        constructor; eauto.
-      all: [> eapply CutElim.cut_implies_core
-           | eapply CutElim.core_implies_cut];
-        eauto.
-      eapply CutElim.wf_lang_iff_cut; eauto.
-    Qed.
     
     Lemma core_iff_cut
       : (forall t1 t2,
@@ -69,7 +53,7 @@ Section WithVar.
       intuition;
         try (eapply CutElim.core_implies_cut
              || eapply CutElim.cut_implies_core
-             || eapply eq_args_iff_cut);
+             || eapply CutElim.eq_args_iff_cut);
         eauto.
       all: eapply CutElim.wf_lang_iff_cut; eauto.
     Qed.
