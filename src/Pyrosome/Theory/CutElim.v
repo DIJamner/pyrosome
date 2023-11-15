@@ -6,12 +6,6 @@ Open Scope list.
 From Utils Require Import Utils SymmetricInduction.
 From Pyrosome.Theory Require Import Core.
 
-Module Notations.
-  Export Term.Notations.
-  Export Rule.Notations.
-End Notations.
-Import Notations.
-
 
 (*TODO: move to Utils*)
 Lemma fresh_with_names_from [V' A B] v (c' : @NamedList.named_list V' A) (s : list B)
