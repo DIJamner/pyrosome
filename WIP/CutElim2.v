@@ -1851,291 +1851,70 @@ Section WithLang.
              eq_args l c c' s s)
       /\ (forall c,
              Model.wf_ctx (Model:= core_model l) c -> wf_ctx l c).
-  Proof using V_Eqb_ok wfl wfc.
+  Proof using V_Eqb_ok wfl.
     simple eapply judge_ind.
     all: basic_goal_prep.
-    all: basic_core_crush.
+    all:eauto using  eq_sort_sym, eq_sort_trans,
+        eq_term_sym, eq_term_trans, eq_term_conv, eq_term_var with lang_core.
     {
-      erewrite <- sort_subst_id with (c:=c0) (a:= t1) by typeclasses eauto.
-      erewrite <- sort_subst_id with (c:=c0) (a:= t2) by typeclasses eauto.
+      erewrite <- sort_subst_id with (c:=c) (a:= t1) by typeclasses eauto.
+      erewrite <- sort_subst_id with (c:=c) (a:= t2) by typeclasses eauto.
       fold_Substable.
       eapply eq_sort_by; eauto.
       eapply cut_id_subst_refl.
     }
     {
-      eapply cut_admissible.
-      TODO: separate section
-      eauto.
-      TODO: c' is arbitrary; how to get cut-admissibility for it?.
-      Question: can I tie the loop on admissibility w/o core_implies_cut via an alternate wf_ctx?
-                    
-                                                          
-      eapply weak_cut_admissible; eauto.
-      admit (*TODO: depends on cut admissibility*).
+      eapply cut_admissible; cycle 1; eauto.
     }
     {
-      admit (*TODO: depends on cut admissibility*).
+      eapply cut_admissible; cycle 1; eauto.
     }
     {
       erewrite <- sort_subst_id with (c:=c) (a:= t) by typeclasses eauto.
-      erewrite <- subst_id with (c:=c) (a:= e1) by typeclasses eauto.
-      erewrite <- subst_id with (c:=c) (a:= e2) by typeclasses eauto.
+      erewrite <- term_subst_id with (c:=c) (a:= e1) by typeclasses eauto.
+      erewrite <- term_subst_id with (c:=c) (a:= e2) by typeclasses eauto.
       fold_Substable.
       eapply eq_term_by; eauto.
       eapply cut_id_subst_refl.
     }
   Qed.
+
+  Lemma ctx_iff_cut c
+    : Model.wf_ctx (Model:= core_model l) c <-> wf_ctx l c.
+  Proof.
+    split; [ eapply core_implies_cut |].
+    induction 1;
+      basic_goal_prep;
+      constructor; eauto.
+    all: try eapply Core.eq_sort_wf_r; eauto.
+    all: try eapply cut_implies_core; eauto.
+  Qed.
   
-  
+  Lemma rule_iff_cut r
+    : Core.wf_rule l r <-> wf_rule l r.
+  Proof using V_Eqb_ok V_default wfl wfl_core.
+    destruct r;
+      autorewrite with lang_core;
+      intuition.
+    all: try eapply core_implies_cut; eauto.
+    all: try eapply Core.eq_sort_wf_r; eauto.
+    all: try eapply Core.eq_term_wf_r; eauto.
+    all: try eapply cut_implies_core; eauto.
+    all: eapply ctx_iff_cut; eauto.
+  Qed.
 
-(* TODO: assess benefits of retaining symmetry, transitivity
-Hint Constructors eq_sort eq_term eq_subst eq_args
-     wf_sort wf_term wf_subst wf_args wf_ctx
-     wf_rule : lang_core.
- *)
+  End CoreWfLang.
 
-Hint Constructors eq_subst eq_args
-     wf_sort wf_term wf_subst wf_args wf_ctx
-     wf_rule : lang_core.
+End WithLang.
 
-Hint Resolve eq_sort_by : lang_core.
-Hint Resolve eq_sort_subst : lang_core.
-Hint Resolve eq_sort_refl : lang_core.
-Hint Resolve eq_term_by : lang_core.
-Hint Resolve eq_term_subst : lang_core.
-Hint Resolve eq_term_refl : lang_core.
-Hint Resolve eq_term_conv : lang_core.
+Lemma wf_lang_iff_cut l
+  : Core.wf_lang l <-> wf_lang l.
+Proof.
+  split; induction 1;
+    autorewrite with utils lang_core in *;
+    intuition; try constructor;
+    eauto with lang_core.
+  all: eapply rule_iff_cut; eauto.
+Qed.
 
-#[local] Hint Mode wf_ctx - - - - ! : lang_core.
-#[local] Hint Mode wf_ctx - - - - ! : model.
-
-#[local] Hint Mode wf_args - - - - ! - - : model.
-#[local] Hint Mode wf_args - - - - - ! - : model.
-#[local] Hint Mode wf_args - - - - - - ! : model.
-#[local] Hint Mode wf_args - - - - ! - - : lang_core.
-#[local] Hint Mode wf_args - - - - - ! - : lang_core.
-#[local] Hint Mode wf_args - - - - - - ! : lang_core.
-
-#[local] Hint Mode eq_sort - - ! - : lang_core.
-#[local] Hint Mode eq_sort - - - ! : lang_core.
-#[local] Hint Mode eq_term - - - ! - : lang_core.
-#[local] Hint Mode eq_term - - - - ! : lang_core.
-#[local] Hint Mode wf_term - - ! - : lang_core.
-#[local] Hint Mode wf_sort - - ! : lang_core.
-  
-  Notation eq_subst l :=
-    (eq_subst (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
-  Notation eq_args l :=
-    (eq_args (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
-  Notation wf_subst l :=
-    (wf_subst (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
-  Notation wf_args l :=
-    (wf_args (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
-  Notation wf_ctx l :=
-    (wf_ctx (Model:= mut_mod (eq_sort l) (eq_term l) (wf_sort l) (wf_term l))).
-
-  (*
-  Defined by inlining nested datatypes then modifying the results of the mutual schemes below.
-  The induction schemes for the nested types were pulled out into a separate section
-  and various naming and implicit arguments changes were made for brevity
-  and (some) legibility.
-
-Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
-  with eq_term_ind' := Minimality for eq_term Sort Prop
-  with eq_subst_ind' := Minimality for eq_subst Sort Prop
-  with wf_sort_ind' := Minimality for wf_sort Sort Prop
-  with wf_term_ind' := Minimality for wf_term Sort Prop
-  with wf_args_ind' := Minimality for wf_args Sort Prop
-  with wf_ctx_ind' := Minimality for wf_ctx Sort Prop.
-
-   *)
-  Section JudgeInd.
-    Context (l : lang) (P : ctx -> sort -> sort -> Prop)
-            (P0 : ctx -> sort -> term -> term -> Prop)
-            (P1 : ctx -> ctx -> subst -> subst -> Prop) (P2 : ctx -> sort -> Prop)
-            (P3 : ctx -> term -> sort -> Prop) (P4 : ctx -> list term -> ctx -> Prop) 
-            (P5 : ctx -> Prop)
-            (f : forall (c : ctx) (name : V) (t1 t2 : sort),
-                In (name, sort_eq_rule c t1 t2) l -> P c t1 t2)
-            (f0 : forall (c : ctx) (s1 s2 : subst) (c' : ctx) (t1' t2' : sort),
-                wf_ctx l c' ->
-                P5 c' ->
-                eq_subst l c c' s1 s2 ->
-                P1 c c' s1 s2 ->
-                eq_sort l c' t1' t2' ->
-                P c' t1' t2' ->
-                P c t1' [/s1 /] t2' [/s2 /])
-            (f1 : forall (c : ctx) (t : sort), wf_sort l c t -> P2 c t -> P c t t)
-            (f2 : forall (c : ctx) (t1 t12 t2 : sort),
-                eq_sort l c t1 t12 -> P c t1 t12 -> eq_sort l c t12 t2 -> P c t12 t2 -> P c t1 t2)
-            (f3 : forall (c : ctx) (t1 t2 : sort), eq_sort l c t1 t2 -> P c t1 t2 -> P c t2 t1)
-            (f4 : forall (c : ctx) (s1 s2 : subst) (c' : ctx) (t : sort) (e1 e2 : term),
-                wf_ctx l c' ->
-                P5 c' ->
-                eq_subst l c c' s1 s2 ->
-                P1 c c' s1 s2 ->
-                eq_term l c' t e1 e2 -> P0 c' t e1 e2 -> P0 c t [/s2 /] e1 [/s1 /] e2 [/s2 /])
-            (f5 : forall (c : ctx) (name : V) (t : sort) (e1 e2 : term),
-                In (name, term_eq_rule c e1 e2 t) l -> P0 c t e1 e2)
-            (f6 : forall (c : ctx) (e : term) (t : sort),
-                wf_term l c e t -> P3 c e t -> P0 c t e e)
-            (f7 : forall (c : ctx) (t : sort) (e1 e12 e2 : term),
-                eq_term l c t e1 e12 ->
-                P0 c t e1 e12 -> eq_term l c t e12 e2 -> P0 c t e12 e2 -> P0 c t e1 e2)
-            (f8 : forall (c : ctx) (t : sort) (e1 e2 : term),
-                eq_term l c t e1 e2 -> P0 c t e1 e2 -> P0 c t e2 e1)
-            (f9 : forall (c : ctx) (t t' : sort),
-                eq_sort l c t t' ->
-                P c t t' -> forall e1 e2 : term,
-                    eq_term l c t e1 e2 -> P0 c t e1 e2 -> P0 c t' e1 e2)
-            (f10 : forall c : ctx, P1 c [] [] [])
-            (f11 : forall (c c' : ctx) (s1 s2 : subst),
-                eq_subst l c c' s1 s2 ->
-                P1 c c' s1 s2 ->
-                forall (name : V) (t : sort) (e1 e2 : term),
-                  eq_term l c t [/s2 /] e1 e2 ->
-                  P0 c t [/s2 /] e1 e2 ->
-                  P1 c ((name, t) :: c') ((name, e1) :: s1) ((name, e2) :: s2))
-            (f12 : forall (c : ctx) (n : V) (s : list term) (args : list V) (c' : ctx),
-                In (n, sort_rule c' args) l -> wf_args l c s c' -> P4 c s c' -> P2 c (scon n s))
-            (f13 : forall (c : ctx) (n : V) (s : list term) (args : list V) (c' : ctx) (t : sort),
-                In (n, term_rule c' args t) l ->
-                wf_args l c s c' -> P4 c s c' -> P3 c (con n s) t [/with_names_from c' s /])
-            (f14 : forall (c : ctx) (e : term) (t t' : sort),
-                wf_term l c e t -> P3 c e t -> eq_sort l c t t' -> P c t t' -> P3 c e t')
-            (f15 : forall (c : list (V * sort)) (n : V) (t : sort), In (n, t) c -> P3 c (var n) t)
-            (f16 : forall c : ctx, P4 c [] [])
-            (f17 : forall (c : ctx) (s : list term) (c' : named_list sort)
-                          (name : V) (e : term) (t : sort),
-                wf_term l c e t [/with_names_from c' s /] ->
-                P3 c e t [/with_names_from c' s /] ->
-                wf_args l c s c' -> P4 c s c' -> P4 c (e :: s) ((name, t) :: c')) 
-            (f18 : P5 [])
-            (f19 : forall (name : V) (c : named_list sort) (v : sort),
-                fresh name c -> wf_ctx l c -> P5 c ->
-                wf_sort l c v -> P2 c v -> P5 ((name, v) :: c)).
-
-    Section Nested.
-      Context (eq_sort_ind' : forall (c : ctx) (s s0 : sort), eq_sort l c s s0 -> P c s s0)
-              (eq_term_ind' : forall (c : ctx) (s : sort) (t t0 : term),
-                  eq_term l c s t t0 -> P0 c s t t0)
-              (wf_sort_ind'
-                : forall (c : ctx) (s : sort), wf_sort l c s -> P2 c s)
-              (wf_term_ind'
-                : forall (c : ctx) (t : term) (s : sort), wf_term l c t s -> P3 c t s).
-      
-      Fixpoint eq_subst_ind' (c c0 : ctx) (s s0 : subst) (e : eq_subst l c c0 s s0)
-        : P1 c c0 s s0 :=
-        match e in (Model.eq_subst c1 c2 s1 s2) return (P1 c1 c2 s1 s2) with
-        | eq_subst_nil c1 => f10 c1
-        | eq_subst_cons e0 name t e1 e2 e3 =>
-            f11 e0 (eq_subst_ind' e0) name t e3 (eq_term_ind' e3)
-        end.
-      Fixpoint wf_args_ind' (c : ctx) (l0 : list term) (c0 : ctx) (w : wf_args l c l0 c0)
-        : P4 c l0 c0 :=
-        match w in (Model.wf_args c1 l1 c2) return (P4 c1 l1 c2) with
-        | wf_args_nil c1 => f16 c1
-        | wf_args_cons name e t w0 w1 =>
-            f17 name t w0 (wf_term_ind' w0) w1 (wf_args_ind' w1)
-        end.
-      Fixpoint wf_ctx_ind' (c : ctx) (w : wf_ctx l c) {struct w} : P5 c :=
-        match w in (Model.wf_ctx c0) return (P5 c0) with
-        | wf_ctx_nil => f18
-        | wf_ctx_cons v f20 w0 w1 =>
-            f19 f20 w0 (wf_ctx_ind' w0) w1 (wf_sort_ind' w1)
-        end.
-    End Nested.
-
-    Fixpoint eq_sort_ind' (c : ctx) (s s0 : sort) (e : eq_sort l c s s0) : P c s s0 :=
-      match e in (eq_sort _ c0 s1 s2) return (P c0 s1 s2) with
-      | eq_sort_by _ c0 name t1 t2 i => f c0 name t1 t2 i
-      | eq_sort_subst e1 e0 w =>
-          f0 w (wf_ctx_ind' wf_sort_ind' w) e0
-             (eq_subst_ind' eq_term_ind' e0) e1 (eq_sort_ind' e1)
-      | eq_sort_refl w => f1 w (wf_sort_ind' w)
-      | eq_sort_trans e0 e1 => f2 e0 (eq_sort_ind' e0) e1 (eq_sort_ind' e1)
-      | eq_sort_sym e0 => f3 e0 (eq_sort_ind' e0)
-      end
-    with eq_term_ind' (c : ctx) (s : sort) (t t0 : term) (e : eq_term l c s t t0) : P0 c s t t0 :=
-           match e in (eq_term _ c0 s0 t1 t2) return (P0 c0 s0 t1 t2) with
-           | eq_term_subst e3 e0 w =>
-               f4 w (wf_ctx_ind' wf_sort_ind' w)
-                  e0 (eq_subst_ind' eq_term_ind' e0) e3 (eq_term_ind' e3)
-           | eq_term_by _ c0 name t1 e1 e2 i => f5 c0 name t1 e1 e2 i
-           | eq_term_refl w => f6 w (wf_term_ind' w)
-           | eq_term_trans e0 e3 =>
-               f7 e0 (eq_term_ind' e0) e3 (eq_term_ind' e3)
-           | eq_term_sym e0 => f8 e0 (eq_term_ind' e0)
-           | eq_term_conv e3 e0 =>
-               f9 e0 (eq_sort_ind' e0) e3 (eq_term_ind' e3)
-           end
-    with wf_sort_ind' (c : ctx) (s : sort) (w : wf_sort l c s) {struct w} : P2 c s :=
-           match w in (wf_sort _ c0 s0) return (P2 c0 s0) with
-           | wf_sort_by n args i w0 =>
-               f12 n args i w0 (wf_args_ind' wf_term_ind' w0)
-           end
-    with wf_term_ind' (c : ctx) (t : term) (s : sort) (w : wf_term l c t s) : P3 c t s :=
-           match w in (wf_term _ c0 t0 s0) return (P3 c0 t0 s0) with
-           | wf_term_by n args t0 i w0 =>
-               f13 n args t0 i w0 (wf_args_ind' wf_term_ind' w0)
-           | wf_term_conv w0 e0 =>
-               f14 w0 (wf_term_ind' w0) e0 (eq_sort_ind' e0)
-           | wf_term_var _ c0 n t0 i => f15 c0 n t0 i
-           end.
-
-    
-    Definition eq_subst_ind'' := eq_subst_ind' eq_term_ind'.
-    Definition wf_args_ind'' := wf_args_ind' wf_term_ind'.
-    Definition wf_ctx_ind'' := wf_ctx_ind' wf_sort_ind'.
-
-    Combined Scheme judge_ind
-         from eq_sort_ind', eq_term_ind', eq_subst_ind'',
-              wf_sort_ind', wf_term_ind', wf_args_ind'',
-      wf_ctx_ind''.
-    
-  End JudgeInd.
-
-
-(*TODO: separate file for properties?*)
-
-  (*TODO: move appropriate lemmas into Model.v?*)
-Lemma invert_wf_subst_nil_cons l c n t c'
-  : wf_subst l c [] ((n,t)::c') <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_subst_nil_cons : lang_core.
-
-Lemma invert_wf_subst_cons_nil l c n e s
-  : wf_subst l c ((n,e)::s) [] <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_subst_cons_nil : lang_core.
-
-Lemma invert_wf_subst_nil_nil l c
-  : wf_subst l c [] [] <-> True.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_subst_nil_nil : lang_core.
-
-Lemma invert_wf_subst_cons_cons l c n e s m t c'
-  : wf_subst l c ((n,e)::s) ((m,t)::c') <-> n = m /\ wf_subst l c s c' /\ wf_term l c e t[/s/].
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_subst_cons_cons : lang_core.
-
-
-Lemma invert_wf_sort_rule l c args
-  : wf_rule l (sort_rule c args) <-> wf_ctx l c /\ sublist args (map fst c).
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_sort_rule : lang_core.
-
-Lemma invert_wf_term_rule l c args t
-  : wf_rule l (term_rule c args t) <-> wf_ctx l c /\ sublist args (map fst c) /\ wf_sort l c t.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_term_rule : lang_core.
-
-Lemma invert_wf_sort_eq_rule l c t1 t2
-  : wf_rule l (sort_eq_rule c t1 t2) <-> wf_ctx l c /\ wf_sort l c t1 /\ wf_sort l c t2.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_sort_eq_rule : lang_core.
-
-Lemma invert_wf_term_eq_rule l c e1 e2 t
-  : wf_rule l (term_eq_rule c e1 e2 t) <-> wf_ctx l c /\ wf_term l c e1 t /\ wf_term l c e2 t /\ wf_sort l c t.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_wf_term_eq_rule : lang_core.
+End WithVar.
