@@ -168,6 +168,68 @@ Section WithVar.
 
     End CutInd.
 
+    
+    Section TermCutInd.
+      
+      Context (P_term : sort -> term -> term -> Prop).
+
+      Fixpoint P_args c s1 s2 :=
+        match c, s1, s2 with
+        | [], [], [] => True
+        | (n,t)::c', e1::s1, e2::s2 =>
+            P_args c' s1 s2
+            /\ P_term t[/with_names_from c' s2/] e1 e2
+        | _, _, _ => False
+        end.
+      
+      Fixpoint P_subst c s1 s2 :=
+        match c, s1, s2 with
+        | [], [], [] => True
+        | (n,t)::c', (n1,e1)::s1, (n2,e2)::s2 =>
+            n1 = n
+            /\ n2 = n
+            /\ P_subst c' s1 s2
+            /\ P_term t[/s2/] e1 e2
+        | _, _, _ => False
+        end.
+      
+      (* Term hypotheses *)
+      Context (f : forall (c' : ctx) (name : V) (t : sort) (e1 e2 : term) s1 s2,
+                  In (name, term_eq_rule c' e1 e2 t) l ->
+                  eq_subst c' s1 s2 ->
+                  P_subst c' s1 s2 ->
+                  P_term t[/s2/] e1[/s1/] e2[/s2/])
+        (f0 : forall (c' : ctx) (name : V) (t : sort) args s1 s2,
+            In (name, term_rule c' args t) l ->
+            eq_args c' s1 s2 ->
+            P_args c' s1 s2 ->
+            P_term t[/(with_names_from c' s2)/] (con name s1) (con name s2))
+        (f01 : forall (n : V) (t : sort),
+            In (n, t) c -> P_term t (var n) (var n))
+        (f1 : forall (t : sort) (e1 e12 e2 : term),
+            eq_term l c t e1 e12 -> P_term t e1 e12 ->
+            eq_term l c t e12 e2 -> P_term t e12 e2 ->
+            P_term t e1 e2)
+        (f2 : forall (t : sort) (e1 e2 : term),
+            eq_term l c t e1 e2 -> P_term t e1 e2 -> P_term t e2 e1)
+        (f3 : forall (t t' : sort),
+            eq_sort l c t t' ->
+            forall e1 e2 : term,
+              eq_term l c t e1 e2 -> P_term t e1 e2 -> P_term t' e1 e2).
+
+      Lemma term_cut_ind s t t0 : eq_term l c s t t0 -> P_term s t t0.
+      Proof.
+        enough ((forall t t0, eq_sort l c t t0 -> True) /\
+                  (forall s t t0, eq_term l c s t t0 -> P_term s t t0) /\
+                  (forall c0 s s0, eq_subst c0 s s0 -> P_subst c0 s s0) /\
+                  (forall c0 s s0, eq_args c0 s s0 -> P_args c0 s s0)) by firstorder.
+        eapply cut_ind;
+          eauto;
+          try constructor; eauto.
+      Qed.
+
+    End TermCutInd.
+
   End WithLangAndCtx.
   
 End WithVar.
