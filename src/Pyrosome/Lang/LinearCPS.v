@@ -107,6 +107,50 @@ Ltac kill := apply todo.
         fail 100 "rule not found in lang"
       end. *)
 
+Ltac conc_only :=
+  eapply eq_term_trans;
+  try eredex_steps_with linear_value_subst "conc_ext_right";
+  compute_eq_compilation;
+  term_cong; try term_refl;
+  compute_eq_compilation;
+  eredex_steps_with linear_value_subst "conc_emp".
+
+Fixpoint concify_t t :=
+  match t with
+  | con "ext" [A; G] => {{e #"conc" {G} (#"ext" #"emp" {A} ) }}
+  | con s l => con s (map concify_t l)
+  | _ => t
+  end.
+
+Definition concify_s t :=
+  match t with
+  | scon "ext" [A; G] => {{s #"conc" {G} (#"ext" #"emp" {A} ) }}
+  | scon s l => scon s (map concify_t l)
+  end.
+
+Ltac use_conc_sort :=
+  try match goal with
+  | |- eq_sort _ _ _ ?t =>
+    instantiate (1 := concify_s t);
+    compute_eq_compilation;
+    sort_cong; try term_refl;
+    try conc_only
+  end.
+
+Ltac make_sort_conc :=
+  eapply eq_term_conv;
+  cycle 1;
+  use_conc_sort;
+  compute_eq_compilation.
+
+Ltac wf_make_sort_conc :=
+  eapply wf_term_conv;
+  cycle 1;
+  use_conc_sort;
+  try cleanup_auto_elab.
+
+Ltac show_subst_wf :=
+  repeat constructor; cycle 1; try cleanup_auto_elab; try wf_make_sort_conc.
 
 Derive linear_cps_subst
        SuchThat (elab_preserving_compiler []
@@ -119,84 +163,55 @@ Derive linear_cps_subst
        As linear_cps_subst_preserving.
 Proof.
 auto_elab_compiler; try compute_eq_compilation.
-all: kill.
-(*
+(* all: kill. *)
 - hide_implicits.
   eapply eq_term_trans; cycle 1.
   + eredex_steps_with linear_value_subst "exch_cmp".
   + compute_eq_compilation. term_refl.
 - cbv. (* should generate eq_sort goal instead *) kill.
-- hide_implicits.
-  eapply eq_term_trans; cycle 1.
+- eapply eq_term_trans; cycle 1.
   { eredex_steps_with linear_block_subst "blk_subst_id". }
   compute_eq_compilation.
-  replace {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) (
-                   #"csub" "G" "G" (only (#"neg" "A")) (only (
-                           #"neg" "A")) (#"id" "G") (#"id" (only (#"neg" "A")))) "e"}} with
-          {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) "s" "e"}}
-          [/[("s", {{e #"csub" "G" "G" (only (#"neg" "A")) (only (
-                           #"neg" "A")) (#"id" "G") (#"id" (only (#"neg" "A")))}})] /]
-          by reflexivity.
-  replace {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) (
-                   #"id" (#"ext" "G" (#"neg" "A"))) "e"}} with
-          {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) "s" "e"}}
-          [/[("s", {{e #"id" (#"ext" "G" (#"neg" "A"))}})] /]
-          by reflexivity.
-  replace {{s #"blk" (#"ext" "G" (#"neg" "A"))}} with
-          {{s #"blk" (#"ext" "G" (#"neg" "A"))}}
-          [/[("s", {{e #"id" (#"ext" "G" (#"neg" "A"))}})] /]
-          by reflexivity.
-  eapply eq_term_subst.
-  + term_refl.
-  + econstructor. { econstructor. }
-    unfold Model.eq_term.
-    instantiate (1 := {{s #"sub" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) }}).
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    Print eq_term_subst.
-    { eredex_steps_with linear_value_subst "csub_id". }
-
-
-  eapply eq_term_trans; cycle 1.
-  { instantiate (1 := {{e #"blk_subst" (#"ext" (#"conc" "G" #"emp") (#"neg" "A")) (#"ext" (#"conc" "G" #"emp") (#"neg" "A")) (#"id" (#"ext" (#"conc" "G" #"emp") (#"neg" "A"))) "e"}}).
-    compute_eq_compilation.
-    (* eredex_steps_with linear_value_subst "conc_emp". *)
-    replace {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) (
-                   #"id" (#"ext" "G" (#"neg" "A"))) "e"}} with
-            {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) (
-                              #"id" (#"ext" "G" (#"neg" "A"))) "e"}}
-            [/[("G", {{e "G"}})] /] by reflexivity.
-    replace {{e #"blk_subst" (#"ext" (#"conc" "G" #"emp") (#"neg" "A")) (#"ext" (#"conc" "G" #"emp") (#"neg" "A"))
-                  (#"id" (#"ext" (#"conc" "G" #"emp") (#"neg" "A"))) "e"}} with
-            {{e #"blk_subst" (#"ext" "G" (#"neg" "A")) (#"ext" "G" (#"neg" "A")) (#"id" (#"ext" "G" (#"neg" "A"))) "e"}}
-            [/[("G", {{e #"conc" "G" #"emp"}})] /] by reflexivity.
-    replace {{s #"blk" (#"ext" "G" (#"neg" "A"))}} with
-      {{s #"blk" (#"ext" "G" (#"neg" "A"))}} [/[("G", {{e "G"}})] /] by reflexivity.
-    eapply eq_term_subst.
-    - term_refl.
-    - econstructor. { econstructor. }
-      unfold Model.eq_term.
-      instantiate (1 := {{s #"env"}}).
-      compute_eq_compilation.
-      replace {{s #"env"}} with {{s #"env"}} [/[("G", {{e "G"}})] /] by reflexivity.
-      replace {{e #"conc" "G" #"emp"}} with {{e #"conc" "G" #"emp"}} [/[("G", {{e "G"}})] /] by reflexivity.
-      replace {{e "G"}} with {{e "G"}} [/[("G", {{e "G"}})] /] by reflexivity.
-      eapply eq_term_subst; cycle 1.
-      + econstructor. { econstructor. }
-        instantiate (1 := {{s #"env"}}).
-        term_refl.
-      + cleanup_auto_elab.
-      + eredex_steps_with linear_value_subst "conc_emp".
-    - cleanup_auto_elab. }
-
-    eapply eq_term_trans; cycle 1.
-    { eredex_steps_with linear_value_subst "conc_ext". }
-- hide_implicits. kill.
+  term_cong; try term_refl.
+  compute_eq_compilation.
+  eapply eq_term_trans.
+  + make_sort_conc.
+    eredex_steps_with linear_value_subst "csub_id".
+  + compute_eq_compilation; term_cong;
+    compute_eq_compilation; conc_only.
+- eapply eq_term_trans.
+  { eredex_steps_with linear_block_subst "blk_subst_cmp".
+    show_subst_wf.
+  }
+  compute_eq_compilation.
+  term_cong; try term_refl.
+  compute_eq_compilation.
+  eapply eq_term_trans.
+  { instantiate (1 := {{e #"csub" "G1" "G3" (only (#"neg" "A")) (only (#"neg" "A")) (#"cmp" "G1" "G2" "G3" "f" "g")
+      (#"cmp" (only (#"neg" "A")) (only (#"neg" "A")) (only (#"neg" "A")) (#"id" (only (#"neg" "A"))) (#"id" (only (#"neg" "A")))) }}).
+    eapply eq_term_sym.
+    make_sort_conc.
+    hide_implicits.
+    (* eredex_steps_with linear_value_subst "csub_subst_cmp". *)
+    kill. }
+  term_cong; try term_refl.
+  { left. eapply eq_sort_sym. sort_cong; compute_eq_compilation; conc_only. }
+  compute_eq_compilation.
+  eredex_steps_with linear_value_subst "id_left".
 - cbv. (* should generate eq_sort *) kill.
-- hide_implicits. kill.
+- hide_implicits.
+  eapply eq_term_trans.
+  { eredex_steps_with linear_block_subst "blk_subst_cmp".
+    show_subst_wf.
+    { compute_eq_compilation. term_cong; try term_refl.
+      compute_eq_compilation.
+      (* eredex_steps_with linear_value_subst "conc_emp". *)
+      kill. }
+    kill. }
+  compute_eq_compilation.
+  hide_implicits.
 Unshelve.
 all: cleanup_auto_elab.
-*)
 Qed.
 #[export] Hint Resolve linear_cps_subst_preserving : elab_pfs.
 
