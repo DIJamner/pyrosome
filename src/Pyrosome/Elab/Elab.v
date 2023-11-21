@@ -302,19 +302,19 @@ Hint Resolve elab_ctx_lang_monotonicity : lang_core.
 Lemma elab_term_by' l c n (s es : list term) args c' t t'
   : In (n, term_rule c' args t') l ->
     elab_args l c s args es c' ->
-    t = t' [/with_names_from c' es /] ->
+    t = t' [/with_names_from c' es /] \/ eq_sort l c t' [/with_names_from c' es /] t ->
     elab_term l c (con n s) (con n es) t.
 Proof.
-  intros; subst; eauto with lang_core.
+  intros; subst; intuition subst; eauto with lang_core.
 Qed.
 
 Lemma wf_term_by' l c n (es : list term) args c' t t'
   : In (n, term_rule c' args t') l ->
     wf_args l c es c' ->
-    t = t' [/with_names_from c' es /] ->
+    t = t' [/with_names_from c' es /] \/ eq_sort l c t' [/with_names_from c' es /] t ->
     wf_term l c (con n es) t.
 Proof.
-  intros; subst; eauto with lang_core.
+  intros; subst; intuition subst; eauto with lang_core.
 Qed.
 
 

@@ -284,7 +284,89 @@ Section WithVar.
            }
            eapply wf_term_subst_monotonicity; eauto.
          }
-       Qed.         
+       Qed.
+
+       
+       Lemma eq_args_implies_eq_subst c c' s1 s2
+         : eq_args c c' s1 s2 ->
+           eq_subst c c' (with_names_from c' s1) (with_names_from c' s2).
+       Proof.
+         induction 1; basic_goal_prep; constructor; basic_utils_crush.
+       Qed.
+
+       
+       Lemma eq_args_refl c s c'
+         : wf_args c s c' ->
+           eq_args c c' s s.
+       Proof.
+         induction 1;
+           basic_goal_prep;
+           constructor;
+           basic_utils_crush.
+         eapply eq_term_refl.
+         eauto.
+       Qed.
+
+       Lemma eq_args_trans c c' s1 s12 s2
+         : wf_ctx c' ->
+           eq_args c c' s1 s12 ->
+           eq_args c c' s12 s2 ->
+           eq_args c c' s1 s2.
+       Proof.
+         intros Hctx H'; revert Hctx s2;
+           induction H';
+           inversion 2;
+           subst;
+           basic_goal_prep;
+           constructor.
+         {
+           safe_invert Hctx.
+           eauto.
+         }
+         {
+           safe_invert Hctx.
+           eapply eq_term_trans;
+             eauto.
+           eapply eq_term_conv; eauto.
+           eapply eq_sort_subst; eauto.
+           2:{
+             eapply eq_sort_refl; eauto.
+           }
+           {
+             eapply eq_args_implies_eq_subst.
+             eauto.
+           }
+         }
+       Qed.
+       
+       Lemma eq_args_sym c c' s1 s2
+         : wf_ctx c' ->
+           eq_args c c' s1 s2 ->
+           eq_args c c' s2 s1.
+       Proof.
+         intros Hctx H'; revert Hctx;
+           induction H';
+           subst;
+           basic_goal_prep;
+           constructor.
+         {
+           safe_invert Hctx.
+           eauto.
+         }
+         {
+           safe_invert Hctx.
+           eapply eq_term_sym;
+           eapply eq_term_conv; eauto.
+           eapply eq_sort_subst; eauto.
+           2:{
+             eapply eq_sort_refl; eauto.
+           }
+           {
+             eapply eq_args_implies_eq_subst.
+             eauto.
+           }
+         }
+       Qed.
 
     End WithModel.
 

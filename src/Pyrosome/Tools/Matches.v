@@ -661,6 +661,7 @@ Ltac t :=
   | |- wf_subst _ _ _ _ => apply wf_subst_cons || apply wf_subst_nil
   (*Don't use vm_compute here*)
   | [|- _ = _] => compute; reflexivity
+  | |- _ = _ \/ eq_sort _ _ _ _ => left; compute; reflexivity
   end.
 
 
