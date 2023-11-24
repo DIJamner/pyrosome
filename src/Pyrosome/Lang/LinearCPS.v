@@ -17,9 +17,8 @@ Require Import Pyrosome.Tools.UnElab.
 
 Local Notation compiler := (compiler string).
 
-About eq_term_trans.
-
-Notation "'only' e" := ({{e #"ext" #"emp" {e} }})(in custom term at level 40, e custom arg at level 0).
+(* Local Notation "'lext' e t" := ({{e #"conc" (#"only" {t}) {e} }})
+    (in custom term at level 40, e custom arg at level 0, t custom arg at level 0). *)
 
 Definition linear_cps_lang_def : lang :=
   {[l/lin_subst (* [linear_blk_subst ++ linear_value_subst] *)
@@ -29,7 +28,7 @@ Definition linear_cps_lang_def : lang :=
       ];
   [:| "G" : #"env",
       "A" : #"ty",
-      "e" : #"blk" (#"ext" "G" "A")
+      "e" : #"blk" (ext "G" "A")
       -----------------------------------------------
       #"cont" "A" "e" : #"val" "G" (#"neg" "A")
    ];
@@ -42,7 +41,7 @@ Definition linear_cps_lang_def : lang :=
    ];
   [:= "G" : #"env", "H" : #"env",
       "A" : #"ty",
-      "e" : #"blk" (#"ext" "G" "A"),
+      "e" : #"blk" (ext "G" "A"),
       "v" : #"val" "H" "A"
       ----------------------------------------------- ("jmp_beta")
       #"jmp" (#"cont" "A" "e") "v"
@@ -58,8 +57,6 @@ Definition linear_cps_lang_def : lang :=
   ]
   ]}.
 
-Compute linear_cps_lang_def.
-
 Derive linear_cps_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst)
                                linear_cps_lang_def
@@ -74,83 +71,120 @@ Qed.
 Definition linear_cps_subst_def : compiler :=
   match # from (linear_exp_subst ++ linear_value_subst) with
   | {{s #"exp" "G" "A"}} =>
-    {{s #"blk" (#"ext" "G" (#"neg" "A")) }}
+    {{s #"blk" (ext "G" (#"neg" "A")) }}
   | {{e #"exp_subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"blk_subst" (#"csub" "g" (#"id" (only (#"neg" "A")))) "e"}}
+    {{e #"blk_subst" (#"csub" "g" (#"id" (#"only" (#"neg" "A")))) "e"}}
   | {{e #"ret" "G" "A" "v"}} =>
-    {{e #"blk_subst" (#"exch" #"emp" "G" (#"ext" #"emp" (#"neg" "A")) #"emp") (#"jmp" (#"hd" (#"neg" "A")) "v")}}
+    {{e #"blk_subst" (#"exch" #"emp" "G" (#"only" (#"neg" "A")) #"emp") (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
 Axiom todo : forall (T : Type), T.
 Ltac kill := apply todo.
 
-(* Ltac eredex_steps_with lang name :=
+(* Fixpoint normalize_env' e :=
+  match e with
+  | {{e #"conc" {e1} {e2} }} =>
+    let e1' := normalize_env' e1 in
+    let e2' := normalize_env' e2 in
+    match e1', e2' with
+    | {{e #"emp"}}, _ => e2'
+    | _, {{e #"emp"}} => e1'
+    | {{e #"conc" {e11} {e12} }}, _ => {{e #"conc" {e11} (#"conc" {e12} {e2'})}}
+    | _, _ => {{e #"conc" {e1'} {e2'} }}
+    end
+  | _ => e
+  end. *)
+
+Ltac reduce_by l r :=
+  eapply eq_term_trans;
+  [> eredex_steps_with l r | ..].
+
+Ltac normalize_env_step :=
+  compute_eq_compilation;
+  match goal with
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" #"emp" {_} }} _ =>
+    reduce_by linear_value_subst "conc_emp_l"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" {_} #"emp" }} _ =>
+    reduce_by linear_value_subst "conc_emp_r"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" (#"conc" {_} {_}) {_} }} _ =>
+    reduce_by linear_value_subst "conc_assoc"
+  | |- eq_term _ _ {{s #"env"}} {{e #"conc" {_} {_} }} _ => term_cong
+  | _ => term_refl
+  end.
+
+Ltac normalize_env :=
+  eapply eq_term_trans;
+  [> repeat normalize_env_step; term_refl | .. ].
+
+
+Ltac simplify_wf_term :=
+  try unfold Model.wf_term;
+  match goal with
+  | |- wf_term ?l ?c ?e ?t =>
+      let c' := eval vm_compute in c in
+      let e' := eval vm_compute in e in
+      let t' := eval vm_compute in t in
+          change_no_check (wf_term l c' e' t')
+  end.
+
+      (* Ltac eredex_steps_with' lang name :=
   let mr := eval vm_compute in (named_list_lookup_err lang name) in
       lazymatch mr with
       | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
         lazymatch goal with
         | [|- @eq_term ?V _ ?l ?c' ?t ?e1 ?e2] =>
-          let s := open_constr:(_:subst V) in
+          let s := open_constr:(_:subst) in
           first [unify_var_names V s c | fail 2 "could not unify var names"];
+          idtac t tp e1 e1p e2 e2p;
           first [ replace (eq_term l c' t e1 e2)
-                    with (@eq_term V _ l c' tp[/s/] e1p[/s/] e2p[/s/]);
-                  [| f_equal; vm_compute; reflexivity (*TODO: is this general?*)]
+                    with (@eq_term V _ l c' tp[/s/] e1p[/s/] e2p[/s/])
+                  (* [| f_equal; vm_compute; reflexivity ]
                 | fail 2 "could not replace with subst"];
           eapply (@eq_term_subst V _ l c' s s c);
           [eapply (@eq_term_by V _ l c name tp e1p e2p);
            try solve [cleanup_auto_elab]
           | eapply eq_subst_refl; try solve [cleanup_auto_elab]
-          | try solve [cleanup_auto_elab]
+          | try solve [cleanup_auto_elab] *)
           ]
         end
       | None =>
         fail 100 "rule not found in lang"
       end. *)
 
-Ltac conc_only :=
-  eapply eq_term_trans;
-  try eredex_steps_with linear_value_subst "conc_ext_right";
+Ltac solve_wf_term := first [eapply wf_term_by';
+  [> solve_in | solve_wf_args | first [left; reflexivity | right; solve_sort] ]
+  | eapply wf_term_var; solve_in]
+with solve_wf_args :=
+  first [apply wf_args_nil | constructor; [> solve_wf_term | solve_wf_args ]]
+with env_eq :=
   compute_eq_compilation;
-  term_cong; try term_refl;
-  compute_eq_compilation;
-  eredex_steps_with linear_value_subst "conc_emp".
+  normalize_env;
+  eapply eq_term_sym;
+  normalize_env;
+  apply eq_term_refl;
+  solve_wf_term
+with solve_sort := sort_cong; [> env_eq .. ].
 
-Fixpoint concify_t t :=
-  match t with
-  | con "ext" [A; G] => {{e #"conc" {G} (#"ext" #"emp" {A} ) }}
-  | con s l => con s (map concify_t l)
-  | _ => t
-  end.
+Ltac solve_wf_subst :=
+  repeat (eapply wf_subst_cons; [> .. | solve_wf_term ]);
+  eapply wf_subst_nil.
 
-Definition concify_s t :=
-  match t with
-  | scon "ext" [A; G] => {{s #"conc" {G} (#"ext" #"emp" {A} ) }}
-  | scon s l => scon s (map concify_t l)
-  end.
-
-Ltac use_conc_sort :=
-  try match goal with
-  | |- eq_sort _ _ _ ?t =>
-    instantiate (1 := concify_s t);
-    compute_eq_compilation;
-    sort_cong; try term_refl;
-    try conc_only
-  end.
-
-Ltac make_sort_conc :=
+Ltac conv_steps_with l r :=
   eapply eq_term_conv;
-  cycle 1;
-  use_conc_sort;
-  compute_eq_compilation.
+  [> eredex_steps_with l r | solve_sort].
 
-Ltac wf_make_sort_conc :=
-  eapply wf_term_conv;
-  cycle 1;
-  use_conc_sort;
-  try cleanup_auto_elab.
+Ltac thru_steps_with l r :=
+  first [ conv_steps_with l r |
+    term_cong; try compute_eq_compilation;
+    first [
+      left; solve_sort |
+      thru_steps_with l r |
+      term_refl l r |
+      env_eq ] ].
 
-Ltac show_subst_wf :=
-  repeat constructor; cycle 1; try cleanup_auto_elab; try wf_make_sort_conc.
+Ltac lhs_thru_steps_with l r :=
+  eapply eq_term_trans;
+  [> thru_steps_with l r | .. ].
 
 Derive linear_cps_subst
        SuchThat (elab_preserving_compiler []
@@ -163,67 +197,85 @@ Derive linear_cps_subst
        As linear_cps_subst_preserving.
 Proof.
 auto_elab_compiler; try compute_eq_compilation.
-(* all: kill. *)
-- hide_implicits.
-  eapply eq_term_trans; cycle 1.
-  + eredex_steps_with linear_value_subst "exch_cmp".
-  + compute_eq_compilation. term_refl.
-- cbv. (* should generate eq_sort goal instead *) kill.
-- eapply eq_term_trans; cycle 1.
-  { eredex_steps_with linear_block_subst "blk_subst_id". }
-  compute_eq_compilation.
-  term_cong; try term_refl.
+- right. solve_sort.
+- hide_implicits. Compute linear_cps_lang_def.
+  reduce_by linear_block_subst "blk_subst_cmp".
+  { kill. }
   compute_eq_compilation.
   eapply eq_term_trans.
-  + make_sort_conc.
-    eredex_steps_with linear_value_subst "csub_id".
-  + compute_eq_compilation; term_cong;
-    compute_eq_compilation; conc_only.
-- eapply eq_term_trans.
-  { eredex_steps_with linear_block_subst "blk_subst_cmp".
-    show_subst_wf.
-  }
-  compute_eq_compilation.
-  term_cong; try term_refl.
-  compute_eq_compilation.
-  eapply eq_term_trans.
-  { instantiate (1 := {{e #"csub" "G1" "G3" (only (#"neg" "A")) (only (#"neg" "A")) (#"cmp" "G1" "G2" "G3" "f" "g")
-      (#"cmp" (only (#"neg" "A")) (only (#"neg" "A")) (only (#"neg" "A")) (#"id" (only (#"neg" "A"))) (#"id" (only (#"neg" "A")))) }}).
-    eapply eq_term_sym.
-    make_sort_conc.
-    hide_implicits.
-    (* eredex_steps_with linear_value_subst "csub_subst_cmp". *)
-    kill. }
-  term_cong; try term_refl.
-  { left. eapply eq_sort_sym. sort_cong; compute_eq_compilation; conc_only. }
-  compute_eq_compilation.
-  eredex_steps_with linear_value_subst "id_left".
-- cbv. (* should generate eq_sort *) kill.
-- hide_implicits.
-  eapply eq_term_trans.
-  { eredex_steps_with linear_block_subst "blk_subst_cmp".
-    show_subst_wf.
-    { compute_eq_compilation. term_cong; try term_refl.
+  { term_cong; try compute_eq_compilation; cycle 3.
+    - eapply eq_term_trans.
+      { term_cong. 1-4: shelve. term_refl. }
       compute_eq_compilation.
-      (* eredex_steps_with linear_value_subst "conc_emp". *)
-      kill. }
-    kill. }
-  compute_eq_compilation.
-  hide_implicits.
-Unshelve.
-all: cleanup_auto_elab.
-Qed.
-#[export] Hint Resolve linear_cps_subst_preserving : elab_pfs.
+      eredex_steps_with linear_value_subst "exch_cmp".
+      instantiate (8 := {{e #"id" #"emp" }}).
+      instantiate (7 := {{e #"id" (#"only" (#"neg" "A")) }}).
+      instantiate (6 := {{e "g"}}).
+      instantiate (5 := {{e #"id" #"emp" }}).
+      solve_wf_subst.
+    - term_refl.
+    - left. solve_sort.
+    - env_eq.
+    - env_eq.
+    Unshelve.
+    all: try cleanup_auto_elab.
+    all: try env_eq.
+    + compute_eq_compilation.
+      eapply eq_term_sym.
+      lhs_thru_steps_with linear_value_subst "csub_emp_l".
+      lhs_thru_steps_with linear_value_subst "csub_emp_r".
+      term_refl.
+    + solve_wf_term.
+  }
 
+  lhs_thru_steps_with linear_value_subst "csub_emp_l".
+  lhs_thru_steps_with linear_value_subst "csub_emp_r".
+
+  compute_eq_compilation.
+
+  eapply eq_term_sym.
+  eapply eq_term_trans.
+  { term_cong; cycle 1.
+    1-3: term_refl.
+    2: right; reflexivity.
+    compute_eq_compilation.
+    eapply eq_term_sym.
+    instantiate (1 := {{e #"blk_subst" {_} {_}
+                        (#"csub" {_} {_} {_} {_} (#"id" (#"only" (#"neg" "A"))) "g")
+                        (#"jmp" (#"only" (#"neg" "A")) "G2" "A" (#"hd" (#"neg" "A")) "v") }} ).
+    (* eapply eq_term_conv. *)
+    (* { *)
+    eapply eq_term_trans.
+    { eredex_steps_with linear_cps_lang "jmp-subst". }
+    compute_eq_compilation.
+    term_cong; try term_refl.
+    compute_eq_compilation.
+    eredex_steps_with linear_value_subst "val_subst_id".
+  }
+  reduce_by linear_block_subst "blk_subst_cmp".
+  { kill. }
+  compute_eq_compilation.
+  repeat (term_cong; try env_eq;
+  try compute_eq_compilation).
+  left. solve_sort.
+Unshelve.
+all: try cleanup_auto_elab.
+all: solve_wf_term.
+Unshelve.
+all: solve_wf_term.
+Qed.
+
+#[export] Hint Resolve linear_cps_subst_preserving : elab_pfs.
 
 (*TODO: separate file?*)
 Definition linear_cps_prod_lang_def : lang :=
-  {[l/lin_subst
+{[l/lin_subst
 
   [:| "A" : #"ty", "B": #"ty"
       -----------------------------------------------
       #"prod" "A" "B" : #"ty"
   ];
+
   [:| "G" : #"env", "H" : #"env",
       "A" : #"ty",
       "B" : #"ty",
@@ -232,20 +284,22 @@ Definition linear_cps_prod_lang_def : lang :=
       -----------------------------------------------
       #"pair" "e1" "e2" : #"val" (#"conc" "G" "H") (#"prod" "A" "B")
   ];
+
   [:| "G" : #"env", "H" : #"env",
       "A" : #"ty",
       "B" : #"ty",
       "v" : #"val" "H" (#"prod" "A" "B"),
-      "e" : #"blk" (#"ext" (#"ext" "G" "A") "B")
+      "e" : #"blk" (ext (ext "G" "A") "B")
       -----------------------------------------------
       #"pm_pair" "v" "e" : #"blk" (#"conc" "G" "H")
   ];
+
   [:= "G" : #"env", "H" : #"env", "K" : #"env",
       "A" : #"ty",
       "B" : #"ty",
       "v1" : #"val" "G" "A",
       "v2" : #"val" "H" "B",
-      "e" : #"blk" (#"ext" (#"ext" "K" "A") "B")
+      "e" : #"blk" (ext (ext "K" "A") "B")
       ----------------------------------------------- ("eval pm_pair")
       #"pm_pair" (#"pair" "v1" "v2") "e"
       = #"blk_subst" (#"csub" (#"id" "K") (#"csub" (#"vsub" "v1") (#"vsub" "v2"))) "e"
@@ -254,14 +308,12 @@ Definition linear_cps_prod_lang_def : lang :=
   [:= "G" : #"env", "H" : #"env",
       "A" : #"ty", "B" : #"ty",
       "v" : #"val" "H" (#"prod" "A" "B"),
-      "e" : #"blk" (#"ext" "G" (#"prod" "A" "B"))
+      "e" : #"blk" (ext "G" (#"prod" "A" "B"))
       ----------------------------------------------- ("prod_eta")
       #"pm_pair" "v" (#"blk_subst" (#"csub" (#"id" "G") (#"vsub" (#"pair" (#"hd" "A") (#"hd" "B")))) "e")
       = #"blk_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
       : #"blk" (#"conc" "G" "H")
   ] ]}.
-
-
 
 Derive linear_cps_prod_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
@@ -269,20 +321,16 @@ Derive linear_cps_prod_lang
 Proof. auto_elab. Qed.
 #[export] Hint Resolve linear_cps_prod_wf : elab_pfs.
 
-Print linear_cps_lang.
-
-Definition under s :=
-  {{e #"snoc" s #"hd"}}.
-
 Definition bind e A k :=
   {{e #"blk_subst" (#"snoc" #"id" (#"cont" {A} {k})) {e} }}.
 Arguments bind e A k/.
 
 
+
 Definition linear_cps_def : compiler :=
   match # from (linear_stlc) with
   | {{s #"exp" "G" "A"}} =>
-    {{s #"blk" (#"ext" "G" (#"neg" "A")) }}
+    {{s #"blk" (ext "G" (#"neg" "A")) }}
   | {{e #"lolli" "A" "B"}} =>
     {{e #"neg" (#"prod" "A" (#"neg" "B")) }}
   | {{e #"linear_lambda" "G" "A" "B" "e"}} =>
@@ -309,9 +357,9 @@ Definition linear_cps_def : compiler :=
       )
     )
   | {{e #"exp_subst" "G" "G'" "g" "A" "e" }} =>
-    {{e #"blk_subst" (#"snoc" "g" #"hd") "e" }}
+    {{e #"blk_subst" (#"csub" "g" (#"id" (#"only" (#"neg" "A")))) "e"}}
   | {{e #"ret" "G" "A" "v"}} =>
-    {{e #"blk_subst" (#"exch" #"emp" "G" (#"ext" #"emp" (#"neg" "A")) #"emp") (#"jmp" #"hd" "v")}}
+    {{e #"jmp" (#"hd" (#"neg" "A")) "v"}}
   end.
 
 Derive linear_cps
