@@ -22,6 +22,14 @@ Notation subst := (@subst string).
 Notation rule := (@rule string).
 Notation lang := (@lang string).
 
+Notation "'nconc' x .. y z" := (con "conc" [.. (con "conc" [z; y]) ..; x])
+    (in custom term at level 40, x custom arg at level 0, z custom arg at level 0).
+
+Notation "'ncsub' x .. y z" := (con "csub" [.. (con "csub" [z; y]) ..; x])
+    (in custom term at level 40, x custom arg at level 0, z custom arg at level 0).
+
+Notation "'ext' e t" := ({{e #"conc" {e} (#"only" {t} )}})
+    (in custom term at level 40, e custom arg at level 0, t custom arg at level 0).
 
 Definition linear_value_subst_def : lang :=
   {[l
@@ -91,9 +99,9 @@ Definition linear_value_subst_def : lang :=
   [:| -----------------------------------------------
       #"emp" : #"env"
   ];
-  [:| "G" : #"env", "A": #"ty"
-       -----------------------------------------------
-       #"ext" "G" "A" : #"env"
+  [:| "A": #"ty"
+      -----------------------------------------------
+      #"only" "A" : #"env"
   ];
 
   [:| "G": #"env", "H": #"env"
@@ -101,17 +109,12 @@ Definition linear_value_subst_def : lang :=
       #"conc" "G" "H": #"env"
   ];
   [:= "G": #"env"
-      ----------------------------------------------- ("conc_emp")
-      #"conc" "G" #"emp" = "G" : #"env"
-  ];
-  [:= "G": #"env"
-      ----------------------------------------------- ("emp_conc")
+      ----------------------------------------------- ("conc_emp_l")
       #"conc" #"emp" "G" = "G" : #"env"
   ];
-  [:= "G": #"env", "H": #"env", "A": #"ty"
-      ----------------------------------------------- ("conc_ext_right")
-      #"conc" "G" (#"ext" "H" "A") =
-      #"ext" (#"conc" "G" "H") "A" : #"env"
+  [:= "G": #"env"
+      ----------------------------------------------- ("conc_emp_r")
+      #"conc" "G" #"emp" = "G" : #"env"
   ];
   [:= "G1": #"env", "G2": #"env", "G3": #"env"
       ----------------------------------------------- ("conc_assoc")
@@ -130,7 +133,13 @@ Definition linear_value_subst_def : lang :=
   ];
   [:= "G": #"env", "G'": #"env",
       "g": #"sub" "G" "G'"
-      ----------------------------------------------- ("csub_emp")
+      ----------------------------------------------- ("csub_emp_l")
+      #"csub" (#"id" #"emp") "g" = "g":
+      #"sub" "G" "G'"
+  ];
+  [:= "G": #"env", "G'": #"env",
+      "g": #"sub" "G" "G'"
+      ----------------------------------------------- ("csub_emp_r")
       #"csub" "g" (#"id" #"emp") = "g":
       #"sub" "G" "G'"
   ];
@@ -149,46 +158,49 @@ Definition linear_value_subst_def : lang :=
              (#"conc" "G1'" (#"conc" "G2'" "G3'"))
 
   ];
+  (* [:= "G1": #"env", "G2": #"env", "G3": #"env",
+      "H1": #"env", "H2": #"env", "H3": #"env",
+      "g1": #"sub" "G1" "G2", "g2": #"sub" "G2" "G3",
+      "h1": #"sub" "H1" "H2", "h2": #"sub" "H2" "H3"
+      ----------------------------------------------- ("csub_cmp")
+      #"csub" (#"cmp" "g1" "g2") (#"cmp" "h1" "h2") =
+      #"cmp" (#"csub" "g1" "h1") (#"csub" "g2" "h2") :
+      #"sub" (#"conc" "G1" "H1") (#"conc" "G3" "H3")
+  ]; *)
   [:= "G1": #"env", "G2": #"env", "G3": #"env",
       "H1": #"env", "H2": #"env", "H3": #"env",
       "g1": #"sub" "G1" "G2", "g2": #"sub" "G2" "G3",
       "h1": #"sub" "H1" "H2", "h2": #"sub" "H2" "H3"
-      ----------------------------------------------- ("csub_subst_cmp")
-      #"csub" (#"cmp" "g1" "g2") (#"cmp" "h1" "h2") =
-      #"cmp" (#"csub" "g1" "h1") (#"csub" "g2" "h2"):
+      ----------------------------------------------- ("cmp_csub")
+      #"cmp" (#"csub" "g1" "h1") (#"csub" "g2" "h2") =
+      #"csub" (#"cmp" "g1" "g2") (#"cmp" "h1" "h2") :
       #"sub" (#"conc" "G1" "H1") (#"conc" "G3" "H3")
   ];
 
   [:|  "A" : #"ty"
        -----------------------------------------------
-       #"hd" "A" : #"val" (#"ext" #"emp" "A") "A"
+       #"hd" "A" : #"val" (#"only" "A") "A"
   ];
 
   [:| "G" : #"env",
       "A" : #"ty",
       "v" : #"val" "G" "A" (*we restrict substitutions to values *)
        -----------------------------------------------
-       #"vsub" "v" : #"sub" "G" (#"ext" #"emp" "A")
+       #"vsub" "v" : #"sub" "G" (#"only" "A")
   ];
 
   [:= "A" : #"ty"
       ----------------------------------------------- ("vsub_hd")
-      #"vsub" (#"hd" "A") = #"id" (#"ext" #"emp" "A") :
-      #"sub" (#"ext" #"emp" "A") (#"ext" #"emp" "A")
+      #"vsub" (#"hd" "A") = #"id" (#"only" "A") :
+      #"sub" (#"only" "A") (#"only" "A")
   ];
 
   (* explicit substitution for env*)
-  (* [:= "G": #"env", "H": #"env",
-      "X": #"env", "Y": #"env"
-      ----------------------------------------------- ("env_exch")
-      #"conc" (#"conc" (#"conc" "G" "X") "Y") "H" =
-      #"conc" (#"conc" (#"conc" "G" "Y") "X") "H" : #"env"
-  ]; *)
   [:| "G": #"env", "X": #"env", "Y": #"env", "H": #"env"
       -----------------------------------------------
       #"exch" "G" "X" "Y" "H":
-      #"sub" (#"conc" (#"conc" (#"conc" "G" "X") "Y") "H")
-             (#"conc" (#"conc" (#"conc" "G" "Y") "X") "H")
+      #"sub" (nconc "G" "X" "Y" "H")
+             (nconc "G" "Y" "X" "H")
   ];
   [:= "G": #"env", "X": #"env", "Y": #"env", "H": #"env",
       "G'": #"env", "X'": #"env", "Y'": #"env", "H'": #"env",
@@ -197,30 +209,18 @@ Definition linear_value_subst_def : lang :=
       "y": #"sub" "Y" "Y'",
       "h": #"sub" "H" "H'"
       ----------------------------------------------- ("exch_cmp")
+      #"cmp" (ncsub "g" "x" "y" "h")
+             (#"exch" "G'" "X'" "Y'" "H'") =
       #"cmp" (#"exch" "G" "X" "Y" "H")
-             (#"csub" (#"csub" (#"csub" "g" "y") "x" ) "h") =
-      #"cmp" (#"csub" (#"csub" (#"csub" "g" "x") "y" ) "h")
-             (#"exch" "G'" "X'" "Y'" "H'") :
-      #"sub" (#"conc" (#"conc" (#"conc" "G" "X") "Y") "H")
-             (#"conc" (#"conc" (#"conc" "G'" "Y'") "X'") "H'")
+             (ncsub "g" "y" "x" "h") :
+      #"sub" (nconc "G" "X" "Y" "H")
+             (nconc "G'" "Y'" "X'" "H'")
   ]
-  (* [:= "G": #"env", "H": #"env",
-      "V": #"env", "W": #"env",
-      "A": #"ty", "B": #"ty",
-      "v": #"val" "V" "A",
-      "w": #"val" "W" "B"
-      ----------------------------------------------- ("snoc_exch")
-      #"cmp" (#"csub" (#"snoc" (#"snoc" #"id" "v") "w") #"id")
-             (#"exch" "G" "H" "A" "B") =
-      #"csub" (#"snoc" (#"snoc" #"id" "w") "v") #"id" :
-      #"sub" (#"conc" (#"conc" (#"conc" "G" "V") "W") "H")
-             (#"conc" (#"ext" (#"ext" "G" "B") "A") "H")
-  ] *)
 
   ]}.
 
 #[export] Hint Resolve (inst_for_db "emp") : injective_con.
-#[export] Hint Resolve (inst_for_db "ext") : injective_con.
+#[export] Hint Resolve (inst_for_db "only") : injective_con.
 #[export] Hint Resolve (inst_for_db "vsub") : injective_con.
 
 (*TODO: use elab_lang notation?*)
@@ -315,10 +315,8 @@ Definition definitely_fresh (s : string) (l : list string) :=
 Definition choose_fresh (s : string) (c : ctx) :=
   if negb (inb s (map fst c)) then s else definitely_fresh s (map fst c).
 
-Definition only t := {{e #"ext" #"emp" {t} }}.
-
 Definition under s t :=
-  {{e #"csub" {s} (#"id" {only t})}}.
+  {{e #"csub" {s} (#"id" (#"only" {t} ))}}.
 
 Definition get_subst_constr s :=
   match s with
@@ -346,9 +344,13 @@ Section GenRHSSubterms.
    document &/or fix *)
   Fixpoint gen_arg_subst s :=
     match s with
-    | {{e#"emp"}} => {{e #"id" #"emp"}}
+    | {{e #"emp"}}
+    | {{e #"only" {_} }} => {{e #"id" {s} }}
+    | {{e #"conc" {s1} {s2} }} =>
+      let sub1 := gen_arg_subst s1 in
+      let sub2 := gen_arg_subst s2 in
+      {{e #"csub" {sub1} {sub2} }}
     | var G' => subst_for Gs gs G'
-    | {{e#"ext" {s'} {t} }} => under (gen_arg_subst s') t
     | _ => {{e#"ERR2" {s} }}
     end.
 
@@ -426,9 +428,14 @@ Fixpoint make_G' G G's :=
 
 Definition substable_constr name c args t : option lang :=
   match t with
-  | scon s [A; G] =>
+  | scon s l =>
     match get_subst_constr s with
     | Some subst_constr =>
+      let (A, G) := match l with
+      | [A0; G0] => (Some A0, G0)
+      | [G0] => (None, G0)
+      | _ => (None, {{e #"ERR4"}})
+      end in
       let constr_rule := term_rule c args t in
       let Gs := get_envs G in
       let '(G's, gs, c') := make_fresh_subs Gs c in
@@ -437,13 +444,15 @@ Definition substable_constr name c args t : option lang :=
       let blank_term := con name (map var args) in
       let lhs := {{e #subst_constr {g} {blank_term} }} in
       let rhs := con name (gen_rhs_subterms Gs gs c args) in
-      let t' := scon s [A; G'] in
+      let t' := match A with
+      | Some A0 => scon s [A0; G']
+      | None => scon s [G']
+      end in
       let subst_rule :=
           term_eq_rule c' lhs rhs t' in
       Some [(append name "-subst",subst_rule);(name, constr_rule)]
     | None => None
     end
-  | _ => None
   end.
 
 Definition sc '(n,r) :=
@@ -460,3 +469,42 @@ Notation "'{[l/lin_subst' r1 ; .. ; r2 ]}" :=
   (List.flat_map sc (cons r2 .. (cons r1 nil) ..))%rule
   (format "'[' {[l/lin_subst '[hv' r1 ; '/' .. ; '/' r2 ']' ]} ']'") : lang_scope.
 
+
+(* Definition linear_cps_lang_def : lang :=
+  {[l/lin_subst (* [linear_blk_subst ++ linear_value_subst] *)
+      [:| "A" : #"ty"
+          -----------------------------------------------
+          #"neg" "A" : #"ty"
+      ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "e" : #"blk" (ext "G" "A")
+      -----------------------------------------------
+      #"cont" "A" "e" : #"val" "G" (#"neg" "A")
+   ];
+   [:| "G" : #"env", "H" : #"env",
+       "A" : #"ty",
+       "v1" : #"val" "G" (#"neg" "A"),
+       "v2" : #"val" "H" "A"
+      -----------------------------------------------
+      #"jmp" "v1" "v2" : #"blk" (#"conc" "G" "H")
+   ];
+  [:= "G" : #"env", "H" : #"env",
+      "A" : #"ty",
+      "e" : #"blk" (ext "G" "A"),
+      "v" : #"val" "H" "A"
+      ----------------------------------------------- ("jmp_beta")
+      #"jmp" (#"cont" "A" "e") "v"
+      = #"blk_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
+      : #"blk" (#"conc" "G" "H")
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" (#"neg" "A")
+      ----------------------------------------------- ("cont_eta")
+      #"cont" "A" (#"jmp" "v" (#"hd" "A")) = "v"
+      : #"val" "G" (#"neg" "A")
+  ]
+  ]}.
+
+Compute linear_cps_lang_def. *)

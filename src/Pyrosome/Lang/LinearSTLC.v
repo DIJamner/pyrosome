@@ -11,6 +11,9 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
+Local Notation "'ext' e t" := ({{e #"conc" {e} (#"only" {t} )}})
+    (in custom term at level 40, e custom arg at level 0, t custom arg at level 0).
+
 Definition linear_stlc_def : lang :=
   {[l/lin_subst
   [:| "t" : #"ty", "t'": #"ty"
@@ -20,7 +23,7 @@ Definition linear_stlc_def : lang :=
   [:| "G" : #"env",
        "A" : #"ty",
        "B" : #"ty",
-       "e" : #"exp" (#"ext" "G" "A") "B"
+       "e" : #"exp" (ext "G" "A") "B"
        -----------------------------------------------
        #"linear_lambda" "A" "e" : #"val" "G" (#"lolli" "A" "B")
   ];
@@ -37,9 +40,9 @@ Definition linear_stlc_def : lang :=
       "H" : #"env",
       "A" : #"ty",
       "B" : #"ty",
-      "e" : #"exp" (#"ext" "G" "A") "B",
+      "e" : #"exp" (ext "G" "A") "B",
       "v" : #"val" "H" "A"
-      ----------------------------------------------- ("Linear-STLC-beta")
+      ----------------------------------------------- ("LSTLC-beta")
       #"linear_app" (#"ret" (#"linear_lambda" "A" "e")) (#"ret" "v")
       = #"exp_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
       : #"exp" (#"conc" "G" "H") "B"
@@ -109,8 +112,6 @@ Definition linear_stlc_def : lang :=
   ]
   ]}.
 *)
-
-Compute linear_stlc_def.
 
 Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
