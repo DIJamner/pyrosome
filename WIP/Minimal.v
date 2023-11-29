@@ -41,16 +41,16 @@ Section Terms.
 
     
   Variant eq_term_step : sort -> term -> term -> Prop :=
-  | eq_term_step_by : forall name c' t e1 e2 s1 s2 t',
+  | eq_term_step_by : forall name c' t e1 e2 s t',
       In (name,term_eq_rule c' e1 e2 t) l ->
-      eq_subst c' s1 s2 ->
-      eq_sort t[/s2/] t' ->
-      eq_term_step t' e1[/s1/] e2[/s2/]
-  | eq_term_step_by_sym : forall name c' t e1 e2 s1 s2 t',
+      wf_subst (Model:=core_model l) c s c' ->
+      eq_sort t[/s/] t' ->
+      eq_term_step t' e1[/s/] e2[/s/]
+  | eq_term_step_by_sym : forall name c' t e1 e2 s t',
       In (name,term_eq_rule c' e2 e1 t) l ->
-      eq_subst c' s1 s2 ->
-      eq_sort t[/s2/] t' ->
-      eq_term_step t' e1[/s1/] e2[/s2/]
+      wf_subst (Model:=core_model l) c s c' ->
+      eq_sort t[/s/] t' ->
+      eq_term_step t' e1[/s/] e2[/s/]
   | eq_term_step_cong : forall name c' args t s1 s2 t',
       In (name,term_rule c' args t) l ->
       eq_args c' s1 s2 ->
@@ -112,16 +112,6 @@ Scheme min_term_step_ind := Minimality for eq_term_step Sort Prop
       basic_goal_prep;
       try use_rule_in_wf;
       basic_core_crush.
-    {
-      eapply eq_term_step_by_sym; eauto using eq_subst_sym with lang_core.
-      eapply eq_sort_trans; eauto.
-      eapply eq_sort_subst; eauto with lang_core.
-    }
-    {
-      eapply eq_term_step_by; eauto using eq_subst_sym with lang_core.
-      eapply eq_sort_trans; eauto.
-      eapply eq_sort_subst; eauto with lang_core.
-    }
     {
       eapply eq_term_step_cong; eauto.
       { eapply eq_args_sym; eauto using core_model_ok. }
@@ -187,6 +177,17 @@ Scheme min_term_step_ind := Minimality for eq_term_step Sort Prop
       basic_goal_prep;
       eauto using eq_term_step_conv with lang_core.
   Qed.
+
+  
+  Lemma eq_term_refl_subst c' e t s1 s2
+    : wf_term l c' e t -> eq_subst c' s1 s2 -> eq_term t [/s2 /] e [/s1 /] e [/s2 /].
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_core_crush.
+    3:{
+      TODO: requires eq_subst to be mutual?
+                     Question: should I just eliminate conv first, not trans, sym?
   
   Lemma core_implies_eq_term t e1 e2
     : Core.eq_term l c t e1 e2 -> eq_term t e1 e2.
@@ -198,8 +199,11 @@ Scheme min_term_step_ind := Minimality for eq_term_step Sort Prop
     all: eauto using eq_term_sym, eq_term_trans, eq_term_conv with lang_core.
     all: autorewrite with utils lang_core in *; break.
     {
-      eapply eq_term_one.
-      eapply eq_term_step_by; eauto with lang_core.
+      eapply eq_term_next.
+      {
+        eapply eq_term_step_by; eauto with lang_core.
+      }
+      TODO: .
     }
     {
       eapply eq_term_cong; eauto.
