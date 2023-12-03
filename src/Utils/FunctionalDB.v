@@ -756,6 +756,72 @@ Alternately: should I build a tree then convert to a list?
   (*TODO: rebuilding process requires non-functional dbs at intermediate steps
     once we use non-idx merges
    *)
+  (*
+    TODO: do I want to support let_query? I don't have a use for it right now
+    and generally, multiple queries is a bad idea since they should be bundled into one
+    instead: log_exp an upd_exp
+   *)
+  Inductive log_upd : Type :=
+  | put_row : atom -> idx (* var *) -> log_upd -> log_upd
+  | let_row : atom -> idx (* binder *) -> log_upd -> log_upd
+  | unify : idx -> idx -> log_upd -> log_upd
+  | done : log_upd.
+
+  Record op_state : Type :=
+   Mk_state {
+      data : instance;
+      env : idx_map idx;
+      changed : bool;
+     }.
+  
+  Definition do_unify a b : state op_state unit :=
+    fun s =>
+      (* shortcut when equal so that changed remains false *)
+      if eqb a b then (tt,s) else
+      match UnionFind.union _ _ _ _ s.(data).(equiv) a b with
+      | Some (uf,_) => (tt,Mk_state (Build_instance s.(data).(db) uf) s.(env) true)
+      | None => (tt,s) (* shouldn't happen *)
+      end.
+
+  (* assumes the input is in the domain *)
+  Definition sub (env : idx_map idx) i : idx :=
+    unwrap_with_default (map.get env i).
+
+  Definition do_put_row a i : state op_state unit :=
+    fun s =>
+      let f := a.(atom_fn) in
+      let args := map (sub s.(env)) a.(atom_args) in
+      let val := sub s.(env) i in
+      let (_, d) := db_put f args val s.(data) in
+      (tt, Mk_state d s.(env) true).
+
+  (* Assumes that the symbol of a corresponds to a real table *)
+  Definition do_let_row a x : state op_state unit :=
+    fun s =>
+      let f := a.(atom_fn) in
+      let args := map (sub s.(env)) a.(atom_args) in
+      match db_get f args s.(data) with
+      | Some (i, d) =>
+          (tt, Mk_state d (map.put s.(env) x i) true)          
+      | None => (tt,s) (* shouldn't happen *)
+      end.
+  
+  (* TODO: generate differential instance?
+   *)
+  Fixpoint apply_upd (l : log_upd) : state op_state unit :=
+      match l with
+      | unify i1 i2 k =>
+          @! let _ <- do_unify i1 i2 in
+            (apply_upd k)
+      | put_row a i k => 
+          @! let _ <- do_put_row a i in
+            (apply_upd k)
+      | let_row a x k => 
+          @! let _ <- do_let_row a x in
+            (apply_upd k)
+      | done => Mret tt
+      end.
+        
   
   (*
     Note: should be able to generate terms (e.g. proofs of internal facts like neq) in addition to equalities!
@@ -767,10 +833,7 @@ Alternately: should I build a tree then convert to a list?
         to better support multiple operations being performed on the results of a single match.
         log_ops behave as follows:
         - run `assumptions` query
-        - for each substitution in the result:
-          + for each conclusion in order:
-            * if the output var is not in the subst, generate fresh output id & append it to the subst
-            * apply current subst to conclusion & add the result to db
+        - for each substitution in the result, run the update program
 
        This is useful for things like recording `sort_of` entries at the same time as terms are added to the db
 
@@ -778,7 +841,7 @@ Alternately: should I build a tree then convert to a list?
        made up of an (ordered) sequence of queries and conclusions, to take advantage of subqueries.
        Note: Use the var/const split for this
        *)
-      conclusions : list (atom * idx);
+      update : log_upd;
       assumptions : query;
     }.
   
@@ -821,36 +884,26 @@ Alternately: should I build a tree then convert to a list?
   End __.
 
   Definition state_upd {S} (f : S -> S) : state S unit := fun s => (tt, f s).
-  
-  (* TODO: generate differential instance?
-     TODO: track no change
-   *)
+
+  Fixpoint fold_updates has_changed upd subs : state instance bool :=
+    match subs with
+    | [] => Mret has_changed
+    | s::subs' =>
+        @! let s_changed <- fun i =>
+                            let (_,op_s) := apply_upd upd (Mk_state i s has_changed) in
+                            (op_s.(changed), op_s.(data)) in
+          let subs'_changed <- fold_updates has_changed upd subs' in
+          ret orb s_changed subs'_changed
+    end.
+
+  (* TODO: generate differential instance? *)
   Definition apply_op changed (l : log_op) : state instance bool :=
     fun i =>
-    (* TODO: precompute, choose a good var order as part of query optimization *)
-    let q := l.(assumptions) in
-    let subs := generic_join (flatten_db i.(db)) q in
-    (* operation to be performed per sub,cmd pair *)
-    let op_c '(fvs, sub, changed) c :=
-      let '(Build_atom f args,out) := c in
-      let args' := atom_args_subst sub fvs args in
-      match named_list_lookup_err (combine fvs sub) out with
-      | Some out_val =>
-          @! let _ <- db_put f args' out_val in
-            ret (fvs, sub, true)
-      | None =>
-        (* assumes a fixed default behavior for new rows *)
-        @! let fresh_x <- db_alloc in
-          let _ <- db_put f args' fresh_x in
-          (*TODO: why odd tuple? only need true after op_c*)
-          ret (out::fvs, fresh_x::sub, true)
-      end
-    in
-    (* operation to be performed per sub result from the query
-     *)
-    let op_sub changed s := Mfmap snd
-                      (list_Mfoldl op_c l.(conclusions) (q.(free_vars), s, changed)) in
-    (list_Mfoldl op_sub subs changed i).
+      (* TODO: precompute, choose a good var order as part of query optimization *)
+      let q := l.(assumptions) in
+      let subs := generic_join (flatten_db i.(db)) q in
+      let sub_maps := map (fun s => map.of_list (combine q.(free_vars) s)) subs in
+      (fold_updates changed l.(update) sub_maps i).
     
   Definition run_once (p : log_program) : state instance bool :=
     list_Mfoldl apply_op p false.    
