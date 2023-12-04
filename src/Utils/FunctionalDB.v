@@ -21,17 +21,10 @@ Section WithMap.
     (idx : Type)
       (Eqb_idx : Eqb idx)
       (Eqb_idx_ok : Eqb_ok Eqb_idx)
-      (counter : Type)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
-    (allocated : counter -> idx -> Prop)
-    (fresh : counter -> idx)
-    (* TODO: forces idx to be infinite *)
-    (fresh_is_new : forall c, ~ allocated c (fresh c))
-    (incr : counter -> counter)
-    (fresh_is_next : forall c, allocated (incr c) (fresh c))
     (* the type of values in the table. TODO: generalize to a symbol-dependent signature.
     (elt : Type)
     We use idx as the sole output type for now since it behaves specially wrt matching
@@ -215,6 +208,7 @@ Section WithMap.
     {
       atom_fn : symbol;
       atom_args : list idx;
+      (* TODO: should I keep this separate? atom_conclusion : idx; *)
     }.
 
   Definition node_map := symbol_map table.
