@@ -20,16 +20,7 @@ Section WithMap.
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
-    (allocated : counter -> idx -> Prop)
-    (fresh : counter -> idx)
-    (* TODO: forces idx to be infinite *)
-    (fresh_is_new : forall c, ~ allocated c (fresh c))
-    (incr : counter -> counter)
-    (fresh_is_next : forall c, allocated (incr c) (fresh c))
-    (* the type of values in the table. TODO: generalize to a symbol-dependent signature.
-    (elt : Type)
-    We use idx as the sole output type for now since it behaves specially wrt matching
-     *).
+      (idx_succ : idx -> idx).
 
   Notation log_upd := (log_upd idx symbol).
   Notation atom := (atom idx symbol).
@@ -77,9 +68,9 @@ Section WithMap.
     | done => id
     end.
 
-  Definition normalize l := normalize' l (Build_norm [] [] []).
+  Definition normalize_upd l := normalize' l (Build_norm [] [] []).
 
-  Definition unnormalize '(Build_norm l e p) : log_upd :=
+  Definition unnormalize_upd '(Build_norm l e p) : log_upd :=
     let pk : log_upd := List.fold_left (fun k '(a,x) => put_row a x k) p done in
     let ek : log_upd := List.fold_left (fun k '(x,y) => unify x y k) e pk in
     List.fold_right (fun '(a,x) k => let_row a x k) ek l.
@@ -164,6 +155,130 @@ Section WithMap.
 
   
   Definition optimize_upd l :=
-    unnormalize (dedup (elim_new_unified_vars (normalize l))).
+    unnormalize_upd (dedup (elim_new_unified_vars (normalize_upd l))).
 
+  Notation query := (query idx symbol).
+  Context (symbol_map : forall A, map.map symbol A).
+  Context 
+      (idx_map : forall A, map.map idx A)
+      (idx_map_ok : forall A, map.ok (idx_map A)).
+  Section Queries.
+
+    (* necessary to identify when a clause mentions the output.
+       TODO: should clauses always bind output? Might be some performance concerns.
+     *)
+    Context (arities : symbol_map nat).
+
+    (* TODO: move to FunctionalDB.v *)
+    Arguments atom_fn {idx symbol}%type_scope a.
+    Arguments atom_args {idx symbol}%type_scope a.
+    Arguments clauses {idx symbol}%type_scope q.
+    Arguments free_vars {idx symbol}%type_scope q.
+    Arguments Build_query {idx symbol}%type_scope (free_vars clauses)%list_scope.
+
+    Definition dead_var_elim q : query :=
+      let in_clauses x := existsb (fun a => inb x a.(atom_args)) q.(clauses) in
+      let fvs' := filter in_clauses q.(free_vars) in
+      Build_query fvs' q.(clauses).
+
+    (*TODO: move to utils*)
+    Instance nat_default : WithDefault nat := 0.
+    
+    (* returns a junk value in the none case for convenience *)
+    Definition arity f :=
+      unwrap_with_default (map.get arities f).
+
+    (*TODO: move to better place (list.v?) *)
+    Fixpoint split_last {A} `{WithDefault A} (l : list A) :=
+      match l with
+      | [] => ([], default)
+      | [a] => ([], a)
+      | a :: (_ :: _) as l0 =>
+          let (l',x) := split_last l0 in
+          (a::l',x)
+      end.
+
+    Definition gensym : state idx idx :=
+      fun s => (idx_succ s, s).
+
+    Context {idx_default : WithDefault idx}.
+    
+    Definition separate_atom_out a : state idx (atom * idx) :=
+      if eqb (length a.(atom_args)) (arity a.(atom_fn))
+      (* no preexisting variable *)
+      then
+        @! let x <- gensym in
+          ret (a,x)
+        (* assume len = arity + 1 *)
+      else
+        let '(args', out) := split_last a.(atom_args) in
+        Mret (Build_atom a.(atom_fn) args',out).
+
+    Notation instance := (instance idx symbol symbol_map idx_map).
+    Arguments db_put {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+      {symbol_map idx_map}%function_scope s ks%list_scope v i.
+
+    Definition uf_empty : union_find idx (idx_map _) (idx_map _) :=
+      (empty idx (idx_map idx) (idx_map nat) default).
+
+    Definition clauses_to_db (clauses : list atom) : state idx instance :=
+      list_Mfoldl (fun acc a =>
+                     @! let (Build_atom f args,out) <- separate_atom_out a in
+                       (*TODO: should db_put really return the idx? *)
+                       ret (snd (db_put f args out acc)))
+        clauses (Build_instance _ _ _ _ map.empty uf_empty).
+
+    Context (idx_max : idx -> idx -> idx).
+
+    (*TODO: is it safe to remove phonies?
+      No! might have been unified w/ other var.
+      Need a separate pass to remove them, so no point in remembering them?
+      Difficulty: can only remove a variable if:
+      - it appears only once in return position, and
+      - it is not free in the associated update
+      Rather than maintain a phony list, should take as input the fvs of the update
+     *)
+    Definition query_to_db q : instance :=
+      let next := idx_succ (List.fold_right idx_max idx_default q.(free_vars)) in
+      fst (clauses_to_db q.(clauses) next).
+
+    Notation db_map := (db_map idx symbol symbol_map idx_map).
+    Definition db_to_clauses : db_map -> list atom :=
+      let args_map_to_args _ args_map :=
+        MapTreeN.ntree_fold
+          _
+          (fun acc keys val => (keys ++ [val])::acc)
+          _ args_map []
+      in
+      map.fold (fun clauses f args_map =>
+                  (map (Build_atom f) (args_map_to_args _ (projT2 args_map)))
+                    ++ clauses) [].
+
+    (* Note: does not need to produce a mapping from old vars to new ones.
+       just grab the union-find from the instance *)
+    Fail Definition db_to_query (i : instance) : query :=
+      let clauses := db_to_clauses i.(db) in      
+      _.
+
+    End Queries.
+
+      (*Optimization pipeline:
+        - query -> db
+        - rebuild
+        - db -> query
+        - prune unused output vars
+        - optimize update
+        - rename vars to be dense near 0
+
+        TODO: check that there's no point in optimizing the update first
+       *)
+
+    (*
+      general idea for variable order:
+      1. RHS vars in order of row arity
+         + question: this puts sorts (via sort_of) early. Is that a good thing?
+           Seems like it might be?
+     *)
+
+    
 End WithMap.
