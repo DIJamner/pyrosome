@@ -750,16 +750,16 @@ Alternately: should I build a tree then convert to a list?
   (*TODO: rebuilding process requires non-functional dbs at intermediate steps
     once we use non-idx merges
    *)
+  
   (*
     TODO: do I want to support let_query? I don't have a use for it right now
     and generally, multiple queries is a bad idea since they should be bundled into one
     instead: log_exp an upd_exp
    *)
-  Inductive log_upd : Type :=
-  | put_row : atom -> idx (* var *) -> log_upd -> log_upd
-  | let_row : atom -> idx (* binder *) -> log_upd -> log_upd
-  | unify : idx -> idx -> log_upd -> log_upd
-  | done : log_upd.
+  Variant log_upd : Type :=
+  | put_row : atom -> idx (* var *) -> log_upd
+  | let_row : atom -> idx (* binder *) -> log_upd
+  | unify : idx -> idx -> log_upd.
 
   Record op_state : Type :=
    Mk_state {
@@ -802,20 +802,16 @@ Alternately: should I build a tree then convert to a list?
   
   (* TODO: generate differential instance?
    *)
-  Fixpoint apply_upd (l : log_upd) : state op_state unit :=
+  Definition apply_upd (l : log_upd) : state op_state unit :=
       match l with
-      | unify i1 i2 k =>
-          @! let _ <- do_unify i1 i2 in
-            (apply_upd k)
-      | put_row a i k => 
-          @! let _ <- do_put_row a i in
-            (apply_upd k)
-      | let_row a x k => 
-          @! let _ <- do_let_row a x in
-            (apply_upd k)
-      | done => Mret tt
+      | unify i1 i2 => do_unify i1 i2
+      | put_row a i => do_put_row a i
+      | let_row a x => do_let_row a x
       end.
-        
+
+  
+  Definition apply_upds : list log_upd -> state op_state unit :=
+    list_Miter apply_upd.
   
   (*
     Note: should be able to generate terms (e.g. proofs of internal facts like neq) in addition to equalities!
@@ -835,7 +831,7 @@ Alternately: should I build a tree then convert to a list?
        made up of an (ordered) sequence of queries and conclusions, to take advantage of subqueries.
        Note: Use the var/const split for this
        *)
-      update : log_upd;
+      update : list log_upd;
       assumptions : query;
     }.
   
@@ -884,7 +880,7 @@ Alternately: should I build a tree then convert to a list?
     | [] => Mret has_changed
     | s::subs' =>
         @! let s_changed <- fun i =>
-                            let (_,op_s) := apply_upd upd (Mk_state i s has_changed) in
+                            let (_,op_s) := apply_upds upd (Mk_state i s has_changed) in
                             (op_s.(changed), op_s.(data)) in
           let subs'_changed <- fold_updates has_changed upd subs' in
           ret orb s_changed subs'_changed

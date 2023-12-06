@@ -51,29 +51,27 @@ Section WithMap.
     Build_norm l (e++e') p.
 
   (*TODO: move to FunctionalDB*)
-  Arguments unify {idx symbol}%type_scope _ _ _.
-  Arguments put_row {idx symbol}%type_scope _ _ _.
-  Arguments let_row {idx symbol}%type_scope _ _ _.
-  Arguments done {idx symbol}%type_scope.
+  Arguments unify {idx symbol}%type_scope _ _.
+  Arguments put_row {idx symbol}%type_scope _ _.
+  Arguments let_row {idx symbol}%type_scope _ _.
 
   (* Assumes no shadowing *)
-  Fixpoint normalize' l : normalized_upd -> normalized_upd :=
+  Definition normalize_upd l : normalized_upd -> normalized_upd :=
     match l with
-    | unify i1 i2 k =>
-        Basics.compose (normalize' k) (push_eqn i1 i2)
-    | put_row a i k =>
-        Basics.compose (normalize' k) (push_put a i)
-    | let_row a x k =>
-        Basics.compose (normalize' k) (push_let a x)
-    | done => id
+    | unify i1 i2 => (push_eqn i1 i2)
+    | put_row a i => (push_put a i)
+    | let_row a x => (push_let a x)
     end.
+  
+  Definition normalize_upds l :=
+    List.fold_left (fun f l => Basics.compose (normalize_upd l) f) l id
+      (Build_norm [] [] []).
 
-  Definition normalize_upd l := normalize' l (Build_norm [] [] []).
-
-  Definition unnormalize_upd '(Build_norm l e p) : log_upd :=
-    let pk : log_upd := List.fold_left (fun k '(a,x) => put_row a x k) p done in
-    let ek : log_upd := List.fold_left (fun k '(x,y) => unify x y k) e pk in
-    List.fold_right (fun '(a,x) k => let_row a x k) ek l.
+  Definition unnormalize_upds '(Build_norm l e p) : list log_upd :=
+    let lk : list log_upd := List.map (fun '(a,x) => let_row a x) l in
+    let ek : list log_upd := List.map (fun '(x,y) => unify x y) e in
+    let pk : list log_upd := List.map (fun '(a,x) => put_row a x) p in
+    lk ++ ek ++ pk.
 
   Fixpoint find_in_eqns' (x : idx) e acc :=
     match e with
@@ -155,7 +153,7 @@ Section WithMap.
 
   
   Definition optimize_upd l :=
-    unnormalize_upd (dedup (elim_new_unified_vars (normalize_upd l))).
+    unnormalize_upds (dedup (elim_new_unified_vars (normalize_upds l))).
 
   Notation query := (query idx symbol).
   Context (symbol_map : forall A, map.map symbol A).
