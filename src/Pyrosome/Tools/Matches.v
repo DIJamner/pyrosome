@@ -118,14 +118,14 @@ Definition matches (e pat : term) (args : list int) : option subst :=
   @! let s <- matches_unordered e pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     let !Term.eq_term e pat[/s'/] in
+     let !eqb e pat[/s'/] in
      ret s'.
 
 Definition matches_sort t pat (args : list int) : option subst :=
   @! let s <- matches_unordered_sort t pat in
      let s' <- order_subst s args in
      (* this condition can fail because merge doesn't check for conflicts *)
-     let !Term.eq_sort t pat[/s'/] in
+     let !eqb t pat[/s'/] in
      ret s'.
 
 (*If the LHS of a term eq rule directly applies to e, 
@@ -251,7 +251,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
     Definition cast_by_step t2 p : option pf :=
       let t1 := sort_of p in
       (*branch is an optimization, not necessary for correctness*)
-      if Term.eq_sort t1 t2 then Some p
+      if eqb t1 t2 then Some p
       else @! let p1 <- step_sort t1 in
               let p2 <- step_sort t2 in
               ret pconv (ptrans p1 (psym p2)) p.

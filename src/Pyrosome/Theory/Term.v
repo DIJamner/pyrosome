@@ -545,19 +545,6 @@ Qed.
   Qed.
   #[local] Hint Rewrite sort_subst_nil : term.
 
-Fixpoint eq_term e1 e2 {struct e1} : bool :=
-  match e1, e2 with
-  | var x, var y => eqb x y
-  | con n1 l1, con n2 l2 =>
-    (eqb n1 n2) && (allb2 eq_term l1 l2)
-  | _,_ => false
-  end.
-
-Definition eq_sort (t1 t2 : sort) : bool :=
-  let (n1, l1) := t1 in
-  let (n2, l2) := t2 in
-    (eqb n1 n2) && (allb2 eq_term l1 l2).
-
 Lemma with_names_from_args_subst (c':ctx) s' (s : list term)
   : with_names_from c' s[/s'/] = (with_names_from c' s)[/s'/].
 Proof.
@@ -576,28 +563,6 @@ Proof.
   intros; subst; auto.
 Qed.
 Hint Resolve well_scoped_change_args : term.
-
-
-Lemma invert_con n n' s s'
-  : con n s = con n' s' <-> n = n' /\ s = s'.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_con : term.
-
-Lemma invert_var_con n s x
-  : var x = con n s <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_var_con : term.
-
-Lemma invert_con_var n s x
-  : con n s = var x <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_var_con : term.
-
-
-Lemma invert_scon n n' s s'
-  : scon n s = scon n' s' <-> n = n' /\ s = s'.
-Proof. solve_invert_constr_eq_lemma. Qed.
-Hint Rewrite invert_scon : term.
 
 (*TODO: put in substable?*)
 (*TODO: guarentee all_fresh or no?*)
@@ -672,10 +637,6 @@ Arguments con {V}%type_scope _ _%list_scope.
 #[export] Hint Rewrite term_subst_id : term.
 #[export] Hint Resolve ws_term_subst_lookup : term.
 #[export] Hint Resolve well_scoped_change_args : term.
-#[export] Hint Rewrite invert_con : term.
-#[export] Hint Rewrite invert_var_con : term.
-#[export] Hint Rewrite invert_scon : term.
-
 
 #[export] Hint Rewrite sort_subst_nil : term.
 
