@@ -1,7 +1,5 @@
-
-Require Import String Lists.List.
+Require Import Lists.List.
 Import ListNotations.
-Open Scope string.
 Open Scope list.
 From Utils Require Import Utils SymmetricInduction.
 From Pyrosome.Theory Require Import Core.
@@ -15,7 +13,7 @@ Proof.
   unfold fresh.
   basic_utils_crush.
 Qed.
-Hint Rewrite fresh_with_names_from : utils.
+#[export] Hint Rewrite fresh_with_names_from : utils.
 
 
 (*TODO: move to Rule.v*)
@@ -66,7 +64,7 @@ Hint Resolve ws_subst_from_ws_args : lang_core.
     induction t;
       basic_goal_prep;
       basic_term_crush.
-    revert dependent l;
+    generalize dependent l;
       induction l;
       basic_goal_prep;
       basic_term_crush.
@@ -76,7 +74,7 @@ Hint Resolve ws_subst_from_ws_args : lang_core.
     : well_scoped args t ->incl args args' -> well_scoped args' t.
   Proof.
     destruct t.
-    revert dependent l;
+    generalize dependent l;
       induction l;
       basic_goal_prep;
       basic_term_crush.
@@ -839,7 +837,7 @@ Proof using V_Eqb_ok.
   intros.
   eapply H0 in H2; eauto.
   clear H0.
-  revert dependent l.
+  generalize dependent l.
   induction l;
     basic_goal_prep;
     basic_core_crush.

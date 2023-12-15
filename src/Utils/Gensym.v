@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require List.
+Require Lists.List.
 From Utils Require Import Utils Natlike Monad.
 
 Section __.

@@ -7,7 +7,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import Core CutFreeInd.
 Import Core.Notations.
 
 
@@ -220,8 +220,6 @@ Section TermsAndRules.
     revert s; induction c'; destruct s;
       basic_goal_prep; try reflexivity; safe_invert H.
     basic_utils_crush.
-    - rewrite <- IHc'; eauto.
-    - rewrite IHc'; eauto.
   Qed.
 
                            
@@ -789,7 +787,39 @@ Proof.
     basic_core_crush.
 Qed.
 
-  Lemma subterms_wf_if_in l c e t (s : subst) c' e' t' x c_in
+(* TODO!!! prune all lemmas above this point. Some are unnecessary. *)
+Lemma eq_implies_wf_subst_elts' l c s c'
+  : (forall t1 t2,
+        Core.eq_sort l c' t1 t2 ->
+        forall t2',
+          Core.eq_sort l c t1[/s/] t2' ->
+          forall x e t', In x (fv t1) ->
+                         In (x, e) s ->
+                         In (x, t') c' ->
+                         (*TODO: be cautious of the /s/*)
+                         Core.wf_term l c e t'[/s/])
+    /\ (forall t e1 e2,
+           Core.eq_term l c' t e1 e2 ->
+           forall e2',
+             Core.eq_term l c t e1[/s/] e2' ->
+             forall x e t', In x (fv e1) ->
+                            In (x, e) s ->
+                            In (x, t') c' ->
+                            Core.wf_term l c e t'[/s/])
+    /\ (forall c'' s1 s2,
+           Core.eq_arg l c' c'' s1 s2' ->
+           forall s2',
+             Core.eq_args l c c'' s1[/s/] s2' ->
+             forall x e t', In x (fv s1) ->
+                            In (x, e) s ->
+                            In (x, t') c' ->
+                            Core.wf_term l c e t)
+.
+Proof.
+  apply cut_ind
+
+
+ Lemma subterms_wf_if_in l c e t (s : subst) c' e' t' x c_in
     : wf_lang l ->
       wf_ctx l c ->
       wf_ctx l c' ->

@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String Int63.
+Require Import Datatypes.String Uint63.
 Local Open Scope string_scope.
 
 From Utils Require Import Base.

@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String Lists.List.
+Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -61,7 +60,7 @@ Section WithVar.
     intro.
     induction e; basic_goal_prep; basic_core_firstorder_crush.
 
-    revert dependent l;
+    generalize dependent l;
       induction l; basic_goal_prep; basic_core_crush.
   Qed.
   Hint Resolve all_constructors_term_weaken : lang_core.
@@ -73,7 +72,7 @@ Section WithVar.
       all (all_constructors Q) l.
   Proof.
     intro;
-      revert dependent l;
+      generalize dependent l;
       induction l; basic_goal_prep; basic_core_crush.
   Qed.
   Hint Resolve all_constructors_args_weaken : lang_core.

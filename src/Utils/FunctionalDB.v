@@ -1,6 +1,6 @@
 (* An implementation of the core of egglog
  *)
-Require Import Equalities Orders ZArith Lists.List Int63.
+Require Import Equalities Orders ZArith Lists.List Uint63.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
@@ -912,7 +912,7 @@ End WithMap.
 Module PositiveIdx.
 
   (*TODO: move to Eqb or sim. locaion *)
-  Instance positive_Eqb : Eqb positive := Pos.eqb.
+  #[export] Instance positive_Eqb : Eqb positive := Pos.eqb.
 
   Definition generic_join_pos :=
     generic_join positive _ positive (TrieMap.trie_map)

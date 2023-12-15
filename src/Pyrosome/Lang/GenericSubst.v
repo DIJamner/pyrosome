@@ -1,4 +1,4 @@
-Require Import Ascii Lists.List String.
+Require Import Ascii Lists.List Datatypes.String.
 Import ListNotations.
 Require Import Utils.Utils.
 Require Import Pyrosome.Theory.Core.

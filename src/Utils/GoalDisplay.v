@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String.
+Require Import Datatypes.String.
 Local Open Scope string.
 
 (* Note: use with caution! *)

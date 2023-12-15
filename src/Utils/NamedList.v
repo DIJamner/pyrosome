@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool String Lists.List.
+Require Import Bool Datatypes.String Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.

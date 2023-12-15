@@ -73,7 +73,7 @@ Module Type __ArrayListSpec
        (Idx : __Natlike)
        (Import AO : (__ArrayList Idx)).
 
-  Module Import Notations := (__NatlikeNotations Idx) <+ (__ArrayNotations Idx AO).
+  Module Import Notations := __NatlikeNotations Idx <+ __ArrayNotations Idx AO.
 
   (* Include an arbitrary predicate for specifying a well-formed subset of the array type.
      Ideally we would prove a parametricity result that shows all arrays constructed from

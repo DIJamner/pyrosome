@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String Lists.List.
+Require Import Datatypes.String Lists.List.
 Require Import Bool.
 Import ListNotations.
 Open Scope string.
@@ -506,9 +505,35 @@ Section WithVar.
   Context (p_name : V)
     (p_sort : sort).
 
-  Definition parameterize_lang (pl : param_spec) : lang -> lang :=
+  
+  Section WithSpec.
+    Context (pl : param_spec).
+
+    Notation pctx := (parameterize_ctx p_name p_sort pl).
+    Notation psort := (parameterize_sort p_name pl).
+    Notation pterm := (parameterize_term p_name pl).
+  
+  Definition parameterize_lang : lang -> lang :=
     map (fun p => (fst p, parameterize_rule p_name p_sort pl p)).
 
+  (* TODO: should really generalize semantics_preserving, which should take a fn as input
+     rather than a compiler.
+   *)
+  Lemma parameterize_term l c t e1 e2 is_param
+    : eq_term l c t e1 e2 ->
+      wf_ctx l c ->
+      eq_term (parameterize_lang l)
+        (pctx is_param c) (psort t)
+        (pterm e1) (pterm e2).
+  Proof.
+    induction 1. (*TODO: use cut_ind*)
+    {
+      intros.
+      (*TODO: commute w/ substitution...*)
+  Abort.
+    
+
+  End WithSpec.
   
     (*args idx*)
   Definition param_generator := named_list (option nat).
@@ -580,6 +605,11 @@ Section WithVar.
               end
           end
       end.
+
+  (*TODO: propositional characterization of a valid param_spec.
+  Question: can I use a boolean validity check on param_specs? (implicit args behavior is more limited)
+   *)
+  
 (*
 
     

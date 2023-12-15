@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Lists.List String Ascii.
+Require Import Lists.List Datatypes.String Ascii.
 From Utils Require Import Utils.
 
 (* A class for using the infiniteness of types,

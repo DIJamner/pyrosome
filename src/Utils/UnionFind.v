@@ -13,13 +13,17 @@
 
 
 Require Import Lists.List.
-Require Import Coq.Sorting.Permutation.
-Require Import Setoid.
 
 From coqutil Require Import Map.Interface.
 Import ListNotations.
 
+Require Import Setoid.
+Require Import Coq.Classes.Morphisms.
+Require Import Coq.Sorting.Permutation.
+
 From Utils Require Import Utils Monad Sep.
+
+
 
 Section __.
   Context
@@ -925,6 +929,8 @@ Section __.
     Qed.
 
   End Perm.
+
+  (*TODO: ok here*)
 
   Section Perm.
 
@@ -2824,7 +2830,6 @@ Section __.
     Qed.
     (*Hint Resolve iff2_trans : utils.*)
 
-    Import Coq.Classes.Morphisms.
     Lemma equivalence_closure_proper A
       : Proper (iff2 ==> iff2) (@equivalence_closure A).
     Proof.

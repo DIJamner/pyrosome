@@ -1,7 +1,6 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String Lists.List.
+Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -432,10 +431,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         : f default = default ->
           NamedList.named_map f (combine_r_padded l1 l2) = combine_r_padded l1 (map f l2).
       Proof.
-        intros; revert l2; induction l1; destruct l2; basic_goal_prep; basic_utils_crush.
-        f_equal; [ congruence|].
-        rewrite IHl1.
-        reflexivity.
+        intros; revert l2; induction l1; destruct l2;
+          basic_goal_prep; basic_utils_crush.
       Qed.
 
       
