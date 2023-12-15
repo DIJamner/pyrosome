@@ -397,12 +397,12 @@ c |- e1 = e2 : t'
 
   
   Lemma invert_wf_ctx_nil : wf_ctx [] <-> True.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   #[local] Hint Rewrite invert_wf_ctx_nil : lang_core.
 
   Lemma invert_wf_ctx_cons c n t
     : wf_ctx ((n,t)::c) <-> fresh n c /\ wf_ctx c /\ eq_sort c t t.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   #[local] Hint Rewrite invert_wf_ctx_cons : lang_core.
 
   
@@ -485,23 +485,23 @@ c |- e1 = e2 : t'
   
   Lemma invert_wf_sort_rule c args
     : wf_rule (sort_rule c args) <-> wf_ctx c /\ sublist args (map fst c).
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_sort_rule : lang_core.
 
   Lemma invert_wf_term_rule c args t
     : wf_rule (term_rule c args t) <-> wf_ctx c /\ sublist args (map fst c) /\ eq_sort c t t.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_term_rule : lang_core.
 
   Lemma invert_wf_sort_eq_rule c t1 t2
     : wf_rule (sort_eq_rule c t1 t2) <-> wf_ctx c /\ eq_sort c t1 t1 /\ eq_sort c t2 t2.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_sort_eq_rule : lang_core.
 
   Lemma invert_wf_term_eq_rule c e1 e2 t
     : wf_rule (term_eq_rule c e1 e2 t)
       <-> wf_ctx c /\ eq_term c t e1 e1 /\ eq_term c t e2 e2 /\ eq_sort c t t.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 

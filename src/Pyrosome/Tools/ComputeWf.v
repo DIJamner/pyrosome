@@ -108,7 +108,7 @@ Section WithVar.
         case_match; basic_goal_prep; [|basic_core_crush].
         (* TODO: why does this take a long time?
           basic_core_crush. *)
-        autorewrite with utils model term lang_core in *.
+        autorewrite with bool utils model term lang_core in *.
         subst.
         split; eauto.
       }
@@ -138,7 +138,7 @@ Section WithVar.
       revert c'.
       induction s; destruct c'; basic_goal_prep; [basic_core_crush..|].
       repeat (revert H0; case_match; basic_goal_prep; [|basic_core_crush]).
-      autorewrite with utils model term lang_core in *.
+      autorewrite with bool utils model term lang_core in *.
       subst.
       intuition eauto.
       eapply compute_noconv_wf_term_sound; eauto.
@@ -239,7 +239,7 @@ Section WithVar.
       destruct r; basic_goal_prep.
       all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
 
-      all:autorewrite with lang_core utils in *.
+      all:autorewrite with lang_core bool utils in *.
       all:subst.
       
       all: intuition eauto using compute_noconv_wf_ctx_sound,

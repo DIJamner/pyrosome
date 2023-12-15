@@ -1,5 +1,4 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
 Require Import Lists.List Datatypes.String Ascii.
 From Utils Require Import Utils.
@@ -66,7 +65,7 @@ Proof.
   intro l.
   set (string_of_list_ascii _) as s.
   intro HIn.
-  assert ((list_max (map length l))< length s).
+  assert ((list_max (map length l)) < length s).
   {
     subst s.
     rewrite string_of_list_ascii_length, repeat_length.

@@ -18,12 +18,14 @@ Import Notations.
 
 Create HintDb lang_core discriminated.
 
-Ltac basic_core_crush := let x := autorewrite with utils term lang_core model in * in
-                                  let y := eauto 7 with utils term lang_core model in
-                                          generic_crush x y.
-Ltac basic_core_firstorder_crush := let x := autorewrite with utils term lang_core model in * in
-                                  let y := eauto with utils term lang_core  model in
-                                      generic_firstorder_crush x y.
+Ltac basic_core_crush :=
+  let x := autorewrite with bool utils term lang_core model in * in
+  let y := eauto 7 with utils term lang_core model in
+      generic_crush x y.
+Ltac basic_core_firstorder_crush :=
+  let x := autorewrite with bool utils term lang_core model in * in
+  let y := eauto with utils term lang_core  model in
+      generic_firstorder_crush x y.
 
                                            
 (*
@@ -419,43 +421,43 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
   (*TODO: move appropriate lemmas into Model.v?*)
 Lemma invert_wf_subst_nil_cons l c n t c'
   : wf_subst l c [] ((n,t)::c') <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_subst_nil_cons : lang_core.
 
 Lemma invert_wf_subst_cons_nil l c n e s
   : wf_subst l c ((n,e)::s) [] <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_subst_cons_nil : lang_core.
 
 Lemma invert_wf_subst_nil_nil l c
   : wf_subst l c [] [] <-> True.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_subst_nil_nil : lang_core.
 
 Lemma invert_wf_subst_cons_cons l c n e s m t c'
   : wf_subst l c ((n,e)::s) ((m,t)::c') <-> n = m /\ wf_subst l c s c' /\ wf_term l c e t[/s/].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_subst_cons_cons : lang_core.
 
 
 Lemma invert_wf_sort_rule l c args
   : wf_rule l (sort_rule c args) <-> wf_ctx l c /\ sublist args (map fst c).
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_sort_rule : lang_core.
 
 Lemma invert_wf_term_rule l c args t
   : wf_rule l (term_rule c args t) <-> wf_ctx l c /\ sublist args (map fst c) /\ wf_sort l c t.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_term_rule : lang_core.
 
 Lemma invert_wf_sort_eq_rule l c t1 t2
   : wf_rule l (sort_eq_rule c t1 t2) <-> wf_ctx l c /\ wf_sort l c t1 /\ wf_sort l c t2.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_sort_eq_rule : lang_core.
 
 Lemma invert_wf_term_eq_rule l c e1 e2 t
   : wf_rule l (term_eq_rule c e1 e2 t) <-> wf_ctx l c /\ wf_term l c e1 t /\ wf_term l c e2 t /\ wf_sort l c t.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_wf_term_eq_rule : lang_core.
 
 
@@ -905,12 +907,12 @@ Section Extension.
 
   Lemma invert_wf_lang_nil
     : wf_lang_ext [] <-> True.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_lang_nil : lang_core.
 
   Lemma invert_wf_lang_cons n r l
     : wf_lang_ext ((n,r)::l) <-> fresh n (l++l_pre) /\ wf_lang_ext l /\ wf_rule (l++l_pre) r.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_wf_lang_cons : lang_core.
 
   Lemma rule_in_wf l r name

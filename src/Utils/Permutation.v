@@ -457,9 +457,7 @@ Section __.
   (*TODO: move*)
   Lemma inv_NoDup_cons B (x:B) l
     : NoDup (x::l) <-> ~ In x l /\ NoDup l.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite inv_NoDup_cons : utils.
 
   Lemma length_filter_elt_NoDup l (a : nat)
@@ -709,13 +707,11 @@ Section __.
     2:{
       basic_goal_prep;
       basic_utils_crush.
-      Lia.lia.
     }
     rewrite length_remove_all'; eauto.
     all: rewrite seq_length; eauto.
     rewrite filter_true_In; try Lia.lia.
     basic_goal_prep; basic_utils_crush.
-    Lia.lia.
   Qed.
 
   Lemma remove_all_seq_filter' perm n m

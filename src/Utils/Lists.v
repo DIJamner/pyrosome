@@ -1,8 +1,8 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool Lists.List.
-Import ListNotations.
+Require Import Coq.Lists.List. Import ListNotations.
+Require Import Bool.
+Require Export Datatypes.List.
 Import BoolNotations.
 Open Scope list.
 
@@ -19,19 +19,14 @@ Section __.
   Hint Rewrite invert_eq_nil_nil : utils. *)
   
   Lemma invert_eq_cons_nil (e:A) es : e::es = [] <-> False.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_eq_cons_nil : utils.
-  Lemma invert_eq_nil_cons (e:A) es : [] =e::es <-> False.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Lemma invert_eq_nil_cons (e:A) es : [] = e::es <-> False.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_eq_nil_cons : utils.
-  Lemma invert_eq_cons_cons (e e':A) es es' : e::es = e'::es' <-> e = e' /\ es = es'.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Lemma invert_eq_cons_cons (e e':A) es es'
+    : e::es = e'::es' <-> e = e' /\ es = es'.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_eq_cons_cons : utils.
 
   
@@ -160,7 +155,7 @@ Section __.
     Context `{Eqb_ok A}.
     
     (*TODO: rename Booleans.all2 to allb2*)
-    #[export] Instance list_eqb : Eqb (list A) := allb2 (eqb (A:=A)).
+    #[export] Instance list_eqb : Eqb (list A) := forallb2 (eqb (A:=A)).
 
     #[export] Instance list_eqb_ok : Eqb_ok (list_eqb).
     Proof.

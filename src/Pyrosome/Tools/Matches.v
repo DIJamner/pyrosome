@@ -372,7 +372,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
 
   (*TODO: duplicated; refactor*)
   Definition max (x y : int) :=
-    if leb x y then y else x.
+    if Uint63.leb x y then y else x.
   
   (*TODO: find a better location for this?*)
   Definition named_list_to_array {A} `{WithDefault A} (l : named_list A) : array A :=

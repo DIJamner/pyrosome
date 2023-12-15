@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Bool Datatypes.String Lists.List Uint63.
+Require Import Base Bool Datatypes.String Lists.List Uint63.
 Import ListNotations.
 
 (* TODO: add/cut dep on Booleans? *)

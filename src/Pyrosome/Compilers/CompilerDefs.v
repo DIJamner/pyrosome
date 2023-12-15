@@ -52,22 +52,22 @@ Definition compiler := named_list compiler_case.
 
 Lemma invert_eq_term_case_term_case args args' e e'
   : term_case args e = term_case args' e' <-> args = args' /\ e = e'.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_case_term_case : lang_core.
 
 Lemma invert_eq_term_case_sort_case args args' e e'
   : term_case args e = sort_case args' e' <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_case_sort_case : lang_core.
 
 Lemma invert_eq_sort_case_term_case args args' e e'
   : sort_case args e = term_case args' e' <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_case_term_case : lang_core.
 
 Lemma invert_eq_sort_case_sort_case args args' e e'
   : sort_case args e = sort_case args' e' <-> args = args' /\ e = e'.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_case_sort_case : lang_core.
 
 Section CompileFn.

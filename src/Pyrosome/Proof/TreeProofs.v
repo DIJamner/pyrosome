@@ -442,23 +442,23 @@ Section WithVar.
         + basic_core_crush.
       - eapply eq_sort_trans; basic_utils_crush.
       - inversion H.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
         eapply eq_term_trans; eauto.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
         eapply eq_sort_sym; eauto.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
         eapply eq_term_sym; eauto.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
         eapply eq_term_conv; eauto.
-      - autorewrite with utils in *.
+      - autorewrite with bool utils in *.
         intuition subst.
     Qed.
 

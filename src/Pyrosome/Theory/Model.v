@@ -390,93 +390,93 @@ Qed.
 
 Lemma invert_wf_ctx_nil V term sort (Model : @Model V term sort)
   : wf_ctx [] <-> True.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_ctx_nil using solve[typeclasses eauto] : model.
 
 Lemma invert_wf_ctx_cons V term sort (Model : @Model V term sort) c n t
   : wf_ctx ((n,t)::c) <-> fresh n c /\ wf_ctx c /\ wf_sort c t.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_ctx_cons using solve[typeclasses eauto] : model.
 
 
 Lemma invert_wf_subst_nil V term sort (Model : @Model V term sort) c c'
   : wf_subst c [] c' <-> c' = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_subst_nil using solve[typeclasses eauto] : model.
 
 Lemma invert_wf_subst_ctx_nil V term sort (Model : @Model V term sort) c s
   : wf_subst c s [] <-> s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_subst_ctx_nil using solve[typeclasses eauto] : model.
 
 (*TODO: write a version that destructs c' w/ existentials? *)
 Lemma invert_wf_subst_cons V term sort (Model : @Model V term sort) c s c' n n' e t
   : wf_subst c ((n,e)::s) ((n',t)::c') <-> n = n' /\ wf_subst c s c' /\ wf_term c e t [/s /].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_subst_cons using solve[typeclasses eauto] : model.
 
 
 Lemma invert_wf_args_nil V term sort (Model : @Model V term sort) c c'
   : wf_args c [] c' <-> c' = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_args_nil using solve[typeclasses eauto] : model.
 
 Lemma invert_wf_args_ctx_nil V term sort (Model : @Model V term sort) c s
   : wf_args c s [] <-> s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_args_ctx_nil using solve[typeclasses eauto] : model.
 
 (*TODO: write a version that destructs c' w/ existentials? *)
 Lemma invert_wf_args_cons V term sort (Model : @Model V term sort) c s c' n e t
   : wf_args c (e::s) ((n,t)::c') <-> wf_args c s c' /\ wf_term c e t [/with_names_from c' s /].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_wf_args_cons using solve[typeclasses eauto] : model.
 
 
 
 Lemma invert_eq_subst_nil_l V term sort (Model : @Model V term sort) c s c'
   : eq_subst c [] s c' <-> c' = [] /\ s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_subst_nil_l using solve[typeclasses eauto] : model.
 
 Lemma invert_eq_subst_nil_r V term sort (Model : @Model V term sort) c s c'
   : eq_subst c s [] c' <-> c' = [] /\ s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_subst_nil_r using solve[typeclasses eauto] : model.
 
 Lemma invert_eq_subst_ctx_nil V term sort (Model : @Model V term sort) c s1 s2
   : eq_subst c s1 s2 [] <-> s1 = [] /\ s2 = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_subst_ctx_nil using solve[typeclasses eauto] : model.
 
 (*TODO: write a version that destructs c' w/ existentials? *)
 Lemma invert_eq_subst_cons V term sort (Model : @Model V term sort) c s1 s2 c' n' n1 n2 e1 e2 t
   : eq_subst c ((n',t)::c') ((n1,e1)::s1) ((n2,e2)::s2)
     <-> n' = n1 /\ n1 = n2 /\ eq_subst c c' s1 s2 /\ eq_term c t [/s2 /] e1 e2.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_subst_cons using solve[typeclasses eauto] : model.
 
 
 Lemma invert_eq_args_nil_l V term sort (Model : @Model V term sort) c s c'
   : eq_args c [] s c' <-> c' = [] /\ s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_args_nil_l using solve[typeclasses eauto] : model.
 
 Lemma invert_eq_args_nil_r V term sort (Model : @Model V term sort) c s c'
   : eq_args c s [] c' <-> c' = [] /\ s = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_args_nil_r using solve[typeclasses eauto] : model.
 
 Lemma invert_eq_args_ctx_nil V term sort (Model : @Model V term sort) c s1 s2
   : eq_args c s1 s2 [] <-> s1 = [] /\ s2 = [].
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_args_ctx_nil using solve[typeclasses eauto] : model.
 
 (*TODO: write a version that destructs c' w/ existentials? *)
 Lemma invert_eq_args_cons V term sort (Model : @Model V term sort) c s1 s2 c' n e1 e2 t
   : eq_args c ((n,t)::c') (e1::s1) (e2::s2)
     <-> eq_args c c' s1 s2 /\ eq_term c t [/with_names_from c' s2 /] e1 e2.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[export] Hint Rewrite invert_eq_args_cons using solve[typeclasses eauto] : model.
 
 

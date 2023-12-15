@@ -1,5 +1,4 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
 From Utils Require Import Base Booleans Eqb Default.
 
@@ -9,21 +8,17 @@ Section __.
 
   Lemma invert_none_some (x : A)
     : None = Some x <-> False.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_none_some : utils.
 
   Lemma invert_some_none (x : A)
     : Some x = None <-> False.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_some_none : utils.
   
   Lemma invert_some_some (x y : A)
     : Some x = Some y <-> x = y.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_some_some : utils.
 
   #[export] Instance option_eqb : Eqb (option A) :=

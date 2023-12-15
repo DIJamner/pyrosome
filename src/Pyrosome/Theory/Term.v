@@ -36,8 +36,8 @@ Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
   Qed.
 
 Create HintDb term discriminated.
-Ltac basic_term_crush := let x := autorewrite with utils term in * in
-                                  let y := eauto with utils term in
+Ltac basic_term_crush := let x := autorewrite with bool utils term in * in
+                                  let y := eauto with bool utils term in
                                           generic_crush x y.
 Ltac basic_term_firstorder_crush :=
   let x := autorewrite with utils term in * in
@@ -112,28 +112,28 @@ Variant sort : Type := scon : V -> list term -> sort.
 
 Lemma invert_eq_con_con n1 n2 s1 s2
   : con n1 s1 = con n2 s2 <-> (n1 = n2 /\ s1 = s2).
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[local] Hint Rewrite invert_eq_con_con : term.
 
 Lemma invert_eq_var_var x y
   : var x = var y <-> x = y.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[local] Hint Rewrite invert_eq_var_var : term.
 
 Lemma invert_eq_var_con x n s
   : var x = con n s <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[local] Hint Rewrite invert_eq_var_con : term.
 
 Lemma invert_eq_con_var n s y
   : con n s = var y <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[local] Hint Rewrite invert_eq_con_var : term.
 
 
 Lemma invert_eq_scon_scon n1 n2 s1 s2
   : scon n1 s1 = scon n2 s2 <-> (n1 = n2 /\ s1 = s2).
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 #[local] Hint Rewrite invert_eq_scon_scon : term.
 
 
@@ -157,7 +157,7 @@ Section WithEqb.
     match e1, e2 with
     | var n1, var n2 => eqb n1 n2
     | con n1 s1, con n2 s2 =>
-        andb (eqb n1 n2) (allb2 term_eqb s1 s2)
+        andb (eqb n1 n2) (forallb2 term_eqb s1 s2)
     | _, _ => false
     end.
 

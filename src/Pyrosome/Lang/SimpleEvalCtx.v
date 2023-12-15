@@ -144,7 +144,7 @@ Fixpoint substitute_eval_ctx_in_ctx (renamings : evctx_renamings) (H_ty : string
   end.
 
 Definition ascii_uppercase (a : ascii) : ascii :=
-  if andb (leb a "z") (leb "a" a)
+  if andb (Ascii.leb a "z") (Ascii.leb "a" a)
   then ascii_of_nat (nat_of_ascii a - 32)
   else a.
 

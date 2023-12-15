@@ -2508,7 +2508,7 @@ Section __.
       induction mr;
         basic_goal_prep; [congruence|].
       revert H0; case_match; [|congruence].
-      case_match; autorewrite with utils in *;
+      case_match; autorewrite with bool utils in *;
         subst.
       {
         basic_goal_prep; subst.
@@ -2519,7 +2519,7 @@ Section __.
       {
         case_match; [| congruence].
         basic_goal_prep.
-        autorewrite with utils in *; basic_goal_prep;
+        autorewrite with bool utils in *; basic_goal_prep;
           subst.
         symmetry in HeqH2.
         eapply IHmr in HeqH2; eauto.
@@ -3011,7 +3011,7 @@ Section __.
     induction mr;
       basic_goal_prep; [congruence|].
       revert H0; case_match; [|congruence].
-      case_match; autorewrite with utils in *;
+      case_match; autorewrite with bool utils in *;
         subst.
       {
         basic_goal_prep; subst.
@@ -3044,7 +3044,7 @@ Section __.
       {
         case_match; [| congruence].
         basic_goal_prep.
-        autorewrite with utils in *; basic_goal_prep;
+        autorewrite with bool utils in *; basic_goal_prep;
           subst.
         symmetry in HeqH2.
         
@@ -3439,7 +3439,7 @@ Section __.
     unfold tree.
     intros.
     unfold sep in H; break;
-      repeat (autorewrite with utils in *; break; subst).
+      repeat (autorewrite with bool utils in *; break; subst).
     rewrite reachable_loop_iff by eauto.
     rewrite  reachable_forest_ptsto by eauto.
     basic_utils_crush.
@@ -3561,7 +3561,7 @@ Section __.
     revert m.
     induction l;
       basic_goal_prep;
-      repeat (autorewrite with utils in*;
+      repeat (autorewrite with bool utils in*;
               break; subst).
     { basic_utils_crush. }
     {
@@ -3806,7 +3806,7 @@ Section __.
       replace (map.put r j j) with r; try reflexivity.
       eapply map.map_ext.
       intro k; eqb_case k j; [|basic_utils_crush].
-      autorewrite with utils; eauto.
+      autorewrite with bool utils; eauto.
       eapply forest_root_iff; eauto.
     }     
     revert r.

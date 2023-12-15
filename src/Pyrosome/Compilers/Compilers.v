@@ -127,7 +127,7 @@ Section WithVar.
 
   Lemma invert_preserving_compiler_plus_nil cmp
     : preserving_compiler_plus cmp [] <-> cmp = [].
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_preserving_compiler_plus_nil : lang_core.
 
   Lemma invert_preserving_compiler_plus_sort_rule n c args t cmp l
@@ -136,7 +136,7 @@ Section WithVar.
       <-> preserving_compiler_plus cmp l /\
             Model.wf_ctx (compile_ctx cmp c) /\
             Model.wf_sort (compile_ctx cmp c) t.
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_preserving_compiler_plus_sort_rule : lang_core.
 
   Lemma invert_preserving_compiler_plus_term_rule n c args e t cmp l
@@ -145,7 +145,7 @@ Section WithVar.
       <-> preserving_compiler_plus cmp l /\
             Model.wf_ctx (compile_ctx cmp c) /\
             Model.wf_term (compile_ctx cmp c) e (compile_sort cmp t).
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
     Hint Rewrite invert_preserving_compiler_plus_term_rule : lang_core.
 
     
@@ -156,7 +156,7 @@ Section WithVar.
             Model.eq_sort (compile_ctx cmp c)
                           (compile_sort cmp t1)
                           (compile_sort cmp t2).
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
     Hint Rewrite invert_preserving_compiler_plus_sort_eq_rule : lang_core.
     
   Lemma invert_preserving_compiler_plus_term_eq_rule n c e1 e2 t cmp l
@@ -167,7 +167,7 @@ Section WithVar.
                           (compile_sort cmp t)
                           (compile cmp e1)
                           (compile cmp e2).
-  Proof. solve_invert_constr_eq_lemma. Qed.
+  Proof. prove_inversion_lemma. Qed.
   Hint Rewrite invert_preserving_compiler_plus_term_eq_rule : lang_core.
   
 Lemma fresh_compile_ctx x cmp c

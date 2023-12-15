@@ -33,83 +33,83 @@ Definition lang := named_list rule.
 
 Lemma invert_eq_sort_rule_sort_rule c c' args args'
   : sort_rule c args = sort_rule c' args' <-> c = c' /\ args = args'.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_rule_sort_rule : term.
 
 Lemma invert_eq_sort_rule_term_rule c c' args args' t'
   : sort_rule c args = term_rule c' args' t' <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_rule_term_rule : term.
 
 
 Lemma invert_eq_sort_rule_sort_eq_rule c c' args t1' t2'
   : sort_rule c args = sort_eq_rule c' t1' t2' <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_rule_sort_eq_rule : term.
 
 Lemma invert_eq_sort_rule_term_eq_rule c c' args e1' e2' t
   : sort_rule c args = term_eq_rule c' e1' e2' t <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_rule_term_eq_rule : term.
   
 Lemma invert_eq_term_rule_sort_rule c c' args args' t
   : term_rule c args t = sort_rule c' args' <-> False.
-Proof using. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_rule_sort_rule : term.
 
 Lemma invert_eq_term_rule_term_rule c c' args args' t t'
   : term_rule c args t = term_rule c' args' t' <-> c = c' /\ args = args' /\ t = t'.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_rule_term_rule : term.
 
 Lemma invert_eq_term_rule_sort_eq_rule c c' args t t1' t2'
   : term_rule c args t = sort_eq_rule c' t1' t2' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_rule_sort_eq_rule : term.
 
 Lemma invert_eq_term_rule_term_eq_rule c c' args t e1' e2' t'
   : term_rule c args t = term_eq_rule c' e1' e2' t' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_rule_term_eq_rule : term.
 
 Lemma invert_eq_sort_eq_rule_sort_rule c c' args' t1 t2
   : sort_eq_rule c t1 t2 = sort_rule c' args' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof using. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_eq_rule_sort_rule : term.
 
 Lemma invert_eq_sort_eq_rule_term_rule c c' args' t1 t2 t'
   : sort_eq_rule c t1 t2 = term_rule c' args' t' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_eq_rule_term_rule : term.
 
 Lemma invert_eq_sort_eq_rule_sort_eq_rule c c' t1 t1' t2 t2'
   : sort_eq_rule c t1 t2 = sort_eq_rule c' t1' t2' <-> c = c' /\ t1 = t1' /\ t2 = t2'.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_eq_rule_sort_eq_rule : term.
 
 Lemma invert_eq_sort_eq_rule_term_eq_rule c c' t1 t2 e1' e2' t'
   : sort_eq_rule c t1 t2 = term_eq_rule c' e1' e2' t' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_sort_eq_rule_term_eq_rule : term.
   
 Lemma invert_eq_term_eq_rule_sort_rule c c' e1 e2 args' t
   : term_eq_rule c e1 e2 t = sort_rule c' args' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_sort_rule : term.
 
 Lemma invert_eq_term_eq_rule_term_rule c c' args' t e1 e2 t'
   : term_eq_rule c e1 e2 t = term_rule c' args' t' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_term_rule : term.
 
 Lemma invert_eq_term_eq_rule_sort_eq_rule c c' e1 e2 t t1' t2'
   : term_eq_rule c e1 e2 t = sort_eq_rule c' t1' t2' <-> False.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_sort_eq_rule : term.
 
 Lemma invert_eq_term_eq_rule_term_eq_rule c c' e1 e2 e1' e2' t t'
   : term_eq_rule c e1 e2 t = term_eq_rule c' e1' e2' t' <-> c = c' /\ e1 = e1' /\ e2 = e2' /\ t = t'.
-Proof. solve_invert_constr_eq_lemma. Qed.
+Proof. prove_inversion_lemma. Qed.
 Hint Rewrite invert_eq_term_eq_rule_term_eq_rule : term.
 
 Context

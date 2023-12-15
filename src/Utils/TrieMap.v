@@ -564,10 +564,10 @@ Section MapIntersectList.
     destruct a;
       basic_goal_prep;
       basic_utils_crush.
-    rewrite <- IHtl.
+    (*rewrite <- IHtl.
     f_equal.
     cbn.
-    admit (*comm*).
+    admit (*comm*).*)
   Admitted.
   
   Lemma list_intersect_correct hd l
@@ -576,7 +576,7 @@ Section MapIntersectList.
     destruct hd;
       basic_goal_prep;
       basic_utils_crush.
-    revert t0.
+    (*revert t0.
     induction l; [eapply list_intersect'_nil|].
 
     basic_goal_prep;
@@ -585,7 +585,7 @@ Section MapIntersectList.
     replace (intersect' elt_intersect t0 t1) with
       (List.fold_left i'' [t1] (Nodes t0)).
     2: cbn; admit (*comm*).
-    eapply acc_tree'_list_helper.
+    eapply acc_tree'_list_helper.*)
   Admitted.
   
 End  MapIntersectList.
