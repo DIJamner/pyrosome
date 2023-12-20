@@ -185,6 +185,18 @@ Ltac lhs_thru_steps_with l r :=
   eapply eq_term_trans;
   [> thru_steps_with l r | .. ].
 
+Require Import TreeProofs.
+
+Ltac make_pf :=
+  lazymatch goal with
+    | [|- eq_term ?l ?c' ?t ?e1 ?e2] =>
+        (*TODO: 100 is a magic number; make it an input*)
+        let x := eval compute in (step_term_V l c' 100 e1 t) in
+          eapply pf_checker_sound with(p:=x);
+          [typeclasses eauto | assumption |]
+  end.
+
+
 Derive linear_cps_subst
        SuchThat (elab_preserving_compiler []
                                           (linear_cps_lang
@@ -197,10 +209,7 @@ Derive linear_cps_subst
 Proof.
 auto_elab_compiler; try compute_eq_compilation.
 - right. solve_sort.
-- hide_implicits. Compute linear_cps_lang_def.
-  reduce_by linear_block_subst "blk_subst_cmp".
-  { kill. }
-  compute_eq_compilation.
+- reduce.
   eapply eq_term_trans.
   { term_cong; try compute_eq_compilation; cycle 3.
     - eapply eq_term_trans.
@@ -220,18 +229,12 @@ auto_elab_compiler; try compute_eq_compilation.
     all: try cleanup_auto_elab.
     all: try env_eq.
     + compute_eq_compilation.
-      eapply eq_term_sym.
-      lhs_thru_steps_with linear_value_subst "csub_emp_l".
-      lhs_thru_steps_with linear_value_subst "csub_emp_r".
+      reduce_rhs.
       term_refl.
     + solve_wf_term.
   }
 
-  lhs_thru_steps_with linear_value_subst "csub_emp_l".
-  lhs_thru_steps_with linear_value_subst "csub_emp_r".
-
-  compute_eq_compilation.
-
+  reduce.
   eapply eq_term_sym.
   eapply eq_term_trans.
   { term_cong; cycle 1.
@@ -242,8 +245,6 @@ auto_elab_compiler; try compute_eq_compilation.
     instantiate (1 := {{e #"blk_subst" {_} {_}
                         (#"csub" {_} {_} {_} {_} (#"id" (#"only" (#"neg" "A"))) "g")
                         (#"jmp" (#"only" (#"neg" "A")) "G2" "A" (#"hd" (#"neg" "A")) "v") }} ).
-    (* eapply eq_term_conv. *)
-    (* { *)
     eapply eq_term_trans.
     { eredex_steps_with linear_cps_lang "jmp-subst". }
     compute_eq_compilation.
@@ -252,11 +253,10 @@ auto_elab_compiler; try compute_eq_compilation.
     eredex_steps_with linear_value_subst "val_subst_id".
   }
   reduce_by linear_block_subst "blk_subst_cmp".
-  { kill. }
+  { solve_wf_subst. }
   compute_eq_compilation.
   repeat (term_cong; try env_eq;
   try compute_eq_compilation).
-  left. solve_sort.
 Unshelve.
 all: try cleanup_auto_elab.
 all: solve_wf_term.
