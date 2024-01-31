@@ -6,7 +6,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Infinite Monad.
-From Pyrosome Require Import Theory.Core Theory.Renaming Compilers.CompilerDefs.
+From Pyrosome Require Import Theory.Core Theory.Renaming
+  Compilers.SemanticsPreservingDef Compilers.CompilerDefs.
 Import Core.Notations.
 
 (*TODO: move to Utils.v*)
@@ -223,6 +224,20 @@ Section WithVar.
         | Some n => insert (fst n) (p_name, p_sort) c'
         | None => c'
         end.
+
+    Definition parameterize_subst (mn : option (_*bool)) s :=
+      let s' := named_map parameterize_term s in
+        match mn with
+        | Some n => insert (fst n) (p_name, var p_name) s'
+        | None => s'
+        end.
+    
+    Definition parameterize_args (mn : option (_*bool)) s :=
+      let s' := map parameterize_term s in
+        match mn with
+        | Some n => insert (fst n) (var p_name) s'
+        | None => s'
+        end.
     
     (*
     Fixpoint insert_parameter_sub (c : ctx) : option ctx :=
@@ -258,7 +273,7 @@ Section WithVar.
       | S _, [] , _ => args
       end.
 
-    Definition parameterize_args (mn : option (_*bool)) :=
+    Definition parameterize_elab_args (mn : option (_*bool)) :=
       match mn with
       | Some n => if (snd n) then parameterize_args' (fst n) else fun _ => id
       | None => fun _ => id
@@ -273,10 +288,10 @@ Section WithVar.
                 TODO: make sure p goes at the right places
            *)
           sort_rule (parameterize_ctx mn c)
-            (parameterize_args mn c args)
+            (parameterize_elab_args mn c args)
       | term_rule c args t =>
           term_rule (parameterize_ctx mn c) 
-            (parameterize_args mn c args)
+            (parameterize_elab_args mn c args)
             (parameterize_sort t)
       | sort_eq_rule c t1 t2 =>
           sort_eq_rule (parameterize_ctx mn c)
@@ -323,14 +338,92 @@ Section WithVar.
       case_match; basic_utils_crush.
     Qed.
 
-    (*
-    Lemma subst_lookup_p_name s
+
+    Lemma lookup_app_r n s1 s2
+      : fresh n s1 -> subst_lookup (s1++s2) n = subst_lookup s2 n.
+    Proof.
+      induction s1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma named_list_lookup_app_r A n s1 s2 (v : A)
+      : fresh n s1 -> named_list_lookup v (s1++s2) n = named_list_lookup v s2 n.
+    Proof.
+      induction s1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    (*TODO: move to Utils*)
+    Lemma fresh_firstn A n i (l : named_list A)
+      : fresh n l -> fresh n (firstn i l).
+    Proof.
+      revert l; induction i;
+        destruct l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Resolve fresh_firstn : utils.
+    
+    (*TODO: move to Utils*)
+    Lemma fresh_skipn A n i (l : named_list A)
+      : fresh n l -> fresh n (skipn i l).
+    Proof.
+      revert l; induction i;
+        destruct l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Resolve fresh_skipn : utils.
+    
+    Lemma lookup_insert i (s : subst) v
       : fresh p_name s ->
-        subst_lookup (parameterize_sub s) p_name = var p_name.
+        subst_lookup (insert i (p_name, v) s) p_name = v.
+    Proof.
+      unfold insert.
+      intros.
+      rewrite lookup_app_r by basic_utils_crush.
+      cbn.
+      basic_utils_crush.
+    Qed.
+
+    (* TODO: move to Utils *)
+    Lemma fresh_named_map A B n (g : A -> B) s
+      : fresh n s <-> fresh n (named_map g s).
+    Proof.
+      induction s;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite <- fresh_named_map : utils.
+    Hint Resolve -> fresh_named_map : utils.
+    
+    Lemma subst_lookup_fresh n s
+      : fresh n s ->
+        subst_lookup s n = var n.
     Proof.
       induction s;
         basic_goal_prep;
         basic_term_crush.
+    Qed.
+    
+    Lemma subst_lookup_p_name mn s
+      : fresh p_name s ->
+        subst_lookup (parameterize_subst mn s) p_name = var p_name.
+    Proof.
+      unfold parameterize_subst.
+      destruct mn.
+      2:{
+        induction s;
+        basic_goal_prep;
+        basic_term_crush.
+      }
+      {
+        intros.
+        apply lookup_insert; basic_utils_crush.
+      }
     Qed.
 
     
@@ -359,45 +452,215 @@ Section WithVar.
       rewrite <- map_map.
       apply p_name_not_in_map.
     Qed.
-     *)
-
-    (*
     
-    Lemma parameterize_term_subst e s
-      : parameterize_term (rename f e) [/rename_subst f s /]
-        = (parameterize_term (rename f e)) [/parameterize_sub (rename_subst f s) /].
+    Lemma lookup_app_l n s1 s2
+      : fresh n s2 -> subst_lookup (s1++s2) n = subst_lookup s1 n.
     Proof.
-      induction e;
+      induction s1;
         basic_goal_prep;
-        basic_term_crush.
+        basic_utils_crush.
+      { eapply subst_lookup_fresh; eauto. }
+      { eqb_case n v; eauto. }
+    Qed.
+
+    (* TODO: move to coqutil *)
+    Lemma In_skipn_to_In
+      : forall (A : Type) (n : nat) (a : A) (l : list A), In a (skipn n l) -> In a l.
+    Proof.
+      induction n; destruct l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Resolve In_skipn_to_In : utils.
+    
+    Hint Resolve In_firstn_to_In : utils.
+
+
+    Lemma named_list_lookup_default A d (s : named_list A) n
+      : fresh n s -> named_list_lookup d s n = d.
+    Proof.
+      induction s;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    (* TODO: move to term, replacing (?) cons version *)
+    Lemma subst_ext (a : term) args s s'
+      : (forall x, In x args -> subst_lookup s x = subst_lookup s' x) ->
+        well_scoped args a -> a [/s/] = a [/s' /].
+    Proof.
+      induction a;
+        basic_goal_prep;
+        basic_utils_crush.
+      f_equal.
+      revert dependent l.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma lookup_insert_neq i s v x n
+      : fresh n s -> x <> n -> subst_lookup (insert i (n, v) s) x = subst_lookup s x.
+    Proof.
+      unfold insert.
+      unfold subst_lookup.
+      intros.
+      assert (fresh n (firstn i s)) by basic_utils_crush.
+      assert (fresh n (skipn i s)) by basic_utils_crush.
+      revert H1 H2.
+      rewrite <- firstn_skipn with (l:=s) (n:=i) at 5.
+      generalize (skipn i s).
+      generalize (firstn i s).
+      revert H0.
+      clear s H.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.        
+      eqb_case x v0; eauto.
+    Qed.
+
+    Lemma strengthen_subst_insert
+      s n v e (a : term)
+      : fresh v s ->
+        well_scoped (map fst s) a -> a [/insert n (v,e) s/] = a [/s /].
+    Proof.
+      intros; eapply subst_ext; eauto; intros.
+      eapply lookup_insert_neq; eauto.
+      basic_utils_crush.
+    Qed.
+
+    
+    Lemma lookup_insert' i s x n
+      : fresh n s -> subst_lookup (insert i (n, var n) s) x = subst_lookup s x.
+    Proof.
+      unfold insert.
+      unfold subst_lookup.
+      intros.
+      assert (fresh n (firstn i s)) by basic_utils_crush.
+      assert (fresh n (skipn i s)) by basic_utils_crush.
+      revert H0 H1.
+      rewrite <- firstn_skipn with (l:=s) (n:=i) at 5.
+      generalize (skipn i s).
+      generalize (firstn i s).
+      clear s H.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.        
       {
-        unfold parameterize_sub.
-        apply parameterize_subst_lookup; auto.
-        firstorder.
+        eqb_case x n; eauto.
+        rewrite named_list_lookup_default; eauto.
       }
       {
-        rewrite !map_app, !map_map;
-          simpl.
-        f_equal.
+        eqb_case x v; eauto.
+      }
+    Qed.
+    
+    Lemma strengthen_subst_insert'
+      : forall (s : named_list term) (n : nat) (v : V) (a : term),
+        fresh v s -> a [/insert n (v, var v) s /] = a [/s /].
+    Proof.
+      induction a; basic_goal_prep;
+        basic_term_crush.
+      { eapply lookup_insert'; eauto. }
+      {
+        revert H; induction l;
+          basic_goal_prep;
+          basic_term_crush.
+      }
+    Qed.
+
+    
+    Lemma strengthen_list_subst_insert'
+      : forall (s : named_list term) (n : nat) (v : V) (a : list term),
+        fresh v s -> a [/insert n (v, var v) s /] = a [/s /].
+    Proof.
+      induction a; basic_goal_prep;
+        basic_term_crush.
+      apply strengthen_subst_insert'; eauto.
+    Qed.
+
+    (*TODO move to utils*)    
+    Lemma map_fst_named_map A B (g : A -> B) s
+      : (map fst (named_map g s)) = map fst s.
+    Proof.
+      induction s; basic_goal_prep; basic_utils_crush.
+    Qed.
+    Hint Rewrite map_fst_named_map  : utils.
+
+    Lemma parameterize_term_subst' e s
+      : parameterize_term (rename f e) [/rename_subst f s /] =
+          (parameterize_term (rename f e)) [/named_map parameterize_term (rename_subst f s) /].
+    Proof.
+      induction e;
+          basic_goal_prep;
+          basic_term_crush.
         {
-          revert H.
-          induction l;
-            basic_goal_prep;
-            basic_term_crush.
+          erewrite parameterize_subst_lookup; eauto.
+          rewrite lookup_app_l;
+            basic_goal_prep; basic_utils_crush.
         }
         {
-          f_equal.
-          case_match; simpl; auto.
-          rewrite subst_lookup_p_name; auto.
-          apply p_name_fresh_in_subst.
+          case_match; basic_goal_prep.
+          {
+            unfold insert.
+            rewrite map_app. (*TODO: add to utils rw?*)
+            rewrite !firstn_map, !skipn_map.
+            rewrite map_cons.
+            rewrite !map_map.
+            f_equal.
+            {
+              apply map_ext_in; intros; eauto.
+              eapply in_all with (a:=a) in H; basic_utils_crush.
+            }
+            f_equal.
+            2:{
+              apply map_ext_in; intros; eauto.
+              eapply in_all with (a:=a) in H; basic_utils_crush.
+            }
+            {
+              cbn.
+              unfold term_subst_lookup.
+              rewrite named_list_lookup_default; auto.
+              basic_utils_crush.
+              apply p_name_fresh_in_subst.
+            }
+          }
+          {
+            rewrite !map_map.
+            apply map_ext_in; intros; eauto.
+            eapply in_all with (a:=a) in H; basic_utils_crush.
+          }
         }
+        Unshelve.
+        exact default. (*TODO: where is this coming from?*)
+    Qed.
+
+                                               
+    Lemma parameterize_term_subst mn e s
+      : parameterize_term (rename f e) [/rename_subst f s /]
+        = (parameterize_term (rename f e)) [/parameterize_subst mn (rename_subst f s) /].
+    Proof.
+      unfold parameterize_subst;
+        destruct mn;
+        rewrite ?strengthen_subst_insert'; eauto using parameterize_term_subst'.
+      {
+        unfold rename_subst.
+        unfold fresh.
+        basic_term_crush.
+        rewrite map_map in *; cbn in *.
+        enough (all (fun x => ~ x = p_name) (map (fun x : V' * Term.term V' => f (fst x)) s)).
+        {
+          eapply in_all in H0; eauto.
+        }
+        revert p_name_fresh; clear; induction s; basic_goal_prep; basic_utils_crush.
       }
     Qed.
 
     
     Lemma map_parameterize_term_subst e s
       : map parameterize_term (map (rename f) e) [/rename_subst f s /]
-        = (map parameterize_term (map (rename f) e)) [/parameterize_sub (rename_subst f s) /].
+        = (map parameterize_term (map (rename f) e))
+            [/named_map parameterize_term (rename_subst f s)/].
     Proof.
       induction e;
         basic_goal_prep;
@@ -407,53 +670,121 @@ Section WithVar.
         cbn.
         fold_Substable.
         f_equal; auto.
-        rewrite !parameterize_term_subst; eauto.
-      }
-    Qed.
-    
-    Lemma parameterize_args_subst e s
-      : parameterize_args (map (rename f) e) [/rename_subst f s /]
-        = (parameterize_args (map (rename f) e)) [/parameterize_sub (rename_subst f s) /].
-    Proof.
-      induction e;
-        basic_goal_prep;
-        basic_term_crush.
-      {
-        cbn; f_equal.
-        rewrite subst_lookup_p_name; auto.
-        apply p_name_fresh_in_subst.
-      }
-      {
-        cbn.
-        unfold parameterize_args in *.
-        fold_Substable.
-        f_equal; auto.
-        rewrite !parameterize_term_subst; eauto.
+        erewrite !parameterize_term_subst; eauto.
+        change (named_map parameterize_term (rename_subst f s))
+          with (parameterize_subst None (rename_subst f s)).
+        eauto.
       }
     Qed.
 
-    (*TODO: move to Term.v*)
-    Lemma subst_app_args (l1 l2 : list term) s
+    
+    Lemma subst_app (l1 l2 : list term) s
       : (l1 ++ l2)[/s/] = l1[/s/] ++ l2[/s/].
     Proof.
-      unfold apply_subst, substable_args, args_subst.
-      rewrite map_app.
-      reflexivity.
-    Qed.
-    
-    Lemma parameterize_sort_subst e s
-      : parameterize_sort (rename_sort f e) [/rename_subst f s /]
-        = (parameterize_sort (rename_sort f e)) [/parameterize_sub (rename_subst f s) /].
-    Proof.
-      destruct e;
+      induction l1;
         basic_goal_prep;
         basic_term_crush.
-      case_match; basic_utils_crush.
-      {
-        apply map_parameterize_term_subst.
+    Qed.
+    Hint Rewrite subst_app : term.
+
+    Lemma firstn_subst n (e : list term) s
+      : firstn n e [/s/]
+        = (firstn n e) [/ s /].
+    Proof.
+      revert e; induction n; destruct e;
+        basic_goal_prep;
+        basic_term_crush.
+    Qed.
+    Hint Rewrite <- firstn_subst : term.
+    
+    Lemma skipn_subst n (e : list term) s
+      : skipn n e [/s/]
+        = (skipn n e) [/ s /].
+    Proof.
+      revert e; induction n; destruct e;
+        basic_goal_prep;
+        basic_term_crush.
+    Qed.
+    Hint Rewrite <- skipn_subst : term.
+
+    Lemma subst_cons (a : term) l s : (a::l)[/s/] = a[/s/] :: l[/s/].
+    Proof. reflexivity. Qed.
+    Hint Rewrite subst_cons : term.
+      
+    Lemma insert_p_name_subst n e s
+      : {{e p_name }}[/s/] = {{e p_name }} ->
+        insert n {{e p_name }} e [/s/]
+        = (insert n {{e p_name }} e) [/ s /].
+    Proof.
+      intros.
+      unfold insert;
+        basic_goal_prep;
+        basic_term_crush.
+    Qed.          
+
+    Hint Immediate p_name_fresh_in_subst : term.
+      
+    (* TODO: same mn or different? *)
+    Lemma parameterize_args_subst mn e s
+      : parameterize_args mn (map (rename f) e) [/rename_subst f s /]
+        = (parameterize_args mn (map (rename f) e)) [/parameterize_subst mn (rename_subst f s) /].
+    Proof.
+      unfold parameterize_args, parameterize_subst;
+      destruct mn.
+      2: apply map_parameterize_term_subst.
+      destruct p.
+      cbn [fst].
+      rewrite strengthen_list_subst_insert';
+        basic_term_crush.
+      rewrite <- insert_p_name_subst.
+      2:{
+        cbn; basic_term_crush.
+        rewrite subst_lookup_fresh; eauto.
+        basic_term_crush.
+      }
+      f_equal.
+      apply map_parameterize_term_subst.
+    Qed.
+    
+    Lemma parameterize_sort_subst mn e s
+      : parameterize_sort (rename_sort f e) [/rename_subst f s /]
+        = (parameterize_sort (rename_sort f e)) [/parameterize_subst mn (rename_subst f s) /].
+    Proof.
+      destruct mn; cbn.
+      2:{
+        destruct e;
+        basic_goal_prep;
+        basic_term_crush.
+        case_match; basic_utils_crush.
+        2: apply map_parameterize_term_subst.
+        cbn [fst].
+        rewrite <- insert_p_name_subst.
+        {
+          rewrite map_parameterize_term_subst; eauto.
+        }
+        {
+          cbn.
+          basic_term_crush.
+          apply subst_lookup_fresh.
+          basic_term_crush.
+        }
       }
       {
-        apply parameterize_args_subst.
+        destruct e;
+        basic_goal_prep;
+        basic_term_crush.
+        case_match; basic_utils_crush.
+        all: cbn [fst].
+        1:rewrite <- insert_p_name_subst.
+        2:{
+          cbn.
+          basic_term_crush.
+          apply lookup_insert.
+          basic_term_crush.
+        }
+        all:rewrite ?strengthen_list_subst_insert';
+          try rewrite map_parameterize_term_subst;
+          basic_term_crush.
       }
     Qed.
 
@@ -495,8 +826,7 @@ Section WithVar.
         basic_utils_crush.
     Qed.
       
-     *)
-    
+     
       End WithInjection.
       
   End WithParameter.
@@ -515,6 +845,21 @@ Section WithVar.
   
   Definition parameterize_lang : lang -> lang :=
     map (fun p => (fst p, parameterize_rule p_name p_sort pl p)).
+
+  (*TODO: use cut-free induction here? yes or no?
+    Probably no since I acutally need all the judgments.
+   *)
+
+  Notation semantics_preserving l :=
+    (semantics_preserving
+       (V_Eqb := V_Eqb)
+       (tgt_Model := core_model (parameterize_lang l))
+       (parameterize_term p_name pl)
+       (parameterize_sort p_name pl)
+       (parameterize_ctx p_name p_sort pl _(*TODO:what goes here again?*))
+       (parameterize_args p_name pl _(*TODO:what goes here again?*))
+       (parameterize_subst p_name pl _(*TODO:what goes here again?*))
+       l).
 
   (* TODO: should really generalize semantics_preserving, which should take a fn as input
      rather than a compiler.

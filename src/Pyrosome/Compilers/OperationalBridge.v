@@ -4,7 +4,10 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers.
+From Pyrosome Require Import
+  Theory.Core
+  Compilers.SemanticsPreservingDef
+  Compilers.Compilers.
 Import Core.Notations.
 
 
@@ -70,13 +73,22 @@ Section WithVar.
   #[local] Hint Resolve step_wf : lang_core.
   #[local] Hint Resolve star_step_wf : lang_core.
   #[local] Hint Resolve star_step_sound : lang_core.
-
+  
   Context (src tgt : lang) (c : compiler).
   Context (wf_src : wf_lang src)
-            (wf_tgt : wf_lang tgt).
-  Context (c_preserving : semantics_preserving
-                            (tgt_Model := core_model tgt)
-                            c src).
+    (wf_tgt : wf_lang tgt).
+
+  
+  
+  Notation semantics_preserving cmp :=
+    (semantics_preserving (tgt_Model := core_model tgt)
+       (compile cmp)
+       (compile_sort cmp)
+       (compile_ctx cmp)
+       (compile_args cmp)
+       (compile_subst cmp)).
+  
+  Context (c_preserving : semantics_preserving c src).
   Context (step_src step_tgt : sort -> term -> term -> Prop).
   Context (src_sound : rel_sound src step_src)
     (tgt_sound : rel_sound tgt step_tgt).
