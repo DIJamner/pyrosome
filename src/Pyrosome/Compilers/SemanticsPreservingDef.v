@@ -92,6 +92,13 @@ Section WithVar.
           wf_ctx src c' ->
           Model.eq_subst (compile_ctx c) (compile_ctx c') (compile_subst s1) (compile_subst s2).
       
+      Definition args_eq_preserving_sem :=
+        forall c c' s1 s2,
+          eq_args src c c' s1 s2 ->
+          wf_ctx src c ->
+          wf_ctx src c' ->
+          Model.eq_args (compile_ctx c) (compile_ctx c') (compile_args s1) (compile_args s2).
+      
       Definition ctx_wf_preserving_sem :=
         forall c, wf_ctx src c -> Model.wf_ctx (compile_ctx c).
 
