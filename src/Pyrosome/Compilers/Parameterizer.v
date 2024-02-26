@@ -7,6 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Infinite Monad.
 From Pyrosome Require Import Theory.Core Theory.Renaming Theory.CutFreeInd
+  Tools.ConstructorsOf
   Compilers.SemanticsPreservingDef Compilers.CompilerDefs.
 Import Core.Notations.
 
@@ -578,6 +579,15 @@ Section WithVar.
         basic_term_crush.
       apply strengthen_subst_insert'; eauto.
     Qed.
+    
+    Lemma strengthen_sort_subst_insert'
+      : forall (s : named_list term) (n : nat) (v : V) (a : sort),
+        fresh v s -> a [/insert n (v, var v) s /] = a [/s /].
+    Proof.
+      induction a; basic_goal_prep;
+        basic_term_crush.
+      apply strengthen_list_subst_insert'; eauto.
+    Qed.
 
     (*TODO move to utils*)    
     Lemma map_fst_named_map A B (g : A -> B) s
@@ -923,149 +933,1105 @@ Section WithVar.
        l).
 
   Section __.
-    Context (l : lang) (c : ctx).
+    Context (l : lang).
     Definition tgt_model := (core_model (parameterize_lang l)).
     Existing Instance tgt_model.
 
     Context (wfl : wf_lang l).
     Context (IH_l : wf_lang (parameterize_lang l)).
-    Context (H_p_name_l : all (fun p => fresh p_name (get_ctx (snd p))) l).
+    Context (H_p_name_l : all (fun p => fresh p_name (get_ctx (snd p))) l).    
     
+    Definition direct_dependency n n' :=
+      match named_list_lookup_err l n with
+      | Some r => In n' (constructors_of_rule r)
+      | None => False
+      end.
 
-    (*Context (IH_ctx : forall c, wf_ctx l c -> forall mn, wf_ctx (parameterize_lang l) (pctx mn c)).*)
     
+    (*TODO: move to Term.v*)    
+    Definition sort_name : sort -> V := fun '(scon n _ ) => n.
+
+    Inductive dependency : _ -> _ -> Prop :=
+    (*| dep_refl n : dependency n n*)
+    | dep_trans n n1 n2 : dependency n n1 -> dependency n1 n2 -> dependency n n2
+    | dep_direct n n1 : direct_dependency n n1 -> dependency n n1
+    | dep_eqn n c e1 e2 t : In (n, term_eq_rule c e1 e2 t) l -> dependency (sort_name t) n
+    | dep_con n c args t : In (n, term_rule c args t) l -> dependency (sort_name t) n.
+
+    Definition pl_is_ordered :=
+      all (fun '(n,_) => forall n', dependency n n' ->
+                                    (Is_Some (named_list_lookup_err pl n') ->
+                                     Is_Some (named_list_lookup_err pl n))
+                                    /\ (fresh n pl ->
+                                        fresh n' pl)) l.
+    
+    Context (H_pl : pl_is_ordered).
+    (*
+    TODO: what to do about mn for c?.
+    It doesn't make sense to connect it to any name.
+    It can be None
+    It can be some (but maybe always (0,true)?)
+     *)
+
+
+    
+    (*TODO: move to Rule*)
+    Definition is_sort_eqn (r : rule) :=
+      match r with
+      | sort_eq_rule _ _ _ => true
+      | _ => false
+      end.
+    Definition no_sort_eqns : lang -> _ := forallb (fun p => negb (is_sort_eqn (snd p))).
+
+    Context (H_no_sort_eqns : Is_true (no_sort_eqns l)).
+
+    
+    Lemma sort_name_subst t s : sort_name t [/s/] = sort_name t.
+    Proof.
+      destruct t; reflexivity.
+    Qed.
+    Hint Rewrite sort_name_subst : term.
+
+    
+    
+    Lemma eq_fresh_iff_sort_fresh c' e1 e2 t name
+      : In (name, term_eq_rule c' e1 e2 t) l ->
+        fresh name pl <->
+        fresh (sort_name t) pl.
+    Proof.
+      unfold pl_is_ordered in H_pl.
+      intros.
+      assert (dependency name (sort_name t)).
+      {
+        eapply dep_direct.
+        unfold direct_dependency.
+        case_match.
+        2:{
+          apply named_list_lookup_none_iff in HeqH0; eauto.
+          eapply fresh_notin; eauto.
+        }
+        apply named_list_lookup_err_in in HeqH0.
+        eapply in_all_fresh_same in HeqH0; [| basic_core_crush | clear HeqH0; eassumption].
+        subst.
+        destruct t; cbn.
+        basic_utils_crush.
+      }
+      assert (dependency (sort_name t) name).
+      {
+        eapply dep_eqn; eauto.
+      }
+      
+      pose proof H as H_copy.
+      eapply in_all in H; eauto.
+      cbn in *.
+      eapply H in H0.
+      intuition eauto.
+      use_rule_in_wf; autorewrite with lang_core utils in *; break.
+      destruct H7.
+      eapply in_all in H7; eauto.
+      eapply H7 in H1.
+      intuition eauto.
+    Qed.
+
+       
+    Lemma con_fresh_iff_sort_fresh c' args t name
+      : In (name, term_rule c' args t) l ->
+        fresh name pl <->
+        fresh (sort_name t) pl.
+    Proof.
+      unfold pl_is_ordered in H_pl.
+      intros.
+      pose proof H as H_copy.
+      eapply in_all in H; eauto.
+      cbn in *.
+      assert (dependency name (sort_name t)).
+      {
+        eapply dep_direct.
+        unfold direct_dependency.
+        case_match.
+        2:{
+          apply named_list_lookup_none_iff in HeqH0; eauto.
+          eapply fresh_notin; eauto.
+        }
+        apply named_list_lookup_err_in in HeqH0.
+        eapply in_all_fresh_same in HeqH0; [| basic_core_crush | clear HeqH0; eassumption].
+        subst.
+        destruct t; cbn.
+        basic_utils_crush.
+      }
+      assert (dependency (sort_name t) name).
+      {
+        eapply dep_con; eauto.
+      }
+      
+      eapply H in H0.
+      intuition eauto.
+      use_rule_in_wf; autorewrite with lang_core utils in *; break.
+      destruct H6.
+      eapply in_all in H6; eauto.
+      eapply H6 in H1.
+      intuition eauto.
+    Qed.
+
+    (*TODO: move to utils*)
+    Lemma all_in A (P : A -> Prop) lst : (forall (a : A), In a lst -> P a) -> all P lst.
+    Proof.
+      induction lst;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma ctx_fresh_if_sort_fresh r name
+      : In (name, r) l ->
+        fresh name pl ->
+        (all (fun n : V => fresh n pl) (constructors_of_ctx (get_ctx r))).
+    Proof.
+      unfold pl_is_ordered in H_pl.
+      intros.
+      pose proof H as H_copy.
+      eapply in_all in H; eauto.
+      cbn in *.
+      apply all_in; intros.
+      eapply H; eauto.
+      eapply dep_direct.
+      unfold direct_dependency.
+      case_match.
+      2:{
+        apply named_list_lookup_none_iff in HeqH2; eauto.
+        eapply fresh_notin; eauto.
+      }
+      apply named_list_lookup_err_in in HeqH2.
+      eapply in_all_fresh_same in HeqH2; [| basic_core_crush | clear HeqH2; eassumption].
+      subst.
+      destruct r0; cbn;
+        basic_utils_crush.
+    Qed.
+
+    (*TODO: move to utils*)
+    Lemma with_named_from_named_map A B C (f : A -> B) c' (s : list C)
+      : with_names_from (named_map f c') s
+        = with_names_from c' s.
+    Proof.
+      revert s; induction c';
+        destruct s;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite  with_named_from_named_map : utils.
+
+    
+    (*TODO: move to utils*)
+    Lemma all_app A (P : A -> Prop) l1 l2 : all P (l1++l2) <-> all P l1 /\ all P l2.
+    Proof.
+      induction l1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite all_app : utils.
+
+    
+    Lemma named_map_with_names_from A B C (f : A -> B) (c' : named_list C) s
+      : named_map f (with_names_from c' s) = with_names_from c' (map f s).
+    Proof.
+      revert s; induction c'; destruct s;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite  named_map_with_names_from : utils.
+
+    
+  (*TODO: move to utils*)  
+  Lemma incl_insert A (a:A) n lst
+    : incl lst (insert n a lst).
+  Proof.
+    enough (incl (firstn n lst ++ skipn n lst) (insert n a lst)).
+    { rewrite firstn_skipn in *; auto. }
+    unfold insert.
+    basic_utils_crush.
+  Qed.
+  Hint Immediate incl_insert : utils.
+
+  (*TODO: move to core *)
+  Lemma eq_args_ctx_monotonicity l' c1 c' s1 s2
+    : wf_lang l' ->
+      eq_args l' c1 c' s1 s2 -> forall c0 : list (V * Term.sort V), incl c1 c0 -> eq_args l' c0 c' s1 s2.
+  Proof.
+    induction 2;
+      basic_goal_prep;
+      basic_core_crush.
+    eapply eq_term_ctx_monotonicity; eauto.
+  Qed.
+
+  
+  Lemma insert_0 A (a : A) lst : insert 0 a lst = a::lst.
+  Proof. reflexivity. Qed.
+  Hint Rewrite insert_0 : utils.
+
+  
+  Lemma insert_S A n (a : A) a' lst : insert (S n) a (a'::lst) = a'::(insert n a lst).
+  Proof. reflexivity. Qed.
+  Hint Rewrite insert_S : utils.
+
+  Context (H_p_sort_closed: well_scoped [] p_sort).
+
+  
+  Definition pl_indices_sound :=
+    forall n p r, In (n,p) pl ->
+                In (n,r) l ->
+                all (fun n0 : V => fresh n0 pl) (constructors_of_ctx (skipn (fst p) (get_ctx r))).
+
+  Context (H_pl_indices_sound : pl_indices_sound).
+
+
+  Lemma firstn_with_names_from A B  n (l1 : named_list A) (l2 : list B)
+    : firstn n (with_names_from l1 l2)
+      = with_names_from (firstn n l1) (firstn n l2).
+  Proof.
+    revert l1 l2; induction n;
+      destruct l1,l2;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite firstn_with_names_from : utils.
+
+  (*TODO: move to term.v*)
+  Lemma closed_term_subst (e:term) s
+    : well_scoped [] e ->
+      e [/s/] = e.
+  Proof.
+    induction e;
+      basic_goal_prep;
+      basic_term_crush.
+    revert dependent l0.
+    induction l0;
+      basic_goal_prep;
+      basic_term_crush.
+  Qed.
+  
+  Lemma closed_args_subst (e:list term) s
+    : well_scoped [] e ->
+      e [/s/] = e.
+  Proof.
+    induction e;
+      basic_goal_prep;
+      basic_term_crush.
+    eapply closed_term_subst; eauto.
+  Qed.
+    
+  Lemma closed_sort_subst (e:sort) s
+    : well_scoped [] e ->
+      e [/s/] = e.
+  Proof.
+    destruct e; basic_goal_prep.
+    f_equal; eapply closed_args_subst.
+    auto.
+  Qed.
+  
+
+  Lemma skipn_with_names_from A B  n (l1 : named_list A) (l2 : list B)
+    : skipn n (with_names_from l1 l2)
+      = with_names_from (skipn n l1) (skipn n l2).
+  Proof.
+    revert l1 l2; induction n;
+      destruct l1,l2;
+      basic_goal_prep;
+      basic_utils_crush.
+    destruct (skipn n l1); try reflexivity.
+    cbv.
+    destruct p.
+    reflexivity.
+  Qed.
+  Hint Rewrite skipn_with_names_from : utils.
+
+  
+  Lemma with_names_from_app A B (l11 l12 : named_list A) (l21 l22 : list B)
+    : length l11 = length l21 ->
+      with_names_from (l11++l12) (l21++l22)
+      = (with_names_from l11 l21) ++ (with_names_from l12 l22).
+  Proof.
+    revert l21; induction l11;
+      destruct l21;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma with_names_from_insert A B (a:A) (b:B) n l1 l2 (name:V)
+    : length l1 = length l2 ->
+      insert n (name,a) (with_names_from l1 l2)
+      = with_names_from (insert n (name,b) l1) (insert n a l2).
+  Proof.
+    intros.
+    unfold insert.
+    basic_utils_crush.
+    rewrite with_names_from_app; eauto.
+    rewrite !firstn_length; Lia.lia.
+  Qed.
+
+  Section WithCtx.
+
+     Context (c : ctx).
     Context (wfc : wf_ctx l c).
 
     Context (H_p_name_c : fresh p_name c).
-  (*TODO: quantify by mn*)
-  Lemma parameterize_preserving'
+    
+    Lemma sort_names_equal t1 t2
+      : eq_sort l c t1 t2 -> sort_name t1 = sort_name t2.
+    Proof.
+      (*TODO: sort-only cut-free induction*)
+      enough ((forall t t0 : Term.sort V, eq_sort l c t t0 -> sort_name t = sort_name t0) /\
+       (forall (s : Term.sort V) (t t0 : Term.term V), eq_term l c s t t0 -> True) /\
+       (forall (c0 : Term.ctx V) (s s0 : Term.subst V), eq_subst l c c0 s s0 -> True) /\
+                (forall (c0 : Term.ctx V) (s s0 : list (Term.term V)), eq_args l c c0 s s0 -> True))
+        by firstorder.
+      eapply cut_ind;
+        try typeclasses eauto; intuition (eauto; try congruence).
+      {
+        my_case H' (no_sort_eqns l).
+        2: simpl in *; tauto.
+        unfold no_sort_eqns in *.
+        rewrite forallb_forall in H'.
+        apply H' in H.
+        cbn in *.
+        congruence.
+      }
+    Qed.
+
+    
+    Lemma wf_sort_name_in t
+      : wf_sort l c t -> exists r, In (sort_name t, r) l.
+    Proof.
+      destruct 1.
+      eexists; eauto.
+    Qed.
+   
+                               
+  Lemma parameterize_preserving'_None
     : (forall (t1 t2 : sort),
-   eq_sort l c t1 t2 -> wf_ctx l c -> forall mn, Model.eq_sort (pctx mn c) (psort t1) (psort t2)) /\
+          eq_sort l c t1 t2 -> wf_ctx l c ->
+          fresh (sort_name t1) pl ->
+            Model.eq_sort (pctx None c) (psort t1) (psort t2)) /\
   (forall (t : sort) (e1 e2 : term),
-   eq_term l c t e1 e2 -> wf_ctx l c -> forall mn, Model.eq_term (pctx mn c) (psort t) (pterm e1) (pterm e2)) /\
+   eq_term l c t e1 e2 -> wf_ctx l c ->
+   fresh (sort_name t) pl ->
+   Model.eq_term (pctx None c) (psort t) (pterm e1) (pterm e2)) /\
   (forall (c' : named_list sort) (s1 s2 : named_list term),
    eq_subst l c c' s1 s2 ->
    wf_ctx l c ->
    wf_ctx l c' ->
    fresh p_name c' ->
-   forall mn mn',
-     (Is_Some mn -> Is_Some mn')->
-     eq_subst (parameterize_lang l) (pctx mn c) (pctx mn' c') (parameterize_subst p_name pl mn' s1)
-     (parameterize_subst p_name pl mn' s2)) /\
+   all (fun n => fresh n pl) (constructors_of_ctx c') ->
+     eq_subst (parameterize_lang l) (pctx None c) (pctx None c') (parameterize_subst p_name pl None s1)
+     (parameterize_subst p_name pl None s2)) /\
   (forall (c' : named_list sort) (s1 s2 : list term),
    eq_args l c c' s1 s2 ->
    wf_ctx l c ->
    wf_ctx l c' ->
    fresh p_name c' ->
-   forall mn mn',
-     (Is_Some mn -> Is_Some mn')->
-   eq_args (parameterize_lang l) (pctx mn c) (pctx mn' c') (parameterize_args p_name pl mn' s1)
-     (parameterize_args p_name pl mn' s2)).
+   all (fun n => fresh n pl) (constructors_of_ctx c') ->
+   eq_args (parameterize_lang l) (pctx None c) (pctx None c') (parameterize_args p_name pl None s1)
+     (parameterize_args p_name pl None s2)).
   Proof.
     apply cut_ind;
       eauto;
       try typeclasses eauto;
       basic_goal_prep.
     {
-      eapply in_all in H_p_name_l; eauto;
-        cbn in *.
-      use_rule_in_wf.
-      autorewrite with lang_core utils term in *.
-      break.
-      eapply in_map with
-        (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
-        in H.
-      cbn in H.
-      use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      
-      erewrite !parameterize_sort_subst with (mn:=(named_list_lookup_err pl name)).
-      2:{
-        eapply eq_subst_name_fresh_r_from_ctx; eauto.
-      }
-      3:{
-        eapply eq_subst_name_fresh_l_from_ctx; eauto.
-      }
-      2,3:basic_core_crush.
-      eapply eq_sort_subst; [| eapply H1; eauto| eauto].
-      1:eapply eq_sort_by; eauto.
-      (*TODO: need property of pl.
-      TODO: would this be easier to verify _if it short-circuited on things not in pl?.
-      don't have to recurse on non-parameterized subterms anyway
-      intros _.
-      unfold Is_Some; case_match;
-        basic_utils_crush.
+      my_case H' (no_sort_eqns l).
+      2: simpl in *; tauto.
+      unfold no_sort_eqns in *.
+      rewrite forallb_forall in H'.
+      apply H' in H.
+      cbn in *.
+      congruence.
     }
     {
       use_rule_in_wf; autorewrite with utils lang_core in *; break.
+      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
+      {
+        change c' with (get_ctx ( sort_rule c' args)).
+        eapply ctx_fresh_if_sort_fresh; eauto.
+      }
       eapply in_all in H_p_name_l; eauto;
         cbn in *.
       eapply in_map with
         (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
         in H.
       eapply sort_con_congruence; eauto.
+      apply named_list_lookup_none_iff in H3; rewrite <- H3.
+      eauto.
     }
     {
+      apply sort_names_equal in H, H1.
+      rewrite H in *; rewrite H1 in *.
       eauto using eq_sort_trans.
     }
     {
+      apply sort_names_equal in H.
+      rewrite H in *.
       eauto using eq_sort_sym.
     }
     {
       eapply in_all in H_p_name_l; eauto;
-        cbn in *.
+      cbn in *.
       use_rule_in_wf.
       autorewrite with lang_core utils term in *.
       break.
+      assert (named_list_lookup_err pl name = None).
+      {
+        symmetry.
+        apply named_list_lookup_none_iff.
+        eapply eq_fresh_iff_sort_fresh; eauto.
+      }      
+      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
+      {
+        change c' with (get_ctx (term_eq_rule c' e1 e2 t)).
+        eapply ctx_fresh_if_sort_fresh; eauto.
+        apply named_list_lookup_none_iff; eauto.        
+      }
       eapply in_map with
         (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
         in H.
       cbn in H.
       use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      
-      erewrite  !parameterize_sort_subst, !parameterize_term_subst with (mn:=(named_list_lookup_err pl name));
-        try solve [ eapply eq_subst_name_fresh_r_from_ctx; eauto
-                  | eapply eq_subst_name_fresh_l_from_ctx; eauto];
-        [|basic_core_crush..].
+
+      erewrite !parameterize_sort_subst with (mn:=None).
+      2:{
+        eapply eq_subst_name_fresh_r_from_ctx; eauto.
+      }
+      2: basic_core_crush.
+      erewrite !parameterize_term_subst with (mn:=None).
+      2:{
+        eapply eq_subst_name_fresh_r_from_ctx; eauto.
+      }      
+      3:{
+        eapply eq_subst_name_fresh_l_from_ctx; eauto.
+      }
+      2,3:basic_core_crush.
+      rewrite H8 in *.
       eapply eq_term_subst; [| eapply H1; eauto| eauto].
       eapply eq_term_by; eauto.
     }
     {
+      
+      assert (named_list_lookup_err pl name = None).
+      {
+        autorewrite with term in H3.
+        eapply con_fresh_iff_sort_fresh in H.
+        symmetry.
+        apply named_list_lookup_none_iff.
+        intuition auto.
+      }
+      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
+      {
+        change c' with (get_ctx (term_rule c' args t)).
+        eapply ctx_fresh_if_sort_fresh; eauto.
+        apply named_list_lookup_none_iff; eauto.        
+      }
       use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      eapply in_all in H_p_name_l; eauto;
-        cbn in *.
-      eapply in_map with
-        (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
-        in H.
-      eapply term_con_congruence; eauto.
-      admit(*TODO: property about inserting a var not doing anything (default)*).
+      rewrite H4 in *.
+       eapply in_all in H_p_name_l; eauto;
+         cbn in *.
+       eapply in_map with
+         (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+         in H.
+       eapply term_con_congruence; eauto.
+       2:{
+         rewrite H4.
+         apply H1; eauto.
+       }
+       {
+         right.
+         rewrite H4.
+         cbn.
+         rewrite with_names_from_map_is_named_map.
+         rewrite  with_named_from_named_map.
+         erewrite !parameterize_sort_subst with (mn:=None); auto;
+           autorewrite with utils model term lang_core;
+           eauto with utils model term lang_core.
+         2:{
+           eapply @eq_args_length_eq_r with (Model:=core_model l).
+           eapply H0.
+         }
+         rewrite CutElim.fresh_with_names_from; eauto.
+         
+         eapply @eq_args_length_eq_r with (Model:=core_model l).
+         eapply H0.
+       }
+     }
+     {
+       basic_core_crush.
+     }
+     {
+       eauto using eq_term_trans.
+     }
+     {
+       eauto using eq_term_sym.
+     }
+     {
+       eapply eq_term_conv; eauto.
+       {
+         eapply H2; eauto.
+         apply sort_names_equal in H.
+         congruence.
+       }
+       {
+         eapply H0; eauto.
+         apply sort_names_equal in H.
+         congruence.
+       }
+     }
+     {
+       basic_core_crush.
+     }
+     {
+       unfold constructors_of_ctx in *.
+       basic_goal_prep.
+       autorewrite with utils lang_core term model in *; break.
+       constructor; eauto.
+       unfold Model.eq_term, core_model.
+       erewrite !parameterize_sort_subst with (mn:=None) in H2.
+       2:{
+         eapply eq_subst_name_fresh_r_from_ctx; eauto.
+       }      
+       2:basic_core_crush.
+       eapply H2; eauto.
+       destruct t;
+         basic_goal_prep.
+       intuition eauto.
+     }
+     {
+       basic_core_crush.
+     }
+     {
+       unfold constructors_of_ctx in *.
+       basic_goal_prep.
+       autorewrite with utils lang_core term model in *; break.
+       constructor; eauto.
+       unfold Model.eq_term, core_model.
+       erewrite !parameterize_sort_subst with (mn:=None) in H2.
+       2:{
+         rewrite CutElim.fresh_with_names_from; eauto.
+         eapply @eq_args_length_eq_r with (Model:=core_model l);
+           eauto.
+       }      
+       2:{
+         autorewrite with term model utils lang_core.
+         2:eapply @eq_args_length_eq_r with (Model:=core_model l);
+         eauto.
+         basic_core_crush.
+       }      
+       cbn in *.
+       autorewrite with term model utils in *.
+       eapply H2; eauto.
+       destruct t; cbn in *.
+       intuition.
+     }
+  Qed.
+  
+  Lemma parameterize_preserving'_Some
+    : (forall (t1 t2 : sort),
+          eq_sort l c t1 t2 -> wf_ctx l c ->
+          (*fresh (sort_name t1) pl ->*)
+          forall p,
+            Model.eq_sort (pctx (Some p) c) (psort t1) (psort t2)) /\
+  (forall (t : sort) (e1 e2 : term),
+   eq_term l c t e1 e2 -> wf_ctx l c ->
+   (*fresh (sort_name t) pl ->*)
+   forall p,
+   Model.eq_term (pctx (Some p) c) (psort t) (pterm e1) (pterm e2)) /\
+  (forall (c' : named_list sort) (s1 s2 : named_list term),
+   eq_subst l c c' s1 s2 ->
+   wf_ctx l c ->
+   wf_ctx l c' ->
+   fresh p_name c' ->
+   forall p p',
+     all (fun n => fresh n pl) (constructors_of_ctx (skipn (fst p') c'))->
+     eq_subst (parameterize_lang l) (pctx (Some p) c) (pctx (Some p') c')
+       (parameterize_subst p_name pl (Some p') s1)
+       (parameterize_subst p_name pl (Some p') s2)) /\
+  (forall (c' : named_list sort) (s1 s2 : list term),
+      eq_args l c c' s1 s2 ->
+      wf_ctx l c ->
+      wf_ctx l c' ->
+      fresh p_name c' ->
+      forall p p',
+        all (fun n => fresh n pl) (constructors_of_ctx (skipn (fst p') c'))->
+        eq_args (parameterize_lang l) (pctx (Some p) c) (pctx (Some p') c')
+          (parameterize_args p_name pl (Some p') s1)
+          (parameterize_args p_name pl (Some p') s2)).
+  Proof.
+    apply cut_ind;
+      eauto;
+      try typeclasses eauto;
+      basic_goal_prep.
+    {
+      my_case H' (no_sort_eqns l).
+      2: simpl in *; tauto.
+      unfold no_sort_eqns in *.
+      rewrite forallb_forall in H'.
+      apply H' in H.
+      cbn in *.
+      congruence.
     }
     {
-      basic_core_crush.
-    }
-    {
-      eauto using eq_term_trans.
-    }
-    {
-      eauto using eq_term_sym.
-    }
-    {
-      basic_core_crush.
-    }
-    {
-      TODO: need that if mn' is a Some, so is mn
-      destruct mn'; cbn;
-        basic_core_crush.
-      unfold insert; cbn;
+      use_rule_in_wf; autorewrite with utils lang_core in *; break.
+      case_match.
+      2:{
+        eapply eq_sort_ctx_monotonicity; eauto.
+        {
+          eapply sort_con_congruence; eauto.
+          2:{
+            eapply parameterize_preserving'_None; eauto.
+            
+            {
+              eapply in_all in H_p_name_l; eauto;
+                cbn in *.
+              eapply in_map with
+                (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+                in H.
+              eauto.
+            }
+            {
+              change c' with (get_ctx ( sort_rule c' args)).
+              eapply ctx_fresh_if_sort_fresh; eauto.
+              apply named_list_lookup_none_iff; eauto.
+            }
+          }
+          eapply in_map with (f:=(fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p))) in H.
+          unfold parameterize_lang.
+          cbn in H.
+          rewrite <- HeqH5 in *.
+          eapply H.
+        }
+        {
+          cbn.
+          basic_utils_crush.
+        }
+      }
+      {
+        eapply sort_con_congruence; eauto.
+        {
+          eapply in_map with (f:=(fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p))) in H.
+          unfold parameterize_lang.
+          cbn in H.
+          rewrite <- HeqH5 in *.
+          eapply H.
+        }
+        cbn.
+        specialize H1 with (p:= (n,b)).
+        eapply H1; eauto.
+        {
+          eapply in_all in H_p_name_l; eauto;
+            cbn in *.
+          eapply in_map with
+            (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+            in H.
+          eauto.
+        }
+        change c' with (get_ctx (sort_rule c' args)).
+        eapply  H_pl_indices_sound; eauto.
         basic_utils_crush.
-      cbn.
+      }
+    }
+    {
+      specialize H0 with (p:=(n,b)).
+      specialize H2 with (p:=(n,b)).
+      basic_goal_prep.
+      eauto using eq_sort_trans.
+    }
+    {
+      specialize H0 with (p:=(n,b)).
+      basic_goal_prep.
+      eauto using eq_sort_sym.
+    }
+    {
+      erewrite !parameterize_term_subst with (mn:=(named_list_lookup_err pl name)),
+          !parameterize_sort_subst with (mn:=(named_list_lookup_err pl name)).
+      
+      3,5,7: use_rule_in_wf; basic_core_crush.
+      2,3,4:enough (fresh p_name c'); 
+      try (unfold fresh in *;
+           (erewrite !eq_subst_dom_eq_l
+            +erewrite !eq_subst_dom_eq_r); now eauto).
+      2,3,4: eapply in_all in H_p_name_l; eauto;
+      cbn in *;
+      eapply in_map with
+          (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+          in H;
+        now eauto.
+      eapply eq_term_subst.
+      {
+        eapply eq_term_by.
+        eapply in_map with
+          (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+          in H.
+        eauto.
+      }
+      {
+        my_case Hmn (named_list_lookup_err pl name).
+        2:{
+          cbn.
+          eapply eq_subst_ctx_monotonicity; eauto.
+          {
+            eapply parameterize_preserving'_None; eauto.
+            1: use_rule_in_wf; basic_core_crush.
+            {
+              eapply in_all in H_p_name_l; eauto;
+                cbn in *;
+                eapply in_map with
+                (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+                in H;
+                now eauto.
+            }
+            change c' with (get_ctx (term_eq_rule c' e1 e2 t)).
+            eapply ctx_fresh_if_sort_fresh; eauto.
+            apply named_list_lookup_none_iff; congruence.
+          }
+          {
+            cbn; basic_utils_crush.
+          }
+        }
+        {
+          cbn.
+          specialize H1 with (p:=(n,b)).
+          eapply H1; eauto.
+          { use_rule_in_wf; basic_core_crush. }
+          {
+            eapply in_all in H_p_name_l; eauto;
+              cbn in *;
+              eapply in_map with
+              (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+              in H;
+              now eauto.
+          }
+        change c' with (get_ctx (term_eq_rule c' e1 e2 t)).
+        eapply  H_pl_indices_sound; eauto.
+        basic_utils_crush.
+        }
+      }
+      {
+        eapply in_map with
+          (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+          in H.
+        cbn in H.
+        use_rule_in_wf.
+        basic_core_crush.
+      }
+    }
+    {
+      eapply term_con_congruence.
+      {
+        eapply in_map with
+          (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+          in H.
+        eauto.
+      }
+      {
+        right.
+        erewrite parameterize_sort_subst with (mn:=(named_list_lookup_err pl name)).
+        2:{
+          rewrite CutElim.fresh_with_names_from.
+          {
+            eapply in_all in H_p_name_l; eauto.
+            eauto.
+          }
+          {
+            eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+          }
+        }
+        2:{
+          basic_utils_crush.
+          2: eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+          use_rule_in_wf; basic_core_crush.
+        }
+        1:case_match; cbn;eauto.
+        {
+          rewrite named_map_with_names_from.
+          erewrite <- with_named_from_named_map.
+          erewrite with_names_from_insert; eauto.
+          basic_utils_crush.
+           eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+        }
+        {
+          rewrite named_map_with_names_from.
+          erewrite <- with_named_from_named_map.
+          reflexivity.
+        }
+      }
+      {
+        eauto.
+      }
+      {
+        specialize H1 with (p:=(n,b)).
+        case_match; cbn;eauto.
+        2:{
+          cbn.
+          eapply eq_args_ctx_monotonicity; eauto.
+          {
+            eapply parameterize_preserving'_None; eauto.
+            { use_rule_in_wf; basic_core_crush. }
+            {
+              eapply in_all in H_p_name_l; eauto;
+                cbn in *;
+                eapply in_map with
+                (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+                in H;
+                now eauto.
+            }
+            {
+              change c' with (get_ctx (term_rule c' args t)).
+              eapply ctx_fresh_if_sort_fresh; eauto.
+              apply named_list_lookup_none_iff; eauto.
+            }
+          }
+          {
+            cbn; basic_utils_crush.
+          }
+        }
+        {
+          cbn in *.
+          eapply H1; eauto.
+          { use_rule_in_wf; basic_core_crush. }
+          {
+            eapply in_all in H_p_name_l; eauto;
+              cbn in *;
+              eapply in_map with
+              (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
+              in H;
+              now eauto.
+          }
+          {
+            change c' with (get_ctx (term_rule c' args t)).
+            eapply H_pl_indices_sound; eauto.
+            basic_utils_crush.
+          }
+        }
+      }
+    }
+    {
       basic_core_crush.
-      eapply eq_term_refl.
+    }
+    {
+      specialize H0 with (p:=(n,b)).
+      specialize H2 with (p:=(n,b)).
+      eapply eq_term_trans; eauto.
+    }
+    {
+      specialize H0 with (p:=(n,b)).
+      eapply eq_term_sym; eauto.
+    }
+    {
+      specialize H0 with (p:=(n,b)).
+      specialize H2 with (p:=(n,b)).
+      eapply eq_term_conv; eauto.
+    }
+    {
+      unfold insert.
+      basic_utils_crush.
+      cbn.
+      constructor; constructor.
       eapply wf_term_var.
-      replace (p_sort[/[]/]) with p_sort
-        by (symmetry; apply sort_subst_nil).
-      autorewrite with model term.
-    }*)
-  Abort.
+      replace  p_sort [/[] /] with p_sort;
+        basic_core_crush.
+      symmetry.
+      apply sort_subst_nil.
+    }
+    {
+      specialize H0 with (p:=(n0,b0)).
+      cbn -[insert] in *.
+      destruct n; basic_utils_crush.
+      {
+        constructor.
+        {
+          eapply eq_subst_ctx_monotonicity; eauto.
+          {
+            eapply (proj1 (proj2 (proj2 parameterize_preserving'_None)))
+              with (c':=(name,t)::c')
+                   (s1:=(name,e1)::s1)
+                   (s2:=(name,e2)::s2); eauto.
+            1: basic_core_crush.
+            basic_utils_crush.
+          }
+          {
+            cbn; basic_utils_crush.
+          }
+        }
+        {
+          eapply eq_term_refl.
+          replace  p_sort [/(name, pterm e2) :: named_map pterm s2 /]
+            with p_sort.
+          {
+            eapply wf_term_var.
+            basic_utils_crush.
+          }
+          rewrite closed_sort_subst; eauto.
+        }
+      }
+      {
+        constructor.
+        {
+          specialize H7 with (p':=(n,b)).
+          eapply H7; eauto.
+          basic_core_crush.
+        }
+        replace ((psort t) [/insert n (p_name, {{e p_name}}) (named_map pterm s2) /])
+          with  (psort t [/s2 /]).
+        (*rewrite strengthen_sort_subst_insert'.*)
+        {
+          specialize H0 with (p:=(n0,b0)); cbn -[insert] in*.
+          eapply H0.
+        }
+        {
+          rewrite parameterize_sort_subst with (mn:=Some (n,b)); eauto.
+          {
+            unfold fresh in *.
+            erewrite eq_subst_dom_eq_r; eauto.
+          }
+          {
+            erewrite eq_subst_dom_eq_r; eauto.
+            basic_core_crush.
+          }
+        }
+      }
+    }
+    {
+      unfold insert.
+      basic_utils_crush.
+      cbn.
+      constructor; constructor.
+      eapply wf_term_var.
+      replace  p_sort [/with_names_from [] [] /] with p_sort;
+        basic_core_crush.
+      symmetry.
+      apply sort_subst_nil.
+    }
+    {
+      specialize H0 with (p:=(n0,b0)).
+      cbn -[insert] in *.
+      destruct n; basic_utils_crush.
+      {
+        constructor.
+        {
+          eapply eq_args_ctx_monotonicity; eauto.
+          {
+            eapply (proj2 (proj2 (proj2 parameterize_preserving'_None)))
+              with (c':=(name,t)::c')
+                   (s1:=e1::s1)
+                   (s2:=e2::s2); eauto.
+            1: basic_core_crush.
+            basic_utils_crush.
+          }
+          {
+            cbn; basic_utils_crush.
+          }
+        }
+        {
+          eapply eq_term_refl.
+          replace p_sort [/with_names_from ((name, psort t) :: named_map psort c') (pterm e2 :: map pterm s2) /]
+            with p_sort.
+          {
+            eapply wf_term_var.
+            basic_utils_crush.
+          }
+          rewrite closed_sort_subst; eauto.
+        }
+      }
+      {
+        constructor.
+        {
+          specialize H7 with (p':=(n,b)).
+          eapply H7; eauto.
+          basic_core_crush.
+        }
+        replace ((psort t)  [/with_names_from (insert n (p_name, p_sort) (named_map psort c')) (insert n {{e p_name}} (map pterm s2)) /])
+          with  (psort t [/with_names_from c' s2 /]).
+        (*rewrite strengthen_sort_subst_insert'.*)
+        {
+          specialize H0 with (p:=(n0,b0)); cbn -[insert] in*.
+          eapply H0.
+        }
+        {
+          rewrite parameterize_sort_subst with (mn:=Some (n,b)); eauto.
+          2:{
+            rewrite CutElim.fresh_with_names_from; basic_utils_crush.
+            eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+          }
+          2:{
+            autorewrite with utils term model lang_core in *; intuition eauto with lang_core.
+            eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+          }
+          rewrite <- with_names_from_insert, ?with_named_from_named_map,
+            <-named_map_with_names_from; eauto.
+          basic_utils_crush.
+          eapply @eq_args_length_eq_r with (Model:=core_model l); eauto.
+        }
+      }
+    }
+  Qed.
+
+  Lemma parameterize_preserving'
+    : (forall (t1 t2 : sort),
+          eq_sort l c t1 t2 -> wf_ctx l c ->
+          forall (mn : option _),
+            (if mn then True else fresh (sort_name t1) pl) ->
+            Model.eq_sort (pctx mn c) (psort t1) (psort t2)) /\
+        (forall (t : sort) (e1 e2 : term),
+            eq_term l c t e1 e2 -> wf_ctx l c ->
+            forall (mn : option _),
+              (if mn then True else fresh (sort_name t) pl) ->
+              Model.eq_term (pctx mn c) (psort t) (pterm e1) (pterm e2)) /\
+        (forall (c' : named_list sort) (s1 s2 : named_list term),
+            eq_subst l c c' s1 s2 ->
+            wf_ctx l c ->
+            wf_ctx l c' ->
+            fresh p_name c' ->
+            forall (mn mn' : option _),
+              (if mn then match mn' with
+                          | Some p' => all (fun n => fresh n pl) (constructors_of_ctx (skipn (fst p') c'))
+                          | None => all (fun n => fresh n pl) (constructors_of_ctx c')
+                          end
+               else ~ Is_Some mn' /\ all (fun n => fresh n pl) (constructors_of_ctx c')) ->
+              eq_subst (parameterize_lang l) (pctx mn c) (pctx mn' c')
+                     (parameterize_subst p_name pl mn' s1)
+                     (parameterize_subst p_name pl mn' s2)) /\
+        (forall (c' : named_list sort) (s1 s2 : list term),
+            eq_args l c c' s1 s2 ->
+            wf_ctx l c ->
+            wf_ctx l c' ->
+            fresh p_name c' ->
+            forall (mn mn' : option _),
+              (if mn then match mn' with
+                          | Some p' => all (fun n => fresh n pl) (constructors_of_ctx (skipn (fst p') c'))
+                          | None => all (fun n => fresh n pl) (constructors_of_ctx c')
+                          end
+               else ~ Is_Some mn' /\ all (fun n => fresh n pl) (constructors_of_ctx c')) ->
+                   eq_args (parameterize_lang l) (pctx mn c) (pctx mn' c')
+                     (parameterize_args p_name pl mn' s1)
+                     (parameterize_args p_name pl mn' s2)).
+  Proof.
+    repeat split; destruct mn; try destruct mn';
+      intros.
+    all: cbn in *; intuition eauto.
+    all: try now (apply parameterize_preserving'_None; cbn in *; intuition eauto).
+    all: try now (apply parameterize_preserving'_Some; cbn in *; intuition; eauto).
+    {
+      eapply eq_subst_ctx_monotonicity; eauto.
+      { apply parameterize_preserving'_None; intuition eauto. }
+      {
+        cbn; apply incl_insert; eauto.
+      }
+    }
+    {
+      eapply eq_args_ctx_monotonicity; eauto.
+      { apply parameterize_preserving'_None; intuition eauto. }
+      {
+        cbn; apply incl_insert; eauto.
+      }
+    }
+  Qed.
+
+  End WithCtx.
+
 
   (*
     sort_eq_preserving_sem (tgt_Model := core_model (parameterize_lang l))
@@ -1107,21 +2073,6 @@ Section WithVar.
      *)
   Abort.
 
-  (* TODO: should really generalize semantics_preserving, which should take a fn as input
-     rather than a compiler.
-   *)
-  Lemma parameterize_term t e1 e2 is_param
-    : eq_term l c t e1 e2 ->
-      wf_ctx l c ->
-      eq_term (parameterize_lang l)
-        (pctx is_param c) (psort t)
-        (pterm e1) (pterm e2).
-  Proof.
-    induction 1. (*TODO: use cut_ind*)
-    {
-      intros.
-      (*TODO: commute w/ substitution...*)
-  Abort.
 
   End __.
     
