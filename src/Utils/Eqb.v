@@ -1,11 +1,11 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import Base Bool Datatypes.String Lists.List Uint63.
+(* TODO: add/cut dep on Booleans?
+ TODO: leave instances here or move them?*)
+Require Coq.Bool.Bool.
+Require Import Utils.Base Datatypes.Bool Datatypes.String Lists.List Uint63.
 Import ListNotations.
 
-(* TODO: add/cut dep on Booleans? *)
-Require Import Utils.Base Utils.Booleans.
 
 Section __.
   Context (A : Type).
@@ -118,6 +118,18 @@ Arguments dec {A}%type_scope {DecidableEq} s1 s2.
 Ltac eqb_case i j :=
   pose proof (eqb_spec i j); destruct (eqb i j);[ subst i |].
 
+
+#[export] Instance bool_eqb : Eqb bool := Bool.eqb.
+
+#[export] Instance bool_eqb_ok : Eqb_ok bool_eqb.
+Proof.
+  intros a b.
+  unfold eqb, bool_eqb.
+  destruct (Coq.Bool.Bool.eqb_spec a b); eauto.
+Qed.
+
+(* TODO move code below to specific files *)
+
 #[export] Instance string_Eqb : Eqb string := String.eqb.
 
 #[export] Instance string_Eqb_ok : Eqb_ok string_Eqb.
@@ -138,3 +150,10 @@ Proof.
 Qed.
 
 #[export] Instance int_eqb : Eqb int := Uint63.eqb.
+
+#[export] Instance int_eqb_ok : Eqb_ok int_eqb.
+Proof.
+  intros a b.
+  unfold eqb, int_eqb.
+  case_match; [eapply Uint63.eqb_spec| eapply eqb_false_spec]; eauto.
+Qed.

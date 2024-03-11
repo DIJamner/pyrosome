@@ -7,6 +7,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.AllConstructors.
 Import Core.Notations.
+From Pyrosome.Compilers Require Import SemanticsPreservingDef.
 From Pyrosome.Compilers Require Export CompilerDefs.
 
 Section WithVar.
@@ -831,6 +832,14 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         { break; eauto. }
         { break; eauto. }
       Qed.
+
+      Notation semantics_preserving cmp :=
+        (semantics_preserving
+           (compile cmp)
+           (compile_sort cmp)
+           (compile_ctx cmp)
+           (compile_args cmp)
+           (compile_subst cmp)).
 
       Lemma inductive_implies_semantic' cmp ls
         : wf_lang ls ->

@@ -5,7 +5,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
+From Pyrosome Require Import Theory.Core Compilers.SemanticsPreservingDef
+  Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Tools.Matches Tools.CompilerTools Compilers.CompilerTransitivity.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
   SimpleUnit NatHeap SimpleVCPSHeap
@@ -267,12 +268,22 @@ Proof.
   }
 Qed.
 
+
+
+Notation semantics_preserving tgt cmp :=
+  (semantics_preserving (tgt_Model := core_model tgt)
+     (compile cmp)
+     (compile_sort cmp)
+     (compile_ctx cmp)
+     (compile_args cmp)
+     (compile_subst cmp)).
+
 Lemma full_compiler_semantic
   : semantics_preserving
-      (tgt_Model:= core_model (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
+      (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
                    ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
                    forget_eq_wkn'++
-                   cps_prod_lang ++ block_subst ++ value_subst))
+                   cps_prod_lang ++ block_subst ++ value_subst)
       (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
                    (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
       (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).

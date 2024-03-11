@@ -136,68 +136,6 @@ End WithPreModel.
     Notation compiler :=
       (compiler (tgt_term:=tgt_term)
          (tgt_sort:=tgt_sort)).
-    
-Section CompileJudgment.
-  Context (cmp : compiler)
-    (src : lang).
-
-  Notation compile := (compile cmp).
-  Notation compile_sort := (compile_sort cmp).
-  Notation compile_ctx := (compile_ctx cmp).
-  Notation compile_args := (compile_args cmp).
-  Notation compile_subst := (compile_subst cmp).
-  
-   (* First we specify the properties semantically,
-     then inductively on the compiler. TODO: prove equivalent
-   *)
-  Definition sort_wf_preserving_sem :=
-    forall c t,
-      wf_sort src c t ->
-      wf_ctx src c ->
-      Model.wf_sort (compile_ctx c) (compile_sort t).
-
-  Definition term_wf_preserving_sem :=
-    forall c e t,
-      wf_term src c e t ->
-      wf_ctx src c ->
-      Model.wf_term (compile_ctx c) (compile e) (compile_sort t).
-
-  Definition sort_eq_preserving_sem :=
-    forall c t1 t2,
-      eq_sort src c t1 t2 ->
-      wf_ctx src c ->
-      Model.eq_sort (compile_ctx c) (compile_sort t1) (compile_sort t2).
-  
-  Definition term_eq_preserving_sem :=
-    forall c t e1 e2,
-      eq_term src c t e1 e2 ->
-      wf_ctx src c ->
-      Model.eq_term (compile_ctx c) (compile_sort t) (compile e1) (compile e2).
-
-  Definition args_wf_preserving_sem :=
-    forall c s c',
-      wf_args src c s c' ->
-      wf_ctx src c ->
-      wf_ctx src c' ->
-      Model.wf_args (compile_ctx c) (compile_args s) (compile_ctx c').
-
-  Definition subst_eq_preserving_sem :=
-    forall c c' s1 s2,
-      eq_subst src c c' s1 s2 ->
-      wf_ctx src c ->
-      wf_ctx src c' ->
-      Model.eq_subst (compile_ctx c) (compile_ctx c') (compile_subst s1) (compile_subst s2).
-   
-  Definition ctx_wf_preserving_sem :=
-    forall c, wf_ctx src c -> Model.wf_ctx (compile_ctx c).
-
-  (*Set up to match the combined scheme for the judgment inductives *)
-  Definition semantics_preserving :=
-    sort_eq_preserving_sem /\ term_eq_preserving_sem /\ subst_eq_preserving_sem
-    /\ sort_wf_preserving_sem /\ term_wf_preserving_sem /\ args_wf_preserving_sem
-    /\ ctx_wf_preserving_sem.
-
-End CompileJudgment.
 
 (*
 First we define an inductively provable (and in fact decidable) property 
