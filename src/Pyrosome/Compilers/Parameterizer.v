@@ -7,8 +7,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Infinite Monad.
 From Pyrosome Require Import Theory.Core Theory.Renaming Theory.CutFreeInd
+  Theory.ModelImpls
   Tools.ConstructorsOf
-  Compilers.SemanticsPreservingDef Compilers.CompilerDefs.
+  Compilers.SemanticsPreservingDef Compilers.Compilers.
 Import Core.Notations.
 
 (*TODO: move to Utils.v*)
@@ -2655,6 +2656,964 @@ Section WithVar.
   Qed.
 
   End WithSpec.
+
+  Local Notation preserving_compiler_ext tgt cmp_pre cmp src :=
+    (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
+  Local Notation compiler := (@compiler V term sort).
+
+  (*TODO: move to a better location*)
+  Definition id_compiler : lang -> compiler :=
+    flat_map (fun '(name,r) =>
+                match r with
+                | sort_rule c _ => [(name,sort_case (map fst c) (scon name (map var (map fst c))))]
+                | term_rule c _ _ => [(name,term_case (map fst c) (con name (map var (map fst c))))]
+                | _ => []
+                end).
+
+  
+  Lemma term_rule_not_fresh_in_id_compiler n c' args t l
+    :  In (n, term_rule c' args t) l -> ~ fresh n (id_compiler l).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  
+  Lemma term_rule_in_id_compiler n c' args t l
+    :  In (n, term_rule c' args t) l ->
+       In (n,term_case (map fst c') (con n (map var (map fst c'))))
+          (id_compiler l).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  
+  Lemma id_compiler_fresh n l
+    : fresh n l -> fresh n (id_compiler l).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      try destruct r;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve id_compiler_fresh : utils.
+  
+  Lemma id_compiler_all_fresh l
+    : all_fresh l -> all_fresh (id_compiler l).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      try destruct r;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve id_compiler_all_fresh : utils.
+
+
+  
+  (*TODO: move somewhere better*)
+  Lemma named_list_lookup_in A (a:A) n v s'
+    : all_fresh s' -> In (n,v) s' -> named_list_lookup a s' n = v.
+  Proof with (basic_goal_prep; basic_term_crush).
+    induction s'...     
+    eqb_case n v0...
+  Qed.      
+      
+  Lemma var_args_helper' s s'
+    : all_fresh s' ->
+      incl s s' ->
+      (map var (map fst s)) [/s'/] = map snd s.
+  Proof.
+    induction s;
+      basic_goal_prep;
+      basic_term_crush.
+    apply named_list_lookup_in; eauto.
+  Qed.
+
+  
+  Lemma map_snd_with_names_from A B (s : list A) (c' : named_list B)
+    : Datatypes.length s = Datatypes.length c' ->
+      map snd (with_names_from c' s) = s.
+  Proof.
+    revert s;
+      induction c';
+      destruct s;
+      basic_goal_prep;
+      basic_term_crush.
+  Qed.
+  Hint Rewrite map_snd_with_names_from : utils.
+
+
+  Lemma fresh_with_names_from n A B (s : list A) (c' : named_list B)
+    : fresh n c' ->
+      fresh n (with_names_from c' s).
+  Proof.
+    revert s;
+      induction c';
+      destruct s;
+      basic_goal_prep;
+      basic_term_crush.
+  Qed.
+  Hint Resolve fresh_with_names_from : utils.
+  
+  Lemma all_fresh_with_names_from A B (s : list A) (c' : named_list B)
+    : all_fresh c' ->
+      all_fresh (with_names_from c' s).
+  Proof.
+    revert s;
+      induction c';
+      destruct s;
+      basic_goal_prep;
+      basic_term_crush.
+  Qed.
+  Hint Resolve all_fresh_with_names_from : utils.
+    
+  Lemma var_args_helper s (c' : ctx)
+    : all_fresh c' ->
+      length s = length c' ->
+      (map var (map fst c')) [/combine_r_padded (map fst c') s /] = s.
+  Proof.
+    intros H H'.
+    rewrite combine_r_padded_eq_len by basic_utils_crush.
+    replace (map fst c') with
+      (map fst (combine (map fst c') s)) at 2
+      by basic_utils_crush.
+    rewrite var_args_helper';
+      basic_utils_crush.
+  Qed.
+
+  
+  Lemma map_flat_map A B C (f : B -> C) (g : A -> list B) l
+    : map f (flat_map g l) = flat_map (fun x => map f (g x)) l.
+  Proof.
+    induction l; basic_goal_prep; basic_utils_crush.
+    rewrite !map_app.
+    congruence.
+  Qed.
+
+  
+  Lemma incl_flat_map A B (f : A -> list B) x l
+    : In x l -> incl (f x) (flat_map f l).
+  Proof.
+    induction l; basic_goal_prep; basic_utils_crush.
+  Qed.
+    
+  
+  Lemma id_compiler_identity l
+    : wf_lang l ->
+      (forall c t, wf_sort l c t ->
+                     compile_sort (id_compiler l) t = t)
+      /\ (forall c e t, wf_term l c e t ->
+                     compile (id_compiler l) e = e)
+      /\ (forall c s c', wf_args l c s c'->
+                     compile_args (id_compiler l) s = s).
+  Proof.
+    intro.
+    apply wf_judge_ind;
+      basic_goal_prep;
+      basic_core_crush.
+    all: case_match; [| exfalso].
+    4:eapply term_rule_not_fresh_in_id_compiler; eauto;
+    eapply named_list_lookup_none_iff; eauto.
+    all: use_rule_in_wf.
+    all: set (f:=fun '(name,r) =>
+                match r with
+                | sort_rule c _ => [(name:V,sort_case (map fst c) (scon name (map var (map fst c))))]
+                | term_rule c _ _ => [(name,term_case (map fst c) (con name (map var (map fst c))))]
+                | _ => []
+                end).
+    all: apply incl_flat_map with (f:=f) in H0;
+      cbn in H0.
+    2:{
+      eapply named_list_lookup_none_iff in HeqH3.
+      eapply HeqH3.
+      unfold id_compiler.
+      rewrite map_flat_map.
+      basic_utils_crush.
+    }
+    {
+      eapply named_list_lookup_err_in in HeqH3.
+      basic_utils_crush.
+      eapply in_all_fresh_same in HeqH3; eauto;
+        subst;
+        basic_core_crush.
+      change (scon ?n ?s) [/?s'/] with (scon n s[/s'/]).
+      f_equal.
+      unfold compile_args in *.
+      erewrite H2.
+      apply var_args_helper;
+        basic_core_crush.
+      symmetry; eapply wf_args_length_eq; eauto.
+    }
+    {
+      eapply named_list_lookup_err_in in HeqH3.
+      basic_utils_crush.
+      eapply in_all_fresh_same in HeqH3; eauto;
+        subst;
+        basic_core_crush.
+      change (con ?n ?s) [/?s'/] with (con n s[/s'/]).
+      f_equal.
+      unfold compile_args in *.
+      erewrite H2.
+      apply var_args_helper;
+        basic_core_crush.
+      symmetry; eapply wf_args_length_eq; eauto.
+    }
+  Qed.
+    
+  Lemma id_compiler_identity_ctx l c
+    : wf_lang l ->
+      wf_ctx l c ->
+      compile_ctx (id_compiler l) c = c.
+  Proof.
+    intro.
+    induction 1;
+      basic_goal_prep; eauto.
+    f_equal; eauto.
+    f_equal; eauto.
+    eapply id_compiler_identity; eauto.
+  Qed.
+    
+  Lemma id_compiler_preserving' l l'
+    : wf_lang l -> incl l l' -> preserving_compiler_ext l' [] (id_compiler l) l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_core_crush.
+    destruct r;
+      basic_goal_prep;
+      constructor;
+      basic_utils_crush.
+    all: try use_rule_in_wf.
+    all: rewrite id_compiler_identity_ctx; 
+      basic_core_crush.
+    { eapply wf_sort_by; basic_core_crush. }
+    {
+      replace (compile_sort (id_compiler l) s)
+        with s[/with_names_from n (map var (map fst n))/].
+      { eapply wf_term_by; basic_core_crush. }
+      {
+        etransitivity.
+        { apply sort_subst_id; eauto. }
+        {
+          symmetry.
+          eapply id_compiler_identity; eauto.
+        }
+      }
+    }
+    {
+      erewrite !(proj1 (id_compiler_identity H0)); eauto.
+      eapply eq_sort_by; eauto.
+    }
+    {
+      erewrite !(proj1 (id_compiler_identity H0)); eauto.
+      erewrite !(proj1 (proj2 (id_compiler_identity H0))); eauto.
+      eapply eq_term_by; eauto.
+    }
+  Qed.
+
+  Lemma id_compiler_preserving l
+    : wf_lang l -> preserving_compiler_ext l [] (id_compiler l) l.
+  Proof.
+    intros; apply id_compiler_preserving'; basic_utils_crush.
+  Qed.
+
+  Context (tgt : lang).
+
+  Context (l_base : lang).
+  Context (src_spec tgt_spec : param_spec).
+
+  
+  Lemma lookup_Some_to_pcmp cmp n c
+    : let pcmp := (parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base) in
+      named_list_lookup_err cmp n = Some c ->
+      named_list_lookup_err pcmp n
+      = Some (parameterize_ccase p_name tgt_spec src_spec (n,c)).
+  Proof.
+    induction cmp;
+      basic_goal_prep;
+      subst;
+      basic_goal_prep;
+      basic_utils_crush.
+    eqb_case n v;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+    
+  
+  Hint Rewrite map_insert : utils.
+  
+  Lemma named_map_combine A B (f : A -> B) l1 l2
+    : named_map f (combine l1 l2) = combine l1 (map f l2).
+  Proof.
+    revert l2;
+      induction l1;
+      destruct l2;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite named_map_combine : utils.
+
+  Hint Rewrite skipn_nil firstn_nil combine_nil : utils.
+
+  Lemma combine_skipn A B (l : list A) (l' : list B) (n : nat)
+    : skipn n (combine l l') = combine (skipn n l) (skipn n l').
+  Proof.
+    revert l' n;
+      induction l;
+      destruct l';
+      destruct n;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.          
+  
+  Hint Rewrite firstn_length combine_firstn combine_skipn : utils.
+  
+  Lemma combine_insert A B n (a:A) (b:B) l1 l2
+    : length l1 = length l2 ->
+      combine (insert n a l1) (insert n b l2)
+      = insert n (a,b) (combine l1 l2).
+  Proof.
+    unfold insert.
+    intros.
+    rewrite combine_app by basic_utils_crush.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  (*TODO: edited from Compilers.v *_plus inductive*)
+  
+
+  Lemma fresh_lang_fresh_cmp tgt' cmp_pre cmp l n
+    : preserving_compiler_ext tgt' cmp_pre cmp l ->
+      fresh n l -> fresh n cmp.
+  Proof.
+    induction 1; basic_goal_prep;
+      basic_core_crush.
+  Qed.
+  Hint Resolve fresh_lang_fresh_cmp : lang_core.
+
+    Lemma preserving_contradiction tgt' cmp_pre cmp l n r
+      : preserving_compiler_ext tgt' cmp_pre cmp l ->
+        all_fresh l ->        
+        In (n,r) l ->
+        match r, named_list_lookup_err cmp n with
+        | term_rule _ _ _, Some (term_case _ _)
+        | sort_rule _ _, Some (sort_case _ _) => True
+        | term_rule _ _ _, None
+        | sort_rule _ _, None => False
+        | _, Some _ => False
+        | _, None => True
+        end.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        repeat case_match;
+        subst;
+        autorewrite with utils in *;
+        try tauto;
+        intuition (subst;try congruence; eauto with lang_core).
+      all: my_case H' (named_list_lookup_err cmp n); cbn in *; try tauto.
+      all: autorewrite with utils in *.
+      all: try congruence.
+      all: try match goal with
+           | H : _ = Some _ |- _ =>
+               symmetry in H;
+               eapply named_list_lookup_err_in in H
+             end.
+      all: repeat match goal with
+             | H : context [ match _ with _ => _ end ] |- _ =>
+                 revert H; case_match; eauto; try congruence
+             end.
+      all: basic_goal_prep; basic_utils_crush.
+      all: assert (fresh n cmp) by eauto with lang_core;
+                basic_utils_crush.      
+    Qed.
+
+    Lemma preserving_args_length tgt' cmp_pre cmp l n r
+      : preserving_compiler_ext tgt' cmp_pre cmp l ->
+        all_fresh l ->        
+        In (n,r) l ->
+        match named_list_lookup_err cmp n with
+        | Some (term_case args _)
+        | Some (sort_case args _) => length args = length (get_ctx r)
+        | None => True
+        end.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        repeat case_match;
+        subst;
+        autorewrite with utils in *;
+        try tauto;
+        intuition (subst;try congruence; eauto with lang_core).
+      all: my_case H' (named_list_lookup_err cmp n); cbn in *; try tauto.
+      all: autorewrite with utils in *.
+      all: try congruence.
+      all: try match goal with
+           | H : _ = Some _ |- _ =>
+               symmetry in H;
+               eapply named_list_lookup_err_in in H
+             end.
+      all: repeat match goal with
+             | H : context [ match _ with _ => _ end ] |- _ =>
+                 revert H; case_match; eauto; try congruence
+             end.
+      all: basic_goal_prep; basic_core_crush.
+      all: exfalso; eapply fresh_lang_fresh_cmp; eauto.
+      all:eapply in_map in H'; eauto; exact H'.
+    Qed.
+
+    Definition p_name_fresh_in_cmp : compiler -> Prop :=
+      all (fun p => match snd p with
+                    | term_case args _
+                    | sort_case args _ => ~In p_name args
+                    end).
+
+    
+    Lemma fresh_combine_r_padded A B (n:A) l (l' : list B) `{WithDefault B}
+      : ~In n l -> fresh n (combine_r_padded l l').
+    Proof.
+      revert l';
+        induction l;
+        destruct l';
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Resolve fresh_combine_r_padded : utils.
+
+    Lemma not_in_p_name_cmp_term cmp args e n
+      : p_name_fresh_in_cmp cmp ->
+        In (n, term_case args e) cmp ->
+        ~In p_name args.
+    Proof.
+      unfold p_name_fresh_in_cmp.
+      intros.
+      eapply in_all in H; eauto.
+      cbn in *.
+      auto.
+    Qed.
+    Hint Resolve not_in_p_name_cmp_term : core.
+
+    
+    Lemma not_in_p_name_cmp_sort cmp args e n
+      : p_name_fresh_in_cmp cmp ->
+        In (n, sort_case args e) cmp ->
+        ~In p_name args.
+    Proof.
+      unfold p_name_fresh_in_cmp.
+      intros.
+      eapply in_all in H; eauto.
+      cbn in *.
+      auto.
+    Qed.
+    Hint Resolve not_in_p_name_cmp_term : core.
+
+    Hint Rewrite @map_fst_combine_r_padded : utils.
+
+    Lemma preserving_compiler_ws tgt' cmp_pre cmp l
+      : wf_lang tgt' ->
+        preserving_compiler_ext tgt' cmp_pre cmp l ->
+        ws_compiler (tgt_Model:=core_model tgt') cmp.
+    Proof.
+      induction 2; basic_goal_prep; intuition auto.
+      {
+        eapply well_scoped_change_args;
+          try typeclasses eauto.
+        {
+          change  (@substable_sort V V_Eqb) with  (sort_substable).
+          change  (@syntax_model V V_Eqb) with (@premodel V term sort (core_model tgt')) in *.
+          eapply Model.wf_sort_implies_ws; eauto.
+        }
+        {
+          unfold compile_ctx.
+          rewrite named_map_fst_eq.
+          reflexivity.
+        }
+      }
+      {
+        eapply well_scoped_change_args.
+        - typeclasses eauto.
+        - 
+          change  (@substable_term V V_Eqb) with  (term_substable).
+          change  (@substable_sort V V_Eqb) with  (sort_substable).
+          change  (@syntax_model V V_Eqb) with (@premodel V term sort (core_model tgt')) in *.
+          eapply Model.wf_term_implies_ws; eauto.
+        - unfold compile_ctx.
+          rewrite named_map_fst_eq.
+          reflexivity.
+      }
+      Unshelve.
+      all: eapply core_model_ok; eauto.
+    Qed.
+    Hint Resolve preserving_compiler_ws : lang_core.
+
+    Hint Rewrite app_length skipn_length : utils.
+    
+    Lemma length_insert A n (a:A) l
+      : length (insert n a l) = S (length l).
+    Proof.
+      unfold insert; basic_utils_crush.
+      cbn.
+      basic_utils_crush.
+      Lia.lia.
+    Qed.
+    Hint Rewrite length_insert : utils.
+     
+  (*TODO: invariants on mn1,mn2*)
+  (* TODO: *)
+  Lemma compile_parameterize_commute src cmp
+    : all_fresh src ->
+      wf_lang tgt ->
+      p_name_fresh_in_cmp cmp ->
+      preserving_compiler_ext tgt [] cmp src ->
+      let pcmp := (parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base) in
+    (forall c t,
+        wf_sort src c t ->
+        compile_sort pcmp (parameterize_sort p_name src_spec t)
+        = parameterize_sort p_name tgt_spec (compile_sort cmp t))
+    /\ (forall c e t, wf_term src c e t ->
+        compile pcmp (parameterize_term p_name src_spec e)
+        = parameterize_term p_name tgt_spec (compile cmp e))
+    /\ (forall c s c',
+           Model.wf_args (Model:=core_model src) c s c' ->
+           forall mn, (*TODO: separate?*)
+            (* (Is_Some mn1 <-> Is_Some mn2) ->*)
+             compile_args pcmp (parameterize_args p_name src_spec mn s)
+             = parameterize_args p_name tgt_spec mn (compile_args cmp s)).
+  Proof.
+    intros.
+    apply wf_judge_ind;
+      intros.
+    {
+      cbn.
+      my_case H_lookup (named_list_lookup_err cmp n).
+      2:{
+        eapply preserving_contradiction in H;
+        basic_utils_crush.
+        all:cbn in *.
+        exfalso.
+        rewrite H_lookup in H; tauto.
+      }
+      subst pcmp.
+      erewrite lookup_Some_to_pcmp; eauto.
+      destruct c0.
+      {
+        eapply preserving_contradiction in H;
+        basic_utils_crush.
+        all:cbn in *.
+        exfalso.
+        rewrite H_lookup in H; tauto.
+      }
+      cbn.
+      rewrite parameterize_sort_subst with (mn:=named_list_lookup_err src_spec n); eauto.
+      2:{
+        symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
+        apply fresh_combine_r_padded.
+        eapply not_in_p_name_cmp_sort; eauto.
+      }
+      2:{
+        basic_utils_crush.
+        assert (ws_compiler (tgt_Model:=core_model tgt) cmp)
+          by basic_core_crush.
+        symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
+        eapply in_all in H6; eauto.
+        cbn in *; eauto.
+      }
+      f_equal.
+      rewrite !combine_r_padded_eq_len.
+      2:{
+        eapply preserving_args_length in H3; eauto.
+        rewrite H_lookup in H3.
+        basic_goal_prep;
+          basic_core_crush.
+        erewrite <- wf_args_length_eq; eauto.
+      }
+      2:{
+        eapply preserving_args_length in H3; eauto.
+        rewrite H_lookup in H3.
+        case_match;
+          basic_goal_prep;
+          basic_core_crush.
+        all:erewrite <- wf_args_length_eq; eauto.
+      }
+      case_match;
+        basic_goal_prep;
+        basic_utils_crush.
+      2:{
+        f_equal.
+        specialize (H5 None).
+        apply H5.
+      }
+      {
+        rewrite combine_insert.
+        2: basic_utils_crush.
+        2:{
+          eapply preserving_args_length in H3; eauto.
+          rewrite H_lookup in H3.
+          basic_goal_prep;
+            basic_core_crush.
+          erewrite <- wf_args_length_eq; eauto.
+        }
+        f_equal; try reflexivity.
+        f_equal.
+        (*TODO: probably won't work later*)
+        specialize (H5 None).
+        apply H5.
+      }
+    }
+    {
+      cbn.
+      my_case H_lookup (named_list_lookup_err cmp n).
+      2:{
+        eapply preserving_contradiction in H;
+        basic_utils_crush.
+        all:cbn in *.
+        exfalso.
+        rewrite H_lookup in H; tauto.
+      }
+      subst pcmp.
+      erewrite lookup_Some_to_pcmp; eauto.
+      destruct c0.
+      2:{
+        eapply preserving_contradiction in H;
+        basic_utils_crush.
+        all:cbn in *.
+        exfalso.
+        rewrite H_lookup in H; tauto.
+      }
+      cbn.
+      rewrite parameterize_term_subst with (mn:=named_list_lookup_err src_spec n); eauto.
+      2:{
+        symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
+        apply fresh_combine_r_padded.
+        eapply not_in_p_name_cmp_term; eauto.
+      }
+      2:{
+        basic_utils_crush.
+        assert (ws_compiler (tgt_Model:=core_model tgt) cmp)
+          by basic_core_crush.
+        symmetry in H_lookup; apply named_list_lookup_err_in in H_lookup.
+        eapply in_all in H6; eauto.
+        cbn in *; eauto.
+      }
+      f_equal.
+      rewrite !combine_r_padded_eq_len.
+      2:{
+        eapply preserving_args_length in H3; eauto.
+        rewrite H_lookup in H3.
+        basic_goal_prep;
+          basic_core_crush.
+        erewrite <- wf_args_length_eq; eauto.
+      }
+      2:{
+        eapply preserving_args_length in H3; eauto.
+        rewrite H_lookup in H3.
+        case_match;
+          basic_goal_prep;
+          basic_core_crush.
+        all:erewrite <- wf_args_length_eq; eauto.
+      }
+      case_match;
+        basic_goal_prep;
+        basic_utils_crush.
+      2:{
+        f_equal.
+        specialize (H5 None).
+        apply H5.
+      }
+      {
+        rewrite combine_insert.
+        2: basic_utils_crush.
+      2:{
+        eapply preserving_args_length in H3; eauto.
+        rewrite H_lookup in H3.
+        basic_goal_prep;
+          basic_core_crush.
+        erewrite <- wf_args_length_eq; eauto.
+      }
+        f_equal; try reflexivity.
+        f_equal.
+        (*TODO: probably won't work later*)
+        specialize (H5 None).
+        apply H5.        
+      }
+    }
+    all: eauto.
+    {
+      destruct mn; cbn;
+        basic_utils_crush.
+      unfold compile_args.
+      cbn.
+      basic_utils_crush.
+    }
+    {
+      unfold compile_args in *.
+      destruct mn; cbn;
+        basic_utils_crush.
+      2:{
+        specialize (H6 None).
+        basic_utils_crush.
+      }
+      {
+        specialize (H6 None).
+        cbn -[insert].
+        basic_utils_crush.
+      }
+    }
+  Qed.
+
+  Hint Rewrite insert_nil : utils.
+
+  (*TODO: could have weaker assumptions*)
+  Lemma compile_p_sort cmp src
+    : all_fresh (src ++ l_base) ->
+      p_name_fresh_in_cmp cmp ->
+      preserving_compiler_ext tgt [] cmp src ->
+      let pcmp := (parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base) in
+      compile_sort pcmp p_sort = p_sort.
+  Admitted.
+
+  
+  Lemma named_map_insert A B (f : A -> B) n a lst
+    : named_map f (insert n a lst) = insert n (fst a, f (snd a)) (named_map f lst).
+  Proof.
+    unfold named_map.
+    rewrite map_insert.
+    unfold pair_map_snd.
+    break; reflexivity.
+  Qed.
+  Hint Rewrite named_map_insert : utils.
+  
+  Lemma compile_parameterize_commute_ctx src cmp
+    : all_fresh (src++l_base) ->
+      wf_lang tgt ->
+      p_name_fresh_in_cmp cmp ->
+      preserving_compiler_ext tgt [] cmp src ->
+      let pcmp := (parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base) in
+      forall c,
+        wf_ctx src c ->
+        forall mn,
+        compile_ctx pcmp (parameterize_ctx p_name p_sort src_spec mn c)
+        = parameterize_ctx p_name p_sort tgt_spec mn (compile_ctx cmp c).
+  Proof.
+    intros until c.
+    induction 1;
+      basic_goal_prep;
+      basic_core_crush.
+    {
+      destruct mn; cbn; eauto.
+      basic_utils_crush.
+      cbn.
+      subst pcmp. erewrite compile_p_sort; eauto.
+    }
+    {
+      unfold parameterize_ctx.
+      case_match.
+      2:{
+        cbn in *.
+        specialize (IHwf_ctx None).
+        f_equal; eauto.
+        f_equal.
+        eapply compile_parameterize_commute.
+        5:eauto.
+        all: eauto.
+        basic_utils_crush.
+        eapply all_fresh_app_l; eauto.
+      }
+      {
+        subst.
+        unfold compile_ctx in *.
+        basic_utils_crush.
+        cbn -[insert]  in*.
+        destruct a.
+        {
+          cbn.
+          subst pcmp.
+          erewrite !compile_p_sort; eauto.
+          f_equal.
+          f_equal.
+          {
+            f_equal.
+            eapply compile_parameterize_commute.
+            5:eauto.
+            all: eauto.
+            basic_utils_crush.
+            eapply all_fresh_app_l; eauto.
+          }
+          {
+            specialize (IHwf_ctx None); eauto.
+          }
+        }
+        {
+          rewrite !insert_S.
+          subst pcmp.
+          erewrite !compile_p_sort; eauto.
+          f_equal.
+          {
+            f_equal.
+            eapply compile_parameterize_commute.
+            5:eauto.
+            all: eauto.
+            basic_utils_crush.
+            eapply all_fresh_app_l; eauto.
+          }
+          {
+            specialize (IHwf_ctx (Some (a,b))).
+            cbn -[insert] in *.
+            basic_utils_crush.
+            cbn -[insert] in *.
+            erewrite !compile_p_sort in *; eauto.
+          }
+        }
+      }
+    }
+  Qed.
+        
+  Fixpoint constructors_containing_vars vars e :=
+    match e with
+    | var _ => []
+    | con n s =>
+        if existsb (fun x => inb x vars) (fv_args s)
+        then let cs := flat_map (constructors_containing_vars vars) s in
+             n::cs
+        else []
+    end.
+
+  Definition sort_constructors_containing_vars vars e :=
+    match e with
+    | scon n s =>
+        if existsb (fun x => inb x vars) (fv_args s)
+        then let cs := flat_map (constructors_containing_vars vars) s in
+             n::cs
+        else []
+    end.
+        
+  
+  Definition specs_compatibleb : compiler -> bool :=
+    forallb (fun '(name, cc) =>
+               match cc with
+               | sort_case args t => 
+                   match named_list_lookup_err src_spec name with
+                   | Some n0 =>
+                       forallb (fun n => inb n (map fst tgt_spec))
+                         (sort_constructors_containing_vars (firstn (fst n0) args) t)
+                   | None => forallb (fun n => freshb n tgt_spec) (constructors_of_sort t)
+                   end
+               | term_case args e =>
+                   match named_list_lookup_err src_spec name with
+                   | Some n0 =>
+                       forallb (fun n => inb n (map fst tgt_spec))
+                         (constructors_containing_vars (firstn (fst n0) args) e)
+                   | None => forallb (fun n => freshb n tgt_spec) (constructors_of e)
+                   end
+               end).
+
+  Context (Hwfl_base: wf_lang l_base).
+  Context (Hwf_p_sort : wf_sort l_base {{c }} p_sort).
+
+  Hint Rewrite Is_true_forallb:utils.
+  
+  Lemma parameterize_compiler_preserving cmp src
+    : wf_lang tgt ->
+      Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt) ->
+      pl_is_ordered tgt_spec tgt ->
+      preserving_compiler_ext tgt [] cmp src ->
+      wf_lang src ->
+      p_name_fresh_in_cmp cmp ->
+      all_fresh (src++l_base) ->
+      (*Is_true (specs_compatibleb cmp) ->*)
+      preserving_compiler_ext (parameterize_lang tgt_spec tgt ++ l_base)
+        (id_compiler l_base)
+        (parameterize_compiler p_name tgt_spec src_spec cmp)
+        (parameterize_lang src_spec src).
+  Proof.
+    intros wft H_b H_ord.
+    unfold parameterize_lang, parameterize_compiler.
+    induction 1; intros; cbn [map fst] in *.
+    { constructor. }
+    {
+      cbn -[parameterize_ctx parameterize_compiler].
+      replace (match named_list_lookup_err src_spec n with
+               | Some n0 => insert (fst n0) p_name (map fst c)
+               | None => map fst c
+               end)
+        with (map fst (parameterize_ctx p_name p_sort src_spec (named_list_lookup_err src_spec n) c)).
+      {
+        eapply CompilerDefs.preserving_compiler_sort; eauto.
+        {
+          eapply IHpreserving_compiler_ext; eauto.
+          all: basic_goal_prep; basic_core_crush.
+        }
+        cbn -[parameterize_ctx parameterize_compiler].
+        eapply  compile_parameterize_commute_ctx in H;
+          [| basic_goal_prep; basic_utils_crush..].
+        {
+          unfold parameterize_lang, parameterize_compiler in H.
+          erewrite H; eauto.
+          eapply eq_sort_wf_r; eauto.
+          {
+            eapply wf_lang_concat; eauto.
+            eapply parameterize_lang_preserving; eauto.
+          }
+          {
+            eapply parameterize_ctx_preserving'; eauto.
+            {
+              eapply wf_lang_concat; eauto.
+              eapply parameterize_lang_preserving; eauto.
+            }
+            {
+              unfold syntactic_parameterization_conditions in *;
+                basic_utils_crush.
+              eapply all_in; intros.
+              eapply in_all in H4; eauto.
+              eapply use_compute_fresh; eauto.
+              (*TODO: freshb rewrite, or all proper impl?*)
+            }
+            {
+              unfold syntactic_parameterization_conditions in *;
+                basic_utils_crush.
+            }
+            
+            {
+              unfold syntactic_parameterization_conditions in *;
+                basic_utils_crush.
+              eapply compute_pl_indices_sound; eauto.
+            }
+            {
+              
+              admit (*TODO: ctx_wf; lost some necessary assumptions (preserving)*).
+            }
+            {
+              (*TODO: is p_name fresh in c? need that mn = None*)
+              admit.
+            }
+
+          (*} 
+            all: admit (*easy*).
+
+            TODO list:
+              - finish compiler parameterization
+              - fixup substitution (implement type substitution)
+              - add type abstraction
+                    
+              - inversion
+              - bridge proof
+                       
+          1,2:ad
+          eapply (proj1 (parameterize_preserving' _ _ _ _ _ _ _ _)).
+          all: basic_core_crush.
+          all: admit. (*not trivial*)
+        }
+        basic_core_crush.
+      }
+      {
+      }*)
+  Admitted.
   
     (*args idx*)
   Definition param_generator := named_list (option nat).
