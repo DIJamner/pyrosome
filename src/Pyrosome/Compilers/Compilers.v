@@ -449,7 +449,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Context (sort_default_subst : forall s, (default : tgt_sort)[/s/] = (default : tgt_sort)).
       Context (term_default_subst : forall s, (default : tgt_term)[/s/] = (default : tgt_term)).
       
-      Local Lemma distribute_compile_subst_term cmp (s : subst) e
+      Lemma distribute_compile_subst_term cmp (s : subst) e
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) e ->
@@ -494,7 +494,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Qed.
       Hint Rewrite distribute_compile_subst_term : lang_core.
 
-      Local Lemma distribute_compile_subst_args cmp (s : subst) e
+      Lemma distribute_compile_subst_args cmp (s : subst) e
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) e ->
@@ -507,7 +507,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Qed.
       Hint Rewrite distribute_compile_subst_args : lang_core.
 
-      Local Lemma distribute_compile_subst_sort cmp (s : subst) t
+      Lemma distribute_compile_subst_sort cmp (s : subst) t
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) t ->
@@ -544,6 +544,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
       Qed.
       Hint Rewrite distribute_compile_subst_sort : lang_core.
+
+      
 
       
       Lemma strengthening cmp' cmp l
