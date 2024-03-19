@@ -714,9 +714,9 @@ Hint Extern 5 (Model.wf_sort _ _) => unfold Model.wf_sort : lang_core.
 Hint Extern 5 (Model.eq_sort _ _ _) => unfold Model.eq_sort : lang_core.
 
 Lemma id_args_wf (l : lang) c
-  : forall c', sublist c c' -> wf_args l c' (id_args c) c.
-  Proof.
-    induction c; basic_goal_prep; basic_core_crush. 
+  : forall c', incl c c' -> wf_args l c' (id_args c) c.
+Proof.
+  induction c; basic_goal_prep; basic_core_crush. 
 Qed.
 Hint Resolve id_args_wf : lang_core.
 
@@ -1028,26 +1028,32 @@ Proof.
 Qed.
 Hint Resolve wf_lang_implies_ws_noext : lang_core.
 
-Local Lemma ctx_mono l name t'
+Local Lemma ctx_mono l
   : wf_lang l ->
     (forall c t1 t2,
         eq_sort l c t1 t2 ->
-        eq_sort l ((name,t')::c) t1 t2)
+        forall c0, incl c c0 ->
+                   eq_sort l c0 t1 t2)
     /\ (forall c t e1 e2,
            eq_term l c t e1 e2 ->
-           eq_term l ((name,t')::c) t e1 e2)
+           forall c0, incl c c0 ->
+                      eq_term l c0 t e1 e2)
     /\ (forall c c' s1 s2,
            eq_subst l c c' s1 s2 ->
-           eq_subst l ((name,t')::c) c' s1 s2)
+           forall c0, incl c c0 ->
+                      eq_subst l c0 c' s1 s2)
     /\ (forall c t,
            wf_sort l c t ->
-           wf_sort l ((name,t')::c) t)
+           forall c0, incl c c0 ->
+                      wf_sort l c0 t)
     /\ (forall c e t,
            wf_term l c e t ->
-           wf_term l ((name,t')::c) e t)
+           forall c0, incl c c0 ->
+                      wf_term l c0 e t)
     /\ (forall c s c',
            wf_args l c s c' ->
-           wf_args l ((name,t')::c) s c')
+           forall c0, incl c c0 ->
+                      wf_args l c0 s c')
     /\ (forall c,
            wf_ctx l c -> True).
 Proof using V_Eqb_ok.
@@ -1079,28 +1085,28 @@ Proof using V_Eqb_ok.
   }
 Qed.
 
-Definition eq_sort_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (ctx_mono name t' wfl).
+Definition eq_sort_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (ctx_mono wfl).
 Hint Resolve eq_sort_ctx_monotonicity : lang_core.
 
-Definition eq_term_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (proj2 (ctx_mono name t' wfl)).
+Definition eq_term_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (proj2 (ctx_mono wfl)).
 Hint Resolve eq_term_ctx_monotonicity : lang_core.
 
-Definition eq_subst_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (ctx_mono name t' wfl))).
+Definition eq_subst_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (ctx_mono wfl))).
 Hint Resolve eq_subst_ctx_monotonicity : lang_core.
 
-Definition wf_sort_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))).
+Definition wf_sort_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (ctx_mono wfl)))).
 Hint Resolve wf_sort_ctx_monotonicity : lang_core.
 
-Definition wf_term_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl))))).
+Definition wf_term_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (ctx_mono wfl))))).
 Hint Resolve wf_term_ctx_monotonicity : lang_core.
 
-Definition wf_args_ctx_monotonicity (l : lang) name t' (wfl : wf_lang l)
-  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (ctx_mono name t' wfl)))))).
+Definition wf_args_ctx_monotonicity (l : lang) (wfl : wf_lang l)
+  := proj1 (proj2 (proj2 (proj2 (proj2 (proj2 (ctx_mono wfl)))))).
 Hint Resolve wf_args_ctx_monotonicity : lang_core.
 
 Lemma in_ctx_wf (l : lang) c n t

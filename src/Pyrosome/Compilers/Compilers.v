@@ -7,6 +7,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.AllConstructors.
 Import Core.Notations.
+From Pyrosome.Compilers Require Import SemanticsPreservingDef.
 From Pyrosome.Compilers Require Export CompilerDefs.
 
 Section WithVar.
@@ -448,7 +449,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Context (sort_default_subst : forall s, (default : tgt_sort)[/s/] = (default : tgt_sort)).
       Context (term_default_subst : forall s, (default : tgt_term)[/s/] = (default : tgt_term)).
       
-      Local Lemma distribute_compile_subst_term cmp (s : subst) e
+      Lemma distribute_compile_subst_term cmp (s : subst) e
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) e ->
@@ -493,7 +494,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Qed.
       Hint Rewrite distribute_compile_subst_term : lang_core.
 
-      Local Lemma distribute_compile_subst_args cmp (s : subst) e
+      Lemma distribute_compile_subst_args cmp (s : subst) e
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) e ->
@@ -506,7 +507,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Qed.
       Hint Rewrite distribute_compile_subst_args : lang_core.
 
-      Local Lemma distribute_compile_subst_sort cmp (s : subst) t
+      Lemma distribute_compile_subst_sort cmp (s : subst) t
         : ws_compiler cmp ->
           all_fresh cmp ->
           well_scoped (map fst s) t ->
@@ -543,6 +544,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
       Qed.
       Hint Rewrite distribute_compile_subst_sort : lang_core.
+
+      
 
       
       Lemma strengthening cmp' cmp l
@@ -831,6 +834,14 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         { break; eauto. }
         { break; eauto. }
       Qed.
+
+      Notation semantics_preserving cmp :=
+        (semantics_preserving
+           (compile cmp)
+           (compile_sort cmp)
+           (compile_ctx cmp)
+           (compile_args cmp)
+           (compile_subst cmp)).
 
       Lemma inductive_implies_semantic' cmp ls
         : wf_lang ls ->
