@@ -184,14 +184,32 @@ Definition linear_value_subst_def : lang :=
   [:| "G" : #"env",
       "A" : #"ty",
       "v" : #"val" "G" "A" (*we restrict substitutions to values *)
-       -----------------------------------------------
-       #"vsub" "v" : #"sub" "G" (#"only" "A")
+      -----------------------------------------------
+      #"vsub" "v" : #"sub" "G" (#"only" "A")
+  ];
+
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "v" : #"val" "G" "A"
+      ----------------------------------------------- ("vsub_subst")
+      #"val_subst" (#"vsub" "v") (#"hd" "A") = "v" :
+      #"val" "G" "A"
   ];
 
   [:= "A" : #"ty"
       ----------------------------------------------- ("vsub_hd")
       #"vsub" (#"hd" "A") = #"id" (#"only" "A") :
       #"sub" (#"only" "A") (#"only" "A")
+  ];
+
+  [:= "G": #"env", "G'": #"env",
+      "g": #"sub" "G'" "G",
+      "A": #"ty",
+      "v": #"val" "G" "A"
+      ----------------------------------------------- ("cmp_vsub")
+      #"cmp" "g" (#"vsub" "v") =
+      #"vsub" (#"val_subst" "g" "v") :
+      #"sub" "G'" (#"only" "A")
   ];
 
   (* explicit substitution for env*)

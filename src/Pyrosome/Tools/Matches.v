@@ -1,4 +1,4 @@
-(* 
+(*
  Gallina functions for matching an expression against a pattern
  *)
 Set Implicit Arguments.
@@ -17,7 +17,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab Tools.ComputeWf Tools.Linter
 Import Core.Notations.
 
 Section Int63Matches.
-  
+
 Notation named_list := (@named_list int).
 Notation named_map := (@named_map int).
 Notation term := (@term int).
@@ -28,7 +28,7 @@ Notation rule := (@rule int).
 Notation lang := (@lang int).
 Notation pf := (@pf int).
 
-  
+
   Notation eq_subst l :=
     (eq_subst (Model:= core_model l)).
   Notation eq_args l :=
@@ -58,7 +58,7 @@ Section InnerLoop.
        | pe::pat',e::s' =>
          @! let res_e <- matches_unordered e pe in
             let res_s <- args_match_unordered s' pat' in
-            ret (unordered_merge_unsafe res_e res_s)                          
+            ret (unordered_merge_unsafe res_e res_s)
        | _,_ => None
        end.
 End InnerLoop.
@@ -109,7 +109,7 @@ Definition matches_unordered_sort (t pat : sort) :=
       args_match_unordered matches_unordered s s_pat
     else None
   end.
-          
+
 (* Note that 'args' is critical to getting the order of the output subst correct.
    FV(pat) must be a permutation of args to get a result.
  *)
@@ -127,7 +127,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
      let !eqb t pat[/s'/] in
      ret s'.
 
-(*If the LHS of a term eq rule directly applies to e, 
+(*If the LHS of a term eq rule directly applies to e,
   return the rule name and s such that LHS[/s/] = e.
   Rules are scanned from the root of the language.
  *)
@@ -137,7 +137,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
     Context (l : array rule).
     Context (c : array sort).
 
-    
+
     Fixpoint project_term_r p :=
       match p with
       | pcon n s =>
@@ -170,7 +170,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
            | pconv p _ => project_term_l p
            | pvar x => var x
            end.
-    
+
     Fixpoint project_sort_r p :=
       match p with
       | pcon n s =>
@@ -203,9 +203,9 @@ Definition matches_sort t pat (args : list int) : option subst :=
       | pconv p _ => default
       | pvar x => default
       end.
-    
-      
-    
+
+
+
     (*TODO: move to term or treeproofs*)
     (*TODO: requires c, thread through*)
     (* returns the sort of a term, _assuming it is well-formed_ *)
@@ -255,7 +255,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
               let p2 <- step_sort t2 in
               ret pconv (ptrans p1 (psym p2)) p.
 
-    
+
     Fixpoint cast_args_by_step c' s pfs : option (list pf) :=
       match c', s, pfs with
       | [], [], [] => Some []
@@ -265,7 +265,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
             ret p'::pfs'
       | _, _, _ => None
       end.
-    
+
     Fixpoint pf_refl e : option pf :=
       match e with
       | var x => Some (pvar x)
@@ -275,7 +275,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
             let pfs' <- cast_args_by_step c' s refls in
             ret pcon n pfs'
       end.
-  
+
     (* if the top level of the term takes a step, return it *)
     (*
     TODO: parameterize by e's type?
@@ -308,7 +308,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
     (*TODO: move to Utils.v*)
     Definition unwrap {A} d (ma : option A) : A :=
       match ma with Some a => a | None => d end.
-    
+
       Section StepTermInner.
         Context (step_term_n : term -> option (pf * term)).
 
@@ -326,7 +326,7 @@ Definition matches_sort t pat (args : list int) : option subst :=
                   let refls <- list_Mmap (fun e => option_map (fun p => (p, e)) (pf_refl e)) s in
                   let steps := map (uncurry unwrap) (combine refls osteps) in
                   let (arg_steps, args) := split steps in
-                  let pfs' <- cast_args_by_step c' s arg_steps in
+                  let pfs' <- cast_args_by_step c' args arg_steps in
                   ret (pcon name pfs', con name args)
           end.
 
@@ -340,61 +340,62 @@ Definition matches_sort t pat (args : list int) : option subst :=
       End StepTermInner.
 
 
-      Fixpoint step_term_opt l n e {struct n}
-        : option _ :=
+      Fixpoint step_term_opt l n e {struct n} : option _ :=
         match n with
         | 0 => None
         | S n' =>
             @! let (step,e') <- step_term_one_traversal (step_term_opt l n') l e in
               match step_term_opt l n' e' with
-                (*TODO: transitivity casts*)
-               | Some (rst_steps, e'') => @! ret (ptrans step rst_steps, e'')
+               | Some (rst_steps, e'') =>
+                  @! let rst_steps' <- cast_by_step (sort_of step) rst_steps in
+                     ret (ptrans step rst_steps', e'')
                | None => @! ret (step, e')
                end
         end.
 
   End Inner.
 
-  (*TODO: what to do with T; currently unused, but probably shouldn't be*)
   Fixpoint step_term' l (n : nat) (e : term) (t : sort) {struct n} : pf :=
     match n with
       (*TODO: do I care if the 0 case is valid?*)
     | 0 => pcon default []
-    | S n =>
-        match step_term_opt (step_term' l n) l n e with
-        | Some (pf,_) => pf
+    | S n => let inner_step := step_term' l n in
+      match step_term_opt inner_step l n e with
+      | Some (pf,_) => unwrap pf (cast_by_step inner_step t pf)
+      | _ =>
         (*TODO: check that the unwrap always succeeds*)
-        | _ => unwrap (pcon default []) (pf_refl (step_term' l n) e)
-        end
+        let refl_pf := unwrap (pcon default []) (pf_refl inner_step e) in
+        unwrap refl_pf (cast_by_step inner_step t refl_pf)
+      end
     end.
-    
+
   End WithCtx.
 
   (*TODO: duplicated; refactor*)
   Definition max (x y : int) :=
     if Uint63.leb x y then y else x.
-  
+
   (*TODO: find a better location for this?*)
   Definition named_list_to_array {A} `{WithDefault A} (l : named_list A) : array A :=
     let sz := add (fold_left max (map fst l) 0) 1 in
     let acc := PArray.make sz default in
     fold_left (fun acc '(i,a) => set acc i a) l acc.
-  
+
   Definition step_term (l : lang) (c : ctx) (n : nat) e t : pf :=
     let l_arr := named_list_to_array (H:= sort_rule [] []) l in
     let c_arr := named_list_to_array c in
-    step_term' l_arr c_arr l n e t. 
-  
+    step_term' l_arr c_arr l n e t.
+
 
 End Int63Matches.
-  
+
 
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
           {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
-  
+
 Notation named_list := (@named_list V).
 Notation named_map := (@named_map V).
 Notation term := (@term V).
@@ -405,7 +406,7 @@ Notation rule := (@rule V).
 Notation lang := (@lang V).
 Notation pf := (@pf V).
 
-  
+
   Notation eq_subst l :=
     (eq_subst (Model:= core_model l)).
   Notation eq_args l :=
@@ -416,7 +417,7 @@ Notation pf := (@pf V).
     (wf_args (Model:= core_model l)).
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
-  
+
   Import StateMonad.
   Definition step_term_V' (l : lang) (c : ctx) n e t : state (renaming V) _ :=
     @! let l' <- rename_lang l in
@@ -430,11 +431,11 @@ Notation pf := (@pf V).
     let ren := empty_rename 500 in
     let (p,ren') := step_term_V' l c n e t ren in
     unrename_pf ren' p.
-  
-  
+
+
 
 Lemma wf_args_cons2
-     : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort) 
+     : forall (l : lang) (c : ctx) (s : list term) (c' : named_list sort)
          (name name': V) (e e': term) (t t' : sort),
        wf_term l c e t [/with_names_from c' s /] ->
        wf_term l c e' t' [/with_names_from ((name,t)::c') (e::s) /] ->
@@ -444,7 +445,7 @@ Proof.
 Qed.
 
 Lemma eq_args_cons2
-     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort) 
+     : forall (l : lang) (c : ctx) (s1 s2 : list term) (c' : named_list sort)
          (name name': V) (e1 e2 e1' e2': term) (t t' : sort),
        eq_args l c c' s1 s2 ->
        eq_term l c t [/with_names_from c' s2 /] e1 e2 ->
@@ -454,7 +455,7 @@ Proof.
   eauto with lang_core.
 Qed.
 
-Lemma eq_term_by_with_subst name l c c' e1 e2 t s 
+Lemma eq_term_by_with_subst name l c c' e1 e2 t s
   : wf_lang l ->
     In (name, term_eq_rule c' e1 e2 t) l ->
     wf_subst l c s c' ->
@@ -493,7 +494,7 @@ Proof.
   {
     apply eq_args_implies_eq_subst; eauto.
   }
-Qed.  
+Qed.
 
 Lemma elab_lang_nil_nth_tail l_pre l el
   : l = [] ->
@@ -519,7 +520,7 @@ Ltac in_db db n :=
 (* database of injective contructor names.
    Note that these names are not namespaced, so use caution when renaming
    imported languages.
- *)       
+ *)
 Create HintDb injective_con discriminated.
 
 (* TODO: temp fix for weird hintdb name scoping*)
@@ -548,7 +549,7 @@ Ltac is_term_rule := eapply eq_term_by; solve_named_list_in_from_value.
 
 
 
-Ltac eq_term_by s := 
+Ltac eq_term_by s :=
   eapply (eq_term_by _ _ s); solve_in.
 
 
@@ -589,7 +590,7 @@ Ltac term_cong :=
                            || simple eapply eq_args_cons2
                            || simple eapply eq_args_cons
            end].
-Ltac term_refl := 
+Ltac term_refl :=
   apply eq_term_refl; shelve (*TODO: solve[repeat t']*).
 
 Ltac compute_wf_subjects :=
@@ -878,7 +879,7 @@ Ltac break_elab_rule :=
   | [|- elab_rule _ (term_rule _ _ _) _] =>
     eapply elab_term_rule; [break_down_elab_ctx | break_elab_sort | solve_sublist]
   | [|- elab_rule _ (term_eq_rule _ _ _ _) _] =>
-    eapply eq_term_rule;[ break_down_elab_ctx | break_elab_sort| try_break_elab_term | try_break_elab_term]    
+    eapply eq_term_rule;[ break_down_elab_ctx | break_elab_sort| try_break_elab_term | try_break_elab_term]
   end.
 
 
