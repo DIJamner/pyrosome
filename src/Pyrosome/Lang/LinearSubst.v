@@ -213,25 +213,36 @@ Definition linear_value_subst_def : lang :=
   ];
 
   (* explicit substitution for env*)
-  [:| "G": #"env", "X": #"env", "Y": #"env", "H": #"env"
+  [:| "G": #"env", "H": #"env"
       -----------------------------------------------
-      #"exch" "G" "X" "Y" "H":
-      #"sub" (nconc "G" "X" "Y" "H")
-             (nconc "G" "Y" "X" "H")
+      #"exch" "G" "H":
+      #"sub" (#"conc" "G" "H") (#"conc" "H" "G")
   ];
-  [:= "G": #"env", "X": #"env", "Y": #"env", "H": #"env",
-      "G'": #"env", "X'": #"env", "Y'": #"env", "H'": #"env",
+
+  [:= "G": #"env", "H": #"env"
+      ----------------------------------------------- ("exch_inv")
+      #"cmp" (#"exch" "G" "H") (#"exch" "H" "G") =
+      #"id" (#"conc" "G" "H") :
+      #"sub" (#"conc" "G" "H") (#"conc" "G" "H")
+  ];
+
+  [:= "G": #"env", "H": #"env", "K": #"env"
+      ----------------------------------------------- ("exch_triple")
+      #"cmp" (#"exch" "G" (#"conc" "H" "K"))
+             (#"csub" (#"id" "H")
+                      (#"exch" "K" "G")) =
+      #"csub" (#"exch" "G" "H") (#"id" "K") :
+      #"sub" (nconc "G" "H" "K") (nconc "H" "G" "K")
+  ];
+
+  [:= "G": #"env", "H": #"env",
+      "G'": #"env", "H'": #"env",
       "g": #"sub" "G" "G'",
-      "x": #"sub" "X" "X'",
-      "y": #"sub" "Y" "Y'",
       "h": #"sub" "H" "H'"
       ----------------------------------------------- ("exch_cmp")
-      #"cmp" (ncsub "g" "x" "y" "h")
-             (#"exch" "G'" "X'" "Y'" "H'") =
-      #"cmp" (#"exch" "G" "X" "Y" "H")
-             (ncsub "g" "y" "x" "h") :
-      #"sub" (nconc "G" "X" "Y" "H")
-             (nconc "G'" "Y'" "X'" "H'")
+      #"cmp" (#"csub" "g" "h") (#"exch" "G'" "H'") =
+      #"cmp" (#"exch" "G" "H") (#"csub" "h" "g") :
+      #"sub" (#"conc" "G" "H") (#"conc" "H'" "G'")
   ]
 
   ]}.
