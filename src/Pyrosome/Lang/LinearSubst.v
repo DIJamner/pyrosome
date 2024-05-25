@@ -228,11 +228,10 @@ Definition linear_value_subst_def : lang :=
 
   [:= "G": #"env", "H": #"env", "K": #"env"
       ----------------------------------------------- ("exch_triple")
-      #"cmp" (#"exch" "G" (#"conc" "H" "K"))
-             (#"csub" (#"id" "H")
-                      (#"exch" "K" "G")) =
-      #"csub" (#"exch" "G" "H") (#"id" "K") :
-      #"sub" (nconc "G" "H" "K") (nconc "H" "G" "K")
+      #"cmp" (#"exch" (#"conc" "G" "H") "K")
+             (#"csub" (#"exch" "K" "G") (#"id" "H")) =
+      #"csub" (#"id" "G") (#"exch" "H" "K") :
+      #"sub" (nconc "G" "H" "K") (nconc "G" "K" "H")
   ];
 
   [:= "G": #"env", "H": #"env",
