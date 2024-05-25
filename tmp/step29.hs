@@ -1,1 +1,0 @@
-(!! {{e #"blk_subst" (#"csub" (#"id" "G") (#"csub" (#"vsub" "v") (#"id" (#"neg" "B")))) "e"}})
