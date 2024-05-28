@@ -1378,6 +1378,22 @@ Proof.
 Qed.
   Hint Resolve eq_subst_wf_r : lang_core.
 
+  
+Lemma eq_args_wf_r (l : lang) c c' s1 s2
+  : wf_lang l ->
+    wf_ctx l c ->
+    wf_ctx l c' ->
+    eq_args l c c' s1 s2 ->
+    wf_args l c s2 c'.
+Proof.
+  intros wfl wfc wfc' eqt.
+  induction eqt;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+Hint Resolve eq_args_wf_r : lang_core.
+
+
     (*
   Defined by inlining nested datatypes then modifying the results of the mutual schemes below.
   The induction schemes for the nested types were pulled out into a separate section

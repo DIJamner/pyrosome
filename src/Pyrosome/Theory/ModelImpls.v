@@ -44,6 +44,20 @@ Section WithVar.
         wf_term_implies_ws := wf_term_implies_ws ltac:(eauto with lang_core);
       }.
 
+    (*TODO: move to Core.v. Requires either eliminating the Model_ok dependence
+      or moving model_ok instance to Core. *)
+    Lemma eq_args_wf_l c c' s1 s2
+      : wf_ctx (Model:=core_model) c ->
+        wf_ctx (Model:=core_model) c' ->
+        eq_args (Model:=core_model) c c' s1 s2 ->
+        wf_args (Model:=core_model) c s1 c'.
+    Proof.
+      intros wfc wfc' eqt.
+      eapply eq_args_wf_r; eauto.
+      eapply eq_args_sym; eauto; typeclasses eauto.
+    Qed.      
+    Hint Resolve eq_args_wf_l : lang_core.
+
   End WithLang.
   
   (*TODO: implement (is this defined in multicompilers.v?*)
