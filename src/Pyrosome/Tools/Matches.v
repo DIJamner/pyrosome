@@ -742,6 +742,33 @@ Ltac step_if_concrete :=
        end
   else term_refl.
 
+Ltac step_if_concrete_on l :=
+  tryif lhs_concrete
+  then lazymatch goal with
+      | [|- eq_term _ ?c' ?t ?e1 ?e2] =>
+          (*TODO: 100 is a magic number; make it an input*)
+          let x := eval compute in (step_term_V l c' 100 e1 t) in
+            eapply TreeProofs.pf_checker_sound with(p:=x);
+            [typeclasses eauto | assumption | compute; reflexivity]
+      end
+  else term_refl.
+
+Ltac reduce_lhs_on l :=
+  compute_eq_compilation;
+  eapply eq_term_trans;
+  [step_if_concrete_on l|];
+  compute_eq_compilation.
+
+
+Ltac reduce_rhs_on l :=
+  compute_eq_compilation;
+  eapply eq_term_trans;
+  [|eapply eq_term_sym;
+    step_if_concrete_on l];
+  compute_eq_compilation.
+
+Ltac reduce_on l := reduce_lhs_on l; reduce_rhs_on l.
+
 Ltac reduce_lhs :=
   compute_eq_compilation;
   eapply eq_term_trans;
