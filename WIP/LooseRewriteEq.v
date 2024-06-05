@@ -1,13 +1,12 @@
 (*TODO: Move to Proof subdir?*)
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
-Require Import String Lists.List.
+Require Import Lists.List.
 Import ListNotations.
-Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome.Theory Require Import Core CutFreeInd.
+From Pyrosome.Theory Require Import Core ModelImpls.
+From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 
 
@@ -45,10 +44,13 @@ Section WithVar.
 
   Notation Model := (@Model V term sort).
 
+
+  Section __.
+    Context (l:lang)
+      (Hwfl : wf_lang l).
   
-  Lemma wf_term_inv_up_to_conv l c e t
-    : wf_lang l ->
-      wf_ctx l c ->
+  Lemma wf_term_inv_up_to_conv c e t
+    : wf_ctx l c ->
       wf_term l c e t ->
       (exists n s c' args t', e = (Term.con n s)
                             /\ In (n, term_rule c' args t') l
@@ -56,11 +58,11 @@ Section WithVar.
                             /\ wf_args l c s c')
       \/ (exists x t', e = Term.var x /\ In (x,t') c /\ Core.eq_sort l c t t').
   Proof.
-    induction 3.
+    induction 2.
     {
       left; repeat eexists; eauto.
       eapply eq_sort_refl.
-      eapply rule_in_wf in H1; eauto; safe_invert H1.
+      eapply rule_in_wf in H0; eauto; safe_invert H0.
       (*TODO: rule_in not properly automatic*)
       basic_core_crush.
     }
@@ -78,6 +80,144 @@ Section WithVar.
       basic_core_crush.
     }
   Qed.
+
+  (*TODO: move somewhere else*)
+  Definition sort_of c e :=
+    match e with
+    | Term.var x => unwrap_with_default (named_list_lookup_err c x)
+    | Term.con n s =>
+        match named_list_lookup_err l n with
+          | Some (term_rule c' _ t) => t[/with_names_from c' s/]
+          | Some (term_eq_rule c' _ _ t) => t[/with_names_from c' s/]
+        | _ => default
+        end
+    end.
+
+  Lemma canonical_sort c e t
+    : all_fresh c ->
+      Core.wf_term l c e t ->
+      Core.wf_term l c e (sort_of c e).
+  Proof.
+    intro Hfresh.
+    revert e t.
+    apply WfCutElim.wf_term_cut_ind;
+      basic_goal_prep; auto.
+    {
+      pose proof H as H'.
+      rewrite <- all_fresh_named_list_lookup_err_in in H
+          by (try typeclasses eauto; basic_core_crush).
+      rewrite <- H.
+      clear H.
+      eapply wf_term_by; eauto.
+    }
+    {
+      pose proof H as H'.
+      rewrite <- all_fresh_named_list_lookup_err_in in H
+          by (try typeclasses eauto; basic_core_crush).
+      rewrite <- H.
+      clear H. cbn.
+      eapply wf_term_var; eauto.
+    }
+  Qed.      
+
+(*
+  Inductive structure:
+  on term e, subst s, ctx c
+
+  Bottom-up:
+  s empty: trivial
+  new x on s: 
+ *)
+
+  
+  (*TODO: move to utils*)
+  Lemma named_list_lookup_in A s x e (d:A)
+    : all_fresh s -> In (x,e) s -> named_list_lookup d s x = e.
+  Proof.
+    induction s;
+      basic_goal_prep;
+      basic_utils_crush.
+    eqb_case x v;
+      basic_utils_crush.
+  Qed.
+
+  Definition wf_term' l c e := wf_term l c e (sort_of c e).
+
+  (*TODO: strengthen types *)
+  Lemma recover_subst_component_wf' c1 c2 c' s1 s2 x e' t'
+    : let c := (c1++(x,t')::c2) in
+      let s := (s1++(x,e')::s2) in
+      all_fresh s ->
+      all_fresh c ->
+      wf_ctx l c' ->
+      wf_subst l c' s2 c2 ->
+      wf_sort l c2 t' ->(*TODO: needed?*)
+      forall e t, wf_term l c e t ->
+                  In x (fv e) ->
+                  wf_term' l c' e[/s/] (*(sort_of c e)[/s2++(x,e')::s/]*) ->
+                  wf_term' l c' e' (*t'[/s2++(x,e')::s/]*).
+  Proof.
+    intros c s Hfrs Hfrc Hwfc' Hwfs Hwft e t H.
+    unfold wf_term' in *.
+    pattern e, t.
+    unshelve eapply (WfCutElim.wf_term_cut_ind _ l c _ _ _ _ e t H).
+    all: basic_goal_prep; subst.
+    all: intuition (subst; try tauto).
+    {
+      assert (all_fresh c') as Hfrc' by basic_core_crush.
+      pose proof H0 as H'.
+      
+      eapply all_fresh_named_list_lookup_err_in in H0; eauto; [| basic_core_crush].
+      rewrite <- H0 in H4.
+      clear H0.
+      apply wf_term_inv_up_to_conv in H4; eauto.
+      intuition break; autorewrite with term in *;
+        break; try tauto.
+      subst.
+      eapply in_all_fresh_same in H'; try eassumption; [| basic_core_crush].
+      safe_invert H'; subst.
+      clear H4 H5 x0.
+      
+      generalize dependent s0.
+      
+      induction c'0;
+        destruct s0;
+        basic_goal_prep;
+        autorewrite with model lang_core in *;
+        subst;
+        basic_goal_prep;
+        try tauto.
+      basic_utils_crush.
+      
+      
+      apply H3.
+      change (term_var_map (term_subst_lookup ?s) ?e0) with e0[/s/] in *.
+      change (map (term_var_map (term_subst_lookup ?s)) ?s2)
+        with s2[/s/] in *.
+      eapply canonical_sort; eauto.
+    }
+    {
+      cbn in *.
+      subst.
+      replace (term_subst_lookup s x) with e' in *; eauto.
+      subst s.
+      unfold term_subst_lookup.
+      {
+        clear t0 H0.
+        symmetry.
+        apply named_list_lookup_in; eauto; basic_utils_crush.
+      }
+    }
+  Qed.
+
+
+
+
+
+
+
+    
+
 
   Section SortOf.
   (*TODO: find defn.,proofs about this*)
@@ -171,6 +311,190 @@ Section TermsAndRules.
   Context (wfl : wf_lang l)
     (wfc : wf_ctx l c).
 
+      Section TermCutInd.
+      
+      Context (P_term : term -> sort -> Prop).
+
+      Fixpoint P_args s (c:ctx) :=
+        match c,s with
+        | [], [] => True
+        | (n,t)::c', e::s =>
+            P_args s c'
+            /\ P_term e t[/with_names_from c' s/]
+        |  _, _ => False
+        end.
+      
+      Fixpoint P_subst s (c:ctx) :=
+        match c,s with
+        | [], [] => True
+        | (n,t)::c', (n',e)::s =>
+            n = n'
+            /\ P_subst s c'
+            /\ P_term e t[/s/]
+        |  _, _ => False
+        end.
+
+      (* Term hypotheses *)
+      Context
+        (f0 : forall (c' : ctx) (name : V) (t : sort) args s,
+            In (name, term_rule c' args t) l ->
+            wf_args l c s c' ->
+            P_args s c' ->
+            P_term (con name s) t[/(with_names_from c' s)/])
+        (f01 : forall (n : V) (t : sort),
+            In (n, t) c -> P_term (var n) t)
+        (*TODO: do I want this one separate?*)
+        (f3 : forall (t t' : sort),
+            Core.eq_sort l c t t' ->
+            forall e : term,
+              wf_term l c e t -> P_term e t -> P_term e t').
+
+      Lemma wf_term_cut_ind' :
+        forall t e e', Core.eq_term l c t e e' -> P_term e t /\ P_term e' t.
+      Proof.
+        eapply (term_cut_ind _ _ _ _ _ (fun t e e' => P_term e t/\ P_term e' t));
+          basic_goal_prep;
+          subst; eauto using wf_term_conv.
+        3:{
+          split;eapply f3; eauto;
+          basic_core_crush.
+        }
+        2:{
+          split; [ eapply f3|]; try eapply f0; eauto.
+          {
+            eapply eq_sort_subst; eauto.
+            all: admit.
+          }
+          {
+            eapply wf_term_by; eauto.
+            admit.
+          }
+          {
+            eapply eq_args_wf_l; eauto.
+            use_rule_in_wf.
+            basic_core_crush.
+          }
+          {
+            use_rule_in_wf.
+            clear H.
+            autorewrite with utils lang_core in *.
+            break.
+            clear H2.
+            clear H3.
+            induction H0;
+            basic_goal_prep; auto.
+            autorewrite with model utils lang_core in *.
+            intuition eauto.
+            eapply f3; eauto.
+            2: basic_core_crush.
+            eapply eq_sort_sym.
+            eapply eq_sort_subst; eauto.
+            1: basic_core_crush.
+            apply eq_args_implies_eq_subst.
+            eauto.
+          }
+          {
+            eapply eq_args_wf_r; eauto.
+            use_rule_in_wf.
+            basic_core_crush.
+          }
+          {
+            clear H.
+            induction H0;
+            basic_goal_prep; auto.
+            intuition eauto.
+          }
+        }
+        {
+          use_rule_in_wf.
+          autorewrite with model utils lang_core in *.
+          break.
+          TODO: doesn't work; don't have IH for lang terms
+          could strengthen IH w/ reflexive case in cutelim
+          split.
+          2:{
+            use
+            
+        }
+          firstorder.
+        intuition eauto using wf_term_conv.
+          eapply f3; eauto; basic_core_crush.
+        }
+        3:{
+          TODO: transitivity?
+          eapply f; eauto; basic_core_crush.
+        }
+        
+      Lemma wf_term_cut_ind : forall e t, wf_term l c e t -> P_term e t.
+      Proof.
+        eno
+        intros H.
+        
+        
+
+  term_cut_ind
+     : forall (V : Type) (V_Eqb : Eqb V),
+       Eqb_ok V_Eqb ->
+       WithDefault V ->
+       forall l : Rule.lang V,
+       wf_lang l ->
+       forall c : Term.ctx V,
+       wf_ctx l c ->
+       forall P_term : Term.sort V -> Term.term V -> Term.term V -> Prop,
+       (forall (c' : Term.ctx V) (name : V) (t : Term.sort V) (e1 e2 : Term.term V)
+          (s1 s2 : Term.subst V),
+        In (name, term_eq_rule c' e1 e2 t) l ->
+        core_eq_subst l c c' s1 s2 ->
+        P_subst V P_term c' s1 s2 -> P_term t [/s2 /] e1 [/s1 /] e2 [/s2 /]) ->
+       (forall (c' : Term.ctx V) (name : V) (t : Term.sort V) (args : list V)
+          (s1 s2 : list (Term.term V)),
+        In (name, term_rule c' args t) l ->
+        core_eq_args l c c' s1 s2 ->
+        P_args V P_term c' s1 s2 ->
+        P_term t [/with_names_from c' s2 /] (Term.con name s1) (Term.con name s2)) ->
+       (forall (n : V) (t : Term.sort V), In (n, t) c -> P_term t {{e n}} {{e n}}) ->
+       (forall (t : Term.sort V) (e1 e12 e2 : Term.term V),
+        Core.eq_term l c t e1 e12 ->
+        P_term t e1 e12 -> Core.eq_term l c t e12 e2 -> P_term t e12 e2 -> P_term t e1 e2) ->
+       (forall (t : Term.sort V) (e1 e2 : Term.term V),
+        Core.eq_term l c t e1 e2 -> P_term t e1 e2 -> P_term t e2 e1) ->
+       (forall t t' : Term.sort V,
+        Core.eq_sort l c t t' ->
+        forall e1 e2 : Term.term V,
+        Core.eq_term l c t e1 e2 -> P_term t e1 e2 -> P_term t' e1 e2) ->
+       forall (s : Term.sort V) (t t0 : Term.term V),
+       Core.eq_term l c s t t0 -> P_term s t t0
+
+                                         
+  Lemma loose_sound
+    : (forall e1 e2,
+          eq_term e1 e2 ->
+          forall t, wf_term l c e1 t -> Core.eq_term l c t e1 e2) /\
+        (forall s1 s2,
+            eq_subst s1 s2 ->
+            forall c', wf_subst l c s1 c' ->
+                       core_eq_subst l c c' s1 s2) /\
+        (forall s1 s2,
+            eq_args s1 s2 ->
+            forall c', wf_args l c s1 c' ->
+                       core_eq_args l c c' s1 s2).
+  Proof.
+    apply judge_ind;
+      basic_goal_prep;
+      basic_core_crush.
+    {
+      eapply eq_term_conv.
+      {
+        eapply eq_term_subst.
+        {
+          eapply Core.eq_term_by; eauto.
+        }
+        {
+          eapply H2; eauto.
+          TODO: I do need this lemma; make cut-free induction for wf_term
+        }
+          2:
+  
 
   (*
   Lemma wf_term_fv_ind
@@ -212,7 +536,8 @@ Section TermsAndRules.
     constructor; eauto.
   Qed.
 
-                           
+
+  (*
   (*TODO: Move to Utils.v*)
   Lemma fresh_with_names_from {A B} (c' : named_list A) (s : list B) name
     : length c' = length s -> fresh name (with_names_from c' s) <-> fresh name c'.
@@ -221,6 +546,7 @@ Section TermsAndRules.
       basic_goal_prep; try reflexivity; safe_invert H.
     basic_utils_crush.
   Qed.
+*)
 
                            
   (*TODO: move to the right place*)
@@ -1470,3 +1796,8 @@ Proof using.
     eapply H2; eauto.
   }
 Qed.
+
+
+Lemma rewrite_in
+  : eq_term e1 e2 ->
+    eq_term (con n (l1++e1::l2)) (con n (l1++e2::l2)).
