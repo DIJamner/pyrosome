@@ -3369,14 +3369,126 @@ Section WithVar.
 
   Hint Rewrite insert_nil : utils.
 
-  (*TODO: could have weaker assumptions*)
+  
+  Context (Hwfl_base: wf_lang l_base).
+  Context (Hwf_p_sort : wf_sort l_base {{c }} p_sort).
+
+  
+  (*TODO: move to utils.*)
+  Lemma fresh_incl A B n (a : named_list A) (b : named_list B)
+    : incl (map fst b) (map fst a) -> fresh n a -> fresh n b.
+  Proof.
+    unfold fresh, incl.
+    generalize (map fst a) (map fst b).
+    clear a b.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Lemma sublist_incl A (l1 l2 : list A)
+    : sublist l1 l2 -> incl l1 l2.
+  Proof.
+    revert l1;
+      induction l2;
+      destruct l1; 
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+    
+  Lemma all_fresh_sublist A B (a : named_list A) (b : named_list B)
+    : sublist (map fst b) (map fst a) -> all_fresh a -> all_fresh b.
+  Proof.
+    revert b;
+      induction a;
+      destruct b;
+      basic_goal_prep;
+      basic_utils_crush.
+
+    {
+      eapply fresh_incl; eauto using sublist_incl.
+    }
+    {
+      specialize (IHa ((v,b0)::b)).
+      eapply IHa in H0; eauto.
+      cbn in *.
+      intuition subst.
+    }
+  Qed.
+  
+  Lemma sublist_app_hom A (l1 l1' l2 l2' : list A)
+    : sublist l1 l1' ->
+      sublist l2 l2' ->
+      sublist (l1++l2) (l1'++l2').
+  Proof.
+    revert l1;
+      induction l1';
+      destruct l1;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      destruct l2; eauto.
+      right.
+      eauto using sublist_app_r.
+    }
+    {
+      right.
+      change (a0 :: l1 ++ l2)
+        with ((a0 :: l1) ++ l2).
+      eapply IHl1'; eauto.
+    }
+  Qed.
+  
+  Lemma preserving_compiler_sublist tgt' cmp_pre cmp src
+    : preserving_compiler_ext tgt' cmp_pre cmp src ->
+      sublist (map fst cmp) (map fst src).
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+    all: destruct cmp; cbn; eauto.
+  Qed.
+
+  (*TODO: move somewhere*)
+  Hint Resolve core_model_ok id_compiler_preserving : lang_core.
+    
   Lemma compile_p_sort cmp src
     : all_fresh (src ++ l_base) ->
       p_name_fresh_in_cmp cmp ->
       preserving_compiler_ext tgt [] cmp src ->
       let pcmp := (parameterize_compiler p_name tgt_spec src_spec cmp ++ id_compiler l_base) in
       compile_sort pcmp p_sort = p_sort.
-  Admitted.
+  Proof.
+    intros.
+    replace (compile_sort pcmp p_sort) with (compile_sort (id_compiler l_base) p_sort).
+    {
+      eapply id_compiler_identity; eauto.
+    }
+    {
+      subst pcmp.
+      symmetry.
+      change (@syntax_model V V_Eqb) with (@premodel V _ _ (core_model l_base)).
+      eapply strengthening_sort; eauto.
+      {
+        eapply strengthen_preserving_compiler; eauto;
+          basic_core_crush.
+      }
+      {
+        unfold parameterize_compiler.
+        basic_utils_crush.
+        eapply all_fresh_sublist; try eassumption.
+        rewrite !map_app.
+        eapply sublist_app_hom; eauto.
+        2:{
+          eapply preserving_compiler_sublist.
+          eapply id_compiler_preserving.
+          auto.
+        }
+        rewrite map_map.
+        cbn.
+        eapply preserving_compiler_sublist; eauto.
+      }
+    }
+  Qed.
 
   
   Lemma named_map_insert A B (f : A -> B) n a lst
@@ -3500,21 +3612,20 @@ Section WithVar.
                | sort_case args t => 
                    match named_list_lookup_err src_spec name with
                    | Some n0 =>
-                       forallb (fun n => inb n (map fst tgt_spec))
-                         (sort_constructors_containing_vars (firstn (fst n0) args) t)
+                       true (*forallb (fun n => inb n (map fst tgt_spec))
+                         (sort_constructors_containing_vars (firstn (fst n0) args) t)*)
                    | None => forallb (fun n => freshb n tgt_spec) (constructors_of_sort t)
                    end
                | term_case args e =>
                    match named_list_lookup_err src_spec name with
                    | Some n0 =>
-                       forallb (fun n => inb n (map fst tgt_spec))
-                         (constructors_containing_vars (firstn (fst n0) args) e)
+                       true
+                       (*forallb (fun n => inb n (map fst tgt_spec))
+                         (constructors_containing_vars (firstn (fst n0) args) e)*)
                    | None => forallb (fun n => freshb n tgt_spec) (constructors_of e)
                    end
                end).
 
-  Context (Hwfl_base: wf_lang l_base).
-  Context (Hwf_p_sort : wf_sort l_base {{c }} p_sort).
 
   Hint Rewrite Is_true_forallb:utils.
 
@@ -3646,8 +3757,10 @@ Section WithVar.
       
 
   
-      Lemma strengthening tgt' cmp_pre cmp' cmp l
-        : preserving_compiler_ext tgt' cmp_pre cmp l ->
+      Lemma strengthening tgt' cmp' cmp l
+        : preserving_compiler_ext tgt' [] cmp l ->
+          wf_lang l ->
+          wf_lang tgt' ->
           incl cmp cmp' ->
           all_fresh cmp' ->
           (forall c t, wf_sort l c t ->
@@ -3675,22 +3788,34 @@ Section WithVar.
         all: try congruence.
         {
           apply named_list_lookup_none_iff in HeqH1.
-          admit(* sort_name_in_cmp*).
+          exfalso.
+          eapply HeqH1.
+          eapply sort_name_in_cmp; auto;[|eauto].
+          eapply strengthen_preserving_compiler; auto.
+          4:eassumption.
+          all: basic_goal_prep; basic_core_crush.
         }
         {
           apply named_list_lookup_none_iff in HeqH1.
-          admit(* term_name_in_cmp*).
+          exfalso.
+          eapply HeqH1.
+          eapply term_name_in_cmp; auto;[|eauto].
+          eapply strengthen_preserving_compiler; auto.
+          4:eassumption.
+          all: basic_goal_prep; basic_core_crush.
         }
-      Admitted.
+      Qed.
       
-      Lemma strengthening_ctx tgt' cmp_pre cmp' cmp l
-        : preserving_compiler_ext tgt' cmp_pre cmp l ->
+      Lemma strengthening_ctx tgt' cmp' cmp l
+        : preserving_compiler_ext tgt' [] cmp l ->
+          wf_lang l ->
+          wf_lang tgt' ->
           incl cmp cmp' ->
           all_fresh cmp' ->
           forall c, wf_ctx l c ->
                         compile_ctx cmp' c = compile_ctx cmp c.
       Proof.
-        induction 4;
+        induction 6;
           basic_goal_prep; f_equal; eauto; f_equal;
           eapply strengthening; eauto.
       Qed.
@@ -3704,7 +3829,7 @@ Section WithVar.
       wf_lang src ->
       p_name_fresh_in_cmp cmp ->
       all_fresh (src++l_base) ->
-      (*Is_true (specs_compatibleb cmp) ->*)
+      Is_true (specs_compatibleb cmp) ->
       preserving_compiler_ext (parameterize_lang tgt_spec tgt ++ l_base)
         (id_compiler l_base)
         (parameterize_compiler p_name tgt_spec src_spec cmp)
@@ -3713,10 +3838,6 @@ Section WithVar.
     intros wft H_b H_respectsb H_ord H H0.
     rewrite compiler_respects_parameterizationb_spec in *;[|basic_core_crush].
     unfold compiler_respects_parameterization in *.
-    (*TODO: rewrite for changed hrespectsb.
-      idea: generalize hrespectsb to be invariant under preserving induction
-      by claiming that it applies to lists including the current ones.
-     *)
     assert(
         exists (*spec'*) src' cmp',
         (forall (n : V) (num : nat) (x : bool) (r : rule),
@@ -3796,7 +3917,7 @@ Section WithVar.
               unfold syntactic_parameterization_conditions in *;
                 basic_utils_crush.
               eapply all_in; intros.
-              eapply in_all in H4; eauto.
+              eapply in_all in H5; eauto.
               eapply use_compute_fresh; eauto.
               (*TODO: freshb rewrite, or all proper impl?*)
             }
@@ -3815,7 +3936,6 @@ Section WithVar.
               eapply inductive_implies_semantic; cycle 6;
                 eauto;
                 basic_core_crush.
-              apply core_model_ok; eauto.
             }
             {
               revert H2; clear.
@@ -3852,12 +3972,13 @@ Section WithVar.
                 change c with (get_ctx (sort_rule c args)).
                 erewrite <- strengthening_ctx;
                   try eassumption.
-                2: now basic_utils_crush.
-                2: cbn; basic_core_crush.
-                eapply H_respectsb.
-                1: basic_utils_crush.
-                right; intuition eauto.
-                apply named_list_lookup_none_iff; eauto.
+                {
+                  eapply H_respectsb.
+                  1: basic_utils_crush.
+                  right; intuition eauto.
+                  apply named_list_lookup_none_iff; eauto.
+                }
+                all: cbn; basic_core_crush.
               }
               {
                 autorewrite with utils lang_core in *.
@@ -3904,8 +4025,9 @@ Section WithVar.
             }
             {
               unfold syntactic_parameterization_conditions in *.
+              case_match; basic_utils_crush.
+              destruct t; cbn in*.
               basic_utils_crush.
-              admit (*TODO: find or add bool condition*).
             }
           }
         }
@@ -3956,7 +4078,7 @@ Section WithVar.
               unfold syntactic_parameterization_conditions in *;
                 basic_utils_crush.
               eapply all_in; intros.
-              eapply in_all in H4; eauto.
+              eapply in_all in H5; eauto.
               eapply use_compute_fresh; eauto.
               (*TODO: freshb rewrite, or all proper impl?*)
             }
@@ -3975,7 +4097,6 @@ Section WithVar.
               eapply inductive_implies_semantic; cycle 6;
                 eauto;
                 basic_core_crush.
-              apply core_model_ok; eauto.
             }
             {
               revert H2; clear.
@@ -4012,12 +4133,13 @@ Section WithVar.
                 change c with (get_ctx (term_rule c args t)).
                 erewrite <- strengthening_ctx;
                   try eassumption.
-                2: now basic_utils_crush.
-                2: cbn; basic_core_crush.
-                eapply H_respectsb.
-                1: basic_utils_crush.
-                right; intuition eauto.
-                apply named_list_lookup_none_iff; eauto.
+                {
+                  eapply H_respectsb.
+                  1: basic_utils_crush.
+                  right; intuition eauto.
+                  apply named_list_lookup_none_iff; eauto.
+                }
+                all: cbn; basic_core_crush.
               }
               {
                 autorewrite with utils lang_core in *.
@@ -4083,7 +4205,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions in *.
               basic_utils_crush.
-              admit (*TODO: find or add bool condition*).
+              case_match; basic_utils_crush.
+              admit (*TODO: why is sort name fresh?*).
             }
           }
         }
