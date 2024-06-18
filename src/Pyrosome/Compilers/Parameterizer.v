@@ -3819,6 +3819,18 @@ Section WithVar.
           basic_goal_prep; f_equal; eauto; f_equal;
           eapply strengthening; eauto.
       Qed.
+
+      
+
+      Lemma sort_case_in_cmp cmp src c' args n
+        : preserving_compiler_ext tgt [] cmp src ->
+          In (n, sort_rule c' args) src ->
+          exists (args : list V) (t : sort), In (n, sort_case args t) cmp.
+      Proof.
+        induction 1;basic_goal_prep;
+          with_rule_in_wf_crush.
+      Qed.
+      Local Hint Resolve sort_case_in_cmp : lang_core.
   
   Lemma parameterize_compiler_preserving cmp src
     : wf_lang tgt ->
@@ -3838,6 +3850,7 @@ Section WithVar.
     intros wft H_b H_respectsb H_ord H H0.
     rewrite compiler_respects_parameterizationb_spec in *;[|basic_core_crush].
     unfold compiler_respects_parameterization in *.
+    intros H1 H2 H3.
     assert(
         exists (*spec'*) src' cmp',
         (forall (n : V) (num : nat) (x : bool) (r : rule),
@@ -3846,6 +3859,9 @@ Section WithVar.
                 num = 0 /\ fresh n src_spec ->
                 all (fun n0 : V => fresh n0 tgt_spec)
                   (constructors_of_ctx (skipn num (compile_ctx cmp' (get_ctx r)))))
+        /\ Is_true (specs_compatibleb cmp')
+        /\ wf_lang src'
+        /\ preserving_compiler_ext tgt [] cmp' src'
         /\ incl src src'
         (*/\ incl src_spec spec'*)
         /\ incl cmp cmp'
@@ -3854,8 +3870,9 @@ Section WithVar.
     {
       exists (*src_spec,*) src, cmp.
       intuition eauto using incl_refl.
-      admit (*TODO: lift _plus lemma*).
+      eapply strengthen_preserving_compiler in H; auto; basic_core_crush.
     }
+    revert H1 H2 H3.
 (*    assert (exists spec' src' cmp',
                 (forall (n : V) (p : nat * bool) (r : rule),
                 In (n, p) spec' ->
@@ -3897,7 +3914,7 @@ Section WithVar.
         }
         cbn -[parameterize_ctx parameterize_compiler].
         pose proof H as Hpres.
-        eapply  compile_parameterize_commute_ctx in H;
+        eapply compile_parameterize_commute_ctx in H;
           [| basic_goal_prep; basic_utils_crush..].
         {
           unfold parameterize_lang, parameterize_compiler in H.
@@ -3916,10 +3933,13 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions in *;
                 basic_utils_crush.
-              eapply all_in; intros.
-              eapply in_all in H5; eauto.
+              match goal with
+              | [H : all ?P ?l |- all _ ?l] =>
+                  match P with context[freshb] => idtac end;
+                  eapply all_in; try eapply H; intros
+              end.
+              eapply in_all in H6; eauto.
               eapply use_compute_fresh; eauto.
-              (*TODO: freshb rewrite, or all proper impl?*)
             }
             {
               unfold syntactic_parameterization_conditions in *;
@@ -4014,14 +4034,14 @@ Section WithVar.
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2;
+              eauto with lang_core.
             }
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2;
+              eauto with lang_core.
             }
             {
               unfold syntactic_parameterization_conditions in *.
@@ -4078,9 +4098,8 @@ Section WithVar.
               unfold syntactic_parameterization_conditions in *;
                 basic_utils_crush.
               eapply all_in; intros.
-              eapply in_all in H5; eauto.
+              eapply in_all in H6; eauto.
               eapply use_compute_fresh; eauto.
-              (*TODO: freshb rewrite, or all proper impl?*)
             }
             {
               unfold syntactic_parameterization_conditions in *;
@@ -4193,19 +4212,56 @@ Section WithVar.
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
             }
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
             }
             {
               unfold syntactic_parameterization_conditions in *.
               basic_utils_crush.
               case_match; basic_utils_crush.
+              use_rule_in_wf.
+              autorewrite with lang_core model term utils in H2.
+              break.
+              inversion H23; subst.
+              (*TODO: names off by 1*)
+              unfold specs_compatibleb in Hincl_src.
+              autorewrite with lang_core model term utils in Hincl_src.
+              (*TODO: need which case it is too; stronger lemma*)
+              eapply sort_case_in_cmp in H24; eauto.
+              break.
+              eapply in_all in Hincl_src; eauto.
+              cbn in *.
+              (*
+              TODO: mismatch; cmp vs x0; is n0 in the subset?.
+              Is there a way to strengthen H24?
+              case_match;cbn.
+              HeqH2 ?
+              TODO: why does Hincl_src have a true case
+              TODO: explicitly have fresh n l! need H14 about cmp'?.
+              adjust initial assert?.
+              To justify not default
+              assert (wf_lang x) by admit.
+              use_rule_in_wf.
+              autorewrite with lang_core model term utils in H20.
+              break.
+              inversion H22; subst.
+              eapply sort_name_in_cmp in H23.
+              2:{ TODO: need to use l, not x?
+                eapply strengthen_preserving_compiler; cycle 6; eauto.
+              cbn.
+              TODO: not name of src, but name of compiled term is fresh?
+              basic_core_crush.
+              term_name_in_cmp
+              preserving_compiler_plus
+              revert H14 H9; clear.
+              unfold specs_compatibleb in *.
+              basic_utils_crush.
+              TODO: in lang -> in compiler, all_in
+              TODO: from H14*)
               admit (*TODO: why is sort name fresh?*).
             }
           }
@@ -4289,14 +4345,14 @@ Section WithVar.
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2;
+              eauto with lang_core.
             }
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic;auto; cycle 2;
+              eauto with lang_core.
             }
             {
               unfold syntactic_parameterization_conditions in *.
@@ -4385,14 +4441,14 @@ Section WithVar.
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2;
+              eauto with lang_core.
             }
             {
               autorewrite with lang_core model utils in *.
               break.
-              eapply inductive_implies_semantic; eauto.
-              eapply core_model_ok; eauto.
+              eapply inductive_implies_semantic; auto; cycle 2;
+                eauto with lang_core.
             }
             {
               unfold syntactic_parameterization_conditions in *.
@@ -4406,50 +4462,756 @@ Section WithVar.
     }
     Unshelve.
     all:constructor.
-Admitted.
-  
-    (*args idx*)
-  Definition param_generator := named_list (option nat).
+  Admitted.
 
-  Fixpoint calc_param_pos ps (c : ctx) : option nat :=
-    match c with
-    | [] => None
-    | (_,t)::c =>
-        match calc_param_pos ps c with
-        | Some n => Some (S n)
-        | None =>
-            if eqb t (parameterize_sort p_name ps t)
-            then None
-            else Some 1
-        end
-    end.
 
-  Fixpoint arg_n_to_ctx_n n args (c : ctx) :=
-    match n, args, c with
-    | 0, _, _ => 0
-    | S n', x::args', (xc,_)::c' =>
-        S (if eqb x xc
-           then arg_n_to_ctx_n n' args' c'
-           else arg_n_to_ctx_n n args c')
-    (*should never happen*)
-    | _, _, _ => 0
-    end.
 
-  Definition no_param_needed (ps : param_spec) r : bool :=
-    match r with
-    | sort_rule _ _ => true
-    | term_rule _ _ t => eqb t (parameterize_sort p_name ps t)
-    | sort_eq_rule c t1 t2 =>
-        andb (eqb t1 (parameterize_sort p_name ps t1))
-         (eqb t2 (parameterize_sort p_name ps t2))
-    | term_eq_rule c e1 e2 t =>
-        andb (eqb e1 (parameterize_term p_name ps e1))
-        (andb (eqb e2 (parameterize_term p_name ps e2))
-         (eqb t (parameterize_sort p_name ps t)))
-    end.
+      Definition sort_elem_constructors (l : lang) sname :=
+      flat_map (fun '(n,r) =>
+                    match r with
+                    | term_eq_rule _ _ _ t
+                    | term_rule _ _ t =>
+                        if eqb (sort_name t) sname then [n] else []
+                    | _ => []
+                    end) l.
+    
+
+    Definition compute_direct_dependencies (l : lang) n :=
+      match named_list_lookup_err l n with
+      | Some r => (ConstructorsOf.constructors_of_rule r)
+      | None => []
+      end.
+                                               
+    Definition frontier l :=
+      let f n := n::sort_elem_constructors l n ++ compute_direct_dependencies l n in
+      map (fun n => (n,f n)) (map fst l).
+
+    
+    (*TODO: move to utils*)
+    Section Fixpoints.
+      Context {A} `{Eqb_ok A} (f: A -> A).
+      Fixpoint fixpoint fuel a :=
+        match fuel with
+        | 0 => a
+        | S n =>
+            let a' := f a in
+            if eqb a a' then a else fixpoint n a'
+        end.
+        
+    Definition fixed_point p := eqb (f p) p.
+
+    
+    Lemma fixpoint_fixed (a:A) n
+      : a = f a -> fixpoint n a = a.
+    Proof.
+      induction n;
+        basic_goal_prep; eauto.
+      rewrite <- H1.
+      basic_utils_crush.
+    Qed.        
+    
+    Lemma fixpoint_inside_out (a:A) n
+      : (fixpoint n (f a)) = f (fixpoint n a).
+    Proof.
+      revert a.
+      induction n;
+        basic_goal_prep;
+        auto.
       
-  
-  Fixpoint elab_param (l : lang) (pa : param_generator) : param_spec :=
+      rewrite IHn.
+      pose proof (eqb_spec a (f a)).
+      destruct (eqb a (f a)).
+      {
+        rewrite <- !H1.
+        basic_utils_crush.
+      }
+      {
+        pose proof (eqb_spec (f a) (f (f a))).
+        destruct (eqb (f a) (f (f a))); eauto.
+        revert H2.
+        clear H1 IHn.
+        generalize (f a).
+        clear a; intro a; intros.
+        rewrite fixpoint_fixed; eauto.
+      }
+    Qed.
+
+    Context (P : A -> Prop)
+      (P_invariant : forall a, P a -> P (f a)).
+
+    Lemma fixpoint_invariant a n
+      : P a -> P (fixpoint n a).
+    Proof.
+      intro P_initial.
+      induction n;
+        basic_goal_prep;
+        basic_utils_crush.
+      pose proof (eqb_spec a (f a)).
+      destruct (eqb a (f a)); eauto.
+      rewrite fixpoint_inside_out.
+      eauto.
+    Qed.
+
+    End Fixpoints.
+
+
+    (*TODO: does this only work if everything has a reflexive dep?*)
+    Definition dep_trans_step out :=
+      named_map (flat_map (named_list_lookup [] out)) out.
+    
+    (*TODO: might be graph algo? compute fixed point w/ fuel*)
+    Definition compute_dependencies l : named_list (list V) :=
+      let init := frontier l in
+      fixpoint dep_trans_step 10 (*fuel: TODO: short circuit ever?*) init.
+
+    
+    Lemma incl_flat_map_elt A B (f:A -> list B) x l l'
+      : In x l' -> incl l (f x) -> incl l (flat_map f l').
+    Proof.
+      induction l';
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Definition deps_extends (s1 s2 : named_list (list V)) :=
+      all2 (fun '(n1,l1) '(n2,l2) => n1 = n2 /\ incl l1 l2) s1 s2.
+    
+    Lemma deps_extends_refl s : deps_extends s s.
+    Proof.
+      induction s;
+        basic_goal_prep; eauto.
+      basic_utils_crush.
+    Qed.
+    Local Hint Resolve deps_extends_refl : utils.
+
+    Definition dep_reflexive (s : named_list (list V)) :=
+      forall n l, In (n,l) s -> In n l.
+    
+    Lemma dep_trans_step_mono s
+      : all_fresh s ->
+        dep_reflexive s ->
+        deps_extends s (dep_trans_step s).
+    Proof.
+      unfold deps_extends, dep_trans_step, dep_reflexive.
+      enough (forall s',
+                 all_fresh s' ->
+                 (forall (n : V) (l : list V), In (n, l) s -> In n l) ->
+                 incl s s' ->
+                 all2 (fun '(n1, l1) '(n2, l2) => n1 = n2 /\ incl l1 l2) s
+                   (named_map (flat_map (named_list_lookup [] s')) s)).
+      {
+        intros.
+        eapply H; basic_utils_crush.
+      }
+      intros s' Hfresh.
+      induction s;
+        basic_goal_prep;
+        basic_utils_crush.
+      {
+        apply incl_flat_map_elt with (x:=v).
+        { eapply H; left; eauto. }
+        {
+          erewrite named_list_lookup_in; eauto.
+          eapply incl_refl.
+        }
+      }
+    Qed.
+
+    Lemma frontier_reflexive l
+      : dep_reflexive (frontier l).
+    Proof.
+      unfold frontier, dep_reflexive.
+      intros.
+      rewrite map_map in *.
+      cbn in *.
+      rewrite in_map_iff in *.
+      break.
+      basic_utils_crush.
+    Qed.
+
+    (*TODO: move to Utils*)
+    Lemma in_named_map A B (f : A -> B) l n x
+      : In (n, x) (named_map f l) -> exists y, In (n, y) l /\ x = f y.
+    Proof.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+      
+    Lemma dep_trans_step_reflexive l
+      : all_fresh l ->
+        dep_reflexive l -> dep_reflexive (dep_trans_step l).
+    Proof.
+      unfold dep_trans_step, dep_reflexive.
+      intuition subst.
+      apply in_named_map in H1.
+      break.
+      subst.
+      apply in_flat_map.
+      exists n.
+      firstorder.
+      erewrite named_list_lookup_in; eauto.
+    Qed.
+    
+    Lemma frontier_map_fst l
+      : map fst l = map fst (frontier l).
+    Proof.
+      unfold frontier.
+      rewrite !map_map.
+      cbn.
+      reflexivity.
+    Qed.
+      
+    Lemma frontier_all_fresh l
+      : all_fresh l -> all_fresh (frontier l).
+    Proof.
+      apply all_fresh_sublist.
+      rewrite frontier_map_fst.
+      apply sublist_refl.
+    Qed.
+
+
+    Lemma deps_extends_trans a b c
+      : deps_extends a b -> deps_extends b c -> deps_extends a c.
+    Proof.
+      unfold deps_extends.
+      intro H; revert b H c.
+      induction a;
+        destruct b,c;
+        basic_goal_prep;
+        basic_utils_crush.
+      revert H4 H5; clear.
+      unfold incl; firstorder.
+    Qed.
+
+    
+    Lemma deps_extends_step_map_fst a b
+      : deps_extends a b -> map fst a = map fst b.
+    Proof.
+      revert b;
+        induction a; destruct b;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma map_fst_compute_deps n l
+          : map fst (fixpoint dep_trans_step n l)
+            = map fst l.
+    Proof.
+      apply fixpoint_invariant; eauto.
+      intros.
+      unfold dep_trans_step.
+      rewrite map_fst_named_map.
+      auto.
+    Qed.
+
+    
+
+    Lemma compute_dependencies_reflexive l
+      : all_fresh l ->
+        dep_reflexive (compute_dependencies l).
+    Proof.
+      unfold compute_dependencies.
+      intro Hfresh.
+      enough (dep_reflexive (fixpoint dep_trans_step 10 (frontier l))
+              /\ all_fresh (fixpoint dep_trans_step 10 (frontier l))) by intuition eauto.
+      simple apply fixpoint_invariant;
+        basic_goal_prep;
+        intuition eauto using dep_trans_step_reflexive,
+        frontier_all_fresh,
+        frontier_reflexive.
+      eapply all_fresh_sublist; eauto.
+      unfold dep_trans_step.
+      rewrite map_fst_named_map.
+      eapply sublist_refl.
+    Qed.
+      
+    Lemma dependencies_contain_frontier l
+      : all_fresh l ->
+         deps_extends (frontier l) (compute_dependencies l).
+    Proof.
+      unfold compute_dependencies.
+      intro Hfresh.
+      generalize 10 as n.
+      induction n; basic_goal_prep;
+        basic_utils_crush.
+      case_match; basic_goal_prep;
+        basic_utils_crush.
+      rewrite fixpoint_inside_out.
+      eapply deps_extends_trans; eauto.
+      apply dep_trans_step_mono.
+      {
+        
+        eapply all_fresh_sublist; eauto.
+        rewrite map_fst_compute_deps.
+        rewrite <- frontier_map_fst.
+        eapply sublist_refl.
+      }
+      {
+        enough (dep_reflexive (fixpoint dep_trans_step n (frontier l))
+                /\ all_fresh (fixpoint dep_trans_step n (frontier l))) by intuition eauto.
+        simple apply fixpoint_invariant;
+          basic_goal_prep;
+          intuition eauto using dep_trans_step_reflexive,
+          frontier_all_fresh,
+          frontier_reflexive.
+        eapply all_fresh_sublist; eauto.
+        unfold dep_trans_step.
+        rewrite map_fst_named_map.
+        eapply sublist_refl.
+      }
+    Qed.
+
+    Lemma frontier_direct_dep_complete l n n'
+      : all_fresh l ->
+        direct_dependency l n n' ->
+        let deps := (frontier l) in
+        match named_list_lookup_err deps n with
+        | Some l => In n' l
+        | None => False
+        end.
+    Proof.
+      unfold direct_dependency.
+      intros.
+      revert H0; case_match;
+        basic_goal_prep; try tauto.
+      pose proof HeqH0 as H'.
+      eapply named_list_lookup_err_in in HeqH0.
+      case_match.
+      {
+        eapply named_list_lookup_err_in in HeqH1.
+        unfold frontier in *.
+        rewrite map_map in *.
+        lazymatch goal with
+        | H : In _ (map ?f' ?l), H' : In _ ?l |- _ =>
+            eapply in_map with (f:=f') in H';
+            cbn in *;
+            eapply in_all_fresh_same in H'; eauto
+        end.
+        2:{
+          eapply all_fresh_sublist; eauto.
+          lazymatch goal with
+          | |- sublist ?l1 ?l2 =>
+              replace l1 with l2;
+              eauto using sublist_refl
+          end.
+          rewrite map_map in *.
+          cbn.
+          reflexivity.
+        }
+        subst.
+        cbn.
+        right.
+        basic_utils_crush.
+        right.
+        unfold compute_direct_dependencies.
+        rewrite <- H'.
+        eauto.
+      }
+      {
+        eapply named_list_lookup_err_in in H'.
+        eapply named_list_lookup_none_iff in HeqH1.
+        unfold frontier in *.
+        unfold fresh in *.
+        rewrite !map_map in *.
+        eapply HeqH1.
+        lazymatch goal with
+        | H' : In _ ?l |- In _ (map ?f' ?l) =>
+            eapply in_map with (f:=f') in H';
+            cbn in *;
+            eauto
+        end.
+      }
+    Qed.
+    
+    Lemma deps_extends_lookup l1 l2 l1' n
+      : deps_extends l1 l2 -> Some l1' = named_list_lookup_err l1 n ->
+        exists l2', Some l2' = named_list_lookup_err l2 n /\ incl l1' l2'.
+    Proof.
+      unfold deps_extends.
+      revert l2; induction l1;
+        destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+      eqb_case n v; basic_utils_crush.
+    Qed.
+
+    (*TODO: move to utils*)
+    Lemma named_list_lookup_to_err A (l:named_list A) x d
+      : named_list_lookup d l x
+        = @unwrap_with_default A d (named_list_lookup_err l x).
+    Proof.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+      eqb_case x v;
+        basic_utils_crush.
+    Qed.
+
+    Lemma in_named_map'
+     : forall (A B : Type) (f : A -> B) (l : named_list A) (n : V) (x : B),
+        In (n, x) (named_map f l) <-> exists y : A, In (n, y) l /\ x = f y.
+    Proof.
+      intuition eauto using in_named_map.
+      break.
+      subst.
+      unfold named_map.
+      basic_utils_crush.
+    Qed.
+
+    Lemma fixed_point_named_map_inv A `{Eqb_ok A} (f : A -> A) m n l
+      : Is_true (fixed_point (named_map f) m) ->
+        In (n,l) m ->
+        Is_true (fixed_point f l).
+    Proof.
+      unfold fixed_point.
+      induction m;
+        basic_goal_prep;
+        basic_utils_crush;
+        unfold named_list in H1;
+        basic_utils_crush.
+    Qed.            
+    
+    Lemma fixed_point_deps_helper deps n l
+      : Is_true (fixed_point dep_trans_step deps) ->
+        In (n,l) deps ->
+        flat_map (named_list_lookup [] deps) l = l.
+    Proof.
+      unfold dep_trans_step.
+      intros.
+      eapply fixed_point_named_map_inv in H; eauto;
+        try typeclasses eauto.
+      unfold fixed_point in *.
+      basic_utils_crush.
+    Qed.
+    
+    Lemma fixed_point_deps_closed deps n l n' l'
+      : all_fresh deps ->
+        Is_true (fixed_point dep_trans_step deps) ->
+        In (n,l) deps ->
+        In n' l ->
+        In (n',l') deps ->
+        incl l' l.
+    Proof.
+      intros; intros n'' Hin.
+
+      pose proof H1 as H1';
+        pose proof H3 as H3'.
+      eapply fixed_point_deps_helper in H1, H3; eauto.
+      rewrite <- H1.
+      apply in_flat_map.
+      exists n'; intuition eauto.
+
+      erewrite named_list_lookup_in; eauto.
+    Qed.
+    
+    Lemma all_fresh_deps l
+      : all_fresh l -> all_fresh (compute_dependencies l).
+    Proof.
+      unfold compute_dependencies, dep_trans_step.
+      intros.
+      eapply fixpoint_invariant;
+        eauto using frontier_all_fresh.
+      intros.
+      eapply all_fresh_sublist; eauto.
+      rewrite map_fst_named_map.
+      basic_utils_crush.
+    Qed.
+    
+    Lemma compute_dependencies_complete l n n'
+      : wf_lang l ->
+        dependency l n n' ->
+        let deps := (compute_dependencies l) in
+        Is_true (fixed_point dep_trans_step deps) ->
+        match named_list_lookup_err deps n with
+        | Some l => In n' l
+        | None => False
+        end.
+    Proof.
+      intro Hwf.
+      assert (all_fresh l) as Hfresh by basic_core_crush.
+      induction 1;
+        basic_goal_prep; subst deps;
+        intuition subst;
+        basic_utils_crush.
+      {
+        case_match; try tauto.
+        revert H3; case_match; intros; try tauto.        
+        eapply named_list_lookup_err_in in HeqH3, HeqH4.
+        eapply fixed_point_deps_closed; eauto using all_fresh_deps.
+      }
+      {
+        unfold fixed_point.
+        eapply frontier_direct_dep_complete in H; eauto.
+        revert H; case_match; intros; try tauto.
+        pose proof (dependencies_contain_frontier l ltac:(auto)) as Hext.
+        eapply deps_extends_lookup in Hext; eauto.
+        break.
+        rewrite <- H1.
+        eapply H2; eauto.
+      }
+      {
+        pose proof (dependencies_contain_frontier ltac:(auto)) as Hext.
+        use_rule_in_wf.
+        basic_core_crush.
+        safe_invert H6.
+        case_match.
+        2:{
+          eapply named_list_lookup_none_iff in HeqH6.
+          unfold fresh in *.
+          eapply HeqH6.
+          unfold compute_dependencies.
+          rewrite map_fst_compute_deps.
+          rewrite <- frontier_map_fst.
+          eauto using pair_fst_in.
+        }
+        {
+          assert (exists x, Some x = named_list_lookup_err (frontier l) n0).
+          {
+            my_case Hfrontier (named_list_lookup_err (frontier l) n0).
+            { exists l1; eauto. }
+            exfalso.
+            symmetry in Hfrontier.
+            eapply named_list_lookup_none_iff in Hfrontier.
+            unfold fresh in Hfrontier.
+            rewrite <- frontier_map_fst in Hfrontier.
+            apply pair_fst_in in H5.
+            eauto.
+          }
+          break.
+
+          pose proof H6.
+          
+          eapply deps_extends_lookup in H6; eauto.
+          break.
+          basic_goal_prep.
+          replace l0 with x0 in * by congruence; clear l0 H6.
+
+          eapply H9.
+          eapply named_list_lookup_err_in in H8.
+
+          unfold frontier in H8.
+          apply in_map_iff in H8.
+          break.
+          basic_utils_crush.
+          basic_goal_prep.
+          right.
+          basic_utils_crush.
+          left.
+          unfold sort_elem_constructors.
+          eapply in_flat_map.
+          exists (n, term_eq_rule c e1 e2 (scon n0 s));
+            intuition eauto.
+          cbn.
+          basic_utils_crush.
+        }
+      }
+      {
+        pose proof (dependencies_contain_frontier ltac:(auto)) as Hext.
+        use_rule_in_wf.
+        basic_core_crush.
+        safe_invert H5.
+        case_match.
+        2:{
+          eapply named_list_lookup_none_iff in HeqH5.
+          unfold fresh in *.
+          eapply HeqH5.
+          unfold compute_dependencies.
+          rewrite map_fst_compute_deps.
+          rewrite <- frontier_map_fst.
+          eauto using pair_fst_in.
+        }
+        {
+          assert (exists x, Some x = named_list_lookup_err (frontier l) n0).
+          {
+            my_case Hfrontier (named_list_lookup_err (frontier l) n0).
+            { exists l1; eauto. }
+            exfalso.
+            symmetry in Hfrontier.
+            eapply named_list_lookup_none_iff in Hfrontier.
+            unfold fresh in Hfrontier.
+            rewrite <- frontier_map_fst in Hfrontier.
+            apply pair_fst_in in H4.
+            eauto.
+          }
+          break.
+
+          pose proof H5.
+          
+          eapply deps_extends_lookup in H5; eauto.
+          break.
+          basic_goal_prep.
+          replace l0 with x0 in * by congruence; clear l0 H5.
+
+          eapply H8.
+          eapply named_list_lookup_err_in in H7.
+
+          unfold frontier in H7.
+          apply in_map_iff in H7.
+          break.
+          basic_utils_crush.
+          basic_goal_prep.
+          right.
+          basic_utils_crush.
+          left.
+          unfold sort_elem_constructors.
+          eapply in_flat_map.
+          exists (n, term_rule c args (scon n0 s));
+            intuition eauto.
+          cbn.
+          basic_utils_crush.
+        }
+      }
+    Qed.
+
+    Definition pl_is_orderedb (pl : param_spec) (l : lang) :=
+      let deps := (compute_dependencies l) in
+      (* fails if not a fixed point to make sure it's sound.
+           To fix this failure, just up the fuel enough.
+       *)
+      (fixed_point dep_trans_step deps) &&
+        let Q n n' :=
+          (implb (inb n' (map fst pl)) (inb n (map fst pl)))
+          && (implb (freshb n pl) (freshb n' pl))
+        in
+        let P '(n,_) :=
+          match named_list_lookup_err deps n with
+          | Some l => forallb (Q n) l
+          | None => false
+          end               
+        in
+        forallb P l.
+
+    (*TODO: move to Utils*)
+    Lemma Is_true_implb a b : Is_true (implb a b) <-> (Is_true a -> Is_true b).
+    Proof. destruct a, b; cbn in *; intuition eauto. Qed.
+    Hint Rewrite Is_true_implb : utils.
+    
+    Lemma pl_is_orderedb_sound pl l
+      : wf_lang l ->
+        Is_true (pl_is_orderedb pl l) ->
+        pl_is_ordered pl l.
+    Proof.
+      unfold pl_is_orderedb, pl_is_ordered.
+      basic_utils_crush.
+      eapply all_impl; eauto.
+      clear H2.
+      basic_goal_prep.
+      revert H0; case_match;
+        basic_goal_prep;
+        try tauto.
+      eapply compute_dependencies_complete in H2;
+        eauto.
+      rewrite <- HeqH0 in H2.
+      autorewrite with utils in H0.
+      assert (In v l0).
+      {
+        eapply compute_dependencies_reflexive;
+          eauto using named_list_lookup_err_in.
+        basic_core_crush.
+      }
+      eapply in_all in H2, H3; eauto.
+      basic_utils_crush.
+      revert H4.
+      unfold Is_Some.
+      repeat case_match;
+        basic_utils_crush.
+      apply named_list_lookup_none_iff in HeqH1.
+      eapply named_list_lookup_err_in in HeqH2.
+      eapply pair_fst_in in HeqH2.
+      intuition eauto.
+    Qed.
+
+    Definition p_name_fresh_in_cmpb : compiler -> bool :=
+      forallb (fun p =>
+                 match snd p with
+                 | term_case args _ | sort_case args _ => negb (inb p_name args)
+                 end).
+    
+    Lemma p_name_fresh_in_cmpbsound cmp
+      : Is_true (p_name_fresh_in_cmpb cmp) ->
+        p_name_fresh_in_cmp cmp.
+    Proof.
+      unfold p_name_fresh_in_cmp, p_name_fresh_in_cmpb.
+      basic_utils_crush.
+      eapply all_impl; eauto; clear H.
+      basic_goal_prep;
+        case_match;
+        basic_utils_crush.
+    Qed.
+
+    (*TODO: rename one above; really should merge them/refactor*)
+    Definition syntactic_parameterization_conditions' tgt_spec l_base tgt src cmp :=
+      syntactic_parameterization_conditions tgt_spec l_base tgt
+      && compiler_respects_parameterizationb src cmp
+      && pl_is_orderedb tgt_spec tgt
+      && all_freshb (src++l_base)
+      && specs_compatibleb cmp
+      && p_name_fresh_in_cmpb cmp.
+      
+    (*TODO: rename one above; really should merge them/refactor*)
+    Lemma parameterize_compiler_preserving' cmp src
+      : (* Assumed invariants*)
+      wf_lang tgt ->
+      preserving_compiler_ext tgt [] cmp src ->
+      wf_lang src ->
+      (* computable invariants*)
+      Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt src cmp) ->
+      preserving_compiler_ext (parameterize_lang tgt_spec tgt ++ l_base)
+        (id_compiler l_base)
+        (parameterize_compiler p_name tgt_spec src_spec cmp)
+        (parameterize_lang src_spec src).
+    Proof.
+      unfold syntactic_parameterization_conditions'.
+      intros; eapply parameterize_compiler_preserving; eauto;
+        basic_goal_prep;
+        basic_utils_crush.
+      all: eauto using p_name_fresh_in_cmpbsound, pl_is_orderedb_sound, use_compute_all_fresh.
+    Qed.
+    
+    (*args idx*)
+    Definition param_generator := named_list (option nat).
+
+    Fixpoint calc_param_pos ps (c : ctx) : option nat :=
+      match c with
+      | [] => None
+      | (_,t)::c =>
+          match calc_param_pos ps c with
+          | Some n => Some (S n)
+          | None =>
+              if eqb t (parameterize_sort p_name ps t)
+              then None
+              else Some 1
+          end
+      end.
+
+    Fixpoint arg_n_to_ctx_n n args (c : ctx) :=
+      match n, args, c with
+      | 0, _, _ => 0
+      | S n', x::args', (xc,_)::c' =>
+          S (if eqb x xc
+             then arg_n_to_ctx_n n' args' c'
+             else arg_n_to_ctx_n n args c')
+      (*should never happen*)
+      | _, _, _ => 0
+      end.
+
+    Definition no_param_needed (ps : param_spec) r : bool :=
+      match r with
+      | sort_rule _ _ => true
+      | term_rule _ _ t => eqb t (parameterize_sort p_name ps t)
+      | sort_eq_rule c t1 t2 =>
+          andb (eqb t1 (parameterize_sort p_name ps t1))
+            (eqb t2 (parameterize_sort p_name ps t2))
+      | term_eq_rule c e1 e2 t =>
+          andb (eqb e1 (parameterize_term p_name ps e1))
+            (andb (eqb e2 (parameterize_term p_name ps e2))
+               (eqb t (parameterize_sort p_name ps t)))
+      end.
+    
+    
+    Fixpoint elab_param (l : lang) (pa : param_generator) : param_spec :=
       match l with
       | [] => []
       | (x,r)::l =>
@@ -4479,10 +5241,10 @@ Admitted.
           end
       end.
 
-  (*TODO: propositional characterization of a valid param_spec.
+(*TODO: propositional characterization of a valid param_spec.
   Question: can I use a boolean validity check on param_specs? (implicit args behavior is more limited)
-   *)
-  
+ *)
+    
 (*
 
     
@@ -4506,7 +5268,7 @@ Admitted.
     Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
       
     Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
-*)
+ *)
 (*
     Fixpoint elab_param_spec l (g : param_generator) : param_spec :=
       match l, g with
@@ -4521,7 +5283,7 @@ Admitted.
             (elab_param_spec l' g)            
       | _, _ => []
       end.
-*)
+ *)
 (*    Notation parameterize_lang :=
       (named_map (parameterize_rule (map f untouched_constructors))).
     Notation parameterize_sort :=
@@ -4534,8 +5296,8 @@ Admitted.
       (parameterize_sub (map f untouched_constructors)).
     Notation parameterize_args :=
       (parameterize_args (map f untouched_constructors)).
-*)
-    (*
+ *)
+(*
     Lemma parameterization_monotonicity'
       (P := fun x => Is_true (negb (eqb (Impl := V_Eqb) x p_name)))
       (l : lang') lp
@@ -4641,7 +5403,7 @@ Proof using.
     TODO: important case; when we do/don't have D appended
     TODO: need wf
     eapply sort_con_congruence.
-  }
+    }
   1:solve [basic_core_crush].
   1:solve [basic_core_crush].
   1:solve [basic_core_crush].
@@ -4670,7 +5432,7 @@ Proof using.
     rewrite parameterize_sort_subst; eauto.
       TODO: commute w/ subst
 Qed.
-     *)
+ *)
 
 
 End WithVar.
