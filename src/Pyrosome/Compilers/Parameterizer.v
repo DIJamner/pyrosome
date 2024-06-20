@@ -3831,8 +3831,72 @@ Section WithVar.
           with_rule_in_wf_crush.
       Qed.
       Local Hint Resolve sort_case_in_cmp : lang_core.
+
+      
+      (*TODO: move to Compilers*)
+      Lemma compile_strengthen_incl (cmp1 cmp2 : compiler) e
+        : all_fresh cmp1 ->
+          all_fresh cmp2 ->
+          incl cmp1 cmp2 ->
+          AllConstructors.all_constructors (fun n0 : V => In n0 (map fst cmp1)) e ->
+          compile cmp1 e = compile cmp2 e.
+      Proof.
+        intros ? ? ?.
+        induction e;
+          basic_goal_prep; basic_core_crush.
+        case_match;
+          basic_utils_crush.
+        {
+          eapply all_fresh_named_list_lookup_err_in in HeqH3; eauto.
+          eapply H1 in HeqH3.
+          eapply all_fresh_named_list_lookup_err_in in HeqH3; eauto.
+          rewrite <- HeqH3.
+          case_match; eauto.
+          f_equal.
+          f_equal.
+          revert H2 H5.
+          induction l;
+            basic_goal_prep; basic_core_crush.
+        }
+        {
+          eapply named_list_lookup_none_iff in HeqH3.
+          exfalso.
+          eauto.
+        }
+      Qed.
+        
+      (*TODO: move to Compilers*)
+      Lemma compile_strengthen_sort_incl (cmp1 cmp2 : compiler) (t : sort)
+        : all_fresh cmp1 ->
+          all_fresh cmp2 ->
+          incl cmp1 cmp2 ->
+          AllConstructors.all_constructors_sort (fun n0 : V => In n0 (map fst cmp1)) t ->
+          compile_sort cmp1 t = compile_sort cmp2 t.
+      Proof.
+        destruct t;
+          basic_goal_prep.
+        case_match;
+          basic_utils_crush.
+        {
+          eapply all_fresh_named_list_lookup_err_in in HeqH3; eauto.
+          eapply H1 in HeqH3.
+          eapply all_fresh_named_list_lookup_err_in in HeqH3; eauto.
+          rewrite <- HeqH3.
+          case_match; eauto.
+          f_equal.
+          f_equal.
+          revert H4.
+          induction l;
+            basic_goal_prep; basic_core_crush; eauto using compile_strengthen_incl.
+        }
+        {
+          eapply named_list_lookup_none_iff in HeqH3.
+          exfalso.
+          eauto.
+        }
+      Qed.
   
-  Lemma parameterize_compiler_preserving cmp src
+  Lemma parameterize_compiler_preserving cmp src (H_ordered_src: pl_is_ordered src_spec src)
     : wf_lang tgt ->
       Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt) ->
       Is_true (compiler_respects_parameterizationb src cmp) ->
@@ -3866,6 +3930,7 @@ Section WithVar.
         (*/\ incl src_spec spec'*)
         /\ incl cmp cmp'
         /\ all_fresh cmp'
+        /\ pl_is_ordered src_spec src'
       ).
     {
       exists (*src_spec,*) src, cmp.
@@ -3888,15 +3953,70 @@ Section WithVar.
       exists src_spec, src.
       eauto using incl_refl.
     }*)
-    clear H_respectsb.
+    clear H_respectsb H_ordered_src.
     break.
     rename H1 into H_respectsb.
     (*rename H3 into Hincl_spec.*)
     rename H2 into Hincl_src.
     rename H3 into Hincl_cmp.
     rename H4 into Hfresh_cmp.
+    rename H8 into H_ordered_src.
     revert H H0 (*Hincl_spec*) Hincl_src Hincl_cmp.
     unfold parameterize_lang, parameterize_compiler.
+
+
+(*
+
+ V : Type
+  V_Eqb : Eqb V
+  V_Eqb_ok : Eqb_ok V_Eqb
+  V_default : WithDefault V
+  p_name : V
+  p_sort : sort
+  tgt, l_base : lang
+  src_spec, tgt_spec : param_spec
+  Hwfl_base : wf_lang l_base
+  Hwf_p_sort : wf_sort l_base {{c }} p_sort
+  H_src_fresh : all_fresh src_spec
+  cmp : compiler
+  src : lang
+  wft : wf_lang tgt
+  H_b : Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt)
+  H_ord : pl_is_ordered tgt_spec tgt
+  x : list (V * rule)
+  x0 : compiler
+  H_respectsb : forall (n : V) (num : nat) (x1 : bool) (r : rule),
+                In (n, r) x ->
+                In (n, (num, x1)) src_spec \/ num = 0 /\ fresh n src_spec ->
+                all (fun n0 : V => fresh n0 tgt_spec)
+                  (constructors_of_ctx (skipn num (compile_ctx x0 (get_ctx r))))
+  Hfresh_cmp : preserving_compiler_ext tgt [] x0 x
+  H5 : incl src x
+  H6 : incl cmp x0
+  H7 : all_fresh x0
+  H_ordered_src : pl_is_ordered src_spec x
+  ============================
+  preserving_compiler_ext tgt [] cmp src ->
+  wf_lang src ->
+  Is_true (specs_compatibleb x0) ->
+  wf_lang x ->
+  p_name_fresh_in_cmp cmp ->
+  all_fresh (src ++ l_base) ->
+  Is_true (specs_compatibleb cmp) ->
+  preserving_compiler_ext
+    (map (fun p : V * rule => (fst p, parameterize_rule p_name p_sort tgt_spec p)) tgt ++
+     l_base) (id_compiler l_base)
+    (map
+       (fun p : V * compiler_case V => (fst p, parameterize_ccase p_name tgt_spec src_spec p))
+       cmp) (map (fun p : V * rule => (fst p, parameterize_rule p_name p_sort src_spec p)) src)
+
+
+
+*)
+
+
+    
+    
     induction 1; intros; cbn [map fst] in *.
     { constructor. }
     {
@@ -4220,49 +4340,80 @@ Section WithVar.
               eapply inductive_implies_semantic; auto; cycle 2; eauto with lang_core.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
-              basic_utils_crush.
-              case_match; basic_utils_crush.
-              use_rule_in_wf.
-              autorewrite with lang_core model term utils in H2.
-              break.
-              inversion H23; subst.
-              (*TODO: names off by 1*)
-              unfold specs_compatibleb in Hincl_src.
-              autorewrite with lang_core model term utils in Hincl_src.
-              (*TODO: need which case it is too; stronger lemma*)
-              eapply sort_case_in_cmp in H24; eauto.
-              break.
-              eapply in_all in Hincl_src; eauto.
-              cbn in *.
-              (*
-              TODO: mismatch; cmp vs x0; is n0 in the subset?.
-              Is there a way to strengthen H24?
-              case_match;cbn.
-              HeqH2 ?
-              TODO: why does Hincl_src have a true case
-              TODO: explicitly have fresh n l! need H14 about cmp'?.
-              adjust initial assert?.
-              To justify not default
-              assert (wf_lang x) by admit.
-              use_rule_in_wf.
-              autorewrite with lang_core model term utils in H20.
-              break.
-              inversion H22; subst.
-              eapply sort_name_in_cmp in H23.
-              2:{ TODO: need to use l, not x?
-                eapply strengthen_preserving_compiler; cycle 6; eauto.
-              cbn.
-              TODO: not name of src, but name of compiled term is fresh?
-              basic_core_crush.
-              term_name_in_cmp
-              preserving_compiler_plus
-              revert H14 H9; clear.
-              unfold specs_compatibleb in *.
-              basic_utils_crush.
-              TODO: in lang -> in compiler, all_in
-              TODO: from H14*)
-              admit (*TODO: why is sort name fresh?*).
+              replace (compile_sort cmp t)
+                with (compile_sort x0 t).
+              {
+                unfold syntactic_parameterization_conditions in *.
+                basic_utils_crush.
+                case_match; basic_utils_crush.
+                use_rule_in_wf.
+                autorewrite with lang_core model term utils in H2.
+                break.
+                inversion H23; subst.
+                (*TODO: names off by 1*)
+                unfold specs_compatibleb in Hincl_src.
+                autorewrite with lang_core model term utils in Hincl_src.
+                (*TODO: need which case it is too; stronger lemma*)
+                eapply sort_case_in_cmp in H24; eauto.
+                break.
+                eapply in_all in Hincl_src; eauto.
+                cbn in *.
+                eapply all_fresh_named_list_lookup_err_in in H24;
+                  eauto.
+                rewrite <- H24.
+                destruct x2; cbn.
+                revert Hincl_src; case_match;
+                  basic_goal_prep.
+                2:{
+                  basic_utils_crush.
+                }
+                (*
+                TODO: what happens if e is a var? no dep at tgt level?.
+                                      Question: do I need pl_is_ordered on src?.
+                                                   would probably solve the problem
+                 *)  
+                enough (fresh n0 src_spec).
+                {
+                  eapply all_fresh_named_list_lookup_err_in in HeqH26; eauto.
+                  eapply pair_fst_in in HeqH26.
+                  unfold fresh in *; eauto.
+                }
+                
+                assert (dependency x n n0) as Hdep.
+                {
+                  eapply dep_direct.
+                  unfold direct_dependency.
+                  eapply all_fresh_named_list_lookup_err_in in H12; eauto.
+                  2: basic_core_crush.
+                  rewrite <- H12.
+                  cbn.
+                  clear.
+                  basic_utils_crush.
+                }
+                unfold pl_is_ordered in H_ordered_src.
+                eapply in_all in H_ordered_src; eauto.
+                cbn in *.
+                eapply H_ordered_src in Hdep.
+                eapply Hdep.
+                eapply named_list_lookup_none_iff in HeqH2; eauto.
+              }
+              {
+                autorewrite with lang_core utils term in *.
+                symmetry.
+                eapply compile_strengthen_sort_incl; intuition eauto.
+                all: eauto with lang_core term model utils.
+                {
+                  eapply all_fresh_compiler.
+                  {
+                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                  }
+                  basic_core_crush.
+                }
+                {
+                  eapply all_constructors_sort_from_wf; eauto.
+                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                }
+              }
             }
           }
         }
@@ -4355,11 +4506,82 @@ Section WithVar.
               eauto with lang_core.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
-              basic_utils_crush.
-              admit (*TODO: find or add bool condition*).
+              replace (compile_sort cmp t1)
+                with (compile_sort x0 t1).
+              {
+                unfold syntactic_parameterization_conditions in *.
+                basic_utils_crush.
+                case_match; basic_utils_crush.
+                use_rule_in_wf.
+                autorewrite with lang_core model term utils in H8.
+                break.
+                inversion H19; subst.
+                (*TODO: names off by 1*)
+                unfold specs_compatibleb in Hincl_src.
+                autorewrite with lang_core model term utils in Hincl_src.
+                (*TODO: need which case it is too; stronger lemma*)
+                eapply sort_case_in_cmp in H21; eauto.
+                break.
+                eapply in_all in Hincl_src; eauto.
+                cbn in *.
+                eapply all_fresh_named_list_lookup_err_in in H21;
+                  eauto.
+                rewrite <- H21.
+                destruct x2; cbn.
+                revert Hincl_src; case_match;
+                  basic_goal_prep.
+                2:{
+                  basic_utils_crush.
+                }
+                (*
+                TODO: what happens if e is a var? no dep at tgt level?.
+                                      Question: do I need pl_is_ordered on src?.
+                                                   would probably solve the problem
+                 *)  
+                enough (fresh n0 src_spec).
+                {
+                  eapply all_fresh_named_list_lookup_err_in in HeqH23; eauto.
+                  eapply pair_fst_in in HeqH23.
+                  unfold fresh in *; eauto.
+                }
+                
+                assert (dependency x n n0) as Hdep.
+                {
+                  eapply dep_direct.
+                  unfold direct_dependency.
+                  eapply all_fresh_named_list_lookup_err_in in H11; eauto.
+                  2: basic_core_crush.
+                  rewrite <- H11.
+                  cbn.
+                  clear.
+                  basic_utils_crush.
+                }
+                unfold pl_is_ordered in H_ordered_src.
+                eapply in_all in H_ordered_src; eauto.
+                cbn in *.
+                eapply H_ordered_src in Hdep.
+                eapply Hdep.
+                eapply named_list_lookup_none_iff in HeqH8; eauto.
+              }
+              {
+                autorewrite with lang_core utils term in *.
+                symmetry.
+                eapply compile_strengthen_sort_incl; intuition eauto.
+                all: eauto with lang_core term model utils.
+                {
+                  eapply all_fresh_compiler.
+                  {
+                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                  }
+                  basic_core_crush.
+                }
+                {
+                  eapply all_constructors_sort_from_wf; eauto.
+                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                }
+              }
             }
-        }
+          }
         {
           basic_core_crush.
         }
@@ -4451,18 +4673,84 @@ Section WithVar.
                 eauto with lang_core.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
-              basic_utils_crush.
-              admit (*TODO: find or add bool condition*).
+              replace (compile_sort cmp t)
+                with (compile_sort x0 t).
+              {
+                unfold syntactic_parameterization_conditions in *.
+                basic_utils_crush.
+                case_match; basic_utils_crush.
+                use_rule_in_wf.
+                autorewrite with lang_core model term utils in H8.
+                break.
+                inversion H21; subst.
+                (*TODO: names off by 1*)
+                unfold specs_compatibleb in Hincl_src.
+                autorewrite with lang_core model term utils in Hincl_src.
+                (*TODO: need which case it is too; stronger lemma*)
+                eapply sort_case_in_cmp in H22; eauto.
+                break.
+                eapply in_all in Hincl_src; eauto.
+                cbn in *.
+                eapply all_fresh_named_list_lookup_err_in in H22;
+                  eauto.
+                rewrite <- H22.
+                destruct x2; cbn.
+                revert Hincl_src; case_match;
+                  basic_goal_prep.
+                2:{
+                  basic_utils_crush.
+                }  
+                enough (fresh n0 src_spec).
+                {
+                  eapply all_fresh_named_list_lookup_err_in in HeqH24; eauto.
+                  eapply pair_fst_in in HeqH24.
+                  unfold fresh in *; eauto.
+                }
+                
+                assert (dependency x n n0) as Hdep.
+                {
+                  eapply dep_direct.
+                  unfold direct_dependency.
+                  eapply all_fresh_named_list_lookup_err_in in H11; eauto.
+                  2: basic_core_crush.
+                  rewrite <- H11.
+                  cbn.
+                  clear.
+                  basic_utils_crush.
+                }
+                unfold pl_is_ordered in H_ordered_src.
+                eapply in_all in H_ordered_src; eauto.
+                cbn in *.
+                eapply H_ordered_src in Hdep.
+                eapply Hdep.
+                eapply named_list_lookup_none_iff in HeqH8; eauto.
+              }
+              {
+                autorewrite with lang_core utils term in *.
+                symmetry.
+                eapply compile_strengthen_sort_incl; intuition eauto.
+                all: eauto with lang_core term model utils.
+                {
+                  eapply all_fresh_compiler.
+                  {
+                    eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                  }
+                  basic_core_crush.
+                }
+                {
+                  eapply all_constructors_sort_from_wf; eauto.
+                  eapply strengthen_preserving_compiler; cycle 6; eauto with lang_core.
+                }
+              }
             }
-        }
+          }
         {
           basic_core_crush.
         }
     }
     Unshelve.
     all:constructor.
-  Admitted.
+  Qed.
 
 
 
@@ -5146,6 +5434,7 @@ Section WithVar.
       syntactic_parameterization_conditions tgt_spec l_base tgt
       && compiler_respects_parameterizationb src cmp
       && pl_is_orderedb tgt_spec tgt
+      && pl_is_orderedb src_spec src
       && all_freshb (src++l_base)
       && specs_compatibleb cmp
       && p_name_fresh_in_cmpb cmp.
@@ -5240,200 +5529,6 @@ Section WithVar.
               end
           end
       end.
-
-(*TODO: propositional characterization of a valid param_spec.
-  Question: can I use a boolean validity check on param_specs? (implicit args behavior is more limited)
- *)
-    
-(*
-
-    
-    Definition parameterize_rule_if_in_list '(n,r) :=
-      if inb n (map fst parameterize_list)
-    
-    Fixpoint parameterize_lang l :=
-      match l with
-      | [] => []
-      | (n,r)::l =>
-          let (pl',l') := parameterize_lang' l parameterize_list in
-          let r' := parameterize_rule p_name p_sort pl' r in
-          let pl'' :=
-          (*TODO: do this in a more idiomatic way?*)
-            if eqb r r'
-            then pl'
-            else (n,idx_of p_name (map fst (get_ctx r)))::pl' in
-          (pl'', (n,r')::l')
-      end.
-
-    Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
-      
-    Fixpoint auto_param_ctx (s : param_spec) (c : ctx) :=
- *)
-(*
-    Fixpoint elab_param_spec l (g : param_generator) : param_spec :=
-      match l, g with
-      | (n,r)::l', (n', args)::g' =>
-          if eqb n n'
-           then (n, elab_param_rule r args):: (elab_param_spec l' g')
-          else
-            let s := (elab_param_spec l' g) in
-            
-            algorithm:
-          if r needs to be parameterized (should we just assume this? sufficient, but less convenient), determine how
-            (elab_param_spec l' g)            
-      | _, _ => []
-      end.
- *)
-(*    Notation parameterize_lang :=
-      (named_map (parameterize_rule (map f untouched_constructors))).
-    Notation parameterize_sort :=
-      (parameterize_sort (map f untouched_constructors)).
-    Notation parameterize_term :=
-      (parameterize_term (map f untouched_constructors)).
-    Notation parameterize_ctx :=
-      (parameterize_ctx (map f untouched_constructors)).
-    Notation parameterize_sub :=
-      (parameterize_sub (map f untouched_constructors)).
-    Notation parameterize_args :=
-      (parameterize_args (map f untouched_constructors)).
- *)
-(*
-    Lemma parameterization_monotonicity'
-      (P := fun x => Is_true (negb (eqb (Impl := V_Eqb) x p_name)))
-      (l : lang') lp
-      (l':= (parameterize_lang (rename_lang (@projT1 V P) l))++lp)
-      : all_fresh l' ->
-     (*   untouched_constructors = (map fst lp) ->*)
-        (forall c t1 t2,
-            (*TODO: rename lp*)
-            eq_sort (V:=V') (l ++ lp) c t1 t2 ->
-            eq_sort l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-              (parameterize_sort (rename_sort (@projT1 V P) t1))
-              (parameterize_sort (rename_sort (@projT1 V P) t2)))
-        /\ (forall c t e1 e2,
-               eq_term (l ++ lp) c t e1 e2 ->
-               eq_term l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-                 (parameterize_sort (rename_sort (@projT1 V P) t))
-                 (parameterize_term (rename (@projT1 V P) e1))
-                 (parameterize_term (rename (@projT1 V P) e2)))
-        /\ (forall c c' s1 s2,
-               eq_subst (l ++ lp) c c' s1 s2 ->
-               eq_subst l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-                 (parameterize_ctx (rename_ctx (@projT1 V P) c'))
-                 (parameterize_sub (rename_subst (@projT1 V P) s1))
-                 (parameterize_sub (rename_subst (@projT1 V P) s2)))
-        /\ (forall c t,
-               wf_sort (l ++ lp) c t ->
-               wf_sort l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-                 (parameterize_sort (rename_sort (@projT1 V P) t)))
-        /\ (forall c e t,
-               wf_term (l ++ lp) c e t ->
-               wf_term l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-                 (parameterize_term (rename (@projT1 V P) e))
-                 (parameterize_sort (rename_sort (@projT1 V P) t)))
-        /\ (forall c s c',
-               wf_args (l ++ lp) c s c' ->
-               wf_args l' (parameterize_ctx (rename_ctx (@projT1 V P) c))
-                 (parameterize_args (map (rename (@projT1 V P)) s))
-                 (parameterize_ctx (rename_ctx (@projT1 V P) c)))
-        /\ (forall c,
-               wf_ctx (l ++ lp) c ->
-               wf_ctx l' (parameterize_ctx (rename_ctx (@projT1 V P) c))).
-Proof using.
-  intros all_fresh.
-  apply judge_ind; basic_goal_prep.
-  all: try solve [constructor; eauto].
-  all: erewrite ?rename_sort_distr_subst, ?rename_distr_subst in *
-    by apply is_true_subset_proj_Injective.
-  all:rewrite ?parameterize_term_subst, ?parameterize_sort_subst with (f:= projT1 (P:=P)) in *
-    by apply V'_proj_not_p_name.
-  {
-    subst l'.
-    eapply eq_sort_by.
-    eapply in_or_app; left.
-    unfold parameterize_lang, rename_lang.
-    rewrite map_map; simpl.
-    eapply in_map in H; exact H.
-  }
-  1:solve[basic_core_crush].
-  1:solve[basic_core_crush].
-  1:solve [basic_core_crush].
-  {
-    subst l'.
-    eapply eq_term_by.
-    eapply in_or_app; left.
-    unfold parameterize_lang, rename_lang.
-    rewrite map_map; simpl.
-    eapply in_map in H; exact H.
-  }  
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  {
-    cbn.
-    repeat constructor.
-    unfold parameterize_ctx.
-    basic_utils_crush.
-    right.
-    simpl.
-    left.
-    f_equal.
-    admit (*TODO: find lemma*).
-  }
-  {
-    cbn.
-    constructor; basic_core_crush.
-  }
-  {
-    TODO: should have n in l', not l?
-    subst l'.
-    case_match.
-    eapply wf_sort_by.
-    {
-      eapply in_or_app; left.
-    unfold parameterize_lang, rename_lang.
-    rewrite map_map; simpl.
-    eapply in_map in H; exact H.
-    }  
-    {
-      TODO: 
-        case_match;
-      basic_core_crush.
-    1:unfold parameterize_ctx.
-    TODO: false; ctx always extended, but args not always extended
-    TODO: important case; when we do/don't have D appended
-    TODO: need wf
-    eapply sort_con_congruence.
-    }
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  1:solve [basic_core_crush].
-  {
-    basic_core_crush.
-    TODO: why are s1, s2 not renamed?
-    rewrite <- !rename_sort_distr_subst.
-     all: rewrite <- ?parameterize_term_subst, <- ?parameterize_sort_subst.
- 
-    Idea: rename via V -> V' renaming, using a subset type
-
-    all: rewrite ?parameterize_term_subst, ?parameterize_sort_subst.
-    TODO: how to rename? generalize mutual inductive to include list of reserved names?
-      - relies on V being infinite
-    eapply eq_sort_subst; cycle 1; eauto. }
-  {
-    TODO: what to do about ctxs in eq_sort_subst? alpha-rename? cut elim?
-    alpha:                                                          
-    pair of lemmas for renaming a ctx
-  }
-  constructor. eauto].
-    eauto.
-    rewrite parameterize_sort_subst; eauto.
-      TODO: commute w/ subst
-Qed.
- *)
-
 
 End WithVar.
 
