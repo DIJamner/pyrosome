@@ -2549,14 +2549,6 @@ Section WithVar.
                                                      (get_ctx (snd nr))))
                | None => true
                end).
-
-  Definition syntactic_parameterization_conditions l :=
-    (forallb (fun p : V * rule => freshb p_name (get_ctx (snd p))) l)
-    && (no_sort_eqns l)
-    && (forallb rule_checkedb l)
-    && (all_freshb (l++l_base))
-    && (all_freshb pl)
-    && (pl_indices_soundb l).
   
   Lemma Is_true_forallb A (f : A -> _) l
     : Is_true (forallb f l) <-> all (fun x => Is_true (f x)) l.
@@ -2604,20 +2596,25 @@ Section WithVar.
     apply use_compute_fresh.
     eapply in_all in H0; eauto.
   Qed.
-    
+
   
-  Lemma parameterize_lang_preserving
+  Definition syntactic_parameterization_conditions' l :=
+    (forallb (fun p : V * rule => freshb p_name (get_ctx (snd p))) l)
+    && (no_sort_eqns l)
+    && (forallb rule_checkedb l)
+    && (all_freshb (l++l_base))
+    && (all_freshb pl)
+    && (pl_indices_soundb l).
+
+  Lemma parameterize_lang_preserving''
      : forall l : lang,
        wf_lang l ->
        wf_lang l_base ->
-       Is_true (syntactic_parameterization_conditions l) ->
-       (* TODO: need a function that computes dependencies
-          to booleanize this. Is that worth it?
-        *)
+       Is_true (syntactic_parameterization_conditions' l) ->
        pl_is_ordered l ->
        wf_lang_ext l_base (parameterize_lang l).
   Proof.
-    unfold syntactic_parameterization_conditions,
+    unfold syntactic_parameterization_conditions',
       rule_checkedb.
     intros.
     basic_utils_crush.
@@ -3164,8 +3161,6 @@ Section WithVar.
     Qed.
     Hint Rewrite length_insert : utils.
      
-  (*TODO: invariants on mn1,mn2*)
-  (* TODO: *)
   Lemma compile_parameterize_commute src cmp
     : all_fresh src ->
       wf_lang tgt ->
@@ -3181,8 +3176,7 @@ Section WithVar.
         = parameterize_term p_name tgt_spec (compile cmp e))
     /\ (forall c s c',
            Model.wf_args (Model:=core_model src) c s c' ->
-           forall mn, (*TODO: separate?*)
-            (* (Is_Some mn1 <-> Is_Some mn2) ->*)
+           forall mn,
              compile_args pcmp (parameterize_args p_name src_spec mn s)
              = parameterize_args p_name tgt_spec mn (compile_args cmp s)).
   Proof.
@@ -3261,7 +3255,6 @@ Section WithVar.
         }
         f_equal; try reflexivity.
         f_equal.
-        (*TODO: probably won't work later*)
         specialize (H5 None).
         apply H5.
       }
@@ -3338,7 +3331,6 @@ Section WithVar.
       }
         f_equal; try reflexivity.
         f_equal.
-        (*TODO: probably won't work later*)
         specialize (H5 None).
         apply H5.        
       }
@@ -3895,10 +3887,10 @@ Section WithVar.
           eauto.
         }
       Qed.
-  
-  Lemma parameterize_compiler_preserving cmp src (H_ordered_src: pl_is_ordered src_spec src)
+      
+  Lemma parameterize_compiler_preserving' cmp src (H_ordered_src: pl_is_ordered src_spec src)
     : wf_lang tgt ->
-      Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt) ->
+      Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt) ->
       Is_true (compiler_respects_parameterizationb src cmp) ->
       pl_is_ordered tgt_spec tgt ->
       preserving_compiler_ext tgt [] cmp src ->
@@ -3981,7 +3973,7 @@ Section WithVar.
   cmp : compiler
   src : lang
   wft : wf_lang tgt
-  H_b : Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt)
+  H_b : Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt)
   H_ord : pl_is_ordered tgt_spec tgt
   x : list (V * rule)
   x0 : compiler
@@ -4042,16 +4034,16 @@ Section WithVar.
           eapply eq_sort_wf_r; eauto.
           {
             eapply wf_lang_concat; eauto.
-            eapply parameterize_lang_preserving; eauto.
+            eapply parameterize_lang_preserving''; eauto.
           }
           {
             eapply parameterize_ctx_preserving'; eauto.
             {
               eapply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eapply parameterize_lang_preserving''; eauto.
             }
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
               match goal with
               | [H : all ?P ?l |- all _ ?l] =>
@@ -4062,12 +4054,12 @@ Section WithVar.
               eapply use_compute_fresh; eauto.
             }
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
             }
             
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
               eapply compute_pl_indices_sound; eauto.
             }
@@ -4131,23 +4123,23 @@ Section WithVar.
             eapply parameterize_preserving'; eauto.
             {
               apply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eapply parameterize_lang_preserving''; eauto.
             }
             5:{ eapply eq_sort_refl; basic_core_crush. }
             all: break; cbn in *.
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               eapply all_impl; eauto.
               basic_goal_prep;
                 basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               apply compute_pl_indices_sound; eauto.
             }
@@ -4164,7 +4156,7 @@ Section WithVar.
               eauto with lang_core.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               case_match; basic_utils_crush.
               destruct t; cbn in*.
               basic_utils_crush.
@@ -4206,28 +4198,28 @@ Section WithVar.
           eapply eq_term_wf_r; eauto.
           {
             eapply wf_lang_concat; eauto.
-            eapply parameterize_lang_preserving; eauto.
+            eapply parameterize_lang_preserving''; eauto.
           }
           {
             eapply parameterize_ctx_preserving'; eauto.
             {
               eapply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eapply parameterize_lang_preserving''; eauto.
             }
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
               eapply all_in; intros.
               eapply in_all in H6; eauto.
               eapply use_compute_fresh; eauto.
             }
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
             }
             
             {
-              unfold syntactic_parameterization_conditions in *;
+              unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
               eapply compute_pl_indices_sound; eauto.
             }
@@ -4302,30 +4294,30 @@ Section WithVar.
               eapply compile_parameterize_commute; eauto.
               1:basic_core_crush.
               {
-                unfold syntactic_parameterization_conditions in *;
+                unfold syntactic_parameterization_conditions' in *;
                   basic_utils_crush.
               }
             }
             eapply parameterize_preserving'; eauto.
             {
               apply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eauto using parameterize_lang_preserving''.
             }
             5:{ eapply eq_term_refl; basic_core_crush. }
             all: break; cbn in *.
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               eapply all_impl; eauto.
               basic_goal_prep;
                 basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               apply compute_pl_indices_sound; eauto.
             }
@@ -4343,7 +4335,7 @@ Section WithVar.
               replace (compile_sort cmp t)
                 with (compile_sort x0 t).
               {
-                unfold syntactic_parameterization_conditions in *.
+                unfold syntactic_parameterization_conditions' in *.
                 basic_utils_crush.
                 case_match; basic_utils_crush.
                 use_rule_in_wf.
@@ -4353,7 +4345,6 @@ Section WithVar.
                 (*TODO: names off by 1*)
                 unfold specs_compatibleb in Hincl_src.
                 autorewrite with lang_core model term utils in Hincl_src.
-                (*TODO: need which case it is too; stronger lemma*)
                 eapply sort_case_in_cmp in H24; eauto.
                 break.
                 eapply in_all in Hincl_src; eauto.
@@ -4366,12 +4357,7 @@ Section WithVar.
                   basic_goal_prep.
                 2:{
                   basic_utils_crush.
-                }
-                (*
-                TODO: what happens if e is a var? no dep at tgt level?.
-                                      Question: do I need pl_is_ordered on src?.
-                                                   would probably solve the problem
-                 *)  
+                } 
                 enough (fresh n0 src_spec).
                 {
                   eapply all_fresh_named_list_lookup_err_in in HeqH26; eauto.
@@ -4473,23 +4459,23 @@ Section WithVar.
           eapply parameterize_preserving'; auto.
             {
               apply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eapply parameterize_lang_preserving''; eauto.
             }
             5:{ basic_core_crush. }
             all: break; cbn in *.
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               eapply all_impl; eauto.
               basic_goal_prep;
                 basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               apply compute_pl_indices_sound; eauto.
             }
@@ -4509,7 +4495,7 @@ Section WithVar.
               replace (compile_sort cmp t1)
                 with (compile_sort x0 t1).
               {
-                unfold syntactic_parameterization_conditions in *.
+                unfold syntactic_parameterization_conditions' in *.
                 basic_utils_crush.
                 case_match; basic_utils_crush.
                 use_rule_in_wf.
@@ -4519,7 +4505,6 @@ Section WithVar.
                 (*TODO: names off by 1*)
                 unfold specs_compatibleb in Hincl_src.
                 autorewrite with lang_core model term utils in Hincl_src.
-                (*TODO: need which case it is too; stronger lemma*)
                 eapply sort_case_in_cmp in H21; eauto.
                 break.
                 eapply in_all in Hincl_src; eauto.
@@ -4533,11 +4518,6 @@ Section WithVar.
                 2:{
                   basic_utils_crush.
                 }
-                (*
-                TODO: what happens if e is a var? no dep at tgt level?.
-                                      Question: do I need pl_is_ordered on src?.
-                                                   would probably solve the problem
-                 *)  
                 enough (fresh n0 src_spec).
                 {
                   eapply all_fresh_named_list_lookup_err_in in HeqH23; eauto.
@@ -4640,23 +4620,23 @@ Section WithVar.
           eapply parameterize_preserving'; auto.
             {
               apply wf_lang_concat; eauto.
-              eapply parameterize_lang_preserving; eauto.
+              eapply parameterize_lang_preserving''; eauto.
             }
             5:{ basic_core_crush. }
             all: break; cbn in *.
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               eapply all_impl; eauto.
               basic_goal_prep;
                 basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions in *.
+              unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
               apply compute_pl_indices_sound; eauto.
             }
@@ -4676,7 +4656,7 @@ Section WithVar.
               replace (compile_sort cmp t)
                 with (compile_sort x0 t).
               {
-                unfold syntactic_parameterization_conditions in *.
+                unfold syntactic_parameterization_conditions' in *.
                 basic_utils_crush.
                 case_match; basic_utils_crush.
                 use_rule_in_wf.
@@ -4686,7 +4666,6 @@ Section WithVar.
                 (*TODO: names off by 1*)
                 unfold specs_compatibleb in Hincl_src.
                 autorewrite with lang_core model term utils in Hincl_src.
-                (*TODO: need which case it is too; stronger lemma*)
                 eapply sort_case_in_cmp in H22; eauto.
                 break.
                 eapply in_all in Hincl_src; eauto.
@@ -4843,14 +4822,12 @@ Section WithVar.
     End Fixpoints.
 
 
-    (*TODO: does this only work if everything has a reflexive dep?*)
     Definition dep_trans_step out :=
-      named_map (flat_map (named_list_lookup [] out)) out.
+      named_map (Basics.compose (dedup (eqb (A:=_))) (flat_map (named_list_lookup [] out))) out.
     
-    (*TODO: might be graph algo? compute fixed point w/ fuel*)
     Definition compute_dependencies l : named_list (list V) :=
       let init := frontier l in
-      fixpoint dep_trans_step 10 (*fuel: TODO: short circuit ever?*) init.
+      fixpoint dep_trans_step 10 (*fuel: TODO: does it short circuit ever?*) init.
 
     
     Lemma incl_flat_map_elt A B (f:A -> list B) x l l'
@@ -4886,7 +4863,8 @@ Section WithVar.
                  (forall (n : V) (l : list V), In (n, l) s -> In n l) ->
                  incl s s' ->
                  all2 (fun '(n1, l1) '(n2, l2) => n1 = n2 /\ incl l1 l2) s
-                   (named_map (flat_map (named_list_lookup [] s')) s)).
+                   (named_map (Basics.compose (dedup (eqb (A:=V)))
+                                 (flat_map (named_list_lookup [] s'))) s)).
       {
         intros.
         eapply H; basic_utils_crush.
@@ -4896,6 +4874,9 @@ Section WithVar.
         basic_goal_prep;
         basic_utils_crush.
       {
+        cbv [Basics.compose].
+        intros a H'; rewrite <- dedup_preserves_In.
+        revert a H'.
         apply incl_flat_map_elt with (x:=v).
         { eapply H; left; eauto. }
         {
@@ -4935,6 +4916,8 @@ Section WithVar.
       apply in_named_map in H1.
       break.
       subst.
+      cbv [Basics.compose].
+      rewrite <- dedup_preserves_In.
       apply in_flat_map.
       exists n.
       firstorder.
@@ -5164,13 +5147,14 @@ Section WithVar.
     Lemma fixed_point_deps_helper deps n l
       : Is_true (fixed_point dep_trans_step deps) ->
         In (n,l) deps ->
-        flat_map (named_list_lookup [] deps) l = l.
+        Basics.compose (dedup (@eqb _ _)) (flat_map (named_list_lookup [] deps)) l = l.
     Proof.
       unfold dep_trans_step.
       intros.
       eapply fixed_point_named_map_inv in H; eauto;
         try typeclasses eauto.
       unfold fixed_point in *.
+      cbv [Basics.compose] in *.
       basic_utils_crush.
     Qed.
     
@@ -5188,9 +5172,10 @@ Section WithVar.
         pose proof H3 as H3'.
       eapply fixed_point_deps_helper in H1, H3; eauto.
       rewrite <- H1.
+      cbv [Basics.compose] in *.
+      rewrite <- !dedup_preserves_In.
       apply in_flat_map.
       exists n'; intuition eauto.
-
       erewrite named_list_lookup_in; eauto.
     Qed.
     
@@ -5411,6 +5396,21 @@ Section WithVar.
       intuition eauto.
     Qed.
 
+    Local Hint Resolve pl_is_orderedb_sound : lang_core.
+    
+    Lemma parameterize_lang_preserving
+      : forall l : lang,
+        wf_lang l ->
+        wf_lang l_base ->
+        Is_true (syntactic_parameterization_conditions' src_spec l_base l
+                 && pl_is_orderedb src_spec l) ->
+        wf_lang_ext l_base (parameterize_lang src_spec l).
+    Proof.
+      intros.
+      eapply parameterize_lang_preserving''; eauto;
+        basic_core_crush.
+    Qed.
+
     Definition p_name_fresh_in_cmpb : compiler -> bool :=
       forallb (fun p =>
                  match snd p with
@@ -5430,8 +5430,8 @@ Section WithVar.
     Qed.
 
     (*TODO: rename one above; really should merge them/refactor*)
-    Definition syntactic_parameterization_conditions' tgt_spec l_base tgt src cmp :=
-      syntactic_parameterization_conditions tgt_spec l_base tgt
+    Definition syntactic_parameterization_conditions tgt_spec l_base tgt src cmp :=
+      syntactic_parameterization_conditions' tgt_spec l_base tgt
       && compiler_respects_parameterizationb src cmp
       && pl_is_orderedb tgt_spec tgt
       && pl_is_orderedb src_spec src
@@ -5440,20 +5440,20 @@ Section WithVar.
       && p_name_fresh_in_cmpb cmp.
       
     (*TODO: rename one above; really should merge them/refactor*)
-    Lemma parameterize_compiler_preserving' cmp src
+    Lemma parameterize_compiler_preserving cmp src
       : (* Assumed invariants*)
       wf_lang tgt ->
       preserving_compiler_ext tgt [] cmp src ->
       wf_lang src ->
       (* computable invariants*)
-      Is_true (syntactic_parameterization_conditions' tgt_spec l_base tgt src cmp) ->
+      Is_true (syntactic_parameterization_conditions tgt_spec l_base tgt src cmp) ->
       preserving_compiler_ext (parameterize_lang tgt_spec tgt ++ l_base)
         (id_compiler l_base)
         (parameterize_compiler p_name tgt_spec src_spec cmp)
         (parameterize_lang src_spec src).
     Proof.
-      unfold syntactic_parameterization_conditions'.
-      intros; eapply parameterize_compiler_preserving; eauto;
+      unfold syntactic_parameterization_conditions.
+      intros; eapply parameterize_compiler_preserving'; eauto;
         basic_goal_prep;
         basic_utils_crush.
       all: eauto using p_name_fresh_in_cmpbsound, pl_is_orderedb_sound, use_compute_all_fresh.
