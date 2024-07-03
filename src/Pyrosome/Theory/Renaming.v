@@ -258,6 +258,17 @@ Section Injective.
     apply f_inj in H1; subst.
     eapply pair_fst_in; eauto.
   Qed.
+
+  Lemma rename_lang_mono_ext l_pre l
+    (* TODO: probably don't need 1st assumption*)
+    : wf_lang l_pre -> wf_lang_ext l_pre l -> wf_lang_ext (rename_lang l_pre) (rename_lang l).
+  Proof.
+    intros.
+    eapply wf_lang_concat_iff.
+    unfold rename_lang; rewrite <- map_app.
+    eapply rename_lang_mono.
+    basic_core_crush.
+  Qed.
     
 End Injective.
 

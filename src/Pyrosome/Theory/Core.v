@@ -1017,6 +1017,30 @@ Proof.
 Qed.
 Hint Resolve wf_lang_concat : lang_core.
 
+
+Lemma wf_lang_concat_hd (l1 l2 : lang)
+  : wf_lang (l2 ++ l1) -> wf_lang_ext l1 l2.
+Proof.
+  induction l2;
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
+Lemma wf_lang_tail l' l
+  : wf_lang (l' ++ l) -> wf_lang l.
+Proof.
+  induction l';
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+
+Lemma wf_lang_concat_iff (l1 l2 : lang)
+  : wf_lang (l2 ++ l1) <-> wf_lang l1 /\ wf_lang_ext l1 l2.
+Proof.
+  intuition eauto using wf_lang_concat, wf_lang_concat_hd, wf_lang_tail.
+Qed.
+
+
 Lemma wf_lang_implies_ws_noext l
   : wf_lang l -> ws_lang l.
 Proof.
@@ -1728,15 +1752,6 @@ Proof.
     pose proof (in_all_fresh_same _ _ _ _ (wf_ctx_all_fresh H0) H2 H1) as H'.
     basic_core_crush.
   }
-Qed.
-
-
-Lemma wf_lang_tail l' l
-  : wf_lang (l' ++ l) -> wf_lang l.
-Proof.
-  induction l';
-    basic_goal_prep;
-    basic_core_crush.
 Qed.
 
 

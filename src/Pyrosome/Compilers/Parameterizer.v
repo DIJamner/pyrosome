@@ -5410,6 +5410,26 @@ Section WithVar.
       eapply parameterize_lang_preserving''; eauto;
         basic_core_crush.
     Qed.
+    
+    Lemma parameterize_lang_preserving_ext
+      : forall l l_pre : lang,
+        wf_lang l_pre ->
+        wf_lang_ext l_pre l ->
+        wf_lang l_base ->
+        Is_true (syntactic_parameterization_conditions' src_spec l_base (l++l_pre)
+                 && pl_is_orderedb src_spec (l++l_pre)) ->
+        wf_lang_ext (parameterize_lang src_spec l_pre ++ l_base) (parameterize_lang src_spec l).
+    Proof.
+      intros.
+      apply wf_lang_concat_iff.
+      unfold parameterize_lang.
+      rewrite app_assoc.
+      rewrite <- map_app.
+      apply wf_lang_concat_iff.
+      split; auto.
+      apply parameterize_lang_preserving; eauto.
+      apply wf_lang_concat_iff; intuition eauto.
+    Qed.
 
     Definition p_name_fresh_in_cmpb : compiler -> bool :=
       forallb (fun p =>
