@@ -265,40 +265,8 @@ Lemma elt_cartesian_wf
 Proof. auto_elab. Qed.
 #[export] Hint Resolve elt_cartesian_wf : elab_pfs.
 
-Definition ty_subst_lang :=
-  rename_lang
-    (fun n =>
-       match n with
-       | "obj" => "ty_env"
-       | "arr" => "ty_sub"
-       | "act" => "ty_subst"
-       | "unit" => "ty"
-       | "u" => "A"
-       | "g"
-       | "f"
-       | "h" => n 
-       | String "G"%char s => String "D" s
-       (*needed for injectivity*)
-       | "env" => "_env"
-       | "subst" => "_subst"
-       (**)
-       | _ => ("ty_"++ n)%string
-       end)
-    (unit_cartesian ++ unit_action++obj_consumer++cat).
-
-
-
-Definition ty_subst_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (ty_subst_lang)
-                    ty_subst_lang.
-
-Lemma ty_subst_wf
-  : elab_lang_ext [] ty_subst_def ty_subst_lang.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve ty_subst_wf : elab_pfs.
-
-Definition val_subst :=
+(*TODO: fix construction*)
+Definition value_subst :=
   rename_lang
     (fun n =>
        match n with
@@ -314,18 +282,19 @@ Definition val_subst :=
        (**)
        | _ => n
        end)
-    (elt_cartesian++elt_action++typed_consumer++cat).
+    (elt_cartesian++elt_action++typed_consumer++cat)
+    ++ [("ty",sort_rule [] [])].
 
 
-Definition val_subst_def :=
+Definition value_subst_def :=
   Eval compute in Rule.hide_lang_implicits
-                    (val_subst++[("ty",sort_rule [] [])])
-                    val_subst.
+                    value_subst
+                    value_subst.
 
-Lemma val_subst_wf
-  : elab_lang_ext [("ty",sort_rule [] [])] val_subst_def val_subst.
+Lemma value_subst_wf
+  : elab_lang_ext [] value_subst_def value_subst.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve val_subst_wf : elab_pfs.
+#[export] Hint Resolve value_subst_wf : elab_pfs.
 
 Definition exp_subst_base :=
   rename_lang
@@ -349,11 +318,11 @@ Definition exp_subst_base :=
 
 Definition exp_subst_base_def :=
   Eval compute in Rule.hide_lang_implicits
-                    (exp_subst_base ++ val_subst++[("ty",sort_rule [] [])])
+                    (exp_subst_base ++ value_subst)
                     exp_subst_base.
 
 Lemma exp_subst_base_wf
-  : elab_lang_ext (val_subst++[("ty",sort_rule [] [])])
+  : elab_lang_ext (value_subst)
       exp_subst_base_def exp_subst_base.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_base_wf : elab_pfs.
@@ -361,14 +330,14 @@ Proof. auto_elab. Qed.
 
 
 Definition exp_ret_def : lang _ :=
-  {[l/subst [(exp_subst_base++val_subst++[("ty",sort_rule [] [])])]
+  {[l/subst [(exp_subst_base++value_subst)]
   [:| "G" : #"env", "A" : #"ty", "v" : #"val" "G" "A"
        -----------------------------------------------
        #"ret" "v" : #"exp" "G" "A"
     ] ]}.
 
 Derive exp_ret
-  SuchThat (elab_lang_ext (exp_subst_base++val_subst++[("ty",sort_rule [] [])])
+  SuchThat (elab_lang_ext (exp_subst_base++value_subst)
               exp_ret_def exp_ret)
        As exp_ret_wf.
 Proof. auto_elab. Qed.
@@ -385,31 +354,124 @@ issue: if  I parameterize elt_action as normal, what to do about G, A?
 For now: writing one manually to see how it goes
 *)
                            
-Definition exp_and_val_parameterized :=
+Definition val_parameterized :=
   Eval compute in
-    let ps := (elab_param "D" (exp_ret ++ exp_subst_base
-                                 ++ val_subst++[("ty",sort_rule[][])])
+    let ps := (elab_param "D" value_subst
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
                 ("val",Some 2);
                 ("exp",Some 2)]) in
   parameterize_lang "D" {{s #"ty_env"}}
-    ps (exp_ret ++ exp_subst_base ++ val_subst).
+    ps value_subst.
+
+Definition exp_parameterized :=
+  Eval compute in
+    let ps := (elab_param "D" (exp_ret ++ exp_subst_base ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_ret ++ exp_subst_base).
 
 
-Definition exp_and_val_parameterized_def :=
+
+Definition val_parameterized_def :=
   Eval compute in Rule.hide_lang_implicits
-                    (exp_and_val_parameterized
-                       ++ty_subst_lang)
-                    exp_and_val_parameterized.
+                    (val_parameterized
+                       ++[("ty_env",sort_rule [] [])])
+                    val_parameterized.
 
-Lemma exp_and_val_parameterized_wf
-  : elab_lang_ext ty_subst_lang
-      exp_and_val_parameterized_def
-      exp_and_val_parameterized.
+Definition exp_parameterized_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (exp_parameterized
+                       ++val_parameterized
+                       ++[("ty_env",sort_rule [] [])])
+                    exp_parameterized.
+
+Lemma val_parameterized_wf
+  : elab_lang_ext [("ty_env",sort_rule [] [])]
+      val_parameterized_def
+      val_parameterized.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_and_val_parameterized_wf : elab_pfs.
+#[export] Hint Resolve val_parameterized_wf : elab_pfs.
+
+Lemma exp_parameterized_wf
+  : elab_lang_ext (val_parameterized++[("ty_env",sort_rule [] [])])
+      exp_parameterized_def
+      exp_parameterized.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_parameterized_wf : elab_pfs.
+
+
+(*TODO: how to remove obj from cat the right way? issue: lang containing*)
+(*TODO: split into envs and (ty lang in terms of parameterized val_subst)*)
+
+Definition ty_env_lang :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "ty_env"
+       | "arr" => "ty_sub"
+       | "act" => "ty_subst"
+       | "unit" => "ty"
+       | "u" => "A"
+       | "g"
+       | "f"
+       | "h" => n 
+       | String "G"%char s => String "D" s
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("ty_"++ n)%string
+       end) cat.
+
+Definition ty_subst_lang :=
+  rename_lang
+    (fun n =>
+       match n with
+       | "obj" => "ty_env"
+       | "arr" => "ty_sub"
+       | "act" => "ty_subst"
+       | "unit" => "ty"
+       | "u" => "A"
+       | "g"
+       | "f"
+       | "h" => n 
+       | String "G"%char s => String "D" s
+       (*needed for injectivity*)
+       | "env" => "_env"
+       | "subst" => "_subst"
+       (**)
+       | _ => ("ty_"++ n)%string
+       end)
+    (unit_cartesian ++ unit_action).
+
+
+
+Definition ty_env_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    ty_env_lang
+                    ty_env_lang.
+
+Definition ty_subst_def :=
+  Eval compute in Rule.hide_lang_implicits
+                    (ty_subst_lang++ exp_parameterized++val_parameterized++ty_env_lang)
+                    ty_subst_lang.
+
+Lemma ty_env_wf
+  : elab_lang_ext [] ty_env_def ty_env_lang.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve ty_env_wf : elab_pfs.
+
+
+Lemma ty_subst_wf
+  : elab_lang_ext (val_parameterized ++ ty_env_lang) ty_subst_def ty_subst_lang.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve ty_subst_wf : elab_pfs.
 
 Definition env_ty_subst_rename :=
     (fun n =>
@@ -441,13 +503,11 @@ Definition env_ty_subst :=
 Definition env_ty_subst_def :=
   Eval compute in Rule.hide_lang_implicits
                     (env_ty_subst++
-                       exp_and_val_parameterized
-                       ++ty_subst_lang)
+                       ty_subst_lang++val_parameterized++ty_env_lang)
                     (env_ty_subst).
 
-
 Lemma env_ty_subst_wf
-  : elab_lang_ext (exp_and_val_parameterized++ty_subst_lang)
+  : elab_lang_ext (ty_subst_lang++val_parameterized++ty_env_lang)
       env_ty_subst_def
       (env_ty_subst).
 Proof. auto_elab. Qed.
@@ -490,8 +550,9 @@ Definition exp_ty_subst_def : lang _ :=
 
 Derive exp_ty_subst
   SuchThat (elab_lang_ext (env_ty_subst
-                             ++exp_and_val_parameterized
-                             ++ty_subst_lang)
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
       exp_ty_subst_def
       exp_ty_subst)
        As exp_ty_subst_wf.
@@ -500,14 +561,15 @@ Proof. auto_elab. Qed.
 
 
 Definition exp_and_val_param_substs_def :=
-  eqn_rules type_subst_mode (exp_ty_subst++env_ty_subst++exp_and_val_parameterized ++ty_subst_lang)
-    exp_and_val_parameterized_def.
+  eqn_rules type_subst_mode (exp_ty_subst++env_ty_subst++exp_parameterized++val_parameterized ++ty_subst_lang)
+   (exp_parameterized_def++val_parameterized_def).
              
 Derive exp_and_val_param_substs
   SuchThat (elab_lang_ext (exp_ty_subst
                              ++env_ty_subst
-                             ++exp_and_val_parameterized
-                             ++ty_subst_lang)
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
               exp_and_val_param_substs_def
               exp_and_val_param_substs)
   As exp_and_val_param_substs_wf.
@@ -648,8 +710,9 @@ Derive poly
   SuchThat (elab_lang_ext (exp_and_val_param_substs
                              ++ exp_ty_subst
                              ++env_ty_subst
-                             ++exp_and_val_parameterized
-                             ++ty_subst_lang)
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
               poly_def poly)
        As poly_wf.
 Proof. auto_elab. Qed.
@@ -677,55 +740,55 @@ Definition block_subst : lang _ :=
        (**)
        | _ => ("blk_"++ n)%string
        end)
-    ( unit_action++obj_consumer).
+    (unit_action++obj_consumer).
 
 
 Definition block_subst_def :=
   Eval compute in Rule.hide_lang_implicits
-                    (block_subst ++ val_subst ++[("ty",sort_rule [] [])])
+                    (block_subst ++ value_subst)
                     block_subst.
 
 Lemma block_subst_wf
-  : elab_lang_ext (val_subst ++[("ty",sort_rule [] [])])
+  : elab_lang_ext value_subst
       block_subst_def block_subst.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 
-
                         
-Definition block_and_val_parameterized :=
+Definition block_parameterized :=
   Eval compute in
     let ps := (elab_param "D" (block_subst
-                                 ++ val_subst++[("ty",sort_rule[][])])
+                                 ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
                 ("val",Some 2);
                 ("blk",Some 1)]) in
   parameterize_lang "D" {{s #"ty_env"}}
-    ps (block_subst ++ val_subst).
+    ps (block_subst).
 
 
-Definition block_and_val_parameterized_def :=
+Definition block_parameterized_def :=
   Eval compute in Rule.hide_lang_implicits
-                    (block_and_val_parameterized
-                       ++ty_subst_lang)
-                    block_and_val_parameterized.
+                    (block_parameterized++val_parameterized
+                       ++ty_env_lang)
+                    block_parameterized.
 
-Lemma block_and_val_parameterized_wf
-  : elab_lang_ext ty_subst_lang
-      block_and_val_parameterized_def
-      block_and_val_parameterized.
+Lemma block_parameterized_wf
+  : elab_lang_ext (val_parameterized++ty_env_lang)
+      block_parameterized_def
+      block_parameterized.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve block_and_val_parameterized_wf : elab_pfs.
+#[export] Hint Resolve block_parameterized_wf : elab_pfs.
 
-
+(*
 Lemma env_ty_subst_wf'
-  : elab_lang_ext (block_and_val_parameterized++ty_subst_lang)
+  : elab_lang_ext (block_and_val_parameterized++ty_env_lang)
       env_ty_subst_def
       (env_ty_subst).
 Proof. auto_elab. Qed.
 #[export] Hint Resolve env_ty_subst_wf' : elab_pfs.
+*)
 
 
 Definition block_ty_subst_def : lang _ :=
@@ -763,8 +826,10 @@ Definition block_ty_subst_def : lang _ :=
 
 Derive block_ty_subst
   SuchThat (elab_lang_ext (env_ty_subst
-                             ++block_and_val_parameterized
-                             ++ty_subst_lang)
+                             ++ ty_subst_lang
+                             ++block_parameterized
+                             ++ val_parameterized
+                             ++ty_env_lang)
       block_ty_subst_def
       block_ty_subst)
        As block_ty_subst_wf.
@@ -772,20 +837,25 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve block_ty_subst_wf : elab_pfs. 
 
 
-
+(*TODO: split and*)
 Definition block_and_val_param_substs_def :=
-  eqn_rules type_subst_mode (block_ty_subst++env_ty_subst++block_and_val_parameterized ++ty_subst_lang)
-    block_and_val_parameterized_def.
+  eqn_rules type_subst_mode (block_ty_subst++env_ty_subst
+                               ++block_parameterized
+                               ++val_parameterized++ty_subst_lang)
+    (block_parameterized_def ++ val_parameterized_def).
              
 Derive block_and_val_param_substs
   SuchThat (elab_lang_ext (block_ty_subst
                              ++env_ty_subst
-                             ++block_and_val_parameterized
-                             ++ty_subst_lang)
+                               ++block_parameterized
+                               ++ty_subst_lang
+                               ++val_parameterized
+                             ++ty_env_lang)
               block_and_val_param_substs_def
               block_and_val_param_substs)
   As block_and_val_param_substs_wf.
 Proof.
+  (*TODO: generate eqns from elabb'ed terms*)
   setup_elab_lang.
   -(first
    [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
