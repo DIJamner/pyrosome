@@ -7,12 +7,12 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Theory.Renaming
-  Tools.Matches Compilers.Parameterizer Compilers.Compilers.
+  Tools.Matches Compilers.Parameterizer Compilers.Compilers Compilers.CompilerFacts.
 From Pyrosome.Lang Require Import PolySubst
   SimpleVSubst SimpleVCPS SimpleEvalCtx
   SimpleEvalCtxCPS SimpleUnit NatHeap SimpleVCPSHeap
   SimpleVFixCPS SimpleVFixCC SimpleVCC SimpleVSTLC
-  SimpleVCCHeap SimpleVFix.
+  SimpleVCCHeap SimpleVFix CombinedThm.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -37,9 +37,8 @@ Definition tgt_ext :=
                    cps_prod_lang (* ++ block_subst ++ value_subst*).
 
 Definition stlc_parameterized :=
-  Eval compute in
     let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
-                                 ++ val_subst++[("ty",sort_rule[][])])
+                                 ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
@@ -48,26 +47,48 @@ Definition stlc_parameterized :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps stlc.
 
+(*
 Definition stlc_parameterized_def :=
   Eval compute in Rule.hide_lang_implicits
                     (stlc_parameterized++
                        exp_and_val_parameterized
                        ++ty_subst_lang)
                     stlc_parameterized.
+ *)
+
+Local Definition evp' := 
+    let ps := (elab_param "D" (stlc ++exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_ret ++ exp_subst_base ++ value_subst).
 
 Lemma stlc_parameterized_wf
-  : elab_lang_ext (exp_and_val_parameterized
-                       ++ty_subst_lang)
-      stlc_parameterized_def
+  : wf_lang_ext ((exp_parameterized++val_parameterized)
+                       ++ty_env_lang)
       stlc_parameterized.
-Proof. auto_elab. Qed.
+Proof.
+  change (exp_parameterized++val_parameterized) with evp'.
+  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
+  (*TODO: need to strengthen parameterization pl w/ add'l language?
+    Currently cheating.
+   *)
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+Qed.
 #[export] Hint Resolve stlc_parameterized_wf : elab_pfs.
 
 
 Definition src_parameterized :=
-  Eval compute in
     let ps := (elab_param "D" (src_ext ++ exp_ret ++ exp_subst_base
-                                 ++ val_subst++[("ty",sort_rule[][])])
+                                 ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
@@ -76,20 +97,56 @@ Definition src_parameterized :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps src_ext.
 
-Definition src_parameterized_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (src_parameterized++
-                       exp_and_val_parameterized
-                       ++ty_subst_lang)
-                    src_parameterized.
+
+Local Definition evp'' := 
+    let ps := (elab_param "D" (src_ext ++exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_subst ++ value_subst).
+
+(*TODO: move to Core.v*)
+Lemma wf_lang_concat' (l_pre l1 l2 : lang)
+  : wf_lang_ext l_pre l1 ->
+    wf_lang_ext (l1++l_pre) l2 ->
+    wf_lang_ext l_pre (l2 ++ l1).
+Proof.
+  induction 2; basic_goal_prep; basic_core_firstorder_crush.
+  rewrite <- app_assoc; eauto.
+Qed.
+
+Ltac prove_from_known_elabs ::=
+  rewrite <- ?as_nth_tail;
+   repeat
+    lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => compute_all_fresh
+    | |- incl _ _ => compute_incl
+    end.
 
 
 Lemma src_parameterized_wf
-  : elab_lang_ext (exp_and_val_parameterized
-                       ++ty_subst_lang)
-      src_parameterized_def
+  : wf_lang_ext ((exp_parameterized++val_parameterized)
+                       ++ty_env_lang)
       src_parameterized.
-Proof. auto_elab. Qed.
+Proof.
+  change (exp_parameterized++val_parameterized) with evp''.
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | try now prove_from_known_elabs..
+    | vm_compute; exact I].
+  {
+    unfold src_ext.
+    prove_from_known_elabs.
+  }
+Qed.
 #[export] Hint Resolve src_parameterized_wf : elab_pfs.
 
 
@@ -107,33 +164,6 @@ Definition hide_compiler {V} `{Eqb V} `{WithDefault V} (l : Rule.lang V)
   : CompilerDefs.compiler V -> _:=
   NamedList.named_map (hide_ccase_implicits l).
 
-                        
-Definition block_and_val_parameterized :=
-  Eval compute in
-    let ps := (elab_param "D" (block_subst
-                                 ++ val_subst++[("ty",sort_rule[][])])
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("blk",Some 1)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps (block_subst ++ val_subst).
-
-
-Definition block_and_val_parameterized_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (block_and_val_parameterized
-                       ++ty_subst_lang)
-                    block_and_val_parameterized.
-
-Lemma block_and_val_parameterized_wf
-  : elab_lang_ext ty_subst_lang
-      block_and_val_parameterized_def
-      block_and_val_parameterized.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve block_and_val_parameterized_wf : elab_pfs.
-(*TODO: recompile & remove above*)
 
 Definition cps_full := (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]).
 
@@ -151,34 +181,11 @@ Definition rule_to_param_spec (x : string) r :=
 src = src_parameterized
          ++exp_and_val_parameterized*)
 
-Definition cps_parameterized :=
-  Eval compute in
-    (*TODO: elab_param seems to do the right thing, why is
-      parameterize_compiler doing the wrong thing with it?
-     *)
-    let ps := (elab_param "D" (src_ext ++ exp_ret ++ exp_subst_base
-                                 ++ val_subst++[("ty",sort_rule[][])])
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-    let pir :=  (elab_param "D" (ir_ext ++ block_subst
-                                 ++ val_subst++[("ty",sort_rule[][])])
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("blk",Some 1)]) in
-    parameterize_compiler "D"
-      (*firstn 44 skips the rule for ty*)
-    pir ps (firstn 44 cps_full).
 
 
 Definition ir_parameterized :=
-  Eval compute in
-    let ps := (elab_param "D" (ir_ext ++ block_subst
-                                 ++ val_subst++[("ty",sort_rule[][])])
+  let ps := (elab_param "D" (ir_ext ++ block_subst
+                                 ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
                 ("env", Some 0);
@@ -187,30 +194,60 @@ Definition ir_parameterized :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps ir_ext.
 
-Definition ir_parameterized_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (ir_parameterized++
-                       block_and_val_parameterized
-                       ++ty_subst_lang)
-                    ir_parameterized.
-
+Local Definition bvp' :=
+  let ps := (elab_param "D" (ir_ext
+                               ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (block_subst ++ value_subst).
 
 Lemma ir_parameterized_wf
-  : elab_lang_ext (block_and_val_parameterized
-                       ++ty_subst_lang)
-      ir_parameterized_def
+  : wf_lang_ext ((block_parameterized++
+                       val_parameterized)
+                       ++ty_env_lang)
       ir_parameterized.
-Proof. auto_elab. Qed.
+Proof.
+  change (block_parameterized++val_parameterized) with bvp'.
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | try now prove_from_known_elabs..
+    | vm_compute; exact I].
+  {
+    unfold ir_ext.
+    prove_from_known_elabs.
+  }
+Qed.
 #[export] Hint Resolve ir_parameterized_wf : elab_pfs.
 
-Definition cps_parameterized_def :=
-  Eval compute in hide_compiler
-                    (ir_parameterized++
-                       block_and_val_parameterized
-                       ++ty_subst_lang)
-                    cps_parameterized.
 
-
+Definition cps_parameterized :=
+    (*TODO: elab_param seems to do the right thing, why is
+      parameterize_compiler doing the wrong thing with it?
+     *)
+    let ps := (elab_param "D" (src_ext ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+    let pir :=  (elab_param "D" (ir_ext ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+    parameterize_compiler "D"
+      (*firstn 44 skips the rule for ty. TODO: still necessary?*)
+      pir ps cps_full.
+(*
 Definition id_ccase '(n,r) : list (string * compiler_case string) :=
   match r with
   | sort_rule c _ => [(n,sort_case (map fst c) (scon n (map var (map fst c))))]
@@ -219,7 +256,7 @@ Definition id_ccase '(n,r) : list (string * compiler_case string) :=
   end.
   
 Definition id_compiler : lang -> compiler :=
-  flat_map id_ccase.
+  flat_map id_ccase.*)
 
 (*
 Lemma id_compiler_preserving (l l' : lang)
@@ -236,48 +273,54 @@ Proof.
   1:auto.
  *)
 
-Definition ty_subst_cmp := id_compiler ty_subst_lang.
-Definition ty_subst_cmp_def :=
-  Eval compute in hide_compiler ty_subst_lang ty_subst_cmp.
+Definition ty_env_cmp := id_compiler ty_env_lang.
 
+(*TODO: prove the more general version*)
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.ElabCompilers.
 Lemma ty_subst_id_compiler_correct
-  : (elab_preserving_compiler []
-       ty_subst_lang
-       ty_subst_cmp_def
-       ty_subst_cmp
-       ty_subst_lang).
+  : (preserving_compiler_ext
+       (tgt_Model:=core_model ty_env_lang)
+       []
+       ty_env_cmp
+       ty_env_lang).
 Proof.
-  auto_elab_compiler.
+  apply id_compiler_preserving; try typeclasses eauto.
+  prove_from_known_elabs.
 Qed.
 #[export] Hint Resolve ty_subst_id_compiler_correct : elab_pfs.
      
 
 Lemma cps_parameterized_correct
-  : elab_preserving_compiler ty_subst_cmp
-      (ir_parameterized
-         ++ block_and_val_parameterized
-         ++ty_subst_lang)
-      cps_parameterized_def
+  : preserving_compiler_ext
+      (tgt_Model:=core_model ((ir_parameterized
+                                ++ (block_parameterized++
+                                      val_parameterized))
+                                ++ty_env_lang))
+      ty_env_cmp
       cps_parameterized
-      
       (src_parameterized
-         ++exp_and_val_parameterized).
+         ++ (exp_parameterized++
+               val_parameterized)).
 Proof.
-  Optimize Heap.
-  auto_elab_compiler.
-  - cleanup_elab_after eredex_steps_with ir_parameterized "heap_comm".
-  - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_miss".
-  - cleanup_elab_after eredex_steps_with ir_parameterized "lookup_empty".
-  - cleanup_elab_after
-    (reduce;
-    eapply eq_term_trans;
-    [eredex_steps_with ir_parameterized "eval get"|];
-    by_reduction).
-  - cleanup_elab_after
-    (reduce;
-     eapply eq_term_trans;
-     [eredex_steps_with ir_parameterized "eval get"|];
-     by_reduction).
+  change (exp_parameterized++val_parameterized) with evp''.
+  unfold ty_env_cmp, cps_parameterized,
+    src_parameterized, evp''.
+  unfold parameterize_lang.
+  rewrite <- map_app.
+  match goal with
+  | |- context[core_model ?l] =>
+      let y := type of l in
+      let x := open_constr:(_:y) in
+      replace (core_model l) with (core_model x)
+  end.
+  1:eapply parameterize_compiler_preserving.
+  all: try typeclasses eauto.
+  1,2:repeat t'; try constructor.
+  1: eapply use_compute_all_fresh; vm_compute; exact I.
+  2:eapply full_cps_compiler_preserving.
+  1:prove_from_known_elabs.
+  1:unfold src_ext;prove_from_known_elabs.
+  2: reflexivity.
+  1: vm_compute; exact I.
 Qed.
 #[export] Hint Resolve cps_parameterized_correct : elab_pfs.
