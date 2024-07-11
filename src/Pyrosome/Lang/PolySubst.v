@@ -513,19 +513,8 @@ Lemma env_ty_subst_wf
 Proof. auto_elab. Qed.
 #[export] Hint Resolve env_ty_subst_wf : elab_pfs.
 
-
-Definition exp_ty_subst_def : lang _ :=
+Definition val_ty_subst_def : lang _ :=
   {[l
-       [:| "D" : #"ty_env",
-           "D'" : #"ty_env",
-           "g" : #"ty_sub" "D" "D'",
-           "G" : #"env" "D'",
-           "A" : #"ty" "D'",
-           "e" : #"exp" "D'" "G" "A" 
-           -----------------------------------------------
-           #"exp_ty_subst" "g" "e"
-           : #"exp" "D" (#"env_ty_subst" "g" "G") (#"ty_subst" "g" "A")
-       ];
     [:| "D" : #"ty_env",
            "D'" : #"ty_env",
            "g" : #"ty_sub" "D" "D'",
@@ -546,6 +535,31 @@ Definition exp_ty_subst_def : lang _ :=
            #"sub_ty_subst" "g" "v"
            : #"sub" "D" (#"env_ty_subst" "g" "G") (#"env_ty_subst" "g" "G'")
        ]
+  ]}.
+
+Derive val_ty_subst
+  SuchThat (elab_lang_ext (env_ty_subst
+                             ++ty_subst_lang
+                             ++val_parameterized
+                             ++ty_env_lang)
+      val_ty_subst_def
+      val_ty_subst)
+       As val_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve val_ty_subst_wf : elab_pfs. 
+
+Definition exp_ty_subst_def : lang _ :=
+  {[l
+       [:| "D" : #"ty_env",
+           "D'" : #"ty_env",
+           "g" : #"ty_sub" "D" "D'",
+           "G" : #"env" "D'",
+           "A" : #"ty" "D'",
+           "e" : #"exp" "D'" "G" "A" 
+           -----------------------------------------------
+           #"exp_ty_subst" "g" "e"
+           : #"exp" "D" (#"env_ty_subst" "g" "G") (#"ty_subst" "g" "A")
+       ]
       ]}.
 
 Derive exp_ty_subst
@@ -560,67 +574,44 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
 
 
-Definition exp_and_val_param_substs_def :=
-  eqn_rules type_subst_mode (exp_ty_subst++env_ty_subst++exp_parameterized++val_parameterized ++ty_subst_lang)
-   (exp_parameterized_def++val_parameterized_def).
+Definition val_param_substs_def :=
+  Eval compute in
+    eqn_rules type_subst_mode (val_ty_subst ++ env_ty_subst
+                                 ++ val_parameterized ++ ty_subst_lang)
+   val_parameterized_def.
              
-Derive exp_and_val_param_substs
-  SuchThat (elab_lang_ext (exp_ty_subst
+Derive val_param_substs
+  SuchThat (elab_lang_ext (val_ty_subst
+                             ++env_ty_subst
+                             ++ty_subst_lang
+                             ++val_parameterized
+                             ++ty_env_lang)
+              val_param_substs_def
+              val_param_substs)
+  As val_param_substs_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve val_param_substs_wf : elab_pfs.
+
+Definition exp_param_substs_def :=
+  Eval compute in
+    eqn_rules type_subst_mode (exp_ty_subst++val_ty_subst
+                                 ++env_ty_subst++exp_parameterized
+                                 ++val_parameterized ++ty_subst_lang)
+   exp_parameterized_def.
+             
+Derive exp_param_substs
+  SuchThat (elab_lang_ext (val_param_substs
+                             ++exp_ty_subst
+                             ++val_ty_subst
                              ++env_ty_subst
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
-              exp_and_val_param_substs_def
-              exp_and_val_param_substs)
-  As exp_and_val_param_substs_wf.
-Proof.
-  setup_elab_lang.
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  - break_elab_rule.
-    all: unfold Model.eq_term.
-    all: compute_eq_compilation.
-    all: try apply eq_term_refl.
-    all: try  cleanup_auto_elab.
-    (* Note: wkn's argument can't be inferred here*)
-    instantiate (1:= {{e #"ty_subst" "D'" "D" "d" "A"}}).
-    by_reduction.
-  - break_elab_rule.
-    all: unfold Model.eq_term.
-    all: compute_eq_compilation.
-    all: try apply eq_term_refl.
-    all: try  cleanup_auto_elab.
-    instantiate (1:= {{e #"env_ty_subst" "D'" "D" "d" "G"}}).
-    by_reduction.
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-     cleanup_auto_elab ]).
-   Unshelve.
-   all: cleanup_auto_elab.
-Qed.
-#[export] Hint Resolve exp_and_val_param_substs_wf : elab_pfs.
+              exp_param_substs_def
+              exp_param_substs)
+  As exp_param_substs_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exp_param_substs_wf : elab_pfs.
 
 Local Open Scope lang_scope.
 Definition poly_def : lang _ :=
@@ -629,6 +620,16 @@ Definition poly_def : lang _ :=
       -----------------------------------------------
       #"All" "A" : #"ty" "D"
   ];
+    (*TODO: autogenerate:*)
+    [:= "D" : #"ty_env",
+              "A" : #"ty" (#"ty_ext" "D"),
+              "D'" : #"ty_env",
+              "d" : #"ty_sub" "D'" "D"
+              ----------------------------------------------- ("ty_subst All")
+              #"ty_subst" "d" (#"All" "A")
+               = #"All" (#"ty_subst" (#"ty_snoc" (#"ty_cmp" #"ty_wkn" "d") #"ty_hd") "A")
+               : #"ty" "D'"
+          ];
     [:| "D" : #"ty_env",
        "G" : #"env" "D",
        "A" :  #"ty" (#"ty_ext" "D"),
@@ -674,20 +675,24 @@ Definition poly_def : lang _ :=
        ----------------------------------------------- ("subst @")
        #"exp_subst" "g" (#"@" "e" "B")
        = #"@" (#"exp_subst" "g" "e") "B" : #"exp" "D" "G'" (#"ty_subst" (#"ty_snoc" #"ty_id" "B") "A")
-    ]
-    (* TODO: autogenerate G substs w/ ambient D *)
-    
-    (*
-  [:= "D" : #"ty_env",
-      "G" : #"env" "D",
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
         "A" : #"ty" (#"ty_ext" "D"),
-       "v" : #"val" "D" "G" (#"All" "A")
+        "v" : #"val" "D" "G" (#"All" "A")
         ----------------------------------------------- ("Lam-eta")
-      #"Lam" (#"@" (#"ret" "v") (#"ret" #"ty_hd"))
-      = "v"
-      : #"val" "D" "G" (#"All" "A")
-  ] *)
+        #"Lam" (#"@" (#"ret" (#"val_ty_subst" #"ty_wkn" "v")) #"ty_hd")
+        = "v"
+        : #"val" "D" "G" (#"All" "A")
+  ]
   ]}.
+
+(*TODO: add in*)
+  Eval compute in
+    eqn_rules type_subst_mode (exp_ty_subst++val_ty_subst
+                                 ++env_ty_subst++exp_parameterized
+                                 ++val_parameterized ++ty_subst_lang)
+    poly_def.
 
 #[export] Hint Resolve (inst_for_db "ty_id") : injective_con.
 #[export] Hint Resolve (inst_for_db "ty_emp") : injective_con.
@@ -707,8 +712,10 @@ Definition poly_def : lang _ :=
 #[export] Hint Resolve (inst_for_db "All") : injective_con.
 
 Derive poly
-  SuchThat (elab_lang_ext (exp_and_val_param_substs
+  SuchThat (elab_lang_ext (exp_param_substs
                              ++ exp_ty_subst
+                             ++ val_param_substs
+                             ++ val_ty_subst
                              ++env_ty_subst
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
@@ -837,66 +844,24 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve block_ty_subst_wf : elab_pfs. 
 
 
-(*TODO: split and*)
-Definition block_and_val_param_substs_def :=
-  eqn_rules type_subst_mode (block_ty_subst++env_ty_subst
+Definition block_param_substs_def :=
+  Eval compute in
+  eqn_rules type_subst_mode (val_param_substs
+                               ++block_ty_subst++env_ty_subst
                                ++block_parameterized
                                ++val_parameterized++ty_subst_lang)
-    (block_parameterized_def ++ val_parameterized_def).
+    block_parameterized_def.
              
-Derive block_and_val_param_substs
-  SuchThat (elab_lang_ext (block_ty_subst
+Derive block_param_substs
+  SuchThat (elab_lang_ext (val_param_substs
+                             ++block_ty_subst
                              ++env_ty_subst
-                               ++block_parameterized
-                               ++ty_subst_lang
-                               ++val_parameterized
+                             ++block_parameterized
+                             ++ty_subst_lang
+                             ++val_parameterized
                              ++ty_env_lang)
-              block_and_val_param_substs_def
-              block_and_val_param_substs)
-  As block_and_val_param_substs_wf.
-Proof.
-  (*TODO: generate eqns from elabb'ed terms*)
-  setup_elab_lang.
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-  - break_elab_rule.
-    all: unfold Model.eq_term.
-    all: compute_eq_compilation.
-    all: try apply eq_term_refl.
-    all: try  cleanup_auto_elab.
-    (* Note: wkn's argument can't be inferred here*)
-    instantiate (1:= {{e #"ty_subst" "D'" "D" "d" "A"}}).
-    by_reduction.
-  - break_elab_rule.
-    all: unfold Model.eq_term.
-    all: compute_eq_compilation.
-    all: try apply eq_term_refl.
-    all: try  cleanup_auto_elab.
-    instantiate (1:= {{e #"env_ty_subst" "D'" "D" "d" "G"}}).
-    by_reduction.
-  -(first
-   [ unshelve (solve [ break_elab_rule; apply eq_term_refl; cleanup_auto_elab ]); try apply eq_term_refl;
-      cleanup_auto_elab ]).
-   Unshelve.
-   all: cleanup_auto_elab.
-Qed.
-#[export] Hint Resolve block_and_val_param_substs_wf : elab_pfs.
+              block_param_substs_def
+              block_param_substs)
+  As block_param_substs_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve block_param_substs_wf : elab_pfs.
