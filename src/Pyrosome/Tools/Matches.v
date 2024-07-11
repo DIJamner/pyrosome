@@ -838,7 +838,7 @@ Ltac try_cong :=
       eapply term_con_congruence;
       [solve_in | left; sort_cong | assumption
       | repeat (eapply eq_args_cons || eapply eq_args_nil)];
-      cbn -[nth_tail]
+      cbn_eq_goal
   end.
 
 Ltac process_eq_term :=
