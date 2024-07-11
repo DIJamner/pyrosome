@@ -324,3 +324,465 @@ Proof.
   1: vm_compute; exact I.
 Qed.
 #[export] Hint Resolve cps_parameterized_correct : elab_pfs.
+
+
+Local Open Scope lang_scope.
+Definition exists_def : lang _ :=
+  {[l (*l/subst TODO: psubst*)
+  [:| "D" : #"ty_env", "A" : #"ty" (#"ty_ext" "D")
+      -----------------------------------------------
+      #"Exists" "A" : #"ty" "D"
+  ];
+    (*TODO:autogenerate*)
+  [:= "D" : #"ty_env",
+      "A" : #"ty" (#"ty_ext" "D"),
+      "D'" : #"ty_env",
+      "d" : #"ty_sub" "D'" "D"
+      ----------------------------------------------- ("ty_subst Exists")
+      #"ty_subst" "d" (#"Exists" "A")
+      = #"Exists" (#"ty_subst" (#"ty_snoc" (#"ty_cmp" #"ty_wkn" "d") #"ty_hd") "A")
+      : #"ty" "D'"
+   ];
+    [:| "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" "D",
+       "B" :  #"ty" (#"ty_ext" "D"),
+       "v" : #"val" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "A") "B")
+       -----------------------------------------------
+       #"pack_val" "A" "v" : #"val" "D" "G" (#"Exists" "B")
+  ];
+    [:| "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" "D",
+       "B" :  #"ty" (#"ty_ext" "D"),
+       "e" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "A") "B")
+       -----------------------------------------------
+       #"pack" "A" "e" : #"exp" "D" "G" (#"Exists" "B")
+  ];
+  [:| "D" : #"ty_env",
+      "G" : #"env" "D",
+      "B" : #"ty" (#"ty_ext" "D"),
+      "e" : #"exp" "D" "G" (#"Exists" "B"),
+      "C" : #"ty" "D",
+      "e'" : #"exp" (#"ty_ext" "D") (#"ext" (#"env_ty_subst" #"ty_wkn" "G") "B")
+               (#"ty_subst" #"ty_wkn" "C")
+       -----------------------------------------------
+       #"unpack" "e" "e'" : #"exp" "D" "G" "C"
+  ];
+  [:=  "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" "D",
+       "B" :  #"ty" (#"ty_ext" "D"),
+       "v" : #"val" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "A") "B"),
+      "C" : #"ty" "D",
+      "e'" : #"exp" (#"ty_ext" "D") (#"ext" (#"env_ty_subst" #"ty_wkn" "G") "B")
+               (#"ty_subst" #"ty_wkn" "C")
+      ----------------------------------------------- ("unpack-beta")
+      #"unpack" (#"ret" (#"pack_val" "A" "v")) "e'"
+      = #"exp_subst" (#"snoc" #"id" "v") (#"exp_ty_subst" (#"ty_snoc" #"ty_id" "A") "e'")
+      : #"exp" "D" "G" "C"
+  ]
+  ]}.
+
+#[export] Hint Resolve (inst_for_db "Exists") : injective_con.
+
+(*TODO: add in*)
+  Eval compute in
+    eqn_rules type_subst_mode (exp_ty_subst++val_ty_subst
+                                 ++env_ty_subst++exp_parameterized
+                                 ++val_parameterized ++ty_subst_lang)
+    exists_def.
+
+Derive exists_lang
+  SuchThat (elab_lang_ext (exp_param_substs
+                             ++ exp_ty_subst
+                             ++ val_param_substs
+                             ++ val_ty_subst
+                             ++env_ty_subst
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
+              exists_def exists_lang)
+       As exists_lang_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exists_lang_wf : elab_pfs. 
+
+
+Definition exists_block_def : lang _ :=
+  {[l (*l/subst TODO: psubst*)
+  [:| "D" : #"ty_env", "A" : #"ty" (#"ty_ext" "D")
+      -----------------------------------------------
+      #"Exists" "A" : #"ty" "D"
+  ];
+    [:= "D" : #"ty_env",
+              "A" : #"ty" (#"ty_ext" "D"),
+              "D'" : #"ty_env",
+              "d" : #"ty_sub" "D'" "D"
+              ----------------------------------------------- ("ty_subst Exists")
+              #"ty_subst" "d" (#"Exists" "A")
+               = #"Exists" (#"ty_subst" (#"ty_snoc" (#"ty_cmp" #"ty_wkn" "d") #"ty_hd") "A")
+               : #"ty" "D'"
+          ];
+    [:| "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" "D",
+       "B" :  #"ty" (#"ty_ext" "D"),
+       "v" : #"val" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "A") "B")
+       -----------------------------------------------
+       #"pack" "A" "v" : #"val" "D" "G" (#"Exists" "B")
+  ];
+  [:| "D" : #"ty_env",
+      "G" : #"env" "D",
+      "B" : #"ty" (#"ty_ext" "D"),
+      "v" : #"val" "D" "G" (#"Exists" "B"),
+      "e" : #"blk" (#"ty_ext" "D") (#"ext" (#"env_ty_subst" #"ty_wkn" "G") "B")
+       -----------------------------------------------
+       #"unpack" "v" "e" : #"blk" "D" "G"
+  ];
+  [:=  "D" : #"ty_env",
+       "G" : #"env" "D",
+       "A" :  #"ty" "D",
+       "B" :  #"ty" (#"ty_ext" "D"),
+       "v" : #"val" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "A") "B"),
+      "e" : #"blk" (#"ty_ext" "D") (#"ext" (#"env_ty_subst" #"ty_wkn" "G") "B")
+      ----------------------------------------------- ("unpack-beta")
+      #"unpack" (#"pack" "A" "v") "e"
+      = #"blk_subst" (#"snoc" #"id" "v") (#"blk_ty_subst" (#"ty_snoc" #"ty_id" "A")"e")
+      : #"blk" "D" "G"
+  ]
+  ]}.
+
+(*TODO: add in*)
+  Eval compute in
+    eqn_rules type_subst_mode (block_ty_subst++val_ty_subst
+                                 ++env_ty_subst++block_parameterized
+                                 ++val_parameterized ++ty_subst_lang)
+    exists_block_def.
+
+Derive exists_block_lang
+  SuchThat (elab_lang_ext (block_param_substs
+                             ++val_param_substs
+                             ++ block_ty_subst
+                             ++env_ty_subst
+                             ++ty_subst_lang
+                             ++block_parameterized++val_parameterized
+                             ++ty_env_lang)
+              exists_block_def exists_block_lang)
+       As exists_block_lang_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve exists_block_lang_wf : elab_pfs. 
+
+Import CompilerDefs.Notations.
+
+
+
+Definition exp_ty_subst_cps_def : compiler string :=
+  match # from (exp_param_substs ++ exp_ty_subst) with
+  | {{e #"exp_ty_subst" "D" "D'" "g" "G" "A" "e"}} =>
+      {{e #"blk_ty_subst" "g" "e"}}
+  end.
+
+(*TODO: upstream*)
+Ltac auto_elab_compiler :=
+  cleanup_elab_after setup_elab_compiler;
+  repeat ([> repeat Matches.t;cleanup_elab_after try (solve [ by_reduction ]) |..]).
+
+Require Import Tools.UnElab.
+
+Definition ir_param_substs_def :=
+  Eval compute in
+    let deps := (block_param_substs
+                                 ++ val_param_substs
+                                 ++ block_ty_subst
+                                 ++ env_ty_subst
+                                 ++ ty_subst_lang
+                                 ++ block_parameterized
+                                 ++ val_parameterized
+                                 ++ ty_env_lang) in
+    eqn_rules type_subst_mode deps
+    (hide_lang_implicits (ir_parameterized++deps) ir_parameterized).
+
+Derive ir_param_substs
+  SuchThat (elab_lang_ext (ir_parameterized
+                             ++block_param_substs
+                             ++val_param_substs
+                             ++block_ty_subst
+                             ++env_ty_subst
+                             ++block_parameterized
+                             ++ty_subst_lang
+                             ++val_parameterized
+                             ++ty_env_lang)
+              ir_param_substs_def
+              ir_param_substs)
+  As ir_param_substs_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve ir_param_substs_wf : elab_pfs.
+
+Let cmp' := Eval compute in cps_parameterized.
+Derive exp_ty_subst_cps
+  SuchThat (elab_preserving_compiler
+              (id_compiler (val_param_substs
+                             ++ val_ty_subst
+                              ++env_ty_subst
+                              ++ty_subst_lang)
+                 ++ cps_parameterized++ty_env_cmp)
+              (ir_param_substs
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+              exp_ty_subst_cps_def
+              exp_ty_subst_cps
+              (exp_param_substs ++ exp_ty_subst))
+  As exp_ty_subst_cps_preserving.
+Proof.
+  auto_elab_compiler.
+  {
+    right.
+
+    compute_eq_compilation.
+    sort_cong.
+    all: try term_refl.
+    compute_eq_compilation.
+    by_reduction. (*TODO: fix auto_elab_compiler to handle*)
+  }
+  Unshelve.
+  repeat Matches.t'.
+Qed.
+
+
+  (*TODO: upstream*)
+  Ltac eredex_steps_with' lang name' :=
+    let V := string in
+    let mr := eval vm_compute in (named_list_lookup_err lang name') in
+      lazymatch mr with
+      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
+          lazymatch goal with
+          | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
+              let s1 := open_constr:((_ : subst V)) in
+              let s2 := open_constr:((_ : subst V)) in
+              let s3 := open_constr:((_ : subst V)) in
+              (first [ unify_var_names V s1 c; unify_var_names V s2 c; unify_var_names V s3 c
+                     | fail 2 "could not unify var names" ]);
+              (first [ eapply (eq_term_conv (t:= tp [/s1 /]));
+                       [eapply (eq_term_trans (l:=l) (c:=c') (e1:=e1) (e12:= e1p [/s2 /]));
+                        [ try term_refl
+                        | eapply (eq_term_trans (l:=l) (c:=c') (e12:= e2p [/s3 /]));
+                          [eapply eq_term_subst;
+                           [eapply eq_term_by with (name:=name'); solve_in
+                           |repeat apply  eq_subst_cons; try apply  eq_subst_nil;
+                            process_eq_term
+                           |try (solve [ cleanup_auto_elab ])]
+                          |try term_refl]]
+                       | sort_cong; repeat process_eq_term]
+                         
+                     | fail 2 "could not replace with subst" ])
+          end
+      | None => fail 100 "rule not found in lang"
+      end.
+
+Definition poly_cps_def : compiler string :=
+  match # from poly with
+  | {{e #"All" "D" "A"}} =>
+    {{e #"neg" (#"Exists" (#"neg" "A")) }}
+  | {{e #"Lam" "D" "G" "A" "e"}} =>
+      {{e #"cont" (#"Exists" (#"neg" "A"))
+          (#"unpack" #"hd" (#"blk_subst" (#"snoc" (#"cmp" #"wkn" #"wkn") #"hd") "e")) }}
+  | {{e #"@" "D" "G" "A" "e" "B"}} =>      
+    bind_k 1 (var "e") {{e #"neg" (#"Exists" (#"neg" "A")) }}
+    {{e #"jmp" {ovar 0} (#"pack" "B" {ovar 1}) }}
+  end.
+
+
+TODO: not id on exp_param_substs ++
+        exp_ty_subst, need compiler for them
+                           (map exp subst to blk subst)
+                           
+Let cmp' := Eval compute in cps_parameterized.
+Derive poly_cps
+  SuchThat (elab_preserving_compiler
+              (id_compiler (val_param_substs
+                              ++env_ty_subst
+                              ++ty_subst_lang)
+                 ++ cps_parameterized++ty_env_cmp)
+              (exists_block_lang
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+              poly_cps_def
+              poly_cps
+              poly)
+  As poly_cps_preserving.
+Proof.
+  change cps_parameterized with cmp'.
+  cleanup_elab_after setup_elab_compiler.
+  (*  TODO: why are there unshelved terms? *)
+  1-3: shelve.
+  {
+    repeat Matches.t.
+  }
+  {
+    repeat Matches.t;cleanup_elab_after
+                       try (solve [ by_reduction ]).
+    right; sort_cong; try now term_refl.
+    cleanup_elab_after try (solve [ by_reduction ]).
+  }
+  {
+    repeat Matches.t;cleanup_elab_after
+                       try (solve [ by_reduction ]).
+    right; sort_cong; try now term_refl.
+    compute_eq_compilation.
+    reduce.
+    TODO: don't have rule for ty_subst on neg.
+    Finish substitutions and should be good to go.
+    cleanup_elab_after try (solve [ by_reduction ]).
+    cleanup_elab_after try (solve [ by_reduction ]).
+  }
+    right.
+    repeat Matches.t.
+    sort_cong.
+    1: now term_refl.
+    compute_eq_compilation.
+    by_reduction.
+    reduce.
+    cleanup_elab_after
+   try (solve [ by_reduction ]).
+    
+    left.
+    cbn.
+    by_reduction.
+    (#"snoc" (#"cmp" #"wkn" #"wkn") #"hd")
+    G,ExA,A => G,A
+    something like this?
+    (#"subst" (#"snoc" (under #"wkn") #"hd") "e")
+    Lam case.
+    TODO:issue: e doesn't have the right subst.
+    Need to replace old hd w/ new hd?
+    repeat Matches.t.
+    {
+      left.
+      cbn.
+      TODO: val d G on one side, val d ext on the other.
+      ret type (#"Exists" "D" (#"neg" (#"ty_ext" "D") "A"))
+    apply named_list_lookup_err_in; compute.
+    TODO: missing "env_ty_subst"
+    repeat f_equal.
+    ; reflexivity.
+  }
+    left.
+    match goal with
+      |- ?x = ?y =>
+        let x' := eval compute in x in
+          change (x' = y)
+    end.
+    TODO: is the issue that I don't have the id compiler for a part of the ext?
+             ty_subst_lang maybe?
+             (exp_and_val_param_substs ++
+     exp_ty_subst ++
+     env_ty_subst ++ ty_subst_lang ++ exp_parameterized ++ val_parameterized ++ ty_env_lang)
+    case for All:
+      - ex -[""] A
+    TODO: issue: "" in the substitution lining up w/ D
+    cbn [fst].
+    cleanup_elab_after
+      try (solve [ by_reduction ])
+          Ltac auto_elab_compiler :=
+  cleanup_elab_after setup_elab_compiler; repeat Matches.t; cleanup_elab_after
+   try (solve [ by_reduction ])
+
+  auto_elab_compiler.
+  {
+    cbn [fst] in *.
+    TODO: compiler linted? and still "" appears.
+
+  Import Tools.Linter.
+
+    Definition lint_ccase (src tgt : lang string) '(n,c) :=
+      match named_list_lookup_err src n, c with
+      (* rule disagreements *)
+      | None, (term_case args e) =>
+          [ccase_constr_unbound_in_lang n c] ++ (lint_term tgt args e)
+      | None, (sort_case args t) =>
+          [ccase_constr_unbound_in_lang n c] ++ (lint_sort tgt args t)
+      | Some (sort_rule _ _), (term_case args e) =>
+          [ccase_sort_give_term_case n e] ++ (lint_term tgt args e)
+      | Some (term_rule _ _ _), (sort_case args t)=>
+          [ccase_term_give_sort_case n t] ++ (lint_sort tgt args t)
+      | Some (sort_eq_rule _ _ _), (sort_case args t) 
+      | Some (term_eq_rule _ _ _ _), (sort_case args t) =>
+          [ccase_eqn_give_sort_case n t] ++ (lint_sort tgt args t)
+      | Some (sort_eq_rule _ _ _), (term_case args e)
+      | Some (term_eq_rule _ _ _ _), (term_case args e) =>
+          [ccase_eqn_give_term_case n e] ++ (lint_term tgt args e)
+      (* rule-matching cases *)
+      | Some (sort_rule c _), sort_case args t =>
+          (lint_ccase_args args c) ++ (lint_sort tgt args t)
+      | Some (term_rule c _ t), term_case args e =>
+          (lint_ccase_args args c) ++ (lint_term tgt args e)
+      end.
+
+  (*TODO: make more precise wrt comparing to l *)
+  Definition lint_cmp_ext src tgt cmp :=
+    flat_map (lint_ccase src tgt) cmp.
+    
+Ltac lint_compiler src tgt cmp :=
+  let lint_res := (eval vm_compute in (lint_cmp_ext src tgt cmp)) in
+  lazymatch lint_res with
+  | [] => idtac
+  (* TODO: print all errors *)
+  | ?e::_ => print_linting_err e
+  end.
+
+  match goal with
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+      lint_compiler src tgt cmp
+  end.
+  break_preserving
+  lint_compiler l cmp
+                  
+    TODO:  add lint to auto_elab_compiler
+  auto_elab_compiler. (*
+  16:{
+   (* TODO: compiler linter
+                   Linter .lint_lang_ex
+      auto_elab_compiler.
+    Goal: show "A" : "ty_env" (oops)in env D : "", A : ty ""*)
+  fail fail.
+  all: try lazymatch goal with
+  | |- string => shelve
+  | |- SimpleVSubst.sort => shelve
+         end.
+  4:{
+    TODO:default strings appearing, what case did I miss?.
+  all: try apply default.
+  (*To long.., maybe because langs aren't computed*)
+  TODO
+*)
+Qed.
+#[export] Hint Resolve poly_cps_preserving : elab_pfs.
+
+
+Derive poly_cps
+  SuchThat (elab_lang_ext (exp_and_val_param_substs
+                             ++ exp_ty_subst
+                             ++env_ty_subst
+                             ++ty_subst_lang
+                             ++exp_parameterized++val_parameterized
+                             ++ty_env_lang)
+              poly_def poly)
+       As poly_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve poly_wf : elab_pfs. 
+
+(*
+Definition poly_cps : compiler  :=
+*)
