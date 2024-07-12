@@ -1054,33 +1054,72 @@ Qed.
 
 
 Definition exists_cc_def : compiler string :=
-  match # from exists_lang with
+  match # from exists_block_lang with
   | {{e #"Exists" "D" "A"}} =>
       {{e #"Exists" "A" }}
-  | {{e #"pack_val" "D" "G" "A" "B" "v"}} =>
-      {{e #"pack" "A" "v" }}
-  | {{e #"pack" "D" "G" "A" "B" "e"}} =>
-      bind_k 1 (var "e") {{e #"ty_subst" (#"ty_snoc" #"ty_id" "A") "B" }}
-        {{e #"jmp" {ovar 1} (#"pack" "A" {ovar 0}) }}
-  | {{e #"unpack" "D" "G" "B" "e" "C" "e'" }} =>
-    bind_k 1 (var "e") {{e #"Exists" "B" }}
-      {{e #"unpack" {ovar 0} (#"blk_subst" {swap} "e'")  }}
+  | {{e #"pack" "D" "G" "A" "B" "v"}} =>
+        {{e #"pack" "A" "v" }}
+  | {{e #"unpack" "D" "G" "B" "v" "e'" }} =>
+      {{e #"unpack" "v" (#"blk_subst" (#"snoc" #"forget" (#"pair" {ovar 1} #"hd")) "e")  }}
   end.
 
-TODO: exists_cps
-Derive exists_cc
+
+Definition tgt_param_substs_def :=
+  Eval compute in
+    let deps := (block_param_substs
+                                 ++ val_param_substs
+                                 ++ block_ty_subst
+                                 ++ env_ty_subst
+                                 ++ ty_subst_lang
+                                 ++ block_parameterized
+                                 ++ val_parameterized
+                                 ++ ty_env_lang) in
+    eqn_rules type_subst_mode deps
+    (hide_lang_implicits (tgt_parameterized++deps) tgt_parameterized).
+
+Derive tgt_param_substs
+  SuchThat (elab_lang_ext (tgt_parameterized
+                             ++block_param_substs
+                             ++val_param_substs
+                             ++block_ty_subst
+                             ++env_ty_subst
+                             ++block_parameterized
+                             ++ty_subst_lang
+                             ++val_parameterized
+                             ++ty_env_lang)
+              tgt_param_substs_def
+              tgt_param_substs)
+  As tgt_param_substs_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve tgt_param_substs_wf : elab_pfs.
+
+Compute ty_subst_lang.
+
+Let cmp'' := Eval compute in cc_parameterized.
+
+Compute subst_cc.
+
+
+Definition block_ty_subst_cc_def : compiler string :=
+  match # from (block_param_substs ++ block_ty_subst
+                  ++val_param_substs ++ val_ty_subst
+                  ++env_ty_subst) with
+  | {{e #"env_ty_subst" "D" "D'" "g" "G"}} =>
+      {{e #"ty_subst" "g" "G"}}
+  | {{e #"val_ty_subst" "D" "D'" "g" "G" "A" "v"}} =>
+      {{e #"val_ty_subst" "g" "v"}}
+  | {{e #"sub_ty_subst" "D" "D'" "d" "G" "G'" "g"}} =>
+      {{e #"val_ty_subst" "d" "g"}}
+  | {{e #"blk_ty_subst" "D" "D'" "g" "G" "e"}} =>
+      {{e #"blk_ty_subst" "g" "e"}}
+  end.
+
+Derive block_ty_subst_cc
   SuchThat (elab_preserving_compiler
-              (exp_ty_subst_cps <--- what's this; replace
-                 ++ id_compiler (val_param_substs
-                                   ++ val_ty_subst
-                                   ++env_ty_subst
-                                   ++ty_subst_lang)
+              (id_compiler (ty_subst_lang)
                  ++ cc_parameterized++ty_env_cmp)
-              (exists_block_lang
-                 
-                 ++ ir_param_substs
-                 ++ ir_parameterized (*TODO: only include conts*)
-                 
+              (tgt_param_substs
+                 ++ tgt_parameterized (*TODO: only include conts*)
                  ++ block_param_substs
                  ++ val_param_substs
                  ++ block_ty_subst
@@ -1088,24 +1127,22 @@ Derive exists_cc
                  ++ty_subst_lang
                  ++block_parameterized++val_parameterized
                  ++ty_env_lang)
-              exists_cps_def
-              exists_cps
-              exists_lang)
-  As exists_cps_preserving.
-Proof.
-  auto_elab_compiler.
+              block_ty_subst_cc_def
+              block_ty_subst_cc
+              (block_param_substs ++ block_ty_subst++val_param_substs
+                 ++ val_ty_subst++env_ty_subst))
+  As block_ty_subst_cc_preserving.
+Proof. auto_elab_compiler. Qed.
+#[export] Hint Resolve block_ty_subst_cc_preserving : elab_pfs.
 
+Derive exists_cc
   SuchThat (elab_preserving_compiler
-              (exp_ty_subst_cps
-                 ++ id_compiler (val_param_substs
-                                   ++ val_ty_subst
-                                   ++env_ty_subst
-                                   ++ty_subst_lang)
-                 ++ cps_parameterized++ty_env_cmp)
+              (block_ty_subst_cc ++id_compiler (ty_subst_lang)
+                 ++ cc_parameterized++ty_env_cmp)
               (exists_block_lang
                  
-                 ++ ir_param_substs
-                 ++ ir_parameterized (*TODO: only include conts*)
+                 ++ tgt_param_substs
+                 ++ tgt_parameterized
                  
                  ++ block_param_substs
                  ++ val_param_substs
@@ -1117,5 +1154,105 @@ Proof.
               exists_cc_def
               exists_cc
               exists_block_lang)
-  As poly_cps_preserving.
+  As exists_cc_preserving.
 Proof.
+  auto_elab_compiler.
+  {
+    compute_eq_compilation.
+    reduce.
+    hide_implicits.
+    
+    match goal with
+      |- eq_term ?l' ?c ?t ?e1 ?e2 =>
+        let e := constr:({{e  #"blk_subst" (#"snoc" #"id" "v")
+                             (#"blk_subst" (#"snoc" #"forget" (#"pair" {ovar 1} #"hd")) "e") }})
+        in
+        let e' := open_constr:(_:term) in
+        assert (elab_term l' c e e' t) as H';
+        [| eapply eq_term_trans with (e12:=e');
+           clear H']
+    end.
+    {
+      repeat Matches.t.
+    }
+    2: by_reduction.
+    hide_implicits.
+    
+    
+    eapply eq_term_trans; cycle 1.
+    {
+      eredex_steps_with exists_block_lang "unpack-eta".
+    }
+    by_reduction.
+  }
+  {
+    compute_eq_compilation.
+    reduce.
+    hide_implicits.
+    term_cong;
+      compute_eq_compilation.
+    all: try term_refl.
+    compute_eq_compilation.
+    hide_implicits.
+    term_cong.
+    1: left.
+    all:compute_eq_compilation.
+    1: sort_cong.
+    all: try term_refl.
+    all:compute_eq_compilation.
+    1:by_reduction.
+    hide_implicits.
+    term_cong.
+    all:compute_eq_compilation.
+    all: try term_refl.
+    all:compute_eq_compilation.
+    hide_implicits.
+    term_cong.
+    all:compute_eq_compilation.
+    all: try term_refl.
+    all:compute_eq_compilation.
+    reduce.
+    hide_implicits.
+    term_cong.
+    all:compute_eq_compilation.
+    all: try term_refl.
+    all:compute_eq_compilation.
+    hide_implicits.
+
+    Ltac intermediate_term e :=      
+    match goal with
+      |- eq_term ?l' ?c ?t ?e1 ?e2 =>
+        let e' := open_constr:(_:term) in
+        assert (elab_term l' c e e' t) as H';
+        [| eapply eq_term_trans with (e12:=e');
+           clear H']
+    end.
+    intermediate_term constr:({{e #"cmp" #"wkn" (#"snoc" #"forget" #"hd")}}).
+    { repeat Matches.t. }
+    all: hide_implicits.
+    1:by_reduction.
+    eapply eq_term_trans.
+    { eredex_steps_with val_parameterized "cmp_snoc". }
+    hide_implicits.
+    all:compute_eq_compilation.
+    term_cong; try term_refl.
+    all:compute_eq_compilation.
+    eredex_steps_with val_parameterized  "cmp_forget".
+  }
+  Unshelve.
+  all:repeat Matches.t'.
+  {
+    eapply wf_term_by'.
+    1:solve_in.
+    1:repeat eapply wf_args_cons; try eapply wf_args_nil.
+    all:repeat Matches.t'.
+    right.
+    compute_eq_compilation.
+    sort_cong; try term_refl.
+    compute_eq_compilation.
+    by_reduction.
+  }
+  Unshelve.
+  all:repeat Matches.t'.
+Qed.
+#[export] Hint Resolve exists_cc_preserving : elab_pfs.
