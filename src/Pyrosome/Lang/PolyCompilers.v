@@ -471,7 +471,7 @@ Definition exists_block_def : lang _ :=
 
 (*TODO: add in*)
   Eval compute in
-    eqn_rules type_subst_mode (block_ty_subst++val_ty_subst
+    eqn_rules type_subst_mode (block_ty_subst(*++val_ty_subst*)
                                  ++env_ty_subst++block_parameterized
                                  ++val_parameterized ++ty_subst_lang)
     exists_block_def.
@@ -947,6 +947,7 @@ Proof.
 Qed.
 #[export] Hint Resolve exists_cps_preserving : elab_pfs.
 
+
 Definition tgt_parameterized :=
   let ps := (elab_param "D" (tgt_ext ++ block_subst
                                  ++ value_subst)
@@ -1101,8 +1102,8 @@ Compute subst_cc.
 
 
 Definition block_ty_subst_cc_def : compiler string :=
-  match # from (block_param_substs ++ block_ty_subst
-                  ++val_param_substs ++ val_ty_subst
+  match # from (block_param_substs
+                  ++val_param_substs ++ block_ty_subst
                   ++env_ty_subst) with
   | {{e #"env_ty_subst" "D" "D'" "g" "G"}} =>
       {{e #"ty_subst" "g" "G"}}
@@ -1129,8 +1130,8 @@ Derive block_ty_subst_cc
                  ++ty_env_lang)
               block_ty_subst_cc_def
               block_ty_subst_cc
-              (block_param_substs ++ block_ty_subst++val_param_substs
-                 ++ val_ty_subst++env_ty_subst))
+              (block_param_substs ++ val_param_substs
+                 ++ block_ty_subst++env_ty_subst))
   As block_ty_subst_cc_preserving.
 Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve block_ty_subst_cc_preserving : elab_pfs.
@@ -1256,3 +1257,1425 @@ Proof.
   all:repeat Matches.t'.
 Qed.
 #[export] Hint Resolve exists_cc_preserving : elab_pfs.
+
+Require Import Pyrosome.Compilers.CompilerTransitivity.
+
+  Local Notation preserving_compiler_ext' tgt cmp_pre cmp src :=
+    (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
+  
+    Lemma id_cmp_app (l l_pre : lang)
+      : id_compiler l ++ id_compiler l_pre = id_compiler (l ++ l_pre).
+    Proof.
+      unfold id_compiler.
+      rewrite flat_map_app.
+      auto.
+    Qed.
+Lemma id_compiler_preserving'  (l_pre l l' : lang)
+  : wf_lang l_pre ->
+    wf_lang_ext l_pre l -> incl l l' ->
+    preserving_compiler_ext' (l'++l_pre) (id_compiler l_pre) (id_compiler l) l.
+Proof.
+  intro wfl_pre.
+    induction l;
+      basic_goal_prep;
+      basic_core_crush.
+    destruct r;
+      basic_goal_prep;
+      constructor;
+      basic_utils_crush.
+    all: try use_rule_in_wf.
+    all: rewrite ?id_cmp_app.
+    all: rewrite id_compiler_identity_ctx; 
+      basic_core_crush.
+    { eapply wf_sort_by; basic_core_crush.
+      eapply id_args_wf; basic_utils_crush.
+      typeclasses eauto.
+    }
+    all: try typeclasses eauto.
+    {
+      replace (compile_sort (id_compiler (l ++ l_pre)) s0)
+        with s0[/with_names_from n (map var (map fst n))/].
+      { eapply wf_term_by; basic_core_crush.
+      eapply id_args_wf; basic_utils_crush.
+      typeclasses eauto.
+      }
+      {
+        etransitivity.
+        { apply sort_subst_id; eauto.
+          typeclasses eauto.
+        }
+        {
+          symmetry.
+          eapply id_compiler_identity; eauto.
+          1:typeclasses eauto.
+          basic_core_crush.
+        }
+      }
+    }
+    {
+      assert (wf_lang (l ++ l_pre)) as H' by basic_core_crush.
+      erewrite !(proj1 (id_compiler_identity H')); eauto.
+      eapply eq_sort_by; eauto.
+      basic_utils_crush.
+    }
+    {
+      assert (wf_lang (l ++ l_pre)) as H' by basic_core_crush.
+      erewrite !(proj1 (id_compiler_identity H')); eauto.
+      erewrite !(proj1 (proj2 (id_compiler_identity H'))); eauto.
+      eapply eq_term_by; eauto.
+      basic_utils_crush.
+    }
+  Qed.
+
+  Lemma id_compiler_preserving (l l_pre : lang)
+    : wf_lang l_pre ->
+      wf_lang_ext l_pre l ->
+      preserving_compiler_ext' (l++l_pre) (id_compiler l_pre) (id_compiler l) l.
+  Proof.
+    intros; apply id_compiler_preserving'; basic_utils_crush.
+  Qed.
+
+  
+  Definition hide_cmp_implicits (l:lang) : compiler string -> compiler string :=
+    NamedList.named_map (hide_ccase_implicits l).
+  Let id_cps_def :=
+        Eval compute in
+        hide_cmp_implicits
+          (((val_param_substs
+                      ++ val_ty_subst
+                      ++env_ty_subst
+                      ++ty_subst_lang)++ val_parameterized ++ ty_env_lang))
+          (id_compiler (val_param_substs
+                      ++ val_ty_subst
+                      ++env_ty_subst
+                      ++ty_subst_lang)).
+Lemma ty_subst_lang_id_ext
+  : elab_preserving_compiler
+      (cps_parameterized ++ ty_env_cmp)
+      (((val_param_substs
+                      ++ val_ty_subst
+                      ++env_ty_subst
+                      ++ty_subst_lang)++ val_parameterized ++ ty_env_lang))
+      id_cps_def
+      (id_compiler (val_param_substs
+                      ++ val_ty_subst
+                      ++env_ty_subst
+                      ++ty_subst_lang))
+         (val_param_substs
+            ++ val_ty_subst
+            ++env_ty_subst
+            ++ty_subst_lang).
+Proof. 
+  cleanup_elab_after
+    (  match goal with
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
+         assert (wf_lang tgt) by prove_from_known_elabs
+       end; break_preserving).
+  
+  all:repeat
+    ([>repeat Matches.t; cleanup_elab_after try (try decompose_sort_eq; (solve [ by_reduction ]))
+     | .. ]).
+  Unshelve.
+  all:repeat Matches.t'.
+Qed.
+#[export] Hint Resolve ty_subst_lang_id_ext :elab_pfs.
+
+  Let id_cc_def :=
+        Eval compute in
+        hide_cmp_implicits
+          (ty_subst_lang++ val_parameterized ++ ty_env_lang)
+          (id_compiler ty_subst_lang).
+
+  Lemma ty_subst_lang_id_ext_cc
+  : elab_preserving_compiler
+      (cc_parameterized ++ty_env_cmp)
+      (ty_subst_lang ++ val_parameterized ++ ty_env_lang)
+      id_cc_def
+      (id_compiler ty_subst_lang)
+         (ty_subst_lang).
+Proof. 
+  cleanup_elab_after
+    (  match goal with
+  | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
+        rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
+         assert (wf_lang tgt) by prove_from_known_elabs
+       end; break_preserving).
+  
+  all:repeat
+    ([>repeat Matches.t; cleanup_elab_after try (try decompose_sort_eq; (solve [ by_reduction ]))
+     | .. ]).
+  Unshelve.
+  all:repeat Matches.t'.
+Qed.
+#[export] Hint Resolve ty_subst_lang_id_ext_cc :elab_pfs.
+
+
+Lemma ir_param_substs_preserving
+  :elab_preserving_compiler
+     (block_ty_subst_cc ++ id_compiler ty_subst_lang ++ cc_parameterized ++ ty_env_cmp)
+     (tgt_param_substs ++
+        tgt_parameterized ++
+        block_param_substs ++
+        val_param_substs ++
+        block_ty_subst ++
+        env_ty_subst ++ ty_subst_lang ++ block_parameterized
+        ++ val_parameterized ++ ty_env_lang)
+     []
+     []
+     ir_param_substs.
+Proof.
+  auto_elab_compiler.
+Qed.
+
+Definition poly_tgt :=
+  (exists_block_lang ++
+     tgt_param_substs ++
+     tgt_parameterized ++
+     block_param_substs ++
+     val_param_substs ++
+     block_ty_subst ++
+     env_ty_subst ++ ty_subst_lang ++ block_parameterized ++ val_parameterized ++ ty_env_lang).
+
+Definition poly_ir :=
+  (exists_block_lang ++
+     ir_param_substs ++
+     block_param_substs ++
+     val_param_substs ++
+     block_ty_subst ++
+     env_ty_subst ++ ty_subst_lang ++ 
+     (ir_parameterized ++ block_parameterized ++ val_parameterized) ++ ty_env_lang).
+
+Definition poly_src :=
+  exists_lang
+    ++ poly
+    ++ (exp_param_substs ++ exp_ty_subst)
+    ++ (val_param_substs ++ val_ty_subst ++ env_ty_subst ++ ty_subst_lang)
+    ++ (src_parameterized ++ exp_parameterized ++ val_parameterized)
+    ++ ty_env_lang.
+
+Definition pcps :=
+  exists_cps
+    ++ poly_cps
+    ++ (exp_ty_subst_cps
+          ++ id_compiler (val_param_substs ++ val_ty_subst ++ env_ty_subst ++ ty_subst_lang)
+          ++ cps_parameterized ++ ty_env_cmp).
+
+Definition pcc :=
+  exists_cc
+    ++ []
+    ++ block_ty_subst_cc
+    ++ id_compiler ty_subst_lang ++ cc_parameterized ++ ty_env_cmp.
+
+
+Theorem combined_poly
+  :  preserving_compiler_ext
+      (tgt_Model := core_model poly_tgt)
+      []
+      (compile_cmp pcc pcps)
+      poly_src.
+Proof.
+  apply preservation_transitivity
+    with (ir:=poly_ir).
+  all: try typeclasses eauto; try reflexivity.
+  {
+    (*TODO: I seem to have added a bad hint*)
+    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
+    all: do 6 lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => compute_all_fresh
+    | |- incl _ _ => compute_incl
+    end.
+    all:do 5 [> lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => compute_all_fresh
+    | |- incl _ _ => compute_incl
+    end |..].
+    {
+      eapply lang_ext_monotonicity.
+      1: eapply src_parameterized_wf.
+      1: auto with utils.
+      compute_all_fresh.
+    }
+    all: try (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
+  }
+  {
+    (*TODO: I seem to have added a bad hint*)
+    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
+    all: do 3 lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => compute_all_fresh
+    | |- incl _ _ => compute_incl
+    end.
+    all:do 10 [> lazymatch goal with
+    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
+    | |- wf_lang_ext _ [] => apply wf_lang_nil
+    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
+    | |- all_fresh _ => compute_all_fresh
+    | |- incl _ _ => compute_incl
+                 end |..].
+    2:
+    {
+      eapply lang_ext_monotonicity.
+      1: eapply ir_parameterized_wf.
+      2: compute_all_fresh.
+      auto 7 with utils.
+    }
+    all: try (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
+  }
+  1: (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
+  {
+    (*TODO: I seem to have added a bad hint*)
+    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
+    eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply exists_cc_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      rewrite app_assoc.
+      apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    all: try (eapply preserving_compiler_embed; [eapply ty_subst_id_compiler_correct|]).
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      rewrite app_assoc.
+      apply ir_parameterized_wf.
+    }
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+     {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      rewrite app_assoc.
+      apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    all: try (eapply preserving_compiler_embed; [eapply ty_subst_id_compiler_correct|]).
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      rewrite app_assoc.
+      apply ir_parameterized_wf.
+    }
+    
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+    }
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      1:eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply env_ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply block_ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply val_param_substs_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply block_param_substs_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    }
+    2:{
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      1:eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply env_ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply block_ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply val_param_substs_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply block_param_substs_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply lang_ext_monotonicity.
+    1: eapply elab_lang_implies_wf;
+      apply exists_block_lang_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ir_param_substs_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+      1: eapply cc_parameterized_correct.
+
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      }
+      
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+    }
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+      1: eapply cc_parameterized_correct.
+
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      }
+       {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+       }
+
+
+       {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+         1:rewrite app_assoc.
+         1:apply ir_parameterized_wf.
+         1:eapply lang_ext_monotonicity.
+         1:eapply elab_lang_implies_wf;
+         apply ty_subst_wf.
+         all: try (eapply use_inclb; vm_compute; exact I).
+         all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         all:prove_from_known_elabs.
+       }
+       2:{
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      1:eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+      all: try (eapply use_inclb; vm_compute; exact I).
+      all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      all:prove_from_known_elabs.
+       }
+       change (block_param_substs ++
+     val_param_substs ++
+     block_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++ (ir_parameterized ++ block_parameterized ++ val_parameterized) ++ ty_env_lang)
+         with ((block_param_substs ++
+     val_param_substs ++
+     block_ty_subst ++
+     env_ty_subst) ++
+     ty_subst_lang ++ (ir_parameterized ++ block_parameterized ++ val_parameterized) ++ ty_env_lang).
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+      1: eapply cc_parameterized_correct.
+
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      }
+      
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+    }
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cc_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    
+      {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+    }
+    1: eapply compiler_append; try typeclasses eauto.
+      1: eapply cc_parameterized_correct.
+
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+
+    
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+    }
+    {
+      rewrite <- !app_assoc.
+      repeat apply wf_lang_concat'.
+      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+      {
+        eapply lang_ext_monotonicity.
+        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+        1: eapply use_inclb; vm_compute; exact I.
+        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      }
+      all:autorewrite with utils.
+      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+      1:rewrite app_assoc.
+      1:apply ir_parameterized_wf.
+      eapply lang_ext_monotonicity.
+      1:eapply elab_lang_implies_wf;
+      apply ty_subst_wf.
+      all: try (eapply use_inclb; vm_compute; exact I).
+      all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+      
+    }
+    
+       {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
+         1:rewrite app_assoc.
+         1:apply ir_parameterized_wf.
+         1:eapply lang_ext_monotonicity.
+         1:eapply elab_lang_implies_wf;
+         apply ty_subst_wf.
+         all: try (eapply use_inclb; vm_compute; exact I).
+         all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         all:prove_from_known_elabs.
+       }
+  }
+  {
+    (*TODO: I seem to have added a bad hint*)
+    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
+    eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply exists_cps_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply exp_ty_subst_cps_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+    
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    1:eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply poly_cps_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply exp_ty_subst_cps_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+    
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply exp_ty_subst_cps_preserving.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext.
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+      
+    1: eapply compiler_append; try typeclasses eauto.
+    1: eapply cps_parameterized_correct.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    1: eapply use_inclb; vm_compute; exact I.
+    1:eapply preserving_compiler_embed.
+    1:eapply ty_subst_id_compiler_correct.
+    all: try (eapply use_inclb; vm_compute; exact I).
+    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         apply src_parameterized_wf.
+    }
+
+
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+    
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+
+    
+
+
+    {
+         rewrite <- !app_assoc.
+         repeat apply wf_lang_concat'.
+         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
+         {
+           eapply lang_ext_monotonicity.
+           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
+           1: eapply use_inclb; vm_compute; exact I.
+           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
+         }
+         all:autorewrite with utils.
+         1:prove_from_known_elabs.
+         1:         apply src_parameterized_wf.
+         all:prove_from_known_elabs.
+    }
+  }
+Qed.
+      
