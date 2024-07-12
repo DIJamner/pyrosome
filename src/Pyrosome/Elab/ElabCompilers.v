@@ -196,6 +196,14 @@ Tactic Notation "cleanup_elab_after" tactic(tc) :=
   unshelve tc; repeat t'; eauto with elab_pfs auto_elab.
 
 
+Ltac decompose_sort_eq :=
+  lazymatch goal with
+    |- _ = _ \/ eq_sort _ _ _ _ =>
+      first [ left; reflexivity
+            | right; compute_eq_compilation; sort_cong ]
+  end.
+
 Ltac auto_elab_compiler :=
-  (cleanup_elab_after (setup_elab_compiler; repeat t));
-  cleanup_elab_after try solve[by_reduction].
+  cleanup_elab_after setup_elab_compiler;
+  repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
