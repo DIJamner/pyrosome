@@ -17,25 +17,6 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-Definition src_ext := (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang))(*++(exp_subst ++ value_subst)++[]).*).
-
-Definition ir_ext := heap_cps_ops
-         ++ fix_cps_lang
-         ++ cps_lang
-         ++ cps_prod_lang
-         ++ unit_lang
-         ++ heap
-         ++ nat_exp
-         ++ nat_lang (*
-         ++ block_subst
-         ++ value_subst.*) .
-
-Definition tgt_ext :=
-  fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
-                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
-                   forget_eq_wkn'++
-                   cps_prod_lang (* ++ block_subst ++ value_subst*).
-
 Definition stlc_parameterized :=
     let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
                                  ++ value_subst)
@@ -318,7 +299,7 @@ Proof.
   1,2:repeat t'; try constructor.
   1: eapply use_compute_all_fresh; vm_compute; exact I.
   2:eapply full_cps_compiler_preserving.
-  1:prove_from_known_elabs.
+  1:unfold ir_ext; prove_from_known_elabs.
   1:unfold src_ext;prove_from_known_elabs.
   2: reflexivity.
   1: vm_compute; exact I.
@@ -919,3 +900,222 @@ Proof.
 Qed.
 #[export] Hint Resolve poly_cps_preserving : elab_pfs.
 
+
+Local Definition unpack_swap :=
+  {{e #"snoc" (#"snoc" (#"cmp" (#"cmp" #"wkn" #"wkn") #"wkn") #"hd") {ovar 2} }}.
+
+
+Definition exists_cps_def : compiler string :=
+  match # from exists_lang with
+  | {{e #"Exists" "D" "A"}} =>
+      {{e #"Exists" "A" }}
+  | {{e #"pack_val" "D" "G" "A" "B" "v"}} =>
+      {{e #"pack" "A" "v" }}
+  | {{e #"pack" "D" "G" "A" "B" "e"}} =>
+      bind_k 1 (var "e") {{e #"ty_subst" (#"ty_snoc" #"ty_id" "A") "B" }}
+        {{e #"jmp" {ovar 1} (#"pack" "A" #"hd") }}
+  | {{e #"unpack" "D" "G" "B" "e" "C" "e'" }} =>
+    bind_k 1 (var "e") {{e #"Exists" "B" }}
+      {{e #"unpack" #"hd" (#"blk_subst" {unpack_swap} "e'")  }}
+  end.
+
+Derive exists_cps
+  SuchThat (elab_preserving_compiler
+              (exp_ty_subst_cps
+                 ++ id_compiler (val_param_substs
+                                   ++ val_ty_subst
+                                   ++env_ty_subst
+                                   ++ty_subst_lang)
+                 ++ cps_parameterized++ty_env_cmp)
+              (exists_block_lang
+                 ++ ir_param_substs
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+              exists_cps_def
+              exists_cps
+              exists_lang)
+  As exists_cps_preserving.
+Proof.
+  change cps_parameterized with cmp'.
+  auto_elab_compiler.
+Qed.
+#[export] Hint Resolve exists_cps_preserving : elab_pfs.
+
+Definition tgt_parameterized :=
+  let ps := (elab_param "D" (tgt_ext ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps tgt_ext.
+
+Local Definition bvp'' :=
+  let ps := (elab_param "D" (tgt_ext
+                               ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (block_subst ++ value_subst).
+
+Lemma tgt_parameterized_wf
+  : wf_lang_ext ((block_parameterized++
+                       val_parameterized)
+                       ++ty_env_lang)
+      tgt_parameterized.
+Proof.
+  change (block_parameterized++val_parameterized) with bvp''.
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | try now prove_from_known_elabs..
+    | vm_compute; exact I].
+  {
+    unfold tgt_ext.
+    prove_from_known_elabs.
+  }
+Qed.
+#[export] Hint Resolve tgt_parameterized_wf : elab_pfs.
+
+Definition cc_full :=
+  (fix_cc ++ heap_cc ++ heap_id' ++ cc ++ prod_cc_compile ++ subst_cc ++ []).
+
+Definition cc_parameterized :=
+    let pir :=  (elab_param "D" (ir_ext ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+    let ptgt :=  (elab_param "D" (tgt_ext ++ block_subst
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("blk",Some 1)]) in
+    parameterize_compiler "D"
+      ptgt pir cc_full.
+
+
+Lemma cc_parameterized_correct
+  : preserving_compiler_ext
+      (tgt_Model:=core_model ((tgt_parameterized
+                                ++ (block_parameterized++
+                                      val_parameterized))
+                                ++ty_env_lang))
+      ty_env_cmp
+      cc_parameterized
+      (ir_parameterized
+         ++ (block_parameterized++
+               val_parameterized)).
+Proof.
+  change (block_parameterized++val_parameterized) with bvp' at 2.
+  unfold ty_env_cmp, cc_parameterized,
+    ir_parameterized, bvp'.
+  unfold parameterize_lang.
+  rewrite <- map_app.
+  match goal with
+  | |- context[core_model ?l] =>
+      let y := type of l in
+      let x := open_constr:(_:y) in
+      replace (core_model l) with (core_model x)
+  end.
+  1:eapply parameterize_compiler_preserving.
+  all: try typeclasses eauto.
+  1,2:repeat t'; try constructor.
+  1: eapply use_compute_all_fresh; vm_compute; exact I.
+  2:{
+    unfold ir_ext; rewrite <- !app_assoc.
+    replace (block_subst ++ value_subst)
+    with ((block_subst ++ value_subst)++[])
+      by basic_utils_crush.
+    eapply full_cc_compiler_preserving.
+  }
+  1: unfold tgt_ext; prove_from_known_elabs.
+  1:unfold ir_ext;prove_from_known_elabs.
+  2: reflexivity.
+  1: vm_compute; exact I.
+Qed.
+#[export] Hint Resolve cc_parameterized_correct : elab_pfs.
+
+
+Definition exists_cc_def : compiler string :=
+  match # from exists_lang with
+  | {{e #"Exists" "D" "A"}} =>
+      {{e #"Exists" "A" }}
+  | {{e #"pack_val" "D" "G" "A" "B" "v"}} =>
+      {{e #"pack" "A" "v" }}
+  | {{e #"pack" "D" "G" "A" "B" "e"}} =>
+      bind_k 1 (var "e") {{e #"ty_subst" (#"ty_snoc" #"ty_id" "A") "B" }}
+        {{e #"jmp" {ovar 1} (#"pack" "A" {ovar 0}) }}
+  | {{e #"unpack" "D" "G" "B" "e" "C" "e'" }} =>
+    bind_k 1 (var "e") {{e #"Exists" "B" }}
+      {{e #"unpack" {ovar 0} (#"blk_subst" {swap} "e'")  }}
+  end.
+
+TODO: exists_cps
+Derive exists_cc
+  SuchThat (elab_preserving_compiler
+              (exp_ty_subst_cps <--- what's this; replace
+                 ++ id_compiler (val_param_substs
+                                   ++ val_ty_subst
+                                   ++env_ty_subst
+                                   ++ty_subst_lang)
+                 ++ cc_parameterized++ty_env_cmp)
+              (exists_block_lang
+                 
+                 ++ ir_param_substs
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+              exists_cps_def
+              exists_cps
+              exists_lang)
+  As exists_cps_preserving.
+Proof.
+  auto_elab_compiler.
+
+  SuchThat (elab_preserving_compiler
+              (exp_ty_subst_cps
+                 ++ id_compiler (val_param_substs
+                                   ++ val_ty_subst
+                                   ++env_ty_subst
+                                   ++ty_subst_lang)
+                 ++ cps_parameterized++ty_env_cmp)
+              (exists_block_lang
+                 
+                 ++ ir_param_substs
+                 ++ ir_parameterized (*TODO: only include conts*)
+                 
+                 ++ block_param_substs
+                 ++ val_param_substs
+                 ++ block_ty_subst
+                 ++env_ty_subst
+                 ++ty_subst_lang
+                 ++block_parameterized++val_parameterized
+                 ++ty_env_lang)
+              exists_cc_def
+              exists_cc
+              exists_block_lang)
+  As poly_cps_preserving.
+Proof.

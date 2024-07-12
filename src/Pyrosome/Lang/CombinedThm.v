@@ -109,57 +109,67 @@ Ltac build_compiler :=
         | typeclasses eauto
         |prove_from_known_elabs].
 
+Definition src_ext := (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)).
 
-(*TODO: add let*)
-Lemma full_cps_compiler_preserving
-  : preserving_compiler_ext
-      (tgt_Model := core_model (heap_cps_ops
+Definition ir_ext :=
+  fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
+                            ++cps_lang++cps_prod_lang.
+  (*heap_cps_ops
          ++ fix_cps_lang
          ++ cps_lang
          ++ cps_prod_lang
          ++ unit_lang
          ++ heap
          ++ nat_exp
-         ++ nat_lang
-         ++ block_subst
-         ++ value_subst))
+         ++ nat_lang.*)
+
+Definition tgt_ext :=
+  fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
+                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
+                   forget_eq_wkn'++
+                   cps_prod_lang.
+
+(*TODO: add let*)
+Lemma full_cps_compiler_preserving
+  : preserving_compiler_ext
+      (tgt_Model := core_model (ir_ext ++ block_subst ++ value_subst))
       []
       (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[])
-      (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).
-Proof. build_compiler. Qed.
+      (src_ext++exp_subst ++ value_subst).
+Proof.
+  change (src_ext++exp_subst ++ value_subst)
+    with (SimpleVFix.fix_lang++SimpleVSTLC.stlc
+            ++ heap_ctx++ eval_ctx++heap_ops
+            ++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
+            ++(exp_subst ++ value_subst)++[]).
+  build_compiler.
+Qed.
 
 
 Lemma full_cc_compiler_preserving
   : preserving_compiler_ext
-      (tgt_Model := core_model (fix_cc_lang ++
-     heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
-                                      ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
-                                      forget_eq_wkn'++
-                                      cps_prod_lang ++ block_subst ++ value_subst))
+      (tgt_Model := core_model (tgt_ext ++ block_subst ++ value_subst))
       []
-                        (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
-                        (fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
+      (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
+      (ir_ext++block_subst ++ value_subst).
+Proof.
+  change (ir_ext++block_subst ++ value_subst)
+    with (fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
                             ++cps_lang++cps_prod_lang++(block_subst ++ value_subst)++[]).
-Proof. build_compiler. Qed.
+  build_compiler.
+Qed.
 
-
-(*TODO: compiler transitivity*)
 Lemma full_compiler_preserving
   : preserving_compiler_ext
-      (tgt_Model := core_model (fix_cc_lang ++
-                                     heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
-                                     ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
-                                     forget_eq_wkn'++
-                                     cps_prod_lang ++ block_subst ++ value_subst))
+      (tgt_Model := core_model (tgt_ext ++ block_subst ++ value_subst))
       []
-                        (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
-                        (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
-      (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).
+      (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
+         (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
+      (src_ext++exp_subst ++ value_subst).
 Proof.
   apply preservation_transitivity
-        with (ir:=(fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
-                               ++cps_lang++cps_prod_lang++(block_subst ++ value_subst)++[])).
-  all: try (rewrite <-?app_assoc; solve[prove_from_known_elabs]).
+        with (ir:=ir_ext ++ block_subst ++ value_subst).
+  all: try (rewrite <-?app_assoc; solve[unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs]).
   all: try typeclasses eauto; try reflexivity.
   {
     apply full_cc_compiler_preserving.
@@ -183,19 +193,16 @@ Notation semantics_preserving tgt cmp :=
 
 Lemma full_compiler_semantic
   : semantics_preserving
-      (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
-                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
-                   forget_eq_wkn'++
-                   cps_prod_lang ++ block_subst ++ value_subst)
+      (tgt_ext ++ block_subst ++ value_subst)
       (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
                    (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[]))
-      (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]).
+      (src_ext ++ exp_subst ++ value_subst).
 Proof.
   apply inductive_implies_semantic; try typeclasses eauto;
     eauto using ModelImpls.core_model_ok; try reflexivity.
   1: apply ModelImpls.core_model_ok; try typeclasses eauto.
-  1: solve [prove_from_known_elabs].
-  1: solve [prove_from_known_elabs].
+  1: solve [unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs].
+  1: solve [unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs].
   apply full_compiler_preserving.
 Qed.
 
@@ -209,11 +216,8 @@ Definition compile_fn l c t e :=
   partial_eval _ l (compile_ctx full_compiler c) (compile_sort full_compiler t) 100 (compile full_compiler e).
 
 Lemma full_compiler_with_opt_pres_eq
-  (src := (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)++(exp_subst ++ value_subst)++[]))
-  (tgt := (fix_cc_lang ++ heap_cps_ops ++cc_lang ++ forget_eq_wkn ++ unit_eta ++ unit_lang
-                   ++ heap ++ nat_exp ++ nat_lang ++ prod_cc ++
-                   forget_eq_wkn'++
-                   cps_prod_lang ++ block_subst ++ value_subst))
+  (src := src_ext ++ exp_subst ++ value_subst)
+  (tgt := tgt_ext  ++ block_subst ++ value_subst)
   : forall c t e1 e2,
       eq_term src c t e1 e2 ->
       wf_ctx (Model:=core_model src) c ->
@@ -229,13 +233,13 @@ Proof.
   {
     eapply full_compiler_semantic; eauto.
   }
-  1,3:subst tgt; prove_from_known_elabs.
+  1,3:subst tgt;unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs.
   {
     eapply eq_term_wf_l; eauto; try typeclasses eauto.
-    prove_from_known_elabs.
+    unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs.
   }
   {
     eapply eq_term_wf_r; eauto; try typeclasses eauto.
-    prove_from_known_elabs.
+    unfold src_ext, ir_ext, tgt_ext; prove_from_known_elabs.
   }
 Qed.
