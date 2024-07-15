@@ -12,6 +12,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Term.
+From Pyrosome Require Import Tools.AllConstructors.
 Import SumboolNotations.
 
 Section WithVar.
@@ -128,29 +129,70 @@ Proof.
     Term.basic_term_crush.
 Qed.
 
+
+Fixpoint close_term (e : Term.term V) : term :=
+  match e with
+  | Term.var n => con n []
+  | Term.con n l => con n (map close_term l)
+  end.
+
+Definition close_sort (t : Term.sort V) : term :=
+  let (n, l) := t in
+  con n (map close_term l).
+
+Section WithArgs.
+  Context (args : list V).
+
+  Fixpoint open_term (e : term) : Term.term V :=
+    let (n, l) := e in
+    if inb n args then Term.var n
+    else Term.con n (map open_term l).
+  
+  Definition open_sort (e : term) : Term.sort V :=
+    let (n, l) := e in
+    Term.scon n (map open_term l).
+
+  Lemma open_close_inverse_term e
+    : all_constructors (fun n => ~ In n args) e ->
+      (*TODO: use well_scoped?*)
+      incl (Term.fv e) args ->
+      open_term (close_term e) = e.
+  Proof.
+    induction e;
+      basic_goal_prep;
+      Term.basic_term_crush.
+    all: case_match;
+      Term.basic_term_crush.
+    f_equal.
+    revert dependent l.
+    induction l;
+      basic_goal_prep;
+      Term.basic_term_crush.
+    {
+      (*TODO: make incl_app_inv a rewrite rule*)
+      apply incl_app_inv in H1.
+      Term.basic_term_crush.
+    }
+    {
+      (*TODO: make incl_app_inv a rewrite rule*)
+      apply incl_app_inv in H1.
+      Term.basic_term_crush.
+    }
+  Qed.
+
+End WithArgs.
+
 Section WithDefault.
   
   Context {V_default : WithDefault V}.
   
   Instance term_default : WithDefault term := con default [].
   
-  Fixpoint close_term (s : subst) (e : Term.term V) : term :=
-    match e with
-    | Term.var n => named_list_lookup default s n
-    | Term.con n l => con n (map (close_term s) l)
-    end.
-  
-  Arguments close_term s !e /.
-  
-  Definition close_sort (s : subst) (t : Term.sort V) : term :=
-    let (n, l) := t in
-    con n (map (close_term s) l).
-  
-  Arguments close_sort s !t /.
-
 End WithDefault.
 
 End WithEqb.
+
+
 
 End WithVar.
 
