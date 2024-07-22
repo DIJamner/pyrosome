@@ -1,6 +1,6 @@
 From coqutil Require Import Map.Interface Map.Solver.
 
-From Utils Require Import Eqb.
+From Utils Require Import Eqb Options.
 
 (*
 TODO: implement map with tries?
@@ -137,6 +137,20 @@ Section __.
       map_intersect : forall {A B C}, (A -> B -> C) -> m A -> m B -> m C;
       map_fold_values : forall {A B}, (A -> B -> B) -> m A -> B -> B;
       map_map : forall {A B}, (A -> B) -> m A -> m B;
+    }.
+
+  (*TODO: strengthen from Is_Some to a result about the value*)
+  Class map_plus_ok `{map_plus} : Prop := {
+      (*base_map_ok :> forall A, map.ok (m A);*)
+      intersect_spec : forall A B C (f : A -> B -> C) k t1 t2,
+        map.get (map_intersect f t1 t2) k
+        = match map.get t1 k, map.get t2 k with
+          | Some a, Some b => Some (f a b)
+          | _, _ => None
+          end;
+      
+      map_map_spec : forall A B (f : A -> B) m k,
+        map.get (map_map f m) k = option_map f (map.get m k);
     }.
 
 End __.

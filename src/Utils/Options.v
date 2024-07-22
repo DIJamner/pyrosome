@@ -46,6 +46,9 @@ Section __.
 
   #[export] Instance option_default : WithDefault (option A) := None.
 
+  
+  Definition Is_Some (x : option A) := if x then True else False.
+
 End __.
 
 #[export] Hint Rewrite invert_none_some : utils.

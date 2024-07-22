@@ -4,7 +4,7 @@ Require Import Tries.Canonical.
 Import PTree.
 
 Require Utils.ArrayList.
-From Utils Require Import Base ExtraMaps Default.
+From Utils Require Import Booleans Base Options ExtraMaps Default.
 
 (* TODO: move this somewhere? *)
 (*reverses the bits in a positive number*)
@@ -183,6 +183,11 @@ Section MapIntersect.
     | Node110 l1 a, Node111 l2 b _
     | Node111 l1 a _, Node110 l2 b => Node (intersect' l1 l2) (Some (elt_intersect a b)) empty
 
+    (* RHS and LHS *)
+    | Node101 l1 r1, Node101 l2 r2 => Node (intersect' l1 l2) None (intersect' r1 r2)
+    | Node101 l1 r1, Node111 l2 _ r2 => Node (intersect' l1 l2) None (intersect' r1 r2)
+    | Node111 l1 _ r1, Node101 l2 r2 => Node (intersect' l1 l2) None (intersect' r1 r2)
+
     (* everything *)
     | Node111 l1 a r1, Node111 l2 b r2 => Node (intersect' l1 l2) (Some (elt_intersect a b)) (intersect' r1 r2)
      
@@ -196,6 +201,7 @@ Section MapIntersect.
     | _, Empty => empty
     | Nodes m1', Nodes m2' => intersect' m1' m2'
     end.
+
 End MapIntersect.
 
 (* Designed to avoid as much work as possible by short-circuiting.
@@ -588,7 +594,7 @@ Section MapIntersectList.
     eapply acc_tree'_list_helper.*)
   Admitted.
   
-End  MapIntersectList.
+End MapIntersectList.
 
 #[export] Instance ptree_map_plus : map_plus trie_map :=
   {
@@ -597,6 +603,77 @@ End  MapIntersectList.
     (* TODO: check whether the filter overhead is detectable *)
     map_map _ _ f := map_filter (fun x => Some (f x));
   }.
+
+#[export] Hint Rewrite gempty : utils.
+#[export] Hint Rewrite @gNode : utils.
+
+#[local] Hint Rewrite @invert_none_some : utils.
+
+#[export] Instance ptree_map_plus_ok : map_plus_ok trie_map.
+Proof.
+  constructor.
+  {
+    intros.
+    destruct t1, t2; basic_goal_prep; try now intuition eauto.
+    { case_match; eauto. }
+    {
+      revert t1 k;
+        induction t0;
+        destruct t1;
+        basic_goal_prep;
+        repeat case_match;
+        basic_goal_prep;
+        try congruence.
+      all:repeat lazymatch goal with
+            | H : _ = get' ?k (?f ?t0) |- _ =>
+                destruct k; basic_goal_prep
+            | H : _ = intersect' ?t0 ?t1
+              |- _ =>
+                rewrite <- H
+            end.
+      all:autorewrite with utils in *.
+      all: try congruence.
+      all: repeat lazymatch goal with
+             | Hi : _ = intersect' ?f ?t0 ?t1,
+                 Hg0 : _ = get' ?k ?t0,
+                   IH : forall t1 k,
+                     get k (intersect' ?f ?t0 t1) = _
+                     |- _ =>
+                 specialize (IH t1 k);
+                 rewrite <- Hi, <- Hg0 in IH;
+                                cbn in *;
+                                try congruence
+    |  Hg0 : _ = get' ?k ?t0,
+        IH : forall t1 k,
+          get k (intersect' ?f ?t0 t1) = _
+          |- get ?k (intersect' ?f ?t0 ?t1) = _ =>
+         specialize (IH t1 k);
+         rewrite <- Hg0 in IH;
+         cbn in *;
+         try congruence
+    |  Hg1 : _ = get' ?k ?t1,
+        Hg0 : _ = get' ?k ?t0,
+          IH : forall t1 k,
+            get k (intersect' ?f ?t0 t1) = _
+            |- _ =>
+         specialize (IH t1 k);
+         rewrite <- Hg1, <- Hg0 in IH;
+                         cbn in *;
+                         try congruence
+    | Hg1 : _ = get' ?k ?t1,
+        IH : context [get' ?k ?t1]
+      |- _ =>
+        rewrite <- Hg1 in IH;
+        cbn in *;
+        try congruence
+      end.
+    }
+  }
+  {
+    intros.
+    apply gmap_filter.
+  }
+Qed.
 
 Module TrieArrayList.
 

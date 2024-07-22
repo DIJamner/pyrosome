@@ -2,7 +2,7 @@ Require Import NArith Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Base ExtraMaps Monad.
+From Utils Require Import Base Options ExtraMaps Monad.
 From Utils Require TrieMap.
 
 
@@ -92,6 +92,7 @@ Section __.
           | _,_ => None
           end
     end.
+  Arguments ntree_get [n]%nat_scope _ _%list_scope.
 
   (*
     Assumes k has length exactly n.
@@ -130,9 +131,13 @@ Section __.
 
   End __.
 
+  Arguments ntree_get {A}%type_scope [n]%nat_scope _ _%list_scope.
+
+  (* Question: Should I handle empty ntree 0s?
+   *)
   Context {A B C : Type}
     (merge : A -> B -> C)
-    `{@map_plus key m}.
+    `{map_plus_ok key (m := m)}.
   Fixpoint ntree_intersect n : ntree A n -> ntree B n -> ntree C n :=
     match n with
     | 0 => merge
@@ -147,7 +152,67 @@ Section __.
           | inr c1, inr c2 => inr (ntree_intersect n' c1 c2)
           end
     end.
+  Arguments ntree_intersect [n]%nat_scope _ _.
+
+  (* TODO: move to base *)  
+  Ltac case_match' c :=
+    lazymatch c with
+    | context [match ?c' with _ => _ end] => case_match' c'
+    | _ =>
+        let e' := fresh in
+        remember c as e'; destruct e'
+    end.
+  Ltac case_match :=
+    match goal with
+    | |- context [ match ?e with
+                   | _ => _
+                   end ] => case_match' e
+    end.
+  
+    Lemma ntree_intersect_spec n (t1 : ntree A n) (t2 : ntree B n) k
+      : ntree_get (ntree_intersect t1 t2) k
+        = match ntree_get t1 k, ntree_get t2 k with
+          | Some a, Some b => Some (merge a b)
+          | _, _ => None
+          end.
+    Proof.
+      revert t1 t2 k;
+        induction n;
+        basic_goal_prep; try now intuition eauto.
+      destruct k, t1, t2;
+        basic_goal_prep;
+        intuition eauto;
+        rewrite ?intersect_spec; eauto.
+      all: repeat case_match; try congruence.
+      all: rewrite ?map_map_spec in *.
+      all:try(unfold ntree in *;
+              cbn in *;
+              repeat lazymatch goal with
+                | H1 : context[?A], H2 : None = ?A |- _ =>
+                    rewrite <- H2 in H1;
+                    try safe_invert H1
+                | H1 : context[?A], H2 : Some _ = ?A |- _ =>
+                    rewrite <- H2 in H1;
+                    try safe_invert H1
+                end;
+              try congruence).
+      all: rewrite ?IHn.
+      all: repeat case_match; try congruence.
+      {
+        my_case Hrk (map.get r k);
+          cbn in *; try congruence.
+        safe_invert HeqH1.
+        rewrite IHn, <- HeqH0.
+        reflexivity.
+      }
+    Qed.
+  
+    Lemma fold_ntree_intersect
+      : Is_Some (ntree_get (fold_right (ntree_intersect merge len) (top_tree len) l) k)
+        -> Forall (fun t : ntree idx A len => Is_Some (ntree_get t k)) l.
   
 End __.
 
 Arguments ntree key%type_scope {m}%function_scope A%type_scope n%nat_scope.
+Arguments ntree_get {A}%type_scope [n]%nat_scope _ _%list_scope.
+Arguments ntree_intersect {A}%type_scope [n]%nat_scope _ _.
