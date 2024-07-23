@@ -207,12 +207,8 @@ Section __.
       }
     Qed.
   
-    Lemma fold_ntree_intersect
-      : Is_Some (ntree_get (fold_right (ntree_intersect merge len) (top_tree len) l) k)
-        -> Forall (fun t : ntree idx A len => Is_Some (ntree_get t k)) l.
-  
 End __.
 
 Arguments ntree key%type_scope {m}%function_scope A%type_scope n%nat_scope.
-Arguments ntree_get {A}%type_scope [n]%nat_scope _ _%list_scope.
-Arguments ntree_intersect {A}%type_scope [n]%nat_scope _ _.
+Arguments ntree_get {key}%type_scope {m}%function_scope {A}%type_scope [n]%nat_scope _ _%list_scope.
+Arguments ntree_intersect {key}%type_scope {m}%function_scope {A B C}%type_scope merge%function_scope {H} [n]%nat_scope _ _.

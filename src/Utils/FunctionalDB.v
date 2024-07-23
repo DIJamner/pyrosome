@@ -208,7 +208,7 @@ Section WithMap.
     {
       atom_fn : symbol;
       atom_args : list idx;
-      (* TODO: should I keep this separate? atom_conclusion : idx; *)
+      atom_ret : idx;
     }.
 
   Definition node_map := symbol_map table.
@@ -218,7 +218,10 @@ Section WithMap.
    *)
   Definition build_trie (nodes:node_map) (vars : list idx) (clause : atom) : option _ :=
     @!let (r1::tab) <?- map.get nodes clause.(atom_fn) in
-      ret (build_trie' (r1,tab) vars (map var_arg clause.(atom_args))).
+      (*TODO: find a better way to pass ret & trace it back to simplify deps,
+        since they can assume a ret exists.
+       *)
+      ret (build_trie' (r1,tab) vars (map var_arg (clause.(atom_args)++[clause.(atom_ret)]))).
 
   (* Returns None only if some clause doesn't match any rows.
      Note: may still return Some in such cases.
@@ -248,7 +251,7 @@ Alternately: should I build a tree then convert to a list?
     | S n => inr (top_tree n)
     end.
 
-  Context `{@map_plus idx idx_map}.
+  Context `{map_plus_ok idx (m:=idx_map)}.
   
   (* We implement a simplified generic join by just iteratively intersecting the tries.
      Note: the running time here is proportional to the second-largest trie in the worst case,
@@ -258,7 +261,7 @@ Alternately: should I build a tree then convert to a list?
   Definition generic_join' {A} var_count (tries : list (ntree idx A var_count)) : list _ :=
     ntree_fold _ (fun acc k _ => cons k acc)
       var_count
-      (List.fold_right (ntree_intersect cons var_count) (top_tree var_count) tries) [].
+      (List.fold_right (ntree_intersect cons (n:=var_count)) (top_tree var_count) tries) [].
 
   
   Record query :=
@@ -278,6 +281,260 @@ Alternately: should I build a tree then convert to a list?
     end.
 
   (* Properties *)
+
+  Lemma fold_ntree_intersect A B (merge : A -> B -> B) len l (t : ntree idx B len) k
+    : let merge' (ma : option A) (mb : option B) :=
+        @! let a <- ma in
+          let b <- mb in
+          ret merge a b
+      in
+      ntree_get (fold_right (ntree_intersect merge (n:=len)) t l) k
+      = fold_right merge' (ntree_get t k) (map (fun t => ntree_get t k) l).
+  Proof.
+    intro merge'.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite ntree_intersect_spec; eauto.
+    subst merge'.
+    case_match; eauto.
+    rewrite IHl.
+    reflexivity.
+  Qed.
+
+  Fixpoint fully_constrained {A len} : ntree idx A len -> Prop :=
+    match len with
+    | 0 => fun _ => True
+    | S n => fun t => match t with
+                      | inl m => map.forall_values fully_constrained m
+                      | inr _ => False
+                      end
+    end.
+
+  
+  Lemma fold_right_flatmap X Y f (acc : list Y) (l : list X)
+    : (forall x acc, f x acc = f x [] ++ acc) ->
+      let f' x := f x [] in
+      fold_right f acc l = flat_map f' l ++ acc.
+  Proof.
+    intro Hf.
+    intro f'; subst f'.
+    revert acc; induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite Hf.
+    rewrite IHl.
+    rewrite app_assoc.
+    reflexivity.
+  Qed.
+
+
+  Lemma ntree_fold'_monotone A len acc0 keystack n
+    : ntree_fold' (list A)
+    (fun (acc1 : list (list idx)) (k0 : list idx) (_ : list A) => k0 :: acc1) len acc0
+    keystack n =
+  ntree_fold' (list A)
+    (fun (acc1 : list (list idx)) (k0 : list idx) (_ : list A) => k0 :: acc1) len []
+    keystack n ++ acc0.
+  Proof.
+    revert acc0 keystack n.
+    induction len;
+      basic_goal_prep;
+      basic_utils_crush.
+    cbn.
+    rewrite !Properties.map.fold_to_tuples_fold.
+    
+    unfold ntree in *.
+    generalize (map.tuples a) as l.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite IHlen.
+    rewrite IHl.
+    rewrite app_assoc.
+    rewrite <- IHlen.
+    reflexivity.
+  Qed.
+  
+(*
+  TODO: acc, keystack on rhs.
+  TODO: what to do about rhs case? seems like the implementation isn't sound in that case.
+  Note: at the top level, the tree should be fully constrained iff all fvs appear in some clause.
+ *)
+  Lemma ntree_fold'_keys A (k:list idx) len t acc keystack
+    : fully_constrained t ->
+      In k (ntree_fold' (list A) (fun acc k _ => k::acc) len acc keystack t)
+      <-> (exists k_suff, k = rev keystack ++ k_suff
+                          /\ Is_Some (ntree_get t k_suff)
+                          /\ List.length k_suff = len)
+          \/ In k acc.
+  Proof.
+    revert t acc keystack.
+    induction len;
+      basic_goal_prep.
+    {
+      split;
+      basic_goal_prep;
+        basic_utils_crush.
+      {
+        left; exists [];
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+      {
+        destruct x;
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+    }
+    {
+      destruct t; try tauto.
+      cbn.
+      match goal with
+        |- context [(map.fold ?f ?acc ?m)] =>
+          pose proof (Properties.map.fold_to_list f acc m)
+      end.
+      break.
+      (*assert (all_fresh x) as Hxfr by admit.*)
+      unfold ntree in *.
+      rewrite H2.
+      unfold map.forall_values in H1.
+      assert (forall k v, In (k, v) x -> fully_constrained v).
+      {
+        intros k' v';
+          specialize (H3 k' v');
+          specialize (H1 k' v');
+          intuition eauto.
+      }
+      clear H2.
+      setoid_replace (exists k_suff : list idx,
+     k = rev keystack ++ k_suff /\
+     Is_Some
+       match k_suff with
+       | [] => None
+       | k1 :: k' => match map.get r k1 with
+                     | Some a => ntree_get a k'
+                     | None => None
+                     end
+       end /\ Datatypes.length k_suff = S len)
+                with (exists k1 k_suff,
+     k = rev (k1::keystack) ++ k_suff /\
+     Is_Some match map.get r k1 with
+                     | Some a => ntree_get a k_suff
+                     | None => None
+       end /\ Datatypes.length k_suff = len).
+      2:{
+        split; 
+        basic_goal_prep;
+        intuition eauto.
+        {
+          destruct x0 as [|k1 k']; cbn in *; try tauto.
+          exists k1, k'.
+          basic_utils_crush.
+          rewrite <- app_assoc; eauto.
+        }
+        {
+          exists (x0::x1).
+          basic_goal_prep;
+          basic_utils_crush.
+          rewrite <- app_assoc; eauto.
+        }
+      }
+      rewrite fold_right_flatmap.
+      {
+        unfold ntree.
+        basic_goal_prep.
+        autorewrite with utils.
+        rewrite in_flat_map.
+        apply or_iff_compat_r.
+        split; basic_goal_prep;
+          basic_utils_crush.
+        {
+          rewrite IHlen in H5.
+          2: firstorder.
+          intuition (basic_goal_prep;
+                     basic_utils_crush).
+          exists i, x0.
+          basic_goal_prep;
+            basic_utils_crush.
+          rewrite H3 in H2.
+          rewrite H2.
+          eauto.
+        }
+        {
+          revert H5; case_match; cbn; try tauto.
+          exists (x0,n).
+          rewrite H3.
+          rewrite IHlen; eauto.
+          basic_utils_crush.
+        }
+      }
+      {
+        basic_goal_prep.
+        eapply ntree_fold'_monotone.
+      }
+    }
+  Qed.
+
+  Definition is_left {A B} (v : A + B) := if v then True else False.
+
+  (*
+  Fixpoint fully_constrained_list {A len} : list (ntree idx A len) -> Prop :=
+    match len with
+    | 0 => fun _ => True
+    | S n => fun l =>
+               Exists is_left l
+               /\ all ? l
+                    TODO: need to pick one key and apply to all trees.
+    Exposes a representation issue: can have some branches, but not all, unconstrained.
+    This is undesirable.
+    Question: should I resctruture so that ea. ntree has a list of contrained indices?.
+    Seems like a better representation.
+               match t with
+                      | inl m => map.forall_values fully_constrained m
+                      | inr _ => False
+                      end
+    end.
+  *)
+
+  
+  (*TODO: could eliminate length condition, but would add operations to computation*)
+  Lemma ntree_fold_keys A (k:list idx) len t
+    : fully_constrained t ->
+      In k (ntree_fold (list A) (fun acc k _ => k::acc) len t [])
+      <-> Is_Some (ntree_get t k) /\ List.length k = len.
+  Proof.
+    intro Hf;
+      eapply ntree_fold'_keys with (k:=k) (acc:=[]) (keystack:=[]) in Hf.
+    intuition (basic_goal_prep;
+               basic_utils_crush).
+  Qed.      
+  
+  Lemma generic_join'_sound A len l assignment
+    : In assignment (generic_join' (A:=A) len l) ->
+      all (fun t => Is_Some (ntree_get t assignment)) l.
+  Proof.
+    unfold generic_join'.
+    rewrite ntree_fold_keys.
+    2:{
+      (*TODO: generalize fully constrained to list of trees?*)
+      admit(* TODO: what assumptions do I need for this?*).
+    }
+    rewrite fold_ntree_intersect.
+    unfold Is_Some;
+      case_match;
+      basic_goal_prep; try tauto.
+    revert HeqH1.
+    subst.
+    revert l0.
+    induction l;
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+    revert HeqH1; case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+  Abort.
 
   (*TODO: use this here? *)
   Context `{WithDefault idx}.
@@ -300,11 +557,13 @@ Alternately: should I build a tree then convert to a list?
 
 
   (* Note: We don't need completeness for our purposes, but it should hold. *)
-  Theorem generic_join_sound nodes q results
+  (*Theorem generic_join_sound nodes q assignment
     : (*wf_query q -> (probably necessary) *)
-    In results (generic_join nodes q) ->
-    exists has_rets args, results = map (nodes_lookup nodes) (combine has_rets (query_subst args q)).
-  Abort.
+    In assignment (generic_join nodes q) ->
+    let sub := combine q.(free_vars) assignment in
+    forall c, In c q.(clauses) ->
+              in_table c.(symbol) (clause_sub sub c) nodes.
+  Abort.*)
 
   (*
   Section __.
@@ -659,7 +918,7 @@ Alternately: should I build a tree then convert to a list?
   Import StateMonad.
 
   Definition table_put n (t : ntree idx idx n) uf ks v :=
-     match ntree_get _ n t ks with
+     match ntree_get t ks with
      | Some v1 =>
          (*TODO: union shouldn't ever fail? check this &/or make non-option union *)
          match UnionFind.union _ _ _ _ uf v v1 with
@@ -694,7 +953,7 @@ Alternately: should I build a tree then convert to a list?
     fun i =>
       (* TODO: abstact out the 'mutate value' pattern? *)
       @! let (existT _ n t) <- map.get i.(db) s in
-        match ntree_get _ n t ks with
+        match ntree_get t ks with
         | Some v => Some (v, i)
         | None =>
             let (uf',v) := alloc _ _ _ idx_succ i.(equiv) in
@@ -929,16 +1188,16 @@ Module PositiveIdx.
   Example query1 : query :=
     Build_query _ _ [3;1;2;4;5;6]
       [
-        Build_atom _ _ 10 [4;5;6];
-        Build_atom _ _ 20 [2;3];
-        Build_atom _ _ 10 [1;1;2;3]
+        Build_atom _ _ 10 [4;5] 6;
+        Build_atom _ _ 20 [2] 3;
+        Build_atom _ _ 10 [1;1;2] 3
       ].
   Time Compute (generic_join_pos db1 query1).
   
   Example query2 : query :=
     Build_query _ _ [1;2;3]
       [
-        Build_atom _ _ 10 [1;2;2;3]
+        Build_atom _ _ 10 [1;2;2] 3
       ].
 
   Compute (generic_join_pos db1 query2).
