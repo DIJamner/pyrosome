@@ -27,11 +27,14 @@ Ltac break :=
          | [H: exists x, _|-_]=> destruct H
          end.
 
-
+(*TODO: deprecate *)
 Ltac my_case eqnname exp :=
+  destruct exp eqn:eqnname.
+  (*
   let casevar := fresh "casevar" in
   remember exp as casevar eqn:eqnname;
   destruct casevar; symmetry in eqnname.
+   *)
 
 
 (* Performs inversion on H exactly when 
@@ -89,7 +92,37 @@ Ltac basic_utils_firstorder_crush :=
 Ltac basic_goal_prep := intros; break; simpl in *.
 
 
-(*TODO: make case on innermost match?*)
+Ltac case_match' c :=
+  lazymatch c with
+  | context [match ?c' with _ => _ end] => case_match' c'
+  | _ =>
+      let e' := fresh in
+      remember c as e'; destruct e'
+  end.
+Ltac better_case_match :=
+  match goal with
+  | |- context [ match ?e with
+                 | _ => _
+                 end ] => case_match' e
+  end.
+
+
+(* TODO: replace with similar tactic?
+Require Import Tactics.Tactics
+Print destruct_one_match.
+*)
+(*TODO: make case on innermost match?
+  (*TOOD: replace case_match with this? Copied once already*)
+  Ltac case_match' :=
+    try lazymatch goal with
+          [ H :  context [ match ?e with
+                           | _ => _
+                           end] |- _ ] => revert H
+        end;
+    case_match.
+ *)
+(*TODO: remove *)
+#[deprecated(note="should replace with better_case_match")]
 Ltac case_match :=match goal with
   | [|- context[match ?e with _ => _ end]]
     => let e':= fresh in remember e as e'; destruct e'

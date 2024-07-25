@@ -30,7 +30,7 @@ Section __.
   Fixpoint ntree n : Type :=
     match n with
     | 0 => A
-    | S n => m (ntree n) + ntree n (*top*)
+    | S n => m (ntree n) (*+ ntree n (*top*)*)
     end.
                                           
   Section __.
@@ -40,13 +40,9 @@ Section __.
     Fixpoint ntree_fold' n acc keystack : ntree n -> _ :=
       match n with
       | 0 => f acc (rev keystack)
-      | S n' =>
-          sum_rect _
-            (map.fold (fun acc k => ntree_fold' n' acc (k::keystack)) acc)
-            (fun _ => acc) (*NOTE!!! will return incorrect results in this case. Might be infinite, se we can't fold*)
+      | S n' => (map.fold (fun acc k => ntree_fold' n' acc (k::keystack)) acc)
       end.
 
-    (* NOTE: will return faulty results if the tree contains any top nodes *)
     Definition ntree_fold n (t:ntree n) acc :=
       ntree_fold' n acc [] t.
 
@@ -59,13 +55,9 @@ Section __.
     Fixpoint ntree_Mfold' n (acc :B) keystack : ntree n -> state ST B :=
       match n with
       | 0 => f acc (rev keystack)
-      | S n' =>
-          sum_rect _
-            (fun m : map.rep => map_Mfold (fun k v acc => ntree_Mfold' n' acc (k::keystack) v) m acc)
-            (fun _ => Mret acc) (*NOTE!!! will return incorrect results in this case. Might be infinite, se we can't fold*)
+      | S n' => (fun m : map.rep => map_Mfold (fun k v acc => ntree_Mfold' n' acc (k::keystack) v) m acc)
       end.
 
-    (* NOTE: will return faulty results if the tree contains any top nodes *)
     Definition ntree_Mfold n (t:ntree n) acc :=
       ntree_Mfold' n acc [] t.
 
@@ -84,12 +76,11 @@ Section __.
     | 0 => fun t k => Some t
     | S n' =>
         fun t k =>
-          match k,t with
-          | k1::k', inl t =>
+          match k with
+          | k1::k' =>
               @! let next <- map.get t k1 in
                 (ntree_get n' next k')
-          | k1::k', inr next => (ntree_get n' next k')
-          | _,_ => None
+          | _ => None
           end
     end.
   Arguments ntree_get [n]%nat_scope _ _%list_scope.
@@ -102,8 +93,8 @@ Section __.
     | 0 => v
     | S n' =>
         match k with
-        | k1 :: k' => inl (map.singleton k1 (ntree_singleton n' k' v))
-        | _ => inl map.empty
+        | k1 :: k' => map.singleton k1 (ntree_singleton n' k' v)
+        | _ => map.empty
         end
     end.
   
@@ -117,15 +108,13 @@ Section __.
     | 0 => fun _ _ a => a
     | S n' =>
         fun t k v =>
-          match k, t with
-          | k1 :: k', inl t =>
-              inl match map.get t k1 with
+          match k with
+          | k1 :: k' =>
+              match map.get t k1 with
               | Some next => map.put t k1 (ntree_set n' next k' v)
               | None => map.put t k1 (ntree_singleton n' k' v)
               end
-          | k1 :: k', inr next =>
-              inr (ntree_set n' next k' v)
-          | _, _ => t
+          | _ => t
           end
     end.
 
@@ -142,32 +131,9 @@ Section __.
     match n with
     | 0 => merge
     | S n' =>
-        fun t1 t2 =>
-          match t1,t2 with
-          | inl m1, inl m2 => inl (map_intersect (ntree_intersect n') m1 m2)
-          | inl m, inr c =>
-              inl (map_map (fun c' => ntree_intersect n' c' c) m)
-          | inr c, inl m =>
-              inl (map_map (ntree_intersect n' c) m)
-          | inr c1, inr c2 => inr (ntree_intersect n' c1 c2)
-          end
+        fun m1 m2 => map_intersect (ntree_intersect n') m1 m2
     end.
   Arguments ntree_intersect [n]%nat_scope _ _.
-
-  (* TODO: move to base *)  
-  Ltac case_match' c :=
-    lazymatch c with
-    | context [match ?c' with _ => _ end] => case_match' c'
-    | _ =>
-        let e' := fresh in
-        remember c as e'; destruct e'
-    end.
-  Ltac case_match :=
-    match goal with
-    | |- context [ match ?e with
-                   | _ => _
-                   end ] => case_match' e
-    end.
   
     Lemma ntree_intersect_spec n (t1 : ntree A n) (t2 : ntree B n) k
       : ntree_get (ntree_intersect t1 t2) k
@@ -179,11 +145,11 @@ Section __.
       revert t1 t2 k;
         induction n;
         basic_goal_prep; try now intuition eauto.
-      destruct k, t1, t2;
+      destruct k;
         basic_goal_prep;
         intuition eauto;
         rewrite ?intersect_spec; eauto.
-      all: repeat case_match; try congruence.
+      all: repeat better_case_match; try congruence.
       all: rewrite ?map_map_spec in *.
       all:try(unfold ntree in *;
               cbn in *;
@@ -197,14 +163,7 @@ Section __.
                 end;
               try congruence).
       all: rewrite ?IHn.
-      all: repeat case_match; try congruence.
-      {
-        my_case Hrk (map.get r k);
-          cbn in *; try congruence.
-        safe_invert HeqH1.
-        rewrite IHn, <- HeqH0.
-        reflexivity.
-      }
+      all: repeat better_case_match; try congruence.
     Qed.
   
 End __.

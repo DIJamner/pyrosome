@@ -108,16 +108,16 @@ Section WithMap.
   (*TODO: move to FunctionalDB.v*)
   Arguments Build_atom {idx symbol}%type_scope atom_fn atom_args%list_scope.
   Instance Eqb_atom : Eqb atom :=
-    fun '(Build_atom f1 a1) '(Build_atom f2 a2) =>
-      andb (eqb f1 f2) (eqb a1 a2).
+    fun '(Build_atom f1 a1 r1) '(Build_atom f2 a2 r2) =>
+      andb (eqb f1 f2 ) (andb (eqb a1 a2 ) (eqb r1 r2)).
 
   Definition sub_var (sub : list (idx*idx)) x : idx := named_list_lookup x sub x.
   
   Definition eqn_sub (sub : list (idx*idx)) :=
     map (fun '(x,y) => (sub_var sub x, sub_var sub y)).
 
-  Definition atom_sub sub '(Build_atom f args) : atom :=
-    Build_atom f (map (sub_var sub) args).
+  Definition atom_sub sub '(Build_atom f args r) : atom :=
+    Build_atom f (map (sub_var sub) args) (sub_var sub r).
   
   Definition put_sub (sub : list (idx*idx)) : list (atom * idx) -> _ :=
     map (fun '(a, x) => (atom_sub sub a, sub_var sub x)).
@@ -200,17 +200,6 @@ Section WithMap.
       fun s => (idx_succ s, s).
 
     Context {idx_default : WithDefault idx}.
-    
-    Definition separate_atom_out a : state idx (atom * idx) :=
-      if eqb (length a.(atom_args)) (arity a.(atom_fn))
-      (* no preexisting variable *)
-      then
-        @! let x <- gensym in
-          ret (a,x)
-        (* assume len = arity + 1 *)
-      else
-        let '(args', out) := split_last a.(atom_args) in
-        Mret (Build_atom a.(atom_fn) args',out).
 
     Notation instance := (instance idx symbol symbol_map idx_map).
     Arguments db_put {idx}%type_scope {Eqb_idx} {symbol}%type_scope
@@ -219,11 +208,11 @@ Section WithMap.
     Definition uf_empty : union_find idx (idx_map _) (idx_map _) :=
       (empty idx (idx_map idx) (idx_map nat) default).
 
-    Definition clauses_to_db (clauses : list atom) : state idx instance :=
-      list_Mfoldl (fun acc a =>
-                     @! let (Build_atom f args,out) <- separate_atom_out a in
-                       (*TODO: should db_put really return the idx? *)
-                       ret (snd (db_put f args out acc)))
+    Definition clauses_to_db (clauses : list atom) : instance :=
+      fold_left (fun acc a =>
+                   let '(Build_atom f args out) := a in
+                   (*TODO: should db_put really return the idx? *)
+                   (snd (db_put f args out acc)))
         clauses (Build_instance _ _ _ _ map.empty uf_empty).
 
     Context (idx_max : idx -> idx -> idx).
@@ -236,20 +225,18 @@ Section WithMap.
       - it is not free in the associated update
       Rather than maintain a phony list, should take as input the fvs of the update
      *)
-    Definition query_to_db q : instance :=
-      let next := idx_succ (List.fold_right idx_max idx_default q.(free_vars)) in
-      fst (clauses_to_db q.(clauses) next).
+    Definition query_to_db q : instance := clauses_to_db q.(clauses).
 
     Notation db_map := (db_map idx symbol symbol_map idx_map).
     Definition db_to_clauses : db_map -> list atom :=
       let args_map_to_args _ args_map :=
         MapTreeN.ntree_fold
           _
-          (fun acc keys val => (keys ++ [val])::acc)
+          (fun acc keys val => (keys, val)::acc)
           _ args_map []
       in
       map.fold (fun clauses f args_map =>
-                  (map (Build_atom f) (args_map_to_args _ (projT2 args_map)))
+                  (map (fun '(args,r) => Build_atom f args r) (args_map_to_args _ (projT2 args_map)))
                     ++ clauses) [].
 
     (* Note: does not need to produce a mapping from old vars to new ones.

@@ -259,9 +259,18 @@ Section __.
     revert s; induction l; destruct s; basic_goal_prep; try easy.
     revert H. case_match; basic_utils_crush.
   Qed.
-  *)
+   *)
+
+  Lemma Is_true_forallb (f : A -> _) l
+    : Is_true (forallb f l) <-> all (fun x => Is_true (f x)) l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
 
 End __.
+
 
 
 Arguments sublist {A}%type_scope (s l)%list_scope.
@@ -312,3 +321,5 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 
 
 #[export] Hint Rewrite inb_is_In using solve[typeclasses eauto] : utils.
+
+#[export] Hint Rewrite Is_true_forallb : utils.
