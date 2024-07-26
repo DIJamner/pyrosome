@@ -129,15 +129,6 @@ Section WithMap.
   
   Coercion ne_as_table : ne_table >-> list.
 
-  
-
-  Definition arg_subst v x a :=
-    match a with
-    | const_arg c => const_arg c
-    | var_arg x' =>
-        if eqb x x' then const_arg v else var_arg x'
-    end.
-
   Instance eqb_argument : Eqb argument :=
     fun a b =>
       match a,b with
@@ -227,12 +218,20 @@ Section WithMap.
       let t := build_trie' (r1,tab) v_is in
       ret Build_ntree _ _ t.
 
+  
+  Record query :=
+    {
+      free_vars : list idx;
+      clauses : list atom;
+    }.
+  
+  
   (* Returns None only if some clause doesn't match any rows.
      Note: may still return Some in such cases.
    *)
-  Definition build_tries (nodes : node_map) (vars : list idx) (clauses : list atom)
+  Definition build_tries (nodes : node_map) (q: query)
     : option (list _) :=
-    list_Mmap (build_trie nodes vars) clauses.
+    list_Mmap (build_trie nodes q.(free_vars)) q.(clauses).
 
 (*
 TODO: what is best wrt intersection?
@@ -284,18 +283,13 @@ Alternately: should I build a tree then convert to a list?
     ntree_fold _ (fun acc k _ => cons k acc)
       (List.fold_right (ntree_intersect_unchecked (fun _ _ => tt)) t1 tries) [].
   
-  Record query :=
-    {
-      free_vars : list idx;
-      clauses : list atom;
-    }.
 
   (* Returns a list of all possible outputs of the query's clauses
      such that the query matches.
      Note: duplicates are possible.
    *)
   Definition generic_join (nodes : node_map) q : list (list idx) :=
-    match build_tries nodes q.(free_vars) q.(clauses) with
+    match build_tries nodes q with
     | None => [] (* short-circuit: includes an empty trie *)
     | Some [] => [] (* NOTE: no clauses, invalid result in this case *)
     | Some (t1::tries) => generic_join' t1 tries
@@ -649,160 +643,209 @@ Alternately: should I build a tree then convert to a list?
     revert H1; repeat (better_case_match; cbn); intuition eauto.
   Qed.
 
-  (*
-  (*TODO: use this here? *)
-  Context `{WithDefault idx}.
-
-  (*TODO: is the combine in the right order?*)
-  Definition atom_args_subst args_in fvs : list idx -> list idx :=
-    map (named_list_lookup default (combine fvs args_in)).
-  
-  Definition query_subst (args : list idx) q : list (symbol * list idx) :=
-    List.map (fun clause => (clause.(atom_fn),atom_args_subst args q.(free_vars) clause.(atom_args))) q.(clauses).
-
-  (*TODO: handles the return variable in a somewhat hacky way.
-          Maybe the query should keep it separate at spec-level?
-   *)  
-  Definition nodes_lookup (n : node_map) '(has_ret,(s,args)) : idx :=
-    let table_key := if has_ret : bool then removelast args else args in
-    unwrap_with_default
-      (@! let tab <- map.get n s in
-         (named_list_lookup_err tab table_key)).
-   *)
-
-
-  (* Note: We don't need completeness for our purposes, but it should hold. *)
-  (*Theorem generic_join_sound nodes q assignment
-    : (*wf_query q -> (probably necessary) *)
-    In assignment (generic_join nodes q) ->
-    let sub := combine q.(free_vars) assignment in
-    forall c, In c q.(clauses) ->
-              in_table c.(symbol) (clause_sub sub c) nodes.
-  Abort.*)
-
-  (*
-  Section __.
-    Context (tab : table).
-  Inductive trie_satisfies_clause' : list idx -> list argument -> _ -> Prop :=
-  | empty_satisfies_no_result_match key a atom_args
-    : In (key, a) tab ->
-      atom_args = map const_arg key ->
-      trie_satisfies_clause' [] atom_args (leaf a)
-  | empty_satisfies_result_match key a atom_args
-    : In (key, a) tab ->
-      atom_args = map const_arg (key++[a]) ->
-      trie_satisfies_clause' [] atom_args (leaf a)
-  | cons_satisfies_top x fvs atom_args t
-    (* rather than quantify over an arbitrary v here,
-       we require that x is not in atom_args.
-     *)
-    : trie_satisfies_clause' fvs atom_args t ->
-      trie_satisfies_clause' (x::fvs) atom_args (top_node t)
-  | cons_satisfies_node x fvs atom_args m
-    : (forall v t, map.get m v = Some t -> trie_satisfies_clause' fvs (map (arg_subst x v) atom_args) t) ->
-      trie_satisfies_clause' (x::fvs) atom_args (node m).
-  End __.
-  Hint Constructors trie_satisfies_clause' : utils.
+  Lemma build_trie_length nodes fvs a t
+    : Some t = build_trie nodes fvs a ->
+      List.length t.(constrained_indices) = List.length fvs.
+  Proof.
+    unfold build_trie.
+    cbn.
+    repeat (better_case_match; cbn);
+      basic_goal_prep;
+      basic_utils_crush.
+    cbn.
+    unfold c_is_of_vars, var_indices.
+    basic_utils_crush.
+  Qed.
 
   
-  Definition trie_satisfies_clause nodes fvs clause trie : Prop :=
-    match map.get nodes clause.(atom_fn) with
-    | Some tab => trie_satisfies_clause' tab fvs (map var_arg clause.(atom_args)) trie
+  Lemma list_Mmap_invariant A B (f : A -> option B) (P : B -> Prop) l l'
+    : (forall x y, Some y = f x -> P y) -> Some l' = list_Mmap f l -> all P l'.
+  Proof.
+    intro Hf.
+    revert l';
+      induction l;
+      repeat (better_case_match; cbn);
+      basic_goal_prep;
+      basic_utils_crush.
+    revert H1;
+      repeat (better_case_match; cbn);
+      basic_goal_prep;
+      basic_utils_crush.
+    cbn; intuition eauto.
+  Qed.
+
+  Lemma build_tries_length nodes q l t1
+    : Some (t1::l) = build_tries nodes q ->
+      all (fun t' : ntree unit => ntree_len_eq t1 t') l.
+  Proof.
+    unfold build_tries; destruct q;
+      cbn.
+    intro HM.
+    eapply list_Mmap_invariant in HM.
+    { cbn in *; intuition eauto. }
+    {
+      unfold ntree_len_eq.
+      basic_goal_prep;
+        basic_utils_crush.
+      destruct clauses0; cbn in HM; try congruence.
+      revert HM; repeat better_case_match;
+      basic_goal_prep;
+        basic_utils_crush.
+      cbn.
+      unfold c_is_of_vars, var_indices.
+      basic_utils_crush.
+      erewrite build_trie_length; eauto.
+    }
+  Qed.
+
+  Definition in_node_map (n : node_map) a :=
+    match map.get n a.(atom_fn) with
+    | Some t => In (a.(atom_args),a.(atom_ret)) t
     | None => False
     end.
 
-  Definition subst_all_args s args : list argument :=
-    List.fold_right (fun '(x,v) => map (arg_subst x v)) args s.
   
-  (* has two disjuncts, one for including the result and one for not *)
-  Definition row_can_match (args : list argument) '(key,v) :=
-    exists s, (subst_all_args s args) = map const_arg (key++[v])
-              \/ (subst_all_args s args) = map const_arg key.
+  Context `{WithDefault idx}.
 
-  Definition arg_vars :=
-    flat_map (fun x =>
-                match x with
-                | const_arg c => []
-                | var_arg x' => [x']
-                end).
-  
-  Lemma no_vars_means_all_const args
-    :  incl (arg_vars args) [] ->
-       exists cs, args = map const_arg cs.
-  Proof.
-    induction args;
-      basic_goal_prep;
-      [exists []
-       | destruct a (*
-         let x := open_constr:(_::_) in
-         exists x*)];
-      basic_goal_prep;
-      basic_utils_crush.
-    exists (c::x).
-    reflexivity.
+  (* Note: defaults don't protect against out-of-scope idxs *)
+  Definition atom_subst (sub : named_list idx idx) (a : atom) : atom :=
+    let (f, args, r) := a in
+    Build_atom f
+      (map (named_list_lookup default sub) args)
+      (named_list_lookup default sub r).
+
+  Definition matches_pat mp (x:idx) :=
+    match mp with Some x' => x = x' | None => True end.
+
+  Definition table_compatible (t : table) (sub : named_list idx idx) args rv :=
+    let args_pat := map (named_list_lookup_err sub) args in
+    let r_pat := named_list_lookup_err sub rv in
+    all (fun '(k,r) => all2 matches_pat args_pat k /\ matches_pat r_pat r) t.
+
+  (* TODO: move to Lists.v*)
+  Lemma named_list_lookup_from_err (i0 : idx) (sub' : named_list idx idx) r
+    : Some i0 = named_list_lookup_err sub' r ->
+      named_list_lookup default sub' r = i0.
+  Proof using Eqb_idx_ok.
+    induction sub';
+      basic_goal_prep; try congruence.
+    eqb_case r i; try congruence; eauto.
   Qed.
   
-  Lemma subst_all_args_const x x0
-    : subst_all_args x (map const_arg x0) = (map const_arg x0).
+  Lemma table_compatible_lookup (t : ne_table) sub' args r
+    :  table_compatible t sub' args r ->
+       In r (map fst sub') ->
+       incl args (map fst sub') ->
+       In (map (named_list_lookup default sub') args, named_list_lookup default sub' r) t.
   Proof.
-    unfold subst_all_args.
-    revert x0.
-    induction x;
+    clear idx_leb.
+    unfold table_compatible, matches_pat.
+    destruct t as [[x i] t].
+    induction t;
       basic_goal_prep;
       basic_utils_crush.
-    rewrite IHx.
-    rewrite map_map.
-    eapply map_ext.
-    intros; reflexivity.
+    2:{
+      revert H7;
+      better_case_match;
+      basic_goal_prep;
+      subst;
+      basic_utils_crush.
+      { erewrite named_list_lookup_from_err; eauto. }
+      { exfalso.
+        eapply pair_fst_in_exists in H3; break.
+        eapply named_list_lookup_none in HeqH5; eauto.
+      }
+    }
+    {
+      revert x H2 H4.
+      clear H7 H6 H3 r.
+      induction args;
+        destruct x;
+        repeat better_case_match;
+        basic_goal_prep;
+        subst;
+        basic_utils_crush.
+      revert H3;
+      better_case_match;
+      basic_goal_prep;
+      subst;
+      basic_utils_crush.
+      { erewrite named_list_lookup_from_err; eauto. }
+      { exfalso.
+        eapply pair_fst_in_exists in H2; break.
+        eapply named_list_lookup_none in HeqH3; eauto.
+      }
+    }
   Qed.
-*)
 
-  (*TODO: move to List.v*)
-  Lemma map_inj A B (f : A -> B)
-    : (forall a a', f a = f a' -> a = a') ->
-      forall l l', map f l = map f l' -> l = l'.
+
+  (* TODO: move to namedlist *)
+  Lemma lookup_app_notin {A} (x:idx) (l1 l2 : named_list idx A) 
+    : fresh x l2 ->
+      named_list_lookup_err (l1++l2) x
+      = named_list_lookup_err l1 x.
   Proof.
+    clear idx_leb.
+    induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      symmetry.
+      rewrite named_list_lookup_none_iff.
+      eauto.
+    }
+    {
+      eqb_case x i; eauto.
+    }
+  Qed.
+  
+  Local Lemma map_lookup_app_notin {A} l (l1 l2 : named_list idx A) 
+    : all (fun x => fresh x l2) l ->
+      map (named_list_lookup_err (l1++l2)) l
+      = map (named_list_lookup_err l1) l.
+  Proof.
+    clear idx_leb.
     induction l;
-      destruct l';
-      basic_goal_prep;
-      basic_utils_crush.
+      cbn; eauto.
+    intuition (f_equal; eauto using lookup_app_notin).
   Qed.
 
-  (*TODO: move to Utils*)
-  Hint Resolve incl_tl : utils.
-
-  (*
-  (*TODO: move to List.v*)
-  Lemma incl_strengthen {A} (a:A) l1 l2
-    : ~ In a l1 ->
-      incl l1 (a::l2) ->
-      incl l1 l2.
+  Lemma table_compatible_snoc_unconstrained t sub' a args r i
+    : ~ In a args ->
+      a <> r ->
+      table_compatible t sub' args r ->
+      table_compatible t (sub' ++ [(a, i)]) args r.
   Proof.
-    unfold incl;
-      basic_goal_prep.
-    pose proof H2.
-    eapply H1 in H2;
+    unfold table_compatible.
+    intros Hargs Hr.
+    eapply all_implies.
+    basic_goal_prep;
+      subst;
       basic_utils_crush.
-  Qed.
-*)
-(*
-  Lemma not_in_arg_vars a args
-    : ~ In (var_arg a) args ->
-      ~ In a (arg_vars args).
-  Proof.
-    unfold arg_vars.
-    induction args;
-      try case_match;
-      basic_goal_prep;
-      basic_utils_crush.
-    revert H5;
-      case_match;
-      basic_goal_prep;
-      basic_utils_crush.
+    2:{
+      clear H2.
+      unfold matches_pat in *.
+      rewrite lookup_app_notin; eauto.
+      cbv; intuition eauto.
+    }
+    {
+      clear H3.
+      unfold matches_pat in *.
+      rewrite map_lookup_app_notin; eauto.
+      {
+        unfold fresh.
+        cbn.
+        revert Hargs; clear;
+          induction args;
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+    }
   Qed.
 
-  Lemma indices_of_empty A  `{Eqb_ok A} (a:A) l
-    : [] = indices_of a l ->
+  
+  Lemma empty_indices_of a l
+    : [] = indices_of (var_arg a) (map var_arg l) ->
       ~ In a l.
   Proof.
     unfold indices_of.
@@ -810,204 +853,191 @@ Alternately: should I build a tree then convert to a list?
     induction l;
       basic_goal_prep;
       basic_utils_crush.
+    cbn in *.
     eqb_case a a0;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  Require Import Coq.Sorting.Permutation.
-  Import Mergesort.Sectioned.
-
-  
-  Lemma filter_split_sorted_sound i0 idxs tab v t
-    : (*TODO: use regular or strong sort? (have both)*)
-    Sorted.Sorted (fun x x0 => is_true (args_order i0 x x0)) tab ->
-    In (v,t) (filter_split_sorted (i0, idxs) tab) ->
-    incl t tab
-    /\ all (fun row => all (fun i => nth i (fst row) (snd row) = v) (i0::idxs)) t.
-  Proof.
-    unfold filter_split_sorted;
-      case_match.
-    {
-      basic_utils_crush.
-    }
-    {
-      subst; break; cbn.
-      set (forallb _ _) as b;
-        my_case Hforallb b;
-        subst b.
-      2:{ basic_utils_crush. }
-      basic_goal_prep.
-      (*TODO: induction invariants for filter_split_sorted'*)
-  Admitted.
-
-  
-  Context (idx_leb_total : forall x y, idx_leb x y = true \/ idx_leb y x = true).
-
-    
-  Lemma args_order_total x y i0
-    : args_order i0 x y = true \/ args_order i0 y x = true.
-  Proof.
-    unfold args_order.
-    eapply idx_leb_total.
+      try congruence.
+    eapply IHl; eauto.
   Qed.
   
-  Lemma split_by_sound i0 idxs tab v t
-    : In (v,t) (split_by (i0,idxs) tab) ->
-      incl t tab
-      /\ all (fun row => all (fun i => nth i (fst row) (snd row) = v) (i0::idxs)) t.
+  Lemma build_trie'_sound (ne_tab : ne_table) assignment args r fvs sub'
+    : List.length fvs = List.length assignment ->
+      table_compatible ne_tab sub' args r ->
+      let v_is := var_indices fvs (map var_arg (args ++ [r])) in
+      Is_Some (MapTreeN.ntree_get (build_trie' ne_tab v_is)
+                 (filter_key assignment (c_is_of_vars v_is))) ->
+      In r (map fst sub' ++ fvs) ->
+      incl args (map fst sub' ++ fvs) ->
+      let sub := named_list_lookup default (sub' ++ combine fvs assignment) in
+      In (map sub args, sub r) ne_tab.
   Proof.
-    unfold split_by.
-    set (Merge.sort _ _) as l.
-    assert (Permutation l tab).
-    {
-      symmetry.
-      eapply Permuted_sort.
-    }
-    intro H'.
-    eapply filter_split_sorted_sound in H'.
-    2:{
-      subst l.
-      eapply Merge.Sorted_sort.
-      intros; eapply args_order_total.
-    }
-    intuition eauto.
-    unfold incl.
-    intro.
-    rewrite <- H0.
-    eapply H1.
-  Qed.
-  
-  Lemma row_can_match_subst a v l i args
-    : (forall j, In j (indices_of (var_arg a) args) ->
-                 nth j (l++[i]) v = v) ->
-      row_can_match args (l, i) ->
-      row_can_match (map (arg_subst a v) args) (l, i).
-  Proof.
-    revert l.
-    induction args;
-      destruct l;
-      unfold row_can_match;
-      basic_goal_prep.
-    { exists x; eauto. }
-    {
-      exfalso.
-      revert H1.
-      (*unfold subst_all_args.
-      cbv [fold_right].
-      cbn.
-      cbn in H1. intuition congruence. }
-    
-      basic_utils_crush.*)
-  Admitted.
-    
-    
-  Lemma build_trie'_sound r1 tab fvs args
-    : incl (arg_vars args) fvs ->
-      all (row_can_match args) (r1::tab) ->
-      trie_satisfies_clause' (r1::tab) fvs args (build_trie' (r1,tab) fvs args).
-  Proof.
-    revert r1 tab args.
+    revert assignment sub'.
     induction fvs;
-      basic_goal_prep.
+      destruct assignment;
+      try (basic_goal_prep; congruence).
     {
-      break.
-      
-      eapply no_vars_means_all_const in H0; break; subst.
-      rewrite ! subst_all_args_const in H1.
-      destruct H1 as [H1 | H1];
-        eapply map_inj in H1; subst;
+      intros.
+      eapply table_compatible_lookup; 
         basic_goal_prep;
-        try congruence;
         basic_utils_crush.
     }
     {
-      case_match; subst; basic_goal_prep.
-      {
-        econstructor.
-        assert (incl (arg_vars args) fvs).
-        {
-          eapply incl_strengthen; eauto.
-          eapply not_in_arg_vars.
-          eapply indices_of_empty; eauto.
-          typeclasses eauto.
-        }
-        eapply IHfvs; basic_utils_crush.
-        all: unfold row_can_match;
-          exists x.
-        all: [>left | right]; eauto.
-      }
-      {
-        econstructor;
-          basic_goal_prep.
-        assert (t = build_trie' ((l,i), tab) fvs (map (arg_subst a v) args))
-          by admit.
-        {
-          break;subst.
-          eapply IHfvs.
-          1:admit (*arg_vars lemma*).
-          (* TODO:use row_can_match_subst *)
-       (*   
-        revert H4.
-        lazymatch goal with
-        | |- context [split_by (?i0, ?idxs) ?tab] =>
-            pose proof (split_by_sound i0 idxs tab) as H';
-            revert H';
-            set (split_by _ _)
-        end.
-        intros.
-        intro H4.
-        Set Printing Coercions.
-        cbv in n0.
-        eapply split_by_sound in 
+      intros.
+      subst v_is sub.
+      cbn [combine] in *.
 
-        TODO: nested ind on the split_by?
-        revert t H4.
-        eapply Properties.map.map_ind.
-        TODO: nested map induction
-        eapply IHfvs.
+      
+      revert H4; cbn.
+      better_case_match.
+      {
+        (*unconstrained case *)
+        replace (map fst sub' ++ a :: fvs)
+          with (map fst (sub' ++ [(a,i)]) ++ fvs) in *.
+        2:{
+          clear.
+          rewrite map_app.
+          basic_goal_prep;
+            basic_utils_crush.
+          rewrite <- app_assoc.
+          eauto.
+        }
+        replace (sub' ++ (a,i) :: combine fvs assignment)
+          with ((sub' ++ [(a,i)]) ++ combine fvs assignment) in *.
+        2:{
+          rewrite <- app_assoc.
+          eauto.
+        }
+        intro Hsome.
+        eapply IHfvs; eauto.
+        {
+          eapply empty_indices_of in HeqH4.
+          eapply table_compatible_snoc_unconstrained; eauto;
+            basic_utils_crush.
+        }
       }
-    }
-  Qed.*)
+      {
+        (*
+        Design questions:
+          1. can I assume some sort on the table?
+             - needs to be per-query, but does it have to be per recursive branch?
+          2. what data structure does the table need to have?                                  - is there something that is more amenable to quick lookup&insertion?
+             - related: when/what lookups,insertions do I perform?
+               for equalities: no lookups, but batched insertions
+                               w/ potentially mergable results
+               for type inference: lookups for every metametavariable/hole,
+               alternately a recursive whole-term lookup
+         *)
+        (*
+        TODO: properties of split_by;
+        fold_left invariant;
+        put sound
+         *)
   Admitted.
-    
-  Lemma build_trie_sound nodes fvs clause tries
-    : incl (arg_vars (map var_arg clause.(atom_args))) fvs ->
-      (forall tab, map.get nodes clause.(atom_fn) = Some tab ->
-                   all (row_can_match (map var_arg clause.(atom_args))) tab) ->
-      build_trie nodes fvs clause = Some tries ->
-      trie_satisfies_clause nodes fvs clause tries.
-  Proof.
-    unfold build_trie, trie_satisfies_clause.
-    case_match;
-      basic_goal_prep;
-      basic_utils_crush.
-    revert H2;
-    case_match;
-      basic_goal_prep;
-      basic_utils_crush.
-    eapply build_trie'_sound; eauto.
-  Qed.     
+
   
-  (* Only the Some case is necessary in the soundness direction *)
-  Lemma build_tries_sound nodes fvs clauses tries
-    : all (fun c => incl (arg_vars (map var_arg c.(atom_args))) fvs) clauses ->
-      all (fun c => forall tab, map.get nodes c.(atom_fn) = Some tab ->
-                                all (row_can_match (map var_arg c.(atom_args))) tab)
-        clauses ->
-    build_tries nodes fvs clauses = Some tries ->
-      all2 (trie_satisfies_clause nodes fvs) clauses tries.
+  Definition atom_ws fvs (a:atom) :=
+    In a.(atom_ret) fvs /\ incl a.(atom_args) fvs.
+
+  (*TODO: move to Lists*)
+  Lemma all2_map_l A B C (f : A -> B) (P : B -> C -> Prop) l1 l2
+    : all2 P (map f l1) l2 <-> all2 (fun x y => P (f x) y) l1 l2.
   Proof.
-    revert tries; induction clauses;
+    clear.
+    revert l2;
+      induction l1;
+      destruct l2;
       basic_goal_prep;
       basic_utils_crush.
-    revert H2; case_match;
-      basic_utils_crush.
-    revert H2; case_match;
-      basic_utils_crush.
-    eapply build_trie_sound; eauto.
+    all:apply IHl1; eauto.
   Qed.
- *)
+
+  Lemma all2_implies B C (P Q : B -> C -> Prop) l1 l2
+    : (forall x y, P x y -> Q x y) -> all2 P l1 l2 -> all2 Q l1 l2.
+  Proof.
+    clear.
+    intro Hpq.
+    revert l2;
+      induction l1;
+      destruct l2;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma table_compatible_nil (t : table) args r
+    : all (fun row => List.length args = List.length (fst row)) t ->
+      table_compatible t [] args r.
+  Proof.
+    unfold table_compatible, matches_pat.
+    cbn.
+    eapply all_implies.
+    {
+      basic_goal_prep.
+      intuition eauto.
+      rewrite all2_map_l.
+      revert args H2;
+        induction l;
+        destruct args;
+        basic_goal_prep;
+        basic_utils_crush.
+    }
+  Qed.    
+  
+  Lemma build_trie_sound t fvs c nodes assignment
+    : atom_ws fvs c ->
+      Some t = build_trie nodes fvs c ->
+      Is_Some (ntree_get t assignment) ->
+      in_node_map nodes (atom_subst (combine fvs assignment) c).
+  Proof.
+    unfold build_trie, atom_ws.
+    destruct c.
+    unfold in_node_map, ntree_get.
+    cbn in *.    
+    repeat better_case_match;
+      try (cbv [default option_default]; congruence).
+    intros; basic_utils_crush.
+    eapply build_trie'_sound
+      with (ne_tab:= (l, i, H2))
+           (sub':=[]);
+      eauto.
+    { admit (*ntree get len lemma*). }
+    {
+      eapply table_compatible_nil.
+      admit (*table arity wfness*). }
+  Abort.    
+    
+  Lemma build_tries_sound l q nodes assignment
+    : Some l = build_tries nodes q ->
+      all2 (fun t c => Is_Some (ntree_get t assignment) ->
+                       in_node_map nodes (atom_subst (combine (free_vars q) assignment) c))
+        l q.(clauses).
+  Proof.
+    unfold build_tries.
+    destruct q.
+    cbn.
+
+  Abort.
+  
+  (* Note: We don't need completeness for our purposes, but it should hold. *)
+  Theorem generic_join_sound nodes q assignment
+    : (*wf_query q -> (probably necessary) *)
+    In assignment (generic_join nodes q) ->
+      let sub := combine q.(free_vars) assignment in
+      forall c, In c q.(clauses) ->
+                in_node_map nodes (atom_subst sub c).
+  Proof.
+    unfold generic_join.
+    repeat better_case_match.
+    all: basic_utils_crush.
+    eapply generic_join'_sound in H3.
+    2:{ eapply build_tries_length; eauto. }
+    2:{ admit (*TODO: add wf query assumption *). }
+    revert HeqH2 H3.
+    generalize (n::H2).
+    clear n H2.
+    intros.
+    repeat better_case_match.
+    (*TODO: use build_tries_sound*)
+  Abort.
+
 
   Definition db_map := symbol_map {n & (MapTreeN.ntree idx idx n)}.
 
