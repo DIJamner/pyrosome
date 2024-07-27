@@ -99,13 +99,12 @@ Ltac case_match' c :=
       let e' := fresh in
       remember c as e'; destruct e'
   end.
-Ltac better_case_match :=
+Ltac case_match :=
   match goal with
   | |- context [ match ?e with
                  | _ => _
                  end ] => case_match' e
   end.
-
 
 (* TODO: replace with similar tactic?
 Require Import Tactics.Tactics
@@ -121,9 +120,3 @@ Print destruct_one_match.
         end;
     case_match.
  *)
-(*TODO: remove *)
-#[deprecated(note="should replace with better_case_match")]
-Ltac case_match :=match goal with
-  | [|- context[match ?e with _ => _ end]]
-    => let e':= fresh in remember e as e'; destruct e'
-  end.

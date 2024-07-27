@@ -155,7 +155,7 @@ Section __.
       all: rewrite ?intersect_spec; eauto.
       all: cbn in *;
         unfold MapTreeN.ntree in *;
-        repeat better_case_match; try tauto.
+        repeat case_match; try tauto.
       all: unfold List.zip in *; cbn in *.
       all: rewrite ?IHconstrained_indices0; eauto.
       all: repeat lazymatch goal with

@@ -2504,6 +2504,8 @@ Section WithVar.
         apply wf_lang_concat; eauto.
         apply IHwf_lang_ext; basic_goal_prep; basic_utils_crush.
       }
+      unfold parameterize_lang, no_sort_eqns in *.
+      basic_utils_crush.
     }      
   Qed.
   
@@ -2549,15 +2551,9 @@ Section WithVar.
                                                      (get_ctx (snd nr))))
                | None => true
                end).
-  
-  Lemma Is_true_forallb A (f : A -> _) l
-    : Is_true (forallb f l) <-> all (fun x => Is_true (f x)) l.
-  Proof.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  Hint Rewrite Is_true_forallb : utils.
+
+  (*TODO: remove hint if possible*)
+  (*Hint Rewrite Is_true_forallb : utils.*)
 
   
   Lemma compute_elab_args_sublist n b r

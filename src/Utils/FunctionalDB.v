@@ -478,10 +478,10 @@ Alternately: should I build a tree then convert to a list?
       }
       {
         rewrite in_flat_map in *.
-        revert H3; better_case_match;
+        revert H3; case_match;
         basic_goal_prep;
           basic_utils_crush.
-        revert H3; better_case_match;
+        revert H3; case_match;
           basic_goal_prep;
           basic_utils_crush.
         left.
@@ -640,7 +640,7 @@ Alternately: should I build a tree then convert to a list?
     induction tries;
       basic_goal_prep.
     1:basic_utils_crush.
-    revert H1; repeat (better_case_match; cbn); intuition eauto.
+    revert H1; repeat (case_match; cbn); intuition eauto.
   Qed.
 
   Lemma build_trie_length nodes fvs a t
@@ -649,7 +649,7 @@ Alternately: should I build a tree then convert to a list?
   Proof.
     unfold build_trie.
     cbn.
-    repeat (better_case_match; cbn);
+    repeat (case_match; cbn);
       basic_goal_prep;
       basic_utils_crush.
     cbn.
@@ -664,11 +664,11 @@ Alternately: should I build a tree then convert to a list?
     intro Hf.
     revert l';
       induction l;
-      repeat (better_case_match; cbn);
+      repeat (case_match; cbn);
       basic_goal_prep;
       basic_utils_crush.
     revert H1;
-      repeat (better_case_match; cbn);
+      repeat (case_match; cbn);
       basic_goal_prep;
       basic_utils_crush.
     cbn; intuition eauto.
@@ -688,7 +688,7 @@ Alternately: should I build a tree then convert to a list?
       basic_goal_prep;
         basic_utils_crush.
       destruct clauses0; cbn in HM; try congruence.
-      revert HM; repeat better_case_match;
+      revert HM; repeat case_match;
       basic_goal_prep;
         basic_utils_crush.
       cbn.
@@ -746,7 +746,7 @@ Alternately: should I build a tree then convert to a list?
       basic_utils_crush.
     2:{
       revert H7;
-      better_case_match;
+      case_match;
       basic_goal_prep;
       subst;
       basic_utils_crush.
@@ -761,12 +761,12 @@ Alternately: should I build a tree then convert to a list?
       clear H7 H6 H3 r.
       induction args;
         destruct x;
-        repeat better_case_match;
+        repeat case_match;
         basic_goal_prep;
         subst;
         basic_utils_crush.
       revert H3;
-      better_case_match;
+      case_match;
       basic_goal_prep;
       subst;
       basic_utils_crush.
@@ -887,7 +887,7 @@ Alternately: should I build a tree then convert to a list?
 
       
       revert H4; cbn.
-      better_case_match.
+      case_match.
       {
         (*unconstrained case *)
         replace (map fst sub' ++ a :: fvs)
@@ -991,7 +991,7 @@ Alternately: should I build a tree then convert to a list?
     destruct c.
     unfold in_node_map, ntree_get.
     cbn in *.    
-    repeat better_case_match;
+    repeat case_match;
       try (cbv [default option_default]; congruence).
     intros; basic_utils_crush.
     eapply build_trie'_sound
@@ -1025,7 +1025,7 @@ Alternately: should I build a tree then convert to a list?
                 in_node_map nodes (atom_subst sub c).
   Proof.
     unfold generic_join.
-    repeat better_case_match.
+    repeat case_match.
     all: basic_utils_crush.
     eapply generic_join'_sound in H3.
     2:{ eapply build_tries_length; eauto. }
@@ -1034,7 +1034,7 @@ Alternately: should I build a tree then convert to a list?
     generalize (n::H2).
     clear n H2.
     intros.
-    repeat better_case_match.
+    repeat case_match.
     (*TODO: use build_tries_sound*)
   Abort.
 

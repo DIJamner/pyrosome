@@ -1094,11 +1094,8 @@ Derive tgt_param_substs
 Proof. auto_elab. Qed.
 #[export] Hint Resolve tgt_param_substs_wf : elab_pfs.
 
-Compute ty_subst_lang.
 
 Let cmp'' := Eval compute in cc_parameterized.
-
-Compute subst_cc.
 
 
 Definition block_ty_subst_cc_def : compiler string :=

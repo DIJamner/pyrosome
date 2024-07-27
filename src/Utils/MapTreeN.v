@@ -149,7 +149,7 @@ Section __.
         basic_goal_prep;
         intuition eauto;
         rewrite ?intersect_spec; eauto.
-      all: repeat better_case_match; try congruence.
+      all: repeat case_match; try congruence.
       all: rewrite ?map_map_spec in *.
       all:try(unfold ntree in *;
               cbn in *;
@@ -163,7 +163,7 @@ Section __.
                 end;
               try congruence).
       all: rewrite ?IHn.
-      all: repeat better_case_match; try congruence.
+      all: repeat case_match; try congruence.
     Qed.
   
 End __.
