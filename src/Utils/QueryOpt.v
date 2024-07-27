@@ -217,14 +217,6 @@ Section WithMap.
 
     Context (idx_max : idx -> idx -> idx).
 
-    (*TODO: is it safe to remove phonies?
-      No! might have been unified w/ other var.
-      Need a separate pass to remove them, so no point in remembering them?
-      Difficulty: can only remove a variable if:
-      - it appears only once in return position, and
-      - it is not free in the associated update
-      Rather than maintain a phony list, should take as input the fvs of the update
-     *)
     Definition query_to_db q : instance := clauses_to_db q.(clauses).
 
     Notation db_map := (db_map idx symbol symbol_map idx_map).

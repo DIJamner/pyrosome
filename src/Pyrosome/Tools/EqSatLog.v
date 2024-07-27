@@ -16,9 +16,9 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB Monad.
+From Utils Require Import Utils UnionFind FunctionalDB QueryOpt Monad.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import Core ClosedTerm.
 Import Core.Notations.
 
 Section WithVar.
@@ -52,6 +52,8 @@ Section WithVar.
       (V_map_ok : forall A, map.ok (V_map A)).
 
   Notation instance := (instance V V V_map V_map).
+
+  Notation atom := (atom V V).
   
   Record eqsat : Type := {
       inst : instance;
@@ -82,9 +84,15 @@ Section WithVar.
   Definition write {A} a : writer A unit :=
     ([a],tt).
 
+  (* TODO: rework.
+     1. no vars in eqsatlog; convert to closed terms via variable-> constant transformation.
+     2. no type pointers in egraph? I think types can be inferred/checked w/out any explicit pointers,
+        and eqns should not have to check types.
+   *)
+  
   Variant extended_clause :=
-    | rel_clause : atom V V -> V -> extended_clause
-    | var_clause : V -> V -> extended_clause.
+    | rel_clause : atom -> extended_clause
+    | unif_clause : V -> V -> extended_clause.
 
   (*
     Translation of rewrite into query:
@@ -115,59 +123,54 @@ Section WithVar.
 
    *)
 
-  Definition rel_clause' x s xx := rel_clause (Build_atom _ _ x s) xx.
+  (*TODO: move to db*)
+  Arguments Build_atom {idx symbol}%type_scope atom_fn atom_args%list_scope atom_ret.
+
   
+
+  Definition rel_clause' x s r := rel_clause (Build_atom x s r).
+
+  (*TODO: should work exclusively on closed terms for performance.
+    Can use the bijection between clsoed and open terms.
+   *)
   Fixpoint term_to_clauses (e : term) : stateT V (writer extended_clause) V :=
     match e with
-    | var x => (*TODO: how to handle vars in db? shared namespace w/ con? *)
-        @! let xx <- gensym in
-          let tt <- lift (write (rel_clause' x [] xx)) in
-          ret xx
     | con n s =>
         @! let s' <- list_Mmap term_to_clauses s in
           let ax <- gensym in
           let tt <- lift (write (rel_clause' n s' ax)) in
           ret ax
     end.
-  
-  (* Patterns treat variables differently! *)
-  Fixpoint term_pat_to_clauses (varmap : named_list V) (e : term)
+
+  (* Open terms are for patterns only.
+     TODO: is this necessary? probably.
+     Consider best archtecture to take advantage of query rebuilding.
+   *)
+  Fixpoint term_pat_to_clauses (e : Term.term V)
     : stateT V (writer extended_clause) V :=
     match e with
-    | var x => Mret (named_list_lookup default varmap x)
-    | con n s =>
-        @! let s' <- list_Mmap (term_pat_to_clauses varmap) s in
+    | var x => Mret x (*assumes gensym doesn't hit vars*)
+    | Term.con n s =>
+        @! let s' <- list_Mmap term_pat_to_clauses s in
           let ax <- gensym in
           let tt <- lift (write (rel_clause' n s' ax)) in
           ret ax
     end.
 
-  Definition sort_pat_to_clauses vm (t : sort)
+  Definition sort_pat_to_clauses (t : sort)
     : stateT V (writer extended_clause) V :=
     match t with
     | scon n s =>
-        @! let s' <- list_Mmap (term_pat_to_clauses vm) s in
+        @! let s' <- list_Mmap term_pat_to_clauses s in
           let ax <- gensym in
           let tt <- lift (write (rel_clause' n s' ax)) in
           ret ax
     end.
 
-  Fixpoint ctx_pat_to_clauses (c : ctx)
-    : stateT V (writer _) (list (V * V)) :=
-    match c with
-    | [] => Mret (M:=stateT V (writer _)) []
-    | (n,t)::c' =>
-        @! let vm <- ctx_pat_to_clauses c' in
-          let t' <- sort_pat_to_clauses vm t in
-          let n' <- gensym in
-          let _ <- lift (write (rel_clause' sort_of [n'] t')) in
-          ret (n,n')::vm
-    end.
-
-  Definition term_pat_to_clauses_known_ret (varmap : named_list V) (e : term) (retV : V)
+  Definition term_pat_to_clauses_known_ret (e : Term.term V) (retV : V)
     : stateT V (writer _) unit :=
-    @! let e' <- term_pat_to_clauses varmap e in
-      (lift (write (var_clause e' retV))).
+    @! let e' <- term_pat_to_clauses e in
+      (lift (write (unif_clause e' retV))).
   
   (*TODO: use writer that appends to the end or reverse *)
   Fail Fixpoint term_pat_to_upd (varmap : named_list V) (e : term)
@@ -182,6 +185,62 @@ Section WithVar.
           let _ <- lift (write (put_row sort_of i t)) in
           ret i
     end.
+
+  Definition clauses_of_extended_list : list extended_clause -> list atom :=
+    flat_map (fun c => match c with rel_clause a => [a] | _ => [] end).
+  
+  Definition unifications_of_extended_list : list extended_clause -> list (V * V) :=
+    flat_map (fun c => match c with unif_clause x y => [(x,y)] | _ => [] end).
+
+  (*TODO: put in FunctionalDB.v*)
+  
+  Arguments atom_args {idx symbol}%type_scope a.
+  Arguments atom_ret {idx symbol}%type_scope a.
+  Arguments db {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
+  Arguments unify {idx symbol}%type_scope _ _.
+Arguments fold_updates {idx}%type_scope {Eqb_idx}
+    {symbol}%type_scope {symbol_map idx_map}%function_scope
+    (idx_succ)%function_scope {H3} has_changed%bool_scope (upd subs)%list_scope.
+Arguments equiv {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
+Arguments db {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
+Arguments Build_instance {idx symbol}%type_scope {symbol_map idx_map}%function_scope db equiv.
+Arguments union {idx}%type_scope {Eqb_idx idx_map rank_map} h x y.
+
+Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope {symbol_map idx_map}%function_scope i.
+
+  (*TODO: put in QueryOpt*)
+  (*TODO: should the fvs be included in a query or computed via these functions?*)
+  Definition fvs_of_atom (a : atom) :=
+    a.(atom_ret)::a.(atom_args).
+
+  Definition fvs_of_clauses l :=
+    List.dedup (eqb (A:=_)) (flat_map fvs_of_atom l).
+  
+  Arguments db_to_clauses {idx symbol}%type_scope {symbol_map idx_map}%function_scope _.
+  Arguments clauses_to_db {idx}%type_scope {Eqb_idx}
+    {symbol}%type_scope {symbol_map idx_map}%function_scope
+    {idx_default} clauses%list_scope.
+
+  (*TODO: order vars better*)
+  Definition db_to_query (i : instance) : query _ _ :=
+      let clauses := db_to_clauses i.(db) in      
+      Build_query _ _ (fvs_of_clauses clauses) clauses.
+
+  (*TODO: what to do if union returns none?
+   *)
+  Definition inst_unify (i:instance) '(x,y) :=
+    match union i.(equiv) x y with
+    | Some (equiv',_) => Build_instance i.(db) equiv'
+    | None => i
+    end.
+  
+  Definition extended_list_to_query l : query _ _ :=
+    let i := clauses_to_db (clauses_of_extended_list l) in
+    let i1 := fold_left inst_unify (unifications_of_extended_list l) i in
+    let i2 := rebuild i1 in
+    db_to_query i2.
+
+  
   
 (*
   Definition rewrite_to_log_op c t e1 e2 :=
@@ -252,6 +311,7 @@ Section WithVar.
   TODO: rules to eqsat program
   TODO: sort map rebuilding
  *)
-*)
+ *)
+
 
 End WithVar.
