@@ -197,9 +197,7 @@ Section WithVar.
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
       revert H; case_match; basic_goal_prep; [|basic_core_crush].
       basic_core_firstorder_crush.
-      - apply (use_compute_fresh _).
-        congruence.
-      - eapply compute_noconv_wf_sort_sound; eauto.
+      eapply compute_noconv_wf_sort_sound; eauto.
     Qed.
 
     
@@ -271,8 +269,7 @@ Section WithVar.
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     basic_core_crush.
-    - apply (use_compute_fresh _); congruence.
-    - eapply compute_noconv_wf_rule_sound; eauto.
+    eapply compute_noconv_wf_rule_sound; eauto.
   Qed.
 
 End WithVar.

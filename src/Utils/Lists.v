@@ -221,6 +221,15 @@ Section __.
         basic_utils_crush.
     Qed.
 
+    
+    Lemma inclb_spec (l1 l2 : list A)
+      : Is_true (inclb l1 l2) <-> incl l1 l2.
+    Proof.
+      induction l1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
     Fixpoint no_dupb (l : list A) : bool :=
       match l with
       | [] => true
@@ -285,6 +294,8 @@ Ltac compute_sublist := apply use_sublistb; vm_compute; exact I.
 
 Arguments use_inclb {A}%type_scope {H H0} (l1 l2)%list_scope _ a _.
 Ltac compute_incl := apply use_inclb; vm_compute; exact I.
+
+#[export] Hint Rewrite inclb_spec : utils.
 
 #[export] Hint Rewrite invert_eq_cons_nil : utils.
 #[export] Hint Rewrite invert_eq_nil_cons : utils.

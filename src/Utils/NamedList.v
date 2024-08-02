@@ -189,6 +189,14 @@ Section __.
       unfold fresh.
       basic_utils_crush.
     Qed.
+    
+    Lemma freshb_spec x (l : named_list) 
+      : Is_true (freshb x l) <-> fresh x l.
+    Proof.
+      unfold freshb.
+      unfold fresh.
+      basic_utils_crush.
+    Qed.
 
 
     Fixpoint all_freshb (l : named_list) : bool :=
@@ -200,10 +208,19 @@ Section __.
 
     #[local] Hint Resolve use_compute_fresh : utils.
 
+    (*TODO: remove uses*)
     Lemma use_compute_all_fresh (l : named_list)
       : Is_true (all_freshb l) -> all_fresh l.
     Proof.
       induction l; basic_goal_prep; basic_utils_crush.
+    Qed.
+
+    
+    Lemma all_freshb_spec (l : named_list)
+      : Is_true (all_freshb l) <-> all_fresh l.
+    Proof.
+      induction l; basic_goal_prep; basic_utils_crush.
+      apply freshb_spec; eauto.
     Qed.
 
     
@@ -340,6 +357,10 @@ Ltac compute_fresh := eapply use_compute_fresh; vm_compute; exact I.
 Arguments use_compute_all_fresh {S}%type_scope {EqbS EqbS_ok} 
   [A]%type_scope l _.
 Ltac compute_all_fresh := eapply use_compute_all_fresh; vm_compute; exact I.
+
+
+#[export] Hint Rewrite freshb_spec : utils.
+#[export] Hint Rewrite all_freshb_spec : utils.
 
 Arguments in_once {S A}%type_scope n e !l%list_scope /.
 

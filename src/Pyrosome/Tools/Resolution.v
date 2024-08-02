@@ -104,10 +104,8 @@ Section WithVar.
     eapply in_all in H1'; eauto.
     basic_goal_prep.
     autorewrite with bool utils in *.
+    all: try typeclasses eauto (*TODO: fix freshb/inclb hint*).
     break; subst.
-    pose proof (use_compute_fresh _ _ H2).
-    pose proof (use_compute_all_fresh _ H3).
-    pose proof (use_inclb _ _ H5).
     basic_core_crush.
     eapply wf_rule_lang_monotonicity; eauto.
   Qed.
@@ -153,6 +151,78 @@ Section WithVar.
       exist _ (db1 ++ proj1_sig dbP2)
         (lang_db_append_sound check pf1 (proj2_sig dbP2)).
 
+  
+  (*TODO: move to namedlist.v*)
+  Lemma all_fresh_map_fst A (l1 : named_list A) B (l2 : named_list B)
+    : map fst l1 = map fst l2 -> all_fresh l1 -> all_fresh l2.
+  Proof.
+    revert l2; induction l1;
+      destruct l2;
+      basic_goal_prep;
+      basic_utils_crush.
+    unfold fresh in *.
+    congruence.
+  Qed.
+
+  
+  Lemma lang_to_db_map_fst l l0
+    :  map fst (lang_to_db l l0) = map fst l0.
+  Proof.
+    induction l0;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  
+  (*TODO: map_flat_map; is this in coqutil? *)
+  Lemma map_flat_map A B C (f : A -> list B) (g : B -> C) l
+    : map g (flat_map f l) = flat_map (fun x => map g (f x)) l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite map_app.
+    congruence.
+  Qed.
+    
+
+  Lemma db_append_lang_list_proof
+    (lst : list { p | wf_lang_ext (fst p) (snd p) })
+    (* TODO: try moving this out of the type and into the term for vm_compute *)
+    (check : Is_true(all_freshb (flat_map (fun x => snd (proj1_sig x)) lst)))
+    : lang_db_sound (flat_map (fun x => uncurry lang_to_db (proj1_sig x)) lst).
+  Proof.
+    revert check.
+    induction lst;
+      basic_goal_prep.
+    1: apply empty_lang_db_sound.
+    destruct a as [[? ?] ?].
+    cbn in *.
+    apply lang_db_append_sound; eauto using wf_lang_sound_db.
+    all: autorewrite with utils in *; eauto.
+    {
+      eapply all_fresh_map_fst; try eassumption.
+      rewrite !map_app.
+      rewrite lang_to_db_map_fst.
+      f_equal.
+      rewrite !map_flat_map.
+      apply flat_map_ext.
+      intros [[? ?] ?].
+      basic_goal_prep.
+      rewrite lang_to_db_map_fst.
+      reflexivity.
+    }
+    {  eauto using all_fresh_tail. }
+  Qed.
+  
+  Definition db_append_lang_list
+    (lst : list { p | wf_lang_ext (fst p) (snd p) })
+    : { db | lang_db_sound db } :=
+    (* used to avoid computing all_freshb in type checking *)
+    compute_unchecked (H := empty_lang_dbP)
+      (fun (check : Is_true(all_freshb (flat_map (fun x => snd (proj1_sig x)) lst))) =>
+         exist _ (flat_map (fun x => uncurry lang_to_db (proj1_sig x)) lst)
+           (db_append_lang_list_proof _ check)).
 
   
   Record compiler_db_entry : Type :=
@@ -268,7 +338,7 @@ Section WithVar.
   Proof.
     unfold cmp_db_sound, cmp_wf_in_db.
     intro Hdb.
-    autorewrite with bool utils.
+    autorewrite with bool utils in *; eauto.
     revert cmp.
     induction src;
       basic_goal_prep.
@@ -276,6 +346,9 @@ Section WithVar.
     unfold case_wf_in_db in *.
     revert H; destruct r; cbn; repeat case_match;
       basic_goal_prep; subst; intuition eauto.
+    all: autorewrite with bool utils in *; eauto; try typeclasses eauto.
+    all: basic_goal_prep.
+    all: subst.
     all: basic_utils_crush.
     1,2: destruct c0, c1; basic_goal_prep.
     5,6: destruct c; basic_goal_prep; subst.
@@ -319,7 +392,7 @@ Section WithVar.
         intro; subst.
         basic_utils_crush.
       }                    
-      eapply H12 in Hin.
+      eapply H10 in Hin.
       basic_goal_prep;basic_core_crush.
     }
     {
@@ -331,7 +404,7 @@ Section WithVar.
       all: basic_utils_crush.
       all:intros [x c] Hin;
       assert (x <> v1) by (basic_goal_prep;basic_core_crush).                   
-      all:eapply H12 in Hin; basic_goal_prep;basic_core_crush.
+      all:eapply H10 in Hin; basic_goal_prep;basic_core_crush.
     }
     {
       eapply eq_sort_lang_monotonicity; eauto.
@@ -557,9 +630,8 @@ Section WithVar.
   Proof.
     unfold cmp_db_sound.
     intros H1 H2.
-    autorewrite with bool utils in *; break.
+    autorewrite with bool utils in *; break; eauto.
     apply all_constructors_in_langb_spec in H0.
-    apply use_compute_all_fresh in H.
     revert H1 H H0.
     induction 1;
       basic_goal_prep;

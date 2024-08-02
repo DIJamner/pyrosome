@@ -2644,7 +2644,8 @@ Section WithVar.
       }
     }
     {
-      eapply compute_pl_indices_sound; eauto.
+      eapply compute_pl_indices_sound;
+        basic_utils_crush.
     }
   Qed.
 
@@ -3891,7 +3892,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
-              eapply compute_pl_indices_sound; eauto.
+              eapply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               
@@ -3971,7 +3973,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
-              apply compute_pl_indices_sound; eauto.
+              apply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               autorewrite with lang_core model utils in *.
@@ -4051,7 +4054,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *;
                 basic_utils_crush.
-              eapply compute_pl_indices_sound; eauto.
+              eapply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               
@@ -4149,7 +4153,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
-              apply compute_pl_indices_sound; eauto.
+              apply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               autorewrite with lang_core model utils in *.
@@ -4307,7 +4312,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
-              apply compute_pl_indices_sound; eauto.
+              apply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               autorewrite with lang_core model utils in *.
@@ -4468,7 +4474,8 @@ Section WithVar.
             {
               unfold syntactic_parameterization_conditions' in *.
               basic_utils_crush.
-              apply compute_pl_indices_sound; eauto.
+              apply compute_pl_indices_sound;
+                basic_utils_crush.
             }
             {
               autorewrite with lang_core model utils in *.
