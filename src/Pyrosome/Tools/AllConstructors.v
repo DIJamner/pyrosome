@@ -49,7 +49,15 @@ Section WithVar.
     | term_rule c _ t =>
         (all_constructors_ctx P c)
         /\ (all_constructors_sort P t)
-    | _ => True
+    | sort_eq_rule c t1 t2 =>
+        (all_constructors_ctx P c)
+        /\ (all_constructors_sort P t1)
+        /\ (all_constructors_sort P t2)
+    | term_eq_rule c e1 e2 t =>
+        (all_constructors_ctx P c)
+        /\ (all_constructors_sort P t)
+        /\ (all_constructors P e1)
+        /\ (all_constructors P e2)
     end.
 
   Lemma all_constructors_term_weaken (P Q : _ -> Prop) e

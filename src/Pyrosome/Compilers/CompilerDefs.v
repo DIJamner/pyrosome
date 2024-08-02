@@ -50,6 +50,33 @@ Variant compiler_case :=
  | sort_case (args : list V) (t:tgt_sort).
 Definition compiler := named_list compiler_case.
 
+Section Eqb.
+  Context `{Eqb_ok V}
+    `{Eqb_ok tgt_term}
+    `{Eqb_ok tgt_sort}.
+
+  Instance compiler_case_eqb : Eqb compiler_case :=
+    fun c1 c2 =>
+      match c1, c2 with
+      | term_case args e, term_case args' e' => (eqb args args') && (eqb e e')
+      | sort_case args t, sort_case args' t' => (eqb args args') && (eqb t t')
+      | _, _ => false
+      end.
+
+  Instance compiler_case_eqb_ok : Eqb_ok compiler_case_eqb.
+  Proof.
+    intros a b;
+      destruct a, b;
+      cbn; try congruence.
+    all: lazymatch goal with
+         | |- if eqb ?x ?y && eqb ?v ?w then _ else _ =>
+             eqb_case x y;
+             eqb_case v w;
+             eauto; try congruence
+         end.
+  Qed.
+End Eqb.
+
 Lemma invert_eq_term_case_term_case args args' e e'
   : term_case args e = term_case args' e' <-> args = args' /\ e = e'.
 Proof using. prove_inversion_lemma. Qed.
@@ -186,6 +213,9 @@ End WithVar.
 #[export] Hint Rewrite invert_eq_sort_case_term_case : lang_core.
 #[export] Hint Rewrite invert_eq_sort_case_sort_case : lang_core.
 #[export] Hint Constructors preserving_compiler_ext : lang_core.
+
+#[export] Existing Instance compiler_case_eqb.
+#[export] Existing Instance compiler_case_eqb_ok.
 
 (*TODO: add preserving_compiler notation once other files are updated *)
 (*TODO: shouth the RHS be in the constr entry?
