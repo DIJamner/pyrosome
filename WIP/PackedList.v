@@ -128,19 +128,17 @@ Section __.
   (* TODO: call list foldl/r here? fold_right *)
   Section __.
     Context {B} (f : A -> B -> B) (base : B).
-    Fixpoint block_list_foldr' l :=
+    Definition block_list_foldrF F l :=
       match l with
       | blist_base x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
           fold_right f base
             [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13; x14]
       | blist_cons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l' =>
-          fold_right f (block_list_foldr' l')
+          fold_right f (F l')
             [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13; x14] 
       end.
-    Definition block_list_foldr :=
-      Eval compute in block_list_foldr'.
 
-    Definition plist_foldr' (l:plist) :=
+    Definition plist_foldrF' block_list_foldr (l:plist) :=
       match l with
       | pnil => base
       | tuple1 x => fold_right f base [x]
@@ -214,11 +212,18 @@ Section __.
                         x8; x9; x10; x11; x12; x13]
       end.
         
+    Definition plist_foldrF :=
+      Eval compute in plist_foldrF'.    
+    
+    Definition block_list_foldr :=
+      Eval compute in fix block_list_foldr l := block_list_foldrF block_list_foldr l.
+
     Definition plist_foldr :=
-      Eval cbv -[block_list_foldr] in plist_foldr'.
+      Eval cbv [plist_foldrF] in plist_foldrF block_list_foldr.  
         
   End __.
-  
+
+  (*TODO: as above*)
   Section __.
     Context {B} (f : B -> A -> B).
     Fixpoint block_list_foldl' l (base : B) :=
@@ -368,13 +373,246 @@ Section __.
         phd0 (blist_cons a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 bl)
     end.
 
- (*TODO: is it worth computing these?
-   For now, no: these should not be assumed to be optimally effficient
-  *)
- Definition to_list := plist_foldr cons nil.
- (* computed definition not optimal *)
- Definition of_list := fold_right pcons pnil.
+ (* TODO: should I have a block_list eta too?*)
+ Definition plist_eta {B} (f : plist -> B) (l:plist) :=
+    match l with
+    | pnil => f pnil
+    | tuple1 x => f (tuple1 x)
+    | tuple2 x x0 => f (tuple2 x x0)
+    | tuple3 x x0 x1 => f (tuple3 x x0 x1)
+    | tuple4 x x0 x1 x2 => f (tuple4 x x0 x1 x2)
+    | tuple5 x x0 x1 x2 x3 => f (tuple5 x x0 x1 x2 x3)
+    | tuple6 x x0 x1 x2 x3 x4 => f (tuple6 x x0 x1 x2 x3 x4)
+    | tuple7 x x0 x1 x2 x3 x4 x5 => f (tuple7 x x0 x1 x2 x3 x4 x5)
+    | tuple8 x x0 x1 x2 x3 x4 x5 x6 => f (tuple8 x x0 x1 x2 x3 x4 x5 x6)
+    | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 => f (tuple9 x x0 x1 x2 x3 x4 x5 x6 x7)
+    | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
+        f (tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8)
+    | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
+        f (tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)
+    | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
+        f (tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10)
+    | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
+        f (tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11)
+    | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 =>
+        f (tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12)
+    | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
+        f (tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13)
+    | phd0 bl => f (phd0 bl)
+    | phd1 x bl => f (phd1 x bl)
+    | phd2 x x0 bl => f (phd2 x x0 bl)
+    | phd3 x x0 x1 bl => f (phd3 x x0 x1 bl)
+    | phd4 x x0 x1 x2 bl => f (phd4 x x0 x1 x2 bl)
+    | phd5 x x0 x1 x2 x3 bl => f (phd5 x x0 x1 x2 x3 bl)
+    | phd6 x x0 x1 x2 x3 x4 bl => f (phd6 x x0 x1 x2 x3 x4 bl)
+    | phd7 x x0 x1 x2 x3 x4 x5 bl => f (phd7 x x0 x1 x2 x3 x4 x5 bl)
+    | phd8 x x0 x1 x2 x3 x4 x5 x6 bl =>
+        f (phd8 x x0 x1 x2 x3 x4 x5 x6 bl)
+    | phd9 x x0 x1 x2 x3 x4 x5 x6 x7 bl =>
+        f (phd9 x x0 x1 x2 x3 x4 x5 x6 x7 bl)
+    | phd10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 bl =>
+        f (phd10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 bl)
+    | phd11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 bl =>
+        f (phd11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 bl)
+    | phd12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 bl =>
+        f (phd12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 bl)
+    | phd13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 bl =>
+        f (phd13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 bl)             
+    | phd14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 bl =>
+        f (phd14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 bl)
+    | phd15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 bl =>
+        f (phd15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 bl)
+    end.
+ 
+ Definition pconsK {B} a (k : plist -> B)  (l:plist) :=
+   match l with
+   | pnil => k (tuple1 a)
+   | tuple1 x => k (tuple2 a x)
+   | tuple2 x x0 => k (tuple3 a x x0)
+   | tuple3 x x0 x1 => k (tuple4 a x x0 x1)
+   | tuple4 x x0 x1 x2 => k (tuple5 a x x0 x1 x2)
+   | tuple5 x x0 x1 x2 x3 => k (tuple6 a x x0 x1 x2 x3)
+   | tuple6 x x0 x1 x2 x3 x4 => k (tuple7 a x x0 x1 x2 x3 x4)
+   | tuple7 x x0 x1 x2 x3 x4 x5 => k (tuple8 a x x0 x1 x2 x3 x4 x5)
+   | tuple8 x x0 x1 x2 x3 x4 x5 x6 => k (tuple9 a x x0 x1 x2 x3 x4 x5 x6)
+   | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 => k (tuple10 a x x0 x1 x2 x3 x4 x5 x6 x7)
+   | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
+       k (tuple11 a x x0 x1 x2 x3 x4 x5 x6 x7 x8)
+   | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
+       k (tuple12 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)
+   | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
+       k (tuple13 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10)
+   | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
+       k (tuple14 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11)
+   | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 =>
+       k (tuple15 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12)
+   | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
+       k (phd0 (blist_base a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13))
+   | phd0 bl => k (phd1 a bl)
+   | phd1 x bl => k (phd2 a x bl)
+   | phd2 x x0 bl => k (phd3 a x x0 bl)
+   | phd3 x x0 x1 bl => k (phd4 a x x0 x1 bl)
+   | phd4 x x0 x1 x2 bl => k (phd5 a x x0 x1 x2 bl)
+   | phd5 x x0 x1 x2 x3 bl => k (phd6 a x x0 x1 x2 x3 bl)
+   | phd6 x x0 x1 x2 x3 x4 bl => k (phd7 a x x0 x1 x2 x3 x4 bl)
+   | phd7 x x0 x1 x2 x3 x4 x5 bl => k (phd8 a x x0 x1 x2 x3 x4 x5 bl)
+   | phd8 x x0 x1 x2 x3 x4 x5 x6 bl =>
+       k (phd9 a x x0 x1 x2 x3 x4 x5 x6 bl)
+   | phd9 x x0 x1 x2 x3 x4 x5 x6 x7 bl =>
+       k (phd10 a x x0 x1 x2 x3 x4 x5 x6 x7 bl)
+   | phd10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 bl =>
+       k (phd11 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 bl)
+   | phd11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 bl =>
+       k (phd12 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 bl)
+   | phd12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 bl =>
+       k (phd13 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 bl)
+   | phd13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 bl =>
+       k (phd14 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 bl)              
+   | phd14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 bl =>
+       k (phd15 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 bl)
+   | phd15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 bl =>
+       k (phd0 (blist_cons a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 bl))
+   end.
 
+ Section ListRec16.
+   Context {B} (f : list A -> B -> B) (base : B).
+   Definition list_rec16FP rec l
+     x' x0' x1' x2' x3' x4' x5' x6' x7' x8' x9' x10' x11' x12' x13' x14' : B :=
+    match l with
+    | [] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+           x5'; x6'; x7'; x8'; x9'; x10';
+           x11'; x12'; x13'; x14'] base
+    | [x] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x] base
+    | [x; x0] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0] base
+    | [x; x0; x1] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1] base
+    | [x; x0; x1; x2] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2] base
+    | [x; x0; x1; x2; x3] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3] base
+    | [x; x0; x1; x2; x3; x4] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4] base
+    | [x; x0; x1; x2; x3; x4; x5] => f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5] base
+    | [x; x0; x1; x2; x3; x4; x5; x6] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
+        f [x'; x0'; x1'; x2'; x3'; x4';
+                x5'; x6'; x7'; x8'; x9'; x10';
+                x11'; x12'; x13'; x14';
+                x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] base        
+    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
+        f [x'; x0'; x1'; x2'; x3'; x4'; x5'; x6'; x7'; x8'; x9'; x10'; x11'; x12'; x13'; x14']
+          (rec l x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14)        
+    end.
+
+   Definition list_rec16P :=
+     Eval cbv in fix list_rec16P l := list_rec16FP list_rec16P l.
+  
+   Definition list_rec16F list_rec16P l : B :=
+    match l with
+    | [] => f [] base
+    | [x] => f [x] base
+    | [x; x0] => f [x; x0] base
+    | [x; x0; x1] => f [x; x0; x1] base
+    | [x; x0; x1; x2] => f [x; x0; x1; x2] base
+    | [x; x0; x1; x2; x3] => f [x; x0; x1; x2; x3] base
+    | [x; x0; x1; x2; x3; x4] => f [x; x0; x1; x2; x3; x4] base
+    | [x; x0; x1; x2; x3; x4; x5] => f [x; x0; x1; x2; x3; x4; x5] base
+    | [x; x0; x1; x2; x3; x4; x5; x6] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] base
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] base        
+    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
+        f [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] base        
+    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
+        list_rec16P l x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14      
+    end.
+
+   Definition list_rec16 :=
+     Eval cbv -[list_rec16P] in
+       list_rec16F list_rec16P.
+   
+ End ListRec16.
+ 
+
+ Definition block_to_list :=
+   Eval compute in fix block_to_list l := block_list_foldrF cons nil block_to_list l.
+ 
+ Definition to_list :=
+   Eval cbv -[block_to_list] in plist_foldrF cons nil block_to_list.
+
+ 
+ Definition of_list' :=
+   Eval compute in
+     fix list_rec16P l :=
+     list_rec16FP (fold_right pconsK id) pnil list_rec16P l.
+ 
+ Definition of_list :=
+   Eval cbv -[of_list'] in list_rec16F (fold_right pconsK id) pnil of_list'.
+
+ 
+(*TODO:
  Lemma block_of_list_to_list b
    : of_list (block_list_foldr cons [] b) = phd0 b.
  Proof.
@@ -426,616 +664,57 @@ Section __.
    Lia.lia.
  Qed.
 
+ *)
+ 
  (*
  Definition plist_eta {B} (f : plist -> B) :=
    plist_foldr (fun l => f (of_list l))
   *)
+
  
- Definition papp (l1 l2 : plist) :=
-   plist_foldr pcons l2 l1.
- Compute papp. (*TODO: nests matches wrong, sim. to to_list. How to fix? eta?*)
-  
-  Variant frame : Type :=
-  | frame1 : A -> frame
-  | frame2 : A -> A -> frame
-  | frame3 : A -> A -> A -> frame
-  | frame4 : A -> A -> A -> A ->
-             frame
-  | frame5 : A -> A -> A -> A ->
-             A ->
-             frame
-  | frame6 : A -> A -> A -> A ->
-             A -> A ->
-             frame
-  | frame7 : A -> A -> A -> A ->
-             A -> A -> A ->
-             frame
-  | frame8 : A -> A -> A -> A ->
-             A -> A -> A -> A ->
-             frame
-  | frame9 : A -> A -> A -> A ->
-             A -> A -> A -> A ->
-             A ->
-             frame
-  | frame10 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A ->
-              frame
-  | frame11 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A ->
-              frame
-  | frame12 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              frame
-  | frame13 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A ->
-              frame
-  | frame14 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A ->
-              frame
-  | frame15 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A ->
-              frame
- (* (* TODO: do I want this *)
-  | frame16 : A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              A -> A -> A -> A ->
-              frame. *).
-  Hint Constructors frame : utils.
+ Definition block_pcons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 :=
+   Eval compute in
+     fold_right pconsK id [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13; x14].
 
-  Definition cons_frame : Type := ntuple (A:=A) 16.
-  
-  Definition frame_to_ne_list (f:frame) : A * list A :=
-    match f with
-    | frame1 x => (x,[])
-    | frame2 x x0 => (x,[x0])
-    | frame3 x x0 x1 => (x,[x0; x1])
-    | frame4 x x0 x1 x2 => (x,[x0; x1; x2])
-    | frame5 x x0 x1 x2 x3 => (x,[x0; x1; x2; x3])
-    | frame6 x x0 x1 x2 x3 x4 => (x,[x0; x1; x2; x3; x4])
-    | frame7 x x0 x1 x2 x3 x4 x5 => (x,[x0; x1; x2; x3; x4; x5])
-    | frame8 x x0 x1 x2 x3 x4 x5 x6 => (x,[x0; x1; x2; x3; x4; x5; x6])
-    | frame9 x x0 x1 x2 x3 x4 x5 x6 x7 => (x,[x0; x1; x2; x3; x4; x5; x6; x7])
-    | frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8])
-    | frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9])
-    | frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10])
-    | frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11])
-    | frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12])
-    | frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13])
-    (*
-    | frame16 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
-        (x,[x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13; x14])*)
-    end.
+ (* Not computed. Should it be? Not much benefit
+    TODO: can I use block_list_foldrF?
+  *)
+ Fixpoint block_list_app (bl : block_list) (pl : plist) :=
+   match bl with
+   | blist_base x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
+       block_pcons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 pl
+   | blist_cons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 bl' =>
+       block_pcons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14
+         (block_list_app bl' pl)
+   end.
 
-  Definition ne_to_list {A} := uncurry (A:=A) cons.
-  (* TODO: uniform inheritance warking
-  Local Coercion ne_to_list : prod >-> list.
-   *)
-
-  Definition split_frame_of_list l : option (frame + (cons_frame * list A)) :=
-    match l with
-    | [] => None
-    | [x] => Some (inl (frame1 x))
-    | [x; x0] => Some (inl (frame2 x x0))
-    | [x; x0; x1] => Some (inl (frame3 x x0 x1))
-    | [x; x0; x1; x2] => Some (inl (frame4 x x0 x1 x2))
-    | [x; x0; x1; x2; x3] => Some (inl (frame5 x x0 x1 x2 x3))
-    | [x; x0; x1; x2; x3; x4] => Some (inl (frame6 x x0 x1 x2 x3 x4))
-    | [x; x0; x1; x2; x3; x4; x5] => Some (inl (frame7 x x0 x1 x2 x3 x4 x5))
-    | [x; x0; x1; x2; x3; x4; x5; x6] => Some (inl (frame8 x x0 x1 x2 x3 x4 x5 x6))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7] => Some (inl (frame9 x x0 x1 x2 x3 x4 x5 x6 x7))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
-        Some (inl (frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
-        Some (inl (frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
-        Some (inl (frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
-        Some (inl (frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
-        Some (inl (frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12))
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
-        Some (inl (frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13))
-    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
-        Some (inr ((tt, x, x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14), l))
-    end.
-
-  
-  (* Note: only well-defined if |l| <=16*)
-  Definition split_frame_of_ne_list '(x,l) : frame + (cons_frame * list A) :=
-    match l with
-    | [] => inl (frame1 x)
-    | [x0] => inl (frame2 x x0)
-    | [x0; x1] => inl (frame3 x x0 x1)
-    | [x0; x1; x2] => inl (frame4 x x0 x1 x2)
-    | [x0; x1; x2; x3] => inl (frame5 x x0 x1 x2 x3)
-    | [x0; x1; x2; x3; x4] => inl (frame6 x x0 x1 x2 x3 x4)
-    | [x0; x1; x2; x3; x4; x5] => inl (frame7 x x0 x1 x2 x3 x4 x5)
-    | [x0; x1; x2; x3; x4; x5; x6] => inl (frame8 x x0 x1 x2 x3 x4 x5 x6)
-    | [x0; x1; x2; x3; x4; x5; x6; x7] => inl (frame9 x x0 x1 x2 x3 x4 x5 x6 x7)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
-        inl (frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
-        inl (frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
-        inl (frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
-        inl (frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
-        inl (frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12)
-    | [x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
-        inl (frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13)
-    | x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
-        inr ((tt, x, x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14), l)
-    end.
-
-  Fixpoint prepeat (x : A) (n : nat) {struct n} : plist :=
-    match n with
-    | 0  =>    pnil
-    | 1  =>  tuple1 x
-    | 2  =>  tuple2 x x
-    | 3  =>  tuple3 x x x
-    | 4  =>  tuple4 x x x x
-    | 5  =>  tuple5 x x x x x
-    | 6  =>  tuple6 x x x x x x
-    | 7  =>  tuple7 x x x x x x x
-    | 8  =>  tuple8 x x x x x x x x
-    | 9  =>  tuple9 x x x x x x x x x
-    | 10 => tuple10 x x x x x x x x x x
-    | 11 => tuple11 x x x x x x x x x x x
-    | 12 => tuple12 x x x x x x x x x x x x
-    | 13 => tuple13 x x x x x x x x x x x x x
-    | 14 => tuple14 x x x x x x x x x x x x x x
-    | 15 => tuple15 x x x x x x x x x x x x x x x
-    | S (S (S (S (S (S (S (S (S (S (S (S (S (S (S (S n))))))))))))))) =>
-        pcons' x x x x x x x x x x x x x x x x (prepeat x n)
-    end.
-
-  Definition split_frame (l : plist) : option (frame + (cons_frame * plist)) :=
-    match l with
-    | pnil => None
-    | tuple1 x => Some (inl (frame1 x))
-    | tuple2 x x0 => Some (inl (frame2 x x0))
-    | tuple3 x x0 x1 => Some (inl (frame3 x x0 x1))
-    | tuple4 x x0 x1 x2 => Some (inl (frame4 x x0 x1 x2))
-    | tuple5 x x0 x1 x2 x3 => Some (inl (frame5 x x0 x1 x2 x3))
-    | tuple6 x x0 x1 x2 x3 x4 =>
-        Some (inl (frame6 x x0 x1 x2 x3 x4))
-    | tuple7 x x0 x1 x2 x3 x4 x5 =>
-        Some (inl (frame7 x x0 x1 x2 x3 x4 x5))
-    | tuple8 x x0 x1 x2 x3 x4 x5 x6 =>
-        Some (inl (frame8 x x0 x1 x2 x3 x4 x5 x6)) 
-    | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 =>
-        Some (inl (frame9 x x0 x1 x2 x3 x4 x5 x6 x7))
-    | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-        Some (inl (frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8))
-    | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-        Some (inl (frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)) 
-    | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-        Some (inl (frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10)) 
-    | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-        Some (inl (frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11)) 
-    | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-        Some (inl (frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12)) 
-    | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-        Some (inl (frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13)) 
-    | pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l =>
-        Some (inr ((tt, x, x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14), l))
-    end.
-
-  Definition frame_add' (f1 f2 : frame) : (option cons_frame * frame) :=
-    let (a,l1) := frame_to_ne_list f1 in
-    let l2 := l1 ++ ne_to_list (frame_to_ne_list f2) in
-    match split_frame_of_ne_list (a,l2) with
-    | inl f => (None,f)
-    | inr (cf,l) =>
-        match split_frame_of_list l with
-        | Some (inl f') => (Some cf, f')
-        | inr _ => (*never happens*) (None, f1)
-        end
-    end.
-
-    
-  Definition frame_eta {B} (f:frame -> B) (fr:frame) : B :=
-    match fr with
-    | frame1 x => f (frame1 x)
-    | frame2 x x0 => f (frame2 x x0)
-    | frame3 x x0 x1 => f (frame3 x x0 x1)
-    | frame4 x x0 x1 x2 => f (frame4 x x0 x1 x2)
-    | frame5 x x0 x1 x2 x3 => f (frame5 x x0 x1 x2 x3)
-    | frame6 x x0 x1 x2 x3 x4 => f (frame6 x x0 x1 x2 x3 x4)
-    | frame7 x x0 x1 x2 x3 x4 x5 => f (frame7 x x0 x1 x2 x3 x4 x5)
-    | frame8 x x0 x1 x2 x3 x4 x5 x6 => f (frame8 x x0 x1 x2 x3 x4 x5 x6)
-    | frame9 x x0 x1 x2 x3 x4 x5 x6 x7 => f (frame9 x x0 x1 x2 x3 x4 x5 x6 x7)
-    | frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-        f (frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8)
-    | frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-        f (frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9)
-    | frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-        f (frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10)
-    | frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-        f (frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11)
-    | frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-        f (frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12)
-    | frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-        f (frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13)
-    | frame16 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
-        f (frame16 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14)
-    end.
-  
-  Definition frame_add :=
-    Eval compute in
-      (frame_eta (fun f => frame_eta (frame_add' f))).
-  
-  (* O(n) *)
-  Fixpoint pcons a (l : plist) {struct l} : plist :=
-    match l with
-    | pnil => tuple1 a
-    | tuple1 x => tuple2 a x
-    | tuple2 x x0 => tuple3 a x x0
-    | tuple3 x x0 x1 => tuple4 a x x0 x1
-    | tuple4 x x0 x1 x2 => tuple5 a x x0 x1 x2
-    | tuple5 x x0 x1 x2 x3 => tuple6 a x x0 x1 x2 x3
-    | tuple6 x x0 x1 x2 x3 x4 =>
-        tuple7 a x x0 x1 x2 x3 x4
-    | tuple7 x x0 x1 x2 x3 x4 x5 =>
-        tuple8 a x x0 x1 x2 x3 x4 x5
-    | tuple8 x x0 x1 x2 x3 x4 x5 x6 =>
-        tuple9 a x x0 x1 x2 x3 x4 x5 x6 
-    | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 =>
-        tuple10 a x x0 x1 x2 x3 x4 x5 x6 x7 
-    | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-        tuple11 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 
-    | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-        tuple12 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 
-    | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-        tuple13 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 
-    | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-        tuple14 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 
-    | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-        tuple15 a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 
-    | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-        pcons' a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 pnil
-    | pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l =>
-        pcons' a x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 (pcons x14 l)
-    end.
-
-  
-  (*TODO: how to generalize to pcons? fold_left?*)
-  Section __.
-    Context {B}
-      (base : B)
-      (rec : list A -> B -> B).
-    Fixpoint prec (l:plist) : B :=
-      match l with
-      | pnil => base
-      | tuple1 x => rec [x] base
-      | tuple2 x x0 => rec [x; x0] base
-      | tuple3 x x0 x1 => rec [x; x0; x1] base
-      | tuple4 x x0 x1 x2 => rec [x; x0; x1; x2] base
-      | tuple5 x x0 x1 x2 x3 => rec [x; x0; x1; x2; x3] base
-      | tuple6 x x0 x1 x2 x3 x4 => rec [x; x0; x1; x2; x3; x4] base
-      | tuple7 x x0 x1 x2 x3 x4 x5 => rec [x; x0; x1; x2; x3; x4; x5] base
-      | tuple8 x x0 x1 x2 x3 x4 x5 x6 => rec [x; x0; x1; x2; x3; x4; x5; x6] base
-      | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 => rec [x; x0; x1; x2; x3; x4; x5; x6; x7] base
-      | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] base
-      | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] base
-      | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] base
-      | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11]  base
-      | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12]  base
-      | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] base
-      | pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l =>
-          rec [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13; x14] (prec l)
-      end.
-  End __.
-
-  Definition to_list :=
-    Eval compute in
-      prec [] (app (A:=_)).
-
-  (*
-  Fixpoint to_list (l:plist) : list A :=
-    match l with
-    | pnil => []
-    | tuple1 x => [x]
-    | tuple2 x x0 => [x; x0]
-    | tuple3 x x0 x1 => [x; x0; x1]
-    | tuple4 x x0 x1 x2 => [x; x0; x1; x2]
-    | tuple5 x x0 x1 x2 x3 => [x; x0; x1; x2; x3]
-    | tuple6 x x0 x1 x2 x3 x4 => [x; x0; x1; x2; x3; x4]
-    | tuple7 x x0 x1 x2 x3 x4 x5 => [x; x0; x1; x2; x3; x4; x5]
-    | tuple8 x x0 x1 x2 x3 x4 x5 x6 => [x; x0; x1; x2; x3; x4; x5; x6]
-    | tuple9 x x0 x1 x2 x3 x4 x5 x6 x7 => [x; x0; x1; x2; x3; x4; x5; x6; x7]
-    | tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8 =>
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8]
-    | tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 =>
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9]
-    | tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 =>
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10]
-    | tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 =>
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] 
-    | tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 => 
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] 
-    | tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 =>
-        [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13]
-    | pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l =>
-        x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::(to_list l)
-    end.
-   *)
-  
-  Fixpoint of_list (l : list A) : plist :=
-    match l with
-    | [] => pnil
-    | [x] => tuple1 x
-    | [x; x0] => tuple2 x x0
-    | [x; x0; x1] => tuple3 x x0 x1
-    | [x; x0; x1; x2] => tuple4 x x0 x1 x2 
-    | [x; x0; x1; x2; x3] => tuple5 x x0 x1 x2 x3
-    | [x; x0; x1; x2; x3; x4] => tuple6 x x0 x1 x2 x3 x4
-    | [x; x0; x1; x2; x3; x4; x5] => tuple7 x x0 x1 x2 x3 x4 x5
-    | [x; x0; x1; x2; x3; x4; x5; x6] => tuple8 x x0 x1 x2 x3 x4 x5 x6
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7] => tuple9 x x0 x1 x2 x3 x4 x5 x6 x7
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
-        tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
-        tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
-        tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
-        tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
-        tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
-        tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 
-    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
-        pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 (of_list l)
-    end.
-
-  Lemma of_list_to_list l : of_list (to_list l) = l.
-  Proof.
-    induction l;
-      basic_goal_prep; auto.
-    congruence.
-  Qed.
-
-  Lemma to_list_of_list l : to_list (of_list l) = l.
-  Proof.
-    remember (length l) as n.
-    assert (length l <= n) as Hlt by Lia.lia.
-    clear Heqn.
-    revert l Hlt.
-    induction n.
-    1: destruct l; basic_goal_prep; basic_utils_crush; Lia.lia.
-    do 16 (destruct l as [|? l ]; [basic_utils_crush|]).
-    cbn.
-    basic_goal_prep.
-    repeat f_equal.
-    apply IHn.
-    Lia.lia.
-  Qed.
-  
-  Lemma cons_pcons a l : cons a (to_list l) = to_list (pcons a l).
-  Proof.
-    revert a.
-    induction l;
-      basic_goal_prep; basic_utils_crush.
-  Qed.
-
-  Lemma pcons_cons a l : pcons a (of_list l) = of_list (cons a l).
-  Proof.
-    rewrite <- of_list_to_list with (l:=pcons _ _).
-    rewrite <- cons_pcons.
-    rewrite to_list_of_list.
-    reflexivity.
-  Qed.
-  
-  Section __.
-    Context {B} (f : A -> B -> B).
-    Definition pfold_right acc :=
-    Eval compute in
-        prec acc (fun pre acc => fold_right f acc pre).
-  End __.
-
-  
-  Definition frame_to_plist :=
-    Eval compute in
-      (frame_eta (fun f => of_list (ne_to_list (frame_to_ne_list f)))).
-
-  
-  Fixpoint frame_pcons f l :=
-    match split_frame l with
-    | None => frame_to_plist f
-    | Some (f', l') =>
-        let (a,fl) := frame_to_ne_list f in
-        let f'l := frame_to_list f' in
-        let (f3,l3) := split_frame_of_ne_list (a,fl++f'l) in
-        match split_frame_of_list l3 with
-        | 
-        
-    let 
-  
-  Definition frame_pcons :=
-    Eval compute in
-      fix frame_pcons f l :=
-      match split_frame l with
-      | None => frame_to_plist f
-      | Some (f', l') =>
-          ...
-      let (a,l1) := frame_to_ne_list f1 in
-    let l2 := l1 ++ ne_to_list (frame_to_ne_list f2) in
-    let (f1,l3) := split_frame_of_ne_list (a,l2) in
-    (f1, option_map fst (split_frame_of_list l3)).
-          
-          Fixpoint frame_pcons f l :=
-            match split_frame l with
-            | None => frame_to_plist f
-            | Some (f', l') =>
-                let (f1,f2) := add_frame f f' in
-                let fo := (*TODO: turn f into pcons'*) in
-                fo::(frame_pcons f2 l')
-                  issue: what if f' < 15
-  
-  (*
-  Fixpoint frame_of_list (l : list A) : option frame :=
-    match l with
-    | [] => None
-    | [x] => frame1 x
-    | [x; x0] => frame2 x x0
-    | [x; x0; x1] => frame3 x x0 x1
-    | [x; x0; x1; x2] => frame4 x x0 x1 x2 
-    | [x; x0; x1; x2; x3] => frame5 x x0 x1 x2 x3
-    | [x; x0; x1; x2; x3; x4] => frame6 x x0 x1 x2 x3 x4
-    | [x; x0; x1; x2; x3; x4; x5] => frame7 x x0 x1 x2 x3 x4 x5
-    | [x; x0; x1; x2; x3; x4; x5; x6] => frame8 x x0 x1 x2 x3 x4 x5 x6
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7] => frame9 x x0 x1 x2 x3 x4 x5 x6 x7
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
-        frame10 x x0 x1 x2 x3 x4 x5 x6 x7 x8
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
-        frame11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
-        frame12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
-        frame13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
-        frame14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
-        frame15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 
-    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
-        pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 (of_list l)
-    end.
-   *)
-  
-  
-  Lemma cons15_to_list x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 l
-    : x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l
-      = to_list (pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 (of_list l)).
-  Proof.
-    rewrite <- to_list_of_list with (l:=l).
-    cbn.
-    rewrite !to_list_of_list.
-    reflexivity.
-  Qed.
-
-  (*
-  Require Import Derive.
-  Derive frame_cons
-    SuchThat (forall (f:frame) (l : plist),
-                 to_list (frame_cons f l) = frame_to_list f ++ to_list l)
-    As frame_cons_spec.
-  Proof.
-    Unshelve.
-    2:{
-      refine (fix frame_cons f l : plist := _).
-      destruct f, l.
-      all:shelve.
-    }
-    compute in frame_cons.
-    destruct f,l;
-      basic_goal_prep.
-    all: lazymatch goal with
-         | l : plist |- _ => idtac
-         | |- _ = ?lst =>
-             rewrite <- to_list_of_list with (l:=lst);
-             apply f_equal
-         end.
-    all: cbn[of_list].
-    all: try reflexivity.
-    all: rewrite cons15_to_list with (x:=a).
-    all: apply f_equal.
-    all: apply f_equal.
-    all: instantiate(1:= frame_cons _ _).
-    TODO: need induction l
-          *)
-
-  (*
-  (* TODO: how to abstract out this match? *)
-  Definition list_cons l pl :=
-    match l with
-    | [] => pl
-    | [x] => tuple1 x
-    | [x; x0] => tuple2 x x0
-    | [x; x0; x1] => tuple3 x x0 x1
-    | [x; x0; x1; x2] => tuple4 x x0 x1 x2 
-    | [x; x0; x1; x2; x3] => tuple5 x x0 x1 x2 x3
-    | [x; x0; x1; x2; x3; x4] => tuple6 x x0 x1 x2 x3 x4
-    | [x; x0; x1; x2; x3; x4; x5] => tuple7 x x0 x1 x2 x3 x4 x5
-    | [x; x0; x1; x2; x3; x4; x5; x6] => tuple8 x x0 x1 x2 x3 x4 x5 x6
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7] => tuple9 x x0 x1 x2 x3 x4 x5 x6 x7
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8] =>
-        tuple10 x x0 x1 x2 x3 x4 x5 x6 x7 x8
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9] =>
-        tuple11 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10] =>
-        tuple12 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11] =>
-        tuple13 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12] =>
-        tuple14 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 
-    | [x; x0; x1; x2; x3; x4; x5; x6; x7; x8; x9; x10; x11; x12; x13] =>
-        tuple15 x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 
-    | x::x0::x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::l =>
-        pcons' x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 (of_list l)
-    end.
-    
-  
-  Definition papp (l m : plist) :=
-    Eval compute in
-      prec m list_cons l.
-  
-  (* O(nm) *)
-  Fixpoint papp (l m : plist) {struct l} : plist :=
-    match l with
-    | pnil => m
-    | (a :: l1)%list => (a :: app l1 m)%list
-    end.
-*)
+ 
+ Definition papp (l : plist) : plist -> plist :=
+   Eval cbv -[block_list_app] in
+     plist_foldrF pconsK id block_list_app l.
 
 End __.
 
+Arguments block_list : clear implicits.
 Arguments plist : clear implicits.
-#[export] Hint Constructors frame plist : utils.
+#[export] Hint Constructors block_list plist : utils.
 
 Section __.
   Context {A B} (f : A -> B).
 
-  Definition pmap (l : plist A) : plist B :=
-    (*TODO: need frame cons/papp. Question:
-      is there a way to spec things using n-tuples
-      to reduce duplication?
-     *)
-    Eval compute in
-        prec pnil (fun pre acc => (map f pre) ++ acc).
-    match l with
-    | pnil => pnil
-    | tuple1 x => tuple1 (f x)
-    | tuple2 x x0 => tuple2 (f x) (f x0)
-    | tuple3 x x0 x1 => tuple3 (f x) (f x0) (f x1)
-    | tuple4 x x0 x1 x2 => tuple4 (f x) (f x0) (f x1) (f x2)
-    | tuple5 x x0 x1 x2 x3 => tuple5 (f x) (f x0) (f x1) (f x2) (f x3)
-    | tuple6 x x0 x1 x2 x3 x4 => tuple6 (f x) (f x0) (f x1) (f x2) (f x3) (f x4)
-    | pcons' x x0 x1 x2 x3 x4 x5 x6 =>
-        pcons' (f x) (f x0) (f x1) (f x2) (f x3) (f x4) (f x5) (pmap x6)
-    | _ => pnil
+  (* TODO: is there a way to generate this? *)
+  Fixpoint block_map (bl : block_list A) :=
+    match bl with
+    | blist_base x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
+        blist_base (f x) (f x0) (f x1) (f x2) (f x3) (f x4) (f x5) (f x6)
+          (f x7) (f x8) (f x9) (f x10) (f x11) (f x12) (f x13) (f x14)
+    | blist_cons x x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 bl' =>
+        blist_cons (f x) (f x0) (f x1) (f x2) (f x3) (f x4) (f x5) (f x6)
+          (f x7) (f x8) (f x9) (f x10) (f x11) (f x12) (f x13) (f x14)
+          (block_map bl')
     end.
+  
+  Definition pmap (l : plist A) : plist B :=
+    Eval cbv -[block_map] in
+      plist_foldrF (fun a => pcons (f a)) pnil (fun b => phd0 (block_map b)) l.
 End __.
