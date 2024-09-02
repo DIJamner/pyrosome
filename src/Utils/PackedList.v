@@ -693,6 +693,30 @@ Section __.
    Eval cbv -[block_list_app] in
      plist_foldrF pconsK id block_list_app l.
 
+ (*TODO: could probably implement repeat faster*)
+ 
+ Fixpoint block_repeat' n (x:A) acc :=
+   match n with
+   | 0 => acc
+   | S n => block_repeat' n x (blist_cons x x x x x x x x x x x x x x x x acc)
+   end.
+
+ (*
+   TODO: can significantly speed up
+   TODO: wrong
+  *)
+ Definition prepeat (x:A) n :=
+   let (blocks,hd_len_minus) := Nat.divmod n 15 0 15 in
+   let hd_len := 15 - hd_len_minus in
+   match blocks with
+   | 0 =>
+   (*TODO: compute, assuming hd_len <=15*)
+       Nat.iter hd_len (pcons x) pnil
+   | S blocks_minus_1 =>
+       let base := blist_base x x x x x x x x x x x x x x x x in
+       Nat.iter hd_len (pcons x) (phd0 (block_repeat' blocks_minus_1 x base))
+   end.
+       
 End __.
 
 Arguments block_list : clear implicits.
@@ -718,3 +742,70 @@ Section __.
     Eval cbv -[block_map] in
       plist_foldrF (fun a => pcons (f a)) pnil (fun b => phd0 (block_map b)) l.
 End __.
+
+(*
+(* Tests *)
+Goal False.
+  (*regular list-of-small-lists instantiation*)
+  Time Let l_small := Eval vm_compute in
+      (let l1 := repeat 0 10 in repeat l1 20000).
+  (* 0.9 s *)
+  (* list-of-small-packed-lists instantiation*)
+  Time Let pl_small := Eval vm_compute in
+      (let l1 := prepeat 0 10 in repeat l1 20000).
+  (* 0.366 s *)
+  (* list-of-small-packed-lists instantiation*)
+  Time Let pl_pl_small := Eval vm_compute in
+      (let l1 := prepeat 0 10 in prepeat l1 20000).
+  (* 0.288 s *)
+  time let _ := eval vm_compute in
+       (map (map S) l_small)
+         in
+         idtac.
+  (* 0.407 s *)
+  time let _ := eval vm_compute in
+       (map (pmap S) pl_small)
+         in
+         idtac.
+  (* 0.263 s *)
+  time let _ := eval vm_compute in
+       (pmap (pmap S) pl_pl_small)
+         in
+         idtac.
+  (* 0.214 s *)
+  
+  (*regular list-of-large-lists instantiation*)
+  Time Let l_large := Eval vm_compute in
+      (let l1 := repeat 0 1000 in repeat l1 1000).
+  (* 3.278 s *)
+  (* list-of-large-packed-lists instantiation*)
+  Time Let pl_large := Eval vm_compute in
+      (let l1 := prepeat 0 1000 in repeat l1 1000).
+  (* 1.205 s *)
+  (* list-of-large-packed-lists instantiation*)
+  Time Let pl_pl_large := Eval vm_compute in
+      (let l1 := prepeat 0 1000 in prepeat l1 1000).
+  (* 1.225 s *)
+  time let _ := eval vm_compute in
+       (map (map S) l_large)
+         in
+         idtac.
+  (* 1.632 s *)
+  time let _ := eval vm_compute in
+       (map (pmap S) pl_large)
+         in
+         idtac.
+  (* 0.906 s *)
+  time let _ := eval vm_compute in
+       (pmap (pmap S) pl_pl_large)
+         in
+         idtac.
+  (* 0.95 s *)
+
+(*
+  Timing conclusions:
+  Using plist instead of list can expect to execute the list-processing
+  parts 1.5-2x faster when the data in the list is small.
+ *)
+Abort.
+*)
