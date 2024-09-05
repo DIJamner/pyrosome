@@ -1,4 +1,6 @@
 (* An implementation of the core of egglog
+
+   TODO: benchmark, then use plist everywhere feasible and retest
  *)
 Require Import Equalities Orders ZArith Lists.List Uint63.
 Import ListNotations.
@@ -9,188 +11,51 @@ Require Import Tries.Canonical.
 Require Std.Sorting.Mergesort.
 Module Merge := Std.Sorting.Mergesort.Sectioned.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind SpacedMapTreeN.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind (*SpacedMapTreeN*).
 From Utils Require TrieMap TrieMapInt63.
 (*From Pyrosome.Theory Require Import Core.*)
 Import Sets.
-  
+Import StateMonad.
+
+Notation ne_list A := (A * list A)%type.
+Definition ne_map {A B} (f : A -> B) (l : ne_list A) : ne_list B :=
+  (f (fst l), map f (snd l)).
 
 Section WithMap.
   Context
-    (* these first 3 types may all be the same *)
     (idx : Type)
       (Eqb_idx : Eqb idx)
       (Eqb_idx_ok : Eqb_ok Eqb_idx)
+
+      (*TODO: just extend to Natlike?*)
+      (idx_succ : idx -> idx)
+      (idx_zero : idx)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
-      (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
-    (* the type of values in the table. TODO: generalize to a symbol-dependent signature.
-    (elt : Type)
-    We use idx as the sole output type for now since it behaves specially wrt matching
-     *).
-  (*(term_args_map : map.map (list idx) elt).*)
+      (Eqb_symbol_ok : Eqb_ok Eqb_symbol).
 
-  Definition table := (named_list (list idx) idx).
   
- Context (symbol_map : forall A, map.map symbol A).
+  Context (symbol_map : forall A, map.map symbol A).
 
   Context 
       (idx_map : forall A, map.map idx A)
-      (idx_map_ok : forall A, map.ok (idx_map A)).
+        (idx_map_ok : forall A, map.ok (idx_map A))
+        (* TODO: define and assume weak_map_ok*)
+        (idx_trie : forall A, map.map (list idx) A)
+        (idx_trie_plus : map_plus idx_trie).
 
-  (* we need constants for residual queries in generic_join *)
-  Variant argument := const_arg (c : idx) | var_arg (x : idx).
-
-  (* assumption a = const_arg x *)
-  Definition resolve_arg a :=
-    match a with const_arg x => Some x | var_arg _ => None end.
-
-  
-  (* args_locs represents the indices of the arguments we want to match.
-     for functions of the form f(x0..xn) |-> x_n+1, the index i refers to xi.
-     For simplicity, we assume that any index >= n+1 refers to out.
-     (Alternately, this function should only be called w/ indices up to n+1)
-
-     Returns `Some i` if this row has i at indices l0::args_locs,
-     and None if those locations do not all have the same value.
+  (*
+    each symbol has an n-ary table of epoch-stamped entries.
+    fst of result is epoch, snd is value
    *)
-  Definition match_args (args : list idx) (out : idx) '(l0,args_locs) : option _ :=
-    let v := nth l0 args out in
-    if forallb (fun i => eqb v (nth i args out)) args_locs then Some v else None. 
-  
-  (*
-  Require Import Coq.Sorting.Mergesort.
-  Import NatSort. *)
-  
-  (*
-    `split_by` sorts the table into subtables where all key indices in 'is' have the same value
-    Split up into a call to mergesort and a second filter/split pass.
-    This increases runtime (but not complexity), but lets us use the library mergesort.
-   *)
-  (*Fail Context (sort : ((list idx) * idx -> (list idx) * idx -> bool) -> table -> table).*)
+  Definition db_map := symbol_map (idx_trie (idx * idx)).
 
-  Fixpoint filter_split_sorted' (args_locs : nat * list nat) (tab : table)
-    out current current_idx
-    : named_list idx (named_list (list idx) idx) :=
-    match tab with
-    | [] => (current_idx,current)::out
-    | (args,e)::tab' =>
-        match match_args args e args_locs with
-        | Some i =>
-            if eqb i current_idx
-            then filter_split_sorted' args_locs tab' out ((args,e)::current) current_idx
-            else filter_split_sorted' args_locs tab' ((current_idx, current)::out) [(args,e)] i
-        | None => filter_split_sorted' args_locs tab' out current current_idx
-        end
-    end.
+  (*Context `{@map_plus symbol symbol_map}.*)
 
-  Definition filter_split_sorted args_locs tab :=
-    match tab with
-    | [] => []
-    | (args,e)::tab' =>
-        match match_args args e args_locs with
-        | Some i => filter_split_sorted' args_locs tab' [] [(args,e)] i
-        (* TODO: Silences errors. Consider proper error propagation *)
-        | None => []
-        end
-    end.
+  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
 
-  (*TODO: move to Booloeans/WithDefault*)
-  Instance default_bool : WithDefault bool := false.
-
-  Context (idx_leb : idx -> idx -> bool).
-  
-  Definition args_order loc0 : list idx * idx -> list idx * idx -> bool :=
-    fun l1 l2 =>
-      let v1 := nth loc0 (fst l1) (snd l1) in 
-      let v2 := nth loc0 (fst l2) (snd l2) in 
-      idx_leb v1 v2.
-
-  Definition split_by (args_locs : nat * list nat) (tab : table)
-    : named_list idx table :=
-    let table' := Merge.sort (args_order (fst args_locs)) tab in
-    filter_split_sorted args_locs table'.
-
-  (*TODO: move to list utils?*)
-  Fixpoint indices_of' {A} `{Eqb A} (a : A) offset l : list nat :=
-    match l with
-    | [] => []
-    | b::l' => if eqb a b then offset::(indices_of' a (S offset) l')
-               else indices_of' a (S offset) l'
-    end.
-
-  Definition indices_of {A} `{Eqb A} (a : A) l : list nat :=
-     indices_of' a 0 l.
-
-  Definition ne_table : Type := ((list idx) * idx) * table.
-
-  Definition ne_as_table (n : ne_table) := cons (fst n) (snd n).
-  
-  Coercion ne_as_table : ne_table >-> list.
-
-  Instance eqb_argument : Eqb argument :=
-    fun a b =>
-      match a,b with
-      | var_arg ax, var_arg bx => eqb ax bx
-      | const_arg ac, const_arg bc => eqb ac bc
-      | _,_ => false
-      end.
-
-
-  
-  Instance eqb_argument_ok : Eqb_ok eqb_argument.
-  Proof using Eqb_idx_ok.
-    unfold Eqb_ok, eqb, eqb_argument.
-    intros a b;
-      my_case Ha a;
-      my_case Hb b;
-      basic_goal_prep;
-      try congruence.
-    { eqb_case c c0; congruence. }
-    { eqb_case x x0; congruence. }
-  Qed.
-
-  Definition var_indices (vars : list idx) (args : list argument) :=
-    map (fun x => indices_of (var_arg x) args) vars.
-  
-  Definition c_is_of_vars : list (list nat) -> _ :=
-  map (fun x : list nat => if x then false else true).
-  
-  Fixpoint build_trie' (tab : ne_table) (v_is : list (list nat))
-    : MapTreeN.ntree idx unit
-        (List.length (filter id (c_is_of_vars v_is))) :=
-    match v_is as v_is with
-    | [] =>
-        (* Assumes that all arguments must be constant here.
-           Implied by fvs(args) <= vars.
-
-           Further assumes that the table is functional,
-           i.e. that each key (arg list) appears at most once.
-           TODO: figure out whether we need to relax this assumption,
-           e.g. for semi-naive evaluation.
-         *)
-        tt
-    (* unconstrained *)
-    | []::v_is => build_trie' tab v_is
-    | (loc0::arg_locs)::v_is =>
-        let split_tab := split_by (loc0,arg_locs) tab in                
-        fold_left
-          (fun trie_map '(i, tab) =>
-             match tab with
-             (* Short-circuit if there are no more entries.
-                      TODO: check whether this can happen.
-                      If so, it means that map.get can return None on the output
-                      in normal operation
-              *)
-             | [] => trie_map
-             | r1::tab' => map.put trie_map i (build_trie' (r1,tab') v_is)
-             end)
-          split_tab
-          map.empty
-    end.
-
-  (*
+   (*
     clauses have the form R(x1,...xn) (|-> xn+1)?
     where xn+1, if provided, binds the output.
     atom_args should be of length either arity(R) or arity(R)+1
@@ -201,100 +66,386 @@ Section WithMap.
       atom_args : list idx;
       atom_ret : idx;
     }.
-
-  Definition node_map := symbol_map table.
+ 
   
-  (* Returns None only if the clause doesn't match any rows.
-     Note: may still return Some in such cases.
-   *)
-  Definition build_trie (nodes:node_map) (vars : list idx) (clause : atom) : option _ :=
-    @!let (r1::tab) <?- map.get nodes clause.(atom_fn) in
-      (*TODO: find a better way to pass ret & trace it back to simplify deps,
-        since they can assume a ret exists.
+  Record instance := {
+      db : db_map;
+      (*sort_map : idx_map idx;*)
+      equiv : union_find;
+      parents : idx_map (list atom);
+      (* Used to determine which entries belong to the frontier *)
+      epoch : idx;
+      (* used to delay unification until rebuilding *)
+      worklist : list idx;
+      (* TODO: maintain an upper bound on the number of rows in db
+         for the purpose of ensuring termination?
+       
+      size : nat;*)
+      (*
+        Note: For saturation, need to maintain a 'changed' flag somewhere.
+              (alternately, maintain the epoch of last edit)
+              If we instead maintain one 'changed' flag per symbol,
+              we can reuse tries from all tables that haven't changed.
+              For pyrosome languages, this will frequently include type info.
+              Probably worth doing, since the only cost is 'or'ing the 'changed'
+              flags once per iteration
        *)
-      let v_is := var_indices vars
-                    (map var_arg (clause.(atom_args)
-                                           ++[clause.(atom_ret)])) in
-      let t := build_trie' (r1,tab) v_is in
-      ret Build_ntree _ _ t.
+    }.
 
-  
-  Record query :=
+    (*
+    each disjunct contains a free variable list and a list of clause info,
+    where clause info consists of the idx of the clause and a substitution.
+    The substitution must be monotonic, i.e. if n < m then s(n) < s(m)
+   *)
+  Record compiled_rw_rule :=
     {
-      free_vars : list idx;
-      clauses : list atom;
+      query_vars : list idx;
+      (* TODO: substitution could a named_list,
+         or just be a list idx? but would require an injection
+         nat -> idx
+         Alternately, should it just be an idx map?
+
+         We expect the substitution to be dense (actually total) on [0,n) for some n.
+         but access is primarily ordered.
+         
+       *)
+      query_clause_ptrs : ne_list (symbol * nat * list idx);
+      (* The list of clauses to write for each assignment valid wrt the query.
+         Uses the vars in query_vars, plus additional ones for fresh/unbound idxs.
+         Fresh variables must first appear in an output position.
+         Interpretation:
+                for each clause, case on whether the output variable is in query_vars:
+                - if yes, merge/unify their values
+                - if no, allocate a fresh value
+        Writes should be executed against a (monotonically extending) environment
+        starting from the values given by each assignment to query_vars.
+       *)
+      write_clauses : list atom;
     }.
   
-  
-  (* Returns None only if some clause doesn't match any rows.
-     Note: may still return Some in such cases.
+
+  (*
+    TODO: how to do clauses for output of rw_set?
+    probably just makes sense to go by disjunct than try sharing,
+    since adding is pretty cheap compared to trie creation.
    *)
-  Definition build_tries (nodes : node_map) (q: query)
-    : option (list _) :=
-    list_Mmap (build_trie nodes q.(free_vars)) q.(clauses).
+  Record rw_set :=
+    {
+      (* each clause (f x1..xn -> y) uses an independent,
+         canonical minimal set of variables (0..n+1, or less if some are repeated)
+         Shared between queries
 
-(*
-TODO: what is best wrt intersection?
+         TODO: nat instead of idx
+       *)
+      query_clauses : symbol_map (list (list nat * nat));
+      compiled_rules : list compiled_rw_rule;
+    }.
 
-Seems like the sorted-list-style map might be the best here.
-- arrays (when available) are best when the keys are dense
-- Sorted list is better than ptree when you have to iterate over the whole map
-- ptree is better than sorted list when you need to get or to set possibly exisitng keys
-
-Issue: building trie performs unordered insertions
-Question: what dominates: unordered insertions or iteration? probably insertion
-Alternately: should I build a tree then convert to a list?
-2nd alt: can I define an intersection that directly builds sorted lists?
- *)
-
-  (*TODO: move tp SpacedMapTreeN*)
-  Lemma top_tree_cast {A} var_count
-    : A = MapTreeN.ntree idx A (Datatypes.length (filter id (repeat false var_count))).
-  Proof.
-    replace (filter id (repeat false var_count)) with (@nil bool);
-      [ reflexivity |].
-    induction var_count;
-      cbn;
-      try reflexivity.
-    assumption.
-  Defined.
-
-  (*TODO: move to a better place*)
-  Definition cast {A B} (eq : A = B) : A -> B :=
-    match eq with eq_refl => id end.
   
-  Definition top_tree {A} `{WithDefault A} var_count : ntree A :=
-    Build_ntree _ (m:=idx_map) (repeat false var_count)
-      (cast (top_tree_cast var_count) default).
+  Local Notation "'ST'" := (state instance).
 
-  Context `{map_plus_ok idx (m:=idx_map)}.
   
-  (* We implement a simplified generic join by just iteratively intersecting the tries.
-     Note: the running time here is proportional to the second-largest trie in the worst case,
-     whereas it should be proportional to the smallest.
-     Potential solutions: lazy tries &/or special nary-intersect (second seems easier than first)
-
-     TODO: how to handle var_count being the same across trees?
-     Can't take advantage of it as easily here.
-     TODO: intersect_checked returning Some is inconvenient as speculated; return default?
-     alternately, to avoid checking length a bunch of times, could have a forest package
-   *)                                                              
-  Definition generic_join' (t1: ntree unit) (tries : list (ntree unit)) : list _ :=
-    ntree_fold _ (fun acc k _ => cons k acc)
-      (List.fold_right (ntree_intersect_unchecked (fun _ _ => tt)) t1 tries) [].
-  
-
-  (* Returns a list of all possible outputs of the query's clauses
-     such that the query matches.
-     Note: duplicates are possible.
+  (*TODO: propagate down the removal of the option and push to UnionFind file
+    as an alternative
    *)
-  Definition generic_join (nodes : node_map) q : list (list idx) :=
-    match build_tries nodes q with
-    | None => [] (* short-circuit: includes an empty trie *)
-    | Some [] => [] (* NOTE: no clauses, invalid result in this case *)
-    | Some (t1::tries) => generic_join' t1 tries
+  Definition union (v v1 : idx) : ST idx :=
+    fun d =>
+    match UnionFind.union _ _ _ _ d.(equiv) v v1 with
+    | Some (uf',v') =>
+        (*TODO: eqb duplicated in union; how to reduce the work?*)
+        let wl := if eqb v v1 then d.(worklist) else v'::d.(worklist) in
+        (v', Build_instance d.(db) uf' d.(parents) d.(epoch) wl)
+    | None => (*should never happen if v in uf *) (v,d)  
     end.
 
+  
+  (*TODO: move this somewhere?
+    TODO: sometimes maps can implement this more efficiently
+   *)
+  Definition map_update {K V} {mp : map.map K V} (m : mp) x (f : V -> V) :=
+    match map.get m x with
+    | Some v => map.put m x (f v)
+    | None => m
+    end.
+
+  Definition new_singleton f args : ST idx :=
+    fun i =>
+      let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
+      let tbl_upd tbl := map.put tbl args (i.(epoch), x_fresh) in
+      (* assumes f exists *)
+      let db' := map_update i.(db) f tbl_upd in
+      let node := Build_atom f args x_fresh in
+      let parents' := fold_left (fun m x => map_update m x (cons node)) args i.(parents) in
+      (x_fresh, Build_instance db' equiv' parents' i.(epoch) i.(worklist)).
+  
+  (* accesses the egraph like a hashcons.
+     If the node exists, return its id.
+     Otherwise, generate a fresh id, store it, and return it
+
+     TODO: some maps are more efficient by merging get/set ops.
+     Is that worth doing?
+   *)
+  Definition hash_node f args : ST idx :=
+    fun i =>
+      match map.get i.(db) f with
+      | Some tbl =>
+          match map.get tbl args with
+          | Some x => (snd x, i)
+          | None => new_singleton f args i
+          end
+      | None => (*shouldn't happen, using 0 as default for now*) (idx_zero,i)
+      end.
+
+  Fixpoint exec_write_clauses' (env : idx_map idx) (cl : list atom) : ST unit :=
+    match cl with
+    | [] => @!ret {ST} tt
+    | c::cl' =>
+        let (f,args,out) := c in
+        (* assume: all idx in args are keys in env *)
+        let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
+        @! let {ST} i <- hash_node f args in
+          match map.get env out with
+          | Some v => @!let {ST} _ <- union i v in (exec_write_clauses' env cl')
+          | None => exec_write_clauses' (map.put env out i) cl'
+          end
+    end.
+
+  Definition exec_write_clauses (qvs : list idx) (wcls : list atom) assignment : ST unit :=
+    let initial_env := map.of_list (combine qvs assignment) in
+    exec_write_clauses' initial_env wcls.
+  
+  (*TODO: move to MapTreeN
+    TODO: how to represent the empty tree?
+    PTree-specific: model as Empty | tree' (tree'...)
+    Question: should I give up on abstraction and have an ntree interface?
+    Can't quite implement map.ok since set only works w/ the right arity
+    I could have ntree_ok as an alternate property of the map interface, weakening set
+    Specifically: in map.weak_ok, include as a parameter a predicate P,
+    where any call to put (except get_put_diff?) assumes P k
+  Definition  ntree_empty n :=
+    match n with
+    | 0 => ????
+    | _ => map.empty
+    end.
+   *)
+
+  (*TODO: move to List.v*)
+  Fixpoint is_nth (l : list idx) n i :=
+    match n, l with
+    | 0, i'::_ => eqb i i'
+    | S n, _::l => is_nth l n i
+    | _, _ => false
+    end.
+  
+  (* Assumption: cargs, cv in increasing order, except for duplicates.
+     Algorithm:
+     maintain: next index, assignment list
+     if current idx is next, assign args hd and recur
+     else, check that args hd is the current idx-element of the assignment.
+     If yes, recur, else fail
+
+     TODO: use idxs instead of nats
+   *)
+  Definition match_argK {A} x y curr (acc : list idx) (K : _ -> _ -> option A) :=
+    if eqb x curr
+    then K (S curr) (y::acc)
+           (* TODO: avoid rev?*)
+    else if is_nth (rev acc) x y then K curr acc else None.
+
+  (* TODO: inline match_argK*)
+  Fixpoint match_clause' cargs cv args v curr acc : option _ :=
+    match cargs, args with
+    | [], [] =>
+        (* TODO: avoid rev*)
+         match_argK cv v curr acc (fun _ acc => Some (rev acc))
+    | x::cargs', y::args' =>
+        match_argK x y curr acc (match_clause' cargs' cv args' v)
+    | _, _ => None (*shouldn't happen *)
+    end.
+    
+  Definition match_clause '(cargs, cv) args v : option _ :=
+    match_clause' cargs cv args v 0 [].
+    
+  
+  (* build all the tries for a given symbol at once *)
+  Definition build_tries_for_symbol
+    current_epoch
+    (l : list (list nat * nat))
+    (tbl : idx_trie (idx * idx))
+    : list (idx_trie unit * idx_trie unit) (* full * frontier *)
+    :=
+    let upd_trie_pair (args : list idx) '(epoch,v) '(full, frontier) clause :=
+      match match_clause clause args v with
+      | Some assignment =>
+          let full' : idx_trie unit := map.put full assignment tt in
+          (*ltb also usable, but includes added nodes (undesirable?)
+          TODO: check off-by-one*)
+          if eqb (idx_succ epoch) current_epoch
+          then (full', map.put frontier assignment tt)
+          else (full', frontier)
+      | None => (full, frontier)
+      end          
+    in
+    (*TOOD: want an uncurried map2; use combine for now, but should remove *)
+    map.fold (fun tries args vp => map2 (upd_trie_pair args vp) (combine tries l))
+      (map (fun _ => (map.empty, map.empty : idx_trie unit)) l) tbl.
+
+  (* TODO: add map_map2 to map_plus? or a map_mapn? *)
+  Context (map_map2 : forall {A B C}, (A -> B -> C) -> symbol_map A -> symbol_map B -> symbol_map C).
+  Arguments map_map2 {A B C}%type_scope _%function_scope _ _.
+
+  Definition build_tries (q : rw_set) : ST (symbol_map (list (idx_trie unit * idx_trie unit))) :=
+    fun i =>  (map_map2 (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
+
+  (* We implement a simplified generic join by just iteratively intersecting the tries.
+       TODO: verify and use n-ary intersection.
+   *)                                                              
+  Definition intersection_keys (t1: idx_trie unit) (tries : list (idx_trie unit)) : list _ :=
+    map.fold (fun acc k _ => cons k acc) [] (List.fold_right (map_intersect (fun _ _ => tt)) t1 tries).
+
+  (*TODO: move somewhere?*)
+  #[local] Instance map_default {k v} `{m : map.map k v} : WithDefault m := map.empty.
+  
+  Definition process_compiled_rw_rule'
+    (* each trie pair is (total, frontier) *)
+    (db_tries : symbol_map (list (idx_trie unit * idx_trie unit)))
+    (r : compiled_rw_rule) (frontier_n : nat) : ST unit :=
+    let trie_of_clause '(f, n, sub) :=
+      (* assume f in db_tries *)
+      match map.get db_tries f with
+      | Some trie_list =>
+          if Nat.eqb n frontier_n
+          then snd (nth n trie_list default)
+          else fst (nth n trie_list default)
+      | None => (*should never happen*) default
+      end
+    in
+    let (t1,tries) := ne_map trie_of_clause r.(query_clause_ptrs) in
+    let assignments := (intersection_keys t1 tries) in
+    list_Miter (exec_write_clauses r.(query_vars) r.(write_clauses)) assignments.
+
+  Definition process_compiled_rw_rule db_tries r : ST unit :=
+    (* TODO: don't construct the list of nats *)
+    list_Miter (process_compiled_rw_rule' db_tries r)
+      (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
+
+  (* TODO: return the new epoch?  *)
+  Definition increment_epoch : ST unit :=
+    fun '(Build_instance db equiv parents epoch worklist) =>
+      (tt,Build_instance db equiv parents (idx_succ epoch) worklist).
+
+  (*TODO: propagate down the removal of the option and push to UnionFind file
+    as an alternative
+   *)
+  Definition find a : ST idx :=
+    fun d =>
+      match UnionFind.find _ _ _ _ d.(equiv) a with
+      | Some (uf',v') =>
+          (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist))
+      | None => (*should never happen if a in uf *) (a,d)  
+      end.
+
+  Definition canonicalize (a:atom) : ST atom :=
+    let (f,args,o) := a in
+    @!let args' <- list_Mmap find args in
+      let o' <- find o in
+      ret Build_atom f args' o'.
+
+  
+  Definition pull_worklist : ST (list idx) :=
+    fun d => (d.(worklist),
+               Build_instance d.(db) d.(equiv) d.(parents) d.(epoch) []).
+
+  (*optional addition: return value
+    NOTE: removes only from data, not parents or frontier.
+   *)
+  Definition remove_node f args : ST unit :=
+    fun i =>
+      let d' := map_update i.(db) f (fun tbl => map.remove tbl args) in
+      (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
+
+  Definition put_node f args (out : idx) : ST unit :=
+    fun i =>
+      let d' := map_update i.(db) f
+                (fun tbl => map.put tbl args (i.(epoch),out)) in
+      (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
+
+  Definition get_parents x : ST (list atom) :=
+    fun s =>
+      (* assume x exists *)
+      (unwrap_with_default (map.get s.(parents) x), s).
+  
+  Definition set_parents x ps : ST unit :=
+    fun d =>
+      (* assume x exists *)
+      let p' := map.put d.(parents) x ps in
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)).
+
+  
+  Fixpoint add_parent ps p : ST (list atom) :=
+    match ps with
+    | [] => Mret [p]
+    | (Build_atom f' args' o' as p')::ps' =>
+        let (f, args, o) := p in
+        if (eqb f f') && (eqb args args')
+        then @! let om <- union p.(atom_ret) p'.(atom_ret) in
+               ret (Build_atom f args om)::ps'
+        else @! let ps'' <- add_parent ps' p in ret p'::ps''
+    end.
+    
+  Definition repair x : ST unit :=
+    let repair_each '(Build_atom f args out) :=
+      @! let _ <- remove_node f args in
+        let args' <- list_Mmap find args in
+        let out' <- find out in
+        (put_node f args' out')
+    in
+    @! let ps <- get_parents x in
+      let _ <- list_Miter repair_each ps in
+      let ps1 <- list_Mmap canonicalize ps in
+      let ps2 <- list_Mfoldl add_parent [] ps in
+      (set_parents x ps1).    
+
+  Fixpoint rebuild fuel : ST unit :=
+    match fuel with
+    | 0 => Mret tt
+    | S fuel =>
+        @! let todo <- pull_worklist in
+          if todo : list idx then ret tt
+          else
+            let todo <- list_Mmap find todo in
+            let todo := dedup (eqb (A:=_)) todo in
+            let _ <- list_Miter repair todo in
+            (rebuild fuel)
+    end.
+
+  (*TODO: update/implement rebuilding*)
+  Definition run1iter (rs : rw_set) : ST unit :=
+    @! let tries <- build_tries rs in
+      (* increment the epoch so that all added nodes are in the next frontier.
+           TODO: check for off-by-one errors
+       *)
+      let _ <- increment_epoch in
+      let _ <- list_Miter (process_compiled_rw_rule tries) rs.(compiled_rules) in
+      (* TODO: compute an adequate upper bound for fuel *)
+      (rebuild 1000).
+
+  Fixpoint saturate_until rs (P : ST bool) fuel : ST unit :=
+    match fuel with
+    | 0 => Mret tt
+    | S fuel =>
+        @! let {ST} done <- P in
+          if (done : bool) then ret tt
+          else let _ <- run1iter rs in (saturate_until rs P fuel)
+    end.
+
+  (*TODO:
+    - fill in Context-hypothesized ops
+    - prove properties of above
+    - implement eqsatlog on top of this (relationship to terms)
+   *)
+
+  (*
   (* Properties *)
 
   
@@ -1037,235 +1188,69 @@ Alternately: should I build a tree then convert to a list?
     repeat case_match.
     (*TODO: use build_tries_sound*)
   Abort.
-
-
-  Definition db_map := symbol_map {n & (MapTreeN.ntree idx idx n)}.
-
-  Context `{@map_plus symbol symbol_map}.
-
-  Definition flatten_db : db_map -> node_map :=
-    map_map (fun p => MapTreeN.ntree_to_tuples _ (projT1 p) (projT2 p)).
-    
-  
-  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
-
-  
-  Record instance := {
-      db : db_map;
-      (*sort_map : idx_map idx;*)
-      equiv : union_find;
-      (* TODO: maintain an upper bound on the number of rows in db
-         for the purpose of ensuring termination?
-       
-      size : nat;*)
-    }.
-
-  Import StateMonad.
-
-  Definition table_put n (t : MapTreeN.ntree idx idx n) uf ks v :=
-     match MapTreeN.ntree_get t ks with
-     | Some v1 =>
-         (*TODO: union shouldn't ever fail? check this &/or make non-option union *)
-         match UnionFind.union _ _ _ _ uf v v1 with
-         | Some (uf',v') =>
-            (* Note: needs rebuilding*)
-             (v', t, uf')
-         | None => (*should never happen if v in uf *) (v, t, uf)  
-         end
-        | None =>
-            let t' := MapTreeN.ntree_set _ n t ks v in
-            (v, t', uf)            
-        end.
-
-  (* TODO: assumes idx merge fn. Generalize.
-     TODO: why the option out?
-   *)
-  Definition db_put s ks v i : idx * instance :=
-    match map.get i.(db) s with
-    | Some (existT _ n t) =>
-        let '(v', t', uf') := table_put _ t i.(equiv) ks v in
-        let db' := map.put i.(db) s (existT _ n t') in
-        (v,Build_instance db' uf')
-    | None =>
-        let s_ntree := MapTreeN.ntree_singleton _ (List.length ks) ks v in
-        let db' := map.put i.(db) s (existT _ (List.length ks) s_ntree) in
-        (v, Build_instance db' i.(equiv))
-    end.
-
-  Context (idx_succ : idx -> idx).
-  
-  Definition db_get s ks : stateT instance option idx :=
-    fun i =>
-      (* TODO: abstact out the 'mutate value' pattern? *)
-      @! let (existT _ n t) <- map.get i.(db) s in
-        match MapTreeN.ntree_get t ks with
-        | Some v => Some (v, i)
-        | None =>
-            let (uf',v) := alloc _ _ _ idx_succ i.(equiv) in
-            let t' := MapTreeN.ntree_set _ n t ks v in
-            let db' := map.put i.(db) s (existT _ n t') in
-            Some (v,Build_instance db' uf')            
-        end.
-
-  Definition find' (v : idx) : stateT _ option idx :=
-    fun uf => @!let p <- UnionFind.find _ _ _ _ uf v in ret (snd p, fst p).
-  
-  (*TODO: write instead in terms of node_map?*)
-  Definition rebuild_ntree' (uf : union_find) n (t : MapTreeN.ntree idx idx (S n))
-    : (MapTreeN.ntree idx idx (S n) * union_find * bool) :=
-    MapTreeN.ntree_fold (key:=idx) _ (fun '(t,uf, changed) keys v =>
-                    unwrap_with_default (H:=(t,uf,changed))
-                      (@! let {option} (keys',uf1) <- list_Mmap (M:= stateT _ option) find' keys uf in
-                         let {option} (v', uf2) <- find' v uf1 in
-                         let (_,t', uf') := table_put _ t uf keys' v' in
-                         let changed' := (changed || eqb v v')%bool in
-                         ret {option} (t',uf',changed')))
-       (S n) t (map.empty : MapTreeN.ntree idx idx (S n),uf,false).
-    
-  (*TODO: `unwrap_with_default` assumes presence in uf. Is this the best way to handle things? *)
-  Definition rebuild_ntree (uf : union_find) n
-    : MapTreeN.ntree idx idx n -> (MapTreeN.ntree idx idx n * union_find*bool) :=
-    match n with
-    (* can always mark changed as false here, since rebuilding a tree0 needs at most one update *)
-    | 0 => fun x => unwrap_with_default (H:=(x,uf,false)) (Mfmap (fun x => (x,false)) (find' x uf))
-    | S n' => rebuild_ntree' uf n'
-    end.
-                               
-  Definition rebuild_once i : instance * bool :=
-      map.fold (fun '(acc, has_changed) k '(existT _ n v) =>
-                  let '(v', uf', v_has_changed) := rebuild_ntree acc.(equiv) n v in
-                  (Build_instance (map.put acc.(db) k (existT _ n v')) uf',
-                    (has_changed || v_has_changed)%bool))
-        (Build_instance map.empty i.(equiv),false) i.(db).
-
-  Fixpoint rebuild' limit (i : instance) : instance :=
-    match limit with
-    | 0 => i
-    | S n =>
-        let '(i',changed) := rebuild_once i in
-        if changed then rebuild' n i' else i'
-    end.
-
-  (* Note: partial rebuilding is sound but not complete.
-         We use a bound of 100 for now.
-         On strange match failures, check this.
-   *)
-  Definition rebuild (i : instance) : instance := rebuild' 100 i.
-  
-  (*TODO: rebuilding process requires non-functional dbs at intermediate steps
-    once we use non-idx merges
    *)
   
   (*
-    TODO: do I want to support let_query? I don't have a use for it right now
-    and generally, multiple queries is a bad idea since they should be bundled into one
-    instead: log_exp an upd_exp
-   *)
-  Variant log_upd : Type :=
-  | put_row : atom -> idx (* var *) -> log_upd
-  | let_row : atom -> idx (* binder *) -> log_upd
-  | unify : idx -> idx -> log_upd.
+  TODO: disjunctive-normal-form queries.
+  TODO: differential query generation to use the frontier.
 
-  Record op_state : Type :=
-   Mk_state {
-      data : instance;
-      env : idx_map idx;
-      changed : bool;
-     }.
-  
-  Definition do_unify a b : state op_state unit :=
-    fun s =>
-      (* shortcut when equal so that changed remains false *)
-      if eqb a b then (tt,s) else
-      match UnionFind.union _ _ _ _ s.(data).(equiv) a b with
-      | Some (uf,_) => (tt,Mk_state (Build_instance s.(data).(db) uf) s.(env) true)
-      | None => (tt,s) (* shouldn't happen *)
-      end.
-
-  Context `{WithDefault idx}.
-
-  (* assumes the input is in the domain *)
-  Definition sub (env : idx_map idx) i : idx :=
-    unwrap_with_default (map.get env i).
-
-  Definition do_put_row a i : state op_state unit :=
-    fun s =>
-      let f := a.(atom_fn) in
-      let args := map (sub s.(env)) a.(atom_args) in
-      let val := sub s.(env) i in
-      let (_, d) := db_put f args val s.(data) in
-      (tt, Mk_state d s.(env) true).
-
-  (* Assumes that the symbol of a corresponds to a real table *)
-  Definition do_let_row a x : state op_state unit :=
-    fun s =>
-      let f := a.(atom_fn) in
-      let args := map (sub s.(env)) a.(atom_args) in
-      match db_get f args s.(data) with
-      | Some (i, d) =>
-          (tt, Mk_state d (map.put s.(env) x i) true)          
-      | None => (tt,s) (* shouldn't happen *)
-      end.
-  
-  (* TODO: generate differential instance?
-   *)
-  Definition apply_upd (l : log_upd) : state op_state unit :=
-      match l with
-      | unify i1 i2 => do_unify i1 i2
-      | put_row a i => do_put_row a i
-      | let_row a x => do_let_row a x
-      end.
-
-  
-  Definition apply_upds : list log_upd -> state op_state unit :=
-    list_Miter apply_upd.
-  
-  (*
-    Note: should be able to generate terms (e.g. proofs of internal facts like neq) in addition to equalities!
-   *)
-  Record log_op : Type :=
-    {
-      (*
-        We generalized the conclusion :- assumption ... pattern from core egglog
-        to better support multiple operations being performed on the results of a single match.
-        log_ops behave as follows:
-        - run `assumptions` query
-        - for each substitution in the result, run the update program
-
-       This is useful for things like recording `sort_of` entries at the same time as terms are added to the db
-
-       TODO: w/ advanced enough optimization, it will be worth generalizing further to a program
-       made up of an (ordered) sequence of queries and conclusions, to take advantage of subqueries.
-       Note: Use the var/const split for this
-       *)
-      update : list log_upd;
-      assumptions : query;
-    }.
-  
-  Definition log_program : Type := list log_op.
-
-  Definition opt_to_list {A} o : list A :=
-    match o with Some x => [x] | None => [] end.
-
-  (*
-  Definition make_query l :=
-    let c_vars := (opt_to_list (snd l.(conclusion)) ++ atom_args (fst l.(conclusion))) in
-    let vars := List.dedup (eqb (A:=_))
-                  (List.fold_left (app (A:=_))
-                     (map atom_args l.(assumptions)) c_vars) in
-    Build_query vars l.(assumptions).
+  TODO: add DNF optimization to QueryOpt (best place?)
+  expected pipeline will look something like:
+  - accept a set of rules as term-term pairs
+  - generate queries from LHSs
+  - optimize each query individually to deduplicate clauses
+  - generate delta-rules
+  - consider (delta)-query set as a (tagged) disjunction
+  - disjunction-optimize query set
+    + choose variable orders such that there is maximal trie-sharing
+      * note: deciding variable order might be faster before delta-rules,
+              since maximality should be invariant under that transformation
+      * any 2 deltas of the same rule will share exactly all but 2 of their clauses
+      * note: some wiggle room; only need relative order to be sahred, not exact var position.
+              e.g. if Q1(a,b,c,d) :- ... C1(a,c) and Q2(e,f,g,h) :- ... C1(f,g) they can share
+    + build some sort of sharing/index structure for the clause trie graph;
+      each clause will have its filter-list and then a view into the shared trie bank
+  - build shared trie bank
+  - build trie-referencing query set
+  - compute the intersection for each query
+  - apply matching RHS to each output, update egraph
+  - bump frontier pointer
    *)
 
   (*
-  (*TODO: how to tell arity of conclusion to differentiate val var and no val var?*)
-  Definition apply_join_sub c fvs s : atom * option idx :=
-    let '(Build_atom f args,out) := c in
-    let args' := atom_args_subst s fvs args in
-    (Build_atom f args',Mfmap (named_list_lookup default (combine fvs s)) out).*)
+    DNF optimization requires solving a (slight generalization of) this problem:
 
-  Definition db_alloc '(Build_instance db equiv) : idx * instance :=
-    let '(equiv',v):= alloc _ _ _ idx_succ equiv in
-    (v, Build_instance db equiv').
+    Consider a (finite) set X of identifiers and a (finite) set S of (finite) sequences from X.
+    Find an ordering x1 < x2 on X that minimizes |S/~|
+    where s1 ~ s2 iff there exists a bijection f : {e in s1} -> {e in s2}
+    such that f(s1) = s2 and f is monotonic wrt <.
+
+    Note: output is critical. optimization is run once per rule-set,
+    so effectively offline
+    Saturation has complexity >= O(I*D*|S/~|) where I is iterations until saturation
+    and D is the size of the full database.
+
+
+    simple, greedy heuristic:
+    - rename rules to be disjointly named
+    - choose a var order for each rule
+    - choose a rule order, append var lists
+
+    Given an order, can compute sharing polynomially:
+    for each clause, unify w/ first other compatible clause
+   *)
+(*
+  Definition build_queryset' (qs : list query) :=
+    fst (fold (fun q '(qset,hc) =>
+                 foreach cl in q.(clauses) in
+                   let (s,cl') := norm_clause q in
+                   let x <- hc_put cl' in
+                   let _ <- qs_put x cl' in
+                   ret (q.(free_vars),s)
+                   
+           )
+           ((empty, []) : queryset * hashcons atom idx) qs).
+  *)
 
   (* TODO: move to Monad.v *)
   Section __.
@@ -1280,40 +1265,6 @@ Alternately: should I build a tree then convert to a list?
       end.
   End __.
 
-  Definition state_upd {S} (f : S -> S) : state S unit := fun s => (tt, f s).
-
-  Fixpoint fold_updates has_changed upd subs : state instance bool :=
-    match subs with
-    | [] => Mret has_changed
-    | s::subs' =>
-        @! let s_changed <- fun i =>
-                            let (_,op_s) := apply_upds upd (Mk_state i s has_changed) in
-                            (op_s.(changed), op_s.(data)) in
-          let subs'_changed <- fold_updates has_changed upd subs' in
-          ret orb s_changed subs'_changed
-    end.
-
-  (* TODO: generate differential instance? *)
-  Definition apply_op changed (l : log_op) : state instance bool :=
-    fun i =>
-      (* TODO: precompute, choose a good var order as part of query optimization *)
-      let q := l.(assumptions) in
-      let subs := generic_join (flatten_db i.(db)) q in
-      let sub_maps := map (fun s => map.of_list (combine q.(free_vars) s)) subs in
-      (fold_updates changed l.(update) sub_maps i).
-    
-  Definition run_once (p : log_program) : state instance bool :=
-    list_Mfoldl apply_op p false.    
-  
-  Fixpoint run (p : log_program) n i : instance :=
-    match n with
-    | 0 => i
-    | S n =>
-        let (changed,i') := run_once p i in
-        if changed then run p n (rebuild i') else i
-    end.
-
-
 End WithMap.
 
 Module PositiveIdx.
@@ -1321,6 +1272,7 @@ Module PositiveIdx.
   (*TODO: move to Eqb or sim. locaion *)
   #[export] Instance positive_Eqb : Eqb positive := Pos.eqb.
 
+  (* TODO: update test example
   Definition generic_join_pos :=
     generic_join positive _ positive (TrieMap.trie_map)
       TrieMap.trie_map Pos.leb (H:=TrieMap.ptree_map_plus).
@@ -1349,22 +1301,5 @@ Module PositiveIdx.
       ].
 
   Compute (generic_join_pos db1 query2).
+   *)
 End PositiveIdx.
-
-  
-
- (* (*TODO: Does reachable being reflexive cause a problem?
-    Really want a PER since malformed terms shouldn't count? *)
-
-  Axiom lookup : term symbol -> instance -> option idx.
-  Axiom sort_of : forall {V}, lang V -> ctx V -> term V -> sort V.
-
-  (* TODO: extend to support existentials *)
-  (* Assumes no sort eqns in l (and so does not store sorts in instance) *)
-  Definition valid_instance l c (i : instance) :=
-    (forall i' t, lookup t i = Some i' -> interp_uf (equiv i) i' i')
-    /\ (forall t1 i1 t2 i2, interp_uf (equiv i) i1 i2 ->
-                            lookup t1 i = Some i1 ->
-                           lookup t2 i = Some i2 ->
-                           eq_term l c (sort_of l c t1) t1 t2).
-  *)

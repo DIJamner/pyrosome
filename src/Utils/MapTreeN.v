@@ -85,6 +85,43 @@ Section __.
     end.
   Arguments ntree_get [n]%nat_scope _ _%list_scope.
 
+  
+  (*TODO: DUPLICATED! move this somewhere?
+    TODO: sometimes maps can implement this more efficiently
+   *)
+  Definition map_update {K V} {mp : map.map K V} (m : mp) x (f : V -> V) :=
+    match map.get m x with
+    | Some v => map.put m x (f v)
+    | None => m
+    end.
+  
+  (*
+    Assumes k has length exactly n.
+   *)
+  Fixpoint ntree_remove n {struct n} : ntree n -> list _ -> ntree n :=
+    match n with
+    (* TODO: not well-defined on 0! should the last level be an option?
+       Have this awkward workaround for matching the n=1 case
+     *)
+    | 0 => fun t k => t
+    | S n' =>
+        match n' with
+        | 0 => fun t k =>
+                 match k with
+                 | k1::[] =>
+                     map.remove t k1
+                 | _ => t
+                 end
+        | _ => fun t k =>
+                 match k with
+                 | k1::k' =>
+                     map_update t k1 (fun t' => ntree_remove n' t' k)
+                 | _ => t
+                 end
+        end
+    end.
+  Arguments ntree_remove [n]%nat_scope _ _%list_scope.
+
   (*
     Assumes k has length exactly n.
    *)
