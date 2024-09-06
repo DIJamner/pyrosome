@@ -8,9 +8,6 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-Require Std.Sorting.Mergesort.
-Module Merge := Std.Sorting.Mergesort.Sectioned.
-
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind (*SpacedMapTreeN*).
 From Utils Require TrieMap TrieMapInt63.
 (*From Pyrosome.Theory Require Import Core.*)
@@ -134,10 +131,8 @@ Section WithMap.
       (* each clause (f x1..xn -> y) uses an independent,
          canonical minimal set of variables (0..n+1, or less if some are repeated)
          Shared between queries
-
-         TODO: nat instead of idx
        *)
-      query_clauses : symbol_map (list (list nat * nat));
+      query_clauses : symbol_map (list (list idx * idx));
       compiled_rules : list compiled_rw_rule;
     }.
 
@@ -213,64 +208,51 @@ Section WithMap.
   Definition exec_write_clauses (qvs : list idx) (wcls : list atom) assignment : ST unit :=
     let initial_env := map.of_list (combine qvs assignment) in
     exec_write_clauses' initial_env wcls.
-  
-  (*TODO: move to MapTreeN
-    TODO: how to represent the empty tree?
-    PTree-specific: model as Empty | tree' (tree'...)
-    Question: should I give up on abstraction and have an ntree interface?
-    Can't quite implement map.ok since set only works w/ the right arity
-    I could have ntree_ok as an alternate property of the map interface, weakening set
-    Specifically: in map.weak_ok, include as a parameter a predicate P,
-    where any call to put (except get_put_diff?) assumes P k
-  Definition  ntree_empty n :=
-    match n with
-    | 0 => ????
-    | _ => map.empty
-    end.
-   *)
 
-  (*TODO: move to List.v*)
-  Fixpoint is_nth (l : list idx) n i :=
-    match n, l with
-    | 0, i'::_ => eqb i i'
-    | S n, _::l => is_nth l n i
-    | _, _ => false
+  Definition match_argK {A} x y (acc : idx_map idx) (K : _ -> option A) :=
+    match map.get acc x with
+    | Some accv => if eqb accv y then K acc else None
+    | None => K (map.put acc x y)
     end.
   
-  (* Assumption: cargs, cv in increasing order, except for duplicates.
-     Algorithm:
-     maintain: next index, assignment list
-     if current idx is next, assign args hd and recur
-     else, check that args hd is the current idx-element of the assignment.
-     If yes, recur, else fail
-
-     TODO: use idxs instead of nats
-   *)
-  Definition match_argK {A} x y curr (acc : list idx) (K : _ -> _ -> option A) :=
-    if eqb x curr
-    then K (S curr) (y::acc)
-           (* TODO: avoid rev?*)
-    else if is_nth (rev acc) x y then K curr acc else None.
-
-  (* TODO: inline match_argK*)
-  Fixpoint match_clause' cargs cv args v curr acc : option _ :=
+  (* TODO: inline match_argK w/ compute? *)
+  Fixpoint match_clause' cargs cv args v acc : option _ :=
     match cargs, args with
-    | [], [] =>
-        (* TODO: avoid rev*)
-         match_argK cv v curr acc (fun _ acc => Some (rev acc))
-    | x::cargs', y::args' =>
-        match_argK x y curr acc (match_clause' cargs' cv args' v)
+    | [], [] => match_argK cv v acc Some
+    | x::cargs', y::args' => match_argK x y acc (match_clause' cargs' cv args' v)
     | _, _ => None (*shouldn't happen *)
     end.
-    
+
+  (* assumes keys of m are dense starting at 0 *)
+  Fixpoint iter_until_none' {A} (m : idx_map A) fuel current : list A :=
+    match fuel with
+    | 0 => []
+    | S fuel =>
+        match map.get m current with
+        | Some x => x::(iter_until_none' m fuel (idx_succ current))
+        | None => []
+        end
+    end.
+
+  Definition iter_until_none {A} (m : idx_map A) fuel : list A :=
+    iter_until_none' m fuel idx_zero.
+  
+  (*
+    Returns `Some assignment` iff (cargs,cv)[/assignment/] = (args,v)
+    where assignment has domain [0..max(cargs,cv)].
+    Note that if it exists, the assignment is unique.
+
+    TODO: there are definitely opportunities to speed up this function and its helpers
+   *)
   Definition match_clause '(cargs, cv) args v : option _ :=
-    match_clause' cargs cv args v 0 [].
+    @! let assign_map <- match_clause' cargs cv args v map.empty in
+      ret iter_until_none assign_map (S (List.length cargs)).
     
   
   (* build all the tries for a given symbol at once *)
   Definition build_tries_for_symbol
     current_epoch
-    (l : list (list nat * nat))
+    (l : list (list idx * idx))
     (tbl : idx_trie (idx * idx))
     : list (idx_trie unit * idx_trie unit) (* full * frontier *)
     :=
@@ -364,6 +346,7 @@ Section WithMap.
       let d' := map_update i.(db) f (fun tbl => map.remove tbl args) in
       (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
 
+  (* Note: should only be called with nodes not in the egraph! *)
   Definition put_node f args (out : idx) : ST unit :=
     fun i =>
       let d' := map_update i.(db) f
@@ -438,7 +421,7 @@ Section WithMap.
           if (done : bool) then ret tt
           else let _ <- run1iter rs in (saturate_until rs P fuel)
     end.
-
+               
   (*TODO:
     - fill in Context-hypothesized ops
     - prove properties of above
