@@ -33,10 +33,12 @@ Section WithMap.
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol).
 
   
-  Context (symbol_map : forall A, map.map symbol A).
+  Context (symbol_map : forall A, map.map symbol A)
+    (symbol_map_plus : map_plus symbol_map).
 
   Context 
       (idx_map : forall A, map.map idx A)
+        (idx_map_plus : map_plus idx_map)
         (idx_map_ok : forall A, map.ok (idx_map A))
         (* TODO: define and assume weak_map_ok*)
         (idx_trie : forall A, map.map (list idx) A)
@@ -104,9 +106,11 @@ Section WithMap.
 
          We expect the substitution to be dense (actually total) on [0,n) for some n.
          but access is primarily ordered.
-         
+
+         symbol, clause id, clause variables (in query_vars order)
        *)
-      query_clause_ptrs : ne_list (symbol * nat * list idx);
+      query_clause_ptrs : ne_list (symbol * idx * list idx);
+      (*TODO: old: query_clause_ptrs : ne_list (symbol * nat * list idx);*)
       (* The list of clauses to write for each assignment valid wrt the query.
          Uses the vars in query_vars, plus additional ones for fresh/unbound idxs.
          Fresh variables must first appear in an output position.
@@ -132,7 +136,7 @@ Section WithMap.
          canonical minimal set of variables (0..n+1, or less if some are repeated)
          Shared between queries
        *)
-      query_clauses : symbol_map (list (list idx * idx));
+      query_clauses : symbol_map (idx_map (list idx * idx));
       compiled_rules : list compiled_rw_rule;
     }.
 
@@ -247,15 +251,14 @@ Section WithMap.
   Definition match_clause '(cargs, cv) args v : option _ :=
     @! let assign_map <- match_clause' cargs cv args v map.empty in
       ret iter_until_none assign_map (S (List.length cargs)).
-    
   
   (* build all the tries for a given symbol at once *)
   Definition build_tries_for_symbol
-    current_epoch
-    (l : list (list idx * idx))
+    (current_epoch : idx)
+    (q_clauses : idx_map (list idx * idx))
     (tbl : idx_trie (idx * idx))
-    : list (idx_trie unit * idx_trie unit) (* full * frontier *)
-    :=
+    : idx_map (idx_trie unit * idx_trie unit) (* full * frontier *)
+    :=    
     let upd_trie_pair (args : list idx) '(epoch,v) '(full, frontier) clause :=
       match match_clause clause args v with
       | Some assignment =>
@@ -267,48 +270,82 @@ Section WithMap.
           else (full', frontier)
       | None => (full, frontier)
       end          
-    in
-    (*TOOD: want an uncurried map2; use combine for now, but should remove *)
-    map.fold (fun tries args vp => map2 (upd_trie_pair args vp) (combine tries l))
-      (map (fun _ => (map.empty, map.empty : idx_trie unit)) l) tbl.
+    in  
+    map.fold (fun tries args vp => map_intersect (upd_trie_pair args vp) tries q_clauses)
+      (map_map (fun _ => (map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
-  (* TODO: add map_map2 to map_plus? or a map_mapn? *)
-  Context (map_map2 : forall {A B C}, (A -> B -> C) -> symbol_map A -> symbol_map B -> symbol_map C).
-  Arguments map_map2 {A B C}%type_scope _%function_scope _ _.
+  Definition build_tries (q : rw_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
+    fun i => (map_intersect  (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
 
-  Definition build_tries (q : rw_set) : ST (symbol_map (list (idx_trie unit * idx_trie unit))) :=
-    fun i =>  (map_map2 (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
+  
 
-  (* We implement a simplified generic join by just iteratively intersecting the tries.
-       TODO: verify and use n-ary intersection.
-   *)                                                              
-  Definition intersection_keys (t1: idx_trie unit) (tries : list (idx_trie unit)) : list _ :=
-    map.fold (fun acc k _ => cons k acc) [] (List.fold_right (map_intersect (fun _ _ => tt)) t1 tries).
+  (* TODO: fill this in? Or must it stay a parameter?   *)
+  (*
+  Context (spaced_map_intersect
+            : forall A B C : Type, (A -> B -> C) ->
+                                   idx_trie A -> list bool -> idx_trie B -> list bool ->
+                                   idx_trie C * list bool). *)
+  (*Check @TrieMap.list_intersect.*)
+  Context (spaced_list_intersect
+             (*TODO: nary merge?*)
+            : forall {B} (merge : B -> B -> B),
+              ne_list (idx_trie B * list bool) ->
+              (* Doesn't return a flag list because we assume it will always be all true*)
+              idx_trie B).
+  Arguments spaced_list_intersect {B}%type_scope merge%function_scope _.
+                                                 
+  Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
+    map.fold (fun acc k _ => cons k acc) [] (spaced_list_intersect (fun _ _ => tt) tries).
 
   (*TODO: move somewhere?*)
   #[local] Instance map_default {k v} `{m : map.map k v} : WithDefault m := map.empty.
-  
-  Definition process_compiled_rw_rule'
+
+  (* assumes `sublist cvs qvs` *)
+  Fixpoint variable_flags (qvs cvs : list idx) :=
+    match qvs, cvs with
+    | [], _ (*assume cvs empty *) => []
+    | qx::qvs', [] => false::(variable_flags qvs' [])
+    | qx::qvs', cx::cvs' =>
+        if eqb qx cx
+        then true::(variable_flags qvs' cvs')
+        else false::(variable_flags qvs' cvs)
+    end.
+
+  Definition trie_of_clause
+    (query_vars : list idx)
     (* each trie pair is (total, frontier) *)
-    (db_tries : symbol_map (list (idx_trie unit * idx_trie unit)))
-    (r : compiled_rw_rule) (frontier_n : nat) : ST unit :=
-    let trie_of_clause '(f, n, sub) :=
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (frontier_n : idx)
+    '(f, n, clause_vars) : idx_trie unit * list bool :=
       (* assume f in db_tries *)
       match map.get db_tries f with
       | Some trie_list =>
-          if Nat.eqb n frontier_n
-          then snd (nth n trie_list default)
-          else fst (nth n trie_list default)
+          let (fst,snd) := unwrap_with_default (map.get trie_list n) in
+          let inner_trie := if eqb (n : idx) frontier_n then snd else fst in
+          let flags := variable_flags query_vars clause_vars in
+          (inner_trie, flags)
       | None => (*should never happen*) default
-      end
-    in
-    let (t1,tries) := ne_map trie_of_clause r.(query_clause_ptrs) in
-    let assignments := (intersection_keys t1 tries) in
-    list_Miter (exec_write_clauses r.(query_vars) r.(write_clauses)) assignments.
+      end.
+  
+  Definition process_compiled_rw_rule'
+    (* each trie pair is (total, frontier) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (r : compiled_rw_rule) (frontier_n : idx) : ST unit :=
+    let tries : ne_list _ := ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
+                               r.(query_clause_ptrs) in
+    let assignments : list _ := (intersection_keys tries) in
+    list_Miter (M:=ST) (exec_write_clauses r.(query_vars) r.(write_clauses)) assignments.
 
+  (*TODO: avoid using this*)
+  Fixpoint idx_of_nat n :=
+    match n with
+    | 0 => idx_zero
+    | S n => idx_succ (idx_of_nat n)
+    end.
+  
   Definition process_compiled_rw_rule db_tries r : ST unit :=
-    (* TODO: don't construct the list of nats *)
-    list_Miter (process_compiled_rw_rule' db_tries r)
+    (* TODO: don't construct the list of nats/idxs, just iterate directly *)
+    list_Miter (fun n => process_compiled_rw_rule' db_tries r (idx_of_nat n))
       (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
 
   (* TODO: return the new epoch?  *)
