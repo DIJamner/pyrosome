@@ -6,256 +6,250 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB Monad.
+From Utils Require Import Utils UnionFind FunctionalDB Monad ExtraMaps.
 Import Monad.StateMonad.
 
 Section WithMap.
   Context
-    (* these first 3 types may all be the same *)
     (idx : Type)
       (Eqb_idx : Eqb idx)
       (Eqb_idx_ok : Eqb_ok Eqb_idx)
-      (counter : Type)
+
+      (*TODO: just extend to Natlike?*)
+      (idx_succ : idx -> idx)
+      (idx_zero : WithDefault idx)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
-      (idx_succ : idx -> idx).
+      (default_symbol : WithDefault symbol).
 
-  Notation log_upd := (log_upd idx symbol).
-  Notation atom := (atom idx symbol).
+  Existing Instance idx_zero.
+  Existing Instance default_symbol.
   
-  Record normalized_upd : Type :=
-    Build_norm {
-      lets : list (atom * idx (*ordered binders *));
-      eqns : list (idx * idx) (* variables *);
-      puts : list (atom * idx (*variables*));
-    }.
+  Context (symbol_map : forall A, map.map symbol A)
+        (symbol_map_plus : map_plus symbol_map).
 
-  (*Note: could improve performance by reversing at the end,
-    but the performance is negligible compared to running the query anyway.
-   *)
-  Definition push_let a x '(Build_norm l e p) : normalized_upd :=
-    Build_norm (l++[(a,x)]) e p.
-  
-  Definition push_put a x '(Build_norm l e p) : normalized_upd :=
-    (*order is irrelevant *)
-    Build_norm l e ((a,x)::p).
-  
-  Definition push_eqn x y '(Build_norm l e p) : normalized_upd :=
-    (*order is irrelevant *)
-    Build_norm l ((x,y)::e) p.
-  
-  Definition push_eqns e' '(Build_norm l e p) : normalized_upd :=
-    (*order is irrelevant *)
-    Build_norm l (e++e') p.
-
-  (*TODO: move to FunctionalDB*)
-  Arguments unify {idx symbol}%type_scope _ _.
-  Arguments put_row {idx symbol}%type_scope _ _.
-  Arguments let_row {idx symbol}%type_scope _ _.
-
-  (* Assumes no shadowing *)
-  Definition normalize_upd l : normalized_upd -> normalized_upd :=
-    match l with
-    | unify i1 i2 => (push_eqn i1 i2)
-    | put_row a i => (push_put a i)
-    | let_row a x => (push_let a x)
-    end.
-  
-  Definition normalize_upds l :=
-    List.fold_left (fun f l => Basics.compose (normalize_upd l) f) l id
-      (Build_norm [] [] []).
-
-  Definition unnormalize_upds '(Build_norm l e p) : list log_upd :=
-    let lk : list log_upd := List.map (fun '(a,x) => let_row a x) l in
-    let ek : list log_upd := List.map (fun '(x,y) => unify x y) e in
-    let pk : list log_upd := List.map (fun '(a,x) => put_row a x) p in
-    lk ++ ek ++ pk.
-
-  Fixpoint find_in_eqns' (x : idx) e acc :=
-    match e with
-    | [] => None
-    | (y,z)::e' =>
-        if eqb x y then Some (z,acc++e')
-        else 
-        if eqb x z then Some (y,acc++e')
-        else find_in_eqns' x e' ((y,z)::acc)
-    end.
-
-  (*may reorder eqns*)
-  Definition find_in_eqns x e := find_in_eqns' x e [].
-  
-  (*Note: could improve performance but the performance is negligible compared to running the query anyway.
-   *)
-  Fixpoint elim_new_unified_vars' l e : normalized_upd -> normalized_upd :=
-    match l with
-    | [] => push_eqns e
-    | (a,x)::l' =>
-        match find_in_eqns x e with
-        | Some (y,e') =>
-            Basics.compose (elim_new_unified_vars' l' e')
-              (push_put a y)
-        | None =>
-            Basics.compose (elim_new_unified_vars' l' e)
-              (push_let a x)
-        end
-    end.
-
-  Definition elim_new_unified_vars '(Build_norm l e p) :=
-    elim_new_unified_vars' l e (Build_norm [] [] p).
-
-  (*TODO: move to FunctionalDB.v*)
-  Arguments Build_atom {idx symbol}%type_scope atom_fn atom_args%list_scope.
-  Instance Eqb_atom : Eqb atom :=
-    fun '(Build_atom f1 a1 r1) '(Build_atom f2 a2 r2) =>
-      andb (eqb f1 f2 ) (andb (eqb a1 a2 ) (eqb r1 r2)).
-
-  Definition sub_var (sub : list (idx*idx)) x : idx := named_list_lookup x sub x.
-  
-  Definition eqn_sub (sub : list (idx*idx)) :=
-    map (fun '(x,y) => (sub_var sub x, sub_var sub y)).
-
-  Definition atom_sub sub '(Build_atom f args r) : atom :=
-    Build_atom f (map (sub_var sub) args) (sub_var sub r).
-  
-  Definition put_sub (sub : list (idx*idx)) : list (atom * idx) -> _ :=
-    map (fun '(a, x) => (atom_sub sub a, sub_var sub x)).
-  
-  Definition let_sub (sub : list (idx*idx)) : list (atom * idx) -> _ :=
-    map (fun '(a, x) => (atom_sub sub a, x)).
-  
-  (* delays the substitution to apply it to l as we recurse. *)
-  Fixpoint dedup_lets' l sub acc :=
-    match l with
-    | [] => (acc, sub)
-    | (a,x)::l' =>
-        let a_sub := atom_sub sub a in
-        (*note: bad asymptotics, but it doesn't matter *)
-        match named_list_lookup_err (let_sub sub l') a_sub with
-        | Some y =>
-            let sub' := (x,y)::sub in
-            dedup_lets' l' sub' acc
-        | None =>
-            dedup_lets' l' sub ((a,x)::acc)
-        end
-    end.
-
-  (* Need to reverse l on input so that when we find a duplicate, we remove the later one.
-     Removing the earlier one might incorrectly free a variable.
-   *)
-  Definition dedup_lets l := dedup_lets' (rev l) [] [].
-  
-  Definition dedup '(Build_norm l e p) :=
-    let (l',sub) := dedup_lets l in
-    Build_norm l' (List.dedup (eqb (A:=_)) (eqn_sub sub e))
-      (List.dedup (eqb (A:=_)) (put_sub sub p)).
-
-  
-  Definition optimize_upd l :=
-    unnormalize_upds (dedup (elim_new_unified_vars (normalize_upds l))).
-
-  Notation query := (query idx symbol).
-  Context (symbol_map : forall A, map.map symbol A).
   Context 
       (idx_map : forall A, map.map idx A)
-      (idx_map_ok : forall A, map.ok (idx_map A)).
-  Section Queries.
+        (idx_map_ok : forall A, map.ok (idx_map A))
+        (* TODO: define and assume weak_map_ok*)
+        (idx_trie : forall A, map.map (list idx) A)
+        (idx_trie_plus : map_plus idx_trie).
 
-    (* necessary to identify when a clause mentions the output.
-       TODO: should clauses always bind output? Might be some performance concerns.
-     *)
-    Context (arities : symbol_map nat).
+  Notation atom := (atom idx symbol).
 
-    (* TODO: move to FunctionalDB.v *)
-    Arguments atom_fn {idx symbol}%type_scope a.
-    Arguments atom_args {idx symbol}%type_scope a.
-    Arguments clauses {idx symbol}%type_scope q.
-    Arguments free_vars {idx symbol}%type_scope q.
-    Arguments Build_query {idx symbol}%type_scope (free_vars clauses)%list_scope.
+  (*TODO: move to FunctionalDB*)
+  Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope v v1 _.
+  Arguments hash_node {idx}%type_scope idx_succ%function_scope idx_zero {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
+  Arguments Build_atom {idx symbol}%type_scope atom_fn 
+  atom_args%list_scope atom_ret.
 
-    Definition dead_var_elim q : query :=
-      let in_clauses x := existsb (fun a => inb x a.(atom_args)) q.(clauses) in
-      let fvs' := filter in_clauses q.(free_vars) in
-      Build_query fvs' q.(clauses).
+  Notation hash_node := (hash_node idx_succ idx_zero).
+  
+  Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
 
-    (*TODO: move to utils*)
-    Instance nat_default : WithDefault nat := 0.
+  
+  
+
+  Record uncompiled_rw_rule : Type :=
+  { uc_query_vars : list idx;
+    uc_query_clauses : list atom;
+    uc_write_clauses : list atom }.
+
+  (*
+    Normalization through congruence closure
+
+    We can use egraph rebuilding to perform extensive rw rule optimization.
+    Just adding all the atoms to the egraph deduplicates them in a simple sense,
+    but it still leaves the situation where two identical atoms allocate separate output variables.
+    However, rebuilding solves exactly this situation, so we can just call it to handle
+    the job for us.
+
+    TODO: what to do about input vs fresh vars in output clauses of query?
+    also: split between query and coquery clauses
+    - a chance for optimization to eliminate coquery clauses that are in the query
+    - how to distinguish query and coquery in the same egraph: special fn table?
+
+    Something that will definitely work:
+    - rebuild-optimize just the query, building a map of variable -> egraph index at initialization
+                     + Note: this map can be the identity map if the variables are dense and numbered right,
+                             but that might be a bit too delicate for something with unimportant performance
+    - unify like variables across the rule
+    - rebuild-optimize the coquery independently, again w/ a var map to retain the exact names
+                     + TODO: what to do about two query variables getting unified?
+                             We can safely assume they are output vars.
+                             This can be represented by adding a node twice, once for each var.
+                             Could also add unification clauses, but that doesn't seem worth it
+
+    Potential improvement:
+    Given D  |- G, (f x^ |-> z) where (f x^ |-> y) in D and z not in fv(D), we can remove (f x^ |-> z)
+    from the coquery and replace z with y everywhere.
+    This could then lead to improvements via congruence, so it would be beneficial to do in the egraph.
+
+    Idea: after optimizing the query, instead of starting from a fresh graph,
+    add the coquery to the existing egraph, then rebuild.
+    Take the output and subtract all query clauses.
+    Question: is this sound & complete?
+    - Seems like no: what if two query clauses get unified?
+      Could happen when the coquery is supposed to generate a merge.
+      Would either result in some query clauses migrating to the coquery,
+      or if do really wrong, a rule that restricts the inputs instead of unifying the outputs
+
+    Note: improving the coquery is nice, but not very important, so we'll skip this latter idea for now.
+
+
+    Core implementation question: add vars as 0-arg constructors
+    or 'pun' as ids? Punning makes rebuilding do the right thing automatically, but subtle.
+    0-arg constructors requires rws for output.
+
+
+    TODO: for punning:
+    - add vars to union-find such that they are all valid ids
+         (note: will benefit from vars being dense starting at 0)
+    - add clauses as atoms (put rather than hash since the ids are preallocated)
+    - run rebuild
     
-    (* returns a junk value in the none case for convenience *)
-    Definition arity f :=
-      unwrap_with_default (map.get arities f).
+    - for coquery, if a var isn't in the query vars, still pre-add it,
+      but use hash_node to generate a value, then union them.
+      Generates excess free vars the first time a clause is seen, but allows for proper deduplication
 
-    (*TODO: move to better place (list.v?) *)
-    Fixpoint split_last {A} `{WithDefault A} (l : list A) :=
-      match l with
-      | [] => ([], default)
-      | [a] => ([], a)
-      | a :: (_ :: _) as l0 =>
-          let (l',x) := split_last l0 in
-          (a::l',x)
+    
+   *)
+  
+  
+  Local Notation "'ST'" := (state instance).
+
+  (* We add the query vars
+  Definition add_vars (l : list idx) : ST (named_list symbol idx) :=
+    @!let idxs <- list_Mmap (fun x => hash_node x []) l in
+      ret (combine l idxs).
+  *)
+
+  (* adds a rule clause, using its variables as unionfind indices
+     Note: output idx unlikely to be used.
+   *)
+  Definition add_rule_clause '(Build_atom f args out) : ST unit :=
+    (* TODO: make sure all vars are valid in the union-find*)
+    @! (*let _ <- add_vars_to_uf (out::args) in*)
+      (* this may create new vars!
+         need to make sure all rule vars are already added.*)
+      let out' <- hash_node f args in
+      let _ <- union out out' in
+      ret tt.
+
+  (*
+  Definition initialize_uf r :=
+    (*likely to dup a couple vars, but that's fine.
+      Necessary to include coquery vars as well, even for query,
+      so that the substitution doesn't identify new vars w/
+      coquery vars.
+     *)
+    for_each (r.(query_vars)++(map atom_ret r.(coquery)))
+             (fun x => add_to_uf x).
+  
+  Definition add_clauses (clauses : list atom) : ST unit :=
+    list_Miter add_rule_clause clauses.
+
+  Definition optimize_query r :=
+    let (vars_out, i) := @! let _ <- initialize_uf r in
+                    let _ <- add_clauses r.(query) in
+                    let _ <- rebuild 1000 in
+                    (list_Mmap find r.(query_vars))
+    in
+    let new_clauses := list_atoms i in
+    let var_map := combine r.(query_vars) vars_out in
+    (* TODO: rename var_map vars to be dense starting at 0.
+       Will impact map performance at runtime.
+     *)
+    (dedup vars_out, new_clauses, rename_clauses var_map r.(coquery)).
+
+  Definition optimize_coquery r :=
+    (*TODO: pass for eliminating query-determined vars,
+      where coquery contains an atom f args out where f args out'
+      is in the query and out is fresh.
+     *)
+    let (vars_out, i) := @! let _ <- initialize_uf r in
+                    let _ <- add_clauses r.(query) in
+                    let _ <- rebuild 1000 in
+                    (list_Mmap find r.(query_vars))
+    in
+    let new_clauses := list_atoms i in    
+    let var_map := combine r.(query_vars) vars_out in
+    let unification_clauses :=
+      for each x such that x in r.(query_vars) and x->z (z!=x),
+      let (f args z) in new_clauses in
+      (f args x)
+      
+    in
+    (dedup vars_out, new_clauses, rename_clauses var_map r.(coquery)).
+
+   *)
+
+  Notation rw_set := (rw_set idx symbol symbol_map idx_map).
+  (* TODO: Using ST' instead of ST because of some weird namespacing *)
+  Local Notation ST' := (state (symbol_map (idx * idx_map (list idx * idx)))).
+
+  (* Sorts the elements in the first list, viewed as a set, by their position in the second.
+     Assumes the second list has no duplicates.
+   *)
+  Definition sort_by_position_in (l1 l2 : list idx) :=
+    filter (fun x => inb x l1) l2.
+
+  (* Returns `Some k` for some k such that (k,v) is in m, if any such pair exists.
+     Expect this to be slow. *)
+  Definition map_inverse_get {key value} {map : map.map key value} `{Eqb value}
+    (m : map) (v : value) : option key :=
+    map.fold (fun acc k v' => if eqb v v' then Some k else acc) None m.
+
+  Definition hash_clause (a : atom) : ST' idx :=
+    let (f, args, out) := a in
+    fun S : symbol_map (idx * idx_map (list idx * idx)) =>
+      match map.get S f with
+      | Some (last, m) =>
+          match map_inverse_get m (args,out) with
+          | Some i => (i, S)
+          | None =>
+              let new_id := idx_succ last in
+              let S' := map.put S f (new_id, map.put m new_id (args,out)) in
+              (new_id, S')
+          end
+      | None => (idx_zero, map.put S f (idx_zero, map.singleton idx_zero (args,out)))
       end.
 
-    Definition gensym : state idx idx :=
-      fun s => (idx_succ s, s).
+  Local Notation idx_of_nat := (idx_of_nat _ idx_succ idx_zero).
 
-    Context {idx_default : WithDefault idx}.
+  Definition compile_query_clause (qvs : list idx) (a : atom) : ST' (symbol * idx * list idx) :=
+    let (f, args, out) := a in
+    let clause_vars := sort_by_position_in (out::args) qvs in
+    let idxs := map idx_of_nat (seq 0 (length clause_vars)) in
+    let sub := combine clause_vars idxs in
+    let compiled_clause := Build_atom f (map (named_list_lookup default sub) args)
+                             (named_list_lookup default sub out) in
+    @! let i <- hash_clause compiled_clause in
+      ret (f, i, clause_vars).
 
-    Notation instance := (instance idx symbol symbol_map idx_map).
-    Arguments db_put {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-      {symbol_map idx_map}%function_scope s ks%list_scope v i.
+  Local Notation compiled_rw_rule := (compiled_rw_rule idx symbol).
+  
+  Definition compile_rw_rule (r  : uncompiled_rw_rule) : ST' compiled_rw_rule :=
+    let (qvs, qcls, wcls) := r in
+    (*TODO: ne_list*)
+    @! let qcls_ptrs <- list_Mmap (compile_query_clause qvs) qcls in
+      (* Assume it's must be nonempty to be useful *)
+      match qcls_ptrs with
+      | [] => (*Should never happen if called corrrectly*)
+          Mret (Build_compiled_rw_rule _ _ default default default)
+      | c::cs => Mret (Build_compiled_rw_rule _ _ qvs (c,cs) wcls)
+      end.
 
-    Definition uf_empty : union_find idx (idx_map _) (idx_map _) :=
-      (empty idx (idx_map idx) (idx_map nat) default).
-
-    Definition clauses_to_db (clauses : list atom) : instance :=
-      fold_left (fun acc a =>
-                   let '(Build_atom f args out) := a in
-                   (*TODO: should db_put really return the idx? *)
-                   (snd (db_put f args out acc)))
-        clauses (Build_instance _ _ _ _ map.empty uf_empty).
-
-    Context (idx_max : idx -> idx -> idx).
-
-    Definition query_to_db q : instance := clauses_to_db q.(clauses).
-
-    Notation db_map := (db_map idx symbol symbol_map idx_map).
-    Definition db_to_clauses : db_map -> list atom :=
-      let args_map_to_args _ args_map :=
-        MapTreeN.ntree_fold
-          _
-          (fun acc keys val => (keys, val)::acc)
-          _ args_map []
-      in
-      map.fold (fun clauses f args_map =>
-                  (map (fun '(args,r) => Build_atom f args r) (args_map_to_args _ (projT2 args_map)))
-                    ++ clauses) [].
-
-    (* Note: does not need to produce a mapping from old vars to new ones.
-       just grab the union-find from the instance *)
-    Fail Definition db_to_query (i : instance) : query :=
-      let clauses := db_to_clauses i.(db) in      
-      _.
-
-    End Queries.
-
-      (*Optimization pipeline:
-        - query -> db
-        - rebuild
-        - db -> query
-        - prune unused output vars
-        - optimize update
-        - rename vars to be dense near 0
-
-        TODO: check that there's no point in optimizing the update first
-       *)
-
-    (*
-      general idea for variable order:
-      1. RHS vars in order of row arity
-         + question: this puts sorts (via sort_of) early. Is that a good thing?
-           Seems like it might be?
-     *)
-
-    
+  
+  Arguments Build_rw_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
+    query_clauses compiled_rules%list_scope.
+  
+  Definition build_rw_set (rules : list uncompiled_rw_rule) : rw_set :=
+    let (crs, clauses_plus) := list_Mmap compile_rw_rule rules map.empty in
+    Build_rw_set (map_map snd clauses_plus) crs.
+ 
 End WithMap.

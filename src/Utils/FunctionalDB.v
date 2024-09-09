@@ -141,7 +141,7 @@ Section WithMap.
     }.
 
   
-  Local Notation "'ST'" := (state instance).
+  Local Notation ST := (state instance).
 
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
