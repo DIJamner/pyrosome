@@ -49,22 +49,47 @@ Section WithVar.
   
   Context 
       (V_map : forall A, map.map V A)
-      (V_map_ok : forall A, map.ok (V_map A)).
+      (V_map_ok : forall A, map.ok (V_map A))
+      (V_trie : forall A, map.map (list V) A).
 
-  Notation instance := (instance V V V_map V_map).
+  Notation instance := (instance V V V_map V_map V_trie).
 
   Notation atom := (atom V V).
   
   Record eqsat : Type := {
       inst : instance;
-      (* maintain a map*)
-      sort_map : V_map V;
+      (* TODO: maintain a separate sort map?
+      sort_map : V_map V;*)
     }.
 
   Context (succ : V -> V).
   
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
+
+
+  (*
+    TODO: compile rules to rw sets
+    - IR: each term compiles to a set of clauses
+    - IR clause-set-pairs compile to rw rules + lists of clauses (writer monad?)
+    - rules plus deduped clause lists become rw sets
+      + question: does dedup have to happen here? seems more like a query opt.
+      + question: does query opt run on the IR or the target? IR makes more sense.
+                  *TODO: move IR->target to functionaldb or query opt(this one)
+   *)
+
+  (*
+Record
+rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
+  : Type := Build_rw_set
+  { query_clauses : map.rep;  compiled_rules : list (compiled_rw_rule idx symbol) }.
+
+    Record compiled_rw_rule (idx symbol : Type) : Type := Build_compiled_rw_rule
+  { query_vars : list idx;
+    query_clause_ptrs : ne_list (symbol * nat * list idx);
+    write_clauses : list (FunctionalDB.atom idx symbol) }.
+   *)
+
 
   
   Definition gensym {M} `{Monad M} : stateT V M V :=
@@ -92,6 +117,7 @@ Section WithVar.
   
   Variant extended_clause :=
     | rel_clause : atom -> extended_clause
+    (* useful? in the case that the rhs of e = e' is a variable*)
     | unif_clause : V -> V -> extended_clause.
 
   (*
@@ -196,6 +222,7 @@ Section WithVar.
   
   Arguments atom_args {idx symbol}%type_scope a.
   Arguments atom_ret {idx symbol}%type_scope a.
+  (*
   Arguments db {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
   Arguments unify {idx symbol}%type_scope _ _.
 Arguments fold_updates {idx}%type_scope {Eqb_idx}
@@ -240,8 +267,72 @@ Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope {symbol_map idx
     let i2 := rebuild i1 in
     db_to_query i2.
 
+  *)
+
+  (*******************************************)
   
-  
+  (*Extraction sketches*)
+  (*
+    Extraction is about finding a (least-weight) tree in a graph,
+    starting from a given root.
+    Specifically, a tree such that each leaf is a valid leaf node.
+    (in the egraph case, a 0-argument node, i.e. a node with no out edges)
+
+    restatement: lowest-weight 'full' tree, where a full tree is not a prefix of any other tree.
+    Dyn prog?
+    compute lowest-weight 'full' tree for all nodes.
+    go by node arity?
+    for each node, compute the lwft from its children's lwfts if all exist, save weight.
+    If not all children have lwfts, move to reserve worklist.
+    once worklist is empty, switch to reserve if it is shorter than the starting worklist.
+    Repeat.
+
+    Define weight as the sum of node weights
+
+    Idea:
+    - maintain extraction incrementally w/ egraph
+    - as table in db? (requires finer-grain control over what columns are up to equivalence)
+    - requires proper node indexing (can't forget original node ids)
+
+    Supporting syntactic analyses:
+    for each table/symbol, maintain a legend of which inputs/outputs are semantic,
+    i.e. congruent wrt equivalence
+    Issue: how to merge outputs that are syntacitc?
+    answer: need merge defined; e.g. for extraction, use weight ordering
+    in other words: can weaken requirements to lattice instead of UF (mentioned in egg papers)
+
+    On efficiency: if extraction is "fast enough" post hoc,
+    then it seems wrong to put it in the egraph,
+    since it would slow down the inner loop
+   *)
+  (*
+  Section EExtract.
+    (* look for node with least weight, interpreting None as oo *)
+    Context (node_weight : node -> option nat).
+  Fixpoint extract' fuel eclasses : idx_map (term * nat) :=
+    let process n :=
+      let (f, args) := n in
+      @! let w <- node_weight n in
+        
+    in
+    @! let eclasses := build_classes i in
+      let nodes <- lookup eclasses x in
+      minimum node_weight (ap_map process nodes).
+
+  End EExtract.
+  *)
+
+
+  (******************************************)
+
+  (*interprets an equation as a left-to-right rewrite*)
+  (*
+  Definition eqn_to_rewrite e1 e2 :=
+    (*TODO: handle side conditions *)
+    let gs_state := succ (list.fold_left max (fvs e1) in
+    let q1 := extended_list_to_query (term_pat_to_clauses e1 gs_state) in
+    let q2 := TODO: what is different on the put side?
+    *)
 (*
   Definition rewrite_to_log_op c t e1 e2 :=
     let (next, clauses, c', e1', t') :=
