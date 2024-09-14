@@ -122,6 +122,14 @@ Section WithMap.
         starting from the values given by each assignment to query_vars.
        *)
       write_clauses : list atom;
+      (*
+        Can mostly be emulated with duplicate clauses,
+        but is necessary for the case where we want to unify variables
+        that only appear as functino inputs (e.g. the rule x : unit, y : unit |- x = y).
+        Since we have to support it, we may as well allow them everywhere
+        since it's a small improvement over adding the same clause twice with different outputs.
+       *)
+      write_unifications : list (idx * idx);
     }.
   
 
@@ -195,23 +203,30 @@ Section WithMap.
       | None => (*shouldn't happen, using 0 as default for now*) (idx_zero,i)
       end.
 
-  Fixpoint exec_write_clauses' (env : idx_map idx) (cl : list atom) : ST unit :=
+  Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST unit :=
     match cl with
     | [] => @!ret {ST} tt
     | c::cl' =>
         let (f,args,out) := c in
         (* assume: all idx in args are keys in env *)
         let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
+        (* TODO: allocates extra id when the node is fresh *)
         @! let {ST} i <- hash_node f args in
           match map.get env out with
-          | Some v => @!let {ST} _ <- union i v in (exec_write_clauses' env cl')
-          | None => exec_write_clauses' (map.put env out i) cl'
+          | Some v => @!let {ST} _ <- union i v in (exec_write_clauses env cl')
+          | None => exec_write_clauses (map.put env out i) cl'
           end
     end.
 
-  Definition exec_write_clauses (qvs : list idx) (wcls : list atom) assignment : ST unit :=
-    let initial_env := map.of_list (combine qvs assignment) in
-    exec_write_clauses' initial_env wcls.
+  (* Note: only makes the query variables available for unification clauses,
+     not the freshly-generated ones.
+     This is sufficient to encode any deserived behavior.
+   *)
+  Definition exec_write r assignment : ST unit :=
+    let initial_env := map.of_list (combine r.(query_vars) assignment) in
+    Mseq (exec_write_clauses initial_env r.(write_clauses))
+      (* TODO: let iter accept a polymorphic input*)
+      (list_Miter (fun '(x,y) => Mseq (union x y) (Mret tt)) r.(write_unifications)).
 
   Definition match_argK {A} x y (acc : idx_map idx) (K : _ -> option A) :=
     match map.get acc x with
@@ -334,7 +349,7 @@ Section WithMap.
     let tries : ne_list _ := ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
                                r.(query_clause_ptrs) in
     let assignments : list _ := (intersection_keys tries) in
-    list_Miter (M:=ST) (exec_write_clauses r.(query_vars) r.(write_clauses)) assignments.
+    list_Miter (M:=ST) (exec_write r) assignments.
 
   (*TODO: avoid using this*)
   Fixpoint idx_of_nat n :=
@@ -450,14 +465,23 @@ Section WithMap.
       (* TODO: compute an adequate upper bound for fuel *)
       (rebuild 1000).
 
-  Fixpoint saturate_until rs (P : ST bool) fuel : ST unit :=
+  Fixpoint saturate_until rs (P : ST bool) fuel : ST bool :=
     match fuel with
-    | 0 => Mret tt
+    | 0 => Mret false
     | S fuel =>
         @! let {ST} done <- P in
-          if (done : bool) then ret tt
+          if (done : bool) then ret true
           else let _ <- run1iter rs in (saturate_until rs P fuel)
     end.
+
+  
+  Definition are_unified (x1 x2 : idx) : state instance bool :=
+    @!let x1' <- find x1 in
+      let x2' <- find x2 in
+      ret eqb x1' x2'.
+
+  Definition empty_egraph : instance :=
+    Build_instance map.empty (empty _ _ _ idx_zero) map.empty idx_zero [].
                
   (*TODO:
     - fill in Context-hypothesized ops
@@ -1286,6 +1310,27 @@ Section WithMap.
   End __.
 
 End WithMap.
+
+Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope v v1 _.
+Arguments hash_node {idx}%type_scope idx_succ%function_scope idx_zero {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
+Arguments Build_atom {idx symbol}%type_scope atom_fn 
+  atom_args%list_scope atom_ret.
+
+
+Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
+  idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
+  {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
+  spaced_list_intersect%function_scope 
+  rs P fuel%nat_scope _.
+
+Arguments are_unified {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope x1 x2 _.
+
+
+Arguments empty_egraph {idx}%type_scope idx_zero {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope.
 
 Module PositiveIdx.
 

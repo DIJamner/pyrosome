@@ -49,33 +49,35 @@ Section WithVar.
   
   Context 
       (V_map : forall A, map.map V A)
+      (V_map_plus : ExtraMaps.map_plus V_map)
       (V_map_ok : forall A, map.ok (V_map A))
       (V_trie : forall A, map.map (list V) A).
 
   Notation instance := (instance V V V_map V_map V_trie).
 
   Notation atom := (atom V V).
-  
+
+  (*
   Record eqsat : Type := {
       inst : instance;
       (* TODO: maintain a separate sort map?
       sort_map : V_map V;*)
     }.
+  *)
 
   Context (succ : V -> V).
   
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
 
+  
+
 
   (*
-    TODO: compile rules to rw sets
-    - IR: each term compiles to a set of clauses
-    - IR clause-set-pairs compile to rw rules + lists of clauses (writer monad?)
-    - rules plus deduped clause lists become rw sets
-      + question: does dedup have to happen here? seems more like a query opt.
-      + question: does query opt run on the IR or the target? IR makes more sense.
-                  *TODO: move IR->target to functionaldb or query opt(this one)
+    TODO: compile terms to uncompiled rw rules
+    Question: (when) do I have to use sort_of?
+    - definitely some places: side conditions.
+    - for now, assume everywhere
    *)
 
   (*
@@ -109,165 +111,301 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
   Definition write {A} a : writer A unit :=
     ([a],tt).
 
-  (* TODO: rework.
-     1. no vars in eqsatlog; convert to closed terms via variable-> constant transformation.
-     2. no type pointers in egraph? I think types can be inferred/checked w/out any explicit pointers,
-        and eqns should not have to check types.
-   *)
-  
-  Variant extended_clause :=
-    | rel_clause : atom -> extended_clause
-    (* useful? in the case that the rhs of e = e' is a variable*)
-    | unif_clause : V -> V -> extended_clause.
-
-  (*
-    Translation of rewrite into query:
-    G |- e1 ~> e2 : A
-    xi : Bi |- e1 ~> e2 : scon nA aj
-
-    becomes
-    to_clauses(e2, kA) |-> k1 :- to_clauses(G)
-                              /\ to_clauses(A) |-> kA
-                              /\ to_clauses(e1, kA) |-> k1
-
-   to_clauses(var x, kA) := lookup(x) |-> x /\ sort_of(x,kA) [keep var map around w/ gensym, alt. multiple passes]
-   to_clauses(con n ei, kA) := node n ki |-> k /\ to_clauses(ei,rulectx) |-> ki /\ sort_of(k,kA)
-
-
-   Important: should dedup the queries; performance critical
-   To dedup: use hashcons w/ logic vars as ptrs (in other words: maintain a set of existing nodes)
-   One thing to be careful of: bound vars on rhs of |->
-
-   Semantics of cj(x1...xn)... :- ai(x1...xn)...:
-   roughly: forall x1...xn such that ai ... , add cj ...
-   Note: for xk where xk in fv(c) - fv(a), choose a default (fresh) value
-
-   For a sound (but not complete) characterization,
-   forall e1, e2. DB  + c1 ... cm |= e1 = e2 -> DB + c1...cm+1 |= e1 = e2;
-   and, forall x1...xn, (forall i, DB + c1 ... cm |= ai) -> |- cm+1
-   TODO: address delayed rebuilding; this characterization rebuilds on every +
-
-   *)
-
-  (*TODO: move to db*)
-  Arguments Build_atom {idx symbol}%type_scope atom_fn atom_args%list_scope atom_ret.
-
-  
-
-  Definition rel_clause' x s r := rel_clause (Build_atom x s r).
-
-  (*TODO: should work exclusively on closed terms for performance.
-    Can use the bijection between clsoed and open terms.
-   *)
-  Fixpoint term_to_clauses (e : term) : stateT V (writer extended_clause) V :=
-    match e with
-    | con n s =>
-        @! let s' <- list_Mmap term_to_clauses s in
-          let ax <- gensym in
-          let tt <- lift (write (rel_clause' n s' ax)) in
-          ret ax
-    end.
-
   (* Open terms are for patterns only.
-     TODO: is this necessary? probably.
-     Consider best archtecture to take advantage of query rebuilding.
+     To run an egraph on terms with variables,
+     first map variables to constructors.
    *)
   Fixpoint term_pat_to_clauses (e : Term.term V)
-    : stateT V (writer extended_clause) V :=
+    : stateT V (writer atom) V :=
     match e with
-    | var x => Mret x (*assumes gensym doesn't hit vars*)
+    | var x => Mret x (*assumes gensym doesn't hit pattern vars*)
     | Term.con n s =>
         @! let s' <- list_Mmap term_pat_to_clauses s in
           let ax <- gensym in
-          let tt <- lift (write (rel_clause' n s' ax)) in
+          let tt <- lift (write (Build_atom n s' ax)) in
+          (* TODO: sort_of atoms *)
           ret ax
     end.
 
-  Definition sort_pat_to_clauses (t : sort)
-    : stateT V (writer extended_clause) V :=
-    match t with
+  Definition sort_pat_to_clauses (e : Term.sort V)
+    : stateT V (writer atom) V :=
+    match e with
     | scon n s =>
         @! let s' <- list_Mmap term_pat_to_clauses s in
           let ax <- gensym in
-          let tt <- lift (write (rel_clause' n s' ax)) in
+          let tt <- lift (write (Build_atom n s' ax)) in
+          (* TODO: sort_of atoms *)
           ret ax
     end.
 
-  Definition term_pat_to_clauses_known_ret (e : Term.term V) (retV : V)
-    : stateT V (writer _) unit :=
-    @! let e' <- term_pat_to_clauses e in
-      (lift (write (unif_clause e' retV))).
-  
-  (*TODO: use writer that appends to the end or reverse *)
-  Fail Fixpoint term_pat_to_upd (varmap : named_list V) (e : term)
-    : stateT V (writer log_upd) V (* ret var *) :=
-    match e with
-    | var x => Mret (named_list_lookup default varmap x)
-    | con n s =>
-        @!let args <- list_Mmap (term_pat_to_upd varmap) s in
-          let i <- gensym in
-          let _ <- lift (write (let_row (Build_atom n args) i)) in
-          let t := sort_of n s in
-          let _ <- lift (write (put_row sort_of i t)) in
-          ret i
-    end.
+  Definition ctx_to_clauses : Term.ctx V -> stateT V (writer atom) unit :=
+    list_Miter
+      (fun '(x,t) =>
+         @! let t_v <- sort_pat_to_clauses t in
+           (lift (write (Build_atom sort_of [x] t_v)))).
 
-  Definition clauses_of_extended_list : list extended_clause -> list atom :=
-    flat_map (fun c => match c with rel_clause a => [a] | _ => [] end).
-  
-  Definition unifications_of_extended_list : list extended_clause -> list (V * V) :=
-    flat_map (fun c => match c with unif_clause x y => [(x,y)] | _ => [] end).
+  Context (TODO: forall A, A).
+  Context (supremum : list V -> V).
+  Arguments TODO {A}.
 
-  (*TODO: put in FunctionalDB.v*)
-  
-  Arguments atom_args {idx symbol}%type_scope a.
-  Arguments atom_ret {idx symbol}%type_scope a.
+  (*TODO: move to queryopt*)
+  Arguments Build_uncompiled_rw_rule {idx symbol}%type_scope
+    (uc_query_vars uc_query_clauses uc_write_clauses uc_write_unifications)%list_scope.
+
   (*
-  Arguments db {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
-  Arguments unify {idx symbol}%type_scope _ _.
-Arguments fold_updates {idx}%type_scope {Eqb_idx}
-    {symbol}%type_scope {symbol_map idx_map}%function_scope
-    (idx_succ)%function_scope {H3} has_changed%bool_scope (upd subs)%list_scope.
-Arguments equiv {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
-Arguments db {idx symbol}%type_scope {symbol_map idx_map}%function_scope i.
-Arguments Build_instance {idx symbol}%type_scope {symbol_map idx_map}%function_scope db equiv.
-Arguments union {idx}%type_scope {Eqb_idx idx_map rank_map} h x y.
+    On variable ordering
 
-Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope {symbol_map idx_map}%function_scope i.
+    Good constraints to satisfy:
+    - ctx vars should be in ctx order I think
+    - if a variable appears twice in the same clause,
+      it should be ordered early
+    - given a clause (sort_of x -> y),
+      should we have x ordered before y? or the opposite?
+    - More generally, should output variables be ordered after input ones?
 
-  (*TODO: put in QueryOpt*)
-  (*TODO: should the fvs be included in a query or computed via these functions?*)
-  Definition fvs_of_atom (a : atom) :=
-    a.(atom_ret)::a.(atom_args).
+    sort of considerations:
+    If the value of x is fixed, then trie(sort_of x->y) has size 1.
+    On the other hand, there may be intersection benefits to restricting y first.
+    If there are 10 sorts with 100 elements evenly distributed,
+    then order x,y yields a trie with maximal comparisons 200 (100 * (1 + 1*1))
+    and order y,x yields a trie with maximal comparisons 110 (10 * (1 + 10*1))
 
-  Definition fvs_of_clauses l :=
-    List.dedup (eqb (A:=_)) (flat_map fvs_of_atom l).
-  
-  Arguments db_to_clauses {idx symbol}%type_scope {symbol_map idx_map}%function_scope _.
-  Arguments clauses_to_db {idx}%type_scope {Eqb_idx}
-    {symbol}%type_scope {symbol_map idx_map}%function_scope
-    {idx_default} clauses%list_scope.
+    Goal: to speed up intersection, partition db space as equally as possible
+    into small numbers of branches.
+    This means that the best variable order is the one where each next var
+    has the fewest matches of available vars.
+    What remains is that the order should be determined
+    by the size of available matches.
 
-  (*TODO: order vars better*)
-  Definition db_to_query (i : instance) : query _ _ :=
-      let clauses := db_to_clauses i.(db) in      
-      Build_query _ _ (fvs_of_clauses clauses) clauses.
+    Question about independent components, e.g. sorts of unrelated subterms:
+    - is it better to fully determine one component, or constrain each?
+    - seems better to fully constrain one thing, so that constraining the next
+      happens in as few subtries as possible?
+    - if truly independent, then intersection skips, so there is no cost.
+    
 
-  (*TODO: what to do if union returns none?
+    Good match set size heuristics:
+    - sorts have smaller match sets
+      + implies (sort_of x -> y) orders y before x
+    - outputs have multiplicity bounded by the min multiplicity of their inputs,         so outputs should usually be ordered before their inputs
+
+
+    One potential sort order:
+    order vars from greatest to least
+      
    *)
-  Definition inst_unify (i:instance) '(x,y) :=
-    match union i.(equiv) x y with
-    | Some (equiv',_) => Build_instance i.(db) equiv'
-    | None => i
-    end.
   
-  Definition extended_list_to_query l : query _ _ :=
-    let i := clauses_to_db (clauses_of_extended_list l) in
-    let i1 := fold_left inst_unify (unifications_of_extended_list l) i in
-    let i2 := rebuild i1 in
-    db_to_query i2.
+  (*TODO: should drop the 'rw' in the name/change the name.
+    Rules can do more than rewrite, essentially a full datalog.
 
-  *)
+    TODO: should I add back the union output clause?
+    My current strategy doesn't work for rules with LHS as a lone var.
+    Could also do the same, but for RHS.
+
+    How to handle this?
+    x : val unit, y : val unit
+    -----------------------
+    x = y : val unit
+
+    Need unification clause...
+
+    Idea: add (exactly one?) unification clause to uncompiled rules,
+          compile to either current compiled rule, or a rule with only exactly on eunification
+   *)
+  Definition rule_to_uncompiled_rw n (r : rule) : uncompiled_rw_rule V V :=
+    match r with
+    | sort_rule c args =>
+        let '(query_clauses,(tt,next_var)) :=
+          ctx_to_clauses c (supremum (map fst c)) in
+        (*TODO: check for off-by-one*)
+        let write_clauses := [Build_atom n (map fst c) next_var] in
+        (*TODO: need list of all query vars, not just ctx vars.
+          Additionally, the order is important.
+         *)
+        Build_uncompiled_rw_rule TODO query_clauses write_clauses []
+    | term_rule c args t => 
+        let '(query_clauses,(tt,next_var)) :=
+          ctx_to_clauses c (supremum (map fst c)) in
+        let '(t_clauses,(v,next_var0)) :=
+          sort_pat_to_clauses t next_var in
+        (*TODO: check for off-by-one*)
+        let write_clauses := [Build_atom sort_of [next_var0] v;
+                              Build_atom n (map fst c) next_var0] in
+        (*TODO: need list of all query vars, not just ctx vars.
+          Additionally, the order is important.
+         *)
+        Build_uncompiled_rw_rule TODO query_clauses write_clauses []
+    | sort_eq_rule c t1 t2 => 
+        let '(ctx_clauses,(tt,next_var)) :=
+          ctx_to_clauses c (supremum (map fst c)) in
+        let '(t1_clauses,(v1,next_var0)) :=
+          sort_pat_to_clauses t1 next_var in
+        let '(t2_clauses,(v2,next_var1)) :=
+          sort_pat_to_clauses t2 next_var0 in
+        (*TODO: need list of all query vars, not just ctx vars.
+          Additionally, the order is important.
+         *)
+        Build_uncompiled_rw_rule TODO (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
+    | term_eq_rule c e1 e2 t => 
+        let '(ctx_clauses,(tt,next_var)) :=
+          ctx_to_clauses c (supremum (map fst c)) in
+        let '(e1_clauses,(v1,next_var0)) :=
+          term_pat_to_clauses e1 next_var in
+        let '(e2_clauses,(v2,next_var1)) :=
+          term_pat_to_clauses e2 next_var0 in
+        let '(t_clauses,(vt,next_var2)) :=
+          sort_pat_to_clauses t next_var1 in
+        (*
+          TODO: do I need to match the LHS sort? no, right?
+          
+         *)
+        (*TODO: need list of all query vars, not just ctx vars.
+          Additionally, the order is important.
+         *)
+        Build_uncompiled_rw_rule TODO (e1_clauses++ctx_clauses)
+          ((Build_atom sort_of [v2] vt)::e2_clauses++t_clauses) [(v1,v2)]
+    end.
+
+  
+  Notation rw_set := (rw_set V V V_map V_map).
+  
+  Arguments build_rw_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
+    {symbol}%type_scope default_symbol {symbol_map}%function_scope {symbol_map_plus} 
+    {idx_map}%function_scope rules%list_scope.
+  
+  (* Note: only pass in the subset of the language you want to run.
+     Often, that will be exactly the equational rules.
+   *)
+  Definition rw_set_from_lang (l : lang) : rw_set :=
+    build_rw_set succ _ _ (map (uncurry rule_to_uncompiled_rw) l).
+
+  Local Notation hash_node := (hash_node succ default).
+
+  Section AddTerm.
+    (*
+    (* TODO: this definitely exists somewhere *)
+    Definition sort_of_term n s :=
+      match named_list_lookup_err l n with
+      | Some (term_rule c args t) =>
+          t[/combine (map fst c) s/]
+      | _ => default
+      end.
+     *)
+
+    Context (l : lang).
+    Section __.
+      Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
+      Fixpoint add_open_term' (sub : named_list V) (e : Term.term V)
+      : state instance V :=
+      match e with
+      | Term.var x => Mret (named_list_lookup default sub x)
+      | Term.con n s =>          
+          match named_list_lookup_err l n with
+          | Some (term_rule c args t) =>
+              @! let s' <- list_Mmap (add_open_term' sub) s in
+                let x <- hash_node n s' in
+                let tsub := combine (map fst c) s' in
+                let tx <- add_open_sort tsub t in
+                (* TODO: allocates extra id when the node is fresh *)
+                let tx' <- hash_node sort_of [x] in
+                let _ <- union tx tx' in
+                ret x
+          | _ => Mret default
+          end
+      end.
+    End __.
+
+    Fixpoint add_open_sort' fuel (sub : named_list V) (t : Term.sort V)
+      : state instance V :=
+      match fuel with
+      | 0 => Mret default (*should never happen*)
+      | S fuel =>
+        let (n,s) := t in
+        @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
+          (hash_node n s')
+      end.
+
+    (*
+      The recursion is bounded by the number of rules since every term in a sort
+      must be of a previously defined sort.
+     *)
+    Definition add_open_sort := add_open_sort' (length l).
+    Definition add_open_term := add_open_term' add_open_sort.
+
+    End AddTerm.
+
+    (* TODO: any reason to use the non-open ones? can just use the open one w/ empty sub
+    Fixpoint add_term (t : term)
+      : state instance V :=
+      match t with
+      | con n s =>
+          @! let s' <- list_Mmap add_term s in
+            let sub := combine (map fst c
+            (hash_node succ default n s')
+      end.
+    
+    Definition add_sort (t : term)
+      : state instance V :=
+      match t with
+      | con n s =>
+          @! let s' <- list_Mmap add_term s in
+            (hash_node succ default n s')
+      end.
+     *)
+
+    (*TODO: inherited from functionaldb. fill in.*)
+    Context (spaced_list_intersect
+              (*TODO: nary merge?*)
+              : forall {B} (merge : B -> B -> B),
+                ne_list (V_trie B * list bool) ->
+                (* Doesn't return a flag list because we assume it will always be all true*)
+                V_trie B).
+
+    (* TODO: instantiate missing trie functionality*)
+    Definition egraph_equal l (rws : rw_set) fuel (e1 e2 : Term.term V) :=
+      let comp : state instance bool :=
+        @!let {(state instance)} x1 <- add_open_term l [] e1 in
+          let {(state instance)} x2 <- add_open_term l [] e2 in
+          (saturate_until succ default spaced_list_intersect rws (are_unified x1 x2) fuel)
+      in fst (comp (empty_egraph default)).
+
+(*
+    Worked example:
+    
+  [:="G" : #"env",
+      "A" : #"ty",
+      "B" : #"ty",
+      "v1" : #"exp" "G" "A",
+      "v2" : #"exp" "G" "B"
+      ----------------------------------------------- ("project 1")
+      #".1" (#"pair" "v1" "v2") = "v1" : #"exp" "G" "A"
+  ];
+
+    Query clauses from context (partially deduped):
+    (#"env") ~> 0
+    (#"sort_of" "G") ~> 0
+    (#"ty") ~> 1
+    (#"sort_of" "A") ~> 1
+    (#"sort_of" "B") ~> 1
+    {#"exp" "G" "A") ~> 2
+    (#"sort_of" "v1") ~> 2
+    {#"exp" "G" "B") ~> 3
+    (#"sort_of" "v2") ~> 3
+
+    Query clauses from LHS (partial dedup, extends above):
+    (#"pair" "G" "A" "B" "v1" "v2") ~> 4
+    (#".1" "G" "A" "B" 4) ~> 5
+    (#"sort_of" 5) ~> 2         //TODO: prove this one unnecessary? (possible, but necessary?)
+
+    Write clauses (from RHS):
+    (#".1" "G" "A" "B" 4) ~> "v1"
+
+
+    general case: write clauses are clauses of RHS + LHS_top -> RHS_top_id.
+    If RHS is not a variable, can optimize to clauses of RHS
+    where the var for RHS_top is LHS_top_id
+   *)
+  
 
   (*******************************************)
   

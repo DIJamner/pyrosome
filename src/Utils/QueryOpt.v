@@ -39,14 +39,6 @@ Section WithMap.
 
   Notation atom := (atom idx symbol).
 
-  (*TODO: move to FunctionalDB*)
-  Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope v v1 _.
-  Arguments hash_node {idx}%type_scope idx_succ%function_scope idx_zero {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
-  Arguments Build_atom {idx symbol}%type_scope atom_fn 
-  atom_args%list_scope atom_ret.
-
   Notation hash_node := (hash_node idx_succ idx_zero).
   
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
@@ -57,7 +49,9 @@ Section WithMap.
   Record uncompiled_rw_rule : Type :=
   { uc_query_vars : list idx;
     uc_query_clauses : list atom;
-    uc_write_clauses : list atom }.
+    uc_write_clauses : list atom;
+    uc_write_unifications : list (idx * idx);
+  }.
 
   (*
     Normalization through congruence closure
@@ -234,14 +228,13 @@ Section WithMap.
   Local Notation compiled_rw_rule := (compiled_rw_rule idx symbol).
   
   Definition compile_rw_rule (r  : uncompiled_rw_rule) : ST' compiled_rw_rule :=
-    let (qvs, qcls, wcls) := r in
-    (*TODO: ne_list*)
+    let (qvs, qcls, wcls, wufs) := r in
     @! let qcls_ptrs <- list_Mmap (compile_query_clause qvs) qcls in
-      (* Assume it's must be nonempty to be useful *)
+      (* Assume it must be nonempty to be useful *)
       match qcls_ptrs with
       | [] => (*Should never happen if called corrrectly*)
-          Mret (Build_compiled_rw_rule _ _ default default default)
-      | c::cs => Mret (Build_compiled_rw_rule _ _ qvs (c,cs) wcls)
+          Mret (Build_compiled_rw_rule _ _ default default default default)
+      | c::cs => Mret (Build_compiled_rw_rule _ _ qvs (c,cs) wcls wufs)
       end.
 
   
