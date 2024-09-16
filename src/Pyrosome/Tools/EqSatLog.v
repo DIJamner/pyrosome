@@ -144,14 +144,15 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
          @! let t_v <- sort_pat_to_clauses t in
            (lift (write (Build_atom sort_of [x] t_v)))).
 
-  Context (TODO: forall A, A).
   Context (supremum : list V -> V).
-  Arguments TODO {A}.
 
   (*TODO: move to queryopt*)
   Arguments Build_uncompiled_rw_rule {idx symbol}%type_scope
     (uc_query_vars uc_query_clauses uc_write_clauses uc_write_unifications)%list_scope.
 
+  Definition query_fvs (l : list atom) : list V :=
+    dedup (eqb (A:=_)) (flat_map (fun '(Build_atom _ l o) => o::l) l).
+  
   (*
     On variable ordering
 
@@ -211,6 +212,8 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
 
     Idea: add (exactly one?) unification clause to uncompiled rules,
           compile to either current compiled rule, or a rule with only exactly on eunification
+
+   TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
    *)
   Definition rule_to_uncompiled_rw n (r : rule) : uncompiled_rw_rule V V :=
     match r with
@@ -222,7 +225,7 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule TODO query_clauses write_clauses []
+        Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
     | term_rule c args t => 
         let '(query_clauses,(tt,next_var)) :=
           ctx_to_clauses c (supremum (map fst c)) in
@@ -234,7 +237,7 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule TODO query_clauses write_clauses []
+        Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
     | sort_eq_rule c t1 t2 => 
         let '(ctx_clauses,(tt,next_var)) :=
           ctx_to_clauses c (supremum (map fst c)) in
@@ -245,7 +248,8 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule TODO (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
+        Build_uncompiled_rw_rule (query_fvs (t1_clauses++ctx_clauses))
+          (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
     | term_eq_rule c e1 e2 t => 
         let '(ctx_clauses,(tt,next_var)) :=
           ctx_to_clauses c (supremum (map fst c)) in
@@ -262,7 +266,7 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule TODO (e1_clauses++ctx_clauses)
+        Build_uncompiled_rw_rule (query_fvs (e1_clauses++ctx_clauses)) (e1_clauses++ctx_clauses)
           ((Build_atom sort_of [v2] vt)::e2_clauses++t_clauses) [(v1,v2)]
     end.
 
@@ -548,6 +552,8 @@ End WithVar.
 
 Require Import NArith Tries.Canonical.
 From Utils Require Import TrieMap SpacedMapTreeN.
+From Pyrosome.Tools Require Import PosRenaming.
+From Pyrosome.Theory Require ClosedTerm.
 Module PositiveInstantiation.
   
 
@@ -681,7 +687,31 @@ Module PositiveInstantiation.
       bool :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ default (@pt_spaced_intersect)).
 
-  (* TODO: build rule set *)
+  (*TODO: move somewhere?*)
+  Definition filter_eqn_rules {V} : lang V -> lang V :=
+    filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
+  Definition build_rw_set : lang positive -> rw_set positive positive trie_map trie_map :=
+    rw_set_from_lang ptree_map_plus Pos.succ xH (fold_right Pos.max xH).
+
+  (*TODO: a bit of an abuse of the code*)
+  Definition var_to_con {V} `{Eqb V} (t : Term.term V) :=
+    ClosedTerm.open_term []
+      (ClosedTerm.close_term t).
+  
+  (* all-in-one when it's not worth separating out the rule-building.
+     Handles renaming.
+     
+   (*TODO: handle term closing, sort matching*)
+   *)
+  Definition egraph_equal' {V} `{Eqb V} (l : lang V) n (e1 e2 : Term.term V) : bool :=
+    let rename_and_run : state (renaming V) _ :=
+      @! let l' <- rename_lang l in
+        let e1' <- rename_term (var_to_con e1) in
+        let e2' <- rename_term (var_to_con e2) in
+        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l')) n e1' e2')
+    in
+    fst (rename_and_run (empty_rename _)).
+  
 End PositiveInstantiation.
 
