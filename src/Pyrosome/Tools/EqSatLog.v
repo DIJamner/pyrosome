@@ -16,9 +16,9 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB QueryOpt Monad.
+From Utils Require Import Utils UnionFind FunctionalDB QueryOpt Monad ExtraMaps.
 Import Monad.StateMonad.
-From Pyrosome.Theory Require Import Core ClosedTerm.
+From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
 Section WithVar.
@@ -544,3 +544,144 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
 
 
 End WithVar.
+
+
+Require Import NArith Tries.Canonical.
+From Utils Require Import TrieMap SpacedMapTreeN.
+Module PositiveInstantiation.
+  
+
+  (*TODO: duplicated; move to Eqb or sim. locaion *)
+  #[export] Instance positive_Eqb : Eqb positive := Pos.eqb.
+
+  #[export] Instance positive_default : WithDefault positive := xH.
+
+  Section __.
+    Context {A : Type}.
+    Inductive pos_trie :=
+    | pos_trie_empty
+    | pos_trie_leaf (a:A)
+    | pos_trie_node (m : PTree.tree' pos_trie).
+
+    (*TODO: check for pre-computation optimizations *)
+    (* Note: assumes the key is the right length. *)
+    Fixpoint pt_get pt k {struct k} : option A :=
+      match pt, k with
+      | pos_trie_empty, _ => None
+      | pos_trie_leaf a, [] => Some a
+      | pos_trie_node m, p::k' =>
+          match PTree.get' p m with
+          | Some pt' => pt_get pt' k'
+          | None => None
+          end
+      | _, _ => None        
+      end.
+
+    Fixpoint pt_put pt k v {struct k} :=
+      match pt, k with
+      | pos_trie_empty, []
+      | pos_trie_leaf _, _ => pos_trie_leaf v
+      (*this case shouldn't happen:
+        | pos_trie_leaf a, p::k' => _
+       *)
+      (* Note: could be optimized slightly*)
+      | pos_trie_empty, p::k' =>
+          pos_trie_node (PTree.set0 p (pt_put pos_trie_empty k' v))
+      (*this case shouldn't happen *)
+      | pos_trie_node m, [] => pos_trie_node m
+      | pos_trie_node m, p::k' =>
+          (* TODO: can do 1 traversal instead of 2*)
+          match PTree.get' p m with
+          | Some pt' => pos_trie_node (PTree.set' p (pt_put pt' k' v) m)
+          | None => pos_trie_node (PTree.set' p (pt_put pos_trie_empty k' v) m)
+          end
+      end.
+    
+    Fixpoint pt_remove pt k {struct k} :=
+      match pt, k with
+      | pos_trie_empty, _
+      | pos_trie_leaf _, _ => pos_trie_empty
+      (*this case shouldn't happen:
+        | pos_trie_leaf a, p::k' => _
+       *)
+      (*this case shouldn't happen *)
+      | pos_trie_node m, [] => pos_trie_empty
+      | pos_trie_node m, p::k' =>
+          (* TODO: can do 1 traversal instead of 2*)
+          match PTree.get' p m with
+          | Some pt' => pos_trie_node (PTree.set' p (pt_remove pt' k') m)
+          | None => pos_trie_node m
+          end
+      end.
+
+    (*TODO: check; probably wrong
+      TODO: can probably be made faster, if it's the bottleneck
+     *)
+    Fixpoint pt_fold' {R} (f : R -> _ -> _ -> R) (acc : R) pt stack : R :=
+      match pt with
+      | pos_trie_empty => acc
+      | pos_trie_leaf a => f acc (rev stack) a
+      | pos_trie_node m =>
+          let f' acc p pt :=
+            pt_fold' f acc pt (p::stack)
+          in
+          trie_fold' f' acc m 1
+      end.
+    
+  (*TODO: temporary? *)
+  #[export] Instance pos_trie_map : map.map (list positive) A :=
+    {
+      rep := pos_trie;
+      get := pt_get;
+      empty := pos_trie_empty;
+      put := pt_put;
+      remove := pt_remove;
+      fold _ f acc pt := pt_fold' f acc pt [];
+    }.
+
+  Section __.
+    Context (merge : A -> A -> A).
+    Fixpoint pt_spaced_intersect' (ci1 ci2 : list bool) pt1 pt2
+      : pos_trie :=
+      match ci1, pt1, ci2, pt2 with
+      | _, pos_trie_empty, _, _ 
+      | _, _, _, pos_trie_empty => pos_trie_empty
+      | [], pos_trie_leaf a, [], pos_trie_leaf a' => pos_trie_leaf (merge a a')
+      | b1::ci1', pos_trie_node m, b2::ci2', pos_trie_node m' =>
+          (*TODO: could optimize*)
+          let map' :=
+            if b1 then
+              if b2 then map_intersect (pt_spaced_intersect' ci1' ci2')
+                           (PTree.Nodes m)
+                           (PTree.Nodes m')
+              else map_map (fun t => pt_spaced_intersect' ci1' ci2' t pt2) (PTree.Nodes m)
+            else map_map (fun t => pt_spaced_intersect' ci1' ci2' pt1 t) (PTree.Nodes m)
+          in
+          match map' with
+          | PTree.Empty => pos_trie_empty
+          | PTree.Nodes m => pos_trie_node m
+          end
+      | _,_,_,_ => pos_trie_empty (*TODO: check that this doesn't happen*)
+      end.
+
+    (* TODO: port the efficient one from spaced ntree*)
+    Definition pt_spaced_intersect (tries : ne_list (pos_trie * list bool)) :=
+      let '(trie0,tries) := tries in
+      let f '(t,flags) '(t',flags') :=
+        (pt_spaced_intersect' flags flags' t t', List.zip orb flags flags') in
+      fst (List.fold_left f tries trie0).
+    
+  End __.
+
+  End __.
+  
+  Definition egraph_equal
+    : lang positive -> rw_set positive positive trie_map trie_map ->
+      nat -> Term.term positive -> Term.term positive ->
+      bool :=
+    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ default (@pt_spaced_intersect)).
+
+  (* TODO: build rule set *)
+
+End PositiveInstantiation.
+
