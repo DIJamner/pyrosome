@@ -169,11 +169,14 @@ Section WithMap.
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
    *)
-  Definition map_update {K V} {mp : map.map K V} (m : mp) x (f : V -> V) :=
+  Definition map_update {K V} `{WithDefault V} {mp : map.map K V} (m : mp) x (f : V -> V) :=
     match map.get m x with
     | Some v => map.put m x (f v)
-    | None => m
+    | None => map.put m x (f default)
     end.
+
+  (*TODO: move*)
+  #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
   Definition new_singleton f args : ST idx :=
     fun i =>
@@ -184,7 +187,7 @@ Section WithMap.
       let node := Build_atom f args x_fresh in
       let parents' := fold_left (fun m x => map_update m x (cons node)) args i.(parents) in
       (x_fresh, Build_instance db' equiv' parents' i.(epoch) i.(worklist)).
-  
+
   (* accesses the egraph like a hashcons.
      If the node exists, return its id.
      Otherwise, generate a fresh id, store it, and return it
@@ -192,7 +195,7 @@ Section WithMap.
      TODO: some maps are more efficient by merging get/set ops.
      Is that worth doing?
    *)
-  Definition hash_node f args : ST idx :=
+  Definition hash_node (f : symbol) args : ST idx :=
     fun i =>
       match map.get i.(db) f with
       | Some tbl =>
@@ -200,7 +203,7 @@ Section WithMap.
           | Some x => (snd x, i)
           | None => new_singleton f args i
           end
-      | None => (*shouldn't happen, using 0 as default for now*) (idx_zero,i)
+      | None => new_singleton f args i
       end.
 
   Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST unit :=
@@ -311,9 +314,6 @@ Section WithMap.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
     map.fold (fun acc k _ => cons k acc) [] (spaced_list_intersect (fun _ _ => tt) tries).
-
-  (*TODO: move somewhere?*)
-  #[local] Instance map_default {k v} `{m : map.map k v} : WithDefault m := map.empty.
 
   (* assumes `sublist cvs qvs` *)
   Fixpoint variable_flags (qvs cvs : list idx) :=
@@ -1313,7 +1313,7 @@ End WithMap.
 
 Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope v v1 _.
-Arguments hash_node {idx}%type_scope idx_succ%function_scope idx_zero {symbol}%type_scope
+Arguments hash_node {idx}%type_scope idx_succ%function_scope {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.

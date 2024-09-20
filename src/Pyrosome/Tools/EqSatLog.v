@@ -283,7 +283,7 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
   Definition rw_set_from_lang (l : lang) : rw_set :=
     build_rw_set succ _ _ (map (uncurry rule_to_uncompiled_rw) l).
 
-  Local Notation hash_node := (hash_node succ default).
+  Local Notation hash_node := (hash_node succ).
 
   Section AddTerm.
     (*
@@ -365,13 +365,23 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
                 (* Doesn't return a flag list because we assume it will always be all true*)
                 V_trie B).
 
-    (* TODO: instantiate missing trie functionality*)
-    Definition egraph_equal l (rws : rw_set) fuel (e1 e2 : Term.term V) :=
+    Definition egraph_sort_of (x t : V) : state instance bool :=
+      @! let t0 <- hash_node sort_of [x] in
+        let t1 <- find V _ V _ _ _ t in
+        ret eqb t0 t1.
+
+    Definition eq_proven x1 x2 t : state instance bool :=
+      @!let b1 <- egraph_sort_of x1 t in
+        let b2 <- are_unified x1 x2 in
+        ret (andb b1 b2).
+
+    Definition egraph_equal l (rws : rw_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state instance bool :=
         @!let {(state instance)} x1 <- add_open_term l [] e1 in
           let {(state instance)} x2 <- add_open_term l [] e2 in
-          (saturate_until succ default spaced_list_intersect rws (are_unified x1 x2) fuel)
-      in fst (comp (empty_egraph default)).
+          let {(state instance)} xt <- add_open_sort l [] t in
+          (saturate_until succ default spaced_list_intersect rws (eq_proven x1 x2 xt) fuel)
+      in (comp (empty_egraph default)).
 
 (*
     Worked example:
@@ -447,22 +457,100 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
     then it seems wrong to put it in the egraph,
     since it would slow down the inner loop
    *)
-  (*
-  Section EExtract.
-    (* look for node with least weight, interpreting None as oo *)
-    Context (node_weight : node -> option nat).
-  Fixpoint extract' fuel eclasses : idx_map (term * nat) :=
-    let process n :=
-      let (f, args) := n in
-      @! let w <- node_weight n in
+  
+    Section EExtract.
+      (*TODO: generalize from nat to any metric (e.g. list nat),
+        or max instead of sum
+      
+      Check list_sum.
+      Check Nat.ltb.
+       *)
+      
+      (* look for node with least weight, interpreting None as oo *)
+      Context (symbol_weight : atom -> option nat).
+      
+      (* TODO generalize to be monadic *)
+      Fixpoint minimum' {A} (ltb : A -> A -> bool) (l : list A) (min : A) : A :=
+        match l with
+        | [] => min
+        | x::l =>
+            if ltb x min then minimum' ltb l x else minimum' ltb l min
+        end.
+
+      Definition minimum {A} ltb (l : list A) :=
+        match l with
+        | [] => None
+        | x::l => Some (minimum' ltb l x)
+        end.
+
+      Definition enter {A} `{Eqb A} x : stateT (list A) option unit :=
+        fun l => if inb x l then None else Some (tt,(x::l)).
+      
+      Definition exit {A} `{Eqb A} : stateT (list A) option unit :=
+        fun l => Some (tt, tl l).
+
+      (*TODO: doesn't have to return an option/always returns Some*)
+      Fixpoint Mfiltermap {A B} (f : A -> stateT (list V) option B) (l : list A)
+        : stateT (list V) option (list B) :=
+        match l with
+        | [] => Mret []
+        | x::l =>
+            fun s =>
+              match f x s with
+              | None => Mfiltermap f l s
+              | Some (x',s') =>
+                  @!let (l', s') <- Mfiltermap f l s' in
+                    ret (x'::l',s')
+              end
+        end.
+      
+    (* returns the weight of the extracted term.
+       TODO: memoize
+       Maintains a 'visited' stack to avoid cycles
+     *)
+      Fixpoint extract' fuel eclasses (uf : union_find V (V_map V) (V_map nat)) (x : V)
+        : stateT (list V) option (term * nat) :=
+        match fuel with
+        | 0 => fun _ => None
+        | S fuel =>
+            let process (x : V) p : stateT (list V) option (term*nat) :=
+              let '(f, args):= p in 
+              @!let _ <- enter x in
+                let weight <- lift (symbol_weight (Build_atom (f:V) args x)) in
+                let args' <- list_Mmap (extract' fuel eclasses uf) args in
+                let _ <- exit in
+                ret (con f (map fst args'),
+                    (list_sum (weight::(map snd args'))))
+            in
+            (* TODO: is find necessary? might always be a no-op *)
+            @!let (_,x') <- lift (UnionFind.find _ _ _ _ uf x) in
+              let cls <- lift (map.get eclasses x) in
+              let candidates <- Mfiltermap (process x) cls in
+              (lift (minimum (fun x y => Nat.ltb (snd x) (snd y)) candidates))
+        end.
+
+      Definition build_eclasses : db_map V V _ _ -> V_map (list (V * list V)) :=
+        let process_row f acc args '(_,out) :=
+          match map.get acc out with
+          | Some l => map.put acc out ((f,args)::l)
+          | None => map.put acc out [(f,args)]
+          end
+        in
+        let process_table acc f :=
+          map.fold (process_row f) acc
+        in
+        map.fold process_table map.empty.
         
-    in
-    @! let eclasses := build_classes i in
-      let nodes <- lookup eclasses x in
-      minimum node_weight (ap_map process nodes).
+      Definition extract fuel (i : instance) x :=
+        let cls := (build_eclasses i.(db _ _ _ _ _)) in
+        option_map fst
+          (option_map fst (extract' fuel cls i.(equiv _ _ _ _ _) x [])).
+    
+    (*TODO: differential extraction;
+    extract 2 terms together with a shared weight metric (distance)
+     *)
 
   End EExtract.
-  *)
 
 
   (******************************************)
@@ -680,12 +768,14 @@ Module PositiveInstantiation.
   End __.
 
   End __.
+
+  Definition sort_of := xH.
   
   Definition egraph_equal
     : lang positive -> rw_set positive positive trie_map trie_map ->
-      nat -> Term.term positive -> Term.term positive ->
-      bool :=
-    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ default (@pt_spaced_intersect)).
+      nat -> Term.term positive -> Term.term positive -> Term.sort positive ->
+      _ :=
+    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@pt_spaced_intersect)).
 
   (*TODO: move somewhere?*)
   Definition filter_eqn_rules {V} : lang V -> lang V :=
@@ -699,19 +789,25 @@ Module PositiveInstantiation.
     ClosedTerm.open_term []
       (ClosedTerm.close_term t).
   
+  Definition sort_var_to_con {V} `{Eqb V} (t : Term.sort V) :=
+    ClosedTerm.open_sort []
+      (ClosedTerm.close_sort t).
+  
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
      
    (*TODO: handle term closing, sort matching*)
    *)
-  Definition egraph_equal' {V} `{Eqb V} (l : lang V) n (e1 e2 : Term.term V) : bool :=
+  Definition egraph_equal' {V} `{Eqb V} (l : lang V) n (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
     let rename_and_run : state (renaming V) _ :=
       @! let l' <- rename_lang l in
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
-        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l')) n e1' e2')
+        let t' <- rename_sort (sort_var_to_con t) in
+        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l')) n e1' e2' t')
     in
-    fst (rename_and_run (empty_rename _)).
+    (*2 so that sort_of is distict*)
+    fst (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
   
 End PositiveInstantiation.
 

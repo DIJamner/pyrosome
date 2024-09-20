@@ -39,7 +39,7 @@ Section WithMap.
 
   Notation atom := (atom idx symbol).
 
-  Notation hash_node := (hash_node idx_succ idx_zero).
+  Notation hash_node := (hash_node idx_succ).
   
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
 
@@ -130,7 +130,7 @@ Section WithMap.
     @! (*let _ <- add_vars_to_uf (out::args) in*)
       (* this may create new vars!
          need to make sure all rule vars are already added.*)
-      let out' <- hash_node f args in
+      let out' <- @hash_node (f : symbol) args in
       let _ <- union out out' in
       ret tt.
 
