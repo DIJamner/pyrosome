@@ -95,7 +95,7 @@ rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
 
   
   Definition gensym {M} `{Monad M} : stateT V M V :=
-    fun s => Mret (succ s, s).
+    fun s => Mret (s, succ s).
 
   Definition writer S A : Type := list S * A.
 
