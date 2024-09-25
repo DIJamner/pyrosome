@@ -114,14 +114,13 @@ Section WithVar.
     Definition of_p (p : positive) : V :=
       unwrap_with_default (get p r.(p_to_v)). 
 
-    Fixpoint unrename_pf p : pf V :=
-      match p with
-      | pvar x => pvar (of_p x)
-      | pcon n s => pcon (of_p n) (map unrename_pf s)
-      | ptrans p1 p2 => ptrans (unrename_pf p1) (unrename_pf p2)
-      | psym p => psym (unrename_pf p)
-      | pconv p1 p2 => pconv (unrename_pf p1) (unrename_pf p2)
+    
+    Fixpoint unrename_term (e : Term.term positive) : Term.term V :=
+      match e with
+      | var x => var (of_p x)
+      | con n s => con (of_p n) (map unrename_term s)
       end.
+    
   End Unrename.
           
 End WithVar.

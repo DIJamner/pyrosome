@@ -1311,6 +1311,10 @@ Section WithMap.
 
 End WithMap.
 
+Arguments atom_fn {idx symbol}%type_scope a.
+Arguments atom_args {idx symbol}%type_scope a.
+Arguments atom_ret {idx symbol}%type_scope a.
+
 Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope v v1 _.
 Arguments hash_node {idx}%type_scope idx_succ%function_scope {symbol}%type_scope

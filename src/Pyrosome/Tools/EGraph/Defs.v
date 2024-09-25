@@ -57,43 +57,12 @@ Section WithVar.
 
   Notation atom := (atom V V).
 
-  (*
-  Record eqsat : Type := {
-      inst : instance;
-      (* TODO: maintain a separate sort map?
-      sort_map : V_map V;*)
-    }.
-  *)
-
   Context (succ : V -> V).
   
   (* Include sort_of as special symbol/fn in db. *)
   Context (sort_of : V).
 
-  
-
-
-  (*
-    TODO: compile terms to uncompiled rw rules
-    Question: (when) do I have to use sort_of?
-    - definitely some places: side conditions.
-    - for now, assume everywhere
-   *)
-
-  (*
-Record
-rw_set (idx symbol : Type) (symbol_map : forall A : Type, map.map symbol A)
-  : Type := Build_rw_set
-  { query_clauses : map.rep;  compiled_rules : list (compiled_rw_rule idx symbol) }.
-
-    Record compiled_rw_rule (idx symbol : Type) : Type := Build_compiled_rw_rule
-  { query_vars : list idx;
-    query_clause_ptrs : ne_list (symbol * nat * list idx);
-    write_clauses : list (FunctionalDB.atom idx symbol) }.
-   *)
-
-
-  
+  (*TODO: move*)
   Definition gensym {M} `{Monad M} : stateT V M V :=
     fun s => Mret (s, succ s).
 
@@ -807,7 +776,7 @@ Module PositiveInstantiation.
         ret (egraph_equal l' (build_rw_set (filter_eqn_rules l')) n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
-    fst (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
+    (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
   
 End PositiveInstantiation.
 
