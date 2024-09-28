@@ -13,13 +13,73 @@ From Utils Require TrieMap.
 Import Sets.
 Import StateMonad.
 
+
+(*TODO: move somewhere*)
+Definition Is_Some_satisfying {A} (P : A -> Prop) x :=
+  match x with
+  | Some x => P x
+  | None => False
+  end.
+Notation "x <$> P" :=
+  (Is_Some_satisfying P x)
+    (at level 56,left associativity).
+
 (*TODO: move somewhere *)
-Inductive transitive_closure {A} (R : A -> A -> Prop) : A -> A -> Prop :=
-| trans_base a b : R a b -> transitive_closure R a b
-| trans_step a b c : R a b -> transitive_closure R b c -> transitive_closure R a c.
+Section TransitiveClosure.
+  Context {A} (R : A -> A -> Prop).
+  Inductive transitive_closure : A -> A -> Prop :=
+  | trans_base a b : R a b -> transitive_closure a b
+  | trans_step a b c : R a b -> transitive_closure b c -> transitive_closure a c.
+  Hint Constructors  transitive_closure : utils.
+  
+  Lemma transitive_closure_step_r a b c
+    : transitive_closure a b -> R b c -> transitive_closure a c.
+  Proof.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve transitive_closure_step_r : utils.
+    
+  Lemma transitive_closure_trans
+    : Transitive transitive_closure.
+  Proof.
+    intros a b c H1 H2.
+    revert H1.
+    induction H2;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma transitive_closure_sym
+    : Symmetric R -> Symmetric transitive_closure.
+  Proof.
+    intros Hsym a b.
+    induction 1;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
 
-(*TODO: move to FUnctionalDB*)
+  Lemma transitive_closure_refl
+    : Reflexive R -> Reflexive transitive_closure.
+  Proof.
+    intros Hrefl a.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.  
+  
+  Lemma transitive_closure_equiv
+    : Equivalence R -> Equivalence transitive_closure.
+  Proof.
+    destruct 1; constructor;
+      eauto using transitive_closure_trans,
+      transitive_closure_sym,
+      transitive_closure_refl.
+  Qed.
 
+End TransitiveClosure.
+#[export] Hint Constructors transitive_closure : utils.
+#[export] Hint Resolve transitive_closure_equiv : utils.
 
 Section WithMap.
   Context
@@ -37,9 +97,11 @@ Section WithMap.
 
   Notation atom := (atom idx symbol).
 
-  (*TODO: implement*)
-  Axiom atom_subst : named_list idx idx -> atom -> atom.
-
+  Definition atom_subst (sub : named_list idx idx) (a : atom) :=
+    Build_atom
+      a.(atom_fn)
+      (map (fun x => named_list_lookup x sub x) a.(atom_args))
+      (named_list_lookup a.(atom_ret) sub a.(atom_ret)).
   
   Definition lift_idx_eq (ieq:idx -> idx -> Prop) (a b : atom) : Prop :=
     a.(atom_fn) = b.(atom_fn)
@@ -64,7 +126,7 @@ Section WithMap.
   Record eqlog_data_wf (d : eqlog_data) : Prop :=
     {
       (* TODO Equivalence or PER? an equiv prob. wouldn't hurt, R_atom is still a PER*)
-      R_idx_PER : Equivalence d.(R_idx);
+      R_idx_equiv : Equivalence d.(R_idx);
       P_atom_respects_R_idx : forall a b, R_atom d a b -> d.(P_atom) b;
     }.
 
@@ -120,8 +182,16 @@ Section WithMap.
       P_atom := atom_functional_closure P' R';
     |}.
 
-  (*TODO: implement*)
-  Axiom fresh_assignment_valid : named_list idx idx -> uncompiled_rw_rule idx symbol -> Prop.
+  Definition idx_fresh_in_atoms (P : atom -> Prop) x : Prop :=
+    forall a, P a -> ~ In x (a.(atom_ret)::a.(atom_args)).
+  
+  Definition fresh_assignment_valid
+    (fa : named_list idx idx)
+    (r :uncompiled_rw_rule idx symbol)
+    (S : eqlog_data) : Prop :=
+    all_fresh fa
+    /\ incl (map atom_ret r.(uc_write_clauses _ _)) (map fst fa ++ r.(uc_query_vars _ _))
+    /\ all (idx_fresh_in_atoms S.(P_atom)) (map snd fa).
   
   (* Note: this applies the rules in order, whereas the egraph applies them in parallel.
      There is no difference in the limit though.
@@ -131,7 +201,248 @@ Section WithMap.
   | interp_eqlog_step S1 r fa
     : interp_eqlog l S0 S1 ->
       In r l ->
-      fresh_assignment_valid fa r ->
+      fresh_assignment_valid fa r S1 ->
       interp_eqlog l S0 (interp_rule_step r S1 fa).
 
+  Lemma functional_dependence_sym P
+    : Symmetric (functional_dependence P).
+  Proof.
+    unfold functional_dependence.
+    intros x y H;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+    
+  Lemma idx_functional_closure_equiv P R
+    : Reflexive R -> Symmetric R -> Equivalence (idx_functional_closure P R).
+  Proof.
+    unfold idx_functional_closure, ifc.
+    constructor.
+    1:eapply transitive_closure_refl; eauto.
+    {
+      eapply transitive_closure_sym; eauto.
+      intros x y H';
+        destruct H'; [ left | right]; eauto.
+      apply functional_dependence_sym.
+      eauto.
+    }
+    {
+      eapply transitive_closure_trans.
+    }
+  Qed.
+
+  Lemma interp_rule_step_inflationary r S fa x
+    : S.(P_atom) x -> (interp_rule_step r S fa).(P_atom) x.
+  Proof.
+    destruct S; cbn.
+    intros; eapply atom_base.
+    intuition eauto.
+  Qed.
+  
+  Lemma interp_rule_step_wf r S fa
+    : eqlog_data_wf S -> eqlog_data_wf (interp_rule_step r S fa).
+  Proof.
+      destruct 1;
+      constructor.
+    {
+      destruct R_idx_equiv0.
+      apply idx_functional_closure_equiv.
+      all: unfold Reflexive,  Symmetric; basic_goal_prep; intuition eauto.
+      basic_goal_prep; intuition eauto.
+    }
+    {
+      intros.
+      unfold R_atom in *; break.
+      unfold interp_rule_step in *.
+      cbn in*.
+(*      intros; eapply interp_rule_step_inflationary.
+      unfold R_atom in *; break.
+      induction H0; intuition eauto.
+      
+      
+      eapply P_atom_respects_R_idx0.
+      intros; break.
+      revert b H.
+      induction H0; intuition eauto.
+      {
+        TODO: looks false!.
+        ridx is smaller on output than input
+        cbn in H.
+        pose proof (fun b H => P_atom_respects_R_idx0 a b (conj H H0)).
+        TODO: base case; use inflationary principle
+        eapply P_atom_respects_R_idx0 in H0.
+      basic_goal_prep.
+        , lift_idx_eq, interp_rule_step  in *;
+        basic_goal_prep; intuition eauto.
+      induction H0
+  Qed. *)
+  Abort.
+
+
+(* Alternate approach: consider the initial model of the theory.
+   Terms added at the start form a no-premise rule, so can be ignored.
+ *)
+  Record model : Type :=
+    {
+      (* represents the quotiented idx.
+         TODO: to realize the quotient, should I include a domain equiv?
+         - would let me use e.g. terms as the domain
+         - alternatively, I can use idx as the domain, and take the quotient
+           to be implied by the non-bijectivity of constants.
+       *)
+      domain : Type;
+      (* included to support setoids *)
+      domain_eq : domain -> domain -> Prop;
+      (*constants : idx -> domain; TODO: do I have any constants? *)
+      interpretation : symbol -> list domain -> option domain;
+    }.
+
+  (*TODO: implement*)
+  Axiom assignment_satisfies
+    : forall m, named_list idx m.(domain) -> list atom -> Prop.
+
+  Axiom TODO_domain : forall {m}, m.(domain).
+  (* TODO: handle domain being possibly empty.
+     (assignment lookup default)
+   *)
+  Record model_of
+    (m : model)
+    (rw : list (uncompiled_rw_rule idx symbol)) : Prop :=
+    {
+      (* TODO: does it need to be an equivalence? *)
+      domain_eq_PER : PER m.(domain_eq);
+      unifications_sound
+      : forall r,
+        In r rw ->
+        forall assignment,
+          assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
+          forall x y, In (x,y) r.(uc_write_unifications _ _) ->
+                      m.(domain_eq) (named_list_lookup TODO_domain assignment x)
+                          (named_list_lookup TODO_domain assignment y);
+      write_clauses_sound
+      : forall r,
+        In r rw ->
+        forall assignment,
+          assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
+          forall a, In a r.(uc_write_clauses _ _) ->
+                    m.(interpretation) a.(atom_fn)
+                      (map (named_list_lookup TODO_domain assignment) a.(atom_args))
+                    = named_list_lookup_err assignment a.(atom_ret)
+    }.
+
+  (*
+  Record model_morphism (m1 m2 : model) : Type :=
+    {
+      domain_morphism : m1.(domain) -> m2.(domain);
+      domain_eq_morphism
+      : forall x y, m1.(domain_eq) x y -m2.(domain_eq) (domain_morphism x) (domain_morphism y);
+      interpretation_morphism
+      : forall f s, option_map domain_morphism (m1.(interpretation) f s)
+                    = m2.(interpretation) f (map domain_morphism s);      
+    }.
+
+  Record initial_model rw m :=
+    {
+      initial_model_wf : model_of m rw;
+      is_initial : forall m', model_of m' rw -> model_morphism m m';
+    }.
+
+  *)
+(*
+  Sketch:
+  1. egraph soundly underapproximates the rules
+  2. rules hold in all models
+  3. terms are a model
+ *)
+
+  
+  Context (symbol_map : forall A, map.map symbol A)
+    (symbol_map_plus : map_plus symbol_map)
+    (symbol_map_ok : forall A, map.ok (symbol_map A)).
+
+  Context 
+      (idx_map : forall A, map.map idx A)
+        (idx_map_plus : map_plus idx_map)
+        (idx_map_ok : forall A, map.ok (idx_map A))
+        (* TODO: define and assume weak_map_ok*)
+        (idx_trie : forall A, map.map (list idx) A)
+        (idx_trie_plus : map_plus idx_trie).
+
+  Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
+  (*TODO: many of these relations can be functions. what's the best way to define them?*)
+  Definition atom_in_egraph '(Build_atom f args out) (i : instance) :=
+    (map.get i.(db _ _ _ _ _) f) <$>
+      (fun tbl => (map.get tbl args) <$>
+                    (fun r => snd r = out)).
+
+  Definition SomeRel {A B} (R : A -> B -> Prop) ma mb :=
+    match ma, mb with
+    | Some a, Some b => R a b
+    | _, _ => False
+    end.
+
+  (* TODO: this is parametric, use the initial model instead? No.
+     TODO: this is proof relevant; keep it that way or no?
+   *)
+  Record egraph_sound_for_model e m :=
+    {
+      (*  TODO: Is this the best way? Could also identify idxs w/ terms/atom trees
+         terms/atom trees from the initial model.
+
+         TODO: how to ensure this covers the whole domain?
+       *)
+      idx_interpretation : idx -> option m.(domain);
+      (* TODO: write in a more natural way*)
+      atom_interpretation :
+      forall a,
+        atom_in_egraph a e ->
+        (Mbind (m.(interpretation) a.(atom_fn))
+           (list_Mmap idx_interpretation a.(atom_args))) <$>
+          (fun d => (idx_interpretation a.(atom_ret)) <$> (m.(domain_eq) d));
+    }.
+
+  Definition egraph_sound e rs :=
+    forall m : model,
+      model_of m rs ->
+      egraph_sound_for_model e m.
+
+  Context (spaced_list_intersect
+             (*TODO: nary merge?*)
+            : forall {B} (merge : B -> B -> B),
+              ne_list (idx_trie B * list bool) ->
+              (* Doesn't return a flag list because we assume it will always be all true*)
+              idx_trie B).
+
+  Theorem empty_sound rs : egraph_sound (empty_egraph idx_zero) rs.
+  Proof.
+    unfold empty_egraph.
+    unshelve econstructor.
+    1: exact (fun _ => None).
+    unfold atom_in_egraph;
+      destruct a;
+      basic_goal_prep.
+    rewrite map.get_empty in *.
+    basic_goal_prep.
+    tauto.    
+  Qed.
+
+  
+  Notation saturate_until := (saturate_until idx_succ idx_zero spaced_list_intersect).
+  
+  Theorem saturation_sound e rs rs' P fuel b e'
+    : (*TODO: needed: predicate_sound P rs -> *)
+      egraph_sound e rs ->
+      (*TODO: relationship between compiled rs' and uncompiled rs? incl rs' rs ->*)
+      saturate_until rs' P fuel e = (b, e') ->
+      egraph_sound e' rs.
+  Proof.
+    revert e.
+    induction fuel;
+      basic_goal_prep;
+      basic_utils_crush;[].
+  Abort.
+
 End WithMap.
+
+Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  pat i.

@@ -6,22 +6,13 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB QueryOpt Monad ExtraMaps.
+From Utils Require Import Utils UnionFind
+  FunctionalDB FunctionalDBSemantics QueryOpt Monad ExtraMaps.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 
-
-(*TODO: move to Utils somewhere*)
-Definition Is_Some_satisfying {A} (P : A -> Prop) x :=
-  match x with
-  | Some x => P x
-  | None => False
-  end.
-Notation "x <$> P" :=
-  (Is_Some_satisfying P x)
-    (at level 55,left associativity).
 
 Section WithVar.
   Context (V : Type)
@@ -73,17 +64,12 @@ Section WithVar.
 
     
     (*TODO: many of these relations can be functions. what's the best way to define them?*)
-    Definition atom_in_egraph '(Build_atom f args out) :=
-      (map.get i.(db _ _ _ _ _) f) <$>
-        (fun tbl => (map.get tbl args) <$>
-                      (fun r => snd r = out)).
-
     Fixpoint open_term_in_egraph sub e ex :=
       match e with
       | var x => In (x,ex) sub
       | con n s =>
           exists s',
-          atom_in_egraph (Build_atom n s' ex)
+          atom_in_egraph (Build_atom n s' ex) i
           /\ all2 (open_term_in_egraph sub) s s'
       end.
 
@@ -91,7 +77,7 @@ Section WithVar.
       match t with
       | scon n s =>
           exists s',
-          atom_in_egraph (Build_atom n s' tx)
+          atom_in_egraph (Build_atom n s' tx) i
           /\ all2 (open_term_in_egraph sub) s s'
       end.
 
@@ -102,7 +88,7 @@ Section WithVar.
     Definition egraph_wf_sort t :=
       exists tx, sort_in_egraph t tx.
 
-    Definition has_sort_idx ex tx := atom_in_egraph (Build_atom sort_of [ex] tx).
+    Definition has_sort_idx ex tx := atom_in_egraph (Build_atom sort_of [ex] tx) i.
     
 
     Definition has_sort ex sub t :=      
@@ -127,13 +113,15 @@ Section WithVar.
         term_in_egraph e1 ex
         /\ term_in_egraph e2 ex
         /\ sort_in_egraph t tx
-        /\ atom_in_egraph (Build_atom sort_of [ex] tx).
+        /\ atom_in_egraph (Build_atom sort_of [ex] tx) i.
 
     
     Fixpoint idxs_have_sorts s (c:ctx) :=
       match s, c with
       | [], [] => True
-      | i::s, (x,t)::c => has_sort i (combine (map fst c) s) t
+      | i::s, (x,t)::c =>
+          has_sort i (combine (map fst c) s) t
+          /\ idxs_have_sorts s c
       | _, _ => False
       end.      
 
@@ -196,7 +184,7 @@ Section WithVar.
       {
         atoms_in_domain
         : forall a,
-          atom_in_egraph a ->
+          atom_in_egraph a i ->
           all (fun x => uf_rel i.(equiv) x x)
             (a.(atom_ret _ _)::a.(atom_args));
         (*
