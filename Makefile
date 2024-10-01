@@ -1,6 +1,6 @@
 default_target: all
 
-.PHONY: clean force all clean_all stdlib clean_stdlib tries clean_tries coqutil clean_coqutil clone_all update_all clean_deps deps
+.PHONY: clean force all clean_all tries clean_tries coqutil clean_coqutil clone_all update_all clean_deps deps
 
 # absolute paths so that emacs compile mode knows where to find error
 # use cygpath -m because Coq on Windows cannot handle cygwin paths
@@ -15,7 +15,6 @@ SRC_VS ?= $(shell find $(SRC_DIR) -type f -name '*.v')
 define COQPROJECT
 -R $(ABS_ROOT_DIR)/coqutil/src/coqutil coqutil
 -R $(ABS_ROOT_DIR)/canonical-binary-tries/ Tries
--R $(ABS_ROOT_DIR)/coq-stdlib-edits/src/Std/ Std
 -R $(SRC_DIR)/Utils Utils
 -R $(SRC_DIR)/Pyrosome Pyrosome
 
@@ -40,7 +39,7 @@ all: Makefile.coq $(SRC_VS)
 
 COQ_MAKEFILE := $(COQBIN)coq_makefile -f _CoqProject -docroot coqutil $(COQMF_ARGS)
 
-deps: tries coqutil stdlib
+deps: tries coqutil
 
 Makefile.coq: deps force _CoqProject
 	@echo "Generating Makefile.coq"
@@ -55,12 +54,6 @@ tries:
 clean_tries:
 	$(MAKE) -C $(ABS_ROOT_DIR)/canonical-binary-tries clean
 
-stdlib:
-	$(MAKE) -C $(ABS_ROOT_DIR)/coq-stdlib-edits
-
-clean_stdlib:
-	$(MAKE) -C $(ABS_ROOT_DIR)/coq-stdlib-edits clean
-
 coqutil:
 	$(MAKE) -C $(ABS_ROOT_DIR)/coqutil
 
@@ -72,6 +65,6 @@ clean: Makefile.coq
 	find . -type f \( -name '*~' -o -name '*.glob' -o -name '*.aux' -o -name '.lia.cache' -o -name '.nia.cache' \) -delete
 	rm -f Makefile.coq Makefile.coq.conf _CoqProject
 
-clean_deps: clean_coqutil clean_tries clean_stdlib
+clean_deps: clean_coqutil clean_tries
 
 clean_all: clean_deps clean
