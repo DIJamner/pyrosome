@@ -188,7 +188,7 @@ Section WithVar.
     match r with
     | sort_rule c args =>
         let '(query_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (supremum (map fst c)) in
+          ctx_to_clauses c (succ (supremum (map fst c))) in
         (*TODO: check for off-by-one*)
         let write_clauses := [Build_atom n (map fst c) next_var] in
         (*TODO: need list of all query vars, not just ctx vars.
@@ -197,19 +197,19 @@ Section WithVar.
         Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
     | term_rule c args t => 
         let '(query_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (supremum (map fst c)) in
+          ctx_to_clauses c (succ (supremum (map fst c))) in
         let '(t_clauses,(v,next_var0)) :=
           sort_pat_to_clauses t next_var in
         (*TODO: check for off-by-one*)
-        let write_clauses := [Build_atom sort_of [next_var0] v;
-                              Build_atom n (map fst c) next_var0] in
+        let write_clauses := (Build_atom sort_of [next_var0] v)::
+                             (Build_atom n (map fst c) next_var0):: t_clauses  in
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
         Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
     | sort_eq_rule c t1 t2 => 
         let '(ctx_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (supremum (map fst c)) in
+          ctx_to_clauses c (succ (supremum (map fst c))) in
         let '(t1_clauses,(v1,next_var0)) :=
           sort_pat_to_clauses t1 next_var in
         let '(t2_clauses,(v2,next_var1)) :=
@@ -221,7 +221,7 @@ Section WithVar.
           (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
     | term_eq_rule c e1 e2 t => 
         let '(ctx_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (supremum (map fst c)) in
+          ctx_to_clauses c (succ (supremum (map fst c))) in
         let '(e1_clauses,(v1,next_var0)) :=
           term_pat_to_clauses e1 next_var in
         let '(e2_clauses,(v2,next_var1)) :=
@@ -761,15 +761,19 @@ Module PositiveInstantiation.
   Definition sort_var_to_con {V} `{Eqb V} (t : Term.sort V) :=
     ClosedTerm.open_sort []
       (ClosedTerm.close_sort t).
+
+  (* TODO: move to closedterm?*)
+  Definition ctx_to_rules {V} : ctx V -> lang V :=
+    named_map (fun t => term_rule [] [] t).
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
      
    (*TODO: handle term closing, sort matching*)
    *)
-  Definition egraph_equal' {V} `{Eqb V} (l : lang V) n (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
+  Definition egraph_equal' {V} `{Eqb V} (l : lang V) n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
     let rename_and_run : state (renaming V) _ :=
-      @! let l' <- rename_lang l in
+      @! let l' <- rename_lang (ctx_to_rules c ++ l) in
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
