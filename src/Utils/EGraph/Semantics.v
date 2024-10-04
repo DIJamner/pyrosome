@@ -8,7 +8,8 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind FunctionalDB QueryOpt.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind.
+From Utils.EGraph Require Import Defs QueryOpt.
 From Utils Require TrieMap.
 Import Sets.
 Import StateMonad.
@@ -137,7 +138,7 @@ Section WithMap.
    *)
   Record model_of
     (m : model)
-    (rw : list (uncompiled_rw_rule idx symbol)) : Prop :=
+    (rw : list (log_rule idx symbol)) : Prop :=
     {
       (* TODO: does it need to be an equivalence? *)
       domain_eq_PER : PER m.(domain_eq);
@@ -145,8 +146,8 @@ Section WithMap.
       : forall r,
         In r rw ->
         forall assignment,
-          assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
-          forall x y, In (x,y) r.(uc_write_unifications _ _) ->
+          assignment_satisfies m assignment r.(query_clauses _ _) ->
+          forall x y, In (x,y) r.(write_unifications _ _) ->
                       (named_list_lookup_err assignment x) <$>
                       (fun x' => (named_list_lookup_err assignment y) <$>
                       (m.(domain_eq) x'));
@@ -154,8 +155,8 @@ Section WithMap.
       : forall r,
         In r rw ->
         forall assignment,
-          assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
-          forall a, In a r.(uc_write_clauses _ _) ->
+          assignment_satisfies m assignment r.(query_clauses _ _) ->
+          forall a, In a r.(write_clauses _ _) ->
                     (list_Mmap (named_list_lookup_err assignment) a.(atom_args)) <$>
                       (fun args => m.(interpretation) a.(atom_fn) args                      
                                    = named_list_lookup_err assignment a.(atom_ret))

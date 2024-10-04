@@ -6,7 +6,8 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils.EGraph Require Import Defs.
 Import Monad.StateMonad.
 
 Section WithMap.
@@ -43,14 +44,12 @@ Section WithMap.
   
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
 
-  
-  
-
-  Record uncompiled_rw_rule : Type :=
-  { uc_query_vars : list idx;
-    uc_query_clauses : list atom;
-    uc_write_clauses : list atom;
-    uc_write_unifications : list (idx * idx);
+  (*TODO: move to semantics?*)
+  Record log_rule : Type :=
+  { query_vars : list idx;
+    query_clauses : list atom;
+    write_clauses : list atom;
+    write_unifications : list (idx * idx);
   }.
 
   (*
@@ -225,24 +224,24 @@ Section WithMap.
     @! let i <- hash_clause compiled_clause in
       ret (f, i, clause_vars).
 
-  Local Notation compiled_rw_rule := (compiled_rw_rule idx symbol).
+  Local Notation erule := (erule idx symbol).
   
-  Definition compile_rw_rule (r  : uncompiled_rw_rule) : ST' compiled_rw_rule :=
+  Definition compile_rule (r  : log_rule) : ST' erule :=
     let (qvs, qcls, wcls, wufs) := r in
     @! let qcls_ptrs <- list_Mmap (compile_query_clause qvs) qcls in
       (* Assume it must be nonempty to be useful *)
       match qcls_ptrs with
       | [] => (*Should never happen if called corrrectly*)
-          Mret (Build_compiled_rw_rule _ _ default default default default)
-      | c::cs => Mret (Build_compiled_rw_rule _ _ qvs (c,cs) wcls wufs)
+          Mret (Build_erule _ _ default default default default)
+      | c::cs => Mret (Build_erule _ _ qvs (c,cs) wcls wufs)
       end.
 
   
   Arguments Build_rw_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
     query_clauses compiled_rules%list_scope.
   
-  Definition build_rw_set (rules : list uncompiled_rw_rule) : rw_set :=
-    let (crs, clauses_plus) := list_Mmap compile_rw_rule rules map.empty in
+  Definition build_rw_set (rules : list log_rule) : rw_set :=
+    let (crs, clauses_plus) := list_Mmap compile_rule rules map.empty in
     Build_rw_set (map_map snd clauses_plus) crs.
  
 End WithMap.

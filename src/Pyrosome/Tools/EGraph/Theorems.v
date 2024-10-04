@@ -6,8 +6,8 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind
-  FunctionalDB FunctionalDBSemantics QueryOpt Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils.EGraph Require Import Defs Semantics QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
@@ -62,6 +62,210 @@ Section WithVar.
 
     Context (sort_of_fresh : fresh sort_of l).
 
+    Definition eq_sum {A B} (eqA : A -> A -> Prop) eqB (x y : A + B) :=
+      match x, y with
+      | inl x, inl y => eqA x y
+      | inr x, inr y => eqB x y
+      | _, _ => False
+      end.
+
+    (* TODO: find this*)
+    Context (sort_of_term : lang -> term -> sort).
+    Definition interp_sort_of (args : list (term + sort))
+      : option (term + sort) :=
+      match args with
+      | [inl t] => Some (inr (sort_of_term l t))
+      | _ => None
+      end.
+
+    Definition left_opt {A B} (x: A + B) :=
+      match x with inl x => Some x | _ => None end.
+
+    Definition all_left {A B} (l : list (A+B)) :=
+      list_Mmap left_opt l.
+
+    (*TODO: write*)
+    Context (is_sort is_term : V -> bool).
+      
+    Definition lang_model : model V :=
+      {|
+        domain := term + sort;
+        domain_eq := eq_sum (fun x y => exists t, eq_term l [] t x y)
+                       (eq_sort l []);
+        interpretation f args :=
+          if eqb f sort_of then interp_sort_of args
+          else if is_sort f then Mbind (fun x => Some (inr (scon f x)))
+                                   (all_left args)
+               else if is_term f then Mbind (fun x => Some (inl (con f x)))
+                                        (all_left args)
+                    else None;
+      |}.
+
+    Context (supremum : list V -> V).
+    
+    (* TODO: move to FnDb semantics *)
+    Definition rule_sound r m :=
+      forall assignment : NamedList.named_list V (domain V m),
+        assignment_satisfies m assignment
+          (query_clauses V V r) ->
+        (forall x y,
+            In (x, y) (write_unifications V V r) ->
+            named_list_lookup_err assignment x <$>
+              (fun x' : domain V m =>
+                 named_list_lookup_err assignment y <$> domain_eq V m x'))
+        /\ (forall a : Defs.atom V V,
+               In a (write_clauses V V r) ->
+               list_Mmap (named_list_lookup_err assignment) (atom_args a) <$>
+                 (fun args : list (domain V m) =>
+                    interpretation V m (atom_fn a) args =
+                      named_list_lookup_err assignment (atom_ret a))).
+
+    Context (le_V : V -> V -> Prop)
+      (le_V_refl : forall x, le_V x x)
+      (le_V_sym : forall x y z, le_V x y -> le_V y z -> le_V x z)
+      (* TODO: to work w/ int63, have to weaken this *)
+      (succ_le : forall x, le_V x (succ x))
+      (succ_neq : forall x, x <> succ x)
+      (supremum_le : forall l x, In x l -> le_V x (supremum l)).
+
+    Local Hint Resolve le_V_refl : utils.
+
+    Definition lt_V x y := le_V (succ x) y.
+
+    (*TODO: why isn't this hint working: pair_equal_spec:
+    *)
+    Lemma term_pat_to_clauses_var next_var e l1 x next_var'
+      :  term_pat_to_clauses succ e next_var = (l1, (x, next_var')) ->
+         le_V next_var next_var'.
+    Proof.
+      revert next_var l1 x next_var'.
+      induction e.
+      {
+        basic_goal_prep;
+          basic_utils_crush.
+        cbv in H.
+        rewrite !pair_equal_spec in H.
+        basic_goal_prep;
+          basic_utils_crush.
+      }
+      {
+        revert H; induction l0;   
+        basic_goal_prep;
+          unfold Basics.compose in *;
+        basic_goal_prep;
+          basic_utils_crush.
+        {
+          cbv in H0;
+            rewrite !pair_equal_spec in H0.
+          basic_goal_prep; subst; eauto.
+        }
+        {
+          destruct (term_pat_to_clauses succ a next_var) eqn:Hpat.
+          unfold uncurry in *.
+          basic_goal_prep.
+          specialize (H4 v0).
+          destruct (list_Mmap (term_pat_to_clauses succ) l0 v0) eqn:Hlist.
+          basic_goal_prep.
+          cbv [writer] in H0;
+            rewrite !pair_equal_spec in H0.
+          basic_goal_prep.
+          subst.
+          epose proof (H4 _ _ _ eq_refl) as Hle.
+          eapply H in Hpat.
+          eauto.
+        }
+      }
+    Qed.
+
+    (*TODO
+    Lemma term_pat_to_clauses_sound next_var
+      :  next_var > fvs e ->
+         term_pat_to_clauses succ e next_var = (l1, (x, next_var')) ->
+         matches assignment l1 ->
+         let s := (combine (fvs e) (map (lookup assignment) (fvs e))) in
+         lookup assignment x = Some e [/s/].
+*)
+    
+    Lemma rule_model_sound n r
+      : In (n,r) l ->
+        rule_sound (rule_to_uncompiled_rw succ sort_of supremum n r) lang_model.
+    Proof.
+      unfold rule_sound, assignment_satisfies.
+      destruct r;
+        basic_goal_prep.
+      all:intuition eauto.
+      all: repeat lazymatch goal with
+             H : context [let '(_,_) := ?e in _ ] |- _ =>
+               let Htuple := fresh "Htuple" in
+               destruct e as [? [ [] ? ] ] eqn:Htuple
+           end.
+      all: repeat (cbn in *; intuition subst).
+      {
+        (*
+        Lemma ctx_to_clauses_var
+          : next_var > all map fst c ->
+          ctx_to_clauses succ sort_of n0 next_var = (l1, (tt, next_var')) ->
+          next_var' > fvs l1.
+          
+        Lemma ctx_to_clauses_sound
+          : next_var > all map fst c ->
+          ctx_to_clauses succ sort_of n0 next_var = (l1, (tt, next_var')) ->
+          matches assignment l1 ->
+          wf_subst l [] (combine (map fst c) (map (lookup assignment) (map fst c))) c.
+
+          (* TODO: does this depend on being conjoined w/ ctx_clauses?
+             TODO: what to say about wf type clauses added?
+
+             TODO: need separate lemma for query and for add?
+             Probably no?
+           *)
+        Lemma term_pat_to_clauses_sound
+          :  next_var > fvs e ->
+             term_pat_to_clauses succ e next_var = (l1, (x, next_var')) ->
+             matches assignment l1 ->
+             let s := (combine (fvs e) (map (lookup assignment) (fvs e))) in
+             lookup assignment x = Some e [/s/].
+                
+        
+        TODO: ctx_to_clauses lemma
+        eqb_case n sort_of.
+        {
+          revert dependent l1.
+          TODO: stateT writer tactics?
+          Or, as thought, change to reuse more code first?
+          TODO: some kind of nested induction?
+                     should be a cleaner way?
+        lazymatch goal with
+        | H : Is_Some_satisfying ?P ?ma |- _ =>
+            let Hopt := fresh "Hopt" in
+            destruct ma eqn:Hopt
+        end.
+        unfold Is_Some_satisfying in H0.
+        revert H0.
+        case_match. [| tauto].
+        eqb_case n sort_of.
+        {
+        TODO: ctx_to_clauses lemma
+
+
+          destruct (ctx_to_clauses succ sort_of n0 (supremum (map fst n0))) as [? [ [] ?] ] eqn:Hctx.
+        TODO: 
+        cbn in *.
+        basic_goal_prep.
+        TODO: why false assumption?
+        basic_utils_crush.
+    Qed.
+         *)
+    Abort.
+
+    Theorem lang_model_wf
+      : model_of lang_model (map (uncurry (rule_to_uncompiled_rw succ sort_of supremum)) l).
+    Proof.
+
+      
+    Abort.
+
+    
     
     (*TODO: many of these relations can be functions. what's the best way to define them?*)
     Fixpoint open_term_in_egraph sub e ex :=

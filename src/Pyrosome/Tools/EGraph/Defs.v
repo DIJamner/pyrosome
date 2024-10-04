@@ -16,7 +16,7 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind FunctionalDB QueryOpt Monad ExtraMaps.
+From Utils Require Import Utils UnionFind EGraph.Defs EGraph.QueryOpt Monad ExtraMaps.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
@@ -116,8 +116,8 @@ Section WithVar.
   Context (supremum : list V -> V).
 
   (*TODO: move to queryopt*)
-  Arguments Build_uncompiled_rw_rule {idx symbol}%type_scope
-    (uc_query_vars uc_query_clauses uc_write_clauses uc_write_unifications)%list_scope.
+  Arguments Build_log_rule {idx symbol}%type_scope
+    (query_vars query_clauses write_clauses write_unifications)%list_scope.
 
   Definition query_fvs (l : list atom) : list V :=
     dedup (eqb (A:=_)) (flat_map (fun '(Build_atom _ l o) => o::l) l).
@@ -184,7 +184,7 @@ Section WithVar.
 
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
    *)
-  Definition rule_to_uncompiled_rw n (r : rule) : uncompiled_rw_rule V V :=
+  Definition rule_to_uncompiled_rw n (r : rule) : log_rule V V :=
     match r with
     | sort_rule c args =>
         let '(query_clauses,(tt,next_var)) :=
@@ -194,7 +194,7 @@ Section WithVar.
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
+        Build_log_rule (query_fvs query_clauses) query_clauses write_clauses []
     | term_rule c args t => 
         let '(query_clauses,(tt,next_var)) :=
           ctx_to_clauses c (succ (supremum (map fst c))) in
@@ -206,7 +206,7 @@ Section WithVar.
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule (query_fvs query_clauses) query_clauses write_clauses []
+        Build_log_rule (query_fvs query_clauses) query_clauses write_clauses []
     | sort_eq_rule c t1 t2 => 
         let '(ctx_clauses,(tt,next_var)) :=
           ctx_to_clauses c (succ (supremum (map fst c))) in
@@ -217,7 +217,7 @@ Section WithVar.
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule (query_fvs (t1_clauses++ctx_clauses))
+        Build_log_rule (query_fvs (t1_clauses++ctx_clauses))
           (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
     | term_eq_rule c e1 e2 t => 
         let '(ctx_clauses,(tt,next_var)) :=
@@ -235,7 +235,7 @@ Section WithVar.
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
-        Build_uncompiled_rw_rule (query_fvs (e1_clauses++ctx_clauses)) (e1_clauses++ctx_clauses)
+        Build_log_rule (query_fvs (e1_clauses++ctx_clauses)) (e1_clauses++ctx_clauses)
           ((Build_atom sort_of [v2] vt)::e2_clauses++t_clauses) [(v1,v2)]
     end.
 

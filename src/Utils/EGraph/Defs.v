@@ -95,7 +95,7 @@ Section WithMap.
     where clause info consists of the idx of the clause and a substitution.
     The substitution must be monotonic, i.e. if n < m then s(n) < s(m)
    *)
-  Record compiled_rw_rule :=
+  Record erule :=
     {
       query_vars : list idx;
       (* TODO: substitution could a named_list,
@@ -144,7 +144,7 @@ Section WithMap.
          Shared between queries
        *)
       query_clauses : symbol_map (idx_map (list idx * idx));
-      compiled_rules : list compiled_rw_rule;
+      compiled_rules : list erule;
     }.
 
   
@@ -341,10 +341,10 @@ Section WithMap.
       | None => (*should never happen*) default
       end.
   
-  Definition process_compiled_rw_rule'
+  Definition process_erule'
     (* each trie pair is (total, frontier) *)
     (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
-    (r : compiled_rw_rule) (frontier_n : idx) : ST unit :=
+    (r : erule) (frontier_n : idx) : ST unit :=
     let tries : ne_list _ := ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
                                r.(query_clause_ptrs) in
     let assignments : list _ := (intersection_keys tries) in
@@ -357,9 +357,9 @@ Section WithMap.
     | S n => idx_succ (idx_of_nat n)
     end.
   
-  Definition process_compiled_rw_rule db_tries r : ST unit :=
+  Definition process_erule db_tries r : ST unit :=
     (* TODO: don't construct the list of nats/idxs, just iterate directly *)
-    list_Miter (fun n => process_compiled_rw_rule' db_tries r (idx_of_nat n))
+    list_Miter (fun n => process_erule' db_tries r (idx_of_nat n))
       (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
 
   (* TODO: return the new epoch?  *)
@@ -460,7 +460,7 @@ Section WithMap.
            TODO: check for off-by-one errors
        *)
       let _ <- increment_epoch in
-      let _ <- list_Miter (process_compiled_rw_rule tries) rs.(compiled_rules) in
+      let _ <- list_Miter (process_erule tries) rs.(compiled_rules) in
       (* TODO: compute an adequate upper bound for fuel *)
       (rebuild 1000).
 
