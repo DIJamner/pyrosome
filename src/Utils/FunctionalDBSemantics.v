@@ -102,181 +102,6 @@ Section WithMap.
       a.(atom_fn)
       (map (fun x => named_list_lookup x sub x) a.(atom_args))
       (named_list_lookup a.(atom_ret) sub a.(atom_ret)).
-  
-  Definition lift_idx_eq (ieq:idx -> idx -> Prop) (a b : atom) : Prop :=
-    a.(atom_fn) = b.(atom_fn)
-    /\ Forall2 ieq a.(atom_args) b.(atom_args)
-    /\ ieq a.(atom_ret) b.(atom_ret).
-
-  Definition reflexively {A} (R : relation A) : A -> Prop :=
-    fun a => R a a.
-
-
-  Definition idx_closure (R_idx : relation idx) : relation atom -> relation atom :=
-    union_closure (lift_idx_eq R_idx).
-
-  Record eqlog_data : Type :=
-    {
-      R_idx : relation idx;
-      P_atom : atom -> Prop;
-    }.
-
-  Definition R_atom d a b := lift_idx_eq d.(R_idx) a b /\ d.(P_atom) a.                  
-
-  Record eqlog_data_wf (d : eqlog_data) : Prop :=
-    {
-      (* TODO Equivalence or PER? an equiv prob. wouldn't hurt, R_atom is still a PER*)
-      R_idx_equiv : Equivalence d.(R_idx);
-      P_atom_respects_R_idx : forall a b, R_atom d a b -> d.(P_atom) b;
-    }.
-
-  
-  
-  Definition functional_dependence (P : atom -> Prop) : relation idx :=
-    fun x y => exists f args, P (Build_atom f args x) /\ P (Build_atom f args y).
-  
-  Local Definition ifc R (P : atom -> Prop) :=
-    transitive_closure (fun x y => R x y \/ functional_dependence P x y).
-  
-  Section __.
-    Context (P : atom -> Prop)
-      (R : relation idx).
-    
-    Inductive atom_functional_closure : atom -> Prop :=
-    | atom_base a : P a -> atom_functional_closure a
-    | atom_idx_closure a b
-      : atom_functional_closure a ->
-        lift_idx_eq (ifc R atom_functional_closure) a b ->
-        atom_functional_closure b.
-
-    (* TODO: prove it's an equivalence relation *)
-    Definition idx_functional_closure : relation idx :=
-      ifc R atom_functional_closure.
-
-  End __.
-
-  (* Assumes rule wf, d wf, & fresh assignment wf wrt rule *)
-  Definition interp_rule_step
-    (r : uncompiled_rw_rule idx symbol) (d : eqlog_data)
-    (fresh_assignment : named_list idx idx)
-    : eqlog_data :=
-    let new_atoms query_assignment :=
-      map (atom_subst (fresh_assignment ++ query_assignment)) r.(uc_write_clauses _ _)
-    in
-    let new_unions query_assignment :=
-      let sub := fresh_assignment ++ query_assignment in
-      map (fun '(x,y) => (named_list_lookup x sub x, named_list_lookup y sub y))
-        r.(uc_write_unifications _ _)
-    in
-    let assignment_valid a :=
-      map fst a = r.(uc_query_vars _ _)
-      /\ all d.(P_atom) (map (atom_subst a) r.(uc_query_clauses _ _)) in
-    let P' x := d.(P_atom) x \/ exists qa, assignment_valid qa /\ In x (new_atoms qa) in
-    let R' x y := d.(R_idx) x y
-                  \/ exists qa, assignment_valid qa
-                                /\ (In (x,y) (new_unions qa)
-                                    \/ In (y,x) (new_unions qa))
-    in
-    {|
-      R_idx := idx_functional_closure P' R';
-      P_atom := atom_functional_closure P' R';
-    |}.
-
-  Definition idx_fresh_in_atoms (P : atom -> Prop) x : Prop :=
-    forall a, P a -> ~ In x (a.(atom_ret)::a.(atom_args)).
-  
-  Definition fresh_assignment_valid
-    (fa : named_list idx idx)
-    (r :uncompiled_rw_rule idx symbol)
-    (S : eqlog_data) : Prop :=
-    all_fresh fa
-    /\ incl (map atom_ret r.(uc_write_clauses _ _)) (map fst fa ++ r.(uc_query_vars _ _))
-    /\ all (idx_fresh_in_atoms S.(P_atom)) (map snd fa).
-  
-  (* Note: this applies the rules in order, whereas the egraph applies them in parallel.
-     There is no difference in the limit though.
-   *)
-  Inductive interp_eqlog (l : list (uncompiled_rw_rule idx symbol)) (S0 : eqlog_data) : eqlog_data -> Prop :=
-  | interp_eqlog_base : interp_eqlog l S0 S0
-  | interp_eqlog_step S1 r fa
-    : interp_eqlog l S0 S1 ->
-      In r l ->
-      fresh_assignment_valid fa r S1 ->
-      interp_eqlog l S0 (interp_rule_step r S1 fa).
-
-  Lemma functional_dependence_sym P
-    : Symmetric (functional_dependence P).
-  Proof.
-    unfold functional_dependence.
-    intros x y H;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-    
-  Lemma idx_functional_closure_equiv P R
-    : Reflexive R -> Symmetric R -> Equivalence (idx_functional_closure P R).
-  Proof.
-    unfold idx_functional_closure, ifc.
-    constructor.
-    1:eapply transitive_closure_refl; eauto.
-    {
-      eapply transitive_closure_sym; eauto.
-      intros x y H';
-        destruct H'; [ left | right]; eauto.
-      apply functional_dependence_sym.
-      eauto.
-    }
-    {
-      eapply transitive_closure_trans.
-    }
-  Qed.
-
-  Lemma interp_rule_step_inflationary r S fa x
-    : S.(P_atom) x -> (interp_rule_step r S fa).(P_atom) x.
-  Proof.
-    destruct S; cbn.
-    intros; eapply atom_base.
-    intuition eauto.
-  Qed.
-  
-  Lemma interp_rule_step_wf r S fa
-    : eqlog_data_wf S -> eqlog_data_wf (interp_rule_step r S fa).
-  Proof.
-      destruct 1;
-      constructor.
-    {
-      destruct R_idx_equiv0.
-      apply idx_functional_closure_equiv.
-      all: unfold Reflexive,  Symmetric; basic_goal_prep; intuition eauto.
-      basic_goal_prep; intuition eauto.
-    }
-    {
-      intros.
-      unfold R_atom in *; break.
-      unfold interp_rule_step in *.
-      cbn in*.
-(*      intros; eapply interp_rule_step_inflationary.
-      unfold R_atom in *; break.
-      induction H0; intuition eauto.
-      
-      
-      eapply P_atom_respects_R_idx0.
-      intros; break.
-      revert b H.
-      induction H0; intuition eauto.
-      {
-        TODO: looks false!.
-        ridx is smaller on output than input
-        cbn in H.
-        pose proof (fun b H => P_atom_respects_R_idx0 a b (conj H H0)).
-        TODO: base case; use inflationary principle
-        eapply P_atom_respects_R_idx0 in H0.
-      basic_goal_prep.
-        , lift_idx_eq, interp_rule_step  in *;
-        basic_goal_prep; intuition eauto.
-      induction H0
-  Qed. *)
-  Abort.
 
 
 (* Alternate approach: consider the initial model of the theory.
@@ -297,11 +122,16 @@ Section WithMap.
       interpretation : symbol -> list domain -> option domain;
     }.
 
-  (*TODO: implement*)
-  Axiom assignment_satisfies
-    : forall m, named_list idx m.(domain) -> list atom -> Prop.
+  Definition eval_atom m (assignment : named_list idx m.(domain)) f args : option m.(domain) :=
+    @!let args' <- list_Mmap (named_list_lookup_err assignment) args in
+      (m.(interpretation) f args').
+      
+  Definition assignment_satisfies m
+    (assignment : named_list idx m.(domain)) : list atom -> Prop :=
+    all (fun a => (eval_atom m assignment a.(atom_fn) a.(atom_args)) <$>
+                    (fun r => (named_list_lookup_err assignment a.(atom_ret)) <$>
+                    (m.(domain_eq) r))).
 
-  Axiom TODO_domain : forall {m}, m.(domain).
   (* TODO: handle domain being possibly empty.
      (assignment lookup default)
    *)
@@ -317,17 +147,18 @@ Section WithMap.
         forall assignment,
           assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
           forall x y, In (x,y) r.(uc_write_unifications _ _) ->
-                      m.(domain_eq) (named_list_lookup TODO_domain assignment x)
-                          (named_list_lookup TODO_domain assignment y);
+                      (named_list_lookup_err assignment x) <$>
+                      (fun x' => (named_list_lookup_err assignment y) <$>
+                      (m.(domain_eq) x'));
       write_clauses_sound
       : forall r,
         In r rw ->
         forall assignment,
           assignment_satisfies m assignment r.(uc_query_clauses _ _) ->
           forall a, In a r.(uc_write_clauses _ _) ->
-                    m.(interpretation) a.(atom_fn)
-                      (map (named_list_lookup TODO_domain assignment) a.(atom_args))
-                    = named_list_lookup_err assignment a.(atom_ret)
+                    (list_Mmap (named_list_lookup_err assignment) a.(atom_args)) <$>
+                      (fun args => m.(interpretation) a.(atom_fn) args                      
+                                   = named_list_lookup_err assignment a.(atom_ret))
     }.
 
   (*
@@ -446,3 +277,8 @@ End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
   pat i.
+
+Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
+
+Arguments assignment_satisfies {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
+  m assignment%list_scope _%list_scope.

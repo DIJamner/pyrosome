@@ -10,7 +10,6 @@ Require Import Tries.Canonical.
 
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind (*SpacedMapTreeN*).
 From Utils Require TrieMap TrieMapInt63.
-(*From Pyrosome.Theory Require Import Core.*)
 Import Sets.
 Import StateMonad.
 
