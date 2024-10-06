@@ -44,7 +44,13 @@ Section WithMap.
   
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
 
-  (*TODO: move to semantics?*)
+  (*TODO: move to semantics?
+    Semantic interpretation of variables:
+    - query_vars is a permutation of (fvs query_clauses)
+    - elements of query_vars are universally quantified
+    - elements of ((fvs write_clauses) - query_vars) are existentially quantified
+    - no new variables in write_unifications
+   *)
   Record log_rule : Type :=
   { query_vars : list idx;
     query_clauses : list atom;

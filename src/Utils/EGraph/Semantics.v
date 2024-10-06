@@ -25,63 +25,6 @@ Notation "x <$> P" :=
   (Is_Some_satisfying P x)
     (at level 56,left associativity).
 
-(*TODO: move somewhere *)
-Section TransitiveClosure.
-  Context {A} (R : A -> A -> Prop).
-  Inductive transitive_closure : A -> A -> Prop :=
-  | trans_base a b : R a b -> transitive_closure a b
-  | trans_step a b c : R a b -> transitive_closure b c -> transitive_closure a c.
-  Hint Constructors  transitive_closure : utils.
-  
-  Lemma transitive_closure_step_r a b c
-    : transitive_closure a b -> R b c -> transitive_closure a c.
-  Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  Hint Resolve transitive_closure_step_r : utils.
-    
-  Lemma transitive_closure_trans
-    : Transitive transitive_closure.
-  Proof.
-    intros a b c H1 H2.
-    revert H1.
-    induction H2;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  
-  Lemma transitive_closure_sym
-    : Symmetric R -> Symmetric transitive_closure.
-  Proof.
-    intros Hsym a b.
-    induction 1;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  Lemma transitive_closure_refl
-    : Reflexive R -> Reflexive transitive_closure.
-  Proof.
-    intros Hrefl a.
-    basic_goal_prep;
-      basic_utils_crush.
-  Qed.  
-  
-  Lemma transitive_closure_equiv
-    : Equivalence R -> Equivalence transitive_closure.
-  Proof.
-    destruct 1; constructor;
-      eauto using transitive_closure_trans,
-      transitive_closure_sym,
-      transitive_closure_refl.
-  Qed.
-
-End TransitiveClosure.
-#[export] Hint Constructors transitive_closure : utils.
-#[export] Hint Resolve transitive_closure_equiv : utils.
-
 Section WithMap.
   Context
     (idx : Type)
@@ -133,8 +76,13 @@ Section WithMap.
                     (fun r => (named_list_lookup_err assignment a.(atom_ret)) <$>
                     (m.(domain_eq) r))).
 
-  (* TODO: handle domain being possibly empty.
-     (assignment lookup default)
+  Definition assignment_unifies m
+    (assignment : named_list idx m.(domain)) : list (idx * idx) -> Prop :=
+    all (fun '(x,y) => named_list_lookup_err assignment x <$>
+                         (fun xv => named_list_lookup_err assignment y <$>
+                                      (m.(domain_eq) xv))).
+  
+  (* TODO: rewrite properties to be easier to read
    *)
   Record model_of
     (m : model)
@@ -142,50 +90,18 @@ Section WithMap.
     {
       (* TODO: does it need to be an equivalence? *)
       domain_eq_PER : PER m.(domain_eq);
-      unifications_sound
-      : forall r,
-        In r rw ->
-        forall assignment,
-          assignment_satisfies m assignment r.(query_clauses _ _) ->
-          forall x y, In (x,y) r.(write_unifications _ _) ->
-                      (named_list_lookup_err assignment x) <$>
-                      (fun x' => (named_list_lookup_err assignment y) <$>
-                      (m.(domain_eq) x'));
-      write_clauses_sound
-      : forall r,
-        In r rw ->
-        forall assignment,
-          assignment_satisfies m assignment r.(query_clauses _ _) ->
-          forall a, In a r.(write_clauses _ _) ->
-                    (list_Mmap (named_list_lookup_err assignment) a.(atom_args)) <$>
-                      (fun args => m.(interpretation) a.(atom_fn) args                      
-                                   = named_list_lookup_err assignment a.(atom_ret))
+      rules_sound : all (fun r =>
+                           forall query_assignment,
+                             map fst query_assignment = r.(query_vars _ _) ->
+                             assignment_satisfies m query_assignment r.(query_clauses _ _) ->
+                             exists out_assignment,
+                               (* query assignment first eliminates the need for an all_fresh condition*)
+                               assignment_satisfies m (query_assignment ++ out_assignment)
+                                 r.(write_clauses _ _)
+                               /\ assignment_unifies m (query_assignment ++ out_assignment)
+                                 r.(write_unifications _ _))
+                      rw
     }.
-
-  (*
-  Record model_morphism (m1 m2 : model) : Type :=
-    {
-      domain_morphism : m1.(domain) -> m2.(domain);
-      domain_eq_morphism
-      : forall x y, m1.(domain_eq) x y -m2.(domain_eq) (domain_morphism x) (domain_morphism y);
-      interpretation_morphism
-      : forall f s, option_map domain_morphism (m1.(interpretation) f s)
-                    = m2.(interpretation) f (map domain_morphism s);      
-    }.
-
-  Record initial_model rw m :=
-    {
-      initial_model_wf : model_of m rw;
-      is_initial : forall m', model_of m' rw -> model_morphism m m';
-    }.
-
-  *)
-(*
-  Sketch:
-  1. egraph soundly underapproximates the rules
-  2. rules hold in all models
-  3. terms are a model
- *)
 
   
   Context (symbol_map : forall A, map.map symbol A)
@@ -282,4 +198,6 @@ Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%f
 Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
 
 Arguments assignment_satisfies {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
+  m assignment%list_scope _%list_scope.
+Arguments assignment_unifies {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
   m assignment%list_scope _%list_scope.

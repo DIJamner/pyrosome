@@ -184,7 +184,7 @@ Section WithVar.
 
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
    *)
-  Definition rule_to_uncompiled_rw n (r : rule) : log_rule V V :=
+  Definition rule_to_log_rule n (r : rule) : log_rule V V :=
     match r with
     | sort_rule c args =>
         let '(query_clauses,(tt,next_var)) :=
@@ -250,7 +250,7 @@ Section WithVar.
      Often, that will be exactly the equational rules.
    *)
   Definition rw_set_from_lang (l : lang) : rw_set :=
-    build_rw_set succ _ _ (map (uncurry rule_to_uncompiled_rw) l).
+    build_rw_set succ _ _ (map (uncurry rule_to_log_rule) l).
 
   Local Notation hash_node := (hash_node succ).
 

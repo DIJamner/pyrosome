@@ -69,56 +69,155 @@ Section WithVar.
       | _, _ => False
       end.
 
-    (* TODO: find this*)
-    Context (sort_of_term : lang -> term -> sort).
-    Definition interp_sort_of (args : list (term + sort))
-      : option (term + sort) :=
-      match args with
-      | [inl t] => Some (inr (sort_of_term l t))
-      | _ => None
-      end.
+    (* Note: can prove via lemma (should exist somewhere) that if
+       a term is wf under some sort, it has this sort *)
+    Definition interp_sort_of args
+        : option term :=
+        @!let [e] <?- Some args in
+          let (con f s) <?- Some e in
+          let (term_rule c args t) <?- named_list_lookup_err l f in
+          let (scon tf ts) := t in
+          ret (con tf ts[/with_names_from c s/]).
 
-    Definition left_opt {A B} (x: A + B) :=
-      match x with inl x => Some x | _ => None end.
-
-    Definition all_left {A B} (l : list (A+B)) :=
-      list_Mmap left_opt l.
-
-    (*TODO: write*)
+    (*TODO: write?
     Context (is_sort is_term : V -> bool).
-      
+     *)
+
+    (* since sorts and terms are all jumbled in the domain,
+       construct a subsuming judgment.
+     *)
+    Inductive lang_model_eq : term -> term -> Prop :=
+    | lm_eq_terms e1 e2 t : eq_term l [] t e1 e2 -> lang_model_eq e1 e2
+    | lm_eq_sorts e1 e2
+      : match e1, e2 with
+        | con f1 s1, con f2 s2 => eq_sort l [] (scon f1 s1) (scon f2 s2)
+        | _,_ => False
+        end ->
+        lang_model_eq e1 e2.
+
+    (* The reflexive case of _eq *)
+    Inductive lang_model_wf : term -> Prop :=
+    | lm_wf_term e t : wf_term l [] e t -> lang_model_wf e
+    | lm_wf_sort e
+      : match e with
+        | con f s => wf_sort l [] (scon f s)
+        | _ => False
+        end ->
+        lang_model_wf e.
+
+    Context (wfl : wf_lang l).
+
+    (* TODO: this is sufficient to t/c, but want to relate e and t.
+       Worth proving separately or no?
+     *)
+    Lemma interp_sort_of_wf e t
+      : lang_model_wf e ->
+        interp_sort_of [e] = Some t -> lang_model_wf t.
+    Proof.
+      cbn.
+      cbv[default option_default].
+      repeat (case_match; cbn; try congruence).
+      subst.
+      apply named_list_lookup_err_in in HeqH0.
+      basic_goal_prep;
+        basic_utils_crush.
+      apply lm_wf_sort;
+        basic_goal_prep;
+        basic_utils_crush.
+      inversion H; subst.
+      {
+        change (scon v0 l2 [/with_names_from n l0 /])
+          with (scon v0 l2) [/with_names_from n l0 /].
+        revert HeqH0.
+        generalize (scon v0 l2).
+        clear v0 l2.
+        intros.
+        use_rule_in_wf.
+        eapply wf_sort_subst_monotonicity; eauto.
+        1:basic_core_crush.
+        1:basic_core_crush.
+        eapply wf_subst_from_wf_args; eauto.
+        autorewrite with lang_core utils in *.
+        break.
+        remember (con v l0) as e.
+        revert Heqe.
+        revert H0 HeqH0.
+        induction 1;
+          basic_goal_prep;
+          basic_core_crush.
+        eapply in_all_fresh_same in H0; eauto;
+          basic_core_crush.
+      }
+      {
+        safe_invert H0. 
+        eapply in_all_fresh_same in HeqH0; eauto;
+          basic_core_crush.
+      }
+    Qed.
+
+    (*
+    (*TODO: clean up*)
+    Definition interp_sort_of (x : list {x | lang_model_wf x}) : option {x | lang_model_wf x}.
+      refine (match x with [e] => _ | _ => None end).
+      pose proof (fun t => interp_sort_of'_wf _ t (proj2_sig e)).
+      revert H.
+      refine(
+      match interp_sort_of' (proj1_sig e) with
+      | Some x => fun H => Some (exist _ _ _)
+      | None => fun _ => None
+      end).
+      eapply H.
+      reflexivity.
+    Defined.
+    *)
+    
+    (* TODO: how to handle the invariant that all contents are wf?
+       want sort_of to be meaningful.
+       Need a predicate that applies to all elts. Just use refinement type?
+     *)
     Definition lang_model : model V :=
       {|
-        domain := term + sort;
-        domain_eq := eq_sum (fun x y => exists t, eq_term l [] t x y)
-                       (eq_sort l []);
+        domain := term;
+        (*TODO: necessary? domain_elt : domain -> Prop
+          arg. for: want egraph belonging to imply wfness?
+          arg against: equation by domain_eq implies this, so unnecessary
+         *)
+        domain_eq := lang_model_eq;
         interpretation f args :=
+          (* TODO: need lemma that sort_of case wf*)
           if eqb f sort_of then interp_sort_of args
-          else if is_sort f then Mbind (fun x => Some (inr (scon f x)))
-                                   (all_left args)
-               else if is_term f then Mbind (fun x => Some (inl (con f x)))
-                                        (all_left args)
-                    else None;
+          else Some (con f args)
       |}.
 
-    Context (supremum : list V -> V).
+    Definition sort_of_term e :=
+      match e with
+      | con f s => scon f s
+      | _ => (*shouldn't happen*) default
+      end.
     
-    (* TODO: move to FnDb semantics *)
-    Definition rule_sound r m :=
-      forall assignment : NamedList.named_list V (domain V m),
-        assignment_satisfies m assignment
-          (query_clauses V V r) ->
-        (forall x y,
-            In (x, y) (write_unifications V V r) ->
-            named_list_lookup_err assignment x <$>
-              (fun x' : domain V m =>
-                 named_list_lookup_err assignment y <$> domain_eq V m x'))
-        /\ (forall a : Defs.atom V V,
-               In a (write_clauses V V r) ->
-               list_Mmap (named_list_lookup_err assignment) (atom_args a) <$>
-                 (fun args : list (domain V m) =>
-                    interpretation V m (atom_fn a) args =
-                      named_list_lookup_err assignment (atom_ret a))).
+    Lemma lang_model_sort_of_sound e t
+      : wf_term l [] e t ->
+        forall t',
+        interp_sort_of [e] = Some t' ->
+        wf_term l [] e (sort_of_term t').
+    Proof.
+      induction 1;
+          basic_goal_prep;
+          basic_core_crush.
+      unfold interp_sort_of in *; cbn in *.
+      pose proof H as Hin.
+      eapply all_fresh_named_list_lookup_err_in in H; eauto;
+        [|basic_core_crush].
+      rewrite <- H in H1.
+      destruct t.
+      basic_utils_crush.
+      unfold sort_of_term; cbn.
+      change (scon v l0 [/with_names_from c' s /])
+        with (scon v l0) [/with_names_from c' s /].
+      eapply wf_term_by; eauto.
+    Qed.
+
+    Context (supremum : list V -> V).
 
     Context (le_V : V -> V -> Prop)
       (le_V_refl : forall x, le_V x x)
@@ -152,8 +251,7 @@ Section WithVar.
         revert H; induction l0;   
         basic_goal_prep;
           unfold Basics.compose in *;
-        basic_goal_prep;
-          basic_utils_crush.
+        basic_goal_prep.
         {
           cbv in H0;
             rewrite !pair_equal_spec in H0.
@@ -163,16 +261,17 @@ Section WithVar.
           destruct (term_pat_to_clauses succ a next_var) eqn:Hpat.
           unfold uncurry in *.
           basic_goal_prep.
-          specialize (H4 v0).
           destruct (list_Mmap (term_pat_to_clauses succ) l0 v0) eqn:Hlist.
           basic_goal_prep.
           cbv [writer] in H0;
             rewrite !pair_equal_spec in H0.
           basic_goal_prep.
           subst.
-          epose proof (H4 _ _ _ eq_refl) as Hle.
           eapply H in Hpat.
-          eauto.
+          eapply IHl0 with (next_var:=v0) in H1.
+          all: cbn; eauto.
+          rewrite Hlist.
+          cbn; eauto.
         }
       }
     Qed.
@@ -184,23 +283,53 @@ Section WithVar.
          matches assignment l1 ->
          let s := (combine (fvs e) (map (lookup assignment) (fvs e))) in
          lookup assignment x = Some e [/s/].
-*)
+     *)
     
-    Lemma rule_model_sound n r
+    Lemma rule_model_sound n r query_assignment
       : In (n,r) l ->
-        rule_sound (rule_to_uncompiled_rw succ sort_of supremum n r) lang_model.
+        let r' := (rule_to_log_rule succ sort_of supremum n r) in
+        map fst query_assignment = r'.(query_vars _ _) ->
+        assignment_satisfies lang_model query_assignment r'.(query_clauses _ _) ->
+        exists out_assignment,
+          assignment_satisfies lang_model (query_assignment ++ out_assignment)
+            r'.(write_clauses _ _)
+          /\ assignment_unifies lang_model (query_assignment ++ out_assignment)
+               r'.(write_unifications _ _).
     Proof.
-      unfold rule_sound, assignment_satisfies.
+      intros.
+      subst r'.
       destruct r;
         basic_goal_prep.
-      all:intuition eauto.
       all: repeat lazymatch goal with
              H : context [let '(_,_) := ?e in _ ] |- _ =>
                let Htuple := fresh "Htuple" in
                destruct e as [? [ [] ? ] ] eqn:Htuple
-           end.
-      all: repeat (cbn in *; intuition subst).
+             end.
+      all: basic_goal_prep.
       {
+        remember (list_Mmap (named_list_lookup_err (query_assignment)) (map fst n0)) as ml.
+        destruct ml;[|admit (*contradiction *)].
+        eexists [(v,con n l2)]; cbn; intuition eauto.
+        (* TODO: ctx lemma to imply wf args at right types*)
+        case_match; cbn.
+        2: admit (*easy*).
+        replace l3 with l2 by admit (*TODO: easy*).
+        eqb_case n sort_of.
+        1:admit (*contradiction*).
+        cbn.
+        assert (~In v (query_fvs l1)) by admit (*holds b/c v is fresh after ctx_to_clauses*).        
+        lazymatch goal with
+          |- named_list_lookup_err (?query_assignment ++ ?out) ?v <$> ?RHS =>
+            replace (named_list_lookup_err (query_assignment ++ out) v)
+            with (named_list_lookup_err out v) by admit (*TODO: easy*)
+        end.
+        cbn.
+        autorewrite with utils bool.
+        cbn.
+        eapply lm_eq_sorts.
+        eapply eq_sort_refl.
+        econstructor; eauto.
+      (*}*)
         (*
         Lemma ctx_to_clauses_var
           : next_var > all map fst c ->
@@ -258,8 +387,8 @@ Section WithVar.
          *)
     Abort.
 
-    Theorem lang_model_wf
-      : model_of lang_model (map (uncurry (rule_to_uncompiled_rw succ sort_of supremum)) l).
+    Theorem lang_model_of
+      : model_of lang_model (map (uncurry (rule_to_log_rule succ sort_of supremum)) l).
     Proof.
 
       
@@ -442,9 +571,6 @@ Section WithVar.
     
     Context (Hwf : egraph_wf).
      *)
-
-
-    Context (wfl : wf_lang l).
 
     (*equivalent to the longer one below*)
     Theorem egraph_sound_eq
