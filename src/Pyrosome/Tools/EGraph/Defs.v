@@ -19,7 +19,10 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Utils UnionFind EGraph.Defs EGraph.QueryOpt Monad ExtraMaps.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
+
+
 
 Section WithVar.
   Context (V : Type)
@@ -46,6 +49,20 @@ Section WithVar.
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
+  
+  (*TODO: a bit of an abuse of the code*)
+  Definition var_to_con (t : term) :=
+    ClosedTerm.open_term []
+      (ClosedTerm.close_term t).
+
+  Definition sort_var_to_con (t : sort) :=
+    ClosedTerm.open_sort []
+      (ClosedTerm.close_sort t).
+
+  (* TODO: move to closedterm?
+   *)
+  Definition ctx_to_rules : ctx -> lang :=
+    named_map (term_rule [] []).  
   
   Context 
       (V_map : forall A, map.map V A)
@@ -80,40 +97,63 @@ Section WithVar.
   Definition write {A} a : writer A unit :=
     ([a],tt).
 
+  
+  Context (supremum : list V -> V).
+  
   (* Open terms are for patterns only.
      To run an egraph on terms with variables,
      first map variables to constructors.
    *)
-  Fixpoint term_pat_to_clauses (e : Term.term V)
-    : stateT V (writer atom) V :=
-    match e with
-    | var x => Mret x (*assumes gensym doesn't hit pattern vars*)
-    | Term.con n s =>
-        @! let s' <- list_Mmap term_pat_to_clauses s in
-          let ax <- gensym in
-          let tt <- lift (write (Build_atom n s' ax)) in
-          (* TODO: sort_of atoms *)
-          ret ax
-    end.
+  Section WithLang.
+    
+    Context (l : lang).
+    
+    Section __.
+      Context (sort_pat_to_clauses : Term.sort V -> stateT V (writer atom) V).
+      
+      Fixpoint term_pat_to_clauses' (e : Term.term V)
+        : stateT V (writer atom) V :=
+        match e with
+        | var x => Mret x (*assumes gensym doesn't hit pattern vars*)
+        | Term.con n s =>
+          match named_list_lookup_err l n with
+          | Some (term_rule c args t) =>
+              @! let s' <- list_Mmap term_pat_to_clauses' s in
+                let ax <- gensym in
+                let tt <- lift (write (Build_atom n s' ax)) in
+                (*TODO: this produces a lot of duplication.
+                  Optimization is important.
+                 *)
+                let tx <- sort_pat_to_clauses t[/with_names_from c s/] in
+                let tt <- lift (write (Build_atom sort_of [ax] tx)) in
+                (* TODO: sort_of atoms *)
+                ret ax
+          | _ => Mret default (*shouldn't happen*)
+          end
+        end.
+    End __.
 
-  Definition sort_pat_to_clauses (e : Term.sort V)
-    : stateT V (writer atom) V :=
-    match e with
-    | scon n s =>
-        @! let s' <- list_Mmap term_pat_to_clauses s in
-          let ax <- gensym in
-          let tt <- lift (write (Build_atom n s' ax)) in
-          (* TODO: sort_of atoms *)
-          ret ax
-    end.
+    Fixpoint sort_pat_to_clauses' fuel (e : Term.sort V)
+      : stateT V (writer atom) V :=
+      match fuel, e with
+      | 0, _ => Mret default (*shouldn't happen *)
+      | S fuel, scon n s =>
+          @! let s' <- list_Mmap (term_pat_to_clauses' (sort_pat_to_clauses' fuel)) s in
+            let ax <- gensym in
+            let tt <- lift (write (Build_atom n s' ax)) in
+            (* TODO: sort_of atoms *)
+            ret ax
+      end.
+
+    Definition sort_pat_to_clauses := sort_pat_to_clauses' (length l).
+    Definition term_pat_to_clauses := term_pat_to_clauses' sort_pat_to_clauses.
 
   Definition ctx_to_clauses : Term.ctx V -> stateT V (writer atom) unit :=
     list_Miter
       (fun '(x,t) =>
          @! let t_v <- sort_pat_to_clauses t in
            (lift (write (Build_atom sort_of [x] t_v)))).
-
-  Context (supremum : list V -> V).
+ 
 
   (*TODO: move to queryopt*)
   Arguments Build_log_rule {idx symbol}%type_scope
@@ -239,6 +279,7 @@ Section WithVar.
           ((Build_atom sort_of [v2] vt)::e2_clauses++t_clauses) [(v1,v2)]
     end.
 
+  End WithLang.
   
   Notation rw_set := (rw_set V V V_map V_map).
   
@@ -248,9 +289,11 @@ Section WithVar.
   
   (* Note: only pass in the subset of the language you want to run.
      Often, that will be exactly the equational rules.
+
+     Assumes incl l l'
    *)
-  Definition rw_set_from_lang (l : lang) : rw_set :=
-    build_rw_set succ _ _ (map (uncurry rule_to_log_rule) l).
+  Definition rw_set_from_lang (l l': lang) : rw_set :=
+    build_rw_set succ _ _ (map (uncurry (rule_to_log_rule l')) l).
 
   Local Notation hash_node := (hash_node succ).
 
@@ -610,7 +653,6 @@ End WithVar.
 Require Import NArith Tries.Canonical.
 From Utils Require Import TrieMap SpacedMapTreeN.
 From Pyrosome.Tools Require Import PosRenaming.
-From Pyrosome.Theory Require ClosedTerm.
 Module PositiveInstantiation.
   
 
@@ -750,21 +792,8 @@ Module PositiveInstantiation.
   Definition filter_eqn_rules {V} : lang V -> lang V :=
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
-  Definition build_rw_set : lang positive -> rw_set positive positive trie_map trie_map :=
-    rw_set_from_lang ptree_map_plus Pos.succ xH (fold_right Pos.max xH).
-
-  (*TODO: a bit of an abuse of the code*)
-  Definition var_to_con {V} `{Eqb V} (t : Term.term V) :=
-    ClosedTerm.open_term []
-      (ClosedTerm.close_term t).
-  
-  Definition sort_var_to_con {V} `{Eqb V} (t : Term.sort V) :=
-    ClosedTerm.open_sort []
-      (ClosedTerm.close_sort t).
-
-  (* TODO: move to closedterm?*)
-  Definition ctx_to_rules {V} : ctx V -> lang V :=
-    named_map (fun t => term_rule [] [] t).
+  Definition build_rw_set : lang positive -> lang positive -> rw_set positive positive trie_map trie_map :=
+    rw_set_from_lang ptree_map_plus Pos.succ sort_of (fold_right Pos.max xH).
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
@@ -777,10 +806,164 @@ Module PositiveInstantiation.
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
-        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l')) n e1' e2' t')
+        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l') l') n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
   
 End PositiveInstantiation.
 
+Require Ascii.
+Module StringInstantiation.
+
+  Import Ascii.
+  Import Strings.String.
+
+  Fixpoint blist_succ (l : list bool) : list bool :=
+    match l with
+    | [] => [true]
+    | x::l' =>
+        if x then false::(blist_succ l')
+        else true::l'
+    end.
+
+  Definition ascii_of_bit_list l :=
+    match l with
+    | [x; x0; x1; x2; x3; x4; x5; x6] =>
+        Ascii.Ascii x x0 x1 x2 x3 x4 x5 x6
+    | _ => Ascii.zero
+    end.
+  
+  (* None denotes a carry *)
+  Definition ascii_succ a : Ascii.ascii :=
+    Eval vm_compute in
+      match a with
+      | Ascii.Ascii x x0 x1 x2 x3 x4 x5 x6 =>
+          (*Note: will roll over at 255*)
+          ascii_of_bit_list (blist_succ [x; x0; x1; x2; x3; x4; x5; x6])
+      end.
+
+  Require Import Ascii.
+  
+  Goal ascii_succ "0"%char = "1"%char.
+  Proof. compute. reflexivity. Qed.
+  
+  (*TODO: could consider writing one that retains better legibility.
+    Sepcifically: only use printable characters
+   *)
+  Fixpoint string_succ s : string :=
+    match s with
+    | "" => "0"
+    | String a EmptyString =>
+        if andb (Ascii.ltb a "Z"%char) (Ascii.ltb "/"%char a)
+        then String (ascii_succ a) EmptyString
+        else  String a "0"
+    | String a s => String a (string_succ s)
+    end.
+
+  Goal string_succ "v8" = "v9".
+  Proof. compute. reflexivity. Qed.
+
+  
+  Goal string_succ "vZ" = "vZ0".
+  Proof. compute. reflexivity. Qed.
+  
+  Goal string_succ "v/" = "v/0".
+  Proof. compute. reflexivity. Qed.
+
+  
+  Definition sort_of := "@sort_of".
+
+  Fixpoint stp s : positive :=
+    match s with
+    | "" => xH
+    | String a s' =>
+        let p' := Zpower.shift_nat 8 (stp s') in
+        match Ascii.N_of_ascii a with
+        | N0 => p'
+        | Npos p => p + p'
+        end
+    end.
+
+  Fixpoint positive_to_bit_list p :=
+    match p with
+    | xH => []
+    | xO p' => false::(positive_to_bit_list p')
+    | xI p' => true::(positive_to_bit_list p')
+    end.
+
+  Fixpoint bit_list_to_string bl : string :=
+    match bl with
+    | [] => ""
+    | x:: x0:: x1:: x2:: x3:: x4:: x5:: x6:: bl' =>
+        String (Ascii.Ascii x x0 x1 x2 x3 x4 x5 x6) (bit_list_to_string bl')
+    (*TODO: wrong, but won't come up *)
+    | _ => "VERY_WRONG"
+    end.
+  
+  Definition pts p : string :=
+    bit_list_to_string (positive_to_bit_list p).
+
+  Goal pts (stp "Foo123#") = "Foo123#".
+  Proof. reflexivity. Abort.
+  
+  (*could be able to be much faster, this is just the quick version*)
+  Definition string_trie_map value :=
+    {|
+      map.rep := PTree.t value;
+      map.get m k := PTree.get (stp k) m;
+      map.empty := PTree.empty value;
+      map.put m k v := PTree.set (stp k) v m;
+      map.remove m k := PTree.remove (stp k) m;
+      map.fold A f a m :=
+        let f' a p v := f a (pts p) v in
+        @trie_fold value A f' a m;
+    |}.
+
+  
+  (*TODO: temporary? *)
+  #[export] Instance string_list_trie_map A : map.map (list string) A :=
+    {
+      rep := PositiveInstantiation.pos_trie;
+      get m k := PositiveInstantiation.pt_get m (map stp k);
+      empty := PositiveInstantiation.pos_trie_empty;
+      put m k v:= PositiveInstantiation.pt_put m (map stp k) v;
+      remove m k := PositiveInstantiation.pt_remove m (map stp k);
+      fold _ f acc pt :=
+        let f' a p v := f a (map pts p) v in
+        PositiveInstantiation.pt_fold' f' acc pt [];
+    }.
+
+  #[export] Instance string_ptree_map_plus : map_plus string_trie_map :=
+    {|
+      map_intersect A B C f (m1 : string_trie_map A) m2 :=
+        @TrieMap.intersect A B C f m1 m2;
+      ExtraMaps.map_fold_values := @map_fold_values;
+      map_map :=
+        fun (A B : Type) (f : A -> B) =>
+          PTree.map_filter (fun x : A => Some (f x))
+    |}.
+  
+  Definition egraph_equal
+    : lang string -> rw_set string string string_trie_map string_trie_map ->
+      nat -> _ -> Term.term string -> Term.term string -> Term.sort string ->
+      _ :=
+    fun l rw n c e1 e2 t =>
+    let l' := ctx_to_rules c ++ l in
+    egraph_equal string_ptree_map_plus (@string_list_trie_map) string_succ sort_of
+      (@PositiveInstantiation.pt_spaced_intersect) l' rw n
+  (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
+
+  Definition string_max (s1 s2 : string) :=
+    match String.compare s1 s2 with
+    | Gt => s1
+    | _ => s2
+    end.
+  
+  Definition build_rw_set : lang string ->
+                            lang string ->
+                            rw_set string string string_trie_map string_trie_map :=
+    rw_set_from_lang string_ptree_map_plus string_succ sort_of
+      (fold_right string_max "x0").
+
+End StringInstantiation.

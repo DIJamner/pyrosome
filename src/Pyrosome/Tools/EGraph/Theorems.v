@@ -14,6 +14,62 @@ Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 
 
+(*TODO: move to Monad.v
+      TODO: generalize monad equiv?   
+ *)
+Lemma list_Mmap_ext A B M `{Monad M} (f g : A -> M B) lst
+  : (forall x, In x lst -> f x = g x) ->
+    list_Mmap f lst = list_Mmap g lst.
+Proof using.
+  intro Hfg.
+  enough (forall l', incl l' lst ->  list_Mmap f l' = list_Mmap g l')
+    by eauto using incl_refl.
+  induction l';
+    basic_goal_prep;
+    basic_utils_crush.
+  rewrite Hfg; eauto.
+  rewrite H0.
+  reflexivity.
+Qed.
+
+(*TODO: move to utils*)
+Lemma named_list_lookup_prefix {S A} `{Eqb S} (s s' : NamedList.named_list S A) x v
+  : named_list_lookup_err s x = Some v ->
+    named_list_lookup_err (s++s') x = Some v.
+Proof.
+  induction s; basic_goal_prep; [congruence|].
+  case_match;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+
+
+Lemma Mmap_lookup_self  {S A} `{Eqb_ok S} (x : NamedList.named_list S A)
+  : all_fresh x -> Some (map snd x) = list_Mmap (named_list_lookup_err x) (map fst x).
+Proof.
+  induction x; basic_goal_prep; basic_utils_crush.
+  rewrite list_Mmap_ext with (g:=(named_list_lookup_err x)).
+  {
+    rewrite <- H1.
+    reflexivity.
+  }
+  {
+    basic_goal_prep.
+    eqb_case x0 s;
+      basic_utils_crush.
+  }
+Qed.
+
+(*TODO: move to Utils *)
+Lemma combine_map_fst_snd S A (s : NamedList.named_list S A)
+  : combine (map fst s) (map snd s) = s.
+Proof.
+  induction s;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+#[local] Hint Rewrite combine_map_fst_snd : utils.
+
 Section WithVar.
   Context (V : Type)
     {V_Eqb : Eqb V}
@@ -218,7 +274,16 @@ Section WithVar.
     Qed.
 
     Context (supremum : list V -> V).
+    Context (V_to_nat : V -> nat)
+      (VtN_inj : FinFun.Injective V_to_nat)
+    (VtN_succ : forall x, V_to_nat (succ x) = Nat.succ (V_to_nat x)).
 
+    Definition le_V a b := V_to_nat a <= V_to_nat b.
+    Definition lt_V a b := V_to_nat a < V_to_nat b.
+
+    Context (supremum_le : forall l x, In x l -> le_V x (supremum l)).
+      
+    (*
     Context (le_V : V -> V -> Prop)
       (le_V_refl : forall x, le_V x x)
       (le_V_sym : forall x y z, le_V x y -> le_V y z -> le_V x z)
@@ -230,7 +295,9 @@ Section WithVar.
     Local Hint Resolve le_V_refl : utils.
 
     Definition lt_V x y := le_V (succ x) y.
+     *)
 
+    (*
     (*TODO: why isn't this hint working: pair_equal_spec:
     *)
     Lemma term_pat_to_clauses_var next_var e l1 x next_var'
@@ -275,6 +342,7 @@ Section WithVar.
         }
       }
     Qed.
+*)
 
     (*TODO
     Lemma term_pat_to_clauses_sound next_var
@@ -284,10 +352,93 @@ Section WithVar.
          let s := (combine (fvs e) (map (lookup assignment) (fvs e))) in
          lookup assignment x = Some e [/s/].
      *)
+
     
+   
+
+    (*TODO: move to core*)
+    Lemma wf_subst_fresh c s c'
+      : all_fresh c' -> wf_subst l c s c' -> all_fresh s.
+    Proof.
+      intros H H'; revert H;
+        induction H';
+        basic_goal_prep;
+        basic_utils_crush.
+      unfold fresh.
+      erewrite wf_subst_dom_eq; eauto.
+    Qed.
+    Hint Resolve wf_subst_fresh : lang_core.
+
+    (*TODO: move to core *)
+    Lemma wf_args_from_wf_subst c s c'
+      : wf_subst l c s c' -> wf_args l c (map snd s) c'.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_core_crush.
+      rewrite <- combine_map_fst_is_with_names_from.
+      erewrite <- wf_subst_dom_eq; eauto.
+      unfold fresh.
+      basic_utils_crush.
+    Qed.
+    Hint Resolve wf_args_from_wf_subst : lang_core.
+
+    (*TODO: move to Utils *)
+    Lemma named_list_lookup_suffix S A `{Eqb_ok S} (l1 l2 : NamedList.named_list S A) x
+      : fresh x l1 ->
+        named_list_lookup_err l2 x
+        = named_list_lookup_err (l1++l2) x.
+    Proof.
+      induction l1; basic_goal_prep; try tauto.
+      autorewrite with utils in *; break.
+      eqb_case x s; auto; try tauto.
+    Qed.
+
+    
+    Lemma sort_pat_to_clauses_next_var_fresh t l1 v v' vt
+      : sort_pat_to_clauses succ sort_of l t v = (l1, (vt, v')) ->
+        ~In v' (query_fvs l1).
+    Proof.
+      unfold sort_pat_to_clauses.
+      generalize (length l).
+      induction n;
+        unfold writer in *;
+        basic_goal_prep;
+        basic_utils_crush.
+      destruct t.
+      unfold Basics.compose in *.
+      revert H; case_match.
+      unfold uncurry.
+      break.
+      unfold gensym.
+      cbn.
+      basic_goal_prep;
+        basic_utils_crush.
+    Admitted.
+      
+    Lemma ctx_to_clauses_next_var_fresh c l1 v
+      : ctx_to_clauses succ sort_of l c (succ (supremum (map fst c))) = (l1, (tt, v)) ->
+        ~In v (query_fvs l1).
+    Proof.
+      unfold ctx_to_clauses.
+      remember (succ (supremum (map fst c))) as next_var.
+      assert (forall x, In x (map fst c) -> lt_V x next_var).
+      {
+        intros.
+        eapply supremum_le in H.
+        cbv [le_V lt_V] in *.
+        subst.
+        rewrite  VtN_succ.
+        apply Arith_prebase.le_lt_n_Sm; eauto.
+      }
+      {
+    Abort.
+
+        
     Lemma rule_model_sound n r query_assignment
-      : In (n,r) l ->
-        let r' := (rule_to_log_rule succ sort_of supremum n r) in
+      : all_fresh query_assignment ->
+        In (n,r) l ->
+        let r' := (rule_to_log_rule succ sort_of supremum l n r) in
         map fst query_assignment = r'.(query_vars _ _) ->
         assignment_satisfies lang_model query_assignment r'.(query_clauses _ _) ->
         exists out_assignment,
@@ -307,28 +458,65 @@ Section WithVar.
              end.
       all: basic_goal_prep.
       {
-        remember (list_Mmap (named_list_lookup_err (query_assignment)) (map fst n0)) as ml.
-        destruct ml;[|admit (*contradiction *)].
-        eexists [(v,con n l2)]; cbn; intuition eauto.
         (* TODO: ctx lemma to imply wf args at right types*)
-        case_match; cbn.
-        2: admit (*easy*).
-        replace l3 with l2 by admit (*TODO: easy*).
-        eqb_case n sort_of.
-        1:admit (*contradiction*).
-        cbn.
-        assert (~In v (query_fvs l1)) by admit (*holds b/c v is fresh after ctx_to_clauses*).        
-        lazymatch goal with
-          |- named_list_lookup_err (?query_assignment ++ ?out) ?v <$> ?RHS =>
-            replace (named_list_lookup_err (query_assignment ++ out) v)
-            with (named_list_lookup_err out v) by admit (*TODO: easy*)
-        end.
-        cbn.
-        autorewrite with utils bool.
-        cbn.
-        eapply lm_eq_sorts.
-        eapply eq_sort_refl.
-        econstructor; eauto.
+        assert(exists l2, incl l2 query_assignment
+                          /\ wf_subst l [] l2 n0)
+          by admit.
+        break.
+        assert (all_fresh x).
+        {
+          use_rule_in_wf.
+          basic_core_crush.
+        }
+        eexists [(v,con n (map snd x))]; cbn; intuition eauto.
+        replace (list_Mmap (named_list_lookup_err (query_assignment
+                                                     ++ [(v, con n (map snd x))]))
+                   (map fst n0))
+          with (Some (map snd x)).
+        2:{
+          erewrite list_Mmap_ext with (g:= named_list_lookup_err x).
+          2:{
+            intros.
+            erewrite <- wf_subst_dom_eq in H6; eauto.
+            eapply pair_fst_in_exists in H6; break.
+            erewrite named_list_lookup_prefix with (v:=x1); [|symmetry].
+            all: rewrite all_fresh_named_list_lookup_err_in; eauto.
+          }
+          {            
+            erewrite <- wf_subst_dom_eq; eauto.
+            eapply Mmap_lookup_self; eauto.
+          }
+        }
+        {
+          eqb_case n sort_of.
+          {
+            exfalso.
+            eapply pair_fst_in in H0.
+            eapply sort_of_fresh in H0; eauto.
+          }
+          {
+            cbn.
+            assert (~In v (query_fvs l1)) by admit (*holds b/c v is fresh after ctx_to_clauses*).        
+            lazymatch goal with
+              |- named_list_lookup_err (?query_assignment ++ ?out) ?v <$> ?RHS =>
+                replace (named_list_lookup_err (query_assignment ++ out) v)
+                with (named_list_lookup_err out v)
+            end.
+            {
+            cbn.
+            autorewrite with utils bool.
+            cbn.
+            eapply lm_eq_sorts.
+            eapply eq_sort_refl.
+            econstructor; eauto with lang_core.
+            }
+            {
+              eapply named_list_lookup_suffix; eauto.
+              congruence.
+            }
+          }
+        }
+      }
       (*}*)
         (*
         Lemma ctx_to_clauses_var
@@ -388,7 +576,7 @@ Section WithVar.
     Abort.
 
     Theorem lang_model_of
-      : model_of lang_model (map (uncurry (rule_to_log_rule succ sort_of supremum)) l).
+      : model_of lang_model (map (uncurry (rule_to_log_rule succ sort_of supremum l)) l).
     Proof.
 
       
