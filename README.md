@@ -31,8 +31,6 @@ The source code is split into a `Utils` folder that contains generic library fea
 as properties of lists and some useful typeclasses, and a `Pyrosome` folder that contains
 all of the code specific to this project. Here's an incomplete outline of the `Pyrosome` directory:
 
-
-
 ## Theory
 
 - Term.v contains basic term syntax definitions
@@ -59,4 +57,5 @@ all of the code specific to this project. Here's an incomplete outline of the `P
 - SimpleVCPS.v contains the CPS transformation for STLC
 - SimpleVCC.v contains the core closure conversion pass
 - SimpleVCPSHeap.v contains the CPS transformation for heap operations
-- CombinedThm.v contains the combined corectness result about the full case study compiler
+- CombinedThm.v contains the combined corectness result about the simply-typed case study compiler
+- PolyCompilers.v contains the polymorphic extensions and the final theorem about the polymorphic compiler.
