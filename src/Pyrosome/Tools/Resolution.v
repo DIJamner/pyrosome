@@ -349,20 +349,22 @@ Section WithVar.
     }.
     
   Section WithCompilerDb.    
-    Context (db : named_list compiler_db_entry).
+    Context (db : named_list (list compiler_db_entry)).
 
     Context (tgt : lang).
     
 
     Definition case_wf_in_db cmp_pre n r mc :=
       match named_list_lookup_err db n with
-      | Some entry =>
-          (eqb r entry.(entry_rule))
-          && (eqb mc entry.(entry_case))
-          && (inclb entry.(entry_tgt) tgt)
-          && (inclb entry.(entry_cmp_pre) cmp_pre)
-          && (freshb n entry.(entry_cmp_pre))
-          && (all_freshb entry.(entry_cmp_pre))
+      | Some entries =>
+          existsb (fun entry =>
+                     (eqb r entry.(entry_rule))
+                     && (eqb mc entry.(entry_case))
+                     && (inclb entry.(entry_tgt) tgt)
+                     && (inclb entry.(entry_cmp_pre) cmp_pre)
+                     && (freshb n entry.(entry_cmp_pre))
+                     && (all_freshb entry.(entry_cmp_pre)))
+            entries
       | None => false
       end.
 
@@ -398,7 +400,7 @@ Section WithVar.
     Definition option_to_list {A} ma : list A :=
       match ma with Some x => [x] | None => [] end.
 
-    Definition wf_entry '(n,e) :=
+    Definition wf_entry n e :=
       preserving_compiler_ext
         (tgt_Model := core_model e.(entry_tgt))
         e.(entry_cmp_pre)
@@ -411,7 +413,7 @@ Section WithVar.
     Definition cmp_db_sound :=
       all_fresh db
       (* TODO: need an isolate sim. to wf_rule *)
-      /\ all wf_entry db.
+      /\ all (fun '(n,l) => all (wf_entry n) l) db.
 
   End WithCompilerDb.
     
@@ -443,7 +445,7 @@ Section WithVar.
   Definition empty_cmp_dbP := exist _ _ empty_cmp_db_sound.
 
   Hint Resolve use_compute_all_fresh : utils.
-    
+  
 
   Lemma cmp_wf_in_db_correct db tgt cmp_pre cmp src
     : cmp_db_sound db ->
@@ -458,45 +460,52 @@ Section WithVar.
       basic_goal_prep.
     1: basic_core_crush.
     unfold case_wf_in_db in *.
+
+
+    destruct (named_list_lookup_err db v) eqn:Hnll.
+    2:{
+      destruct r; destruct cmp;
+      basic_goal_prep;
+      basic_core_crush.
+    }
+    lazymatch goal with
+    | H : named_list_lookup_err ?db _ = Some _,
+        Hall: all (fun '(n, l) => all (wf_entry n) l) ?db |-_=>
+        symmetry in H;
+        apply named_list_lookup_err_in in H;
+        eapply in_all in H; eauto;
+        unfold wf_entry in H;
+        cbn in *;
+        basic_core_crush;
+        try safe_invert H
+    end.
     revert H; destruct r; cbn; repeat case_match;
-      basic_goal_prep; subst; intuition eauto.
-    all: autorewrite with bool utils in *; eauto; try typeclasses eauto.
+      basic_goal_prep;
+      autorewrite with bool utils in *; eauto; try typeclasses eauto;
+      intuition subst.
     all: basic_goal_prep.
-    all: subst.
-    all: basic_utils_crush.
-    1,2: destruct c0, c1; basic_goal_prep.
-    5,6: destruct c; basic_goal_prep; subst.
-    1,2: destruct entry_case0.
-    all: lazymatch goal with
-         | H : Some _ = named_list_lookup_err ?db _,
-           Hall: all wf_entry ?db |-_=>
-             apply named_list_lookup_err_in in H;
-             eapply in_all in H; eauto;
-             unfold wf_entry in H;
-             cbn in *;
-             basic_core_crush;
-             try safe_invert H
-         end.
-    all: cbn in *;
-      try lazymatch goal with
+    all: eapply in_all in Hnll; eauto; basic_goal_prep.
+    all: repeat (lazymatch goal with
+                 | x : rule |- _ => destruct x
+                 | x : compiler_case |- _ => destruct x
+                 | x : option compiler_case |- _ => destruct x
+                 | x : compiler_db_entry |- _ => destruct x
+                 end;
+                 basic_goal_prep;
+                 autorewrite with bool utils in *; eauto; try typeclasses eauto;
+                 intuition subst).
+    all: try lazymatch goal with
         | H : preserving_compiler_ext _ (_::_) (_::_) |-_=>
             try safe_invert H
         | H : preserving_compiler_ext _ [] (_::_) |-_=>
             try safe_invert H
            end.
-    all: try econstructor; eauto.
-    all: basic_goal_prep;basic_core_crush.
-    (*TODO: make rewrites *)
-    all: repeat lazymatch goal with
-            | H : Is_true (freshb _ _) |- _ =>
-               eapply use_compute_fresh in H
-            | H : Is_true (all_freshb _) |- _ =>
-               eapply use_compute_all_fresh in H
-            | H : Is_true (inclb _ _) |- _ =>
-               eapply use_inclb in H               
-           end.
+    all: econstructor; eauto.
+    all: [> eapply wf_sort_lang_monotonicity
+         | eapply wf_term_lang_monotonicity
+         | eapply eq_sort_lang_monotonicity
+         | eapply eq_term_lang_monotonicity]; eauto.
     {
-      eapply wf_sort_lang_monotonicity; eauto.
       erewrite <- compile_strengthen_ctx_incl; [eassumption| ..];
         eauto.
       all: basic_utils_crush.
@@ -505,12 +514,12 @@ Section WithVar.
       {
         intro; subst.
         basic_utils_crush.
-      }                    
-      eapply H10 in Hin.
+      }
+      basic_goal_prep.
+      eapply H13 in Hin.
       basic_goal_prep;basic_core_crush.
     }
     {
-      eapply wf_term_lang_monotonicity; eauto.
       erewrite <- compile_strengthen_sort_incl,
          <- compile_strengthen_ctx_incl;
         [eassumption| ..];
@@ -518,16 +527,14 @@ Section WithVar.
       all: basic_utils_crush.
       all:intros [x c] Hin;
       assert (x <> v1) by (basic_goal_prep;basic_core_crush).                   
-      all:eapply H10 in Hin; basic_goal_prep;basic_core_crush.
+      all:eapply H13 in Hin; basic_goal_prep;basic_core_crush.
     }
     {
-      eapply eq_sort_lang_monotonicity; eauto.
       erewrite <- compile_strengthen_sort_incl,
          <- compile_strengthen_ctx_incl; eauto.
       1:erewrite <- compile_strengthen_sort_incl with (t:=s2); eauto.
     }
     {
-      eapply eq_term_lang_monotonicity; eauto.
       erewrite <- compile_strengthen_sort_incl,
          <- compile_strengthen_incl,
          <- compile_strengthen_ctx_incl; eauto.
@@ -535,40 +542,60 @@ Section WithVar.
     }
   Qed.
   
-  Lemma cmp_db_append_sound db1 db2
-    : Is_true(all_freshb (db1++db2)) ->
-      cmp_db_sound db1 ->
-      cmp_db_sound db2 ->
-      cmp_db_sound (db1++db2).
+  Lemma cmp_db_insert_sound n l db
+    : all (wf_entry n) l ->
+      cmp_db_sound db ->
+      cmp_db_sound (insert_db n l db).
   Proof.
-    intro H.
-    apply use_compute_all_fresh in H.
     unfold cmp_db_sound.
-    intuition eauto.
-    clear H H2 H0.
-    revert H3.
+    induction db;
+      basic_goal_prep.
+    1:basic_core_crush.
+    eqb_case n v.
+    all: basic_goal_prep.
+    all: basic_core_crush.
+  Qed. 
+  
+  Lemma cmp_db_append_sound db1 db2
+    : cmp_db_sound db1 ->
+      cmp_db_sound db2 ->
+      cmp_db_sound (merge_dbs db1 db2).
+  Proof.
+    unfold cmp_db_sound.
+    revert db2.
     induction db1;
-      basic_goal_prep;
+      basic_goal_prep.
+    1:basic_core_crush.
+    break.
+    unshelve
+      let H := open_constr:(_) in
+      specialize (IHdb1 (insert_db v l db2)
+                    ltac:(intuition eauto) H).
+    all: basic_core_crush.
+    apply all_insert; eauto.
+    basic_goal_prep;
       basic_core_crush.
   Qed.
 
+  (*
   Definition cmp_dbP_append
     (dbP1 dbP2 : { db | cmp_db_sound db })
     (check : Is_true(all_freshb (proj1_sig dbP1 ++ proj1_sig dbP2))) : { db | cmp_db_sound db } :=
     exist _ (proj1_sig dbP1 ++ proj1_sig dbP2)
       (cmp_db_append_sound check (proj2_sig dbP1) (proj2_sig dbP2)).
+   *)
 
   Fixpoint cmp_to_db tgt cmp_pre (src : lang) (cmp : compiler) : named_list _ :=
     match src with
     | [] => []
     | (n,r)::src' =>
         if rule_is_eqn r
-        then (n,Build_compiler_db_entry tgt (cmp++cmp_pre) r None)
+        then (n,[Build_compiler_db_entry tgt (cmp++cmp_pre) r None])
                :: (cmp_to_db tgt cmp_pre src' cmp)
         else match cmp with
              | [] => [] (* never happens*)
              | (_,cc)::cmp' =>
-                 (n,Build_compiler_db_entry tgt (cmp'++cmp_pre) r (Some cc))
+                 (n,[Build_compiler_db_entry tgt (cmp'++cmp_pre) r (Some cc)])
                    :: (cmp_to_db tgt cmp_pre src' cmp')
              end
     end.
@@ -586,7 +613,7 @@ Section WithVar.
       basic_core_crush.
   Qed.
 
-  (* TODO: move to AllCOnstructors *)
+  (* TODO: move to AllConstructors *)
   Fixpoint all_constructorsb (P : V -> bool) e : bool :=
     match e with
     | var _ => true
@@ -751,6 +778,7 @@ Section WithVar.
       basic_goal_prep;
       try tauto;
       autorewrite with utils bool lang_core term model in *.
+    all: unfold wf_entry.
     all: basic_goal_prep.
     all: intuition eauto using cmp_to_db_fresh with lang_core.
     all: try eapply all_implies; eauto.
@@ -763,6 +791,60 @@ Section WithVar.
     all: eauto.
   Qed.
   
+  Section DBAppendList.
+
+    Context (lst : list { p : lang * compiler * compiler * lang
+                        | preserving_compiler_ext (tgt_Model:=core_model (fst (fst (fst p))))
+                            (snd (fst (fst p)))
+                            (snd (fst p))
+                            (snd p)}).
+    
+    Definition db_append_cmp_list' :=
+      (fold_left (fun acc '(exist _ x p) =>
+                    merge_dbs (cmp_to_db (fst (fst (fst x)))
+                                 (snd (fst (fst x)))
+                                 (snd x)
+                                 (snd (fst x))) acc) lst []).
+
+    Let check :=
+          forallb (fun '(exist _ x _) =>
+                     all_freshb (snd x)
+                     && all_constructors_in_langb (map fst (snd (fst (fst x))))
+                          (snd x)) lst.
+    
+    Section Checked.
+      Context (H_all_checked :  Is_true check).
+
+      Lemma db_append_cmp_list_sound : cmp_db_sound db_append_cmp_list'.
+        unfold db_append_cmp_list', check in *.
+        pose proof empty_cmp_db_sound.
+        autorewrite with utils bool in *.
+        revert H H_all_checked.
+        generalize (@nil (V * (list compiler_db_entry))).
+        induction lst;
+          basic_goal_prep;
+          auto.
+        destruct a.
+        eapply IHl.
+        {
+          apply cmp_db_append_sound; eauto.
+          apply wf_cmp_sound_db; eauto.
+          basic_utils_crush.
+        }
+        {
+          basic_utils_crush.
+        }
+      Qed.
+     
+    End Checked.
+    
+    Definition db_append_cmp_list : { db | cmp_db_sound db } :=
+      compute_unchecked (H:=empty_cmp_dbP)
+        (fun x => exist _ _ (db_append_cmp_list_sound x)).
+
+  End DBAppendList.
+
+  (*
   (*TODO: whole-compiler append*)
   Definition db_append_cmp tgt cmp_pre cmp src
     (wfc : preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src)
@@ -773,6 +855,7 @@ Section WithVar.
     fun (check : Is_true(all_freshb (db1 ++ proj1_sig dbP2))) =>
       exist _ (db1 ++ proj1_sig dbP2)
         (cmp_db_append_sound check pf1 (proj2_sig dbP2)).
+   *)
 
   
 End WithVar.
