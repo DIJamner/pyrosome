@@ -15,6 +15,16 @@ Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
 
 
+(*TODO: move to utils*)
+Lemma all_app A (P : A -> Prop) l1 l2
+  : all P (l1++l2) <-> all P l1 /\ all P l2.
+Proof.
+  induction l1; 
+    basic_goal_prep;
+    basic_core_crush.
+Qed.
+#[local] Hint Rewrite all_app : utils.
+
 Section WithVar.
   Context (V : Type)
           {V_Eqb : Eqb V}
@@ -33,13 +43,83 @@ Section WithVar.
   Notation compiler := (@compiler V term sort).
   Notation compiler_case := (@compiler_case V term sort).
 
+  Section Insert.
+    Context {A : Type}.
+  
+    (*TODO: obviate by using a map*)
+    Fixpoint insert_db n l (db : named_list (list A)) :=
+      match db with
+      | [] => [(n,l)]
+      | (n',l')::db' =>
+          if eqb n n' then (n,l++l')::db'
+          else (n',l')::(insert_db n l db')
+      end.
+
+    
+    Lemma fresh_insert n v l db
+      : n <> v ->
+        fresh v db ->
+        fresh v (insert_db n l db).
+    Proof.
+      induction db;
+        basic_goal_prep;
+        basic_utils_crush.
+      eqb_case n v0;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Resolve fresh_insert : lang_core.
+
+    
+    Lemma all_fresh_insert n l db
+      : all_fresh db ->
+        all_fresh (insert_db n l db).
+    Proof.
+      induction db;
+        basic_goal_prep;
+        basic_core_crush.
+      eqb_case n v.
+      all:basic_goal_prep;
+        basic_core_crush.
+    Qed.
+    Hint Resolve all_fresh_insert : lang_core.
+
+    
+    
+    Lemma all_insert (P : _ -> Prop) v l db
+      : (forall v l1 l2, P (v,l1) -> P (v,l2) -> P (v,l1++l2)) ->
+        P (v,l) ->
+        all P db ->
+        all P (insert_db v l db).
+    Proof.
+      intros HP_app HPv.
+      induction db;
+        basic_goal_prep;
+        basic_core_crush.
+      eqb_case v v0.
+      all: basic_goal_prep.
+      all: basic_core_crush.
+    Qed.    
+    
+    Fixpoint merge_dbs (db1 db2 : named_list (list A)) :=
+      match db1 with
+      | [] => db2
+      | (n,l)::db1' => merge_dbs db1' (insert_db n l db2)
+      end.
+
+  End Insert.
+  Hint Resolve fresh_insert : lang_core.
+  Hint Resolve all_fresh_insert : lang_core.  
+
   Section LangWithDb.
-    Context (db : named_list (lang * rule)).
+    (* Inner list allows for multiple rules with the same name
+       TODO: use a map instead of a named list for performance
+     *)
+    Context (db : named_list (list (lang * rule))).
 
     Definition rule_wf_in_db l n r :=
       match named_list_lookup_err db n with
-      | Some (l', r') =>
-          (eqb r r') && (inclb l' l)
+      | Some lst => existsb (fun '(l', r') => (eqb r r') && (inclb l' l)) lst
       | None => false
       end.
 
@@ -57,14 +137,14 @@ Section WithVar.
 
     Definition lang_db_sound :=
       all_fresh db
-      /\ all (fun '(_,(l,r)) => wf_rule l r) db.
+      /\ all (fun '(_,lst) => all (uncurry (wf_rule (V:=_))) lst) db.
 
   End LangWithDb.
 
-  Fixpoint lang_to_db l_pre l : named_list (lang * rule) :=
+  Fixpoint lang_to_db l_pre l : named_list (list (lang * rule)) :=
       match l with
       | [] => []
-      | (n,r)::l' => (n,(l'++l_pre,r))::(lang_to_db l_pre l')
+      | (n,r)::l' => (n,[(l'++l_pre,r)])::(lang_to_db l_pre l')
       end.
   
   Lemma lang_to_db_fresh n l_pre l
@@ -86,6 +166,32 @@ Section WithVar.
     apply lang_to_db_fresh; eauto.
   Qed.
 
+  (*
+  (*TODO: move to Utils*)
+  Section Some.
+    Context {A} (P : A -> Prop).
+    
+    (* A Fixpoint version of List.Exists *)
+    Fixpoint some l : Prop :=
+      match l with
+      | [] => False
+      | e::l' => P e \/ some l'
+      end.
+
+  End Some.
+  *)
+  (*TODO: move to utils *)
+  Lemma Is_true_existsb:
+    forall [A : Type] (f : A -> bool) (l : list A),
+      Is_true (existsb f l) <-> exists x, In x l /\ Is_true (f x).
+  Proof.
+    intros A f.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Local Hint Rewrite Is_true_existsb : utils.
+
  (* #[local] Hint Resolve use_compute_fresh use_inclb use_compute_all_fresh  : utils.*)
   Lemma lang_wf_in_db_correct db l_pre l
     : lang_db_sound db ->
@@ -106,24 +212,49 @@ Section WithVar.
     autorewrite with bool utils in *.
     all: try typeclasses eauto (*TODO: fix freshb/inclb hint*).
     break; subst.
-    basic_core_crush.
+    constructor; eauto.
+    1:autorewrite with utils; eauto.
+    eapply in_all in H1'; eauto.
+    basic_goal_prep.
+    autorewrite with bool utils in *; try typeclasses eauto.
+    basic_goal_prep.
+    subst.
     eapply wf_rule_lang_monotonicity; eauto.
   Qed.
-
-  Lemma lang_db_append_sound db1 db2
-    : Is_true(all_freshb (db1++db2)) ->
-      lang_db_sound db1 ->
-      lang_db_sound db2 ->
-      lang_db_sound (db1++db2).
+    
+  Lemma lang_db_insert_sound n l db
+    : all (uncurry (wf_rule (V:=V))) l ->
+      lang_db_sound db ->
+      lang_db_sound (insert_db n l db).
   Proof.
-    intro H.
-    apply use_compute_all_fresh in H.
     unfold lang_db_sound.
-    intuition eauto.
-    clear H H2 H0.
-    revert H3.
+    induction db;
+      basic_goal_prep.
+    1:basic_core_crush.
+    eqb_case n v.
+    all: basic_goal_prep.
+    all: basic_core_crush.
+  Qed.
+
+  
+  Lemma lang_db_merge_sound db1 db2
+    : lang_db_sound db1 ->
+      lang_db_sound db2 ->
+      lang_db_sound (merge_dbs db1 db2).
+  Proof.
+    unfold lang_db_sound.
+    revert db2.
     induction db1;
-      basic_goal_prep;
+      basic_goal_prep.
+    1:basic_core_crush.
+    break.
+    unshelve
+      let H := open_constr:(_) in
+      specialize (IHdb1 (insert_db v l db2)
+                    ltac:(intuition eauto) H).
+    all: basic_core_crush.
+    apply all_insert; eauto.
+    basic_goal_prep;
       basic_core_crush.
   Qed.
 
@@ -137,19 +268,15 @@ Section WithVar.
   Definition empty_lang_dbP := exist _ _ empty_lang_db_sound.
 
   Definition lang_dbP_append
-    (dbP1 dbP2 : { db | lang_db_sound db })
-    (check : Is_true(all_freshb (proj1_sig dbP1 ++ proj1_sig dbP2))) : { db | lang_db_sound db } :=
-    exist _ (proj1_sig dbP1 ++ proj1_sig dbP2)
-      (lang_db_append_sound check (proj2_sig dbP1) (proj2_sig dbP2)).
+    (dbP1 dbP2 : { db | lang_db_sound db }) : { db | lang_db_sound db } :=
+    exist _ (merge_dbs (proj1_sig dbP1) (proj1_sig dbP2))
+      (lang_db_merge_sound (proj2_sig dbP1) (proj2_sig dbP2)).
 
   
   Definition db_append_lang l_pre l (wfl : wf_lang_ext l_pre l)
-    (dbP2 : { db | lang_db_sound db }) :=
-    let db1 := (lang_to_db l_pre l) in
-    let pf1 := wf_lang_sound_db wfl in 
-    fun (check : Is_true(all_freshb (db1 ++ proj1_sig dbP2))) =>
-      exist _ (db1 ++ proj1_sig dbP2)
-        (lang_db_append_sound check pf1 (proj2_sig dbP2)).
+    (dbP2 : { db | lang_db_sound db }) : { db | lang_db_sound db } :=
+      exist _ _
+        (lang_db_merge_sound (wf_lang_sound_db wfl) (proj2_sig dbP2)).
 
   
   (*TODO: move to namedlist.v*)
@@ -184,46 +311,33 @@ Section WithVar.
     rewrite map_app.
     congruence.
   Qed.
+
+
+  Section DBAppendList.
+
+    Context (lst : list { p | wf_lang_ext (fst p) (snd p) }).
     
+    Definition db_append_lang_list' :=
+      (fold_left (fun acc '(exist _ x p) => merge_dbs (lang_to_db (fst x) (snd x)) acc) lst []).
 
-  Lemma db_append_lang_list_proof
-    (lst : list { p | wf_lang_ext (fst p) (snd p) })
-    (* TODO: try moving this out of the type and into the term for vm_compute *)
-    (check : Is_true(all_freshb (flat_map (fun x => snd (proj1_sig x)) lst)))
-    : lang_db_sound (flat_map (fun x => uncurry lang_to_db (proj1_sig x)) lst).
-  Proof.
-    revert check.
-    induction lst;
-      basic_goal_prep.
-    1: apply empty_lang_db_sound.
-    destruct a as [[? ?] ?].
-    cbn in *.
-    apply lang_db_append_sound; eauto using wf_lang_sound_db.
-    all: autorewrite with utils in *; eauto.
-    {
-      eapply all_fresh_map_fst; try eassumption.
-      rewrite !map_app.
-      rewrite lang_to_db_map_fst.
-      f_equal.
-      rewrite !map_flat_map.
-      apply flat_map_ext.
-      intros [[? ?] ?].
-      basic_goal_prep.
-      rewrite lang_to_db_map_fst.
-      reflexivity.
-    }
-    {  eauto using all_fresh_tail. }
-  Qed.
-  
-  Definition db_append_lang_list
-    (lst : list { p | wf_lang_ext (fst p) (snd p) })
-    : { db | lang_db_sound db } :=
-    (* used to avoid computing all_freshb in type checking *)
-    compute_unchecked (H := empty_lang_dbP)
-      (fun (check : Is_true(all_freshb (flat_map (fun x => snd (proj1_sig x)) lst))) =>
-         exist _ (flat_map (fun x => uncurry lang_to_db (proj1_sig x)) lst)
-           (db_append_lang_list_proof _ check)).
+    Lemma db_append_lang_list_sound : lang_db_sound db_append_lang_list'.
+      unfold db_append_lang_list'.
+      pose proof empty_lang_db_sound.
+      revert H.
+      generalize (@nil (V * (list (lang * rule)))).
+      induction lst;
+        basic_goal_prep;
+        auto.
+      destruct a.
+      eapply IHl.
+      apply lang_db_merge_sound; eauto.
+      apply wf_lang_sound_db; eauto.
+    Qed.
+    
+    Definition db_append_lang_list : { db | lang_db_sound db } :=
+      exist _ _ db_append_lang_list_sound.
 
+  End DBAppendList.
   
   Record compiler_db_entry : Type :=
     {
@@ -684,3 +798,4 @@ Tactic Notation "by_lang_db" :=
                  (Ltac1.of_constr (lang_db ()))).
 Tactic Notation "by_lang_db" constr(db) := prove_by_lang_db db.
 *)
+

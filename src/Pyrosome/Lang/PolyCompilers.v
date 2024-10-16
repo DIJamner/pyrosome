@@ -367,12 +367,6 @@ Definition exists_def : lang _ :=
 
 #[export] Hint Resolve (inst_for_db "Exists") : injective_con.
 
-(*TODO: add in*)
-  Eval compute in
-    eqn_rules type_subst_mode (exp_ty_subst++val_ty_subst
-                                 ++env_ty_subst++exp_parameterized
-                                 ++val_parameterized ++ty_subst_lang)
-    exists_def.
 
 Derive exists_lang
   SuchThat (elab_lang_ext (exp_param_substs
@@ -469,12 +463,6 @@ Definition exists_block_def : lang _ :=
   ]
   ]}.
 
-(*TODO: add in*)
-  Eval compute in
-    eqn_rules type_subst_mode (block_ty_subst(*++val_ty_subst*)
-                                 ++env_ty_subst++block_parameterized
-                                 ++val_parameterized ++ty_subst_lang)
-    exists_block_def.
 
 Derive exists_block_lang
   SuchThat (elab_lang_ext (block_param_substs
@@ -1464,6 +1452,7 @@ Definition pcc :=
     ++ block_ty_subst_cc
     ++ id_compiler ty_subst_lang ++ cc_parameterized ++ ty_env_cmp.
 
+From Pyrosome Require Import Tools.Resolution.
 
 Theorem combined_poly
   :  preserving_compiler_ext
@@ -1475,58 +1464,43 @@ Proof.
   apply preservation_transitivity
     with (ir:=poly_ir).
   all: try typeclasses eauto; try reflexivity.
-  {
-    (*TODO: I seem to have added a bad hint*)
-    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
-    all: do 6 lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
-    | |- wf_lang_ext _ [] => apply wf_lang_nil
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => compute_incl
-    end.
-    all:do 5 [> lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
-    | |- wf_lang_ext _ [] => apply wf_lang_nil
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => compute_incl
-    end |..].
-    {
-      eapply lang_ext_monotonicity.
-      1: eapply src_parameterized_wf.
-      1: auto with utils.
-      compute_all_fresh.
-    }
-    all: try (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
-  }
-  {
-    (*TODO: I seem to have added a bad hint*)
-    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
-    all: do 3 lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
-    | |- wf_lang_ext _ [] => apply wf_lang_nil
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => compute_incl
-    end.
-    all:do 10 [> lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat'
-    | |- wf_lang_ext _ [] => apply wf_lang_nil
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => compute_incl
-                 end |..].
-    2:
-    {
-      eapply lang_ext_monotonicity.
-      1: eapply ir_parameterized_wf.
-      2: compute_all_fresh.
-      auto 7 with utils.
-    }
-    all: try (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
-  }
-  1: (solve[unfold poly_src, poly_ir, poly_tgt, pcps, pcc; prove_from_known_elabs]).
+
+  Optimize Heap.
+
+  (*TODO: not all fresh! src, ir and tgt?
+    TODO: drop all_fresh condition w/ multi-rule lookup
+   *)
+  Let db :=
+        Eval vm_compute in
+        db_append_lang_list
+          [ exist _ (_,_) (elab_lang_implies_wf exists_lang_wf);
+            exist _ (_,_) (elab_lang_implies_wf poly_wf);
+            exist _ (_,_) (elab_lang_implies_wf exp_param_substs_wf);
+            exist _ (_,_) (elab_lang_implies_wf exp_ty_subst_wf);
+            exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);
+            exist _ (_,_) (elab_lang_implies_wf val_ty_subst_wf);
+            exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
+            exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);
+            exist _ (_,_) src_parameterized_wf;
+            exist _ (_,_) (elab_lang_implies_wf exp_parameterized_wf);
+            exist _ (_,_) (elab_lang_implies_wf val_parameterized_wf);
+            exist _ (_,_) (elab_lang_implies_wf ty_env_wf);
+            exist _ (_,_) (elab_lang_implies_wf exists_block_lang_wf);
+            exist _ (_,_) (elab_lang_implies_wf ir_param_substs_wf);
+            exist _ (_,_) (elab_lang_implies_wf block_param_substs_wf);
+            exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);            
+            exist _ (_,_) (elab_lang_implies_wf block_ty_subst_wf);
+            exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
+            exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);            
+            exist _ (_,_) ir_parameterized_wf;
+            exist _ (_,_) (elab_lang_implies_wf block_parameterized_wf);
+            exist _ (_,_) (elab_lang_implies_wf tgt_param_substs_wf);
+            exist _ (_,_) tgt_parameterized_wf
+          ].
+  
+  { prove_by_lang_db db. }
+  { prove_by_lang_db db. }
+  { prove_by_lang_db db. }
   {
     (*TODO: I seem to have added a bad hint*)
     unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
@@ -1548,17 +1522,8 @@ Proof.
     {
       rewrite <- !app_assoc.
       repeat apply wf_lang_concat'.
-      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-      {
-        eapply lang_ext_monotonicity.
-        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-        1: eapply use_inclb; vm_compute; exact I.
-        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-      }
+      all: try prove_by_lang_db db. 
       all:autorewrite with utils.
-      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
-      rewrite app_assoc.
-      apply ir_parameterized_wf.
     }
     1: eapply compiler_append; try typeclasses eauto.
     1: eapply cc_parameterized_correct.
@@ -1572,38 +1537,14 @@ Proof.
     {
       rewrite <- !app_assoc.
       repeat apply wf_lang_concat'.
-      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-      {
-        eapply lang_ext_monotonicity.
-        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-        1: eapply use_inclb; vm_compute; exact I.
-        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-      }
+      all: try prove_by_lang_db db.
       all:autorewrite with utils.
-      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
-      rewrite app_assoc.
-      apply ir_parameterized_wf.
     }
     {
       rewrite <- !app_assoc.
       repeat apply wf_lang_concat'.
-      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-      {
-        eapply lang_ext_monotonicity.
-        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-        1: eapply use_inclb; vm_compute; exact I.
-        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-      }
-      all:autorewrite with utils.
-      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
-      1:rewrite app_assoc.
-      1:apply ir_parameterized_wf.
-      eapply lang_ext_monotonicity.
-      1:eapply elab_lang_implies_wf;
-      apply ty_subst_wf.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-      
+      all: try prove_by_lang_db db.
+      all:autorewrite with utils.     
     }
     1: eapply compiler_append; try typeclasses eauto.
     1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
@@ -1616,20 +1557,11 @@ Proof.
     1:eapply ty_subst_id_compiler_correct.
     all: try (eapply use_inclb; vm_compute; exact I).
     all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-     {
+    {
       rewrite <- !app_assoc.
       repeat apply wf_lang_concat'.
-      1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-      {
-        eapply lang_ext_monotonicity.
-        1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-        1: eapply use_inclb; vm_compute; exact I.
-        all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-      }
+      all: try prove_by_lang_db db.
       all:autorewrite with utils.
-      1:eapply elab_lang_implies_wf;apply block_parameterized_wf.
-      rewrite app_assoc.
-      apply ir_parameterized_wf.
     }
     1: eapply compiler_append; try typeclasses eauto.
     1: eapply cc_parameterized_correct.
@@ -2588,91 +2520,7 @@ Proof.
     1:eapply ty_subst_id_compiler_correct.
     all: try (eapply use_inclb; vm_compute; exact I).
     all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    {
-         rewrite <- !app_assoc.
-         repeat apply wf_lang_concat'.
-         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-         {
-           eapply lang_ext_monotonicity.
-           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-           1: eapply use_inclb; vm_compute; exact I.
-           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-         }
-         all:autorewrite with utils.
-         1:prove_from_known_elabs.
-         apply src_parameterized_wf.
-    }
-
-
-
-
-    {
-         rewrite <- !app_assoc.
-         repeat apply wf_lang_concat'.
-         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-         {
-           eapply lang_ext_monotonicity.
-           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-           1: eapply use_inclb; vm_compute; exact I.
-           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-         }
-         all:autorewrite with utils.
-         1:prove_from_known_elabs.
-         1:         apply src_parameterized_wf.
-         all:prove_from_known_elabs.
-    }
-    
-    {
-         rewrite <- !app_assoc.
-         repeat apply wf_lang_concat'.
-         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-         {
-           eapply lang_ext_monotonicity.
-           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-           1: eapply use_inclb; vm_compute; exact I.
-           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-         }
-         all:autorewrite with utils.
-         1:prove_from_known_elabs.
-         1:         apply src_parameterized_wf.
-         all:prove_from_known_elabs.
-    }
-
-    
-    {
-         rewrite <- !app_assoc.
-         repeat apply wf_lang_concat'.
-         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-         {
-           eapply lang_ext_monotonicity.
-           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-           1: eapply use_inclb; vm_compute; exact I.
-           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-         }
-         all:autorewrite with utils.
-         1:prove_from_known_elabs.
-         1:         apply src_parameterized_wf.
-         all:prove_from_known_elabs.
-    }
-
-    
-
-
-    {
-         rewrite <- !app_assoc.
-         repeat apply wf_lang_concat'.
-         1:eapply elab_lang_implies_wf; eapply ty_env_wf.
-         {
-           eapply lang_ext_monotonicity.
-           1:eapply elab_lang_implies_wf; eapply val_parameterized_wf.
-           1: eapply use_inclb; vm_compute; exact I.
-           all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-         }
-         all:autorewrite with utils.
-         1:prove_from_known_elabs.
-         1:         apply src_parameterized_wf.
-         all:prove_from_known_elabs.
-    }
+    all: prove_by_lang_db db.
   }
 Qed.
       
