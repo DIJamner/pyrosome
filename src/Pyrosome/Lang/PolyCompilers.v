@@ -1454,6 +1454,51 @@ Definition pcc :=
 
 From Pyrosome Require Import Tools.Resolution.
 
+Let db :=
+      Eval vm_compute in
+      db_append_lang_list
+        [ exist _ (_,_) (elab_lang_implies_wf exists_lang_wf);
+          exist _ (_,_) (elab_lang_implies_wf poly_wf);
+          exist _ (_,_) (elab_lang_implies_wf exp_param_substs_wf);
+          exist _ (_,_) (elab_lang_implies_wf exp_ty_subst_wf);
+          exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);
+          exist _ (_,_) (elab_lang_implies_wf val_ty_subst_wf);
+          exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
+          exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);
+          exist _ (_,_) src_parameterized_wf;
+          exist _ (_,_) (elab_lang_implies_wf exp_parameterized_wf);
+          exist _ (_,_) (elab_lang_implies_wf val_parameterized_wf);
+          exist _ (_,_) (elab_lang_implies_wf ty_env_wf);
+          exist _ (_,_) (elab_lang_implies_wf exists_block_lang_wf);
+          exist _ (_,_) (elab_lang_implies_wf ir_param_substs_wf);
+          exist _ (_,_) (elab_lang_implies_wf block_param_substs_wf);
+          exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);            
+          exist _ (_,_) (elab_lang_implies_wf block_ty_subst_wf);
+          exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
+          exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);            
+          exist _ (_,_) ir_parameterized_wf;
+          exist _ (_,_) (elab_lang_implies_wf block_parameterized_wf);
+          exist _ (_,_) (elab_lang_implies_wf tgt_param_substs_wf);
+          exist _ (_,_) tgt_parameterized_wf
+        ].
+
+Let cmp_db :=
+      Eval vm_compute in
+      db_append_cmp_list
+        [
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving exists_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving block_ty_subst_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving ty_subst_lang_id_ext_cc);
+          exist _ (_,_,_,_) cc_parameterized_correct;
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving ir_param_substs_preserving);
+          exist _ (_,_,_,_) ty_subst_id_compiler_correct;
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving exists_cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving poly_cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving exp_ty_subst_cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving ty_subst_lang_id_ext);
+          exist _ (_,_,_,_) cps_parameterized_correct
+        ].
+
 Theorem combined_poly
   :  preserving_compiler_ext
       (tgt_Model := core_model poly_tgt)
@@ -1464,258 +1509,6 @@ Proof.
   apply preservation_transitivity
     with (ir:=poly_ir).
   all: try typeclasses eauto; try reflexivity.
-
-  Optimize Heap.
-
-  (*TODO: not all fresh! src, ir and tgt?
-    TODO: drop all_fresh condition w/ multi-rule lookup
-   *)
-  Let db :=
-        Eval vm_compute in
-        db_append_lang_list
-          [ exist _ (_,_) (elab_lang_implies_wf exists_lang_wf);
-            exist _ (_,_) (elab_lang_implies_wf poly_wf);
-            exist _ (_,_) (elab_lang_implies_wf exp_param_substs_wf);
-            exist _ (_,_) (elab_lang_implies_wf exp_ty_subst_wf);
-            exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);
-            exist _ (_,_) (elab_lang_implies_wf val_ty_subst_wf);
-            exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
-            exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);
-            exist _ (_,_) src_parameterized_wf;
-            exist _ (_,_) (elab_lang_implies_wf exp_parameterized_wf);
-            exist _ (_,_) (elab_lang_implies_wf val_parameterized_wf);
-            exist _ (_,_) (elab_lang_implies_wf ty_env_wf);
-            exist _ (_,_) (elab_lang_implies_wf exists_block_lang_wf);
-            exist _ (_,_) (elab_lang_implies_wf ir_param_substs_wf);
-            exist _ (_,_) (elab_lang_implies_wf block_param_substs_wf);
-            exist _ (_,_) (elab_lang_implies_wf val_param_substs_wf);            
-            exist _ (_,_) (elab_lang_implies_wf block_ty_subst_wf);
-            exist _ (_,_) (elab_lang_implies_wf env_ty_subst_wf);
-            exist _ (_,_) (elab_lang_implies_wf ty_subst_wf);            
-            exist _ (_,_) ir_parameterized_wf;
-            exist _ (_,_) (elab_lang_implies_wf block_parameterized_wf);
-            exist _ (_,_) (elab_lang_implies_wf tgt_param_substs_wf);
-            exist _ (_,_) tgt_parameterized_wf
-          ].
-  
-  { prove_by_lang_db db. }
-  { prove_by_lang_db db. }
-  { prove_by_lang_db db. }
-
-  Let cmp_db :=
-        Eval vm_compute in
-        db_append_cmp_list
-          [
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving exists_cc_preserving);
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving block_ty_subst_cc_preserving);
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving ty_subst_lang_id_ext);
-            exist _ (_,_,_,_) cc_parameterized_correct;
-            exist _ (_,_,_,_) ty_subst_id_compiler_correct;
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving exists_cps_preserving);
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving poly_cps_preserving);
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving exp_ty_subst_cps_preserving);
-            exist _ (_,_,_,_) (elab_compiler_implies_preserving ty_subst_lang_id_ext);
-            exist _ (_,_,_,_) cps_parameterized_correct
-          ].
-
-  (*TODO: backport fix *)
-  Ltac prove_by_cmp_db dbP :=
-    apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig dbP)); vm_compute; exact I.
-  {
-    (*TODO: I seem to have added a bad hint*)
-    unfold poly_src, poly_ir, poly_tgt, pcps, pcc.
-    eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply exists_cc_preserving.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    1: eapply use_inclb; vm_compute; exact I.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    { prove_by_lang_db db. }
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    all: try (eapply preserving_compiler_embed; [eapply ty_subst_id_compiler_correct|]).
-    all: try (eapply use_inclb; vm_compute; exact I).
-    1:prove_by_lang_db db.
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    1: eapply use_inclb; vm_compute; exact I.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    1:prove_by_lang_db db.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    all: try (eapply preserving_compiler_embed; [eapply ty_subst_id_compiler_correct|]).
-    all: try (eapply use_inclb; vm_compute; exact I).
-    1:prove_by_lang_db db.
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ir_param_substs_preserving.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    1: eapply use_inclb; vm_compute; exact I.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.    
-
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    
-   
- 
-
-      
-       change (block_param_substs ++
-     val_param_substs ++
-     block_ty_subst ++
-     env_ty_subst ++
-     ty_subst_lang ++ (ir_parameterized ++ block_parameterized ++ val_parameterized) ++ ty_env_lang)
-         with ((block_param_substs ++
-     val_param_substs ++
-     block_ty_subst ++
-     env_ty_subst) ++
-     ty_subst_lang ++ (ir_parameterized ++ block_parameterized ++ val_parameterized) ++ ty_env_lang).
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply block_ty_subst_cc_preserving.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    1: eapply compiler_append; try typeclasses eauto.
-      1: eapply cc_parameterized_correct.
-
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.
-    
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply elab_compiler_implies_preserving; eapply ty_subst_lang_id_ext_cc.
-    1: eapply compiler_append; try typeclasses eauto.
-    1: eapply cc_parameterized_correct.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    1: eapply use_inclb; vm_compute; exact I.
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    1:prove_by_lang_db db.
-    2:prove_by_lang_db db.    
-    1: eapply compiler_append; try typeclasses eauto.
-      1: eapply cc_parameterized_correct.
-
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    all: try (eapply use_compute_all_fresh;vm_compute; exact I).
-
-    
-    1:eapply preserving_compiler_embed.
-    1:eapply ty_subst_id_compiler_correct.
-    all: try (eapply use_inclb; vm_compute; exact I).
-    
-    1:prove_by_lang_db db.
-  }
-  { prove_by_cmp_db cmp_db. }
+  1-3:prove_by_lang_db db.
+  1-2:prove_by_cmp_db cmp_db.
 Qed.
-      

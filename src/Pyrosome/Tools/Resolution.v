@@ -866,7 +866,7 @@ Ltac prove_by_lang_db dbP :=
 
 
 Ltac prove_by_cmp_db dbP :=
-  apply (cmp_wf_in_db_correct _ _ (proj2_sig dbP));
+  apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig dbP));
   vm_compute; exact I.
 
 (*TODO: this doesn't work since if 2 files overwrite it, importing 1 will erase the other*)
