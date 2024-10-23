@@ -173,6 +173,15 @@ Section WithMap.
     | Some v => map.put m x (f v)
     | None => map.put m x (f default)
     end.
+  
+  (*TODO: move this somewhere?
+    TODO: sometimes maps can implement this more efficiently
+   *)
+  Definition map_update_if_exists {K V} {mp : map.map K V} (m : mp) x (f : V -> V) :=
+    match map.get m x with
+    | Some v => map.put m x (f v)
+    | None => m
+    end.
 
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
@@ -394,7 +403,7 @@ Section WithMap.
    *)
   Definition remove_node f args : ST unit :=
     fun i =>
-      let d' := map_update i.(db) f (fun tbl => map.remove tbl args) in
+      let d' := map_update_if_exists i.(db) f (fun tbl => map.remove tbl args) in
       (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
 
   (* Note: should only be called with nodes not in the egraph! *)
@@ -1313,6 +1322,12 @@ End WithMap.
 Arguments atom_fn {idx symbol}%type_scope a.
 Arguments atom_args {idx symbol}%type_scope a.
 Arguments atom_ret {idx symbol}%type_scope a.
+
+Arguments db {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
+Arguments equiv {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
+Arguments parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
+Arguments epoch {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
+Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
 
 Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope v v1 _.
