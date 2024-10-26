@@ -25,6 +25,17 @@ Notation "x <$> P" :=
   (Is_Some_satisfying P x)
     (at level 56,left associativity).
 
+
+Ltac match_some_satisfying :=
+  lazymatch goal with
+  | H : ?e <$> ?f |- _ =>
+      let Hsat := fresh "Hsat" in
+      destruct e eqn:Hsat; cbn [Is_Some_satisfying] in *; try tauto
+  | |- context ctx [?e <$> ?f] =>
+      let Hsat := fresh "Hsat" in
+      destruct e eqn:Hsat; cbn [Is_Some_satisfying] in *; try tauto
+  end.
+
 Section WithMap.
   Context
     (idx : Type)
@@ -127,25 +138,17 @@ Section WithMap.
 
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
-  Definition atom_in_egraph '(Build_atom f args out) (i : instance) :=
-    (map.get i.(db _ _ _ _ _) f) <$>
-      (fun tbl => (map.get tbl args) <$>
-                    (fun r => snd r = out)).
+  Definition atom_in_egraph a (i : instance) :=
+    (map.get i.(db _ _ _ _ _) a.(atom_fn)) <$>
+      (fun tbl => (map.get tbl a.(atom_args)) <$>
+                    (fun r => snd r = a.(atom_ret))).
 
   Definition SomeRel {A B} (R : A -> B -> Prop) ma mb :=
     match ma, mb with
     | Some a, Some b => R a b
     | _, _ => False
     end.
-
-  Record egraph_ok (e : instance) : Prop :=
-    {
-      egraph_equiv_ok : exists roots, forest _ _ roots (parent _ _ _ e.(equiv))
-    }.
   
-  (* TODO: this is parametric, use the initial model instead? No.
-     TODO: this is proof relevant; keep it that way or no?
-   *)
   Record egraph_sound_for_model e m (idx_interpretation : idx -> option m.(domain)) : Prop :=
     {
       (*TODO: needed?
@@ -168,14 +171,37 @@ Section WithMap.
          SomeRel m.(domain_eq) (idx_interpretation i1) (idx_interpretation i2)
     }.
 
-  Record egraph_sound e rs : Prop :=
-    {
-      sound_egraph_ok :> egraph_ok e;
-      sound_egraph_for_model :
-      forall m : model,
-        model_of m rs ->
-        exists interp, egraph_sound_for_model e m interp;
-    }.
+  Section EGraphSound.
+    (*
+      A list of parents for which the invariant (temporarily) does not hold
+     *)
+    Context (excluded_parents : list (symbol * list idx)).
+
+    Definition excluded a :=
+      exists p, In p excluded_parents
+                /\ fst p = atom_fn a
+                /\ snd p = atom_args a.
+
+    Record egraph_ok (e : instance) : Prop :=
+      {
+        egraph_equiv_ok : exists roots, forest _ _ roots (parent _ _ _ e.(equiv));
+        egraph_parents_exist :
+        (*TODO: loosen atom_in_egraph to be up to canonicalization/atom_rel?
+        TODO: excluded list should just contain atom_fn, atom_args?
+         *)
+        forall i l, map.get e.(parents) i = Some l ->
+                    all (fun a => atom_in_egraph a e \/ excluded a) l
+      }.
+
+    Record egraph_sound e rs : Prop :=
+      {
+        sound_egraph_ok :> egraph_ok e;
+        sound_egraph_for_model :
+        forall m : model,
+          model_of m rs ->
+          exists interp, egraph_sound_for_model e m interp;
+      }.
+  End EGraphSound.
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
@@ -184,11 +210,15 @@ Section WithMap.
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
 
-  Theorem empty_sound rs : egraph_sound (empty_egraph idx_zero) rs.
+  Theorem empty_sound pe rs : egraph_sound pe (empty_egraph idx_zero) rs.
   Proof.
     unfold empty_egraph.
     constructor.
-    { cbn; do 2 econstructor; apply empty_forest_rooted. }
+    { cbn; econstructor; cbn.
+      { econstructor; apply empty_forest_rooted. }
+      { destruct pe; intros; eauto; rewrite map.get_empty in *; congruence. }
+    }
+    
     intros; exists (fun _ => None).
     constructor.
     {
@@ -218,8 +248,9 @@ Section WithMap.
     forall e, P e -> Q (c e).
 
   
-  Definition inst_computation_sound {A} (P : state instance A) rs :=
-    state_triple (fun e => egraph_sound e rs) P (fun p => egraph_sound (snd p) rs).
+  Definition inst_computation_sound {A} excl_in excl_out (P : state instance A) rs :=
+    state_triple (fun e => egraph_sound excl_in e rs) P
+      (fun p => egraph_sound excl_out (snd p) rs).
 
   Lemma state_triple_bind A B P Q H (f : A -> state instance B) c
     : state_triple P c Q ->
@@ -236,22 +267,20 @@ Section WithMap.
     eauto.
   Qed.
 
-  Lemma increment_epoch_sound rs
-    : inst_computation_sound (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie) rs.
+  Lemma increment_epoch_sound rs exl
+    : inst_computation_sound exl exl (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie) rs.
   Proof.
     unfold increment_epoch, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
-    { destruct sound_egraph_ok0; constructor; eauto. }
+    { destruct sound_egraph_ok0; constructor; unfold atom_in_egraph; cbn; eauto. }
     intros m H; specialize (sound_egraph_for_model0 m H); destruct sound_egraph_for_model0.
     exists x.
     destruct H0.
     constructor; eauto.
-    intros; eapply atom_interpretation0.
-    destruct a; cbn in *; eauto.
   Qed.
 
-  Lemma pull_worklist_sound rs
-    : inst_computation_sound (pull_worklist idx symbol symbol_map idx_map idx_trie) rs.
+  Lemma pull_worklist_sound rs exl
+    : inst_computation_sound exl exl (pull_worklist idx symbol symbol_map idx_map idx_trie) rs.
   Proof.
     unfold pull_worklist, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
@@ -260,8 +289,6 @@ Section WithMap.
     exists x.
     destruct H0.
     constructor; eauto.
-    intros; eapply atom_interpretation0.
-    destruct a; cbn in *; eauto.
   Qed.
   
   Lemma state_triple_ret A (a:A) P
@@ -399,10 +426,10 @@ Section WithMap.
   Qed.
 
   
-  Lemma find_sound rs a
-    : state_triple (fun e => egraph_sound e rs)
+  Lemma find_sound pe rs a
+    : state_triple (fun e => egraph_sound pe e rs)
         (find idx Eqb_idx symbol symbol_map idx_map idx_trie a)
-        (fun p => egraph_sound (snd p) rs /\ uf_rel _ _ _ (snd p).(equiv) (fst p) a).
+        (fun p => egraph_sound pe (snd p) rs /\ uf_rel _ _ _ (snd p).(equiv) (fst p) a).
   Proof.
     unfold find, inst_computation_sound, state_triple.
     destruct e; destruct 1; cbn.
@@ -416,7 +443,8 @@ Section WithMap.
     destruct sound_egraph_ok0; break.
     eapply find_spec in HeqH; eauto; [| Lia.lia]; cbn in *; break.
     split;[| apply H2; eauto; eapply reachable_rel_Symmetric; eauto].
-    constructor; [constructor; eexists; eauto |].
+    constructor.
+    { constructor; cbn; [eexists; eauto | eauto]. }
     intros m Hm.
     specialize (sound_egraph_for_model0 m Hm).
     destruct sound_egraph_for_model0 as [ interp [] ];
@@ -436,10 +464,10 @@ Section WithMap.
   Qed.
 
   (* TODO: include output invariant in postcondition*)
-  Lemma get_parents_sound a rs
-    : state_triple (fun e => egraph_sound e rs)
+  Lemma get_parents_sound pe a rs
+    : state_triple (fun e => egraph_sound pe e rs)
         (get_parents idx symbol symbol_map idx_map idx_trie a)
-        (fun p => egraph_sound (snd p) rs /\ all (fun a => atom_in_egraph a (snd p)) (fst p)).
+        (fun p => egraph_sound pe (snd p) rs /\ all (fun a => atom_in_egraph a (snd p)) (fst p)).
   Proof.
     unfold get_parents,state_triple.
     destruct e; cbn;
@@ -508,39 +536,141 @@ Section WithMap.
     case_match; cbn; eauto.
     all:rewrite map.get_put_same; eauto.
   Qed.
+
+  (* TODO: move to Utils*)
+  Lemma all_wkn A l (P Q : A -> Prop)
+    : (forall x, In x l -> P x -> Q x) -> all P l -> all Q l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Lemma atoms_functional a1 a2 e
+    :  atom_in_egraph a1 e ->
+       atom_in_egraph a2 e ->
+       a1.(atom_fn) = a2.(atom_fn) ->
+       a1.(atom_args) = a2.(atom_args) ->
+       a1 = a2.
+  Proof.
+    clear idx_succ.
+    unfold atom_in_egraph;
+      destruct a1, a2;
+      basic_goal_prep;
+      subst.
+    f_equal.
+    repeat (match_some_satisfying; cbn; try tauto;[]).
+    basic_goal_prep;
+      subst.
+    reflexivity.
+  Qed.
+
+  Lemma atom_in_egraph_excluded a e
+    : atom_in_egraph a e \/ ~ atom_in_egraph a e.
+  Proof.
+    clear idx_succ.
+    unfold atom_in_egraph.
+    repeat (match_some_satisfying; cbn;[]).
+    basic_goal_prep.
+    eqb_case i0 (atom_ret a); intuition eauto.
+  Qed.
   
-  Lemma remove_node_sound atom_fn atom_args rs
-    : inst_computation_sound (remove_node idx symbol symbol_map idx_map idx_trie
-                                atom_fn atom_args)
+  Lemma remove_node_sound exl a_fn a_args rs
+    : inst_computation_sound exl ((a_fn,a_args)::exl)
+        (remove_node idx symbol symbol_map idx_map idx_trie
+                                a_fn a_args)
         rs.
   Proof.
     unfold remove_node, inst_computation_sound, state_triple.
     destruct e; cbn;
       destruct 1 as [ [ [?  egraph_equiv_ok0] ] ].
-    constructor; [constructor; eauto |].
+    constructor.
+    {
+      constructor.
+      { eexists; apply egraph_equiv_ok0. }
+      {
+        cbn in *.
+        intros.
+        eapply egraph_parents_exist0 in H.
+        eapply all_wkn; try eassumption.
+        cbn.
+        intros a' Hina'.
+        intuition eauto.
+        (*pose proof (atom_in_egraph_excluded a
+                                          {|
+                                            db := db;
+                                            equiv := equiv;
+                                            parents := parents;
+                                            epoch := epoch;
+                                            worklist := worklist
+                                          |}) as Hor.*)
+        {
+          unfold atom_in_egraph in H1;
+            unfold atom_in_egraph;
+            basic_goal_prep;
+            eauto.
+          eqb_case a_fn a'.(atom_fn).
+          2:{
+            rewrite get_update_if_exists_diff;
+              intuition eauto.
+          }          
+          repeat (match_some_satisfying; cbn;[]).
+          basic_goal_prep; subst.
+          rewrite get_update_if_exists_same; eauto.
+          eqb_case a_args a'.(atom_args); cbn;
+            rewrite Hsat; cbn.
+          2:{
+            rewrite map.get_remove_diff;
+              intuition eauto.
+            rewrite Hsat0; cbn; eauto.
+          }
+          {
+            rewrite map.get_remove_same; cbn;
+              intuition eauto.
+            unfold excluded.
+            right.
+            eexists; cbn; intuition eauto.
+          }
+        }
+        {
+          right.
+          unfold excluded in *;
+            basic_goal_prep;
+            eauto.
+        }
+      }
+    }
     intros m H; specialize (sound_egraph_for_model0 m H);
       destruct sound_egraph_for_model0 as [interp [] ].
     exists interp.
     constructor.
     {
-      intros; eapply atom_interpretation0.
-      destruct a; cbn in *; eauto.
-      eqb_case atom_fn atom_fn0.
+      unfold atom_in_egraph; cbn.
+      intros a'.      
+      eqb_case a_fn a'.(atom_fn).
       2:{
         rewrite get_update_if_exists_diff in *; eauto.
       }
+      rewrite get_update_if_exists_same; cbn; eauto.
+      eqb_case a_args a'.(atom_args).
+      2:{
+        intros.
+        repeat (match_some_satisfying; cbn; []).
+        basic_goal_prep;
+           subst.        
+        intros; eapply atom_interpretation0.
+        unfold atom_in_egraph; cbn.
+        destruct (map.get db (atom_fn a')) eqn:Hfn;
+          cbn in *; try congruence.
+        safe_invert Hsat.
+        rewrite map.get_remove_diff in Hsat0; eauto.
+        rewrite Hsat0; cbn.
+        reflexivity.
+      }
       {
-        rewrite get_update_if_exists_same in *; eauto.
-        destruct (map.get db atom_fn0); cbn in *; try tauto.
-        eqb_case atom_args atom_args0.
-        {
-          unshelve erewrite map.get_remove_same in H0 ; cbn in *;
-            tauto.
-        }
-        {
-          unshelve erewrite map.get_remove_diff in H0 ; cbn in *;
-            eauto.
-        }
+        destruct (map.get db (atom_fn a')) eqn:Hfn;
+          cbn in *; try tauto;[].
+        rewrite map.get_remove_same; cbn; tauto.
       }
     }
     { cbn in *;  eauto. }
@@ -551,9 +681,9 @@ Section WithMap.
                   (interpretation m (atom_fn a) p)) <$>
                 (fun d : domain m => idx_interpretation (atom_ret a) <$> m.(domain_eq) d).
 
-  Record put_precondition a (rs : list (log_rule idx symbol)) (e : instance) : Prop :=
+  Record put_precondition exl_in a (rs : list (log_rule idx symbol)) (e : instance) : Prop :=
     {
-      put_precondition_sound_egraph_ok : egraph_ok e;
+      put_precondition_sound_egraph_ok : egraph_ok exl_in e;
       put_precondition_sound_egraph_for_model : forall m : model,
         model_of m rs ->
         exists interp : idx -> option (domain m),
@@ -561,15 +691,101 @@ Section WithMap.
           /\ node_in_denotation m interp a
     }.
 
-  Lemma put_node_sound atom_f args out rs
-    : state_triple (put_precondition (Build_atom atom_f args out) rs)
+  Lemma put_node_sound exl atom_f args out rs
+    : state_triple (put_precondition exl (Build_atom atom_f args out) rs)
         (put_node idx symbol symbol_map idx_map idx_trie atom_f args out)
-        (fun p : _ * instance => egraph_sound (snd p) rs).
+        (fun p => egraph_sound (removeb (eqb (A:=_)) (atom_f, args) exl)
+                    (snd p) rs).
   Proof.
     unfold put_node, state_triple.
     destruct e; cbn;
       destruct 1 as [ [ [?  egraph_equiv_ok0] ] ].
-    constructor; [constructor; eauto |].
+    constructor.
+    {
+      constructor; cbn in *; eauto.
+      intros i l Hi;
+        eapply egraph_parents_exist0 in Hi.
+      eapply all_wkn; try eassumption.
+      clear Hi.
+      cbn.
+      unfold atom_in_egraph; cbn; intros; eauto.
+      eqb_case atom_f x0.(atom_fn);
+        basic_goal_prep; subst.
+      2:{
+        rewrite get_update_diff; intuition eauto.
+        right; unfold excluded in *;
+          basic_goal_prep;
+          subst.
+        unshelve econstructor; [ constructor; shelve|];
+          cbn; intuition eauto.
+        eapply remove_In_ne; eauto.
+        congruence.
+      }
+      rewrite get_update_same; cbn; eauto.
+      eqb_case args x0.(atom_args);
+          basic_goal_prep; subst.
+      2:{
+        (intuition eauto).       
+        2:{
+          right; unfold excluded in *;
+          basic_goal_prep;
+          subst.
+          unshelve econstructor; [ constructor; shelve|];
+            cbn; intuition eauto.
+          eapply remove_In_ne; eauto.
+          congruence.
+        }
+        case_match; cbn in *; try tauto; [].    
+        rewrite map.get_put_diff; eauto.
+      }
+      repeat (match_some_satisfying; cbn; try tauto;[]).
+      
+      clear H0; left.
+      (*TODO: exclude list should include out since it needs to match parent list.
+              Else, this proof won't go through
+       *)
+      (*
+      Dual of prior problem
+      case_match; cbn;
+        rewrite map.get_put_same; cbn; eauto.
+      repeat (match_some_satisfying; cbn; try tauto;[]).
+
+        admit
+          (*TODO: is this an implementation issue?.
+        Should the parent list only be 2 elts, no ret val?.
+        Makes more sense that way.
+        On the other hand: need a returning remove op to make that make sense
+           *).
+      }
+      {        
+        eqb_case atom_f x0.(atom_fn);
+          basic_goal_prep; subst.
+        2:{
+          rewrite get_update_diff; eauto.
+          rewrite Hsat; cbn.
+          rewrite Hsat0; cbn.
+          left;reflexivity.
+        }
+        rewrite get_update_same; cbn; eauto.
+        rewrite Hsat; cbn.
+        eqb_case args x0.(atom_args);
+          basic_goal_prep; subst.
+        2:{
+          rewrite map.get_put_diff; eauto.
+          rewrite Hsat0; cbn.
+          left;reflexivity.
+        }
+        right.
+        unfold excluded in *;
+          basic_goal_prep; subst.
+        exists (atom_fn x0, atom_args x0);
+          cbn;
+          intuition eauto.
+        TODO: not necessarily true
+      }
+    }
+    [constructor; eauto |].
+    {
     intros m H; specialize (put_precondition_sound_egraph_for_model0 m H);
       destruct put_precondition_sound_egraph_for_model0 as [interp [ [] ? ] ].
     unfold node_in_denotation in *.
@@ -612,10 +828,13 @@ Section WithMap.
     }
     { cbn in *;  eauto. }
   Qed.
+       *)
+  Admitted.
     
   
-  Lemma repair_sound a rs
-    : inst_computation_sound (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie a) rs.
+  Lemma repair_sound a rs exl
+    : inst_computation_sound exl exl
+        (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie a) rs.
   Proof.
     unfold repair.
     eapply state_triple_bind; intros.
@@ -724,8 +943,8 @@ Section WithMap.
               *)
   Abort.
   
-  Lemma rebuild_sound n rs
-    :  inst_computation_sound (rebuild n) rs.
+  Lemma rebuild_sound exl n rs
+    :  inst_computation_sound exl exl (rebuild n) rs.
   Proof.
     (*
     induction n.
@@ -761,8 +980,8 @@ Section WithMap.
     
 
     
-  Lemma run1iter_sound rs rs'
-    : inst_computation_sound (run1iter rs') rs.
+  Lemma run1iter_sound exl rs rs'
+    : inst_computation_sound exl exl (run1iter rs') rs.
   Proof.
     unfold run1iter.
     (*
@@ -795,11 +1014,11 @@ Section WithMap.
     Admitted.
   
   Theorem saturation_sound e rs rs' P fuel b e'
-    : inst_computation_sound P rs ->
-      egraph_sound e rs ->
+    : inst_computation_sound [] [] P rs ->
+      egraph_sound [] e rs ->
       (*TODO: relationship between compiled rs' and uncompiled rs? incl rs' rs ->*)
       saturate_until rs' P fuel e = (b, e') ->
-      egraph_sound e' rs.
+      egraph_sound [] e' rs.
   Proof.
     intro HP.
     revert e.
@@ -811,7 +1030,7 @@ Section WithMap.
       basic_goal_prep;
       basic_utils_crush;
       subst.
-    specialize (run1iter_sound rs rs' i).
+    specialize (run1iter_sound [] rs rs' i).
     destruct (run1iter rs' i); cbn.
     eauto.
   Qed.
@@ -819,7 +1038,7 @@ Section WithMap.
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  pat i.
+  a i.
 
 Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
 
