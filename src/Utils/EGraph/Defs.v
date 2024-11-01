@@ -446,7 +446,7 @@ Section WithMap.
     @! let ps <- get_parents x in
       let _ <- list_Miter repair_each ps in
       let ps1 <- list_Mmap canonicalize ps in
-      let ps2 <- list_Mfoldl add_parent [] ps in
+      let ps2 <- list_Mfoldl add_parent ps [] in
       (set_parents x ps1).    
 
   Fixpoint rebuild fuel : ST unit :=
