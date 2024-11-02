@@ -187,7 +187,7 @@ Section WithMap.
 
    *)
 
-  Notation rw_set := (rw_set idx symbol symbol_map idx_map).
+  Notation rule_set := (rule_set idx symbol symbol_map idx_map).
   (* TODO: Using ST' instead of ST because of some weird namespacing *)
   Local Notation ST' := (state (symbol_map (idx * idx_map (list idx * idx)))).
 
@@ -231,23 +231,32 @@ Section WithMap.
       ret (f, i, clause_vars).
 
   Local Notation erule := (erule idx symbol).
+  Local Notation const_rule := (const_rule idx symbol).
   
-  Definition compile_rule (r  : log_rule) : ST' erule :=
+  Definition compile_rule (r  : log_rule) : ST' (erule + const_rule) :=
     let (qvs, qcls, wcls, wufs) := r in
     @! let qcls_ptrs <- list_Mmap (compile_query_clause qvs) qcls in
-      (* Assume it must be nonempty to be useful *)
+      (* Assume it must be nonempty to be useful.
+         TODO: how to handle empty rules?
+         essentially just add a term to the egraph, can be run once and discarded.
+       *)
       match qcls_ptrs with
-      | [] => (*Should never happen if called corrrectly*)
-          Mret (Build_erule _ _ default default default default)
-      | c::cs => Mret (Build_erule _ _ qvs (c,cs) wcls wufs)
+        (* assumes qvs empty *)
+      | [] => Mret (inr (Build_const_rule _ _ wcls wufs))
+      | c::cs => Mret (inl (Build_erule _ _ qvs (c,cs) wcls wufs))
       end.
 
+  (*TODO: put in Utils.v*)
+  Definition split_sum_list {A B} (l : list (A + B)) : (list A * list B) :=
+    List.fold_right (fun e acc => match e with
+                                  | inl e' => (e'::fst acc, snd acc)
+                                  | inr e' => (fst acc,e'::snd acc)
+                                  end) ([],[]) l.
   
-  Arguments Build_rw_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
-    query_clauses compiled_rules%list_scope.
   
-  Definition build_rw_set (rules : list log_rule) : rw_set :=
+  Definition build_rule_set (rules : list log_rule) : rule_set :=
     let (crs, clauses_plus) := list_Mmap compile_rule rules map.empty in
-    Build_rw_set (map_map snd clauses_plus) crs.
+    let (erules, consts) := split_sum_list crs in
+    Build_rule_set (map_map snd clauses_plus) erules consts.
  
 End WithMap.

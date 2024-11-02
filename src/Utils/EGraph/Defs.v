@@ -130,6 +130,16 @@ Section WithMap.
        *)
       write_unifications : list (idx * idx);
     }.
+
+  (* Used for rules with no query.
+     Such rules are valid, but only need to be run once
+     and are incompatible with the nonempty assumptions of generic join.
+   *)
+  Record const_rule :=
+    {
+      const_clauses : list atom;
+      const_unifications : list (idx * idx);
+    }.
   
 
   (*
@@ -137,15 +147,14 @@ Section WithMap.
     probably just makes sense to go by disjunct than try sharing,
     since adding is pretty cheap compared to trie creation.
    *)
-  Record rw_set :=
+  
+  Record rule_set : Type :=
     {
-      (* each clause (f x1..xn -> y) uses an independent,
-         canonical minimal set of variables (0..n+1, or less if some are repeated)
-         Shared between queries
-       *)
       query_clauses : symbol_map (idx_map (list idx * idx));
       compiled_rules : list erule;
-    }.
+      (* TODO: technically only need 1 const rule *)
+      compiled_const_rules : list const_rule;
+    }. 
 
   
   Local Notation ST := (state instance).
@@ -214,30 +223,38 @@ Section WithMap.
       | None => new_singleton f args i
       end.
 
-  Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST unit :=
+  (* returns the env extended by all output variables' asignments *)
+  Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST _ :=
     match cl with
-    | [] => @!ret {ST} tt
+    | [] => @!ret env
     | c::cl' =>
         let (f,args,out) := c in
         (* assume: all idx in args are keys in env *)
         let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
         (* TODO: allocates extra id when the node is fresh *)
-        @! let {ST} i <- hash_node f args in
+        @! let i <- hash_node f args in
           match map.get env out with
-          | Some v => @!let {ST} _ <- union i v in (exec_write_clauses env cl')
+          | Some v => @!let _ <- union i v in (exec_write_clauses env cl')
           | None => exec_write_clauses (map.put env out i) cl'
           end
     end.
 
-  (* Note: only makes the query variables available for unification clauses,
-     not the freshly-generated ones.
-     This is sufficient to encode any deserived behavior.
-   *)
+  Definition exec_write' initial_env wcs wus : ST unit :=
+    @! let env <- exec_write_clauses initial_env wcs in
+    (* TODO: let iter accept a polymorphic input*)
+    (list_Miter (fun '(x,y) =>
+                   (* assume: all x,y are keys in env *)
+                   let xv := unwrap_with_default (H:=idx_zero) (map.get env x) in
+                   let yv := unwrap_with_default (H:=idx_zero) (map.get env y) in
+                   Mseq (union xv yv) (Mret tt))
+       wus).
+  
   Definition exec_write r assignment : ST unit :=
-    let initial_env := map.of_list (combine r.(query_vars) assignment) in
-    Mseq (exec_write_clauses initial_env r.(write_clauses))
-      (* TODO: let iter accept a polymorphic input*)
-      (list_Miter (fun '(x,y) => Mseq (union x y) (Mret tt)) r.(write_unifications)).
+    exec_write' (map.of_list (combine r.(query_vars) assignment)) r.(write_clauses)  r.(write_unifications).
+
+  Definition process_const_rules (rs : rule_set) : ST unit :=
+    list_Miter (fun cr => exec_write' map.empty cr.(const_clauses) cr.(const_unifications))
+      rs.(compiled_const_rules).    
 
   Definition match_argK {A} x y (acc : idx_map idx) (K : _ -> option A) :=
     match map.get acc x with
@@ -300,7 +317,7 @@ Section WithMap.
     map.fold (fun tries args vp => map_intersect (upd_trie_pair args vp) tries q_clauses)
       (map_map (fun _ => (map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
-  Definition build_tries (q : rw_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
+  Definition build_tries (q : rule_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
     fun i => (map_intersect  (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
 
   
@@ -463,7 +480,7 @@ Section WithMap.
     end.
 
   (*TODO: update/implement rebuilding*)
-  Definition run1iter (rs : rw_set) : ST unit :=
+  Definition run1iter (rs : rule_set) : ST unit :=
     @! let tries <- build_tries rs in
       (* increment the epoch so that all added nodes are in the next frontier.
            TODO: check for off-by-one errors
@@ -473,15 +490,20 @@ Section WithMap.
       (* TODO: compute an adequate upper bound for fuel *)
       (rebuild 1000).
 
-  Fixpoint saturate_until rs (P : ST bool) fuel : ST bool :=
+  Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @! let {ST} done <- P in
           if (done : bool) then ret true
-          else let _ <- run1iter rs in (saturate_until rs P fuel)
+          else let _ <- run1iter rs in (saturate_until' rs P fuel)
     end.
 
+  (* run the const rules once before the saturation loop *)
+  Definition saturate_until rs (P : ST bool) fuel : ST bool :=
+    Mseq (process_const_rules rs)
+      (saturate_until' rs P fuel).
+    
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
     @!let x1' <- find x1 in
@@ -1336,6 +1358,17 @@ Arguments hash_node {idx}%type_scope idx_succ%function_scope {symbol}%type_scope
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
 
+
+  
+Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
+  query_clauses compiled_rules%list_scope.
+
+
+Arguments saturate_until' {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
+  idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
+  {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
+  spaced_list_intersect%function_scope 
+  rs P fuel%nat_scope _.
 
 Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}

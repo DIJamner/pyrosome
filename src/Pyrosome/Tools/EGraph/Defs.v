@@ -281,19 +281,20 @@ Section WithVar.
 
   End WithLang.
   
-  Notation rw_set := (rw_set V V V_map V_map).
+  Notation rule_set := (rule_set V V V_map V_map).
   
-  Arguments build_rw_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
-    {symbol}%type_scope default_symbol {symbol_map}%function_scope {symbol_map_plus} 
+  Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
+    {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus} 
     {idx_map}%function_scope rules%list_scope.
+  
   
   (* Note: only pass in the subset of the language you want to run.
      Often, that will be exactly the equational rules.
 
      Assumes incl l l'
    *)
-  Definition rw_set_from_lang (l l': lang) : rw_set :=
-    build_rw_set succ _ _ (map (uncurry (rule_to_log_rule l')) l).
+  Definition rule_set_from_lang (l l': lang) : rule_set :=
+    build_rule_set succ _ (map (uncurry (rule_to_log_rule l')) l).
 
   Local Notation hash_node := (hash_node succ).
 
@@ -387,7 +388,7 @@ Section WithVar.
         let b2 <- are_unified x1 x2 in
         ret (andb b1 b2).
 
-    Definition egraph_equal l (rws : rw_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
+    Definition egraph_equal l (rws : rule_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state instance bool :=
         @!let {(state instance)} x1 <- add_open_term l [] e1 in
           let {(state instance)} x2 <- add_open_term l [] e2 in
@@ -783,7 +784,7 @@ Module PositiveInstantiation.
   Definition sort_of := xH.
   
   Definition egraph_equal
-    : lang positive -> rw_set positive positive trie_map trie_map ->
+    : lang positive -> rule_set positive positive trie_map trie_map ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive ->
       _ :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@pt_spaced_intersect)).
@@ -792,8 +793,8 @@ Module PositiveInstantiation.
   Definition filter_eqn_rules {V} : lang V -> lang V :=
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
-  Definition build_rw_set : lang positive -> lang positive -> rw_set positive positive trie_map trie_map :=
-    rw_set_from_lang ptree_map_plus Pos.succ sort_of (fold_right Pos.max xH).
+  Definition build_rule_set : lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
+    rule_set_from_lang ptree_map_plus Pos.succ sort_of (fold_right Pos.max xH).
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
@@ -806,7 +807,7 @@ Module PositiveInstantiation.
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
-        ret (egraph_equal l' (build_rw_set (filter_eqn_rules l') l') n e1' e2' t')
+        ret (egraph_equal l' (build_rule_set (filter_eqn_rules l') l') n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
@@ -846,7 +847,7 @@ Module StringInstantiation.
   Require Import Ascii.
   
   Goal ascii_succ "0"%char = "1"%char.
-  Proof. compute. reflexivity. Qed.
+  Proof. compute. reflexivity. Abort.
   
   (*TODO: could consider writing one that retains better legibility.
     Sepcifically: only use printable characters
@@ -862,14 +863,14 @@ Module StringInstantiation.
     end.
 
   Goal string_succ "v8" = "v9".
-  Proof. compute. reflexivity. Qed.
+  Proof. compute. reflexivity. Abort.
 
   
   Goal string_succ "vZ" = "vZ0".
-  Proof. compute. reflexivity. Qed.
+  Proof. compute. reflexivity. Abort.
   
   Goal string_succ "v/" = "v/0".
-  Proof. compute. reflexivity. Qed.
+  Proof. compute. reflexivity. Abort.
 
   
   Definition sort_of := "@sort_of".
@@ -945,7 +946,7 @@ Module StringInstantiation.
     |}.
   
   Definition egraph_equal
-    : lang string -> rw_set string string string_trie_map string_trie_map ->
+    : lang string -> rule_set string string string_trie_map string_trie_map ->
       nat -> _ -> Term.term string -> Term.term string -> Term.sort string ->
       _ :=
     fun l rw n c e1 e2 t =>
@@ -960,10 +961,10 @@ Module StringInstantiation.
     | _ => s2
     end.
   
-  Definition build_rw_set : lang string ->
+  Definition build_rule_set : lang string ->
                             lang string ->
-                            rw_set string string string_trie_map string_trie_map :=
-    rw_set_from_lang string_ptree_map_plus string_succ sort_of
+                            rule_set string string string_trie_map string_trie_map :=
+    rule_set_from_lang string_ptree_map_plus string_succ sort_of
       (fold_right string_max "x0").
 
 End StringInstantiation.

@@ -260,6 +260,7 @@ Section WithMap.
   Qed.
 
   
+  Notation saturate_until' := (saturate_until' idx_succ idx_zero spaced_list_intersect).
   Notation saturate_until := (saturate_until idx_succ idx_zero spaced_list_intersect).
 
   Notation run1iter :=
@@ -1502,11 +1503,11 @@ Section WithMap.
      *)
     Admitted.
   
-  Theorem saturation_sound e rs rs' P fuel b e'
+  Theorem saturation'_sound e rs rs' P fuel b e'
     : inst_computation_sound P rs ->
       egraph_sound e rs ->
       (*TODO: relationship between compiled rs' and uncompiled rs? incl rs' rs ->*)
-      saturate_until rs' P fuel e = (b, e') ->
+      saturate_until' rs' P fuel e = (b, e') ->
       egraph_sound e' rs.
   Proof.
     intro HP.
