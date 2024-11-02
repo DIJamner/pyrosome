@@ -232,7 +232,7 @@ Section WithMap.
         (* assume: all idx in args are keys in env *)
         let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
         (* TODO: allocates extra id when the node is fresh *)
-        @! let i <- hash_node f args in
+        @! let i <- hash_node f args_vals in
           match map.get env out with
           | Some v => @!let _ <- union i v in (exec_write_clauses env cl')
           | None => exec_write_clauses (map.put env out i) cl'
