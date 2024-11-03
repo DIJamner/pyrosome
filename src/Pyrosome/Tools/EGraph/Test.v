@@ -138,9 +138,9 @@ Notation "a = b" :=
 Definition example1 : list log_rule :=
   [!! "dog" -> "d" :-;
    !! "cat" -> "c" :-;
-   !! "canine" "x" -> "t" :- "dog" -> "x" [ "x" ];
-   !! "animal" "x" -> "t" :- "dog" -> "x" [ "x" ];
-   !! "animal" "x" -> "t" :- "cat" -> "x" [ "x" ]
+   !! "canine" "y" -> "y" :- "dog" -> "y" [ "y" ];
+   !! "animal" "a" -> "t" :- "canine" "a" -> "t" [ "a" "t" ];
+   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ]
   ]%log.
 
 
@@ -151,8 +151,52 @@ Definition ex1_set :=
 
 Definition ex1_graph :=
   Eval vm_compute in
-    (saturate_until string_succ "v0"
+    (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 10
-       (empty_egraph default)).
+       (empty_egraph default))).
 
-(*TODO: test queries*)
+(*TODO: am I double-incrementing the epoch? have "" , 1, 3???
+  Alternately, am I wasting 1/2 of the epoch cycles?
+  TODO: not unioning function outputs properly
+ *)
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
+Compute (map.tuples ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+
+(*
+(*TODO: implement & test queries*)
+Definition query_egraph 
+
+  Definition process_erule'
+    (* each trie pair is (total, frontier) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    (r : erule) (frontier_n : idx) : ST unit :=
+    let tries : ne_list _ := ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
+                               r.(query_clause_ptrs) in
+    let assignments : list _ := (intersection_keys tries) in
+    list_Miter (M:=ST) (exec_write r) assignments.
+
+  (*TODO: avoid using this*)
+  Fixpoint idx_of_nat n :=
+    match n with
+    | 0 => idx_zero
+    | S n => idx_succ (idx_of_nat n)
+    end.
+  
+  Definition process_erule db_tries r : ST unit :=
+    (* TODO: don't construct the list of nats/idxs, just iterate directly *)
+    list_Miter (fun n => process_erule' db_tries r (idx_of_nat n))
+      (seq 0 (List.length (uncurry cons r.(query_clause_ptrs)))).
+
+  
+
+  (*TODO: update/implement rebuilding*)
+  Definition run1iter (rs : rule_set) : ST unit :=
+    @! let tries <- build_tries rs in
+      (* increment the epoch so that all added nodes are in the next frontier.
+           TODO: check for off-by-one errors
+       *)
+      let _ <- increment_epoch in
+      let _ <- list_Miter (process_erule tries) rs.(compiled_rules) in
+      (* TODO: compute an adequate upper bound for fuel *)
+      (rebuild 1000).
+*)

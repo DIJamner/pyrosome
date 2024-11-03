@@ -165,13 +165,13 @@ Section WithMap.
    *)
   Definition union (v v1 : idx) : ST idx :=
     fun d =>
-    match UnionFind.union _ _ _ _ d.(equiv) v v1 with
-    | Some (uf',v') =>
-        (*TODO: eqb duplicated in union; how to reduce the work?*)
-        let wl := if eqb v v1 then d.(worklist) else v'::d.(worklist) in
-        (v', Build_instance d.(db) uf' d.(parents) d.(epoch) wl)
-    | None => (*should never happen if v in uf *) (v,d)  
-    end.
+      (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
+      if eqb v v1 then (v,d)
+      else match UnionFind.union _ _ _ _ d.(equiv) v v1 with
+           | Some (uf',v') =>
+               (v', Build_instance d.(db) uf' d.(parents) d.(epoch) (v'::d.(worklist)))
+           | None => (*should never happen if v in uf *) (v,d)  
+           end.
 
   
   (*TODO: move this somewhere?
@@ -195,22 +195,46 @@ Section WithMap.
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
-  Definition new_singleton f args : ST idx :=
+  Definition new_singleton_out f args out : ST idx :=
     fun i =>
-      let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-      let tbl_upd tbl := map.put tbl args (i.(epoch), x_fresh) in
+      let tbl_upd tbl := map.put tbl args (i.(epoch), out) in
       (* assumes f exists *)
       let db' := map_update i.(db) f tbl_upd in
-      let node := Build_atom f args x_fresh in
+      let node := Build_atom f args out in
       let parents' := fold_left (fun m x => map_update m x (cons node)) args i.(parents) in
-      (x_fresh, Build_instance db' equiv' parents' i.(epoch) i.(worklist)).
+      (out, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist)).
+  
+  Definition new_singleton f args : ST idx :=
+    Mbind (new_singleton_out f args)
+      (fun i =>
+         let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
+         (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
 
+  
+  (*
+    takes in an idx that should be unified with the output (but doe no unification)
+    Guarantees not to allocate a fresh idx
+    TODO: move function boundary for a better spec
+   *)
+  Definition hash_node_out (f : symbol) args out : ST idx :=
+    fun i =>
+      match map.get i.(db) f with
+      | Some tbl =>
+          match map.get tbl args with
+          | Some x => (snd x, i)
+          | None => new_singleton_out f args out i
+          end
+      | None => new_singleton_out f args out i
+      end.
+  
   (* accesses the egraph like a hashcons.
      If the node exists, return its id.
      Otherwise, generate a fresh id, store it, and return it
 
      TODO: some maps are more efficient by merging get/set ops.
      Is that worth doing?
+
+     TODO: define in terms of above?
    *)
   Definition hash_node (f : symbol) args : ST idx :=
     fun i =>
@@ -231,12 +255,14 @@ Section WithMap.
         let (f,args,out) := c in
         (* assume: all idx in args are keys in env *)
         let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
-        (* TODO: allocates extra id when the node is fresh *)
-        @! let i <- hash_node f args_vals in
-          match map.get env out with
-          | Some v => @!let _ <- union i v in (exec_write_clauses env cl')
-          | None => exec_write_clauses (map.put env out i) cl'
-          end
+        match map.get env out with
+        | Some v => @!let i <- hash_node_out f args_vals v in
+                      (* will be a noop if hash_node_out allocates a fresh singleton *)
+                      let _ <- union i v in
+                      (exec_write_clauses env cl')
+        | None => @! let i <- hash_node f args_vals in
+                    (exec_write_clauses (map.put env out i) cl')
+        end
     end.
 
   Definition exec_write' initial_env wcs wus : ST unit :=
