@@ -745,6 +745,16 @@ Module PositiveInstantiation.
       fold _ f acc pt := pt_fold' f acc pt [];
     }.
 
+  (* Helper function for projecting the inner map when we assume the node case.
+     Should not be called on other cases.
+   *)
+  Definition proj_node_map p : PTree.tree pos_trie :=
+    match p with
+    | pos_trie_empty => PTree.Empty
+    | pos_trie_leaf a => PTree.Empty
+    | pos_trie_node m => PTree.Nodes m
+    end.
+  
   Section __.
     Context (merge : A -> A -> A).
     Fixpoint pt_spaced_intersect' (ci1 ci2 : list bool) pt1 pt2
@@ -752,16 +762,18 @@ Module PositiveInstantiation.
       match ci1, pt1, ci2, pt2 with
       | _, pos_trie_empty, _, _ 
       | _, _, _, pos_trie_empty => pos_trie_empty
-      | [], pos_trie_leaf a, [], pos_trie_leaf a' => pos_trie_leaf (merge a a')
-      | b1::ci1', pos_trie_node m, b2::ci2', pos_trie_node m' =>
+      (* Assume: ci1 = ci2 = repeat n false *)
+      | _, pos_trie_leaf a, _, pos_trie_leaf a' => pos_trie_leaf (merge a a')
+      (* TODO: missing cases: where one map is a leaf*)
+      | b1::ci1', (*pos_trie_node m*) _, b2::ci2', (*pos_trie_node m' *)_ =>
           (*TODO: could optimize*)
           let map' :=
             if b1 then
               if b2 then map_intersect (pt_spaced_intersect' ci1' ci2')
-                           (PTree.Nodes m)
-                           (PTree.Nodes m')
-              else map_map (fun t => pt_spaced_intersect' ci1' ci2' t pt2) (PTree.Nodes m)
-            else map_map (fun t => pt_spaced_intersect' ci1' ci2' pt1 t) (PTree.Nodes m)
+                           (proj_node_map pt1)
+                           (proj_node_map pt2)
+              else map_map (fun t => pt_spaced_intersect' ci1' ci2' t pt2) (proj_node_map pt1)
+            else map_map (fun t => pt_spaced_intersect' ci1' ci2' pt1 t) (proj_node_map pt2)
           in
           match map' with
           | PTree.Empty => pos_trie_empty

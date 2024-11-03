@@ -140,7 +140,8 @@ Definition example1 : list log_rule :=
    !! "cat" -> "c" :-;
    !! "canine" "y" -> "y" :- "dog" -> "y" [ "y" ];
    !! "animal" "a" -> "t" :- "canine" "a" -> "t" [ "a" "t" ];
-   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ]
+   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ];
+   !! "catdog" -> "d" (*| "d" = "c" *) :- "dog" -> "d", "cat" -> "c" [ "c" "d" ]
   ]%log.
 
 
@@ -157,10 +158,25 @@ Definition ex1_graph :=
 
 (*TODO: am I double-incrementing the epoch? have "" , 1, 3???
   Alternately, am I wasting 1/2 of the epoch cycles?
-  TODO: not unioning function outputs properly
+  TODO: not unioning function outputs properly?
+
+  TODO: query intersection seems to have issues:
+  catdog (dog) works, catdog (cat,dog) does not.
+  Probably an intersection issue
  *)
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
 Compute (map.tuples ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+
+(*TODO test pt_spaced_intersect.
+  Looks like a spaced intersect bug
+ *)
+Import PositiveInstantiation.
+Local Existing Instance pos_trie_map.
+(* expect ["foo"; "foo"]*)
+Compute
+  (map (map pts) (map.keys (pt_spaced_intersect (fun 'tt 'tt => tt)
+           ((map.put map.empty ["foo"] tt : pos_trie_map, [true; false]),
+             [(map.put map.empty ["foo"] tt : pos_trie_map, [false;true])]) : pos_trie_map))).
 
 (*
 (*TODO: implement & test queries*)
