@@ -1289,6 +1289,7 @@ Section WithMap.
         eapply state_triple_bind; intros.
         {
           unfold curry; cbn.
+          (* TODO: fix proof
           eapply state_triple_strengthen_pre;[| apply remove_node_sound with (rs:=rs)].
           intros i []; basic_goal_prep.
           constructor; eauto.
@@ -1430,7 +1431,8 @@ Section WithMap.
           (l := a0)
           (P:= fun acc l e =>
                       get_parents_postcondition rs (acc++l, e)).
-         *)
+           *)
+           *)
   Abort.
   
   Lemma rebuild_sound n rs

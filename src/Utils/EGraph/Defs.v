@@ -201,7 +201,11 @@ Section WithMap.
       (* assumes f exists *)
       let db' := map_update i.(db) f tbl_upd in
       let node := Build_atom f args out in
-      let parents' := fold_left (fun m x => map_update m x (cons node)) args i.(parents) in
+      (* Add the node as a parent of its output.
+         This is necessary to ensure output ids stay canonical,
+         which matters for matching.
+       *)
+      let parents' := fold_left (fun m x => map_update m x (cons node)) (out::args) i.(parents) in
       (out, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist)).
   
   Definition new_singleton f args : ST idx :=
@@ -209,6 +213,24 @@ Section WithMap.
       (fun i =>
          let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
          (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
+
+  
+  (*TODO: propagate down the removal of the option and push to UnionFind file
+    as an alternative
+   *)
+  Definition find a : ST idx :=
+    fun d =>
+      match UnionFind.find _ _ _ _ d.(equiv) a with
+      | Some (uf',v') =>
+          (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist))
+      | None => (*should never happen if a in uf *) (a,d)  
+      end.
+
+  Definition canonicalize (a:atom) : ST atom :=
+    let (f,args,o) := a in
+    @!let args' <- list_Mmap find args in
+      let o' <- find o in
+      ret Build_atom f args' o'.
 
   
   (*
@@ -255,14 +277,16 @@ Section WithMap.
         let (f,args,out) := c in
         (* assume: all idx in args are keys in env *)
         let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
-        match map.get env out with
-        | Some v => @!let i <- hash_node_out f args_vals v in
-                      (* will be a noop if hash_node_out allocates a fresh singleton *)
-                      let _ <- union i v in
-                      (exec_write_clauses env cl')
-        | None => @! let i <- hash_node f args_vals in
-                    (exec_write_clauses (map.put env out i) cl')
-        end
+        (* TODO: track canonicalization better and figure out if these are needed*)
+        @!let args_vals' <- list_Mmap find args_vals in
+          match map.get env out with
+          | Some v => @!let i <- hash_node_out f args_vals' v in
+                        (* will be a noop if hash_node_out allocates a fresh singleton *)
+                        let _ <- union i v in
+                        (exec_write_clauses env cl')
+          | None => @! let i <- hash_node f args_vals' in
+                      (exec_write_clauses (map.put env out i) cl')
+          end
     end.
 
   Definition exec_write' initial_env wcs wus : ST unit :=
@@ -344,17 +368,8 @@ Section WithMap.
       (map_map (fun _ => (map.empty, map.empty : idx_trie unit)) q_clauses) tbl.
 
   Definition build_tries (q : rule_set) : ST (symbol_map (idx_map (idx_trie unit * idx_trie unit))) :=
-    fun i => (map_intersect  (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
+    fun i => (map_intersect (build_tries_for_symbol i.(epoch)) q.(query_clauses) i.(db), i).
 
-  
-
-  (* TODO: fill this in? Or must it stay a parameter?   *)
-  (*
-  Context (spaced_map_intersect
-            : forall A B C : Type, (A -> B -> C) ->
-                                   idx_trie A -> list bool -> idx_trie B -> list bool ->
-                                   idx_trie C * list bool). *)
-  (*Check @TrieMap.list_intersect.*)
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
             : forall {B} (merge : B -> B -> B),
@@ -418,24 +433,6 @@ Section WithMap.
   Definition increment_epoch : ST unit :=
     fun '(Build_instance db equiv parents epoch worklist) =>
       (tt,Build_instance db equiv parents (idx_succ epoch) worklist).
-
-  (*TODO: propagate down the removal of the option and push to UnionFind file
-    as an alternative
-   *)
-  Definition find a : ST idx :=
-    fun d =>
-      match UnionFind.find _ _ _ _ d.(equiv) a with
-      | Some (uf',v') =>
-          (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist))
-      | None => (*should never happen if a in uf *) (a,d)  
-      end.
-
-  Definition canonicalize (a:atom) : ST atom :=
-    let (f,args,o) := a in
-    @!let args' <- list_Mmap find args in
-      let o' <- find o in
-      ret Build_atom f args' o'.
-
   
   Definition pull_worklist : ST (list idx) :=
     fun d => (d.(worklist),
@@ -478,13 +475,18 @@ Section WithMap.
                ret (Build_atom f args om)::ps'
         else @! let ps'' <- add_parent ps' p in ret p'::ps''
     end.
-    
+
   Definition repair x : ST unit :=
     let repair_each '(Build_atom f args out) :=
-      @! let _ <- remove_node f args in
-        let args' <- list_Mmap find args in
+      @!let args' <- list_Mmap find args in
         let out' <- find out in
-        (put_node f args' out')
+        (* Don't update if it's already canonical,
+           to avoid falsely bumping the epoch
+         *)
+        if eqb (out::args) (out'::args')
+        then ret tt
+        else let _ <- remove_node f args in        
+               (put_node f args' out')
     in
     @! let ps <- get_parents x in
       let _ <- list_Miter repair_each ps in
@@ -505,7 +507,6 @@ Section WithMap.
             (rebuild fuel)
     end.
 
-  (*TODO: update/implement rebuilding*)
   Definition run1iter (rs : rule_set) : ST unit :=
     @! let tries <- build_tries rs in
       (* increment the epoch so that all added nodes are in the next frontier.
@@ -528,7 +529,13 @@ Section WithMap.
   (* run the const rules once before the saturation loop *)
   Definition saturate_until rs (P : ST bool) fuel : ST bool :=
     Mseq (process_const_rules rs)
-      (saturate_until' rs P fuel).
+      (Mseq increment_epoch
+         (* TODO: is there a need to rebuild after const rules?
+            In general: yes, for now.
+            With optimal const rules: no
+          *)
+            (Mseq (rebuild 1000)
+               (saturate_until' rs P fuel))).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=

@@ -7,7 +7,7 @@ Open Scope list.
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps.
-From Utils.EGraph Require Import Defs Semantics QueryOpt.
+From Utils.EGraph Require Import Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
@@ -138,10 +138,10 @@ Notation "a = b" :=
 Definition example1 : list log_rule :=
   [!! "dog" -> "d" :-;
    !! "cat" -> "c" :-;
+   !! "catdog" -> "d" | "d" = "c" :- "dog" -> "d", "cat" -> "c" [ "c" "d" ];
    !! "canine" "y" -> "y" :- "dog" -> "y" [ "y" ];
    !! "animal" "a" -> "t" :- "canine" "a" -> "t" [ "a" "t" ];
-   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ];
-   !! "catdog" -> "d" (*| "d" = "c" *) :- "dog" -> "d", "cat" -> "c" [ "c" "d" ]
+   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ]
   ]%log.
 
 
@@ -153,23 +153,41 @@ Definition ex1_set :=
 Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 10
+       (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 4
        (empty_egraph default))).
 
-(*TODO: am I double-incrementing the epoch? have "" , 1, 3???
-  Alternately, am I wasting 1/2 of the epoch cycles?
-  TODO: not unioning function outputs properly?
+(*TODO: strange epoch behavior. Should only take 3 cycles? but 9 appears?
+  - catdog in cycle 0
+  - animal[cat], canine [dog] in cycle 1
 
-  TODO: query intersection seems to have issues:
-  catdog (dog) works, catdog (cat,dog) does not.
-  Probably an intersection issue
+  Without catdog, nothing in cycle 0, canine + animal in cycle 1
+
+  Issue: something to do w/ epoch of first elts? but then why does catdog work?
+
+  TODO: not rebuilding correctly. "0" should disappear from tuples.
+
+  TODO: animal[0] instead of animal[]; using the wrong side of the union?
+        - does get unioned though
+        - alternative explanation: catdog happens before animal
+  TODO: should parents update output var? Doesn't quite seem right.
+  TODO!!!!!!!! critical fix: need to update the out-var.
+
+  TODO: fix epoch merging.
+  Currently, looks like an identical overwrite updates the epoch.
+  It can't, or epochs aren't as useful.
+  TODO: hash_node should already handle this; why doesn't it?
+  Canine gets re-entered every round
+  Idea: maybe related to non-canonical out ptrs? yes.
+  Now animal, canine both do it.
+  Maybe something adding non-canonical node still?
+
+
  *)
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
+Compute (fst (canonicalize _ _ _ _ _ _ (Build_atom "animal" ["0"] "0") ex1_graph)).
 Compute (map.tuples ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+Compute (map.tuples ex1_graph.(parents _ _ _ _ _)).
 
-(*TODO test pt_spaced_intersect.
-  Looks like a spaced intersect bug
- *)
 Import PositiveInstantiation.
 Local Existing Instance pos_trie_map.
 (* expect ["foo"; "foo"]*)
