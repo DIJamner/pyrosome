@@ -64,6 +64,12 @@ Section WithMap.
       atom_args : list idx;
       atom_ret : idx;
     }.
+
+  #[export] Instance atom_eqb : Eqb atom :=
+    fun a1 a2 =>
+      (eqb a1.(atom_fn) a2.(atom_fn))
+      && (eqb a1.(atom_args) a2.(atom_args))
+      && (eqb a1.(atom_ret) a2.(atom_ret)).
  
   
   Record instance := {
@@ -74,7 +80,7 @@ Section WithMap.
       (* Used to determine which entries belong to the frontier *)
       epoch : idx;
       (* used to delay unification until rebuilding *)
-      worklist : list idx;
+      worklist : list (idx * idx);
       (* TODO: maintain an upper bound on the number of rows in db
          for the purpose of ensuring termination?
        
@@ -158,7 +164,6 @@ Section WithMap.
 
   
   Local Notation ST := (state instance).
-
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -169,7 +174,8 @@ Section WithMap.
       if eqb v v1 then (v,d)
       else match UnionFind.union _ _ _ _ d.(equiv) v v1 with
            | Some (uf',v') =>
-               (v', Build_instance d.(db) uf' d.(parents) d.(epoch) (v'::d.(worklist)))
+               let v_old := if eqb v v' then v1 else v in
+               (v', Build_instance d.(db) uf' d.(parents) d.(epoch) ((v_old,v')::d.(worklist)))
            | None => (*should never happen if v in uf *) (v,d)  
            end.
 
@@ -195,25 +201,20 @@ Section WithMap.
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
-  Definition new_singleton_out f args out : ST idx :=
+  Definition new_singleton_out a : ST idx :=
     fun i =>
-      let tbl_upd tbl := map.put tbl args (i.(epoch), out) in
-      (* assumes f exists *)
-      let db' := map_update i.(db) f tbl_upd in
-      let node := Build_atom f args out in
+      let tbl_upd tbl := map.put tbl a.(atom_args) (i.(epoch), a.(atom_ret)) in
+      (* assumes fn exists *)
+      let db' := map_update i.(db) a.(atom_fn) tbl_upd in
       (* Add the node as a parent of its output.
          This is necessary to ensure output ids stay canonical,
          which matters for matching.
-       *)
-      let parents' := fold_left (fun m x => map_update m x (cons node)) (out::args) i.(parents) in
-      (out, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist)).
-  
-  Definition new_singleton f args : ST idx :=
-    Mbind (new_singleton_out f args)
-      (fun i =>
-         let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-         (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
 
+         Dedup the args to avoid adding a node twice.
+       *)
+      let parents' := fold_left (fun m x => map_update m x (cons a))
+                        (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
+      (a.(atom_ret), Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist)).
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -238,36 +239,27 @@ Section WithMap.
     Guarantees not to allocate a fresh idx
     TODO: move function boundary for a better spec
    *)
-  Definition hash_node_out (f : symbol) args out : ST idx :=
+  Definition hash_node_out a : ST idx :=
     fun i =>
-      match map.get i.(db) f with
+      match map.get i.(db) a.(atom_fn) with
       | Some tbl =>
-          match map.get tbl args with
+          match map.get tbl a.(atom_args) with
           | Some x => (snd x, i)
-          | None => new_singleton_out f args out i
+          | None => new_singleton_out a i
           end
-      | None => new_singleton_out f args out i
+      | None => new_singleton_out a i
       end.
   
   (* accesses the egraph like a hashcons.
      If the node exists, return its id.
      Otherwise, generate a fresh id, store it, and return it
-
-     TODO: some maps are more efficient by merging get/set ops.
-     Is that worth doing?
-
-     TODO: define in terms of above?
+     TODO: generates extra idxs when the node already exists
    *)
   Definition hash_node (f : symbol) args : ST idx :=
-    fun i =>
-      match map.get i.(db) f with
-      | Some tbl =>
-          match map.get tbl args with
-          | Some x => (snd x, i)
-          | None => new_singleton f args i
-          end
-      | None => new_singleton f args i
-      end.
+    Mbind (fun out => hash_node_out (Build_atom f args out))
+      (fun i =>
+         let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
+         (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
 
   (* returns the env extended by all output variables' asignments *)
   Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST _ :=
@@ -280,8 +272,10 @@ Section WithMap.
         (* TODO: track canonicalization better and figure out if these are needed*)
         @!let args_vals' <- list_Mmap find args_vals in
           match map.get env out with
-          | Some v => @!let i <- hash_node_out f args_vals' v in
-                        (* will be a noop if hash_node_out allocates a fresh singleton *)
+          | Some v => @!let i <- hash_node_out (Build_atom f args_vals' v) in
+                        (* will be a noop if hash_node_out allocates a fresh singleton
+                           TODO: this union is suspicious
+                         *)
                         let _ <- union i v in
                         (exec_write_clauses env cl')
           | None => @! let i <- hash_node f args_vals' in
@@ -358,7 +352,7 @@ Section WithMap.
           let full' : idx_trie unit := map.put full assignment tt in
           (*ltb also usable, but includes added nodes (undesirable?)
           TODO: check off-by-one*)
-          if eqb (idx_succ epoch) current_epoch
+          if eqb epoch current_epoch
           then (full', map.put frontier assignment tt)
           else (full', frontier)
       | None => (full, frontier)
@@ -434,10 +428,11 @@ Section WithMap.
     fun '(Build_instance db equiv parents epoch worklist) =>
       (tt,Build_instance db equiv parents (idx_succ epoch) worklist).
   
-  Definition pull_worklist : ST (list idx) :=
+  Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
                Build_instance d.(db) d.(equiv) d.(parents) d.(epoch) []).
 
+  (*
   (*optional addition: return value
     NOTE: removes only from data, not parents or frontier.
    *)
@@ -447,11 +442,26 @@ Section WithMap.
       (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
 
   (* Note: should only be called with nodes not in the egraph! *)
-  Definition put_node f args (out : idx) : ST unit :=
+  Definition put_node a : ST unit :=
     fun i =>
-      let d' := map_update i.(db) f
-                (fun tbl => map.put tbl args (i.(epoch),out)) in
+      let d' := map_update i.(db) a.(atom_fn)
+                (fun tbl => map.put tbl a.(atom_args) (i.(epoch),a.(atom_ret))) in
       (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
+  *)
+
+  (*
+    Returns a as a convenience
+    NOTE: removes only from data, not parents or frontier.
+   *)
+  Definition update_node a old_args : ST atom :=
+    fun i =>
+      let tbl_update tbl :=
+        map.put (map.remove tbl old_args)
+          a.(atom_args)
+              (i.(epoch),a.(atom_ret))
+      in
+      let d' := map_update i.(db) a.(atom_fn) tbl_update in
+      (a, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
 
   Definition get_parents x : ST (list atom) :=
     fun s =>
@@ -460,8 +470,12 @@ Section WithMap.
   
   Definition set_parents x ps : ST unit :=
     fun d =>
-      (* assume x exists *)
       let p' := map.put d.(parents) x ps in
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)).
+  
+  Definition remove_parents x : ST unit :=
+    fun d =>
+      let p' := map.remove d.(parents) x in
       (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)).
 
   
@@ -476,32 +490,39 @@ Section WithMap.
         else @! let ps'' <- add_parent ps' p in ret p'::ps''
     end.
 
-  Definition repair x : ST unit :=
-    let repair_each '(Build_atom f args out) :=
-      @!let args' <- list_Mmap find args in
-        let out' <- find out in
+  (*TODO: move to Monad *)
+  Definition pair_Mmap {A A' B B' M} `{Monad M}
+    (f : A -> M A') (g : B -> M B') (p: A * B) : M (A' * B')%type :=
+    @! let x <- f (fst p) in
+      let y <- g (snd p) in
+      ret (x,y).
+  
+  Definition repair '(x_old,x_canonical) : ST unit :=
+    let repair_each a : ST atom :=
+      @!let {ST} a' <- canonicalize a in
         (* Don't update if it's already canonical,
            to avoid falsely bumping the epoch
          *)
-        if eqb (out::args) (out'::args')
-        then ret tt
-        else let _ <- remove_node f args in        
-               (put_node f args' out')
+        if eqb a a'
+        then ret {ST} a
+        else (update_node a' a.(atom_args))
     in
-    @! let ps <- get_parents x in
-      let _ <- list_Miter repair_each ps in
-      let ps1 <- list_Mmap canonicalize ps in
-      let ps2 <- list_Mfoldl add_parent ps [] in
-      (set_parents x ps1).    
+    (* TODO: a one-op remove-and-return would be useful*)
+    @! let old_ps <- get_parents x_old in
+      let _ <- remove_parents x_old in
+      let ps1 <- list_Mmap repair_each old_ps in
+      let canon_ps <- get_parents x_canonical in
+      let ps2 <- list_Mfoldl add_parent ps1 canon_ps in
+      (set_parents x_canonical ps2).
 
   Fixpoint rebuild fuel : ST unit :=
     match fuel with
     | 0 => Mret tt
     | S fuel =>
         @! let todo <- pull_worklist in
-          if todo : list idx then ret tt
+          if todo : list (idx * idx) then ret tt
           else
-            let todo <- list_Mmap find todo in
+            let todo <- list_Mmap (pair_Mmap find find) todo in
             let todo := dedup (eqb (A:=_)) todo in
             let _ <- list_Miter repair todo in
             (rebuild fuel)
@@ -529,13 +550,13 @@ Section WithMap.
   (* run the const rules once before the saturation loop *)
   Definition saturate_until rs (P : ST bool) fuel : ST bool :=
     Mseq (process_const_rules rs)
-      (Mseq increment_epoch
+      (*(Mseq increment_epoch*)
          (* TODO: is there a need to rebuild after const rules?
             In general: yes, for now.
             With optimal const rules: no
           *)
             (Mseq (rebuild 1000)
-               (saturate_until' rs P fuel))).
+               (saturate_until' rs P fuel)).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
@@ -1386,7 +1407,7 @@ Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%functio
 
 Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope v v1 _.
-Arguments hash_node {idx}%type_scope idx_succ%function_scope {symbol}%type_scope
+Arguments hash_node {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
