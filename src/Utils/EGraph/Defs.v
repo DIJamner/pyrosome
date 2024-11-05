@@ -522,13 +522,17 @@ Section WithMap.
         @! let todo <- pull_worklist in
           if todo : list (idx * idx) then ret tt
           else
-            let todo <- list_Mmap (pair_Mmap find find) todo in
+            (* we canonicalize the canonical node, but not the old one
+               Since this entry is responsible for adding the old parents
+               to whatever the current canonical representative is
+             *)
+            let todo <- list_Mmap (pair_Mmap Mret find) todo in
             let todo := dedup (eqb (A:=_)) todo in
             let _ <- list_Miter repair todo in
             (rebuild fuel)
     end.
 
-  Definition run1iter (rs : rule_set) : ST unit :=
+  Definition run1iter (rs : rule_set) rebuild_fuel : ST unit :=
     @! let tries <- build_tries rs in
       (* increment the epoch so that all added nodes are in the next frontier.
            TODO: check for off-by-one errors
@@ -536,15 +540,16 @@ Section WithMap.
       let _ <- increment_epoch in
       let _ <- list_Miter (process_erule tries) rs.(compiled_rules) in
       (* TODO: compute an adequate upper bound for fuel *)
-      (rebuild 1000).
+      (rebuild rebuild_fuel).
 
-  Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
+  Fixpoint saturate_until' rs (P : ST bool) fuel rebuild_fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @! let {ST} done <- P in
           if (done : bool) then ret true
-          else let _ <- run1iter rs in (saturate_until' rs P fuel)
+          else (Mseq (run1iter rs rebuild_fuel)
+                 (saturate_until' rs P fuel rebuild_fuel))
     end.
 
   (* run the const rules once before the saturation loop *)
@@ -556,7 +561,7 @@ Section WithMap.
             With optimal const rules: no
           *)
             (Mseq (rebuild 1000)
-               (saturate_until' rs P fuel)).
+               (saturate_until' rs P fuel 1000)).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
