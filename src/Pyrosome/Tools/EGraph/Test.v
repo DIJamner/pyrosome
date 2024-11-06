@@ -175,34 +175,35 @@ Definition ex0 :=
     (snd (Mseq (process_const_rules ex1_set)
             (rebuild 1000)
             (empty_egraph default))).
+(*
 Compute ex0.(epoch).
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db _ _ _ _ _))).
 Compute (map.tuples ex0.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
 Compute (map.tuples ex0.(parents _ _ _ _ _)).
-(*Ok*)
+*)
 
 
 
 Definition ex1 :=
   Eval vm_compute in
     (snd (run1iter ex1_set 1000 ex0)).
+(*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1.(db _ _ _ _ _))).
 Compute (map.tuples ex1.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
 Compute (map.tuples ex1.(parents _ _ _ _ _)).
+*)
 
 Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 5
        (empty_egraph default))).
-
+(*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
 Compute (fst (canonicalize _ _ _ _ _ _ (Build_atom "animal" ["0"] "0") ex1_graph)).
 Compute (map.tuples ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
-(* TODO: some old parents left. why? stale iterator problem?
-   Confusing: why do I have animal[""]->"0"? shouldn't be possible. stale output somewhere?
- *)
 Compute (map.tuples ex1_graph.(parents _ _ _ _ _)).
+ *)
 
 
 Definition example2 :=
@@ -232,33 +233,21 @@ Definition ex2_graph :=
        (@PositiveInstantiation.pt_spaced_intersect) ex2_set (Mret false) 2
        (empty_egraph default))).
 
+(*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex2_graph.(db _ _ _ _ _))).
-(*TODO: why is it not adding more successors? probably something w/ frontiers?
-
-        TODO: what is the v0?
- 
-zero -> ""
-foo -> 2
-nat v0 -> 1
-nat "" -> 1
-S v0 => 0
-S "" -> 5
-
-Is v0 an issue w/ 2?
- *)
 Compute (map.tuples ex2_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
-(* TODO: what are all of the unused variables?
- *)
 Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
+*)
 
 Import PositiveInstantiation.
 Local Existing Instance pos_trie_map.
 (* expect ["foo"; "foo"]*)
+(*
 Compute
   (map (map pts) (map.keys (pt_spaced_intersect (fun 'tt 'tt => tt)
            ((map.put map.empty ["foo"] tt : pos_trie_map, [true; false]),
              [(map.put map.empty ["foo"] tt : pos_trie_map, [false;true])]) : pos_trie_map))).
-
+*)
 (*
 (*TODO: implement & test queries*)
 Definition query_egraph 
