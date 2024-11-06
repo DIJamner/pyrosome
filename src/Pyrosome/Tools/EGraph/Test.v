@@ -35,7 +35,7 @@ Notation "wc , .. , wc' | wu , .. , wu' :- qc , .. , qc' [ var .. var' ]" :=
   (Build_log_rule
      (cons var' .. (cons var nil) ..)
      (cons qc' .. (cons qc nil) ..)
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      (cons wu' .. (cons wu nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -47,7 +47,7 @@ Notation "wc , .. , wc' :- qc , .. , qc' [ var .. var' ]" :=
   (Build_log_rule
      (cons var' .. (cons var nil) ..)
      (cons qc' .. (cons qc nil) ..)
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      [])
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -58,7 +58,7 @@ Notation "wc , .. , wc' | wu , .. , wu' :- [ var .. var' ]" :=
   (Build_log_rule
      (cons var' .. (cons var nil) ..)
      nil
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      (cons wu' .. (cons wu nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -69,7 +69,7 @@ Notation "wc , .. , wc' :- [ var .. var' ]" :=
   (Build_log_rule
      (cons var' .. (cons var nil) ..)
      nil
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      [])
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -81,7 +81,7 @@ Notation "wc , .. , wc' | wu , .. , wu' :- qc , .. , qc'" :=
   (Build_log_rule
      nil
      (cons qc' .. (cons qc nil) ..)
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      (cons wu' .. (cons wu nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -92,7 +92,7 @@ Notation "wc , .. , wc' :- qc , .. , qc'" :=
   (Build_log_rule
      nil
      (cons qc' .. (cons qc nil) ..)
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      [])
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -102,7 +102,7 @@ Notation "wc , .. , wc' | wu , .. , wu' :-" :=
   (Build_log_rule
      nil
      nil
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      (cons wu' .. (cons wu nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -112,10 +112,23 @@ Notation "wc , .. , wc' :-" :=
   (Build_log_rule
      nil
      nil
-     (cons wc' .. (cons wc nil) ..)
+     (cons wc .. (cons wc' nil) ..)
      [])
     (in custom logrule at level 60,
         wc custom atom at level 50).
+
+(*TODO: compute query vars for convenience*)
+Notation "| wu , .. , wu' :- qc , .. , qc' [ var .. var' ]" :=
+  (Build_log_rule
+     (cons var' .. (cons var nil) ..)
+     (cons qc' .. (cons qc nil) ..)
+     nil
+     (cons wu' .. (cons wu nil) ..))
+    (in custom logrule at level 60,
+        wu custom unification at level 50,
+        qc custom atom at level 50,
+        var constr at level 0).
+
 
 Notation "f a .. a' -> r" :=
   (Build_atom f (cons a' .. (cons a nil) ..) r)
@@ -150,43 +163,93 @@ Definition ex1_set :=
     QueryOpt.build_rule_set _ _ string_succ "v0" _ string_trie_map
       _ string_trie_map example1.
 
+
+Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _).
+Notation increment_epoch := (increment_epoch _ string_succ _ _ _ _).
+Notation rebuild := (rebuild _ _ _ _ _ _ _).
+Notation run1iter :=
+  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PositiveInstantiation.pt_spaced_intersect)).
+
+Definition ex0 :=
+  Eval vm_compute in
+    (snd (Mseq (process_const_rules ex1_set)
+            (rebuild 1000)
+            (empty_egraph default))).
+Compute ex0.(epoch).
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db _ _ _ _ _))).
+Compute (map.tuples ex0.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+Compute (map.tuples ex0.(parents _ _ _ _ _)).
+(*Ok*)
+
+
+
+Definition ex1 :=
+  Eval vm_compute in
+    (snd (run1iter ex1_set 1000 ex0)).
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1.(db _ _ _ _ _))).
+Compute (map.tuples ex1.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+Compute (map.tuples ex1.(parents _ _ _ _ _)).
+
 Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 4
+       (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 5
        (empty_egraph default))).
 
-(*TODO: strange epoch behavior. Should only take 3 cycles? but 9 appears?
-  - catdog in cycle 0
-  - animal[cat], canine [dog] in cycle 1
-
-  Without catdog, nothing in cycle 0, canine + animal in cycle 1
-
-  Issue: something to do w/ epoch of first elts? but then why does catdog work?
-
-  TODO: not rebuilding correctly. "0" should disappear from tuples.
-
-  TODO: animal[0] instead of animal[]; using the wrong side of the union?
-        - does get unioned though
-        - alternative explanation: catdog happens before animal
-  TODO: should parents update output var? Doesn't quite seem right.
-  TODO!!!!!!!! critical fix: need to update the out-var.
-
-  TODO: fix epoch merging.
-  Currently, looks like an identical overwrite updates the epoch.
-  It can't, or epochs aren't as useful.
-  TODO: hash_node should already handle this; why doesn't it?
-  Canine gets re-entered every round
-  Idea: maybe related to non-canonical out ptrs? yes.
-  Now animal, canine both do it.
-  Maybe something adding non-canonical node still?
-
-
- *)
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
 Compute (fst (canonicalize _ _ _ _ _ _ (Build_atom "animal" ["0"] "0") ex1_graph)).
 Compute (map.tuples ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+(* TODO: some old parents left. why? stale iterator problem?
+   Confusing: why do I have animal[""]->"0"? shouldn't be possible. stale output somewhere?
+ *)
 Compute (map.tuples ex1_graph.(parents _ _ _ _ _)).
+
+
+Definition example2 :=
+  [!! "zero" -> "z", "nat" "z" -> "_"  :-;
+   !! "S" "n" -> "+n", "nat" "+n" -> "_" :- "nat" "n" -> "_" ["n" "_"];
+   !!  | "n" = "m" :- "S" "n" -> "r", "S" "m" -> "r" [ "m" "n" "r" ];
+   (* skip Sn /= 0 because we don't have /= *)
+   !! "add" "m" "n" -> "mn", "nat" "mn" -> "_0" | "_0" = "_1" :-
+      "nat" "m" -> "_0" , "nat" "n" -> "_1" ["m" "n" "_0" "_1"];
+   !! | "n" = "r" :-  "zero" -> "z", "add" "z" "n" -> "r" ["n" "r" "z"];
+   !! "S" "n" -> "s'", "add" "m" "n" -> "mn", "S" "mn" -> "r" :-
+      "S" "m" -> "s", "add" "s" "n" -> "r" ["n" "r" "s" "m"];
+   (* Initializing rules*)
+   !! "foo" -> "f", "nat" "f" -> "nf" :-
+  ]%log.
+
+
+Definition ex2_set :=
+  Eval vm_compute in
+    QueryOpt.build_rule_set _ _ string_succ "v0" _ string_trie_map
+      _ string_trie_map example2.
+
+
+Definition ex2_graph :=
+  Eval vm_compute in
+    (snd (saturate_until string_succ "v0"
+       (@PositiveInstantiation.pt_spaced_intersect) ex2_set (Mret false) 2
+       (empty_egraph default))).
+
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex2_graph.(db _ _ _ _ _))).
+(*TODO: why is it not adding more successors? probably something w/ frontiers?
+
+        TODO: what is the v0?
+ 
+zero -> ""
+foo -> 2
+nat v0 -> 1
+nat "" -> 1
+S v0 => 0
+S "" -> 5
+
+Is v0 an issue w/ 2?
+ *)
+Compute (map.tuples ex2_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+(* TODO: what are all of the unused variables?
+ *)
+Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
 
 Import PositiveInstantiation.
 Local Existing Instance pos_trie_map.
