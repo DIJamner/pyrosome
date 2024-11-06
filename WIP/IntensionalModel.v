@@ -2,9 +2,6 @@ Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 Set Universe Polymorphism.
 
-
-Require Import List.
-
 (* What I want:
 Inductive ctx : Type :=
 | ctx_nil : ctx
@@ -406,8 +403,8 @@ Defined.
 
 Example test : open |##| (fun _ => Type).
  *)
-Require Import List.
-Import ListNotations.
+Require Lists.List.
+Import List.ListNotations.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Core.

@@ -5,6 +5,7 @@ Set Definitional UIP.
 Require Import Lists.List.
 Import List.ListNotations.
 
+(*TODO: make SProp utils*)
 Inductive seq {A} (a:A) : A -> SProp :=
   srefl : seq a a.
 
@@ -384,8 +385,52 @@ Proof.
   all: intros; eauto.
 Qed.
 
+
+Lemma apply_subst_cons' c s A B a (e : open (ctx_cons c A) B)
+  : apply_subst (ctx_cons c A) (subst_cons c s A a) e
+    = apply_subst c s (lam' e) a.
+Proof.
+  revert dependent c.
+  destruct c as [x c].
+  revert c.
+  induction x; destruct c; cbn; intros; eauto.
+Qed.
+
+Definition open_eq c A : open c A -> open c A -> Prop :=
+  fun a b => forall s, apply_subst c s a = apply_subst c s b.
+
+Lemma apply_subst_lam' c A B s' (e : open (ctx_cons c A) B) a
+  : apply_subst c s' (lam' e) a = apply_subst (ctx_cons c A) (subst_cons c s' A a) e.
+Proof.
+  revert A B e a.
+  pattern c, s'.
+  apply simple_subst_ind with (c:=c) (s:=s').
+  {
+    reflexivity.
+  }
+  {
+    intros.
+    rewrite !apply_subst_cons'.
+    rewrite H.
+    reflexivity.
+  }
+Qed.
+
+Lemma app''_lam' c A B  (e : open (ctx_cons c A) B) : open_eq _ _ (app'' (lam' e)) e.
+Proof.
+  unfold open_eq.  
+  intros s.
+  pattern s.
+  eapply subst_inv.
+  clear s.
+  intros.
+  rewrite ! apply_subst_cons.
+  apply apply_subst_lam'.
+Qed.
+
 Lemma open_to_term_inverse c
-  : forall A e s, open_to_term c A (term_to_open c A e) s = e s.
+                           (*TODO: Set should be Type. Universe issue when replaced. *)
+  : forall (A : subst c -> Set) e s, open_to_term c A (term_to_open c A e) s = e s.
 Proof.
   unfold open_to_term.  
   pattern c.
@@ -401,44 +446,193 @@ Proof.
     pattern s.
     eapply subst_inv with (c0:=c0) (A:=A) (s:= s).
     clear s; intros.
-    replace (term_to_open (ctx_cons c0 A) A0 e)
-      with (app'' (lam' (term_to_open (ctx_cons c0 A) A0 e))).
+    enough (open_eq _ _ (term_to_open (ctx_cons c0 A) A0 e) (app'' (lam' (term_to_open (ctx_cons c0 A) A0 e)))).
     {
+      rewrite H0.
       erewrite apply_subst_cons.
       rewrite  lam'_term_to_open.
       erewrite H.
       reflexivity.
     }
+    intro s.
+    rewrite app''_lam'.
+    reflexivity.
+  }
+Qed.
+(*TODO: repeat for open' layer? How important is open_ty vs subst -> Type? *)
 
-    Definition open_eq c A : open c A -> open c A -> Prop :=
-      fun a b => forall s, apply_subst c s a = apply_subst c s b. 
-      TODO: enough to show above
-    TODO: need open_eq definition
-    Lemma app''_lam : app'' (lam' e) = e. 
+
+(******)
+Require Import Coq.Wellfounded.Well_Ordering.
+
+(*For inference reasons*)
+Inductive Empty : Type :=.
+Inductive unitty : Type := Ity.
+
+Notation B := (fun (x:bool) => if x then unitty else Empty).
+Definition WO_nat := WO bool (fun x => if x then unitty else Empty).
+Definition O : WO_nat := sup _ _ false (fun (x : Empty) => match x with end).
+Definition S n : WO_nat := sup _ _ true (fun x => n).
+
+
+Record dep_fun1 (A : Type) (G : A -> Type) (alpha : forall {a}, G a -> A) : Type := {
+    placeholder : A;
+    dep_fun_data : G placeholder;
+    dep_fun_eqn : placeholder == alpha dep_fun_data
+  }.
+
+
+Record dep_fun2 (A : Type) (G : A -> Type) (alpha : forall {a}, G a -> A) : Type := {
+    placeholder : A;
+    dep_fun_data : G placeholder;
+    dep_fun_eqn : placeholder == alpha dep_fun_data
+  }.
+
+Context (A:Type).
+Check (fun B => forall (a:A) (f: A -> B f a), Type).
+
+(*Idea: close the loop on B first, then f.*)
+Definition dep_fun_ty
+  (A : Type)(*TODO: WO for proofs*)
+  := (B : (forall (a:A) (f: A -> B a), Type)).
+
+Section Inner.
+  
+  Context (subst_n : unitty -> forall A : Type, A -> Type).
+  Fixpoint ctx_n' (n : WO_nat) : Type :=
+    match n with
+    | sup _ _ false f => unitty
+    | sup _ _ true f => {c : ctx_n' (f Ity) & subst_n Ity c -> Type}
+    end.
+
+End Inner.
+
+(*TODO: how to restrict A to substn'? it does 2 things:
+  untie the very dependent knot & accept the recursive argument
+
+  A gets B[f,x], not f
+ *)
+Definition f_subst_n' (b : bool)
+  (f : (if b then unitty else Empty) -> WO bool B)
+  (subst_n' : (if b then unitty else Empty) -> forall A : Type, A -> Type)
+  (A:Type) (a:A)
+  : Type :=
+  let ctx' : (B b -> forall A : Type, A -> Type) -> WO_nat -> Type :=
+    if b as b return ((B b -> forall A : Type, A -> Type) -> WO_nat -> Type)
+    then ctx_n'
+    else fun x _ => unit in
+  { Heq : ^(A == ctx' subst_n' (sup _ _ b f)) &
+            (if b as a1 return
+                       forall (f : B a1 -> WO bool B)
+                     (subst_n' : B a1 -> forall A : Type, A -> Type)
+                     (Heq : ^(A == ctx' subst_n' (sup _ _ a1 f))), Type
+             then fun f subst_n' Heq =>  {s : subst_n' Ity _ (projT1 (conv #Heq a))
+                                                           & projT2 (conv #Heq a) s}
+             else fun _ _ _ => unitty)
+              f
+              subst_n'
+              Heq }.
+
+Definition subst_n' : WO_nat -> forall A (a : A), Type :=
+  WO_rect _ _ _ f_subst_n'.
+
+Definition ctx' := { n & ctx_n subst_n n}.
+Definition subst' (c : ctx) := subst_n (projT1 c) (projT2 c).
+
+Definition f_subst_n'' (b:bool) (f : (if b then unitty else Empty) -> WO bool B)
+       (subst_n' : (if b then unitty else Empty) -> forall A : Type, A -> Type) : forall A : Type, A -> Type :=
+
+
+  f_subst_n'
+     : forall b : bool,
+       ((if b then unitty else Empty) -> WO bool B) ->
+       ((if b then unitty else Empty) -> forall A : Type, A -> Type) -> forall A : Type, A -> Type
+  if b as a1 return
+          (B a1 -> WO bool B) ->
+          (B a1 -> forall A : Type, A -> Type) ->
+          forall A : Type, A -> Type
+  then fun f subst_n' (A : Type) (a:A) =>
+         (*TODO: to lift this out, have to reckon w/ f*)
+         { Heq : ^(A == ctx_n' subst_n' (S (f Ity)))
+                 & {s : subst_n' Ity _ (projT1 (conv #Heq a))
+                        & projT2 (conv #Heq a) s}}
+  else fun _ _ (A:Type) (a:A) => unitty.
+
+
+Section VD_nat.
+  (* Use a WO as A to guarantee a known ordering on it *)
+  Notation A := nat.
+  Context (B : (forall (a:A), {RecB & RecB a}) -> A -> Type).
+  Context (f' : forall (f : forall (a:A), {RecB & RecB a}), forall (a:A), B f a).
+  (*TODO: need knowledge of B, can't be an arbitrary parameter?\
+   TODO: need to do a match*)
+  Fixpoint f_rec (a:A) : {RecB & RecB a}.
+    destruct a.
     {
-      TODO: lemma
+      unshelve eapply existT with (x:=B _).
+      exact f_rec.
+      apply f'.
     }
-      cbn.
-      TODO: lam-term-to-open;
-      alternately, define
-      eapply H with (s:=s').
-      TODO: why is s fixed?
-      eapply H.
-    TODO: difficult to prove since accumulation is internal (tail)
-    
-    unfold term_to_open.
-    rewrite ctx_rect_cons.
-    unfold apply_subst.
-    rewrite  simple_subst_rect_cons.
-    cbn.
-    clear s; intros.
+    {
+      unshelve eapply existT with (x:=B _).
+      exact f_rec.
+      apply f'.
+      
+    }
+    Show Proof.
+  Defined.
+      construc
+    match a with
+    | 0 => _
+    let (w1,w2) := a in (*TODO: call f_rec only on w2???*)
+    existT _ (B f_rec) (f' f_rec a).
+
+                                              
+    match a with
+    | sup _ _ w1 w2 => ?
+    end.
 
     
-    
-    unfold apply_subst in *.
-    cbn.
-    TODO: apply_subst cons lemma?
-    TODOsubst_inv helper
+Section VD.
+  Context (W1 :Type) (W2 : W1 -> Type).
+  (* Use a WO as A to guarantee a known ordering on it *)
+  Notation A := (WO W1 W2).
+  Context (B : (forall (a:A), {RecB & RecB a}) -> A -> Type).
+  Context (f' : forall (f : forall (a:A), {RecB & RecB a}), forall (a:A), B f a).
+  (*TODO: need knowledge of B, can't be an arbitrary parameter?\
+   TODO: need to do a match*)
+  Fixpoint f_rec (a:A) : {RecB & RecB a} :=
+    let (w1,w2) := a in (*TODO: call f_rec only on w2???*)
+    existT _ (B f_rec) (f' f_rec a).
+
+                                              
+    match a with
+    | sup _ _ w1 w2 => ?
+    end.
+
+Notes: ctx a bit of a detour, subst the real meat.
+W/ self-very-dependence handled, ctx should be a standard nested def?.
+
+
+
+Section SimpleGeneric.
+  (* Idea: F-algebras: (F,a, i : F a -> a) *)
+  Parameter (F : Type -> Type).
+
+  Record alg : Type :=
+    {
+      carrier : Type;
+      interp : F carrier -> carrier;
+    }.
+
+  Parameter (WO_A : Type) (WO_B : WO_A -> Type).
+
+  Notation WO := (WO WO_A WO_B).
+
+  
+  
+
+  (******)
 
 Definition lam {c} (A : open_ty c) (B : open_ty (ctx_cons'' c A))
   : open' (ctx_cons'' c A) B ->
@@ -447,6 +641,8 @@ Definition lam {c} (A : open_ty c) (B : open_ty (ctx_cons'' c A))
   eapply (term_to_open c).
   intro s.
   unfold Pi.
+  (*TODO: do this in a way that computes*)
+  rewrite open_to_term_inverse with (c := c) (A:=(fun _ : subst c => Type)).
   TODO: open_to_term inverse
   cbn.
 

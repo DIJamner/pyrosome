@@ -5,7 +5,7 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils Monad.
 From Pyrosome Require Import Theory.Core Theory.CutFreeInd.
 Import Core.Notations.
 
@@ -44,100 +44,181 @@ Section WithVar.
 
   Section WithRed.
     (* Represents the action of one redex *)
-    Context (red : sort -> term -> term -> Prop)
-      (* so far, always empty *)
-      (red_sort :  sort -> sort -> Prop).
+    Context (red1 : term -> option term).
+    (*
+      so far, no languages have sort eqns.
+      Add this if/when they do.
+      Until then, assume all sorts are injective.
+      (red_sort :  sort -> sort)
+     *)
 
+    (* Note: if red1 is given by a compiler-like table,
+       this should generally be automatically provable.
+     *)
     Axiom red_subset
       : forall t e1 e2,
-        (* not strictly necessary, but makes life easier *)
         wf_term l c e1 t ->
-        red t e1 e2 ->
+        red1 e1 = Some e2 ->
         eq_term l c t e1 e2.
-    Axiom red_subset_sort
-      : forall t1 t2,
-        (* not strictly necessary, but makes life easier *)
-        wf_sort l c t1 ->
-        red_sort t1 t2 ->
-        eq_sort l c t1 t2.
+
+    (* decidable equality for head forms,
+       given as an algebra.
+       TODO: think about termination argument.
+       TODO: define reduction, head_eq as list of patterns?
+       solves termination issue here
+
+       Termination idea: on the size of the sort.
+       The fixpoint takes the size of the initial sort
+     *)
+    Context (head_eq : (term -> term -> bool) -> term -> term -> bool).
+
+    Variant arg_kind := head_term | neutral_term | unreduced.
+    (* For each neutral pattern, record which of its arguments must be reduced
+       and which must be neutrals.
+       Separating neutrals allows them to be handled generically.
+     *)
+    Context (neutrals : list (term * list arg_kind)).
+    (* While sorts are injective, treat them all as heads.       
+      (neutrals_sort : list (sort * list bool)).*)
+
+    (* variable for the hole in the evaluation context *)
+    Context (hole : V)
+      (hole_fresh : fresh hole c).
+
+    (* TODO: move to Term.v *)
+    Fixpoint size (e:term) :=
+      match e with
+      | var _ => 1
+      | con _ s => fold_left Nat.add (map size s) 1
+      end.
+
+    Fixpoint split_redex' sz e : (term * term) :=
+      match sz with
+      | 0 => (e, var hole)
+      | S sz' =>
+      (* TODO: algo:
+         1. find the first match N in neutrals; if no match, return (e,hole)
+         2. recur, producing result (r,E)
+         3. return (r, N[/(hole,E)::(id_subst c)/])
+       *)
+          (e,var hole) (*TODO: implement*)
+      end.
+
+    Definition split_redex e := split_redex' (size e) e.
+      
+      (* represents one step of reduction, possibly under neutral constructor(s) *)
+    Definition step1 (e : term) :=
+      @! let (r, E) := split_redex e in
+        let r' <- red1 r in
+        ret E[/(hole,r')::(id_subst c)/].
+
+    Fixpoint big_step' fuel e :=
+      match fuel with
+      | 0 => None
+      | S fuel' =>
+          match step1 e with
+          | Some e' => big_step' fuel' e'
+          | None => Some e
+          end
+      end.
+
+    (* Design question: If I make the right things proof-relevant,
+       is it possible to set up the LR to output this number in a relevant context
+       as a function of e (and probably its type)?
+       If so, it would give me a fuel-less reduction function at the end
+       for user dependent type theories.
+       This would also give a fuel-less conversion function/decider
+       and therefore a type checker.
+       Note: it might end up as a _very_ large number, so a positive version
+       might be worth implementing.
+     *)
+    Definition big_step e v := exists fuel, big_step' fuel e = Some v.
+
+    (* TODO: do I want this?
+    Definition big_step'_sort fuel (t : sort) : option sort :=
+      let (n,s) := t in
+      @! let s' <- list_Mmap (big_step' fuel) s in
+        ret (scon n s').
+
+    Definition big_step_sort e v := exists fuel, big_step'_sort fuel e = Some v.
+     *)
     
-
-    (* For each whnf pattern, record which of its arguments must be in whnf.
-       The set of terms should form a partition into LHSs of red and whnfs,
-       although we may not need to prove this fact (to be seen).
-     *)
-    (*TODO: figure whether we need to separate neutrals from other things.
-      Current understasnding: will be helpful in defining R_whnf below,
-      but is not needed in the metatheory
-
-      TODO: what to do with these?
-      the idea is that they are all congruences of R_whnf.
-      Question: add them in generically or verify congruence?
-     
-    Context (whnfs : list (term * list bool))
-      (whnfs_sort : list (sort * list bool)).
-     *)
-
-    (* reflexive, transitive, _congruence_ (TODO) closure of red*)
-    Definition red_clo : sort -> term -> term -> Prop. Admitted.
-    Definition red_clo_sort : sort -> sort -> Prop. Admitted.
     (* TODO: prove*)
-    Lemma red_clo_subset
+    Lemma big_step_subset
       : forall t e1 e2,
-        (* not strictly necessary, but makes life easier *)
         wf_term l c e1 t ->
-        red_clo t e1 e2 ->
+        big_step e1 e2 ->
         eq_term l c t e1 e2.
     Admitted.
-    Lemma red_clo_subset_sort
-      : forall t1 t2,
-        (* not strictly necessary, but makes life easier *)
-        wf_sort l c t1 ->
-        red_clo_sort t1 t2 ->
-        eq_sort l c t1 t2.
-    Admitted.
 
-    (* Logical Relation. TODO: Prop or Type? *)
-    Context (R_whnf : sort -> term -> term -> Prop)
-      (R_whnf_sort : sort -> sort -> Prop).
-    
-    Axiom R_whnf_sound : forall t e1 e2, R_whnf t e1 e2 -> eq_term l c t e1 e2.
+    (* Logical Relation. TODO: Prop or Type?
+       TODO: should be some sort of algebra over such relations,
+       i.e. parameterized by R.
+     *)
+    Context (R_whnf : sort -> term -> term -> Prop).
+      (*(R_whnf_sort : sort -> sort -> Prop).*)
+
+    Axiom R_whnf_sound
+      : forall t e1 e2,
+        wf_term l c e1 t ->
+        wf_term l c e2 t ->
+        R_whnf t e1 e2 -> eq_term l c t e1 e2.
+    (*
     Axiom R_whnf_sound_sort : forall t1 t2, R_whnf_sort t1 t2 -> eq_sort l c t1 t2.
+     *)
 
     (* TODO: do I want to have wf judgments here?
        Probably, but worth checking.
+       TODO: should reduce t as well
      *)    
     Record R t (e1 e2 : term) : Prop :=
       {
         e1_wf : wf_term l c e1 t;
         e1' : term;
-        normalize_e1 : red_clo t e1 e1';
+        normalize_e1 : big_step e1 e1';
         e2_wf : wf_term l c e2 t;
         e2' : term;
-        normalize_e2 : red_clo t e2 e2';
+        normalize_e2 : big_step e2 e2';
         whnf_related : R_whnf t e1' e2';
       }.
 
-    
+    (* TODO: how to relate sorts?
+       Current thought: R_sort definition uses R, not R_whnf
+       so it doesn't normalize subterms
     Record R_sort (t1 t2 : sort) : Prop :=
       {
         t1_wf : wf_sort l c t1;
         t1' : sort;
-        normalize_t1 : red_clo_sort t1 t1';
+        normalize_t1 : big_step_sort t1 t1';
         t2_wf : wf_sort l c t2;
         t2' : sort;
-        normalize_t2 : red_clo_sort t2 t2';
+        normalize_t2 : big_step_sort t2 t2';
         whnf_related : R_whnf_sort t1' t2';
       }.
+     *)
 
+    (* TODO: figure out sort relation
+    Fixpoint R_args (kinds : list arg_kind
+
+      Definition R_sort '(scon n1 s1) '(scon n2 s2) : Prop :=
+      let kinds := repeat (length s1) TODO: head or neutral?
+      match named_list_lookup_err l n1 with
+      | Some r => n1 = n2 /\ R_args kinds (get_ctx r) s1 s2
+      | None => False
+      end.
+     *)
+
+    (* TODO: what is missing that lets me prove this w/out algorithmic conv involved?*)
     Lemma R_sound : forall t e1 e2, R t e1 e2 -> eq_term l c t e1 e2.
     Proof.
       destruct 1.
       eapply eq_term_trans;[|eapply eq_term_trans; [|eapply eq_term_sym]];
         cycle 2;
-        [eapply red_clo_subset; eauto .. |].
+        [eapply big_step_subset; eauto .. |].
       eapply R_whnf_sound; auto.
+      all: eapply eq_term_wf_r; eauto using big_step_subset.
     Qed.
+    (*
     Lemma R_sound_sort : forall t1 t2, R_sort t1 t2 -> eq_sort l c t1 t2.
     Proof.
       destruct 1.
@@ -146,6 +227,7 @@ Section WithVar.
         [eapply red_clo_subset_sort; eauto .. |].
       eapply R_whnf_sound_sort; auto.
     Qed.
+     *)
 
     Section Fundamental.
 
@@ -183,6 +265,7 @@ Section WithVar.
              2. name is not a head constructor:
              - should generically solve neutral goals
              - requires handling evaluation order
+             - requires 
            *)
         2:{ (*TODO: add a wrapper around R_whnf to verify this*) admit. }
         2:{
