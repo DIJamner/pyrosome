@@ -815,7 +815,8 @@ Section WithMap.
     basic_goal_prep.
     eqb_case i0 (atom_ret a); intuition eauto.
   Qed.
-  
+
+  (*TODO: update
   Lemma remove_node_sound a_fn a_args rs l
     : state_triple (fun e => get_parents_postcondition rs (l,e))
         (remove_node idx symbol symbol_map idx_map idx_trie a_fn a_args)
@@ -867,6 +868,7 @@ Section WithMap.
       all: cbn in *; now eauto.
     }
   Qed.
+   *)
 
 
   Record put_precondition a (rs : list (log_rule idx symbol)) (e : instance) : Prop :=
@@ -1046,7 +1048,8 @@ Section WithMap.
     case_match; basic_goal_prep; basic_utils_crush.
     case_match; basic_goal_prep; basic_utils_crush.
   Qed.
-  
+
+  (*TODO: update
   Lemma put_node_sound fn args out a0 rs a2 a3
     : In {| atom_fn := fn; atom_args := args; atom_ret := out |} a0 ->
       state_triple
@@ -1113,6 +1116,7 @@ Section WithMap.
     Unshelve.
     all: eapply domain_eq_PER; eauto.
   Qed.
+*)
 
   
   Definition atom_rel (equiv : union_find idx (idx_map idx) (idx_map nat)) (a1 a2 : atom) : Prop :=
@@ -1272,6 +1276,7 @@ Section WithMap.
   Lemma repair_sound a rs
     : inst_computation_sound (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie a) rs.
   Proof.
+    (*TODO: update
     unfold repair.
     eapply state_triple_bind; intros.
     (*TODO: does this lemma need a stronger postcondition?*)
@@ -1433,6 +1438,7 @@ Section WithMap.
                       get_parents_postcondition rs (acc++l, e)).
            *)
            *)
+           *)
   Abort.
   
   Lemma rebuild_sound n rs
@@ -1472,8 +1478,8 @@ Section WithMap.
     
 
     
-  Lemma run1iter_sound rs rs'
-    : inst_computation_sound (run1iter rs') rs.
+  Lemma run1iter_sound rs rs' n
+    : inst_computation_sound (run1iter rs' n) rs.
   Proof.
     unfold run1iter.
     (*
@@ -1505,11 +1511,11 @@ Section WithMap.
      *)
     Admitted.
   
-  Theorem saturation'_sound e rs rs' P fuel b e'
+  Theorem saturation'_sound e rs rs' P fuel rebuild_fuel b e'
     : inst_computation_sound P rs ->
       egraph_sound e rs ->
       (*TODO: relationship between compiled rs' and uncompiled rs? incl rs' rs ->*)
-      saturate_until' rs' P fuel e = (b, e') ->
+      saturate_until' rs' P fuel rebuild_fuel e = (b, e') ->
       egraph_sound e' rs.
   Proof.
     intro HP.
@@ -1522,8 +1528,8 @@ Section WithMap.
       basic_goal_prep;
       basic_utils_crush;
       subst.
-    specialize (run1iter_sound rs rs' i).
-    destruct (run1iter rs' i); cbn.
+    specialize (run1iter_sound rs rs' rebuild_fuel i).
+    destruct (run1iter rs' rebuild_fuel i); cbn.
     eauto.
   Qed.
 
