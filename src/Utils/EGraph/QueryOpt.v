@@ -116,10 +116,22 @@ Section WithMap.
       Generates excess free vars the first time a clause is seen, but allows for proper deduplication
 
     
-   *)
+   *)    
   
   
   Local Notation "'ST'" := (state instance).
+
+  (*TODO: query optimization
+
+  Definition add_fundep_clause a : ST unit :=
+    @! let args' <- list_Mmap add_fundep_var a.(atom_args) in
+      let out' <- list_Mmap add_fundep_var a.(atom_ret) in
+      (*TODO: pick the right add_node fn*)
+      (add_node (Build_atom a.(atom_fn args' out'))).
+  
+  Definition rebuild_functional_deps_unordered_vars (clauses : list atom) :=
+    let (_, g) := (list_Miter add_fundep_clause clauses) in
+   *)
 
   (* We add the query vars
   Definition add_vars (l : list idx) : ST (named_list symbol idx) :=
@@ -189,7 +201,7 @@ Section WithMap.
 
   Notation rule_set := (rule_set idx symbol symbol_map idx_map).
   (* TODO: Using ST' instead of ST because of some weird namespacing *)
-  Local Notation ST' := (state (symbol_map (idx * idx_map (list idx * idx)))).
+  Local Notation ST' := (state (symbol_map (idx * idx_map (list nat * nat)))).
 
   (* Sorts the elements in the first list, viewed as a set, by their position in the second.
      Assumes the second list has no duplicates.
@@ -203,9 +215,9 @@ Section WithMap.
     (m : map) (v : value) : option key :=
     map.fold (fun acc k v' => if eqb v v' then Some k else acc) None m.
 
-  Definition hash_clause (a : atom) : ST' idx :=
+  Definition hash_clause (a : Defs.atom nat symbol) : ST' idx :=
     let (f, args, out) := a in
-    fun S : symbol_map (idx * idx_map (list idx * idx)) =>
+    fun S : symbol_map (idx * idx_map (list nat * nat)) =>
       match map.get S f with
       | Some (last, m) =>
           match map_inverse_get m (args,out) with
@@ -223,10 +235,10 @@ Section WithMap.
   Definition compile_query_clause (qvs : list idx) (a : atom) : ST' (symbol * idx * list idx) :=
     let (f, args, out) := a in
     let clause_vars := sort_by_position_in (out::args) qvs in
-    let idxs := map idx_of_nat (seq 0 (length clause_vars)) in
-    let sub := combine clause_vars idxs in
-    let compiled_clause := Build_atom f (map (named_list_lookup default sub) args)
-                             (named_list_lookup default sub out) in
+    let indices : list nat := (seq 0 (length clause_vars)) in
+    let sub : named_list idx nat := combine clause_vars indices in
+    let compiled_clause := Build_atom f (map (named_list_lookup 0 sub) args)
+                             (named_list_lookup 0 sub out) in
     @! let i <- hash_clause compiled_clause in
       ret (f, i, clause_vars).
 

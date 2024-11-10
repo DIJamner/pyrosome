@@ -156,7 +156,11 @@ Section WithMap.
   
   Record rule_set : Type :=
     {
-      query_clauses : symbol_map (idx_map (list idx * idx));
+      (* TODO: having nat recursion makes the implementation simpler.
+         Either require nat recursion for idx or just implement a packed nat here,
+         since most numbers will be 0-5 and essentially all will be <16
+       *)
+      query_clauses : symbol_map (idx_map (list nat * nat));
       compiled_rules : list erule;
       (* TODO: technically only need 1 const rule *)
       compiled_const_rules : list const_rule;
@@ -299,35 +303,26 @@ Section WithMap.
 
   Definition process_const_rules (rs : rule_set) : ST unit :=
     list_Miter (fun cr => exec_write' map.empty cr.(const_clauses) cr.(const_unifications))
-      rs.(compiled_const_rules).    
+      rs.(compiled_const_rules).
 
-  Definition match_argK {A} x y (acc : idx_map idx) (K : _ -> option A) :=
-    match map.get acc x with
-    | Some accv => if eqb accv y then K acc else None
-    | None => K (map.put acc x y)
-    end.
   
-  (* TODO: inline match_argK w/ compute? *)
+  Fixpoint insert (acc : list (option idx)) n x : option _ :=
+    match n,acc with
+    | 0, [] => Some [Some x]
+    | 0, None::acc' => Some ((Some x)::acc')
+    | 0, (Some y)::acc' => if eqb x y then Some acc else None
+    | S n, [] => option_map (cons None) (insert [] n x)
+    | S n, my::acc' => option_map (cons my) (insert acc' n x)
+    end.
+
+  
   Fixpoint match_clause' cargs cv args v acc : option _ :=
     match cargs, args with
-    | [], [] => match_argK cv v acc Some
-    | x::cargs', y::args' => match_argK x y acc (match_clause' cargs' cv args' v)
+    | [], [] => insert acc cv v
+    | x::cargs', y::args' => Mbind (match_clause' cargs' cv args' v) (insert acc x y)
     | _, _ => None (*shouldn't happen *)
     end.
 
-  (* assumes keys of m are dense starting at 0 *)
-  Fixpoint iter_until_none' {A} (m : idx_map A) fuel current : list A :=
-    match fuel with
-    | 0 => []
-    | S fuel =>
-        match map.get m current with
-        | Some x => x::(iter_until_none' m fuel (idx_succ current))
-        | None => []
-        end
-    end.
-
-  Definition iter_until_none {A} (m : idx_map A) fuel : list A :=
-    iter_until_none' m fuel idx_zero.
   
   (*
     Returns `Some assignment` iff (cargs,cv)[/assignment/] = (args,v)
@@ -338,19 +333,18 @@ Section WithMap.
 
     Observation: a typical atom has 0-5 args.
     A (packed) list is probably faster than a ptree map.
-    Question: isn't there a better way to sort outputs?
-    maybe list (option)
+
+    Note: will return None if not all consecutive cargs/cv nats have been instantiated
    *)
   Definition match_clause '(cargs, cv) args v : option _ :=
-    @! let assign_map <- match_clause' cargs cv args v map.empty in
-      ret iter_until_none assign_map (S (List.length cargs)).
+    Mbind option_all (match_clause' cargs cv args v []).
   
   (* build all the tries for a given symbol at once
      TODO: likely bug returning leaf in some cases
    *)
   Definition build_tries_for_symbol
     (current_epoch : idx)
-    (q_clauses : idx_map (list idx * idx))
+    (q_clauses : idx_map (list nat * nat))
     (tbl : idx_trie (idx * idx))
     : idx_map (idx_trie unit * idx_trie unit) (* full * frontier *)
     :=    
