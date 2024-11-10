@@ -91,7 +91,7 @@ Section WithVar.
       Mbind _ _ f ma :=
         let '(l1,a) := ma in
         let '(l2,b) := f a in
-        (l2++l1,b)
+        (l1++l2,b)
     }.
 
   Definition write {A} a : writer A unit :=
@@ -223,6 +223,8 @@ Section WithVar.
           compile to either current compiled rule, or a rule with only exactly on eunification
 
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
+
+   TODO: BUG!!!!! write clause order is wrong, probably backwards. Check all fns
    *)
   Definition rule_to_log_rule n (r : rule) : log_rule V V :=
     match r with
@@ -241,8 +243,9 @@ Section WithVar.
         let '(t_clauses,(v,next_var0)) :=
           sort_pat_to_clauses t next_var in
         (*TODO: check for off-by-one*)
-        let write_clauses := (Build_atom sort_of [next_var0] v)::
-                             (Build_atom n (map fst c) next_var0):: t_clauses  in
+        let write_clauses :=  t_clauses ++
+                                [Build_atom n (map fst c) next_var0;
+                                   Build_atom sort_of [next_var0] v] in
         (*TODO: need list of all query vars, not just ctx vars.
           Additionally, the order is important.
          *)
@@ -276,7 +279,7 @@ Section WithVar.
           Additionally, the order is important.
          *)
         Build_log_rule (query_fvs (e1_clauses++ctx_clauses)) (e1_clauses++ctx_clauses)
-          ((Build_atom sort_of [v2] vt)::e2_clauses++t_clauses) [(v1,v2)]
+          (t_clauses++e2_clauses++[Build_atom sort_of [v2] vt]) [(v1,v2)]
     end.
 
   End WithLang.

@@ -188,7 +188,8 @@ Section WithMap.
     | Some v => map.put m x (f v)
     | None => map.put m x (f default)
     end.
-  
+
+  (*
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
    *)
@@ -197,6 +198,7 @@ Section WithMap.
     | Some v => map.put m x (f v)
     | None => m
     end.
+  *)
 
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
@@ -204,7 +206,6 @@ Section WithMap.
   Definition new_singleton_out a : ST idx :=
     fun i =>
       let tbl_upd tbl := map.put tbl a.(atom_args) (i.(epoch), a.(atom_ret)) in
-      (* assumes fn exists *)
       let db' := map_update i.(db) a.(atom_fn) tbl_upd in
       (* Add the node as a parent of its output.
          This is necessary to ensure output ids stay canonical,
@@ -334,12 +335,19 @@ Section WithMap.
     Note that if it exists, the assignment is unique.
 
     TODO: there are definitely opportunities to speed up this function and its helpers
+
+    Observation: a typical atom has 0-5 args.
+    A (packed) list is probably faster than a ptree map.
+    Question: isn't there a better way to sort outputs?
+    maybe list (option)
    *)
   Definition match_clause '(cargs, cv) args v : option _ :=
     @! let assign_map <- match_clause' cargs cv args v map.empty in
       ret iter_until_none assign_map (S (List.length cargs)).
   
-  (* build all the tries for a given symbol at once *)
+  (* build all the tries for a given symbol at once
+     TODO: likely bug returning leaf in some cases
+   *)
   Definition build_tries_for_symbol
     (current_epoch : idx)
     (q_clauses : idx_map (list idx * idx))
@@ -349,9 +357,11 @@ Section WithMap.
     let upd_trie_pair (args : list idx) '(epoch,v) '(full, frontier) clause :=
       match match_clause clause args v with
       | Some assignment =>
+          (* TODO: bug would be explained by assignment always being empty
+             incorrectly.
+             TODO: test match_clause
+           *)
           let full' : idx_trie unit := map.put full assignment tt in
-          (*ltb also usable, but includes added nodes (undesirable?)
-          TODO: check off-by-one*)
           if eqb epoch current_epoch
           then (full', map.put frontier assignment tt)
           else (full', frontier)
@@ -392,15 +402,15 @@ Section WithMap.
     (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
     (frontier_n : idx)
     '(f, n, clause_vars) : idx_trie unit * list bool :=
-      (* assume f in db_tries *)
-      match map.get db_tries f with
-      | Some trie_list =>
-          let (fst,snd) := unwrap_with_default (map.get trie_list n) in
-          let inner_trie := if eqb (n : idx) frontier_n then snd else fst in
-          let flags := variable_flags query_vars clause_vars in
-          (inner_trie, flags)
-      | None => (*should never happen*) default
-      end.
+    let flags := variable_flags query_vars clause_vars in
+    (* If f is not in db_tries, it means the DB contains no matching nodes *)
+    match map.get db_tries f with
+    | Some trie_list =>
+        let (total,frontier) := unwrap_with_default (map.get trie_list n) in
+        let inner_trie := if eqb (n : idx) frontier_n then frontier else total in
+        (inner_trie, flags)
+    | None => (map.empty, flags)
+    end.
   
   Definition process_erule'
     (* each trie pair is (total, frontier) *)
@@ -571,6 +581,52 @@ Section WithMap.
 
   Definition empty_egraph : instance :=
     Build_instance map.empty (empty _ _ _ idx_zero) map.empty idx_zero [].
+
+
+  
+  Definition trie_of_clause'
+    (query_vars : list idx)
+    (* each trie pair is (total, frontier) *)
+    (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
+    '(f, n, clause_vars) : idx_trie unit * list bool :=
+    let flags := variable_flags query_vars clause_vars in
+    match map.get db_tries f with
+    | Some trie_list =>
+        (* never use the frontier*)
+        let (total,_) := unwrap_with_default (map.get trie_list n) in
+        let flags := variable_flags query_vars clause_vars in
+        (total, flags)
+    | None => (map.empty, flags)
+    end.
+  (*TODO: name clash; rename QueryOpt?
+    Runs the query side of the rules in a rule set, returning the computed assignments
+
+    TODO: different interface?
+   *)
+  Definition run_query (rs : rule_set) n : ST _ :=
+    match nth_error rs.(compiled_rules) n with
+    | Some r =>
+        @! let db_tries <- build_tries rs in
+          (*TODO: frontier_n a hack*)
+          let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
+                                     r.(query_clause_ptrs) in
+          ret (Some (intersection_keys tries))
+    | None => Mret None
+    end.
+
+  (* TODO: name clash. TODO: keep def? diagnostic only
+     
+   *)
+  Definition run_query' (rs : rule_set) n : ST _ :=
+    match nth_error rs.(compiled_rules) n with
+    | Some r =>
+        @! let db_tries <- build_tries rs in
+          (*TODO: frontier_n a hack*)
+          let tries : ne_list _ := ne_map (trie_of_clause' r.(query_vars) db_tries)
+                                     r.(query_clause_ptrs) in
+          ret (Some tries)
+    | None => Mret None
+    end.
                
   (*TODO:
     - fill in Context-hypothesized ops
