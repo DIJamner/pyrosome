@@ -351,8 +351,7 @@ Section WithMap.
     let upd_trie_pair (args : list idx) '(epoch,v) '(full, frontier) clause :=
       match match_clause clause args v with
       | Some assignment =>
-          (* TODO: bug would be explained by assignment always being empty
-             incorrectly.
+          (* TODO: possible issue w/ tuple ordering
              TODO: test match_clause
            *)
           let full' : idx_trie unit := map.put full assignment tt in
@@ -370,11 +369,11 @@ Section WithMap.
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
-            : forall {B} (merge : B -> B -> B),
+            : forall {B} `{WithDefault B} (merge : B -> B -> B),
               ne_list (idx_trie B * list bool) ->
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
-  Arguments spaced_list_intersect {B}%type_scope merge%function_scope _.
+  Arguments spaced_list_intersect {B}%type_scope {_} merge%function_scope _.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
     map.fold (fun acc k _ => cons k acc) [] (spaced_list_intersect (fun _ _ => tt) tries).

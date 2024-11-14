@@ -168,19 +168,28 @@ Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ 
 Notation increment_epoch := (increment_epoch _ string_succ _ _ _ _).
 Notation rebuild := (rebuild _ _ _ _ _ _ _).
 Notation run1iter :=
-  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PositiveInstantiation.pt_spaced_intersect)).
+  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PositiveInstantiation.compat_intersect)).
 
 Definition ex0 :=
   Eval vm_compute in
     (snd (Mseq (process_const_rules ex1_set)
             (rebuild 1000)
             (empty_egraph default))).
-(*
-Compute ex0.(epoch).
-Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db _ _ _ _ _))).
-Compute (map.tuples ex0.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
-Compute (map.tuples ex0.(parents _ _ _ _ _)).
-*)
+
+Ltac test H :=
+  let H' := fresh in
+  assert H  as H' by (vm_compute; reflexivity);
+  clear H'.
+
+Goal False.
+  test (ex0.(epoch) = "").
+  test (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db _ _ _ _ _))
+          = [("dog", [([], ("", ""))]); ("cat", [([], ("", "0"))])]).
+  test (map.tuples ex0.(equiv _ _ _ _ _).(UnionFind.parent _ _ _) = [("0", "0"); ("", "")]).
+  test (map.tuples ex0.(parents _ _ _ _ _)
+       = [("0", [{| atom_fn := "cat"; atom_args := []; atom_ret := "0" |}]);
+        ("", [{| atom_fn := "dog"; atom_args := []; atom_ret := "" |}])]).
+Abort.
 
 
 
@@ -196,8 +205,10 @@ Compute (map.tuples ex1.(parents _ _ _ _ _)).
 Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.pt_spaced_intersect) ex1_set (Mret false) 5
+       (@PositiveInstantiation.compat_intersect) ex1_set (Mret false) 5
        (empty_egraph default))).
+
+(*TODO: intersection very broken*)
 (*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
 Compute (fst (canonicalize _ _ _ _ _ _ (Build_atom "animal" ["0"] "0") ex1_graph)).
@@ -230,21 +241,271 @@ Definition ex2_set :=
 Definition ex2_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.pt_spaced_intersect) ex2_set (Mret false) 2
+       (@PositiveInstantiation.compat_intersect) ex2_set (Mret false) 2
        (empty_egraph default))).
 
 (*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex2_graph.(db _ _ _ _ _))).
 Compute (map.tuples ex2_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
 Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
+ *)
+
+Definition ex2_query :=
+  [ !! "ERR" -> "X" :- "zero" -> "z", "add" "z" "n" -> "n" ["z" "n"]
+  ]%log.
+
+Definition ex2_qset :=
+  Eval vm_compute in
+    QueryOpt.build_rule_set _ _ string_succ "v0" _ string_trie_map
+      _ string_trie_map ex2_query.
+
+
+Arguments run_query {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
+  {idx_trie}%function_scope spaced_list_intersect%function_scope rs n%nat_scope _.
+Arguments run_query' {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
+  {idx_trie}%function_scope rs n%nat_scope _.
+
+Notation run_query := (run_query (@PositiveInstantiation.compat_intersect)).
+Notation run_query' := (run_query').
+Notation build_tries := (build_tries _ _ _ _ _ _ _ _).
+
+Compute (fst (run_query ex2_qset 0 ex2_graph)).
+
+(* Lang tests *)
+(*
+From Utils Require Import Utils.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches.
+From Pyrosome.Lang Require Import SimpleVSubst SimpleUnit SimpleEvalCtx.
+Import Core.Notations.
+
+Require Coq.derive.Derive.
+
+Open Scope lang_scope.*)
+
+Import Core.Notations.
+
+
+Definition monoid : lang string := 
+  {[l
+  [s|
+      -----------------------------------------------
+      #"S" srt
+  ];
+  [:|  "a": #"S", "b" : #"S"
+       -----------------------------------------------
+       #"*" "a" "b" : #"S"
+  ];
+  [:=  "a": #"S", "b" : #"S", "c" : #"S"
+       ----------------------------------------------- ("assoc")
+       #"*" (#"*" "a" "b") "c"
+       = #"*" "a" (#"*" "b" "c")
+       : #"S"
+  ]
+  ]}.
+
+Definition monoid_rule_set_full :=
+  Eval vm_compute in
+    (build_rule_set monoid monoid).
+
+Definition monoid_rule_set :=
+  Eval vm_compute in
+    (build_rule_set (PositiveInstantiation.filter_eqn_rules monoid) monoid).
+
+Definition monoid_ex1 : lang string := 
+  {[l
+  [:|  
+       -----------------------------------------------
+       #"foo" : #"S"
+  ];
+  [:|  
+       -----------------------------------------------
+       #"bar" : #"S"
+  ](*;
+  [:=  
+       ----------------------------------------------- ("foobar")
+       #"*" "foo" "bar"
+       = #"foo"
+       : #"S"
+  ]*)
+  ]}.
+
+
+Definition monoid_ex1_rule_set :=
+  Eval vm_compute in
+    (build_rule_set monoid_ex1 monoid_ex1).
+
+Definition monoid_ex1_base :=
+  Eval vm_compute in
+    (snd (saturate_until string_succ "v0"
+       (@PositiveInstantiation.compat_intersect) monoid_ex1_rule_set (Mret false) 0
+       (empty_egraph default))).
+      
+Definition monoid_ex1_graph :=
+  Eval vm_compute in
+    (snd (saturate_until string_succ "v0"
+       (@PositiveInstantiation.compat_intersect) monoid_rule_set_full (Mret false) 2
+       monoid_ex1_base)).
+
+Compute (map (uncurry (rule_to_log_rule string_succ sort_of
+                         (fold_right string_max "x0") monoid_ex1))
+           monoid_ex1).
+Compute (map (uncurry (rule_to_log_rule string_succ sort_of
+                         (fold_right string_max "x0") monoid))
+           monoid).
+(*
+  !! "S" -> "x3", "*" "a" "b" -> "x4", "@sort_of" "x4" -> "x3" :- "@sort_of" "a" -> "x2",
+  "S" -> "x2", "@sort_of" "b" -> "x1", "S" -> "x1" ["a" "x2" "b" "x1"];
+ *)
+(*look ok *)
+(*TODO: optimization will make the above more readable*)
+
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples monoid_ex1_base.(db _ _ _ _ _))).
+(* TODO only see odd allocations. What is happening w/ the even ones
+   and can I get rid of them? They appear in the uf.
+ *)
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples monoid_ex1_graph.(db _ _ _ _ _))).
+(*TODO: assoc never matching. Question: are there any * ( * _ _) _s? yes. Should match
+  Example expected match:
+  S -> ""
+               sort_of 0 -> ""
+  * 0 0 -> 5   sort_of 5 -> ""
+  * 5 0 -> Z0  sort_of Z0 -> ""
+
+!! "S" -> "x<", "*" "b" "c" -> "x8", "S" -> "x9", "@sort_of" "x8" -> "x9",
+   "*" "a" "x8" -> "x:", "S" -> "x;", "@sort_of" "x:" -> "x;", "@sort_of" "x:" -> "x<"
+           | "x6" = "x:" :-
+
+   "@sort_of" "a" -> "x3",
+   "S" -> "x3",
+   "@sort_of" "b" -> "x2", 
+   "S" -> "x2",
+   "@sort_of" "c" -> "x1",
+   "S" -> "x1",
+   "@sort_of" "x6" -> "x7",
+   "S" -> "x7",
+   "*" "x4" "c" -> "x6",
+   "@sort_of" "x4" -> "x5",
+   "S" -> "x5",
+   "*" "a" "b" -> "x4"
+   ["a" "x3" "b" "x2" "c" "x1" "x6" "x7" "x4" "x5"];
+
+   Satisfying match:
+   x3 = x2 = x1 = x7 = x5 := "".
+   a = b = c := 0.
+   x4 := 5.
+   x6 := Z0
+
+ *)
+
+Compute (filter (fun p => negb (eqb (fst p) (snd p)))
+           (map.tuples monoid_ex1_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _))).
+Compute (map.tuples monoid_ex1_graph.(parents _ _ _ _ _)).
+(*TODO: are the vars not bound properly in the write clause? yes, see zero-var match below*)
+(*
+ [("@sort_of",
+         [(["0"], ("", "")); (["2"], ("", "")); (["5"], ("0", ""));
+          (["?"], ("1", ""))]); ("bar", [([], ("", "0"))]);
+        ("*", [(["v0"; "v0"], ("0", "5")); (["5"; "v0"], ("1", "?"))]);
+        ("foo", [([], ("", "2"))]); ("S", [([], ("", ""))])]
+ *)
+
+(*TODO: doesn't match but should *)
+Compute (fst (run_query monoid_rule_set_full 0 monoid_ex1_graph)).
+
+Let tries :=
+      Eval vm_compute in
+      (unwrap_with_default (fst (run_query' monoid_rule_set_full 0 monoid_ex1_graph))).
+
+Definition ne_firstn {A} n (l : ne_list A) : ne_list A :=
+  (fst l, firstn n (snd l)).
+(*TODO: why is this empty?*)
+
+Compute (intersection_keys string _ (@PositiveInstantiation.compat_intersect)
+           (ne_firstn 0 tries)).
+(*even the first 2 cancel*)
+Compute (intersection_keys string _ (@PositiveInstantiation.compat_intersect)
+           (ne_firstn 1 tries)).
+
+Compute (map.tuples (PositiveInstantiation.proj_node_map
+           (PositiveInstantiation.compat_intersect (fun _ _ : unit => tt)
+           (ne_firstn 0 tries)) : string_trie_map _)).
+(*
+  TODO: all tries contain elts, must be that there's an empty intersection.
+
+  TODO: triple order?!!
+  tree ["x4"; "x6"; "c"] contains  ["5"; "Z0"; "0"]!
+  4th tree from the front
+ *)
+Compute (ne_map (fun '(m,l) => (map.tuples m,
+                                 map fst (filter snd (combine ["x5"; "x4"; "x7"; "x6"; "x1"; "c"; "x2"; "b"; "x3"; "a"] l)))) tries).
+(*
+   query_clause_ptrs :=
+         ("*", "", ["x4"; "b"; "a"],
+          [("S", "", ["x5"]); ("@sort_of", "", ["x5"; "x4"]); ("*", "0", ["x4"; "x6"; "c"]);
+           ("S", "", ["x7"]); ("@sort_of", "", ["x7"; "x6"]); ("S", "", ["x1"]);
+           ("@sort_of", "", ["x1"; "c"]); ("S", "", ["x2"]); ("@sort_of", "", ["x2"; "b"]);
+           ("S", "", ["x3"]); ("@sort_of", "", ["x3"; "a"])]);
+
+Question: is this an intersection bug? by-hand intersection seems to work?
+
 *)
 
+
+Compute (named_map map.tuples (map.tuples monoid_rule_set_full.(Defs.query_clauses _ _ _ _))).
+(*[("@sort_of", [("", ([1], 0))]); ("*", [("0", ([2; 0], 1)); ("", ([1; 2], 0))]);
+        ("S", [("", ([], 0))])]*)
+
+(*Some
+    S -> x1   (PositiveInstantiation.pos_trie_leaf tt, [true; false; false; false],
+    @sort_of b->x1     [(PositiveInstantiation.pos_trie_leaf tt, [true; true; false; false]);
+    S -> x2     (PositiveInstantiation.pos_trie_leaf tt, [false; false; true; false]);
+    @sort_of  a->x2     (PositiveInstantiation.pos_trie_leaf tt, [false; false; true; true])])
+
+
+     {|
+       Defs.query_vars := ["x1"; "b"; "x2"; "a"];
+       query_clause_ptrs :=
+         ("S", "", ["x1"],
+          [("@sort_of", "", ["x1"; "b"]); ("S", "", ["x2"]); ("@sort_of", "", ["x2"; "a"])]);
+       Defs.write_clauses :=
+         [{| atom_fn := "S"; atom_args := []; atom_ret := "x3" |};
+          {| atom_fn := "*"; atom_args := ["b"; "a"]; atom_ret := "x4" |};
+          {| atom_fn := "@sort_of"; atom_args := ["x4"]; atom_ret := "x3" |}];
+       Defs.write_unifications := []
+     |}
+ *)
+
+Compute (map.tuples (map_map map.tuples monoid_rule_set_full.(Defs.query_clauses _ _ _ _))).
+(*[("@sort_of", [("", (["0"], ""))]); ("*", [("0", (["1"; ""], "0")); ("", (["0"; "1"], ""))]);
+        ("S", [("", ([], ""))])]*)
+Compute (map.tuples (map_map map.tuples (fst (build_tries monoid_rule_set_full monoid_ex1_base)))).
+(*Results: [("@sort_of", [("", (PositiveInstantiation.pos_trie_leaf tt, PositiveInstantiation.pos_trie_leaf tt))]);
+        ("S", [("", (PositiveInstantiation.pos_trie_leaf tt, PositiveInstantiation.pos_trie_leaf tt))])]
+        Leaves are not defaults (empty is default).
+        Only make sense if flags are [false..]
+
+TODO: why are the * tries not here? answer: no * nodes.
+Observation: issue appears with a rule that has some matches, but not all fn symbols exist!
+probably assuming that * is in the egraph
+
+TODO: check intersection keys/flag lists?
+*)
+
+Definition compute_tries rs := build_tries rs.
+(*
+Compute (map.tuples ex2_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
+Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
+ *)
+
+(*
 Import PositiveInstantiation.
-Local Existing Instance pos_trie_map.
+Local Existing Instance pos_trie_map.*)
 (* expect ["foo"; "foo"]*)
 (*
 Compute
-  (map (map pts) (map.keys (pt_spaced_intersect (fun 'tt 'tt => tt)
+  (map (map pts) (map.keys (compat_intersect (fun 'tt 'tt => tt)
            ((map.put map.empty ["foo"] tt : pos_trie_map, [true; false]),
              [(map.put map.empty ["foo"] tt : pos_trie_map, [false;true])]) : pos_trie_map))).
 *)

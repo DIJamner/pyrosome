@@ -16,6 +16,16 @@ Fixpoint pos_rev' p acc :=
   end.
 Definition pos_rev p := pos_rev' p xH.
 
+
+(*TODO: move these somewhere?*)
+Section __.
+  Context {A B C D : Type}.
+  Record triple := mk3 { p31 :A; p32 : B; p33 : C }.
+  Record quad := mk4 { p41 :A; p42 : B; p43 : C; p44 : D }.
+End __.
+Arguments triple : clear implicits.
+Arguments quad : clear implicits.
+
 Section Folds.
   Context {B A : Type}.
 
@@ -208,7 +218,7 @@ End MapIntersect.
    Assumes that (elt_intersect _ x) commutes
  *)
 Section MapIntersectList.
-  Context {B} (elt_intersect : B -> B -> B).
+  Context {B} (elts_intersect : B -> list B -> option B).
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
@@ -424,37 +434,41 @@ Section MapIntersectList.
            | lb', cb', rb' => fun _ _ => mk_i lb' cb' rb' [] [] []
            end in
          i' rec true true true tl).
-
-  Definition elts_intersect c l :=
-    Some (fold_left elt_intersect l c).
     
   (* Note: termination argument is tricky.
      Duplicate code for destruction of the head to make it structural.
      TODO: eval some calls to Node
+
+     For implementation convenience, assumes that args is nonempty.
+     This means that if (any of) the output lists are empty, the intersection is empty
+     since the lengths of the lists should be constant across execution.
    *)
   Fixpoint list_intersect' (hd : tree' B) (args : list (tree' B)) : tree B :=
     match hd with
     | Node001 r => 
         let rs := rights args [] in
-        Node Empty None (list_intersect' r rs)
+        if rs then Empty else Node Empty None (list_intersect' r rs)
     | Node010 c =>
-        let cs := centers args [] in
-        Node Empty (elts_intersect c cs) Empty
+        let cs := centers args [] in        
+        if cs then Empty else Node Empty (elts_intersect c cs) Empty
     | Node011 c r => 
         let '(cs,rs) := crs args ([],[]) in
-        Node Empty (elts_intersect c cs) (list_intersect' r rs)
+        if rs then Empty else Node Empty (elts_intersect c cs) (list_intersect' r rs)
     | Node100 l => 
         let ls := lefts args [] in
-        Node (list_intersect' l ls) None Empty
+        if ls then Empty else Node (list_intersect' l ls) None Empty
     | Node101 l r => 
         let '(ls,rs) := sides args ([],[]) in
-        Node (list_intersect' l ls) None (list_intersect' r rs)
+        (* both lists should have the same length *)
+        if rs then Empty else Node (list_intersect' l ls) None (list_intersect' r rs)
     | Node110 l c => 
-        let '(ls,cs) := lcs args ([],[]) in
-        Node (list_intersect' l ls) (elts_intersect c cs) Empty
+        let '(ls,cs) := lcs args ([],[]) in 
+        (* both lists should have the same length *)
+        if ls then Empty else Node (list_intersect' l ls) (elts_intersect c cs) Empty
     | Node111 l c r => 
         let '(ls,cs,rs) := lcrs args ([],[],[]) in
-        Node (list_intersect' l ls) (elts_intersect c cs) (list_intersect' r rs)
+        (* all lists should have the same length *)
+        if ls then Empty else Node (list_intersect' l ls) (elts_intersect c cs) (list_intersect' r rs)
     end.
 
   Definition list_intersect'_cbv :=
@@ -469,13 +483,20 @@ Section MapIntersectList.
 
   (* takes the first `hd` since the intersection of an empty list of trees isn't finitely defined.*)
   Definition list_intersect (hd : tree B) (tl : list (tree B)) : tree B :=
-    match hd with
-    | Empty => Empty
-    | Nodes hd' => acc_tree'_list tl [] (list_intersect'_cbv hd')
-    end.
+    (* ensures that the tail is nonempty in the else branch.
+       TODO: is there a way to hide this check in an existing match?
+     *)
+    if tl then hd else
+      match hd with
+      | Empty => Empty
+      | Nodes hd' => acc_tree'_list tl [] (list_intersect'_cbv hd')
+      end.
 
+  (*
   Context (elt_intersect_comm : forall a b, elt_intersect a b = elt_intersect b a).
-  
+   *)
+
+  (*
   Lemma list_intersect'_nil
     : forall t0 : tree' B, Nodes t0 = list_intersect'_cbv t0 [].
   Proof.
@@ -487,7 +508,9 @@ Section MapIntersectList.
         end;
       basic_utils_crush.
   Qed.
+   *)
 
+  (*
   Lemma fold_intersect_empty l
     : fold_left (intersect elt_intersect) l Empty = Empty.
   Proof.
@@ -497,6 +520,7 @@ Section MapIntersectList.
       basic_utils_crush.
   Qed.
   #[local] Hint Rewrite fold_intersect_empty : utils.
+  *)
 
   Definition i'_spec tl (acc : i_list_type true true true) : i_list_type true true true :=
     match tl with
@@ -506,7 +530,8 @@ Section MapIntersectList.
         open_node' n
           (fun '(nl, nc, nr) => (mcons nl (Some accl), mcons nc (Some accc), mcons nr (Some accr)))
     end.
-  
+
+  (*
   Local Definition i'' m2 m1' :=
     match m2 with
     | Empty => empty
@@ -549,6 +574,7 @@ Section MapIntersectList.
     (*rewrite <- IHtl'.
     *)
   Admitted.
+   *)
 
    
   Lemma intersect_empty_r A (f : A -> A -> A) t
@@ -557,7 +583,8 @@ Section MapIntersectList.
     destruct t; reflexivity.
   Qed.
   Hint Rewrite intersect_empty_r : utils.
-    
+
+  (*
   Lemma acc_tree'_list_helper tl tl' hd
     : List.fold_left (intersect elt_intersect) tl
         (List.fold_left i'' tl' (Nodes hd))
@@ -593,6 +620,7 @@ Section MapIntersectList.
     2: cbn; admit (*comm*).
     eapply acc_tree'_list_helper.*)
   Admitted.
+   *)
   
 End MapIntersectList.
 

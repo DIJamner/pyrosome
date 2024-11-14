@@ -205,26 +205,10 @@ Section WithVar.
       
    *)
   
-  (*TODO: should drop the 'rw' in the name/change the name.
-    Rules can do more than rewrite, essentially a full datalog.
-
-    TODO: should I add back the union output clause?
-    My current strategy doesn't work for rules with LHS as a lone var.
-    Could also do the same, but for RHS.
-
-    How to handle this?
-    x : val unit, y : val unit
-    -----------------------
-    x = y : val unit
-
-    Need unification clause...
-
-    Idea: add (exactly one?) unification clause to uncompiled rules,
-          compile to either current compiled rule, or a rule with only exactly on eunification
-
+  (*
+    
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
 
-   TODO: BUG!!!!! write clause order is wrong, probably backwards. Check all fns
    *)
   Definition rule_to_log_rule n (r : rule) : log_rule V V :=
     match r with
@@ -242,7 +226,6 @@ Section WithVar.
           ctx_to_clauses c (succ (supremum (map fst c))) in
         let '(t_clauses,(v,next_var0)) :=
           sort_pat_to_clauses t next_var in
-        (*TODO: check for off-by-one*)
         let write_clauses :=  t_clauses ++
                                 [Build_atom n (map fst c) next_var0;
                                    Build_atom sort_of [next_var0] v] in
@@ -376,7 +359,7 @@ Section WithVar.
     (*TODO: inherited from functionaldb. fill in.*)
     Context (spaced_list_intersect
               (*TODO: nary merge?*)
-              : forall {B} (merge : B -> B -> B),
+              : forall {B} `{WithDefault B} (merge : B -> B -> B),
                 ne_list (V_trie B * list bool) ->
                 (* Doesn't return a flag list because we assume it will always be all true*)
                 V_trie B).
@@ -653,9 +636,9 @@ Section WithVar.
 
 End WithVar.
 
-
+(*TODO: move most of this to Utils*)
 Require Import NArith Tries.Canonical.
-From Utils Require Import TrieMap SpacedMapTreeN.
+From Utils Require Import TrieMap (*SpacedMapTreeN *).
 From Pyrosome.Tools Require Import PosRenaming.
 Module PositiveInstantiation.
   
@@ -667,60 +650,91 @@ Module PositiveInstantiation.
 
   Section __.
     Context {A : Type}.
-    Inductive pos_trie :=
-    | pos_trie_empty
+    Inductive pos_trie' :=
     | pos_trie_leaf (a:A)
-    | pos_trie_node (m : PTree.tree' pos_trie).
+    | pos_trie_node (m : PTree.tree' pos_trie').
+
+    (*None is empty *)
+    Definition pos_trie := option pos_trie'.
+
+    Definition of_ptree (t : PTree.tree pos_trie') : pos_trie :=
+      match t with
+      | PTree.Empty => None
+      | PTree.Nodes m => Some (pos_trie_node m)
+      end.
 
     (*TODO: check for pre-computation optimizations *)
     (* Note: assumes the key is the right length. *)
-    Fixpoint pt_get pt k {struct k} : option A :=
+    Fixpoint pt_get' pt k {struct k} : option A :=
       match pt, k with
-      | pos_trie_empty, _ => None
       | pos_trie_leaf a, [] => Some a
       | pos_trie_node m, p::k' =>
           match PTree.get' p m with
-          | Some pt' => pt_get pt' k'
+          | Some pt' => pt_get' pt' k'
           | None => None
           end
       | _, _ => None        
       end.
 
-    Fixpoint pt_put pt k v {struct k} :=
+    Definition pt_get pt k : option A :=
+      match pt with    
+      | None => None
+      | Some pt => pt_get' pt k
+      end.
+
+    Fixpoint pt_singleton k v :=
+      match k with
+      | [] => pos_trie_leaf v
+      | p::k' =>
+          pos_trie_node (PTree.set0 p (pt_singleton k' v))
+      end.
+    
+    Fixpoint pt_put' pt k v {struct k} :=
       match pt, k with
-      | pos_trie_empty, []
       | pos_trie_leaf _, _ => pos_trie_leaf v
       (*this case shouldn't happen:
         | pos_trie_leaf a, p::k' => _
        *)
-      (* Note: could be optimized slightly*)
-      | pos_trie_empty, p::k' =>
-          pos_trie_node (PTree.set0 p (pt_put pos_trie_empty k' v))
       (*this case shouldn't happen *)
       | pos_trie_node m, [] => pos_trie_node m
       | pos_trie_node m, p::k' =>
           (* TODO: can do 1 traversal instead of 2*)
           match PTree.get' p m with
-          | Some pt' => pos_trie_node (PTree.set' p (pt_put pt' k' v) m)
-          | None => pos_trie_node (PTree.set' p (pt_put pos_trie_empty k' v) m)
+          | Some pt' => pos_trie_node (PTree.set' p (pt_put' pt' k' v) m)
+          | None => pos_trie_node (PTree.set' p (pt_singleton k' v) m)
           end
       end.
     
-    Fixpoint pt_remove pt k {struct k} :=
+    Definition pt_put pt k v :=
+      match pt with
+      | None => Some (pt_singleton k v)
+      | Some pt => Some (pt_put' pt k v)
+      end.
+    
+    Fixpoint pt_remove' pt k {struct k} :=
       match pt, k with
-      | pos_trie_empty, _
-      | pos_trie_leaf _, _ => pos_trie_empty
+      | pos_trie_leaf _, _ => None
       (*this case shouldn't happen:
         | pos_trie_leaf a, p::k' => _
        *)
       (*this case shouldn't happen *)
-      | pos_trie_node m, [] => pos_trie_empty
+      | pos_trie_node m, [] => None
       | pos_trie_node m, p::k' =>
           (* TODO: can do 1 traversal instead of 2*)
           match PTree.get' p m with
-          | Some pt' => pos_trie_node (PTree.set' p (pt_remove pt' k') m)
-          | None => pos_trie_node m
+          | Some pt' =>
+              match pt_remove' pt' k' with
+              | None => of_ptree (PTree.remove' p m)
+              | Some ptr => Some (pos_trie_node (PTree.set' p ptr m))
+              end
+          | None => Some (pos_trie_node m)
           end
+      end.
+    
+    Fixpoint pt_remove pt k {struct k} :=
+      match pt with
+      | None => None
+      | Some ptr => pt_remove' ptr k
       end.
 
     (*TODO: check; probably wrong
@@ -728,7 +742,6 @@ Module PositiveInstantiation.
      *)
     Fixpoint pt_fold' {R} (f : R -> _ -> _ -> R) (acc : R) pt stack : R :=
       match pt with
-      | pos_trie_empty => acc
       | pos_trie_leaf a => f acc (rev stack) a
       | pos_trie_node m =>
           let f' acc p pt :=
@@ -736,73 +749,168 @@ Module PositiveInstantiation.
           in
           trie_fold' f' acc m 1
       end.
+
+    Definition pt_fold {R} (f : R -> _ -> _ -> R) (acc : R) pt : R :=
+      match pt with
+      | None => acc
+      | Some pt => pt_fold' f acc pt []
+      end.
     
   (*TODO: temporary? *)
   #[export] Instance pos_trie_map : map.map (list positive) A :=
     {
       rep := pos_trie;
       get := pt_get;
-      empty := pos_trie_empty;
+      empty := None;
       put := pt_put;
       remove := pt_remove;
-      fold _ f acc pt := pt_fold' f acc pt [];
+      fold _ := pt_fold;
     }.
 
   (* Helper function for projecting the inner map when we assume the node case.
      Should not be called on other cases.
    *)
-  Definition proj_node_map p : PTree.tree pos_trie :=
+  Definition proj_node_map' p : PTree.tree pos_trie' :=
     match p with
-    | pos_trie_empty => PTree.Empty
     | pos_trie_leaf a => PTree.Empty
     | pos_trie_node m => PTree.Nodes m
     end.
   
-  Section __.
-    Context (merge : A -> A -> A).
-    Fixpoint pt_spaced_intersect' (ci1 ci2 : list bool) pt1 pt2
-      : pos_trie :=
-      match ci1, pt1, ci2, pt2 with
-      | _, pos_trie_empty, _, _ 
-      | _, _, _, pos_trie_empty => pos_trie_empty
-      (* Assume: ci1 = ci2 = repeat n false *)
-      | _, pos_trie_leaf a, _, pos_trie_leaf a' => pos_trie_leaf (merge a a')
-      (* TODO: missing cases: where one map is a leaf*)
-      | b1::ci1', (*pos_trie_node m*) _, b2::ci2', (*pos_trie_node m' *)_ =>
-          (*TODO: could optimize*)
-          let map' :=
-            if b1 then
-              if b2 then map_intersect (pt_spaced_intersect' ci1' ci2')
-                           (proj_node_map pt1)
-                           (proj_node_map pt2)
-              else map_map (fun t => pt_spaced_intersect' ci1' ci2' t pt2) (proj_node_map pt1)
-            else map_map (fun t => pt_spaced_intersect' ci1' ci2' pt1 t) (proj_node_map pt2)
-          in
-          match map' with
-          | PTree.Empty => pos_trie_empty
-          | PTree.Nodes m => pos_trie_node m
-          end
-      | _,_,_,_ => pos_trie_empty (*TODO: check that this doesn't happen*)
-      end.
+  Definition proj_node_map p : PTree.tree pos_trie' :=
+    match p with
+    | None => PTree.Empty
+    | Some m => proj_node_map' m
+    end.
 
+  
+  Definition proj_node_map_unchecked `{WithDefault A} p : PTree.tree' pos_trie' :=
+    match p with
+    | pos_trie_leaf a => PTree.Node010 (pos_trie_leaf default)
+    | pos_trie_node m => m
+    end.
+  
+  Section __.
+    Context `{WithDefault A}.
+    (*TODO: make this an option or no?*)
+    Context (merge : A -> A -> A).
+
+    (* assumes all elements of ptl are leaves *)
+    Fixpoint leaf_intersect' (a:A) ptl : A :=
+      match ptl with
+      | [] => a
+      | (pos_trie_leaf a')::ptl' => leaf_intersect' (merge a a') ptl'
+      | (pos_trie_node _)::_ => a (*should never happen*)
+      end.
+    Definition leaf_intersect ptl : option A :=
+      match ptl with
+      | (pos_trie_leaf a)::ptl => Some (leaf_intersect' a ptl)
+      | _ => None (*should never happen*)
+      end.
+    (*
+      Challenge: what if the first trie has a false for the next var?
+                         not so easy to invoke intersection.
+                       More generally, how to intersect n spaced things?.
+                       
+      Algorithm: (assume all var lists have the same depth and match their tries)
+      Project trie's from tries. If any empty, return empty.
+      With n spaced trie's with empty var lists, invoke leaf_intersect.
+      Else, partition tries into those with true next vars and false next vars.
+      list_intersect the true next vars.
+      TODO: does that make sense? not really, since there is no good way to deal with the children.
+
+
+      Algorithm v2: "
+      "
+      Else, partition tries into those with true next vars and false/no next vars.
+      If no trues, assume all tries are leaves, use leaf_intersect (sound if the tries cover the var set)
+      else, call list_intersect' on the trues, with recursive call appending the false tries to its argument
+
+      Question: is it enough to generlize list_intersect to work w/ elts_intersect : A -> list A -> option A?
+      Seems like it might not be b/c of children list.
+
+      Also, the performance is wrong if we eagerly intersect the subtries?
+      No, that seems ok; we don't eagerly intersect them
+     *)
+
+    Fixpoint partition_tries (cil : list (list bool)) (ptl : list pos_trie')
+      (acc : quad _ _ _ _) :=
+      (* assume both lists have the same length *)
+      match cil, ptl with
+      | [], [] => acc
+      | ([] as l1)::cil, pt::ptl
+      | (false::l1)::cil, pt::ptl =>
+          let (true_cil, true_tries, other_cil, other_tries) := acc in
+          partition_tries cil ptl (mk4 true_cil true_tries (l1::other_cil) (pt::other_tries))
+      | (true::l1)::cil, pt::ptl =>
+          let (true_cil, true_tries, other_cil, other_tries) := acc in
+          partition_tries cil ptl (mk4 (l1::true_cil) (pt::true_tries) other_cil other_tries)
+      | _, _ => mk4 default default default default (*should never happen *)
+      end.
+    
+    (*TODO define pos_trie as option pos_trie'*)
+    (* Fuel makes sense here since it is likely to be small (5-20)
+       and makes the recursion much more convenient.
+       Fuel must be more than the length of the lists in cil.
+
+       Assumes cil, ptl nonempty.
+
+       TODO: debug, clean up. Review datatypes.
+     *)
+    Fixpoint pt_spaced_intersect' fuel cil ptl
+      : option pos_trie' :=
+      match fuel with
+      | O => None (* should never happen*)
+      | S fuel =>
+          let (true_cil, true_tries, other_cil, other_tries) := partition_tries cil ptl (mk4 [] [] [] []) in
+          match true_cil, true_tries with
+          | [], _ => (*assume all elements of other_cil are repeat false *)
+              Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
+          | l1::true_cils, pt1::true_tries =>
+              (*TODO: the append here is unpleasant.
+                delay to avoid appending.
+                TODO: this feels like a bug in-waiting.
+                what is the length of the ptl' that gets passed to the recursive call?
+                Might be fine, but be careful.
+               *)
+              match list_intersect'
+                (fun t' ptl' =>
+                   pt_spaced_intersect' fuel (l1::true_cils++other_cil)
+                     (t'::ptl'++other_tries))
+                (*TODO: avoid map*)
+                (proj_node_map_unchecked pt1) (map proj_node_map_unchecked true_tries)
+              with
+              | PTree.Empty => None
+              | PTree.Nodes pt => Some (pos_trie_node pt)
+              end
+          | _, _ => (*should never happen*) None
+          end
+      end.    
+    
     (* TODO: port the efficient one from spaced ntree*)
-    Definition pt_spaced_intersect (tries : ne_list (pos_trie * list bool)) :=
-      let '(trie0,tries) := tries in
-      let f '(t,flags) '(t',flags') :=
-        (pt_spaced_intersect' flags flags' t t', List.zip orb flags flags') in
-      fst (List.fold_left f tries trie0).
+    Definition pt_spaced_intersect (tries : list (pos_trie * list bool)) : pos_trie :=
+      (*TODO: avoid doing this split*)
+      let '(ptl, cil) := split tries in
+      let fuel := S (length (hd [] cil)) in
+      (*TODO: make trie_to_opt an identity*)
+      @! let ptl' <- list_Mmap id ptl in
+        (pt_spaced_intersect' fuel cil ptl').
+
+    (*TODO: ditch this compat layer*)
+    Definition compat_intersect (p : ne_list (pos_trie * list bool)) : pos_trie :=
+      pt_spaced_intersect (fst p::snd p).
     
   End __.
 
   End __.
 
   Definition sort_of := xH.
-  
+
+  (*TODO: the default is biting me*)
   Definition egraph_equal
     : lang positive -> rule_set positive positive trie_map trie_map ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive ->
       _ :=
-    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@pt_spaced_intersect)).
+    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   (*TODO: move somewhere?*)
   Definition filter_eqn_rules {V} : lang V -> lang V :=
@@ -942,12 +1050,12 @@ Module StringInstantiation.
     {
       rep := PositiveInstantiation.pos_trie;
       get m k := PositiveInstantiation.pt_get m (map stp k);
-      empty := PositiveInstantiation.pos_trie_empty;
+      empty := None;
       put m k v:= PositiveInstantiation.pt_put m (map stp k) v;
       remove m k := PositiveInstantiation.pt_remove m (map stp k);
       fold _ f acc pt :=
         let f' a p v := f a (map pts p) v in
-        PositiveInstantiation.pt_fold' f' acc pt [];
+        PositiveInstantiation.pt_fold f' acc pt;
     }.
 
   #[export] Instance string_ptree_map_plus : map_plus string_trie_map :=
@@ -967,7 +1075,7 @@ Module StringInstantiation.
     fun l rw n c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map) string_succ sort_of
-      (@PositiveInstantiation.pt_spaced_intersect) l' rw n
+      (@PositiveInstantiation.compat_intersect) l' rw n
   (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
 
   Definition string_max (s1 s2 : string) :=

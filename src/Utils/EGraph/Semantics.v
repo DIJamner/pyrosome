@@ -1,6 +1,4 @@
-(* An implementation of the core of egglog
-
-   TODO: benchmark, then use plist everywhere feasible and retest
+(* TODO: separate semantics and theorems
  *)
 Require Import Equalities Orders Lists.List.
 Import ListNotations.
@@ -160,6 +158,131 @@ Section WithMap.
         (idx_trie : forall A, map.map (list idx) A)
         (idx_trie_ok : forall A, map.ok (idx_trie A))
         (idx_trie_plus : map_plus idx_trie).
+
+  
+
+  Notation match_clause := (match_clause idx _).
+  Notation match_clause' := (match_clause' idx _).
+
+  (*TODO: duplicate. find other def and move to better location*)
+  Fixpoint nat_to_idx n :=
+    match n with
+    | 0 => idx_zero
+    | S n => idx_succ (nat_to_idx n)
+    end.
+
+  Definition assign_sub (assignment : list idx) :=
+    combine (seq 0 (List.length assignment)) assignment.
+
+  Fixpoint compatible_assignment pa a :=
+    match pa, a with
+    | [], _ => True
+    | None::pa', _::a' => compatible_assignment pa' a'
+    | (Some x)::pa', y::a' => x = (y : idx) /\ compatible_assignment pa' a'
+    | _, _ => False
+    end.
+  
+  (*TODO: how to describe a as smallest list?*)
+  Definition assignment_correct l1 l2 a :=
+      forall default,
+      map (fun x => named_list_lookup default (assign_sub a) x) l1 = l2.
+  
+  (*TODO: how to describe as smallest list?*)
+  Definition passignment_ex l1 l2 pa :=
+    exists assignment,
+      assignment_correct l1 l2 assignment
+      /\ compatible_assignment pa assignment.
+  
+  Definition passignment_forall l1 l2 pa :=
+    forall assignment,
+      assignment_correct l1 l2 assignment ->
+      compatible_assignment pa assignment.
+  
+  Lemma empty_passignment a
+    : compatible_assignment [] a.
+  Proof. exact I. Qed.
+
+  
+  Lemma match_clause'_complete cargs cv args v acc a
+    : match_clause' cargs cv args v acc = None ->
+      passignment_forall (cv::cargs) (v::args) acc ->
+      forall default,
+      map (fun x => named_list_lookup default (assign_sub a) x) (cv::cargs) <> (v::args).
+  Proof.
+    (*
+    revert args acc a.induction cargs;
+      destruct args;
+      unfold passignment_forall,
+      assignment_correct;
+      basic_goal_prep;
+      basic_utils_crush.
+     *)
+    Abort.
+    
+  (*TODO: too strong a statement.
+    The passignment doesn't have to stay compatible in the case where there are no compatible assignments
+   *)
+  Lemma match_clause'_compat_preserving cargs cv args v acc passignment
+    : match_clause' cargs cv args v acc = Some passignment ->
+      passignment_ex (cv::cargs) (v::args) acc ->
+      passignment_ex (cv::cargs) (v::args) passignment.
+  Proof.
+    revert args; induction cargs;
+      destruct args;
+      unfold passignment_forall,
+      assignment_correct;
+      basic_goal_prep;
+      basic_utils_crush.
+    { (*TODO: insert correctness *) shelve. }
+    {
+      revert H; case_match; try congruence.
+      intros.
+
+      (*
+      Lemma insert_correct
+        : Some l = insert idx Eqb_idx acc a i ->
+          passignment_forall l1 l2 acc ->
+          passignment_forall l1 l2 acc ->
+          
+    
+  Lemma match_clause_correct default cargs cv args v assignment
+    : let sub := assign_sub assignment in
+      match_clause (cargs, cv) args v = Some assignment
+      -> map (fun x => named_list_lookup default sub x) (cv::cargs)
+         = v::args.
+  Proof.*)
+      Abort.
+  
+  Lemma match_clause_correct default cargs cv args v assignment
+    : let sub := assign_sub assignment in
+      match_clause (cargs, cv) args v = Some assignment
+      -> map (fun x => named_list_lookup default sub x) (cv::cargs)
+         = v::args.
+  Proof.
+    cbn -[map].
+    case_match; cbn -[map]; try congruence.
+    remember [] as acc.
+    
+    revert dependent l.
+    revert args.
+    (*
+    symmetry in HeqH.
+    eapply match_clause'_correct in HeqH.
+    rewrite <- HeqH.
+    intros.
+    autorewrite with utils in *.
+    subst.
+    eapply map_ext.
+    clear HeqH.
+    intros.
+    (*TODO: need assumption that r is dense
+    cbn.
+     *)
+     *)
+Abort.
+
+
+  
 
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
@@ -731,28 +854,6 @@ Section WithMap.
     }
   Qed.
    *)
-
-  (*TODO: move *)
-  Lemma get_update_if_exists_same K V (mp : map.map K V) {H : map.ok mp} (m : mp) k f
-    : map.get (map_update_if_exists m k f) k
-      = option_map f (map.get m k).
-  Proof.
-    unfold map_update_if_exists.
-    case_match; cbn; eauto.
-    rewrite map.get_put_same; eauto.
-  Qed.
-    
-  (*TODO: move *)
-  Lemma get_update_if_exists_diff K V (mp : map.map K V) {H : map.ok mp} (m : mp) k k' f
-    : k <> k' -> map.get (map_update_if_exists m k f) k'
-                 = (map.get m k').
-  Proof.
-    unfold map_update_if_exists.
-    intro.
-    case_match; cbn; eauto.
-    rewrite map.get_put_diff; eauto.
-  Qed.
-  
     
   (*TODO: move *)
   Lemma get_update_diff K V (mp : map.map K V) {H : map.ok mp} `{WithDefault V} (m : mp) k k' f
@@ -1476,7 +1577,7 @@ Section WithMap.
      *)
   Abort.
     
-
+(*
     
   Lemma run1iter_sound rs rs' n
     : inst_computation_sound (run1iter rs' n) rs.
@@ -1510,7 +1611,8 @@ Section WithMap.
   Qed.
      *)
     Admitted.
-  
+*)
+  (*
   Theorem saturation'_sound e rs rs' P fuel rebuild_fuel b e'
     : inst_computation_sound P rs ->
       egraph_sound e rs ->
@@ -1532,6 +1634,7 @@ Section WithMap.
     destruct (run1iter rs' rebuild_fuel i); cbn.
     eauto.
   Qed.
+*)
 
 End WithMap.
 
