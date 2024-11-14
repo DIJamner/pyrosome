@@ -852,20 +852,25 @@ Module PositiveInstantiation.
        and makes the recursion much more convenient.
        Fuel must be more than the length of the lists in cil.
 
-       Assumes cil, ptl nonempty.
+       takes in two cil lists and two ptl lists to avoid appending them
+       in the recursive call.
+       It's exactly two because we separate the trues and the falses.
+       Assumes cil++cil', and ptl++ptl' are nonempty.
 
        TODO: debug, clean up. Review datatypes.
      *)
-    Fixpoint pt_spaced_intersect' fuel cil ptl
+    Fixpoint pt_spaced_intersect' fuel cil ptl cil' ptl'
       : option pos_trie' :=
       match fuel with
       | O => None (* should never happen*)
       | S fuel =>
-          let (true_cil, true_tries, other_cil, other_tries) := partition_tries cil ptl (mk4 [] [] [] []) in
+          let (true_cil, true_tries, other_cil, other_tries) :=
+            partition_tries cil' ptl'
+              (partition_tries cil ptl (mk4 [] [] [] [])) in
           match true_cil, true_tries with
           | [], _ => (*assume all elements of other_cil are repeat false *)
               Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
-          | l1::true_cils, pt1::true_tries =>
+          | _::_, pt1::true_tries =>
               (*TODO: the append here is unpleasant.
                 delay to avoid appending.
                 TODO: this feels like a bug in-waiting.
@@ -873,18 +878,17 @@ Module PositiveInstantiation.
                 Might be fine, but be careful.
                *)
               match list_intersect'
-                (fun t' ptl' =>
-                   pt_spaced_intersect' fuel (l1::true_cils++other_cil)
-                     (t'::ptl'++other_tries))
+                (pt_spaced_intersect' fuel other_cil other_tries true_cil)
                 (*TODO: avoid map*)
-                (proj_node_map_unchecked pt1) (map proj_node_map_unchecked true_tries)
+                (proj_node_map_unchecked pt1)
+                (map proj_node_map_unchecked true_tries)
               with
               | PTree.Empty => None
               | PTree.Nodes pt => Some (pos_trie_node pt)
               end
           | _, _ => (*should never happen*) None
           end
-      end.    
+      end.
     
     (* TODO: port the efficient one from spaced ntree*)
     Definition pt_spaced_intersect (tries : list (pos_trie * list bool)) : pos_trie :=
@@ -893,7 +897,7 @@ Module PositiveInstantiation.
       let fuel := S (length (hd [] cil)) in
       (*TODO: make trie_to_opt an identity*)
       @! let ptl' <- list_Mmap id ptl in
-        (pt_spaced_intersect' fuel cil ptl').
+        (pt_spaced_intersect' fuel cil ptl' [] []).
 
     (*TODO: ditch this compat layer*)
     Definition compat_intersect (p : ne_list (pos_trie * list bool)) : pos_trie :=

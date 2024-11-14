@@ -499,16 +499,16 @@ Compute (map.tuples ex2_graph.(equiv _ _ _ _ _).(UnionFind.parent _ _ _)).
 Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
  *)
 
-(*
+
 Import PositiveInstantiation.
-Local Existing Instance pos_trie_map.*)
+Local Existing Instance pos_trie_map.
 (* expect ["foo"; "foo"]*)
-(*
 Compute
   (map (map pts) (map.keys (compat_intersect (fun 'tt 'tt => tt)
            ((map.put map.empty ["foo"] tt : pos_trie_map, [true; false]),
              [(map.put map.empty ["foo"] tt : pos_trie_map, [false;true])]) : pos_trie_map))).
-*)
+Fail.
+(**)
 (*
 (*TODO: implement & test queries*)
 Definition query_egraph 

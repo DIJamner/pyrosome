@@ -218,7 +218,10 @@ End MapIntersect.
    Assumes that (elt_intersect _ x) commutes
  *)
 Section MapIntersectList.
-  Context {B} (elts_intersect : B -> list B -> option B).
+  (* The argument to elts_intersect must be non-empty
+     for the result to be well-defined
+   *)
+  Context {B} (elts_intersect : list B -> option B).
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
@@ -436,7 +439,7 @@ Section MapIntersectList.
          i' rec true true true tl).
     
   (* Note: termination argument is tricky.
-     Duplicate code for destruction of the head to make it structural.
+     Duplicates code for destruction of the head to make it structural.
      TODO: eval some calls to Node
 
      For implementation convenience, assumes that args is nonempty.
@@ -450,10 +453,10 @@ Section MapIntersectList.
         if rs then Empty else Node Empty None (list_intersect' r rs)
     | Node010 c =>
         let cs := centers args [] in        
-        if cs then Empty else Node Empty (elts_intersect c cs) Empty
+        if cs then Empty else Node Empty (elts_intersect (c::cs)) Empty
     | Node011 c r => 
         let '(cs,rs) := crs args ([],[]) in
-        if rs then Empty else Node Empty (elts_intersect c cs) (list_intersect' r rs)
+        if rs then Empty else Node Empty (elts_intersect (c::cs)) (list_intersect' r rs)
     | Node100 l => 
         let ls := lefts args [] in
         if ls then Empty else Node (list_intersect' l ls) None Empty
@@ -464,11 +467,11 @@ Section MapIntersectList.
     | Node110 l c => 
         let '(ls,cs) := lcs args ([],[]) in 
         (* both lists should have the same length *)
-        if ls then Empty else Node (list_intersect' l ls) (elts_intersect c cs) Empty
+        if ls then Empty else Node (list_intersect' l ls) (elts_intersect (c::cs)) Empty
     | Node111 l c r => 
         let '(ls,cs,rs) := lcrs args ([],[],[]) in
         (* all lists should have the same length *)
-        if ls then Empty else Node (list_intersect' l ls) (elts_intersect c cs) (list_intersect' r rs)
+        if ls then Empty else Node (list_intersect' l ls) (elts_intersect (c::cs)) (list_intersect' r rs)
     end.
 
   Definition list_intersect'_cbv :=
