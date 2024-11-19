@@ -2,6 +2,7 @@ Set Implicit Arguments.
 
 Require Import Coq.Lists.List. Import ListNotations.
 Require Import Bool.
+Require Import Coq.Classes.RelationClasses.
 Require Export Datatypes.List.
 Import BoolNotations.
 Open Scope list.
@@ -125,7 +126,72 @@ Section __.
       | _::_, [] => False
       | a::l1', b::l2' => R a b /\ all2 l1' l2'
       end.
+    
+    Lemma all2_len_False l1 l2
+      : List.length l1 <> List.length l2 -> ~ all2 l1 l2.
+    Proof using.
+      clear.
+      revert l2;
+        induction l1;
+        destruct l2;
+        basic_goal_prep; basic_utils_crush.
+    Qed.
+    
+    Lemma all2_app l1 l1' l2 l2'
+      : all2 l1 l1' -> all2 l2 l2' -> all2 (l1++l2) (l1'++l2').
+    Proof using.
+      clear.
+      revert l1'.
+      induction l1; destruct l1'; basic_goal_prep; basic_utils_crush.
+    Qed.
+    
   End All2.
+
+  Section All2_AA.
+    Context (R : A -> A -> Prop) {R_refl : Reflexive R}.
+    
+    Lemma all2_refl l : all2 R l l.
+    Proof using R_refl.
+      induction l; basic_goal_prep; basic_utils_crush.
+    Qed.
+
+    Hint Resolve all2_refl : utils.
+   
+    
+    Lemma all2_app_shared_tail l1 l1' l
+      : all2 R (l1++l) (l1'++l) <-> all2 R l1 l1'.
+    Proof using R_refl.
+      revert l1'.
+      induction l1; destruct l1'; basic_goal_prep; basic_utils_crush.
+      {
+        eapply all2_len_False; eauto.
+        cbn.
+        rewrite app_length.
+        Lia.lia.
+      }
+      {
+        destruct l; basic_goal_prep; try tauto.
+        eapply all2_len_False; eauto.
+        cbn.
+        rewrite app_length.
+        cbn.
+        Lia.lia.
+      }
+      all:apply IHl1 in H1; eauto.
+    Qed.
+
+    Context {R_sym : Symmetric R}.
+    
+    Lemma all2_Symmetric : Symmetric (all2 R).
+    Proof using R_sym.
+      intros l1 l2;
+        revert l2;
+        induction l1; destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+  End All2_AA.
   
   Definition set_eq (l1 l2 : list A) :=
     incl l1 l2 /\ incl l2 l1.
@@ -334,3 +400,5 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 #[export] Hint Rewrite inb_is_In using solve[typeclasses eauto] : utils.
 
 #[export] Hint Rewrite Is_true_forallb : utils.
+
+#[export] Hint Resolve all2_refl : utils.

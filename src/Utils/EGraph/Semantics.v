@@ -1038,61 +1038,6 @@ Abort.
   Qed.
    *)
 
-  (*TODO: move all2 lemmas*)
-  Lemma all2_refl A (R : A -> A -> Prop) `{Reflexive A R} l : all2 R l l.
-  Proof using.
-    revert H.
-    clear.
-    intro.
-    induction l; basic_goal_prep; basic_utils_crush.
-  Qed.
-  Hint Resolve all2_refl : utils.
-  
-  Lemma all2_len_False A B (R : A -> B -> Prop) l1 l2
-    : List.length l1 <> List.length l2 -> ~ all2 R l1 l2.
-  Proof using.
-    clear.
-    revert l2;
-      induction l1;
-      destruct l2;
-      basic_goal_prep; basic_utils_crush.
-  Qed.
-    
-  Lemma all2_app_shared_tail A (R : A -> A -> Prop) `{Reflexive A R} l1 l1' l
-    : all2 R (l1++l) (l1'++l) <-> all2 R l1 l1'.
-  Proof using.
-    revert H.
-    clear.
-    intro.
-    revert l1'.
-    induction l1; destruct l1'; basic_goal_prep; basic_utils_crush.
-    {
-      eapply all2_len_False; eauto.
-      cbn.
-      rewrite app_length.
-      Lia.lia.
-    }
-    {
-      destruct l; basic_goal_prep; try tauto.
-      eapply all2_len_False; eauto.
-      cbn.
-      rewrite app_length.
-      cbn.
-      Lia.lia.
-    }
-    all:apply IHl1 in H2; eauto.
-  Qed.
-  
-    
-  Lemma all2_app A B (R : A -> B -> Prop) l1 l1' l2 l2'
-    : all2 R l1 l1' -> all2 R l2 l2' -> all2 R (l1++l2) (l1'++l2').
-  Proof using.
-    clear.
-    revert l1'.
-    induction l1; destruct l1'; basic_goal_prep; basic_utils_crush.
-  Qed.
-
-  
   Lemma all2_iff2 A B (R1 R2 : A -> B -> Prop) l1 l2
     : iff2 R1 R2 ->
       all2 R1 l1 l2 ->
@@ -1108,19 +1053,6 @@ Abort.
       basic_utils_crush.
     firstorder.
   Qed.
-  
-  Lemma all2_Symmetric A R `{Symmetric A R} : Symmetric (all2 R).
-  Proof using.
-    revert H.
-    clear.
-    intro H.
-    intros l1 l2;
-      revert l2;
-      induction l1; destruct l2;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
 
   
   Lemma args_rel_interpretation m interp e
