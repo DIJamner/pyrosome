@@ -429,7 +429,7 @@ Section WithVar.
         cbv [le_V lt_V] in *.
         subst.
         rewrite  VtN_succ.
-        apply Arith_prebase.le_lt_n_Sm; eauto.
+        shelve.
       }
       {
     Abort.
