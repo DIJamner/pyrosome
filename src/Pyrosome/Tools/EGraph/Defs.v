@@ -879,23 +879,23 @@ Module PositiveInstantiation.
                *)
               match list_intersect'
                 (pt_spaced_intersect' fuel other_cil other_tries true_cil)
-                (*TODO: avoid map*)
+                (*TODO: avoid map? it's hard to avoid given the possibility of
+                  leaf_intersect.
+                 *)
                 (proj_node_map_unchecked pt1)
                 (map proj_node_map_unchecked true_tries)
               with
-              | PTree.Empty => None
-              | PTree.Nodes pt => Some (pos_trie_node pt)
+              | None => None
+              | Some pt => Some (pos_trie_node pt)
               end
           | _, _ => (*should never happen*) None
           end
       end.
     
-    (* TODO: port the efficient one from spaced ntree*)
     Definition pt_spaced_intersect (tries : list (pos_trie * list bool)) : pos_trie :=
-      (*TODO: avoid doing this split*)
+      (*This split has to happen at some point, so here is fine*)
       let '(ptl, cil) := split tries in
       let fuel := S (length (hd [] cil)) in
-      (*TODO: make trie_to_opt an identity*)
       @! let ptl' <- list_Mmap id ptl in
         (pt_spaced_intersect' fuel cil ptl' [] []).
 
@@ -1078,7 +1078,8 @@ Module StringInstantiation.
       _ :=
     fun l rw n c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
-    egraph_equal string_ptree_map_plus (@string_list_trie_map) string_succ sort_of
+    egraph_equal string_ptree_map_plus (@string_list_trie_map)
+      string_succ sort_of
       (@PositiveInstantiation.compat_intersect) l' rw n
   (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
 

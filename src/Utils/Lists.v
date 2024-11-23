@@ -156,7 +156,6 @@ Section __.
     Qed.
 
     Hint Resolve all2_refl : utils.
-   
     
     Lemma all2_app_shared_tail l1 l1' l
       : all2 R (l1++l) (l1'++l) <-> all2 R l1 l1'.
@@ -179,6 +178,14 @@ Section __.
       }
       all:apply IHl1 in H1; eauto.
     Qed.
+    
+    Lemma all2_app_shared_head l1 l1' l
+      : all2 R (l++l1) (l++l1') <-> all2 R l1 l1'.
+    Proof using R_refl.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
 
     Context {R_sym : Symmetric R}.
     
@@ -187,6 +194,19 @@ Section __.
       intros l1 l2;
         revert l2;
         induction l1; destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+
+    Context {R_trans : Transitive R}.
+    
+    Lemma all2_Transitive : Transitive (all2 R).
+    Proof using R_trans.
+      clear R_sym.
+      intros l1 l2 l3;
+        revert l2 l3;
+        induction l1; destruct l2, l3;
         basic_goal_prep;
         basic_utils_crush.
     Qed.
