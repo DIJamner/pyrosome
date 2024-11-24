@@ -144,101 +144,70 @@ Section WithMap.
 
   Definition build_var_map v g := build_var_map' v g [].
 
-  Definition optimize_log_rule fuel (lr : log_rule) :=
-    let (_, g) :=
-      Mseq (list_Miter (M :=state instance) add_fundep_clause lr.(query_clauses))
+  Definition atom_fvs (a : atom) := a.(atom_ret)::a.(atom_args).
+
+  Section Optimize.
+    Context (fuel : nat) (lr : log_rule).
+
+    Let g_query := snd (Mseq (list_Miter (M :=state instance) add_fundep_clause lr.(query_clauses))
         (rebuild _ _ _ _ _ _ _ fuel)
-        (empty_egraph idx_zero) in
-    let vm := build_var_map lr.(query_vars) g in
-    let sub x := named_list_lookup x vm x in
-    let atom_sub '(Build_atom f args out) := Build_atom f (map sub args) (sub out) in
-    let clauses' : list atom :=
-      (flat_map (fun '(f,y) =>
-                   map (fun p =>
-                          Build_atom f (map sub (fst p)) (sub (snd (snd p))))
-                     (map.tuples y))
-         (* remove all atoms that are vars *)
-         (filter (fun p => negb (inb (fst p) (map idx_as_symbol lr.(query_vars))))
-            (map.tuples g.(db)))) in
-    let in_clauses (v : idx) :=
-      existsb (fun c => orb (inb v c.(atom_args)) (eqb v c.(atom_ret))) clauses' in
-    (* filter preserves the order. *)
-    let vars' := filter in_clauses lr.(query_vars) in
-    (* TODO: doesn't merge identical existential vars.
-       Small performance penalty.
+        (empty_egraph idx_zero)).
+
+    Let vm_query := build_var_map lr.(query_vars) g_query.
+
+    Let sub_q x := named_list_lookup x vm_query x.
+    
+    Let query_clauses' : list atom :=
+          (flat_map (fun '(f,y) =>
+                       map (fun p =>
+                              Build_atom f (map sub_q (fst p)) (sub_q (snd (snd p))))
+                         (map.tuples y))
+             (* remove all atoms that are vars *)
+             (filter (fun p => negb (inb (fst p) (map idx_as_symbol lr.(query_vars))))
+                (map.tuples g_query.(db)))).
+    
+    Let in_query_clauses (v : idx) :=
+          existsb (fun c => orb (inb v c.(atom_args)) (eqb v c.(atom_ret))) query_clauses'.
+
+    Let query_vars' := filter in_query_clauses lr.(query_vars).
+
+    Let g_write :=
+          snd (Mseq (list_Miter (M :=state instance) add_fundep_clause lr.(write_clauses))
+                 (rebuild _ _ _ _ _ _ _ fuel)
+                 g_query).
+
+    (* prepend query vars to make sure that they take precedence over fresh vars *)
+    Let vars := (dedup (eqb (A:=_))
+                           (lr.(query_vars) ++ (flat_map atom_fvs lr.(write_clauses)))).
+
+    Let sub_w x := named_list_lookup x (build_var_map vars g_write) x.
+
+    (* TODO: BUG. Need to sort so that fresh vars first appear in the conclusions.
      *)
-    let write_clauses' := dedup (eqb (A:=_)) (map atom_sub lr.(write_clauses)) in
+    Let write_clauses' : list atom :=
+          (* TODO: sort by existential var dependence *)
+          (*(sort_by_var_deps *)
+          (*remove all query clauses *)
+          (filter
+             (fun c => negb (inb c query_clauses'))
+             (flat_map (fun '(f,y) =>
+                          map (fun p =>
+                                 Build_atom f (map sub_w (fst p)) (sub_w (snd (snd p))))
+                            (map.tuples y))
+                (* remove all atoms that are vars *)
+                (filter (fun p => negb (inb (fst p) (map idx_as_symbol vars)))
+                   (map.tuples g_write.(db))))).
+    
     (*TODO: optimize unifications of fresh vars out*)
-    let write_unifications' :=
-      dedup (eqb (A:=_)) (map (fun p => (sub (fst p), sub (snd p)))
-                            lr.(write_unifications)) in
-    Build_log_rule vars' clauses' write_clauses' write_unifications'.
+    Let write_unifications' :=
+          (filter (fun p => negb (eqb (fst p) (snd p)))
+             (dedup (eqb (A:=_)) (map (fun p => (sub_w (fst p), sub_w (snd p)))
+                                    lr.(write_unifications)))).
+    
+    Definition optimize_log_rule :=
+      Build_log_rule query_vars' query_clauses' write_clauses' write_unifications'.
 
-  (* We add the query vars
-  Definition add_vars (l : list idx) : ST (named_list symbol idx) :=
-    @!let idxs <- list_Mmap (fun x => hash_node x []) l in
-      ret (combine l idxs).
-  *)
-
-  (* adds a rule clause, using its variables as unionfind indices
-     Note: output idx unlikely to be used.
-   *)
-  Definition add_rule_clause '(Build_atom f args out) : ST unit :=
-    (* TODO: make sure all vars are valid in the union-find*)
-    @! (*let _ <- add_vars_to_uf (out::args) in*)
-      (* this may create new vars!
-         need to make sure all rule vars are already added.*)
-      let out' <- @hash_node (f : symbol) args in
-      let _ <- union out out' in
-      ret tt.
-
-  (*
-  Definition initialize_uf r :=
-    (*likely to dup a couple vars, but that's fine.
-      Necessary to include coquery vars as well, even for query,
-      so that the substitution doesn't identify new vars w/
-      coquery vars.
-     *)
-    for_each (r.(query_vars)++(map atom_ret r.(coquery)))
-             (fun x => add_to_uf x).
-  
-  Definition add_clauses (clauses : list atom) : ST unit :=
-    list_Miter add_rule_clause clauses.
-
-  Definition optimize_query r :=
-    let (vars_out, i) := @! let _ <- initialize_uf r in
-                    let _ <- add_clauses r.(query) in
-                    let _ <- rebuild 1000 in
-                    (list_Mmap find r.(query_vars))
-    in
-    let new_clauses := list_atoms i in
-    let var_map := combine r.(query_vars) vars_out in
-    (* TODO: rename var_map vars to be dense starting at 0.
-       Will impact map performance at runtime.
-     *)
-    (dedup vars_out, new_clauses, rename_clauses var_map r.(coquery)).
-
-  Definition optimize_coquery r :=
-    (*TODO: pass for eliminating query-determined vars,
-      where coquery contains an atom f args out where f args out'
-      is in the query and out is fresh.
-     *)
-    let (vars_out, i) := @! let _ <- initialize_uf r in
-                    let _ <- add_clauses r.(query) in
-                    let _ <- rebuild 1000 in
-                    (list_Mmap find r.(query_vars))
-    in
-    let new_clauses := list_atoms i in    
-    let var_map := combine r.(query_vars) vars_out in
-    let unification_clauses :=
-      for each x such that x in r.(query_vars) and x->z (z!=x),
-      let (f args z) in new_clauses in
-      (f args x)
-      
-    in
-    (dedup vars_out, new_clauses, rename_clauses var_map r.(coquery)).
-
-   *)
+  End Optimize.
 
   Notation rule_set := (rule_set idx symbol symbol_map idx_map).
   (* TODO: Using ST' instead of ST because of some weird namespacing *)
@@ -285,6 +254,11 @@ Section WithMap.
 
   Local Notation erule := (erule idx symbol).
   Local Notation const_rule := (const_rule idx symbol).
+
+  
+  Definition clauses_fvs l rem_list :=
+    filter (fun x => negb (inb x rem_list))
+      (dedup (eqb (A:=_)) (flat_map atom_fvs l)).
   
   Definition compile_rule (r  : log_rule) : ST' (erule + const_rule) :=
     let (qvs, qcls, wcls, wufs) := r in
@@ -295,8 +269,8 @@ Section WithMap.
        *)
       match qcls_ptrs with
         (* assumes qvs empty *)
-      | [] => Mret (inr (Build_const_rule _ _ wcls wufs))
-      | c::cs => Mret (inl (Build_erule _ _ qvs (c,cs) wcls wufs))
+      | [] => Mret (inr (Build_const_rule _ _ (clauses_fvs wcls []) wcls wufs))
+      | c::cs => Mret (inl (Build_erule _ _ qvs (c,cs) (clauses_fvs wcls qvs) wcls wufs))
       end.
 
   (*TODO: put in Utils.v*)

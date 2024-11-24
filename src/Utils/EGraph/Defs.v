@@ -115,16 +115,9 @@ Section WithMap.
          symbol, clause id, clause variables (in query_vars order)
        *)
       query_clause_ptrs : ne_list (symbol * idx * list idx);
-      (*TODO: old: query_clause_ptrs : ne_list (symbol * nat * list idx);*)
+      write_vars : list idx;
       (* The list of clauses to write for each assignment valid wrt the query.
-         Uses the vars in query_vars, plus additional ones for fresh/unbound idxs.
-         Fresh variables must first appear in an output position.
-         Interpretation:
-                for each clause, case on whether the output variable is in query_vars:
-                - if yes, merge/unify their values
-                - if no, allocate a fresh value
-        Writes should be executed against a (monotonically extending) environment
-        starting from the values given by each assignment to query_vars.
+         Uses the vars in query_vars, plus write_vars for fresh/unbound idxs.
        *)
       write_clauses : list atom;
       (*
@@ -143,6 +136,7 @@ Section WithMap.
    *)
   Record const_rule :=
     {
+      const_vars : list idx;
       const_clauses : list atom;
       const_unifications : list (idx * idx);
     }.
@@ -183,6 +177,10 @@ Section WithMap.
            | None => (*should never happen if v in uf *) (v,d)  
            end.
 
+  Definition alloc : ST idx :=
+    (fun i =>
+       let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
   
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
@@ -254,6 +252,7 @@ Section WithMap.
           end
       | None => new_singleton_out a i
       end.
+
   
   (* accesses the egraph like a hashcons.
      If the node exists, return its id.
@@ -261,49 +260,64 @@ Section WithMap.
      TODO: generates extra idxs when the node already exists
    *)
   Definition hash_node (f : symbol) args : ST idx :=
-    Mbind (fun out => hash_node_out (Build_atom f args out))
-      (fun i =>
-         let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-         (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
+    @! let out <- alloc in
+      (hash_node_out (Build_atom f args out)).
 
-  (* returns the env extended by all output variables' asignments *)
-  Fixpoint exec_write_clauses (env : idx_map idx) (cl : list atom) : ST _ :=
-    match cl with
-    | [] => @!ret env
-    | c::cl' =>
-        let (f,args,out) := c in
-        (* assume: all idx in args are keys in env *)
-        let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) args in
-        (* TODO: track canonicalization better and figure out if these are needed*)
-        @!let args_vals' <- list_Mmap find args_vals in
-          match map.get env out with
-          | Some v => @!let i <- hash_node_out (Build_atom f args_vals' v) in
-                        (* will be a noop if hash_node_out allocates a fresh singleton
-                           TODO: this union is suspicious
-                         *)
-                        let _ <- union i v in
-                        (exec_write_clauses env cl')
-          | None => @! let i <- hash_node f args_vals' in
-                      (exec_write_clauses (map.put env out i) cl')
-          end
-    end.
-
-  Definition exec_write' initial_env wcs wus : ST unit :=
-    @! let env <- exec_write_clauses initial_env wcs in
-    (* TODO: let iter accept a polymorphic input*)
-    (list_Miter (fun '(x,y) =>
-                   (* assume: all x,y are keys in env *)
-                   let xv := unwrap_with_default (H:=idx_zero) (map.get env x) in
-                   let yv := unwrap_with_default (H:=idx_zero) (map.get env y) in
-                   Mseq (union xv yv) (Mret tt))
-       wus).
+  (* takes the current env as an accumulator for convenience *)
+  Definition allocate_existential_vars (* write_vars env_acc *)
+    : list idx -> idx_map idx -> ST (idx_map idx) :=
+    list_Mfoldl (fun acc x =>
+                   @! let v <- alloc in
+                     ret (map.put acc x v)).
+  
+  (* writes the clause to the egraph, assuming env maps all free variables to idxs *)
+  Definition exec_clause (env : idx_map idx) (c : atom) : ST _ :=
+    (* assume: all idxs are keys in env *)
+    let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) c.(atom_args) in
+    let out_val := unwrap_with_default (H:=idx_zero) (map.get env c.(atom_ret)) in
+    @!let args_vals' <- list_Mmap find args_vals in
+      let out_val' <- find out_val in
+      let i <- hash_node_out (Build_atom c.(atom_fn) args_vals' out_val') in
+      (* will be a noop if hash_node_out allocates a fresh singleton
+         TODO: this union is suspicious
+       *)
+      (union i out_val').
+   
   
   Definition exec_write r assignment : ST unit :=
-    exec_write' (map.of_list (combine r.(query_vars) assignment)) r.(write_clauses)  r.(write_unifications).
+    (* Note: the preallocation method here will do extra allocations
+       if the nodes are already in the egraph.
+       TODO: (partial?) solution:
+       gc allocated idxs in the union  if they have no parents?
+     *)
+    @! let env <- allocate_existential_vars r.(write_vars)
+                  (map.of_list (combine r.(query_vars) assignment)) in
+      let _ <- list_Miter (exec_clause env) r.(write_clauses) in      
+      (list_Miter (fun '(x,y) =>
+                     (* assume: all x,y are keys in env *)
+                     let xv := unwrap_with_default (H:=idx_zero) (map.get env x) in
+                     let yv := unwrap_with_default (H:=idx_zero) (map.get env y) in
+                     (union xv yv))
+         r.(write_unifications)).
+
+  (*TODO: avoid code duplication *)
+  Definition exec_const r : ST unit :=
+    (* Note: the preallocation method here will do extra allocations
+       if the nodes are already in the egraph.
+       TODO: (partial?) solution:
+       gc allocated idxs in the union  if they have no parents?
+     *)
+    @! let env <- allocate_existential_vars r.(const_vars) map.empty in
+      let _ <- list_Miter (exec_clause env) r.(const_clauses) in      
+      (list_Miter (fun '(x,y) =>
+                     (* assume: all x,y are keys in env *)
+                     let xv := unwrap_with_default (H:=idx_zero) (map.get env x) in
+                     let yv := unwrap_with_default (H:=idx_zero) (map.get env y) in
+                     (union xv yv))
+         r.(const_unifications)).
 
   Definition process_const_rules (rs : rule_set) : ST unit :=
-    list_Miter (fun cr => exec_write' map.empty cr.(const_clauses) cr.(const_unifications))
-      rs.(compiled_const_rules).
+    list_Miter exec_const rs.(compiled_const_rules).
 
   
   Fixpoint insert (acc : list (option idx)) n x : option _ :=

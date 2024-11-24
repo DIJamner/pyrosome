@@ -112,16 +112,14 @@ Section MonadListOps.
             let bl' <- list_Mmap al' in
             ret (b::bl')
       end.
-  End __.
-  
-  Fixpoint list_Miter (f : A -> M unit) (l : list A) : M unit :=
+    
+  Fixpoint list_Miter (l : list A) : M unit :=
     match l with
     | [] => @! ret tt
-    | a::al' =>
-        @! let b <- f a in
-           let tt <- list_Miter f al' in
-           ret tt
+    | a::al' => Mseq (f a) (list_Miter al')
     end.
+  End __.
+  
 
   
   Fixpoint list_Miter_idx' (f : nat -> A -> M unit) (l : list A) n : M unit :=
