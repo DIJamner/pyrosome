@@ -973,27 +973,42 @@ Module StringInstantiation.
   Goal ascii_succ "0"%char = "1"%char.
   Proof. compute. reflexivity. Abort.
   
-  (*TODO: could consider writing one that retains better legibility.
-    Sepcifically: only use printable characters
-   *)
-  Fixpoint string_succ s : string :=
+  Fixpoint string_num_succ s : string :=
     match s with
     | "" => "0"
-    | String a EmptyString =>
-        if andb (Ascii.ltb a "Z"%char) (Ascii.ltb "/"%char a)
-        then String (ascii_succ a) EmptyString
-        else  String a "0"
-    | String a s => String a (string_succ s)
+    | String a s' =>
+        if andb (Ascii.ltb a "9"%char) (Ascii.ltb "/"%char a)
+        then String (ascii_succ a) s'
+        else String "0"%char (string_num_succ s')
+    end.
+  
+  Definition string_succ s : string :=
+    match index 0 "#" s with
+    | None => s ++"#"
+    | Some n =>
+        let pre := substring 0 n s in
+        let post := substring (S n) (length s) s in
+        pre++"#" ++(string_num_succ post)
     end.
 
-  Goal string_succ "v8" = "v9".
+  Goal string_num_succ "8" = "9".
   Proof. compute. reflexivity. Abort.
 
   
-  Goal string_succ "vZ" = "vZ0".
+  Goal string_succ "v#8" = "v#9".
+  Proof. compute. reflexivity. Abort.
+
+  
+  Goal string_succ "vZ#" = "vZ#0".
   Proof. compute. reflexivity. Abort.
   
-  Goal string_succ "v/" = "v/0".
+  Goal string_succ "v/" = "v/#".
+  Proof. compute. reflexivity. Abort.
+  
+  Goal string_succ "v#9" = "v#00".
+  Proof. compute. reflexivity. Abort.
+  
+  Goal string_succ "v#90" = "v#01".
   Proof. compute. reflexivity. Abort.
 
   
