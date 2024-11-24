@@ -331,6 +331,15 @@ Section __.
         basic_goal_prep;
         basic_utils_crush.
     Qed.
+
+    
+    (*TODO: should be option? currently returns length if a is not in l*)
+    Fixpoint idx_of (a:A) l : nat :=
+      match l with
+      | [] => 0
+      | a'::l =>
+          if eqb a a' then 0 else S (idx_of a l)
+      end.
     
   End Eqb.
 
@@ -363,6 +372,8 @@ Section __.
       basic_goal_prep;
       basic_utils_crush.
   Qed.
+
+  
 
 End __.
 

@@ -101,15 +101,6 @@ Section WithVar.
   Notation wf_ctx l :=
     (wf_ctx (Model:= core_model l)).
 
-  
-  (*TODO: should be option?*)
-  Fixpoint idx_of {A} `{Eqb A} (a:A) l : nat :=
-    match l with
-    | [] => 0 (*should never happen, but out of bounds if it does*)
-    | a'::l =>
-        if eqb a a' then 0 else S (idx_of a l)
-    end.
-
   Section WithParameter.
 
     (*TODO: how to handle p_name freshness?
