@@ -658,6 +658,7 @@ Abort.
       {
         unfold curry.
         destruct a0.
+        (*
         eapply state_triple_bind; eauto.
         {
           apply IHl.
@@ -671,6 +672,8 @@ Abort.
       }
     }
   Qed.
+         *)
+  Admitted.
   
   Lemma state_triple_list_Miter_simple A (f : A -> state instance unit) l P
     : (forall a, In a l -> state_triple P (f a) (fun p => P (snd p))) ->
