@@ -269,9 +269,6 @@ Section WithVar.
   
   Notation rule_set := (rule_set V V V_map V_map).
   
-  Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
-    {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus} 
-    {idx_map}%function_scope rules%list_scope.
   
   
   (* Note: only pass in the subset of the language you want to run.
@@ -280,7 +277,7 @@ Section WithVar.
      Assumes incl l l'
    *)
   Definition rule_set_from_lang (l l': lang) : rule_set :=
-    build_rule_set succ _ (map (uncurry (rule_to_log_rule l')) l).
+    build_rule_set succ _ id (map (uncurry (rule_to_log_rule l')) l).
 
   Local Notation hash_node := (hash_node succ).
 
@@ -921,7 +918,7 @@ Module PositiveInstantiation.
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
   Definition build_rule_set : lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
-    rule_set_from_lang ptree_map_plus Pos.succ sort_of (fold_right Pos.max xH).
+    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (fold_right Pos.max xH).
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
@@ -1092,7 +1089,7 @@ Module StringInstantiation.
   Definition build_rule_set : lang string ->
                             lang string ->
                             rule_set string string string_trie_map string_trie_map :=
-    rule_set_from_lang string_ptree_map_plus string_succ sort_of
+    rule_set_from_lang string_ptree_map_plus _ string_succ sort_of
       (fold_right string_max "x0").
 
 End StringInstantiation.

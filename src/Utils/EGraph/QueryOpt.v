@@ -120,18 +120,59 @@ Section WithMap.
   
   
   Local Notation "'ST'" := (state instance).
-
-  (*TODO: query optimization
-
-  Definition add_fundep_clause a : ST unit :=
-    @! let args' <- list_Mmap add_fundep_var a.(atom_args) in
-      let out' <- list_Mmap add_fundep_var a.(atom_ret) in
-      (*TODO: pick the right add_node fn*)
-      (add_node (Build_atom a.(atom_fn args' out'))).
   
-  Definition rebuild_functional_deps_unordered_vars (clauses : list atom) :=
-    let (_, g) := (list_Miter add_fundep_clause clauses) in
-   *)
+  (*TODO: is probably always id. Unify symbol & idx?*)
+  Context (idx_as_symbol : idx -> symbol).
+  Definition add_fundep_var v :=
+    hash_node (idx_as_symbol v) [].
+
+  Definition add_fundep_clause (a : atom) : ST unit :=
+    @! let args' <- list_Mmap add_fundep_var a.(atom_args) in
+      let out' <- add_fundep_var a.(atom_ret) in
+      (*TODO: pick the right add_node fn*)
+      let i <- hash_node_out _ _ _ _ _ _ (Build_atom a.(atom_fn) args' out') in
+      let _ <- union i out' in
+      ret tt.
+
+  Fixpoint build_var_map' (vars : list idx) (g : instance) acc :=
+    match vars with
+    | [] => rev acc
+    | x::vars =>
+        let (x_id,_) := hash_node (idx_as_symbol x) [] g in
+        build_var_map' vars g ((x_id,x)::acc)
+    end.
+
+  Definition build_var_map v g := build_var_map' v g [].
+
+  Definition optimize_log_rule fuel (lr : log_rule) :=
+    let (_, g) :=
+      Mseq (list_Miter (M :=state instance) add_fundep_clause lr.(query_clauses))
+        (rebuild _ _ _ _ _ _ _ fuel)
+        (empty_egraph idx_zero) in
+    let vm := build_var_map lr.(query_vars) g in
+    let sub x := named_list_lookup x vm x in
+    let atom_sub '(Build_atom f args out) := Build_atom f (map sub args) (sub out) in
+    let clauses' : list atom :=
+      (flat_map (fun '(f,y) =>
+                   map (fun p =>
+                          Build_atom f (map sub (fst p)) (sub (snd (snd p))))
+                     (map.tuples y))
+         (* remove all atoms that are vars *)
+         (filter (fun p => negb (inb (fst p) (map idx_as_symbol lr.(query_vars))))
+            (map.tuples g.(db)))) in
+    let in_clauses (v : idx) :=
+      existsb (fun c => orb (inb v c.(atom_args)) (eqb v c.(atom_ret))) clauses' in
+    (* filter preserves the order. *)
+    let vars' := filter in_clauses lr.(query_vars) in
+    (* TODO: doesn't merge identical existential vars.
+       Small performance penalty.
+     *)
+    let write_clauses' := dedup (eqb (A:=_)) (map atom_sub lr.(write_clauses)) in
+    (*TODO: optimize unifications of fresh vars out*)
+    let write_unifications' :=
+      dedup (eqb (A:=_)) (map (fun p => (sub (fst p), sub (snd p)))
+                            lr.(write_unifications)) in
+    Build_log_rule vars' clauses' write_clauses' write_unifications'.
 
   (* We add the query vars
   Definition add_vars (l : list idx) : ST (named_list symbol idx) :=
@@ -267,8 +308,14 @@ Section WithMap.
   
   
   Definition build_rule_set (rules : list log_rule) : rule_set :=
-    let (crs, clauses_plus) := list_Mmap compile_rule rules map.empty in
+    let opt_rules := map (optimize_log_rule 100 (*TODO: magic number*)) rules in
+    let (crs, clauses_plus) := list_Mmap compile_rule opt_rules map.empty in
     let (erules, consts) := split_sum_list crs in
     Build_rule_set (map_map snd clauses_plus) erules consts.
  
 End WithMap.
+
+
+Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
+  {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus} 
+  {idx_map idx_trie}%function_scope idx_as_symbol%function_scope rules%list_scope.
