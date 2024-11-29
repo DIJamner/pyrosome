@@ -8,7 +8,7 @@
  *)
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+Require Import Datatypes.String Lists.List Sorting.Permutation.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -379,43 +379,6 @@ Section WithVar.
           (saturate_until succ default spaced_list_intersect rws (eq_proven x1 x2 xt) fuel)
       in (comp (empty_egraph default)).
 
-(*
-    Worked example:
-    
-  [:="G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "v1" : #"exp" "G" "A",
-      "v2" : #"exp" "G" "B"
-      ----------------------------------------------- ("project 1")
-      #".1" (#"pair" "v1" "v2") = "v1" : #"exp" "G" "A"
-  ];
-
-    Query clauses from context (partially deduped):
-    (#"env") ~> 0
-    (#"sort_of" "G") ~> 0
-    (#"ty") ~> 1
-    (#"sort_of" "A") ~> 1
-    (#"sort_of" "B") ~> 1
-    {#"exp" "G" "A") ~> 2
-    (#"sort_of" "v1") ~> 2
-    {#"exp" "G" "B") ~> 3
-    (#"sort_of" "v2") ~> 3
-
-    Query clauses from LHS (partial dedup, extends above):
-    (#"pair" "G" "A" "B" "v1" "v2") ~> 4
-    (#".1" "G" "A" "B" 4) ~> 5
-    (#"sort_of" 5) ~> 2         //TODO: prove this one unnecessary? (possible, but necessary?)
-
-    Write clauses (from RHS):
-    (#".1" "G" "A" "B" 4) ~> "v1"
-
-
-    general case: write clauses are clauses of RHS + LHS_top -> RHS_top_id.
-    If RHS is not a variable, can optimize to clauses of RHS
-    where the var for RHS_top is LHS_top_id
-   *)
-  
 
   (*******************************************)
   
@@ -541,94 +504,28 @@ Section WithVar.
         let cls := (build_eclasses i.(db _ _ _ _ _)) in
         option_map fst
           (option_map fst (extract' fuel cls i.(equiv _ _ _ _ _) x [])).
-    
+      
     (*TODO: differential extraction;
     extract 2 terms together with a shared weight metric (distance)
      *)
 
-  End EExtract.
+    End EExtract.
 
+    
+(* Egraph-based elaboration:
+   Idea: have an add_unelab_term fn that allocates fresh idxs for elab holes,
+   without terms that point to them.
+   Also: adds 2 sort_of constraints at each level:
+   1. canonical sort
+   2. expected sort
 
-  (******************************************)
+   Last piece: generate & add eqlog rules for injectivity:
+   - not expressible pyrosome rules (would break monotonicity)
+   - e.g. | a = d, b = e :- "->" a b -> c, "->" d e -> c
 
-  (*interprets an equation as a left-to-right rewrite*)
-  (*
-  Definition eqn_to_rewrite e1 e2 :=
-    (*TODO: handle side conditions *)
-    let gs_state := succ (list.fold_left max (fvs e1) in
-    let q1 := extended_list_to_query (term_pat_to_clauses e1 gs_state) in
-    let q2 := TODO: what is different on the put side?
-    *)
-(*
-  Definition rewrite_to_log_op c t e1 e2 :=
-    let (next, clauses, c', e1', t') :=
-      (@!let {stateT V (writer _)}
-               c' <- ctx_pat_to_clauses c in
-         let t' <- sort_pat_to_clauses c' t in
-         let e1' <- term_pat_to_clauses c' e1 in
-         let _ <- lift (write (Build_atom _ _ sort_of [e1'] ,t')) in
-         ret (c',e1',t') 0 in
-    let (next', clauses', e2') :=
-      (@!let {stateT V (writer (atom V V * V))}
-               e2' <- term_pat_to_clauses c' e2 in
-         let _ <- lift (write (var_clause e2' e1'))in
-         TODO: need to subst in both sets of clauses in case e2' not new
-         Question: is this a design issue?.
-       In the case that both LHS and RHS are variables, can't unify them in the conclusion.
-       Solution: just add a unify x,y command
-                                                                               
-       (*TODO: want to add the clause e1' = e2'; how best to write that?
-           could have term_pat_to_clauses take a default arg?
-           - likely best: take a fn of type stateT V _ V; use gensym normally,
-             const arg for a default
-
-          ex.:  x, y : A
-                P : eq x y
-                ----------
-                x = y : A
-          *)
-         let _ <- lift (write (Build_atom _ _ sort_of [e2'] ,t')) in
-         ret e2') next in
-    (*TODO: for optimizing queries: is equivalence (or even inclusion) of queries decidable? (might be)
-      idea: query-db correspondence: run one query on the other?
-      - note: consider whether this requires a completeness theorem about queries (probably doesn't)
-     *)
-
- (*TODO: sketch full translation on paper*)
- 
-  
-  (*TODO: does the wrong thing w/ vars
-  Definition ctx_to_clauses
-
-  Definition lang_rule_to_log_rule n (r : rule) : log_rule :=
-    match r with
-    (* TODO: what to do with the sorts?
-       Include sort_of as special symbol/fn in db? might be easiest
-     *)
-    | term_rule c _ t =>
-        (*TODO: want multiple conclusions?
-          Can be immitated by chained single-conclusion rules, but at > n times cost where n is #conclusions
-          e.g.:
-          (n args) |-> ?x, (sort_of ?x) |-> xt :- ... t |-> xt
-
-          alternately: want a different `default` for `sort_of`?
-          Question: can I ignore/never materialize the sort? No: side conditions are defined by their sorts
-
-          Note about Multi-conclusion rules:
-          - need to have separate variables for outputs that aren't matched in the assumptions.
-          General idea: assumptions generate a subst,
-          future rules treat vars in the subst diff from vars out of the subst
-          Can I remove the awk. in-list vs option distinction by making the clause always have the var this way?
-         *)
-        term_to_clauses : state V 
-        Note: need fresh variable state across assumptions, conclusion?
-                                                                      
-      Build_log_op (concl_cons (term_to_conclusion (con n (map fst c)))... (fun x y => sort_of x y)  ]  ((ctx_to_assumptions c))
-
-  TODO: rules to eqsat program
-  TODO: sort map rebuilding
+   Then saturate, then extract
  *)
- *)
+      
 
 
 End WithVar.
@@ -803,6 +700,7 @@ Module PositiveInstantiation.
       | (pos_trie_leaf a)::ptl => Some (leaf_intersect' a ptl)
       | _ => None (*should never happen*)
       end.
+    
     (*
       Challenge: what if the first trie has a false for the next var?
                          not so easy to invoke intersection.
@@ -841,8 +739,92 @@ Module PositiveInstantiation.
       | (true::l1)::cil, pt::ptl =>
           let (true_cil, true_tries, other_cil, other_tries) := acc in
           partition_tries cil ptl (mk4 (l1::true_cil) (pt::true_tries) other_cil other_tries)
-      | _, _ => mk4 default default default default (*should never happen *)
+      | _, _ => acc (*mk4 default default default default*) (*should never happen *)
       end.
+
+    Definition partition_tries_spec (cil : list (list bool)) (ptl : list pos_trie')
+      (acc : quad _ _ _ _) :=
+      let l := combine cil ptl in
+      let true_filter := rev (map (fun p => (tl (fst p), snd p))
+                                (filter (fun p => hd false (fst p)) l)) in
+      let false_filter := rev (map (fun p => (tl (fst p), snd p))
+                                 (filter (fun p => negb (hd false (fst p))) l)) in
+      let (true_cil, true_tries) := split true_filter in
+      let (false_cil, false_tries) := split false_filter in
+      mk4 (true_cil++acc.(p41))
+        (true_tries++acc.(p42))
+        (false_cil++acc.(p43))
+        (false_tries++acc.(p44)).
+
+    (*TODO: move to utils*)
+    Hint Rewrite map_rev : utils.
+                                
+    (*TODO: move to utils?*)
+    Hint Rewrite map_app : utils.
+    Hint Rewrite split_map : utils.
+    
+    Lemma partition_tries_correct cil ptl acc
+      : partition_tries cil ptl acc = partition_tries_spec cil ptl acc.
+    Proof.
+      unfold partition_tries_spec.
+      revert acc ptl;
+        induction cil;
+        destruct ptl, acc;
+        basic_goal_prep; eauto.
+      { repeat case_match; eauto. }
+      {
+        do 2 case_match; 
+        basic_goal_prep;
+        basic_utils_crush.
+        all: rewrite IHcil;
+        basic_goal_prep;
+          basic_utils_crush.
+        all: f_equal.
+        all: rewrite <- app_assoc.
+        all: reflexivity.
+      }
+    Qed.
+    
+    Lemma filter_complement_permutation C (l : list C) f
+      : Permutation (filter f l ++ filter (fun x => negb (f x)) l) l.
+    Proof using.
+      clear merge.
+      induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+      case_match; cbn; eauto.
+      change (a:: ?l) with ([a] ++ l).
+      rewrite Permutation_app_comm.
+      rewrite <- !app_assoc.
+      apply Permutation_app_head.
+      rewrite Permutation_app_comm.
+      eauto.
+    Qed.
+
+    Lemma partition_tries_ptl_perm cil ptl acc out
+      : Datatypes.length cil = Datatypes.length ptl ->
+        partition_tries cil ptl acc = out ->
+        Permutation (ptl ++ acc.(p42) ++ acc.(p44))
+          (out.(p42) ++ out.(p44)).
+    Proof.
+      rewrite partition_tries_correct.
+      unfold partition_tries_spec.
+      repeat (basic_goal_prep;
+              basic_utils_crush).
+      rewrite !app_assoc.
+      apply Permutation_app_tail.
+      apply Permutation_sym.
+      rewrite Permutation_app_comm.
+      rewrite !app_assoc.
+      apply Permutation_app_tail.
+      rewrite <- rev_app_distr.
+      rewrite <- !map_app.
+      rewrite <- Permutation_rev.
+      rewrite List.map_map; cbn.
+      change (fun x => ?f x) with f.
+      rewrite filter_complement_permutation.
+      rewrite map_combine_snd; eauto.
+    Qed.
     
     (*TODO define pos_trie as option pos_trie'*)
     (* Fuel makes sense here since it is likely to be small (5-20)
@@ -865,11 +847,17 @@ Module PositiveInstantiation.
             partition_tries cil' ptl'
               (partition_tries cil ptl (mk4 [] [] [] [])) in
           match true_cil, true_tries with
-          | [], _ => (*assume all elements of other_cil are repeat false *)
-              Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
+          (* assume true_tries is empty *)
+          | [], _ =>
+              (* if other_cil is also empty (shouldn't happen)
+                 or its first element is the empty list
+                 
+                 Assume: all cil elements have the same length.
+               *)
+              if hd [] other_cil then Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
+              else pt_spaced_intersect' fuel other_cil other_tries [] []
           | _::_, pt1::true_tries =>
-              (*TODO: the append here is unpleasant.
-                delay to avoid appending.
+              (*
                 TODO: this feels like a bug in-waiting.
                 what is the length of the ptl' that gets passed to the recursive call?
                 Might be fine, but be careful.
@@ -895,10 +883,188 @@ Module PositiveInstantiation.
       let fuel := S (length (hd [] cil)) in
       @! let ptl' <- list_Mmap id ptl in
         (pt_spaced_intersect' fuel cil ptl' [] []).
+    
+    Definition spaced_get x (p : pos_trie * list bool) : option A :=
+      let key := map fst (filter snd (combine x (snd p))) in
+      pt_get (fst p) key.
 
-    (*TODO: ditch this compat layer*)
+    Inductive depth' : pos_trie' -> nat -> Prop :=
+    | leaf_depth a : depth' (pos_trie_leaf a) 0
+    | node_depth m n
+      : (forall k v, PTree.get' k m = Some v ->
+                     depth' v n) ->
+        depth' (pos_trie_node m) (S n).
+
+    Definition depth t n :=
+      match t with
+      | Some t' => depth' t' n
+      | None => True
+      end.
+
+    Fixpoint has_depth' (n : nat) (t : pos_trie') :=
+      match n, t with
+      | O, pos_trie_leaf _ => true
+      | S n, pos_trie_node m =>
+          map.forallb (fun k => has_depth' n) (PTree.Nodes m : TrieMap.trie_map _)
+      | _, _ => false
+      end.
+    
+    Definition has_depth n (t : pos_trie) :=
+      match t with
+      | None => true
+      | Some x => has_depth' n x
+      end.
+
+    (*
+    (* TODO: provably false (by example). figure out the bug *)
+    Example pt_spaced_intersect'1_false
+      : exists l p,
+        depth' p (Datatypes.length (filter id l))
+        /\ pt_spaced_intersect' (S (Datatypes.length l)) [l] [p] [] [] = Some p.
+    Proof.
+      exists [false; true].
+      eexists.
+      split.
+      2: cbn.
+      instantiate (1:=[false])
+
+    (* TODO: provably false (by example). figure out the bug *)
+    Example pt_spaced_intersect1 t l
+      : depth t (length (filter id l)) -> pt_spaced_intersect [(t,l)] = t.
+    Proof.
+      unfold pt_spaced_intersect.
+      basic_utils_crush.
+      cbn -[pt_spaced_intersect'] in *.
+      destruct t; eauto.
+      cbn in H0.
+      cbn.
+      cbn [Mbind].
+      cbn [map fst snd hd list_Mmap id].
+      cbv[id].
+      cbn -[pt_spaced_intersect'].
+      destruct t; auto.
+      revert p.
+      induction l.
+      {
+        basic_goal_prep.
+        destruct p; cbn; eauto.
+        safe_invert H0.
+      }
+      cbn [pt_spaced_intersect'] in *.
+      intros.
+      rewrite !partition_tries_correct in *.
+      unfold partition_tries_spec.
+      cbn.
+      (* TODO: why is the 2nd partition_tries becoming visible?*)
+      basic_utils_crush.
+      destruct a; cbn.
+      2:{
+        specialize (IHl p).
+        apply IHl in H0.
+        clear IHl.
+        rewrite !partition_tries_correct in *.
+        unfold partition_tries_spec in *.
+        repeat (basic_goal_prep;
+                basic_utils_crush).
+        destruct l; cbn in *; eauto.
+        destruct b; cbn in *; eauto.
+        (*
+        list_intersect'_correct
+        destruct p; cbn in *; eauto.
+        safe_invert H0.
+        assert (exists k v, PTree.get' k m = Some v) by admit.
+        break.
+        pose proof H0.
+        eapply H3 in H0.
+        specialize (IHl x0).
+        destruct l.*)
+    Admitted.
+     *)
+    
+
+    (*TODO: how to do this other than by matching on p?*)
+      Lemma pt_spaced_intersect_correct x p
+        : let bools := List.fold_left
+                         (fun acc p => map2 orb (combine (snd p) acc))
+                         (tl p)
+                         (hd [] (map snd p))
+          in
+        match list_Mmap (spaced_get x) p with
+        | Some es => spaced_get x (pt_spaced_intersect p, bools)
+                     = match es with
+                       | [] => None
+                       | e::es => Some (List.fold_left merge es e)
+                       end
+        | _ => spaced_get x (pt_spaced_intersect p, bools) = None
+        end.
+      Proof.
+        
+
+        (*
+      Lemma pt_spaced_intersect'_correct x p
+        : all (fun l => len = length l) cil ->
+          all (fun l => len = length l) ptl ->
+        let bools := List.fold_left
+                         (fun acc l => map2 orb (combine l  acc))
+                         cil
+                         (repeat true len)
+          in
+        match list_Mmap (spaced_get x) p with
+        | Some es => spaced_get x (pt_spaced_intersect p, bools)
+                     = match es with
+                       | [] => None
+                       | e::es => Some (List.fold_left merge es e)
+                       end
+        | _ => spaced_get x (pt_spaced_intersect p, bools) = None
+        end.
+      Proof.
+        todo: lemma about intersect'
+              *)
+      Abort.
+        
+    (*TODO: ditch this compat layer? *)
     Definition compat_intersect (p : ne_list (pos_trie * list bool)) : pos_trie :=
       pt_spaced_intersect (fst p::snd p).
+
+      Lemma compat_intersect_correct x p
+        : let bools := List.fold_left
+                         (fun acc p => map2 orb (combine (snd p) acc))
+                         (snd p)
+                         (snd (fst p))
+          in
+        match spaced_get x (fst p), list_Mmap (spaced_get x) (snd p) with
+        | Some e, Some es => spaced_get x (compat_intersect p, bools)
+                             = Some (List.fold_left merge es e)
+        | _,_ => spaced_get x (compat_intersect p, bools) = None
+        end.
+      Proof.
+        (*
+        TODO: to avoid unrolling, write one for pt_spaced_intersect
+        
+        revert p.
+        (*TODO: should work, but might need to do induction on cil*)
+        induction x.
+        {
+          unfold spaced_get, compat_intersect, pt_spaced_intersect.
+          basic_goal_prep.
+          destruct (split  l) as [ptl cil] eqn:Hsplit.
+          cbn.
+          cbv [id].
+          destruct p; cbn;
+            repeat (case_match; subst; cbn in 
+                    2:{
+          
+        unfold compat_intersect.
+        unfold pt_spaced_intersect.
+        destruct p.
+        cbn [fst snd].
+        destruct (split (p :: l)) as [ptl cil] eqn:Hsplit.
+        generalize dependent ptl.
+        revert x p l.
+        
+        TODO: induction on distinguished elt cil?
+              *)
+      Abort.
     
   End __.
 

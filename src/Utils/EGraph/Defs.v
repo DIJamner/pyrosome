@@ -74,7 +74,6 @@ Section WithMap.
   
   Record instance := {
       db : db_map;
-      (*sort_map : idx_map idx;*)
       equiv : union_find;
       parents : idx_map (list atom);
       (* Used to determine which entries belong to the frontier *)
@@ -390,7 +389,7 @@ Section WithMap.
   Arguments spaced_list_intersect {B}%type_scope {_} merge%function_scope _.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
-    map.fold (fun acc k _ => cons k acc) [] (spaced_list_intersect (fun _ _ => tt) tries).
+    map.keys (spaced_list_intersect (fun _ _ => tt) tries).
 
   (* assumes `sublist cvs qvs` *)
   Fixpoint variable_flags (qvs cvs : list idx) :=
