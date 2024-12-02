@@ -1241,10 +1241,8 @@ Section MapIntersectList.
   Qed.
     
   Lemma list_intersect'_correct x hd tl
-    : match list_Mmap (get' x) (hd::tl) with
-      | Some es => get x (otree (list_intersect' hd tl)) = (elts_intersect es)
-      | None => get x (otree (list_intersect' hd tl)) = None
-      end.
+    : get x (otree (list_intersect' hd tl))
+      = option_map elts_intersect (list_Mmap (get' x) (hd::tl)).
   Proof using elts_intersect_Proper.
     pose proof (list_intersect'_correct' x (Some hd) (map Some tl)).
     change (Some hd :: map Some tl) with (map Some (hd::tl)) in *.

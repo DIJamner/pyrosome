@@ -826,7 +826,6 @@ Module PositiveInstantiation.
       rewrite map_combine_snd; eauto.
     Qed.
     
-    (*TODO define pos_trie as option pos_trie'*)
     (* Fuel makes sense here since it is likely to be small (5-20)
        and makes the recursion much more convenient.
        Fuel must be more than the length of the lists in cil.
@@ -846,9 +845,9 @@ Module PositiveInstantiation.
           let (true_cil, true_tries, other_cil, other_tries) :=
             partition_tries cil' ptl'
               (partition_tries cil ptl (mk4 [] [] [] [])) in
-          match true_cil, true_tries with
-          (* assume true_tries is empty *)
-          | [], _ =>
+          match true_tries with
+          (* assume true_cil is empty *)
+          | [] =>
               (* if other_cil is also empty (shouldn't happen)
                  or its first element is the empty list
                  
@@ -856,24 +855,23 @@ Module PositiveInstantiation.
                *)
               if hd [] other_cil then Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
               else pt_spaced_intersect' fuel other_cil other_tries [] []
-          | _::_, pt1::true_tries =>
+          | pt1::true_tries =>
               (*
                 TODO: this feels like a bug in-waiting.
                 what is the length of the ptl' that gets passed to the recursive call?
                 Might be fine, but be careful.
                *)
               match list_intersect'
-                (pt_spaced_intersect' fuel other_cil other_tries true_cil)
-                (*TODO: avoid map? it's hard to avoid given the possibility of
+                      (pt_spaced_intersect' fuel other_cil other_tries true_cil)
+                      (*TODO: avoid map? it's hard to avoid given the possibility of
                   leaf_intersect.
-                 *)
-                (proj_node_map_unchecked pt1)
-                (map proj_node_map_unchecked true_tries)
+                       *)
+                      (proj_node_map_unchecked pt1)
+                      (map proj_node_map_unchecked true_tries)
               with
               | None => None
               | Some pt => Some (pos_trie_node pt)
               end
-          | _, _ => (*should never happen*) None
           end
       end.
     
@@ -884,9 +882,9 @@ Module PositiveInstantiation.
       @! let ptl' <- list_Mmap id ptl in
         (pt_spaced_intersect' fuel cil ptl' [] []).
     
-    Definition spaced_get x (p : pos_trie * list bool) : option A :=
-      let key := map fst (filter snd (combine x (snd p))) in
-      pt_get (fst p) key.
+    Definition spaced_get x (p : list bool * pos_trie) : option A :=
+      let key := map fst (filter snd (combine x (fst p))) in
+      pt_get (snd p) key.
 
     Inductive depth' : pos_trie' -> nat -> Prop :=
     | leaf_depth a : depth' (pos_trie_leaf a) 0
@@ -980,8 +978,552 @@ Module PositiveInstantiation.
         destruct l.*)
     Admitted.
      *)
+
+    
+    Lemma all_const C P (x:C) l
+      : all P l ->
+        (forall y, P y -> y = x) ->
+        l = repeat x (length l).
+    Admitted.
+
+    Lemma filter_false_In:
+      forall (B : Type) (f : B -> bool) (l : list B),
+        (forall x : B, In x l -> f x = false) -> filter f l = [].
+    Admitted.
+
+    Lemma map_combine_fst' C D
+      : forall (lA : list C) (lB : list D),
+        map fst (combine lA lB) = (firstn (length lB) lA).
+    Admitted.
+    Hint Rewrite  map_combine_fst' : utils.
+    
+    Lemma map_combine_snd' C D
+      : forall (lA : list C) (lB : list D),
+        map snd (combine lA lB) = (firstn (length lA) lB).
+    Admitted.
+    Hint Rewrite  map_combine_snd' : utils.
+
+    
+    Lemma firstn_repeat m n C (x:C)
+      : firstn m (repeat x n) = repeat x (min m n).
+    Proof.
+    Admitted.
+    Hint Rewrite firstn_repeat : utils.
+
+    Hint Rewrite PeanoNat.Nat.min_id : utils.
+    Hint Rewrite map_repeat : utils.
+
+    
+    Hint Rewrite rev_repeat : utils.
+
+    
+    Lemma repeat_default_hd C (x:C) n
+      : hd x (repeat x n) = x.
+    Proof.
+      destruct n; reflexivity.
+    Qed.
+    Hint Rewrite repeat_default_hd : utils.
+
+    
+    Hint Rewrite firstn_all : utils.
+    Hint Rewrite repeat_length : utils.
+
+    Lemma tl_repeat C (x:C) n
+      : tl (repeat x n) = repeat x (pred n).
+    Proof.
+      destruct n; reflexivity.
+    Qed.
+    Hint Rewrite tl_repeat : utils.
+
+    
+    Lemma fold_left_fix_In C D (f : C -> D -> C) l acc
+      : (forall x, In x l -> f acc x = acc) -> fold_left f l acc = acc.
+    Admitted.
+
+    
+    Lemma option_all_empty C (l : list (option C))
+      : Some [] = option_all l <-> l = [].
+    Admitted.
+    Hint Rewrite option_all_empty : utils.
+
+    
+    Lemma combine_eq_nil C D (l1 : list C) (l2 : list D)
+      : combine l1 l2 = [] <-> l1 = [] \/ l2 = [].
+    Proof.
+      destruct l1; cbn; try now intuition eauto.
+      destruct l2; cbn; try now intuition eauto.
+    Qed.
+    Hint Rewrite combine_eq_nil : utils.
+
+    Lemma app_eq_nil' : forall [A : Type] (l l' : list A), l ++ l' = [] <-> l = [] /\ l' = [].
+    Proof.
+      split; eauto using app_eq_nil.
+      intuition subst.
+      reflexivity.
+    Qed.
+    Hint Rewrite app_eq_nil' : utils.
+
+    Lemma map_eq_nil' : forall [A B : Type] (f : A -> B) (l : list A), map f l = [] <-> l = [].
+    Proof.
+      split; eauto using map_eq_nil.
+      intuition subst.
+      reflexivity.
+    Qed.
+    Hint Rewrite map_eq_nil' : utils.
+
+    Hint Rewrite length_zero_iff_nil : utils.
+
     
 
+    Lemma filter_eq_nil : forall [A : Type] (f : A -> bool) (l : list A), filter f l = [] <-> l = [].
+    Proof. Admitted.
+    Hint Rewrite filter_eq_nil : utils.
+
+    
+    Lemma rev_eq_nil C (l : list C)
+      : rev l = [] <-> l = [].
+    Proof. Admitted.
+    Hint Rewrite  rev_eq_nil : utils.
+
+    Hint Rewrite combine_nil : utils.
+
+    
+    Lemma map_id C (l : list C)
+      : map id l = l.
+    Admitted.
+
+    
+    Lemma Mbind_option_map A1 A2 A3 (f : A2 -> option A3) (g : A1 -> A2) ma
+      : Mbind f (option_map g ma)
+        = Mbind (fun a => f (g a)) ma.
+    Admitted.
+    Hint Rewrite Mbind_option_map : utils.
+  
+    
+    Lemma all2_empty_r A1 A2 (R : A1 -> A2 -> Prop) l1
+      : all2 R l1 [] <-> l1 = [].
+    Admitted.
+    Hint Rewrite all2_empty_r : utils.
+    
+    Lemma all2_empty_l A1 A2 (R : A1 -> A2 -> Prop) l2
+      : all2 R [] l2 <-> l2 = [].
+    Admitted.
+    Hint Rewrite all2_empty_l : utils.
+
+     (* A simpler version to serve as an intermediate step, removing the double lists *)
+    Fixpoint pt_spaced_intersect'_simple fuel l
+      : option pos_trie' :=
+      match fuel with
+      | O => None (* should never happen*)
+      | S fuel =>
+          let (true_cil, true_tries, other_cil, other_tries) :=
+            partition_tries_spec (map fst l) (map snd l) (mk4 [] [] [] []) in
+          match true_tries with
+          | [] =>
+              if hd [] other_cil then Datatypes.option_map pos_trie_leaf (leaf_intersect other_tries)
+              else pt_spaced_intersect' fuel other_cil other_tries [] []
+          | pt1::true_tries =>
+              match list_intersect'
+                      (fun true_tries => pt_spaced_intersect'_simple fuel
+                                           (combine (other_cil++true_cil) (other_tries++true_tries)))
+                (proj_node_map_unchecked pt1)
+                (map proj_node_map_unchecked true_tries)
+              with
+              | None => None
+              | Some pt => Some (pos_trie_node pt)
+              end
+          end
+      end.
+
+    Hint Rewrite filter_app : utils.
+
+    
+    Lemma partition_tries_app cil1 cil2 ptl1 ptl2 acc
+      : length cil1 = length ptl1 ->
+        partition_tries cil2 ptl2 (partition_tries cil1 ptl1 acc)
+        = partition_tries (cil1++cil2) (ptl1++ptl2) acc.
+    Proof.
+      rewrite !partition_tries_correct.
+      unfold partition_tries_spec.
+      destruct acc.
+      cbn.
+      basic_utils_crush.
+      cbn.
+      rewrite !combine_app; eauto.
+      basic_utils_crush.
+      rewrite !rev_app_distr.
+      rewrite !app_assoc.
+      reflexivity.
+    Qed.
+
+    (*TODO: move? *)
+    Lemma list_intersect'_ext A1 A2 (f g : list A1 -> option A2) t ts
+      : (forall l, f l = g l) ->
+        list_intersect' f t ts = list_intersect' g t ts.
+    Admitted.
+
+    
+    Hint Rewrite rev_length : utils.
+    
+    Lemma pt_spaced_intersect'_simple_spec fuel cil1 cil2 ptl1 ptl2
+      : Datatypes.length cil1 = Datatypes.length ptl1->
+        pt_spaced_intersect' fuel cil1 ptl1 cil2 ptl2
+        = pt_spaced_intersect'_simple fuel (combine (cil1 ++ cil2) (ptl1 ++ ptl2)).
+    Proof.
+      revert cil1 cil2 ptl1 ptl2.
+      induction fuel;
+        basic_goal_prep; eauto.
+      rewrite partition_tries_app; auto.
+      rewrite !partition_tries_correct.
+      unfold partition_tries_spec; cbn [p41 p42 p43 p44].
+      autorewrite with utils bool in *.
+      repeat lazymatch goal with
+               |- match ?c with _ => _ end
+                  = match ?c with _ => _ end =>
+                 case_match; auto
+             end.
+      (*erewrite list_intersect'_ext; eauto.
+      intros.
+      rewrite HeqH1.
+      rewrite IHfuel; eauto.
+      basic_utils_crush.
+    Qed.*)
+    Admitted.
+    
+    Lemma with_names_from_map_snd A1 A2 (l : list (A1 * A2))
+      : with_names_from l (map snd l) = l.
+    Admitted.
+    Hint Rewrite with_names_from_map_snd : utils.
+
+    
+    Definition merge_list l :=
+      match l with
+      | [] => None
+      | e::es => Some (List.fold_left merge es e)
+      end.
+    
+    Lemma pt_spaced_intersect'_simple_correct fuel x l
+      : (fuel > length x)%nat ->
+          all (fun p => length (fst p) = length x) l ->
+          all (fun p => Is_true (has_depth' (length (filter id (fst p))) (snd p))) l ->
+          let bools := List.fold_left
+                         (fun acc l => map2 orb (combine l acc))
+                         (tl (map fst l))
+                         (hd [] (map fst l))
+          in
+          spaced_get x (bools, pt_spaced_intersect'_simple fuel l)
+          = Mbind merge_list (list_Mmap (spaced_get x) (map (pair_map id Some) l)).
+    Proof.
+      revert x l.
+      induction fuel; intros; try Lia.lia.
+      unfold spaced_get.
+      subst bools.
+      cbn [pt_spaced_intersect'_simple].
+      unfold partition_tries_spec.
+      cbn [p41 p42 p43 p44 fst snd].
+      autorewrite with utils bool.
+      cbn [p41 p42 p43 p44 fst snd].
+      case_match.
+      {
+        symmetry in HeqH3.
+        autorewrite with utils bool in *.
+        intuition subst;
+          autorewrite with utils bool in *;
+          subst;
+          eauto.
+      }
+      (*
+      (*TODO: H3, H4*)
+      rewrite HeqH3.
+      unfold pt_get.
+      change (match ?c with
+              | Some pt => Some (?f pt)
+              | None => None
+              end)
+        with (option_map f c).
+      change (match ?c with
+              | Some pt => @?f pt
+              | None => None
+              end)
+        with (Mbind f c).
+      autorewrite with utils bool.
+      rewrite !List.map_map; cbn [fst snd].
+      TODO: what's the diff between H3, H4/ l0,p?
+                                                Why does l0 show up, but not p?
+        TODO: simplify further: have 1 combined list!
+        TODO: list_intersect'_correct
+       *)
+    Abort.
+
+    (*TODO: update
+      Lemma pt_spaced_intersect'_correct fuel x cil1 cil2 ptl1 ptl2
+        : (fuel > length x)%nat ->
+          all (fun l => length l = length x) cil1 ->
+          all (fun l => length l = length x) cil2 ->
+          all2 (fun l t => Is_true (has_depth' (length (filter id l)) t)) cil1 ptl1 ->
+          all2 (fun l t => Is_true (has_depth' (length (filter id l)) t)) cil2 ptl2 ->
+          
+          let bools := List.fold_left
+                         (fun acc l => map2 orb (combine l acc))
+                         (tl (cil1++cil2))
+                         (hd [] (cil1++cil2))
+          in
+          spaced_get x (pt_spaced_intersect' fuel cil1 ptl1 cil2 ptl2, bools)
+          = Mbind merge_list (list_Mmap (spaced_get x) (combine (map Some (ptl1++ptl2)) (cil1 ++ cil2))).
+      Proof.
+        revert x cil1 cil2 ptl1 ptl2.
+        induction fuel; intros; try Lia.lia.
+        unfold spaced_get.
+        subst bools.
+        cbn [pt_spaced_intersect'].
+        rewrite ! partition_tries_correct.
+        unfold partition_tries_spec.
+        cbn [p41 p42 p43 p44 fst snd].
+        autorewrite with utils bool.
+        cbn [p41 p42 p43 p44 fst snd].
+        case_match.
+        {
+          symmetry in HeqH5.
+          autorewrite with utils bool in *.
+          intuition subst;
+            autorewrite with utils bool in *;
+            subst;
+            eauto.
+        }
+        case_match.
+        {
+          symmetry in HeqH5, HeqH6.
+          autorewrite with utils bool in *.
+          intuition subst;
+            autorewrite with utils bool in *;
+            subst;
+            eauto.
+        }
+        assert (combine (l::H5) (p::H6)
+                = rev (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                         (filter (fun p : list bool * pos_trie' => hd false (fst p)) (combine cil2 ptl2)))
+                    ++
+                    rev
+                    (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                       (filter (fun p : list bool * pos_trie' => hd false (fst p)) (combine cil1 ptl1))))
+          by admit.
+        clear H7 (*TODO: we might need this*).
+
+        
+        unfold pt_get.
+        change (match ?c with
+                | Some pt => Some (?f pt)
+                | None => None
+                end)
+          with (option_map f c).
+        change (match ?c with
+                    | Some pt => @?f pt
+                    | None => None
+                    end)
+          with (Mbind f c).
+        autorewrite with utils bool.
+
+        TODO: simplify things: get rid of cil1,2
+        list_intersect'_correct
+                    
+        cbn.
+
+        
+        destruct x; cbn in *.
+
+
+
+
+
+
+
+
+        
+        case_match.
+        1:case_match.
+        all:unfold spaced_get.
+        all: subst.
+        all: cbn [fst snd].
+        {
+          revert HeqH6.
+          rewrite Mmap_option_all.
+          autorewrite with utils bool.
+          intuition subst; cbn in *; eauto.
+          all:autorewrite with utils bool in *; eauto.
+          symmetry in H5.
+          autorewrite with utils bool in *; eauto.
+        }
+        all: cbn [pt_spaced_intersect'].
+        all:rewrite ! partition_tries_correct.
+        all:unfold partition_tries_spec.
+        all: autorewrite with utils bool.
+        all: cbn.
+        all:rewrite !List.map_map.
+        all: cbn.
+        all: case_match.
+        all: try symmetry in HeqH7.
+        all: autorewrite with utils bool in *.
+        all:break.
+        {
+          intuition subst; cbn in *.
+          all:autorewrite with utils bool in *.
+          all: subst.
+          all:autorewrite with utils bool in *.
+          all: cbn in *.
+          all: try congruence.
+          symmetry in H5.
+          all:autorewrite with utils bool in *.
+          subst.
+          cbn in *.
+          congruence.
+        }
+        2:{
+          symmetry in HeqH0.
+          autorewrite with utils bool in *.
+          intuition subst; cbn in *.
+          all:autorewrite with utils bool in *.
+          all: subst.
+          all:autorewrite with utils bool in *.
+          all: cbn in *.
+          all: try congruence.
+        }
+        all: case_match.
+        1,3:exfalso.
+        1,2:[>symmetry in HeqH8 | symmetry in HeqH7];
+        autorewrite with utils bool in *;
+        intuition subst; cbn; eauto;
+        autorewrite with utils bool in *;
+        cbn in *; congruence.
+        all: unfold pt_get.
+        all:change (match ?c with
+                | Some pt => Some (?f pt)
+                | None => None
+                end)
+          with (option_map f c).
+        all:change (match ?c with
+                    | Some pt => @?f pt
+                    | None => None
+                    end)
+          with (Mbind f c).
+        all:autorewrite with utils bool in *.
+        TODO: issue: want goal to have 1 true at the front of bools
+        rewrite list_intersect'_correct.
+        ....
+        
+        2:{
+          
+          }
+            
+        }
+        {
+          rewrite Mmap_option_all in HeqH6.
+          rewrite <- map_app in HeqH6.
+          rewrite <- map_id with (l:= (cil1 ++ cil2)) in HeqH6.
+          rewrite <- map_combine_separated in HeqH6.
+          cbv [id] in HeqH6.
+          rewrite List.map_map in HeqH6.
+          cbn in *.
+        }
+        
+        3:{
+        TODO: relate a H6, l h7?
+
+
+        }
+        {
+          rewrite <- rev_app_distr in HeqH7.
+          rewrite <- rev_involutive with (l:=l::H7) in HeqH7.
+          apply rev_inj in HeqH7.
+          
+        basic_utils_crush.
+        {
+        }
+        all: autorewrite with utils bool.
+        2:{
+        cbn [fst snd].
+        set (key:=(map fst (filter snd (combine x bools)))).
+        subst bools.
+        
+        revert x len cil1 cil2 ptl1 ptl2.
+        induction fuel; intros; try Lia.lia.
+        cbn [pt_spaced_intersect'].
+        rewrite ! partition_tries_correct.
+        unfold partition_tries_spec.
+        basic_utils_crush.
+        rewrite !List.map_map.
+        cbn.
+        unfold spaced_get.
+        cbn.
+        destruct len.
+        {
+          eapply all_const with (x:=[]) in H1, H2.
+          2,3: destruct y; cbn; intros; congruence.
+          generalize dependent (Datatypes.length cil1).
+          generalize dependent (Datatypes.length cil2).
+          intros; subst.
+          autorewrite with utils bool.
+          rewrite !filter_false_In with (f:=(fun p : list bool * pos_trie' => hd false (fst p))).
+          2,3:destruct x0; intro Hcom;
+            apply in_combine_l in Hcom;
+            apply repeat_spec in Hcom;
+            subst;
+            reflexivity.
+          rewrite !Permutation.filter_true_In
+            with (f:=(fun p : list bool * pos_trie' => negb (hd false (fst p)))).
+          2,3:destruct x0; intro Hcom;
+            apply in_combine_l in Hcom;
+            apply repeat_spec in Hcom;
+          subst; reflexivity.
+          repeat change (fun x => ?f x) with f.
+          autorewrite with utils bool.
+          rewrite <- !List.map_map with (f :=fst).
+          autorewrite with utils bool.
+          autorewrite with utils bool.
+          subst bools.
+          cbn.
+          rewrite <- !repeat_app.
+          autorewrite with utils bool.
+          rewrite fold_left_fix_In.
+          2:{
+            intros l Hin.
+            apply repeat_spec in Hin; subst.
+            reflexivity.
+          }
+          unfold spaced_get.
+          cbn.
+          Hint Rewrite combine_nil : utils.
+          autorewrite with utils bool.
+          cbn.
+          TODO: did I case too early on the len?
+     *)
+
+    (*
+    Lemma leaf_intersect_correct l
+      : 
+      spaced_get x
+        (option_map pos_trie_leaf (leaf_intersect l), [])
+        = Mbind (fun es => match es with
+                           | [] => None
+                           | e :: es0 => Some (fold_left merge es0 e)
+                           end)
+            (list_Mmap (spaced_get x) (combine l (repeat [] (length l)))).
+      
+          
+          TODO: leaf intersect lemma
+          
+          Lemma repeat_default_hd
+            : hd x (repeat x n) = x.
+
+
+            rev_app_distr
+          rewrite !map_combine_fst'.
+          rewrite !firstn_repeat.
+          Lemma 
+          rewrite !H1, !H2.
+        cbn beta.
+     *)
+
+    (*TODO update
     (*TODO: how to do this other than by matching on p?*)
       Lemma pt_spaced_intersect_correct x p
         : let bools := List.fold_left
@@ -998,6 +1540,7 @@ Module PositiveInstantiation.
         | _ => spaced_get x (pt_spaced_intersect p, bools) = None
         end.
       Proof.
+     *)
         
 
         (*
@@ -1020,12 +1563,12 @@ Module PositiveInstantiation.
       Proof.
         todo: lemma about intersect'
               *)
-      Abort.
         
     (*TODO: ditch this compat layer? *)
     Definition compat_intersect (p : ne_list (pos_trie * list bool)) : pos_trie :=
       pt_spaced_intersect (fst p::snd p).
 
+    (*TODO: update
       Lemma compat_intersect_correct x p
         : let bools := List.fold_left
                          (fun acc p => map2 orb (combine (snd p) acc))
@@ -1065,6 +1608,7 @@ Module PositiveInstantiation.
         TODO: induction on distinguished elt cil?
               *)
       Abort.
+     *)
     
   End __.
 
