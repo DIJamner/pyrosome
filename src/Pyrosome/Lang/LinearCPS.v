@@ -77,9 +77,6 @@ Definition linear_cps_subst_def : compiler :=
     {{e #"blk_subst" (#"exch" "G" (#"only" (#"neg" "A"))) (#"jmp" (#"hd" (#"neg" "A")) "v")}}
   end.
 
-Axiom todo : forall (T : Type), T.
-Ltac kill := apply todo.
-
 (* Fixpoint normalize_env' e :=
   match e with
   | {{e #"conc" {e1} {e2} }} =>
