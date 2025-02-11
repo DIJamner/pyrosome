@@ -16,7 +16,8 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind EGraph.Defs EGraph.QueryOpt Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require ClosedTerm.
@@ -107,6 +108,76 @@ Section WithVar.
   Section WithLang.
     
     Context (l : lang).
+
+    Local Notation hash_node := (hash_node succ).
+
+    Section __.
+      Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
+      Fixpoint add_open_term' (sub : named_list V) (e : Term.term V)
+        : state instance V :=
+        match e with
+        (* We could make x the default here so that the empty sub behaves as identity.
+           This would be convenient, but would make it to easy to use unallocated names
+           by accident.
+         *)
+        | Term.var x => Mret (named_list_lookup default sub x)
+        | Term.con n s =>          
+            match named_list_lookup_err l n with
+            | Some (term_rule c args t) =>
+                @! let s' <- list_Mmap (add_open_term' sub) s in
+                  let x <- hash_node n s' in
+                  let tsub := combine (map fst c) s' in
+                  let tx <- add_open_sort tsub t in
+                  (* TODO: allocates extra id when the node is fresh *)
+                  let tx' <- hash_node sort_of [x] in
+                  let _ <- union tx tx' in
+                  ret {(state instance)} x
+            | _ => Mret default
+            end
+        end.
+    End __.
+
+    Fixpoint add_open_sort' fuel (sub : named_list V) (t : Term.sort V)
+      : state instance V :=
+      match fuel with
+      | 0 => Mret default (*should never happen*)
+      | S fuel =>
+        let (n,s) := t in
+        @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
+          (hash_node n s')
+      end.
+
+    (*
+      The recursion is bounded by the number of rules since every term in a sort
+      must be of a previously defined sort.
+     *)
+    Definition add_open_sort := add_open_sort' (length l).
+    Definition add_open_term := add_open_term' add_open_sort.
+    
+  
+  Fixpoint list_Mfoldr {A B M} `{Monad M} (f : A -> B -> M B) (l : list A) (base : B) : M B :=
+    match l with
+    | [] => @! ret base
+    | a::al' =>
+        @! let base' <- list_Mfoldr f al' base in
+          (f a base')
+    end.
+
+  Notation alloc :=
+    (alloc V succ V V_map V_map V_trie).
+
+
+  Definition add_ctx (c : ctx) : state instance _ :=
+    list_Mfoldr (fun '(x,t) sub =>
+                   (*use the empty substitution to indicate the identity.
+                      Assumes that the input egraph starts with an allocator
+                    *)
+                   @! let t_v <- add_open_sort sub t in
+                     (* using the variables from ctx isn't sound,
+                          so we make sure to allocate a fresh one
+                      *)
+                     let {(state instance)} x' <- alloc in
+                     ret (x,x')::sub) c [].
     
     (*TODO: deprecate & use (version of?) instance version below only
       For best results, properly (& generically?) lay out queries as an alternate
@@ -130,58 +201,90 @@ Section WithVar.
 
       LRule := all x..., Q => exists y... P, where Q,P are eq sequents
       eq sequent := list lclause * list unif_clause
+
+      all X, (And P) -> exists Y, (And Q)
+      all X, exists Y, -(And P) or (And Q)
+      all X, exists Y, Or -P (And Q)
+
+      Some math notes:
+
+      DB is a category w/ databases as objects and value substitutions as arrows
+      A query is a database, the results of a query Q on database D are Hom(Q,D)
+
+      EG is a category w/ egraphs as objects and (eq-preserving) value substitutions as arrows
+      A query (optionally w/ unification rules) is an egraph, the results of a query are still Hom(Q,D).
+      Up to equivalence, we can pick a canonical form and quotient the homset by the equivalence of D.
+      Also, Hom(Q,D)/D_= is a subset of Hom(Q,D).
+
+      What is a rule in this context?
+      Given a rule G |- G' and db D, we compute Hom(G,D).
+      Then we construct from that a D'. Is this a natural transformation of some kind?
+
+      Note: the above arrows are odd; they compose substitution with subset.
+      Is this a double category?
+
+      Attempt (without the language of double categories, because I haven't learned it yet)
+
+      DB is 2 categories w/ dbs as objects.
+      DB1: vertical morphisms: subset relation
+      DB2: horizontal morphisms: substitutions
+
+      morphism1: --->
+      morphism2: ====>
+
+          s
+      Q  ===> Qs  --->  D
+          |             |
+          |    =====!>  |
+          \/            |
+          s'            \/
+      Q' ===> Q's ---> D'
+
+
+      Running Q as a query on D produces { s | s in Hom(Q,Qs) for Qs subset D}
       
+      Running Q',s additively on D produces D'
+      - compute s' as s + id where id fills Q's domain
+        + Note: this is a interesting property that definitely has a name, we'll call it P1
+      - compute Q's from Q' and s'
+      - compute D' as the union/join of D and Q's
+
+
+      P1: for any morphism s : Q => Qs and object Q' such that dom(Q) subset dom(Q'),
+          s + id is an arrow Q' -> Q's for some Q's
+
+
+     Another way of describing things:
+     D' = D U { Q'[s] | s in Hom(Q,Qs) for Qs subset D}
+
+     Issue: above not quite right b/c of existentials.
+     Need disjoint vars for all the Q'[s]s.
+     How to capture that?
+     idea: no id(it's not right), pull in another morphism
+
+
+     next description attempt :
+
+     Given rule Q |- R and database D:
+
+     D' is the union of D and
+     coproduct { R'_fs | f+s : R -> R'_fs, s in Hom(Q,Qs) for Qs subset D,
+               f is bijective, and dom(f) + dom(s) = ...
+     }
+
+     TODO: coproduct is too disjoint; only want fi to be disjoint
+
+     next attempt:
+
+     
+     D' is the union of D and
+     { R'_fs | f+s : R -> R'_fs, s in Hom(Q,Qs) for Qs subset D,
+               f is bijective, and dom(f) + dom(s) = dom(R)
+     }
+     where the ranges of fi are mutually disjoint
+
      *)
-    Section __.
-      Context (sort_pat_to_clauses : Term.sort V -> stateT V (writer atom) V).
-      
-      Fixpoint term_pat_to_clauses' (e : Term.term V)
-        : stateT V (writer atom) V :=
-        match e with
-        | var x => Mret x (*assumes gensym doesn't hit pattern vars*)
-        | Term.con n s =>
-          match named_list_lookup_err l n with
-          | Some (term_rule c args t) =>
-              @! let s' <- list_Mmap term_pat_to_clauses' s in
-                let ax <- gensym in
-                let tt <- lift (write (Build_atom n s' ax)) in
-                let tx <- sort_pat_to_clauses t[/with_names_from c s/] in
-                let tt <- lift (write (Build_atom sort_of [ax] tx)) in
-                (* TODO: sort_of atoms *)
-                ret ax
-          | _ => Mret default (*shouldn't happen*)
-          end
-        end.
-    End __.
 
-    Fixpoint sort_pat_to_clauses' fuel (e : Term.sort V)
-      : stateT V (writer atom) V :=
-      match fuel, e with
-      | 0, _ => Mret default (*shouldn't happen *)
-      | S fuel, scon n s =>
-          @! let s' <- list_Mmap (term_pat_to_clauses' (sort_pat_to_clauses' fuel)) s in
-            let ax <- gensym in
-            let tt <- lift (write (Build_atom n s' ax)) in
-            (* TODO: sort_of atoms *)
-            ret ax
-      end.
-
-    Definition sort_pat_to_clauses := sort_pat_to_clauses' (length l).
-    Definition term_pat_to_clauses := term_pat_to_clauses' sort_pat_to_clauses.
-
-  Definition ctx_to_clauses : Term.ctx V -> stateT V (writer atom) unit :=
-    list_Miter
-      (fun '(x,t) =>
-         @! let t_v <- sort_pat_to_clauses t in
-           (lift (write (Build_atom sort_of [x] t_v)))).
- 
-
-  (*TODO: move to queryopt*)
-  Arguments Build_log_rule {idx symbol}%type_scope
-    (query_vars query_clauses write_clauses write_unifications)%list_scope.
-
-  Definition query_fvs (l : list atom) : list V :=
-    dedup (eqb (A:=_)) (flat_map (fun '(Build_atom _ l o) => o::l) l).
   
   (*
     On variable ordering
@@ -225,65 +328,41 @@ Section WithVar.
     order vars from greatest to least
       
    *)
-  
+
+  Notation sequent_of_states :=
+    (sequent_of_states V V_Eqb V_default V _ _ _).
   (*
     
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
 
    *)
-  Definition rule_to_log_rule n (r : rule) : log_rule V V :=
+  Definition rule_to_log_rule n (r : rule) : sequent V V :=
     match r with
-    | sort_rule c args =>
-        let '(query_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (succ (supremum (map fst c))) in
-        (*TODO: check for off-by-one*)
-        let write_clauses := [Build_atom n (map fst c) next_var] in
-        (*TODO: need list of all query vars, not just ctx vars.
-          Additionally, the order is important.
-         *)
-        Build_log_rule (query_fvs query_clauses) query_clauses write_clauses []
+    | sort_rule c args =>        
+        sequent_of_states
+          (add_ctx c)
+          (fun sub => add_open_sort sub (scon n (id_args c)))
     | term_rule c args t => 
-        let '(query_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (succ (supremum (map fst c))) in
-        let '(t_clauses,(v,next_var0)) :=
-          sort_pat_to_clauses t next_var in
-        let write_clauses :=  t_clauses ++
-                                [Build_atom n (map fst c) next_var0;
-                                   Build_atom sort_of [next_var0] v] in
-        (*TODO: need list of all query vars, not just ctx vars.
-          Additionally, the order is important.
-         *)
-        Build_log_rule (query_fvs query_clauses) query_clauses write_clauses []
-    | sort_eq_rule c t1 t2 => 
-        let '(ctx_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (succ (supremum (map fst c))) in
-        let '(t1_clauses,(v1,next_var0)) :=
-          sort_pat_to_clauses t1 next_var in
-        let '(t2_clauses,(v2,next_var1)) :=
-          sort_pat_to_clauses t2 next_var0 in
-        (*TODO: need list of all query vars, not just ctx vars.
-          Additionally, the order is important.
-         *)
-        Build_log_rule (query_fvs (t1_clauses++ctx_clauses))
-          (t1_clauses++ctx_clauses) t2_clauses [(v1,v2)]
+        sequent_of_states
+          (add_ctx c)
+          (* add_open_term sees the language, so it handles t *)
+          (fun sub => add_open_term sub (con n (id_args c)))
+    (* TODO: this currently only goes one direction.
+       As a design question, is that what I want?
+     *)
+    | sort_eq_rule c t1 t2 =>
+        sequent_of_states
+          (@!let sub <- add_ctx c in
+             let _ <- add_open_sort sub t1 in
+             ret sub)
+          (fun sub => add_open_sort sub t2)
     | term_eq_rule c e1 e2 t => 
-        let '(ctx_clauses,(tt,next_var)) :=
-          ctx_to_clauses c (succ (supremum (map fst c))) in
-        let '(e1_clauses,(v1,next_var0)) :=
-          term_pat_to_clauses e1 next_var in
-        let '(e2_clauses,(v2,next_var1)) :=
-          term_pat_to_clauses e2 next_var0 in
-        let '(t_clauses,(vt,next_var2)) :=
-          sort_pat_to_clauses t next_var1 in
-        (*
-          TODO: do I need to match the LHS sort? no, right?
-          
-         *)
-        (*TODO: need list of all query vars, not just ctx vars.
-          Additionally, the order is important.
-         *)
-        Build_log_rule (query_fvs (e1_clauses++ctx_clauses)) (e1_clauses++ctx_clauses)
-          (t_clauses++e2_clauses++[Build_atom sort_of [v2] vt]) [(v1,v2)]
+        sequent_of_states
+          (@!let sub <- add_ctx c in
+             let _ <- add_open_term sub e1 in
+             ret sub)
+          (* TODO: should I add that t is its sort?*)
+          (fun sub => add_open_term sub e2)
     end.
 
   End WithLang.
@@ -298,62 +377,9 @@ Section WithVar.
      Assumes incl l l'
    *)
   Definition rule_set_from_lang (l l': lang) : rule_set :=
-    build_rule_set succ _ id (map (uncurry (rule_to_log_rule l')) l).
+    build_rule_set succ _ (map (uncurry (rule_to_log_rule l')) l).
 
-  Local Notation hash_node := (hash_node succ).
-
-  Section AddTerm.
-    (*
-    (* TODO: this definitely exists somewhere *)
-    Definition sort_of_term n s :=
-      match named_list_lookup_err l n with
-      | Some (term_rule c args t) =>
-          t[/combine (map fst c) s/]
-      | _ => default
-      end.
-     *)
-
-    Context (l : lang).
-    Section __.
-      Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
-      Fixpoint add_open_term' (sub : named_list V) (e : Term.term V)
-      : state instance V :=
-      match e with
-      | Term.var x => Mret (named_list_lookup default sub x)
-      | Term.con n s =>          
-          match named_list_lookup_err l n with
-          | Some (term_rule c args t) =>
-              @! let s' <- list_Mmap (add_open_term' sub) s in
-                let x <- hash_node n s' in
-                let tsub := combine (map fst c) s' in
-                let tx <- add_open_sort tsub t in
-                (* TODO: allocates extra id when the node is fresh *)
-                let tx' <- hash_node sort_of [x] in
-                let _ <- union tx tx' in
-                ret x
-          | _ => Mret default
-          end
-      end.
-    End __.
-
-    Fixpoint add_open_sort' fuel (sub : named_list V) (t : Term.sort V)
-      : state instance V :=
-      match fuel with
-      | 0 => Mret default (*should never happen*)
-      | S fuel =>
-        let (n,s) := t in
-        @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
-          (hash_node n s')
-      end.
-
-    (*
-      The recursion is bounded by the number of rules since every term in a sort
-      must be of a previously defined sort.
-     *)
-    Definition add_open_sort := add_open_sort' (length l).
-    Definition add_open_term := add_open_term' add_open_sort.
-
-    End AddTerm.
+ 
 
     (* TODO: any reason to use the non-open ones? can just use the open one w/ empty sub
     Fixpoint add_term (t : term)
@@ -381,6 +407,8 @@ Section WithVar.
                 ne_list (V_trie B * list bool) ->
                 (* Doesn't return a flag list because we assume it will always be all true*)
                 V_trie B).
+    
+    Local Notation hash_node := (hash_node succ).
 
     Definition egraph_sort_of (x t : V) : state instance bool :=
       @! let t0 <- hash_node sort_of [x] in
@@ -2691,7 +2719,7 @@ z            TODO: fold mbind
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
   Definition build_rule_set : lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
-    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (fold_right Pos.max xH).
+    rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
@@ -2878,6 +2906,6 @@ Module StringInstantiation.
                             lang string ->
                             rule_set string string string_trie_map string_trie_map :=
     rule_set_from_lang string_ptree_map_plus _ string_succ sort_of
-      (fold_right string_max "x0").
+      (* fold_right string_max "x0" *).
 
 End StringInstantiation.

@@ -1485,6 +1485,11 @@ Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_s
   query_clauses compiled_rules%list_scope.
 
 
+Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
+  {Eqb_symbol} {symbol_map idx_map idx_trie}%function_scope 
+  fuel%nat_scope _.
+
+
 Arguments saturate_until' {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope

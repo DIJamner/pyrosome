@@ -7,7 +7,7 @@ From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind.
-From Utils.EGraph Require Import Defs QueryOpt.
+From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.
 Import StateMonad.
@@ -66,12 +66,127 @@ Section WithMap.
 
   Notation atom := (atom idx symbol).
 
+  (*TODO: really should just assign a name to eq.
+    Long term, eq shouldn't be special.
+   *)
+  Variant clause := eq_clause (x y : idx) | atom_clause (a:atom).
+
+  Definition clause_vars c :=
+    match c with
+    | eq_clause x y => [x;y]
+    | atom_clause a =>
+        a.(atom_ret)::a.(atom_args)
+    end.
+
+  (* Represents a logical sequent of the form
+     x1,...,xn, P1, ... , Pn |- y1,...,yn, Q1, ... , Qn
+     or alternately
+     forall x1...xn, P1 /\ ... /\ Pn -> exists y1...yn, Q1 /\ ... /\ Qn
+
+     TODO: leave vars as components or infer?
+   *)
+  Record sequent : Type :=
+    {
+      (*forall_vars : list idx;*)
+      seq_assumptions : list clause;
+      (* exist_vars : list idx *)
+      seq_conclusions : list clause;
+    }.
+
+  Definition forall_vars (s : sequent) := flat_map clause_vars s.(seq_assumptions).
+  Definition exists_vars (s : sequent) :=
+    filter (fun x => negb (inb x (forall_vars s)))
+      (flat_map clause_vars s.(seq_conclusions)).
+
+  Definition sequent_vars s :=
+    (flat_map clause_vars (s.(seq_assumptions)++s.(seq_conclusions))).
+    
+
   Definition atom_subst (sub : named_list idx idx) (a : atom) :=
     Build_atom
       a.(atom_fn)
       (map (fun x => named_list_lookup x sub x) a.(atom_args))
       (named_list_lookup a.(atom_ret) sub a.(atom_ret)).
 
+  (*
+    TODO: is there a straightforward SMT encoding of these logical expressions?
+
+    Preamble:
+    declare an unknown type T
+    declare each function symbol as an uninterpreted function of the approriate arity,
+    from Ts to T
+
+    translate clauses to expressions as follows:
+    (= x y) ~> (= x y)
+    (f x1...xn -> y) ~> (= (f x1 ... xn) y)
+
+    for each sequent, generate:
+    (assert (forall x1...xn, (and |P1| ... |Pn|) => exist y1...yn, (and |Q1|..|Qn|)))
+
+
+    Should be able to do type checking, inference, equations, etc.
+
+    Issue: is this correct? SMT might assume decidable equality
+
+   *)
+
+  
+  (* clause lists are isomorphic to DBs/egraphs,
+     up to some egraph state
+
+   *)
+  Section AsInstance.
+
+  Context (symbol_map : forall A, map.map symbol A)
+        (symbol_map_plus : map_plus symbol_map).
+
+  Context 
+      (idx_map : forall A, map.map idx A)
+        (idx_map_ok : forall A, map.ok (idx_map A))
+        (* TODO: define and assume weak_map_ok*)
+        (idx_trie : forall A, map.map (list idx) A)
+        (idx_trie_plus : map_plus idx_trie).
+
+    
+  Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
+
+  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
+
+  (*TODO: output type?*)
+  Definition add_clause_to_instance c : state instance idx :=
+    match c with
+    | eq_clause x y => Defs.union x y
+    (* TODO: this fn probably has the wrong behavior. Check.
+       In particular, needs to make sure all of the variables are initialized/
+       that the allocator is advanced past them
+     *)
+    | atom_clause a => new_singleton_out _ _ _ _ _ _ a
+    end.
+
+  Definition clauses_to_instance := list_Miter add_clause_to_instance.
+
+  Definition uf_to_clauses (u : union_find) :=
+    map (uncurry eq_clause) (map.tuples u.(parent _ _ _)).
+
+
+  Definition row_to_atom f (p : list idx * (idx * idx)) : atom :=
+    let '(k,(_,r)) := p in
+    Build_atom f k r.
+  
+  Definition table_atoms '(f,tbl) : list atom :=
+    map (row_to_atom f) (map.tuples tbl).
+  
+  Definition db_to_atoms (d :  db_map idx symbol symbol_map idx_trie) :=
+    (flat_map table_atoms (map.tuples d)).
+  
+  Definition instance_to_clauses i :=
+    (uf_to_clauses i.(equiv)) ++ (map atom_clause (db_to_atoms i.(db))).
+
+  (* Note: instance_to_clauses and clauses_to_instance
+     are intended to be isomorphic up to egraph bookkeeping
+   *)
+  
+  End AsInstance.
 
 (* Alternate approach: consider the initial model of the theory.
    Terms added at the start form a no-premise rule, so can be ignored.
@@ -95,23 +210,30 @@ Section WithMap.
     @!let args' <- list_Mmap (named_list_lookup_err assignment) args in
       (m.(interpretation) f args').
       
-  Definition assignment_satisfies m
-    (assignment : named_list idx m.(domain)) : list atom -> Prop :=
-    all (fun a => (eval_atom m assignment a.(atom_fn) a.(atom_args)) <$>
+  Definition assignment_satisfies_atom m
+    (assignment : named_list idx m.(domain)) (a : atom) : Prop :=
+    eval_atom m assignment a.(atom_fn) a.(atom_args) <$>
                     (fun r => (named_list_lookup_err assignment a.(atom_ret)) <$>
-                    (m.(domain_eq) r))).
-
-  Definition assignment_unifies m
-    (assignment : named_list idx m.(domain)) : list (idx * idx) -> Prop :=
-    all (fun '(x,y) => named_list_lookup_err assignment x <$>
-                         (fun xv => named_list_lookup_err assignment y <$>
-                                      (m.(domain_eq) xv))).
+                                (m.(domain_eq) r)).
+  
+  Definition assignment_satisfies_eq m
+    (assignment : named_list idx m.(domain)) x y : Prop :=
+    named_list_lookup_err assignment x <$> (fun x' =>
+    (named_list_lookup_err assignment y) <$>
+                                (m.(domain_eq) x')).
+  
+  Definition assignment_satisfies_clause m
+    (assignment : named_list idx m.(domain)) (c : clause) : Prop :=
+    match c with
+    | eq_clause x y => assignment_satisfies_eq m assignment x y
+    | atom_clause a => assignment_satisfies_atom m assignment a
+    end.
   
   (* TODO: rewrite properties to be easier to read
    *)
   Record model_of
     (m : model)
-    (rw : list (log_rule idx symbol)) : Prop :=
+    (rw : list sequent) : Prop :=
     {
       (* wf_model conditions
          TODO: any reason to break these out?
@@ -134,14 +256,12 @@ Section WithMap.
       (* model_of conditions *)
       rules_sound : all (fun r =>
                            forall query_assignment,
-                             map fst query_assignment = r.(query_vars _ _) ->
-                             assignment_satisfies m query_assignment r.(query_clauses _ _) ->
+                             map fst query_assignment = (forall_vars r) ->
+                             all (assignment_satisfies_clause m query_assignment) r.(seq_assumptions) ->
                              exists out_assignment,
                                (* query assignment first eliminates the need for an all_fresh condition*)
-                               assignment_satisfies m (query_assignment ++ out_assignment)
-                                 r.(write_clauses _ _)
-                               /\ assignment_unifies m (query_assignment ++ out_assignment)
-                                 r.(write_unifications _ _))
+                               all (assignment_satisfies_clause m (query_assignment ++ out_assignment))
+                                 r.(seq_conclusions))
                       rw
     }.
 
@@ -389,8 +509,9 @@ Abort.
   Notation run1iter :=
     (run1iter idx Eqb_idx idx_succ idx_zero symbol Eqb_symbol symbol_map symbol_map_plus
        idx_map idx_map_plus idx_trie spaced_list_intersect).
+  (*
   Notation rebuild := (rebuild idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie).
-
+  *)
 
   (*TODO: include the egraph soundness at all?
     If no, move to Monad
@@ -794,7 +915,7 @@ Abort.
   Qed.
    *)
 
-  Record get_parents_postcondition (rs : list (log_rule idx symbol)) (p : list atom  * instance) : Prop :=
+  Record get_parents_postcondition (rs : list _) (p : list atom  * instance) : Prop :=
     {
       get_parents_postcondition_sound_egraph_ok : egraph_ok (snd p);
       get_parents_postcondition_sound_egraph_for_model : forall m : model,
@@ -975,7 +1096,7 @@ Abort.
    *)
 
 
-  Record put_precondition a (rs : list (log_rule idx symbol)) (e : instance) : Prop :=
+  Record put_precondition a (rs : list _) (e : instance) : Prop :=
     {
       put_precondition_sound_egraph_ok : egraph_ok e;
       put_precondition_sound_egraph_for_model : forall m : model,
@@ -1578,7 +1699,13 @@ Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%f
 
 Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
 
-Arguments assignment_satisfies {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
-  m assignment%list_scope _%list_scope.
-Arguments assignment_unifies {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
-  m assignment%list_scope _%list_scope.
+
+Arguments seq_assumptions {idx symbol}%type_scope s.
+Arguments seq_conclusions {idx symbol}%type_scope s.
+
+Arguments forall_vars {idx symbol}%type_scope s.
+Arguments exists_vars {idx}%type_scope {Eqb_idx} {symbol}%type_scope s.
+Arguments sequent_vars {idx symbol}%type_scope s.
+
+Arguments eq_clause {idx symbol}%type_scope x y.
+Arguments atom_clause {idx symbol}%type_scope a.

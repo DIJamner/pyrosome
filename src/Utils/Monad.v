@@ -102,6 +102,15 @@ Section MonadListOps.
           (list_Mfoldl f al' fab)
     end.
 
+  
+  Fixpoint list_Mfoldr (f : A -> B -> M B) (l : list A) (base : B) : M B :=
+    match l with
+    | [] => @! ret base
+    | a::al' =>
+        @! let base' <- list_Mfoldr f al' base in
+          (f a base')
+    end.
+
   Section __.
     Context (f : A -> M B).
     Fixpoint list_Mmap (l : list A) : M (list B) :=
