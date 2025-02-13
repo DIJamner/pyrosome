@@ -123,6 +123,29 @@ Section WithMap.
 
   Notation clauses_to_instance := (clauses_to_instance idx_succ).
 
+  (*TODO: move to egraph defs*)
+  Arguments canonicalize {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope a _.
+  Arguments find  {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope a _.
+
+  Definition canonicalize_clause c : state instance (clause _ _) :=
+    match c with
+    | atom_clause a => Mfmap atom_clause (canonicalize a)
+    | eq_clause x y =>
+        @! let x' <- find x in
+          let y' <- find y in
+          ret (eq_clause x' y')
+    end.
+  
+  (*TODO: duplicated. move*)
+  #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
+
+  Definition remove_atom a : state instance unit :=
+    fun '(Build_instance _ _ _ _ _ db equiv parents epoch wl) =>
+      let tbl_upd tbl := map.remove tbl a.(atom_args) in
+      let db' := map_update db a.(atom_fn) tbl_upd in
+      (tt,Build_instance _ _ _ _ _ db' equiv parents epoch wl).
 
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
 Section SequentOfStates.
@@ -145,27 +168,27 @@ Section SequentOfStates.
    *)
   Let conclusion_inst := snd (uncurry conclusions assumption_inst).
 
-  (*
-    Should be a correct conclusion, but contains all of the query atoms,
-    as well as a bunch of extra equations.
+  (* Remove the atoms of the assumptions.
+     We remove them rather than not adding them in the first place
+     because we also want to remove anything from the conclusion that duplicates
+     an assumption.
    *)
-  Let conclusion_atoms_verbose := db_to_atoms conclusion_inst.(db).
+  Let conclusion_inst_dedup :=
+        snd (list_Miter
+               (fun a => Mbind remove_atom (canonicalize a))
+               assumption_atoms
+               conclusion_inst).
+
+  (*
+    Should be a correct conclusion, but contains a bunch of extra equations.
+   *)
+  Let conclusion_atoms := db_to_atoms conclusion_inst_dedup.(db).
   Let conclusion_eqs_verbose : list (_*_) :=
         map.tuples conclusion_inst.(equiv).(parent _ _ _).
 
-  
-
-  (* TODO: remove all of the assumption atoms
-  (*
-    The canonical variables may have changed, so we rename the assumptions
-    so that we can subtract them from the query.
-   *)
-  Let rename_assumptions
-   *)
-  
-  (*
-    TODO: remove all spurious equations
-    (check whether this should be before or after assumption difference)
+  (* TODO: remove all spurious equations.
+     One option: fully shorten every path,
+     then eliminate every eqn whose lhs (maybe rhs? one) is unused.
    *)
 
   (*TODO: should be optimized more*)
@@ -175,12 +198,12 @@ Section SequentOfStates.
  
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition sequent'_of_states := 
-    (assumption_atoms, conclusion_atoms_verbose , conclusion_eqs_final).
+    (assumption_atoms, conclusion_atoms , conclusion_eqs_final).
 
   (* Generates an (optimized) sequent from two egraph state monad values *)
   Definition sequent_of_states := 
     Build_sequent _ _ (map atom_clause assumption_atoms)
-      (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms_verbose)).
+      (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
 
 End SequentOfStates.
 
