@@ -7,165 +7,73 @@ Open Scope list.
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps.
-From Utils.EGraph Require Import Defs QueryOpt.
+From Utils.EGraph Require Import Defs QueryOpt Semantics.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 Import StringInstantiation.
 
-Notation log_rule := (log_rule string string).
-
 (* TODO: make this available in other places than the tests *)
 Declare Custom Entry logrule.
 Declare Custom Entry atom.
-Declare Custom Entry unification.
 Declare Scope log_scope.
-Bind Scope log_scope with log_rule.
+Bind Scope log_scope with sequent.
 Delimit Scope log_scope with log.
-
-(*TODO: move to defining file*)
-Arguments Build_log_rule {idx symbol}%type_scope
-  (query_vars query_clauses write_clauses write_unifications)%list_scope.
 
 Notation "!! x" := x (at level 60, x custom logrule) : log_scope.
 
 (*TODO: compute query vars for convenience*)
-Notation "wc , .. , wc' | wu , .. , wu' :- qc , .. , qc' [ var .. var' ]" :=
-  (Build_log_rule
-     (cons var' .. (cons var nil) ..)
-     (cons qc' .. (cons qc nil) ..)
-     (cons wc .. (cons wc' nil) ..)
-     (cons wu' .. (cons wu nil) ..))
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        wu custom unification at level 50,
-        qc custom atom at level 50,
-        var constr at level 0).
-
-Notation "wc , .. , wc' :- qc , .. , qc' [ var .. var' ]" :=
-  (Build_log_rule
-     (cons var' .. (cons var nil) ..)
-     (cons qc' .. (cons qc nil) ..)
-     (cons wc .. (cons wc' nil) ..)
-     [])
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        qc custom atom at level 50,
-        var constr at level 0).
-
-Notation "wc , .. , wc' | wu , .. , wu' :- [ var .. var' ]" :=
-  (Build_log_rule
-     (cons var' .. (cons var nil) ..)
-     nil
-     (cons wc .. (cons wc' nil) ..)
-     (cons wu' .. (cons wu nil) ..))
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        wu custom unification at level 50,
-        var constr at level 0).
-
-Notation "wc , .. , wc' :- [ var .. var' ]" :=
-  (Build_log_rule
-     (cons var' .. (cons var nil) ..)
-     nil
-     (cons wc .. (cons wc' nil) ..)
-     [])
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        var constr at level 0).
-
-
-(*TODO: compute query vars for convenience*)
-Notation "wc , .. , wc' | wu , .. , wu' :- qc , .. , qc'" :=
-  (Build_log_rule
-     nil
-     (cons qc' .. (cons qc nil) ..)
-     (cons wc .. (cons wc' nil) ..)
-     (cons wu' .. (cons wu nil) ..))
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        wu custom unification at level 50,
-        qc custom atom at level 50).
-
 Notation "wc , .. , wc' :- qc , .. , qc'" :=
-  (Build_log_rule
-     nil
-     (cons qc' .. (cons qc nil) ..)
-     (cons wc .. (cons wc' nil) ..)
-     [])
+  (Build_sequent _ _
+     (cons qc' .. (cons qc nil) ..)  
+     (cons wc .. (cons wc' nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
         qc custom atom at level 50).
-
-Notation "wc , .. , wc' | wu , .. , wu' :-" :=
-  (Build_log_rule
-     nil
-     nil
-     (cons wc .. (cons wc' nil) ..)
-     (cons wu' .. (cons wu nil) ..))
-    (in custom logrule at level 60,
-        wc custom atom at level 50,
-        wu custom unification at level 50).
 
 Notation "wc , .. , wc' :-" :=
-  (Build_log_rule
+  (Build_sequent _ _
      nil
-     nil
-     (cons wc .. (cons wc' nil) ..)
-     [])
+     (cons wc .. (cons wc' nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50).
 
-(*TODO: compute query vars for convenience*)
-Notation "| wu , .. , wu' :- qc , .. , qc' [ var .. var' ]" :=
-  (Build_log_rule
-     (cons var' .. (cons var nil) ..)
-     (cons qc' .. (cons qc nil) ..)
-     nil
-     (cons wu' .. (cons wu nil) ..))
-    (in custom logrule at level 60,
-        wu custom unification at level 50,
-        qc custom atom at level 50,
-        var constr at level 0).
-
-
 Notation "f a .. a' -> r" :=
-  (Build_atom f (cons a' .. (cons a nil) ..) r)
+  (atom_clause (Build_atom f (cons a' .. (cons a nil) ..) r))
     (in custom atom at level 50,
         f constr at level 0,
         a constr at level 0,
         r constr at level 0).
 
 Notation "f -> r" :=
-  (Build_atom f nil r)
+  (atom_clause (Build_atom f nil r))
     (in custom atom at level 50,
         f constr at level 0,
         r constr at level 0).
 
 Notation "a = b" :=
-  (a,b)
-    (in custom unification at level 50, a constr at level 0,
+  (eq_clause a b)
+    (in custom atom at level 50, a constr at level 0,
     b constr at level 0).
            
-Definition example1 : list log_rule :=
+Definition example1 : list (sequent _ _) :=
   [!! "dog" -> "d" :-;
    !! "cat" -> "c" :-;
-   !! "catdog" -> "d" | "d" = "c" :- "dog" -> "d", "cat" -> "c" [ "c" "d" ];
-   !! "canine" "y" -> "y" :- "dog" -> "y" [ "y" ];
-   !! "animal" "a" -> "t" :- "canine" "a" -> "t" [ "a" "t" ];
-   !! "animal" "x" -> "x" :- "cat" -> "x" [ "x" ]
+   !! "catdog" -> "d" , "d" = "c" :- "dog" -> "d", "cat" -> "c";
+   !! "canine" "y" -> "y" :- "dog" -> "y";
+   !! "animal" "a" -> "t" :- "canine" "a" -> "t";
+   !! "animal" "x" -> "x" :- "cat" -> "x"
   ]%log.
 
 
 Definition ex1_set :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" id (idx_map:=string_trie_map) example1.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example1.
 
 
 Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _).
 Notation increment_epoch := (increment_epoch _ string_succ _ _ _ _).
-Notation rebuild := (rebuild _ _ _ _ _ _ _).
 Notation run1iter :=
   (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PositiveInstantiation.compat_intersect)).
 
@@ -218,14 +126,14 @@ Compute (map.tuples ex1_graph.(parents _ _ _ _ _)).
 
 Definition example2 :=
   [!! "zero" -> "z", "nat" "z" -> "_"  :-;
-   !! "S" "n" -> "+n", "nat" "+n" -> "_" :- "nat" "n" -> "_" ["n" "_"];
-   !!  | "n" = "m" :- "S" "n" -> "r", "S" "m" -> "r" [ "m" "n" "r" ];
+   !! "S" "n" -> "+n", "nat" "+n" -> "_" :- "nat" "n" -> "_";
+   !!  "n" = "m" :- "S" "n" -> "r", "S" "m" -> "r";
    (* skip Sn /= 0 because we don't have /= *)
-   !! "add" "m" "n" -> "mn", "nat" "mn" -> "_0" | "_0" = "_1" :-
-      "nat" "m" -> "_0" , "nat" "n" -> "_1" ["m" "n" "_0" "_1"];
-   !! | "n" = "r" :-  "zero" -> "z", "add" "z" "n" -> "r" ["n" "r" "z"];
+   !! "add" "m" "n" -> "mn", "nat" "mn" -> "_0", "_0" = "_1" :-
+      "nat" "m" -> "_0" , "nat" "n" -> "_1";
+   !! "n" = "r" :-  "zero" -> "z", "add" "z" "n" -> "r";
    !! "S" "n" -> "s'", "add" "m" "n" -> "mn", "S" "mn" -> "r" :-
-      "S" "m" -> "s", "add" "s" "n" -> "r" ["n" "r" "s" "m"];
+      "S" "m" -> "s", "add" "s" "n" -> "r";
    (* Initializing rules*)
    !! "foo" -> "f", "nat" "f" -> "nf" :-
   ]%log.
@@ -233,7 +141,7 @@ Definition example2 :=
 
 Definition ex2_set :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" id (idx_map:=string_trie_map) example2.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example2.
 
 
 Definition ex2_graph :=
@@ -249,12 +157,12 @@ Compute (map.tuples ex2_graph.(parents _ _ _ _ _)).
  *)
 
 Definition ex2_query :=
-  [ !! "ERR" -> "X" :- "zero" -> "z", "add" "z" "n" -> "n" ["z" "n"]
+  [ !! "ERR" -> "X" :- "zero" -> "z", "add" "z" "n" -> "n"
   ]%log.
 
 Definition ex2_qset :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" id (idx_map:=string_trie_map) ex2_query.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) ex2_query.
 
 
 Arguments run_query {idx}%type_scope {Eqb_idx} {symbol}%type_scope
@@ -520,10 +428,11 @@ Definition logic_rule_set :=
   
  *)
 
+(*
 Compute (map (optimize_log_rule string _ string_succ "v0" string _ string_trie_map string_trie_map _ id 100 (*TODO: magic number*))
            (map (uncurry (rule_to_log_rule string_succ sort_of (fold_right string_max "") logic))
               logic)).
-
+*)
 
 Definition logic_ex1_base :=
   Eval vm_compute in
