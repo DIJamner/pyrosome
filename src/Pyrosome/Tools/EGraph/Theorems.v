@@ -394,7 +394,7 @@ Section WithVar.
       eqb_case x s; auto; try tauto.
     Qed.
 
-    
+    (*
     Lemma sort_pat_to_clauses_next_var_fresh t l1 v v' vt
       : sort_pat_to_clauses succ sort_of l t v = (l1, (vt, v')) ->
         ~In v' (query_fvs l1).
@@ -434,7 +434,9 @@ Section WithVar.
       {
     Abort.
 
-        
+*)
+
+    (*
     Lemma rule_model_sound n r query_assignment
       : all_fresh query_assignment ->
         In (n,r) l ->
@@ -582,7 +584,7 @@ Section WithVar.
       
     Abort.
 
-    
+    *)
     
     (*TODO: many of these relations can be functions. what's the best way to define them?*)
     Fixpoint open_term_in_egraph sub e ex :=
