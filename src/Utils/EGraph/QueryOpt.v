@@ -120,20 +120,8 @@ Section WithMap.
 
     
    *)
-  
-Arguments clauses_to_instance {idx}%type_scope {Eqb_idx}
-  {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope 
-  l%list_scope _.
 
-Arguments instance_to_clauses {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope i.
-
-
-Arguments db_to_atoms {idx symbol}%type_scope
-  {symbol_map idx_trie}%function_scope d.
-
-
-Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
+  Notation clauses_to_instance := (clauses_to_instance idx_succ).
 
 
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
@@ -210,14 +198,18 @@ Section Optimize.
         in
         var_count * var_count.
 
-  Let assumptions := Mseq (clauses_to_instance s.(seq_assumptions)) (rebuild fuel).
+  Let sub_and_assumptions :=
+        @! let (_,sub) <- clauses_to_instance s.(seq_assumptions) [] in
+          let _ <- rebuild fuel in
+          ret sub.
 
-  Let conclusions (_ : unit) := Mseq (clauses_to_instance s.(seq_conclusions)) (rebuild fuel).
+  Let conclusions (p : named_list idx idx) : state instance unit :=
+        Mseq (clauses_to_instance s.(seq_conclusions) p) (rebuild fuel). 
  
   (*A variant that preserves in the type that the assumption has no equations*)
-  Definition optimize_sequent' := sequent'_of_states assumptions conclusions.
+  Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.
   
-  Definition optimize_sequent := sequent_of_states assumptions conclusions.
+  Definition optimize_sequent := sequent_of_states sub_and_assumptions conclusions.
 
 End Optimize.
 

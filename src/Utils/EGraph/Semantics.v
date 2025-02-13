@@ -152,15 +152,35 @@ Section WithMap.
 
   Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
 
-  (*TODO: output type?*)
-  Definition add_clause_to_instance c : state instance idx :=
+  
+  Notation alloc :=
+    (alloc idx idx_succ symbol symbol_map idx_map idx_trie).
+  
+  Definition rename_lookup (x : idx) : stateT (named_list idx idx) (state instance) idx :=
+    fun sub =>
+      match named_list_lookup_err sub x with
+      | Some y => Mret (y, sub)
+      | None => @! let y <- alloc in
+                  ret (y, (x,y)::sub)
+      end.
+
+  Definition rename_atom (a : atom) : stateT (named_list idx idx) (state instance) atom :=
+    let (f, args, out) := a in
+    @! let args' <- list_Mmap rename_lookup args in
+      let out' <- rename_lookup out in
+      ret Build_atom f args out.
+
+  (*TODO: output type? should be unit, but doesn't really matter *)
+  Definition add_clause_to_instance c
+    : stateT (named_list idx idx) (state instance) idx :=
     match c with
-    | eq_clause x y => Defs.union x y
-    (* TODO: this fn probably has the wrong behavior. Check.
-       In particular, needs to make sure all of the variables are initialized/
-       that the allocator is advanced past them
-     *)
-    | atom_clause a => new_singleton_out _ _ _ _ _ _ a
+    | eq_clause x y =>
+        @! let x' <- rename_lookup x in
+          let y' <- rename_lookup y in
+          (lift (Defs.union x' y'))
+    | atom_clause a =>
+        @! let a' <- rename_atom a in
+        (lift (new_singleton_out _ _ _ _ _ _ a'))
     end.
 
   Definition clauses_to_instance := list_Miter add_clause_to_instance.
@@ -1709,3 +1729,20 @@ Arguments sequent_vars {idx symbol}%type_scope s.
 
 Arguments eq_clause {idx symbol}%type_scope x y.
 Arguments atom_clause {idx symbol}%type_scope a.
+
+
+Arguments clauses_to_instance {idx}%type_scope {Eqb_idx}
+  idx_succ%function_scope
+  {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope 
+  l%list_scope _ _.
+
+
+Arguments instance_to_clauses {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope i.
+
+
+Arguments db_to_atoms {idx symbol}%type_scope
+  {symbol_map idx_trie}%function_scope d.
+
+
+Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.

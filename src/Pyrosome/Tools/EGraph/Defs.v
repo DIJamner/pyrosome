@@ -154,14 +154,6 @@ Section WithVar.
     Definition add_open_sort := add_open_sort' (length l).
     Definition add_open_term := add_open_term' add_open_sort.
     
-  
-  Fixpoint list_Mfoldr {A B M} `{Monad M} (f : A -> B -> M B) (l : list A) (base : B) : M B :=
-    match l with
-    | [] => @! ret base
-    | a::al' =>
-        @! let base' <- list_Mfoldr f al' base in
-          (f a base')
-    end.
 
   Notation alloc :=
     (alloc V succ V V_map V_map V_trie).
