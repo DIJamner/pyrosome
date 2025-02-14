@@ -1,7 +1,8 @@
 Require Import Lists.List.
 Import ListNotations.
 
-From Utils Require Import Utils NTuple.
+(*From Utils Require Import Utils NTuple.*)
+
 
 Section __.
   Context {A : Type}.
@@ -703,7 +704,6 @@ Section __.
 
  (*
    TODO: can significantly speed up
-   TODO: wrong
   *)
  Definition prepeat (x:A) n :=
    let (blocks,hd_len_minus) := Nat.divmod n 15 0 15 in
