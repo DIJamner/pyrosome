@@ -95,6 +95,13 @@ Section WithMap.
        *)
     }.
 
+  Record erule_query_ptr :=
+    {
+      query_ptr_symbol : symbol;
+      query_ptr_ptr : idx;
+      query_ptr_args : list idx;
+    }.
+  
     (*
     each disjunct contains a free variable list and a list of clause info,
     where clause info consists of the idx of the clause and a substitution.
@@ -113,7 +120,7 @@ Section WithMap.
 
          symbol, clause id, clause variables (in query_vars order)
        *)
-      query_clause_ptrs : ne_list (symbol * idx * list idx);
+      query_clause_ptrs : ne_list erule_query_ptr;
       write_vars : list idx;
       (* The list of clauses to write for each assignment valid wrt the query.
          Uses the vars in query_vars, plus write_vars for fresh/unbound idxs.
@@ -407,7 +414,7 @@ Section WithMap.
     (* each trie pair is (total, frontier) *)
     (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
     (frontier_n : idx)
-    '(f, n, clause_vars) : idx_trie unit * list bool :=
+    '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     (* If f is not in db_tries, it means the DB contains no matching nodes *)
     match map.get db_tries f with
@@ -422,8 +429,9 @@ Section WithMap.
     (* each trie pair is (total, frontier) *)
     (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
     (r : erule) (frontier_n : idx) : ST unit :=
-    let tries : ne_list _ := ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
-                               r.(query_clause_ptrs) in
+    let tries : ne_list _ :=
+      ne_map (trie_of_clause r.(query_vars) db_tries frontier_n)
+        r.(query_clause_ptrs) in
     let assignments : list _ := (intersection_keys tries) in
     list_Miter (M:=ST) (exec_write r) assignments.
 
@@ -594,7 +602,7 @@ Section WithMap.
     (query_vars : list idx)
     (* each trie pair is (total, frontier) *)
     (db_tries : symbol_map (idx_map (idx_trie unit * idx_trie unit)))
-    '(f, n, clause_vars) : idx_trie unit * list bool :=
+    '(Build_erule_query_ptr f n clause_vars) : idx_trie unit * list bool :=
     let flags := variable_flags query_vars clause_vars in
     match map.get db_tries f with
     | Some trie_list =>
