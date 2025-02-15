@@ -1,7 +1,7 @@
 Require Import Lists.List.
 Import ListNotations.
 
-(*From Utils Require Import Utils NTuple.*)
+From Utils Require Import Utils.
 
 
 Section __.
@@ -220,7 +220,7 @@ Section __.
       Eval compute in fix block_list_foldr l := block_list_foldrF block_list_foldr l.
 
     Definition plist_foldr :=
-      Eval cbv [plist_foldrF] in plist_foldrF block_list_foldr.  
+      Eval cbv [plist_foldrF] in plist_foldrF block_list_foldr.
         
   End __.
 
@@ -612,6 +612,69 @@ Section __.
  Definition of_list :=
    Eval cbv -[of_list'] in list_rec16F (fold_right pconsK id) pnil of_list'.
 
+ Section __.
+   Context (eq_A : A -> A -> bool).
+   Scheme Boolean Equality for block_list. (*block_list_beq*)
+   Scheme Boolean Equality for plist. (*plist_beq*)
+ End __.
+
+ Section Eqb.
+   Context `{Eqb_ok A}.
+   
+   Instance block_list_Eqb : Eqb block_list := block_list_beq (eqb (A:=_)).
+
+   (*TODO: move into bool db, use this instead of existing lemma *)
+   Lemma false_eq_to_Is_true : forall b : bool, false = b <-> Is_true (negb b).
+   Proof.
+     destruct b; cbn; intuition congruence.
+   Qed.
+   Local Hint Rewrite false_eq_to_Is_true : bool.
+
+   Instance block_list_Eqb_ok : Eqb_ok block_list_Eqb.
+   Proof.
+     intro x; induction x;
+       destruct b; cbn;
+       try congruence.
+     all: case_match.
+     all:autorewrite with utils bool in *.
+     all: basic_goal_prep; subst.
+     all: try reflexivity.
+     {
+       intro Hcong; safe_invert Hcong.
+       intuition auto.
+     }
+     {
+       f_equal.
+       specialize (IHx b).
+       my_case Hb (eqb x b); cbn in *; tauto.       
+     }
+     {
+       intro Hcong; safe_invert Hcong.
+       intuition auto.
+       specialize (IHx b).
+       my_case Hb (eqb b b); cbn in *; tauto.
+     }
+   Qed.   
+   
+   Instance plist_Eqb : Eqb plist := plist_beq (eqb (A:=_)).
+
+   Instance plist_Eqb_ok : Eqb_ok plist_Eqb.
+   Proof.
+     intros x y; destruct x, y;
+       cbn.
+     1: reflexivity.
+     all: try (intro Hcong; safe_invert Hcong).
+     all: change (block_list_beq (eqb (A:=A)))
+       with (eqb (A:=block_list)) in *.
+     all: case_match.
+     all:autorewrite with utils bool in *.
+     all: basic_goal_prep; subst.
+     all: try reflexivity.
+     all: try(intro Hcong; safe_invert Hcong;
+              intuition now auto).
+   Qed.
+     
+ End Eqb.
  
 (*TODO:
  Lemma block_of_list_to_list b
@@ -722,6 +785,12 @@ End __.
 Arguments block_list : clear implicits.
 Arguments plist : clear implicits.
 #[export] Hint Constructors block_list plist : utils.
+
+#[export] Existing Instance block_list_Eqb.
+#[export] Existing Instance block_list_Eqb_ok.
+
+#[export] Existing Instance plist_Eqb.
+#[export] Existing Instance plist_Eqb_ok.
 
 Section __.
   Context {A B} (f : A -> B).
