@@ -48,7 +48,9 @@ Definition linear_stlc_def : lang :=
   ]
   ]}.
 
-#[export] Hint Resolve (inst_for_db "lolli") : injective_con.
+
+#[local] Definition lolli_inst_for_db := inst_for_db "lolli".
+#[export] Hint Resolve lolli_inst_for_db : injective_con.
 
 (*
 Definition linear_stlc_def : lang :=

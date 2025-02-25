@@ -240,8 +240,8 @@ Definition grp_fmt :=
    ("grpplus", RD "#2 + #3" "\left(#2 + #3\right)" [true;true])
   ].
 
-Let x := Eval compute in (lang_macros grp_fmt grp').
-Let y := Eval compute in (lang_to_latex grp_fmt grp').
+#[local] Definition x := Eval compute in (lang_macros grp_fmt grp').
+#[local] Definition y := Eval compute in (lang_to_latex grp_fmt grp').
 
 
 Ltac2 print_unquoted s :=

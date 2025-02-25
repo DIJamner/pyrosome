@@ -144,10 +144,12 @@ Definition ex2_set :=
     QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example2.
 
 
+(*Set NativeCompute Profiling.*)
+(*TODO: spending the vast majority of its time on string things*)
 Definition ex2_graph :=
-  Eval vm_compute in
+  Eval native_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.compat_intersect) ex2_set (Mret false) 2
+       (@PositiveInstantiation.compat_intersect) ex2_set (Mret false) 3
        (empty_egraph default))).
 
 (*
@@ -292,7 +294,7 @@ Compute (map.tuples monoid_ex1_graph.(parents _ _ _ _ _)).
 Compute (fst (run_query monoid_rule_set_full 0 monoid_ex1_graph)).
 *)
 
-Let tries :=
+#[local] Definition tries :=
       Eval vm_compute in
       (unwrap_with_default (fst (run_query' monoid_rule_set_full 0 monoid_ex1_graph))).
 
@@ -442,9 +444,9 @@ Definition logic_ex1_base :=
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples logic_ex1_base.(db _ _ _ _ _))).
 Compute (filter (fun p => negb (eqb (fst p) (snd p)))
            (map.tuples monoid_ex1_base.(equiv _ _ _ _ _).(UnionFind.parent _ _ _))).
-      
+
 Definition logic_ex1_graph :=
-  Eval vm_compute in
+  Eval native_compute in
     (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.compat_intersect) logic_rule_set (Mret false) 5
        logic_ex1_base)).

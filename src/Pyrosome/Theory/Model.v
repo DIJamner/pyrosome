@@ -25,8 +25,8 @@ Section WithVar.
      *)
     Class PreModel :=
       {
-        term_substable :> Substable0 term;
-        sort_substable :> Substable term sort;
+        term_substable :: Substable0 term;
+        sort_substable :: Substable term sort;
       }.
 
     Local Notation ctx := (named_list sort).
@@ -35,7 +35,7 @@ Section WithVar.
     
       Class Model :=
         {
-          premodel :> PreModel;
+          premodel :: PreModel;
           eq_sort : ctx -> sort -> sort -> Prop;
           eq_term : ctx -> sort -> term -> term -> Prop;
           wf_sort : ctx -> sort -> Prop;
@@ -115,8 +115,8 @@ Section WithVar.
       (* TODO: put this class in a separate module for better imports? *)
       Class Model_ok :=
         {
-          term_substable_ok :> Substable0_ok term;
-          sort_substable_ok :> Substable_ok term sort;
+          term_substable_ok :: Substable0_ok term;
+          sort_substable_ok :: Substable_ok term sort;
 
           (* Syntactic constructors *)
           eq_sort_subst : forall c s1 s2 c' t1' t2',

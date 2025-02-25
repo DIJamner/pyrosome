@@ -1067,6 +1067,7 @@ Section __.
       apply List.NoDup_app_iff.
       repeat split; eauto using Properties.map.keys_NoDup.
       all: intros.
+      all: try eapply Properties.map.keys_NoDup.
       all: eapply dispoint_notin; eauto with utils.
       apply Properties.map.split_comm in Hsplit.
       all: eauto with utils.

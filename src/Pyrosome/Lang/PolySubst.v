@@ -694,22 +694,40 @@ Definition poly_def : lang _ :=
                                  ++val_parameterized ++ty_subst_lang)
     poly_def.
 
-#[export] Hint Resolve (inst_for_db "ty_id") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_emp") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_forget") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_ext") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_snoc") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_wkn") : injective_con.
-#[export] Hint Resolve (inst_for_db "ty_hd") : injective_con.
-#[export] Hint Resolve (inst_for_db "id") : injective_con.
-#[export] Hint Resolve (inst_for_db "emp") : injective_con.
-#[export] Hint Resolve (inst_for_db "forget") : injective_con.
-#[export] Hint Resolve (inst_for_db "ext") : injective_con.
-#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
-#[export] Hint Resolve (inst_for_db "wkn") : injective_con.
-#[export] Hint Resolve (inst_for_db "hd") : injective_con.
-#[export] Hint Resolve (inst_for_db "ret") : injective_con.
-#[export] Hint Resolve (inst_for_db "All") : injective_con.
+
+#[local] Definition ty_id_inst_for_db := inst_for_db "ty_id".
+#[local] Definition ty_emp_inst_for_db := inst_for_db "ty_emp".
+#[local] Definition ty_forget_inst_for_db := inst_for_db "ty_forget".
+#[local] Definition ty_ext_inst_for_db := inst_for_db "ty_ext".
+#[local] Definition ty_snoc_inst_for_db := inst_for_db "ty_snoc".
+#[local] Definition ty_wkn_inst_for_db := inst_for_db "ty_wkn".
+#[local] Definition ty_hd_inst_for_db := inst_for_db "ty_hd".
+#[local] Definition id_inst_for_db := inst_for_db "id".
+#[local] Definition emp_inst_for_db := inst_for_db "emp".
+#[local] Definition forget_inst_for_db := inst_for_db "forget".
+#[local] Definition ext_inst_for_db := inst_for_db "ext".
+#[local] Definition snoc_inst_for_db := inst_for_db "snoc".
+#[local] Definition wkn_inst_for_db := inst_for_db "wkn".
+#[local] Definition hd_inst_for_db := inst_for_db "hd".
+#[local] Definition ret_inst_for_db := inst_for_db "ret".
+#[local] Definition All_inst_for_db := inst_for_db "All".
+  
+#[export] Hint Resolve ty_id_inst_for_db : injective_con.
+#[export] Hint Resolve ty_emp_inst_for_db : injective_con.
+#[export] Hint Resolve ty_forget_inst_for_db : injective_con.
+#[export] Hint Resolve ty_ext_inst_for_db : injective_con.
+#[export] Hint Resolve ty_snoc_inst_for_db : injective_con.
+#[export] Hint Resolve ty_wkn_inst_for_db : injective_con.
+#[export] Hint Resolve ty_hd_inst_for_db : injective_con.
+#[export] Hint Resolve id_inst_for_db : injective_con.
+#[export] Hint Resolve emp_inst_for_db : injective_con.
+#[export] Hint Resolve forget_inst_for_db : injective_con.
+#[export] Hint Resolve ext_inst_for_db : injective_con.
+#[export] Hint Resolve snoc_inst_for_db : injective_con.
+#[export] Hint Resolve wkn_inst_for_db : injective_con.
+#[export] Hint Resolve hd_inst_for_db : injective_con.
+#[export] Hint Resolve ret_inst_for_db : injective_con.
+#[export] Hint Resolve All_inst_for_db : injective_con.
 
 Derive poly
   SuchThat (elab_lang_ext (exp_param_substs

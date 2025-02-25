@@ -176,14 +176,20 @@ Definition subst_def : lang :=
    ]
   ]}.
 
-
-#[export] Hint Resolve (inst_for_db "id") : injective_con.
-#[export] Hint Resolve (inst_for_db "emp") : injective_con.
-#[export] Hint Resolve (inst_for_db "forget") : injective_con.
-#[export] Hint Resolve (inst_for_db "ext") : injective_con.
-#[export] Hint Resolve (inst_for_db "snoc") : injective_con.
-#[export] Hint Resolve (inst_for_db "wkn") : injective_con.
-#[export] Hint Resolve (inst_for_db "hd") : injective_con.
+#[local] Definition id_inst_for_db := inst_for_db "id".
+#[export] Hint Resolve id_inst_for_db : injective_con.
+#[local] Definition emp_inst_for_db := inst_for_db "emp".
+#[export] Hint Resolve emp_inst_for_db : injective_con.
+#[local] Definition forget_inst_for_db := inst_for_db "forget".
+#[export] Hint Resolve forget_inst_for_db : injective_con.
+#[local] Definition ext_inst_for_db := inst_for_db "ext".
+#[export] Hint Resolve ext_inst_for_db : injective_con.
+#[local] Definition snoc_inst_for_db := inst_for_db "snoc".
+#[export] Hint Resolve snoc_inst_for_db : injective_con.
+#[local] Definition wkn_inst_for_db := inst_for_db "wkn".
+#[export] Hint Resolve wkn_inst_for_db : injective_con.
+#[local] Definition hd_inst_for_db := inst_for_db "hd".
+#[export] Hint Resolve hd_inst_for_db : injective_con.
 
 Derive subst_lang
        SuchThat (elab_lang_ext [] subst_def subst_lang)

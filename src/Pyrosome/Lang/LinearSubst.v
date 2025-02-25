@@ -246,9 +246,12 @@ Definition linear_value_subst_def : lang :=
 
   ]}.
 
-#[export] Hint Resolve (inst_for_db "emp") : injective_con.
-#[export] Hint Resolve (inst_for_db "only") : injective_con.
-#[export] Hint Resolve (inst_for_db "vsub") : injective_con.
+#[local] Definition emp_inst_for_db := inst_for_db "emp".
+#[export] Hint Resolve emp_inst_for_db : injective_con.
+#[local] Definition only_inst_for_db := inst_for_db "only".
+#[export] Hint Resolve only_inst_for_db : injective_con.
+#[local] Definition vsub_inst_for_db := inst_for_db "vsub".
+#[export] Hint Resolve vsub_inst_for_db : injective_con.
 
 (*TODO: use elab_lang notation?*)
 Derive linear_value_subst

@@ -5,10 +5,10 @@ From Utils Require Import Utils.
 
 Class Natlike t :=
   {
-  natlike_eqb :> Eqb t;
+  natlike_eqb :: Eqb t;
   ltb : t -> t -> bool;
   leb : t -> t -> bool;
-  zero :> WithDefault t;
+  zero :: WithDefault t;
   succ : t -> t;
   is_top : t -> bool;
   iter : forall {A},

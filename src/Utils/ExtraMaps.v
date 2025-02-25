@@ -15,7 +15,7 @@ Module Sets.
 
   Class set (A : Type) :=
     {
-      set_as_map :> map.map A unit;
+      set_as_map :: map.map A unit;
       intersection : set_as_map -> set_as_map -> set_as_map;
       union : set_as_map -> set_as_map -> set_as_map;
     }.
@@ -24,7 +24,7 @@ Module Sets.
   
   Class ok {A} (iset : set A) :=
     {
-      set_as_map_ok :> map.ok iset;
+      set_as_map_ok :: map.ok iset;
       get_intersect_same : forall (m1 m2 : iset) k,
         map.get m1 k = map.get m2 k ->
         map.get (intersection m1 m2) k = map.get m1 k;
@@ -141,7 +141,7 @@ Section __.
 
   (*TODO: strengthen from Is_Some to a result about the value*)
   Class map_plus_ok `{map_plus} : Prop := {
-      (*base_map_ok :> forall A, map.ok (m A);*)
+      (*base_map_ok :: forall A, map.ok (m A);*)
       intersect_spec : forall A B C (f : A -> B -> C) k t1 t2,
         map.get (map_intersect f t1 t2) k
         = match map.get t1 k, map.get t2 k with

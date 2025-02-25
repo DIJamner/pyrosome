@@ -148,7 +148,7 @@ End MonadListOps.
 
 Class MonadTrans (T : (Type -> Type) -> Type -> Type) : Type :=
   {
-    transformer_monad :> forall `{Monad M}, Monad (T M);
+    transformer_monad :: forall `{Monad M}, Monad (T M);
     lift : forall `{Monad M} {A}, M A -> T M A
   }.
 

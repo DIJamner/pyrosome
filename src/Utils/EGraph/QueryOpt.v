@@ -272,7 +272,8 @@ End Optimize.
 
   Local Notation idx_of_nat := (idx_of_nat _ idx_succ idx_zero).
 
-  Definition compile_query_clause (qvs : list idx) (a : atom) : ST' (symbol * idx * list idx) :=
+  Definition compile_query_clause (qvs : list idx) (a : atom)
+    : ST' (erule_query_ptr idx symbol) :=
     let (f, args, out) := a in
     let clause_vars := sort_by_position_in (out::args) qvs in
     let indices : list nat := (seq 0 (length clause_vars)) in
@@ -280,7 +281,7 @@ End Optimize.
     let compiled_clause := Build_atom f (map (named_list_lookup 0 sub) args)
                              (named_list_lookup 0 sub out) in
     @! let i <- hash_clause compiled_clause in
-      ret (f, i, clause_vars).
+      ret (Build_erule_query_ptr _ _ f i clause_vars).
 
   Local Notation erule := (erule idx symbol).
   Local Notation const_rule := (const_rule idx symbol).
@@ -299,7 +300,7 @@ End Optimize.
     let conclusion_vars :=
       (clauses_fvs (map (uncurry eq_clause) conclusion_eqs
                       ++ map atom_clause conclusion_atoms) qvs) in
-    @! let qcls_ptrs <- list_Mmap (compile_query_clause qvs) assumptions in
+    @! let {ST'} qcls_ptrs <- list_Mmap (compile_query_clause qvs) assumptions in
       (* Assume it must be nonempty to be useful.
          TODO: how to handle empty rules?
          essentially just add a term to the egraph, can be run once and discarded.
@@ -307,7 +308,7 @@ End Optimize.
       match qcls_ptrs with
       | [] => Mret (inr (Build_const_rule _ _ conclusion_vars
                            conclusion_atoms conclusion_eqs))
-      | c::cs => Mret (inl (Build_erule _ _ qvs (c,cs) conclusion_vars
+      | c::cs => Mret (M:=ST') (inl (Build_erule _ _ qvs (c,cs) conclusion_vars
                               conclusion_atoms conclusion_eqs))
       end.
 
