@@ -1,5 +1,4 @@
 Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
 
 Require Import Bool Datatypes.String Lists.List.
 Import ListNotations.
@@ -7,8 +6,7 @@ Import BoolNotations.
 Open Scope string.
 Open Scope list.
 
-From Utils Require Export Base Booleans Nats Props Eqb Default
-  Lists Options Pairs NamedList.
+From Utils Require Export Base Booleans Eqb Default Lists Options Pairs NamedList.
 
 (****************
 Definitions

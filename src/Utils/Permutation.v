@@ -68,8 +68,7 @@ Section __.
       case_match;
         destruct (PeanoNat.Nat.ltb_spec a (length l)); eauto.
       3:{
-        symmetry in HeqH.
-        rewrite nth_error_None in HeqH.
+        rewrite nth_error_None in case_match_eqn.
         Lia.lia.
       }
       2:{
@@ -261,7 +260,7 @@ Section __.
       basic_goal_prep; basic_utils_crush.
     case_match;
       basic_goal_prep; basic_utils_crush.
-    rewrite H in HeqH1; eauto.
+    rewrite H in case_match_eqn; eauto.
   Qed.
 
   Lemma all_false B P (l : list B)
@@ -421,7 +420,7 @@ Section __.
         cbn;
         eauto.
       exfalso.
-      apply HeqH.
+      apply case_match_eqn.
       pose proof (eqb_spec a n);
         destruct (eqb a n);
         subst; intuition Lia.lia.
@@ -470,7 +469,8 @@ Section __.
     case_match;
       basic_goal_prep.
     2:{
-      apply Bool.negb_sym in HeqH2.
+      symmetry in case_match_eqn.
+      apply Bool.negb_sym in case_match_eqn.
       basic_utils_crush.
       rewrite filter_true_In; eauto.
       basic_goal_prep;

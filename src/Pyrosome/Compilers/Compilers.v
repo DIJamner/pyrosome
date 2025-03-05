@@ -472,8 +472,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           erewrite subst_assoc; try typeclasses eauto.
           2:{                                              
             rewrite map_fst_combine_r_padded.
-            apply named_list_lookup_err_in in HeqH5.
-            exact (in_all _ _ _ H2 HeqH5).
+            symmetry in  case_match_eqn.
+            apply named_list_lookup_err_in in case_match_eqn.
+            exact (in_all _ _ _ H2 case_match_eqn).
           }
           f_equal.
           unfold subst_cmp.
@@ -481,11 +482,12 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           {
             f_equal.
             rewrite !map_map.
-            revert H4 H3 H2 H1.
+            revert H4 H1.
             induction l;
               basic_goal_prep; auto;
               autorewrite with utils in *;
               intuition idtac.
+            f_equal; eauto.
           }
           {
             apply term_default_subst.
@@ -522,8 +524,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           erewrite subst_assoc; try typeclasses eauto.
           2:{                                              
             rewrite map_fst_combine_r_padded.
-            apply named_list_lookup_err_in in HeqH4.
-            exact (in_all _ _ _ H1 HeqH4).
+            symmetry in  case_match_eqn.
+            apply named_list_lookup_err_in in case_match_eqn.
+            exact (in_all _ _ _ H1  case_match_eqn).
           }
           f_equal.
           unfold subst_cmp.
@@ -536,6 +539,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
               basic_goal_prep; auto;
               autorewrite with utils in *;
               intuition idtac.
+            f_equal; eauto.
             apply distribute_compile_subst_term; eauto.
           }
           {
@@ -546,6 +550,16 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Hint Rewrite distribute_compile_subst_sort : lang_core.
 
       
+      Lemma strengthening_fresh_helper {A} (cmp' cmp : named_list A) n c1 c2
+        : all_fresh (cmp' ++ cmp) ->
+          In (n, c1) (cmp' ++ cmp) ->
+          In (n, c2) cmp ->
+          c1 = c2.
+      Proof.
+        intros.
+        eapply in_all_fresh_same; try eassumption.
+        basic_utils_crush.
+      Qed.
 
       
       Lemma strengthening cmp' cmp l
@@ -565,57 +579,71 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         all: repeat case_match; auto;
             autorewrite with utils term lang_core in *; eauto.
         all: basic_utils_crush.
-        all: try rewrite all_fresh_named_list_lookup_err_in in HeqH1 by assumption.
-        all: try rewrite all_fresh_named_list_lookup_err_in in HeqH7 by assumption.
+        all: symmetry in case_match_eqn.
+        all: symmetry in case_match_eqn0.
+        all: try rewrite all_fresh_named_list_lookup_err_in in case_match_eqn by assumption.
+        all: try rewrite all_fresh_named_list_lookup_err_in in case_match_eqn0 by assumption.
         all: try (pose proof (in_all_fresh_same _ _ _ _ H2
-                                (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
+                                (in_or_app _ _ _ ltac:(eauto)) case_match_eqn0) as H';
                   now inversion H').
         {
           pose proof (in_all_fresh_same _ _ _ _ H2
-                        (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
+                        (in_or_app _ _ _ ltac:(eauto)) case_match_eqn) as H';
             inversion H'; clear H'; subst.
-          unfold compile_args in H5; rewrite H5.
-          reflexivity.
+        }
+        {
+          eapply strengthening_fresh_helper in case_match_eqn0;
+            try eassumption.
+          congruence.
+        }
+        {
+          pose proof (in_all_fresh_same _ _ _ _ H2
+                        (in_or_app _ _ _ ltac:(eauto)) case_match_eqn) as H';
+            inversion H'; clear H'; subst.
+          cbv [compile_args] in H5.
+          congruence.
         }
         {
           exfalso.
-          eapply named_list_lookup_none_iff in HeqH1.
-          intuition eauto;
-            pose proof (sort_name_in_cmp _ _ _ H1 H3).
-          apply HeqH1 in H7; auto.
-        }
-        {
-          exfalso.
-          eapply named_list_lookup_none_iff in HeqH7.
+          eapply named_list_lookup_none_iff in case_match_eqn0.
           pose proof (sort_name_in_cmp _ _ _ H1 H3).
           basic_utils_crush.
         }
-       (* {
+        {
           exfalso.
           basic_utils_crush.
-          eapply named_list_lookup_none_iff in HeqH7.
+          eapply named_list_lookup_none_iff in case_match_eqn.
           intuition eauto;
             pose proof (sort_name_in_cmp _ _ _ H1 H3).
           basic_utils_crush.
-        }*)
+        }
         {
-          pose proof (in_all_fresh_same _ _ _ _ H2
-                        (in_or_app _ _ _ ltac:(eauto)) HeqH7) as H';
-            inversion H'; clear H'; subst.
           unfold compile_args in H5; rewrite H5.
-          reflexivity.
+          eapply strengthening_fresh_helper in case_match_eqn0;
+            try eassumption.
+          congruence.
+        }
+        {
+          eapply strengthening_fresh_helper in case_match_eqn0;
+            try eassumption.
+          congruence.
         }
         {
           exfalso.
-          eapply named_list_lookup_none_iff in HeqH1.
+          eapply named_list_lookup_none_iff in case_match_eqn0.
+          pose proof (term_name_in_cmp _ _ _ _ H1 H3).
+          basic_utils_crush.
+        }
+        {
+          eapply strengthening_fresh_helper in case_match_eqn0;
+            try eassumption.
+          congruence.
+        }
+        {
+          exfalso.
+          eapply named_list_lookup_none_iff in case_match_eqn.
           intuition eauto;
             pose proof (term_name_in_cmp _ _ _ _ H1 H3).
-          apply HeqH1 in H7; auto.
-        }
-        {
-          exfalso.
-          eapply named_list_lookup_none_iff in HeqH7.
-          pose proof (term_name_in_cmp _ _ _ _ H1 H3).
           basic_utils_crush.
         }
       Qed.
@@ -695,7 +723,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Proof.
         induction 1;
           basic_goal_prep;
-          autorewrite with utils term lang_core in *;
+          autorewrite with rw_prop inversion utils term lang_core in *;
           try assumption;
           try tauto;
           try typeclasses eauto.
@@ -712,7 +740,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         }
         { clear H5 H6; solve[basic_core_crush]. }
         {          
-          autorewrite with utils lang_core term in H4.  
+          autorewrite with rw_prop inversion utils lang_core term in H4.  
           intuition eauto with lang_core.
           (*TODO: why is this slow?
             clear H5 H6; solve[basic_core_crush]. *)
@@ -756,7 +784,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
       Proof.
         induction 1;
           basic_goal_prep;
-          autorewrite with utils term lang_core in *;
+          autorewrite with rw_prop inversion utils term lang_core in *;
           try assumption;
           try tauto.
         {
@@ -919,8 +947,9 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         {
           repeat case_match.
           {
-            apply named_list_lookup_err_in in HeqH7.
-            pose proof (preserving_contradiction _ _ _ ltac:(eassumption) ltac:(eauto with lang_core) H3 HeqH7)
+            symmetry in case_match_eqn.
+            apply named_list_lookup_err_in in case_match_eqn.
+            pose proof (preserving_contradiction _ _ _ ltac:(eassumption) ltac:(eauto with lang_core) H3 case_match_eqn)
               as H'; inversion H'.
           }
           {
@@ -952,7 +981,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             assumption.
           }
           {
-            rewrite named_list_lookup_none_iff in HeqH7.
+            symmetry in case_match_eqn.
+            rewrite named_list_lookup_none_iff in case_match_eqn.
 
             (*TODO: lost indentation
             TODO: need another conclusion of lemma
@@ -967,7 +997,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
                 apply preserving_compiler_tail in Hpres; break; subst
             end.
             inversion H3; subst.
-            exfalso; apply HeqH7.
+            exfalso; apply case_match_eqn.
             basic_utils_crush.
           }
         }
@@ -1018,7 +1048,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
               destruct H'.
           }
           {
-            rewrite named_list_lookup_none_iff in HeqH7.
+            symmetry in case_match_eqn.
+            rewrite named_list_lookup_none_iff in case_match_eqn.
 
             (*TODO: lost indentation
             TODO: need another conclusion of lemma
@@ -1033,7 +1064,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
                 apply preserving_compiler_tail in Hpres; break; subst
             end.
             inversion H3; subst.
-            exfalso; apply HeqH7.
+            exfalso; apply case_match_eqn.
             basic_utils_crush.
           }
         }

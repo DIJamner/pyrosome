@@ -11,25 +11,6 @@ From Utils Require Import Base Booleans Eqb Default.
 
 Section __.
   Context (A : Type).
-
-  (* nil_nil not necessary because of reflexivity
-  Lemma invert_eq_nil_nil : @nil A = @nil A <-> True.
-  Proof.
-    solve_invert_constr_eq_lemma.
-  Qed.
-  Hint Rewrite invert_eq_nil_nil : utils. *)
-  
-  Lemma invert_eq_cons_nil (e:A) es : e::es = [] <-> False.
-  Proof. prove_inversion_lemma. Qed.
-  Hint Rewrite invert_eq_cons_nil : utils.
-  Lemma invert_eq_nil_cons (e:A) es : [] = e::es <-> False.
-  Proof. prove_inversion_lemma. Qed.
-  Hint Rewrite invert_eq_nil_cons : utils.
-  Lemma invert_eq_cons_cons (e e':A) es es'
-    : e::es = e'::es' <-> e = e' /\ es = es'.
-  Proof. prove_inversion_lemma. Qed.
-  Hint Rewrite invert_eq_cons_cons : utils.
-
   
   Fixpoint sublist (s l : list A) : Prop :=
     match s,l with
@@ -393,11 +374,6 @@ Arguments use_inclb {A}%type_scope {H H0} (l1 l2)%list_scope _ a _.
 Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 
 #[export] Hint Rewrite inclb_spec : utils.
-
-#[export] Hint Rewrite invert_eq_cons_nil : utils.
-#[export] Hint Rewrite invert_eq_nil_cons : utils.
-#[export] Hint Rewrite invert_eq_cons_cons : utils.
-
 
 #[export] Hint Resolve in_nil : utils.
 #[export] Hint Resolve in_eq : utils.

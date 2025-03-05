@@ -385,81 +385,70 @@ Section WithVar.
         repeat lazymatch goal with
         | [H : Some _ = Some _ |- _ ] => safe_invert H
                end.
-      - basic_core_crush.
-      - safe_invert HeqH3.
+      { basic_core_crush. }
+      {
         eapply sort_con_congruence; eauto.
         + basic_core_crush.
-        + {
-            clear HeqH0.
-            revert H n0 l4 l5 HeqH2.
-            induction l0;
-              basic_goal_prep;
-              repeat case_match';
-              try congruence;
-              basic_goal_prep;
-              basic_core_crush.
-            eapply H2; auto.
-          }
-      - safe_invert HeqH3.
+        + clear case_match_eqn.
+          clear l1.
+          revert H n0 l2 l3 case_match_eqn0.
+          induction l0;
+            basic_goal_prep;
+            repeat case_match';
+            try congruence;
+            basic_goal_prep;
+            basic_core_crush.
+          eapply H1; eauto.
+      }
+      {
         eapply eq_sort_subst.
         + basic_core_crush.
-        + clear HeqH0.
-          revert H n0 l3 l4 HeqH2.
+        + clear case_match_eqn.
+          revert H n0 l1 l2 case_match_eqn0.
           induction l0;
             basic_goal_prep;
             repeat case_match';
             try congruence;
             basic_goal_prep;
             basic_core_crush.
-          eapply H2; auto.
+          eapply H1; eauto.
         + basic_core_crush.
-      - safe_invert HeqH3.
+      }
+      {
         eapply term_con_congruence; eauto.
         + basic_core_crush.
-        + {
-            clear HeqH0.
-            revert H n0 l4 l5 HeqH2.
-            induction l0;
+        + clear case_match_eqn.
+          revert H n0 l2 l3  case_match_eqn0.
+          induction l0;
               basic_goal_prep;
               repeat case_match';
               try congruence;
               basic_goal_prep;
               basic_core_crush.
-            eapply H2; auto.
-          }
-      - safe_invert HeqH3.
+          eapply H1; auto.
+      }
+      {
         eapply eq_term_subst.
         + basic_core_crush.
-        + clear HeqH0.
-          revert H n0 l3 l4 HeqH2.
+        + clear case_match_eqn.
+          revert H n0 l1 l2 case_match_eqn0.
           induction l0;
             basic_goal_prep;
             repeat case_match';
             try congruence;
             basic_goal_prep;
             basic_core_crush.
-          eapply H2; auto.
+          eapply H1; eauto.
         + basic_core_crush.
-      - eapply eq_sort_trans; basic_utils_crush.
-      - inversion H.
-      - autorewrite with bool utils in *.
-        intuition subst.
-        eapply eq_term_trans; eauto.
-      - autorewrite with bool utils in *.
-        intuition subst.
-      - autorewrite with bool utils in *.
-        intuition subst.
-      - autorewrite with bool utils in *.
-        intuition subst.
-        eapply eq_sort_sym; eauto.
-      - autorewrite with bool utils in *.
-        intuition subst.
-        eapply eq_term_sym; eauto.
-      - autorewrite with bool utils in *.
-        intuition subst.
-        eapply eq_term_conv; eauto.
-      - autorewrite with bool utils in *.
-        intuition subst.
+      }
+      { eapply eq_sort_trans; basic_utils_crush. }
+      { inversion H. }
+      all: autorewrite with bool inversion rw_prop utils in *.
+      all: intuition subst.
+      { eapply eq_term_trans; eauto. }
+      { eapply eq_sort_sym; eauto. }
+      { eapply eq_term_sym; eauto. }
+      { eapply eq_term_conv; eauto. }
     Qed.
 
     End WithLang.

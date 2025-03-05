@@ -1,6 +1,3 @@
-Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
-
 Require Import Bool.
 Import BoolNotations.
 
@@ -26,8 +23,8 @@ Section __.
     intros a b;
       specialize (H0 (fst a) (fst b));
       specialize (H2 (snd a) (snd b)).
-    revert H0 H2;
-      case_match; case_match;
+    revert H0 H2.
+    case_match; case_match;
       basic_goal_prep;
       basic_utils_crush.
   Qed.

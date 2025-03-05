@@ -19,11 +19,11 @@ Import Notations.
 Create HintDb lang_core discriminated.
 
 Ltac basic_core_crush :=
-  let x := autorewrite with bool utils term lang_core model in * in
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
   let y := eauto 7 with utils term lang_core model in
       generic_crush x y.
 Ltac basic_core_firstorder_crush :=
-  let x := autorewrite with bool utils term lang_core model in * in
+  let x := autorewrite with bool rw_prop inversion utils term lang_core model in * in
   let y := eauto with utils term lang_core  model in
       generic_firstorder_crush x y.
 
@@ -1608,7 +1608,7 @@ Hint Resolve eq_args_length_eq_r : lang_core.
 
 (*TODO: come up w/ a more systematic way of constructing this*)
 Ltac with_rule_in_wf_crush :=
-  let rewrite_tac := autorewrite with utils term lang_core in * in
+  let rewrite_tac := autorewrite with bool rw_prop inversion utils term lang_core in * in
   let hint_auto := eauto with utils term lang_core in
           subst; rewrite_tac; firstorder;
                    try use_rule_in_wf; rewrite_tac;
@@ -1943,7 +1943,7 @@ Arguments term_con_congruence {V}%type_scope {V_Eqb V_Eqb_ok}
 
 (*TODO: duplicated; dedup?*)
 Ltac with_rule_in_wf_crush :=
-  let rewrite_tac := autorewrite with utils term lang_core in * in
+  let rewrite_tac := autorewrite with bool rw_prop inversion utils term lang_core in * in
   let hint_auto := eauto with utils term lang_core in
           subst; rewrite_tac; firstorder;
                    try use_rule_in_wf; rewrite_tac;

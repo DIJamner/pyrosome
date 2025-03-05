@@ -182,8 +182,7 @@ Section WithVar.
           end.
        - constructor.
        - constructor; eauto.
-         symmetry in HeqH1.
-         eapply history_sound in HeqH1.
+         eapply history_sound in case_match_eqn0.
          basic_goal_prep;
            basic_utils_crush.
        - safe_invert H.
@@ -207,18 +206,16 @@ Section WithVar.
           end;
          basic_goal_prep;
            repeat lazymatch goal with
-           | [H : Some (term_eq_result _ _ _) = _,
+           | [H : _ = Some (term_eq_result _ _ _),
                  hist : tree_all node_result_sound _ |- _] =>
-               symmetry in H;
                eapply hist in H
-           | [H : Some (sort_eq_result _ _) = _,
+           | [H : _ = Some (sort_eq_result _ _),
                  hist : tree_all node_result_sound _ |- _] =>
-               symmetry in H;
                eapply hist in H
            end; simpl in *; eauto with term lang_core.
        - constructor; constructor.
          eapply named_list_lookup_err_in; auto.
-       - safe_invert HeqH2; subst.
+       - autorewrite with inversion in *.
          eapply term_con_congruence; eauto.
          + eapply named_list_lookup_err_in; eauto.
          + eapply check_args_proof_sound; eauto.
@@ -319,7 +316,6 @@ Section WithVar.
       basic_goal_prep;
       try congruence.
     safe_invert H; simpl.
-    safe_invert HeqH0.
     destruct (Pos.eq_dec n p0).
     {
       subst.
@@ -349,8 +345,7 @@ Section WithVar.
     symmetry in Heqcheck.
     apply check_proof'_sound in Heqcheck.
     simpl in *.
-    symmetry in HeqH.
-    specialize (Heqcheck _ _ HeqH).
+    specialize (Heqcheck _ _ case_match_eqn).
     eauto.
   Qed.
 

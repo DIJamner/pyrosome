@@ -6,6 +6,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad SumMonad.
 From Pyrosome.Theory Require Import Term Rule.
+From Pyrosome.Compilers Require Import CompilerDefs.
 Import Term.Notations.
 Import Rule.Notations.
 
@@ -22,7 +23,9 @@ Section WithVar.
   Notation sort := (@sort V).
   Notation subst := (@subst V).
   Notation rule := (@rule V).
-  Notation lang := (@lang V).  
+  Notation lang := (@lang V).
+
+  Notation compiler_case := (@compiler_case V term sort).
   
   (*TODO: use s-expr framing to show locations?
    *)
@@ -35,7 +38,14 @@ Section WithVar.
   | sort_used_as_term_constr : V -> term -> lint_error
   | term_used_as_sort_constr : V -> sort -> lint_error
   | eqn_used_as_constr : V -> lint_error
-  | arity_mismatch : V -> nat -> list term -> lint_error.
+  | arity_mismatch : V -> nat -> list term -> lint_error
+  (*compiler errors*)                                                
+  | ccase_constr_unbound_in_lang : V -> compiler_case -> lint_error
+  | ccase_sort_give_term_case : V -> term -> lint_error
+  | ccase_term_give_sort_case : V -> sort -> lint_error
+  | ccase_eqn_give_term_case : V -> term -> lint_error
+  | ccase_eqn_give_sort_case : V -> sort -> lint_error
+  | ccase_wrong_args_number : list V -> ctx -> lint_error.
 
   Record constr_info :=
     MkConstrInfo {
@@ -166,6 +176,45 @@ Section WithVar.
           ++ (lint_lang_ext l_base l')
     end.
 
+  Section LintCompiler.
+    
+    Definition lint_ccase_args (args : list V) c :=
+      if eqb (length args) (length c) then []
+      else [ccase_wrong_args_number args c].
+
+    Context (src tgt : lang).
+    
+    Definition lint_ccase '(n,c) :=
+      match named_list_lookup_err src n, c with
+      (* rule disagreements *)
+      | None, (term_case args e) =>
+          [ccase_constr_unbound_in_lang n c] ++ (lint_term tgt args e)
+      | None, (sort_case args t) =>
+          [ccase_constr_unbound_in_lang n c] ++ (lint_sort tgt args t)
+      | Some (sort_rule _ _), (term_case args e) =>
+          [ccase_sort_give_term_case n e] ++ (lint_term tgt args e)
+      | Some (term_rule _ _ _), (sort_case args t)=>
+          [ccase_term_give_sort_case n t] ++ (lint_sort tgt args t)
+      | Some (sort_eq_rule _ _ _), (sort_case args t) 
+      | Some (term_eq_rule _ _ _ _), (sort_case args t) =>
+          [ccase_eqn_give_sort_case n t] ++ (lint_sort tgt args t)
+      | Some (sort_eq_rule _ _ _), (term_case args e)
+      | Some (term_eq_rule _ _ _ _), (term_case args e) =>
+          [ccase_eqn_give_term_case n e] ++ (lint_term tgt args e)
+      (* rule-matching cases *)
+      | Some (sort_rule c _), sort_case args t =>
+          (lint_ccase_args args c) ++ (lint_sort tgt args t)
+      | Some (term_rule c _ t), term_case args e =>
+          (lint_ccase_args args c) ++ (lint_term tgt args e)
+      end.
+
+    (*TODO: make more precise wrt comparing to src *)
+    Definition lint_cmp_ext cmp :=
+      flat_map lint_ccase cmp.
+
+  End LintCompiler.
+      
+
 End WithVar.
 
 Ltac print_linting_err e :=
@@ -190,7 +239,19 @@ Ltac print_linting_err e :=
       let s' := constr:(argument_seq_marker s) in
       fail "Constructor" n "expects" a "explicit arguments, but has arguments" s'
   | arg_unbound_in_context ?c ?x =>
-      fail "Argument" x "unbound in" c
+      fail "Argument" x "unbound in" c    
+  | ccase_constr_unbound_in_lang ?n ?cc =>
+      fail "Constructor" n "with compiler case" cc "not found in language"
+  | ccase_sort_give_term_case ?n ?e =>
+      fail "Sort" n "given term compilation" e
+  | ccase_term_give_sort_case ?n ?t =>
+      fail "Term" n "given sort compilation" t
+  | ccase_eqn_give_term_case ?n ?e =>
+      fail "Equation" n "given term compilation" e
+  | ccase_eqn_give_sort_case ?n ?t =>
+      fail "Equation" n "given sort compilation" t
+  | ccase_wrong_args_number ?args ?c =>
+      fail "Arguments" args "do not match length of context" c
   end.
 
 Ltac lint_lang_ext base l :=
@@ -200,4 +261,15 @@ Ltac lint_lang_ext base l :=
   (* TODO: print all errors *)
   | ?e::_ => print_linting_err e
   end.
+
+(*TODO: not conservative; has some bug. FInd and fix *)
+Ltac lint_compiler l cmp :=
+  let lint_res := (eval vm_compute in (lint_cmp_ext l cmp)) in
+  lazymatch lint_res with
+  | [] => idtac
+  (* TODO: print all errors *)
+  | ?e::_ => print_linting_err e
+  end.
+
+
 

@@ -81,8 +81,7 @@ Proof.
   case_match; eauto with lang_core.
   basic_goal_prep.
   case_match; basic_core_crush.
-  symmetry in HeqH2.
-  eapply pf_checker_sound in HeqH2; eauto.
+  eapply pf_checker_sound in case_match_eqn; eauto.
   eapply eq_term_conv; eauto.
   eapply term_sorts_eq;
     eauto.

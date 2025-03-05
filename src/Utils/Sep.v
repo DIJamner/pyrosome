@@ -817,5 +817,5 @@ Ltac sep_isolate :=
 
 Ltac seprewrite :=
   sep_isolate;
-  autorewrite with utils in *;
+  autorewrite with bool rw_prop inversion utils in *;
   unfold sep_app in *.

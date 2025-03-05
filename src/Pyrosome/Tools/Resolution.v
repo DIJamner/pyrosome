@@ -205,7 +205,8 @@ Section WithVar.
     1: basic_core_crush.
     unfold rule_wf_in_db in *.
     revert H; case_match; [|basic_core_crush].
-    apply named_list_lookup_err_in in HeqH.
+    symmetry in case_match_eqn.
+    apply named_list_lookup_err_in in case_match_eqn.
     pose proof H1 as H1'.
     eapply in_all in H1'; eauto.
     basic_goal_prep.
@@ -454,7 +455,7 @@ Section WithVar.
   Proof.
     unfold cmp_db_sound, cmp_wf_in_db.
     intro Hdb.
-    autorewrite with bool utils in *; eauto.
+    autorewrite with rw_prop inversion bool utils in *; eauto.
     revert cmp.
     induction src;
       basic_goal_prep.
@@ -481,7 +482,7 @@ Section WithVar.
     end.
     revert H; destruct r; cbn; repeat case_match;
       basic_goal_prep;
-      autorewrite with bool utils in *; eauto; try typeclasses eauto;
+      autorewrite with rw_prop inversion bool utils in *; eauto; try typeclasses eauto;
       intuition subst.
     all: basic_goal_prep.
     all: eapply in_all in Hnll; eauto; basic_goal_prep.
@@ -492,7 +493,7 @@ Section WithVar.
                  | x : compiler_db_entry |- _ => destruct x
                  end;
                  basic_goal_prep;
-                 autorewrite with bool utils in *; eauto; try typeclasses eauto;
+                 autorewrite with rw_prop inversion bool utils in *; eauto; try typeclasses eauto;
                  intuition subst).
     all: try lazymatch goal with
         | H : preserving_compiler_ext _ (_::_) (_::_) |-_=>
@@ -510,13 +511,13 @@ Section WithVar.
         eauto.
       all: basic_utils_crush.
       intros [x c] Hin.
-      assert (x <> v1).
+      assert (x <> v0).
       {
         intro; subst.
         basic_utils_crush.
       }
       basic_goal_prep.
-      eapply H13 in Hin.
+      eapply H12 in Hin.
       basic_goal_prep;basic_core_crush.
     }
     {
@@ -526,8 +527,8 @@ Section WithVar.
         eauto.
       all: basic_utils_crush.
       all:intros [x c] Hin;
-      assert (x <> v1) by (basic_goal_prep;basic_core_crush).                   
-      all:eapply H13 in Hin; basic_goal_prep;basic_core_crush.
+      assert (x <> v0) by (basic_goal_prep;basic_core_crush).                   
+      all:eapply H12 in Hin; basic_goal_prep;basic_core_crush.
     }
     {
       erewrite <- compile_strengthen_sort_incl,

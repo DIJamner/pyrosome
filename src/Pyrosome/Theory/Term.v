@@ -36,9 +36,10 @@ Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
   Qed.
 
 Create HintDb term discriminated.
-Ltac basic_term_crush := let x := autorewrite with bool utils term in * in
-                                  let y := eauto with bool utils term in
-                                          generic_crush x y.
+Ltac basic_term_crush :=
+  let x := autorewrite with bool rw_prop inversion utils term in * in
+        let y := eauto with bool utils term in
+            generic_crush x y.
 Ltac basic_term_firstorder_crush :=
   let x := autorewrite with utils term in * in
           let y := eauto with utils term in
@@ -380,7 +381,7 @@ Proof.
   induction c; basic_goal_prep;
     basic_term_crush.
   (*TODO: get rid of need for symmetry*)
-  case_match; symmetry in HeqH;
+  case_match; symmetry in case_match_eqn;
     basic_goal_prep;
     basic_term_crush.
 Qed.
@@ -621,11 +622,11 @@ Arguments con {V}%type_scope _ _%list_scope.
 
 #[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
-#[export] Hint Rewrite invert_eq_con_con : term.
-#[export] Hint Rewrite invert_eq_con_var : term.
-#[export] Hint Rewrite invert_eq_var_con : term.
-#[export] Hint Rewrite invert_eq_var_var : term.
-#[export] Hint Rewrite invert_eq_scon_scon : term.
+#[export] Hint Rewrite invert_eq_con_con : inversion.
+#[export] Hint Rewrite invert_eq_con_var : inversion.
+#[export] Hint Rewrite invert_eq_var_con : inversion.
+#[export] Hint Rewrite invert_eq_var_var : inversion.
+#[export] Hint Rewrite invert_eq_scon_scon : inversion.
 #[export] Hint Rewrite term_subst_nil : term.
 #[export] Hint Rewrite named_map_subst_nil : term.
 #[export] Hint Rewrite subst_lookup_map : term.

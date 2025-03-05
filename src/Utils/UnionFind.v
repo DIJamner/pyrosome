@@ -439,14 +439,14 @@ Section __.
       exfalso.
       eapply Properties.map.get_split with (k:=i) in H; eauto.
       destruct H; basic_goal_prep.
-      { rewrite <- H, <-HeqH in H3; tauto. }
-      { rewrite <- H, <-HeqH in H2; tauto. }
+      { rewrite <- H,case_match_eqn in H3; tauto. }
+      { rewrite <- H, case_match_eqn in H2; tauto. }
     }
     {
       exists x, x0.
       pose proof H0.
       eapply Properties.map.get_split with (k:=i) in H0; eauto.
-      destruct H0; basic_goal_prep;rewrite <- H0, <-HeqH;
+      destruct H0; basic_goal_prep;rewrite <- H0, case_match_eqn;
         basic_utils_crush.
       { rewrite H4 in H5; auto. }
       { rewrite H4 in H5; auto. }
@@ -775,7 +775,7 @@ Section __.
     apply Properties.map.get_split with (k:=k) in H;
       destruct H; basic_goal_prep;
       basic_utils_crush; [|congruence].
-    rewrite H, <- HeqH; auto.
+    rewrite H, case_match_eqn; auto.
   Qed.
   Hint Resolve split_has_key_l : utils.
   
@@ -2340,7 +2340,7 @@ Section __.
       induction mr;
         basic_goal_prep; [congruence|].
       revert H0; case_match; [|congruence].
-      case_match; autorewrite with bool utils in *;
+      case_match; autorewrite with bool inversion utils in *;
         subst.
       {
         basic_goal_prep; subst.
@@ -2351,10 +2351,9 @@ Section __.
       {
         case_match; [| congruence].
         basic_goal_prep.
-        autorewrite with bool utils in *; basic_goal_prep;
+        autorewrite with bool inversion utils in *; basic_goal_prep;
           subst.
-        symmetry in HeqH2.
-        eapply IHmr in HeqH2; eauto.
+        eapply IHmr in  case_match_eqn1; eauto.
         basic_goal_prep; subst.
         eauto using tree_put.
       }
@@ -2379,15 +2378,14 @@ Section __.
         case_match; [|congruence].
         break.
         basic_utils_crush.
-        symmetry in HeqH0; apply IHmr in HeqH0.
+        apply IHmr in  case_match_eqn0.
         eapply Properties.map.same_domain_trans; eauto.
         assert (has_key i r).
         {
           unfold has_key; case_match; eauto.
           clear IHmr.
           unfold map.same_domain, map.sub_domain in *; break.
-          symmetry in HeqH.
-          eapply H0 in HeqH.
+          eapply H0 in case_match_eqn.
           break.
           congruence.
         }
@@ -2445,7 +2443,7 @@ Section __.
             unfold sep, and1, not1, has_key in H0.
             basic_goal_prep;
               basic_utils_crush.
-            rewrite <- HeqH0 in H2.
+            rewrite case_match_eqn in H2.
             tauto.
           }
         }
@@ -2460,15 +2458,14 @@ Section __.
             break.
             basic_goal_prep;
               basic_utils_crush.
-            symmetry in HeqH1.
             (* assert (map.get f_Q i = Some i0) as HgetQ.
           {
             eapply sep_get_some_r; eauto.
             basic_goal_prep; subst.
             eauto.
           }*)
-            pose proof HeqH1 as Heqaux.
-            eapply IHmr in HeqH1; eauto.
+            pose proof case_match_eqn0  as Heqaux.
+            eapply IHmr in case_match_eqn0 ; eauto.
             break.
             exists (map.put x i j).
             rewrite H1.
@@ -2483,10 +2480,9 @@ Section __.
             apply split_put_left.
             {
               apply find_aux_domain in Heqaux.
-              symmetry in HeqH0.
               destruct Heqaux.
               unfold map.sub_domain in *.
-              eapply H3 in HeqH0.
+              eapply H3 in case_match_eqn.
               break.
               apply Properties.map.get_split with (k:=i) in H;
                 intuition congruence.
@@ -2725,7 +2721,7 @@ Section __.
       induction mr;
         basic_goal_prep; [congruence|].
       revert H0; case_match; [|congruence].
-      case_match; autorewrite with bool utils in *;
+      case_match; autorewrite with bool inversion utils in *;
         subst.
       {
         basic_goal_prep; subst.
@@ -2758,26 +2754,9 @@ Section __.
       {
         case_match; [| congruence].
         basic_goal_prep.
-        autorewrite with bool utils in *; basic_goal_prep;
+        autorewrite with bool inversion utils in *; basic_goal_prep;
           subst.
-        symmetry in HeqH2.
-        
-        (*
-        assert (has_key i r).
-        {
-          assert (has_key i f) by admit.
-          eapply find_aux_domain in HeqH2.
-          unfold map.same_domain, map.sub_domain in HeqH2.
-          break.
-          unfold has_key in *.
-          revert H0; repeat (case_match; try tauto).
-          symmetry in HeqH2.
-          eapply H1 in HeqH2.
-          break; congruence.
-        }*)
-        
-        
-        eapply IHmr with (k:=k) (l:=l)in HeqH2; eauto.
+        eapply IHmr with (k:=k) (l:=l)in case_match_eqn1; eauto.
         2:{
           unfold sep, and1 in *; break.
           exists x, x0; intuition eauto.
@@ -2878,23 +2857,20 @@ Section __.
       revert H0; case_match;[|congruence].
       eqb_case i0 i.
       {
-        symmetry in HeqH0.
         intros; basic_utils_crush.
         eapply  eq_clo_base; eauto.
       }
       {
         case_match; [|congruence].
         break.
-        symmetry in HeqH1.
         intros.
         safe_invert H1.
-        eapply IHmr in HeqH1.
+        eapply IHmr in case_match_eqn0.
         {
           break.
           eapply eq_clo_trans; eauto.
           eapply eq_clo_base; eauto.
         }
-        symmetry in HeqH0.
         eapply distribute_get in H; eauto.
         destruct H.
         {
@@ -3396,7 +3372,7 @@ Section __.
         try congruence.
       revert H; case_match;[|congruence].
       intros _.
-      unfold has_key; rewrite <- HeqH; auto.
+      unfold has_key; rewrite case_match_eqn; auto.
     Qed.
     
     Lemma find_aux_reachable_out' l mr f i f' j
@@ -3407,7 +3383,7 @@ Section __.
       intros.
       pose proof H0 as H'; eapply find_aux_has_key in H'; eauto.
       revert H'; unfold has_key; case_match; try tauto; intros _.
-      symmetry in HeqH1; eapply forest_has_key_tree in HeqH1; eauto; break.
+      eapply forest_has_key_tree in case_match_eqn; eauto; break.
       eapply find_aux_reachable_out in H2; eauto.
     Qed.
     
@@ -3624,22 +3600,20 @@ Section __.
       revert H0; case_match;[|congruence].
       eqb_case i0 i.
       {
-        symmetry in HeqH0.
         intros; basic_utils_crush.
       }
       {
         case_match; [|congruence].
         break.
-        symmetry in HeqH1.
         intros.
         safe_invert H1.
-        pose proof HeqH1.
-        eapply IHmr in HeqH1.
+        pose proof case_match_eqn0.
+        eapply IHmr in case_match_eqn0.
         {
           eapply iff2_trans; eauto.
           assert (reachable r i j).
           {
-            eapply HeqH1.
+            eapply case_match_eqn0.
             etransitivity.
             2:eapply find_aux_reachable_out'; eauto.
             eapply eq_clo_base; eauto.
@@ -3897,8 +3871,6 @@ Section __.
         all: eauto using perm_swap.
       }
     Qed.
-
-
     
     Lemma tree_append i j m
       :  seps [tree j; tree i] m ->

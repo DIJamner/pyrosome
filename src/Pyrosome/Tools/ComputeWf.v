@@ -85,7 +85,7 @@ Section WithVar.
         revert H; case_match; basic_goal_prep; try congruence.
         revert H; case_match; basic_goal_prep; try congruence.
         (*TODO: why is this slow? basic_core_firstorder_crush.*)
-        autorewrite with utils in *.
+        autorewrite with rw_prop inversion utils in *.
         subst.
         eapply wf_term_by;
           eauto with lang_core model utils.
@@ -94,7 +94,7 @@ Section WithVar.
         destruct s; destruct c'; destruct fuel;
           basic_goal_prep;
           intuition break;
-          autorewrite with utils model term lang_core in *;
+          autorewrite with rw_prop inversion utils model term lang_core in *;
           try tauto.
         (*TODO: automation for pushing props under matches?
           What about rewriting matches to existential or?

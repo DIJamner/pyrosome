@@ -147,8 +147,9 @@ Proof.
   intros allfcmp all_ws.
   induction e; basic_goal_prep; basic_core_firstorder_crush.
   case_match; simpl; eauto.
-  apply named_list_lookup_err_in in HeqH4.
-  pose proof (in_all_fresh_same _ _ _ _ allfcmp H0 HeqH4).
+  symmetry in  case_match_eqn.
+  apply named_list_lookup_err_in in case_match_eqn.
+  pose proof (in_all_fresh_same _ _ _ _ allfcmp H0  case_match_eqn).
   subst.
 
   erewrite subst_assoc.
@@ -163,7 +164,7 @@ Proof.
   f_equal.
 
   (*prove inner induction*)
-  clear x x0 H0 H2 HeqH4.
+  clear x x0 H0 H2  case_match_eqn.
   revert dependent l.
   induction l; basic_goal_prep; basic_core_crush.
 Qed.
@@ -192,8 +193,9 @@ Proof.
   intros allfcmp all_ws.
   induction e; basic_goal_prep; basic_core_firstorder_crush.
   case_match; simpl; eauto.
-  apply named_list_lookup_err_in in HeqH3.
-  pose proof (in_all_fresh_same _ _ _ _ allfcmp H HeqH3).
+  symmetry in  case_match_eqn.
+  apply named_list_lookup_err_in in case_match_eqn.
+  pose proof (in_all_fresh_same _ _ _ _ allfcmp H case_match_eqn).
   subst.
 
   erewrite subst_assoc; try typeclasses eauto.

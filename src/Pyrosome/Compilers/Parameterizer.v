@@ -485,7 +485,6 @@ Section WithVar.
       induction a;
         basic_goal_prep;
         basic_utils_crush.
-      f_equal.
       revert dependent l.
       induction l;
         basic_goal_prep;
@@ -1008,11 +1007,14 @@ Section WithVar.
         unfold direct_dependency.
         case_match.
         2:{
-          apply named_list_lookup_none_iff in HeqH0; eauto.
+          symmetry in case_match_eqn.
+          apply named_list_lookup_none_iff in case_match_eqn; eauto.
           eapply fresh_notin; eauto.
         }
-        apply named_list_lookup_err_in in HeqH0.
-        eapply in_all_fresh_same in HeqH0; [| basic_core_crush | clear HeqH0; eassumption].
+        symmetry in case_match_eqn.
+        apply named_list_lookup_err_in in case_match_eqn.
+        eapply in_all_fresh_same in case_match_eqn;
+          [| basic_core_crush | clear case_match_eqn; eassumption].
         subst.
         destruct t; cbn.
         basic_utils_crush.
@@ -1051,11 +1053,14 @@ Section WithVar.
         unfold direct_dependency.
         case_match.
         2:{
-          apply named_list_lookup_none_iff in HeqH0; eauto.
+          symmetry in case_match_eqn.
+          apply named_list_lookup_none_iff in case_match_eqn; eauto.
           eapply fresh_notin; eauto.
         }
-        apply named_list_lookup_err_in in HeqH0.
-        eapply in_all_fresh_same in HeqH0; [| basic_core_crush | clear HeqH0; eassumption].
+        symmetry in case_match_eqn.
+        apply named_list_lookup_err_in in case_match_eqn.
+        eapply in_all_fresh_same in case_match_eqn;
+          [| basic_core_crush | clear case_match_eqn; eassumption].
         subst.
         destruct t; cbn.
         basic_utils_crush.
@@ -1096,13 +1101,15 @@ Section WithVar.
       eapply H; eauto.
       eapply dep_direct.
       unfold direct_dependency.
-      case_match.
-      2:{
-        apply named_list_lookup_none_iff in HeqH2; eauto.
+      case_match;
+        symmetry in case_match_eqn.
+      2:{        
+        apply named_list_lookup_none_iff in case_match_eqn; eauto.
         eapply fresh_notin; eauto.
       }
-      apply named_list_lookup_err_in in HeqH2.
-      eapply in_all_fresh_same in HeqH2; [| basic_core_crush | clear HeqH2; eassumption].
+      apply named_list_lookup_err_in in case_match_eqn.
+      eapply in_all_fresh_same in case_match_eqn;
+        [| basic_core_crush | clear case_match_eqn; eassumption].
       subst.
       destruct r0; cbn;
         basic_utils_crush.
@@ -1484,7 +1491,7 @@ Section WithVar.
      {
        unfold constructors_of_ctx in *.
        basic_goal_prep.
-       autorewrite with utils lang_core term model in *; break.
+       autorewrite with rw_prop inversion utils lang_core term model in *; break.
        constructor; eauto.
        unfold Model.eq_term, core_model.
        erewrite !parameterize_sort_subst with (mn:=None) in H2.
@@ -1594,7 +1601,7 @@ Section WithVar.
           eapply in_map with (f:=(fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p))) in H.
           unfold parameterize_lang.
           cbn in H.
-          rewrite <- HeqH5 in *.
+          rewrite case_match_eqn in *.
           subst l_plus; basic_utils_crush.
         }
         {
@@ -1608,7 +1615,7 @@ Section WithVar.
           eapply in_map with (f:=(fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p))) in H.
           unfold parameterize_lang.
           cbn in H.
-          rewrite <- HeqH5 in *.
+          rewrite case_match_eqn in *.
           subst l_plus; basic_utils_crush.
         }
         cbn.
@@ -2399,19 +2406,21 @@ Section WithVar.
       unfold direct_dependency;
       case_match;
       basic_utils_crush.
-    apply named_list_lookup_err_in in HeqH1.
+    symmetry in case_match_eqn.
+    apply named_list_lookup_err_in in case_match_eqn.
     case_match;
+      symmetry in case_match_eqn0;
       basic_utils_crush.
     2:{
-      eapply named_list_lookup_none in HeqH2.
-      apply HeqH2.
+      eapply named_list_lookup_none in case_match_eqn0.
+      apply case_match_eqn0.
       apply H0.
       eauto.
     }
     {
-      apply named_list_lookup_err_in in HeqH2.
-      apply H0 in HeqH1.
-      eapply in_all_fresh_same in HeqH1; eauto.
+      apply named_list_lookup_err_in in case_match_eqn0.
+      apply H0 in case_match_eqn.
+      eapply in_all_fresh_same in case_match_eqn; eauto.
       congruence.
     }
   Qed.
@@ -2801,7 +2810,7 @@ Section WithVar.
     apply wf_judge_ind;
       basic_goal_prep;
       basic_core_crush.
-    all: case_match; [| exfalso].
+    all: case_match; symmetry in case_match_eqn; [| exfalso].
     4:eapply term_rule_not_fresh_in_id_compiler; eauto;
     eapply named_list_lookup_none_iff; eauto.
     all: use_rule_in_wf.
@@ -2814,16 +2823,16 @@ Section WithVar.
     all: apply incl_flat_map with (f:=f) in H0;
       cbn in H0.
     2:{
-      eapply named_list_lookup_none_iff in HeqH3.
-      eapply HeqH3.
+      eapply named_list_lookup_none_iff in case_match_eqn.
+      eapply case_match_eqn.
       unfold id_compiler.
       rewrite map_flat_map.
       basic_utils_crush.
     }
     {
-      eapply named_list_lookup_err_in in HeqH3.
+      eapply named_list_lookup_err_in in case_match_eqn.
       basic_utils_crush.
-      eapply in_all_fresh_same in HeqH3; eauto;
+      eapply in_all_fresh_same in case_match_eqn; eauto;
         subst;
         basic_core_crush.
       change (scon ?n ?s) [/?s'/] with (scon n s[/s'/]).
@@ -2835,9 +2844,9 @@ Section WithVar.
       symmetry; eapply wf_args_length_eq; eauto.
     }
     {
-      eapply named_list_lookup_err_in in HeqH3.
+      eapply named_list_lookup_err_in in case_match_eqn.
       basic_utils_crush.
-      eapply in_all_fresh_same in HeqH3; eauto;
+      eapply in_all_fresh_same in case_match_eqn; eauto;
         subst;
         basic_core_crush.
       change (con ?n ?s) [/?s'/] with (con n s[/s'/]).
@@ -3698,9 +3707,10 @@ Section WithVar.
       autorewrite with utils in *;
         eauto.
       case_match;
+        symmetry in case_match_eqn;
         basic_goal_prep.
-      1: apply named_list_lookup_err_in in HeqH1.
-      2: apply named_list_lookup_none_iff in HeqH1.
+      1: apply named_list_lookup_err_in in case_match_eqn.
+      2: apply named_list_lookup_none_iff in case_match_eqn.
       all: eapply H in H0; intuition eauto.
       all:eapply all_impl; eauto; basic_goal_prep;
         basic_utils_crush.      
@@ -4186,8 +4196,9 @@ Section WithVar.
                 } 
                 enough (fresh n0 src_spec).
                 {
-                  eapply all_fresh_named_list_lookup_err_in in HeqH26; eauto.
-                  eapply pair_fst_in in HeqH26.
+                  symmetry in case_match_eqn0.
+                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
+                  eapply pair_fst_in in case_match_eqn0.
                   unfold fresh in *; eauto.
                 }
                 
@@ -4207,7 +4218,8 @@ Section WithVar.
                 cbn in *.
                 eapply H_ordered_src in Hdep.
                 eapply Hdep.
-                eapply named_list_lookup_none_iff in HeqH2; eauto.
+                symmetry in case_match_eqn.
+                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
                 autorewrite with lang_core utils term in *.
@@ -4347,8 +4359,9 @@ Section WithVar.
                 }
                 enough (fresh n0 src_spec).
                 {
-                  eapply all_fresh_named_list_lookup_err_in in HeqH23; eauto.
-                  eapply pair_fst_in in HeqH23.
+                  symmetry in case_match_eqn0.
+                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
+                  eapply pair_fst_in in case_match_eqn0.
                   unfold fresh in *; eauto.
                 }
                 
@@ -4368,7 +4381,8 @@ Section WithVar.
                 cbn in *.
                 eapply H_ordered_src in Hdep.
                 eapply Hdep.
-                eapply named_list_lookup_none_iff in HeqH8; eauto.
+                symmetry in case_match_eqn.
+                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
                 autorewrite with lang_core utils term in *.
@@ -4509,8 +4523,9 @@ Section WithVar.
                 }  
                 enough (fresh n0 src_spec).
                 {
-                  eapply all_fresh_named_list_lookup_err_in in HeqH24; eauto.
-                  eapply pair_fst_in in HeqH24.
+                  symmetry in case_match_eqn0.
+                  eapply all_fresh_named_list_lookup_err_in in case_match_eqn0; eauto.
+                  eapply pair_fst_in in case_match_eqn0.
                   unfold fresh in *; eauto.
                 }
                 
@@ -4530,7 +4545,8 @@ Section WithVar.
                 cbn in *.
                 eapply H_ordered_src in Hdep.
                 eapply Hdep.
-                eapply named_list_lookup_none_iff in HeqH8; eauto.
+                symmetry in case_match_eqn.
+                eapply named_list_lookup_none_iff in case_match_eqn; eauto.
               }
               {
                 autorewrite with lang_core utils term in *.
@@ -4875,11 +4891,12 @@ Section WithVar.
       intros.
       revert H0; case_match;
         basic_goal_prep; try tauto.
-      pose proof HeqH0 as H'.
-      eapply named_list_lookup_err_in in HeqH0.
-      case_match.
+      pose proof case_match_eqn as H'.
+      symmetry in case_match_eqn.
+      eapply named_list_lookup_err_in in case_match_eqn.
+      case_match; symmetry in case_match_eqn0.
       {
-        eapply named_list_lookup_err_in in HeqH1.
+        eapply named_list_lookup_err_in in case_match_eqn0.
         unfold frontier in *.
         rewrite map_map in *.
         lazymatch goal with
@@ -4905,16 +4922,17 @@ Section WithVar.
         basic_utils_crush.
         right.
         unfold compute_direct_dependencies.
-        rewrite <- H'.
+        rewrite H'.
         eauto.
       }
       {
+        symmetry in H'.
         eapply named_list_lookup_err_in in H'.
-        eapply named_list_lookup_none_iff in HeqH1.
+        eapply named_list_lookup_none_iff in case_match_eqn0.
         unfold frontier in *.
         unfold fresh in *.
         rewrite !map_map in *.
-        eapply HeqH1.
+        eapply case_match_eqn0.
         lazymatch goal with
         | H' : In _ ?l |- In _ (map ?f' ?l) =>
             eapply in_map with (f:=f') in H';
@@ -5038,8 +5056,9 @@ Section WithVar.
         basic_utils_crush.
       {
         case_match; try tauto.
-        revert H3; case_match; intros; try tauto.        
-        eapply named_list_lookup_err_in in HeqH3, HeqH4.
+        revert H3; case_match; intros; try tauto.
+        symmetry in case_match_eqn, case_match_eqn0.
+        eapply named_list_lookup_err_in in case_match_eqn, case_match_eqn0.
         eapply fixed_point_deps_closed; eauto using all_fresh_deps.
       }
       {
@@ -5057,11 +5076,11 @@ Section WithVar.
         use_rule_in_wf.
         basic_core_crush.
         safe_invert H6.
-        case_match.
+        case_match; symmetry in case_match_eqn.
         2:{
-          eapply named_list_lookup_none_iff in HeqH6.
+          eapply named_list_lookup_none_iff in case_match_eqn.
           unfold fresh in *.
-          eapply HeqH6.
+          eapply case_match_eqn.
           unfold compute_dependencies.
           rewrite map_fst_compute_deps.
           rewrite <- frontier_map_fst.
@@ -5113,11 +5132,11 @@ Section WithVar.
         use_rule_in_wf.
         basic_core_crush.
         safe_invert H5.
-        case_match.
+        case_match; symmetry in case_match_eqn.
         2:{
-          eapply named_list_lookup_none_iff in HeqH5.
+          eapply named_list_lookup_none_iff in case_match_eqn.
           unfold fresh in *.
-          eapply HeqH5.
+          eapply case_match_eqn.
           unfold compute_dependencies.
           rewrite map_fst_compute_deps.
           rewrite <- frontier_map_fst.
@@ -5204,7 +5223,7 @@ Section WithVar.
         try tauto.
       eapply compute_dependencies_complete in H2;
         eauto.
-      rewrite <- HeqH0 in H2.
+      rewrite case_match_eqn in H2.
       autorewrite with utils in H0.
       assert (In v l0).
       {
@@ -5218,9 +5237,11 @@ Section WithVar.
       unfold Is_Some.
       repeat case_match;
         basic_utils_crush.
-      apply named_list_lookup_none_iff in HeqH1.
-      eapply named_list_lookup_err_in in HeqH2.
-      eapply pair_fst_in in HeqH2.
+      symmetry in case_match_eqn1.
+      apply named_list_lookup_none_iff in case_match_eqn1.
+      symmetry in case_match_eqn0.
+      eapply named_list_lookup_err_in in case_match_eqn0.
+      eapply pair_fst_in in case_match_eqn0.
       intuition eauto.
     Qed.
 

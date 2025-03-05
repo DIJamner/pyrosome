@@ -1311,7 +1311,7 @@ Lemma wf_lang_iff_cut l
   : Core.wf_lang l <-> wf_lang l.
 Proof.
   split; induction 1;
-    autorewrite with utils lang_core in *;
+    autorewrite with inversion rw_prop utils lang_core in *;
     intuition; try constructor;
     eauto with lang_core.
   all: eapply rule_iff_cut; eauto.

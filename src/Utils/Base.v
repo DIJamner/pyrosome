@@ -1,4 +1,7 @@
-Require Export coqutil.Tactics.ProveInversion.
+(* For the hint db *)
+From coqutil Require Export PropRewrite InversionRewrite.
+From coqutil.Tactics Require Export ProveInversion safe_invert case_match.
+
 
 (***************
  Tactics 
@@ -27,32 +30,9 @@ Ltac break :=
          | [H: exists x, _|-_]=> destruct H
          end.
 
-(*TODO: deprecate *)
+#[deprecated(note="Use `destruct exp eqn:eqnname` instead.")]
 Ltac my_case eqnname exp :=
   destruct exp eqn:eqnname.
-  (*
-  let casevar := fresh "casevar" in
-  remember exp as casevar eqn:eqnname;
-  destruct casevar; symmetry in eqnname.
-   *)
-
-
-(* Performs inversion on H exactly when 
-    either: 
-    - no constructors can produce H and the goal is solved
-    - exactly one constructor can produce H and inversion
-      makes progress
- *)
-Ltac safe_invert H :=
-  let t := type of H in
-  inversion H; clear H;
-  let n := numgoals in
-  guard n <= 1;
-  lazymatch goal with
-  | [ H' : t|-_]=>
-    fail "safe_invert did not make progress"
-  | _ => subst
-  end.
 
 Ltac generic_crush rewrite_tac hint_auto :=
   repeat (intuition break; subst; rewrite_tac;
@@ -76,47 +56,17 @@ Create HintDb utils discriminated.
  *)
 #[export] Hint Rewrite pair_equal_spec : utils.
 
-
 #[export] Hint Extern 100 => exfalso : utils.
 #[export] Hint Extern 100 (_ _ = _ _) => f_equal : utils.
 
 
-Ltac basic_utils_crush := let x := autorewrite with bool utils in * in
-                                  let y := eauto with utils in
-                                          generic_crush x y.
+Ltac basic_utils_crush :=
+  let x := autorewrite with bool rw_prop inversion utils in * in
+        let y := eauto with utils in
+            generic_crush x y.
 Ltac basic_utils_firstorder_crush :=
-  let x := autorewrite with bool utils in * in
+  let x := autorewrite with bool rw_prop utils in * in
           let y := eauto with utils in
                   generic_firstorder_crush x y.
 
 Ltac basic_goal_prep := intros; break; simpl in *.
-
-
-Ltac case_match' c :=
-  lazymatch c with
-  | context [match ?c' with _ => _ end] => case_match' c'
-  | _ =>
-      let e' := fresh in
-      remember c as e'; destruct e'
-  end.
-Ltac case_match :=
-  match goal with
-  | |- context [ match ?e with
-                 | _ => _
-                 end ] => case_match' e
-  end.
-
-(* TODO: replace with similar tactic?
-Require Import Tactics.Tactics
-Print destruct_one_match.
-*)
-(*TODO: make case on innermost match?
-  (*TOOD: replace case_match with this? Copied once already*)
-  Ltac case_match' :=
-    try lazymatch goal with
-          [ H :  context [ match ?e with
-                           | _ => _
-                           end] |- _ ] => revert H
-        end;
-    case_match.
- *)

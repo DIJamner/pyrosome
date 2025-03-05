@@ -1080,8 +1080,8 @@ Section MapIntersectList.
     all: try tauto.
     all: try congruence.
     all: repeat lazymatch goal with
-           | H1 : _ = list_intersect'_pre_cbv ?hd ?l,
-               H2 : _ = list_intersect'_pre_cbv ?hd ?l',
+           | H1 : list_intersect'_pre_cbv ?hd ?l = _,
+               H2 : list_intersect'_pre_cbv ?hd ?l' = _,
                  Hperm : Permutation ?l ?l',
                    IHhd : (Permutation (A:=tree' B) ==> eq)%signature
                             (list_intersect'_pre_cbv ?hd)
@@ -1090,13 +1090,13 @@ Section MapIntersectList.
                erewrite IHhd in H1; try eassumption; clear Hperm
            end;
       try lazymatch goal with
-        | H1 : _ = elts_intersect (?e::?l),
-            H2 : _ = elts_intersect (?e::?l') |- _ =>
+        | H1 : elts_intersect (?e::?l) = _,
+            H2 : elts_intersect (?e::?l') =_ |- _ =>
             erewrite elts_intersect_Proper in H1;
             try apply perm_skip;
             try (eassumption || symmetry; eassumption)
         end;
-      try congruence.
+      congruence.
   Qed.
     
     
@@ -1193,7 +1193,7 @@ Section MapIntersectList.
     all: rewrite hfin3_to_tuple_un_k.
     all: rewrite gather_tries_spec.
     all: unfold gather_tries_simple.
-    all: progress autorewrite with utils in *; subst.
+    all: progress autorewrite with inversion rw_prop utils in *; subst.
     all: try erewrite map_ext by apply tree'_tuple_to_proj.
     all: unfold split3.
     all: rewrite !split_map.
@@ -1212,26 +1212,22 @@ Section MapIntersectList.
     all: repeat (case_match; cbn -[get'] in *;eauto).
     all: rewrite ?get'_1.
     all: cbn.
-    all: rewrite <- ?HeqH0 in *.
-    all:  autorewrite with utils in *; subst.
+    all: autorewrite with inversion utils in *; subst.
     all: rewrite <- ?Permutation_rev in *.
-    all: try rewrite <- ?HeqH3 in IHx; eauto.
-    all: change (fun x => ?f x) with f in *.
-    all: try revert IHx; repeat case_match;cbn; eauto.
-    all: basic_goal_prep.
+    all: try match goal with
+         | H1 : ?A = ?B, H2 : ?A = ?C |- _ =>
+             rewrite H1 in H2
+         end.
+    all: autorewrite with inversion utils in *; subst.
+    all: try assumption.
+    all: try tauto.    
     all: repeat lazymatch goal with
-           | HNone : None = ?a, Hc : context [?a] |- _ =>
-               rewrite <- HNone in Hc
-           | HSome : Some _ = ?a, Hc : context [?a] |- _ =>
-               rewrite <- HSome in Hc
-           end.
-    all: try congruence.
-    all: autorewrite with utils in *; subst.
-    all: rewrite <- ?Permutation_rev in *.
-    all: try congruence.
-    all: try tauto.
+           | HNone : ?a = None |- _ =>
+               rewrite HNone
+           | HSome : ?a = Some _ |- _ =>
+               rewrite HSome
+           end; auto.
   Qed.
-
   
   Lemma option_all_Some A (l : list A) : option_all (map Some l) = Some l.
   Proof.
@@ -1253,10 +1249,10 @@ Section MapIntersectList.
     all:rewrite !option_all_Some in *.
     all: intros; basic_utils_crush.
     all:  repeat lazymatch goal with
-           | HNone : None = ?a |- context [?a] =>
-               rewrite <- HNone
-           | HSome : Some _ = ?a |- context [?a] =>
-               rewrite <- HSome
+           | HNone : ?a = None |- context [?a] =>
+               rewrite HNone
+           | HSome : ?a =  Some _ |- context [?a] =>
+               rewrite HSome
            end.
     all:cbn in *; eauto.
   Qed.
@@ -1491,8 +1487,6 @@ End MapIntersectList.
 #[export] Hint Rewrite gempty : utils.
 #[export] Hint Rewrite @gNode : utils.
 
-#[local] Hint Rewrite @invert_none_some : utils.
-
 #[export] Instance ptree_map_plus_ok : map_plus_ok trie_map.
 Proof.
   constructor.
@@ -1509,45 +1503,45 @@ Proof.
         basic_goal_prep;
         try congruence.
       all:repeat lazymatch goal with
-            | H : _ = get' ?k (?f ?t0) |- _ =>
+            | H : get' ?k (?f ?t0) = _ |- _ =>
                 destruct k; basic_goal_prep
-            | H : _ = intersect' ?t0 ?t1
+            | H : intersect' ?t0 ?t1 = _
               |- _ =>
-                rewrite <- H
+                rewrite H
             end.
-      all:autorewrite with utils in *.
+      all:autorewrite with bool utils in *.
       all: try congruence.
       all: repeat lazymatch goal with
-             | Hi : _ = intersect' ?f ?t0 ?t1,
-                 Hg0 : _ = get' ?k ?t0,
+             | Hi : intersect' ?f ?t0 ?t1 = _,
+                 Hg0 : get' ?k ?t0 = _,
                    IH : forall t1 k,
                      get k (intersect' ?f ?t0 t1) = _
                      |- _ =>
                  specialize (IH t1 k);
-                 rewrite <- Hi, <- Hg0 in IH;
-                                cbn in *;
-                                try congruence
-    |  Hg0 : _ = get' ?k ?t0,
+                 rewrite Hi, Hg0 in IH;
+                             cbn in *;
+                             try congruence
+    |  Hg0 : get' ?k ?t0 = _,
         IH : forall t1 k,
           get k (intersect' ?f ?t0 t1) = _
           |- get ?k (intersect' ?f ?t0 ?t1) = _ =>
          specialize (IH t1 k);
-         rewrite <- Hg0 in IH;
+         rewrite Hg0 in IH;
          cbn in *;
          try congruence
-    |  Hg1 : _ = get' ?k ?t1,
-        Hg0 : _ = get' ?k ?t0,
+    |  Hg1 : get' ?k ?t1 = _,
+        Hg0 : get' ?k ?t0 = _,
           IH : forall t1 k,
             get k (intersect' ?f ?t0 t1) = _
             |- _ =>
          specialize (IH t1 k);
-         rewrite <- Hg1, <- Hg0 in IH;
-                         cbn in *;
-                         try congruence
-    | Hg1 : _ = get' ?k ?t1,
+         rewrite Hg1, Hg0 in IH;
+                      cbn in *;
+                      try congruence
+    | Hg1 : get' ?k ?t1 = _,
         IH : context [get' ?k ?t1]
       |- _ =>
-        rewrite <- Hg1 in IH;
+        rewrite Hg1 in IH;
         cbn in *;
         try congruence
       end.
@@ -1579,6 +1573,5 @@ Module TrieArrayList.
 End TrieArrayList.
 
 
- 
 
     
