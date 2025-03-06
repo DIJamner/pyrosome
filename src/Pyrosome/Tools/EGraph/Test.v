@@ -72,16 +72,16 @@ Definition ex1_set :=
     QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example1.
 
 
-Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _).
+Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _ unit).
 Notation increment_epoch := (increment_epoch _ string_succ _ _ _ _).
 Notation run1iter :=
-  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PositiveInstantiation.compat_intersect)).
+  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ unit (@PositiveInstantiation.compat_intersect)).
 
 Definition ex0 :=
   Eval vm_compute in
     (snd (Mseq (process_const_rules ex1_set)
             (rebuild 1000)
-            (empty_egraph default))).
+            (empty_egraph default _))).
 
 Ltac test H :=
   let H' := fresh in
@@ -90,10 +90,11 @@ Ltac test H :=
 
 Goal False.
   test (ex0.(epoch) = "").
-  test (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db _ _ _ _ _))
-          = [("dog", [([], ("", ""))]); ("cat", [([], ("", "#"))])]).
-  test (map.tuples ex0.(equiv _ _ _ _ _).(UnionFind.parent _ _ _) = [("#", "#"); ("", "")]).
-  test (map.tuples ex0.(parents _ _ _ _ _)
+  test (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex0.(db))
+        = [("dog", [([], (Build_db_entry _ _ "" "" tt))]);
+           ("cat", [([], (Build_db_entry _ _ "" "#" tt))])]).
+  test (map.tuples ex0.(equiv).(UnionFind.parent _ _ _) = [("#", "#"); ("", "")]).
+  test (map.tuples ex0.(parents)
        = [("#", [{| atom_fn := "cat"; atom_args := []; atom_ret := "#" |}]);
         ("", [{| atom_fn := "dog"; atom_args := []; atom_ret := "" |}])]).
 Abort.
@@ -114,7 +115,7 @@ Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.compat_intersect) ex1_set (Mret false) 5
-       (empty_egraph default))).
+       (empty_egraph default _))).
 
 (*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1_graph.(db _ _ _ _ _))).
@@ -149,8 +150,8 @@ Definition ex2_set :=
 Definition ex2_graph :=
   Eval native_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.compat_intersect) ex2_set (Mret false) 3
-       (empty_egraph default))).
+       (@PositiveInstantiation.compat_intersect) ex2_set (Mret false) 0
+       (empty_egraph default _))).
 
 (*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex2_graph.(db _ _ _ _ _))).
@@ -169,10 +170,11 @@ Definition ex2_qset :=
 
 Arguments run_query {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
-  {idx_trie}%function_scope spaced_list_intersect%function_scope rs n%nat_scope _.
+  {idx_trie}%function_scope {analysis_result}%type_scope
+  spaced_list_intersect%function_scope rs n%nat_scope _.
 Arguments run_query' {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
-  {idx_trie}%function_scope rs n%nat_scope _.
+  {idx_trie}%function_scope  {analysis_result}%type_scope rs n%nat_scope _.
 
 Notation run_query := (run_query (@PositiveInstantiation.compat_intersect)).
 Notation run_query' := (run_query').
@@ -247,12 +249,12 @@ Definition monoid_ex1_base :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.compat_intersect) monoid_ex1_rule_set (Mret false) 0
-       (empty_egraph default))).
+       (empty_egraph default _))).
       
 Definition monoid_ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PositiveInstantiation.compat_intersect) monoid_rule_set_full (Mret false) 3
+       (@PositiveInstantiation.compat_intersect) monoid_rule_set_full (Mret false) 2
        monoid_ex1_base)).
 (*TODO: seems to work!
 Definition monoid_ex1_graph' :=
@@ -417,6 +419,27 @@ Definition logic : lang string :=
   ]}.
 
 
+Eval vm_compute in
+    (map (uncurry (rule_to_log_rule (@StringInstantiation.string_trie_map)
+                     (@StringInstantiation.string_list_trie_map)
+                     StringInstantiation.string_succ "sort_of"
+                     logic (analysis_result:=unit))) logic).
+
+(*TODO: foo, bar rules not simplified.
+
+  !! "#0" = "#",
+"#4" = "#1",
+"#6" = "#",
+ "#3" = "#", 
+ "T" -> "#1" :-
+ "sort_of" "" -> "#",
+ "sort_of" "#1" -> "#", 
+           "S" -> "#",
+ "-" "" -> "#1",
+ "F" -> "";
+
+
+ *)
 
 Definition logic_rule_set_full :=
   Eval vm_compute in
@@ -430,20 +453,14 @@ Definition logic_rule_set :=
   
  *)
 
-(*
-Compute (map (optimize_log_rule string _ string_succ "v0" string _ string_trie_map string_trie_map _ id 100 (*TODO: magic number*))
-           (map (uncurry (rule_to_log_rule string_succ sort_of (fold_right string_max "") logic))
-              logic)).
-*)
-
 Definition logic_ex1_base :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
        (@PositiveInstantiation.compat_intersect) logic_rule_set_full (Mret false) 1
-       (empty_egraph default))).
-Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples logic_ex1_base.(db _ _ _ _ _))).
+       (empty_egraph default _))).
+Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples logic_ex1_base.(db))).
 Compute (filter (fun p => negb (eqb (fst p) (snd p)))
-           (map.tuples monoid_ex1_base.(equiv _ _ _ _ _).(UnionFind.parent _ _ _))).
+           (map.tuples monoid_ex1_base.(equiv).(UnionFind.parent _ _ _))).
 
 Definition logic_ex1_graph :=
   Eval native_compute in
@@ -452,4 +469,5 @@ Definition logic_ex1_graph :=
        logic_ex1_base)).
 (*TODO: why no unifications?*)
 Compute (filter (fun p => negb (eqb (fst p) (snd p)))
-           (map.tuples monoid_ex1_base.(equiv _ _ _ _ _).(UnionFind.parent _ _ _))).
+           (map.tuples monoid_ex1_base.(equiv).(UnionFind.parent _ _ _))).
+

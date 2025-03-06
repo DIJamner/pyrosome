@@ -43,11 +43,23 @@ Section WithMap.
         (idx_trie : forall A, map.map (list idx) A)
         (idx_trie_plus : map_plus idx_trie).
 
+  Context (analysis_result : Type).
+
+  Record db_entry :=
+    {
+      entry_epoch : idx;
+      entry_value : idx;
+      (* Note: this is not a duplicate of the by-idx analyses.
+         it is important that there is a result associated with each entry.
+       *)
+      entry_analysis : analysis_result;
+    }.
+  
   (*
     each symbol has an n-ary table of epoch-stamped entries.
     fst of result is epoch, snd is value
    *)
-  Definition db_map := symbol_map (idx_trie (idx * idx)).
+  Definition db_map := symbol_map (idx_trie db_entry).
 
   (*Context `{@map_plus symbol symbol_map}.*)
 
@@ -70,7 +82,15 @@ Section WithMap.
       (eqb a1.(atom_fn) a2.(atom_fn))
       && (eqb a1.(atom_args) a2.(atom_args))
       && (eqb a1.(atom_ret) a2.(atom_ret)).
- 
+
+  Class analysis : Type :=
+    {
+      (* gets an atom and the analyses of its children *)
+      analyze : atom -> list analysis_result -> analysis_result;
+      analysis_meet :  analysis_result -> analysis_result -> analysis_result;
+    }.
+
+  Context `{analysis}.
   
   Record instance := {
       db : db_map;
@@ -93,6 +113,7 @@ Section WithMap.
               Probably worth doing, since the only cost is 'or'ing the 'changed'
               flags once per iteration
        *)
+      analyses : idx_map analysis_result;
     }.
 
   Record erule_query_ptr :=
@@ -168,6 +189,29 @@ Section WithMap.
 
   
   Local Notation ST := (state instance).
+
+  
+  (* does nothing if the arguments don't have analysis results already.
+     TODO: does this design make sense?
+     Analysis is not attached to the node anywhere
+   *)
+  Definition update_analyses a_ret new_a : ST unit :=
+    fun i =>
+      let meet_a := match map.get i.(analyses) a_ret with
+                    | Some oa => analysis_meet new_a oa
+                    | None => new_a
+                    end
+      in
+      let analyses' := map.put i.(analyses) a_ret meet_a in
+      (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses').
+
+  (* assumes the idxs in lst already have analysis results*)
+  Definition get_analyses lst : ST (list analysis_result) :=
+    fun i =>
+      match list_Mmap (map.get i.(analyses)) lst with
+      | Some al => (al, i)
+      | _=> (default, i)
+      end.
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -176,17 +220,26 @@ Section WithMap.
     fun d =>
       (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
       if eqb v v1 then (v,d)
-      else match UnionFind.union _ _ _ _ d.(equiv) v v1 with
-           | Some (uf',v') =>
-               let v_old := if eqb v v' then v1 else v in
-               (v', Build_instance d.(db) uf' d.(parents) d.(epoch) ((v_old,v')::d.(worklist)))
-           | None => (*should never happen if v in uf *) (v,d)  
-           end.
+      else
+        (*should always return Some if v in uf *)
+        @unwrap_with_default _ (v,d)
+        (@!let (uf', v') <- UnionFind.union _ _ _ _ d.(equiv) v v1 in
+             let v_old := if eqb v v' then v1 else v in
+             let v_analysis <- map.get d.(analyses) v in
+             let v1_analysis <- map.get d.(analyses) v1 in
+             let new_analysis := analysis_meet v_analysis v1_analysis in
+             let analyses' :=
+                   (*TODO: doesn't garbage collect right now *)
+                   map.put (map.put d.(analyses) v new_analysis)
+                     v' new_analysis in  
+             ret {option} (v', Build_instance d.(db) uf' d.(parents)
+                     d.(epoch) ((v_old,v')::d.(worklist)) analyses')).
+    
 
   Definition alloc : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist))).
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses))).
   
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
@@ -210,10 +263,12 @@ Section WithMap.
 
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
-
-  Definition new_singleton_out a : ST idx :=
+  
+  Definition new_singleton_out' a out_a : ST idx :=
     fun i =>
-      let tbl_upd tbl := map.put tbl a.(atom_args) (i.(epoch), a.(atom_ret)) in
+      let tbl_upd tbl :=
+        map.put tbl a.(atom_args)
+                        (Build_db_entry i.(epoch) a.(atom_ret) out_a) in
       let db' := map_update i.(db) a.(atom_fn) tbl_upd in
       (* Add the node as a parent of its output.
          This is necessary to ensure output ids stay canonical,
@@ -223,7 +278,13 @@ Section WithMap.
        *)
       let parents' := fold_left (fun m x => map_update m x (cons a))
                         (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
-      (a.(atom_ret), Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist)).
+      (a.(atom_ret), Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
+
+  Definition new_singleton_out a : ST idx :=
+    @! let arg_as <- get_analyses a.(atom_args) in
+      let out_a := analyze a arg_as in
+      let _ <- update_analyses a.(atom_ret) out_a in
+      (new_singleton_out' a out_a).
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -232,7 +293,8 @@ Section WithMap.
     fun d =>
       match UnionFind.find _ _ _ _ d.(equiv) a with
       | Some (uf',v') =>
-          (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist))
+          (v', Build_instance d.(db) uf' d.(parents)
+                              d.(epoch) d.(worklist) d.(analyses))
       | None => (*should never happen if a in uf *) (a,d)  
       end.
 
@@ -253,7 +315,7 @@ Section WithMap.
       match map.get i.(db) a.(atom_fn) with
       | Some tbl =>
           match map.get tbl a.(atom_args) with
-          | Some x => (snd x, i)
+          | Some (Build_db_entry _ x _) => (x, i)
           | None => new_singleton_out a i
           end
       | None => new_singleton_out a i
@@ -365,10 +427,10 @@ Section WithMap.
   Definition build_tries_for_symbol
     (current_epoch : idx)
     (q_clauses : idx_map (list nat * nat))
-    (tbl : idx_trie (idx * idx))
+    (tbl : idx_trie db_entry)
     : idx_map (idx_trie unit * idx_trie unit) (* full * frontier *)
     :=    
-    let upd_trie_pair (args : list idx) '(epoch,v) '(full, frontier) clause :=
+    let upd_trie_pair (args : list idx) '(Build_db_entry epoch v a) '(full, frontier) clause :=
       match match_clause clause args v with
       | Some assignment =>
           (* TODO: possible issue w/ tuple ordering
@@ -449,12 +511,13 @@ Section WithMap.
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
-    fun '(Build_instance db equiv parents epoch worklist) =>
-      (tt,Build_instance db equiv parents (idx_succ epoch) worklist).
+    fun '(Build_instance db equiv parents epoch worklist analyses) =>
+      (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses).
   
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
-               Build_instance d.(db) d.(equiv) d.(parents) d.(epoch) []).
+               Build_instance d.(db) d.(equiv) d.(parents)
+                              d.(epoch) [] d.(analyses)).
 
   (*
   (*optional addition: return value
@@ -475,17 +538,31 @@ Section WithMap.
 
   (*
     Returns a as a convenience
-    NOTE: removes only from data, not parents or frontier.
+    NOTE: removes only from data, not parents
    *)
-  Definition update_node a old_args : ST atom :=
+  Definition update_node' a old_args out_a : ST atom :=
     fun i =>
       let tbl_update tbl :=
-        map.put (map.remove tbl old_args)
-          a.(atom_args)
-              (i.(epoch),a.(atom_ret))
+        match map.get tbl old_args with
+        | Some entry =>
+            (*TODO: can be done in 2 map traversals, not 3*)
+            map.put (map.remove tbl old_args)
+              a.(atom_args)
+                  (Build_db_entry i.(epoch) a.(atom_ret) out_a)
+        | None => 
+            map.put tbl
+              a.(atom_args)
+                  (Build_db_entry i.(epoch) a.(atom_ret) out_a)
+        end
       in
       let d' := map_update i.(db) a.(atom_fn) tbl_update in
-      (a, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
+      (a, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+
+  Definition update_node a old_args : ST atom :=
+    @! let arg_as <- get_analyses a.(atom_args) in
+      let out_a := analyze a arg_as in
+      let _ <- update_analyses a.(atom_ret) out_a in
+      (update_node' a old_args out_a).
 
   Definition get_parents x : ST (list atom) :=
     fun s =>
@@ -495,12 +572,14 @@ Section WithMap.
   Definition set_parents x ps : ST unit :=
     fun d =>
       let p' := map.put d.(parents) x ps in
-      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)).
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
+      d.(analyses)).
   
   Definition remove_parents x : ST unit :=
     fun d =>
       let p' := map.remove d.(parents) x in
-      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)).
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
+      d.(analyses)).
 
   
   Fixpoint add_parent ps p : ST (list atom) :=
@@ -594,7 +673,8 @@ Section WithMap.
       ret eqb x1' x2'.
 
   Definition empty_egraph : instance :=
-    Build_instance map.empty (empty _ _ _ idx_zero) map.empty idx_zero [].
+    Build_instance map.empty (empty _ _ _ idx_zero)
+      map.empty idx_zero [] map.empty.
 
 
   
@@ -1474,16 +1554,31 @@ Arguments atom_fn {idx symbol}%type_scope a.
 Arguments atom_args {idx symbol}%type_scope a.
 Arguments atom_ret {idx symbol}%type_scope a.
 
-Arguments db {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
-Arguments equiv {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
-Arguments parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
-Arguments epoch {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
-Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
+Arguments db {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
+Arguments equiv {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
+Arguments parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
+Arguments epoch {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
+Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
+
+Existing Class analysis.
+
+#[export] Instance unit_analysis {idx symbol} : analysis idx symbol unit:=
+  {
+    analyze _ _ := tt;
+    analysis_meet _ _ := tt;
+  }.
 
 Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope v v1 _.
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope {H} v v1 _.
 Arguments hash_node {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope f args%list_scope _.
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope {H} f args%list_scope _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
 
@@ -1495,27 +1590,39 @@ Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_s
 
 Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
   {Eqb_symbol} {symbol_map idx_map idx_trie}%function_scope 
+  {analysis_result}%type_scope {H}
   fuel%nat_scope _.
 
 
 Arguments saturate_until' {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
+  {analysis_result}%type_scope {H}
   spaced_list_intersect%function_scope 
   rs P fuel%nat_scope _.
 
 Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
+  {analysis_result}%type_scope {H}
   spaced_list_intersect%function_scope 
   rs P fuel%nat_scope _.
 
 Arguments are_unified {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope x1 x2 _.
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope x1 x2 _.
 
 
 Arguments empty_egraph {idx}%type_scope idx_zero {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope.
+
+
+Arguments canonicalize {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope a _.
+Arguments find {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope
+   {analysis_result}%type_scope a _.
 
 Module PositiveIdx.
 
@@ -1553,3 +1660,49 @@ Module PositiveIdx.
   Compute (generic_join_pos db1 query2).
    *)
 End PositiveIdx.
+
+(*
+Eval cbv [UnionFind.union Mbind Mret] in UnionFind.union.
+
+UnionFind.union =
+fun (idx : Type) (Eqb_idx : Eqb idx) (idx_map : map.map idx idx) (rank_map : map.map idx nat)
+  (h : union_find idx idx_map rank_map) (x y : idx) =>
+@!
+let (h0, cx) <- UnionFind.find idx Eqb_idx idx_map rank_map h x
+in (Mbind
+      (fun '(h1, cy) =>
+       @!
+       if eqb cx cy then ret (h1, cx)
+       else (Mbind
+               (fun rx : nat =>
+                @!
+                let ry <- map.get (rank idx idx_map rank_map h1) cy
+                in match ry ?= rx with
+                   | Eq =>
+                       @!
+                       ret ({|
+                              rank := map.put (rank idx idx_map rank_map h1) cx (Init.Nat.succ rx);
+                              parent := map.put (parent idx idx_map rank_map h1) cy cx;
+                              max_rank :=
+                                Init.Nat.max (max_rank idx idx_map rank_map h1) (Init.Nat.succ rx);
+                              next := next idx idx_map rank_map h1
+                            |}, cx)
+                   | Lt =>
+                       @!
+                       ret ({|
+                              rank := rank idx idx_map rank_map h1;
+                              parent := map.put (parent idx idx_map rank_map h1) cy cx;
+                              max_rank := max_rank idx idx_map rank_map h1;
+                              next := next idx idx_map rank_map h1
+                            |}, cx)
+                   | Gt =>
+                       @!
+                       ret ({|
+                              rank := rank idx idx_map rank_map h1;
+                              parent := map.put (parent idx idx_map rank_map h1) cx cy;
+                              max_rank := max_rank idx idx_map rank_map h1;
+                              next := next idx idx_map rank_map h1
+                            |}, cy)
+                   end) (map.get (rank idx idx_map rank_map h1) cx)))
+      (UnionFind.find idx Eqb_idx idx_map rank_map h0 y))
+*)

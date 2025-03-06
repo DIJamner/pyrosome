@@ -121,15 +121,7 @@ Section WithMap.
     
    *)
 
-  Notation clauses_to_instance := (clauses_to_instance idx_succ).
-
-  (*TODO: move to egraph defs*)
-  Arguments canonicalize {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope a _.
-  Arguments find  {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope a _.
-
-  Definition canonicalize_clause c : state instance (clause _ _) :=
+  Definition canonicalize_clause c {A} : state (instance A) (clause _ _) :=
     match c with
     | atom_clause a => Mfmap atom_clause (canonicalize a)
     | eq_clause x y =>
@@ -141,22 +133,30 @@ Section WithMap.
   (*TODO: duplicated. move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
-  Definition remove_atom a : state instance unit :=
-    fun '(Build_instance _ _ _ _ _ db equiv parents epoch wl) =>
+  Definition remove_atom a {A} : state (instance A) unit :=
+    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an) =>
       let tbl_upd tbl := map.remove tbl a.(atom_args) in
       let db' := map_update db a.(atom_fn) tbl_upd in
-      (tt,Build_instance _ _ _ _ _ db' equiv parents epoch wl).
+      (tt,Build_instance _ _ _ _ _ _ db' equiv parents epoch wl an).
 
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
 Section SequentOfStates.
-  Context {A} (assumptions : state instance A)
-    {B} (conclusions : A -> state instance B).
+  Context {X A} `{analysis idx symbol X}
+    (assumptions : state (instance X) A)
+    {B} (conclusions : A -> state (instance X) B).
   
   (* We keep around the egraph for use in the conclusion,
      but it suffices to discard the equations and just use the assumptions,
      since the atoms of the query will all use the canonical variables.
+
+     TODO: make sure to take in a sufficient fuel.
+     Must be an input to be sound.
    *)
-  Let assumption_inst := (assumptions (empty_egraph idx_zero)).
+  Let assumption_inst :=
+        (@! let a <- assumptions in
+           let _ <- rebuild 1000 in
+           ret a)
+          (empty_egraph idx_zero X).
   Let assumption_atoms := db_to_atoms (snd assumption_inst).(db).
 
   (*
@@ -166,7 +166,11 @@ Section SequentOfStates.
     This will leave a bunch of excess equations in the conclusion,
     but we optimize them out later, and even if we didn't, reflexive unions are cheap.
    *)
-  Let conclusion_inst := snd (uncurry conclusions assumption_inst).
+  Let conclusion_inst :=
+        let comp a :=(@! let b <- conclusions a in
+                        let _ <- rebuild 1000 in
+                        ret b) in
+        snd (uncurry comp assumption_inst).
 
   (* Remove the atoms of the assumptions.
      We remove them rather than not adding them in the first place
@@ -175,7 +179,8 @@ Section SequentOfStates.
    *)
   Let conclusion_inst_dedup :=
         snd (list_Miter
-               (fun a => Mbind remove_atom (canonicalize a))
+               (fun a => Mbind (fun a => remove_atom a (A:=X))
+                           (canonicalize a))
                assumption_atoms
                conclusion_inst).
 
@@ -221,12 +226,16 @@ Section Optimize.
         in
         var_count * var_count.
 
+
+  Notation clauses_to_instance :=
+    (clauses_to_instance idx_succ (analysis_result:=unit)).
+  
   Let sub_and_assumptions :=
         @! let (_,sub) <- clauses_to_instance s.(seq_assumptions) [] in
           let _ <- rebuild fuel in
           ret sub.
 
-  Let conclusions (p : named_list idx idx) : state instance unit :=
+  Let conclusions (p : named_list idx idx) : state (instance unit) unit :=
         Mseq (clauses_to_instance s.(seq_conclusions) p) (rebuild fuel). 
  
   (*A variant that preserves in the type that the assumption has no equations*)

@@ -145,16 +145,18 @@ Section WithMap.
         (idx_map_ok : forall A, map.ok (idx_map A))
         (* TODO: define and assume weak_map_ok*)
         (idx_trie : forall A, map.map (list idx) A)
-        (idx_trie_plus : map_plus idx_trie).
+        (idx_trie_plus : map_plus idx_trie)
+        (analysis_result : Type)
+        `{analysis idx symbol analysis_result}.
 
     
-  Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
+  Notation instance := (instance idx symbol symbol_map idx_map idx_trie analysis_result).
 
   Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
 
   
   Notation alloc :=
-    (alloc idx idx_succ symbol symbol_map idx_map idx_trie).
+    (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result).
   
   Definition rename_lookup (x : idx) : stateT (named_list idx idx) (state instance) idx :=
     fun sub =>
@@ -180,7 +182,7 @@ Section WithMap.
           (lift (Defs.union x' y'))
     | atom_clause a =>
         @! let a' <- rename_atom a in
-        (lift (new_singleton_out _ _ _ _ _ _ a'))
+        (lift (new_singleton_out _ _ _ _ _ _ _ a'))
     end.
 
   Definition clauses_to_instance := list_Miter add_clause_to_instance.
@@ -189,14 +191,14 @@ Section WithMap.
     map (uncurry eq_clause) (map.tuples u.(parent _ _ _)).
 
 
-  Definition row_to_atom f (p : list idx * (idx * idx)) : atom :=
-    let '(k,(_,r)) := p in
-    Build_atom f k r.
+  Definition row_to_atom f (p : list idx * db_entry idx analysis_result) : atom :=
+    let '(k,e) := p in
+    Build_atom f k e.(entry_value _ _).
   
   Definition table_atoms '(f,tbl) : list atom :=
     map (row_to_atom f) (map.tuples tbl).
   
-  Definition db_to_atoms (d :  db_map idx symbol symbol_map idx_trie) :=
+  Definition db_to_atoms (d : db_map idx symbol symbol_map idx_trie analysis_result) :=
     (flat_map table_atoms (map.tuples d)).
   
   Definition instance_to_clauses i :=
@@ -423,13 +425,15 @@ Abort.
 
 
   
+  Context (analysis_result : Type).
 
-  Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
+  Notation instance :=
+    (instance idx symbol symbol_map idx_map idx_trie analysis_result).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
   Definition atom_in_egraph a (i : instance) :=
-    (map.get i.(db _ _ _ _ _) a.(atom_fn)) <$>
+    (map.get i.(db) a.(atom_fn)) <$>
       (fun tbl => (map.get tbl a.(atom_args)) <$>
-                    (fun r => snd r = a.(atom_ret))).
+                    (fun r => r.(entry_value _ _) = a.(atom_ret))).
 
   (*
   (*Defined separately for proof convenience.
@@ -469,7 +473,7 @@ Abort.
         forall i1 i2,
           Is_Some (idx_interpretation i1) ->
           (*Is_Some (idx_interpretation i2) ->*)
-          uf_rel _ _ _ e.(equiv _ _ _ _ _) i1 i2 ->
+          uf_rel _ _ _ e.(equiv) i1 i2 ->
           SomeRel m.(domain_eq) (idx_interpretation i1) (idx_interpretation i2);      
         parents_interpretation :
         (* Parents do not have to exist in the egraph (and may not, during rebuilding)
@@ -507,7 +511,7 @@ Abort.
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
 
-  Theorem empty_sound rs : egraph_sound (empty_egraph idx_zero) rs.
+  Theorem empty_sound rs : egraph_sound (empty_egraph idx_zero analysis_result) rs.
   Proof.
     unfold empty_egraph.
     constructor.
@@ -560,7 +564,7 @@ Abort.
   Qed.
 
   Lemma increment_epoch_sound rs
-    : inst_computation_sound (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie) rs.
+    : inst_computation_sound (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result) rs.
   Proof.
     unfold increment_epoch, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
@@ -572,7 +576,7 @@ Abort.
   Qed.
 
   Lemma pull_worklist_sound rs
-    : inst_computation_sound (pull_worklist idx symbol symbol_map idx_map idx_trie) rs.
+    : inst_computation_sound (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) rs.
   Proof.
     unfold pull_worklist, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
@@ -860,15 +864,15 @@ Abort.
   Lemma find_sound (P : _ -> Prop) a
     : (forall e, P e -> exists l,
             forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) e.(equiv))) ->
-      (forall db equiv equiv' parents epoch worklist l,
+      (forall db equiv equiv' parents epoch worklist analyses l,
           forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) equiv) ->
           forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) equiv') ->
           iff2 (uf_rel _ _ _ equiv) (uf_rel _ _ _ equiv') ->
-          P (Build_instance _ _ _ _ _ db equiv parents epoch worklist) ->
+          P (Build_instance _ _ _ _ _ _ db equiv parents epoch worklist analyses) ->
           (* TODO: how to express that the roots are the same?*)
-          P (Build_instance _ _ _ _ _ db equiv' parents epoch worklist)) ->
+          P (Build_instance _ _ _ _ _ _ db equiv' parents epoch worklist analyses)) ->
       state_triple P
-        (find idx Eqb_idx symbol symbol_map idx_map idx_trie a)
+        (find a)
         (fun p => P (snd p) /\ uf_rel _ _ _ (snd p).(equiv) (fst p) a).
   Proof.
     intros Hforest Hequiv.
@@ -876,10 +880,9 @@ Abort.
     destruct e; basic_goal_prep.
     case_match; basic_goal_prep.
     {
-      symmetry in HeqH0.
       specialize (Hforest _ H).
       break.
-      eapply find_spec in HeqH0; eauto.
+      eapply find_spec in  case_match_eqn; eauto.
       2:Lia.lia.
       {
         intuition eauto.
@@ -947,7 +950,7 @@ Abort.
   
   Lemma get_parents_sound a rs
     : state_triple (fun e => egraph_sound e rs)
-        (get_parents idx symbol symbol_map idx_map idx_trie a)
+        (get_parents idx symbol symbol_map idx_map idx_trie analysis_result a)
         (get_parents_postcondition rs).
         (*(fun p => egraph_sound (snd p) rs /\ all (fun a => atom_in_egraph a (snd p)) (fst p)).*)
   Proof.
@@ -1058,7 +1061,8 @@ Abort.
     unfold atom_in_egraph.
     repeat (match_some_satisfying; cbn;[]).
     basic_goal_prep.
-    eqb_case i0 (atom_ret a); intuition eauto.
+    destruct d; cbn.
+    eqb_case entry_value (atom_ret a); intuition eauto.
   Qed.
 
   (*TODO: update
@@ -1217,10 +1221,10 @@ Abort.
     case_match.
     2:{ basic_goal_prep; basic_utils_crush. }
     assert (Is_Some (interp a)) as HiaS.
-    { unfold Is_Some; rewrite <- HeqH1; eauto. }
+    { unfold Is_Some; rewrite  case_match_eqn; eauto. }
     eapply rel_interpretation0 in HiaS; intuition eauto.
     unfold SomeRel in HiaS.
-    rewrite <- HeqH1 in *.
+    rewrite  case_match_eqn in *.
     revert HiaS; case_match; try tauto.
     case_match; basic_goal_prep; basic_utils_crush.
     case_match; basic_goal_prep; basic_utils_crush.
@@ -1322,15 +1326,15 @@ Abort.
   Lemma canonicalize_sound (P : _ -> Prop) a
     : (forall e, P e -> exists l,
             forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) e.(equiv))) ->
-      (forall db equiv equiv' parents epoch worklist l,
+      (forall db equiv equiv' parents epoch worklist analyses l,
           forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) equiv) ->
           forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) equiv') ->
           iff2 (uf_rel _ _ _ equiv) (uf_rel _ _ _ equiv') ->
-          P (Build_instance _ _ _ _ _ db equiv parents epoch worklist) ->
+          P (Build_instance _ _ _ _ _ _ db equiv parents epoch worklist analyses) ->
           (* TODO: how to express that the roots are the same?*)
-          P (Build_instance _ _ _ _ _ db equiv' parents epoch worklist)) ->
+          P (Build_instance _ _ _ _ _ _ db equiv' parents epoch worklist analyses)) ->
       state_triple P
-        (canonicalize idx Eqb_idx symbol symbol_map idx_map idx_trie a)
+        (canonicalize a)
         (fun p => P (snd p) /\ atom_rel (snd p).(equiv) (fst p) a).
   Proof.
     intros Hforest Hequiv.
@@ -1378,15 +1382,15 @@ Abort.
   Qed.
 
   
-  Lemma get_parents_postcondition_equiv_update db equiv equiv' parents epoch worklist l rs roots
+  Lemma get_parents_postcondition_equiv_update db equiv equiv' parents epoch worklist analyses l rs roots
     : forest idx (idx_map idx) roots (parent idx (idx_map idx) (idx_map nat) equiv) ->
       forest idx (idx_map idx) roots (parent idx (idx_map idx) (idx_map nat) equiv') ->
       iff2 (uf_rel idx (idx_map idx) (idx_map nat) equiv)
         (uf_rel idx (idx_map idx) (idx_map nat) equiv') ->
       get_parents_postcondition rs (l,
-          {| db := db; equiv := equiv; parents := parents; epoch := epoch; worklist := worklist |}) ->
+          {| db := db; equiv := equiv; parents := parents; epoch := epoch; worklist := worklist; analyses:= analyses |}) ->
       get_parents_postcondition rs
-        (l, {| db := db; equiv := equiv'; parents := parents; epoch := epoch; worklist := worklist |}).
+        (l, {| db := db; equiv := equiv'; parents := parents; epoch := epoch; worklist := worklist; analyses:= analyses  |}).
   Proof.
     clear idx_zero idx_succ.
     destruct 4 as [ [ ] ?]; cbn in *.
@@ -1448,10 +1452,11 @@ Abort.
       basic_utils_crush.
     }
   Qed.
-    
+
+  Context `{analysis idx symbol analysis_result}.
   
   Lemma repair_sound a rs
-    : inst_computation_sound (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie a) rs.
+    : inst_computation_sound (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie analysis_result a) rs.
   Proof.
     (*TODO: update
     unfold repair.
@@ -1715,6 +1720,7 @@ Abort.
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope
   a i.
 
 Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
@@ -1733,16 +1739,21 @@ Arguments atom_clause {idx symbol}%type_scope a.
 
 Arguments clauses_to_instance {idx}%type_scope {Eqb_idx}
   idx_succ%function_scope
-  {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope 
+  {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope
+  {H}
   l%list_scope _ _.
 
 
 Arguments instance_to_clauses {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope i.
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
 
 
 Arguments db_to_atoms {idx symbol}%type_scope
-  {symbol_map idx_trie}%function_scope d.
+  {symbol_map idx_trie}%function_scope 
+  {analysis_result}%type_scope
+  d.
 
 
 Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.

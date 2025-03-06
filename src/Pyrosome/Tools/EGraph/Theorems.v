@@ -114,7 +114,7 @@ Section WithVar.
   Context (sort_of : V).
 
   Section Properties.
-    Context (l : lang) (i : instance).
+    Context (l : lang) {X} (i : instance X).
 
     Context (sort_of_fresh : fresh sort_of l).
 
@@ -174,7 +174,8 @@ Section WithVar.
       cbv[default option_default].
       repeat (case_match; cbn; try congruence).
       subst.
-      apply named_list_lookup_err_in in HeqH0.
+      symmetry in case_match_eqn.
+      apply named_list_lookup_err_in in case_match_eqn.
       basic_goal_prep;
         basic_utils_crush.
       apply lm_wf_sort;
@@ -184,7 +185,7 @@ Section WithVar.
       {
         change (scon v0 l2 [/with_names_from n l0 /])
           with (scon v0 l2) [/with_names_from n l0 /].
-        revert HeqH0.
+        revert case_match_eqn.
         generalize (scon v0 l2).
         clear v0 l2.
         intros.
@@ -197,7 +198,7 @@ Section WithVar.
         break.
         remember (con v l0) as e.
         revert Heqe.
-        revert H0 HeqH0.
+        revert H0 case_match_eqn.
         induction 1;
           basic_goal_prep;
           basic_core_crush.
@@ -206,7 +207,7 @@ Section WithVar.
       }
       {
         safe_invert H0. 
-        eapply in_all_fresh_same in HeqH0; eauto;
+        eapply in_all_fresh_same in case_match_eqn; eauto;
           basic_core_crush.
       }
     Qed.
@@ -696,9 +697,6 @@ Section WithVar.
     How to define?
 
      *)
-    Arguments equiv {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope i.
-    Arguments canonicalize {idx} {Eqb_idx} {symbol}%type_scope
-      {symbol_map idx_map idx_trie}%function_scope a.
     Arguments uf_rel {idx}%type_scope {idx_map rank_map} uf1 _ _.
 
     (*TODO: move to FunctionalDB.v*)
@@ -774,7 +772,7 @@ Section WithVar.
         destruct H as [ex [tx H] ].
         intuition idtac.
         cbn in *.
-        assert (interp_uf _ _ _ _ i.(equiv _ _ _ _ _) ex ex) by admit
+        assert (interp_uf _ _ _ _ i.(equiv) ex ex) by admit
         (*TODO: need to know ex in uf*).
        (* eapply Hwf in H2.
         break.
