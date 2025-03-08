@@ -232,11 +232,11 @@ Section Optimize.
   
   Let sub_and_assumptions :=
         @! let (_,sub) <- clauses_to_instance s.(seq_assumptions) [] in
-          let _ <- rebuild fuel in
+         (* let _ <- rebuild fuel in TODO: rebuilds above already *)
           ret sub.
 
-  Let conclusions (p : named_list idx idx) : state (instance unit) unit :=
-        Mseq (clauses_to_instance s.(seq_conclusions) p) (rebuild fuel). 
+  Let conclusions (p : named_list idx idx) : state (instance unit) _ :=
+        (*Mseq *) (clauses_to_instance s.(seq_conclusions) p) (* (rebuild fuel) *). 
  
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.

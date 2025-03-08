@@ -88,6 +88,7 @@ Section WithMap.
       (* gets an atom and the analyses of its children *)
       analyze : atom -> list analysis_result -> analysis_result;
       analysis_meet :  analysis_result -> analysis_result -> analysis_result;
+      analysis_default :: WithDefault analysis_result;
     }.
 
   Context `{analysis}.
@@ -221,13 +222,16 @@ Section WithMap.
       (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
       if eqb v v1 then (v,d)
       else
+        let new_analysis :=
+          unwrap_with_default
+            (@!let v_analysis <- map.get d.(analyses) v in
+               let v1_analysis <- map.get d.(analyses) v1 in
+               ret (analysis_meet v_analysis v1_analysis))
+        in
         (*should always return Some if v in uf *)
-        @unwrap_with_default _ (v,d)
+        @unwrap_with_default _  (v,d)
         (@!let (uf', v') <- UnionFind.union _ _ _ _ d.(equiv) v v1 in
              let v_old := if eqb v v' then v1 else v in
-             let v_analysis <- map.get d.(analyses) v in
-             let v1_analysis <- map.get d.(analyses) v1 in
-             let new_analysis := analysis_meet v_analysis v1_analysis in
              let analyses' :=
                    (*TODO: doesn't garbage collect right now *)
                    map.put (map.put d.(analyses) v new_analysis)

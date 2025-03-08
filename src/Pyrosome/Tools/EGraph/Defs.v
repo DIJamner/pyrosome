@@ -372,7 +372,7 @@ Section WithVar.
     | term_eq_rule c e1 e2 t => 
         sequent_of_states
           (@!let sub <- add_ctx false c in
-             let x1 <- add_open_term false [] e1 in
+             let x1 <- add_open_term false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)
           (fun '(sub,x1) =>
