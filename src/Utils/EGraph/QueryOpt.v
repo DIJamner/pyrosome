@@ -25,6 +25,7 @@ Section WithMap.
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
       (default_symbol : WithDefault symbol).
 
+  Existing Instance Eqb_idx.
   Existing Instance idx_zero.
   Existing Instance default_symbol.
   
@@ -33,6 +34,7 @@ Section WithMap.
 
   Context 
       (idx_map : forall A, map.map idx A)
+        (idx_map_plus : map_plus idx_map)
         (idx_map_ok : forall A, map.ok (idx_map A))
         (* TODO: define and assume weak_map_ok*)
         (idx_trie : forall A, map.map (list idx) A)
@@ -40,8 +42,6 @@ Section WithMap.
 
   Notation atom := (atom idx symbol).
   Notation sequent := (sequent idx symbol).
-
-  Notation hash_node := (hash_node idx_succ).
   
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie).
 
@@ -139,6 +139,22 @@ Section WithMap.
       let db' := map_update db a.(atom_fn) tbl_upd in
       (tt,Build_instance _ _ _ _ _ _ db' equiv parents epoch wl an).
 
+  
+  Definition force_uf (uf : union_find idx (idx_map idx) (idx_map nat)) :=
+    let force_parent x :=
+      match UnionFind.find _ _ _ _ uf x with
+      | Some y => snd y
+      | None => (*never happens *) x
+      end in
+    let rank' := map_map (fun _ => 1) uf.(rank _ _ _) in
+    let parent' := map_map force_parent uf.(parent _ _ _) in
+    MkUF _ _ _ rank' parent' 1 uf.(next _ _ _).
+    
+  Definition force_equiv {X} : state (instance X) unit :=
+    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an) =>
+      let equiv' := force_uf equiv in
+      (tt,Build_instance _ _ _ _ _ _ db equiv' parents epoch wl an).
+
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
 Section SequentOfStates.
   Context {X A} `{analysis idx symbol X}
@@ -164,11 +180,16 @@ Section SequentOfStates.
     any conclusion variables that were unified by assumption simplification.
 
     This will leave a bunch of excess equations in the conclusion,
-    but we optimize them out later, and even if we didn't, reflexive unions are cheap.
+    but we optimize them out later, and even if we didn't, reflexive & fresh unions are cheap.
+
+    Note: force_equiv guarantees that the union-find is rank 1.
+    This means that when eliminating dead equations later,
+    we do not need to consider transitivity.
    *)
   Let conclusion_inst :=
         let comp a :=(@! let b <- conclusions a in
                         let _ <- rebuild 1000 in
+                        let _ <- force_equiv in
                         ret b) in
         snd (uncurry comp assumption_inst).
 
@@ -191,15 +212,28 @@ Section SequentOfStates.
   Let conclusion_eqs_verbose : list (_*_) :=
         map.tuples conclusion_inst.(equiv).(parent _ _ _).
 
-  (* TODO: remove all spurious equations.
-     One option: fully shorten every path,
-     then eliminate every eqn whose lhs (maybe rhs? one) is unused.
-   *)
+  (* Check whether the variable is in any atoms (conclusion or assumptions) *)
+  Let conclusion_var_in_atoms x :=
+    existsb (fun a => orb (eqb a.(atom_ret) x)
+                        (inb x a.(atom_args)))
+      (assumption_atoms ++ conclusion_atoms).
 
-  (*TODO: should be optimized more*)
+  Let live_eqn x y :=
+        (* filter out all reflexive equalities,
+           as well as all equalities where one of the variables is not in the atomsz
+         *)
+        andb (andb (negb (eqb x y))
+                   (*TODO: double check! should check query, not conclusion *)
+                (conclusion_var_in_atoms x))
+                (conclusion_var_in_atoms y).
+  
+  (*TODO: should be optimized more; current implementation unfinished*)
   Let conclusion_eqs_final :=
-        (* filter out all reflexive equalities*)
-        filter (fun '(x,y) => negb (eqb x y)) conclusion_eqs_verbose.
+        (* filter out the obviously dead equations*)
+       (*TODO: debug filter (fun '(x,y) => negb (can_erase y))  *)
+        filter (fun '(x,y) => live_eqn x y)
+          conclusion_eqs_verbose.
+
  
   (*A variant that preserves in the type that the assumption has no equations*)
   Definition sequent'_of_states := 
@@ -209,6 +243,17 @@ Section SequentOfStates.
   Definition sequent_of_states := 
     Build_sequent _ _ (map atom_clause assumption_atoms)
       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
+
+  (* Diagnostics. For debugging only*)
+
+  Definition seq_of_S_assumption_atoms := assumption_atoms.
+  Definition seq_of_S_assumption_eqns := map.tuples (snd assumption_inst).(equiv).(parent _ _ _).
+  Definition seq_of_S_conclusion_atoms :=  db_to_atoms conclusion_inst.(db).
+  Definition seq_of_S_live_eqn := live_eqn.
+  Definition seq_of_S_in_atom := conclusion_var_in_atoms.
+  Definition seq_of_S_verbose := conclusion_eqs_verbose.
+
+  (************************)
 
 End SequentOfStates.
 
@@ -242,6 +287,18 @@ Section Optimize.
   Definition optimize_sequent' := sequent'_of_states sub_and_assumptions conclusions.
   
   Definition optimize_sequent := sequent_of_states sub_and_assumptions conclusions.
+
+  
+  (* Diagnostics. For debugging only*)
+
+  Definition opt_assumption_atoms := seq_of_S_assumption_atoms sub_and_assumptions.
+  Definition opt_assumption_eqns := seq_of_S_assumption_eqns sub_and_assumptions.
+  Definition opt_conclusion_atoms := seq_of_S_conclusion_atoms sub_and_assumptions conclusions.
+  Definition opt_live_eqn := seq_of_S_live_eqn sub_and_assumptions conclusions.
+  Definition opt_in_atom := seq_of_S_in_atom sub_and_assumptions conclusions.
+  Definition opt_verbose := seq_of_S_verbose  sub_and_assumptions conclusions.
+
+  (************************)
 
 End Optimize.
 
@@ -339,4 +396,9 @@ End WithMap.
 
 Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
   {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus} 
-  {idx_map idx_trie}%function_scope rules%list_scope.
+  {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope rules%list_scope.
+
+Arguments QueryOpt.sequent_of_states {idx}%type_scope {Eqb_idx} 
+  {idx_zero} {symbol}%type_scope {Eqb_symbol} {symbol_map idx_map}%function_scope
+  {idx_map_plus} {idx_trie}%function_scope {X A}%type_scope {H} 
+  assumptions {B}%type_scope conclusions%function_scope.

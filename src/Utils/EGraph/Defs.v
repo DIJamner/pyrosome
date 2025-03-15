@@ -25,7 +25,7 @@ Section WithMap.
 
       (*TODO: just extend to Natlike?*)
       (idx_succ : idx -> idx)
-      (idx_zero : idx)
+      (idx_zero : WithDefault idx)
       (*TODO: any reason to have separate from idx?*)
     (symbol : Type)
       (Eqb_symbol : Eqb symbol)
@@ -116,6 +116,11 @@ Section WithMap.
        *)
       analyses : idx_map analysis_result;
     }.
+
+  
+  Definition empty_egraph : instance :=
+    Build_instance map.empty (empty _ _ _ idx_zero)
+      map.empty idx_zero [] map.empty.
 
   Record erule_query_ptr :=
     {
@@ -228,8 +233,10 @@ Section WithMap.
                let v1_analysis <- map.get d.(analyses) v1 in
                ret (analysis_meet v_analysis v1_analysis))
         in
-        (*should always return Some if v in uf *)
-        @unwrap_with_default _  (v,d)
+        (*should always return Some if v in uf.
+          Use defaults here to make masking an error less likely
+         *)
+        @unwrap_with_default _  (idx_zero : idx,empty_egraph)
         (@!let (uf', v') <- UnionFind.union _ _ _ _ d.(equiv) v v1 in
              let v_old := if eqb v v' then v1 else v in
              let analyses' :=
@@ -267,28 +274,7 @@ Section WithMap.
 
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
-  
-  Definition new_singleton_out' a out_a : ST idx :=
-    fun i =>
-      let tbl_upd tbl :=
-        map.put tbl a.(atom_args)
-                        (Build_db_entry i.(epoch) a.(atom_ret) out_a) in
-      let db' := map_update i.(db) a.(atom_fn) tbl_upd in
-      (* Add the node as a parent of its output.
-         This is necessary to ensure output ids stay canonical,
-         which matters for matching.
 
-         Dedup the args to avoid adding a node twice.
-       *)
-      let parents' := fold_left (fun m x => map_update m x (cons a))
-                        (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
-      (a.(atom_ret), Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
-
-  Definition new_singleton_out a : ST idx :=
-    @! let arg_as <- get_analyses a.(atom_args) in
-      let out_a := analyze a arg_as in
-      let _ <- update_analyses a.(atom_ret) out_a in
-      (new_singleton_out' a out_a).
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -308,32 +294,81 @@ Section WithMap.
       let o' <- find o in
       ret Build_atom f args' o'.
 
-  
-  (*
-    takes in an idx that should be unified with the output (but doe no unification)
-    Guarantees not to allocate a fresh idx
-    TODO: move function boundary for a better spec
-   *)
-  Definition hash_node_out a : ST idx :=
+
+  Definition get_db : ST db_map := fun i => (i.(db),i).
+  Definition set_db d : ST unit :=
+    fun i => (tt,Build_instance d i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+
+  Definition db_lookup f args : ST (option idx) :=
     fun i =>
-      match map.get i.(db) a.(atom_fn) with
-      | Some tbl =>
-          match map.get tbl a.(atom_args) with
-          | Some (Build_db_entry _ x _) => (x, i)
-          | None => new_singleton_out a i
-          end
-      | None => new_singleton_out a i
-      end.
+      (@! let tbl <- map.get i.(db) f in
+         let e <- map.get tbl args in
+         ret e.(entry_value) , i).
+
+  (* sets an entry in the db and updates parents appropriately *)
+  Definition db_set' a out_a : ST unit :=
+    fun i =>
+      let tbl_upd tbl :=
+        map.put tbl a.(atom_args)
+                        (Build_db_entry i.(epoch) a.(atom_ret) out_a) in
+      let db' := map_update i.(db) a.(atom_fn) tbl_upd in
+      (* Add the node as a parent of its output.
+         This is necessary to ensure output ids stay canonical,
+         which matters for matching.
+
+         Dedup the args to avoid adding a node twice.
+       *)
+      let parents' := fold_left (fun m x => map_update m x (cons a))
+                        (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
+      (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
 
   
-  (* accesses the egraph like a hashcons.
-     If the node exists, return its id.
-     Otherwise, generate a fresh id, store it, and return it
-     TODO: generates extra idxs when the node already exists
+  (* sets an entry in the db and updates parents and analyses appropriately *)
+  Definition db_set a : ST unit :=
+    @! let arg_as <- get_analyses a.(atom_args) in
+      let out_a := analyze a arg_as in
+      let _ <- update_analyses a.(atom_ret) out_a in
+      (db_set' a out_a).
+
+  
+  (* removes an entry in the db *)
+  Definition db_remove a : ST unit :=
+    fun i =>
+      let db' := map_update i.(db) a.(atom_fn) (Basics.flip map.remove a.(atom_args)) in
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+
+  
+  (*
+    Updates the egraph so that it contains a,
+    without invalidating any prior facts,
+    up to rebuilding.
+    May union the ret value of a if a prior value exists.
+
+    TODO: turn lookup + set into one tree traversal.
    *)
-  Definition hash_node (f : symbol) args : ST idx :=
-    @! let out <- alloc in
-      (hash_node_out (Build_atom f args out)).
+  Definition update_entry a : ST unit :=
+    @! let mout <- db_lookup a.(atom_fn) a.(atom_args) in
+      match mout with
+      | Some r => Mseq (union r a.(atom_ret)) (Mret tt)
+      | None => db_set a
+      end.     
+
+  (*
+    Updates the egraph so that it contains an atom with the given symbol and args,
+    without invalidating any prior facts.
+    Generates a new ret value if it is a new atom
+   *)
+  Definition hash_entry f args : ST idx :=
+    @!let args <- list_Mmap find args in
+      let mout <- db_lookup f args in
+      match mout with
+      | Some r => Mret r
+      | None =>
+          @!let r <- alloc in
+            let _ <- (db_set (Build_atom f args r)) in
+            ret r
+      end.
+  
 
   (* takes the current env as an accumulator for convenience *)
   Definition allocate_existential_vars (* write_vars env_acc *)
@@ -343,17 +378,13 @@ Section WithMap.
                      ret (map.put acc x v)).
   
   (* writes the clause to the egraph, assuming env maps all free variables to idxs *)
-  Definition exec_clause (env : idx_map idx) (c : atom) : ST _ :=
+  Definition exec_clause (env : idx_map idx) (c : atom) : ST unit :=
     (* assume: all idxs are keys in env *)
     let args_vals := map (fun x => unwrap_with_default (H:=idx_zero) (map.get env x)) c.(atom_args) in
     let out_val := unwrap_with_default (H:=idx_zero) (map.get env c.(atom_ret)) in
     @!let args_vals' <- list_Mmap find args_vals in
       let out_val' <- find out_val in
-      let i <- hash_node_out (Build_atom c.(atom_fn) args_vals' out_val') in
-      (* will be a noop if hash_node_out allocates a fresh singleton
-         TODO: this union is suspicious
-       *)
-      (union i out_val').
+      (update_entry (Build_atom c.(atom_fn) args_vals' out_val')).
    
   
   Definition exec_write r assignment : ST unit :=
@@ -517,6 +548,8 @@ Section WithMap.
   Definition increment_epoch : ST unit :=
     fun '(Build_instance db equiv parents epoch worklist analyses) =>
       (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses).
+
+  Definition get_epoch : ST idx := fun i => (i.(epoch), i).
   
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
@@ -540,33 +573,6 @@ Section WithMap.
       (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
   *)
 
-  (*
-    Returns a as a convenience
-    NOTE: removes only from data, not parents
-   *)
-  Definition update_node' a old_args out_a : ST atom :=
-    fun i =>
-      let tbl_update tbl :=
-        match map.get tbl old_args with
-        | Some entry =>
-            (*TODO: can be done in 2 map traversals, not 3*)
-            map.put (map.remove tbl old_args)
-              a.(atom_args)
-                  (Build_db_entry i.(epoch) a.(atom_ret) out_a)
-        | None => 
-            map.put tbl
-              a.(atom_args)
-                  (Build_db_entry i.(epoch) a.(atom_ret) out_a)
-        end
-      in
-      let d' := map_update i.(db) a.(atom_fn) tbl_update in
-      (a, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
-
-  Definition update_node a old_args : ST atom :=
-    @! let arg_as <- get_analyses a.(atom_args) in
-      let out_a := analyze a arg_as in
-      let _ <- update_analyses a.(atom_ret) out_a in
-      (update_node' a old_args out_a).
 
   Definition get_parents x : ST (list atom) :=
     fun s =>
@@ -585,7 +591,8 @@ Section WithMap.
       (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
       d.(analyses)).
 
-  
+
+  (*TODO: think about when add_parent triggers unions *)
   Fixpoint add_parent ps p : ST (list atom) :=
     match ps with
     | [] => Mret [p]
@@ -602,17 +609,14 @@ Section WithMap.
     (f : A -> M A') (g : B -> M B') (p: A * B) : M (A' * B')%type :=
     @! let x <- f (fst p) in
       let y <- g (snd p) in
-      ret (x,y).
+      ret (x,y).  
   
   Definition repair '(x_old,x_canonical) : ST unit :=
     let repair_each a : ST atom :=
-      @!let {ST} a' <- canonicalize a in
-        (* Don't update if it's already canonical,
-           to avoid falsely bumping the epoch
-         *)
-        if eqb a a'
-        then ret {ST} a
-        else (update_node a' a.(atom_args))
+      @!let _ <- db_remove a in
+        let {ST} a' <- canonicalize a in
+        let _ <- update_entry a' in
+        ret a'
     in
     (* TODO: a one-op remove-and-return would be useful*)
     @! let old_ps <- get_parents x_old in
@@ -676,9 +680,6 @@ Section WithMap.
       let x2' <- find x2 in
       ret eqb x1' x2'.
 
-  Definition empty_egraph : instance :=
-    Build_instance map.empty (empty _ _ _ idx_zero)
-      map.empty idx_zero [] map.empty.
 
 
   
@@ -1577,22 +1578,27 @@ Existing Class analysis.
     analysis_meet _ _ := tt;
   }.
 
-Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+Arguments union {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope {H} v v1 _.
-Arguments hash_node {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope {H} f args%list_scope _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
 
 
+Arguments update_entry {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+  {H} a _.
+
+
+Arguments hash_entry {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+  {H} f args%list_scope _.
   
 Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
   query_clauses compiled_rules%list_scope.
 
 
-Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
+Arguments rebuild {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope 
   {Eqb_symbol} {symbol_map idx_map idx_trie}%function_scope 
   {analysis_result}%type_scope {H}
   fuel%nat_scope _.

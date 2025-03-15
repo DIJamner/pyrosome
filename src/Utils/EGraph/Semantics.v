@@ -58,11 +58,13 @@ Section WithMap.
 
       (*TODO: just extend to Natlike?*)
       (idx_succ : idx -> idx)
-      (idx_zero : idx)
+      (idx_zero : WithDefault idx)
       (*TODO: any reason to have separate from idx?*)
       (symbol : Type)
       (Eqb_symbol : Eqb symbol)
       (Eqb_symbol_ok : Eqb_ok Eqb_symbol).
+
+  Existing Instance idx_zero.
 
   Notation atom := (atom idx symbol).
 
@@ -170,19 +172,19 @@ Section WithMap.
     let (f, args, out) := a in
     @! let args' <- list_Mmap rename_lookup args in
       let out' <- rename_lookup out in
-      ret Build_atom f args out.
+      ret Build_atom f args' out'.
 
   (*TODO: output type? should be unit, but doesn't really matter *)
   Definition add_clause_to_instance c
-    : stateT (named_list idx idx) (state instance) idx :=
+    : stateT (named_list idx idx) (state instance) unit :=
     match c with
     | eq_clause x y =>
         @! let x' <- rename_lookup x in
           let y' <- rename_lookup y in
-          (lift (Defs.union x' y'))
+          (Mseq (lift (Defs.union x' y')) (Mret tt))
     | atom_clause a =>
         @! let a' <- rename_atom a in
-        (lift (new_singleton_out _ _ _ _ _ _ _ a'))
+        (lift (update_entry a'))
     end.
 
   Definition clauses_to_instance := list_Miter add_clause_to_instance.
@@ -1456,7 +1458,7 @@ Abort.
   Context `{analysis idx symbol analysis_result}.
   
   Lemma repair_sound a rs
-    : inst_computation_sound (repair idx Eqb_idx symbol Eqb_symbol symbol_map idx_map idx_trie analysis_result a) rs.
+    : inst_computation_sound (repair idx Eqb_idx _ symbol Eqb_symbol symbol_map idx_map idx_trie analysis_result a) rs.
   Proof.
     (*TODO: update
     unfold repair.
@@ -1738,7 +1740,7 @@ Arguments atom_clause {idx symbol}%type_scope a.
 
 
 Arguments clauses_to_instance {idx}%type_scope {Eqb_idx}
-  idx_succ%function_scope
+  idx_succ%function_scope {idx_zero}
   {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope
   {H}

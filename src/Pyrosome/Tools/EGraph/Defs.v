@@ -113,6 +113,7 @@ Section WithVar.
       `{analysis V V analysis_result}.
 
     Local Notation instance := (instance analysis_result).
+    Local Notation hash_entry := (hash_entry succ).
 
 
     Section SortFlag.
@@ -120,8 +121,6 @@ Section WithVar.
        Default to true for writes and false for queries.
      *)
     Context (with_sorts : bool).
-
-    Local Notation hash_node := (hash_node succ).
 
     Section __.
       Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
@@ -137,12 +136,11 @@ Section WithVar.
             match named_list_lookup_err l n with
             | Some (term_rule c args t) =>
                 @! let s' <- list_Mmap (add_open_term' sub) s in
-                  let x <- hash_node n s' in
+                  let x <- hash_entry n s' in
                   if with_sorts then
                     let tsub := combine (map fst c) s' in
                     let tx <- add_open_sort tsub t in
-                    (* TODO: allocates extra id when the node is fresh *)
-                    let tx' <- hash_node sort_of [x] in
+                    let tx' <- hash_entry sort_of [x] in
                     let _ <- union tx tx' in
                     ret x
                   else ret x
@@ -158,7 +156,7 @@ Section WithVar.
       | S fuel =>
         let (n,s) := t in
         @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
-          (hash_node n s')
+          (hash_entry n s')
       end.
 
     (*
@@ -183,8 +181,7 @@ Section WithVar.
                           so we make sure to allocate a fresh one
                       *)
                      let {(state instance)} x' <- alloc in
-                     (* TODO: allocates extra id when the node is fresh *)
-                     let tx' <- hash_node sort_of [x'] in
+                     let tx' <- hash_entry sort_of [x'] in
                      let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
 
@@ -339,9 +336,6 @@ Section WithVar.
     order vars from greatest to least
       
    *)
-
-  Notation sequent_of_states :=
-    (sequent_of_states V V_Eqb V_default V _ _ _ _).
   (*
     
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
@@ -430,11 +424,10 @@ Section WithVar.
         `{analysis V V X}.
 
       
-      Local Notation hash_node :=
-        (hash_node (symbol:=V) succ (analysis_result:=X)).
+    Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=X)).
       
     Definition egraph_sort_of (x t : V) : state (instance X) bool :=
-      @! let t0 <- hash_node sort_of [x] in
+      @! let t0 <- hash_entry sort_of [x] in
         let t1 <- find t in
         ret eqb t0 t1.
 
@@ -443,13 +436,18 @@ Section WithVar.
         let b2 <- are_unified x1 x2 in
         ret (andb b1 b2).
 
+    (*TODO: move to Utils *)
+    Instance WithDefault_squared {V} `{WithDefault V}
+      : WithDefault (WithDefault V) := ltac:(assumption).
+    
     Definition egraph_equal l (rws : rule_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state (instance X) bool :=
-        @!let x1 <- add_open_term l true [] e1 in
-          let x2 <- add_open_term l true [] e2 in
-          let xt <- add_open_sort l true [] t in
-          let _ <- rebuild 1000 (*TODO: magic number *) in
-          (saturate_until succ default spaced_list_intersect rws (eq_proven x1 x2 xt) fuel)
+        @!let {(state (instance X))} x1 <- add_open_term l true [] e1 in
+          let {(state (instance X))} x2 <- add_open_term l true [] e2 in
+          let {(state (instance X))} xt <- add_open_sort l true [] t in
+          let {(state (instance X))} _ <- rebuild 1000 (*TODO: magic number *) in
+          (saturate_until succ V_default
+             spaced_list_intersect rws (eq_proven x1 x2 xt) fuel)
       in (comp (empty_egraph default X)).
 
     End __.
@@ -815,7 +813,7 @@ Module PositiveInstantiation.
           end
       end.
     
-    Fixpoint pt_remove pt k {struct k} :=
+    Definition pt_remove pt k :=
       match pt with
       | None => None
       | Some ptr => pt_remove' ptr k
