@@ -647,6 +647,9 @@ Section WithVar.
         | Some a', Some b' => Some (BinPos.Pos.add a' b')
         end.
 
+      (*TODO: move this somewhere better*)
+      Existing Instance PositiveIdx.positive_Eqb.
+
       Instance weighted_depth_analysis : analysis V V (option positive) :=
         {
           analyze a arg_as :=

@@ -89,9 +89,18 @@ Section WithMap.
       analyze : atom -> list analysis_result -> analysis_result;
       analysis_meet :  analysis_result -> analysis_result -> analysis_result;
       analysis_default :: WithDefault analysis_result;
+      analysis_eqb :: Eqb analysis_result;
     }.
 
   Context `{analysis}.
+
+  
+  #[export] Instance db_entry_default : WithDefault db_entry :=
+    Build_db_entry default default default.
+
+  Variant worklist_entry :=
+    | union_repair (old_idx new_idx : idx) (improved_new_analysis : bool)
+    | analysis_repair (i : idx).
   
   Record instance := {
       db : db_map;
@@ -99,8 +108,8 @@ Section WithMap.
       parents : idx_map (list atom);
       (* Used to determine which entries belong to the frontier *)
       epoch : idx;
-      (* used to delay unification until rebuilding *)
-      worklist : list (idx * idx);
+      (* used to delay unification and analysis propagation until rebuilding *)
+      worklist : list worklist_entry;
       (* TODO: maintain an upper bound on the number of rows in db
          for the purpose of ensuring termination?
        
@@ -227,24 +236,27 @@ Section WithMap.
       (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
       if eqb v v1 then (v,d)
       else
-        let new_analysis :=
-          unwrap_with_default
-            (@!let v_analysis <- map.get d.(analyses) v in
-               let v1_analysis <- map.get d.(analyses) v1 in
-               ret (analysis_meet v_analysis v1_analysis))
-        in
+        let v_analysis := unwrap_with_default (map.get d.(analyses) v) in
+        let v1_analysis := unwrap_with_default (map.get d.(analyses) v1) in
+        let new_analysis := analysis_meet v_analysis v1_analysis in
         (*should always return Some if v in uf.
           Use defaults here to make masking an error less likely
          *)
         @unwrap_with_default _  (idx_zero : idx,empty_egraph)
         (@!let (uf', v') <- UnionFind.union _ _ _ _ d.(equiv) v v1 in
-             let v_old := if eqb v v' then v1 else v in
-             let analyses' :=
-                   (*TODO: doesn't garbage collect right now *)
-                   map.put (map.put d.(analyses) v new_analysis)
-                     v' new_analysis in  
-             ret {option} (v', Build_instance d.(db) uf' d.(parents)
-                     d.(epoch) ((v_old,v')::d.(worklist)) analyses')).
+           let (v_old, canon_stale_analysis) :=
+             if eqb v v' then (v1, v_analysis) else (v, v1_analysis)
+           in
+           let improved_new_analysis := negb (eqb new_analysis canon_stale_analysis) in
+           let analyses' :=
+             (*TODO: doesn't garbage collect right now *)
+             map.put (map.put d.(analyses) v new_analysis)
+               v' new_analysis in
+           let worklist' :=
+             ((union_repair v_old v' improved_new_analysis)::d.(worklist)) in
+             
+           ret {option} (v', Build_instance d.(db) uf' d.(parents)
+                     d.(epoch) worklist' analyses')).
     
 
   Definition alloc : ST idx :=
@@ -305,6 +317,24 @@ Section WithMap.
          let e <- map.get tbl args in
          ret e.(entry_value) , i).
 
+  (* assumes the node exists *)
+  Definition db_lookup_entry f args : ST _ :=
+    fun i =>
+      (unwrap_with_default
+         (@! let tbl <- map.get i.(db) f in
+         let e <- map.get tbl args in
+         ret e) , i).
+
+  (* Note: does not do invariant maintenance.
+     Only call if that is appropriate.
+   *)
+  Definition db_set_entry f args v_epoch v out_a : ST unit :=
+    fun i =>
+      let tbl_upd tbl :=
+        map.put tbl args (Build_db_entry v_epoch v out_a) in
+      let db' := map_update i.(db) f tbl_upd in
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+
   (* sets an entry in the db and updates parents appropriately *)
   Definition db_set' a out_a : ST unit :=
     fun i =>
@@ -323,7 +353,8 @@ Section WithMap.
       (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
 
   
-  (* sets an entry in the db and updates parents and analyses appropriately *)
+  (* sets an entry in the db and updates parents and analyses appropriately.
+   *)
   Definition db_set a : ST unit :=
     @! let arg_as <- get_analyses a.(atom_args) in
       let out_a := analyze a arg_as in
@@ -554,7 +585,11 @@ Section WithMap.
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
                Build_instance d.(db) d.(equiv) d.(parents)
-                              d.(epoch) [] d.(analyses)).
+                                                   d.(epoch) [] d.(analyses)).
+
+  Definition push_worklist e : ST unit :=
+    fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
+                   d.(epoch) (e::d.(worklist)) d.(analyses)).
 
   (*
   (*optional addition: return value
@@ -609,9 +644,20 @@ Section WithMap.
     (f : A -> M A') (g : B -> M B') (p: A * B) : M (A' * B')%type :=
     @! let x <- f (fst p) in
       let y <- g (snd p) in
-      ret (x,y).  
+      ret (x,y).
+
+  Definition repair_parent_analysis (a : atom) :=
+    @! let (Build_db_entry v_epoch v old_a) <- db_lookup_entry a.(atom_fn) a.(atom_args) in
+      let arg_as <- get_analyses a.(atom_args) in
+      let out_a := analyze a arg_as in
+      if eqb out_a old_a then ret tt
+      else
+        let _ <- update_analyses a.(atom_ret) out_a in
+        let _ <- push_worklist (analysis_repair a.(atom_ret)) in
+        (db_set_entry a.(atom_fn) a.(atom_args) v_epoch v out_a).
+
   
-  Definition repair '(x_old,x_canonical) : ST unit :=
+  Definition repair_union x_old x_canonical (improved_new_analysis : bool) : ST unit :=
     let repair_each a : ST atom :=
       @!let _ <- db_remove a in
         let {ST} a' <- canonicalize a in
@@ -623,22 +669,84 @@ Section WithMap.
       let _ <- remove_parents x_old in
       let ps1 <- list_Mmap repair_each old_ps in
       let canon_ps <- get_parents x_canonical in
+      (* If the analysis for the canonical id improved, repair its parents' analyses.
+         TODO: should I call repair_parent_analysis or just push to worklist?
+         This seems marginally better.
+       *)
+      let _ <- if improved_new_analysis
+                      then list_Miter repair_parent_analysis canon_ps
+                      else Mret tt in
       let ps2 <- list_Mfoldl add_parent ps1 canon_ps in
       (set_parents x_canonical ps2).
+
+  Definition repair e :=
+    match e with
+    | union_repair old_idx new_idx improved_new_analysis =>
+        repair_union old_idx new_idx improved_new_analysis
+    | analysis_repair i =>
+        (* if the repair is stale, i should have no parents,
+           correctly making this a no-op.
+         *)
+        @!let ps <- get_parents i in
+          (list_Miter repair_parent_analysis ps) 
+    end.
+
+  Definition canonicalize_worklist_entry e : ST worklist_entry :=
+    match e with      
+    (* we canonicalize the canonical node, but not the old one
+       Since this entry is responsible for adding the old parents
+       to whatever the current canonical representative is
+     *)
+    | union_repair old_idx new_idx improved_new_analysis =>
+        @! let new_idx <- find new_idx in
+          ret union_repair old_idx new_idx improved_new_analysis
+    (* we don't update analysis repairs, because if i is now not canonical,
+       it means a union already updated the analyses
+     *)
+    | analysis_repair i => Mret (analysis_repair i)
+    end.
+
+  Definition entry_subsumed_by e1 e2 :=
+    match e1, e2 with
+    | analysis_repair i1, analysis_repair i2 => eqb i1 i2
+    | union_repair old_idx new_idx improved_new_analysis,
+      union_repair old_idx' new_idx' improved_new_analysis' =>
+        andb (eqb old_idx old_idx')
+          (andb (eqb new_idx new_idx')
+             (implb improved_new_analysis improved_new_analysis'))
+    | analysis_repair i,
+      union_repair old_idx new_idx improved_new_analysis =>
+        orb (eqb i old_idx)
+          (andb improved_new_analysis (eqb i new_idx))
+    | _, _ => false
+    end.
+  
+  (* Removes all redunant worklist items.
+     Generalizes `dedup eqb` by also removing analysis repairs subsumed by union repairs.
+   *)
+  Fixpoint worklist_dedup l :=
+    match l with
+    | [] => []
+    | e::l =>
+        (* TODO: small inefficiency: to make sure this is Kosher wrt analyses,
+       could technically have a situation where (old, new, false)
+       and (old,new,true) don't dedup, even though true subsumes false.
+         *)
+        let l' := worklist_dedup l in        
+        if List.existsb (entry_subsumed_by e) l' then l'
+        else e::l'
+    end.
 
   Fixpoint rebuild fuel : ST unit :=
     match fuel with
     | 0 => Mret tt
     | S fuel =>
         @! let todo <- pull_worklist in
-          if todo : list (idx * idx) then ret tt
+          if todo : list worklist_entry then ret tt
           else
-            (* we canonicalize the canonical node, but not the old one
-               Since this entry is responsible for adding the old parents
-               to whatever the current canonical representative is
-             *)
-            let todo <- list_Mmap (pair_Mmap Mret find) todo in
-            let todo := dedup (eqb (A:=_)) todo in
+            let todo <- list_Mmap canonicalize_worklist_entry todo in
+            (* TODO: should cut any analysis that appears in a union as well *)
+            let todo := worklist_dedup todo in
             let _ <- list_Miter repair todo in
             (rebuild fuel)
     end.
@@ -1571,6 +1679,9 @@ Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%functio
   {analysis_result}%type_scope i.
 
 Existing Class analysis.
+
+(*TODO: move to utils*)
+#[local] Instance eqb_unit : Eqb unit := fun _ _ => true.
 
 #[export] Instance unit_analysis {idx symbol} : analysis idx symbol unit:=
   {
