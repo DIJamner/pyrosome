@@ -52,18 +52,21 @@ Section WithVar.
 
   
   (*TODO: a bit of an abuse of the code*)
-  Definition var_to_con (t : term) :=
-    ClosedTerm.open_term []
-      (ClosedTerm.close_term t).
+  Fixpoint var_to_con (t : term) :=
+    match t with
+    | var x => con x []
+    | con n s => con n (map var_to_con s)
+    end.
 
   Definition sort_var_to_con (t : sort) :=
-    ClosedTerm.open_sort []
-      (ClosedTerm.close_sort t).
+    match t with
+    | scon n s => scon n (map var_to_con s)
+    end.
 
   (* TODO: move to closedterm?
    *)
   Definition ctx_to_rules : ctx -> lang :=
-    named_map (term_rule [] []).
+    named_map (fun t => term_rule [] [] (sort_var_to_con t)).
   
   Context 
       (V_map : forall A, map.map V A)
@@ -439,7 +442,8 @@ Section WithVar.
     (*TODO: move to Utils *)
     Instance WithDefault_squared {V} `{WithDefault V}
       : WithDefault (WithDefault V) := ltac:(assumption).
-    
+
+    (*Note: l has to contain the ctx_to_rules of the context *)
     Definition egraph_equal l (rws : rule_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state (instance X) bool :=
         @!let {(state (instance X))} x1 <- add_open_term l true [] e1 in
@@ -3036,7 +3040,7 @@ Module StringInstantiation.
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
       string_succ sort_of
       (@PositiveInstantiation.compat_intersect) l' rw n
-  (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
+      (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
 
   Definition string_max (s1 s2 : string) :=
     match String.compare s1 s2 with
