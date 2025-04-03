@@ -585,13 +585,6 @@ Section __.
 
 
      *)
-
-    Definition assume_ne_list {A R} `{WithDefault R}
-      (f : A -> list A -> R) (l : list A) : R :=
-      match l with
-      | [] => default
-      | a::la => f a la
-      end.
     
     Fixpoint pt_spaced_intersect' fuel cil ptl (ci0 : list bool) cil' pt0 ptl'
       : option pos_trie' :=
@@ -615,9 +608,8 @@ Section __.
           | have_true_part other_cil other_tries t_ci0 t_pt0 true_cil true_tries =>
               let pt_intersect :=
                 (*TODO: change the interface for list_intersect to avoid assume_ne_list?*)
-                list_intersect'
-                  (assume_ne_list
-                     (pt_spaced_intersect' fuel other_cil other_tries t_ci0 true_cil))
+                list_intersect
+                  (pt_spaced_intersect' fuel other_cil other_tries t_ci0 true_cil)
                   (*TODO: avoid map? it's hard to avoid given the possibility of
                   leaf_intersect.
                    *)
@@ -1482,11 +1474,12 @@ Section __.
 
 
 
-    (*TODO: move? *)
+    (*TODO: move?
     Lemma list_intersect'_ext A1 A2 (f g : list A1 -> option A2) t ts
       : (forall l, f l = g l) ->
         list_intersect' f t ts = list_intersect' g t ts.
     Admitted.
+     *)
 
     
     (*

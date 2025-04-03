@@ -435,7 +435,7 @@ Section MapIntersectList.
   (* The argument to elts_intersect must be non-empty
      for the result to be well-defined
    *)
-  Context {B C} (elts_intersect : list B -> option C).
+  Context {B C} (elts_intersect : B -> list B -> option C).
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
@@ -525,7 +525,10 @@ Section MapIntersectList.
         (list_intersect' x y)
     in
     let p12 := pair_map2 (pair_map2 maybe_intersect
-                            (fun c cs => Mbind (M:=option) elts_intersect (mcons c cs)))
+                            (fun c cs =>
+                               @! let c <- c in
+                                 let cs <- cs in
+                                 (elts_intersect c cs)))
                  maybe_intersect
                  p1 p_acc
     in
@@ -534,31 +537,36 @@ Section MapIntersectList.
   #[local] Definition list_intersect'_pre_cbv :=
     (fix list_intersect' hd := list_intersect'F list_intersect' hd).
   
-  Definition list_intersect' :=
+  Definition list_intersect :=
     Eval cbv -[gather_tries] in
-      (fix list_intersect' hd := list_intersect'F list_intersect' hd).
+      (fix list_intersect hd := list_intersect'F list_intersect hd).
 
   
-  Fixpoint acc_tree'_list (l : list (tree B)) acc k : tree C :=
-    match l with
-    | [] => k acc
-    | Empty::_ => Empty
-    | Nodes t :: l' => acc_tree'_list l' (t::acc) k
-    end.
-
-  (* TODO: mediatw tree vs option
-  (* takes the first `hd` since the intersection of an empty list of trees isn't finitely defined.*)
-  Definition list_intersect (hd : tree B) (tl : list (tree B)) : tree C :=
-    (* ensures that the tail is nonempty in the else branch.
-       TODO: is there a way to hide this check in an existing match?
-     *)
-    if tl then map_filter (fun x => elts_intersect [x]) hd else
-      match hd with
-      | Empty => Empty
-      | Nodes hd' => acc_tree'_list tl [] (fun args => list_intersect' hd')
-      end.
-   *)
-
+  Lemma gather_tries_no_short_None3 tl
+    :  gather_tries_no_short tl None3 = None3.
+  Proof using.
+    clear elts_intersect.
+    induction tl;
+      basic_goal_prep;
+      eauto.
+    destruct a;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma gather_no_short tl acc
+    : gather_tries tl acc = gather_tries_no_short tl acc.
+  Proof using.
+    clear elts_intersect.
+    revert acc;
+      induction tl;
+      basic_goal_prep;
+      eauto.
+    destruct a, acc;
+      basic_goal_prep;
+      basic_utils_crush.
+    all: rewrite gather_tries_no_short_None3; eauto.
+  Qed.
   
   Lemma Mmap_get_pos_trie x (l : list (tree B)) l'
     : Some l' = list_Mmap (get x) l ->
@@ -578,20 +586,6 @@ Section MapIntersectList.
       auto.
     }
   Qed.
-  
-  Lemma acc_tree'_list_Nodes x0 acc k
-    : acc_tree'_list (map Nodes x0) acc k = k (rev x0 ++ acc).
-  Proof.
-    revert acc.
-    induction x0;
-      basic_goal_prep;
-      basic_utils_crush.
-    rewrite IHx0.
-    f_equal.
-    rewrite <- app_assoc.
-    reflexivity.
-  Qed.
-
   
   Definition opt_ord {A} (o1 o2 : option A) :=
     match o1, o2 with
@@ -637,248 +631,6 @@ Section MapIntersectList.
   Existing Instance subtree1_trans.
 
   
-  (*
-  (*TODO: generalize to dependent version/other fns *)
-  Lemma rights_correct tl acc
-    : tl <> [] \/ acc <> [] ->
-      match rights tl acc with
-      | [] => Exists no_right tl
-      | _ as rs =>
-          all2 subtree1 (map Node001 rs) (rev tl ++ map Node001 acc)
-      end.
-  Proof.
-    revert acc.
-    induction tl;
-      [destruct acc |];
-      basic_goal_prep;
-      basic_utils_crush.
-    all: destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: try eapply Exists_cons_hd;
-      unfold no_right;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: match goal with
-           |- context [rights _ ?acc] =>
-             specialize (IHtl acc)
-         end.
-    all: intuition try congruence.
-    all: case_match.
-    all: try eapply Exists_cons_tl;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite <- ?app_assoc; cbn [app]; eauto.
-    all: my_case Hrev (rev tl); cbn in *; try tauto.
-    all: repeat (case_match;subst;[]).
-    all: intuition eauto.
-    all: destruct o; cbn in *; subst; try tauto.
-    all: eapply all2_Transitive; try typeclasses eauto.
-    all: try eassumption.
-    all: apply all2_app_shared_head; eauto with utils.
-    all: cbn; intuition eauto with utils.
-  Qed.
-  
-  Lemma lefts_correct tl acc
-    : tl <> [] \/ acc <> [] ->
-      match lefts tl acc with
-      | [] => Exists no_left tl
-      | _ as rs =>
-          all2 subtree1 (map Node100 rs) (rev tl ++ map Node100 acc)
-      end.
-  Proof.
-    revert acc.
-    induction tl;
-      [destruct acc |];
-      basic_goal_prep;
-      basic_utils_crush.
-    all: destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: try eapply Exists_cons_hd;
-      unfold no_left;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: match goal with
-           |- context [lefts _ ?acc] =>
-             specialize (IHtl acc)
-         end.
-    all: intuition try congruence.
-    all: case_match.
-    all: try eapply Exists_cons_tl;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite <- ?app_assoc; cbn [app]; eauto.
-    all: my_case Hrev (rev tl); cbn in *; try tauto.
-    all: repeat (case_match;subst;[]).
-    all: intuition eauto.
-    all: destruct o; cbn in *; subst; try tauto.
-    all: eapply all2_Transitive; try typeclasses eauto.
-    all: try eassumption.
-    all: apply all2_app_shared_head; eauto with utils.
-    all: cbn; intuition eauto with utils.
-  Qed.
-
-  
-  Lemma side_correct_l tl acc
-    : tl <> [] \/ fst acc <> [] ->
-      match fst (sides tl acc) with
-      | [] => Exists no_left tl
-      | _ as rs =>
-          all2 subtree1 (map Node100 rs) (rev tl ++ map Node100 (fst acc))
-      end.
-  Proof.
-    destruct acc as [acc acc'].
-    revert acc acc'.
-    induction tl;
-      [destruct acc |];
-      basic_goal_prep;
-      basic_utils_crush.
-    all: destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: try eapply Exists_cons_hd;
-      unfold no_left;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: match goal with
-           | |- context [sides _ (?acc,?acc')] =>
-             specialize (IHtl acc acc')
-           | |- context [lefts ?tl ?acc] =>
-             pose proof (lefts_correct tl acc)
-         end.
-    all: intuition try congruence.
-    all: case_match.
-    all: try eapply Exists_cons_tl;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite <- ?app_assoc; cbn [app]; eauto.
-    all: my_case Hrev (rev tl); cbn in *; try tauto.
-    all: repeat (case_match;subst;[]).
-    all: intuition eauto.
-    all: repeat (case_match; cbn in *; subst; try tauto).
-    all: cbn; intuition subst; eauto with utils.
-    all: destruct tl; basic_goal_prep; try congruence.
-    all: intuition try congruence.
-    all: eapply all2_Transitive; try typeclasses eauto.
-    all: try eassumption.
-    all: apply all2_app_shared_head; eauto with utils.
-    all: cbn; intuition eauto with utils.
-  Qed.
-
-  
-  Lemma side_subtree tl acc
-    : all2 subtree1
-        (map2 Node101 (rezip (sides tl acc)))
-        (rev tl ++ map2 Node101 (rezip acc)).
-  Proof.
-    revert acc.
-    induction tl;
-      try destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite <- ? app_assoc; basic_goal_prep.
-    {
-      TODO: where is the node001 from?
-      .
-      I should have an option layer.
-      In the 2-3 branch cases it is free.
-      is this what happens when one list out of 2 is empty?
-      TODO: goal is false. why?
-
-    tl <> [] \/ fst acc <> [] ->
-      match fst (sides tl acc) with
-      | [] => Exists no_left tl
-      | _ as rs =>
-          all2 subtree1 (map Node100 rs) (rev tl ++ map Node100 (fst acc))
-      end.
-  Proof.
-
-  Lemma side_correct_r tl acc
-    : let (ls,rs) := sides tl acc in
-      (tl 
-
-
-    tl <> [] \/ snd acc <> [] ->
-      match (sides tl acc) with
-      | [] => Exists no_right tl
-      | _ as rs =>
-          all2 subtree1 (map Node001 rs) (rev tl ++ map Node001 (fst acc))
-      end.
-    
-    Lemma side_correct_r tl acc
-    : tl <> [] \/ snd acc <> [] ->
-      match snd (sides tl acc) with
-      | [] => Exists no_right tl
-      | _ as rs =>
-          all2 subtree1 (map Node001 rs) (rev tl ++ map Node001 (fst acc))
-      end.
-  Proof.
-    destruct acc as [acc' acc].
-    revert acc' acc.
-    induction tl;
-      [destruct acc |];
-      basic_goal_prep;
-      basic_utils_crush.
-    all: destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: try eapply Exists_cons_hd;
-      unfold no_right;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: match goal with
-           | |- context [sides _ (?acc,?acc')] =>
-             specialize (IHtl acc acc')
-           | |- context [rights ?tl ?acc] =>
-             pose proof (rights_correct tl acc)
-         end.
-    all: intuition try congruence.
-    all: case_match.
-    all: try eapply Exists_cons_tl;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite <- ?app_assoc; cbn [app]; eauto.
-    all: my_case Hrev (rev tl); cbn in *; try tauto.
-    all: repeat (case_match;subst;[]).
-    all: intuition eauto.
-    all: repeat (case_match; cbn in *; subst; try tauto).
-    all: cbn; intuition subst; eauto with utils.
-    all: destruct tl; basic_goal_prep; try congruence.
-    all: intuition try congruence.
-    all: eapply all2_Transitive; try typeclasses eauto.
-    all: try eassumption.
-    all: apply all2_app_shared_head; eauto with utils.
-    all: cbn; intuition eauto with utils.
-  Qed.
-
-   *)
-
-  Lemma gather_tries_no_short_None3 tl
-    :  gather_tries_no_short tl None3 = None3.
-  Proof.
-    induction tl;
-      basic_goal_prep;
-      eauto.
-    destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  
-  Lemma gather_no_short tl acc
-    : gather_tries tl acc = gather_tries_no_short tl acc.
-  Proof.
-    revert acc;
-      induction tl;
-      basic_goal_prep;
-      eauto.
-    destruct a, acc;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite gather_tries_no_short_None3; eauto.
-  Qed.
-
-  
   Definition gather_tries_simple (tl : list (tree' B)) (acc : acc_ty) :=
     let oa_rev {A} (l : list (option A)) := option_all (rev l) in
     let h31 := pair_map (pair_map oa_rev oa_rev) oa_rev
@@ -921,7 +673,6 @@ Section MapIntersectList.
       all: reflexivity.
     }
   Qed.
-
   
   Lemma get'_inner_map tl
     : map
@@ -990,9 +741,14 @@ Section MapIntersectList.
   Lemma get'_1 {A} x (t : tree' A)
     : get' x~1 t = Mbind (get' x) (tree_proj_001 t).
   Proof. destruct t; reflexivity. Qed.
-  
-  Context (elts_intersect_Proper : Proper (@Permutation _ ==> eq) elts_intersect).
 
+
+  (* TODO: might want a stronger property, that the first argument can be permuted
+     with the rest.
+     This isn't as convenient though.
+   *)
+  Context (elts_intersect_Proper : Proper (eq ==> @Permutation _ ==> eq) elts_intersect).
+  
   
   Lemma Mmap_Mbind A A' (f : A -> option A') l
     : list_Mmap (Mbind f) l = Mbind (list_Mmap f) (option_all l).
@@ -1017,15 +773,6 @@ Section MapIntersectList.
       repeat (basic_goal_prep; try case_match);
       basic_utils_crush.
   Qed.
-  (*
-  Lemma list_intersect'_proj_001 l l0 l1 t0 t1
-    : list_Mmap tree_proj_001 l = Some l0 ->
-      Some t1 = tree_proj_001 t0 ->
-      list_intersect'_pre_cbv t0 l = Some l1 ->
-      list_intersect'_pre_cbv t1 l0 = tree_proj_001 l1.
-  Proof.
-    destruct t0; cbn.
-   *)
 
   Instance opt_trans {A} {R : A -> A -> Prop} `{Transitive A R}
     : Transitive (Option.option_relation R).
@@ -1049,7 +796,7 @@ Section MapIntersectList.
     { eapply opt_trans; eauto. }
   Qed.
   
-  Instance list_intersect'_Proper
+  #[local] Instance list_intersect'_Proper
     : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect'_pre_cbv.
   Proof.
     intros hd' hd Hhd; subst.
@@ -1090,31 +837,36 @@ Section MapIntersectList.
                erewrite IHhd in H1; try eassumption; clear Hperm
            end;
       try lazymatch goal with
-        | H1 : elts_intersect (?e::?l) = _,
-            H2 : elts_intersect (?e::?l') =_ |- _ =>
+        | H1 : elts_intersect ?e ?l = _,
+            H2 : elts_intersect ?e ?l' =_ |- _ =>
             erewrite elts_intersect_Proper in H1;
             try apply perm_skip;
-            try (eassumption || symmetry; eassumption)
+            try (eassumption || symmetry; eassumption || reflexivity)
         end;
       congruence.
   Qed.
+  
+  
+  #[export] Instance list_intersect_Proper
+    : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect
+    := list_intersect'_Proper.
     
-    
-  Lemma list_intersect'_correct' x mhd mtl
+  Lemma list_intersect_correct' x mhd mtl
     : match list_Mmap (Mbind (get' x)) (mhd::mtl) with
-      | Some es => 
+      | Some (e::es) => 
           (@! let hd <- mhd in
              let tl <- option_all mtl in
-             let li <- (list_intersect' hd tl) in
-             ((get' x) li)) = (elts_intersect es)
+             let li <- (list_intersect hd tl) in
+             ((get' x) li)) = (elts_intersect e es)
+      | Some [] => False
       | None =>
           (@! let hd <- mhd in
              let tl <- option_all mtl in
-             let li <- (list_intersect' hd tl) in
+             let li <- (list_intersect hd tl) in
              ((get' x) li)) = None
       end.
   Proof using elts_intersect_Proper.
-    change list_intersect' with list_intersect'_pre_cbv.
+    change list_intersect with list_intersect'_pre_cbv.
     generalize dependent mtl.
     revert mhd.
     induction x; intros.
@@ -1218,6 +970,8 @@ Section MapIntersectList.
          | H1 : ?A = ?B, H2 : ?A = ?C |- _ =>
              rewrite H1 in H2
          end.
+    all: try assumption.
+    all: try tauto.    
     all: autorewrite with inversion utils in *; subst.
     all: try assumption.
     all: try tauto.    
@@ -1235,12 +989,14 @@ Section MapIntersectList.
     rewrite IHl.
     reflexivity.
   Qed.
-    
-  Lemma list_intersect'_correct x hd tl
-    : get x (otree (list_intersect' hd tl))
-      = option_map elts_intersect (list_Mmap (get' x) (hd::tl)).
+
+  Lemma list_intersect_correct x hd tl
+    : get x (otree (list_intersect hd tl))
+      = @!let hd_x <- get' x hd in
+          let tl_x <- list_Mmap (get' x) tl in
+          (elts_intersect hd_x tl_x).
   Proof using elts_intersect_Proper.
-    pose proof (list_intersect'_correct' x (Some hd) (map Some tl)).
+    pose proof (list_intersect_correct' x (Some hd) (map Some tl)).
     change (Some hd :: map Some tl) with (map Some (hd::tl)) in *.
     rewrite Mmap_Mbind in *.
     rewrite option_all_Some in *.
@@ -1257,177 +1013,6 @@ Section MapIntersectList.
     all:cbn in *; eauto.
   Qed.
 
-  (*TODO: revive?
-  (*TODO: not quite right if elts_intersect is not injective.
-    Forward implication is true,
-    backward is not
-   *)
-  Lemma list_intersect_correct x hd tl
-    : match list_Mmap (get x) (hd::tl) with
-      | Some es => get x (list_intersect hd tl) = (elts_intersect es)
-      | None => get x (list_intersect hd tl) = None
-      end.
-  Proof.
-    case_match.
-    {
-      pose proof HeqH as HeqH'.
-      eapply Mmap_get_pos_trie in HeqH'.
-      break.
-      destruct x0; cbn in *; try congruence.
-      basic_utils_crush.
-      unfold list_intersect. 
-      cbn -[map_filter ]in *.
-      revert HeqH; case_match; cbn -[map_filter] in *; try congruence.
-      case_match; cbn -[map_filter] in *; try congruence.
-      intros;basic_utils_crush.
-      destruct x0.
-      {
-        cbn -[map_filter] in *;
-        rewrite ?gmap_filter, ?gempty in *.
-        basic_utils_crush.
-        cbn.
-        rewrite <- HeqH.
-        reflexivity.
-      }
-      rewrite acc_tree'_list_Nodes.
-      cbn [map].
-      change list_intersect'_cbv with list_intersect'.
-(*
-        get x (list_intersect' t0 t_lst)
-        
-      
-      TODO: need an elts_intersect commutativity lemma to deal w/ the rev
-      TODO: lemma about acc_tree'_list
-               
-        cbn.
-      
-      TODO: unwrap all the ptrees in hd::tl
-      unfold list_intersect.
-      destruct hd;
-        cbn [option_map list_Mmap Mbind option_monad] in *;
-        rewrite ?gmap_filter, ?gempty in *;
-        cbv [get ] in *;
-        try congruence.
-      { revert HeqH; case_match; cbn in *; congruence. }
-      {
-        generalize (tl_1::tl_tl).
-        revert HeqH; case_match; try congruence.
-        case_match; subst; try congruence.
-        case_match; subst; try congruence.
-      }
-        Cbn.
-    }
-    my_case Hget (get x (list_intersect hd tl)).
-    2:case_match; eauto.
-    2:{
-    case_match.
-    
-    unfold list_intersect.
-    destruct tl, hd; cbn -[map_filter] in *; eauto.
-    {
-      case_match; cbn -[map_filter]; eauto;
-        rewrite !gmap_filter;
-        cbv [get];
-        rewrite <- ?HeqH;
-        cbn;
-        eauto.
-    }
-    {
-      case_match; cbn -[map_filter]; eauto;
-        cbv [get];
-        destruct t0; eauto;
-        rewrite <- ?HeqH.
-      {
-        case_match; cbn -[map_filter]; eauto;
-          cbv [get].
-        2:{
-          TODO: prperties of acc_tree'_list
-        cbn;
-        eauto.
-        
-        
-
-End.
-       *)
-  Abort.
-   *)
-
-  (*
-  Context (elt_intersect_comm : forall a b, elt_intersect a b = elt_intersect b a).
-   *)
-
-  (*
-  Lemma list_intersect'_nil
-    : forall t0 : tree' B, Nodes t0 = list_intersect'_cbv t0 [].
-  Proof.
-    induction t0;
-      basic_goal_prep;
-      repeat match goal with
-        | H : Nodes _ = _ |- _ =>
-            rewrite <- ?H; clear H
-        end;
-      basic_utils_crush.
-  Qed.
-   *)
-
-  (*
-  Lemma fold_intersect_empty l
-    : fold_left (intersect elt_intersect) l Empty = Empty.
-  Proof.
-    unfold intersect.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  #[local] Hint Rewrite fold_intersect_empty : utils.
-  *)
-
-
-  (*
-  Local Definition i'' m2 m1' :=
-    match m2 with
-    | Empty => empty
-    | Nodes m2' => intersect' elt_intersect m1' m2'
-    end.
-
-  
-  Lemma list_intersect'_cons_correct tl' hd a
-    : list_intersect' hd (a::tl')
-      = match intersect' elt_intersect hd a with
-        | Empty => Empty
-        | Nodes hd' => (list_intersect' hd' tl')
-        end.
-  Proof.
-    revert a tl'.
-    induction hd; basic_goal_prep.
-    {
-      destruct a.
-(*
-      
-      Nodes (rights tl a::tl') ~ tl' `intersect` (map Node001 (a::tl')) 
-    list_intersect' hd (rights tl tl') ~ fold intersect (map Node001 (hd::tl'))++tl
-                               
-      TODO: what to do with (rights ...)?
-    unfold i''.
- *)
-  Abort.
-
-  Lemma list_intersect'_correct tl' hd
-    :  fold_left i'' tl' (Nodes hd) = list_intersect'_cbv hd tl'.
-  Proof.
-    revert hd.
-    unfold i''.
-    induction tl';
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      eapply list_intersect'_nil.
-    }
-    (*rewrite <- IHtl'.
-    *)
-  Admitted.
-   *)
-
    
   Lemma intersect_empty_r A (f : A -> A -> A) t
     : intersect f t Empty = Empty.
@@ -1436,25 +1021,7 @@ End.
   Qed.
   Hint Rewrite intersect_empty_r : utils.
 
-  (*
-  Lemma acc_tree'_list_helper tl tl' hd
-    : List.fold_left (intersect elt_intersect) tl
-        (List.fold_left i'' tl' (Nodes hd))
-      = acc_tree'_list tl tl' (list_intersect'_cbv hd).
-  Proof.
-    revert tl' hd;
-      induction tl;
-      basic_goal_prep;
-      eauto using list_intersect'_correct.
-    destruct a;
-      basic_goal_prep;
-      basic_utils_crush.
-    (*rewrite <- IHtl.
-    f_equal.
-    cbn.
-    admit (*comm*).*)
-  Admitted.
-  
+  (*  
   Lemma list_intersect_correct hd l
     : List.fold_left (intersect elt_intersect) l hd = list_intersect hd l.
   Proof.
