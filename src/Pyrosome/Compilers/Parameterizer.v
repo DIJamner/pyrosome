@@ -634,14 +634,15 @@ Section WithVar.
               apply map_ext_in; intros; eauto.
               eapply in_all with (a:=a) in H; basic_utils_crush.
               eapply H3; eauto.
-              eapply in_all; basic_utils_crush.
+              eapply in_all; eauto.
+              basic_utils_crush.
             }
             f_equal.
             2:{
               apply map_ext_in; intros; eauto.
               eapply in_all with (a:=a) in H; basic_utils_crush.
               eapply H3; eauto.
-              eapply in_all; basic_utils_crush.
+              eapply in_all; eauto; basic_utils_crush.
             }
             {
               cbn.
@@ -655,7 +656,8 @@ Section WithVar.
             apply map_ext_in; intros; eauto.
             eapply in_all with (a:=a) in H; basic_utils_crush.
             eapply H3; eauto.
-            eapply in_all; basic_utils_crush.
+            (*TODO: why is this much slower w/out the eauto?*)
+            eapply in_all; eauto; basic_utils_crush.
           }
         }
         Unshelve.
@@ -1126,16 +1128,6 @@ Section WithVar.
         basic_utils_crush.
     Qed.
     Hint Rewrite  with_named_from_named_map : utils.
-
-    
-    (*TODO: move to utils*)
-    Lemma all_app A (P : A -> Prop) l1 l2 : all P (l1++l2) <-> all P l1 /\ all P l2.
-    Proof.
-      induction l1;
-        basic_goal_prep;
-        basic_utils_crush.
-    Qed.
-    Hint Rewrite all_app : utils.
 
     
     Lemma named_map_with_names_from A B C (f : A -> B) (c' : named_list C) s
