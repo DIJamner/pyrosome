@@ -8,7 +8,6 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Utils Monad TrieMap.
 Import Monad.StateMonad.
 
-From Pyrosome.Tools Require Import PosRenaming.
 
 
 (*TODO: duplicated; move to Eqb or sim. location *)
@@ -20,6 +19,46 @@ From Pyrosome.Tools Require Import PosRenaming.
 (*TODO: duplicated *)
 #[local] Notation ne_list A := (A * list A)%type.
 
+
+    
+Lemma all2_len T1 T2 (R : T1 -> T2 -> Prop) l1 l2
+  : all2 R l1 l2 -> length l1 = length l2.
+Proof using.
+  revert l2; induction l1; destruct l2;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+Hint Resolve all2_len : utils.
+
+
+Lemma all2_impl_l A B (R : A -> B -> Prop) P l1 l2
+  : (forall x y, In x l1 -> In y l2 -> R x y -> P x) ->
+    all2 R l1 l2 -> all P l1.
+Proof.
+  intro Himpl.
+  enough (forall l1' l2', incl l1' l1 -> incl l2' l2 ->
+                          all2 R l1' l2' -> all P l1')
+    by eauto with utils.
+  induction l1'; destruct l2';
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+Hint Resolve all2_impl_l : utils.
+
+Lemma all2_impl_r A B (R : A -> B -> Prop) P l1 l2
+  : (forall x y, In x l1 -> In y l2 -> R x y -> P y) ->
+    all2 R l1 l2 -> all P l2.
+Proof.
+  intro Himpl.
+  enough (forall l1' l2', incl l1' l1 -> incl l2' l2 ->
+                          all2 R l1' l2' -> all P l2')
+    by eauto with utils.
+  induction l1'; destruct l2';
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+Hint Resolve all2_impl_r : utils.
+    
 
 Lemma filter_false_In:
   forall (B : Type) (f : B -> bool) (l : list B),
@@ -160,14 +199,6 @@ Proof.
   auto.
 Qed.
 
-Lemma map_combine_snd [A B]
-  : forall (lA : list A) (lB : list B), length lA = length lB -> map snd (combine lA lB) = lB.
-Proof.
-  induction lA; destruct lB;
-    basic_goal_prep;
-    basic_utils_crush.  
-Qed.
-
 Lemma Permutation_combine_r T1 T2 (l1 l1' : list T1) (l2 l2' : list T2)
   : length l1 = length l2 ->
     length l1' = length l2' ->
@@ -235,6 +266,10 @@ Section ListEta.
   Proof. destruct o; reflexivity. Qed.
 
 End ListEta.
+
+
+  
+
 
 Section __.
   Context {A : Type}.
@@ -387,7 +422,9 @@ Section __.
       match ptl with
       | [] => a
       | (pos_trie_leaf a')::ptl' => leaf_intersect (merge a a') ptl'
-      | (pos_trie_node _)::_ => a (*should never happen*)
+      | (pos_trie_node _)::ptl' =>
+          (*should never happen. Implementation just for proof convenience *)
+          leaf_intersect a ptl'
       end.
 
     (*
@@ -461,20 +498,243 @@ Section __.
       | _, _, _ => acc (*mk4 default default default default*) (*should never happen *)
       end.
 
-    (*TODO: update*)
-    Definition partition_tries_spec (cil : list (list bool)) (ptl : list pos_trie')
-      (acc : quad _ _ _ _) :=
-      let l := combine cil ptl in
-      let true_filter := rev (map (fun p => (tl (fst p), snd p))
-                                (filter (fun p => hd false (fst p)) l)) in
-      let false_filter := rev (map (fun p => (tl (fst p), snd p))
-                                 (filter (fun p => negb (hd false (fst p))) l)) in
-      let (true_cil, true_tries) := split true_filter in
-      let (false_cil, false_tries) := split false_filter in
-      mk4 (true_cil++acc.(p41))
-        (true_tries++acc.(p42))
-        (false_cil++acc.(p43))
-        (false_tries++acc.(p44)).
+    Definition true_lists acc :=
+      match acc with
+      | just_false_part ci0 pt0 cil ptl => []
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl => combine (t_ci0::t_cil) (t_pt0::t_ptl)
+      end.
+
+    Definition false_lists acc :=
+      match acc with
+      | just_false_part ci0 pt0 cil ptl => combine (ci0::cil) (pt0::ptl)
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl => combine f_cil f_ptl
+      end.
+    
+    Lemma partition_tries_true_lists' width cil ptl acc
+      : width > 0 ->
+        all (fun p => length p = width) cil ->
+        length cil = length ptl ->
+        true_lists (partition_tries cil ptl acc)
+        = let l := combine cil ptl in
+          let true_filter := rev (map (fun p => (tl (fst p), snd p))
+                                    (filter (fun p => hd false (fst p)) l)) in
+          true_filter ++ (true_lists acc).
+    Proof.
+      intro Hwidth.
+      revert ptl acc;
+        induction cil;
+        destruct ptl;
+        basic_goal_prep;
+        repeat (case_match;
+                basic_goal_prep);
+        basic_utils_crush;
+        try Lia.lia.
+      {
+        rewrite IHcil; eauto.
+        basic_goal_prep.
+        rewrite <- ! app_assoc.
+        reflexivity.
+      }
+      {
+        rewrite IHcil; eauto.
+        basic_goal_prep.
+        basic_utils_crush.
+      }
+    Qed.
+    
+    Lemma partition_tries_true_lists width cil ptl acc
+      : all (fun p => length p = S width) cil ->
+        length cil = length ptl ->
+        true_lists (partition_tries cil ptl acc)
+        = let l := combine cil ptl in
+          let true_filter := rev (map (fun p => (tl (fst p), snd p))
+                                    (filter (fun p => hd false (fst p)) l)) in
+          true_filter ++ (true_lists acc).
+    Proof.
+      intros; eapply partition_tries_true_lists'; try eassumption.
+      Lia.lia.
+    Qed.
+    
+    Lemma partition_tries_false_lists' width cil ptl acc
+      : width > 0 ->
+        all (fun p => length p = width) cil ->
+        length cil = length ptl ->
+        false_lists (partition_tries cil ptl acc)
+        = let l := combine cil ptl in
+          let false_filter := rev (map (fun p => (tl (fst p), snd p))
+                                     (filter (fun p => negb (hd false (fst p))) l)) in
+          false_filter ++ (false_lists acc).
+    Proof.
+      intro Hwidth.
+      revert ptl acc;
+        induction cil;
+        destruct ptl;
+        basic_goal_prep;
+        repeat (case_match;
+                basic_goal_prep);
+        basic_utils_crush;
+        try Lia.lia.
+      {
+        rewrite IHcil; eauto.
+        basic_goal_prep.
+        rewrite <- ! app_assoc.
+        cbn.
+        reflexivity.
+      }
+      {
+        rewrite IHcil; eauto.
+        basic_goal_prep.
+        rewrite <- ! app_assoc.
+        cbn.
+        reflexivity.
+      }
+    Qed.
+    
+    Lemma partition_tries_false_lists width cil ptl acc
+      : all (fun p => length p = S width) cil ->
+        length cil = length ptl ->
+        false_lists (partition_tries cil ptl acc)
+        = let l := combine cil ptl in
+          let false_filter := rev (map (fun p => (tl (fst p), snd p))
+                                     (filter (fun p => negb (hd false (fst p))) l)) in
+          false_filter ++ (false_lists acc).
+    Proof.
+      intros; eapply partition_tries_false_lists'; try eassumption.
+      Lia.lia.
+    Qed.
+
+    Instance default_partition_result : WithDefault partition_result :=
+      just_false_part default (pos_trie_leaf default) default default.
+    
+    Definition partition_result_of_lists f t :=
+      match t with
+      | [] =>
+          match f with
+          | (fc0,fp0)::f =>
+          let (t_c,t_p) := split t in
+          let (f_c,f_p) := split f in
+          just_false_part fc0 fp0 f_c f_p
+          | _ => default (* shouldn't happen on valid inputs *)
+          end
+      | (tc0,tp0)::t =>
+          let (t_c,t_p) := split t in
+          let (f_c,f_p) := split f in
+          have_true_part f_c f_p tc0 tp0 t_c t_p
+      end.
+
+    
+    Fixpoint has_depth' (n : nat) (t : pos_trie') :=
+      match n, t with
+      | O, pos_trie_leaf _ => true
+      | S n, pos_trie_node m =>
+          map.forallb (fun k => has_depth' n) (PTree.Nodes m : TrieMap.trie_map _)
+      | _, _ => false
+      end.
+    
+    (*TODO: separate or combine the 2 conjuncts?*)
+    Definition rectangular_trie_list width cil ptl :=
+      all2 (fun c t => Is_true (has_depth' (length (filter id c)) t)
+                          /\ length c = width) cil ptl.
+
+    
+    (* we expect the true tries to be one size deeper than the cis after a partition *)
+    Definition offset_rectangular_trie_list width cil ptl :=
+      all2 (fun c t => Is_true (has_depth' (S (length (filter id c))) t)
+                          /\ length c = width) cil ptl.
+
+    Definition partition_result_wf width acc :=
+      match acc with
+      | just_false_part ci0 pt0 cil ptl =>
+          rectangular_trie_list width (ci0::cil) (pt0::ptl)
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl =>
+          offset_rectangular_trie_list width (t_ci0::t_cil) (t_pt0::t_ptl)
+          /\ rectangular_trie_list width f_cil f_ptl
+      end.
+
+    
+    
+            
+    Lemma partition_left_inverse width acc
+      : partition_result_wf width acc ->
+        partition_result_of_lists (false_lists acc) (true_lists acc) = acc.
+    Proof.
+      destruct acc; cbn;
+        intros;
+        rewrite !combine_split;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma partition_result_empty_true acc
+      : true_lists acc = [] <-> exists fc fcl fp fpl, acc = just_false_part fc fp fcl fpl.
+    Proof.
+      destruct acc; split; basic_goal_prep;
+        repeat eexists; try congruence.
+      Unshelve.
+      all: eauto.
+    Qed.
+    Hint Resolve partition_result_empty_true : utils.
+    
+    Lemma partition_result_empty_false acc
+      : false_lists acc = []
+        -> exists f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl,
+          acc = have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl.
+    Proof.
+      destruct acc; repeat eexists; try congruence.
+      basic_goal_prep; basic_utils_crush.
+      Unshelve.
+      all: eauto.
+    Qed.
+    
+    Lemma partition_result_nonempty acc
+      : true_lists acc = [] ->
+        false_lists acc = [] ->
+        False.
+    Proof.
+      destruct acc; cbn; congruence.
+    Qed.
+    Hint Resolve partition_result_nonempty : utils.
+
+    
+    Lemma partition_tries_wf width acc cil ptl
+      : rectangular_trie_list (S width) cil ptl ->
+        partition_result_wf width acc ->
+        partition_result_wf width (partition_tries cil ptl acc).
+    Proof.
+      revert ptl acc;
+        induction cil;
+        destruct ptl;
+        basic_goal_prep;
+        repeat (case_match; basic_goal_prep);
+        basic_utils_crush.
+      all: apply IHcil.
+      all: cbn; basic_utils_crush.
+    Qed.
+    Hint Resolve partition_tries_wf : utils.
+
+    Lemma partition_tries_spec cil ptl acc width          
+      : rectangular_trie_list (S width) cil ptl ->
+        partition_result_wf width acc ->
+        partition_tries cil ptl acc
+        = let l := combine cil ptl in
+          let true_filter := rev (map (fun p => (tl (fst p), snd p))
+                                    (filter (fun p => hd false (fst p)) l)) in
+          let false_filter := rev (map (fun p => (tl (fst p), snd p))
+                                     (filter (fun p => negb (hd false (fst p))) l)) in
+          
+          partition_result_of_lists (false_filter ++ (false_lists acc))
+            (true_filter ++ (true_lists acc)).
+    Proof.
+      intros.
+      cbv [id].
+      erewrite <- partition_left_inverse with (acc:=partition_tries cil ptl acc);
+        eauto with utils.
+      erewrite partition_tries_true_lists, partition_tries_false_lists.
+      all: unfold rectangular_trie_list in *;
+        basic_goal_prep; basic_utils_crush.
+      all: eapply all2_impl_l; eauto.
+      all: basic_goal_prep; intuition eauto.
+    Qed.
 
     (*TODO: move to utils*)
     Hint Rewrite map_rev : utils.
@@ -606,14 +866,19 @@ Section __.
           | just_false_part ci0 pt0 other_cil other_tries =>
               pt_spaced_intersect' fuel other_cil other_tries ci0 [] pt0 []
           | have_true_part other_cil other_tries t_ci0 t_pt0 true_cil true_tries =>
+              let true_cil_rev := rev true_cil in
               let pt_intersect :=
                 (*TODO: change the interface for list_intersect to avoid assume_ne_list?*)
                 list_intersect
-                  (pt_spaced_intersect' fuel other_cil other_tries t_ci0 true_cil)
+                  (* reverse true_cil to match the order of the tries
+                     passed by list_intersect*)
+                  (fun is_forward =>
+                     pt_spaced_intersect' fuel other_cil other_tries t_ci0
+                       (if is_forward then true_cil else true_cil_rev))
                   (*TODO: avoid map? it's hard to avoid given the possibility of
                   leaf_intersect.
                    *)
-                  (proj_node_map_unchecked pt0)
+                  (proj_node_map_unchecked t_pt0)
                   (map proj_node_map_unchecked true_tries)
               in
               option_map pos_trie_node pt_intersect
@@ -646,13 +911,6 @@ Section __.
       | None => True
       end.
 
-    Fixpoint has_depth' (n : nat) (t : pos_trie') :=
-      match n, t with
-      | O, pos_trie_leaf _ => true
-      | S n, pos_trie_node m =>
-          map.forallb (fun k => has_depth' n) (PTree.Nodes m : TrieMap.trie_map _)
-      | _, _ => false
-      end.
     
     Definition has_depth n (t : pos_trie) :=
       match t with
@@ -814,24 +1072,64 @@ Section __.
 
     Hint Rewrite filter_app : utils.
 
-    (*
-    Lemma partition_tries_app cil1 cil2 ptl1 ptl2 acc
-      : length cil1 = length ptl1 ->
+    (*TODO: why isn't this in utils?*)
+    #[local] Hint Rewrite invert_eq_cons_nil : utils.
+    Lemma rectangular_trie_list_nil_cons width pt ptl
+      : rectangular_trie_list width [] (pt::ptl) <-> False.
+    Proof using. clear merge. prove_inversion_lemma. Qed.
+    Hint Rewrite rectangular_trie_list_nil_cons : utils.
+    
+    Lemma rectangular_trie_list_cons_nil width ci cil
+      : rectangular_trie_list width (ci::cil) [] <-> False.
+    Proof using. clear merge. prove_inversion_lemma. Qed.
+    Hint Rewrite rectangular_trie_list_cons_nil : utils.
+    
+    Lemma rectangular_trie_list_cons_cons width ci cil pt ptl
+      : rectangular_trie_list width (ci::cil) (pt::ptl)
+        <-> length ci = width
+            /\  Is_true (has_depth' (length (filter id ci)) pt)
+            /\ rectangular_trie_list width cil ptl.
+    Proof. clear merge. prove_inversion_lemma. Qed.
+    Hint Rewrite rectangular_trie_list_cons_cons : utils.
+
+    Lemma rectangular_trie_list_app width cil1 cil2 ptl1 ptl2
+      : rectangular_trie_list width cil1 ptl1 ->
+        rectangular_trie_list width cil2 ptl2 ->
+        rectangular_trie_list width (cil1++cil2) (ptl1++ptl2).
+    Proof.
+      unfold rectangular_trie_list.
+      autorewrite with utils.
+      intuition eauto using all2_app.
+    Qed.      
+      
+    Lemma partition_tries_0 cil2 ptl2 acc
+      : rectangular_trie_list 0 cil2 ptl2 ->
+        partition_tries cil2 ptl2 acc = acc.
+    Proof using.
+      clear merge.
+      unfold rectangular_trie_list.
+      revert ptl2 acc.
+      induction cil2;
+        destruct ptl2;
+        repeat (repeat(basic_goal_prep;
+                       try case_match);
+                basic_utils_crush).
+    Qed.     
+
+    Lemma partition_tries_app width cil1 cil2 ptl1 ptl2 acc
+      : rectangular_trie_list width cil1 ptl1 ->
+        rectangular_trie_list width cil2 ptl2 ->
         partition_tries cil2 ptl2 (partition_tries cil1 ptl1 acc)
         = partition_tries (cil1++cil2) (ptl1++ptl2) acc.
     Proof.
-      rewrite !partition_tries_correct.
-      unfold partition_tries_spec.
-      destruct acc.
-      cbn.
-      basic_utils_crush.
-      cbn.
-      basic_utils_crush.
-      rewrite !rev_app_distr.
-      rewrite !app_assoc.
-      reflexivity.
+      intros H1 H2; revert ptl1 acc H1.
+      induction cil1;
+        destruct ptl1;
+        repeat (repeat(basic_goal_prep;
+                       try case_match);
+                basic_utils_crush).
+      apply partition_tries_0; auto.
     Qed.
-*)
     
     
     Definition merge_list l :=
@@ -887,7 +1185,8 @@ Section __.
       if l then False else True.    
     Definition empty {A} (l:list A) :=
       if l then True else False.
-    
+
+    (*
     Lemma partition_tries_spec_properties_empty cil ptl
       true_cil true_tries other_cil other_tries
       : Datatypes.length cil = Datatypes.length ptl ->
@@ -947,6 +1246,7 @@ Section __.
       rewrite map_id.
       reflexivity.
     Qed.
+     *)
 
      
     Definition spaced_get1 x (b : bool) m : option _ :=
@@ -956,6 +1256,12 @@ Section __.
       match t with
       | pos_trie_leaf a => Some a
       | pos_trie_node m => None
+      end.
+    
+    Definition get_leaf_unchecked t :=
+      match t with
+      | pos_trie_leaf a => a
+      | pos_trie_node _ => default
       end.      
 
     Definition get_map t :=
@@ -1010,48 +1316,17 @@ Section __.
     
     Lemma leaf_intersect_correct a l
       : all (fun t => Is_true (has_depth' 0 t)) l ->
-        Some (leaf_intersect a l) = Mbind merge_list (list_Mmap get_leaf l).
+        leaf_intersect a l
+        = fold_left merge (map get_leaf_unchecked l) a.
     Proof.
-      (*
-      unfold leaf_intersect.
-      destruct l; try reflexivity.
-      destruct p; try reflexivity.
-      repeat basic_goal_prep.
-        enough
-          (Some (leaf_intersect' a l) =
-              match list_Mmap get_leaf l with
-              | Some a0 => merge_list (a :: a0)
-              | None => None
-              end)
-          by (case_match; eauto).
-        revert a H1; clear H0.
-        induction l;
-          basic_goal_prep;
-          basic_utils_crush.
-        case_match; 
-          basic_goal_prep;
-          basic_utils_crush.
-        case_match; 
-          basic_goal_prep;
-          basic_utils_crush.
-        {
-          eapply IHl in H2.
-          safe_invert H2.
-          apply H3.
-        }
-        {
-          symmetry in  case_match_eqn.
-          apply list_Mmap_None in case_match_eqn.
-          break.
-          eapply in_all in H1; eauto.
-          basic_goal_prep.
-          destruct x;
-            basic_goal_prep;
-            congruence.
-        }
-    Qed.*)
-    Admitted.
-
+      revert a.
+      induction l;
+        basic_goal_prep;
+        repeat case_match;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
     Instance all_Permutation_Proper {T P} : Proper (@Permutation T ==> iff) (all P).
     Proof.
       intros l1 l2.
@@ -1154,15 +1429,6 @@ Section __.
     Qed.
 
     
-    Lemma all2_len T1 T2 (R : T1 -> T2 -> Prop) l1 l2
-      : all2 R l1 l2 -> length l1 = length l2.
-    Proof.
-      revert l2; induction l1; destruct l2;
-        basic_goal_prep;
-        basic_utils_crush.
-    Qed.
-
-    
     
     Lemma all_app T (P : T -> Prop) l1 l2
       : all P (l1++l2) <-> all P l1 /\ all P l2.
@@ -1173,23 +1439,1049 @@ Section __.
     Qed.
     Hint Rewrite all_app : utils.
 
+
+    (* Note: probably not provable for an arbitrary monad
+       without funext.
+     *)
+    Lemma list_Mfoldl_map_option T1 T2 T3
+      (f : T1 -> T2 -> option T1)
+      (g : T3 -> T2) l acc
+      : list_Mfoldl f (map g l) acc
+        = list_Mfoldl (fun acc x => f acc (g x)) l acc.
+    Proof using.
+      revert acc;
+        induction l;
+        basic_goal_prep;
+        try case_match;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma list_Mfoldl_option_map T1 T2 T3
+      (f : T1 -> T2 -> T1)
+      (g : T3 -> option T2) l a
+      : option_map (fun l => fold_left f l a)
+          (list_Mmap g l)
+        = list_Mfoldl (fun acc x => option_map (f acc) (g x)) l a.
+    Proof.
+      revert a;
+        induction l;
+        basic_goal_prep;
+        repeat case_match;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma get_leaf_is_unchecked pt
+      : Is_true (has_depth' 0 pt) ->
+        get_leaf pt = Some (get_leaf_unchecked pt).
+    Proof using.
+      destruct pt;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    Lemma map_get_leaf_is_unchecked ptl
+      : all (fun t => Is_true (has_depth' 0 t)) ptl ->
+        (list_Mmap get_leaf ptl)
+        = Some (map get_leaf_unchecked ptl).
+    Proof using.
+      induction ptl;
+        basic_goal_prep;
+        rewrite ?get_leaf_is_unchecked;
+        basic_goal_prep;
+        basic_utils_crush.
+      rewrite H2.
+      reflexivity.
+    Qed.
+
+    Section __.
+      Context T (f : T -> T -> T)
+        (f_associative : forall a b c, f (f a b) c = f a (f b c))
+        (f_commutative : forall a b, f a b = f b a).
+      
+      Lemma fold_left_Permutation_Proper
+        : Proper ((Permutation (A:=_)) ==> eq ==> eq) (fold_left f).
+      Proof.
+        intros l l' HP.
+        induction HP;
+          cbv [respectful] in *;
+          basic_goal_prep;
+          basic_utils_crush.
+        { congruence. }
+        { erewrite IHHP1; eauto. }
+      Qed.
+
+      Lemma fold_left_permuted a1 a2 l1 l2
+        : Permutation (a1::l1) (a2::l2) ->
+          fold_left f l1 a1 = fold_left f l2 a2.
+      Proof.
+        remember (a1 :: l1) as l1'.
+        remember (a2 :: l2) as l2'.
+        intro HP.
+        revert a1 l1 Heql1' a2 l2 Heql2'.
+        induction HP;
+          basic_goal_prep;
+          basic_utils_crush.
+        { apply fold_left_Permutation_Proper; auto. }
+        {
+          cbn.
+          congruence.
+        }
+        {
+          destruct l'.
+          {
+            apply Permutation_nil in HP2;
+              congruence.
+          }
+          erewrite IHHP1, IHHP2; eauto.
+        }
+      Qed.
+
+      Lemma map2_commutative : forall a b, map2 f (combine a b) = map2 f (combine b a).
+      Proof.
+        induction a; destruct b;
+          basic_goal_prep;
+          basic_utils_crush;
+          congruence.
+      Qed.
+      
+      
+      Lemma map2_associative
+        : forall a b c,
+          map2 f (combine c (map2 f (combine b a)))
+          = map2 f (combine (map2 f (combine c b)) a).
+      Proof.
+        induction a; destruct b, c;
+          basic_goal_prep;
+          basic_utils_crush;
+          congruence.
+      Qed.
+      
+    End __.
+    
+    Instance zip_bools_Permutation_Proper : Proper ((Permutation (A:=_)) ==> eq) zip_bools.
+    Proof.
+      unfold zip_bools.
+      intros l l' HP.
+      destruct l, l';
+        basic_goal_prep;
+        basic_utils_crush.
+      {
+        apply Permutation_nil in HP;
+          congruence.
+      }
+      {
+        symmetry in HP;
+        apply Permutation_nil in HP;
+          congruence.
+      }
+      {
+        apply fold_left_permuted; eauto.
+        {
+          apply map2_associative.
+          destruct a, b, c; reflexivity.
+        }
+        {
+          intros.
+          apply map2_commutative.
+          destruct a0, b0; reflexivity.
+        }
+      }
+    Qed.
+
+    Lemma zip_bools_map_cons b l
+      : l <> [] -> zip_bools (map (cons b) l) = b::(zip_bools l).
+    Proof.
+      unfold zip_bools.
+      destruct l;
+        try congruence.
+      intros _.
+      cbn [tl hd map].
+      revert l.
+      induction l0;
+        basic_goal_prep;
+        basic_utils_crush.
+      rewrite orb_diag.
+      congruence.
+    Qed.
+    
+    Instance leaf_intersect_Permutation_Proper
+      : Proper (eq ==> Permutation (A:=_) ==> eq)
+          leaf_intersect.
+    Proof.
+      intros a a' ?; subst a'.
+      intros l1 l2 HP.
+      revert a.
+      induction HP; basic_goal_prep;
+        repeat case_match;
+        basic_utils_crush;
+        congruence.
+    Qed.
+
+    
+    Definition part_res_Perm pr1 pr2 :=
+      match pr1, pr2 with
+      | just_false_part ci0 pt0 cil ptl,
+        just_false_part ci0' pt0' cil' ptl' =>
+          Permutation ((ci0,pt0)::(combine cil ptl))
+            ((ci0',pt0')::(combine cil' ptl'))
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl,
+        have_true_part f_cil' f_ptl' t_ci0' t_pt0' t_cil' t_ptl' =>
+          Permutation (combine f_cil f_ptl)
+               (combine f_cil' f_ptl')
+          /\ Permutation ((t_ci0,t_pt0)::(combine t_cil t_ptl))
+               ((t_ci0',t_pt0')::(combine t_cil' t_ptl'))
+      | _,_ => False
+      end.
+
+    Instance part_res_Perm_Reflexive : Reflexive part_res_Perm.
+    Proof.
+      intros a;
+        destruct a;
+        cbn;
+        intuition eauto.
+    Qed.
+
+    Record pr_tuple :=
+      {
+        f_cil : list (list bool);
+        f_ptl : list pos_trie';
+        t_cil : list (list bool);
+        t_ptl : list pos_trie';
+      }.
+
+    Definition pr_to_tuple pr :=
+      match pr with
+      | just_false_part ci0 pt0 cil ptl =>
+          Build_pr_tuple (ci0::cil) (pt0::ptl) [] []
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl => 
+          Build_pr_tuple f_cil f_ptl (t_ci0::t_cil) (t_pt0::t_ptl)
+      end.
+
     (*
-    Lemma pt_spaced_intersect'_correct fuel x cil1 cil2 ptl1 ptl2
+    Lemma partition_tries_spec'
+      : let acc_t := pr_t_tuple acc in
+        let pt_t := partition_tries cil ptl acc in
+        Permutation (combine pt_t.(f_cil) pt_t.(f_ptl))
+          (combine f_cil' t_ptl')
+        /\ Permutation (combine f_cil t_ptl)
+             (combine f_cil' t_ptl')
+      match partition_tries cil ptl acc, acc with
+      | just_false_part ci0 pt0 cil ptl,
+        just_false_part ci0' pt0' cil' ptl' =>
+          ci0 = ci0'
+          /\ pt0 = pt0'
+          /\ Permutation (combine cil ptl)
+                         (combine cil' ptl')
+      | have_true_part f_cil f_ptl t_ci0 t_pt0 t_cil t_ptl,
+        have_true_part f_cil' f_ptl' t_ci0' t_pt0' t_cil' t_ptl' =>
+          t_ci0 = t_ci0'
+          /\ t_pt0 = t_pt0'
+          /\ Permutation (combine f_cil t_ptl)
+                         (combine f_cil' t_ptl')
+          /\ Permutation (combine t_cil t_ptl)
+               (combine t_cil' t_ptl')
+      | _,_ => False
+      end.
+        |
+     *)
+
+    Lemma Permutation_nil_cons_iff:
+      forall [A : Type] (l : list A) (x : A), Permutation [] (x :: l) <-> False.
+    Proof.
+      intuition auto.
+      eapply Permutation_nil_cons; eauto.
+    Qed.
+    Hint Rewrite Permutation_nil_cons_iff : utils.
+
+    
+    Lemma Permutation_cons_nil_iff:
+      forall [A : Type] (l : list A) (x : A), Permutation (x :: l) [] <-> False.
+    Proof.
+      intuition auto.
+      symmetry in H0.
+      eapply Permutation_nil_cons; eauto.
+    Qed.
+    Hint Rewrite Permutation_cons_nil_iff : utils.
+
+    Lemma combine_fst_snd [T1 T2] (x : list (T1 * T2)) 
+      :  combine (map fst x) (map snd x) = x.
+    Proof.
+      induction x; 
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    Instance partition_result_of_lists_Perm
+      : Proper (Permutation (A:=_) ==> (Permutation (A:=_)) ==> part_res_Perm)
+          partition_result_of_lists.
+    Proof.
+      intros ? ? ? ? ? ?.
+      unfold partition_result_of_lists, part_res_Perm.
+      repeat case_match;
+        basic_goal_prep;
+        autorewrite with utils in *;
+        intuition (subst; eauto);
+        rewrite !combine_fst_snd;
+        auto.
+    Qed.
+
+    Instance Permutation_filter'
+      : forall (A : Type) (f : A -> bool),
+        Proper (Permutation (A:=A) ==> Permutation (A:=_)) (filter f).
+    Proof.
+      intros A' f.
+      intros l1 l2 HP.
+      induction HP;
+        basic_goal_prep;
+        repeat (case_match; basic_goal_prep);
+        basic_utils_crush.
+      rewrite IHHP1.
+      eauto.
+    Qed.
+
+    
+    
+    Instance false_lists_Perm
+      : Proper (part_res_Perm ==> (Permutation (A:=_)))
+          false_lists.
+    Proof.
+      intros acc1 acc2 HP.
+      destruct acc1, acc2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    
+    Instance true_lists_Perm
+      : Proper (part_res_Perm ==> (Permutation (A:=_)))
+          true_lists.
+    Proof.
+      intros acc1 acc2 HP.
+      destruct acc1, acc2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+
+    Hint Resolve all2_len : utils.
+
+    Lemma partition_tries_Permutation cil ptl cil' ptl' acc acc' width
+      : rectangular_trie_list (S width) cil ptl ->
+        (*TODO: derivable from other assumptions*)
+        rectangular_trie_list (S width) cil' ptl' ->
+        partition_result_wf width acc ->
+        partition_result_wf width acc' ->
+        Permutation (combine cil ptl) (combine cil' ptl') ->
+        part_res_Perm acc acc' ->
+        part_res_Perm (partition_tries cil ptl acc) (partition_tries cil' ptl' acc').
+    Proof.
+      unfold rectangular_trie_list.
+      intros ? ? ? Hacc Hacc' HP.
+      erewrite <- partition_left_inverse
+        with (acc:=(partition_tries cil ptl acc))
+        by eauto with utils.
+      erewrite <- partition_left_inverse
+        with (acc:=(partition_tries cil' ptl' acc'))
+        by eauto with utils.
+      erewrite !partition_tries_false_lists,
+        !partition_tries_true_lists;
+        basic_utils_crush.
+      
+      all: [>| eapply all2_impl_l; eauto; basic_goal_prep; now intuition eauto..].
+      apply partition_result_of_lists_Perm.
+      all:rewrite <- !Permutation_rev.
+      all: rewrite ?HP, ?Hacc'; apply Permutation_app; eauto.
+    Qed.      
+
+    (*
+    Lemma pt_spaced_intersect_Permutation fuel f_cil f_ptl t_ci0 t_cil
+      : Proper (Permutation (A:=_) =2=> Permutation (A:=_) ==> eq)
+           (pt_spaced_intersect' fuel f_cil f_ptl t_ci0 t_cil).
+    Proof.
+      revert f_cil f_ptl t_ci0 t_cil.
+      induction fuel;
+        intros;
+        intros ? ? ? ptl1 ptl2 HP;
+        basic_goal_prep;
+        basic_utils_crush.
+      repeat case_match; eauto.
+      {
+        rewrite HP.
+        reflexivity.
+      }
+      {
+        TODO: false!
+                   t_cil needs to be permuted with ptl!
+        TODO: partition_tries permutation
+      }
+     *)
+
+    Lemma all_rev_iff [T] [P : T -> Prop] l
+      : all P (rev l) <-> all P l.
+    Proof.
+      rewrite <- Permutation_rev.
+      reflexivity.
+    Qed.
+    Hint Rewrite all_rev_iff : utils.
+
+    
+    Lemma all2_rev [T1 T2] [R : T1 -> T2 -> Prop] l1 l2
+      : all2 R l1 l2 -> all2 R (rev l1) (rev l2).
+    Proof.
+      revert l2;
+        induction l1;
+        destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+      apply all2_app; eauto.
+      cbn.
+      tauto.
+    Qed.
+      
+    Lemma all2_rev_iff [T1 T2] [R : T1 -> T2 -> Prop] l1 l2
+      : all2 R (rev l1) (rev l2) <-> all2 R l1 l2.
+    Proof.
+      split; eauto using all2_rev.
+      rewrite <- rev_involutive with (l:= l1).
+      rewrite <- rev_involutive with (l:= l2).
+      intros.
+      apply all2_rev.
+      rewrite !rev_involutive in *; auto.
+    Qed.
+    Hint Rewrite all2_rev_iff : utils.
+    
+    Lemma rectangular_trie_list_rev_iff width t_cil l
+      : rectangular_trie_list width (rev t_cil) (rev l)
+        <-> rectangular_trie_list width t_cil l.
+    Proof.
+      unfold rectangular_trie_list;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite rectangular_trie_list_rev_iff : utils.
+
+    
+    Definition leaf_intersect_uncons l :=
+      match l with
+      | cons (pos_trie_leaf a) l => leaf_intersect a l
+      | _ => default
+      end.    
+
+    Instance part_res_Perm_Trans : Transitive part_res_Perm.
+    Proof.
+      unfold part_res_Perm, Transitive;
+        repeat (basic_goal_prep; try case_match);
+        basic_utils_crush.
+      { rewrite H0, H1; auto. }
+      { rewrite H0, H1; auto. }
+      { rewrite H3, H2; auto. }
+    Qed.
+    
+    (*TODO: how to make a lemma that cares about which permutation?*)
+    (*
+    Lemma list_intersect_Perm
+      : forall (p : Permutation (x::l) (x'::l')),
+        (forall is_rev x l x' l' (p' : Permutation (x::l) (x'::l')),
+            SamePermutation p p' ->
+            f is_rev x l = g is_rev x' l') ->
+        list_intersect f x l
+        = list_intersect g x' l'.
+
+
+(*TODO: too restrictive? we can have the same permutation 2 different ways...*)
+Inductive SamePermutation {A B}
+  : forall [l1 l2 : list A], Permutation l1 l2 ->
+                             forall [l1' l2' : list B], Permutation l1' l2' -> Prop :=
+| same_perm_nil : SamePermutation (perm_nil _) (perm_nil _)
+| same_perm_skip x l1 l2 (p : Permutation l1 l2) x' l1' l2' (p' : Permutation l1' l2')
+  : SamePermutation p p' -> SamePermutation (perm_skip x p) (perm_skip x' p')
+| same_perm_swap (x y : A) (l : list A)
+    (x' y' : B) (l' : list B)
+  : SamePermutation (perm_swap x y l) (perm_swap x' y' l')
+| same_perm_trans
+
+  match p1, p2 with
+  | perm_nil _, perm_nil _ => True
+  | perm_skip x x0, perm_skip x1 x01 =>
+      same_permutation x0 x01
+  | perm_swap _ _ _, perm_swap _ _ _ => True
+  | perm_trans x x0, perm_trans x1 x01 =>
+      same_permutation x x1
+      /\ same_permutation x0 x01
+  | _, _ => False
+  end.
+     *)
+
+    
+      (*
+    Lemma list_intersect'_Perm_combined D B C (x:PTree.tree' D) l x' l' (f g : _ -> _ -> _ -> _ -> _ -> option (PTree.tree' C))
+      (c : B) cl c' cl' is_rev
+      : Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+      (forall is_rev x l x' l'  c cl c' cl',
+            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+            f c cl is_rev x l = g c' cl' is_rev x' l') ->
+        list_intersect' (f c cl) x is_rev l
+        = list_intersect' (g c' cl') x' is_rev l'.
+    Proof.
+      intros.
+      otree
+      apply PTree.extensionality.
+      option_ext
+      map.map_ext
+      TODO: map_ext
+              pose proof (list_intersect_correct' _ _
+       *)
+
+    
+    Lemma otree_injective B (a b : option (PTree.tree' B))
+      : otree a = otree b -> a = b.
+    Proof.
+      destruct a,b; cbn; congruence.
+    Qed.
+
+    (*TODO: how to make a lemma that cares about which permutation?*)
+    Lemma list_intersect_Perm_combined D B C (x:PTree.tree' D) l x' l' (f g : _ -> _ -> _ -> _ -> option (PTree.tree' C))
+      (c : B) cl c' cl'
+      : Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+      (forall x l x' l'  c cl c' cl',
+            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+            f c cl x l = g c' cl' x' l') ->
+        list_intersect (fun is_forward : bool => f c (if is_forward then cl else rev cl)) x l
+        = list_intersect (fun is_forward : bool => g c' (if is_forward then cl' else rev cl')) x' l'.
+    Proof.
+      intros H' Hext.
+      apply otree_injective.
+      apply PTree.extensionality.
+      intros.
+      rewrite !list_intersect_correct.
+      2,3:admit.
+      {
+        apply Permutation_map with (f:= pair_map id (PTree.get' i)) in H'.
+        rewrite !map_combine in H'.
+        rewrite !map_id in H'.
+         Definition uncons {T T'} f (l : list T) : option T' :=
+          match l with
+          | [] => None
+          | x::l => f x l
+          end.
+        change_no_check (Mbind (fun x => Mbind (fun l => @?f x l) (list_Mmap ?g ?l)) (?g ?x))
+          with (Mbind (uncons f) (list_Mmap g (x::l))).
+        rewrite !Mmap_option_all.
+        set (R:= fun {A} (x y : list A) => Permutation (combine (c::cl) x) (combine (c'::cl') y)).
+        eapply @Mbind_Proper
+          with (R:= R _);
+          auto.
+        2:{
+          unfold R;
+          unfold option_rel;
+            repeat case_match;
+            basic_goal_prep;
+          auto.
+          all:admit.
+        }
+        {
+        cbv [respectful R].
+        destruct x0, y; cbn;
+          basic_utils_crush.
+        eapply Hext.
+        cbn in *.
+        rewrite <- !rev_combine by admit.
+        rewrite <- !Permutation_rev.
+        auto.
+        }
+    Abort.
+      
+    
+    Lemma pt_spaced_intersect'_perm fuel width f_cil f_ptl t_ci0 t_cil x0 l f_cil' f_ptl' t_ci0' t_cil' x0' l'
+      : rectangular_trie_list width (t_ci0::t_cil) (x0::l) ->
+        rectangular_trie_list width f_cil f_ptl ->
+        rectangular_trie_list width (t_ci0'::t_cil') (x0'::l') ->
+        rectangular_trie_list width f_cil' f_ptl' ->
+        let cils := t_ci0::t_cil++f_cil in
+        let cils' := t_ci0'::t_cil'++f_cil' in
+        let ptls := x0::l++f_ptl in
+        let ptls' := x0'::l'++f_ptl' in
+        Permutation (combine cils ptls) (combine cils' ptls') ->
+        pt_spaced_intersect' fuel f_cil f_ptl t_ci0 t_cil x0 l
+        = pt_spaced_intersect' fuel f_cil' f_ptl' t_ci0' t_cil' x0' l'.
+    Proof.
+      revert width f_cil f_ptl t_ci0 t_cil x0 l
+        f_cil' f_ptl' t_ci0' t_cil' x0' l'.
+      induction fuel;
+        basic_goal_prep;
+        auto.
+      destruct t_ci0, t_ci0'.
+      {
+        repeat case_match; basic_goal_prep; subst; intuition auto.
+        rewrite !leaf_intersect_correct.
+        2-5: unfold rectangular_trie_list in *;
+          repeat basic_goal_prep;
+          eapply all2_impl_r; eauto;
+          repeat basic_goal_prep;
+          destruct x, y; 
+        basic_goal_prep; auto; congruence.
+        rewrite <-!fold_left_app.
+        f_equal.
+        f_equal.
+        apply fold_left_permuted; eauto.
+        change (?a :: map get_leaf_unchecked ?l ++ ?l')
+          with (map get_leaf_unchecked ((pos_trie_leaf a)::l) ++ l').
+        change ((?a,?b) :: (combine ?la ?lb))
+          with (combine (a::la) (b::lb)) in *.
+        apply Permutation_combine_r in H4.
+        2,3: basic_goal_prep;basic_utils_crush.
+        rewrite Permutation_app_comm in H4.
+        change (?a::(?l++?l')) with ((a::l) ++ l') in *.
+        eapply Permutation_map in H4.
+        rewrite !map_app in *.
+        erewrite H4.
+        cbn.
+        rewrite Permutation_app_comm.
+        reflexivity.
+      }
+      1,2:repeat case_match;
+          unfold rectangular_trie_list in *;
+          repeat basic_goal_prep;
+          Lia.lia.
+      destruct width as [| width].
+      {
+        repeat case_match;
+          unfold rectangular_trie_list in *;
+          repeat basic_goal_prep;
+          Lia.lia.
+      }
+      {
+
+      erewrite !partition_tries_app in *; eauto.
+      all: [> | unfold rectangular_trie_list in *;
+                repeat basic_goal_prep; now auto..].
+
+      Ltac populate_pt_knowledge width l1 l2 acc :=
+          let Hacc := fresh in
+          let Hrect := fresh in
+          assert (partition_result_wf width acc) as Hacc
+              by (case_match;cbn; intuition auto);
+          assert (rectangular_trie_list (S width) l1 l2) as Hrect
+              by (unfold rectangular_trie_list in *;
+                  repeat basic_goal_prep;
+                  apply all2_app; eauto);
+          pose proof (partition_tries_wf width acc l1 l2 Hrect Hacc).
+       
+
+      lazymatch goal with
+        |- match partition_tries ?l1 ?l2 ?acc with _ => _ end
+           = match partition_tries ?l1' ?l2' ?acc' with _ => _ end =>
+          populate_pt_knowledge width l1 l2 acc;
+          populate_pt_knowledge width l1' l2' acc';
+          assert (part_res_Perm (partition_tries l1 l2 acc)
+                    (partition_tries l1' l2' acc'))
+      end.
+      {
+        erewrite !partition_tries_spec; eauto.
+        basic_goal_prep.
+        rewrite <- !Permutation_rev.
+        apply partition_result_of_lists_Perm.
+        {
+          replace (false_lists (@! if b then (have_true_part [] [] t_ci0 x0 [] [])
+                                  else (just_false_part t_ci0 x0 [] [])))
+            with (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                    (filter (fun p : list bool * pos_trie' => negb (hd false (fst p))) [(b::t_ci0, x0)]))
+            by (destruct b; basic_goal_prep; auto).
+          replace (false_lists (@! if b0 then (have_true_part [] [] t_ci0' x0' [] [])
+                                  else (just_false_part t_ci0' x0' [] [])))
+            with (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                    (filter (fun p : list bool * pos_trie' => negb (hd false (fst p)))
+                       [(b0::t_ci0',x0')]))
+            by (destruct b0; basic_goal_prep; auto).
+          rewrite <- !map_app, <- !filter_app.
+          apply Permutation_map.
+          apply Permutation_filter'.
+          rewrite Permutation_app_comm; cbn.
+          rewrite Permutation_app_comm with (l:=combine (f_cil' ++ t_cil') (f_ptl' ++ l')); cbn.
+          rewrite !combine_app in *; basic_utils_crush.
+          rewrite Permutation_app_comm.
+          rewrite H4.
+          rewrite Permutation_app_comm.
+          reflexivity.
+        }
+        {
+          replace (true_lists (@! if b then (have_true_part [] [] t_ci0 x0 [] [])
+                                 else (just_false_part t_ci0 x0 [] [])))
+            with (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                    (filter (fun p : list bool * pos_trie' => (hd false (fst p))) [(b::t_ci0, x0)]))
+            by (destruct b; basic_goal_prep; auto).
+          replace (true_lists (@! if b0 then (have_true_part [] [] t_ci0' x0' [] [])
+                                 else (just_false_part t_ci0' x0' [] [])))
+            with (map (fun p : list bool * pos_trie' => (tl (fst p), snd p))
+                    (filter (fun p : list bool * pos_trie' => (hd false (fst p)))
+                       [(b0::t_ci0',x0')]))
+            by (destruct b0; basic_goal_prep; auto).
+          rewrite <- !map_app, <- !filter_app.
+          apply Permutation_map.
+          apply Permutation_filter'.
+          rewrite Permutation_app_comm; cbn.
+          rewrite Permutation_app_comm with (l:=combine (f_cil' ++ t_cil') (f_ptl' ++ l')); cbn.
+          rewrite !combine_app in *; basic_utils_crush.
+          rewrite Permutation_app_comm.
+          rewrite H4.
+          rewrite Permutation_app_comm.
+          reflexivity.
+        }
+      }      
+      lazymatch goal with
+        |- match partition_tries ?l1 ?l2 ?acc with _ => _ end
+           = match partition_tries ?l1' ?l2' ?acc' with _ => _ end =>
+          let Heqpt := fresh "Heqpt" in
+          destruct (partition_tries l1 l2 acc) eqn:Heqpt;
+          let Heqpt' := fresh "Heqpt" in
+          destruct (partition_tries l1' l2' acc') eqn:Heqpt'
+      end.      
+      {
+        repeat basic_goal_prep.
+        eapply IHfuel; eauto.        
+        1,2:unfold rectangular_trie_list in *;
+        repeat basic_goal_prep; intuition eauto.
+      }
+      1,2: repeat basic_goal_prep; intuition auto.
+      {
+        repeat basic_goal_prep.
+        f_equal.
+    Abort.
+
+       
+      (*
+    Lemma pt_spaced_intersect'_rev fuel f_cil f_ptl t_ci0 t_cil x0 l width
+      : width > 0 ->
+        rectangular_trie_list width (t_ci0::t_cil) (x0::l) ->
+        rectangular_trie_list width f_cil f_ptl ->
+        Permutation
+        pt_spaced_intersect' fuel f_cil f_ptl t_ci0 (rev t_cil) x0 (rev l)
+        = pt_spaced_intersect' fuel f_cil f_ptl t_ci0 t_cil x0 l.
+    Proof.
+      revert f_cil f_ptl t_ci0 t_cil x0 l.
+      induction fuel;
+        basic_goal_prep;
+        auto.
+      case_match.
+      {
+        case_match; auto.
+        rewrite <- Permutation_rev.
+        reflexivity.
+      }
+      {
+        remember (partition_tries f_cil0 f_ptl0
+                    (@! if b then (have_true_part [] [] t_ci0 x0 [] []) else (just_false_part t_ci0 x0 [] [])))
+          as acc.
+        Note: IH won't be sufficient here. t_ci0 changes as well.
+        erewrite !partition_tries_spec by admit.
+        cbn.
+       *)
+        (*        TODO: fold 1st arg in somehow, deal w/ just a list?
+        Lemma match_of_lists
+          : match partition_result_of_lists l1 l2 with
+            | just_false_part ci0 pt0 other_cil other_tries =>
+                f_case ci0 pt0 other_cil other_tries
+            | have_true_part other_cil other_tries t_ci1 t_pt0 true_cil true_tries =>
+                t_case other_cil other_tries t_ci1 t_pt0 true_cil true_tries
+            end
+            = match l2 with
+                [] =>
+         *)
+                  
+                        (*                   
+        Lemma partition_tries_rev:
+  forall (cil : list (list bool)) (ptl : list pos_trie') (cil' : list (list bool)) (ptl' : list pos_trie')
+    (acc acc' : partition_result) (width : nat),
+  width > 0 ->
+  rectangular_trie_list width cil ptl ->
+  rectangular_trie_list width cil' ptl' ->
+  partition_result_wf acc ->
+  partition_result_wf acc' ->
+  Permutation (combine cil ptl) (combine cil' ptl') ->
+  partition_tries (rev cil) (rev ptl) acc
+  = let fl := false_lists acc in
+    let tl := true_lists acc in
+    partition_result_of_lists ((combine cil ptl)
+      
+          
+        lazymatch goal with
+          |- match ?c1 with _ => _ end = match ?c2 with _ => _ end =>
+            assert (part_res_Perm c1 c2);
+            [| destruct c1 eqn:Hc1;
+               destruct c2 eqn:Hc2]
+           (* [| replace c1 with c2 by admit;
+            destruct c2 eqn:Hc2; auto]*)
+        end.
+        {
+          eapply partition_tries_Permutation; eauto.
+          {
+            unfold rectangular_trie_list in *;
+              basic_goal_prep;
+              basic_utils_crush.
+          }
+       
+          {
+            unfold rectangular_trie_list in *;
+              basic_goal_prep;
+              basic_utils_crush.
+          }
+          all: try now (apply partition_tries_wf;case_match; cbn; auto).
+          {
+            rewrite <- rev_combine, <- Permutation_rev; auto.
+            unfold rectangular_trie_list in *;
+              basic_goal_prep;
+              basic_utils_crush.
+          }
+          { reflexivity. }
+        }
+        {
+          unfold part_res_Perm in *.
+          TODO: need to generalize thm statement to part_res_perm of the arguments?.
+          ALternately, need to be more precise here.
+          Probably a better option:
+          push revs through partition_tries
+          
+        }
+      }
+    Qed.
+        case_match.
+        
+        
+        TODO: justify permuting partition
+        rewrite <- Permutation_rev.
+        destruct ((partition_tries f_cil f_ptl
+                     (@! if b then (have_true_part [] [] t_ci0 x0 [] []) else (just_false_part t_ci0 x0 [] [])))).
+        Lemma partition_tries_rev
+          : partition_tries (rev t_cil) (rev l) acc
+            = 
+        TODO: partition_tries_rev
+      }
+    Qed.
+*)
+    
+    Lemma pt_spaced_intersect'_correct fuel x cil1 cil2 ptl1 ptl2 ci0 pt0
       : (fuel > length x)%nat ->
-        all (fun p => length p = length x) cil1 ->
-        all (fun p => length p = length x) cil2 ->
-        all2 (fun c t => Is_true (has_depth' (length (filter id c)) t)) cil1 ptl1 ->
-        all2 (fun c t => Is_true (has_depth' (length (filter id c)) t)) cil2 ptl2 ->
-        spaced_get_ x (zip_bools (cil1++cil2), pt_spaced_intersect' fuel cil1 ptl1 cil2 ptl2)
-        = Mbind merge_list (list_Mmap (spaced_get_ x) (combine (cil1++cil2)
-                                                         (map Some (ptl1 ++ ptl2)))).
+        length ci0 = length x ->
+        Is_true (has_depth' (length (filter id ci0)) pt0) ->
+        rectangular_trie_list (length x) cil1 ptl1 ->
+        rectangular_trie_list (length x) cil2 ptl2 ->
+        spaced_get_ x (zip_bools (ci0::cil1++cil2),
+            pt_spaced_intersect' fuel cil1 ptl1 ci0 cil2 pt0 ptl2)
+        = Mbind (list_Mfoldl (fun acc p => option_map (merge acc) (spaced_get' x p))
+                   (combine (cil1++cil2) (ptl1 ++ ptl2)))
+            (spaced_get' x (ci0, pt0)).
     Proof.
       unfold spaced_get_.
       rewrite Mbind_option_map.
       cbn [fst snd].
-      revert x cil1 cil2 ptl1 ptl2.
+      revert x cil1 cil2 ptl1 ptl2 ci0 pt0.
       induction fuel; intros; try Lia.lia.
       cbn [pt_spaced_intersect'].
+      destruct x, ci0;
+        basic_goal_prep;
+        try congruence.
+      {
+        destruct pt0; basic_goal_prep; try tauto.
+        rewrite !leaf_intersect_correct.
+        2,3:admit.
+        rewrite <- fold_left_app.
+        rewrite <- map_app.
+        rewrite <- list_Mfoldl_map_option
+          with (g := snd)
+               (f := fun acc x => option_map (merge acc) (get_leaf x)).
+        rewrite map_combine_snd.
+        2: admit.
+        rewrite <- list_Mfoldl_option_map.
+        rewrite map_get_leaf_is_unchecked; auto.
+        basic_utils_crush.
+        all: unfold rectangular_trie_list in *; break.
+        all: eapply all_all2_r.
+        all: eapply all2_impl; eauto.
+        all:unfold empty.
+        all:basic_goal_prep; case_match; subst; cbn in *; eauto.
+        (*
+        all: apply in_combine_l in H7.
+        all: [>eapply in_all in H3 | eapply in_all in H4]; eauto.
+        all: destruct x; cbn in *; congruence.
+      }
+      erewrite partition_tries_app; eauto.
+      destruct (partition_tries (cil1 ++ cil2) (ptl1 ++ ptl2)
+        (@!
+         if b then (have_true_part [] [] ci0 pt0 [] [])
+         else (just_false_part ci0 pt0 [] [])))
+        eqn:Hpart;
+        [ replace (hd false (zip_bools ((b :: ci0) :: cil1 ++ cil2))) with
+          false by admit
+        | replace (hd false (zip_bools ((b :: ci0) :: cil1 ++ cil2))) with
+          true by admit];
+        cbn [spaced_get1].
+      2:{
+        Ltac option_focus k :=
+          match goal with
+            |- context c [match ?e with Some x => @?branchS x | None => ?branchN end] =>
+              lazymatch e with k ?t =>
+              let new_goal := context c [option_eta (fun o => match k o with
+                                                              | Some x => branchS x
+                                                              | None => branchN
+                                                              end) t] in
+              let HG := fresh "Heta" in
+              enough new_goal as HG;
+              [rewrite <- option_eta_equiv in HG; assumption
+              | cbv [option_eta] ]
+              end
+          end.
+          
+          option_focus (option_map pos_trie_node).
+          cbn.
+          repeat 
+          change (match ?m with
+                  | Some a => @?f a
+                  | None => None
+                  end)
+            with (Mbind f m).
+          rewrite option_Mbind_assoc.
+          rewrite otree_get_Mbind.
+          rewrite list_intersect_correct.
+          2:{
+            intro b'; destruct b'; cbn.
+            *)
+            (*
+            TODO: parallel rev lemma.
+            TODO: goal 2 is false?
+            reflexivity.
+             *)
+          (*
+          
+          cbn.
+          rewrite!option_Mbind_assoc.
+          
+          {
+            rewrite <- option_eta_equiv in H5.
+            assumption.
+          sumption.
+        TODO: how to better option-eta
+        list_intersect_correct
+        
+        cbn.
+        replace (match
+    option_map pos_trie_node
+      (list_intersect (pt_spaced_intersect' fuel f_cil f_ptl t_ci0 t_cil) (proj_node_map_unchecked pt0)
+         (map proj_node_map_unchecked t_ptl))
+  with
+  | Some a =>
+      match PTree.get' p (proj_node_map_unchecked a) with
+      | Some a0 =>
+          spaced_get' x
+            (tl
+               (fold_left (fun acc l : list bool => map2 orb (combine l acc)) (cil1 ++ cil2) (b :: ci0)),
+             a0)
+      | None => None
+      end
+  | None => None
+                  end)
+          with
+          (match(list_intersect (pt_spaced_intersect' fuel f_cil f_ptl t_ci0 t_cil) (proj_node_map_unchecked pt0)
+         (map proj_node_map_unchecked t_ptl))
+  with
+  | Some a =>
+      match PTree.get' p a with
+      | Some a0 =>
+          spaced_get' x
+            (tl
+               (fold_left (fun acc l : list bool => map2 orb (combine l acc)) (cil1 ++ cil2) (b :: ci0)),
+             a0)
+      | None => None
+      end
+  | None => None
+  end) by admit.
+        list_intersect_correct.
+      }
+      {
+        assert (Permutation (combine ((b::ci0)::(cil1 ++ cil2))
+                               (pt0::(ptl1 ++ ptl2)))
+                  (combine (map (cons false) (ci1::cil))
+                     (pt1::ptl))) by admit.
+        
+        specialize (IHfuel x cil [] ptl [] ci1 pt1 ltac:(Lia.lia)).
+        case_match. 
+        {
+          pose proof H5 as H5l.
+          apply Permutation_combine_l in H5l.
+          2,3:admit.
+          set (zip_bools ((b :: ci0) :: cil1 ++ cil2)) as tmp.
+          remember tmp as tmp'.
+          revert Heqtmp'.
+          subst tmp.
+          (*TODO: why can't I rewrite in the body of a let?*)
+          rewrite H5l.
+          intros ?; subst tmp'.
+          rewrite !zip_bools_map_cons by congruence.
+          cbn [hd tl map].
+          rewrite ! app_nil_r in IHfuel.
+          cbn -[zip_bools].
+          replace (pos_trie_node (proj_node_map_unchecked p0)) with p0 by admit.
+          rewrite IHfuel.
+          2-5:admit.
+          replace b with false by admit.
+          cbn.
+          change (match ?m with
+                  | Some a => @?f a
+                  | None => None
+                  end)
+            with (Mbind f m).
+          erewrite Mbind_option_ext
+            with (f:= (fun a : pos_trie' => spaced_get' x (zip_bools (ci1 :: cil), a))).
+          2:{
+            intros.
+            TODO: p0 specialized. there's a missalignment
+            rewrite IHfuel.
+          
+          change (Mbind (fun a : pos_trie' => spaced_get' x (pair (zip_bools (cons ci1 cil)) a))
+                    (spaced_get1 p false (proj_node_map_unchecked p0)))
+            with (spaced_get' (p::x) (false::(zip_bools (cons ci1 cil)), p0)).
+          rewrite IHfuel.
+          TODO: turn lhs into a spaced_get?
+          
+          TODO: rewrite rhs into mbind mfoldl
+          TODO: b vs false. not the same get1!
+                                    do I need permutation induction in the middle?
+        }
+        TODO: reconcile spaced_get versions.
+        TODO: would it be easier to relate to a binary fn first? seems like.
+        2:{
+          
+        intuition try Lia.lia.
+      my_case 1.
+      case_match.
+      
+      Lemma partition_tries_spec
+        : partition_tries cil ptl acc = 
+          ->
+          
+      
+      2,3: unfold rectangular_trie_list
+      
+        
+        rewrite <- fold_left_app.
+        
+        
+        rewrite Mmap_option_all.
+        rewrite map_map.
+        cbn.
+        rewrite <- map_map with (f:=snd).
+        rewrite map_combine_snd.
+        2:admit.
+        unfold merge_list.
+        rewrite <- fold_left_app.
+        rewrite <- map_app.
+        = list_Mfold (fun acc t => fmap merge (spaced_get_ x t))
+        TODO: wrong! RHS doesn't include a/ci0/pt0
+        
+        TODO: leaf_intersect_spec.
+
+      
       rewrite partition_tries_app.
       2:{ eapply all2_len; eauto. }
       rewrite partition_tries_correct.
@@ -1434,7 +2726,8 @@ Section __.
 
 
     Qed.
-*)
+           *)
+    Abort.
 
       
     
@@ -1538,7 +2831,7 @@ Section __.
         exists l', l = map pos_trie_node l'.
     Admitted.
 
-    
+    (*
     Lemma partition_tries_spec_properties_nonempty cil ptl
       true_cil true_tries other_cil other_tries
         : mk4 true_cil true_tries other_cil other_tries
@@ -1551,6 +2844,7 @@ Section __.
           /\ length other_cil = length other_tries.
     Proof.
     Admitted.
+*)
 
     
     

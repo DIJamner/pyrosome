@@ -93,6 +93,14 @@ Section __.
       induction l; basic_goal_prep; basic_utils_crush.
     Qed.
 
+    
+    Lemma all_app l1 l2 : all (l1++l2) <-> all l1 /\ all l2.
+    Proof.
+      induction l1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
   End All.
 
 
@@ -402,6 +410,8 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 #[export] Hint Resolve incl_app : utils.
 #[export] Hint Resolve incl_appl : utils.
 #[export] Hint Resolve incl_tl : utils.
+
+#[export] Hint Rewrite all_app : utils.
 
 
 #[export] Hint Rewrite inb_is_In using solve[typeclasses eauto] : utils.

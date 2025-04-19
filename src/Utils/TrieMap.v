@@ -229,6 +229,14 @@ Section __.
     | (None, Some b, Some c) => Some323 b c
     | (Some a, Some b, Some c) => Some3123 a b c
     end.
+
+  Lemma hfin3_tuple_inverse o
+    : hfin3_of_tuple (hfin3_to_tuple o) = o.
+  Proof. destruct o; reflexivity. Qed.
+
+  Lemma hfin3_tuple_inverse' o
+    : hfin3_to_tuple (hfin3_of_tuple o) = o.
+  Proof. cbv; repeat case_match; reflexivity. Qed.
   
   Record quad := mk4 { p41 :A; p42 : B; p43 : C; p44 : D }.
   
@@ -239,6 +247,19 @@ Arguments hfin2 : clear implicits.
 Arguments hfin3 : clear implicits.
 
 
+Definition rev3 {A B C} (hf : hfin3 (list A) (list B) (list C)) :=
+  let r {X} := Datatypes.option_map (rev (A:=X)) in
+  hfin3_of_tuple (pair_map (pair_map r r) r (hfin3_to_tuple hf)).
+
+Lemma rev3_rev3 [A B C] (x :  hfin3 (list A) (list B) (list C)) : rev3 (rev3 x) = x.
+Proof.
+  unfold rev3.
+  destruct x;
+    basic_goal_prep;
+    rewrite ?rev_involutive;
+    reflexivity.
+Qed.
+#[export] Hint Rewrite rev3_rev3 : utils.  
 
 Section Folds.
   Context {B A : Type}.
@@ -432,10 +453,10 @@ End MapIntersect.
    Assumes that (elt_intersect _ x) commutes
  *)
 Section MapIntersectList.
-  (* The argument to elts_intersect must be non-empty
-     for the result to be well-defined
-   *)
-  Context {B C} (elts_intersect : B -> list B -> option C).
+  Context {B C} (elts_intersect : bool -> B -> list B -> option C)
+    (elts_intersect_rev
+      : forall b x l, elts_intersect b x (rev l)
+                      = elts_intersect (negb b) x l).
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
@@ -515,20 +536,20 @@ Section MapIntersectList.
     let to_acc_list {A} := Mbind (M:=option) (fun _ => Mret (@nil A)) in
     hfin3_of_tuple (pair_map (pair_map to_acc_list to_acc_list) to_acc_list hd_tuple).
 
-  Definition list_intersect'F (list_intersect' : tree' B -> list (tree' B) -> option (tree' C))
-    (hd : tree' B) (args : list (tree' B)) : option (tree' C) :=
+  Definition list_intersect'F (list_intersect' : tree' B -> bool -> list (tree' B) -> option (tree' C))
+    (hd : tree' B) (is_rev : bool) (args : list (tree' B)) : option (tree' C) :=
     tree'_tuple_k hd (fun p1 =>
     hfin3_to_tuple_k (gather_tries args (initial_acc p1)) (fun p_acc =>
     let maybe_intersect m1 m2 : option (tree' C) := 
       @! let x <- m1 in
         let y <- m2 in
-        (list_intersect' x y)
+        (list_intersect' x (negb is_rev) y)
     in
     let p12 := pair_map2 (pair_map2 maybe_intersect
                             (fun c cs =>
                                @! let c <- c in
                                  let cs <- cs in
-                                 (elts_intersect c cs)))
+                                 (elts_intersect is_rev c cs)))
                  maybe_intersect
                  p1 p_acc
     in
@@ -537,15 +558,16 @@ Section MapIntersectList.
   #[local] Definition list_intersect'_pre_cbv :=
     (fix list_intersect' hd := list_intersect'F list_intersect' hd).
   
-  Definition list_intersect :=
+  Definition list_intersect' :=
     Eval cbv -[gather_tries] in
       (fix list_intersect hd := list_intersect'F list_intersect hd).
 
+  Definition list_intersect hd := list_intersect' hd false.
   
   Lemma gather_tries_no_short_None3 tl
     :  gather_tries_no_short tl None3 = None3.
   Proof using.
-    clear elts_intersect.
+    clear elts_intersect elts_intersect_rev.
     induction tl;
       basic_goal_prep;
       eauto.
@@ -557,7 +579,7 @@ Section MapIntersectList.
   Lemma gather_no_short tl acc
     : gather_tries tl acc = gather_tries_no_short tl acc.
   Proof using.
-    clear elts_intersect.
+    clear elts_intersect elts_intersect_rev.
     revert acc;
       induction tl;
       basic_goal_prep;
@@ -741,13 +763,6 @@ Section MapIntersectList.
   Lemma get'_1 {A} x (t : tree' A)
     : get' x~1 t = Mbind (get' x) (tree_proj_001 t).
   Proof. destruct t; reflexivity. Qed.
-
-
-  (* TODO: might want a stronger property, that the first argument can be permuted
-     with the rest.
-     This isn't as convenient though.
-   *)
-  Context (elts_intersect_Proper : Proper (eq ==> @Permutation _ ==> eq) elts_intersect).
   
   
   Lemma Mmap_Mbind A A' (f : A -> option A') l
@@ -796,77 +811,185 @@ Section MapIntersectList.
     { eapply opt_trans; eauto. }
   Qed.
   
-  #[local] Instance list_intersect'_Proper
-    : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect'_pre_cbv.
+  Lemma gather_tries_none l
+    : gather_tries l None3 = None3.
   Proof.
-    intros hd' hd Hhd; subst.
-    induction hd;
-      intros;
-      intros tl tl' Htl;
-      basic_goal_prep.
-    all: rewrite !hfin3_to_tuple_un_k.
-    all: rewrite !gather_tries_spec.
-    all: unfold gather_tries_simple.
-    all: unfold pair_map2, pair_map; cbn.
-    all: cbv [id].
-    all: rewrite !split_map.
-    all: cbn.
-    all: rewrite !(map_ext _ _ tree'_tuple_to_proj).
-    all: rewrite !map_map.
-    all: cbn.
-    all:change (fun x => ?f x) with f.
-    all: 
-      pose proof (option_all_perm_Proper _ _ _
-                    (Permutation_rev' (Permutation_map' tree_proj_001 Htl)));
-      pose proof (option_all_perm_Proper _ _ _
-                    (Permutation_rev' (Permutation_map' tree_proj_010 Htl)));
-      pose proof (option_all_perm_Proper _ _ _
-                    (Permutation_rev' (Permutation_map' tree_proj_100 Htl))).
-    all: repeat case_match; cbn; eauto; cbn in *.
-    all: rewrite ?app_nil_r in *.
-    all: try tauto.
-    all: try congruence.
-    all: repeat lazymatch goal with
-           | H1 : list_intersect'_pre_cbv ?hd ?l = _,
-               H2 : list_intersect'_pre_cbv ?hd ?l' = _,
-                 Hperm : Permutation ?l ?l',
-                   IHhd : (Permutation (A:=tree' B) ==> eq)%signature
-                            (list_intersect'_pre_cbv ?hd)
-                            (list_intersect'_pre_cbv ?hd)
-             |- _ =>
-               erewrite IHhd in H1; try eassumption; clear Hperm
-           end;
-      try lazymatch goal with
-        | H1 : elts_intersect ?e ?l = _,
-            H2 : elts_intersect ?e ?l' =_ |- _ =>
-            erewrite elts_intersect_Proper in H1;
-            try apply perm_skip;
-            try (eassumption || symmetry; eassumption || reflexivity)
-        end;
-      congruence.
+    induction l; 
+      basic_goal_prep;
+      try case_match;
+      basic_utils_crush.
   Qed.
+  Hint Rewrite gather_tries_none : utils.
+
   
-  
-  #[export] Instance list_intersect_Proper
-    : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect
-    := list_intersect'_Proper.
+  (* TODO: duplicated; should be a part of Monad_ok at some point*)
+  Lemma option_Mbind_assoc T1 T2 T3 (f : T1 -> option T2) (g : T2 -> option T3) ma
+    : Mbind (fun a => Mbind g (f a)) ma = Mbind g (Mbind f ma).
+  Proof.
+    destruct ma; cbn; eauto.
+  Qed.
+
+  Lemma option_map_ext [T1 T2] (f g : T1 -> T2) m
+    : (forall x, m = Some x -> f x = g x) ->
+      Datatypes.option_map f m = Datatypes.option_map g m.
+  Proof.
+    destruct m; cbn; try congruence.
+    intro H; rewrite H; auto.
+  Qed.
+
+  Lemma option_map_id_ext [T] (m : option T) f
+    : (forall x, m = Some x -> f x = x) ->
+      Datatypes.option_map f m = m.
+  Proof.
+    destruct m; cbn; try congruence.
+    intro H; rewrite H; auto.
+  Qed.
     
-  Lemma list_intersect_correct' x mhd mtl
+
+  Lemma option_map_rev_option_all [T1 T2] (f : T1 -> option T2) l
+    : Datatypes.option_map (rev (A:=T2))
+        (option_all (map f l))
+      = option_all (map f (rev l)).
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    rewrite map_app.
+    rewrite option_all_app.
+    rewrite <- IHl.
+    basic_goal_prep.
+    repeat (case_match; basic_goal_prep);
+      basic_utils_crush.
+  Qed.
+    
+  
+  (*TODO: move to list hints?*)
+  #[local] Hint Rewrite rev_involutive : utils.
+  Lemma gather_tries_rev x l
+    :  gather_tries (rev l) (initial_acc x)
+      = rev3 (gather_tries l (initial_acc x)).
+  Proof.
+    unfold rev3.
+    rewrite <- hfin3_tuple_inverse with (o:= gather_tries (rev l) _).
+    f_equal.
+    rewrite !gather_tries_spec.
+    (*rewrite <- hfin3_tuple_inverse with (o:= initial_acc x).*)
+    unfold gather_tries_simple.
+    (*rewrite ? hfin3_tuple_inverse, ? hfin3_tuple_inverse'.*)
+    cbv [pair_map2 pair_map split3 pair_map id].
+    cbn [fst snd].
+    rewrite ! fst_split, ! snd_split, ! map_map.
+    rewrite <- ! map_rev.
+    rewrite !rev_involutive.
+    
+    f_equal; [f_equal| ].
+    all:destruct x as [ [ [] [] ] [] ];
+      cbn.
+    all: change (match ?c with 
+                 | Some a => Some (a ++ [])
+                 | None => None
+                 end)
+      with (Datatypes.option_map (fun x => app x []) c).
+    all: try now (repeat case_match; reflexivity).
+    all: rewrite ?option_map_id_ext with (f:= (fun x => x ++ []))
+      by (intros; cbn; apply app_nil_r).    
+    all: rewrite ?option_map_rev_option_all,
+        ?rev_involutive; try reflexivity.
+  Qed.
+
+  
+  (*TODO: duplicated *)
+  Lemma Mbind_option_ext T1 T2 (f g : T1 -> option T2) ma
+    : (forall a, ma = Some a -> f a = g a) ->
+      Mbind f ma = Mbind g ma.
+  Proof. destruct ma; cbn in *; firstorder congruence. Qed.
+
+  (*TODO: duplicated*)
+  Lemma Mbind_option_map A1 A2 A3 (f : A2 -> option A3) (g : A1 -> A2) ma
+    : Mbind f (Datatypes.option_map g ma)
+      = Mbind (fun a => f (g a)) ma.
+  Proof. destruct ma; reflexivity. Qed.
+  Hint Rewrite Mbind_option_map : utils.
+
+
+  
+  Lemma list_intersect_rev t1 is_rev l0
+    : list_intersect'_pre_cbv t1 is_rev (rev l0)
+      = list_intersect'_pre_cbv t1 (negb is_rev) l0.
+  Proof.
+    revert is_rev l0.
+    induction t1;
+      basic_goal_prep;
+      basic_utils_crush.
+    all: rewrite ?gather_tries_rev.
+    all: unfold rev3.
+    all: rewrite !hfin3_to_tuple_un_k.
+    all: rewrite hfin3_tuple_inverse'.
+    all: change (if (?x : bool) then false else true) with (negb x) in *.
+    all: autorewrite with utils bool in *.
+    all: cbv [pair_map2 pair_map split3 pair_map id].
+    all: cbn [fst snd].
+
+    Ltac option_focus k :=
+      match goal with
+        |- context c [match ?e with Some x => @?branchS x | None => ?branchN end] =>
+          lazymatch e with k ?t =>
+                             let new_goal := context c [option_eta (fun o => match k o with
+                                                                             | Some x => branchS x
+                                                                             | None => branchN
+                                                                             end) t] in
+                             let HG := fresh "Heta" in
+                             enough new_goal as HG;
+                             [rewrite <- option_eta_equiv in HG; assumption
+                             | cbv [option_eta] ]
+          end
+      end.
+    all: first [option_focus (Datatypes.option_map (rev (A:=B)))
+               |option_focus (Datatypes.option_map (rev (A:=tree' B)))];
+      cbn;
+      repeat 
+        change (match ?m with
+                | Some a => @?f a
+                | None => None
+                end)
+      with (Mbind f m).
+    all: rewrite <- ?option_Mbind_assoc.
+    all: rewrite ? Mbind_option_map.
+    all: try apply Mbind_option_ext; intros.
+    all: rewrite ?IHt1, ?elts_intersect_rev,?negb_involutive.
+    all: try reflexivity.
+    all: repeat (lazymatch goal with
+                   |- match ?c1 with _ => _ end = match ?c2 with _ => _ end =>
+                     replace c1 with c2;[case_match|]
+                 end;
+                 try (apply Mbind_option_ext; intros);
+                 rewrite ?IHt1, ?IHt1_1, ?IHt1_2, ?elts_intersect_rev,?negb_involutive;
+                 try reflexivity).
+  Qed.
+   
+  (*TODO: Issue for list intersect! Uses permutation!
+    The `rev` in gather_tries_simple causes problems.
+    Options:
+    -rev the acc to preserve order
+    -rev the cil in the caller
+    -pass the cils through these functions and maintain pairness to support permutation
+   *)
+  Lemma list_intersect_correct' x mhd mtl is_rev
     : match list_Mmap (Mbind (get' x)) (mhd::mtl) with
       | Some (e::es) => 
           (@! let hd <- mhd in
              let tl <- option_all mtl in
-             let li <- (list_intersect hd tl) in
-             ((get' x) li)) = (elts_intersect e es)
+             let li <- (list_intersect' hd is_rev tl) in
+             ((get' x) li)) = (elts_intersect is_rev e (rev es))
       | Some [] => False
       | None =>
           (@! let hd <- mhd in
              let tl <- option_all mtl in
-             let li <- (list_intersect hd tl) in
+             let li <- (list_intersect' hd is_rev tl) in
              ((get' x) li)) = None
       end.
-  Proof using elts_intersect_Proper.
-    change list_intersect with list_intersect'_pre_cbv.
+  Proof using elts_intersect_rev.
+    change list_intersect' with list_intersect'_pre_cbv.
     generalize dependent mtl.
     revert mhd.
     induction x; intros.
@@ -957,32 +1080,19 @@ Section MapIntersectList.
     all: rewrite ?map_map in *.
     all: cbn -[get'] in *.
     all: rewrite <- ?Mmap_option_all.
-
-
-
-
     all: repeat (case_match; cbn -[get'] in *;eauto).
     all: rewrite ?get'_1.
     all: cbn.
-    all: autorewrite with inversion utils in *; subst.
-    all: rewrite <- ?Permutation_rev in *.
-    all: try match goal with
-         | H1 : ?A = ?B, H2 : ?A = ?C |- _ =>
-             rewrite H1 in H2
-         end.
+    all: try tauto.
+    all: autorewrite with inversion in *; subst.
     all: try assumption.
-    all: try tauto.    
+    all: try tauto.
     all: autorewrite with inversion utils in *; subst.
-    all: try assumption.
-    all: try tauto.    
-    all: repeat lazymatch goal with
-           | HNone : ?a = None |- _ =>
-               rewrite HNone
-           | HSome : ?a = Some _ |- _ =>
-               rewrite HSome
-           end; auto.
+    all:rewrite ?list_intersect_rev, ?elts_intersect'_rev in *.
+    all: rewrite ?negb_involutive in *.
+    all: congruence.
   Qed.
-  
+    
   Lemma option_all_Some A (l : list A) : option_all (map Some l) = Some l.
   Proof.
     induction l; basic_goal_prep; basic_utils_crush.
@@ -994,9 +1104,10 @@ Section MapIntersectList.
     : get x (otree (list_intersect hd tl))
       = @!let hd_x <- get' x hd in
           let tl_x <- list_Mmap (get' x) tl in
-          (elts_intersect hd_x tl_x).
-  Proof using elts_intersect_Proper.
-    pose proof (list_intersect_correct' x (Some hd) (map Some tl)).
+          (elts_intersect false hd_x (rev tl_x)).
+  Proof.
+    pose proof (list_intersect_correct' x (Some hd) (map Some tl)) false.
+    unfold list_intersect.
     change (Some hd :: map Some tl) with (map Some (hd::tl)) in *.
     rewrite Mmap_Mbind in *.
     rewrite option_all_Some in *.
@@ -1013,6 +1124,69 @@ Section MapIntersectList.
     all:cbn in *; eauto.
   Qed.
 
+  (*
+  (* TODO: might want a stronger property, that the first argument can be permuted
+     with the rest.
+     This isn't as convenient though.
+   *)
+  Context (elts_intersect_Proper : Proper (eq ==> @Permutation _ ==> eq) elts_intersect).
+  
+  #[local] Instance list_intersect'_Proper
+    : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect'_pre_cbv.
+  Proof.
+    intros hd' hd Hhd; subst.
+    induction hd;
+      intros;
+      intros tl tl' Htl;
+      basic_goal_prep.
+    all: rewrite !hfin3_to_tuple_un_k.
+    all: rewrite !gather_tries_spec.
+    all: unfold gather_tries_simple.
+    all: unfold pair_map2, pair_map; cbn.
+    all: cbv [id].
+    all: rewrite !split_map.
+    all: cbn.
+    all: rewrite !(map_ext _ _ tree'_tuple_to_proj).
+    all: rewrite !map_map.
+    all: cbn.
+    all:change (fun x => ?f x) with f.
+    all: 
+      pose proof (option_all_perm_Proper _ _ _
+                    (Permutation_rev' (Permutation_map' tree_proj_001 Htl)));
+      pose proof (option_all_perm_Proper _ _ _
+                    (Permutation_rev' (Permutation_map' tree_proj_010 Htl)));
+      pose proof (option_all_perm_Proper _ _ _
+                    (Permutation_rev' (Permutation_map' tree_proj_100 Htl))).
+    all: repeat case_match; cbn; eauto; cbn in *.
+    all: rewrite ?app_nil_r in *.
+    all: try tauto.
+    all: try congruence.
+    all: repeat lazymatch goal with
+           | H1 : list_intersect'_pre_cbv ?hd ?l = _,
+               H2 : list_intersect'_pre_cbv ?hd ?l' = _,
+                 Hperm : Permutation ?l ?l',
+                   IHhd : (Permutation (A:=tree' B) ==> eq)%signature
+                            (list_intersect'_pre_cbv ?hd)
+                            (list_intersect'_pre_cbv ?hd)
+             |- _ =>
+               erewrite IHhd in H1; try eassumption; clear Hperm
+           end;
+      try lazymatch goal with
+        | H1 : elts_intersect ?e ?l = _,
+            H2 : elts_intersect ?e ?l' =_ |- _ =>
+            erewrite elts_intersect_Proper in H1;
+            try apply perm_skip;
+            try (eassumption || symmetry; eassumption || reflexivity)
+        end;
+      congruence.
+  Qed.
+  
+  
+  #[export] Instance list_intersect_Proper
+    : Proper (eq ==> Permutation (A:=_) ==> eq) list_intersect
+    := list_intersect'_Proper.
+  
+   *)
    
   Lemma intersect_empty_r A (f : A -> A -> A) t
     : intersect f t Empty = Empty.
