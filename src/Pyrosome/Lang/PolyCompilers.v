@@ -365,7 +365,9 @@ Definition exists_def : lang _ :=
   ]
   ]}.
 
-#[export] Hint Resolve (inst_for_db "Exists") : injective_con.
+
+#[local] Definition Exists_inst_for_db := inst_for_db "Exists".
+#[export] Hint Resolve Exists_inst_for_db : injective_con.
 
 
 Derive exists_lang
@@ -519,7 +521,7 @@ Derive ir_param_substs
 Proof. auto_elab. Qed.
 #[export] Hint Resolve ir_param_substs_wf : elab_pfs.
 
-Let cmp' := Eval compute in cps_parameterized.
+#[local] Definition cmp' := Eval compute in cps_parameterized.
 Derive exp_ty_subst_cps
   SuchThat (elab_preserving_compiler
               (id_compiler (val_param_substs
@@ -1083,7 +1085,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve tgt_param_substs_wf : elab_pfs.
 
 
-Let cmp'' := Eval compute in cc_parameterized.
+#[local] Definition cmp'' := Eval compute in cc_parameterized.
 
 
 Definition block_ty_subst_cc_def : compiler string :=
@@ -1323,7 +1325,7 @@ Proof.
   
   Definition hide_cmp_implicits (l:lang) : compiler string -> compiler string :=
     NamedList.named_map (hide_ccase_implicits l).
-  Let id_cps_def :=
+  #[local] Definition id_cps_def :=
         Eval compute in
         hide_cmp_implicits
           (((val_param_substs
@@ -1366,7 +1368,7 @@ Proof.
 Qed.
 #[export] Hint Resolve ty_subst_lang_id_ext :elab_pfs.
 
-  Let id_cc_def :=
+#[local] Definition id_cc_def :=
         Eval compute in
         hide_cmp_implicits
           (ty_subst_lang++ val_parameterized ++ ty_env_lang)
@@ -1454,7 +1456,7 @@ Definition pcc :=
 
 From Pyrosome Require Import Tools.Resolution.
 
-Let db :=
+#[local] Definition db :=
       Eval vm_compute in
       db_append_lang_list
         [ exist _ (_,_) (elab_lang_implies_wf exists_lang_wf);
@@ -1482,7 +1484,7 @@ Let db :=
           exist _ (_,_) tgt_parameterized_wf
         ].
 
-Let cmp_db :=
+#[local] Definition cmp_db :=
       Eval vm_compute in
       db_append_cmp_list
         [
