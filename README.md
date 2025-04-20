@@ -1,6 +1,6 @@
 # Build
 
-Tested with Coq 8.19, but may work with subsequent versions.
+Tested with Coq 8.20, but may work with other versions.
 
 You can clone this repository with
 
