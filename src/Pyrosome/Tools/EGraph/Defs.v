@@ -8,7 +8,7 @@
  *)
 Set Implicit Arguments.
 
-Require Import BinNat Datatypes.String Lists.List Sorting.Permutation.
+Require Import BinNat Datatypes.String Datatypes.Result Lists.List Sorting.Permutation.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -23,6 +23,27 @@ From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
+(*TODO: move to Monad.v *)
+Definition resultT (M : Type -> Type) A := M (result A).
+
+#[export] Instance resultT_trans : MonadTrans resultT :=
+  {|
+    transformer_monad M _ :=
+      {|
+        Mret _ a := (Mret (Success a));
+        Mbind _ _ f :=
+          Mbind (M:=M) (fun ma => match ma with
+                                      | Success a => f a
+                                      | Failure err => Mret (Failure err)
+                                      end)
+      |};
+  lift M _ A ma := @! let a <- ma in ret Success a
+  |}.
+
+
+Definition result_monad : Monad result :=
+  Eval cbv in (resultT_trans.(transformer_monad) : Monad (resultT id)).
+#[export] Existing Instance result_monad.
 
 
 Section WithVar.
@@ -610,7 +631,7 @@ Section WithVar.
 
     End EExtract.
 
-    Section AnalysisExtract.      
+    Section AnalysisExtract.
       (* look for node with least weight, interpreting None as oo.
          Note: positive because termination depends on nonzero weight.N
        *)
@@ -698,10 +719,27 @@ Section WithVar.
       Instance fun_default {A B} `{WithDefault B} : WithDefault (A -> B) :=
         fun _ => default.
 
-      Fixpoint extract_weighted fuel x : option term :=
-        @! let x_a <- map.get i.(analyses _ _ _ _ _ _) x in
-          let x_class <- map.get e_classes x in
-          let (x_f, x_args, _) <- List.find (node_lt x_a) x_class in
+      Definition result_of_option_else {A} (o : option A) (e : result A) :=
+          match o with
+          | Some a => Success a
+          | None => e
+          end.
+
+      (*TODO: move to utils *)
+      Instance result_default {A} : WithDefault (result A) :=
+        error:("Default value!").
+
+      Fixpoint extract_weighted fuel x : result term :=
+        @! let x_a <- result_of_option_else
+                        (map.get i.(analyses _ _ _ _ _ _) x)
+                        error:("No analysis for" x)
+          in
+          let x_class <- result_of_option_else
+                            (map.get e_classes x)
+                            error:("No eclass for" x) in
+          let (x_f, x_args, _) <- result_of_option_else
+                                    (List.find (node_lt x_a) x_class)
+                                    error:(x "has no term of size at most" x_a) in
           let children <- list_Mmap (decr fuel extract_weighted) x_args in
           ret (con x_f children).
           
