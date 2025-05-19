@@ -16,13 +16,47 @@ Arguments srefl {_ _}.
 Definition conv {A B} (Heq : A == B) : A -> B :=
   match Heq in _ == B return A -> B with srefl => @id _ end.
 
+(*
+Cannot be primitive
+
+Set Warnings "+non-primitive-record".
+Fail #[projections(primitive=yes)]
 Record box (A : SProp) : Set :=
   box_pf { unbox : A }.
+ *)
+
+Record box (A : SProp) : Set :=
+  box_pf { unbox : A }.
+
+(*
 Notation "^ p" := (box p) (at level 75, right associativity) : type_scope.
 Notation "^^ p" := (box_pf p) (at level 5, right associativity).
 Notation "# p" := (unbox p) (at level 5, right associativity).
-  
-    
+*)
+
+#[projections(primitive=yes)]
+  Record sigT (A : Type) (P : A -> Type) : Type :=
+  existT {
+      projT1 : A;
+      projT2 : P projT1;
+    }.
+Arguments sigT [A]%type_scope P%type_scope.
+Arguments existT [A]%type_scope P%function_scope _ _.
+Notation "{ x & P }" := (sigT (fun x => P)) : type_scope.
+Notation "{ x : A & P }" := (sigT (A:=A) (fun x => P)) : type_scope.
+
+(* A fusion of box and sigT so that we can use primitive projections *)
+#[projections(primitive=yes)]
+  Record sigTB (A : SProp) (P : A -> Type) : Type :=
+  existTB {
+      projTB1 : A;
+      projTB2 : P projTB1;
+    }.
+Arguments sigTB [A]%type_scope P%type_scope.
+Arguments existTB [A]%type_scope P%function_scope _ _.
+Notation "{ ^ x & P }" := (sigTB (fun x => P)) (x ident) : type_scope.
+Notation "{ ^ x : A & P }" := (sigTB (A:=A) (fun x => P%type)) (x ident) : type_scope.
+
 (*
 Inductive sigST (A : SProp) (P : A -> Type) : Type :=  existST : forall x : A, P x -> @sigST A P.
 
@@ -31,8 +65,6 @@ Arguments existST [A]%type_scope P%function_scope x _.
 
 Notation "{ x : A !& P }" := (sigST (fun x : A => P)) (x at level 99).
 *)
-
-
 
 (* This is the mutual definition that we want. *)
 Fail Inductive ctx : Type :=
@@ -58,9 +90,9 @@ Fixpoint subst_n (n : nat) A (a : A) : Type :=
   match n with
   | 0 => unit
   | S n' =>
-      { Heq : ^(A == ctx_n (S n'))
-              & {s : subst_n n' (projT1 (conv #Heq a))
-                     & projT2 (conv #Heq a) s}}
+      { ^ Heq : A == ctx_n (S n')
+              & {s : subst_n n' (projT1 (conv Heq a))
+                     & projT2 (conv Heq a) s}}
   end.
 
 Definition ctx := { n & ctx_n subst_n n}.
@@ -68,15 +100,12 @@ Definition subst (c : ctx) := subst_n (projT1 c) (projT2 c).
 
 Definition ctx_nil : ctx := existT _ 0 tt.
 Definition ctx_cons : forall (c : ctx), (subst c -> Type) -> ctx :=
-  fun c => let (n, cn) as c return (subst c -> Type) -> ctx := c in
-           fun A => existT _ (S n) (existT _ cn A).
+  fun c A => existT _ (S (projT1 c)) (existT _ (projT2 c) A).
 
 (* Note: this fails. TODO: bug report? *)
 Fail Definition ctx_cons' (c : ctx) : (subst c -> Type) -> ctx :=
   let (n, cn) as c return ((subst c -> Type) -> ctx) := c in
   (fun A => existT _ (S n) (existT _ cn A)).
-
-
 
 Notation "{# x1 #}" := x1.
                                
@@ -85,10 +114,9 @@ Notation "{# x1 ; .. ; xn ; xr #}" :=
     (format "'{#'  '[hv' x1 ;  .. ;  xn ;  xr ']'  '#}'").
 
 Definition subst_nil : subst ctx_nil := tt.
-Definition subst_cons : forall (c : ctx) (s : subst c) (A : subst c -> Type) (e : A s), subst (@ctx_cons c A) :=
-  fun c : ctx =>
-    let (n, c) as c return (forall (s : subst c) (A : subst c -> Type), A s -> subst (ctx_cons c A)) := c
-    in fun s _ e => existT _ ^^srefl {#s; e #}.
+Definition subst_cons : forall (c : ctx) (s : subst c) (A : subst c -> Type) (e : A s),
+    subst (@ctx_cons c A) :=
+  fun c s _ e => existTB _ srefl {#s; e #}.
 
 
 Section Elimination.
@@ -107,24 +135,19 @@ Section Elimination.
     | S n' => fun '{#c'; A #} => P_ctx_cons (c := {#n';c'#}) A (ctx_rect' n' c')
     end.
   
-  Definition ctx_rect (c : ctx) : P_ctx c :=
-    let (n, c) as c return P_ctx c := c in
-    ctx_rect' n c.
-
+  Definition ctx_rect (c : ctx) : P_ctx c := ctx_rect' (projT1 c) (projT2 c).
   
   Fixpoint subst_rect' (n : nat)
     : forall c (s : subst_n n c), P_subst (ctx_rect' n c) s :=
     match n as n return forall c (s : subst_n n c),
         P_subst (ctx_rect' n c) s with
     | 0 => fun 'tt 'tt => P_subst_nil
-    | S n' => fun '{#c'; A#} '(existT _ ^^Heq {# s'; e#})=>
+    | S n' => fun '{#c'; A#} '(existTB _ Heq {# s'; e#})=>
                 P_subst_cons (c:={#n';c'#}) _ _ (subst_rect' _ _ _)
     end.    
 
   Definition subst_rect (c : ctx)
-    : forall (s : subst c), P_subst (ctx_rect c) s :=
-    let (n, c) as c return forall (s : subst c), P_subst (ctx_rect c) s := c in
-    subst_rect' n c.
+    : forall (s : subst c), P_subst (ctx_rect c) s := subst_rect' (projT1 c) (projT2 c).
 
 End Elimination.
 
@@ -160,10 +183,7 @@ Section Induction.
           P_subst (P_ctx_cons A P_c) (subst_cons c s A e)).
 
   
-Lemma ctx_ind : forall c : ctx, P_ctx c.
-Proof.
-  apply ctx_rect; assumption.
-Defined.
+Definition ctx_ind : forall c : ctx, P_ctx c := ctx_rect P_ctx_nil P_ctx_cons.
 
 Lemma subst_ind : forall c (s : subst c), P_subst (ctx_ind c) s.
 Proof.
@@ -196,37 +216,27 @@ Definition open : forall (c : ctx) (A : subst c -> Type), Type :=
       open (fun s : subst c => forall x : B s, A (subst_cons c s B x)))).
 
 Definition apply_subst : forall (c : ctx) (s : subst c) (A : subst c -> Type), open _ A -> A s.
-  refine (simple_subst_rect (fun A oa => oa) (fun c =>_)).
-  destruct c.
-  intros s A e apply_subst B OB.
-  refine (apply_subst _ OB _).
+  refine (simple_subst_rect (fun A oa => oa) (fun c s A e apply_subst B OB =>_)).
+  refine (apply_subst _ OB e).
 Defined.
 
 Lemma open_ctx_cons c B A
   : open (ctx_cons c B) A = open _ (fun s : subst c => forall x : B s, A (subst_cons c s B x)).
-Proof.
-  destruct c.
-  simpl.
-  reflexivity.
-Qed.
+Proof. reflexivity. Qed.
 
 
 Definition term_to_open : forall (c : ctx) (A : subst c -> Type), (forall s: subst c, A s) -> open _ A.
   refine (ctx_rect (fun _ b => b _) _).
-  destruct c.
-  intros A term_to_open B e.
+  intros c A term_to_open B e.
+  cbn.
   eapply term_to_open.
   intros s a.
   eapply e.
 Defined.
 
-
 Definition open_to_term : forall (c : ctx) (A : subst c -> Type), open _ A -> forall s : subst c, A s.
   intros; eapply apply_subst; eassumption.
 Defined.
-
-
-
 
 Definition open_ty c := open c (fun _ => Type).
 Definition open' c (A : open_ty c) := open c (open_to_term _ _ A).
@@ -299,37 +309,25 @@ Definition Pi {c} (A : open_ty c) (B : open_ty (ctx_cons'' c A)) : open_ty c :=
     forall x : A' s, B' (subst_cons c s A' x)).
 
 
-Lemma subst_inv c0 A P (s : subst (ctx_cons c0 A))
-  : (forall s' a, P (subst_cons c0 s' A a)) -> P s.
-Proof.
-  destruct c0.
-  cbn in *.
-  destruct s as [Heq [s' a]].
-  destruct Heq.
-  intros H.
-  apply H.
-Defined.
+Definition subst_inv c0 A P (s : subst (ctx_cons c0 A))
+  : (forall s' a, P (subst_cons c0 s' A a)) -> P s :=
+  fun H => H (projT1 (projTB2 s)) (projT2 (projTB2 s)).
 
 Lemma ctx_rect_cons P_ctx P_ctx_nil P_ctx_cons c A
   : ctx_rect (P_ctx := P_ctx) P_ctx_nil P_ctx_cons (ctx_cons c A)
     = P_ctx_cons c A (ctx_rect P_ctx_nil P_ctx_cons c).
-Proof.
-  destruct c.
-  reflexivity.
-Defined.
+Proof. reflexivity. Defined.
   
 
 Lemma simple_subst_rect_cons P_subst P_subst_nil P_subst_cons c A s a
   : simple_subst_rect (P_subst := P_subst) P_subst_nil P_subst_cons
       (ctx_cons c A) (subst_cons c s A a)
     = P_subst_cons c s A a (simple_subst_rect  P_subst_nil P_subst_cons c s).
-Proof.
-  destruct c.
-  reflexivity.
-Defined.
+Proof. reflexivity. Defined.
 
 Definition forall' {c} (A : subst c -> Type) (B : subst (ctx_cons c A) -> Type) :=
   fun s => forall x : A s, B (subst_cons c s A x).
+Arguments forall' {c} A%function_scope B%function_scope s.
 
 Definition app' {c A B}
   : open c (forall' A B) ->
@@ -342,25 +340,86 @@ Lemma seq_trans {A} (a b c : A)
   : a == b -> b == c -> a == c.
 Proof. destruct 1; eauto. Qed.
 
+(*TODO: this does 2 recursions. is it better than the direct induction?
+  Probably no.
+ *)
+Definition lam'_ {c A B} (e : open (ctx_cons c A) B) : open c (forall' A B) :=
+  term_to_open _ _ (fun s x => open_to_term _ _ e _).
+
+Definition app''_ {c A B} (f : open c (forall' A B)) : open (ctx_cons c A) B :=
+   (term_to_open _ _ (fun s => open_to_term _ _ f _)).
+
+
 Definition lam' {c A B} (e : open (ctx_cons c A) B) : open c (forall' A B).
   unfold forall'.
+  cbn in *.
   revert dependent c.
-  destruct c.
+  destruct c as [x c].
   revert c.
   induction x; destruct c; cbn; intros; eauto.
-Defined. (*TODO: simpler def; use ctx_ind? Do same for app'?*)
-
+Defined.
 
 Definition app'' {c A B}
   : open c (forall' A B) ->
     open (ctx_cons c A) B.
   unfold forall'.
+  cbn in *.
   intros.
   revert dependent c.
-  destruct c.
+  destruct c  as [x c].
   revert c.
   induction x; destruct c; cbn; intros; eauto.
 Defined. (*TODO: simpler def; use ctx_ind?*)
+
+(*TODO: to define app the way I want, I need a better `open`.
+  open'? almost
+ *)
+
+(*Should be able to prove something like this*)
+Goal forall c, open_ty c = open' c (term_to_open c (fun _ => Type) (fun _ => Type)).
+Abort.
+
+Definition o c A := forall (s : subst c), A s.
+(*helper for constant args*)
+Notation o' c A := (o c (fun _ => A)).
+
+
+Definition wkn {c} {A : o' c Type} (s : subst (ctx_cons c A)) : subst c.
+Proof.
+  repeat (cbn in *; change (conv ?H ?e) with e in * ).
+  exact (projT1 (projTB2 s)).
+Defined.
+
+
+Definition cmp {A B} (f : A -> B) {C} (g : forall x : B, C x)
+  : forall y : A, C (f y) :=
+  fun y => g (f y).
+
+Definition hd {c} (A : o' c Type) : o (ctx_cons c A) (cmp wkn A) :=
+  fun s => projT2 (projTB2 s).
+
+Definition pi {c} (A : o' c Type) (B : o' (ctx_cons c A) Type) : o' c Type :=
+  (fun s : subst c => forall x : A s, B (subst_cons c s A x)) : o' c Type.
+
+Arguments pi {_} _ _.
+
+Definition lam {c} (A : o' c Type) {B : o' (ctx_cons c A) Type}
+  (e : o (ctx_cons c A) B) : o c (pi A B) :=
+  fun s a => e (subst_cons c s A a).
+
+Definition sub1 {c} {A} (e : o c A) := fun s => subst_cons c s _ (e s).
+
+Definition app {c} {A : o' c Type} {B : o' (ctx_cons c A) Type}
+  (f : o c (pi A B)) (e : o c A) : o c (cmp (sub1 e) B).
+
+
+Compute (fun c (A : o' c Type) B => cmp (wkn (A:=B)) (hd (A:=A))).
+    
+
+Definition mapn {c A} (f : open' c A) : open' (mapn_out c) (list A).
+
+(*Definition app {c A B} (f : open c (forall' A B)) (e : open c A) : open c (ty_sub e B).*)
+Definition app {c A B} (f : open c (forall' A B)) (e : open c A) : open c (ty_sub e B).
 
 Lemma apply_subst_cons c s A B a (e : open c (forall' A B))
   : apply_subst (ctx_cons c A) (subst_cons c s A a) (app'' e)
