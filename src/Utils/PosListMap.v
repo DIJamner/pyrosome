@@ -125,7 +125,7 @@ Proof.
 Qed.
 Hint Rewrite option_all_empty : utils.
 
-Hint Rewrite length_app : utils.
+Hint Rewrite app_length : utils.
 
 Lemma rev_eq_nil C (l : list C)
   : rev l = [] <-> l = [].
@@ -172,7 +172,7 @@ Hint Rewrite all2_empty_l : utils.
 #[local] Hint Rewrite combine_app : utils.
 
 (*TODO: put this in utils *)
-#[local] Hint Rewrite length_rev : utils.
+#[local] Hint Rewrite rev_length : utils.
     
 Lemma rev_combine T1 T2 (l1: list T1) (l2 : list T2)
   : length l1 = length l2 ->
@@ -1851,6 +1851,14 @@ Section __.
       rewrite !rev_involutive in *; auto.
     Qed.
     Hint Rewrite all2_rev_iff : utils.
+      
+    Lemma all2_rev_iff' [T1 T2] [R : T1 -> T2 -> Prop] l1 l2
+      : all2 R (rev l1) l2 <-> all2 R l1 (rev l2).
+    Proof.
+      rewrite <- all2_rev_iff.
+      rewrite rev_involutive.
+      reflexivity.
+    Qed.
     
     Lemma rectangular_trie_list_rev_iff width t_cil l
       : rectangular_trie_list width (rev t_cil) (rev l)
@@ -1941,58 +1949,902 @@ Inductive SamePermutation {A B}
       destruct a,b; cbn; congruence.
     Qed.
 
-    (*TODO: how to make a lemma that cares about which permutation?*)
-    Lemma list_intersect_Perm_combined D B C (x:PTree.tree' D) l x' l' (f g : _ -> _ -> _ -> _ -> option (PTree.tree' C))
+    Lemma option_all_map_Some T l (l' : list T)
+      : option_all l = Some l' ->
+        l = map Some l'.
+    Proof.
+      revert l';
+        induction l;
+        basic_goal_prep; repeat (case_match; basic_goal_prep);
+        basic_utils_crush.
+      basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    Lemma all2_combine T1 T2 (R : T1 -> T2 -> Prop) l1 l2 
+      : all2 R l1 l2
+        <-> length l1 = length l2
+            /\ all (uncurry R) (combine l1 l2).
+    Proof.
+      revert l2;
+        induction l1;
+        destruct l2;
+      basic_goal_prep;
+        basic_utils_firstorder_crush.
+      all: congruence.
+    Qed.
+
+    Lemma all2_Permutation T1 T2 (R : T1 -> T2 -> Prop) l1 l2 l1' l2'
+      : length l1 = length l2 ->
+        length l1' = length l2' ->
+        Permutation (combine l1 l2) (combine l1' l2') ->
+        all2 R l1 l2 ->
+        all2 R l1' l2'.
+    Proof.
+      rewrite !all2_combine.
+      intuition eauto.
+      rewrite H2 in H5.
+      auto.
+    Qed.
+
+    (*TODO: duplicated. put in a better file*)
+  Ltac option_match_comm :=
+    lazymatch goal with
+        |- context [match match ?ma with Some x => @?f x | None => ?y end with
+                      | Some x' => @?f' x'
+                      | None => ?y'
+                      end] =>
+          rewrite option_eta_equiv
+          with (o := ma)
+               (k:= fun c => match match c with Some x => f x | None => y end with
+                      | Some x' => f' x'
+                      | None => y'
+                             end);
+          cbv [option_eta]
+      end.
+    
+    Lemma list_intersect_Perm_combined_helper D B C (x:PTree.tree' D) l
+      (f : _ -> _ -> _ -> _ -> option C)
+      (c : B) cl
+      i
+      : length cl = length l ->
+        (@!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x::l) in
+           (f c (rev cl) hd_x (rev tl_x)))
+        = (@!let (hd_p::tl_p) <?- list_Mmap (fun p => @!let v <- PTree.get' i (snd p) in ret (fst p, v))
+                   (combine (c :: cl) (x :: l)) in
+             (f (fst hd_p) (map fst (rev tl_p)) (snd hd_p) (map snd (rev tl_p)))).
+    Proof.
+      basic_goal_prep.
+      case_match; auto.
+      repeat option_match_comm.
+      cbn.
+      replace (list_Mmap
+                 (fun p : B * PTree.tree' D => match PTree.get' i (snd p) with
+                                               | Some a => Some (fst p, a)
+                                               | None => None
+                                               end) (combine cl l))
+        with (option_map (combine cl) (list_Mmap (PTree.get' i) l)).
+      {
+        unfold option_map.
+        repeat option_match_comm.
+        case_match;
+          basic_utils_crush.
+        rewrite map_combine_fst, map_combine_snd; auto.
+        all: erewrite <- list_Mmap_length with (l':= l0); eassumption.
+      }
+      rewrite !Mmap_option_all.
+      change (fun p : B * PTree.tree' D =>
+                match PTree.get' i (snd p) with
+                | Some a => Some (fst p, a)
+                | None => None
+                end)
+        with (fun x  : B * PTree.tree' D =>
+                (fun p => match snd p with Some a => Some (fst p, a) | None => None end)
+                         ((fun p => (fst p,  PTree.get' i (snd p))) x)).                  
+      rewrite <- map_map with (l := (combine cl l)).
+      change ((fun p : B * PTree.tree' D => (fst p, PTree.get' i (snd p))))
+        with (pair_map (@id B) (PTree.get' (A:=D) i)).
+      rewrite map_combine.
+      rewrite map_id.
+      revert cl H0;
+        clear.
+      induction l;
+        destruct cl;
+        basic_goal_prep;
+        repeat (case_match; basic_goal_prep);
+        basic_utils_crush.
+      {
+        apply eq_of_eq_Some.
+        rewrite IHl; auto.
+      }
+      all:rewrite <- IHl in case_match_eqn1; congruence.
+    Qed.
+
+    
+    Lemma all2_map_combine_preserving T1 T2 T1' T2' (P : T1 -> T2 -> Prop)
+                                      (Q : T1' -> T2' -> Prop) f l1 l2
+      : (forall x y, (*In x l1 -> In y l2 -> *)
+            P x y -> let o := (f (x,y)) in Q (fst o) (snd o)) ->
+        all2 P l1 l2 -> 
+        let l' := map f (combine l1 l2) in
+        all2 Q (map fst l') (map snd l').
+    Proof.
+      revert l2; induction l1; destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma Is_Some_Mmap T1 T2 (f : T1 -> option T2) l
+      : Is_Some (list_Mmap f l) <-> all (Is_Some (A:=_)) (map f l).
+    Proof.
+      induction l;
+        basic_goal_prep;
+        repeat case_match;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma unwrap_all_Some D l (d:D)
+      :  all (Is_Some (A:=D)) l ->
+         option_all l = Some (map (unwrap_with_default (H:=d)) l).
+    Proof.
+      induction l;
+        basic_goal_prep;
+        repeat case_match;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma unwrap_Some D l (d:D)
+      :  Is_Some l ->
+         l = Some (unwrap_with_default (H:=d) l).
+    Proof.
+      induction l;
+        basic_goal_prep;
+        repeat case_match;
+        basic_utils_crush.
+    Qed.
+      
+    Lemma map_elts_wf_Permutation B D R x l x' l' (c : B) cl c' cl'
+      : length cl = length l ->
+        length cl' = length l' ->
+        Permutation (combine (c :: cl) (x :: l)) (combine (c' :: cl') (x' :: l')) ->
+        map_elts_wf
+          (fun (b : bool) (e : D) (es : list D) =>
+             all2 R (c :: (if b then cl else rev cl)) (e :: es)) false x l ->
+        map_elts_wf
+          (fun (b : bool) (e : D) (es : list D) =>
+             all2 R (c' :: (if b then cl' else rev cl')) (e :: es)) false x' l'.
+    Proof.
+      unfold map_elts_wf; cbn [negb].
+      intros.
+      eapply all2_Permutation; cycle 2.
+      {
+        assert (list_Mmap (PTree.get' i) (x'::l') = Some (x0::l'0)).
+        {
+          cbn in *.
+          rewrite H5, H4.
+          reflexivity.
+        }
+        apply Permutation_map with (f:= pair_map id (PTree.get' i)) in H2.
+        rewrite !map_combine, !map_id, !Mmap_option_all in *.
+        apply option_all_map_Some in H6.
+        rewrite H6 in *.
+        apply Permutation_map with (f:= pair_map id (unwrap_with_default (H:=x0))) in H2.
+        rewrite !map_combine, !map_id, !map_map in *.
+        cbn [unwrap_with_default] in *.
+        rewrite !map_id in *.
+        apply H2.
+      }
+      2,3: basic_goal_prep; try apply list_Mmap_length in H5; basic_utils_crush; congruence.
+      {
+        assert (list_Mmap (PTree.get' i) (x'::l') = Some (x0::l'0))
+          by (cbn; rewrite H4, H5; auto).
+        pose proof (I : Is_Some (Some (x0 :: l'0))).
+        rewrite <- H6 in H7.
+        rewrite Is_Some_Mmap in H7.
+        apply Permutation_combine_r in H2;
+          [| basic_goal_prep; congruence..].
+        rewrite <- H2 in H7.
+        assert (list_Mmap (PTree.get' i) (x::l) =
+                  Some (map (fun x1 : PTree.tree' D =>
+                               unwrap_with_default (H:=x0) (PTree.get' i x1))
+                          (x :: l))).
+        {
+          rewrite <- map_map, Mmap_option_all.
+          eapply unwrap_all_Some; auto.
+        }
+        repeat basic_goal_prep.
+        repeat case_match; eapply H3; basic_utils_crush.
+      }
+      Unshelve.
+      all: exact xH.
+    Qed.
+    
+    Lemma all_map D E (f : D -> E) P l
+      : all P (map f l) = all (fun x => P (f x)) l.
+    Proof. induction l; basic_goal_prep; basic_utils_crush. Qed.
+    Hint Rewrite all_map : utils.
+
+    Lemma all_True D (l : list D)
+      : all (fun _ => True) l <-> True.
+    Proof. induction l; basic_goal_prep; basic_utils_crush. Qed.
+    Hint Rewrite all_True : utils.
+
+    
+    Lemma all2_map_r D E (R : D -> E -> Prop) F (f : F -> E) l1 l2
+      : all2 R l1 (map f l2) <-> all2 (fun x y => R x (f y)) l1 l2.
+    Proof.
+      revert l2; induction l1; destruct l2;
+        basic_goal_prep;
+        basic_utils_crush.
+      all: eapply IHl1; eauto.
+    Qed.
+      
+    Lemma list_intersect_Perm_combined D B C (x:PTree.tree' D) l x' l'
+      (f g : _ -> _ -> _ -> _ -> _ -> option C)
+      R
       (c : B) cl c' cl'
-      : Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-      (forall x l x' l'  c cl c' cl',
+      : (*length cl = length l ->*)
+        length cl' = length l' ->
+        all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
+          (c::cl) (x::l) ->
+        Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+        (forall x l x' l' c cl c' cl' b,
+            (*length cl = length l -> *)
+            length cl' = length l' ->
+            all2 R (c::cl) (x::l) ->
+            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+            f c cl b x l = g c' cl' b x' l') ->
+        (forall c cl b x l, f c cl (negb b) x l = f c cl b x (rev l)) ->
+        (forall c cl b x l, g c cl (negb b) x l = g c cl b x (rev l)) ->
+        list_intersect (f c cl) x l
+        = list_intersect (g c' cl') x' l'.
+    Proof.
+      
+      intros Hlen1 HR Hlen2 Hext frev grev.
+      (*
+      assert (f_ext : forall x l x' l' c cl c' cl' b,
+            length cl' = length l' ->
+            all2 R (c::cl) (x::l) ->
+            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+                 f c cl b x l = f c' cl' b x' l').
+      {
+        intros.
+        erewrite Hext; try eassumption.
+        symmetry.
+        apply Hext; eauto.
+        eapply all2_Permutation;
+          cycle 2; eauto;
+          cbn; eauto.
+        basic_goal_prep; basic_utils_crush.
+      }
+      assert (g_ext : forall x l x' l' c cl c' cl' b,
+                 length cl' = length l' ->
+                 all2 R (c::cl) (x::l) ->
+                 Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+                 g c cl b x l = g c' cl' b x' l').
+      {
+        intros.
+        erewrite <- Hext; try symmetry; eauto.
+        1:symmetry; apply Hext; eauto.
+        1: symmetry; basic_goal_prep; basic_utils_crush.
+      }
+      *)
+      
+      apply otree_injective.
+      apply PTree.extensionality.
+      intros.
+      unshelve erewrite !list_intersect_correct.
+      1,2: refine (fun b e es => _).
+      1: refine (all2 R (c::if b then cl else rev cl) (e::es)).
+      1: refine (all2 R (c'::if b then cl' else rev cl') (e::es)).
+      all: cbn beta in *.
+      2,5:intros b v l0; destruct b; cbn;
+      rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
+      2,4: intros b v l0; destruct b; cbn;
+        autorewrite with utils;
+        basic_goal_prep;
+        rewrite <- ?grev, <- ?frev;
+        reflexivity.
+      2:{
+        eapply map_elts_wf_Permutation; cycle 1; try eassumption.
+        2: eapply all2_len; basic_goal_prep; intuition eauto.
+        unfold map_elts_wf, map.forall_values in *; cbn [negb] in *; intros.
+        assert (list_Mmap (PTree.get' i0) (x::l) = Some (x0::l'0))
+          by (cbn; rewrite H0, H1; auto).
+        rewrite Mmap_option_all in *.
+        erewrite unwrap_all_Some in H2.
+        2:{
+          apply option_all_map_Some in H2.
+          rewrite H2.
+          rewrite all_map.
+          cbn.
+          basic_utils_crush.
+        }
+        autorewrite with inversion in *.
+        rewrite <- H2.
+        rewrite map_map.
+        apply all2_map_r.
+        eapply all2_impl; try eassumption.
+        cbn beta; intros.
+        eapply H4.
+        cbn.
+        apply unwrap_Some.
+        eapply in_combine_r in H3.
+        eapply in_map in H3.
+        eapply in_all; try eassumption.
+        rewrite <- Is_Some_Mmap.
+        rewrite Mmap_option_all in *.
+        cbn.
+        rewrite H0, H1; cbn; auto.
+      }
+      2:{
+        unfold map_elts_wf, map.forall_values in *; cbn [negb] in *; intros.
+        assert (list_Mmap (PTree.get' i0) (x::l) = Some (x0::l'0))
+          by (cbn; rewrite H0, H1; auto).
+        rewrite Mmap_option_all in *.
+        erewrite unwrap_all_Some in H2.
+        2:{
+          apply option_all_map_Some in H2.
+          rewrite H2.
+          rewrite all_map.
+          cbn.
+          basic_utils_crush.
+        }
+        autorewrite with inversion in *.
+        rewrite <- H2.
+        rewrite map_map.
+        apply all2_map_r.
+        eapply all2_impl; try eassumption.
+        cbn beta; intros.
+        eapply H4.
+        cbn.
+        apply unwrap_Some.
+        eapply in_combine_r in H3.
+        eapply in_map in H3.
+        eapply in_all; try eassumption.
+        rewrite <- Is_Some_Mmap.
+        rewrite Mmap_option_all in *.
+        cbn.
+        rewrite H0, H1; cbn; auto.
+      }
+      {
+        enough
+          ((@!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x::l) in
+             (f c cl false hd_x (rev tl_x)))
+             = @!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x'::l') in
+                 (g c' cl' false hd_x (rev tl_x))).
+        {
+          revert H0; clear; intros.
+          repeat (basic_goal_prep; try case_match);
+            eauto.
+        }
+        cbn -[list_Mmap].
+        assert (all2 (fun (c : B) (x : PTree.tree' D) => map.forall_values (R c)
+                                                           (PTree.Nodes x : trie_map _))
+                  (c' :: cl') (x' :: l')).
+        {
+          eapply all2_Permutation; cycle 3; try eassumption.
+          all: basic_goal_prep; basic_utils_crush; congruence.
+        }
+        assert (option_rel (Permutation (A:=_))
+                  (list_Mmap (PTree.get' i) (x :: l))
+                  (list_Mmap (PTree.get' i) (x' :: l'))).
+        {
+          eapply list_Mmap_Permutation_Proper;
+            eapply Permutation_combine_r; cycle 2;
+            eauto;
+            basic_goal_prep; basic_utils_crush; congruence.
+        }          
+        repeat case_match; cbn -[list_Mmap] in H1; eauto;
+          basic_utils_crush.
+        rewrite <- frev, <- grev.
+        eapply Hext.
+        {
+          basic_goal_prep;
+            repeat case_match;
+            basic_utils_crush.
+          erewrite <- list_Mmap_length with (l':=l1) by eassumption.
+          eauto.
+        }
+        {
+          rewrite Mmap_option_all in *.
+          erewrite unwrap_all_Some in case_match_eqn.
+          2:{
+            apply option_all_map_Some in case_match_eqn.
+            rewrite case_match_eqn, all_map.
+            cbn; intuition auto.
+            rewrite all_True; auto.
+          }
+          autorewrite with inversion in *.
+          rewrite <- case_match_eqn.
+          rewrite !all2_map_r.
+          eapply all2_impl; try eassumption.        
+          cbn beta; intros.
+          eapply H3.
+          cbn.
+          apply unwrap_Some.
+          eapply in_combine_r in H2.
+          eapply in_map in H2.
+          eapply in_all; try eassumption.
+          rewrite <- Is_Some_Mmap.
+          rewrite Mmap_option_all in *.
+          cbn.
+          assert (Permutation (combine (c :: cl) (d :: l0))
+                    (combine (c' :: cl') (d0 :: l1))).
+          {
+            erewrite unwrap_all_Some in case_match_eqn0.
+            2:admit.
+            autorewrite with inversion in *.
+            rewrite <- case_match_eqn, <- case_match_eqn0.
+            admit.
+          }
+          basic_goal_prep; repeat (case_match; basic_goal_prep);
+            auto.
+          all: basic_utils_crush.
+          {
+            rewrite <- H7 in *.
+            (*
+            subst l0.
+          1:admit.
+          2:admit.
+          TODO: all about l, l' permutations
+          rewrite H0, H1; cbn; auto.
+        }
+        TODO: what to do about the rev? backward
+          
+        TODO: finish
+        1: basic_goal_prep; basic_utils_crush.
+        congruence.
+        
+        {
+          eapply Permutation_combine_r in Hlen2.
+          2,3: basic_goal_prep; basic_utils_crush; congruence.
+          assert (option_rel (Permutation (A:=_)) (Some []) (Some (d :: l0))).
+          {
+            rewrite <- case_match_eqn, <- case_match_eqn0.
+            eapply list_Mmap_Permutation_Proper; eauto.
+          }
+          cbn in *.
+          basic_utils_crush.
+        }
+        {
+          eapply Permutation_combine_r in Hlen2.
+          2,3: basic_goal_prep; basic_utils_crush; congruence.
+          assert (option_rel (Permutation (A:=_)) (Some (d :: l0)) (Some [])).
+          {
+            rewrite <- case_match_eqn, <- case_match_eqn0.
+            eapply list_Mmap_Permutation_Proper; eauto.
+          }
+          cbn in *.
+          basic_utils_crush.
+        }
+          safe_invert H1.
+          rewrite Hlen2 in case_match_eqn.
+        TODO: get = Some for both.
+        show output perms
+                         
+      }
+        
+        a = Some (unwrap_with_default a)
+        admit (*TODO: all is_some*).
+      }
+        cbn [map.get].
+        basic_goal_prep.
+        basic_utils_crush.
+        
+        Fail.
+          eapply in_all.
+        
+        eapply all2_Permutation; cycle 2; try eassumption.
+        TODO: missing facts about x0,l'0
+        all: basi
+        TODO: H3 ~ H1, H2, goal
+        intros.
+        
+        }
+        TODO: bool-rewriting
+        all: eapply g_ext.
+        TODO: fa
+        all:rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
+      }
+      *)
+Admitted.
+      
+      (*
+    Lemma list_intersect_Perm_combined D B C (x:PTree.tree' D) l x' l'
+      (f g : _ -> _ -> _ -> _ -> option C)
+      R
+      (c : B) cl c' cl'
+      : (*length cl = length l ->*)
+        length cl' = length l' ->
+        all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
+          (c::cl) (x::l) ->
+        Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+        (forall x l x' l' c cl c' cl',
+            (*length cl = length l -> *)
+            length cl' = length l' ->
+            all2 R (c::cl) (x::l) ->
             Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
             f c cl x l = g c' cl' x' l') ->
         list_intersect (fun is_forward : bool => f c (if is_forward then cl else rev cl)) x l
         = list_intersect (fun is_forward : bool => g c' (if is_forward then cl' else rev cl')) x' l'.
     Proof.
-      intros H' Hext.
+      intros Hlen1 HR Hlen2 Hext.
+      assert (f_ext : forall x l x' l' c cl c' cl',
+            length cl' = length l' ->
+            all2 R (c::cl) (x::l) ->
+            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+                 f c cl x l = f c' cl' x' l').
+      {
+        intros.
+        erewrite Hext; try eassumption.
+        symmetry.
+        apply Hext; eauto.
+        eapply all2_Permutation;
+          cycle 2; eauto;
+          cbn; eauto.
+        basic_goal_prep; basic_utils_crush.
+      }
+      assert (g_ext : forall x l x' l' c cl c' cl',
+                 length cl' = length l' ->
+                 all2 R (c::cl) (x::l) ->
+                 Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
+                 g c cl x l = g c' cl' x' l').
+      {
+        intros.
+        erewrite <- Hext; try symmetry; eauto.
+        1:symmetry; apply Hext; eauto.
+        1: symmetry; basic_goal_prep; basic_utils_crush.
+      }
+      
       apply otree_injective.
       apply PTree.extensionality.
       intros.
-      rewrite !list_intersect_correct.
-      2,3:admit.
+      pose proof Hlen2 as Hlen2'; eapply all2_Permutation in Hlen2'; eauto.
+      2,3: eapply all2_len in HR;
+      eapply Permutation_length in Hlen2; basic_goal_prep; auto.
+      erewrite !list_intersect_correct.
       {
-        apply Permutation_map with (f:= pair_map id (PTree.get' i)) in H'.
-        rewrite !map_combine in H'.
-        rewrite !map_id in H'.
-         Definition uncons {T T'} f (l : list T) : option T' :=
-          match l with
-          | [] => None
-          | x::l => f x l
-          end.
-        change_no_check (Mbind (fun x => Mbind (fun l => @?f x l) (list_Mmap ?g ?l)) (?g ?x))
-          with (Mbind (uncons f) (list_Mmap g (x::l))).
+        enough
+          ((@!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x::l) in
+             (f c (rev cl) hd_x (rev tl_x)))
+             = @!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x'::l') in
+                 (g c' (rev cl') hd_x (rev tl_x))).
+        {
+          revert H0; clear.
+          cbn.
+          repeat (case_match; basic_goal_prep); auto.
+        }
+        
+        rewrite !list_intersect_Perm_combined_helper.
+        2,3: cbn in *; eapply all2_len; now intuition eauto.
+        eapply list_Mmap_Permutation_Proper in Hlen2.
+        eapply Mbind_Proper in Hlen2.
+        {
+          unshelve erewrite TrieMap.Mbind_option_ext.
+          1:refine (fun a => match a with [] => _ | _::_ => _ end); shelve.
+          2:{
+            intros.
+            destruct a.
+            1: reflexivity.
+            eapply all2_map_combine_preserving
+              in HR.
+            2:{
+              intros.
+              subst o.
+              
+              unfold map.forall_values in H1.
+              specialize (H1 i (snd p)).
+              TODO: what is p
+                with (f:= (fun p : B * PTree.tree' D =>
+                             @! let v <- PTree.get' i (snd p) in ret (fst p, v)))
+
+            eapply Hext.
+            2:{
+              rewrite Mmap_option_all in *.
+              eapply option_all_map_Some in H0.
+              eapply all2_map_combine_preserving
+                in HR.
+
+              
+                with (f:= (fun p : B * PTree.tree' D =>
+                             @! let v <- PTree.get' i (snd p) in ret (fst p, v)))
+              2
+
+              eapply f_equal in H0.
+              TODO: use HR, H0
+            rewrite <- combine_fst_snd with (x:=a).
+            
+
+            
+ let f := constr:(fun (c : B) (x : PTree.tree' D) =>
+                           map.forall_values (R c) (PTree.Nodes x : trie_map D)) in
+        eapply Mbind_Proper with (R:= fun x y => ).
+        2: eapply list_Mmap_Permutation_Proper; eauto.
+        intros ? ? ?.
+        repeat case_match; basic_utils_crush.
+        cbn.
+        rewrite <- combine_fst_snd with (x:=x0) in H0.
+        rewrite <- combine_fst_snd with (x:=y) in H0.
+        change ((?a,?b) :: (combine ?la ?lb))
+          with (combine (a::la) (b::lb)) in *.
+        assert (Permutation (combine (b0 :: rev (map fst x0)) (d0 :: rev (map snd x0)))
+    (combine (b :: rev (map fst y)) (d :: rev (map snd y)))).
+        {
+          etransitivity.
+          {
+            cbn;eapply perm_skip.
+            rewrite <- rev_combine by basic_utils_crush.
+            symmetry.
+            apply Permutation_rev.
+          }
+          symmetry.          
+          etransitivity.
+          {
+            cbn;eapply perm_skip.
+            rewrite <- rev_combine by basic_utils_crush.
+            symmetry.
+            apply Permutation_rev.
+          }
+          rewrite H0.
+          reflexivity.
+        }
+        apply Hext; auto.
+        1: basic_utils_crush.
+        eapply all2_Permutation; try symmetry; try eassumption.
+        all: cbn; basic_utils_crush.
+        TODO: Proper not sufficient here. Have forgotten that the inputs satisfy R
+        rewrite H1.
+        
+          eauto.
+          TODO: rev perm
+        eapply list_Mmap_Permutation_Proper in Hlen2.
+        eapply Mbind_Proper in Hlen2.
+        1: exact Hlen2.
+        {
+          intros
+        unfold option
+        Lemma list_Mmap
+        rewrite Hlen2.
+        enough
+          ((@!let (hd_p::tl_p) <?- list_Mmap (fun p => @!let v <- PTree.get' i (snd p) in ret (fst p, v))
+                    (combine (c :: cl) (x :: l)) in
+             (f (fst hd_p) (map fst (rev tl_p)) (snd hd_p) (map snd (rev tl_p))))
+             = @!let (hd_p::tl_p) <?- list_Mmap (fun p => @!let v <- PTree.get' i (snd p) in ret (fst p, v))
+                    (combine (c' :: cl') (x' :: l')) in
+                 (g (fst hd_p) (map fst (rev tl_p)) (snd hd_p) (map snd (rev tl_p)))).
+        {
+          revert H0; clear;
+            basic_goal_prep.
+          case_match.
+          2:{
+            
+          repeat (case_match; basic_goal_prep); auto.
+          
+        }
+        map_combine_fst
+        option_Mmap_Mmap
         rewrite !Mmap_option_all.
-        set (R:= fun {A} (x y : list A) => Permutation (combine (c::cl) x) (combine (c'::cl') y)).
+        
+        
+          ( Mbind (fun hd_x : D => @! let tl_x <- list_Mmap (PTree.get' i) l in (f c (rev cl) hd_x (rev tl_x)))
+              (PTree.get' i x)
+            = Mbind (fun hd_x : D => @! let tl_x <- list_Mmap (PTree.get' i) l' in
+                                       (g c' (rev cl') hd_x (rev tl_x)))
+                (PTree.get' i x')).
+        
+        rewrite option_Mbind_comm.
+        Lemma Mbind_Mbind
+          : Mbind (fun x => Mbind (g x) v1) v2 = Mbind (Mpair v1 v2) (fun p => g (fst p) (snd p)).
+        replace (Mbind (fun hd_x : D => @! let tl_x <- list_Mmap ?f l in
+                                         (f c (rev cl) hd_x (rev tl_x))) (?f ?v)).
+      }
+        with (elts_wf := fun (b : bool) h l => all2 R (c::if b then cl else rev cl)
+                                                 (h::if b then l else rev l)); eauto.
+      2:{
+        intros.
+        rewrite !rev_involutive, ?negb_if.
+        reflexivity.
+      }
+      2:{
+        (*TODO: x0,l0 vs x' l': missing somve info? Perm!*)
+        intros.
+        repeat rewrite ?rev_involutive, ?negb_if in *.
+        
+        eapply g_ext.
+        1: admit.
+        {
+          not true!
+            with (c' := c')
+             (cl' := cl')
+             (x':=x0)
+             (l':= if b then l0 else rev l0)
+          in H0.
+        3:{
+          destruct b; auto.
+        ;
+          destruct b.
+        1,2: eapply all2_len in HR, H0.
+        1,2: eapply Permutation_length in Hlen2; basic_goal_prep.
+        1,2: rewrite !length_combine, !length_rev in *.
+        1,2: Lia.lia.
+        TODO: false! c'::cl' not the same order
+        {
+          eapply all2_Permutation.
+
+          TODO: what are x0, l0?
+          3: eassumption.
+          eauto.
+      }
+        TODO: what is c'? nedd to rw via perm before all2 breaks up
+        {
+          rewrite Hlen1.
+          rewrite <- H8.
+          rewrite <- Hlen2.
+          rewrite H7.
+        reflexivity.
+      }
+        intros.
+        destruct b; cbn.
+        all: eapply g_ext;
+          basic_goal_prep; basic_utils_crush.
+        
+          b
+      }
+      2:{
+        TODO: need to generalize list_intersect_correct!
+        destruct b; basic_goal_prep;
+        apply g_ext;
+        basic_utils_crush.
+        all: try congruence.
+        {
+          TODO: no good!
+          apply Permutation_cons; auto.
+          rewrite Permutation_rev.
+          rewrite rev_combine
+                    by (rewrite length_rev; congruence).
+          rewrite rev_involutive.
+          auto.
+        }
+        {
+          rewrite <- rev_combine by congruence.
+          apply Permutation_cons; auto.
+          rewrite <- Permutation_rev;auto.
+        }
+      }        
+      2:{
+        destruct b; basic_goal_prep;
+        apply f_ext;rewrite ?length_rev; try congruence.
+        {
+          apply Permutation_cons; auto.
+          rewrite Permutation_rev.
+          rewrite rev_combine by (rewrite ?length_rev; try congruence).
+          rewrite rev_involutive.
+          auto.
+        }
+        {
+          rewrite <- rev_combine by (rewrite ?length_rev; try congruence).
+          apply Permutation_cons; auto.
+          rewrite <- Permutation_rev;auto.
+        }
+      }
+      {
+       repeat lazymatch goal with
+          |- context c [(Mbind (fun x => Mbind (fun l => @?f x l)
+                                           (list_Mmap ?g ?l))
+                           (?g ?x))] =>
+            let g' := context c [ Mbind (uncons f) (list_Mmap g (x::l))]
+            in
+            enough g' as Hg;
+            [revert Hg; clear; intros;
+             unfold uncons in *; basic_goal_prep;
+             repeat case_match; eauto | ]
+        end.
+
+       rewrite !Mmap_option_all.
+        set (R:= fun {A} (x y : list A) => Permutation (combine (c::cl) x) (combine (c'::cl') y) /\ length (c::cl) = length x /\ length (c'::cl') = length y).
         eapply @Mbind_Proper
           with (R:= R _);
           auto.
-        2:{
+         2:{
           unfold R;
-          unfold option_rel;
-            repeat case_match;
+          unfold option_rel.
+          repeat case_match.
+          4: basic_goal_prep; now auto.
+          2:{
+            eapply option_all_None in case_match_eqn0.
+            break.
+            apply nth_error_In in H0.
+            rewrite in_map_iff in *; break.
+            apply Permutation_combine_r in Hlen2;
+              cbn; try congruence.
+            rewrite <- Hlen2 in H1.            
             basic_goal_prep;
-          auto.
-          all:admit.
-        }
-        {
-        cbv [respectful R].
-        destruct x0, y; cbn;
-          basic_utils_crush.
-        eapply Hext.
-        cbn in *.
-        rewrite <- !rev_combine by admit.
-        rewrite <- !Permutation_rev.
-        auto.
-        }
-    Abort.
-      
+              repeat (case_match; basic_goal_prep);
+              basic_utils_crush;
+              try congruence.
+            apply option_all_map_Some in case_match_eqn1.
+            apply in_map with (f:= PTree.get' i) in H2.
+            rewrite case_match_eqn1, H0 in *.
+            apply in_map_iff in H2; break.
+            congruence.
+          }
+          2:{
+            eapply option_all_None in case_match_eqn.
+            break.
+            apply nth_error_In in H0.
+            rewrite in_map_iff in *; break.
+            apply Permutation_combine_r in Hlen2;
+              cbn; try congruence.
+            rewrite Hlen2 in H1.            
+            basic_goal_prep;
+              repeat (case_match; basic_goal_prep);
+              basic_utils_crush;
+              try congruence.
+            apply option_all_map_Some in case_match_eqn1.
+            apply in_map with (f:= PTree.get' i) in H2.
+            rewrite case_match_eqn1, H0 in *.
+            apply in_map_iff in H2; break.
+            congruence.
+          }
+          {
+            basic_goal_prep.
+            repeat (case_match; basic_goal_prep);
+              basic_utils_crush.
+            {
+              apply Permutation_map with (f:= pair_map id (PTree.get' i)) in Hlen2.
+              change ((?a,?b) :: (combine ?la ?lb))
+                with (combine (a::la) (b::lb)) in *.
+              rewrite ! map_combine in *.
+              cbv [id pair_map] in *.
+              cbn in *.
+              rewrite case_match_eqn1, case_match_eqn3 in*.
+              rewrite !map_id in *.
+              {
+                apply option_all_map_Some in case_match_eqn2,case_match_eqn4.
+                rewrite !case_match_eqn2, !case_match_eqn4 in *.
+                apply Permutation_map
+                  with (f:= pair_map id (@unwrap_with_default _ d))
+                  in Hlen2.
+                cbn in Hlen2.
+                rewrite !map_combine in *.
+                rewrite !map_map in *.
+                cbn in *.
+                rewrite !map_id in *.
+                cbv [pair_map id] in *.
+                cbn in *.
+                eauto.
+              }
+            }
+            {
+              apply length_option_all in case_match_eqn4;
+                basic_utils_crush.
+              congruence.
+            }       
+            {
+              apply length_option_all in case_match_eqn2;
+                basic_utils_crush.
+              congruence.
+            }
+          }
+         }
+         {
+           subst R; cbn.
+           intros ? ? ?.
+           unfold uncons.
+           repeat case_match; basic_goal_prep;
+             basic_utils_crush.
+           apply Hext;
+             basic_utils_crush.
+           rewrite <- !rev_combine by eauto.
+           rewrite <- ! Permutation_rev.
+           auto.
+         }
+      }
+        Qed.
+        *)
     
     Lemma pt_spaced_intersect'_perm fuel width f_cil f_ptl t_ci0 t_cil x0 l f_cil' f_ptl' t_ci0' t_cil' x0' l'
       : rectangular_trie_list width (t_ci0::t_cil) (x0::l) ->
@@ -2148,6 +3000,46 @@ Inductive SamePermutation {A B}
       {
         repeat basic_goal_prep.
         f_equal.
+        (*
+        eapply list_intersect_Perm_combined.
+        { basic_goal_prep; basic_utils_crush. }
+        { basic_goal_prep; basic_utils_crush. }
+        {
+          change ((?a,?b) :: (combine ?la ?lb))
+            with (combine (a::la) (b::lb)) in *.
+          apply Permutation_map with (f:= pair_map id proj_node_map_unchecked)
+            in H16.
+          rewrite !map_combine in *.
+          cbv [pair_map id] in *.
+          basic_goal_prep.
+          rewrite !map_id in *.
+          eauto.
+        }
+        {
+          intros.
+          eapply IHfuel; eauto.
+          3:{
+            change ((?a,?b) :: (combine ?la ?lb))
+            with (combine (a::la) (b::lb)) in *.
+            change (?x::?l++?l') with ((x::l)++l').
+            rewrite !combine_app
+              by (basic_goal_prep; basic_utils_crush).
+            rewrite H25, H11.
+            reflexivity.
+          }
+          {
+            TODO: more conditions! remember rectangular.
+            In general, if forall v in t1..n, P v then P(intersect)
+            enough (let p := split (combine (c::cl) (x::l0)) in rectangular_trie_list width (fst p) (snd p)).
+            {
+              rewrite combine_split in *; cbn; eauto.
+            }
+            rewrite H25.
+   
+        TODO: really do need f & g
+          reflexivity.
+                        Fail.
+                        *)
     Abort.
 
        
@@ -2813,11 +3705,7 @@ Inductive SamePermutation {A B}
       : all P (rev l) <-> all P l.
     Admitted.
     Hint Rewrite all_rev : utils.
-    
-    Lemma all_map T T' (f : T -> T') (P : T' -> Prop) l
-      : all P (map f l) <-> all (fun x => P (f x)) l.
-    Admitted.
-    Hint Rewrite all_map : utils.
+
     
     Lemma all_filter T (P : T -> Prop) l f
       : all P (filter f l) <-> all (fun x => Is_true (f x) -> P x) l.

@@ -50,6 +50,23 @@ Proof.
   rewrite IHl; reflexivity.
 Qed.
 
+
+Lemma option_Mmap_Mmap A B C (g : A -> option B) (f : B -> option C) l
+  : list_Mmap (fun x => Mbind f (g x)) l = Mbind (list_Mmap f) (list_Mmap g l).
+Proof.
+  induction l;
+    basic_goal_prep;
+    repeat (case_match;
+            basic_goal_prep);
+    basic_utils_crush.
+Qed.
+
+
+Lemma option_Mbind_comm A B C (f : A -> B -> option C) v1 v2
+  : Mbind (fun x => Mbind (f x) v1) v2
+    = Mbind (fun y => Mbind (fun x => f x y) v2) v1.
+Proof. destruct v1, v2; cbn; reflexivity. Qed.
+
 (*
 Lemma match_match_option A B R (k : B -> R) o (case_1 : A -> B) case_2
   : k (match o with Some x => case_1 x | None => case_2 end)
@@ -454,8 +471,17 @@ End MapIntersect.
  *)
 Section MapIntersectList.
   Context {B C} (elts_intersect : bool -> B -> list B -> option C)
+    (* (* represents the number of maps being intersected.
+       Necessary to instantiate elts_intersect_rev how we need to.
+       TODO: come up with a better way to do this   
+     *)
+    (arity : nat)*)
+    (elts_wf : bool -> B -> list B -> Prop)
+    (elts_wf_rev : forall b v l, elts_wf b v (rev l) <-> elts_wf (negb b) v l)
     (elts_intersect_rev
-      : forall b x l, elts_intersect b x (rev l)
+      : forall b x l, (*length l = arity ->*)
+                      elts_wf b x (rev l) ->
+                      elts_intersect b x (rev l)
                       = elts_intersect (negb b) x l).
 
   Import Lists.List.
@@ -549,6 +575,11 @@ Section MapIntersectList.
                             (fun c cs =>
                                @! let c <- c in
                                  let cs <- cs in
+                                 (* note: the argument to elts_intersect
+                                    is interpreted as is_forward.
+                                    Since cs will have been reversed from the args input,
+                                    going from is_rev to is_forward removes the need to negate it here.
+                                  *)
                                  (elts_intersect is_rev c cs)))
                  maybe_intersect
                  p1 p_acc
@@ -579,7 +610,7 @@ Section MapIntersectList.
   Lemma gather_no_short tl acc
     : gather_tries tl acc = gather_tries_no_short tl acc.
   Proof using.
-    clear elts_intersect elts_intersect_rev.
+    clear elts_intersect elts_intersect_rev elts_wf elts_wf_rev.
     revert acc;
       induction tl;
       basic_goal_prep;
@@ -763,7 +794,36 @@ Section MapIntersectList.
   Lemma get'_1 {A} x (t : tree' A)
     : get' x~1 t = Mbind (get' x) (tree_proj_001 t).
   Proof. destruct t; reflexivity. Qed.
+
+  Lemma list_get'_1 {A} x (l : list (tree' A))
+    : list_Mmap (get' x~1) l = list_Mmap (fun t => Mbind (get' x) (tree_proj_001 t)) l.
+  Proof.
+    rewrite !Mmap_option_all.
+    f_equal.
+    apply map_ext; intros; eauto using get'_1.
+  Qed.
+
   
+  Lemma get'_0 {A} x (t : tree' A)
+    : get' x~0 t = Mbind (get' x) (tree_proj_100 t).
+  Proof. destruct t; reflexivity. Qed.
+
+  Lemma list_get'_0 {A} x (l : list (tree' A))
+    : list_Mmap (get' x~0) l = list_Mmap (fun t => Mbind (get' x) (tree_proj_100 t)) l.
+  Proof.
+    rewrite !Mmap_option_all.
+    f_equal.
+    apply map_ext; intros; eauto using get'_0.
+  Qed.
+
+  
+  Lemma get'_xH {A} (t : tree' A)
+    : get' 1 t = tree_proj_010 t.
+  Proof. reflexivity. Qed.
+
+  Lemma list_get'_xH {A} (l : list (tree' A))
+    : list_Mmap (get' 1) l = list_Mmap tree_proj_010 l.
+  Proof. reflexivity. Qed.
   
   Lemma Mmap_Mbind A A' (f : A -> option A') l
     : list_Mmap (Mbind f) l = Mbind (list_Mmap f) (option_all l).
@@ -861,7 +921,7 @@ Section MapIntersectList.
     repeat (case_match; basic_goal_prep);
       basic_utils_crush.
   Qed.
-    
+
   
   (*TODO: move to list hints?*)
   #[local] Hint Rewrite rev_involutive : utils.
@@ -911,40 +971,269 @@ Section MapIntersectList.
   Proof. destruct ma; reflexivity. Qed.
   Hint Rewrite Mbind_option_map : utils.
 
+  #[local] Hint Rewrite rev_length : utils.
+
+  Fixpoint flip_by_length i b :=
+    match i with
+    | xI x 
+    | xO x => flip_by_length x (negb b)
+    | xH => b
+    end.
 
   
+  Lemma flip_by_length_xI i acc
+    : flip_by_length (xI i) (negb acc) = flip_by_length i acc.
+  Proof. cbn; rewrite negb_involutive; reflexivity. Qed.
+  
+  Lemma flip_by_length_xO i acc
+    : flip_by_length (xO i) (negb acc) = flip_by_length i acc.
+  Proof. cbn; rewrite negb_involutive; reflexivity. Qed.
+
+  
+  Lemma flip_by_length_negb i acc
+    : flip_by_length i (negb acc) = negb (flip_by_length i  acc).
+  Proof.
+    revert acc.
+    induction i;
+      basic_goal_prep;
+      basic_utils_crush.
+    all: rewrite IHi.
+    all: basic_utils_crush.
+  Qed.
+  
+  (*TODO: problem! the reversal is forgotten here!
+it's dependent on the length of i. use flip_by_length (could be backwards?)
+
+     b t l -> b (next t) (rev (next l)) ~ (negb b) (next t) (next l)
+   *)
+  Definition map_elts_wf b t l :=
+    forall i x l', PTree.get' i t = Some x ->
+                   list_Mmap (PTree.get' i) l = Some l' ->
+                 elts_wf (negb b) (*(flip_by_length i b)*) x l'.
+
+  Lemma map_elts_wf_rev' is_rev x a
+    : map_elts_wf is_rev x (rev a) -> map_elts_wf (negb is_rev) x a.
+  Proof.
+    unfold map_elts_wf.
+    intros.
+    rewrite ?flip_by_length_negb.
+    rewrite <- elts_wf_rev.
+    eapply H; eauto.
+    
+    rewrite Mmap_option_all,
+      map_rev,
+      option_all_rev,
+      <- Mmap_option_all in *.
+    rewrite H1.
+    reflexivity.
+  Qed.
+    
+  Lemma map_elts_wf_rev is_rev t a
+    : map_elts_wf (negb is_rev) t a <-> map_elts_wf is_rev t (rev a).
+  Proof.
+    split; eauto using map_elts_wf_rev'.
+    intros.
+    rewrite <- negb_involutive with (b:=is_rev).
+    apply  map_elts_wf_rev'.
+    rewrite rev_involutive; auto.
+  Qed.    
+
+ 
+  Lemma tree'_tuple_center_elts_wf b t l0 v a0
+    : map_elts_wf b t l0 ->
+      snd (fst (tree'_tuple t)) = Some v ->
+      option_all (map (fun x : tree' B => snd (fst (tree'_tuple x))) l0) = Some a0 ->
+      elts_wf b v (rev a0).
+  Proof.
+    unfold map_elts_wf, tree'_tuple.
+    rewrite elts_wf_rev.
+    erewrite map_ext.
+    2:{
+      intros.
+      Unshelve.
+      2: refine (fun a => match a with Node001 x => _ | _ => _ end).
+      2-8:shelve.
+      cbn;destruct a; cbn.
+      all: reflexivity.
+    }
+    intros.
+    specialize (H xH v a0).
+    rewrite <- Mmap_option_all in *.
+    cbn in *.
+    destruct t; cbn in *; try congruence.
+    all:apply H in H1.
+    all:basic_utils_crush.
+  Qed.
+
+  Lemma tree'_tuple_right_elts_wf b t l0 t' a0
+    : map_elts_wf b t l0 ->
+      snd (tree'_tuple t) = Some t' ->
+      option_all (map (fun x : tree' B => snd (tree'_tuple x)) l0) = Some a0 ->
+      map_elts_wf b t' a0.
+  Proof.
+    unfold map_elts_wf, tree'_tuple.
+    destruct t; basic_goal_prep; try congruence.
+    all: autorewrite with inversion in *; subst.
+    all:specialize (H (xI i) x l'); cbn in H;
+    rewrite ?negb_involutive in H; apply H; clear H; auto;
+    change (list_Mmap (get' i) a0)
+        with (Mbind (list_Mmap (get' i)) (Some a0)) in *;
+      rewrite <- H1 in *; clear H1;
+      rewrite <- Mmap_Mbind in *;
+      rewrite Mmap_option_all in *;
+      rewrite map_map in *;
+      rewrite <- H3; clear H3;
+      f_equal;
+      apply map_ext;
+      intros; case_match; basic_goal_prep; auto.
+  Qed.
+  
+  
+  Lemma tree'_tuple_left_elts_wf b t l0 t' a0
+    : map_elts_wf b t l0 ->
+      fst (fst (tree'_tuple t)) = Some t' ->
+      option_all (map (fun x : tree' B => fst (fst (tree'_tuple x))) l0) = Some a0 ->
+      map_elts_wf b t' a0.
+  Proof.
+    unfold map_elts_wf, tree'_tuple.
+    destruct t; basic_goal_prep; try congruence.
+    all: autorewrite with inversion in *; subst.
+    all:specialize (H (xO i) x l'); cbn in H;
+    rewrite ?negb_involutive in H; apply H; clear H; auto;
+    change (list_Mmap (get' i) a0)
+        with (Mbind (list_Mmap (get' i)) (Some a0)) in *;
+      rewrite <- H1 in *; clear H1;
+      rewrite <- Mmap_Mbind in *;
+      rewrite Mmap_option_all in *;
+      rewrite map_map in *;
+      rewrite <- H3; clear H3;
+      f_equal;
+      apply map_ext;
+      intros; case_match; basic_goal_prep; auto.
+  Qed.
+
+  Ltac option_focus k :=
+    match goal with
+      |- context c [match ?e with Some x => @?branchS x | None => ?branchN end] =>
+        lazymatch e with k ?t =>
+                           let new_goal := context c [option_eta (fun o => match k o with
+                                                                           | Some x => branchS x
+                                                                           | None => branchN
+                                                                           end) t] in
+                           let HG := fresh "Heta" in
+                           enough new_goal as HG;
+                           [rewrite <- option_eta_equiv in HG; assumption
+                           | cbv [option_eta] ]
+        end
+    end.
+
+  (*
+  Lemma negated_excluded_middle A
+    : ~~(A \/ ~A).
+  Proof. intuition. Qed.
+  
+  Lemma list_intersect_rev_ex (b1 b2:B) is_rev
+    : (*length l0 = arity -> *)
+    
+    (*elts_wf is_rev b1 [b1;b2] ->*)
+    let t1 := (Node001 (Node001 (Node010 b1))) in
+    let t2 := (Node001 (Node001 (Node010 b2))) in
+    let l0 := [t1;t2 ] in
+    map_elts_wf is_rev t1 (rev l0) ->
+      list_intersect'_pre_cbv t1 is_rev (rev l0)
+      = list_intersect'_pre_cbv t1 (negb is_rev) l0.
+  Proof.
+    cbn in *.
+    intros.
+    rewrite ?negb_involutive in *.
+    
+    rewrite <- elts_intersect_rev, negb_involutive in *; cbn in *;eauto.
+    specialize (H (xI xH)); cbn in *.
+    rewrite ?negb_involutive in *.
+    rewrite (*<- negb_involutive with (b:=is_rev),*) <- elts_wf_rev.
+    apply H; auto.
+    TODO: backward at this level, right at the next. why is that?cu
+  Qed.
+    apply (negated_excluded_middle (map_elts_wf true (Node001 (Node010 b1)) [Node001 (Node010 b2); Node001 (Node010 b1)])).
+    intro.
+    destruct H0.
+    {
+      apply Thm in H0.
+      clear Thm.
+      cbn in *.
+    
+  Lemma not_list_intersect_rev (b1 b2:B)
+    : (*length l0 = arity -> *)
+    
+    elts_wf true b1 [b1;b2] ->
+    b1 <> b2 ->
+      ~( forall t1 is_rev l0, map_elts_wf is_rev t1 (rev l0) ->
+      list_intersect'_pre_cbv t1 is_rev (rev l0)
+      = list_intersect'_pre_cbv t1 (negb is_rev) l0).
+  Proof.
+    intros ? Hneq Thm.
+    specialize (Thm (Node001 (Node010 b1)) true
+                  [(Node001 (Node010 b1)) ;(Node001 (Node010 b2)) ]).
+    cbn in *.
+    change false with (negb true) in *.
+    rewrite <- elts_intersect_rev in *; eauto.
+    apply (negated_excluded_middle (map_elts_wf true (Node001 (Node010 b1)) [Node001 (Node010 b2); Node001 (Node010 b1)])).
+    intro.
+    destruct H0.
+    {
+      apply Thm in H0.
+      clear Thm.
+      cbn in *.
+    2:{
+    }
+    revert is_rev l0.
+    induction t1;
+      basic_goal_prep;
+      basic_utils_crush.    
+    all: rewrite ?gather_tries_rev in *;
+                 unfold rev3 in *;
+                 rewrite ?hfin3_to_tuple_un_k, ?hfin3_tuple_inverse' in *;
+                 cbv [pair_map2 pair_map split3 pair_map id] in *;
+      cbn[fst snd] in *.
+    all: rewrite !gather_tries_spec in *;
+      unfold gather_tries_simple in *;
+      basic_goal_prep;
+      rewrite ?option_map2_Some_r in *;
+      cbv [id] in *;
+      autorewrite with utils in *;
+      erewrite option_map_ext in *
+        by (basic_goal_prep; rewrite app_nil_r; reflexivity).
+    all: erewrite option_map_ext in *
+        by (basic_goal_prep; rewrite rev_involutive; reflexivity).
+    all:rewrite option_map_id_ext in *
+        by (basic_goal_prep; reflexivity).
+    all: try erewrite option_map_ext in *
+        by (basic_goal_prep; apply app_nil_r).
+    {
+      case_match; cbn in *; eauto.
+      2:{
+    all: rewrite !split_map in *; cbn in *.
+    all: rewrite ?map_map in *.
+    all: rewrite option_map_rev_option_all in *.
+    *)
+  
   Lemma list_intersect_rev t1 is_rev l0
-    : list_intersect'_pre_cbv t1 is_rev (rev l0)
+    : (*length l0 = arity -> *)
+      map_elts_wf is_rev t1 (rev l0) ->
+      list_intersect'_pre_cbv t1 is_rev (rev l0)
       = list_intersect'_pre_cbv t1 (negb is_rev) l0.
   Proof.
     revert is_rev l0.
     induction t1;
       basic_goal_prep;
-      basic_utils_crush.
-    all: rewrite ?gather_tries_rev.
-    all: unfold rev3.
-    all: rewrite !hfin3_to_tuple_un_k.
-    all: rewrite hfin3_tuple_inverse'.
-    all: change (if (?x : bool) then false else true) with (negb x) in *.
-    all: autorewrite with utils bool in *.
-    all: cbv [pair_map2 pair_map split3 pair_map id].
-    all: cbn [fst snd].
-
-    Ltac option_focus k :=
-      match goal with
-        |- context c [match ?e with Some x => @?branchS x | None => ?branchN end] =>
-          lazymatch e with k ?t =>
-                             let new_goal := context c [option_eta (fun o => match k o with
-                                                                             | Some x => branchS x
-                                                                             | None => branchN
-                                                                             end) t] in
-                             let HG := fresh "Heta" in
-                             enough new_goal as HG;
-                             [rewrite <- option_eta_equiv in HG; assumption
-                             | cbv [option_eta] ]
-          end
-      end.
-    all: first [option_focus (Datatypes.option_map (rev (A:=B)))
+      basic_utils_crush.    
+    all: rewrite ?gather_tries_rev;
+                 unfold rev3;
+                 rewrite ?hfin3_to_tuple_un_k, ?hfin3_tuple_inverse';
+                 cbv [pair_map2 pair_map split3 pair_map id];
+      cbn[fst snd].
+    all:
+      first [option_focus (Datatypes.option_map (rev (A:=B)))
                |option_focus (Datatypes.option_map (rev (A:=tree' B)))];
       cbn;
       repeat 
@@ -952,147 +1241,275 @@ Section MapIntersectList.
                 | Some a => @?f a
                 | None => None
                 end)
-      with (Mbind f m).
-    all: rewrite <- ?option_Mbind_assoc.
-    all: rewrite ? Mbind_option_map.
-    all: try apply Mbind_option_ext; intros.
-    all: rewrite ?IHt1, ?elts_intersect_rev,?negb_involutive.
-    all: try reflexivity.
-    all: repeat (lazymatch goal with
-                   |- match ?c1 with _ => _ end = match ?c2 with _ => _ end =>
-                     replace c1 with c2;[case_match|]
-                 end;
-                 try (apply Mbind_option_ext; intros);
-                 rewrite ?IHt1, ?IHt1_1, ?IHt1_2, ?elts_intersect_rev,?negb_involutive;
-                 try reflexivity).
-  Qed.
-   
-  (*TODO: Issue for list intersect! Uses permutation!
-    The `rev` in gather_tries_simple causes problems.
-    Options:
-    -rev the acc to preserve order
-    -rev the cil in the caller
-    -pass the cils through these functions and maintain pairness to support permutation
-   *)
-  Lemma list_intersect_correct' x mhd mtl is_rev
-    : match list_Mmap (Mbind (get' x)) (mhd::mtl) with
-      | Some (e::es) => 
-          (@! let hd <- mhd in
-             let tl <- option_all mtl in
-             let li <- (list_intersect' hd is_rev tl) in
-             ((get' x) li)) = (elts_intersect is_rev e (rev es))
-      | Some [] => False
-      | None =>
-          (@! let hd <- mhd in
-             let tl <- option_all mtl in
-             let li <- (list_intersect' hd is_rev tl) in
-             ((get' x) li)) = None
-      end.
-  Proof using elts_intersect_rev.
-    change list_intersect' with list_intersect'_pre_cbv.
-    generalize dependent mtl.
-    revert mhd.
-    induction x; intros.
-    all:rewrite !Mmap_option_all.
-    all:erewrite map_ext; intros.
-    2:instantiate (1:= fun a => @!let a' <- a in
-                                  let a1 <- tree_proj_001 a' in
-                                  (get' x a1));
-    destruct a; cbn; auto;
-    destruct t0; reflexivity.
-    3:instantiate (1:= fun a => @!let a' <- a in
-                                  let a1 <- tree_proj_100 a' in
-                                  (get' x a1));
-    destruct a; cbn; auto;
-    destruct t0; reflexivity.
-    4:{
-      instantiate (1:= fun a => @!let a' <- a in
-                                  (tree_proj_010 a'));
-      destruct a; cbn; auto;
-      destruct t0; reflexivity.
-    }
-    all:change (fun x => ?f x) with f.
-    all:rewrite <- Mmap_option_all.
-    all:rewrite Mmap_Mbind.
-    all:destruct mhd; cbn -[get']; eauto; [].
-    all:case_match; cbn-[get']; eauto; [].
-    1:specialize (IHx (tree_proj_001 t0) (map tree_proj_001 l)).
-    2:specialize (IHx (tree_proj_100 t0) (map tree_proj_100 l)).
-    1,2:rewrite Mmap_Mbind in IHx.
-    all:cbn-[get'] in *.
-    all:case_match; cbn -[get']; eauto.
-    2:{
-      destruct t0; cbn in *; try congruence.
-      all: rewrite hfin3_to_tuple_un_k.
-      all: rewrite gather_tries_spec.
-      all: unfold gather_tries_simple.
-      all: cbn.
-      all:repeat case_match; cbn;eauto.
-    }
-    3:{
-      destruct t0; cbn in *; try congruence.
-      all: rewrite hfin3_to_tuple_un_k.
-      all: rewrite gather_tries_spec.
-      all: unfold gather_tries_simple.
-      all: cbn.
-      all:repeat case_match; cbn;eauto.
-    }
-    4:{
-      destruct t0; cbn in *; try congruence.
-      all: rewrite hfin3_to_tuple_un_k.
-      all: rewrite gather_tries_spec.
-      all: unfold gather_tries_simple.
-      all: cbn.
-      all:repeat case_match; cbn;eauto.
-    }
-    1:change (list_Mmap (fun a' : tree' B =>
-             match tree_proj_001 a' with
-             | Some a0 => get' x a0
-             | None => None
-             end) l)
-          with (list_Mmap (fun a => Mbind (M:=option) (get' x) (tree_proj_001 a)) l).
-    2:change (list_Mmap (fun a' : tree' B =>
-             match tree_proj_100 a' with
-             | Some a0 => get' x a0
-             | None => None
-             end) l)
-          with (list_Mmap (fun a => Mbind (M:=option) (get' x) (tree_proj_100 a)) l).
-    all:rewrite Mmap_option_all.
-    1:rewrite <- map_map with (f:= tree_proj_001).
-    2:rewrite <- map_map with (f:= tree_proj_100).
-    all: change (fun x => ?f x) with f in *.
-    all:rewrite <- Mmap_option_all.
-    all:rewrite ?Mmap_Mbind.
-    all:rewrite <- ?Mmap_option_all in *.
-    all:destruct t0; cbn -[get'] in *;eauto.
-    all: rewrite hfin3_to_tuple_un_k.
-    all: rewrite gather_tries_spec.
-    all: unfold gather_tries_simple.
-    all: progress autorewrite with inversion rw_prop utils in *; subst.
-    all: try erewrite map_ext by apply tree'_tuple_to_proj.
-    all: unfold split3.
-    all: rewrite !split_map.
-    all: rewrite ?map_map in *.
-    all: cbn -[get'] in *.
-    all: rewrite !option_all_rev.
-    all: rewrite <- ?Mmap_option_all.
-    all: rewrite ?split_map.
-    all: rewrite ?map_map in *.
-    all: cbn -[get'] in *.
-    all: rewrite <- ?Mmap_option_all.
-    all: repeat (case_match; cbn -[get'] in *;eauto).
-    all: rewrite ?get'_1.
-    all: cbn.
-    all: try tauto.
-    all: autorewrite with inversion in *; subst.
-    all: try assumption.
-    all: try tauto.
-    all: autorewrite with inversion utils in *; subst.
-    all:rewrite ?list_intersect_rev, ?elts_intersect'_rev in *.
-    all: rewrite ?negb_involutive in *.
-    all: congruence.
-  Qed.
+      with (Mbind f m);
+      rewrite <- ?option_Mbind_assoc;
+      rewrite ? Mbind_option_map;
+      try apply Mbind_option_ext; intros;
+      try apply f_equal.
     
+    all: rewrite gather_tries_spec in *;
+      unfold gather_tries_simple in *;
+      basic_goal_prep;
+      rewrite ?option_map2_Some_r in *;
+      cbv [id] in *;
+      autorewrite with utils in *;
+      erewrite option_map_ext in *
+        by (basic_goal_prep; rewrite app_nil_r; reflexivity).
+    all: rewrite !split_map in *; cbn in *.
+    all: rewrite ?map_map in *.
+    all: rewrite option_map_rev_option_all in *.
+    all: unshelve (repeat (try case_match; basic_goal_prep;
+      rewrite ?elts_intersect_rev by ((erewrite !length_option_all by eauto;
+                                          basic_utils_crush) || shelve);
+
+    
+      rewrite ?gather_tries_spec in *;
+      unfold gather_tries_simple in *;
+      basic_goal_prep;
+      rewrite ?option_map2_Some_r in *;
+      cbv [id] in *;
+      autorewrite with utils in *;
+      try erewrite option_map_ext in *
+        by (basic_goal_prep; rewrite app_nil_r; reflexivity);
+      rewrite ?split_map in *; cbn in *;
+    rewrite ?map_map in *;
+      rewrite ?option_map_rev_option_all in *;
+      (*TODO: hardcoded names*)
+      try rewrite IHt1 by shelve;
+    try rewrite IHt1_1 by shelve;
+    try rewrite IHt1_2 by shelve;
+      try (first [option_focus (Datatypes.option_map (rev (A:=B)))
+                 |option_focus (Datatypes.option_map (rev (A:=tree' B)))];
+           cbn;
+           repeat 
+             change (match ?m with
+                     | Some a => @?f a
+                     | None => None
+                     end)
+             with (Mbind f m);
+           rewrite <- ?option_Mbind_assoc;
+           rewrite ? Mbind_option_map;
+           try apply Mbind_option_ext; intros;
+           try apply f_equal);
+                           rewrite ?negb_involutive, ?rev_involutive; auto)).
+    all: try now (eapply tree'_tuple_center_elts_wf; cycle 1; eauto; cbn; eauto).
+    all:rewrite <- map_elts_wf_rev, negb_involutive.
+    all: try now (eapply tree'_tuple_right_elts_wf; cycle 1; eauto; cbn; eauto).
+    all: try now (eapply tree'_tuple_left_elts_wf; cycle 1; eauto; cbn; eauto).
+  Qed.
+
+  Lemma list_Mmap_length T T' (f : T -> option T') l l'
+    : list_Mmap f l = Some l' ->
+      length l = length l'.
+  Proof.
+    revert l'.
+    induction l;
+      basic_goal_prep;
+      repeat case_match;
+      basic_goal_prep;
+      basic_utils_crush.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Definition uncons {T T'} f (l : list T) : option T' :=
+    match l with
+    | [] => None
+    | x::l => f x l
+    end.
+
+  Lemma tree_proj_tuple_r {T} (a : (tree' T))
+    :tree_proj_001 a = snd (tree'_tuple a).
+  Proof. destruct a; reflexivity. Qed.
+  
+  Lemma list_tree_proj_tuple_r {T} (tl : list (tree' T))
+    :  list_Mmap tree_proj_001 tl = option_all (snd (split (map tree'_tuple tl))).
+  Proof.
+    induction tl; auto.
+    rewrite !snd_split, map_map in *.
+    cbn [list_Mmap map].
+    rewrite tree_proj_tuple_r, IHtl;
+    reflexivity.
+  Qed.
+
+  
+  Lemma tree_proj_tuple_l {T} (a : (tree' T))
+    :tree_proj_100 a = fst (fst (tree'_tuple a)).
+  Proof. destruct a; reflexivity. Qed.
+  
+  Lemma list_tree_proj_tuple_l {T} (tl : list (tree' T))
+    :  list_Mmap tree_proj_100 tl = option_all (fst  (split(fst (split (map tree'_tuple tl))))).
+  Proof.
+    induction tl; auto.
+    rewrite !fst_split, map_map in *.
+    cbn [list_Mmap map].
+    rewrite tree_proj_tuple_l, IHtl;
+    reflexivity.
+  Qed.
+
+  
+  Lemma tree_proj_tuple_c {T} (a : (tree' T))
+    :tree_proj_010 a = snd (fst (tree'_tuple a)).
+  Proof. destruct a; reflexivity. Qed.
+  
+  Lemma list_tree_proj_tuple_c {T} (tl : list (tree' T))
+    :  list_Mmap tree_proj_010 tl = option_all (snd  (split(fst (split (map tree'_tuple tl))))).
+  Proof.
+    induction tl; auto.
+    rewrite !snd_split, !fst_split, map_map in *.
+    cbn [list_Mmap map].
+    rewrite tree_proj_tuple_c, IHtl;
+    reflexivity.
+  Qed.
+
+  Ltac option_match_comm :=
+    lazymatch goal with
+        |- context [match match ?ma with Some x => @?f x | None => ?y end with
+                      | Some x' => @?f' x'
+                      | None => ?y'
+                      end] =>
+          rewrite option_eta_equiv
+          with (o := ma)
+               (k:= fun c => match match c with Some x => f x | None => y end with
+                      | Some x' => f' x'
+                      | None => y'
+                             end);
+          cbv [option_eta]
+      end.
+  
+  Lemma list_intersect'_get1 x is_rev hd tl
+    :  map_elts_wf is_rev hd tl ->
+       Mbind (get' x~1) (list_intersect'_pre_cbv hd is_rev tl)
+      = @!let hd <- tree_proj_001 hd in
+          let tl <- list_Mmap tree_proj_001 tl in
+          (Mbind (get' x) (list_intersect'_pre_cbv hd is_rev tl)).
+  Proof.
+    destruct hd; cbn.
+    all: rewrite ?tree'_tuple_un_k, ?hfin3_to_tuple_un_k.
+    all: cbn.
+    all: rewrite !gather_tries_spec; unfold gather_tries_simple; cbn.
+    all: cbv [id].
+    all: rewrite !option_all_rev.
+    all: rewrite ?list_tree_proj_tuple_r.
+    all: repeat rewrite ?fst_split, ?snd_split, ?map_map.
+    all: try now (repeat case_match; auto).
+    all: repeat change (match ?m with
+                        | Some a => @?f a
+                        | None => None
+                        end)
+      with (Mbind f m);
+      rewrite !Mbind_option_map;
+      basic_goal_prep.
+    all:repeat (case_match; cbn; auto;
+              autorewrite with utils in *;
+              try rewrite !list_intersect_rev, !negb_involutive in *;
+              rewrite ?map_elts_wf_rev, ?rev_involutive).
+    all: try now (eapply tree'_tuple_right_elts_wf; eauto).
+    all: try now (eapply tree'_tuple_left_elts_wf; eauto).
+  Qed.
+
+  
+  Lemma list_intersect'_get0 x is_rev hd tl
+    :  map_elts_wf is_rev hd tl ->
+       Mbind (get' x~0) (list_intersect'_pre_cbv hd is_rev tl)
+      = @!let hd <- tree_proj_100 hd in
+          let tl <- list_Mmap tree_proj_100 tl in
+          (Mbind (get' x) (list_intersect'_pre_cbv hd is_rev tl)).
+  Proof.
+    destruct hd; cbn.
+    all: rewrite ?tree'_tuple_un_k, ?hfin3_to_tuple_un_k.
+    all: cbn.
+    all: rewrite !gather_tries_spec; unfold gather_tries_simple; cbn.
+    all: cbv [id].
+    all: rewrite !option_all_rev.
+    all: try now (repeat case_match; auto).
+    all: rewrite ?list_tree_proj_tuple_l.
+    all: repeat rewrite ?fst_split, ?snd_split, ?map_map.
+    all: try now (repeat case_match; auto).
+    all: repeat change (match ?m with
+                        | Some a => @?f a
+                        | None => None
+                        end)
+      with (Mbind f m);
+      rewrite !Mbind_option_map;
+      basic_goal_prep.
+    all:repeat (case_match; cbn; auto;
+              autorewrite with utils in *;
+              try rewrite !list_intersect_rev, !negb_involutive in *;
+              rewrite ?map_elts_wf_rev, ?rev_involutive).
+    all: try now (eapply tree'_tuple_right_elts_wf; eauto).
+    all: try now (eapply tree'_tuple_left_elts_wf; eauto).
+  Qed.
+
+  
+  Lemma list_intersect'_getxH is_rev hd tl
+    :  map_elts_wf is_rev hd tl ->
+       Mbind (get' 1) (list_intersect'_pre_cbv hd is_rev tl)
+      = @!let hd <- tree_proj_010 hd in
+          let tl <- list_Mmap tree_proj_010 tl in
+          (elts_intersect (negb is_rev) hd tl).
+  Proof.
+    destruct hd; cbn.
+    all: rewrite ?tree'_tuple_un_k, ?hfin3_to_tuple_un_k.
+    all: cbn.
+    all: rewrite !gather_tries_spec; unfold gather_tries_simple; cbn.
+    all: cbv [id].
+    all: rewrite !option_all_rev.
+    all: try now (repeat case_match; auto).
+    all: rewrite ?list_tree_proj_tuple_c.
+    all: repeat rewrite ?fst_split, ?snd_split, ?map_map.
+    all: repeat change (match ?m with
+                        | Some a => @?f a
+                        | None => None
+                        end)
+      with (Mbind f m);
+      rewrite !Mbind_option_map;
+      basic_goal_prep.
+    all:repeat (case_match; cbn; auto;
+              autorewrite with utils in *;
+              try rewrite !list_intersect_rev, !negb_involutive in *;
+                rewrite ?map_elts_wf_rev, ?rev_involutive).
+    all: rewrite ? elts_intersect_rev in *; try congruence.
+    all: try now (eapply tree'_tuple_center_elts_wf; eauto).
+    all: try now (eapply tree'_tuple_left_elts_wf; eauto).
+    all: try now (eapply tree'_tuple_right_elts_wf; eauto).
+  Qed.
+
+  
+  Arguments get' {A}%type_scope !p%positive_scope !m.
+  
+  Lemma list_intersect_correct' x hd tl is_rev
+    : map_elts_wf is_rev hd tl ->
+      Mbind (get' x) (list_intersect' hd is_rev tl)
+      = @!let hd' <- get' x hd in
+          let tl' <- list_Mmap (get' x) tl in
+          (elts_intersect (negb is_rev) hd' tl').
+  Proof using elts_intersect_rev elts_wf_rev.
+    change list_intersect' with list_intersect'_pre_cbv.
+    revert hd is_rev tl.
+    induction x; destruct hd; intros;
+      basic_utils_crush.
+    all: cbn [get'].
+    all: try rewrite list_intersect'_get1 by auto.
+    all: try rewrite list_intersect'_get0 by auto.
+    all: try rewrite list_intersect'_getxH by auto.
+    all: try (cbn; reflexivity).      
+    all: cbn -[Mbind].
+    all: change (Mbind ?f (Some ?v)) with (f v) in *.
+    all: cbn beta.
+    all: rewrite option_Mbind_comm;
+      rewrite ?list_get'_1, ?list_get'_0;
+      rewrite option_Mmap_Mmap, <- !option_Mbind_assoc;
+      eapply Mbind_option_ext;
+      intros.
+    all: try (rewrite IHx by
+             ((eapply tree'_tuple_right_elts_wf
+               +eapply tree'_tuple_left_elts_wf); eauto; cbn;
+         rewrite ?list_tree_proj_tuple_l, ?list_tree_proj_tuple_r,
+           ?snd_split, ? fst_split, ?map_map in *;
+              auto); rewrite option_Mbind_comm; reflexivity).
+  Qed.
+         
   Lemma option_all_Some A (l : list A) : option_all (map Some l) = Some l.
   Proof.
     induction l; basic_goal_prep; basic_utils_crush.
@@ -1101,27 +1518,39 @@ Section MapIntersectList.
   Qed.
 
   Lemma list_intersect_correct x hd tl
-    : get x (otree (list_intersect hd tl))
+    : map_elts_wf false hd tl ->
+      get x (otree (list_intersect hd tl))
       = @!let hd_x <- get' x hd in
           let tl_x <- list_Mmap (get' x) tl in
           (elts_intersect false hd_x (rev tl_x)).
   Proof.
-    pose proof (list_intersect_correct' x (Some hd) (map Some tl)) false.
-    unfold list_intersect.
-    change (Some hd :: map Some tl) with (map Some (hd::tl)) in *.
-    rewrite Mmap_Mbind in *.
-    rewrite option_all_Some in *.
-    cbn in *.
-    revert H; repeat (case_match; cbn).
-    all:rewrite !option_all_Some in *.
-    all: intros; basic_utils_crush.
-    all:  repeat lazymatch goal with
-           | HNone : ?a = None |- context [?a] =>
-               rewrite HNone
-           | HSome : ?a =  Some _ |- context [?a] =>
-               rewrite HSome
-           end.
-    all:cbn in *; eauto.
+    intro.
+    unfold list_intersect, get, otree.
+    etransitivity.
+    {
+      Unshelve.
+      2: refine (_ (list_intersect' hd false tl)).
+      2: intro x'; destruct x'; shelve.
+      cbn.
+      destruct (list_intersect' hd false tl); reflexivity.
+    }
+    cbn.
+    repeat change (match ?m with
+                   | Some a => @?f a
+                   | None => None
+                   end)
+      with (Mbind f m).
+    rewrite list_intersect_correct'; auto.
+    eapply Mbind_option_ext; intros.
+    repeat change (match ?m with
+                   | Some a => @?f a
+                   | None => None
+                   end)
+      with (Mbind f m).
+    eapply Mbind_option_ext; intros.
+    rewrite elts_intersect_rev; auto.
+    eapply H in H1; eauto.
+    eapply  elts_wf_rev; eauto.
   Qed.
 
   (*
