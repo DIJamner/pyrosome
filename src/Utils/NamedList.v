@@ -6,7 +6,7 @@ Import BoolNotations.
 Open Scope string.
 Open Scope list.
 
-From Utils Require Import Base Booleans Props Eqb Default Lists Pairs Options.
+From Utils Require Import Base Booleans Eqb Default Lists Pairs Options.
 
 
 Section __.

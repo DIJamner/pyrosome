@@ -5,7 +5,7 @@ Import ListNotations.
 From Coq.Sorting Require Import Permutation Mergesort.
 Import NatSort.
 
-From Utils Require Import Base Booleans Props Eqb Lists.
+From Utils Require Import Base Booleans Eqb Lists.
 
 Definition nat_permutationb (l1 l2 : list nat) : bool :=
   eqb (sort l1) (sort l2).

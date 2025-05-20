@@ -586,6 +586,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   Is this the problem?.
   wouldn't this mean that the top-level analyses aren't updated?.
   but the problem is that they are out of sync*)
+  Import coqutil.Datatypes.Result.
   lazymatch goal with
   |- eq_term ?l ?c ?t ?e1 ?e2 =>
     let l' := constr:(ctx_to_rules c ++ l) in
@@ -597,9 +598,9 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
    let (x2,g1) := add_open_term StringListMap.string_succ
                     StringListMap.sort_of l' true
                     [] (var_to_con e2) graph in
-  ((unwrap_with_default (extract_weighted g0 1000 x1)), x1,
-             (unwrap_with_default (extract_weighted g1 1000 x2)), x2
-  )) in
+   let ex1 := extract_weighted g0 1000 x1 in
+   let ex2 := (extract_weighted g1 1000 x2) in
+   existT id _ ((of_Success ex1), x1, (of_Success ex2), x2)) in
     idtac e'
   end.
   (*

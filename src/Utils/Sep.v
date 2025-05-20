@@ -7,7 +7,7 @@ Require Import Coq.Classes.Morphisms.
 
 Require Import Coq.Sorting.Permutation.
 
-From Utils Require Import Base Booleans Props Eqb Options Lists ExtraMaps
+From Utils Require Import Base Booleans Eqb Options Lists ExtraMaps
   Permutation.
 
 
