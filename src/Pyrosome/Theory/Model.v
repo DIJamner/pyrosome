@@ -62,18 +62,17 @@ Section WithVar.
       Section WithModel.
         Context {Model : Model}.
       
-      Inductive eq_subst
-        : ctx -> ctx -> subst -> subst -> Prop :=
-        eq_subst_nil : forall c : ctx, eq_subst c [] [] []
-      | eq_subst_cons : forall (c c' : ctx) (s1 s2 : subst),
+      Inductive eq_subst (c : ctx) : ctx -> subst -> subst -> Prop :=
+        eq_subst_nil : eq_subst c [] [] []
+      | eq_subst_cons : forall (c' : ctx) (s1 s2 : subst),
           eq_subst c c' s1 s2 ->
           forall (name : V) (t : sort) (e1 e2 : term),
             eq_term c t [/s2 /] e1 e2 ->
             eq_subst c ((name, t) :: c') ((name, e1) :: s1) ((name, e2) :: s2).
 
-      Inductive wf_args : ctx -> list term -> ctx -> Prop :=
-      | wf_args_nil : forall c, wf_args c [] []
-      | wf_args_cons : forall c s c' name e t,
+      Inductive wf_args (c : ctx) : list term -> ctx -> Prop :=
+      | wf_args_nil :  wf_args c [] []
+      | wf_args_cons : forall s c' name e t,
           wf_term c e t[/with_names_from c' s/] ->
           (* these arguments are last so that proof search unifies existentials
        from the other arguments first*)
@@ -88,9 +87,9 @@ Section WithVar.
           wf_sort c v ->
           wf_ctx ((name,v)::c).
 
-      Inductive eq_args : ctx -> ctx -> list term -> list term -> Prop :=
-      | eq_args_nil : forall c, eq_args c [] [] []
-      | eq_args_cons : forall c c' es1 es2,
+      Inductive eq_args (c : ctx) : ctx -> list term -> list term -> Prop :=
+      | eq_args_nil :  eq_args c [] [] []
+      | eq_args_cons : forall c' es1 es2,
           eq_args c c' es1 es2 ->
           forall name t e1 e2,
             (* assumed because the output ctx is wf: fresh name c' ->*)

@@ -13,17 +13,6 @@ Import Sets.
 Import StateMonad.
 
 
-(*TODO: move somewhere*)
-Definition Is_Some_satisfying {A} (P : A -> Prop) x :=
-  match x with
-  | Some x => P x
-  | None => False
-  end.
-Notation "x <$> P" :=
-  (Is_Some_satisfying P x)
-    (at level 56,left associativity).
-
-
 Definition If_Some_satisfying {A} (P : A -> Prop) x :=
   match x with
   | Some x => P x
@@ -226,67 +215,10 @@ Section WithMap.
       domain : Type;
       (* included to support setoids *)
       domain_eq : domain -> domain -> Prop;
+      domain_wf x := domain_eq x x;
       (*constants : idx -> domain; TODO: do I have any constants? *)
       interpretation : symbol -> list domain -> option domain;
-    }.
-
-  Definition eval_atom m (assignment : named_list idx m.(domain)) f args : option m.(domain) :=
-    @!let args' <- list_Mmap (named_list_lookup_err assignment) args in
-      (m.(interpretation) f args').
-      
-  Definition assignment_satisfies_atom m
-    (assignment : named_list idx m.(domain)) (a : atom) : Prop :=
-    eval_atom m assignment a.(atom_fn) a.(atom_args) <$>
-                    (fun r => (named_list_lookup_err assignment a.(atom_ret)) <$>
-                                (m.(domain_eq) r)).
-  
-  Definition assignment_satisfies_eq m
-    (assignment : named_list idx m.(domain)) x y : Prop :=
-    named_list_lookup_err assignment x <$> (fun x' =>
-    (named_list_lookup_err assignment y) <$>
-                                (m.(domain_eq) x')).
-  
-  Definition assignment_satisfies_clause m
-    (assignment : named_list idx m.(domain)) (c : clause) : Prop :=
-    match c with
-    | eq_clause x y => assignment_satisfies_eq m assignment x y
-    | atom_clause a => assignment_satisfies_atom m assignment a
-    end.
-  
-  (* TODO: rewrite properties to be easier to read
-   *)
-  Record model_of
-    (m : model)
-    (rw : list sequent) : Prop :=
-    {
-      (* wf_model conditions
-         TODO: any reason to break these out?
-       *)
-      (* TODO: does it need to be an equivalence? *)
-      domain_eq_PER : PER m.(domain_eq);
-      interpretation_preserving
-      : forall f args args' d,
-        m.(interpretation) f args = Some d ->
-        match m.(interpretation) f args' with
-        | Some d' => m.(domain_eq) d d'
-        | None => False
-        end;
-      (* TODO: do I want this?
-      interpretation_in_eq :
-      forall f args i, m.(interpretation) f args = Some i ->
-                     m.(domain_eq) i i;
-       *)
-
-      (* model_of conditions *)
-      rules_sound : all (fun r =>
-                           forall query_assignment,
-                             map fst query_assignment = (forall_vars r) ->
-                             all (assignment_satisfies_clause m query_assignment) r.(seq_assumptions) ->
-                             exists out_assignment,
-                               (* query assignment first eliminates the need for an all_fresh condition*)
-                               all (assignment_satisfies_clause m (query_assignment ++ out_assignment))
-                                 r.(seq_conclusions))
-                      rw
+      interprets_to f args d := exists d', interpretation f args = Some d' /\ domain_eq d' d;
     }.
 
   
@@ -303,6 +235,56 @@ Section WithMap.
         (idx_trie_ok : forall A, map.ok (idx_trie A))
         (idx_trie_plus : map_plus idx_trie).
 
+  
+  Section ForModel.
+
+    Context m (idx_interpretation : idx_map m.(domain)).
+
+    Definition atom_sound_for_model a :=
+      (list_Mmap (map.get idx_interpretation) a.(atom_args)) <$> (fun args =>
+      (map.get idx_interpretation a.(atom_ret)) <$> (fun out =>      
+      m.(interprets_to) a.(atom_fn) args out)).
+  
+  Definition eq_sound_for_model x y : Prop :=
+    map.get idx_interpretation x <$> (fun x' =>
+    (map.get idx_interpretation y) <$>
+      (m.(domain_eq) x')).
+
+   Definition clause_sound_for_model (c : clause) : Prop :=
+    match c with
+    | eq_clause x y => eq_sound_for_model x y
+    | atom_clause a => atom_sound_for_model a
+    end.
+
+  End ForModel.
+
+  Definition model_satisfies_rule m r :=
+    forall query_assignment,
+      set_eq (map.keys query_assignment) (forall_vars r) ->
+      all (clause_sound_for_model m query_assignment) r.(seq_assumptions) ->
+      exists out_assignment,
+        map.extends out_assignment query_assignment
+        /\ all (clause_sound_for_model m out_assignment)
+          r.(seq_conclusions).
+  
+  Record model_of
+    (m : model)
+    (rw : list sequent) : Prop :=
+    {
+      (* wf_model conditions
+         TODO: any reason to break these out?
+       *)
+      (* TODO: does it need to be an equivalence? *)
+      domain_eq_PER : PER m.(domain_eq);
+      interpretation_preserving
+      : forall f args args' d d',
+        all2 m.(domain_eq) args args' ->
+        m.(interprets_to) f args d ->
+        m.(interprets_to) f args' d' ->
+        m.(domain_eq) d d';
+      (* model_of conditions *)
+      rules_sound : all (model_satisfies_rule m) rw;
+    }.
   
 
   Notation match_clause := (match_clause idx _).
@@ -432,6 +414,7 @@ Abort.
   Notation instance :=
     (instance idx symbol symbol_map idx_map idx_trie analysis_result).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
+  
   Definition atom_in_egraph a (i : instance) :=
     (map.get i.(db) a.(atom_fn)) <$>
       (fun tbl => (map.get tbl a.(atom_args)) <$>
@@ -448,43 +431,54 @@ Abort.
   *)
 
   Definition SomeRel {A B} (R : A -> B -> Prop) ma mb :=
-    match ma, mb with
-    | Some a, Some b => R a b
-    | _, _ => False
-    end.
+    ma <$> (fun x => mb <$> (R x)).
+  
+  Inductive le (n : idx) : idx -> Prop :=
+    le_n : le n n | le_S : forall m, le n m -> le n (idx_succ m).
 
   Section ForModel.
 
-    Context m (idx_interpretation : idx -> option m.(domain)).
+    Context m (idx_interpretation : idx_map m.(domain)).
 
-    Definition atom_sound_for_model a :=      
-      (Mbind (m.(interpretation) a.(atom_fn))
-         (list_Mmap idx_interpretation a.(atom_args))) <$>
-        (fun d => (idx_interpretation a.(atom_ret)) <$> (m.(domain_eq) d)).
+    Local Notation atom_sound_for_model :=
+      (atom_sound_for_model m idx_interpretation).
+
+    Definition worklist_entry_sound e :=
+      match e with
+      | union_repair _ old_idx new_idx improved_new_analysis =>
+          eq_sound_for_model m idx_interpretation old_idx new_idx
+      | analysis_repair _ i => True (* these don't affect soundness of the egraph *)
+      end.
     
-    Record egraph_sound_for_model e : Prop :=
+    Record egraph_sound_for_interpretation e : Prop :=
       {
-        (*TODO: needed?
-      idx_interpretation_in_domain
-      : forall i d, idx_interpretation i = Some d ->
-                  m.(domain_eq) d d;
-         *)
-        (* TODO: write in a more natural way*)
+        idx_interpretation_wf : forall i d, map.get idx_interpretation i = Some d -> m.(domain_wf) d;
+        (*TODO: rather than functions, should I just use a finite map here?*)
+        interpretation_bounded : forall i, le e.(equiv).(next _ _ _) i ->
+                                           map.get idx_interpretation i = None;
         atom_interpretation : forall a, atom_in_egraph a e -> atom_sound_for_model a;
         rel_interpretation :
         forall i1 i2,
-          Is_Some (idx_interpretation i1) ->
-          (*Is_Some (idx_interpretation i2) ->*)
-          uf_rel _ _ _ e.(equiv) i1 i2 ->
-          SomeRel m.(domain_eq) (idx_interpretation i1) (idx_interpretation i2);      
+          (* TODO: should every index be required to map to a domain value?
+             (e.g. to allow flexibility when initially allocating them)
+           *)
+          uf_rel_PER _ _ _ e.(equiv) i1 i2 ->
+          eq_sound_for_model m idx_interpretation i1 i2;
         parents_interpretation :
         (* Parents do not have to exist in the egraph (and may not, during rebuilding)
            but they must be valid in the model or rebuilding is unsound.
          *)
         forall i l, map.get e.(parents) i = Some l -> all atom_sound_for_model l;
+        worklist_sound : all worklist_entry_sound e.(worklist)
       }.
 
   End ForModel.
+
+  (* TODO: is exists right?
+     Possibly: f is probably sufficiently unique up to equivalence
+   *)
+  Definition egraph_sound_for_model m e : Prop :=
+    exists f, egraph_sound_for_interpretation m f e.
 
   (* TODO: is this record needed? other fields may not be necessary *)
   Record egraph_ok (e : instance) : Prop :=
@@ -497,13 +491,10 @@ Abort.
        *)
     }.
 
-  Record egraph_sound e rs : Prop :=
+  Record egraph_sound e m : Prop :=
     {
       sound_egraph_ok :> egraph_ok e;
-      sound_egraph_for_model :
-      forall m : model,
-        model_of m rs ->
-        exists interp, egraph_sound_for_model m interp e;
+      sound_egraph_for_model : egraph_sound_for_model m e;
     }.
 
   Context (spaced_list_intersect
@@ -513,19 +504,70 @@ Abort.
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
 
-  Theorem empty_sound rs : egraph_sound (empty_egraph idx_zero analysis_result) rs.
+
+  Hint Rewrite @map.get_empty : utils.
+
+  (*
+  Lemma PER_empty (j k : idx)
+    : reachable_plus map.empty j k <-> False.
+  Proof.
+    unfold reachable_plus.
+    intuition (subst; eauto with utils).
+    induction H;
+      basic_goal_prep;
+      basic_utils_crush.
+    all: 
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite reachable_empty : utils.
+   *)
+  
+  Lemma PER_empty A (a b : A) R 
+    : (forall a b, ~ R a b) -> ~ PER_closure R a b.
+  Proof.
+    intros ? ?.
+    induction H0;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Theorem empty_sound m : egraph_sound (empty_egraph idx_zero analysis_result) m.
   Proof.
     unfold empty_egraph.
     constructor.
     { cbn; do 2 econstructor; apply empty_forest_rooted. }
-    intros; exists (fun _ => None).
+    intros; exists map.empty.
     constructor; cbn; try tauto;
       unfold atom_in_egraph;
       basic_goal_prep;
-      rewrite map.get_empty in *;
+      rewrite ? map.get_empty in *;
       basic_goal_prep;
       try tauto;
-      congruence.
+      try congruence.
+    exfalso.
+    unfold uf_rel_PER in *.
+    cbn in *.
+    eapply PER_empty; cycle 1; eauto.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  Theorem empty_sound_for_interpretation m
+    (*: egraph_sound (empty_egraph idx_zero analysis_result) m.*)
+    : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
+  Proof.
+    constructor; cbn; try tauto;
+      unfold atom_in_egraph;
+      basic_goal_prep;
+      rewrite ? map.get_empty in *;
+      basic_goal_prep;
+      try tauto;
+      try congruence.
+    {
+      exfalso; eapply PER_empty; try eassumption.
+      basic_goal_prep;
+        basic_utils_crush.
+    }
   Qed.
 
   
@@ -542,246 +584,37 @@ Abort.
   (*TODO: include the egraph soundness at all?
     If no, move to Monad
    *)
-  Definition state_triple {A} (P : instance -> Prop) (c : state instance A) (Q : A * instance -> Prop) :=
-    forall e, P e -> Q (c e).
 
   
   Definition inst_computation_sound {A} (P : state instance A) rs :=
     state_triple (fun e => egraph_sound e rs) P
       (fun p => egraph_sound (snd p) rs).
 
-  Lemma state_triple_bind A B P Q H (f : A -> state instance B) c
-    : state_triple P c Q ->
-      (forall a, state_triple (curry Q a) (f a) H) ->
-      state_triple P (Mbind f c) H.
-  Proof.
-    unfold curry, state_triple, Mbind in *.
-    cbn.
-    intuition eauto.
-    specialize (H0 e).
-    specialize (H1 (fst (c e)) (snd (c e))).
-    destruct (c e); cbn in *.
-    apply H1.
-    eauto.
-  Qed.
 
-  Lemma increment_epoch_sound rs
-    : inst_computation_sound (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result) rs.
+  Lemma increment_epoch_sound m
+    : inst_computation_sound (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie analysis_result) m.
   Proof.
     unfold increment_epoch, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
     { destruct sound_egraph_ok0; constructor; unfold atom_in_egraph; cbn; eauto. }
-    intros m H; specialize (sound_egraph_for_model0 m H); destruct sound_egraph_for_model0.
+    destruct sound_egraph_for_model0.
     exists x.
-    destruct H0.
+    destruct H.
     constructor; eauto.
   Qed.
 
-  Lemma pull_worklist_sound rs
+  Lemma pull_worklist_sound_deprecated rs
     : inst_computation_sound (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) rs.
   Proof.
     unfold pull_worklist, inst_computation_sound, state_triple.
     destruct e; cbn; destruct 1; constructor.
     { destruct sound_egraph_ok0; constructor; eauto. }
-    intros m H; specialize (sound_egraph_for_model0 m H); destruct sound_egraph_for_model0.
+    destruct sound_egraph_for_model0.
     exists x.
-    destruct H0.
-    constructor; eauto.
-  Qed.
-  
-  Lemma state_triple_ret A (a:A) P
-    : state_triple P (@! ret a) (fun p => (fst p = a) /\ P (snd p)).
-  Proof.
-    unfold increment_epoch, inst_computation_sound, state_triple.
-    cbn; eauto.
+    destruct H.
+    constructor; cbn; eauto.
   Qed.
 
-  Lemma state_triple_wkn_post A P e (Q1 Q2 : A * instance -> Prop)
-    : (forall p, Q1 p -> Q2 p) ->
-      state_triple P e Q1 ->
-      state_triple P e Q2.
-  Proof.
-    unfold state_triple; firstorder.
-  Qed.
-
-  Lemma state_triple_wkn_ret A (a:A) P (Q : _ -> Prop)
-    : (forall p, fst p = a /\ P (snd p) -> Q p) ->
-        state_triple P (@! ret a) Q.
-  Proof.
-    intros.
-    eapply state_triple_wkn_post.
-    2: apply state_triple_ret.
-    firstorder.
-  Qed.
-  
-
-  Lemma state_triple_strengthen_pre A (P1 P2 : _ -> Prop) e (Q: A * instance -> Prop)
-    : (forall i, P1 i -> P2 i) ->
-      state_triple P2 e Q ->
-      state_triple P1 e Q.
-  Proof.
-    unfold state_triple; firstorder.
-  Qed.
-
-  Lemma state_triple_loosen A (P1 P2 : _ -> Prop) e (Q1 Q2 : A * instance -> Prop)
-    : (forall p, Q1 p -> Q2 p) ->
-      (forall i, P1 i -> P2 i) ->
-      state_triple P2 e Q1 ->
-      state_triple P1 e Q2.
-  Proof.
-    intros; eapply state_triple_strengthen_pre; eauto.
-    eapply state_triple_wkn_post; eauto.
-  Qed.
-
-  Lemma state_triple_lift_pre A (H : Prop) P e (Q: A * instance -> Prop)
-    : (H -> state_triple P e Q) ->
-      state_triple (fun i => H /\ P i) e Q.
-  Proof.
-    unfold state_triple; firstorder.
-  Qed.
-
-  
-  Lemma state_triple_lift_post A (H : Prop) P e (Q: A * instance -> Prop)
-    : H ->
-      state_triple P e Q ->      
-      state_triple P e (fun p => H /\ Q p).
-  Proof.
-    unfold state_triple; firstorder.
-  Qed.
-  
-  
-  Lemma state_triple_frame_const A H P e (Q: A * instance -> Prop)
-    : state_triple P e Q -> 
-      state_triple (fun i => H /\ P i) e (fun p => H /\ Q p).
-  Proof.
-    intros. apply state_triple_lift_pre.
-    intros. apply state_triple_lift_post; eauto.
-  Qed.
-
-  
-  Lemma state_triple_list_Mmap1 A B (f : A -> state instance B) l P
-    : (forall l1 a l2, l = l1 ++ a::l2 -> state_triple (P (a::l2)) (f a) (fun p => P l2 (snd p))) ->
-      state_triple (P l) (list_Mmap f l) (fun p => P [] (snd p)).
-  Proof.
-    induction l.
-    {
-      cbn; intros.
-      eapply state_triple_wkn_ret.
-      basic_goal_prep; subst.
-      basic_goal_prep; subst.
-      eauto.
-    }
-    {
-      cbn [all list_Mmap]; intros; break.
-      eapply state_triple_bind; eauto.
-      {
-        apply H with (l1:=[]).
-        reflexivity.
-      }
-      {
-        unfold curry.
-        intro a0.
-        eapply state_triple_bind; eauto.
-        {
-          apply IHl.
-          intros.
-          eapply H with (l1:=a::l1).
-          cbn; congruence.
-        }
-        intro l'.
-        eapply state_triple_wkn_ret.
-        basic_goal_prep; eauto.
-      }
-    }
-  Qed.
-
-  (* TODO: loses some info about the provenance of fl1; ok? *)
-  Lemma state_triple_list_Mmap2 A B (f : A -> state instance B) l Q fl
-    : (forall fl1 a, In a l -> state_triple (Q fl1) (f a) (fun p => Q (fl1++[fst p]) (snd p))) ->
-      state_triple (Q fl) (list_Mmap f l) (fun p => Q (fl++fst p) (snd p)).
-  Proof.
-    revert fl.
-    induction l.
-    {
-      cbn; intros.
-      eapply state_triple_wkn_ret.
-      basic_goal_prep; subst.
-      basic_utils_crush.
-    }
-    {
-      cbn [all list_Mmap]; intros; break.
-      eapply state_triple_bind; [basic_utils_crush |].
-      unfold curry.
-      intro b.
-      eapply state_triple_bind; unfold curry.     
-      { intros; cbn in *; eauto. }
-      {
-        intros.
-        eapply state_triple_wkn_ret.
-        basic_goal_prep; subst.
-        rewrite <- app_assoc in H1.
-        eauto.
-      }
-    }
-  Qed.
-
-  Lemma state_triple_conjunction A (c : state instance A) P1 P2 Q1 Q2
-    : state_triple P1 c Q1 ->
-      state_triple P2 c Q2 ->
-      state_triple (fun e => P1 e /\ P2 e) c (fun e => Q1 e /\ Q2 e).
-  Proof.
-    unfold state_triple.
-    intuition eauto.
-  Qed.
-
-  Lemma state_triple_list_Mmap' A B (f : A -> state instance B) l P fl
-    : (forall fl1 l1 a l2, l = l1 ++ a::l2 ->
-                           state_triple (fun e => P (a::l2) fl1 e)
-                             (f a)
-                             (fun p => P l2 (fl1++[fst p]) (snd p))) ->
-      state_triple (fun e => P l fl e) (list_Mmap f l) (fun p => P [] (fl++fst p) (snd p)).
-  Proof.
-    revert fl.
-    induction l.
-    {
-      cbn; intros.
-      eapply state_triple_wkn_ret.
-      basic_goal_prep; subst.
-      basic_utils_crush.
-    }
-    {
-      cbn [all list_Mmap]; intros; break.
-      eapply state_triple_bind.
-      { eapply H with (l1:=[]); eauto. }
-      unfold curry.
-      intro b.
-      eapply state_triple_bind; unfold curry.     
-      {
-        intros; cbn in *.
-        eapply IHl; intros.
-        eapply H with (l1:=a::l1).
-        cbn.
-        congruence.
-      }
-      {
-        intros.
-        eapply state_triple_wkn_ret.
-        basic_goal_prep; subst.
-        rewrite <- app_assoc in *.
-        eauto.
-      }
-    }
-  Qed.
-
-  
-  Lemma state_triple_list_Mmap A B (f : A -> state instance B) l P
-    : (forall fl1 l1 a l2, l = l1 ++ a::l2 ->
-                           state_triple (fun e => P (a::l2) fl1 e)
-                             (f a)
-                             (fun p => P l2 (fl1++[fst p]) (snd p))) ->
-      state_triple (fun e => P l [] e) (list_Mmap f l) (fun p => P [] (fst p) (snd p)).
-  Proof. apply state_triple_list_Mmap'. Qed.    
-  
   Lemma state_triple_list_Miter A (f : A -> state instance unit) l P
     : (forall l1 a l2, l = l1 ++ a::l2 -> state_triple (P (a::l2)) (f a) (fun p => P l2 (snd p))) ->
       (*all H l -> TODO: include in P*)
@@ -863,7 +696,7 @@ Abort.
    *)
 
   
-  Lemma find_sound (P : _ -> Prop) a
+  Lemma find_sound_deprecated (P : _ -> Prop) a
     : (forall e, P e -> exists l,
             forest idx (idx_map idx) l (parent idx (idx_map idx) (idx_map nat) e.(equiv))) ->
       (forall db equiv equiv' parents epoch worklist analyses l,
@@ -873,7 +706,7 @@ Abort.
           P (Build_instance _ _ _ _ _ _ db equiv parents epoch worklist analyses) ->
           (* TODO: how to express that the roots are the same?*)
           P (Build_instance _ _ _ _ _ _ db equiv' parents epoch worklist analyses)) ->
-      state_triple P
+      state_triple (S:= instance) P
         (find a)
         (fun p => P (snd p) /\ uf_rel _ _ _ (snd p).(equiv) (fst p) a).
   Proof.
@@ -884,7 +717,7 @@ Abort.
     {
       specialize (Hforest _ H).
       break.
-      eapply find_spec in  case_match_eqn; eauto.
+      eapply find_spec' in  case_match_eqn; eauto.
       2:Lia.lia.
       {
         intuition eauto.
@@ -940,13 +773,12 @@ Abort.
   Qed.
    *)
 
-  Record get_parents_postcondition (rs : list _) (p : list atom  * instance) : Prop :=
+  Record get_parents_postcondition m (p : list atom  * instance) : Prop :=
     {
       get_parents_postcondition_sound_egraph_ok : egraph_ok (snd p);
-      get_parents_postcondition_sound_egraph_for_model : forall m : model,
-        model_of m rs ->
-        exists interp : idx -> option (domain m),
-          egraph_sound_for_model m interp (snd p)
+      get_parents_postcondition_sound_egraph_for_model :
+        exists interp,
+          egraph_sound_for_interpretation m interp (snd p)
           /\ all (atom_sound_for_model m interp) (fst p)
     }.
   
@@ -962,8 +794,6 @@ Abort.
     split.
     { constructor; cbn; eauto. }
     {
-      intros m Hm;
-        specialize (sound_egraph_for_model0 _ Hm).
       destruct sound_egraph_for_model0 as [interp [] ].
       exists interp; cbn in *.
       constructor; [constructor; eauto |].
@@ -1028,14 +858,6 @@ Abort.
     all:rewrite map.get_put_same; eauto.
   Qed.
 
-  (* TODO: move to Utils*)
-  Lemma all_wkn A l (P Q : A -> Prop)
-    : (forall x, In x l -> P x -> Q x) -> all P l -> all Q l.
-  Proof.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
 
   Lemma atoms_functional a1 a2 e
     :  atom_in_egraph a1 e ->
@@ -1122,13 +944,12 @@ Abort.
    *)
 
 
-  Record put_precondition a (rs : list _) (e : instance) : Prop :=
+  Record put_precondition a m (e : instance) : Prop :=
     {
       put_precondition_sound_egraph_ok : egraph_ok e;
-      put_precondition_sound_egraph_for_model : forall m : model,
-        model_of m rs ->
-        exists interp : idx -> option (domain m),
-          egraph_sound_for_model m interp e
+      put_precondition_sound_egraph_for_model :
+        exists interp,
+          egraph_sound_for_interpretation m interp e
           /\ atom_sound_for_model m interp a
     }.
 
@@ -1204,13 +1025,44 @@ Abort.
     firstorder.
   Qed.
 
+  (*TODO: move*)
+  Lemma all2_impl A B (R S : A -> B -> Prop) l1 l2
+    : (forall a b, R a b -> S a b) -> all2 R l1 l2 -> all2 S l1 l2.
+  Proof.
+    intro.
+    revert l2; induction l1; destruct l2;
+      basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  Lemma all2_Is_Some_satisfying_l A B (R : A -> B -> Prop) l1 l2
+      : all2 (fun x y => x <$> (fun x' => R x' y)) l1 l2
+        <-> option_all l1 <$> (fun l1' => all2 R l1' l2).
+  Proof.
+    revert l2; induction l1; destruct l2;
+      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
+    { eapply IHl1; eauto. }
+    { eapply IHl1; eauto. } 
+    { eapply IHl1; eauto. }
+  Qed.
+  
+  Lemma all2_Is_Some_satisfying_r A B (R : A -> B -> Prop) l1 l2
+      : all2 (fun x y => y <$> (fun y' => R x y')) l1 l2
+        <-> option_all l2 <$> (fun l2' => all2 R l1 l2').
+  Proof.
+    revert l1; induction l2; destruct l1;
+      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
+    { eapply IHl2; eauto. }
+    { eapply IHl2; eauto. } 
+    { eapply IHl2; eauto. }
+  Qed.
+  
   
   Lemma args_rel_interpretation m interp e
-    : egraph_sound_for_model m interp e ->
+    : egraph_sound_for_interpretation m interp e ->
       forall args1 args2,
-        Is_Some (list_Mmap interp args1) ->
-        all2 (uf_rel _ _ _ e.(equiv)) args1 args2 ->
-        SomeRel (all2 m.(domain_eq)) (list_Mmap interp args1) (list_Mmap interp args2).
+        all2 (uf_rel_PER _ _ _ e.(equiv)) args1 args2 ->
+        option_relation (all2 m.(domain_eq)) (list_Mmap (map.get interp) args1)
+          (list_Mmap (map.get interp) args2).
   Proof.
     destruct e,1; cbn in *.
     clear atom_interpretation0 parents_interpretation0.
@@ -1220,16 +1072,33 @@ Abort.
       basic_goal_prep;
       try tauto.
     specialize (IHargs1 args2).
-    case_match.
-    2:{ basic_goal_prep; basic_utils_crush. }
-    assert (Is_Some (interp a)) as HiaS.
-    { unfold Is_Some; rewrite  case_match_eqn; eauto. }
-    eapply rel_interpretation0 in HiaS; intuition eauto.
-    unfold SomeRel in HiaS.
-    rewrite  case_match_eqn in *.
-    revert HiaS; case_match; try tauto.
-    case_match; basic_goal_prep; basic_utils_crush.
-    case_match; basic_goal_prep; basic_utils_crush.
+    break.
+    eapply rel_interpretation0 in H.
+    unfold eq_sound_for_model in H.
+    case_match; destruct (map.get interp i) eqn:Hi.
+    all:cbn in H; try tauto.
+    rewrite !TrieMap.Mmap_option_all.
+    eapply all2_impl in H0; try eapply rel_interpretation0.
+    unfold eq_sound_for_model in H0.
+    change
+      (all2
+         (fun x y =>
+            (fun x y =>
+               (fun x y => x <$> (fun x' => y <$> domain_eq m x')) x (map.get interp y))
+              (map.get interp x) y)
+        args1 args2)
+      in H0.
+    rewrite <- TrieMap.all2_map_l in H0.
+    change
+      (all2 (fun x y =>
+               (fun x y => x <$> (fun x' => y <$> domain_eq m x')) x (map.get interp y))
+         (map (map.get interp) args1) args2)
+      in H0.
+    rewrite <- TrieMap.all2_map_r in H0.
+    rewrite all2_Is_Some_satisfying_l in H0.
+    case_match; cbn in *; try tauto.
+    rewrite all2_Is_Some_satisfying_r in H0.
+    case_match; cbn in *; tauto.
   Qed.
 
   (*TODO: update
@@ -1335,7 +1204,7 @@ Abort.
           P (Build_instance _ _ _ _ _ _ db equiv parents epoch worklist analyses) ->
           (* TODO: how to express that the roots are the same?*)
           P (Build_instance _ _ _ _ _ _ db equiv' parents epoch worklist analyses)) ->
-      state_triple P
+      state_triple (S:=instance) P
         (canonicalize a)
         (fun p => P (snd p) /\ atom_rel (snd p).(equiv) (fst p) a).
   Proof.
@@ -1353,7 +1222,7 @@ Abort.
       {
         intros; subst.
          eapply state_triple_wkn_post;
-           [ |eapply find_sound]; basic_goal_prep; intuition eauto.
+           [ |eapply find_sound_deprecated]; basic_goal_prep; intuition eauto.
          {
            rewrite <- app_assoc; cbn.
            apply all2_app_shared_tail in H1; eauto using reachable_rel_Reflexive.
@@ -1367,7 +1236,7 @@ Abort.
     unfold curry; cbn [fst snd].
     eapply state_triple_bind; intros.
     {
-      eapply find_sound; basic_goal_prep; intuition eauto.
+      eapply find_sound_deprecated; basic_goal_prep; intuition eauto.
       eapply all2_iff2; eauto.
     }
     unfold curry; cbn [fst snd].
@@ -1383,29 +1252,44 @@ Abort.
     basic_utils_crush.
   Qed.
 
-  
+
+  (*TODO: just use nat?*)
+  Lemma le_trans a b c : le a b -> le b c -> le a c.
+  Proof.
+    intros H1 H2; revert a H1; induction H2;
+      basic_goal_prep; try constructor; eauto.
+  Qed.
+
+  (*TODO: what is this for?
   Lemma get_parents_postcondition_equiv_update db equiv equiv' parents epoch worklist analyses l rs roots
     : forest idx (idx_map idx) roots (parent idx (idx_map idx) (idx_map nat) equiv) ->
       forest idx (idx_map idx) roots (parent idx (idx_map idx) (idx_map nat) equiv') ->
       iff2 (uf_rel idx (idx_map idx) (idx_map nat) equiv)
         (uf_rel idx (idx_map idx) (idx_map nat) equiv') ->
+      le equiv.(next _ _ _) equiv'.(next _ _ _) ->
       get_parents_postcondition rs (l,
           {| db := db; equiv := equiv; parents := parents; epoch := epoch; worklist := worklist; analyses:= analyses |}) ->
       get_parents_postcondition rs
         (l, {| db := db; equiv := equiv'; parents := parents; epoch := epoch; worklist := worklist; analyses:= analyses  |}).
   Proof.
-    clear idx_zero idx_succ.
-    destruct 4 as [ [ ] ?]; cbn in *.
+    clear idx_zero.
+    destruct 5 as [ [ ] ?]; cbn in *.
     repeat (constructor; cbn; eauto).
-    intros m Hm.
-    specialize (get_parents_postcondition_sound_egraph_for_model0 _ Hm).
     basic_goal_prep.
     exists x.
     intuition eauto.
-    destruct H2; constructor; cbn in *; eauto.
-    intros; eapply rel_interpretation0; eauto.
-    eapply H1; eauto.
+    destruct H3; constructor; cbn in *; eauto.
+    {
+      intros.
+      eapply interpretation_bounded0.
+      eapply le_trans; eauto.
+    }
+    {
+      intros; eapply rel_interpretation0; eauto.
+      eapply H1; eauto.
+    }
   Qed.
+*)
 
   
   Lemma iff2_atom_rel equiv equiv'
@@ -1624,7 +1508,8 @@ Abort.
            *)
            *)
   Abort.
-  
+
+  (*TODO: deprecate inst_computation_sound
   Lemma rebuild_sound n rs
     :  inst_computation_sound (rebuild n) rs.
   Proof.
@@ -1659,6 +1544,7 @@ Abort.
     }
      *)
   Abort.
+   *)
     
 (*
     
@@ -1717,15 +1603,400 @@ Abort.
     destruct (run1iter rs' rebuild_fuel i); cbn.
     eauto.
   Qed.
+   *)
+
+  Definition monotone {A} P : Prop :=
+    (forall i i' : idx_map A, map.extends i i' -> P i' -> P i).
+
+  Definition monotone1 {A B} (P : _ -> B -> _) : Prop :=
+    (forall a (i i' : idx_map A), map.extends i i' -> P i' a -> P i a).
+
+  Definition monotone2 {A B C} (P : _ -> B -> C -> _) : Prop :=
+    (forall a b (i i' : idx_map A), map.extends i i' -> P i' a b -> P i a b).
+  
+  Lemma monotone2_fix_l {A B C} (P : idx_map A -> B -> C -> _) x
+    : monotone2 P ->
+      monotone1 (fun i => P i x).
+  Proof.
+    unfold monotone2, monotone1.
+    basic_goal_prep.
+    eapply H0; eauto.
+  Qed.
+
+  
+  Definition state_sound_for_model {A} (m : model) i
+    (* TODO: what data should Post take?*)
+    (s : state instance A) Post_i Post_mono :=
+    state_triple (egraph_sound_for_interpretation m i) s
+      (*TODO: make sure that i' can depend on x *)
+      (fun x => exists i', (Post_i i')
+                           /\ egraph_sound_for_interpretation m i' (snd x)
+                           /\ map.extends i' i
+                           /\ Post_mono i' (fst x))
+    /\ monotone1 Post_mono.
+
+  Hint Resolve Properties.map.extends_refl : utils.
+  
+  Lemma worklist_entry_sound_mono m
+    : monotone1 (worklist_entry_sound m).
+  Proof.
+    intros x ? ?.
+    destruct x; basic_goal_prep; auto.
+    revert H1.
+    unfold eq_sound_for_model, Is_Some_satisfying in *; case_match; try tauto.
+    case_match; try tauto.
+    eapply H0 in case_match_eqn, case_match_eqn0.
+    rewrite case_match_eqn, case_match_eqn0.
+    auto.
+  Qed.
+        
+  Lemma pull_worklist_sound m i
+    : state_sound_for_model m i
+        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
+        (fun i' => i = i') (fun i wl => all (worklist_entry_sound m i) wl).
+  Proof.
+    cbv -[map.rep domain map.get all worklist_entry_sound map.extends];
+      split; intros.
+    {
+      eexists; intuition eauto; destruct e; cbn in *;
+      destruct H0; cbn in *; eauto with utils.
+      constructor; intuition (cbn; eauto).
+    }
+    {
+      eapply all_wkn; try eassumption.
+      basic_goal_prep.
+      eapply worklist_entry_sound_mono; eauto.
+    }     
+  Qed.
+
+  Lemma map_extends_trans {key value : Type} {map : map.map key value} (m1 m2 m3 : map)
+    : map.extends m1 m2 -> map.extends m2 m3 -> map.extends m1 m3.
+  Proof. unfold map.extends; intuition eauto. Qed.
+
+  Lemma state_sound_for_model_bind A B m i c Pi Pmono Qi Qmono (f : A -> _ B)
+    : state_sound_for_model m i c Pi Pmono ->
+      (forall (a:A) i', map.extends i' i ->
+                        Pi i' ->
+                        Pmono i' a ->
+                        state_sound_for_model m i' (f a) Qi Qmono) ->
+      monotone1 Qmono ->
+       state_sound_for_model m i (@! let p <- c in (f p)) Qi Qmono.
+  Proof.
+    basic_goal_prep.
+    split; intros; auto.
+    destruct H0 as [H0 ?].
+    intros e He.
+    specialize (H0 e He).
+    repeat basic_goal_prep.
+    destruct (c e) eqn:Hce.
+    repeat basic_goal_prep.
+    clear c Hce.
+    eapply H1 in H0; eauto with utils.
+    eapply H0 in H4.
+    repeat basic_goal_prep.
+    eexists; intuition eauto using map_extends_trans.
+  Qed.
+
+  Lemma monotone1_all A m (Pmono : _ -> A -> _)
+    : monotone1 Pmono ->
+      monotone1 (fun i' : idx_map (domain m) => all (Pmono i')).
+  Proof.
+    intros; intros l.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Resolve monotone1_all : utils.
+  
+  Lemma state_sound_for_model_Mmap A B m i Pi Pmono l (f : A -> _ B) 
+    : (forall (a:A) i', In a l ->
+                        map.extends i' i ->
+                        Pi i' ->
+                        state_sound_for_model m i' (f a) Pi Pmono) ->
+      Pi i ->
+      monotone1 Pmono ->
+      state_sound_for_model m i (list_Mmap f l)
+        Pi
+        (fun i' => all (Pmono i')).
+  Proof.
+    revert i.
+    induction l.
+    {
+      intros.
+      split; auto using monotone1_all.
+      eapply state_triple_wkn_ret;
+        basic_goal_prep; subst;
+        eexists; cbn; intuition eauto with utils.
+    }
+    {
+      intros.
+      cbn [list_Mmap].
+      eapply state_sound_for_model_bind; eauto using monotone1_all.
+      {
+        basic_goal_prep;
+          basic_utils_crush.
+      }
+      intros.
+      eapply state_sound_for_model_bind; eauto using monotone1_all.
+      {
+        eapply IHl; auto.
+        basic_goal_prep;
+          basic_utils_crush.
+        eapply H0.
+        all:basic_goal_prep;
+          basic_utils_crush.
+        eapply map_extends_trans; eauto.
+      }
+      {
+        intros; split; eauto using monotone1_all.
+        eapply state_triple_wkn_ret;
+          basic_goal_prep; subst;
+          eexists; intuition eauto using Properties.map.extends_refl.
+        basic_goal_prep;
+          basic_utils_crush.
+      }
+    }
+  Qed.
+
+  Lemma eq_sound_monotone m
+    : monotone2 (eq_sound_for_model m).
+  Proof.
+    unfold monotone2, eq_sound_for_model.
+    intros.
+    destruct (map.get i' a) eqn:Hi';
+      basic_goal_prep; try tauto.
+    eapply H0 in Hi'.
+    rewrite Hi' in *.
+    cbn.
+    destruct (map.get i' b) eqn:Hb;
+      basic_goal_prep; try tauto.
+    eapply H0 in Hb.
+    rewrite Hb in *.
+    cbn; auto.
+  Qed.
+
+  
+  Lemma find_next_const x u u' i0
+    : UnionFind.find idx Eqb_idx (idx_map idx) (idx_map nat) u x =
+        Some (u', i0) ->
+      (next idx (idx_map idx) (idx_map nat) u)
+      = (next idx (idx_map idx) (idx_map nat) u').
+  Proof.
+    unfold UnionFind.find.
+    destruct u.
+    cbn.
+    case_match; cbn; try congruence.
+    eqb_case i x.
+    { basic_goal_prep; basic_utils_crush. }
+    {
+      case_match; cbn; try congruence.
+      basic_goal_prep.
+      basic_utils_crush.
+    }
+  Qed.
+
+  (*
+  Lemma uf_rel_implies_sound_for_model m e i x i0
+    : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e) x i0 ->
+      egraph_sound_for_interpretation m i e ->
+      eq_sound_for_model m i x i0.
+  Proof.
+    intros Huf [].
+    unfold eq_sound_for_model, Is_Some_satisfying.
+    case_match.
+    {
+      eapply rel_interpretation0 in Huf;
+        rewrite ?case_match_eqn in *; cbn; auto.
+    }
+    {
+      TODO: do I allow the uf to relate things that arent i nthe interpretation?
+                 that seems like a mistake
+      revert case_match_eqn
+    }
 *)
 
+  Lemma find_sound m i x
+    : Is_Some (map.get i x) ->
+      state_sound_for_model m i (find x) (eq i)
+        (fun i => eq_sound_for_model m i x).
+  Proof.
+    unfold find.
+    split.
+    2:{ eapply monotone2_fix_l; apply eq_sound_monotone. }
+    {
+      intros ? ?.
+      eexists; intuition eauto with utils.
+      {
+        case_match; basic_goal_prep; auto.
+        destruct H1; constructor; basic_goal_prep; intuition eauto.
+        {
+          eapply interpretation_bounded0.
+          eapply find_next_const in case_match_eqn; eauto.
+          congruence.
+        }
+        {
+          eapply rel_interpretation0; eauto.
+          (*TODO: make, use the better spec*)
+          eapply find_spec' in case_match_eqn; basic_goal_prep; eauto; try Lia.lia.
+          2:{
+            admit.
+          }
+          eapply closed_graph_equiv_to_PER in H1.
+          2:{ eapply forest_closed; eauto. }
+          intuition.
+  Abort.
+  (*
+          2,3:admit (*TODO*).
+          eapply H5; eauto.
+        }
+      }
+      {
+        case_match; basic_goal_prep; try congruence.
+        2:{
+          (*TODO: find = None lemma *)
+          admit.
+        }
+        eapply find_spec in case_match_eqn; basic_goal_prep; eauto.
+        2,3:admit (*TODO*).
+        eapply H5; eauto.
+        
+      }
+  Qed. *)
+  
+  Lemma ret_sound_for_model A m i (x:A)
+    : state_sound_for_model m i (Mret x) (eq i) (fun _ => eq x).
+  Proof.
+    split; unfold monotone1; basic_goal_prep; basic_utils_crush.
+    intros ? ?.
+    eexists; basic_goal_prep; basic_utils_crush.
+  Qed.
+  
+  Lemma ret_sound_for_model' A m i (x:A) Pi Pmono
+    : Pi i -> Pmono i x ->
+      monotone1 Pmono ->
+      state_sound_for_model m i (Mret x) Pi Pmono.
+  Proof.
+    split; unfold monotone1; basic_goal_prep; basic_utils_crush.
+    intros ? ?.
+    eexists; basic_goal_prep; basic_utils_crush.
+  Qed.
+
+  Context m (m_PER : PER (domain_eq m)).
+  
+  Lemma eq_sound_for_model_trans i x y z
+    : eq_sound_for_model m i x y ->
+      eq_sound_for_model m i y z ->
+      eq_sound_for_model m i x z.
+  Proof.
+    unfold  eq_sound_for_model, Is_Some_satisfying.
+    repeat case_match; basic_goal_prep; auto.
+    all: try tauto.
+    all: etransitivity; eassumption.
+  Qed.
+  
+  Lemma canonicalize_worklist_entry_sound i a
+    : (worklist_entry_sound m i a) ->
+      state_sound_for_model m i
+        (canonicalize_worklist_entry idx Eqb_idx symbol
+           symbol_map idx_map idx_trie
+           analysis_result a)
+        (eq i) (worklist_entry_sound m).
+  Proof.
+    intro.
+    destruct a; cbn -[Mbind].
+    2:{
+        split; eauto using worklist_entry_sound_mono.
+        eapply state_triple_wkn_ret;
+          basic_goal_prep; subst;
+          eexists; cbn; intuition eauto using Properties.map.extends_refl.
+    }
+    {
+      eapply state_sound_for_model_bind; eauto using worklist_entry_sound_mono.
+      (*
+      1: apply find_sound.
+      basic_goal_prep; subst.
+      eapply ret_sound_for_model'; eauto using worklist_entry_sound_mono.
+      cbn.
+      eauto.
+      eapply eq_sound_for_model_trans; eassumption.
+    }
+  Qed. *)
+  Abort.
+
+  Lemma rebuild_sound i n
+    : state_sound_for_model m i (rebuild n) (fun i' => i = i') (fun _ _ => True).
+  Proof.
+    induction n.
+    {
+      basic_goal_prep.
+      cbv -[map.rep domain map.get]; intros.
+      eexists; intuition eauto.
+    }
+    {
+      cbn [rebuild].
+      eapply state_sound_for_model_bind;
+      [eapply pull_worklist_sound
+      | repeat basic_goal_prep; subst
+      | unfold monotone1; auto].
+      destruct a.
+      {
+        split; unfold monotone1; eauto.
+        eapply state_triple_wkn_ret;
+          basic_goal_prep; subst;
+          eexists; intuition eauto using Properties.map.extends_refl.
+      }      
+      eapply state_sound_for_model_bind;
+        [ | | unfold monotone1; auto].
+      {
+        eapply state_sound_for_model_Mmap.
+        {
+          intros.
+          (*
+        state_triple_list_Mmap
+     : forall (A B : Type) (f : A -> state ?S B) (l : list A)
+         (P : list A -> list B -> ?S -> Prop),
+       (forall (fl1 : list B) (l1 : list A) (a0 : A) (l2 : list A),
+        l = l1 ++ a0 :: l2 ->
+        state_triple (fun e : ?S => P (a0 :: l2) fl1 e) (f a0)
+          (fun p : B * ?S => P l2 (fl1 ++ [fst p]) (snd p))) ->
+       state_triple (fun e : ?S => P l [] e) (list_Mmap f l)
+         (fun p : list B * ?S => P [] (fst p) (snd p))
+        
+        TODO: avoid unfolding to state_triple?
+        eapply state_triple_list_Mmap
+          with (P:= ?).
+        TODO: a good, applicable list_Mmap lemma
+        cbn.
+        TODO: what do I know about w, a?.
+                      Need to know that the worklist entries are sound.
+                                       
+        eapply state_triple list_Mmap
+          p. 2.
+      }
+      
+      TODO: fun x is no good
+      repeat (cbn beta in *; intros; break; subst).
+      
+      intros g Hg.
+      specialize (IHn g Hg).
+      repeat (cbn beta in *; intros; break; subst).
+      repeat basic_goal_prep; subst.
+      eexists; split; eauto.
+      case_match; basic_goal_prep.
+      {
+        basic_utils_crush.
+        *)
+
+  Abort.
+      
+      
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope
   a i.
 
-Arguments model_of {idx}%type_scope {Eqb_idx} {symbol}%type_scope m rw%list_scope.
+Arguments model_of {idx}%type_scope {symbol}%type_scope {idx_map}%function_scope m rw%list_scope.
 
 
 Arguments seq_assumptions {idx symbol}%type_scope s.

@@ -346,15 +346,15 @@ Scheme eq_sort_ind' := Minimality for eq_sort Sort Prop
       
       Fixpoint eq_subst_ind' (c c0 : ctx) (s s0 : subst) (e : eq_subst l c c0 s s0)
         : P1 c c0 s s0 :=
-        match e in (Model.eq_subst c1 c2 s1 s2) return (P1 c1 c2 s1 s2) with
-        | eq_subst_nil c1 => f10 c1
+        match e in (Model.eq_subst _ c2 s1 s2) return (P1 _ c2 s1 s2) with
+        | eq_subst_nil _ => f10 _
         | eq_subst_cons e0 name t e1 e2 e3 =>
             f11 e0 (eq_subst_ind' e0) name t e3 (eq_term_ind' e3)
         end.
       Fixpoint wf_args_ind' (c : ctx) (l0 : list term) (c0 : ctx) (w : wf_args l c l0 c0)
         : P4 c l0 c0 :=
-        match w in (Model.wf_args c1 l1 c2) return (P4 c1 l1 c2) with
-        | wf_args_nil c1 => f16 c1
+        match w in (Model.wf_args _ l1 c2) return (P4 _ l1 c2) with
+        | wf_args_nil _ => f16 _
         | wf_args_cons name e t w0 w1 =>
             f17 name t w0 (wf_term_ind' w0) w1 (wf_args_ind' w1)
         end.
@@ -1454,8 +1454,8 @@ Scheme wf_sort_ind'' := Minimality for wf_sort Sort Prop
                 : forall (c : ctx) (t : term) (s : sort), wf_term l c t s -> P0 c t s).
        Fixpoint wf_args_ind''' (c : ctx) (l0 : list term) (c0 : ctx) (w : wf_args l c l0 c0)
          : P1 c l0 c0 :=
-           match w in (Model.wf_args c1 l1 c2) return (P1 c1 l1 c2) with
-           | wf_args_nil c1 => f3 c1
+           match w in (Model.wf_args _ l1 c2) return (P1 _ l1 c2) with
+           | wf_args_nil _ => f3 _
            | wf_args_cons name _ t w0 w1 =>
                f4 name t w0 (wf_term_ind'' w0) w1 (wf_args_ind''' w1)
            end.

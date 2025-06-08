@@ -102,7 +102,14 @@ Section __.
     Qed.
 
   End All.
-
+  
+  Lemma all_wkn l (P Q : A -> Prop)
+    : (forall x, In x l -> P x -> Q x) -> all P l -> all Q l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
 
   Section All2.
     Context (B : Type) (R : A -> B -> Prop).

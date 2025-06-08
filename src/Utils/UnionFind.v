@@ -2394,7 +2394,7 @@ Section __.
         intros _.
         eapply Properties.map.same_domain_put_r; eauto with utils.
       }
-    Qed.      
+    Qed.
 
 
     Lemma sep_get_some_r P Q (m : idx_map) i j
@@ -2639,8 +2639,32 @@ Section __.
       | eq_clo_trans a b c : equivalence_closure a b -> equivalence_closure b c -> equivalence_closure a c
       | eq_clo_sym a b : equivalence_closure a b -> equivalence_closure b a.
       Hint Constructors equivalence_closure : utils.
+      
+      Inductive PER_closure : A -> A -> Prop :=
+      | PER_clo_base a b : R a b -> PER_closure a b
+      | PER_clo_trans a b c : PER_closure a b -> PER_closure b c -> PER_closure a c
+      | PER_clo_sym a b : PER_closure a b -> PER_closure b a.
+      Hint Constructors PER_closure : utils.
+
+      Inductive transitive_closure : _ -> _ -> Prop :=
+      | trans_clo_base a b : R a b -> transitive_closure a b
+      | trans_clo_step a b c : R a b -> transitive_closure b c -> transitive_closure a c.
+      Hint Constructors transitive_closure : utils.
+
+      Lemma transitive_closure_transitive : Transitive transitive_closure.
+      Proof.
+        intros a b c H.
+        revert c; induction H;
+          basic_goal_prep;
+          basic_utils_crush.
+      Qed.
+      
     End Closure.
-    Hint Constructors equivalence_closure : utils.
+    Hint Constructors equivalence_closure transitive_closure PER_closure : utils.
+
+    Add Parametric Relation {A : Type} (R : A -> A -> Prop) : A (transitive_closure R)
+        transitivity proved by (transitive_closure_transitive _)
+        as transitive_closure_rel.
     
     Definition reachable (m : idx_map) := equivalence_closure (fun i j => map.get m i = Some j).
     Definition iff2 {A B} R1 R2 := forall (a:A) (b:B), R1 a b <-> R2 a b.
@@ -3171,6 +3195,8 @@ Section __.
         basic_goal_prep;
         basic_utils_crush.
     Qed.
+
+    
     
     Lemma split_both_have_key (x:idx) m m1 m2
       : map.split m m1 m2 ->
@@ -3655,11 +3681,185 @@ Section __.
     exists l, forest l uf.(parent).*)
 
     Definition uf_rel uf1 := reachable uf1.(parent).
+
+    Definition parent_rel m := transitive_closure (fun i j : idx => map.get m i = Some j).
+
+    
+    Lemma parent_rel_put m i j k l
+      : parent_rel (map.put m i j) k l ->
+        parent_rel m i j ->
+        parent_rel m k l.
+    Proof.
+      unfold parent_rel.
+      induction 1; basic_goal_prep;
+        eqb_case i a;basic_utils_crush.
+      etransitivity; eauto.  
+    Qed.
+
+    Definition limit {A} (R : A -> A -> Prop) a x :=
+      R a x /\ forall b, R a b -> b = x \/ R b x.
+
+    
+    Instance split_l_subrelation
+      m m_l m_r (_ : map.split m m_l m_r)
+      : subrelation (fun i j : idx => map.get m_l i = Some j)
+          (fun i j : idx => map.get m i = Some j).
+    Proof.
+      unfold reachable, subrelation.
+      basic_goal_prep.
+      basic_utils_crush.
+      eapply Properties.map.get_split_grow_r; eauto.
+    Qed.
+    
+    Instance split_r_subrelation
+      m m_l m_r (_ : map.split m m_l m_r)
+      : subrelation (fun i j : idx => map.get m_r i = Some j)
+          (fun i j : idx => map.get m i = Some j).
+    Proof.
+      unfold reachable, subrelation.
+      basic_goal_prep.
+      basic_utils_crush.
+      eapply Properties.map.get_split_grow_l; eauto.
+    Qed.
+    
+    Instance transitive_closure_subrelation A (R R' : A -> A -> Prop) `{subrelation _ R R'}
+      : subrelation (transitive_closure R) (transitive_closure R').
+    Proof.
+      unfold subrelation; intros.
+      induction H0;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    Lemma parent_rel_put_same x x0 i0
+      : parent_rel (map.put x0 x i0) x i0.
+    Proof.
+      constructor.
+      basic_utils_crush.
+    Qed.
+    Hint Resolve parent_rel_put_same : utils.
+
+    
+    Lemma get_singleton_diff
+      : forall (k k' v : idx), k <> k' -> map.get (map.singleton k v) k' = None.
+    Proof.
+      unfold map.singleton; basic_utils_crush.
+    Qed.
+    Hint Rewrite get_singleton_diff using eassumption : utils.
+
+    
+    Lemma parent_rel_put_new (m : idx_map) (i j k l : idx)
+      : parent_rel m k l -> map.get m i = None -> parent_rel (map.put m i j) k l.
+    Proof.
+      intros; eapply transitive_closure_subrelation; eauto.
+      intros ? ? ?.
+      basic_utils_crush.
+    Qed.
+
+    Lemma parent_rel_empty x i : parent_rel map.empty x i <-> False.
+    Proof.
+      unfold parent_rel.
+      intuition.
+      induction H;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite parent_rel_empty : utils.
+    
+    Lemma forest_ptsto_parent i f
+      : forest_ptsto i f ->
+        forall x, In x (map.keys f) <->
+                  (parent_rel f) x i.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+      {
+        case_match; try tauto.
+        unfold and1 in *; destruct H; break.
+        pose proof H as Hsplit.
+        eapply Properties.map.get_split with (k:=x) in Hsplit.
+        pose proof case_match_eqn as cme.
+        intuition idtac; rewrite H6 in *;
+          eapply forest_ptsto_has_next in case_match_eqn; (intuition eauto); subst.
+        {
+          eapply transitive_closure_subrelation;
+            [eapply split_l_subrelation; eauto| eapply H4].
+          basic_utils_crush.
+          rewrite cme.
+          auto.
+        }
+        {
+          eapply transitive_closure_subrelation;
+            [eapply split_l_subrelation; eauto| eapply H4].
+          basic_utils_crush.
+          rewrite cme.
+          auto.
+        }
+        {
+          eapply transitive_closure_subrelation;
+            [eapply split_r_subrelation; eauto| eapply H3].
+          basic_utils_crush.
+          rewrite cme.
+          auto.
+        }
+        {
+          eapply transitive_closure_subrelation;
+            [eapply split_r_subrelation; eauto| eapply H3].
+          basic_utils_crush.
+          rewrite cme.
+          auto.
+        }
+      }
+      2:{
+        case_match; try tauto.
+        unfold and1, not1 in *; destruct H0; break.
+        pose proof H0 as Hsplit.
+        pose proof case_match_eqn as cme.
+        eapply Properties.map.get_split with (k:=x) in Hsplit.
+        unfold ptsto in *.
+        subst.
+        eqb_case i x; basic_utils_crush.
+        {
+          etransitivity; eauto with utils.
+          eapply parent_rel_put_new; eauto.
+          eapply H4.
+          basic_utils_crush.
+          rewrite cme; auto.
+        }
+        {
+          etransitivity; eauto with utils.
+          eapply parent_rel_put_new; eauto.
+          eapply H4.
+          basic_utils_crush.
+          rewrite cme; auto.
+        }
+      }
+      {
+        revert H0; clear.
+        induction 1;
+        basic_goal_prep;
+        basic_utils_crush;
+        repeat (case_match; try congruence);
+        basic_utils_crush.
+      }
+      {
+        revert H1; clear.
+        induction 1;
+        basic_goal_prep;
+        basic_utils_crush;
+        repeat (case_match; try congruence);
+        basic_utils_crush.
+      }
+    Qed.
+      
+    
+    
     
     (* Note: partial spec. Characterizing when it returns None doesn't help with using
      union find for egraphs.
      *)
-    Lemma find_spec (uf uf' : union_find) i j l
+    Lemma find_spec' (uf uf' : union_find) i j l
       : forest l uf.(parent) ->
         find uf i = Some (uf', j) ->
         forest l uf'.(parent)
@@ -3673,6 +3873,570 @@ Section __.
       safe_invert H0.
       eapply find_aux_spec in Haux; intuition eauto.
     Qed.
+
+    
+    Lemma tree_parent i f
+      : tree i f ->
+        forall x, In x (map.keys f) <->
+                    (parent_rel f) x i.
+    Proof.
+      unfold tree.
+      intros.
+      destruct H; break.
+      unfold ptsto in *; cbn in *; subst.
+      erewrite <- map_split_permutation; eauto.
+      replace (map.keys (map.singleton i i)) with [i].
+      2:{
+        unfold map.keys, map.singleton.
+        rewrite Properties.map.fold_singleton.
+        reflexivity.
+      }
+      rewrite Permutation_app_comm.
+      cbn.
+      rewrite forest_ptsto_parent; eauto.
+      split; basic_goal_prep; intuition subst.
+      {
+        eapply trans_clo_base.
+        eapply Properties.map.get_split_grow_l; eauto.
+        basic_utils_crush.
+      }
+      {
+        eapply transitive_closure_subrelation; eauto.
+        intros ? ? ?.
+        eapply Properties.map.get_split_grow_r; eauto.
+      }
+      {
+        eqb_case i x; intuition auto.
+        right.
+        revert H H2.
+        induction H1;
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          eapply forest_ptsto_parent; eauto.
+          basic_utils_crush.
+          rewrite H; auto.
+        }
+        { eqb_case c b; intuition unfold parent_rel; eauto with utils. }
+      }
+    Qed.
+
+    Inductive count_step_closure {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
+    | count_clo_base : forall a b : A, R a b -> count_step_closure R 0 a b
+    | count_clo_step : forall n (a b c : A),
+        R a b ->
+        count_step_closure R n b c ->
+        count_step_closure R (S n) a c.
+    Hint Constructors count_step_closure : utils.
+
+    Lemma count_step_implies_transitive {A : Type} (R : A -> A -> Prop) n b c
+      : count_step_closure R n b c -> transitive_closure R b c.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    
+    Lemma transitive_iff_count_step {A : Type} (R : A -> A -> Prop) b c
+      : transitive_closure R b c <-> exists n, count_step_closure R n b c.
+    Proof.
+      split; basic_goal_prep; eauto using count_step_implies_transitive.
+      induction H;
+        basic_goal_prep; eexists;
+        basic_utils_crush.
+    Qed.
+    
+    Lemma counted_parent_decidable n m x i
+      : {count_step_closure (fun i j : idx => map.get m i = Some j) n x i}
+        + {~count_step_closure (fun i j : idx => map.get m i = Some j) n x i}.
+    Proof.
+      revert m x i; induction n;
+        basic_goal_prep.
+      {
+        destruct (map.get m x) eqn:Hg; [| right].
+        2:{ intro H; safe_invert H; congruence. }
+        eqb_case i0 i; [| right].
+        2:{ intro H'; safe_invert H'; congruence. }
+        left.
+        basic_utils_crush.
+      }
+      {
+        destruct (map.get m x) eqn:Hg; [| right].
+        2:{ intro H; safe_invert H; congruence. }
+        destruct (IHn m i0 i); [left;econstructor; eauto | right; intro].
+        safe_invert H.
+        eapply n0.
+        assert (b = i0) by congruence; subst; auto.
+      }
+    Qed.
+
+    Hint Constructors NoDup : utils.
+    
+    Lemma step_limit' f m x i
+      : count_step_closure (fun i j : idx => map.get f i = Some j) m x i ->
+        exists l, length l <= length (map.keys f)
+                  /\ (exists n, n <= length l
+                               /\ count_step_closure (fun i j : idx => map.get f i = Some j) n x i)
+                  /\ NoDup l
+                  /\ incl l (map.keys f)
+                  /\ all (fun y => exists n, n <= length l
+                                  /\ count_step_closure (fun i j => map.get f i = Some j) n y i) l.
+    Proof.
+      induction 1; basic_goal_prep.
+      {
+        exists [];
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          pose proof (map_keys_in' f a).
+          rewrite H in H0.
+          destruct (map.keys f); basic_goal_prep; intuition.
+        }
+      }
+      {
+        destruct (inb a x) eqn:Hin;
+          basic_utils_crush.
+        {
+          exists x;
+          basic_goal_prep;
+            basic_utils_crush.
+          eapply in_all in H5; eauto.
+        }            
+        exists (a :: x);
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          assert (incl (a::x) (map.keys f)).
+          {
+            basic_goal_prep; basic_utils_crush.
+            rewrite H; auto.
+          }
+          eapply NoDup_incl_length in H7;
+            basic_utils_crush.
+        }
+        {
+          exists (S x0);
+            basic_goal_prep;
+            basic_utils_crush.
+          Lia.lia.
+        }
+        { rewrite H; auto. }
+        {
+          exists (S x0);
+            basic_goal_prep;
+            basic_utils_crush.
+          Lia.lia.
+        }
+        {
+          eapply all_wkn; eauto.
+          repeat basic_goal_prep;
+            intuition auto.
+          eexists; eauto.
+        }
+      }
+    Qed.
+
+    Lemma step_limit f m x i
+      : count_step_closure (fun i j : idx => map.get f i = Some j) m x i ->
+        exists n, n <= length (map.keys f)
+                  /\ count_step_closure (fun i j : idx => map.get f i = Some j) n x i.
+    Proof.
+      intro H.
+      eapply step_limit' in H.
+      basic_goal_prep;
+        basic_utils_crush.
+      exists x1; intuition Lia.lia.
+    Qed.
+    
+    Lemma bounded_exists_decidable (max : nat) P
+      : (forall n, {P n} + {~ P n}) ->
+        ({exists n : nat, n <= max /\ P n}
+         + {~exists n : nat, n <= max /\ P n}).
+    Proof.
+      intro dec_n.
+      induction max.
+      {
+        destruct (dec_n 0); [left | right];
+          basic_goal_prep;
+          basic_utils_crush.
+        eapply n.
+        replace x with 0 in * by Lia.lia.
+        auto.
+      }
+      {
+        destruct (dec_n (S max)); [left | ];
+          basic_goal_prep;
+          basic_utils_crush.
+        right;
+          basic_goal_prep;
+          basic_utils_crush.
+        eqb_case x (S max);
+          basic_goal_prep;
+          basic_utils_crush.
+        eapply b; exists x;
+          basic_goal_prep;
+          basic_utils_crush.
+        Lia.lia.
+      }
+    Qed.
+    
+    Lemma parent_decidable f x i
+      : {parent_rel f x i} + {~parent_rel f x i}.
+    Proof.
+      unfold parent_rel.
+      enough ({exists n, count_step_closure (fun i j : idx => map.get f i = Some j) n x i}
+              + {~ exists n, count_step_closure (fun i j : idx => map.get f i = Some j) n x i})
+        as Hcounted.
+      {
+        destruct Hcounted; [ left | right];
+          basic_goal_prep;
+          [ eapply transitive_iff_count_step
+          | intro H'; eapply transitive_iff_count_step in H'];
+          basic_goal_prep;
+          try eexists;
+          basic_utils_crush.
+      }
+      enough ({exists n, n <= length (map.keys f)
+                         /\ count_step_closure (fun i j : idx => map.get f i = Some j) n x i}
+              + {~ exists n, n <= length (map.keys f)
+                         /\ count_step_closure (fun i j : idx => map.get f i = Some j) n x i})
+        as Hcounted.
+      {
+        destruct Hcounted; [ left | right; intro];
+          basic_goal_prep;
+          basic_utils_crush.
+        eapply n.
+        eapply step_limit in H.
+        basic_goal_prep.
+        exists x0; basic_utils_crush.
+      }
+      eapply bounded_exists_decidable.
+      intros; apply counted_parent_decidable.
+    Qed.
+    
+    Lemma intermediate_parent f x b i
+      : parent_rel f x b -> parent_rel f x i -> b = i \/ parent_rel f b i \/ parent_rel f i b.
+    Proof.
+      eqb_case b i; intuition auto.
+      destruct (parent_decidable f b i);
+        intuition auto.
+      right; right.
+      revert i H n H1.
+      induction H0;
+        basic_goal_prep;
+        basic_utils_crush.
+      {
+        inversion H1; subst; clear H1.
+        { congruence. }
+        { replace b0 with b in * by congruence; tauto. }
+      }
+      {
+        inversion H2; subst; clear H2.
+        { replace b with i in * by congruence; eauto. }
+        { replace b0 with b in * by congruence; eauto. }
+      }
+    Qed.
+
+    Lemma transitive_closure_leftmost A R (x z : A)
+      : transitive_closure R x z ->
+        exists y, R x y.
+    Proof. inversion 1; eauto. Qed.
+
+    
+    Lemma root_no_parents f i b
+      : forest_ptsto i f ->
+        ~ parent_rel f i b.
+    Proof.
+      intros ? ?.
+      eapply transitive_closure_leftmost in H0; break.
+      eapply forest_ptsto_none in H; congruence.
+    Qed.
+        
+    Lemma forest_ptsto_root_limit i f
+      : forest_ptsto i f ->
+        forall x, In x (map.keys f) <-> limit (parent_rel f) x i.
+    Proof.
+      unfold limit.
+      intuition eauto.
+      all: try eapply forest_ptsto_parent; eauto.
+      rewrite forest_ptsto_parent in * by eauto.
+      pose proof (intermediate_parent _ _ _ _ H1 H0).
+      intuition auto.
+      exfalso.
+      eapply root_no_parents; eauto.
+    Qed.
+
+    Definition dom {A} R (a:A) : Prop :=
+      exists b:A, R a b.
+    
+    Definition codom {A} R (b:A) : Prop :=
+      exists a:A, R a b.
+
+    Definition disjoint {A} P1 P2 : Prop :=
+      forall a:A, ~ (P1 a /\ P2 a).
+
+    Definition or1 {A} (R1 R2 : A -> Prop) a := R1 a \/ R2 a.
+    Definition or2 {A B} (R1 R2 : A -> B -> Prop) a b := R1 a b \/ R2 a b.
+                 
+    Lemma transitive_disjoint_closure A (R1 R2 : A -> _)
+      : disjoint (dom R1) (codom R2) ->
+        disjoint (dom R2) (codom R1) ->          
+        iff2 (transitive_closure (or2 R1 R2))
+          (or2 (transitive_closure R1) (transitive_closure R2)).
+    Proof.
+      split.
+      {
+        unfold or2 in *;
+        induction 1;
+        basic_goal_prep;
+          basic_utils_crush.
+        {
+          specialize (H0 b);
+            unfold dom, codom in H0.
+          exfalso.
+          intuition eauto.
+          eapply H4; eauto.
+          inversion H1; eexists; eauto.
+        }
+        {
+          specialize (H b);
+            unfold dom, codom in H.
+          exfalso.
+          intuition eauto.
+          eapply H4; eauto.
+          inversion H1; eexists; eauto.
+        }
+      }
+      {
+        unfold or2 in *;
+          intro H'; destruct H' as [H' | H'];
+        induction H';
+        basic_goal_prep;
+          basic_utils_crush.
+      }        
+    Qed.
+    
+    Lemma transitive_closure_iff2_impl A x y (a b : A)
+      : iff2 x y -> transitive_closure x a b -> transitive_closure y a b.
+    Proof.
+      intro H.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+      { apply H in H0; basic_utils_crush. }
+      { apply H in H0; basic_utils_crush. }
+    Qed.
+
+    
+
+    Lemma iff2_sym A B (R1 R2 : A -> B -> Prop) : iff2 R1 R2 -> iff2 R2 R1.
+    Proof using.
+      unfold iff2; intuition; eapply H; eauto.
+    Qed.
+
+    Add Parametric Relation A B : (A -> B -> Prop) (@iff2 A B)
+        reflexivity proved by ltac:(intros a b; intuition)
+        symmetry proved by (@iff2_sym A B)
+        transitivity proved by (@iff2_trans A B)
+        as iff2_rel.
+      
+    Instance transitive_closure_Proper A : Proper (iff2 ==> iff2) (transitive_closure (A:=A)).
+    Proof.
+      intros ? ? ? ? ?.
+      split; eapply transitive_closure_iff2_impl; eauto; symmetry; eauto.
+    Qed.
+
+    Lemma map_get_dom m x
+      : dom (fun i j : idx => map.get m i = Some j) x <-> has_key x m.
+    Proof.
+      unfold dom, has_key;
+        case_match;
+        intuition eauto;
+        break; congruence.
+    Qed.
+
+    Lemma forest_codom i m
+      : forest_ptsto i m ->
+        forall x, codom (fun i j : idx => map.get m i = Some j) x ->
+                  x = i \/ dom (fun i j : idx => map.get m i = Some j) x.
+    Proof.
+      unfold codom; basic_goal_prep.
+      eapply forest_ptsto_next in H; eauto.
+      rewrite map_get_dom.
+      intuition eauto.
+    Qed.
+    
+    Lemma mem_step_split_iff m l r
+      : map.split m l r ->
+        iff2 (fun i j : idx => map.get m i = Some j)
+          (or2 (fun i j : idx => map.get l i = Some j)
+             (fun i j : idx => map.get r i = Some j)).
+    Proof.
+      unfold iff2, or2; basic_goal_prep.
+      eapply Properties.map.get_split with (k:=a) in H;
+        basic_utils_crush.
+      all: try (left; congruence).
+      all: try (right; congruence).
+      all: congruence.
+    Qed.
+
+    (*
+    Lemma forest_ptsto_limit_always_root i f
+      : forest_ptsto i f ->
+        forall x y, limit (parent_rel f) x y -> y = i.
+    Proof.
+    Admitted.
+    
+    Lemma forest_ptsto_limit i f
+      : forest_ptsto i f ->
+        forall x y, limit (parent_rel f) x y <-> In x (map.keys f) /\ y = i.
+    Proof.
+      intros.
+      rewrite forest_ptsto_root_limit; eauto.
+      intuition subst; eauto.
+      {
+        rewrite <- forest_ptsto_root_limit; eauto.
+        eapply map_keys_in'.
+        destruct H0;
+          inversion H0; clear H0; subst;
+          rewrite H2; auto.
+      }
+      {
+        eapply forest_ptsto_limit_always_root; eauto.
+      }
+    Qed.
+     *)
+    
+    Lemma parent_rel_loop m x y
+      : parent_rel m x y -> map.get m x = Some x -> y = x.
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+      all: try congruence.
+      replace a with b in * by congruence.
+      eauto.
+    Qed.
+    
+    Lemma parent_rel_add_loop x0 i x y
+      : map.get x0 i = None -> x<>i -> parent_rel (map.put x0 i i) x y <-> parent_rel x0 x y.
+    Proof.
+      intros.
+      split.
+      all:unfold parent_rel in *;
+      induction 1;
+        basic_goal_prep;
+        basic_utils_crush;
+        eqb_case i b;
+        basic_goal_prep;
+        basic_utils_crush.
+      { eapply parent_rel_loop in H2; basic_utils_crush. }
+      1,2:constructor 1; basic_utils_crush.
+      { inversion H2; basic_utils_crush; congruence. }
+      { econstructor 2; basic_utils_crush. }
+    Qed.
+
+    (*
+    Lemma tree_limit i f
+      : tree i f ->
+        forall x y, limit (parent_rel f) x y <-> In x (map.keys f) /\ y = i.
+    Proof.
+      unfold tree.
+      intros.
+      destruct H; break.
+      repeat (autorewrite with utils in *; subst; break).
+      eqb_case i x.
+      {
+        repeat (autorewrite with utils inversion in *; subst; break); eauto.
+        unfold limit;
+          basic_utils_crush;
+          try left;
+          eapply parent_rel_loop; eauto;
+          basic_utils_crush.
+      }
+      {
+        autorewrite with utils.
+        rewrite <- map_keys_in'.
+        rewrite <- forest_ptsto_limit; eauto.
+        unfold limit;
+          intuition eauto using parent_rel_add_loop.
+        2:{
+        TODO: false? no, true
+      }
+      {
+        
+      }
+          safe_invert H2.
+        
+      eqb_case i x.
+      {
+      break.
+      subst.
+      break.
+      subst.
+      autorewrite with utils in *.
+      eqb_case x i.
+      {
+        
+        unfold limit;
+          basic_goal_prep; subst;
+          basic_utils_crush.
+     *)
+
+    (*
+    Lemma parent_rel_split_disjoint m l r
+      : forest_ptsto i f ->
+        map.split m l r ->
+        iff2 (parent_rel m) (or2 (parent_rel l) (parent_rel r)).
+    Proof.
+      split.
+      {
+        induction 1
+*)
+
+
+    (* TODO: what is the right lemma for forests?
+    Lemma forest_parent l f
+      : forest l f ->
+        forall x i , In i l -> In x (map.keys f) <-> parent_rel f x i.
+    Proof.
+      unfold forest;
+        revert f;
+        induction l;
+        basic_goal_prep;
+        basic_utils_crush.
+      { safe_invert H0. }
+      {
+        repeat case_match; try tauto.
+        eapply sep_seps_r in H.
+        eapply sep_get_split in H; eauto.
+        destruct H;[constructor 1 | constructor 2].
+        2:{
+          
+          TODO: lemma for parent_rel of 2 trees
+        
+        forest_ptsto_parent
+*)
+      
+    (* Note: partial spec. Characterizing when it returns None doesn't help with using
+     union find for egraphs.
+     *)
+    Lemma find_spec (uf uf' : union_find) i j l
+      : forest l uf.(parent) ->
+        find uf i = Some (uf', j) ->
+        forest l uf'.(parent)
+        /\ In j l
+        /\ subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent))
+        /\ iff2 (limit (parent_rel uf.(parent))) (limit (parent_rel uf'.(parent)))
+        /\ (limit (parent_rel uf'.(parent)) i j).
+    Proof.
+      destruct uf, uf'.
+      unfold find, uf_rel.
+      my_case Haux (find_aux (S max_rank0) parent0 i); cbn;[| congruence].
+      intros; break.
+      safe_invert H0.
+      eapply find_aux_spec in Haux; intuition eauto.
+    Abort.
     
     Definition union_closure {A : Type} (R1 R2 : A -> A -> Prop) :=
       equivalence_closure (fun a b => R1 a b \/ R2 a b).
@@ -3707,17 +4471,6 @@ Section __.
           basic_utils_crush.
       }
     Qed.
-
-    Lemma iff2_sym A B (R1 R2 : A -> B -> Prop) : iff2 R1 R2 -> iff2 R2 R1.
-    Proof using.
-      unfold iff2; intuition; eapply H; eauto.
-    Qed.
-
-    Add Parametric Relation A B : (A -> B -> Prop) (@iff2 A B)
-        reflexivity proved by ltac:(intros a b; intuition)
-        symmetry proved by (@iff2_sym A B)
-        transitivity proved by (@iff2_trans A B)
-        as iff2_rel.
     
     Lemma union_closure_subrel A (R1 R2 : A -> A -> Prop)
       : (forall a b, R2 a b -> (equivalence_closure R1) a b) ->
@@ -4297,7 +5050,7 @@ Section __.
       my_case Hfx (find u x);break;cbn;[| congruence].
       my_case Hfy (find u0 y);break;cbn;[| congruence].
       intro.
-      eapply find_spec in Hfx, Hfy; break; eauto.
+      eapply find_spec' in Hfx, Hfy; break; eauto.
       eqb_case i i0.
       {
         exists l.
@@ -4455,4 +5208,133 @@ Section __.
       }
     Qed.
     
+    Add Parametric Relation A (R : A -> A -> Prop) : A (PER_closure R)
+        symmetry proved by (PER_clo_sym _)
+        transitivity proved by (PER_clo_trans _)
+        as PER_rel.
+
+    Instance trans_PER_subrel {A} {R : A -> A -> Prop}
+      : subrelation (transitive_closure R) (PER_closure R).
+    Proof.
+      intros ? ? H; induction H;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Lemma closed_graph_PER_shared_parent m
+      : closed_graph m ->
+        iff2 (PER_closure (fun i j : idx => map.get m i = Some j))
+             (fun x y => exists i, parent_rel m x i /\ parent_rel m y i).
+    Proof.
+      split.
+      2:{
+        unfold parent_rel.
+        basic_goal_prep;
+          basic_utils_crush.
+        etransitivity; [| symmetry]; eapply trans_PER_subrel; eauto.
+      }
+      {
+        induction 1;
+          basic_goal_prep;
+          basic_utils_crush.
+        {
+          pose proof H0 as H0';
+            eapply H in H0;
+            unfold has_key in *;
+            case_match; intuition.
+          exists i.
+          unfold parent_rel.
+          basic_utils_crush.
+        }
+        {
+          pose proof (intermediate_parent _ _ _ _ H0 H3).
+          intuition subst; eauto.
+          {
+            exists x0; unfold parent_rel in *;
+              basic_utils_crush.
+            etransitivity;
+              basic_utils_crush.
+          }
+          {
+            exists x; unfold parent_rel in *;
+              basic_utils_crush.
+            etransitivity;
+              basic_utils_crush.
+          }
+        }
+      }
+    Qed.
+    
+    Instance PER_equiv_subrel {A} {R : A -> A -> Prop}
+      : subrelation (PER_closure R) (equivalence_closure R).
+    Proof.
+      intros ? ? H; induction H;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    Section __.
+      Context {A} (R : A -> A -> Prop).
+
+      
+      Lemma PER_trans_equiv b c
+        : equivalence_closure R b c ->
+          (forall a, PER_closure R a b -> PER_closure R a c)
+          /\ (forall d, PER_closure R c d -> PER_closure R b d).
+      Proof.
+        induction 1;
+          basic_goal_prep;
+          basic_utils_crush.
+      Qed.
+      
+      Lemma PER_step a c
+        : PER_closure R a c <->
+            (exists b, (R a b \/ R b a) /\ equivalence_closure R b c)
+            /\ (exists b, (R c b \/ R b c) /\ equivalence_closure R a b).
+      Proof.
+        split; basic_goal_prep.
+        {
+          induction H; basic_goal_prep.
+          { basic_utils_crush. }
+          { split; eexists; basic_utils_crush. }
+          { split; eexists; basic_utils_crush. }
+        }
+        {
+          basic_utils_crush.
+          all: eapply PER_trans_equiv; basic_utils_crush.
+        }
+      Qed.
+    End __.
+    
+
+    Lemma closed_graph_equiv_to_PER m
+      : closed_graph m ->
+        iff2 (PER_closure (fun i j : idx => map.get m i = Some j))
+          (fun x y =>
+             equivalence_closure (fun i j : idx => map.get m i = Some j) x y
+             /\ has_key y m).
+    Proof.
+      split.
+      {
+        intuition.
+        1: apply PER_equiv_subrel; eauto.
+        1: inversion H0;
+        basic_goal_prep;
+        basic_utils_crush.
+        all: rewrite PER_step in *; break;
+          basic_utils_crush.
+      }
+      {
+        basic_goal_prep.
+        eapply PER_trans_equiv; eauto.
+        unfold has_key in *; repeat case_match; try tauto.
+        etransitivity; [|symmetry].
+        all:eapply PER_clo_base; eauto.
+      }
+    Qed.
+
+    Definition uf_rel_PER m :=
+      PER_closure (fun i j : idx => map.get m.(parent) i = Some j).
+    
 End __.
+ 

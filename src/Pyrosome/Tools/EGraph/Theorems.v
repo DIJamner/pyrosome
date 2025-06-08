@@ -257,7 +257,8 @@ Section WithVar.
         forall t',
         interp_sort_of [e] = Some t' ->
         wf_term l [] e (sort_of_term t').
-    Proof.
+    Proof using V_Eqb V_Eqb_ok V_default wfl.
+      clear succ.
       induction 1;
           basic_goal_prep;
           basic_core_crush.
@@ -273,16 +274,6 @@ Section WithVar.
         with (scon v l0) [/with_names_from c' s /].
       eapply wf_term_by; eauto.
     Qed.
-
-    Context (supremum : list V -> V).
-    Context (V_to_nat : V -> nat)
-      (VtN_inj : FinFun.Injective V_to_nat)
-    (VtN_succ : forall x, V_to_nat (succ x) = Nat.succ (V_to_nat x)).
-
-    Definition le_V a b := V_to_nat a <= V_to_nat b.
-    Definition lt_V a b := V_to_nat a < V_to_nat b.
-
-    Context (supremum_le : forall l x, In x l -> le_V x (supremum l)).
       
     (*
     Context (le_V : V -> V -> Prop)
@@ -394,6 +385,622 @@ Section WithVar.
       autorewrite with utils in *; break.
       eqb_case x s; auto; try tauto.
     Qed.
+
+    
+    Lemma wf_con_rule_in c e t
+      : wf_term l c e t ->
+        forall n s, e = con n s ->
+        exists c' args t', In (n, term_rule c' args t') l.
+    Proof.
+      induction 1; basic_goal_prep;
+        basic_core_crush.
+    Qed.
+    
+    Lemma wf_scon_rule_in c t
+      : wf_sort l c t ->
+        forall n s, t = scon n s ->
+        exists c' args, In (n, sort_rule c' args) l.
+    Proof.
+      induction 1; basic_goal_prep;
+        basic_core_crush.
+    Qed.
+    
+    (*
+    Context (supremum : list V -> V).
+    Context (V_to_nat : V -> nat)
+      (VtN_inj : FinFun.Injective V_to_nat)
+    (VtN_succ : forall x, V_to_nat (succ x) = Nat.succ (V_to_nat x)).
+
+    Definition le_V a b := V_to_nat a <= V_to_nat b.
+    Definition lt_V a b := V_to_nat a < V_to_nat b.
+
+    Context (supremum_le : forall l x, In x l -> le_V x (supremum l)).
+     *)
+
+    Lemma lang_model_eq_PER :  RelationClasses.PER lang_model_eq.
+    Proof.
+      constructor; repeat intros ?.
+      all: repeat match goal with
+             | H : lang_model_eq _ _ |- _ =>
+                 inversion H; clear H; subst
+             end;
+        repeat case_match;
+        try tauto.
+      all: try (eapply lm_eq_sorts; cbn; now eauto using eq_sort_sym, eq_sort_trans).
+      all: try (eapply lm_eq_terms; cbn; now eauto using eq_term_sym, eq_term_trans).
+      {
+        eapply lm_eq_terms.
+        eapply eq_term_trans; eauto.
+        eapply eq_term_conv; eauto.
+        eapply eq_term_wf_r in H0; eauto with lang_core.
+        eapply eq_term_wf_l in H1; eauto with lang_core.
+        eapply term_sorts_eq; eauto with lang_core.
+      }      
+      {
+        exfalso.
+        eapply eq_term_wf_l in H1; eauto with lang_core.
+        eapply wf_con_rule_in in H1; eauto.
+        eapply eq_sort_wf_r in H0; eauto with lang_core.
+        eapply wf_scon_rule_in in H0; eauto.
+        break.
+        eapply in_all_fresh_same in H0; try exact H;
+          basic_core_crush.
+      }
+      
+      {
+        exfalso.
+        eapply eq_term_wf_r in H0; eauto with lang_core.
+        eapply wf_con_rule_in in H0; eauto.
+        eapply eq_sort_wf_l in H1; eauto with lang_core.
+        eapply wf_scon_rule_in in H1; eauto.
+        break.
+        eapply in_all_fresh_same in H0; try exact H;
+          basic_core_crush.
+      }
+    Qed.
+
+    Lemma interp_sort_of_unary args d
+      : interp_sort_of args = Some d ->
+        args = [hd default args].
+    Proof.
+      unfold interp_sort_of.
+      basic_goal_prep.
+      repeat (case_match; basic_goal_prep).
+      all:cbv in *; congruence.
+    Qed.
+
+    Lemma wf_var_in
+      : (forall c s,
+            wf_sort l c s ->
+            forall x, In x (fv_sort s) -> In x (map fst c))
+        /\ (forall c e t,
+               wf_term l c e t ->
+               forall x, In x (fv e) -> In x (map fst c))
+        /\ (forall c l0 c0,
+               wf_args l c l0 c0 ->
+               forall x, In x (fv_args l0) -> In x (map fst c)).
+    Proof.
+      clear succ.
+      eapply wf_judge_ind;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+      
+    Lemma lang_model_no_vars v
+      : lang_model_eq {{e v}} {{e v}} <-> False.
+    Proof.
+      clear succ.
+      intuition auto.
+      inversion H; clear H; subst;
+        basic_goal_prep;
+        basic_core_crush.
+      eapply eq_term_wf_r in H0; eauto with lang_core.
+      eapply wf_var_in in H0;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+    Hint Rewrite lang_model_no_vars : lang_core.
+
+    
+    Lemma wf_term_con_inv' c e t
+      : wf_term l c e t ->
+        forall f args, e = (con f args) ->
+        exists c' args' t', In (f,term_rule c' args' t') l
+                            /\ wf_args l c args c'.
+    Proof using.
+      clear succ.
+      induction 1;
+        basic_goal_prep;
+        basic_core_crush.
+    Qed.
+    
+    Lemma wf_term_con_inv c f args t
+      : wf_term l c (con f args) t ->
+        exists c' args' t', In (f,term_rule c' args' t') l
+                            /\ wf_args l c args c'.
+    Proof. eauto using wf_term_con_inv'. Qed.
+
+    
+      
+    Lemma lang_model_term e1 e2 t
+      : wf_term l [] e2 t ->
+        lang_model_eq e1 e2 ->
+        exists t, eq_term l [] t e1 e2.
+    Proof using V_Eqb_ok V_default wfl.
+      clear succ.
+      intro H; revert e1;
+        induction 1;
+        basic_goal_prep;
+        repeat case_match;
+        basic_utils_crush.
+      exfalso.
+      eapply eq_sort_wf_r in H0; basic_core_crush.
+      safe_invert H0.
+      eapply wf_term_con_inv in H.
+      basic_goal_prep.
+      eapply in_all_fresh_same in H4; try exact H;
+        basic_core_crush.
+    Qed.
+    
+    Lemma all_lang_model_args args args' c'
+      : wf_args l [] args' c' ->
+        all2 lang_model_eq args args' ->
+        all2 (fun e1 e2 => exists t, eq_term l [] t e1 e2) args args'.
+    Proof using V_Eqb_ok V_default wfl.
+      clear succ.
+      intro H.
+      revert args.
+      induction H; destruct args;
+        basic_goal_prep;
+        basic_core_crush.
+      eapply lang_model_term; eauto.
+    Qed.
+
+    
+    Lemma all2_eq_to_eq_args c args args' c'
+      : wf_ctx l c ->
+        wf_args l c args' c' ->
+        all2 (fun e1 e2 : term => exists t : sort, eq_term l c t e1 e2) args args' ->
+        eq_args l c c' args args'.
+    Proof using V_Eqb_ok V_default wfl.
+      clear succ.
+      intros wfc H.
+      revert args.
+      induction H; destruct args;
+        basic_goal_prep;
+        basic_core_crush.
+      assert (eq_sort l c x t [/with_names_from c' s /]).
+      {
+        eapply term_sorts_eq; eauto.
+        basic_core_crush.
+      }
+      eapply eq_term_conv; eauto.
+    Qed.
+
+    
+    Lemma term_sort_impossible_helper c t f args args'
+      : wf_lang l ->
+        wf_term l c (con f args') t ->
+        wf_sort l c (scon f args) ->
+        False.
+    Proof using V_Eqb_ok V_default wfl.
+      clear succ.
+      intros.
+      eapply wf_term_con_inv in H0.
+      basic_goal_prep.
+      safe_invert H1.
+      eapply in_all_fresh_same in H6; try exact H0;
+        basic_core_crush.
+    Qed.
+    #[local] Hint Resolve term_sort_impossible_helper : lang_core.
+
+    Notation egraph_sound_for_interpretation :=
+      (egraph_sound_for_interpretation _ succ _ _ _ _ _).
+
+    Definition interp_ordered {A B} (i i' : A -> option B) :=
+      forall x, match i x with
+                | Some y => i' x = Some y
+                | None => True
+                end.
+
+    (*
+    Lemma sequent_of_states_sound A B m i1 s1 Post_i Post Post2
+      (s2 : A -> state (instance _) B) i3
+      : state_sound_for_model m i1 s1 Post_i Post ->
+        (forall a i2, map.extends i2 i1 ->
+                      (Post_i a i2) ->
+                      Post a ->
+                      state_sound_for_model m i2 (s2 a) i3 Post2) ->
+        model_satisfies_rule V V_Eqb V m (sequent_of_states s1 s2).
+    Proof.
+      intros.
+      unfold sequent_of_states.
+      unfold curry.
+      cbn [fst curry uncurry snd].
+    Admitted.
+*)
+
+    Hint Rewrite combine_nil : utils.
+    Hint Rewrite @map.get_empty : utils.
+
+    (*TODO: generalize, move*)
+    Lemma map_extends_empty A (i1 : V_map A) : map.extends i1 map.empty.
+    Proof.
+      clear succ.
+      unfold map.extends.
+      basic_goal_prep.
+      basic_utils_crush.
+    Qed.
+    Hint Resolve map_extends_empty  : utils.
+
+    Hint Resolve Properties.map.extends_refl : utils.
+
+    
+    Lemma state_triple_lift_pre_ex S A Y P s (Q : A * S -> Prop)
+      : (forall y, state_triple (P y) s Q) ->
+        state_triple (fun x => exists y : Y, P y x) s Q.
+    Proof.
+      unfold state_triple; basic_goal_prep;
+        intuition eauto.
+    Qed.
+    
+    Lemma state_triple_lift_pre_ex_rw S A Y P s (Q : A * S -> Prop)
+      : (forall y, state_triple (P y) s Q) <->
+        state_triple (fun x => exists y : Y, P y x) s Q.
+    Proof.
+      unfold state_triple; basic_goal_prep;
+        intuition eauto.
+      break.
+      firstorder.
+    Qed.
+    Hint Rewrite <- state_triple_lift_pre_ex_rw : utils.
+
+    Lemma state_triple_lift_pre_l_rw S
+     : forall (A : Type) (H4 : Prop) (P : S -> Prop) (e0 : state S A) (Q : A * S -> Prop),
+        (H4 -> state_triple P e0 Q) <-> state_triple (fun i : S => H4 /\ P i) e0 Q.
+    Proof.
+      unfold state_triple; basic_goal_prep;
+        intuition eauto.
+    Qed.
+    Hint Rewrite <- state_triple_lift_pre_l_rw : utils.
+    
+    Lemma state_triple_lift_pre_r_rw S
+     : forall (A : Type) (H4 : Prop) (P : S -> Prop) (e0 : state S A) (Q : A * S -> Prop),
+        (H4 -> state_triple P e0 Q) <-> state_triple (fun i : S => P i /\ H4) e0 Q.
+    Proof.
+      unfold state_triple; basic_goal_prep;
+        intuition eauto.
+    Qed.
+    Hint Rewrite <- state_triple_lift_pre_r_rw : utils.
+
+    Definition term_of_sort (t : sort) := let (n,s) := t in con n s.
+
+    
+    (*
+    Lemma add_open_sort'_sound_for_model i1 c args t var_to_idx fuel
+      : fuel > length l -> (*TODO: need to quatify over l*)
+        wf_sort l c t ->
+        wf_args l [] args c ->
+        map fst var_to_idx = map fst c ->
+        map.extends i1 (map.of_list (combine (map snd var_to_idx) args)) ->
+        state_sound_for_model lang_model i1
+          (add_open_sort' succ sort_of l false fuel var_to_idx t)
+          (fun x i' => map.extends i' (map.singleton x (term_of_sort t[/with_names_from c args/])))
+          (fun x => True).
+    Proof.
+      revert i1 c args t var_to_idx.
+      induction fuel; try Lia.lia.
+      intros.
+      safe_invert H0.
+      cbn -[Mbind].
+      eapply state_triple_bind; eauto.
+      {
+        TODO: term, args lemmas
+      basic_goal_prep.
+    Qed.
+
+    
+    Lemma add_open_term'_sound_for_model i1 c args t var_to_idx add_sort
+      : fuel > length l -> (*TODO: need to quatify over l*)
+        wf_term l c e t ->
+        wf_args l [] args c ->
+        map fst var_to_idx = map fst c ->
+        map.extends i1 (map.of_list (combine (map snd var_to_idx) args)) ->
+        state_sound_for_model lang_model i1
+          (add_open_term' succ sort_of l false add_sort var_to_idx t)
+          (fun x => exists y, interp sort_of [x] = interp y /\
+                                (map.of_list [(x,e[/with_names_from c args/])))
+                      (*TODO: also want to say that x has the right type*)
+          (fun x => True).
+    Proof.
+    
+    Lemma add_open_sort_sound_for_model i1 c args t var_to_idx
+      : wf_sort l c t ->
+        wf_args l [] args c ->
+        map fst var_to_idx = map fst c ->
+        map.extends i1 (map.of_list (combine (map snd var_to_idx) args)) ->
+        state_sound_for_model lang_model i1
+          (add_open_sort succ sort_of l false var_to_idx t)
+          (fun x => (map.singleton x (term_of_sort t[/with_names_from c args/])))
+          (fun x => True).
+    Proof.
+      destruct t; basic_goal_prep.
+      safe_invert H.
+      unfold add_open_sort.
+      TODO: fueled functions. manage cleanly
+      cbn.
+    Qed.
+
+
+    Lemma add_ctx_sound_for_model i1 c args
+      : wf_ctx l c ->
+        wf_args l [] args c ->
+                     (*interprets_subst_of_type l i c ->
+          TODO: need that i is bounded by allocations;
+          next allocation must be fresh
+          TODO: is exists i' enough for queries? no!
+          what I want is that any i' of the right shape
+          works
+                      *)
+                     state_sound_for_model lang_model i1 (add_ctx succ sort_of l false c)
+                       (fun var_to_idx =>(*assume same order on var_to_idx as args, c*)
+                          (map.of_list (combine (map snd var_to_idx) args)))
+                       (fun var_to_idx => map fst var_to_idx = map fst c).
+    Proof.
+      intros H1 H2.
+      revert H1.
+      induction H2;
+        basic_goal_prep;
+        autorewrite with lang_core inversion in *.
+      {
+        cbn.
+        unfold state_sound_for_model.
+        eapply state_triple_wkn_ret; eauto.
+        intros.
+        repeat (basic_goal_prep; subst).
+        exists i1.
+        basic_utils_crush.
+      }
+      {
+        autorewrite with model in *.
+        break.
+        unfold add_ctx in *.
+        cbn [list_Mfoldr].
+        eapply state_triple_bind; eauto.
+        { eapply IHwf_args; auto. }
+        clear IHwf_args.
+        unfold curry; intros.
+        eapply state_triple_bind; eauto.
+        {
+          repeat (autorewrite with utils; basic_goal_prep).
+          
+          TODO: forgot that map fst a = map fst c. Need a postcondition for that!
+
+    Lemma add_open_sort_sound_for_model i1 c args
+      : wf_sort l c t ->
+        wf_args l [] args c ->
+        map fst var_to_idx = map fst c ->
+        map.extends i1 (map.of_list (combine (map snd var_to_idx) s)) ->
+                     (*interprets_subst_of_type l i c ->
+          TODO: need that i is bounded by allocations;
+          next allocation must be fresh
+          TODO: is exists i' enough for queries? no!
+          what I want is that any i' of the right shape
+          works
+                      *)
+          state_sound_for_model lang_model i1
+          (add_open_sort succ sort_of l false var_to_idx t)
+                       (fun x i2 => map.extends i2 (map.singleton x t[/with_names_from c args/])).
+    Proof.
+
+          
+          TODO: add_open_sort lemma
+          
+                  state_triple_lift_pre
+          TODO: lift precondition
+          
+    Lemma add_ctx_sound_for_model i1 c args
+      : wf_ctx l c ->
+        wf_args l [] args c ->
+                     (*interprets_subst_of_type l i c ->
+          TODO: need that i is bounded by allocations;
+          next allocation must be fresh
+          TODO: is exists i' enough for queries? no!
+          what I want is that any i' of the right shape
+          works
+                      *)
+                     state_sound_for_model lang_model i1 (add_ctx succ sort_of l false c)
+                       (fun var_to_idx i2 =>(*assume same order on var_to_idx as args, c*)
+                          map.extends i2 (map.of_list (combine (map snd var_to_idx) args))).
+    Proof.
+          
+          TODO: add_open_sort lemma!
+        basic_goal_prep.
+        
+        TODO: use primitive pairs or something?
+        cbn.
+      }
+        
+        basic_goal_prep.
+        
+        state_sound_for_model_id
+          : 
+        exists (fun _ => i1); split.
+        {
+          intros.
+          basic_utils_crush.
+        }
+        {
+          unfold state_sound_for_model, state_triple, Sep.and1.
+          basic_goal_prep.
+          basic_utils_crush.
+        }
+      }
+      {
+        unfold state_sound_for_model, state_triple, Sep.and1.
+        autorewrite with inversion lang_core model in *.
+        basic_goal_prep.
+        intuition idtac.
+        basic_goal_prep.
+        TODO: fold things into the state triple
+        map.putmany
+        TODO: i2 a fix;
+        let i2 := open_constr:(fun vti => match vti with [] => i1 | p::vti' => _ end) in
+        exists i2.
+        intuition eauto.
+        {
+          destruct var_to_idx.
+          1: basic_utils_crush.
+          cbn.
+          eapply Properties.map.put_extends.
+          eapply H4.
+          basic_goal_prep; Lia.lia.
+        }
+        2:{
+          
+        }
+        {
+          unfold add_ctx in *.
+          basic_goal_prep.
+        }        
+      }
+          cbn.
+          TODO: do I need a post, pre?
+          TODO: what is the relationship between post and pre?.
+          TODO: should post, pre be monotonic? the'n Post = pre /\....
+          monotonic conditions sounds attractive.
+          extends clause here an instance of it.
+                                                                                
+          TODO: should post have access to i? then the extends clause could be included
+        }
+        
+        basic_core_crush.
+      TODO: is the model lang_model, or lang_model extended w/ some variables?.
+      Need to model open terms here? no.
+      Just pick an interpretation that has the ctx vars assigned appropriately.
+      means we need access to the interpretations
+     *)
+    (*
+    Lemma lang_model_satisfies_rules v r
+      : In (v, r) l ->
+        model_satisfies_rule V V_Eqb V lang_model (rule_to_log_rule V_map_plus V_trie succ sort_of l v r).
+    Proof.
+      destruct r; basic_goal_prep.
+      {
+        eapply sequent_of_states_sound.
+        {
+          unfold state_sound_for_model.
+        sequent_of_states_sound
+        TODO: sequent_of_states lemma, properties
+      }
+
+    Qed.
+*)
+    
+    (*TODO: encapsulate trivial analysis*)
+    Theorem lang_model_of
+      : model_of lang_model (map (uncurry (rule_to_log_rule _ _ succ sort_of l
+                                             (H:= unit_analysis))) l).
+    Proof.
+      constructor; eauto using lang_model_eq_PER.
+      {
+        unfold interprets_to.
+        basic_goal_prep.
+        repeat case_match; basic_utils_crush.
+        {
+          pose proof H0 as H0';
+            eapply interp_sort_of_unary  in H0';
+            rewrite H0' in *; clear H0'.
+          pose proof H1 as H1';
+            eapply interp_sort_of_unary  in H1';
+            rewrite H1' in *; clear H1'.
+          cbn in H; break.
+          inversion H; clear H; subst.
+          {
+            eapply lang_model_sort_of_sound in H0, H1.
+            2,3: basic_core_crush.
+            eapply lm_eq_sorts.
+            assert (eq_sort l [] (sort_of_term d)  (sort_of_term d')).
+            {
+              apply eq_sort_trans with (t12 :=t);
+                eapply term_sorts_eq; auto;
+                basic_core_crush.
+              1:eapply eq_term_wf_r; eauto with lang_core.
+              all:admit.
+            }
+            (*
+            repeat case_match;
+              basic_goal_prep;
+              rewrite ?lang_model_no_vars in *;
+              tauto.
+          }
+          {
+            repeat (case_match;
+              basic_goal_prep;
+                    cbn in *;
+                    cbv [option_default default] in *;
+                    try congruence).
+            exfalso.
+            symmetry in case_match_eqn2;
+              eapply named_list_lookup_err_in in case_match_eqn2.
+            eapply eq_sort_wf_l in H5; basic_core_crush.
+          }
+        }
+        {
+          inversion H2; inversion H3; subst.
+          {
+            eapply eq_term_wf_l in H0; basic_core_crush.
+            eapply wf_term_con_inv in H0.
+            break.
+            eapply all_lang_model_args in H; eauto.
+            eapply all2_eq_to_eq_args in H; eauto with lang_core.
+            eapply lm_eq_terms.
+            eapply term_con_congruence; eauto.
+          }
+          {
+            exfalso.
+            eapply term_sort_impossible_helper;
+              try eapply eq_sort_wf_l;
+              eauto using term_sort_impossible_helper, eq_sort_wf_l, eq_term_wf_l with model lang_core.
+            all: eauto using term_sort_impossible_helper, eq_sort_wf_l, eq_term_wf_l with model lang_core.
+          }
+          {
+            exfalso.
+            eapply term_sort_impossible_helper;
+              try eapply eq_sort_wf_l;
+              eauto using term_sort_impossible_helper, eq_sort_wf_l, eq_term_wf_l with model lang_core.
+            all: eauto using term_sort_impossible_helper, eq_sort_wf_l, eq_term_wf_l with model lang_core.
+          }
+          {
+            eapply eq_sort_wf_l in H0; basic_core_crush.
+            safe_invert H0.
+            eapply all_lang_model_args in H; eauto.
+            eapply all2_eq_to_eq_args in H; eauto with lang_core.
+            eapply lm_eq_sorts.
+            eapply sort_con_congruence; eauto.
+          }
+        }
+      }            
+      {
+        (* TODO: this accudentally pulls in spurious section vars*)
+        eapply all_wkn with (P:= fun _ => True); eauto.
+        2: eapply PosListMap.all_True; eauto.
+        basic_goal_prep.
+        rewrite in_map_iff in H.
+        basic_goal_prep.
+        subst.
+
+
+
+        
+        basic_utils_crush.
+        
+        4:
+      }
+    Qed.
+*)
+Abort.
+        
 
     (*
     Lemma sort_pat_to_clauses_next_var_fresh t l1 v v' vt

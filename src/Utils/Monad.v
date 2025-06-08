@@ -244,6 +244,222 @@ Module StateMonad.
 
   End MapOps.
 
+  
+  (* Hoare logic reasoning about the state monad *)
+  Definition state_triple {A} (P : S -> Prop) (c : state A) (Q : A * S -> Prop) :=
+    forall e, P e -> Q (c e).
+
+  
+  Lemma state_triple_bind A B P Q H (f : A -> state B) c
+    : state_triple P c Q ->
+      (forall a, state_triple (curry Q a) (f a) H) ->
+      state_triple P (Mbind f c) H.
+  Proof.
+    unfold curry, state_triple, Mbind in *.
+    cbn.
+    intuition eauto.
+    specialize (H0 e).
+    specialize (H1 (fst (c e)) (snd (c e))).
+    destruct (c e); cbn in *.
+    apply H1.
+    eauto.
+  Qed.
+
+  
+  Lemma state_triple_ret A (a:A) P
+    : state_triple P (@! ret a) (fun p => (fst p = a) /\ P (snd p)).
+  Proof.
+    unfold state_triple.
+    cbn; eauto.
+  Qed.
+
+  Lemma state_triple_wkn_post A P e (Q1 Q2 : A * S -> Prop)
+    : (forall p, Q1 p -> Q2 p) ->
+      state_triple P e Q1 ->
+      state_triple P e Q2.
+  Proof.
+    unfold state_triple; firstorder.
+  Qed.
+
+  Lemma state_triple_wkn_ret A (a:A) P (Q : _ -> Prop)
+    : (forall p, fst p = a /\ P (snd p) -> Q p) ->
+        state_triple P (@! ret a) Q.
+  Proof.
+    intros.
+    eapply state_triple_wkn_post.
+    2: apply state_triple_ret.
+    firstorder.
+  Qed.
+  
+
+  Lemma state_triple_strengthen_pre A (P1 P2 : _ -> Prop) e (Q: A * S -> Prop)
+    : (forall i, P1 i -> P2 i) ->
+      state_triple P2 e Q ->
+      state_triple P1 e Q.
+  Proof.
+    unfold state_triple; firstorder.
+  Qed.
+
+  Lemma state_triple_loosen A (P1 P2 : _ -> Prop) e (Q1 Q2 : A * S -> Prop)
+    : (forall p, Q1 p -> Q2 p) ->
+      (forall i, P1 i -> P2 i) ->
+      state_triple P2 e Q1 ->
+      state_triple P1 e Q2.
+  Proof.
+    intros; eapply state_triple_strengthen_pre; eauto.
+    eapply state_triple_wkn_post; eauto.
+  Qed.
+
+  Lemma state_triple_lift_pre A (H : Prop) P e (Q: A * S -> Prop)
+    : (H -> state_triple P e Q) ->
+      state_triple (fun i => H /\ P i) e Q.
+  Proof.
+    unfold state_triple; firstorder.
+  Qed.
+
+  
+  Lemma state_triple_lift_post A (H : Prop) P e (Q: A * S -> Prop)
+    : H ->
+      state_triple P e Q ->      
+      state_triple P e (fun p => H /\ Q p).
+  Proof.
+    unfold state_triple; firstorder.
+  Qed.
+
+  
+  Lemma state_triple_frame_const A H P e (Q: A * S -> Prop)
+    : state_triple P e Q -> 
+      state_triple (fun i => H /\ P i) e (fun p => H /\ Q p).
+  Proof.
+    intros. apply state_triple_lift_pre.
+    intros. apply state_triple_lift_post; eauto.
+  Qed.
+
+  
+  Lemma state_triple_list_Mmap1 A B (f : A -> state B) l P
+    : (forall l1 a l2, l = l1 ++ a::l2 -> state_triple (P (a::l2)) (f a) (fun p => P l2 (snd p))) ->
+      state_triple (P l) (list_Mmap f l) (fun p => P nil (snd p)).
+  Proof.
+    induction l.
+    {
+      cbn; intros.
+      eapply state_triple_wkn_ret.
+      basic_goal_prep; subst.
+      basic_goal_prep; subst.
+      eauto.
+    }
+    {
+      cbn [all list_Mmap]; intros; break.
+      eapply state_triple_bind; eauto.
+      {
+        apply H with (l1:=nil).
+        reflexivity.
+      }
+      {
+        unfold curry.
+        intro a0.
+        eapply state_triple_bind; eauto.
+        {
+          apply IHl.
+          intros.
+          eapply H with (l1:=a::l1).
+          cbn; congruence.
+        }
+        intro l'.
+        eapply state_triple_wkn_ret.
+        basic_goal_prep; eauto.
+      }
+    }
+  Qed.
+
+  (* TODO: loses some info about the provenance of fl1; ok? *)
+  Lemma state_triple_list_Mmap2 A B (f : A -> state B) l Q fl
+    : (forall fl1 a, List.In a l ->
+                     state_triple (Q fl1) (f a) (fun p => Q (fl1++(cons (fst p) nil)) (snd p))) ->
+      state_triple (Q fl) (list_Mmap f l) (fun p => Q (fl++fst p) (snd p)).
+  Proof.
+    revert fl.
+    induction l.
+    {
+      cbn; intros.
+      eapply state_triple_wkn_ret.
+      basic_goal_prep; subst.
+      basic_utils_crush.
+    }
+    {
+      cbn [all list_Mmap]; intros; break.
+      eapply state_triple_bind; [basic_utils_crush |].
+      unfold curry.
+      intro b.
+      eapply state_triple_bind; unfold curry.     
+      { intros; cbn in *; eauto. }
+      {
+        intros.
+        eapply state_triple_wkn_ret.
+        basic_goal_prep; subst.
+        rewrite <- List.app_assoc in H1.
+        eauto.
+      }
+    }
+  Qed.
+
+  Lemma state_triple_conjunction A (c : state A) P1 P2 Q1 Q2
+    : state_triple P1 c Q1 ->
+      state_triple P2 c Q2 ->
+      state_triple (fun e => P1 e /\ P2 e) c (fun e => Q1 e /\ Q2 e).
+  Proof.
+    unfold state_triple.
+    intuition eauto.
+  Qed.
+
+  Lemma state_triple_list_Mmap' A B (f : A -> state B) l P fl
+    : (forall fl1 l1 a l2, l = l1 ++ a::l2 ->
+                           state_triple (fun e => P (a::l2) fl1 e)
+                             (f a)
+                             (fun p => P l2 (fl1++(cons (fst p) nil)) (snd p))) ->
+      state_triple (fun e => P l fl e) (list_Mmap f l) (fun p => P nil (fl++fst p) (snd p)).
+  Proof.
+    revert fl.
+    induction l.
+    {
+      cbn; intros.
+      eapply state_triple_wkn_ret.
+      basic_goal_prep; subst.
+      basic_utils_crush.
+    }
+    {
+      cbn [all list_Mmap]; intros; break.
+      eapply state_triple_bind.
+      { eapply H with (l1:=nil); eauto. }
+      unfold curry.
+      intro b.
+      eapply state_triple_bind; unfold curry.     
+      {
+        intros; cbn in *.
+        eapply IHl; intros.
+        eapply H with (l1:=a::l1).
+        cbn.
+        congruence.
+      }
+      {
+        intros.
+        eapply state_triple_wkn_ret.
+        basic_goal_prep; subst.
+        rewrite <- List.app_assoc in *.
+        eauto.
+      }
+    }
+  Qed.
+
+  
+  Lemma state_triple_list_Mmap A B (f : A -> state B) l P
+    : (forall fl1 l1 a l2, l = l1 ++ a::l2 ->
+                           state_triple (fun e => P (a::l2) fl1 e)
+                             (f a)
+                             (fun p => P l2 (fl1++(cons (fst p) nil)) (snd p))) ->
+      state_triple (fun e => P l nil e) (list_Mmap f l) (fun p => P nil (fst p) (snd p)).
+  Proof. apply state_triple_list_Mmap'. Qed.
+
   End WithS.
 
   Notation "'for' kp vp 'from' m 'in' b" :=
@@ -263,6 +479,7 @@ Module StateMonad.
   
   Arguments stateT S%type_scope M%function_scope A%type_scope : clear implicits.
   Arguments state S%type_scope A%type_scope : clear implicits.
+
   
 End StateMonad.
 

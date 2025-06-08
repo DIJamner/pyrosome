@@ -38,6 +38,7 @@ Section WithMap.
         (idx_map_ok : forall A, map.ok (idx_map A))
         (* TODO: define and assume weak_map_ok*)
         (idx_trie : forall A, map.map (list idx) A)
+        (idx_trie_ok : forall A, map.ok (idx_trie A))
         (idx_trie_plus : map_plus idx_trie).
 
   Notation atom := (atom idx symbol).
@@ -243,6 +244,439 @@ Section SequentOfStates.
   Definition sequent_of_states := 
     Build_sequent _ _ (map atom_clause assumption_atoms)
       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
+
+  Notation state_sound_for_model :=
+    (state_sound_for_model _ idx_succ _ _ _ _ _).
+
+  (*TODO: move to base utils*)
+      Ltac inst_implication H :=
+        unshelve
+          let p := open_constr:(_) in
+          specialize (H p).
+
+      Context (symbol_map_ok : forall {A}, map.ok (symbol_map A)).
+      
+      (*TODO: move to base utils *)
+      Lemma all_map T1 T2 P (f : T1 -> T2) l
+        : all P (map f l) <-> all (fun x => P (f x)) l.
+      Proof using. clear. induction l; basic_goal_prep; basic_utils_crush. Qed.
+
+      
+      Lemma find_does_not_touch_db a (i : instance X) a0 i0
+        : find a i = (a0, i0) ->
+          db i = db i0.
+      Proof.
+        clear.
+        destruct i; unfold find; cbn.
+        case_match; basic_goal_prep;
+          basic_utils_crush.
+      Qed.
+      
+      Lemma canonicalize_does_not_touch_db a (i : instance X) a0 i0
+        : canonicalize a i = (a0, i0) ->
+          db i = db i0.
+      Proof.
+        clear.
+        destruct a; cbn.
+        case_match.
+        assert (db i = db i1).
+        {
+          revert l i i1 case_match_eqn;
+            induction atom_args;
+            basic_goal_prep.
+          1: basic_utils_crush.
+          case_match.
+          eapply find_does_not_touch_db in case_match_eqn0.
+          rewrite  case_match_eqn0; clear  case_match_eqn0.
+          case_match.
+          eapply  IHatom_args in case_match_eqn0.
+          congruence.
+        }
+        case_match.
+        apply find_does_not_touch_db in case_match_eqn0.
+        intros; autorewrite with inversion in *; break; subst.
+        congruence.
+      Qed.
+
+      
+      Lemma remove_atom_incl (i0 : instance X) a0 i1 u
+        : remove_atom a0 i0 = (u, i1) ->
+          incl (db_to_atoms (db i1))  (db_to_atoms (db i0)).
+      Proof using symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
+Eqb_idx.
+        clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
+          conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
+          conclusion_inst assumption_atoms  assumption_inst
+          idx_zero idx_succ.
+        unfold remove_atom.
+        destruct i0; cbn.
+        basic_goal_prep;
+          basic_utils_crush.
+        cbn.
+        unfold map_update.
+        case_match; unfold default, map_default; cbn.
+        2:{
+          rewrite Properties.map.remove_empty.
+          unfold db_to_atoms.
+          intros ? ?.
+          rewrite in_flat_map in *.
+          basic_goal_prep.
+          apply Properties.map.tuples_spec in H0.
+          eqb_case (atom_fn a0) s.
+          {
+            rewrite map.get_put_same in *.
+            autorewrite with inversion in *; subst.
+            unfold map.tuples in H1.
+            cbn in H1.
+            rewrite Properties.map.fold_empty in H1.
+            basic_goal_prep;
+              basic_utils_crush.
+          }
+          {
+            rewrite map.get_put_diff in * by auto.
+            rewrite in_map_iff in H1.
+            basic_goal_prep; subst.
+            exists (s,r).
+            rewrite Properties.map.tuples_spec.
+            intuition auto.
+            unfold table_atoms.
+            apply in_map with (f:= (row_to_atom idx symbol X s)) in H3.
+            eauto.
+          }
+        }
+        {
+          intros ? ?.
+          unfold db_to_atoms in *.
+          rewrite in_flat_map in *.
+          basic_goal_prep.
+          apply Properties.map.tuples_spec in H0.
+          eqb_case (atom_fn a0) s.
+          {
+            rewrite map.get_put_same in *.
+            autorewrite with inversion in *; subst.
+            rewrite in_map_iff in *.
+            basic_goal_prep; subst.
+            rewrite Properties.map.tuples_spec in *.
+            eqb_case l (atom_args a0).
+            {
+              exfalso.
+              rewrite map.get_remove_same in *.
+              congruence.
+            }
+            rewrite map.get_remove_diff in * by auto.
+            exists ((atom_fn a0), r).
+            rewrite Properties.map.tuples_spec.
+            basic_goal_prep;
+              basic_utils_crush.
+            let x := open_constr:(_) in
+            replace ({| atom_fn := atom_fn a0; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
+            {
+              rewrite Properties.map.tuples_spec; eauto.
+            }
+            { reflexivity. }
+          }
+          {
+            rewrite map.get_put_diff in * by auto.
+            rewrite in_map_iff in H1.
+            basic_goal_prep; subst.
+            exists (s, r0).
+            rewrite Properties.map.tuples_spec.
+            intuition auto.
+            unfold table_atoms.          
+            let x := open_constr:(_) in
+            replace ({| atom_fn := s; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
+            { rewrite Properties.map.tuples_spec in *; eauto. }
+            { reflexivity. }
+          }          
+        }
+      Qed.
+        
+      Lemma incl_remove_atoms al (i : instance X)
+        : incl ((db_to_atoms
+                   (db
+                      (snd
+                         (list_Miter
+                            (fun a : atom => @! let a0 <- canonicalize a in (remove_atom a0))
+                            al i)))))
+            (db_to_atoms
+               (db
+                  i)).
+      Proof using symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
+Eqb_idx.
+        clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
+          conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
+          conclusion_inst assumption_atoms  assumption_inst
+          idx_zero idx_succ.
+        revert i; induction al;
+          intros.
+        { cbn; eapply incl_refl. }
+        {
+          basic_goal_prep.
+          destruct (canonicalize a i) eqn:Hc.
+          eapply canonicalize_does_not_touch_db in Hc.
+          rewrite Hc.
+          case_match.
+          apply remove_atom_incl in case_match_eqn.
+          eapply incl_tran; try eassumption.
+          clear case_match_eqn.
+          eapply IHal.
+        }
+      Qed.
+
+      Lemma all_in T (P : T -> _) l
+        : (forall x, In x l -> P x) -> all P l.
+      Proof using.
+        clear.
+        enough (forall l', (forall x, In x l' -> P x) -> incl l l' -> all P l).
+        {
+          intros; eapply H; eauto using incl_refl.
+        }
+        {
+          intros ? ?.
+          induction l; basic_goal_prep;
+            basic_utils_crush.
+        }
+      Qed.
+      
+      (*TODO: move to list utils*)
+      Lemma all_incl {T} (P : T -> Prop) l1 l2
+        : incl l1 l2 ->
+          all P l2 ->
+          all P l1.
+      Proof using.
+        clear.
+        unfold incl.
+        intros.
+        eapply all_in.
+        intros.
+        eapply in_all; eauto.
+      Qed.
+
+      
+      Lemma state_Mbind_assoc
+          : forall S (T1 T2 T3 : Type) (f : T1 -> state S T2)
+                   (g : T2 -> state S T3) (ma : state S T1) s0,
+            Mbind (fun a : T1 => @! let p <- f a in (g p)) ma s0
+            = Mbind g (@! let p <- ma in (f p)) s0.
+      Proof.
+        clear.
+        basic_goal_prep.
+        repeat case_match.
+        congruence.
+      Qed.
+
+      Notation  egraph_sound_for_interpretation :=
+        (egraph_sound_for_interpretation _ idx_succ _ symbol_map _ _ _).
+
+
+      Hint Rewrite @map.get_empty : utils.
+      
+      Lemma empty_egraph_sound m
+        : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero X).
+      Proof.
+        revert idx_map_ok symbol_map_ok.
+        clear.
+        constructor; basic_goal_prep;
+          basic_utils_crush.
+        {
+          exfalso.
+          unfold atom_in_egraph in *.
+          basic_goal_prep;
+            basic_utils_crush.
+        }
+        {
+          exfalso; unfold uf_rel_PER in *.
+          eapply PER_empty; try eassumption; eauto.
+          basic_goal_prep;
+            basic_utils_crush.
+        }
+      Qed.        
+      
+    Lemma sequent_of_states_sound m (*Post_i Post Post2 i3*)
+      : (* state_sound_for_model m map.empty assumptions Post_i Post ->
+        (forall a i2, (Post_i a i2) ->
+                      Post a ->
+                      state_sound_for_model m i2 (conclusions a) i3 Post2) ->*)
+        model_satisfies_rule _ _ _ m sequent_of_states.
+    Proof.
+      unfold model_satisfies_rule.
+      intros.
+      eexists.
+      cbn [sequent_of_states seq_conclusions seq_assumptions] in *.
+      rewrite all_app, !all_map in *.
+      unfold uncurry.
+      (*TODO: more precise conditions*)
+      (*
+      assert (state_sound_for_model m map.empty
+                (@! let a <- assumptions in
+                   (Mbind (fun _ : unit => @! ret a) (rebuild 1000)))
+                 (fun _ x => x = query_assignment (*TODO: should be out_assign*))
+                  (fun _ => True)).
+      {
+        eapply state_triple_bind.
+        *)
+        (*
+        TODO: what is the right assumption?
+      }
+      cbn [assignment_satisfies_clause].
+      assert (forall A B C, (A /\ (A -> B) /\ (A -> C)) -> A /\ B /\ C) as HP
+        by intuition auto.
+      apply HP; clear HP.
+      repeat split; intros.
+      3:{
+        unfold conclusion_atoms.
+        unfold conclusion_inst_dedup.
+        eapply all_incl.
+        1:eapply incl_remove_atoms.
+        unfold conclusion_inst, uncurry.
+        unfold assumption_inst.
+        change (let '(x,y) := ?ma ?s0 in @?f x y)
+          with (Mbind f ma s0).
+        rewrite !state_Mbind_assoc.
+        enough (state_sound_for_model m map.empty
+                  ((@!
+               let p <-
+               @!
+               let p <-
+               @! let a <- assumptions in (Mbind (fun _ : unit => @! ret a) (rebuild 1000))
+               in (conclusions p)
+               in (Mbind (fun _ : unit => @! let _ <- force_equiv in ret p) (rebuild 1000))))
+                  (fun _ x => x = query_assignment (*TODO: should be out_assign*))
+                  (fun _ => True)).
+        {
+          specialize (H3 (empty_egraph idx_zero X) (empty_egraph_sound _)).
+          cbn beta in H3.
+          destruct H3 as [x [ Heq [H3 [? ?] ] ] ].
+          subst x.
+          destruct H3.
+          assignment_satisfies_atom =
+fun (idx symbol : Type) (idx_map : forall A : Type, map.map idx A) 
+  (m : model symbol) (assignment : idx_map (domain symbol m)) (a : Defs.atom idx symbol) =>
+eval_atom idx symbol idx_map m assignment (atom_fn a) (atom_args a) <$>
+(fun r : domain symbol m => map.get assignment (atom_ret a) <$> domain_eq symbol m r)
+     : forall (idx symbol : Type) (idx_map : forall A : Type, map.map idx A) (m : model symbol),
+    idx_map (domain symbol m) -> Defs.atom idx symbol -> Prop
+
+                                                           atom_sound_for_model =
+fun (idx symbol : Type) (idx_map : forall A : Type, map.map idx A) 
+  (m : model symbol) (idx_interpretation : idx_map (domain symbol m))
+  (a : Defs.atom idx symbol) =>
+list_Mmap (map.get idx_interpretation) (atom_args a) <$>
+(fun args : list (domain symbol m) =>
+ map.get idx_interpretation (atom_ret a) <$>
+ (fun out : domain symbol m => interprets_to symbol m (atom_fn a) args out))
+     : forall (idx symbol : Type) (idx_map : forall A : Type, map.map idx A) (m : model symbol),
+       idx_map (domain symbol m) -> Defs.atom idx symbol -> Prop
+          break.
+          cbn in H3.
+          break.
+          basic_goal_prep.
+          
+        TODO: transition to state_sound goal
+        (*TODO: fix constraints on output*)
+        assert (state_sound_for_model m map.empty assumptions
+                  (fun _ x => x = query_assignment)
+                  (fun _ => True)) by admit.
+        state_sound_for_model
+        assert (assumptions).
+        cbn -[rebuild assumption_inst].
+        unfold assumption_atoms in *.
+        cbn -[rebuild assumption_inst] in H1.
+        assert((fst assumption_inst, snd assumption_inst) = assumption_inst).
+        {
+          clear.
+          destruct assumption_inst.
+          reflexivity.
+        }
+        rewrite <- H3.
+        cbn -[rebuild assumption_inst].
+        
+        cbn.
+        case_match.
+        cbn in H1.
+        rewrite all_map in *.
+        cbn in
+        incl ((db_to_atoms
+       (db
+          (snd
+             (list_Miter
+                (fun a : atom => @! let a0 <- canonicalize a in (remove_atom a0))
+                assumption_atoms conclusion_inst)))))
+                conclusion_inst
+        TODO: prove invariant over remove_atom.
+        then prove invariant over force_equiv.
+        Then
+        enough (exists i, egraph_sound_for_interpretation m conclusion_inst_dedup i
+                          /\ extends i (map.of_list query_assignment ++ out_assignment)).
+        enough (forall i, egraph_sound_for_interpretation m assumption_atoms i ->
+                          domain i `intersect` out_fvs = empty ->
+                          exists i, extends i' i
+                                    /\ egraph_sound_for_interpretation m conclusion i').
+        High level idea: quantify over interpretations,
+            relate assignments to interpretations.
+        The two are basically the same thing.
+        Question: should the interpretation just be an assoc list?.
+        It's not computational.
+        Then the two would be literally the same.
+        An assignment for an egraph would be a 'minimal' interpretation.
+        is the ++out_assignment good? I think a better approach might be to say
+               exists out, extends out in, ...
+        
+      rew
+      have: a set of assumptions, that comes from a graph.
+      have: an assignment that satisfies them (and so should be sound wrt the graph).
+      have a set of conclusions that comes from a related graph.
+      need: an extended assignment that is sound wrt the conclusions (graph)
+      notes: assignments in domain, not between graphs
+
+      Fail.
+
+      TODO:soundness of assumptions insufficient for conclusion?.
+      need a completeness-like statement
+             want something like this:
+          for all DBs g where model_of m i g
+          (interpretations are arrows from dbs to models)
+          for s in hom(a,g), i += s : g' -> m.
+
+          *)
+    Abort.
+
+    (*
+    Lemma sequent_of_states_sound m Post_i Post Post2 i3
+      : state_sound_for_model m map.empty assumptions Post_i Post ->
+        (forall a i2, (Post_i a i2) ->
+                      Post a ->
+                      state_sound_for_model m i2 (conclusions a) i3 Post2) ->
+        model_satisfies_rule _ _ _ m sequent_of_states.
+    Proof.
+      intros.
+      unfold sequent_of_states, model_satisfies_rule.
+      cbn.
+      intros.
+      specialize (H0 (empty_egraph idx_zero X)).
+      inst_implication H0.
+      { eapply empty_sound_for_interpretation; eauto. }
+      intuition auto.
+      destruct H0.
+      intuition auto.
+      (*
+      TODO: prove composition of assumptions, rebuild before plugging in empty?.
+      TODO: high-level question: what property do' I want of the assumptions?.
+      it need to be precise, not just monotone; in other words, there is some sort of completeness property
+      break.
+        edestruct empty_sound; cycle 2.
+        {
+          destruct sound_egraph_for_model.
+          eapply H4.
+      }
+      cbn beta in *.
+      basic_goal_prep.
+      unfold curry.
+      cbn [fst curry uncurry snd].
+       *)
+    Admitted.
+*)
+  
 
   (* Diagnostics. For debugging only*)
 

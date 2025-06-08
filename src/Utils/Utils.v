@@ -29,7 +29,14 @@ Proof.
 Qed.
 
 
-
+Definition Is_Some_satisfying {A} (P : A -> Prop) x :=
+  match x with
+  | Some x => P x
+  | None => False
+  end.
+Notation "x <$> P" :=
+  (Is_Some_satisfying P x)
+    (at level 56,left associativity).
 
 
 
