@@ -4417,26 +4417,6 @@ Section __.
         
         forest_ptsto_parent
 *)
-      
-    (* Note: partial spec. Characterizing when it returns None doesn't help with using
-     union find for egraphs.
-     *)
-    Lemma find_spec (uf uf' : union_find) i j l
-      : forest l uf.(parent) ->
-        find uf i = Some (uf', j) ->
-        forest l uf'.(parent)
-        /\ In j l
-        /\ subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent))
-        /\ iff2 (limit (parent_rel uf.(parent))) (limit (parent_rel uf'.(parent)))
-        /\ (limit (parent_rel uf'.(parent)) i j).
-    Proof.
-      destruct uf, uf'.
-      unfold find, uf_rel.
-      my_case Haux (find_aux (S max_rank0) parent0 i); cbn;[| congruence].
-      intros; break.
-      safe_invert H0.
-      eapply find_aux_spec in Haux; intuition eauto.
-    Abort.
     
     Definition union_closure {A : Type} (R1 R2 : A -> A -> Prop) :=
       equivalence_closure (fun a b => R1 a b \/ R2 a b).
@@ -5335,6 +5315,245 @@ Section __.
 
     Definition uf_rel_PER m :=
       PER_closure (fun i j : idx => map.get m.(parent) i = Some j).
+
+    Import StateMonad.
+
+    Definition state_put i r : state idx_map unit :=
+      fun s => (tt, map.put s i r).
+    
+    Definition state_get i : state idx_map idx :=
+      fun s => (unwrap_with_default (H:=i) (map.get s i), s).
+    
+    (*TODO: rename *)
+    (* assumes mr > the max chain length in the state *)
+    Fixpoint find_aux' (mr : nat) (i : idx) : state idx_map idx :=
+      match mr with
+      | 0 => fun s => (i, s)
+      | S mr0 => fun x =>
+                   match map.get x i with
+                   | Some a => if eqb a i then (i, x)
+                               else let (x1, y) := find_aux' mr0 a x in
+                                    (x1, map.put y i x1)
+                   | None => (i,x)
+                   end
+      end.
+
+    Definition find' :=
+      fun '{| rank := ra; parent := pa; max_rank := mr; next := l |} (x : idx) =>
+        let (cx, f) := find_aux' (S mr) x pa in
+        ({| rank := ra; parent := f; max_rank := mr; next := l |}, cx).
+
+        
+    Record union_find_ok uf l :=
+      {
+        uf_forest : forest l uf.(parent); 
+        rank_covers_domain : forall k v,
+        map.get uf.(parent) k = Some v -> exists r, map.get uf.(rank) k = Some r;
+        rank_decreasing : forall i j, map.get uf.(parent) i = Some j ->
+                                      option_relation gt (map.get uf.(rank) i)
+                                        (map.get uf.(rank) j);
+        maximum_rank : forall i r, map.get uf.(rank) i = Some r ->
+                                   r <= uf.(max_rank);                  
+      }.
+
+    Definition steps_bounded_by {A} (R: A -> A -> Prop) max a b :=
+      forall n, count_step_closure R n a b ->
+               (* (* Include the reflexive case to work more nicely in instances
+                   where a -> ... -> a in a non-trivial loop?
+                 *)
+                a = b \/ *)
+                      exists m, count_step_closure R m a b
+                             /\ m < max.
+    
+    Lemma union_find_step_bound uf l i y r
+      : union_find_ok uf l ->
+        map.get uf.(rank) i = Some r ->
+        steps_bounded_by (fun i j : idx => map.get uf.(parent) i = Some j) (S r) i y.
+    Proof.
+      unfold steps_bounded_by; basic_goal_prep.
+      revert r H0.
+      induction H1;basic_goal_prep.
+      { eexists; basic_utils_crush; Lia.lia. }
+      {
+        pose proof (rank_decreasing _ _ H _ _ H0).
+        rewrite H2 in *; cbn in *.
+        case_match; try tauto.
+        specialize (IHcount_step_closure n0);
+          intuition; break.
+        eexists; basic_utils_crush.
+        Lia.lia.
+      }
+    Qed.
+
+    
+    Lemma steps_bounded_by_wkn x y m r1 r2
+      : r1 < r2 ->
+        steps_bounded_by (fun i j : idx => map.get m i = Some j) r1 x y ->
+        steps_bounded_by (fun i j : idx => map.get m i = Some j) r2 x y.
+    Proof.
+      unfold steps_bounded_by; basic_goal_prep.
+      specialize (H0 n).
+      intuition eauto; break.
+      eexists; intuition eauto.
+    Qed.
+
+    
+    Instance option_relation_trans {A} {R : A -> A -> Prop} `{Transitive _ R}
+      : Transitive (option_relation R).
+    Proof.
+      unfold option_relation.
+      intros ? ? ? ? ?.
+      repeat case_match; try tauto; eauto.
+      congruence.
+    Qed.
+    
+    Instance gt_transitive : Transitive gt.
+    Proof. unfold Transitive; Lia.lia. Qed.
+    
+    Lemma rank_lt_parent uf l
+      : union_find_ok uf l ->
+        forall i j : idx,
+        parent_rel uf.(parent) i j ->
+        option_relation gt (map.get uf.(rank) i) (map.get uf.(rank) j).
+    Proof.
+      intros ? i j;
+        induction 1;
+        basic_goal_prep;
+        basic_utils_crush.
+      { eapply rank_decreasing; eauto. }
+      {
+        etransitivity; try eassumption.
+        eapply rank_decreasing; eauto.
+      }
+    Qed.
+    
+    Lemma find_aux'_find_aux uf l i
+      (* TODO relate to rank array? use a prop of that instead? *)
+      : union_find_ok uf l ->
+        has_key i uf.(parent) ->
+        let p := find_aux' (S uf.(max_rank)) i uf.(parent) in
+        find_aux (S uf.(max_rank)) uf.(parent) i = Some (snd p, fst p).
+    Proof.
+      intros H.
+      pose proof (rank_lt_parent _ _ H).
+      revert H.
+      destruct uf; destruct 1; cbn -[find_aux find_aux'] in *.
+      assert (forall (j : idx) (r : nat),
+                 j = i \/ parent_rel parent0 i j ->
+                 map.get rank0 j = Some r -> r < S max_rank0) as max_rank_max.
+      {
+        intros i' r _ H'; pose proof (maximum_rank0 i' r H').
+        Lia.lia.
+      }
+      clear maximum_rank0.
+      revert max_rank_max.
+      change max_rank0 with (pred (S max_rank0)) at 1.
+      assert (S max_rank0 > 0) as Hgt by Lia.lia.
+      revert Hgt; generalize (S max_rank0); clear max_rank0.
+      intro mr.
+      revert i.
+      induction mr;
+        basic_goal_prep.
+      { Lia.lia. }
+      {
+        unfold has_key in *; case_match; try tauto.
+        eqb_case i0 i; eauto.
+        destruct mr.
+        {
+          exfalso.
+          pose proof case_match_eqn as Hc1.
+          pose proof case_match_eqn as Hc2.
+          eapply rank_decreasing0 in Hc1.
+          eapply rank_covers_domain0 in Hc2.
+          break.
+          pose proof H2 as Hr.
+          eapply max_rank_max in H2; eauto.
+          replace x with 0 in * by Lia.lia.
+          rewrite Hr in *.
+          basic_goal_prep; case_match; try tauto.
+          Lia.lia.
+        }
+        {
+          erewrite IHmr; try Lia.lia.
+          { case_match; reflexivity. }
+          {
+            intros; intuition subst.
+            {
+              pose proof case_match_eqn as Hc1.
+              pose proof case_match_eqn as Hc2.
+              eapply rank_decreasing0 in case_match_eqn.
+              eapply rank_covers_domain0 in Hc2.
+              rewrite H3 in *.
+              break.
+              rewrite H2 in *.
+              cbn in *.
+              pose proof (max_rank_max i x ltac:(eauto) ltac:(eauto)).
+              Lia.lia.
+            }
+            {
+              pose proof case_match_eqn as Hc1.
+              pose proof case_match_eqn as Hc2.
+              eapply rank_decreasing0 in case_match_eqn.
+              eapply rank_covers_domain0 in Hc2.
+              break.
+              pose proof H4 as Hpar.
+              eapply H0 in H4; eauto.
+              eapply forest_closed in Hc1; eauto.
+              unfold has_key in *.
+              case_match; try tauto.
+              eapply rank_covers_domain0 in case_match_eqn0; break.
+              rewrite !H3, !H5, !H2 in *.
+              cbn in *.
+              assert (x < S (S mr)).
+              { eapply max_rank_max; intuition eauto. }
+              Lia.lia.
+            }
+          }
+          {
+            eapply forest_closed in case_match_eqn; eauto.            
+          }
+        }
+      }
+    Qed.
+
+    (*
+    Context (rank_map_ok : map.ok rank_map).
+     *)
+    
+    Lemma find'_find uf i l
+      : union_find_ok uf l ->
+        has_key i uf.(parent) ->
+        find uf i = Some (find' uf i).
+    Proof.
+      intros; break.
+      unfold find, find'; cbn -[find_aux' find_aux].
+      eapply find_aux'_find_aux in H; eauto.
+      destruct uf; cbn -[find_aux' find_aux] in *.
+      rewrite H.
+      case_match; reflexivity.
+    Qed.
+
+    (*
+    (* Note: partial spec. Characterizing when it returns None doesn't help with using
+     union find for egraphs.
+     *)
+    Lemma find_spec (uf uf' : union_find) i j l
+      : forest l uf.(parent) ->
+        find' uf i = (uf', j) ->
+        forest l uf'.(parent)
+        /\ In j l
+        /\ subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent))
+        /\ iff2 (limit (parent_rel uf.(parent))) (limit (parent_rel uf'.(parent)))
+        /\ (limit (parent_rel uf'.(parent)) i j).
+    Proof.
+      destruct uf, uf'.
+      unfold find, uf_rel.
+      my_case Haux (find_aux (S max_rank0) parent0 i); cbn;[| congruence].
+      intros; break.
+      safe_invert H0.
+      eapply find_aux_spec in Haux; intuition eauto.
+    Abort.
+    *)
     
 End __.
  
