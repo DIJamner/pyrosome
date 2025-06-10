@@ -81,7 +81,7 @@ Section __.
     (MkUF (map.put ra l 0%nat) (map.put pa l l) mr (succ l), l).
 
   (*TODO: should also decrease ranks for memory reasons *)
-  Fixpoint find_aux (mr : nat) f i : option (idx_map * idx) :=
+  Fixpoint find_aux' (mr : nat) f i : option (idx_map * idx) :=
     match mr with
     | O => None
     | S mr =>
@@ -89,21 +89,21 @@ Section __.
             if eqb fi i then
               ret (f,i)
             else
-              let (f, r) <- find_aux mr f fi in
+              let (f, r) <- find_aux' mr f fi in
               let f := map.put f i r in
               ret (f,r)
     end.
                    
   
-  Definition find '(MkUF ra pa mr l) x  : option _ :=
-    @! let (f,cx) <- find_aux (S mr) pa x in
+  Definition find' '(MkUF ra pa mr l) x  : option _ :=
+    @! let (f,cx) <- find_aux' (S mr) pa x in
       ret (MkUF ra f mr l, cx).
 
   (*TODO: needs to return the root id (check)*)
   (* Note: returns None if either id is not in the map *)
   Definition union h x y : option _ :=
-    @! let (h, cx) <- find h x in
-      let (h, cy) <- find h y in
+    @! let (h, cx) <- find' h x in
+      let (h, cy) <- find' h y in
       if eqb cx cy then ret (h, cx) else
       (*  let '(ra, pa, mr, l) := h in*)
         let rx <- map.get h.(rank) cx in
@@ -124,7 +124,7 @@ Section __.
         end.
 
   Definition interp_uf (u : union_find) (a b : idx) : Prop :=
-    match find u a, find u b with
+    match find' u a, find' u b with
     | Some (_, a'), Some (_, b') => a' = b'
     | _, _ => False
     end.
@@ -2333,7 +2333,7 @@ Section __.
     
     Lemma find_aux_spec' mr f i f' j k
       :  tree k f ->
-         find_aux mr f i = Some (f', j) ->
+         find_aux' mr f i = Some (f', j) ->
          j = k /\ tree j f'.
     Proof.    
       revert f i f' j.
@@ -2364,7 +2364,7 @@ Section __.
     Hint Resolve Properties.map.same_domain_refl : utils.
     
     Lemma find_aux_domain mr f i f' j
-      : find_aux mr f i = Some (f', j) ->
+      : find_aux' mr f i = Some (f', j) ->
         map.same_domain f f'.
     Proof.
       revert f f' i j.
@@ -2410,8 +2410,8 @@ Section __.
     
     Lemma find_aux_frame mr f i f' j Q f_Q
       :  sep Q (eq f) f_Q ->
-         find_aux mr f i = Some (f', j) ->
-         exists f'_Q, find_aux mr f_Q i = Some (f'_Q, j) /\ sep Q (eq f') f'_Q.
+         find_aux' mr f i = Some (f', j) ->
+         exists f'_Q, find_aux' mr f_Q i = Some (f'_Q, j) /\ sep Q (eq f') f'_Q.
     Proof.
       revert f f' i j f_Q.
       induction mr;
@@ -2522,7 +2522,7 @@ Section __.
 
     Lemma find_aux_in l mr f i f' j
       :  forest l f ->
-         find_aux mr f i = Some (f', j) ->
+         find_aux' mr f i = Some (f', j) ->
          In j l.
     Proof.    
       revert f f' i j.
@@ -2738,7 +2738,7 @@ Section __.
     
     Lemma find_aux_spec'' mr l k f i f' j
       : sep (and1 (tree k) (has_key i)) (forest l) f ->
-        find_aux mr f i = Some (f', j) ->
+        find_aux' mr f i = Some (f', j) ->
         j = k /\ forest (k::l) f'.
     Proof.
       revert k l f i f' j.
@@ -2872,7 +2872,7 @@ Section __.
     
     Lemma find_aux_reachable_out k l mr f i f' j
       : sep (and1 (tree k) (has_key i)) (forest l) f ->
-        find_aux mr f i = Some (f', j) ->
+        find_aux' mr f i = Some (f', j) ->
         reachable f i j.
     Proof.
       revert f f' i j.
@@ -3373,7 +3373,7 @@ Section __.
     
     Lemma find_auxforest l mr f i f' j
       : (forest l) f ->
-        find_aux mr f i = Some (f', j) -> forest l f'.
+        find_aux' mr f i = Some (f', j) -> forest l f'.
     Proof.
       intros.
       my_case Hget (map.get f i).
@@ -3390,7 +3390,7 @@ Section __.
     Qed.
 
     Lemma find_aux_has_key mr f i f' j
-      : find_aux mr f i = Some (f', j) ->
+      : find_aux' mr f i = Some (f', j) ->
         has_key i f.
     Proof.
       destruct mr;
@@ -3403,7 +3403,7 @@ Section __.
     
     Lemma find_aux_reachable_out' l mr f i f' j
       : forest l f ->
-        find_aux mr f i = Some (f', j) ->
+        find_aux' mr f i = Some (f', j) ->
         reachable f i j.
     Proof.
       intros.
@@ -3617,7 +3617,7 @@ Section __.
     
     Lemma find_aux_reachable_iff l mr f i f' j
       : (forest l) f ->
-        find_aux mr f i = Some (f', j) ->
+        find_aux' mr f i = Some (f', j) ->
         iff2 (reachable f) (reachable f').
     Proof.    
       revert f f' i j.
@@ -3653,9 +3653,9 @@ Section __.
     Qed.
 
     
-    Lemma find_aux_spec l mr f i f' j
+    Lemma find_aux_spec_partial l mr f i f' j
       : forest l f ->
-        find_aux mr f i = Some (f', j) ->
+        find_aux' mr f i = Some (f', j) ->
         In j l /\ forest l f' /\ reachable f i j /\ iff2 (reachable f) (reachable f').
     Proof.
       intros.
@@ -3861,17 +3861,17 @@ Section __.
      *)
     Lemma find_spec' (uf uf' : union_find) i j l
       : forest l uf.(parent) ->
-        find uf i = Some (uf', j) ->
+        find' uf i = Some (uf', j) ->
         forest l uf'.(parent)
         /\ In j l
         /\ iff2 (uf_rel uf) (uf_rel uf') /\ (uf_rel uf i j).
     Proof.
       destruct uf, uf'.
-      unfold find, uf_rel.
-      my_case Haux (find_aux (S max_rank0) parent0 i); cbn;[| congruence].
+      unfold find', uf_rel.
+      my_case Haux (find_aux' (S max_rank0) parent0 i); cbn;[| congruence].
       intros; break.
       safe_invert H0.
-      eapply find_aux_spec in Haux; intuition eauto.
+      eapply find_aux_spec_partial in Haux; intuition eauto.
     Qed.
 
     
@@ -5027,8 +5027,8 @@ Section __.
           /\ uf_rel u' y z.
     Proof.
       unfold union.
-      my_case Hfx (find u x);break;cbn;[| congruence].
-      my_case Hfy (find u0 y);break;cbn;[| congruence].
+      my_case Hfx (find' u x);break;cbn;[| congruence].
+      my_case Hfy (find' u0 y);break;cbn;[| congruence].
       intro.
       eapply find_spec' in Hfx, Hfy; break; eauto.
       eqb_case i i0.
@@ -5326,21 +5326,21 @@ Section __.
     
     (*TODO: rename *)
     (* assumes mr > the max chain length in the state *)
-    Fixpoint find_aux' (mr : nat) (i : idx) : state idx_map idx :=
+    Fixpoint find_aux (mr : nat) (i : idx) : state idx_map idx :=
       match mr with
       | 0 => fun s => (i, s)
       | S mr0 => fun x =>
                    match map.get x i with
                    | Some a => if eqb a i then (i, x)
-                               else let (x1, y) := find_aux' mr0 a x in
+                               else let (x1, y) := find_aux mr0 a x in
                                     (x1, map.put y i x1)
                    | None => (i,x)
                    end
       end.
 
-    Definition find' :=
+    Definition find :=
       fun '{| rank := ra; parent := pa; max_rank := mr; next := l |} (x : idx) =>
-        let (cx, f) := find_aux' (S mr) x pa in
+        let (cx, f) := find_aux (S mr) x pa in
         ({| rank := ra; parent := f; max_rank := mr; next := l |}, cx).
 
         
@@ -5431,8 +5431,8 @@ Section __.
       (* TODO relate to rank array? use a prop of that instead? *)
       : union_find_ok uf l ->
         has_key i uf.(parent) ->
-        let p := find_aux' (S uf.(max_rank)) i uf.(parent) in
-        find_aux (S uf.(max_rank)) uf.(parent) i = Some (snd p, fst p).
+        let p := find_aux (S uf.(max_rank)) i uf.(parent) in
+        find_aux' (S uf.(max_rank)) uf.(parent) i = Some (snd p, fst p).
     Proof.
       intros H.
       pose proof (rank_lt_parent _ _ H).
@@ -5523,7 +5523,7 @@ Section __.
     Lemma find'_find uf i l
       : union_find_ok uf l ->
         has_key i uf.(parent) ->
-        find uf i = Some (find' uf i).
+        find' uf i = Some (find uf i).
     Proof.
       intros; break.
       unfold find, find'; cbn -[find_aux' find_aux].
@@ -5629,16 +5629,16 @@ Section __.
 
     
     Lemma find_preserves_domain uf uf' j i
-      : find uf i = Some (uf', j) ->
+      : find' uf i = Some (uf', j) ->
         forall x,
         has_key x uf.(parent) <-> has_key x uf'.(parent).
     Proof.
-      destruct uf; unfold find; cbn -[find_aux].
+      destruct uf; unfold find; cbn -[find_aux'].
       generalize (S max_rank0) as mr; intro.
       case_match; try congruence.
       break.
       intro; autorewrite with inversion in *.
-      break; subst; cbn -[find_aux].
+      break; subst; cbn -[find_aux'].
       revert parent0 r i j case_match_eqn.
       induction mr;
         basic_goal_prep;
@@ -5659,14 +5659,14 @@ Section __.
     Lemma find_preserves_ok uf l uf' j i
       : union_find_ok uf l ->
         subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent)) ->
-        find uf i = Some (uf', j) ->
+        find' uf i = Some (uf', j) ->
         forest l uf'.(parent) ->
         union_find_ok uf' l.
     Proof.
       intros H Hsub; pose proof (rank_lt_parent _ _ H).
       destruct uf, uf', H;
         constructor;
-        cbn -[find find_aux] in *;
+        cbn -[find' find_aux'] in *;
         auto.
       {
         intros.
@@ -5678,16 +5678,16 @@ Section __.
         eapply rank_covers_domain0 in case_match_eqn.
         break.
         exists x.
-        unfold find in *; basic_goal_prep;
+        unfold find' in *; basic_goal_prep;
           repeat case_match;
           basic_utils_crush.
         { inversion H6; subst; eauto. }
         { inversion H6; subst; eauto. }
       }
       {
-        unfold find in *;
-          repeat (cbn -[find_aux] in *;
-                  case_match; cbn -[find_aux] in *;
+        unfold find' in *;
+          repeat (cbn -[find_aux'] in *;
+                  case_match; cbn -[find_aux'] in *;
                   try congruence).
         inversion H; subst.
         intros.
@@ -5696,21 +5696,19 @@ Section __.
         constructor; eauto.
       }
       {
-        unfold find in *;
-          repeat (cbn -[find_aux] in *;
-                  case_match; cbn -[find_aux] in *;
+        unfold find' in *;
+          repeat (cbn -[find_aux'] in *;
+                  case_match; cbn -[find_aux'] in *;
                   try congruence).
         inversion H; subst.
         intros.
         eapply maximum_rank0; eauto.
       }
-    Qed.
-
-    
+    Qed.    
 
     Lemma higher_rank_unchanged i0 uf l mr i j parent' r0 r
       : union_find_ok uf l ->
-        find_aux mr uf.(parent) i = Some (parent', j) ->
+        find_aux' mr uf.(parent) i = Some (parent', j) ->
         map.get uf.(rank) i0  = Some r0 ->
         map.get uf.(rank) i = Some r ->
         r0 > r ->
@@ -5747,17 +5745,17 @@ Section __.
       1: eauto.
       2:eauto.
       Lia.lia.
-    Qed.      
+    Qed.
     
     Lemma find_parent_subrelation uf l i uf' j
       : union_find_ok uf l ->
-        find uf i = Some (uf', j) ->
+        find' uf i = Some (uf', j) ->
         subrelation (parent_rel (parent uf')) (parent_rel (parent uf))
         /\ parent_rel uf'.(parent) i j.
     Proof.
       destruct uf, uf';
-        unfold find;
-        cbn -[find find_aux] in *.
+        unfold find';
+        cbn -[find' find_aux'] in *.
       case_match; try congruence.
       break.
       intro Hok.
@@ -5864,7 +5862,7 @@ Section __.
     Lemma find_spec (uf uf' : union_find) i j l
       : union_find_ok uf l ->
         has_key i uf.(parent) ->
-        find' uf i = (uf', j) ->
+        find uf i = (uf', j) ->
         union_find_ok uf' l        
         /\ In j l
         /\ parent_rel uf'.(parent) i j
@@ -5898,7 +5896,7 @@ Section __.
         all: eauto using uf_forest.
         intros; eapply find_preserves_domain; eauto.
       }
-    Qed.    
+    Qed.   
     
 End __.
  
