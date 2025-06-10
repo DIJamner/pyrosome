@@ -5533,27 +5533,372 @@ Section __.
       case_match; reflexivity.
     Qed.
 
-    (*
-    (* Note: partial spec. Characterizing when it returns None doesn't help with using
-     union find for egraphs.
-     *)
-    Lemma find_spec (uf uf' : union_find) i j l
-      : forest l uf.(parent) ->
-        find' uf i = (uf', j) ->
-        forest l uf'.(parent)
-        /\ In j l
-        /\ subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent))
-        /\ iff2 (limit (parent_rel uf.(parent))) (limit (parent_rel uf'.(parent)))
-        /\ (limit (parent_rel uf'.(parent)) i j).
+    Lemma forest_parent l f
+      : forest l f -> forall x : idx, has_key x f <-> exists i, parent_rel f x i /\ In i l.
     Proof.
-      destruct uf, uf'.
-      unfold find, uf_rel.
-      my_case Haux (find_aux (S max_rank0) parent0 i); cbn;[| congruence].
-      intros; break.
-      safe_invert H0.
-      eapply find_aux_spec in Haux; intuition eauto.
-    Abort.
-    *)
+      basic_goal_prep.
+      intuition auto.
+      2:{
+        break.
+        inversion H0;
+          subst;
+          unfold has_key;
+          rewrite H2; auto.
+      }
+      {
+        unfold has_key in *; case_match; try tauto.
+        eapply forest_has_key_tree in case_match_eqn; eauto.
+        break.
+        exists x0; intuition eauto.
+        unfold parent_rel.
+        unfold and1 in *.
+        destruct H2; break.
+        eapply transitive_closure_subrelation.
+        2:{
+          eapply tree_parent; eauto.
+          rewrite map_keys_in'.
+          basic_utils_crush.
+        }
+        { eapply split_l_subrelation; eauto. }
+      }
+    Qed.
+
+    
+    Lemma forest_root_limit l f
+      : forest l f ->
+        forall x, has_key x f <-> exists i, In i l /\ limit (parent_rel f) x i.
+    Proof.
+      unfold limit.
+      intros H1 x.
+      pose proof (forest_parent _ _ H1 x).
+      intuition eauto; break; intuition eauto.
+      exists x0; intuition eauto.
+      eqb_case b x0; intuition eauto; right.
+      pose proof (intermediate_parent _ _ _ _ H2 H4).
+      intuition subst;auto.
+      {
+        constructor 1.
+        eapply forest_root_iff; eauto.
+      }
+      {
+        eapply forest_root_iff in H3; eauto.
+        eapply parent_rel_loop in H6; eauto.
+        subst; basic_utils_crush.
+      }
+    Qed.
+      
+    Lemma union_find_limit uf l i j
+      : union_find_ok uf l ->
+        limit (parent_rel uf.(parent)) i j
+        <-> In j l /\ parent_rel uf.(parent) i j.
+    Proof.
+      unfold limit.
+      intro H.
+      assert (forall A B C, (A -> (B <-> C)) -> (A /\ B <-> C /\ A))
+        by intuition.
+      apply H0.
+      intro H1.
+      split.
+      2:{
+        intros.
+        eqb_case b j; intuition auto; right.
+        pose proof (intermediate_parent _ _ _ _ H1 H3).
+        intuition subst; eauto; try tauto.
+        exfalso.
+        inversion H5; subst; eauto;
+          eapply forest_root_iff in H2; eauto using uf_forest.
+        { congruence. }
+        { eapply parent_rel_loop in H5; eauto. }
+      }
+      {
+        intros.
+        assert (exists x, parent_rel (parent uf) i x /\ In x l).
+        {
+          eapply forest_parent; eauto using uf_forest.
+          unfold has_key; inversion H1; subst; rewrite H3; eauto.
+        }
+        break.
+        pose proof H3.
+        eapply H2 in H3; intuition subst; eauto.
+        pose proof H4.
+        eapply forest_root_iff in H4; eauto using uf_forest.
+        eapply parent_rel_loop in H4; eauto.
+        subst; auto.
+      }
+    Qed.
+
+    
+    Lemma find_preserves_domain uf uf' j i
+      : find uf i = Some (uf', j) ->
+        forall x,
+        has_key x uf.(parent) <-> has_key x uf'.(parent).
+    Proof.
+      destruct uf; unfold find; cbn -[find_aux].
+      generalize (S max_rank0) as mr; intro.
+      case_match; try congruence.
+      break.
+      intro; autorewrite with inversion in *.
+      break; subst; cbn -[find_aux].
+      revert parent0 r i j case_match_eqn.
+      induction mr;
+        basic_goal_prep;
+        try congruence.
+      case_match; try congruence.
+      eqb_case i0 i; autorewrite with inversion in *; break; subst;
+        try reflexivity.
+      case_match; try congruence.
+      break; autorewrite with inversion in *; break; subst.
+      rewrite has_key_put.
+      rewrite IHmr; eauto.
+      intuition subst.
+      rewrite <- IHmr; eauto.
+      basic_utils_crush.
+    Qed.      
+        
+      
+    Lemma find_preserves_ok uf l uf' j i
+      : union_find_ok uf l ->
+        subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent)) ->
+        find uf i = Some (uf', j) ->
+        forest l uf'.(parent) ->
+        union_find_ok uf' l.
+    Proof.
+      intros H Hsub; pose proof (rank_lt_parent _ _ H).
+      destruct uf, uf', H;
+        constructor;
+        cbn -[find find_aux] in *;
+        auto.
+      {
+        intros.
+        pose proof H.
+        eapply find_preserves_domain with (x:=k) in H; cbn in H.
+        unfold has_key in H.
+        rewrite H2 in H; cbn in H.
+        case_match; try tauto.
+        eapply rank_covers_domain0 in case_match_eqn.
+        break.
+        exists x.
+        unfold find in *; basic_goal_prep;
+          repeat case_match;
+          basic_utils_crush.
+        { inversion H6; subst; eauto. }
+        { inversion H6; subst; eauto. }
+      }
+      {
+        unfold find in *;
+          repeat (cbn -[find_aux] in *;
+                  case_match; cbn -[find_aux] in *;
+                  try congruence).
+        inversion H; subst.
+        intros.
+        eapply H0.
+        eapply Hsub.
+        constructor; eauto.
+      }
+      {
+        unfold find in *;
+          repeat (cbn -[find_aux] in *;
+                  case_match; cbn -[find_aux] in *;
+                  try congruence).
+        inversion H; subst.
+        intros.
+        eapply maximum_rank0; eauto.
+      }
+    Qed.
+
+    
+
+    Lemma higher_rank_unchanged i0 uf l mr i j parent' r0 r
+      : union_find_ok uf l ->
+        find_aux mr uf.(parent) i = Some (parent', j) ->
+        map.get uf.(rank) i0  = Some r0 ->
+        map.get uf.(rank) i = Some r ->
+        r0 > r ->
+        map.get uf.(parent) i0 = map.get parent' i0.
+    Proof.
+      destruct uf;
+        intros [];
+        basic_goal_prep.
+      clear rank_covers_domain0 maximum_rank0.      
+      generalize dependent parent0.
+      generalize dependent i.
+      generalize dependent r.
+      revert j parent'.
+      induction mr;
+        basic_goal_prep;
+        basic_utils_crush.
+      case_match; try congruence.
+      eqb_case i1 i; basic_utils_crush.
+      case_match; try congruence.
+      break.
+      basic_utils_crush.
+      eqb_case i i0.
+      {
+        replace r with r0 in * by congruence.
+        Lia.lia.
+      }
+      basic_utils_crush.
+      pose proof case_match_eqn.
+      eapply rank_decreasing0 in case_match_eqn.
+      rewrite H1 in *.
+      cbn in *.
+      case_match; try tauto.
+      eapply IHmr; auto; cycle 2.
+      1: eauto.
+      2:eauto.
+      Lia.lia.
+    Qed.      
+    
+    Lemma find_parent_subrelation uf l i uf' j
+      : union_find_ok uf l ->
+        find uf i = Some (uf', j) ->
+        subrelation (parent_rel (parent uf')) (parent_rel (parent uf))
+        /\ parent_rel uf'.(parent) i j.
+    Proof.
+      destruct uf, uf';
+        unfold find;
+        cbn -[find find_aux] in *.
+      case_match; try congruence.
+      break.
+      intro Hok.
+      inversion 1; subst.
+      clear H.
+      revert parent0 i parent1 j case_match_eqn Hok.
+     
+      generalize (S max_rank1) as mr; induction mr;
+        basic_goal_prep; try congruence.
+      case_match; try congruence.
+      eqb_case i0 i; basic_utils_crush.
+      { reflexivity. }
+      { constructor; eauto. }
+      {
+        case_match; try congruence.
+        break.
+        basic_utils_crush.
+        pose proof case_match_eqn1 as Hfind.
+        eapply IHmr in case_match_eqn1; eauto.
+        break.
+        etransitivity; try eassumption.
+        intros ? ? ?.
+        eapply parent_rel_put; eauto.
+        etransitivity; try eassumption.
+        constructor.
+        change parent0
+          with {| rank := rank1;
+                 parent := parent0;
+                 max_rank := max_rank1;
+                 next := next1 |}.(parent) in case_match_eqn0.
+        pose proof case_match_eqn0 as Hcm.
+        pose proof case_match_eqn0 as Hcm'.
+        eapply forest_closed in case_match_eqn0; eauto using uf_forest.
+        unfold has_key in *; case_match; try tauto.
+        eapply rank_covers_domain in Hcm, case_match_eqn; eauto.
+        basic_goal_prep.
+        change parent0
+          with {| rank := rank1;
+                 parent := parent0;
+                 max_rank := max_rank1;
+                 next := next1 |}.(parent) in Hfind.
+        eapply higher_rank_unchanged in Hfind;
+          [| eauto ..]; cbn in *; try congruence.
+        change parent0
+          with {| rank := rank1;
+                 parent := parent0;
+                 max_rank := max_rank1;
+                 next := next1 |}.(parent) in Hcm'.
+        eapply rank_decreasing in Hcm'; eauto.
+        basic_goal_prep.
+        rewrite H3, H4 in *; basic_goal_prep.
+        auto.
+      }
+      {
+        case_match; try congruence.
+        break.
+        basic_utils_crush.        
+      }
+    Qed.      
+
+    Lemma parent_rel_has_key m a b
+      : parent_rel m a b -> has_key a m.
+    Proof.
+      unfold has_key;
+        inversion 1; subst; rewrite H0; auto.
+    Qed.
+        
+    Lemma root_inverse_subrelation l m m'
+      : forest l m ->
+        forest l m' ->
+        subrelation (parent_rel m') (parent_rel m) ->
+        (forall x, has_key x m <-> has_key x m') ->
+        forall a b,
+          In b l ->
+          parent_rel m a b ->
+          parent_rel m' a b.
+    Proof.
+      intros.
+      pose proof H4.
+      eapply parent_rel_has_key in H4.
+      pose proof H4.
+      eapply H2 in H6.
+      {
+        eapply forest_root_limit in H6; eauto; break.
+        unfold limit in *.
+        break.
+        pose proof H7.
+        eapply H1 in H7.
+        pose proof (intermediate_parent _ _ _ _ H5 H7).
+        intuition subst; eauto.
+        {
+          replace b with x in *; eauto.
+          eapply parent_rel_loop; eauto.
+          eapply forest_root_iff; eauto.
+        }
+        {
+          replace x with b in *; eauto.
+          eapply parent_rel_loop; eauto.
+          eapply forest_root_iff; eauto.
+        }
+      }
+    Qed.
+      
+    Lemma find_spec (uf uf' : union_find) i j l
+      : union_find_ok uf l ->
+        has_key i uf.(parent) ->
+        find' uf i = (uf', j) ->
+        union_find_ok uf' l        
+        /\ In j l
+        /\ parent_rel uf'.(parent) i j
+        /\ subrelation (parent_rel uf'.(parent)) (parent_rel uf.(parent))
+        /\ iff2 (limit (parent_rel uf.(parent))) (limit (parent_rel uf'.(parent))).
+        (* inferrable: /\ (limit (parent_rel uf'.(parent)) i j).*)
+    Proof.
+      intros.
+      pose proof (find'_find _ _ _ H H0).
+      rewrite H1 in H2.
+      clear H1.
+      pose proof H2.
+      eapply find_spec' in H2; eauto using uf_forest.
+      assert (subrelation (parent_rel (parent uf')) (parent_rel (parent uf))).
+      {
+        eapply find_parent_subrelation; eauto.
+      }
+      break.
+      pose proof (find_preserves_ok _ _ _ _ _ H H3 H1 H2).
+      intuition eauto.
+      {
+        eapply find_parent_subrelation in H1; intuition eauto.
+      }          
+      {
+        unfold iff2.
+        intros a b.
+        rewrite !union_find_limit by eauto.
+        intuition eauto.
+        eapply root_inverse_subrelation.
+        6:eauto.
+        all: eauto using uf_forest.
+        intros; eapply find_preserves_domain; eauto.
+      }
+    Qed.    
     
 End __.
  
