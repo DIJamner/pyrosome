@@ -386,32 +386,6 @@ Section __.
     all: congruence.
   Qed.
 
-  
-  Lemma sep_sequent_focus perm1 perm2 l1 l2
-    : Is_true (no_dupb perm1) ->
-      Is_true (no_dupb perm2) ->
-      (seps_Uimpl1 (Permutation.select_all l1 perm1) (Permutation.select_all l2 perm2)) ->
-      (seps_Uimpl1 (Permutation.remove_all l1 perm1) (Permutation.remove_all l2 perm2)) ->
-      (seps_Uimpl1 (mem:=idx_map) l1 l2).
-  Proof.
-    intros.
-    pose proof (sep_sequent_focus _ _ _ _ H H0 H1 H2) as H'.
-    intro.
-    apply H'.
-  Qed.
-
-  Ltac sep_focus' p1 p2 :=
-  simple apply sep_sequent_focus with (perm1 := p1) (perm2 := p2);
-   [ vm_compute; exact I | vm_compute; exact I | cbn.. ].
-
-  (*TODO: move to Sep.v*)
-  Ltac sep_apply_focused p1 p2 l :=
-    sep_focus' p1 p2;
-    [  cbv [seps seps_Uimpl1];
-       intros m H; seprewrite;
-       revert m H; solve[simple apply l]
-    |].
-
   Ltac cancel_prep' H :=
   let m := lazymatch type of H with
            | _ ?m => m
@@ -426,7 +400,6 @@ Section __.
   change (seps_Uimpl1 l1 l2).
 
 
-  
   Lemma distribute_not_has_key (i : idx) P Q
     : Uiff1 (and1 (not1 (has_key i)) (sep P Q))
         (sep (and1 P (not1 (has_key i))) (and1 Q (not1 (has_key i)))).
@@ -764,7 +737,7 @@ Section __.
   Hint Rewrite sep_lift_l : utils.
 
   
-  Lemma split_has_key_l a x x0 (k:idx)
+  Lemma split_has_key_l a (x x0 : idx_map) (k:idx)
     : map.split a x x0 ->
       has_key k x ->
       has_key k a.
@@ -780,7 +753,7 @@ Section __.
   Hint Resolve split_has_key_l : utils.
   
   
-  Lemma split_has_key_r a x x0 (k:idx)
+  Lemma split_has_key_r a (x x0 : idx_map) (k:idx)
     : map.split a x x0 ->
       has_key k x0 ->
       has_key k a.
@@ -1139,7 +1112,7 @@ Section __.
     Qed.
 
     
-    Lemma has_key_empty (i : idx) : has_key i map.empty <-> False.
+    Lemma has_key_empty (i : idx) : has_key i (map.empty : idx_map) <-> False.
     Proof. unfold has_key; basic_utils_crush. Qed.
     Hint Rewrite has_key_empty : utils.
 
@@ -2958,7 +2931,7 @@ Section __.
     Qed.
 
     
-    Lemma has_key_split m x x0 (i:idx)
+    Lemma has_key_split m (x x0 : idx_map) (i:idx)
       : map.split m x x0 ->
         has_key i m <-> has_key i x \/ has_key i x0.
     Proof.
@@ -3198,7 +3171,7 @@ Section __.
 
     
     
-    Lemma split_both_have_key (x:idx) m m1 m2
+    Lemma split_both_have_key (x:idx) (m m1 m2 : idx_map)
       : map.split m m1 m2 ->
         has_key x m1 ->
         has_key x m2 ->
@@ -4471,7 +4444,7 @@ Section __.
     Qed.
 
 
-    Lemma has_key_putmany (i:idx) m1 m2
+    Lemma has_key_putmany (i:idx) (m1 m2 : idx_map)
       : has_key i (map.putmany m1 m2) <-> has_key i m1 \/ has_key i m2.
     Proof.
       unfold has_key.
@@ -5858,7 +5831,8 @@ Section __.
         }
       }
     Qed.
-      
+
+    (*TODO: break up into smaller lemmas?*)
     Lemma find_spec (uf uf' : union_find) i j l
       : union_find_ok uf l ->
         has_key i uf.(parent) ->

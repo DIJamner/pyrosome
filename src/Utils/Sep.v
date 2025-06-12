@@ -102,7 +102,17 @@ Arguments impl1 {A}%type_scope (P1 P2)%function_scope.
 #[export] Hint Resolve Uimpl1_and1_l : utils.
 #[export] Hint Resolve Uimpl1_and1_r : utils.
 
+Section __.
+  Context {A B : Type}
+    {mem : map.map A B}.
+  
+  Definition has_key i (t : mem) :=
+    if map.get t i then True else False.
+End __.
 
+Hint Unfold has_key : utils.
+
+  
 Section __.
   Context (A : Type)
     (Eqb_A : Eqb A)
@@ -144,11 +154,6 @@ Section __.
 
   Hint Rewrite map.get_empty : utils.
   
-  Definition has_key i (t : mem) :=
-    if map.get t i then True else False.
-  Hint Unfold has_key : utils.
-
-
   
   #[export] Instance impl1_iff1_mor {B}
     : Proper (@Uiff1 B ==> Uiff1 ==> iff) Uimpl1.
@@ -707,13 +712,26 @@ Section __.
     firstorder.
   Qed.
 
+  
+  Lemma sep_sequent_focus' perm1 perm2 l1 l2
+    : Is_true (no_dupb perm1) ->
+      Is_true (no_dupb perm2) ->
+      (seps_Uimpl1 (Permutation.select_all l1 perm1) (Permutation.select_all l2 perm2)) ->
+      (seps_Uimpl1 (Permutation.remove_all l1 perm1) (Permutation.remove_all l2 perm2)) ->
+      (seps_Uimpl1 l1 l2).
+  Proof.
+    intros.
+    pose proof (sep_sequent_focus _ _ _ _ H H0 H1 H2) as H'.
+    intro.
+    apply H'.
+  Qed.
+
 End __.
 
 Arguments sep {A}%type_scope {mem} (P1 P2)%function_scope t12.
 Arguments ptsto {A}%type_scope {mem} i j m.
 Arguments emp {A}%type_scope {mem} m.
 Arguments lift {A}%type_scope {mem} P%type_scope m.
-Arguments has_key {A}%type_scope {mem} i t.
 
 Arguments seps {A}%type_scope {mem} l%list_scope _ : simpl never.
 
@@ -819,3 +837,19 @@ Ltac seprewrite :=
   sep_isolate;
   autorewrite with bool rw_prop inversion utils in *;
   unfold sep_app in *.
+
+
+
+Arguments sep_sequent_focus' {A}%type_scope {Eqb_A} {Eqb_A_ok} {mem mem_ok}
+  (perm1 perm2 l1 l2)%list_scope.
+
+Ltac sep_focus' p1 p2 :=
+  simple apply sep_sequent_focus' with (perm1 := p1) (perm2 := p2);
+  [ vm_compute; exact I | vm_compute; exact I | cbn.. ].
+
+Ltac sep_apply_focused p1 p2 l :=
+  sep_focus' p1 p2;
+  [  cbv [seps seps_Uimpl1];
+     intros m H; seprewrite;
+     revert m H; solve[simple apply l]
+  |].

@@ -142,11 +142,7 @@ Section WithMap.
 
   
   Definition force_uf (uf : union_find idx (idx_map idx) (idx_map nat)) :=
-    let force_parent x :=
-      match UnionFind.find _ _ _ _ uf x with
-      | Some y => snd y
-      | None => (*never happens *) x
-      end in
+    let force_parent x := snd (UnionFind.find _ _ _ _ uf x) in
     let rank' := map_map (fun _ => 1) uf.(rank _ _ _) in
     let parent' := map_map force_parent uf.(parent _ _ _) in
     MkUF _ _ _ rank' parent' 1 uf.(next _ _ _).
@@ -465,8 +461,8 @@ Eqb_idx.
         congruence.
       Qed.
 
-      Notation  egraph_sound_for_interpretation :=
-        (egraph_sound_for_interpretation _ idx_succ _ symbol_map _ _ _).
+      Notation egraph_sound_for_interpretation :=
+        (egraph_sound_for_interpretation _ _ symbol_map _ _ _).
 
 
       Hint Rewrite @map.get_empty : utils.
