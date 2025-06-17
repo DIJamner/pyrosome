@@ -243,7 +243,7 @@ Section WithMap.
           Use defaults here to make masking an error less likely
          *)
         @unwrap_with_default _  (idx_zero : idx,empty_egraph)
-        (@!let (uf', v') <- UnionFind.union _ _ _ _ d.(equiv) v v1 in
+        (@!let (uf', v') := UnionFind.union _ _ _ _ d.(equiv) v v1 in
            let (v_old, canon_stale_analysis) :=
              if eqb v v' then (v1, v_analysis) else (v, v1_analysis)
            in

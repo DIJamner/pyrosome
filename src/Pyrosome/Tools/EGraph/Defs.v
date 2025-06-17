@@ -595,9 +595,7 @@ Section WithVar.
                     (list_sum (weight::(map snd args'))))
             in
             (* TODO: is find necessary? might always be a no-op *)
-            @!let {ST} (_,x') <- lift (T:= stateT (V_map _))
-                                   (lift (T:= stateT (list V))
-                                      (UnionFind.find _ _ _ _ uf x)) in
+            @!let (_,x') := UnionFind.find _ _ _ _ uf x in
               let {ST} cls <- lift (T:= stateT (V_map _))
                                 (lift (T:= stateT (list V))
                                    (map.get eclasses x)) in

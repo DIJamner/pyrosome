@@ -726,10 +726,11 @@ Abort.
       specialize (Hforest _ H).
       break.
       eapply find_spec in case_match_eqn; eauto.
+      (*
       2:Lia.lia.
       {
         intuition eauto.
-        {(*
+        {
           apply reachable_rel_Symmetric; eauto.
           apply H2; eauto.
         }
@@ -1991,12 +1992,13 @@ Abort.
       forall x,
         Sep.has_key x uf.(parent) <->
           Sep.has_key x uf'.(parent).
-  Proof.
+  Proof using.
     intros.
-    eapply find'_find in H0; eauto.
+    eapply find'_find in H0; eauto; try Lia.lia.
+    2: admit (*TODO: unnecessary dependency *).
     rewrite H2 in *.
     eapply find_preserves_domain in H0; eauto.
-  Qed.
+  Admitted.
 
   (*TODO: move to originating file*)
   Hint Constructors PER_closure transitive_closure : utils.
@@ -2062,6 +2064,7 @@ Abort.
       pose proof case_match_eqn.
       eapply find_spec in case_match_eqn;
         try Lia.lia; eauto.
+      2: admit (*TODO: false dependency *).
       2:{ eapply interpretation_exact; eauto. }
       break.
       eexists; intuition eauto with utils.
@@ -2084,7 +2087,7 @@ Abort.
         eapply trans_PER_subrel; eauto.
       }
     }
-  Qed.
+  Admitted.
 
   Context m (m_PER : PER (domain_eq m)).
   
@@ -2199,6 +2202,9 @@ Abort.
     | H : ?ma <$> _ |- _ =>
         let Hma := fresh "Hma" in
         destruct ma eqn:Hma; cbn in H;[| tauto]
+    | |- ?ma <?> _ =>
+        let Hma := fresh "Hma" in
+        destruct ma eqn:Hma; cbn;[| tauto]
     end.
   
   Lemma db_remove_sound i a1
@@ -2356,13 +2362,11 @@ Abort.
 
   
   (*TODO: preconditions?*)
-  Lemma db_lookup_sound i f args args'
-    : list_Mmap (map.get i) args = Some args' ->
-      Is_Some (interpretation m f args') ->
-      state_sound_for_model m i
+  Lemma db_lookup_sound i f args
+    : state_sound_for_model m i
         (db_lookup f args)
         (eq i)
-        (fun i mx => mx <$> (fun x => atom_sound_for_model m i (Build_atom f args x))).
+        (fun i mx => mx <?> (fun x => atom_sound_for_model m i (Build_atom f args x))).
   Proof.
     unfold db_lookup.
     repeat intro.
@@ -2370,26 +2374,16 @@ Abort.
     2:{
       repeat intro.
       iss_case; subst.
-      cbn.
+      cbn in *.
       eapply atom_sound_monotone; eauto.
     }
     unfold Sep.and1.
     repeat intro; basic_goal_prep.
     eexists; basic_goal_prep;
       basic_utils_crush.
-    case_match; cbn.
-    (*
-    2:{
-      TODO: 2 different interpretations are confusing.
-      This is prob. not provable b/c we need to know that interpreted fn symbols have tables
-    }
-     *)
-    2:admit (*contradiction*).
-    case_match.
-    2:admit (*contradiction*).
-    cbn.
+    case_match; cbn; try tauto.
+    case_match; cbn; try tauto.
     unfold atom_sound_for_model; cbn.
-    rewrite H0; cbn.
     assert (atom_in_egraph (Build_atom f args (entry_value idx analysis_result d)) e).
     {
       unfold atom_in_egraph; cbn.
@@ -2397,13 +2391,8 @@ Abort.
         rewrite case_match_eqn0; cbn.
       reflexivity.
     }
-    eapply atom_interpretation in H4; eauto.
-    unfold atom_sound_for_model in *.
-    basic_goal_prep.
-    rewrite H0 in *; cbn in *.
-    auto.
-  (*Qed. *)   
-  Abort.
+    eapply atom_interpretation in H2; eauto.
+  Qed.
   
   Lemma update_entry_sound i a
     : atom_sound_for_model m i a ->
@@ -2413,7 +2402,12 @@ Abort.
   Proof.
     unfold update_entry.
     intros.
-    eapply state_sound_for_model_bind; eauto with utils.
+    eapply state_sound_for_model_bind; eauto using db_lookup_sound with utils.
+    cbn beta;intros; subst.
+    case_match; cbn in H3.
+    {
+      admit (*TODO: update union!*).
+    }
     {
   Abort.
       
