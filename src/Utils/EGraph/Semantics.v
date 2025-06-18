@@ -1992,13 +1992,12 @@ Abort.
       forall x,
         Sep.has_key x uf.(parent) <->
           Sep.has_key x uf'.(parent).
-  Proof using.
+  Proof using idx_map_ok Eqb_idx_ok.
     intros.
     eapply find'_find in H0; eauto; try Lia.lia.
-    2: admit (*TODO: unnecessary dependency *).
     rewrite H2 in *.
     eapply find_preserves_domain in H0; eauto.
-  Admitted.
+  Qed.
 
   (*TODO: move to originating file*)
   Hint Constructors PER_closure transitive_closure : utils.
@@ -2064,7 +2063,6 @@ Abort.
       pose proof case_match_eqn.
       eapply find_spec in case_match_eqn;
         try Lia.lia; eauto.
-      2: admit (*TODO: false dependency *).
       2:{ eapply interpretation_exact; eauto. }
       break.
       eexists; intuition eauto with utils.
@@ -2087,7 +2085,7 @@ Abort.
         eapply trans_PER_subrel; eauto.
       }
     }
-  Admitted.
+  Qed.
 
   Context m (m_PER : PER (domain_eq m)).
   

@@ -5479,20 +5479,16 @@ Section __.
         {
           exfalso.
           pose proof case_match_eqn as Hc1.
-          eapply rank_covers_domain0 in Hc1; break.
-          pose proof case_match_eqn as Hc2.
-          eapply rank_increasing0 in Hc2. (*
-          rewrite H2 in *.
-          pose proof case_match_eqn.
           eapply forest_closed in case_match_eqn; eauto.
           unfold has_key in *; case_match; try tauto.
+          
+          pose proof Hc1 as Hc2.
           eapply rank_covers_domain0 in case_match_eqn0; break.
-          rewrite H4 in *.
+          eapply rank_increasing0 in Hc1; eauto.
+          rewrite H, H2 in *.
           cbn in *.
-          autorewrite with inversion in *; break; subst.
-          eapply max_rank_max in H4; eauto.
-          all: try Lia.lia.
-          right; constructor 1; eauto.
+          eapply max_rank_max in H2; [| right; constructor 1; eauto].
+          Lia.lia.
         }          
         {
           pose proof case_match_eqn as H'.
@@ -5513,7 +5509,7 @@ Section __.
             {
               pose proof case_match_eqn as Hc1.
               pose proof case_match_eqn as Hc2.
-              eapply rank_increasing0 in case_match_eqn.
+              eapply rank_increasing0 in case_match_eqn; eauto.
               eapply rank_covers_domain0 in Hc2.
               break.
               rewrite H2, Hi0 in *.
@@ -5527,8 +5523,8 @@ Section __.
           }
         }
       }
-    Qed. *)
-    Admitted.
+    Qed.
+    
 
     (*
     Context (rank_map_ok : map.ok rank_map).
@@ -5705,7 +5701,7 @@ Section __.
                   try congruence).
         inversion H; subst.
         intros.
-        eapply H0. (*
+        eapply H0; eauto.
         eapply Hsub.
         constructor; eauto.
       }
@@ -5718,8 +5714,7 @@ Section __.
         intros.
         eapply maximum_rank0; eauto.
       }
-    Qed. *)
-    Admitted.
+    Qed.
 
     Lemma higher_rank_unchanged i0 uf l mr i j parent' r0 r
       : union_find_ok uf l ->
@@ -5752,8 +5747,7 @@ Section __.
       }
       basic_utils_crush.
       pose proof case_match_eqn.
-      eapply rank_increasing0 in case_match_eqn.
-      (*
+      eapply rank_increasing0 in case_match_eqn; eauto.
       rewrite H1 in *.
       cbn in *.
       case_match; try tauto.
@@ -5761,8 +5755,7 @@ Section __.
       2:eauto.
       4:eauto.
       all: eauto.
-    Qed. *)
-      Admitted.
+    Qed.
     
     Lemma find_parent_subrelation uf l i uf' j
       : union_find_ok uf l ->
@@ -6078,7 +6071,45 @@ Section __.
     Qed.
 
     Context (rank_map_ok : map.ok rank_map).
+
     
+    Lemma parent_rel_r_has_key m a x0
+      : closed_graph m -> parent_rel m a x0 ->
+        has_key x0 m.
+    Proof.
+      induction 2;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+    
+    Lemma unloop_parent l m x y a b
+      : forest l m ->
+        In x l ->
+        a <> x ->
+        parent_rel m a b ->
+        parent_rel (map.put m x y) a b.
+    Proof.
+      intros ? ?.
+      eapply forest_root_iff in H0; eauto.
+      clear l H.
+      intros ? ?.
+      revert H0 H.
+      induction H1;
+        basic_goal_prep;
+        basic_utils_crush.
+      { constructor 1; basic_utils_crush. }
+      {
+        eqb_case b x.
+        {
+          replace c with x in *.
+          { constructor 1; basic_utils_crush. }
+          { eapply parent_rel_loop in H1; eauto. }
+        }
+        { econstructor 2; basic_utils_crush. }
+      }
+    Qed.
+        
 
     Lemma root_redirect_spec uf uf' x y l rx ry ry'
       : union_find_ok uf l ->
@@ -6102,7 +6133,10 @@ Section __.
         /\ iff2 (uf_rel_PER uf')
              (union_closure_PER (uf_rel_PER uf) (singleton_rel x y)).
     Proof.
-      cbn; intros; subst; intuition eauto.
+      cbn; intros; subst.
+      assert (forall A B, (A /\ (A -> B)) -> A /\ B) as Hprop
+          by intuition; apply Hprop; clear Hprop.
+      intuition eauto.
       {
         destruct uf, H; constructor; cbn in *; eauto.
         { eapply forest_put_in; eauto. }
@@ -6115,24 +6149,205 @@ Section __.
           basic_goal_prep.
           eqb_case i x; basic_utils_crush.
           { rewrite H3; cbn; Lia.lia. }
-          (*
-          TODO: rank_increasing is no good for loops
           eqb_case i y; basic_utils_crush.
           {
             assert (map.get parent0 y = Some y).
             { eapply forest_root_iff; eauto. }
             replace j with y in * by congruence.
+            rewrite H4; cbn.
             exfalso.
             basic_utils_crush.
+          }
+          pose proof H as H';
+            eapply rank_covers_domain0 in H';
+            break.
+          rewrite H11.
+          eqb_case y j.
+          {
+            basic_utils_crush.
             cbn.
-            Lia.lia. }   
+            eapply rank_increasing0 in H; eauto.
+            rewrite H11, H4 in *; cbn in *.
+            Lia.lia.
+          }
+          basic_utils_crush.
+          eapply rank_increasing0 in H; eauto.
+          rewrite H11 in *.
+          cbn in *; case_match; tauto.
+        }
+        {
+          intros; eqb_case i y;
+            basic_utils_crush.
+          1: Lia.lia.
+          eapply maximum_rank0 in H; Lia.lia.
         }
       }
-      2:{ eapply In_removeb_diff; eauto. }
-      2:{ repeat intro; eapply In_removeb_In; eauto. }
-      *)
-          Abort.
-      
+      { eapply In_removeb_diff; eauto. }
+      { repeat intro; eapply In_removeb_In; eauto. }
+      {
+        split; intros.
+        {
+          unfold uf_rel_PER in *; cbn in *.
+          apply union_clo_PER_l.
+          induction H9; basic_goal_prep.
+          {
+            eqb_case x a; basic_goal_prep;
+              autorewrite with utils inversion in *;
+              basic_goal_prep; subst; eauto.
+            { constructor 1; right; cbv; intuition auto. }
+            { constructor 1; left; eauto. }
+          }
+          { etransitivity; eauto. }
+          { symmetry; auto. }
+        }
+        {
+          unfold uf_rel_PER; cbn.
+          induction H9; basic_goal_prep;
+            [| etransitivity; eauto | symmetry; auto ].
+          unfold singleton_rel in *.
+          eqb_case a x.
+          {
+            intuition subst; eauto.
+            {
+              eqb_case x b.
+              {
+                etransitivity; [| symmetry]; constructor 1;
+                  basic_utils_crush.
+              }
+              {
+                unfold uf_rel_PER in *.
+                eapply closed_graph_PER_shared_parent in H10;
+                  eauto using uf_forest, forest_closed.
+                break.
+                eapply parent_rel_loop in H10.
+                2:{ eapply forest_root_iff; eauto using uf_forest. }
+                subst.
+                symmetry.
+                eapply trans_PER_subrel.
+                (*TODO: should be a lemma*)
+                clear H H8.
+                revert H9.
+                induction H11; basic_goal_prep;
+                  basic_utils_crush.
+                { constructor 1; basic_utils_crush. }
+                {
+                  eqb_case b c.
+                  { constructor 1; basic_utils_crush. }
+                  { eapply trans_clo_step; basic_utils_crush. }
+                }
+              }
+            }
+            { constructor; basic_utils_crush. }
+          }
+          {
+            intuition eauto.
+            unfold uf_rel_PER in *.
+            eapply closed_graph_PER_shared_parent in H11;
+                  eauto using uf_forest, forest_closed.
+            break.
+            eqb_case b x.
+            {
+              eapply parent_rel_loop in H11.
+              2:{ eapply forest_root_iff; eauto using uf_forest. }
+              subst.
+              eapply trans_PER_subrel.
+              eapply unloop_parent; eauto using uf_forest.
+            }
+            {
+              etransitivity;[|symmetry];
+                eapply trans_PER_subrel.
+              all: eapply unloop_parent; eauto using uf_forest.
+            }
+          }
+        }
+      }
+    Qed.
+
+    
+    Lemma union_closure_PER_singleton_transport1 A (R : _ -> _ -> Prop) (x y z : A)
+      : R y z ->
+        iff2 (union_closure_PER R (singleton_rel x y))
+          (union_closure_PER R (singleton_rel x z)).
+    Proof.
+      unfold singleton_rel, union_closure_PER.
+      split.
+      all: induction 1;
+        basic_goal_prep;
+        subst;
+        intuition (subst; eauto using PER_clo_base, PER_clo_trans,PER_clo_sym).
+      {
+        eapply PER_clo_trans;[| eauto using PER_clo_base,PER_clo_sym].
+        eapply PER_clo_base; intuition eauto.
+      }
+      {
+        eapply PER_clo_trans;[| eauto using PER_clo_base,PER_clo_sym].
+        eapply PER_clo_base; intuition eauto.
+      }
+    Qed.
+    
+    Lemma union_closure_PER_singleton_transport A (R : _ -> _ -> Prop) (x y z : A)
+      : transitive_closure R y z ->
+        iff2 (union_closure_PER R (singleton_rel x y))
+          (union_closure_PER R (singleton_rel x z)).
+    Proof.
+      induction 1;
+        basic_goal_prep;
+        rewrite union_closure_PER_singleton_transport1; eauto.
+      reflexivity.
+    Qed.
+    
+    Lemma union_closure_PER_singleton_sym A (R : _ -> _ -> Prop) (x y : A)
+      : iff2 (union_closure_PER R (singleton_rel x y))
+          (union_closure_PER R (singleton_rel y x)).
+    Proof.
+      unfold singleton_rel, union_closure_PER.
+      split.
+      all: induction 1;
+        basic_goal_prep;
+        subst;
+        intuition (subst; eauto using PER_clo_base,PER_clo_trans,PER_clo_sym).
+    Qed.
+
+    
+    Instance union_closure_PER_Proper A
+      : Proper (iff2 ==> iff2 ==> iff2) (union_closure_PER (A:=A)).
+    Proof.
+      repeat intro.
+      eapply PER_closure_Proper.
+      repeat intro.
+      unfold iff2 in *.
+      rewrite H, H0.
+      reflexivity.
+    Qed.
+
+    Lemma forest_PER_shared_parent l m
+      : forest l m ->
+        iff2 (PER_closure (fun i j : idx => map.get m i = Some j))
+          (fun x y : idx => exists i : idx, limit (parent_rel m) x i
+                                            /\ limit (parent_rel m) y i).
+    Proof.
+      split.
+      2:{
+        basic_goal_prep.
+        unfold limit in *.
+        eapply closed_graph_PER_shared_parent; eauto using forest_closed.
+        eexists; intuition eauto.
+      }
+      {
+        intros.
+        eapply closed_graph_PER_shared_parent in H0; eauto using forest_closed.
+        basic_goal_prep.
+        pose proof H0;
+          pose proof H1;
+          eapply parent_rel_has_key in H0, H1.
+        eapply forest_root_limit in H0, H1; eauto.
+        break.
+        pose proof H2; pose proof H3;
+          eapply confluent_limit in H2, H3; eauto.
+        intuition subst; eauto using transitive_limit.
+      }
+    Qed.
+        
     
     (*TODO: break into smaller lemmas?*)
     Lemma union_spec uf uf' x y z l
@@ -6190,162 +6405,149 @@ Section __.
       }
       case_match.
       {
-        autorewrite with inversion in *; break; subst.
-        exists (removeb eqb i0 l).
-        intuition auto.
-        2:{ eapply In_removeb_diff; eauto. }
-        2:{ intro; eapply In_removeb_In. }
-        2:{
-          eapply iff2_trans
-            with (R2:=union_closure_PER (fun i j : idx => map.get (parent uf) i = Some j)
-                        (singleton_rel i0 z)).
-          {          
-            split; intros.
-            {
-              unfold uf_rel_PER in *; cbn in *.
-              apply union_clo_PER_l.
-              induction H2; basic_goal_prep.
-              {                
-                eqb_case a i0; basic_goal_prep;
-                  autorewrite with utils inversion in *;
-                  basic_goal_prep; subst; eauto.
-                { constructor 1; right; cbv; intuition auto. }
-                {
-                  constructor 1; left.
-                  eapply trans_PER_subrel; eauto.
-                  eapply H6; eapply H12; constructor 1; auto.
-                }
-              }
-              { etransitivity; eauto. }
-              { symmetry; auto. }
-            }
-            {
-              unfold uf_rel_PER; cbn.
-              induction H2; basic_goal_prep;
-                [| etransitivity; eauto | symmetry; auto ].
-              unfold singleton_rel in *.
-              eqb_case a i0.
-              {
-                intuition subst; eauto.
-                {
-                  assert (map.get (parent uf) i0 = Some i0).
-                  { eapply forest_root_iff; eauto using uf_forest. }
-                  replace b with i0 in * by congruence.
-                  etransitivity; [|symmetry];
-                    constructor;
-                    basic_utils_crush.
-                }
-                { constructor; basic_utils_crush. }
-              }
-              {
-                intuition eauto.
-                assert (has_key a (parent uf)).
-                { unfold has_key; rewrite H17; auto. }
-                assert (has_key b (parent uf)).
-                { eapply forest_next; eauto using uf_forest. }
-                eapply forest_root_limit in H2, H18; eauto using uf_forest; break.
+        inversion H2; clear H2.
+        symmetry in H17.
+        subst z.
+        pose proof H4; eapply forest_root_iff in H4; eauto using uf_forest.
+        pose proof H10; eapply forest_root_iff in H10; eauto using uf_forest.
+        eapply rank_covers_domain in H4, H10; eauto.
+        break.
+        rewrite H4, H10 in *; cbn in *.
+        rewrite PeanoNat.Nat.compare_eq_iff in *.
+        pose proof H17;
+        eapply root_redirect_spec in H17; subst; try eassumption; eauto; try Lia.lia.
+        eexists; intuition eauto.
+        etransitivity; try eassumption.
+        clear H21.
+        unfold uf_rel_PER.
+        rewrite !union_clo_PER_l.
 
-                replace x0 with x1 in *.
-                2:{
-                  eapply union_find_unique; cycle 1; eauto.
-                  eapply confluent_limit in H19.
-                  2: constructor 1; eauto.
-                  intuition subst; eauto.
-                  eapply union_find_limit;
-                    intuition eauto.
-                  constructor 1.
-                  eapply forest_root_iff; eauto using uf_forest.
-                }
-                eapply H7 in H20, H19.
-                eapply H13 in H20, H19.
-                etransitivity; [|symmetry].
-                all:eapply PER_bind
-                  with (R2:= (fun i j : idx => map.get (map.put (parent u0) i0 z) i = Some j)).
-                2:eapply trans_PER_subrel; apply H19.
-                3:eapply trans_PER_subrel; apply H20.
-                all: repeat intro.
-                all: eqb_case i0 a0.
-                {
-                  assert (map.get (parent u0) a0 = Some a0).
-                  { eapply forest_root_iff; eauto using uf_forest. }
-                  replace b0 with a0 in * by congruence.
-                  etransitivity; [|symmetry]; constructor 1;
-                    basic_utils_crush.
-                }             
-                2:{
-                  assert (map.get (parent u0) a0 = Some a0).
-                  { eapply forest_root_iff; eauto using uf_forest. }
-                  replace b0 with a0 in * by congruence.
-                  etransitivity; [|symmetry]; constructor 1;
-                    basic_utils_crush.
-                }
-                { constructor 1; basic_utils_crush. }
-                { constructor 1; basic_utils_crush. }
-              }
-            }
-          }
-          {
-            split; (induction 1;
-                    [ | etransitivity; eauto | symmetry; eauto]).
-            {
-              intuition.
-              { repeat constructor 1; eauto. }
-              {
-                unfold singleton_rel in H16; intuition subst.
-                etransitivity; [ etransitivity; [symmetry |] |].
-                {
-                  eapply PER_closure_left.
-                  eapply trans_PER_subrel.
-                  eapply H6.
-                  eapply H12; eauto.
-                }
-                {
-                  symmetry.
-                  eapply union_closure_PER_sym;
-                    eapply PER_closure_left.
-                  cbv; intuition eauto.
-                }
-                {
-                  eapply PER_closure_left.
-                  eapply trans_PER_subrel.
-                  eapply H6; eauto.
-                }
-              }
-            }
-            {
-              intuition.
-              {
-                apply union_clo_PER_l.
-                apply PER_closure_left.
-                eauto.
-              }
-              {
-                unfold singleton_rel in H16; intuition subst.
-                etransitivity; [ etransitivity | symmetry].
-                2:{
-                  symmetry.
-                  eapply union_closure_PER_sym;
-                    eapply PER_closure_left.
-                  cbv; intuition eauto.
-                }
-                {
-                  apply union_clo_PER_l.
-                  eapply PER_closure_left.
-                  eapply trans_PER_subrel.
-                  eapply H6; eauto.
-                } 
-                {
-                  apply union_clo_PER_l.
-                  eapply PER_closure_left.
-                  eapply trans_PER_subrel.
-                  eapply H6; eauto.
-                }
-              }                
-            }
-          }
+        assert (limit (parent_rel (parent u)) x i).
+        { eapply union_find_limit; eauto. }
+        assert (limit (parent_rel (parent u)) y i0).
+        { eapply union_find_limit; eauto. }
+        eapply H13 in H20, H21; destruct H20, H21.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        rewrite union_closure_PER_singleton_sym.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        etransitivity; [|apply union_clo_PER_l].
+        etransitivity; [symmetry;apply union_clo_PER_l|].
+        eapply union_closure_PER_Proper; try reflexivity.
+        rewrite !forest_PER_shared_parent; eauto using uf_forest.
+        split; repeat intro; break; eexists; split;
+          try apply H7; eauto; try apply H13; eauto;
+          try apply H7; eauto.
+      }
+      {
+        inversion H2; clear H2.
+        symmetry in H17.
+        subst z.
+        pose proof H4; eapply forest_root_iff in H4; eauto using uf_forest.
+        pose proof H10; eapply forest_root_iff in H10; eauto using uf_forest.
+        eapply rank_covers_domain in H4, H10; eauto.
+        break.
+        rewrite H4, H10 in *; cbn in *.
+        rewrite PeanoNat.Nat.compare_lt_iff in *.
+        pose proof H17;
+        replace (rank u0) with (map.put (rank u0) i x1) in H17.
+        2:{
+          eapply map.map_ext; intro k; eqb_case k i;
+            basic_utils_crush.
         }
-        {
-        Abort.
+        replace (max_rank u0) with (Nat.max (max_rank u0) x1) in H17.
+        2:{
+          eapply maximum_rank in H4; eauto.
+          Lia.lia.
+        }
+        eapply root_redirect_spec in H17; subst; try eassumption; eauto; try Lia.lia.
+        replace (map.put (rank u0) i x1) with (rank u0) in H17.
+        2:{
+          eapply map.map_ext; intro k; eqb_case k i;
+            basic_utils_crush.
+        }
+        replace (Nat.max (max_rank u0) x1) with (max_rank u0) in H17.
+        2:{
+          eapply maximum_rank in H4; eauto.
+          Lia.lia.
+        }
+        eexists; intuition eauto.
+        etransitivity; try eassumption.
+        clear H21.
+        unfold uf_rel_PER.
+        rewrite !union_clo_PER_l.
+
+        assert (limit (parent_rel (parent u)) x i).
+        { eapply union_find_limit; eauto. }
+        assert (limit (parent_rel (parent u)) y i0).
+        { eapply union_find_limit; eauto. }
+        eapply H13 in H20, H21; destruct H20, H21.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        rewrite union_closure_PER_singleton_sym.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        etransitivity; [|apply union_clo_PER_l].
+        etransitivity; [symmetry;apply union_clo_PER_l|].
+        eapply union_closure_PER_Proper; try reflexivity.
+        rewrite !forest_PER_shared_parent; eauto using uf_forest.
+        split; repeat intro; break; eexists; split;
+          try apply H7; eauto; try apply H13; eauto;
+          try apply H7; eauto.
+      }
+      {
+        inversion H2; clear H2.
+        symmetry in H17.
+        subst z.
+        pose proof H4; eapply forest_root_iff in H4; eauto using uf_forest.
+        pose proof H10; eapply forest_root_iff in H10; eauto using uf_forest.
+        eapply rank_covers_domain in H4, H10; eauto.
+        break.
+        rewrite H4, H10 in *; cbn in *.
+        rewrite PeanoNat.Nat.compare_gt_iff in *.
+        pose proof H17.
+        replace (rank u0) with (map.put (rank u0) i0 x0) in H17.
+        2:{
+          eapply map.map_ext; intro k; eqb_case k i0;
+            basic_utils_crush.
+        }
+        replace (max_rank u0) with (Nat.max (max_rank u0) x0) in H17.
+        2:{
+          eapply maximum_rank in H10; eauto.
+          Lia.lia.
+        }
+        eapply root_redirect_spec in H17; subst; try eassumption; eauto; try Lia.lia.
+        replace (map.put (rank u0) i0 x0) with (rank u0) in H17.
+        2:{
+          eapply map.map_ext; intro k; eqb_case k i0;
+            basic_utils_crush.
+        }
+        replace (Nat.max (max_rank u0) x0) with (max_rank u0) in H17.
+        2:{
+          eapply maximum_rank in H10; eauto.
+          Lia.lia.
+        }
+        eexists; intuition eauto.
+        etransitivity; try eassumption.
+        clear H21.
+        unfold uf_rel_PER.
+        rewrite !union_clo_PER_l.
+
+        assert (limit (parent_rel (parent u)) x i).
+        { eapply union_find_limit; eauto. }
+        assert (limit (parent_rel (parent u)) y i0).
+        { eapply union_find_limit; eauto. }
+        eapply H13 in H20, H21; destruct H20, H21.
+        rewrite union_closure_PER_singleton_sym.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        rewrite union_closure_PER_singleton_sym.
+        rewrite <- union_closure_PER_singleton_transport; eauto.
+        etransitivity; [|apply union_clo_PER_l].
+        etransitivity; [symmetry;apply union_clo_PER_l|].
+        eapply union_closure_PER_Proper; try reflexivity.
+        rewrite !forest_PER_shared_parent; eauto using uf_forest.
+        split; repeat intro; break; eexists; split;
+          try apply H7; eauto; try apply H13; eauto;
+          try apply H7; eauto.
+      }
+    Qed.
     
 End __.
  
