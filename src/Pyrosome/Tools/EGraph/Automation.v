@@ -120,9 +120,13 @@ representing infinity as None, where a value of infinity means that term will ne
  *******************************)
 Import StringInstantiation.
 
+Set Printing Implicit.
+
 Notation instance := (instance string string string_trie_map string_trie_map string_list_trie_map (option positive)).
 
-Notation empty_egraph := (empty_egraph (idx:=string) default (symbol:=string)).
+Definition empty_egraph := (empty_egraph (idx:=string) (default : string)
+                              (symbol:=string) (symbol_map := string_trie_map)
+                              (idx_map := string_trie_map) (option positive)).
 
 Definition add_ctx weight l :=
   add_ctx (V:= string) (V_map := string_trie_map) string_succ "@sort_of" l (H:=weighted_depth_analysis weight) true.
@@ -133,4 +137,3 @@ Definition add_open_term weight l :=
 Definition rebuild weight fuel : state instance _ := (rebuild (idx:=string) fuel (symbol:=string) (H:=weighted_depth_analysis weight)).
 
 Notation extract_weighted := (extract_weighted (V:=string) (V_map:=string_trie_map) (V_trie:=string_list_trie_map)).
-
