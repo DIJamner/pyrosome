@@ -898,7 +898,7 @@ Section WithVar.
 *)
     
     (*TODO: encapsulate trivial analysis*)
-    Theorem lang_model_of
+  (*  Theorem lang_model_of
       : model_of lang_model (map (uncurry (rule_to_log_rule _ _ succ sort_of l
                                              (H:= unit_analysis))) l).
     Proof.
@@ -927,7 +927,7 @@ Section WithVar.
                 basic_core_crush.
               1:eapply eq_term_wf_r; eauto with lang_core.
               all:admit.
-            }
+            } *)
             (*
             repeat case_match;
               basic_goal_prep;
@@ -999,7 +999,7 @@ Section WithVar.
       }
     Qed.
 *)
-Abort.
+(*Abort.*)
         
 
     (*

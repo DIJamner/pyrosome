@@ -313,13 +313,11 @@ Section WithMap.
          let e <- map.get tbl args in
          ret e.(entry_value) , i).
 
-  (* assumes the node exists *)
   Definition db_lookup_entry f args : ST _ :=
     fun i =>
-      (unwrap_with_default
-         (@! let tbl <- map.get i.(db) f in
+      (@! let tbl <- map.get i.(db) f in
          let e <- map.get tbl args in
-         ret e) , i).
+         ret e , i).
 
   (* Note: does not do invariant maintenance.
      Only call if that is appropriate.
@@ -642,16 +640,20 @@ Section WithMap.
       let y <- g (snd p) in
       ret (x,y).
 
+  (*TODO: move to StateMonad*)
+  Instance default_state S {A} `{WithDefault A} : WithDefault (state S A) :=
+    fun s => (default, s).
+
   Definition repair_parent_analysis (a : atom) :=
-    @! let (Build_db_entry v_epoch v old_a) <- db_lookup_entry a.(atom_fn) a.(atom_args) in
+    @! let Some (Build_db_entry v_epoch v old_a)
+             <?- db_lookup_entry a.(atom_fn) a.(atom_args) in
       let arg_as <- get_analyses a.(atom_args) in
-      let out_a := analyze a arg_as in
+      let out_a := analyze a arg_as in      
       if eqb out_a old_a then ret tt
       else
         let _ <- update_analyses a.(atom_ret) out_a in
         let _ <- push_worklist (analysis_repair a.(atom_ret)) in
         (db_set_entry a.(atom_fn) a.(atom_args) v_epoch v out_a).
-
   
   Definition repair_union x_old x_canonical (improved_new_analysis : bool) : ST unit :=
     let repair_each a : ST atom :=

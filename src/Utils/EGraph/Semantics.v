@@ -203,15 +203,10 @@ Section WithMap.
 
 (* Alternate approach: consider the initial model of the theory.
    Terms added at the start form a no-premise rule, so can be ignored.
+   TODO: make a class?
  *)
   Record model : Type :=
     {
-      (* represents the quotiented idx.
-         TODO: to realize the quotient, should I include a domain equiv?
-         - would let me use e.g. terms as the domain
-         - alternatively, I can use idx as the domain, and take the quotient
-           to be implied by the non-bijectivity of constants.
-       *)
       domain : Type;
       (* included to support setoids *)
       domain_eq : domain -> domain -> Prop;
@@ -221,6 +216,13 @@ Section WithMap.
       interprets_to f args d := exists d', interpretation f args = Some d' /\ domain_eq d' d;
     }.
 
+  Class model_ok (m : model) : Prop :=
+    {
+      interpretation_preserving
+      : forall f args1 args2,
+        all2 m.(domain_eq) args1 args2 ->
+        option_relation m.(domain_eq) (m.(interpretation) f args1) (m.(interpretation) f args2)
+    }.
   
   Context (symbol_map : forall A, map.map symbol A)
     (symbol_map_plus : map_plus symbol_map)
@@ -266,7 +268,9 @@ Section WithMap.
         map.extends out_assignment query_assignment
         /\ all (clause_sound_for_model m out_assignment)
           r.(seq_conclusions).
-  
+
+  (*TODO: reformulate or deprecate*)
+  (*
   Record model_of
     (m : model)
     (rw : list sequent) : Prop :=
@@ -284,7 +288,7 @@ Section WithMap.
         m.(domain_eq) d d';
       (* model_of conditions *)
       rules_sound : all (model_satisfies_rule m) rw;
-    }.
+    }. *)
   
 
   Notation match_clause := (match_clause idx _).
@@ -1050,6 +1054,7 @@ Abort.
       : all2 (fun x y => x <$> (fun x' => R x' y)) l1 l2
         <-> option_all l1 <$> (fun l1' => all2 R l1' l2).
   Proof.
+    clear idx_succ idx_zero.
     revert l2; induction l1; destruct l2;
       basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
     { eapply IHl1; eauto. }
@@ -1061,6 +1066,7 @@ Abort.
       : all2 (fun x y => y <$> (fun y' => R x y')) l1 l2
         <-> option_all l2 <$> (fun l2' => all2 R l1 l2').
   Proof.
+    clear idx_succ idx_zero.
     revert l1; induction l2; destruct l1;
       basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
     { eapply IHl2; eauto. }
@@ -2093,7 +2099,8 @@ Abort.
     : eq_sound_for_model m i x y ->
       eq_sound_for_model m i y z ->
       eq_sound_for_model m i x z.
-  Proof.
+  Proof using m_PER.
+    clear idx_succ.
     unfold  eq_sound_for_model, Is_Some_satisfying.
     repeat case_match; basic_goal_prep; auto.
     all: try tauto.
@@ -2103,7 +2110,8 @@ Abort.
   Lemma eq_sound_has_key_r i old_idx new_idx
           : eq_sound_for_model m i old_idx new_idx ->
             Sep.has_key new_idx i.
-  Proof.
+  Proof using.
+    clear idx_succ idx_zero.
     unfold eq_sound_for_model, Sep.has_key, Is_Some_satisfying.
     repeat case_match; tauto.
   Qed.
@@ -2391,6 +2399,640 @@ Abort.
     }
     eapply atom_interpretation in H2; eauto.
   Qed.
+
+  Lemma state_sound_for_model_Mseq A B (i : idx_map (domain m)) (c1 : state instance A)
+    Pi Pmono Qi Qmono (c2 : state instance B)
+    : state_sound_for_model m i c1 Pi Pmono ->
+      (forall a (i' : idx_map (domain m)),
+          map.extends i' i -> Pi i' -> Pmono i' a -> state_sound_for_model m i' c2 Qi Qmono) ->
+      monotone1 Qmono -> state_sound_for_model m i (@! c1; c2) Qi Qmono.
+  Proof.
+    intros.
+    change (@! c1; c2) with (@! let _ <- c1 in c2).
+    eapply state_sound_for_model_bind; eauto.
+  Qed.
+
+  
+  Lemma same_domain_has_key A (m1 m2 : idx_map A)
+    : map.same_domain m1 m2 <->
+        (forall x : idx, Sep.has_key x m1 <-> Sep.has_key x m2).
+  Proof using.
+    clear idx_succ idx_zero.
+    unfold map.same_domain, map.sub_domain,  Sep.has_key.
+    intuition repeat case_match; eauto;
+      try eapply H2 in case_match_eqn0; try eapply H1 in case_match_eqn;
+      try eapply H1 in case_match_eqn0; try eapply H2 in case_match_eqn;
+      try specialize (H0 k);
+      rewrite ? H1, ?H2 in *;
+      repeat case_match;
+      break; try eexists; intuition eauto; try congruence.
+    Unshelve.
+    all: auto.
+  Qed.
+  
+  (*TODO: move to UnionFind.v*)
+  Lemma union_same_domain u u' x y i0 l
+    : union_find_ok idx (idx_map idx) (idx_map nat) u l ->
+      Sep.has_key x u.(parent) ->
+      Sep.has_key y u.(parent) ->
+      UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) u x y
+      = (u', i0) ->
+      map.same_domain u.(parent) u'.(parent).
+  Proof using idx_map_ok Eqb_idx_ok.
+    clear idx_succ idx_zero.
+    unfold UnionFind.union.
+    intros.
+    eapply same_domain_has_key.
+    intro k.
+    do 2 case_match.
+    pose proof case_match_eqn.
+    pose proof case_match_eqn0.
+    eapply find_spec in H4; eauto; break; try Lia.lia.
+    eapply find_spec in H5; eauto; break; try Lia.lia.
+    2:{ eapply H10; eauto. }
+    eapply find_preserves_domain with (x:=k) in case_match_eqn, case_match_eqn0;
+      eauto.
+    2:{ eapply H10; eauto. }
+    rewrite H10.
+    case_match; autorewrite with inversion in *; break; subst; eauto.
+    
+    assert (Sep.has_key i (parent u)).
+    {
+      unfold Sep.has_key.      
+      eapply forest_root_iff with (m:= parent u) in H6; eauto using uf_forest.
+      rewrite H6; eauto.
+    }
+    assert (Sep.has_key i1 (parent u)).
+    {
+      unfold Sep.has_key.      
+      eapply forest_root_iff with (m:= parent u) in H11; eauto using uf_forest.
+      rewrite H11; eauto.
+    }
+    case_match; cbn in *; autorewrite with inversion in *; break; subst; cbn in *; eauto.
+    all: rewrite H15.
+    all: rewrite has_key_put.
+    all: intuition subst; eauto.
+  Qed.
+
+  
+  Lemma union_closure_implies_PER A R `{PER A R} R1 R2
+    : (impl2 R1 R) -> (impl2 R2 R) -> impl2 (union_closure_PER R1 R2) R.
+  Proof using.
+    clear idx_succ idx_zero.
+    unfold impl2;
+      induction 3;
+      basic_goal_prep;
+      basic_utils_crush.
+    { etransitivity; eassumption. }
+    { symmetry; auto. }
+  Qed.
+
+  Instance eq_sound_for_model_PER i
+    : PER (eq_sound_for_model m i).
+  Proof using m_PER.
+    clear idx_succ idx_zero.
+    unfold eq_sound_for_model.
+    constructor; repeat intro; repeat iss_case; cbn.
+    { symmetry; auto. }
+    { etransitivity; eassumption. }
+  Qed.
+
+  (*TODO: move to UnionFInd.v *)
+  Arguments parent_rel [idx]%type_scope [idx_map] m _ _.
+  
+  (*TODO: move to UnionFind.v*)
+  Lemma union_output l uf x y uf' z
+    :  union_find_ok idx (idx_map idx) (idx_map nat) uf l ->
+       Sep.has_key x (parent uf) ->
+       Sep.has_key y (parent uf) ->
+       UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y = (uf', z) ->
+       parent_rel uf'.(parent) x z
+       /\ parent_rel uf'.(parent) y z.
+  Proof using idx_map_ok Eqb_idx_ok.
+    clear idx_succ idx_zero.
+    unfold UnionFind.union.
+    intros.
+    do 2 case_match.
+    eapply find_spec in case_match_eqn; eauto; break; try Lia.lia.
+    eapply find_spec in case_match_eqn0; eauto; break; try Lia.lia.
+    2:{ eapply H9; eauto. }
+    eqb_case i i0.
+    {
+      autorewrite with inversion in *; break; subst.
+      intuition eauto.
+      eapply H14.
+      eapply union_find_limit; eauto.
+      Lia.lia.
+    }
+    case_match.
+    all: autorewrite with inversion in *; break; subst.
+    all: basic_goal_prep.
+    all: intuition eauto.
+    all:lazymatch goal with
+      |- parent_rel (map.put _ ?i0 _) ?x _ =>
+        eqb_case x i0; [ eapply parent_rel_put_same; now eauto |]
+    end.
+    all: try now (eapply unloop_parent; eauto using uf_forest;
+                  eapply H14; eapply union_find_limit; eauto; Lia.lia).
+    all: eapply transitive_closure_transitive;
+      [now (eapply unloop_parent; eauto using uf_forest;
+            eapply H14; eapply union_find_limit; eauto; Lia.lia)|].
+    all: eapply parent_rel_put_same; now eauto.
+  Qed.
+    
+  Lemma union_sound i x y
+    : eq_sound_for_model m i x y ->
+      state_sound_for_model m i (Defs.union x y)
+        (eq i) (fun i' => eq_sound_for_model m i' x).
+  Proof.
+    unfold Defs.union.
+    repeat intro.
+    split.
+    2:{ repeat intro; eapply eq_sound_monotone; eauto. }
+    unfold Sep.and1 in *.
+    repeat intro.
+    eexists; split; eauto.
+    basic_goal_prep.
+    eqb_case x y.
+    { basic_goal_prep; intuition eauto with utils. }
+    case_match.
+    destruct (egraph_equiv_ok _ H1).
+    pose proof case_match_eqn as Hdom.
+    eapply union_spec in case_match_eqn; try Lia.lia; eauto.
+    2:{
+      eapply interpretation_exact; eauto.
+      eapply eq_sound_has_key_r; symmetry; eauto.
+    }
+    2:{
+      eapply interpretation_exact; eauto.
+      eapply eq_sound_has_key_r; eauto.
+    }
+    break.
+    eqb_case x i0; basic_goal_prep.
+    {
+      intuition eauto with utils.
+      3: eapply eq_sound_for_model_trans; try eassumption; symmetry; now eauto.
+      {
+        constructor; cbn.
+        eexists; eauto.
+      }
+      {
+        destruct H2; constructor; cbn; eauto.
+        {
+          intros x H'; apply interpretation_exact0 in H'.
+          eapply union_same_domain in Hdom; eauto.
+          { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
+          {
+            symmetry in H0; eapply eq_sound_has_key_r in H0.
+            eapply interpretation_exact0; eauto.
+          }
+          {
+            eapply eq_sound_has_key_r in H0.
+            eapply interpretation_exact0; eauto.
+          }
+        }
+        {
+          intros.
+          eapply H8 in H2.
+          revert H2; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+          unfold singleton_rel, impl2; basic_goal_prep; subst; eauto.
+        }
+        { split; auto; symmetry; auto. }
+      }
+    }
+    intuition try constructor; basic_goal_prep; intuition eauto with utils.
+    { eapply idx_interpretation_wf; eauto. }
+    {
+      eapply interpretation_exact in H10; eauto.
+      eapply union_same_domain in Hdom; eauto.
+      { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
+      {
+        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      {
+        eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+    }
+    { eapply atom_interpretation in H2; eauto. }
+    {
+      eapply H8 in H10.
+      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      {
+        repeat intro.
+        eapply rel_interpretation; eauto.
+      }
+      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
+    }
+    { eapply parents_interpretation; eauto. }
+    { eapply union_output in Hdom; eauto.
+      2:{
+        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      2:{
+        eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      break.
+      eapply trans_PER_subrel in H10; eapply H8 in H10.
+      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      {
+        repeat intro.
+        eapply rel_interpretation; eauto.
+      }
+      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
+    }
+    { eapply worklist_sound; eauto. }    
+    { eapply union_output in Hdom; eauto.
+      2:{
+        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      2:{
+        eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      break.
+      eapply trans_PER_subrel in H10; eapply H8 in H10.
+      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      {
+        repeat intro.
+        eapply rel_interpretation; eauto.
+      }
+      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
+    }
+  Qed.
+
+  
+  Lemma interprets_two_functional f args d d'
+    : interprets_to m f args d ->
+      interprets_to m f args d' ->
+      m.(domain_eq) d d'.
+  Proof.
+    unfold interprets_to.
+    basic_goal_prep.
+    replace x0 with x in * by congruence.
+    etransitivity; eauto; symmetry; eauto.
+  Qed.
+
+  Lemma get_analyses_sound i args
+    : state_sound_for_model m i
+         (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args) 
+         (eq i)
+         (fun  _ _ => True).
+  Proof.
+    unfold get_analyses.
+    split; eauto with utils; unfold Sep.and1.
+    repeat intro.
+    eexists; split; eauto.
+    case_match; basic_goal_prep; intuition eauto with utils.
+  Qed.
+
+  Lemma update_analyses_sound i o a
+    : state_sound_for_model m i
+        (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result o a)
+         (eq i)
+         (fun  _ _ => True).
+  Proof.
+    unfold update_analyses.
+    split; eauto with utils; unfold Sep.and1.
+    repeat intro.
+    eexists; split; eauto.
+    case_match; basic_goal_prep; intuition eauto with utils.
+    { destruct H0; constructor; basic_goal_prep; intuition eauto. }
+    { destruct H1; constructor; basic_goal_prep; intuition eauto. }
+    { destruct H0; constructor; basic_goal_prep; intuition eauto. }
+    { destruct H1; constructor; basic_goal_prep; intuition eauto. }
+  Qed.
+
+  
+  Lemma set_eq_empty_l A (l : list A) : set_eq [] l <-> l = [].
+  Proof using.
+    clear.
+    unfold set_eq, incl; 
+      basic_goal_prep;
+      basic_utils_crush.
+    destruct l; auto.
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite set_eq_empty_l : utils.
+
+  Lemma fold_left_map_compose A B (f : A -> B -> _) l acc
+    : fold_left f l acc = fold_left (fun acc f => f acc) (map (fun b a => f a b) l) acc.
+  Proof.
+    revert acc; induction l;
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  (*
+  (*TODO: move this to its own file.
+    sequenced w/ or extending permutation?
+   *)
+  Inductive Duplication A : list A -> list A -> Prop :=
+  | dup_nil : Duplication [] []
+  | dup_cons : Duplication l1 l2 ->
+   *)
+
+  Require Import Coq.Sorting.Permutation.
+
+  Lemma permute_elt_to_front A `{Eqb_ok A} (l : list A) a
+    : exists n , Permutation l (repeat a n ++ removeb (eqb (A:=A)) a l).
+  Proof using.
+    clear idx_succ idx_zero.
+    induction l.
+    { exists 0; cbn; eauto. }
+    {
+      basic_goal_prep.
+      eqb_case a a0;
+        [exists (S x) | exists x];
+        cbn;
+        basic_utils_crush.
+      change (?a::?l) with ([a]++l).
+      rewrite Permutation_app_swap_app.
+      eapply Permutation_cons; eauto.
+    }
+  Qed.
+
+  Lemma fold_left_change_order
+    : forall (A R : Type) (f : R -> A -> R),
+      (forall x y acc, f (f acc y) x = (f (f acc x) y)) ->      
+       forall l1 l2 : list A,
+       Permutation l1 l2 -> forall r0 : R, fold_left f l1 r0 = fold_left f l2 r0.
+  Proof.
+    intros.
+    rewrite <- !fold_left_rev_right.
+    eapply fold_right_change_order; eauto.
+    apply Permutation_rev'.
+    auto.
+  Qed.
+
+  
+  Lemma length_removeb_bound A (b:A) f l
+    : Datatypes.length (removeb f b l) <= Datatypes.length l.
+  Proof using.
+    clear.
+    induction l;
+    basic_goal_prep;
+      basic_utils_crush.
+    case_match;
+    basic_goal_prep;
+      basic_utils_crush.
+    Lia.lia.
+  Qed.
+
+  Add Parametric Relation {A : Type} : (list A) (incl (A:=A))
+      reflexivity proved by (incl_refl (A:=A))
+      transitivity proved by (incl_tran (A:=A))
+      as incl_rel. 
+
+  Section FoldSetEq.
+    Context A B `{Eqb_ok B} (f : list A -> B -> list A).
+    (*TODO: is f_comm needed?*)
+    Context (f_comm : forall x y acc, f (f acc y) x = (f (f acc x) y))
+      (f_monotone : forall x acc, incl acc (f acc x))
+      (f_natural : forall x acc acc', incl acc acc' -> incl (f acc x) (f acc' x)).
+
+    
+    Lemma fold_left_incl_acc acc y
+      : incl acc (fold_left f y acc).
+    Proof.
+      clear idx_succ idx_zero.
+      revert acc; induction y;
+        basic_goal_prep;
+        basic_utils_crush.
+      rewrite <- IHy.
+      apply f_monotone.
+    Qed.
+    
+    Instance fold_left_incl_Proper
+      : Proper (eq (A:=list B) ==> incl (A:=A) ==> incl (A:=A)) (fold_left f).
+    Proof.
+      clear idx_succ idx_zero.
+      intros l1 l H'; subst.
+      induction l;
+        do 3 intro; subst;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.      
+    
+    Lemma fold_left_repeat b x0 acc
+      : incl (f acc b) (fold_left f (repeat b x0) (f acc b)).
+    Proof.
+      induction x0; cbn; eauto with utils.
+      etransitivity; try eassumption.
+      eapply fold_left_incl_Proper; eauto.
+    Qed.    
+    
+    Lemma not_In_removeb (b : B) l
+      : ~In b (removeb eqb b l).
+    Proof using H1.
+      clear idx_succ idx_zero.
+      induction l;
+        basic_goal_prep;
+        eauto.
+      eqb_case b a;
+        basic_goal_prep;
+        basic_utils_crush.
+    Qed.
+
+
+    Hint Resolve incl_nil_l : utils.
+    
+    Instance removeb_incl_Proper
+      : Proper (eq ==> (incl (A:=B)) ==> (incl (A:=B))) (removeb eqb).
+    Proof using H1.
+      clear idx_succ idx_zero.
+      do 4 intro; subst.
+      induction x0;
+        basic_goal_prep;
+        basic_utils_crush.
+      eqb_case y a; cbn; eauto.
+      eapply List.incl_cons; eauto.
+      eapply remove_In_ne; eauto.
+    Qed.
+      
+  
+  Lemma fold_left_incl l l' acc
+    : incl l l' ->
+      incl (fold_left f l acc) (fold_left f l' acc).
+  Proof.
+    clear idx_succ idx_zero.
+    revert acc l'.
+    let g := lazymatch goal with |- ?g => g end in
+    enough (forall n, Datatypes.length l < n -> g) as Hstrong
+        by (apply Hstrong with (n:= S (Datatypes.length l)); Lia.lia).
+    intro n; revert l.
+    induction n;
+      destruct l;
+      basic_goal_prep;
+      basic_utils_crush;
+      try Lia.lia.
+    { apply fold_left_incl_acc. }
+    {
+      (*
+      TODO: wrong direction of induction?
+    pose proof (permute_elt_to_front _ l b).
+    pose proof (permute_elt_to_front _ l' b).
+    break.
+    erewrite fold_left_change_order; eauto.
+    rewrite fold_left_app.
+    rewrite IHn with (l' := removeb eqb b l').
+    2:{
+      pose proof (length_removeb_bound _ b eqb l).
+      Lia.lia.
+    }
+    {
+      erewrite fold_left_change_order with (l1:=l'); eauto.
+      rewrite fold_left_app.
+      rewrite !fold_left_repeat.
+      assert (In b l').
+      { eapply H3; cbn; intuition auto. }
+      rewrite H5 in H6.
+      basic_utils_crush.
+      2:{ exfalso; eapply not_In_removeb; eauto. }
+      destruct x; cbn in *; try tauto.
+      rewrite !fold_left_repeat.
+      reflexivity.
+    }
+    {
+      replace (removeb eqb b l)
+        with (removeb eqb b (b::l)).
+      {
+        split; eapply removeb_incl_Proper; eauto;
+          destruct H3; 
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+      cbn.
+      basic_utils_crush.
+    }
+  Qed.
+       *)
+  Abort.
+  End FoldSetEq.
+
+  
+  Lemma all_incl A (l1 l2 : list A) P
+    : incl l1 l2 -> all P l2 -> all P l1.
+  Proof using.
+    clear.
+    revert l2; induction l1;
+      basic_goal_prep;
+      basic_utils_crush.
+    eapply in_all; eauto.
+  Qed.
+      
+  Lemma db_set_sound i a
+    : atom_sound_for_model m i a ->
+      state_sound_for_model m i
+        (db_set idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result a) 
+        (eq i) (fun _ _ => True).
+  Proof.
+    unfold db_set.
+    intros.
+    eapply state_sound_for_model_bind; eauto using get_analyses_sound with utils.
+    cbn beta; intros; subst.
+    eapply state_sound_for_model_bind; eauto using update_analyses_sound with utils.
+    cbn beta; intros; subst.
+    unfold db_set'.
+    split; eauto with utils; unfold Sep.and1.
+    repeat intro; eexists; split; cbn; intuition eauto.
+    { destruct H6; constructor; basic_goal_prep; intuition eauto. }
+    {
+      destruct H7; constructor; basic_goal_prep; intuition eauto.
+      {
+        unfold atom_in_egraph in H4; cbn in H4.
+        eqb_case (atom_fn a) (atom_fn a2);
+          [ rewrite H7 in *; rewrite get_update_same in *
+          | rewrite get_update_diff in * ]; eauto.
+        basic_goal_prep.
+        case_match.
+        {
+          eqb_case (atom_args a) (atom_args a2);
+          [ rewrite H8 in *; rewrite map.get_put_same in *
+          | rewrite map.get_put_diff in * ]; repeat iss_case;
+            autorewrite with inversion in *; break; subst; cbn in *; eauto.
+          { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
+          {
+            apply atom_interpretation0; unfold atom_in_egraph.
+            rewrite case_match_eqn; cbn.
+            rewrite Hma; cbn.
+            eauto.
+          }
+        }
+        {
+          eqb_case (atom_args a) (atom_args a2);
+          [ rewrite H8 in *; rewrite map.get_put_same in *
+          | rewrite map.get_put_diff in * ]; repeat iss_case;
+            autorewrite with inversion in *; break; subst; cbn in *; eauto.
+          { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
+          {
+            change (map.get map.empty (atom_args a2) = Some d) in Hma.
+            basic_utils_crush.
+          }
+        }
+      }
+      {
+        
+        change (map.get
+                  (fold_left (fun m x => map_update m x (cons a))
+                     (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) e.(parents))
+                  i = Some l) in H4.
+        destruct (map.get (parents e) i) eqn:Hpe.
+        2:{
+          assert (incl l [a]).
+          {
+            assert (map.get (parents e) i <?> (fun l => incl l [a])).
+            { rewrite Hpe; cbn; auto. }
+            revert H7 l H4.
+            generalize (parents e);
+            generalize (dedup eqb (atom_ret a :: atom_args a)).
+            induction l;
+              basic_goal_prep;
+              basic_utils_crush.
+            { rewrite H4 in *; cbn in *; auto. }
+            {
+              eapply IHl in H4; eauto.
+              eqb_case i a1.
+              {
+                rewrite get_update_same; cbn; eauto.
+                case_match; cbn in *; eauto with utils.
+                basic_utils_crush.
+              }
+              { rewrite get_update_diff; cbn; eauto. }
+            }
+          }
+          eapply all_incl; eauto; cbn; intuition eauto.
+        }
+        assert (incl l (cons a l0)).
+        {
+          revert H4 Hpe.
+          revert l l0;
+            generalize (parents e);
+            generalize (dedup eqb (atom_ret a :: atom_args a)).
+          induction l;
+            basic_goal_prep;
+            basic_utils_crush.
+          { replace l0 with l by congruence; eauto with utils. }
+          {
+            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H4.
+            2:{ rewrite get_update_same, Hpe; eauto. }
+            3:{ rewrite get_update_diff, Hpe; eauto. }
+            2: now eauto with utils.
+            revert H4; clear; unfold incl; cbn; intuition eauto.
+            eapply H4 in H.
+            intuition subst; eauto.
+          }
+        }
+        eapply all_incl; try eassumption.
+        cbn; intuition eauto.
+      }
+    }    
+  Qed.
   
   Lemma update_entry_sound i a
     : atom_sound_for_model m i a ->
@@ -2404,11 +3046,138 @@ Abort.
     cbn beta;intros; subst.
     case_match; cbn in H3.
     {
-      admit (*TODO: update union!*).
-    }
+      eapply state_sound_for_model_Mseq; eauto with utils.
+      {
+        apply union_sound.
+        unfold atom_sound_for_model in *; basic_goal_prep; repeat iss_case.
+        autorewrite with inversion in *; subst.
+        eapply interprets_two_functional in H3; try apply H0.
+        unfold eq_sound_for_model.
+        rewrite Hma0; cbn; rewrite Hma2; cbn; symmetry; eauto.
+      }
+      {
+        intros; subst.
+        eapply ret_sound_for_model'; eauto with utils.
+      }
+    }        
+    { eapply db_set_sound; eauto. }
+  Qed.
+
+  Context `{model_ok m}.
+  
+  Lemma eq_atom_implies_sound_l i a3 a1 
+    : eq_atom_in_interpretation i a3 a1 ->
+      atom_sound_for_model m i a3 -> atom_sound_for_model m i a1.
+  Proof.
+    clear idx_succ idx_zero.
+    unfold eq_atom_in_interpretation, eq_sound_for_model, atom_sound_for_model, interprets_to.
+    intuition eauto.
+    rewrite <- TrieMap.all2_map_l
+      with (f:= map.get i)
+           (R:= (fun x y => x <$> (fun x' : domain m => map.get i y <$> domain_eq m x')))
+      in H1.
+    eapply all2_Is_Some_satisfying_l in H1.
+    rewrite !TrieMap.Mmap_option_all in *.
+    repeat iss_case; cbn in *.
+    rewrite <- TrieMap.all2_map_r
+      with (f:= map.get i)
+           (R:= fun x y => y <$> domain_eq m x)
+      in H1.
+    eapply all2_Is_Some_satisfying_r in H1.
+    repeat iss_case; cbn in *; break.
+    rewrite H3 in *.
+    apply interpretation_preserving with (f:=(atom_fn a1)) in H1.
+    autorewrite with inversion in *; break; subst.
+    erewrite H2 in *.
+    cbn in *; case_match; try tauto.
+    eexists; split; eauto.
+    repeat (etransitivity; try eassumption;[]).
+    symmetry; eauto.
+  Qed.
+  
+  
+  Instance eq_atom_interp_sym i : Symmetric (eq_atom_in_interpretation i).
+  Proof.
+    clear idx_succ idx_zero.
+    unfold eq_atom_in_interpretation; repeat intro; basic_goal_prep;
+      repeat (iss_case; cbn in * ).
+    intuition eauto.
     {
+      apply all2_Symmetric; eauto.
+      apply eq_sound_for_model_Symmetric; eauto.
+    }
+    { symmetry; eauto. }
+  Qed.
+
+  
+  (*TODO: move to Utils.v*)
+  (*redefine with ::= to change cleanup *)
+  Ltac cleanup_procedure := eauto with utils.
+  Ltac cleanup_context :=
+    repeat multimatch goal with
+      | H : ?P |- _ =>
+          clear H; assert P as H by cleanup_procedure; clear H
+      end.
+    
+  Lemma db_lookup_entry_sound i f args
+    : state_sound_for_model m i
+        (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
+           f args) (eq i) (fun i e => e <?> (fun e => atom_sound_for_model m i
+                                        (Build_atom f args e.(entry_value _ _)))).
+  Proof.
+    unfold db_lookup_entry.
+    split.
+    (*
+    2:{ repeat intro; eapply atom_sound_monotone; eauto. }
+    unfold Sep.and1.
+    repeat intro.
+    eexists; split; eauto; break.
+    cbn [snd fst].
+    intuition eauto with utils. *)
+    (*    TODO: unwrap w/ default means we assume it's in the egraph*)
   Abort.
-      
+
+  Lemma repair_parent_analysis_sound i a
+    : state_sound_for_model m i
+        (repair_parent_analysis idx symbol
+           symbol_map idx_map idx_trie analysis_result a)
+        (eq i) (fun _ _ => True).
+  Proof.
+    unfold repair_parent_analysis.
+    split; eauto with utils.
+    (*
+    TODO: how to I do this w/out invoking intensional invariants?.
+                      only works b/c f, args are in the egraph.
+                      Is it worth changing the code? probably
+    split; eauto with utils.
+    unfold Sep.and1.
+    repeat intro; basic_goal_prep.
+    eexists; split; eauto.
+    unfold get_analyses; cbn.
+    basic_goal_prep.
+    autorewrite with  bool rw_prop inversion utils in *.
+    subst.
+    case_match;
+    basic_goal_prep;
+    autorewrite with  bool rw_prop inversion utils in *;
+      subst.
+    all:case_match;
+    basic_goal_prep;
+    autorewrite with  bool rw_prop inversion utils in *;
+      subst.
+    all:case_match;
+    basic_goal_prep;
+    autorewrite with  bool rw_prop inversion utils in *;
+      subst.
+    2:{
+      intuition eauto with utils.
+    
+    
+    eapply state_sound_for_model_bind; eauto with utils.
+    TODO: should I do this as state triples? or even just break it down fully?.
+                      Has no effect outside analyses
+     *)
+    Abort.
   
   Lemma repair_sound i a
     : state_sound_for_model m i
@@ -2426,21 +3195,42 @@ Abort.
       cbn beta;intros; subst.
       eapply state_sound_for_model_bind; eauto with utils.
       {
-        eapply state_sound_for_model_Mmap with (Pi:= eq i'0); auto.
+        eapply state_sound_for_model_Mmap with (Pi:= eq i'0); auto with utils.
+        cbn beta;intros; subst.
+        eapply state_sound_for_model_bind; eauto with utils.
+        { eapply db_remove_sound. }
+        cbn beta;intros; subst.
+        eapply state_sound_for_model_bind; eauto with utils.
+        {
+          eapply canonicalize_sound.
+          eapply in_all; eassumption.
+        }
         {
           cbn beta;intros; subst.
           eapply state_sound_for_model_bind; eauto with utils.
-          { eapply db_remove_sound. }
-          cbn beta;intros; subst.
-          eapply state_sound_for_model_bind; eauto with utils.
-          {
-            eapply canonicalize_sound.
-            eapply in_all; eassumption.
+          { eapply update_entry_sound; eauto with utils.
+            eapply eq_atom_implies_sound_l; try symmetry; eauto.
+            eapply in_all; eauto.
           }
-          {
-            cbn beta;intros; subst.
-            eapply state_sound_for_model_bind; eauto with utils.
-          (*  
+          cbn beta;intros; subst.
+          eapply ret_sound_for_model'; eauto with utils.
+          eapply eq_atom_implies_sound_l; try symmetry; eauto.
+          eapply in_all; eauto.
+        }
+      }
+      cbn beta;intros; subst.
+      eapply state_sound_for_model_bind; eauto using get_parents_sound with utils.
+      cbn beta;intros; subst.
+      eapply state_sound_for_model_Mseq; eauto with utils.
+      {
+        case_match.
+        {
+          eapply state_sound_for_model_Miter with (Pi:= eq i'0); auto with utils.
+          cbn beta;intros; subst.
+          cleanup_context.
+          
+
+  (*  
           }
         }
         
@@ -2483,6 +3273,8 @@ Abort.
         eapply state_sound_for_model_Miter with (Pi:= eq i'0); auto.
         {
           intros; subst.
+          cleanup_context.
+          
           (*
           TODO: repair_sound
           eapply canonicalize_worklist_entry_sound.
@@ -2527,7 +3319,6 @@ Abort.
       {
         basic_utils_crush.
         *)
-
   Abort.
       
       
@@ -2537,8 +3328,9 @@ Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%f
   {analysis_result}%type_scope
   a i.
 
+(*
 Arguments model_of {idx}%type_scope {symbol}%type_scope {idx_map}%function_scope m rw%list_scope.
-
+*)
 
 Arguments seq_assumptions {idx symbol}%type_scope s.
 Arguments seq_conclusions {idx symbol}%type_scope s.
