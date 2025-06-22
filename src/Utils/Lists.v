@@ -2,7 +2,8 @@ Set Implicit Arguments.
 
 Require Import Coq.Lists.List. Import ListNotations.
 Require Import Bool.
-Require Import Coq.Classes.RelationClasses.
+Require Import Coq.Classes.Morphisms Coq.Classes.RelationClasses.
+Require Import Coq.Sorting.Permutation.
 Require Export Datatypes.List.
 Import BoolNotations.
 Open Scope list.
@@ -369,7 +370,64 @@ Section __.
       basic_utils_crush.
   Qed.
 
+  (*TODO: move to Permutation.v?*)
+  Lemma removeb_perm `{Eqb_ok A} x l
+    : In x l -> NoDup l -> Permutation (x :: List.removeb (eqb (A:=A)) x l) l.
+  Proof.
+    induction l; basic_goal_prep;
+      basic_utils_crush.
+    {
+      apply perm_skip.
+      safe_invert H2.
+      rewrite removeb_not_In; eauto.
+    }
+    {
+      safe_invert H2.
+      eqb_case x a; cbn.
+      {
+        apply perm_skip.
+        rewrite removeb_not_In; eauto.
+      }
+      {
+        etransitivity.
+        { apply perm_swap. }
+        apply perm_skip.
+        eauto.
+      }        
+    }
+  Qed.
+
   
+    #[export] Instance filter_Permutation_Proper (f : A -> bool)
+      : Proper (Permutation (A:=A) ==> Permutation (A:=A)) (List.filter f).
+    Proof.
+      intros l l' Hl.
+      induction Hl;
+        basic_goal_prep;
+        basic_utils_crush.
+
+      { destruct (f x) eqn:Hf; eauto. }
+      { destruct (f x) eqn:Hx; destruct (f y) eqn:Hy; eauto using perm_skip, perm_swap. }
+      { etransitivity; eauto. }
+    Qed.
+    
+    #[export] Instance removeb_Permutation_Proper (eqb : A -> A -> bool)
+      : Proper (eq ==> Permutation (A:=A) ==> Permutation (A:=A)) (List.removeb eqb).
+    Proof.
+      intros a a' Ha; subst.
+      apply filter_Permutation_Proper.
+    Qed.
+
+    
+    #[export] Instance map_Permutation_Proper B (f : A -> B)
+      : Proper (Permutation (A:=A) ==> Permutation (A:=B)) (List.map f).
+    Proof.
+      intros l l' Hl.
+      induction Hl;
+        basic_goal_prep;
+        basic_utils_crush;
+        eauto using perm_skip, perm_swap, perm_trans. 
+    Qed.
 
 End __.
 
@@ -426,3 +484,5 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 #[export] Hint Rewrite Is_true_forallb : utils.
 
 #[export] Hint Resolve all2_refl : utils.
+
+#[export] Hint Constructors NoDup : utils.

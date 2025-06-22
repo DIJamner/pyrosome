@@ -293,7 +293,7 @@ Section WithMap.
    *)
   Definition find a : ST idx :=
     fun d =>
-      let (uf',v') := UnionFind.find _ _ _ _ d.(equiv) a in
+      let (uf',v') := UnionFind.find d.(equiv) a in
       (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses)).
 
   Definition canonicalize (a:atom) : ST atom :=

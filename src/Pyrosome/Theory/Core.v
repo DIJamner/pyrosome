@@ -137,31 +137,12 @@ c |- e1 = e2 : t'
       eq_term c t e1 e2 ->
       eq_sort c t t' ->
       eq_term c t' e1 e2
-                (*
-  (* TODO: do I want to allow implicit elements in substitutions? *)
-  (* TODO: do I want to define this in terms of eq_args? *)
-  with eq_subst : ctx -> ctx -> subst -> subst -> Prop :=
-  | eq_subst_nil : forall c, eq_subst c [] [] []
-  | eq_subst_cons : forall c c' s1 s2,
-      eq_subst c c' s1 s2 ->
-      forall name t e1 e2,
-        (* assumed because the output ctx is wf: fresh name c' ->*)
-        eq_term c t[/s2/] e1 e2 ->
-        eq_subst c ((name, t)::c') ((name,e1)::s1) ((name,e2)::s2)*)
   with wf_term : ctx -> term -> sort -> Prop :=
   | wf_term_by : forall c n s args c' t,
       In (n, term_rule c' args t) l ->
       wf_args (Model:= mut_mod eq_sort eq_term wf_sort wf_term) c s c' ->
       wf_term c (con n s) t[/(with_names_from c' s)/]
   | wf_term_conv : forall c e t t',
-      (* We add this condition so that we satisfy the assumptions of eq_sort
-         TODO: necessary? not based on current judgment scheme.
-         wf_term c e t should imply wf_sort c t,
-         and eq_sort c t t' should imply wf_sort c t
-
-
-      wf_sort c t -> 
-       *)
       wf_term c e t ->
       eq_sort c t t' ->
       wf_term c e t'

@@ -602,23 +602,24 @@ Section WithVar.
                 | Some y => i' x = Some y
                 | None => True
                 end.
+    
+    Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope m r.
 
-    (*
-    Lemma sequent_of_states_sound A B m i1 s1 Post_i Post Post2
-      (s2 : A -> state (instance _) B) i3
+    Lemma sequent_of_states_sound A B m i1 s1 Post_i Post Post2 Post_i2
+      (s2 : A -> state (instance _) B)
       : state_sound_for_model m i1 s1 Post_i Post ->
         (forall a i2, map.extends i2 i1 ->
-                      (Post_i a i2) ->
-                      Post a ->
-                      state_sound_for_model m i2 (s2 a) i3 Post2) ->
-        model_satisfies_rule V V_Eqb V m (sequent_of_states s1 s2).
+                      (Post_i i2) ->
+                      Post i2 a ->
+                      state_sound_for_model m i2 (s2 a) Post_i2 Post2) ->
+        model_satisfies_rule m (sequent_of_states s1 s2).
     Proof.
       intros.
       unfold sequent_of_states.
       unfold curry.
       cbn [fst curry uncurry snd].
-    Admitted.
-*)
+    Abort.
+
 
     Hint Rewrite combine_nil : utils.
     Hint Rewrite @map.get_empty : utils.

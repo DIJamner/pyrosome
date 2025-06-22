@@ -420,7 +420,7 @@ Definition logic : lang string :=
 
 
 Eval vm_compute in
-    (map (uncurry (rule_to_log_rule (string_ptree_map_plus)
+    (map (uncurry (rule_to_log_rule (string_trie_map)
                      (@StringListMap.string_list_trie_map)
                      StringListMap.string_succ "sort_of"
                      logic (analysis_result:=unit))) logic).
@@ -550,7 +550,7 @@ lazymatch goal with
   |- eq_term ?l ?c ?t ?e1 ?e2 =>
     let l' := constr:(ctx_to_rules c ++ l) in
     let r :=  eval vm_compute in
-    (map (uncurry (rule_to_log_rule (string_ptree_map_plus)
+    (map (uncurry (rule_to_log_rule (string_trie_map)
                      (@StringListMap.string_list_trie_map)
                      StringListMap.string_succ "@sort_of"
                      l' (analysis_result:=unit))) (PositiveInstantiation.filter_eqn_rules l')) in
@@ -635,25 +635,21 @@ print_rules.
   Compute (QueryOpt.optimize_sequent string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      string_ptree_map_plus
       StringListMap.string_list_trie_map seq).
   Compute (QueryOpt.opt_verbose string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      string_ptree_map_plus
       StringListMap.string_list_trie_map seq).
   
   
   Compute (QueryOpt.opt_live_eqn string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      string_ptree_map_plus
       StringListMap.string_list_trie_map seq "#1" "#0").
 
   Compute (QueryOpt.opt_conclusion_atoms string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      string_ptree_map_plus
       StringListMap.string_list_trie_map seq).
   (*
   [{| atom_fn := "@sort_of"; atom_args := ["#2"]; atom_ret := "" |};

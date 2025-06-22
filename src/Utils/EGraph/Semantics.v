@@ -6,7 +6,7 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations UnionFind.
 From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.
@@ -30,6 +30,16 @@ Notation "x <?> P" :=
   (If_Some_satisfying P x)
     (at level 56,left associativity).
 
+
+(*TODO: move to Utils.v*)
+Ltac inversions := autorewrite with inversion in *; break; subst.
+
+(*TODO: move to utils*)
+Ltac get_head e :=
+  lazymatch e with
+  | ?f _ => get_head f
+  | _ => e
+  end.
 
 Ltac match_some_satisfying :=
   lazymatch goal with
@@ -479,7 +489,7 @@ Abort.
   (* TODO: is this record needed? other fields may not be necessary *)
   Record egraph_ok (e : instance) : Prop :=
     {
-      egraph_equiv_ok : exists roots, union_find_ok _ _ _ e.(equiv) roots;
+      egraph_equiv_ok : exists roots, union_find_ok e.(equiv) roots;
       (* TODO: not an invariant that parents exist?
            Can be broken in many places.
            What is the invariant?
@@ -1139,7 +1149,7 @@ Abort.
 
   
   Lemma find_next_const x u u' i0
-    : UnionFind.find idx Eqb_idx (idx_map idx) (idx_map nat) u x = (u', i0) ->
+    : UnionFind.find u x = (u', i0) ->
       (next idx (idx_map idx) (idx_map nat) u)
       = (next idx (idx_map idx) (idx_map nat) u').
   Proof.
@@ -1162,21 +1172,6 @@ Abort.
   Qed.
 
   (*TODO: move to UnionFind.v *)
-  Arguments UnionFind.find {idx}%type_scope {Eqb_idx idx_map rank_map} pat x.
-  Arguments parent {idx}%type_scope {idx_map rank_map} u.
-  Lemma find_preserves_domain (uf uf': union_find _ (idx_map _) (idx_map _)) l i j
-    : union_find_ok _ _ _ uf l ->
-      Sep.has_key i uf.(parent) ->
-      UnionFind.find uf i = (uf', j) ->
-      forall x,
-        Sep.has_key x uf.(parent) <->
-          Sep.has_key x uf'.(parent).
-  Proof using idx_map_ok Eqb_idx_ok.
-    intros.
-    eapply find'_find in H0; eauto; try Lia.lia.
-    rewrite H2 in *.
-    eapply find_preserves_domain in H0; eauto.
-  Qed.
 
   (*TODO: move to originating file*)
   Hint Constructors PER_closure transitive_closure : utils.
@@ -1611,7 +1606,7 @@ Abort.
   
   (*TODO: move to UnionFind.v*)
   Lemma union_same_domain u u' x y i0 l
-    : union_find_ok idx (idx_map idx) (idx_map nat) u l ->
+    : union_find_ok u l ->
       Sep.has_key x u.(parent) ->
       Sep.has_key y u.(parent) ->
       UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) u x y
@@ -1681,7 +1676,7 @@ Abort.
   
   (*TODO: move to UnionFind.v*)
   Lemma union_output l uf x y uf' z
-    :  union_find_ok idx (idx_map idx) (idx_map nat) uf l ->
+    :  union_find_ok uf l ->
        Sep.has_key x (parent uf) ->
        Sep.has_key y (parent uf) ->
        UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y = (uf', z) ->
@@ -2131,14 +2126,6 @@ Abort.
     }
     eapply atom_interpretation; eauto.
   Qed.
-
-  
-  (*TODO: move to utils*)
-  Ltac get_head e :=
-    lazymatch e with
-    | ?f _ => get_head f
-    | _ => e
-    end.
   
   (*TODO: lift upwards, use as needed *)
   Ltac open_ssm :=
@@ -2175,8 +2162,6 @@ Abort.
     eapply state_sound_for_model_bind;
     eauto with utils;
     cbn beta in *;intros; subst; cleanup_context.
-
-  Ltac inversions := autorewrite with inversion in *; break; subst.
 
   Lemma db_set_entry_sound i f args entry_epoch entry_value a
     : atom_sound_for_model m i (Build_atom f args entry_value) ->
@@ -2531,3 +2516,39 @@ Arguments db_to_atoms {idx symbol}%type_scope
 
 
 Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
+
+
+Arguments state_sound_for_model {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+  {A}%type_scope m i s (Post_i Post_mono)%function_scope.
+
+
+Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope m r.
+
+
+(*TODO: duplicated in section *)
+Ltac open_ssm :=
+  cleanup_context;
+  lazymatch goal with
+    |- state_sound_for_model _ _ ?e _ _ =>
+      let h := get_head e in
+      unfold h;
+      split; eauto with utils;
+      unfold Sep.and1;
+      repeat intro;
+      eexists; split; eauto; break;
+      cbn [fst snd]
+  end.
+
+
+(*TODO: duplicated in section *)
+Ltac bind_with_fn H :=
+  eapply state_sound_for_model_bind;
+  eauto using H with utils;
+  cbn beta;intros; subst; cleanup_context.
+
+(*TODO: duplicated in section *)
+Ltac ssm_bind :=
+  eapply state_sound_for_model_bind;
+  eauto with utils;
+  cbn beta in *;intros; subst; cleanup_context.

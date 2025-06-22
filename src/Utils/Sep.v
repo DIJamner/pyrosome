@@ -726,6 +726,69 @@ Section __.
     apply H'.
   Qed.
 
+  #[export] Instance seps_Permutation_Proper
+    : Proper (Permutation (A:=mem -> Prop) ==> eq ==> iff) seps.
+    Proof.
+      intros P1 P2 HP m1 m2 Hm.
+      subst.
+      revert m2.
+      induction HP;
+        basic_goal_prep;
+        basic_utils_crush.
+      {
+        destruct H as [m [m' [Ha [Hb ?]]]].
+        exists m, m'.
+        intuition eauto.
+        apply IHHP; eauto.
+      }
+      {
+        destruct H as [m [m' [Ha [Hb ?]]]].
+        exists m, m'.
+        intuition eauto.
+        apply IHHP; eauto.
+      }
+      {
+        revert m2 H.
+        change (Uimpl1 (sep y (sep x (seps l))) (sep x (sep y (seps l)))).
+        rewrite <- !sep_assoc; eauto.
+        rewrite sep_comm with (P1:=y); eauto.
+        reflexivity.       
+      }
+      {
+        revert m2 H.
+        change (Uimpl1 (sep x (sep y (seps l))) (sep y (sep x (seps l)))).
+        rewrite <- !sep_assoc; eauto.
+        rewrite sep_comm with (P1:=y); eauto.
+        reflexivity.       
+      }
+      1,2:firstorder.
+    Qed.
+
+    
+    
+    Lemma split_both_have_key x (m m1 m2 : mem)
+      : map.split m m1 m2 ->
+        has_key x m1 ->
+        has_key x m2 ->
+        False.
+    Proof.
+      unfold has_key;
+        repeat case_match;
+        try tauto.
+      intros.
+      eapply Properties.map.get_split with (k:= x) in H;
+        intuition congruence.
+    Qed.
+    
+    
+    Lemma seps_has_key_conflict x (m : mem)
+      : sep (has_key x) (has_key x) m -> False.
+    Proof.
+      destruct 1 as [m1 [m1' [Ha [Hb ?]]]].
+      eapply split_both_have_key; eauto.
+    Qed.
+    
+
 End __.
 
 Arguments sep {A}%type_scope {mem} (P1 P2)%function_scope t12.
