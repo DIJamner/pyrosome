@@ -478,156 +478,6 @@ Section WithVar.
     End __.
 
   (*******************************************)
-  
-  (*Extraction sketches*)
-  (*
-    Extraction is about finding a (least-weight) tree in a graph,
-    starting from a given root.
-    Specifically, a tree such that each leaf is a valid leaf node.
-    (in the egraph case, a 0-argument node, i.e. a node with no out edges)
-
-    restatement: lowest-weight 'full' tree, where a full tree is not a prefix of any other tree.
-    Dyn prog?
-    compute lowest-weight 'full' tree for all nodes.
-    go by node arity?
-    for each node, compute the lwft from its children's lwfts if all exist, save weight.
-    If not all children have lwfts, move to reserve worklist.
-    once worklist is empty, switch to reserve if it is shorter than the starting worklist.
-    Repeat.
-
-    Define weight as the sum of node weights
-
-    Idea:
-    - maintain extraction incrementally w/ egraph
-    - as table in db? (requires finer-grain control over what columns are up to equivalence)
-    - requires proper node indexing (can't forget original node ids)
-
-    Supporting syntactic analyses:
-    for each table/symbol, maintain a legend of which inputs/outputs are semantic,
-    i.e. congruent wrt equivalence
-    Issue: how to merge outputs that are syntacitc?
-    answer: need merge defined; e.g. for extraction, use weight ordering
-    in other words: can weaken requirements to lattice instead of UF (mentioned in egg papers)
-
-    On efficiency: if extraction is "fast enough" post hoc,
-    then it seems wrong to put it in the egraph,
-    since it would slow down the inner loop
-   *)
-  
-    Section EExtract.
-      (*TODO: generalize from nat to any metric (e.g. list nat),
-        or max instead of sum
-      
-      Check list_sum.
-      Check Nat.ltb.
-       *)
-      
-      (* look for node with least weight, interpreting None as oo *)
-      Context (symbol_weight : atom -> option N).
-      
-      (* TODO generalize to be monadic *)
-      Fixpoint minimum' {A} (ltb : A -> A -> bool) (l : list A) (min : A) : A :=
-        match l with
-        | [] => min
-        | x::l =>
-            if ltb x min then minimum' ltb l x else minimum' ltb l min
-        end.
-
-      Definition minimum {A} ltb (l : list A) :=
-        match l with
-        | [] => None
-        | x::l => Some (minimum' ltb l x)
-        end.
-
-      Definition enter {A S} `{Eqb A} x : stateT S (stateT (list A) option) unit :=
-        fun S l => if inb x l then None else Some (tt, S,(x::l)).
-      
-      Definition exit {A S} `{Eqb A} :  stateT S (stateT (list A) option) unit :=
-        fun S l => Some (tt, S, tl l).
-
-      (*TODO: doesn't have to return an option/always returns Some*)
-      Fixpoint Mfiltermap {S A B}
-        (f : A -> stateT S (stateT (list V) option) B) (l : list A)
-        : stateT S (stateT (list V) option) (list B) :=
-        match l with
-        | [] => Mret []
-        | x::l =>
-            fun S s =>
-              match f x S s with
-              | None => Mfiltermap f l S s
-              | Some (x', S', s') =>
-                  @!let {option} (l', S', s') <- Mfiltermap f l S' s' in
-                    ret {option} (x'::l', S', s')
-              end
-        end.
-
-      Definition memoize {A M} `{Monad M} (f : V -> stateT (V_map A) M A) (x:V)
-        : stateT (V_map A) M A :=
-        fun S =>
-          match map.get S x with
-          | Some v => Mret (v,S)
-          | None => f x S
-          end.
-
-      Definition list_sum := fun l : list N => fold_right N.add 0%N l.
-
-      Notation ST := (stateT (V_map (term * N)) (stateT (list V) option)).
-      
-    (* returns the weight of the extracted term.
-       TODO: memoize
-       Maintains a 'visited' stack to avoid cycles
-     *)
-      Fixpoint extract' fuel eclasses (uf : union_find V (V_map V) (V_map _)) (x : V)
-        : stateT (V_map (term * N)) (stateT (list V) option) (term * N) :=
-        match fuel with
-        | 0 => fun _ _ => None
-        | S fuel =>
-            let process (x : V) p
-              : stateT (V_map (term * N)) (stateT (list V) option) (term * N) :=
-              let '(f, args):= p in 
-              @!let {ST} _ <- enter x in
-                let {ST} weight <-
-                      lift (T:= stateT (V_map _))
-                        (lift (symbol_weight (Build_atom (f:V) args x))) in
-                let {ST} args' <- list_Mmap (memoize (extract' fuel eclasses uf)) args in
-                let {ST} _ <- exit in
-                ret {ST} (con f (map fst args'),
-                    (list_sum (weight::(map snd args'))))
-            in
-            (* TODO: is find necessary? might always be a no-op *)
-            @!let (_,x') := UnionFind.find uf x in
-              let {ST} cls <- lift (T:= stateT (V_map _))
-                                (lift (T:= stateT (list V))
-                                   (map.get eclasses x)) in
-              let {ST} candidates <- Mfiltermap (process x) cls in
-              (lift (T:= stateT (V_map _))
-                 (lift (T:= stateT (list V))
-                    (minimum (fun x y => N.ltb (snd x) (snd y)) candidates)))
-        end.
-
-      Definition build_eclasses {X} : db_map V V _ _ X -> V_map (list (V * list V)) :=
-        let process_row f acc args row :=
-          let out := row.(entry_value _ _) in
-          match map.get acc out with
-          | Some l => map.put acc out ((f,args)::l)
-          | None => map.put acc out [(f,args)]
-          end
-        in
-        let process_table acc f :=
-          map.fold (process_row f) acc
-        in
-        map.fold process_table map.empty.
-        
-      Definition extract fuel {X} (i : instance X) x :=
-        let cls := (build_eclasses i.(db)) in
-        option_map fst
-          (option_map fst (extract' fuel cls i.(equiv) x map.empty [])).
-      
-    (*TODO: differential extraction;
-    extract 2 terms together with a shared weight metric (distance)
-     *)
-
-    End EExtract.
 
     Section AnalysisExtract.
       (* look for node with least weight, interpreting None as oo.
@@ -740,6 +590,12 @@ Section WithVar.
                                     error:(x "has no term of size at most" x_a) in
           let children <- list_Mmap (decr fuel extract_weighted) x_args in
           ret (con x_f children).
+
+    (* Notes on verifying extraction:
+       - cheap option: re-add the term and check id
+       - more intensive: extract to an arbitrary model
+         + will catch bugs in extraction
+     *)
           
     End AnalysisExtract.
     
