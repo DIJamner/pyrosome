@@ -270,20 +270,20 @@ Section WithMap.
   Hint Resolve Properties.map.extends_refl : utils.
   
   Lemma force_equiv_sound X m i
-    : state_sound_for_model (analysis_result:=X) m i force_equiv (eq i) (fun _ _ => True).
+    : state_sound_for_model (analysis_result:=X) m i force_equiv (fun i' _ => i = i').
   Proof.
-    open_ssm.
+    open_ssm'.
     intuition cbn; eauto with utils.
     {
-      destruct e, H; constructor; basic_goal_prep; eauto.
+      destruct e, e0; constructor; basic_goal_prep; eauto.
       eexists; eauto using force_uf_ok.
     }
     {
-      destruct e, H0; constructor; basic_goal_prep; eauto.
-      { destruct H as [ [] ]; eapply force_uf_same_domain; eauto. }
+      destruct e, e1; constructor; basic_goal_prep; eauto.
+      { destruct e0 as [ [] ]; eapply force_uf_same_domain; eauto. }
       {
         apply rel_interpretation;
-          destruct H as [ [] ];
+          destruct e0 as [ [] ];
           eapply force_uf_equivalent; eauto.
       }
     }
@@ -294,8 +294,7 @@ Section WithMap.
         (list_Miter (fun a => Mbind (fun a => remove_atom a (A:=X))
                                 (canonicalize a))
            l)
-        (eq i)
-        (fun _ _ => True).
+        (fun i' _ => i = i').
   Proof.
     eapply state_sound_for_model_Miter; eauto.
     intros; subst.

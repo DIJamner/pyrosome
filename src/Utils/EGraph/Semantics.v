@@ -842,16 +842,13 @@ Abort.
 
   
   Definition state_sound_for_model {A} (m : model) i
-    (* TODO: what data should Post take?*)
-    (s : state instance A) Post_i Post_mono :=
+    (s : state instance A) Post :=
     state_triple (Sep.and1 egraph_ok (egraph_sound_for_interpretation m i)) s
       (*TODO: make sure that i' can depend on x *)
-      (fun x => exists i', (Post_i i')
+      (fun x => exists i', (Post i' (fst x))
                            /\ egraph_ok (snd x)
                            /\ egraph_sound_for_interpretation m i' (snd x)
-                           /\ map.extends i' i
-                           /\ Post_mono i' (fst x))
-    /\ monotone1 Post_mono.
+                           /\ map.extends i' i).
 
   Hint Resolve Properties.map.extends_refl : utils.
   
@@ -871,41 +868,33 @@ Abort.
   Lemma pull_worklist_sound m i
     : state_sound_for_model m i
         (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
-        (fun i' => i = i') (fun i wl => all (worklist_entry_sound m i) wl).
+        (fun i' wl => i = i' /\ all (worklist_entry_sound m i) wl).
   Proof.
     cbv -[map.rep domain map.get all worklist_entry_sound map.extends];
-      split; intros; break.
+      intros; break.
     {
       eexists; intuition eauto; destruct e; cbn in *.
+      { destruct H1; basic_utils_crush. }
       { destruct H0; constructor; cbn in *; eauto with utils. }
       { destruct H1; constructor; cbn in *; intuition (cbn; eauto). }
       { basic_utils_crush. }
-      { destruct H1; basic_utils_crush. }
-    }
-    {
-      eapply all_wkn; try eassumption.
-      basic_goal_prep.
-      eapply worklist_entry_sound_mono; eauto.
-    }     
+    } 
   Qed.
 
   Lemma map_extends_trans {key value : Type} {map : map.map key value} (m1 m2 m3 : map)
     : map.extends m1 m2 -> map.extends m2 m3 -> map.extends m1 m3.
   Proof using. clear; unfold map.extends; intuition eauto. Qed.
 
-  Lemma state_sound_for_model_bind A B m i c Pi Pmono Qi Qmono (f : A -> _ B)
-    : state_sound_for_model m i c Pi Pmono ->
+  Lemma state_sound_for_model_bind A B m i c P Q (f : A -> _ B)
+    : state_sound_for_model m i c P ->
       (forall (a:A) i', map.extends i' i ->
-                        Pi i' ->
-                        Pmono i' a ->
-                        state_sound_for_model m i' (f a) Qi Qmono) ->
-      monotone1 Qmono ->
-       state_sound_for_model m i (@! let p <- c in (f p)) Qi Qmono.
+                        P i' a ->
+                        state_sound_for_model m i' (f a) Q) ->
+      state_sound_for_model m i (@! let p <- c in (f p)) Q.
   Proof.
     clear idx_succ idx_zero.
     basic_goal_prep.
-    split; intros; auto.
-    destruct H0 as [H0 ?].
+    intros; auto.
     intros e He.
     specialize (H0 e He).
     repeat basic_goal_prep.
@@ -914,7 +903,6 @@ Abort.
     clear c Hce.
     eapply H1 in H0; eauto with utils; clear H1.
     
-    destruct H0.
     specialize (H0 i0).
     unfold Sep.and1 in *; intuition break.
     eexists; intuition eauto using map_extends_trans.
@@ -932,23 +920,22 @@ Abort.
   Qed.
   Hint Resolve monotone1_all : utils.
   
-  Lemma state_sound_for_model_Mmap A B m i Pi Pmono l (f : A -> _ B) 
+  Lemma state_sound_for_model_Mmap A B m i P_const P_elt l (f : A -> _ B) 
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
-                        Pi i' ->
-                        state_sound_for_model m i' (f a) Pi Pmono) ->
-      Pi i ->
-      monotone1 Pmono ->
+                        P_const i' ->
+                        state_sound_for_model m i' (f a)
+                          (fun i' a => P_const i' /\ P_elt i' a)) ->
+      P_const i ->
+      monotone1 P_elt ->
       state_sound_for_model m i (list_Mmap f l)
-        Pi
-        (fun i' => all (Pmono i')).
+        (fun i' l => P_const i' /\ all (P_elt i') l).
   Proof.
     cleanup_context.
     revert i.
     induction l.
     {
       intros.
-      split; auto using monotone1_all.
       eapply state_triple_wkn_ret;
         unfold Sep.and1 in *;
         basic_goal_prep; subst;
@@ -966,7 +953,7 @@ Abort.
       eapply state_sound_for_model_bind; eauto using monotone1_all.
       {
         eapply IHl; auto.
-        basic_goal_prep;
+        all:basic_goal_prep;
           basic_utils_crush.
         eapply H0.
         all:basic_goal_prep;
@@ -974,7 +961,7 @@ Abort.
         eapply map_extends_trans; eauto.
       }
       {
-        intros; split; eauto using monotone1_all.
+        intros.
         eapply state_triple_wkn_ret;
           unfold Sep.and1 in *;
           basic_goal_prep; subst;
@@ -988,44 +975,40 @@ Abort.
 
   
   Lemma ret_sound_for_model A m i (x:A)
-    : state_sound_for_model m i (Mret x) (eq i) (fun _ => eq x).
+    : state_sound_for_model m i (Mret x) (fun i' a => i = i' /\ a = x).
   Proof.
-    split; unfold monotone1, Sep.and1; basic_goal_prep; basic_utils_crush.
+    unfold state_sound_for_model, Sep.and1; basic_goal_prep; basic_utils_crush.
     intros ? ?.
     eexists; basic_goal_prep; basic_utils_crush.
   Qed.
   
-  Lemma ret_sound_for_model' A m i (x:A) Pi Pmono
-    : Pi i -> Pmono i x ->
-      monotone1 Pmono ->
-      state_sound_for_model m i (Mret x) Pi Pmono.
+  Lemma ret_sound_for_model' A m i (x:A) P
+    : P i x ->
+      state_sound_for_model m i (Mret x) P.
   Proof.
     clear idx_succ idx_zero.
-    split; unfold monotone1, Sep.and1; basic_goal_prep; basic_utils_crush.
+    unfold state_sound_for_model, monotone1, Sep.and1; basic_goal_prep; basic_utils_crush.
     intros ? ?.
     eexists; basic_goal_prep; basic_utils_crush.
   Qed.
-
   
-  Lemma state_sound_for_model_Mmap_dep A B m i Pi Pmono l (f : A -> _ B) 
+  Lemma state_sound_for_model_Mmap_dep A B m i P_const P_elt l (f : A -> _ B) 
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
-                        Pi i' ->
-                        state_sound_for_model m i' (f a) Pi (Pmono a)) ->
-      Pi i ->
-      (forall a,  monotone1 (Pmono a)) ->
+                        P_const i' ->
+                        state_sound_for_model m i' (f a)
+                          (fun i' a' => P_const i' /\ P_elt a i' a')) ->
+      P_const i ->
+      (forall a, monotone1 (P_elt a)) ->
       state_sound_for_model m i (list_Mmap f l)
-        Pi
-        (fun i' => all2 (fun a => Pmono a i') l).
+        (fun i' l' => P_const i' /\ all2 (fun a => P_elt a i') l l').
   Proof.
     cleanup_context.
     revert i.
     induction l.
     {
       intros.
-      split.
-      2:{ unfold monotone1; basic_goal_prep; basic_utils_crush. }
-         eapply state_triple_wkn_ret;
+      eapply state_triple_wkn_ret;
         unfold Sep.and1 in *;
         basic_goal_prep; subst;
         eexists; cbn; intuition eauto with utils.
@@ -1034,15 +1017,6 @@ Abort.
       intros.
       cbn [list_Mmap].
       eapply state_sound_for_model_bind; eauto using monotone1_all.
-      3:{
-        unfold monotone1; basic_goal_prep; case_match; basic_utils_crush.
-        { eapply H2; eauto. }
-        {
-          eapply all2_impl; try eassumption.
-          basic_goal_prep.
-          eapply H2; eauto.
-        }
-      }
       {
         basic_goal_prep;
           basic_utils_crush.
@@ -1051,7 +1025,7 @@ Abort.
       eapply state_sound_for_model_bind; eauto using monotone1_all.
       {
         eapply IHl; auto.
-        basic_goal_prep;
+        all:basic_goal_prep;
           basic_utils_crush.
         eapply H0.
         all:basic_goal_prep;
@@ -1065,24 +1039,6 @@ Abort.
           basic_goal_prep; intuition eauto.
           eapply H2; eauto.
         }
-        {
-          basic_goal_prep; intuition eauto.
-          repeat intro.
-          case_match; try tauto.
-          intuition eauto.
-          { eapply H2; eauto. }
-          {
-            eapply all2_impl; try eassumption.
-            basic_goal_prep.
-            eapply H2; eauto.
-          }
-        }
-      }
-      {
-        repeat intro.
-        eapply all2_impl; try eassumption.
-        basic_goal_prep.
-        eapply H2; eauto.
       }
     }
   Qed.
@@ -1092,16 +1048,14 @@ Abort.
   Proof. repeat intro; auto. Qed.
   Hint Resolve const_monotone1 : utils.
   
-  Lemma state_sound_for_model_Miter A m i Pi
+  Lemma state_sound_for_model_Miter A m i P
     l (f : A -> state instance unit) 
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
-                        Pi i' ->
-                        state_sound_for_model m i' (f a) Pi (fun _ _ => True)) ->
-      Pi i ->
-      state_sound_for_model m i (list_Miter f l)
-        Pi
-        (fun _ _ => True).
+                        P i' tt ->
+                        state_sound_for_model m i' (f a) P) ->
+      P i tt ->
+      state_sound_for_model m i (list_Miter f l) P.
   Proof.
     clear idx_succ idx_zero.
     revert i.
@@ -1114,7 +1068,7 @@ Abort.
       2:{
         intros.
         eapply IHl; eauto.
-        basic_goal_prep;
+        all:basic_goal_prep;
           basic_utils_crush.
         eapply H0.
         all:basic_goal_prep;
@@ -1125,7 +1079,6 @@ Abort.
         basic_goal_prep;
           basic_utils_crush.
       }
-      eauto with utils.
     }
   Qed.
 
@@ -1223,15 +1176,12 @@ Abort.
   
   Lemma find_sound m i x
     : Sep.has_key x i ->
-      state_sound_for_model m i (find x) (eq i)
-        (fun i => eq_sound_for_model m i x).
+      state_sound_for_model m i (find x) (fun i' a => i = i' /\ eq_sound_for_model m i x a).
   Proof.
     cleanup_context.
     unfold find.
-    split.
-    2:{ eapply monotone2_fix_l; apply eq_sound_monotone. }
     {
-      intros ? ?.
+      intros ? ? ?.
       case_match; cbn.
       unfold Sep.and1 in *; break.
       destruct H1; break.
@@ -1241,6 +1191,11 @@ Abort.
       2:{ eapply interpretation_exact; eauto. }
       break.
       eexists; intuition eauto with utils.
+      {
+        eapply rel_interpretation; eauto.
+        eapply H7 in H6.
+        eapply trans_PER_subrel; eauto.
+      }
       { constructor; eauto. }
       {
         destruct H2; constructor; basic_goal_prep; intuition eauto.
@@ -1253,11 +1208,6 @@ Abort.
           eapply rel_interpretation0; eauto.
           eapply trans_to_PER_natural; eauto.
         }
-      }
-      {
-        eapply rel_interpretation; eauto.
-        eapply H7 in H6.
-        eapply trans_PER_subrel; eauto.
       }
     }
   Qed.
@@ -1292,7 +1242,7 @@ Abort.
         (canonicalize_worklist_entry idx Eqb_idx symbol
            symbol_map idx_map idx_trie
            analysis_result a)
-        (eq i) (worklist_entry_sound m).
+        (fun i' a => i = i' /\ worklist_entry_sound m i' a).
   Proof.
     intro.
     destruct a; cbn -[Mbind].
@@ -1303,6 +1253,7 @@ Abort.
       basic_goal_prep; subst.
       eapply ret_sound_for_model'; eauto using worklist_entry_sound_mono.
       cbn.
+      intuition subst.
       eapply eq_sound_for_model_trans; eauto.
     }
   Qed.
@@ -1333,18 +1284,36 @@ Abort.
   Qed.
   Hint Resolve atom_sound_monotone : utils.
   Hint Resolve monotone1_all : utils.
+
+  
+  (*TODO: lift upwards, use as needed *)
+  Ltac open_ssm' :=
+    cleanup_context;
+    lazymatch goal with
+    | |- state_sound_for_model _ _ ?e _ =>
+        let h := get_head e in
+        unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
+        eexists; eauto with utils;
+        break; cbn[fst snd]
+    end.
+  
+  Ltac open_ssm :=
+    open_ssm';
+    intuition eauto with utils;
+    break; cbn[fst snd];
+    try lazymatch goal with
+      | H : egraph_ok _ |- egraph_ok _ =>
+          destruct H; constructor; eauto with utils
+      | H : egraph_sound_for_interpretation _ _ _
+        |- egraph_sound_for_interpretation _ _ _ =>
+          destruct H; constructor; eauto with utils
+    end.
   
   Lemma get_parents_sound i old_idx
     : state_sound_for_model m i (get_parents old_idx)
-         (eq i)
-         (fun i => all (atom_sound_for_model m i)).
+         (fun i' a => i = i' /\ all (atom_sound_for_model m i) a).
   Proof.
-    cleanup_context.
-    unfold get_parents.
-    split; eauto with utils.
-    unfold Sep.and1.
-    repeat intro; basic_goal_prep.
-    eexists; intuition eauto with utils.
+    open_ssm.
     unfold unwrap_with_default; case_match; [| exact I].
     eapply parents_interpretation in case_match_eqn; eauto.
   Qed.
@@ -1355,23 +1324,14 @@ Abort.
   Lemma remove_parents_sound i old_idx
     : state_sound_for_model m i
         (remove_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx) 
-        (eq i) (fun _ _ => True).
+        (fun i' _ => i' = i).
   Proof.
-    cleanup_context.
-    unfold remove_parents;
-    split; eauto with utils.
-    unfold Sep.and1.
-    repeat intro; basic_goal_prep.
-    eexists; intuition eauto with utils.
-    { destruct H0; constructor; eauto. }
-    {
-      destruct H1; constructor; eauto.
-      basic_goal_prep.
-      eqb_case i0 old_idx;
-        basic_utils_crush.
-      rewrite map.get_remove_diff in H1; try tauto.
-      eauto.
-    }
+    open_ssm.
+    basic_goal_prep.
+    eqb_case i0 old_idx;
+      basic_utils_crush.
+    rewrite map.get_remove_diff in H0; try tauto.
+    eauto.
   Qed.
   
   Ltac iss_case :=
@@ -1387,52 +1347,42 @@ Abort.
   Lemma db_remove_sound i a1
     : state_sound_for_model m i
         (db_remove idx symbol symbol_map idx_map idx_trie analysis_result a1)
-        (eq i)
-        (fun _ _ => True).
+        (fun i' _ => i' = i).
   Proof.
-    cleanup_context.
-    unfold db_remove;
-    split; eauto with utils.
-    unfold Sep.and1.
-    repeat intro; basic_goal_prep.
-    eexists; intuition eauto with utils.
-    { destruct H0; constructor; eauto. }
+    open_ssm.
+    basic_goal_prep.
+    eapply atom_interpretation0.
+    unfold atom_in_egraph in *.
+    basic_goal_prep.
+    basic_utils_crush.
+    repeat iss_case.
+    eqb_case (atom_fn a1) (atom_fn a).
     {
-      destruct H1; constructor; eauto.
-      basic_goal_prep.
-      eapply atom_interpretation0.
-      unfold atom_in_egraph in *.
-      basic_goal_prep.
-      basic_utils_crush.
-      repeat iss_case.
-      eqb_case (atom_fn a1) (atom_fn a).
+      rewrite H1 in *.
+      rewrite get_update_same in Hma; eauto.
+      autorewrite with inversion in *.
+      unfold Basics.flip in *.
+      case_match.
+      2:{
+        change (map.remove map.empty (atom_args a1) = r) in Hma.
+        rewrite Properties.map.remove_empty in *.
+        basic_utils_crush.
+      }
+      cbn; subst.        
+      eqb_case (atom_args a1) (atom_args a).
       {
         rewrite H2 in *.
-        rewrite get_update_same in Hma; eauto.
-        autorewrite with inversion in *.
-        unfold Basics.flip in *.
-        case_match.
-        2:{
-          change (map.remove map.empty (atom_args a1) = r) in Hma.
-          rewrite Properties.map.remove_empty in *.
-          basic_utils_crush.
-        }
-        cbn; subst.        
-        eqb_case (atom_args a1) (atom_args a).
-        {
-          rewrite H3 in *.
-          basic_utils_crush.
-        }
-        {
-          rewrite map.get_remove_diff in Hma0; eauto.
-          rewrite Hma0; cbn; eauto.
-        }
+        basic_utils_crush.
       }
       {
-        rewrite get_update_diff in Hma; eauto.
-        rewrite Hma; cbn; eauto.
+        rewrite map.get_remove_diff in Hma0; eauto.
         rewrite Hma0; cbn; eauto.
       }
+    }
+    {
+      rewrite get_update_diff in Hma; eauto.
+      rewrite Hma; cbn; eauto.
+      rewrite Hma0; cbn; eauto.
     }
   Qed.
 
@@ -1477,8 +1427,8 @@ Abort.
 
   Lemma canonicalize_sound i a1
     : atom_sound_for_model m i a1 ->
-      state_sound_for_model m i (canonicalize a1) (eq i)
-        (fun i a => eq_atom_in_interpretation i a a1).
+      state_sound_for_model m i (canonicalize a1)
+        (fun i' a => i = i' /\ eq_atom_in_interpretation i a a1).
   Proof.
     cleanup_context.
     unfold canonicalize.
@@ -1486,7 +1436,7 @@ Abort.
     intros.
     eapply state_sound_for_model_bind; eauto with utils.
     {
-      eapply state_sound_for_model_Mmap_dep with (Pi:= eq i); auto.
+      eapply state_sound_for_model_Mmap_dep with (P_const:= eq i); auto.
       {
         cbn beta;intros; subst.
         eapply find_sound.
@@ -1502,7 +1452,7 @@ Abort.
       }
       {
         repeat intro; 
-        eapply eq_sound_monotone; eauto.
+        eapply eq_sound_monotone; eauto with utils.
       }
     }
     {
@@ -1514,6 +1464,7 @@ Abort.
         repeat iss_case.
         basic_goal_prep.
         rewrite TrieMap.Mmap_option_all in *.
+        subst.
         unfold Sep.has_key; rewrite Hma0; auto.
       }
       {
@@ -1522,18 +1473,15 @@ Abort.
         {
           unfold eq_atom_in_interpretation;
             basic_goal_prep;
-            intuition eauto.
+            intuition subst; eauto.
           {
             eapply all2_Symmetric; eauto.
             apply eq_sound_for_model_Symmetric.
           }
           { apply eq_sound_for_model_Symmetric; auto. }
-        }
-        { repeat intro; eapply eq_atom_monotone; eauto. }        
+        }      
       }
-      { repeat intro; eapply eq_atom_monotone; eauto. }
     }
-    { repeat intro; eapply eq_atom_monotone; eauto. }
   Qed.
   
   Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
@@ -1544,22 +1492,11 @@ Abort.
   Lemma db_lookup_sound i f args
     : state_sound_for_model m i
         (db_lookup f args)
-        (eq i)
-        (fun i mx => mx <?> (fun x => atom_sound_for_model m i (Build_atom f args x))).
+        (fun i' mx => i = i'
+                      /\ mx <?> (fun x => atom_sound_for_model m i (Build_atom f args x))).
   Proof.
-    cleanup_context.
-    unfold db_lookup.
-    repeat intro.
-    split.
-    2:{
-      repeat intro.
-      iss_case; subst.
-      cbn in *.
-      eapply atom_sound_monotone; eauto.
-    }
-    unfold Sep.and1.
-    repeat intro; basic_goal_prep.
-    eexists; basic_goal_prep;
+    open_ssm.
+    basic_goal_prep;
       basic_utils_crush.
     case_match; cbn; try tauto.
     case_match; cbn; try tauto.
@@ -1571,21 +1508,20 @@ Abort.
         rewrite case_match_eqn0; cbn.
       reflexivity.
     }
-    eapply atom_interpretation in H2; eauto.
+    eapply atom_interpretation in H0; eauto.
   Qed.
 
   Lemma state_sound_for_model_Mseq A B (i : idx_map (domain m)) (c1 : state instance A)
-    Pi Pmono Qi Qmono (c2 : state instance B)
-    : state_sound_for_model m i c1 Pi Pmono ->
+    P Q (c2 : state instance B)
+    : state_sound_for_model m i c1 P ->
       (forall a (i' : idx_map (domain m)),
-          map.extends i' i -> Pi i' -> Pmono i' a -> state_sound_for_model m i' c2 Qi Qmono) ->
-      monotone1 Qmono -> state_sound_for_model m i (@! c1; c2) Qi Qmono.
+          map.extends i' i -> P i' a -> state_sound_for_model m i' c2 Q) ->
+      state_sound_for_model m i (@! c1; c2) Q.
   Proof.
     intros.
     change (@! c1; c2) with (@! let _ <- c1 in c2).
     eapply state_sound_for_model_bind; eauto.
   Qed.
-
   
   Lemma same_domain_has_key A (m1 m2 : idx_map A)
     : map.same_domain m1 m2 <->
@@ -1717,21 +1653,14 @@ Abort.
   Lemma union_sound i x y
     : eq_sound_for_model m i x y ->
       state_sound_for_model m i (Defs.union x y)
-        (eq i) (fun i' => eq_sound_for_model m i' x).
+        (fun i' a => i = i' /\ eq_sound_for_model m i' x a).
   Proof.
-    cleanup_context.
-    unfold Defs.union.
-    repeat intro.
-    split.
-    2:{ repeat intro; eapply eq_sound_monotone; eauto. }
-    unfold Sep.and1 in *.
-    repeat intro.
-    eexists; split; eauto.
+    intros; open_ssm'.
     basic_goal_prep.
     eqb_case x y.
     { basic_goal_prep; intuition eauto with utils. }
     case_match.
-    destruct (egraph_equiv_ok _ H1).
+    destruct (egraph_equiv_ok _ e0).
     pose proof case_match_eqn as Hdom.
     eapply union_spec in case_match_eqn; try Lia.lia; eauto.
     2:{
@@ -1746,13 +1675,13 @@ Abort.
     eqb_case x i0; basic_goal_prep.
     {
       intuition eauto with utils.
-      3: eapply eq_sound_for_model_trans; try eassumption; symmetry; now eauto.
+      { eapply eq_sound_for_model_trans; try eassumption; symmetry; now eauto. }
       {
         constructor; cbn.
         eexists; eauto.
       }
       {
-        destruct H2; constructor; cbn; eauto.
+        destruct e1; constructor; cbn; eauto.
         {
           intros x H'; apply interpretation_exact0 in H'.
           eapply union_same_domain in Hdom; eauto.
@@ -1768,17 +1697,35 @@ Abort.
         }
         {
           intros.
-          eapply H8 in H2.
-          revert H2; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+          eapply H6 in H7.
+          revert H7; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
           unfold singleton_rel, impl2; basic_goal_prep; subst; eauto.
         }
         { split; auto; symmetry; auto. }
       }
     }
-    intuition try constructor; basic_goal_prep; intuition eauto with utils.
+    intuition try constructor; basic_goal_prep; intuition eauto with utils.    
+    { eapply union_output in Hdom; eauto.
+      2:{
+        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      2:{
+        eapply eq_sound_has_key_r in H0.
+        eapply interpretation_exact; eauto.
+      }
+      break.
+      eapply trans_PER_subrel in H8; eapply H6 in H8.
+      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      {
+        repeat intro.
+        eapply rel_interpretation; eauto.
+      }
+      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
+    }
     { eapply idx_interpretation_wf; eauto. }
     {
-      eapply interpretation_exact in H10; eauto.
+      eapply interpretation_exact in H8; eauto.
       eapply union_same_domain in Hdom; eauto.
       { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
       {
@@ -1790,10 +1737,10 @@ Abort.
         eapply interpretation_exact; eauto.
       }
     }
-    { eapply atom_interpretation in H2; eauto. }
+    { eapply atom_interpretation in e1; eauto. }
     {
-      eapply H8 in H10.
-      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      eapply H6 in H8.
+      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
       {
         repeat intro.
         eapply rel_interpretation; eauto.
@@ -1801,6 +1748,7 @@ Abort.
       { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
     }
     { eapply parents_interpretation; eauto. }
+    2:{ eapply worklist_sound; eauto. }    
     { eapply union_output in Hdom; eauto.
       2:{
         symmetry in H0; eapply eq_sound_has_key_r in H0.
@@ -1811,27 +1759,8 @@ Abort.
         eapply interpretation_exact; eauto.
       }
       break.
-      eapply trans_PER_subrel in H10; eapply H8 in H10.
-      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-    { eapply worklist_sound; eauto. }    
-    { eapply union_output in Hdom; eauto.
-      2:{
-        symmetry in H0; eapply eq_sound_has_key_r in H0.
-        eapply interpretation_exact; eauto.
-      }
-      2:{
-        eapply eq_sound_has_key_r in H0.
-        eapply interpretation_exact; eauto.
-      }
-      break.
-      eapply trans_PER_subrel in H10; eapply H8 in H10.
-      revert H10; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      eapply trans_PER_subrel in H8; eapply H6 in H8.
+      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
       {
         repeat intro.
         eapply rel_interpretation; eauto.
@@ -1855,35 +1784,20 @@ Abort.
   Lemma get_analyses_sound i args
     : state_sound_for_model m i
          (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args) 
-         (eq i)
-         (fun  _ _ => True).
+         (fun i' _ => i = i').
   Proof.
-    clear idx_succ idx_zero.
-    unfold get_analyses.
-    split; eauto with utils; unfold Sep.and1.
-    repeat intro.
-    eexists; split; eauto.
+    open_ssm'.
+    split; eauto.
     case_match; basic_goal_prep; intuition eauto with utils.
   Qed.
 
   Lemma update_analyses_sound i o a
     : state_sound_for_model m i
         (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result o a)
-         (eq i)
-         (fun  _ _ => True).
+         (fun i' _ => i = i').
   Proof.
-    cleanup_context.
-    unfold update_analyses.
-    split; eauto with utils; unfold Sep.and1.
-    repeat intro.
-    eexists; split; eauto.
-    case_match; basic_goal_prep; intuition eauto with utils.
-    { destruct H0; constructor; basic_goal_prep; intuition eauto. }
-    { destruct H1; constructor; basic_goal_prep; intuition eauto. }
-    { destruct H0; constructor; basic_goal_prep; intuition eauto. }
-    { destruct H1; constructor; basic_goal_prep; intuition eauto. }
+    open_ssm.
   Qed.
-
   
   Lemma set_eq_empty_l A (l : list A) : set_eq [] l <-> l = [].
   Proof using.
@@ -1910,8 +1824,8 @@ Abort.
   Lemma db_set_sound i a
     : atom_sound_for_model m i a ->
       state_sound_for_model m i
-        (db_set idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result a) 
-        (eq i) (fun _ _ => True).
+        (db_set idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result a)
+        (fun i' _ => i = i').
   Proof.
     cleanup_context.
     unfold db_set.
@@ -1921,21 +1835,21 @@ Abort.
     eapply state_sound_for_model_bind; eauto using update_analyses_sound with utils.
     cbn beta; intros; subst.
     unfold db_set'.
-    split; eauto with utils; unfold Sep.and1.
+    unfold state_sound_for_model, Sep.and1.
     repeat intro; eexists; split; cbn; intuition eauto.
-    { destruct H6; constructor; basic_goal_prep; intuition eauto. }
+    { destruct H4; constructor; basic_goal_prep; intuition eauto. }
     {
-      destruct H7; constructor; basic_goal_prep; intuition eauto.
+      destruct H5; constructor; basic_goal_prep; intuition eauto.
       {
-        unfold atom_in_egraph in H4; cbn in H4.
+        unfold atom_in_egraph in H3; cbn in H3.
         eqb_case (atom_fn a) (atom_fn a2);
-          [ rewrite H7 in *; rewrite get_update_same in *
+          [ rewrite H5 in *; rewrite get_update_same in *
           | rewrite get_update_diff in * ]; eauto.
         basic_goal_prep.
         case_match.
         {
           eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H8 in *; rewrite map.get_put_same in *
+          [ rewrite H6 in *; rewrite map.get_put_same in *
           | rewrite map.get_put_diff in * ]; repeat iss_case;
             autorewrite with inversion in *; break; subst; cbn in *; eauto.
           { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
@@ -1948,7 +1862,7 @@ Abort.
         }
         {
           eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H8 in *; rewrite map.get_put_same in *
+          [ rewrite H6 in *; rewrite map.get_put_same in *
           | rewrite map.get_put_diff in * ]; repeat iss_case;
             autorewrite with inversion in *; break; subst; cbn in *; eauto.
           { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
@@ -1959,26 +1873,25 @@ Abort.
         }
       }
       {
-        
         change (map.get
                   (fold_left (fun m x => map_update m x (cons a))
                      (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) e.(parents))
-                  i = Some l) in H4.
+                  i = Some l) in H3.
         destruct (map.get (parents e) i) eqn:Hpe.
         2:{
           assert (incl l [a]).
           {
             assert (map.get (parents e) i <?> (fun l => incl l [a])).
             { rewrite Hpe; cbn; auto. }
-            revert H7 l H4.
+            revert H5 l H3.
             generalize (parents e);
             generalize (dedup eqb (atom_ret a :: atom_args a)).
             induction l;
               basic_goal_prep;
               basic_utils_crush.
-            { rewrite H4 in *; cbn in *; auto. }
+            { rewrite H3 in *; cbn in *; auto. }
             {
-              eapply IHl in H4; eauto.
+              eapply IHl in H3; eauto.
               eqb_case i a1.
               {
                 rewrite get_update_same; cbn; eauto.
@@ -1992,7 +1905,7 @@ Abort.
         }
         assert (incl l (cons a l0)).
         {
-          revert H4 Hpe.
+          revert H3 Hpe.
           revert l l0;
             generalize (parents e);
             generalize (dedup eqb (atom_ret a :: atom_args a)).
@@ -2001,12 +1914,12 @@ Abort.
             basic_utils_crush.
           { replace l0 with l by congruence; eauto with utils. }
           {
-            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H4.
+            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H3.
             2:{ rewrite get_update_same, Hpe; eauto. }
             3:{ rewrite get_update_diff, Hpe; eauto. }
             2: now eauto with utils.
-            revert H4; clear; unfold incl; cbn; intuition eauto.
-            eapply H4 in H.
+            revert H3; clear; unfold incl; cbn; intuition eauto.
+            eapply H3 in H.
             intuition subst; eauto.
           }
         }
@@ -2019,15 +1932,14 @@ Abort.
   Lemma update_entry_sound i a
     : atom_sound_for_model m i a ->
       state_sound_for_model m i (update_entry a)
-        (eq i)
-        (fun _ _ => True).
+        (fun i' _ => i = i').
   Proof.
     cleanup_context.
     unfold update_entry.
     intros.
     eapply state_sound_for_model_bind; eauto using db_lookup_sound with utils.
     cbn beta;intros; subst.
-    case_match; cbn in H3.
+    case_match; cbn in H2.
     {
       eapply state_sound_for_model_Mseq; eauto with utils.
       {
@@ -2040,10 +1952,11 @@ Abort.
       }
       {
         intros; subst.
-        eapply ret_sound_for_model'; eauto with utils.
+        eapply ret_sound_for_model'; intuition subst; eauto with utils.
+        break; subst; eauto.
       }
     }        
-    { eapply db_set_sound; eauto. }
+    { break; subst; eapply db_set_sound; eauto. }
   Qed.
 
   Context `{model_ok m}.
@@ -2098,21 +2011,11 @@ Abort.
   Lemma db_lookup_entry_sound i f args
     : state_sound_for_model m i
         (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
-           f args) (eq i) (fun i e => e <?> (fun e => atom_sound_for_model m i
+           f args) (fun i' e => i' = i
+                                /\ e <?> (fun e => atom_sound_for_model m i
                                         (Build_atom f args e.(entry_value _ _)))).
   Proof.
-    cleanup_context.
-    unfold db_lookup_entry.
-    split.
-    2:{
-      repeat intro.
-      repeat iss_case; subst; cbn in *.
-      eapply atom_sound_monotone; eauto.
-    }
-    unfold Sep.and1.
-    repeat intro.
-    eexists; split; eauto; break.
-    cbn [snd fst].
+    open_ssm.
     intuition eauto with utils.
     basic_goal_prep.
     case_match; cbn; auto.
@@ -2127,30 +2030,15 @@ Abort.
     eapply atom_interpretation; eauto.
   Qed.
   
-  (*TODO: lift upwards, use as needed *)
-  Ltac open_ssm :=
-    cleanup_context;
-    lazymatch goal with
-      |- state_sound_for_model _ _ ?e _ _ =>
-        let h := get_head e in
-        unfold h;
-        split; eauto with utils;
-        unfold Sep.and1;
-        repeat intro;
-        eexists; split; eauto; break;
-        cbn [fst snd]
-    end.
-
   
   Lemma push_worklist_sound_analysis i o
     : state_sound_for_model m i
         (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
-           (analysis_repair idx o)) (eq i) (fun _ _ => True).
+           (analysis_repair idx o)) 
+        (fun i' _ => i = i').
   Proof.
     open_ssm.
-    intuition eauto with utils.
-    { destruct H1; constructor; intros; eauto. }
-    { destruct H2; constructor; intros; cbn; eauto. }    
+    cbn; eauto.
   Qed.
 
   Ltac bind_with_fn H :=
@@ -2167,56 +2055,53 @@ Abort.
     : atom_sound_for_model m i (Build_atom f args entry_value) ->
       state_sound_for_model m i
        (db_set_entry idx symbol symbol_map idx_map idx_trie analysis_result 
-          f args entry_epoch entry_value a) (eq i) (fun _ _ => True).
+          f args entry_epoch entry_value a) 
+         (fun i' _ => i = i').
   Proof.
     intro Hsound.
     open_ssm.
     intuition eauto with utils.
-    { destruct H1; constructor; intros; eauto. }
+    unfold atom_in_egraph in *; cbn in *.
+    repeat iss_case.
+    eqb_case f (atom_fn a0).
     {
-      destruct H2; constructor; intros; cbn; eauto.
-      unfold atom_in_egraph in *; cbn in *.
-      repeat iss_case.
-      eqb_case f (atom_fn a0).
+      rewrite get_update_same in* by eauto.
+      inversions.
+      case_match.
+      all: eqb_case args (atom_args a0).
+      all: rewrite ?map.get_put_same in * by eauto; inversions; cbn in *; subst; eauto.
+      all: rewrite  ?map.get_put_diff in * by eauto; inversions;cbn in *; subst; eauto.
       {
-        rewrite get_update_same in* by eauto.
-        inversions.
-        case_match.
-        all: eqb_case args (atom_args a0).
-        all: rewrite ?map.get_put_same in * by eauto; inversions; cbn in *; subst; eauto.
-        all: rewrite  ?map.get_put_diff in * by eauto; inversions;cbn in *; subst; eauto.
-        {
-          eapply atom_interpretation0; rewrite case_match_eqn; cbn.
-          rewrite Hma0; cbn.
-          eauto.
-        }
-        {
-          exfalso.
-          change (map.get map.empty (atom_args a0) = Some d) in Hma0.
-          rewrite map.get_empty in *.
-          congruence.
-        }
-      }
-      {
-        rewrite get_update_diff in * by eauto.
-        apply atom_interpretation0.
-        rewrite Hma; cbn.
-        rewrite Hma0;cbn.
+        eapply atom_interpretation0; rewrite case_match_eqn; cbn.
+        rewrite Hma0; cbn.
         eauto.
       }
-    }    
+      {
+        exfalso.
+        change (map.get map.empty (atom_args a0) = Some d) in Hma0.
+        rewrite map.get_empty in *.
+        congruence.
+      }
+    }
+    {
+      rewrite get_update_diff in * by eauto.
+      apply atom_interpretation0.
+      rewrite Hma; cbn.
+      rewrite Hma0;cbn.
+      eauto.
+    }   
   Qed.    
 
   Lemma repair_parent_analysis_sound i a
     : state_sound_for_model m i
         (repair_parent_analysis idx symbol
            symbol_map idx_map idx_trie analysis_result a)
-        (eq i) (fun _ _ => True).
+         (fun i' _ => i = i').
   Proof.
     cleanup_context.
     unfold repair_parent_analysis.
     bind_with_fn db_lookup_entry_sound.
-    case_match.
+    case_match; break; subst.
     2:{ eapply ret_sound_for_model'; eauto with utils. }
     case_match.
     cbn in H3.
@@ -2229,26 +2114,24 @@ Abort.
     apply db_set_entry_sound; auto.
   Qed.
 
-  
-  Lemma state_sound_for_model_Mfoldl A B i Pi Pmono l (f : B -> A -> state instance B) acc
+  Lemma state_sound_for_model_Mfoldl A B i P_const P_acc l (f : B -> A -> state instance B) acc
     : (forall (a:A) acc i', In a l ->
                             map.extends i' i ->
-                            Pi i' ->
-                            Pmono i' acc ->
-                            state_sound_for_model m i' (f acc a) Pi Pmono) ->
-      Pi i ->
-      Pmono i acc ->
-      monotone1 Pmono ->
+                            P_const i' ->
+                            P_acc i' acc ->
+                            state_sound_for_model m i' (f acc a)
+                              (fun i' acc => P_const i' /\ P_acc i' acc)) ->
+      P_const i ->
+      P_acc i acc ->
+      monotone1 P_acc ->
       state_sound_for_model m i (list_Mfoldl f l acc)
-        Pi
-        Pmono.
+        (fun i' acc => P_const i' /\ P_acc i' acc).
   Proof.
     cleanup_context.
     revert i acc.
     induction l.
     {
       intros.
-      split; eauto using monotone1_all.
       eapply state_triple_wkn_ret;
         unfold Sep.and1 in *;
         basic_goal_prep; subst;
@@ -2264,7 +2147,7 @@ Abort.
       }
       intros.
       eapply IHl; eauto.
-      basic_goal_prep;
+      all:basic_goal_prep;
         basic_utils_crush.
       eapply H1.
       all:basic_goal_prep;
@@ -2272,7 +2155,6 @@ Abort.
       eapply map_extends_trans; eauto.
     }
   Qed.
-
   
   Lemma atom_sound_functional i f args r1 r2
     : atom_sound_for_model m i (Build_atom f args r1) ->
@@ -2292,8 +2174,7 @@ Abort.
       state_sound_for_model m i
         (add_parent idx Eqb_idx idx_zero symbol Eqb_symbol symbol_map idx_map idx_trie
            analysis_result ps p)
-        (eq i)
-        (fun i => all (atom_sound_for_model m i)).
+        (fun i' a => i = i' /\ all (atom_sound_for_model m i') a).
   Proof.
     intro.
     induction ps; cbn [add_parent]; intros.
@@ -2313,24 +2194,24 @@ Abort.
           eapply atom_sound_functional; eauto.
         }
         cbn beta in *; subst.
-        eapply ret_sound_for_model'; eauto with utils.
+        eapply ret_sound_for_model'; break; subst; eauto with utils.
         cbn; intuition eauto with utils.
         unfold atom_sound_for_model; cbn in *.
-        unfold atom_sound_for_model in H1; cbn in *.
+        unfold atom_sound_for_model in H1; cbn in *; subst.
         unfold eq_sound_for_model in H6.
         repeat (iss_case; cbn).
-        unfold interprets_to in *; break.
+        unfold interprets_to in *; break; subst.
         exists x; intuition eauto.
         etransitivity; eauto.
       }
       {
         ssm_bind.
-        eapply ret_sound_for_model'; eauto with utils.
+        eapply ret_sound_for_model'; break; subst; eauto with utils.
         cbn; intuition eauto.
       }
       {
         ssm_bind.
-        eapply ret_sound_for_model'; eauto with utils.
+        eapply ret_sound_for_model'; break; subst; eauto with utils.
         cbn; intuition eauto.
       }
     }
@@ -2340,39 +2221,35 @@ Abort.
     : all (atom_sound_for_model m i) l ->
       state_sound_for_model m i
         (set_parents idx symbol symbol_map idx_map idx_trie analysis_result new_idx l) 
-        (eq i) (fun (_ : idx_map (domain m)) (_ : unit) => True).
+        (fun i' _ => i = i').
   Proof.
     intros.
     open_ssm.
-    intuition eauto with utils.
-    { destruct H2; constructor; intros; eauto. }
-    {
-      destruct H3; constructor; intros; cbn in *; eauto.
-      eqb_case i0 new_idx.
-      2:{ rewrite map.get_put_diff in *; eauto. }
-      { rewrite map.get_put_same in *; inversions; eauto. }
-    }
+    intuition cbn in *; eauto with utils.
+    eqb_case i0 new_idx.
+    { rewrite map.get_put_same in *; inversions; eauto. }
+    { rewrite map.get_put_diff in *; eauto. }
   Qed.
         
   
   Lemma repair_sound i a
     : state_sound_for_model m i
         (repair idx_zero a)
-        (eq i) (fun (_ : idx_map (domain m)) (_ : unit) => True).
+        (fun i' _ => i = i').
   Proof.
     cleanup_context.
     destruct a; cbn [repair].
     {
       unfold repair_union.
       eapply state_sound_for_model_bind;
-        [ eapply get_parents_sound | | eauto with utils].
+        [ eapply get_parents_sound |].
       cbn beta;intros; subst.
       eapply state_sound_for_model_bind; eauto with utils.
       { eapply remove_parents_sound. }
       cbn beta;intros; subst.
-      eapply state_sound_for_model_bind; eauto with utils.
+      eapply state_sound_for_model_bind; break; subst; eauto with utils.
       {
-        eapply state_sound_for_model_Mmap with (Pi:= eq i'0); auto with utils.
+        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto with utils.
         cbn beta;intros; subst.
         eapply state_sound_for_model_bind; eauto with utils.
         { eapply db_remove_sound. }
@@ -2383,25 +2260,26 @@ Abort.
           eapply in_all; eassumption.
         }
         {
-          cbn beta;intros; subst.
+          cbn beta;intros; break; subst.
           eapply state_sound_for_model_bind; eauto with utils.
-          { eapply update_entry_sound; eauto with utils.
+          {
+            eapply update_entry_sound; eauto with utils.
             eapply eq_atom_implies_sound_l; try symmetry; eauto.
             eapply in_all; eauto.
           }
-          cbn beta;intros; subst.
-          eapply ret_sound_for_model'; eauto with utils.
+          cbn beta;intros; break; subst.
+          eapply ret_sound_for_model'; intuition eauto with utils.
           eapply eq_atom_implies_sound_l; try symmetry; eauto.
           eapply in_all; eauto.
         }
       }
       cbn beta;intros; subst.
       bind_with_fn get_parents_sound.
-      eapply state_sound_for_model_Mseq; eauto with utils.
+      eapply state_sound_for_model_Mseq; break; subst; eauto with utils.
       {
         case_match.
         {
-          eapply state_sound_for_model_Miter with (Pi:= eq i'0); auto with utils.
+          eapply state_sound_for_model_Miter with (P:= fun i' _ => i'1 = i'); auto with utils.
           cbn beta;intros; subst.
           cleanup_context.
           apply repair_parent_analysis_sound.
@@ -2411,7 +2289,7 @@ Abort.
       cbn beta;intros; subst.
       ssm_bind.
       {
-        eapply state_sound_for_model_Mfoldl with (Pi:= eq i'); auto.
+        eapply state_sound_for_model_Mfoldl with (P_const:= eq i'); auto.
         {
           cbn beta;intros; subst.
           eapply add_parent_sound; eauto.
@@ -2421,20 +2299,20 @@ Abort.
         { cbn; eauto with utils. }
       }
       {
-        subst.
+        cbn in *; break; subst.
         apply set_parents_sound; eauto.
       }        
     }
     {
       bind_with_fn get_parents_sound.
-      eapply state_sound_for_model_Miter; auto.
-      cbn beta;intros; subst.
+      eapply state_sound_for_model_Miter; break; subst; auto.
+      cbn beta;intros; break; subst.
       eapply repair_parent_analysis_sound.
     }
   Qed. 
 
   Lemma rebuild_sound i n
-    : state_sound_for_model m i (rebuild n) (fun i' => i = i') (fun _ _ => True).
+    : state_sound_for_model m i (rebuild n) (fun i' _ => i = i').
   Proof.
     induction n.
     {
@@ -2446,26 +2324,25 @@ Abort.
       cbn [rebuild].
       eapply state_sound_for_model_bind;
       [eapply pull_worklist_sound
-      | intros; subst
-      | unfold monotone1; auto].
+      | intros; subst].
       destruct a.
-      { eapply ret_sound_for_model'; eauto with utils. }
+      { eapply ret_sound_for_model'; break; subst; eauto with utils. }
       eapply state_sound_for_model_bind; eauto with utils.
       {
-        eapply state_sound_for_model_Mmap with (Pi:= eq i'); auto.
+        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto.
         {
-          intros; subst.
+          intros; break; subst.
           eapply canonicalize_worklist_entry_sound.
           eapply in_all; eauto.
         }
         { eauto using worklist_entry_sound_mono. }
       }
       cbn beta; intros; repeat subst.
-      eapply state_sound_for_model_bind; eauto with utils.
+      eapply state_sound_for_model_bind; break; subst; eauto with utils.
       {
-        eapply state_sound_for_model_Miter with (Pi:= eq i'0); auto.
+        eapply state_sound_for_model_Miter with (P:= fun i _ => i'0 = i); auto.
         {
-          intros; subst.
+          intros; break; subst.
           cleanup_context.
           eapply repair_sound.
         }
@@ -2520,25 +2397,34 @@ Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
 
 Arguments state_sound_for_model {idx symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
-  {A}%type_scope m i s (Post_i Post_mono)%function_scope.
+  {A}%type_scope m i s (Post)%function_scope.
 
 
 Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope m r.
 
 
 (*TODO: duplicated in section *)
+Ltac open_ssm' :=
+    cleanup_context;
+    lazymatch goal with
+    | |- state_sound_for_model _ _ ?e _ =>
+        let h := get_head e in
+        unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
+        eexists; eauto with utils;
+        break; cbn[fst snd]
+    end.
+
 Ltac open_ssm :=
-  cleanup_context;
-  lazymatch goal with
-    |- state_sound_for_model _ _ ?e _ _ =>
-      let h := get_head e in
-      unfold h;
-      split; eauto with utils;
-      unfold Sep.and1;
-      repeat intro;
-      eexists; split; eauto; break;
-      cbn [fst snd]
-  end.
+  open_ssm';
+  intuition eauto with utils;
+  break; cbn[fst snd];
+  try lazymatch goal with
+    | H : egraph_ok _ |- egraph_ok _ =>
+        destruct H; constructor; eauto with utils
+    | H : egraph_sound_for_interpretation _ _ _
+      |- egraph_sound_for_interpretation _ _ _ =>
+        destruct H; constructor; eauto with utils
+    end.
 
 
 (*TODO: duplicated in section *)
