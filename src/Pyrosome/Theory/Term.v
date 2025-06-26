@@ -150,8 +150,6 @@ Arguments term_subst_lookup {_} !s n/.
 Section WithEqb.  
   Context {V_Eqb : Eqb V}
     {V_Eqb_ok : Eqb_ok V_Eqb}.
-
-
   
 #[export] Instance term_eqb : Eqb term :=
   fix term_eqb (e1 e2 : term) :=
@@ -716,11 +714,6 @@ Module Notations.
     x (in custom arg at level 0, x constr).
   Notation "{ x }" :=
     x (in custom sort at level 0, x constr).
-  (* TODO: issues; fix *)
-  (*
-    Notation "{ x }" :=
-    x (in custom ctx at level 0, x constr).
-  *)
 
   (*TODO: still including string scope here for convenience.
     Is there a way to parameterize that?
@@ -765,11 +758,6 @@ Module Notations.
     (var x%string)
       (in custom arg at level 0, x constr at level 0, format "x").
 
-  
-  (* TODO: allow redundant parens?
-  Notation "( e )" := e (in custom term at level 0, e custom term at level 100).
-  Notation "( e )" := e (in custom sort at level 0, e custom sort at level 100).
-   *)
 
 Goal False.
   pose {{e #"foo" }}.
@@ -782,12 +770,12 @@ Abort.
 
   Notation "'{{c' }}" :=
     nil
-      (at level 0, format "'[' '{{c'  '}}' ']'")
+      (at level 0, format "'[' '{{c'  '}}' ']'", only parsing)
     : ctx_scope.
   Notation "'{{c' bd , .. , bd' '}}'" :=
     (cons bd' .. (cons bd nil)..)
       (at level 0, bd custom ctx_binding at level 100,
-          format "'[' {{c  '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'") : ctx_scope.
+          format "'[' {{c  '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'", only parsing) : ctx_scope.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)
@@ -817,7 +805,7 @@ Abort.
     epose (as_ctx {{c "x" : #"env", "y" : #"ty" "x", "z" : #"ty" "x"}}).
   Abort.
   
-  (* Used to print arguments in the order the appear in a term *)
+  (* Used to print arguments in the order they appear in a term *)
   Definition argument_seq_marker {V} (s : list (term V)) := s.
   
   Notation "al" :=
