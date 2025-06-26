@@ -21,7 +21,7 @@ Require Import Setoid.
 Require Import Coq.Classes.Morphisms.
 Require Import Coq.Sorting.Permutation.
 
-From Utils Require Import Utils Monad Sep Relations Decidable Options.
+From Utils Require Import Utils Monad Sep Relations Decidable Options Maps.
 Import StateMonad.
 
 
@@ -874,30 +874,6 @@ Section __.
       apply perm_swap.
     Qed.
 
-    
-    Lemma fold_right_map_fst A B (l : list (A * B))
-      : fold_right (fun '(k, _) (r : list _) => k :: r) [] l
-        = map fst l.
-    Proof.
-      induction l;
-        basic_goal_prep;
-        basic_utils_crush.
-    Qed.
-
-    (*TODO: move to utils*)
-    Hint Resolve incl_nil_l : utils.
-
-    Lemma pair_fst_in_exists:
-      forall [S A : Type] (l : named_list S A) (n : S),
-        In n (map fst l) -> exists a, In (n, a) l.
-    Proof.
-      induction l;
-        basic_goal_prep;
-        basic_utils_crush.
-      apply IHl in H0; break.
-      exists x; eauto.
-    Qed.
-
     Lemma incl_fst_put_tuple i i0
       :  forall gen0 : idx_map,
         incl (map fst (map.tuples gen0))
@@ -965,35 +941,6 @@ Section __.
       apply Properties.map.split_comm in H.
       eauto using map_split_incl_r.
     Qed.
-
-    Lemma map_keys_in (m : idx_map) k
-      : In k (map.keys m) -> exists v, map.get m k = Some v.
-    Proof.
-      unfold map.keys.
-      rewrite Properties.map.fold_to_tuples_fold.
-      rewrite fold_right_map_fst.
-      intro.
-      
-      apply pair_fst_in_exists in H.
-      break.
-      exists x.
-      apply Properties.map.tuples_spec.
-      auto.
-    Qed.
-    
-    Lemma map_keys_in' (m : idx_map) k
-      : In k (map.keys m) <-> if map.get m k then True else False.
-    Proof.
-      case_match; intuition eauto.
-      {
-        eapply Properties.map.in_keys; eauto.
-      }
-      {
-        eapply map_keys_in in H;
-          basic_goal_prep.
-        congruence.
-      }
-    Qed.
     
     Lemma map_split_incl2 (a x x0 : idx_map)
       : map.split a x x0 ->
@@ -1014,7 +961,7 @@ Section __.
       }
     Qed.
 
-    Lemma dispoint_notin (x x0 : idx_map)
+    Lemma disjoint_notin (x x0 : idx_map)
       : map.disjoint x x0 ->
         (forall x1 : idx, In x1 (map.keys x) -> ~ In x1 (map.keys x0)).
     Proof.
@@ -1042,7 +989,7 @@ Section __.
       repeat split; eauto using Properties.map.keys_NoDup.
       all: intros.
       all: try eapply Properties.map.keys_NoDup.
-      all: eapply dispoint_notin; eauto with utils.
+      all: eapply disjoint_notin; eauto with utils.
       apply Properties.map.split_comm in Hsplit.
       all: eauto with utils.
     Qed.
@@ -1111,18 +1058,11 @@ Section __.
         }
       }
     Qed.
-
     
     Lemma has_key_empty (i : idx) : has_key i (map.empty : idx_map) <-> False.
     Proof. unfold has_key; basic_utils_crush. Qed.
     Hint Rewrite has_key_empty : utils.
 
-    Lemma map_keys_empty : map.keys (map:=idx_map) map.empty = [].
-    Proof.
-      unfold map.keys.
-      basic_utils_crush.
-    Qed.
-    Hint Rewrite map_keys_empty : utils.
     
     Lemma mem_order_empty i :  mem_order i [] map.empty.
     Proof.
@@ -4703,7 +4643,8 @@ Section __.
                                       option_relation Peano.lt (map.get uf.(rank) i)
                                         (map.get uf.(rank) j);
         maximum_rank : forall i r, map.get uf.(rank) i = Some r ->
-                                   r <= uf.(max_rank);                  
+                                   r <= uf.(max_rank);
+        next_upper_bound : forall k, has_key k uf.(parent) -> lt k uf.(next);
       }.
 
     Definition steps_bounded_by {A} (R: A -> A -> Prop) max a b :=
@@ -5010,7 +4951,12 @@ Section __.
       rewrite <- IHmr; eauto.
       basic_utils_crush.
     Qed.      
-        
+
+   
+    Lemma union_find_inversion r p mr n r' p' mr' n'
+      : MkUF r p mr n = MkUF r' p' mr' n' <-> r = r' /\ p = p' /\ mr = mr' /\ n = n'.
+    Proof. prove_inversion_lemma. Qed.
+    Hint Rewrite union_find_inversion : inversion.
       
     Lemma find_preserves_ok uf l uf' j i
       : union_find_ok uf l ->
@@ -5037,8 +4983,6 @@ Section __.
         unfold find' in *; basic_goal_prep;
           repeat case_match;
           basic_utils_crush.
-        { inversion H6; subst; eauto. }
-        { inversion H6; subst; eauto. }
       }
       {
         unfold find' in *;
@@ -5059,6 +5003,16 @@ Section __.
         inversion H; subst.
         intros.
         eapply maximum_rank0; eauto.
+      }
+      {
+        intro k.
+        pose proof H as H'; eapply find'_preserves_domain with (x:=k) in H'.
+         unfold find' in *;
+          repeat (cbn -[find_aux'] in *;
+                  case_match; cbn -[find_aux'] in *;
+                  try congruence).
+         inversions. intros; eapply next_upper_bound0; eauto.
+         eapply H'; auto.
       }
     Qed.
 
@@ -5429,6 +5383,13 @@ Section __.
           1: Lia.lia.
           eapply maximum_rank0 in H; Lia.lia.
         }
+        {
+          intros; eapply next_upper_bound0.
+          eqb_case k x; unfold has_key in *;
+            [ rewrite map.get_put_same in *
+            | rewrite map.get_put_diff in * by eauto; eauto ].
+          { eapply forest_root_iff in H0; eauto; rewrite H0; auto. }
+        }
       }
       { eapply In_removeb_diff; eauto. }
       { repeat intro; eapply In_removeb_In; eauto. }
@@ -5760,4 +5721,4 @@ End __.
 
 Arguments UnionFind.find {idx}%type_scope {Eqb_idx idx_map rank_map} pat x.
 Arguments parent {idx}%type_scope {idx_map rank_map} u.
-Arguments union_find_ok {idx}%type_scope {idx_map} {rank_map} uf l%list_scope.
+Arguments union_find_ok {idx}%type_scope {idx_map} {rank_map} lt uf l%list_scope.

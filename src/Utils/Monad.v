@@ -32,7 +32,7 @@ Notation "p <?- e ; b" :=
 (*TODO: this notation prints too readily*)
 Notation "'let' p := e 'in' b" :=
   (let p := e in b)
-    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do).
+    (in custom monadic_do at level 200, left associativity, p pattern at level 0, e constr, b custom monadic_do, only parsing).
 
 
 Notation "'let' p <?- e 'in' b" :=
@@ -46,7 +46,7 @@ Notation "'let' ! e 'in' b" :=
 Notation "'if' c 'then' b1 'else' b2" :=
   (if c then b1 else b2)
     (in custom monadic_do at level 200, left associativity,
-        c constr, b1 custom monadic_do, b2 custom monadic_do).
+        c constr, b1 custom monadic_do, b2 custom monadic_do, only parsing).
 
 Notation "e1 ; e2" :=
   (Mseq e1 e2)
@@ -74,8 +74,6 @@ Notation "'let' { M } p <?- e 'in' b" :=
     (in custom monadic_do at level 200, left associativity,
         p pattern at level 0, e constr, b custom monadic_do,
         only parsing).
-
-(*Notation "e" := (e) (in custom monadic_do at level 80, e constr at level 80).*)
 
 (*
 Notation "! e ; b" :=
@@ -128,8 +126,6 @@ Section MonadListOps.
     | a::al' => Mseq (f a) (list_Miter al')
     end.
   End __.
-  
-
   
   Fixpoint list_Miter_idx' (f : nat -> A -> M unit) (l : list A) n : M unit :=
     match l with
@@ -470,7 +466,7 @@ Module StateMonad.
           m constr, b custom monadic_do).
   
   Notation "'for/fold' kp vp 'from' m [[ acc := a ]] 'in' b" :=
-    (map_Mfold (fun kp vp acc => b) m a)                       
+    (map_Mfold (fun kp vp acc => b) m a)                    
       (in custom monadic_do at level 200, left associativity,
           kp pattern at level 0,
           vp pattern at level 0,

@@ -126,3 +126,27 @@ Fixpoint incl_dec {A} (eq_dec : forall s1 s2 : A, {s1 = s2} + {s1 <> s2})
          end); basic_utils_firstorder_crush.
 Defined.
 
+Ltac inversions := autorewrite with inversion in *; break; subst.
+
+Ltac get_head e :=
+  lazymatch e with
+  | ?f _ => get_head f
+  | _ => e
+  end.
+
+(*redefine with ::= to change cleanup *)
+Ltac cleanup_procedure := eauto with utils.
+Ltac cleanup_context :=
+  repeat multimatch goal with
+    | H : ?P |- _ =>
+        clear H; assert P as H by cleanup_procedure; clear H
+    end.
+
+Definition If_Some_satisfying {A} (P : A -> Prop) x :=
+  match x with
+  | Some x => P x
+  | None => True
+  end.
+Notation "x <?> P" :=
+  (If_Some_satisfying P x)
+    (at level 56,left associativity).

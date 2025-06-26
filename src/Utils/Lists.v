@@ -486,3 +486,15 @@ Ltac compute_incl := apply use_inclb; vm_compute; exact I.
 #[export] Hint Resolve all2_refl : utils.
 
 #[export] Hint Constructors NoDup : utils.
+
+
+Lemma fold_right_map_fst A B (l : list (A * B))
+  : fold_right (fun '(k, _) (r : list _) => k :: r) [] l
+    = map fst l.
+Proof.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.
+
+#[export] Hint Resolve incl_nil_l : utils.

@@ -520,3 +520,43 @@ Proof.
   rewrite H, H0.
   reflexivity.
 Qed.
+
+Lemma subrelation_PER_closure A (R1 R2 : A -> A -> Prop)
+  : subrelation R1 R2 ->
+    subrelation (PER_closure R1) (PER_closure R2).
+Proof using.
+  clear.
+  unfold subrelation.
+  intros ? ?; induction 1; basic_goal_prep;
+    basic_utils_crush.
+Qed.
+
+Lemma PER_closure_of_trans A (R : A -> A -> Prop)
+  :  iff2 (PER_closure (transitive_closure R)) (PER_closure R).
+Proof using.
+  clear.
+  unfold iff2; split;
+    induction 1; basic_goal_prep;
+    basic_utils_crush.
+  eapply trans_PER_subrel; eauto.
+Qed.
+
+Instance subrelation_Proper {A}
+  : Proper (iff2 ==> iff2 ==> iff) (subrelation (A:=A)).
+Proof using.
+  clear.
+  unfold subrelation.
+  repeat intro; unfold iff2 in *; split; intros.
+  { rewrite <- H, <- H0 in *; eauto. }
+  { rewrite H, H0 in *; eauto. }
+Qed.
+
+Lemma PER_empty A (a b : A) R 
+  : (forall a b, ~ R a b) -> ~ PER_closure R a b.
+Proof.
+  clear.
+  intros ? ?.
+  induction H0;
+    basic_goal_prep;
+    basic_utils_crush.
+Qed.

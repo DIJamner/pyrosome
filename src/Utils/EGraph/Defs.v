@@ -511,11 +511,11 @@ Section WithMap.
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
-            : forall {B} `{WithDefault B} (merge : B -> B -> B),
+            : forall {B} (*`{WithDefault B}*) (merge : B -> B -> B),
               ne_list (idx_trie B * list bool) ->
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
-  Arguments spaced_list_intersect {B}%type_scope {_} merge%function_scope _.
+  Arguments spaced_list_intersect {B}%type_scope merge%function_scope _.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
     map.keys (spaced_list_intersect (fun _ _ => tt) tries).
@@ -584,23 +584,6 @@ Section WithMap.
   Definition push_worklist e : ST unit :=
     fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
                    d.(epoch) (e::d.(worklist)) d.(analyses)).
-
-  (*
-  (*optional addition: return value
-    NOTE: removes only from data, not parents or frontier.
-   *)
-  Definition remove_node f args : ST unit :=
-    fun i =>
-      let d' := map_update_if_exists i.(db) f (fun tbl => map.remove tbl args) in
-      (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
-
-  (* Note: should only be called with nodes not in the egraph! *)
-  Definition put_node a : ST unit :=
-    fun i =>
-      let d' := map_update i.(db) a.(atom_fn)
-                (fun tbl => map.put tbl a.(atom_args) (i.(epoch),a.(atom_ret))) in
-      (tt, Build_instance d' i.(equiv) i.(parents) i.(epoch) i.(worklist)).
-  *)
 
 
   Definition get_parents x : ST (list atom) :=
@@ -1779,49 +1762,3 @@ Module PositiveIdx.
   Compute (generic_join_pos db1 query2).
    *)
 End PositiveIdx.
-
-(*
-Eval cbv [UnionFind.union Mbind Mret] in UnionFind.union.
-
-UnionFind.union =
-fun (idx : Type) (Eqb_idx : Eqb idx) (idx_map : map.map idx idx) (rank_map : map.map idx nat)
-  (h : union_find idx idx_map rank_map) (x y : idx) =>
-@!
-let (h0, cx) <- UnionFind.find idx Eqb_idx idx_map rank_map h x
-in (Mbind
-      (fun '(h1, cy) =>
-       @!
-       if eqb cx cy then ret (h1, cx)
-       else (Mbind
-               (fun rx : nat =>
-                @!
-                let ry <- map.get (rank idx idx_map rank_map h1) cy
-                in match ry ?= rx with
-                   | Eq =>
-                       @!
-                       ret ({|
-                              rank := map.put (rank idx idx_map rank_map h1) cx (Init.Nat.succ rx);
-                              parent := map.put (parent idx idx_map rank_map h1) cy cx;
-                              max_rank :=
-                                Init.Nat.max (max_rank idx idx_map rank_map h1) (Init.Nat.succ rx);
-                              next := next idx idx_map rank_map h1
-                            |}, cx)
-                   | Lt =>
-                       @!
-                       ret ({|
-                              rank := rank idx idx_map rank_map h1;
-                              parent := map.put (parent idx idx_map rank_map h1) cy cx;
-                              max_rank := max_rank idx idx_map rank_map h1;
-                              next := next idx idx_map rank_map h1
-                            |}, cx)
-                   | Gt =>
-                       @!
-                       ret ({|
-                              rank := rank idx idx_map rank_map h1;
-                              parent := map.put (parent idx idx_map rank_map h1) cx cy;
-                              max_rank := max_rank idx idx_map rank_map h1;
-                              next := next idx idx_map rank_map h1
-                            |}, cy)
-                   end) (map.get (rank idx idx_map rank_map h1) cx)))
-      (UnionFind.find idx Eqb_idx idx_map rank_map h0 y))
-*)

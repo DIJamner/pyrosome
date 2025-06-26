@@ -399,3 +399,16 @@ Arguments named_list_lookup_none {S}%type_scope {EqbS EqbS_ok} [A]%type_scope l 
 #[export] Hint Rewrite @fresh_app : utils.
 #[export] Hint Resolve all_fresh_insert_rest_is_fresh : utils.
 #[export] Hint Resolve named_list_lookup_err_in : utils.
+
+
+
+Lemma pair_fst_in_exists:
+  forall [S A : Type] (l : named_list S A) (n : S),
+    In n (map fst l) -> exists a, In (n, a) l.
+Proof.
+  induction l;
+    basic_goal_prep;
+    basic_utils_crush.
+  apply IHl in H0; break.
+  exists x; eauto.
+Qed.

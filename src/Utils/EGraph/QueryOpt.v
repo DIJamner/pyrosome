@@ -1,4 +1,4 @@
-Require Import Datatypes.String Lists.List.
+Require Import Datatypes.String Lists.List Coq.Classes.RelationClasses.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -6,7 +6,7 @@ Open Scope list.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps.
 From Utils.EGraph Require Import Defs Semantics.
 Import Monad.StateMonad.
 
@@ -17,6 +17,7 @@ Section WithMap.
       (Eqb_idx_ok : Eqb_ok Eqb_idx)
 
       (*TODO: just extend to Natlike?*)
+      (lt : idx -> idx -> Prop)
       (idx_succ : idx -> idx)
       (idx_zero : WithDefault idx)
       (*TODO: any reason to have separate from idx?*)
@@ -158,6 +159,8 @@ Section WithMap.
   (*TODO: move to utils*)
   Ltac get_goal :=
     lazymatch goal with |- ?G => G end.
+
+  Notation union_find_ok := (union_find_ok lt).
   
   Lemma force_uf_ok equiv x
     : union_find_ok equiv x ->
@@ -270,7 +273,7 @@ Section WithMap.
   Hint Resolve Properties.map.extends_refl : utils.
   
   Lemma force_equiv_sound X m i
-    : state_sound_for_model (analysis_result:=X) m i force_equiv (fun i' _ => i = i').
+    : state_sound_for_model (analysis_result:=X) lt m i force_equiv (fun i' _ => i = i').
   Proof.
     open_ssm'.
     intuition cbn; eauto with utils.
@@ -290,7 +293,7 @@ Section WithMap.
   Qed.
 
   Lemma dedup_computation_sound X m i l
-    : state_sound_for_model (analysis_result:=X) m i
+    : state_sound_for_model lt (analysis_result:=X) m i
         (list_Miter (fun a => Mbind (fun a => remove_atom a (A:=X))
                                 (canonicalize a))
            l)
@@ -454,7 +457,7 @@ Section SequentOfStates.
       Lemma remove_atom_incl (i0 : instance X) a0 i1 u
         : remove_atom a0 i0 = (u, i1) ->
           incl (db_to_atoms (db i1))  (db_to_atoms (db i0)).
-      Proof using symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
+      Proof using lt symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
@@ -553,7 +556,7 @@ Eqb_idx.
             (db_to_atoms
                (db
                   i)).
-      Proof using symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
+      Proof using lt symbol_map_ok idx_trie_ok Eqb_symbol_ok Eqb_symbol Eqb_idx_ok
 Eqb_idx.
         clear conclusion_eqs_final live_eqn conclusion_var_in_atoms
           conclusion_eqs_verbose conclusion_atoms conclusion_inst_dedup
@@ -622,6 +625,7 @@ Eqb_idx.
 
 
       Hint Rewrite @map.get_empty : utils.
+
       
       Lemma empty_egraph_sound m
         : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero X).
@@ -632,7 +636,7 @@ Eqb_idx.
           basic_utils_crush.
         {
           exfalso.
-          unfold atom_in_egraph in *.
+          unfold atom_in_egraph, atom_in_db in *.
           basic_goal_prep;
             basic_utils_crush.
         }

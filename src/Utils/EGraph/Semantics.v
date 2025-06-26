@@ -6,40 +6,12 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations UnionFind.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind.
 From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.
 Import StateMonad.
 
-(*TODO: move to Utils.v*)
-(*redefine with ::= to change cleanup *)
-Ltac cleanup_procedure := eauto with utils.
-Ltac cleanup_context :=
-  repeat multimatch goal with
-    | H : ?P |- _ =>
-        clear H; assert P as H by cleanup_procedure; clear H
-    end.
-
-Definition If_Some_satisfying {A} (P : A -> Prop) x :=
-  match x with
-  | Some x => P x
-  | None => True
-  end.
-Notation "x <?> P" :=
-  (If_Some_satisfying P x)
-    (at level 56,left associativity).
-
-
-(*TODO: move to Utils.v*)
-Ltac inversions := autorewrite with inversion in *; break; subst.
-
-(*TODO: move to utils*)
-Ltac get_head e :=
-  lazymatch e with
-  | ?f _ => get_head f
-  | _ => e
-  end.
 
 Ltac match_some_satisfying :=
   lazymatch goal with
@@ -64,6 +36,7 @@ Section WithMap.
       (Eqb_idx_ok : Eqb_ok Eqb_idx)
 
       (*TODO: just extend to Natlike?*)
+      (lt : idx -> idx -> Prop)
       (idx_succ : idx -> idx)
       (idx_zero : WithDefault idx)
       (*TODO: any reason to have separate from idx?*)
@@ -413,13 +386,17 @@ Abort.
 
   Notation instance :=
     (instance idx symbol symbol_map idx_map idx_trie analysis_result).
+  Notation db_map :=
+    (db_map idx symbol symbol_map idx_trie analysis_result).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
   
-  Definition atom_in_egraph a (i : instance) :=
-    (map.get i.(db) a.(atom_fn)) <$>
+  Definition atom_in_db a (d : db_map) :=
+    (map.get d a.(atom_fn)) <$>
       (fun tbl => (map.get tbl a.(atom_args)) <$>
                     (fun r => r.(entry_value _ _) = a.(atom_ret))).
-
+  (*TODO: is this useful anymore? *)
+  Definition atom_in_egraph a i := atom_in_db a i.(db). 
+  
   (*
   (*Defined separately for proof convenience.
     Equivalent to a term using ~ atom_in_egraph
@@ -489,7 +466,7 @@ Abort.
   (* TODO: is this record needed? other fields may not be necessary *)
   Record egraph_ok (e : instance) : Prop :=
     {
-      egraph_equiv_ok : exists roots, union_find_ok e.(equiv) roots;
+      egraph_equiv_ok : exists roots, union_find_ok lt e.(equiv) roots;
       (* TODO: not an invariant that parents exist?
            Can be broken in many places.
            What is the invariant?
@@ -511,40 +488,14 @@ Abort.
               idx_trie B).
 
 
-  Hint Rewrite @map.get_empty : utils.
-
-  (*
-  Lemma PER_empty (j k : idx)
-    : reachable_plus map.empty j k <-> False.
-  Proof.
-    unfold reachable_plus.
-    intuition (subst; eauto with utils).
-    induction H;
-      basic_goal_prep;
-      basic_utils_crush.
-    all: 
-      basic_utils_crush.
-  Qed.
-  Hint Rewrite reachable_empty : utils.
-   *)
-  
-  Lemma PER_empty A (a b : A) R 
-    : (forall a b, ~ R a b) -> ~ PER_closure R a b.
-  Proof.
-    intros ? ?.
-    induction H0;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  
+  Hint Rewrite @map.get_empty : utils.  
   
   Theorem empty_sound_for_interpretation m
     (*: egraph_sound (empty_egraph idx_zero analysis_result) m.*)
     : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
   Proof.
     constructor; cbn; try tauto;
-      unfold atom_in_egraph;
+      unfold atom_in_egraph, atom_in_db;
       basic_goal_prep;
       rewrite ? map.get_empty in *;
       basic_goal_prep;
@@ -557,6 +508,12 @@ Abort.
     }
   Qed.
 
+  
+  Lemma has_key_empty A k
+    : Sep.has_key k (map.empty : idx_map A) <-> False.
+  Proof. clear idx_succ. unfold Sep.has_key; basic_utils_crush. Qed.
+  Hint Rewrite has_key_empty : utils.
+  
   Theorem empty_sound m : egraph_sound (empty_egraph idx_zero analysis_result) m.
   Proof.
     unfold empty_egraph.
@@ -568,7 +525,7 @@ Abort.
     apply empty_sound_for_interpretation.
   Qed.
   
-  Notation saturate_until' := (saturate_until' idx_succ idx_zero spaced_list_intersect).
+  Notation saturate_until' := (saturate_until' idx_succ idx_zero (spaced_list_intersect)).
   Notation saturate_until := (saturate_until idx_succ idx_zero spaced_list_intersect).
 
   Notation run1iter :=
@@ -611,7 +568,7 @@ Abort.
        a1 = a2.
   Proof.
     clear idx_succ.
-    unfold atom_in_egraph;
+    unfold atom_in_egraph, atom_in_db;
       destruct a1, a2;
       basic_goal_prep;
       subst.
@@ -626,7 +583,7 @@ Abort.
     : atom_in_egraph a e \/ ~ atom_in_egraph a e.
   Proof.
     clear idx_succ.
-    unfold atom_in_egraph.
+    unfold atom_in_egraph, atom_in_db.
     repeat (match_some_satisfying; cbn;[]).
     basic_goal_prep.
     destruct d; cbn.
@@ -749,7 +706,7 @@ Abort.
 
   Lemma atom_rel_refl equiv : Reflexive (atom_rel equiv).
   Proof using.
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold atom_rel.
     intro a; destruct a; cbn; intuition eauto.
     1:eapply all2_refl.
@@ -758,7 +715,7 @@ Abort.
   
   Lemma atom_rel_sym equiv : Symmetric (atom_rel equiv).
   Proof using.
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold atom_rel.
     intros a b; destruct a, b; cbn; intuition eauto.
     1:eapply all2_Symmetric.
@@ -855,6 +812,7 @@ Abort.
   Lemma worklist_entry_sound_mono m
     : monotone1 (worklist_entry_sound m).
   Proof.
+    clear idx_zero idx_succ.
     intros x ? ?.
     destruct x; basic_goal_prep; auto.
     revert H1.
@@ -1123,43 +1081,9 @@ Abort.
       basic_goal_prep; basic_utils_crush.
     }
   Qed.
-
-  (*TODO: move to UnionFind.v *)
-
-  (*TODO: move to originating file*)
-  Hint Constructors PER_closure transitive_closure : utils.
-  Lemma subrelation_PER_closure A (R1 R2 : A -> A -> Prop)
-    : subrelation R1 R2 ->
-      subrelation (PER_closure R1) (PER_closure R2).
-  Proof using.
-    clear.
-    unfold subrelation.
-    intros ? ?; induction 1; basic_goal_prep;
-      basic_utils_crush.
-  Qed.
   
-  Lemma PER_closure_of_trans A (R : A -> A -> Prop)
-    :  iff2 (PER_closure (transitive_closure R)) (PER_closure R).
-  Proof using.
-    clear.
-    unfold iff2; split;
-      induction 1; basic_goal_prep;
-      basic_utils_crush.
-    eapply trans_PER_subrel; eauto.
-  Qed.
-  
-  Instance subrelation_Proper {A}
-    : Proper (iff2 ==> iff2 ==> iff) (subrelation (A:=A)).
-  Proof using.
-    clear.
-    unfold subrelation.
-    repeat intro; unfold iff2 in *; split; intros.
-    { rewrite <- H, <- H0 in *; eauto. }
-    { rewrite H, H0 in *; eauto. }
-  Qed.
-
-  (*TODO: move to originating file *)
-  Existing Instance iff2_rel.
+  (*TODO: still needed? *)
+  (*Existing Instance iff2_rel. *)
   
   Lemma trans_to_PER_natural u u'
     : subrelation (parent_rel idx (idx_map idx) (parent u))
@@ -1212,6 +1136,7 @@ Abort.
     }
   Qed.
 
+  (*TODO: this should be implied by model_ok*)
   Context m (m_PER : PER (domain_eq m)).
   
   Lemma eq_sound_for_model_trans i x y z
@@ -1219,7 +1144,7 @@ Abort.
       eq_sound_for_model m i y z ->
       eq_sound_for_model m i x z.
   Proof using m_PER.
-    clear idx_succ.
+    clear lt idx_succ.
     unfold  eq_sound_for_model, Is_Some_satisfying.
     repeat case_match; basic_goal_prep; auto.
     all: try tauto.
@@ -1230,7 +1155,7 @@ Abort.
           : eq_sound_for_model m i old_idx new_idx ->
             Sep.has_key new_idx i.
   Proof using.
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold eq_sound_for_model, Sep.has_key, Is_Some_satisfying.
     repeat case_match; tauto.
   Qed.
@@ -1352,7 +1277,7 @@ Abort.
     open_ssm.
     basic_goal_prep.
     eapply atom_interpretation0.
-    unfold atom_in_egraph in *.
+    unfold atom_in_egraph, atom_in_db in *.
     basic_goal_prep.
     basic_utils_crush.
     repeat iss_case.
@@ -1404,7 +1329,7 @@ Abort.
 
   Instance eq_sound_for_model_Symmetric i : Symmetric (eq_sound_for_model m i).
   Proof using m_PER .
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold eq_sound_for_model.
     repeat intro.
     repeat iss_case.
@@ -1503,7 +1428,7 @@ Abort.
     unfold atom_sound_for_model; cbn.
     assert (atom_in_egraph (Build_atom f args (entry_value idx analysis_result d)) e).
     {
-      unfold atom_in_egraph; cbn.
+      unfold atom_in_egraph, atom_in_db; cbn.
       rewrite case_match_eqn; cbn;
         rewrite case_match_eqn0; cbn.
       reflexivity.
@@ -1527,7 +1452,7 @@ Abort.
     : map.same_domain m1 m2 <->
         (forall x : idx, Sep.has_key x m1 <-> Sep.has_key x m2).
   Proof using.
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold map.same_domain, map.sub_domain,  Sep.has_key.
     intuition repeat case_match; eauto;
       try eapply H2 in case_match_eqn0; try eapply H1 in case_match_eqn;
@@ -1542,7 +1467,7 @@ Abort.
   
   (*TODO: move to UnionFind.v*)
   Lemma union_same_domain u u' x y i0 l
-    : union_find_ok u l ->
+    : union_find_ok lt u l ->
       Sep.has_key x u.(parent) ->
       Sep.has_key y u.(parent) ->
       UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) u x y
@@ -1600,7 +1525,7 @@ Abort.
   Instance eq_sound_for_model_PER i
     : PER (eq_sound_for_model m i).
   Proof using m_PER.
-    clear idx_succ idx_zero.
+    clear lt idx_succ idx_zero.
     unfold eq_sound_for_model.
     constructor; repeat intro; repeat iss_case; cbn.
     { symmetry; auto. }
@@ -1612,7 +1537,7 @@ Abort.
   
   (*TODO: move to UnionFind.v*)
   Lemma union_output l uf x y uf' z
-    :  union_find_ok uf l ->
+    :  union_find_ok lt uf l ->
        Sep.has_key x (parent uf) ->
        Sep.has_key y (parent uf) ->
        UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y = (uf', z) ->
@@ -1841,7 +1766,7 @@ Abort.
     {
       destruct H5; constructor; basic_goal_prep; intuition eauto.
       {
-        unfold atom_in_egraph in H3; cbn in H3.
+        unfold atom_in_egraph, atom_in_db in H3; cbn in H3.
         eqb_case (atom_fn a) (atom_fn a2);
           [ rewrite H5 in *; rewrite get_update_same in *
           | rewrite get_update_diff in * ]; eauto.
@@ -1854,7 +1779,7 @@ Abort.
             autorewrite with inversion in *; break; subst; cbn in *; eauto.
           { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
           {
-            apply atom_interpretation0; unfold atom_in_egraph.
+            apply atom_interpretation0; unfold atom_in_egraph, atom_in_db.
             rewrite case_match_eqn; cbn.
             rewrite Hma; cbn.
             eauto.
@@ -2022,7 +1947,7 @@ Abort.
     case_match; cbn; auto.
     assert (atom_in_egraph (Build_atom f args d.(entry_value _ _)) e).
     {
-      unfold atom_in_egraph; cbn.
+      unfold atom_in_egraph, atom_in_db; cbn.
       rewrite case_match_eqn; cbn.
       rewrite case_match_eqn0; cbn.
       reflexivity.
@@ -2061,7 +1986,7 @@ Abort.
     intro Hsound.
     open_ssm.
     intuition eauto with utils.
-    unfold atom_in_egraph in *; cbn in *.
+    unfold atom_in_egraph,atom_in_db in *; cbn in *.
     repeat iss_case.
     eqb_case f (atom_fn a0).
     {
@@ -2350,7 +2275,764 @@ Abort.
       cbn beta; intros; repeat subst.
       eauto.
     }
-  Qed.      
+  Qed.
+
+  Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
+    : state_sound_for_model m i s P ->
+      (forall i' a, map.extends i' i -> P i' a -> Q i' a) ->
+      state_sound_for_model m i s Q.
+  Proof.
+    clear idx_zero idx_succ.
+    unfold state_sound_for_model, state_triple, Sep.and1; basic_goal_prep;
+      intuition eauto.
+    specialize (H1 e).
+    intuition break.
+    eexists; intuition eauto.
+  Qed.
+
+  
+  (*TODO: move to coqutil *)
+  Lemma extends_put_None A (i : idx_map A) k v
+    : map.get i k = None -> map.extends (map.put i k v) i.
+  Proof.
+    repeat intro.
+    eqb_case x k;
+      [ rewrite map.get_put_same | rewrite map.get_put_diff by eauto ];
+      congruence.
+  Qed.
+
+  (*TODO: move to UnionFind.v*)
+  Arguments UnionFind.alloc {idx}%type_scope {idx_map rank_map} succ%function_scope pat.
+
+  
+  Lemma forest_cons l u (x : idx)
+    : forest _ _ l u ->
+      ~ Sep.has_key x u ->
+      forest _ _ (x::l) (map.put u x x).
+  Proof.
+    clear idx_zero idx_succ.
+    exists (map.singleton x x), u;
+      basic_goal_prep;
+      basic_utils_crush.
+    {
+      eapply Sep.map_split_singleton_l; intuition eauto.
+      unfold Sep.has_key in *; case_match; tauto.
+    }
+    { eapply tree_singleton; eauto. }
+  Qed.
+
+  Context (lt_asymmetric : Asymmetric lt)
+    (lt_succ : forall x, lt x (idx_succ x))
+    (lt_trans : Transitive lt).
+
+  Existing Instance lt_trans.
+
+  Lemma asymmetric_unequal a b
+    : lt a b -> a <> b.
+  Proof. repeat intro; subst; eapply asymmetry; eauto. Qed.
+  Hint Resolve asymmetric_unequal : utils.
+  
+  (*TODO: move to UnionFind.v*)
+  Lemma alloc_preserves_ok u l u' x
+    : union_find_ok lt u l ->
+      UnionFind.alloc idx_succ u = (u', x) ->
+      union_find_ok lt u' (x::l).
+  Proof.
+    clear idx_zero.
+    destruct u;
+    unfold UnionFind.alloc;
+      basic_goal_prep; inversions.
+    destruct H1; constructor; basic_goal_prep; eauto.
+    { eapply forest_cons; eauto. }
+    {
+      eqb_case k x.
+      { exists 0; rewrite map.get_put_same; auto. }
+      {
+        rewrite !map.get_put_diff in * by eauto.
+        apply rank_covers_domain in H1; eauto.
+      }
+    }
+    {
+      eqb_case i x; [ repeat (rewrite !map.get_put_same in *; auto; inversions; tauto)
+                    | rewrite !map.get_put_diff in * by eauto].
+      pose proof H1 as H1';
+        eapply forest_closed in H1'; eauto.
+      eapply next_upper_bound in H1'.
+      assert (j <> x) by auto with utils.
+      rewrite !map.get_put_diff in * by eauto.
+      eapply rank_increasing in H1; eauto.
+    }
+    { 
+      eqb_case i x; [ repeat (rewrite !map.get_put_same in *; auto; inversions)
+                    | rewrite !map.get_put_diff in * by eauto];
+        eauto; Lia.lia.
+    }
+    {
+      rewrite has_key_put in *; eauto.
+      intuition subst; eauto.
+    }
+  Qed.
+
+  (*TODO: move to UnionFind.v*)
+  Arguments next {idx}%type_scope {idx_map rank_map} u.
+  
+  Lemma alloc_next u u' i0
+    : UnionFind.alloc idx_succ u = (u', i0) ->
+      i0 = u.(next).
+  Proof.
+    destruct u;
+      unfold UnionFind.alloc; cbn; intros; inversions.
+    reflexivity.
+  Qed.
+
+  Hint Rewrite has_key_put : utils.
+
+  (*TODO: move to Sep*)
+  Lemma get_put_None A (i : idx_map A) k x v v'
+    : map.get i x = None ->
+      map.get i k = Some v' ->
+      map.get (map.put i x v) k = Some v'.
+  Proof.
+    eqb_case k x; [congruence |].
+    rewrite map.get_put_diff; eauto.
+  Qed.
+  
+  Lemma Mmap_get_put_None A (i : idx_map A) l l' x v
+    : map.get i x = None ->
+      list_Mmap (map.get i) l = Some l' ->
+      list_Mmap (map.get (map.put i x v)) l = Some l'.
+  Proof.
+    revert l';
+      induction l;
+      basic_goal_prep;
+      repeat case_match; try tauto;
+      inversions;
+      intuition eauto using get_put_None.
+    {
+      eapply get_put_None with (v:=v) in case_match_eqn1; eauto.
+      replace a0 with a1 by congruence.
+      f_equal.
+      eapply IHl with (l':=l1) in H1; inversions; eauto.
+    }
+    {
+      eapply IHl with (l':=l0) in H1; inversions; eauto.
+    }
+    {
+      eapply get_put_None with (v:=v) in case_match_eqn0; eauto.
+      congruence.
+    }
+  Qed.
+
+
+  Ltac key_case x y :=
+    eqb_case x y; [ rewrite !map.get_put_same in *
+                  | rewrite !map.get_put_diff in * by eauto ].
+  
+  
+  (*TODO: move to union_find *)
+  Arguments closed_graph {idx}%type_scope {idx_map} m. 
+  
+  Lemma PER_closure_put parent x i1 i2
+    : closed_graph parent ->
+      map.get parent x = None ->
+      PER_closure (fun i j : idx => map.get (map.put parent x x) i = Some j) i1 i2
+      <-> PER_closure (fun i j : idx => map.get parent i = Some j) i1 i2
+          \/ (i1 = x /\ i2 = x).
+  Proof.
+    intuition subst.
+    2:{
+      eapply subrelation_PER_closure; eauto.
+      repeat intro.
+      key_case x0 x; congruence.
+    }
+    2:{ constructor 1; rewrite map.get_put_same; auto. }
+    {
+      induction H3; basic_goal_prep; basic_utils_crush.
+      key_case x a; inversions; basic_utils_crush.
+    }
+  Qed.
+
+  
+  Lemma next_None uf l
+    : union_find_ok lt uf l ->
+      map.get uf.(parent) uf.(next) = None.
+  Proof.
+    destruct uf, 1; basic_goal_prep.
+    destruct (map.get parent next) eqn:H'; try congruence.
+    exfalso.
+    assert (Sep.has_key next parent).
+    { unfold Sep.has_key in *; rewrite H' in *; auto. }
+    apply next_upper_bound in H1.
+    eapply asymmetric_unequal; eauto.
+  Qed.
+
+  
+  Lemma map_get_None_contradiction A (i : idx_map A) next
+    : (~Is_Some (map.get i next)) -> map.get i next = None.
+  Proof. unfold Is_Some; destruct (map.get i next); intuition congruence. Qed.
+  
+  Lemma alloc_sound i time_travel_term
+    : m.(domain_wf) time_travel_term ->
+      state_sound_for_model m i
+        (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun i' x => map.get i' x = Some time_travel_term).
+  Proof.
+    clear idx_zero.
+    unfold alloc.
+    repeat intro.
+    unfold Sep.and1 in *; break.
+    case_match; cbn.
+    pose proof case_match_eqn as H';
+      eapply alloc_next in H'; subst.
+    exists (map.put i (equiv e).(next) time_travel_term).
+    basic_goal_prep; intuition auto.
+    { rewrite map.get_put_same; eauto. }
+    {
+      destruct H2 as [ [] ].
+      eapply alloc_preserves_ok in case_match_eqn; eauto.
+      constructor; eexists; cbn; eauto.
+    }
+    2:{
+      eapply extends_put_None.
+      destruct (map.get i (next (equiv e))) eqn:Hget; auto.
+      exfalso.
+      assert (Is_Some (map.get i (next (equiv e)))) as Hsome
+          by (rewrite Hget; cbn; auto).
+      clear d Hget.
+      eapply interpretation_exact in Hsome; eauto.
+      
+      destruct H2 as [ [] ].
+      eapply next_upper_bound in Hsome; eauto.
+    }
+    {
+      destruct H3; constructor; basic_goal_prep; eauto.
+      {
+         unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
+           inversions.
+         eqb_case next i0;
+           [rewrite !map.get_put_same in *
+           |rewrite !map.get_put_diff in * by eauto ];
+           inversions; eauto.
+      }
+      {
+        unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
+          inversions; cbn in *.
+        eqb_case next x;
+          [rewrite !map.get_put_same in *
+          |rewrite !map.get_put_diff in * by eauto ];
+          inversions; basic_utils_crush.
+      }
+      {
+        unfold atom_in_egraph in *; cbn in *.
+        eapply atom_interpretation0 in H3.
+        eapply atom_sound_monotone; eauto.
+        apply extends_put_None.
+        destruct H2 as [ [] ].
+        enough (~ Sep.has_key (next (equiv e)) i).
+        { unfold Sep.has_key in *; case_match; try congruence; tauto. }
+        intro.
+        apply interpretation_exact0 in H4.
+        eapply next_upper_bound in H4; eauto.
+      }
+      {
+        destruct e; destruct equiv;
+        unfold uf_rel_PER, UnionFind.alloc in *;
+          basic_goal_prep; inversions; basic_goal_prep.
+        eapply PER_closure_put in H3.
+        2:{
+          destruct H2 as [ [? H2] ].
+          eapply uf_forest in H2; cbn in *; eauto.
+          eapply forest_closed; eauto.
+        }
+        2:{
+          destruct H2 as [ [? H2] ]; cbn in H2.
+          eapply next_None in H2; cbn in H2; auto.
+        }
+        intuition subst.
+        { eapply rel_interpretation0 in H4.
+          eapply eq_sound_monotone; eauto.
+          apply extends_put_None.
+          destruct H2 as [ [? H2] ]; cbn in H2.
+          eapply next_None in H2; cbn in H2; auto.
+          apply map_get_None_contradiction; repeat intro.
+          apply interpretation_exact0 in H3.
+          unfold Sep.has_key in *; rewrite H2 in *; auto.
+        }
+        {
+          unfold eq_sound_for_model; rewrite map.get_put_same; cbn.
+          auto.
+        }
+      }
+      {
+        eapply monotone1_all; [apply atom_sound_monotone | | eauto].
+        apply extends_put_None.
+        destruct H2 as [ [? H2] ]; cbn in H2.
+        eapply next_None in H2; cbn in H2; auto.
+        apply map_get_None_contradiction; repeat intro.
+        apply interpretation_exact0 in H4.
+        unfold Sep.has_key in *; rewrite H2 in *; auto.
+      }
+      {
+        eapply monotone1_all; [apply worklist_entry_sound_mono| | eauto].
+        apply extends_put_None.
+        destruct H2 as [ [? H2] ]; cbn in H2.
+        eapply next_None in H2; cbn in H2; auto.
+        apply map_get_None_contradiction; repeat intro.
+        apply interpretation_exact0 in H3.
+        unfold Sep.has_key in *; rewrite H2 in *; auto.
+      }
+    }        
+  Qed.
+
+  (*
+  Lemma list_Mfoldl_map A B C (g : A -> B) M `{Monad M} (f : C -> B -> M C) l acc
+    : list_Mfoldl f (map g l) acc = list_Mfoldl (fun acc x => f acc (g x)) l acc.
+  Proof using.
+    revert acc; induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+    (*TODO: needs Mbind_ext?*)
+  Admitted. *)
+
+  (* TODO: Define and implement monad.ok *)
+  (*TODO: avoid depending on funext if possible *)
+  Lemma Mbind_assoc (T1 T2 T3 : Type) S (f : T1 -> state S T2) (g : T2 -> state S T3) ma
+    : Mbind (fun a : T1 => @! let p <- f a in (g p)) ma = Mbind g (@! let p <- ma in (f p)).
+  Proof.
+    (*TODO: primitive pairs would validate this. *)
+    cbn.
+    apply FunctionalExtensionality.functional_extensionality;
+      intros; repeat case_match; eauto.
+  Qed.
+  Lemma Mbind_Mret : forall (T1 T2 : Type) S (f : T1 -> state S T2) v,
+      Mbind f (Mret v) = f v.
+  Proof. intros; reflexivity. Qed.
+
+  
+  (*TODO: Move to a better spot*)
+  Lemma set_eq_refl A (l : list A) : set_eq l l.
+  Proof. unfold set_eq, incl; intuition auto. Qed.
+  Hint Resolve set_eq_refl : utils.
+  
+  Lemma set_eq_trans A : Transitive (A:=list A) set_eq.
+  Proof. unfold set_eq, incl; repeat intro; intuition auto. Qed.
+  
+  Lemma set_eq_sym A : Symmetric (A:=list A) set_eq.
+  Proof. unfold set_eq, incl; repeat intro; intuition auto. Qed.
+
+  Add Parametric Relation {A : Type} : (list A) (set_eq)
+    reflexivity proved by (set_eq_refl _)
+    symmetry proved by (set_eq_sym _)
+    transitivity proved by (set_eq_trans _)
+      as set_eq_rel.
+
+  Instance perm_set_eq_subrel {A} : subrelation (Permutation.Permutation (A:=A)) (set_eq (A:=A)).
+  Proof.
+    unfold set_eq, incl.
+    repeat intro.
+    intuition auto.
+    { rewrite <- H1; auto. }
+    { rewrite H1; auto. }
+  Qed.
+  
+  Lemma map_keys_put A (acc : idx_map A) a a0
+    : set_eq (map.keys (map.put acc a a0)) (a::map.keys acc).
+  Proof.
+    unfold set_eq, incl.
+    repeat intro; cbn in *.
+    intuition auto; cbn; rewrite map_keys_in' in *.
+    all: key_case a a1; inversions; intuition auto.
+  Qed.
+
+  
+  (*TODO: move *)
+  Instance set_eq_cons_Proper {A}
+    : Proper (eq ==> set_eq ==> set_eq) (@ cons A).
+  Proof. unfold set_eq, incl; repeat intro; cbn in *; subst; intuition eauto. Qed.
+  
+  (*TODO: move *)
+  Instance set_eq_app_Proper {A}
+    : Proper (set_eq ==> set_eq ==> set_eq) (@ app A).
+  Proof.
+    unfold set_eq, incl; repeat intro; cbn in *; subst.
+    basic_goal_prep.
+    basic_utils_crush.
+  Qed.
+  
+  (*TODO: move *)
+  Instance set_eq_in_Proper {A}
+    : Proper (eq ==> set_eq ==> iff) (@ In A).
+  Proof. unfold set_eq, incl; repeat intro; cbn in *; subst; intuition eauto. Qed.
+  
+    
+  (* `time_travel_terms` should be a set of terms determined by code that is run later.
+     Another way of looking at this lemma is that for any list of assignments for vars,
+     fresh allocation is compatible with the evaluation determined by that list.
+     TODO: see if this works.
+   *)
+  Lemma allocate_existential_vars_sound i vars acc time_travel_terms
+    : Datatypes.length time_travel_terms = Datatypes.length vars ->
+      all m.(domain_wf) time_travel_terms ->
+      NoDup vars ->
+      all (fun x => ~Sep.has_key x acc) vars ->
+      state_sound_for_model m i
+        (allocate_existential_vars idx idx_succ symbol symbol_map
+           idx_map idx_trie analysis_result
+           vars acc)
+        (fun i a =>
+           map.extends a acc
+           /\ all2 (fun x t => map.get a x <$> (fun k => map.get i k = Some t))
+                vars time_travel_terms
+           /\ set_eq (map.keys a) (vars ++ (map.keys acc))).
+  Proof.
+    unfold allocate_existential_vars.
+    intros.
+    {
+      revert i acc time_travel_terms H1 H2 H3 H4.
+      induction vars; destruct time_travel_terms;
+        cbn [list_Mfoldl Datatypes.length] in *; intros; try congruence.
+      {
+        eapply ret_sound_for_model';
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+      rewrite <- !Mbind_assoc.
+      ssm_bind.
+      { apply alloc_sound with (time_travel_term:= d); basic_goal_prep; intuition eauto. }
+      rewrite Mbind_Mret.
+      eapply state_sound_for_model_wkn.
+      {
+        inversion H1; inversion H3; subst; basic_goal_prep.
+        eapply IHvars; basic_goal_prep; intuition eauto.
+        eapply all_wkn; try eassumption.
+        intros.
+        basic_utils_crush.
+      }
+      {
+        inversion H1; inversion H3; break; subst.
+        repeat basic_goal_prep.
+        intuition eauto.
+        {
+          eapply map_extends_trans; eauto.
+          apply extends_put_None.
+          apply Sep.not1_has_key.
+          auto.
+        }
+        {
+          assert (map.get (map.put acc a a0) a = Some a0)
+            by apply map.get_put_same.
+          erewrite H9 by eassumption; cbn.
+          erewrite H7 by eassumption; eauto.
+        }
+        {
+          rewrite map_keys_put in H13.
+          change (?a::?l) with ([a]++l) in H13.
+          rewrite Permutation.Permutation_app_comm in H13.
+          cbn in *. 
+          rewrite Permutation.Permutation_app_comm in H13.
+          auto.
+        }
+      }
+    }
+  Qed.
+
+  (*TODO: move to utils.v *)
+  Lemma all_True A P (l : list A)
+    : (forall x, P x) -> all P l.
+  Proof.
+    intro.
+    induction l;
+      basic_goal_prep;
+      eauto.
+  Qed.
+
+  Definition atom_subst_map (m : idx_map idx) (a : atom) : atom :=
+    (Build_atom a.(atom_fn)
+                    (map (fun x : idx => unwrap_with_default (map.get m x)) (atom_args a))
+                    (unwrap_with_default (map.get m (atom_ret a)))).
+  
+  Lemma exec_clause_sound i acc a
+    : (*TODO: should this be split in 2? *)
+    (atom_sound_for_model m i (atom_subst_map acc a)) ->
+    state_sound_for_model m i
+      (exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result acc a)
+      (* no conclusion because the assumption takes care of making sure i is right
+         by interacting with allocation's "time travel"
+       *)
+          (fun _ _ => True).
+  Proof.
+    unfold exec_clause.
+    intros.
+    ssm_bind.
+    {      
+      eapply state_sound_for_model_Mmap_dep with (P_const:= eq i); auto.
+      {
+        cbn beta;intros; subst.
+        eapply find_sound.
+        unfold atom_subst_map, atom_sound_for_model in *; basic_goal_prep.
+        repeat iss_case.
+        rewrite TrieMap.Mmap_option_all in *.
+        eapply In_option_all in Hma; eauto.
+        2:{ eapply in_map; eauto. }
+        break.
+        unfold Sep.has_key; rewrite H4; auto.
+      }
+      {
+        repeat intro; cbn beta.
+        eapply eq_sound_monotone; eauto with utils.
+      }
+    }
+    cbn beta in *; intros; break; subst.
+    ssm_bind.
+    {
+      apply find_sound.
+      unfold atom_subst_map, atom_sound_for_model in *; basic_goal_prep.
+      repeat iss_case.
+      unfold Sep.has_key; rewrite Hma0; auto.
+    }
+    cbn beta in *; intros; break; subst.
+    eapply state_sound_for_model_wkn.
+    {
+      eapply update_entry_sound; eauto.
+      unfold atom_sound_for_model, atom_subst_map in *.
+      basic_goal_prep.
+      repeat iss_case.
+      unfold eq_sound_for_model in *.
+      rewrite Hma0 in *; cbn in *.
+      repeat iss_case; cbn in *.
+      rewrite <- TrieMap.all2_map_l
+        with (f:= map.get i'0)
+             (R:= (fun a a0 => a <$> (fun x' : domain m => map.get i'0 a0 <$> domain_eq m x')))
+        in H4.
+      rewrite all2_Is_Some_satisfying_l in H4.
+      rewrite <- TrieMap.Mmap_option_all in *.
+      rewrite Hma in *; cbn in*.
+      rewrite <- TrieMap.all2_map_r
+        with (f:= map.get i'0)
+             (R:= (fun x a0 => a0 <$> domain_eq m x))
+        in H4.
+      rewrite all2_Is_Some_satisfying_r in H4.
+      rewrite <- TrieMap.Mmap_option_all in *.
+      repeat iss_case; cbn in *.
+      unfold interprets_to in *; break.
+      eapply interpretation_preserving with (f:=(atom_fn a)) in H4; eauto.
+      rewrite H1 in *; cbn in *; case_match; try tauto.
+      eexists; split; eauto.
+      etransitivity; try eassumption.
+      etransitivity; try apply H2.
+      symmetry; eauto.
+    }
+    { eauto. }
+  Qed.    
+
+  (*TODO: move*)
+  Arguments const_vars {idx symbol}%type_scope c.
+  Arguments const_clauses {idx symbol}%type_scope c.
+  Arguments const_unifications {idx symbol}%type_scope c.
+
+  Definition clauses_of_const r :=
+    (map atom_clause r.(const_clauses)) ++ (map (uncurry eq_clause) r.(const_unifications)).
+  
+  Record const_rule_sound_for_evaluation (*m*) i r : Prop :=
+    {
+      (* rule wfness properties *)
+      const_vars_NoDup : NoDup r.(const_vars);
+      const_vars_all_used : set_eq r.(const_vars) (flat_map clause_vars (clauses_of_const r));
+      (* evaluation-related properties *)
+      (* TODO: a field or an argument? *)
+      const_rule_assignment : idx_map idx;
+      const_rule_eval_dom : set_eq r.(const_vars) (map.keys const_rule_assignment);
+      const_rule_assignment_sound
+      : forall x y, map.get const_rule_assignment x = Some y ->
+                    eq_sound_for_model m i y y;
+      const_clauses_sound : all (fun a => atom_sound_for_model m i
+                                      (atom_subst_map const_rule_assignment a))
+                        r.(const_clauses);
+      const_eqns_sound
+      : all (fun '(x,y) =>
+               map.get const_rule_assignment x <$> (fun x' =>
+               map.get const_rule_assignment y <$> (fun y' =>
+               eq_sound_for_model m i x' y')))
+          r.(const_unifications);
+    }.
+
+  Hint Resolve const_vars_NoDup : utils.
+
+  
+  (*TODO: move*)
+  Lemma all2_all A R (l : list A)
+    : all2 R l l <-> all (fun x => R x x) l.
+  Proof.
+    clear.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  Hint Rewrite all2_all : utils.
+
+  
+  
+  
+  Lemma exec_const_sound i r
+    : const_rule_sound_for_evaluation i r ->
+      state_sound_for_model m i
+        (exec_const idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+           analysis_result r) (fun _ _ => True).
+  Proof.
+    intros.
+    unfold exec_const.
+    destruct H1.
+    ssm_bind.
+    (*TODO: a doesn't exist here!*)
+    1:eapply allocate_existential_vars_sound
+      with (time_travel_terms :=
+              map (fun x => unwrap_with_default
+                              (Mbind (map.get i) (map.get const_rule_assignment x)))
+                (const_vars r)); eauto with utils.
+    3:{ eapply all_True; basic_goal_prep; rewrite has_key_empty; tauto. }
+    3:{
+      cbn beta in *; break; subst.
+      ssm_bind.
+      {
+        eapply state_sound_for_model_Miter.
+        {
+          intros.
+          eapply exec_clause_sound.
+          rewrite TrieMap.all2_map_r in *.
+          autorewrite with utils in *; eauto.
+
+          assert (forall x, In x (const_vars r) ->
+                            map.get i'0 (unwrap_with_default (map.get a x))
+                            = map.get i'0 (unwrap_with_default (map.get const_rule_assignment x))).
+          {
+            intros.
+            pose proof H8.
+            eapply in_all in H8; eauto; cbn in *.
+            repeat iss_case; cbn in *.
+            eapply H6 in H8.
+            rewrite H8.
+            pose proof H9.
+            rewrite const_rule_eval_dom in H9.
+            rewrite map_keys_in' in H9.
+            case_match; try tauto.
+            rewrite <- H8.
+            cbn.
+            eapply const_rule_assignment_sound in case_match_eqn.
+            unfold eq_sound_for_model in *; repeat iss_case; cbn.
+            rewrite H8.
+            eapply H1 in Hma0.
+            eapply H6 in Hma0.
+            cbn; congruence.
+          }
+          assert (forall l,
+                     incl l (const_vars r) ->
+                     list_Mmap (fun x => map.get i'0 (unwrap_with_default (map.get a x))) l
+                     = list_Mmap (fun x => map.get i'0 (unwrap_with_default
+                                                         (map.get const_rule_assignment x))) l).
+          {
+            induction l; basic_goal_prep; intuition eauto.
+            rewrite H8 by (basic_goal_prep; basic_utils_crush).
+            case_match; eauto.
+            rewrite IHl by (basic_goal_prep; basic_utils_crush).
+            reflexivity.
+          }
+          
+          eapply in_all in const_clauses_sound; eauto.
+          unfold atom_sound_for_model, atom_subst_map in *; cbn in *.
+          rewrite ?TrieMap.Mmap_option_all, ?List.map_map, <- ?TrieMap.Mmap_option_all in *.
+          rewrite H9 by admit.
+          repeat iss_case.
+          replace (list_Mmap (fun x : idx => map.get i'0 (unwrap_with_default
+                                                            (map.get const_rule_assignment x)))
+                     (atom_args a0))
+            with (list_Mmap (fun x : idx => map.get i (unwrap_with_default
+                                                            (map.get const_rule_assignment x)))
+                    (atom_args a0)).
+          2:{ admit.
+          }
+          rewrite Hma; cbn.
+          rewrite H8 by admit.
+          replace (map.get i'0 (unwrap_with_default
+                                  (map.get const_rule_assignment
+                                     (atom_ret a0)))) with (Some d) by admit.
+          cbn.
+          auto.
+        }
+        (*
+          TODO: equalize mmaps
+          replace (atom_subst_map a a0)
+            with (atom_subst_map const_rule_assignment a0).
+          2:{
+            unfold atom_subst_map.
+            f_equal.
+            eapply map.map_ext;
+              intros.
+            destruct (inb k (const_vars r)) eqn:Hin;
+              basic_utils_crush.
+            {
+              eapply in_all in H3; eauto.
+              repeat iss_case; cbn.
+              assert (Is_Some (map.get const_rule_assignment k)).
+              {
+                rewrite const_rule_eval_dom in Hin.
+                rewrite map_keys_in' in Hin; case_match; tauto.
+              }
+              case_match; cbn in *; try tauto.
+              TODO: not true! a <> const_rule_assignment? but is equalized by evaluation
+              congruence.
+              
+            
+          (time_travel_terms := map (fun x => unwrap_with_default
+                                                (Mbind (map.get i) (map.get const_rule_assignment x)))
+                                  (const_vars r))
+          TODO: how do I know that a is the right map? (the one in the record).
+                       answer? set time travel terms.
+                       should be enough to be unique.
+
+          Definition clause_initial vars a :=
+            exists eval, seq_eq vars (map.keys eval) ->
+                         
+
+
+          Definition const_rule_sound_for_model m i r : Prop :=
+            NoDup const_vars
+                  (*TODO: scoping necessary or no?*)
+            /\ scoped const_vars const_clauses
+            /\ scoped const_vars const_unifications
+            /\ forall eval, all (fun a => atom_sound_for_model m i (atom_subst_map eval a)) const_clauses
+            /\ forall eval, all (fun a => eq_model m i (atom_subst_map eval a)) const_unifications
+          TODO: need facts about the rule
+          (*
+      TODO: how to thread time travel terms through?
+                state_sound_for_model_Miter *) *)
+  Abort.
+  
+  (*TODO: conditions on rs*)
+  Lemma process_const_rules_sound i rs
+    : state_sound_for_model m i
+        (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+           analysis_result rs)
+        (fun _ _ => True).
+  Proof.
+    unfold process_const_rules.
+    eapply state_sound_for_model_Miter; eauto.
+    intros.
+  Abort.
+
+  (*TODO: conditions on rs.
+    TODO: is i1 necessary?
+   *)
+  Lemma saturate_until_sound i rs cond fuel P
+    : state_sound_for_model m i cond (fun i2 (b:bool) => if b then P i2 else True) ->
+      monotone P ->
+    state_sound_for_model m i (saturate_until rs cond fuel)
+      (fun i b => if b then P i else True).
+  Proof.
+    intros.
+    unfold saturate_until.
+    eapply state_sound_for_model_Mseq.
+  Abort.
+  
       
 End WithMap.
 
@@ -2395,7 +3077,7 @@ Arguments db_to_atoms {idx symbol}%type_scope
 Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
 
 
-Arguments state_sound_for_model {idx symbol}%type_scope
+Arguments state_sound_for_model {idx} lt {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
   {A}%type_scope m i s (Post)%function_scope.
 
@@ -2405,14 +3087,14 @@ Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope 
 
 (*TODO: duplicated in section *)
 Ltac open_ssm' :=
-    cleanup_context;
-    lazymatch goal with
-    | |- state_sound_for_model _ _ ?e _ =>
-        let h := get_head e in
-        unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
-        eexists; eauto with utils;
-        break; cbn[fst snd]
-    end.
+  cleanup_context;
+  lazymatch goal with
+  | |- state_sound_for_model _ _ _ ?e _ =>
+      let h := get_head e in
+      unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
+      eexists; eauto with utils;
+      break; cbn[fst snd]
+  end.
 
 Ltac open_ssm :=
   open_ssm';
