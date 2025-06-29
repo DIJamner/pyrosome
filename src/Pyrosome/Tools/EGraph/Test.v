@@ -69,7 +69,7 @@ Definition example1 : list (sequent _ _) :=
 
 Definition ex1_set :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example1.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) 1000 example1.
 
 
 Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _ unit).
@@ -114,7 +114,7 @@ Compute (map.tuples ex1.(parents _ _ _ _ _)).
 Definition ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) ex1_set (Mret false) 5
+       (@PosListMap.compat_intersect) 1000 ex1_set (Mret false) 5
        (empty_egraph _ _))).
 
 (*
@@ -142,7 +142,7 @@ Definition example2 :=
 
 Definition ex2_set :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example2.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) 1000 example2.
 
 
 (*Set NativeCompute Profiling.*)
@@ -150,7 +150,7 @@ Definition ex2_set :=
 Definition ex2_graph :=
   Eval native_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) ex2_set (Mret false) 0
+       (@PosListMap.compat_intersect) 1000 ex2_set (Mret false) 0
        (empty_egraph _ _))).
 
 (*
@@ -165,7 +165,7 @@ Definition ex2_query :=
 
 Definition ex2_qset :=
   Eval vm_compute in
-    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) ex2_query.
+    QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) 1000 ex2_query.
 
 
 Arguments run_query {idx}%type_scope {Eqb_idx} {symbol}%type_scope
@@ -216,11 +216,11 @@ Definition monoid : lang string :=
 
 Definition monoid_rule_set_full :=
   Eval vm_compute in
-    (build_rule_set monoid monoid).
+    (build_rule_set 1000 monoid monoid).
 
 Definition monoid_rule_set :=
   Eval vm_compute in
-    (build_rule_set (PositiveInstantiation.filter_eqn_rules monoid) monoid).
+    (build_rule_set 1000 (PositiveInstantiation.filter_eqn_rules monoid) monoid).
 
 Definition monoid_ex1 : lang string := 
   {[l
@@ -243,18 +243,18 @@ Definition monoid_ex1 : lang string :=
 
 Definition monoid_ex1_rule_set :=
   Eval vm_compute in
-    (build_rule_set monoid_ex1 monoid_ex1).
+    (build_rule_set 1000 monoid_ex1 monoid_ex1).
 
 Definition monoid_ex1_base :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) monoid_ex1_rule_set (Mret false) 0
+       (@PosListMap.compat_intersect) 1000 monoid_ex1_rule_set (Mret false) 0
        (empty_egraph _ _))).
       
 Definition monoid_ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) monoid_rule_set_full (Mret false) 2
+       (@PosListMap.compat_intersect) 1000 monoid_rule_set_full (Mret false) 2
        monoid_ex1_base)).
 (*TODO: seems to work!
 Definition monoid_ex1_graph' :=
@@ -423,7 +423,7 @@ Eval vm_compute in
     (map (uncurry (rule_to_log_rule (string_trie_map)
                      (@StringListMap.string_list_trie_map)
                      StringListMap.string_succ "sort_of"
-                     logic (analysis_result:=unit))) logic).
+                     logic (analysis_result:=unit) 1000)) logic).
 
 (*TODO: foo, bar rules not simplified.
 
@@ -443,11 +443,11 @@ Eval vm_compute in
 
 Definition logic_rule_set_full :=
   Eval vm_compute in
-    (build_rule_set logic logic).
+    (build_rule_set 1000 logic logic).
 
 Definition logic_rule_set :=
   Eval vm_compute in
-    (build_rule_set (PositiveInstantiation.filter_eqn_rules logic) logic).
+    (build_rule_set 1000 (PositiveInstantiation.filter_eqn_rules logic) logic).
 (*TODO: is the optimization not working? multiple S write clauses.
   answer: no, since optimization doesn't handle existential vars.
   
@@ -456,7 +456,7 @@ Definition logic_rule_set :=
 Definition logic_ex1_base :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) logic_rule_set_full (Mret false) 1
+       (@PosListMap.compat_intersect) 1000 logic_rule_set_full (Mret false) 1
        (empty_egraph _ _))).
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples logic_ex1_base.(db))).
 Compute (filter (fun p => negb (eqb (fst p) (snd p)))
@@ -465,7 +465,7 @@ Compute (filter (fun p => negb (eqb (fst p) (snd p)))
 Definition logic_ex1_graph :=
   Eval native_compute in
     (snd (saturate_until string_succ "v0"
-       (@PosListMap.compat_intersect) logic_rule_set (Mret false) 5
+       (@PosListMap.compat_intersect) 1000 logic_rule_set (Mret false) 5
        logic_ex1_base)).
 (*TODO: why no unifications?*)
 Compute (filter (fun p => negb (eqb (fst p) (snd p)))
@@ -482,15 +482,15 @@ Require Tools.UnElab.
   {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
   {H} spaced_list_intersect%function_scope rs rebuild_fuel%nat_scope _.
 
-Ltac egraph n :=
+Ltac egraph rn n :=
       lazymatch goal with
         |- eq_term ?l ?c ?t ?e1 ?e2 =>
           let l' := constr:(ctx_to_rules c ++ l) in
-          let rs := constr:(StringInstantiation.build_rule_set
+          let rs := constr:(StringInstantiation.build_rule_set rn
                               (PositiveInstantiation.filter_eqn_rules l') l') in
           
         let result := (eval vm_compute in
-                        (StringInstantiation.egraph_equal (X:= option positive) (*V:=string*) l' rs n c e1 e2 t)) in
+                        (StringInstantiation.egraph_equal (X:= option positive) (*V:=string*) l' rs rn n c e1 e2 t)) in
           let result' := eval vm_compute in
           (Defs.run1iter string_succ "v0" string_ptree_map_plus string_ptree_map_plus
              (@compat_intersect) rs 0 (snd result)
@@ -553,7 +553,7 @@ lazymatch goal with
     (map (uncurry (rule_to_log_rule (string_trie_map)
                      (@StringListMap.string_list_trie_map)
                      StringListMap.string_succ "@sort_of"
-                     l' (analysis_result:=unit))) (PositiveInstantiation.filter_eqn_rules l')) in
+                     l' (analysis_result:=unit) 1000)) (PositiveInstantiation.filter_eqn_rules l')) in
         idtac r
 end.
 
@@ -564,7 +564,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   {{e #"/\" "b" (#"/\" "a" "a") }}.
 
 
-  egraph 10.
+  egraph 1000 10.
   Compute (map.get graph.(analyses _ _ _ _ _ _) "#9").
   (*TODO: 9 can be xO xH here, why is it xI xH?*)
   (* issue: 9 different after 2nd iter, not updated in db,
@@ -635,22 +635,22 @@ print_rules.
   Compute (QueryOpt.optimize_sequent string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      StringListMap.string_list_trie_map seq).
+      StringListMap.string_list_trie_map seq 1000).
   Compute (QueryOpt.opt_verbose string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      StringListMap.string_list_trie_map seq).
+      StringListMap.string_list_trie_map seq 1000).
   
   
   Compute (QueryOpt.opt_live_eqn string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      StringListMap.string_list_trie_map seq "#1" "#0").
+      StringListMap.string_list_trie_map seq 1000 "#1" "#0").
 
   Compute (QueryOpt.opt_conclusion_atoms string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      StringListMap.string_list_trie_map seq).
+      StringListMap.string_list_trie_map seq 1000).
   (*
   [{| atom_fn := "@sort_of"; atom_args := ["#2"]; atom_ret := "" |};
         {| atom_fn := "@sort_of"; atom_args := ["#"]; atom_ret := "" |};
@@ -660,7 +660,7 @@ print_rules.
   assert (QueryOpt.opt_assumption_atoms string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
-      StringListMap.string_list_trie_map seq = []).
+      StringListMap.string_list_trie_map seq 1000 = []).
 
   {
     unfold opt_assumption_atoms.

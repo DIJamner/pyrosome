@@ -602,15 +602,19 @@ Section WithVar.
                 | Some y => i' x = Some y
                 | None => True
                 end.
+
+    Context (lt : V -> V -> Prop).
+
+    Notation state_sound_for_model := (state_sound_for_model lt).
     
 
-    Lemma sequent_of_states_sound A B m i1 s1 Post Post2
+    Lemma sequent_of_states_sound A B m i1 s1 Post Post2 rn
       (s2 : A -> state (instance _) B)
       : state_sound_for_model m i1 s1 Post ->
         (forall a i2, map.extends i2 i1 ->
                       Post i2 a ->
                       state_sound_for_model m i2 (s2 a) Post2) ->
-        model_satisfies_rule m (sequent_of_states s1 s2).
+        model_satisfies_rule m (sequent_of_states s1 s2 rn).
     Proof.
       intros.
       unfold sequent_of_states.

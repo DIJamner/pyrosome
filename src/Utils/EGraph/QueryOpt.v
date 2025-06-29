@@ -314,7 +314,7 @@ Section WithMap.
 Section SequentOfStates.
   Context {X A} `{analysis idx symbol X}
     (assumptions : state (instance X) A)
-    {B} (conclusions : A -> state (instance X) B).
+    {B} (conclusions : A -> state (instance X) B) (r_fuel : nat).
   
   (* We keep around the egraph for use in the conclusion,
      but it suffices to discard the equations and just use the assumptions,
@@ -325,7 +325,7 @@ Section SequentOfStates.
    *)
   Let assumption_inst :=
         (@! let a <- assumptions in
-           let _ <- rebuild 1000 in
+           let _ <- rebuild r_fuel in
            ret a)
           (empty_egraph idx_zero X).
   Let assumption_atoms := db_to_atoms (snd assumption_inst).(db).
@@ -344,7 +344,7 @@ Section SequentOfStates.
    *)
   Let conclusion_inst :=
         let comp a :=(@! let b <- conclusions a in
-                        let _ <- rebuild 1000 in
+                        let _ <- rebuild r_fuel in
                         let _ <- force_equiv in
                         ret b) in
         snd (uncurry comp assumption_inst).
@@ -975,9 +975,9 @@ End Optimize.
     filter (fun x => negb (inb x rem_list))
       (dedup (eqb (A:=_)) (flat_map (clause_vars idx symbol) l)).
 
-  Definition compile_rule (r  : sequent) : ST' (erule + const_rule) :=
+  Definition compile_rule rf (r : sequent) : ST' (erule + const_rule) :=
     let '(assumptions, conclusion_atoms, conclusion_eqs) :=
-      optimize_sequent' r in
+      optimize_sequent' r rf in
     (*TODO: optimize order somewhere*)
     let qvs := dedup (eqb (A:=_)) (flat_map atom_fvs assumptions) in
     (*TODO: simplify *)
@@ -1004,8 +1004,8 @@ End Optimize.
                                   end) ([],[]) l.
   
   
-  Definition build_rule_set (rules : list sequent) : rule_set :=
-    let (crs, clauses_plus) := list_Mmap compile_rule rules map.empty in
+  Definition build_rule_set rf (rules : list sequent) : rule_set :=
+    let (crs, clauses_plus) := list_Mmap (compile_rule rf) rules map.empty in
     let (erules, consts) := split_sum_list crs in
     Build_rule_set (map_map snd clauses_plus) erules consts.
   
@@ -1014,9 +1014,9 @@ End WithMap.
 
 Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
   {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus} 
-  {idx_map}%function_scope {idx_trie}%function_scope rules%list_scope.
+  {idx_map}%function_scope {idx_trie}%function_scope rf rules%list_scope.
 
 Arguments QueryOpt.sequent_of_states {idx}%type_scope {Eqb_idx} 
   {idx_zero} {symbol}%type_scope {Eqb_symbol} {symbol_map idx_map}%function_scope
   {idx_trie}%function_scope {X A}%type_scope {H} 
-  assumptions {B}%type_scope conclusions%function_scope.
+  assumptions {B}%type_scope conclusions%function_scope r_fuel.

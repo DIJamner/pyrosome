@@ -219,14 +219,6 @@ Section WithMap.
       in
       let analyses' := map.put i.(analyses) a_ret meet_a in
       (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses').
-
-  (* assumes the idxs in lst already have analysis results*)
-  Definition get_analyses lst : ST (list analysis_result) :=
-    fun i =>
-      match list_Mmap (map.get i.(analyses)) lst with
-      | Some al => (al, i)
-      | _=> (default, i)
-      end.
   
   (*TODO: propagate down the removal of the option and push to UnionFind file
     as an alternative
@@ -263,6 +255,13 @@ Section WithMap.
     (fun i =>
        let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
        (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses))).
+
+  (* used for ids that aren't expected to have nodes. Handles analysis specially *)
+  Definition alloc_opaque : ST idx :=
+    (fun i =>
+       let (equiv', x_fresh) := UnionFind.alloc _ _ _ idx_succ i.(equiv) in
+       let analyses' := map.put i.(analyses) x_fresh default in
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) analyses')).
   
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
@@ -301,6 +300,15 @@ Section WithMap.
     @!let args' <- list_Mmap find args in
       let o' <- find o in
       ret Build_atom f args' o'.
+
+  Definition pull_worklist : ST (list _) :=
+    fun d => (d.(worklist),
+               Build_instance d.(db) d.(equiv) d.(parents)
+                                                   d.(epoch) [] d.(analyses)).
+
+  Definition push_worklist e : ST unit :=
+    fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
+                                                      d.(epoch) (e::d.(worklist)) d.(analyses)).
 
 
   Definition get_db : ST db_map := fun i => (i.(db),i).
@@ -346,6 +354,21 @@ Section WithMap.
                         (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
       (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
 
+  (* If an analysis isn't found, use the default and push the idx for repair. *)
+  Definition get_analysis x : ST analysis_result :=
+    fun i => match map.get i.(analyses) x with
+             | Some a => (a,i)
+             | None =>
+                 let cmp := Mseq (update_analyses x default)
+                              (push_worklist (analysis_repair x))
+                 in
+                  (default, snd (cmp i))
+             end.
+  
+  (* If the idxs in lst don't have analysis results,
+     returns the default and pushes them for repair *)
+  Definition get_analyses : _ ->  ST (list analysis_result) :=
+    list_Mmap get_analysis.
   
   (* sets an entry in the db and updates parents and analyses appropriately.
    *)
@@ -511,11 +534,11 @@ Section WithMap.
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
-            : forall {B} (*`{WithDefault B}*) (merge : B -> B -> B),
+            : forall {B} `{WithDefault B} (merge : B -> B -> B),
               ne_list (idx_trie B * list bool) ->
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
-  Arguments spaced_list_intersect {B}%type_scope merge%function_scope _.
+  Arguments spaced_list_intersect {B}%type_scope {_} merge%function_scope _.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
     map.keys (spaced_list_intersect (fun _ _ => tt) tries).
@@ -575,15 +598,6 @@ Section WithMap.
       (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses).
 
   Definition get_epoch : ST idx := fun i => (i.(epoch), i).
-  
-  Definition pull_worklist : ST (list _) :=
-    fun d => (d.(worklist),
-               Build_instance d.(db) d.(equiv) d.(parents)
-                                                   d.(epoch) [] d.(analyses)).
-
-  Definition push_worklist e : ST unit :=
-    fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
-                   d.(epoch) (e::d.(worklist)) d.(analyses)).
 
 
   Definition get_parents x : ST (list atom) :=
@@ -752,6 +766,8 @@ Section WithMap.
                  (saturate_until' rs P fuel rebuild_fuel))
     end.
 
+  Context (rebuild_fuel : nat).
+
   (* run the const rules once before the saturation loop *)
   Definition saturate_until rs (P : ST bool) fuel : ST bool :=
     Mseq (process_const_rules rs)
@@ -760,8 +776,8 @@ Section WithMap.
             In general: yes, for now.
             With optimal const rules: no
           *)
-            (Mseq (rebuild 1000)
-               (saturate_until' rs P fuel 1000)).
+            (Mseq (rebuild rebuild_fuel)
+               (saturate_until' rs P fuel rebuild_fuel)).
     
   
   Definition are_unified (x1 x2 : idx) : state instance bool :=
@@ -1707,7 +1723,7 @@ Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
   {analysis_result}%type_scope {H}
-  spaced_list_intersect%function_scope 
+  spaced_list_intersect%function_scope rebuild_fuel
   rs P fuel%nat_scope _.
 
 Arguments are_unified {idx}%type_scope {Eqb_idx} {symbol}%type_scope

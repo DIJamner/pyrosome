@@ -482,7 +482,7 @@ Abort.
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
-            : forall {B} (merge : B -> B -> B),
+            : forall {B} `{WithDefault B} (merge : B -> B -> B),
               ne_list (idx_trie B * list bool) ->
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
@@ -1706,14 +1706,50 @@ Abort.
     etransitivity; eauto; symmetry; eauto.
   Qed.
 
+  
+  Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
+    : state_sound_for_model m i s P ->
+      (forall i' a, map.extends i' i -> P i' a -> Q i' a) ->
+      state_sound_for_model m i s Q.
+  Proof.
+    clear idx_zero idx_succ.
+    unfold state_sound_for_model, state_triple, Sep.and1; basic_goal_prep;
+      intuition eauto.
+    specialize (H0 e).
+    intuition break.
+    eexists; intuition eauto.
+  Qed.
+
+  
+  Lemma get_analysis_sound i a
+    : state_sound_for_model m i
+        (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result a)
+        (fun i' _ => i = i').
+  Proof.
+    open_ssm'.
+    split; eauto.
+    case_match; cbn; intuition eauto with utils.
+    { destruct e0; constructor; intros; intuition eauto. }
+    { destruct e1; constructor; intros; cbn; intuition eauto. }
+  Qed.
+
   Lemma get_analyses_sound i args
     : state_sound_for_model m i
          (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args) 
          (fun i' _ => i = i').
   Proof.
-    open_ssm'.
-    split; eauto.
-    case_match; basic_goal_prep; intuition eauto with utils.
+    clear idx_zero idx_succ.
+    unfold get_analyses.
+    eapply state_sound_for_model_wkn.
+    1:apply state_sound_for_model_Mmap with
+      (P_const := fun i' => i = i')
+      (P_elt := fun _ _ => True); auto with utils.
+    {
+      intros; subst.
+      eapply state_sound_for_model_wkn; [apply get_analysis_sound |].
+      basic_goal_prep; subst; intuition auto.
+    }
+    basic_goal_prep; subst; intuition auto.
   Qed.
 
   Lemma update_analyses_sound i o a
@@ -2275,19 +2311,6 @@ Abort.
       cbn beta; intros; repeat subst.
       eauto.
     }
-  Qed.
-
-  Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
-    : state_sound_for_model m i s P ->
-      (forall i' a, map.extends i' i -> P i' a -> Q i' a) ->
-      state_sound_for_model m i s Q.
-  Proof.
-    clear idx_zero idx_succ.
-    unfold state_sound_for_model, state_triple, Sep.and1; basic_goal_prep;
-      intuition eauto.
-    specialize (H1 e).
-    intuition break.
-    eexists; intuition eauto.
   Qed.
 
   
@@ -3022,11 +3045,11 @@ Abort.
   (*TODO: conditions on rs.
     TODO: is i1 necessary?
    *)
-  Lemma saturate_until_sound i rs cond fuel P
+  Lemma saturate_until_sound i rb_fuel rs cond fuel P
     : state_sound_for_model m i cond (fun i2 (b:bool) => if b then P i2 else True) ->
       monotone P ->
-    state_sound_for_model m i (saturate_until rs cond fuel)
-      (fun i b => if b then P i else True).
+      state_sound_for_model m i (saturate_until rb_fuel rs cond fuel)
+        (fun i b => if b then P i else True).
   Proof.
     intros.
     unfold saturate_until.

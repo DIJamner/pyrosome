@@ -191,8 +191,8 @@ Section WithVar.
     Definition add_open_term := add_open_term' add_open_sort.
     
 
-  Notation alloc :=
-    (alloc V succ V V_map V_map V_trie _).
+  Notation alloc_opaque :=
+    (alloc_opaque V succ V V_map V_map V_trie _).
 
 
   Definition add_ctx (c : ctx) : state instance _ :=
@@ -202,9 +202,11 @@ Section WithVar.
                     *)
                    @! let t_v <- add_open_sort sub t in
                      (* using the variables from ctx isn't sound,
-                          so we make sure to allocate a fresh one
+                          so we make sure to allocate a fresh one.
+                          We also write a default analysis value
+                          so that things are analyzable and rebuilding doesn't loop
                       *)
-                     let {(state instance)} x' <- alloc in
+                     let {(state instance)} x' <- alloc_opaque in
                      let tx' <- hash_entry sort_of [x'] in
                      let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
@@ -360,6 +362,8 @@ Section WithVar.
     order vars from greatest to least
       
    *)
+    Context (rf : nat).
+    Notation sequent_of_states a c := (sequent_of_states a c rf).
   (*
     
    TODO: (IMPORTANT) pick a var order. Currently uses an unoptimized order
@@ -409,9 +413,9 @@ Section WithVar.
 
      Assumes incl l l'
    *)
-  Definition rule_set_from_lang (l l': lang) : rule_set :=
-    build_rule_set succ _ (map (uncurry (rule_to_log_rule l'
-                                           (analysis_result:=unit))) l).
+  Definition rule_set_from_lang rf (l l': lang) : rule_set :=
+    build_rule_set succ _ rf (map (uncurry (rule_to_log_rule l'
+                                           (analysis_result:=unit) rf)) l).
 
  
 
@@ -465,14 +469,14 @@ Section WithVar.
       : WithDefault (WithDefault V) := ltac:(assumption).
 
     (*Note: l has to contain the ctx_to_rules of the context *)
-    Definition egraph_equal l (rws : rule_set) fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
+    Definition egraph_equal l (rws : rule_set) rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state (instance X) bool :=
         @!let {(state (instance X))} x1 <- add_open_term l true [] e1 in
           let {(state (instance X))} x2 <- add_open_term l true [] e2 in
           let {(state (instance X))} xt <- add_open_sort l true [] t in
-          let {(state (instance X))} _ <- rebuild 1000 (*TODO: magic number *) in
+          let {(state (instance X))} _ <- rebuild rfuel (*TODO: magic number *) in
           (saturate_until succ V_default
-             spaced_list_intersect rws (eq_proven x1 x2 xt) fuel)
+             spaced_list_intersect rfuel rws (eq_proven x1 x2 xt) fuel)
       in (comp (empty_egraph default X)).
 
     End __.
@@ -627,7 +631,7 @@ Module PositiveInstantiation.
   
   (*TODO: the default is biting me*)
   Definition egraph_equal {X} `{analysis _ _ X}
-    : lang positive -> rule_set positive positive trie_map trie_map ->
+    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive ->
       _ * instance _ _ _ _ _ X :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
@@ -636,7 +640,7 @@ Module PositiveInstantiation.
   Definition filter_eqn_rules {V} : lang V -> lang V :=
     filter (fun '(n,r) => match r with term_rule _ _ _ | sort_rule _ _ => false | _ => true end).
 
-  Definition build_rule_set : lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
+  Definition build_rule_set : nat -> lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
     rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
   
   (* all-in-one when it's not worth separating out the rule-building.
@@ -644,13 +648,13 @@ Module PositiveInstantiation.
      
    (*TODO: handle term closing, sort matching*)
    *)
-  Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X} (l : lang V) n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
+  Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X} (l : lang V) rn n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
     let rename_and_run : state (renaming V) _ :=
       @! let l' <- rename_lang (ctx_to_rules c ++ l) in
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
-        ret (egraph_equal l' (build_rule_set (filter_eqn_rules l') l') n e1' e2' t')
+        ret (egraph_equal l' (build_rule_set rn (filter_eqn_rules l') l') rn n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
@@ -663,16 +667,17 @@ Module StringInstantiation.
 
   Definition egraph_equal {X} `{analysis _ _ X}
     : lang string -> rule_set string string string_trie_map string_trie_map ->
-      nat -> _ -> Term.term string -> Term.term string -> Term.sort string ->
+      nat -> nat -> _ -> Term.term string -> Term.term string -> Term.sort string ->
       _ * instance _ _ _ _ _ X :=
-    fun l rw n c e1 e2 t =>
+    fun l rw rn n c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
       string_succ sort_of
-      (@PosListMap.compat_intersect) l' rw n
+      (@PosListMap.compat_intersect) l' rw rn n
       (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
   
-  Definition build_rule_set : lang string ->
+  Definition build_rule_set : nat ->
+                              lang string ->
                             lang string ->
                             rule_set string string string_trie_map string_trie_map :=
     rule_set_from_lang string_ptree_map_plus _ string_succ sort_of
