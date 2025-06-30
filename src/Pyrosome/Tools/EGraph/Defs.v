@@ -581,24 +581,60 @@ Section WithVar.
       Instance result_default {A} : WithDefault (result A) :=
         error:("Default value!").
 
-      Fixpoint extract_weighted fuel x : result term :=
-        @! let x_a <- result_of_option_else
-                        (map.get i.(analyses _ _ _ _ _ _) x)
-                        error:("No analysis for" x)
-          in
-          let x_class <- result_of_option_else
-                            (map.get e_classes x)
-                            error:("No eclass for" x) in
-          let (x_f, x_args, _) <- result_of_option_else
-                                    (List.find (node_lt x_a) x_class)
-                                    error:(x "has no term of size at most" x_a) in
-          let children <- list_Mmap (decr fuel extract_weighted) x_args in
-          ret (con x_f children).
+      (*TODO: move to StateMonad*)
+      Definition stateT_get {S M} `{Monad M} : stateT S M S :=
+        fun s => Mret (s,s).
+      (*returns the put element for convenience*)
+      Definition stateT_put {S M} `{Monad M} x : stateT S M unit :=
+        fun _ => Mret (tt,x).
 
+      
+      Section Memoize.
+        Context {A B} {mp : map.map A B} {M} `{Monad M}
+          (f : forall {MT} `{MonadTrans MT}, (A -> MT M B) -> A -> MT M B).
+        Arguments f [MT]%function_scope {H0} _%function_scope _.
+
+        Definition memoizeF (rec : A -> stateT mp M B) (a: A) : stateT mp M B :=
+          @! let s <- stateT_get in
+            match map.get s a with
+            | Some x => Mret (M:=stateT mp M) x
+            | None => @! let {(stateT mp M)} x <- f rec a in
+                        let _ <- stateT_put (map.put s a x) in
+                        ret {(stateT mp M)} x
+            end.
+      End Memoize.
+      
+      Section __.
+        Context MT `{MonadTrans MT} (rec : V -> MT result term).
+        
+        Definition extract_weightedF x : MT result term :=
+          @! let x_a <- lift (result_of_option_else
+                                (map.get i.(analyses _ _ _ _ _ _) x)
+                                error:("No analysis for" x))
+            in
+            let x_class <- lift (result_of_option_else
+                                   (map.get e_classes x)
+                                   error:("No eclass for" x)) in
+            let (x_f, x_args, _) <- lift (result_of_option_else
+                                            (List.find (node_lt x_a) x_class)
+                                            error:(x "has no term of size <=" x_a)) in
+            let children <- list_Mmap rec x_args in
+            ret (con x_f children).
+      End __.
+
+      Fixpoint extract_weighted' fuel : V -> stateT (V_map term) result term  :=
+        memoizeF extract_weightedF (decr fuel (extract_weighted')).
+
+      (* Memoized so that the same e_class is never accessed twice.
+         This makes the procedure at worst linear in the size of the egraph.
+       *)
+      Definition extract_weighted fuel x :=
+        @!let x <- extract_weighted' fuel x map.empty in
+          ret fst x.
+      
     (* Notes on verifying extraction:
        - cheap option: re-add the term and check id
        - more intensive: extract to an arbitrary model
-         + will catch bugs in extraction
      *)
           
     End AnalysisExtract.
