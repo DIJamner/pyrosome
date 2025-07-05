@@ -1006,12 +1006,12 @@ Abort.
   Proof. repeat intro; auto. Qed.
   Hint Resolve const_monotone1 : utils.
   
-  Lemma state_sound_for_model_Miter A m i P
-    l (f : A -> state instance unit) 
+  Lemma state_sound_for_model_Miter A B m i (P : _ -> _ -> Prop)
+    l (f : A -> state instance B) 
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
                         P i' tt ->
-                        state_sound_for_model m i' (f a) P) ->
+                        state_sound_for_model m i' (f a) (fun i'' _ => P i'' tt)) ->
       P i tt ->
       state_sound_for_model m i (list_Miter f l) P.
   Proof.
@@ -1023,19 +1023,19 @@ Abort.
       intros.
       cbn [list_Miter].
       eapply state_sound_for_model_bind.
-      2:{
+      {
+        eapply H0;basic_goal_prep;
+          basic_utils_crush.
+      }
+      {
         intros.
-        eapply IHl; eauto.
+        eapply IHl; eauto.        
         all:basic_goal_prep;
           basic_utils_crush.
         eapply H0.
         all:basic_goal_prep;
           basic_utils_crush.
         eapply map_extends_trans; eauto.
-      }
-      {
-        basic_goal_prep;
-          basic_utils_crush.
       }
     }
   Qed.
@@ -2686,7 +2686,36 @@ Abort.
   Instance set_eq_in_Proper {A}
     : Proper (eq ==> set_eq ==> iff) (@ In A).
   Proof. unfold set_eq, incl; repeat intro; cbn in *; subst; intuition eauto. Qed.
+
   
+  Lemma in_all_iff {A} (P : A -> Prop) l
+    : all P l <-> (forall x, In x l -> P x).
+  Proof.
+    induction l;
+    basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
+  (*TODO: move *)
+  Instance set_eq_all_Proper {A}
+    : Proper (Sep.Uiff1 ==> set_eq ==> iff) (@all A).
+  Proof.
+    unfold set_eq, incl, Sep.Uiff1;
+      repeat intro; cbn in *; subst;
+      intuition eauto;
+      rewrite !in_all_iff in *;
+      firstorder auto.    
+  Qed.
+  
+  Instance set_eq_map_Proper {A B}
+    : Proper (eq ==> set_eq ==> set_eq) (@map A B).
+  Proof.
+    unfold set_eq, incl;
+      repeat intro; cbn in *; subst;
+      intuition eauto; rewrite !in_map_iff in *; break; subst;
+      rewrite <- in_map_iff;
+      apply in_map; eauto.
+  Qed.
     
   (* `time_travel_terms` should be a set of terms determined by code that is run later.
      Another way of looking at this lemma is that for any list of assignments for vars,
@@ -2893,9 +2922,52 @@ Abort.
   Qed.
   Hint Rewrite all2_all : utils.
 
+  (*TODO: move*)
   
+  Lemma all_map A B P (f : A -> B) l
+    : all P (map f l) <-> all (fun x => P (f x)) l.
+  Proof.
+      induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
   
+  Lemma all_flat_map A B P (f : A -> list B) l
+    : all P (flat_map f l) <-> all (fun x => all P (f x)) l.
+  Proof.
+      induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
   
+  Lemma domain_eq_wf_l d d'
+    : domain_eq m d d' -> domain_wf m d.
+  Proof.
+    unfold domain_wf.
+    intro H'; etransitivity;[| symmetry]; apply H'.
+  Qed.
+  Hint Resolve domain_eq_wf_l : utils.
+  
+  Lemma domain_eq_wf_r d d'
+    : domain_eq m d d' -> domain_wf m d'.
+  Proof.
+    unfold domain_wf.
+    intro H'; etransitivity;[symmetry |]; apply H'.
+  Qed.
+  Hint Resolve domain_eq_wf_r : utils.
+
+  
+  Lemma set_eq_empty A (l : list A)
+    : set_eq [] l <-> l = [].
+  Proof using.
+    clear.
+    unfold set_eq, incl;
+    destruct l; cbn;
+      intuition  subst; eauto; try congruence.
+    specialize (H1 a); intuition.
+  Qed.
+
   Lemma exec_const_sound i r
     : const_rule_sound_for_evaluation i r ->
       state_sound_for_model m i
@@ -2905,148 +2977,944 @@ Abort.
     intros.
     unfold exec_const.
     destruct H1.
+    destruct
+      (list_Mmap (fun x => Mbind (map.get i) (map.get const_rule_assignment x)) (const_vars r)) as [ d_lst |] eqn:Httt.
+    2:{
+      exfalso.
+      rewrite TrieMap.Mmap_option_all in *.
+      apply option_all_None in Httt.
+      break.
+      apply nth_error_In in H1.
+      apply in_map_iff in H1; break.
+      rewrite const_rule_eval_dom in H2.
+      rewrite map_keys_in' in H2.
+      case_match; try tauto; cbn in *.
+      apply const_rule_assignment_sound in case_match_eqn.
+      unfold eq_sound_for_model in *; rewrite H1 in *; cbn in *; tauto.
+    }
+    (*TODO: this is a circuitous proof *)
+    destruct d_lst as [| d_hd d_tl].
+    {
+      rewrite TrieMap.Mmap_option_all in *.
+      apply length_option_all in Httt.
+      cbn in Httt.
+      destruct r; cbn in *.
+      destruct const_vars; cbn in *; try congruence.
+      apply set_eq_empty in const_vars_all_used0.
+      rewrite flat_map_app in const_vars_all_used0.
+      apply app_eq_nil in const_vars_all_used0.
+      unfold uncurry in const_vars_all_used0.
+      replace const_clauses with (@nil atom) in *.
+      1:replace const_unifications with (@nil (idx*idx)) in *.
+      {
+        cbn.
+        eapply ret_sound_for_model'; auto.
+      }
+      {
+        destruct const_unifications; try congruence; exfalso.
+        break; cbn in *; congruence.
+      }
+      {
+        destruct const_clauses; try congruence; exfalso.
+        break; cbn in *; congruence.
+      }
+    }
     ssm_bind.
-    (*TODO: a doesn't exist here!*)
     1:eapply allocate_existential_vars_sound
       with (time_travel_terms :=
-              map (fun x => unwrap_with_default
+              map (fun x => unwrap_with_default (H:=_)
                               (Mbind (map.get i) (map.get const_rule_assignment x)))
                 (const_vars r)); eauto with utils.
     3:{ eapply all_True; basic_goal_prep; rewrite has_key_empty; tauto. }
     3:{
       cbn beta in *; break; subst.
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Miter.
-        {
-          intros.
-          eapply exec_clause_sound.
-          rewrite TrieMap.all2_map_r in *.
-          autorewrite with utils in *; eauto.
-
-          assert (forall x, In x (const_vars r) ->
+      rewrite TrieMap.all2_map_r in *.
+      autorewrite with utils in *; eauto.
+      assert (forall x i'0, In x (const_vars r) ->
+                           map.extends i'0 i' ->
                             map.get i'0 (unwrap_with_default (map.get a x))
                             = map.get i'0 (unwrap_with_default (map.get const_rule_assignment x))).
           {
             intros.
-            pose proof H8.
-            eapply in_all in H8; eauto; cbn in *.
+            pose proof H5.
+            eapply in_all in H5; eauto; cbn in *.
             repeat iss_case; cbn in *.
-            eapply H6 in H8.
-            rewrite H8.
-            pose proof H9.
-            rewrite const_rule_eval_dom in H9.
-            rewrite map_keys_in' in H9.
+            eapply const_rule_eval_dom in H7.
+            rewrite map_keys_in' in H7.
             case_match; try tauto.
-            rewrite <- H8.
-            cbn.
+            eapply H6 in H5; rewrite H5; cbn.
             eapply const_rule_assignment_sound in case_match_eqn.
             unfold eq_sound_for_model in *; repeat iss_case; cbn.
-            rewrite H8.
             eapply H1 in Hma0.
             eapply H6 in Hma0.
             cbn; congruence.
           }
+      ssm_bind.
+      {
+        eapply state_sound_for_model_Miter with (P:=(fun (_ : idx_map (domain m)) (_ : unit) => True));
+          auto.
+        intros.
+        eapply state_sound_for_model_wkn.
+        {
+          eapply exec_clause_sound.
           assert (forall l,
                      incl l (const_vars r) ->
                      list_Mmap (fun x => map.get i'0 (unwrap_with_default (map.get a x))) l
                      = list_Mmap (fun x => map.get i'0 (unwrap_with_default
-                                                         (map.get const_rule_assignment x))) l).
+                                                          (map.get const_rule_assignment x))) l).
           {
             induction l; basic_goal_prep; intuition eauto.
-            rewrite H8 by (basic_goal_prep; basic_utils_crush).
+            rewrite H5 by (basic_goal_prep; basic_utils_crush).
             case_match; eauto.
             rewrite IHl by (basic_goal_prep; basic_utils_crush).
             reflexivity.
-          }
-          
+          }          
           eapply in_all in const_clauses_sound; eauto.
           unfold atom_sound_for_model, atom_subst_map in *; cbn in *.
           rewrite ?TrieMap.Mmap_option_all, ?List.map_map, <- ?TrieMap.Mmap_option_all in *.
-          rewrite H9 by admit.
+          rewrite H9.
+          2:repeat intro;           
+            apply const_vars_all_used0;
+              unfold clauses_of_const;
+              rewrite flat_map_app,
+              !flat_map_concat_map,
+              !List.map_map,
+              <- !flat_map_concat_map,
+              in_app_iff,
+              !in_flat_map;
+              cbn;
+              left;eexists; now intuition eauto.
           repeat iss_case.
           replace (list_Mmap (fun x : idx => map.get i'0 (unwrap_with_default
                                                             (map.get const_rule_assignment x)))
                      (atom_args a0))
-            with (list_Mmap (fun x : idx => map.get i (unwrap_with_default
-                                                            (map.get const_rule_assignment x)))
-                    (atom_args a0)).
-          2:{ admit.
+            with (Some l).
+          2:{
+            rewrite TrieMap.Mmap_option_all in *.
+            symmetry.
+            rewrite <- Hma; f_equal.
+            eapply map_ext_in.
+            intros.
+            eapply in_map in H10.
+            eapply In_option_all in H10; eauto.
+            break; subst.
+            rewrite H10.
+            eapply H1 in H10; eapply H7 in H10.
+            auto.
           }
-          rewrite Hma; cbn.
-          rewrite H8 by admit.
-          replace (map.get i'0 (unwrap_with_default
-                                  (map.get const_rule_assignment
-                                     (atom_ret a0)))) with (Some d) by admit.
+          cbn.
+          rewrite H5; auto.
+          2:repeat intro;           
+            apply const_vars_all_used0;
+              unfold clauses_of_const;
+              rewrite flat_map_app,
+              !flat_map_concat_map,
+              !List.map_map,
+              <- !flat_map_concat_map,
+              in_app_iff,
+              !in_flat_map;
+              cbn;
+          left;eexists; now intuition eauto.
+          apply H1 in Hma0; apply H7 in Hma0.
+          rewrite Hma0.
           cbn.
           auto.
         }
-        (*
-          TODO: equalize mmaps
-          replace (atom_subst_map a a0)
-            with (atom_subst_map const_rule_assignment a0).
-          2:{
-            unfold atom_subst_map.
-            f_equal.
-            eapply map.map_ext;
-              intros.
-            destruct (inb k (const_vars r)) eqn:Hin;
-              basic_utils_crush.
-            {
-              eapply in_all in H3; eauto.
-              repeat iss_case; cbn.
-              assert (Is_Some (map.get const_rule_assignment k)).
-              {
-                rewrite const_rule_eval_dom in Hin.
-                rewrite map_keys_in' in Hin; case_match; tauto.
-              }
-              case_match; cbn in *; try tauto.
-              TODO: not true! a <> const_rule_assignment? but is equalized by evaluation
-              congruence.
-              
-            
-          (time_travel_terms := map (fun x => unwrap_with_default
-                                                (Mbind (map.get i) (map.get const_rule_assignment x)))
-                                  (const_vars r))
-          TODO: how do I know that a is the right map? (the one in the record).
-                       answer? set time travel terms.
-                       should be enough to be unique.
+        cbn; auto.
+      }
+      apply state_sound_for_model_Miter with (P:=(fun (_ : idx_map (domain m)) (_ : unit) => True));
+        auto.
+      intros; break.
+      eapply state_sound_for_model_wkn; auto.
+      apply union_sound.
+      eapply eq_sound_monotone; eauto.
+      pose proof H8.
+      eapply in_all in H8; eauto.
+      cbn in H8.
+      unfold eq_sound_for_model in *.
+      repeat iss_case.
+      rewrite !H5; eauto.
+      2,3:
+        apply const_vars_all_used0;
+        unfold clauses_of_const;
+        rewrite flat_map_app,
+          !flat_map_concat_map,
+          !List.map_map,
+          <- !flat_map_concat_map,
+          in_app_iff,
+          !in_flat_map;
+          cbn;
+        right;eexists; intuition eauto;
+        cbn; now intuition eauto.
+      rewrite Hma, Hma0.
+      cbn.
+      eapply H1 in Hma1; eapply H6 in Hma1; rewrite Hma1; cbn.
+      eapply H1 in Hma2; eapply H6 in Hma2; rewrite Hma2; cbn.
+      auto.
+    }
+    { basic_utils_crush. }
+    {
+      pose proof const_vars_all_used0.
+      eapply set_eq_map_Proper in const_vars_all_used0; eauto.
+      eapply set_eq_all_Proper in const_vars_all_used0; [| repeat intro; reflexivity ].
+      eapply const_vars_all_used0.
+      unfold clauses_of_const.
+      rewrite flat_map_app, map_app, all_app.
+      clear const_vars_all_used0.
+      repeat rewrite ?all_map, ?all_flat_map; split.
+      2:{
+        eapply all_wkn; try eassumption.
+        basic_goal_prep.
+        repeat iss_case; cbn.
+        unfold eq_sound_for_model in *; repeat iss_case; cbn; intuition eauto with utils.
+      }
+      {
+        eapply all_wkn; try eassumption.
+        basic_goal_prep.
+        assert (Sep.has_key (atom_ret x) const_rule_assignment).
+        {
+          apply map_keys_in'.
+          rewrite <- const_rule_eval_dom.
+          rewrite -> H1.
+          unfold clauses_of_const.
+          rewrite ?flat_map_app, ?map_app, ?all_app, in_app_iff.
+          left.
+          destruct r; cbn in *.
+          rewrite in_flat_map.
+          exists (atom_clause x).
+          split; [ eapply in_map; eauto | destruct x; cbn; eauto].
+        }
+        unfold Sep.has_key in H4; case_match; try tauto.
+        split.
+        {
+          apply const_rule_assignment_sound in case_match_eqn.
+          unfold eq_sound_for_model in *;
+            repeat iss_case; cbn; eauto with utils.
+        }
+        {
+          apply in_all_iff.
+          intros.
+          assert (Sep.has_key x0 const_rule_assignment).
+          {
+            apply map_keys_in'.
+            rewrite <- const_rule_eval_dom.
+            rewrite -> H1.
+            unfold clauses_of_const.
+            rewrite ?flat_map_app, ?map_app, ?all_app, in_app_iff.
+            left.
+            destruct r; cbn in *.
+            rewrite in_flat_map.
+            exists (atom_clause x).
+            split; [ eapply in_map; eauto | destruct x; cbn; eauto].
+          }
+          unfold Sep.has_key in H6; case_match; try tauto.
+          apply const_rule_assignment_sound in case_match_eqn0.
+          unfold eq_sound_for_model in *;
+            repeat iss_case; cbn; eauto with utils.
+        }
+      }
+    }
+    Unshelve.
+    exact d_hd.
+  Qed.
 
-          Definition clause_initial vars a :=
-            exists eval, seq_eq vars (map.keys eval) ->
-                         
-
-
-          Definition const_rule_sound_for_model m i r : Prop :=
-            NoDup const_vars
-                  (*TODO: scoping necessary or no?*)
-            /\ scoped const_vars const_clauses
-            /\ scoped const_vars const_unifications
-            /\ forall eval, all (fun a => atom_sound_for_model m i (atom_subst_map eval a)) const_clauses
-            /\ forall eval, all (fun a => eq_model m i (atom_subst_map eval a)) const_unifications
-          TODO: need facts about the rule
-          (*
-      TODO: how to thread time travel terms through?
-                state_sound_for_model_Miter *) *)
-  Abort.
+  Lemma const_rule_sound_monotone : monotone1 const_rule_sound_for_evaluation.
+  Proof.
+    repeat intro.
+    destruct H2; econstructor; intros; eauto with utils.
+    { eapply eq_sound_monotone; eauto. }
+    {
+      eapply all_wkn; try eassumption.
+      intros; eapply atom_sound_monotone; eauto.
+    }
+    {
+      eapply all_wkn; try eassumption.
+      basic_goal_prep; repeat iss_case; cbn.
+      eapply eq_sound_monotone; eauto.
+    }      
+  Qed.
   
-  (*TODO: conditions on rs*)
   Lemma process_const_rules_sound i rs
-    : state_sound_for_model m i
+    : all (const_rule_sound_for_evaluation i)
+        (compiled_const_rules idx symbol symbol_map idx_map rs) ->
+      state_sound_for_model m i
         (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
            analysis_result rs)
         (fun _ _ => True).
   Proof.
     unfold process_const_rules.
+    intros.
     eapply state_sound_for_model_Miter; eauto.
     intros.
+    apply exec_const_sound.
+    eapply in_all; eauto.
+    eapply all_wkn; try eassumption.
+    intros; eapply const_rule_sound_monotone; eauto.
+  Qed.
+
+  Lemma increment_epoch_sound i
+    : state_sound_for_model m i
+        (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie
+           analysis_result) (fun _ _ => True).
+  Proof.
+    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
+  Qed.
+
+ (*
+  Record rule_sound_for_evaluation (*m*) i r : Prop :=.
+  *)
+
+  Definition atom_of_access f (access : list nat * nat) args : atom :=
+    Build_atom f (map (fun n => nth n args default) (fst access))
+      (nth (snd access) args default).
+  
+  Definition trie_sound_for_model i f trie (access : list nat * nat) :=
+    forall k, map.get trie k = Some tt ->
+              atom_sound_for_model m i (atom_of_access f access k).
+  
+  Arguments query_ptr_symbol {idx symbol}%type_scope e.
+  Arguments query_ptr_ptr {idx symbol}%type_scope e.
+
+  Definition ptr_trie_sound_for_model i tries
+    (query_clauses : symbol_map (idx_map (list nat * nat)%type))
+    (p : erule_query_ptr _ _) :=
+    match map.get tries p.(query_ptr_symbol),
+       map.get query_clauses p.(query_ptr_symbol) with
+    | Some tries', Some qc' =>
+        match map.get tries' p.(query_ptr_ptr),
+          map.get qc' p.(query_ptr_ptr) with
+        | Some (t1, t2), Some access =>
+            trie_sound_for_model i p.(query_ptr_symbol) t1 access
+            /\ trie_sound_for_model i p.(query_ptr_symbol) t2 access
+        | _, _ => False
+        end
+    | _, _ => False
+    end.
+
+  Definition tries_sound_for_model i tries
+    (query_clauses : symbol_map (idx_map (list nat * nat)%type)) :=
+    forall f x qc' access,
+      map.get query_clauses f = Some qc' ->
+      map.get qc' x = Some access ->
+      match map.get tries f with
+      | Some tries' =>
+          match map.get tries' x with
+          | Some (t1, t2) =>
+              trie_sound_for_model i f t1 access
+              /\ trie_sound_for_model i f t2 access
+          | None => False
+          end
+      | None => False
+      end.
+
+  
+  Arguments query_vars {idx symbol}%type_scope _.
+  Arguments write_vars {idx symbol}%type_scope _.
+  Arguments query_ptr_args {idx symbol}%type_scope _.
+
+  (*
+  Record rule_vars_wf (*i*) (*qc*) (r : erule symbol idx) :=
+    {
+      (* rule wfness properties *)
+      query_vars_NoDup : NoDup r.(query_vars);
+      write_vars_NoDup : NoDup r.(query_vars);
+      rule_vars_disjoint
+      : disjoint (fun x => In x r.(query_vars))
+          (fun x => In x r.(write_vars));
+    }.
+   *)
+
+  Definition assignment_sound_for_ptr i qc qa ptr :=
+    incl ptr.(query_ptr_args) (map fst qa) /\
+    match map.get qc ptr.(query_ptr_symbol) with
+    | Some qc' =>
+        match map.get qc' ptr.(query_ptr_ptr) with
+        | Some access => 
+            atom_sound_for_model m i
+              (atom_subst qa
+                 (atom_of_access ptr.(query_ptr_symbol) access ptr.(query_ptr_args)))
+        | None => False
+        end
+    | None => False
+    end.
+
+  Definition as_list {A} (l : ne_list A) :=
+    cons (fst l) (snd l).
+  Arguments as_list {A}%type_scope !l.
+  
+  
+  Definition query_assignment_sound i qc qa ptrs :=
+    all (assignment_sound_for_ptr i qc qa) (as_list ptrs).
+  
+  Arguments query_clause_ptrs {idx symbol}%type_scope _.
+  Arguments write_clauses {idx symbol}%type_scope _.
+  Arguments write_unifications {idx symbol}%type_scope _.
+      
+  Record rule_sound_for_evaluation i qc (r : erule idx symbol) : Prop :=
+    {
+      (* rule wfness properties *)
+      vars_NoDup : NoDup (r.(write_vars)++r.(query_vars));
+      write_clauses_well_scoped
+      : incl (flat_map (fun a => atom_ret a :: atom_args a)
+                r.(write_clauses)) (r.(query_vars) ++ r.(write_vars));
+      write_unifications_well_scoped
+      : incl (flat_map (fun p => [fst p; snd p])
+                r.(write_unifications)) (r.(query_vars) ++ r.(write_vars));
+      (*rule_vars_disjoint
+      : disjoint (fun x => In x r.(query_vars))
+          (fun x => In x r.(write_vars));*)
+      rule_vars_covered : incl r.(query_vars)
+                                   (flat_map query_ptr_args
+                                      (as_list r.(query_clause_ptrs)));
+      rule_assignment : named_list idx (named_list idx idx -> idx);
+      rule_assignment_dom
+      : r.(write_vars) = (map fst rule_assignment);
+      rule_assignment_sound
+      : forall x f, In (x,f) rule_assignment ->
+                    forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
+                               eq_sound_for_model m i (f qa) (f qa);
+      write_assignment :=
+        fun qa => (named_map (fun f => f qa) rule_assignment) ++ qa;
+      clauses_sound
+      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
+                   all (fun c => atom_sound_for_model m i (atom_subst (write_assignment qa) c))
+                     r.(write_clauses);
+      eqns_sound
+      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
+                   all (fun '(x,y) =>
+                          exists vx vy,
+                            In (x,vx) qa
+                            /\ In (y,vy) qa
+                            /\ eq_sound_for_model m i vx vy)
+                     r.(write_unifications);
+    }.
+
+  
+  Lemma in_flat_map_incl A B (f : A -> list B) a l
+    : In a l -> incl (f a) (flat_map f l).
+  Proof.
+    clear.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  Hint Rewrite NoDup_cons_iff : inversion.
+  
+  Lemma named_list_lookup_in A `{Eqb_ok A} B (x:A) (xv:B) l d
+    : NoDup (map fst l) -> In (x,xv) l -> named_list_lookup d l x = xv.
+  Proof.
+    induction l; basic_goal_prep; basic_utils_crush.
+    eqb_case x a; basic_goal_prep; basic_utils_crush.
+  Qed.
+  
+  (*Require Import Coq.Sorting.Permutation.*)
+
+  (*TODO: move lemmas from this import to another *)
+  Require Import Utils.PosListMap.
+
+  (*TODO: move*)
+  Lemma named_map_snd_eq:
+    forall [S : Type] {A B : Type} (f : A -> B) (l : named_list S A),
+      map snd (named_map f l) = map f (map snd l).
+  Proof.
+    clear.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+
+  
+  Lemma In_option_all_out [A : Type] {l1 : list (option A)} {l2 : list A} v1o
+    : option_all l1 = Some l2 ->
+      In v1o l2 -> In (Some v1o) l1.
+  Proof.
+    revert l2; induction l1;
+      destruct l2;
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+  Qed.
+
+  Hint Resolve NoDup_app_remove_r NoDup_app_remove_l : utils.
+
+  
+  Lemma map_get_of_list_In A B `{map.ok A B} `{Eqb_ok A} (x : A) (v : B) l
+    : map.get (map.of_list l) x = Some v -> In (x,v) l.
+  Proof.
+    induction l; 
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+    eqb_case x a.
+    {
+      rewrite map.get_put_same in H4;
+        inversions; intuition auto.
+    }
+    {
+      right.
+      rewrite map.get_put_diff in H4;
+        inversions; intuition auto.
+    }
+  Qed.
+  
+   Lemma map_get_of_list_not_In A B `{map.ok A B} `{Eqb_ok A} (x : A) (l : named_list A B)
+    : NoDup (map fst l) -> map.get (map.of_list l) x = None -> ~In x (map fst l).
+  Proof.
+    induction l; 
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+    all: rewrite ?map.get_put_same in *;
+        inversions; intuition auto.
+    eqb_case x a.
+    {
+      rewrite map.get_put_same in *;
+        inversions; intuition auto.
+    }
+    {
+      rewrite map.get_put_diff in * by eauto.
+      intuition auto.
+    }
+  Qed.
+
+  Lemma in_named_map_iff [S : Type] {A B : Type} (f : A -> B) (l : list (S * A)) (n : S) (x : B)
+    : In (n, x) (named_map f l) <-> exists y, x = f y /\ In (n, y) l.
+  Proof.
+    induction l;
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+  Qed.
+  
+  Lemma map_extends_None A B {mp : map.map A B} `{@map.ok A B mp} `{Eqb_ok A} (x : A) (a b : mp)
+    : map.extends a b -> map.get a x = None -> map.get b x = None.
+  Proof.
+    unfold map.extends.
+    intro H'; specialize (H' x).
+    destruct (map.get b x) eqn:Hget; try congruence.
+    specialize (H' _ eq_refl).
+    congruence.
+  Qed.
+
+  
+  Lemma all_option_all A (P : A -> Prop) l l'
+    : all P l ->
+      Some l = option_all l' ->
+      all (fun ma => ma <$> P) l'.
+  Proof.
+    revert l; induction l'; destruct l;
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush.
+  Qed.
+
+  Lemma exec_write_sound i r assign_vals qc
+    : rule_sound_for_evaluation i qc r ->
+      Datatypes.length r.(query_vars) = Datatypes.length assign_vals ->
+      query_assignment_sound i qc (combine r.(query_vars) assign_vals) r.(query_clause_ptrs) ->
+      state_sound_for_model m i
+        (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map
+           idx_trie analysis_result r assign_vals)
+        (fun (_ : idx_map (domain m)) (_ : unit) => True).
+  Proof.
+    unfold exec_write; intros ? Hlen ?.
+    destruct H1.
+    rename H2 into H1.
+    pose (named_map (fun f : named_list idx idx -> idx => f (combine (query_vars r) assign_vals))
+            rule_assignment) as l.
+    destruct (list_Mmap (map.get i) (map snd l)) as [ttt|] eqn:Httt.
+    2:{
+      exfalso.
+      symmetry in Httt; apply list_Mmap_None in Httt; eauto.
+      break.
+      subst l.
+      rewrite named_map_snd_eq, !List.map_map in H2.
+      apply in_map_iff in H2; break.
+      eapply rule_assignment_sound in H1; eauto;
+        basic_goal_prep; subst.
+      unfold eq_sound_for_model in H1; repeat iss_case.
+      congruence.
+    }
+    ssm_bind.
+    {
+      apply allocate_existential_vars_sound
+        with (time_travel_terms:= ttt).
+      {
+        apply TrieMap.list_Mmap_length in Httt.
+        subst l.
+        rewrite rule_assignment_dom.
+        basic_utils_crush.
+      }
+      {
+        pose proof (fun x y H => rule_assignment_sound x y H _ H1).
+        apply in_all_iff; intros.
+        rewrite !TrieMap.Mmap_option_all in *.
+        eapply In_option_all_out in Httt; eauto.
+        eapply in_map_iff in Httt.
+        break.
+        unfold l in H5.
+        eapply in_map_iff in H5; break; subst; cbn in *.
+        unfold named_map in H6.
+        eapply in_map_iff in H6; break; subst; cbn in *.
+        inversions.
+        eapply H2 in H6.
+        unfold eq_sound_for_model in H6.
+        rewrite H4 in *; cbn in *.
+        auto.
+      }
+      { eauto with utils. }
+      {
+        apply NoDup_app_iff in vars_NoDup0; break.
+        eapply in_all_iff; intros.
+        intro.
+        enough (In x (query_vars r)) by firstorder.
+        unfold Sep.has_key in H7.
+        case_match; try tauto.
+        assert (NoDup (map fst (combine (query_vars r) assign_vals))).
+        { rewrite map_combine_fst; eauto. }
+        apply Properties.map.all_gets_from_map_of_NoDup_list in H8.
+        eapply map_get_of_list_In in case_match_eqn; eauto.
+        eapply in_combine_l; eauto.
+      }
+    }
+    ssm_bind.
+    {
+      eapply state_sound_for_model_Miter with (P := fun _ _ => True); auto.
+      intros.
+      eapply exec_clause_sound.
+      break.
+      pose proof H1 as Hclause;
+        eapply clauses_sound in Hclause.
+      eapply in_all in Hclause; eauto.
+      eapply atom_sound_monotone in Hclause.
+      2: eassumption.
+      eapply atom_sound_monotone in Hclause.
+      2: eassumption.
+      assert (forall x d' d, In x (write_vars r ++ query_vars r) ->
+                            map.get i'0 (unwrap_with_default (H:=d) (map.get a x))
+                            = map.get i'0 (named_list_lookup d'
+                                             (write_assignment (combine (query_vars r)
+                                                                   assign_vals))
+                                             x)).
+      {
+        intros.
+        autorewrite with utils in*.
+        destruct (map.get a x) eqn:Hget.
+        2:{
+          pose proof Hget.
+          eapply map_extends_None in Hget; eauto.
+          eapply map_get_of_list_not_In in Hget; eauto;
+            rewrite map_combine_fst in *; eauto with utils.
+          intuition.
+          exfalso.
+          eapply all2_combine in H7; unfold uncurry in H7; cbn in H7; break.
+          replace (write_vars r) with (map fst (combine (write_vars r) ttt))
+            in H11 by (rewrite map_combine_fst in *; eauto with utils).
+          apply pair_fst_in_exists in H11; break.
+          eapply in_all in H9; eauto.
+          cbn in*.
+          repeat iss_case.
+          congruence.
+        }
+        destruct H9.
+        2:{
+          destruct (map.get (map.of_list (combine (query_vars r) assign_vals)) x) eqn:Hget'.
+          {
+            pose proof Hget'; eapply map_get_of_list_In in Hget'; eauto.
+            eapply H3 in H10.
+            replace i0 with i1 in * by congruence.
+            assert (In (x,i1) (write_assignment (combine (query_vars r) assign_vals))).
+            {
+              unfold write_assignment.
+              basic_utils_crush.
+            }
+            eapply named_list_lookup_in in H11; eauto.
+            2:{
+              unfold write_assignment.
+              rewrite map_app, named_map_fst_eq.
+              rewrite <- rule_assignment_dom.
+              rewrite map_combine_fst; eauto.
+            }
+            rewrite H11.
+            reflexivity.
+          }
+          {
+            exfalso.
+            eapply map_get_of_list_not_In in Hget';
+              rewrite ?map_combine_fst in *; eauto with utils.
+          }
+        }
+        {
+          eapply all2_combine in H7; unfold uncurry in H7; cbn in H7; break.
+          replace (write_vars r) with (map fst (combine (write_vars r) ttt))
+            in H9 by (rewrite map_combine_fst in *; eauto with utils).
+          pose proof H9.
+          apply pair_fst_in_exists in H9; break.
+          eapply in_all in H9; cbn in *; eauto; cbn in *.
+          rewrite Hget in *; cbn in *.
+          assert (exists i1, In (x,i1) l).
+          {
+            unfold l.
+            rewrite map_combine_fst in *; eauto with utils.
+            unfold write_assignment.
+            rewrite rule_assignment_dom in H11.
+            apply in_map_iff in H11; break; subst; cbn in *.
+            eapply in_named_map in H12.
+            eexists.
+            autorewrite with utils.
+            exact H12.
+          }
+          break.
+          replace (named_list_lookup d'
+                     (write_assignment (combine (query_vars r) assign_vals)) x)
+            with x1.
+          2:{
+            subst l.
+            epose proof (or_introl H12).
+            apply in_app_iff in H13.
+            eapply named_list_lookup_in with (d:=d) in H13; eauto.
+            2:{
+              rewrite map_app, named_map_fst_eq, map_combine_fst; eauto.
+              change (list (?A*?B)) with (named_list A B).
+              rewrite <- rule_assignment_dom; auto.
+            }
+            {
+              symmetry; apply named_list_lookup_in; eauto.
+              {
+                unfold write_assignment.
+                rewrite map_app, named_map_fst_eq, map_combine_fst; eauto.
+                change (list (?A*?B)) with (named_list A B).
+                rewrite <- rule_assignment_dom; auto.
+              }
+              {
+                unfold write_assignment.
+                autorewrite with utils; eauto.
+              }
+            }
+          }
+          assert (Some (combine (write_vars r) ttt)
+                  = list_Mmap (M:=option)
+                      (fun p => option_map (pair (fst p)) (map.get i (snd p))) l).
+          {
+            replace (write_vars r)
+              with (map fst l).
+            2:{
+              subst l.
+              rewrite named_map_fst_eq.
+              auto.
+            }
+            clear H7 H10 H11.
+            revert ttt Httt.
+            clear.
+            induction l; basic_goal_prep;              
+              basic_utils_crush.
+            destruct (map.get i i1) eqn:Hget; cbn in *; try congruence.
+            destruct (list_Mmap (map.get i) (map snd l)); cbn in *; try congruence.
+            inversions.
+            erewrite <- IHl; eauto.
+          }
+          rewrite TrieMap.Mmap_option_all in *.
+          eapply all_option_all in H13; eauto.
+          rewrite all_map in H13.
+          eapply in_all in H13; eauto.
+          unfold option_map in H13; cbn in H13.
+          case_match; cbn in *; try tauto.
+          repeat iss_case.
+          apply H2 in case_match_eqn; apply H5 in case_match_eqn.
+          inversions.
+          apply H5 in H13.
+          congruence.
+        }
+      }
+      unfold atom_sound_for_model in Hclause;
+        unfold atom_sound_for_model.
+      repeat iss_case.
+      assert (incl (write_vars r) (map.keys a)) as Hwrite_keys.
+      {
+        revert H7 idx_map_ok Eqb_idx_ok; clear.
+        revert ttt;
+          induction (write_vars r);
+          basic_goal_prep;
+          repeat case_match;
+          basic_utils_crush.
+        repeat iss_case.
+        rewrite map_keys_in'.
+        rewrite Hma; auto.
+      }
+      assert (forall l , incl l (write_vars r ++ query_vars r) ->
+                          list_Mmap (map.get i'0)
+                            (map (fun x : idx => unwrap_with_default (map.get a x)) l)
+                            = list_Mmap (map.get i'0)
+                                (map (fun x : idx => named_list_lookup x
+                                                       (write_assignment (combine (query_vars r)
+                                                                             assign_vals)) x)
+                                   l)).
+      {
+        induction l1; basic_goal_prep; auto.
+        erewrite <- H9.
+        2:{ eapply H10; cbn; eauto. }
+        case_match; cbn; auto.
+        {
+          erewrite <- IHl1;
+          clear IHl1.
+          2: basic_utils_crush.
+          case_match; auto.
+        }
+      }
+      destruct a0; cbn in *.
+      erewrite H10, Hma; cbn.
+      1: erewrite H9, Hma0; cbn; eauto.
+      all:repeat intro;
+        rewrite Permutation.Permutation_app_comm;
+        apply write_clauses_well_scoped0;
+        apply in_flat_map;
+        eexists; split; try eassumption;
+        cbn; eauto.
+    }
+    eapply state_sound_for_model_Miter with (P := fun _ _ => True); auto.
+    intros; break.
+    eapply state_sound_for_model_wkn; auto.
+    eapply union_sound.
+    apply eqns_sound0 in H1.
+    eapply in_all in H6; eauto; cbn in H6.
+    break.
+    apply Properties.map.get_of_list_In_NoDup in H6, H11.
+    2,3: rewrite map_combine_fst; eauto.
+    2,3: apply NoDup_app_iff in  vars_NoDup0; break; now eauto.
+    apply H3 in H6, H11.
+    rewrite H6, H11.
+    cbn.
+    repeat (eapply eq_sound_monotone; [eassumption| eauto]).
+  Qed.
+
+  Lemma monotone_rule_sound_for_evaluation
+    : monotone2 rule_sound_for_evaluation.
+  Proof.
+    repeat intro.
+    destruct H2; econstructor; intros; eauto.
+    { eapply eq_sound_monotone; try eassumption.
+      eapply rule_assignment_sound; eauto.
+     (* fail (*TODO: issue! antitone*).
+      eapply eq_sound_monotone; try eassumption.*)
+  Abort. 
+    
+  Lemma process_erule'_sound i tries frontier_idx (r : erule _ _) qc
+    : tries_sound_for_model i tries qc ->
+      rule_sound_for_evaluation i qc r ->
+       state_sound_for_model m i
+        (process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map
+           idx_map idx_trie analysis_result spaced_list_intersect tries r
+           (idx_of_nat idx idx_succ idx_zero frontier_idx))
+        (fun _ _ => True).
+  Proof.
+    unfold process_erule'.
+    intros.
+    apply state_sound_for_model_Miter with (P:= fun _ _ => True);
+      intros; auto.
+    eapply exec_write_sound; eauto.
+    (*
+    TODO: need var coverage for assignment length lemma
+    TODO: monotone rule_sound_for_evaluation.
+    TODO:  where to get query_assignment_sound?
+     *)
+    Abort.
+  
+  (*TODO assumptions on tries*)
+  Lemma process_erule_sound i tries r qc (*TODO: relate qc and r*)
+    :  tries_sound_for_model i tries qc ->
+       state_sound_for_model m i
+        (process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map
+           idx_map idx_trie analysis_result spaced_list_intersect tries r)
+        (fun _ _ => True).
+  Proof.
+    intros.
+    
   Abort.
 
+  (*
+    Definition ptr_trie_sound_for_model i tries (p : erule_query_ptr) :=
+      forall tries' t1 t2,
+        map.get tries p.(query_ptr_symbol) = tries' ->
+        map.get tries' p.(query_ptr_ptr) = (t1, t2) ->
+        todo: use qp args
+        
+    Definition tries_sound_for_model i tries access :=
+      forall s tries', map.get tries s = Some tries' ->
+                       forall x
+    unfold process_erule.
+    apply state_sound_for_model_Miter with (P:= fun _ _ => True);
+      intros; auto.
+    
+query_clauses symbol_map (idx_map (list nat * nat))
+*)
+
+  Lemma run1_iter_sound i rs rb_fuel
+    : state_sound_for_model m i
+        (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol Eqb_symbol
+           symbol_map symbol_map_plus idx_map idx_map_plus idx_trie
+           analysis_result spaced_list_intersect rs rb_fuel) 
+        (fun _ _ => True).
+  Proof.
+    unfold Defs.run1iter.
+    ssm_bind.
+    2:{
+      ssm_bind.
+      1: apply increment_epoch_sound.
+      ssm_bind.
+      2:{
+        eapply state_sound_for_model_wkn; eauto.
+        eapply rebuild_sound.
+      }
+      apply state_sound_for_model_Miter with (P:= fun _ _ => True);
+        intros; eauto.
+        admit.
+    }
+    admit.
+  Admitted.
+    (*
+    Lemma build_tries_sound
+      : state_sound_for_model m i
+    (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus idx_map
+       idx_map_plus idx_trie analysis_result rs) 
+    ?P*)
+    
+  Lemma saturate_until'_sound i rb_fuel rs cond fuel P
+    : (forall i', map.extends i' i ->
+                  state_sound_for_model m i' cond (fun i2 (b:bool) => if b then P i2 else True)) ->
+      monotone P ->
+      forall i', map.extends i' i ->
+      state_sound_for_model m i' (saturate_until' rs cond fuel rb_fuel)
+        (fun i b => if b then P i else True).
+  Proof.
+    intros Hcond HP.
+    induction fuel;
+      cbn [Defs.saturate_until'].
+    { intros; eapply ret_sound_for_model'; auto. }
+    {
+      intros.
+      ssm_bind.
+      destruct a.
+      { eapply ret_sound_for_model'; auto. }
+      eapply state_sound_for_model_Mseq.
+      { apply run1_iter_sound. }
+      {
+        intros; eauto.
+        eapply IHfuel.
+        eapply map_extends_trans; try eassumption.
+        eapply map_extends_trans; try eassumption.
+      }
+    }
+  Qed.
+  
   (*TODO: conditions on rs.
-    TODO: is i1 necessary?
    *)
   Lemma saturate_until_sound i rb_fuel rs cond fuel P
-    : state_sound_for_model m i cond (fun i2 (b:bool) => if b then P i2 else True) ->
+    (* TODO: package rs properties together*)
+    : all (const_rule_sound_for_evaluation i)
+        (compiled_const_rules idx symbol symbol_map idx_map rs) ->
+      (forall i', map.extends i' i ->
+                  state_sound_for_model m i' cond (fun i2 (b:bool) => if b then P i2 else True)) ->
       monotone P ->
       state_sound_for_model m i (saturate_until rb_fuel rs cond fuel)
         (fun i b => if b then P i else True).
@@ -3054,7 +3922,14 @@ Abort.
     intros.
     unfold saturate_until.
     eapply state_sound_for_model_Mseq.
-  Abort.
+    1:eapply process_const_rules_sound; eauto.
+    intros; break; cbn beta in *.
+    eapply state_sound_for_model_Mseq.
+    1: apply rebuild_sound.
+    intros.
+    eapply saturate_until'_sound; eauto.
+    repeat (eapply map_extends_trans; try eassumption).
+  Qed.
   
       
 End WithMap.
