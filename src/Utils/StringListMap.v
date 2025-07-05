@@ -8,7 +8,7 @@ From Utils Require Import Utils Monad ExtraMaps TrieMap.
 From Utils Require PosListMap.
 Import Monad.StateMonad.
 
-From Pyrosome.Tools Require Import PosRenaming.
+(*From Pyrosome.Tools Require Import PosRenaming.*)
 
 Import Ascii.
 Import Strings.String.
