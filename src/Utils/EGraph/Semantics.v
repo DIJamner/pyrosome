@@ -788,6 +788,12 @@ Abort.
 
   Definition monotone2 {A B C} (P : _ -> B -> C -> _) : Prop :=
     (forall a b (i i' : idx_map A), map.extends i i' -> P i' a b -> P i a b).
+
+  Definition monotone3 {A B C D} (P : _ -> B -> C -> D -> _) : Prop :=
+    (forall a b c (i i' : idx_map A), map.extends i i' -> P i' a b c -> P i a b c).
+  
+  Definition monotone4 {A B C D E} (P : _ -> B -> C -> D -> E -> _) : Prop :=
+    (forall a b c d (i i' : idx_map A), map.extends i i' -> P i' a b c d -> P i a b c d).
   
   Lemma monotone2_fix_l {A B C} (P : idx_map A -> B -> C -> _) x
     : monotone2 P ->
@@ -3869,10 +3875,29 @@ Abort.
       admit (*TODO: parameterized on spaced_list_intersect*).
     }
   Admitted.
+  
+  Lemma trie_sound_for_model_monotone
+    : monotone3 trie_sound_for_model.
+  Proof.
+    unfold trie_sound_for_model.
+    repeat intro.
+    eapply atom_sound_monotone; eauto.
+  Qed.
+
+  Lemma lookup_trie_sound_for_model_monotone
+    : monotone4 lookup_trie_sound_for_model.
+  Proof.
+    unfold lookup_trie_sound_for_model; repeat intro.
+    specialize (H2 _ _ H3 H4 _ H5 _ _ H6).
+    intuition (eapply trie_sound_for_model_monotone; eauto).
+  Qed.    
 
   Lemma tries_sound_for_model_monotone
     : monotone2 tries_sound_for_model.
-  Admitted.
+  Proof.
+    unfold tries_sound_for_model.
+    do 8 intro. eapply lookup_trie_sound_for_model_monotone; eauto.
+  Qed.
   
   Lemma process_erule_sound i tries r qc
     :  tries_sound_for_model i tries qc ->
@@ -4275,8 +4300,6 @@ query_clauses symbol_map (idx_map (list nat * nat))
     }
   Qed.
   
-  (*TODO: conditions on rs.
-   *)
   Lemma saturate_until_sound i rb_fuel rs cond fuel P
     (* TODO: package rs properties together*)
     : all (const_rule_sound_for_evaluation i)
@@ -4298,17 +4321,13 @@ query_clauses symbol_map (idx_map (list nat * nat))
     intros.
     eapply saturate_until'_sound; eauto.
     repeat (eapply map_extends_trans; try eassumption).
-  Qed.  
+  Qed.
       
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope
   a i.
-
-(*
-Arguments model_of {idx}%type_scope {symbol}%type_scope {idx_map}%function_scope m rw%list_scope.
-*)
 
 Arguments seq_assumptions {idx symbol}%type_scope s.
 Arguments seq_conclusions {idx symbol}%type_scope s.
