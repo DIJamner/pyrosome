@@ -31,7 +31,8 @@ Section WithMap.
   Existing Instance default_symbol.
   
   Context (symbol_map : forall A, map.map symbol A)
-        (symbol_map_plus : map_plus symbol_map).
+    (symbol_map_ok : forall A, @map.ok _ _ (symbol_map A))
+    (symbol_map_plus : map_plus symbol_map).
 
   Context 
       (idx_map : forall A, map.map idx A)
@@ -291,24 +292,79 @@ Section WithMap.
       }
     }
   Qed.
+  
+  (*TODO: duplicated*)  
+  Ltac iss_case :=
+    lazymatch goal with
+    | H : ?ma <$> _ |- _ =>
+        let Hma := fresh "Hma" in
+        destruct ma eqn:Hma; cbn in H;[| tauto]
+    | |- ?ma <?> _ =>
+        let Hma := fresh "Hma" in
+        destruct ma eqn:Hma; cbn;[| tauto]
+    end.
+
+  Lemma remove_atom_sound X m i a
+   : state_sound_for_model lt m i (remove_atom a (A:=X))
+       (fun (i'' : idx_map (domain symbol m)) (_ : unit) => i = i'').
+  Proof.
+    open_ssm; destruct e; cbn.
+    { destruct e0; constructor; intuition eauto. }
+    {
+      destruct e1; constructor; intuition eauto.
+      apply atom_interpretation.
+      unfold atom_in_egraph, atom_in_db in *; cbn in *.
+      intros; repeat iss_case.
+      eqb_case (atom_fn a) (atom_fn a0).
+      {
+        rewrite H0 in *.
+        rewrite get_update_same in Hma; eauto.
+        inversions.
+        unfold default, map_default in Hma0.
+        rewrite Properties.map.remove_empty in Hma0.
+        case_match; rewrite ?map.get_empty in *; try congruence.
+        cbn.
+        eqb_case (atom_args a) (atom_args a0).
+        {
+          rewrite H1 in *.
+          rewrite map.get_remove_same in *; congruence.
+        }
+        {
+          rewrite map.get_remove_diff in * by auto.
+          rewrite Hma0.
+          cbn.
+          eauto.
+        }
+      }
+      {
+        rewrite get_update_diff in Hma by auto.
+        rewrite Hma; cbn.
+        rewrite Hma0; cbn; auto.
+      }
+    }
+  Qed.
 
   Lemma dedup_computation_sound X m i l
-    : state_sound_for_model lt (analysis_result:=X) m i
+    (* TODO this assumption should be packaged somewhere*)
+    : PER (domain_eq symbol m) ->
+      all (atom_sound_for_model idx symbol idx_map m i) l ->
+      state_sound_for_model lt (analysis_result:=X) m i
         (list_Miter (fun a => Mbind (fun a => remove_atom a (A:=X))
                                 (canonicalize a))
            l)
         (fun i' _ => i = i').
   Proof.
+    intros.
     eapply state_sound_for_model_Miter; eauto.
     intros; subst.
     ssm_bind.
-    { apply canonicalize_sound; eauto.
-      2:{
-        (*
-      TODO: PER dom_eq? why is this an assumption?
-    open_ssm
-         *)
-        Abort.
+    {
+      apply canonicalize_sound; eauto.
+      eapply in_all; eauto.
+    }
+    cbn beta in *; break; subst.
+    apply remove_atom_sound.
+    Qed.
 
 (* TODO: split in 2: egraph comps to sequent, and sequent to egraph comps *)
 Section SequentOfStates.
@@ -408,8 +464,6 @@ Section SequentOfStates.
         unshelve
           let p := open_constr:(_) in
           specialize (H p).
-
-      Context (symbol_map_ok : forall {A}, map.ok (symbol_map A)).
       
       (*TODO: move to base utils *)
       Lemma all_map T1 T2 P (f : T1 -> T2) l
@@ -662,7 +716,13 @@ Eqb_idx.
       (*
       TODO: ssm Pi -> forall i, Pi -> atom a e -> clause_sound a i.
       Will this work? not really soundness, more completeness. seems ok.
-      eqns should be easy. actually, everything should be ok? 
+      eqns should be easy. actually, everything should be ok?
+
+      relationship between ssm, model_satisfies_rule, and query sat assign.
+
+      Idea: If add_ctx returns renaming R, and query matches w/ assignment R',
+      then R . R' . i = subst
+
       
       rewrite all_map in H1; cbn in H1.
       eexists.
@@ -1013,10 +1073,10 @@ End WithMap.
 
 
 Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
-  {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus} 
+  {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus} 
   {idx_map}%function_scope {idx_trie}%function_scope rf rules%list_scope.
 
 Arguments QueryOpt.sequent_of_states {idx}%type_scope {Eqb_idx} 
-  {idx_zero} {symbol}%type_scope {Eqb_symbol} {symbol_map idx_map}%function_scope
+  {idx_zero} {symbol}%type_scope {symbol_map idx_map}%function_scope
   {idx_trie}%function_scope {X A}%type_scope {H} 
   assumptions {B}%type_scope conclusions%function_scope r_fuel.

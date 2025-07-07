@@ -206,10 +206,6 @@ Section WithMap.
   Local Notation ST := (state instance).
 
   
-  (* does nothing if the arguments don't have analysis results already.
-     TODO: does this design make sense?
-     Analysis is not attached to the node anywhere
-   *)
   Definition update_analyses a_ret new_a : ST unit :=
     fun i =>
       let meet_a := match map.get i.(analyses) a_ret with
@@ -220,9 +216,6 @@ Section WithMap.
       let analyses' := map.put i.(analyses) a_ret meet_a in
       (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses').
   
-  (*TODO: propagate down the removal of the option and push to UnionFind file
-    as an alternative
-   *)
   Definition union (v v1 : idx) : ST idx :=
     fun d =>
       (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
@@ -248,8 +241,7 @@ Section WithMap.
              ((union_repair v_old v' improved_new_analysis)::d.(worklist)) in
              
            ret {option} (v', Build_instance d.(db) uf' d.(parents)
-                     d.(epoch) worklist' analyses')).
-    
+                     d.(epoch) worklist' analyses')).    
 
   Definition alloc : ST idx :=
     (fun i =>
@@ -614,11 +606,19 @@ Section WithMap.
   Definition remove_parents x : ST unit :=
     fun d =>
       let p' := map.remove d.(parents) x in
-      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
-      d.(analyses)).
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist) d.(analyses)).
 
+  (*gets the parents and removes them. TODO: implement in one operation *)
+  Definition pull_parents x : ST (list atom) :=
+    @! let ps <- get_parents x in
+      let _ <- remove_parents x in
+      ret ps.
+  
 
-  (*TODO: think about when add_parent triggers unions *)
+(*
+  (*TODO: think about when add_parent triggers unions.
+    Does this ever happen?
+   *)
   Fixpoint add_parent ps p : ST (list atom) :=
     match ps with
     | [] => Mret [p]
@@ -629,6 +629,7 @@ Section WithMap.
                ret (Build_atom f args om)::ps'
         else @! let ps'' <- add_parent ps' p in ret p'::ps''
     end.
+  *)
 
   (*TODO: move to Monad *)
   Definition pair_Mmap {A A' B B' M} `{Monad M}
@@ -655,24 +656,25 @@ Section WithMap.
   Definition repair_union x_old x_canonical (improved_new_analysis : bool) : ST unit :=
     let repair_each a : ST atom :=
       @!let _ <- db_remove a in
-        let {ST} a' <- canonicalize a in
+        let a' <- canonicalize a in
         let _ <- update_entry a' in
         ret a'
     in
-    (* TODO: a one-op remove-and-return would be useful*)
-    @! let old_ps <- get_parents x_old in
-      let _ <- remove_parents x_old in
+    @! let old_ps <- pull_parents x_old in
       let ps1 <- list_Mmap repair_each old_ps in
       let canon_ps <- get_parents x_canonical in
       (* If the analysis for the canonical id improved, repair its parents' analyses.
          TODO: should I call repair_parent_analysis or just push to worklist?
          This seems marginally better.
        *)
-      let _ <- if improved_new_analysis
-                      then list_Miter repair_parent_analysis canon_ps
-                      else Mret tt in
-      let ps2 <- list_Mfoldl add_parent ps1 canon_ps in
-      (set_parents x_canonical ps2).
+      if improved_new_analysis
+               then (list_Miter repair_parent_analysis canon_ps)
+               else ret tt
+      (*TODO: dedup iterates over canon_ps unnecessarily
+        TODO: probably not necessary!
+      let ps2 := dedup (eqb (A:=_)) (ps1++canon_ps) in
+      (set_parents x_canonical ps2)
+       *).
 
   Definition repair e :=
     match e with
@@ -1707,20 +1709,20 @@ Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_s
 
 
 Arguments rebuild {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope 
-  {Eqb_symbol} {symbol_map idx_map idx_trie}%function_scope 
+  {symbol_map idx_map idx_trie}%function_scope 
   {analysis_result}%type_scope {H}
   fuel%nat_scope _.
 
 
 Arguments saturate_until' {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
+  idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
   {analysis_result}%type_scope {H}
   spaced_list_intersect%function_scope 
   rs P fuel%nat_scope _.
 
 Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope {symbol_map_plus}
+  idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
   {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
   {analysis_result}%type_scope {H}
   spaced_list_intersect%function_scope rebuild_fuel

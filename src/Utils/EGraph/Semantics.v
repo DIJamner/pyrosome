@@ -1191,7 +1191,7 @@ Abort.
   Qed.
   
 
-  Arguments repair {idx}%type_scope {Eqb_idx} idx_zero {symbol}%type_scope {Eqb_symbol}
+  Arguments repair {idx}%type_scope {Eqb_idx} idx_zero {symbol}%type_scope
     {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
     {H} e _.
   
@@ -1265,6 +1265,31 @@ Abort.
     rewrite map.get_remove_diff in H0; try tauto.
     eauto.
   Qed.
+
+  
+
+  Ltac bind_with_fn H :=
+    eapply state_sound_for_model_bind;
+    eauto using H with utils;
+    cbn beta;intros; subst; cleanup_context.
+  
+  Ltac ssm_bind :=
+    eapply state_sound_for_model_bind;
+    eauto with utils;
+    cbn beta in *;intros; subst; cleanup_context.
+  
+  Lemma pull_parents_sound i old_idx
+    : state_sound_for_model m i
+        (pull_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx) 
+        (fun i' a => i = i' /\ all (atom_sound_for_model m i) a).
+  Proof.
+    unfold pull_parents.
+    ssm_bind; [ apply get_parents_sound |].
+    ssm_bind; [ apply remove_parents_sound |].
+    cbn beta in *; break; subst.
+    eapply ret_sound_for_model'; auto.
+  Qed.
+  
   
   Ltac iss_case :=
     lazymatch goal with
@@ -2009,16 +2034,6 @@ Abort.
     cbn; eauto.
   Qed.
 
-  Ltac bind_with_fn H :=
-    eapply state_sound_for_model_bind;
-    eauto using H with utils;
-    cbn beta;intros; subst; cleanup_context.
-  
-  Ltac ssm_bind :=
-    eapply state_sound_for_model_bind;
-    eauto with utils;
-    cbn beta in *;intros; subst; cleanup_context.
-
   Lemma db_set_entry_sound i f args entry_epoch entry_value a
     : atom_sound_for_model m i (Build_atom f args entry_value) ->
       state_sound_for_model m i
@@ -2135,7 +2150,8 @@ Abort.
     eapply interprets_to_functional; eauto.
   Qed.
   Hint Resolve atom_sound_functional : utils.
-  
+
+  (*
   Lemma add_parent_sound i ps p
     : atom_sound_for_model m i p ->
       all (atom_sound_for_model m i) ps ->
@@ -2184,6 +2200,7 @@ Abort.
       }
     }
   Qed.
+  *)
 
   Lemma set_parents_sound i new_idx l
     : all (atom_sound_for_model m i) l ->
@@ -2198,7 +2215,18 @@ Abort.
     { rewrite map.get_put_same in *; inversions; eauto. }
     { rewrite map.get_put_diff in *; eauto. }
   Qed.
-        
+
+  
+  (*TODO: move to Lists.v *)
+  Lemma all_dedup A (P : A -> Prop) f l
+    : all P l -> all P (dedup f l).
+  Proof using.
+    clear.
+    induction l;
+      basic_goal_prep;
+      try case_match; cbn;
+      basic_utils_crush.
+  Qed.    
   
   Lemma repair_sound i a
     : state_sound_for_model m i
@@ -2210,10 +2238,7 @@ Abort.
     {
       unfold repair_union.
       eapply state_sound_for_model_bind;
-        [ eapply get_parents_sound |].
-      cbn beta;intros; subst.
-      eapply state_sound_for_model_bind; eauto with utils.
-      { eapply remove_parents_sound. }
+        [ eapply pull_parents_sound |].
       cbn beta;intros; subst.
       eapply state_sound_for_model_bind; break; subst; eauto with utils.
       {
@@ -2243,33 +2268,14 @@ Abort.
       }
       cbn beta;intros; subst.
       bind_with_fn get_parents_sound.
-      eapply state_sound_for_model_Mseq; break; subst; eauto with utils.
+      case_match; break; subst.
       {
-        case_match.
-        {
-          eapply state_sound_for_model_Miter with (P:= fun i' _ => i'1 = i'); auto with utils.
-          cbn beta;intros; subst.
-          cleanup_context.
-          apply repair_parent_analysis_sound.
-        }
-        { eapply ret_sound_for_model'; eauto with utils. }
+        eapply state_sound_for_model_Miter with (P:= fun i' _ => i'1 = i'); auto with utils.
+        cbn beta;intros; subst.
+        cleanup_context.
+        apply repair_parent_analysis_sound.
       }
-      cbn beta;intros; subst.
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Mfoldl with (P_const:= eq i'); auto.
-        {
-          cbn beta;intros; subst.
-          eapply add_parent_sound; eauto.
-          eapply in_all;[| eauto]; auto.
-        }
-        { cbn; auto. }
-        { cbn; eauto with utils. }
-      }
-      {
-        cbn in *; break; subst.
-        apply set_parents_sound; eauto.
-      }        
+      { eapply ret_sound_for_model'; eauto with utils. }
     }
     {
       bind_with_fn get_parents_sound.
@@ -4238,7 +4244,7 @@ query_clauses symbol_map (idx_map (list nat * nat))
   Lemma run1_iter_sound i rs rb_fuel
     : all (rule_sound_for_evaluation i (query_clauses rs)) rs.(compiled_rules) ->
       state_sound_for_model m i
-        (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol Eqb_symbol
+        (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol
            symbol_map symbol_map_plus idx_map idx_map_plus idx_trie
            analysis_result spaced_list_intersect rs rb_fuel) 
         (fun _ _ => True).
