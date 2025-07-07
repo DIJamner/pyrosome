@@ -661,15 +661,15 @@ Section WithMap.
         ret a'
     in
     @! let old_ps <- pull_parents x_old in
-      let ps1 <- list_Mmap repair_each old_ps in
-      let canon_ps <- get_parents x_canonical in
+      let ps1 <- list_Mmap repair_each old_ps in      
       (* If the analysis for the canonical id improved, repair its parents' analyses.
          TODO: should I call repair_parent_analysis or just push to worklist?
          This seems marginally better.
        *)
       if improved_new_analysis
-               then (list_Miter repair_parent_analysis canon_ps)
-               else ret tt
+      then let canon_ps <- get_parents x_canonical in
+           (list_Miter repair_parent_analysis canon_ps)
+      else ret tt
       (*TODO: dedup iterates over canon_ps unnecessarily
         TODO: probably not necessary!
       let ps2 := dedup (eqb (A:=_)) (ps1++canon_ps) in

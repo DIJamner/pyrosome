@@ -2266,11 +2266,11 @@ Abort.
           eapply in_all; eauto.
         }
       }
-      cbn beta;intros; subst.
-      bind_with_fn get_parents_sound.
-      case_match; break; subst.
+      cbn beta;intros; break; subst.
+      case_match.
       {
-        eapply state_sound_for_model_Miter with (P:= fun i' _ => i'1 = i'); auto with utils.
+        bind_with_fn get_parents_sound; break; subst.
+        eapply state_sound_for_model_Miter with (P:= fun i _ => i' = i); auto with utils.
         cbn beta;intros; subst.
         cleanup_context.
         apply repair_parent_analysis_sound.

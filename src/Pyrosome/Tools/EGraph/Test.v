@@ -75,7 +75,7 @@ Definition ex1_set :=
 Notation process_const_rules := (process_const_rules _ _ string_succ "v0" _ _ _ _ unit).
 Notation increment_epoch := (increment_epoch _ string_succ _ _ _ _).
 Notation run1iter :=
-  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ _ (@PosListMap.compat_intersect)).
+  (run1iter _ _ string_succ "v0" _ _ _ _ _ _ _ (@PosListMap.compat_intersect)).
 
 Definition ex0 :=
   Eval vm_compute in
@@ -478,7 +478,7 @@ Require Tools.UnElab.
 
 
   Arguments Defs.run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope symbol_map_plus
+  idx_zero {symbol}%type_scope {symbol_map}%function_scope symbol_map_plus
   {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
   {H} spaced_list_intersect%function_scope rs rebuild_fuel%nat_scope _.
 
@@ -633,22 +633,22 @@ print_rules.
      where did #2 come from? did something not do a proper subst?
    *)
   Compute (QueryOpt.optimize_sequent string string_Eqb
-      StringListMap.string_succ string_default string string_Eqb
+      StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
       StringListMap.string_list_trie_map seq 1000).
   Compute (QueryOpt.opt_verbose string string_Eqb
-      StringListMap.string_succ string_default string string_Eqb
+      StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
       StringListMap.string_list_trie_map seq 1000).
   
   
   Compute (QueryOpt.opt_live_eqn string string_Eqb
-      StringListMap.string_succ string_default string string_Eqb
+      StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
       StringListMap.string_list_trie_map seq 1000 "#1" "#0").
 
   Compute (QueryOpt.opt_conclusion_atoms string string_Eqb
-      StringListMap.string_succ string_default string string_Eqb
+      StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
       StringListMap.string_list_trie_map seq 1000).
   (*
@@ -658,7 +658,7 @@ print_rules.
         {| atom_fn := "S"; atom_args := []; atom_ret := "" |};
         {| atom_fn := "/\"; atom_args := ["#"; "#0"]; atom_ret := "#2" |}] *)
   assert (QueryOpt.opt_assumption_atoms string string_Eqb
-      StringListMap.string_succ string_default string string_Eqb
+      StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
       StringListMap.string_list_trie_map seq 1000 = []).
 
