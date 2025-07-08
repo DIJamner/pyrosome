@@ -103,7 +103,7 @@ Abort.
 
 Definition ex1 :=
   Eval vm_compute in
-    (snd (run1iter ex1_set 1000 ex0)).
+    (snd (run1iter 1000 ex1_set ex0)).
 
 (*
 Compute (map (fun '(x,y) => (x, map.tuples y)) (map.tuples ex1.(db _ _ _ _ _))).
@@ -480,7 +480,7 @@ Require Tools.UnElab.
   Arguments Defs.run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
   idx_zero {symbol}%type_scope {symbol_map}%function_scope symbol_map_plus
   {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
-  {H} spaced_list_intersect%function_scope rs rebuild_fuel%nat_scope _.
+  {H} spaced_list_intersect%function_scope rebuild_fuel%nat_scope rs _.
 
 Ltac egraph rn n :=
       lazymatch goal with
@@ -493,7 +493,7 @@ Ltac egraph rn n :=
                         (StringInstantiation.egraph_equal (X:= option positive) (*V:=string*) l' rs rn n c e1 e2 t)) in
           let result' := eval vm_compute in
           (Defs.run1iter string_succ "v0" string_ptree_map_plus string_ptree_map_plus
-             (@compat_intersect) rs 0 (snd result)
+             (@compat_intersect) 0 rs (snd result)
           ) in
         lazymatch result with
         | (?b, ?g (*, ?r *)) =>

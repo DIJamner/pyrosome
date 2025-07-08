@@ -4246,7 +4246,7 @@ query_clauses symbol_map (idx_map (list nat * nat))
       state_sound_for_model m i
         (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol
            symbol_map symbol_map_plus idx_map idx_map_plus idx_trie
-           analysis_result spaced_list_intersect rs rb_fuel) 
+           analysis_result spaced_list_intersect rb_fuel rs) 
         (fun _ _ => True).
   Proof.
     unfold Defs.run1iter.
@@ -4278,7 +4278,7 @@ query_clauses symbol_map (idx_map (list nat * nat))
                   state_sound_for_model m i' cond (fun i2 (b:bool) => if b then P i2 else True)) ->
       monotone P ->
       forall i', map.extends i' i ->
-      state_sound_for_model m i' (saturate_until' rs cond fuel rb_fuel)
+      state_sound_for_model m i' (saturate_until' rb_fuel rs cond fuel)
         (fun i b => if b then P i else True).
   Proof.
     intros Hrule Hcond HP.
