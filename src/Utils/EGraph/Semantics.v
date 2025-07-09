@@ -203,16 +203,33 @@ Section WithMap.
       domain_eq : domain -> domain -> Prop;
       domain_wf x := domain_eq x x;
       (*constants : idx -> domain; TODO: do I have any constants? *)
-      interpretation : symbol -> list domain -> option domain;
-      interprets_to f args d := exists d', interpretation f args = Some d' /\ domain_eq d' d;
+      interprets_to : symbol -> list domain -> domain -> Prop;
+      (*interprets_to f args d := exists d', interpretation f args = Some d' /\ domain_eq d' d;*)
     }.
 
   Class model_ok (m : model) : Prop :=
     {
-      interpretation_preserving
-      : forall f args1 args2,
+      domain_eq_PER :: PER (domain_eq m);
+      interprets_to_functional
+      : forall f args1 args2 d1 d2,
+        m.(interprets_to) f args1 d1 ->
+        m.(interprets_to) f args2 d2 ->
         all2 m.(domain_eq) args1 args2 ->
-        option_relation m.(domain_eq) (m.(interpretation) f args1) (m.(interpretation) f args2)
+        m.(domain_eq) d1 d2;
+      interprets_to_preserved
+      : forall f args1 args2 d1 d2,
+        m.(interprets_to) f args1 d1 ->
+        all2 m.(domain_eq) args1 args2 ->
+        m.(domain_eq) d1 d2 ->
+        m.(interprets_to) f args2 d2;
+      interprets_to_implies_wf_args
+      : forall f args d,
+        m.(interprets_to) f args d ->
+        all m.(domain_wf) args;
+      interprets_to_implies_wf_conclusion
+      : forall f args d,
+        m.(interprets_to) f args d ->
+         m.(domain_wf) d;
     }.
   
   Context (symbol_map : forall A, map.map symbol A)
@@ -1144,13 +1161,13 @@ Abort.
   Qed.
 
   (*TODO: this should be implied by model_ok*)
-  Context m (m_PER : PER (domain_eq m)).
+  Context m `{model_ok m}.
   
   Lemma eq_sound_for_model_trans i x y z
     : eq_sound_for_model m i x y ->
       eq_sound_for_model m i y z ->
       eq_sound_for_model m i x z.
-  Proof using m_PER.
+  Proof using H0.
     clear lt idx_succ.
     unfold  eq_sound_for_model, Is_Some_satisfying.
     repeat case_match; basic_goal_prep; auto.
@@ -1262,7 +1279,7 @@ Abort.
     basic_goal_prep.
     eqb_case i0 old_idx;
       basic_utils_crush.
-    rewrite map.get_remove_diff in H0; try tauto.
+    rewrite map.get_remove_diff in H1; try tauto.
     eauto.
   Qed.
 
@@ -1315,7 +1332,7 @@ Abort.
     repeat iss_case.
     eqb_case (atom_fn a1) (atom_fn a).
     {
-      rewrite H1 in *.
+      rewrite H2 in *.
       rewrite get_update_same in Hma; eauto.
       autorewrite with inversion in *.
       unfold Basics.flip in *.
@@ -1328,7 +1345,7 @@ Abort.
       cbn; subst.        
       eqb_case (atom_args a1) (atom_args a).
       {
-        rewrite H2 in *.
+        rewrite H3 in *.
         basic_utils_crush.
       }
       {
@@ -1360,7 +1377,7 @@ Abort.
   Qed.
 
   Instance eq_sound_for_model_Symmetric i : Symmetric (eq_sound_for_model m i).
-  Proof using m_PER .
+  Proof using H0.
     clear lt idx_succ idx_zero.
     unfold eq_sound_for_model.
     repeat intro.
@@ -1368,6 +1385,20 @@ Abort.
     cbn.
     symmetry; auto.
   Qed.
+
+  
+  (*TODO: backport*)
+  Ltac break ::=
+    repeat match goal with
+   | H:unit |- _ => destruct H
+   | H:_ * _ |- _ => destruct H
+    | H:_ /\ _ |- _ =>
+        (*TODO: why is this necessary *)
+        let H1 := fresh in
+        let H2 := fresh in
+        destruct H as [H1 H2]; try clear H
+   | H:exists x, _ |- _ => destruct H
+   end.
 
   Lemma eq_atom_monotone
     : monotone2 eq_atom_in_interpretation.
@@ -1405,7 +1436,7 @@ Abort.
         eapply In_option_all in Hma; eauto.
         2: eapply in_map; eauto.
         break.
-        unfold Sep.has_key; rewrite H3; auto.
+        unfold Sep.has_key; rewrite H5; auto.
       }
       {
         repeat intro; 
@@ -1465,7 +1496,7 @@ Abort.
         rewrite case_match_eqn0; cbn.
       reflexivity.
     }
-    eapply atom_interpretation in H0; eauto.
+    eapply atom_interpretation in H1; eauto.
   Qed.
 
   Lemma state_sound_for_model_Mseq A B (i : idx_map (domain m)) (c1 : state instance A)
@@ -1487,10 +1518,10 @@ Abort.
     clear lt idx_succ idx_zero.
     unfold map.same_domain, map.sub_domain,  Sep.has_key.
     intuition repeat case_match; eauto;
-      try eapply H2 in case_match_eqn0; try eapply H1 in case_match_eqn;
-      try eapply H1 in case_match_eqn0; try eapply H2 in case_match_eqn;
-      try specialize (H0 k);
-      rewrite ? H1, ?H2 in *;
+      try eapply H3 in case_match_eqn0; try eapply H2 in case_match_eqn;
+      try eapply H2 in case_match_eqn0; try eapply H3 in case_match_eqn;
+      try specialize (H1 k);
+      rewrite ? H2, ?H3 in *;
       repeat case_match;
       break; try eexists; intuition eauto; try congruence.
     Unshelve.
@@ -1514,29 +1545,29 @@ Abort.
     do 2 case_match.
     pose proof case_match_eqn.
     pose proof case_match_eqn0.
-    eapply find_spec in H4; eauto; break; try Lia.lia.
     eapply find_spec in H5; eauto; break; try Lia.lia.
-    2:{ eapply H10; eauto. }
+    eapply find_spec in H6; eauto; break; try Lia.lia.
+    2:{ eapply H12; eauto. }
     eapply find_preserves_domain with (x:=k) in case_match_eqn, case_match_eqn0;
       eauto.
-    2:{ eapply H10; eauto. }
-    rewrite H10.
+    2:{ eapply H12; eauto. }
+    rewrite H12.
     case_match; autorewrite with inversion in *; break; subst; eauto.
     
     assert (Sep.has_key i (parent u)).
     {
       unfold Sep.has_key.      
-      eapply forest_root_iff with (m:= parent u) in H6; eauto using uf_forest.
-      rewrite H6; eauto.
+      eapply forest_root_iff with (m:= parent u) in H5; eauto using uf_forest.
+      rewrite H5; eauto.
     }
     assert (Sep.has_key i1 (parent u)).
     {
       unfold Sep.has_key.      
-      eapply forest_root_iff with (m:= parent u) in H11; eauto using uf_forest.
-      rewrite H11; eauto.
+      eapply forest_root_iff with (m:= parent u) in H6; eauto using uf_forest.
+      rewrite H6; eauto.
     }
     case_match; cbn in *; autorewrite with inversion in *; break; subst; cbn in *; eauto.
-    all: rewrite H15.
+    all: rewrite H17.
     all: rewrite has_key_put.
     all: intuition subst; eauto.
   Qed.
@@ -1556,7 +1587,7 @@ Abort.
 
   Instance eq_sound_for_model_PER i
     : PER (eq_sound_for_model m i).
-  Proof using m_PER.
+  Proof using H0.
     clear lt idx_succ idx_zero.
     unfold eq_sound_for_model.
     constructor; repeat intro; repeat iss_case; cbn.
@@ -1582,12 +1613,12 @@ Abort.
     do 2 case_match.
     eapply find_spec in case_match_eqn; eauto; break; try Lia.lia.
     eapply find_spec in case_match_eqn0; eauto; break; try Lia.lia.
-    2:{ eapply H9; eauto. }
+    2:{ eapply H11; eauto. }
     eqb_case i i0.
     {
       autorewrite with inversion in *; break; subst.
       intuition eauto.
-      eapply H14.
+      eapply H15.
       eapply union_find_limit; eauto.
       Lia.lia.
     }
@@ -1600,10 +1631,10 @@ Abort.
         eqb_case x i0; [ eapply parent_rel_put_same; now eauto |]
     end.
     all: try now (eapply unloop_parent; eauto using uf_forest;
-                  eapply H14; eapply union_find_limit; eauto; Lia.lia).
+                  eapply H15; eapply union_find_limit; eauto; Lia.lia).
     all: eapply transitive_closure_transitive;
       [now (eapply unloop_parent; eauto using uf_forest;
-            eapply H14; eapply union_find_limit; eauto; Lia.lia)|].
+            eapply H15; eapply union_find_limit; eauto; Lia.lia)|].
     all: eapply parent_rel_put_same; now eauto.
   Qed.
     
@@ -1617,7 +1648,7 @@ Abort.
     eqb_case x y.
     { basic_goal_prep; intuition eauto with utils. }
     case_match.
-    destruct (egraph_equiv_ok _ e0).
+    destruct (egraph_equiv_ok _ H3).
     pose proof case_match_eqn as Hdom.
     eapply union_spec in case_match_eqn; try Lia.lia; eauto.
     2:{
@@ -1638,24 +1669,24 @@ Abort.
         eexists; eauto.
       }
       {
-        destruct e1; constructor; cbn; eauto.
+        destruct H4; constructor; cbn; eauto.
         {
           intros x H'; apply interpretation_exact0 in H'.
           eapply union_same_domain in Hdom; eauto.
           { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
           {
-            symmetry in H0; eapply eq_sound_has_key_r in H0.
+            symmetry in H1; eapply eq_sound_has_key_r in H1.
             eapply interpretation_exact0; eauto.
           }
           {
-            eapply eq_sound_has_key_r in H0.
+            eapply eq_sound_has_key_r in H1.
             eapply interpretation_exact0; eauto.
           }
         }
         {
           intros.
-          eapply H6 in H7.
-          revert H7; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+          eapply H10 in H4.
+          revert H4; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
           unfold singleton_rel, impl2; basic_goal_prep; subst; eauto.
         }
         { split; auto; symmetry; auto. }
@@ -1664,16 +1695,16 @@ Abort.
     intuition try constructor; basic_goal_prep; intuition eauto with utils.    
     { eapply union_output in Hdom; eauto.
       2:{
-        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        symmetry in H1; eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
       2:{
-        eapply eq_sound_has_key_r in H0.
+        eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
       break.
-      eapply trans_PER_subrel in H8; eapply H6 in H8.
-      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      eapply trans_PER_subrel in H11; eapply H10 in H11.
+      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
       {
         repeat intro.
         eapply rel_interpretation; eauto.
@@ -1682,22 +1713,22 @@ Abort.
     }
     { eapply idx_interpretation_wf; eauto. }
     {
-      eapply interpretation_exact in H8; eauto.
+      eapply interpretation_exact in H11; eauto.
       eapply union_same_domain in Hdom; eauto.
       { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
       {
-        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        symmetry in H1; eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
       {
-        eapply eq_sound_has_key_r in H0.
+        eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
     }
-    { eapply atom_interpretation in e1; eauto. }
+    { eapply atom_interpretation in H4; eauto. }
     {
-      eapply H6 in H8.
-      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      eapply H10 in H11.
+      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
       {
         repeat intro.
         eapply rel_interpretation; eauto.
@@ -1708,16 +1739,16 @@ Abort.
     2:{ eapply worklist_sound; eauto. }    
     { eapply union_output in Hdom; eauto.
       2:{
-        symmetry in H0; eapply eq_sound_has_key_r in H0.
+        symmetry in H1; eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
       2:{
-        eapply eq_sound_has_key_r in H0.
+        eapply eq_sound_has_key_r in H1.
         eapply interpretation_exact; eauto.
       }
       break.
-      eapply trans_PER_subrel in H8; eapply H6 in H8.
-      revert H8; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
+      eapply trans_PER_subrel in H11; eapply H10 in H11.
+      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
       {
         repeat intro.
         eapply rel_interpretation; eauto.
@@ -1725,19 +1756,6 @@ Abort.
       { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
     }
   Qed.
-
-  
-  Lemma interprets_to_functional f args d d'
-    : interprets_to m f args d ->
-      interprets_to m f args d' ->
-      m.(domain_eq) d d'.
-  Proof.
-    unfold interprets_to.
-    basic_goal_prep.
-    replace x0 with x in * by congruence.
-    etransitivity; eauto; symmetry; eauto.
-  Qed.
-
   
   Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
     : state_sound_for_model m i s P ->
@@ -1747,7 +1765,7 @@ Abort.
     clear idx_zero idx_succ.
     unfold state_sound_for_model, state_triple, Sep.and1; basic_goal_prep;
       intuition eauto.
-    specialize (H0 e).
+    specialize (H1 e).
     intuition break.
     eexists; intuition eauto.
   Qed.
@@ -1761,8 +1779,8 @@ Abort.
     open_ssm'.
     split; eauto.
     case_match; cbn; intuition eauto with utils.
-    { destruct e0; constructor; intros; intuition eauto. }
-    { destruct e1; constructor; intros; cbn; intuition eauto. }
+    { destruct H2; constructor; intros; intuition eauto. }
+    { destruct H3; constructor; intros; cbn; intuition eauto. }
   Qed.
 
   Lemma get_analyses_sound i args
@@ -1830,19 +1848,19 @@ Abort.
     unfold db_set'.
     unfold state_sound_for_model, Sep.and1.
     repeat intro; eexists; split; cbn; intuition eauto.
-    { destruct H4; constructor; basic_goal_prep; intuition eauto. }
+    { destruct H5; constructor; basic_goal_prep; intuition eauto. }
     {
-      destruct H5; constructor; basic_goal_prep; intuition eauto.
+      destruct H6; constructor; basic_goal_prep; intuition eauto.
       {
-        unfold atom_in_egraph, atom_in_db in H3; cbn in H3.
+        unfold atom_in_egraph, atom_in_db in H4; cbn in H4.
         eqb_case (atom_fn a) (atom_fn a2);
-          [ rewrite H5 in *; rewrite get_update_same in *
+          [ rewrite H6 in *; rewrite get_update_same in *
           | rewrite get_update_diff in * ]; eauto.
         basic_goal_prep.
         case_match.
         {
           eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H6 in *; rewrite map.get_put_same in *
+          [ rewrite H7 in *; rewrite map.get_put_same in *
           | rewrite map.get_put_diff in * ]; repeat iss_case;
             autorewrite with inversion in *; break; subst; cbn in *; eauto.
           { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
@@ -1855,7 +1873,7 @@ Abort.
         }
         {
           eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H6 in *; rewrite map.get_put_same in *
+          [ rewrite H7 in *; rewrite map.get_put_same in *
           | rewrite map.get_put_diff in * ]; repeat iss_case;
             autorewrite with inversion in *; break; subst; cbn in *; eauto.
           { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
@@ -1869,22 +1887,22 @@ Abort.
         change (map.get
                   (fold_left (fun m x => map_update m x (cons a))
                      (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) e.(parents))
-                  i = Some l) in H3.
+                  i = Some l) in H4.
         destruct (map.get (parents e) i) eqn:Hpe.
         2:{
           assert (incl l [a]).
           {
             assert (map.get (parents e) i <?> (fun l => incl l [a])).
             { rewrite Hpe; cbn; auto. }
-            revert H5 l H3.
+            revert H6 l H4.
             generalize (parents e);
             generalize (dedup eqb (atom_ret a :: atom_args a)).
             induction l;
               basic_goal_prep;
               basic_utils_crush.
-            { rewrite H3 in *; cbn in *; auto. }
+            { rewrite H4 in *; cbn in *; auto. }
             {
-              eapply IHl in H3; eauto.
+              eapply IHl in H4; eauto.
               eqb_case i a1.
               {
                 rewrite get_update_same; cbn; eauto.
@@ -1898,7 +1916,7 @@ Abort.
         }
         assert (incl l (cons a l0)).
         {
-          revert H3 Hpe.
+          revert H4 Hpe.
           revert l l0;
             generalize (parents e);
             generalize (dedup eqb (atom_ret a :: atom_args a)).
@@ -1907,12 +1925,12 @@ Abort.
             basic_utils_crush.
           { replace l0 with l by congruence; eauto with utils. }
           {
-            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H3.
+            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H4.
             2:{ rewrite get_update_same, Hpe; eauto. }
             3:{ rewrite get_update_diff, Hpe; eauto. }
             2: now eauto with utils.
-            revert H3; clear; unfold incl; cbn; intuition eauto.
-            eapply H3 in H.
+            revert H4; clear; unfold incl; cbn; intuition eauto.
+            eapply H4 in H.
             intuition subst; eauto.
           }
         }
@@ -1921,6 +1939,17 @@ Abort.
       }
     }    
   Qed.
+
+  (*TODO: move *)
+  Lemma all2_same A R (l : list A)
+    : all2 R l l <-> all (fun x => R x x) l.
+  Proof.
+    clear.
+    induction l;
+      basic_goal_prep;
+      basic_utils_crush.
+  Qed.
+  
   
   Lemma update_entry_sound i a
     : atom_sound_for_model m i a ->
@@ -1939,9 +1968,15 @@ Abort.
         apply union_sound.
         unfold atom_sound_for_model in *; basic_goal_prep; repeat iss_case.
         autorewrite with inversion in *; subst.
-        eapply interprets_to_functional in H3; try apply H0.
-        unfold eq_sound_for_model.
-        rewrite Hma0; cbn; rewrite Hma2; cbn; symmetry; eauto.
+        eapply interprets_to_functional in H5; try apply H1.
+        {
+          unfold eq_sound_for_model.
+          rewrite Hma0; cbn; rewrite Hma2; cbn; symmetry; eauto.
+        }
+        {
+          rewrite all2_same.
+          eapply interprets_to_implies_wf_args; eauto.
+        }
       }
       {
         intros; subst.
@@ -1951,15 +1986,13 @@ Abort.
     }        
     { break; subst; eapply db_set_sound; eauto. }
   Qed.
-
-  Context `{model_ok m}.
   
   Lemma eq_atom_implies_sound_l i a3 a1 
     : eq_atom_in_interpretation i a3 a1 ->
       atom_sound_for_model m i a3 -> atom_sound_for_model m i a1.
   Proof.
     clear idx_succ idx_zero.
-    unfold eq_atom_in_interpretation, eq_sound_for_model, atom_sound_for_model, interprets_to.
+    unfold eq_atom_in_interpretation, eq_sound_for_model, atom_sound_for_model.
     intuition eauto.
     rewrite <- TrieMap.all2_map_l
       with (f:= map.get i)
@@ -1975,13 +2008,8 @@ Abort.
     eapply all2_Is_Some_satisfying_r in H1.
     repeat iss_case; cbn in *; break.
     rewrite H3 in *.
-    apply interpretation_preserving with (f:=(atom_fn a1)) in H1.
-    autorewrite with inversion in *; break; subst.
-    erewrite H2 in *.
-    cbn in *; case_match; try tauto.
-    eexists; split; eauto.
-    repeat (etransitivity; try eassumption;[]).
-    symmetry; eauto.
+    eapply interprets_to_preserved; eauto.
+    inversions; eauto.
   Qed.
   
   
@@ -1998,7 +2026,6 @@ Abort.
     { symmetry; eauto. }
   Qed.
 
-  
 
     
   Lemma db_lookup_entry_sound i f args
@@ -2009,7 +2036,6 @@ Abort.
                                         (Build_atom f args e.(entry_value _ _)))).
   Proof.
     open_ssm.
-    intuition eauto with utils.
     basic_goal_prep.
     case_match; cbn; auto.
     case_match; cbn; auto.
@@ -2087,7 +2113,7 @@ Abort.
     case_match; break; subst.
     2:{ eapply ret_sound_for_model'; eauto with utils. }
     case_match.
-    cbn in H3.
+    cbn in H4.
     bind_with_fn get_analyses_sound.
     cbn beta;intros; subst.
     case_match.
@@ -2148,6 +2174,7 @@ Abort.
     unfold atom_sound_for_model, eq_sound_for_model; cbn.
     intros; repeat iss_case; inversions; cbn.
     eapply interprets_to_functional; eauto.
+    eapply all2_same; eapply interprets_to_implies_wf_args; eauto.
   Qed.
   Hint Resolve atom_sound_functional : utils.
 
@@ -2526,7 +2553,7 @@ Abort.
     basic_goal_prep; intuition auto.
     { rewrite map.get_put_same; eauto. }
     {
-      destruct H2 as [ [] ].
+      destruct H3 as [ [] ].
       eapply alloc_preserves_ok in case_match_eqn; eauto.
       constructor; eexists; cbn; eauto.
     }
@@ -2539,11 +2566,11 @@ Abort.
       clear d Hget.
       eapply interpretation_exact in Hsome; eauto.
       
-      destruct H2 as [ [] ].
+      destruct H3 as [ [] ].
       eapply next_upper_bound in Hsome; eauto.
     }
     {
-      destruct H3; constructor; basic_goal_prep; eauto.
+      destruct H4; constructor; basic_goal_prep; eauto.
       {
          unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
            inversions.
@@ -2562,10 +2589,10 @@ Abort.
       }
       {
         unfold atom_in_egraph in *; cbn in *.
-        eapply atom_interpretation0 in H3.
+        eapply atom_interpretation0 in H2.
         eapply atom_sound_monotone; eauto.
         apply extends_put_None.
-        destruct H2 as [ [] ].
+        destruct H3 as [ [] ].
         enough (~ Sep.has_key (next (equiv e)) i).
         { unfold Sep.has_key in *; case_match; try congruence; tauto. }
         intro.
@@ -2576,25 +2603,25 @@ Abort.
         destruct e; destruct equiv;
         unfold uf_rel_PER, UnionFind.alloc in *;
           basic_goal_prep; inversions; basic_goal_prep.
-        eapply PER_closure_put in H3.
+        eapply PER_closure_put in H2.
         2:{
-          destruct H2 as [ [? H2] ].
-          eapply uf_forest in H2; cbn in *; eauto.
+          destruct H3 as [ [? H3] ].
+          eapply uf_forest in H3; cbn in *; eauto.
           eapply forest_closed; eauto.
         }
         2:{
-          destruct H2 as [ [? H2] ]; cbn in H2.
-          eapply next_None in H2; cbn in H2; auto.
+          destruct H3 as [ [? H3] ]; cbn in H3.
+          eapply next_None in H3; cbn in H3; auto.
         }
         intuition subst.
         { eapply rel_interpretation0 in H4.
           eapply eq_sound_monotone; eauto.
           apply extends_put_None.
-          destruct H2 as [ [? H2] ]; cbn in H2.
-          eapply next_None in H2; cbn in H2; auto.
+          destruct H3 as [ [? H3] ]; cbn in H3.
+          eapply next_None in H3; cbn in H3; auto.
           apply map_get_None_contradiction; repeat intro.
-          apply interpretation_exact0 in H3.
-          unfold Sep.has_key in *; rewrite H2 in *; auto.
+          apply interpretation_exact0 in H2.
+          unfold Sep.has_key in *; rewrite H3 in *; auto.
         }
         {
           unfold eq_sound_for_model; rewrite map.get_put_same; cbn.
@@ -2604,23 +2631,138 @@ Abort.
       {
         eapply monotone1_all; [apply atom_sound_monotone | | eauto].
         apply extends_put_None.
-        destruct H2 as [ [? H2] ]; cbn in H2.
-        eapply next_None in H2; cbn in H2; auto.
+        destruct H3 as [ [? H3] ]; cbn in H3.
+        eapply next_None in H3; cbn in H3; auto.
         apply map_get_None_contradiction; repeat intro.
         apply interpretation_exact0 in H4.
-        unfold Sep.has_key in *; rewrite H2 in *; auto.
+        unfold Sep.has_key in *; rewrite H3 in *; auto.
       }
       {
         eapply monotone1_all; [apply worklist_entry_sound_mono| | eauto].
         apply extends_put_None.
-        destruct H2 as [ [? H2] ]; cbn in H2.
-        eapply next_None in H2; cbn in H2; auto.
+        destruct H3 as [ [? H3] ]; cbn in H3.
+        eapply next_None in H3; cbn in H3; auto.
         apply map_get_None_contradiction; repeat intro.
-        apply interpretation_exact0 in H3.
-        unfold Sep.has_key in *; rewrite H2 in *; auto.
+        apply interpretation_exact0 in H2.
+        unfold Sep.has_key in *; rewrite H3 in *; auto.
       }
     }        
   Qed.
+
+    
+  Lemma alloc_opaque_sound i time_travel_term
+    : m.(domain_wf) time_travel_term ->
+      state_sound_for_model m i
+        (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun i' x => map.get i' x = Some time_travel_term).
+  Proof.
+    clear idx_zero.
+    unfold alloc_opaque.
+    repeat intro.
+    unfold Sep.and1 in *; break.
+    case_match; cbn.
+    pose proof case_match_eqn as H';
+      eapply alloc_next in H'; subst.
+    exists (map.put i (equiv e).(next) time_travel_term).
+    basic_goal_prep; intuition auto.
+    { rewrite map.get_put_same; eauto. }
+    {
+      destruct H3 as [ [] ].
+      eapply alloc_preserves_ok in case_match_eqn; eauto.
+      constructor; eexists; cbn; eauto.
+    }
+    2:{
+      eapply extends_put_None.
+      destruct (map.get i (next (equiv e))) eqn:Hget; auto.
+      exfalso.
+      assert (Is_Some (map.get i (next (equiv e)))) as Hsome
+          by (rewrite Hget; cbn; auto).
+      clear d Hget.
+      eapply interpretation_exact in Hsome; eauto.
+      
+      destruct H3 as [ [] ].
+      eapply next_upper_bound in Hsome; eauto.
+    }
+    {
+      destruct H4; constructor; basic_goal_prep; eauto.
+      {
+         unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
+           inversions.
+         eqb_case next i0;
+           [rewrite !map.get_put_same in *
+           |rewrite !map.get_put_diff in * by eauto ];
+           inversions; eauto.
+      }
+      {
+        unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
+          inversions; cbn in *.
+        eqb_case next x;
+          [rewrite !map.get_put_same in *
+          |rewrite !map.get_put_diff in * by eauto ];
+          inversions; basic_utils_crush.
+      }
+      {
+        unfold atom_in_egraph in *; cbn in *.
+        eapply atom_interpretation0 in H2.
+        eapply atom_sound_monotone; eauto.
+        apply extends_put_None.
+        destruct H3 as [ [] ].
+        enough (~ Sep.has_key (next (equiv e)) i).
+        { unfold Sep.has_key in *; case_match; try congruence; tauto. }
+        intro.
+        apply interpretation_exact0 in H4.
+        eapply next_upper_bound in H4; eauto.
+      }
+      {
+        destruct e; destruct equiv;
+        unfold uf_rel_PER, UnionFind.alloc in *;
+          basic_goal_prep; inversions; basic_goal_prep.
+        eapply PER_closure_put in H2.
+        2:{
+          destruct H3 as [ [? H3] ].
+          eapply uf_forest in H3; cbn in *; eauto.
+          eapply forest_closed; eauto.
+        }
+        2:{
+          destruct H3 as [ [? H3] ]; cbn in H3.
+          eapply next_None in H3; cbn in H3; auto.
+        }
+        intuition subst.
+        { eapply rel_interpretation0 in H4.
+          eapply eq_sound_monotone; eauto.
+          apply extends_put_None.
+          destruct H3 as [ [? H3] ]; cbn in H3.
+          eapply next_None in H3; cbn in H3; auto.
+          apply map_get_None_contradiction; repeat intro.
+          apply interpretation_exact0 in H2.
+          unfold Sep.has_key in *; rewrite H3 in *; auto.
+        }
+        {
+          unfold eq_sound_for_model; rewrite map.get_put_same; cbn.
+          auto.
+        }
+      }
+      {
+        eapply monotone1_all; [apply atom_sound_monotone | | eauto].
+        apply extends_put_None.
+        destruct H3 as [ [? H3] ]; cbn in H3.
+        eapply next_None in H3; cbn in H3; auto.
+        apply map_get_None_contradiction; repeat intro.
+        apply interpretation_exact0 in H4.
+        unfold Sep.has_key in *; rewrite H3 in *; auto.
+      }
+      {
+        eapply monotone1_all; [apply worklist_entry_sound_mono| | eauto].
+        apply extends_put_None.
+        destruct H3 as [ [? H3] ]; cbn in H3.
+        eapply next_None in H3; cbn in H3; auto.
+        apply map_get_None_contradiction; repeat intro.
+        apply interpretation_exact0 in H2.
+        unfold Sep.has_key in *; rewrite H3 in *; auto.
+      }
+    }        
+  Qed.
+  
 
   (*
   Lemma list_Mfoldl_map A B C (g : A -> B) M `{Monad M} (f : C -> B -> M C) l acc
@@ -2731,6 +2873,159 @@ Abort.
       rewrite <- in_map_iff;
       apply in_map; eauto.
   Qed.
+
+  
+  Lemma atom_sound_for_model_preserved i f args1 args2 o1 o2
+    : atom_sound_for_model m i {| atom_fn := f; atom_args := args1; atom_ret := o1 |} ->
+      all2 (eq_sound_for_model m i) args1 args2 ->
+      eq_sound_for_model m i o1 o2 ->
+      atom_sound_for_model m i {| atom_fn := f; atom_args := args2; atom_ret := o2 |}.
+  Proof.
+    unfold atom_sound_for_model.
+    basic_goal_prep;
+      repeat iss_case; cbn in *.
+    unfold eq_sound_for_model in H2.
+    rewrite <- TrieMap.all2_map_l
+      with (f:= map.get i)
+           (R := (fun x y => x <$> (fun x' : domain m => map.get i y <$> domain_eq m x')))
+      in H2.
+    rewrite all2_Is_Some_satisfying_l in H2; iss_case; cbn in *.
+    rewrite <- TrieMap.all2_map_r
+      with (f:= map.get i)
+           (R := (fun x' y => y <$> domain_eq m x'))
+      in H2.
+    rewrite all2_Is_Some_satisfying_r in H2; iss_case; cbn in *.
+    rewrite <- TrieMap.Mmap_option_all in *.
+    replace l with l0 in * by congruence.
+    rewrite Hma2; cbn.
+    unfold eq_sound_for_model in H3.
+    rewrite Hma0 in *; cbn in *.
+    iss_case;cbn in *.
+    eapply interprets_to_preserved; eauto.
+  Qed.
+
+  
+  Lemma eq_sound_refl i a d
+    : map.get i a = Some d ->
+      m.(domain_wf) d ->
+      eq_sound_for_model m i a a.
+  Proof.
+    unfold eq_sound_for_model;
+      intros H' H0';
+      rewrite H'; cbn.
+    eauto.
+  Qed.
+
+  
+  
+  Lemma map_extends_None A B {mp : map.map A B} `{@map.ok A B mp} `{Eqb_ok A} (x : A) (a b : mp)
+    : map.extends a b -> map.get a x = None -> map.get b x = None.
+  Proof.
+    unfold map.extends.
+    intro H'; specialize (H' x).
+    destruct (map.get b x) eqn:Hget; try congruence.
+    specialize (H' _ eq_refl).
+    congruence.
+  Qed.
+  
+  Lemma Mmap_extends A (i i' : idx_map A) args dargs
+    : list_Mmap (map.get i) args = Some dargs ->
+      map.extends i' i ->
+      list_Mmap (map.get i') args = Some dargs.
+  Proof.
+    revert dargs;
+      induction args;
+      destruct dargs;
+      basic_goal_prep;
+      repeat case_match;
+      basic_utils_crush;
+      try congruence.
+    { apply H2 in case_match_eqn1; congruence. }
+    {
+      specialize (IHargs _ eq_refl);
+        intuition congruence.
+    }
+    {
+      specialize (IHargs _ eq_refl);
+        intuition congruence.
+    }
+    { eapply map_extends_None in case_match_eqn; eauto; congruence. }
+  Qed.
+
+  Lemma hash_entry_sound i f args dargs out
+    : list_Mmap (map.get i) args = Some dargs ->
+      m.(interprets_to) f dargs out ->
+      state_sound_for_model m i (hash_entry idx_succ f args)
+        (fun i x => atom_sound_for_model m i (Build_atom f args x)).
+  Proof.
+    intros.
+    unfold hash_entry.
+    ssm_bind.
+    {
+      eapply state_sound_for_model_Mmap_dep
+        with (P_const := fun i' => i = i')
+             (P_elt := fun a i a' => eq_sound_for_model m i a a'); auto.
+      {
+        intros; subst.
+        eapply state_sound_for_model_wkn.
+        {
+          eapply find_sound.
+          rewrite TrieMap.Mmap_option_all in *.
+          apply in_map with (f:= map.get i') in H3.
+          eapply In_option_all in H1; eauto.
+          break.
+          unfold Sep.has_key; rewrite H5; auto.
+        }
+        { repeat basic_goal_prep; subst; intuition auto. }
+      }
+      { repeat intro; eapply eq_sound_monotone; eauto. }
+    }
+    cbn beta in *; break; subst.
+    ssm_bind.
+    { apply db_lookup_sound. }
+    cbn beta in *; break; subst.
+    case_match;
+      cbn in H7; break; subst.
+    { eapply ret_sound_for_model'.
+      repeat change (fun y => ?f y) with f in *.
+      eapply atom_sound_for_model_preserved; eauto.
+      { eapply all2_Symmetric; eauto; apply eq_sound_for_model_PER. }
+      {
+        unfold atom_sound_for_model in H7.
+        repeat iss_case.
+        unfold eq_sound_for_model; repeat (rewrite Hma0;cbn).
+        eapply interprets_to_implies_wf_conclusion; eauto.
+      }
+    }
+    ssm_bind.
+    {
+      apply alloc_sound with (time_travel_term := out).
+      eauto using interprets_to_implies_wf_conclusion.
+    }
+    ssm_bind.
+    {
+      apply db_set_sound.
+      repeat change (fun y => ?f y) with f in *.
+      eapply atom_sound_for_model_preserved.
+      2:{
+        eapply all2_impl; try eassumption.
+        intros ? ?; apply eq_sound_monotone; auto.
+      }
+      2:{
+        eapply eq_sound_refl; eauto.
+        eapply interprets_to_implies_wf_conclusion; eauto.
+      }
+      unfold atom_sound_for_model; cbn.
+      eapply Mmap_extends in H1; eauto; rewrite H1;cbn.
+      rewrite H5; cbn; auto.
+    }
+    cbn beta in *; break; subst.
+    eapply ret_sound_for_model'.
+    repeat change (fun y => ?f y) with f in *.
+    unfold atom_sound_for_model; cbn.
+    eapply Mmap_extends in H1; eauto; rewrite H1;cbn.
+    rewrite H5; cbn; auto.
+  Qed.
     
   (* `time_travel_terms` should be a set of terms determined by code that is run later.
      Another way of looking at this lemma is that for any list of assignments for vars,
@@ -2788,15 +3083,15 @@ Abort.
         {
           assert (map.get (map.put acc a a0) a = Some a0)
             by apply map.get_put_same.
-          erewrite H9 by eassumption; cbn.
+          erewrite H12 by eassumption; cbn.
           erewrite H7 by eassumption; eauto.
         }
         {
-          rewrite map_keys_put in H13.
-          change (?a::?l) with ([a]++l) in H13.
-          rewrite Permutation.Permutation_app_comm in H13.
+          rewrite map_keys_put in H14.
+          change (?a::?l) with ([a]++l) in H14.
+          rewrite Permutation.Permutation_app_comm in H14.
           cbn in *. 
-          rewrite Permutation.Permutation_app_comm in H13.
+          rewrite Permutation.Permutation_app_comm in H14.
           auto.
         }
       }
@@ -2842,7 +3137,7 @@ Abort.
         eapply In_option_all in Hma; eauto.
         2:{ eapply in_map; eauto. }
         break.
-        unfold Sep.has_key; rewrite H4; auto.
+        unfold Sep.has_key; rewrite H5; auto.
       }
       {
         repeat intro; cbn beta.
@@ -2870,27 +3165,21 @@ Abort.
       rewrite <- TrieMap.all2_map_l
         with (f:= map.get i'0)
              (R:= (fun a a0 => a <$> (fun x' : domain m => map.get i'0 a0 <$> domain_eq m x')))
-        in H4.
-      rewrite all2_Is_Some_satisfying_l in H4.
+        in H5.
+      rewrite all2_Is_Some_satisfying_l in H5.
       rewrite <- TrieMap.Mmap_option_all in *.
       rewrite Hma in *; cbn in*.
       rewrite <- TrieMap.all2_map_r
         with (f:= map.get i'0)
              (R:= (fun x a0 => a0 <$> domain_eq m x))
-        in H4.
-      rewrite all2_Is_Some_satisfying_r in H4.
+        in H5.
+      rewrite all2_Is_Some_satisfying_r in H5.
       rewrite <- TrieMap.Mmap_option_all in *.
       repeat iss_case; cbn in *.
-      unfold interprets_to in *; break.
-      eapply interpretation_preserving with (f:=(atom_fn a)) in H4; eauto.
-      rewrite H1 in *; cbn in *; case_match; try tauto.
-      eexists; split; eauto.
-      etransitivity; try eassumption.
-      etransitivity; try apply H2.
-      symmetry; eauto.
+      eapply interprets_to_preserved; eauto.
     }
     { eauto. }
-  Qed.    
+  Qed.
 
   (*TODO: move*)
   Arguments const_vars {idx symbol}%type_scope c.
@@ -2983,6 +3272,17 @@ Abort.
     specialize (H1 a); intuition.
   Qed.
 
+
+
+  (*TODO: backport*)
+  Ltac break ::=
+    repeat match goal with
+   | H:unit |- _ => destruct H
+   | H:_ * _ |- _ => destruct H
+    | H:_ /\ _ |- _ => destruct H
+   | H:exists x, _ |- _ => destruct H
+   end.
+  
   Lemma exec_const_sound i r
     : const_rule_sound_for_evaluation i r ->
       state_sound_for_model m i
@@ -3486,16 +3786,6 @@ Abort.
       basic_goal_prep;
       repeat case_match;
       basic_utils_crush.
-  Qed.
-  
-  Lemma map_extends_None A B {mp : map.map A B} `{@map.ok A B mp} `{Eqb_ok A} (x : A) (a b : mp)
-    : map.extends a b -> map.get a x = None -> map.get b x = None.
-  Proof.
-    unfold map.extends.
-    intro H'; specialize (H' x).
-    destruct (map.get b x) eqn:Hget; try congruence.
-    specialize (H' _ eq_refl).
-    congruence.
   Qed.
 
   

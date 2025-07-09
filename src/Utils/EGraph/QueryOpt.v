@@ -344,10 +344,9 @@ Section WithMap.
     }
   Qed.
 
-  Lemma dedup_computation_sound X m i l
+  Lemma dedup_computation_sound X m i l `{model_ok _ m}
     (* TODO this assumption should be packaged somewhere*)
-    : PER (domain_eq symbol m) ->
-      all (atom_sound_for_model idx symbol idx_map m i) l ->
+    : all (atom_sound_for_model idx symbol idx_map m i) l ->
       state_sound_for_model lt (analysis_result:=X) m i
         (list_Miter (fun a => Mbind (fun a => remove_atom a (A:=X))
                                 (canonicalize a))
@@ -722,6 +721,20 @@ Eqb_idx.
 
       Idea: If add_ctx returns renaming R, and query matches w/ assignment R',
       then R . R' . i = subst
+
+
+
+
+current understanding:
+property of add_ctx: for all interps of the resulting e-graph,
+the output renaming composed with the interp produces a subst that is wf at the ctx.
+
+property of add_term: for ....,
+the output id maps to the input term w/the subst applied
+
+
+
+
 
       
       rewrite all_map in H1; cbn in H1.

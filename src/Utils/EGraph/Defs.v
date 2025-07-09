@@ -814,6 +814,8 @@ Arguments epoch {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_s
   {analysis_result}%type_scope i.
 Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope i.
+Arguments analyses {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope i.
 
 Existing Class analysis.
 

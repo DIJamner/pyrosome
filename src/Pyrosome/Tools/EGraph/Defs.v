@@ -163,6 +163,7 @@ Section WithVar.
                   let x <- hash_entry n s' in
                   if with_sorts then
                     let tsub := combine (map fst c) s' in
+                    (*TODO: add context sorts*)
                     let tx <- add_open_sort tsub t in
                     let tx' <- hash_entry sort_of [x] in
                     let _ <- union tx tx' in
@@ -554,7 +555,7 @@ Section WithVar.
         in
         map.fold process_table map.empty.
 
-      Definition node_lt (x_a : option positive) (p : ne_list V * option positive) :=
+      Definition atom_le (x_a : option positive) (p : ne_list V * option positive) :=
         oP_le (snd p) x_a.
 
       Context (i : instance (option positive)).
@@ -609,14 +610,14 @@ Section WithVar.
         
         Definition extract_weightedF x : MT result term :=
           @! let x_a <- lift (result_of_option_else
-                                (map.get i.(analyses _ _ _ _ _ _) x)
+                                (map.get i.(analyses) x)
                                 error:("No analysis for" x))
             in
             let x_class <- lift (result_of_option_else
                                    (map.get e_classes x)
                                    error:("No eclass for" x)) in
             let (x_f, x_args, _) <- lift (result_of_option_else
-                                            (List.find (node_lt x_a) x_class)
+                                            (List.find (atom_le x_a) x_class)
                                             error:(x "has no term of size <=" x_a)) in
             let children <- list_Mmap rec x_args in
             ret (con x_f children).

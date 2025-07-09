@@ -66,6 +66,9 @@ Definition example1 : list (sequent _ _) :=
    !! "animal" "x" -> "x" :- "cat" -> "x"
   ]%log.
 
+Definition inject : list (sequent _ _) :=
+  [!! "G" = "G1", "A" = "A1" :- "exp" "G" "A" -> "x", "exp" "G1" "A1" -> "x"]%log.
+
 
 Definition ex1_set :=
   Eval vm_compute in

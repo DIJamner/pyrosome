@@ -191,4 +191,31 @@ Section WithVar.
 
   End Terms.
 
+  Lemma invert_wf_term_con l c n s (t : sort)
+    : Core.wf_term l c (con n s) t ->
+      exists c' args t', In (n, term_rule c' args t') l
+                         /\ Model.wf_args (Model:=core_model l) c s c'
+                         /\ (eq_sort l c t'[/with_names_from c' s/] t
+                             \/ t'[/with_names_from c' s/] = t).
+  Proof.
+    intro H.
+    remember (con n s) as e.
+    revert n s Heqe.
+    pattern t.
+    pattern e.
+    revert e t H.
+    apply wf_term_cut_ind;
+      intros; subst; inversions; try tauto.
+    {
+      repeat eexists; intuition eauto.
+    }
+    {
+      specialize (H0 _ _ eq_refl).
+      break.
+      repeat eexists; intuition eauto.
+      { left; eapply eq_sort_trans; eauto. }
+      { subst; left; eauto. }
+    }
+  Qed.
+
 End WithVar.
