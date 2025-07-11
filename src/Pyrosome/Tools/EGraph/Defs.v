@@ -8,7 +8,7 @@
  *)
 Set Implicit Arguments.
 
-Require Import BinNat Datatypes.String Datatypes.Result Lists.List Sorting.Permutation.
+Require Import Coq.NArith.BinNat Datatypes.String Datatypes.Result Lists.List Sorting.Permutation.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -188,7 +188,7 @@ Section WithVar.
       The recursion is bounded by the number of rules since every term in a sort
       must be of a previously defined sort.
      *)
-    Definition add_open_sort := add_open_sort' (length l).
+    Definition add_open_sort := add_open_sort' (S (length l)).
     Definition add_open_term := add_open_term' add_open_sort.
     
 
