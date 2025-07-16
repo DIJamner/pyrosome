@@ -214,16 +214,6 @@ Definition get_ctx (r : rule) :=
   | sort_eq_rule c _ _
   | term_eq_rule c _ _ _ => c
   end.
-  
-    (*TODO: move to Utils?*)
-    (* Note: does not error out on bad inputs *)
-    Fixpoint select_sublist {A} (s : named_list A) (filter : list V) :=
-      match s, filter with
-      | [], _ | _, [] => []
-      | (n,a)::s', n'::filter' =>
-          if eqb n n' then a::(select_sublist s' filter')
-          else (select_sublist s' filter)
-      end.
 
   (* Converts an elaborated term/sort/etc to an unelaborated one.
      Used for more readable goals. *)

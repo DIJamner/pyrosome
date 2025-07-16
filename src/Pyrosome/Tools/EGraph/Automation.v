@@ -52,7 +52,7 @@ Instance my_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => if inb a.(atom_fn) ["val_subst"; "blk_subst"]
                                     then Some 20
                                     else Some 1 (*(length a.(atom_args))) *) ).
- *)
+
 Instance full_term_analysis : analysis string string (option (term string)) :=
   {
     analyze a r :=
@@ -67,6 +67,20 @@ Instance full_term_analysis : analysis string string (option (term string)) :=
         then Some e else Some e'
     end;
   }.
+*)
+
+Instance depth_analysis : analysis string string (option positive) :=
+  weighted_depth_analysis (fun a => Some 1).
+
+(*TODO: generalize what rules to run *)
+Theorem egraph_sound rebuild_fuel fuel l (c : ctx string) t (e1 e2 : term string)
+  : wf_lang l ->
+    wf_ctx (Model:=core_model l) c ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    fst (fst (fst (fst (egraph_equal' l rebuild_fuel fuel c e1 e2 t)))) = true->
+    eq_term l c t e1 e2.
+Admitted.
 
 Ltac egraph rule_transform n :=
       lazymatch goal with
@@ -75,7 +89,7 @@ Ltac egraph rule_transform n :=
           let rs := constr:(StringInstantiation.build_rule_set
                               (rule_transform l') l') in
         let result := (eval vm_compute in
-                        (StringInstantiation.egraph_equal (X:= option (term string)) (*V:=string*) l' rs n c e1 e2 t)) in
+                        (StringInstantiation.egraph_equal (*V:=string*) l' rs n c e1 e2 t)) in
         lazymatch result with
         | (?b, ?g (*, ?r *)) =>
             (*
@@ -119,8 +133,6 @@ representing infinity as None, where a value of infinity means that term will ne
 
  *******************************)
 Import StringInstantiation.
-
-Set Printing Implicit.
 
 Notation instance := (instance string string string_trie_map string_trie_map string_list_trie_map (option positive)).
 

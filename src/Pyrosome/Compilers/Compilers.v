@@ -1,3 +1,4 @@
+(* TODO: prove cut elimination for eq judgments, use to simplify this proof *)
 Set Implicit Arguments.
 
 Require Import Datatypes.String Lists.List.
@@ -217,15 +218,12 @@ Lemma compile_strengthen_term cmp n cc e
     compile ((n,cc)::cmp) e = compile cmp e.
 Proof.
   induction e; basic_goal_prep; basic_core_crush.
-  my_case Heq (eqb n0 n); basic_goal_prep;
-    basic_core_crush.
-  case_match; basic_goal_prep;
-      basic_core_crush.
-  case_match; basic_goal_prep;
-    basic_core_crush.
+  my_case Heq (eqb n0 n); basic_goal_prep.
+  1: basic_core_crush.
+  case_match; basic_goal_prep; auto.
+  case_match; basic_goal_prep; auto.
   f_equal.
   f_equal.
-
   revert dependent l.
   induction l; basic_goal_prep; basic_core_crush.
 Qed.
@@ -248,18 +246,15 @@ Lemma compile_strengthen_sort cmp n cc e
     compile_sort ((n,cc)::cmp) e = compile_sort cmp e.
 Proof.
   destruct e; basic_goal_prep; basic_core_crush.
-  my_case Heq (eqb v n); basic_goal_prep;
-    basic_core_crush.
-  case_match; basic_goal_prep;
-      basic_core_crush.
-  case_match; basic_goal_prep;
-    basic_core_crush.
+  my_case Heq (eqb v n); basic_goal_prep.
+  1: basic_core_crush.
+  case_match; basic_goal_prep; auto.
+  case_match; basic_goal_prep; auto.
   f_equal.
   f_equal.
   apply compile_strengthen_args; assumption.
 Qed.
 Hint Rewrite compile_strengthen_sort : lang_core.
-
 
 Lemma compile_strengthen_ctx cmp n cc c
   : fresh n cmp ->
@@ -578,7 +573,6 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         all: pose proof (all_fresh_tail _ _ ltac:(eassumption)).
         all: repeat case_match; auto;
             autorewrite with utils term lang_core in *; eauto.
-        all: basic_utils_crush.
         all: symmetry in case_match_eqn.
         all: symmetry in case_match_eqn0.
         all: try rewrite all_fresh_named_list_lookup_err_in in case_match_eqn by assumption.
@@ -804,8 +798,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           use_rule_in_wf.
           basic_core_crush.
         }
-        { now basic_core_crush. }
-        { now basic_core_crush. }
+        { clear H5 H6;now basic_core_crush. }
+        { clear H5 H6;now basic_core_crush. }
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -832,8 +826,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
             eapply IHpreserving_compiler_plus; eauto.
           }
         }
-        { now basic_core_crush. }
-        { now basic_core_crush. }
+        { clear H5 H6;now basic_core_crush. }
+        { clear H5 H6; now basic_core_crush. }
         {
           eapply all_constructors_sort_from_wf; eauto.
           intuition subst;
@@ -846,8 +840,8 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
           all:use_rule_in_wf;
             basic_core_crush.
         }
-        { now basic_core_crush. }
-        { now basic_core_crush. }
+        { clear H5 H6;now basic_core_crush. }
+        { clear H5 H6;now basic_core_crush. }
         {
           eapply all_constructors_ctx_from_wf; eauto.
           intuition subst;
@@ -896,7 +890,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         {
           autorewrite with utils lang_core in *.
           { eapply Model.eq_sort_subst; eauto. }
-          all: basic_core_crush.
+          all: eauto with lang_core term model.
         }
         {
           eapply Model.eq_sort_refl; eauto.
@@ -910,6 +904,7 @@ Local Hint Resolve wf_sort_implies_ws : lang_core.
         {
           autorewrite with utils lang_core in *.
           { eapply Model.eq_term_subst; eauto. }
+          all: eauto with lang_core term model utils.
           all: basic_core_crush.
         }
         {

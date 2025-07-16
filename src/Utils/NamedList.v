@@ -343,6 +343,15 @@ Section __.
     case_match; basic_goal_prep; basic_utils_crush.
   Qed.
 
+  (* Note: does not error out on bad inputs *)
+  Fixpoint select_sublist {A} (s : named_list A) (filter : list S) :=
+    match s, filter with
+    | [], _ | _, [] => []
+    | (n,a)::s', n'::filter' =>
+        if eqb n n' then a::(select_sublist s' filter')
+        else (select_sublist s' filter)
+    end.
+
 End __.
 
 

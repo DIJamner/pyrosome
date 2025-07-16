@@ -78,7 +78,8 @@ Section WithVar.
     Proof.
       all: intros wfl wfc.
       {
-        destruct e; destruct fuel; basic_goal_prep; basic_core_firstorder_crush.
+        destruct e; destruct fuel; basic_goal_prep.
+        1-3:basic_core_firstorder_crush.
         revert H; case_match; basic_goal_prep; [|basic_core_crush].
         (*TODO: Some = default rewrite?*)
         unfold default, option_default in H.

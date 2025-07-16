@@ -28,6 +28,13 @@ Section WithVar.
 
     Definition id_args {B} (c : named_list B) :=
       map inj_var (map fst c).
+    
+    
+    Lemma id_args_nil B'
+      : @id_args B' [] = [].
+    Proof.
+      reflexivity.
+    Qed.
 
     (*Defined as a notation so that the definition 
       does not get in the way of automation *)
@@ -284,6 +291,8 @@ Arguments args_subst [V]%type_scope {A}%type_scope {Substable0} s !a%list_scope/
 Arguments ws_args [V]%type_scope {A}%type_scope {Substable0} (_ !_)%list_scope/.
 Arguments subst_id0 [V]%type_scope {A}%type_scope {Substable0 Substable0_ok} B%type_scope _ _ : rename.
 
+
+#[export] Hint Rewrite id_args_nil : term.
 
 
 #[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.

@@ -427,16 +427,15 @@ c |- e1 = e2 : t'
       basic_core_crush.
   Qed.
 
+  (*TODO: use Core.in_ctx_wf?*)
   Lemma in_ctx_wf n t c
     : wf_ctx c -> In (n, t) c -> eq_sort c t t.
   Proof.
-    induction 1;
-      basic_goal_prep;
-      basic_core_crush.
-    all:eapply ctx_mono; eauto; eauto with utils.
+    induction 1; basic_goal_prep; try tauto.
+    inversions.
+    intuition subst;eapply ctx_mono; eauto; eauto with utils.
   Qed.
   Hint Resolve in_ctx_wf : lang_core.
-
 
   Lemma cut_id_subst_refl' c c'
     : incl c c' -> eq_subst c' c (id_subst c) (id_subst c).
@@ -554,8 +553,9 @@ c |- e1 = e2 : t'
         {
           erewrite strengthen_subst;
             try typeclasses eauto;
-            eauto;
-            basic_core_crush.
+            eauto with lang_core model utils.
+          all: autorewrite with utils bool in *; subst.
+          all:basic_core_crush.
         }
         {
           change ((named_list_lookup (var ?n) ?s ?n)) with (subst_lookup s n).
@@ -1001,8 +1001,8 @@ Section WithLang.
         with lang_core utils.
     }
     1-3:eapply eq_term_conv; now eauto using eq_subst_refl_right.
-    all: constructor; [basic_core_crush |].
-    all: eapply eq_term_conv; [basic_core_crush|].
+    all: constructor; [ now eauto with lang_core model utils |].
+    all: eapply eq_term_conv; [now eauto with lang_core model utils |].
     all: unfold sort_cut_admissible in *.
     1-3: erewrite subst_assoc; try typeclasses eauto; eauto;
     erewrite ?eq_subst_map_fst_r by eassumption;

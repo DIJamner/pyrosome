@@ -321,16 +321,7 @@ Lemma id_args_cons A n (a :A) c
 Proof.
   reflexivity.
 Qed.
-
   
-  (*TODO: move to Substable.v*)
-  Lemma id_args_nil {A} `{Substable0 A} B'
-    : @id_args V A _ B' [] = [].
-  Proof.
-    reflexivity.
-  Qed.
-  
-#[local] Hint Rewrite id_args_nil : term.  
 #[local] Hint Rewrite id_args_cons : term.
 
 Lemma term_subst_nil e : term_subst [] e = e.

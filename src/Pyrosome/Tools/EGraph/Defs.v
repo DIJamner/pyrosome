@@ -438,53 +438,7 @@ Section WithVar.
             (hash_node succ default n s')
       end.
      *)
-
-    (*TODO: inherited from functionaldb. fill in.*)
-    Context (spaced_list_intersect
-              (*TODO: nary merge?*)
-              : forall {B} `{WithDefault B} (merge : B -> B -> B),
-                ne_list (V_trie B * list bool) ->
-                (* Doesn't return a flag list because we assume it will always be all true*)
-                V_trie B).
-    
-
-    Section __.
-      Context {X : Type}
-        `{analysis V V X}.
-
-      
-    Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=X)).
-      
-    Definition egraph_sort_of (x t : V) : state (instance X) bool :=
-      @! let t0 <- hash_entry sort_of [x] in
-        let t1 <- find t in
-        ret eqb t0 t1.
-
-    Definition eq_proven x1 x2 t : state (instance X) bool :=
-      @!let b1 <- egraph_sort_of x1 t in
-        let b2 <- are_unified x1 x2 in
-        ret (andb b1 b2).
-
-    (*TODO: move to Utils *)
-    Instance WithDefault_squared {V} `{WithDefault V}
-      : WithDefault (WithDefault V) := ltac:(assumption).
-
-    (*Note: l has to contain the ctx_to_rules of the context *)
-    Definition egraph_equal l (rws : rule_set) rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
-      let comp : state (instance X) bool :=
-        @!let {(state (instance X))} x1 <- add_open_term l true [] e1 in
-          let {(state (instance X))} x2 <- add_open_term l true [] e2 in
-          let {(state (instance X))} xt <- add_open_sort l true [] t in
-          let {(state (instance X))} _ <- rebuild rfuel (*TODO: magic number *) in
-          (saturate_until succ V_default
-             spaced_list_intersect rfuel rws (eq_proven x1 x2 xt) fuel)
-      in (comp (empty_egraph default X)).
-
-    End __.
-
-  (*******************************************)
-
-    Section AnalysisExtract.
+  Section AnalysisExtract.
       (* look for node with least weight, interpreting None as oo.
          Note: positive because termination depends on nonzero weight.N
        *)
@@ -640,6 +594,57 @@ Section WithVar.
           
     End AnalysisExtract.
     
+
+    (*TODO: inherited from functionaldb. fill in.*)
+    Context (spaced_list_intersect
+              (*TODO: nary merge?*)
+              : forall {B} `{WithDefault B} (merge : B -> B -> B),
+                ne_list (V_trie B * list bool) ->
+                (* Doesn't return a flag list because we assume it will always be all true*)
+                V_trie B).
+    
+
+    Section __.
+      (* TODO: generalize later
+      Context {X : Type}
+        `{analysis V V X}.
+       *)
+
+      
+      Local Notation hash_entry := (hash_entry (symbol:=V) succ (analysis_result:=option positive)).
+      Local Notation instance := (instance (option positive)).
+
+      Instance depth : analysis V V (option positive) :=
+        weighted_depth_analysis (fun _ => Some xH).
+      
+    Definition egraph_sort_of (x t : V) : state instance bool :=
+      @! let t0 <- hash_entry sort_of [x] in
+        let t1 <- find t in
+        ret eqb t0 t1.
+
+    Definition eq_proven x1 x2 t : state instance bool :=
+      @!let b1 <- egraph_sort_of x1 t in
+        let b2 <- are_unified x1 x2 in
+        ret (andb b1 b2).
+
+    (*TODO: move to Utils *)
+    Instance WithDefault_squared {V} `{WithDefault V}
+      : WithDefault (WithDefault V) := ltac:(assumption).
+
+    (*Note: l has to contain the ctx_to_rules of the context *)
+    Definition egraph_equal l (rws : rule_set) rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
+      let comp : state instance (bool * _ * _) :=
+        @!let {(state instance)} x1 <- add_open_term l true [] e1 in
+          let {(state instance)} x2 <- add_open_term l true [] e2 in
+          let {(state instance)} xt <- add_open_sort l true [] t in
+          let {(state instance)} _ <- rebuild rfuel (*TODO: magic number *) in
+          let {state instance}res <- saturate_until succ V_default
+                       spaced_list_intersect rfuel rws (eq_proven x1 x2 xt) fuel in
+          ret (res, x1, x2)
+      in (comp (empty_egraph default _)).
+
+    End __.
+    
 (* Egraph-based elaboration:
    Idea: have an add_unelab_term fn that allocates fresh idxs for elab holes,
    without terms that point to them.
@@ -667,10 +672,9 @@ Module PositiveInstantiation.
   Export PosListMap.
   
   (*TODO: the default is biting me*)
-  Definition egraph_equal {X} `{analysis _ _ X}
+  Definition egraph_equal
     : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
-      nat -> Term.term positive -> Term.term positive -> Term.sort positive ->
-      _ * instance _ _ _ _ _ X :=
+      nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   (*TODO: move somewhere?*)
@@ -695,6 +699,14 @@ Module PositiveInstantiation.
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
+  (*
+   (fun g : instance =>
+                  (@!let {result} e1' <- extract_weighted g extract_fuel x1 in
+                     let {result} e2' <- extract_weighted g extract_fuel x2 in
+                     
+                     error:(x1 "not identified with" x2
+                              "Extracted term 1:" e1'
+                              "Extracted term 2:" e2'), g)) *)
   
 End PositiveInstantiation.
 
@@ -702,11 +714,11 @@ Require Ascii.
 Module StringInstantiation.
   Export StringListMap.
 
-  Definition egraph_equal {X} `{analysis _ _ X}
-    : lang string -> rule_set string string string_trie_map string_trie_map ->
+  Definition egraph_equal
+    : lang string -> rule_set string string string_trie_map string_trie_map -> nat ->
       nat -> nat -> _ -> Term.term string -> Term.term string -> Term.sort string ->
-      _ * instance _ _ _ _ _ X :=
-    fun l rw rn n c e1 e2 t =>
+      _ * instance _ _ _ _ _ _ :=
+    fun l rw rn n en c e1 e2 t =>
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
       string_succ sort_of

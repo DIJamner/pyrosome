@@ -298,7 +298,7 @@ Section __.
       pose proof H0 as H'.
       apply Properties.map.get_split with (k:=j) in H0.
       rewrite !H in H0.
-      basic_utils_crush; [left | right].
+      intuition; [left | right].
       all: exists x, x0.
       all: unfold not1, and1, has_key.
       all: rewrite <- H0.
@@ -421,7 +421,7 @@ Section __.
       pose proof H0.
       eapply Properties.map.get_split with (k:=i) in H0; eauto.
       destruct H0; basic_goal_prep;rewrite <- H0, case_match_eqn;
-        basic_utils_crush.
+      intuition eauto.
       { rewrite H4 in H5; auto. }
       { rewrite H4 in H5; auto. }
     }
@@ -512,9 +512,9 @@ Section __.
           with (seps [forest_ptsto j0; ptsto j0 k; (and1 (forest_ptsto i) (not1 (has_key j)))])
                using relation (@Uimpl1 idx_map).
         {
-          basic_utils_crush.
+          autorewrite with bool rw_prop inversion utils.
           basic_goal_prep.
-          basic_utils_crush.
+          autorewrite with bool rw_prop inversion utils.
           
           sep_focus' [2;3] [2]; [|reflexivity].
           unfold seps_Uimpl1, Uimpl1.
@@ -1033,14 +1033,12 @@ Section __.
         rewrite H0, H1.
         reflexivity.
       }
-      {
-        
-        basic_goal_prep;
-          basic_utils_crush.
+      {        
+        basic_goal_prep.
+        autorewrite with bool rw_prop inversion utils in *.
 
         pose proof (eqb_spec i j);
-          destruct (eqb i j); auto; left.
-        
+          destruct (eqb i j); auto; left.        
         
         apply Properties.map.get_split with (k:=i0) in H;
           destruct H; basic_goal_prep.
@@ -1637,7 +1635,7 @@ Section __.
               eapply forest_join.
               repeat (break; subst; autorewrite with utils in *; eauto; try typeclasses eauto).
               exists (map.put x1 i j), (map.put x5 i1 j).
-              basic_utils_crush.
+              intuition auto.
               2:{
                 eapply forest_node with (i:=i); eauto.
                 basic_utils_crush.
@@ -1699,7 +1697,7 @@ Section __.
                     unfold map.disjoint in *.
                     intros.
                     pose proof (eqb_spec i k); destruct (eqb i k);[ subst i |];
-                      basic_utils_crush.
+                       autorewrite with bool rw_prop inversion utils in *.
                     {
                       eapply H7; eauto.
                       basic_utils_crush.
@@ -2550,7 +2548,8 @@ Section __.
       : forest_ptsto k x -> Some i0 = map.get x i -> k = i0 \/ has_key i0 x.
     Proof.
       intro H; revert i i0; induction H;
-        basic_goal_prep; basic_utils_crush.
+        basic_goal_prep.
+      1:basic_utils_crush.
       {
         eapply distribute_get in H; eauto.
         destruct H; unfold sep, and1 in *; break.
@@ -2702,12 +2701,10 @@ Section __.
         2:{
           basic_utils_crush.
         }
-        clear IHl; unfold and1 in *;
-          basic_utils_crush.
-        exists x, x3;
-          basic_utils_crush.
-        unfold map.split;
-          basic_utils_crush.
+        clear IHl; unfold and1 in *.
+        intuition eauto.
+        exists x, x3; intuition eauto.
+        unfold map.split; intuition eauto.
         eapply Properties.map.disjoint_comm.
         eapply Properties.map.shrink_disjoint_l; eauto.
         2: eapply Properties.map.split_comm;eauto.
@@ -2976,8 +2973,7 @@ Section __.
       intros.
       split; intro H'; induction H';
         basic_goal_prep;
-        basic_utils_crush.
-      all: try reflexivity.
+        try now intuition eauto with utils.
       all: try now (etransitivity; eauto).
       {
         eqb_case j a;
@@ -3225,8 +3221,7 @@ Section __.
       intros.
       rewrite !reachable_tree in *; eauto.
       2: eapply tree_put; eauto.
-      destruct H0; basic_goal_prep;
-        basic_utils_crush.
+      destruct H0; basic_goal_prep; basic_utils_crush.
     Qed.
 
     Lemma tree_closed k f : tree k f -> closed_graph f.
@@ -3751,8 +3746,8 @@ Section __.
           eapply in_all in H5; eauto.
         }            
         exists (a :: x);
-          basic_goal_prep;
-          basic_utils_crush.
+          basic_goal_prep.
+        intuition eauto.
         {
           assert (incl (a::x) (map.keys f)).
           {
@@ -3768,7 +3763,11 @@ Section __.
             basic_utils_crush.
           Lia.lia.
         }
-        { rewrite H; auto. }
+        1:basic_utils_crush.
+        {
+          autorewrite with utils.
+          rewrite H; auto.
+        }
         {
           exists (S x0);
             basic_goal_prep;
@@ -3904,8 +3903,8 @@ Section __.
              (fun i j : idx => map.get r i = Some j)).
     Proof.
       unfold iff2, or2; basic_goal_prep.
-      eapply Properties.map.get_split with (k:=a) in H;
-        basic_utils_crush.
+      eapply Properties.map.get_split with (k:=a) in H.
+      intuition eauto.
       all: try (left; congruence).
       all: try (right; congruence).
       all: congruence.
@@ -3915,8 +3914,7 @@ Section __.
       : parent_rel m x y -> map.get m x = Some x -> y = x.
     Proof.
       induction 1;
-        basic_goal_prep;
-        basic_utils_crush.
+        basic_goal_prep; intuition eauto.
       all: try congruence.
       replace a with b in * by congruence.
       eauto.
@@ -3933,7 +3931,7 @@ Section __.
         basic_utils_crush;
         eqb_case i b;
         basic_goal_prep;
-        basic_utils_crush.
+        eauto with utils.
       { eapply parent_rel_loop in H2; basic_utils_crush. }
       1,2:constructor 1; basic_utils_crush.
       { inversion H2; basic_utils_crush; congruence. }
@@ -4181,7 +4179,7 @@ Section __.
         change (seps (?a::?l)) with (sep a (seps l)) in *.
         unfold sep in H4; break.
         exists (map.put (map.putmany x3 x) i j), x4.
-        basic_utils_crush.
+        intuition auto.
         {
           eapply split_put_left'.
           {
@@ -4203,12 +4201,12 @@ Section __.
         }
         {
           eapply tree_join.
-          exists x3, (map.put x i j);
-            basic_utils_crush.
+          exists x3, (map.put x i j); intuition auto.
           2:{
             eapply forest_node; eauto.
             exists (map.remove x i), (map.singleton i j).
-            basic_utils_crush.
+            (intuition auto);
+              [basic_utils_crush | | basic_utils_crush ].               
             unfold and1.
             unfold tree in *.
             clear IHl.
@@ -4386,8 +4384,7 @@ Section __.
         basic_goal_prep;
           basic_utils_crush.
         exists (List.removeb (eqb (A:=_)) i0 l).
-        basic_goal_prep;
-          basic_utils_crush.
+        basic_goal_prep; intuition auto.
         {
           eapply forest_put_in; eauto.
         }
@@ -4431,8 +4428,7 @@ Section __.
         basic_goal_prep;
           basic_utils_crush.
         exists (List.removeb (eqb (A:=_)) i0 l).
-        basic_goal_prep;
-          basic_utils_crush.
+        basic_goal_prep; intuition auto.
         {
           eapply forest_put_in; eauto.
         }
@@ -4477,7 +4473,7 @@ Section __.
           basic_utils_crush.
         exists (List.removeb (eqb (A:=_)) i l).
         basic_goal_prep;
-          basic_utils_crush.
+          intuition auto.
         {
           eapply forest_put_in; eauto.
         }
@@ -4573,7 +4569,7 @@ Section __.
         basic_goal_prep;
         basic_utils_crush.
         all: rewrite PER_step in *; break;
-          basic_utils_crush.
+          intuition eauto with utils.
       }
       {
         basic_goal_prep.
@@ -5033,13 +5029,13 @@ Section __.
       generalize dependent r.
       revert j parent'.
       induction mr;
-        basic_goal_prep;
-        basic_utils_crush.
+        basic_goal_prep; intuition try congruence.
       case_match; try congruence.
-      eqb_case i1 i; basic_utils_crush.
+      eqb_case i1 i.
+      1:basic_utils_crush.
       case_match; try congruence.
       break.
-      basic_utils_crush.
+      autorewrite with bool rw_prop inversion utils in *.
       eqb_case i i0.
       {
         replace r with r0 in * by congruence.
@@ -5351,7 +5347,7 @@ Section __.
           basic_goal_prep.
           eqb_case i x; basic_utils_crush.
           { rewrite H3; cbn; Lia.lia. }
-          eqb_case i y; basic_utils_crush.
+          eqb_case i y; autorewrite with utils; eauto.
           {
             assert (map.get parent0 y = Some y).
             { eapply forest_root_iff; eauto. }
@@ -5436,8 +5432,7 @@ Section __.
                 (*TODO: should be a lemma*)
                 clear H H8.
                 revert H9.
-                induction H11; basic_goal_prep;
-                  basic_utils_crush.
+                induction H11; basic_goal_prep.
                 { constructor 1; basic_utils_crush. }
                 {
                   eqb_case b c.
@@ -5475,7 +5470,7 @@ Section __.
     Lemma forest_PER_shared_parent l m
       : forest l m ->
         iff2 (PER_closure (fun i j : idx => map.get m i = Some j))
-          (fun x y : idx => exists i : idx, limit (parent_rel m) x i
+           (fun x y : idx => exists i : idx, limit (parent_rel m) x i
                                             /\ limit (parent_rel m) y i).
     Proof.
       split.

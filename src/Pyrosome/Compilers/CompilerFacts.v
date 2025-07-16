@@ -43,11 +43,12 @@ Section WithVar.
       incl tgt tgt' ->
       preserving_compiler_ext (tgt_Model:=core_model tgt') cmp_pre cmp src.
   Proof.
-    induction 1; basic_goal_prep; constructor; basic_core_firstorder_crush.
-    - eapply wf_sort_lang_monotonicity; eauto.
-    - eapply wf_term_lang_monotonicity; eauto.
-    - eapply eq_sort_lang_monotonicity; eauto.
-    - eapply eq_term_lang_monotonicity; eauto.
+    induction 1; basic_goal_prep; constructor.
+    2:eapply wf_sort_lang_monotonicity; now eauto.
+    3:eapply wf_term_lang_monotonicity; now eauto.
+    4:eapply eq_sort_lang_monotonicity; now eauto.
+    5:eapply eq_term_lang_monotonicity; now eauto.
+    all:basic_core_firstorder_crush.
   Qed.
   #[local] Hint Resolve preserving_compiler_embed : auto_elab.
 

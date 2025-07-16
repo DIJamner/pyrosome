@@ -977,7 +977,7 @@ Proof.
           lazymatch e2 with _ [/ _ /] => idtac
                        | _ => eapply eq_term_trans; [| now eauto using eq_term_sym]
           end;
-          eapply eq_term_subst; basic_core_crush
+          eapply eq_term_subst; eauto with lang_core model
       end.
 Qed.
 
@@ -1064,7 +1064,7 @@ Local Lemma ctx_mono l
 Proof using V_Eqb_ok.
   intro wfl.
   (*Intuition crush is much slower here than firstorder for some reason *)
-  apply judge_ind; basic_goal_prep; basic_core_firstorder_crush.
+  apply judge_ind; basic_goal_prep; eauto with lang_core model.
   {
     replace t1 with t1[/id_subst c/]; [|basic_core_crush].
     replace t2 with t2[/id_subst c/]; [|basic_core_crush].
@@ -1120,7 +1120,9 @@ Lemma in_ctx_wf (l : lang) c n t
     In (n,t) c ->
     wf_sort l c t.
 Proof.
-  induction 2; basic_goal_prep; basic_core_crush.
+  induction 2; basic_goal_prep; try tauto.
+  inversions.
+  intuition subst; eauto with utils lang_core.
 Qed.
 Hint Resolve in_ctx_wf : lang_core.
 
@@ -1132,16 +1134,17 @@ Lemma wf_term_lookup (l : lang) c s c'
     In (n,t) c' ->
     wf_term l c (subst_lookup s n) t [/s /].
 Proof.
-  
-  induction 2; basic_goal_prep;
-    basic_core_firstorder_crush.
+  induction 2; basic_goal_prep; eauto with utils lang_core model.
+  inversions.
+  intuition subst.
   {
     rewrite strengthen_subst with (Substable0 := _);
     try typeclasses eauto;
       basic_core_crush.
   }
   {
-    case_match; basic_goal_prep; basic_core_crush.
+    eqb_case n name; basic_goal_prep.
+    1:basic_core_crush.
     change ((named_list_lookup (var n) s n)) with (subst_lookup s n).
     
     erewrite strengthen_subst;
@@ -1149,6 +1152,8 @@ Proof.
       eauto;
       basic_core_crush.
   }
+  Unshelve.
+  all: auto.
 Qed.
 Hint Resolve wf_term_lookup : lang_core.  
 
@@ -1215,7 +1220,7 @@ Proof.
       replace (map fst s2) with (map fst c'); 
         basic_core_crush.
       symmetry.
-      basic_core_crush.
+      eauto with lang_core model.
     }
   }
   {
@@ -1281,13 +1286,19 @@ Local Lemma checked_subproperties l
            wf_ctx l c -> True).
 Proof using V V_Eqb V_Eqb_ok V_default.
   intros; apply judge_ind; basic_goal_prep;
-    try use_rule_in_wf;basic_core_crush.
-  (* TODO: no longer automatic b/c symmetry is not automatic.
+    try use_rule_in_wf;
+    intuition eauto with lang_core model.
+  6:{
+    safe_invert H5.
+    constructor; intuition eauto with model lang_core.
+    (* TODO: no longer automatic b/c symmetry is not automatic.
      Make + use a tactic variant w/ symmetry?
-   *)
-  eapply wf_term_conv; eauto.
-  eapply eq_sort_sym.
-  basic_core_crush.
+     *)
+    eapply wf_term_conv; eauto.
+    eapply eq_sort_sym.
+    eapply eq_sort_subst; eauto with lang_core model.
+  }
+  all:basic_core_crush.
 Qed.
 
 Lemma eq_sort_wf_l (l : lang) c t1 t2
@@ -1634,8 +1645,8 @@ Lemma term_con_congruence (l : lang) (c : ctx) t name s1 s2 c' args t'
 Proof.
   intros.
   assert (wf_ctx l c') by with_rule_in_wf_crush.
-  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s1);[| eauto with lang_core model..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|eauto with lang_core model..].
   destruct H0; [ eapply eq_term_conv; [| eapply eq_sort_sym; eauto] | subst ];
   change (con ?n ?args[/?s/]) with (con n args)[/s/];
   eapply eq_term_subst; eauto.
@@ -1654,8 +1665,8 @@ Lemma sort_con_congruence (l : lang) (c : ctx) name s1 s2 c' args
 Proof.
   intros.
   assert (wf_ctx l c') by with_rule_in_wf_crush.
-  rewrite <- (wf_con_id_args_subst c' s1);[| basic_core_crush..].
-  rewrite <- (wf_con_id_args_subst c' s2);[|basic_core_crush..].
+  rewrite <- (wf_con_id_args_subst c' s1);[| eauto with lang_core model..].
+  rewrite <- (wf_con_id_args_subst c' s2);[|eauto with lang_core model..].
   subst.
   change (scon ?n ?args[/?s/]) with (scon n args)[/s/].
   eapply eq_sort_subst; eauto.
@@ -1719,8 +1730,8 @@ Proof.
   }
   {
     intros; 
+      eauto using eq_sort_trans, eq_sort_sym;
       basic_core_crush.
-    eauto using eq_sort_trans, eq_sort_sym.
   }
   {
     remember (var n) as e.

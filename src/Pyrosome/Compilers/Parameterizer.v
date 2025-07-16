@@ -1435,7 +1435,9 @@ Section WithVar.
          (f:= (fun p : V * rule => (fst p, parameterize_rule p_name p_sort pl p)))
          in H.
        subst l_plus.
-       eapply term_con_congruence; basic_utils_crush.
+       eapply term_con_congruence.
+       1: basic_utils_crush.
+       2: basic_utils_crush.
        2:{
          rewrite H4.
          apply H1; eauto.
@@ -2061,34 +2063,13 @@ Section WithVar.
     revert mn.
     induction Hwf;
       destruct mn;
-      basic_goal_prep;
-      basic_core_crush.
+      basic_goal_prep; auto with lang_core.
     {
+      basic_core_crush.
       unfold Model.wf_sort, core_model.
       subst l_plus.
       eapply wf_sort_lang_monotonicity; eauto; basic_utils_crush.
-    }
-    2:{
-      specialize (IHHwf None).
-      eapply IHHwf; unfold constructors_of_ctx in *;
-        basic_goal_prep;
-        basic_utils_crush.
-    }
-    2:{
-      unfold Model.wf_sort, core_model.
-      eapply eq_sort_wf_l; eauto.
-      {
-        specialize (IHHwf None).
-        eapply IHHwf; unfold constructors_of_ctx in *;
-          basic_goal_prep;
-          basic_utils_crush.
-      }
-      eapply (proj1 (parameterize_preserving' _)) with (mn:=None);
-        unfold constructors_of_ctx in *;
-        basic_goal_prep; basic_core_crush.
-      destruct v; 
-        basic_goal_prep; basic_core_crush.
-    }
+    }   
     {
       destruct n; basic_utils_crush;
         autorewrite with model utils.
@@ -2140,6 +2121,28 @@ Section WithVar.
           unfold constructors_of_ctx in *;
           basic_goal_prep; basic_core_crush.
       }
+    }
+    constructor; [ basic_core_crush | | ].
+    {
+      specialize (IHHwf None).
+      eapply IHHwf; unfold constructors_of_ctx in *;
+        basic_goal_prep;
+        basic_utils_crush.
+    }
+    {
+      unfold Model.wf_sort, core_model.
+      eapply eq_sort_wf_l; eauto.
+      {
+        specialize (IHHwf None).
+        eapply IHHwf; unfold constructors_of_ctx in *;
+          basic_goal_prep;
+          basic_utils_crush.
+      }
+      eapply (proj1 (parameterize_preserving' _)) with (mn:=None);
+        unfold constructors_of_ctx in *;
+        basic_goal_prep; basic_core_crush.
+      destruct v; 
+        basic_goal_prep; basic_core_crush.
     }
     Unshelve.
     all: eauto.
@@ -2220,96 +2223,6 @@ Section WithVar.
       basic_utils_crush.
     }
   Qed.
-    
-    (*
-  Lemma sublist_app A (l1 l1' l2 l2' : list A)
-    : sublist l1 l1' -> sublist l2 l2' -> sublist (l1++l2) (l1'++l2').
-  Proof.
-    revert l1';
-      induction l1;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      apply sublist_split in H.
-      break.
-      subst.
-      apply IHl1 in H1; eauto.
-      replace ((x ++ a :: x0) ++ l2') with ((x++[a])++(x0++l2')).
-  Admitted.
-  Hint Resolve sublist_app : utils.
-*)
-
-  (*
-  Lemma sublist_insert A n (a:A) lst
-    : sublist lst (insert n a lst).
-  Proof.
-    rewrite <- firstn_skipn with (n:=n) (l:=lst) at 1.
-    unfold insert.
-    basic_utils_crush.
-  Qed.
-  (*Hint Immediate sublist_insert : utils.*)
-*)
-
-(*
-  Lemma sublist_trans A (l1 l2 l3 : list A)
-    : sublist l1 l2 -> sublist l2 l3 -> sublist l1 l3.
-  Proof.
-    revert l2 l3.
-    induction l1;
-      basic_goal_prep;
-      basic_utils_crush.
-    destruct l2; basic_goal_prep; [tauto|].
-    destruct l3; basic_goal_prep;[tauto|].
-    intuition subst.
-    { basic_utils_crush. }
-    {
-      right.
-      apply sublist_split in H1.
-      break.
-      subst.
-      change (a0 :: l1) with ([a0]++l1).
-      replace (x ++ a0 :: x0)
-        with ((x ++ [a0]) ++ x0).
-      {
-        eapply sublist_app; eauto.
-        eapply sublist_app_r.
-        cbn; intuition eauto.
-      }
-      rewrite <- app_assoc.
-      reflexivity.
-    }
-    {
-      right.
-      apply sublist_split in H1.
-      break.
-      subst.
-      replace (x ++ a :: x0)
-        with ((x ++ [a]) ++ x0) in H2.
-      {
-        (*
-        apply sublist_split in H2.
-        eapply sublist_app; eauto.
-        eapply sublist_app_r.
-        cbn; intuition eauto.
-      }
-      rewrite <- app_assoc.
-      reflexivity.
-    }
-      
-    }*)
-  Admitted.
-*)
-
-  (*
-  Lemma sublist_insert' A n (a:A) l1 l2
-    : sublist l1 l2 -> sublist l1 (insert n a l2).
-  Proof.
-    intros.
-    eapply sublist_trans; eauto.
-    apply sublist_insert.
-  Qed.
-  Hint Resolve sublist_insert' : utils.
-*)
 
   (* TODO: restrict to lhs by restricting n0 to len c?*)
   Lemma parameterize_args'_empty n0 c
@@ -2333,42 +2246,6 @@ Section WithVar.
       basic_utils_crush.
   Qed.
   Hint Immediate sublist_singleton_insert : utils.
-
-  (*
-  Lemma sublist_parameterize_args' n n0 l0
-    : sublist l0 (map fst n) ->
-      sublist (parameterize_args' p_name n0 n l0) (insert n0 p_name (map fst n)).
-  Proof.
-    revert n l0;
-      induction n0;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      destruct l0; intuition eauto.
-      destruct (parameterize_args'_empty n0 []) as [H' | H']; rewrite H'.
-      all:basic_utils_crush.
-    }
-    {
-      destruct l0; intuition eauto.
-      {
-        destruct (parameterize_args'_empty n0 ((v, s) :: n)) as [H' | H']; rewrite H';
-        basic_utils_crush.
-      }
-      {
-        subst.
-        change (v :: map fst n) with (map fst ((v,s)::n)).
-        eapply IHn.
-      }
-      {
-
-      }
-    }
-      cbn.
-      case_match; eauto.
-      right.
-      TODO: need IH
-  Qed.
-   *)
                  
   Lemma parameterize_rule_preserving' p
     : wf_rule l (snd p) ->
@@ -2875,8 +2752,7 @@ Section WithVar.
       constructor;
       basic_utils_crush.
     all: try use_rule_in_wf.
-    all: rewrite id_compiler_identity_ctx; 
-      basic_core_crush.
+    all: rewrite id_compiler_identity_ctx by basic_core_crush.
     { eapply wf_sort_by; basic_core_crush. }
     {
       replace (compile_sort (id_compiler l) s)
@@ -2888,16 +2764,18 @@ Section WithVar.
         {
           symmetry.
           eapply id_compiler_identity; eauto.
+         basic_core_crush.
         }
       }
     }
     {
       erewrite !(proj1 (id_compiler_identity H0)); eauto.
+      all:basic_core_crush.
       eapply eq_sort_by; eauto.
     }
     {
-      erewrite !(proj1 (id_compiler_identity H0)); eauto.
-      erewrite !(proj1 (proj2 (id_compiler_identity H0))); eauto.
+      erewrite !(proj1 (id_compiler_identity H0)); eauto; basic_core_crush.
+      erewrite !(proj1 (proj2 (id_compiler_identity H0))); eauto; basic_core_crush.
       eapply eq_term_by; eauto.
     }
   Qed.
@@ -3049,9 +2927,15 @@ Section WithVar.
              | H : context [ match _ with _ => _ end ] |- _ =>
                  revert H; case_match; eauto; try congruence
              end.
-      all: basic_goal_prep; basic_core_crush.
+      all: basic_goal_prep; autorewrite with bool utils in *; subst.
+      all:eauto with lang_core model utils.
       all: exfalso; eapply fresh_lang_fresh_cmp; eauto.
       all:eapply in_map in H'; eauto; exact H'.
+      (*TODO: fake dependencies*)
+      Unshelve.
+      all: auto.
+      all: repeat constructor; eauto.
+      all: repeat intro; apply True.
     Qed.
 
     Definition p_name_fresh_in_cmp : compiler -> Prop :=
@@ -4046,14 +3930,12 @@ Section WithVar.
             
             {
               unfold syntactic_parameterization_conditions' in *;
-                basic_utils_crush.
-              eapply compute_pl_indices_sound;
+                try eapply compute_pl_indices_sound;
                 basic_utils_crush.
             }
             {
-              
               eapply inductive_implies_semantic; cycle 6;
-                eauto;
+                eauto with utils lang_core model;
                 basic_core_crush.
             }
             {
@@ -4116,7 +3998,8 @@ Section WithVar.
               with (parameterize_sort p_name tgt_spec (compile_sort cmp t)).
             2:{
               symmetry.
-              basic_core_crush.
+              autorewrite with bool rw_prop inversion utils term lang_core model in *.
+              intuition break; subst.
               cbn in *.
               eapply compile_parameterize_commute; eauto.
               1:basic_core_crush.
@@ -4144,9 +4027,8 @@ Section WithVar.
               basic_utils_crush.
             }
             {
-              unfold syntactic_parameterization_conditions' in *.
-              basic_utils_crush.
-              apply compute_pl_indices_sound;
+              unfold syntactic_parameterization_conditions' in *;
+                try apply compute_pl_indices_sound;
                 basic_utils_crush.
             }
             {

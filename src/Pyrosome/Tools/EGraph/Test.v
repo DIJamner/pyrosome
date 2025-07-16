@@ -485,7 +485,7 @@ Require Tools.UnElab.
   {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
   {H} spaced_list_intersect%function_scope rebuild_fuel%nat_scope rs _.
 
-Ltac egraph rn n :=
+Ltac egraph rn n en :=
       lazymatch goal with
         |- eq_term ?l ?c ?t ?e1 ?e2 =>
           let l' := constr:(ctx_to_rules c ++ l) in
@@ -493,7 +493,7 @@ Ltac egraph rn n :=
                               (PositiveInstantiation.filter_eqn_rules l') l') in
           
         let result := (eval vm_compute in
-                        (StringInstantiation.egraph_equal (X:= option positive) (*V:=string*) l' rs rn n c e1 e2 t)) in
+                        (StringInstantiation.egraph_equal (*V:=string*) l' rs rn n en c e1 e2 t)) in
           let result' := eval vm_compute in
           (Defs.run1iter string_succ "v0" string_ptree_map_plus string_ptree_map_plus
              (@compat_intersect) 0 rs (snd result)
@@ -567,7 +567,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   {{e #"/\" "b" (#"/\" "a" "a") }}.
 
 
-  egraph 1000 10.
+  egraph 1000 10 100.
   Compute (map.get graph.(analyses _ _ _ _ _ _) "#9").
   (*TODO: 9 can be xO xH here, why is it xI xH?*)
   (* issue: 9 different after 2nd iter, not updated in db,

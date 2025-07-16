@@ -700,6 +700,7 @@ Eqb_idx.
             basic_utils_crush.
         }
       Qed.
+
       
       
     Lemma sequent_of_states_sound m (*Post_i Post Post2 i3*)
