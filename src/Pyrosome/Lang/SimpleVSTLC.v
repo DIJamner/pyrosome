@@ -51,3 +51,10 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.
 
 
+
+
+(* Fixpoint build_term_with_holes (L: lang) (t: term): term :=
+match term with
+| var _ => term
+| con _ _ => (Term.term.name_list_lookup default L "lambda")
+end.  *)

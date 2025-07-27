@@ -21,12 +21,12 @@ Declare Scope log_scope.
 Bind Scope log_scope with sequent.
 Delimit Scope log_scope with log.
 
-Notation "!! x" := x (at level 60, x custom logrule) : log_scope.
+Notation "!! x" := x (at level 60, x custom logrule, only parsing) : log_scope.
 
 (*TODO: compute query vars for convenience*)
 Notation "wc , .. , wc' :- qc , .. , qc'" :=
   (Build_sequent _ _
-     (cons qc' .. (cons qc nil) ..)  
+     (cons qc' .. (cons qc nil) ..)
      (cons wc .. (cons wc' nil) ..))
     (in custom logrule at level 60,
         wc custom atom at level 50,
@@ -56,7 +56,7 @@ Notation "a = b" :=
   (eq_clause a b)
     (in custom atom at level 50, a constr at level 0,
     b constr at level 0).
-           
+
 Definition example1 : list (sequent _ _) :=
   [!! "dog" -> "d" :-;
    !! "cat" -> "c" :-;
@@ -66,7 +66,13 @@ Definition example1 : list (sequent _ _) :=
    !! "animal" "x" -> "x" :- "cat" -> "x"
   ]%log.
 
+ Definition inject : list (sequent _ _) :=
+   [!! "G" = "G1", "A" = "A1" :- "exp" "G" "A" -> "x", "exp" "G1" "A1"
+-> "x"]%log.
 
+
+Check @QueryOpt.build_rule_set.
+Check @QueryOpt.build_rule_set (string) String.eqb (string_succ).
 Definition ex1_set :=
   Eval vm_compute in
     QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) example1.
@@ -196,7 +202,7 @@ Open Scope lang_scope.*)
 Import Core.Notations.
 
 
-Definition monoid : lang string := 
+Definition monoid : lang string :=
   {[l
   [s|
       -----------------------------------------------
@@ -222,17 +228,17 @@ Definition monoid_rule_set :=
   Eval vm_compute in
     (build_rule_set (PositiveInstantiation.filter_eqn_rules monoid) monoid).
 
-Definition monoid_ex1 : lang string := 
+Definition monoid_ex1 : lang string :=
   {[l
-  [:|  
+  [:|
        -----------------------------------------------
        #"foo" : #"S"
   ];
-  [:|  
+  [:|
        -----------------------------------------------
        #"bar" : #"S"
   ](*;
-  [:=  
+  [:=
        ----------------------------------------------- ("foobar")
        #"*" "foo" "bar"
        = #"foo"
@@ -250,7 +256,7 @@ Definition monoid_ex1_base :=
     (snd (saturate_until string_succ "v0"
        (@PosListMap.compat_intersect) monoid_ex1_rule_set (Mret false) 0
        (empty_egraph _ _))).
-      
+
 Definition monoid_ex1_graph :=
   Eval vm_compute in
     (snd (saturate_until string_succ "v0"
@@ -345,26 +351,26 @@ Goal
   let '(ptl, cil) :=
     split [(map.put map.empty ["foo"] tt : pos_trie_map, [true; false]);
            (map.put map.empty ["foo"] tt : pos_trie_map, [false;true])] in
-  let fuel := S (Datatypes.length (hd [] cil)) in  
+  let fuel := S (Datatypes.length (hd [] cil)) in
   (map (map pts) (map.keys (@! let ptl' <- list_Mmap (M:=option) id ptl in
-    (pt_spaced_intersect' (fun 'tt 'tt => tt) fuel cil ptl' [] [])        
+    (pt_spaced_intersect' (fun 'tt 'tt => tt) fuel cil ptl' [] [])
                                 : pos_trie_map))) = [ ["foo"; "foo"] ].
 reflexivity.
 Abort.
 *)
 
 
-Definition logic : lang string := 
+Definition logic : lang string :=
   {[l
   [s|
       -----------------------------------------------
       #"S" srt
   ];
-  [:|  
+  [:|
        -----------------------------------------------
        #"T" : #"S"
   ];
-  [:|  
+  [:|
        -----------------------------------------------
        #"F" : #"S"
   ];
@@ -380,11 +386,11 @@ Definition logic : lang string :=
        -----------------------------------------------
        #"-" "a" : #"S"
   ];
-  [:=  
+  [:=
        ----------------------------------------------- ("-T")
        #"-" #"T" = #"F" : #"S"
   ];
-  [:=  
+  [:=
        ----------------------------------------------- ("-F")
        #"-" #"F" = #"T" : #"S"
   ];
@@ -407,15 +413,15 @@ Definition logic : lang string :=
        #"/\" "b" "b" = "b" : #"S"
   ];
     (* initial terms *)
-  [:|  
+  [:|
        -----------------------------------------------
        #"foo" : #"S"
   ];
-  [:|  
+  [:|
        -----------------------------------------------
        #"bar" : #"S"
   ]
-    
+
   ]}.
 
 
@@ -430,10 +436,10 @@ Eval vm_compute in
   !! "#0" = "#",
 "#4" = "#1",
 "#6" = "#",
- "#3" = "#", 
+ "#3" = "#",
  "T" -> "#1" :-
  "sort_of" "" -> "#",
- "sort_of" "#1" -> "#", 
+ "sort_of" "#1" -> "#",
            "S" -> "#",
  "-" "" -> "#1",
  "F" -> "";
@@ -450,7 +456,7 @@ Definition logic_rule_set :=
     (build_rule_set (PositiveInstantiation.filter_eqn_rules logic) logic).
 (*TODO: is the optimization not working? multiple S write clauses.
   answer: no, since optimization doesn't handle existential vars.
-  
+
  *)
 
 Definition logic_ex1_base :=
@@ -477,9 +483,9 @@ Instance my_analysis {V} : analysis V V _ := weighted_depth_analysis (fun _ => S
 Require Tools.UnElab.
 
 
-  Arguments Defs.run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
+  Arguments Defs.run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope
   idx_zero {symbol}%type_scope {Eqb_symbol} {symbol_map}%function_scope symbol_map_plus
-  {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
+  {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope
   {H} spaced_list_intersect%function_scope rs rebuild_fuel%nat_scope _.
 
 Ltac egraph n :=
@@ -488,7 +494,7 @@ Ltac egraph n :=
           let l' := constr:(ctx_to_rules c ++ l) in
           let rs := constr:(StringInstantiation.build_rule_set
                               (PositiveInstantiation.filter_eqn_rules l') l') in
-          
+
         let result := (eval vm_compute in
                         (StringInstantiation.egraph_equal (X:= option positive) (*V:=string*) l' rs n c e1 e2 t)) in
           let result' := eval vm_compute in
@@ -519,11 +525,11 @@ Ltac egraph n :=
               rs.(compiled_rules _ _ _ _)
             ) in
             pose (GoalDisplay.lie_to_user (real:=rs) tt) as rws;
-           
+
                  (*pose (lie_to_user (real:=rw1) tt) as rules;*)
                  idtac b (*"! Also," e1 "became" e1' "with id" x1
         end*)
-         
+
         | _ => fail "ill-formed!"
         end
       end.
@@ -545,7 +551,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
  *)
 
 Ltac print_rules :=
- 
+
 lazymatch goal with
   |- eq_term ?l ?c ?t ?e1 ?e2 =>
     let l' := constr:(ctx_to_rules c ++ l) in
@@ -570,7 +576,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   (* issue: 9 different after 2nd iter, not updated in db,
      but 5 does get updated correctly
    *)
-  
+
   Compute (print_egraph graph).
   Compute (map.tuples graph.(parents)).
   Compute  (named_map map.tuples (map.tuples (graph.(db)))).
@@ -590,7 +596,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   lazymatch goal with
   |- eq_term ?l ?c ?t ?e1 ?e2 =>
     let l' := constr:(ctx_to_rules c ++ l) in
-    
+
   let e' := eval vm_compute in
   (let (x1,g0) := add_open_term StringListMap.string_succ
                     StringListMap.sort_of l' true
@@ -625,9 +631,9 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
 print_rules.
 (*TODO: still have bug on T rule*)
   pose (
-   (!! "#1" = "#2", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", "S" -> "", 
+   (!! "#1" = "#2", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", "S" -> "",
      "F" -> "#1", "@sort_of" "#" -> "")%log) as seq.
-  
+
 
   (* TODO: issue not with filter! why is there no #2 in the conclusion eqs?
      where did #2 come from? did something not do a proper subst?
@@ -642,8 +648,8 @@ print_rules.
       StringListMap.string_trie_map StringListMap.string_trie_map
       string_ptree_map_plus
       StringListMap.string_list_trie_map seq).
-  
-  
+
+
   Compute (QueryOpt.opt_live_eqn string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
@@ -671,7 +677,7 @@ print_rules.
 Definition focus {A} (a:A) : Prop := False.
 Opaque focus.
 (*
-  
+
   TODO: error! reflexivity for #2 not included in assumptions!.
   How is that possible w/ atom /\ 1 # -> 2?
      = [{| atom_fn := "@sort_of"; atom_args := ["#"]; atom_ret := "" |};
@@ -690,9 +696,9 @@ Opaque focus.
         {| atom_fn := "/\"; atom_args := ["#"; "#0"]; atom_ret := "#2" |}]
     : list (atom string string)
 
-               = !! "#1" = "#0", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", 
+               = !! "#1" = "#0", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2",
           "S" -> "", "F" -> "#1", "@sort_of" "#" -> ""
-  
+
   Compute (QueryOpt.opt_known_atoms string string_Eqb
       StringListMap.string_succ string_default string string_Eqb
       StringListMap.string_trie_map StringListMap.string_trie_map
@@ -712,9 +718,9 @@ Opaque focus.
     write_clauses := [{| atom_fn := "@sort_of"; atom_args := ["#2"]; atom_ret := "" |}];
     write_unifications := [("#1", "#0")]
   |};
-   !! "#1" = "#2", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", "S" -> "", 
+   !! "#1" = "#2", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", "S" -> "",
     "F" -> "#1", "@sort_of" "#" -> "";
-  
+
 Compute (named_map (named_map (entry_value _ _))
            (named_map map.tuples (map.tuples (graph.(db))))).
 (*TODO: still broken
@@ -732,11 +738,11 @@ lazymatch goal with
                      l' (analysis_result:=unit))) (filter_eqn_rules l')) in
         idtac r
 end.
-  
+
 ([("@sort_of", [("", ([1], 0))]); ("T", [("", ([], 0))]); ("F", [("", ([], 0))]);
   ("-", [("", ([1], 0))]); ("S", [("", ([], 0))]); ("/\", [("#", ([1; 2], 0)); ("", ([1; 1], 0))])],
 
-                                  
+
                                   {|
     query_vars := [""; "#2"; "#"; "#1"];
     query_clause_ptrs :=
@@ -754,10 +760,10 @@ end.
  T -> #1.
  S -> "".
  /\ #1 # -> #2.
-                
+
 *)
 
- 
+
 Compute (*(named_map (named_map (entry_value _ _))*)
            (named_map map.tuples (map.tuples (graph.(db)))).
 (*TODO: fires when T in the LHS of /\.
@@ -778,7 +784,7 @@ end.
 lazymatch goal with
   |- eq_term ?l ?c ?t ?e1 ?e2 =>
     let l' := constr:(ctx_to_rules c ++ l) in
-    
+
   let e' := eval vm_compute in
   (let (x0,g0) := add_open_term StringListMap.string_succ
                     StringListMap.sort_of l' true
@@ -793,19 +799,19 @@ end.
 *)
 
 (*
- !! "#0" = "", "#1" = "#2", "#3" = "", "@sort_of" "#2" -> "" :- 
+ !! "#0" = "", "#1" = "#2", "#3" = "", "@sort_of" "#2" -> "" :-
     "/\" "#1" "#" -> "#2", "S" -> "", "F" -> "#1", "@sort_of" "#" -> "";
  Check code path  for 0 = ""
- !! "#0" = "", "#" = "#2" :- "/\" "#1" "#" -> "#2", "S" -> "", 
+ !! "#0" = "", "#" = "#2" :- "/\" "#1" "#" -> "#2", "S" -> "",
     "T" -> "#1", "@sort_of" "#" -> "";
  *)
 Compute (*(named_map (named_map (entry_value _ _))*)
            (named_map map.tuples (map.tuples (graph.(db)))).
-                     
+
 Compute (map.tuples graph.(equiv).(parent _ _ _)).
 
 (*TODO: why false?
-  
+
  *)
 Compute (fst (egraph_sort_of StringListMap.string_succ "@sort_of" "" "#5" graph)).
 

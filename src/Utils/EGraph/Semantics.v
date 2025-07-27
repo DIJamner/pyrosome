@@ -91,7 +91,7 @@ Section WithMap.
 
   Definition sequent_vars s :=
     (flat_map clause_vars (s.(seq_assumptions)++s.(seq_conclusions))).
-    
+
 
   Definition atom_subst (sub : named_list idx idx) (a : atom) :=
     Build_atom
@@ -121,7 +121,7 @@ Section WithMap.
 
    *)
 
-  
+
   (* clause lists are isomorphic to DBs/egraphs,
      up to some egraph state
 
@@ -131,7 +131,7 @@ Section WithMap.
   Context (symbol_map : forall A, map.map symbol A)
         (symbol_map_plus : map_plus symbol_map).
 
-  Context 
+  Context
       (idx_map : forall A, map.map idx A)
         (idx_map_ok : forall A, map.ok (idx_map A))
         (* TODO: define and assume weak_map_ok*)
@@ -140,15 +140,15 @@ Section WithMap.
         (analysis_result : Type)
         `{analysis idx symbol analysis_result}.
 
-    
+
   Notation instance := (instance idx symbol symbol_map idx_map idx_trie analysis_result).
 
   Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
 
-  
+
   Notation alloc :=
     (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result).
-  
+
   Definition rename_lookup (x : idx) : stateT (named_list idx idx) (state instance) idx :=
     fun sub =>
       match named_list_lookup_err sub x with
@@ -185,20 +185,20 @@ Section WithMap.
   Definition row_to_atom f (p : list idx * db_entry idx analysis_result) : atom :=
     let '(k,e) := p in
     Build_atom f k e.(entry_value _ _).
-  
+
   Definition table_atoms '(f,tbl) : list atom :=
     map (row_to_atom f) (map.tuples tbl).
-  
+
   Definition db_to_atoms (d : db_map idx symbol symbol_map idx_trie analysis_result) :=
     (flat_map table_atoms (map.tuples d)).
-  
+
   Definition instance_to_clauses i :=
     (uf_to_clauses i.(equiv)) ++ (map atom_clause (db_to_atoms i.(db))).
 
   (* Note: instance_to_clauses and clauses_to_instance
      are intended to be isomorphic up to egraph bookkeeping
    *)
-  
+
   End AsInstance.
 
 (* Alternate approach: consider the initial model of the theory.
@@ -221,12 +221,12 @@ Section WithMap.
       interprets_to f args d := exists d', interpretation f args = Some d' /\ domain_eq d' d;
     }.
 
-  
+
   Context (symbol_map : forall A, map.map symbol A)
     (symbol_map_plus : map_plus symbol_map)
     (symbol_map_ok : forall A, map.ok (symbol_map A)).
 
-  Context 
+  Context
       (idx_map : forall A, map.map idx A)
         (idx_map_plus : map_plus idx_map)
         (idx_map_ok : forall A, map.ok (idx_map A))
@@ -235,16 +235,16 @@ Section WithMap.
         (idx_trie_ok : forall A, map.ok (idx_trie A))
         (idx_trie_plus : map_plus idx_trie).
 
-  
+
   Section ForModel.
 
     Context m (idx_interpretation : idx_map m.(domain)).
 
     Definition atom_sound_for_model a :=
       (list_Mmap (map.get idx_interpretation) a.(atom_args)) <$> (fun args =>
-      (map.get idx_interpretation a.(atom_ret)) <$> (fun out =>      
+      (map.get idx_interpretation a.(atom_ret)) <$> (fun out =>
       m.(interprets_to) a.(atom_fn) args out)).
-  
+
   Definition eq_sound_for_model x y : Prop :=
     map.get idx_interpretation x <$> (fun x' =>
     (map.get idx_interpretation y) <$>
@@ -266,7 +266,7 @@ Section WithMap.
         map.extends out_assignment query_assignment
         /\ all (clause_sound_for_model m out_assignment)
           r.(seq_conclusions).
-  
+
   Record model_of
     (m : model)
     (rw : list sequent) : Prop :=
@@ -285,7 +285,7 @@ Section WithMap.
       (* model_of conditions *)
       rules_sound : all (model_satisfies_rule m) rw;
     }.
-  
+
 
   Notation match_clause := (match_clause idx _).
   Notation match_clause' := (match_clause' idx _).
@@ -307,28 +307,28 @@ Section WithMap.
     | (Some x)::pa', y::a' => x = (y : idx) /\ compatible_assignment pa' a'
     | _, _ => False
     end.
-  
+
   (*TODO: how to describe a as smallest list?*)
   Definition assignment_correct l1 l2 a :=
       forall default,
       map (fun x => named_list_lookup default (assign_sub a) x) l1 = l2.
-  
+
   (*TODO: how to describe as smallest list?*)
   Definition passignment_ex l1 l2 pa :=
     exists assignment,
       assignment_correct l1 l2 assignment
       /\ compatible_assignment pa assignment.
-  
+
   Definition passignment_forall l1 l2 pa :=
     forall assignment,
       assignment_correct l1 l2 assignment ->
       compatible_assignment pa assignment.
-  
+
   Lemma empty_passignment a
     : compatible_assignment [] a.
   Proof. exact I. Qed.
 
-  
+
   Lemma match_clause'_complete cargs cv args v acc a
     : match_clause' cargs cv args v acc = None ->
       passignment_forall (cv::cargs) (v::args) acc ->
@@ -344,7 +344,7 @@ Section WithMap.
       basic_utils_crush.
      *)
     Abort.
-    
+
   (*TODO: too strong a statement.
     The passignment doesn't have to stay compatible in the case where there are no compatible assignments
    *)
@@ -369,8 +369,8 @@ Section WithMap.
         : Some l = insert idx Eqb_idx acc a i ->
           passignment_forall l1 l2 acc ->
           passignment_forall l1 l2 acc ->
-          
-    
+
+
   Lemma match_clause_correct default cargs cv args v assignment
     : let sub := assign_sub assignment in
       match_clause (cargs, cv) args v = Some assignment
@@ -378,7 +378,7 @@ Section WithMap.
          = v::args.
   Proof.*)
       Abort.
-  
+
   Lemma match_clause_correct default cargs cv args v assignment
     : let sub := assign_sub assignment in
       match_clause (cargs, cv) args v = Some assignment
@@ -388,7 +388,7 @@ Section WithMap.
     cbn -[map].
     case_match; cbn -[map]; try congruence.
     remember [] as acc.
-    
+
     revert dependent l.
     revert args.
     (*
@@ -408,13 +408,13 @@ Section WithMap.
 Abort.
 
 
-  
+
   Context (analysis_result : Type).
 
   Notation instance :=
     (instance idx symbol symbol_map idx_map idx_trie analysis_result).
   (*TODO: many of these relations can be functions. what's the best way to define them?*)
-  
+
   Definition atom_in_egraph a (i : instance) :=
     (map.get i.(db) a.(atom_fn)) <$>
       (fun tbl => (map.get tbl a.(atom_args)) <$>
@@ -432,7 +432,7 @@ Abort.
 
   Definition SomeRel {A B} (R : A -> B -> Prop) ma mb :=
     ma <$> (fun x => mb <$> (R x)).
-  
+
   Inductive le (n : idx) : idx -> Prop :=
     le_n : le n n | le_S : forall m, le n m -> le n (idx_succ m).
 
@@ -449,10 +449,10 @@ Abort.
           eq_sound_for_model m idx_interpretation old_idx new_idx
       | analysis_repair _ i => True (* these don't affect soundness of the egraph *)
       end.
-    
+
     (*TODO: move to defining file*)
     Arguments parent {idx}%type_scope {idx_map rank_map} u.
-    
+
     Record egraph_sound_for_interpretation e : Prop :=
       {
         idx_interpretation_wf : forall i d, map.get idx_interpretation i = Some d -> m.(domain_wf) d;
@@ -522,13 +522,13 @@ Abort.
     induction H;
       basic_goal_prep;
       basic_utils_crush.
-    all: 
+    all:
       basic_utils_crush.
   Qed.
   Hint Rewrite reachable_empty : utils.
    *)
-  
-  Lemma PER_empty A (a b : A) R 
+
+  Lemma PER_empty A (a b : A) R
     : (forall a b, ~ R a b) -> ~ PER_closure R a b.
   Proof.
     intros ? ?.
@@ -559,7 +559,7 @@ Abort.
     basic_goal_prep;
       basic_utils_crush.
   Qed.
-  
+
   Theorem empty_sound_for_interpretation m
     (*: egraph_sound (empty_egraph idx_zero analysis_result) m.*)
     : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
@@ -578,10 +578,10 @@ Abort.
     }
   Qed.
 
-  
+
   Notation saturate_until' := (saturate_until' idx_succ idx_zero spaced_list_intersect).
   Notation saturate_until := (saturate_until idx_succ idx_zero spaced_list_intersect).
-
+  Locate spaced_list_intersect.
   Notation run1iter :=
     (run1iter idx Eqb_idx idx_succ idx_zero symbol Eqb_symbol symbol_map symbol_map_plus
        idx_map idx_map_plus idx_trie spaced_list_intersect).
@@ -593,7 +593,7 @@ Abort.
     If no, move to Monad
    *)
 
-  
+
   Definition inst_computation_sound {A} (P : state instance A) rs :=
     state_triple (fun e => egraph_sound e rs) P
       (fun p => egraph_sound (snd p) rs).
@@ -662,7 +662,7 @@ Abort.
   Qed.
          *)
   Admitted.
-  
+
   Lemma state_triple_list_Miter_simple A (f : A -> state instance unit) l P
     : (forall a, In a l -> state_triple P (f a) (fun p => P (snd p))) ->
       state_triple P (list_Miter f l) (fun p => P (snd p)).
@@ -742,7 +742,7 @@ Abort.
     }
   Qed. *)
   Admitted.
-    
+
   (*
   Lemma find_sound rs a
     : state_triple (fun e => egraph_sound e rs)
@@ -768,7 +768,7 @@ Abort.
     destruct sound_egraph_for_model0 as [ interp [] ];
       exists interp; constructor; basic_goal_prep.
     {
-      eapply atom_interpretation0; 
+      eapply atom_interpretation0;
         clear atom_interpretation0.
       destruct a0.
       cbn in *; eauto.
@@ -791,7 +791,7 @@ Abort.
           egraph_sound_for_interpretation m interp (snd p)
           /\ all (atom_sound_for_model m interp) (fst p)
     }.
-  
+
   #[deprecated(note="will be removed in favor of lemmas of a different shape")]
   Lemma get_parents_sound_deprecated a rs
     : state_triple (fun e => egraph_sound e rs)
@@ -844,7 +844,7 @@ Abort.
     }
   Qed.
    *)
-    
+
   (*TODO: move *)
   Lemma get_update_diff K V (mp : map.map K V) {H : map.ok mp} `{WithDefault V} (m : mp) k k' f
     : k <> k' -> map.get (map_update m k f) k'
@@ -855,7 +855,7 @@ Abort.
     case_match; cbn; eauto.
     all:rewrite map.get_put_diff; eauto.
   Qed.
-  
+
   (*TODO: move *)
   Lemma get_update_same K V (mp : map.map K V) {H : map.ok mp} `{WithDefault V} (m : mp) k f
     : map.get (map_update m k f) k
@@ -922,7 +922,7 @@ Abort.
       constructor.
       {
         unfold atom_in_egraph; cbn.
-        intros a'.      
+        intros a'.
         eqb_case a_fn a'.(atom_fn).
         2:{
           rewrite get_update_if_exists_diff in *; eauto.
@@ -933,7 +933,7 @@ Abort.
           intros.
           repeat (match_some_satisfying; cbn; []).
           basic_goal_prep;
-            subst.        
+            subst.
           intros; eapply atom_interpretation0.
           unfold atom_in_egraph; cbn.
           destruct (map.get db (atom_fn a')) eqn:Hfn;
@@ -1053,10 +1053,10 @@ Abort.
     revert l2; induction l1; destruct l2;
       basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
     { eapply IHl1; eauto. }
-    { eapply IHl1; eauto. } 
+    { eapply IHl1; eauto. }
     { eapply IHl1; eauto. }
   Qed.
-  
+
   Lemma all2_Is_Some_satisfying_r A B (R : A -> B -> Prop) l1 l2
       : all2 (fun x y => y <$> (fun y' => R x y')) l1 l2
         <-> option_all l2 <$> (fun l2' => all2 R l1 l2').
@@ -1064,11 +1064,11 @@ Abort.
     revert l1; induction l2; destruct l1;
       basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
     { eapply IHl2; eauto. }
-    { eapply IHl2; eauto. } 
+    { eapply IHl2; eauto. }
     { eapply IHl2; eauto. }
   Qed.
-  
-  
+
+
   Lemma args_rel_interpretation m interp e
     : egraph_sound_for_interpretation m interp e ->
       forall args1 args2,
@@ -1129,7 +1129,7 @@ Abort.
       destruct 1 as [ [ [ [ [roots ?] ] ] ] ?]; cbn in *.
     repeat (constructor; cbn; eauto).
     intros m Hm; specialize (get_parents_postcondition_sound_egraph_for_model0 _ Hm).
-    
+
     destruct get_parents_postcondition_sound_egraph_for_model0
       as [ interp [ Hmodel ?] ].
     pose proof (args_rel_interpretation _ _ _ Hmodel) as Hargsrel.
@@ -1182,7 +1182,7 @@ Abort.
   Qed.
 *)
 
-  
+
   Definition atom_rel (equiv : union_find idx (idx_map idx) (idx_map nat)) (a1 a2 : atom) : Prop :=
     a1.(atom_fn) = a2.(atom_fn)
     /\ all2 (uf_rel _ _ _ equiv) a1.(atom_args) a2.(atom_args)
@@ -1196,7 +1196,7 @@ Abort.
     1:eapply all2_refl.
     all: apply reachable_rel_Reflexive.
   Qed.
-  
+
   Lemma atom_rel_sym equiv : Symmetric (atom_rel equiv).
   Proof using.
     clear idx_succ idx_zero.
@@ -1205,7 +1205,7 @@ Abort.
     1:eapply all2_Symmetric.
     all: try apply reachable_rel_Symmetric; eauto.
   Qed.
-  
+
   #[deprecated(note="will be removed in favor of lemmas of a different shape")]
   Lemma canonicalize_sound_deprecated (P : _ -> Prop) a
     : (forall e, P e -> exists l,
@@ -1228,10 +1228,10 @@ Abort.
     {
       eapply state_triple_strengthen_pre;
         [ |eapply state_triple_list_Mmap
-        with 
+        with
         (P := fun atom_args_out atom_args' e =>
                 P e /\ all2 (uf_rel _ _ _ e.(equiv)) atom_args (atom_args' ++ atom_args_out))].
-      { basic_goal_prep; intuition eauto using all2_refl, reachable_rel_Reflexive. }        
+      { basic_goal_prep; intuition eauto using all2_refl, reachable_rel_Reflexive. }
       {
         intros; subst.
          eapply state_triple_wkn_post;
@@ -1304,7 +1304,7 @@ Abort.
   Qed.
 *)
 
-  
+
   Lemma iff2_atom_rel equiv equiv'
     : iff2 (uf_rel idx (idx_map idx) (idx_map nat) equiv)
         (uf_rel idx (idx_map idx) (idx_map nat) equiv') ->
@@ -1319,7 +1319,7 @@ Abort.
     all: try eapply Huf; eauto.
     unfold iff2 in *; firstorder.
   Qed.
-  
+
   Lemma state_triple_list_Mfoldl A B f l P acc
     : (forall (acc : B) (l1 : list A) (a : A) (l2 : list A),
           l = l1 ++ a :: l2 ->
@@ -1353,7 +1353,7 @@ Abort.
   Qed.
 
   Context `{analysis idx symbol analysis_result}.
-  
+
   Lemma repair_sound a rs
     : inst_computation_sound (repair idx Eqb_idx _ symbol Eqb_symbol symbol_map idx_map idx_trie analysis_result a) rs.
   Proof.
@@ -1390,7 +1390,7 @@ Abort.
         eapply state_triple_bind; intros; cbn [fst snd].
         1: eapply state_triple_loosen;
         [ | |eapply state_triple_list_Mmap
-        with 
+        with
         (P := fun  atom_args_out atom_args' e =>
                 get_parents_postcondition rs (a0, e)
                 /\ all2 (uf_rel _ _ _ e.(equiv)) atom_args (atom_args' ++ atom_args_out))].
@@ -1421,7 +1421,7 @@ Abort.
             exists roots; eauto.
           }
           {
-            (*TODO: lemma?*)            
+            (*TODO: lemma?*)
             destruct H2 as [ [ [roots ?] ] ?]; cbn in *.
             repeat (constructor; cbn; eauto).
             intros m Hm.
@@ -1432,7 +1432,7 @@ Abort.
             destruct H4; constructor; cbn in *; eauto.
             intros; eapply rel_interpretation0; eauto.
             eapply H1; eauto.
-          }              
+          }
           {
             eapply all2_iff2; eauto.
           }
@@ -1469,7 +1469,7 @@ Abort.
       {
         eapply state_triple_strengthen_pre;
         [ |eapply state_triple_list_Mmap
-        with 
+        with
         (P := fun atom_args_out atom_args' e =>
                 get_parents_postcondition rs (a0, e)
                 /\ all2 (atom_rel e.(equiv)) a0 (atom_args' ++ atom_args_out))].
@@ -1553,14 +1553,14 @@ Abort.
       eapply list_Miter_sound.
       intros.
       TODO: repair_sound
-      
+
     }
      *)
   Abort.
    *)
-    
+
 (*
-    
+
   Lemma run1iter_sound rs rs' n
     : inst_computation_sound (run1iter rs' n) rs.
   Proof.
@@ -1626,7 +1626,7 @@ Abort.
 
   Definition monotone2 {A B C} (P : _ -> B -> C -> _) : Prop :=
     (forall a b (i i' : idx_map A), map.extends i i' -> P i' a b -> P i a b).
-  
+
   Lemma monotone2_fix_l {A B C} (P : idx_map A -> B -> C -> _) x
     : monotone2 P ->
       monotone1 (fun i => P i x).
@@ -1636,7 +1636,7 @@ Abort.
     eapply H0; eauto.
   Qed.
 
-  
+
   Definition state_sound_for_model {A} (m : model) i
     (* TODO: what data should Post take?*)
     (s : state instance A) Post_i Post_mono :=
@@ -1650,7 +1650,7 @@ Abort.
     /\ monotone1 Post_mono.
 
   Hint Resolve Properties.map.extends_refl : utils.
-  
+
   Lemma worklist_entry_sound_mono m
     : monotone1 (worklist_entry_sound m).
   Proof.
@@ -1663,10 +1663,10 @@ Abort.
     rewrite case_match_eqn, case_match_eqn0.
     auto.
   Qed.
-        
+
   Lemma pull_worklist_sound m i
     : state_sound_for_model m i
-        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
+        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result)
         (fun i' => i = i') (fun i wl => all (worklist_entry_sound m i) wl).
   Proof.
     cbv -[map.rep domain map.get all worklist_entry_sound map.extends];
@@ -1682,7 +1682,7 @@ Abort.
       eapply all_wkn; try eassumption.
       basic_goal_prep.
       eapply worklist_entry_sound_mono; eauto.
-    }     
+    }
   Qed.
 
   Lemma map_extends_trans {key value : Type} {map : map.map key value} (m1 m2 m3 : map)
@@ -1708,7 +1708,7 @@ Abort.
     repeat basic_goal_prep.
     clear c Hce.
     eapply H1 in H0; eauto with utils; clear H1.
-    
+
     destruct H0.
     specialize (H0 i0).
     unfold Sep.and1 in *; intuition break.
@@ -1725,8 +1725,8 @@ Abort.
       basic_utils_crush.
   Qed.
   Hint Resolve monotone1_all : utils.
-  
-  Lemma state_sound_for_model_Mmap A B m i Pi Pmono l (f : A -> _ B) 
+
+  Lemma state_sound_for_model_Mmap A B m i Pi Pmono l (f : A -> _ B)
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
                         Pi i' ->
@@ -1777,9 +1777,9 @@ Abort.
       }
     }
   Qed.
-  
 
-  
+
+
   Lemma ret_sound_for_model A m i (x:A)
     : state_sound_for_model m i (Mret x) (eq i) (fun _ => eq x).
   Proof.
@@ -1787,7 +1787,7 @@ Abort.
     intros ? ?.
     eexists; basic_goal_prep; basic_utils_crush.
   Qed.
-  
+
   Lemma ret_sound_for_model' A m i (x:A) Pi Pmono
     : Pi i -> Pmono i x ->
       monotone1 Pmono ->
@@ -1798,8 +1798,8 @@ Abort.
     eexists; basic_goal_prep; basic_utils_crush.
   Qed.
 
-  
-  Lemma state_sound_for_model_Mmap_dep A B m i Pi Pmono l (f : A -> _ B) 
+
+  Lemma state_sound_for_model_Mmap_dep A B m i Pi Pmono l (f : A -> _ B)
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
                         Pi i' ->
@@ -1877,14 +1877,14 @@ Abort.
       }
     }
   Qed.
-  
+
   Lemma const_monotone1 A B
     : monotone1 (fun (_ : idx_map A) (_ : B) => True).
   Proof. repeat intro; auto. Qed.
   Hint Resolve const_monotone1 : utils.
-  
+
   Lemma state_sound_for_model_Miter A m i Pi (Pmono : idx_map (domain m) -> unit -> Prop)
-    l (f : A -> state instance unit) 
+    l (f : A -> state instance unit)
     : (forall (a:A) i', In a l ->
                         map.extends i' i ->
                         Pi i' ->
@@ -1938,7 +1938,7 @@ Abort.
     cbn; auto.
   Qed.
 
-  
+
   Lemma find_next_const x u u' i0
     : UnionFind.find idx Eqb_idx (idx_map idx) (idx_map nat) u x = (u', i0) ->
       (next idx (idx_map idx) (idx_map nat) u)
@@ -2011,7 +2011,7 @@ Abort.
     intros ? ?; induction 1; basic_goal_prep;
       basic_utils_crush.
   Qed.
-  
+
   Lemma PER_closure_of_trans A (R : A -> A -> Prop)
     :  iff2 (PER_closure (transitive_closure R)) (PER_closure R).
   Proof using.
@@ -2021,7 +2021,7 @@ Abort.
       basic_utils_crush.
     eapply trans_PER_subrel; eauto.
   Qed.
-  
+
   Instance subrelation_Proper {A}
     : Proper (iff2 ==> iff2 ==> iff) (subrelation (A:=A)).
   Proof using.
@@ -2034,7 +2034,7 @@ Abort.
 
   (*TODO: move to originating file *)
   Existing Instance iff2_rel.
-  
+
   Lemma trans_to_PER_natural u u'
     : subrelation (parent_rel idx (idx_map idx) (parent u))
         (parent_rel idx (idx_map idx) (parent u')) ->
@@ -2047,7 +2047,7 @@ Abort.
     rewrite !PER_closure_of_trans in H.
     exact H.
   Qed.
-  
+
   Lemma find_sound m i x
     : Sep.has_key x i ->
       state_sound_for_model m i (find x) (eq i)
@@ -2090,7 +2090,7 @@ Abort.
   Admitted.
 
   Context m (m_PER : PER (domain_eq m)).
-  
+
   Lemma eq_sound_for_model_trans i x y z
     : eq_sound_for_model m i x y ->
       eq_sound_for_model m i y z ->
@@ -2110,7 +2110,7 @@ Abort.
     repeat case_match; tauto.
   Qed.
   Hint Resolve eq_sound_has_key_r : utils.
-  
+
   Lemma canonicalize_worklist_entry_sound i a
     : (worklist_entry_sound m i a) ->
       state_sound_for_model m i
@@ -2131,12 +2131,12 @@ Abort.
       eapply eq_sound_for_model_trans; eauto.
     }
   Qed.
-  
+
 
   Arguments repair {idx}%type_scope {Eqb_idx} idx_zero {symbol}%type_scope {Eqb_symbol}
-    {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+    {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
     {H} e _.
-  
+
   Arguments get_parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
     {analysis_result}%type_scope x _.
 
@@ -2158,7 +2158,7 @@ Abort.
   Qed.
   Hint Resolve atom_sound_monotone : utils.
   Hint Resolve monotone1_all : utils.
-  
+
   Lemma get_parents_sound i old_idx
     : state_sound_for_model m i (get_parents old_idx)
          (eq i)
@@ -2175,10 +2175,10 @@ Abort.
 
   Hint Rewrite @map.get_remove_same: utils.
   (*Hint Rewrite @map.get_remove_diff using tauto: utils.*)
-  
+
   Lemma remove_parents_sound i old_idx
     : state_sound_for_model m i
-        (remove_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx) 
+        (remove_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx)
         (eq i) (fun _ _ => True).
   Proof.
     unfold remove_parents;
@@ -2196,7 +2196,7 @@ Abort.
       eauto.
     }
   Qed.
-  
+
   Ltac iss_case :=
     lazymatch goal with
     | H : ?ma <$> _ |- _ =>
@@ -2206,7 +2206,7 @@ Abort.
         let Hma := fresh "Hma" in
         destruct ma eqn:Hma; cbn;[| tauto]
     end.
-  
+
   Lemma db_remove_sound i a1
     : state_sound_for_model m i
         (db_remove idx symbol symbol_map idx_map idx_trie analysis_result a1)
@@ -2239,7 +2239,7 @@ Abort.
           rewrite Properties.map.remove_empty in *.
           basic_utils_crush.
         }
-        cbn; subst.        
+        cbn; subst.
         eqb_case (atom_args a1) (atom_args a).
         {
           rewrite H3 in *.
@@ -2263,7 +2263,7 @@ Abort.
       all2 (eq_sound_for_model m i) (atom_args a1) (atom_args a2) /\
       eq_sound_for_model m i (atom_ret a1) (atom_ret a2).
 
-  
+
   Lemma all2_flip A B (R : A -> B -> Prop) l1 l2
     : all2 R l1 l2 = all2 (fun a b => R b a) l2 l1.
   Proof using.
@@ -2315,14 +2315,14 @@ Abort.
         repeat iss_case.
         basic_goal_prep.
         rewrite TrieMap.Mmap_option_all in *.
-        
+
         eapply In_option_all in Hma; eauto.
         2: eapply in_map; eauto.
         break.
         unfold Sep.has_key; rewrite H3; auto.
       }
       {
-        repeat intro; 
+        repeat intro;
         eapply eq_sound_monotone; eauto.
       }
     }
@@ -2350,17 +2350,17 @@ Abort.
           }
           { apply eq_sound_for_model_Symmetric; auto. }
         }
-        { repeat intro; eapply eq_atom_monotone; eauto. }        
+        { repeat intro; eapply eq_atom_monotone; eauto. }
       }
       { repeat intro; eapply eq_atom_monotone; eauto. }
     }
     { repeat intro; eapply eq_atom_monotone; eauto. }
   Qed.
-  
+
   Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
     {analysis_result}%type_scope f args%list_scope _.
 
-  
+
   (*TODO: preconditions?*)
   Lemma db_lookup_sound i f args
     : state_sound_for_model m i
@@ -2393,7 +2393,7 @@ Abort.
     }
     eapply atom_interpretation in H2; eauto.
   Qed.
-  
+
   Lemma update_entry_sound i a
     : atom_sound_for_model m i a ->
       state_sound_for_model m i (update_entry a)
@@ -2410,8 +2410,8 @@ Abort.
     }
     {
   Abort.
-      
-  
+
+
   Lemma repair_sound i a
     : state_sound_for_model m i
         (repair idx_zero a)
@@ -2442,10 +2442,10 @@ Abort.
           {
             cbn beta;intros; subst.
             eapply state_sound_for_model_bind; eauto with utils.
-          (*  
+          (*
           }
         }
-        
+
     }
     {
     }
@@ -2504,7 +2504,7 @@ Abort.
           (fun p : B * ?S => P l2 (fl1 ++ [fst p]) (snd p))) ->
        state_triple (fun e : ?S => P l [] e) (list_Mmap f l)
          (fun p : list B * ?S => P [] (fst p) (snd p))
-        
+
         TODO: avoid unfolding to state_triple?
         eapply state_triple_list_Mmap
           with (P:= ?).
@@ -2512,14 +2512,14 @@ Abort.
         cbn.
         TODO: what do I know about w, a?.
                       Need to know that the worklist entries are sound.
-                                       
+
         eapply state_triple list_Mmap
           p. 2.
       }
-      
+
       TODO: fun x is no good
       repeat (cbn beta in *; intros; break; subst).
-      
+
       intros g Hg.
       specialize (IHn g Hg).
       repeat (cbn beta in *; intros; break; subst).
@@ -2531,8 +2531,8 @@ Abort.
         *)
 
   Abort.
-      
-      
+
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
@@ -2567,7 +2567,7 @@ Arguments instance_to_clauses {idx symbol}%type_scope
 
 
 Arguments db_to_atoms {idx symbol}%type_scope
-  {symbol_map idx_trie}%function_scope 
+  {symbol_map idx_trie}%function_scope
   {analysis_result}%type_scope
   d.
 
