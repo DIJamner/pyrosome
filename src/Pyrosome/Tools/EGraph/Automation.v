@@ -73,12 +73,12 @@ Instance depth_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => Some 1).
 
 (*TODO: generalize what rules to run *)
-Theorem egraph_sound rebuild_fuel fuel l (c : ctx string) t (e1 e2 : term string)
+Theorem egraph_sound rebuild_fuel fuel l filter (c : ctx string) t (e1 e2 : term string)
   : wf_lang l ->
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    fst (fst (fst (fst (egraph_equal' l rebuild_fuel fuel c e1 e2 t)))) = true->
+    fst (fst (fst (fst (egraph_equal' l filter rebuild_fuel fuel c e1 e2 t)))) = true->
     eq_term l c t e1 e2.
 Admitted.
 

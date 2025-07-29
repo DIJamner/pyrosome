@@ -596,10 +596,10 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
     
   let e' := eval vm_compute in
   (let (x1,g0) := add_open_term StringListMap.string_succ
-                    StringListMap.sort_of l' true
+                    StringListMap.sort_of l' true false
                     [] (var_to_con e1) graph in
    let (x2,g1) := add_open_term StringListMap.string_succ
-                    StringListMap.sort_of l' true
+                    StringListMap.sort_of l' true false
                     [] (var_to_con e2) graph in
    let ex1 := extract_weighted g0 1000 x1 in
    let ex2 := (extract_weighted g1 1000 x2) in

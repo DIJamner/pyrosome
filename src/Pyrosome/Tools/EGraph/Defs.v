@@ -79,6 +79,13 @@ Section WithVar.
     | con n s => con n (map var_to_con s)
     end.
 
+  Fixpoint con_to_var vars (t : term) :=
+    match t with
+    | var x => var x (*should never happen *)
+    | con n s =>
+        if inb n vars then var n else con n (map (con_to_var vars) s)
+    end.
+
   Definition sort_var_to_con (t : sort) :=
     match t with
     | scon n s => scon n (map var_to_con s)
@@ -144,10 +151,23 @@ Section WithVar.
     (* A flag for determining whether to emit sort annotations.
        Default to true for writes and false for queries.
      *)
-    Context (with_sorts : bool).
+      Context (with_sorts : bool).
+      (* A flag for determining whether to emit secondary sort annotations
+         for arguments to allow for sort unification.
+         Default to false.
+       *)
+      Context (with_ctx_sorts : bool).
 
     Section __.
       Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
+
+      Definition add_ctx_sorts s' (c:ctx) :=
+        let tsub := combine (map fst c) s' in
+        list_Miter (fun '(x,t) => 
+                    @!let tx <- add_open_sort tsub t in
+                    let tx' <- hash_entry sort_of [x] in
+                    (union tx tx')) (combine s' (map snd c)).
+      
       Fixpoint add_open_term' (sub : named_list V) (e : Term.term V)
         : state instance V :=
         match e with
@@ -161,9 +181,10 @@ Section WithVar.
             | Some (term_rule c args t) =>
                 @! let s' <- list_Mmap (add_open_term' sub) s in
                   let x <- hash_entry n s' in
+                  let _ <- if with_ctx_sorts then add_ctx_sorts s' c
+                           else Mret tt in
                   if with_sorts then
                     let tsub := combine (map fst c) s' in
-                    (*TODO: add context sorts*)
                     let tx <- add_open_sort tsub t in
                     let tx' <- hash_entry sort_of [x] in
                     let _ <- union tx tx' in
@@ -374,32 +395,32 @@ Section WithVar.
     match r with
     | sort_rule c args =>        
         sequent_of_states
-          (add_ctx false c)
-          (fun sub => add_open_sort true sub (scon n (id_args c)))
+          (add_ctx false false c)
+          (fun sub => add_open_sort true false sub (scon n (id_args c)))
     | term_rule c args t => 
         sequent_of_states
-          (add_ctx false c)
+          (add_ctx false false c)
           (* add_open_term sees the language, so it handles t *)
-          (fun sub => add_open_term true sub (con n (id_args c)))
+          (fun sub => add_open_term true false sub (con n (id_args c)))
     (* TODO: this currently only goes one direction.
        As a design question, is that what I want?
      *)
     | sort_eq_rule c t1 t2 =>
         sequent_of_states
-          (@!let sub <- add_ctx false c in
-             let x1 <- add_open_sort false sub t1 in
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_sort false false sub t1 in
              ret (sub,x1))
           (fun '(sub,x1) =>
-             @! let x2 <- add_open_sort true sub t2 in
+             @! let x2 <- add_open_sort true false sub t2 in
                (union x1 x2))
     | term_eq_rule c e1 e2 t => 
         sequent_of_states
-          (@!let sub <- add_ctx false c in
-             let x1 <- add_open_term false sub e1 in
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)
           (fun '(sub,x1) =>
-             @! let x2 <- add_open_term true sub e2 in
+             @! let x2 <- add_open_term true false sub e2 in
                (union x1 x2))
     end.
 
@@ -634,14 +655,26 @@ Section WithVar.
     (*Note: l has to contain the ctx_to_rules of the context *)
     Definition egraph_equal l (rws : rule_set) rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state instance (bool * _ * _) :=
-        @!let {(state instance)} x1 <- add_open_term l true [] e1 in
-          let {(state instance)} x2 <- add_open_term l true [] e2 in
-          let {(state instance)} xt <- add_open_sort l true [] t in
-          let {(state instance)} _ <- rebuild rfuel (*TODO: magic number *) in
+        @!let {(state instance)} x1 <- add_open_term l true false [] e1 in
+          let {(state instance)} x2 <- add_open_term l true false [] e2 in
+          let {(state instance)} xt <- add_open_sort l true false [] t in
+          let {(state instance)} _ <- rebuild rfuel in
           let {state instance}res <- saturate_until succ V_default
                        spaced_list_intersect rfuel rws (eq_proven x1 x2 xt) fuel in
           ret (res, x1, x2)
       in (comp (empty_egraph default _)).
+
+    Definition egraph_simpl l (rws : rule_set) rfuel fuel efuel
+      (e : Term.term V) :=
+      let comp : state instance V :=
+        @!let {state instance} x <- add_open_term l true false [] e in
+          let {state instance} _ <- rebuild rfuel in
+          let {state instance} _ <- saturate_until succ V_default
+                       spaced_list_intersect rfuel rws (Mret (M:=state _) false) fuel in
+          ret {state instance} x
+      in
+      let (x,g) := comp (empty_egraph default _) in
+      extract_weighted g efuel x.
 
     End __.
     
@@ -689,13 +722,17 @@ Module PositiveInstantiation.
      
    (*TODO: handle term closing, sort matching*)
    *)
-  Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X} (l : lang V) rn n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
+  Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X}
+    (l : lang V)
+    (lang_filter : lang V -> lang V)
+    rn n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
     let rename_and_run : state (renaming V) _ :=
       @! let l' <- rename_lang (ctx_to_rules c ++ l) in
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
-        ret (egraph_equal l' (build_rule_set rn (filter_eqn_rules l') l') rn n e1' e2' t')
+        let rules <- rename_lang (lang_filter l) in
+        ret (egraph_equal l' (build_rule_set rn rules l') rn n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
@@ -707,6 +744,38 @@ Module PositiveInstantiation.
                      error:(x1 "not identified with" x2
                               "Extracted term 1:" e1'
                               "Extracted term 2:" e2'), g)) *)
+  
+  Fixpoint unrename_term {V} `{WithDefault V} (r : renaming V)
+    (e : Term.term positive) : Term.term V :=
+    match e with
+    | var x => var (unwrap_with_default (Interface.map.get r.(p_to_v) x))
+    | con n s =>
+        con (unwrap_with_default (Interface.map.get r.(p_to_v) n))
+          (map (unrename_term r) s)
+    end.
+  
+  Definition egraph_simpl
+    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
+      nat -> nat -> Term.term positive -> _ :=
+    (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+
+  Definition egraph_simpl' {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
+    (l : lang V) rn n en (c : Term.ctx _) (e : Term.term V) :=
+    let rename_and_run : state (renaming V) _ :=
+      @!let l' : lang positive <- rename_lang (ctx_to_rules c ++ l) in
+        let e' : term positive <- rename_term (var_to_con e) in
+        ret (egraph_simpl l' (build_rule_set rn (filter_eqn_rules l') l')
+               rn n en e')
+    in
+    (*2 so that sort_of is distict*)
+    let (re,r) := rename_and_run
+                   ({| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})
+    in
+    match re with
+    | Success e => con_to_var (map fst c) (unrename_term r e)
+    | _ => e
+    end.
+    
   
 End PositiveInstantiation.
 
