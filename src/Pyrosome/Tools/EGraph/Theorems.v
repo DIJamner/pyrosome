@@ -1166,7 +1166,7 @@ Section WithVar.
                      forall i r, args_in_instance l s i (map snd r) ->
                                  map fst c = map fst r ->
                                 state_sound_for_model (lang_model l) i
-                                  (add_open_term' succ sort_of l with_sorts add_open_sort r e)
+                                  (add_open_term' succ sort_of l with_sorts false add_open_sort r e)
                                   (fun i x => option_relation (lang_model l).(domain_eq _)
                                               (map.get i x) (Some (inl e[/with_names_from c s/]))))
         /\ (forall args c', wf_args l1 c args c' ->
@@ -1174,7 +1174,7 @@ Section WithVar.
                                  map fst c = map fst r ->
                                        state_sound_for_model (lang_model l) i
                                          (list_Mmap (add_open_term' succ sort_of l
-                                                       with_sorts add_open_sort r) args)
+                                                       with_sorts false add_open_sort r) args)
                                          (fun i arg_ids =>
                                             args_in_instance l args[/with_names_from c s/] i arg_ids)).
     Proof.      
@@ -1235,6 +1235,8 @@ Section WithVar.
             }
           }
         }
+        ssm_bind.
+        1: apply ret_sound_for_model; eauto.
         case_match.
         {
           use_rule_in_wf.
@@ -1253,20 +1255,24 @@ Section WithVar.
               unfold apply_subst; cbn; unfold args_subst; cbn.
               basic_utils_crush.
             }
-            4:{       
+            4:{
+              autorewrite with lang_core in *; break.
               eapply wf_args_subst_monotonicity; auto.
               { eapply wf_args_lang_monotonicity; eauto. }
               { eapply wf_ctx_lang_monotonicity; eauto. }
-              { eapply wf_ctx_lang_monotonicity; eauto. }
+              {
+                eapply wf_ctx_lang_monotonicity; cycle 1; eauto;
+                  basic_utils_crush.
+              }
               {
                 eapply wf_subst_from_wf_args; eauto.
               }
             }
             5:{
               eapply wf_lang_tail in Hwf'; safe_invert Hwf'.
-              safe_invert H17.
+              safe_invert H15.
               autorewrite with utils in *.
-              exact H19.
+              eassumption.
             }
             {
               eapply wf_lang_tail in Hwf'; safe_invert Hwf'; eauto.
@@ -1280,7 +1286,7 @@ Section WithVar.
             }
             {
               eapply wf_lang_tail in Hwf'; safe_invert Hwf'.
-              safe_invert H17.
+              safe_invert H15.
               autorewrite with utils in *; auto.
             }
             {
@@ -1321,16 +1327,16 @@ Section WithVar.
             cbn in *.
             eapply H8 in case_match_eqn; rewrite case_match_eqn.
             cbn.
-            unfold atom_sound_for_model in H14.
+            unfold atom_sound_for_model in H9.
             cbn in *.
             repeat iss_case.
             case_match; try congruence.
             inversions.
             cbn.
-            apply interpret_sort_of in H14; break; subst; eauto.
+            apply interpret_sort_of in H9; break; subst; eauto.
             etransitivity; try eassumption.
             lang_model_simp.
-            safe_invert H14.
+            safe_invert H9.
             etransitivity.
             2:{
               constructor.
@@ -1342,11 +1348,11 @@ Section WithVar.
             eapply eq_sort_subst; eauto.
             {
               eapply eq_sort_refl.
-              apply Hl_sub in H12; use_rule_in_wf;
+              apply Hl_sub in H13; use_rule_in_wf;
                 basic_core_crush.
             }
             2:{
-              apply Hl_sub in H12; use_rule_in_wf;
+              apply Hl_sub in H13; use_rule_in_wf;
                 basic_core_crush.
             }
             {
@@ -1360,7 +1366,7 @@ Section WithVar.
               eapply all2_Symmetric in H6; try typeclasses eauto.
               eapply all2_model_eq_eq_args in H6; eauto.
               2:{
-                eapply Hl_sub in H12;
+                eapply Hl_sub in H13;
                   use_rule_in_wf.
                   autorewrite with lang_core utils in *; break; eauto.
               }
@@ -1395,7 +1401,7 @@ Section WithVar.
           eapply all2_Symmetric in H6; try typeclasses eauto.
           eapply all2_model_eq_eq_args in H6; eauto.
           2:{
-            eapply Hl_sub in H12;
+            eapply Hl_sub in H13;
               use_rule_in_wf.
             autorewrite with lang_core utils in *; break; eauto.
           }
@@ -1530,7 +1536,7 @@ Section WithVar.
         args_in_instance l s i (map snd r) ->
         map fst c = map fst r ->
         state_sound_for_model (lang_model l) i
-          (add_open_sort' succ sort_of l with_sorts fuel r t)
+          (add_open_sort' succ sort_of l with_sorts false fuel r t)
           (fun i x => option_relation (lang_model l).(domain_eq _)
                       (map.get i x) (Some (inr t[/with_names_from c s/]))).
     Proof.
@@ -1697,7 +1703,7 @@ Section WithVar.
         map fst c = map fst r ->
         args_in_instance l s i (map snd r) ->
         state_sound_for_model (lang_model l) i
-          (add_open_sort succ sort_of l with_sorts r t)
+          (add_open_sort succ sort_of l with_sorts false r t)
           (fun i x => option_relation (lang_model l).(domain_eq _)
                       (map.get i x) (Some (inr t[/with_names_from c s/]))).
     Proof.
@@ -1713,7 +1719,7 @@ Section WithVar.
         map fst c = map fst r ->
         args_in_instance l s i (map snd r) ->
         state_sound_for_model (lang_model l) i
-          (add_open_term succ sort_of l with_sorts r e)
+          (add_open_term succ sort_of l with_sorts false r e)
           (fun i x => option_relation (lang_model l).(domain_eq _)
                       (map.get i x) (Some (inl e[/with_names_from c s/]))).
     Proof.
@@ -1730,7 +1736,7 @@ Section WithVar.
     : wf_subst l [] s c ->
       wf_ctx l c ->
       state_sound_for_model (lang_model l) i
-        (add_ctx succ sort_of l with_sorts c)
+        (add_ctx succ sort_of l with_sorts false c)
         (fun i r => map fst r = map fst c
                     /\ args_in_instance l (map snd s) i (map snd r)).
   Proof.
