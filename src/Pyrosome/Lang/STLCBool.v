@@ -51,7 +51,7 @@ Definition stlc_bool_def : lang :=
   ]}.
 
 Derive stlc_bool
-       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_bool_def stlc)
+       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_bool_def stlc_bool)
        As stlc_bool_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_bool_wf : elab_pfs.
