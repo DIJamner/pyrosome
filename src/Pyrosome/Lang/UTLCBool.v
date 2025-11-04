@@ -84,17 +84,47 @@ Derive utlc_bool
 Proof. auto_elab. Qed.
 #[export] Hint Resolve utlc_bool_wf : elab_pfs.
 
-Definition dyn_to_typed {G : term} (x : term) (T : term) : T :=
-  match T with
+Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
+  match Ty with
   | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
-  | {{e #"bool"}} => OL if/else, with x as condition
-  | {{e #"->" {A} {B}}} => {#"lambda" A (dyn_to_typed (#"app" (#"val_subst" #"wkn" x) (typed_to_dyn #"hd" A)) B)}
+  | {{e #"bool"}} => match x with
+                     | {{e #"ret" {v} }} => {{e #"ret" {dtt_v v Ty} }}
+                     | _ => {{e #"if" {dtt_e x Ty} #"ret" #"T" #"ret" #"F" }}
+                     end
+  (* OL if/else, with x as condition *)
+  | {{e #"->" {A} {B} }} => {{e #"ret" #"lambda" {A} {dtt_e {{e #"uapp" (#"val_subst" #"wkn" {x}) {ttd_e {{e #"hd"}} A} }} B} }}
+  (* {#"lambda" A (dyn_to_typed (#"app" (#"val_subst" #"wkn" x) (typed_to_dyn #"hd" A)) B)} *)
   end. 
 
 
-Definition typed_to_dyn {G : term} (x : term) (T : term) : T :=
+Definition ttd_e {G : term} (x : term) (T : term) : T :=
   match T with
-  | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
-  | {{e #"bool"}} => OL if/else, with x as condition
-  | {{e #"->" {A} {B}}} => {#"lambda" A (dyn_to_typed (#"app" (#"val_subst" #"wkn" x) (typed_to_dyn #"hd" A)) B)}
+  | {{e #"*"}} => x
+  | {{e #"bool"}} => match x with
+                     | {{e #"ret" {v} }} => {{e #"ret" {ttd_v v Ty} }}
+                     | _ => {{e #"uif" {ttd_e x Ty} #"ret" #"uT" #"ret" #"uF" }}
+                     end
+  | {{e #"->" {A} {B} }} => {{e #"ret" #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
+  end. 
+
+Definition dtt_v {G : term} (x : term) (Ty : term) : Ty :=
+  match Ty with
+  | {{e #"*"}} => x
+  | {{e #"bool"}} => match x with
+                     | {{e #"uT"}} => {{e #"T"}}
+                     | {{e #"uF"}} => {{e #"F"}}
+                     | _           => {{e #"F"}}
+                     end
+  | {{e #"->" {A} {B} }} => {{e #"lambda" {A} {dtt_e {{e #"uapp" (#"val_subst" #"wkn" #"ret" {x}) {ttd_e {{e #"hd"}} A} }} B} }}
+  end. 
+
+Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
+  match Ty with
+  | {{e #"*"}} => x
+  | {{e #"bool"}} => match x with
+                     | {{e #"T"}} => {{e #"uT"}}
+                     | {{e #"F"}} => {{e #"uF"}}
+                     | _          => {{e #"uF"}}
+                     end
+  | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
   end. 
