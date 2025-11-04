@@ -10,12 +10,14 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 From Pyrosome.Lang Require Import SimpleVSTLC. 
+(* From Pyrosome.Lang Require Import UTLC. 
+(* think I need to run make command (for just this file ideally) *)
+ *)
 
 (* Compute value_subst_def. 
 Locate term.  *)
-Definition utlc_def : lang :=
-  {[l/subst [utlc++exp_subst++value_subst] 
-  (* does putting UTLC there make it so I only have to define the new things? *)
+Definition utlc_bool_def : lang :=
+  {[l/subst [exp_subst++value_subst] 
   [:| "G" : #"env"
       -----------------------------------------------
       #"uT" : #"val" "G" #"*"
@@ -25,59 +27,72 @@ Definition utlc_def : lang :=
       #"uF" : #"val" "G" #"*"
   ];
   [:| "G" : #"env",
-      "v" : #"val" "G" #"*"
+      "e" : #"exp" "G" #"*"
       -----------------------------------------------
-      #"bool?" "v" : #"exp" "G" #"*"
+      #"bool?" "e" : #"exp" "G" #"*"
   ];
-  [:|
-      -----------------------------------------------
-      #"bool?" #"uT" = #"uT" (* left is an expression, but right is a value; fix by wrapping right side with #"ret"? *)
-      (* also have a syntax error I'm not sure how to get rid of *)
+  [:=
+      ----------------------------------------------- ("bool?-true")
+      #"bool?" (#"ret" #"uT") 
+      = #"ret" #"uT" : #"exp" "G" #"*"
   ];
-  [:|
-      -----------------------------------------------
-      #"bool?" #"uF" = #"uT"
+  [:=
+      ----------------------------------------------- ("bool?-false")
+      #"bool?" (#"ret" #"uF") 
+      = #"ret" #"uT" : #"exp" "G" #"*"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e" : #"exp" (#"ext" "G" #"*") #"*"
-      -----------------------------------------------
-      #"bool?" (#"ulambda" "e") = #"uF"
+      ----------------------------------------------- ("bool?-func")
+      #"bool?" (#"ulambda" "e") 
+      = #"ret" #"uF" : #"exp" "G" #"*"
   ];
   [:| "G" : #"env",
-      "cond" : #"val" "G" #"*",
+      "cond" : #"exp" "G" #"*",
       "e2" : #"exp" "G" #"*",
       "e3" : #"exp" "G" #"*"
       -----------------------------------------------
       #"uif" "cond" "e2" "e3" : #"exp" "G" #"*"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e2" : #"exp" "G" "*",
       "e3" : #"exp" "G" "*"
-      -----------------------------------------------
-      #"uif" #"uT" "e2" "e3" = "e2"
+      ----------------------------------------------- ("uif-true")
+      #"uif" (#"ret" #"uT") "e2" "e3" 
+      = "e2" : #"exp" "G" #"*"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e2" : #"exp" "G" "*",
       "e3" : #"exp" "G" "*"
-      -----------------------------------------------
-      #"uif" #"uF" "e2" "e3" = "e3"
+      ----------------------------------------------- ("uif-false")
+      #"uif" (#"ret" #"uF") "e2" "e3" 
+      = "e3" : #"exp" "G" #"*"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e" : #"exp" (#"ext" "G" #"*") #"*",
       "e2" : #"exp" "G" "*",
       "e3" : #"exp" "G" "*"
-      -----------------------------------------------
-      #"uif" (#"ret" #"ulambda" #"e") "e2" "e3" = "e3"
-  ];
+      ----------------------------------------------- ("uif-func")
+      #"uif" (#"ret" #"ulambda" #"e") "e2" "e3" 
+      = "e3" : #"exp" "G" #"*"
+  ]
   ]}.
 
-Derive utlc
-       SuchThat (elab_lang_ext (exp_subst++value_subst) utlc_def utlc)
-       As utlc_wf.
+Derive utlc_bool
+       SuchThat (elab_lang_ext (utlc++exp_subst++value_subst) utlc_bool_def utlc)
+       As utlc_bool_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve utlc_wf : elab_pfs.
+#[export] Hint Resolve utlc_bool_wf : elab_pfs.
 
 Definition dyn_to_typed {G : term} (x : term) (T : term) : T :=
+  match T with
+  | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
+  | {{e #"bool"}} => OL if/else, with x as condition
+  | {{e #"->" {A} {B}}} => {#"lambda" A (dyn_to_typed (#"app" (#"val_subst" #"wkn" x) (typed_to_dyn #"hd" A)) B)}
+  end. 
+
+
+Definition typed_to_dyn {G : term} (x : term) (T : term) : T :=
   match T with
   | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
   | {{e #"bool"}} => OL if/else, with x as condition

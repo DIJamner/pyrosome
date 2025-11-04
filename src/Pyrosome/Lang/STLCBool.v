@@ -11,9 +11,8 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 
 
-Definition stlc_def : lang :=
-(* Is there a way to import STLC and only list the new rules? *)
-  {[l/subst [stlc++exp_subst++value_subst]
+Definition stlc_bool_def : lang :=
+  {[l/subst [exp_subst++value_subst] (* for subst rule generation *)
   [:| 
       -----------------------------------------------
       #"bool" : #"ty"
@@ -27,30 +26,32 @@ Definition stlc_def : lang :=
       #"F" : #"val" "G" #"bool"
   ];
   [:| "G" : #"env",
-      "cond" : #"val" "G" #"bool",
+      "cond" : #"exp" "G" #"bool",
       "e2" : #"exp" "G" "t",
       "e3" : #"exp" "G" "t"
       -----------------------------------------------
       #"if" "cond" "e2" "e3" : #"exp" "G" "t"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e2" : #"exp" "G" "t",
       "e3" : #"exp" "G" "t"
-      -----------------------------------------------
-      #"if" #"T" "e2" "e3" = "e2"
+      ----------------------------------------------- ("if-true")
+      #"if" (#"ret" #"T") "e2" "e3" 
+      = "e2" : #"exp" "G" "t"
   ];
-  [:| "G" : #"env",
+  [:= "G" : #"env",
       "e2" : #"exp" "G" "t",
       "e3" : #"exp" "G" "t"
-      -----------------------------------------------
-      #"if" #"F" "e2" "e3" = "e3"
-  ];
+      ----------------------------------------------- ("if-false")
+      #"if" (#"ret" #"F") "e2" "e3" 
+      = "e3" : #"exp" "G" "t"
+  ]
   ]}.
 
-Derive stlc
-       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_def stlc)
-       As stlc_wf.
+Derive stlc_bool
+       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_bool_def stlc)
+       As stlc_bool_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve stlc_wf : elab_pfs.
+#[export] Hint Resolve stlc_bool_wf : elab_pfs.
 
 
