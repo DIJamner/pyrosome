@@ -9,6 +9,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSub
 Import Core.Notations.
 
 Require Coq.derive.Derive.
+From Pyrosome.Lang Require Import SimpleVSTLC. 
 
 
 Definition stlc_bool_def : lang :=
@@ -26,6 +27,7 @@ Definition stlc_bool_def : lang :=
       #"F" : #"val" "G" #"bool"
   ];
   [:| "G" : #"env",
+      "t" : #"ty",
       "cond" : #"exp" "G" #"bool",
       "e2" : #"exp" "G" "t",
       "e3" : #"exp" "G" "t"
@@ -33,25 +35,25 @@ Definition stlc_bool_def : lang :=
       #"if" "cond" "e2" "e3" : #"exp" "G" "t"
   ];
   [:= "G" : #"env",
-      "A" : #"ty",
-      "e2" : #"exp" "G" "A",
-      "e3" : #"exp" "G" "A"
+      "t" : #"ty",
+      "e2" : #"exp" "G" "t",
+      "e3" : #"exp" "G" "t"
       ----------------------------------------------- ("if-true")
       #"if" (#"ret" #"T") "e2" "e3" 
-      = "e2" : #"exp" "G" "A"
+      = "e2" : #"exp" "G" "t"
   ];
   [:= "G" : #"env",
-      "A" : #"ty",
-      "e2" : #"exp" "G" "A",
-      "e3" : #"exp" "G" "A"
+      "t" : #"ty",
+      "e2" : #"exp" "G" "t",
+      "e3" : #"exp" "G" "t"
       ----------------------------------------------- ("if-false")
       #"if" (#"ret" #"F") "e2" "e3" 
-      = "e3" : #"exp" "G" "A"
+      = "e3" : #"exp" "G" "t"
   ]
   ]}.
 
 Derive stlc_bool
-       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_bool_def stlc_bool)
+       SuchThat (elab_lang_ext (stlc++exp_subst++value_subst) stlc_bool_def stlc_bool)
        As stlc_bool_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_bool_wf : elab_pfs.
