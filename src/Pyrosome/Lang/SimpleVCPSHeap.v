@@ -96,7 +96,7 @@ Definition heap_id_def : compiler :=
   | {{s #"heap"}} => {{s#"heap"}}
   end.
 
-
+Require Import Tools.EGraph.Automation.
 
 Derive heap_id
        SuchThat (elab_preserving_compiler cps_subst
@@ -112,14 +112,8 @@ Derive heap_id
                                           heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As cps_preserving.
-Proof.
-  auto_elab_compiler.
-  - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-Qed.
+Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve heap_id : elab_pfs.
-
 
 
 Definition heap_cps_def : compiler :=
@@ -151,14 +145,7 @@ Derive heap_cps
                                           heap_cps
                                           heap_ops)
        As heap_cps_preserving.
-Proof.
-  auto_elab_compiler.
-  cleanup_elab_after
-    (reduce;
-    eapply eq_term_trans;
-    [eredex_steps_with heap_cps_ops "eval get"|];
-    by_reduction).
-Qed.
+Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve heap_cps_preserving : elab_pfs.
 
 Definition Ebind_k n e A k :=
@@ -202,11 +189,6 @@ Derive heap_ctx_cps
        As heap_ctx_cps_preserving.
 Proof.
   auto_elab_compiler.
-  cleanup_elab_after
-    (reduce;
-     eapply eq_term_trans;
-     [eredex_steps_with heap_cps_ops "eval get"|];
-     by_reduction).
 Qed.
 #[export] Hint Resolve heap_ctx_cps_preserving : elab_pfs.
 

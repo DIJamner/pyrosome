@@ -1820,7 +1820,7 @@ Section WithVar.
     }
   Qed.
           
-
+(*
     Lemma sequent_of_states_sound A B m i1 s1 Post Post2 rn
       (s2 : A -> state (instance _) B)
       : state_sound_for_model m i1 s1 Post ->
@@ -1834,6 +1834,7 @@ Section WithVar.
       unfold curry.
       cbn [fst curry uncurry snd].
     Abort.
+*)
 
 
     Hint Rewrite combine_nil : utils.

@@ -5,7 +5,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches.
+From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleUnit.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -145,8 +145,6 @@ Derive subst_cc
        As subst_cc_preserving.
 Proof.
   auto_elab_compiler.
-  cleanup_elab_after
-    (reduce; eredex_steps_with unit_eta "unit eta").
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
@@ -206,7 +204,6 @@ Definition cc_def : compiler :=
   | {{e #"jmp" "G" "A" "v1" "v2"}} =>
     {{e #"jmp" "v1" "v2" }}
   end.
-
  
 Derive cc
        SuchThat (elab_preserving_compiler (prod_cc_compile++subst_cc)
@@ -222,14 +219,6 @@ Derive cc
                                           cc
                                           cps_lang)
        As cc_preserving.
-Proof.
-  auto_elab_compiler.
-  cleanup_elab_after
-  (reduce;
-   eapply eq_term_trans;  
-   [eapply eq_term_sym;
-   eredex_steps_with cc_lang "clo_eta"|];
-   by_reduction).
-Qed.
+Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve cc_preserving : elab_pfs.
 

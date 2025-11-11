@@ -267,16 +267,64 @@ Section WithMap.
     | atom_clause a => atom_sound_for_model a
     end.
 
+   (*TODO: move*)
+   Definition clause_subst s c :=
+     match c with
+     | eq_clause x y =>
+         let x' := named_list_lookup x s x in
+         let y' := named_list_lookup y s y in
+         eq_clause x' y'
+     | atom_clause a => atom_clause (atom_subst s a)
+     end.
+   
+   (* should be seen as denoting a set of renamings for a given query
+      and interpretation.
+    *)
+  Definition conjunct_denotation
+    (q : list clause) (ren : named_list _ _) : Prop :=
+    set_eq (flat_map clause_vars q) (map fst ren)
+    /\ all clause_sound_for_model (map (clause_subst ren) q).
+
   End ForModel.
 
+  (*
+
+  TODO: map vs named_list. allfresh?
   Definition model_satisfies_rule m r :=
+    forall i ren, conjunct_denotation m i r.(seq_assumptions) ren ->
+                  exists ren' i',
+                    (* Not specific enough about dom i'.
+                       Probably has some issues w/ alloc
+                     *)
+                    map.extends i' i
+                    /\ dom i' = dom i & codom (ren')
+                    /\ map.extends ren' ren
+                    /\ conjunct_denotation m i'
+                         r.(seq_conclusions) ren'.
+                  
     forall query_assignment,
       set_eq (map.keys query_assignment) (forall_vars r) ->
       all (clause_sound_for_model m query_assignment) r.(seq_assumptions) ->
       exists out_assignment,
         map.extends out_assignment query_assignment
         /\ all (clause_sound_for_model m out_assignment)
-          r.(seq_conclusions).  
+             r.(seq_conclusions).
+*)
+
+  (*
+    graph_ok g i
+    (dom g = dom i)
+    i[x] = e
+    (dom (query(g)) = canonize (dom g))
+
+    graph_ok g' i' ->
+    matches g' query(g) = Some l_s ->
+    In s l_s ->
+    (dom s = dom query(g))
+    ...
+    graph_ok g[/canon^-1 s/] i'
+   *)
+  
 
   Notation match_clause := (match_clause idx _).
   Notation match_clause' := (match_clause' idx _).
@@ -284,7 +332,7 @@ Section WithMap.
   (*TODO: duplicate. find other def and move to better location*)
   Fixpoint nat_to_idx n :=
     match n with
-    | 0 => idx_zero
+     | 0 => idx_zero
     | S n => idx_succ (nat_to_idx n)
     end.
 
@@ -852,6 +900,7 @@ Abort.
         (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
         (fun i' wl => i = i' /\ all (worklist_entry_sound m i) wl).
   Proof.
+    clear idx_zero idx_succ.
     cbv -[map.rep domain map.get all worklist_entry_sound map.extends];
       intros; break.
     {
@@ -1193,6 +1242,7 @@ Abort.
            analysis_result a)
         (fun i' a => i = i' /\ worklist_entry_sound m i' a).
   Proof.
+    clear idx_zero idx_succ.
     intro.
     destruct a; cbn -[Mbind].
     2:{ eapply ret_sound_for_model'; eauto using worklist_entry_sound_mono. }
@@ -2316,19 +2366,15 @@ Abort.
     : state_sound_for_model m i (rebuild n) (fun i' _ => i = i').
   Proof.
     induction n.
-    {
-      basic_goal_prep.
-      cbv -[map.rep domain map.get]; intuition.
-      eexists; intuition eauto.
-    }
+    { eapply ret_sound_for_model'; eauto with utils. }
     {
       cbn [rebuild].
-      eapply state_sound_for_model_bind;
-      [eapply pull_worklist_sound
-      | intros; subst].
+      ssm_bind.
+      { eapply pull_worklist_sound. }
+      
       destruct a.
       { eapply ret_sound_for_model'; break; subst; eauto with utils. }
-      eapply state_sound_for_model_bind; eauto with utils.
+      ssm_bind.
       {
         eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto.
         {
@@ -2338,8 +2384,7 @@ Abort.
         }
         { eauto using worklist_entry_sound_mono. }
       }
-      cbn beta; intros; repeat subst.
-      eapply state_sound_for_model_bind; break; subst; eauto with utils.
+      ssm_bind.
       {
         eapply state_sound_for_model_Miter with (P:= fun i _ => i'0 = i); auto.
         {
@@ -2348,8 +2393,7 @@ Abort.
           eapply repair_sound.
         }
       }
-      cbn beta; intros; repeat subst.
-      eauto.
+      break; subst; eauto with utils.
     }
   Qed.
 
@@ -4662,8 +4706,9 @@ Arguments state_sound_for_model {idx} lt {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
   {A}%type_scope m i s (Post)%function_scope.
 
-
+(*
 Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope m r.
+*)
 
 
 (*TODO: duplicated in section *)

@@ -514,15 +514,17 @@ Section WithVar.
           analysis_meet := oP_minimum;
         }.
 
-      (*TODO: deprecate the old one*)
-      Definition build_eclasses' {X}
-        : db_map V V _ _ X -> V_map (list (V * list V * X)) :=
+      (* For each eclass, select a node that is optimal for it *)
+      Definition select_optimal_nodes {X}
+        (le : X -> X -> bool)
+        (analyses : V_map X)
+        : db_map V V _ _ X -> V_map (V * list V) :=
         let process_row f acc args row :=
           let out := row.(entry_value _ _) in
           let ra := row.(entry_analysis _ _) in
-          match map.get acc out with
-          | Some l => map.put acc out ((f,args,ra)::l)
-          | None => map.put acc out [(f,args,ra)]
+          match map.get analyses out with
+          | None => acc (* shouldn't happen? *)
+          | Some a => if le ra a then map.put acc out (f,args) else acc
           end
         in
         let process_table acc f :=
@@ -530,12 +532,14 @@ Section WithVar.
         in
         map.fold process_table map.empty.
 
+      (*
       Definition atom_le (x_a : option positive) (p : ne_list V * option positive) :=
-        oP_le (snd p) x_a.
-
+        oP_le (snd p) x_a.*)
+      
+      (* properly generalize this to X*)
       Context (i : instance (option positive)).
       
-      Let e_classes := build_eclasses' i.(db).
+      Let optimal_nodes := select_optimal_nodes oP_le i.(analyses) i.(db).
 
       Definition decr fuel {A} `{WithDefault A} (f : _ -> A) :=
         match fuel with
@@ -584,16 +588,13 @@ Section WithVar.
         Context MT `{MonadTrans MT} (rec : V -> MT result term).
         
         Definition extract_weightedF x : MT result term :=
-          @! let x_a <- lift (result_of_option_else
+          @! (*let x_a <- lift (result_of_option_else
                                 (map.get i.(analyses) x)
                                 error:("No analysis for" x))
-            in
-            let x_class <- lift (result_of_option_else
-                                   (map.get e_classes x)
-                                   error:("No eclass for" x)) in
-            let (x_f, x_args, _) <- lift (result_of_option_else
-                                            (List.find (atom_le x_a) x_class)
-                                            error:(x "has no term of size <=" x_a)) in
+            in*)
+            let (x_f, x_args) <- lift (result_of_option_else
+                                   (map.get optimal_nodes x)
+                                   error:("No optimal node for for" x)) in
             let children <- list_Mmap rec x_args in
             ret (con x_f children).
       End __.
@@ -602,11 +603,16 @@ Section WithVar.
         memoizeF extract_weightedF (decr fuel (extract_weighted')).
 
       (* Memoized so that the same e_class is never accessed twice.
-         This makes the procedure at worst linear in the size of the egraph.
+         This makes the procedure at worst linear in the size of the egraph,
+         no matter the size of the output term.
+
+         Note: assumes that the egraph has been fully rebuilt,
+         but accepts a non-normal input.
        *)
       Definition extract_weighted fuel x :=
-        @!let x <- extract_weighted' fuel x map.empty in
-          ret fst x.
+        @!let x' := snd (UnionFind.find i.(equiv) x) in
+          let p <- extract_weighted' fuel x' map.empty in
+          ret fst p.
       
     (* Notes on verifying extraction:
        - cheap option: re-add the term and check id
@@ -652,15 +658,44 @@ Section WithVar.
     Instance WithDefault_squared {V} `{WithDefault V}
       : WithDefault (WithDefault V) := ltac:(assumption).
 
+    
+
+    (*TODO: move to Monad.v*)
+    Fixpoint list_Miter_breakable {A M} `{Monad M}
+      (f : A -> M bool) (l : list A) : M bool :=
+      match l with
+      | [] => @! ret false
+      | a :: al' => @! let break <- (f a) in
+                      if (break : bool) then ret true
+                      else (list_Miter_breakable f al')
+      end.
+    
+    (*TODO: move to Utils.EGraph.Defs *)
+    Fixpoint scheduled_saturate_until rfuel
+      {X} `{analysis V V X} 
+       schedule p fuel
+      : state (Defs.instance V V _ _ _ X) bool :=
+      match fuel with
+      | 0 => Mret false
+      | S fuel =>
+          let process e : state (Defs.instance V V _ _ _ X) bool :=
+            saturate_until succ V_default (analysis_result:= X)
+              spaced_list_intersect rfuel (snd e) p (fst e) in
+          @! let (done : bool) <- list_Miter_breakable process schedule in
+            if done then ret true
+            else (scheduled_saturate_until rfuel schedule p fuel)
+      end.
+
     (*Note: l has to contain the ctx_to_rules of the context *)
-    Definition egraph_equal l (rws : rule_set) rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
+    Definition egraph_equal l schedule
+      rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
       let comp : state instance (bool * _ * _) :=
         @!let {(state instance)} x1 <- add_open_term l true false [] e1 in
           let {(state instance)} x2 <- add_open_term l true false [] e2 in
           let {(state instance)} xt <- add_open_sort l true false [] t in
           let {(state instance)} _ <- rebuild rfuel in
-          let {state instance}res <- saturate_until succ V_default
-                       spaced_list_intersect rfuel rws (eq_proven x1 x2 xt) fuel in
+          let {state instance}res <-
+                scheduled_saturate_until rfuel schedule (eq_proven x1 x2 xt) fuel in
           ret (res, x1, x2)
       in (comp (empty_egraph default _)).
 
@@ -670,11 +705,112 @@ Section WithVar.
         @!let {state instance} x <- add_open_term l true false [] e in
           let {state instance} _ <- rebuild rfuel in
           let {state instance} _ <- saturate_until succ V_default
-                       spaced_list_intersect rfuel rws (Mret (M:=state _) false) fuel in
+        spaced_list_intersect rfuel rws (Mret (M:=state _) false) fuel in
           ret {state instance} x
       in
       let (x,g) := comp (empty_egraph default _) in
       extract_weighted g efuel x.
+
+    (*TODO: move to defining file*)
+    Arguments run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
+      idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
+      {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope 
+      {analysis_result}%type_scope {H} spaced_list_intersect%function_scope
+      rebuild_fuel%nat_scope rs _.
+
+
+    Fixpoint egraph_simpl_capped'
+      rws rn en (cap : nat) (e : Term.term V) x g
+      : result _ :=
+      match cap with
+      | O => error:("Term not reduced within" cap "iterations")
+      | S cap =>
+          let (_,g') := run1iter succ _ spaced_list_intersect rn rws g in
+          @! let e' <- extract_weighted g' en x in
+            if eqb e e' then (egraph_simpl_capped' rws rn en cap e' x g')            
+            else ret e'            
+      end.
+
+    Definition get_extract en x : resultT (state instance) _ :=
+      fun g => (extract_weighted g en x, g).
+    
+    Fixpoint egraph_simpl2_capped'
+      rws rn en (cap : nat) (e1 e2 : Term.term V) x1 x2
+      : resultT (state instance) (term * term) :=
+      match cap with
+      | O => Mret error:("Terms not reduced within" cap "iterations")
+      | S cap =>
+          @! let _ <- lift (run1iter succ _ spaced_list_intersect rn rws) in
+            let e1' <- get_extract en x1 in
+            let _ <- lift (log_event cap) in
+            let _ <- lift (log_event "extracted e1 and e2. cap is") in
+             let e2' <- get_extract en x2 in
+             if andb (eqb e1 e1') (eqb e2 e2')
+             then (egraph_simpl2_capped' rws rn en cap e1' e2' x1 x2)            
+             else ret (e1',e2')
+      end.
+
+    Definition egraph_simpl_capped l rws rn en cap e :=
+      let comp : state instance V :=
+        @!let {state instance} x <- add_open_term l true false [] e in
+          let {state instance} _ <- rebuild rn in
+          let {state instance} _ <- saturate_until succ V_default
+        spaced_list_intersect rn rws (Mret (M:=state _) false) 0 in
+          ret {state instance} x
+      in
+      let (x,g) := comp (empty_egraph default _) in
+      egraph_simpl_capped' rws rn en cap e x g.
+    
+    Definition egraph_simpl2_capped l rws rn en cap e1 e2 :=
+      let comp : state instance (V*V) :=
+        @!let {state instance} x1 <- add_open_term l true false [] e1 in
+        let {state instance} x2 <- add_open_term l true false [] e2 in
+          let {state instance} _ <- rebuild rn in
+          let {state instance} _ <- saturate_until succ V_default
+        spaced_list_intersect rn rws (Mret (M:=state _) false) 0 in
+          ret {state instance} (x1,x2)
+      in      
+      (@! let {resultT (state instance)} (x1,x2) <- lift comp in
+         (egraph_simpl2_capped' rws rn en cap e1 e2 x1 x2))
+        (empty_egraph default _).
+
+    (* Works by repeatedly running saturation for the minimum number of steps
+     until extraction produces a new term
+     *)
+    Fixpoint egraph_simpl_progressive l rws rn en cap e pfuel :=
+      match egraph_simpl_capped l rws rn en cap e with
+      | Success e' => decr pfuel (egraph_simpl_progressive l rws rn en cap e')
+      | _ => e
+      end.
+
+    
+    Import coqutil.Datatypes.dlist.
+    Polymorphic Fixpoint dapp (l1 l2 : dlist) :=
+      match l1 with
+      | dnil => l2
+      | dcons x l1 => dcons x (dapp l1 l2)
+      end.
+
+    Definition print_egraph
+      (g : instance) :=
+      (NamedList.named_map (NamedList.named_map (entry_value _ _))
+         (NamedList.named_map map.tuples (map.tuples g.(db))),
+        map.tuples g.(equiv).(UnionFind.parent _ _ _)).
+
+    (* Works by repeatedly running saturation for the minimum number of steps
+     until extraction produces a new term
+     *)    
+     Fixpoint egraph_simpl2_progressive l rws rn en cap e1 e2 pfuel debug :=
+      match egraph_simpl2_capped l rws rn en cap e1 e2 with
+      | (Success (e1',e2'), g) =>
+          decr pfuel (egraph_simpl2_progressive l rws rn en cap e1' e2')
+               (dcons "progressed, pfuel" (dcons pfuel (dapp g.(log _ _ _ _ _ _) debug)))
+      | (Failure err, g) =>
+          (e1,e2, (dcons "returned with error log"
+                      (dapp err
+                         (dcons "end of error log"
+                            (dapp g.(log _ _ _ _ _ _) debug)))))
+      end.
 
     End __.
     
@@ -706,7 +842,7 @@ Module PositiveInstantiation.
   
   (*TODO: the default is biting me*)
   Definition egraph_equal
-    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
+    : lang positive -> _ -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
@@ -716,11 +852,22 @@ Module PositiveInstantiation.
 
   Definition build_rule_set : nat -> lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
     rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
+
+  (*TODO: move *)
+  Definition rev_rule {V} (r : rule V) :=
+    match r with
+    | sort_eq_rule x x0 x1 => sort_eq_rule x x1 x0
+    | term_eq_rule x x0 x1 t => term_eq_rule x x1 x0 t
+    | _ => r
+    end.      
+
   
   (* all-in-one when it's not worth separating out the rule-building.
      Handles renaming.
      
-   (*TODO: handle term closing, sort matching*)
+   (*TODO: handle sort matching*)
+
+   (* TODO: extract magic numbers?*)
    *)
   Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)
@@ -733,7 +880,12 @@ Module PositiveInstantiation.
         let t' <- rename_sort (sort_var_to_con t) in
         (* Never filter context rules since they are always constant rules. *)
         let rules <- rename_lang (ctx_to_rules c ++ lang_filter l) in
-        ret (egraph_equal l' (build_rule_set rn rules l') rn n e1' e2' t')
+        (* build in backwards steps *)
+        let rev_rules := named_map rev_rule rules in
+        ret (egraph_equal l'
+               [(10%nat,build_rule_set rn rules l');
+                (1%nat,build_rule_set rn rev_rules l')]
+               rn n e1' e2' t')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
@@ -760,6 +912,20 @@ Module PositiveInstantiation.
       nat -> nat -> Term.term positive -> _ :=
     (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
+  
+  Definition egraph_simpl_progressive
+    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
+      nat -> nat -> Term.term positive -> nat -> _ :=
+    (egraph_simpl_progressive ptree_map_plus (@pos_trie_map)
+       Pos.succ sort_of (@compat_intersect)).
+
+  
+  Definition egraph_simpl2_progressive
+    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
+      nat -> nat -> Term.term positive -> Term.term positive -> nat -> _ :=
+    (egraph_simpl2_progressive ptree_map_plus (@pos_trie_map)
+       Pos.succ sort_of (@compat_intersect)).
+
   Definition egraph_simpl' {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
     (l : lang V) rn n en (c : Term.ctx _) (e : Term.term V) :=
     let rename_and_run : state (renaming V) _ :=
@@ -777,8 +943,43 @@ Module PositiveInstantiation.
     | _ => e
     end.
     
+
+  Definition egraph_simpl'_progressive {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
+    (l : lang V) rn cap en pn (c : Term.ctx _) (e : Term.term V) :=
+    let rename_and_run : state (renaming V) _ :=
+      @!let l' : lang positive <- rename_lang (ctx_to_rules c ++ l) in
+        let e' : term positive <- rename_term (var_to_con e) in
+        ret {state (renaming V)} (egraph_simpl_progressive l'
+                                    (build_rule_set rn (filter_eqn_rules l') l')
+                                    rn en cap e' pn)
+    in
+    (*2 so that sort_of is distict*)
+    let (e,r) := rename_and_run
+                   ({| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})
+    in con_to_var (map fst c) (unrename_term r e).
+
+  
+  Definition egraph_simpl2'_progressive
+    {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
+    (l : lang V) rn cap en pn (c : Term.ctx _) (e1 e2 : Term.term V) :=
+    let rename_and_run : state (renaming V) _ :=
+      @!let l' : lang positive <- rename_lang (ctx_to_rules c ++ l) in
+        let e1' : term positive <- rename_term (var_to_con e1) in
+        let e2' : term positive <- rename_term (var_to_con e2) in
+        ret {state (renaming V)} (egraph_simpl2_progressive l'
+                                    (build_rule_set rn (filter_eqn_rules l') l')
+                                    rn en cap e1' e2' pn dlist.dnil)
+    in
+    (*2 so that sort_of is distict*)
+    let '((e1,e2, debug),r) := rename_and_run
+                   ({| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})
+    in (con_to_var (map fst c) (unrename_term r e1),
+         con_to_var (map fst c) (unrename_term r e2),
+       debug).
+
   
 End PositiveInstantiation.
+
 
 Require Ascii.
 Module StringInstantiation.
@@ -792,7 +993,7 @@ Module StringInstantiation.
     let l' := ctx_to_rules c ++ l in
     egraph_equal string_ptree_map_plus (@string_list_trie_map)
       string_succ sort_of
-      (@PosListMap.compat_intersect) l' rw rn n
+      (@PosListMap.compat_intersect) l' [(n,rw)] rn 1
       (var_to_con e1) (var_to_con e2) (sort_var_to_con t).
   
   Definition build_rule_set : nat ->
@@ -803,3 +1004,4 @@ Module StringInstantiation.
       (* fold_right string_max "x0" *).
 
 End StringInstantiation.
+

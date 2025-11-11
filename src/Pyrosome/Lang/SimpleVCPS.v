@@ -6,7 +6,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches.
+  Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches Tools.EGraph.Automation.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.

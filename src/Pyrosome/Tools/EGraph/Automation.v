@@ -13,7 +13,7 @@ Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
-  From Utils Require Import EGraph.Defs.
+From Utils Require Import EGraph.Defs.
 Require Import Pyrosome.Tools.EGraph.Defs.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
@@ -21,6 +21,9 @@ Require Import Utils.Monad PosRenaming NArith.
 Import StateMonad.
 Require Import Tools.UnElab.
 Import StringInstantiation.
+
+
+From Pyrosome Require Import Tools.Matches.
 
 
 Definition print_egraph {X} (g : instance string string string_trie_map string_trie_map string_list_trie_map X) :=
@@ -120,8 +123,44 @@ Ltac egraph rule_transform n :=
     (*TODO: debug rules?*)
 (* TODO: think about variable order for query performance
 
-     *)
+ *)
 
+
+
+Lemma egraph_simpl2_sound
+  : forall  (rebuild_fuel cap fuel efuel : nat) (l : lang string)
+         (c : named_list string (sort string)) t e1 e2 e1' e2' debug,
+       wf_lang l ->
+       wf_ctx (Model:= core_model l) c ->
+       wf_term l c e1 t ->
+       wf_term l c e2 t ->
+       Defs.PositiveInstantiation.egraph_simpl2'_progressive
+         l rebuild_fuel cap fuel efuel c e1 e2 = (e1',e2', debug) ->
+       eq_term l c t e1' e2'->
+       eq_term l c t e1 e2.
+Admitted.
+
+(*TODO: remove the need for cap? *)
+Ltac egraph_simpl2 cap :=
+    compute_eq_compilation;
+    eapply (egraph_simpl2_sound 100 cap 100 100);
+    [prove_from_known_elabs| shelve | shelve | shelve | vm_compute; reflexivity | ].
+
+
+Ltac by_reduction :=
+  (*TODO: subsume reduce w/ egraph_simpl2*)
+  reduce;
+   (* egraph_simpl2 10%nat;*)
+    apply (egraph_sound 100 100 (@filter_rules _) );
+    [prove_from_known_elabs| | | | vm_compute; reflexivity].
+
+Ltac auto_elab_compiler :=
+  cleanup_elab_after
+  setup_elab_compiler;
+  repeat
+     ([>repeat t; cleanup_elab_after try 
+                    (try decompose_sort_eq; by_reduction)
+     | .. ]).
 
 
 (*******************************

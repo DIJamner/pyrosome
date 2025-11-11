@@ -4,7 +4,7 @@
  *)
 Require Import Equalities Orders ZArith Lists.List Uint63.
 Import ListNotations.
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Datatypes.dlist.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
@@ -16,6 +16,9 @@ Import StateMonad.
 Notation ne_list A := (A * list A)%type.
 Definition ne_map {A B} (f : A -> B) (l : ne_list A) : ne_list B :=
   (f (fst l), map f (snd l)).
+
+(*TODO: move*)
+#[export] Instance dlist_default : WithDefault dlist := dnil.
 
 Section WithMap.
   Context
@@ -124,12 +127,17 @@ Section WithMap.
               flags once per iteration
        *)
       analyses : idx_map analysis_result;
+      (* for debugging purposes *)
+      log : dlist
     }.
 
+  Definition log_event {E} (e:E) : state instance unit :=
+    fun  d => (tt, Build_instance d.(db) d.(equiv) d.(parents) d.(epoch) d.(worklist) d.(analyses) (dcons e d.(log))).
+    
   
   Definition empty_egraph : instance :=
     Build_instance map.empty (empty _ _ _ idx_zero)
-      map.empty idx_zero [] map.empty.
+      map.empty idx_zero [] map.empty default.
 
   Record erule_query_ptr :=
     {
@@ -214,7 +222,7 @@ Section WithMap.
                     end
       in
       let analyses' := map.put i.(analyses) a_ret meet_a in
-      (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses').
+      (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses' i.(log)).
   
   Definition union (v v1 : idx) : ST idx :=
     fun d =>
@@ -241,19 +249,19 @@ Section WithMap.
              ((union_repair v_old v' improved_new_analysis)::d.(worklist)) in
              
            ret {option} (v', Build_instance d.(db) uf' d.(parents)
-                     d.(epoch) worklist' analyses')).    
+                     d.(epoch) worklist' analyses' d.(log))).    
 
   Definition alloc : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses))).
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log))).
 
   (* used for ids that aren't expected to have nodes. Handles analysis specially *)
   Definition alloc_opaque : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := UnionFind.alloc _ _ _ idx_succ i.(equiv) in
        let analyses' := map.put i.(analyses) x_fresh default in
-       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) analyses')).
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) analyses' i.(log))).
   
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
@@ -285,7 +293,7 @@ Section WithMap.
   Definition find a : ST idx :=
     fun d =>
       let (uf',v') := UnionFind.find d.(equiv) a in
-      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses)).
+      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses) d.(log)).
 
   Definition canonicalize (a:atom) : ST atom :=
     let (f,args,o) := a in
@@ -296,16 +304,16 @@ Section WithMap.
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
                Build_instance d.(db) d.(equiv) d.(parents)
-                                                   d.(epoch) [] d.(analyses)).
+                                                   d.(epoch) [] d.(analyses)d.(log)).
 
   Definition push_worklist e : ST unit :=
     fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
-                                                      d.(epoch) (e::d.(worklist)) d.(analyses)).
+                                                      d.(epoch) (e::d.(worklist)) d.(analyses) d.(log)).
 
 
   Definition get_db : ST db_map := fun i => (i.(db),i).
   Definition set_db d : ST unit :=
-    fun i => (tt,Build_instance d i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+    fun i => (tt,Build_instance d i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   Definition db_lookup f args : ST (option idx) :=
     fun i =>
@@ -327,7 +335,7 @@ Section WithMap.
       let tbl_upd tbl :=
         map.put tbl args (Build_db_entry v_epoch v out_a) in
       let db' := map_update i.(db) f tbl_upd in
-      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   (* sets an entry in the db and updates parents appropriately *)
   Definition db_set' a out_a : ST unit :=
@@ -344,7 +352,7 @@ Section WithMap.
        *)
       let parents' := fold_left (fun m x => map_update m x (cons a))
                         (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
-      (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   (* If an analysis isn't found, use the default and push the idx for repair. *)
   Definition get_analysis x : ST analysis_result :=
@@ -375,7 +383,7 @@ Section WithMap.
   Definition db_remove a : ST unit :=
     fun i =>
       let db' := map_update i.(db) a.(atom_fn) (Basics.flip map.remove a.(atom_args)) in
-      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   
   (*
@@ -586,8 +594,8 @@ Section WithMap.
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
-    fun '(Build_instance db equiv parents epoch worklist analyses) =>
-      (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses).
+    fun '(Build_instance db equiv parents epoch worklist analyses log) =>
+      (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses log).
 
   Definition get_epoch : ST idx := fun i => (i.(epoch), i).
 
@@ -601,12 +609,12 @@ Section WithMap.
     fun d =>
       let p' := map.put d.(parents) x ps in
       (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
-      d.(analyses)).
+      d.(analyses) d.(log)).
   
   Definition remove_parents x : ST unit :=
     fun d =>
       let p' := map.remove d.(parents) x in
-      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist) d.(analyses)).
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist) d.(analyses) d.(log)).
 
   (*gets the parents and removes them. TODO: implement in one operation *)
   Definition pull_parents x : ST (list atom) :=
@@ -834,6 +842,9 @@ Arguments union {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
 
+Arguments log_event {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  {E}%type_scope e _.
 
 Arguments update_entry {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 

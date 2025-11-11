@@ -6,7 +6,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Tools.Matches.
+  Tools.Matches Tools.EGraph.Automation.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
      SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC.
 Import Core.Notations.
@@ -40,12 +40,7 @@ Derive heap_id'
                                           heap_id'
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As heap_id'_preserving.
-Proof.
-  auto_elab_compiler.
-  - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-Qed.
+Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve heap_id'_preserving : elab_pfs.
 
 
@@ -102,103 +97,5 @@ Derive heap_cc
        As heap_cc_preserving.
 Proof.
   auto_elab_compiler.
-  {
-    reduce.
-    repeat (term_cong; unfold Model.eq_term; try term_refl; compute_eq_compilation).
-    eapply eq_term_trans; cycle 1.
-    {
-      term_cong; unfold Model.eq_term.
-      - term_refl.
-      - term_refl.
-      - compute_eq_compilation.        
-        estep_under forget_eq_wkn' "forget_eq_wkn".
-      - term_refl.
-      - term_refl.
-    }
-    compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
-    1:estep_under value_subst "cmp_snoc".
-    compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
-    {
-      term_cong; unfold Model.eq_term.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - term_refl.
-      - compute_eq_compilation.
-        eapply eq_term_trans; cycle 1.
-        {
-          term_cong; unfold Model.eq_term.
-          - term_refl.
-          - term_refl.
-          - 
-            eapply eq_term_trans; cycle 1.
-            {
-              compute_eq_compilation.
-              eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
-            }
-            compute_eq_compilation.
-            {
-              term_cong; unfold Model.eq_term.
-              - term_refl.
-              - term_refl.
-              - term_refl.
-              - term_refl.
-              - compute_eq_compilation.
-                eredex_steps_with value_subst "id_emp_forget".
-            }
-          - term_refl.
-          - term_refl.
-        }
-        compute_eq_compilation.
-        eapply eq_term_trans; cycle 1.
-        {
-          term_cong; unfold Model.eq_term.
-          - term_refl.
-          - term_refl.
-          - eapply eq_term_sym.
-            eredex_steps_with value_subst "id_right".
-          - term_refl.
-          - term_refl.
-        }
-        compute_eq_compilation.
-        by_reduction.
-    }
-    eapply eq_term_trans; cycle 1.
-    {
-      eapply eq_term_sym.
-      eredex_steps_with value_subst "id_right".
-    }
-    compute_eq_compilation.
-    term_refl.
-  }
-  {
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    {
-      eredex_steps_with heap_cps_ops "eval get".
-    }
-    compute_eq_compilation.
-    reduce.
-    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
-    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
-    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
-    eapply eq_term_trans.
-    {      
-      eapply eq_term_sym.
-      eredex_steps_with forget_eq_wkn' "forget_eq_wkn".
-    }      
-    compute_eq_compilation.
-    eapply eq_term_trans; cycle 1.
-    {
-      eredex_steps_with value_subst "id_right".
-    }
-    compute_eq_compilation.
-    term_cong; try term_refl; unfold Model.eq_term; compute_eq_compilation.
-    by_reduction.
-  }
-Unshelve.
-  all: repeat t'.
 Qed.
 #[export] Hint Resolve heap_cc_preserving : elab_pfs.

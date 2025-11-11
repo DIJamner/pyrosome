@@ -188,7 +188,7 @@ Notation run_query := (run_query (@PosListMap.compat_intersect)).
 Notation run_query' := (run_query').
 Notation build_tries := (build_tries _ _ _ _ _ _ _ _).
 
-Compute (fst (run_query ex2_qset 0 ex2_graph)).
+(*Compute (fst (run_query ex2_qset 0 ex2_graph)).*)
 
 (* Lang tests *)
 (*
@@ -426,12 +426,12 @@ Definition logic : lang string :=
     
   ]}.
 
-
+(*
 Eval vm_compute in
     (map (uncurry (Defs.rule_to_log_rule (string_trie_map)
                      (@StringListMap.string_list_trie_map)
                      StringListMap.string_succ "sort_of"
-                     logic (analysis_result:=unit) 1000)) logic).
+                     logic (analysis_result:=unit) 1000)) logic). *)
 
 (*TODO: foo, bar rules not simplified.
 
@@ -647,6 +647,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
   (* TODO: issue not with filter! why is there no #2 in the conclusion eqs?
      where did #2 come from? did something not do a proper subst?
    *)
+  (*
   Compute (QueryOpt.optimize_sequent string string_Eqb
       StringListMap.string_succ string_default string
       StringListMap.string_trie_map StringListMap.string_trie_map
