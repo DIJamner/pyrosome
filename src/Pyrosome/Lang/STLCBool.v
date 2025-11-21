@@ -27,33 +27,33 @@ Definition stlc_bool_def : lang :=
       #"F" : #"val" "G" #"bool"
   ];
   [:| "G" : #"env",
-      "t" : #"ty",
+      "A" : #"ty",
       "cond" : #"exp" "G" #"bool",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
       -----------------------------------------------
-      #"if" "cond" "e2" "e3" : #"exp" "G" "t"
+      #"if" "cond" "e2" "e3" : #"exp" "G" "A"
   ];
   [:= "G" : #"env",
-      "t" : #"ty",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
       ----------------------------------------------- ("if-true")
       #"if" (#"ret" #"T") "e2" "e3" 
-      = "e2" : #"exp" "G" "t"
+      = "e2" : #"exp" "G" "A"
   ];
   [:= "G" : #"env",
-      "t" : #"ty",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
       ----------------------------------------------- ("if-false")
       #"if" (#"ret" #"F") "e2" "e3" 
-      = "e3" : #"exp" "G" "t"
+      = "e3" : #"exp" "G" "A"
   ]
   ]}.
 
 Derive stlc_bool
-       SuchThat (elab_lang_ext (stlc++exp_subst++value_subst) stlc_bool_def stlc_bool)
+       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_bool_def stlc_bool)
        As stlc_bool_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_bool_wf : elab_pfs.

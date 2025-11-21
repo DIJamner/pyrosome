@@ -10,13 +10,28 @@ Import Core.Notations.
 
 Require Coq.derive.Derive.
 
-
-Definition utlc_def : lang :=
+Definition usubst_def : lang :=
   {[l/subst [exp_subst++value_subst]
   [:| 
       -----------------------------------------------
       #"*" : #"ty"
   ];
+  [:| "G" : #"env",
+      "t" : #"ty"
+      -----------------------------------------------
+      #"Error" "t" : #"exp" "G" "t"
+  ]
+  ]}.
+
+Derive usubst
+       SuchThat (elab_lang_ext (exp_subst++value_subst) usubst_def usubst)
+       As usubst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve usubst_wf : elab_pfs. 
+
+
+Definition utlc_def : lang :=
+  {[l/subst [exp_subst++value_subst]
   [:| "G" : #"env",
       "e" : #"exp" (#"ext" "G" #"*") #"*"
       -----------------------------------------------
@@ -26,7 +41,7 @@ Definition utlc_def : lang :=
       "e" : #"exp" "G" #"*", 
       "e'" : #"exp" "G" #"*"
       -----------------------------------------------
-      #"uapp" "e" "e'" : #"exp" "G" #"*" (* necessary to make uapp as opposed to app? *)
+      #"uapp" "e" "e'" : #"exp" "G" #"*"
   ];
   [:= "G" : #"env",
       "e" : #"exp" (#"ext" "G" #"*") #"*",
@@ -39,7 +54,7 @@ Definition utlc_def : lang :=
   ]}.
 
 Derive utlc
-       SuchThat (elab_lang_ext (exp_subst++value_subst) utlc_def utlc)
+       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) utlc_def utlc)
        As utlc_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve utlc_wf : elab_pfs.

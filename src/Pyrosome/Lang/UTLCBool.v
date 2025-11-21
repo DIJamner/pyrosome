@@ -12,9 +12,7 @@ Require Coq.derive.Derive.
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
 
-(* Compute value_subst_def. 
-Locate term.  *)
-Definition utlc_only_boolha_def : lang :=
+Definition utf_def : lang :=
   {[l/subst [exp_subst++value_subst] 
   [:| "G" : #"env"
       -----------------------------------------------
@@ -23,7 +21,20 @@ Definition utlc_only_boolha_def : lang :=
   [:| "G" : #"env"
       -----------------------------------------------
       #"uF" : #"val" "G" #"*"
-  ];
+  ]
+  ]}.
+
+Derive utf
+       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) utf_def utf)
+       As utf_wf.
+Proof. auto_elab. Qed. 
+#[export] Hint Resolve utf_wf : elab_pfs.
+
+
+(* Compute value_subst_def. 
+Locate term.  *)
+Definition boolhuh_def : lang :=
+  {[l/subst [exp_subst++value_subst] 
   [:| "G" : #"env",
       "e" : #"exp" "G" #"*"
       -----------------------------------------------
@@ -42,36 +53,61 @@ Definition utlc_only_boolha_def : lang :=
   [:= "G" : #"env",
       "e" : #"exp" (#"ext" "G" #"*") #"*"
       ----------------------------------------------- ("bool?-func")
-      #"bool?" (#"ulambda" "e") 
+      #"bool?" (#"ret" (#"ulambda" "e")) 
       = #"ret" #"uF" : #"exp" "G" #"*"
   ]
   ]}.
 
-Derive utlc_only_boolha
-       SuchThat (elab_lang_ext (utlc++exp_subst++value_subst) utlc_only_boolha_def utlc_only_boolha)
-       As utlc_only_boolha_wf.
-Proof. auto_elab. Admitted. 
-#[export] Hint Resolve utlc_only_boolha_wf : elab_pfs.
+Derive boolhuh
+       SuchThat (elab_lang_ext (utf++utlc++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
+       As boolhuh_wf.
+Proof. auto_elab. Qed. 
+#[export] Hint Resolve boolhuh_wf : elab_pfs.
 
 
-Definition utlc_bool_uif_def : lang :=
+Definition utf_uapp_def : lang :=
   {[l/subst [exp_subst++value_subst] 
-  [:| "G" : #"env",
-      "t" : #"ty"
+  [:= "G" : #"env",
+      "e" : #"exp" "G" #"*"
+      ----------------------------------------------- ("uT uapp")
+      #"uapp" (#"ret" #"uT") "e" =
+      #"Error" #"*" : #"exp" "G" #"*"
+  ];
+  [:= "G" : #"env",
+      "e" : #"exp" "G" #"*"
+      ----------------------------------------------- ("uF uapp")
+      #"uapp" (#"ret" #"uF") "e" =
+      #"Error" #"*" : #"exp" "G" #"*"
+  ]
+  ]}.
+
+Derive utf_uapp
+       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) utf_uapp_def utf_uapp)
+       As utf_uapp_wf.
+Proof. auto_elab. Qed. 
+#[export] Hint Resolve utf_uapp_wf : elab_pfs.
+
+
+Definition uif_def : lang :=
+  {[l/subst [exp_subst++value_subst] 
+  [:| "G" : #"env", 
+      "e1" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" #"*",
+      "e3" : #"exp" "G" #"*"
       -----------------------------------------------
-      #"Error" : #"exp" "G" "t"
+      #"uif" "e1" "e2" "e3" : #"exp" "G" #"*"
   ];
   [:= "G" : #"env",
       "e2" : #"exp" "G" #"*",
       "e3" : #"exp" "G" #"*"
-      ----------------------------------------------- ("uif-true")
+      ----------------------------------------------- ("uif true")
       #"uif" (#"ret" #"uT") "e2" "e3" 
       = "e2" : #"exp" "G" #"*"
   ];
   [:= "G" : #"env",
       "e2" : #"exp" "G" #"*",
       "e3" : #"exp" "G" #"*"
-      ----------------------------------------------- ("uif-false")
+      ----------------------------------------------- ("uif false")
       #"uif" (#"ret" #"uF") "e2" "e3" 
       = "e3" : #"exp" "G" #"*"
   ];
@@ -79,52 +115,107 @@ Definition utlc_bool_uif_def : lang :=
       "e" : #"exp" (#"ext" "G" #"*") #"*",
       "e2" : #"exp" "G" #"*",
       "e3" : #"exp" "G" #"*"
-      ----------------------------------------------- ("uif-func")
+      ----------------------------------------------- ("uif func")
       #"uif" (#"ret" (#"ulambda" "e")) "e2" "e3" 
-      = #"Error" : #"exp" "G" #"*" 
+      = #"Error" #"*" : #"exp" "G" #"*" 
+  ];
+  [:= "G" : #"env",
+      "e2" : #"exp" "G" #"*",
+      "e3" : #"exp" "G" #"*"
+      ----------------------------------------------- ("uif Error")
+      #"uif" (#"Error" #"*") "e2" "e3"
+      = #"Error" #"*" : #"exp" "G" #"*" 
+  ];
+  [:= "G" : #"env",
+      "e" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" #"*",
+      "e3" : #"exp" "G" #"*"
+      ----------------------------------------------- ("uif uT")
+      #"uif" (#"uapp" (#"ret" #"uT") "e") "e2" "e3"
+      = #"Error" #"*" : #"exp" "G" #"*" 
+  ];
+  [:= "G" : #"env",
+      "e" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" #"*",
+      "e3" : #"exp" "G" #"*"
+      ----------------------------------------------- ("uif uF")
+      #"uif" (#"uapp" (#"ret" #"uF") "e") "e2" "e3"
+      = #"Error" #"*" : #"exp" "G" #"*" 
   ]
   ]}.
 
-Derive utlc_bool_uif
-       SuchThat (elab_lang_ext (utlc_only_boolha++exp_subst++value_subst) utlc_bool_uif_def utlc_bool_uif)
-       As utlc_bool_uif_wf.
+Derive uif
+       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) uif_def uif)
+       As uif_wf. (* leftmost is newest *)
 Proof. auto_elab. Qed.
-#[export] Hint Resolve utlc_bool_uif_wf : elab_pfs.
+#[export] Hint Resolve uif_wf : elab_pfs.
 
 
-Definition utlc_bool_mif_def : lang :=
+Definition mif_def : lang :=
   {[l/subst [exp_subst++value_subst] 
-  [:| "G" : #"env",
-      "t" : #"ty"
+  [:| "G" : #"env", 
+      "A" : #"ty",
+      "e1" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
       -----------------------------------------------
-      #"Error" : #"exp" "G" "t"
+      #"mif" "e1" "e2" "e3" : #"exp" "G" "A"
   ];
   [:= "G" : #"env",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
-      ----------------------------------------------- ("mif-true")
-      #"uif" (#"ret" #"uT") "e2" "e3" 
-      = "e2" : #"exp" "G" "t"
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif true")
+      #"mif" (#"ret" #"uT") "e2" "e3" 
+      = "e2" : #"exp" "G" "A"
   ];
   [:= "G" : #"env",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
-      ----------------------------------------------- ("mif-false")
-      #"uif" (#"ret" #"uF") "e2" "e3" 
-      = "e3" : #"exp" "G" "t"
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif false")
+      #"mif" (#"ret" #"uF") "e2" "e3" 
+      = "e3" : #"exp" "G" "A"
   ];
   [:= "G" : #"env",
+      "A" : #"ty",
       "e" : #"exp" (#"ext" "G" #"*") #"*",
-      "e2" : #"exp" "G" "t",
-      "e3" : #"exp" "G" "t"
-      ----------------------------------------------- ("mif-func")
-      #"uif" (#"ret" (#"ulambda" "e")) "e2" "e3" 
-      = #"Error" : #"exp" "G" "t" 
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif func")
+      #"mif" (#"ret" (#"ulambda" "e")) "e2" "e3" 
+      = #"Error" "A" : #"exp" "G" "A" 
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif Error")
+      #"mif" (#"Error" #"*") "e2" "e3"
+      = #"Error" "A" : #"exp" "G" "A" 
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif uT")
+      #"mif" (#"uapp" (#"ret" #"uT") "e") "e2" "e3"
+      = #"Error" "A" : #"exp" "G" "A" 
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e" : #"exp" "G" #"*",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("mif uF")
+      #"mif" (#"uapp" (#"ret" #"uF") "e") "e2" "e3"
+      = #"Error" "A" : #"exp" "G" "A" 
   ]
   ]}.
 
-Derive utlc_bool_mif
-       SuchThat (elab_lang_ext (utlc_only_boolha++exp_subst++value_subst) utlc_bool_mif_def utlc_bool_mif)
-       As utlc_bool_mif_wf.
+Derive mif
+       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) mif_def mif)
+       As mif_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve utlc_bool_mif_wf : elab_pfs.
+#[export] Hint Resolve mif_wf : elab_pfs.

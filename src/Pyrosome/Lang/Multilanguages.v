@@ -20,104 +20,99 @@ Definition hml_def : lang :=
         "A" : #"ty",
         "e" : #"exp" "G" "A"
         -----------------------------------------------
-        #"ttd" "A" "e" : #"exp" "G" #"*"
+        #"ttd_e" "A" "e" : #"exp" "G" #"*"
     ];
     [:| "G" : #"env",
         "A" : #"ty",
         "e" : #"exp" "G" #"*"
         -----------------------------------------------
-        #"dtt" "A" "e" : #"exp" "G" "A"
+        #"dtt_e" "A" "e" : #"exp" "G" "A"
     ];
     [:| "G" : #"env",
         "A" : #"ty",
         "v" : #"val" "G" "A"
         -----------------------------------------------
-        #"ttd" "A" "v" : #"val" "G" #"*"
+        #"ttd_v" "A" "v" : #"val" "G" #"*"
     ];
     [:| "G" : #"env",
         "A" : #"ty",
         "v" : #"val" "G" #"*"
         -----------------------------------------------
-        #"dtt" "A" "v" : #"val" "G" "A"
+        #"dtt_v" "A" "v" : #"val" "G" "A"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("dtt ret comm")
-        #"dtt" "A" (#"ret" "v") =
-        #"ret" (#"dtt" "A" "v") : #"exp" "G" "A"
+        #"dtt_e" "A" (#"ret" "v") =
+        #"ret" (#"dtt_v" "A" "v") : #"exp" "G" "A"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "v" : #"val" "G" "A"
         ----------------------------------------------- ("ttd ret comm")
-        #"ttd" "A" (#"ret" "v") =
-        #"ret" (#"ttd" "A" "v") : #"exp" "G" #"*"
+        #"ttd_e" "A" (#"ret" "v") =
+        #"ret" (#"ttd_v" "A" "v") : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("dtt star")
-        #"dtt" #"*" "v" =
-        "v" : #"exp" "G" #"*"
+        #"dtt_v" #"*" "v" =
+        "v" : #"val" "G" #"*"
     ];
     [:= "G" : #"env",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("ttd star")
-        #"ttd" #"*" "v" =
-        "v" : #"exp" "G" #"*"
+        #"ttd_v" #"*" "v" =
+        "v" : #"val" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt True")
-        #"dtt" #"bool" #"uT" =
-        #"T" : #"exp" "G" #"bool"
+        #"dtt_v" #"bool" #"uT" =
+        #"T" : #"val" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt False")
-        #"dtt" #"bool" #"uF" =
-        #"F" : #"exp" "G" #"bool"
+        #"dtt_v" #"bool" #"uF" =
+        #"F" : #"val" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd True")
-        #"ttd" #"bool" #"T" =
-        #"uT" : #"exp" "G" #"bool"
+        #"ttd_v" #"bool" #"T" =
+        #"uT" : #"val" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd False")
-        #"ttd" #"bool" #"F" =
-        #"uF" : #"exp" "G" #"bool"
+        #"ttd_v" #"bool" #"F" =
+        #"uF" : #"val" "G" #"*"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("dtt func")
-        #"dtt" (#"->" "A" "B") "v" =
-        #"lambda" "A" (#"dtt" "B" (#"uapp" (#"val_subst" #"wkn" #"ret" "v") (#"ttd" "A" #"hd"))) :
+        #"dtt_v" (#"->" "A" "B") "v" =
+        #"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd")))) :
         #"val" "G" (#"->" "A" "B")
-    ]
+    ];
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty",
         "v" : #"val" "G" (#"->" "A" "B")
         ----------------------------------------------- ("ttd func")
-        #"ttd" (#"->" "A" "B") "v" =
-        #"lambda" "A" (#"ttd" "B" (#"app" (#"val_subst" #"wkn" #"ret" "v") (#"dtt" "A" #"hd"))) :
-        #"val" "G" #"*"
-    ]
-    [:= "G" : #"env",
-        "v" : #"val" "G" "XXX",
-        "B" : #"ty"
-        ----------------------------------------------- ("dtt func")
-        #"ttd" (#"->" "A" "B") "v" =
-        #"lambda" "A" (#"ttd" "B" (#"app" (#"val_subst" #"wkn" #"ret" "v") (#"dtt" "A" #"hd"))) :
+        #"ttd_v" (#"->" "A" "B") "v" =
+        #"ulambda" (#"ttd_e" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"dtt_v" "A" #"hd")))) :
         #"val" "G" #"*"
     ]
     (* RULES HERE *)
     (* This is the stuff that's basically the same as Matthews and Findler *)
   ]}.
 Derive hml
-        SuchThat (elab_lang_ext (stlc_bool ++ 
-                                utlc_bool_uif ++ 
+        SuchThat (elab_lang_ext (utlc ++ 
+                                stlc ++ 
+                                stlc_bool ++
+                                utf ++
+                                usubst ++
                                 exp_subst++value_subst) 
                 hml_def hml)
         As hml_wf.
@@ -126,7 +121,7 @@ Proof. auto_elab. Qed.
 
 
 
-Definition lml_def : lang :=
+Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "G" : #"env",
         "cond" : #"ty",
@@ -138,7 +133,6 @@ Definition lml_def : lang :=
         #"type case" "cond" "e1" "e2" "e3"  : #"exp" "G" "A"
     ];
     [:= "G" : #"env",
-        "cond" : #"ty",
         "A" : #"ty",
         "e1" : #"exp" "G" "A",
         "e2" : #"exp" "G" "A",
@@ -146,9 +140,8 @@ Definition lml_def : lang :=
         ----------------------------------------------- ("type case star")
         #"type case" #"*" "e1" "e2" "e3"  
         = "e1" : #"exp" "G" "A"
-    ]
+    ];
     [:= "G" : #"env",
-        "cond" : #"ty",
         "A" : #"ty",
         "e1" : #"exp" "G" "A",
         "e2" : #"exp" "G" "A",
@@ -156,9 +149,8 @@ Definition lml_def : lang :=
         ----------------------------------------------- ("type case bool")
         #"type case" #"bool" "e1" "e2" "e3"  
         = "e2" : #"exp" "G" "A"
-    ]
+    ];
     [:= "G" : #"env",
-        "cond" : #"ty",
         "A" : #"ty",
         "t1" : #"ty",
         "t2" : #"ty",
@@ -170,14 +162,18 @@ Definition lml_def : lang :=
         = "e3" : #"exp" "G" "A"
     ]
   ]}.
-Derive lml
+Derive type_casing
         SuchThat (elab_lang_ext (stlc_bool ++ 
-                                utlc_bool_mif ++ 
+                                stlc ++
+                                usubst ++ 
                                 exp_subst++value_subst) 
-                lml_def lml)
-        As lml_wf.
+                type_casing_def type_casing)
+        As type_casing_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve lml_wf : elab_pfs.
+#[export] Hint Resolve type_casing_wf : elab_pfs.
+
+
+
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
 
@@ -197,7 +193,7 @@ because they can be expressed in terms of more primitive features, but we can do
 
 
 (* everytyhig will be v boudnaries (evantuaully) *)
-Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
+(* Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
   match Ty with
   | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
   | {{e #"bool"}} => match x with
@@ -242,4 +238,4 @@ Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
                      | _          => {{e #"uF"}}
                      end
   | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
-  end. 
+  end.  *)
