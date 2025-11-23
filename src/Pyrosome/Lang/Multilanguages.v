@@ -34,31 +34,18 @@ Definition boundaries_def : lang :=
         -----------------------------------------------
         #"ttd_v" "A" "v" : #"val" "G" #"*"
     ];
-    [:| "G" : #"env",
-        "A" : #"ty",
-        "v" : #"val" "G" #"*"
-        -----------------------------------------------
-        #"dtt_v" "A" "v" : #"val" "G" "A"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "v" : #"val" "G" #"*"
-        ----------------------------------------------- ("dtt ret comm")
-        #"dtt_e" "A" (#"ret" "v") =
-        #"ret" (#"dtt_v" "A" "v") : #"exp" "G" "A"
-    ];
     [:= "G" : #"env",
         "A" : #"ty",
         "v" : #"val" "G" "A"
         ----------------------------------------------- ("ttd ret comm")
         #"ttd_e" "A" (#"ret" "v") =
         #"ret" (#"ttd_v" "A" "v") : #"exp" "G" #"*"
-    ];
+    ]; (* need comm rule iff we have diff e and v boundaries *)
     [:= "G" : #"env",
-        "v" : #"val" "G" #"*"
+        "e" : #"exp" "G" #"*"
         ----------------------------------------------- ("dtt star")
-        #"dtt_v" #"*" "v" =
-        "v" : #"val" "G" #"*"
+        #"dtt_e" #"*" "e" =
+        "e" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "v" : #"val" "G" #"*"
@@ -68,21 +55,14 @@ Definition boundaries_def : lang :=
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt True")
-        #"dtt_v" #"bool" #"uT" =
-        #"T" : #"val" "G" #"bool"
+        #"dtt_e" #"bool" (#"ret" #"uT") =
+        #"ret" #"T" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt False")
-        #"dtt_v" #"bool" #"uF" =
-        #"F" : #"val" "G" #"bool"
+        #"dtt_e" #"bool" (#"ret" #"uF") =
+        #"ret" #"F" : #"exp" "G" #"bool"
     ];
-    (* [:= "G" : #"env",
-        "e" : #"exp" (#"ext" "G" #"*") #"*"
-        ----------------------------------------------- ("dtt func mismatch")
-        #"dtt_v" #"bool" (#"ulambda" "e") =
-        #"Error" #"bool" : #"val" "G" #"bool"
-    ]; *) (* PROBLEM: not well formed because #"Error" is an expression, but we want this to return a value *)
-            (* more reason for making error a value instead of expression? *)
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd True")
         #"ttd_v" #"bool" #"T" =
@@ -98,9 +78,9 @@ Definition boundaries_def : lang :=
         "B" : #"ty",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("dtt func")
-        #"dtt_v" (#"->" "A" "B") "v" =
-        #"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd")))) :
-        #"val" "G" (#"->" "A" "B")
+        #"dtt_e" (#"->" "A" "B") (#"ret" "v") =
+        #"ret" (#"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd"))))) :
+        #"exp" "G" (#"->" "A" "B")
     ];
     [:= "G" : #"env",
         "A" : #"ty",
@@ -108,11 +88,29 @@ Definition boundaries_def : lang :=
         "v" : #"val" "G" (#"->" "A" "B")
         ----------------------------------------------- ("ttd func")
         #"ttd_v" (#"->" "A" "B") "v" =
-        #"ulambda" (#"ttd_e" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"dtt_v" "A" #"hd")))) :
+        #"ulambda" (#"ttd_e" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt_e" "A" (#"ret" #"hd")))) :
         #"val" "G" #"*"
+    ];
+    [:= "G" : #"env",
+        "e" : #"exp" (#"ext" "G" #"*") #"*"
+        ----------------------------------------------- ("dtt ulambda mismatch")
+        #"dtt_e" #"bool" (#"ret" (#"ulambda" "e")) =
+        #"Error" #"bool" : #"exp" "G" #"bool"
+    ];
+    [:= "G" : #"env",
+        "A" : #"ty",
+        "B" : #"ty"
+        ----------------------------------------------- ("dtt uT mismatch")
+        #"dtt_e" (#"->" "A" "B") (#"ret" #"uT") =
+        #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
+    ];
+    [:= "G" : #"env",
+        "A" : #"ty",
+        "B" : #"ty"
+        ----------------------------------------------- ("dtt uF mismatch")
+        #"dtt_e" (#"->" "A" "B") (#"ret" #"uF") =
+        #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
     ]
-    (* RULES HERE *)
-    (* This is the stuff that's basically the same as Matthews and Findler *)
   ]}.
 Derive boundaries
         SuchThat (elab_lang_ext (utlc ++ 
