@@ -14,7 +14,7 @@ From Pyrosome.Lang Require Import UTLC.
 From Pyrosome.Lang Require Import STLCBool. 
 From Pyrosome.Lang Require Import UTLCBool. 
 
-Definition hml_def : lang :=
+Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "G" : #"env",
         "A" : #"ty",
@@ -76,6 +76,13 @@ Definition hml_def : lang :=
         #"dtt_v" #"bool" #"uF" =
         #"F" : #"val" "G" #"bool"
     ];
+    (* [:= "G" : #"env",
+        "e" : #"exp" (#"ext" "G" #"*") #"*"
+        ----------------------------------------------- ("dtt func mismatch")
+        #"dtt_v" #"bool" (#"ulambda" "e") =
+        #"Error" #"bool" : #"val" "G" #"bool"
+    ]; *) (* PROBLEM: not well formed because #"Error" is an expression, but we want this to return a value *)
+            (* more reason for making error a value instead of expression? *)
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd True")
         #"ttd_v" #"bool" #"T" =
@@ -107,17 +114,17 @@ Definition hml_def : lang :=
     (* RULES HERE *)
     (* This is the stuff that's basically the same as Matthews and Findler *)
   ]}.
-Derive hml
+Derive boundaries
         SuchThat (elab_lang_ext (utlc ++ 
                                 stlc ++ 
                                 stlc_bool ++
                                 utf ++
                                 usubst ++
                                 exp_subst++value_subst) 
-                hml_def hml)
-        As hml_wf.
+                boundaries_def boundaries)
+        As boundaries_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve hml_wf : elab_pfs.
+#[export] Hint Resolve boundaries_wf : elab_pfs.
 
 
 
@@ -172,6 +179,18 @@ Derive type_casing
 Proof. auto_elab. Qed.
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 
+(* The actual multilanguages *)
+Definition shared_fragment := 
+            boolhuh ++ 
+            utf_uapp_ulambda ++ utlc ++ utf ++ usubst ++
+            stlc_bool ++ stlc ++
+            exp_subst ++ value_subst.
+
+Definition high_level_multilanguage := 
+            boundaries ++ uif ++ shared_fragment.
+
+Definition low_level_multilanguage :=
+            type_casing ++ mif ++ shared_fragment.
 
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages

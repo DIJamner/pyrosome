@@ -65,7 +65,7 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve boolhuh_wf : elab_pfs.
 
 
-Definition utf_uapp_def : lang :=
+Definition utf_uapp_ulambda_def : lang :=
   {[l/subst [exp_subst++value_subst] 
   [:= "G" : #"env",
       "e" : #"exp" "G" #"*"
@@ -78,14 +78,24 @@ Definition utf_uapp_def : lang :=
       ----------------------------------------------- ("uF uapp")
       #"uapp" (#"ret" #"uF") "e" =
       #"Error" #"*" : #"exp" "G" #"*"
+  ];
+  [:= "G" : #"env"
+      ----------------------------------------------- ("uT ulambda")
+      #"ret" (#"ulambda" (#"ret" #"uT")) = 
+      #"Error" #"*" : #"exp" "G" #"*"
+  ];
+  [:= "G" : #"env"
+      ----------------------------------------------- ("uF ulambda")
+      #"ret" (#"ulambda" (#"ret" #"uF")) =
+      #"Error" #"*" : #"exp" "G" #"*"
   ]
   ]}.
 
-Derive utf_uapp
-       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) utf_uapp_def utf_uapp)
-       As utf_uapp_wf.
+Derive utf_uapp_ulambda
+       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) utf_uapp_ulambda_def utf_uapp_ulambda)
+       As utf_uapp_ulambda_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve utf_uapp_wf : elab_pfs.
+#[export] Hint Resolve utf_uapp_ulambda_wf : elab_pfs.
 
 
 Definition uif_def : lang :=
@@ -124,22 +134,6 @@ Definition uif_def : lang :=
       "e3" : #"exp" "G" #"*"
       ----------------------------------------------- ("uif Error")
       #"uif" (#"Error" #"*") "e2" "e3"
-      = #"Error" #"*" : #"exp" "G" #"*" 
-  ];
-  [:= "G" : #"env",
-      "e" : #"exp" "G" #"*",
-      "e2" : #"exp" "G" #"*",
-      "e3" : #"exp" "G" #"*"
-      ----------------------------------------------- ("uif uT")
-      #"uif" (#"uapp" (#"ret" #"uT") "e") "e2" "e3"
-      = #"Error" #"*" : #"exp" "G" #"*" 
-  ];
-  [:= "G" : #"env",
-      "e" : #"exp" "G" #"*",
-      "e2" : #"exp" "G" #"*",
-      "e3" : #"exp" "G" #"*"
-      ----------------------------------------------- ("uif uF")
-      #"uif" (#"uapp" (#"ret" #"uF") "e") "e2" "e3"
       = #"Error" #"*" : #"exp" "G" #"*" 
   ]
   ]}.
@@ -192,24 +186,6 @@ Definition mif_def : lang :=
       "e3" : #"exp" "G" "A"
       ----------------------------------------------- ("mif Error")
       #"mif" (#"Error" #"*") "e2" "e3"
-      = #"Error" "A" : #"exp" "G" "A" 
-  ];
-  [:= "G" : #"env",
-      "A" : #"ty",
-      "e" : #"exp" "G" #"*",
-      "e2" : #"exp" "G" "A",
-      "e3" : #"exp" "G" "A"
-      ----------------------------------------------- ("mif uT")
-      #"mif" (#"uapp" (#"ret" #"uT") "e") "e2" "e3"
-      = #"Error" "A" : #"exp" "G" "A" 
-  ];
-  [:= "G" : #"env",
-      "A" : #"ty",
-      "e" : #"exp" "G" #"*",
-      "e2" : #"exp" "G" "A",
-      "e3" : #"exp" "G" "A"
-      ----------------------------------------------- ("mif uF")
-      #"mif" (#"uapp" (#"ret" #"uF") "e") "e2" "e3"
       = #"Error" "A" : #"exp" "G" "A" 
   ]
   ]}.
