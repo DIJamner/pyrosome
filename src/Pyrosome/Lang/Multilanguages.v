@@ -190,6 +190,30 @@ Definition high_level_multilanguage :=
 Definition low_level_multilanguage :=
             type_casing ++ mif ++ shared_fragment.
 
+Definition h2l : compiler :=
+    match # from high_level_multilanguage with
+    | {{e #"uT"}} => {{e #"uT"}}
+    | {{e #"uF"}} => {{e #"uF"}}
+    | {{e #"T"}} => {{e #"T"}}
+    | {{e #"F"}} => {{e #"F"}}
+    | {{e #"Error" "A"}} => {{e #"Error" "A"}}
+    | {{e #"ret" "v"}} => {{e #"ret" {h2l {{e "v"}} } }}
+    | {{e #"lambda" "A" "e"}} => {{e #"lambda" "A" {h2l {{e "e"}} } }}
+    | {{e #"app" "e" "e'"}} => {{e #"app" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
+    | {{e #"ulambda" "e"}} => {{e #"ulambda" {h2l {{e "e"}} } }}
+    | {{e #"uapp" "e" "e'"}} => {{e #"uapp" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
+    | {{e #"bool?" "e"}} => {{e #"bool?" {h2l {{"e"}} } }}
+    | {{e #"if" "c" "thn" "els"}} => {{e #"if" {h2l "c"} {h2l "thn"} {h2l "els"} }}
+    | {{e #"uif" "c" "thn" "els"}} => {{e #"mif" {h2l "c"} {h2l "thn"} {h2l "els"} }}
+    | {{e #"dtt_e" "A" "e"}} => {{e "type case" "A" 
+                                    {h2l {{e "e"}} } 
+                                    (#"mif" {h2l {{e "e"}} } "T" "F") 
+                                    {h2l {{e #"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd")))) }} } 
+                                }}
+    (* missing ttd *)
+    end. 
+
+
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
@@ -210,7 +234,7 @@ because they can be expressed in terms of more primitive features, but we can do
 
 
 (* everytyhig will be v boudnaries (evantuaully) *)
-(* Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
+Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
   match Ty with
   | {{e #"*"}} => x (* this is how you put pyrosome things in gallina *)
   | {{e #"bool"}} => match x with
@@ -255,4 +279,4 @@ Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
                      | _          => {{e #"uF"}}
                      end
   | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
-  end.  *)
+  end. 
