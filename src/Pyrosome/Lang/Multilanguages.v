@@ -14,6 +14,11 @@ From Pyrosome.Lang Require Import UTLC.
 From Pyrosome.Lang Require Import STLCBool. 
 From Pyrosome.Lang Require Import UTLCBool. 
 
+(* copied from LinearCPS.v *)
+From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
+(*TODO: repackage this in compilers*)
+Import CompilerDefs.Notations.
+
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "G" : #"env",
@@ -202,13 +207,13 @@ Definition h2l : compiler :=
     | {{e #"app" "e" "e'"}} => {{e #"app" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
     | {{e #"ulambda" "e"}} => {{e #"ulambda" {h2l {{e "e"}} } }}
     | {{e #"uapp" "e" "e'"}} => {{e #"uapp" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
-    | {{e #"bool?" "e"}} => {{e #"bool?" {h2l {{"e"}} } }}
+    | {{e #"bool?" "e"}} => {{e #"bool?" {h2l {{e "e"}} } }}
     | {{e #"if" "c" "thn" "els"}} => {{e #"if" {h2l "c"} {h2l "thn"} {h2l "els"} }}
     | {{e #"uif" "c" "thn" "els"}} => {{e #"mif" {h2l "c"} {h2l "thn"} {h2l "els"} }}
-    | {{e #"dtt_e" "A" "e"}} => {{e "type case" "A" 
+    | {{e #"dtt_e" "A" "e"}} => {{e #"type case" "A" 
                                     {h2l {{e "e"}} } 
-                                    (#"mif" {h2l {{e "e"}} } "T" "F") 
-                                    {h2l {{e #"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd")))) }} } 
+                                    (#"mif" {h2l {{e "e"}} } (#"ret" "T") (#"ret" "F")) 
+                                    {h2l {{e #"ret" (#"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd"))))) }} } 
                                 }}
     (* missing ttd *)
     end. 
