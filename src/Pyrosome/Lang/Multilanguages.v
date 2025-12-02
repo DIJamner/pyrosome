@@ -223,7 +223,7 @@ Definition h2l_def : compiler :=
     (* order of implicit vars is order of context vars *)
     end. 
 
-(* in case needed, defined in Tools.Matches, Elab.ElabComopoilers *)
+(* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
 (* semantic properties are in SemanticsPreservingDefs.v *)
 
 (* Check h2l_def.  *)
