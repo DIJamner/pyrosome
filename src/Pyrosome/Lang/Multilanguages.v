@@ -14,9 +14,10 @@ From Pyrosome.Lang Require Import UTLC.
 From Pyrosome.Lang Require Import STLCBool. 
 From Pyrosome.Lang Require Import UTLCBool. 
 
+From Pyrosome.Lang Require Import PolySubst. 
+
 (* copied from LinearCPS.v *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-(*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Definition boundaries_def : lang :=
@@ -25,66 +26,53 @@ Definition boundaries_def : lang :=
         "A" : #"ty",
         "e" : #"exp" "G" "A"
         -----------------------------------------------
-        #"ttd_e" "A" "e" : #"exp" "G" #"*"
+        #"ttd" "A" "e" : #"exp" "G" #"*"
     ];
     [:| "G" : #"env",
         "A" : #"ty",
         "e" : #"exp" "G" #"*"
         -----------------------------------------------
-        #"dtt_e" "A" "e" : #"exp" "G" "A"
+        #"dtt" "A" "e" : #"exp" "G" "A"
     ];
-    [:| "G" : #"env",
-        "A" : #"ty",
-        "v" : #"val" "G" "A"
-        -----------------------------------------------
-        #"ttd_v" "A" "v" : #"val" "G" #"*"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "v" : #"val" "G" "A"
-        ----------------------------------------------- ("ttd ret comm")
-        #"ttd_e" "A" (#"ret" "v") =
-        #"ret" (#"ttd_v" "A" "v") : #"exp" "G" #"*"
-    ]; (* need comm rule iff we have diff e and v boundaries *)
     [:= "G" : #"env",
         "e" : #"exp" "G" #"*"
         ----------------------------------------------- ("dtt star")
-        #"dtt_e" #"*" "e" =
+        #"dtt" #"*" "e" =
         "e" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
-        "v" : #"val" "G" #"*"
+        "e" : #"exp" "G" #"*"
         ----------------------------------------------- ("ttd star")
-        #"ttd_v" #"*" "v" =
-        "v" : #"val" "G" #"*"
+        #"ttd" #"*" "e" =
+        "e" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt True")
-        #"dtt_e" #"bool" (#"ret" #"uT") =
+        #"dtt" #"bool" (#"ret" #"uT") =
         #"ret" #"T" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt False")
-        #"dtt_e" #"bool" (#"ret" #"uF") =
+        #"dtt" #"bool" (#"ret" #"uF") =
         #"ret" #"F" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd True")
-        #"ttd_v" #"bool" #"T" =
-        #"uT" : #"val" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"T") =
+        #"ret" #"uT" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd False")
-        #"ttd_v" #"bool" #"F" =
-        #"uF" : #"val" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"F") =
+        #"ret" #"uF" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty",
         "v" : #"val" "G" #"*"
         ----------------------------------------------- ("dtt func")
-        #"dtt_e" (#"->" "A" "B") (#"ret" "v") =
-        #"ret" (#"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd"))))) :
+        #"dtt" (#"->" "A" "B") (#"ret" "v") =
+        #"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))) :
         #"exp" "G" (#"->" "A" "B")
     ];
     [:= "G" : #"env",
@@ -92,28 +80,28 @@ Definition boundaries_def : lang :=
         "B" : #"ty",
         "v" : #"val" "G" (#"->" "A" "B")
         ----------------------------------------------- ("ttd func")
-        #"ttd_v" (#"->" "A" "B") "v" =
-        #"ulambda" (#"ttd_e" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt_e" "A" (#"ret" #"hd")))) :
-        #"val" "G" #"*"
+        #"ttd" (#"->" "A" "B") (#"ret" "v") =
+        #"ret" (#"ulambda" (#"ttd" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt" "A" (#"ret" #"hd"))))) :
+        #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "e" : #"exp" (#"ext" "G" #"*") #"*"
         ----------------------------------------------- ("dtt ulambda mismatch")
-        #"dtt_e" #"bool" (#"ret" (#"ulambda" "e")) =
+        #"dtt" #"bool" (#"ret" (#"ulambda" "e")) =
         #"Error" #"bool" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty"
         ----------------------------------------------- ("dtt uT mismatch")
-        #"dtt_e" (#"->" "A" "B") (#"ret" #"uT") =
+        #"dtt" (#"->" "A" "B") (#"ret" #"uT") =
         #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
     ];
     [:= "G" : #"env",
         "A" : #"ty",
         "B" : #"ty"
         ----------------------------------------------- ("dtt uF mismatch")
-        #"dtt_e" (#"->" "A" "B") (#"ret" #"uF") =
+        #"dtt" (#"->" "A" "B") (#"ret" #"uF") =
         #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
     ]
   ]}.
@@ -133,14 +121,15 @@ Proof. auto_elab. Qed.
 
 Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
-    [:| "G" : #"env",
-        "cond" : #"ty",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
+    [:| "D" : #"ty_env",
+        "G" : #"env" "D",
+        "cond" : #"ty" "D",
+        "A" : #"ty" "D",
+        "e1" : #"exp" "D" "G" "A",
+        "e2" : #"exp" "D" "G" "A",
+        "e3" : #"exp" (#"ext" "D") "G" "A" (* needs to have extneded type environment *)
         -----------------------------------------------
-        #"type case" "cond" "e1" "e2" "e3"  : #"exp" "G" "A"
+        #"type case" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" "A"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
@@ -169,13 +158,17 @@ Definition type_casing_def : lang :=
         "e3" : #"exp" "G" "A"
         ----------------------------------------------- ("type case func")
         #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
-        = "e3" : #"exp" "G" "A"
+        = #"exp_subst" (#"snoc" #"ty_id" "t1" "t2") "e3" : #"exp" "D" "G" "A"
+        (* = "e3" : #"exp" "G" "A"  *)
+        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
+        (* some page in the paper they sent you has a rule like this *)
     ]
   ]}.
 Derive type_casing
         SuchThat (elab_lang_ext (stlc_bool ++ 
                                 stlc ++
                                 usubst ++ 
+                                poly ++
                                 exp_subst++value_subst) 
                 type_casing_def type_casing)
         As type_casing_wf.
@@ -184,7 +177,7 @@ Proof. auto_elab. Qed.
 
 (* The actual multilanguages *)
 Definition shared_fragment := 
-            boolhuh ++ 
+            boolhuh ++ (* think abt why can't compile s*)
             utf_uapp_ulambda ++ utlc ++ utf ++ usubst ++
             stlc_bool ++ stlc ++
             exp_subst ++ value_subst.
@@ -195,30 +188,57 @@ Definition high_level_multilanguage :=
 Definition low_level_multilanguage :=
             type_casing ++ mif ++ shared_fragment.
 
-Definition h2l : compiler :=
+Print boolhuh. (* here you can see implicit argumetns *)
+
+(* compiler *)
+
+Local Notation compiler := (compiler string). 
+Definition h2l_def : compiler :=
     match # from high_level_multilanguage with
-    | {{e #"uT"}} => {{e #"uT"}}
-    | {{e #"uF"}} => {{e #"uF"}}
-    | {{e #"T"}} => {{e #"T"}}
-    | {{e #"F"}} => {{e #"F"}}
-    | {{e #"Error" "A"}} => {{e #"Error" "A"}}
-    | {{e #"ret" "v"}} => {{e #"ret" {h2l {{e "v"}} } }}
-    | {{e #"lambda" "A" "e"}} => {{e #"lambda" "A" {h2l {{e "e"}} } }}
-    | {{e #"app" "e" "e'"}} => {{e #"app" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
-    | {{e #"ulambda" "e"}} => {{e #"ulambda" {h2l {{e "e"}} } }}
-    | {{e #"uapp" "e" "e'"}} => {{e #"uapp" {h2l {{e "e"}} } {h2l {{e "e'"}} } }}
-    | {{e #"bool?" "e"}} => {{e #"bool?" {h2l {{e "e"}} } }}
-    | {{e #"if" "c" "thn" "els"}} => {{e #"if" {h2l "c"} {h2l "thn"} {h2l "els"} }}
-    | {{e #"uif" "c" "thn" "els"}} => {{e #"mif" {h2l "c"} {h2l "thn"} {h2l "els"} }}
-    | {{e #"dtt_e" "A" "e"}} => {{e #"type case" "A" 
-                                    {h2l {{e "e"}} } 
-                                    (#"mif" {h2l {{e "e"}} } (#"ret" "T") (#"ret" "F")) 
-                                    {h2l {{e #"ret" (#"lambda" "A" (#"dtt_e" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ret" (#"ttd_v" "A" #"hd"))))) }} } 
-                                }}
-    (* missing ttd *)
+    (* | {{e #"uT" "G" }} => {{e #"uT" }} (* add implicit argumemts on LHS *)
+    | {{e #"uF" "G"}} => {{e #"uF"}}
+    | {{e #"T" "G"}} => {{e #"T"}}
+    | {{e #"F" "G"}} => {{e #"F"}}
+    (* maybe don't need these explicit ones either *)
+    | {{e #"Error" "G" "A"}} => {{e #"Error" "A"}}
+    | {{e #"ret" "G" "v"}} => {{e #"ret" "v"}}
+    | {{e #"lambda" "G" "A" "e"}} => {{e #"lambda" "A" "e"}}
+    (* need a rule for types (but actually don't bc identity is taken care of) *)
+    | {{e #"app" "G" "e" "e'"}} => {{e #"app" "e" "e'"}}
+    | {{e #"ulambda" "G" "e"}} => {{e #"ulambda" "e"}}
+    | {{e #"uapp" "G" "e" "e'"}} => {{e #"uapp" "e" "e'"}}
+    | {{e #"bool?" "G" "e"}} => {{e #"bool?" "e"}}
+    | {{e #"if" "G" "c" "thn" "els"}} => {{e #"if" "c" "thn" "els" }} *)
+    | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
+    | {{e #"dtt" "G" "A" "e"}} => {{e #"type case" "A" (* diff from A below. TAKE CARE OF A AND B *)
+                                    "e" 
+                                    (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
+                                    (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd")))))) 
+                                    }}
+    | {{e #"ttd" "G" "A" "e"}} => {{e #"type case" "A" 
+                                    "e"
+                                    (#"if" "e" (#"ret" #"uT") (#"ret" #"uF")) 
+                                    (#"ret" (#"ulambda" (#"ttd" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt" "A" (#"ret" #"hd")))))) 
+                                    }}
+    (* order of implicit vars is order of context vars *)
     end. 
 
+(* in case needed, defined in Tools.Matches, Elab.ElabComopoilers *)
+(* semantic properties are in SemanticsPreservingDefs.v *)
 
+(* Check h2l_def.  *)
+(* Print compiler.  *)
+
+Derive h2l (* proof mirrors language proof *)
+       SuchThat (elab_preserving_compiler [] (* compiler root: for base language *)
+                                          low_level_multilanguage (* target language—ALL of it *)
+                                          h2l_def
+                                          h2l
+                                          high_level_multilanguage) (* source  *) 
+                                          (* ideally, only boundaries ++ uif *)
+       As h2l_preserving.
+Proof. auto_elab_compiler. Qed.
+#[export] Hint Resolve h2l_preserving : elab_pfs.
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
