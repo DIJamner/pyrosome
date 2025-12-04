@@ -15,6 +15,7 @@ From Pyrosome.Lang Require Import STLCBool.
 From Pyrosome.Lang Require Import UTLCBool. 
 
 From Pyrosome.Lang Require Import PolySubst. 
+From Pyrosome.Compilers Require Import Parameterizer. 
 
 (* copied from LinearCPS.v *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
@@ -119,7 +120,7 @@ Proof. auto_elab. Qed.
 
 
 
-Definition type_casing_def : lang :=
+(* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "D" : #"ty_env",
         "G" : #"env" "D",
@@ -127,7 +128,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" "D",
         "e1" : #"exp" "D" "G" "A",
         "e2" : #"exp" "D" "G" "A",
-        "e3" : #"exp" (#"ext" "D") "G" "A" (* needs to have extneded type environment *)
+        "e3" : #"exp" (#"ext" (#"ext" "D")) "G" "A" (* needs to have extneded type environment *)
         -----------------------------------------------
         #"type case" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" "A"
     ];
@@ -163,12 +164,56 @@ Definition type_casing_def : lang :=
         (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
         (* some page in the paper they sent you has a rule like this *)
     ]
+  ]}. *)
+Definition type_casing_def : lang :=
+  {[l/subst [exp_subst++value_subst] 
+    [:| "G" : #"env",
+        "cond" : #"ty",
+        "A" : #"ty",
+        "e1" : #"exp" "G" "A",
+        "e2" : #"exp" "G" "A",
+        "e3" : #"exp" "G" "A"
+        -----------------------------------------------
+        #"type case" "cond" "e1" "e2" "e3"  : #"exp" "G" "A"
+    ];
+    [:= "G" : #"env",
+        "A" : #"ty",
+        "e1" : #"exp" "G" "A",
+        "e2" : #"exp" "G" "A",
+        "e3" : #"exp" "G" "A"
+        ----------------------------------------------- ("type case star")
+        #"type case" #"*" "e1" "e2" "e3"  
+        = "e1" : #"exp" "G" "A"
+    ];
+    [:= "G" : #"env",
+        "A" : #"ty",
+        "e1" : #"exp" "G" "A",
+        "e2" : #"exp" "G" "A",
+        "e3" : #"exp" "G" "A"
+        ----------------------------------------------- ("type case bool")
+        #"type case" #"bool" "e1" "e2" "e3"  
+        = "e2" : #"exp" "G" "A"
+    ];
+    [:= "G" : #"env",
+        "A" : #"ty",
+        "t1" : #"ty",
+        "t2" : #"ty",
+        "e1" : #"exp" "G" "A",
+        "e2" : #"exp" "G" "A",
+        "e3" : #"exp" "G" "A"
+        ----------------------------------------------- ("type case func")
+        #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
+        = "e3" : #"exp" "G" "A" 
+        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
+        (* some page in the paper they sent you has a rule like this *)
+    ]
   ]}.
+
+(* Compute type_casing_def.  *)
 Derive type_casing
         SuchThat (elab_lang_ext (stlc_bool ++ 
                                 stlc ++
                                 usubst ++ 
-                                poly ++
                                 exp_subst++value_subst) 
                 type_casing_def type_casing)
         As type_casing_wf.
@@ -181,14 +226,23 @@ Definition shared_fragment :=
             utf_uapp_ulambda ++ utlc ++ utf ++ usubst ++
             stlc_bool ++ stlc ++
             exp_subst ++ value_subst.
+Hint Unfold shared_fragment : auto_elab. 
+
+(* Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] (id_compiler shared_fragment) shared_fragment.
+Proof. 
+    apply id_compiler_preserving. 
+    prove_from_known_elabs.  *)
 
 Definition high_level_multilanguage := 
             boundaries ++ uif ++ shared_fragment.
+Hint Unfold high_level_multilanguage : auto_elab. 
 
 Definition low_level_multilanguage :=
             type_casing ++ mif ++ shared_fragment.
+Hint Unfold high_level_multilanguage : auto_elab. 
 
-Print boolhuh. (* here you can see implicit argumetns *)
+(* Print boolhuh.  *)
+(* here you can see implicit argumetns *)
 
 (* compiler *)
 
@@ -210,7 +264,7 @@ Definition h2l_def : compiler :=
     | {{e #"bool?" "G" "e"}} => {{e #"bool?" "e"}}
     | {{e #"if" "G" "c" "thn" "els"}} => {{e #"if" "c" "thn" "els" }} *)
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
-    | {{e #"dtt" "G" "A" "e"}} => {{e #"type case" "A" (* diff from A below. TAKE CARE OF A AND B *)
+    | {{e #"dtt" "G" "C" "e"}} => {{e #"type case" "C" (* diff from A below. TAKE CARE OF A AND B *)
                                     "e" 
                                     (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
                                     (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd")))))) 
@@ -229,6 +283,11 @@ Definition h2l_def : compiler :=
 (* Check h2l_def.  *)
 (* Print compiler.  *)
 
+(* try running make *)
+
+(* id_compiler shared_fragment *)
+
+
 Derive h2l (* proof mirrors language proof *)
        SuchThat (elab_preserving_compiler [] (* compiler root: for base language *)
                                           low_level_multilanguage (* target language—ALL of it *)
@@ -237,7 +296,11 @@ Derive h2l (* proof mirrors language proof *)
                                           high_level_multilanguage) (* source  *) 
                                           (* ideally, only boundaries ++ uif *)
        As h2l_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. unfold low_level_multilanguage. unfold high_level_multilanguage. 
+        unfold shared_fragment. 
+        (* auto_elab_compiler.  *)
+        admit. 
+Qed.
 #[export] Hint Resolve h2l_preserving : elab_pfs.
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
@@ -257,7 +320,7 @@ because they can be expressed in terms of more primitive features, but we can do
 (* high level multilanguage which has boundaries—has set of eqns that fully describe the boundaries *)
 (* low level multilanguage which has type cases—this is the one with mif *)
 
-
+(* 
 (* everytyhig will be v boudnaries (evantuaully) *)
 Definition dtt_e {G : term} (x : term) (Ty : term) : Ty :=
   match Ty with
@@ -304,4 +367,4 @@ Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
                      | _          => {{e #"uF"}}
                      end
   | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
-  end. 
+  end.  *)
