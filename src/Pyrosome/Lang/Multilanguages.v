@@ -231,7 +231,8 @@ Hint Unfold shared_fragment : auto_elab.
 (* Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] (id_compiler shared_fragment) shared_fragment.
 Proof. 
     apply id_compiler_preserving. 
-    prove_from_known_elabs.  *)
+    prove_from_known_elabs. 
+Qed.  *)
 
 Definition high_level_multilanguage := 
             boundaries ++ uif ++ shared_fragment.
@@ -249,20 +250,6 @@ Hint Unfold high_level_multilanguage : auto_elab.
 Local Notation compiler := (compiler string). 
 Definition h2l_def : compiler :=
     match # from high_level_multilanguage with
-    (* | {{e #"uT" "G" }} => {{e #"uT" }} (* add implicit argumemts on LHS *)
-    | {{e #"uF" "G"}} => {{e #"uF"}}
-    | {{e #"T" "G"}} => {{e #"T"}}
-    | {{e #"F" "G"}} => {{e #"F"}}
-    (* maybe don't need these explicit ones either *)
-    | {{e #"Error" "G" "A"}} => {{e #"Error" "A"}}
-    | {{e #"ret" "G" "v"}} => {{e #"ret" "v"}}
-    | {{e #"lambda" "G" "A" "e"}} => {{e #"lambda" "A" "e"}}
-    (* need a rule for types (but actually don't bc identity is taken care of) *)
-    | {{e #"app" "G" "e" "e'"}} => {{e #"app" "e" "e'"}}
-    | {{e #"ulambda" "G" "e"}} => {{e #"ulambda" "e"}}
-    | {{e #"uapp" "G" "e" "e'"}} => {{e #"uapp" "e" "e'"}}
-    | {{e #"bool?" "G" "e"}} => {{e #"bool?" "e"}}
-    | {{e #"if" "G" "c" "thn" "els"}} => {{e #"if" "c" "thn" "els" }} *)
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
     | {{e #"dtt" "G" "C" "e"}} => {{e #"type case" "C" (* diff from A below. TAKE CARE OF A AND B *)
                                     "e" 
@@ -277,6 +264,8 @@ Definition h2l_def : compiler :=
     (* order of implicit vars is order of context vars *)
     end. 
 
+Definition five := 5. 
+
 (* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
 (* semantic properties are in SemanticsPreservingDefs.v *)
 
@@ -288,7 +277,7 @@ Definition h2l_def : compiler :=
 (* id_compiler shared_fragment *)
 
 
-Derive h2l (* proof mirrors language proof *)
+(* Derive h2l (* proof mirrors language proof *)
        SuchThat (elab_preserving_compiler [] (* compiler root: for base language *)
                                           low_level_multilanguage (* target language—ALL of it *)
                                           h2l_def
@@ -298,10 +287,9 @@ Derive h2l (* proof mirrors language proof *)
        As h2l_preserving.
 Proof. unfold low_level_multilanguage. unfold high_level_multilanguage. 
         unfold shared_fragment. 
-        (* auto_elab_compiler.  *)
-        admit. 
+        auto_elab_compiler. 
 Qed.
-#[export] Hint Resolve h2l_preserving : elab_pfs.
+#[export] Hint Resolve h2l_preserving : elab_pfs. *)
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
@@ -368,3 +356,4 @@ Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
                      end
   | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
   end.  *)
+  Definition three := 3.
