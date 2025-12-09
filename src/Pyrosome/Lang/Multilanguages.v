@@ -237,15 +237,13 @@ Definition test1 := preserving_compiler_ext. (* from CompilerDefs *)
 Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
 (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
 
-Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] (id_compiler shared_fragment) shared_fragment.
+Definition shared_fragment_compiler := id_compiler shared_fragment. 
+
+Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] shared_fragment_compiler shared_fragment.
 Proof. 
     unfold shared_fragment. 
-    apply id_compiler_preserving; prove_from_known_elabs.
-    (* below is to prove goal `Eqb_ok string_Eqb`. *)
-    unfold Eqb_ok. intros. destruct (eqb a b) eqn:EQB. 
-    - apply String.eqb_eq. apply EQB. 
-    - unfold eqb in *. unfold string_Eqb in EQB. 
-        unfold not. intros. apply String.eqb_eq in H. rewrite H in EQB. discriminate EQB. 
+    apply id_compiler_preserving; prove_from_known_elabs. 
+    typeclasses eauto. 
 Qed. 
 Hint Resolve shared_fragment_compiles : auto_elab. 
 
@@ -264,22 +262,22 @@ Hint Unfold high_level_multilanguage : auto_elab.
 
 Local Notation compiler := (compiler string). 
 Definition h2l_def : compiler :=
-    match # from high_level_multilanguage with
+    match # from (boundaries ++ uif) with
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
     | {{e #"dtt" "G" "C" "e"}} => {{e #"type case" "C" (* diff from A below. TAKE CARE OF A AND B *)
                                     "e" 
                                     (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
-                                    (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd")))))) 
+                                    (#"Error" "C")
+                                    (* (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))))  *)
                                     }}
     | {{e #"ttd" "G" "A" "e"}} => {{e #"type case" "A" 
                                     "e"
                                     (#"if" "e" (#"ret" #"uT") (#"ret" #"uF")) 
-                                    (#"ret" (#"ulambda" (#"ttd" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt" "A" (#"ret" #"hd")))))) 
+                                    (#"Error" "C")
+                                    (* (#"ret" (#"ulambda" (#"ttd" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt" "A" (#"ret" #"hd"))))))  *)
                                     }}
     (* order of implicit vars is order of context vars *)
     end. 
-
-Definition five := 5. 
 
 (* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
 (* semantic properties are in SemanticsPreservingDefs.v *)
@@ -289,9 +287,9 @@ Locate auto_elab_compiler.  *)
 
 (* Derive h2l *)
 
-Derive h2l 
+(* Derive h2l 
         SuchThat (elab_preserving_compiler 
-                    (id_compiler shared_fragment)
+                    shared_fragment_compiler
                     low_level_multilanguage
                     h2l_def
                     h2l
@@ -300,8 +298,12 @@ Derive h2l
         As h2l_preserving. 
 Proof. unfold low_level_multilanguage. 
         unfold shared_fragment. 
+        unfold shared_fragment_compiler. 
         auto_elab_compiler. 
-Admitted. 
+        Compute mif_def. 
+        19 :{ 
+            solve_in. 
+Admitted.  *)
 
 
 (* proof mirrors language proof *)
@@ -316,8 +318,11 @@ Admitted.
 Proof. unfold low_level_multilanguage. unfold high_level_multilanguage. 
         unfold shared_fragment. 
         auto_elab_compiler. 
-Admitted.  *)
-#[export] Hint Resolve h2l_preserving : elab_pfs.
+        lazymatch goal with 
+        | |- ?G => idtac G
+        end. 
+Admitted. 
+#[export] Hint Resolve h2l_preserving : elab_pfs. *)
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
