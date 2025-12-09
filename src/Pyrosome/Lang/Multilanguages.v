@@ -15,11 +15,12 @@ From Pyrosome.Lang Require Import STLCBool.
 From Pyrosome.Lang Require Import UTLCBool. 
 
 From Pyrosome.Lang Require Import PolySubst. 
-From Pyrosome.Compilers Require Import Parameterizer. 
 
+From Pyrosome.Compilers Require Import Parameterizer. 
 (* copied from LinearCPS.v *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations.
+Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
+(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
 
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -220,6 +221,8 @@ Derive type_casing
 Proof. auto_elab. Qed.
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 
+
+
 (* The actual multilanguages *)
 Definition shared_fragment := 
             boolhuh ++ (* think abt why can't compile s*)
@@ -228,11 +231,23 @@ Definition shared_fragment :=
             exp_subst ++ value_subst.
 Hint Unfold shared_fragment : auto_elab. 
 
-(* Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] (id_compiler shared_fragment) shared_fragment.
+(* figured out the issue: it was a notation issue. *)
+Definition test1 := preserving_compiler_ext. (* from CompilerDefs *)
+(* Locate preserving_compiler_ext.  *)
+Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
+(preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
+
+Lemma shared_fragment_compiles : preserving_compiler_ext shared_fragment [] (id_compiler shared_fragment) shared_fragment.
 Proof. 
-    apply id_compiler_preserving. 
-    prove_from_known_elabs. 
-Qed.  *)
+    unfold shared_fragment. 
+    apply id_compiler_preserving; prove_from_known_elabs.
+    (* below is to prove goal `Eqb_ok string_Eqb`. *)
+    unfold Eqb_ok. intros. destruct (eqb a b) eqn:EQB. 
+    - apply String.eqb_eq. apply EQB. 
+    - unfold eqb in *. unfold string_Eqb in EQB. 
+        unfold not. intros. apply String.eqb_eq in H. rewrite H in EQB. discriminate EQB. 
+Qed. 
+Hint Resolve shared_fragment_compiles : auto_elab. 
 
 Definition high_level_multilanguage := 
             boundaries ++ uif ++ shared_fragment.
@@ -269,15 +284,28 @@ Definition five := 5.
 (* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
 (* semantic properties are in SemanticsPreservingDefs.v *)
 
-(* Check h2l_def.  *)
-(* Print compiler.  *)
+(* Locate elab_preserving_compiler. 
+Locate auto_elab_compiler.  *)
 
-(* try running make *)
+(* Derive h2l *)
 
-(* id_compiler shared_fragment *)
+Derive h2l 
+        SuchThat (elab_preserving_compiler 
+                    (id_compiler shared_fragment)
+                    low_level_multilanguage
+                    h2l_def
+                    h2l
+                    (boundaries ++ uif)
+                    ) 
+        As h2l_preserving. 
+Proof. unfold low_level_multilanguage. 
+        unfold shared_fragment. 
+        auto_elab_compiler. 
+Admitted. 
 
 
-(* Derive h2l (* proof mirrors language proof *)
+(* proof mirrors language proof *)
+(* Derive h2l
        SuchThat (elab_preserving_compiler [] (* compiler root: for base language *)
                                           low_level_multilanguage (* target language—ALL of it *)
                                           h2l_def
@@ -288,8 +316,8 @@ Definition five := 5.
 Proof. unfold low_level_multilanguage. unfold high_level_multilanguage. 
         unfold shared_fragment. 
         auto_elab_compiler. 
-Qed.
-#[export] Hint Resolve h2l_preserving : elab_pfs. *)
+Admitted.  *)
+#[export] Hint Resolve h2l_preserving : elab_pfs.
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
