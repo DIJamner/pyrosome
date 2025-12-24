@@ -643,7 +643,7 @@ Goal eq_term logic {{c  "a": #"S", "b" : #"S" }}
    (!! "#1" = "#2", "@sort_of" "#2" -> "" :- "/\" "#1" "#" -> "#2", "S" -> "", 
      "F" -> "#1", "@sort_of" "#" -> "")%log) as seq.
   
-(*
+
   (* TODO: issue not with filter! why is there no #2 in the conclusion eqs?
      where did #2 come from? did something not do a proper subst?
    *)
@@ -830,3 +830,4 @@ Compute (Defs.eq_proven StringListMap.string_succ "@sort_of" "" ""
 *)
 
 Abort.
+

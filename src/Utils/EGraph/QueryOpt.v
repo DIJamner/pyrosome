@@ -704,16 +704,19 @@ Eqb_idx.
 
       
       
-    Lemma sequent_of_states_sound m (*Post_i Post Post2 i3*)
+    Lemma sequent_of_states_sound (*m*) (*Post_i Post Post2 i3*)
       : (* state_sound_for_model m map.empty assumptions Post_i Post ->
         (forall a i2, (Post_i a i2) ->
                       Post a ->
                       state_sound_for_model m i2 (conclusions a) i3 Post2) ->*)
-        model_satisfies_rule m sequent_of_states.
-    Proof.      
+      (*TODO: why doesn't this work?  model_satisfies_rule m sequent_of_states.*)
+      False.
+    Proof.
+      (*
       unfold model_satisfies_rule, sequent_of_states; cbn.
       intros.
       replace conclusion_eqs_final with conclusion_eqs_verbose by admit.
+*)
       (*
       TODO: ssm Pi -> forall i, Pi -> atom a e -> clause_sound a i.
       Will this work? not really soundness, more completeness. seems ok.
