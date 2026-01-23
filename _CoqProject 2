@@ -1,0 +1,5 @@
+-R /Users/miguelbuitrago/Desktop/pyrosome/coqutil/src/coqutil coqutil
+-R /Users/miguelbuitrago/Desktop/pyrosome/canonical-binary-tries/ Tries
+-R /Users/miguelbuitrago/Desktop/pyrosome/src/Utils Utils
+-R /Users/miguelbuitrago/Desktop/pyrosome/src/Pyrosome Pyrosome
+

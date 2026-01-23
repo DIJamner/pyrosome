@@ -73,6 +73,7 @@ Definition utf_uapp_ulambda_def : lang :=
       #"uapp" (#"ret" #"uT") "e" =
       #"Error" #"*" : #"exp" "G" #"*"
   ];
+  (* for eventually contexts, Estlc_def in SimpleEvalCtx.v *)
   [:= "G" : #"env",
       "e" : #"exp" "G" #"*"
       ----------------------------------------------- ("uF uapp")

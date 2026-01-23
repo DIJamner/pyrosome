@@ -107,7 +107,7 @@ Definition boundaries_def : lang :=
         #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
     ]
   ]}.
-Derive boundaries
+Derive boundaries  (* need polymorphic versions of all these *)
         SuchThat (elab_lang_ext (utlc ++ 
                                 stlc ++ 
                                 stlc_bool ++
@@ -120,7 +120,100 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve boundaries_wf : elab_pfs.
 
 
+Fixpoint ty_wkn_n n :=
+  match n with
+  | 0 => {{e #"ty_id"}}
+  | 1 => {{e #"ty_wkn"}}
+  | S n' =>
+    {{e #"ty_cmp" #"ty_wkn" {ty_wkn_n n'} }}
+  end.
 
+Definition ty_ovar n :=
+    {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}.  
+
+
+
+Print PolySubst. (* this has the type substitution stuff *)
+(* list of languages that poly depends on:
+    exp_param_substs ++
+    exp_ty_subst ++
+    val_param_substs ++
+    val_ty_subst ++
+    env_ty_subst ++
+    ty_subst_lang ++
+    exp_parameterized ++ val_parameterized ++ ty_env_lang
+*)
+Compute poly_def. 
+
+Definition type_casing_def : lang :=
+  {[l/subst [exp_subst++value_subst] 
+    [:| "D" : #"ty_env",
+        "G" : #"env" "D",
+        "cond" : #"ty" "D", (* is mu *)
+        "A" : #"ty" (#"ty_ext" "D"), (* this is sigma *)
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"), (* substitute identity type for all except the last (which is A), which we change to star *)
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" #"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")) (* look at arrow case in 134 *)
+        -----------------------------------------------
+        #"typerec" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
+        ----------------------------------------------- ("type case star")
+        #"typerec" #"*" "e1" "e2" "e3"  
+        = "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A")
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
+        ----------------------------------------------- ("type case star")
+        #"typerec" #"bool" "e1" "e2" "e3"  
+        = "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A")
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+        "t1" : #"ty" (#"ty_ext" (#"ty_ext" "D")),
+        "t2" : #"ty" (#"ty_ext" (#"ty_ext" (#"ty_ext" "D"))),
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 1} {ty_ovar 0})) "A")
+        ----------------------------------------------- ("type case func")
+        #"typerec" (#"->" "t1" "t2") "e1" "e2" "e3"  
+        = "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
+    ]
+    (* [:= "G" : #"env",  (* the old function rule, for reference *)
+        "A" : #"ty",
+        "t1" : #"ty",
+        "t2" : #"ty",
+        "e1" : #"exp" "G" "A",
+        "e2" : #"exp" "G" "A",
+        "e3" : #"exp" "G" "A"
+        ----------------------------------------------- ("type case func")
+        #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
+        = "e3" : #"exp" "G" "A"
+        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
+        (* some page in the paper they sent you has a rule like this *)
+    ] *)
+  ]}.
+
+(* Compute type_casing_def.  *)
+Derive type_casing
+        SuchThat (elab_lang_ext (stlc_bool ++ 
+                                stlc ++
+                                usubst ++ 
+                                exp_subst++value_subst) 
+                type_casing_def type_casing)
+        As type_casing_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve type_casing_wf : elab_pfs.
 (* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "D" : #"ty_env",
@@ -133,24 +226,7 @@ Proof. auto_elab. Qed.
         -----------------------------------------------
         #"type case" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" "A"
     ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case star")
-        #"type case" #"*" "e1" "e2" "e3"  
-        = "e1" : #"exp" "G" "A"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case bool")
-        #"type case" #"bool" "e1" "e2" "e3"  
-        = "e2" : #"exp" "G" "A"
-    ];
+    ... (* this is just an example of what it will look like *)
     [:= "G" : #"env",
         "A" : #"ty",
         "t1" : #"ty",
@@ -166,60 +242,6 @@ Proof. auto_elab. Qed.
         (* some page in the paper they sent you has a rule like this *)
     ]
   ]}. *)
-Definition type_casing_def : lang :=
-  {[l/subst [exp_subst++value_subst] 
-    [:| "G" : #"env",
-        "cond" : #"ty",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        -----------------------------------------------
-        #"type case" "cond" "e1" "e2" "e3"  : #"exp" "G" "A"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case star")
-        #"type case" #"*" "e1" "e2" "e3"  
-        = "e1" : #"exp" "G" "A"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case bool")
-        #"type case" #"bool" "e1" "e2" "e3"  
-        = "e2" : #"exp" "G" "A"
-    ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "t1" : #"ty",
-        "t2" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case func")
-        #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
-        = "e3" : #"exp" "G" "A" 
-        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
-        (* some page in the paper they sent you has a rule like this *)
-    ]
-  ]}.
-
-(* Compute type_casing_def.  *)
-Derive type_casing
-        SuchThat (elab_lang_ext (stlc_bool ++ 
-                                stlc ++
-                                usubst ++ 
-                                exp_subst++value_subst) 
-                type_casing_def type_casing)
-        As type_casing_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve type_casing_wf : elab_pfs.
 
 
 
@@ -270,7 +292,7 @@ Definition h2l_def : compiler :=
                                     (#"Error" "C")
                                     (* (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))))  *)
                                     }}
-    | {{e #"ttd" "G" "A" "e"}} => {{e #"type case" "A" 
+    | {{e #"ttd" "G" "C" "e"}} => {{e #"type case" "C"  (* rewrite with convoy pattern focus on bool *)
                                     "e"
                                     (#"if" "e" (#"ret" #"uT") (#"ret" #"uF")) 
                                     (#"Error" "C")
@@ -285,9 +307,7 @@ Definition h2l_def : compiler :=
 (* Locate elab_preserving_compiler. 
 Locate auto_elab_compiler.  *)
 
-(* Derive h2l *)
-
-(* Derive h2l 
+Derive h2l 
         SuchThat (elab_preserving_compiler 
                     shared_fragment_compiler
                     low_level_multilanguage
@@ -300,10 +320,65 @@ Proof. unfold low_level_multilanguage.
         unfold shared_fragment. 
         unfold shared_fragment_compiler. 
         auto_elab_compiler. 
-        Compute mif_def. 
-        19 :{ 
-            solve_in. 
-Admitted.  *)
+
+
+
+    (****** BEGIN In STUFF *)
+        cleanup_elab_after setup_elab_compiler.
+        1-3: shelve. 
+
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - repeat ([> repeat Matches.t;
+           cleanup_elab_after try (try decompose_sort_eq; solve [ by_reduction ]) |..]).
+        - cbv [map combine fst]. 
+            (* cbv with brackets does _only_ those things. with the minus it does all but those htings. *)
+
+        (* cbn_elab_goal. *)
+
+        lazymatch goal with
+        | |- elab_term ?l ?ctx ?e ?ee ?t =>
+        let ctx' := eval cbv-[ann_cons annotation] in ctx in
+        let e' := eval cbv-[ann_cons annotation] in e in
+        let ee' := eval cbv-[ann_cons annotation] in ee in
+        let t' := eval cbv-[ann_cons annotation] in t in
+        change_no_check (elab_term l ctx' e' ee' t')
+        end. 
+        repeat t. 
+        
+        (****** END In STUFF *)
+        
+        
+        cbn_elab_goal. 
+        
+        (* convoy pattern *)
+        
+        auto_elab_compiler. 
+        1 : {
+            cbv -[In]. (* for in goals, this gives what you're trying to prove *)
+            Print auto_elab_compiler. 
+        }
+        3 : { admit. }
+        4 : { 
+                inversion h2l. 
+                Compute shared_fragment.  
+            }
+        (* is the name of a rule (replaces left to right)  *)
+
+        Locate shared_fragment. 
+        (* look at heap proofs, delete cleanup elab after *)
+        (* cleanup elab after are good for well formed terms *)
+        (* if you see elab_term, that means something is not done type inference *)
+        4 :{}
+Abort. 
 
 
 (* proof mirrors language proof *)
