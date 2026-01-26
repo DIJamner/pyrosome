@@ -186,8 +186,7 @@ Section WithVar.
                   if with_sorts then
                     let tsub := combine (map fst c) s' in
                     let tx <- add_open_sort tsub t in
-                    let tx' <- hash_entry sort_of [x] in
-                    let _ <- union tx tx' in
+                    let _ <- update_entry (Build_atom sort_of [x] tx) in
                     ret x
                   else ret x
             | _ => Mret default
@@ -200,9 +199,15 @@ Section WithVar.
       match fuel with
       | 0 => Mret default (*should never happen*)
       | S fuel =>
-        let (n,s) := t in
-        @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
-          (hash_entry n s')
+          let (n,s) := t in
+            match named_list_lookup_err l n with
+            | Some (sort_rule c args) =>
+                @! let s' <- list_Mmap (add_open_term' (add_open_sort' fuel) sub) s in
+                  let _ <- if with_ctx_sorts then add_ctx_sorts (add_open_sort' fuel) s' c
+                           else Mret tt in
+                  (hash_entry n s')
+            | _ => Mret default (*should never happen*)
+            end
       end.
 
     (*
@@ -229,8 +234,7 @@ Section WithVar.
                           so that things are analyzable and rebuilding doesn't loop
                       *)
                      let {(state instance)} x' <- alloc_opaque in
-                     let tx' <- hash_entry sort_of [x'] in
-                     let _ <- union t_v tx' in
+                     let _ <- update_entry (Build_atom sort_of [x] t_v) in
                      ret (x,x')::sub) c [].
 
   End SortFlag.
@@ -541,6 +545,9 @@ Section WithVar.
       
       Let optimal_nodes := select_optimal_nodes oP_le i.(analyses) i.(db).
 
+      (*for testing*)
+      Definition return_optimal_nodes := optimal_nodes.
+
       Definition decr fuel {A} `{WithDefault A} (f : _ -> A) :=
         match fuel with
         | O => default
@@ -613,6 +620,11 @@ Section WithVar.
         @!let x' := snd (UnionFind.find i.(equiv) x) in
           let p <- extract_weighted' fuel x' map.empty in
           ret fst p.
+
+      (*So that the optimal nodes can be reused*)
+      Definition extract_weighted_list fuel :=
+        map (extract_weighted fuel).
+      
       
     (* Notes on verifying extraction:
        - cheap option: re-add the term and check id

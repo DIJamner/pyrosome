@@ -223,40 +223,47 @@ Section WithMap.
       in
       let analyses' := map.put i.(analyses) a_ret meet_a in
       (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses' i.(log)).
-  
-  Definition union (v v1 : idx) : ST idx :=
+
+  Definition find a : ST idx :=
     fun d =>
-      (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
-      if eqb v v1 then (v,d)
+      let (uf',v') := UnionFind.find d.(equiv) a in
+      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses) d.(log)).
+
+  (*edge case: union non-canonical nodes.
+    TODO: split find from union in UnionFind.v
+   *)
+  Definition union (v v1 : idx) : ST idx :=
+    @! let v <- find v in
+      let v1 <- find v1 in
+      if eqb v v1 then ret v
       else
-        let v_analysis := unwrap_with_default (map.get d.(analyses) v) in
-        let v1_analysis := unwrap_with_default (map.get d.(analyses) v1) in
-        let new_analysis := analysis_meet v_analysis v1_analysis in
-        (*should always return Some if v in uf.
-          Use defaults here to make masking an error less likely
-         *)
-        @unwrap_with_default _  (idx_zero : idx,empty_egraph)
-        (@!let (uf', v') := UnionFind.union _ _ _ _ d.(equiv) v v1 in
+        (fun d =>
+           let v_analysis := unwrap_with_default (map.get d.(analyses) v) in
+           let v1_analysis := unwrap_with_default (map.get d.(analyses) v1) in
+           let new_analysis := analysis_meet v_analysis v1_analysis in
+           (*TODO: find, eqb duplicated in UF.union; decouple *)
+           let (uf', v') := UnionFind.union _ _ _ _ d.(equiv) v v1 in
            let (v_old, canon_stale_analysis) :=
              if eqb v v' then (v1, v_analysis) else (v, v1_analysis)
            in
            let improved_new_analysis := negb (eqb new_analysis canon_stale_analysis) in
            let analyses' :=
-             (*TODO: doesn't garbage collect right now *)
+             (*TODO: doesn't garbage collect right now.
+            TODO: should I have analyses for non-canonical nodes?
+              *)
              map.put (map.put d.(analyses) v new_analysis)
                v' new_analysis in
            let worklist' :=
              ((union_repair v_old v' improved_new_analysis)::d.(worklist)) in
-             
-           ret {option} (v', Build_instance d.(db) uf' d.(parents)
-                     d.(epoch) worklist' analyses' d.(log))).    
+           
+           (v', Build_instance d.(db) uf' d.(parents) d.(epoch) worklist' analyses' d.(log))).    
 
   Definition alloc : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
        (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log))).
 
-  (* used for ids that aren't expected to have nodes. Handles analysis specially *)
+  (* used for ids that aren't expected to have nodes. Handles analysis specially. *)
   Definition alloc_opaque : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := UnionFind.alloc _ _ _ idx_succ i.(equiv) in
@@ -286,14 +293,6 @@ Section WithMap.
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
-  
-  (*TODO: propagate down the removal of the option and push to UnionFind file
-    as an alternative
-   *)
-  Definition find a : ST idx :=
-    fun d =>
-      let (uf',v') := UnionFind.find d.(equiv) a in
-      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses) d.(log)).
 
   Definition canonicalize (a:atom) : ST atom :=
     let (f,args,o) := a in
@@ -304,7 +303,7 @@ Section WithMap.
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
                Build_instance d.(db) d.(equiv) d.(parents)
-                                                   d.(epoch) [] d.(analyses)d.(log)).
+                                                   d.(epoch) [] d.(analyses) d.(log)).
 
   Definition push_worklist e : ST unit :=
     fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
@@ -669,7 +668,7 @@ Section WithMap.
         @! let new_idx <- find new_idx in
           ret union_repair old_idx new_idx improved_new_analysis
     (* we don't update analysis repairs, because if i is now not canonical,
-       it means a union already updated the analyses
+       it means a union already updated the analyses.
      *)
     | analysis_repair i => Mret (analysis_repair i)
     end.
@@ -836,7 +835,7 @@ Existing Class analysis.
     analysis_meet _ _ := tt;
   }.
 
-Arguments union {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
+Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope {H} v v1 _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
@@ -846,7 +845,7 @@ Arguments log_event {idx symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
   {E}%type_scope e _.
 
-Arguments update_entry {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
+Arguments update_entry {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
   {H} a _.
 
@@ -858,8 +857,15 @@ Arguments hash_entry {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}
 Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
   query_clauses compiled_rules%list_scope.
 
+Arguments repair {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+    {H} e _.
 
-Arguments rebuild {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope 
+
+Arguments get_parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+    {analysis_result}%type_scope x _.
+
+Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
   {symbol_map idx_map idx_trie}%function_scope 
   {analysis_result}%type_scope {H}
   fuel%nat_scope _.
