@@ -220,10 +220,11 @@ Definition type_casing_def : lang :=
         "t2" : #"ty" (#"ty_ext" (#"ty_ext" (#"ty_ext" "D"))),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 1} {ty_ovar 0})) "A")
+        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
         ----------------------------------------------- ("typerec func")
         #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
-        = "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
+        = #"@" (#"@" "e3" "t1") "t2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
+        (* TODO: use type application to fill in the right hand side of this equation *)
     ]
     (* [:= "G" : #"env",  (* the old function rule, for reference *)
         "A" : #"ty",
