@@ -133,6 +133,7 @@ Definition ty_ovar n :=
 
 
 (* The polymorphic languages *)
+(* TODO: prove well-formed *)
 
 Definition stlc_parameterized := (* pasted from PolyCompilers.v (import eventually) *)
     let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
@@ -144,6 +145,35 @@ Definition stlc_parameterized := (* pasted from PolyCompilers.v (import eventual
                 ("exp",Some 2)]) in
   parameterize_lang "D" {{s #"ty_env"}}
     ps stlc.
+
+Local Definition evp' := 
+    let ps := (elab_param "D" (stlc ++exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_ret ++ exp_subst_base ++ value_subst).
+
+Lemma stlc_parameterized_wf
+  : wf_lang_ext ((exp_parameterized++val_parameterized)
+                       ++ty_env_lang)
+      stlc_parameterized.
+Proof.
+  change (exp_parameterized++val_parameterized) with evp'.
+  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
+  (*TODO: need to strengthen parameterization pl w/ add'l language?
+    Currently cheating.
+   *)
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+Qed.
+#[export] Hint Resolve stlc_parameterized_wf : elab_pfs.
 
 Definition typed_bool_parameterized :=
     let ps := (elab_param "D" (typed_bool ++ exp_ret ++ exp_subst_base
@@ -182,7 +212,7 @@ Definition usubst_parameterized :=
 (* Compute poly_def.  *)
 
 Definition type_casing_def : lang :=
-  {[l/subst [exp_subst++value_subst] 
+  {[l
     [:| "D" : #"ty_env",
         "G" : #"env" "D",
         "cond" : #"ty" "D", (* is mu *)
@@ -225,7 +255,22 @@ Definition type_casing_def : lang :=
         #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
         = #"@" (#"@" "e3" "t1") "t2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
         (* TODO: use type application to fill in the right hand side of this equation *)
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "cond" : #"ty" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))),
+        "G'" : #"env" "D",
+        "g" : #"sub" "D" "G'" "G"
+        ----------------------------------------------- ("exp_subst typerec")
+        #"exp_subst" "g" (#"typerec" "cond" "A" "e1" "e2" "e3")
+        = #"typerec" "cond" "A" (#"exp_subst" "g" "e1") (#"exp_subst" "g" "e2") (#"exp_subst" "g" "e3")
+        : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A")
     ]
+
     (* [:= "G" : #"env",  (* the old function rule, for reference *)
         "A" : #"ty",
         "t1" : #"ty",
@@ -240,6 +285,8 @@ Definition type_casing_def : lang :=
         (* some page in the paper they sent you has a rule like this *)
     ] *)
   ]}.
+
+  Compute type_casing_def. 
 
 (* Compute type_casing_def.  *)
 Derive type_casing
@@ -262,7 +309,9 @@ Derive type_casing
                                 ) 
                 type_casing_def type_casing)
         As type_casing_wf.
-Proof. auto_elab. Qed. (* getting an error with number of args for a rule *)
+Proof. 
+    
+    auto_elab. Qed. (* getting an error with number of args for a rule *)
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 (* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
