@@ -11,8 +11,7 @@ Import Core.Notations.
 Require Coq.derive.Derive.
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import STLCBool. 
-From Pyrosome.Lang Require Import UTLCBool. 
+From Pyrosome.Lang Require Import Bool. 
 
 From Pyrosome.Lang Require Import PolySubst. 
 
@@ -110,8 +109,8 @@ Definition boundaries_def : lang :=
 Derive boundaries  (* need polymorphic versions of all these *)
         SuchThat (elab_lang_ext (utlc ++ 
                                 stlc ++ 
-                                stlc_bool ++
-                                utf ++
+                                typed_bool ++
+                                untyped_bool ++
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_def boundaries)
@@ -133,8 +132,45 @@ Definition ty_ovar n :=
 
 
 
-Print PolySubst. (* this has the type substitution stuff *)
-(* list of languages that poly depends on:
+(* The polymorphic languages *)
+
+Definition stlc_parameterized := (* pasted from PolyCompilers.v (import eventually) *)
+    let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps stlc.
+
+Definition typed_bool_parameterized :=
+    let ps := (elab_param "D" (typed_bool ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps typed_bool.
+
+Definition usubst_parameterized :=
+    let ps := (elab_param "D" (usubst ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps usubst.
+
+
+(* this has the type substitution stuff *)
+(* Print PolySubst.  *)
+(* list of languages that a poly language depends on:
     exp_param_substs ++
     exp_ty_subst ++
     val_param_substs ++
@@ -143,7 +179,7 @@ Print PolySubst. (* this has the type substitution stuff *)
     ty_subst_lang ++
     exp_parameterized ++ val_parameterized ++ ty_env_lang
 *)
-Compute poly_def. 
+(* Compute poly_def.  *)
 
 Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -153,7 +189,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"), (* this is sigma *)
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"), (* substitute identity type for all except the last (which is A), which we change to star *)
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" #"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")) (* look at arrow case in 134 *)
+        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))) (* look at arrow case in 134 *)
         -----------------------------------------------
         #"typerec" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
     ];
@@ -163,7 +199,7 @@ Definition type_casing_def : lang :=
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
-        ----------------------------------------------- ("type case star")
+        ----------------------------------------------- ("typerec star")
         #"typerec" #"*" "e1" "e2" "e3"  
         = "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A")
     ];
@@ -173,7 +209,7 @@ Definition type_casing_def : lang :=
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
-        ----------------------------------------------- ("type case star")
+        ----------------------------------------------- ("typerec bool")
         #"typerec" #"bool" "e1" "e2" "e3"  
         = "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A")
     ];
@@ -185,7 +221,7 @@ Definition type_casing_def : lang :=
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 1} {ty_ovar 0})) "A")
-        ----------------------------------------------- ("type case func")
+        ----------------------------------------------- ("typerec func")
         #"typerec" (#"->" "t1" "t2") "e1" "e2" "e3"  
         = "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
     ]
@@ -206,13 +242,26 @@ Definition type_casing_def : lang :=
 
 (* Compute type_casing_def.  *)
 Derive type_casing
-        SuchThat (elab_lang_ext (stlc_bool ++ 
+        SuchThat (elab_lang_ext (
+                                typed_bool_parameterized ++ 
+                                stlc_parameterized ++ 
+                                usubst_parameterized ++ 
+                                poly ++ 
+                                exp_param_substs ++
+                                exp_ty_subst ++
+                                val_param_substs ++
+                                val_ty_subst ++
+                                env_ty_subst ++
+                                ty_subst_lang ++
+                                exp_parameterized ++ val_parameterized ++ ty_env_lang
+                                (* typed_bool ++ 
                                 stlc ++
                                 usubst ++ 
-                                exp_subst++value_subst) 
+                                exp_subst++value_subst *)
+                                ) 
                 type_casing_def type_casing)
         As type_casing_wf.
-Proof. auto_elab. Qed.
+Proof. auto_elab. Qed. (* getting an error with number of languages *)
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 (* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -248,8 +297,8 @@ Proof. auto_elab. Qed.
 (* The actual multilanguages *)
 Definition shared_fragment := 
             boolhuh ++ (* think abt why can't compile s*)
-            utf_uapp_ulambda ++ utlc ++ utf ++ usubst ++
-            stlc_bool ++ stlc ++
+            utlc_bool ++ utlc ++ untyped_bool ++ usubst ++
+            typed_bool ++ stlc ++
             exp_subst ++ value_subst.
 Hint Unfold shared_fragment : auto_elab. 
 
@@ -269,21 +318,21 @@ Proof.
 Qed. 
 Hint Resolve shared_fragment_compiles : auto_elab. 
 
-Definition high_level_multilanguage := 
+Definition source_multilanguage := 
             boundaries ++ uif ++ shared_fragment.
-Hint Unfold high_level_multilanguage : auto_elab. 
+Hint Unfold source_multilanguage : auto_elab. 
 
-Definition low_level_multilanguage :=
+Definition target_multilanguage :=
             type_casing ++ mif ++ shared_fragment.
-Hint Unfold high_level_multilanguage : auto_elab. 
+Hint Unfold target_multilanguage : auto_elab. 
 
 (* Print boolhuh.  *)
-(* here you can see implicit argumetns *)
+(* here you can see implicit arguments *)
 
 (* compiler *)
 
 Local Notation compiler := (compiler string). 
-Definition h2l_def : compiler :=
+Definition multilang_compiler_def : compiler :=
     match # from (boundaries ++ uif) with
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e #"mif" "c" "thn" "els" }}
     | {{e #"dtt" "G" "C" "e"}} => {{e #"type case" "C" (* diff from A below. TAKE CARE OF A AND B *)
@@ -307,15 +356,15 @@ Definition h2l_def : compiler :=
 (* Locate elab_preserving_compiler. 
 Locate auto_elab_compiler.  *)
 
-Derive h2l 
+Derive multilang_compiler 
         SuchThat (elab_preserving_compiler 
                     shared_fragment_compiler
-                    low_level_multilanguage
-                    h2l_def
-                    h2l
+                    target_multilanguage
+                    multilang_compiler_def
+                    multilang_compiler
                     (boundaries ++ uif)
                     ) 
-        As h2l_preserving. 
+        As multilang_compiler_preserving. 
 Proof. unfold low_level_multilanguage. 
         unfold shared_fragment. 
         unfold shared_fragment_compiler. 

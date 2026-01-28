@@ -12,7 +12,55 @@ Require Coq.derive.Derive.
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
 
-Definition utf_def : lang :=
+
+Definition typed_bool_def : lang :=
+  {[l/subst [exp_subst++value_subst] (* for subst rule generation *)
+  [:| 
+      -----------------------------------------------
+      #"bool" : #"ty"
+  ];
+  [:| "G" : #"env"
+      -----------------------------------------------
+      #"T" : #"val" "G" #"bool"
+  ];
+  [:| "G" : #"env"
+      -----------------------------------------------
+      #"F" : #"val" "G" #"bool"
+  ];
+  [:| "G" : #"env",
+      "A" : #"ty",
+      "cond" : #"exp" "G" #"bool",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      -----------------------------------------------
+      #"if" "cond" "e2" "e3" : #"exp" "G" "A"
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("if-true")
+      #"if" (#"ret" #"T") "e2" "e3" 
+      = "e2" : #"exp" "G" "A"
+  ];
+  [:= "G" : #"env",
+      "A" : #"ty",
+      "e2" : #"exp" "G" "A",
+      "e3" : #"exp" "G" "A"
+      ----------------------------------------------- ("if-false")
+      #"if" (#"ret" #"F") "e2" "e3" 
+      = "e3" : #"exp" "G" "A"
+  ]
+  ]}.
+
+Derive typed_bool
+       SuchThat (elab_lang_ext (exp_subst++value_subst) typed_bool_def typed_bool)
+       As typed_bool_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve typed_bool_wf : elab_pfs.
+
+
+Definition untyped_bool_def : lang :=
   {[l/subst [exp_subst++value_subst] 
   [:| "G" : #"env"
       -----------------------------------------------
@@ -24,11 +72,11 @@ Definition utf_def : lang :=
   ]
   ]}.
 
-Derive utf
-       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) utf_def utf)
-       As utf_wf.
+Derive untyped_bool
+       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) untyped_bool_def untyped_bool)
+       As untyped_bool_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve utf_wf : elab_pfs.
+#[export] Hint Resolve untyped_bool_wf : elab_pfs.
 
 
 (* Compute value_subst_def. 
@@ -59,13 +107,13 @@ Definition boolhuh_def : lang :=
   ]}.
 
 Derive boolhuh
-       SuchThat (elab_lang_ext (utf++utlc++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
+       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
        As boolhuh_wf.
 Proof. auto_elab. Qed. 
 #[export] Hint Resolve boolhuh_wf : elab_pfs.
 
 
-Definition utf_uapp_ulambda_def : lang :=
+Definition utlc_bool_def : lang :=
   {[l/subst [exp_subst++value_subst] 
   [:= "G" : #"env",
       "e" : #"exp" "G" #"*"
@@ -92,11 +140,11 @@ Definition utf_uapp_ulambda_def : lang :=
   ]
   ]}.
 
-Derive utf_uapp_ulambda
-       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) utf_uapp_ulambda_def utf_uapp_ulambda)
-       As utf_uapp_ulambda_wf.
+Derive utlc_bool
+       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) utlc_bool_def utlc_bool)
+       As utlc_bool_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve utf_uapp_ulambda_wf : elab_pfs.
+#[export] Hint Resolve utlc_bool_wf : elab_pfs.
 
 
 Definition uif_def : lang :=
@@ -140,7 +188,7 @@ Definition uif_def : lang :=
   ]}.
 
 Derive uif
-       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) uif_def uif)
+       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) uif_def uif)
        As uif_wf. (* leftmost is newest *)
 Proof. auto_elab. Qed.
 #[export] Hint Resolve uif_wf : elab_pfs.
@@ -192,7 +240,7 @@ Definition mif_def : lang :=
   ]}.
 
 Derive mif
-       SuchThat (elab_lang_ext (utlc++utf++usubst++exp_subst++value_subst) mif_def mif)
+       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) mif_def mif)
        As mif_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve mif_wf : elab_pfs.
