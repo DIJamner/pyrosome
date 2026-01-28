@@ -261,7 +261,7 @@ Derive type_casing
                                 ) 
                 type_casing_def type_casing)
         As type_casing_wf.
-Proof. auto_elab. Qed. (* getting an error with number of languages *)
+Proof. auto_elab. Qed. (* getting an error with number of args for a rule *)
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 (* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
