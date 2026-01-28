@@ -135,8 +135,9 @@ Definition ty_ovar n :=
 (* The polymorphic languages *)
 (* TODO: prove well-formed *)
 
-Definition stlc_parameterized := (* pasted from PolyCompilers.v (import eventually) *)
-    let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
+(* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
+Definition parameterize_wrapper (l : lang) : lang := 
+    let ps := (elab_param "D" (l ++ exp_ret ++ exp_subst_base
                                  ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
@@ -144,10 +145,10 @@ Definition stlc_parameterized := (* pasted from PolyCompilers.v (import eventual
                 ("val",Some 2);
                 ("exp",Some 2)]) in
   parameterize_lang "D" {{s #"ty_env"}}
-    ps stlc.
+    ps l.
 
-Local Definition evp' := 
-    let ps := (elab_param "D" (stlc ++exp_ret ++ exp_subst_base
+Local Definition evp'_general (l : lang) : lang := 
+    let ps := (elab_param "D" (l ++exp_ret ++ exp_subst_base
                                  ++ value_subst)
                [("sub", Some 2);
                 ("ty", Some 0);
@@ -157,12 +158,8 @@ Local Definition evp' :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps (exp_ret ++ exp_subst_base ++ value_subst).
 
-Lemma stlc_parameterized_wf
-  : wf_lang_ext ((exp_parameterized++val_parameterized)
-                       ++ty_env_lang)
-      stlc_parameterized.
-Proof.
-  change (exp_parameterized++val_parameterized) with evp'.
+Ltac solve_parameterize_wrapper l := (* comments are copied over from PolyCompilers.v*)
+  change (exp_parameterized++val_parameterized) with (evp'_general l);
   (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
   (*TODO: need to strengthen parameterization pl w/ add'l language?
     Currently cheating.
@@ -172,30 +169,30 @@ Proof.
     [repeat t';  constructor (*TODO: include in t'*)
     | now prove_from_known_elabs..
     | vm_compute; exact I].
-Qed.
+
+Definition stlc_parameterized := parameterize_wrapper stlc. 
+
+Lemma stlc_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      stlc_parameterized.
+Proof. solve_parameterize_wrapper stlc. Qed.
 #[export] Hint Resolve stlc_parameterized_wf : elab_pfs.
 
-Definition typed_bool_parameterized :=
-    let ps := (elab_param "D" (typed_bool ++ exp_ret ++ exp_subst_base
-                                 ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps typed_bool.
+Definition typed_bool_parameterized := parameterize_wrapper typed_bool. 
 
-Definition usubst_parameterized :=
-    let ps := (elab_param "D" (usubst ++ exp_ret ++ exp_subst_base
-                                 ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps usubst.
+Lemma typed_bool_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      typed_bool_parameterized.
+Proof. solve_parameterize_wrapper typed_bool. Qed.
+#[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
+
+Definition usubst_parameterized := parameterize_wrapper usubst. 
+
+Lemma usubst_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      usubst_parameterized.
+Proof. solve_parameterize_wrapper usubst. Qed.
+#[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
 
 
 (* this has the type substitution stuff *)
@@ -254,7 +251,6 @@ Definition type_casing_def : lang :=
         ----------------------------------------------- ("typerec func")
         #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
         = #"@" (#"@" "e3" "t1") "t2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
-        (* TODO: use type application to fill in the right hand side of this equation *)
     ];
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
@@ -311,7 +307,7 @@ Derive type_casing
         As type_casing_wf.
 Proof. 
     
-    auto_elab. Qed. (* getting an error with number of args for a rule *)
+    auto_elab. Qed. 
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 (* Definition type_casing_def : lang :=
   {[l/subst [exp_subst++value_subst] 
