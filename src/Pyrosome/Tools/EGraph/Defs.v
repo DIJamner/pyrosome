@@ -161,12 +161,12 @@ Section WithVar.
     Section __.
       Context (add_open_sort : named_list V -> Term.sort V -> state instance V).
 
-      Definition add_ctx_sorts s' (c:ctx) :=
+       Definition add_ctx_sorts s' (c:ctx) :=
         let tsub := combine (map fst c) s' in
         list_Miter (fun '(x,t) => 
-                    @!let tx <- add_open_sort tsub t in
-                    let tx' <- hash_entry sort_of [x] in
-                    (union tx tx')) (combine s' (map snd c)).
+                      @!let tx <- add_open_sort tsub t in
+                        (update_entry (Build_atom sort_of [x] tx)))
+          (combine s' (map snd c)).
       
       Fixpoint add_open_term' (sub : named_list V) (e : Term.term V)
         : state instance V :=
@@ -234,7 +234,12 @@ Section WithVar.
                           so that things are analyzable and rebuilding doesn't loop
                       *)
                      let {(state instance)} x' <- alloc_opaque in
-                     let _ <- update_entry (Build_atom sort_of [x] t_v) in
+                     (*Note: do not replace with update_entry.
+                       It does not work correctly, likely with
+                       the unmapped variables in rule compilation.
+                      *)
+                     let tx' <- hash_entry sort_of [x'] in
+                     let _ <- union t_v tx' in
                      ret (x,x')::sub) c [].
 
   End SortFlag.
