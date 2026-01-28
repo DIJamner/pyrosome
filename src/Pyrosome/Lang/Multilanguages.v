@@ -191,7 +191,7 @@ Definition type_casing_def : lang :=
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))) (* look at arrow case in 134 *)
         -----------------------------------------------
-        #"typerec" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
+        #"typerec" "cond" "A" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
     ];
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
@@ -200,7 +200,7 @@ Definition type_casing_def : lang :=
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
         ----------------------------------------------- ("typerec star")
-        #"typerec" #"*" "e1" "e2" "e3"  
+        #"typerec" #"*" "A" "e1" "e2" "e3"  
         = "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A")
     ];
     [:= "D" : #"ty_env",
@@ -210,7 +210,7 @@ Definition type_casing_def : lang :=
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
         ----------------------------------------------- ("typerec bool")
-        #"typerec" #"bool" "e1" "e2" "e3"  
+        #"typerec" #"bool" "A" "e1" "e2" "e3"  
         = "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A")
     ];
     [:= "D" : #"ty_env",
@@ -222,7 +222,7 @@ Definition type_casing_def : lang :=
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 1} {ty_ovar 0})) "A")
         ----------------------------------------------- ("typerec func")
-        #"typerec" (#"->" "t1" "t2") "e1" "e2" "e3"  
+        #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
         = "e3" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
     ]
     (* [:= "G" : #"env",  (* the old function rule, for reference *)
