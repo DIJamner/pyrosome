@@ -24,13 +24,13 @@ Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage wit
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
     [:| "G" : #"env",
-        "A" : #"ty",
+        "A" : #"ty", (* 'source' type *)
         "e" : #"exp" "G" "A"
         -----------------------------------------------
         #"ttd" "A" "e" : #"exp" "G" #"*"
     ];
     [:| "G" : #"env",
-        "A" : #"ty",
+        "A" : #"ty", (* 'target' type *)
         "e" : #"exp" "G" #"*"
         -----------------------------------------------
         #"dtt" "A" "e" : #"exp" "G" "A"
@@ -38,34 +38,28 @@ Definition boundaries_def : lang :=
     [:= "G" : #"env",
         "e" : #"exp" "G" #"*"
         ----------------------------------------------- ("dtt star")
-        #"dtt" #"*" "e" =
-        "e" : #"exp" "G" #"*"
+        #"dtt" #"*" "e" = "e" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "e" : #"exp" "G" #"*"
         ----------------------------------------------- ("ttd star")
-        #"ttd" #"*" "e" =
-        "e" : #"exp" "G" #"*"
+        #"ttd" #"*" "e" = "e" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt True")
-        #"dtt" #"bool" (#"ret" #"uT") =
-        #"ret" #"T" : #"exp" "G" #"bool"
+        #"dtt" #"bool" (#"ret" #"uT") = #"ret" #"T" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("dtt False")
-        #"dtt" #"bool" (#"ret" #"uF") =
-        #"ret" #"F" : #"exp" "G" #"bool"
+        #"dtt" #"bool" (#"ret" #"uF") = #"ret" #"F" : #"exp" "G" #"bool"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd True")
-        #"ttd" #"bool" (#"ret" #"T") =
-        #"ret" #"uT" : #"exp" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"T") = #"ret" #"uT" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env"
         ----------------------------------------------- ("ttd False")
-        #"ttd" #"bool" (#"ret" #"F") =
-        #"ret" #"uF" : #"exp" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"F") = #"ret" #"uF" : #"exp" "G" #"*"
     ];
     [:= "G" : #"env",
         "A" : #"ty",
@@ -108,9 +102,9 @@ Definition boundaries_def : lang :=
   ]}.
 Derive boundaries  (* need polymorphic versions of all these *)
         SuchThat (elab_lang_ext (utlc ++ 
+                                untyped_bool ++
                                 stlc ++ 
                                 typed_bool ++
-                                untyped_bool ++
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_def boundaries)
@@ -348,9 +342,6 @@ Definition shared_fragment :=
             exp_subst ++ value_subst.
 Hint Unfold shared_fragment : auto_elab. 
 
-(* figured out the issue: it was a notation issue. *)
-Definition test1 := preserving_compiler_ext. (* from CompilerDefs *)
-(* Locate preserving_compiler_ext.  *)
 Local Notation preserving_compiler_ext tgt cmp_pre cmp src := (* copied from Paramaterizer, 2523 *)
 (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).
 
