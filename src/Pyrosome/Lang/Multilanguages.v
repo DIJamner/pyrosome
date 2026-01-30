@@ -9,17 +9,159 @@ From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSub
 Import Core.Notations.
 
 Require Coq.derive.Derive.
+
+(* import the relevant language fragments *)
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
 From Pyrosome.Lang Require Import Bool. 
 
+(* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst. 
-
+From Pyrosome.Lang Require Import PolyCompilers. (* for parameterizing existing languages*)
 From Pyrosome.Compilers Require Import Parameterizer. 
+
+(* imports for compilers *)
 (* copied from LinearCPS.v *)
 From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
 Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
 (* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+
+(* The polymorphic languages *)
+(* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
+Definition parameterize_wrapper (l : lang) : lang := 
+    let ps := (elab_param "D" (l
+                                 ++ exp_ret 
+                                 ++ exp_subst_base
+                                 ++ value_subst
+                                 )
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps l.
+
+Local Definition evp'_general (l : lang) : lang := 
+    let ps := (elab_param "D" (l ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (exp_ret ++ exp_subst_base ++ value_subst).
+
+Ltac solve_parameterize_wrapper l := (* comments are copied over from PolyCompilers.v*)
+  change (exp_parameterized++val_parameterized) with (evp'_general l);
+  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
+  (*TODO: need to strengthen parameterization pl w/ add'l language?
+    Currently cheating.
+   *)
+  eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+
+Definition typed_bool_parameterized := parameterize_wrapper typed_bool. 
+
+Lemma typed_bool_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      typed_bool_parameterized.
+Proof. solve_parameterize_wrapper typed_bool. Qed. 
+#[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
+
+Definition usubst_parameterized := parameterize_wrapper usubst. 
+
+Lemma usubst_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      usubst_parameterized.
+Proof. solve_parameterize_wrapper usubst. Qed.
+#[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
+
+Definition utlc_parameterized := 
+    let ps := (elab_param "D" (utlc ++ usubst ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps utlc.
+
+Local Definition evp'_utlc : lang := 
+    let ps := (elab_param "D" (utlc ++ usubst ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
+
+Lemma utlc_parameterized_wf
+  : wf_lang_ext ((usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      utlc_parameterized.
+Proof. 
+  replace (usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc.
+  - eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+  - cbv; reflexivity. 
+Qed. 
+#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+
+Definition untyped_bool_parameterized := 
+    let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps untyped_bool.
+
+Local Definition evp'_untyped_bool : lang := 
+    let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
+                                 ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
+
+Lemma untyped_bool_parameterized_wf
+  : wf_lang_ext ((usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      untyped_bool_parameterized.
+Proof. 
+  replace (usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_untyped_bool.
+  - eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+  - cbv; reflexivity. 
+Qed. 
+#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+
+(* 
+TODO: 
+- parameterize boundaries
+- typerec func
+- boundaries ty_subst
+- convoy for compiler
+*)
+
+
 
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -101,10 +243,10 @@ Definition boundaries_def : lang :=
     ]
   ]}.
 Derive boundaries  (* need polymorphic versions of all these *)
-        SuchThat (elab_lang_ext (utlc ++ 
-                                untyped_bool ++
+        SuchThat (elab_lang_ext (utlc ++ (* need poly version *)
+                                untyped_bool ++ (* need poly version *)
                                 stlc ++ 
-                                typed_bool ++
+                                typed_bool ++ 
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_def boundaries)
@@ -117,77 +259,20 @@ Fixpoint ty_wkn_n n :=
   match n with
   | 0 => {{e #"ty_id"}}
   | 1 => {{e #"ty_wkn"}}
-  | S n' =>
-    {{e #"ty_cmp" #"ty_wkn" {ty_wkn_n n'} }}
+  | S n' => {{e #"ty_cmp" #"ty_wkn" {ty_wkn_n n'} }}
   end.
 
 Definition ty_ovar n :=
-    {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}.  
+  match n with 
+  | 0 => {{e #"ty_hd"}} (* bc ty_wkn ty_hd is just ty_id *)
+  | S _ => {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}
+  end.  
 
 
 
-(* The polymorphic languages *)
-(* TODO: prove well-formed *)
 
-(* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
-Definition parameterize_wrapper (l : lang) : lang := 
-    let ps := (elab_param "D" (l ++ exp_ret ++ exp_subst_base
-                                 ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps l.
 
-Local Definition evp'_general (l : lang) : lang := 
-    let ps := (elab_param "D" (l ++exp_ret ++ exp_subst_base
-                                 ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps (exp_ret ++ exp_subst_base ++ value_subst).
-
-Ltac solve_parameterize_wrapper l := (* comments are copied over from PolyCompilers.v*)
-  change (exp_parameterized++val_parameterized) with (evp'_general l);
-  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
-  (*TODO: need to strengthen parameterization pl w/ add'l language?
-    Currently cheating.
-   *)
-  eapply parameterize_lang_preserving_ext;
-    try typeclasses eauto;
-    [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
-    | vm_compute; exact I].
-
-Definition stlc_parameterized := parameterize_wrapper stlc. 
-
-Lemma stlc_parameterized_wf
-  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
-      stlc_parameterized.
-Proof. solve_parameterize_wrapper stlc. Qed.
-#[export] Hint Resolve stlc_parameterized_wf : elab_pfs.
-
-Definition typed_bool_parameterized := parameterize_wrapper typed_bool. 
-
-Lemma typed_bool_parameterized_wf
-  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
-      typed_bool_parameterized.
-Proof. solve_parameterize_wrapper typed_bool. Qed.
-#[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
-
-Definition usubst_parameterized := parameterize_wrapper usubst. 
-
-Lemma usubst_parameterized_wf
-  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
-      usubst_parameterized.
-Proof. solve_parameterize_wrapper usubst. Qed.
-#[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
-
+Compute ty_subst_def. (* I think this has an example of type substitution, which is the rule you're mising in the type casing language *)
 
 (* this has the type substitution stuff *)
 (* Print PolySubst.  *)
@@ -210,7 +295,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"), (* this is sigma *)
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"), (* substitute identity type for all except the last (which is A), which we change to star *)
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))) (* look at arrow case in 134 *)
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))))) (* look at arrow case in 134 *)
         -----------------------------------------------
         #"typerec" "cond" "A" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
     ];
@@ -219,7 +304,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
         ----------------------------------------------- ("typerec star")
         #"typerec" #"*" "A" "e1" "e2" "e3"  
         = "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A")
@@ -229,7 +314,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
         ----------------------------------------------- ("typerec bool")
         #"typerec" #"bool" "A" "e1" "e2" "e3"  
         = "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A")
@@ -237,29 +322,31 @@ Definition type_casing_def : lang :=
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
         "A" : #"ty" (#"ty_ext" "D"),
-        "t1" : #"ty" (#"ty_ext" (#"ty_ext" "D")),
-        "t2" : #"ty" (#"ty_ext" (#"ty_ext" (#"ty_ext" "D"))),
+        "t1" : #"ty" "D",
+        "t2" : #"ty" "D",
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
         ----------------------------------------------- ("typerec func")
         #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
         = #"@" (#"@" "e3" "t1") "t2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
+        (* trec-fn on page 135 *)
     ];
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
+        "G'" : #"env" "D",
+        "g" : #"sub" "D" "G'" "G",
         "cond" : #"ty" "D",
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"All" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))),
-        "G'" : #"env" "D",
-        "g" : #"sub" "D" "G'" "G"
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
         ----------------------------------------------- ("exp_subst typerec")
         #"exp_subst" "g" (#"typerec" "cond" "A" "e1" "e2" "e3")
         = #"typerec" "cond" "A" (#"exp_subst" "g" "e1") (#"exp_subst" "g" "e2") (#"exp_subst" "g" "e3")
         : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A")
     ]
+    (* need another one of these for ty_subst, somehwere in val_ty_subst prolly (look very similar, just htink harteder about the type) *)
 
     (* [:= "G" : #"env",  (* the old function rule, for reference *)
         "A" : #"ty",
@@ -366,8 +453,7 @@ Hint Unfold target_multilanguage : auto_elab.
 (* Print boolhuh.  *)
 (* here you can see implicit arguments *)
 
-(* compiler *)
-
+(* the compiler *)
 Local Notation compiler := (compiler string). 
 Definition multilang_compiler_def : compiler :=
     match # from (boundaries ++ uif) with
