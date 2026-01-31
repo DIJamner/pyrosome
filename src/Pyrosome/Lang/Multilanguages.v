@@ -156,104 +156,158 @@ Qed.
 (* 
 TODO: 
 - typerec func (DONE)
-- boundaries ty_subst
-- parameterize boundaries
+- ty_subst (boundaries and type casing) (* have a first shot, don't think it's right *)
+- parameterize boundaries (* STARTED, not done *)
 - remaining langs parameterized (ultc_bool, mif, uif, boolhuh)
 - convoy for compiler
 *)
 
-
+Compute exp_parameterized. 
 
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
-    [:| "G" : #"env",
-        "A" : #"ty", (* 'source' type *)
-        "e" : #"exp" "G" "A"
+    [:| "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D", (* 'source' type *)
+        "e" : #"exp" "D" "G" "A"
         -----------------------------------------------
-        #"ttd" "A" "e" : #"exp" "G" #"*"
+        #"ttd" "A" "e" : #"exp" "D" "G" #"*"
     ];
-    [:| "G" : #"env",
-        "A" : #"ty", (* 'target' type *)
-        "e" : #"exp" "G" #"*"
+    [:| "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D", (* 'target' type *)
+        "e" : #"exp" "D" "G" "A"
         -----------------------------------------------
-        #"dtt" "A" "e" : #"exp" "G" "A"
+        #"dtt" "A" "e" : #"exp" "D" "G" "A"
     ];
-    [:= "G" : #"env",
-        "e" : #"exp" "G" #"*"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "e" : #"exp" "D" "G" #"*"
         ----------------------------------------------- ("dtt star")
-        #"dtt" #"*" "e" = "e" : #"exp" "G" #"*"
+        #"dtt" #"*" "e" = "e" : #"exp" "D" "G" #"*"
     ];
-    [:= "G" : #"env",
-        "e" : #"exp" "G" #"*"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "e" : #"exp" "D" "G" #"*"
         ----------------------------------------------- ("ttd star")
-        #"ttd" #"*" "e" = "e" : #"exp" "G" #"*"
+        #"ttd" #"*" "e" = "e" : #"exp" "D" "G" #"*"
     ];
-    [:= "G" : #"env"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D"
         ----------------------------------------------- ("dtt True")
-        #"dtt" #"bool" (#"ret" #"uT") = #"ret" #"T" : #"exp" "G" #"bool"
+        #"dtt" #"bool" (#"ret" #"uT") = #"ret" #"T" : #"exp" "D" "G" #"bool"
     ];
-    [:= "G" : #"env"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D"
         ----------------------------------------------- ("dtt False")
-        #"dtt" #"bool" (#"ret" #"uF") = #"ret" #"F" : #"exp" "G" #"bool"
+        #"dtt" #"bool" (#"ret" #"uF") = #"ret" #"F" : #"exp" "D" "G" #"bool"
     ];
-    [:= "G" : #"env"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D"
         ----------------------------------------------- ("ttd True")
-        #"ttd" #"bool" (#"ret" #"T") = #"ret" #"uT" : #"exp" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"T") = #"ret" #"uT" : #"exp" "D" "G" #"*"
     ];
-    [:= "G" : #"env"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D"
         ----------------------------------------------- ("ttd False")
-        #"ttd" #"bool" (#"ret" #"F") = #"ret" #"uF" : #"exp" "G" #"*"
+        #"ttd" #"bool" (#"ret" #"F") = #"ret" #"uF" : #"exp" "D" "G" #"*"
     ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "B" : #"ty",
-        "v" : #"val" "G" #"*"
-        ----------------------------------------------- ("dtt func")
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "B" : #"ty" "D",
+        "v" : #"val" "D" "G" #"*"
+        ----------------------------------------------- ("dtt func") (* NOTE: NOT DONE *)
         #"dtt" (#"->" "A" "B") (#"ret" "v") =
         #"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))) :
         #"exp" "G" (#"->" "A" "B")
     ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "B" : #"ty",
-        "v" : #"val" "G" (#"->" "A" "B")
-        ----------------------------------------------- ("ttd func")
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "B" : #"ty" "D",
+        "v" : #"val" "D" "G" (#"->" "A" "B")
+        ----------------------------------------------- ("ttd func") (* NOTE: NOT DONE *)
         #"ttd" (#"->" "A" "B") (#"ret" "v") =
         #"ret" (#"ulambda" (#"ttd" "B" (#"app" (#"ret" (#"val_subst" #"wkn" "v")) (#"dtt" "A" (#"ret" #"hd"))))) :
         #"exp" "G" #"*"
     ];
-    [:= "G" : #"env",
-        "e" : #"exp" (#"ext" "G" #"*") #"*"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "e" : #"exp" "D" (#"ext" "G" #"*") #"*"
         ----------------------------------------------- ("dtt ulambda mismatch")
         #"dtt" #"bool" (#"ret" (#"ulambda" "e")) =
-        #"Error" #"bool" : #"exp" "G" #"bool"
+        #"Error" #"bool" : #"exp" "D" "G" #"bool"
     ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "B" : #"ty"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "B" : #"ty" "D"
         ----------------------------------------------- ("dtt uT mismatch")
         #"dtt" (#"->" "A" "B") (#"ret" #"uT") =
-        #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
+        #"Error" (#"->" "A" "B") : #"exp" "D" "G" (#"->" "A" "B")
     ];
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "B" : #"ty"
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "B" : #"ty" "D"
         ----------------------------------------------- ("dtt uF mismatch")
         #"dtt" (#"->" "A" "B") (#"ret" #"uF") =
-        #"Error" (#"->" "A" "B") : #"exp" "G" (#"->" "A" "B")
+        #"Error" (#"->" "A" "B") : #"exp" "D" "G" (#"->" "A" "B")
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "e" : #"exp" "D" "G" "A",
+        "G'" : #"env" "D" "G",
+        "g" : #"sub" "D" "G" "G'"
+        ----------------------------------------------- ("exp_subst dtt")
+        #"exp_subst" "g" (#"dtt" "A" "e") = 
+        #"dtt" "A" (#"exp_subst" "g" "e"): #"exp" "G" "A"
+    ];
+    [:= "D" : #"ty_env",
+        "G" : #"env" "D",
+        "A" : #"ty" "D",
+        "e" : #"exp" "D" "G" "A",
+        "G'" : #"env" "D" "G",
+        "g" : #"sub" "D" "G" "G'"
+        ----------------------------------------------- ("exp_subst ttd")
+        #"exp_subst" "g" (#"ttd" "A" "e") = 
+        #"ttd" "A" (#"exp_subst" "g" "e") : #"exp" "G" "A"
+    ];
+    [:= "D" : #"ty_env",
+        "D'" : #"ty_env",
+        "G" : #"env" "D",
+        "g" : #"ty_sub" "D" "D'",
+        "A" : #"ty" "D",
+        "e" : #"exp" "D" "G" "A"
+        ----------------------------------------------- ("ty_subst dtt")
+        #"ty_subst" "g" (#"dtt" "A" "e")
+        = #"dtt" (#"ty_subst" "g" "A") "e" : #"exp" "G" "A"
+    ];
+    [:= "D" : #"ty_env",
+        "D'" : #"ty_env",
+        "G" : #"env" "D",
+        "g" : #"ty_sub" "D" "D'",
+        "A" : #"ty" "D",
+        "e" : #"exp" "D" "G" "A"
+        ----------------------------------------------- ("ty_subst ttd")
+        #"ty_subst" "g" (#"ttd" "A" "e")
+        = #"ttd" (#"ty_subst" "g" "A") "e" : #"exp" "G" "A"
     ]
   ]}.
-Derive boundaries  (* need polymorphic versions of all these *)
-        SuchThat (elab_lang_ext (utlc ++ (* need poly version *)
-                                untyped_bool ++ (* need poly version *)
+(* Compute boundaries_def.  *)
+(* Derive boundaries  (* need polymorphic versions of all these *)
+        SuchThat (elab_lang_ext (utlc ++
+                                untyped_bool ++
                                 stlc ++ 
                                 typed_bool ++ 
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_def boundaries)
         As boundaries_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve boundaries_wf : elab_pfs.
+Proof. Abort.  *)
+(* #[export] Hint Resolve boundaries_wf : elab_pfs. *)
 
 
 Fixpoint ty_wkn_n n :=
@@ -269,15 +323,17 @@ Definition ty_ovar n :=
   | S _ => {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}
   end.  
 
+Compute exp_subst_def. 
 Compute ty_subst_def. (* I think this has an example of type substitution, which is the rule you're mising in the type casing language *)
-(* Compute poly_def.  *)
+(* Compute poly_def.  *) 
+Compute val_ty_subst. 
 
 Definition type_casing_def : lang :=
   {[l
     [:| "D" : #"ty_env",
         "G" : #"env" "D",
         "cond" : #"ty" "D", (* is mu *)
-        "A" : #"ty" (#"ty_ext" "D"), (* this is sigma *)
+        "A" : #"ty" (#"ty_ext" "D"), (* this is sigma. it's a variable? I think? *)
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"), (* substitute identity type for all except the last (which is A), which we change to star *)
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
         "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A"))))) (* look at arrow case in 134 *)
@@ -321,7 +377,7 @@ Definition type_casing_def : lang :=
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
         "G'" : #"env" "D",
-        "g" : #"sub" "D" "G'" "G",
+        "g" : #"sub" "D" "G" "G'",
         "cond" : #"ty" "D",
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
@@ -330,6 +386,20 @@ Definition type_casing_def : lang :=
         ----------------------------------------------- ("exp_subst typerec")
         #"exp_subst" "g" (#"typerec" "cond" "A" "e1" "e2" "e3")
         = #"typerec" "cond" "A" (#"exp_subst" "g" "e1") (#"exp_subst" "g" "e2") (#"exp_subst" "g" "e3")
+        : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A")
+    ];
+    [:= "D" : #"ty_env",
+        "D'" : #"ty_env",
+        "G" : #"env" "D",
+        "g" : #"ty_sub" "D" "D'",
+        "cond" : #"ty" "D",
+        "A" : #"ty" (#"ty_ext" "D"),
+        "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
+        "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A")))))
+        ----------------------------------------------- ("ty_subst typerec")
+        #"ty_subst" "g" (#"typerec" "cond" "A" "e1" "e2" "e3")
+        = #"typerec" (#"ty_subst" "g" "cond") (#"ty_subst" "g" "A") "e1" "e2" "e3"
         : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A")
     ]
     (* need another one of these for ty_subst, somehwere in val_ty_subst prolly (look very similar, just htink harteder about the type) *)
@@ -402,7 +472,7 @@ Definition multilang_compiler_def : compiler :=
                                     "e" 
                                     (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
                                     (#"Error" "C")
-                                    (* (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd"))))))  *)
+                                    (#"ret" (#"lambda" "A" (#"dtt" "B" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "A" (#"ret" #"hd")))))) 
                                     }}
     | {{e #"ttd" "G" "C" "e"}} => {{e #"type case" "C"  (* rewrite with convoy pattern focus on bool *)
                                     "e"
