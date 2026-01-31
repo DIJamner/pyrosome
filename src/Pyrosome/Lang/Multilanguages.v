@@ -155,9 +155,10 @@ Qed.
 
 (* 
 TODO: 
-- parameterize boundaries
-- typerec func
+- typerec func (DONE)
 - boundaries ty_subst
+- parameterize boundaries
+- remaining langs parameterized (ultc_bool, mif, uif, boolhuh)
 - convoy for compiler
 *)
 
@@ -264,27 +265,11 @@ Fixpoint ty_wkn_n n :=
 
 Definition ty_ovar n :=
   match n with 
-  | 0 => {{e #"ty_hd"}} (* bc ty_wkn ty_hd is just ty_id *)
+  | 0 => {{e #"ty_hd"}} (* bc ty_wkn ty_hd is just ty_id *) (* NOTE: should this be ty_id or ty_hd? *)
   | S _ => {{e #"ty_subst" {ty_wkn_n n} #"ty_hd" }}
   end.  
 
-
-
-
-
 Compute ty_subst_def. (* I think this has an example of type substitution, which is the rule you're mising in the type casing language *)
-
-(* this has the type substitution stuff *)
-(* Print PolySubst.  *)
-(* list of languages that a poly language depends on:
-    exp_param_substs ++
-    exp_ty_subst ++
-    val_param_substs ++
-    val_ty_subst ++
-    env_ty_subst ++
-    ty_subst_lang ++
-    exp_parameterized ++ val_parameterized ++ ty_env_lang
-*)
 (* Compute poly_def.  *)
 
 Definition type_casing_def : lang :=
@@ -295,7 +280,8 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"), (* this is sigma *)
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"), (* substitute identity type for all except the last (which is A), which we change to star *)
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A"))))) (* look at arrow case in 134 *)
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A"))))) (* look at arrow case in 134 *)
+        (* NOTE: I think the 1s and 0s are right? *)
         -----------------------------------------------
         #"typerec" "cond" "A" "e1" "e2" "e3"  : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A") (* verbos way of writing the [u/t]sigma in the rule on 134 *)
     ];
@@ -304,7 +290,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A")))))
         ----------------------------------------------- ("typerec star")
         #"typerec" #"*" "A" "e1" "e2" "e3"  
         = "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A")
@@ -314,7 +300,7 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A")))))
         ----------------------------------------------- ("typerec bool")
         #"typerec" #"bool" "A" "e1" "e2" "e3"  
         = "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A")
@@ -326,11 +312,11 @@ Definition type_casing_def : lang :=
         "t2" : #"ty" "D",
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
-        ----------------------------------------------- ("typerec func")
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A")))))
+        ----------------------------------------------- ("typerec func") (* trec-fn on page 135 *)
         #"typerec" (#"->" "t1" "t2") "A" "e1" "e2" "e3"  
-        = #"@" (#"@" "e3" "t1") "t2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
-        (* trec-fn on page 135 *)
+        = #"app" (#"@" (#"app" (#"@" "e3" "t1") (#"typerec" "t1" "A" "e1" "e2" "e3")) "t2") (#"typerec" "t2" "A" "e1" "e2" "e3")
+        : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" (#"->" "t1" "t2")) "A")
     ];
     [:= "D" : #"ty_env",
         "G" : #"env" "D",
@@ -340,27 +326,13 @@ Definition type_casing_def : lang :=
         "A" : #"ty" (#"ty_ext" "D"),
         "e1" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"*") "A"),
         "e2" : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" #"bool") "A"),
-        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 0} {ty_ovar 1})) "A")))))
+        "e3" : #"exp" "D" "G" (#"All" (#"->" "A" (#"All" (#"->" (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} {ty_ovar 0}) "A") (#"ty_subst" (#"ty_snoc" {ty_wkn_n 2} (#"->" {ty_ovar 1} {ty_ovar 0})) "A")))))
         ----------------------------------------------- ("exp_subst typerec")
         #"exp_subst" "g" (#"typerec" "cond" "A" "e1" "e2" "e3")
         = #"typerec" "cond" "A" (#"exp_subst" "g" "e1") (#"exp_subst" "g" "e2") (#"exp_subst" "g" "e3")
         : #"exp" "D" "G" (#"ty_subst" (#"ty_snoc" #"ty_id" "cond") "A")
     ]
     (* need another one of these for ty_subst, somehwere in val_ty_subst prolly (look very similar, just htink harteder about the type) *)
-
-    (* [:= "G" : #"env",  (* the old function rule, for reference *)
-        "A" : #"ty",
-        "t1" : #"ty",
-        "t2" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case func")
-        #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
-        = "e3" : #"exp" "G" "A"
-        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
-        (* some page in the paper they sent you has a rule like this *)
-    ] *)
   ]}.
 
   Compute type_casing_def. 
@@ -371,7 +343,8 @@ Derive type_casing
                                 typed_bool_parameterized ++ 
                                 stlc_parameterized ++ 
                                 usubst_parameterized ++ 
-                                poly ++ 
+                                poly ++ (* needed for #"All" *)
+                                (* below are the things needed for polymorphic languages *)
                                 exp_param_substs ++
                                 exp_ty_subst ++
                                 val_param_substs ++
@@ -379,10 +352,6 @@ Derive type_casing
                                 env_ty_subst ++
                                 ty_subst_lang ++
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
-                                (* typed_bool ++ 
-                                stlc ++
-                                usubst ++ 
-                                exp_subst++value_subst *)
                                 ) 
                 type_casing_def type_casing)
         As type_casing_wf.
@@ -390,35 +359,6 @@ Proof.
     
     auto_elab. Qed. 
 #[export] Hint Resolve type_casing_wf : elab_pfs.
-(* Definition type_casing_def : lang :=
-  {[l/subst [exp_subst++value_subst] 
-    [:| "D" : #"ty_env",
-        "G" : #"env" "D",
-        "cond" : #"ty" "D",
-        "A" : #"ty" "D",
-        "e1" : #"exp" "D" "G" "A",
-        "e2" : #"exp" "D" "G" "A",
-        "e3" : #"exp" (#"ext" (#"ext" "D")) "G" "A" (* needs to have extneded type environment *)
-        -----------------------------------------------
-        #"type case" "cond" "e1" "e2" "e3"  : #"exp" "D" "G" "A"
-    ];
-    ... (* this is just an example of what it will look like *)
-    [:= "G" : #"env",
-        "A" : #"ty",
-        "t1" : #"ty",
-        "t2" : #"ty",
-        "e1" : #"exp" "G" "A",
-        "e2" : #"exp" "G" "A",
-        "e3" : #"exp" "G" "A"
-        ----------------------------------------------- ("type case func")
-        #"type case" (#"->" "t1" "t2") "e1" "e2" "e3"  
-        = #"exp_subst" (#"snoc" #"ty_id" "t1" "t2") "e3" : #"exp" "D" "G" "A"
-        (* = "e3" : #"exp" "G" "A"  *)
-        (* gonna have a type level substitution on e3 that'll plug t1 and t2 in *)
-        (* some page in the paper they sent you has a rule like this *)
-    ]
-  ]}. *)
-
 
 
 (* The actual multilanguages *)
