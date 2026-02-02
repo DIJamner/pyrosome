@@ -5,11 +5,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst Tools.EGraph.TypeInference.
 Import Core.Notations.
-
-Require Coq.derive.Derive.
-
 
 Definition stlc_def : lang :=
   {[l/subst [exp_subst++value_subst]
@@ -44,10 +41,14 @@ Definition stlc_def : lang :=
   ]
   ]}.
 
-Derive stlc
-       SuchThat (elab_lang_ext (exp_subst++value_subst) stlc_def stlc)
-       As stlc_wf.
+Definition stlc_injectivity :=
+  [("app", ["B"; "G"]); ("lambda", ["e";"B"; "A"; "G"]); ("->", ["t'"; "t"])].
+
+Definition stlc :=
+  Eval vm_compute in
+    (infer_lang_ext (exp_subst++value_subst) stlc_def
+       (stlc_injectivity++exp_subst_injectivity++value_subst_injectivity)).
+
+Lemma stlc_wf : elab_lang_ext (exp_subst++value_subst) stlc_def stlc.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve stlc_wf : elab_pfs.
-
-

@@ -36,3 +36,12 @@ Definition exp_subst_def := exp_ret_def ++ exp_subst_base_def.
 Lemma exp_subst_wf : elab_lang_ext value_subst exp_subst_def exp_subst.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.
+
+
+Definition value_subst_injectivity :=
+  [("hd", ["A"; "G"]); ("wkn", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("ext", ["A"; "G"]);
+   ("forget", ["G"]); ("emp", []); ("val_subst", ["A"; "G"]); ("val", ["A"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", []); ("ty", [])].
+
+Definition exp_subst_injectivity :=
+  [("ret", ["v";"A"; "G"]); ("exp_subst", ["A"; "G"]); ("exp", ["A"; "G"])].

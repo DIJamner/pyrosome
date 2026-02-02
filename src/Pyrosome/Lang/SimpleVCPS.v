@@ -6,12 +6,11 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches Tools.EGraph.Automation.
+  Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
-
-Require Coq.derive.Derive.
 
 Local Notation compiler := (compiler string).
 
@@ -54,11 +53,23 @@ Definition cps_lang_def : lang :=
   ]
   ]}.
 
-Derive cps_lang
-       SuchThat (elab_lang_ext (block_subst ++ value_subst)
+(*TODO: move to PolySubst.v*)
+Definition block_subst_injectivity :=
+  [("blk_subst", ["G"]); ("blk", ["G"])].
+
+
+Definition cps_injectivity :=
+  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
+
+Definition cps_lang :=
+  Eval vm_compute in
+    (infer_lang_ext (block_subst++value_subst) cps_lang_def
+       (cps_injectivity++block_subst_injectivity++value_subst_injectivity)).
+
+
+Lemma cps_lang_wf : elab_lang_ext (block_subst ++ value_subst)
                                cps_lang_def
-                               cps_lang)
-       As cps_lang_wf.
+                               cps_lang.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve cps_lang_wf : elab_pfs.
 

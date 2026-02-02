@@ -5,7 +5,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils EGraph.Defs Monad Lens.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.EGraph.Defs
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Elab.PreTerm Elab.PreRule
+  Tools.Matches Tools.EGraph.Defs
   Tools.EGraph.Automation.
 Require Import Utils.EGraph.Semantics.
 Import PArith.
@@ -24,6 +26,9 @@ Notation sort := (@sort string).
 Notation subst := (@subst string).
 Notation rule := (@rule string).
 Notation lang := (@lang string).
+
+
+Notation prelang := (@prelang string).
 
 (* TODO: make all of this use something other than strings *)
 
@@ -68,7 +73,7 @@ Fixpoint insert_terms_into_context
   end.
  *)
 
-
+(*
 (*TODO: log dummy names as they are gensymmed.
 Use writer monad
  *)
@@ -88,6 +93,7 @@ Definition get_dummy_names_from_sort (s: sort) : list string :=
 
 Definition get_dummy_names_from_ctx (c : ctx) :=
   flat_map get_dummy_names_from_sort (map snd c).
+*)
 
 Fixpoint get_dummy_rules (dummy_names: list string) : lang :=
   match dummy_names with
@@ -97,6 +103,7 @@ Fixpoint get_dummy_rules (dummy_names: list string) : lang :=
 Definition get_dummy_context (dummy_names: list string): ctx :=
   map (fun name => (name, scon "ty" [])) dummy_names.
 (* ----------------------------------------*)
+
 
 
 (* Newtype for clear typeclass inference*)
@@ -125,24 +132,49 @@ Section __.
   Context {M} `{StateMonad ident M}
   `{StateMonad (list (string * rule)) M}.
 
-  Fixpoint insert_arg_holes (s : list term) (c_names e_args : list string) 
-    : M (list term) :=
-    match c_names, e_args, s with
-    | [], _, _ => Mret []
-    | x::c_names', [], [] =>
-        @! let s' <- insert_arg_holes [] c_names' [] in
-          let  x_sym <- gensym in
-          ret (con x_sym [] :: s')
-    | x::c_names', y::e_args', e::s' =>
-        if eqb x y then
-          @! let s'' <- insert_arg_holes s' c_names' e_args' in
-            ret (e :: s'')
-        else 
-          @! let s'' <- insert_arg_holes s c_names' e_args in
-            let x_sym <- gensym in
-            ret (con x_sym [] :: s'')
-    | _, _, _ => Mret default
-    end.
+  Section Inner.
+    Context (build_term_with_holes : term -> M term).
+    
+    (* Separated out for the termination checker*)
+    Fixpoint insert_trailing_holes (c_names : list string)
+      : M (list term) :=
+      match c_names with
+      | [] => Mret []
+      | x::c_names' =>
+          @! let s' <- insert_trailing_holes c_names' in
+            let  x_sym <- gensym in
+            ret (con x_sym [] :: s')
+      end.
+
+    Section Inner2.
+      Context (insert_arg_holes_rest : list string ->
+                                       list string -> M (list term))
+        (e_holes : term).
+      (* Separated out for the termination checker*)
+      Fixpoint insert_next_arg (c_names e_args : list string)
+          : M (list term) :=
+          match c_names, e_args with
+          | [], _ | _, [] => Mret default (* should not happen *)
+          | x::c_names', y::e_args' =>
+              if eqb x y then
+                @! let s'' <- insert_arg_holes_rest c_names' e_args' in
+                  ret (e_holes :: s'')
+              else 
+                @! let s'' <- insert_next_arg c_names' e_args in
+                  let x_sym <- gensym in
+                  ret (con x_sym [] :: s'')
+          end.
+    End Inner2.      
+    
+    Fixpoint insert_arg_holes (s : list term) (c_names e_args : list string)
+      : M (list term) :=
+      match s with
+      | [] => insert_trailing_holes c_names
+      | e::s' =>
+          @!let e_holes <- build_term_with_holes e in
+            (insert_next_arg (insert_arg_holes s') e_holes c_names e_args)
+      end.
+  End Inner.
   
   Fixpoint build_term_with_holes (t: term)
     : M term :=
@@ -153,7 +185,8 @@ Section __.
         match NamedList.named_list_lookup_err l name_of_rule with
         | Some (term_rule context explicit_args _) =>
             @! let s' <- list_Mmap build_term_with_holes s in
-              let s_holes <- insert_arg_holes s (map fst context) explicit_args in
+              let s_holes <- insert_arg_holes build_term_with_holes
+                               s (map fst context) explicit_args in
               ret con name_of_rule s_holes
         (* The case below never runs *)
         | _ => Mret default
@@ -168,7 +201,8 @@ Section __.
         match NamedList.named_list_lookup_err l name_of_rule with
         | Some (sort_rule context explicit_args) =>
             @! let s' <- list_Mmap build_term_with_holes s in
-              let s_holes <- insert_arg_holes s (map fst context) explicit_args in
+              let s_holes <- insert_arg_holes build_term_with_holes
+                               s (map fst context) explicit_args in
               ret scon name_of_rule s_holes
         (* The case below never runs *)
         | _ => Mret default
