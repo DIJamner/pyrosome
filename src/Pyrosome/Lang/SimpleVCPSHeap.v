@@ -112,7 +112,7 @@ Derive heap_id
                                           heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As cps_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve heap_id : elab_pfs.
 
 
@@ -145,7 +145,7 @@ Derive heap_cps
                                           heap_cps
                                           heap_ops)
        As heap_cps_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve heap_cps_preserving : elab_pfs.
 
 Definition Ebind_k n e A k :=
@@ -188,7 +188,7 @@ Derive heap_ctx_cps
                                           heap_ctx)
        As heap_ctx_cps_preserving.
 Proof.
-  auto_elab_compiler.
+  auto_elab_compiler_no_check.
 Qed.
 #[export] Hint Resolve heap_ctx_cps_preserving : elab_pfs.
 

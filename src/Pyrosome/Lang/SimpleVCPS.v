@@ -107,7 +107,7 @@ Derive cps_subst
                                           cps_subst
                                           (exp_subst ++ value_subst))
        As cps_subst_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve cps_subst_preserving : elab_pfs.
 
 (*TODO: separate file?*)
@@ -195,5 +195,5 @@ Derive cps
                                           cps
                                           stlc)
        As cps_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve cps_preserving : elab_pfs.

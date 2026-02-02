@@ -888,7 +888,8 @@ Module PositiveInstantiation.
    *)
   Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)
-    (lang_filter : lang V -> lang V)
+    (lang_filter : V * rule V -> bool)
+    (reversible : V * rule V -> bool)
     rn n c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
     let rename_and_run : state (renaming V) _ :=
       @! let l' <- rename_lang (ctx_to_rules c ++ l) in
@@ -896,12 +897,16 @@ Module PositiveInstantiation.
         let e2' <- rename_term (var_to_con e2) in
         let t' <- rename_sort (sort_var_to_con t) in
         (* Never filter context rules since they are always constant rules. *)
-        let rules <- rename_lang (ctx_to_rules c ++ lang_filter l) in
+        let pos_rules <- rename_lang (ctx_to_rules c ++ filter lang_filter l) in        
         (* build in backwards steps *)
-        let rev_rules := named_map rev_rule rules in
+        let rev_rules := named_map rev_rule
+                           (filter (fun p => reversible p
+                                             && lang_filter p)
+                              l) in
+        let pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in       
         ret (egraph_equal l'
-               [(10%nat,build_rule_set rn rules l');
-                (1%nat,build_rule_set rn rev_rules l')]
+               [(10%nat,build_rule_set rn pos_rules l');
+                (1%nat,build_rule_set rn pos_rev_rules l')]
                rn n e1' e2' t')
     in
     (*2 so that sort_of is distict*)

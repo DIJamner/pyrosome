@@ -144,7 +144,7 @@ Derive subst_cc
                                           (block_subst++value_subst))
        As subst_cc_preserving.
 Proof.
-  auto_elab_compiler.
+  auto_elab_compiler_no_check.
 Qed.
 #[export] Hint Resolve subst_cc_preserving : elab_pfs.
 
@@ -180,6 +180,9 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve forget_eq_wkn_wf : elab_pfs.
 
 
+Definition cc_bidirectional_rules :=
+  ["forget_eq_wkn"; "clo_eta"; "id_emp_forget"; "cmp_snoc"].
+
 Derive prod_cc_compile
        SuchThat (elab_preserving_compiler subst_cc
                                           ( unit_eta
@@ -192,7 +195,7 @@ Derive prod_cc_compile
                                           prod_cc_compile
                                           cps_prod_lang)
        As prod_cc_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve prod_cc_preserving : elab_pfs.
 
 
@@ -219,6 +222,6 @@ Derive cc
                                           cc
                                           cps_lang)
        As cc_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve cc_preserving : elab_pfs.
 

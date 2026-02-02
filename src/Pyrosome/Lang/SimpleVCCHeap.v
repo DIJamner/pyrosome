@@ -40,7 +40,7 @@ Derive heap_id'
                                           heap_id'
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
        As heap_id'_preserving.
-Proof. auto_elab_compiler. Qed.
+Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve heap_id'_preserving : elab_pfs.
 
 
@@ -96,6 +96,6 @@ Derive heap_cc
                                           heap_cps_ops)
        As heap_cc_preserving.
 Proof.
-  auto_elab_compiler.
+  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) fail.
 Qed.
 #[export] Hint Resolve heap_cc_preserving : elab_pfs.

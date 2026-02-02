@@ -14,6 +14,9 @@ Import CompilerDefs.Notations.
 Require Coq.derive.Derive.
 
 
+Require Import Tools.EGraph.Automation.
+
+
 Definition fix_cc_lang_def : lang :=
   {[l/subst [(cc_lang++prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)]
   [:| "G" : #"env",
@@ -55,21 +58,6 @@ Definition fix_cc_def : compiler :=
                                  "e") #"hd")}}
   end.
 
-
-(*
-Lemma term_rw_lhs_nth {V} `{Eqb V} (l : Rule.lang V) c t t'' s1 e e1 e2 s1_pre s1_post name
-  : wf_lang l ->
-    s1 = s1_pre ++ e1::s1_post ->
-    eq_term l c t'' e1 e2 ->
-    eq_term l c t (con name (s1_pre ++ e2::s1_post)) e ->
-    eq_term l c t (con name s1) e.
-Proof.
-  intros; subst.
-  eapply eq_term_trans; eauto.
-  (*TODO: conv-stable inversion*)
-Admitted.
- *)
-
 Derive fix_cc
        SuchThat (elab_preserving_compiler (cc++prod_cc_compile++subst_cc)
                                           (fix_cc_lang
@@ -86,14 +74,6 @@ Derive fix_cc
                                           fix_cps_lang)
        As fix_cc_preserving.
 Proof.
-  auto_elab_compiler.
-  cleanup_elab_after
-    (reduce;
-     term_cong; try term_refl;
-     unfold Model.eq_term;
-     eapply eq_term_trans;
-     [eapply eq_term_sym;
-      eredex_steps_with cc_lang "clo_eta"|];
-     by_reduction).
+  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) fail.
 Qed.
 #[export] Hint Resolve fix_cc_preserving : elab_pfs.

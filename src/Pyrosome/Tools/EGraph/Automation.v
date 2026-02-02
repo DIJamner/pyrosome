@@ -36,9 +36,8 @@ Definition subst_weight (r : renaming string) (a : atom positive positive) :=
        [Some "val_subst"; Some "blk_subst"] then Some 20%nat
   else Some (length a.(atom_args)).
 
-Definition filter_rules := fun V : Type =>
-filter
-  (fun pat : V * Rule.rule V =>
+Definition filter_rules :=
+(fun pat : string * Rule.rule string =>
    match pat with
    | (_, term_rule _ _ _) => false
    | _ => true
@@ -76,12 +75,15 @@ Instance depth_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => Some 1).
 
 (*TODO: generalize what rules to run *)
-Theorem egraph_sound rebuild_fuel fuel l filter (c : ctx string) t (e1 e2 : term string)
+Theorem egraph_sound
+  rebuild_fuel fuel l filter
+  reversible
+  (c : ctx string) t (e1 e2 : term string)
   : wf_lang l ->
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    fst (fst (fst (fst (egraph_equal' l filter rebuild_fuel fuel c e1 e2 t)))) = true->
+    Is_true (fst (fst (fst (fst (egraph_equal' l filter reversible rebuild_fuel fuel c e1 e2 t))))) ->
     eq_term l c t e1 e2.
 Admitted.
 
@@ -128,7 +130,7 @@ Ltac egraph rule_transform n :=
 
 
 Lemma egraph_simpl2_sound
-  : forall  (rebuild_fuel cap fuel efuel : nat) (l : lang string)
+  : forall (rebuild_fuel cap fuel efuel : nat) (l : lang string)
          (c : named_list string (sort string)) t e1 e2 e1' e2' debug,
        wf_lang l ->
        wf_ctx (Model:= core_model l) c ->
@@ -146,22 +148,37 @@ Ltac egraph_simpl2 cap :=
     eapply (egraph_simpl2_sound 100 cap 100 100);
     [prove_from_known_elabs| shelve | shelve | shelve | vm_compute; reflexivity | ].
 
+Ltac exact_check_if do_check v :=
+  tryif do_check then (vm_compute; exact v)
+  else vm_cast_no_check v.
 
-Ltac by_reduction :=
+Ltac by_reduction' reversible do_check :=
   (*TODO: subsume reduce w/ egraph_simpl2*)
   reduce;
    (* egraph_simpl2 10%nat;*)
-    apply (egraph_sound 100 100 (@filter_rules _) );
-    [prove_from_known_elabs| | | | vm_compute; reflexivity].
+    apply (egraph_sound 100 100 filter_rules reversible);
+  [prove_from_known_elabs| | | | exact_check_if do_check I].
 
-Ltac auto_elab_compiler :=
+Ltac by_reduction :=
+  by_reduction' (fun _ : string * Rule.rule string => true) idtac.
+
+Ltac auto_elab_compiler' reversible do_check :=
   cleanup_elab_after
   setup_elab_compiler;
   repeat
      ([>repeat t; cleanup_elab_after try 
-                    (try decompose_sort_eq; by_reduction)
-     | .. ]).
+                    (try decompose_sort_eq; by_reduction' reversible do_check)
+      | .. ]).
 
+Ltac auto_elab_compiler :=
+  auto_elab_compiler' (fun _ : string * Rule.rule string => true) idtac.
+
+Ltac auto_elab_compiler_no_check :=
+  auto_elab_compiler' (fun _ : string * Rule.rule string => true) fail.
+
+(* for building filters from lists in tactics *)
+Definition rule_named_in l :=
+  (fun p : string * Rule.rule string => inb (fst p) l).
 
 (*******************************
  Extraction facilities.
