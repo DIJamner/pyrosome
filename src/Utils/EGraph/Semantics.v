@@ -4572,6 +4572,24 @@ query_clauses symbol_map (idx_map (list nat * nat))
   
   (*TODO: move*)
   Arguments compiled_rules {idx symbol}%type_scope {symbol_map idx_map}%function_scope r.
+
+  
+  Lemma max_id_sound i
+    : state_sound_for_model m i
+        (max_id idx symbol symbol_map idx_map idx_trie
+           analysis_result) (fun _ _ => True).
+  Proof.
+    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
+  Qed.
+  
+  Lemma worklist_empty_sound i
+    : state_sound_for_model m i
+        (worklist_empty idx symbol symbol_map idx_map idx_trie
+           analysis_result) (fun _ _ => True).
+  Proof.
+    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
+  Qed.
+
   
   Lemma run1_iter_sound i rs rb_fuel
     : all (rule_sound_for_evaluation i (query_clauses rs)) rs.(compiled_rules) ->
@@ -4587,20 +4605,27 @@ query_clauses symbol_map (idx_map (list nat * nat))
     { apply build_tries_sound. }
     {
       ssm_bind.
+      1: apply max_id_sound.
+      ssm_bind.
       1: apply increment_epoch_sound.
       ssm_bind.
-      2:{
-        eapply state_sound_for_model_wkn; eauto.
-        eapply rebuild_sound.
+      {        
+        apply state_sound_for_model_Miter with (P:= fun _ _ => True);
+          intros; eauto.
+        eapply process_erule_sound; eauto.
+        { repeat (eapply tries_sound_for_model_monotone; try eassumption). }
+        {
+          eapply in_all in H1; eauto.
+          repeat (eapply monotone_rule_sound_for_evaluation; try eassumption).
+        }
       }
-      apply state_sound_for_model_Miter with (P:= fun _ _ => True);
-        intros; eauto.
-      eapply process_erule_sound; eauto.
-      { repeat (eapply tries_sound_for_model_monotone; try eassumption). }
-      {
-        eapply in_all in H1; eauto.
-        repeat (eapply monotone_rule_sound_for_evaluation; try eassumption).
-      }
+      ssm_bind.
+      1: apply max_id_sound.
+      ssm_bind.
+      1: apply worklist_empty_sound.
+      ssm_bind.
+      1:eapply rebuild_sound.
+      eapply ret_sound_for_model'; auto.
     }
   Qed.
     
@@ -4622,13 +4647,15 @@ query_clauses symbol_map (idx_map (list nat * nat))
       ssm_bind.
       destruct a.
       { eapply ret_sound_for_model'; auto. }
-      eapply state_sound_for_model_Mseq.
+      ssm_bind.
       {
         apply run1_iter_sound.
         eapply all_wkn; try eassumption.
         intros.
         repeat (eapply monotone_rule_sound_for_evaluation; try eassumption).
       }
+      case_match.
+      { eapply ret_sound_for_model'; auto. }        
       {
         intros; eauto.
         eapply IHfuel.

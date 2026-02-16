@@ -18,82 +18,35 @@ Require Import Coq.Strings.String.
 Require Coq.Numbers.DecimalString.
 
 
-Notation named_list := (@named_list string).
-Notation named_map := (@named_map string).
-Notation term := (@term string).
-Notation ctx := (@ctx string).
-Notation sort := (@sort string).
-Notation subst := (@subst string).
-Notation rule := (@rule string).
-Notation lang := (@lang string).
+Local Notation named_list := (@named_list string).
+Local Notation named_map := (@named_map string).
+Local Notation term := (@term string).
+Local Notation ctx := (@ctx string).
+Local Notation sort := (@sort string).
+Local Notation subst := (@subst string).
+Local Notation rule := (@rule string).
+Local Notation lang := (@lang string).
 
 
-Notation prelang := (@prelang string).
+Local Notation preterm := (@preterm string).
+Local Notation prectx := (@prectx string).
+Local Notation presort := (@presort string).
+Local Notation prerule := (@prerule string).
+Local Notation prelang := (@prelang string).
 
 (* TODO: make all of this use something other than strings *)
 
 Definition nat_to_string (n : nat) : string :=
   DecimalString.NilZero.string_of_uint (Nat.to_uint n).
 
-Fixpoint Zip_two_lists (X: Type) (Y: Type) (l1: list X) (l2: list Y) : list (X * Y) :=
-  match l1 with
-  | nil => nil
-  | cons head1 tail1 =>
-    match l2 with
-    | nil => nil
-    | cons head2 tail2 => cons (head1, head2) (Zip_two_lists tail1 tail2)
-    end
-  end.
 Fixpoint Find_x (Y: Type) (key: string) (l: list (string * Y)) : option Y :=
   match l with
   | nil => None
   | cons (head_x, head_y) tail => if (String.eqb key head_x) then (Some head_y) else (Find_x key tail)
   end.
-Fixpoint map_indexed (X: Type) (Y: Type) (f : nat -> X -> Y) (L: list X) (start: nat)  : list Y :=
-  (* Takes a list X and for each element v at index i replaces it with f (start + i) x and returns a list of such elements of type list Y*)
-  match L with
-  | nil => nil
-  | cons head tail => cons (f start head) (map_indexed f tail (start + 1) )
-  end.
 
 (* ------BUILDING_TERMS_and_SORTS_WITH_HOLES---------*)
 Local Open Scope string_scope.
-
-
-(*
-Fixpoint insert_terms_into_context
-      (list_of_subterms: list term) (explicit_args: list string) (context: ctx) (prefix: string) : list term :=
-  match context with
-  | nil => nil
-  | cons (head_name, head_sort) rest_context =>
-    match (Find_x head_name (Zip_two_lists explicit_args list_of_subterms)) with
-    | None => (cons (con ("?" ++ prefix ++ head_name) []) (insert_terms_into_context list_of_subterms explicit_args rest_context prefix))
-    | Some t => (cons t (insert_terms_into_context list_of_subterms explicit_args rest_context prefix))
-    end
-  end.
- *)
-
-(*
-(*TODO: log dummy names as they are gensymmed.
-Use writer monad
- *)
-Fixpoint get_dummy_names_from_term (t: term) : list string :=
-  match t with
-  | var _ => []
-  | con (String "?" rest) subterms => cons (String "?" rest) (fold_right (@app string) [] (map get_dummy_names_from_term subterms))
-  | con _ subterms => (fold_right (@app string) [] (map get_dummy_names_from_term subterms))
-  end.
-
-Definition get_dummy_names_from_sort (s: sort) : list string :=
-  (* takes a sort with holes *)
-  match s with
-  | scon (String "?" rest) subterms => cons (String "?" rest) (fold_right (@app string) [] (map get_dummy_names_from_term subterms))
-  | scon _ subterms => fold_right (@app string) [] (map get_dummy_names_from_term subterms)
-  end.
-
-Definition get_dummy_names_from_ctx (c : ctx) :=
-  flat_map get_dummy_names_from_sort (map snd c).
-*)
 
 Fixpoint get_dummy_rules (dummy_names: list string) : lang :=
   match dummy_names with
@@ -121,6 +74,27 @@ Definition gensym {M} `{StateMonad ident M} `{StateMonad (list (string * rule)) 
     let _ <- set_state (Build_ident (string_succ s.(get_ident))) in
     ret s.(get_ident).
 
+
+Section Inner.
+  Context (pre_var_to_con : preterm -> preterm).
+  Definition pre_var_to_con_arg (a : string* preterm + preterm) :=
+    match a with
+    | inr e => inr (pre_var_to_con e)
+    | inl (x,e) => inl (x, pre_var_to_con e)
+    end.
+End Inner.
+
+Fixpoint pre_var_to_con (t : preterm) :=
+  match t with
+  | pre_var x => pre_con x []
+  | pre_con n s => pre_con n (map (pre_var_to_con_arg pre_var_to_con) s)
+  end.
+
+Definition presort_var_to_con (t : presort) :=
+  match t with
+  | pre_scon n s => pre_scon n (map (pre_var_to_con_arg pre_var_to_con) s)
+  end.
+
 (*
 Definition gen_dummy_rules {M} `{StateMonad (list ident) M}
   : M _ :=
@@ -133,7 +107,7 @@ Section __.
   `{StateMonad (list (string * rule)) M}.
 
   Section Inner.
-    Context (build_term_with_holes : term -> M term).
+    Context (build_term_with_holes : preterm -> M term).
     
     (* Separated out for the termination checker*)
     Fixpoint insert_trailing_holes (c_names : list string)
@@ -149,6 +123,7 @@ Section __.
     Section Inner2.
       Context (insert_arg_holes_rest : list string ->
                                        list string -> M (list term))
+        (e_name : string)
         (e_holes : term).
       (* Separated out for the termination checker*)
       Fixpoint insert_next_arg (c_names e_args : list string)
@@ -164,28 +139,48 @@ Section __.
                   let x_sym <- gensym in
                   ret (con x_sym [] :: s'')
           end.
+      
+      (* Separated out for the termination checker*)
+      Fixpoint insert_next_implicit_arg (c_names e_args : list string)
+          : M (list term) :=
+          match c_names with
+          | [] => Mret default (* should not happen *)
+          | x::c_names' =>
+              if eqb x e_name then
+                @! let s'' <- insert_arg_holes_rest c_names' e_args in
+                  ret (e_holes :: s'')
+              else 
+                @! let s'' <- insert_next_arg c_names' e_args in
+                  let x_sym <- gensym in
+                  ret (con x_sym [] :: s'')
+          end.
     End Inner2.      
     
-    Fixpoint insert_arg_holes (s : list term) (c_names e_args : list string)
+    Fixpoint insert_arg_holes
+      (s : list (string * PreTerm.preterm string + PreTerm.preterm string))
+      (c_names e_args : list string)
       : M (list term) :=
       match s with
       | [] => insert_trailing_holes c_names
-      | e::s' =>
-          @!let e_holes <- build_term_with_holes e in
+      | inr e::s' =>
+          @!let {M} e_holes <- build_term_with_holes e in
             (insert_next_arg (insert_arg_holes s') e_holes c_names e_args)
+      | inl (x,e)::s' =>
+          @!let {M} e_holes <- build_term_with_holes e in
+            (insert_next_implicit_arg (insert_arg_holes s')
+               x e_holes c_names e_args)
       end.
   End Inner.
   
-  Fixpoint build_term_with_holes (t: term)
+  Fixpoint build_term_with_holes (t: preterm)
     : M term :=
     match t with
-    | var _ => Mret t
-    | con name_of_rule s =>
+    | pre_var x => Mret (var x)
+    | pre_con name_of_rule s =>
         @! let l <- get_state in
         match NamedList.named_list_lookup_err l name_of_rule with
         | Some (term_rule context explicit_args _) =>
-            @! let s' <- list_Mmap build_term_with_holes s in
-              let s_holes <- insert_arg_holes build_term_with_holes
+            @! let {M} s_holes <- insert_arg_holes build_term_with_holes
                                s (map fst context) explicit_args in
               ret con name_of_rule s_holes
         (* The case below never runs *)
@@ -193,15 +188,14 @@ Section __.
         end
     end.
 
-  Definition build_sort_with_holes (s: sort)
+  Definition build_sort_with_holes (s: presort)
     : M sort :=
     match s with
-    | scon name_of_rule s =>
+    | pre_scon name_of_rule s =>
         @! let l <- get_state in
         match NamedList.named_list_lookup_err l name_of_rule with
         | Some (sort_rule context explicit_args) =>
-            @! let s' <- list_Mmap build_term_with_holes s in
-              let s_holes <- insert_arg_holes build_term_with_holes
+            @!let s_holes <- insert_arg_holes build_term_with_holes
                                s (map fst context) explicit_args in
               ret scon name_of_rule s_holes
         (* The case below never runs *)
@@ -210,7 +204,7 @@ Section __.
     end.
 
   Local Open Scope list_scope.
-  Fixpoint build_ctx_with_holes (context: ctx)
+  Fixpoint build_ctx_with_holes (context: prectx)
     : M _ :=
     (* takes a pre-elaboration context and a language it type-checks in.
     outputs a context with holes and an extended language with the dummy rule and the additional context rules *)
@@ -218,7 +212,7 @@ Section __.
     | nil => Mret nil
     | (name_n, s) :: context =>
         @!let elab_context <- build_ctx_with_holes context in
-          let s_with_no_variables := sort_var_to_con s in
+          let s_with_no_variables := presort_var_to_con s in
           let s_holes <- build_sort_with_holes s_with_no_variables in
           let _ <- log [(name_n, term_rule [] [] s_holes)] in
           ret ((name_n , s_holes) :: elab_context)
@@ -372,9 +366,9 @@ Instance infer_state_egraph : Lens infer_state instance :=
 
 (* assumes l contains the context rules *)
 (*TODO: always take in a sort id?*)
-Definition add_elab_term_to_egraph (t: term) (sort_id: string)
+Definition add_elab_term_to_egraph (t: preterm) (sort_id: string)
   : state infer_state string :=
-  let term_with_no_variables := (var_to_con t) in
+  let term_with_no_variables := (pre_var_to_con t) in
   @!let term_with_holes <- build_term_with_holes term_with_no_variables in
     let l <- get_state in
     let t_id <- state_embed (add_open_term weight l true [] term_with_holes) in
@@ -386,9 +380,9 @@ Definition infer_add_open_sort s :=
     (state_embed (add_open_sort weight l true [] s)).
 
 (* assumes l contains the context rules *)
-Definition add_elab_sort_to_egraph (s:sort)
+Definition add_elab_sort_to_egraph (s:presort)
   : state infer_state _ :=
-  let sort_with_no_variables := (sort_var_to_con s) in
+  let sort_with_no_variables := (presort_var_to_con s) in
   @!let sort_with_holes <- build_sort_with_holes sort_with_no_variables in
     (infer_add_open_sort sort_with_holes).
 
@@ -442,23 +436,29 @@ Fixpoint decode_ctx graph ids :=
       (x, decode_sort context graph x_id)::context
   end.
 
+Definition get_ctx (r : prerule) :=
+  match r with
+  | presort_rule c _ | preterm_rule c _ _ | presort_eq_rule c _ _ |
+    preterm_eq_rule c _ _ _ => c
+  end.
+
 (*TODO: use state composed w/ writer for dummy rules?*)
-Definition infer_rule_egraph (l: lang) inj_rules r :=
+Definition infer_rule_egraph (l: lang) inj_rules (r : prerule) :=
   let context := get_ctx r in
   let comp : state infer_state _ :=
     @!
       let context_with_holes <- build_ctx_with_holes context in
       let c_ids <- add_ctx_with_holes_to_egraph context_with_holes in
       let res <- match r with
-                 | sort_rule _ args => @!ret sort_rule_ids c_ids args
-                 | term_rule _ args t => 
+                 | presort_rule _ args => @!ret sort_rule_ids c_ids args
+                 | preterm_rule _ args t => 
                      @!let t_id <- add_elab_sort_to_egraph t in
                        ret term_rule_ids c_ids args t_id
-                 | sort_eq_rule _ t1 t2 => 
+                 | presort_eq_rule _ t1 t2 => 
                      @!let t1_id <- add_elab_sort_to_egraph t1 in
                        let t2_id <- add_elab_sort_to_egraph t2 in
                        ret sort_eq_rule_ids c_ids t1_id t2_id
-                 | term_eq_rule _ e1 e2 t => 
+                 | preterm_eq_rule _ e1 e2 t => 
                      @!let t_id <- add_elab_sort_to_egraph t in
                        let e1_id <- add_elab_term_to_egraph e1 t_id in
                        let e2_id <- add_elab_term_to_egraph e2 t_id in
@@ -480,15 +480,15 @@ Definition infer_rule_egraph_testing_initial (l: lang) r :=
       let context_with_holes <- build_ctx_with_holes context in
       let c_ids <- add_ctx_with_holes_to_egraph context_with_holes in
       let res <- match r with
-                 | sort_rule _ args => @!ret sort_rule_ids c_ids args
-                 | term_rule _ args t => 
+                 | presort_rule _ args => @!ret sort_rule_ids c_ids args
+                 | preterm_rule _ args t => 
                      @!let t_id <- add_elab_sort_to_egraph t in
                        ret term_rule_ids c_ids args t_id
-                 | sort_eq_rule _ t1 t2 => 
+                 | presort_eq_rule _ t1 t2 => 
                      @!let t1_id <- add_elab_sort_to_egraph t1 in
                        let t2_id <- add_elab_sort_to_egraph t2 in
                        ret sort_eq_rule_ids c_ids t1_id t2_id
-                 | term_eq_rule _ e1 e2 t => 
+                 | preterm_eq_rule _ e1 e2 t => 
                      @!let t_id <- add_elab_sort_to_egraph t in
                        let e1_id <- add_elab_term_to_egraph e1 t_id in
                        let e2_id <- add_elab_term_to_egraph e2 t_id in
@@ -522,11 +522,11 @@ Definition decode_rule ids graph :=
       term_eq_rule c e1 e2 t
   end.
 
-Definition infer_rule (l: lang) inj_rules r :=
+Definition infer_rule (l: lang) inj_rules (r : prerule) :=
   let '(ids, s) := infer_rule_egraph l inj_rules r in
   decode_rule ids s.(egraph).
 
-Fixpoint infer_lang_ext l_base l inj_rules :=
+Fixpoint infer_lang_ext l_base (l : prelang) inj_rules :=
   match l with
   | [] => []
   | (n,r)::l =>
@@ -535,6 +535,9 @@ Fixpoint infer_lang_ext l_base l inj_rules :=
       let r' := infer_rule (l'++l_base) inj_rules r in
       (n,r')::l'
   end.
+
+Definition infer_lang_ext_simple l_base (l : lang) inj_rules :=
+  infer_lang_ext l_base (of_lang l) inj_rules.
 
 (*
 Definition infer_sort (L: lang) inj_rules (context: ctx) (s: sort) : sort :=

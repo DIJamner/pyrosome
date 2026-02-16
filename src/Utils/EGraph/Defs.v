@@ -718,22 +718,37 @@ Section WithMap.
   
   Context (rebuild_fuel : nat).
 
-  Definition run1iter (rs : rule_set) : ST unit :=
+  (*Returns the current max id.
+    Used to check if any new terms were allocated.
+   *)
+  Definition max_id : ST idx :=
+    fun i => (i.(equiv).(next _ _ _), i).
+  
+  Definition worklist_empty : ST bool :=
+    fun i => (if i.(worklist) then true else false, i).
+
+  Definition run1iter (rs : rule_set) : ST bool :=
     @!let tries <- build_tries rs in
+      let old_max <- max_id in
       increment_epoch;
       (list_Miter (process_erule tries) rs.(compiled_rules));
+      let new_max <- max_id in
+      let is_empty <- worklist_empty in
       (* TODO: compute an adequate upper bound for fuel *)
-  (rebuild rebuild_fuel).
+      (rebuild rebuild_fuel);
+      ret (andb (eqb new_max old_max) is_empty).
   
-
   Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @!let done <- P in
           if (done : bool) then ret true
-          else (run1iter rs);
-               (saturate_until' rs P fuel)
+          else
+            let no_changes <- run1iter rs in
+            (* Short circuit if no new facts were added *)
+            if (no_changes : bool) then ret false
+            else (saturate_until' rs P fuel)
     end.
 
   (* run the const rules once before the saturation loop *)
