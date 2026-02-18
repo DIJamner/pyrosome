@@ -309,53 +309,6 @@ Section __.
       eapply compute_wf_sort_sound; eauto.
     Qed.
 
-    
-    Definition compute_wf_rule r fuel : option unit :=
-      match r with
-      | sort_rule c args =>
-          @! let ! sublistb args (map fst c) in
-             let tt <- compute_wf_ctx c fuel in
-             ret tt
-      | term_rule c args t =>
-          @! let ! sublistb args (map fst c) in
-             let tt <- compute_wf_ctx c fuel in
-             let tt <- compute_wf_sort c t fuel in 
-             ret tt
-      | sort_eq_rule c t t'=>
-          @! let tt <- compute_wf_ctx c fuel in
-             let tt <- compute_wf_sort c t fuel in 
-             let tt <- compute_wf_sort c t' fuel in
-             ret tt
-      | term_eq_rule c e e' t =>
-          @! let tt <- compute_wf_ctx c fuel in
-             let tt <- compute_wf_sort c t fuel in
-             let t1 <- compute_wf_term c e fuel in
-             let t2 <- compute_wf_term c e' fuel in 
-             let ! eqb t1 t in
-             let ! eqb t2 t in
-             ret tt
-      end.
-
-    
-    Lemma compute_wf_rule_sound r fuel
-      : wf_lang l ->
-        Some tt = compute_wf_rule r fuel ->
-        wf_rule l r.
-    Proof.
-      intro wfl.
-      destruct r; basic_goal_prep.
-      all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
-
-      all:autorewrite with lang_core bool utils in *.
-      all:subst.
-      
-      all: intuition eauto using compute_wf_ctx_sound,
-        compute_wf_sort_sound,
-        compute_wf_term_sound,
-          use_sublistb.
-      all: apply use_sublistb; eauto; typeclasses eauto.
-    Qed.
-
     (* For when the judgment has a non-trivial type *)
     Definition compute_wf_term' c e t fuel : option unit :=
       @!let _ <- compute_wf_sort c t fuel in
@@ -383,6 +336,51 @@ Section __.
      eapply eq_term_wf_sort; eauto; try typeclasses eauto.
      eapply eq_term_refl; eauto.
    Qed.
+
+       
+    Definition compute_wf_rule r fuel : option unit :=
+      match r with
+      | sort_rule c args =>
+          @! let ! sublistb args (map fst c) in
+             let tt <- compute_wf_ctx c fuel in
+             ret tt
+      | term_rule c args t =>
+          @! let ! sublistb args (map fst c) in
+             let tt <- compute_wf_ctx c fuel in
+             let tt <- compute_wf_sort c t fuel in 
+             ret tt
+      | sort_eq_rule c t t'=>
+          @! let tt <- compute_wf_ctx c fuel in
+             let tt <- compute_wf_sort c t fuel in 
+             let tt <- compute_wf_sort c t' fuel in
+             ret tt
+      | term_eq_rule c e e' t =>
+          @! let tt <- compute_wf_ctx c fuel in
+             let tt <- compute_wf_sort c t fuel in
+             let tt <- compute_wf_term' c e t fuel in
+             let tt <- compute_wf_term' c e' t fuel in
+             ret tt
+      end.
+
+    
+    Lemma compute_wf_rule_sound r fuel
+      : wf_lang l ->
+        Some tt = compute_wf_rule r fuel ->
+        wf_rule l r.
+    Proof.
+      intro wfl.
+      destruct r; basic_goal_prep.
+      all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
+
+      all:autorewrite with lang_core bool utils in *.
+      all:subst.
+      
+      all: intuition eauto using compute_wf_ctx_sound,
+        compute_wf_sort_sound,
+        compute_wf_term'_sound,
+          use_sublistb.
+      all: apply use_sublistb; eauto; typeclasses eauto.
+    Qed.
 
   End Terms.  
   
@@ -439,6 +437,17 @@ Ltac compute_subst_wf :=
   | vm_compute; reflexivity ].
 
 
+Ltac compute_sort_wf :=  
+    apply compute_wf_sort_sound with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=filter_rules)
+         (reversible:=filter_rules);
+    [ assumption
+    | solve_wf_ctx
+    | vm_compute; reflexivity].
+
+
 Ltac compute_term_wf :=  
     apply compute_wf_term'_sound with (fuel := 100)
          (rebuild_fuel := 100)
@@ -448,6 +457,16 @@ Ltac compute_term_wf :=
     [ assumption
     | solve_wf_ctx
     | vm_compute; reflexivity].
+
+
+Ltac compute_wf_rule :=
+  apply compute_wf_rule_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=Automation.filter_rules)
+         (reversible:=Automation.filter_rules);
+  [ assumption | vm_compute; reflexivity].
 
 Require Import Pyrosome.Elab.Elab.
 

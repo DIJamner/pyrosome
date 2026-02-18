@@ -7,6 +7,7 @@ From Utils Require Import Utils Monad.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.EGraph.TypeInference
+  Tools.Interactive
   Elab.PreTerm Elab.PreRule
   Lang.Subst.
 
@@ -28,7 +29,7 @@ Definition under G G' A g :=
   let gA := {{e #"ty_subst" {G} {G'} {g} {A} }} in
   let extG := {{e #"ext" {G} {gA} }} in
   {{e #"snoc" {extG} {G'} {A}
-      (#"cmp" {extG} {G'} (#"wkn" {G} {A}) {g})
+      (#"cmp" {extG} {G} {G'} (#"wkn" {G} {gA}) {g})
       (#"hd" {G} {gA}) }}.
 
 Definition get_subst_constr s :=
@@ -75,8 +76,8 @@ Section GenRHSSubterms.
               ret e::subterms
         | [A;G0], Some subst_constr =>            
             @!let (G0',s) <- gen_arg_subst G0 in
-              let A0 := {{e #"ty_subst" {G0'} {G0} {s} {A} }} in
-              let e := {{e #subst_constr {G0'} {G0} {s} {A0} n }} in
+              (*let A0 := {{e #"ty_subst" {G0'} {G0} {s} {A} }} in*)
+              let e := {{e #subst_constr {G0'} {G0} {s} {A} n }} in
               let subterms <- gen_rhs_subterms c' in
               ret e::subterms
         | _, None =>
@@ -120,4 +121,16 @@ Definition substable_constr name (c : ctx) (t : sort) : option _ :=
           term_eq_rule c' lhs rhs t' in
       (Some (append name " subst",subst_rule))
   | _ => None
+  end.
+
+Ltac gen_subst :=
+  lazymatch goal with
+    |- wf_lang_ext ((?n,term_rule ?c _ ?t)::_) _ =>
+      let mrule := eval vm_compute in
+      (substable_constr n c t)
+        in
+        lazymatch mrule with
+        | Some ?rule => push_rule rule
+        | None => fail "Failed to generate substitution rule. TODO: improve message"
+        end
   end.
