@@ -20,7 +20,13 @@ Definition definitely_fresh (s : string) (l : list string) :=
 Definition choose_fresh (s : string) (c:ctx) :=
   if negb (inb s (map fst c)) then s else definitely_fresh s (map fst c).
 
-Import Core.Notations.
+Import PreRule.Notations Core.Notations.
+
+
+(*pre-elab version
+ *)
+Definition under' g :=
+  {{pe #"snoc" (#"cmp" #"wkn" {inr g}) #"hd" }}.
 
 (*TODO: complicaed for dep types.
   Need a subst on hd?
@@ -134,3 +140,4 @@ Ltac gen_subst :=
         | None => fail "Failed to generate substitution rule. TODO: improve message"
         end
   end.
+

@@ -1,5 +1,3 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
@@ -107,12 +105,6 @@ Proof.
       : #"exp" "G" (#"ty_subst" (#"snoc" #"id" "e'") "B")
   ]}%prerule
     (pi_injectivity++subst_injectivity).
-  
-(*pre-elab version
- *)
-Definition under' g :=
-  {{pe #"snoc" (#"cmp" #"wkn" {inr g}) #"hd" }}.
-
 elab_rule {[r "G" : #"env",
       "A" : #"ty" "G",
       "B": #"ty" (#"ext" "G" "A"),
