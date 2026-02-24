@@ -159,7 +159,7 @@ Ltac exact_check_if do_check v :=
 
 Ltac by_reduction' reversible do_check :=
   (*TODO: subsume reduce w/ egraph_simpl2*)
-  reduce;
+  try reduce;
    (* egraph_simpl2 10%nat;*)
     apply (egraph_sound 100 100 filter_rules reversible);
   [prove_from_known_elabs| | | | exact_check_if do_check I].

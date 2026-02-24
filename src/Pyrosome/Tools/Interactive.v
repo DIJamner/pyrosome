@@ -39,22 +39,31 @@ Ltac update_lang_assumption :=
   end.
 
 
-Ltac push_rule named_rule :=
+Ltac push_rule' named_rule do_compute :=
     eapply wf_lang_snoc with (nr:=named_rule);
-    [solve_fresh | assumption | update_lang_assumption | compute_wf_rule].
+    [solve_fresh | assumption | update_lang_assumption
+    | try (do_compute; compute_wf_rule)].
 
 Ltac push_rule_no_compute named_rule :=
-    eapply wf_lang_snoc with (nr:=named_rule);
-  [solve_fresh | assumption | update_lang_assumption |].
+  push_rule' named_rule fail.
 
-Ltac elab_rule named_rule injective :=
+Ltac push_rule named_rule :=
+  push_rule' named_rule idtac.
+
+
+
+Ltac elab_rule' named_rule injective do_compute :=
   let base := lazymatch goal with
                 |- wf_lang_ext ?base _ => base
               end in
   let named_rule' := eval vm_compute in
     (fst named_rule, infer_rule base injective (snd named_rule))
   in
-  push_rule named_rule'.
+  push_rule' named_rule' do_compute.
+
+
+Ltac elab_rule named_rule injective :=
+  elab_rule' named_rule injective idtac.
 
 
 Ltac setup_lang_interactive :=

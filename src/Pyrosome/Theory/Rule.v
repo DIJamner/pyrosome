@@ -256,7 +256,7 @@ Definition get_ctx (r : rule) :=
                        (hide_sort_implicits t)
       end.
 
-    (* TODO: doesn't work properly (input needs to be in base *)
+    (* TODO: doesn't work properly (input needs to be in base) *)
     Definition hide_lang_implicits : lang -> lang := named_map hide_rule_implicits.
 
   End HideImplicits.
