@@ -385,29 +385,33 @@ Section __.
   End Terms.  
   
 
-  Fixpoint compute_wf_lang l fuel : option unit :=
+  Fixpoint compute_wf_lang l_pre l fuel : option unit :=
     match l with
     | [] => @! ret tt
     | (name,t)::l' =>
-        @! let ! (freshb name l') in
-           let tt <- compute_wf_rule l' t fuel in
-           let tt <- compute_wf_lang l' fuel in
+        @! let ! (freshb name l_pre) in
+           let ! (freshb name l') in
+           let tt <- compute_wf_rule (l'++l_pre) t fuel in
+           let tt <- compute_wf_lang l_pre l' fuel in
            ret tt
     end.
 
-  Lemma compute_wf_lang_sound l fuel
-    : Some tt = compute_wf_lang l fuel ->
-      wf_lang l.
+  Lemma compute_wf_lang_sound l_pre l fuel
+    : wf_lang l_pre ->
+      Is_Some (compute_wf_lang l_pre l fuel) ->
+      wf_lang_ext l_pre l.
   Proof.
     induction l; basic_goal_prep.
     { basic_core_crush. }
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
+    revert H; case_match; basic_goal_prep; [|basic_core_crush].
     symmetry in case_match_eqn0.
     autorewrite with bool utils in *; try typeclasses eauto.
     basic_core_crush.
-    eapply compute_wf_rule_sound; eauto.
+    eapply compute_wf_rule_sound; eauto using wf_lang_concat_hd.
+    eapply wf_lang_concat_iff; intuition auto.
   Qed.
 
 End EGraph.
@@ -467,6 +471,26 @@ Ltac compute_wf_rule :=
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules);
   [ assumption | vm_compute; reflexivity].
+
+
+Ltac compute_wf_lang :=
+  apply compute_wf_lang_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=Automation.filter_rules)
+         (reversible:=Automation.filter_rules);
+  [ prove_from_known_elabs | vm_compute; reflexivity].
+
+(* TODO: dedup after refactoring the right helpers from Automation.v*)
+Ltac compute_wf_lang_no_check :=
+  apply compute_wf_lang_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=Automation.filter_rules)
+         (reversible:=Automation.filter_rules);
+  [ prove_from_known_elabs | vm_cast_no_check I].
 
 Require Import Pyrosome.Elab.Elab.
 

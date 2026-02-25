@@ -195,7 +195,7 @@ Definition subst_injectivity :=
   [("hd", ["A"; "G"]); ("wkn", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("ext", ["A"; "G"]);
    ("forget", ["G"]); ("emp", []); ("ty", ["G"]); ("ty_subst", ["G"]);
    ("exp_subst", ["G"]); ("exp", ["A"; "G"]);
-   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", []); ("ty", [])].
+   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", [])].
 
 #[local] Definition id_inst_for_db := inst_for_db "id".
 #[export] Hint Resolve id_inst_for_db : injective_con.
