@@ -7,7 +7,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches Tools.EGraph.Automation
-  Tools.EGraph.TypeInference.
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -63,14 +64,13 @@ Definition cps_injectivity :=
 
 Definition cps_lang :=
   Eval vm_compute in
-    (infer_lang_ext (block_subst++value_subst) cps_lang_def
+    (infer_lang_ext_simple (block_subst++value_subst) cps_lang_def
        (cps_injectivity++block_subst_injectivity++value_subst_injectivity)).
 
 
-Lemma cps_lang_wf : elab_lang_ext (block_subst ++ value_subst)
-                               cps_lang_def
+Lemma cps_lang_wf : wf_lang_ext (block_subst ++ value_subst)
                                cps_lang.
-Proof. auto_elab. Qed.
+Proof. compute_wf_lang_no_check. Qed.
 #[export] Hint Resolve cps_lang_wf : elab_pfs.
 
 
@@ -166,11 +166,18 @@ Definition cps_prod_lang_def : lang :=
   ] ]}.
 
 
-    
-Derive cps_prod_lang
-       SuchThat (elab_lang_ext (block_subst ++value_subst) cps_prod_lang_def cps_prod_lang)
-       As cps_prod_wf.
-Proof. auto_elab. Qed.
+Definition cps_prod_injectivity :=
+  [("pair", ["e2";"e1";"B";"A"; "G"]); ("prod", ["B";"A"])].
+
+
+Definition cps_prod_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (block_subst++value_subst) cps_prod_lang_def
+       (cps_prod_injectivity++block_subst_injectivity++value_subst_injectivity)).
+
+Lemma cps_prod_wf
+  : wf_lang_ext (block_subst ++value_subst) cps_prod_lang.
+Proof. compute_wf_lang_no_check. Qed.
 #[export] Hint Resolve cps_prod_wf : elab_pfs.
 
 Definition under s :=
