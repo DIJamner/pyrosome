@@ -4,8 +4,11 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad.
 From Utils Require Import EGraph.Defs.
-From Pyrosome.Theory Require Import Core.
+From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Tools Require Import Matches EGraph.Defs EGraph.Automation.
+From Pyrosome.Compilers Require Import Compilers CompilerFacts
+        (*TODO: refactor so I don't need this*)
+        CompilerTransitivity.
 Import Core.Notations.
 Import PositiveInstantiation.
 
@@ -414,6 +417,111 @@ Section __.
     eapply wf_lang_concat_iff; intuition auto.
   Qed.
 
+  Section __.
+    Context (tgt src_pre : lang)
+      (cmp_pre : @compiler string term sort)
+      (fuel : nat).
+    Fixpoint compute_preserving_compiler src cmp : option unit :=
+      match src, cmp with
+      | [], [] => Mret tt
+      | ((n, sort_rule c args) :: src),
+        ((n', sort_case cargs t) :: cmp) =>
+          @!let !eqb n n' in
+            let !eqb (map fst c) cargs in
+            let _ <- compute_wf_sort tgt
+                       (compile_ctx (cmp ++ cmp_pre) c) t fuel in
+            (compute_preserving_compiler src cmp)
+      | ((n, term_rule c args t) :: src),
+        ((n', term_case cargs e) :: cmp) =>
+          @!let !eqb n n' in
+            let !eqb (map fst c) cargs in
+            let _ <- compute_wf_term' tgt
+                       (compile_ctx (cmp ++ cmp_pre) c) e
+                       (compile_sort (cmp ++ cmp_pre) t) fuel in
+            (compute_preserving_compiler src cmp)
+      | ((n, sort_eq_rule c t1 t2) :: src), _ =>
+          @!let!eq_sort_oracle tgt (compile_ctx (cmp ++ cmp_pre) c)
+                 (compile_sort (cmp ++ cmp_pre) t1)
+                 (compile_sort (cmp ++ cmp_pre) t2) in
+            (compute_preserving_compiler src cmp)
+      | ((n, term_eq_rule c e1 e2 t) :: src), _ =>
+          @!let!eq_term_oracle tgt (compile_ctx (cmp ++ cmp_pre) c)
+                 (compile (cmp ++ cmp_pre) e1)
+                 (compile (cmp ++ cmp_pre) e2)
+                 (compile_sort (cmp ++ cmp_pre) t) in
+            (compute_preserving_compiler src cmp)  
+      | _,_ => None
+      end.
+
+    Context (wf_tgt : wf_lang tgt)
+      (wf_src_pre : wf_lang src_pre)
+      (preserving_cmp_pre
+        : preserving_compiler_ext (tgt_Model:=core_model tgt)
+          [] cmp_pre src_pre).
+
+    Lemma compute_preserving_compiler_sound src cmp
+      : Is_Some (compute_preserving_compiler src cmp) ->
+        wf_lang_ext src_pre src ->
+        preserving_compiler_ext (tgt_Model:=core_model tgt)
+          cmp_pre cmp src.
+    Proof.
+      revert cmp; induction src;
+        repeat (basic_goal_prep;
+                case_match);
+        basic_utils_crush;
+        autorewrite with lang_core in *;
+        constructor; intuition eauto.
+      {
+        eapply compute_wf_sort_sound; eauto.
+        eapply inductive_implies_semantic; auto;
+          try typeclasses eauto.
+        4: eauto.
+        2: prove_from_known_elabs;eauto.
+        1:apply core_model_ok ; eauto; typeclasses eauto.
+        eapply compiler_append; eauto; try typeclasses eauto;
+          basic_core_crush.
+        eapply all_fresh_compiler; eauto with lang_core.
+      }
+      {
+        eapply compute_wf_term'_sound; eauto.
+        eapply inductive_implies_semantic; auto;
+          try typeclasses eauto.
+        4: eauto.
+        2: prove_from_known_elabs;eauto.
+        1:apply core_model_ok ; eauto; typeclasses eauto.
+        eapply compiler_append; eauto; try typeclasses eauto;
+          basic_core_crush.
+        eapply all_fresh_compiler; eauto with lang_core.
+      }
+      {
+        eapply eq_sort_oracle_sound; eauto.
+        all:eapply inductive_implies_semantic
+          with (tgt_Model:=core_model tgt); auto;
+          try typeclasses eauto.
+        all: try (apply core_model_ok ; eauto; typeclasses eauto).
+        3,5,6,7,9,10,11: eauto.
+        all: try prove_from_known_elabs;eauto.
+        all:eapply compiler_append; eauto; try typeclasses eauto;
+            basic_core_crush.
+        all:eapply all_fresh_compiler; eauto with lang_core.
+      }
+      {
+        (*TODO: write lemma*)
+        unfold eq_term_oracle in *.
+        eapply egraph_sound; eauto.
+        all:eapply inductive_implies_semantic
+          with (tgt_Model:=core_model tgt); auto;
+          try typeclasses eauto.
+        all: try (apply core_model_ok ; eauto; typeclasses eauto).
+        3,5,6,7,9,10,11: eauto.
+        all: try prove_from_known_elabs;eauto.
+        all:eapply compiler_append; eauto; try typeclasses eauto;
+            basic_core_crush.
+        all:eapply all_fresh_compiler; eauto with lang_core.
+      }
+    Qed.
+  End __.
+  
 End EGraph.
 
 End __.
