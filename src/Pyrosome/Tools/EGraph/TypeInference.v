@@ -7,6 +7,7 @@ Open Scope list.
 From Utils Require Import Utils EGraph.Defs Monad Lens.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Elab.PreTerm Elab.PreRule
+  Compilers.Compilers
   Tools.Matches Tools.EGraph.Defs
   Tools.EGraph.Automation.
 Require Import Utils.EGraph.Semantics.
@@ -217,6 +218,12 @@ Section __.
           let _ <- log [(name_n, term_rule [] [] s_holes)] in
           ret ((name_n , s_holes) :: elab_context)
     end.
+
+  (* To be used when the context is already elaborated.
+     TODO: rules technically in the wrong order.
+   *)
+  Definition ctx_rules : ctx -> lang :=
+    named_map (fun t => term_rule [] [] (sort_var_to_con t)).
   
 End __.
 
@@ -388,8 +395,9 @@ Definition add_elab_sort_to_egraph (s:presort)
 
 Definition add_ctx_with_holes_to_egraph (context: ctx)
   : state infer_state _ :=
-  (* takes a context holes, a language it type checks in.
+  (* takes a context with holes and a language it type checks in.
       adds the sorts in the context to the egraph.
+      Returns a map from pyrosome (not egraph) variables to sort ids
       Note: Mmap is in the wrong direction,
       so it might not be sound to fuse this
       with building the context with holes
@@ -539,12 +547,82 @@ Fixpoint infer_lang_ext l_base (l : prelang) inj_rules :=
 Definition infer_lang_ext_simple l_base (l : lang) inj_rules :=
   infer_lang_ext l_base (of_lang l) inj_rules.
 
+
+Section __.
+  Context (tgt:lang).
+  Notation compile_ctx :=
+    (compile_ctx (tgt_Model := @syntax_model _ _)).
+  Notation compile :=
+    (compile (tgt_Model := @syntax_model _ _)).
+  Notation compile_sort :=
+    (compile_sort (tgt_Model := @syntax_model _ _)).
+  Notation compiler_case :=
+    (@compiler_case string term sort).
+  (* takes in a prelab cc and an elaborated rule r *)
+  (* TODO: add precompilers, def that allows annotations *)
+  Definition infer_compiler_case_simple
+    cmp (cc : compiler_case) r inj_rules :=
+    let initial := (Build_infer_state (Build_ident "?")
+                      tgt empty_egraph) in
+    match cc,r with
+    | sort_case cnames t, sort_rule c _ => 
+        let c' := (compile_ctx cmp c) in
+        let c'_rules := ctx_rules c' in
+        let comp : state infer_state _ :=
+          @!
+            let _ <- log c'_rules in
+            let x <- add_elab_sort_to_egraph (of_sort t) in
+            let l <- get_state (S:= lang) in
+            let _ <- state_embed (state_operation l inj_rules) in
+            ret x
+        in
+        let (x,s) := comp initial in
+        sort_case cnames (decode_sort c' s.(egraph) x)
+    | term_case cnames e, term_rule c _ t =>
+        let c' := (compile_ctx cmp c) in
+        let c'_rules := ctx_rules c' in
+        let comp : state infer_state _ :=
+          @!let _ <- log c'_rules in
+            let l <- get_state (S:= lang) in
+            let t_id <-
+                  state_embed
+                    (add_open_sort weight l true []
+                       (sort_var_to_con (compile_sort cmp t))) in
+            let x <- add_elab_term_to_egraph (of_term e) t_id in
+            let l <- get_state (S:= lang) in
+            let _ <- state_embed (state_operation l inj_rules) in
+            ret x
+        in
+        let (x,s) := comp initial in
+        term_case cnames (decode_term c' s.(egraph) x)
+    | _,_ => sort_case [] default (* failure case *)
+    end.
+  
+  Fixpoint infer_compiler_simple cmp_pre cmp src inj_rules :=
+    match cmp,src with
+    | [], [] => []
+    | (n,cc)::cmp', (n',r)::src' =>
+        if eqb n n'
+        then let ecmp' :=
+               infer_compiler_simple cmp_pre cmp' src' inj_rules
+             in
+             let ecc := infer_compiler_case_simple
+                          (ecmp'++cmp_pre) cc r inj_rules in
+             (n,ecc)::ecmp'
+        (* must be an equation *)
+        else infer_compiler_simple cmp_pre cmp src' inj_rules
+    | _, _ => [] (*Failure case. TODO: better errors *)
+    end.
+  
+End __.
+
+
 (*
 Definition infer_sort (L: lang) inj_rules (context: ctx) (s: sort) : sort :=
   let Language_plus_rules := L ++ (ctx_to_rules context) in
   (*TODO: what is this and why did I use it? 
   let new_context := context ++ get_dummy_context (get_dummy_names_from_term (term_with_holes)) in
-   *)
+ *)
   (*TODO: check that add_sort doesn't need dummy rules (it shouldn't)*)
   let '(t_id, counter, graph) :=
     (@! let {stateT string (state instance)} (t_id, dummy_rules) <-
