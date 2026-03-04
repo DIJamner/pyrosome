@@ -547,7 +547,6 @@ Fixpoint infer_lang_ext l_base (l : prelang) inj_rules :=
 Definition infer_lang_ext_simple l_base (l : lang) inj_rules :=
   infer_lang_ext l_base (of_lang l) inj_rules.
 
-
 Section __.
   Context (tgt:lang).
   Notation compile_ctx :=
@@ -568,19 +567,26 @@ Section __.
     | sort_case cnames t, sort_rule c _ => 
         let c' := (compile_ctx cmp c) in
         let c'_rules := ctx_rules c' in
+        (* rename to the names from the rule *)
+        let t' := t[/combine cnames (map var (map fst c))/] in
         let comp : state infer_state _ :=
           @!
             let _ <- log c'_rules in
-            let x <- add_elab_sort_to_egraph (of_sort t) in
+            let x <- add_elab_sort_to_egraph (of_sort t') in
             let l <- get_state (S:= lang) in
             let _ <- state_embed (state_operation l inj_rules) in
             ret x
         in
         let (x,s) := comp initial in
-        sort_case cnames (decode_sort c' s.(egraph) x)
+        let out' := (decode_sort c' s.(egraph) x) in
+        (* rename back to the compiler case names *)
+        let out := out' [/combine (map fst c) (map var cnames)/] in
+        sort_case cnames out
     | term_case cnames e, term_rule c _ t =>
         let c' := (compile_ctx cmp c) in
         let c'_rules := ctx_rules c' in
+        (* rename to the names from the rule *)
+        let e' := e[/combine cnames (map var (map fst c))/] in
         let comp : state infer_state _ :=
           @!let _ <- log c'_rules in
             let l <- get_state (S:= lang) in
@@ -588,13 +594,16 @@ Section __.
                   state_embed
                     (add_open_sort weight l true []
                        (sort_var_to_con (compile_sort cmp t))) in
-            let x <- add_elab_term_to_egraph (of_term e) t_id in
+            let x <- add_elab_term_to_egraph (of_term e') t_id in
             let l <- get_state (S:= lang) in
             let _ <- state_embed (state_operation l inj_rules) in
             ret x
         in
         let (x,s) := comp initial in
-        term_case cnames (decode_term c' s.(egraph) x)
+        let out' := (decode_term c' s.(egraph) x) in
+        (* rename back to the compiler case names *)
+        let out := out' [/combine (map fst c) (map var cnames)/] in
+        term_case cnames out
     | _,_ => sort_case [] default (* failure case *)
     end.
   

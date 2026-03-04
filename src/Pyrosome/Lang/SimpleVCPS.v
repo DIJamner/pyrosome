@@ -109,17 +109,30 @@ Definition cps_subst_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
-Derive cps_subst
-       SuchThat (elab_preserving_compiler []
-                                          (cps_lang
-                                             ++ block_subst
-                                             ++ value_subst)
-                                          cps_subst_def
-                                          cps_subst
-                                          (exp_subst ++ value_subst))
-       As cps_subst_preserving.
+
+Definition cps_subst :=
+  Eval vm_compute in
+    (infer_compiler_simple
+       (cps_lang
+          ++ block_subst
+          ++ value_subst)
+       []
+       cps_subst_def
+       (exp_subst++value_subst)
+       (cps_injectivity++block_subst_injectivity
+          ++value_subst_injectivity)).
+
+Lemma cps_subst_preserving
+  : elab_preserving_compiler []
+      (cps_lang
+         ++ block_subst
+         ++ value_subst)
+      cps_subst_def
+      cps_subst
+      (exp_subst ++ value_subst).
 Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve cps_subst_preserving : elab_pfs.
+
 
 (*TODO: separate file?*)
 Definition cps_prod_lang_def : lang :=
@@ -203,15 +216,28 @@ Definition cps_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
-Derive cps
-       SuchThat (elab_preserving_compiler cps_subst
+
+Definition cps :=
+  Eval vm_compute in
+    (infer_compiler_simple
+       (cps_prod_lang
+          ++ cps_lang
+          ++ block_subst
+          ++ value_subst)
+       cps_subst
+       cps_def
+       stlc
+       (cps_prod_injectivity++cps_injectivity++block_subst_injectivity
+          ++value_subst_injectivity)).
+
+(*TODO: eliminate elab*)
+Lemma cps_preserving : elab_preserving_compiler cps_subst
                                           (cps_prod_lang
                                              ++ cps_lang
                                              ++ block_subst
                                              ++ value_subst)
                                           cps_def
                                           cps
-                                          stlc)
-       As cps_preserving.
+                                          stlc.
 Proof. auto_elab_compiler_no_check. Qed.
 #[export] Hint Resolve cps_preserving : elab_pfs.
