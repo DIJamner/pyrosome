@@ -24,7 +24,7 @@ Definition unit_injectivity := [("tt", ["G"])].
 
 Definition unit_lang :=
   Eval vm_compute in
-    (infer_lang_ext (exp_subst++value_subst) unit_lang_def
+    (infer_lang_ext_simple (exp_subst++value_subst) unit_lang_def
        (unit_injectivity++exp_subst_injectivity++value_subst_injectivity)).
 
 Lemma unit_wf : elab_lang_ext value_subst unit_lang_def unit_lang.
@@ -42,7 +42,7 @@ Definition unit_eta_def :lang :=
 
 Definition unit_eta :=
   Eval vm_compute in
-    (infer_lang_ext (unit_lang++exp_subst++value_subst) unit_eta_def
+    (infer_lang_ext_simple (unit_lang++exp_subst++value_subst) unit_eta_def
        (unit_injectivity++exp_subst_injectivity++value_subst_injectivity)).
 
 

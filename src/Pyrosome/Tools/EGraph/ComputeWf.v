@@ -600,6 +600,37 @@ Ltac compute_wf_lang_no_check :=
          (reversible:=Automation.filter_rules);
   [ prove_from_known_elabs | vm_cast_no_check I].
 
+Ltac compute_preserving_compiler cmp_pre_src :=
+  apply compute_preserving_compiler_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=Automation.filter_rules)
+         (reversible:=Automation.filter_rules)
+         (src_pre:= cmp_pre_src);
+    [ try now prove_from_known_elabs
+    | try now prove_from_known_elabs
+    |(*TODO: make prove_from_known_elabs work for compilers*)
+      eauto using CompilerDefs.preserving_compiler_nil with elab_pfs
+    | vm_compute; exact I
+    | try now prove_from_known_elabs].
+
+(* TODO: dedup after refactoring the right helpers from Automation.v*)
+Ltac compute_preserving_compiler_no_check cmp_pre_src :=
+  apply compute_preserving_compiler_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (filter:=Automation.filter_rules)
+         (reversible:=Automation.filter_rules)
+         (src_pre:= cmp_pre_src);
+    [ try now prove_from_known_elabs
+    | try now prove_from_known_elabs
+    |(*TODO: make prove_from_known_elabs work for compilers*)
+      eauto using CompilerDefs.preserving_compiler_nil with elab_pfs
+    | vm_cast_no_check I
+    | try now prove_from_known_elabs].
+
 Require Import Pyrosome.Elab.Elab.
 
 (*TODO: reorganize so that I don't have to do this

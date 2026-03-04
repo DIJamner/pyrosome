@@ -46,7 +46,7 @@ Definition stlc_injectivity :=
 
 Definition stlc :=
   Eval vm_compute in
-    (infer_lang_ext (exp_subst++value_subst) stlc_def
+    (infer_lang_ext_simple (exp_subst++value_subst) stlc_def
        (stlc_injectivity++exp_subst_injectivity++value_subst_injectivity)).
 
 Lemma stlc_wf : elab_lang_ext (exp_subst++value_subst) stlc_def stlc.
