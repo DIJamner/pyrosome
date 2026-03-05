@@ -808,85 +808,6 @@ Proof.
   }
   Unshelve.
   all: repeat Matches.t'.
-  lazymatch goal with
-  | |- wf_term ?l ?c ?e ?t =>
-        let c' := eval compute in (hide_ctx_implicits l c) in
-        let t' := eval compute in (hide_sort_implicits l t) in
-        let e' := eval compute in (hide_term_implicits l e) in
-        change (wf_term l (lie_to_user (real:=c) (as_ctx c'))
-                        (lie_to_user (real:=e) e')
-                        (lie_to_user (real:=t) t'))
-  end.
-  
-  eapply wf_term_by';[ solve_in |..].
-  2:left;
-  reflexivity.
-  repeat eapply wf_args_cons; try eapply wf_args_nil.
-  all:repeat Matches.t'.
-  lazymatch goal with
-  | |- wf_term ?l ?c ?e ?t =>
-        let c' := eval compute in (hide_ctx_implicits l c) in
-        let t' := eval compute in (hide_sort_implicits l t) in
-        let e' := eval compute in (hide_term_implicits l e) in
-        change (wf_term l (lie_to_user (real:=c) (as_ctx c'))
-                        (lie_to_user (real:=e) e')
-                        (lie_to_user (real:=t) t'))
-  end.
-  
-  eapply wf_term_by';[ solve_in |..].
-  2:{
-    right.
-    compute_eq_compilation.
-    sort_cong; try term_refl.
-    reduce.
-    term_refl.
-  }
-  repeat eapply wf_args_cons; try eapply wf_args_nil.
-  all:repeat Matches.t'.
-  all:  match goal with
-  | |- wf_term ?l ?c ?e ?t =>
-        let c' := eval vm_compute in c in
-        let e' := eval vm_compute in e in
-        let t' := eval vm_compute in t in
-        change_no_check (wf_term l c' e' t')
-        end.
-  {
-    
-    eapply wf_term_by';[ solve_in |..].
-    2:left;reflexivity.
-    repeat eapply wf_args_cons; try eapply wf_args_nil.
-    all:repeat Matches.t'.
-    
-    eapply wf_term_by';[ solve_in |..].
-  2:{
-    right.
-    compute_eq_compilation.
-    sort_cong; try term_refl.
-    reduce.
-    term_refl.
-  }
-  repeat eapply wf_args_cons; try eapply wf_args_nil.
-  all:repeat Matches.t'.
-  }
-  {
-    eapply wf_term_by';[ solve_in |..].
-    2:left;reflexivity.
-    repeat eapply wf_args_cons; try eapply wf_args_nil.
-    all:repeat Matches.t'.
-    
-    eapply wf_term_by';[ solve_in |..].
-  2:{
-    right.
-    compute_eq_compilation.
-    sort_cong; try term_refl.
-    reduce.
-    term_refl.
-  }
-  repeat eapply wf_args_cons; try eapply wf_args_nil.
-  all:repeat Matches.t'.
-  }
-  Unshelve.
-  all:repeat Matches.t'.
 Qed.
 #[export] Hint Resolve poly_cps_preserving : elab_pfs.
 
@@ -1068,6 +989,8 @@ Definition tgt_param_substs_def :=
     eqn_rules type_subst_mode deps
     (hide_lang_implicits (tgt_parameterized++deps) tgt_parameterized).
 
+
+
 Derive tgt_param_substs
   SuchThat (elab_lang_ext (tgt_parameterized
                              ++block_param_substs
@@ -1226,19 +1149,6 @@ Proof.
     term_cong; try term_refl.
     all:compute_eq_compilation.
     eredex_steps_with val_parameterized  "cmp_forget".
-  }
-  Unshelve.
-  all:repeat Matches.t'.
-  {
-    eapply wf_term_by'.
-    1:solve_in.
-    1:repeat eapply wf_args_cons; try eapply wf_args_nil.
-    all:repeat Matches.t'.
-    right.
-    compute_eq_compilation.
-    sort_cong; try term_refl.
-    compute_eq_compilation.
-    by_reduction.
   }
   Unshelve.
   all:repeat Matches.t'.
