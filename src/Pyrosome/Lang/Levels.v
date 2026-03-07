@@ -21,32 +21,11 @@ Require Coq.derive.Derive.
 Import Core.Notations.
 Import PreRule.Notations.
 
-(*TODO: move to Automation.v*)
-Ltac auto_elab' reversible do_check :=
-  setup_elab_lang;
-  repeat
-    ([>unshelve (solve
-                   [ break_elab_rule; (*try decompose_sort_eq;*)
-                     try apply eq_term_refl;
-                     try Automation.by_reduction' reversible do_check;
-                     cleanup_auto_elab ]);
-      try apply eq_term_refl; cleanup_auto_elab
-     | .. ]).
-
-
-Ltac auto_elab :=
-  auto_elab' (fun _ : string * Rule.rule string => true) idtac.
-
-Ltac auto_elab_no_check :=
-  auto_elab' (fun _ : string * Rule.rule string => true) fail.
-
-
 Derive levels
        SuchThat (wf_lang (levels : lang))
        As levels_wf.
 Proof.
   setup_lang_interactive.
-
   elab_rule {[r
       -----------------------------------------------
       #"lvl" srt
@@ -124,24 +103,6 @@ Require Import Pyrosome.Compilers.Parameterizer.
 
 Definition subst_leveled :=
   Eval vm_compute in subst_leveled'.
-
-Ltac compute_wf_lang ::=
-  apply compute_wf_lang_sound
-    with (fuel := 100)
-         (rebuild_fuel := 100)
-         (saturation_fuel := 10)
-         (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules);
-  [ prove_from_known_elabs | vm_compute; reflexivity].
-
-Ltac compute_wf_lang_no_check :=
-  apply compute_wf_lang_sound
-    with (fuel := 100)
-         (rebuild_fuel := 100)
-         (saturation_fuel := 10)
-         (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules);
-  [ prove_from_known_elabs | vm_cast_no_check I].
 
 Lemma subst_leveled_wf
   : wf_lang_ext levels subst_leveled.

@@ -477,30 +477,49 @@ Proof.
             unfold Model.eq_term;
             try term_refl;[]).
   
-  - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-  - compute_eq_compilation.
-    reduce.
-    eapply eq_term_sym.
-    step_backward block_subst "blk_subst_id".
-    step_backward value_subst "snoc_wkn_hd".
-    step_backward cc_lang "clo_eta".
-    reduce.
-    eredex_steps_with unit_eta "unit eta".
-  - compute_eq_compilation.
+  - Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
+  - Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
+  - Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
+  - Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
+    
+  -
+    (*TODO: this case takes at least a while w/ by_reduction.
+      probably wants inj congruence.
+      TODO: more specifically, probably wants something intelligent.
+      The current proof uses this reasoning:
+      <e>[/s/] = <e>[/s'/] iff s = s' for metavariable <e>.
+      How should I express that?
+      *)
+    compute_eq_compilation.
     Matches.reduce.
+    UnElab.hide_implicits.
     repeat (term_cong; try term_refl;[]).
     (*TODO: expensive*)
     repeat clo_eta_cong.
     compute_eq_compilation.
-    (*TODO: why aren't all unit terms reduced to tt?
-    Matches.reduce.*)
-    eredex_steps_with unit_eta "unit eta".
+    Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
   - compute_eq_compilation.
     reduce.
     step_backward cc_lang "clo_eta".
-    by_reduction.
+    Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
@@ -518,50 +537,25 @@ Proof.
         + term_refl.
         + term_refl.
         + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).
-          unfold Model.eq_term.
-          eapply eq_term_trans; cycle 1.
-          {
-            compute_eq_compilation.
-            eredex_steps_with cc_lang "clo_eta".
-          }
-          compute_eq_compilation.
-          term_cong.
-          *term_refl.
-          *term_refl.
-          *term_refl.
-          * unfold Model.eq_term.
-            compute_eq_compilation.
-            Matches.reduce.
-            term_refl.
-          * unfold Model.eq_term.
-            compute_eq_compilation.
-            Matches.reduce.
-            term_refl.
+          
+          Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
       - term_refl.
     }
-    Matches.by_reduction.
+    Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
     repeat clo_eta_cong.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    term_refl.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    term_refl.
-    (*
-  - compute_eq_compilation.
-    Matches.reduce.
-    admit Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    hide_implicits.
-    term_refl.*)
+    Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
@@ -569,15 +563,13 @@ Proof.
     term_refl.
   - compute_eq_compilation.
     Matches.reduce.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    {
-      eredex_steps_with heap_cps_ops "eval get".
-    }
-    
-    Matches.by_reduction.
-
+    repeat (term_cong; try term_refl;[]).
+    repeat clo_eta_cong.
+    term_refl.
+  - Automation.by_reduction;
+    [ComputeWf.solve_wf_ctx
+    |ComputeWf.compute_term_wf
+    |ComputeWf.compute_term_wf].
     Unshelve.
     all: repeat Matches.t'.
 Qed.

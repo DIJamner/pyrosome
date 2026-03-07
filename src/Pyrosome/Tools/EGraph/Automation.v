@@ -74,16 +74,20 @@ Instance full_term_analysis : analysis string string (option (term string)) :=
 Instance depth_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => Some 1).
 
+(*TODO: put in Utils*)
+Definition Is_Success {A} (r : Result.result A) : Prop :=
+  if r then True else False.
+
 (*TODO: generalize what rules to run *)
 Theorem egraph_sound
-  rebuild_fuel fuel l filter
+  rebuild_fuel sat_fuel efuel red_fuel l filter
   reversible
   (c : ctx string) t (e1 e2 : term string)
   : wf_lang l ->
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    Is_true (fst (fst (fst (fst (egraph_equal' l filter reversible rebuild_fuel fuel c e1 e2 t))))) ->
+    Is_Success (fst (egraph_reducing_equal' l filter reversible rebuild_fuel sat_fuel efuel red_fuel c e1 e2 t)) ->
     eq_term l c t e1 e2.
 Admitted.
 
@@ -128,7 +132,7 @@ Ltac egraph rule_transform n :=
  *)
 
 
-
+(*
 Lemma egraph_simpl2_sound
   : forall (rebuild_fuel cap fuel efuel : nat) (l : lang string)
            (c : named_list string (sort string)) t e1 e2 e1' e2' debug
@@ -142,16 +146,17 @@ Lemma egraph_simpl2_sound
          l rebuild_fuel cap fuel efuel c e1 e2 = (e1',e2', debug) ->
        eq_term l c t e1' e2'->
        eq_term l c t e1 e2.
-Admitted.
+Admitted. *)
 
 (*TODO: remove the need for cap? *)
 (* TODO: make injective-aware version
    TODO: currently broken
  *)
+(*
 Ltac egraph_simpl2 cap :=
     compute_eq_compilation;
     eapply (egraph_simpl2_sound 100 cap 100 100);
-    [prove_from_known_elabs| shelve | shelve | shelve | vm_compute; reflexivity | ].
+    [prove_from_known_elabs| shelve | shelve | shelve | vm_compute; reflexivity | ].*)
 
 Ltac exact_check_if do_check v :=
   tryif do_check then (vm_compute; exact v)
@@ -161,7 +166,7 @@ Ltac by_reduction' reversible do_check :=
   (*TODO: subsume reduce w/ egraph_simpl2*)
   try reduce;
    (* egraph_simpl2 10%nat;*)
-    apply (egraph_sound 100 100 filter_rules reversible);
+    apply (egraph_sound 100 100 100 100 filter_rules reversible);
   [prove_from_known_elabs| | | | exact_check_if do_check I].
 
 Ltac by_reduction :=

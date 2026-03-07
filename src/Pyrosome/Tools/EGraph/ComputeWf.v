@@ -37,16 +37,16 @@ Section __.
     (wf_ctx (Model:= core_model l)).
 
   Section EGraph.
-    Context (rebuild_fuel saturation_fuel : nat)
+    Context (rebuild_fuel saturation_fuel efuel red_fuel : nat)
       (filter reversible : string * Rule.rule string -> bool).
     
   Section Terms.
     Context (l : lang).
 
     Definition eq_term_oracle c e1 e2 t :=
-      (fst (fst (fst (fst (egraph_equal'
-                             l filter reversible rebuild_fuel
-                             saturation_fuel c e1 e2 t))))).
+      (fst (egraph_reducing_equal'
+              l filter reversible rebuild_fuel
+              saturation_fuel efuel red_fuel c e1 e2 t)).
 
     Fixpoint eq_args_oracle c s1 s2 c' :=
       match c', s1, s2 with
@@ -92,9 +92,9 @@ Section __.
         case_match; cbn in *; try tauto.
         eapply egraph_sound; eauto.
         2:{
-          apply Is_true_eq_left.
           unfold eq_term_oracle in *.
-          simple apply case_match_eqn.
+          erewrite case_match_eqn.
+          exact I.
         }
         {
           eapply wf_term_conv; eauto.
@@ -509,6 +509,15 @@ Section __.
         (*TODO: write lemma*)
         unfold eq_term_oracle in *.
         eapply egraph_sound; eauto.
+        4:{
+          assert(Is_Success(fst
+      (egraph_reducing_equal' tgt filter reversible rebuild_fuel
+         saturation_fuel efuel red_fuel (compile_ctx (cmp ++ cmp_pre) n)
+         (compile (cmp ++ cmp_pre) t) (compile (cmp ++ cmp_pre) t0)
+         (compile_sort (cmp ++ cmp_pre) s0))))
+            by  (erewrite case_match_eqn; exact I).
+          apply H5.
+        }
         all:eapply inductive_implies_semantic
           with (tgt_Model:=core_model tgt); auto;
           try typeclasses eauto.
@@ -532,6 +541,8 @@ Ltac solve_wf_ctx :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=filter_rules)
          (reversible:=filter_rules);
    [ assumption | vm_compute; reflexivity ]).
@@ -541,6 +552,8 @@ Ltac compute_subst_wf :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=filter_rules)
          (reversible:=filter_rules);
   [ assumption
@@ -553,6 +566,8 @@ Ltac compute_sort_wf :=
     apply compute_wf_sort_sound with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=filter_rules)
          (reversible:=filter_rules);
     [ assumption
@@ -564,6 +579,8 @@ Ltac compute_term_wf :=
     apply compute_wf_term'_sound with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=filter_rules)
          (reversible:=filter_rules);
     [ assumption
@@ -576,6 +593,8 @@ Ltac compute_wf_rule :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules);
   [ assumption | vm_compute; reflexivity].
@@ -586,6 +605,8 @@ Ltac compute_wf_lang :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules);
   [ prove_from_known_elabs | vm_compute; reflexivity].
@@ -596,6 +617,8 @@ Ltac compute_wf_lang_no_check :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules);
   [ prove_from_known_elabs | vm_cast_no_check I].
@@ -605,6 +628,8 @@ Ltac compute_preserving_compiler cmp_pre_src :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules)
          (src_pre:= cmp_pre_src);
@@ -621,6 +646,8 @@ Ltac compute_preserving_compiler_no_check cmp_pre_src :=
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
          (filter:=Automation.filter_rules)
          (reversible:=Automation.filter_rules)
          (src_pre:= cmp_pre_src);
