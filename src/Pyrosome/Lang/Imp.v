@@ -5,7 +5,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches.
+From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation Tools.EGraph.ComputeWf.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS NatHeap.
 Import Core.Notations.
 Import CompilerDefs.Notations.
@@ -340,57 +340,6 @@ Definition plug_Ectx e c :=
 Definition Eif0 E z nz :=
   plug_Ectx E {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}.
 
-(*
-(* E : blk [ ~nat x nat]
-   c : blk [... ; ~unit]
-   blk [... ; ~unit x nat] *) 
-Definition Ewhile E c :=
-  {{e #"jmp" (#"fix"
-                (#"closure"
-                   (#"prod" (#"neg" #"unit") #"unit")
-                   (*
-                     [(~unit * nat) * (~unit * unit)]
-                    *)
-                   (#"blk_subst"
-                      (#"snoc" #"wkn"
-                         (#"pair" (#"closure" #"nat"
-                                     (*
-                                        [(k : ~unit * loop : ~unit ) * nat]
-                                      *)
-                                     (#"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
-                                        (#"jmp" (#".1" (#".1" #"hd")) #"tt")
-                                        (#"blk_subst" (#"snoc" #"wkn" (#".2" (#".1" #"hd"))) {c}))
-                                     (#"pair" (#".1" (#".1" #"hd")) (#".1" (#".2" #"hd"))))
-                            (#".2" (#".1" #"hd")) ))
-                      {E})
-                   #"hd"))
-      #"tt"
-  }}.
-*)
-   (*   {{e #"jmp" (#"fix"
-                   (#"closure"
-                     (#"prod" (#"neg" #"unit") #"unit")
-                     (#"blk_subst" (* [((~nat, ~~nat), (~unit, unit))] *)
-                       (#"snoc"
-                         (#"snoc" #"forget"
-                           (#"closure" #"nat"
-                             (#"if0" (#".2" #"hd")
-                               (#"jmp" (#".1" (#".1" (#".1" #"hd"))) #"tt")
-                               (#"blk_subst" (#"snoc" #"wkn" (#".1" (#".2" (#".1" #"hd")))) "c")
-                             )
-                             #"hd"
-                           )
-                         )
-                         (#".2" (#".1" #"hd"))
-                       )
-                       "E"
-                     )
-                     (#"pair" (#"val_subst" #"wkn" #"hd") #"hd")
-                   )
-                 )
-          #"tt"
-  }}*)
-
 (* x : natural
    e : blk [... ; ~nat]
    blk [... ; ~unit] *)
@@ -442,13 +391,6 @@ Ltac step_backward lang name :=
   try_term_cong;
   eapply eq_term_sym.
 
-
-Ltac reduce :=
-  repeat (
-      eapply eq_term_trans;
-      (try cleanup_elab_after step_if_concrete);
-      try_term_cong).
-
 (*Use: `hide_implicits` shows the pre-elaboration terms,
   and `wysiwyg` shows the actual goal again.
  *)
@@ -463,7 +405,8 @@ Derive ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-  auto_elab_compiler.
+  (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
+  ElabCompilers.auto_elab_compiler.
   
   Ltac clo_eta_cong :=
     eapply eq_term_trans;
@@ -476,24 +419,10 @@ Proof.
     repeat (term_cong; 
             unfold Model.eq_term;
             try term_refl;[]).
-  
-  - Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
-  - Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
-  - Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
-  - Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
-    
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.    
   -
     (*TODO: this case takes at least a while w/ by_reduction.
       probably wants inj congruence.
@@ -504,7 +433,6 @@ Proof.
       *)
     compute_eq_compilation.
     Matches.reduce.
-    UnElab.hide_implicits.
     repeat (term_cong; try term_refl;[]).
     (*TODO: expensive*)
     repeat clo_eta_cong.
@@ -514,12 +442,15 @@ Proof.
     |ComputeWf.compute_term_wf
     |ComputeWf.compute_term_wf].
   - compute_eq_compilation.
-    reduce.
+
+Ltac reduce :=
+  repeat (
+      eapply eq_term_trans;
+      (try cleanup_elab_after step_if_concrete);
+      try_term_cong).
+    reduce. (* TODO: 1. why is this reduce needed. 2. why does the other reduce not work?*)
     step_backward cc_lang "clo_eta".
-    Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
+    Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
@@ -536,26 +467,16 @@ Proof.
         + term_refl.
         + term_refl.
         + term_refl.
-        + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).
-          
-          Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
+        + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).          
+          Automation.by_reduction; Matches.t'.
       - term_refl.
     }
-    Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
+    Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
     repeat clo_eta_cong.
-    Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
+    Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
@@ -566,10 +487,7 @@ Proof.
     repeat (term_cong; try term_refl;[]).
     repeat clo_eta_cong.
     term_refl.
-  - Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
+  - Automation.by_reduction; Matches.t'.
     Unshelve.
     all: repeat Matches.t'.
 Qed.

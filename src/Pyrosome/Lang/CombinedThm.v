@@ -8,9 +8,10 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.SemanticsPreservingDef
   Compilers.Compilers Compilers.CompilerFacts
   Elab.Elab Elab.ElabCompilers
-  Tools.AllConstructors Tools.Matches Tools.CompilerTools Compilers.CompilerTransitivity.
+  Tools.AllConstructors Tools.Matches Tools.CompilerTools Compilers.CompilerTransitivity
+  Tools.Resolution.
 From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
-  SimpleUnit NatHeap SimpleVCPSHeap
+  SimpleUnit NatHeap SimpleVCPS SimpleVCPSHeap
   SimpleVFixCPS SimpleVFixCC SimpleVCC SimpleVSTLC SimpleVCCHeap SimpleVFix.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -43,23 +44,6 @@ Proof.
   all: case_match;
     basic_core_crush.
 Qed.
-(*
-
-Lemma elab_preserving_compiler_monotonicity cmp' cmp_pre tgt cmp ecmp src src_pre cmp_pre'
-  : elab_preserving_compiler [] tgt cmp' cmp_pre src_pre ->
-    elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
-    wf_lang (src++src_pre) ->
-    incl cmp_pre cmp_pre' ->
-    all_fresh cmp_pre' ->
-    elab_preserving_compiler cmp_pre' tgt cmp ecmp src.
-Proof.
-
-Ltac use_preserving_hint :=
-  eapply elab_preserving_compiler_embed;
-  [eapply elab_preserving_compiler_monotonicity;[shelve| | shelve |..];
-   [ eauto with elab_pfs| solve_incl|apply use_compute_all_fresh; vm_compute; reflexivity]
-  | solve_incl].
-*)
 
 (*TODO: put these hints with their subjects*)
 #[local] Hint Resolve cps_preserving : elab_pfs.
@@ -98,17 +82,6 @@ Ltac prove_from_known_elabs :=
     | |- incl _ _ => compute_incl
     end.
 
-Ltac build_compiler :=  
-  unshelve(repeat (first [apply preserving_compiler_nil
-                         | eapply compiler_append
-                         | solve_compiler_lookup
-                         | shelve]));
-  first [apply incl_refl
-        |compute_all_fresh
-        |compute_incl
-        | typeclasses eauto
-        |prove_from_known_elabs].
-
 Definition src_ext := (SimpleVFix.fix_lang++SimpleVSTLC.stlc++ heap_ctx++ eval_ctx++heap_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)).
 
 Definition ir_ext :=
@@ -129,6 +102,22 @@ Definition tgt_ext :=
                    forget_eq_wkn'++
                    cps_prod_lang.
 
+(*TODO: moke this fast. I probably want to repeat it frequently in tactics.
+  Specifically: make it roughly linear.
+ *)
+#[local] Definition cmp_db :=
+      Eval vm_compute in
+      db_append_cmp_list
+        [
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving fix_cps_preserving);
+          exist _ (_,_,_,_) (SimpleVCPS.cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_ctx_cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving Ectx_cps_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_cps_preserving);          
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving cps_preserving);
+          exist _ (_,_,_,_) (cps_subst_preserving)
+        ].
+
 (*TODO: add let*)
 Lemma full_cps_compiler_preserving
   : preserving_compiler_ext
@@ -137,14 +126,20 @@ Lemma full_cps_compiler_preserving
       (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[])
       (src_ext++exp_subst ++ value_subst).
 Proof.
-  change (src_ext++exp_subst ++ value_subst)
-    with (SimpleVFix.fix_lang++SimpleVSTLC.stlc
-            ++ heap_ctx++ eval_ctx++heap_ops
-            ++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
-            ++(exp_subst ++ value_subst)++[]).
-  build_compiler.
+  prove_by_cmp_db cmp_db.
 Qed.
 
+#[local] Definition cc_db :=
+      Eval vm_compute in
+      db_append_cmp_list
+        [
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving fix_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_id'_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving cc_preserving); 
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving prod_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving subst_cc_preserving)
+        ].
 
 Lemma full_cc_compiler_preserving
   : preserving_compiler_ext
@@ -153,10 +148,7 @@ Lemma full_cc_compiler_preserving
       (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
       (ir_ext++block_subst ++ value_subst).
 Proof.
-  change (ir_ext++block_subst ++ value_subst)
-    with (fix_cps_lang++heap_cps_ops++(unit_lang ++ heap ++ nat_exp ++ nat_lang)
-                            ++cps_lang++cps_prod_lang++(block_subst ++ value_subst)++[]).
-  build_compiler.
+  prove_by_cmp_db cc_db.
 Qed.
 
 Lemma full_compiler_preserving

@@ -123,14 +123,13 @@ Definition cps_subst :=
           ++value_subst_injectivity)).
 
 Lemma cps_subst_preserving
-  : elab_preserving_compiler []
-      (cps_lang
+  : preserving_compiler_ext []
+      (tgt_Model := core_model (cps_lang
          ++ block_subst
-         ++ value_subst)
-      cps_subst_def
+         ++ value_subst))
       cps_subst
       (exp_subst ++ value_subst).
-Proof. auto_elab_compiler_no_check. Qed.
+Proof. compute_preserving_compiler_no_check (@nil (string*rule)). Qed.
 #[export] Hint Resolve cps_subst_preserving : elab_pfs.
 
 
@@ -231,13 +230,19 @@ Definition cps :=
           ++value_subst_injectivity)).
 
 (*TODO: eliminate elab*)
-Lemma cps_preserving : elab_preserving_compiler cps_subst
-                                          (cps_prod_lang
+Lemma cps_preserving : preserving_compiler_ext cps_subst
+                                          (tgt_Model:= core_model (cps_prod_lang
                                              ++ cps_lang
                                              ++ block_subst
-                                             ++ value_subst)
-                                          cps_def
+                                             ++ value_subst))
                                           cps
                                           stlc.
-Proof. auto_elab_compiler_no_check. Qed.
+Proof.
+  compute_preserving_compiler_no_check (exp_subst ++ value_subst).
+  (*TODO: eliminate lang argument via proof search *)
+  (*TODO: build this into tactic:*)
+  eapply CompilerFacts.preserving_compiler_embed.
+  all:eauto with elab_pfs.
+  compute_incl.
+Qed.
 #[export] Hint Resolve cps_preserving : elab_pfs.

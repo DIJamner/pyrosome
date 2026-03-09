@@ -162,10 +162,11 @@ Ltac exact_check_if do_check v :=
   tryif do_check then (vm_compute; exact v)
   else vm_cast_no_check v.
 
+(*TODO: call Matches.t' or some other tactic to solve subgoals*)
 Ltac by_reduction' reversible do_check :=
-  (*TODO: subsume reduce w/ egraph_simpl2*)
+  (*TODO: check subsumed by egraph reduction
   try reduce;
-   (* egraph_simpl2 10%nat;*)
+   *)
     apply (egraph_sound 100 100 100 100 filter_rules reversible);
   [prove_from_known_elabs| | | | exact_check_if do_check I].
 
