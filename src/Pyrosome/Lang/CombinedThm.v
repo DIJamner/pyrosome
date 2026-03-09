@@ -4,7 +4,7 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.SemanticsPreservingDef
   Compilers.Compilers Compilers.CompilerFacts
   Elab.Elab Elab.ElabCompilers
@@ -102,21 +102,34 @@ Definition tgt_ext :=
                    forget_eq_wkn'++
                    cps_prod_lang.
 
-(*TODO: moke this fast. I probably want to repeat it frequently in tactics.
-  Specifically: make it roughly linear.
- *)
-#[local] Definition cmp_db :=
-      Eval vm_compute in
-      db_append_cmp_list
-        [
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving fix_cps_preserving);
-          exist _ (_,_,_,_) (SimpleVCPS.cps_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_ctx_cps_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving Ectx_cps_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_cps_preserving);          
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving cps_preserving);
-          exist _ (_,_,_,_) (cps_subst_preserving)
-        ].
+Definition entry_ty (p : lang * compiler * compiler * lang) :=
+  preserving_compiler_ext (tgt_Model:=core_model (fst (fst (fst p))))
+    (snd (fst (fst p))) (snd (fst p)) (snd p).
+
+Create HintDb preserving_compiler_db discriminated.
+
+(* TODO: move these to their defining files, adoptthis pattern generally.*)
+#[local] Definition fix_cps_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) (elab_compiler_implies_preserving fix_cps_preserving)).
+Hint Resolve fix_cps_entry : preserving_compiler_db.
+#[local] Definition cps_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) SimpleVCPS.cps_preserving).
+Hint Resolve cps_entry : preserving_compiler_db.
+#[local] Definition heap_ctx_cps_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) (elab_compiler_implies_preserving heap_ctx_cps_preserving)).
+Hint Resolve heap_ctx_cps_entry : preserving_compiler_db.
+#[local] Definition Ectx_cps_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) (elab_compiler_implies_preserving Ectx_cps_preserving)).
+Hint Resolve Ectx_cps_entry : preserving_compiler_db.
+#[local] Definition heap_cps_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) (elab_compiler_implies_preserving heap_cps_preserving)).
+Hint Resolve heap_cps_entry : preserving_compiler_db.
+#[local] Definition heap_id_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) (elab_compiler_implies_preserving cps_preserving)).
+Hint Resolve heap_id_entry : preserving_compiler_db.
+#[local] Definition cps_subst_entry :=
+  mkEntry (exist entry_ty (_,_,_,_) cps_subst_preserving).
+Hint Resolve cps_subst_entry : preserving_compiler_db.
 
 (*TODO: add let*)
 Lemma full_cps_compiler_preserving
@@ -126,20 +139,9 @@ Lemma full_cps_compiler_preserving
       (fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[])
       (src_ext++exp_subst ++ value_subst).
 Proof.
-  prove_by_cmp_db cmp_db.
+  let db := hint_db_list preserving_compiler_db in
+  prove_by_cmp_db (db_append_cmp_list (V:=string) db).
 Qed.
-
-#[local] Definition cc_db :=
-      Eval vm_compute in
-      db_append_cmp_list
-        [
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving fix_cc_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_cc_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_id'_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving cc_preserving); 
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving prod_cc_preserving);
-          exist _ (_,_,_,_) (elab_compiler_implies_preserving subst_cc_preserving)
-        ].
 
 Lemma full_cc_compiler_preserving
   : preserving_compiler_ext
@@ -148,7 +150,16 @@ Lemma full_cc_compiler_preserving
       (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
       (ir_ext++block_subst ++ value_subst).
 Proof.
-  prove_by_cmp_db cc_db.
+  let db := constr:(db_append_cmp_list
+        [
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving fix_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving heap_id'_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving cc_preserving); 
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving prod_cc_preserving);
+          exist _ (_,_,_,_) (elab_compiler_implies_preserving subst_cc_preserving)
+        ]) in
+  prove_by_cmp_db db.
 Qed.
 
 Lemma full_compiler_preserving

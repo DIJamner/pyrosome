@@ -57,11 +57,6 @@ Ltac2 rec list_to_syntax l :=
       '($a::$l')
   end.
 
-Ltac2 define_hint_db_from_hyps () :=
-  let x := (focus 1 1 (fun () => list_to_syntax (list_db_values ()))) in
-  let y := (focus 1 1 (fun () => eval vm_compute in $x)) in
-    dispatch [(fun _ => exact I); (fun _ => exact $y)].
-
 (*TODO: there should be a more direct way to do this.
   TODO: move to a more general file.
   Creates a new dummy goal to operate in without affecting the proof term.
@@ -70,11 +65,23 @@ Ltac2 define_hint_db_from_hyps () :=
 Ltac dummy_goal P :=
   unshelve (let x := open_constr:(_ : P) in idtac).
 
-Ltac define_hint_db db :=
-  dummy_goal True;
-  [clear; enumerate_db db |];
-  ltac2:(|- define_hint_db_from_hyps ()).
 
+(*TODO: accomodate an arbitrary number of focused goals, not just 1*)
+Ltac2 hint_db_list db :=
+  (*TODO: move this into ltac2?*)
+  ltac1:(db |- dummy_goal True;
+         [clear; enumerate_db db |]) db;
+  let x := (focus 1 1 (fun () => list_to_syntax (list_db_values ()))) in
+  dispatch [(fun _ => exact I); (fun _ => ())];
+  x.
+
+Ltac hint_db_list :=
+  ltac2val:(db |- Ltac1.of_constr (hint_db_list db)).
+
+Ltac define_hint_db db :=
+  let x := hint_db_list db in
+  let y := eval vm_compute in x in
+  exact y.
 
 Module Tests.
   Create HintDb test discriminated.
