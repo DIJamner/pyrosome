@@ -80,14 +80,15 @@ Definition Is_Success {A} (r : Result.result A) : Prop :=
 
 (*TODO: generalize what rules to run *)
 Theorem egraph_sound
-  rebuild_fuel sat_fuel efuel red_fuel l filter
+  (rebuild_fuel sat_fuel efuel red_fuel : nat) l filter
   reversible
+  inj_rules
   (c : ctx string) t (e1 e2 : term string)
   : wf_lang l ->
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    Is_Success (fst (egraph_reducing_equal' l filter reversible rebuild_fuel sat_fuel efuel red_fuel c e1 e2 t)) ->
+    Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     eq_term l c t e1 e2.
 Admitted.
 
@@ -163,29 +164,33 @@ Ltac exact_check_if do_check v :=
   else vm_cast_no_check v.
 
 (*TODO: call Matches.t' or some other tactic to solve subgoals*)
-Ltac by_reduction' reversible do_check :=
+Ltac by_reduction' reversible inj_rules do_check :=
   (*TODO: check subsumed by egraph reduction
   try reduce;
    *)
-    apply (egraph_sound 100 100 100 100 filter_rules reversible);
-  [prove_from_known_elabs| | | | exact_check_if do_check I].
+    apply (egraph_sound 100 100 100 100 filter_rules reversible inj_rules);
+    [prove_from_known_elabs| | | | exact_check_if do_check I].
+
+
+(* TODO: plug inj_rules into tactics *)
+Definition empty_inj_rules : list (string * list string) := [].
 
 Ltac by_reduction :=
-  by_reduction' (fun _ : string * Rule.rule string => true) idtac.
+  by_reduction' (fun _ : string * Rule.rule string => true) empty_inj_rules idtac.
 
-Ltac auto_elab_compiler' reversible do_check :=
+Ltac auto_elab_compiler' reversible inj_rules do_check :=
   cleanup_elab_after
   setup_elab_compiler;
   repeat
      ([>repeat t; cleanup_elab_after try 
-                    (try decompose_sort_eq; by_reduction' reversible do_check)
+                    (try decompose_sort_eq; by_reduction' reversible inj_rules do_check)
       | .. ]).
 
 Ltac auto_elab_compiler :=
-  auto_elab_compiler' (fun _ : string * Rule.rule string => true) idtac.
+  auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules idtac.
 
 Ltac auto_elab_compiler_no_check :=
-  auto_elab_compiler' (fun _ : string * Rule.rule string => true) fail.
+  auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules fail.
 
 (* for building filters from lists in tactics *)
 Definition rule_named_in l :=

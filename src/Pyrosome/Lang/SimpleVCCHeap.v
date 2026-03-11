@@ -96,6 +96,6 @@ Derive heap_cc
                                           heap_cps_ops)
        As heap_cc_preserving.
 Proof.
-  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) fail.
+  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules fail.
 Qed.
 #[export] Hint Resolve heap_cc_preserving : elab_pfs.

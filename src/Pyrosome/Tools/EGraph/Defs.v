@@ -753,13 +753,13 @@ Section WithVar.
       (extract_weighted g efuel x,extract_weighted g efuel y).
 
 
-    (* Note: l has to contain the ctx_to_rules of the context *)
+    (* Note: l has to contain the ctx_to_rules of the context. *)
     Definition egraph_reducing_equal_step l schedule
-      rfuel fuel (e1 e2 : Term.term V) (t : Term.sort V) :=
+      rfuel fuel (e1 e2 : Term.term V) (*t : Term.sort V*) :=
       let comp : state instance (bool * _ * _) :=
         @!let {(state instance)} x1 <- add_open_term l true false [] e1 in
           let {(state instance)} x2 <- add_open_term l true false [] e2 in
-          let {(state instance)} xt <- add_open_sort l true false [] t in
+          (*let {(state instance)} xt <- add_open_sort l true false [] t in*)
           let w1 <- get_analysis x1 in
           let w2 <- get_analysis x2 in
           let {state instance} _ <- rebuild rfuel in
@@ -769,37 +769,89 @@ Section WithVar.
                if (b1:bool) then ret true else
                let b2 <- weight_less_than x2 w2 in
                if (b2:bool) then ret true else
-               (eq_proven x1 x2 xt))
+               (are_unified x1 x2))
           in
           let {state instance}res <-
                 scheduled_saturate_until rfuel schedule pred fuel in
           ret (res, x1, x2)
       in (comp (empty_egraph default _)).
+
+    Fixpoint select_inj_args (c : ctx) inj_args (s1 s2 : list term) : option _ :=
+      match inj_args, c, s1, s2 with
+      | [], [], _, _ => Some []
+      | [], (_::_), _, _ => if eqb s1 s2 then Some [] else None
+      | x::inj_args', (x',_)::c', e1::s1', e2::s2' =>
+          if eqb x x' then
+            @!let rest <- select_inj_args c' inj_args' s1' s2' in
+              ret (e1,e2)::rest
+          else if eqb e1 e2 then select_inj_args c' inj_args s1' s2'
+               else None
+      | _, _, _, _ => None (* should be unreachable *)
+      end.
+
+    (*TODO: include the type?
+      going to be a bit of trickiness either way
+      TODO: do the same for sorts.
+      Right now I think the calling code assumes all sorts are injective.
+     *)
+    Definition cong_subgoals l inj_list '(e1,e2) :=
+      match e1, e2 with
+      | con n1 s1, con n2 s2 =>
+          match eqb n1 n2, named_list_lookup_err inj_list n1, named_list_lookup_err l n1 with
+          | true, Some inj_args, Some (term_rule c _ t) =>
+              match select_inj_args c inj_args s1 s2 with
+              | Some l => l
+              | None => [(e1,e2)]
+              end
+          | _, _, _ => [(e1,e2)]
+          end
+      | _,_ => (*shouldn't happen, but this makes the proof easiest*) [(e1,e2)]
+      end.
     
     (* Computes egraph equality, but attempts to mitigate e-graph
        explosion by restarting computation when things get simpler.
        When it does, it furthermore tries to use knowledge of injective
        constructors to break down the goal.
+       TODO: deduplicate goals
       Note: l has to contain the ctx_to_rules of the context *)
-    Fixpoint egraph_reducing_equal l schedule
-      rfuel sat_fuel efuel red_fuel (e1 e2 : Term.term V) (t : Term.sort V)
+    Fixpoint egraph_reducing_cong l schedule
+      rfuel sat_fuel efuel red_fuel inj_list
+      (goals : list (Term.term V * Term.term V))
       : result unit :=
       match red_fuel with
         (*TODO: import the notation*)
       | 0 => Failure (dlist.dcons "out of fuel for reduction" dlist.dnil)
       | S red_fuel =>
-          let '(res,x,y,g) := egraph_reducing_equal_step l schedule
-                                rfuel sat_fuel e1 e2 t in
-          if res then Success tt
-          else
-            @!let e1' <- extract_weighted g efuel x in
-              let e2' <- extract_weighted g efuel y in
-              (* TODO: is there a reason to do this? *)
-              (*let t' <- extract_weighted g efuel y in*)
-              (*TODO: take injectivity into account*)
-              (egraph_reducing_equal  l schedule
-                 rfuel sat_fuel efuel red_fuel e1' e2' t)
-      end.    
+          (*TODO: iterate congruence*)
+          let goals' := flat_map (cong_subgoals l inj_list) goals in
+          let process '(e1,e2) :=
+            let '(res,x,y,g) := egraph_reducing_equal_step l schedule
+                                  rfuel sat_fuel e1 e2 in
+            if res then Success tt
+            else
+              @!let e1' <- extract_weighted g efuel x in
+                let e2' <- extract_weighted g efuel y in
+                (* TODO: is there a reason to do this? *)
+                (*let t' <- extract_weighted g efuel y in*)
+                (*TODO: take injectivity into account*)
+                (egraph_reducing_cong l schedule
+                   rfuel sat_fuel efuel red_fuel inj_list [(e1',e2')])
+          in
+          list_Miter process goals'
+      end.
+    
+    (* Computes egraph equality, but attempts to mitigate e-graph
+       explosion by restarting computation when things get simpler.
+       When it does, it furthermore tries to use knowledge of injective
+       constructors to break down the goal.
+      Note: l has to contain the ctx_to_rules of the context
+      TODO: currently drops t! decide whether t is useful.
+     *)
+    Fixpoint egraph_reducing_equal l schedule inj_list
+      rfuel sat_fuel efuel red_fuel (e1 e2 : Term.term V) (*t : Term.sort V*)
+      : result unit :=
+      egraph_reducing_cong l schedule
+        rfuel sat_fuel efuel red_fuel inj_list [(e1,e2)].
 
     (*TODO: move to defining file*)
     Arguments run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
@@ -889,8 +941,8 @@ Module PositiveInstantiation.
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   Definition egraph_reducing_equal
-    : lang positive -> _ -> nat ->
-      nat -> nat -> nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
+    : lang positive -> _ -> _ -> nat ->
+      nat -> nat -> nat -> Term.term positive -> Term.term positive -> _ :=
     (egraph_reducing_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   (*TODO: move somewhere?*)
@@ -964,17 +1016,22 @@ Module PositiveInstantiation.
       nat -> nat -> Term.term positive -> _ :=
     (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
+  Definition rename_inj {V} `{Eqb V} '(n,args) : state (renaming V) (positive * list positive) :=
+    @! let n' <- to_p n in
+      let args' <- list_Mmap (to_p (V:=V)) args in
+      ret (n',args').
   
   Definition egraph_reducing_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)
     (lang_filter : V * rule V -> bool)
     (reversible : V * rule V -> bool)
-    rn n efuel red_fuel c (e1 e2 : Term.term V) (t : Term.sort V) : _ :=
+    inj_rules
+    rn n efuel red_fuel c (e1 e2 : Term.term V) (*t : Term.sort V*) : _ :=
     let rename_and_run : state (renaming V) (result unit) :=
       @! let l' <- rename_lang (ctx_to_rules c ++ l) in
         let e1' <- rename_term (var_to_con e1) in
         let e2' <- rename_term (var_to_con e2) in
-        let t' <- rename_sort (sort_var_to_con t) in
+        (*let t' <- rename_sort (sort_var_to_con t) in*)
         (* Never filter context rules since they are always constant rules. *)
         let {state (renaming V)} pos_rules <- rename_lang (ctx_to_rules c ++ filter lang_filter l) in        
         (* build in backwards steps *)
@@ -982,11 +1039,13 @@ Module PositiveInstantiation.
                            (filter (fun p => reversible p
                                              && lang_filter p)
                               l) in
-        let {state (renaming V)} pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in       
+        let {state (renaming V)} pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in
+        let renamed_inj_rules <- list_Mmap rename_inj inj_rules in
         ret {state (renaming V)} (egraph_reducing_equal l'
                [(10%nat,build_rule_set rn pos_rules l');
                 (1%nat,build_rule_set rn pos_rev_rules l')]
-               rn n efuel red_fuel e1' e2' t')
+               renamed_inj_rules
+               rn n efuel red_fuel e1' e2')
     in
     (*2 so that sort_of is distict*)
     (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).

@@ -74,6 +74,6 @@ Derive fix_cc
                                           fix_cps_lang)
        As fix_cc_preserving.
 Proof.
-  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) fail.
+  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules fail.
 Qed.
 #[export] Hint Resolve fix_cc_preserving : elab_pfs.

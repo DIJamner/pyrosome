@@ -38,16 +38,18 @@ Section __.
 
   Section EGraph.
     Context (rebuild_fuel saturation_fuel efuel red_fuel : nat)
-      (filter reversible : string * Rule.rule string -> bool).
+      (filter reversible : string * Rule.rule string -> bool)
+      (inj_rules : list (string * list string)).
     
   Section Terms.
     Context (l : lang).
 
-    Definition eq_term_oracle c e1 e2 t :=
+    Definition eq_term_oracle c e1 e2 :=
       (fst (egraph_reducing_equal'
-              l filter reversible rebuild_fuel
-              saturation_fuel efuel red_fuel c e1 e2 t)).
+              l filter reversible inj_rules rebuild_fuel
+              saturation_fuel efuel red_fuel c e1 e2)).
 
+    (*
     Fixpoint eq_args_oracle c s1 s2 c' :=
       match c', s1, s2 with
       | [], [], [] => true
@@ -56,17 +58,21 @@ Section __.
           then eq_args_oracle c s1 s2 c'
           else false
       | _, _, _ => false
-      end.
+      end. *)
 
+    Definition eq_args_oracle c :=
+      forallb2 (fun e1 e2 => if eq_term_oracle c e1 e2 then true else false).
+
+    (*Assumes the sorts are wf.*)
     Definition eq_sort_oracle c (t1 t2 : sort) :=
       let (n1,s1) := t1 in
       let (n2,s2) := t2 in
       (* second condition for short-circuiting *)
-      match eqb n1 n2, eqb t1 t2, named_list_lookup_err l n1 with
-      | true, true, _ => true
-      | true, false, Some (sort_rule c' _) =>
-          eq_args_oracle c s1 s2 c'
-      | _, _, _ => false
+      match eqb n1 n2, eqb t1 t2 (*, named_list_lookup_err l n1*) with
+      | true, true (*, _*) => true
+      | true, false (*, Some (sort_rule c' _)*) =>
+          eq_args_oracle c s1 s2 (*c'*)
+      | _, _ (*, _*) => false
       end.
 
     Lemma eq_args_oracle_sound c s1 s2 c'
@@ -75,7 +81,7 @@ Section __.
         wf_ctx l c' ->
         wf_args l c s1 c' ->
         wf_args l c s2 c' ->
-        Is_true (eq_args_oracle c s1 s2 c') ->
+        Is_true (eq_args_oracle c s1 s2) ->
         eq_args l c c' s1 s2.
     Proof.
       intros wfl wfc wfc' H1.
@@ -84,10 +90,6 @@ Section __.
         inversion 2;
         basic_goal_prep;
         basic_core_crush.
-      {
-        case_match; cbn in *; try tauto.
-        eauto.
-      }
       {
         case_match; cbn in *; try tauto.
         eapply egraph_sound; eauto.
@@ -117,20 +119,14 @@ Section __.
       cbn.
       eqb_case s s0; basic_goal_prep; try tauto.
       eqb_case l0 l1; basic_goal_prep; eauto with lang_core.
-      case_match; cbn in *; try tauto.
-      case_match; cbn in *; try tauto.
-      symmetry in case_match_eqn;
-        eapply named_list_lookup_err_in in case_match_eqn.
-      eapply sort_con_congruence; eauto; try typeclasses eauto.
-      use_rule_in_wf.
-      basic_core_crush.
       safe_invert H1.
       safe_invert H2.
-      eapply in_all_fresh_same in H9;[ | clear H9; eauto with lang_core ..].
-      eapply in_all_fresh_same in H10;[ | clear H10; eauto with lang_core ..].
+      use_rule_in_wf.
+      eapply in_all_fresh_same in H8;[ | clear H8; eauto with lang_core ..].
       basic_core_crush.
+      eapply sort_con_congruence; eauto; try typeclasses eauto.
       eapply eq_args_oracle_sound; eauto.
-    Qed.      
+    Qed.
 
     Fixpoint compute_wf_term c e fuel : option sort :=
       match e with
@@ -447,8 +443,7 @@ Section __.
       | ((n, term_eq_rule c e1 e2 t) :: src), _ =>
           @!let!eq_term_oracle tgt (compile_ctx (cmp ++ cmp_pre) c)
                  (compile (cmp ++ cmp_pre) e1)
-                 (compile (cmp ++ cmp_pre) e2)
-                 (compile_sort (cmp ++ cmp_pre) t) in
+                 (compile (cmp ++ cmp_pre) e2) in
             (compute_preserving_compiler src cmp)  
       | _,_ => None
       end.
@@ -511,10 +506,9 @@ Section __.
         eapply egraph_sound; eauto.
         4:{
           assert(Is_Success(fst
-      (egraph_reducing_equal' tgt filter reversible rebuild_fuel
+      (egraph_reducing_equal' tgt filter reversible inj_rules rebuild_fuel
          saturation_fuel efuel red_fuel (compile_ctx (cmp ++ cmp_pre) n)
-         (compile (cmp ++ cmp_pre) t) (compile (cmp ++ cmp_pre) t0)
-         (compile_sort (cmp ++ cmp_pre) s0))))
+         (compile (cmp ++ cmp_pre) t) (compile (cmp ++ cmp_pre) t0))))
             by  (erewrite case_match_eqn; exact I).
           apply H5.
         }
@@ -535,7 +529,6 @@ End EGraph.
 
 End __.
 
-
 Ltac solve_wf_ctx :=
   (apply compute_wf_ctx_sound
     with (fuel := 100)
@@ -544,7 +537,8 @@ Ltac solve_wf_ctx :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=filter_rules)
-         (reversible:=filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
    [ assumption | vm_compute; reflexivity ]).
 
 Ltac compute_subst_wf :=
@@ -555,7 +549,8 @@ Ltac compute_subst_wf :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=filter_rules)
-         (reversible:=filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
   [ assumption
   | solve_wf_ctx
   | solve_wf_ctx
@@ -569,7 +564,8 @@ Ltac compute_sort_wf :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=filter_rules)
-         (reversible:=filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
     [ assumption
     | solve_wf_ctx
     | vm_compute; reflexivity].
@@ -582,7 +578,8 @@ Ltac compute_term_wf :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=filter_rules)
-         (reversible:=filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
     [ assumption
     | solve_wf_ctx
     | vm_compute; reflexivity].
@@ -596,7 +593,8 @@ Ltac compute_wf_rule :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
   [ assumption | vm_compute; reflexivity].
 
 
@@ -608,7 +606,8 @@ Ltac compute_wf_lang :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
   [ prove_from_known_elabs | vm_compute; reflexivity].
 
 (* TODO: dedup after refactoring the right helpers from Automation.v*)
@@ -620,7 +619,8 @@ Ltac compute_wf_lang_no_check :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules);
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
   [ prove_from_known_elabs | vm_cast_no_check I].
 
 Ltac compute_preserving_compiler cmp_pre_src :=
@@ -631,7 +631,8 @@ Ltac compute_preserving_compiler cmp_pre_src :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules)
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules)
          (src_pre:= cmp_pre_src);
     [ try now prove_from_known_elabs
     | try now prove_from_known_elabs
@@ -649,7 +650,8 @@ Ltac compute_preserving_compiler_no_check cmp_pre_src :=
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=Automation.filter_rules)
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules)
          (src_pre:= cmp_pre_src);
     [ try now prove_from_known_elabs
     | try now prove_from_known_elabs

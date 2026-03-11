@@ -4,11 +4,12 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils GallinaHintDb.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches Tools.EGraph.Automation
   Tools.EGraph.TypeInference
-  Tools.EGraph.ComputeWf.
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -228,7 +229,7 @@ Definition cps :=
        stlc
        (cps_prod_injectivity++cps_injectivity++block_subst_injectivity
           ++value_subst_injectivity)).
-
+Require Import Pyrosome.Tools.Resolution.
 (*TODO: eliminate elab*)
 Lemma cps_preserving : preserving_compiler_ext cps_subst
                                           (tgt_Model:= core_model (cps_prod_lang
@@ -239,10 +240,14 @@ Lemma cps_preserving : preserving_compiler_ext cps_subst
                                           stlc.
 Proof.
   compute_preserving_compiler_no_check (exp_subst ++ value_subst).
-  (*TODO: eliminate lang argument via proof search *)
+  #[local] Definition entry_ty (p : lang * compiler * compiler * lang) :=
+    preserving_compiler_ext (tgt_Model:=core_model (fst (fst (fst p))))
+      (snd (fst (fst p))) (snd (fst p)) (snd p).
+  #[local] Definition cps_subst_entry :=
+    mkEntry (exist entry_ty (_,_,_,_) cps_subst_preserving).
+  Hint Resolve cps_subst_entry : preserving_compiler_db.
   (*TODO: build this into tactic:*)
-  eapply CompilerFacts.preserving_compiler_embed.
-  all:eauto with elab_pfs.
-  compute_incl.
+  let db := hint_db_list preserving_compiler_db in
+  prove_by_cmp_db (db_append_cmp_list (V:=string) db).
 Qed.
 #[export] Hint Resolve cps_preserving : elab_pfs.

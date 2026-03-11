@@ -545,38 +545,6 @@ Derive exp_ty_subst_cps
 Proof. auto_elab_compiler. Qed.
 #[export] Hint Resolve exp_ty_subst_cps_preserving : elab_pfs.
 
-(*
-  (*TODO: upstream*)
-  Ltac eredex_steps_with' lang name' :=
-    let V := string in
-    let mr := eval vm_compute in (named_list_lookup_err lang name') in
-      lazymatch mr with
-      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-          lazymatch goal with
-          | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
-              let s1 := open_constr:((_ : subst V)) in
-              let s2 := open_constr:((_ : subst V)) in
-              let s3 := open_constr:((_ : subst V)) in
-              (first [ unify_var_names V s1 c; unify_var_names V s2 c; unify_var_names V s3 c
-                     | fail 2 "could not unify var names" ]);
-              (first [ eapply (eq_term_conv (t:= tp [/s1 /]));
-                       [eapply (eq_term_trans (l:=l) (c:=c') (e1:=e1) (e12:= e1p [/s2 /]));
-                        [ try term_refl
-                        | eapply (eq_term_trans (l:=l) (c:=c') (e12:= e2p [/s3 /]));
-                          [eapply eq_term_subst;
-                           [eapply eq_term_by with (name:=name'); solve_in
-                           |repeat apply  eq_subst_cons; try apply  eq_subst_nil;
-                            process_eq_term
-                           |try (solve [ cleanup_auto_elab ])]
-                          |try term_refl]]
-                       | sort_cong; repeat process_eq_term]
-                         
-                     | fail 2 "could not replace with subst" ])
-          end
-      | None => fail 100 "rule not found in lang"
-      end.
-  *)
-
 Definition poly_cps_def : compiler string :=
   match # from poly with
   | {{e #"All" "D" "A"}} =>
@@ -672,6 +640,16 @@ Ltac insert_implicits l e :=
     let e' := eval compute in (snd (insert_implicits 100 l e evar_list)) in
       idtac e'.
 
+
+Ltac intermediate_term e :=      
+  match goal with
+    |- eq_term ?l' ?c ?t ?e1 ?e2 =>
+      let e' := open_constr:(_:term) in
+      assert (elab_term l' c e e' t) as H';
+      [| eapply eq_term_trans with (e12:=e');
+         clear H']
+  end.
+
 Derive poly_cps
   SuchThat (elab_preserving_compiler
               (exp_ty_subst_cps
@@ -701,75 +679,6 @@ Proof.
     compute_eq_compilation.
     reduce.
     hide_implicits.
-
-      (*TODO: upstream when done*)
-  Ltac eredex_steps_with' lang name' :=
-    let V := string in
-    let mr := eval vm_compute in (named_list_lookup_err lang name') in
-      lazymatch mr with
-      | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-          lazymatch goal with
-          | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
-              let s1 := open_constr:((_ : subst V)) in
-              let s2 := open_constr:((_ : subst V)) in
-              let s3 := open_constr:((_ : subst V)) in
-              
-              (first [ unify_var_names V s1 c; unify_var_names V s2 c; unify_var_names V s3 c
-                     | fail 2 "could not unify var names" ]);
-              let H1 := fresh in
-              let H2 := fresh in
-              assert (eq_subst (Model:=core_model l) c' c s1 s2) as H1;
-              [|clear H1; assert (eq_subst (Model:=core_model l) c' c s2 s3) as H2;
-              [| clear H2;
-              (first [ eapply (eq_term_conv (t:= tp [/s1 /]));
-                       [eapply (eq_term_trans (l:=l) (c:=c') (e1:=e1) (e12:= e1p [/s2 /]));
-                        [ try term_refl
-                        | eapply (eq_term_trans (l:=l) (c:=c') (e12:= e2p [/s3 /]));
-                          [eapply eq_term_subst;
-                           [eapply eq_term_by with (name:=name'); solve_in
-                           |repeat apply  eq_subst_cons; try apply  eq_subst_nil;
-                            process_eq_term
-                           |try (solve [ cleanup_auto_elab ])]
-                          |try term_refl ] ]
-                       | sort_cong; repeat process_eq_term]
-                         
-                     | fail 2 "could not replace with subst using rule" mr ]) ] ];
-              [repeat eapply eq_subst_cons; try eapply eq_subst_nil; try term_refl..|]
-          end
-      | None => fail 100 "rule not found in lang"
-      end.
-  
-  Ltac eredex_steps_with'' lang name :=
-    let V := string in
-  let mr := eval vm_compute in (named_list_lookup_err lang name) in
-  lazymatch mr with
-  | Some (term_eq_rule ?c ?e1p ?e2p ?tp) =>
-      lazymatch goal with
-      | |- eq_term ?l ?c' ?t ?e1 ?e2 =>
-              let s1 := open_constr:((_ : subst V)) in
-              let s2 := open_constr:((_ : subst V)) in
-              let s3 := open_constr:((_ : subst V)) in
-              
-              (first [ unify_var_names V s1 c; unify_var_names V s2 c; unify_var_names V s3 c
-                     | fail 2 "could not unify var names" ]);
-              let H1 := fresh in
-              let H2 := fresh in
-              assert (eq_subst (Model:=core_model l) c' c s1 s2) as H1;
-              [|(*clear H1;*) assert (eq_subst (Model:=core_model l) c' c s2 s3) as H2;
-              [| (*clear H2;*)
-
-                 (first
-             [ replace (eq_term l c' t e1 e2) with (eq_term l c' tp [/s1 /] e1p [/s2 /] e2p [/s3 /]);
-                [  | f_equal; vm_compute; try reflexivity ]
-             | fail 2 "could not replace with subst" ])(*;
-             eapply eq_term_conv;
-             [eapply (eq_term_subst (l:=l) (c:=c') (s1:=s1) (s2:=s2) (c':=c));
-             [ eapply (eq_term_by l c name tp e1p e2p); try (solve [ cleanup_auto_elab ])
-             | eapply eq_subst_refl; try (solve [ cleanup_auto_elab ])
-             | try (solve [ cleanup_auto_elab ]) ] | ] *) ] ] 
-      end
-  | None => fail 100 "rule not found in lang"
-  end.
   eapply eq_term_trans; cycle 1.
   {
     eredex_steps_with ir_parameterized "cont_eta".
@@ -779,32 +688,9 @@ Proof.
   all: compute_eq_compilation.
   all: try term_refl.
   reduce.
-  hide_implicits.
-
-  
-  match goal with
-  |- eq_term ?l' ?c ?t ?e1 ?e2 =>
-    let e := constr:({{e #"blk_subst" (#"snoc" #"id" #"hd") (#"jmp" (#"val_subst" (#"cmp" #"wkn" #"wkn") "v") #"hd") }})
-      in
-      let e' := open_constr:(_:term) in
-      assert (elab_term l' c e e' t) as H';
-      [| eapply eq_term_trans with (e12:=e');
-         clear H']
-  end.
-  {
-    try_break_elab_term.
-    all:repeat (compute_eq_compilation;
-                try term_refl; reduce).
-  }
-  2:{ by_reduction. }
-  eapply eq_term_trans; cycle 1.
-  {
-    eredex_steps_with exists_block_lang "unpack-eta".
-  }
-  compute_eq_compilation.
-  hide_implicits.
-  reduce.
-  term_refl.
+  intermediate_term constr:({{e #"blk_subst" (#"snoc" #"id" #"hd") (#"jmp" (#"val_subst" (#"cmp" #"wkn" #"wkn") "v") #"hd") }}).
+  1:try_break_elab_term.
+  all:Automation.by_reduction; Matches.t'.
   }
   Unshelve.
   all: repeat Matches.t'.
@@ -1068,35 +954,8 @@ Derive exists_cc
   As exists_cc_preserving.
 Proof.
   auto_elab_compiler.
-  {
-    compute_eq_compilation.
-    reduce.
-    hide_implicits.
-    
-    match goal with
-      |- eq_term ?l' ?c ?t ?e1 ?e2 =>
-        let e := constr:({{e  #"blk_subst" (#"snoc" #"id" "v")
-                             (#"blk_subst" (#"snoc" #"forget" (#"pair" {ovar 1} #"hd")) "e") }})
-        in
-        let e' := open_constr:(_:term) in
-        assert (elab_term l' c e e' t) as H';
-        [| eapply eq_term_trans with (e12:=e');
-           clear H']
-    end.
-    {
-      repeat Matches.t.
-    }
-    2: by_reduction.
-    hide_implicits.
-    
-    
-    eapply eq_term_trans; cycle 1.
-    {
-      eredex_steps_with exists_block_lang "unpack-eta".
-    }
-    by_reduction.
-  }
-  {
+  { Automation.by_reduction; Matches.t'. }
+  {   
     compute_eq_compilation.
     reduce.
     hide_implicits.
@@ -1129,26 +988,12 @@ Proof.
     all: try term_refl.
     all:compute_eq_compilation.
     hide_implicits.
-
-    Ltac intermediate_term e :=      
-    match goal with
-      |- eq_term ?l' ?c ?t ?e1 ?e2 =>
-        let e' := open_constr:(_:term) in
-        assert (elab_term l' c e e' t) as H';
-        [| eapply eq_term_trans with (e12:=e');
-           clear H']
-    end.
+    assert True; cycle 1.
+    (*Time 1:Automation.by_reduction; Matches.t'. 8min+ *)
+    (* TODO: This is a hard one to make work.*)
     intermediate_term constr:({{e #"cmp" #"wkn" (#"snoc" #"forget" #"hd")}}).
     { repeat Matches.t. }
-    all: hide_implicits.
-    1:by_reduction.
-    eapply eq_term_trans.
-    { eredex_steps_with val_parameterized "cmp_snoc". }
-    hide_implicits.
-    all:compute_eq_compilation.
-    term_cong; try term_refl.
-    all:compute_eq_compilation.
-    eredex_steps_with val_parameterized  "cmp_forget".
+    all: Automation.by_reduction; Matches.t'.
   }
   Unshelve.
   all:repeat Matches.t'.
