@@ -569,8 +569,6 @@ Hint Unfold polymorphic_shared_fragment : auto_elab.
 
 Local Notation compiler := (compiler string).
 
-Compute value_subst. Locate exp_subst.  
-
 Definition shared_fragment_compiler_def : compiler :=
   match # from simple_shared_fragment with
   | {{s#"ty"}} => {{s #"ty" #"ty_emp"}}
@@ -604,8 +602,6 @@ Definition shared_fragment_compiler_def : compiler :=
   | {{e#"uapp" "G" "e" "e'"}} => {{e @"uapp" @("D" := #"ty_emp") "e" "e'"}}
   | {{e#"bool?" "G" "e"}} => {{e @"bool?" @("D" := #"ty_emp") "e"}}
   end.
-
-Compute shared_fragment_compiler_def. 
 
 Axiom todo : wf_lang polymorphic_shared_fragment.
 
@@ -664,9 +660,6 @@ Hint Unfold source_multilanguage : auto_elab.
 Definition target_multilanguage :=
             type_casing ++ mif_parameterized ++ polymorphic_shared_fragment.
 Hint Unfold target_multilanguage : auto_elab.
-
-Compute mif_parameterized.
-Compute value_subst. 
 
 (*
 Definition ttd_fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) : (t1 -> t2) -> dyn :=
@@ -731,7 +724,6 @@ Definition multilang_compiler_def : compiler :=
     (* neeed to parameterize exp sort and val sort and ty sort so need three rules for that *)
     end.
 
-Compute multilang_compiler_def. 
 
 (* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
 (* semantic properties are in SemanticsPreservingDefs.v *)
