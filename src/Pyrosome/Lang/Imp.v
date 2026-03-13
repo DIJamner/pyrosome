@@ -381,22 +381,23 @@ Notation target_lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
-Ltac try_term_cong :=
-  repeat (try (term_cong; repeat (try apply eq_args_cons); try apply eq_args_nil; simpl; try term_refl; let n := numgoals in guard n <= 1)).
-
-Ltac step_backward lang name :=
+Ltac clo_eta_cong :=
   eapply eq_term_trans;
-  eapply eq_term_sym;
-  try eredex_steps_with lang name;
-  try_term_cong;
-  eapply eq_term_sym.
-
+  [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
+  compute_eq_compilation;
+  reduce_lhs;
+  eapply eq_term_trans; cycle
 (*Use: `hide_implicits` shows the pre-elaboration terms,
   and `wysiwyg` shows the actual goal again.
  *)
+ 1;
+  [ now eredex_steps_with cc_lang "clo_eta"|];
+  reduce_rhs;
+  repeat (term_cong; 
+          unfold Model.eq_term;
+          try term_refl;[]).
 
 Derive ch8_cc
-
        SuchThat (elab_preserving_compiler
                    []
                    target_lang
@@ -406,25 +407,12 @@ Derive ch8_cc
        As ch8_cc_preserving.
 Proof.
   (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
-  ElabCompilers.auto_elab_compiler.
-  
-  Ltac clo_eta_cong :=
-    eapply eq_term_trans;
-    [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
-    compute_eq_compilation;
-    reduce_lhs;
-    eapply eq_term_trans; cycle 1;
-    [ now eredex_steps_with cc_lang "clo_eta"|];
-    reduce_rhs;
-    repeat (term_cong; 
-            unfold Model.eq_term;
-            try term_refl;[]).
+  ElabCompilers.auto_elab_compiler.  
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.    
-  -
-    (*TODO: this case takes at least a while w/ by_reduction.
+  - (*TODO: this case takes at least a while w/ by_reduction.
       probably wants inj congruence.
       TODO: more specifically, probably wants something intelligent.
       The current proof uses this reasoning:
@@ -434,58 +422,39 @@ Proof.
     compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    (*TODO: expensive*)
-    repeat clo_eta_cong.
-    compute_eq_compilation.
-    Automation.by_reduction;
-    [ComputeWf.solve_wf_ctx
-    |ComputeWf.compute_term_wf
-    |ComputeWf.compute_term_wf].
-  - compute_eq_compilation.
+    clo_eta_cong.
+    (*
+    UnElab.hide_implicits.
+    TODO: injectivity doesn't deal well w/ closures!.
+    not very injective.
+    Need the following injectivity pattern:
+      <\xy.e, c> = <\xy.e', c> <-> e = e'.
+    if c is the same, then e, e' injective. requires more complicated pattern than I have
+                           
+    
+Definition cc_injectivity :=
+  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
 
-Ltac reduce :=
-  repeat (
-      eapply eq_term_trans;
-      (try cleanup_elab_after step_if_concrete);
-      try_term_cong).
-    reduce. (* TODO: 1. why is this reduce needed. 2. why does the other reduce not work?*)
-    step_backward cc_lang "clo_eta".
+  TODO: clo_eta is expensive
+  *)
+    clo_eta_cong.
+    Automation.by_reduction;Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - compute_eq_compilation.
+    Matches.reduce.
+    repeat (term_cong; try term_refl;[]).
+    progress clo_eta_cong.
     Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    eapply eq_term_trans.
-    {
-      term_cong;unfold Model.eq_term.
-      - right; compute; reflexivity.
-      - term_refl.
-      - term_refl.
-      - term_cong.
-        + right; compute; reflexivity.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).          
-          Automation.by_reduction; Matches.t'.
-      - term_refl.
-    }
-    Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    Automation.by_reduction; Matches.t'.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
+    progress clo_eta_cong.
     term_refl.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
+    progress clo_eta_cong.
     term_refl.
   - Automation.by_reduction; Matches.t'.
     Unshelve.

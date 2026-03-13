@@ -675,23 +675,9 @@ Derive poly_cps
 Proof.
   change cps_parameterized with cmp'.
   auto_elab_compiler.
-  {
-    compute_eq_compilation.
-    reduce.
-    hide_implicits.
-  eapply eq_term_trans; cycle 1.
-  {
-    eredex_steps_with ir_parameterized "cont_eta".
-  }
-  all: compute_eq_compilation.
-  term_cong.
-  all: compute_eq_compilation.
-  all: try term_refl.
-  reduce.
-  intermediate_term constr:({{e #"blk_subst" (#"snoc" #"id" #"hd") (#"jmp" (#"val_subst" (#"cmp" #"wkn" #"wkn") "v") #"hd") }}).
-  1:try_break_elab_term.
-  all:Automation.by_reduction; Matches.t'.
-  }
+  (* Automation.auto_elab_compiler. 1:36-1:44+ Why is this longer?*)
+  (*260s for legacy auto*)
+  { Automation.by_reduction; Matches.t'. }
   Unshelve.
   all: repeat Matches.t'.
 Qed.
@@ -740,6 +726,10 @@ Derive exists_cps
   As exists_cps_preserving.
 Proof.
   change cps_parameterized with cmp'.
+  (*TODO: takes much longer than legacy auto_elab_compiler (has not terminated). Why?
+    Time  1:Automation.auto_elab_compiler.
+    Legacy: ~50s
+   *)
   auto_elab_compiler.
 Qed.
 #[export] Hint Resolve exists_cps_preserving : elab_pfs.
@@ -988,7 +978,6 @@ Proof.
     all: try term_refl.
     all:compute_eq_compilation.
     hide_implicits.
-    assert True; cycle 1.
     (*Time 1:Automation.by_reduction; Matches.t'. 8min+ *)
     (* TODO: This is a hard one to make work.*)
     intermediate_term constr:({{e #"cmp" #"wkn" (#"snoc" #"forget" #"hd")}}).
