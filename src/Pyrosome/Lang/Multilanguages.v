@@ -13,7 +13,7 @@ Require Coq.derive.Derive.
 (* import the relevant language fragments *)
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import Bool. 
+From Pyrosome.Lang Require Import BoolType. 
 
 (* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst. 
