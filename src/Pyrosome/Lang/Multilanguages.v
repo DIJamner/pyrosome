@@ -661,7 +661,7 @@ Definition target_multilanguage :=
             type_casing ++ mif_parameterized ++ polymorphic_shared_fragment.
 Hint Unfold target_multilanguage : auto_elab.
 
-(*
+
 Definition ttd_fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) : (t1 -> t2) -> dyn :=
   fun input =>
     ufun z =>
@@ -700,7 +700,7 @@ Definition boundaries t : (t -> dyn) * (dyn -> t) :=
       (snd y) (input ((fst x) z))
                     )
   end.
-*)
+
 
 
 (* simple to poly compiler *)
