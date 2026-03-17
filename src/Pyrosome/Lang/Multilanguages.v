@@ -1,5 +1,5 @@
 Set Implicit Arguments.
-
+ (* test comment *)
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
