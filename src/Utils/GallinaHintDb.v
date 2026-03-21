@@ -4,8 +4,7 @@
 From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-
-From Ltac2 Require Import Ltac2 Control List.
+From Ltac2 Require Import Ltac2 Ident Control List Bool Constr.
 Set Default Proof Mode "Classic".
 
 (* TODO: generalize tactics to allow DBs w/ more than 1 type of entry?*)
@@ -14,13 +13,16 @@ Variant eauto_goal {A} (a:A) : Prop := mkEautoGoal.
 Variant dummy_hyp {A} (a:A) : Prop := mkHyp.
 Variant fresh_check {A} (a:A) : Prop := mkFreshCheck.
 
-(* Database for facts used internally *)
-Create HintDb enumerate_db discriminated.
+(* Database for facts used internally.
+   Should not be added to by other files.
+ *)
+Create HintDb gallina_hint_db_internals discriminated.
 
 Lemma contract_hyp {A} (a:A)
   : entry a -> fresh_check a -> eauto_goal a.
 Proof. constructor. Qed.
-#[export] Hint Resolve contract_hyp : enumerate_db.
+(* Global so that the internal process always works *)
+#[global] Hint Resolve contract_hyp : gallina_hint_db_internals.
 
 Lemma to_eauto_goal {A} (a:A)
   : eauto_goal a -> dummy_hyp a.
@@ -31,13 +33,26 @@ Ltac do_fresh_check a :=
   | H : dummy_hyp a |- _ => fail
   | _ => constructor
   end.
-#[export] Hint Extern 0 (fresh_check ?a) => do_fresh_check a : enumerate_db.
+(* Global so that the internal process always works *)
+#[global] Hint Extern 0 (fresh_check ?a) => do_fresh_check a : gallina_hint_db_internals.
 
-Ltac enumerate_db db :=
-  repeat
-    (let x := open_constr:(_) in
-     assert (dummy_hyp x);
-     [ apply to_eauto_goal; now eauto with nocore enumerate_db db | not_evar x]).
+Ltac2 Type exn ::= [ Db_not_found(string) ].
+
+Ltac2 get_db s := 
+  match Ident.of_string s with
+  | Some name => name
+  | None => throw (Db_not_found s)
+  end.
+
+Ltac2 enumerate_db db : unit :=
+  let db_list := [get_db "nocore"; get_db "gallina_hint_db_internals"; db] in
+  let body () : unit :=
+    let x := open_constr:(_) in
+       assert (dummy_hyp $x) >
+       [ apply to_eauto_goal; now Std.eauto Std.Off None [] (Some db_list)
+       | if is_evar x then fail else ()]
+  in
+  repeat0 body.
 
 Ltac2 list_db_values () :=
   flat_map (fun p =>
@@ -62,26 +77,28 @@ Ltac2 rec list_to_syntax l :=
   Creates a new dummy goal to operate in without affecting the proof term.
   The new goal is the first one.
  *)
-Ltac dummy_goal P :=
-  unshelve (let x := open_constr:(_ : P) in idtac).
-
+Ltac2 dummy_goal p :=
+  unshelve (fun _ => let _ := open_constr:(_ : $p) in ()).
 
 (*TODO: accomodate an arbitrary number of focused goals, not just 1*)
-Ltac2 hint_db_list db :=
-  (*TODO: move this into ltac2?*)
-  ltac1:(db |- dummy_goal True;
-         [clear; enumerate_db db |]) db;
+Ltac2 hint_db_list s :=
+  dummy_goal constr:(True) >
+    [clear; enumerate_db (get_db s) |];
   let x := (focus 1 1 (fun () => list_to_syntax (list_db_values ()))) in
   dispatch [(fun _ => exact I); (fun _ => ())];
   x.
 
-Ltac hint_db_list :=
-  ltac2val:(db |- Ltac1.of_constr (hint_db_list db)).
+(*
+It doesn't seem like it's possible to pass strings from Ltac to Ltac2,
+so we can't implement this:
+Ltac hint_db_list s :=
+  ltac2val:(Ltac1.of_constr (hint_db_list s)).
+ *)
 
-Ltac define_hint_db db :=
-  let x := hint_db_list db in
-  let y := eval vm_compute in x in
-  exact y.
+Ltac2 define_hint_db s :=
+  let x := hint_db_list s in
+  let y := eval vm_compute in $x in
+  exact $y.
 
 Module Tests.
   Create HintDb test discriminated.
@@ -97,9 +114,11 @@ Module Tests.
   Hint Resolve tag4 : test.
   #[local] Definition tag5 := mkEntry 5.
   Hint Resolve tag5 : test.
+  #[local] Definition tag52 := mkEntry 5.
+  Hint Resolve tag52 : test.
 
   #[local] Definition my_db : list nat.
-    define_hint_db test.
+    ltac2:(define_hint_db "test").
   Defined.
 
   Goal incl my_db [5; 4; 3; 2; 1; 0].

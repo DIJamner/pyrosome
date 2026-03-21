@@ -2,10 +2,10 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad.
+From Utils Require Import Utils Monad GallinaHintDb Ltac.
 From Utils Require Import EGraph.Defs.
 From Pyrosome.Theory Require Import Core ModelImpls.
-From Pyrosome.Tools Require Import Matches EGraph.Defs EGraph.Automation.
+From Pyrosome.Tools Require Import Matches Resolution EGraph.Defs EGraph.Automation.
 From Pyrosome.Compilers Require Import Compilers CompilerFacts
         (*TODO: refactor so I don't need this*)
         CompilerTransitivity.
@@ -261,7 +261,7 @@ Section __.
     Lemma compute_wf_sort_sound c t fuel
       : wf_lang l ->
         wf_ctx l c ->
-        Some tt = compute_wf_sort c t fuel ->
+        Is_Some (compute_wf_sort c t fuel) ->
         wf_sort l c t.
     Proof.
       intros wfl wfc.
@@ -293,7 +293,7 @@ Section __.
     
     Lemma compute_wf_ctx_sound c fuel
       : wf_lang l ->
-        Some tt = compute_wf_ctx c fuel ->
+        Is_Some (compute_wf_ctx c fuel) ->
         wf_ctx l c.
     Proof.
       intro wfl.
@@ -306,6 +306,7 @@ Section __.
         eauto with utils;
         try typeclasses eauto.
       eapply compute_wf_sort_sound; eauto.
+      rewrite case_match_eqn0; auto.
     Qed.
 
     (* For when the judgment has a non-trivial type *)
@@ -318,16 +319,16 @@ Section __.
    Lemma compute_wf_term'_sound c e t fuel
       : wf_lang l ->
         wf_ctx l c ->
-        Some tt = compute_wf_term' c e t fuel ->
+        Is_Some (compute_wf_term' c e t fuel) ->
         wf_term l c e t.
    Proof.
      unfold compute_wf_term'.
      basic_goal_prep.
      repeat (case_match;
              repeat (unfold default, option_default in *; basic_goal_prep);
-             try congruence).
-     symmetry in case_match_eqn.
-     eapply compute_wf_sort_sound in case_match_eqn; eauto.     
+             try tauto).
+     assert (Is_Some (compute_wf_sort c t fuel)) as Hsort by (rewrite case_match_eqn; exact I).
+     eapply compute_wf_sort_sound in Hsort; eauto.  
      symmetry in case_match_eqn0.
      eapply compute_wf_term_sound in case_match_eqn0; eauto.
      autorewrite with bool in *.
@@ -335,7 +336,6 @@ Section __.
      eapply eq_term_wf_sort; eauto; try typeclasses eauto.
      eapply eq_term_refl; eauto.
    Qed.
-
        
     Definition compute_wf_rule r fuel : option unit :=
       match r with
@@ -361,16 +361,21 @@ Section __.
              ret tt
       end.
 
+    (*TODO: move to utils*)
+    Lemma left_eq_to_Is_Some A e (x:A)
+      : e = Some x -> Is_Some e.
+    Proof. intro H; rewrite H; exact I. Qed.
+
     
     Lemma compute_wf_rule_sound r fuel
       : wf_lang l ->
-        Some tt = compute_wf_rule r fuel ->
+        Is_Some (compute_wf_rule r fuel) ->
         wf_rule l r.
     Proof.
       intro wfl.
       destruct r; basic_goal_prep.
       all: repeat (revert H; case_match; basic_goal_prep; [|basic_core_crush]).
-
+      all: repeat match goal with H : _ |- _ => apply left_eq_to_Is_Some in H end.
       all:autorewrite with lang_core bool utils in *.
       all:subst.
       
@@ -378,12 +383,13 @@ Section __.
         compute_wf_sort_sound,
         compute_wf_term'_sound,
           use_sublistb.
+      all: try tauto.
       all: apply use_sublistb; eauto; typeclasses eauto.
     Qed.
 
   End Terms.  
-  
 
+  (*TODO: return result with useful error message *)
   Fixpoint compute_wf_lang l_pre l fuel : option unit :=
     match l with
     | [] => @! ret tt
@@ -406,6 +412,7 @@ Section __.
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
+    all: repeat match goal with H : _ |- _ => apply left_eq_to_Is_Some in H end.
     symmetry in case_match_eqn0.
     autorewrite with bool utils in *; try typeclasses eauto.
     basic_core_crush.
@@ -465,13 +472,14 @@ Section __.
                 case_match);
         basic_utils_crush;
         autorewrite with lang_core in *;
-        constructor; intuition eauto.
+        constructor; intuition eauto;
+        repeat match goal with H : _ |- _ => apply left_eq_to_Is_Some in H end.
       {
         eapply compute_wf_sort_sound; eauto.
         eapply inductive_implies_semantic; auto;
           try typeclasses eauto.
-        4: eauto.
-        2: prove_from_known_elabs;eauto.
+        4:eauto.
+        2:eauto using wf_lang_concat.
         1:apply core_model_ok ; eauto; typeclasses eauto.
         eapply compiler_append; eauto; try typeclasses eauto;
           basic_core_crush.
@@ -482,7 +490,7 @@ Section __.
         eapply inductive_implies_semantic; auto;
           try typeclasses eauto.
         4: eauto.
-        2: prove_from_known_elabs;eauto.
+        2:eauto using wf_lang_concat.
         1:apply core_model_ok ; eauto; typeclasses eauto.
         eapply compiler_append; eauto; try typeclasses eauto;
           basic_core_crush.
@@ -495,7 +503,7 @@ Section __.
           try typeclasses eauto.
         all: try (apply core_model_ok ; eauto; typeclasses eauto).
         3,5,6,7,9,10,11: eauto.
-        all: try prove_from_known_elabs;eauto.
+        all: try eauto using wf_lang_concat.
         all:eapply compiler_append; eauto; try typeclasses eauto;
             basic_core_crush.
         all:eapply all_fresh_compiler; eauto with lang_core.
@@ -517,14 +525,62 @@ Section __.
           try typeclasses eauto.
         all: try (apply core_model_ok ; eauto; typeclasses eauto).
         3,5,6,7,9,10,11: eauto.
-        all: try prove_from_known_elabs;eauto.
+        all: try eauto using wf_lang_concat.
         all:eapply compiler_append; eauto; try typeclasses eauto;
             basic_core_crush.
         all:eapply all_fresh_compiler; eauto with lang_core.
       }
     Qed.
   End __.
+
+  (*TODO: would ideally like to infer src_pre from src &/or cmp via dbs *)
+  Definition compute_preserving_compiler_with_side_conditions db db_cmp
+    tgt src_pre cmp_pre fuel src cmp
+    : option _ :=
+    if (lang_wf_in_db db [] tgt)
+       && (lang_wf_in_db db [] src_pre)
+       && (lang_wf_in_db db src_pre src)
+       && (cmp_wf_in_db db_cmp tgt [] cmp_pre src_pre)
+    then compute_preserving_compiler tgt cmp_pre fuel src cmp
+    else None.
+
+  Lemma compute_preserving_compiler_sound_with_side_conditions src cmp
+     (tgt src_pre : lang) (cmp_pre : compiler string) (fuel : nat)
+     (db : { db | lang_db_sound (V:=string) db })
+     (db_cmp : { db | cmp_db_sound (V:=string) db })
+     : Is_Some (compute_preserving_compiler_with_side_conditions
+                  (proj1_sig db) (proj1_sig db_cmp)
+                  tgt src_pre cmp_pre fuel src cmp) ->
+       preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src.
+  Proof.
+    unfold compute_preserving_compiler_with_side_conditions, andb.
+    repeat case_match; cbn; try tauto.
+    intros.
+    eapply compute_preserving_compiler_sound; eauto.
+    1,2:apply lang_wf_in_db_correct with (db:=proj1_sig db);
+    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
+    1:apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
+      [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush].
+    apply lang_wf_in_db_correct with (db:=proj1_sig db);
+    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
+  Qed.
+
+  Definition compute_wf_lang_with_side_conditions db l_pre l fuel :=
+    if lang_wf_in_db db [] l_pre then compute_wf_lang l_pre l fuel
+    else None.
   
+  Lemma compute_wf_lang_sound_with_side_conditions l_pre l fuel
+    (db : { db | lang_db_sound (V:=string) db })
+    : Is_Some (compute_wf_lang_with_side_conditions (proj1_sig db) l_pre l fuel) ->
+      wf_lang_ext l_pre l.
+  Proof.
+    unfold compute_wf_lang_with_side_conditions.
+    repeat case_match; cbn; try tauto.
+    eapply compute_wf_lang_sound.  
+    apply lang_wf_in_db_correct with (db:=proj1_sig db);
+    [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
+  Qed.    
+    
 End EGraph.
 
 End __.
@@ -539,7 +595,7 @@ Ltac solve_wf_ctx :=
          (filter:=filter_rules)
          (reversible:=fun _ => true)
          (inj_rules := empty_inj_rules);
-   [ assumption | vm_compute; reflexivity ]).
+   [ assumption | flagged_exact I ]).
 
 Ltac compute_subst_wf :=
   apply compute_wf_subst_sound
@@ -554,6 +610,7 @@ Ltac compute_subst_wf :=
   [ assumption
   | solve_wf_ctx
   | solve_wf_ctx
+  (* TODO: update to flagged_exact *)
   | vm_compute; reflexivity ].
 
 
@@ -568,7 +625,7 @@ Ltac compute_sort_wf :=
          (inj_rules := empty_inj_rules);
     [ assumption
     | solve_wf_ctx
-    | vm_compute; reflexivity].
+    | flagged_exact I].
 
 
 Ltac compute_term_wf :=  
@@ -582,8 +639,7 @@ Ltac compute_term_wf :=
          (inj_rules := empty_inj_rules);
     [ assumption
     | solve_wf_ctx
-    | vm_compute; reflexivity].
-
+    | flagged_exact I].
 
 Ltac compute_wf_rule :=
   apply compute_wf_rule_sound
@@ -595,70 +651,49 @@ Ltac compute_wf_rule :=
          (filter:=Automation.filter_rules)
          (reversible:=fun _ => true)
          (inj_rules := empty_inj_rules);
-  [ assumption | vm_compute; reflexivity].
+  [ assumption | flagged_exact I].
 
+Ltac compute_wf_lang' reverse inj :=
+  let lang_db := ltac2val:(Ltac1.of_constr (hint_db_list "wf_lang_db")) in
+  apply  compute_wf_lang_sound_with_side_conditions
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
+         (filter:=Automation.filter_rules)
+         (reversible:=reverse)
+         (inj_rules := inj)
+         (db := db_append_lang_list (V:=string) lang_db);
+  flagged_exact I.
 
 Ltac compute_wf_lang :=
-  apply compute_wf_lang_sound
+  compute_wf_lang'
+    (fun _ : string * Rule.rule string => true)
+    empty_inj_rules.
+
+Ltac compute_preserving_compiler' cmp_pre_src reverse inj :=
+  let lang_db := ltac2val:(Ltac1.of_constr (hint_db_list "wf_lang_db")) in
+  let cmp_db := ltac2val:(Ltac1.of_constr (hint_db_list "preserving_db")) in
+  apply compute_preserving_compiler_sound_with_side_conditions
     with (fuel := 100)
          (rebuild_fuel := 100)
          (saturation_fuel := 10)
          (efuel := 100)
          (red_fuel := 100)
          (filter:=Automation.filter_rules)
-         (reversible:=fun _ => true)
-         (inj_rules := empty_inj_rules);
-  [ prove_from_known_elabs | vm_compute; reflexivity].
+         (reversible:=reverse)
+         (inj_rules := inj)
+         (src_pre:= cmp_pre_src)
+         (db := db_append_lang_list (V:=string) lang_db)
+         (db_cmp := db_append_cmp_list (V:=string) cmp_db);
+  flagged_exact I.
 
-(* TODO: dedup after refactoring the right helpers from Automation.v*)
-Ltac compute_wf_lang_no_check :=
-  apply compute_wf_lang_sound
-    with (fuel := 100)
-         (rebuild_fuel := 100)
-         (saturation_fuel := 10)
-         (efuel := 100)
-         (red_fuel := 100)
-         (filter:=Automation.filter_rules)
-         (reversible:=fun _ => true)
-         (inj_rules := empty_inj_rules);
-  [ prove_from_known_elabs | vm_cast_no_check I].
-
+(* TODO: automatically infer cmp_pre *)
 Ltac compute_preserving_compiler cmp_pre_src :=
-  apply compute_preserving_compiler_sound
-    with (fuel := 100)
-         (rebuild_fuel := 100)
-         (saturation_fuel := 10)
-         (efuel := 100)
-         (red_fuel := 100)
-         (filter:=Automation.filter_rules)
-         (reversible:=fun _ => true)
-         (inj_rules := empty_inj_rules)
-         (src_pre:= cmp_pre_src);
-    [ try now prove_from_known_elabs
-    | try now prove_from_known_elabs
-    |(*TODO: make prove_from_known_elabs work for compilers*)
-      eauto using CompilerDefs.preserving_compiler_nil with elab_pfs
-    | vm_compute; exact I
-    | try now prove_from_known_elabs].
-
-(* TODO: dedup after refactoring the right helpers from Automation.v*)
-Ltac compute_preserving_compiler_no_check cmp_pre_src :=
-  apply compute_preserving_compiler_sound
-    with (fuel := 100)
-         (rebuild_fuel := 100)
-         (saturation_fuel := 10)
-         (efuel := 100)
-         (red_fuel := 100)
-         (filter:=Automation.filter_rules)
-         (reversible:=fun _ => true)
-         (inj_rules := empty_inj_rules)
-         (src_pre:= cmp_pre_src);
-    [ try now prove_from_known_elabs
-    | try now prove_from_known_elabs
-    |(*TODO: make prove_from_known_elabs work for compilers*)
-      eauto using CompilerDefs.preserving_compiler_nil with elab_pfs
-    | vm_cast_no_check I
-    | try now prove_from_known_elabs].
+  compute_preserving_compiler' cmp_pre_src
+    (fun _ : string * Rule.rule string => true)
+    empty_inj_rules.
 
 Require Import Pyrosome.Elab.Elab.
 

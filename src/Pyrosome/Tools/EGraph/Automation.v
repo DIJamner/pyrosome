@@ -5,7 +5,7 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils Ltac.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -159,38 +159,31 @@ Ltac egraph_simpl2 cap :=
     eapply (egraph_simpl2_sound 100 cap 100 100);
     [prove_from_known_elabs| shelve | shelve | shelve | vm_compute; reflexivity | ].*)
 
-Ltac exact_check_if do_check v :=
-  tryif do_check then (vm_compute; exact v)
-  else vm_cast_no_check v.
-
 (*TODO: call Matches.t' or some other tactic to solve subgoals*)
-Ltac by_reduction' reversible inj_rules do_check :=
+Ltac by_reduction' reversible inj_rules :=
   (*TODO: check subsumed by egraph reduction
   try reduce;
    *)
     apply (egraph_sound 100 100 100 100 filter_rules reversible inj_rules);
-    [prove_from_known_elabs| | | | exact_check_if do_check I].
+    [prove_from_known_elabs| | | | flagged_exact I].
 
 
 (* TODO: plug inj_rules into tactics *)
 Definition empty_inj_rules : list (string * list string) := [].
 
 Ltac by_reduction :=
-  by_reduction' (fun _ : string * Rule.rule string => true) empty_inj_rules idtac.
+  by_reduction' (fun _ : string * Rule.rule string => true) empty_inj_rules.
 
-Ltac auto_elab_compiler' reversible inj_rules do_check :=
+Ltac auto_elab_compiler' reversible inj_rules :=
   cleanup_elab_after
   setup_elab_compiler;
   repeat
      ([>repeat t; cleanup_elab_after try 
-                    (try decompose_sort_eq; by_reduction' reversible inj_rules do_check)
+                    (try decompose_sort_eq; by_reduction' reversible inj_rules)
       | .. ]).
 
 Ltac auto_elab_compiler :=
-  auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules idtac.
-
-Ltac auto_elab_compiler_no_check :=
-  auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules fail.
+  auto_elab_compiler' (fun _ : string * Rule.rule string => true) empty_inj_rules.
 
 (* for building filters from lists in tactics *)
 Definition rule_named_in l :=
