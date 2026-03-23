@@ -6,8 +6,9 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Lang.LinearSubst Lang.LinearSTLC Tools.Matches
-  Tools.EGraph.Automation Tools.EGraph.ComputeWf.
+  Lang.LinearSubst Lang.LinearSTLC
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.Automation.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -62,7 +63,9 @@ Derive linear_cps_lang
 Proof.
   auto_elab.
 Qed.
-#[export] Hint Resolve cps_lang_wf : elab_pfs.
+#[local] Definition linear_cps_entry :=
+  lang_entry (elab_lang_implies_wf cps_lang_wf).
+#[export] Hint Resolve linear_cps_entry : wf_lang_db.
 
 Definition linear_cps_subst_def : compiler :=
   match # from (linear_exp_subst ++ linear_value_subst) with
@@ -86,8 +89,9 @@ Derive linear_cps_subst
 Proof.
   auto_elab_compiler.
 Qed.
-
-#[export] Hint Resolve linear_cps_subst_preserving : elab_pfs.
+#[local] Definition linear_cps_cmp_entry :=
+  cmp_entry (elab_compiler_implies_preserving linear_cps_subst_preserving).
+#[export] Hint Resolve linear_cps_cmp_entry : preserving_db.
 
 (*TODO: separate file?*)
 Definition linear_cps_prod_lang_def : lang :=
@@ -141,7 +145,9 @@ Derive linear_cps_prod_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
        As linear_cps_prod_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve linear_cps_prod_wf : elab_pfs.
+#[local] Definition linear_cps_prod_entry :=
+  lang_entry (elab_lang_implies_wf linear_cps_prod_wf).
+#[export] Hint Resolve linear_cps_prod_entry : wf_lang_db.
 
 (* e: blk G; {~A}
    k: blk H; {A} *)
@@ -228,27 +234,18 @@ Proof.
       or use e-graph inference machinery.
      *)
     repeat s.
-    all: match goal with
-         | [|- (?s1 = ?s2) \/ (eq_sort ?l ?c ?s2 ?s1) ] =>
-             let s1' := eval vm_compute in s1 in
-               let s2' := eval vm_compute in s2 in
-                 let c' := eval vm_compute in c in
-                   change ((s1' = s2') \/ (eq_sort l c' s2' s1'))
-         end.
-    all: match goal with
-         | [|- ?eq \/ _ ] =>
-             tryif (has_evar eq)
-             then idtac
-             else (left; reflexivity)
-         end.
-    1-9, 11-15, 17-20: now (left; reflexivity).
-    1: instantiate (1 := {{e ext (#"only" (#"neg" "B")) (#"neg" (#"prod" "A" (#"neg" "B")))}}).
-    2: instantiate (1 := {{e ext "H" (#"neg" "B")}}).
-    all: right; sort_cong; by_reduction; now t'.
+    24:instantiate (1 := {{e ext (ext (#"only" (#"neg" "B"))
+                                   (#"neg" (#"prod" "A" (#"neg" "B"))))
+                             "A" }}).
+    30:instantiate (1 := {{e ext "H" (#"neg" "B")}}).
+    all: first [left; vm_compute; reflexivity
+               | right; sort_cong; by_reduction; now t'].
   }
   { by_reduction; now t'. }
   { by_reduction; now t'. }
   Unshelve.
   all: repeat t'.
 Qed.
-#[export] Hint Resolve linear_cps_preserving : elab_pfs.
+#[local] Definition linear_cps_stlc_entry :=
+  cmp_entry (elab_compiler_implies_preserving linear_cps_preserving).
+#[export] Hint Resolve linear_cps_stlc_entry : preserving_db.

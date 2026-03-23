@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad.
 From Pyrosome Require Import Theory.Core Elab.Elab
-  Tools.Matches
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
   Tools.EGraph.TypeInference
   Elab.PreTerm Elab.PreRule.
 
@@ -217,6 +217,7 @@ Definition subst_lang :=
     (infer_lang_ext [] subst_def
        subst_injectivity).
 
-Lemma subst_lang_wf : elab_lang_ext [] (to_lang subst_def) subst_lang.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve subst_lang_wf : elab_pfs.
+Lemma subst_lang_wf : wf_lang_ext [] subst_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition subst_entry := lang_entry subst_lang_wf.
+#[export] Hint Resolve subst_entry : wf_lang_db.

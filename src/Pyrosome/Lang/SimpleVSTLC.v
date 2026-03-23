@@ -5,7 +5,8 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst Tools.EGraph.TypeInference.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
 Definition stlc_def : lang :=
@@ -49,6 +50,9 @@ Definition stlc :=
     (infer_lang_ext_simple (exp_subst++value_subst) stlc_def
        (stlc_injectivity++exp_subst_injectivity++value_subst_injectivity)).
 
-Lemma stlc_wf : elab_lang_ext (exp_subst++value_subst) stlc_def stlc.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve stlc_wf : elab_pfs.
+Lemma stlc_wf : wf_lang_ext (exp_subst++value_subst) stlc.
+Proof. compute_wf_lang. Qed.
+
+#[local] Definition stlc_entry :=
+  lang_entry stlc_wf.
+#[export] Hint Resolve stlc_entry : wf_lang_db.

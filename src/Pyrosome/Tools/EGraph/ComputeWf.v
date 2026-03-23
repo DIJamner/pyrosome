@@ -1,8 +1,9 @@
-Require Import Datatypes.String Lists.List.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String Datatypes.Result.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad GallinaHintDb Ltac.
+From Utils Require Import Utils Monad GallinaHintDb Ltac Result.
 From Utils Require Import EGraph.Defs.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Tools Require Import Matches Resolution EGraph.Defs EGraph.Automation.
@@ -387,27 +388,33 @@ Section __.
       all: apply use_sublistb; eauto; typeclasses eauto.
     Qed.
 
-  End Terms.  
+  End Terms.
 
   (*TODO: return result with useful error message *)
-  Fixpoint compute_wf_lang l_pre l fuel : option unit :=
+  Fixpoint compute_wf_lang l_pre l fuel : result unit :=
     match l with
     | [] => @! ret tt
     | (name,t)::l' =>
-        @! let ! (freshb name l_pre) in
-           let ! (freshb name l') in
-           let tt <- compute_wf_rule (l'++l_pre) t fuel in
+        @! let _ <- true_or (freshb name l_pre)
+                      error:(name "not fresh in prefix:" (map fst l_pre)) in
+           let _ <- true_or (freshb name l')
+                      error:(name "not fresh in tail:" (map fst l')) in
+           (* TODO: report detailed info from rule *)
+           let tt <- Some_or (compute_wf_rule (l'++l_pre) t fuel)
+                       error:(name "not proven to be a well-formed rule")
+           in
            let tt <- compute_wf_lang l_pre l' fuel in
            ret tt
     end.
 
   Lemma compute_wf_lang_sound l_pre l fuel
     : wf_lang l_pre ->
-      Is_Some (compute_wf_lang l_pre l fuel) ->
+      Is_Success (compute_wf_lang l_pre l fuel) ->
       wf_lang_ext l_pre l.
   Proof.
     induction l; basic_goal_prep.
     { basic_core_crush. }
+    unfold true_or, Some_or in *.
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
     revert H; case_match; basic_goal_prep; [|basic_core_crush].
@@ -424,6 +431,7 @@ Section __.
     Context (tgt src_pre : lang)
       (cmp_pre : @compiler string term sort)
       (fuel : nat).
+    (* TODO: use Result for error reporting *)
     Fixpoint compute_preserving_compiler src cmp : option unit :=
       match src, cmp with
       | [], [] => Mret tt
@@ -565,16 +573,18 @@ Section __.
     [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
   Qed.
 
-  Definition compute_wf_lang_with_side_conditions db l_pre l fuel :=
-    if lang_wf_in_db db [] l_pre then compute_wf_lang l_pre l fuel
-    else None.
+  Definition compute_wf_lang_with_side_conditions db l_pre l fuel
+    : result unit :=
+    @! let _ <- true_or (lang_wf_in_db db [] l_pre)
+                  error:("Could not validate prefix:" (map fst l_pre)) in
+      (compute_wf_lang l_pre l fuel).
   
   Lemma compute_wf_lang_sound_with_side_conditions l_pre l fuel
     (db : { db | lang_db_sound (V:=string) db })
-    : Is_Some (compute_wf_lang_with_side_conditions (proj1_sig db) l_pre l fuel) ->
+    : Is_Success (compute_wf_lang_with_side_conditions (proj1_sig db) l_pre l fuel) ->
       wf_lang_ext l_pre l.
   Proof.
-    unfold compute_wf_lang_with_side_conditions.
+    unfold compute_wf_lang_with_side_conditions, true_or.
     repeat case_match; cbn; try tauto.
     eapply compute_wf_lang_sound.  
     apply lang_wf_in_db_correct with (db:=proj1_sig db);

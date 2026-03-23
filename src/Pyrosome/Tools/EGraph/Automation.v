@@ -5,7 +5,7 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Ltac.
+From Utils Require Import Utils Ltac Result.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -73,10 +73,6 @@ Instance full_term_analysis : analysis string string (option (term string)) :=
 
 Instance depth_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => Some 1).
-
-(*TODO: put in Utils*)
-Definition Is_Success {A} (r : Result.result A) : Prop :=
-  if r then True else False.
 
 (*TODO: generalize what rules to run *)
 Theorem egraph_sound

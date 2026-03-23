@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.Resolution Tools.EGraph.ComputeWf
   (*Import as a temporary fill until this file can be removed*)
   Lang.PolySubst.
 From Pyrosome.Lang Require Export GenericSubst.
@@ -22,21 +22,33 @@ Notation subst := (@subst string).
 Notation rule := (@rule string).
 Notation lang := (@lang string).
 
+(* TODO: modernize the definitions in PolySubst *)
 Export Pyrosome.Lang.PolySubst
   (value_subst, value_subst_def, value_subst_wf,
     block_subst, block_subst_def, block_subst_wf).
-#[export] Hint Resolve value_subst_wf : elab_pfs.
-#[export] Hint Resolve block_subst_wf : elab_pfs.
 
+(*TODO: check that I don't need these hints
+#[local] Definition value_subst_entry :=
+  lang_entry (elab_lang_implies_wf value_subst_wf).
+#[export] Hint Resolve value_subst_entry : wf_lang_db.
+#[local] Definition block_subst_entry :=
+  lang_entry (elab_lang_implies_wf block_subst_wf).
+#[export] Hint Resolve block_subst_entry : wf_lang_db.
+*)
 
 Definition exp_subst : lang := exp_ret ++ exp_subst_base.
 Definition exp_subst_def := exp_ret_def ++ exp_subst_base_def.
 
-(*TODO: duplicated*)
-Lemma exp_subst_wf : elab_lang_ext value_subst exp_subst_def exp_subst.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_subst_wf : elab_pfs.
+(*TODO: duplicated *)
+#[deprecated(note="Re-proves facts from PolySubst. Just use those.")]
+Lemma exp_subst_wf : wf_lang_ext value_subst exp_subst.
+Proof. compute_wf_lang. Qed.
 
+(*TODO: check that I don't need this hint
+#[local] Definition exp_subst_entry :=
+  lang_entry exp_subst_wf.
+#[export] Hint Resolve exp_subst_entry : wf_lang_db.
+*)
 
 Definition value_subst_injectivity :=
   [("hd", ["A"; "G"]); ("wkn", ["A"; "G"]); ("snoc", ["v"; "A"; "g"; "G'"; "G"]); ("ext", ["A"; "G"]);

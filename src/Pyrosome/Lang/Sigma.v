@@ -6,8 +6,8 @@ From Utils Require Import Utils.
 From Pyrosome Require Import
   Theory.Core Elab.Elab
   Elab.PreRule
-  Tools.Matches Tools.EGraph.TypeInference
-  Tools.EGraph.ComputeWf
+  Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.TypeInference
   Tools.Interactive
   Lang.Subst
   Lang.SubstEqnGen.
@@ -16,10 +16,6 @@ Require Coq.derive.Derive.
 
 Import Core.Notations.
 Import PreRule.Notations.
-
-
-Import Tools.ComputeWf.
-
 
 (* TODO: delcare interactively, register in DB *)
 (* Note: sigma injectivity is a bit complicated,
@@ -109,6 +105,7 @@ Unshelve.
 1:shelve.
 1:vm_compute; reflexivity.
 Qed.
-#[export] Hint Resolve sigma_wf : elab_pfs.
+#[local] Definition sigma_entry := lang_entry sigma_wf.
+#[export] Hint Resolve sigma_entry : wf_lang_db.
 
 

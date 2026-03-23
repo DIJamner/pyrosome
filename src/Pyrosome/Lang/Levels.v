@@ -7,10 +7,14 @@ From Pyrosome Require Import
   Theory.Core Elab.Elab
   Elab.PreRule
   Tools.ComputeWf
-  Tools.Matches Tools.EGraph.TypeInference
+  Tools.Matches
+  Tools.Resolution
+  Tools.EGraph.TypeInference
   Tools.EGraph.ComputeWf
   Tools.EGraph.Automation
   Tools.Interactive.
+
+Require Import Pyrosome.Compilers.Parameterizer.
 
 From Pyrosome.Lang Require Import
   Subst SubstEqnGen
@@ -83,14 +87,12 @@ Unshelve.
 1:shelve.
 1:vm_compute; reflexivity.
 Qed.
-#[export] Hint Resolve levels_wf : elab_pfs.
+#[local] Definition levels_entry := lang_entry levels_wf.
+#[export] Hint Resolve levels_entry : wf_lang_db.
 
 Definition levels_injectivity :=
   [("<", ["l2"; "l1"]);("lS", ["l"]); ("l0", []);
    ("lvl", [])].
-
-Require Import Pyrosome.Compilers.Parameterizer.
-
 
 #[local] Definition subst_leveled' :=
     let ps := (elab_param "l" (subst_lang)
@@ -106,10 +108,9 @@ Definition subst_leveled :=
 
 Lemma subst_leveled_wf
   : wf_lang_ext levels subst_leveled.
-Proof.
-  compute_wf_lang_no_check.
-Qed.
-#[export] Hint Resolve subst_leveled_wf : elab_pfs.
+Proof. compute_wf_lang. Qed.
+#[local] Definition subst_leveled_entry := lang_entry subst_leveled_wf.
+#[export] Hint Resolve subst_leveled_entry : wf_lang_db.
 
 
 (*TODO: parameterize subst injectivity programmatically?
@@ -137,10 +138,9 @@ Definition pi_leveled :=
 
 Lemma pi_leveled_wf
   : wf_lang_ext (subst_leveled++levels) pi_leveled.
-Proof.
-  compute_wf_lang_no_check.
-Qed.
-#[export] Hint Resolve pi_leveled_wf : elab_pfs.
+Proof. compute_wf_lang. Qed.
+#[local] Definition pi_leveled_entry := lang_entry pi_leveled_wf.
+#[export] Hint Resolve pi_leveled_entry : wf_lang_db.
 
 (*
 TODO: level promotion constructs
