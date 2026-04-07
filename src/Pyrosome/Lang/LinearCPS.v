@@ -8,7 +8,9 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
   Lang.LinearSubst Lang.LinearSTLC
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.TypeInference
   Tools.EGraph.Automation.
+
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -54,6 +56,30 @@ Definition linear_cps_lang_def : lang :=
       : #"val" "G" (#"neg" "A")
   ]
   ]}.
+
+(*TODO: move to LinearSubst *)
+Definition linear_value_subst_injectivity :=
+  [("exch", ["H";"G"]);("vsub",["v";"A"; "G"]);("hd", ["A"]);
+   ("only", ["A"]); ("emp", []); ("val_subst", ["A"; "G"]); ("val", ["A"; "G"]);
+   ("cmp", ["G3"; "G1"]); ("id", ["G"]); ("sub", ["G'"; "G"]); ("env", []); ("ty", [])].
+
+(*TODO: move to LinearSubst *)
+Definition linear_block_subst_injectivity :=
+  [("blk_subst", ["G"]); ("blk", ["G"])].
+
+Definition linear_cps_injectivity :=
+  [("cont", ["e";"A"; "G"]); ("neg", ["A"])].
+
+(* TODO: doesn't know that ext is injective, so jump beta doesn't infer
+Definition linear_cps_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple
+       (linear_block_subst ++ linear_value_subst)
+       linear_cps_lang_def
+       (linear_cps_injectivity
+          ++linear_block_subst_injectivity
+          ++linear_value_subst_injectivity)).
+*)
 
 Derive linear_cps_lang
        SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst)

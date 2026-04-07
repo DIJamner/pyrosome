@@ -8,42 +8,22 @@
  *)
 Set Implicit Arguments.
 
-Require Import Coq.NArith.BinNat Datatypes.String Datatypes.Result Lists.List Sorting.Permutation.
+From coqutil Require Import Datatypes.String Datatypes.Result.
+From Stdlib Require Import
+  NArith.BinNat Lists.List Sorting.Permutation.
 Import ListNotations.
-Open Scope string.
-Open Scope list.
-
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad Result ExtraMaps.
 From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require ClosedTerm.
 Import Core.Notations.
 
-(*TODO: move to Monad.v *)
-Definition resultT (M : Type -> Type) A := M (result A).
-
-#[export] Instance resultT_trans : MonadTrans resultT :=
-  {|
-    transformer_monad M _ :=
-      {|
-        Mret _ a := (Mret (Success a));
-        Mbind _ _ f :=
-          Mbind (M:=M) (fun ma => match ma with
-                                      | Success a => f a
-                                      | Failure err => Mret (Failure err)
-                                      end)
-      |};
-  lift M _ A ma := @! let a <- ma in ret Success a
-  |}.
-
-
-Definition result_monad : Monad result :=
-  Eval cbv in (resultT_trans.(transformer_monad) : Monad (resultT id)).
-#[export] Existing Instance result_monad.
+Open Scope string.
+Open Scope list.
 
 
 Section WithVar.
@@ -893,13 +873,6 @@ Section WithVar.
              else ret (e1',e2')
       end.
     
-    Import coqutil.Datatypes.dlist.
-    Polymorphic Fixpoint dapp (l1 l2 : dlist) :=
-      match l1 with
-      | dnil => l2
-      | dcons x l1 => dcons x (dapp l1 l2)
-      end.
-
     Definition print_egraph
       (g : instance) :=
       (NamedList.named_map (NamedList.named_map (entry_value _ _))

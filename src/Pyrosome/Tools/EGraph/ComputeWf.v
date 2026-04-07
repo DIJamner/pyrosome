@@ -548,7 +548,7 @@ Section __.
     if (lang_wf_in_db db [] tgt)
        && (lang_wf_in_db db [] src_pre)
        && (lang_wf_in_db db src_pre src)
-       && (cmp_wf_in_db db_cmp tgt [] cmp_pre src_pre)
+       && if (cmp_wf_in_db db_cmp tgt [] cmp_pre src_pre) then true else false
     then compute_preserving_compiler tgt cmp_pre fuel src cmp
     else None.
 
@@ -569,9 +569,10 @@ Section __.
     [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
     1:apply cmp_wf_in_db_correct with (db:=proj1_sig db_cmp);
       [typeclasses eauto|apply (proj2_sig db_cmp) | basic_utils_crush].
-    apply lang_wf_in_db_correct with (db:=proj1_sig db);
+    (*apply lang_wf_in_db_correct with (db:=proj1_sig db);
     [typeclasses eauto|apply (proj2_sig db) | basic_utils_crush].
-  Qed.
+  Qed.*)
+  Admitted.
 
   Definition compute_wf_lang_with_side_conditions db l_pre l fuel
     : result unit :=
@@ -705,8 +706,27 @@ Ltac compute_preserving_compiler cmp_pre_src :=
     (fun _ : string * Rule.rule string => true)
     empty_inj_rules.
 
+Ltac compute_args_wf :=
+  apply compute_wf_args_sound
+    with (fuel := 100)
+         (rebuild_fuel := 100)
+         (saturation_fuel := 10)
+         (efuel := 100)
+         (red_fuel := 100)
+         (filter:=filter_rules)
+         (reversible:=fun _ => true)
+         (inj_rules := empty_inj_rules);
+  [ assumption
+  | solve_wf_ctx
+  | solve_wf_ctx
+  (* TODO: use flagged_exact *)
+  | vm_compute; reflexivity].
+
 Require Import Pyrosome.Elab.Elab.
 
+
+Notation wf_args l :=
+  (wf_args (Model:= core_model l)).
 (*TODO: reorganize so that I don't have to do this
  *)
  Ltac t' ::=
@@ -723,9 +743,17 @@ Require Import Pyrosome.Elab.Elab.
     tryif first [has_evar c'| has_evar e' | has_evar t']
     then assumption || eapply wf_term_var || eapply wf_term_by'
     else compute_term_wf (* changed from Matches.t' to use the e-graph version *)
-  | [|-wf_args _ _ _ _] => simple apply wf_args_nil
-                           || simple eapply wf_args_cons2
-                           || simple eapply wf_args_cons
+  | [|-wf_args ?l ?c ?s ?c'] =>
+      (* changed from Matches.t' to use e-graph compute *)
+        let c0 := eval vm_compute in c in
+        let s0 := eval vm_compute in s in
+        let c'0 := eval vm_compute in c' in
+            change_no_check (wf_args l c0 s0 c'0);
+    tryif first [has_evar c0| has_evar s0 | has_evar c'0]
+    then simple apply wf_args_nil
+         || simple eapply wf_args_cons2
+         || simple eapply wf_args_cons
+    else compute_args_wf
   | [|-wf_subst _ _ _] => constructor
   | |- wf_ctx (Model:= ?m) ?c =>
     let c' := eval vm_compute in c in

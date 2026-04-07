@@ -1,13 +1,15 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Tools.Matches Tools.EGraph.Automation.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS
      SimpleUnit NatHeap SimpleVCPSHeap SimpleVCC.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
@@ -21,11 +23,8 @@ Definition heap_id'_def : compiler :=
   | {{s #"heap"}} => {{s#"heap"}}
   end.
 
-
-
-
 Derive heap_id'
-       SuchThat (elab_preserving_compiler subst_cc
+       in (elab_preserving_compiler subst_cc
                                           (heap_cps_ops (*TODO: remove via lemma*)
                                              ++ cc_lang (*TODO: remove via lemma*)
                                              ++ prod_cc
@@ -39,10 +38,11 @@ Derive heap_id'
                                           heap_id'_def
                                           heap_id'
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
-       As heap_id'_preserving.
-Proof. auto_elab_compiler_no_check. Qed.
-#[export] Hint Resolve heap_id'_preserving : elab_pfs.
-
+       as heap_id'_preserving.
+Proof. auto_elab_compiler. Qed.
+#[local] Definition heap_id'_entry :=
+  cmp_entry (elab_compiler_implies_preserving heap_id'_preserving).
+#[export] Hint Resolve heap_id'_entry : preserving_db.
 
 (*TODO: move to value_subst? could conflict w/ cmp_forget
   not currently used
@@ -63,7 +63,9 @@ Derive forget_eq_wkn'
                                forget_eq_wkn')
        As forget_eq_wkn'_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve forget_eq_wkn'_wf : elab_pfs.
+#[local] Definition forget_eq_wkn'_entry :=
+  lang_entry (elab_lang_implies_wf forget_eq_wkn'_wf).
+#[export] Hint Resolve forget_eq_wkn'_entry : wf_lang_db.
 
 Definition heap_cc_def : compiler :=
   match # from heap_cps_ops with
@@ -79,7 +81,7 @@ Definition heap_cc_def : compiler :=
 
 (*TODO: make proof brief*)
 Derive heap_cc
-       SuchThat (elab_preserving_compiler (heap_id'++subst_cc)
+       in (elab_preserving_compiler (heap_id'++subst_cc)
                                           (heap_cps_ops
                                              ++ cc_lang
                                              ++ prod_cc
@@ -94,8 +96,10 @@ Derive heap_cc
                                           heap_cc_def
                                           heap_cc
                                           heap_cps_ops)
-       As heap_cc_preserving.
+       as heap_cc_preserving.
 Proof.
-  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules fail.
+  auto_elab_compiler' (rule_named_in cc_bidirectional_rules) empty_inj_rules.
 Qed.
-#[export] Hint Resolve heap_cc_preserving : elab_pfs.
+#[local] Definition heap_cc_entry :=
+  cmp_entry (elab_compiler_implies_preserving heap_cc_preserving).
+#[export] Hint Resolve heap_cc_entry : preserving_db.

@@ -1,12 +1,15 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleUnit.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVSTLC SimpleVCPS SimpleUnit.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -54,7 +57,8 @@ Derive prod_cc
        SuchThat (elab_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
        As prod_cc_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve prod_cc_wf : elab_pfs.
+#[local] Definition prod_cc_entry := lang_entry (elab_lang_implies_wf prod_cc_wf).
+#[export] Hint Resolve prod_cc_entry : wf_lang_db.
 
 Definition cc_lang_def : lang :=
   {[l/subst [prod_cc++cps_prod_lang ++ block_subst ++value_subst]
@@ -99,15 +103,15 @@ Definition cc_lang_def : lang :=
       : #"val" (#"ext" #"emp" "A") (#"neg" "B")
   ]]}.
 
-
 Derive cc_lang
-       SuchThat (elab_lang_ext (prod_cc ++ cps_prod_lang ++ block_subst ++value_subst)
+  SuchThat (elab_lang_ext (prod_cc ++ cps_prod_lang
+                             ++ block_subst ++value_subst)
                                cc_lang_def
                                cc_lang)
        As cc_lang_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve cc_lang_wf : elab_pfs.
-
+#[local] Definition cc_entry := lang_entry (elab_lang_implies_wf cc_lang_wf).
+#[export] Hint Resolve cc_entry : wf_lang_db.
 
 Definition subst_cc_def : compiler :=
   match # from (block_subst ++ value_subst) with
@@ -143,11 +147,10 @@ Derive subst_cc
                                           subst_cc
                                           (block_subst++value_subst))
        As subst_cc_preserving.
-Proof.
-  auto_elab_compiler_no_check.
-Qed.
-#[export] Hint Resolve subst_cc_preserving : elab_pfs.
-
+Proof. auto_elab_compiler. Qed.
+#[local] Definition subst_cc_entry :=
+  cmp_entry (elab_compiler_implies_preserving subst_cc_preserving).
+#[export] Hint Resolve subst_cc_entry : preserving_db.
 
 (*TODO: redo for positive products *)
 Definition prod_cc_compile_def : compiler :=
@@ -177,8 +180,9 @@ Derive forget_eq_wkn
                                forget_eq_wkn)
        As forget_eq_wkn_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve forget_eq_wkn_wf : elab_pfs.
-
+#[local] Definition forget_eq_wkn_entry :=
+  lang_entry (elab_lang_implies_wf forget_eq_wkn_wf).
+#[export] Hint Resolve forget_eq_wkn_entry : wf_lang_db.
 
 Definition cc_bidirectional_rules :=
   ["forget_eq_wkn"; "clo_eta"; "id_emp_forget"; "cmp_snoc"].
@@ -195,9 +199,10 @@ Derive prod_cc_compile
                                           prod_cc_compile
                                           cps_prod_lang)
        As prod_cc_preserving.
-Proof. auto_elab_compiler_no_check. Qed.
-#[export] Hint Resolve prod_cc_preserving : elab_pfs.
-
+Proof. auto_elab_compiler. Qed.
+#[local] Definition prod_cc_cmp_entry :=
+  cmp_entry (elab_compiler_implies_preserving prod_cc_preserving).
+#[export] Hint Resolve prod_cc_cmp_entry : preserving_db.
 
 Definition cc_def : compiler :=
   match # from (cps_lang) with
@@ -222,6 +227,8 @@ Derive cc
                                           cc
                                           cps_lang)
        As cc_preserving.
-Proof. auto_elab_compiler_no_check. Qed.
-#[export] Hint Resolve cc_preserving : elab_pfs.
+Proof. auto_elab_compiler. Qed.
+#[local] Definition cc_cmp_entry :=
+  cmp_entry (elab_compiler_implies_preserving cc_preserving).
+#[export] Hint Resolve cc_cmp_entry : preserving_db.
 

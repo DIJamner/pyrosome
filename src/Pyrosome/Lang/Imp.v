@@ -1,15 +1,21 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation Tools.EGraph.ComputeWf.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS NatHeap.
+From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
+  Lang.LinearSubst Lang.LinearSTLC
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.Automation.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVCC SimpleVFixCC
+  SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS NatHeap.
 Import Core.Notations.
+(*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
+
 Require Coq.derive.Derive.
+
 
 Definition ch8_def : lang :=
   {[l
@@ -62,31 +68,9 @@ Derive ch8
        SuchThat (elab_lang_ext (heap++nat_lang) ch8_def ch8)
        As ch8_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve ch8_wf : elab_pfs.
-
-(* Definition nat_eq_def : lang := *)
-(*   {[l *)
-(*     [s| "n" : #"natural", *)
-(*         "m" : #"natural" *)
-(*       ----------------------------------------------- *)
-(*       #"eq" "n" "m" srt *)
-(*     ]; *)
-(*     [:| "n": #"natural" *)
-(*       ----------------------------------------------- *)
-(*       #"eq_0_0" : #"eq" #"0" #"0" *)
-(*     ]; *)
-(*     [:| "n": #"natural", "m": #"natural", *)
-(*         "p" : #"eq" "n" "m" *)
-(*       ----------------------------------------------- *)
-(*       #"eq_1+" "p" : #"eq" (#"1+" "n") (#"1+" "m") *)
-(*     ] *)
-(*   ]}. *)
-
-(* Derive nat_eq *)
-(*        SuchThat (elab_lang_ext (nat_lang) nat_eq_def nat_eq) *)
-(*        As nat_eq_wf. *)
-(* Proof. auto_elab. Qed. *)
-(* #[export] Hint Resolve nat_eq_wf : elab_pfs. *)
+#[local] Definition ch8_entry :=
+  lang_entry (elab_lang_implies_wf ch8_wf).
+#[export] Hint Resolve ch8_entry : wf_lang_db.
 
 Definition ch8_config_def : lang := 
   {[l
@@ -154,8 +138,9 @@ Derive ch8_config
        SuchThat (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
        As ch8_config_wf.
 Proof.  auto_elab. Qed.
-#[export] Hint Resolve ch8_config_wf : elab_pfs.
-
+#[local] Definition ch8_config_entry :=
+  lang_entry (elab_lang_implies_wf ch8_config_wf).
+#[export] Hint Resolve ch8_config_entry : wf_lang_db.
 
 Definition ch8_ectx_def : lang := 
   {[l
@@ -245,7 +230,9 @@ Derive ch8_ectx
        SuchThat (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
        As ch8_ectx_wf.
 Proof.  auto_elab. Qed.
-#[export] Hint Resolve ch8_ectx_wf : elab_pfs.
+#[local] Definition ch8_ectx_entry :=
+  lang_entry (elab_lang_implies_wf ch8_ectx_wf).
+#[export] Hint Resolve ch8_ectx_entry : wf_lang_db.
 
 (* blk [... ; ~unit] *)
 Definition jmp_hd :=
@@ -454,12 +441,23 @@ Definition cc_injectivity :=
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    progress clo_eta_cong.
-    term_refl.
+      eapply eq_term_trans;
+   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"
+   |  ].
+      compute_eq_compilation; reduce_lhs.
+      (*Import UnElab. hide_implicits.*)
+      (*TODO: clo_eta <- on the RHS is too slow.
+        Check whether egraph is running <- rules.
+       *)
+      eapply eq_term_trans; cycle 1;
+        [ now eredex_steps_with cc_lang "clo_eta" |  ].
+      Automation.by_reduction; Matches.t'.
   - Automation.by_reduction; Matches.t'.
     Unshelve.
     all: repeat Matches.t'.
 Qed.
-#[export] Hint Resolve ch8_cc_preserving : elab_pfs.
+#[local] Definition ch8_cc_entry :=
+  cmp_entry (elab_compiler_implies_preserving ch8_cc_preserving).
+#[export] Hint Resolve ch8_cc_entry : wf_lang_db.
 
 

@@ -5,8 +5,14 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Compilers.CompilerDefs.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleVSum SimpleVProd.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches
+  Tools.Resolution
+  Tools.EGraph.ComputeWf
+  Tools.EGraph.Automation
+  Compilers.CompilerDefs.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVSTLC SimpleVSum SimpleVProd.
 From Pyrosome.Lang Require GenericSubst.
 Import GenericSubst (choose_fresh).
 Import Core.Notations.
@@ -40,61 +46,8 @@ Derive eval_ctx
        SuchThat (elab_lang_ext (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
        As eval_ctx_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve eval_ctx_wf : elab_pfs.
-
-
-Definition Estlc_def :lang :=  
-  {[l
-  [:| "G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "C" : #"ty",
-      "E" : #"Ectx" "G" "C" (#"->" "A" "B"),
-      "e'" : #"exp" "G" "A"
-      -----------------------------------------------
-      #"Eapp_l" "E" "e'" : #"Ectx" "G" "C" "B"
-  ];
-  [:= "G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "C" : #"ty",
-       "E" : #"Ectx" "G" "C" (#"->" "A" "B"),
-       "e'" : #"exp" "G" "A",
-       "e" : #"exp" "G" "C"
-       ----------------------------------------------- ("plug app_l")
-       #"plug" (#"Eapp_l" "E" "e'") "e"
-       = #"app" (#"plug" "E" "e") "e'"
-      : #"exp" "G" "B"
-  ];
-  [:| "G" : #"env",
-       "A" : #"ty",
-       "B" : #"ty",
-       "C" : #"ty",
-       "v" : #"val" "G" (#"->" "A" "B"),
-       "E" : #"Ectx" "G" "C" "A"
-       -----------------------------------------------
-       #"Eapp_r" "v" "E" : #"Ectx" "G" "C" "B"
-  ];
-  [:= "G" : #"env",
-      "A" : #"ty",
-      "B" : #"ty",
-      "C" : #"ty",
-      "E" : #"Ectx" "G" "C" "A",
-      "v" : #"val" "G" (#"->" "A" "B"),
-      "e" : #"exp" "G" "C"
-      ----------------------------------------------- ("plug app_r")
-      #"plug" (#"Eapp_r" "v" "E") "e"
-      = #"app" (#"ret" "v") (#"plug" "E" "e")
-      : #"exp" "G" "B"
-  ]]}.
-
-
-Derive Estlc
-       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
-       As Estlc_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve Estlc_wf : elab_pfs.
-
+#[local] Definition eval_ctx_entry := lang_entry (elab_lang_implies_wf eval_ctx_wf).
+#[export] Hint Resolve eval_ctx_entry : wf_lang_db.
 
 Record string_subst := make_subst {
     from : string;
@@ -266,15 +219,15 @@ Definition Eapp_r_hint := ["E"; "v"].
 Definition Estlc_hints := [("app", "Eapp_l", Eapp_l_hint);
     ("app", "Eapp_r", Eapp_r_hint)].
 
-Definition auto_Estlc_def :=
+Definition Estlc_def :=
   eval_ctx_lang Estlc_hints stlc_def.
 
-Derive Estlc'
-       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) auto_Estlc_def Estlc')
-       As Estlc_wf'.
+Derive Estlc
+       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
+       As Estlc_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve Estlc_wf : elab_pfs.
-
+#[local] Definition Estlc_entry := lang_entry (elab_lang_implies_wf Estlc_wf).
+#[export] Hint Resolve Estlc_entry : wf_lang_db.
 
 (* Sum Language *)
 Definition Esum_def := eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
@@ -283,7 +236,8 @@ Derive Esum
        SuchThat (elab_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum)
        As Esum_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve Esum_wf : elab_pfs.
+#[local] Definition Esum_entry := lang_entry (elab_lang_implies_wf Esum_wf).
+#[export] Hint Resolve Esum_entry : wf_lang_db.
 
 (* Prod Language *)
 Definition Eprod_def := eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
@@ -295,7 +249,8 @@ Derive Eprod
        SuchThat (elab_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod)
        As Eprod_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve Eprod_wf : elab_pfs.
+#[local] Definition Eprod_entry := lang_entry (elab_lang_implies_wf Eprod_wf).
+#[export] Hint Resolve Eprod_entry : wf_lang_db.
 
 Fixpoint wkn_n n :=
   match n with
@@ -342,71 +297,6 @@ Fixpoint match_wkn_n (t : term) : option nat :=
       end
   | _ => None
   end.
-
-
-(* Fixpoint term_to_bind_term (t : term) : bind_term := *)
-(*   match t with *)
-(*   | var v => bvar v *)
-(*   | con "blk_subst" l =>  *)
-(*       let default := bcon "blk_subst" (map (fun x => term_to_bind_term x) l) in *)
-(*       match l with *)
-(*       | [e; s] => *)
-(*         match s with *)
-(*         | con "snoc" [con "cont" [k; A]; w] => *)
-(*             match match_wkn_n w with *)
-(*             | None => default *)
-(*             | Some n => *)
-(*                 let e := term_to_bind_term e in *)
-(*                 let A := term_to_bind_term A in *)
-(*                 let k := term_to_bind_term k in *)
-(*                 bbind_k n e A k *)
-(*             end *)
-(*         | _ => default *)
-(*         end *)
-(*       | _ => default *)
-(*       end *)
-(*   | con n l => bcon n (map (fun x => term_to_bind_term x) l) *)
-(*   end. *)
-
-
-
-(* Compute term_to_bind_term original_app_rule_term. *)
-
-(* Fixpoint bind_term_to_term (t : bind_term) : term := *)
-(*   match t with *)
-(*   | bvar v => var v *)
-(*   | bcon n l => con n (map (fun x => bind_term_to_term x) l) *)
-(*   | bbind_k n e A k => *)
-(*       let e := bind_term_to_term e in *)
-(*       let A := bind_term_to_term A in *)
-(*       let k := bind_term_to_term k in *)
-(*       {{e #"blk_subst" (#"snoc" {wkn_n n} (#"cont" {A} {k})) {e} }} *)
-(*   end. *)
-
-(* Compute bind_term_to_term (term_to_bind_term original_app_rule_term). *)
-(* Compute original_app_rule_term. *)
-
-(* Fixpoint substitute_ctx_bind_term (renamings : evctx_renamings) (e : bind_term) := *)
-(*   match e with *)
-(*   | bvar n => bvar (rename_variable renamings n) *)
-(*   | bcon l args => bcon l (map (substitute_ctx_bind_term renamings) args) *)
-(*   | bbind_k n e' A k => *)
-(*       let A' := substitute_ctx_bind_term renamings A in *)
-(*       let k' := substitute_ctx_bind_term renamings k in *)
-(*       let e'' := match e' with *)
-(*                 | bvar v =>  *)
-(*                     match find (fun x => eqb v x.(from)) renamings.(vals) with *)
-(*                     | Some replace_val => *)
-(*                         let v := replace_val.(to) in *)
-(*                         term_to_bind_term {{e #"jmp" #"hd" (#"val_subst" #"wkn" v)}} *)
-(*                     | None => substitute_ctx_bind_term renamings e' *)
-(*                     end *)
-(*                  | _ => substitute_ctx_bind_term renamings e' *)
-(*                  end *)
-(*       in *)
-(*       bbind_k n e'' A' k' *)
-(*   end. *)
-
 
 Fixpoint generate_compiler_subst (hint : list string) (original : list string) : subst :=
   match hint, original with
@@ -459,7 +349,3 @@ Definition eval_ctx_compiler (hints : list (string * string * list string)) (c :
              end
          end
       ) hints.
-
-(*
-Compute eval_ctx_compiler Estlc_hints app_compiler stlc_def.
-*)
