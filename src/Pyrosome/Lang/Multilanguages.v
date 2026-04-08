@@ -5,7 +5,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches
+  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -16,7 +18,7 @@ From Pyrosome.Lang Require Import UTLC.
 From Pyrosome.Lang Require Import BoolType. 
 
 (* imports for polymorphism *)
-From Pyrosome.Lang Require Import PolySubst. 
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 From Pyrosome.Lang Require Import PolyCompilers. (* for parameterizing existing languages*)
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab. 
@@ -122,7 +124,9 @@ Derive boundaries
                 boundaries_def boundaries)
         As boundaries_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve boundaries_wf : elab_pfs.
+#[local] Definition boundaries_entry :=
+  lang_entry (elab_lang_implies_wf boundaries_wf).
+#[export] Hint Resolve boundaries_entry : wf_lang_db.
 
 
 (* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
@@ -169,7 +173,9 @@ Lemma typed_bool_parameterized_wf
   : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       typed_bool_parameterized.
 Proof. solve_parameterize_wrapper typed_bool. Qed. 
-#[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
+#[local] Definition typed_bool_parameterized_entry :=
+  lang_entry typed_bool_parameterized_wf.
+#[export] Hint Resolve typed_bool_parameterized_entry : wf_lang_db.
 
 Definition typed_bool_ty_subst_def : lang :=
 {[l
@@ -196,7 +202,9 @@ Derive typed_bool_ty_subst
   As typed_bool_ty_subst_wf.
 Proof. auto_elab.
 Qed. 
-#[export] Hint Resolve typed_bool_ty_subst_wf : elab_pfs.
+#[local] Definition typed_bool_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf typed_bool_ty_subst_wf).
+#[export] Hint Resolve typed_bool_ty_subst_entry : wf_lang_db.
 
 Definition usubst_parameterized := parameterize_wrapper usubst. 
 
@@ -204,7 +212,9 @@ Lemma usubst_parameterized_wf
   : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       usubst_parameterized.
 Proof. solve_parameterize_wrapper usubst. Qed.
-#[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
+#[local] Definition usubst_parameterized_entry :=
+  lang_entry usubst_parameterized_wf.
+#[export] Hint Resolve usubst_parameterized_entry : wf_lang_db.
 
 Definition usubst_ty_subst_def : lang :=
 {[l
@@ -231,7 +241,9 @@ Derive usubst_ty_subst
   As usubst_ty_subst_wf.
 Proof. auto_elab.
 Qed. 
-#[export] Hint Resolve usubst_ty_subst_wf : elab_pfs.
+#[local] Definition usubst_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf usubst_ty_subst_wf).
+#[export] Hint Resolve usubst_ty_subst_entry : wf_lang_db.
 
 Definition stlc_ty_subst_def : lang :=
 {[l
@@ -260,7 +272,9 @@ Derive stlc_ty_subst
   As stlc_ty_subst_wf.
 Proof. auto_elab. (* QUESTION FOR DUSTIN: WHY? *)
 Qed. 
-#[export] Hint Resolve stlc_ty_subst_wf : elab_pfs.
+#[local] Definition stlc_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf stlc_ty_subst_wf).
+#[export] Hint Resolve stlc_ty_subst_entry : wf_lang_db.
 
 Fixpoint ty_wkn_n n :=
   match n with
@@ -373,10 +387,12 @@ Derive type_casing
               ) 
                 type_casing_def type_casing)
         As type_casing_wf.
-Proof. 
+Proof.
   auto_elab. (* 6:20 *)
 Qed. (* ~0:30 *)
-#[export] Hint Resolve type_casing_wf : elab_pfs.
+#[local] Definition type_casing_entry :=
+  lang_entry (elab_lang_implies_wf type_casing_wf).
+#[export] Hint Resolve type_casing_entry : wf_lang_db.
 
 (* 
 TODO:
@@ -419,7 +435,7 @@ Local Definition evp'_utlc : lang :=
 Lemma utlc_parameterized_wf
   : wf_lang_ext ((usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       utlc_parameterized.
-Proof. 
+Proof.
   replace (usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
@@ -428,7 +444,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+#[local] Definition utlc_parameterized_entry :=
+  lang_entry utlc_parameterized_wf.
+#[export] Hint Resolve utlc_parameterized_entry : wf_lang_db.
 
 Definition untyped_bool_parameterized := 
     let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
@@ -464,7 +482,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+#[local] Definition untyped_bool_parameterized_entry :=
+  lang_entry untyped_bool_parameterized_wf.
+#[export] Hint Resolve untyped_bool_parameterized_entry : wf_lang_db.
 
 Definition utlc_bool_parameterized := 
     let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -498,7 +518,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_bool_parameterized_wf : elab_pfs.
+#[local] Definition utlc_bool_parameterized_entry :=
+  lang_entry utlc_bool_parameterized_wf.
+#[export] Hint Resolve utlc_bool_parameterized_entry : wf_lang_db.
 
 Definition boolhuh_parameterized := 
     let ps := (elab_param "D" (boolhuh ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -532,7 +554,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve boolhuh_parameterized_wf : elab_pfs.
+#[local] Definition boolhuh_parameterized_entry :=
+  lang_entry boolhuh_parameterized_wf.
+#[export] Hint Resolve boolhuh_parameterized_entry : wf_lang_db.
 
 Definition simple_shared_fragment :=
   boolhuh ++ 
@@ -543,8 +567,7 @@ Definition simple_shared_fragment :=
     typed_bool ++ 
     stlc ++ 
     exp_subst ++ 
-    value_subst. 
-Hint Unfold simple_shared_fragment : auto_elab.
+    value_subst.
 
 Definition polymorphic_shared_fragment :=
     boolhuh_parameterized ++ 
@@ -565,7 +588,6 @@ Definition polymorphic_shared_fragment :=
     env_ty_subst ++
     ty_subst_lang ++
     exp_parameterized ++ val_parameterized ++ ty_env_lang.
-Hint Unfold polymorphic_shared_fragment : auto_elab.
 
 Local Notation compiler := (compiler string).
 
@@ -603,8 +625,6 @@ Definition shared_fragment_compiler_def : compiler :=
   | {{e#"bool?" "G" "e"}} => {{e @"bool?" @("D" := #"ty_emp") "e"}}
   end.
 
-Axiom todo : wf_lang polymorphic_shared_fragment.
-
 Derive shared_fragment_compiler 
         SuchThat (elab_preserving_compiler 
                     []
@@ -614,10 +634,11 @@ Derive shared_fragment_compiler
                     simple_shared_fragment) 
         As shared_fragment_compiler_preserving. 
 Proof.
-  assert (wf_lang polymorphic_shared_fragment) by apply todo.
   auto_elab_compiler.
 Qed.
-Hint Resolve shared_fragment_compiler_preserving : auto_elab. 
+#[local] Definition shared_fragment_entry :=
+  cmp_entry (elab_compiler_implies_preserving shared_fragment_compiler_preserving).
+#[export] Hint Resolve shared_fragment_entry : preserving_db.
 
 Definition mif_parameterized := 
     let ps := (elab_param "D" (mif ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -651,15 +672,15 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve mif_parameterized_wf : elab_pfs.
+#[local] Definition mif_parameterized_entry :=
+  lang_entry mif_parameterized_wf.
+#[export] Hint Resolve mif_parameterized_entry : wf_lang_db.
 
 Definition source_multilanguage := 
             boundaries ++ uif ++ simple_shared_fragment.
-Hint Unfold source_multilanguage : auto_elab. 
 
 Definition target_multilanguage :=
             type_casing ++ mif_parameterized ++ polymorphic_shared_fragment.
-Hint Unfold target_multilanguage : auto_elab.
 
 (*
 Definition ttd_fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) : (t1 -> t2) -> dyn :=
