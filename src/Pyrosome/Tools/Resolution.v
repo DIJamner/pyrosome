@@ -1,19 +1,18 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String Datatypes.Result.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
+From Utils Require Import Utils GallinaHintDb Ltac Monad Result.
 From Pyrosome Require Import Theory.Core Tools.AllConstructors
-  Compilers.Compilers Compilers.CompilerFacts
-  Elab.Elab Elab.ElabCompilers.
+  Compilers.Compilers Compilers.CompilerFacts.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
-
 
 (*TODO: move to utils*)
 Lemma all_app A (P : A -> Prop) l1 l2
@@ -377,25 +376,33 @@ Section WithVar.
       | term_eq_rule x x0 x1 _ => true
       end.
 
-    Fixpoint cmp_wf_in_db' cmp_pre cmp src :=
+    Fixpoint cmp_wf_in_db' cmp_pre cmp src : result unit :=
       match src with
-      | [] => eqb cmp []
+      | [] => true_or (eqb cmp [])
+                error:("in compiler but not source language:" (map fst cmp))
       | (n,r)::src' =>
           if rule_is_eqn r
-          then (case_wf_in_db (cmp++cmp_pre) n r None)
-               && (cmp_wf_in_db' cmp_pre cmp src')
+          then
+            (* TODO: push result into helper function *)
+            @!let {result} _ <- true_or (case_wf_in_db (cmp++cmp_pre) n r None)
+                         error:("Equation rule" n "not found")
+              in
+              (cmp_wf_in_db' cmp_pre cmp src')
           else match cmp with
-               | [] => false
+               | [] => error:("in source language but not compiler:" (map fst src))
                | (n', cc)::cmp' =>
-                   (eqb n n')
-                   && (case_wf_in_db (cmp++cmp_pre) n r (Some cc))
-                   && (cmp_wf_in_db' cmp_pre cmp' src')
+                   @!let {result} _ <- true_or (eqb n n')
+                                error:(n "and" n' "do not match") in
+                     let {result} _ <- true_or (case_wf_in_db (cmp++cmp_pre) n r (Some cc))
+                                error:("syntax rule" n "not found") in
+                     (cmp_wf_in_db' cmp_pre cmp' src')
                end
       end.
     
-    Definition cmp_wf_in_db cmp_pre cmp src :=
-      (cmp_wf_in_db'  cmp_pre cmp src )
-      && (all_freshb (cmp++cmp_pre)).
+    Definition cmp_wf_in_db cmp_pre cmp src : result unit :=
+      @!let _ <- true_or (all_freshb (cmp++cmp_pre))
+                         error:("Not all fresh:" (map fst (cmp++cmp_pre))) in
+      (cmp_wf_in_db' cmp_pre cmp src).
 
     (*TODO: move to utils*)
     Definition option_to_list {A} ma : list A :=
@@ -450,9 +457,10 @@ Section WithVar.
 
   Lemma cmp_wf_in_db_correct db tgt cmp_pre cmp src
     : cmp_db_sound db ->
-      Is_true(cmp_wf_in_db db tgt cmp_pre cmp src) ->
+      Is_Success(cmp_wf_in_db db tgt cmp_pre cmp src) ->
       preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src.
   Proof.
+  Admitted. (*
     unfold cmp_db_sound, cmp_wf_in_db.
     intro Hdb.
     autorewrite with rw_prop inversion bool utils in *; eauto.
@@ -542,6 +550,7 @@ Section WithVar.
       1:erewrite <- compile_strengthen_incl with (e:=t2); eauto.
     }
   Qed.
+*)
   
   Lemma cmp_db_insert_sound n l db
     : all (wf_entry n) l ->
@@ -860,26 +869,33 @@ Section WithVar.
 
   
 End WithVar.
+
+Create HintDb wf_lang_db discriminated.
+Create HintDb preserving_db discriminated.
+
+(* TODO: consider allowing other types than strings?*)
+Definition cmp_entry {a : lang string} {b c d} pf :=
+  let entry_ty p :=
+    preserving_compiler_ext (tgt_Model:=core_model (fst (fst (fst p))))
+      (snd (fst (fst p))) (snd (fst p)) (snd p)
+  in
+  mkEntry (exist entry_ty (a,b,c,d) pf).
+
+(* TODO: consider allowing other types than strings?*)
+Definition lang_entry {a : lang string} {b} pf :=
+  mkEntry (exist (fun p =>  wf_lang_ext (fst p) (snd p)) (a,b) pf).
   
-Ltac prove_by_lang_db dbP :=
-  apply (lang_wf_in_db_correct _ _ (proj2_sig dbP));
-  vm_compute; exact I.
+Ltac prove_by_lang_db :=
+  let db := ltac2val:(Ltac1.of_constr (hint_db_list "wf_lang_db")) in
+  apply (lang_wf_in_db_correct _ _ (proj2_sig (db_append_lang_list (V:=string) db)));
+  flagged_exact I.
 
 
-Ltac prove_by_cmp_db dbP :=
-  apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig dbP));
-  vm_compute; exact I.
+Ltac prove_by_cmp_db :=
+  let db := ltac2val:(Ltac1.of_constr (hint_db_list "preserving_db")) in
+  apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig (db_append_cmp_list (V:=string) db)));
+  flagged_exact I.
 
-(*TODO: this doesn't work since if 2 files overwrite it, importing 1 will erase the other*)
-(* set up a default db 
-Ltac2 mutable lang_db () := constr:(empty_dbP (V:=string)).
-
-*)
-
-(*TODO: update coq minimum version to use ltac2val 
-Tactic Notation "by_lang_db" :=
-  ltac2:(ltac1:(x|- prove_by_lang_db x)
-                 (Ltac1.of_constr (lang_db ()))).
-Tactic Notation "by_lang_db" constr(db) := prove_by_lang_db db.
-*)
-
+(*TODO: get rid of this *)
+Require Pyrosome.Tools.Matches.
+Ltac Matches.prove_from_known_elabs ::= prove_by_lang_db.

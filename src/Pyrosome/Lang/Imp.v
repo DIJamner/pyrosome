@@ -1,15 +1,21 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCC SimpleVFixCC SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS NatHeap.
+From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
+  Lang.LinearSubst Lang.LinearSTLC
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.Automation.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVCC SimpleVFixCC
+  SimpleVCPSHeap SimpleUnit SimpleVCCHeap SimpleVCPS NatHeap.
 Import Core.Notations.
+(*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
+
 Require Coq.derive.Derive.
+
 
 Definition ch8_def : lang :=
   {[l
@@ -62,31 +68,9 @@ Derive ch8
        SuchThat (elab_lang_ext (heap++nat_lang) ch8_def ch8)
        As ch8_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve ch8_wf : elab_pfs.
-
-(* Definition nat_eq_def : lang := *)
-(*   {[l *)
-(*     [s| "n" : #"natural", *)
-(*         "m" : #"natural" *)
-(*       ----------------------------------------------- *)
-(*       #"eq" "n" "m" srt *)
-(*     ]; *)
-(*     [:| "n": #"natural" *)
-(*       ----------------------------------------------- *)
-(*       #"eq_0_0" : #"eq" #"0" #"0" *)
-(*     ]; *)
-(*     [:| "n": #"natural", "m": #"natural", *)
-(*         "p" : #"eq" "n" "m" *)
-(*       ----------------------------------------------- *)
-(*       #"eq_1+" "p" : #"eq" (#"1+" "n") (#"1+" "m") *)
-(*     ] *)
-(*   ]}. *)
-
-(* Derive nat_eq *)
-(*        SuchThat (elab_lang_ext (nat_lang) nat_eq_def nat_eq) *)
-(*        As nat_eq_wf. *)
-(* Proof. auto_elab. Qed. *)
-(* #[export] Hint Resolve nat_eq_wf : elab_pfs. *)
+#[local] Definition ch8_entry :=
+  lang_entry (elab_lang_implies_wf ch8_wf).
+#[export] Hint Resolve ch8_entry : wf_lang_db.
 
 Definition ch8_config_def : lang := 
   {[l
@@ -154,8 +138,9 @@ Derive ch8_config
        SuchThat (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
        As ch8_config_wf.
 Proof.  auto_elab. Qed.
-#[export] Hint Resolve ch8_config_wf : elab_pfs.
-
+#[local] Definition ch8_config_entry :=
+  lang_entry (elab_lang_implies_wf ch8_config_wf).
+#[export] Hint Resolve ch8_config_entry : wf_lang_db.
 
 Definition ch8_ectx_def : lang := 
   {[l
@@ -245,7 +230,9 @@ Derive ch8_ectx
        SuchThat (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
        As ch8_ectx_wf.
 Proof.  auto_elab. Qed.
-#[export] Hint Resolve ch8_ectx_wf : elab_pfs.
+#[local] Definition ch8_ectx_entry :=
+  lang_entry (elab_lang_implies_wf ch8_ectx_wf).
+#[export] Hint Resolve ch8_ectx_entry : wf_lang_db.
 
 (* blk [... ; ~unit] *)
 Definition jmp_hd :=
@@ -340,57 +327,6 @@ Definition plug_Ectx e c :=
 Definition Eif0 E z nz :=
   plug_Ectx E {{e #"if0" (#".2" #"hd") (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {z}) (#"blk_subst" (#"snoc" #"wkn" (#".1" #"hd")) {nz}) }}.
 
-(*
-(* E : blk [ ~nat x nat]
-   c : blk [... ; ~unit]
-   blk [... ; ~unit x nat] *) 
-Definition Ewhile E c :=
-  {{e #"jmp" (#"fix"
-                (#"closure"
-                   (#"prod" (#"neg" #"unit") #"unit")
-                   (*
-                     [(~unit * nat) * (~unit * unit)]
-                    *)
-                   (#"blk_subst"
-                      (#"snoc" #"wkn"
-                         (#"pair" (#"closure" #"nat"
-                                     (*
-                                        [(k : ~unit * loop : ~unit ) * nat]
-                                      *)
-                                     (#"if0" (#".2" #"hd") (* blk [((~unit, (~unit, unit)), nat)] *)
-                                        (#"jmp" (#".1" (#".1" #"hd")) #"tt")
-                                        (#"blk_subst" (#"snoc" #"wkn" (#".2" (#".1" #"hd"))) {c}))
-                                     (#"pair" (#".1" (#".1" #"hd")) (#".1" (#".2" #"hd"))))
-                            (#".2" (#".1" #"hd")) ))
-                      {E})
-                   #"hd"))
-      #"tt"
-  }}.
-*)
-   (*   {{e #"jmp" (#"fix"
-                   (#"closure"
-                     (#"prod" (#"neg" #"unit") #"unit")
-                     (#"blk_subst" (* [((~nat, ~~nat), (~unit, unit))] *)
-                       (#"snoc"
-                         (#"snoc" #"forget"
-                           (#"closure" #"nat"
-                             (#"if0" (#".2" #"hd")
-                               (#"jmp" (#".1" (#".1" (#".1" #"hd"))) #"tt")
-                               (#"blk_subst" (#"snoc" #"wkn" (#".1" (#".2" (#".1" #"hd")))) "c")
-                             )
-                             #"hd"
-                           )
-                         )
-                         (#".2" (#".1" #"hd"))
-                       )
-                       "E"
-                     )
-                     (#"pair" (#"val_subst" #"wkn" #"hd") #"hd")
-                   )
-                 )
-          #"tt"
-  }}*)
-
 (* x : natural
    e : blk [... ; ~nat]
    blk [... ; ~unit] *)
@@ -432,29 +368,23 @@ Notation target_lang :=
                                 forget_eq_wkn'++
                                 cps_prod_lang ++ block_subst ++ value_subst).
 
-Ltac try_term_cong :=
-  repeat (try (term_cong; repeat (try apply eq_args_cons); try apply eq_args_nil; simpl; try term_refl; let n := numgoals in guard n <= 1)).
-
-Ltac step_backward lang name :=
+Ltac clo_eta_cong :=
   eapply eq_term_trans;
-  eapply eq_term_sym;
-  try eredex_steps_with lang name;
-  try_term_cong;
-  eapply eq_term_sym.
-
-
-Ltac reduce :=
-  repeat (
-      eapply eq_term_trans;
-      (try cleanup_elab_after step_if_concrete);
-      try_term_cong).
-
+  [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
+  compute_eq_compilation;
+  reduce_lhs;
+  eapply eq_term_trans; cycle
 (*Use: `hide_implicits` shows the pre-elaboration terms,
   and `wysiwyg` shows the actual goal again.
  *)
+ 1;
+  [ now eredex_steps_with cc_lang "clo_eta"|];
+  reduce_rhs;
+  repeat (term_cong; 
+          unfold Model.eq_term;
+          try term_refl;[]).
 
 Derive ch8_cc
-
        SuchThat (elab_preserving_compiler
                    []
                    target_lang
@@ -463,124 +393,71 @@ Derive ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
        As ch8_cc_preserving.
 Proof.
-  auto_elab_compiler.
-  
-  Ltac clo_eta_cong :=
-    eapply eq_term_trans;
-    [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"|];
-    compute_eq_compilation;
-    reduce_lhs;
-    eapply eq_term_trans; cycle 1;
-    [ now eredex_steps_with cc_lang "clo_eta"|];
-    reduce_rhs;
-    repeat (term_cong; 
-            unfold Model.eq_term;
-            try term_refl;[]).
-  
-  - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-  - compute_eq_compilation.
-    reduce.
-    eapply eq_term_sym.
-    step_backward block_subst "blk_subst_id".
-    step_backward value_subst "snoc_wkn_hd".
-    step_backward cc_lang "clo_eta".
-    reduce.
-    eredex_steps_with unit_eta "unit eta".
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    (*TODO: expensive*)
-    repeat clo_eta_cong.
+  (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
+  ElabCompilers.auto_elab_compiler.  
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.    
+  - (*TODO: this case takes at least a while w/ by_reduction.
+      probably wants inj congruence.
+      TODO: more specifically, probably wants something intelligent.
+      The current proof uses this reasoning:
+      <e>[/s/] = <e>[/s'/] iff s = s' for metavariable <e>.
+      How should I express that?
+      *)
     compute_eq_compilation.
-    (*TODO: why aren't all unit terms reduced to tt?
-    Matches.reduce.*)
-    eredex_steps_with unit_eta "unit eta".
-  - compute_eq_compilation.
-    reduce.
-    step_backward cc_lang "clo_eta".
-    by_reduction.
-  - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    eapply eq_term_trans.
-    {
-      term_cong;unfold Model.eq_term.
-      - right; compute; reflexivity.
-      - term_refl.
-      - term_refl.
-      - term_cong.
-        + right; compute; reflexivity.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + term_refl.
-        + instantiate (1:= {{e #"hd" #"emp" (#"neg" #"nat") }}).
-          unfold Model.eq_term.
-          eapply eq_term_trans; cycle 1.
-          {
-            compute_eq_compilation.
-            eredex_steps_with cc_lang "clo_eta".
-          }
-          compute_eq_compilation.
-          term_cong.
-          *term_refl.
-          *term_refl.
-          *term_refl.
-          * unfold Model.eq_term.
-            compute_eq_compilation.
-            Matches.reduce.
-            term_refl.
-          * unfold Model.eq_term.
-            compute_eq_compilation.
-            Matches.reduce.
-            term_refl.
-      - term_refl.
-    }
-    Matches.by_reduction.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    term_refl.
-  - compute_eq_compilation.
-    Matches.reduce.
-    repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    term_refl.
+    clo_eta_cong.
     (*
+    UnElab.hide_implicits.
+    TODO: injectivity doesn't deal well w/ closures!.
+    not very injective.
+    Need the following injectivity pattern:
+      <\xy.e, c> = <\xy.e', c> <-> e = e'.
+    if c is the same, then e, e' injective. requires more complicated pattern than I have
+                           
+    
+Definition cc_injectivity :=
+  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
+
+  TODO: clo_eta is expensive
+  *)
+    clo_eta_cong.
+    Automation.by_reduction;Matches.t'.
+  - Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
-    admit Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    hide_implicits.
-    term_refl.*)
+    progress clo_eta_cong.
+    Automation.by_reduction; Matches.t'.
   - compute_eq_compilation.
     Matches.reduce.
     repeat (term_cong; try term_refl;[]).
-    repeat clo_eta_cong.
+    progress clo_eta_cong.
     term_refl.
   - compute_eq_compilation.
     Matches.reduce.
-    unfold Model.eq_term.
-    compute_eq_compilation.
-    eapply eq_term_trans.
-    {
-      eredex_steps_with heap_cps_ops "eval get".
-    }
-    
-    Matches.by_reduction.
-
+    repeat (term_cong; try term_refl;[]).
+      eapply eq_term_trans;
+   [ eapply eq_term_sym; now eredex_steps_with cc_lang "clo_eta"
+   |  ].
+      compute_eq_compilation; reduce_lhs.
+      (*Import UnElab. hide_implicits.*)
+      (*TODO: clo_eta <- on the RHS is too slow.
+        Check whether egraph is running <- rules.
+       *)
+      eapply eq_term_trans; cycle 1;
+        [ now eredex_steps_with cc_lang "clo_eta" |  ].
+      Automation.by_reduction; Matches.t'.
+  - Automation.by_reduction; Matches.t'.
     Unshelve.
     all: repeat Matches.t'.
 Qed.
-#[export] Hint Resolve ch8_cc_preserving : elab_pfs.
+#[local] Definition ch8_cc_entry :=
+  cmp_entry (elab_compiler_implies_preserving ch8_cc_preserving).
+#[export] Hint Resolve ch8_cc_entry : wf_lang_db.
 
 

@@ -5,7 +5,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.LinearSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches Tools.Resolution
+  Lang.LinearSubst.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -118,4 +120,6 @@ Derive linear_stlc
        SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
        As linear_stlc_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve linear_stlc_wf : elab_pfs.
+#[local] Definition linear_stlc_entry :=
+  lang_entry (elab_lang_implies_wf linear_stlc_wf).
+#[export] Hint Resolve linear_stlc_entry : wf_lang_db.

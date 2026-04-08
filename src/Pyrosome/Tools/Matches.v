@@ -560,24 +560,8 @@ Ltac prove_ident_from_known_elabs :=
   | auto with utils
   | compute_all_fresh].
 
-(*TODO: this is still a tactic performance bottleneck;
-  reduce number of calls to it
- *)
-Ltac prove_from_known_elabs :=
-  (*TODO: is this what I want, or something more general?*)
-  rewrite <- ?as_nth_tail;
-  repeat
-    lazymatch goal with
-    | |- wf_lang_ext ?l_pre (?l1 ++ ?l2) => apply wf_lang_concat
-    | |- wf_lang_ext _ [] => apply wf_lang_nil
-    | |- wf_lang_ext _ _ => prove_ident_from_known_elabs
-    | |- all_fresh _ => compute_all_fresh
-    | |- incl _ _ => compute_incl
-    end.
-
-
-(*TODO*)
-
+#[deprecated(note="Use `Tools.Resolution.prove_by_lang_db` instead")]
+Ltac prove_from_known_elabs := fail "Use `Tools.Resolution.prove_by_lang_db` instead".
 
 Ltac term_cong :=
   eapply term_con_congruence;

@@ -1,18 +1,20 @@
-Set Implicit Arguments.
-Set Bullet Behavior "Strict Subproofs".
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Compilers.Compilers Elab.ElabCompilers.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVCPS.
 Import Core.Notations.
+(*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
-
 
 Notation compiler := (compiler string).
 
@@ -38,10 +40,11 @@ Definition let_lang_def : lang :=
   ] ]}.
 
 Derive let_lang
-       SuchThat (elab_lang_ext (exp_subst++value_subst) let_lang_def let_lang)
-       As let_lang_wf.
+       in (elab_lang_ext (exp_subst++value_subst) let_lang_def let_lang)
+       as let_lang_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve let_lang_wf : elab_pfs.
+#[local] Definition let_entry := lang_entry (elab_lang_implies_wf let_lang_wf).
+#[export] Hint Resolve let_entry : wf_lang_db.
 
 Definition let_cps_def : compiler :=
   match # from (let_lang) with
@@ -51,11 +54,13 @@ Definition let_cps_def : compiler :=
   end.
 
 Derive let_cps
-       SuchThat (elab_preserving_compiler cps_subst
+       in (elab_preserving_compiler cps_subst
                                           (cps_lang ++ block_subst ++ value_subst)
                                           let_cps_def
                                           let_cps
                                           let_lang)
-       As let_cps_preserving.
+       as let_cps_preserving.
 Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve let_cps_preserving : elab_pfs.
+#[local] Definition let_cps_entry :=
+  cmp_entry (elab_compiler_implies_preserving let_cps_preserving).
+#[export] Hint Resolve let_cps_entry : preserving_db.

@@ -137,10 +137,10 @@ Section WithMap.
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
   Definition remove_atom a {A} : state (instance A) unit :=
-    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an) =>
+    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an log) =>
       let tbl_upd tbl := map.remove tbl a.(atom_args) in
       let db' := map_update db a.(atom_fn) tbl_upd in
-      (tt,Build_instance _ _ _ _ _ _ db' equiv parents epoch wl an).
+      (tt,Build_instance _ _ _ _ _ _ db' equiv parents epoch wl an log).
 
   (*TODO: would this be a better signature for UnionFind.find? *)
   Definition uf_find_stateful i : state (union_find idx (idx_map idx) (idx_map nat)) idx :=
@@ -153,9 +153,9 @@ Section WithMap.
     list_Miter uf_find_stateful (map.keys uf.(parent _ _ _)) uf.
     
   Definition force_equiv {X} : state (instance X) unit :=
-    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an) =>
+    fun '(Build_instance _ _ _ _ _ _ db equiv parents epoch wl an log) =>
       let equiv' := snd (force_uf equiv) in
-      (tt,Build_instance _ _ _ _ _ _ db equiv' parents epoch wl an).
+      (tt,Build_instance _ _ _ _ _ _ db equiv' parents epoch wl an log).
 
   (*TODO: move to utils*)
   Ltac get_goal :=
@@ -454,9 +454,10 @@ Section SequentOfStates.
   Definition sequent_of_states := 
     Build_sequent _ _ (map atom_clause assumption_atoms)
       (map (uncurry eq_clause) conclusion_eqs_final++(map atom_clause conclusion_atoms)).
-
+(*
   Notation state_sound_for_model :=
     (state_sound_for_model _ idx_succ _ _ _ _ _).
+*)
 
   (*TODO: move to base utils*)
       Ltac inst_implication H :=
@@ -703,16 +704,19 @@ Eqb_idx.
 
       
       
-    Lemma sequent_of_states_sound m (*Post_i Post Post2 i3*)
+    Lemma sequent_of_states_sound (*m*) (*Post_i Post Post2 i3*)
       : (* state_sound_for_model m map.empty assumptions Post_i Post ->
         (forall a i2, (Post_i a i2) ->
                       Post a ->
                       state_sound_for_model m i2 (conclusions a) i3 Post2) ->*)
-        model_satisfies_rule m sequent_of_states.
-    Proof.      
+      (*TODO: why doesn't this work?  model_satisfies_rule m sequent_of_states.*)
+      False.
+    Proof.
+      (*
       unfold model_satisfies_rule, sequent_of_states; cbn.
       intros.
       replace conclusion_eqs_final with conclusion_eqs_verbose by admit.
+*)
       (*
       TODO: ssm Pi -> forall i, Pi -> atom a e -> clause_sound a i.
       Will this work? not really soundness, more completeness. seems ok.
