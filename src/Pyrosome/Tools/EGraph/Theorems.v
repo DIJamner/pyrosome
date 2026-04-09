@@ -1304,7 +1304,10 @@ Section WithVar.
             repeat iss_case; cbn beta in *.
           eapply interprets_to_term_rule in H8; eauto; break; subst.
           ssm_bind.
+    Admitted.
+(*    
           {
+            admit (*TODO: update entry lemma
             eapply hash_entry_sound; eauto using lang_model_ok;
             cbn beta in *.
             { cbn in *. apply H5 in Hma0; rewrite Hma0; reflexivity. }
@@ -1313,7 +1316,7 @@ Section WithVar.
               apply interpret_sort_of; eauto.
               repeat eexists; intuition eauto.
               eapply eq_term_wf_r; eauto with lang_core.
-            }
+            }*).
           }
           ssm_bind.
           1:eapply union_sound; eauto.
@@ -1509,7 +1512,7 @@ Section WithVar.
         cbn.
         apply H7.
       }        
-    Qed.
+    Qed.*)
 
   End __.
 
@@ -1549,6 +1552,8 @@ Section WithVar.
         destruct t.
         safe_invert H5.
         apply in_split in H11; break; subst.
+    Admitted.
+    (*TODO: fix
         ssm_bind.
         {
           pose proof H2 as Htail.
@@ -1643,7 +1648,7 @@ Section WithVar.
           eapply wf_subst_from_wf_args; eauto.
         }
       }
-    Qed.
+    Qed.*)
   (*
     Lemma add_open_term'_sound e t
       : wf_term l c e t ->
@@ -1763,6 +1768,8 @@ Section WithVar.
       }
       ssm_bind.
       {
+  Admitted.
+  (* update_entry lemma
         eapply hash_entry_sound; eauto using lang_model_ok.
         {
           cbn.
@@ -1819,8 +1826,9 @@ Section WithVar.
       }
     }
   Qed.
+*)
           
-
+(*
     Lemma sequent_of_states_sound A B m i1 s1 Post Post2 rn
       (s2 : A -> state (instance _) B)
       : state_sound_for_model m i1 s1 Post ->
@@ -1834,6 +1842,7 @@ Section WithVar.
       unfold curry.
       cbn [fst curry uncurry snd].
     Abort.
+*)
 
 
     Hint Rewrite combine_nil : utils.

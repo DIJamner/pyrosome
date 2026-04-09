@@ -1,6 +1,6 @@
 # Build
 
-Tested with Coq 8.20, but may work with other versions.
+Tested with Rocq 9.0, but may work with later versions.
 
 You can clone this repository with
 

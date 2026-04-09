@@ -6,7 +6,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches.
+From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -253,13 +253,15 @@ Definition linear_value_subst_def : lang :=
 #[local] Definition vsub_inst_for_db := inst_for_db "vsub".
 #[export] Hint Resolve vsub_inst_for_db : injective_con.
 
-(*TODO: use elab_lang notation?*)
+(*TODO: use modern inference procedure *)
 Derive linear_value_subst
        SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
        As linear_value_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve linear_value_subst_wf : elab_pfs.
 
+#[local] Definition linear_value_entry :=
+  lang_entry (elab_lang_implies_wf linear_value_subst_wf).
+#[export] Hint Resolve linear_value_entry : wf_lang_db.
 
 Definition linear_exp_subst_def : lang :=
   {[l
@@ -298,12 +300,13 @@ Definition linear_exp_subst_def : lang :=
     ]
   ]}.
 
-
 Derive linear_exp_subst
        SuchThat (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
        As linear_exp_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve linear_exp_subst_wf : elab_pfs.
+#[local] Definition linear_exp_entry :=
+  lang_entry (elab_lang_implies_wf linear_exp_subst_wf).
+#[export] Hint Resolve linear_exp_entry : wf_lang_db.
 
 Definition linear_block_subst_def : lang :=
   {[l
@@ -331,12 +334,13 @@ Definition linear_block_subst_def : lang :=
     ]
   ]}.
 
-
 Derive linear_block_subst
        SuchThat (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
        As linear_block_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve linear_block_subst_wf : elab_pfs.
+#[local] Definition linear_block_entry :=
+  lang_entry (elab_lang_implies_wf linear_block_subst_wf).
+#[export] Hint Resolve linear_block_entry : wf_lang_db.
 
 Definition definitely_fresh (s : string) (l : list string) :=
   let len := List.fold_left Nat.max (map String.length l) 0 in
@@ -499,42 +503,3 @@ Notation "'{[l/lin_subst' r1 ; .. ; r2 ]}" :=
   (List.flat_map sc (cons r2 .. (cons r1 nil) ..))%rule
   (format "'[' {[l/lin_subst '[hv' r1 ; '/' .. ; '/' r2 ']' ]} ']'") : lang_scope.
 
-
-(* Definition linear_cps_lang_def : lang :=
-  {[l/lin_subst (* [linear_blk_subst ++ linear_value_subst] *)
-      [:| "A" : #"ty"
-          -----------------------------------------------
-          #"neg" "A" : #"ty"
-      ];
-  [:| "G" : #"env",
-      "A" : #"ty",
-      "e" : #"blk" (ext "G" "A")
-      -----------------------------------------------
-      #"cont" "A" "e" : #"val" "G" (#"neg" "A")
-   ];
-   [:| "G" : #"env", "H" : #"env",
-       "A" : #"ty",
-       "v1" : #"val" "G" (#"neg" "A"),
-       "v2" : #"val" "H" "A"
-      -----------------------------------------------
-      #"jmp" "v1" "v2" : #"blk" (#"conc" "G" "H")
-   ];
-  [:= "G" : #"env", "H" : #"env",
-      "A" : #"ty",
-      "e" : #"blk" (ext "G" "A"),
-      "v" : #"val" "H" "A"
-      ----------------------------------------------- ("jmp_beta")
-      #"jmp" (#"cont" "A" "e") "v"
-      = #"blk_subst" (#"csub" (#"id" "G") (#"vsub" "v")) "e"
-      : #"blk" (#"conc" "G" "H")
-  ];
-  [:= "G" : #"env",
-      "A" : #"ty",
-      "v" : #"val" "G" (#"neg" "A")
-      ----------------------------------------------- ("cont_eta")
-      #"cont" "A" (#"jmp" "v" (#"hd" "A")) = "v"
-      : #"val" "G" (#"neg" "A")
-  ]
-  ]}.
-
-Compute linear_cps_lang_def. *)

@@ -5,11 +5,13 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches
+  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
-From Pyrosome.Lang Require Import SimpleVSTLC. 
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
 From Pyrosome.Lang Require Import UTLC. 
 
 
@@ -57,8 +59,9 @@ Derive typed_bool
        SuchThat (elab_lang_ext (exp_subst++value_subst) typed_bool_def typed_bool)
        As typed_bool_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve typed_bool_wf : elab_pfs.
-
+#[local] Definition typed_bool_entry :=
+  lang_entry (elab_lang_implies_wf typed_bool_wf).
+#[export] Hint Resolve typed_bool_entry : wf_lang_db.
 
 Definition untyped_bool_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -76,7 +79,9 @@ Derive untyped_bool
        SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) untyped_bool_def untyped_bool)
        As untyped_bool_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve untyped_bool_wf : elab_pfs.
+#[local] Definition untyped_bool_entry :=
+  lang_entry (elab_lang_implies_wf untyped_bool_wf).
+#[export] Hint Resolve untyped_bool_entry : wf_lang_db.
 
 
 (* Compute value_subst_def. 
@@ -109,8 +114,10 @@ Definition boolhuh_def : lang :=
 Derive boolhuh
        SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
        As boolhuh_wf.
-Proof. auto_elab. Qed. 
-#[export] Hint Resolve boolhuh_wf : elab_pfs.
+Proof. auto_elab. Qed.
+#[local] Definition boolhuh_entry :=
+  lang_entry (elab_lang_implies_wf boolhuh_wf).
+#[export] Hint Resolve boolhuh_entry : wf_lang_db.
 
 
 Definition utlc_bool_def : lang :=
@@ -143,8 +150,10 @@ Definition utlc_bool_def : lang :=
 Derive utlc_bool
        SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) utlc_bool_def utlc_bool)
        As utlc_bool_wf.
-Proof. auto_elab. Qed. 
-#[export] Hint Resolve utlc_bool_wf : elab_pfs.
+Proof. auto_elab. Qed.
+#[local] Definition utlc_bool_entry :=
+  lang_entry (elab_lang_implies_wf utlc_bool_wf).
+#[export] Hint Resolve utlc_bool_entry : wf_lang_db.
 
 
 Definition uif_def : lang :=
@@ -191,8 +200,9 @@ Derive uif
        SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) uif_def uif)
        As uif_wf. (* leftmost is newest *)
 Proof. auto_elab. Qed.
-#[export] Hint Resolve uif_wf : elab_pfs.
-
+#[local] Definition uif_entry :=
+  lang_entry (elab_lang_implies_wf uif_wf).
+#[export] Hint Resolve uif_entry : wf_lang_db.
 
 Definition mif_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -243,4 +253,6 @@ Derive mif
        SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) mif_def mif)
        As mif_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve mif_wf : elab_pfs.
+#[local] Definition mif_entry :=
+  lang_entry (elab_lang_implies_wf mif_wf).
+#[export] Hint Resolve mif_entry : wf_lang_db.

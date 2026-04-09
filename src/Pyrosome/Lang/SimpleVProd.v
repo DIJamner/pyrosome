@@ -6,7 +6,11 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches
+  Tools.Resolution Tools.EGraph.ComputeWf
+  Tools.EGraph.Automation.
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -86,12 +90,12 @@ Definition prod_def : lang :=
      ]
     ]}.
 
-
 Derive prod
-       SuchThat (elab_lang_ext (exp_subst++value_subst) prod_def prod)
-       As prod_wf.
+       in (elab_lang_ext (exp_subst++value_subst) prod_def prod)
+       as prod_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve prod_wf : elab_pfs.
+#[local] Definition prod_entry := lang_entry (elab_lang_implies_wf prod_wf).
+#[export] Hint Resolve prod_entry : wf_lang_db.
 
 (*Note that because the projections aren't values,
   we can't put the eta law directly at the value level

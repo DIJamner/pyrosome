@@ -7,7 +7,8 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Theory.Renaming
-  Tools.Matches Compilers.Parameterizer
+  Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
+  Compilers.Parameterizer
   Lang.GenericSubst.
 Import Core.Notations.
 
@@ -62,7 +63,9 @@ Derive cat
        SuchThat (elab_lang_ext [] cat_def cat)
        As cat_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve cat_wf : elab_pfs.
+#[local] Definition cat_entry :=
+  lang_entry (elab_lang_implies_wf cat_wf).
+#[export] Hint Resolve cat_entry : wf_lang_db.
 
 (* TODO: beyond this point there are some category-theoretic
    names that could be used but which I would get wrong in choosing.
@@ -80,7 +83,9 @@ Derive obj_consumer
        SuchThat (elab_lang_ext cat obj_consumer_def obj_consumer)
        As obj_consumer_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve obj_consumer_wf : elab_pfs.
+#[local] Definition obj_consumer_entry :=
+  lang_entry (elab_lang_implies_wf obj_consumer_wf).
+#[export] Hint Resolve obj_consumer_entry : wf_lang_db.
 
 Definition unit_action_def : lang _ :=
   {[l
@@ -107,8 +112,9 @@ Derive unit_action
        SuchThat (elab_lang_ext (obj_consumer++cat) unit_action_def unit_action)
        As unit_action_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve unit_action_wf : elab_pfs.
-
+#[local] Definition unit_action_entry :=
+  lang_entry (elab_lang_implies_wf unit_action_wf).
+#[export] Hint Resolve unit_action_entry : wf_lang_db.
 
 Definition unit_cartesian_def : lang _ :=
 {[l
@@ -174,14 +180,14 @@ Definition unit_cartesian_def : lang _ :=
    ]
 ]}.
 
-
 Derive unit_cartesian
   SuchThat (elab_lang_ext (unit_action++obj_consumer++cat)
               unit_cartesian_def unit_cartesian)
        As unit_cartesian_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve unit_cartesian_wf : elab_pfs.
-
+#[local] Definition unit_cartesian_entry :=
+  lang_entry (elab_lang_implies_wf unit_cartesian_wf).
+#[export] Hint Resolve unit_cartesian_entry : wf_lang_db.
 
 (*TODO: careful; parameterize doesn't check freshness*)
 Definition elt_cartesian_rename (n : string) : string :=
@@ -220,50 +226,31 @@ Definition elt_cartesian :=
      elt_cartesian_ps
      (rename_lang elt_cartesian_rename unit_cartesian)).
 
-
-Definition typed_consumer_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (typed_consumer
-                       ++[("ty",sort_rule [] [])]++cat)
-                    typed_consumer.
-
-Definition elt_action_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (elt_action++typed_consumer
-                       ++[("ty",sort_rule [] [])]++cat)
-                    elt_action.
-
-Definition elt_cartesian_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (elt_cartesian++elt_action++typed_consumer
-                       ++[("ty",sort_rule [] [])]++cat)
-                    elt_cartesian.
-
-Lemma simple_sort_wf {V} `{Eqb V} (n : V)
-  : wf_lang_ext [] [(n,sort_rule [] [])].
+Lemma ty_sort_wf : wf_lang_ext [] [("ty",sort_rule [] [])].
 Proof.
   constructor;
     basic_core_crush.
 Qed.
-#[export] Hint Resolve simple_sort_wf : elab_pfs.
+#[local] Definition ty_sort_entry := lang_entry ty_sort_wf.
+#[export] Hint Resolve ty_sort_entry : wf_lang_db.
 
 Lemma typed_consumer_wf
-  : elab_lang_ext ([("ty",sort_rule [] [])]++cat)
-      typed_consumer_def typed_consumer.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve typed_consumer_wf : elab_pfs.
+  : wf_lang_ext ([("ty",sort_rule [] [])]++cat) typed_consumer.
+Proof. compute_wf_lang. Qed.
+#[local] Definition typed_consumer_entry := lang_entry typed_consumer_wf.
+#[export] Hint Resolve typed_consumer_entry : wf_lang_db.
 
 Lemma elt_action_wf
-  : elab_lang_ext (typed_consumer++[("ty",sort_rule [] [])]++cat)
-      elt_action_def elt_action.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve elt_action_wf : elab_pfs.
+  : wf_lang_ext (typed_consumer++[("ty",sort_rule [] [])]++cat) elt_action.
+Proof. compute_wf_lang. Qed.
+#[local] Definition elt_action_entry := lang_entry elt_action_wf.
+#[export] Hint Resolve elt_action_entry : wf_lang_db.
 
 Lemma elt_cartesian_wf
-  : elab_lang_ext (elt_action++typed_consumer++[("ty",sort_rule [] [])]++cat)
-      elt_cartesian_def elt_cartesian.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve elt_cartesian_wf : elab_pfs.
+  : wf_lang_ext (elt_action++typed_consumer++[("ty",sort_rule [] [])]++cat) elt_cartesian.
+Proof. compute_wf_lang. Qed.
+#[local] Definition elt_cartesian_entry := lang_entry elt_action_wf.
+#[export] Hint Resolve elt_cartesian_entry : wf_lang_db.
 
 (*TODO: fix construction*)
 Definition value_subst :=
@@ -291,10 +278,10 @@ Definition value_subst_def :=
                     value_subst
                     value_subst.
 
-Lemma value_subst_wf
-  : elab_lang_ext [] value_subst_def value_subst.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve value_subst_wf : elab_pfs.
+Lemma value_subst_wf : wf_lang_ext [] value_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition value_subst_entry := lang_entry value_subst_wf.
+#[export] Hint Resolve value_subst_entry : wf_lang_db.
 
 Definition exp_subst_base :=
   rename_lang
@@ -321,13 +308,10 @@ Definition exp_subst_base_def :=
                     (exp_subst_base ++ value_subst)
                     exp_subst_base.
 
-Lemma exp_subst_base_wf
-  : elab_lang_ext (value_subst)
-      exp_subst_base_def exp_subst_base.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_subst_base_wf : elab_pfs.
-
-
+Lemma exp_subst_base_wf : wf_lang_ext value_subst exp_subst_base.
+Proof. compute_wf_lang. Qed.
+#[local] Definition exp_subst_base_entry := lang_entry exp_subst_base_wf.
+#[export] Hint Resolve exp_subst_base_entry : wf_lang_db.
 
 Definition exp_ret_def : lang _ :=
   {[l/subst [(exp_subst_base++value_subst)]
@@ -341,18 +325,8 @@ Derive exp_ret
               exp_ret_def exp_ret)
        As exp_ret_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_ret_wf : elab_pfs.
-
-(* TODO: note about ordering: have to gen G subst coherence rules
-   before parameterizing w/ D?
- *)
-(*
-issue: if  I parameterize elt_action as normal, what to do about G, A?
--both should be parameterized by D
--both should have substs applied to them by coherence rules
-
-For now: writing one manually to see how it goes
-*)
+#[local] Definition exp_ret_entry := lang_entry (elab_lang_implies_wf exp_ret_wf).
+#[export] Hint Resolve exp_ret_entry : wf_lang_db.
                            
 Definition val_parameterized :=
   Eval compute in
@@ -376,8 +350,7 @@ Definition exp_parameterized :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps (exp_ret ++ exp_subst_base).
 
-
-
+(*TODO: obviate the need for these *)
 Definition val_parameterized_def :=
   Eval compute in Rule.hide_lang_implicits
                     (val_parameterized
@@ -391,20 +364,23 @@ Definition exp_parameterized_def :=
                        ++[("ty_env",sort_rule [] [])])
                     exp_parameterized.
 
+
+Lemma ty_env_rule_wf : wf_lang_ext [] [("ty_env",sort_rule [] [])].
+Proof. compute_wf_lang. Qed.
+#[local] Definition ty_env_rule_entry := lang_entry ty_env_rule_wf.
+#[export] Hint Resolve ty_env_rule_entry : wf_lang_db.
+
 Lemma val_parameterized_wf
-  : elab_lang_ext [("ty_env",sort_rule [] [])]
-      val_parameterized_def
-      val_parameterized.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve val_parameterized_wf : elab_pfs.
+  : wf_lang_ext [("ty_env",sort_rule [] [])] val_parameterized.
+Proof. compute_wf_lang. Qed.
+#[local] Definition val_parameterized_entry := lang_entry val_parameterized_wf.
+#[export] Hint Resolve val_parameterized_entry : wf_lang_db.
 
 Lemma exp_parameterized_wf
-  : elab_lang_ext (val_parameterized++[("ty_env",sort_rule [] [])])
-      exp_parameterized_def
-      exp_parameterized.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_parameterized_wf : elab_pfs.
-
+  : wf_lang_ext (val_parameterized++[("ty_env",sort_rule [] [])]) exp_parameterized.
+Proof. compute_wf_lang. Qed.
+#[local] Definition exp_parameterized_entry := lang_entry exp_parameterized_wf.
+#[export] Hint Resolve exp_parameterized_entry : wf_lang_db.
 
 (*TODO: how to remove obj from cat the right way? issue: lang containing*)
 (*TODO: split into envs and (ty lang in terms of parameterized val_subst)*)
@@ -450,28 +426,16 @@ Definition ty_subst_lang :=
        end)
     (unit_cartesian ++ unit_action).
 
-
-
-Definition ty_env_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    ty_env_lang
-                    ty_env_lang.
-
-Definition ty_subst_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (ty_subst_lang++ exp_parameterized++val_parameterized++ty_env_lang)
-                    ty_subst_lang.
-
-Lemma ty_env_wf
-  : elab_lang_ext [] ty_env_def ty_env_lang.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve ty_env_wf : elab_pfs.
-
+Lemma ty_env_wf : wf_lang_ext [] ty_env_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition ty_env_entry := lang_entry ty_env_wf.
+#[export] Hint Resolve ty_env_entry : wf_lang_db.
 
 Lemma ty_subst_wf
-  : elab_lang_ext (val_parameterized ++ ty_env_lang) ty_subst_def ty_subst_lang.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve ty_subst_wf : elab_pfs.
+  : wf_lang_ext (val_parameterized ++ ty_env_lang) ty_subst_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition ty_subst_entry := lang_entry ty_subst_wf.
+#[export] Hint Resolve ty_subst_entry : wf_lang_db.
 
 Definition env_ty_subst_rename :=
     (fun n =>
@@ -499,19 +463,11 @@ Definition env_ty_subst :=
   Eval compute in
     (rename_lang env_ty_subst_rename (unit_action)).
 
-
-Definition env_ty_subst_def :=
-  Eval compute in Rule.hide_lang_implicits
-                    (env_ty_subst++
-                       ty_subst_lang++val_parameterized++ty_env_lang)
-                    (env_ty_subst).
-
 Lemma env_ty_subst_wf
-  : elab_lang_ext (ty_subst_lang++val_parameterized++ty_env_lang)
-      env_ty_subst_def
-      (env_ty_subst).
-Proof. auto_elab. Qed.
-#[export] Hint Resolve env_ty_subst_wf : elab_pfs.
+  : wf_lang_ext (ty_subst_lang++val_parameterized++ty_env_lang) env_ty_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition env_ty_subst_entry := lang_entry env_ty_subst_wf.
+#[export] Hint Resolve env_ty_subst_entry : wf_lang_db.
 
 Definition val_ty_subst_def : lang _ :=
   {[l
@@ -546,7 +502,9 @@ Derive val_ty_subst
       val_ty_subst)
        As val_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve val_ty_subst_wf : elab_pfs. 
+#[local] Definition val_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf val_ty_subst_wf).
+#[export] Hint Resolve val_ty_subst_entry : wf_lang_db.
 
 Definition exp_ty_subst_def : lang _ :=
   {[l
@@ -571,8 +529,9 @@ Derive exp_ty_subst
       exp_ty_subst)
        As exp_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_ty_subst_wf : elab_pfs. 
-
+#[local] Definition exp_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf exp_ty_subst_wf).
+#[export] Hint Resolve exp_ty_subst_entry : wf_lang_db.
 
 Definition val_param_substs_def :=
   Eval compute in
@@ -590,7 +549,9 @@ Derive val_param_substs
               val_param_substs)
   As val_param_substs_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve val_param_substs_wf : elab_pfs.
+#[local] Definition val_param_substs_entry :=
+  lang_entry (elab_lang_implies_wf val_param_substs_wf).
+#[export] Hint Resolve val_param_substs_entry : wf_lang_db.
 
 Definition exp_param_substs_def :=
   Eval compute in
@@ -600,7 +561,7 @@ Definition exp_param_substs_def :=
    exp_parameterized_def.
              
 Derive exp_param_substs
-  SuchThat (elab_lang_ext (val_param_substs
+  in (elab_lang_ext (val_param_substs
                              ++exp_ty_subst
                              ++val_ty_subst
                              ++env_ty_subst
@@ -609,9 +570,11 @@ Derive exp_param_substs
                              ++ty_env_lang)
               exp_param_substs_def
               exp_param_substs)
-  As exp_param_substs_wf.
+  as exp_param_substs_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve exp_param_substs_wf : elab_pfs.
+#[local] Definition exp_param_substs_entry :=
+  lang_entry (elab_lang_implies_wf exp_param_substs_wf).
+#[export] Hint Resolve exp_param_substs_entry : wf_lang_db.
 
 Local Open Scope lang_scope.
 Definition poly_def : lang _ :=
@@ -688,6 +651,7 @@ Definition poly_def : lang _ :=
   ]}.
 
 (*TODO: add in*)
+Definition poly_subst_laws_def :=
   Eval compute in
     eqn_rules type_subst_mode (exp_ty_subst++val_ty_subst
                                  ++env_ty_subst++exp_parameterized
@@ -730,7 +694,7 @@ Definition poly_def : lang _ :=
 #[export] Hint Resolve All_inst_for_db : injective_con.
 
 Derive poly
-  SuchThat (elab_lang_ext (exp_param_substs
+  in (elab_lang_ext (exp_param_substs
                              ++ exp_ty_subst
                              ++ val_param_substs
                              ++ val_ty_subst
@@ -739,9 +703,11 @@ Derive poly
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
               poly_def poly)
-       As poly_wf.
+       as poly_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve poly_wf : elab_pfs. 
+#[local] Definition poly_entry :=
+  lang_entry (elab_lang_implies_wf poly_wf).
+#[export] Hint Resolve poly_entry : wf_lang_db.
 
 
 Definition block_subst : lang _ :=
@@ -773,11 +739,10 @@ Definition block_subst_def :=
                     (block_subst ++ value_subst)
                     block_subst.
 
-Lemma block_subst_wf
-  : elab_lang_ext value_subst
-      block_subst_def block_subst.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve block_subst_wf : elab_pfs.
+Lemma block_subst_wf : wf_lang_ext value_subst block_subst.
+Proof. compute_wf_lang. Qed.
+#[local] Definition block_subst_entry := lang_entry block_subst_wf.
+#[export] Hint Resolve block_subst_entry : wf_lang_db.
 
                         
 Definition block_parameterized :=
@@ -800,20 +765,10 @@ Definition block_parameterized_def :=
                     block_parameterized.
 
 Lemma block_parameterized_wf
-  : elab_lang_ext (val_parameterized++ty_env_lang)
-      block_parameterized_def
-      block_parameterized.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve block_parameterized_wf : elab_pfs.
-
-(*
-Lemma env_ty_subst_wf'
-  : elab_lang_ext (block_and_val_parameterized++ty_env_lang)
-      env_ty_subst_def
-      (env_ty_subst).
-Proof. auto_elab. Qed.
-#[export] Hint Resolve env_ty_subst_wf' : elab_pfs.
-*)
+  : wf_lang_ext (val_parameterized++ty_env_lang)block_parameterized.
+Proof. compute_wf_lang. Qed.
+#[local] Definition block_parameterized_entry := lang_entry block_parameterized_wf.
+#[export] Hint Resolve block_parameterized_entry : wf_lang_db.
 
 
 Definition block_ty_subst_def : lang _ :=
@@ -850,17 +805,18 @@ Definition block_ty_subst_def : lang _ :=
       ]}.
 
 Derive block_ty_subst
-  SuchThat (elab_lang_ext (env_ty_subst
+  in (elab_lang_ext (env_ty_subst
                              ++ ty_subst_lang
                              ++block_parameterized
                              ++ val_parameterized
                              ++ty_env_lang)
       block_ty_subst_def
       block_ty_subst)
-       As block_ty_subst_wf.
+    as block_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve block_ty_subst_wf : elab_pfs. 
-
+#[local] Definition block_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf block_ty_subst_wf).
+#[export] Hint Resolve block_ty_subst_entry : wf_lang_db.
 
 Definition block_param_substs_def :=
   Eval compute in
@@ -882,4 +838,6 @@ Derive block_param_substs
               block_param_substs)
   As block_param_substs_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve block_param_substs_wf : elab_pfs.
+#[local] Definition block_param_substs_entry :=
+  lang_entry (elab_lang_implies_wf block_param_substs_wf).
+#[export] Hint Resolve block_param_substs_entry : wf_lang_db.

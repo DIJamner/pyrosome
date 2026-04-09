@@ -17,7 +17,7 @@ From Pyrosome.Lang Require Import BoolType.
 From Pyrosome.Lang Require Import SimpleVProd. 
 
 (* imports for polymorphism *)
-From Pyrosome.Lang Require Import PolySubst. 
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 From Pyrosome.Lang Require Import PolyCompilers. (* for parameterizing existing languages*)
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab. 
@@ -121,7 +121,9 @@ Derive boundaries
                 boundaries_def boundaries)
         As boundaries_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve boundaries_wf : elab_pfs.
+#[local] Definition boundaries_entry :=
+  lang_entry (elab_lang_implies_wf boundaries_wf).
+#[export] Hint Resolve boundaries_entry : wf_lang_db.
 
 
 
@@ -171,7 +173,9 @@ Lemma typed_bool_parameterized_wf
   : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       typed_bool_parameterized.
 Proof. solve_parameterize_wrapper typed_bool. Qed. 
-#[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
+#[local] Definition typed_bool_parameterized_entry :=
+  lang_entry typed_bool_parameterized_wf.
+#[export] Hint Resolve typed_bool_parameterized_entry : wf_lang_db.
 
 Definition typed_bool_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -249,7 +253,9 @@ Lemma usubst_parameterized_wf
   : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       usubst_parameterized.
 Proof. solve_parameterize_wrapper usubst. Qed.
-#[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
+#[local] Definition usubst_parameterized_entry :=
+  lang_entry usubst_parameterized_wf.
+#[export] Hint Resolve usubst_parameterized_entry : wf_lang_db.
 
 Definition usubst_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -443,7 +449,7 @@ Local Definition evp'_utlc : lang :=
 Lemma utlc_parameterized_wf
   : wf_lang_ext ((usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       utlc_parameterized.
-Proof. 
+Proof.
   replace (usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
@@ -452,7 +458,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+#[local] Definition utlc_parameterized_entry :=
+  lang_entry utlc_parameterized_wf.
+#[export] Hint Resolve utlc_parameterized_entry : wf_lang_db.
 
 Definition utlc_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -609,7 +617,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve boolhuh_parameterized_wf : elab_pfs.
+#[local] Definition boolhuh_parameterized_entry :=
+  lang_entry boolhuh_parameterized_wf.
+#[export] Hint Resolve boolhuh_parameterized_entry : wf_lang_db.
 
 Compute boolhuh_parameterized. 
 
@@ -752,8 +762,7 @@ Definition simple_shared_fragment :=
     typed_bool ++ 
     stlc ++ 
     exp_subst ++ 
-    value_subst. 
-Hint Unfold simple_shared_fragment : auto_elab.
+    value_subst.
 
 Definition polymorphic_shared_fragment :=
     boolhuh_parameterized ++  (* NOTE: MISSING BOOLHUH_TY_SUBST *)
@@ -776,7 +785,6 @@ Definition polymorphic_shared_fragment :=
     env_ty_subst ++
     ty_subst_lang ++
     exp_parameterized ++ val_parameterized ++ ty_env_lang.
-Hint Unfold polymorphic_shared_fragment : auto_elab.
 
 Local Notation compiler := (compiler string).
 
@@ -814,8 +822,6 @@ Definition shared_fragment_compiler_def : compiler :=
   | {{e#"bool?" "G" "e"}} => {{e @"bool?" @("D" := #"ty_emp") "e"}}
   end.
 
-Axiom todo : wf_lang polymorphic_shared_fragment.
-
 Derive shared_fragment_compiler 
         SuchThat (elab_preserving_compiler 
                     []
@@ -825,10 +831,11 @@ Derive shared_fragment_compiler
                     simple_shared_fragment) 
         As shared_fragment_compiler_preserving. 
 Proof.
-  assert (wf_lang polymorphic_shared_fragment) by apply todo.
   auto_elab_compiler.
 Qed.
-Hint Resolve shared_fragment_compiler_preserving : auto_elab. 
+#[local] Definition shared_fragment_entry :=
+  cmp_entry (elab_compiler_implies_preserving shared_fragment_compiler_preserving).
+#[export] Hint Resolve shared_fragment_entry : preserving_db.
 
 Definition source_multilanguage := 
             boundaries ++ uif ++ simple_shared_fragment.
@@ -866,7 +873,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve mif_parameterized_wf : elab_pfs.
+#[local] Definition mif_parameterized_entry :=
+  lang_entry mif_parameterized_wf.
+#[export] Hint Resolve mif_parameterized_entry : wf_lang_db.
 
 
 (*

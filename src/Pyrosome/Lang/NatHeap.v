@@ -1,12 +1,14 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleUnit SimpleEvalCtx.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleUnit SimpleEvalCtx.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -44,12 +46,12 @@ Definition nat_lang_def : lang :=
   ]
   ]}.
 
-
 Derive nat_lang
-       SuchThat (elab_lang_ext [] nat_lang_def nat_lang)
-       As nat_lang_wf.
+       in (elab_lang_ext [] nat_lang_def nat_lang)
+       as nat_lang_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve nat_lang_wf : elab_pfs.
+#[local] Definition nat_lang_entry := lang_entry (elab_lang_implies_wf nat_lang_wf).
+#[export] Hint Resolve nat_lang_entry : wf_lang_db.
 
 Definition nat_exp_def : lang :=
   {[l/subst [nat_lang ++ value_subst]
@@ -62,16 +64,15 @@ Definition nat_exp_def : lang :=
        #"nv" "n" : #"val" "G" #"nat"
   ]]}.
 
-
 Derive nat_exp
-       SuchThat (elab_lang_ext (nat_lang ++ value_subst)
+       in (elab_lang_ext (nat_lang ++ value_subst)
                                nat_exp_def
                                nat_exp)
-       As nat_exp_wf.
+       as nat_exp_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve nat_exp_wf : elab_pfs.
+#[local] Definition nat_exp_entry := lang_entry (elab_lang_implies_wf nat_exp_wf).
+#[export] Hint Resolve nat_exp_entry : wf_lang_db.
   
-(*TODO: might need set empty 0 = empty axiom *)
 Definition heap_def : lang :=
   {[l
   [s|
@@ -138,19 +139,15 @@ Definition heap_def : lang :=
   ]
   ]}.
 
-
 Derive heap
-       SuchThat (elab_lang_ext nat_lang
+       in (elab_lang_ext nat_lang
                                heap_def
                                heap)
-       As heap_wf.
+       as heap_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve heap_wf : elab_pfs.
+#[local] Definition heap_entry := lang_entry (elab_lang_implies_wf heap_wf).
+#[export] Hint Resolve heap_entry : wf_lang_db.
 
-(*simple heap operations w/axioms avoiding an explicit heap 
-  TODO: depends on let, unit, natural numbers, nat-as-exp
-  TODO: subst rules
-*)
 Definition heap_ops_def : lang :=
   {[l/subst [unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst]
   [:|  "G" : #"env",
@@ -195,12 +192,13 @@ Definition heap_ops_def : lang :=
   ]}.
 
 Derive heap_ops
-       SuchThat (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst)
+       in (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ exp_subst ++ value_subst)
                                heap_ops_def
                                heap_ops)
-       As heap_ops_wf.
+       as heap_ops_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve heap_ops_wf : elab_pfs.
+#[local] Definition heap_ops_entry := lang_entry (elab_lang_implies_wf heap_ops_wf).
+#[export] Hint Resolve heap_ops_entry : wf_lang_db.
 
 Definition heap_ctx_def : lang :=
   {[l
@@ -278,13 +276,14 @@ Definition heap_ctx_def : lang :=
   ]}.
 
 Derive heap_ctx
-       SuchThat (elab_lang_ext (eval_ctx ++ heap_ops
+       in (elab_lang_ext (eval_ctx ++ heap_ops
                                   ++ unit_lang
                                   ++ heap ++ nat_exp
                                   ++ nat_lang ++ exp_subst
                                   ++ value_subst)
                                heap_ctx_def
                                heap_ctx)
-       As heap_ctx_wf.
+       as heap_ctx_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve heap_ctx_wf : elab_pfs.
+#[local] Definition heap_ctx_entry := lang_entry (elab_lang_implies_wf heap_ctx_wf).
+#[export] Hint Resolve heap_ctx_entry : wf_lang_db.

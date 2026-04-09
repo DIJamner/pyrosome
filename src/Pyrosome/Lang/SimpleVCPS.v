@@ -4,14 +4,16 @@ Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers
-  Lang.SimpleVSubst Lang.SimpleVSTLC Tools.Matches.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
-
-Require Coq.derive.Derive.
 
 Local Notation compiler := (compiler string).
 
@@ -54,14 +56,25 @@ Definition cps_lang_def : lang :=
   ]
   ]}.
 
-Derive cps_lang
-       SuchThat (elab_lang_ext (block_subst ++ value_subst)
-                               cps_lang_def
-                               cps_lang)
-       As cps_lang_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve cps_lang_wf : elab_pfs.
+(*TODO: move to PolySubst.v*)
+Definition block_subst_injectivity :=
+  [("blk_subst", ["G"]); ("blk", ["G"])].
 
+
+Definition cps_injectivity :=
+  [("jmp", ["G"]); ("cont", ["e";"A"; "G"]); ("neg", ["A"])].
+
+Definition cps_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (block_subst++value_subst) cps_lang_def
+       (cps_injectivity++block_subst_injectivity++value_subst_injectivity)).
+
+
+Lemma cps_lang_wf : wf_lang_ext (block_subst ++ value_subst)
+                               cps_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition cps_lang_entry := lang_entry cps_lang_wf.
+#[export] Hint Resolve cps_lang_entry : wf_lang_db.
 
 Fixpoint wkn_n n :=
   match n with
@@ -98,17 +111,30 @@ Definition cps_subst_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
-Derive cps_subst
-       SuchThat (elab_preserving_compiler []
-                                          (cps_lang
-                                             ++ block_subst
-                                             ++ value_subst)
-                                          cps_subst_def
-                                          cps_subst
-                                          (exp_subst ++ value_subst))
-       As cps_subst_preserving.
-Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve cps_subst_preserving : elab_pfs.
+
+Definition cps_subst :=
+  Eval vm_compute in
+    (infer_compiler_simple
+       (cps_lang
+          ++ block_subst
+          ++ value_subst)
+       []
+       cps_subst_def
+       (exp_subst++value_subst)
+       (cps_injectivity++block_subst_injectivity
+          ++value_subst_injectivity)).
+
+Lemma cps_subst_preserving
+  : preserving_compiler_ext []
+      (tgt_Model := core_model (cps_lang
+         ++ block_subst
+         ++ value_subst))
+      cps_subst
+      (exp_subst ++ value_subst).
+Proof. compute_preserving_compiler (@nil (string*rule)). Qed.
+#[local] Definition cps_subst_entry := cmp_entry cps_subst_preserving.
+#[export] Hint Resolve cps_subst_entry : preserving_db.
+
 
 (*TODO: separate file?*)
 Definition cps_prod_lang_def : lang :=
@@ -155,12 +181,20 @@ Definition cps_prod_lang_def : lang :=
   ] ]}.
 
 
-    
-Derive cps_prod_lang
-       SuchThat (elab_lang_ext (block_subst ++value_subst) cps_prod_lang_def cps_prod_lang)
-       As cps_prod_wf.
-Proof. auto_elab. Qed.
-#[export] Hint Resolve cps_prod_wf : elab_pfs.
+Definition cps_prod_injectivity :=
+  [("pair", ["e2";"e1";"B";"A"; "G"]); ("prod", ["B";"A"])].
+
+
+Definition cps_prod_lang :=
+  Eval vm_compute in
+    (infer_lang_ext_simple (block_subst++value_subst) cps_prod_lang_def
+       (cps_prod_injectivity++block_subst_injectivity++value_subst_injectivity)).
+
+Lemma cps_prod_wf
+  : wf_lang_ext (block_subst ++value_subst) cps_prod_lang.
+Proof. compute_wf_lang. Qed.
+#[local] Definition cps_prod_entry := lang_entry cps_prod_wf.
+#[export] Hint Resolve cps_prod_entry : wf_lang_db.
 
 Definition under s :=
   {{e #"snoc" (#"cmp" #"wkn" {s}) #"hd"}}.
@@ -185,15 +219,27 @@ Definition cps_def : compiler :=
     {{e #"jmp" #"hd" (#"val_subst" #"wkn" "v")}}
   end.
 
-Derive cps
-       SuchThat (elab_preserving_compiler cps_subst
-                                          (cps_prod_lang
+
+Definition cps :=
+  Eval vm_compute in
+    (infer_compiler_simple
+       (cps_prod_lang
+          ++ cps_lang
+          ++ block_subst
+          ++ value_subst)
+       cps_subst
+       cps_def
+       stlc
+       (cps_prod_injectivity++cps_injectivity++block_subst_injectivity
+          ++value_subst_injectivity)).
+
+Lemma cps_preserving : preserving_compiler_ext cps_subst
+                                          (tgt_Model:= core_model (cps_prod_lang
                                              ++ cps_lang
                                              ++ block_subst
-                                             ++ value_subst)
-                                          cps_def
+                                             ++ value_subst))
                                           cps
-                                          stlc)
-       As cps_preserving.
-Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve cps_preserving : elab_pfs.
+                                          stlc.
+Proof. compute_preserving_compiler (exp_subst ++ value_subst). Qed.
+#[local] Definition cps_entry := cmp_entry cps_preserving.
+#[export] Hint Resolve cps_entry : preserving_db.

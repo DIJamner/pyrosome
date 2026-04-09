@@ -1,18 +1,20 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers Tools.Matches.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVCPS SimpleEvalCtx SimpleEvalCtxCPS SimpleUnit NatHeap.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
-
 
 (*simple heap operations w/axioms avoiding an explicit heap *)
 Definition heap_cps_ops_def : lang :=
@@ -84,22 +86,23 @@ Definition heap_cps_ops_def : lang :=
   ]}.
 
 Derive heap_cps_ops
-       SuchThat (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
+       in (elab_lang_ext (unit_lang ++ heap ++ nat_exp++ nat_lang ++ block_subst ++ value_subst)
                                heap_cps_ops_def
                                heap_cps_ops)
-       As heap_cps_ops_wf.
+       as heap_cps_ops_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve heap_cps_ops_wf : elab_pfs.
+#[local] Definition heap_cps_ops_entry := lang_entry (elab_lang_implies_wf heap_cps_ops_wf).
+#[export] Hint Resolve heap_cps_ops_entry : wf_lang_db.
 
 Definition heap_id_def : compiler :=
   match # from (unit_lang ++ heap ++ nat_exp++ nat_lang) with
   | {{s #"heap"}} => {{s#"heap"}}
   end.
 
-
+Require Import Tools.EGraph.Automation.
 
 Derive heap_id
-       SuchThat (elab_preserving_compiler cps_subst
+       in (elab_preserving_compiler cps_subst
                                           (heap_cps_ops (*TODO: remove via lemma*)
                                              ++ cps_lang (*TODO: remove via lemma*)
                                              ++ unit_lang
@@ -111,16 +114,11 @@ Derive heap_id
                                           heap_id_def
                                           heap_id
                                           (unit_lang ++ heap ++ nat_exp++ nat_lang))
-       As cps_preserving.
-Proof.
-  auto_elab_compiler.
-  - cleanup_elab_after eredex_steps_with heap "heap_comm".
-  - cleanup_elab_after eredex_steps_with heap "lookup_miss".
-  - cleanup_elab_after eredex_steps_with heap "lookup_empty".
-Qed.
-#[export] Hint Resolve heap_id : elab_pfs.
-
-
+       as heap_id_preserving.
+Proof. auto_elab_compiler. Qed.
+#[local] Definition heap_id_entry :=
+  cmp_entry (elab_compiler_implies_preserving heap_id_preserving).
+#[export] Hint Resolve heap_id_entry : preserving_db.
 
 Definition heap_cps_def : compiler :=
   match # from heap_ops with
@@ -138,7 +136,7 @@ Definition heap_cps_def : compiler :=
   end.    
     
 Derive heap_cps
-       SuchThat (elab_preserving_compiler (heap_id++cps_subst)
+       in (elab_preserving_compiler (heap_id++cps_subst)
                                           (heap_cps_ops
                                              ++ cps_lang
                                              ++ unit_lang
@@ -150,16 +148,11 @@ Derive heap_cps
                                           heap_cps_def
                                           heap_cps
                                           heap_ops)
-       As heap_cps_preserving.
-Proof.
-  auto_elab_compiler.
-  cleanup_elab_after
-    (reduce;
-    eapply eq_term_trans;
-    [eredex_steps_with heap_cps_ops "eval get"|];
-    by_reduction).
-Qed.
-#[export] Hint Resolve heap_cps_preserving : elab_pfs.
+       as heap_cps_preserving.
+Proof. auto_elab_compiler. Qed.
+#[local] Definition heap_cps_entry :=
+  cmp_entry (elab_compiler_implies_preserving heap_cps_preserving).
+#[export] Hint Resolve heap_cps_entry : preserving_db.
 
 Definition Ebind_k n e A k :=
   {{e #"blk_subst" (#"snoc"
@@ -187,7 +180,7 @@ Definition heap_ctx_cps_def : compiler :=
   end.    
 
 Derive heap_ctx_cps
-       SuchThat (elab_preserving_compiler (Ectx_cps++heap_cps++heap_id++cps_subst)
+       in (elab_preserving_compiler (Ectx_cps++heap_cps++heap_id++cps_subst)
                                           (heap_cps_ops
                                              ++ cps_lang
                                              ++ unit_lang
@@ -199,14 +192,9 @@ Derive heap_ctx_cps
                                           heap_ctx_cps_def
                                           heap_ctx_cps
                                           heap_ctx)
-       As heap_ctx_cps_preserving.
-Proof.
-  auto_elab_compiler.
-  cleanup_elab_after
-    (reduce;
-     eapply eq_term_trans;
-     [eredex_steps_with heap_cps_ops "eval get"|];
-     by_reduction).
-Qed.
-#[export] Hint Resolve heap_ctx_cps_preserving : elab_pfs.
+       as heap_ctx_cps_preserving.
+Proof. auto_elab_compiler. Qed.
+#[local] Definition heap_ctx_cps_entry :=
+  cmp_entry (elab_compiler_implies_preserving heap_ctx_cps_preserving).
+#[export] Hint Resolve heap_ctx_cps_entry : preserving_db.
 

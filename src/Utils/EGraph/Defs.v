@@ -4,7 +4,7 @@
  *)
 Require Import Equalities Orders ZArith Lists.List Uint63.
 Import ListNotations.
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Datatypes.dlist.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
@@ -16,6 +16,9 @@ Import StateMonad.
 Notation ne_list A := (A * list A)%type.
 Definition ne_map {A B} (f : A -> B) (l : ne_list A) : ne_list B :=
   (f (fst l), map f (snd l)).
+
+(*TODO: move*)
+#[export] Instance dlist_default : WithDefault dlist := dnil.
 
 Section WithMap.
   Context
@@ -124,12 +127,17 @@ Section WithMap.
               flags once per iteration
        *)
       analyses : idx_map analysis_result;
+      (* for debugging purposes *)
+      log : dlist
     }.
 
+  Definition log_event {E} (e:E) : state instance unit :=
+    fun  d => (tt, Build_instance d.(db) d.(equiv) d.(parents) d.(epoch) d.(worklist) d.(analyses) (dcons e d.(log))).
+    
   
   Definition empty_egraph : instance :=
     Build_instance map.empty (empty _ _ _ idx_zero)
-      map.empty idx_zero [] map.empty.
+      map.empty idx_zero [] map.empty default.
 
   Record erule_query_ptr :=
     {
@@ -214,46 +222,53 @@ Section WithMap.
                     end
       in
       let analyses' := map.put i.(analyses) a_ret meet_a in
-      (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses').
-  
-  Definition union (v v1 : idx) : ST idx :=
+      (tt, Build_instance i.(db) i.(equiv) i.(parents) i.(epoch) i.(worklist) analyses' i.(log)).
+
+  Definition find a : ST idx :=
     fun d =>
-      (*TODO: eqb duplicated in UF.union; how to reduce the work?*)
-      if eqb v v1 then (v,d)
+      let (uf',v') := UnionFind.find d.(equiv) a in
+      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses) d.(log)).
+
+  (*edge case: union non-canonical nodes.
+    TODO: split find from union in UnionFind.v
+   *)
+  Definition union (v v1 : idx) : ST idx :=
+    @! let v <- find v in
+      let v1 <- find v1 in
+      if eqb v v1 then ret v
       else
-        let v_analysis := unwrap_with_default (map.get d.(analyses) v) in
-        let v1_analysis := unwrap_with_default (map.get d.(analyses) v1) in
-        let new_analysis := analysis_meet v_analysis v1_analysis in
-        (*should always return Some if v in uf.
-          Use defaults here to make masking an error less likely
-         *)
-        @unwrap_with_default _  (idx_zero : idx,empty_egraph)
-        (@!let (uf', v') := UnionFind.union _ _ _ _ d.(equiv) v v1 in
+        (fun d =>
+           let v_analysis := unwrap_with_default (map.get d.(analyses) v) in
+           let v1_analysis := unwrap_with_default (map.get d.(analyses) v1) in
+           let new_analysis := analysis_meet v_analysis v1_analysis in
+           (*TODO: find, eqb duplicated in UF.union; decouple *)
+           let (uf', v') := UnionFind.union _ _ _ _ d.(equiv) v v1 in
            let (v_old, canon_stale_analysis) :=
              if eqb v v' then (v1, v_analysis) else (v, v1_analysis)
            in
            let improved_new_analysis := negb (eqb new_analysis canon_stale_analysis) in
            let analyses' :=
-             (*TODO: doesn't garbage collect right now *)
+             (*TODO: doesn't garbage collect right now.
+            TODO: should I have analyses for non-canonical nodes?
+              *)
              map.put (map.put d.(analyses) v new_analysis)
                v' new_analysis in
            let worklist' :=
              ((union_repair v_old v' improved_new_analysis)::d.(worklist)) in
-             
-           ret {option} (v', Build_instance d.(db) uf' d.(parents)
-                     d.(epoch) worklist' analyses')).    
+           
+           (v', Build_instance d.(db) uf' d.(parents) d.(epoch) worklist' analyses' d.(log))).    
 
   Definition alloc : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := alloc _ _ _ idx_succ i.(equiv) in
-       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses))).
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log))).
 
-  (* used for ids that aren't expected to have nodes. Handles analysis specially *)
+  (* used for ids that aren't expected to have nodes. Handles analysis specially. *)
   Definition alloc_opaque : ST idx :=
     (fun i =>
        let (equiv', x_fresh) := UnionFind.alloc _ _ _ idx_succ i.(equiv) in
        let analyses' := map.put i.(analyses) x_fresh default in
-       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) analyses')).
+       (x_fresh, Build_instance i.(db) equiv' i.(parents) i.(epoch) i.(worklist) analyses' i.(log))).
   
   (*TODO: move this somewhere?
     TODO: sometimes maps can implement this more efficiently
@@ -278,14 +293,6 @@ Section WithMap.
   (*TODO: move*)
   #[local] Instance map_default {K V} `{m : map.map K V} : WithDefault m := map.empty.
 
-  
-  (*TODO: propagate down the removal of the option and push to UnionFind file
-    as an alternative
-   *)
-  Definition find a : ST idx :=
-    fun d =>
-      let (uf',v') := UnionFind.find d.(equiv) a in
-      (v', Build_instance d.(db) uf' d.(parents) d.(epoch) d.(worklist) d.(analyses)).
 
   Definition canonicalize (a:atom) : ST atom :=
     let (f,args,o) := a in
@@ -296,16 +303,16 @@ Section WithMap.
   Definition pull_worklist : ST (list _) :=
     fun d => (d.(worklist),
                Build_instance d.(db) d.(equiv) d.(parents)
-                                                   d.(epoch) [] d.(analyses)).
+                                                   d.(epoch) [] d.(analyses) d.(log)).
 
   Definition push_worklist e : ST unit :=
     fun d => (tt, Build_instance d.(db) d.(equiv) d.(parents)
-                                                      d.(epoch) (e::d.(worklist)) d.(analyses)).
+                                                      d.(epoch) (e::d.(worklist)) d.(analyses) d.(log)).
 
 
   Definition get_db : ST db_map := fun i => (i.(db),i).
   Definition set_db d : ST unit :=
-    fun i => (tt,Build_instance d i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+    fun i => (tt,Build_instance d i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   Definition db_lookup f args : ST (option idx) :=
     fun i =>
@@ -327,7 +334,7 @@ Section WithMap.
       let tbl_upd tbl :=
         map.put tbl args (Build_db_entry v_epoch v out_a) in
       let db' := map_update i.(db) f tbl_upd in
-      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   (* sets an entry in the db and updates parents appropriately *)
   Definition db_set' a out_a : ST unit :=
@@ -344,7 +351,7 @@ Section WithMap.
        *)
       let parents' := fold_left (fun m x => map_update m x (cons a))
                         (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) i.(parents) in
-      (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) parents' i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   (* If an analysis isn't found, use the default and push the idx for repair. *)
   Definition get_analysis x : ST analysis_result :=
@@ -375,7 +382,7 @@ Section WithMap.
   Definition db_remove a : ST unit :=
     fun i =>
       let db' := map_update i.(db) a.(atom_fn) (Basics.flip map.remove a.(atom_args)) in
-      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses)).
+      (tt, Build_instance db' i.(equiv) i.(parents) i.(epoch) i.(worklist) i.(analyses) i.(log)).
 
   
   (*
@@ -586,8 +593,8 @@ Section WithMap.
 
   (* TODO: return the new epoch?  *)
   Definition increment_epoch : ST unit :=
-    fun '(Build_instance db equiv parents epoch worklist analyses) =>
-      (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses).
+    fun '(Build_instance db equiv parents epoch worklist analyses log) =>
+      (tt,Build_instance db equiv parents (idx_succ epoch) worklist analyses log).
 
   Definition get_epoch : ST idx := fun i => (i.(epoch), i).
 
@@ -601,12 +608,12 @@ Section WithMap.
     fun d =>
       let p' := map.put d.(parents) x ps in
       (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist)
-      d.(analyses)).
+      d.(analyses) d.(log)).
   
   Definition remove_parents x : ST unit :=
     fun d =>
       let p' := map.remove d.(parents) x in
-      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist) d.(analyses)).
+      (tt, Build_instance d.(db) d.(equiv) p' d.(epoch) d.(worklist) d.(analyses) d.(log)).
 
   (*gets the parents and removes them. TODO: implement in one operation *)
   Definition pull_parents x : ST (list atom) :=
@@ -661,7 +668,7 @@ Section WithMap.
         @! let new_idx <- find new_idx in
           ret union_repair old_idx new_idx improved_new_analysis
     (* we don't update analysis repairs, because if i is now not canonical,
-       it means a union already updated the analyses
+       it means a union already updated the analyses.
      *)
     | analysis_repair i => Mret (analysis_repair i)
     end.
@@ -711,22 +718,37 @@ Section WithMap.
   
   Context (rebuild_fuel : nat).
 
-  Definition run1iter (rs : rule_set) : ST unit :=
+  (*Returns the current max id.
+    Used to check if any new terms were allocated.
+   *)
+  Definition max_id : ST idx :=
+    fun i => (i.(equiv).(next _ _ _), i).
+  
+  Definition worklist_empty : ST bool :=
+    fun i => (if i.(worklist) then true else false, i).
+
+  Definition run1iter (rs : rule_set) : ST bool :=
     @!let tries <- build_tries rs in
+      let old_max <- max_id in
       increment_epoch;
       (list_Miter (process_erule tries) rs.(compiled_rules));
+      let new_max <- max_id in
+      let is_empty <- worklist_empty in
       (* TODO: compute an adequate upper bound for fuel *)
-  (rebuild rebuild_fuel).
+      (rebuild rebuild_fuel);
+      ret (andb (eqb new_max old_max) is_empty).
   
-
   Fixpoint saturate_until' rs (P : ST bool) fuel : ST bool :=
     match fuel with
     | 0 => Mret false
     | S fuel =>
         @!let done <- P in
           if (done : bool) then ret true
-          else (run1iter rs);
-               (saturate_until' rs P fuel)
+          else
+            let no_changes <- run1iter rs in
+            (* Short circuit if no new facts were added *)
+            if (no_changes : bool) then ret false
+            else (saturate_until' rs P fuel)
     end.
 
   (* run the const rules once before the saturation loop *)
@@ -828,14 +850,17 @@ Existing Class analysis.
     analysis_meet _ _ := tt;
   }.
 
-Arguments union {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
+Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope {H} v v1 _.
 Arguments Build_atom {idx symbol}%type_scope atom_fn 
   atom_args%list_scope atom_ret.
 
+Arguments log_event {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  {E}%type_scope e _.
 
-Arguments update_entry {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope
+Arguments update_entry {idx}%type_scope {Eqb_idx} {symbol}%type_scope
   {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
   {H} a _.
 
@@ -847,8 +872,15 @@ Arguments hash_entry {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}
 Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
   query_clauses compiled_rules%list_scope.
 
+Arguments repair {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+    {H} e _.
 
-Arguments rebuild {idx}%type_scope {Eqb_idx} {idx_zero} {symbol}%type_scope 
+
+Arguments get_parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
+    {analysis_result}%type_scope x _.
+
+Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
   {symbol_map idx_map idx_trie}%function_scope 
   {analysis_result}%type_scope {H}
   fuel%nat_scope _.

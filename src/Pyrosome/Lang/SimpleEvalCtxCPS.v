@@ -1,13 +1,18 @@
-Set Implicit Arguments.
-
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Compilers.Compilers Elab.ElabCompilers.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleVSTLC SimpleEvalCtx SimpleVCPS.
+From Utils Require Import Utils GallinaHintDb.
+From Pyrosome Require Import Theory.Core Compilers.Compilers
+  Elab.Elab Elab.ElabCompilers Tools.Matches Tools.EGraph.Automation
+  Tools.EGraph.TypeInference
+  Tools.EGraph.ComputeWf
+  Tools.Resolution.
+From Pyrosome.Lang Require Import
+  PolySubst SimpleVSubst SimpleVSTLC SimpleEvalCtx SimpleVCPS.
 Import Core.Notations.
+(*TODO: repackage this in compilers*)
+Import CompilerDefs.Notations.
 
 Require Coq.derive.Derive.
 
@@ -26,8 +31,6 @@ Definition Ectx_cps_def : compiler :=
     bind_k 1 (var "e") (var "A") (var "E")
   end.
 
-
-
 Derive Ectx_cps
        SuchThat (elab_preserving_compiler cps_subst
                                           (cps_lang
@@ -38,4 +41,6 @@ Derive Ectx_cps
                                           eval_ctx)
        As Ectx_cps_preserving.
 Proof. auto_elab_compiler. Qed.
-#[export] Hint Resolve cps_subst_preserving : elab_pfs.
+#[local] Definition Ectx_cps_entry :=
+  cmp_entry (elab_compiler_implies_preserving Ectx_cps_preserving).
+#[export] Hint Resolve Ectx_cps_entry : preserving_db.
