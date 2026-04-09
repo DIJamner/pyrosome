@@ -1,11 +1,11 @@
 Set Implicit Arguments.
- (* test comment *)
+
 Require Import Datatypes.String Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -13,7 +13,8 @@ Require Coq.derive.Derive.
 (* import the relevant language fragments *)
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+From Pyrosome.Lang Require Import BoolType.
+From Pyrosome.Lang Require Import SimpleVProd. 
 
 (* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst. 
@@ -22,8 +23,6 @@ From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab. 
 
 (* imports for compilers *)
-(* copied from LinearCPS.v *)
-From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
 Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
 (* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
 
@@ -125,6 +124,13 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve boundaries_wf : elab_pfs.
 
 
+
+
+
+
+
+
+
 (* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
 Definition parameterize_wrapper (l : lang) : lang := 
     let ps := (elab_param "D" (l
@@ -151,15 +157,11 @@ Local Definition evp'_general (l : lang) : lang :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps (exp_ret ++ exp_subst_base ++ value_subst).
 
-Ltac solve_parameterize_wrapper l := (* comments are copied over from PolyCompilers.v*)
+Ltac solve_parameterize_wrapper l := (* deleted comments in equivalent code from PolyCompilers.v*)
   change (exp_parameterized++val_parameterized) with (evp'_general l);
-  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
-  (*TODO: need to strengthen parameterization pl w/ add'l language?
-    Currently cheating.
-   *)
   eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
-    [repeat t';  constructor (*TODO: include in t'*)
+    [repeat t';  constructor
     | now prove_from_known_elabs..
     | vm_compute; exact I].
 
@@ -171,17 +173,26 @@ Lemma typed_bool_parameterized_wf
 Proof. solve_parameterize_wrapper typed_bool. Qed. 
 #[export] Hint Resolve typed_bool_parameterized_wf : elab_pfs.
 
-Definition typed_bool_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "g" : #"ty_sub" "D" "D'"
-        ----------------------------------------------- ("ty_subst bool")
-        #"ty_subst" "g" #"bool" = 
-        #"bool"
-        : #"ty" "D"
-    ]
-]}.
+Definition typed_bool_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (typed_bool_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       typed_bool_parameterized)).
 Derive typed_bool_ty_subst
   SuchThat (elab_lang_ext (typed_bool_parameterized ++
                                 exp_param_substs ++
@@ -194,9 +205,43 @@ Derive typed_bool_ty_subst
                                 )
               typed_bool_ty_subst_def typed_bool_ty_subst)
   As typed_bool_ty_subst_wf.
-Proof. auto_elab.
-Qed. 
+Proof. auto_elab. Qed. 
 #[export] Hint Resolve typed_bool_ty_subst_wf : elab_pfs.
+
+Definition stlc_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (stlc_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       stlc_parameterized)).
+Derive stlc_ty_subst
+  SuchThat (elab_lang_ext (stlc_parameterized ++
+                             exp_param_substs ++
+                             exp_ty_subst ++
+                             val_param_substs ++
+                             val_ty_subst ++
+                             env_ty_subst ++
+                             ty_subst_lang ++
+                             exp_parameterized ++ val_parameterized ++ ty_env_lang
+                                )
+              stlc_ty_subst_def stlc_ty_subst)
+  As stlc_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve stlc_ty_subst_wf : elab_pfs.
 
 Definition usubst_parameterized := parameterize_wrapper usubst. 
 
@@ -206,17 +251,26 @@ Lemma usubst_parameterized_wf
 Proof. solve_parameterize_wrapper usubst. Qed.
 #[export] Hint Resolve usubst_parameterized_wf : elab_pfs.
 
-Definition usubst_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "g" : #"ty_sub" "D" "D'"
-        ----------------------------------------------- ("ty_subst star")
-        #"ty_subst" "g" #"*" = 
-        #"*"
-        : #"ty" "D"
-    ]
-]}.
+Definition usubst_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (usubst_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       usubst_parameterized)).
 Derive usubst_ty_subst
   SuchThat (elab_lang_ext (usubst_parameterized ++
                                 exp_param_substs ++
@@ -229,38 +283,8 @@ Derive usubst_ty_subst
                                 )
               usubst_ty_subst_def usubst_ty_subst)
   As usubst_ty_subst_wf.
-Proof. auto_elab.
-Qed. 
+Proof. auto_elab. Qed.
 #[export] Hint Resolve usubst_ty_subst_wf : elab_pfs.
-
-Definition stlc_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "d" : #"ty_sub" "D" "D'",
-        "A" : #"ty" "D'",
-        "B" : #"ty" "D'"
-        ----------------------------------------------- ("ty_subst-arrow dist")
-        #"ty_subst" "d" (#"->" "A" "B") = 
-        #"->" (#"ty_subst" "d" "A") (#"ty_subst" "d" "B")
-        : #"ty" "D"
-    ]
-]}.
-Derive stlc_ty_subst
-  SuchThat (elab_lang_ext (stlc_parameterized ++
-                                exp_param_substs ++
-                                exp_ty_subst ++
-                                val_param_substs ++
-                                val_ty_subst ++
-                                env_ty_subst ++
-                                ty_subst_lang ++
-                                exp_parameterized ++ val_parameterized ++ ty_env_lang
-                                )
-              stlc_ty_subst_def stlc_ty_subst)
-  As stlc_ty_subst_wf.
-Proof. auto_elab. (* QUESTION FOR DUSTIN: WHY? *)
-Qed. 
-#[export] Hint Resolve stlc_ty_subst_wf : elab_pfs.
 
 Fixpoint ty_wkn_n n :=
   match n with
@@ -374,8 +398,8 @@ Derive type_casing
                 type_casing_def type_casing)
         As type_casing_wf.
 Proof. 
-  auto_elab. (* 6:20 *)
-Qed. (* ~0:30 *)
+  auto_elab.
+Qed. 
 #[export] Hint Resolve type_casing_wf : elab_pfs.
 
 (* 
@@ -430,6 +454,49 @@ Proof.
 Qed. 
 #[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
 
+Definition utlc_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( usubst_ty_subst ++ (* add all dependencies with their ty_subst versions *)
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits (
+       utlc_parameterized ++
+                          usubst_ty_subst ++
+       usubst_parameterized ++
+       exp_param_substs ++
+       exp_ty_subst ++
+       val_param_substs ++
+       val_ty_subst ++
+       env_ty_subst ++
+       ty_subst_lang ++
+       exp_parameterized ++ val_parameterized ++ ty_env_lang
+     )
+     utlc_parameterized)).
+Derive utlc_ty_subst
+  SuchThat (elab_lang_ext (
+                utlc_parameterized ++
+                  usubst_ty_subst ++
+                  usubst_parameterized ++
+                  exp_param_substs ++
+                  exp_ty_subst ++
+                  val_param_substs ++
+                  val_ty_subst ++
+                  env_ty_subst ++
+                  ty_subst_lang ++
+                  exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              utlc_ty_subst_def utlc_ty_subst)
+  As utlc_ty_subst_wf.
+Proof. auto_elab. Qed. 
+#[export] Hint Resolve utlc_ty_subst_wf : elab_pfs.
+
 Definition untyped_bool_parameterized := 
     let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
                                  ++ value_subst)
@@ -464,41 +531,51 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_parameterized_wf : elab_pfs.
+#[export] Hint Resolve untyped_bool_parameterized_wf : elab_pfs.
 
-Definition utlc_bool_parameterized := 
-    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps utlc_bool.
-
-Local Definition evp'_utlc_bool : lang := 
-    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps (untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
-
-Lemma utlc_bool_parameterized_wf
-  : wf_lang_ext ((untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
-      utlc_bool_parameterized.
-Proof. 
-  replace (untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc_bool.
-  - eapply parameterize_lang_preserving_ext;
-    try typeclasses eauto;
-    [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
-    | vm_compute; exact I].
-  - cbv; reflexivity. 
-Qed. 
-#[export] Hint Resolve utlc_bool_parameterized_wf : elab_pfs.
+Definition untyped_bool_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( usubst_ty_subst ++ (* add all dependencies with their ty_subst versions *)
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits (
+       untyped_bool_parameterized ++ (* I think I don't need ty_subst versions here because the operation here is sytnactic *)
+                                  (* but you do need the actual language here (for this example, untyped_bool_parameterized *)
+                                  usubst_ty_subst ++
+         usubst_parameterized ++
+       exp_param_substs ++
+       exp_ty_subst ++
+       val_param_substs ++
+       val_ty_subst ++
+       env_ty_subst ++
+       ty_subst_lang ++
+       exp_parameterized ++ val_parameterized ++ ty_env_lang
+     )
+     untyped_bool_parameterized)).
+Derive untyped_bool_ty_subst
+  SuchThat (elab_lang_ext (
+                untyped_bool_parameterized ++
+                  usubst_ty_subst ++
+                  usubst_parameterized ++
+                  exp_param_substs ++
+                  exp_ty_subst ++
+                  val_param_substs ++
+                  val_ty_subst ++
+                  env_ty_subst ++
+                  ty_subst_lang ++
+                  exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              untyped_bool_ty_subst_def untyped_bool_ty_subst)
+  As untyped_bool_ty_subst_wf.
+Proof. auto_elab. Qed. 
+#[export] Hint Resolve untyped_bool_ty_subst_wf : elab_pfs.
 
 Definition boolhuh_parameterized := 
     let ps := (elab_param "D" (boolhuh ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -534,6 +611,138 @@ Proof.
 Qed. 
 #[export] Hint Resolve boolhuh_parameterized_wf : elab_pfs.
 
+Compute boolhuh_parameterized. 
+
+(*
+
+
+Definition boolhuh_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( (* add all dependencies with their ty_subst versions *)
+    untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits ( (* add previously depending parameterized languages (and the current one) *)
+       boolhuh_parameterized ++
+         untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+     boolhuh_parameterized)). (* change this line to the current parameterized langauge working on *)
+
+
+(* Definition boolhuh_ty_subst_def : lang :=
+  {[l
+      [:= "D" : #"ty_env",
+           "D'" : #"ty_env",
+             "G" : #"env" "D",
+               "d" : #"ty_sub" "D'" "D",
+            "e" : #"exp" "D" "G" #"*"
+            ----------------------------------------------- ("exp_ty_subst bool?")
+            #"exp_ty_subst" "d" (#"bool?" "e") = #"bool?" (#"exp_ty_subst" "d" "e")
+             : #"exp" "D'" (#"env_ty_subst" "d" "G") (#"ty_subst" "d" #"*")
+        ]
+  ]}. *)
+
+Compute boolhuh_ty_subst_def. 
+
+Derive boolhuh_ty_subst
+  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+                boolhuh_parameterized ++
+                untyped_bool_ty_subst ++
+                untyped_bool_parameterized ++
+                utlc_ty_subst ++
+                utlc_parameterized ++
+                usubst_ty_subst ++ 
+                usubst_parameterized ++
+                exp_param_substs ++
+                exp_ty_subst ++
+                val_param_substs ++
+                val_ty_subst ++
+                env_ty_subst ++
+                ty_subst_lang ++
+                exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              boolhuh_ty_subst_def boolhuh_ty_subst) (* remember to change this *)
+  As boolhuh_ty_subst_wf. (* and remember to change this *)
+Proof. 
+auto_elab. Qed. 
+#[export] Hint Resolve boolhuh_ty_subst_wf : elab_pfs. (* and remember to change this *)
+
+
+*)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(* NOTE: utlc_bool does not need a ty_subst lang because there are no new syntactic constructs in utlc_bool *)
+Definition utlc_bool_parameterized := 
+    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps utlc_bool.
+
+Local Definition evp'_utlc_bool : lang := 
+    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
+
+Lemma utlc_bool_parameterized_wf
+  : wf_lang_ext ((untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      utlc_bool_parameterized.
+Proof. 
+  replace (untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc_bool.
+  - eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+  - cbv; reflexivity. 
+Qed. 
+#[export] Hint Resolve utlc_bool_parameterized_wf : elab_pfs.
+
+
+
 Definition simple_shared_fragment :=
   boolhuh ++ 
     utlc_bool ++ 
@@ -547,17 +756,19 @@ Definition simple_shared_fragment :=
 Hint Unfold simple_shared_fragment : auto_elab.
 
 Definition polymorphic_shared_fragment :=
-    boolhuh_parameterized ++ 
-    utlc_bool_parameterized ++ 
+    boolhuh_parameterized ++  (* NOTE: MISSING BOOLHUH_TY_SUBST *)
+      utlc_bool_parameterized ++
+      utlc_ty_subst ++
     utlc_parameterized ++
-    (* stlc_ty_subst ++ (* ty_subst lang *)
-    typed_bool_ty_subst ++ (* ty_subst lang *)
-    usubst_ty_subst ++ (* ty_subst lang *) *)
-    untyped_bool_parameterized ++ 
-    usubst_parameterized ++ 
-    typed_bool_parameterized ++ 
+    untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    usubst_ty_subst ++
+    usubst_parameterized ++
+    typed_bool_ty_subst ++
+    typed_bool_parameterized ++
+    stlc_ty_subst ++
     stlc_parameterized ++
-    (* all polymorphic langs stuff *)
+    (* all polymorphic langs stuff *) 
     exp_param_substs ++
     exp_ty_subst ++
     val_param_substs ++
@@ -619,6 +830,10 @@ Proof.
 Qed.
 Hint Resolve shared_fragment_compiler_preserving : auto_elab. 
 
+Definition source_multilanguage := 
+            boundaries ++ uif ++ simple_shared_fragment.
+Hint Unfold source_multilanguage : auto_elab. 
+
 Definition mif_parameterized := 
     let ps := (elab_param "D" (mif ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
                [("sub", Some 2);
@@ -653,15 +868,141 @@ Proof.
 Qed. 
 #[export] Hint Resolve mif_parameterized_wf : elab_pfs.
 
-Definition source_multilanguage := 
-            boundaries ++ uif ++ simple_shared_fragment.
-Hint Unfold source_multilanguage : auto_elab. 
+
+(*
+
+Definition mif_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( (* add all dependencies with their ty_subst versions *)
+    untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits ( (* add previously depending parameterized languages (and the current one) *)
+       mif_parameterized ++
+         untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+     mif_parameterized)). (* change this line to the current parameterized langauge working on *)
+Derive mif_ty_subst
+  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+                mif_parameterized ++
+                untyped_bool_ty_subst ++
+                untyped_bool_parameterized ++
+                utlc_ty_subst ++
+                utlc_parameterized ++
+                usubst_ty_subst ++ 
+                usubst_parameterized ++
+                exp_param_substs ++
+                exp_ty_subst ++
+                val_param_substs ++
+                val_ty_subst ++
+                env_ty_subst ++
+                ty_subst_lang ++
+                exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              mif_ty_subst_def mif_ty_subst) (* remember to change this *)
+  As mif_ty_subst_wf. (* and remember to change this *)
+Proof. 
+auto_elab. Qed. 
+#[export] Hint Resolve mif_ty_subst_wf : elab_pfs. (* and remember to change this *)
+
+*)
+
+Definition prod_parameterized := parameterize_wrapper prod. 
+
+Lemma prod_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      prod_parameterized.
+Proof. solve_parameterize_wrapper prod. Qed. 
+#[export] Hint Resolve prod_parameterized_wf : elab_pfs.
+
+Definition prod_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (prod_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       prod_parameterized)).
+Derive prod_ty_subst
+  SuchThat (elab_lang_ext (prod_parameterized ++
+                                exp_param_substs ++
+                                exp_ty_subst ++
+                                val_param_substs ++
+                                val_ty_subst ++
+                                env_ty_subst ++
+                                ty_subst_lang ++
+                                exp_parameterized ++ val_parameterized ++ ty_env_lang
+                                )
+              prod_ty_subst_def prod_ty_subst)
+  As prod_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[export] Hint Resolve prod_ty_subst_wf : elab_pfs.
 
 Definition target_multilanguage :=
-            type_casing ++ mif_parameterized ++ polymorphic_shared_fragment.
+  prod_ty_subst ++
+    prod_parameterized ++
+    mif_parameterized ++ (* NOTE: MISSING MIF_TY_SUBST *)
+    type_casing ++
+    poly ++
+    polymorphic_shared_fragment.
 Hint Unfold target_multilanguage : auto_elab.
 
+Axiom todo_2 : wf_lang target_multilanguage.
 
+Fixpoint wkn_n n :=
+  match n with
+  | 0 => {{e #"id"}}
+  | 1 => {{e #"wkn"}}
+  | S n' =>
+    {{e #"cmp" #"wkn" {wkn_n n'} }}
+  end.
+
+Definition ovar n :=
+    {{e #"val_subst" {wkn_n n} #"hd" }}.  
+
+Fixpoint vwkn_n n e :=
+  match n with
+  | 0 => e
+  | S n' =>
+    {{e #"val_subst" #"wkn" {vwkn_n n' e} }}
+  end.
+
+(*
 Definition ttd_fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) : (t1 -> t2) -> dyn :=
   fun input =>
     ufun z =>
@@ -671,7 +1012,7 @@ Definition ttd t : t -> dyn :=
   match t with
   | dyn => fun x => x
   | bool => fun x =>  if x then utrue else ufalse
-  | t1 -> t2 => fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) => fun input =>
+  | t1 -> t2 => fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) => fun input => (* x is NOT _this_ dtt! which is why the type is flipped *)
     ufun z =>
       y (input (dtt t1 z))
   end.
@@ -694,35 +1035,560 @@ Definition boundaries t : (t -> dyn) * (dyn -> t) :=
                     fun input =>
     ufun z =>
       (fst y) (input ((snd x) z))
-                    ,
+                    , (* above is ttd, below is dtt *)
                     ufun input =>
     fun z =>
       (snd y) (input ((fst x) z))
                     )
+  end. (* in the first case, the first thing is first of y bc we want to get the same direction, and in the second one its second *)
+(* then we reverse evertyihng in the other one *)
+*)
+(* so the way this is gonna work is that we're gonna have a typerec that has as its three cases the three things in the boundaries func *)
+
+Ltac derive_elab_term :=
+  pose proof todo_2;
+  unshelve (repeat t); t'. (* repeat t then unshelve; then on the unshelved do t'. *)
+
+Definition trec_star_case_unelab :=
+  {{e
+      #"pair"
+      (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
+      (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
+  }}. 
+Derive trec_star_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_star_case_unelab
+         trec_star_case
+         {{s #"exp" #"ty_emp" "G"
+             (#"prod" #"ty_emp"
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
+             )
+         }}
+     ) as trec_star_case_wf.
+Proof. derive_elab_term. Qed.
+
+Definition trec_bool_case_unelab :=
+  {{e
+      #"pair"
+      (#"ret" (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF"))))
+      (#"ret" (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F"))))
+  }}. 
+Derive trec_bool_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_bool_case_unelab
+         trec_bool_case
+         {{s #"exp" #"ty_emp" "G"
+             (#"prod" #"ty_emp"
+                (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"*" #"ty_emp"))
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"bool" #"ty_emp"))
+             )
+         }}
+     ) as trec_bool_case_wf. 
+Proof. derive_elab_term. Qed.
+
+Ltac quick_goal_match :=
+  lazymatch goal with
+  | |- elab_term _ _ (con ?s _) (con ?s _) _ =>
+      idtac "can go further"
+  | |- elab_term _ _ (con ?s _) (con ?s' _) _ =>
+      fail "cannot go further"
+  | |- _  => idtac "neither case"
+  end.
+
+(*
+Definition trec_func_case'_unelab :=
+  {{e
+      #"pair"
+         (#"ret"
+            (#"lambda" (#"->" "t1" "t2")
+               (#"ret"
+                  (#"ulambda"
+                     (#"app" (#".1" (#"ret" "v2")) (#"app" (#"ret" {ovar 1}) (#"app" (#".2" (#"ret" "v3")) (#"ret" {ovar 0}))))
+                  )
+               )
+            )
+         )
+         (#"ret"
+            (#"lambda" #"*"
+               (#"ret"
+                  (#"lambda" "t1"
+                     (#"app" (#".2" (#"ret" "v2")) (#"uapp" (#"ret" {ovar 1}) (#"app" (#".1" (#"ret" "v3")) (#"ret" {ovar 0}))))
+                  )
+               )
+            )
+         )
+  }}.
+
+Definition two_var_env := {{e #"ty_ext" (#"ty_ext" #"ty_emp") }}.
+Derive trec_func_case'_sort
+  in (elab_sort target_multilanguage
+        [
+           ("G", {{s #"env" #"ty_emp"}});
+           ("t1", {{s #"ty" (#"ty_ext" #"ty_emp") "G"}});
+           ("t2", {{s #"ty" (#"ty_ext" (#"ty_ext" #"ty_emp")) "G"}});
+           ("v2", {{s #"val" {two_var_env} "G"
+                      (#"prod" {two_var_env}
+                         (#"->" {two_var_env} "t2" (#"*" {two_var_env}))
+                         (#"->" {two_var_env} (#"*" {two_var_env}) "t2")
+                      )
+           }});
+           ("v3", {{s #"val" {two_var_env} "G"
+                      (#"prod" {two_var_env}
+                         (#"->" {two_var_env} "t1" (#"*" {two_var_env}))
+                         (#"->" {two_var_env} (#"*" {two_var_env}) "t1")
+                      )
+           }})
+         ]
+        {{s #"exp" #"ty_emp" "G"
+             (#"All" 
+                (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                   (#"All"
+                      (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                             (#"prod" (#"->" (#"->" {ty_ovar 1} {ty_ovar 0}) #"*") (#"->" #"*" (#"->" {ty_ovar 1} {ty_ovar 0})))
+                      )
+                   )
+                )
+             )
+        }}
+        trec_func_case'_sort
+ 
+     )
+    as trec_func_case_sort_wf.
+Proof.
+  pose proof todo_2.
+  repeat t.
+  all: t'.
+  Abort. 
+
+
+Derive trec_func_case'
+  in ( elab_term target_multilanguage
+         [
+           ("G", {{s #"env" #"ty_emp"}});
+           ("t1", {{s #"ty" (#"ty_ext" #"ty_emp") "G"}});
+           ("t2", {{s #"ty" (#"ty_ext" (#"ty_ext" #"ty_emp")) "G"}});
+           ("v2", {{s #"val" {two_var_env} "G"
+                      (#"prod" {two_var_env}
+                         (#"->" {two_var_env} "t2" (#"*" {two_var_env}))
+                         (#"->" {two_var_env} (#"*" {two_var_env}) "t2")
+                      )
+           }});
+           ("v3", {{s #"val" {two_var_env} "G"
+                      (#"prod" {two_var_env}
+                         (#"->" {two_var_env} "t1" (#"*" {two_var_env}))
+                         (#"->" {two_var_env} (#"*" {two_var_env}) "t1")
+                      )
+           }})
+         ]
+         trec_func_case'_unelab
+         trec_func_case'
+         {{s #"exp" #"ty_emp" "G"
+                             (#"prod" (#"->" (#"->" "t1" "t2") #"*") (#"->" #"*" (#"->" "t1" "t2")))
+         }}
+     ) as trec_func_case_wf.
+Proof.
+  pose proof todo_2.
+  repeat t.
+  Abort. 
+*)
+
+
+
+
+Derive trec_func_case_sort
+  in (elab_sort target_multilanguage
+        [("G", {{s #"env" #"ty_emp"}})]
+        {{s #"exp" #"ty_emp" "G"
+             (#"All" 
+                (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                   (#"All"
+                      (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                             (#"prod" (#"->" (#"->" {ty_ovar 1} {ty_ovar 0}) #"*") (#"->" #"*" (#"->" {ty_ovar 1} {ty_ovar 0})))
+                      )
+                   )
+                )
+             )
+        }}
+        trec_func_case_sort
+     )
+    as trec_func_case_sort_wf.
+Proof. derive_elab_term. Qed.
+
+Print trec_func_case_sort.
+
+Definition trec_func_case_unelab :=
+  {{e
+      #"ret"
+      (#"Lam"
+         (#"ret"
+            (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+               (#"ret"
+                  (#"Lam"
+                     (#"ret"
+                        (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+
+                           (#"pair"
+         (#"ret"
+            (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0})
+               (#"ret"
+                  (#"ulambda"
+                     (#"app" (#".1" (#"ret" {ovar 2})) (#"app" (#"ret" {ovar 1}) (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))
+                  )
+               )
+            )
+         )
+         (#"ret"
+            (#"lambda" #"*"
+               (#"ret"
+                  (#"lambda" {ty_ovar 1}
+                     (#"app" (#".2" (#"ret" {ovar 2})) (#"uapp" (#"ret" {ovar 1}) (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0}))))
+                  )
+               )
+            )
+         )
+      )
+                        )
+                     )
+                  )
+               )
+            )
+         )
+      )
+  }}.
+
+
+
+
+
+
+
+Definition evar := {{e #"ty_emp" }}.
+Definition evar2 := {{e "G" }}. 
+Definition lhs := 
+{{s #"exp" (#"ty_ext" (#"ty_ext" {evar})) (#"ext" (#"ty_ext" (#"ty_ext" {evar})) {
+                                                    evar2} (#"prod" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                  #"->" (
+                                                                        #"ty_ext" (#"ty_ext" {evar})) (
+                                                                        #"ty_subst" 
+                                                                        (
+                                                                        #"ty_ext" (#"ty_ext" {evar})) (
+                                                                        #"ty_ext" 
+                                                                        {evar}) (
+                                                                        #"ty_wkn" 
+                                                                        (#"ty_ext" {evar})) (
+                                                                        #"ty_hd" 
+                                                                        {evar})) (
+                                                                        #"*" 
+                                                                        (
+                                                                        #"ty_ext" (#"ty_ext" {evar})))) (
+                                                                  #"->" (
+                                                                        #"ty_ext" (#"ty_ext" {evar})) (
+                                                                        #"*" 
+                                                                        (
+                                                                        #"ty_ext" (#"ty_ext" {evar}))) (
+                                                                        #"ty_subst" 
+                                                                        (
+                                                                        #"ty_ext" (#"ty_ext" {evar})) (
+                                                                        #"ty_ext" 
+                                                                        {evar}) (
+                                                                        #"ty_wkn" 
+                                                                        (#"ty_ext" {evar})) (
+                                                                        #"ty_hd" 
+                                                                        {evar}))))) (
+             #"->" (#"ty_ext" (#"ty_ext" {evar})) (#"prod" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                           #"->" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                 #"ty_hd" 
+                                                                 (#"ty_ext" {evar})) (
+                                                                 #"*" (#"ty_ext" (#"ty_ext" {evar})))) (
+                                                           #"->" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                 #"*" (#"ty_ext" (#"ty_ext" {evar}))) (
+                                                                 #"ty_hd" 
+                                                                 (#"ty_ext" {evar})))) (
+                   #"prod" (#"ty_ext" (#"ty_ext" {evar})) (#"->" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                 #"->" (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                       #"ty_subst" 
+                                                                       (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                       #"ty_ext" 
+                                                                       {evar}) (
+                                                                       #"ty_wkn" 
+                                                                       (#"ty_ext" {evar})) (
+                                                                       #"ty_hd" 
+                                                                       {evar})) (
+                                                                       #"ty_hd" 
+                                                                       (#"ty_ext" {evar}))) (
+                                                                 #"*" (#"ty_ext" (#"ty_ext" {evar})))) (
+                           #"->" (#"ty_ext" (#"ty_ext" {evar})) (#"*" (#"ty_ext" (#"ty_ext" {evar}))) (
+                                 #"->" (#"ty_ext" (#"ty_ext" {evar})) (#"ty_subst" 
+                                                                       (#"ty_ext" (#"ty_ext" {evar})) (
+                                                                       #"ty_ext" 
+                                                                       {evar}) (
+                                                                       #"ty_wkn" 
+                                                                       (#"ty_ext" {evar})) (
+                                                                       #"ty_hd" 
+                                                                       {evar})) (
+                                     #"ty_hd" (#"ty_ext" {evar}))))))}}.
+
+Definition rhs := {{s #"exp" (#"ty_ext" (#"ty_ext" #"ty_emp")) (#"env_ty_subst" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                #"ty_ext" 
+                                                                #"ty_emp") (
+                                                                #"ty_wkn" 
+                                                                (#"ty_ext" #"ty_emp")) (
+                                                                #"ext" (#"ty_ext" #"ty_emp") (
+                                                                       #"env_ty_subst" 
+                                                                       (#"ty_ext" #"ty_emp") #"ty_emp" (
+                                                                       #"ty_wkn" 
+                                                                       #"ty_emp") "G") (
+                                                                       #"prod" 
+                                                                       (#"ty_ext" #"ty_emp") (
+                                                                       #"->" 
+                                                                       (#"ty_ext" #"ty_emp") (
+                                                                       #"ty_hd" 
+                                                                       #"ty_emp") (
+                                                                       #"*" 
+                                                                       (#"ty_ext" #"ty_emp"))) (
+                                                                       #"->" 
+                                                                       (#"ty_ext" #"ty_emp") (
+                                                                       #"*" 
+                                                                       (#"ty_ext" #"ty_emp")) (
+                                                                       #"ty_hd" 
+                                                                       #"ty_emp"))))) (
+             #"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (#"prod" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                              #"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                    #"ty_hd" 
+                                                                    (#"ty_ext" #"ty_emp")) (
+                                                                    #"*" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp")))) (
+                                                              #"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                    #"*" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp"))) (
+                                                                    #"ty_hd" 
+                                                                    (#"ty_ext" #"ty_emp")))) (
+                   #"prod" (#"ty_ext" (#"ty_ext" #"ty_emp")) (#"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                    #"->" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                    #"ty_subst" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                                    #"ty_ext" 
+                                                                    #"ty_emp") (
+                                                                    #"ty_wkn" 
+                                                                    (#"ty_ext" #"ty_emp")) (
+                                                                    #"ty_hd" 
+                                                                    #"ty_emp")) (
+                                                                    #"ty_hd" 
+                                                                    (#"ty_ext" #"ty_emp"))) (
+                                                                    #"*" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp")))) (
+                           #"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (#"*" 
+                                                                    (#"ty_ext" (#"ty_ext" #"ty_emp"))) (
+                                 #"->" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                       #"ty_subst" (#"ty_ext" (#"ty_ext" #"ty_emp")) (
+                                                   #"ty_ext" #"ty_emp") (
+                                                   #"ty_wkn" (#"ty_ext" #"ty_emp")) (
+                                                   #"ty_hd" #"ty_emp")) (
+                                     #"ty_hd" (#"ty_ext" #"ty_emp"))))))}}.
+
+Check eq_sort.
+
+Ltac hide_implicits_custom :=
+  lazymatch goal with
+  | |- Model.eq_sort ?l ?c ?s1 ?s2 =>
+        let c' := eval compute in (hide_ctx_implicits l c) in
+        let s1' := eval compute in (hide_sort_implicits l s1) in
+        let s2' := eval compute in (hide_sort_implicits l s2) in
+        change (Model.eq_sort l (!! as_ctx c') (!! s1') (!! s2'))
   end.
 
 
+Theorem problem_case : eq_sort
+                         target_multilanguage
+                         {{c "G" : #"env" #"ty_emp" }}
+                         lhs
+                         rhs.
+Proof.
+  pose proof todo_2. 
+  compute.
+  
+  sort_cong.
+  1: by_reduction.
+  2: by_reduction.
+  (* there's one goal left, and it's a env_ty_subst on one side and an ext on the other side *)
+  Abort. 
+  
 
+
+
+
+
+Derive trec_func_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_func_case_unelab
+         trec_func_case
+         trec_func_case_sort
+     ) as trec_func_case_wf.
+Proof.
+  pose proof todo_2.
+  repeat t.
+  right.
+  compute_eq_compilation.
+  sort_cong.
+  1: term_refl.
+  1: compute_eq_compilation.
+  1: reduce.
+  1: term_cong.
+  1: term_refl.
+  1: reduce.
+  1: term_refl.
+  1: by_reduction.
+  1: compute_eq_compilation.
+  term_cong.
+  1: term_refl.
+  1: compute_eq_compilation.
+  1: term_cong.
+  1: term_refl.
+  1: term_refl.
+  1: term_refl.
+  compute_eq_compilation.
+  term_refl.
+  Unshelve.
+  all: t'.
+Qed.
+
+
+
+Definition trec_boundaries_unelab :=
+  {{e
+      #"typerec" "A" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+      {trec_star_case_unelab}
+      {trec_bool_case_unelab}
+      {trec_func_case_unelab}
+  }}.
+
+Derive trec_boundaries
+         in ( elab_term target_multilanguage
+                [("e", {{s #"exp" #"ty_emp" "G" "A"}}); ("A", {{s #"ty" #"ty_emp"}});
+
+                 ("G", {{s #"env" #"ty_emp"}})]
+                trec_boundaries_unelab
+                trec_boundaries
+                {{s #"exp" #"ty_emp" "G"
+                    (#"prod" #"ty_emp"
+                       (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
+                       (#"->" #"ty_emp" (#"*" #"ty_emp") "A")
+                    )
+                }}
+            ) as trec_boundaries_wf.
+Proof.
+Abort.
+(* 
+  derive_elab_term. 
+  t.
+  2: t. 2: t. 2: t.
+  3: t. 3: t. 3: t.
+  4: t. 4: t. 4: t.
+  5: t. 5: t. 5: t.
+  6: t. 6: t. 6: t.
+  7: t. 7: t. 7: t.
+  8: t. 8: t. 8: t.
+  9: t. 9: t. 9: t.
+  10: t. 10: t. 10: t.
+  11: t. 11: t. 11: t.
+  12: t. 12: t. 12: t.
+  13: t. 13: t. 13: t.
+  14: t. 14: t. 14: t.
+  15: t. 15: t. 15: t.
+  16: t. 16: t. 16: t.
+  17: t. 17: t. 17: t.
+  18: t.
+
+  Compute target_multilanguage. 
+  18: t. 18: t.
+  19: t. 19: t. 19: t.
+  20: t. 20: t. 20: t.
+  21: t. 21: t. 21: t.
+  22: t. 22: t. 22: t.
+  23: t. 23: t. 23: t.
+  24: t. 24: t. 24: t.
+  25: t. 25: t. 25: t.
+  26: t. 26: t. 26: t.
+  27: t. 27: t. 27: t.
+  28: t. 28: t. 28: t.
+  29: t. 29: t. 29: t.
+
+  repeat Matches.t.
+  Qed. 
+  Matches.t. 1: Matches.t. 2: shelve. t. 1: repeat t. 2: t. 2: repeat t. 3: repeat t.
+  all: cycle 1. 1: t.
+  Compute prod_parameterized. 
+  1: solve_in.
+  1: t. 1: repeat t. 2: repeat t. 
+  all: try (left; reflexivity).
+ *)  
+
+
+(*
 (* simple to poly compiler *)
 Definition multilang_compiler_def : compiler :=
     match # from (boundaries ++ uif) with
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e @"mif" @("D" := #"ty_emp") "c" "thn" "els" }}
-    | {{e #"dtt" "G" "A" "e"}} => {{e (* NOT convoy *)
-                                    #"typerec" "A" #"ty_hd"
-                                    "e" 
-                                    (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
-                                    (#"ret" (#"lambda" "A" (#"dtt" "C" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "B" (#"ret" #"hd")))))) 
-                                    }}
-    | {{e #"ttd" "G" "A" "e"}} => {{e (* NEED convoy *)
-                                      #"typerec" "A" #"ty_hd"
-                                      (#"lambda" "A" #"hd")
-                                      (#"lambda" "A" (#"if" #"hd" (#"ret" #"uT") (#"ret" #"uF")))
-                                      (#"lambda" "A" (#"ret" (#"ulambda" (#"ttd" "C" (#"app" (#"ret" (#"val_subst" #"wkn" #"hd")) (#"dtt" "B" (#"ret" #"hd")))))))
-                                    "e"
-                                    }}
+    | {{e #"dtt" "G" "A" "e"}} => {{e #"app" (#".2" {trec_boundaries {{e "A"}}}) "e" }}
+    | {{e #"ttd" "G" "A" "e"}} => {{e #"app" (#".1" {trec_boundaries {{e "A"}}}) "e" }}
     (* order of implicit vars is order of context vars *)
-    (* neeed to parameterize exp sort and val sort and ty sort so need three rules for that *)
     end.
+
+Derive multilang_compiler 
+        SuchThat (elab_preserving_compiler 
+                    shared_fragment_compiler
+                    target_multilanguage
+                    multilang_compiler_def
+                    multilang_compiler
+                    (boundaries ++ uif)
+                    ) 
+        As multilang_compiler_preserving. 
+Proof.
+  assert (wf_lang target_multilanguage) by apply todo_2.
+  setup_elab_compiler.
+  { repeat Matches.t.  }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { Compute (compile_ctx (nth_tail 2 multilang_compiler ++ shared_fragment_compiler)
+               {{c "G" : #"env", "A" : #"ty", "e" : #"exp" "G" "A"}}).
+    Compute (compile_sort (nth_tail 2 multilang_compiler ++ shared_fragment_compiler)
+       {{s #"exp" "G" #"*"}}).
+
+
+
+      repeat Matches.t. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  3: { compute_eq_compilation. by_reduction.  }.
+   repeat
+    ([>repeat Matches.t; cleanup_elab_after
+        try (try decompose_sort_eq; (solve [ by_reduction ]))
+     | .. ])
+
+
+  Print auto_elab_compiler. 
+  auto_elab_compiler.
+  Check eq_term.
+  Print boundaries. 
+  setup_elab_compiler.
+   repeat
+    ([>repeat Matches.t; cleanup_elab_after
+        try (try decompose_sort_eq; (solve [ by_reduction ]))
+     | .. ])
 
 
 (* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
@@ -1003,3 +1869,5 @@ Definition ttd_v {G : term} (x : term) (Ty : term) : Ty :=
                      end
   | {{e #"->" {A} {B} }} => {{e #"ulambda" {ttd_e {{e #"app" (#"val_subst" #"wkn" #"ret" {x}) {dtt_e {{e #"hd"}} A} }} B} }}
   end.  *)
+
+ *)
