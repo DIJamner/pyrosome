@@ -20,6 +20,7 @@ From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require ClosedTerm.
+From Pyrosome.Tools Require Import PosRenaming.
 Import Core.Notations.
 
 Open Scope string.
@@ -912,6 +913,11 @@ Module PositiveInstantiation.
     : lang positive -> _ -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
     (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+  
+  Definition egraph_simpl
+    : lang positive -> _ -> nat -> nat ->
+      nat -> Term.term positive -> _ :=
+    (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   Definition egraph_reducing_equal
     : lang positive -> _ -> _ -> nat ->
@@ -931,16 +937,27 @@ Module PositiveInstantiation.
     | sort_eq_rule x x0 x1 => sort_eq_rule x x1 x0
     | term_eq_rule x x0 x1 t => term_eq_rule x x1 x0 t
     | _ => r
-    end.      
-
+    end.
   
-  (* all-in-one when it's not worth separating out the rule-building.
-     Handles renaming.
-     
-   (*TODO: handle sort matching*)
+  Definition egraph_simpl' {V} `{Eqb V} `{WithDefault V} {X} `{analysis V V X}
+    (l : lang V) rn n en (c : Term.ctx _) (e : Term.term V) :=
+    let rename_and_run : state (renaming V) _ :=
+      @!let l' : lang positive <- rename_lang (ctx_to_rules c ++ l) in
+        let e' : term positive <- rename_term (var_to_con e) in
+        ret (egraph_simpl l' (build_rule_set rn (filter_eqn_rules l') l')
+               rn n en e')
+    in
+    (*2 so that sort_of is distict*)
+    let (re,r) := rename_and_run
+                    ({| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})
+    in
+    match re with
+    | Success e => con_to_var (map fst c) (unrename_term r e)
+    | _ => e
+    end.
+  
 
    (* TODO: extract magic numbers?*)
-   *)
   Definition egraph_equal' {V} `{Eqb V} {X} `{analysis V V X}
     (l : lang V)
     (lang_filter : V * rule V -> bool)
@@ -974,20 +991,6 @@ Module PositiveInstantiation.
                      error:(x1 "not identified with" x2
                               "Extracted term 1:" e1'
                               "Extracted term 2:" e2'), g)) *)
-  
-  Fixpoint unrename_term {V} `{WithDefault V} (r : renaming V)
-    (e : Term.term positive) : Term.term V :=
-    match e with
-    | var x => var (unwrap_with_default (Interface.map.get r.(p_to_v) x))
-    | con n s =>
-        con (unwrap_with_default (Interface.map.get r.(p_to_v) n))
-          (map (unrename_term r) s)
-    end.
-  
-  Definition egraph_simpl
-    : lang positive -> rule_set positive positive trie_map trie_map -> nat ->
-      nat -> nat -> Term.term positive -> _ :=
-    (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
 
   Definition rename_inj {V} `{Eqb V} '(n,args) : state (renaming V) (positive * list positive) :=
     @! let n' <- to_p n in
