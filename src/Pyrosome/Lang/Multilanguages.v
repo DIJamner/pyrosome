@@ -5,7 +5,9 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
-From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers Theory.Core Elab.Elab Tools.Matches Lang.SimpleVSubst.
+From Pyrosome Require Import Theory.Core Elab.Elab
+  Tools.Matches
+  Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
 Require Coq.derive.Derive.
@@ -23,6 +25,8 @@ From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab. 
 
 (* imports for compilers *)
+(* copied from LinearCPS.v *)
+From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
 Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
 (* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
 
@@ -210,7 +214,9 @@ Derive typed_bool_ty_subst
               typed_bool_ty_subst_def typed_bool_ty_subst)
   As typed_bool_ty_subst_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve typed_bool_ty_subst_wf : elab_pfs.
+#[local] Definition typed_bool_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf typed_bool_ty_subst_wf).
+#[export] Hint Resolve typed_bool_ty_subst_entry : wf_lang_db.
 
 Definition stlc_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -245,7 +251,9 @@ Derive stlc_ty_subst
               stlc_ty_subst_def stlc_ty_subst)
   As stlc_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve stlc_ty_subst_wf : elab_pfs.
+#[local] Definition stlc_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf stlc_ty_subst_wf).
+#[export] Hint Resolve stlc_ty_subst_entry : wf_lang_db.
 
 Definition usubst_parameterized := parameterize_wrapper usubst. 
 
@@ -290,7 +298,10 @@ Derive usubst_ty_subst
               usubst_ty_subst_def usubst_ty_subst)
   As usubst_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve usubst_ty_subst_wf : elab_pfs.
+#[local] Definition usubst_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf usubst_ty_subst_wf).
+#[export] Hint Resolve usubst_ty_subst_entry : wf_lang_db.
+
 
 Fixpoint ty_wkn_n n :=
   match n with
@@ -406,7 +417,9 @@ Derive type_casing
 Proof. 
   auto_elab.
 Qed. 
-#[export] Hint Resolve type_casing_wf : elab_pfs.
+#[local] Definition type_casing_entry :=
+  lang_entry (elab_lang_implies_wf type_casing_wf).
+#[export] Hint Resolve type_casing_entry : wf_lang_db.
 
 (* 
 TODO:
@@ -503,7 +516,9 @@ Derive utlc_ty_subst
               utlc_ty_subst_def utlc_ty_subst)
   As utlc_ty_subst_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve utlc_ty_subst_wf : elab_pfs.
+#[local] Definition utlc_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf utlc_ty_subst_wf).
+#[export] Hint Resolve utlc_ty_subst_entry : wf_lang_db.
 
 Definition untyped_bool_parameterized := 
     let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
@@ -539,7 +554,10 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve untyped_bool_parameterized_wf : elab_pfs.
+#[local] Definition untyped_bool_parameterized_entry :=
+  lang_entry untyped_bool_parameterized_wf.
+#[export] Hint Resolve untyped_bool_parameterized_entry : wf_lang_db.
+
 
 Definition untyped_bool_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -583,7 +601,9 @@ Derive untyped_bool_ty_subst
               untyped_bool_ty_subst_def untyped_bool_ty_subst)
   As untyped_bool_ty_subst_wf.
 Proof. auto_elab. Qed. 
-#[export] Hint Resolve untyped_bool_ty_subst_wf : elab_pfs.
+#[local] Definition untyped_bool_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf untyped_bool_ty_subst_wf).
+#[export] Hint Resolve untyped_bool_ty_subst_entry : wf_lang_db.
 
 Definition boolhuh_parameterized := 
     let ps := (elab_param "D" (boolhuh ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -749,7 +769,9 @@ Proof.
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
-#[export] Hint Resolve utlc_bool_parameterized_wf : elab_pfs.
+#[local] Definition utlc_bool_parameterized_entry :=
+  lang_entry utlc_bool_parameterized_wf.
+#[export] Hint Resolve utlc_bool_parameterized_entry : wf_lang_db.
 
 
 
@@ -945,7 +967,9 @@ Lemma prod_parameterized_wf
   : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
       prod_parameterized.
 Proof. solve_parameterize_wrapper prod. Qed. 
-#[export] Hint Resolve prod_parameterized_wf : elab_pfs.
+#[local] Definition prod_parameterized_entry :=
+  lang_entry prod_parameterized_wf.
+#[export] Hint Resolve prod_parameterized_entry : wf_lang_db.
 
 Definition prod_ty_subst_def := Eval vm_compute in (eqn_rules
   type_subst_mode
@@ -980,7 +1004,10 @@ Derive prod_ty_subst
               prod_ty_subst_def prod_ty_subst)
   As prod_ty_subst_wf.
 Proof. auto_elab. Qed.
-#[export] Hint Resolve prod_ty_subst_wf : elab_pfs.
+#[local] Definition prod_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf prod_ty_subst_wf).
+#[export] Hint Resolve prod_ty_subst_entry : wf_lang_db.
+
 
 Definition target_multilanguage :=
   prod_ty_subst ++
@@ -1054,16 +1081,68 @@ Definition boundaries t : (t -> dyn) * (dyn -> t) :=
 *)
 (* so the way this is gonna work is that we're gonna have a typerec that has as its three cases the three things in the boundaries func *)
 
+(*
+ Ltac t' :=
+  match goal with
+  | [|- fresh _ _ ]=> compute_fresh
+  | [|- sublist _ _ ]=> apply (use_sublistb); vm_compute; reflexivity
+  | |- In _ _ => solve [solve_in | simpl; intuition fail]
+  | |- Model.wf_term _ _ _ => cbn [Model.wf_term core_model]
+  | |- wf_term ?l ?c ?e ?t =>
+        let c' := eval vm_compute in c in
+        let e' := eval vm_compute in e in
+        let t' := eval vm_compute in t in
+            change_no_check (wf_term l c' e' t');
+    tryif first [has_evar c'| has_evar e' | has_evar t']
+    then assumption || eapply wf_term_var || eapply wf_term_by'
+    else compute_noconv_term_wf
+  | [|-wf_args _ _ _ _] => simple apply wf_args_nil
+                           || simple eapply wf_args_cons2
+                           || simple eapply wf_args_cons
+  | [|-wf_subst _ _ _] => constructor
+  | |- wf_ctx (Model:= ?m) ?c =>
+    let c' := eval vm_compute in c in
+        change_no_check (wf_ctx (Model:= m) c');
+    tryif has_evar c'
+    then assumption || constructor
+    else solve_wf_ctx
+  | |- wf_sort ?l ?c ?t =>
+        let c' := eval vm_compute in c in
+        let t' := eval vm_compute in t in
+        change_no_check (wf_sort l c' t'); eapply wf_sort_by
+  | [|- wf_lang _] => solve[Tools.Resolution.prove_by_lang_db]
+  (*Don't use vm_compute here*)
+  | [|- _ = _] => compute; reflexivity
+  end.
+*)
+
 Ltac derive_elab_term :=
   pose proof todo_2;
   unshelve (repeat t); t'. (* repeat t then unshelve; then on the unshelved do t'. *)
+
+Derive bool_test
+  in (elab_term target_multilanguage
+                [("G", {{s #"env" #"ty_emp"}})]
+         {{e #"lambda" #"bool" (#"ret" #"T") }}
+         bool_test
+         {{s #"exp" #"ty_emp" "G"
+                (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"bool" #"ty_emp"))
+         }}
+     ) as bool_test_wf.
+Proof.
+  pose proof todo_2.
+  repeat t.
+  1: solve_in.
+  
+  1: solve [ solve_in | simpl; intuition fail ]. 
+
 
 Definition trec_star_case_unelab :=
   {{e
       #"pair"
       (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
       (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
-  }}. 
+  }}.
 Derive trec_star_case
   in ( elab_term target_multilanguage
          [("G", {{s #"env" #"ty_emp"}})]
@@ -1076,7 +1155,21 @@ Derive trec_star_case
              )
          }}
      ) as trec_star_case_wf.
-Proof. derive_elab_term. Qed.
+Proof.
+  pose proof todo_2.
+  repeat t. 
+  unshelve (repeat t).
+  Print Matches.t'. 
+  all: try apply default.
+  Print t'.
+  1: solve_in. 
+  1: solve [ solve_in | simpl; intuition fail ].
+  Print t'. 
+  18: t'. 
+  
+  all: try t'. 
+
+  derive_elab_term. Qed.
 
 Definition trec_bool_case_unelab :=
   {{e
