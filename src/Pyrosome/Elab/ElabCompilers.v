@@ -143,25 +143,6 @@ End Extension.
 End WithVar.
 
 (*TODO: review how much of the following code is necessary/ put in better places*)
-
-(*TODO: tactics might need fixing up below this line*)
- Ltac t :=
-   match goal with
-  | [|- fresh _ _ ]=> compute_fresh
-  | [|- sublist _ _ ]=> compute_sublist
-   (* TODO: if this works, use this pattern for other typeclass occurances *)
-   | [|- In _ _ ]=> apply named_list_lookup_err_in with (EqbS_ok := _)
-                    ; compute; reflexivity
-  | [|- len_eq _ _] => econstructor
-  | [|-elab_sort _ _ _ _] => eapply elab_sort_by
-  | [|-elab_ctx _ _ _] => econstructor
-  | [|-elab_args _ _ _ _ _ _] => eapply elab_args_cons_ex' || econstructor
-  | [|-elab_term _ _ _ _ _] => eapply elab_term_var || eapply elab_term_by'
-  | [|-wf_term _ _ _ _] => shelve
-  | [|-elab_rule _ _ _] => econstructor
-  | [|- _ = _] => compute; reflexivity
-  end.
-
   
  Ltac safe_eexists :=
    lazymatch goal with
