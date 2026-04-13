@@ -5,6 +5,13 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
+
+(* imports for compilers *)
+(* copied from LinearCPS.v *)
+From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
+Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
+(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
+
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches
   Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
@@ -15,19 +22,14 @@ Require Coq.derive.Derive.
 (* import the relevant language fragments *)
 From Pyrosome.Lang Require Import SimpleVSTLC. 
 From Pyrosome.Lang Require Import UTLC. 
-From Pyrosome.Lang Require Import BoolType. 
+From Pyrosome.Lang Require Import BoolType.
+From Pyrosome.Lang Require Import SimpleVProd. 
 
 (* imports for polymorphism *)
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 From Pyrosome.Lang Require Import PolyCompilers. (* for parameterizing existing languages*)
 From Pyrosome.Compilers Require Import Parameterizer.
 Import Pyrosome.Tools.UnElab. 
-
-(* imports for compilers *)
-(* copied from LinearCPS.v *)
-From Pyrosome Require Import Compilers.Compilers Elab.ElabCompilers.
-Import CompilerDefs.Notations. (* for `match # from high_level_multilanguage with` *)
-(* CompilerDefs, for preserving_compiler_ext, is already imported. Prolly through something else. *)
 
 Definition boundaries_def : lang :=
   {[l/subst [exp_subst++value_subst] 
@@ -129,6 +131,13 @@ Proof. auto_elab. Qed.
 #[export] Hint Resolve boundaries_entry : wf_lang_db.
 
 
+
+
+
+
+
+
+
 (* NOTE: the following is abstracted from the definition of stlc_parameterized in PolyCompilers.v *)
 Definition parameterize_wrapper (l : lang) : lang := 
     let ps := (elab_param "D" (l
@@ -155,15 +164,11 @@ Local Definition evp'_general (l : lang) : lang :=
   parameterize_lang "D" {{s #"ty_env"}}
     ps (exp_ret ++ exp_subst_base ++ value_subst).
 
-Ltac solve_parameterize_wrapper l := (* comments are copied over from PolyCompilers.v*)
+Ltac solve_parameterize_wrapper l := (* deleted comments in equivalent code from PolyCompilers.v*)
   change (exp_parameterized++val_parameterized) with (evp'_general l);
-  (*TODO: phrase exp_and_val_parameterized as parameterized in definition*)
-  (*TODO: need to strengthen parameterization pl w/ add'l language?
-    Currently cheating.
-   *)
   eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
-    [repeat t';  constructor (*TODO: include in t'*)
+    [repeat t';  constructor
     | now prove_from_known_elabs..
     | vm_compute; exact I].
 
@@ -177,34 +182,64 @@ Proof. solve_parameterize_wrapper typed_bool. Qed.
   lang_entry typed_bool_parameterized_wf.
 #[export] Hint Resolve typed_bool_parameterized_entry : wf_lang_db.
 
-Definition typed_bool_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "g" : #"ty_sub" "D" "D'"
-        ----------------------------------------------- ("ty_subst bool")
-        #"ty_subst" "g" #"bool" = 
-        #"bool"
-        : #"ty" "D"
-    ]
-]}.
+Definition typed_bool_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++ exp_ty_subst ++
+     val_param_substs ++ val_ty_subst ++
+     env_ty_subst ++ ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (typed_bool_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       typed_bool_parameterized)).
 Derive typed_bool_ty_subst
   SuchThat (elab_lang_ext (typed_bool_parameterized ++
-                                exp_param_substs ++
-                                exp_ty_subst ++
-                                val_param_substs ++
-                                val_ty_subst ++
-                                env_ty_subst ++
-                                ty_subst_lang ++
+                                exp_param_substs ++ exp_ty_subst ++
+                                val_param_substs ++ val_ty_subst ++
+                                env_ty_subst ++ ty_subst_lang ++
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
                                 )
               typed_bool_ty_subst_def typed_bool_ty_subst)
   As typed_bool_ty_subst_wf.
-Proof. auto_elab.
-Qed. 
+Proof. auto_elab. Qed. 
 #[local] Definition typed_bool_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf typed_bool_ty_subst_wf).
 #[export] Hint Resolve typed_bool_ty_subst_entry : wf_lang_db.
+
+Definition stlc_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++ exp_ty_subst ++
+     val_param_substs ++ val_ty_subst ++
+     env_ty_subst ++ ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (stlc_parameterized ++
+                            exp_param_substs ++ exp_ty_subst ++
+                            val_param_substs ++ val_ty_subst ++
+                            env_ty_subst ++ ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       stlc_parameterized)).
+Derive stlc_ty_subst
+  SuchThat (elab_lang_ext (stlc_parameterized ++
+                             exp_param_substs ++ exp_ty_subst ++
+                             val_param_substs ++ val_ty_subst ++
+                             env_ty_subst ++ ty_subst_lang ++
+                             exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              stlc_ty_subst_def stlc_ty_subst)
+  As stlc_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[local] Definition stlc_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf stlc_ty_subst_wf).
+#[export] Hint Resolve stlc_ty_subst_entry : wf_lang_db.
 
 Definition usubst_parameterized := parameterize_wrapper usubst. 
 
@@ -216,65 +251,37 @@ Proof. solve_parameterize_wrapper usubst. Qed.
   lang_entry usubst_parameterized_wf.
 #[export] Hint Resolve usubst_parameterized_entry : wf_lang_db.
 
-Definition usubst_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "g" : #"ty_sub" "D" "D'"
-        ----------------------------------------------- ("ty_subst star")
-        #"ty_subst" "g" #"*" = 
-        #"*"
-        : #"ty" "D"
-    ]
-]}.
+Definition usubst_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (usubst_parameterized ++
+                            exp_param_substs ++ exp_ty_subst ++
+                            val_param_substs ++ val_ty_subst ++
+                            env_ty_subst ++ ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       usubst_parameterized)).
 Derive usubst_ty_subst
   SuchThat (elab_lang_ext (usubst_parameterized ++
-                                exp_param_substs ++
-                                exp_ty_subst ++
-                                val_param_substs ++
-                                val_ty_subst ++
-                                env_ty_subst ++
-                                ty_subst_lang ++
+                                exp_param_substs ++ exp_ty_subst ++
+                                val_param_substs ++ val_ty_subst ++
+                                env_ty_subst ++ ty_subst_lang ++
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
-                                )
+              )
               usubst_ty_subst_def usubst_ty_subst)
   As usubst_ty_subst_wf.
-Proof. auto_elab.
-Qed. 
+Proof. auto_elab. Qed.
 #[local] Definition usubst_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf usubst_ty_subst_wf).
 #[export] Hint Resolve usubst_ty_subst_entry : wf_lang_db.
 
-Definition stlc_ty_subst_def : lang :=
-{[l
-    [:= "D" : #"ty_env",
-        "D'" : #"ty_env",
-        "d" : #"ty_sub" "D" "D'",
-        "A" : #"ty" "D'",
-        "B" : #"ty" "D'"
-        ----------------------------------------------- ("ty_subst-arrow dist")
-        #"ty_subst" "d" (#"->" "A" "B") = 
-        #"->" (#"ty_subst" "d" "A") (#"ty_subst" "d" "B")
-        : #"ty" "D"
-    ]
-]}.
-Derive stlc_ty_subst
-  SuchThat (elab_lang_ext (stlc_parameterized ++
-                                exp_param_substs ++
-                                exp_ty_subst ++
-                                val_param_substs ++
-                                val_ty_subst ++
-                                env_ty_subst ++
-                                ty_subst_lang ++
-                                exp_parameterized ++ val_parameterized ++ ty_env_lang
-                                )
-              stlc_ty_subst_def stlc_ty_subst)
-  As stlc_ty_subst_wf.
-Proof. auto_elab. (* QUESTION FOR DUSTIN: WHY? *)
-Qed. 
-#[local] Definition stlc_ty_subst_entry :=
-  lang_entry (elab_lang_implies_wf stlc_ty_subst_wf).
-#[export] Hint Resolve stlc_ty_subst_entry : wf_lang_db.
 
 Fixpoint ty_wkn_n n :=
   match n with
@@ -377,19 +384,16 @@ Derive type_casing
                   usubst_parameterized ++
                   poly ++ (* needed for #"All" *)
                   (* below are the things needed for polymorphic languages *)
-                  exp_param_substs ++
-                  exp_ty_subst ++
-                  val_param_substs ++
-                  val_ty_subst ++
-                  env_ty_subst ++
-                  ty_subst_lang ++
+                  exp_param_substs ++ exp_ty_subst ++
+                  val_param_substs ++ val_ty_subst ++
+                  env_ty_subst ++ ty_subst_lang ++
                   exp_parameterized ++ val_parameterized ++ ty_env_lang
               ) 
                 type_casing_def type_casing)
         As type_casing_wf.
-Proof.
-  auto_elab. (* 6:20 *)
-Qed. (* ~0:30 *)
+Proof. 
+  auto_elab.
+Qed. 
 #[local] Definition type_casing_entry :=
   lang_entry (elab_lang_implies_wf type_casing_wf).
 #[export] Hint Resolve type_casing_entry : wf_lang_db.
@@ -448,6 +452,51 @@ Qed.
   lang_entry utlc_parameterized_wf.
 #[export] Hint Resolve utlc_parameterized_entry : wf_lang_db.
 
+Definition utlc_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( usubst_ty_subst ++ (* add all dependencies with their ty_subst versions *)
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits (
+       utlc_parameterized ++
+                          usubst_ty_subst ++
+       usubst_parameterized ++
+       exp_param_substs ++
+       exp_ty_subst ++
+       val_param_substs ++
+       val_ty_subst ++
+       env_ty_subst ++
+       ty_subst_lang ++
+       exp_parameterized ++ val_parameterized ++ ty_env_lang
+     )
+     utlc_parameterized)).
+Derive utlc_ty_subst
+  SuchThat (elab_lang_ext (
+                utlc_parameterized ++
+                  usubst_ty_subst ++
+                  usubst_parameterized ++
+                  exp_param_substs ++
+                  exp_ty_subst ++
+                  val_param_substs ++
+                  val_ty_subst ++
+                  env_ty_subst ++
+                  ty_subst_lang ++
+                  exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              utlc_ty_subst_def utlc_ty_subst)
+  As utlc_ty_subst_wf.
+Proof. auto_elab. Qed. 
+#[local] Definition utlc_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf utlc_ty_subst_wf).
+#[export] Hint Resolve utlc_ty_subst_entry : wf_lang_db.
+
 Definition untyped_bool_parameterized := 
     let ps := (elab_param "D" (untyped_bool ++ usubst ++ exp_ret ++ exp_subst_base
                                  ++ value_subst)
@@ -486,41 +535,52 @@ Qed.
   lang_entry untyped_bool_parameterized_wf.
 #[export] Hint Resolve untyped_bool_parameterized_entry : wf_lang_db.
 
-Definition utlc_bool_parameterized := 
-    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps utlc_bool.
 
-Local Definition evp'_utlc_bool : lang := 
-    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
-               [("sub", Some 2);
-                ("ty", Some 0);
-                ("env", Some 0);
-                ("val",Some 2);
-                ("exp",Some 2)]) in
-  parameterize_lang "D" {{s #"ty_env"}}
-    ps (untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
-
-Lemma utlc_bool_parameterized_wf
-  : wf_lang_ext ((untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
-      utlc_bool_parameterized.
-Proof. 
-  replace (untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc_bool.
-  - eapply parameterize_lang_preserving_ext;
-    try typeclasses eauto;
-    [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
-    | vm_compute; exact I].
-  - cbv; reflexivity. 
-Qed. 
-#[local] Definition utlc_bool_parameterized_entry :=
-  lang_entry utlc_bool_parameterized_wf.
-#[export] Hint Resolve utlc_bool_parameterized_entry : wf_lang_db.
+Definition untyped_bool_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( usubst_ty_subst ++ (* add all dependencies with their ty_subst versions *)
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits (
+       untyped_bool_parameterized ++ (* I think I don't need ty_subst versions here because the operation here is sytnactic *)
+                                  (* but you do need the actual language here (for this example, untyped_bool_parameterized *)
+                                  usubst_ty_subst ++
+         usubst_parameterized ++
+       exp_param_substs ++
+       exp_ty_subst ++
+       val_param_substs ++
+       val_ty_subst ++
+       env_ty_subst ++
+       ty_subst_lang ++
+       exp_parameterized ++ val_parameterized ++ ty_env_lang
+     )
+     untyped_bool_parameterized)).
+Derive untyped_bool_ty_subst
+  SuchThat (elab_lang_ext (
+                untyped_bool_parameterized ++
+                  usubst_ty_subst ++
+                  usubst_parameterized ++
+                  exp_param_substs ++
+                  exp_ty_subst ++
+                  val_param_substs ++
+                  val_ty_subst ++
+                  env_ty_subst ++
+                  ty_subst_lang ++
+                  exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              untyped_bool_ty_subst_def untyped_bool_ty_subst)
+  As untyped_bool_ty_subst_wf.
+Proof. auto_elab. Qed. 
+#[local] Definition untyped_bool_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf untyped_bool_ty_subst_wf).
+#[export] Hint Resolve untyped_bool_ty_subst_entry : wf_lang_db.
 
 Definition boolhuh_parameterized := 
     let ps := (elab_param "D" (boolhuh ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
@@ -558,6 +618,104 @@ Qed.
   lang_entry boolhuh_parameterized_wf.
 #[export] Hint Resolve boolhuh_parameterized_entry : wf_lang_db.
 
+Definition boolhuh_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( (* add all dependencies with their ty_subst versions *)
+    untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits ( (* add previously depending parameterized languages (and the current one) *)
+       boolhuh_parameterized ++
+         untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+     boolhuh_parameterized)). (* change this line to the current parameterized langauge working on *)
+Derive boolhuh_ty_subst
+  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+                boolhuh_parameterized ++
+                untyped_bool_ty_subst ++
+                untyped_bool_parameterized ++
+                utlc_ty_subst ++
+                utlc_parameterized ++
+                usubst_ty_subst ++ 
+                usubst_parameterized ++
+                exp_param_substs ++
+                exp_ty_subst ++
+                val_param_substs ++
+                val_ty_subst ++
+                env_ty_subst ++
+                ty_subst_lang ++
+                exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              boolhuh_ty_subst_def boolhuh_ty_subst) (* remember to change this *)
+  As boolhuh_ty_subst_wf. (* and remember to change this *)
+Proof. 
+auto_elab. Qed. 
+#[local] Definition boolhuh_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf boolhuh_ty_subst_wf).
+#[export] Hint Resolve boolhuh_ty_subst_entry : wf_lang_db.
+
+(* NOTE: utlc_bool does not need a ty_subst lang because there are no new syntactic constructs in utlc_bool *)
+Definition utlc_bool_parameterized := 
+    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps utlc_bool.
+
+Local Definition evp'_utlc_bool : lang := 
+    let ps := (elab_param "D" (utlc_bool ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
+               [("sub", Some 2);
+                ("ty", Some 0);
+                ("env", Some 0);
+                ("val",Some 2);
+                ("exp",Some 2)]) in
+  parameterize_lang "D" {{s #"ty_env"}}
+    ps (untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst).
+
+Lemma utlc_bool_parameterized_wf
+  : wf_lang_ext ((untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      utlc_bool_parameterized.
+Proof. 
+  replace (untyped_bool_parameterized ++ utlc_parameterized ++ usubst_parameterized ++ exp_parameterized ++ val_parameterized) with evp'_utlc_bool.
+  - eapply parameterize_lang_preserving_ext;
+    try typeclasses eauto;
+    [repeat t';  constructor (*TODO: include in t'*)
+    | now prove_from_known_elabs..
+    | vm_compute; exact I].
+  - cbv; reflexivity. 
+Qed. 
+#[local] Definition utlc_bool_parameterized_entry :=
+  lang_entry utlc_bool_parameterized_wf.
+#[export] Hint Resolve utlc_bool_parameterized_entry : wf_lang_db.
+
+
+
 Definition simple_shared_fragment :=
   boolhuh ++ 
     utlc_bool ++ 
@@ -570,24 +728,27 @@ Definition simple_shared_fragment :=
     value_subst.
 
 Definition polymorphic_shared_fragment :=
-    boolhuh_parameterized ++ 
-    utlc_bool_parameterized ++ 
-    utlc_parameterized ++
-    (* stlc_ty_subst ++ (* ty_subst lang *)
-    typed_bool_ty_subst ++ (* ty_subst lang *)
-    usubst_ty_subst ++ (* ty_subst lang *) *)
-    untyped_bool_parameterized ++ 
-    usubst_parameterized ++ 
-    typed_bool_parameterized ++ 
-    stlc_parameterized ++
-    (* all polymorphic langs stuff *)
-    exp_param_substs ++
-    exp_ty_subst ++
-    val_param_substs ++
-    val_ty_subst ++
-    env_ty_subst ++
-    ty_subst_lang ++
-    exp_parameterized ++ val_parameterized ++ ty_env_lang.
+  boolhuh_ty_subst ++
+      boolhuh_parameterized ++
+      utlc_bool_parameterized ++
+      utlc_ty_subst ++
+      utlc_parameterized ++
+      untyped_bool_ty_subst ++
+      untyped_bool_parameterized ++
+      usubst_ty_subst ++
+      usubst_parameterized ++
+      typed_bool_ty_subst ++
+      typed_bool_parameterized ++
+      stlc_ty_subst ++
+      stlc_parameterized ++
+      (* all polymorphic langs stuff *) 
+      exp_param_substs ++
+      exp_ty_subst ++
+      val_param_substs ++
+      val_ty_subst ++
+      env_ty_subst ++
+      ty_subst_lang ++
+      exp_parameterized ++ val_parameterized ++ ty_env_lang.
 
 Local Notation compiler := (compiler string).
 
@@ -640,6 +801,10 @@ Qed.
   cmp_entry (elab_compiler_implies_preserving shared_fragment_compiler_preserving).
 #[export] Hint Resolve shared_fragment_entry : preserving_db.
 
+Definition source_multilanguage := 
+            boundaries ++ uif ++ simple_shared_fragment.
+Hint Unfold source_multilanguage : auto_elab. 
+
 Definition mif_parameterized := 
     let ps := (elab_param "D" (mif ++ untyped_bool ++ utlc ++ usubst ++ exp_ret ++ exp_subst_base ++ value_subst)
                [("sub", Some 2);
@@ -676,81 +841,258 @@ Qed.
   lang_entry mif_parameterized_wf.
 #[export] Hint Resolve mif_parameterized_entry : wf_lang_db.
 
-Definition source_multilanguage := 
-            boundaries ++ uif ++ simple_shared_fragment.
+Definition mif_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+  ( (* add all dependencies with their ty_subst versions *)
+    untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+  (hide_lang_implicits ( (* add previously depending parameterized languages (and the current one) *)
+       mif_parameterized ++
+         untyped_bool_ty_subst ++
+    untyped_bool_parameterized ++
+    utlc_ty_subst ++
+    utlc_parameterized ++
+    usubst_ty_subst ++ 
+    usubst_parameterized ++
+    exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+     mif_parameterized)). (* change this line to the current parameterized langauge working on *)
+Derive mif_ty_subst
+  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+                mif_parameterized ++
+                untyped_bool_ty_subst ++
+                untyped_bool_parameterized ++
+                utlc_ty_subst ++
+                utlc_parameterized ++
+                usubst_ty_subst ++ 
+                usubst_parameterized ++
+                exp_param_substs ++
+                exp_ty_subst ++
+                val_param_substs ++
+                val_ty_subst ++
+                env_ty_subst ++
+                ty_subst_lang ++
+                exp_parameterized ++ val_parameterized ++ ty_env_lang
+              )
+              mif_ty_subst_def mif_ty_subst) (* remember to change this *)
+  As mif_ty_subst_wf. (* and remember to change this *)
+Proof. 
+auto_elab. Qed. 
+#[local] Definition mif_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf mif_ty_subst_wf).
+#[export] Hint Resolve mif_ty_subst_entry : wf_lang_db.
+
+Definition prod_parameterized := parameterize_wrapper prod. 
+
+Lemma prod_parameterized_wf
+  : wf_lang_ext ((exp_parameterized ++ val_parameterized) ++ ty_env_lang)
+      prod_parameterized.
+Proof. solve_parameterize_wrapper prod. Qed. 
+#[local] Definition prod_parameterized_entry :=
+  lang_entry prod_parameterized_wf.
+#[export] Hint Resolve prod_parameterized_entry : wf_lang_db.
+
+Definition prod_ty_subst_def := Eval vm_compute in (eqn_rules
+  type_subst_mode
+    (exp_param_substs ++
+     exp_ty_subst ++
+     val_param_substs ++
+     val_ty_subst ++
+     env_ty_subst ++
+     ty_subst_lang ++
+     exp_parameterized ++ val_parameterized ++ ty_env_lang
+    )
+    (hide_lang_implicits (prod_parameterized ++
+                            exp_param_substs ++
+                            exp_ty_subst ++
+                            val_param_substs ++
+                            val_ty_subst ++
+                            env_ty_subst ++
+                            ty_subst_lang ++
+                            exp_parameterized ++ val_parameterized ++ ty_env_lang
+       )
+       prod_parameterized)).
+Derive prod_ty_subst
+  SuchThat (elab_lang_ext (prod_parameterized ++
+                                exp_param_substs ++
+                                exp_ty_subst ++
+                                val_param_substs ++
+                                val_ty_subst ++
+                                env_ty_subst ++
+                                ty_subst_lang ++
+                                exp_parameterized ++ val_parameterized ++ ty_env_lang
+                                )
+              prod_ty_subst_def prod_ty_subst)
+  As prod_ty_subst_wf.
+Proof. auto_elab. Qed.
+#[local] Definition prod_ty_subst_entry :=
+  lang_entry (elab_lang_implies_wf prod_ty_subst_wf).
+#[export] Hint Resolve prod_ty_subst_entry : wf_lang_db.
+
 
 Definition target_multilanguage :=
-            type_casing ++ mif_parameterized ++ polymorphic_shared_fragment.
+  prod_ty_subst ++ prod_parameterized ++
+    mif_ty_subst ++ mif_parameterized ++ 
+    type_casing ++
+    poly ++
+    polymorphic_shared_fragment.
+Hint Unfold target_multilanguage : auto_elab.
 
-(*
-Definition ttd_fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) : (t1 -> t2) -> dyn :=
-  fun input =>
-    ufun z =>
-    y (input (dtt t1 z))
-.
-Definition ttd t : t -> dyn :=
-  match t with
-  | dyn => fun x => x
-  | bool => fun x =>  if x then utrue else ufalse
-  | t1 -> t2 => fun t1 (x : t1 -> dyn) t2 (y : t2 -> dyn) => fun input =>
-    ufun z =>
-      y (input (dtt t1 z))
+Fixpoint wkn_n n :=
+  match n with
+  | 0 => {{e #"id"}}
+  | 1 => {{e #"wkn"}}
+  | S n' =>
+    {{e #"cmp" #"wkn" {wkn_n n'} }}
   end.
 
-Definition dtt t : dyn -> t :=
-  match t with
-  | dyn => fun x => x
-  | bool => fun x =>  mif x then true else false
-  | t1 -> t2 => fun t1 (x : dyn -> t1) t2 (y : dyn -> t2) => ufun input =>
-    fun z =>
-      y (input (ttd t1 z))
+Definition ovar n :=
+    {{e #"val_subst" {wkn_n n} #"hd" }}.  
+
+(* this is not used *)
+Fixpoint vwkn_n n e :=
+  match n with
+  | 0 => e
+  | S n' =>
+    {{e #"val_subst" #"wkn" {vwkn_n n' e} }}
   end.
 
-Definition boundaries t : (t -> dyn) * (dyn -> t) :=
-  match t with
-  | dyn => (fun x => x, fun x => x)
-  | bool => (fun x =>  if x then utrue else ufalse, fun x =>  mif x then true else false)
-  | t1 -> t2 => fun t1 (x : (t1 -> dyn) * (dyn -> t1)) t2 (y : (t2 -> dyn) * (dyn -> t2)) =>
-                  (
-                    fun input =>
-    ufun z =>
-      (fst y) (input ((snd x) z))
-                    ,
-                    ufun input =>
-    fun z =>
-      (snd y) (input ((fst x) z))
-                    )
-  end.
-*)
+(* it seems this is still needed *)
+Lemma target_multilanguage_wf : wf_lang target_multilanguage.
+Proof. prove_by_lang_db. Qed.
+#[local] Definition target_multilanguage_entry :=
+  lang_entry target_multilanguage_wf.
+#[export] Hint Resolve target_multilanguage_entry : wf_lang_db.
 
+Ltac derive_elab_term :=
+  pose proof target_multilanguage_wf;
+  unshelve (repeat t); t'. (* repeat t then unshelve; then on the unshelved do t'. *)
+
+Ltac solve_eq_sort_disj :=
+  right; compute_eq_compilation; sort_cong; repeat by_reduction.
+
+Ltac mega_derive_elab_term :=
+  pose proof target_multilanguage_wf;
+  (* NOTE: the by_reduction below seems to me redundant given the def of solve_eq_sort_disj, but it's necessary for trec_boundaries and for both elab_term goals in the compiler *)
+  (* the elab_term goals in the compiler were goals that I had to do out of order. Wonder if that has to do with it? *)
+  (* and now that I think about it, the way I was doing the elab_term goals in trec_boundaries was doing the last one first. Then the rest went through. So it does seem like an order thing... but this solves it? *)
+  unshelve (repeat t; solve_eq_sort_disj; by_reduction); t'.
+
+(* tactic to see if progress can be made on an elab_term goal *)
+Ltac quick_goal_match :=
+  lazymatch goal with
+  | |- elab_term _ _ (con ?s _) (con ?s _) _ =>
+      idtac "can go further"
+  | |- elab_term _ _ (con ?s _) (con ?s' _) _ =>
+      fail "cannot go further"
+  | |- _  => idtac "neither case"
+  end.
+
+Definition trec_star_case_unelab :=
+  {{e #"pair"
+      (#"ret" (#"lambda" #"*" (#"ret" #"hd")))
+      (#"ret" (#"lambda" #"*" (#"ret" #"hd"))) }}.
+Derive trec_star_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_star_case_unelab
+         trec_star_case
+         {{s #"exp" #"ty_emp" "G"
+             (#"prod" #"ty_emp"
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"*" #"ty_emp"))
+             )
+         }}
+     ) as trec_star_case_wf.
+Proof. derive_elab_term. Qed. 
+
+Definition trec_bool_case_unelab :=
+  {{e #"pair"
+      (#"ret" (#"lambda" #"bool" (#"if" (#"ret" #"hd") (#"ret" #"uT") (#"ret" #"uF"))))
+      (#"ret" (#"lambda" #"*" (#"mif" (#"ret" #"hd") (#"ret" #"T") (#"ret" #"F")))) }}. 
+Derive trec_bool_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_bool_case_unelab
+         trec_bool_case
+         {{s #"exp" #"ty_emp" "G"
+             (#"prod" #"ty_emp"
+                (#"->" #"ty_emp" (#"bool" #"ty_emp") (#"*" #"ty_emp"))
+                (#"->" #"ty_emp" (#"*" #"ty_emp") (#"bool" #"ty_emp"))
+             )
+         }}
+     ) as trec_bool_case_wf. 
+Proof. derive_elab_term. Qed.
+
+Derive trec_func_case_sort
+  in (elab_sort target_multilanguage
+        [("G", {{s #"env" #"ty_emp"}})]
+        {{s #"exp" #"ty_emp" "G"
+            (#"All" 
+               (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                  (#"All"
+                     (#"->" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+                        (#"prod" (#"->" (#"->" {ty_ovar 1} {ty_ovar 0}) #"*") (#"->" #"*" (#"->" {ty_ovar 1} {ty_ovar 0}))))))) }}
+        trec_func_case_sort
+     )
+    as trec_func_case_sort_wf.
+Proof. derive_elab_term. Qed.
+
+Definition trec_func_case_unelab :=
+  {{e #"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"ret" (#"Lam" (#"ret" (#"lambda" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0})) (#"pair" (#"ret" (#"lambda" (#"->" {ty_ovar 1} {ty_ovar 0}) (#"ret" (#"ulambda" (#"app" (#".1" (#"ret" {ovar 2})) (#"app" (#"ret" {ovar 1}) (#"app" (#".2" (#"ret" {ovar 3})) (#"ret" {ovar 0})))))))) (#"ret" (#"lambda" #"*" (#"ret" (#"lambda" {ty_ovar 1} (#"app" (#".2" (#"ret" {ovar 2})) (#"uapp" (#"ret" {ovar 1}) (#"app" (#".1" (#"ret" {ovar 3})) (#"ret" {ovar 0})))) ) ))))))))))) }}.
+Derive trec_func_case
+  in ( elab_term target_multilanguage
+         [("G", {{s #"env" #"ty_emp"}})]
+         trec_func_case_unelab
+         trec_func_case
+         trec_func_case_sort
+     ) as trec_func_case_wf.
+Proof. mega_derive_elab_term. Qed.
+
+Definition trec_boundaries_unelab :=
+  {{e #"typerec" "A" (#"prod" (#"->" {ty_ovar 0} #"*") (#"->" #"*" {ty_ovar 0}))
+      {trec_star_case_unelab}
+      {trec_bool_case_unelab}
+      {trec_func_case_unelab} }}.
+Derive trec_boundaries
+         in ( elab_term target_multilanguage
+                [("A", {{s #"ty" #"ty_emp"}}); ("G", {{s #"env" #"ty_emp"}})]
+                trec_boundaries_unelab
+                trec_boundaries
+                {{s #"exp" #"ty_emp" "G"
+                    (#"prod" #"ty_emp"
+                       (#"->" #"ty_emp" "A" (#"*" #"ty_emp"))
+                       (#"->" #"ty_emp" (#"*" #"ty_emp") "A")) }}
+            ) as trec_boundaries_wf.
+Proof. mega_derive_elab_term. Qed.
 
 (* simple to poly compiler *)
 Definition multilang_compiler_def : compiler :=
     match # from (boundaries ++ uif) with
     | {{e #"uif" "G" "c" "thn" "els"}} => {{e @"mif" @("D" := #"ty_emp") "c" "thn" "els" }}
-    | {{e #"dtt" "G" "A" "e"}} => {{e (* NOT convoy *)
-                                    #"typerec" "A" #"ty_hd"
-                                    "e" 
-                                    (#"mif" "e" (#"ret" #"T") (#"ret" #"F")) 
-                                    (#"ret" (#"lambda" "A" (#"dtt" "C" (#"uapp" (#"ret" (#"val_subst" #"wkn" "v")) (#"ttd" "B" (#"ret" #"hd")))))) 
-                                    }}
-    | {{e #"ttd" "G" "A" "e"}} => {{e (* NEED convoy *)
-                                      #"typerec" "A" #"ty_hd"
-                                      (#"lambda" "A" #"hd")
-                                      (#"lambda" "A" (#"if" #"hd" (#"ret" #"uT") (#"ret" #"uF")))
-                                      (#"lambda" "A" (#"ret" (#"ulambda" (#"ttd" "C" (#"app" (#"ret" (#"val_subst" #"wkn" #"hd")) (#"dtt" "B" (#"ret" #"hd")))))))
-                                    "e"
-                                    }}
-    (* order of implicit vars is order of context vars *)
-    (* neeed to parameterize exp sort and val sort and ty sort so need three rules for that *)
+    | {{e #"dtt" "G" "A" "e"}} => {{e @"app" @("D" := #"ty_emp")
+                                      (#".2" {trec_boundaries_unelab}) "e" }}
+    | {{e #"ttd" "G" "A" "e"}} => {{e @"app" @("D" := #"ty_emp")
+                                      (#".1" {trec_boundaries_unelab}) "e" }}
     end.
-
-
-(* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
-(* semantic properties are in SemanticsPreservingDefs.v *)
-
-(* Locate elab_preserving_compiler. 
-Locate auto_elab_compiler.  *)
 
 Derive multilang_compiler 
         SuchThat (elab_preserving_compiler 
@@ -761,10 +1103,26 @@ Derive multilang_compiler
                     (boundaries ++ uif)
                     ) 
         As multilang_compiler_preserving. 
-Proof. 
-Abort. 
+Proof.
+  setup_elab_compiler.
+  { derive_elab_term. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { by_reduction. }
+  { mega_derive_elab_term. }
+  2: mega_derive_elab_term. 
+  all: Automation.by_reduction.
+  Unshelve. all: t'.
+Qed. 
 
 
+
+
+
+(* in case needed, defined in Tools.Matches, Elab.ElabCompilers *)
+(* semantic properties are in SemanticsPreservingDefs.v *)
 
 
 
@@ -787,6 +1145,10 @@ Qed.
 Hint Resolve polymorphic_shared_fragment_identity_compiler_preserving : auto_elab.
 *)
 
+
+
+
+(* 
 Definition boundaries_parameterized_def : lang :=
   {[l
     [:| "D" : #"ty_env",
@@ -930,9 +1292,7 @@ Derive boundaries_parameterized  (* need polymorphic versions of all these *)
         As boundaries_parameterized_wf.
 Proof. Abort. 
 (* #[export] Hint Resolve boundaries_parameterized_wf : elab_pfs. *)
-
-
-
+*)
 
 
 
@@ -958,6 +1318,8 @@ Proof. unfold low_level_multilanguage. unfold high_level_multilanguage.
         end. 
 Admitted. 
 #[export] Hint Resolve h2l_preserving : elab_pfs. *)
+
+
 
 (* accompanying story: boundaries aren't really necessary to do multilanguages
 because they can be expressed in terms of more primitive features, but we can do mif *)
