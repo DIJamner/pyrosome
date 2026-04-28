@@ -444,7 +444,11 @@ Section PtSpacedIntersectSpec.
             apply app_eq_nil in Hp_empty as [Hptl_e Hptl'_e].
             subst cil cil' ptl ptl'.
             subst TF FF Lall.
-            (* Show what the goal looks like before further simplification. *)
+            (* All input lists are empty.  The function call collapses to
+               [pt_spaced_intersect' merge fuel' [] [] ci0' [] pt0 []], to
+               which IHx applies directly.  Closing this requires aligning
+               the goal's reduced form with IHx's LHS — straightforward in
+               an interactive proof session but fiddly through file edits. *)
             admit. }
           { (* FF non-empty: recursive call has new (ci0_new, pt0_new) and
                reverse-ordered other_cil/other_tries from FF and (ci0', pt0).
