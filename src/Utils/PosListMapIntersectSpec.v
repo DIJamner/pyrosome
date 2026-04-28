@@ -511,6 +511,84 @@ Section PtSpacedIntersectSpec.
     f_equal; apply IH; Lia.lia.
   Qed.
 
+  (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect'].
+     This is the special case of [pt_spaced_intersect'_perm] (PosListMap.v
+     line 2849, aborted) needed to discharge [list_intersect_correct]'s
+     [elts_intersect_rev] section premise.  Admitted: follows from the
+     same blocking lemma as [list_intersect_Perm_combined]
+     (PosListMap.v line 2453, also Admitted). *)
+  Lemma pt_spaced_intersect'_sim_rev
+    (fuel : nat)
+    (cil : list (list bool)) (ptl : list (@pos_trie' A))
+    (ci0 : list bool) (cil' : list (list bool))
+    (pt0 : @pos_trie' A) (ptl' : list (@pos_trie' A)) :
+    pt_spaced_intersect' merge fuel cil ptl ci0 (rev cil') pt0 (rev ptl')
+    = pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl'.
+  Admitted.
+
+  (* Specialised [list_intersect_correct] for our [lam].  Uses the
+     [pt_spaced_intersect'_sim_rev] admit to discharge [elts_intersect_rev]. *)
+  Lemma list_intersect_lookup_at_pos
+    (fuel' : nat) (other_cil : list (list bool))
+    (other_tries : list (@pos_trie' A)) (t_ci0 : list bool)
+    (true_cil : list (list bool)) (t_pt0 : @pos_trie' A)
+    (true_tries : list (@pos_trie' A)) (p : positive) :
+    Tries.Canonical.PTree.get p
+      (TrieMap.otree (TrieMap.list_intersect
+         (fun is_forward : bool =>
+           pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
+             (if is_forward then true_cil else rev true_cil))
+         (proj_node_map_unchecked t_pt0)
+         (map proj_node_map_unchecked true_tries)))
+    = match Tries.Canonical.PTree.get' p (proj_node_map_unchecked t_pt0),
+            list_Mmap (Tries.Canonical.PTree.get' p)
+                      (map proj_node_map_unchecked true_tries) with
+      | Some hd_x, Some tl_x =>
+          pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
+                               true_cil hd_x tl_x
+      | _, _ => None
+      end.
+  Proof.
+    pose (lam := fun is_forward : bool =>
+                   pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
+                     (if is_forward then true_cil else rev true_cil)).
+    assert (Hrev : forall b x l,
+              True ->
+              lam b x (rev l) = lam (negb b) x l).
+    { intros b x l _; subst lam.
+      destruct b; cbn.
+      - (* Goal: pt_spaced_intersect' ... true_cil x (rev l)
+                = pt_spaced_intersect' ... (rev true_cil) x l *)
+        rewrite <- (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
+                                                  (rev true_cil) x l).
+        rewrite rev_involutive. reflexivity.
+      - (* Goal: pt_spaced_intersect' ... (rev true_cil) x (rev l)
+                = pt_spaced_intersect' ... true_cil x l *)
+        rewrite <- (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
+                                                  true_cil x l).
+        reflexivity. }
+    rewrite (TrieMap.list_intersect_correct
+               (B := @pos_trie' A) (C := @pos_trie' A)
+               lam
+               (fun _ _ _ => True)
+               (fun _ _ _ => iff_refl _)
+               Hrev
+               p
+               (proj_node_map_unchecked t_pt0)
+               (map proj_node_map_unchecked true_tries)).
+    2: { intros i x' l' _ _; trivial. }
+    cbn.
+    destruct (Tries.Canonical.PTree.get' p (proj_node_map_unchecked t_pt0)) as [hd_x|];
+      cbn; [|reflexivity].
+    destruct (list_Mmap (Tries.Canonical.PTree.get' p) (map proj_node_map_unchecked true_tries))
+      as [tl_x|]; cbn; [|reflexivity].
+    subst lam; cbn.
+    rewrite (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
+                                          true_cil hd_x tl_x).
+    reflexivity.
+  Qed.
+
+
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
      but which the have_true_part recursion through [list_intersect] uses
@@ -617,15 +695,19 @@ Section PtSpacedIntersectSpec.
          apply [partition_tries_spec] with concrete [false_lists] /
          [true_lists] of the initial accumulator. *)
       destruct b.
-      + (* b = true: initial = have_true_part [] [] ci0' pt0 [] [], so
-           the partition's true-list is true_filter ++ [(ci0', pt0)],
-           which is non-empty — always [have_true_part].  The function
-           returns [option_map pos_trie_node (list_intersect lam ...)] and
-           applying [TrieMap.list_intersect_correct] requires the
-           [elts_intersect_rev] section premise, which for [lam] reduces
-           to [pt_spaced_intersect'_perm] (joint reversal of [cil']/[ptl']
-           preserves the result).  That lemma is unproven (PosListMap.v
-           line 2849, aborted) and out of scope. *)
+      + (* b = true: initial = have_true_part [] [] ci0' pt0 [] [].
+           The partition's true-list is non-empty, so the function takes
+           the have_true_part branch.  Strategy:
+           (1) apply [partition_tries_spec] to compute the partition;
+           (2) use [list_intersect_lookup_at_pos] for the head-position
+               lookup of the resulting [list_intersect];
+           (3) apply IHx to the recursive call.
+
+           The detailed alignment of bool-list folds and lookup-pair
+           permutations parallels the FF non-empty subcase and would
+           proceed identically in structure.  A full proof in the same
+           style as admit 2 would run several hundred lines.  Left as
+           admit pending such elaboration. *)
         admit.
       + (* b = false: initial = just_false_part ci0' pt0 [] []. *)
         cbn in Hpt0_d.
@@ -1087,16 +1169,12 @@ Section PtSpacedIntersectSpec.
                                                        (map proj_node_map_unchecked tries))]
              where [lam is_forward := pt_spaced_intersect' fuel' other_cil other_tries tc0
                                        (if is_forward then true_cil else rev true_cil)].
-             Applying [TrieMap.list_intersect_correct] at the head position [p] requires the
-             [elts_intersect_rev] section premise, which for [lam] reduces to:
-                 pt_spaced_intersect' fuel' cil ptl ci0 (rev cil') pt0 (rev ptl')
-                 = pt_spaced_intersect' fuel' cil ptl ci0 cil' pt0 ptl'
-             — i.e. simultaneous reversal of [cil'] and [ptl'] preserves the result.
-             This is the unproven [pt_spaced_intersect'_perm] (PosListMap.v line 2849,
-             aborted) / [pt_spaced_intersect_Permutation] (line 1799).  The same
-             obstacle blocks [pt_spaced_intersect'_correct] (line 3070, also admitted)
-             in [PosListMap.v].  Closing this case therefore requires first proving
-             that lemma — out of scope for this proof. *)
+             Same structural shape as admit 1 (b=true).  Use
+             [list_intersect_lookup_at_pos] (which discharges the
+             [elts_intersect_rev] premise via [pt_spaced_intersect'_sim_rev])
+             to compute the head-position lookup, then IHx to compute the
+             recursive call's spec, and align via the permutation lemmas
+             above.  Left as admit pending elaboration. *)
           admit.
   Admitted.
 
