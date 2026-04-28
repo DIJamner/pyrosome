@@ -437,9 +437,14 @@ Section PtSpacedIntersectSpec.
             { apply length_zero_iff_nil.
               rewrite length_app, <- Hcil_ptl_len, <- Hcil'_ptl'_len,
                 <- length_app, Hcc_empty. reflexivity. }
-            (* With cil++cil' = [] and ptl++ptl' = [], the partition's
-               recursive call is at empty extra-trie lists, and IHx
-               applies trivially. *)
+            (* With cil++cil' = [] and ptl++ptl' = [], we substitute and the
+               partition_result_of_lists collapses to just_false_part with
+               (ci0', pt0) as the new head and empty other_cil/other_tries. *)
+            apply app_eq_nil in Hcc_empty as [Hcil_e Hcil'_e].
+            apply app_eq_nil in Hp_empty as [Hptl_e Hptl'_e].
+            subst cil cil' ptl ptl'.
+            subst TF FF Lall.
+            (* Show what the goal looks like before further simplification. *)
             admit. }
           { (* FF non-empty: recursive call has new (ci0_new, pt0_new) and
                reverse-ordered other_cil/other_tries from FF and (ci0', pt0).
