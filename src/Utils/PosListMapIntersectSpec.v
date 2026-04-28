@@ -135,6 +135,29 @@ Section PtSpacedIntersectSpec.
     reflexivity.
   Qed.
 
+  (* Helper: [spaced_get] with a [false] head bit drops the corresponding
+     position from the lookup key. *)
+  Lemma spaced_get_cons_false (x : list positive) (p : positive)
+    (bools : list bool) (trie : @pos_trie A) :
+    spaced_get (p :: x) (false :: bools, trie) = spaced_get x (bools, trie).
+  Proof.
+    unfold spaced_get; cbn [fst snd combine filter map]. reflexivity.
+  Qed.
+
+  (* Helper: when [hd false c = false], [lookup_one' (p :: x) (pt, c)]
+     drops [p] and recurses on [tl c].  Covers both [c = []] and [c = false :: _]. *)
+  Lemma lookup_one'_cons_hd_false (x : list positive) (p : positive)
+    (pt : @pos_trie' A) (c : list bool) :
+    hd false c = false ->
+    lookup_one' (p :: x) (pt, c) = lookup_one' x (pt, tl c).
+  Proof.
+    destruct c as [|h c_tl]; intros Hhd.
+    - unfold lookup_one'; cbn [snd tl].
+      rewrite combine_nil. cbn [filter map].
+      destruct x; cbn [combine filter map]; reflexivity.
+    - cbn [hd] in Hhd. subst h. apply lookup_one'_cons_false.
+  Qed.
+
   (* Helper: when the bool head is [true], the lookup descends one level
      into [pt] at position [p] before continuing on [x]. *)
   Lemma lookup_one'_cons_true (x : list positive) (p : positive)
@@ -193,6 +216,100 @@ Section PtSpacedIntersectSpec.
     pose proof (Forall_inv Hlen) as Hc_len.
     destruct c as [|b r]; cbn in Hc_len; [discriminate|].
     destruct b; cbn in HfT, HfF; discriminate.
+  Qed.
+
+  (* Helper: when [filter f l] is empty, [filter (negb ∘ f) l = l]. *)
+  Lemma filter_complement_nil_id {T} (f : T -> bool) (l : list T) :
+    filter f l = [] ->
+    filter (fun x => negb (f x)) l = l.
+  Proof.
+    induction l as [|a l IH]; cbn; auto.
+    destruct (f a) eqn:Hfa; cbn; intro Heq; [discriminate|].
+    f_equal. apply IH; assumption.
+  Qed.
+
+  (* Helper: [combine] of a list-of-pairs split is the list itself when
+     the components have equal length. *)
+  Lemma combine_split_id {T1 T2} (l : list (T1 * T2)) :
+    combine (map fst l) (map snd l) = l.
+  Proof.
+    induction l as [|[a b] l IH]; cbn; auto. f_equal; assumption.
+  Qed.
+
+  (* Helper: [map fst (combine A B) = A] and [map snd (combine A B) = B]
+     when [A] and [B] have equal length. *)
+  Lemma map_fst_combine {T1 T2} (la : list T1) (lb : list T2) :
+    length la = length lb -> map fst (combine la lb) = la.
+  Proof.
+    revert lb; induction la as [|a la IH]; intros [|b lb] Hlen; cbn in *;
+      try discriminate; try reflexivity.
+    f_equal. apply IH; Lia.lia.
+  Qed.
+
+  Lemma map_snd_combine {T1 T2} (la : list T1) (lb : list T2) :
+    length la = length lb -> map snd (combine la lb) = lb.
+  Proof.
+    revert lb; induction la as [|a la IH]; intros [|b lb] Hlen; cbn in *;
+      try discriminate; try reflexivity.
+    f_equal. apply IH; Lia.lia.
+  Qed.
+
+  (* Helper: [combine (map snd L) (map fst L)] swaps each pair. *)
+  Lemma combine_swap_proj {T1 T2} (L : list (T1 * T2)) :
+    combine (map snd L) (map fst L) = map (fun p => (snd p, fst p)) L.
+  Proof.
+    induction L as [|[a b] L IH]; cbn; auto. f_equal; assumption.
+  Qed.
+
+  (* Helper: [map (fun p => (snd p, fst p)) (combine A B)] = [combine B A]
+     when [A] and [B] have the same length. *)
+  Lemma map_swap_combine {T1 T2} (la : list T1) (lb : list T2) :
+    length la = length lb ->
+    map (fun p => (snd p, fst p)) (combine la lb) = combine lb la.
+  Proof.
+    revert lb; induction la as [|a la IH]; intros [|b lb] Hlen; cbn in *;
+      try discriminate; try reflexivity.
+    f_equal. apply IH; Lia.lia.
+  Qed.
+
+  (* Helper: [map (fun p => (tl (fst p), snd p)) (combine A B) = combine (map tl A) B]
+     when [A] and [B] have the same length. *)
+  Lemma map_tl_fst_combine {T} (la : list (list bool)) (lb : list T) :
+    length la = length lb ->
+    map (fun p => (tl (fst p), snd p)) (combine la lb)
+    = combine (map (@tl _) la) lb.
+  Proof.
+    revert lb; induction la as [|a la IH]; intros [|b lb] Hlen; cbn in *;
+      try discriminate; try reflexivity.
+    f_equal. apply IH; Lia.lia.
+  Qed.
+
+  (* Helper: in the all-heads-false case, [fold_left (map2 orb (combine ...))]
+     leaves the [acc]'s head untouched and recurses on the tails. *)
+  Lemma fold_orb_combine_all_false_head
+    (L : list (list bool)) (b : bool) (t : list bool) :
+    Forall (fun l => length l = S (length t) /\ hd false l = false) L ->
+    fold_left (fun acc (l : list bool) => map2 orb (combine l acc)) L (b :: t)
+    = b :: fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                     (map (@tl _) L) t.
+  Proof.
+    revert b t; induction L as [|l L IH]; intros b t Hall; cbn; [reflexivity|].
+    pose proof (Forall_inv Hall) as [Hl_len Hl_hd].
+    pose proof (Forall_inv_tail Hall) as Hall'.
+    destruct l as [|h l_tl]; cbn [length] in Hl_len; [discriminate|].
+    cbn [hd] in Hl_hd. subst h.
+    injection Hl_len as Hl_tl_len.
+    change (combine (false :: l_tl) (b :: t)) with ((false, b) :: combine l_tl t).
+    change (map2 orb ((false, b) :: combine l_tl t))
+      with (b :: map2 orb (combine l_tl t)).
+    rewrite IH.
+    2: { eapply Forall_impl; [|exact Hall'].
+         intros l' [Hl'_len Hl'_hd]; split; [|exact Hl'_hd].
+         (* length (map2 orb (combine l_tl t)) = length t *)
+         unfold map2.
+         rewrite length_map, length_combine, Hl_tl_len, PeanoNat.Nat.min_id.
+         exact Hl'_len. }
+    cbn [tl]. reflexivity.
   Qed.
 
   (* Permutation invariance of [fold_left merge] under comm/assoc. *)
@@ -502,8 +619,13 @@ Section PtSpacedIntersectSpec.
       destruct b.
       + (* b = true: initial = have_true_part [] [] ci0' pt0 [] [], so
            the partition's true-list is true_filter ++ [(ci0', pt0)],
-           which is non-empty — always [have_true_part], requiring
-           [list_intersect_correct]. *)
+           which is non-empty — always [have_true_part].  The function
+           returns [option_map pos_trie_node (list_intersect lam ...)] and
+           applying [TrieMap.list_intersect_correct] requires the
+           [elts_intersect_rev] section premise, which for [lam] reduces
+           to [pt_spaced_intersect'_perm] (joint reversal of [cil']/[ptl']
+           preserves the result).  That lemma is unproven (PosListMap.v
+           line 2849, aborted) and out of scope. *)
         admit.
       + (* b = false: initial = just_false_part ci0' pt0 [] []. *)
         cbn in Hpt0_d.
@@ -594,11 +716,371 @@ Section PtSpacedIntersectSpec.
                IHx applies; the bool-list and lookup-pair sides each need
                permutation reasoning to align with IHx's per-call form,
                using fold_left_orb_combine_perm_full and
-               list_Mmap_lookup_fold_perm (defined above).
-               TODO: alignment of let-bindings with the destruct of
-               [split (FF_tail ++ [(ci0', pt0)])] still requires more care
-               -- left as admit. *)
-            admit. }
+               list_Mmap_lookup_fold_perm. *)
+
+            (* Step 1: derive that all entries of [cil ++ cil'] start
+               with [false], by extracting [filter (hd=true) Lall = []]
+               from HTF. *)
+            unfold TF in HTF.
+            apply (f_equal (@rev _)) in HTF.
+            rewrite rev_involutive in HTF; cbn [rev] in HTF.
+            apply map_eq_nil in HTF.
+            (* HTF : filter (fun p => hd false (fst p)) Lall = [] *)
+
+            (* Step 2: simplify HFF.  Since [filter (hd=true) Lall = []],
+               [filter (negb (hd=true)) Lall = Lall]. *)
+            pose proof (filter_complement_nil_id _ _ HTF) as Hfilter_F.
+            unfold FF in HFF.
+            rewrite Hfilter_F in HFF.
+            apply (f_equal (@rev _)) in HFF.
+            rewrite rev_involutive in HFF.
+            (* HFF : map (fun p => (tl (fst p), snd p)) Lall =
+                       rev ((fc0', fp0') :: FF_tail) *)
+            unfold Lall in HFF.
+            rewrite map_tl_fst_combine in HFF.
+            2: { rewrite ?length_app, <- Hcil_ptl_len, <- Hcil'_ptl'_len.
+                 reflexivity. }
+            (* HFF : combine (map tl (cil ++ cil')) (ptl ++ ptl') =
+                       rev ((fc0', fp0') :: FF_tail) *)
+
+            (* Step 3: build [Forall (length = S length x' /\ hd false = false)]
+               for [cil ++ cil']. *)
+            assert (Hall_false : Forall
+                       (fun l : list bool => length l = S (length x')
+                                             /\ hd false l = false)
+                       (cil ++ cil')).
+            { (* All entries have length S(length x') (rectangular).
+                 Head false comes from HTF. *)
+              assert (Hcc_len : Forall (fun l => length l = S (length x'))
+                                  (cil ++ cil')).
+              { apply Forall_app; split; assumption. }
+              assert (Hcc_hd : Forall (fun l => hd false l = false) (cil ++ cil')).
+              { (* HTF says no entry of Lall has hd=true.  Lall has all of
+                   cil++cil' as fst-projections (with corresponding ptl++ptl'). *)
+                assert (Hlen_full : length (cil ++ cil') = length (ptl ++ ptl')).
+                { rewrite ?length_app; congruence. }
+                unfold Lall in HTF.
+                revert HTF Hlen_full.
+                generalize (ptl ++ ptl') as P. generalize (cil ++ cil') as C.
+                clear; intros C P HTF Hlen.
+                revert P Hlen HTF.
+                induction C as [|c C IH]; intros [|p P] Hlen HTF.
+                - constructor.
+                - cbn in Hlen; discriminate.
+                - cbn in Hlen; discriminate.
+                - destruct c as [|h c].
+                  + (* c = []: hd false [] = false trivially *)
+                    cbn in HTF.
+                    constructor; [reflexivity|].
+                    apply (IH P); [cbn in Hlen; Lia.lia | exact HTF].
+                  + destruct h.
+                    * (* h = true: HTF has (true :: c, p) :: ... = [] *)
+                      cbn in HTF; discriminate.
+                    * (* h = false *)
+                      cbn in HTF.
+                      constructor; [reflexivity|].
+                      apply (IH P); [cbn in Hlen; Lia.lia | exact HTF]. }
+              clear -Hcc_len Hcc_hd.
+              induction Hcc_len; cbn; auto.
+              inversion Hcc_hd; subst.
+              constructor; [split; assumption|]. apply IHHcc_len; assumption. }
+
+            clear Hfilter_F.
+            (* Step 4: compute the bool-list fold via [fold_orb_combine_all_false_head]. *)
+            rewrite <- Hci0_len in Hall_false.
+            rewrite (fold_orb_combine_all_false_head _ _ _ Hall_false).
+            rewrite Hci0_len in Hall_false.
+            (* Now the goal's Bools is [false :: fold (map tl (cil++cil')) ci0']. *)
+
+            (* Step 5: reduce the [partition_result_of_lists] in the trie. *)
+            (* combine [ci0'] [pt0] = [(ci0', pt0)] *)
+            cbn [combine] in *.
+            (* ((fc0', fp0') :: FF_tail) ++ [(ci0', pt0)]
+               = (fc0', fp0') :: (FF_tail ++ [(ci0', pt0)]) *)
+            rewrite <- app_comm_cons.
+            (* Reduce partition_result_of_lists *)
+            cbn [partition_result_of_lists].
+            (* Replace split with (map fst, map snd) and destructure the let. *)
+            assert (Hsplit_eq : split (FF_tail ++ [(ci0', pt0)])
+                                = (map fst (FF_tail ++ [(ci0', pt0)]),
+                                   map snd (FF_tail ++ [(ci0', pt0)])))
+              by apply TrieMap.split_map.
+            rewrite Hsplit_eq.
+            clear Hsplit_eq.
+            cbn [split].
+            (* The match has been resolved to:
+               just_false_part fc0' fp0'
+                 (map fst (FF_tail ++ [(ci0', pt0)]))
+                 (map snd (FF_tail ++ [(ci0', pt0)])) *)
+
+            (* Set [f_c, f_p] for clarity. *)
+            set (f_c := map fst (FF_tail ++ [(ci0', pt0)])).
+            set (f_p := map snd (FF_tail ++ [(ci0', pt0)])).
+
+            (* Step 6: derive preconditions for IHx. *)
+            (* Permutation: (fc0', fp0') :: FF_tail ≡perm≡ combine (map tl (cil++cil')) (ptl++ptl') *)
+            assert (Hperm_FF :
+                      Permutation ((fc0', fp0') :: FF_tail)
+                                  (combine (map (@tl _) (cil ++ cil'))
+                                           (ptl ++ ptl'))).
+            { rewrite HFF. apply Permutation_rev. }
+
+            assert (Hcc_lentl : length (map (@tl _) (cil ++ cil'))
+                                = length (ptl ++ ptl')).
+            { rewrite length_map, ?length_app. congruence. }
+
+            (* Length facts about cil++cil' tails *)
+            assert (Hmap_tl_len :
+                      Forall (fun l => length l = length x')
+                             (map (@tl _) (cil ++ cil'))).
+            { eapply Forall_map.
+              eapply Forall_impl; [|exact Hall_false].
+              intros l [Hl_len Hl_hd]. cbn.
+              destruct l as [|h ltl]; cbn in *; [discriminate|].
+              injection Hl_len as ->. reflexivity. }
+
+            (* Forall2 depth fact about (map tl (cil++cil'), ptl++ptl') *)
+            assert (Hmap_tl_d :
+                      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt))
+                              (map (@tl _) (cil ++ cil'))
+                              (ptl ++ ptl')).
+            { (* From Hcil_ptl_d, Hcil'_ptl'_d and Hall_false (heads=false). *)
+              assert (Hcc_d : Forall2 (fun ci pt =>
+                                Is_true (has_depth' (length (filter id ci)) pt))
+                                (cil ++ cil') (ptl ++ ptl')).
+              { clear -Hcil_ptl_d Hcil'_ptl'_d.
+                induction Hcil_ptl_d; cbn; auto. }
+              clear -Hcc_d Hall_false.
+              induction Hcc_d as [|c p C P Hcp Hrest IH]; cbn; auto.
+              pose proof (Forall_inv Hall_false) as [Hl_len Hl_hd].
+              pose proof (Forall_inv_tail Hall_false) as Hall_false'.
+              destruct c as [|h c]; cbn in *; [discriminate|].
+              subst h.
+              constructor; [exact Hcp|].
+              apply IH. exact Hall_false'. }
+
+            (* Length: f_c length = length f_p *)
+            assert (Hf_cp_len : length f_c = length f_p).
+            { unfold f_c, f_p. rewrite ?length_map. reflexivity. }
+
+            (* (fc0', fp0') :: FF_tail has length len(map tl (cil++cil')). *)
+            assert (Hperm_len_eq : length ((fc0', fp0') :: FF_tail)
+                                   = length (map (@tl _) (cil ++ cil'))).
+            { erewrite Permutation_length by exact Hperm_FF.
+              rewrite length_combine, Hcc_lentl, PeanoNat.Nat.min_id.
+              reflexivity. }
+
+            (* All elements of (fc0', fp0') :: FF_tail have appropriate length/depth. *)
+            assert (Hperm_lens : Forall (fun pq => length (fst pq) = length x')
+                                        ((fc0', fp0') :: FF_tail)).
+            { (* By Permutation: same property holds. *)
+              eapply Permutation_Forall;
+                [apply Permutation_sym; exact Hperm_FF|].
+              clear -Hmap_tl_len Hcc_lentl.
+              revert Hcc_lentl Hmap_tl_len.
+              generalize (ptl ++ ptl') as P.
+              generalize (map (@tl _) (cil ++ cil')) as C.
+              intros C P Hlen Hall.
+              revert P Hlen.
+              induction Hall as [|c C Hc Hrest IH]; intros [|p P] Hlen;
+                cbn in *; try discriminate; constructor.
+              - cbn. exact Hc.
+              - apply IH; Lia.lia. }
+
+            assert (Hperm_dep : Forall2 (fun ci pt =>
+                       Is_true (has_depth' (length (filter id ci)) pt))
+                       (map fst ((fc0', fp0') :: FF_tail))
+                       (map snd ((fc0', fp0') :: FF_tail))).
+            { (* By Permutation: same Forall2 holds. *)
+              (* Convert Forall2 to Forall on combine, apply Permutation, convert back. *)
+              assert (HPair :
+                        Forall (fun pq => Is_true (has_depth' (length (filter id (fst pq))) (snd pq)))
+                          ((fc0', fp0') :: FF_tail)).
+              { eapply Permutation_Forall;
+                  [apply Permutation_sym; exact Hperm_FF|].
+                clear -Hmap_tl_d Hcc_lentl.
+                revert Hcc_lentl Hmap_tl_d.
+                generalize (ptl ++ ptl') as P.
+                generalize (map (@tl _) (cil ++ cil')) as C.
+                intros C P Hlen Hd.
+                induction Hd; cbn; auto. }
+              clear -HPair.
+              remember ((fc0', fp0') :: FF_tail) as L.
+              clear HeqL fc0' fp0' FF_tail.
+              induction HPair; cbn; auto. }
+
+            (* Permutation of (fc0' :: f_c) and (ci0' :: map tl (cil++cil')) *)
+            assert (Hperm_cil : Permutation (fc0' :: f_c)
+                                            (ci0' :: map (@tl _) (cil ++ cil'))).
+            { unfold f_c.
+              rewrite map_app; cbn [map fst].
+              (* fc0' :: (map fst FF_tail ++ [ci0']) *)
+              change (fc0' :: (map fst FF_tail ++ [ci0']))
+                with ((fc0' :: map fst FF_tail) ++ [ci0']).
+              (* fc0' :: map fst FF_tail = map fst ((fc0', fp0') :: FF_tail) *)
+              change (fc0' :: map fst FF_tail)
+                with (map fst ((fc0', fp0') :: FF_tail)).
+              etransitivity.
+              { apply Permutation_app_tail.
+                apply Permutation_map. exact Hperm_FF. }
+              (* map fst (combine A B) ≡ A when |A| = |B|. *)
+              rewrite map_fst_combine by exact Hcc_lentl.
+              (* Now: map tl (cil++cil') ++ [ci0'] vs ci0' :: map tl (cil++cil') *)
+              rewrite Permutation_app_comm; cbn. reflexivity. }
+
+            (* Permutation of (fp0', fc0') :: combine f_p f_c
+                                  vs (pt0, ci0') :: (combine ptl (map tl cil) ++ combine ptl' (map tl cil')) *)
+            assert (Hperm_lookup :
+                      Permutation
+                        ((fp0', fc0') :: combine f_p f_c)
+                        ((pt0, ci0')
+                           :: (combine ptl (map (@tl _) cil)
+                                ++ combine ptl' (map (@tl _) cil')))).
+            { unfold f_c, f_p.
+              rewrite ?map_app; cbn [map fst snd].
+              rewrite combine_app_eq by (rewrite ?length_map; reflexivity).
+              cbn [combine].
+              (* (fp0', fc0') :: (combine (map snd FF_tail) (map fst FF_tail) ++ [(pt0, ci0')]) *)
+              (* Rotate (pt0, ci0') to head via Permutation_app_comm + perm_skip. *)
+              change ((fp0', fc0')
+                       :: combine (map snd FF_tail) (map fst FF_tail) ++ [(pt0, ci0')])
+                with (((fp0', fc0')
+                         :: combine (map snd FF_tail) (map fst FF_tail))
+                        ++ [(pt0, ci0')]).
+              etransitivity; [apply Permutation_app_comm|]; cbn [app].
+              apply perm_skip.
+              (* (fp0', fc0') :: combine (map snd FF_tail) (map fst FF_tail)
+                 = combine (map snd ((fc0', fp0') :: FF_tail))
+                           (map fst ((fc0', fp0') :: FF_tail))
+                 = map swap ((fc0', fp0') :: FF_tail) *)
+              rewrite combine_swap_proj.
+              change ((fp0', fc0')
+                        :: map (fun p => (snd p, fst p)) FF_tail)
+                with (map (fun p : list bool * pos_trie' => (snd p, fst p))
+                          ((fc0', fp0') :: FF_tail)).
+              etransitivity.
+              { apply Permutation_map. exact Hperm_FF. }
+              rewrite map_swap_combine by exact Hcc_lentl.
+              (* combine (ptl++ptl') (map tl (cil++cil')) *)
+              rewrite map_app.
+              rewrite combine_app_eq by (rewrite length_map; congruence).
+              reflexivity. }
+
+            (* Step 7: reduce LHS [spaced_get] using head-false. *)
+            rewrite spaced_get_cons_false.
+
+            (* Step 8: reduce RHS using lookup_one'_cons_false. *)
+            rewrite lookup_one'_cons_false.
+
+            (* Now align RHS list_Mmap with IHx. *)
+            (* For each (pt, b::tl) ∈ combine ptl cil ++ combine ptl' cil',
+               lookup_one' (p::x') (pt, false::tl) = lookup_one' x' (pt, tl).
+               We push this through with a helper. *)
+            assert (Hrhs_eq :
+                      list_Mmap (lookup_one' (p :: x'))
+                        (combine ptl cil ++ combine ptl' cil')
+                      = list_Mmap (lookup_one' x')
+                          (combine ptl (map (@tl _) cil)
+                             ++ combine ptl' (map (@tl _) cil'))).
+            { (* Each ci in cil has head=false (from Hall_false). *)
+              assert (Hcil_hd : Forall (fun l => hd false l = false) cil).
+              { eapply Forall_impl with (P := fun l => length l = S (length x')
+                                                       /\ hd false l = false);
+                  [intuition|].
+                eapply Forall_app in Hall_false as [Hcc1 _]. exact Hcc1. }
+              assert (Hcil'_hd : Forall (fun l => hd false l = false) cil').
+              { eapply Forall_impl with (P := fun l => length l = S (length x')
+                                                       /\ hd false l = false);
+                  [intuition|].
+                eapply Forall_app in Hall_false as [_ Hcc2]. exact Hcc2. }
+              (* General helper: list_Mmap (lookup_one' (p::x')) (combine ptl cil)
+                 = list_Mmap (lookup_one' x') (combine ptl (map tl cil))
+                 when all entries of cil have head false. *)
+              assert (Hgeneric : forall (cil_ : list (list bool)) (ptl_ : list (@pos_trie' A)),
+                         length cil_ = length ptl_ ->
+                         Forall (fun l => hd false l = false) cil_ ->
+                         list_Mmap (lookup_one' (p :: x')) (combine ptl_ cil_)
+                         = list_Mmap (lookup_one' x')
+                             (combine ptl_ (map (@tl _) cil_))).
+              { clear.
+                intro cil_; induction cil_ as [|c cil_ IH];
+                  intros [|pt ptl_] Hlen Hhd;
+                  try (cbn in Hlen; discriminate);
+                  cbn [combine map]; [reflexivity..|].
+                pose proof (Forall_inv Hhd) as Hc_hd.
+                pose proof (Forall_inv_tail Hhd) as Hhd_tail.
+                cbn [list_Mmap].
+                rewrite (lookup_one'_cons_hd_false _ _ _ _ Hc_hd).
+                destruct (lookup_one' x' (pt, tl c)) as [v|]; [|reflexivity].
+                rewrite IH by (cbn in Hlen; Lia.lia || assumption).
+                reflexivity. }
+              rewrite ?list_Mmap_app.
+              rewrite (Hgeneric _ _ Hcil_ptl_len Hcil_hd).
+              rewrite (Hgeneric _ _ Hcil'_ptl'_len Hcil'_hd).
+              reflexivity. }
+            rewrite Hrhs_eq.
+
+            (* Step 9: apply IHx with parameters (fuel', x', fc0', fp0', f_c, f_p, [], []). *)
+            (* Length of fc0'. *)
+            assert (Hfc0'_len : length fc0' = length x').
+            { pose proof (Forall_inv Hperm_lens) as Hfc0'.
+              cbn [fst] in Hfc0'. exact Hfc0'. }
+
+            assert (Hf_c_len_x : Forall (fun l => length l = length x') f_c).
+            { unfold f_c; rewrite map_app; cbn [map].
+              apply Forall_app; split.
+              - eapply Forall_map.
+                eapply Forall_impl; [|exact (Forall_inv_tail Hperm_lens)].
+                intros pq Hpq; cbn [fst] in *. exact Hpq.
+              - constructor; [exact Hci0_len | constructor]. }
+
+            assert (Hfp0'_d :
+                      Is_true (has_depth' (length (filter id fc0')) fp0')).
+            { (* head pair of Hperm_dep. *)
+              clear -Hperm_dep.
+              cbn [map] in Hperm_dep. inversion Hperm_dep; subst.
+              assumption. }
+
+            assert (Hf_cp_d :
+                      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt))
+                              f_c f_p).
+            { unfold f_c, f_p; rewrite ?map_app; cbn [map].
+              apply Forall2_app.
+              - (* tail of Hperm_dep *)
+                cbn [map] in Hperm_dep.
+                inversion Hperm_dep as [|a b la lb Ha Htail]; subst.
+                exact Htail.
+              - constructor; [exact Hpt0_d | constructor]. }
+
+            specialize (IHx fuel' fc0' fp0' f_c f_p [] []
+                            Hfuel' Hfc0'_len Hf_c_len_x (Forall_nil _)
+                            Hf_cp_len eq_refl
+                            Hfp0'_d Hf_cp_d (Forall2_nil _)).
+            cbn [combine app] in IHx.
+            rewrite ?app_nil_r in IHx.
+
+            (* Step 10: align fold sides via Hperm_cil. *)
+            (* IHx's bool-list fold is [fold_left ... f_c fc0']. *)
+            (* Our LHS bool-list fold is [fold_left ... (map tl (cil++cil')) ci0']. *)
+            (* These are equal by [fold_left_orb_combine_perm_full] using Hperm_cil. *)
+            assert (Hfold_eq :
+                      fold_left (fun acc l => map2 orb (combine l acc))
+                                (map (@tl _) (cil ++ cil')) ci0'
+                      = fold_left (fun acc l => map2 orb (combine l acc))
+                                  f_c fc0').
+            { apply (fold_left_orb_combine_perm_full _ _ _ _).
+              - constructor; [reflexivity|].
+                eapply Forall_impl; [|exact Hmap_tl_len].
+                intros l Hl. rewrite Hl, Hci0_len. reflexivity.
+              - apply Permutation_sym. exact Hperm_cil. }
+            rewrite Hfold_eq.
+
+            (* Step 11: rewrite LHS using IHx *)
+            etransitivity; [exact IHx|].
+
+            (* Step 12: Apply Hperm_lookup to align. *)
+            apply (list_Mmap_lookup_fold_perm (lookup_one' x') _ _ _ _ Hperm_lookup).
+          }
         * (* TF non-empty: at least one true-headed entry, so we get
              [have_true_part].  The function returns
              [option_map pos_trie_node (list_intersect lam (proj_node_map_unchecked tp0)
