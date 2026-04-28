@@ -175,6 +175,26 @@ Section PtSpacedIntersectSpec.
     apply IH; assumption.
   Qed.
 
+  (* Helper: if both head-true and head-false filters of a combine are
+     empty *and* every cil entry is non-empty (forced when the section's
+     [length = S _] hypothesis holds), then the input lists are empty. *)
+  Lemma filter_both_empty_combine_nil
+    (cil : list (list bool)) (ptl : list (@pos_trie' A)) (n : nat) :
+    Forall (fun l => length l = S n) cil ->
+    length cil = length ptl ->
+    filter (fun p => hd false (fst p)) (combine cil ptl) = [] ->
+    filter (fun p => negb (hd false (fst p))) (combine cil ptl) = [] ->
+    cil = [].
+  Proof.
+    intros Hlen Hlen_p HfT HfF.
+    destruct cil as [|c cil_rest]; [reflexivity|].
+    destruct ptl as [|pt ptl_rest]; [cbn in Hlen_p; discriminate|].
+    cbn in HfT, HfF.
+    pose proof (Forall_inv Hlen) as Hc_len.
+    destruct c as [|b r]; cbn in Hc_len; [discriminate|].
+    destruct b; cbn in HfT, HfF; discriminate.
+  Qed.
+
   (* Permutation invariance of [fold_left merge] under comm/assoc. *)
   Lemma fold_left_merge_Permutation (l1 l2 : list A) :
     Permutation l1 l2 ->
@@ -392,13 +412,27 @@ Section PtSpacedIntersectSpec.
                filters being empty.  Since each cil/cil' entry is non-empty
                (length = S (length x')), this forces cil++cil' = []. *)
             assert (Hcc_empty : cil ++ cil' = []).
-            { destruct (cil ++ cil') as [|c cc] eqn:Hcc; [reflexivity|].
-              (* c has length S (length x') by Hcil_len/Hcil'_len, so it's
-                 non-empty.  Its head is either true or false, contradicting
-                 either HFF (which says FF=[] = rev(false-heads)) or HTF
-                 (which says TF=[] = rev(true-heads) via subst HTF in TF).
-                 Detailed argument omitted here. *)
-              admit. }
+            { (* Extract that the head=true filter on Lall is empty. *)
+              unfold TF in HTF; unfold FF in HFF.
+              assert (Hfilter_T : filter (fun p => hd false (fst p)) Lall = []).
+              { apply (f_equal (@rev _)) in HTF.
+                rewrite rev_involutive in HTF.
+                apply map_eq_nil in HTF; exact HTF. }
+              assert (Hfilter_F : filter
+                (fun p => negb (hd false (fst p))) Lall = []).
+              { apply (f_equal (@rev _)) in HFF.
+                rewrite rev_involutive in HFF.
+                apply map_eq_nil in HFF; exact HFF. }
+              eapply (filter_both_empty_combine_nil _ _ (length x')).
+              - apply Forall_app; split.
+                + eapply Forall_impl; [|exact Hcil_len].
+                  intros l Hl; cbn in Hl; cbn; Lia.lia.
+                + eapply Forall_impl; [|exact Hcil'_len].
+                  intros l Hl; cbn in Hl; cbn; Lia.lia.
+              - rewrite length_app, length_app,
+                  <- Hcil_ptl_len, <- Hcil'_ptl'_len. reflexivity.
+              - exact Hfilter_T.
+              - exact Hfilter_F. }
             assert (Hp_empty : ptl ++ ptl' = []).
             { apply length_zero_iff_nil.
               rewrite length_app, <- Hcil_ptl_len, <- Hcil'_ptl'_len,
