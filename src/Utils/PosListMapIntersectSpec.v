@@ -257,32 +257,43 @@ Section PtSpacedIntersectSpec.
       rewrite (leaf_intersect_correct _ _ ptl' Hptl'_all).
       rewrite <- fold_left_app.
       reflexivity.
-    - (* Inductive case: x = p :: x'.
-
-         Plan:
-         - destruct ci0 = b :: ci0' (Hci0_len), fuel = S fuel' (Hfuel).
-         - Collapse the two-step [partition_tries] using
-           [partition_tries_app] from PosListMap.v into a single
-           [partition_tries (cil ++ cil') (ptl ++ ptl') initial_part];
-           then unfold by [partition_tries_spec] into
-           [partition_result_of_lists] of false/true filters of
-           [combine (cil ++ cil') (ptl ++ ptl')].
-         - Subcase A (just_false_part): the recursive call passes
-           cil'=ptl'=[], so apply IHx (the *generalised* IH) at x' with
-           cil'=[] and ptl'=[].  Reconcile orderings using:
-             (i)  [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x'
-                  (pt, ci)];
-             (ii) [fold_left orb_combine] is permutation-invariant;
-             (iii) [fold_left merge] is permutation-invariant under
-                   [merge_comm]/[merge_assoc].
-         - Subcase B (have_true_part): use
-           [TrieMap.list_intersect_correct] to push [pt_get' p] through
-           [list_intersect], reducing to a [PTree.get' p] composed with
-             [pt_spaced_intersect' fuel' other_cil other_tries t_ci0
-                                   (true_cil or its rev) child_pt0 child_ptl].
-           Apply IHx at x' with non-empty cil'=true_cil and
-           ptl'=child_ptl — *this is exactly why the generalisation was
-           needed*.  Then reconcile orderings as in (A). *)
+    - (* Inductive case: x = p :: x'. *)
+      destruct ci0 as [|b ci0']; [cbn in Hci0_len; discriminate|].
+      destruct fuel as [|fuel']; [cbn in Hfuel; Lia.lia|].
+      cbn [Datatypes.length] in Hci0_len, Hfuel.
+      injection Hci0_len as Hci0_len.
+      assert (Hfuel' : (fuel' > length x')%nat) by Lia.lia.
+      (* Build rectangular_trie_list facts for partition_tries_app. *)
+      assert (Hrect : rectangular_trie_list (S (length x')) cil ptl).
+      { eapply rectangular_trie_list_of_Forall2; [|exact Hcil_ptl_d]. exact Hcil_len. }
+      assert (Hrect' : rectangular_trie_list (S (length x')) cil' ptl').
+      { eapply rectangular_trie_list_of_Forall2; [|exact Hcil'_ptl'_d]. exact Hcil'_len. }
+      (* The combined inputs are rectangular at width [S (length x')]. *)
+      assert (Hrect_app : rectangular_trie_list (S (length x'))
+                                                (cil ++ cil') (ptl ++ ptl')).
+      { apply rectangular_trie_list_app; assumption. }
+      (* Unfold the function one step. The two-step partition_tries
+         collapses to a single partition over (cil ++ cil') / (ptl ++ ptl')
+         via partition_tries_app. *)
+      cbn [pt_spaced_intersect'].
+      erewrite partition_tries_app by eassumption.
+      (* Case on [b]: this fixes the initial partition shape so we can
+         apply [partition_tries_spec] with concrete [false_lists] /
+         [true_lists] of the initial accumulator. *)
+      destruct b.
+      + (* b = true: initial = have_true_part [] [] ci0' pt0 [] [], so
+           the partition's true-list is true_filter ++ [(ci0', pt0)],
+           which is non-empty — always [have_true_part], requiring
+           [list_intersect_correct]. *)
+        admit.
+      + (* b = false: initial = just_false_part ci0' pt0 [] [], so the
+           partition's false-list is false_filter ++ [(ci0', pt0)] and
+           the true-list is true_filter.  Subcases on whether
+           [true_filter] is empty:
+            - empty   -> [just_false_part], IH applies with cil'=ptl'=[];
+            - nonempty -> [have_true_part], IH applies with the children
+              produced by [list_intersect_correct]. *)
+        admit.
   Admitted.
 
   (* The original lemma is the cil'=ptl'=[] specialisation. *)
