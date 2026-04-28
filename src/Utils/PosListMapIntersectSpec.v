@@ -286,13 +286,24 @@ Section PtSpacedIntersectSpec.
            which is non-empty — always [have_true_part], requiring
            [list_intersect_correct]. *)
         admit.
-      + (* b = false: initial = just_false_part ci0' pt0 [] [], so the
-           partition's false-list is false_filter ++ [(ci0', pt0)] and
-           the true-list is true_filter.  Subcases on whether
-           [true_filter] is empty:
-            - empty   -> [just_false_part], IH applies with cil'=ptl'=[];
-            - nonempty -> [have_true_part], IH applies with the children
-              produced by [list_intersect_correct]. *)
+      + (* b = false: initial = just_false_part ci0' pt0 [] []. *)
+        cbn in Hpt0_d.
+        assert (Hwf_init : partition_result_wf (length x')
+                             (just_false_part ci0' pt0 (@nil (list bool))
+                                              (@nil (@pos_trie' A)))).
+        { cbn. split; [|reflexivity]. split; [exact Hpt0_d|exact Hci0_len]. }
+        erewrite (@partition_tries_spec _ _ merge (cil ++ cil') (ptl ++ ptl')
+                    (just_false_part ci0' pt0 [] []) (length x')
+                    Hrect_app Hwf_init).
+        cbn [false_lists true_lists].
+        (* partition_result_of_lists is now a [match] on the (possibly
+           empty) true_filter list.  Cases:
+            - true_filter = []: result is just_false_part, recursive call
+              has cil'=ptl'=[], so IHx applies directly;
+            - true_filter = (tc0,tp0)::t': result is have_true_part,
+              the recursive call goes through list_intersect with
+              non-empty cil'/ptl' (true_cil and the children of true_tries)
+              — IHx still applies because we generalised. *)
         admit.
   Admitted.
 
