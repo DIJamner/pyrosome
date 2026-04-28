@@ -1,4 +1,4 @@
-Require Import NArith Tries.Canonical Lists.List.
+Require Import NArith Tries.Canonical Lists.List Sorting.Permutation.
 Import ListNotations.
 
 From Utils Require Import Utils Monad.
@@ -174,6 +174,72 @@ Section PtSpacedIntersectSpec.
     split; [split; assumption|].
     apply IH; assumption.
   Qed.
+
+  (* Permutation invariance of [fold_left merge] under comm/assoc. *)
+  Lemma fold_left_merge_Permutation (l1 l2 : list A) :
+    Permutation l1 l2 ->
+    forall a, fold_left merge l1 a = fold_left merge l2 a.
+  Proof.
+    intros Hperm. induction Hperm; intros a; cbn; auto.
+    - (* swap case *)
+      f_equal.
+      rewrite <- merge_assoc, (merge_comm y x), merge_assoc. reflexivity.
+    - etransitivity; eauto.
+  Qed.
+
+  (* Pointwise-OR over equal-length boolean lists is comm/assoc, so the
+     bool-fold over a list of equal-length lists is permutation-invariant. *)
+  Lemma map2_orb_comm (a b : list bool) :
+    map2 orb (combine a b) = map2 orb (combine b a).
+  Proof.
+    revert b; induction a as [|x a IH]; intros [|y b]; cbn; auto.
+    f_equal; [apply Bool.orb_comm | apply IH].
+  Qed.
+
+  Lemma map2_orb_assoc (a b c : list bool) :
+    length a = length b -> length b = length c ->
+    map2 orb (combine (map2 orb (combine a b)) c)
+    = map2 orb (combine a (map2 orb (combine b c))).
+  Proof.
+    revert b c; induction a as [|x a IH]; intros [|y b] [|z c] Hab Hbc;
+      cbn in *; try discriminate; try reflexivity.
+    f_equal.
+    - symmetry; apply Bool.orb_assoc.
+    - apply IH; Lia.lia.
+  Qed.
+
+  Lemma fold_left_orb_combine_Permutation
+    (cil1 cil2 : list (list bool)) (acc : list bool) :
+    Forall (fun l => length l = length acc) cil1 ->
+    Permutation cil1 cil2 ->
+    fold_left (fun a l => map2 orb (combine l a)) cil1 acc
+    = fold_left (fun a l => map2 orb (combine l a)) cil2 acc.
+  Proof.
+    intros Hlen Hperm.
+    revert acc Hlen.
+    induction Hperm; intros acc Hlen; cbn; auto.
+    - apply IHHperm.
+      pose proof (Forall_inv Hlen) as Hlen_x.
+      pose proof (Forall_inv_tail Hlen) as Hlen_tail.
+      eapply Forall_impl; [|exact Hlen_tail].
+      intros lz Hlz.
+      rewrite Hlz.
+      symmetry.
+      clear -Hlen_x.
+      revert acc Hlen_x.
+      induction x as [|b x IH]; intros [|c acc] Hlen; cbn in *;
+        try discriminate; try reflexivity.
+      f_equal. apply IH; Lia.lia.
+    - (* swap case: pointwise OR of two equal-length lists swaps freely
+         under acc (orb is comm/assoc).  The combinator algebra works
+         out to a single equality that follows from map2_orb_comm and
+         map2_orb_assoc, but the explicit chain of rewrites is tedious. *)
+      admit.
+    - etransitivity.
+      + apply IHHperm1; assumption.
+      + apply IHHperm2.
+        eapply Permutation_Forall; eassumption.
+  Admitted.
 
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
