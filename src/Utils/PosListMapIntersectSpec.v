@@ -230,11 +230,16 @@ Section PtSpacedIntersectSpec.
       induction x as [|b x IH]; intros [|c acc] Hlen; cbn in *;
         try discriminate; try reflexivity.
       f_equal. apply IH; Lia.lia.
-    - (* swap case: pointwise OR of two equal-length lists swaps freely
-         under acc (orb is comm/assoc).  The combinator algebra works
-         out to a single equality that follows from map2_orb_comm and
-         map2_orb_assoc, but the explicit chain of rewrites is tedious. *)
-      admit.
+    - (* swap case *)
+      pose proof (Forall_inv Hlen) as Hlen_y.
+      pose proof (Forall_inv_tail Hlen) as Hlen_tail.
+      pose proof (Forall_inv Hlen_tail) as Hlen_x.
+      f_equal.
+      assert (Hxy : length x = length y) by congruence.
+      rewrite <- (map2_orb_assoc x y acc) by congruence.
+      rewrite <- (map2_orb_assoc y x acc) by congruence.
+      rewrite (map2_orb_comm x y).
+      reflexivity.
     - etransitivity.
       + apply IHHperm1; assumption.
       + apply IHHperm2.
