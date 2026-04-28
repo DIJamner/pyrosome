@@ -889,7 +889,7 @@ Section __.
       (*This split has to happen at some point, so here is fine*)
       let '(ptl, cil) := split (snd tries) in
       let '(pt0, ci0) := fst tries in
-      let fuel := S (length (hd [] cil)) in
+      let fuel := S (length ci0) in
       @!let pt0' <- pt0 in
         let ptl' <- list_Mmap id ptl in
         (pt_spaced_intersect' fuel cil ptl' ci0 [] pt0' []).

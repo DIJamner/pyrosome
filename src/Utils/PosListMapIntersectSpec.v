@@ -55,7 +55,7 @@ Section PtSpacedIntersectSpec.
     end.
 
   Definition wf_tries (x : list positive) (tries : ne_list (@pos_trie A * list bool)) : Prop :=
-    snd tries <> [] /\ wf_input x (fst tries) /\ Forall (wf_input x) (snd tries).
+    wf_input x (fst tries) /\ Forall (wf_input x) (snd tries).
 
   (* ------------------------------------------------------------ *)
   (* Auxiliary lemma about the recursive helper [pt_spaced_intersect'].
@@ -203,7 +203,7 @@ Section PtSpacedIntersectSpec.
     (tries : ne_list (@pos_trie A * list bool)) (x : list positive) :
     wf_tries x tries -> pt_spaced_intersect_spec tries x.
   Proof.
-    intros [Htail_ne [Hwf_head Hwf_tail]].
+    intros [Hwf_head Hwf_tail].
     destruct tries as [[pt0_opt ci0] tail]; cbn [fst snd] in *.
     destruct Hwf_head as [Hci0_len Hpt0_depth].
     unfold pt_spaced_intersect_spec, pt_spaced_intersect; cbn [fst snd].
@@ -262,12 +262,7 @@ Section PtSpacedIntersectSpec.
     pose proof (list_Mmap_id_Some_inv _ _ Hmmap) as Hptl_opt_eq.
 
     (* Set up the lemma's hypotheses *)
-    assert (Hfuel : (S (length (hd [] cil)) > length x)%nat).
-    { destruct cil as [|c cil']; cbn.
-      - (* cil = [], so tail = [], contradicting Htail_ne *)
-        exfalso. apply Htail_ne. rewrite <- Htail_eq.
-        cbn in Hlen_pc. destruct ptl_opt; [reflexivity|cbn in Hlen_pc; discriminate].
-      - inversion Hcil_len; subst. Lia.lia. }
+    assert (Hfuel : (S (length ci0) > length x)%nat) by Lia.lia.
     assert (Hcil_len_x : Forall (fun l => length l = length x) cil) by exact Hcil_len.
     assert (Hcil_ptl_len : length cil = length ptl).
     { rewrite Hptl_opt_eq, length_map in Hlen_pc. Lia.lia. }
