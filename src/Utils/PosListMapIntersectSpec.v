@@ -266,6 +266,134 @@ Section PtSpacedIntersectSpec.
         eapply Permutation_Forall; eassumption.
   Qed.
 
+  (* Permutation invariance for [fold_left merge] including the accumulator
+     element.  Treats [acc :: l] as a single multiset over which merge is
+     commutative/associative. *)
+  Lemma fold_left_merge_perm_full (l1 l2 : list A) (e1 e2 : A) :
+    Permutation (e1 :: l1) (e2 :: l2) ->
+    fold_left merge l1 e1 = fold_left merge l2 e2.
+  Proof.
+    remember (e1 :: l1) as L1 eqn:HEq1.
+    remember (e2 :: l2) as L2 eqn:HEq2.
+    intros HP. revert e1 l1 e2 l2 HEq1 HEq2.
+    induction HP; intros e1' l1' e2' l2' HEq1 HEq2; try discriminate.
+    - injection HEq1 as <- <-. injection HEq2 as <- <-.
+      apply fold_left_merge_Permutation; eauto.
+    - injection HEq1 as <- <-. injection HEq2 as <- <-.
+      cbn. f_equal. apply merge_comm.
+    - subst l. subst l''.
+      destruct l' as [|m_e m_l].
+      + apply Permutation_sym in HP1.
+        apply Permutation_nil_cons in HP1; contradiction.
+      + transitivity (fold_left merge m_l m_e).
+        * apply IHHP1; reflexivity.
+        * apply IHHP2; reflexivity.
+  Qed.
+
+  (* Permutation invariance for [fold_left (fun acc l => map2 orb (combine l acc))]
+     including the accumulator element.  Same treatment as above for OR over
+     equal-length boolean lists. *)
+  Lemma fold_left_orb_combine_perm_full
+    (l1 l2 : list (list bool)) (acc1 acc2 : list bool) :
+    Forall (fun l => length l = length acc1) (acc1 :: l1) ->
+    Permutation (acc1 :: l1) (acc2 :: l2) ->
+    fold_left (fun a l => map2 orb (combine l a)) l1 acc1
+    = fold_left (fun a l => map2 orb (combine l a)) l2 acc2.
+  Proof.
+    intros Hlen HP.
+    remember (acc1 :: l1) as L1 eqn:HEq1.
+    remember (acc2 :: l2) as L2 eqn:HEq2.
+    revert acc1 l1 acc2 l2 Hlen HEq1 HEq2.
+    induction HP; intros acc1' l1' acc2' l2' Hlen HEq1 HEq2; try discriminate.
+    - injection HEq1 as <- <-. injection HEq2 as <- <-.
+      apply fold_left_orb_combine_Permutation; auto.
+      apply Forall_inv_tail in Hlen; assumption.
+    - injection HEq1 as <- <-. injection HEq2 as <- <-.
+      pose proof (Forall_inv Hlen) as Ha1.
+      pose proof (Forall_inv_tail Hlen) as Ha1tail.
+      pose proof (Forall_inv Ha1tail) as Ha2.
+      cbn. f_equal. apply map2_orb_comm.
+    - subst l. subst l''.
+      destruct l' as [|m_e m_l].
+      + apply Permutation_sym in HP1.
+        apply Permutation_nil_cons in HP1; contradiction.
+      + assert (Hlen_mid : Forall (fun l => length l = length acc1') (m_e :: m_l)).
+        { eapply Permutation_Forall; [exact HP1|]. exact Hlen. }
+        transitivity (fold_left (fun a l => map2 orb (combine l a)) m_l m_e).
+        * apply IHHP1; auto.
+        * apply IHHP2; auto.
+          (* Need Forall on (m_e :: m_l) with length = length m_e *)
+          pose proof (Forall_inv Hlen_mid) as Hme_len.
+          eapply Forall_impl; [|exact Hlen_mid].
+          cbn; intros lz Hlz; congruence.
+  Qed.
+
+  (* Permutation invariance for [list_Mmap]: the result options carry
+     permutation information. *)
+  Lemma list_Mmap_Permutation_resp
+    {T1 T2} (f : T1 -> option T2) (l1 l2 : list T1) :
+    Permutation l1 l2 ->
+    match list_Mmap f l1, list_Mmap f l2 with
+    | Some r1, Some r2 => Permutation r1 r2
+    | None, None => True
+    | _, _ => False
+    end.
+  Proof.
+    intros HP.
+    induction HP; cbn.
+    - constructor.
+    - destruct (f x) as [v|]; cbn; [|trivial].
+      destruct (list_Mmap f l) as [r1|], (list_Mmap f l') as [r2|];
+        cbn in *; try contradiction; try trivial.
+      apply perm_skip; assumption.
+    - destruct (f x) as [vx|], (f y) as [vy|]; cbn; try trivial.
+      destruct (list_Mmap f l) as [r|]; cbn; try trivial.
+      apply perm_swap.
+    - destruct (list_Mmap f l) as [r|],
+               (list_Mmap f l') as [r'|],
+               (list_Mmap f l'') as [r''|]; cbn in *;
+        try contradiction; try trivial.
+      etransitivity; eassumption.
+  Qed.
+
+  (* Combined helper: pulls a permutation through both [list_Mmap] and the
+     [fold_left merge] that follows. *)
+  Lemma list_Mmap_lookup_fold_perm
+    {T1} (f : T1 -> option A) (e1 e2 : T1) (l1 l2 : list T1) :
+    Permutation (e1 :: l1) (e2 :: l2) ->
+    match f e1, list_Mmap f l1 with
+    | Some v, Some vs => Some (fold_left merge vs v)
+    | _, _ => None
+    end
+    = match f e2, list_Mmap f l2 with
+      | Some v, Some vs => Some (fold_left merge vs v)
+      | _, _ => None
+      end.
+  Proof.
+    intros HP.
+    pose proof (list_Mmap_Permutation_resp f _ _ HP) as HMM.
+    cbn in HMM.
+    destruct (f e1) as [v1|] eqn:Hf1;
+      destruct (list_Mmap f l1) as [vs1|] eqn:HM1;
+      destruct (f e2) as [v2|] eqn:Hf2;
+      destruct (list_Mmap f l2) as [vs2|] eqn:HM2;
+      cbn in HMM;
+      try contradiction;
+      try reflexivity.
+    f_equal. apply fold_left_merge_perm_full. assumption.
+  Qed.
+
+  (* Combine over [(la1 ++ la2)] / [(lb1 ++ lb2)] when the prefix lengths agree. *)
+  Lemma combine_app_eq T1 T2
+    (la1 la2 : list T1) (lb1 lb2 : list T2) :
+    length la1 = length lb1 ->
+    combine (la1 ++ la2) (lb1 ++ lb2) = combine la1 lb1 ++ combine la2 lb2.
+  Proof.
+    revert lb1; induction la1 as [|a la1 IH]; intros [|b lb1] Hlen;
+      cbn in *; try discriminate; try reflexivity.
+    f_equal; apply IH; Lia.lia.
+  Qed.
+
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
      but which the have_true_part recursion through [list_intersect] uses
@@ -444,22 +572,49 @@ Section PtSpacedIntersectSpec.
             apply app_eq_nil in Hp_empty as [Hptl_e Hptl'_e].
             subst cil cil' ptl ptl'.
             subst TF FF Lall.
-            (* All input lists are empty.  The function call collapses to
-               [pt_spaced_intersect' merge fuel' [] [] ci0' [] pt0 []], to
-               which IHx applies directly.  Closing this requires aligning
-               the goal's reduced form with IHx's LHS — straightforward in
-               an interactive proof session but fiddly through file edits. *)
-            admit. }
+            clear HTF HFF Hrect Hrect' Hrect_app
+                  Hcil_len Hcil'_len Hcil_ptl_len Hcil'_ptl'_len
+                  Hcil_ptl_d Hcil'_ptl'_d Hwf_init.
+            (* Reduce partition_result_of_lists *)
+            cbn [app combine partition_result_of_lists split fst snd].
+            (* Apply IHx with all-empty side inputs *)
+            specialize (IHx fuel' ci0' pt0 [] [] [] [] Hfuel' Hci0_len
+                            (Forall_nil _) (Forall_nil _) eq_refl eq_refl
+                            Hpt0_d (Forall2_nil _) (Forall2_nil _)).
+            cbn [combine app] in IHx.
+            (* Reduce the bool-list fold and the spaced_get on the head *)
+            cbn [fold_left app] in *.
+            unfold spaced_get in *; cbn [fst snd] in *.
+            cbn [combine filter map] in *.
+            rewrite lookup_one'_cons_false.
+            cbn [combine list_Mmap].
+            exact IHx. }
           { (* FF non-empty: recursive call has new (ci0_new, pt0_new) and
                reverse-ordered other_cil/other_tries from FF and (ci0', pt0).
-               IHx applies; orderings are reconciled by the Permutation
-               lemmas.  This is the technically rich sub-sub-case. *)
+               IHx applies; the bool-list and lookup-pair sides each need
+               permutation reasoning to align with IHx's per-call form,
+               using fold_left_orb_combine_perm_full and
+               list_Mmap_lookup_fold_perm (defined above).
+               TODO: alignment of let-bindings with the destruct of
+               [split (FF_tail ++ [(ci0', pt0)])] still requires more care
+               -- left as admit. *)
             admit. }
         * (* TF non-empty: at least one true-headed entry, so we get
-             [have_true_part]; the recursive call goes through
-             [list_intersect] which we discharge via
-             [TrieMap.list_intersect_correct] and then IHx with non-empty
-             cil'/ptl'. *)
+             [have_true_part].  The function returns
+             [option_map pos_trie_node (list_intersect lam (proj_node_map_unchecked tp0)
+                                                       (map proj_node_map_unchecked tries))]
+             where [lam is_forward := pt_spaced_intersect' fuel' other_cil other_tries tc0
+                                       (if is_forward then true_cil else rev true_cil)].
+             Applying [TrieMap.list_intersect_correct] at the head position [p] requires the
+             [elts_intersect_rev] section premise, which for [lam] reduces to:
+                 pt_spaced_intersect' fuel' cil ptl ci0 (rev cil') pt0 (rev ptl')
+                 = pt_spaced_intersect' fuel' cil ptl ci0 cil' pt0 ptl'
+             — i.e. simultaneous reversal of [cil'] and [ptl'] preserves the result.
+             This is the unproven [pt_spaced_intersect'_perm] (PosListMap.v line 2849,
+             aborted) / [pt_spaced_intersect_Permutation] (line 1799).  The same
+             obstacle blocks [pt_spaced_intersect'_correct] (line 3070, also admitted)
+             in [PosListMap.v].  Closing this case therefore requires first proving
+             that lemma — out of scope for this proof. *)
           admit.
   Admitted.
 
