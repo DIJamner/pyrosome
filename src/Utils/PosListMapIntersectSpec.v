@@ -244,7 +244,7 @@ Section PtSpacedIntersectSpec.
       + apply IHHperm1; assumption.
       + apply IHHperm2.
         eapply Permutation_Forall; eassumption.
-  Admitted.
+  Qed.
 
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
