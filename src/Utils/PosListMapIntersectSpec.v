@@ -125,6 +125,56 @@ Section PtSpacedIntersectSpec.
         destruct (list_Mmap f l2) as [xs2|]; reflexivity.
   Qed.
 
+  (* Helper: when the bool in [ci] is [false] at the head, the corresponding
+     position [p] in [x] is dropped from the lookup key by [filter snd]. *)
+  Lemma lookup_one'_cons_false (x : list positive) (p : positive)
+    (pt : @pos_trie' A) (c : list bool) :
+    lookup_one' (p :: x) (pt, false :: c) = lookup_one' x (pt, c).
+  Proof.
+    unfold lookup_one'; cbn [combine fst snd filter map].
+    reflexivity.
+  Qed.
+
+  (* Helper: when the bool head is [true], the lookup descends one level
+     into [pt] at position [p] before continuing on [x]. *)
+  Lemma lookup_one'_cons_true (x : list positive) (p : positive)
+    (m : PTree.tree' (@pos_trie' A)) (c : list bool) :
+    lookup_one' (p :: x) (pos_trie_node m, true :: c)
+    = match PTree.get' p m with
+      | Some pt' => lookup_one' x (pt', c)
+      | None => None
+      end.
+  Proof.
+    unfold lookup_one'; cbn [combine fst snd filter map pt_get'].
+    destruct (PTree.get' p m); reflexivity.
+  Qed.
+
+  (* Helper: convert standard [Forall2] to Pyrosome's [all2]. *)
+  Lemma Forall2_to_all2 {T1 T2} (R : T1 -> T2 -> Prop)
+    (l1 : list T1) (l2 : list T2) :
+    Forall2 R l1 l2 -> all2 R l1 l2.
+  Proof.
+    induction 1; cbn; auto.
+  Qed.
+
+  (* Helper: combine [Forall length = n] and [Forall2 (has_depth' …)] into
+     [rectangular_trie_list n] (the precondition required by
+     [partition_tries_app] and [partition_tries_spec] in PosListMap.v). *)
+  Lemma rectangular_trie_list_of_Forall2 (n : nat)
+    (cil : list (list bool)) (ptl : list (@pos_trie' A)) :
+    Forall (fun l => length l = n) cil ->
+    Forall2 (fun c t => Is_true (has_depth' (length (filter id c)) t)) cil ptl ->
+    rectangular_trie_list n cil ptl.
+  Proof.
+    intros Hlen Hd2.
+    revert Hlen.
+    induction Hd2 as [|c t cil' ptl' Hct Htail IH]; intros Hlen; cbn; auto.
+    pose proof (Forall_inv Hlen) as Hlen_c.
+    pose proof (Forall_inv_tail Hlen) as Hlen_tail.
+    split; [split; assumption|].
+    apply IH; assumption.
+  Qed.
+
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
      but which the have_true_part recursion through [list_intersect] uses
