@@ -379,9 +379,20 @@ Section PtSpacedIntersectSpec.
            argument [TF].  Subcases on whether [TF] is empty. *)
         destruct TF as [|[tc0 tp0] TF_tail] eqn:HTF.
         * (* TF = []: no entry of cil++cil' has a true head, so the
-             partition collapses to just_false_part, and the recursive
-             call is over the false-headed entries (in reverse order)
-             with the original (ci0', pt0) appended.  Apply IHx. *)
+             partition collapses to just_false_part with new
+             (ci0_new, pt0_new) at head and the rest in the tail. *)
+          unfold partition_result_of_lists.
+          destruct (FF ++ [(ci0', pt0)]) as [|[fc0 fp0] f_rest] eqn:HFF_app.
+          { (* impossible: FF ++ [(ci0', pt0)] is non-empty *)
+            destruct FF; cbn in HFF_app; discriminate. }
+          destruct (split f_rest) as [f_c f_p] eqn:Hsplit_f.
+          (* The recursive call passes cil' = ptl' = [], so IHx applies
+             at x' to give us the value as a fold_left merge of the
+             reordered tries.  The reordering is a Permutation of the
+             original tries (FF is a reverse of the false-headed entries,
+             with (ci0', pt0) appended at the end).  We use
+             [fold_left_merge_Permutation] and
+             [fold_left_orb_combine_Permutation] to reconcile orderings. *)
           admit.
         * (* TF non-empty: at least one true-headed entry, so we get
              [have_true_part]; the recursive call goes through
