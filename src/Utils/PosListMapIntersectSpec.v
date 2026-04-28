@@ -378,22 +378,40 @@ Section PtSpacedIntersectSpec.
         (* Partition_result_of_lists pattern-matches on its second
            argument [TF].  Subcases on whether [TF] is empty. *)
         destruct TF as [|[tc0 tp0] TF_tail] eqn:HTF.
-        * (* TF = []: no entry of cil++cil' has a true head, so the
-             partition collapses to just_false_part with new
-             (ci0_new, pt0_new) at head and the rest in the tail. *)
-          unfold partition_result_of_lists.
-          destruct (FF ++ [(ci0', pt0)]) as [|[fc0 fp0] f_rest] eqn:HFF_app.
-          { (* impossible: FF ++ [(ci0', pt0)] is non-empty *)
-            destruct FF; cbn in HFF_app; discriminate. }
-          destruct (split f_rest) as [f_c f_p] eqn:Hsplit_f.
-          (* The recursive call passes cil' = ptl' = [], so IHx applies
-             at x' to give us the value as a fold_left merge of the
-             reordered tries.  The reordering is a Permutation of the
-             original tries (FF is a reverse of the false-headed entries,
-             with (ci0', pt0) appended at the end).  We use
-             [fold_left_merge_Permutation] and
-             [fold_left_orb_combine_Permutation] to reconcile orderings. *)
-          admit.
+        * (* TF = []: no entry of cil++cil' has a true head.  We further
+             split on FF: if FF=[] then cil=cil'=[] (no extra tries) and
+             the recursive call is trivially over the empty input; if FF
+             is non-empty, the recursive call is over the false-headed
+             entries (in reverse order) with (ci0', pt0) appended. *)
+          destruct FF as [|[fc0' fp0'] FF_tail] eqn:HFF.
+          { (* FF = []: no false-headed entries either, so cil++cil'=[].
+               Sub-goal: the original function call collapses to the same
+               recursive form as the spec at x'. *)
+            (* From TF = [] and FF = [], all entries of [combine (cil++cil')
+               (ptl++ptl')] must satisfy both [head=true] and [head=false]
+               filters being empty.  Since each cil/cil' entry is non-empty
+               (length = S (length x')), this forces cil++cil' = []. *)
+            assert (Hcc_empty : cil ++ cil' = []).
+            { destruct (cil ++ cil') as [|c cc] eqn:Hcc; [reflexivity|].
+              (* c has length S (length x') by Hcil_len/Hcil'_len, so it's
+                 non-empty.  Its head is either true or false, contradicting
+                 either HFF (which says FF=[] = rev(false-heads)) or HTF
+                 (which says TF=[] = rev(true-heads) via subst HTF in TF).
+                 Detailed argument omitted here. *)
+              admit. }
+            assert (Hp_empty : ptl ++ ptl' = []).
+            { apply length_zero_iff_nil.
+              rewrite length_app, <- Hcil_ptl_len, <- Hcil'_ptl'_len,
+                <- length_app, Hcc_empty. reflexivity. }
+            (* With cil++cil' = [] and ptl++ptl' = [], the partition's
+               recursive call is at empty extra-trie lists, and IHx
+               applies trivially. *)
+            admit. }
+          { (* FF non-empty: recursive call has new (ci0_new, pt0_new) and
+               reverse-ordered other_cil/other_tries from FF and (ci0', pt0).
+               IHx applies; orderings are reconciled by the Permutation
+               lemmas.  This is the technically rich sub-sub-case. *)
+            admit. }
         * (* TF non-empty: at least one true-headed entry, so we get
              [have_true_part]; the recursive call goes through
              [list_intersect] which we discharge via
