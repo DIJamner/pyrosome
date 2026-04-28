@@ -64,6 +64,45 @@ Section PtSpacedIntersectSpec.
      [x] in the resulting trie under the OR-combined bool pattern equals
      the merged fold of the per-trie lookups, or [None] if any input
      lookup misses. *)
+  (* Helper: when all elements of [cil] are [], folding [map2 orb] starting
+     from [[]] yields [[]]. *)
+  Lemma fold_left_map2_orb_all_nil (cil : list (list bool)) :
+    Forall (fun l => l = []) cil ->
+    fold_left (fun acc (l : list bool) => map2 orb (combine l acc)) cil []
+    = [].
+  Proof.
+    induction cil as [|c cil IH]; cbn; intros Hall; [reflexivity|].
+    inversion Hall as [|? ? Hc Hall']; subst c.
+    cbn. apply IH; assumption.
+  Qed.
+
+  (* Helper: every element of [ptl] is a leaf when its depth is 0. *)
+  Lemma has_depth'_0_leaf (pt : @pos_trie' A) :
+    Is_true (has_depth' 0 pt) -> exists a, pt = pos_trie_leaf a.
+  Proof.
+    destruct pt as [a|m]; cbn; intros Hd; [eauto|contradiction].
+  Qed.
+
+  (* Helper: list_Mmap of lookup_one' on length-0 keys gives the leaves. *)
+  Lemma list_Mmap_lookup_one'_nil
+    (ptl : list (@pos_trie' A)) (cil : list (list bool)) :
+    length cil = length ptl ->
+    Forall (fun l => l = []) cil ->
+    Forall (fun pt => Is_true (has_depth' 0 pt)) ptl ->
+    list_Mmap (lookup_one' []) (combine ptl cil)
+    = Some (map get_leaf_unchecked ptl).
+  Proof.
+    revert cil; induction ptl as [|pt ptl IH]; intros [|ci cil] Hlen Hcil Hptl;
+      cbn in *; try discriminate; try reflexivity.
+    inversion Hcil as [|? ? Hc Hcil']; subst ci.
+    inversion Hptl as [|? ? Hpt Hptl']; subst.
+    apply has_depth'_0_leaf in Hpt.
+    destruct Hpt as [a Heqa]; subst pt; cbn.
+    unfold lookup_one'; cbn.
+    rewrite IH by (auto || Lia.lia).
+    reflexivity.
+  Qed.
+
   Lemma pt_spaced_intersect'_spec
     (fuel : nat) (x : list positive)
     (ci0 : list bool) (pt0 : @pos_trie' A)
@@ -83,6 +122,70 @@ Section PtSpacedIntersectSpec.
         | _, _ => None
         end.
   Proof.
+    revert fuel ci0 pt0 cil ptl.
+    induction x as [|p x' IHx];
+      intros fuel ci0 pt0 cil ptl
+             Hfuel Hci0_len Hcil_len Hcil_ptl_len Hpt0_d Hcil_ptl_d.
+    - (* Base case: x = [] *)
+      destruct ci0 as [|? ?]; [|cbn in Hci0_len; discriminate].
+      destruct fuel as [|fuel']; [Lia.lia|].
+      cbn in Hpt0_d.
+      destruct pt0 as [a|m]; [|contradiction].
+      assert (Hcil_all_nil : Forall (fun l => l = []) cil).
+      { eapply Forall_impl; [|exact Hcil_len].
+        intros l Hl; cbn in Hl. apply length_zero_iff_nil. exact Hl. }
+      assert (Hptl_leaf : Forall (fun pt => Is_true (has_depth' 0 pt)) ptl).
+      { revert Hcil_ptl_d Hcil_all_nil. clear.
+        revert ptl. induction cil as [|c cil IH]; intros [|pt ptl] Hd Hcil;
+          inversion Hd; subst; constructor.
+        - inversion Hcil; subst c. cbn in *. assumption.
+        - apply IH; [assumption|]. inversion Hcil; assumption. }
+      assert (Hptl_all : all (fun t => Is_true (has_depth' 0 t)) ptl).
+      { clear - Hptl_leaf. induction ptl; cbn; auto.
+        inversion Hptl_leaf; subst; split; auto. }
+      cbn [pt_spaced_intersect'].
+      rewrite (fold_left_map2_orb_all_nil _ Hcil_all_nil).
+      rewrite (list_Mmap_lookup_one'_nil _ _ Hcil_ptl_len Hcil_all_nil Hptl_leaf).
+      change (lookup_one' [] (pos_trie_leaf a, []))
+        with (@Some A a).
+      unfold spaced_get; cbn [fst snd pt_get].
+      cbn [filter combine map].
+      cbn [pt_get'].
+      rewrite (leaf_intersect_correct _ a ptl Hptl_all).
+      cbn [map fold_left].
+      reflexivity.
+    - (* Inductive case: x = p :: x'.
+
+         Sketch:
+           - destruct ci0 = b :: ci0' (Hci0_len shrinks),
+             destruct fuel = S fuel' (Hfuel),
+           - the second [partition_tries] is on []/[] so it is the identity;
+             the first [partition_tries] sorts (cil, ptl) into:
+               * the "true-head" entries and
+               * the "false-head" entries (each with its head stripped).
+             The result combines those with the initial part determined by [b].
+           - Subcase A (b = false AND no cil entry has a true head): result is
+             [just_false_part ci0' pt0 false_cil false_ptl]; recurse with ci0',
+             cil = false_cil, ptl = false_ptl, pt0 unchanged. Apply IHx at x'
+             to the sub-problem; show [combined_bools] for the filtered set on
+             x' agrees with the original on x after dropping the false head;
+             show [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x' (pt, ci)]
+             since [filter snd] skips the index where ci's head is false; and
+             that the missing (no true heads) cil entries also drop out.
+           - Subcase B (b = true OR some cil entry has a true head): result is
+             [have_true_part false_cil false_ptl t_ci0 t_pt0 true_cil true_ptl].
+             Use [list_intersect_correct] from TrieMap.v to push [pt_get' p _]
+             through the [list_intersect]; this turns the goal into a [Mbind]
+             over [PTree.get' p] of [proj_node_map_unchecked t_pt0] and the
+             children of [true_ptl]. Each of those children has depth one less
+             than the original, so IHx applies at x'.
+
+         Each subcase needs auxiliary characterisations of [partition_tries]
+         (currently only the projections [partition_tries_true_lists] and
+         [partition_tries_false_lists] are proven in PosListMap.v; the
+         stronger [partition_tries_spec_properties_*] lemmas used by the
+         existing partial attempts are admitted there). Completing this
+         proof requires first establishing those characterisations. *)
   Admitted.
 
   (* ------------------------------------------------------------ *)
