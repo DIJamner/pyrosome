@@ -109,6 +109,133 @@ Section PtSpacedIntersectSpec.
     reflexivity.
   Qed.
 
+  (* Helper: list_Mmap distributes over [++] when the [Mret/None] is option. *)
+  Lemma list_Mmap_app {T1 T2} (f : T1 -> option T2) (l1 l2 : list T1) :
+    list_Mmap f (l1 ++ l2) =
+      match list_Mmap f l1, list_Mmap f l2 with
+      | Some xs1, Some xs2 => Some (xs1 ++ xs2)
+      | _, _ => None
+      end.
+  Proof.
+    induction l1 as [|a l1 IH]; cbn.
+    - destruct (list_Mmap f l2); reflexivity.
+    - destruct (f a) as [b|]; cbn; [|reflexivity].
+      rewrite IH.
+      destruct (list_Mmap f l1) as [xs1|];
+        destruct (list_Mmap f l2) as [xs2|]; reflexivity.
+  Qed.
+
+  (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
+     [pt_spaced_intersect'] (which the just_false_part recursion sets to []
+     but which the have_true_part recursion through [list_intersect] uses
+     non-trivially).  Setting [cil' = ptl' = []] recovers the original. *)
+  Lemma pt_spaced_intersect'_spec_general
+    (fuel : nat) (x : list positive)
+    (ci0 : list bool) (pt0 : @pos_trie' A)
+    (cil : list (list bool)) (ptl : list (@pos_trie' A))
+    (cil' : list (list bool)) (ptl' : list (@pos_trie' A))
+    : (fuel > length x)%nat ->
+      length ci0 = length x ->
+      Forall (fun l => length l = length x) cil ->
+      Forall (fun l => length l = length x) cil' ->
+      length cil = length ptl ->
+      length cil' = length ptl' ->
+      Is_true (has_depth' (length (filter id ci0)) pt0) ->
+      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt)) cil ptl ->
+      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt)) cil' ptl' ->
+      spaced_get x (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                              (cil ++ cil') ci0,
+                    pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl')
+      = match lookup_one' x (pt0, ci0),
+              list_Mmap (lookup_one' x) (combine ptl cil ++ combine ptl' cil') with
+        | Some e, Some es => Some (fold_left merge es e)
+        | _, _ => None
+        end.
+  Proof.
+    revert fuel ci0 pt0 cil ptl cil' ptl'.
+    induction x as [|p x' IHx];
+      intros fuel ci0 pt0 cil ptl cil' ptl'
+             Hfuel Hci0_len Hcil_len Hcil'_len Hcil_ptl_len Hcil'_ptl'_len
+             Hpt0_d Hcil_ptl_d Hcil'_ptl'_d.
+    - (* Base case: x = []. Both cil and cil' contain only []s, every ptl
+         and ptl' element is a leaf, function returns
+         Some (pos_trie_leaf (leaf_intersect (leaf_intersect a ptl) ptl')). *)
+      destruct ci0 as [|? ?]; [|cbn in Hci0_len; discriminate].
+      destruct fuel as [|fuel']; [Lia.lia|].
+      cbn in Hpt0_d.
+      destruct pt0 as [a|m]; [|contradiction].
+      assert (Hcil_all_nil : Forall (fun l => l = []) cil).
+      { eapply Forall_impl; [|exact Hcil_len].
+        intros l Hl; cbn in Hl. apply length_zero_iff_nil. exact Hl. }
+      assert (Hcil'_all_nil : Forall (fun l => l = []) cil').
+      { eapply Forall_impl; [|exact Hcil'_len].
+        intros l Hl; cbn in Hl. apply length_zero_iff_nil. exact Hl. }
+      assert (Hptl_leaf : Forall (fun pt => Is_true (has_depth' 0 pt)) ptl).
+      { revert Hcil_ptl_d Hcil_all_nil. clear.
+        revert ptl. induction cil as [|c cil IH]; intros [|pt ptl] Hd Hcil;
+          inversion Hd; subst; constructor.
+        - inversion Hcil; subst c. cbn in *. assumption.
+        - apply IH; [assumption|]. inversion Hcil; assumption. }
+      assert (Hptl'_leaf : Forall (fun pt => Is_true (has_depth' 0 pt)) ptl').
+      { revert Hcil'_ptl'_d Hcil'_all_nil. clear.
+        revert ptl'. induction cil' as [|c cil' IH]; intros [|pt ptl'] Hd Hcil';
+          inversion Hd; subst; constructor.
+        - inversion Hcil'; subst c. cbn in *. assumption.
+        - apply IH; [assumption|]. inversion Hcil'; assumption. }
+      assert (Hptl_all : all (fun t => Is_true (has_depth' 0 t)) ptl).
+      { clear - Hptl_leaf. induction ptl; cbn; auto.
+        inversion Hptl_leaf; subst; split; auto. }
+      assert (Hptl'_all : all (fun t => Is_true (has_depth' 0 t)) ptl').
+      { clear - Hptl'_leaf. induction ptl'; cbn; auto.
+        inversion Hptl'_leaf; subst; split; auto. }
+      cbn [pt_spaced_intersect'].
+      (* combined-bools across cil ++ cil' folds to []. *)
+      assert (Hcc_all_nil : Forall (fun l => l = []) (cil ++ cil')).
+      { apply Forall_app; split; assumption. }
+      rewrite (fold_left_map2_orb_all_nil _ Hcc_all_nil).
+      (* RHS list_Mmap over the appended combine. *)
+      rewrite list_Mmap_app.
+      rewrite (list_Mmap_lookup_one'_nil _ _ Hcil_ptl_len Hcil_all_nil Hptl_leaf).
+      rewrite (list_Mmap_lookup_one'_nil _ _ Hcil'_ptl'_len Hcil'_all_nil Hptl'_leaf).
+      change (lookup_one' [] (pos_trie_leaf a, [])) with (@Some A a).
+      unfold spaced_get; cbn [fst snd pt_get].
+      cbn [filter combine map].
+      cbn [pt_get'].
+      (* leaf_intersect (leaf_intersect a ptl) ptl' = fold_left merge over
+         (map leaf_value ptl ++ map leaf_value ptl') starting at a. *)
+      rewrite (leaf_intersect_correct _ a ptl Hptl_all).
+      rewrite (leaf_intersect_correct _ _ ptl' Hptl'_all).
+      rewrite <- fold_left_app.
+      reflexivity.
+    - (* Inductive case: x = p :: x'.
+
+         Plan:
+         - destruct ci0 = b :: ci0' (Hci0_len), fuel = S fuel' (Hfuel).
+         - Collapse the two-step [partition_tries] using
+           [partition_tries_app] from PosListMap.v into a single
+           [partition_tries (cil ++ cil') (ptl ++ ptl') initial_part];
+           then unfold by [partition_tries_spec] into
+           [partition_result_of_lists] of false/true filters of
+           [combine (cil ++ cil') (ptl ++ ptl')].
+         - Subcase A (just_false_part): the recursive call passes
+           cil'=ptl'=[], so apply IHx (the *generalised* IH) at x' with
+           cil'=[] and ptl'=[].  Reconcile orderings using:
+             (i)  [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x'
+                  (pt, ci)];
+             (ii) [fold_left orb_combine] is permutation-invariant;
+             (iii) [fold_left merge] is permutation-invariant under
+                   [merge_comm]/[merge_assoc].
+         - Subcase B (have_true_part): use
+           [TrieMap.list_intersect_correct] to push [pt_get' p] through
+           [list_intersect], reducing to a [PTree.get' p] composed with
+             [pt_spaced_intersect' fuel' other_cil other_tries t_ci0
+                                   (true_cil or its rev) child_pt0 child_ptl].
+           Apply IHx at x' with non-empty cil'=true_cil and
+           ptl'=child_ptl — *this is exactly why the generalisation was
+           needed*.  Then reconcile orderings as in (A). *)
+  Admitted.
+
+  (* The original lemma is the cil'=ptl'=[] specialisation. *)
   Lemma pt_spaced_intersect'_spec
     (fuel : nat) (x : list positive)
     (ci0 : list bool) (pt0 : @pos_trie' A)
@@ -128,96 +255,20 @@ Section PtSpacedIntersectSpec.
         | _, _ => None
         end.
   Proof.
-    revert fuel ci0 pt0 cil ptl.
-    induction x as [|p x' IHx];
-      intros fuel ci0 pt0 cil ptl
-             Hfuel Hci0_len Hcil_len Hcil_ptl_len Hpt0_d Hcil_ptl_d.
-    - (* Base case: x = [] *)
-      destruct ci0 as [|? ?]; [|cbn in Hci0_len; discriminate].
-      destruct fuel as [|fuel']; [Lia.lia|].
-      cbn in Hpt0_d.
-      destruct pt0 as [a|m]; [|contradiction].
-      assert (Hcil_all_nil : Forall (fun l => l = []) cil).
-      { eapply Forall_impl; [|exact Hcil_len].
-        intros l Hl; cbn in Hl. apply length_zero_iff_nil. exact Hl. }
-      assert (Hptl_leaf : Forall (fun pt => Is_true (has_depth' 0 pt)) ptl).
-      { revert Hcil_ptl_d Hcil_all_nil. clear.
-        revert ptl. induction cil as [|c cil IH]; intros [|pt ptl] Hd Hcil;
-          inversion Hd; subst; constructor.
-        - inversion Hcil; subst c. cbn in *. assumption.
-        - apply IH; [assumption|]. inversion Hcil; assumption. }
-      assert (Hptl_all : all (fun t => Is_true (has_depth' 0 t)) ptl).
-      { clear - Hptl_leaf. induction ptl; cbn; auto.
-        inversion Hptl_leaf; subst; split; auto. }
-      cbn [pt_spaced_intersect'].
-      rewrite (fold_left_map2_orb_all_nil _ Hcil_all_nil).
-      rewrite (list_Mmap_lookup_one'_nil _ _ Hcil_ptl_len Hcil_all_nil Hptl_leaf).
-      change (lookup_one' [] (pos_trie_leaf a, []))
-        with (@Some A a).
-      unfold spaced_get; cbn [fst snd pt_get].
-      cbn [filter combine map].
-      cbn [pt_get'].
-      rewrite (leaf_intersect_correct _ a ptl Hptl_all).
-      cbn [map fold_left].
-      reflexivity.
-    - (* Inductive case: x = p :: x'.  Still admitted; below is what
-         finishing it actually entails.
-
-         Setup:
-           destruct ci0 = b :: ci0' (Hci0_len),
-           destruct fuel = S fuel' (Hfuel).
-         The inner [partition_tries [] [] _] is the identity, so the
-         function's internal partition is just [partition_tries cil ptl
-         initial] with [initial] determined by [b].  Use
-         [PosListMap.partition_tries_spec] (proven, [Qed]) to rewrite
-         that into [partition_result_of_lists (false_filter ++ false_lists
-         initial) (true_filter ++ true_lists initial)] where false/true
-         filters are [rev (map (tl, snd) (filter (head=…) (combine cil
-         ptl)))].
-
-         Two subcases, on the partition result:
-
-         (A) [just_false_part]: occurs iff [b = false] AND no entry of
-             [cil] has a true head.  Then the recursive call is
-             [pt_spaced_intersect' fuel' f_c f_p fc0 [] fp0 []] —
-             cil' = ptl' = [], so IHx applies directly at x'.  But the
-             new (fc0, fp0) is the LAST false-headed entry and (f_c, f_p)
-             holds the rest in REVERSE order with the original (ci0', pt0)
-             appended at the end.  Reconciling LHS and IH-RHS requires:
-               (i)  [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x'
-                    (pt, ci)] (since [filter snd] drops the false slot);
-               (ii) [fold_left orb_combine] is permutation-invariant
-                    (fold of OR is comm/assoc), so the combined-bools on
-                    x' agree across the reordering;
-               (iii) [fold_left merge] is permutation-invariant given
-                     [merge_comm]/[merge_assoc] above, so the reordered
-                     left-fold equals the original.
-
-         (B) [have_true_part]: occurs iff [b = true] OR some [cil] entry
-             has a true head.  The recursive call goes through
-             [list_intersect (fun fwd => pt_spaced_intersect' fuel' other_cil
-             other_tries t_ci0 (true_cil/rev)) (proj t_pt0) (map proj
-             true_tries)].  Use [TrieMap.list_intersect_correct] to push
-             [PTree.get' p _] through the [list_intersect].  THE OBSTACLE:
-             that recursive call passes [cil' = true_cil] and [ptl' =]
-             children-of-true-tries — both NON-EMPTY in general — so this
-             very lemma's IH (which fixes [cil' = ptl' = []]) does not
-             apply.  Finishing (B) requires a stronger variant of this
-             lemma whose conclusion is over [combine ptl cil ++ combine
-             ptl' cil'] (i.e. the "extra" arguments behave as additional
-             input tries).  The leaf base case extends cleanly because
-             [leaf_intersect (leaf_intersect a ptl) ptl' = fold_left merge
-             (leaf_values (ptl ++ ptl')) a]; the inductive case follows
-             the same partition structure but with [partition_tries] applied
-             twice.  That generalised lemma — call it
-             [pt_spaced_intersect'_spec_general] — should be proven first,
-             with the present statement an immediate corollary
-             ([cil' = ptl' = []]).
-
-         Note: as documented in the section's [merge_comm]/[merge_assoc]
-         hypotheses, the lemma is FALSE without those — the partition step
-         in subcase (A) literally swaps the head and last input. *)
-  Admitted.
+    intros Hfuel Hci0 Hcil Hcil_ptl Hpt0 Hcil_ptl_d.
+    pose proof (pt_spaced_intersect'_spec_general
+                  fuel x ci0 pt0 cil ptl [] []
+                  Hfuel Hci0 Hcil
+                  (Forall_nil _)
+                  Hcil_ptl
+                  eq_refl
+                  Hpt0 Hcil_ptl_d
+                  (Forall2_nil _)) as Hgen.
+    rewrite app_nil_r in Hgen.
+    cbn [combine] in Hgen.
+    rewrite app_nil_r in Hgen.
+    exact Hgen.
+  Qed.
 
   (* ------------------------------------------------------------ *)
   (* Bookkeeping helpers used to lift [pt_spaced_intersect'_spec]
