@@ -296,15 +296,28 @@ Section PtSpacedIntersectSpec.
                     (just_false_part ci0' pt0 [] []) (length x')
                     Hrect_app Hwf_init).
         cbn [false_lists true_lists].
-        (* partition_result_of_lists is now a [match] on the (possibly
-           empty) true_filter list.  Cases:
-            - true_filter = []: result is just_false_part, recursive call
-              has cil'=ptl'=[], so IHx applies directly;
-            - true_filter = (tc0,tp0)::t': result is have_true_part,
-              the recursive call goes through list_intersect with
-              non-empty cil'/ptl' (true_cil and the children of true_tries)
-              — IHx still applies because we generalised. *)
-        admit.
+        rewrite app_nil_r.
+        (* Bind the [true_filter] / [false_filter] expressions so we can
+           case on them. *)
+        set (Lall := combine (cil ++ cil') (ptl ++ ptl')).
+        set (TF := rev (map (fun p => (tl (fst p), snd p))
+                          (filter (fun p => hd false (fst p)) Lall))).
+        set (FF := rev (map (fun p => (tl (fst p), snd p))
+                          (filter (fun p => negb (hd false (fst p))) Lall))).
+        (* Partition_result_of_lists pattern-matches on its second
+           argument [TF].  Subcases on whether [TF] is empty. *)
+        destruct TF as [|[tc0 tp0] TF_tail] eqn:HTF.
+        * (* TF = []: no entry of cil++cil' has a true head, so the
+             partition collapses to just_false_part, and the recursive
+             call is over the false-headed entries (in reverse order)
+             with the original (ci0', pt0) appended.  Apply IHx. *)
+          admit.
+        * (* TF non-empty: at least one true-headed entry, so we get
+             [have_true_part]; the recursive call goes through
+             [list_intersect] which we discharge via
+             [TrieMap.list_intersect_correct] and then IHx with non-empty
+             cil'/ptl'. *)
+          admit.
   Admitted.
 
   (* The original lemma is the cil'=ptl'=[] specialisation. *)
