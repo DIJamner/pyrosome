@@ -10,6 +10,12 @@ Section PtSpacedIntersectSpec.
   Context {A : Type}.
   Context `{WithDefault A}.
   Context (merge : A -> A -> A).
+  (* [pt_spaced_intersect'] re-orders inputs while it partitions on each
+     variable, so the per-key merge runs in a different order than the
+     spec's [fold_left merge es e].  The two agree only when [merge] is
+     commutative and associative. *)
+  Context (merge_comm : forall a b, merge a b = merge b a).
+  Context (merge_assoc : forall a b c, merge a (merge b c) = merge (merge a b) c).
 
   (* The combined bool pattern for the intersected trie is the pointwise
      OR ("union") of all the input patterns. *)
@@ -154,38 +160,63 @@ Section PtSpacedIntersectSpec.
       rewrite (leaf_intersect_correct _ a ptl Hptl_all).
       cbn [map fold_left].
       reflexivity.
-    - (* Inductive case: x = p :: x'.
+    - (* Inductive case: x = p :: x'.  Still admitted; below is what
+         finishing it actually entails.
 
-         Sketch:
-           - destruct ci0 = b :: ci0' (Hci0_len shrinks),
-             destruct fuel = S fuel' (Hfuel),
-           - the second [partition_tries] is on []/[] so it is the identity;
-             the first [partition_tries] sorts (cil, ptl) into:
-               * the "true-head" entries and
-               * the "false-head" entries (each with its head stripped).
-             The result combines those with the initial part determined by [b].
-           - Subcase A (b = false AND no cil entry has a true head): result is
-             [just_false_part ci0' pt0 false_cil false_ptl]; recurse with ci0',
-             cil = false_cil, ptl = false_ptl, pt0 unchanged. Apply IHx at x'
-             to the sub-problem; show [combined_bools] for the filtered set on
-             x' agrees with the original on x after dropping the false head;
-             show [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x' (pt, ci)]
-             since [filter snd] skips the index where ci's head is false; and
-             that the missing (no true heads) cil entries also drop out.
-           - Subcase B (b = true OR some cil entry has a true head): result is
-             [have_true_part false_cil false_ptl t_ci0 t_pt0 true_cil true_ptl].
-             Use [list_intersect_correct] from TrieMap.v to push [pt_get' p _]
-             through the [list_intersect]; this turns the goal into a [Mbind]
-             over [PTree.get' p] of [proj_node_map_unchecked t_pt0] and the
-             children of [true_ptl]. Each of those children has depth one less
-             than the original, so IHx applies at x'.
+         Setup:
+           destruct ci0 = b :: ci0' (Hci0_len),
+           destruct fuel = S fuel' (Hfuel).
+         The inner [partition_tries [] [] _] is the identity, so the
+         function's internal partition is just [partition_tries cil ptl
+         initial] with [initial] determined by [b].  Use
+         [PosListMap.partition_tries_spec] (proven, [Qed]) to rewrite
+         that into [partition_result_of_lists (false_filter ++ false_lists
+         initial) (true_filter ++ true_lists initial)] where false/true
+         filters are [rev (map (tl, snd) (filter (head=…) (combine cil
+         ptl)))].
 
-         Each subcase needs auxiliary characterisations of [partition_tries]
-         (currently only the projections [partition_tries_true_lists] and
-         [partition_tries_false_lists] are proven in PosListMap.v; the
-         stronger [partition_tries_spec_properties_*] lemmas used by the
-         existing partial attempts are admitted there). Completing this
-         proof requires first establishing those characterisations. *)
+         Two subcases, on the partition result:
+
+         (A) [just_false_part]: occurs iff [b = false] AND no entry of
+             [cil] has a true head.  Then the recursive call is
+             [pt_spaced_intersect' fuel' f_c f_p fc0 [] fp0 []] —
+             cil' = ptl' = [], so IHx applies directly at x'.  But the
+             new (fc0, fp0) is the LAST false-headed entry and (f_c, f_p)
+             holds the rest in REVERSE order with the original (ci0', pt0)
+             appended at the end.  Reconciling LHS and IH-RHS requires:
+               (i)  [lookup_one' (p::x') (pt, false :: ci) = lookup_one' x'
+                    (pt, ci)] (since [filter snd] drops the false slot);
+               (ii) [fold_left orb_combine] is permutation-invariant
+                    (fold of OR is comm/assoc), so the combined-bools on
+                    x' agree across the reordering;
+               (iii) [fold_left merge] is permutation-invariant given
+                     [merge_comm]/[merge_assoc] above, so the reordered
+                     left-fold equals the original.
+
+         (B) [have_true_part]: occurs iff [b = true] OR some [cil] entry
+             has a true head.  The recursive call goes through
+             [list_intersect (fun fwd => pt_spaced_intersect' fuel' other_cil
+             other_tries t_ci0 (true_cil/rev)) (proj t_pt0) (map proj
+             true_tries)].  Use [TrieMap.list_intersect_correct] to push
+             [PTree.get' p _] through the [list_intersect].  THE OBSTACLE:
+             that recursive call passes [cil' = true_cil] and [ptl' =]
+             children-of-true-tries — both NON-EMPTY in general — so this
+             very lemma's IH (which fixes [cil' = ptl' = []]) does not
+             apply.  Finishing (B) requires a stronger variant of this
+             lemma whose conclusion is over [combine ptl cil ++ combine
+             ptl' cil'] (i.e. the "extra" arguments behave as additional
+             input tries).  The leaf base case extends cleanly because
+             [leaf_intersect (leaf_intersect a ptl) ptl' = fold_left merge
+             (leaf_values (ptl ++ ptl')) a]; the inductive case follows
+             the same partition structure but with [partition_tries] applied
+             twice.  That generalised lemma — call it
+             [pt_spaced_intersect'_spec_general] — should be proven first,
+             with the present statement an immediate corollary
+             ([cil' = ptl' = []]).
+
+         Note: as documented in the section's [merge_comm]/[merge_assoc]
+         hypotheses, the lemma is FALSE without those — the partition step
+         in subcase (A) literally swaps the head and last input. *)
   Admitted.
 
   (* ------------------------------------------------------------ *)
