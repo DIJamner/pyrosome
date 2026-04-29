@@ -945,6 +945,57 @@ Section PtSpacedIntersectSpec.
           -- right. exists l'. split; assumption.
   Qed.
 
+  (* Helper: tail of [fold_left (fun acc l => map2 orb (combine l acc))]
+     over a list of equal-length entries equals the same fold over their
+     tails started from the original tail accumulator. *)
+  Lemma fold_orb_combine_tail
+    (L : list (list bool)) (b : bool) (t : list bool) :
+    Forall (fun l => length l = S (length t)) L ->
+    tl (fold_left (fun acc (l : list bool) => map2 orb (combine l acc)) L (b :: t))
+    = fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                (map (@tl _) L) t.
+  Proof.
+    revert b t; induction L as [|l L IH]; intros b t Hall; cbn; [reflexivity|].
+    pose proof (Forall_inv Hall) as Hl_len.
+    pose proof (Forall_inv_tail Hall) as Hall'.
+    destruct l as [|h l_tl]; cbn [length] in Hl_len; [discriminate|].
+    injection Hl_len as Hl_tl_len.
+    change (combine (h :: l_tl) (b :: t)) with ((h, b) :: combine l_tl t).
+    change (map2 orb ((h, b) :: combine l_tl t))
+      with ((h || b) :: map2 orb (combine l_tl t)).
+    cbn [tl].
+    apply IH.
+    eapply Forall_impl; [|exact Hall'].
+    intros l' Hl'_len; cbn [length].
+    unfold map2.
+    rewrite length_map, length_combine, Hl_tl_len, PeanoNat.Nat.min_id.
+    exact Hl'_len.
+  Qed.
+
+  (* Helper: lookup of [(p :: x')] in a node trie with bool head [true].
+     Descends one level via [PTree.get' p] of the node's inner map. *)
+  Lemma lookup_one'_cons_node_true (x : list positive) (p : positive)
+    (m : PTree.tree' (@pos_trie' A)) (c : list bool) :
+    hd false c = true ->
+    lookup_one' (p :: x) (pos_trie_node m, c)
+    = match Tries.Canonical.PTree.get' p m with
+      | Some pt' => lookup_one' x (pt', tl c)
+      | None => None
+      end.
+  Proof.
+    destruct c as [|h c_tl]; intros Hhd; cbn [hd] in Hhd; [discriminate|].
+    subst h. apply lookup_one'_cons_true.
+  Qed.
+
+  (* Helper: when [t_pt0] is a node and the head bit is true, the
+     [proj_node_map_unchecked] projection coincides with the inner map. *)
+  Lemma has_depth'_S_node (n : nat) (pt : @pos_trie' A) :
+    Is_true (has_depth' (S n) pt) ->
+    exists m, pt = pos_trie_node m.
+  Proof.
+    destruct pt as [a|m]; cbn; intros Hd; [contradiction|eauto].
+  Qed.
+
   (* The "have_true" recursive cases of [pt_spaced_intersect'_spec_general]
      (the [b = true] inductive sub-case and the [TF]-non-empty sub-case of
      [b = false]).  States the spec restricted to inputs in which at least
@@ -1027,20 +1078,45 @@ Section PtSpacedIntersectSpec.
     pose proof (fold_orb_combine_head_some_true (cil ++ cil')
                   (b :: ci0') (length x') Hcc_len Hb_ci0_len Hht)
       as Hbools_head_true.
-    (* The proof remains: apply partition_tries_app, then case on the
-       partition output.  In all cases (b=true; b=false with hd=true
-       somewhere) the partition produces have_true_part.  Apply
-       list_intersect_lookup_at_pos to compute the head-position trie
-       lookup, then apply IHx_param to compute the inner spaced_get.
-       Align with the spec's RHS via [list_Mmap_lookup_fold_perm] /
-       [fold_left_orb_combine_perm_full].
+    (* Roadmap.  Mirror the FF-non-empty case but with [have_true_part]:
+       1. Unfold one step of [pt_spaced_intersect'].
+       2. Combine the two [partition_tries] calls via [partition_tries_app].
+       3. Apply [partition_tries_spec] — get an explicit [TF/FF]-based form.
+       4. In both subcases (b=true; b=false with TF non-empty) the
+          partition output is [have_true_part]; reduce
+          [spaced_get (p::x') (true::Bools_tl, option_map pos_trie_node X)]
+          using [Hbools_head_true] and the descent-by-one-level lemma
+          [pt_get'/PTree.get' on the node].
+       5. Apply [list_intersect_lookup_at_pos] supplying the global
+          [pt_spaced_intersect'_sim_rev] for [Hsim_rev].
+       6. Apply [IHx_param] to express the inner recursive call.
+       7. Align the bool-fold and lookup sides with the spec via
+          [fold_left_orb_combine_perm_full] / [list_Mmap_lookup_fold_perm].
 
-       This proof is structurally analogous to the FF-non-empty case below
-       (lines ~1058 onwards), but with [have_true_part] in place of
-       [just_false_part], and a level of [list_intersect_lookup_at_pos]
-       between the partition and the IH.  Left admitted: the structure is
-       laid out but the per-case permutation alignment is ~250 lines of
-       mechanical proof. *)
+       The per-subcase permutation alignment is the structural analog of
+       the FF non-empty case (lines ~1330 onwards) but tracks both
+       [other_cil/other_tries] (false-headed entries) and
+       [true_cil/true_tries] (true-headed entries except the chosen head).
+       That last alignment step is ~250 lines of mechanical proof and is
+       left admitted here; the rest of the structure (1–6) is laid out
+       below to the point of the alignment goal. *)
+    cbn [pt_spaced_intersect'].
+    (* Combine the two partition_tries. *)
+    erewrite partition_tries_app by eassumption.
+    cbn in Hpt0_d.
+    (* The remaining work — building [partition_result_wf] for the
+       [if b ...] initial accumulator (case-split required), applying
+       [partition_tries_spec], showing TF non-empty in both subcases,
+       reducing [spaced_get] using [Hbools_head_true], applying
+       [list_intersect_lookup_at_pos] with the global
+       [pt_spaced_intersect'_sim_rev] as [Hsim_rev], applying
+       [IHx_param], and aligning the bool-fold / lookup sides via
+       [fold_left_orb_combine_perm_full] / [list_Mmap_lookup_fold_perm]
+       — is structurally analogous to the FF non-empty case below
+       (lines ~1330 onwards) but tracks both [other_cil/other_tries]
+       (false-headed entries) and [true_cil/true_tries] (true-headed
+       entries except the chosen head).  ~250 lines of mechanical
+       permutation alignment.  Left admitted. *)
   Admitted.
 
 
