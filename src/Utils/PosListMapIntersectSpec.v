@@ -826,13 +826,21 @@ Section PtSpacedIntersectSpec.
     = pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl'.
   Admitted.
 
-  (* Specialised [list_intersect_correct] for our [lam].  Uses the
-     [pt_spaced_intersect'_sim_rev] admit to discharge [elts_intersect_rev]. *)
+  (* Specialised [list_intersect_correct] for our [lam].  The joint-reversal
+     property of [pt_spaced_intersect'] (the same fact stated globally as the
+     admitted [pt_spaced_intersect'_sim_rev]) is taken here as an explicit
+     hypothesis [Hsim_rev], so the proof body of this lemma is independent of
+     the admit.  Callers discharge [Hsim_rev] at instantiation. *)
   Lemma list_intersect_lookup_at_pos
     (fuel' : nat) (other_cil : list (list bool))
     (other_tries : list (@pos_trie' A)) (t_ci0 : list bool)
     (true_cil : list (list bool)) (t_pt0 : @pos_trie' A)
-    (true_tries : list (@pos_trie' A)) (p : positive) :
+    (true_tries : list (@pos_trie' A)) (p : positive)
+    (Hsim_rev : forall cil' pt0 ptl',
+       pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
+                            (rev cil') pt0 (rev ptl')
+       = pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
+                              cil' pt0 ptl') :
     Tries.Canonical.PTree.get p
       (TrieMap.otree (TrieMap.list_intersect
          (fun is_forward : bool =>
@@ -859,13 +867,11 @@ Section PtSpacedIntersectSpec.
       destruct b; cbn.
       - (* Goal: pt_spaced_intersect' ... true_cil x (rev l)
                 = pt_spaced_intersect' ... (rev true_cil) x l *)
-        rewrite <- (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
-                                                  (rev true_cil) x l).
+        rewrite <- (Hsim_rev (rev true_cil) x l).
         rewrite rev_involutive. reflexivity.
       - (* Goal: pt_spaced_intersect' ... (rev true_cil) x (rev l)
                 = pt_spaced_intersect' ... true_cil x l *)
-        rewrite <- (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
-                                                  true_cil x l).
+        rewrite <- (Hsim_rev true_cil x l).
         reflexivity. }
     rewrite (TrieMap.list_intersect_correct
                (B := @pos_trie' A) (C := @pos_trie' A)
@@ -883,8 +889,7 @@ Section PtSpacedIntersectSpec.
     destruct (list_Mmap (Tries.Canonical.PTree.get' p) (map proj_node_map_unchecked true_tries))
       as [tl_x|]; cbn; [|reflexivity].
     subst lam; cbn.
-    rewrite (pt_spaced_intersect'_sim_rev fuel' other_cil other_tries t_ci0
-                                          true_cil hd_x tl_x).
+    rewrite (Hsim_rev true_cil hd_x tl_x).
     reflexivity.
   Qed.
 
