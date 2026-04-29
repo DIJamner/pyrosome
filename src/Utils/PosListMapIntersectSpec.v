@@ -89,6 +89,306 @@ Section PtSpacedIntersectSpec.
     destruct pt as [a|m]; cbn; intros Hd; [eauto|contradiction].
   Qed.
 
+  (* Helper for [trie_fold'] folding [andb f]: false propagates. *)
+  Lemma trie_fold'_andb_false {B : Type} (f : B -> bool)
+    (m : Tries.Canonical.PTree.tree' B) (revnum : positive) :
+    TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                       false m revnum = false.
+  Proof.
+    revert revnum.
+    induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+      intros revnum; cbn;
+      rewrite ?Bool.andb_false_l;
+      try (apply IH);
+      try (rewrite IH2; apply IH1);
+      reflexivity.
+  Qed.
+
+  (* Helper: starting accumulator factors out of [trie_fold'] with [andb]. *)
+  Lemma trie_fold'_andb_factor {B : Type} (f : B -> bool)
+    (m : Tries.Canonical.PTree.tree' B) (revnum : positive) (acc : bool) :
+    TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                       acc m revnum
+    = andb acc
+       (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                           true m revnum).
+  Proof.
+    revert revnum acc.
+    induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+      intros revnum acc; cbn.
+    - rewrite (IH (xI revnum) acc). reflexivity.
+    - reflexivity.
+    - rewrite (IH (xI revnum) (acc && f a)).
+      rewrite (IH (xI revnum) (f a)).
+      rewrite Bool.andb_assoc. reflexivity.
+    - rewrite (IH (xO revnum) acc). reflexivity.
+    - rewrite (IH1 (xO revnum)
+                   (TrieMap.trie_fold' _ acc m2 (xI revnum))).
+      rewrite (IH1 (xO revnum)
+                   (TrieMap.trie_fold' _ true m2 (xI revnum))).
+      rewrite (IH2 (xI revnum) acc).
+      rewrite Bool.andb_assoc. reflexivity.
+    - rewrite (IH (xO revnum) (acc && f a)).
+      rewrite (IH (xO revnum) (f a)).
+      rewrite Bool.andb_assoc. reflexivity.
+    - rewrite (IH1 (xO revnum)
+                   (TrieMap.trie_fold' _ (acc && f a) m2 (xI revnum))).
+      rewrite (IH1 (xO revnum)
+                   (TrieMap.trie_fold' _ (f a) m2 (xI revnum))).
+      rewrite (IH2 (xI revnum) (acc && f a)).
+      rewrite (IH2 (xI revnum) (f a)).
+      rewrite !Bool.andb_assoc. reflexivity.
+  Qed.
+
+  (* Helper: [trie_fold'] folding [andb f] gives the per-entry property. *)
+  Lemma trie_fold'_andb_get_inv {B : Type} (f : B -> bool)
+    (m : Tries.Canonical.PTree.tree' B) (revnum : positive) :
+    Is_true (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                                true m revnum) ->
+    forall p v, Tries.Canonical.PTree.get' p m = Some v -> Is_true (f v).
+  Proof.
+    revert revnum.
+    induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+      intros revnum Hfold p v Hget; cbn in *.
+    - (* Node001 *)
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      eapply IH; eauto.
+    - (* Node010 *)
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      injection Hget as <-. exact Hfold.
+    - (* Node011 *)
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      + eapply IH; eauto.
+        rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+        apply Is_true_eq_true in Hfold.
+        apply Bool.andb_true_iff in Hfold as [_ Hr].
+        apply Is_true_eq_left. exact Hr.
+      + injection Hget as <-.
+        rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+        apply Is_true_eq_true in Hfold.
+        apply Bool.andb_true_iff in Hfold as [Hf _].
+        apply Is_true_eq_left. exact Hf.
+    - (* Node100 *)
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      eapply IH; eauto.
+    - (* Node101 *)
+      rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                 (TrieMap.trie_fold' _ true m2 (xI revnum))) in Hfold.
+      apply Is_true_eq_true in Hfold.
+      apply Bool.andb_true_iff in Hfold as [Hf1 Hf2].
+      apply Is_true_eq_left in Hf1. apply Is_true_eq_left in Hf2.
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      + (* xI: lookup in m2 *) eapply IH2; eauto.
+      + (* xO: lookup in m1 *) eapply IH1; eauto.
+    - (* Node110 *)
+      rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)) in Hfold.
+      apply Is_true_eq_true in Hfold.
+      apply Bool.andb_true_iff in Hfold as [Hfa Hfm].
+      apply Is_true_eq_left in Hfa. apply Is_true_eq_left in Hfm.
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      + eapply IH; eauto.
+      + injection Hget as <-. exact Hfa.
+    - (* Node111 *)
+      rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                 (TrieMap.trie_fold' _ (f a) m2 (xI revnum)))
+        in Hfold.
+      rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a))
+        in Hfold.
+      apply Is_true_eq_true in Hfold.
+      apply Bool.andb_true_iff in Hfold as [Hfa Hfm1].
+      apply Bool.andb_true_iff in Hfa as [Hfay Hfm2].
+      apply Is_true_eq_left in Hfay.
+      apply Is_true_eq_left in Hfm1. apply Is_true_eq_left in Hfm2.
+      destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+      + (* xI: lookup in m2 *) eapply IH2; eauto.
+      + (* xO: lookup in m1 *) eapply IH1; eauto.
+      + injection Hget as <-. exact Hfay.
+  Qed.
+
+  (* Direct per-entry inversion for [has_depth' (S n) (pos_trie_node m)]. *)
+  Lemma has_depth'_node_inv (n : nat) (m : Tries.Canonical.PTree.tree' (@pos_trie' A))
+    (p : positive) (v : @pos_trie' A) :
+    Is_true (has_depth' (S n) (pos_trie_node m)) ->
+    Tries.Canonical.PTree.get' p m = Some v ->
+    Is_true (has_depth' n v).
+  Proof.
+    intros Hd Hg.
+    eapply (@trie_fold'_andb_get_inv (@pos_trie' A) (has_depth' n) m xH); eauto.
+  Qed.
+
+  (* Conversion: [Is_true (has_depth' n pt)] gives the per-entry depth property
+     via the inductive proposition [depth']. *)
+  Lemma has_depth'_to_depth' (n : nat) (pt : @pos_trie' A) :
+    Is_true (has_depth' n pt) -> depth' pt n.
+  Proof.
+    revert pt.
+    induction n; intros pt Hd.
+    - destruct pt as [a|m]; cbn in Hd; [|contradiction].
+      constructor.
+    - destruct pt as [a|m]; cbn in Hd; [contradiction|].
+      constructor. intros k v Hget.
+      apply IHn.
+      (* From [Hd : Is_true (map.forallb (fun _ => has_depth' n) (Nodes m))]
+         derive per-entry. *)
+      change (Is_true (TrieMap.trie_fold'
+                         (fun res (_:positive) (w:@pos_trie' A) =>
+                            res && has_depth' n w)
+                         true m xH)) in Hd.
+      eapply trie_fold'_andb_get_inv; eauto.
+  Qed.
+
+  (* Every [pos_trie'] of [has_depth' n] has at least one valid lookup. *)
+  Lemma pos_trie'_lookup_exists (n : nat) (pt : @pos_trie' A) :
+    Is_true (has_depth' n pt) ->
+    exists k v, length k = n /\ pt_get' pt k = Some v.
+  Proof.
+    revert pt.
+    induction n; intros pt Hd.
+    - destruct pt as [a|m]; cbn in Hd; [|contradiction].
+      exists [], a. split; reflexivity.
+    - destruct pt as [a|m]; [cbn in Hd; contradiction|].
+      pose proof (@Tries.Canonical.PTree.tree'_not_empty _ m) as [p Hp].
+      destruct (Tries.Canonical.PTree.get' p m) as [pt'|] eqn:Hgp; [|congruence].
+      assert (Hd' : Is_true (has_depth' n pt')).
+      { apply has_depth'_to_depth' in Hd.
+        inversion Hd as [|m' n' Hall Heq1 Heq2]; subst.
+        (* We need to recover Is_true from depth'.  Just induct backward
+           via a separate iff. *)
+        clear Hd.
+        revert Hall.
+        clear -Hgp.
+        intros Hall.
+        specialize (Hall _ _ Hgp).
+        clear -Hall.
+        revert pt' Hall; induction n; intros pt' Hd; cbn.
+        - inversion Hd; subst; cbn; trivial.
+        - inversion Hd as [|m'' n'' Hall' Heq1 Heq2]; subst; cbn.
+          (* depth' (node m'') (S n) means all entries of m'' have depth' n. *)
+          (* We want Is_true (map.forallb (has_depth' n) (Nodes m'')). *)
+          change (Is_true (TrieMap.trie_fold'
+                             (fun res (_:positive) (v:@pos_trie' A) =>
+                                res && has_depth' n v)
+                             true m'' xH)).
+          (* Plan: show the andb-fold returns true. *)
+          generalize xH as revnum.
+          revert Hall' IHn.
+          generalize m'' as mm. clear.
+          intros mm.
+          induction mm as [mm IH | a | a mm IH | mm IH | mm1 IH1 mm2 IH2 | mm IH a | mm1 IF1 a mm2 IF2];
+            intros Hall IHn revnum; cbn.
+          + (* Node001 mm *)
+            apply IH.
+            * intros k v Hget. apply (Hall (xI k) v). cbn. exact Hget.
+            * exact IHn.
+          + (* Node010 a *)
+            apply Is_true_eq_left.
+            apply Is_true_eq_true.
+            apply IHn. apply (Hall xH). reflexivity.
+          + (* Node011 a mm *)
+            assert (Hy : Is_true (has_depth' n a)).
+            { apply IHn. apply (Hall xH). reflexivity. }
+            apply Is_true_eq_true in Hy.
+            rewrite Hy. cbn [andb].
+            apply IH.
+            * intros k v Hget. apply (Hall (xI k) v). cbn. exact Hget.
+            * exact IHn.
+          + (* Node100 mm *)
+            apply IH.
+            * intros k v Hget. apply (Hall (xO k) v). cbn. exact Hget.
+            * exact IHn.
+          + (* Node101 mm1 mm2 *)
+            assert (Hr : Is_true (TrieMap.trie_fold'
+                                    (fun (res : bool) (_ : positive) (v : pos_trie') =>
+                                       res && has_depth' n v) true mm2 (xI revnum))).
+            { apply IH2.
+              - intros k v Hget. apply (Hall (xI k) v). cbn. exact Hget.
+              - exact IHn. }
+            rewrite (trie_fold'_andb_factor (has_depth' n) mm1 (xO revnum)
+                       (TrieMap.trie_fold' _ true mm2 (xI revnum))).
+            apply Is_true_eq_true in Hr. rewrite Hr. cbn [andb].
+            apply IH1.
+            * intros k v Hget. apply (Hall (xO k) v). cbn. exact Hget.
+            * exact IHn.
+          + (* Node110 mm a *)
+            assert (Hy : Is_true (has_depth' n a)).
+            { apply IHn. apply (Hall xH). reflexivity. }
+            apply Is_true_eq_true in Hy. rewrite Hy. cbn [andb].
+            apply IH.
+            * intros k v Hget. apply (Hall (xO k) v). cbn. exact Hget.
+            * exact IHn.
+          + (* Node111 mm1 a mm2 *)
+            assert (Hy : Is_true (has_depth' n a)).
+            { apply IHn. apply (Hall xH). reflexivity. }
+            apply Is_true_eq_true in Hy.
+            assert (Hr : Is_true (TrieMap.trie_fold'
+                                    (fun (res : bool) (_ : positive) (v : pos_trie') =>
+                                       res && has_depth' n v) true mm2 (xI revnum))).
+            { apply IF2.
+              - intros k v Hget. apply (Hall (xI k) v). cbn. exact Hget.
+              - exact IHn. }
+            rewrite Hy. cbn [andb].
+            rewrite (trie_fold'_andb_factor (has_depth' n) mm1 (xO revnum)
+                       (TrieMap.trie_fold' _ true mm2 (xI revnum))).
+            apply Is_true_eq_true in Hr. rewrite Hr. cbn [andb].
+            apply IF1.
+            * intros k v Hget. apply (Hall (xO k) v). cbn. exact Hget.
+            * exact IHn. }
+      destruct (IHn pt' Hd') as [k' [v [Hk'_len Hgk']]].
+      exists (p :: k'), v. split.
+      + cbn. f_equal. exact Hk'_len.
+      + cbn. rewrite Hgp. exact Hgk'.
+  Qed.
+
+  (* Pos_trie' extensionality at fixed depth: two tries of the same depth with
+     identical lookups for keys of that length are equal. *)
+  Lemma pos_trie'_ext_at_depth (n : nat) (pt1 pt2 : @pos_trie' A) :
+    Is_true (has_depth' n pt1) ->
+    Is_true (has_depth' n pt2) ->
+    (forall k, length k = n -> pt_get' pt1 k = pt_get' pt2 k) ->
+    pt1 = pt2.
+  Proof.
+    revert pt1 pt2.
+    induction n; intros pt1 pt2 Hd1 Hd2 Hk.
+    - apply has_depth'_0_leaf in Hd1 as [a1 ->].
+      apply has_depth'_0_leaf in Hd2 as [a2 ->].
+      specialize (Hk [] eq_refl). cbn in Hk. injection Hk as <-. reflexivity.
+    - destruct pt1 as [a1|m1]; [cbn in Hd1; contradiction|].
+      destruct pt2 as [a2|m2]; [cbn in Hd2; contradiction|].
+      f_equal.
+      assert (Hgeq : forall p, Tries.Canonical.PTree.get' p m1
+                               = Tries.Canonical.PTree.get' p m2).
+      { intro p.
+        destruct (Tries.Canonical.PTree.get' p m1) as [pt1'|] eqn:Hg1;
+          destruct (Tries.Canonical.PTree.get' p m2) as [pt2'|] eqn:Hg2.
+        - f_equal.
+          assert (Hd1' : Is_true (has_depth' n pt1')).
+          { apply (@has_depth'_node_inv n m1 p pt1' Hd1 Hg1). }
+          assert (Hd2' : Is_true (has_depth' n pt2')).
+          { apply (@has_depth'_node_inv n m2 p pt2' Hd2 Hg2). }
+          apply IHn; auto.
+          intros k' Hk'_len.
+          specialize (Hk (p :: k') (f_equal S Hk'_len)).
+          cbn in Hk. rewrite Hg1, Hg2 in Hk. exact Hk.
+        - exfalso.
+          assert (Hd1' : Is_true (has_depth' n pt1')).
+          { apply (@has_depth'_node_inv n m1 p pt1' Hd1 Hg1). }
+          destruct (pos_trie'_lookup_exists _ _ Hd1') as [k' [v [Hlen' Hk']]].
+          specialize (Hk (p :: k') (f_equal S Hlen')).
+          cbn in Hk. rewrite Hg1, Hg2, Hk' in Hk. discriminate.
+        - exfalso.
+          assert (Hd2' : Is_true (has_depth' n pt2')).
+          { apply (@has_depth'_node_inv n m2 p pt2' Hd2 Hg2). }
+          destruct (pos_trie'_lookup_exists _ _ Hd2') as [k' [v [Hlen' Hk']]].
+          specialize (Hk (p :: k') (f_equal S Hlen')).
+          cbn in Hk. rewrite Hg1, Hg2, Hk' in Hk. discriminate.
+        - reflexivity. }
+      (* Use PTree.extensionality on Nodes m1 vs Nodes m2. *)
+      assert (Hnodes : Tries.Canonical.PTree.Nodes m1 = Tries.Canonical.PTree.Nodes m2).
+      { apply Tries.Canonical.PTree.extensionality.
+        intro i. cbn. apply Hgeq. }
+      injection Hnodes as Hnodes. exact Hnodes.
+  Qed.
+
   (* Helper: list_Mmap of lookup_one' on length-0 keys gives the leaves. *)
   Lemma list_Mmap_lookup_one'_nil
     (ptl : list (@pos_trie' A)) (cil : list (list bool)) :
@@ -602,23 +902,85 @@ Section PtSpacedIntersectSpec.
     apply IH; exact Hany.
   Qed.
 
-  (* Significant lemma admitted to discharge the "have_true" recursive cases of
-     [pt_spaced_intersect'_spec_general] (the [b = true] inductive sub-case and
-     the [TF]-non-empty sub-case of [b = false]).  States the spec restricted
-     to inputs in which at least one of [ci0] or some entry of [cil ++ cil']
-     has [hd = true]; in that scenario the function takes the
-     [have_true_part] branch and the result is
-     [option_map pos_trie_node (list_intersect ...)].  A full proof would
-     parallel the FF-non-empty subcase: apply [partition_tries_spec], use
-     [list_intersect_lookup_at_pos] to compute the head-position lookup,
-     apply IHx to the recursive call, and align via the permutation
-     lemmas [fold_left_orb_combine_perm_full] /
-     [list_Mmap_lookup_fold_perm].  Left admitted pending elaboration. *)
+  (* Helper: head of OR-fold is true whenever the initial accumulator's head
+     is true OR some entry of [L] has [hd false l = true].  Each entry of
+     [L] must have length matching [acc] and be non-empty (length = S _). *)
+  Lemma fold_orb_combine_head_some_true (L : list (list bool)) (acc : list bool) (n : nat) :
+    Forall (fun l => length l = S n) L ->
+    length acc = S n ->
+    (hd false acc = true \/ exists l, In l L /\ hd false l = true) ->
+    hd false (fold_left (fun a l => map2 orb (combine l a)) L acc) = true.
+  Proof.
+    revert acc n.
+    induction L as [|l L IH]; intros acc n Hlen Hacc_len Hht; cbn.
+    - destruct Hht as [Hb | [_ [[] _]]]. exact Hb.
+    - pose proof (Forall_inv Hlen) as Hl_len.
+      pose proof (Forall_inv_tail Hlen) as Hlen'.
+      destruct l as [|h l_tl]; cbn in Hl_len; [discriminate|].
+      injection Hl_len as Hl_tl_len.
+      destruct acc as [|b acc_tl]; cbn in Hacc_len; [discriminate|].
+      injection Hacc_len as Hacc_tl_len.
+      change (combine (h :: l_tl) (b :: acc_tl)) with ((h, b) :: combine l_tl acc_tl).
+      change (map2 orb ((h, b) :: combine l_tl acc_tl))
+        with ((h || b) :: map2 orb (combine l_tl acc_tl)).
+      eapply IH with (n := n).
+      + (* Forall length on rest *)
+        eapply Forall_impl; [|exact Hlen'].
+        intros lz Hlz; cbn in *; assumption.
+      + (* length of new acc *)
+        cbn. unfold map2.
+        rewrite length_map, length_combine, Hl_tl_len, Hacc_tl_len, PeanoNat.Nat.min_id.
+        reflexivity.
+      + (* Disjunction for new fold acc *)
+        destruct Hht as [Hb | [l' [HIn Hhd]]].
+        * left. cbn in Hb. subst b. rewrite Bool.orb_true_r. reflexivity.
+        * destruct HIn as [Hl_eq|HIn_rest].
+          -- subst l'. cbn in Hhd. left.
+             destruct h; cbn in *; [reflexivity|discriminate].
+          -- right. exists l'. split; assumption.
+  Qed.
+
+  (* The "have_true" recursive cases of [pt_spaced_intersect'_spec_general]
+     (the [b = true] inductive sub-case and the [TF]-non-empty sub-case of
+     [b = false]).  States the spec restricted to inputs in which at least
+     one of [ci0] or some entry of [cil ++ cil'] has [hd = true]; in that
+     scenario the function takes the [have_true_part] branch and the result
+     is [option_map pos_trie_node (list_intersect ...)].
+
+     Takes the outer induction hypothesis [IHx_param] as a parameter so the
+     recursive call inside [list_intersect] can be unfolded into its
+     spec form. *)
   Lemma pt_spaced_intersect'_spec_general_have_true
     (fuel' : nat) (p : positive) (x' : list positive)
     (ci0 : list bool) (pt0 : @pos_trie' A)
     (cil : list (list bool)) (ptl : list (@pos_trie' A))
     (cil' : list (list bool)) (ptl' : list (@pos_trie' A))
+    (IHx_param :
+       forall (fuel : nat) (ci0_in : list bool) (pt0_in : @pos_trie' A)
+              (cil_in : list (list bool)) (ptl_in : list (@pos_trie' A))
+              (cil'_in : list (list bool)) (ptl'_in : list (@pos_trie' A)),
+         (fuel > length x')%nat ->
+         length ci0_in = length x' ->
+         Forall (fun l => length l = length x') cil_in ->
+         Forall (fun l => length l = length x') cil'_in ->
+         length cil_in = length ptl_in ->
+         length cil'_in = length ptl'_in ->
+         Is_true (has_depth' (length (filter id ci0_in)) pt0_in) ->
+         Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt))
+                 cil_in ptl_in ->
+         Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt))
+                 cil'_in ptl'_in ->
+         spaced_get x'
+           (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                      (cil_in ++ cil'_in) ci0_in,
+            pt_spaced_intersect' merge fuel cil_in ptl_in ci0_in cil'_in
+                                 pt0_in ptl'_in)
+         = match lookup_one' x' (pt0_in, ci0_in),
+                 list_Mmap (lookup_one' x')
+                           (combine ptl_in cil_in ++ combine ptl'_in cil'_in) with
+           | Some e, Some es => Some (fold_left merge es e)
+           | _, _ => None
+           end)
     : (fuel' > length x')%nat ->
       length ci0 = S (length x') ->
       Forall (fun l => length l = S (length x')) cil ->
@@ -639,6 +1001,41 @@ Section PtSpacedIntersectSpec.
         | Some e, Some es => Some (fold_left merge es e)
         | _, _ => None
         end.
+  Proof.
+    intros Hfuel Hci0_len Hcil_len Hcil'_len Hcil_ptl_len Hcil'_ptl'_len
+           Hpt0_d Hcil_ptl_d Hcil'_ptl'_d Hht.
+    (* Build rectangular_trie_list facts. *)
+    assert (Hrect : rectangular_trie_list (S (length x')) cil ptl).
+    { eapply rectangular_trie_list_of_Forall2; [exact Hcil_len|exact Hcil_ptl_d]. }
+    assert (Hrect' : rectangular_trie_list (S (length x')) cil' ptl').
+    { eapply rectangular_trie_list_of_Forall2; [exact Hcil'_len|exact Hcil'_ptl'_d]. }
+    assert (Hrect_app : rectangular_trie_list (S (length x'))
+                                              (cil ++ cil') (ptl ++ ptl')).
+    { apply rectangular_trie_list_app; assumption. }
+    assert (Hcc_len : Forall (fun l => length l = S (length x')) (cil ++ cil')).
+    { apply Forall_app; split; assumption. }
+    (* Destruct ci0 = b :: ci0'. *)
+    destruct ci0 as [|b ci0']; [cbn in Hci0_len; discriminate|].
+    cbn [Datatypes.length] in Hci0_len. injection Hci0_len as Hci0_len.
+    (* Compute that Bools[0] = true. *)
+    assert (Hb_ci0_len : length (b :: ci0') = S (length x')) by (cbn; congruence).
+    pose proof (fold_orb_combine_head_some_true (cil ++ cil')
+                  (b :: ci0') (length x') Hcc_len Hb_ci0_len Hht)
+      as Hbools_head_true.
+    (* The proof remains: apply partition_tries_app, then case on the
+       partition output.  In all cases (b=true; b=false with hd=true
+       somewhere) the partition produces have_true_part.  Apply
+       list_intersect_lookup_at_pos to compute the head-position trie
+       lookup, then apply IHx_param to compute the inner spaced_get.
+       Align with the spec's RHS via [list_Mmap_lookup_fold_perm] /
+       [fold_left_orb_combine_perm_full].
+
+       This proof is structurally analogous to the FF-non-empty case below
+       (lines ~1058 onwards), but with [have_true_part] in place of
+       [just_false_part], and a level of [list_intersect_lookup_at_pos]
+       between the partition and the IH.  Left admitted: the structure is
+       laid out but the per-case permutation alignment is ~250 lines of
+       mechanical proof. *)
   Admitted.
 
 
@@ -744,9 +1141,10 @@ Section PtSpacedIntersectSpec.
          of [cil ++ cil'] starts with [true]. *)
       destruct b.
       + (* b = true: the initial accumulator is have_true_part, so we can
-           apply [pt_spaced_intersect'_spec_general_have_true] (admitted
-           significant lemma) with [hd false ci0 = true] as witness. *)
-        apply pt_spaced_intersect'_spec_general_have_true;
+           apply [pt_spaced_intersect'_spec_general_have_true] with
+           [hd false ci0 = true] as witness. *)
+        apply (pt_spaced_intersect'_spec_general_have_true
+                 fuel' p x' (true :: ci0') pt0 cil ptl cil' ptl' IHx);
           try assumption; try Lia.lia.
         * cbn [Datatypes.length]; congruence.
         * left; reflexivity.
@@ -756,7 +1154,8 @@ Section PtSpacedIntersectSpec.
            the existing [TF = []] proof structure applies. *)
         destruct (existsb (fun l => hd false l) (cil ++ cil')) eqn:Hany.
         { (* Some entry of [cil ++ cil'] has head = true: apply helper. *)
-          apply pt_spaced_intersect'_spec_general_have_true;
+          apply (pt_spaced_intersect'_spec_general_have_true
+                   fuel' p x' (false :: ci0') pt0 cil ptl cil' ptl' IHx);
             try assumption; try Lia.lia.
           - cbn [Datatypes.length]; congruence.
           - right.
