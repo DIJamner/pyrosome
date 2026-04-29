@@ -1136,11 +1136,17 @@ Section PtSpacedIntersectSpec.
       cbn [partition_result_of_lists].
       rewrite ?TrieMap.split_map.
       cbn [fst snd].
-      (* Goal: spaced_get (p :: x') (Bools, option_map pos_trie_node (list_intersect ...))
+      (* Expose Bools = true :: Bools_tl. *)
+      remember (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                          (cil ++ cil') (true :: ci0')) as Bools eqn:HBools.
+      destruct Bools as [|b1 Bools_tl];
+        [cbn in Hbools_head_true; discriminate|].
+      cbn [hd] in Hbools_head_true. subst b1.
+      (* Goal: spaced_get (p :: x') (true :: Bools_tl, option_map pos_trie_node (list_intersect ...))
               = match lookup_one' (p :: x') (pt0, true :: ci0'),
                       list_Mmap ... with ... end.
-         The remaining ~120 lines reduce LHS via [Hbools_head_true] +
-         [list_intersect_lookup_at_pos] + [IHx_param] and align with RHS
+         The remaining ~100 lines reduce LHS via head=true descent,
+         [list_intersect_lookup_at_pos], [IHx_param], and align with RHS
          via two Permutations. *)
       admit. }
     { (* b = false.  initial = just_false_part ci0' pt0 [] [].
@@ -1197,20 +1203,26 @@ Section PtSpacedIntersectSpec.
       cbn [partition_result_of_lists].
       rewrite ?TrieMap.split_map.
       cbn [fst snd].
-      (* Goal: spaced_get (p :: x') (Bools, option_map pos_trie_node (list_intersect ...))
-              = match lookup_one' (p :: x') (pt0, false :: ci0'),
-                      list_Mmap (lookup_one' (p :: x'))
-                                (combine ptl cil ++ combine ptl' cil') with
-                | Some e, Some es => Some (fold_left merge es e)
-                | _ => None
-                end.
-         The remaining ~120 lines reduce the LHS via [Hbools_head_true]
-         then [list_intersect_lookup_at_pos] (with the global
-         [pt_spaced_intersect'_sim_rev] as [Hsim_rev]) and apply
-         [IHx_param] with (other_cil/other_tries) from FF and
-         (true_cil/true_tries) from TF_tail; the alignment with the
-         goal's RHS uses two Permutations analogous to [Hperm_cil] /
-         [Hperm_lookup] in the FF non-empty case below. *)
+      (* Expose Bools = true :: Bools_tl using [Hbools_head_true]. *)
+      remember (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                          (cil ++ cil') (false :: ci0')) as Bools eqn:HBools.
+      destruct Bools as [|b1 Bools_tl];
+        [cbn in Hbools_head_true; discriminate|].
+      cbn [hd] in Hbools_head_true. subst b1.
+      (* Reduce [spaced_get] on head bit [true]: drops to [pt_get] on the
+         remaining key.  Set [rest_key] to track the key tail. *)
+      unfold spaced_get; cbn [fst snd combine filter map].
+      (* Goal LHS: pt_get (option_map pos_trie_node (list_intersect ...))
+                          (p :: map fst (filter snd (combine x' Bools_tl))).
+         RHS: same as before. *)
+      set (rest_key := map fst (filter snd (combine x' Bools_tl))).
+      (* [pt_get (option_map pos_trie_node X) (p :: rest_key)
+         = match Mbind (get' p) X with Some pt' => pt_get' pt' rest_key | None => None end].
+         The remaining ~80 lines apply [list_intersect_lookup_at_pos]
+         (with global [pt_spaced_intersect'_sim_rev] as [Hsim_rev])
+         to compute [Mbind (get' p) X], then [IHx_param] to expand the
+         inner [pt_spaced_intersect'], and align bool-fold / lookup
+         sides via two Permutations. *)
       admit. }
   Admitted.
 
