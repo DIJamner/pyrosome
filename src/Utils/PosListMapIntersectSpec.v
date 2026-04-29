@@ -1203,6 +1203,9 @@ Section PtSpacedIntersectSpec.
       cbn [partition_result_of_lists].
       rewrite ?TrieMap.split_map.
       cbn [fst snd].
+      (* Simplify [map fst/snd (FF ++ [(ci0', pt0)])] to
+         [map fst FF ++ [ci0']] / [map snd FF ++ [pt0]]. *)
+      rewrite ?(map_app _ FF), ?(map_cons _ (ci0', pt0)); cbn [map fst snd].
       (* Expose Bools = true :: Bools_tl using [Hbools_head_true]. *)
       remember (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
                           (cil ++ cil') (false :: ci0')) as Bools eqn:HBools.
@@ -1212,17 +1215,50 @@ Section PtSpacedIntersectSpec.
       (* Reduce [spaced_get] on head bit [true]: drops to [pt_get] on the
          remaining key.  Set [rest_key] to track the key tail. *)
       unfold spaced_get; cbn [fst snd combine filter map].
-      (* Goal LHS: pt_get (option_map pos_trie_node (list_intersect ...))
-                          (p :: map fst (filter snd (combine x' Bools_tl))).
-         RHS: same as before. *)
       set (rest_key := map fst (filter snd (combine x' Bools_tl))).
-      (* [pt_get (option_map pos_trie_node X) (p :: rest_key)
-         = match Mbind (get' p) X with Some pt' => pt_get' pt' rest_key | None => None end].
-         The remaining ~80 lines apply [list_intersect_lookup_at_pos]
-         (with global [pt_spaced_intersect'_sim_rev] as [Hsim_rev])
-         to compute [Mbind (get' p) X], then [IHx_param] to expand the
-         inner [pt_spaced_intersect'], and align bool-fold / lookup
-         sides via two Permutations. *)
+      (* Factor [pt_get (option_map pos_trie_node X) (p :: rest_key)]
+         through [Tries.Canonical.PTree.get p (otree X)] so that
+         [list_intersect_lookup_at_pos] applies. *)
+      assert (Hfactor : forall X : option (Tries.Canonical.PTree.tree' (@pos_trie' A)),
+                 pt_get (option_map pos_trie_node X) (p :: rest_key)
+                 = match Tries.Canonical.PTree.get p (TrieMap.otree X) with
+                   | Some pt' => pt_get' pt' rest_key
+                   | None => None
+                   end).
+      { intros [m|]; cbn; reflexivity. }
+      rewrite Hfactor.
+      (* Apply [list_intersect_lookup_at_pos], supplying the global
+         [pt_spaced_intersect'_sim_rev] as the Hsim_rev premise. *)
+      rewrite (list_intersect_lookup_at_pos
+                 fuel'
+                 (map fst FF ++ [ci0'])
+                 (map snd FF ++ [pt0])
+                 tc0
+                 (map fst TF_tail)
+                 tp0
+                 (map snd TF_tail)
+                 p
+                 (pt_spaced_intersect'_sim_rev fuel'
+                    (map fst FF ++ [ci0'])
+                    (map snd FF ++ [pt0])
+                    tc0)).
+      (* Goal LHS now:
+         match
+           match Tries.Canonical.PTree.get' p (proj_node_map_unchecked tp0),
+                 list_Mmap (Tries.Canonical.PTree.get' p)
+                           (map proj_node_map_unchecked (map snd TF_tail)) with
+           | Some hd_x, Some tl_x =>
+               pt_spaced_intersect' merge fuel'
+                 (map fst FF ++ [ci0']) (map snd FF ++ [pt0]) tc0
+                 (map fst TF_tail) hd_x tl_x
+           | _, _ => None
+           end
+         with Some pt' => pt_get' pt' rest_key | None => None end.
+         Remaining ~60 lines: apply [IHx_param] to expand the inner
+         [pt_spaced_intersect'] (when both lookups succeed), align the
+         bool-fold via [fold_orb_combine_tail] + a Permutation argument,
+         and align the lookup side with the goal RHS via another
+         Permutation. *)
       admit. }
   Admitted.
 
