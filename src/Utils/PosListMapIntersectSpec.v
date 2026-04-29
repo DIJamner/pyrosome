@@ -589,6 +589,59 @@ Section PtSpacedIntersectSpec.
   Qed.
 
 
+  (* Helper: when no element of [L] has [hd false l = true], the filter on
+     pairs of (combine L P) selecting [hd false (fst p) = true] is empty. *)
+  Lemma filter_combine_no_true_head
+    (L : list (list bool)) (P : list (@pos_trie' A)) :
+    existsb (fun l => hd false l) L = false ->
+    filter (fun p => hd false (fst p)) (combine L P) = [].
+  Proof.
+    revert P. induction L as [|l L IH]; intros [|pt P] Hany;
+      cbn in *; auto.
+    destruct (hd false l) eqn:Hh; cbn in Hany; [discriminate|].
+    apply IH; exact Hany.
+  Qed.
+
+  (* Significant lemma admitted to discharge the "have_true" recursive cases of
+     [pt_spaced_intersect'_spec_general] (the [b = true] inductive sub-case and
+     the [TF]-non-empty sub-case of [b = false]).  States the spec restricted
+     to inputs in which at least one of [ci0] or some entry of [cil ++ cil']
+     has [hd = true]; in that scenario the function takes the
+     [have_true_part] branch and the result is
+     [option_map pos_trie_node (list_intersect ...)].  A full proof would
+     parallel the FF-non-empty subcase: apply [partition_tries_spec], use
+     [list_intersect_lookup_at_pos] to compute the head-position lookup,
+     apply IHx to the recursive call, and align via the permutation
+     lemmas [fold_left_orb_combine_perm_full] /
+     [list_Mmap_lookup_fold_perm].  Left admitted pending elaboration. *)
+  Lemma pt_spaced_intersect'_spec_general_have_true
+    (fuel' : nat) (p : positive) (x' : list positive)
+    (ci0 : list bool) (pt0 : @pos_trie' A)
+    (cil : list (list bool)) (ptl : list (@pos_trie' A))
+    (cil' : list (list bool)) (ptl' : list (@pos_trie' A))
+    : (fuel' > length x')%nat ->
+      length ci0 = S (length x') ->
+      Forall (fun l => length l = S (length x')) cil ->
+      Forall (fun l => length l = S (length x')) cil' ->
+      length cil = length ptl ->
+      length cil' = length ptl' ->
+      Is_true (has_depth' (length (filter id ci0)) pt0) ->
+      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt)) cil ptl ->
+      Forall2 (fun ci pt => Is_true (has_depth' (length (filter id ci)) pt)) cil' ptl' ->
+      (hd false ci0 = true \/ exists l, In l (cil ++ cil') /\ hd false l = true) ->
+      spaced_get (p :: x')
+        (fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
+                   (cil ++ cil') ci0,
+         pt_spaced_intersect' merge (S fuel') cil ptl ci0 cil' pt0 ptl')
+      = match lookup_one' (p :: x') (pt0, ci0),
+              list_Mmap (lookup_one' (p :: x'))
+                        (combine ptl cil ++ combine ptl' cil') with
+        | Some e, Some es => Some (fold_left merge es e)
+        | _, _ => None
+        end.
+  Admitted.
+
+
   (* Generalised version: handles the auxiliary [cil'/ptl'] arguments to
      [pt_spaced_intersect'] (which the just_false_part recursion sets to []
      but which the have_true_part recursion through [list_intersect] uses
@@ -686,30 +739,34 @@ Section PtSpacedIntersectSpec.
       assert (Hrect_app : rectangular_trie_list (S (length x'))
                                                 (cil ++ cil') (ptl ++ ptl')).
       { apply rectangular_trie_list_app; assumption. }
-      (* Unfold the function one step. The two-step partition_tries
-         collapses to a single partition over (cil ++ cil') / (ptl ++ ptl')
-         via partition_tries_app. *)
-      cbn [pt_spaced_intersect'].
-      erewrite partition_tries_app by eassumption.
-      (* Case on [b]: this fixes the initial partition shape so we can
-         apply [partition_tries_spec] with concrete [false_lists] /
-         [true_lists] of the initial accumulator. *)
+      (* Case on [b].  [b = true] dispatches directly through the
+         have-true helper; [b = false] further splits on whether any entry
+         of [cil ++ cil'] starts with [true]. *)
       destruct b.
-      + (* b = true: initial = have_true_part [] [] ci0' pt0 [] [].
-           The partition's true-list is non-empty, so the function takes
-           the have_true_part branch.  Strategy:
-           (1) apply [partition_tries_spec] to compute the partition;
-           (2) use [list_intersect_lookup_at_pos] for the head-position
-               lookup of the resulting [list_intersect];
-           (3) apply IHx to the recursive call.
-
-           The detailed alignment of bool-list folds and lookup-pair
-           permutations parallels the FF non-empty subcase and would
-           proceed identically in structure.  A full proof in the same
-           style as admit 2 would run several hundred lines.  Left as
-           admit pending such elaboration. *)
-        admit.
-      + (* b = false: initial = just_false_part ci0' pt0 [] []. *)
+      + (* b = true: the initial accumulator is have_true_part, so we can
+           apply [pt_spaced_intersect'_spec_general_have_true] (admitted
+           significant lemma) with [hd false ci0 = true] as witness. *)
+        apply pt_spaced_intersect'_spec_general_have_true;
+          try assumption; try Lia.lia.
+        * cbn [Datatypes.length]; congruence.
+        * left; reflexivity.
+      + (* b = false: case on whether any entry of [cil ++ cil'] starts
+           with [true].  If yes, apply the same helper with the right
+           disjunct; otherwise the partition's true-filter is empty and
+           the existing [TF = []] proof structure applies. *)
+        destruct (existsb (fun l => hd false l) (cil ++ cil')) eqn:Hany.
+        { (* Some entry of [cil ++ cil'] has head = true: apply helper. *)
+          apply pt_spaced_intersect'_spec_general_have_true;
+            try assumption; try Lia.lia.
+          - cbn [Datatypes.length]; congruence.
+          - right.
+            apply existsb_exists in Hany.
+            destruct Hany as [l [HIn Hhd]].
+            exists l. split; [exact HIn|].
+            destruct (hd false l); cbn in Hhd; [reflexivity|discriminate]. }
+        (* All heads are false; proceed with the existing TF = [] proof. *)
+        cbn [pt_spaced_intersect'].
+        erewrite partition_tries_app by eassumption.
         cbn in Hpt0_d.
         assert (Hwf_init : partition_result_wf (length x')
                              (just_false_part ci0' pt0 (@nil (list bool))
@@ -1163,20 +1220,14 @@ Section PtSpacedIntersectSpec.
             (* Step 12: Apply Hperm_lookup to align. *)
             apply (list_Mmap_lookup_fold_perm (lookup_one' x') _ _ _ _ Hperm_lookup).
           }
-        * (* TF non-empty: at least one true-headed entry, so we get
-             [have_true_part].  The function returns
-             [option_map pos_trie_node (list_intersect lam (proj_node_map_unchecked tp0)
-                                                       (map proj_node_map_unchecked tries))]
-             where [lam is_forward := pt_spaced_intersect' fuel' other_cil other_tries tc0
-                                       (if is_forward then true_cil else rev true_cil)].
-             Same structural shape as admit 1 (b=true).  Use
-             [list_intersect_lookup_at_pos] (which discharges the
-             [elts_intersect_rev] premise via [pt_spaced_intersect'_sim_rev])
-             to compute the head-position lookup, then IHx to compute the
-             recursive call's spec, and align via the permutation lemmas
-             above.  Left as admit pending elaboration. *)
-          admit.
-  Admitted.
+        * (* TF non-empty: contradiction with [Hany], since this branch
+             assumes no entry of [cil ++ cil'] has [hd false l = true],
+             yet a non-empty TF would witness exactly such an entry. *)
+          exfalso.
+          unfold TF in HTF; unfold Lall in HTF.
+          rewrite (filter_combine_no_true_head _ _ Hany) in HTF.
+          cbn in HTF; discriminate.
+  Qed.
 
   (* The original lemma is the cil'=ptl'=[] specialisation. *)
   Lemma pt_spaced_intersect'_spec
