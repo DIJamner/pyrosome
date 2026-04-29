@@ -1254,11 +1254,14 @@ Section PtSpacedIntersectSpec.
            | _, _ => None
            end
          with Some pt' => pt_get' pt' rest_key | None => None end.
-         Remaining ~60 lines: apply [IHx_param] to expand the inner
-         [pt_spaced_intersect'] (when both lookups succeed), align the
-         bool-fold via [fold_orb_combine_tail] + a Permutation argument,
-         and align the lookup side with the goal RHS via another
-         Permutation. *)
+         The remaining ~60 lines case-split on the two options, apply
+         [IHx_param] in the (Some, Some) branch with the post-partition
+         [partition_result_wf] supplying length / depth premises, and
+         dispatch the [None] branches by showing the RHS also reduces
+         to [None] via head-bit analysis on the entries of
+         [combine ptl cil ++ combine ptl' cil'].  Then align bool-fold
+         and lookup sides via two Permutations analogous to [Hperm_cil] /
+         [Hperm_lookup] in the FF non-empty case below. *)
       admit. }
   Admitted.
 
