@@ -1104,19 +1104,114 @@ Section PtSpacedIntersectSpec.
     (* Combine the two partition_tries. *)
     erewrite partition_tries_app by eassumption.
     cbn in Hpt0_d.
-    (* The remaining work — building [partition_result_wf] for the
-       [if b ...] initial accumulator (case-split required), applying
-       [partition_tries_spec], showing TF non-empty in both subcases,
-       reducing [spaced_get] using [Hbools_head_true], applying
-       [list_intersect_lookup_at_pos] with the global
-       [pt_spaced_intersect'_sim_rev] as [Hsim_rev], applying
-       [IHx_param], and aligning the bool-fold / lookup sides via
-       [fold_left_orb_combine_perm_full] / [list_Mmap_lookup_fold_perm]
-       — is structurally analogous to the FF non-empty case below
-       (lines ~1330 onwards) but tracks both [other_cil/other_tries]
-       (false-headed entries) and [true_cil/true_tries] (true-headed
-       entries except the chosen head).  ~250 lines of mechanical
-       permutation alignment.  Left admitted. *)
+    (* Case-split on [b]: each branch has a concrete initial accumulator.
+       Both cases use [partition_tries_spec] then destructure the [TF]
+       output to access the [have_true_part] case. *)
+    destruct b.
+    { (* b = true.  initial = have_true_part [] [] ci0' pt0 [] [].
+         After [partition_tries_spec]: partition_result_of_lists
+         FF_filter (TF_filter ++ [(ci0', pt0)]).  TF non-empty by
+         construction. *)
+      assert (Hwf_init : partition_result_wf (length x')
+                (have_true_part [] (@nil (@pos_trie' A)) ci0' pt0 [] [])).
+      { cbn. split; [|cbn; trivial].
+        cbn. split; [|trivial]. split; [exact Hpt0_d|exact Hci0_len]. }
+      erewrite (@partition_tries_spec _ _ merge (cil ++ cil') (ptl ++ ptl')
+                  _ (length x') Hrect_app Hwf_init).
+      cbn [false_lists true_lists].
+      (* Set up names. *)
+      set (Lall := combine (cil ++ cil') (ptl ++ ptl')).
+      set (TF_filter := rev (map (fun p => (tl (fst p), snd p))
+                              (filter (fun p => hd false (fst p)) Lall))).
+      set (FF := rev (map (fun p => (tl (fst p), snd p))
+                        (filter (fun p => negb (hd false (fst p))) Lall))).
+      (* TF = TF_filter ++ [(ci0', pt0)] is non-empty by construction. *)
+      set (TF := TF_filter ++ [(ci0', pt0)]).
+      assert (HTF_ne : TF <> []).
+      { unfold TF. intro HEq.
+        apply (f_equal (@length _)) in HEq.
+        rewrite length_app in HEq; cbn [length] in HEq; Lia.lia. }
+      destruct TF as [|tp TF_tail] eqn:HTF; [exfalso; apply HTF_ne; reflexivity|].
+      destruct tp as [tc0 tp0].
+      cbn [partition_result_of_lists].
+      rewrite ?TrieMap.split_map.
+      cbn [fst snd].
+      (* Goal: spaced_get (p :: x') (Bools, option_map pos_trie_node (list_intersect ...))
+              = match lookup_one' (p :: x') (pt0, true :: ci0'),
+                      list_Mmap ... with ... end.
+         The remaining ~120 lines reduce LHS via [Hbools_head_true] +
+         [list_intersect_lookup_at_pos] + [IHx_param] and align with RHS
+         via two Permutations. *)
+      admit. }
+    { (* b = false.  initial = just_false_part ci0' pt0 [] [].
+         After [partition_tries_spec]: partition_result_of_lists
+         (FF_filter ++ [(ci0', pt0)]) TF_filter.  TF_filter non-empty by
+         [Hht]'s right disjunct (Hht left disjunct is impossible since
+         [hd false (false :: ci0') = false]). *)
+      assert (Hwf_init : partition_result_wf (length x')
+                (just_false_part ci0' pt0 [] (@nil (@pos_trie' A)))).
+      { cbn. split; [|trivial]. split; [exact Hpt0_d|exact Hci0_len]. }
+      erewrite (@partition_tries_spec _ _ merge (cil ++ cil') (ptl ++ ptl')
+                  _ (length x') Hrect_app Hwf_init).
+      cbn [false_lists true_lists].
+      rewrite app_nil_r.
+      (* Set up names and prove TF non-empty. *)
+      set (Lall := combine (cil ++ cil') (ptl ++ ptl')).
+      set (TF := rev (map (fun p => (tl (fst p), snd p))
+                        (filter (fun p => hd false (fst p)) Lall))).
+      set (FF := rev (map (fun p => (tl (fst p), snd p))
+                        (filter (fun p => negb (hd false (fst p))) Lall))).
+      assert (HTF_ne : TF <> []).
+      { destruct Hht as [Hb_hd | [l_w [HIn Hl_w_hd]]];
+          [cbn in Hb_hd; discriminate|].
+        unfold TF, Lall.
+        intro HEq.
+        apply (f_equal (@rev _)) in HEq; rewrite rev_involutive in HEq;
+          cbn [rev] in HEq.
+        apply map_eq_nil in HEq.
+        (* HEq: filter (hd false ∘ fst) (combine (cil++cil') (ptl++ptl')) = [].
+           But l_w ∈ cil++cil' has hd false l_w = true, contradiction. *)
+        assert (Hcc_p_len : length (cil ++ cil') = length (ptl ++ ptl'))
+          by (rewrite ?length_app; congruence).
+        revert HIn HEq Hcc_p_len Hl_w_hd; clear.
+        generalize (ptl ++ ptl') as Pall.
+        generalize (cil ++ cil') as Call.
+        intros Call; revert Call.
+        induction Call as [|c rest IH]; intros Pall HIn HEq Hlen Hl_w_hd;
+          [cbn in HIn; contradiction|].
+        destruct Pall as [|pp Prest]; [cbn in Hlen; discriminate|].
+        cbn [combine] in HEq.
+        destruct HIn as [Heq|HIn_rest].
+        + (* c = l_w: filter sees hd l_w = true, so cons-ed. *)
+          subst c. cbn [filter fst] in HEq.
+          rewrite Hl_w_hd in HEq. discriminate.
+        + (* c ∈ rest: filter on (c, pp) :: combine rest Prest decides on hd c. *)
+          cbn [filter fst] in HEq.
+          destruct (hd false c) eqn:Hhd_c; [discriminate|].
+          apply (IH Prest); [exact HIn_rest|exact HEq| |exact Hl_w_hd].
+          cbn in Hlen; Lia.lia. }
+      (* Destructure TF.  After this, partition_result_of_lists
+         reduces to have_true_part. *)
+      destruct TF as [|tp TF_tail] eqn:HTF; [exfalso; apply HTF_ne; reflexivity|].
+      destruct tp as [tc0 tp0].
+      cbn [partition_result_of_lists].
+      rewrite ?TrieMap.split_map.
+      cbn [fst snd].
+      (* Goal: spaced_get (p :: x') (Bools, option_map pos_trie_node (list_intersect ...))
+              = match lookup_one' (p :: x') (pt0, false :: ci0'),
+                      list_Mmap (lookup_one' (p :: x'))
+                                (combine ptl cil ++ combine ptl' cil') with
+                | Some e, Some es => Some (fold_left merge es e)
+                | _ => None
+                end.
+         The remaining ~120 lines reduce the LHS via [Hbools_head_true]
+         then [list_intersect_lookup_at_pos] (with the global
+         [pt_spaced_intersect'_sim_rev] as [Hsim_rev]) and apply
+         [IHx_param] with (other_cil/other_tries) from FF and
+         (true_cil/true_tries) from TF_tail; the alignment with the
+         goal's RHS uses two Permutations analogous to [Hperm_cil] /
+         [Hperm_lookup] in the FF non-empty case below. *)
+      admit. }
   Admitted.
 
 
