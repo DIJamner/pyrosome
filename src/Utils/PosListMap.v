@@ -3,7 +3,7 @@ Require Import Coq.Classes.Morphisms.
 Require Ascii.
 Import ListNotations.
 
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Map.Properties.
 
 From Utils Require Import Utils Monad TrieMap.
 Import Monad.StateMonad.
@@ -1091,6 +1091,173 @@ Section __.
             /\ rectangular_trie_list width cil ptl.
     Proof. clear merge. prove_inversion_lemma. Qed.
     Hint Rewrite rectangular_trie_list_cons_cons : utils.
+
+    (* [trie_fold'] folding [andb f] gives the per-entry property. *)
+    Lemma trie_fold'_andb_false {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) :
+      TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                         false m revnum = false.
+    Proof.
+      revert revnum.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum; cbn;
+        rewrite ?Bool.andb_false_l;
+        try (apply IH);
+        try (rewrite IH2; apply IH1);
+        reflexivity.
+    Qed.
+
+    Lemma trie_fold'_andb_factor {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) (acc : bool) :
+      TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                         acc m revnum
+      = andb acc
+         (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                             true m revnum).
+    Proof.
+      revert revnum acc.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum acc; cbn.
+      - rewrite (IH (xI revnum) acc). reflexivity.
+      - reflexivity.
+      - rewrite (IH (xI revnum) (acc && f a)).
+        rewrite (IH (xI revnum) (f a)).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH (xO revnum) acc). reflexivity.
+      - rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ acc m2 (xI revnum))).
+        rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))).
+        rewrite (IH2 (xI revnum) acc).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH (xO revnum) (acc && f a)).
+        rewrite (IH (xO revnum) (f a)).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ (acc && f a) m2 (xI revnum))).
+        rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))).
+        rewrite (IH2 (xI revnum) (acc && f a)).
+        rewrite (IH2 (xI revnum) (f a)).
+        rewrite !Bool.andb_assoc. reflexivity.
+    Qed.
+
+    Lemma trie_fold'_andb_get_inv {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) :
+      Is_true (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                                  true m revnum) ->
+      forall p v, PTree.get' p m = Some v -> Is_true (f v).
+    Proof.
+      revert revnum.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum Hfold p v Hget; cbn in *.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        eapply IH; eauto.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        injection Hget as <-. exact Hfold.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + discriminate.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        eapply IH; eauto.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          eapply (IH2 (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH1 (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + discriminate.
+        + rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a)) in Hf.
+          apply Bool.andb_true_iff in Hf as [_ Hf].
+          eapply (IH2 (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH1 (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a)) in Hf.
+          apply Bool.andb_true_iff in Hf as [Hf _].
+          apply Is_true_eq_left, Hf.
+    Qed.
+
+    (* Per-entry inversion for [has_depth' (S n) (pos_trie_node m)]. *)
+    Lemma has_depth'_node_inv (n : nat) (m : PTree.tree' pos_trie')
+      (p : positive) (v : pos_trie') :
+      Is_true (has_depth' (S n) (pos_trie_node m)) ->
+      PTree.get' p m = Some v ->
+      Is_true (has_depth' n v).
+    Proof.
+      intros Hd Hg.
+      eapply (@trie_fold'_andb_get_inv pos_trie' (has_depth' n) m xH); eauto.
+    Qed.
+
+    (* Offset-rectangular tries are nodes (not leaves), and their projected
+       value-maps satisfy the corresponding non-offset rectangularity
+       elementwise.  Used to discharge the [all2 (forall_values ...)] premise
+       of [list_intersect_Perm_combined] when descending past a [have_true]
+       partition. *)
+    Lemma offset_rect_forall_values width cil ptl
+      : offset_rectangular_trie_list width cil ptl ->
+        all2 (fun c x =>
+                map.forall_values
+                  (fun v => Is_true (has_depth' (length (filter id c)) v)
+                            /\ length c = width)
+                  (PTree.Nodes x : trie_map _))
+             cil (map proj_node_map_unchecked ptl).
+    Proof.
+      unfold offset_rectangular_trie_list.
+      revert ptl; induction cil as [|c cil IH]; intros [|pt ptl] Hoff;
+        cbn [all2 map] in *; try contradiction; auto.
+      destruct Hoff as [Hhead Hrest].
+      destruct Hhead as [Hd Hlen].
+      split.
+      { intros i v Hgv.
+        split; [|exact Hlen].
+        destruct pt as [|m]; cbn [has_depth'] in Hd; [contradiction|].
+        cbn [proj_node_map_unchecked] in Hgv.
+        eapply (has_depth'_node_inv _ m i v); [|exact Hgv].
+        cbn [has_depth']. exact Hd. }
+      exact (IH ptl Hrest).
+    Qed.
 
     Lemma rectangular_trie_list_app width cil1 cil2 ptl1 ptl2
       : rectangular_trie_list width cil1 ptl1 ->
@@ -2190,16 +2357,16 @@ Inductive SamePermutation {A B}
         all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
           (c::cl) (x::l) ->
         Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-        (forall x l x' l' c cl c' cl' b,
+        (forall x l x' l' c cl c' cl',
             (*length cl = length l -> *)
             length cl' = length l' ->
             all2 R (c::cl) (x::l) ->
             Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-            f c cl b x l = g c' cl' b x' l') ->
-        (forall c cl b x l, all2 R (c::cl) (x::l) ->
-                            f c cl (negb b) x l = f c cl b x (rev l)) ->
-        (forall c cl b x l, all2 R (c::cl) (x::l) ->
-                            g c cl (negb b) x l = g c cl b x (rev l)) ->
+            f c cl true x l = g c' cl' true x' l') ->
+        (forall c cl x l, all2 R (c::cl) (x::l) ->
+                          f c cl true x l = f c cl false x (rev l)) ->
+        (forall c cl x l, all2 R (c::cl) (x::l) ->
+                          g c cl true x l = g c cl false x (rev l)) ->
         list_intersect (f c cl) x l
         = list_intersect (g c' cl') x' l'.
     Proof.
@@ -2224,18 +2391,18 @@ Inductive SamePermutation {A B}
            rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
       (* Discharge [elts_intersect_rev] (two goals: one for [f], one for [g]).
          Hwf gives [all2 R (c :: if b then cl else rev cl) (v :: rev l0)].
-         For b=true, the strengthened frev/grev premise matches Hwf at
-         [l := rev l0] (with [rev_involutive] to align RHS); for b=false,
+         For b=true, the b=false-specialized frev/grev applied at [l := rev l0]
+         matches Hwf (with [rev_involutive] to align RHS); for b=false,
          [all2_rev_iff] flips [(rev cl, rev l0)] to [(cl, l0)]. *)
       2,4: intros b v l0 Hwf;
            destruct b; cbn [negb] in *; cbn in Hwf; destruct Hwf as [Hhd Htl];
            [ rewrite <- (rev_involutive l0) at 2;
-             (exact (frev c cl false v (rev l0) (conj Hhd Htl)) +
-              exact (grev c' cl' false v (rev l0) (conj Hhd Htl)))
+             (exact (frev c cl v (rev l0) (conj Hhd Htl)) +
+              exact (grev c' cl' v (rev l0) (conj Hhd Htl)))
            | rewrite all2_rev_iff in Htl;
              symmetry;
-             (exact (frev c cl false v l0 (conj Hhd Htl)) +
-              exact (grev c' cl' false v l0 (conj Hhd Htl))) ].
+             (exact (frev c cl v l0 (conj Hhd Htl)) +
+              exact (grev c' cl' v l0 (conj Hhd Htl))) ].
       (* Two map_elts_wf premises remain.  Both follow from HR (combined with
          the [Permutation] for the second one). *)
       2: {
@@ -2384,8 +2551,8 @@ Inductive SamePermutation {A B}
           eapply in_all; [|exact Hin].
           rewrite <- Is_Some_Mmap.
           rewrite Hmt'; cbn; trivial. }
-      rewrite <- (frev c cl false vh vt) by exact Hvt_all2.
-      rewrite <- (grev c' cl' false vh' vt') by exact Hvt'_all2.
+      rewrite <- (frev c cl vh vt Hvt_all2).
+      rewrite <- (grev c' cl' vh' vt' Hvt'_all2).
       eapply Hext.
       - (* length cl' = length vt' *)
         erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'.
@@ -2974,9 +3141,122 @@ Inductive SamePermutation {A B}
         (* The [(have_true, have_true)] case.  After [basic_goal_prep], the
            [part_res_Perm] is destructed into two Permutation hypotheses
            (one for the false-list parts and one for the true-list parts).
-           We apply the now-weakened [list_intersect_Perm_combined] and
+           We apply the strengthened [list_intersect_Perm_combined] and
            discharge each premise. *)
-    Abort.
+        eapply (list_intersect_Perm_combined
+                  _ _ _ _ _ _ _
+                  (fun c cl b x l =>
+                     pt_spaced_intersect' fuel f_cil1 f_ptl1 c
+                       (if b then cl else rev cl) x l)
+                  (fun c cl b x l =>
+                     pt_spaced_intersect' fuel f_cil2 f_ptl2 c
+                       (if b then cl else rev cl) x l)
+                  (fun c t => Is_true (has_depth' (length (filter id c)) t)
+                              /\ length c = width)
+                  t_ci1 t_cil1 t_ci2 t_cil2).
+        1: { (* length t_cil2 = length (map proj_node_map_unchecked t_ptl1) *)
+          rewrite length_map.
+          eapply all2_len; eassumption. }
+        1: { (* all2 (forall_values R) on the LHS post-projection.
+                Each (ci, pti) pair has pti at offset depth, so post-projection
+                values satisfy [R ci v]. *)
+          change (proj_node_map_unchecked t_pt0 :: map proj_node_map_unchecked t_ptl0)
+            with (map proj_node_map_unchecked (t_pt0 :: t_ptl0)).
+          apply offset_rect_forall_values.
+          cbn [offset_rectangular_trie_list all2 map]; intuition assumption. }
+        1: { (* Permutation (combine ...) — derived from H16's Permutation by
+                mapping pair-wise [proj_node_map_unchecked]. *)
+          apply (Permutation_map
+                   (pair_map (@id (list bool)) proj_node_map_unchecked))
+            in H16.
+          cbn [map] in H16.
+          rewrite !map_combine in H16.
+          rewrite !(@map_id (list bool)) in H16.
+          unfold pair_map, id in H16.
+          cbn [fst snd] in H16.
+          cbn [combine].
+          exact H16. }
+        1: { (* Hext at b=true: pt_si fuel f_cil1 f_ptl1 c cl x l =
+                pt_si fuel f_cil2 f_ptl2 c' cl' x' l'.  Apply IHfuel with the
+                rectangularity given by [all2 R] and a Permutation extended by
+                the [f_cil1, f_ptl1 / f_cil2, f_ptl2] permutation [H11]. *)
+          intros x_h l_h x_h' l_h' c_h cl_h c_h' cl_h' Hlen Hall2 Hperm.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil1 f_ptl1 c_h cl_h x_h l_h
+                          f_cil2 f_ptl2 c_h' cl_h' x_h' l_h').
+          - (* rectangular_trie_list width (c_h::cl_h) (x_h::l_h) *)
+            unfold rectangular_trie_list. exact Hall2.
+          - (* rectangular_trie_list width f_cil1 f_ptl1 *)
+            exact H20.
+          - (* rectangular_trie_list width (c_h'::cl_h') (x_h'::l_h') *)
+            assert (Hr_prime : all2
+              (fun (c : list bool) (t : pos_trie') =>
+                Is_true (has_depth' (length (filter id c)) t) /\
+                length c = width)
+              (c_h'::cl_h') (x_h'::l_h')).
+            { eapply all2_Permutation;
+                [ exact Hlen_h
+                | cbn [length]; f_equal; exact Hlen
+                | exact Hperm
+                | exact Hall2 ]. }
+            exact Hr_prime.
+          - (* rectangular_trie_list width f_cil2 f_ptl2 *)
+            exact H17.
+          - (* full Permutation: combine (c_h::cl_h++f_cil1) (x_h::l_h++f_ptl1)
+                                 with (c_h'::cl_h'++f_cil2) (x_h'::l_h'++f_ptl2). *)
+            cbn [combine].
+            rewrite (combine_app cl_h f_cil1 l_h f_ptl1)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app cl_h' f_cil2 l_h' f_ptl2 Hlen).
+            change ((?a, ?b) :: ?L1 ++ ?L2) with (((a, b) :: L1) ++ L2).
+            apply Permutation_app; [|exact H11].
+            cbn [combine] in Hperm. exact Hperm. }
+        1: { (* frev: pt_si fuel f_cil1 f_ptl1 c0 cl0 x0 l0 =
+                pt_si fuel f_cil1 f_ptl1 c0 (rev cl0) x0 (rev l0).  Joint
+                reversal via IHfuel — like [pt_spaced_intersect'_sim_rev] but
+                at the smaller fuel. *)
+          intros c0 cl0 x0_ l0 Hall2.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil1 f_ptl1 c0 cl0 x0_ l0
+                          f_cil1 f_ptl1 c0 (rev cl0) x0_ (rev l0)).
+          - exact Hall2.
+          - exact H20.
+          - cbn [all2]. split.
+            + exact (proj1 Hall2).
+            + apply all2_rev. exact (proj2 Hall2).
+          - exact H20.
+          - cbn [combine].
+            rewrite (combine_app cl0 f_cil1 l0 f_ptl1)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app (rev cl0) f_cil1 (rev l0) f_ptl1)
+              by (rewrite !length_rev; cbn in Hlen_h; Lia.lia).
+            apply perm_skip.
+            apply Permutation_app; [|reflexivity].
+            rewrite <- rev_combine by (cbn in Hlen_h; Lia.lia).
+            apply Permutation_rev. }
+        1: { (* grev: symmetric, with [f_cil2, f_ptl2]. *)
+          intros c0 cl0 x0_ l0 Hall2.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil2 f_ptl2 c0 cl0 x0_ l0
+                          f_cil2 f_ptl2 c0 (rev cl0) x0_ (rev l0)).
+          - exact Hall2.
+          - exact H17.
+          - cbn [all2]. split.
+            + exact (proj1 Hall2).
+            + apply all2_rev. exact (proj2 Hall2).
+          - exact H17.
+          - cbn [combine].
+            rewrite (combine_app cl0 f_cil2 l0 f_ptl2)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app (rev cl0) f_cil2 (rev l0) f_ptl2)
+              by (rewrite !length_rev; cbn in Hlen_h; Lia.lia).
+            apply perm_skip.
+            apply Permutation_app; [|reflexivity].
+            rewrite <- rev_combine by (cbn in Hlen_h; Lia.lia).
+            apply Permutation_rev. }
+      }
+      }
+    Qed.
 
        
       (*
