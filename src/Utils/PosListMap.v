@@ -2196,9 +2196,9 @@ Inductive SamePermutation {A B}
             all2 R (c::cl) (x::l) ->
             Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
             f c cl b x l = g c' cl' b x' l') ->
-        (forall c cl b x l, length cl = length l ->
+        (forall c cl b x l, all2 R (c::cl) (x::l) ->
                             f c cl (negb b) x l = f c cl b x (rev l)) ->
-        (forall c cl b x l, length cl = length l ->
+        (forall c cl b x l, all2 R (c::cl) (x::l) ->
                             g c cl (negb b) x l = g c cl b x (rev l)) ->
         list_intersect (f c cl) x l
         = list_intersect (g c' cl') x' l'.
@@ -2223,16 +2223,19 @@ Inductive SamePermutation {A B}
       2,5: intros b v l0; destruct b; cbn;
            rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
       (* Discharge [elts_intersect_rev] (two goals: one for [f], one for [g]).
-         Length info comes from [all2 R (... :: ...) (v :: rev l0)] inside Hwf. *)
+         Hwf gives [all2 R (c :: if b then cl else rev cl) (v :: rev l0)].
+         For b=true, the strengthened frev/grev premise matches Hwf at
+         [l := rev l0] (with [rev_involutive] to align RHS); for b=false,
+         [all2_rev_iff] flips [(rev cl, rev l0)] to [(cl, l0)]. *)
       2,4: intros b v l0 Hwf;
-           destruct b; cbn in Hwf;
-           destruct Hwf as [_ Hwf];
-           apply all2_len in Hwf;
-           rewrite ?length_rev in Hwf;
-           autorewrite with utils;
-           basic_goal_prep;
-           rewrite <- ?frev, <- ?grev by Lia.lia;
-           reflexivity.
+           destruct b; cbn [negb] in *; cbn in Hwf; destruct Hwf as [Hhd Htl];
+           [ rewrite <- (rev_involutive l0) at 2;
+             (exact (frev c cl false v (rev l0) (conj Hhd Htl)) +
+              exact (grev c' cl' false v (rev l0) (conj Hhd Htl)))
+           | rewrite all2_rev_iff in Htl;
+             symmetry;
+             (exact (frev c cl false v l0 (conj Hhd Htl)) +
+              exact (grev c' cl' false v l0 (conj Hhd Htl))) ].
       (* Two map_elts_wf premises remain.  Both follow from HR (combined with
          the [Permutation] for the second one). *)
       2: {
@@ -2322,24 +2325,16 @@ Inductive SamePermutation {A B}
       (* Now we're in the (Some, Some, Some, Some) case.
          Hperm_Mmap : Permutation (vh::vt) (vh'::vt').
          Goal: f c cl false vh (rev vt) = g c' cl' false vh' (rev vt').
-         Apply frev/grev to flip the bool.  Then Hext at b=true. *)
-      assert (Hvt_len : length cl = length vt).
-      { erewrite <- list_Mmap_length with (l':=vt) by exact Hmt; Lia.lia. }
-      assert (Hvt'_len : length cl' = length vt').
-      { erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'; Lia.lia. }
-      rewrite <- (frev c cl false vh vt) by exact Hvt_len.
-      rewrite <- (grev c' cl' false vh' vt') by exact Hvt'_len.
-      eapply Hext.
-      - (* length cl' = length vt' *)
-        erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'.
-        Lia.lia.
-      - (* all2 R (c :: cl) (vh :: vt) *)
-        cbn. split.
-        + (* R c vh : from HR's head *)
+         Build [all2 R] for both sides at the per-position values, then use them
+         as the strengthened premises of [frev]/[grev] to flip the bool.  Then
+         dispatch via [Hext] at [b=true]. *)
+      assert (Hvt_all2 : all2 R (c :: cl) (vh :: vt)).
+      { cbn. split.
+        - (* R c vh : from HR's head *)
           pose proof (proj1 HR) as HRc.
           unfold map.forall_values in HRc.
           eapply (HRc i). cbn. exact Hgh.
-        + (* all2 R cl vt *)
+        - (* all2 R cl vt *)
           pose proof Hmt as Hmt_keep.
           rewrite Mmap_option_all in Hmt_keep.
           erewrite unwrap_all_Some in Hmt_keep.
@@ -2358,7 +2353,45 @@ Inductive SamePermutation {A B}
           eapply in_map with (f := PTree.get' i) in Hin.
           eapply in_all; [|exact Hin].
           rewrite <- Is_Some_Mmap.
-          rewrite Hmt; cbn; trivial.
+          rewrite Hmt; cbn; trivial. }
+      (* Transport HR across [Hperm_orig] to get the prime-side rectangularity
+         hypothesis, then build [Hvt'_all2] symmetrically. *)
+      assert (HR' : all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
+                      (c'::cl') (x'::l')).
+      { eapply all2_Permutation; [ | | exact Hperm_orig | exact HR ];
+          cbn [length]; f_equal; assumption. }
+      assert (Hvt'_all2 : all2 R (c' :: cl') (vh' :: vt')).
+      { cbn. split.
+        - pose proof (proj1 HR') as HRc'.
+          unfold map.forall_values in HRc'.
+          eapply (HRc' i). cbn. exact Hgh'.
+        - pose proof Hmt' as Hmt'_keep.
+          rewrite Mmap_option_all in Hmt'_keep.
+          erewrite unwrap_all_Some in Hmt'_keep.
+          2: { apply option_all_map_Some in Hmt'_keep.
+               rewrite Hmt'_keep, all_map; cbn.
+               rewrite all_True; auto. }
+          autorewrite with inversion in Hmt'_keep.
+          rewrite <- Hmt'_keep, map_map.
+          apply all2_map_r.
+          eapply all2_impl; [|exact (proj2 HR')].
+          cbn beta; intros pt_c pt_x Hin Hpt.
+          unfold map.forall_values in Hpt.
+          eapply (Hpt i). cbn [map.get trie_map].
+          apply unwrap_Some.
+          eapply in_combine_r in Hin.
+          eapply in_map with (f := PTree.get' i) in Hin.
+          eapply in_all; [|exact Hin].
+          rewrite <- Is_Some_Mmap.
+          rewrite Hmt'; cbn; trivial. }
+      rewrite <- (frev c cl false vh vt) by exact Hvt_all2.
+      rewrite <- (grev c' cl' false vh' vt') by exact Hvt'_all2.
+      eapply Hext.
+      - (* length cl' = length vt' *)
+        erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'.
+        Lia.lia.
+      - (* all2 R (c :: cl) (vh :: vt) *)
+        exact Hvt_all2.
       - (* Permutation (combine (c::cl) (vh::vt)) (combine (c'::cl') (vh'::vt')) *)
         (* Apply pair_map id (PTree.get' i) pointwise to Hperm_orig, then
            unwrap the resulting Some's. *)
