@@ -3,7 +3,7 @@ Require Import Coq.Classes.Morphisms.
 Require Ascii.
 Import ListNotations.
 
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Map.Properties.
 
 From Utils Require Import Utils Monad TrieMap.
 Import Monad.StateMonad.
@@ -889,7 +889,7 @@ Section __.
       (*This split has to happen at some point, so here is fine*)
       let '(ptl, cil) := split (snd tries) in
       let '(pt0, ci0) := fst tries in
-      let fuel := S (length (hd [] cil)) in
+      let fuel := S (length ci0) in
       @!let pt0' <- pt0 in
         let ptl' <- list_Mmap id ptl in
         (pt_spaced_intersect' fuel cil ptl' ci0 [] pt0' []).
@@ -1091,6 +1091,173 @@ Section __.
             /\ rectangular_trie_list width cil ptl.
     Proof. clear merge. prove_inversion_lemma. Qed.
     Hint Rewrite rectangular_trie_list_cons_cons : utils.
+
+    (* [trie_fold'] folding [andb f] gives the per-entry property. *)
+    Lemma trie_fold'_andb_false {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) :
+      TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                         false m revnum = false.
+    Proof.
+      revert revnum.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum; cbn;
+        rewrite ?Bool.andb_false_l;
+        try (apply IH);
+        try (rewrite IH2; apply IH1);
+        reflexivity.
+    Qed.
+
+    Lemma trie_fold'_andb_factor {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) (acc : bool) :
+      TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                         acc m revnum
+      = andb acc
+         (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                             true m revnum).
+    Proof.
+      revert revnum acc.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum acc; cbn.
+      - rewrite (IH (xI revnum) acc). reflexivity.
+      - reflexivity.
+      - rewrite (IH (xI revnum) (acc && f a)).
+        rewrite (IH (xI revnum) (f a)).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH (xO revnum) acc). reflexivity.
+      - rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ acc m2 (xI revnum))).
+        rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))).
+        rewrite (IH2 (xI revnum) acc).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH (xO revnum) (acc && f a)).
+        rewrite (IH (xO revnum) (f a)).
+        rewrite Bool.andb_assoc. reflexivity.
+      - rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ (acc && f a) m2 (xI revnum))).
+        rewrite (IH1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))).
+        rewrite (IH2 (xI revnum) (acc && f a)).
+        rewrite (IH2 (xI revnum) (f a)).
+        rewrite !Bool.andb_assoc. reflexivity.
+    Qed.
+
+    Lemma trie_fold'_andb_get_inv {B : Type} (f : B -> bool)
+      (m : PTree.tree' B) (revnum : positive) :
+      Is_true (TrieMap.trie_fold' (fun res (_:positive) (v:B) => andb res (f v))
+                                  true m revnum) ->
+      forall p v, PTree.get' p m = Some v -> Is_true (f v).
+    Proof.
+      revert revnum.
+      induction m as [m IH | a | a m IH | m IH | m1 IH1 m2 IH2 | m IH a | m1 IH1 a m2 IH2];
+        intros revnum Hfold p v Hget; cbn in *.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        eapply IH; eauto.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        injection Hget as <-. exact Hfold.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + discriminate.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m (xI revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        eapply IH; eauto.
+      - destruct p as [p'|p'|]; cbn in Hget; try discriminate.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          eapply (IH2 (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ true m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH1 (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + discriminate.
+        + rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m (xO revnum) (f a)) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          apply Is_true_eq_left, Hf.
+      - destruct p as [p'|p'|]; cbn in Hget.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a)) in Hf.
+          apply Bool.andb_true_iff in Hf as [_ Hf].
+          eapply (IH2 (xI revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [_ Hf].
+          eapply (IH1 (xO revnum)); [|eassumption].
+          apply Is_true_eq_left, Hf.
+        + injection Hget as <-.
+          rewrite (trie_fold'_andb_factor f m1 (xO revnum)
+                     (TrieMap.trie_fold' _ (f a) m2 (xI revnum))) in Hfold.
+          apply Is_true_eq_true in Hfold.
+          apply Bool.andb_true_iff in Hfold as [Hf _].
+          rewrite (trie_fold'_andb_factor f m2 (xI revnum) (f a)) in Hf.
+          apply Bool.andb_true_iff in Hf as [Hf _].
+          apply Is_true_eq_left, Hf.
+    Qed.
+
+    (* Per-entry inversion for [has_depth' (S n) (pos_trie_node m)]. *)
+    Lemma has_depth'_node_inv (n : nat) (m : PTree.tree' pos_trie')
+      (p : positive) (v : pos_trie') :
+      Is_true (has_depth' (S n) (pos_trie_node m)) ->
+      PTree.get' p m = Some v ->
+      Is_true (has_depth' n v).
+    Proof.
+      intros Hd Hg.
+      eapply (@trie_fold'_andb_get_inv pos_trie' (has_depth' n) m xH); eauto.
+    Qed.
+
+    (* Offset-rectangular tries are nodes (not leaves), and their projected
+       value-maps satisfy the corresponding non-offset rectangularity
+       elementwise.  Used to discharge the [all2 (forall_values ...)] premise
+       of [list_intersect_Perm_combined] when descending past a [have_true]
+       partition. *)
+    Lemma offset_rect_forall_values width cil ptl
+      : offset_rectangular_trie_list width cil ptl ->
+        all2 (fun c x =>
+                map.forall_values
+                  (fun v => Is_true (has_depth' (length (filter id c)) v)
+                            /\ length c = width)
+                  (PTree.Nodes x : trie_map _))
+             cil (map proj_node_map_unchecked ptl).
+    Proof.
+      unfold offset_rectangular_trie_list.
+      revert ptl; induction cil as [|c cil IH]; intros [|pt ptl] Hoff;
+        cbn [all2 map] in *; try contradiction; auto.
+      destruct Hoff as [Hhead Hrest].
+      destruct Hhead as [Hd Hlen].
+      split.
+      { intros i v Hgv.
+        split; [|exact Hlen].
+        destruct pt as [|m]; cbn [has_depth'] in Hd; [contradiction|].
+        cbn [proj_node_map_unchecked] in Hgv.
+        eapply (has_depth'_node_inv _ m i v); [|exact Hgv].
+        cbn [has_depth']. exact Hd. }
+      exact (IH ptl Hrest).
+    Qed.
 
     Lemma rectangular_trie_list_app width cil1 cil2 ptl1 ptl2
       : rectangular_trie_list width cil1 ptl1 ->
@@ -2190,267 +2357,238 @@ Inductive SamePermutation {A B}
         all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
           (c::cl) (x::l) ->
         Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-        (forall x l x' l' c cl c' cl' b,
+        (forall x l x' l' c cl c' cl',
             (*length cl = length l -> *)
             length cl' = length l' ->
             all2 R (c::cl) (x::l) ->
             Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-            f c cl b x l = g c' cl' b x' l') ->
-        (forall c cl b x l, f c cl (negb b) x l = f c cl b x (rev l)) ->
-        (forall c cl b x l, g c cl (negb b) x l = g c cl b x (rev l)) ->
+            f c cl true x l = g c' cl' true x' l') ->
+        (forall c cl x l, all2 R (c::cl) (x::l) ->
+                          f c cl true x l = f c cl false x (rev l)) ->
+        (forall c cl x l, all2 R (c::cl) (x::l) ->
+                          g c cl true x l = g c cl false x (rev l)) ->
         list_intersect (f c cl) x l
         = list_intersect (g c' cl') x' l'.
     Proof.
-      
       intros Hlen1 HR Hlen2 Hext frev grev.
-      (*
-      assert (f_ext : forall x l x' l' c cl c' cl' b,
-            length cl' = length l' ->
-            all2 R (c::cl) (x::l) ->
-            Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-                 f c cl b x l = f c' cl' b x' l').
-      {
-        intros.
-        erewrite Hext; try eassumption.
-        symmetry.
-        apply Hext; eauto.
-        eapply all2_Permutation;
-          cycle 2; eauto;
-          cbn; eauto.
-        basic_goal_prep; basic_utils_crush.
-      }
-      assert (g_ext : forall x l x' l' c cl c' cl' b,
-                 length cl' = length l' ->
-                 all2 R (c::cl) (x::l) ->
-                 Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
-                 g c cl b x l = g c' cl' b x' l').
-      {
-        intros.
-        erewrite <- Hext; try symmetry; eauto.
-        1:symmetry; apply Hext; eauto.
-        1: symmetry; basic_goal_prep; basic_utils_crush.
-      }
-      *)
-      
+      (* Setup of the proof.  Length facts derived from Hlen2, plus a copy
+         of the source Permutation. *)
+      assert (Hlen0 : length cl = length l).
+      { eapply all2_len in HR. cbn in HR. Lia.lia. }
+      pose proof Hlen2 as Hperm_orig.
       apply otree_injective.
       apply PTree.extensionality.
-      intros.
+      intros i.
+      (* Apply [list_intersect_correct] on both sides with [elts_wf] tracking
+         the [all2 R] property modulo the [b]-flip. *)
       unshelve erewrite !list_intersect_correct.
       1,2: refine (fun b e es => _).
-      1: refine (all2 R (c::if b then cl else rev cl) (e::es)).
-      1: refine (all2 R (c'::if b then cl' else rev cl') (e::es)).
+      1: refine (all2 R (c :: if b then cl else rev cl) (e :: es)).
+      1: refine (all2 R (c' :: if b then cl' else rev cl') (e :: es)).
       all: cbn beta in *.
-      2,5:intros b v l0; destruct b; cbn;
-      rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
-      2,4: intros b v l0; destruct b; cbn;
-        autorewrite with utils;
-        basic_goal_prep;
-        rewrite <- ?grev, <- ?frev;
-        reflexivity.
-      2:{
-        eapply map_elts_wf_Permutation; cycle 1; try eassumption.
-        2: eapply all2_len; basic_goal_prep; intuition eauto.
-        unfold map_elts_wf, map.forall_values in *; cbn [negb] in *; intros.
-        assert (list_Mmap (PTree.get' i0) (x::l) = Some (x0::l'0))
-          by (cbn; rewrite H0, H1; auto).
-        rewrite Mmap_option_all in *.
-        erewrite unwrap_all_Some in H2.
-        2:{
-          apply option_all_map_Some in H2.
-          rewrite H2.
-          rewrite all_map.
-          cbn.
-          basic_utils_crush.
-        }
-        autorewrite with inversion in *.
-        rewrite <- H2.
-        rewrite map_map.
-        apply all2_map_r.
-        eapply all2_impl; try eassumption.
-        cbn beta; intros.
-        eapply H4.
-        cbn.
-        apply unwrap_Some.
-        eapply in_combine_r in H3.
-        eapply in_map in H3.
-        eapply in_all; try eassumption.
-        rewrite <- Is_Some_Mmap.
-        rewrite Mmap_option_all in *.
-        cbn.
-        rewrite H0, H1; cbn; auto.
-      }
-      2:{
-        unfold map_elts_wf, map.forall_values in *; cbn [negb] in *; intros.
-        assert (list_Mmap (PTree.get' i0) (x::l) = Some (x0::l'0))
-          by (cbn; rewrite H0, H1; auto).
-        rewrite Mmap_option_all in *.
-        erewrite unwrap_all_Some in H2.
-        2:{
-          apply option_all_map_Some in H2.
-          rewrite H2.
-          rewrite all_map.
-          cbn.
-          basic_utils_crush.
-        }
-        autorewrite with inversion in *.
-        rewrite <- H2.
-        rewrite map_map.
-        apply all2_map_r.
-        eapply all2_impl; try eassumption.
-        cbn beta; intros.
-        eapply H4.
-        cbn.
-        apply unwrap_Some.
-        eapply in_combine_r in H3.
-        eapply in_map in H3.
-        eapply in_all; try eassumption.
-        rewrite <- Is_Some_Mmap.
-        rewrite Mmap_option_all in *.
-        cbn.
-        rewrite H0, H1; cbn; auto.
-      }
-      {
-        enough
-          ((@!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x::l) in
-             (f c cl false hd_x (rev tl_x)))
-             = @!let (hd_x::tl_x) <?- list_Mmap (PTree.get' i) (x'::l') in
-                 (g c' cl' false hd_x (rev tl_x))).
-        {
-          revert H0; clear; intros.
-          repeat (basic_goal_prep; try case_match);
-            eauto.
-        }
-        cbn -[list_Mmap].
-        assert (all2 (fun (c : B) (x : PTree.tree' D) => map.forall_values (R c)
-                                                           (PTree.Nodes x : trie_map _))
-                  (c' :: cl') (x' :: l')).
-        {
-          eapply all2_Permutation; cycle 3; try eassumption.
-          all: basic_goal_prep; basic_utils_crush; congruence.
-        }
-        assert (option_rel (Permutation (A:=_))
-                  (list_Mmap (PTree.get' i) (x :: l))
-                  (list_Mmap (PTree.get' i) (x' :: l'))).
-        {
-          eapply list_Mmap_Permutation_Proper;
-            eapply Permutation_combine_r; cycle 2;
-            eauto;
-            basic_goal_prep; basic_utils_crush; congruence.
-        }          
-        repeat case_match; cbn -[list_Mmap] in H1; eauto;
-          basic_utils_crush.
-        rewrite <- frev, <- grev.
-        eapply Hext.
-        {
-          basic_goal_prep;
-            repeat case_match;
-            basic_utils_crush.
-          erewrite <- list_Mmap_length with (l':=l1) by eassumption.
-          eauto.
-        }
-        {
-          rewrite Mmap_option_all in *.
-          erewrite unwrap_all_Some in case_match_eqn.
-          2:{
-            apply option_all_map_Some in case_match_eqn.
-            rewrite case_match_eqn, all_map.
-            cbn; intuition auto.
-            rewrite all_True; auto.
-          }
+      (* Discharge [elts_wf_rev]. *)
+      2,5: intros b v l0; destruct b; cbn;
+           rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
+      (* Discharge [elts_intersect_rev] (two goals: one for [f], one for [g]).
+         Hwf gives [all2 R (c :: if b then cl else rev cl) (v :: rev l0)].
+         For b=true, the b=false-specialized frev/grev applied at [l := rev l0]
+         matches Hwf (with [rev_involutive] to align RHS); for b=false,
+         [all2_rev_iff] flips [(rev cl, rev l0)] to [(cl, l0)]. *)
+      2,4: intros b v l0 Hwf;
+           destruct b; cbn [negb] in *; cbn in Hwf; destruct Hwf as [Hhd Htl];
+           [ rewrite <- (rev_involutive l0) at 2;
+             (exact (frev c cl v (rev l0) (conj Hhd Htl)) +
+              exact (grev c' cl' v (rev l0) (conj Hhd Htl)))
+           | rewrite all2_rev_iff in Htl;
+             symmetry;
+             (exact (frev c cl v l0 (conj Hhd Htl)) +
+              exact (grev c' cl' v l0 (conj Hhd Htl))) ].
+      (* Two map_elts_wf premises remain.  Both follow from HR (combined with
+         the [Permutation] for the second one). *)
+      2: {
+        (* Second list_intersect: at the [c', cl', x', l'] side. *)
+        eapply map_elts_wf_Permutation.
+        - exact Hlen0.
+        - exact Hlen1.
+        - exact Hperm_orig.
+        - unfold map_elts_wf, map.forall_values; cbn [negb].
+          intros i0 v0 vs0 Hgv Hmmap.
+          assert (Hmm : list_Mmap (PTree.get' i0) (x::l) = Some (v0::vs0))
+            by (cbn; rewrite Hgv, Hmmap; auto).
+          rewrite Mmap_option_all in Hmm.
+          erewrite unwrap_all_Some in Hmm.
+          2: { apply option_all_map_Some in Hmm.
+               rewrite Hmm, all_map.
+               cbn; intuition auto.
+               rewrite all_True; auto. }
           autorewrite with inversion in *.
-          rewrite <- case_match_eqn.
-          rewrite !all2_map_r.
-          eapply all2_impl; try eassumption.        
-          cbn beta; intros.
-          eapply H3.
+          rewrite <- Hmm, map_map.
+          apply all2_map_r.
+          eapply all2_impl; try eassumption.
+          cbn beta; intros pt_c pt_x Hin Hpt.
+          unfold map.forall_values in Hpt.
+          eapply (Hpt i0).
           cbn.
           apply unwrap_Some.
-          eapply in_combine_r in H2.
-          eapply in_map in H2.
+          eapply in_combine_r in Hin.
+          eapply in_map with (f := PTree.get' i0) in Hin.
           eapply in_all; try eassumption.
           rewrite <- Is_Some_Mmap.
           rewrite Mmap_option_all in *.
-          cbn.
-          assert (Permutation (combine (c :: cl) (d :: l0))
-                    (combine (c' :: cl') (d0 :: l1))).
-          {
-            erewrite unwrap_all_Some in case_match_eqn0.
-            2:admit.
-            autorewrite with inversion in *.
-            rewrite <- case_match_eqn, <- case_match_eqn0.
-            admit.
-          }
-          basic_goal_prep; repeat (case_match; basic_goal_prep);
-            auto.
-          all: basic_utils_crush.
-          {
-            rewrite <- H7 in *.
-            (*
-            subst l0.
-          1:admit.
-          2:admit.
-          TODO: all about l, l' permutations
-          rewrite H0, H1; cbn; auto.
-        }
-        TODO: what to do about the rev? backward
-          
-        TODO: finish
-        1: basic_goal_prep; basic_utils_crush.
-        congruence.
-        
-        {
-          eapply Permutation_combine_r in Hlen2.
-          2,3: basic_goal_prep; basic_utils_crush; congruence.
-          assert (option_rel (Permutation (A:=_)) (Some []) (Some (d :: l0))).
-          {
-            rewrite <- case_match_eqn, <- case_match_eqn0.
-            eapply list_Mmap_Permutation_Proper; eauto.
-          }
-          cbn in *.
-          basic_utils_crush.
-        }
-        {
-          eapply Permutation_combine_r in Hlen2.
-          2,3: basic_goal_prep; basic_utils_crush; congruence.
-          assert (option_rel (Permutation (A:=_)) (Some (d :: l0)) (Some [])).
-          {
-            rewrite <- case_match_eqn, <- case_match_eqn0.
-            eapply list_Mmap_Permutation_Proper; eauto.
-          }
-          cbn in *.
-          basic_utils_crush.
-        }
-          safe_invert H1.
-          rewrite Hlen2 in case_match_eqn.
-        TODO: get = Some for both.
-        show output perms
-                         
+          cbn. rewrite Hgv, Hmmap; cbn; trivial.
       }
-        
-        a = Some (unwrap_with_default a)
-        admit (*TODO: all is_some*).
+      2: {
+        (* First list_intersect: directly from HR. *)
+        unfold map_elts_wf, map.forall_values; cbn [negb].
+        intros i0 v0 vs0 Hgv Hmmap.
+        assert (Hmm : list_Mmap (PTree.get' i0) (x::l) = Some (v0::vs0))
+          by (cbn; rewrite Hgv, Hmmap; auto).
+        rewrite Mmap_option_all in Hmm.
+        erewrite unwrap_all_Some in Hmm.
+        2: { apply option_all_map_Some in Hmm.
+             rewrite Hmm, all_map.
+             cbn; intuition auto.
+             rewrite all_True; auto. }
+        autorewrite with inversion in *.
+        rewrite <- Hmm, map_map.
+        apply all2_map_r.
+        eapply all2_impl; try eassumption.
+        cbn beta; intros pt_c pt_x Hin Hpt.
+        unfold map.forall_values in Hpt.
+        eapply (Hpt i0).
+        cbn.
+        apply unwrap_Some.
+        eapply in_combine_r in Hin.
+        eapply in_map with (f := PTree.get' i0) in Hin.
+        eapply in_all; try eassumption.
+        rewrite <- Is_Some_Mmap.
+        rewrite Mmap_option_all in *.
+        cbn. rewrite Hgv, Hmmap; cbn; trivial.
       }
-        cbn [map.get].
-        basic_goal_prep.
-        basic_utils_crush.
-        
-        Fail.
-          eapply in_all.
-        
-        eapply all2_Permutation; cycle 2; try eassumption.
-        TODO: missing facts about x0,l'0
-        all: basi
-        TODO: H3 ~ H1, H2, goal
-        intros.
-        
-        }
-        TODO: bool-rewriting
-        all: eapply g_ext.
-        TODO: fa
-        all:rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
-      }
-      *)
-Admitted.
+      (* Main alignment: the two [list_intersect_correct] RHSs are equal. *)
+      cbn -[list_Mmap].
+      (* Convert the source permutation into a permutation of list_Mmap results. *)
+      assert (Hperm_Mmap : option_rel (Permutation (A:=_))
+                            (list_Mmap (PTree.get' i) (x :: l))
+                            (list_Mmap (PTree.get' i) (x' :: l'))).
+      { eapply list_Mmap_Permutation_Proper.
+        eapply Permutation_combine_r; cycle 2; eauto.
+        all: basic_goal_prep; basic_utils_crush; congruence. }
+      (* Case-match on each component of the LHS and RHS expressions. *)
+      destruct (PTree.get' i x) as [vh|] eqn:Hgh;
+        destruct (list_Mmap (PTree.get' i) l) as [vt|] eqn:Hmt;
+        destruct (PTree.get' i x') as [vh'|] eqn:Hgh';
+        destruct (list_Mmap (PTree.get' i) l') as [vt'|] eqn:Hmt';
+        cbn [Mbind option_monad];
+        (* For each branch, normalize [Hperm_Mmap] then dispatch trivially. *)
+        (cbn [list_Mmap] in Hperm_Mmap;
+         rewrite ?Hgh, ?Hmt, ?Hgh', ?Hmt' in Hperm_Mmap;
+         cbn [Mbind option_monad option_rel] in Hperm_Mmap);
+        try (exfalso; exact Hperm_Mmap);
+        try reflexivity.
+      (* Remaining: the (Some, Some, Some, Some) sub-case.
+         Hperm_Mmap : Permutation (vh::vt) (vh'::vt').
+         Goal: f c cl false vh (rev vt) = g c' cl' false vh' (rev vt'). *)
+      (* Now we're in the (Some, Some, Some, Some) case.
+         Hperm_Mmap : Permutation (vh::vt) (vh'::vt').
+         Goal: f c cl false vh (rev vt) = g c' cl' false vh' (rev vt').
+         Build [all2 R] for both sides at the per-position values, then use them
+         as the strengthened premises of [frev]/[grev] to flip the bool.  Then
+         dispatch via [Hext] at [b=true]. *)
+      assert (Hvt_all2 : all2 R (c :: cl) (vh :: vt)).
+      { cbn. split.
+        - (* R c vh : from HR's head *)
+          pose proof (proj1 HR) as HRc.
+          unfold map.forall_values in HRc.
+          eapply (HRc i). cbn. exact Hgh.
+        - (* all2 R cl vt *)
+          pose proof Hmt as Hmt_keep.
+          rewrite Mmap_option_all in Hmt_keep.
+          erewrite unwrap_all_Some in Hmt_keep.
+          2: { apply option_all_map_Some in Hmt_keep.
+               rewrite Hmt_keep, all_map; cbn.
+               rewrite all_True; auto. }
+          autorewrite with inversion in Hmt_keep.
+          rewrite <- Hmt_keep, map_map.
+          apply all2_map_r.
+          eapply all2_impl; [|exact (proj2 HR)].
+          cbn beta; intros pt_c pt_x Hin Hpt.
+          unfold map.forall_values in Hpt.
+          eapply (Hpt i). cbn [map.get trie_map].
+          apply unwrap_Some.
+          eapply in_combine_r in Hin.
+          eapply in_map with (f := PTree.get' i) in Hin.
+          eapply in_all; [|exact Hin].
+          rewrite <- Is_Some_Mmap.
+          rewrite Hmt; cbn; trivial. }
+      (* Transport HR across [Hperm_orig] to get the prime-side rectangularity
+         hypothesis, then build [Hvt'_all2] symmetrically. *)
+      assert (HR' : all2 (fun c x => map.forall_values (R c) (PTree.Nodes x : trie_map _))
+                      (c'::cl') (x'::l')).
+      { eapply all2_Permutation; [ | | exact Hperm_orig | exact HR ];
+          cbn [length]; f_equal; assumption. }
+      assert (Hvt'_all2 : all2 R (c' :: cl') (vh' :: vt')).
+      { cbn. split.
+        - pose proof (proj1 HR') as HRc'.
+          unfold map.forall_values in HRc'.
+          eapply (HRc' i). cbn. exact Hgh'.
+        - pose proof Hmt' as Hmt'_keep.
+          rewrite Mmap_option_all in Hmt'_keep.
+          erewrite unwrap_all_Some in Hmt'_keep.
+          2: { apply option_all_map_Some in Hmt'_keep.
+               rewrite Hmt'_keep, all_map; cbn.
+               rewrite all_True; auto. }
+          autorewrite with inversion in Hmt'_keep.
+          rewrite <- Hmt'_keep, map_map.
+          apply all2_map_r.
+          eapply all2_impl; [|exact (proj2 HR')].
+          cbn beta; intros pt_c pt_x Hin Hpt.
+          unfold map.forall_values in Hpt.
+          eapply (Hpt i). cbn [map.get trie_map].
+          apply unwrap_Some.
+          eapply in_combine_r in Hin.
+          eapply in_map with (f := PTree.get' i) in Hin.
+          eapply in_all; [|exact Hin].
+          rewrite <- Is_Some_Mmap.
+          rewrite Hmt'; cbn; trivial. }
+      rewrite <- (frev c cl vh vt Hvt_all2).
+      rewrite <- (grev c' cl' vh' vt' Hvt'_all2).
+      eapply Hext.
+      - (* length cl' = length vt' *)
+        erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'.
+        Lia.lia.
+      - (* all2 R (c :: cl) (vh :: vt) *)
+        exact Hvt_all2.
+      - (* Permutation (combine (c::cl) (vh::vt)) (combine (c'::cl') (vh'::vt')) *)
+        (* Apply pair_map id (PTree.get' i) pointwise to Hperm_orig, then
+           unwrap the resulting Some's. *)
+        apply Permutation_map with
+          (f := @pair_map B B (PTree.tree' D) (option D) (@id B) (PTree.get' (A:=D) i))
+          in Hperm_orig.
+        rewrite !map_combine in Hperm_orig.
+        rewrite (@map_id B) in Hperm_orig.
+        rewrite (@map_id B) in Hperm_orig.
+        cbn [map] in Hperm_orig.
+        rewrite Hgh, Hgh' in Hperm_orig.
+        rewrite Mmap_option_all in Hmt, Hmt'.
+        apply option_all_map_Some in Hmt, Hmt'.
+        rewrite Hmt, Hmt' in Hperm_orig.
+        apply Permutation_map with
+          (f := @pair_map B B (option D) D (@id B) (@unwrap_with_default D vh))
+          in Hperm_orig.
+        rewrite !map_combine in Hperm_orig.
+        rewrite (@map_id B) in Hperm_orig.
+        rewrite (@map_id B) in Hperm_orig.
+        cbn [map unwrap_with_default] in Hperm_orig.
+        rewrite !map_map in Hperm_orig.
+        unfold unwrap_with_default in Hperm_orig.
+        assert (Hsv : forall (vs : list D), map (fun x : D => x) vs = vs).
+        { intros vs; induction vs as [|? rest IH]; cbn; congruence. }
+        rewrite (Hsv vt), (Hsv vt') in Hperm_orig.
+        exact Hperm_orig.
+        Unshelve.
+        all: match goal with H : ?T |- ?T => exact H end.
+    Qed.
       
       (*
     Lemma list_intersect_Perm_combined D B C (x:PTree.tree' D) l x' l'
@@ -3000,47 +3138,125 @@ Admitted.
       {
         repeat basic_goal_prep.
         f_equal.
-        (*
-        eapply list_intersect_Perm_combined.
-        { basic_goal_prep; basic_utils_crush. }
-        { basic_goal_prep; basic_utils_crush. }
-        {
-          change ((?a,?b) :: (combine ?la ?lb))
-            with (combine (a::la) (b::lb)) in *.
-          apply Permutation_map with (f:= pair_map id proj_node_map_unchecked)
+        (* The [(have_true, have_true)] case.  After [basic_goal_prep], the
+           [part_res_Perm] is destructed into two Permutation hypotheses
+           (one for the false-list parts and one for the true-list parts).
+           We apply the strengthened [list_intersect_Perm_combined] and
+           discharge each premise. *)
+        eapply (list_intersect_Perm_combined
+                  _ _ _ _ _ _ _
+                  (fun c cl b x l =>
+                     pt_spaced_intersect' fuel f_cil1 f_ptl1 c
+                       (if b then cl else rev cl) x l)
+                  (fun c cl b x l =>
+                     pt_spaced_intersect' fuel f_cil2 f_ptl2 c
+                       (if b then cl else rev cl) x l)
+                  (fun c t => Is_true (has_depth' (length (filter id c)) t)
+                              /\ length c = width)
+                  t_ci1 t_cil1 t_ci2 t_cil2).
+        1: { (* length t_cil2 = length (map proj_node_map_unchecked t_ptl1) *)
+          rewrite length_map.
+          eapply all2_len; eassumption. }
+        1: { (* all2 (forall_values R) on the LHS post-projection.
+                Each (ci, pti) pair has pti at offset depth, so post-projection
+                values satisfy [R ci v]. *)
+          change (proj_node_map_unchecked t_pt0 :: map proj_node_map_unchecked t_ptl0)
+            with (map proj_node_map_unchecked (t_pt0 :: t_ptl0)).
+          apply offset_rect_forall_values.
+          cbn [offset_rectangular_trie_list all2 map]; intuition assumption. }
+        1: { (* Permutation (combine ...) — derived from H16's Permutation by
+                mapping pair-wise [proj_node_map_unchecked]. *)
+          apply (Permutation_map
+                   (pair_map (@id (list bool)) proj_node_map_unchecked))
             in H16.
-          rewrite !map_combine in *.
-          cbv [pair_map id] in *.
-          basic_goal_prep.
-          rewrite !map_id in *.
-          eauto.
-        }
-        {
-          intros.
-          eapply IHfuel; eauto.
-          3:{
-            change ((?a,?b) :: (combine ?la ?lb))
-            with (combine (a::la) (b::lb)) in *.
-            change (?x::?l++?l') with ((x::l)++l').
-            rewrite !combine_app
-              by (basic_goal_prep; basic_utils_crush).
-            rewrite H25, H11.
-            reflexivity.
-          }
-          {
-            TODO: more conditions! remember rectangular.
-            In general, if forall v in t1..n, P v then P(intersect)
-            enough (let p := split (combine (c::cl) (x::l0)) in rectangular_trie_list width (fst p) (snd p)).
-            {
-              rewrite combine_split in *; cbn; eauto.
-            }
-            rewrite H25.
-   
-        TODO: really do need f & g
-          reflexivity.
-                        Fail.
-                        *)
-    Abort.
+          cbn [map] in H16.
+          rewrite !map_combine in H16.
+          rewrite !(@map_id (list bool)) in H16.
+          unfold pair_map, id in H16.
+          cbn [fst snd] in H16.
+          cbn [combine].
+          exact H16. }
+        1: { (* Hext at b=true: pt_si fuel f_cil1 f_ptl1 c cl x l =
+                pt_si fuel f_cil2 f_ptl2 c' cl' x' l'.  Apply IHfuel with the
+                rectangularity given by [all2 R] and a Permutation extended by
+                the [f_cil1, f_ptl1 / f_cil2, f_ptl2] permutation [H11]. *)
+          intros x_h l_h x_h' l_h' c_h cl_h c_h' cl_h' Hlen Hall2 Hperm.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil1 f_ptl1 c_h cl_h x_h l_h
+                          f_cil2 f_ptl2 c_h' cl_h' x_h' l_h').
+          - (* rectangular_trie_list width (c_h::cl_h) (x_h::l_h) *)
+            unfold rectangular_trie_list. exact Hall2.
+          - (* rectangular_trie_list width f_cil1 f_ptl1 *)
+            exact H20.
+          - (* rectangular_trie_list width (c_h'::cl_h') (x_h'::l_h') *)
+            assert (Hr_prime : all2
+              (fun (c : list bool) (t : pos_trie') =>
+                Is_true (has_depth' (length (filter id c)) t) /\
+                length c = width)
+              (c_h'::cl_h') (x_h'::l_h')).
+            { eapply all2_Permutation;
+                [ exact Hlen_h
+                | cbn [length]; f_equal; exact Hlen
+                | exact Hperm
+                | exact Hall2 ]. }
+            exact Hr_prime.
+          - (* rectangular_trie_list width f_cil2 f_ptl2 *)
+            exact H17.
+          - (* full Permutation: combine (c_h::cl_h++f_cil1) (x_h::l_h++f_ptl1)
+                                 with (c_h'::cl_h'++f_cil2) (x_h'::l_h'++f_ptl2). *)
+            cbn [combine].
+            rewrite (combine_app cl_h f_cil1 l_h f_ptl1)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app cl_h' f_cil2 l_h' f_ptl2 Hlen).
+            change ((?a, ?b) :: ?L1 ++ ?L2) with (((a, b) :: L1) ++ L2).
+            apply Permutation_app; [|exact H11].
+            cbn [combine] in Hperm. exact Hperm. }
+        1: { (* frev: pt_si fuel f_cil1 f_ptl1 c0 cl0 x0 l0 =
+                pt_si fuel f_cil1 f_ptl1 c0 (rev cl0) x0 (rev l0).  Joint
+                reversal via IHfuel — like [pt_spaced_intersect'_sim_rev] but
+                at the smaller fuel. *)
+          intros c0 cl0 x0_ l0 Hall2.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil1 f_ptl1 c0 cl0 x0_ l0
+                          f_cil1 f_ptl1 c0 (rev cl0) x0_ (rev l0)).
+          - exact Hall2.
+          - exact H20.
+          - cbn [all2]. split.
+            + exact (proj1 Hall2).
+            + apply all2_rev. exact (proj2 Hall2).
+          - exact H20.
+          - cbn [combine].
+            rewrite (combine_app cl0 f_cil1 l0 f_ptl1)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app (rev cl0) f_cil1 (rev l0) f_ptl1)
+              by (rewrite !length_rev; cbn in Hlen_h; Lia.lia).
+            apply perm_skip.
+            apply Permutation_app; [|reflexivity].
+            rewrite <- rev_combine by (cbn in Hlen_h; Lia.lia).
+            apply Permutation_rev. }
+        1: { (* grev: symmetric, with [f_cil2, f_ptl2]. *)
+          intros c0 cl0 x0_ l0 Hall2.
+          pose proof (all2_len _ _ _ _ _ Hall2) as Hlen_h.
+          eapply (IHfuel width f_cil2 f_ptl2 c0 cl0 x0_ l0
+                          f_cil2 f_ptl2 c0 (rev cl0) x0_ (rev l0)).
+          - exact Hall2.
+          - exact H17.
+          - cbn [all2]. split.
+            + exact (proj1 Hall2).
+            + apply all2_rev. exact (proj2 Hall2).
+          - exact H17.
+          - cbn [combine].
+            rewrite (combine_app cl0 f_cil2 l0 f_ptl2)
+              by (cbn in Hlen_h; Lia.lia).
+            rewrite (combine_app (rev cl0) f_cil2 (rev l0) f_ptl2)
+              by (rewrite !length_rev; cbn in Hlen_h; Lia.lia).
+            apply perm_skip.
+            apply Permutation_app; [|reflexivity].
+            rewrite <- rev_combine by (cbn in Hlen_h; Lia.lia).
+            apply Permutation_rev. }
+      }
+      }
+    Qed.
 
        
       (*
