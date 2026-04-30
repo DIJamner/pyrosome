@@ -220,6 +220,14 @@ Section PtSpacedIntersectSpec.
       + injection Hget as <-. exact Hfay.
   Qed.
 
+  (* Helper: a [pos_trie'] of depth [S n] is a node, not a leaf. *)
+  Lemma has_depth'_S_node (n : nat) (pt : @pos_trie' A) :
+    Is_true (has_depth' (S n) pt) ->
+    exists m, pt = pos_trie_node m.
+  Proof.
+    destruct pt as [a|m]; cbn; intros Hd; [contradiction|eauto].
+  Qed.
+
   (* Direct per-entry inversion for [has_depth' (S n) (pos_trie_node m)]. *)
   Lemma has_depth'_node_inv (n : nat) (m : Tries.Canonical.PTree.tree' (@pos_trie' A))
     (p : positive) (v : @pos_trie' A) :
@@ -933,80 +941,40 @@ Section PtSpacedIntersectSpec.
         admit.
   Admitted.
 
-  (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect'].
-     This is the joint-reversal special case of a [Permutation] property
-     of [pt_spaced_intersect'] (general perm: arbitrary permutation of the
-     [combine (ci0::cil++cil') (pt0::ptl++ptl')] aggregate).
-
-     The lemma takes the full rectangularity premise set required by
-     the recursive-case proof:
-       - [length cil = length ptl] / [length cil' = length ptl'];
-       - [Forall (fun l => length l = length ci0)] on both [cil] and [cil'];
-       - depth match: [has_depth' (length (filter id ci0)) pt0] for the
-         head trie, and [Forall2] depth-match on each side.
-     These are precisely the hypotheses [partition_tries_Permutation] and
-     [list_intersect_Perm_combined] need.  Without [length cil' = length ptl']
-     the statement is false in general (mismatched lengths cause
-     [partition_tries] to consume the FIRST [min(|cil'|,|ptl'|)] elements
-     in the original direction vs. the LAST [min] in the reversed
-     direction, producing genuinely different partitions). *)
+  (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect']
+     when the inputs are rectangular at a common [width].  Derived from
+     [pt_spaced_intersect'_perm] by exhibiting joint reversal as a
+     [Permutation] of the underlying [combine cil' ptl'] block. *)
   Lemma pt_spaced_intersect'_sim_rev
-    (fuel : nat)
+    (fuel : nat) (width : nat)
     (cil : list (list bool)) (ptl : list (@pos_trie' A))
     (ci0 : list bool) (cil' : list (list bool))
     (pt0 : @pos_trie' A) (ptl' : list (@pos_trie' A))
-    (Hcil'_ptl'_len : length cil' = length ptl') :
+    (Hrect_main : rectangular_trie_list width (ci0::cil) (pt0::ptl))
+    (Hrect_aux : rectangular_trie_list width cil' ptl') :
     pt_spaced_intersect' merge fuel cil ptl ci0 (rev cil') pt0 (rev ptl')
     = pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl'.
   Proof.
-    revert cil ptl ci0 cil' pt0 ptl' Hcil'_ptl'_len.
-    induction fuel as [|fuel IHfuel];
-      intros cil ptl ci0 cil' pt0 ptl' Hlen.
-    - (* fuel = 0 *) reflexivity.
-    - destruct ci0 as [|b ci0']; cbn [pt_spaced_intersect'].
-      + (* ci0 = []: leaf or node case for pt0 *)
-        destruct pt0 as [a|m]; [|reflexivity].
-        f_equal. f_equal.
-        (* Goal: leaf_intersect (leaf_intersect a ptl) (rev ptl')
-                = leaf_intersect (leaf_intersect a ptl) ptl'.
-           Use [leaf_intersect_Permutation_Proper] with [Permutation l (rev l)]. *)
-        apply (leaf_intersect_Permutation_Proper merge merge_comm merge_assoc);
-          [reflexivity|].
-        symmetry. apply Permutation_rev.
-      + (* ci0 = b :: ci0': partition_tries reasoning.
-
-           Completing this case requires:
-             1. [partition_tries_app] to combine the two [partition_tries]
-                calls into one over [(cil ++ cil', ptl ++ ptl')] (resp.
-                with [(rev cil', rev ptl')] on the LHS).
-             2. [partition_tries_Permutation] (PosListMap.v:1770) applied
-                with [Permutation_rev] on [combine cil' ptl'], giving
-                [part_res_Perm] between LHS and RHS partition outputs.
-             3. Case-split on the [partition_result] variant:
-                - [just_false_part]: the recursive call has DIFFERENT
-                  [(ci0_new, pt0_new, other_cil, other_tries)] on LHS vs RHS
-                  (related by permutation, not joint reversal).  This is
-                  what forces a STRONGER permutation form of the lemma:
-                  the [IHfuel] given here only provides joint reversal at
-                  smaller fuel, which is insufficient.
-                - [have_true_part]: apply [list_intersect_Perm_combined]
-                  (now weakened in PosListMap.v:2184 to take length-
-                  conditional [frev]/[grev]), discharging length from
-                  partition rectangularity, [all2 R] with [R := True],
-                  the [Permutation] lifted through [proj_node_map_unchecked]
-                  from [part_res_Perm]'s true-list part, and [frev]/[grev]
-                  from a perm-form IH at smaller fuel.
-
-           Recommended completion path: revive the abandoned
-           [pt_spaced_intersect'_perm] (PosListMap.v:2787), finishing the
-           [(have_true, have_true)] case via the now-available weakened
-           [list_intersect_Perm_combined], then derive
-           [pt_spaced_intersect'_sim_rev] as a corollary using
-           [Permutation_rev] on [combine cil' ptl'].  The local
-           rectangularity hypotheses needed for that derivation are
-           already produced by every call site of this lemma in the spec
-           proof. *)
-  Admitted.
+    pose proof (all2_len _ _ _ _ _ Hrect_aux) as Hlen_aux.
+    cbn in Hrect_main.
+    destruct Hrect_main as [Hhead Hrect_tail].
+    pose proof (all2_len _ _ _ _ _ Hrect_tail) as Hlen_tail.
+    apply (pt_spaced_intersect'_perm fuel width
+             cil ptl ci0 (rev cil') pt0 (rev ptl')
+             cil ptl ci0 cil' pt0 ptl').
+    - cbn. split; [exact Hhead|].
+      apply rectangular_trie_list_rev_iff. exact Hrect_aux.
+    - exact Hrect_tail.
+    - cbn. split; [exact Hhead|]. exact Hrect_aux.
+    - exact Hrect_tail.
+    - cbn [combine]. apply perm_skip.
+      rewrite (combine_app_eq _ _ (rev cil') cil (rev ptl') ptl)
+        by (rewrite !length_rev; Lia.lia).
+      rewrite (combine_app_eq _ _ cil' cil ptl' ptl) by Lia.lia.
+      apply Permutation_app_tail.
+      rewrite <- rev_combine by Lia.lia.
+      apply Permutation_sym, Permutation_rev.
+  Qed.
 
   (* Specialised [list_intersect_correct] for our [lam].  Takes the joint
      reversal property as an explicit hypothesis [Hsim_rev], specialised to
@@ -1019,13 +987,19 @@ Section PtSpacedIntersectSpec.
      so [Hsim_rev]'s length premise can be discharged at each interior
      callback site. *)
   Lemma list_intersect_lookup_at_pos
-    (fuel' : nat) (other_cil : list (list bool))
-    (other_tries : list (@pos_trie' A)) (t_ci0 : list bool)
-    (true_cil : list (list bool)) (t_pt0 : @pos_trie' A)
-    (true_tries : list (@pos_trie' A)) (p : positive)
-    (Htt_len : length true_cil = length true_tries)
+    (fuel' : nat) (width : nat)
+    (other_cil : list (list bool)) (other_tries : list (@pos_trie' A))
+    (t_ci0 : list bool) (true_cil : list (list bool))
+    (t_pt0 : @pos_trie' A) (true_tries : list (@pos_trie' A))
+    (p : positive)
+    (Ht_ci0_len : length t_ci0 = width)
+    (Ht_pt0_d : Is_true (has_depth' (S (length (filter id t_ci0))) t_pt0))
+    (Hrect_true_offset :
+       all2 (fun ci pt =>
+               Is_true (has_depth' (S (length (filter id ci))) pt) /\ length ci = width)
+            true_cil true_tries)
     (Hsim_rev : forall x l,
-       length l = length true_cil ->
+       rectangular_trie_list width (t_ci0::true_cil) (x::l) ->
        pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
                             (rev true_cil) x (rev l)
        = pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
@@ -1049,21 +1023,68 @@ Section PtSpacedIntersectSpec.
     pose (lam := fun is_forward : bool =>
                    pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
                      (if is_forward then true_cil else rev true_cil)).
-    pose (wf_l := fun (_ : bool) (_ : @pos_trie' A) (l : list (@pos_trie' A)) =>
-                    length l = length true_cil).
+    pose (wf_l := fun (b : bool) (v : @pos_trie' A) (l : list (@pos_trie' A)) =>
+                    rectangular_trie_list width
+                      (t_ci0 :: (if b then true_cil else rev true_cil)) (v :: l)).
+    (* Helper used both for [map_elts_wf] discharge and the final rewrite:
+       given a position [i] where [t_pt0]/[true_tries] descend successfully,
+       the per-position values form a [wf_l true]-rectangular pair. *)
+    assert (Hdescent :
+              forall i x l',
+                Tries.Canonical.PTree.get' i (proj_node_map_unchecked t_pt0) = Some x ->
+                list_Mmap (Tries.Canonical.PTree.get' i)
+                          (map proj_node_map_unchecked true_tries) = Some l' ->
+                rectangular_trie_list width (t_ci0::true_cil) (x::l')).
+    { intros i x l' Hgx Hmm.
+      cbn. split.
+      - split.
+        + destruct (has_depth'_S_node _ _ Ht_pt0_d) as [m_pt0 Heq_pt0].
+          rewrite Heq_pt0 in Hgx, Ht_pt0_d.
+          cbn [proj_node_map_unchecked] in Hgx.
+          apply (has_depth'_node_inv _ _ i _ Ht_pt0_d Hgx).
+        + exact Ht_ci0_len.
+      - clear Hgx Ht_pt0_d Ht_ci0_len Hsim_rev.
+        revert true_tries Hrect_true_offset l' Hmm.
+        induction true_cil as [|c cil_tl IH];
+          intros [|t ptl_tl] Hoff l' Hmm; cbn in *;
+          try contradiction.
+        + injection Hmm as <-. cbn. trivial.
+        + destruct Hoff as [Hh Hrest].
+          destruct (Tries.Canonical.PTree.get' i (proj_node_map_unchecked t)) as [v|] eqn:Hgv;
+            [|discriminate].
+          destruct (list_Mmap (Tries.Canonical.PTree.get' i)
+                              (map proj_node_map_unchecked ptl_tl)) as [vs|] eqn:Hms;
+            [|discriminate].
+          injection Hmm as <-.
+          cbn. split.
+          * destruct Hh as [Hd_t Hl_eq].
+            destruct (has_depth'_S_node _ _ Hd_t) as [m_t Heq_t].
+            rewrite Heq_t in Hd_t, Hgv.
+            cbn [proj_node_map_unchecked] in Hgv.
+            split.
+            -- apply (has_depth'_node_inv _ _ i _ Hd_t Hgv).
+            -- exact Hl_eq.
+          * apply (IH ptl_tl Hrest vs Hms). }
     assert (Hwf_rev : forall b v l, wf_l b v (rev l) <-> wf_l (negb b) v l).
-    { intros b v l. subst wf_l. cbn.
-      rewrite length_rev. reflexivity. }
+    { intros b v l. subst wf_l. cbn [negb].
+      destruct b; cbn; split; intros [Hh Hf]; split; try exact Hh.
+      - rewrite <- all2_rev_iff' in Hf. exact Hf.
+      - rewrite <- all2_rev_iff'. exact Hf.
+      - rewrite all2_rev_iff in Hf. exact Hf.
+      - rewrite all2_rev_iff. exact Hf. }
     assert (Hrev : forall b x l,
               wf_l b x (rev l) ->
               lam b x (rev l) = lam (negb b) x l).
-    { intros b x l Hl. subst lam wf_l. cbn in Hl.
-      rewrite length_rev in Hl.
+    { intros b x l Hwf. subst lam wf_l. cbn in Hwf.
+      destruct Hwf as [Hh Hf].
       destruct b; cbn.
-      - rewrite <- (Hsim_rev x (rev l)).
-        + rewrite rev_involutive. reflexivity.
-        + rewrite length_rev; exact Hl.
-      - exact (Hsim_rev x l Hl). }
+      - assert (Hpre : rectangular_trie_list width (t_ci0::true_cil) (x::rev l))
+          by (cbn; split; [exact Hh|exact Hf]).
+        pose proof (Hsim_rev x (rev l) Hpre) as Heq.
+        rewrite rev_involutive in Heq. symmetry. exact Heq.
+      - assert (Hpre : rectangular_trie_list width (t_ci0::true_cil) (x::l)).
+        { cbn. split; [exact Hh|]. rewrite all2_rev_iff in Hf. exact Hf. }
+        exact (Hsim_rev x l Hpre). }
     rewrite (TrieMap.list_intersect_correct
                (B := @pos_trie' A) (C := @pos_trie' A)
                lam
@@ -1074,20 +1095,16 @@ Section PtSpacedIntersectSpec.
                (proj_node_map_unchecked t_pt0)
                (map proj_node_map_unchecked true_tries)).
     2: { intros i x' l' Hgx Hmm.
-         subst wf_l. cbn.
-         apply (TrieMap.list_Mmap_length _ _ _) in Hmm.
-         rewrite <- Hmm, length_map, <- Htt_len. reflexivity. }
+         subst wf_l. cbn [negb].
+         apply (Hdescent i x' l' Hgx Hmm). }
     cbn.
-    destruct (Tries.Canonical.PTree.get' p (proj_node_map_unchecked t_pt0)) as [hd_x|];
+    destruct (Tries.Canonical.PTree.get' p (proj_node_map_unchecked t_pt0)) as [hd_x|] eqn:Hgp;
       cbn; [|reflexivity].
     destruct (list_Mmap (Tries.Canonical.PTree.get' p) (map proj_node_map_unchecked true_tries))
       as [tl_x|] eqn:Hmm; cbn; [|reflexivity].
     subst lam; cbn.
-    assert (Htl_len : length tl_x = length true_cil).
-    { apply (TrieMap.list_Mmap_length _ _ _) in Hmm.
-      rewrite <- Hmm, length_map, <- Htt_len. reflexivity. }
-    rewrite (Hsim_rev hd_x tl_x Htl_len).
-    reflexivity.
+    apply (Hsim_rev hd_x tl_x).
+    apply (Hdescent p hd_x tl_x Hgp Hmm).
   Qed.
 
 
@@ -1182,15 +1199,6 @@ Section PtSpacedIntersectSpec.
   Proof.
     destruct c as [|h c_tl]; intros Hhd; cbn [hd] in Hhd; [discriminate|].
     subst h. apply lookup_one'_cons_true.
-  Qed.
-
-  (* Helper: when [t_pt0] is a node and the head bit is true, the
-     [proj_node_map_unchecked] projection coincides with the inner map. *)
-  Lemma has_depth'_S_node (n : nat) (pt : @pos_trie' A) :
-    Is_true (has_depth' (S n) pt) ->
-    exists m, pt = pos_trie_node m.
-  Proof.
-    destruct pt as [a|m]; cbn; intros Hd; [contradiction|eauto].
   Qed.
 
   (* The "have_true" recursive cases of [pt_spaced_intersect'_spec_general]
@@ -1360,8 +1368,134 @@ Section PtSpacedIntersectSpec.
                    end).
       { intros [m|]; cbn; reflexivity. }
       rewrite Hfactor.
+      (* Build rectangularity auxiliaries needed by the new signature of
+         [list_intersect_lookup_at_pos]: length of tc0, depth of tp0, and
+         all2-form rectangularity for FF and TF_tail at width [length x']. *)
+      assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
+        by (rewrite ?length_app; congruence).
+      assert (Hcc_d_pre : Forall2 (fun ci pt =>
+                                Is_true (has_depth' (length (filter id ci)) pt))
+                              (cil ++ cil') (ptl ++ ptl')).
+      { clear -Hcil_ptl_d Hcil'_ptl'_d.
+        induction Hcil_ptl_d; cbn; auto. }
+      assert (Hcc_combine_d_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          Is_true (has_depth' (length (filter id (fst pq))) (snd pq)))
+                       (combine (cil ++ cil') (ptl ++ ptl'))).
+      { clear -Hcc_d_pre. induction Hcc_d_pre; cbn; auto. }
+      assert (Hcc_combine_len_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = S (length x'))
+                       (combine (cil ++ cil') (ptl ++ ptl'))).
+      { clear -Hcc_p_len_eq Hcc_len.
+        revert Hcc_p_len_eq Hcc_len.
+        generalize (ptl ++ ptl') as P. generalize (cil ++ cil') as C.
+        intros C P Hlen Hall.
+        revert P Hlen.
+        induction Hall as [|c C Hc Hall' IH]; intros [|p0 P] Hlen;
+          cbn [combine length] in *;
+          try (constructor; fail);
+          try discriminate.
+        constructor; [cbn; exact Hc | apply IH; Lia.lia]. }
+      (* Helper to build rectangularity for filtered/mapped sublists. *)
+      assert (Hbuild_pre :
+                forall (entries : list (list bool * @pos_trie' A))
+                       (P : (list bool * @pos_trie' A) -> bool),
+                  (forall pq, In pq entries ->
+                              length (fst pq) = S (length x') /\
+                              Is_true (has_depth' (length (filter id (fst pq))) (snd pq))) ->
+                  Forall (fun pq : list bool * @pos_trie' A =>
+                            forall (b : bool),
+                              hd false (fst pq) = b ->
+                              length (tl (fst pq)) = length x' /\
+                              (b = true ->
+                               Is_true (has_depth' (S (length (filter id (tl (fst pq))))) (snd pq))) /\
+                              (b = false ->
+                               Is_true (has_depth' (length (filter id (tl (fst pq)))) (snd pq))))
+                         entries -> True).
+      { intros. trivial. }
+      clear Hbuild_pre.
+      assert (HTF_filter_props_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = length x' /\
+                          Is_true (has_depth' (S (length (filter id (fst pq)))) (snd pq)))
+                       TF_filter).
+      { apply Forall_forall. intros pq HIn_TF.
+        unfold TF_filter, Lall in HIn_TF.
+        apply <- in_rev in HIn_TF.
+        apply in_map_iff in HIn_TF as [[c0 pp0] [Heq HIn_filt]].
+        apply filter_In in HIn_filt as [HIn_comb Hhd]; cbn [fst] in Hhd.
+        destruct pq as [c pq2]; cbn in Heq.
+        injection Heq; intros <- <-.
+        rewrite Forall_forall in Hcc_combine_len_pre, Hcc_combine_d_pre.
+        pose proof (Hcc_combine_len_pre _ HIn_comb) as Hlen0; cbn [fst length] in Hlen0.
+        pose proof (Hcc_combine_d_pre _ HIn_comb) as Hd0; cbn [fst snd] in Hd0.
+        destruct c0 as [|h c0]; cbn [length] in Hlen0; [discriminate|].
+        injection Hlen0 as Hlen0_tl.
+        cbn [hd] in Hhd. destruct h; cbn in Hhd; [|discriminate].
+        cbn [filter id length] in Hd0.
+        cbn [tl].
+        split; [exact Hlen0_tl | exact Hd0]. }
+      assert (HFF_props_pre : Forall (fun pq : list bool * @pos_trie' A =>
+                            length (fst pq) = length x' /\
+                            Is_true (has_depth' (length (filter id (fst pq))) (snd pq)))
+                          FF).
+      { apply Forall_forall. intros pq HIn_FF.
+        unfold FF, Lall in HIn_FF.
+        apply <- in_rev in HIn_FF.
+        apply in_map_iff in HIn_FF as [[c0 pp0] [Heq HIn_filt]].
+        apply filter_In in HIn_filt as [HIn_comb Hhd]; cbn [fst] in Hhd.
+        destruct pq as [c pq2]; cbn in Heq.
+        injection Heq; intros <- <-.
+        rewrite Forall_forall in Hcc_combine_len_pre, Hcc_combine_d_pre.
+        pose proof (Hcc_combine_len_pre _ HIn_comb) as Hlen0; cbn [fst length] in Hlen0.
+        pose proof (Hcc_combine_d_pre _ HIn_comb) as Hd0; cbn [fst snd] in Hd0.
+        destruct c0 as [|h c0]; cbn [length] in Hlen0; [discriminate|].
+        injection Hlen0 as Hlen0_tl.
+        cbn [hd] in Hhd. destruct h; cbn in Hhd; [discriminate|].
+        cbn [filter id] in Hd0.
+        cbn [tl].
+        split; [exact Hlen0_tl | exact Hd0]. }
+      assert (Hpt0_d_eff_pre : Is_true (has_depth' (S (length (filter id ci0'))) pt0)).
+      { cbn [filter id length] in Hpt0_d. exact Hpt0_d. }
+      assert (HTF_props_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = length x' /\
+                          Is_true (has_depth' (S (length (filter id (fst pq)))) (snd pq)))
+                       ((tc0, tp0) :: TF_tail)).
+      { rewrite HTF_def.
+        apply Forall_app; split; [exact HTF_filter_props_pre|].
+        constructor; [|constructor].
+        cbn [fst snd]. split; [exact Hci0_len | exact Hpt0_d_eff_pre]. }
+      assert (Htc0_lenx_pre : length tc0 = length x').
+      { pose proof (Forall_inv HTF_props_pre) as Hh; cbn in Hh.
+        destruct Hh; assumption. }
+      assert (Htp0_d_pre : Is_true (has_depth' (S (length (filter id tc0))) tp0)).
+      { pose proof (Forall_inv HTF_props_pre) as Hh; cbn in Hh.
+        destruct Hh; assumption. }
+      assert (HTF_tail_props_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = length x' /\
+                          Is_true (has_depth' (S (length (filter id (fst pq)))) (snd pq)))
+                       TF_tail).
+      { apply Forall_inv_tail in HTF_props_pre; assumption. }
+      (* Convert HFF_props_pre and HTF_tail_props_pre to all2 form. *)
+      assert (Hrect_FF_pre :
+                rectangular_trie_list (length x') (map fst FF) (map snd FF)).
+      { unfold rectangular_trie_list.
+        clear -HFF_props_pre.
+        induction HFF_props_pre as [|[c pp] L Hh Hrest IH]; cbn; auto.
+        split; [destruct Hh; cbn in *; split; assumption | exact IH]. }
+      assert (Hrect_TF_tail_pre :
+                all2 (fun (ci : list bool) (pt : @pos_trie' A) =>
+                        Is_true (has_depth' (S (length (filter id ci))) pt) /\
+                        length ci = length x')
+                     (map fst TF_tail) (map snd TF_tail)).
+      { clear -HTF_tail_props_pre.
+        induction HTF_tail_props_pre as [|[c pp] L Hh Hrest IH]; cbn; auto.
+        split; [destruct Hh; cbn in *; split; assumption | exact IH]. }
       rewrite (list_intersect_lookup_at_pos
-                 fuel'
+                 fuel' (length x')
                  (map fst FF)
                  (map snd FF)
                  tc0
@@ -1369,16 +1503,20 @@ Section PtSpacedIntersectSpec.
                  tp0
                  (map snd TF_tail)
                  p
-                 (eq_trans (length_map _ _) (eq_sym (length_map _ _)))
-                 (fun x l Hl =>
-                    pt_spaced_intersect'_sim_rev fuel'
+                 Htc0_lenx_pre
+                 Htp0_d_pre
+                 Hrect_TF_tail_pre
+                 (fun x l Hpre =>
+                    pt_spaced_intersect'_sim_rev fuel' (length x')
                       (map fst FF)
                       (map snd FF)
                       tc0
                       (map fst TF_tail)
-                      x l (eq_sym Hl))).
-      assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
-        by (rewrite ?length_app; congruence).
+                      x l
+                      (* Hrect_main: combine (tc0, x) head from Hpre with FF rectangularity *)
+                      (conj (proj1 Hpre) Hrect_FF_pre)
+                      (* Hrect_aux: TF_tail tail from Hpre *)
+                      (proj2 Hpre))).
       assert (HBools_tl_eq :
                 Bools_tl
                 = fold_left (fun acc (l : list bool) => map2 orb (combine l acc))
@@ -1913,10 +2051,111 @@ Section PtSpacedIntersectSpec.
                    end).
       { intros [m|]; cbn; reflexivity. }
       rewrite Hfactor.
-      (* Apply [list_intersect_lookup_at_pos], supplying the global
-         [pt_spaced_intersect'_sim_rev] as the Hsim_rev premise. *)
+      (* Build rectangularity auxiliaries needed by the new signature of
+         [list_intersect_lookup_at_pos]. *)
+      assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
+        by (rewrite ?length_app; congruence).
+      assert (Hcc_d_pre : Forall2 (fun ci pt =>
+                                Is_true (has_depth' (length (filter id ci)) pt))
+                              (cil ++ cil') (ptl ++ ptl')).
+      { clear -Hcil_ptl_d Hcil'_ptl'_d.
+        induction Hcil_ptl_d; cbn; auto. }
+      assert (Hcc_combine_d_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          Is_true (has_depth' (length (filter id (fst pq))) (snd pq)))
+                       (combine (cil ++ cil') (ptl ++ ptl'))).
+      { clear -Hcc_d_pre. induction Hcc_d_pre; cbn; auto. }
+      assert (Hcc_combine_len_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = S (length x'))
+                       (combine (cil ++ cil') (ptl ++ ptl'))).
+      { clear -Hcc_p_len_eq Hcc_len.
+        revert Hcc_p_len_eq Hcc_len.
+        generalize (ptl ++ ptl') as P. generalize (cil ++ cil') as C.
+        intros C P Hlen Hall.
+        revert P Hlen.
+        induction Hall as [|c C Hc Hall' IH]; intros [|p0 P] Hlen;
+          cbn [combine length] in *;
+          try (constructor; fail);
+          try discriminate.
+        constructor; [cbn; exact Hc | apply IH; Lia.lia]. }
+      assert (HTF_props_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = length x' /\
+                          Is_true (has_depth' (S (length (filter id (fst pq)))) (snd pq)))
+                       TF).
+      { apply Forall_forall. intros pq HIn_TF.
+        unfold TF, Lall in HIn_TF.
+        apply <- in_rev in HIn_TF.
+        apply in_map_iff in HIn_TF as [[c0 pp0] [Heq HIn_filt]].
+        apply filter_In in HIn_filt as [HIn_comb Hhd]; cbn [fst] in Hhd.
+        destruct pq as [c pq2]; cbn in Heq.
+        injection Heq; intros <- <-.
+        rewrite Forall_forall in Hcc_combine_len_pre, Hcc_combine_d_pre.
+        pose proof (Hcc_combine_len_pre _ HIn_comb) as Hlen0; cbn [fst length] in Hlen0.
+        pose proof (Hcc_combine_d_pre _ HIn_comb) as Hd0; cbn [fst snd] in Hd0.
+        destruct c0 as [|h c0]; cbn [length] in Hlen0; [discriminate|].
+        injection Hlen0 as Hlen0_tl.
+        cbn [hd] in Hhd. destruct h; cbn in Hhd; [|discriminate].
+        cbn [filter id length] in Hd0.
+        cbn [tl].
+        split; [exact Hlen0_tl | exact Hd0]. }
+      assert (HFF_props_pre : Forall (fun pq : list bool * @pos_trie' A =>
+                            length (fst pq) = length x' /\
+                            Is_true (has_depth' (length (filter id (fst pq))) (snd pq)))
+                          FF).
+      { apply Forall_forall. intros pq HIn_FF.
+        unfold FF, Lall in HIn_FF.
+        apply <- in_rev in HIn_FF.
+        apply in_map_iff in HIn_FF as [[c0 pp0] [Heq HIn_filt]].
+        apply filter_In in HIn_filt as [HIn_comb Hhd]; cbn [fst] in Hhd.
+        destruct pq as [c pq2]; cbn in Heq.
+        injection Heq; intros <- <-.
+        rewrite Forall_forall in Hcc_combine_len_pre, Hcc_combine_d_pre.
+        pose proof (Hcc_combine_len_pre _ HIn_comb) as Hlen0; cbn [fst length] in Hlen0.
+        pose proof (Hcc_combine_d_pre _ HIn_comb) as Hd0; cbn [fst snd] in Hd0.
+        destruct c0 as [|h c0]; cbn [length] in Hlen0; [discriminate|].
+        injection Hlen0 as Hlen0_tl.
+        cbn [hd] in Hhd. destruct h; cbn in Hhd; [discriminate|].
+        cbn [filter id] in Hd0.
+        cbn [tl].
+        split; [exact Hlen0_tl | exact Hd0]. }
+      assert (Htc0_lenx_pre : length tc0 = length x').
+      { rewrite HTF in HTF_props_pre.
+        pose proof (Forall_inv HTF_props_pre) as Hh; cbn in Hh. destruct Hh; assumption. }
+      assert (Htp0_d_pre : Is_true (has_depth' (S (length (filter id tc0))) tp0)).
+      { rewrite HTF in HTF_props_pre.
+        pose proof (Forall_inv HTF_props_pre) as Hh; cbn in Hh. destruct Hh; assumption. }
+      assert (HTF_tail_props_pre :
+                Forall (fun pq : list bool * @pos_trie' A =>
+                          length (fst pq) = length x' /\
+                          Is_true (has_depth' (S (length (filter id (fst pq)))) (snd pq)))
+                       TF_tail).
+      { rewrite HTF in HTF_props_pre.
+        apply Forall_inv_tail in HTF_props_pre; assumption. }
+      assert (Hpt0_d_eff_pre : Is_true (has_depth' (length (filter id ci0')) pt0)).
+      { cbn [filter id] in Hpt0_d. exact Hpt0_d. }
+      (* Convert HFF_props_pre + (ci0', pt0) singleton to all2 form for the
+         appended list (map fst FF ++ [ci0'], map snd FF ++ [pt0]). *)
+      assert (Hrect_FF_app_pre :
+                rectangular_trie_list (length x')
+                  (map fst FF ++ [ci0'])
+                  (map snd FF ++ [pt0])).
+      { unfold rectangular_trie_list. apply all2_app.
+        - clear -HFF_props_pre.
+          induction HFF_props_pre as [|[c pp] L Hh Hrest IH]; cbn; auto.
+          split; [destruct Hh; cbn in *; split; assumption | exact IH].
+        - cbn. split; [|trivial]. split; [exact Hpt0_d_eff_pre|exact Hci0_len]. }
+      assert (Hrect_TF_tail_pre :
+                all2 (fun (ci : list bool) (pt : @pos_trie' A) =>
+                        Is_true (has_depth' (S (length (filter id ci))) pt) /\
+                        length ci = length x')
+                     (map fst TF_tail) (map snd TF_tail)).
+      { clear -HTF_tail_props_pre.
+        induction HTF_tail_props_pre as [|[c pp] L Hh Hrest IH]; cbn; auto.
+        split; [destruct Hh; cbn in *; split; assumption | exact IH]. }
       rewrite (list_intersect_lookup_at_pos
-                 fuel'
+                 fuel' (length x')
                  (map fst FF ++ [ci0'])
                  (map snd FF ++ [pt0])
                  tc0
@@ -1924,20 +2163,23 @@ Section PtSpacedIntersectSpec.
                  tp0
                  (map snd TF_tail)
                  p
-                 (eq_trans (length_map _ _) (eq_sym (length_map _ _)))
-                 (fun x l Hl =>
-                    pt_spaced_intersect'_sim_rev fuel'
+                 Htc0_lenx_pre
+                 Htp0_d_pre
+                 Hrect_TF_tail_pre
+                 (fun x l Hpre =>
+                    pt_spaced_intersect'_sim_rev fuel' (length x')
                       (map fst FF ++ [ci0'])
                       (map snd FF ++ [pt0])
                       tc0
                       (map fst TF_tail)
-                      x l (eq_sym Hl))).
+                      x l
+                      (* Hrect_main *)
+                      (conj (proj1 Hpre) Hrect_FF_app_pre)
+                      (* Hrect_aux *)
+                      (proj2 Hpre))).
       (* === b=false TF non-empty subcase: continue from list_intersect_lookup_at_pos === *)
       (* Reduce RHS lookup_one' (p :: x') (pt0, false :: ci0') to lookup_one' x' (pt0, ci0'). *)
       rewrite lookup_one'_cons_false.
-      (* Length / depth facts. *)
-      assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
-        by (rewrite ?length_app; congruence).
       (* HBools_tl_eq: Bools_tl = fold_left orb (map tl (cil++cil')) ci0'. *)
       assert (HBools_tl_eq :
                 Bools_tl
