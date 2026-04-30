@@ -826,21 +826,24 @@ Section PtSpacedIntersectSpec.
     = pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl'.
   Admitted.
 
-  (* Specialised [list_intersect_correct] for our [lam].  The joint-reversal
-     property of [pt_spaced_intersect'] (the same fact stated globally as the
-     admitted [pt_spaced_intersect'_sim_rev]) is taken here as an explicit
-     hypothesis [Hsim_rev], so the proof body of this lemma is independent of
-     the admit.  Callers discharge [Hsim_rev] at instantiation. *)
+  (* Specialised [list_intersect_correct] for our [lam].  Takes the joint
+     reversal property as an explicit hypothesis [Hsim_rev], specialised to
+     the fixed [true_cil] of this lemma — the proof only needs reversal on
+     that one [true_cil], not a universal-in-[cil'] version.  This makes
+     the dependency on [pt_spaced_intersect'_sim_rev] explicit at each call
+     site (callers specialise it to their [true_cil]), and any future
+     local discharge of the constrained property suffices to drop the
+     reliance on the global admit at that call site. *)
   Lemma list_intersect_lookup_at_pos
     (fuel' : nat) (other_cil : list (list bool))
     (other_tries : list (@pos_trie' A)) (t_ci0 : list bool)
     (true_cil : list (list bool)) (t_pt0 : @pos_trie' A)
     (true_tries : list (@pos_trie' A)) (p : positive)
-    (Hsim_rev : forall cil' pt0 ptl',
+    (Hsim_rev : forall x l,
        pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
-                            (rev cil') pt0 (rev ptl')
+                            (rev true_cil) x (rev l)
        = pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
-                              cil' pt0 ptl') :
+                              true_cil x l) :
     Tries.Canonical.PTree.get p
       (TrieMap.otree (TrieMap.list_intersect
          (fun is_forward : bool =>
@@ -867,12 +870,11 @@ Section PtSpacedIntersectSpec.
       destruct b; cbn.
       - (* Goal: pt_spaced_intersect' ... true_cil x (rev l)
                 = pt_spaced_intersect' ... (rev true_cil) x l *)
-        rewrite <- (Hsim_rev (rev true_cil) x l).
+        rewrite <- (Hsim_rev x (rev l)).
         rewrite rev_involutive. reflexivity.
       - (* Goal: pt_spaced_intersect' ... (rev true_cil) x (rev l)
                 = pt_spaced_intersect' ... true_cil x l *)
-        rewrite <- (Hsim_rev true_cil x l).
-        reflexivity. }
+        exact (Hsim_rev x l). }
     rewrite (TrieMap.list_intersect_correct
                (B := @pos_trie' A) (C := @pos_trie' A)
                lam
@@ -889,7 +891,7 @@ Section PtSpacedIntersectSpec.
     destruct (list_Mmap (Tries.Canonical.PTree.get' p) (map proj_node_map_unchecked true_tries))
       as [tl_x|]; cbn; [|reflexivity].
     subst lam; cbn.
-    rewrite (Hsim_rev true_cil hd_x tl_x).
+    rewrite (Hsim_rev hd_x tl_x).
     reflexivity.
   Qed.
 
@@ -1175,7 +1177,8 @@ Section PtSpacedIntersectSpec.
                  (pt_spaced_intersect'_sim_rev fuel'
                     (map fst FF)
                     (map snd FF)
-                    tc0)).
+                    tc0
+                    (map fst TF_tail))).
       assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
         by (rewrite ?length_app; congruence).
       assert (HBools_tl_eq :
@@ -1726,7 +1729,8 @@ Section PtSpacedIntersectSpec.
                  (pt_spaced_intersect'_sim_rev fuel'
                     (map fst FF ++ [ci0'])
                     (map snd FF ++ [pt0])
-                    tc0)).
+                    tc0
+                    (map fst TF_tail))).
       (* === b=false TF non-empty subcase: continue from list_intersect_lookup_at_pos === *)
       (* Reduce RHS lookup_one' (p :: x') (pt0, false :: ci0') to lookup_one' x' (pt0, ci0'). *)
       rewrite lookup_one'_cons_false.
