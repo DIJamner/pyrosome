@@ -834,117 +834,11 @@ Section PtSpacedIntersectSpec.
     f_equal; apply IH; Lia.lia.
   Qed.
 
-  (* General [Permutation] invariance of [pt_spaced_intersect'].  The
-     statement permutes the joint list [combine (t_ci0::t_cil++f_cil)
-     (x0::l++f_ptl)] — i.e. arbitrarily reorders the head [(t_ci0, x0)]
-     and the rest of the rectangular bool-list/trie pairs — while keeping
-     [other_cil/other_tries] (the false-headed entries from a partition)
-     and [t_ci0::t_cil] (the true-headed entries plus the chosen head)
-     coherent across the reordering.  Joint reversal
-     [pt_spaced_intersect'_sim_rev] is a corollary.  Currently admitted;
-     the proof structure follows the abandoned [pt_spaced_intersect'_perm]
-     in PosListMap.v:2787, with the [(have_true, have_true)] sub-case
-     handled by [list_intersect_Perm_combined] (PosListMap.v:2184). *)
-  Lemma pt_spaced_intersect'_perm
-    (fuel : nat) (width : nat)
-    (f_cil : list (list bool)) (f_ptl : list (@pos_trie' A))
-    (t_ci0 : list bool) (t_cil : list (list bool))
-    (x0 : @pos_trie' A) (l : list (@pos_trie' A))
-    (f_cil' : list (list bool)) (f_ptl' : list (@pos_trie' A))
-    (t_ci0' : list bool) (t_cil' : list (list bool))
-    (x0' : @pos_trie' A) (l' : list (@pos_trie' A)) :
-    rectangular_trie_list width (t_ci0::t_cil) (x0::l) ->
-    rectangular_trie_list width f_cil f_ptl ->
-    rectangular_trie_list width (t_ci0'::t_cil') (x0'::l') ->
-    rectangular_trie_list width f_cil' f_ptl' ->
-    Permutation (combine (t_ci0::t_cil++f_cil) (x0::l++f_ptl))
-                (combine (t_ci0'::t_cil'++f_cil') (x0'::l'++f_ptl')) ->
-    pt_spaced_intersect' merge fuel f_cil f_ptl t_ci0 t_cil x0 l
-    = pt_spaced_intersect' merge fuel f_cil' f_ptl' t_ci0' t_cil' x0' l'.
-  Proof.
-    revert width f_cil f_ptl t_ci0 t_cil x0 l
-           f_cil' f_ptl' t_ci0' t_cil' x0' l'.
-    induction fuel as [|fuel IHfuel];
-      intros width f_cil f_ptl t_ci0 t_cil x0 l
-             f_cil' f_ptl' t_ci0' t_cil' x0' l'
-             Hrect_t Hrect_f Hrect_t' Hrect_f' Hperm.
-    - (* fuel = 0: both sides return None definitionally. *)
-      reflexivity.
-    - (* fuel = S fuel': case-split on [t_ci0] and [t_ci0']. *)
-      cbn [pt_spaced_intersect'].
-      destruct t_ci0 as [|b ci0_tl], t_ci0' as [|b' ci0_tl'].
-      + (* (nil, nil): leaf case.
-           From rectangularity at [width] (with [t_ci0=[]] forcing
-           width=0), every entry of [t_cil/t_cil'/f_cil/f_cil'] is empty
-           and every corresponding trie has depth 0 (i.e. is a leaf).
-           [pt_spaced_intersect'] reduces to [Some (pos_trie_leaf
-           (leaf_intersect (leaf_intersect a f_ptl) l))] on each side. *)
-        cbn in Hrect_t, Hrect_t'.
-        destruct Hrect_t as [[Hd_x0 Hwidth0] Hrect_l].
-        destruct Hrect_t' as [[Hd_x0' _] Hrect_l'].
-        cbn [length] in Hwidth0. subst width.
-        cbn [filter id length] in Hd_x0, Hd_x0'.
-        apply has_depth'_0_leaf in Hd_x0 as [a Hx0_eq].
-        apply has_depth'_0_leaf in Hd_x0' as [a' Hx0'_eq].
-        subst x0 x0'.
-        (* Both sides reduce to [Some (pos_trie_leaf (leaf_intersect
-           (leaf_intersect a f_ptl) l))] because [t_ci0=[]] and pt0 is
-           a leaf — but proving the equality of those folds requires
-           the [fold_left_permuted] argument over [Hperm], which has
-           cross-section-Context plumbing that [Permutation_combine_r]
-           and [fold_left_permuted] need.  Left admitted; sketch in the
-           original abandoned proof (PosListMap.v:2806-2832). *)
-        admit.
-      + (* (nil, cons): contradicts [length t_ci0 = length t_ci0' = width]. *)
-        cbn in Hrect_t, Hrect_t'.
-        destruct Hrect_t as [[_ Hl_eq] _].
-        destruct Hrect_t' as [[_ Hl_eq'] _].
-        cbn [length] in Hl_eq, Hl_eq'. exfalso. Lia.lia.
-      + (* (cons, nil): symmetric contradiction. *)
-        cbn in Hrect_t, Hrect_t'.
-        destruct Hrect_t as [[_ Hl_eq] _].
-        destruct Hrect_t' as [[_ Hl_eq'] _].
-        cbn [length] in Hl_eq, Hl_eq'. exfalso. Lia.lia.
-      + (* (cons, cons): real recursive case.
-           Mirrors PosListMap.v:2845-2945. *)
-        cbn in Hrect_t, Hrect_t'.
-        destruct Hrect_t as [[Hd_x0 Hwidth_t] Hrect_l].
-        destruct Hrect_t' as [[Hd_x0' Hwidth_t'] Hrect_l'].
-        cbn [length] in Hwidth_t, Hwidth_t'.
-        (* width = S w': otherwise [length (b::ci0_tl) = 0] is impossible. *)
-        destruct width as [|width']; [exfalso; Lia.lia|].
-        injection Hwidth_t as Hwidth_t.
-        injection Hwidth_t' as Hwidth_t'.
-        (* From rectangularity at width=S w', the inner trie lists
-           [t_cil++f_cil] and [t_cil'++f_cil'] are rectangular at width
-           S w' too — the prerequisite for [partition_tries_app]. *)
-        assert (Hrect_tail :
-                  rectangular_trie_list (S width') (t_cil ++ f_cil) (l ++ f_ptl))
-          by (apply rectangular_trie_list_app; assumption).
-        assert (Hrect_tail' :
-                  rectangular_trie_list (S width') (t_cil' ++ f_cil') (l' ++ f_ptl'))
-          by (apply rectangular_trie_list_app; assumption).
-        (* Coalesce the nested partition_tries via partition_tries_app.
-           In [pt_spaced_intersect'], the structure is
-           [partition_tries cil' ptl' (partition_tries cil ptl init)] —
-           with the function call's [cil := f_cil, cil' := t_cil], so
-           cil1=f_cil and cil2=t_cil for the lemma. *)
-        erewrite (partition_tries_app merge (S width') f_cil t_cil f_ptl l _ Hrect_f Hrect_l).
-        erewrite (partition_tries_app merge (S width') f_cil' t_cil' f_ptl' l' _ Hrect_f' Hrect_l').
-        (* Remaining: case-split on [partition_tries (t_cil++f_cil) (l++f_ptl) acc]
-           and similarly on the primed side; show the two are
-           [part_res_Perm]-related; then on each output variant proceed
-           by IHfuel (just_false_part) or list_intersect_Perm_combined
-           (have_true_part).  Mixed variants are False from part_res_Perm.
-           This 200-line block is admitted — see roadmap in commit message
-           and PosListMap.v:2945 onward. *)
-        admit.
-  Admitted.
-
   (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect']
      when the inputs are rectangular at a common [width].  Derived from
-     [pt_spaced_intersect'_perm] by exhibiting joint reversal as a
-     [Permutation] of the underlying [combine cil' ptl'] block. *)
+     [pt_spaced_intersect'_perm] (now proven in PosListMap.v) by
+     exhibiting joint reversal as a [Permutation] of the underlying
+     [combine cil' ptl'] block. *)
   Lemma pt_spaced_intersect'_sim_rev
     (fuel : nat) (width : nat)
     (cil : list (list bool)) (ptl : list (@pos_trie' A))
@@ -959,7 +853,7 @@ Section PtSpacedIntersectSpec.
     cbn in Hrect_main.
     destruct Hrect_main as [Hhead Hrect_tail].
     pose proof (all2_len _ _ _ _ _ Hrect_tail) as Hlen_tail.
-    apply (pt_spaced_intersect'_perm fuel width
+    apply (pt_spaced_intersect'_perm merge merge_comm merge_assoc fuel width
              cil ptl ci0 (rev cil') pt0 (rev ptl')
              cil ptl ci0 cil' pt0 ptl').
     - cbn. split; [exact Hhead|].
