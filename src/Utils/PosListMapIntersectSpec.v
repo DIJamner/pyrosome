@@ -70,6 +70,21 @@ Section PtSpacedIntersectSpec.
      [x] in the resulting trie under the OR-combined bool pattern equals
      the merged fold of the per-trie lookups, or [None] if any input
      lookup misses. *)
+  (* Helper: [Forall2] respects joint reversal of both lists.  Stated as an
+     iff to match the [elts_wf_rev] interface of [list_intersect_correct]. *)
+  Lemma Forall2_rev_iff {T1 T2} (P : T1 -> T2 -> Prop) (l1 : list T1) (l2 : list T2) :
+    Forall2 P (rev l1) (rev l2) <-> Forall2 P l1 l2.
+  Proof.
+    split.
+    - intro Hr.
+      rewrite <- (rev_involutive l1), <- (rev_involutive l2).
+      generalize (rev l1) (rev l2) Hr. clear.
+      intros a b Ha. induction Ha; cbn; [constructor|].
+      apply Forall2_app; auto.
+    - intro Hf. induction Hf; cbn; [constructor|].
+      apply Forall2_app; auto.
+  Qed.
+
   (* Helper: when all elements of [cil] are [], folding [map2 orb] starting
      from [[]] yields [[]]. *)
   Lemma fold_left_map2_orb_all_nil (cil : list (list bool)) :
@@ -812,34 +827,98 @@ Section PtSpacedIntersectSpec.
   Qed.
 
   (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect'].
-     This is the special case of [pt_spaced_intersect'_perm] (PosListMap.v
-     line 2849, aborted) needed to discharge [list_intersect_correct]'s
-     [elts_intersect_rev] section premise.  Admitted: follows from the
-     same blocking lemma as [list_intersect_Perm_combined]
-     (PosListMap.v line 2453, also Admitted). *)
+     This is the joint-reversal special case of a [Permutation] property
+     of [pt_spaced_intersect'] (general perm: arbitrary permutation of the
+     [combine (ci0::cil++cil') (pt0::ptl++ptl')] aggregate).
+
+     The lemma takes the full rectangularity premise set required by
+     the recursive-case proof:
+       - [length cil = length ptl] / [length cil' = length ptl'];
+       - [Forall (fun l => length l = length ci0)] on both [cil] and [cil'];
+       - depth match: [has_depth' (length (filter id ci0)) pt0] for the
+         head trie, and [Forall2] depth-match on each side.
+     These are precisely the hypotheses [partition_tries_Permutation] and
+     [list_intersect_Perm_combined] need.  Without [length cil' = length ptl']
+     the statement is false in general (mismatched lengths cause
+     [partition_tries] to consume the FIRST [min(|cil'|,|ptl'|)] elements
+     in the original direction vs. the LAST [min] in the reversed
+     direction, producing genuinely different partitions). *)
   Lemma pt_spaced_intersect'_sim_rev
     (fuel : nat)
     (cil : list (list bool)) (ptl : list (@pos_trie' A))
     (ci0 : list bool) (cil' : list (list bool))
-    (pt0 : @pos_trie' A) (ptl' : list (@pos_trie' A)) :
+    (pt0 : @pos_trie' A) (ptl' : list (@pos_trie' A))
+    (Hcil'_ptl'_len : length cil' = length ptl') :
     pt_spaced_intersect' merge fuel cil ptl ci0 (rev cil') pt0 (rev ptl')
     = pt_spaced_intersect' merge fuel cil ptl ci0 cil' pt0 ptl'.
+  Proof.
+    revert cil ptl ci0 cil' pt0 ptl' Hcil'_ptl'_len.
+    induction fuel as [|fuel IHfuel];
+      intros cil ptl ci0 cil' pt0 ptl' Hlen.
+    - (* fuel = 0 *) reflexivity.
+    - destruct ci0 as [|b ci0']; cbn [pt_spaced_intersect'].
+      + (* ci0 = []: leaf or node case for pt0 *)
+        destruct pt0 as [a|m]; [|reflexivity].
+        f_equal. f_equal.
+        (* Goal: leaf_intersect (leaf_intersect a ptl) (rev ptl')
+                = leaf_intersect (leaf_intersect a ptl) ptl'.
+           Use [leaf_intersect_Permutation_Proper] with [Permutation l (rev l)]. *)
+        apply (leaf_intersect_Permutation_Proper merge merge_comm merge_assoc);
+          [reflexivity|].
+        symmetry. apply Permutation_rev.
+      + (* ci0 = b :: ci0': partition_tries reasoning.
+
+           Completing this case requires:
+             1. [partition_tries_app] to combine the two [partition_tries]
+                calls into one over [(cil ++ cil', ptl ++ ptl')] (resp.
+                with [(rev cil', rev ptl')] on the LHS).
+             2. [partition_tries_Permutation] (PosListMap.v:1770) applied
+                with [Permutation_rev] on [combine cil' ptl'], giving
+                [part_res_Perm] between LHS and RHS partition outputs.
+             3. Case-split on the [partition_result] variant:
+                - [just_false_part]: the recursive call has DIFFERENT
+                  [(ci0_new, pt0_new, other_cil, other_tries)] on LHS vs RHS
+                  (related by permutation, not joint reversal).  This is
+                  what forces a STRONGER permutation form of the lemma:
+                  the [IHfuel] given here only provides joint reversal at
+                  smaller fuel, which is insufficient.
+                - [have_true_part]: apply [list_intersect_Perm_combined]
+                  (now weakened in PosListMap.v:2184 to take length-
+                  conditional [frev]/[grev]), discharging length from
+                  partition rectangularity, [all2 R] with [R := True],
+                  the [Permutation] lifted through [proj_node_map_unchecked]
+                  from [part_res_Perm]'s true-list part, and [frev]/[grev]
+                  from a perm-form IH at smaller fuel.
+
+           Recommended completion path: revive the abandoned
+           [pt_spaced_intersect'_perm] (PosListMap.v:2787), finishing the
+           [(have_true, have_true)] case via the now-available weakened
+           [list_intersect_Perm_combined], then derive
+           [pt_spaced_intersect'_sim_rev] as a corollary using
+           [Permutation_rev] on [combine cil' ptl'].  The local
+           rectangularity hypotheses needed for that derivation are
+           already produced by every call site of this lemma in the spec
+           proof. *)
   Admitted.
 
   (* Specialised [list_intersect_correct] for our [lam].  Takes the joint
      reversal property as an explicit hypothesis [Hsim_rev], specialised to
      the fixed [true_cil] of this lemma — the proof only needs reversal on
-     that one [true_cil], not a universal-in-[cil'] version.  This makes
-     the dependency on [pt_spaced_intersect'_sim_rev] explicit at each call
-     site (callers specialise it to their [true_cil]), and any future
-     local discharge of the constrained property suffices to drop the
-     reliance on the global admit at that call site. *)
+     lists [l] of length matching [true_cil], so the constrained signature
+     mirrors what [pt_spaced_intersect'_sim_rev] now provides.
+
+     The auxiliary length/depth facts about [true_cil]/[true_tries] are
+     threaded through [list_intersect_correct] via a non-trivial [elts_wf]
+     so [Hsim_rev]'s length premise can be discharged at each interior
+     callback site. *)
   Lemma list_intersect_lookup_at_pos
     (fuel' : nat) (other_cil : list (list bool))
     (other_tries : list (@pos_trie' A)) (t_ci0 : list bool)
     (true_cil : list (list bool)) (t_pt0 : @pos_trie' A)
     (true_tries : list (@pos_trie' A)) (p : positive)
+    (Htt_len : length true_cil = length true_tries)
     (Hsim_rev : forall x l,
+       length l = length true_cil ->
        pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
                             (rev true_cil) x (rev l)
        = pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
@@ -863,35 +942,44 @@ Section PtSpacedIntersectSpec.
     pose (lam := fun is_forward : bool =>
                    pt_spaced_intersect' merge fuel' other_cil other_tries t_ci0
                      (if is_forward then true_cil else rev true_cil)).
+    pose (wf_l := fun (_ : bool) (_ : @pos_trie' A) (l : list (@pos_trie' A)) =>
+                    length l = length true_cil).
+    assert (Hwf_rev : forall b v l, wf_l b v (rev l) <-> wf_l (negb b) v l).
+    { intros b v l. subst wf_l. cbn.
+      rewrite length_rev. reflexivity. }
     assert (Hrev : forall b x l,
-              True ->
+              wf_l b x (rev l) ->
               lam b x (rev l) = lam (negb b) x l).
-    { intros b x l _; subst lam.
+    { intros b x l Hl. subst lam wf_l. cbn in Hl.
+      rewrite length_rev in Hl.
       destruct b; cbn.
-      - (* Goal: pt_spaced_intersect' ... true_cil x (rev l)
-                = pt_spaced_intersect' ... (rev true_cil) x l *)
-        rewrite <- (Hsim_rev x (rev l)).
-        rewrite rev_involutive. reflexivity.
-      - (* Goal: pt_spaced_intersect' ... (rev true_cil) x (rev l)
-                = pt_spaced_intersect' ... true_cil x l *)
-        exact (Hsim_rev x l). }
+      - rewrite <- (Hsim_rev x (rev l)).
+        + rewrite rev_involutive. reflexivity.
+        + rewrite length_rev; exact Hl.
+      - exact (Hsim_rev x l Hl). }
     rewrite (TrieMap.list_intersect_correct
                (B := @pos_trie' A) (C := @pos_trie' A)
                lam
-               (fun _ _ _ => True)
-               (fun _ _ _ => iff_refl _)
+               wf_l
+               Hwf_rev
                Hrev
                p
                (proj_node_map_unchecked t_pt0)
                (map proj_node_map_unchecked true_tries)).
-    2: { intros i x' l' _ _; trivial. }
+    2: { intros i x' l' Hgx Hmm.
+         subst wf_l. cbn.
+         apply (TrieMap.list_Mmap_length _ _ _) in Hmm.
+         rewrite <- Hmm, length_map, <- Htt_len. reflexivity. }
     cbn.
     destruct (Tries.Canonical.PTree.get' p (proj_node_map_unchecked t_pt0)) as [hd_x|];
       cbn; [|reflexivity].
     destruct (list_Mmap (Tries.Canonical.PTree.get' p) (map proj_node_map_unchecked true_tries))
-      as [tl_x|]; cbn; [|reflexivity].
+      as [tl_x|] eqn:Hmm; cbn; [|reflexivity].
     subst lam; cbn.
-    rewrite (Hsim_rev hd_x tl_x).
+    assert (Htl_len : length tl_x = length true_cil).
+    { apply (TrieMap.list_Mmap_length _ _ _) in Hmm.
+      rewrite <- Hmm, length_map, <- Htt_len. reflexivity. }
+    rewrite (Hsim_rev hd_x tl_x Htl_len).
     reflexivity.
   Qed.
 
@@ -1174,11 +1262,14 @@ Section PtSpacedIntersectSpec.
                  tp0
                  (map snd TF_tail)
                  p
-                 (pt_spaced_intersect'_sim_rev fuel'
-                    (map fst FF)
-                    (map snd FF)
-                    tc0
-                    (map fst TF_tail))).
+                 (eq_trans (length_map _ _) (eq_sym (length_map _ _)))
+                 (fun x l Hl =>
+                    pt_spaced_intersect'_sim_rev fuel'
+                      (map fst FF)
+                      (map snd FF)
+                      tc0
+                      (map fst TF_tail)
+                      x l (eq_sym Hl))).
       assert (Hcc_p_len_eq : length (cil ++ cil') = length (ptl ++ ptl'))
         by (rewrite ?length_app; congruence).
       assert (HBools_tl_eq :
@@ -1726,11 +1817,14 @@ Section PtSpacedIntersectSpec.
                  tp0
                  (map snd TF_tail)
                  p
-                 (pt_spaced_intersect'_sim_rev fuel'
-                    (map fst FF ++ [ci0'])
-                    (map snd FF ++ [pt0])
-                    tc0
-                    (map fst TF_tail))).
+                 (eq_trans (length_map _ _) (eq_sym (length_map _ _)))
+                 (fun x l Hl =>
+                    pt_spaced_intersect'_sim_rev fuel'
+                      (map fst FF ++ [ci0'])
+                      (map snd FF ++ [pt0])
+                      tc0
+                      (map fst TF_tail)
+                      x l (eq_sym Hl))).
       (* === b=false TF non-empty subcase: continue from list_intersect_lookup_at_pos === *)
       (* Reduce RHS lookup_one' (p :: x') (pt0, false :: ci0') to lookup_one' x' (pt0, ci0'). *)
       rewrite lookup_one'_cons_false.

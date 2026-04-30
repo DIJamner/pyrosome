@@ -2196,8 +2196,10 @@ Inductive SamePermutation {A B}
             all2 R (c::cl) (x::l) ->
             Permutation (combine (c::cl) (x::l)) (combine (c'::cl') (x'::l')) ->
             f c cl b x l = g c' cl' b x' l') ->
-        (forall c cl b x l, f c cl (negb b) x l = f c cl b x (rev l)) ->
-        (forall c cl b x l, g c cl (negb b) x l = g c cl b x (rev l)) ->
+        (forall c cl b x l, length cl = length l ->
+                            f c cl (negb b) x l = f c cl b x (rev l)) ->
+        (forall c cl b x l, length cl = length l ->
+                            g c cl (negb b) x l = g c cl b x (rev l)) ->
         list_intersect (f c cl) x l
         = list_intersect (g c' cl') x' l'.
     Proof.
@@ -2220,11 +2222,16 @@ Inductive SamePermutation {A B}
       (* Discharge [elts_wf_rev]. *)
       2,5: intros b v l0; destruct b; cbn;
            rewrite !all2_rev_iff', ?rev_involutive; reflexivity.
-      (* Discharge [elts_intersect_rev]. *)
-      2,4: intros b v l0; destruct b; cbn;
+      (* Discharge [elts_intersect_rev] (two goals: one for [f], one for [g]).
+         Length info comes from [all2 R (... :: ...) (v :: rev l0)] inside Hwf. *)
+      2,4: intros b v l0 Hwf;
+           destruct b; cbn in Hwf;
+           destruct Hwf as [_ Hwf];
+           apply all2_len in Hwf;
+           rewrite ?length_rev in Hwf;
            autorewrite with utils;
            basic_goal_prep;
-           rewrite <- ?grev, <- ?frev;
+           rewrite <- ?frev, <- ?grev by Lia.lia;
            reflexivity.
       (* Two map_elts_wf premises remain.  Both follow from HR (combined with
          the [Permutation] for the second one). *)
@@ -2316,7 +2323,12 @@ Inductive SamePermutation {A B}
          Hperm_Mmap : Permutation (vh::vt) (vh'::vt').
          Goal: f c cl false vh (rev vt) = g c' cl' false vh' (rev vt').
          Apply frev/grev to flip the bool.  Then Hext at b=true. *)
-      rewrite <- frev, <- grev.
+      assert (Hvt_len : length cl = length vt).
+      { erewrite <- list_Mmap_length with (l':=vt) by exact Hmt; Lia.lia. }
+      assert (Hvt'_len : length cl' = length vt').
+      { erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'; Lia.lia. }
+      rewrite <- (frev c cl false vh vt) by exact Hvt_len.
+      rewrite <- (grev c' cl' false vh' vt') by exact Hvt'_len.
       eapply Hext.
       - (* length cl' = length vt' *)
         erewrite <- list_Mmap_length with (l':=vt') by exact Hmt'.
@@ -2926,46 +2938,11 @@ Inductive SamePermutation {A B}
       {
         repeat basic_goal_prep.
         f_equal.
-        (*
-        eapply list_intersect_Perm_combined.
-        { basic_goal_prep; basic_utils_crush. }
-        { basic_goal_prep; basic_utils_crush. }
-        {
-          change ((?a,?b) :: (combine ?la ?lb))
-            with (combine (a::la) (b::lb)) in *.
-          apply Permutation_map with (f:= pair_map id proj_node_map_unchecked)
-            in H16.
-          rewrite !map_combine in *.
-          cbv [pair_map id] in *.
-          basic_goal_prep.
-          rewrite !map_id in *.
-          eauto.
-        }
-        {
-          intros.
-          eapply IHfuel; eauto.
-          3:{
-            change ((?a,?b) :: (combine ?la ?lb))
-            with (combine (a::la) (b::lb)) in *.
-            change (?x::?l++?l') with ((x::l)++l').
-            rewrite !combine_app
-              by (basic_goal_prep; basic_utils_crush).
-            rewrite H25, H11.
-            reflexivity.
-          }
-          {
-            TODO: more conditions! remember rectangular.
-            In general, if forall v in t1..n, P v then P(intersect)
-            enough (let p := split (combine (c::cl) (x::l0)) in rectangular_trie_list width (fst p) (snd p)).
-            {
-              rewrite combine_split in *; cbn; eauto.
-            }
-            rewrite H25.
-   
-        TODO: really do need f & g
-          reflexivity.
-                        Fail.
-                        *)
+        (* The [(have_true, have_true)] case.  After [basic_goal_prep], the
+           [part_res_Perm] is destructed into two Permutation hypotheses
+           (one for the false-list parts and one for the true-list parts).
+           We apply the now-weakened [list_intersect_Perm_combined] and
+           discharge each premise. *)
     Abort.
 
        
