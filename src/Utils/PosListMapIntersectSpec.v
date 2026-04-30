@@ -869,16 +869,23 @@ Section PtSpacedIntersectSpec.
            From rectangularity at [width] (with [t_ci0=[]] forcing
            width=0), every entry of [t_cil/t_cil'/f_cil/f_cil'] is empty
            and every corresponding trie has depth 0 (i.e. is a leaf).
-           [pt_spaced_intersect'] reduces to a [leaf_intersect (leaf_-
-           intersect a ptl) ptl'] expression on each side, equal to
-           [fold_left merge (map get_leaf_unchecked …)] by
-           [leaf_intersect_correct].  The two folds are equal by
-           [fold_left_permuted] applied to [Hperm] (lifted from a
-           [combine] permutation to the underlying trie multiset).
-           Sketch (mirrors PosListMap.v:2806-2832); discharging requires
-           threading the section's Context arguments explicitly through
-           [leaf_intersect_correct] / [fold_left_permuted] (which become
-           explicitly-quantified when their inner section closes). *)
+           [pt_spaced_intersect'] reduces to [Some (pos_trie_leaf
+           (leaf_intersect (leaf_intersect a f_ptl) l))] on each side. *)
+        cbn in Hrect_t, Hrect_t'.
+        destruct Hrect_t as [[Hd_x0 Hwidth0] Hrect_l].
+        destruct Hrect_t' as [[Hd_x0' _] Hrect_l'].
+        cbn [length] in Hwidth0. subst width.
+        cbn [filter id length] in Hd_x0, Hd_x0'.
+        apply has_depth'_0_leaf in Hd_x0 as [a Hx0_eq].
+        apply has_depth'_0_leaf in Hd_x0' as [a' Hx0'_eq].
+        subst x0 x0'.
+        (* Both sides reduce to [Some (pos_trie_leaf (leaf_intersect
+           (leaf_intersect a f_ptl) l))] because [t_ci0=[]] and pt0 is
+           a leaf — but proving the equality of those folds requires
+           the [fold_left_permuted] argument over [Hperm], which has
+           cross-section-Context plumbing that [Permutation_combine_r]
+           and [fold_left_permuted] need.  Left admitted; sketch in the
+           original abandoned proof (PosListMap.v:2806-2832). *)
         admit.
       + (* (nil, cons): contradicts [length t_ci0 = length t_ci0' = width]. *)
         cbn in Hrect_t, Hrect_t'.
@@ -890,40 +897,39 @@ Section PtSpacedIntersectSpec.
         destruct Hrect_t as [[_ Hl_eq] _].
         destruct Hrect_t' as [[_ Hl_eq'] _].
         cbn [length] in Hl_eq, Hl_eq'. exfalso. Lia.lia.
-      + (* (cons, cons): real recursive case, both sides go through
-           [partition_tries].
-           Plan (mirrors PosListMap.v:2845-2945):
-             1. [destruct width as [|width']] — case [width=0] is
-                contradictory because [length (b::ci0_tl) = 0] forces nil.
-             2. [partition_tries_app] coalesces the two nested
-                [partition_tries] calls into one over
-                [combine (cil ++ cil') (ptl ++ ptl')] (and similarly on
-                the primed side).
-             3. [populate_pt_knowledge] gives [partition_result_wf] and
-                [partition_tries_wf] for each side.
-             4. [partition_tries_Permutation] (PosListMap.v:1770) yields
-                [part_res_Perm] between the two partition outputs (using
-                [Hperm] threaded through [combine_app] / cons-shuffles).
-             5. [destruct] both [partition_tries ...]:
-                - [(just_false, just_false)]: apply [IHfuel] (the args
-                  are length-related; rectangularity at [width']
-                  carries via partition_tries_wf).
-                - mixed pairs: contradictory by [part_res_Perm]'s [False].
-                - [(have_true, have_true)]: f_equal then
-                  [list_intersect_Perm_combined] (PosListMap.v:2184).
-                  Choose [R := fun c x => Is_true (has_depth' (length
-                  (filter id c)) x) /\ length c = width'].  The
-                  [Permutation] premise is the true-list part of
-                  [part_res_Perm] (cons head onto rev of [true_lists]).
-                  [Hext] (alignment of f and g at any [c, cl, c', cl', x,
-                  l, x', l'] with rectangular relation): apply [IHfuel]
-                  at [fuel] (the subterm).
-                  [frev]/[grev] (joint reversal at length-only): need a
-                  pre-existing joint-reversal lemma — [_sim_rev] is the
-                  natural fit, but it's currently admitted with the
-                  length-only signature.  Bootstrapping: derive a
-                  [_perm]-driven joint reversal at smaller fuel — this is
-                  the bootstrap point that requires care. *)
+      + (* (cons, cons): real recursive case.
+           Mirrors PosListMap.v:2845-2945. *)
+        cbn in Hrect_t, Hrect_t'.
+        destruct Hrect_t as [[Hd_x0 Hwidth_t] Hrect_l].
+        destruct Hrect_t' as [[Hd_x0' Hwidth_t'] Hrect_l'].
+        cbn [length] in Hwidth_t, Hwidth_t'.
+        (* width = S w': otherwise [length (b::ci0_tl) = 0] is impossible. *)
+        destruct width as [|width']; [exfalso; Lia.lia|].
+        injection Hwidth_t as Hwidth_t.
+        injection Hwidth_t' as Hwidth_t'.
+        (* From rectangularity at width=S w', the inner trie lists
+           [t_cil++f_cil] and [t_cil'++f_cil'] are rectangular at width
+           S w' too — the prerequisite for [partition_tries_app]. *)
+        assert (Hrect_tail :
+                  rectangular_trie_list (S width') (t_cil ++ f_cil) (l ++ f_ptl))
+          by (apply rectangular_trie_list_app; assumption).
+        assert (Hrect_tail' :
+                  rectangular_trie_list (S width') (t_cil' ++ f_cil') (l' ++ f_ptl'))
+          by (apply rectangular_trie_list_app; assumption).
+        (* Coalesce the nested partition_tries via partition_tries_app.
+           In [pt_spaced_intersect'], the structure is
+           [partition_tries cil' ptl' (partition_tries cil ptl init)] —
+           with the function call's [cil := f_cil, cil' := t_cil], so
+           cil1=f_cil and cil2=t_cil for the lemma. *)
+        erewrite (partition_tries_app merge (S width') f_cil t_cil f_ptl l _ Hrect_f Hrect_l).
+        erewrite (partition_tries_app merge (S width') f_cil' t_cil' f_ptl' l' _ Hrect_f' Hrect_l').
+        (* Remaining: case-split on [partition_tries (t_cil++f_cil) (l++f_ptl) acc]
+           and similarly on the primed side; show the two are
+           [part_res_Perm]-related; then on each output variant proceed
+           by IHfuel (just_false_part) or list_intersect_Perm_combined
+           (have_true_part).  Mixed variants are False from part_res_Perm.
+           This 200-line block is admitted — see roadmap in commit message
+           and PosListMap.v:2945 onward. *)
         admit.
   Admitted.
 
