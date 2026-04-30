@@ -826,6 +826,107 @@ Section PtSpacedIntersectSpec.
     f_equal; apply IH; Lia.lia.
   Qed.
 
+  (* General [Permutation] invariance of [pt_spaced_intersect'].  The
+     statement permutes the joint list [combine (t_ci0::t_cil++f_cil)
+     (x0::l++f_ptl)] — i.e. arbitrarily reorders the head [(t_ci0, x0)]
+     and the rest of the rectangular bool-list/trie pairs — while keeping
+     [other_cil/other_tries] (the false-headed entries from a partition)
+     and [t_ci0::t_cil] (the true-headed entries plus the chosen head)
+     coherent across the reordering.  Joint reversal
+     [pt_spaced_intersect'_sim_rev] is a corollary.  Currently admitted;
+     the proof structure follows the abandoned [pt_spaced_intersect'_perm]
+     in PosListMap.v:2787, with the [(have_true, have_true)] sub-case
+     handled by [list_intersect_Perm_combined] (PosListMap.v:2184). *)
+  Lemma pt_spaced_intersect'_perm
+    (fuel : nat) (width : nat)
+    (f_cil : list (list bool)) (f_ptl : list (@pos_trie' A))
+    (t_ci0 : list bool) (t_cil : list (list bool))
+    (x0 : @pos_trie' A) (l : list (@pos_trie' A))
+    (f_cil' : list (list bool)) (f_ptl' : list (@pos_trie' A))
+    (t_ci0' : list bool) (t_cil' : list (list bool))
+    (x0' : @pos_trie' A) (l' : list (@pos_trie' A)) :
+    rectangular_trie_list width (t_ci0::t_cil) (x0::l) ->
+    rectangular_trie_list width f_cil f_ptl ->
+    rectangular_trie_list width (t_ci0'::t_cil') (x0'::l') ->
+    rectangular_trie_list width f_cil' f_ptl' ->
+    Permutation (combine (t_ci0::t_cil++f_cil) (x0::l++f_ptl))
+                (combine (t_ci0'::t_cil'++f_cil') (x0'::l'++f_ptl')) ->
+    pt_spaced_intersect' merge fuel f_cil f_ptl t_ci0 t_cil x0 l
+    = pt_spaced_intersect' merge fuel f_cil' f_ptl' t_ci0' t_cil' x0' l'.
+  Proof.
+    revert width f_cil f_ptl t_ci0 t_cil x0 l
+           f_cil' f_ptl' t_ci0' t_cil' x0' l'.
+    induction fuel as [|fuel IHfuel];
+      intros width f_cil f_ptl t_ci0 t_cil x0 l
+             f_cil' f_ptl' t_ci0' t_cil' x0' l'
+             Hrect_t Hrect_f Hrect_t' Hrect_f' Hperm.
+    - (* fuel = 0: both sides return None definitionally. *)
+      reflexivity.
+    - (* fuel = S fuel': case-split on [t_ci0] and [t_ci0']. *)
+      cbn [pt_spaced_intersect'].
+      destruct t_ci0 as [|b ci0_tl], t_ci0' as [|b' ci0_tl'].
+      + (* (nil, nil): leaf case.
+           From rectangularity at [width] (with [t_ci0=[]] forcing
+           width=0), every entry of [t_cil/t_cil'/f_cil/f_cil'] is empty
+           and every corresponding trie has depth 0 (i.e. is a leaf).
+           [pt_spaced_intersect'] reduces to a [leaf_intersect (leaf_-
+           intersect a ptl) ptl'] expression on each side, equal to
+           [fold_left merge (map get_leaf_unchecked …)] by
+           [leaf_intersect_correct].  The two folds are equal by
+           [fold_left_permuted] applied to [Hperm] (lifted from a
+           [combine] permutation to the underlying trie multiset).
+           Sketch (mirrors PosListMap.v:2806-2832); discharging requires
+           threading the section's Context arguments explicitly through
+           [leaf_intersect_correct] / [fold_left_permuted] (which become
+           explicitly-quantified when their inner section closes). *)
+        admit.
+      + (* (nil, cons): contradicts [length t_ci0 = length t_ci0' = width]. *)
+        cbn in Hrect_t, Hrect_t'.
+        destruct Hrect_t as [[_ Hl_eq] _].
+        destruct Hrect_t' as [[_ Hl_eq'] _].
+        cbn [length] in Hl_eq, Hl_eq'. exfalso. Lia.lia.
+      + (* (cons, nil): symmetric contradiction. *)
+        cbn in Hrect_t, Hrect_t'.
+        destruct Hrect_t as [[_ Hl_eq] _].
+        destruct Hrect_t' as [[_ Hl_eq'] _].
+        cbn [length] in Hl_eq, Hl_eq'. exfalso. Lia.lia.
+      + (* (cons, cons): real recursive case, both sides go through
+           [partition_tries].
+           Plan (mirrors PosListMap.v:2845-2945):
+             1. [destruct width as [|width']] — case [width=0] is
+                contradictory because [length (b::ci0_tl) = 0] forces nil.
+             2. [partition_tries_app] coalesces the two nested
+                [partition_tries] calls into one over
+                [combine (cil ++ cil') (ptl ++ ptl')] (and similarly on
+                the primed side).
+             3. [populate_pt_knowledge] gives [partition_result_wf] and
+                [partition_tries_wf] for each side.
+             4. [partition_tries_Permutation] (PosListMap.v:1770) yields
+                [part_res_Perm] between the two partition outputs (using
+                [Hperm] threaded through [combine_app] / cons-shuffles).
+             5. [destruct] both [partition_tries ...]:
+                - [(just_false, just_false)]: apply [IHfuel] (the args
+                  are length-related; rectangularity at [width']
+                  carries via partition_tries_wf).
+                - mixed pairs: contradictory by [part_res_Perm]'s [False].
+                - [(have_true, have_true)]: f_equal then
+                  [list_intersect_Perm_combined] (PosListMap.v:2184).
+                  Choose [R := fun c x => Is_true (has_depth' (length
+                  (filter id c)) x) /\ length c = width'].  The
+                  [Permutation] premise is the true-list part of
+                  [part_res_Perm] (cons head onto rev of [true_lists]).
+                  [Hext] (alignment of f and g at any [c, cl, c', cl', x,
+                  l, x', l'] with rectangular relation): apply [IHfuel]
+                  at [fuel] (the subterm).
+                  [frev]/[grev] (joint reversal at length-only): need a
+                  pre-existing joint-reversal lemma — [_sim_rev] is the
+                  natural fit, but it's currently admitted with the
+                  length-only signature.  Bootstrapping: derive a
+                  [_perm]-driven joint reversal at smaller fuel — this is
+                  the bootstrap point that requires care. *)
+        admit.
+  Admitted.
+
   (* Joint reversal of [cil']/[ptl'] preserves [pt_spaced_intersect'].
      This is the joint-reversal special case of a [Permutation] property
      of [pt_spaced_intersect'] (general perm: arbitrary permutation of the
