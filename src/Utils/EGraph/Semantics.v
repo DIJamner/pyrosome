@@ -1539,8 +1539,10 @@ Abort.
     exact H.
   Qed.
   
-  Lemma egraph_sound_for_interpretation_iff_equiv i g1 g2
+  Lemma egraph_sound_for_interpretation_iff_equiv i g1 g2 l
     : g1.(db) = g2.(db) ->
+      union_find_ok lt g1.(equiv) l ->
+      union_find_ok lt g2.(equiv) l ->
       (iff2 (limit (parent_rel _ _ g1.(equiv).(parent)))
          (limit (parent_rel _ _ g2.(equiv).(parent)))) ->
       g1.(parents) = g2.(parents) ->
@@ -1548,11 +1550,69 @@ Abort.
       egraph_sound_for_interpretation m i g1
       <-> egraph_sound_for_interpretation m i g2.
   Proof.
-    clear idx_zero idx_succ.
-    intros.
-    destruct g1, g2; split; destruct 1; cbn in *; subst; constructor; cbn in *; eauto.
-    2:{
-  Admitted.
+    intros Hdb Huf1 Huf2 Hlim Hpar Hwl.
+    pose proof Huf1 as Huf1'; destruct Huf1' as [Hf1 ? ? ? ?].
+    pose proof Huf2 as Huf2'; destruct Huf2' as [Hf2 ? ? ? ?].
+    cbn in Hf1, Hf2.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hkey : forall x, Sep.has_key x (parent g1.(equiv))
+                             <-> Sep.has_key x (parent g2.(equiv))).
+    {
+      intro x.
+      rewrite (@forest_root_limit _ _ _ _ _ _ default lt_trans_nat _ _ Hf1 x).
+      rewrite (@forest_root_limit _ _ _ _ _ _ default lt_trans_nat _ _ Hf2 x).
+      split; intros (r & Hin & Hl); exists r; intuition (try apply Hlim; auto).
+    }
+    assert (HPER : iff2 (uf_rel_PER _ _ _ g1.(equiv))
+                        (uf_rel_PER _ _ _ g2.(equiv))).
+    {
+      unfold uf_rel_PER.
+      intros x y.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat _ _ Hf1 x y) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat _ _ Hf2 x y) as HP2.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim; auto).
+    }
+    split; intros He; destruct He as [He_ok Hwf Hexact Hatom Hrel];
+      destruct He_ok as [Hg_eq Hg_wl Hg_par];
+      constructor; eauto.
+    - constructor.
+      + exists l; assumption.
+      + rewrite <- Hwl.
+        eapply all_wkn; [|exact Hg_wl].
+        intros [old new improved | i'] _ He; cbn in *; auto.
+        apply HPER; assumption.
+      + rewrite <- Hpar.
+        intros x s Hg.
+        pose proof (Hg_par _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a _ Ha. unfold atom_in_egraph in *.
+        rewrite <- Hdb. exact Ha.
+    - intros x Hi. apply Hkey. apply Hexact. exact Hi.
+    - intros a Ha.
+      apply Hatom. unfold atom_in_egraph in *. rewrite Hdb. exact Ha.
+    - intros i1 i2 Hr.
+      apply Hrel. apply HPER. exact Hr.
+    - constructor.
+      + exists l; assumption.
+      + rewrite Hwl.
+        eapply all_wkn; [|exact Hg_wl].
+        intros [old new improved | i'] _ He; cbn in *; auto.
+        apply HPER; assumption.
+      + rewrite Hpar.
+        intros x s Hg.
+        pose proof (Hg_par _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a _ Ha. unfold atom_in_egraph in *.
+        rewrite Hdb. exact Ha.
+    - intros x Hi. apply Hkey. apply Hexact. exact Hi.
+    - intros a Ha.
+      apply Hatom. unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha.
+    - intros i1 i2 Hr.
+      apply Hrel. apply HPER. exact Hr.
+  Qed.
 
   Definition P_guarantees
     {A} (P : (A -> Prop) -> Prop) Q : Prop :=
@@ -1560,52 +1620,61 @@ Abort.
   
   Lemma find_sound Pre x
     : P_guarantees Pre (Sep.has_key x) ->
-      (forall s, Pre s -> ex s) ->      
+      (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre (find x)
         (fun x' s => Pre s /\ (forall i, s i -> eq_sound_for_model m i x x')).
   Proof.
-    clear idx_zero idx_succ.
-    unfold P_guarantees.
-    intro.
+    unfold P_guarantees; intros HPkey Hex.
+    constructor; [now eauto |].
+    intros graph Hpre.
+    pose proof (Hex _ Hpre) as Hf_ex; destruct Hf_ex as [someInterp Hf].
+    pose proof (HPkey _ Hpre _ Hf) as Hkx_interp.
+    pose proof Hf as Hf_copy.
+    destruct Hf_copy as [Heq_ok Hwf Hexact Hatom Hrel].
+    pose proof Heq_ok as Heq_ok'.
+    destruct Heq_ok' as [Hg_eq Hg_wl Hg_par].
+    assert (Hkx : Sep.has_key x (parent graph.(equiv))).
+    {
+      apply Hexact.
+      unfold Is_Some, Sep.has_key in *.
+      destruct (map.get someInterp x); tauto.
+    }
+    destruct Hg_eq as [l Huf_l].
     unfold find.
-    prepare_state_sound; intros;
-      repeat (case_match;[]); cbn in *.
-    {
-      eapply set_pred_ext;[| eassumption].
-      intros.
-      eapply egraph_sound_for_interpretation_iff_equiv; cbn; eauto.
-      intros.
-      pose proof H1.
-      destruct H1.
-      destruct sound_egraph_ok0.
-      destruct egraph_equiv_ok0.
-      eapply find_spec; eauto.
-      { intros; Lia.lia. }
-      eapply interpretation_exact0.
-      eapply H0; eauto.
-    }
-    {
-      eapply rel_interpretation; eauto.
+    destruct (UnionFind.find graph.(equiv) x) as [uf' i0] eqn:Hfind.
+    cbn.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Huf_l Hkx Hfind) as Hspec.
+    destruct Hspec as (Huf'_l & Hi0_in & Hpar_uf' & Hsubrel & Hlim_iff & Hkey_iff).
+    match goal with
+    | |- _ /\ ne_set_maps_to _ (denote ?inst) =>
+        assert (Hiff_g_n :
+                  forall j, egraph_sound_for_interpretation m j graph
+                            <-> egraph_sound_for_interpretation m j inst);
+          [ intros j;
+            apply (egraph_sound_for_interpretation_iff_equiv j graph inst l);
+            cbn; auto |]
+    end.
+    repeat split.
+    { eapply set_pred_ext; [| exact Hpre].
+      intros j. apply Hiff_g_n. }
+    { intros j Hj.
+      destruct Hj as [Hj_ok Hj_wf Hj_exact Hj_atom Hj_rel].
+      apply Hj_rel.
       cbn.
-      (* TODO: use find_spec *)
-      admit.
-    }
-    {
-      eapply Build_forall_nonempty with (fne_elt:= x0); eauto.
-      {
-        eapply egraph_sound_for_interpretation_iff_equiv; cbn; eauto.
-        intros.
-        pose proof H1.
-        destruct H1.
-        destruct sound_egraph_ok0.
-        destruct egraph_equiv_ok0.
-        eapply find_spec; eauto.
-        { intros; Lia.lia. }
-        all: admit.
-      }
-      admit.
-    }
-  Admitted.
+      unfold uf_rel_PER.
+      eapply trans_PER_subrel.
+      unfold parent_rel in Hpar_uf'.
+      exact Hpar_uf'. }
+    { eapply Build_forall_nonempty with (fne_elt := someInterp).
+      { apply Hiff_g_n. exact Hf. }
+      { intros j Hj.
+        exists j; split.
+        { apply Hiff_g_n. exact Hj. }
+        { apply Properties.map.extends_refl. } } }
+  Qed.
 
   Context `{model_ok m}.
   
@@ -1632,7 +1701,8 @@ Abort.
   Hint Resolve eq_sound_has_key_r : utils.
   
   Lemma canonicalize_worklist_entry_sound Pre a
-    : P_guarantees Pre (fun i => worklist_entry_sound m i a) ->
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => worklist_entry_sound m i a) ->
       state_sound_for_model Pre
         (canonicalize_worklist_entry idx Eqb_idx symbol
            symbol_map idx_map idx_trie
@@ -1640,17 +1710,57 @@ Abort.
         (fun a' s => Pre s
          /\ forall i', s i' -> worklist_entry_sound m i' a').
   Proof.
-    clear idx_zero idx_succ.
-  Admitted.
+    intros Hex HPa.
+    unfold canonicalize_worklist_entry.
+    destruct a as [old new improved | i_repair]; cbn.
+    - eapply state_sound_for_model_bind.
+      { apply find_sound.
+        - intros s Hs i Hsi.
+          eapply eq_sound_has_key_r.
+          apply (HPa _ Hs _ Hsi).
+        - exact Hex. }
+      intros new'.
+      eapply state_sound_for_model_wkn_post.
+      { apply state_sound_for_model_ret.
+        intros s Hs. destruct Hs as [HPre Hsound]. apply Hex; auto. }
+      intros a' s Hpost.
+      destruct Hpost as [HPostBind Heq].
+      destruct HPostBind as [HPre Hsound].
+      subst a'.
+      split; [exact HPre|].
+      intros i' Hi'.
+      cbn.
+      eapply eq_sound_for_model_trans.
+      { apply (HPa _ HPre _ Hi'). }
+      { apply Hsound. exact Hi'. }
+    - eapply state_sound_for_model_wkn_post.
+      { apply state_sound_for_model_ret. exact Hex. }
+      intros a' s Hpost. destruct Hpost as [HPre Heq]. subst a'.
+      split; [exact HPre|]. intros; cbn; exact I.
+  Qed.
   
   Lemma get_parents_sound Pre old_idx
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre (get_parents old_idx)
         (fun a s => Pre s
-                    /\ P_guarantees Pre
-                         (fun i => all (atom_sound_for_model m i) a)).
+                    /\ forall i, s i -> all (atom_sound_for_model m i) a).
   Proof.
-  Admitted.  
+    intros Hex.
+    constructor; [exact Hex |].
+    intros e Hpre.
+    unfold get_parents. cbn.
+    pose proof (Hex _ Hpre) as [j Hj].
+    repeat split.
+    { exact Hpre. }
+    { intros i Hi.
+      destruct (map.get e.(parents) old_idx) as [s|] eqn:Hg; cbn.
+      - eapply parents_interpretation; eauto.
+      - cbn. exact I. }
+    { eapply Build_forall_nonempty with (fne_elt := j).
+      - exact Hj.
+      - intros i' Hi'. exists i'.
+        split; [exact Hi' | apply Properties.map.extends_refl]. }
+  Qed.
 
   (*TODO: move to Defs.v*)
   Arguments pull_parents {idx symbol}%type_scope
@@ -1664,18 +1774,67 @@ Abort.
   Lemma remove_parents_sound Pre old_idx
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre
-        (remove_parents old_idx) 
+        (remove_parents old_idx)
         (fun _ => Pre).
   Proof.
-  Admitted.
+    intros Hex.
+    constructor; [exact Hex |].
+    intros e Hpre.
+    unfold remove_parents. cbn.
+    pose proof (Hex _ Hpre) as [j Hj].
+    pose proof Hj as Hj_copy.
+    destruct Hj_copy as [Hj_ok Hj_wf Hj_exact Hj_atom Hj_rel].
+    pose proof Hj_ok as Hj_ok_copy.
+    destruct Hj_ok_copy as [Hj_eq Hj_wl Hj_par_old].
+    destruct e as [db_e equiv_e parents_e epoch_e worklist_e analyses_e log_e].
+    cbn in *.
+    pose (e_new := Build_instance _ _ _ _ _ _
+                    db_e equiv_e (map.remove parents_e old_idx)
+                    epoch_e worklist_e analyses_e log_e).
+    assert (Hiff : forall i,
+               egraph_sound_for_interpretation m i
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                    epoch_e worklist_e analyses_e log_e)
+               <-> egraph_sound_for_interpretation m i e_new).
+    {
+      intros i.
+      split; intros He_sound.
+      { destruct He_sound as [He_ok Hwf Hexact Hatom Hrel].
+        destruct He_ok as [Hg_eq Hg_wl Hg_par].
+        constructor; cbn in *; try assumption.
+        constructor; cbn in *; try assumption.
+        intros y s Hg.
+        eqb_case old_idx y.
+        { rewrite map.get_remove_same in Hg. discriminate. }
+        { rewrite map.get_remove_diff in Hg by auto.
+          eapply Hg_par; eauto. } }
+      { destruct He_sound as [He_ok Hwf Hexact Hatom Hrel].
+        destruct He_ok as [Hg_eq Hg_wl Hg_par].
+        unfold e_new in *. cbn in *.
+        constructor; cbn in *; [| assumption | assumption | assumption | assumption].
+        constructor; cbn in *; [assumption | assumption |].
+        intros y s Hg.
+        eqb_case old_idx y.
+        { eapply Hj_par_old; eauto. }
+        { specialize (Hg_par y s).
+          rewrite map.get_remove_diff in Hg_par by auto.
+          eapply Hg_par; eauto. } }
+    }
+    split.
+    { eapply set_pred_ext; [| exact Hpre].
+      intros i. apply Hiff. }
+    { eapply Build_forall_nonempty with (fne_elt := j).
+      - apply Hiff. exact Hj.
+      - intros i' Hi'. exists i'.
+        split; [apply Hiff; exact Hi' | apply Properties.map.extends_refl]. }
+  Qed.
 
   Lemma pull_parents_sound Pre old_idx
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre
-        (pull_parents old_idx) 
+        (pull_parents old_idx)
         (fun a s => Pre s
-                    /\ P_guarantees Pre
-                         (fun i => all (atom_sound_for_model m i) a)).
+                    /\ forall i, s i -> all (atom_sound_for_model m i) a).
   Proof.
     intros.
     unfold pull_parents.
@@ -1759,13 +1918,131 @@ Abort.
       end.
 
  
+  Lemma atom_sound_args_have_key i a
+    : atom_sound_for_model m i a ->
+      all (fun x => Sep.has_key x i) a.(atom_args).
+  Proof.
+    unfold atom_sound_for_model, Sep.has_key, Is_Some_satisfying.
+    intros H1.
+    destruct (list_Mmap (map.get i) a.(atom_args)) eqn:Hg; cbn in H1; try tauto.
+    clear H1.
+    revert l Hg.
+    induction (atom_args a) as [| arg args IH]; cbn; intros.
+    - exact I.
+    - destruct (map.get i arg) eqn:Hgarg; cbn in *; try discriminate.
+      destruct (list_Mmap (map.get i) args) eqn:Hgargs; cbn in *; try discriminate.
+      split; auto.
+      eapply IH; eauto.
+  Qed.
+
+  Lemma atom_sound_ret_has_key i a
+    : atom_sound_for_model m i a ->
+      Sep.has_key a.(atom_ret) i.
+  Proof.
+    unfold atom_sound_for_model, Sep.has_key, Is_Some_satisfying.
+    intros H1.
+    destruct (list_Mmap (map.get i) a.(atom_args)) eqn:Hg; cbn in H1; try tauto.
+    destruct (map.get i a.(atom_ret)); cbn in *; tauto.
+  Qed.
+
   Lemma canonicalize_sound Pre a1
-    : P_guarantees Pre (fun i => atom_sound_for_model m i a1) ->
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a1) ->
       state_sound_for_model Pre (canonicalize a1)
         (fun a s => Pre s
-                    /\ P_guarantees Pre (fun i => eq_atom_in_interpretation i a a1)).
+                    /\ forall i, s i -> eq_atom_in_interpretation i a a1).
   Proof.
-  Admitted.
+    intros Hex HPa.
+    destruct a1 as [f args1 o1].
+    unfold canonicalize.
+    eapply state_sound_for_model_bind.
+    { eapply state_sound_for_model_Mmap_dep
+        with (P_const := Pre)
+             (P_elt := fun s arg arg' =>
+                         forall i, s i -> eq_sound_for_model m i arg arg').
+      - intros arg.
+        eapply state_sound_for_model_wkn_post with
+          (Post1 := fun x' s => (Pre s /\ In arg args1) /\
+                                (forall i, s i -> eq_sound_for_model m i arg x')).
+        + eapply state_sound_for_model_strengthen_pre with
+            (Pre1 := fun s => Pre s /\ In arg args1).
+          * apply find_sound.
+            { intros s [HPre Hin] i Hsi.
+              specialize (HPa _ HPre _ Hsi).
+              cbn in HPa.
+              pose proof (atom_sound_args_have_key _ _ HPa) as Hkey.
+              cbn in Hkey.
+              clear -Hkey Hin.
+              induction args1 as [| a args IH]; cbn in *; try tauto.
+              destruct Hkey as [Hka Hkargs].
+              destruct Hin as [Heq | Hin'].
+              { subst; auto. }
+              { apply IH; auto. } }
+            { intros s [HPre Hin]. apply Hex; auto. }
+          * intros s Hs. split.
+            { destruct Hs as [_ HPre]. exact HPre. }
+            { destruct Hs as [Hin _]. exact Hin. }
+        + intros a' s Hpost.
+          destruct Hpost as [HPre_in Hsound].
+          destruct HPre_in as [HPre _]. split; auto.
+      - intros s HPre. exact HPre.
+      - exact Hex.
+      - intros arg arg' s s' Helt Hne i' Hsi'.
+        destruct Hne as [j Hjs Hjall].
+        specialize (Hjall _ Hsi'). destruct Hjall as (j' & Hj's & Hj'ext).
+        specialize (Helt _ Hj's).
+        unfold eq_sound_for_model, Is_Some_satisfying in *.
+        destruct (map.get j' arg) eqn:Hgarg; try contradiction.
+        destruct (map.get j' arg') eqn:Hgarg'; try contradiction.
+        apply Hj'ext in Hgarg, Hgarg'.
+        rewrite Hgarg, Hgarg'. cbn. exact Helt. }
+    intros args1'.
+    eapply state_sound_for_model_bind.
+    { eapply state_sound_for_model_wkn_post with
+        (Post1 := fun x' s =>
+                    (Pre s /\
+                     all2 (fun arg arg' =>
+                             forall i, s i -> eq_sound_for_model m i arg arg')
+                          args1 args1')
+                    /\ (forall i, s i -> eq_sound_for_model m i o1 x')).
+      - eapply state_sound_for_model_strengthen_pre with
+          (Pre1 := fun s => Pre s /\
+                            all2 (fun arg arg' =>
+                                    forall i, s i -> eq_sound_for_model m i arg arg')
+                                 args1 args1').
+        + apply find_sound.
+          * intros s Hs i Hsi. destruct Hs as [HPre _].
+            specialize (HPa _ HPre _ Hsi). cbn in HPa.
+            eapply atom_sound_ret_has_key in HPa. exact HPa.
+          * intros s Hs. destruct Hs as [HPre _]. apply Hex; auto.
+        + intros s Hs. exact Hs.
+      - intros a' s Hpost. exact Hpost. }
+    intros o'.
+    eapply state_sound_for_model_wkn_post.
+    { apply state_sound_for_model_ret.
+      intros s Hs.
+      destruct Hs as [Hpre_args Hretsound].
+      destruct Hpre_args as [HPre _].
+      apply Hex; auto. }
+    intros a' s Hpost.
+    destruct Hpost as [Hpost_bind Heq]. subst a'.
+    destruct Hpost_bind as [Hpre_args Hretsound].
+    destruct Hpre_args as [HPre Hargsounds].
+    split; [exact HPre|].
+    intros i' Hi'.
+    unfold eq_atom_in_interpretation. cbn.
+    split; [reflexivity|].
+    split.
+    { clear Hretsound HPre HPa Hex.
+      revert args1' Hargsounds.
+      induction args1 as [| a args IH]; intros args1' Hargsounds;
+        destruct args1' as [| a' args']; cbn in *; try contradiction; auto.
+      destruct Hargsounds as [Hhd Htl].
+      split.
+      { symmetry. apply Hhd; exact Hi'. }
+      { apply IH; exact Htl. } }
+    { symmetry. apply Hretsound. exact Hi'. }
+  Qed.
   
   Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
     {analysis_result}%type_scope f args%list_scope _.
