@@ -261,3 +261,92 @@ Unshelve.
 Qed.
 #[local] Definition lift_pi_entry := lang_entry lift_pi_wf.
 #[export] Hint Resolve lift_pi_entry : wf_lang_db.
+
+#[local] Definition sigma_leveled' :=
+    let ps := (elab_param "l" (sigma++subst_lang)
+                 [(*("env", None);
+                   ("sub", None);*)
+                ("exp",Some 1);
+                ("ty", Some 0)]) in
+  parameterize_lang "l" {{s #"lvl"}}
+    ps sigma.
+
+Definition sigma_leveled :=
+  Eval vm_compute in sigma_leveled'.
+
+Lemma sigma_leveled_wf
+  : wf_lang_ext (subst_leveled++levels) sigma_leveled.
+Proof. compute_wf_lang. Qed.
+#[local] Definition sigma_leveled_entry := lang_entry sigma_leveled_wf.
+#[export] Hint Resolve sigma_leveled_entry : wf_lang_db.
+
+(* Naturality rules describing how `lift` interacts with the constructs of
+   `sigma_leveled`.
+ *)
+Definition sigma_leveled_injectivity :=
+  [("proj2", ["l"; "G"]);
+   ("proj1", ["A"; "l"; "G"]);
+   ("ex", ["e2"; "B"; "e1"; "A"; "l"; "G"]);
+   ("Sig", ["B"; "A"; "l"; "G"])].
+
+Definition lift_sigma_inj :=
+  levels_injectivity ++ sigma_leveled_injectivity ++ subst_injectivity.
+
+Derive lift_sigma
+       SuchThat (wf_lang_ext (lift ++ sigma_leveled ++ subst_leveled ++ levels)
+                             (lift_sigma : lang))
+       As lift_sigma_wf.
+Proof.
+  setup_lang_interactive.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1"
+      ----------------------------------------------- ("lift_Sig")
+      #"lift" "p" (#"Sig" "A" "B")
+      = #"Sig" (#"lift" "p" "A") (#"lift" "p" "B")
+      : #"ty" "G" "l2"
+    ]}%prerule
+    lift_sigma_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "e1" : #"exp" "G" "l1" "A",
+                "B" : #"ty" (#"ext" "G" "A") "l1",
+                "e2" : #"exp" "G" "l1" (#"ty_subst" (#"snoc" #"id" "e1") "B")
+      ----------------------------------------------- ("lift_ex")
+      #"ex" "e1" "e2"
+      = #"ex" "e1" "e2"
+      : #"exp" "G" "l2" (#"Sig" (#"lift" "p" "A") (#"lift" "p" "B"))
+    ]}%prerule
+    lift_sigma_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1",
+                "e" : #"exp" "G" "l1" (#"Sig" "A" "B")
+      ----------------------------------------------- ("lift_proj1")
+      #"proj1" ["A" := #"lift" "p" "A"] ["B" := #"lift" "p" "B"] "e"
+      = #"proj1" "e"
+      : #"exp" "G" "l2" (#"lift" "p" "A")
+    ]}%prerule
+    lift_sigma_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1",
+                "e" : #"exp" "G" "l1" (#"Sig" "A" "B")
+      ----------------------------------------------- ("lift_proj2")
+      #"proj2" ["A" := #"lift" "p" "A"] ["B" := #"lift" "p" "B"] "e"
+      = #"proj2" "e"
+      : #"exp" "G" "l2"
+            (#"ty_subst" (#"snoc" #"id" (#"proj1" "e")) (#"lift" "p" "B"))
+    ]}%prerule
+    lift_sigma_inj.
+  apply wf_lang_nil.
+Unshelve.
+1:shelve.
+1:vm_compute; reflexivity.
+Qed.
+#[local] Definition lift_sigma_entry := lang_entry lift_sigma_wf.
+#[export] Hint Resolve lift_sigma_entry : wf_lang_db.
