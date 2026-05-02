@@ -203,3 +203,61 @@ Unshelve.
 Qed.
 #[local] Definition lift_entry := lang_entry lift_wf.
 #[export] Hint Resolve lift_entry : wf_lang_db.
+
+(* Naturality rules describing how `lift` interacts with the constructs of
+   `pi_leveled`.
+ *)
+Definition pi_leveled_injectivity :=
+  [("app", ["l"; "G"]);
+   ("lambda", ["e"; "B"; "A"; "l"; "G"]);
+   ("Pi", ["B"; "A"; "l"; "G"])].
+
+Definition lift_pi_inj :=
+  levels_injectivity ++ pi_leveled_injectivity ++ subst_injectivity.
+
+Derive lift_pi
+       SuchThat (wf_lang_ext (lift ++ pi_leveled ++ subst_leveled ++ levels)
+                             (lift_pi : lang))
+       As lift_pi_wf.
+Proof.
+  setup_lang_interactive.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1"
+      ----------------------------------------------- ("lift_Pi")
+      #"lift" "p" (#"Pi" "A" "B")
+      = #"Pi" (#"lift" "p" "A") (#"lift" "p" "B")
+      : #"ty" "G" "l2"
+    ]}%prerule
+    lift_pi_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1",
+                "e" : #"exp" (#"ext" "G" "A") "l1" "B"
+      ----------------------------------------------- ("lift_lambda")
+      #"lambda" "A" "e"
+      = #"lambda" (#"lift" "p" "A") "e"
+      : #"exp" "G" "l2" (#"Pi" (#"lift" "p" "A") (#"lift" "p" "B"))
+    ]}%prerule
+    lift_pi_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env",
+                "A" : #"ty" "G" "l1",
+                "B" : #"ty" (#"ext" "G" "A") "l1",
+                "e" : #"exp" "G" "l1" (#"Pi" "A" "B"),
+                "e'" : #"exp" "G" "l1" "A"
+      ----------------------------------------------- ("lift_app")
+      #"app" ["A" := #"lift" "p" "A"] ["B" := #"lift" "p" "B"] "e" "e'"
+      = #"app" "e" "e'"
+      : #"exp" "G" "l2" (#"ty_subst" (#"snoc" #"id" "e'") (#"lift" "p" "B"))
+    ]}%prerule
+    lift_pi_inj.
+  apply wf_lang_nil.
+Unshelve.
+1:shelve.
+1:vm_compute; reflexivity.
+Qed.
+#[local] Definition lift_pi_entry := lang_entry lift_pi_wf.
+#[export] Hint Resolve lift_pi_entry : wf_lang_db.
