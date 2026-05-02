@@ -142,6 +142,64 @@ Proof. compute_wf_lang. Qed.
 #[local] Definition pi_leveled_entry := lang_entry pi_leveled_wf.
 #[export] Hint Resolve pi_leveled_entry : wf_lang_db.
 
-(*
-TODO: level promotion constructs
-*)
+(* Lift operation and equations from
+   https://arxiv.org/abs/1902.08848 (Sterling, "Algebraic Type Theory and
+   Universe Hierarchies"), Section 4.1.
+ *)
+Definition lift_inj := levels_injectivity ++ subst_injectivity.
+
+Derive lift
+       SuchThat (wf_lang_ext (subst_leveled ++ levels) (lift : lang))
+       As lift_wf.
+Proof.
+  setup_lang_interactive.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env", "A" : #"ty" "G" "l1"
+      -----------------------------------------------
+      #"lift" "p" "A" : #"ty" "G" "l2"
+    ]}%prerule
+    lift_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+                "A" : #"ty" "G'" "l1"
+      ----------------------------------------------- ("lift_subst")
+      #"ty_subst" "g" (#"lift" "p" "A")
+      = #"lift" "p" (#"ty_subst" "g" "A")
+      : #"ty" "G" "l2"
+    ]}%prerule
+    lift_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "l3" : #"lvl",
+                "p" : #"<" "l1" "l2", "q" : #"<" "l2" "l3",
+                "G" : #"env", "A" : #"ty" "G" "l1"
+      ----------------------------------------------- ("lift_cmp")
+      #"lift" "q" (#"lift" "p" "A")
+      = #"lift" (#"<trans" "p" "q") "A"
+      : #"ty" "G" "l3"
+    ]}%prerule
+    lift_inj.
+  (* The `( s ) e1 = e2 srt` notation conflicts with the term-equality
+     `( s ) e1 = e2 : t` notation, so we construct the prerule manually. *)
+  elab_rule
+    ("lift_el"%string,
+     presort_eq_rule
+       [("A", {{ps #"ty" "G" "l1"}});
+        ("G", {{ps #"env"}});
+        ("p", {{ps #"<" "l1" "l2"}});
+        ("l2", {{ps #"lvl"}});
+        ("l1", {{ps #"lvl"}})]
+       {{ps #"exp" "G" "l1" "A"}}
+       {{ps #"exp" "G" "l2" (#"lift" "p" "A")}})
+    lift_inj.
+  elab_rule {[r "l1" : #"lvl", "l2" : #"lvl", "p" : #"<" "l1" "l2",
+                "G" : #"env", "A" : #"ty" "G" "l1"
+      ----------------------------------------------- ("lift_ext")
+      #"ext" "G" "A" = #"ext" "G" (#"lift" "p" "A") : #"env"
+    ]}%prerule
+    lift_inj.
+  apply wf_lang_nil.
+Unshelve.
+1:shelve.
+1:vm_compute; reflexivity.
+Qed.
+#[local] Definition lift_entry := lang_entry lift_wf.
+#[export] Hint Resolve lift_entry : wf_lang_db.
