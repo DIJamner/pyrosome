@@ -2923,14 +2923,73 @@ TODO: lemmas in the comment block are out of date
            /\ mr <?> (fun e => forall i, s i ->
                 atom_sound_for_model m i
                   (Build_atom f args (entry_value idx analysis_result e)))).
-  Admitted.
+  Proof.
+    prepare_state_sound.
+    { eapply set_pred_ext; [| eassumption]; intros.
+      split; intros; differential_soundness. }
+    { (* output condition: mr <?> ... *)
+      destruct (map.get graph.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
+      destruct (map.get tbl args) as [d|] eqn:Hd; cbn; auto.
+      intros i Hi.
+      assert (atom_in_egraph (Build_atom f args (entry_value idx analysis_result d)) graph).
+      { unfold atom_in_egraph, atom_in_db; cbn.
+        rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
+      eapply atom_interpretation; eauto. }
+    { econstructor;
+        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
+      differential_soundness. }
+  Qed.
+
+  Lemma get_analysis_sound' Pre x
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun _ => Pre).
+  Proof.
+    intro Hex.
+    constructor; [exact Hex |].
+    intros graph Hpre.
+    pose proof (Hex _ Hpre) as Hf.
+    destruct Hf as [interp Hf].
+    cbv [get_analysis].
+    destruct (map.get graph.(analyses) x) as [a|] eqn:Hga; cbn.
+    - (* Some case: no state change *)
+      split; [exact Hpre|].
+      econstructor; [exact Hf|].
+      intros j Hj. exists j. split; [exact Hj | apply Properties.map.extends_refl].
+    - (* None case: update_analyses + push_worklist *)
+      split.
+      + eapply set_pred_ext; [| exact Hpre]; intros.
+        split; intros; differential_soundness;
+          eauto using worklist_ok, sound_egraph_ok.
+      + econstructor;
+          [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
+        differential_soundness;
+          eauto using worklist_ok, sound_egraph_ok.
+  Qed.
 
   Lemma get_analyses_sound' Pre args
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre
         (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    intros Hex.
+    unfold get_analyses.
+    eapply state_sound_for_model_wkn_post.
+    - eapply state_sound_for_model_Mmap with
+        (P_const := Pre) (P_elt := fun _ _ => True).
+      + intros a.
+        eapply state_sound_for_model_wkn_post.
+        * eapply state_sound_for_model_strengthen_pre.
+          -- apply get_analysis_sound'. exact Hex.
+          -- intros s Hp. destruct Hp as [_ HPre]; exact HPre.
+        * intros r s HPre. split; [exact HPre | exact I].
+      + auto.
+      + auto.
+      + repeat intro; auto.
+    - intros r s Hp; destruct Hp as [HPre _]; exact HPre.
+  Qed.
 
   Lemma update_analyses_sound' Pre k v
     : (forall s, Pre s -> ex s) ->
@@ -2938,7 +2997,14 @@ TODO: lemmas in the comment block are out of date
         (update_analyses idx symbol symbol_map idx_map idx_trie
            analysis_result k v)
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    prepare_state_sound.
+    { eapply set_pred_ext; [| eassumption]; intros.
+      split; intros; differential_soundness. }
+    { econstructor;
+        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
+      differential_soundness. }
+  Qed.
 
   Lemma push_worklist_analysis_sound Pre o
     : (forall s, Pre s -> ex s) ->
@@ -2946,7 +3012,16 @@ TODO: lemmas in the comment block are out of date
         (push_worklist idx symbol symbol_map idx_map idx_trie
            analysis_result (analysis_repair idx o))
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    prepare_state_sound.
+    { eapply set_pred_ext; [| eassumption]; intros.
+      split; intros; differential_soundness;
+        eauto using worklist_ok, sound_egraph_ok. }
+    { econstructor;
+        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
+      differential_soundness;
+        eauto using worklist_ok, sound_egraph_ok. }
+  Qed.
 
   Lemma db_set_entry_sound' Pre f args ep v an
     : (forall s, Pre s -> ex s) ->
