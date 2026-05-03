@@ -2909,6 +2909,55 @@ TODO: lemmas in the comment block are out of date
         (fun _ => Pre).
   Admitted.
 
+  (* Primitives used by repair_parent_analysis. These are admitted because
+     their existing proofs (in the comment block above, lines 2609-2702)
+     are written in the old state_sound_for_model style and need to be
+     translated. They are all "preserves Pre" lemmas modulo a soundness
+     side condition for db_set_entry. *)
+  Lemma db_lookup_entry_sound Pre f args
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+           analysis_result f args)
+        (fun mr s => Pre s
+           /\ mr <?> (fun e => forall i, s i ->
+                atom_sound_for_model m i
+                  (Build_atom f args (entry_value idx analysis_result e)))).
+  Admitted.
+
+  Lemma get_analyses_sound' Pre args
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun _ => Pre).
+  Admitted.
+
+  Lemma update_analyses_sound' Pre k v
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (update_analyses idx symbol symbol_map idx_map idx_trie
+           analysis_result k v)
+        (fun _ => Pre).
+  Admitted.
+
+  Lemma push_worklist_analysis_sound Pre o
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (push_worklist idx symbol symbol_map idx_map idx_trie
+           analysis_result (analysis_repair idx o))
+        (fun _ => Pre).
+  Admitted.
+
+  Lemma db_set_entry_sound' Pre f args ep v an
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i =>
+         atom_sound_for_model m i (Build_atom f args v)) ->
+      state_sound_for_model Pre
+        (db_set_entry idx symbol symbol_map idx_map idx_trie
+           analysis_result f args ep v an)
+        (fun _ => Pre).
+  Admitted.
+
   Lemma repair_parent_analysis_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
@@ -2916,7 +2965,74 @@ TODO: lemmas in the comment block are out of date
         (repair_parent_analysis idx symbol symbol_map idx_map idx_trie
            analysis_result a)
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    intros Hex Ha.
+    unfold repair_parent_analysis.
+    eapply state_sound_for_model_bind.
+    { apply db_lookup_entry_sound; auto. }
+    intros mr.
+    destruct mr as [e|].
+    2:{
+      (* None case: default = Mret tt *)
+      cbn beta iota.
+      eapply state_sound_for_model_wkn_post.
+      - apply state_sound_for_model_ret.
+        intros s Hp; destruct Hp as [HPre _]; auto.
+      - intros r s Hp.
+        destruct Hp as [Hpre Heq].
+        destruct Hpre as [HPre _]; exact HPre.
+    }
+    destruct e as [v_epoch v old_a]; cbn beta iota.
+    {
+      (* Some case: lookup returned an entry, so the atom (f, args, v) is sound *)
+      eapply state_sound_for_model_strengthen_pre with
+        (Pre1 := fun s => Pre s /\
+                  forall i, s i ->
+                    atom_sound_for_model m i
+                      (Build_atom (atom_fn a) (atom_args a) v)).
+      {
+        eapply state_sound_for_model_bind.
+        { apply get_analyses_sound'.
+          intros s Hp; destruct Hp as [HPre _]; auto. }
+        intros arg_as.
+        case_match.
+        {
+          (* eqb out_a old_a = true: ret tt *)
+          eapply state_sound_for_model_wkn_post.
+          - apply state_sound_for_model_ret.
+            intros s Hp; destruct Hp as [HPre _]; auto.
+          - intros r s Hp.
+            destruct Hp as [Hpre Heq].
+            destruct Hpre as [HPre Hsound]; exact HPre.
+        }
+        {
+          (* eqb out_a old_a = false: do the updates *)
+          eapply state_sound_for_model_bind.
+          { apply update_analyses_sound'.
+            intros s Hp; destruct Hp as [HPre _]; auto. }
+          intros r1.
+          eapply state_sound_for_model_bind.
+          { apply push_worklist_analysis_sound.
+            intros s Hp; destruct Hp as [HPre _]; auto. }
+          intros r2.
+          eapply state_sound_for_model_wkn_post.
+          - apply db_set_entry_sound'.
+            + intros s Hp; destruct Hp as [HPre _]; auto.
+            + unfold P_guarantees.
+              intros s Hp i Hsi.
+              destruct Hp as [HPre Hsound].
+              apply Hsound; auto.
+          - intros r s Hp; destruct Hp as [HPre _]; exact HPre.
+        }
+      }
+      {
+        intros s Hp.
+        destruct Hp as [HPre Hatom].
+        cbn in Hatom.
+        split; auto.
+      }
+    }
+  Qed.
 
   Lemma repair_sound Pre a
     : (forall s, Pre s -> ex s) ->
