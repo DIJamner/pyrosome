@@ -3023,6 +3023,14 @@ TODO: lemmas in the comment block are out of date
         eauto using worklist_ok, sound_egraph_ok. }
   Qed.
 
+  (* db_set_entry_sound' is admitted because as stated it may not be
+     provable in general: overwriting the (f, args) entry with a different
+     value v can leave parents pointing at a stale atom (f, args, old_v)
+     that is no longer atom_in_egraph, violating parents_ok. The lemma is
+     true in the use-case in repair_parent_analysis_sound (where v comes
+     from the existing entry, so old_v = v), but discharging that requires
+     either a stronger precondition or threading an "entry already has
+     value v" invariant through the proof. *)
   Lemma db_set_entry_sound' Pre f args ep v an
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i =>
