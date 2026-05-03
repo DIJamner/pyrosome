@@ -2046,10 +2046,11 @@ Abort.
   
   Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
     {analysis_result}%type_scope f args%list_scope _.
-  
-  (* TODO: In progress beyond this point! do not read! *)
 
   (*
+
+TODO: lemmas in the comment block are out of date
+
   (*TODO: preconditions?*)
   Lemma db_lookup_sound i f args
     : state_sound_for_model m i
@@ -2889,11 +2890,19 @@ Abort.
     }
   Qed. 
 
-  Lemma rebuild_sound i n
-    : state_sound_for_model m i (rebuild n) (fun i' _ => i = i').
+*)
+  Lemma rebuild_sound Pre n
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre (rebuild n) (fun _ => Pre).
   Proof.
+    intro Hex.
     induction n.
-    { eapply ret_sound_for_model'; eauto with utils. }
+    {
+      eapply state_sound_for_model_wkn_post.
+      1:eapply state_sound_for_model_ret; eauto with utils.
+      cbn; intuition auto.
+    }
+    (*Old, out of date proof:
     {
       cbn [rebuild].
       ssm_bind.
@@ -2921,10 +2930,12 @@ Abort.
         }
       }
       break; subst; eauto with utils.
-    }
-  Qed.
+      }
+*)
+  Admitted.
 
-  
+  (*TODO: do not read beyond this point. needs to be updated. *)
+  (*
   (*TODO: move to coqutil *)
   Lemma extends_put_None {key value : Type} {map : map.map key value} `{@map.ok _ _ map}
                          `{Eqb_ok key}
