@@ -2891,6 +2891,150 @@ TODO: lemmas in the comment block are out of date
   Qed. 
 
 *)
+
+  (* Helper: repair_each (the inner closure of repair_union) preserves Pre
+     when called on a sound atom. The semantic story is that db_remove
+     followed by canonicalize+update_entry leaves the egraph's set of
+     facts unchanged up to canonicalization. Note that db_remove alone
+     does NOT preserve Pre (db_remove_sound is Aborted above), so this
+     lemma must be proved as a single unit rather than by composition. *)
+  Lemma repair_each_sound Pre a
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      state_sound_for_model Pre
+        (@! let _ <- db_remove a in
+         let a' <- canonicalize a in
+         let _ <- update_entry a' in
+         ret a')
+        (fun _ => Pre).
+  Admitted.
+
+  Lemma repair_parent_analysis_sound Pre a
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      state_sound_for_model Pre
+        (repair_parent_analysis idx symbol symbol_map idx_map idx_trie
+           analysis_result a)
+        (fun _ => Pre).
+  Admitted.
+
+  Lemma repair_sound Pre a
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre (repair a) (fun _ => Pre).
+  Proof.
+    intro Hex.
+    destruct a as [old new improved | i_repair]; cbn [repair].
+    {
+      unfold repair_union.
+      eapply state_sound_for_model_bind.
+      { apply pull_parents_sound; auto. }
+      intros old_ps.
+      eapply state_sound_for_model_bind.
+      {
+        eapply state_sound_for_model_wkn_post.
+        - eapply state_sound_for_model_Mmap with
+            (P_const := fun s => Pre s
+                /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)
+            (P_elt := fun _ _ => True).
+          + intros a_atom.
+            eapply state_sound_for_model_wkn_post.
+            * eapply repair_each_sound
+                with (Pre := Sep.and1 (pure (In a_atom old_ps))
+                               (fun s => Pre s
+                                  /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)).
+              -- intros s Hp.
+                 cbv [Sep.and1 pure] in Hp.
+                 destruct Hp as [Hin Hpc].
+                 destruct Hpc as [HPre Hsound]; auto.
+              -- unfold P_guarantees. intros s Hp i Hsi.
+                 cbv [Sep.and1 pure] in Hp.
+                 destruct Hp as [Hin Hpc].
+                 destruct Hpc as [HPre Hsound].
+                 eapply in_all; [|exact Hin].
+                 apply Hsound; auto.
+            * intros a' s Hp.
+              cbv [Sep.and1 pure] in Hp.
+              destruct Hp as [Hin Hpc].
+              split; [exact Hpc | exact I].
+          + intros s Hp; exact Hp.
+          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+          + repeat intro; auto.
+        - intros r s Hp.
+          destruct Hp as [Hpc Hall].
+          destruct Hpc as [HPre Hsound]; exact HPre.
+      }
+      intros new_atoms.
+      destruct improved.
+      {
+        eapply state_sound_for_model_bind.
+        { apply get_parents_sound; auto. }
+        intros canon_ps.
+        eapply state_sound_for_model_wkn_post.
+        - eapply state_sound_for_model_Miter with
+            (P_inv := fun _ s => Pre s
+                /\ forall i, s i -> all (atom_sound_for_model m i) canon_ps).
+          + intros a_atom.
+            eapply state_sound_for_model_wkn_post.
+            * eapply repair_parent_analysis_sound
+                with (Pre := Sep.and1 (pure (In a_atom canon_ps))
+                               (fun s => Pre s
+                                  /\ forall i, s i -> all (atom_sound_for_model m i) canon_ps)).
+              -- intros s Hp.
+                 cbv [Sep.and1 pure] in Hp.
+                 destruct Hp as [Hin Hpc].
+                 destruct Hpc as [HPre Hsound]; auto.
+              -- unfold P_guarantees. intros s Hp i Hsi.
+                 cbv [Sep.and1 pure] in Hp.
+                 destruct Hp as [Hin Hpc].
+                 destruct Hpc as [HPre Hsound].
+                 eapply in_all; [|exact Hin].
+                 apply Hsound; auto.
+            * intros r s Hp.
+              cbv [Sep.and1 pure] in Hp.
+              destruct Hp as [Hin Hpc]; exact Hpc.
+          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+        - intros r s Hp. destruct Hp as [HPre Hsound]; exact HPre.
+      }
+      {
+        eapply state_sound_for_model_wkn_post.
+        - apply state_sound_for_model_ret. exact Hex.
+        - intros r s Hp. destruct Hp as [HPre Heq]; exact HPre.
+      }
+    }
+    {
+      eapply state_sound_for_model_bind.
+      { apply get_parents_sound; auto. }
+      intros ps.
+      eapply state_sound_for_model_wkn_post.
+      - eapply state_sound_for_model_Miter with
+          (P_inv := fun _ s => Pre s
+              /\ forall i, s i -> all (atom_sound_for_model m i) ps).
+        + intros a_atom.
+          eapply state_sound_for_model_wkn_post.
+          * eapply repair_parent_analysis_sound
+              with (Pre := Sep.and1 (pure (In a_atom ps))
+                             (fun s => Pre s
+                                /\ forall i, s i -> all (atom_sound_for_model m i) ps)).
+            -- intros s Hp.
+               cbv [Sep.and1 pure] in Hp.
+               destruct Hp as [Hin Hpc].
+               destruct Hpc as [HPre Hsound]; auto.
+            -- unfold P_guarantees. intros s Hp i Hsi.
+               cbv [Sep.and1 pure] in Hp.
+               destruct Hp as [Hin Hpc].
+               destruct Hpc as [HPre Hsound].
+               eapply in_all; [|exact Hin].
+               apply Hsound; auto.
+          * intros r s Hp.
+            cbv [Sep.and1 pure] in Hp.
+            destruct Hp as [Hin Hpc]; exact Hpc.
+        + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+        + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+      - intros r s Hp. destruct Hp as [HPre Hsound]; exact HPre.
+    }
+  Qed.
+
   Lemma rebuild_sound Pre n
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre (rebuild n) (fun _ => Pre).
@@ -2902,37 +3046,67 @@ TODO: lemmas in the comment block are out of date
       1:eapply state_sound_for_model_ret; eauto with utils.
       cbn; intuition auto.
     }
-    (*Old, out of date proof:
+    cbn [rebuild].
+    eapply state_sound_for_model_bind.
+    { apply pull_worklist_sound; auto. }
+    intros wl.
+    destruct wl as [|w wl'].
     {
-      cbn [rebuild].
-      ssm_bind.
-      { eapply pull_worklist_sound. }
-      
-      destruct a.
-      { eapply ret_sound_for_model'; break; subst; eauto with utils. }
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto.
-        {
-          intros; break; subst.
-          eapply canonicalize_worklist_entry_sound.
-          eapply in_all; eauto.
-        }
-        { eauto using worklist_entry_sound_mono. }
-      }
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Miter with (P:= fun i _ => i'0 = i); auto.
-        {
-          intros; break; subst.
-          cleanup_context.
-          eapply repair_sound.
-        }
-      }
-      break; subst; eauto with utils.
-      }
-*)
-  Admitted.
+      eapply state_sound_for_model_wkn_post.
+      1: eapply state_sound_for_model_ret.
+      { intros s Hpre. destruct Hpre as [HPre Hsound]; auto. }
+      intros r s Hp. destruct Hp as [Hp1 Heq]. destruct Hp1 as [HPre Hsound]. exact HPre.
+    }
+    eapply state_sound_for_model_bind.
+    {
+      eapply state_sound_for_model_wkn_post.
+      - eapply state_sound_for_model_Mmap
+          with (P_const := fun s => Pre s
+                  /\ forall i, s i -> all (worklist_entry_sound m i) (w :: wl'))
+               (P_elt := fun _ _ => True).
+        + intros a.
+          eapply state_sound_for_model_wkn_post.
+          * eapply canonicalize_worklist_entry_sound
+              with (Pre := Sep.and1 (pure (In a (w :: wl')))
+                             (fun s => Pre s
+                                /\ forall i, s i -> all (worklist_entry_sound m i) (w :: wl'))).
+            -- intros s Hp.
+               cbv [Sep.and1 pure] in Hp.
+               destruct Hp as [Hin Hpc].
+               destruct Hpc as [HPre Hsound].
+               auto.
+            -- unfold P_guarantees. intros s Hp i Hsi.
+               cbv [Sep.and1 pure] in Hp.
+               destruct Hp as [Hin Hpc].
+               destruct Hpc as [HPre Hsound].
+               eapply in_all; [|exact Hin].
+               apply Hsound; auto.
+          * intros a' s Hp.
+            destruct Hp as [Hpre Hsound].
+            cbv [Sep.and1 pure] in Hpre.
+            destruct Hpre as [Hin Hpc].
+            split; [exact Hpc | exact I].
+        + intros s Hp; exact Hp.
+        + intros s Hp. destruct Hp as [HPre Hsound]; auto.
+        + repeat intro; auto.
+      - intros r s Hp.
+        destruct Hp as [Hpc Hall].
+        destruct Hpc as [HPre Hsound]; exact HPre.
+    }
+    intros wl''.
+    eapply state_sound_for_model_bind.
+    {
+      eapply state_sound_for_model_Miter with (P_inv := fun _ => Pre).
+      - intros a.
+        eapply state_sound_for_model_strengthen_pre.
+        + apply repair_sound. exact Hex.
+        + cbv [Sep.and1 pure]. intros s [_ HPre]; exact HPre.
+      - intros s HPre; exact HPre.
+      - exact Hex.
+    }
+    intros r.
+    apply IHn.
+  Qed.
 
   (*TODO: do not read beyond this point. needs to be updated. *)
   (*
