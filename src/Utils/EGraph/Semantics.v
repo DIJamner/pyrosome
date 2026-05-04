@@ -1006,25 +1006,69 @@ Abort.
     erewrite <- set_ext; try eassumption.
   Qed.
   
+  Ltac state_sound_constructor :=
+    unfold state_sound_for_model, state_triple;
+    intros e Hpre_pair;
+    destruct Hpre_pair as [HPre Hex_pre];
+    destruct Hex_pre as [iSSC HiSSC].
+
   Lemma pull_worklist_sound Pre
     : state_sound_for_model Pre
-        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
+        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result)
         (fun wl abs_set =>
            Pre abs_set
            /\ forall i, abs_set i -> all (worklist_entry_sound m i) wl).
   Proof.
     clear idx_zero idx_succ.
-    verify_state_preserving; eauto using worklist_ok, sound_egraph_ok.
-    {
-      apply worklist_sound.
-      differential_soundness;
-      eauto using worklist_ok, sound_egraph_ok.
-    }
+    state_sound_constructor.
+    unfold pull_worklist; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+    assert (Hiff : forall j,
+               egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e wl_e analyses_e log_e)
+               <-> egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e [] analyses_e log_e)).
+    { intros j.
+      split.
+      - intros Hsnd.
+        destruct Hsnd as [Hok Hwf Hex Ha Hr].
+        destruct Hok as [Heq Hwl Hpa].
+        constructor.
+        + constructor; cbn in *; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+      - intros Hsnd.
+        destruct Hsnd as [Hok Hwf Hex Ha Hr].
+        destruct Hok as [Heq _ Hpa].
+        pose proof HiSSC as HiSSC_copy.
+        destruct HiSSC_copy as [Hok_o _ _ _ _].
+        destruct Hok_o as [_ Hwl_o _].
+        cbn in Hwl_o.
+        constructor.
+        + constructor; cbn in *; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto. }
+    split.
+    { split.
+      - eapply set_pred_ext; [exact Hiff | exact HPre].
+      - intros j Hj.
+        apply Hiff in Hj.
+        destruct Hj as [Hok_j Hwf_j Hex_j Ha_j Hrel_j].
+        destruct Hok_j as [_ Hwl_j _].
+        cbn in Hwl_j.
+        eapply all_wkn; [|exact Hwl_j].
+        cbn; intros [old new improved | k] Hwentry; auto.
+        eapply Hrel_j; eauto. }
+    { econstructor.
+      - apply (proj1 (Hiff iSSC)). exact HiSSC.
+      - intros j Hj. exists j. split.
+        + apply (proj2 (Hiff j)). exact Hj.
+        + apply Properties.map.extends_refl. }
   Qed.
-
-
-  Ltac state_sound_constructor :=
-    constructor; [ now eauto using precondition_implies_inhabited |].
 
   Lemma state_sound_for_model_bind A B Pre1 c Post1 (f : A -> _ B) Post2
     : state_sound_for_model Pre1 c Post1 ->
@@ -1032,18 +1076,19 @@ Abort.
       state_sound_for_model Pre1 (@! let p <- c in (f p)) Post2.
   Proof.
     clear idx_zero idx_succ.
-    intros.
+    intros Hc Hf.
     state_sound_constructor.
-    repeat intro.
-    subst res; cbn.
-    eapply H0.(soundness_triple) in H2.
-    destruct (c e) eqn:Hce.
-    specialize (H1 a).
-    break.
-    clear Pre1 H0.
-    pose proof (soundness_triple H1 i H2).
-    cbn in H0.
-    intuition eauto using ne_set_maps_to_trans.
+    cbn in *.
+    specialize (Hc e (conj HPre (ex_intro _ iSSC HiSSC))).
+    destruct (c e) as [a e'] eqn:Hce.
+    cbn in *.
+    destruct Hc as [HPost1 Hne1].
+    assert (Hex' : exists j, denote e' j).
+    { destruct Hne1 as [j Hj _]; eauto. }
+    destruct Hex' as [j' Hj'].
+    specialize (Hf a e' (conj HPost1 (ex_intro _ j' Hj'))).
+    destruct Hf as [HPost2 Hne2].
+    split; [exact HPost2 | eauto using ne_set_maps_to_trans].
   Qed.
 
   
@@ -1069,9 +1114,7 @@ Abort.
   Proof.
     intros Hc Himpl.
     state_sound_constructor.
-    repeat intro.
-    apply Hc.
-    eauto.
+    apply Hc; eauto.
   Qed.
   
   Lemma state_sound_for_model_wkn_post A Pre (c : _ A) Post1 Post2
@@ -1081,9 +1124,8 @@ Abort.
   Proof.
     intros Hc Himpl.
     state_sound_constructor.
-    repeat intro.
-    split;[ eapply Himpl |];
-      eapply Hc.(soundness_triple); eauto.
+    specialize (Hc e (conj HPre (ex_intro _ iSSC HiSSC))).
+    destruct Hc as [HPost1 Hne]; split; auto.
   Qed.
 
   
@@ -1092,12 +1134,9 @@ Abort.
       state_sound_for_model Pre (Mret v) (fun x s => Pre s /\ x = v).
   Proof.
     clear idx_succ idx_zero.
-    intro Hex.
+    intros _.
     state_sound_constructor.
-    repeat intro; subst res; cbn in *.
-    pose proof H0.
-    eapply Hex in H0.
-    break.
+    cbn [fst snd].
     intuition eauto using ne_set_maps_to_refl.
   Qed.
 
@@ -1115,9 +1154,12 @@ Abort.
     clear idx_succ idx_zero.
     intros Himpl Hclo Hc.
     state_sound_constructor.
-    intros; subst res.
-    pose proof H0.
-    eapply Hc.(soundness_triple) in H0; break; intuition eauto.
+    specialize (Hc e (conj HPre (ex_intro _ iSSC HiSSC))).
+    destruct Hc as [Himp Hne].
+    split; [|exact Hne].
+    apply Himp.
+    eapply Hclo; [|exact Hne].
+    apply Himpl; auto.
   Qed.
 
   (*TODO: move and1, etc to Relations*)
@@ -1161,12 +1203,9 @@ Abort.
     {
       intros _.
       state_sound_constructor.
-      repeat intro; subst res; cbn in *.
-      repeat split; eauto.
-      eapply H2 in H1.
-      break.
-      eapply ne_set_maps_to_refl; eauto.
-    }      
+      cbn in *.
+      repeat split; eauto using ne_set_maps_to_refl.
+    }
     {
       cbn [list_Mmap].
       intros Hincl.
@@ -1186,7 +1225,7 @@ Abort.
       {
         eapply state_sound_for_model_strengthen_pre; eauto.
         intros; intuition eauto.
-      }        
+      }
       {
         intros.
         eapply state_sound_for_model_wkn_post.
@@ -1206,7 +1245,7 @@ Abort.
     }
   Qed.
   (*TODO: move and1, etc to Relations*)
-  Lemma state_sound_for_model_Mmap_dep A B Pre P_const P_elt l (f : A -> _ B) 
+  Lemma state_sound_for_model_Mmap_dep A B Pre P_const P_elt l (f : A -> _ B)
     : (forall (a:A), (* in could be strengthened, but doesn't need to be*)
                      state_sound_for_model (Sep.and1 (pure (In a l)) P_const) (f a)
                        (fun b s' => P_const s' /\ P_elt s' a b)) ->
@@ -1237,12 +1276,9 @@ Abort.
     {
       intros _.
       state_sound_constructor.
-      repeat intro; subst res; cbn in *.
-      repeat split; eauto.
-      eapply H2 in H1.
-      break.
-      eapply ne_set_maps_to_refl; eauto.
-    }      
+      cbn in *.
+      repeat split; eauto using ne_set_maps_to_refl.
+    }
     {
       cbn [list_Mmap].
       intros Hincl.
@@ -1318,14 +1354,11 @@ Abort.
     generalize dependent l.
     induction l.
     {
-      intros _.      
+      intros _.
       state_sound_constructor.
-      repeat intro; subst res; cbn in *.
-      repeat split; eauto.
-      eapply H2 in H1.
-      break.
-      eapply ne_set_maps_to_refl; eauto.
-    }      
+      cbn in *.
+      repeat split; eauto using ne_set_maps_to_refl.
+    }
     {
       cbn [list_Miter].
       intros Hincl.
@@ -1489,9 +1522,10 @@ Abort.
         (fun x' s => Pre s /\ (forall i, s i -> eq_sound_for_model m i x x')).
   Proof.
     unfold P_guarantees; intros HPkey Hex.
-    constructor; [now eauto |].
-    intros graph Hpre.
-    pose proof (Hex _ Hpre) as Hf_ex; destruct Hf_ex as [someInterp Hf].
+    unfold state_sound_for_model, state_triple.
+    intros graph Hp.
+    destruct Hp as [Hpre Hf_ex].
+    destruct Hf_ex as [someInterp Hf].
     pose proof (HPkey _ Hpre _ Hf) as Hkx_interp.
     pose proof Hf as Hf_copy.
     destruct Hf_copy as [Heq_ok Hwf Hexact Hatom Hrel].
@@ -1609,19 +1643,17 @@ Abort.
         (fun a s => Pre s
                     /\ forall i, s i -> all (atom_sound_for_model m i) a).
   Proof.
-    intros Hex.
-    constructor; [exact Hex |].
-    intros e Hpre.
+    intros _.
+    state_sound_constructor.
     unfold get_parents. cbn.
-    pose proof (Hex _ Hpre) as [j Hj].
     repeat split.
-    { exact Hpre. }
+    { exact HPre. }
     { intros i Hi.
       destruct (map.get e.(parents) old_idx) as [s|] eqn:Hg; cbn.
       - eapply parents_interpretation; eauto.
       - cbn. exact I. }
-    { eapply Build_forall_nonempty with (fne_elt := j).
-      - exact Hj.
+    { eapply Build_forall_nonempty with (fne_elt := iSSC).
+      - exact HiSSC.
       - intros i' Hi'. exists i'.
         split; [exact Hi' | apply Properties.map.extends_refl]. }
   Qed.
@@ -1641,12 +1673,10 @@ Abort.
         (remove_parents old_idx)
         (fun _ => Pre).
   Proof.
-    intros Hex.
-    constructor; [exact Hex |].
-    intros e Hpre.
+    intros _.
+    state_sound_constructor.
     unfold remove_parents. cbn.
-    pose proof (Hex _ Hpre) as [j Hj].
-    pose proof Hj as Hj_copy.
+    pose proof HiSSC as Hj_copy.
     destruct Hj_copy as [Hj_ok Hj_wf Hj_exact Hj_atom Hj_rel].
     pose proof Hj_ok as Hj_ok_copy.
     destruct Hj_ok_copy as [Hj_eq Hj_wl Hj_par_old].
@@ -1685,10 +1715,10 @@ Abort.
           eapply Hg_par; eauto. } }
     }
     split.
-    { eapply set_pred_ext; [| exact Hpre].
+    { eapply set_pred_ext; [| exact HPre].
       intros i. apply Hiff. }
-    { eapply Build_forall_nonempty with (fne_elt := j).
-      - apply Hiff. exact Hj.
+    { eapply Build_forall_nonempty with (fne_elt := iSSC).
+      - apply Hiff. exact HiSSC.
       - intros i' Hi'. exists i'.
         split; [apply Hiff; exact Hi' | apply Properties.map.extends_refl]. }
   Qed.
@@ -2731,20 +2761,21 @@ TODO: lemmas in the comment block are out of date
                 atom_sound_for_model m i
                   (Build_atom f args (entry_value idx analysis_result e)))).
   Proof.
-    prepare_state_sound.
-    { eapply set_pred_ext; [| eassumption]; intros.
-      split; intros; differential_soundness. }
-    { (* output condition: mr <?> ... *)
-      destruct (map.get graph.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
+    intros _.
+    state_sound_constructor.
+    unfold db_lookup_entry; cbn [fst snd].
+    split.
+    { split; [exact HPre |].
+      destruct (map.get e.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
       destruct (map.get tbl args) as [d|] eqn:Hd; cbn; auto.
       intros i Hi.
-      assert (atom_in_egraph (Build_atom f args (entry_value idx analysis_result d)) graph).
-      { unfold atom_in_egraph, atom_in_db; cbn.
-        rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
-      eapply atom_interpretation; eauto. }
-    { econstructor;
-        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
-      differential_soundness. }
+      eapply atom_interpretation; eauto.
+      unfold atom_in_egraph, atom_in_db; cbn.
+      rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
+    { econstructor.
+      - exact HiSSC.
+      - intros j Hj. exists j. split;
+          [exact Hj | apply Properties.map.extends_refl]. }
   Qed.
 
   Lemma get_analysis_sound' Pre x
@@ -2753,26 +2784,58 @@ TODO: lemmas in the comment block are out of date
         (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
         (fun _ => Pre).
   Proof.
-    intro Hex.
-    constructor; [exact Hex |].
-    intros graph Hpre.
-    pose proof (Hex _ Hpre) as Hf.
-    destruct Hf as [interp Hf].
-    cbv [get_analysis].
-    destruct (map.get graph.(analyses) x) as [a|] eqn:Hga; cbn.
-    - (* Some case: no state change *)
-      split; [exact Hpre|].
-      econstructor; [exact Hf|].
-      intros j Hj. exists j. split; [exact Hj | apply Properties.map.extends_refl].
-    - (* None case: update_analyses + push_worklist *)
+    intros Hex.
+    unfold get_analysis.
+    state_sound_constructor.
+    cbn [fst snd].
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    { (* Some case: state unchanged *)
+      cbn [fst snd].
+      split; [exact HPre |].
+      econstructor.
+      - exact HiSSC.
+      - intros j Hj. exists j. split;
+          [exact Hj | apply Properties.map.extends_refl]. }
+    { (* None case: update_analyses + push_worklist *)
+      destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+      cbn [Defs.analyses fst snd] in *.
+      assert (Hwl_iff : forall wl,
+                 (forall ent, In ent wl -> worklist_entry_ok equiv_e ent) ->
+                 all (worklist_entry_ok equiv_e) wl).
+      { intros wl Hwl. induction wl; cbn in *; auto. }
+      assert (Hiff : forall j analyses1 analyses2 wl1 wl2,
+                 (forall ent, In ent wl1 -> worklist_entry_ok equiv_e ent) ->
+                 (forall ent, In ent wl2 -> worklist_entry_ok equiv_e ent) ->
+                 egraph_sound_for_interpretation m j
+                   (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                      wl1 analyses1 log_e)
+                 <-> egraph_sound_for_interpretation m j
+                   (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                      wl2 analyses2 log_e)).
+      { intros j a1 a2 w1 w2 Hw1 Hw2.
+        split; intros Hsnd; destruct Hsnd as [Hok Hwf Hex' Ha Hr];
+          destruct Hok as [Heq Hwl Hpa];
+          constructor; cbn in *; auto.
+        - constructor; cbn; auto.
+        - constructor; cbn; auto. }
+      pose proof HiSSC as HiSSC_copy.
+      destruct HiSSC_copy as [Hok_o _ _ _ _].
+      destruct Hok_o as [_ Hwl_o _].
+      cbn in Hwl_o.
+      assert (Hwl_o' : forall ent, In ent wl_e -> worklist_entry_ok equiv_e ent).
+      { intros ent Hin. eapply in_all; eauto. }
+      assert (Hnew_wl : forall ent,
+                 In ent (analysis_repair idx x :: wl_e) -> worklist_entry_ok equiv_e ent).
+      { intros ent Hin. cbn in Hin. destruct Hin as [Heq | Hin].
+        - rewrite <- Heq. cbn. auto.
+        - eapply in_all; eauto. }
       split.
-      + eapply set_pred_ext; [| exact Hpre]; intros.
-        split; intros; differential_soundness;
-          eauto using worklist_ok, sound_egraph_ok.
-      + econstructor;
-          [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
-        differential_soundness;
-          eauto using worklist_ok, sound_egraph_ok.
+      { eapply set_pred_ext; [|exact HPre]. intros j; eapply Hiff; auto. }
+      { econstructor.
+        - eapply (proj1 (Hiff iSSC _ _ _ _ Hwl_o' Hnew_wl)). exact HiSSC.
+        - intros j Hj. exists j. split;
+            [eapply (proj2 (Hiff j _ _ _ _ Hwl_o' Hnew_wl)); exact Hj
+            | apply Properties.map.extends_refl]. } }
   Qed.
 
   Lemma get_analyses_sound' Pre args
@@ -2805,12 +2868,28 @@ TODO: lemmas in the comment block are out of date
            analysis_result k v)
         (fun _ => Pre).
   Proof.
-    prepare_state_sound.
-    { eapply set_pred_ext; [| eassumption]; intros.
-      split; intros; differential_soundness. }
-    { econstructor;
-        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
-      differential_soundness. }
+    intros _.
+    state_sound_constructor.
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+    assert (Hiff : forall j analyses1 analyses2,
+               egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                    wl_e analyses1 log_e)
+               <-> egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                    wl_e analyses2 log_e)).
+    { intros j a1 a2.
+      split; intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+        destruct Hok as [Heq Hwl Hpa];
+        constructor; cbn in *; auto;
+        constructor; cbn; auto. }
+    unfold update_analyses; cbn [fst snd].
+    split.
+    { eapply set_pred_ext; [|exact HPre]. intro j; apply Hiff. }
+    { econstructor.
+      - eapply (proj1 (Hiff iSSC _ _)). exact HiSSC.
+      - intros j Hj. exists j. split;
+          [eapply (proj2 (Hiff j _ _)); exact Hj | apply Properties.map.extends_refl]. }
   Qed.
 
   Lemma push_worklist_analysis_sound Pre o
@@ -2820,14 +2899,42 @@ TODO: lemmas in the comment block are out of date
            analysis_result (analysis_repair idx o))
         (fun _ => Pre).
   Proof.
-    prepare_state_sound.
-    { eapply set_pred_ext; [| eassumption]; intros.
-      split; intros; differential_soundness;
-        eauto using worklist_ok, sound_egraph_ok. }
-    { econstructor;
-        [| intros; eexists; split; [ | eapply Properties.map.extends_refl ] ];
-      differential_soundness;
-        eauto using worklist_ok, sound_egraph_ok. }
+    intros _.
+    state_sound_constructor.
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+    assert (Hiff : forall j,
+               egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                    wl_e analyses_e log_e)
+               <-> egraph_sound_for_interpretation m j
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                    (analysis_repair idx o :: wl_e) analyses_e log_e)).
+    { intros j.
+      split.
+      - intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+          destruct Hok as [Heq Hwl Hpa].
+        constructor.
+        + constructor; cbn in *; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+      - intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+          destruct Hok as [Heq Hwl Hpa].
+        cbn in Hwl. destruct Hwl as [_ Hwl].
+        constructor.
+        + constructor; cbn in *; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto.
+        + cbn; auto. }
+    unfold push_worklist; cbn [fst snd].
+    split.
+    { eapply set_pred_ext; [exact Hiff | exact HPre]. }
+    { econstructor.
+      - apply (proj1 (Hiff iSSC)). exact HiSSC.
+      - intros j Hj. exists j. split;
+          [apply (proj2 (Hiff j)); exact Hj | apply Properties.map.extends_refl]. }
   Qed.
 
   (* db_set_entry_sound' is admitted because as stated it may not be
