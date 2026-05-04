@@ -903,15 +903,6 @@ Abort.
   
   Definition monotone4 {A B C D E} (P : _ -> B -> C -> D -> E -> _) : Prop :=
     (forall a b c d (i i' : idx_map A), map.extends i i' -> P i' a b c d -> P i a b c d).
-  
-  Lemma monotone2_fix_l {A B C} (P : idx_map A -> B -> C -> _) x
-    : monotone2 P ->
-      monotone1 (fun i => P i x).
-  Proof.
-    unfold monotone2, monotone1.
-    basic_goal_prep.
-    eapply H0; eauto.
-  Qed.
 
   (*TODO: move*)
   Record forall_nonempty {A} P Q : Prop :=
@@ -966,135 +957,35 @@ Abort.
     
   End __.
 
-  
-
   Context (m : model).
   
   #[local] Notation abs_set := (idx_map (domain m) -> Prop).
 
   #[local] Notation denote e := (fun i => egraph_sound_for_interpretation m i e).
 
+  
+  (* Hoare logic reasoning about the state monad.
+     TODO: replace the definition in Monad.v with this updated one.
+   *)
+  Definition state_triple {S A} (P : S -> Prop) (c : state S A) (Q : S -> A * S -> Prop) :=
+    forall e, P e -> Q e (c e).
 
   Section __.
 
     Context {A : Type}.
-             
     
     (* Outcome logic reasoning about e-graph abstractions *)
-    Record state_sound_for_model
+    Definition state_sound_for_model
       (Pre : abs_set -> Prop)
       (c : state instance A)
       (Post : A -> abs_set -> Prop) :=
-      {
-        precondition_implies_inhabited
-        : forall s, Pre s -> ex s; 
-        soundness_triple
-        : forall e, Pre (denote e) ->
-                    let res := c e in
-                    Post (fst res) (denote (snd res))
-                    /\ ne_set_maps_to (denote e) (denote (snd res))
-      }.
-
+      state_triple (fun e => Pre (denote e) /\ exists i, denote e i) c
+        (fun e res => Post (fst res) (denote (snd res))
+                      /\ ne_set_maps_to (denote e) (denote (snd res))).
   End __.
-  Arguments soundness_triple {A}%type_scope {Pre}%function_scope 
-    {c} {Post}%function_scope s0 e _.
-  Arguments precondition_implies_inhabited {A}%type_scope {Pre}%function_scope 
-    {c} {Post}%function_scope s0 s%function_scope.  
-    
-   (*
-  Definition state_sound_for_model {A} (m : model) a_set
-    (s : state instance A) Post :=
-    state_triple (egraph_sound_for_interpretation m i) s
-      (*TODO: make sure that i' can depend on x *)
-      (fun x => forall_ne i' | egraph_sound_for_interpretation m i' (snd x),
-         map.extends i' i /\ Post i' (fst x)).
-    *)    
 
   (*TODO: move*)
   Hint Resolve Properties.map.extends_refl : utils.
-  
-  Lemma worklist_entry_sound_mono : monotone1 (worklist_entry_sound m).
-  Proof.
-    clear idx_zero idx_succ.
-    intros x ? ?.
-    destruct x; basic_goal_prep; auto.
-    revert H1.
-    unfold eq_sound_for_model, Is_Some_satisfying in *; case_match; try tauto.
-    case_match; try tauto.
-    eapply H0 in case_match_eqn, case_match_eqn0.
-    rewrite case_match_eqn, case_match_eqn0.
-    auto.
-  Qed.
-
-  
-  From Stdlib Require Import Logic.PropExtensionality
-    Logic.FunctionalExtensionality.
-
-  (* assuming e1 is okay, when is e2 okay? *)
-  Record differential_egraph_ok (e1 e2 : instance) : Prop :=
-    {
-      differential_egraph_equiv_ok
-      : e1.(equiv) = e2.(equiv)
-        \/ exists roots : list idx, union_find_ok lt (equiv e2) roots;
-      differential_worklist_ok
-      : (e1.(equiv) = e2.(equiv) /\ e1.(worklist) = e2.(worklist))
-        \/ all (worklist_entry_ok (equiv e2)) (worklist e2);
-      differential_parents_ok
-      : (e1.(db) = e2.(db) /\ e1.(parents) = e2.(parents))
-        \/ forall (x : idx) (s : list atom),
-        map.get (parents e2) x = Some s ->
-        all (fun a : atom => atom_in_egraph a e2) s
-    }.
-
-  Lemma apply_differential_egraph_ok e1 e2
-    : egraph_ok e1 ->
-      differential_egraph_ok e1 e2 ->
-      egraph_ok e2.
-  Proof.
-    clear idx_zero idx_succ.
-    destruct e1, e2;
-      destruct 1; destruct 1; constructor; cbn in *;
-      intuition (subst; eauto).
-  Qed.
-
-  (* TODO: generalize over multiple 'i's*)
-  Record differential_soundness m idx_interpretation e1 e2 :=
-    {
-      differential_sound_egraph_ok : differential_egraph_ok e1 e2;
-      (*differential_idx_interpretation_wf
-      : forall (i : idx) (d : domain m),
-        map.get idx_interpretation i = Some d ->
-        domain_wf m d; *)
-      differential_interpretation_exact
-      : e1.(equiv) = e2.(equiv)
-        \/ forall x : idx,
-        Is_Some (map.get idx_interpretation x) ->
-        Sep.has_key x (parent (equiv e2));
-      differential_atom_interpretation
-      : e1.(db) = e2.(db)
-        \/ forall a : atom,
-        atom_in_egraph a e2 ->
-        atom_sound_for_model m idx_interpretation a;
-      differential_rel_interpretation
-      : e1.(equiv) = e2.(equiv)
-        \/ forall i1 i2 : idx,
-        uf_rel_PER idx (idx_map idx) 
-          (idx_map nat) (equiv e2) i1 i2 ->
-        eq_sound_for_model m idx_interpretation i1 i2
-    }.
-  
-  Lemma apply_differential_soundness i e1 e2
-    : egraph_sound_for_interpretation m i e1 ->
-      differential_soundness m i e1 e2 ->
-      egraph_sound_for_interpretation m i e2.
-  Proof.
-    clear idx_zero idx_succ.
-    destruct e1, e2;
-      destruct 1; destruct 1; constructor; cbn in *;
-      intuition (subst; eauto).
-    all: eapply apply_differential_egraph_ok; eauto.
-  Qed.
-
   
   From Stdlib Require Import Logic.PropExtensionality
     Logic.FunctionalExtensionality.
@@ -1114,36 +1005,9 @@ Abort.
     intros.
     erewrite <- set_ext; try eassumption.
   Qed.
-
-  
-  Ltac differential_soundness :=
-    eapply apply_differential_soundness;
-    [ eassumption | constructor; cbn; [ apply Build_differential_egraph_ok |..] ];
-    cbn; intuition eauto.
-
-  
-  Ltac prepare_state_sound :=
-    let Hex := fresh "Hex" in
-    intro Hex;
-    constructor; [ now eauto |];
-    intros graph Hpre res;
-    let Hf := fresh in
-    pose proof (Hex _ Hpre) as Hf;
-    destruct Hf as [? Hf];
-    repeat split;
-    subst res; cbn in *.
-  
-  Ltac verify_state_preserving :=
-    prepare_state_sound;
-    [ eapply set_pred_ext; [| eassumption]; intros;
-      split; intros; differential_soundness
-    | intros (* output conditions; varied *)
-    | econstructor; [| intros; eexists; split; [ | eapply Properties.map.extends_refl] ];
-      differential_soundness].
   
   Lemma pull_worklist_sound Pre
-    : (forall s, Pre s -> ex s) ->
-      state_sound_for_model Pre
+    : state_sound_for_model Pre
         (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
         (fun wl abs_set =>
            Pre abs_set
@@ -2833,63 +2697,6 @@ TODO: lemmas in the comment block are out of date
       basic_utils_crush.
   Qed.    
   
-  Lemma repair_sound i a
-    : state_sound_for_model m i
-        (repair a)
-        (fun i' _ => i = i').
-  Proof.
-    cleanup_context.
-    destruct a; cbn [repair].
-    {
-      unfold repair_union.
-      eapply state_sound_for_model_bind;
-        [ eapply pull_parents_sound |].
-      cbn beta;intros; subst.
-      eapply state_sound_for_model_bind; break; subst; eauto with utils.
-      {
-        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto with utils.
-        cbn beta;intros; subst.
-        eapply state_sound_for_model_bind; eauto with utils.
-        { eapply db_remove_sound. }
-        cbn beta;intros; subst.
-        eapply state_sound_for_model_bind; eauto with utils.
-        {
-          eapply canonicalize_sound.
-          eapply in_all; eassumption.
-        }
-        {
-          cbn beta;intros; break; subst.
-          eapply state_sound_for_model_bind; eauto with utils.
-          {
-            eapply update_entry_sound; eauto with utils.
-            eapply eq_atom_implies_sound_l; try symmetry; eauto.
-            eapply in_all; eauto.
-          }
-          cbn beta;intros; break; subst.
-          eapply ret_sound_for_model'; intuition eauto with utils.
-          eapply eq_atom_implies_sound_l; try symmetry; eauto.
-          eapply in_all; eauto.
-        }
-      }
-      cbn beta;intros; break; subst.
-      case_match.
-      {
-        bind_with_fn get_parents_sound; break; subst.
-        eapply state_sound_for_model_Miter with (P:= fun i _ => i' = i); auto with utils.
-        cbn beta;intros; subst.
-        cleanup_context.
-        apply repair_parent_analysis_sound.
-      }
-      { eapply ret_sound_for_model'; eauto with utils. }
-    }
-    {
-      bind_with_fn get_parents_sound.
-      eapply state_sound_for_model_Miter; break; subst; auto.
-      cbn beta;intros; break; subst.
-      eapply repair_parent_analysis_sound.
-    }
-  Qed. 
-
 *)
 
   (* Helper: repair_each (the inner closure of repair_union) preserves Pre
