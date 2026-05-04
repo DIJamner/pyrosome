@@ -2734,7 +2734,25 @@ TODO: lemmas in the comment block are out of date
      followed by canonicalize+update_entry leaves the egraph's set of
      facts unchanged up to canonicalization. Note that db_remove alone
      does NOT preserve Pre (db_remove_sound is Aborted above), so this
-     lemma must be proved as a single unit rather than by composition. *)
+     lemma must be proved as a single unit rather than by composition.
+
+     ** WHY THIS IS NOT PROVABLE AS STATED. **
+     [parents_ok] (in [egraph_ok]) requires every atom in [e.(parents)] to
+     be [atom_in_egraph], i.e., literally present in [e.(db)]. After
+     [db_remove (f, args, ret)] the entry at (f, args) is gone, but
+     [e.(parents)[ret]] and [e.(parents)[args[i]]] still hold the atom
+     (f, args, ret), so [parents_ok] fails immediately. [update_entry]
+     re-installs (f, args', ret') (the canonicalized form) but never
+     scrubs the stale (f, args, ret) from parents — so parents_ok is
+     still violated whenever args ≠ args' or ret ≠ ret'.
+
+     The TODO on [parents_ok] notes: "atom_in_egraph might be too strong.
+     I might (will?) need this to be up to equivalence". Relaxing
+     [parents_ok] to "atom_in_egraph up to equiv" would make this
+     lemma true (the canonicalized atom installed by update_entry is
+     equivalent in the union-find to the removed one), but it's a
+     structural change to [egraph_ok] that cascades through many
+     proofs, so it's left for a future revision. *)
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
@@ -2944,7 +2962,41 @@ TODO: lemmas in the comment block are out of date
      true in the use-case in repair_parent_analysis_sound (where v comes
      from the existing entry, so old_v = v), but discharging that requires
      either a stronger precondition or threading an "entry already has
-     value v" invariant through the proof. *)
+     value v" invariant through the proof.
+
+     ** WHY THIS IS NOT PROVABLE AS STATED. **
+     Same root cause as [repair_each_sound]: [parents_ok] requires every
+     parent atom to be [atom_in_egraph] structurally. Overwriting (f,args)
+     with a new value [v] (when the old value was [v_old ≠ v]) leaves
+     parents pointing to (f, args, v_old), which is no longer in the db,
+     so [parents_ok] of the new state is broken.
+
+     ** FIXING IT WITHOUT CHANGING [parents_ok]. **
+     The natural extra hypothesis is "the (f,args) entry, if any, has
+     value [v]", e.g.
+       (forall e, Pre (denote e) ->
+          match map.get e.(db) f with
+          | Some tbl =>
+              match map.get tbl args with
+              | Some entry => entry_value _ _ entry = v
+              | None => True
+              end
+          | None => True
+          end)
+     Under that hypothesis the proof goes through (parents_ok preserved
+     because atom_in_egraph at (f,args,v) is unchanged, and the case
+     where the entry didn't exist is fine because parents could not have
+     pointed to (f,args,_) anyway). The blocker is that the unique caller
+     in [repair_parent_analysis_sound] cannot discharge that hypothesis:
+     [state_sound_for_model]'s post is over abstract sets of
+     interpretations, which by design hides the structural db state, so
+     the fact "the egraph we just looked up in still has (f,args) ↦ v"
+     cannot be threaded through the bind. Discharging it would require
+     either (a) inlining the db_set_entry call into the proof of
+     repair_parent_analysis_sound and reasoning at the [state_triple]
+     level, or (b) extending [state_sound_for_model] so that postconditions
+     can mention the input instance, neither of which is local to this
+     lemma. *)
   Lemma db_set_entry_sound' Pre f args ep v an
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i =>
