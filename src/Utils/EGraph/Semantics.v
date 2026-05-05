@@ -1781,23 +1781,93 @@ Abort.
         split; [apply Hiff; exact Hi' | apply Properties.map.extends_refl]. }
   Qed.
 
+  (* State-triple level statement: in addition to the semantic
+     postcondition (Pre preserved, returned atoms sound for the model),
+     the returned atoms are recorded as parents and so satisfy the
+     [atom_in_egraph_up_to_equiv] structural fact w.r.t. the output
+     instance. This structural fact is what callers need to apply
+     [repair_each_sound]; we expose the input/output instance via
+     state_triple because it cannot be expressed at the
+     [state_sound_for_model] (abs_set) level. *)
   Lemma pull_parents_sound Pre old_idx
     : (forall s, Pre s -> ex s) ->
-      state_sound_for_model Pre
+      state_triple
+        (fun e => Pre (denote e) /\ exists i, denote e i)
         (pull_parents old_idx)
-        (fun a s => Pre s
-                    /\ forall i, s i -> all (atom_sound_for_model m i) a).
+        (fun e res =>
+           (Pre (denote (snd res))
+            /\ (forall i, denote (snd res) i ->
+                          all (atom_sound_for_model m i) (fst res))
+            /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res))
+           /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
-    intros.
-    unfold pull_parents.
-    eapply state_sound_for_model_bind;
-      [ apply get_parents_sound; eassumption | cbn beta; intros ].
-    eapply state_sound_for_model_bind;
-      [ apply remove_parents_sound; intuition auto
-      | cbn beta; intros ].
-    eapply state_sound_for_model_wkn_post.
-    1:eapply state_sound_for_model_ret; intuition eauto.
-    repeat intuition (subst; eauto).
+    intros _ e [HPre Hex_e].
+    destruct Hex_e as [iSSC HiSSC].
+    pose proof HiSSC as HiSSC_copy.
+    destruct HiSSC_copy as [Hok_o Hwf_o Hex_o Hatom_o Hrel_o].
+    pose proof Hok_o as Hok_o_copy.
+    destruct Hok_o_copy as [Heq_o Hwl_o Hpar_o].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+    cbn [Defs.db Defs.equiv Defs.parents Defs.epoch
+         Defs.worklist Defs.analyses Defs.log] in *.
+    pose (e_after := Build_instance _ _ _ _ _ _
+                       db_e equiv_e (map.remove parents_e old_idx)
+                       epoch_e wl_e analyses_e log_e).
+    pose (ps := unwrap_with_default (map.get parents_e old_idx)
+                  : list atom).
+    assert (Hcompute : (pull_parents old_idx)
+                         (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                            epoch_e wl_e analyses_e log_e) = (ps, e_after)).
+    { reflexivity. }
+    rewrite Hcompute. cbn [fst snd].
+    assert (Hiff : forall i,
+               egraph_sound_for_interpretation m i
+                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                    epoch_e wl_e analyses_e log_e)
+               <-> egraph_sound_for_interpretation m i e_after).
+    { intros i.
+      split; intros He_sound.
+      { destruct He_sound as [He_ok Hwf Hex' Hatom Hrel].
+        destruct He_ok as [Hg_eq Hg_wl Hg_par].
+        constructor; cbn in *; try assumption.
+        constructor; cbn in *; try assumption.
+        intros y s Hg.
+        eqb_case old_idx y.
+        { rewrite map.get_remove_same in Hg. discriminate. }
+        { rewrite map.get_remove_diff in Hg by auto.
+          eapply Hg_par; eauto. } }
+      { destruct He_sound as [He_ok Hwf Hex' Hatom Hrel].
+        destruct He_ok as [Hg_eq Hg_wl Hg_par].
+        unfold e_after in *. cbn in *.
+        constructor; cbn in *; [| assumption | assumption | assumption | assumption].
+        constructor; cbn in *; [assumption | assumption |].
+        intros y s Hg.
+        eqb_case old_idx y.
+        { eapply Hpar_o; eauto. }
+        { specialize (Hg_par y s).
+          rewrite map.get_remove_diff in Hg_par by auto.
+          eapply Hg_par; eauto. } } }
+    split.
+    2:{ eapply Build_forall_nonempty with (fne_elt := iSSC).
+        - apply Hiff. exact HiSSC.
+        - intros i' Hi'. exists i'.
+          split; [apply Hiff; exact Hi' | apply Properties.map.extends_refl]. }
+    repeat split.
+    { eapply set_pred_ext; [intros i; apply Hiff | exact HPre]. }
+    { intros i Hi.
+      apply Hiff in Hi.
+      unfold ps, unwrap_with_default.
+      destruct (map.get parents_e old_idx) as [s'|] eqn:Hg_par;
+        [eapply parents_interpretation; eauto | exact I]. }
+    { unfold ps, unwrap_with_default.
+      destruct (map.get parents_e old_idx) as [s'|] eqn:Hg_par; [|exact I].
+      specialize (Hpar_o old_idx s' Hg_par).
+      eapply all_wkn; [|exact Hpar_o].
+      intros a Hin Heqv.
+      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+        atom_in_egraph, atom_in_db in *.
+      destruct Heqv as (a' & (Hfn & Hargs & Hret) & Hain).
+      exists a'; cbn; intuition. }
   Qed.
   
   Ltac iss_case :=
@@ -2788,30 +2858,36 @@ TODO: lemmas in the comment block are out of date
 *)
 
   (* Helper: repair_each (the inner closure of repair_union) preserves Pre
-     when called on a sound atom that is structurally in the input db.
-     The semantic story is that db_remove followed by
+     when called on a sound atom that is canonically represented in the
+     input db. The semantic story is that db_remove followed by
      canonicalize+update_entry leaves the egraph's set of facts
      unchanged up to canonicalization, provided the entry being
-     removed actually corresponds to [a]. Note that db_remove alone
-     does NOT preserve Pre (db_remove_sound is Aborted above), so this
-     lemma is proved as a single unit rather than by composition.
+     removed corresponds (up to canonical equivalence) to [a]. Note
+     that db_remove alone does NOT preserve Pre (db_remove_sound is
+     Aborted above), so this lemma is proved as a single unit rather
+     than by composition.
 
      This is a state_triple-level statement (with [state_sound_for_model]
-     unfolded) so we can quantify [atom_in_egraph a e] over the input
-     [e]. The structural hypothesis is necessary: without it there is a
-     "stale entry" counterexample where [db_e] contains
-     [(atom_fn a, atom_args a, old_v)] with [old_v ≠ atom_ret a],
+     unfolded) so we can quantify [atom_in_egraph_up_to_equiv a e]
+     over the input [e]. A structural hypothesis is necessary:
+     without one there is a "stale entry" counterexample where
+     [db_e] contains [(atom_fn a, atom_args a, old_v)] with
+     [old_v] not canonically equivalent to [atom_ret a],
      [db_remove + canonicalize + update_entry] leaves [denote e3]
      strictly larger than [denote e], and [ne_set_maps_to] fails.
-     With [atom_in_egraph a e], the entry at [(atom_fn a, atom_args a)]
-     literally has value [atom_ret a], so removing-then-restoring
-     preserves [denote] in every branch of [update_entry]. *)
+     With [atom_in_egraph_up_to_equiv a e], the entry witnessing
+     canonical membership has [ret] equiv to [atom_ret a], so removing-
+     then-restoring preserves [denote] in every branch of
+     [update_entry]. The relaxed form (over [atom_in_egraph_up_to_equiv]
+     rather than literal [atom_in_egraph]) matches the relaxed
+     [parents_ok] invariant, so callers can supply this premise from
+     facts about parent atoms. *)
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
       state_triple (fun e => Pre (denote e)
                              /\ (exists i, denote e i)
-                             /\ atom_in_egraph a e)
+                             /\ atom_in_egraph_up_to_equiv a e)
                    (@! let _ <- db_remove a in
                        let a' <- canonicalize a in
                        let _ <- update_entry a' in
@@ -2864,6 +2940,42 @@ TODO: lemmas in the comment block are out of date
       - apply Hiff; exact Hj.
       - apply Properties.map.extends_refl. }
      *)
+  Admitted.
+
+  (* State-triple level Mmap of repair_each over a list of atoms.
+     The structural invariant — every remaining atom is canonically
+     represented in the current db — must hold initially and is
+     preserved by each iteration: repair_each on one atom replaces a
+     canonical-equivalence witness with another canonically-equivalent
+     witness, so [atom_in_egraph_up_to_equiv] for the other atoms is
+     maintained (modulo possibly enlarged [equiv]). The semantic
+     soundness of all atoms is also preserved across repair_each by
+     [ne_set_maps_to_trans] + monotone1_atom_sound.
+
+     This statement bundles both invariants into the precondition;
+     proving it requires an inductive argument on [old_ps] using
+     [repair_each_sound] and a separate preservation lemma that
+     [db_remove + canonicalize + update_entry] preserves
+     [atom_in_egraph_up_to_equiv] for atoms other than the one being
+     repaired. That preservation argument follows the same
+     [Hiff]-style reasoning as in [repair_each_sound] but is admitted
+     here for now. *)
+  Lemma list_Mmap_repair_each_sound Pre old_ps
+    : (forall s, Pre s -> ex s) ->
+      state_triple
+        (fun e => Pre (denote e)
+                  /\ (exists i, denote e i)
+                  /\ (forall i, denote e i ->
+                                all (atom_sound_for_model m i) old_ps)
+                  /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
+        (list_Mmap (fun a : atom =>
+                      @! let _ <- db_remove a in
+                         let a' <- canonicalize a in
+                         let _ <- update_entry a' in
+                         ret a')
+                   old_ps)
+        (fun e res => Pre (denote (snd res))
+                      /\ ne_set_maps_to (denote e) (denote (snd res))).
   Admitted.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
@@ -3154,134 +3266,132 @@ TODO: lemmas in the comment block are out of date
     }
   Qed.
 
+  (* Soundness of [list_Miter repair_parent_analysis ps] under the
+     hypothesis that all atoms in [ps] are sound for the model. This
+     is exactly the inner Miter chunk used in both branches of
+     [repair_sound]. Factored out for reuse. *)
+  Lemma list_Miter_repair_parent_analysis_sound Pre ps
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model
+        (fun s => Pre s
+                  /\ forall i, s i -> all (atom_sound_for_model m i) ps)
+        (list_Miter repair_parent_analysis ps)
+        (fun _ s => Pre s
+                    /\ forall i, s i -> all (atom_sound_for_model m i) ps).
+  Proof.
+    intros Hex.
+    eapply state_sound_for_model_Miter with
+      (P_inv := fun _ s => Pre s
+                /\ forall i, s i -> all (atom_sound_for_model m i) ps).
+    - intros a_atom.
+      eapply state_sound_for_model_wkn_post.
+      + eapply repair_parent_analysis_sound
+          with (Pre := Sep.and1 (pure (In a_atom ps))
+                         (fun s => Pre s
+                            /\ forall i, s i -> all (atom_sound_for_model m i) ps)).
+        * intros s Hp.
+          cbv [Sep.and1 pure] in Hp.
+          destruct Hp as [Hin Hpc].
+          destruct Hpc as [HPre Hsound]; auto.
+        * unfold P_guarantees. intros s Hp i Hsi.
+          cbv [Sep.and1 pure] in Hp.
+          destruct Hp as [Hin Hpc].
+          destruct Hpc as [HPre Hsound].
+          eapply in_all; [|exact Hin].
+          apply Hsound; auto.
+      + intros r s Hp.
+        cbv [Sep.and1 pure] in Hp.
+        destruct Hp as [Hin Hpc]; exact Hpc.
+    - intros s Hp; exact Hp.
+    - intros s Hp; exact Hp.
+  Qed.
+
+  (* Continuation of repair_union after the [list_Mmap repair_each]
+     step: either gather x_canonical's parents and run analysis repair
+     over them, or do nothing if the analysis was unchanged. *)
+  Lemma repair_after_mmap_sound Pre x_canonical improved
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (if improved
+         then (@! let canon_ps <- get_parents x_canonical in
+                  list_Miter repair_parent_analysis canon_ps)
+         else Mret tt)
+        (fun _ => Pre).
+  Proof.
+    intros Hex.
+    destruct improved.
+    - eapply state_sound_for_model_bind.
+      { apply get_parents_sound; auto. }
+      intros canon_ps.
+      eapply state_sound_for_model_wkn_post.
+      + apply list_Miter_repair_parent_analysis_sound; auto.
+      + intros r s Hp; destruct Hp as [HPre _]; exact HPre.
+    - eapply state_sound_for_model_wkn_post.
+      + apply state_sound_for_model_ret. exact Hex.
+      + intros r s Hp; destruct Hp as [HPre _]; exact HPre.
+  Qed.
+
+  (* Soundness of [repair_union]. Done at state_triple level for the
+     [pull_parents] + [list_Mmap repair_each] prefix (so the structural
+     fact from [pull_parents_sound] can be threaded into
+     [list_Mmap_repair_each_sound]'s precondition), then re-folded to
+     state_sound_for_model for the [if improved] continuation. *)
+  Lemma repair_union_sound Pre x_old x_canonical improved
+    : (forall s, Pre s -> ex s) ->
+      state_sound_for_model Pre
+        (repair_union x_old x_canonical improved)
+        (fun _ => Pre).
+  Proof.
+    intros Hex.
+    unfold repair_union, state_sound_for_model.
+    intros e He.
+    pose proof (pull_parents_sound Pre x_old Hex e He) as Hpp.
+    unfold state_triple in Hpp.
+    destruct (pull_parents x_old e) as [old_ps e1] eqn:Hpp_eqn.
+    cbn [fst snd] in Hpp.
+    destruct Hpp as [(HPre1 & Hsound_old & Hain_old) Hne_pp].
+    assert (Hex_e1 : exists i, denote e1 i).
+    { destruct Hne_pp as [iH HiHe1 _]. eauto. }
+    pose proof (list_Mmap_repair_each_sound Pre old_ps Hex) as Hmap.
+    unfold state_triple in Hmap.
+    specialize (Hmap e1 (conj HPre1 (conj Hex_e1 (conj Hsound_old Hain_old)))).
+    destruct (list_Mmap _ old_ps e1) as [ps1 e2] eqn:Hmap_eqn.
+    cbn [fst snd] in Hmap.
+    destruct Hmap as [HPre2 Hne_map].
+    assert (Hex_e2 : exists i, denote e2 i).
+    { destruct Hne_map as [iH HiHe2 _]. eauto. }
+    pose proof (repair_after_mmap_sound Pre x_canonical improved Hex) as Hcont.
+    unfold state_sound_for_model, state_triple in Hcont.
+    specialize (Hcont e2 (conj HPre2 Hex_e2)).
+    set (cont := if improved
+                 then (@! let canon_ps <- get_parents x_canonical in
+                          list_Miter repair_parent_analysis canon_ps)
+                 else Mret tt) in *.
+    destruct (cont e2) as [r e_final] eqn:Hcont_eqn.
+    cbn [fst snd] in Hcont.
+    destruct Hcont as [HPreFinal Hne_cont].
+    cbn [Mbind].
+    rewrite Hpp_eqn. cbn [fst snd].
+    rewrite Hmap_eqn. cbn [fst snd].
+    change (if improved then _ else _) with cont.
+    rewrite Hcont_eqn. cbn [fst snd].
+    split; [exact HPreFinal | eauto using ne_set_maps_to_trans].
+  Qed.
+
   Lemma repair_sound Pre a
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre (repair a) (fun _ => Pre).
   Proof.
     intro Hex.
     destruct a as [old new improved | i_repair]; cbn [repair].
-    {
-      unfold repair_union.
-      eapply state_sound_for_model_bind.
-      { apply pull_parents_sound; auto. }
-      intros old_ps.
-      eapply state_sound_for_model_bind.
-      {
-        eapply state_sound_for_model_wkn_post.
-        - eapply state_sound_for_model_Mmap with
-            (P_const := fun s => Pre s
-                /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)
-            (P_elt := fun _ _ => True).
-          + intros a_atom.
-            eapply state_sound_for_model_wkn_post.
-            * (*TODO: use repair_each_sound directly here *)
-              (*Out of date:
-              eapply repair_each_sound_ssm
-                with (Pre := Sep.and1 (pure (In a_atom old_ps))
-                               (fun s => Pre s
-                                  /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)).
-              -- intros s Hp.
-                 cbv [Sep.and1 pure] in Hp.
-                 destruct Hp as [Hin Hpc].
-                 destruct Hpc as [HPre Hsound]; auto.
-              -- unfold P_guarantees. intros s Hp i Hsi.
-                 cbv [Sep.and1 pure] in Hp.
-                 destruct Hp as [Hin Hpc].
-                 destruct Hpc as [HPre Hsound].
-                 eapply in_all; [|exact Hin].
-                 apply Hsound; auto.
-              -- (* structural premise: a_atom is literally in the input db.
-                    Pre at this point only constrains [s] semantically, so
-                    we cannot extract [atom_in_egraph a_atom e] directly.
-                    Discharging this requires either (a) refactoring the
-                    bind chain so that pull_parents threads through a
-                    structural fact about a_atom, or (b) an extension of
-                    [state_sound_for_model] that exposes the input
-                    instance. *)
-               *)
-                 admit.
-            * admit (*out of date: intros a' s Hp.
-              cbv [Sep.and1 pure] in Hp.
-              destruct Hp as [Hin Hpc].
-              split; [exact Hpc | exact I]. *).
-          + intros s Hp; exact Hp.
-          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
-          + repeat intro; auto.
-        - intros r s Hp.
-          destruct Hp as [Hpc Hall].
-          destruct Hpc as [HPre Hsound]; exact HPre.
-      }
-      intros new_atoms.
-      destruct improved.
-      {
-        eapply state_sound_for_model_bind.
-        { apply get_parents_sound; auto. }
-        intros canon_ps.
-        eapply state_sound_for_model_wkn_post.
-        - eapply state_sound_for_model_Miter with
-            (P_inv := fun _ s => Pre s
-                /\ forall i, s i -> all (atom_sound_for_model m i) canon_ps).
-          + intros a_atom.
-            eapply state_sound_for_model_wkn_post.
-            * eapply repair_parent_analysis_sound
-                with (Pre := Sep.and1 (pure (In a_atom canon_ps))
-                               (fun s => Pre s
-                                  /\ forall i, s i -> all (atom_sound_for_model m i) canon_ps)).
-              -- intros s Hp.
-                 cbv [Sep.and1 pure] in Hp.
-                 destruct Hp as [Hin Hpc].
-                 destruct Hpc as [HPre Hsound]; auto.
-              -- unfold P_guarantees. intros s Hp i Hsi.
-                 cbv [Sep.and1 pure] in Hp.
-                 destruct Hp as [Hin Hpc].
-                 destruct Hpc as [HPre Hsound].
-                 eapply in_all; [|exact Hin].
-                 apply Hsound; auto.
-            * intros r s Hp.
-              cbv [Sep.and1 pure] in Hp.
-              destruct Hp as [Hin Hpc]; exact Hpc.
-          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
-          + intros s Hp. destruct Hp as [HPre Hsound]; auto.
-        - intros r s Hp. destruct Hp as [HPre Hsound]; exact HPre.
-      }
-      {
-        eapply state_sound_for_model_wkn_post.
-        - apply state_sound_for_model_ret. exact Hex.
-        - intros r s Hp. destruct Hp as [HPre Heq]; exact HPre.
-      }
-    }
-    {
-      eapply state_sound_for_model_bind.
+    - apply repair_union_sound; auto.
+    - eapply state_sound_for_model_bind.
       { apply get_parents_sound; auto. }
       intros ps.
       eapply state_sound_for_model_wkn_post.
-      - eapply state_sound_for_model_Miter with
-          (P_inv := fun _ s => Pre s
-              /\ forall i, s i -> all (atom_sound_for_model m i) ps).
-        + intros a_atom.
-          eapply state_sound_for_model_wkn_post.
-          * eapply repair_parent_analysis_sound
-              with (Pre := Sep.and1 (pure (In a_atom ps))
-                             (fun s => Pre s
-                                /\ forall i, s i -> all (atom_sound_for_model m i) ps)).
-            -- intros s Hp.
-               cbv [Sep.and1 pure] in Hp.
-               destruct Hp as [Hin Hpc].
-               destruct Hpc as [HPre Hsound]; auto.
-            -- unfold P_guarantees. intros s Hp i Hsi.
-               cbv [Sep.and1 pure] in Hp.
-               destruct Hp as [Hin Hpc].
-               destruct Hpc as [HPre Hsound].
-               eapply in_all; [|exact Hin].
-               apply Hsound; auto.
-          * intros r s Hp.
-            cbv [Sep.and1 pure] in Hp.
-            destruct Hp as [Hin Hpc]; exact Hpc.
-        + intros s Hp. destruct Hp as [HPre Hsound]; auto.
-        + intros s Hp. destruct Hp as [HPre Hsound]; auto.
-      - intros r s Hp. destruct Hp as [HPre Hsound]; exact HPre.
-    }
-  Admitted.
+      + apply list_Miter_repair_parent_analysis_sound; auto.
+      + intros r s Hp; destruct Hp as [HPre _]; exact HPre.
+  Qed.
 
   Lemma rebuild_sound Pre n
     : (forall s, Pre s -> ex s) ->
