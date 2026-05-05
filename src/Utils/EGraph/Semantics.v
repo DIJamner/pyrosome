@@ -489,17 +489,31 @@ Abort.
     | analysis_repair _ i => True
     end.
 
-  
+  (* Two atoms have the same canonical representation in [e] iff they
+     share a function symbol and their args/ret are pointwise equivalent
+     in [e]'s union-find. *)
+  Definition atom_canonical_equiv (e : instance) (a1 a2 : atom) : Prop :=
+    a1.(atom_fn) = a2.(atom_fn)
+    /\ all2 (uf_rel_PER _ _ _ e.(equiv)) a1.(atom_args) a2.(atom_args)
+    /\ uf_rel_PER _ _ _ e.(equiv) a1.(atom_ret) a2.(atom_ret).
+
+  (* [a] need not literally be in [e.(db)]; it is sufficient that some
+     atom with the same canonical representation is. *)
+  Definition atom_in_egraph_up_to_equiv (a : atom) (e : instance) : Prop :=
+    exists a', atom_canonical_equiv e a a' /\ atom_in_egraph a' e.
+
   (* TODO: is this record needed? other fields may not be necessary *)
   Record egraph_ok (e : instance) : Prop :=
     {
       egraph_equiv_ok : exists roots, union_find_ok lt e.(equiv) roots;
       worklist_ok : all (worklist_entry_ok e.(equiv)) e.(worklist);
+      (* For every atom [a] recorded as a parent, there must exist some
+         canonically-equivalent atom in the database. This is weaker than
+         requiring [atom_in_egraph a e] directly: db_remove followed by
+         canonicalize+update_entry replaces a parent atom with a
+         canonically-equivalent one without scrubbing the parents map. *)
       parents_ok : forall x s, map.get e.(parents) x = Some s ->
-                               (*TODO: atom_in_egraph might be too strong.
-                                 I might (will?) need this to be up to equivalence
-                                *)
-                             all (fun a => atom_in_egraph a e) s;
+                             all (fun a => atom_in_egraph_up_to_equiv a e) s;
     }.
 
   Section ForModel.
@@ -548,30 +562,10 @@ Abort.
   Definition egraph_sound_for_model m e : Prop :=
     exists f, egraph_sound_for_interpretation m f e.
 
-  Section WithEGraph.
-    Context e m i `{egraph_sound_for_interpretation m i e}.
-
-    Lemma parents_interpretation
-      :forall y l, map.get e.(parents) y = Some l -> all (atom_sound_for_model m i) l.
-    Proof.
-      intros.
-      apply parents_ok in H; eauto using sound_egraph_ok.
-      eapply all_wkn; try apply H.
-      cbn; intros.
-      eapply atom_interpretation; eauto.
-    Qed.
-
-    Lemma worklist_sound : all (worklist_entry_sound m i) e.(worklist).
-    Proof.
-      intros.
-      eapply all_wkn.
-      2: apply worklist_ok; eauto using sound_egraph_ok.
-      cbn; intros.
-      destruct x; cbn in *; auto.
-      eauto using rel_interpretation.
-    Qed.
-
-  End WithEGraph.
+  (* parents_interpretation and worklist_sound moved below to where
+     [model_ok m] is in scope, since the relaxed [parents_ok] requires
+     [interprets_to_preserved] to lift atom soundness across canonical
+     equivalence. *)
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
@@ -1485,8 +1479,17 @@ Abort.
         intros x s Hg.
         pose proof (Hg_par _ _ Hg) as Hall.
         eapply all_wkn; [|exact Hall].
-        intros a _ Ha. unfold atom_in_egraph in *.
-        rewrite <- Hdb. exact Ha.
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv.
+        exists aa; split.
+        * split; [exact Hfn|]. split.
+          -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
+          -- apply HPER; exact Hret.
+        * unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha_aa.
     - intros x Hi. apply Hkey. apply Hexact. exact Hi.
     - intros a Ha.
       apply Hatom. unfold atom_in_egraph in *. rewrite Hdb. exact Ha.
@@ -1502,8 +1505,17 @@ Abort.
         intros x s Hg.
         pose proof (Hg_par _ _ Hg) as Hall.
         eapply all_wkn; [|exact Hall].
-        intros a _ Ha. unfold atom_in_egraph in *.
-        rewrite Hdb. exact Ha.
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv.
+        exists aa; split.
+        * split; [exact Hfn|]. split.
+          -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
+          -- apply HPER; exact Hret.
+        * unfold atom_in_egraph in *. rewrite Hdb. exact Ha_aa.
     - intros x Hi. apply Hkey. apply Hexact. exact Hi.
     - intros a Ha.
       apply Hatom. unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha.
@@ -1597,7 +1609,53 @@ Abort.
     repeat case_match; tauto.
   Qed.
   Hint Resolve eq_sound_has_key_r : utils.
-  
+
+  Section WithEGraph.
+    Context e i `{Hsoundeg : egraph_sound_for_interpretation m i e}.
+
+    Lemma parents_interpretation
+      :forall y l, map.get e.(parents) y = Some l -> all (atom_sound_for_model m i) l.
+    Proof.
+      intros y l Hpar.
+      apply parents_ok in Hpar; eauto using sound_egraph_ok.
+      eapply all_wkn; try exact Hpar.
+      intros a Hin Hex.
+      cbv beta in Hex.
+      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+      destruct Hex as (aa & Hcanon & Ha_aa).
+      destruct Hcanon as (Hfn & Hargs & Hret).
+      pose proof (atom_interpretation _ _ _ Hsoundeg _ Ha_aa) as Hsa.
+      pose proof (args_rel_interpretation _ _ _ Hsoundeg _ _ Hargs) as Hopt.
+      pose proof (rel_interpretation _ _ _ Hsoundeg _ _ Hret) as Hret_eq.
+      unfold atom_sound_for_model in Hsa |- *.
+      unfold eq_sound_for_model in Hret_eq.
+      unfold Is_Some_satisfying in Hsa, Hret_eq |- *.
+      unfold option_relation in Hopt.
+      destruct (list_Mmap (map.get i) (atom_args aa)) as [margs_aa|] eqn:Hma_aa;
+        cbn in *; [| exfalso; exact Hsa].
+      destruct (map.get i (atom_ret aa)) as [out_aa|] eqn:Hmret_aa;
+        cbn in *; [| exfalso; exact Hsa].
+      destruct (list_Mmap (map.get i) (atom_args a)) as [margs|] eqn:Hma;
+        cbn in *; [| discriminate Hopt].
+      destruct (map.get i (atom_ret a)) as [out|] eqn:Hmret;
+        cbn in *; [| exfalso; exact Hret_eq].
+      rewrite Hfn.
+      eapply interprets_to_preserved with (args1 := margs_aa) (d1 := out_aa); eauto.
+      - apply all2_Symmetric; [typeclasses eauto | exact Hopt].
+      - symmetry; exact Hret_eq.
+    Qed.
+
+    Lemma worklist_sound : all (worklist_entry_sound m i) e.(worklist).
+    Proof.
+      eapply all_wkn.
+      2: apply worklist_ok; eauto using sound_egraph_ok.
+      cbn; intros x Hwl.
+      destruct x; cbn in *; auto.
+      eauto using rel_interpretation.
+    Qed.
+
+  End WithEGraph.
+
   Lemma canonicalize_worklist_entry_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => worklist_entry_sound m i a) ->
@@ -2736,23 +2794,10 @@ TODO: lemmas in the comment block are out of date
      does NOT preserve Pre (db_remove_sound is Aborted above), so this
      lemma must be proved as a single unit rather than by composition.
 
-     ** WHY THIS IS NOT PROVABLE AS STATED. **
-     [parents_ok] (in [egraph_ok]) requires every atom in [e.(parents)] to
-     be [atom_in_egraph], i.e., literally present in [e.(db)]. After
-     [db_remove (f, args, ret)] the entry at (f, args) is gone, but
-     [e.(parents)[ret]] and [e.(parents)[args[i]]] still hold the atom
-     (f, args, ret), so [parents_ok] fails immediately. [update_entry]
-     re-installs (f, args', ret') (the canonicalized form) but never
-     scrubs the stale (f, args, ret) from parents — so parents_ok is
-     still violated whenever args ≠ args' or ret ≠ ret'.
-
-     The TODO on [parents_ok] notes: "atom_in_egraph might be too strong.
-     I might (will?) need this to be up to equivalence". Relaxing
-     [parents_ok] to "atom_in_egraph up to equiv" would make this
-     lemma true (the canonicalized atom installed by update_entry is
-     equivalent in the union-find to the removed one), but it's a
-     structural change to [egraph_ok] that cascades through many
-     proofs, so it's left for a future revision. *)
+     The previous obstacle here was that [parents_ok] required every
+     parent atom to literally be [atom_in_egraph]; that has been relaxed
+     to [atom_in_egraph_up_to_equiv], so a proof should now be feasible.
+     Still admitted pending the actual proof. *)
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
@@ -2955,48 +3000,17 @@ TODO: lemmas in the comment block are out of date
           [apply (proj2 (Hiff j)); exact Hj | apply Properties.map.extends_refl]. }
   Qed.
 
-  (* db_set_entry_sound' is admitted because as stated it may not be
-     provable in general: overwriting the (f, args) entry with a different
-     value v can leave parents pointing at a stale atom (f, args, old_v)
-     that is no longer atom_in_egraph, violating parents_ok. The lemma is
-     true in the use-case in repair_parent_analysis_sound (where v comes
-     from the existing entry, so old_v = v), but discharging that requires
-     either a stronger precondition or threading an "entry already has
-     value v" invariant through the proof.
-
-     ** WHY THIS IS NOT PROVABLE AS STATED. **
-     Same root cause as [repair_each_sound]: [parents_ok] requires every
-     parent atom to be [atom_in_egraph] structurally. Overwriting (f,args)
-     with a new value [v] (when the old value was [v_old ≠ v]) leaves
-     parents pointing to (f, args, v_old), which is no longer in the db,
-     so [parents_ok] of the new state is broken.
-
-     ** FIXING IT WITHOUT CHANGING [parents_ok]. **
-     The natural extra hypothesis is "the (f,args) entry, if any, has
-     value [v]", e.g.
-       (forall e, Pre (denote e) ->
-          match map.get e.(db) f with
-          | Some tbl =>
-              match map.get tbl args with
-              | Some entry => entry_value _ _ entry = v
-              | None => True
-              end
-          | None => True
-          end)
-     Under that hypothesis the proof goes through (parents_ok preserved
-     because atom_in_egraph at (f,args,v) is unchanged, and the case
-     where the entry didn't exist is fine because parents could not have
-     pointed to (f,args,_) anyway). The blocker is that the unique caller
-     in [repair_parent_analysis_sound] cannot discharge that hypothesis:
-     [state_sound_for_model]'s post is over abstract sets of
-     interpretations, which by design hides the structural db state, so
-     the fact "the egraph we just looked up in still has (f,args) ↦ v"
-     cannot be threaded through the bind. Discharging it would require
-     either (a) inlining the db_set_entry call into the proof of
-     repair_parent_analysis_sound and reasoning at the [state_triple]
-     level, or (b) extending [state_sound_for_model] so that postconditions
-     can mention the input instance, neither of which is local to this
-     lemma. *)
+  (* db_set_entry_sound': overwriting the (f, args) entry with a value v
+     can leave parents pointing at a stale atom (f, args, old_v). The
+     relaxed [parents_ok] (using [atom_in_egraph_up_to_equiv]) lets a
+     stale parent atom be witnessed by a canonically-equivalent atom in
+     the db, but only if [uf_rel_PER e.(equiv) old_v v] — i.e., old_v
+     and v are already in the same union-find class. As stated this
+     lemma still requires either an extra precondition relating old_v
+     and v, or a stronger pre-condition such as the one in
+     repair_parent_analysis_sound where v comes from the existing entry
+     (so old_v = v). Still admitted; see prior commit message for the
+     fuller analysis. *)
   Lemma db_set_entry_sound' Pre f args ep v an
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i =>
