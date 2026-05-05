@@ -2960,6 +2960,67 @@ TODO: lemmas in the comment block are out of date
      repaired. That preservation argument follows the same
      [Hiff]-style reasoning as in [repair_each_sound] but is admitted
      here for now. *)
+
+  (* Generic state_triple-level lemma for list_Mmap. P is a list-indexed
+     invariant on the state, R relates pre- and post-states (typically a
+     monotonicity relation); the user supplies (i) reflexivity of R on
+     terminal P-states, (ii) transitivity of R, and (iii) a per-element
+     state_triple that consumes the head of the list and produces an
+     R-step. The conclusion threads the invariant through the entire
+     list_Mmap and exposes a single end-to-end R-step from the initial
+     to the final state. Designed so that [list_Mmap_repair_each_sound]
+     can be reduced to its per-element preservation argument. *)
+  Lemma state_triple_list_Mmap_inv {S A B}
+    (f : A -> state S B)
+    (P : list A -> S -> Prop)
+    (R : S -> S -> Prop)
+    : (forall s, P [] s -> R s s) ->
+      (forall s s' s'', R s s' -> R s' s'' -> R s s'') ->
+      (forall a l_rest,
+         state_triple
+           (P (a::l_rest))
+           (f a)
+           (fun s p => P l_rest (snd p) /\ R s (snd p))) ->
+      forall l,
+        state_triple
+          (P l)
+          (list_Mmap f l)
+          (fun s p => P [] (snd p) /\ R s (snd p)).
+  Proof.
+    intros Hrefl_base Htrans Hstep.
+    induction l as [| a l' IH].
+    - unfold state_triple. cbn. intros e HP. split; auto.
+    - unfold state_triple in *. intros e HP.
+      cbn [list_Mmap].
+      pose proof (Hstep a l' e HP) as Hae.
+      cbn in *.
+      destruct (f a e) as [b s1] eqn:Hfa.
+      cbn in Hae. destruct Hae as [HPl' Hmono1].
+      pose proof (IH s1 HPl') as IH1.
+      cbn in IH1.
+      destruct (list_Mmap f l' s1) as [bl' s2] eqn:Hmap.
+      cbn in IH1. destruct IH1 as [HPnil Hmono2].
+      cbn. split; eauto.
+  Qed.
+
+  (* The "other atoms" preservation lemma flagged in the comment above:
+     repair_each on atom [a] preserves [atom_in_egraph_up_to_equiv] for
+     any list of atoms [l]. The justification is the same case-split on
+     [update_entry]'s branches as in [repair_each_sound] — removing [a]
+     and re-inserting its canonical form replaces a canonical-equivalence
+     witness with another canonically-equivalent witness, leaving every
+     other atom's witness either untouched or replaced with an equivalent
+     one. Admitted pending that case-analysis. *)
+  Lemma repair_each_preserves_atoms_in_egraph_up_to_equiv (a : atom) (l : list atom)
+    : state_triple
+        (fun e => all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
+        (@! let _ <- db_remove a in
+            let a' <- canonicalize a in
+            let _ <- update_entry a' in
+            ret a')
+        (fun _ p => all (fun a' => atom_in_egraph_up_to_equiv a' (snd p)) l).
+  Admitted.
+
   Lemma list_Mmap_repair_each_sound Pre old_ps
     : (forall s, Pre s -> ex s) ->
       state_triple
@@ -2976,7 +3037,93 @@ TODO: lemmas in the comment block are out of date
                    old_ps)
         (fun e res => Pre (denote (snd res))
                       /\ ne_set_maps_to (denote e) (denote (snd res))).
-  Admitted.
+  Proof.
+    intros Hex.
+    intros e0 HP0.
+    assert (Hgen :
+              state_triple
+                (fun e : instance =>
+                   Pre (denote e)
+                   /\ (exists i, denote e i)
+                   /\ (forall i, denote e i -> all (atom_sound_for_model m i) old_ps)
+                   /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
+                (list_Mmap (fun a : atom =>
+                              @! let _ <- db_remove a in
+                                 let a' <- canonicalize a in
+                                 let _ <- update_entry a' in
+                                 ret a') old_ps)
+                (fun e p =>
+                   (Pre (denote (snd p))
+                    /\ (exists i, denote (snd p) i)
+                    /\ (forall i, denote (snd p) i ->
+                                  all (atom_sound_for_model m i) (@nil atom))
+                    /\ all (fun a => atom_in_egraph_up_to_equiv a (snd p)) (@nil atom))
+                   /\ ne_set_maps_to (denote e) (denote (snd p)))).
+    { eapply state_triple_list_Mmap_inv with
+        (P := fun l e =>
+                Pre (denote e)
+                /\ (exists i, denote e i)
+                /\ (forall i, denote e i -> all (atom_sound_for_model m i) l)
+                /\ all (fun a => atom_in_egraph_up_to_equiv a e) l)
+        (R := fun e1 e2 : instance =>
+                ne_set_maps_to (denote e1) (denote e2)).
+      - (* base reflexivity on P [] *)
+        intros s HPs.
+        destruct HPs as (_ & Hexists & _).
+        destruct Hexists as [j Hj].
+        eapply ne_set_maps_to_refl; eauto.
+      - (* transitivity *)
+        intros s1 s2 s3 H12 H23. eapply ne_set_maps_to_trans; eauto.
+      - (* per-element step *)
+        intros a l_rest e HPe.
+        destruct HPe as (HPre_e & Hex_e & Hsound_e & Hatoms_e).
+        cbn [all] in Hatoms_e.
+        destruct Hatoms_e as [Hatom_a_e Hatoms_rest_e].
+        pose (Pre' := fun s : abs_set =>
+                        Pre s
+                        /\ (forall i, s i -> all (atom_sound_for_model m i) (a::l_rest))).
+        assert (Hex' : forall s, Pre' s -> ex s).
+        { intros s HPs'. destruct HPs' as [HPs _]. auto. }
+        assert (HPg : P_guarantees Pre' (fun i => atom_sound_for_model m i a)).
+        { intros s HPs' i Hi.
+          destruct HPs' as [_ Hsnd].
+          specialize (Hsnd i Hi). cbn [all] in Hsnd.
+          destruct Hsnd as [Ha _]. exact Ha. }
+        pose proof (repair_each_sound Pre' a Hex' HPg) as Hre.
+        unfold state_triple in Hre.
+        assert (HpreInput :
+                  Pre' (denote e)
+                  /\ (exists i, denote e i)
+                  /\ atom_in_egraph_up_to_equiv a e).
+        { subst Pre'; cbn beta.
+          split; [split |split].
+          - exact HPre_e.
+          - exact Hsound_e.
+          - exact Hex_e.
+          - exact Hatom_a_e. }
+        specialize (Hre e HpreInput).
+        destruct Hre as [HPre'_post Hmono].
+        subst Pre'; cbn beta in HPre'_post.
+        destruct HPre'_post as [HPre_post Hsound_post].
+        pose proof (repair_each_preserves_atoms_in_egraph_up_to_equiv a l_rest) as Hpres.
+        unfold state_triple in Hpres.
+        specialize (Hpres e Hatoms_rest_e).
+        split; [|exact Hmono].
+        split; [exact HPre_post|].
+        split; [|split].
+        + (* exists i, denote (snd ...) i, from ne_set_maps_to *)
+          destruct Hmono as [i' Hi' _]. exists i'; exact Hi'.
+        + (* soundness on l_rest, from preserved Pre' projecting tail *)
+          intros i' Hi'. specialize (Hsound_post i' Hi').
+          cbn [all] in Hsound_post.
+          destruct Hsound_post as [_ Hrest]. exact Hrest.
+        + (* atom_in_egraph_up_to_equiv preserved on l_rest *)
+          exact Hpres. }
+    specialize (Hgen e0 HP0).
+    destruct Hgen as [HPpost Hmono].
+    destruct HPpost as [HPre_post _].
+    split; assumption.
+  Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
      their existing proofs (in the comment block above, lines 2609-2702)
