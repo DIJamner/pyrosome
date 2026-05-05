@@ -3529,27 +3529,52 @@ TODO: lemmas in the comment block are out of date
      fact from [pull_parents_sound] can be threaded into
      [list_Mmap_repair_each_sound]'s precondition), then re-folded to
      state_sound_for_model for the [if improved] continuation. *)
-  (* TODO: this proof should compose [pull_parents_sound],
-     [list_Mmap_repair_each_sound], and [repair_after_mmap_sound] via
-     [state_triple_bind]. After [eapply state_triple_bind] for the outer
-     [pull_parents], the second subgoal has shape [Q2 e0 (Mbind k c e1)]
-     — no longer a state_triple — so peeling the inner Mbind requires
-     wrapping with a [state_triple (eq e1) ...] (since
-     [state_triple (eq e1) c Q ↔ Q e1 (c e1)]). The remaining obstacle
-     is that [list_Mmap_repair_each_sound] hard-codes its lambda inside
-     [list_Mmap] in the lemma statement, so `apply` against the goal's
-     [list_Mmap lambda old_ps] only succeeds if Coq's unifier recognises
-     the section-discharged HARD-CODED lambda as definitionally equal to
-     the goal's INLINED-from-[repair_union] lambda; in practice the two
-     elaborate slightly differently (one pretty-prints with nested @!,
-     the other with mixed @!/Mbind), and [rewrite]/[change] fail to
-     convert them. Admitted for now to keep the file compiling. *)
   Lemma repair_union_sound Pre x_old x_canonical improved
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre
         (repair_union x_old x_canonical improved)
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    intros Hex.
+    unfold state_sound_for_model.
+    unfold repair_union; cbn beta zeta.
+    eapply state_triple_bind.
+    { apply pull_parents_sound; auto. }
+    intros e0 old_ps e1 [HPre Hex_e] [(HPre1 & Hsound & Hain) Hne1].
+    assert (Hex_e1 : exists i, denote e1 i)
+      by (destruct Hne1 as [iH _ _]; eauto).
+    enough (Hinner :
+              state_triple (fun e => e = e1)
+                (Mbind (fun _ : list atom =>
+                          if improved
+                          then (@! let canon_ps <- get_parents x_canonical in
+                                   (list_Miter repair_parent_analysis canon_ps))
+                          else Mret tt)
+                       (list_Mmap (fun a : atom =>
+                                     @! let _ <- db_remove a in
+                                        let a' <- canonicalize a in
+                                        let _ <- update_entry a' in
+                                        ret a') old_ps))
+                (fun _ res =>
+                   Pre (denote (snd res))
+                   /\ ne_set_maps_to (denote e0) (denote (snd res)))).
+    { specialize (Hinner e1 eq_refl). exact Hinner. }
+    eapply state_triple_bind.
+    { intros e He; subst e.
+      exact (list_Mmap_repair_each_sound Pre old_ps Hex e1
+               (conj HPre1 (conj Hex_e1 (conj Hsound Hain)))). }
+    intros e0' ps1 e2 He0' [HPre2 Hne_map].
+    cbn in He0'; subst e0'.
+    assert (Hex_e2 : exists i, denote e2 i)
+      by (destruct Hne_map as [iH _ _]; eauto).
+    pose proof (repair_after_mmap_sound Pre x_canonical improved Hex e2
+                  (conj HPre2 Hex_e2)) as Hcont.
+    cbn beta in Hcont.
+    destruct Hcont as [HPreFinal Hne_cont].
+    split.
+    - exact HPreFinal.
+    - eauto using ne_set_maps_to_trans.
+  Qed.
 
   Lemma repair_sound Pre a
     : (forall s, Pre s -> ex s) ->
