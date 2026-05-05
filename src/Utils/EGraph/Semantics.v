@@ -3307,7 +3307,7 @@ TODO: lemmas in the comment block are out of date
         cbv [Sep.and1 pure] in Hp.
         destruct Hp as [Hin Hpc]; exact Hpc.
     - intros s Hp; exact Hp.
-    - intros s Hp; exact Hp.
+    - intros s Hp. intuition auto.
   Qed.
 
   (* Continuation of repair_union after the [list_Mmap repair_each]
