@@ -2789,15 +2789,56 @@ TODO: lemmas in the comment block are out of date
 
   (* Helper: repair_each (the inner closure of repair_union) preserves Pre
      when called on a sound atom. The semantic story is that db_remove
-     followed by canonicalize+update_entry leaves the egraph's set of
-     facts unchanged up to canonicalization. Note that db_remove alone
-     does NOT preserve Pre (db_remove_sound is Aborted above), so this
-     lemma must be proved as a single unit rather than by composition.
+     followed by canonicalize+update_entry should leave the egraph's
+     set of facts unchanged up to canonicalization. Note that db_remove
+     alone does not preserve Pre (db_remove_sound is Aborted above),
+     so this lemma must be proved as a single unit, not by composition.
 
-     The previous obstacle here was that [parents_ok] required every
-     parent atom to literally be [atom_in_egraph]; that has been relaxed
-     to [atom_in_egraph_up_to_equiv], so a proof should now be feasible.
-     Still admitted pending the actual proof. *)
+     ** WHY THIS LEMMA IS LIKELY FALSE AS STATED. **
+     The relaxed [parents_ok] is necessary but not sufficient. There is
+     a class of pre-repair states (the kind [repair_union] is designed
+     to clean up) where running the round trip strictly LOOSENS the
+     constraints captured by [denote], breaking [ne_set_maps_to].
+     Concretely: suppose [db_e] contains both [(f, [x], old_v)] and
+     [(f, [x'], y_a)] with [x ≡ x'] in [e.equiv] but [old_v] and [y_a]
+     in different equivalence classes. (This is the canonical "stale
+     entry needs rebuilding" situation.) For [a = (f, [x], y_a)]:
+       - [HPa] gives [atom_sound i a] for [i ∈ Pre]'s set.
+       - [atom_interpretation_e] applied to [(f, [x], old_v)] forces
+         [i(y_a) ≈ i(old_v)] for every [i ∈ denote e].
+       - After [db_remove a + canonicalize a + update_entry], the
+         lookup at the canonicalized [(f, [x'])] finds [y_a],
+         [union y_a y_a] is a no-op, and [(f, [x], old_v)] is gone
+         from [db_e3] forever.
+       - So [denote e3] no longer enforces [j(y_a) ≈ j(old_v)]: a
+         [j' ∈ denote e3] with [j'(old_v) = None] (or with [j'(old_v)]
+         in a different equivalence class than [j'(y_a)]) is sound for
+         [e3] but is not sound for [e] and does not extend any
+         [j ∈ denote e].
+       - Hence [ne_set_maps_to (denote e) (denote e3)] fails.
+
+     A correct version of this lemma needs an additional precondition,
+     either:
+       (a) [Pre] must be downward-closed under [denote]-set growth
+           (which the call sites' [Pre = "all i sound for old_ps"] is,
+           but [ne_set_maps_to] requires structural [extends], not
+           just downward closure of [Pre]); or
+       (b) a structural hypothesis about the input state, like
+           [forall e, Pre (denote e) -> atom_in_egraph a e] (literally
+           in db, not just up-to-equiv) — then [db_remove + db_set]
+           is observationally equivalent and [denote] is preserved; or
+       (c) refactor [state_sound_for_model] to also expose the input
+           [e] in postconditions, so the caller can use the structural
+           parents_ok to rule out the [old_v]-extends-failure scenario.
+
+     The user's call site in [repair_sound] does provide the relevant
+     structural fact (a comes from pull_parents, so it is in
+     [parents_e]; by parents_ok_e, [atom_in_egraph_up_to_equiv a e]),
+     but plumbing it into a lemma whose [Pre] is a predicate over
+     abstract sets requires one of the refactors above.
+
+     Left admitted; reopening the lemma signature is out of scope for
+     the current pass. *)
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
