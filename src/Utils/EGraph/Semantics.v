@@ -2961,6 +2961,24 @@ TODO: lemmas in the comment block are out of date
      [Hiff]-style reasoning as in [repair_each_sound] but is admitted
      here for now. *)
 
+  (* Generic state_triple-level bind lemma for the new state_triple shape
+     (postcondition takes the input state explicitly). *)
+  Lemma state_triple_bind {S A B} (c : state S A) (f : A -> state S B)
+    (P : S -> Prop) (Q1 : S -> A * S -> Prop) (Q2 : S -> B * S -> Prop)
+    : state_triple P c Q1 ->
+      (forall e0 a e1, P e0 -> Q1 e0 (a, e1) -> Q2 e0 (f a e1)) ->
+      state_triple P (Mbind f c) Q2.
+  Proof.
+    intros Hc Hf.
+    unfold state_triple in *.
+    intros e HP.
+    pose proof (Hc e HP) as HQ1.
+    cbn.
+    destruct (c e) as [a e1] eqn:Hce.
+    cbn in HQ1.
+    apply Hf; auto.
+  Qed.
+
   (* Generic state_triple-level lemma for list_Mmap. P is a list-indexed
      invariant on the state, R relates pre- and post-states (typically a
      monotonicity relation); the user supplies (i) reflexivity of R on
@@ -3010,7 +3028,18 @@ TODO: lemmas in the comment block are out of date
      and re-inserting its canonical form replaces a canonical-equivalence
      witness with another canonically-equivalent witness, leaving every
      other atom's witness either untouched or replaced with an equivalent
-     one. Admitted pending that case-analysis. *)
+     one. The per-atom statement is admitted; the [all]-version below
+     follows by induction. *)
+  Lemma repair_each_preserves_atom_in_egraph_up_to_equiv (a a' : atom)
+    : state_triple
+        (fun e => atom_in_egraph_up_to_equiv a' e)
+        (@! let _ <- db_remove a in
+            let a'' <- canonicalize a in
+            let _ <- update_entry a'' in
+            ret a'')
+        (fun _ p => atom_in_egraph_up_to_equiv a' (snd p)).
+  Admitted.
+
   Lemma repair_each_preserves_atoms_in_egraph_up_to_equiv (a : atom) (l : list atom)
     : state_triple
         (fun e => all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
@@ -3019,7 +3048,16 @@ TODO: lemmas in the comment block are out of date
             let _ <- update_entry a' in
             ret a')
         (fun _ p => all (fun a' => atom_in_egraph_up_to_equiv a' (snd p)) l).
-  Admitted.
+  Proof.
+    induction l as [| a' rest IH].
+    - unfold state_triple. cbn [all]. intros e _. exact I.
+    - unfold state_triple in *. intros e Hall.
+      cbn [all] in *.
+      destruct Hall as [Ha' Hrest].
+      split.
+      + exact (repair_each_preserves_atom_in_egraph_up_to_equiv a a' e Ha').
+      + exact (IH e Hrest).
+  Qed.
 
   Lemma list_Mmap_repair_each_sound Pre old_ps
     : (forall s, Pre s -> ex s) ->
@@ -3492,16 +3530,20 @@ TODO: lemmas in the comment block are out of date
      [list_Mmap_repair_each_sound]'s precondition), then re-folded to
      state_sound_for_model for the [if improved] continuation. *)
   (* TODO: this proof should compose [pull_parents_sound],
-     [list_Mmap_repair_each_sound], and [repair_after_mmap_sound]. The
-     current attempt at a direct unfold + rewrite stalls because
-     [unfold repair_union] elaborates the inner [let repair_each := ...]
-     differently from a freshly-written [set (repair_each := ...)] (subtle
-     differences in how the [@!] / [Mbind] notation resolves implicit
-     arguments after section discharge), so [rewrite Hmap_eqn] can't
-     find the [list_Mmap repair_each old_ps e1] subterm. The clean fix
-     is probably to compose via [state_sound_for_model_bind] rather than
-     manually destructing each step, but that requires a different proof
-     structure. Admitted for now to keep the file compiling. *)
+     [list_Mmap_repair_each_sound], and [repair_after_mmap_sound] via
+     [state_triple_bind]. After [eapply state_triple_bind] for the outer
+     [pull_parents], the second subgoal has shape [Q2 e0 (Mbind k c e1)]
+     — no longer a state_triple — so peeling the inner Mbind requires
+     wrapping with a [state_triple (eq e1) ...] (since
+     [state_triple (eq e1) c Q ↔ Q e1 (c e1)]). The remaining obstacle
+     is that [list_Mmap_repair_each_sound] hard-codes its lambda inside
+     [list_Mmap] in the lemma statement, so `apply` against the goal's
+     [list_Mmap lambda old_ps] only succeeds if Coq's unifier recognises
+     the section-discharged HARD-CODED lambda as definitionally equal to
+     the goal's INLINED-from-[repair_union] lambda; in practice the two
+     elaborate slightly differently (one pretty-prints with nested @!,
+     the other with mixed @!/Mbind), and [rewrite]/[change] fail to
+     convert them. Admitted for now to keep the file compiling. *)
   Lemma repair_union_sound Pre x_old x_canonical improved
     : (forall s, Pre s -> ex s) ->
       state_sound_for_model Pre
