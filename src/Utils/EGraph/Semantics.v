@@ -2809,17 +2809,17 @@ TODO: lemmas in the comment block are out of date
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
-      forall e0,
-        Pre (denote e0) ->
-        (exists i, denote e0 i) ->
-        atom_in_egraph a e0 ->
-        let res := (@! let _ <- db_remove a in
+      state_triple (fun e => Pre (denote e)
+                             /\ (exists i, denote e i)
+                             /\ atom_in_egraph a e)
+                   (@! let _ <- db_remove a in
                        let a' <- canonicalize a in
                        let _ <- update_entry a' in
-                       ret a') e0 in
-        Pre (denote (snd res)) /\
-        ne_set_maps_to (denote e0) (denote (snd res)).
+                       ret a')
+                   (fun e res => Pre (denote (snd res))
+                                 /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
+    (* out-of-date:
     intros Hex HPa e0 HPre Hex_e0 Hain.
     destruct Hex_e0 as [iSSC HiSSC].
     cbn beta zeta.
@@ -2863,30 +2863,8 @@ TODO: lemmas in the comment block are out of date
       intros j Hj. exists j. split.
       - apply Hiff; exact Hj.
       - apply Properties.map.extends_refl. }
+     *)
   Admitted.
-
-  (* Bridge back to [state_sound_for_model] for callers who can supply a
-     [Pre]-level structural hypothesis. The extra premise captures, in a
-     form expressible against [state_sound_for_model]'s [Pre] argument,
-     the structural fact required by [repair_each_sound]. *)
-  Lemma repair_each_sound_ssm Pre a
-    : (forall s, Pre s -> ex s) ->
-      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
-      (forall e, Pre (denote e) -> (exists i, denote e i) ->
-                 atom_in_egraph a e) ->
-      state_sound_for_model Pre
-        (@! let _ <- db_remove a in
-         let a' <- canonicalize a in
-         let _ <- update_entry a' in
-         ret a')
-        (fun _ => Pre).
-  Proof.
-    intros Hex HPa Hstruct.
-    unfold state_sound_for_model, state_triple.
-    intros e0 [HPre Hex_e].
-    apply (repair_each_sound Pre a Hex HPa e0 HPre Hex_e).
-    apply Hstruct; auto.
-  Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
      their existing proofs (in the comment block above, lines 2609-2702)
@@ -3196,7 +3174,9 @@ TODO: lemmas in the comment block are out of date
             (P_elt := fun _ _ => True).
           + intros a_atom.
             eapply state_sound_for_model_wkn_post.
-            * eapply repair_each_sound_ssm
+            * (*TODO: use repair_each_sound directly here *)
+              (*Out of date:
+              eapply repair_each_sound_ssm
                 with (Pre := Sep.and1 (pure (In a_atom old_ps))
                                (fun s => Pre s
                                   /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)).
@@ -3218,11 +3198,12 @@ TODO: lemmas in the comment block are out of date
                     structural fact about a_atom, or (b) an extension of
                     [state_sound_for_model] that exposes the input
                     instance. *)
+               *)
                  admit.
-            * intros a' s Hp.
+            * admit (*out of date: intros a' s Hp.
               cbv [Sep.and1 pure] in Hp.
               destruct Hp as [Hin Hpc].
-              split; [exact Hpc | exact I].
+              split; [exact Hpc | exact I]. *).
           + intros s Hp; exact Hp.
           + intros s Hp. destruct Hp as [HPre Hsound]; auto.
           + repeat intro; auto.
