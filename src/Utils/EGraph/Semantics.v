@@ -2819,6 +2819,50 @@ TODO: lemmas in the comment block are out of date
                        ret a') e0 in
         Pre (denote (snd res)) /\
         ne_set_maps_to (denote e0) (denote (snd res)).
+  Proof.
+    intros Hex HPa e0 HPre Hex_e0 Hain.
+    destruct Hex_e0 as [iSSC HiSSC].
+    cbn beta zeta.
+    set (cmd := (@! let _ <- db_remove a in
+                    let aa <- canonicalize a in
+                    let _ <- update_entry aa in
+                    ret aa)).
+    destruct (cmd e0) as [aa e3] eqn:Hcmd.
+    cbn [snd].
+    (* Plan: prove [forall j, denote e0 j <-> denote e3 j] by computing
+       e3 and case-splitting on update_entry's branches. The cases are:
+         (1) [args' = atom_args a, ret' = atom_ret a]: a is fully
+             canonical. db_lookup at (atom_fn a, atom_args a) returns
+             None (just removed). update_entry takes the None branch:
+             db_set restores a. Net: db unchanged (modulo path
+             compression in equiv, parent dup possibly).
+         (2) [args' = atom_args a, ret' <> atom_ret a]: only ret was
+             non-canonical. db_lookup returns None, db_set adds
+             (atom_fn a, atom_args a, ret'). Use uf_rel_PER atom_ret a
+             ret' + interprets_to_preserved.
+         (3) [args' <> atom_args a, lookup = Some r]: union r ret'.
+             a is gone permanently from db; the remaining
+             (atom_fn a, args', r) plus the new union r ≡ ret'
+             gives an equivalent witness in the model.
+         (4) [args' <> atom_args a, lookup = None]: db_set adds
+             (atom_fn a, args', ret'). a's role is taken over by
+             this canonically-equivalent atom.
+       In each case, [denote e0 = denote e3] using [HPa] +
+       [interprets_to_functional]/[interprets_to_preserved] + uf_rel_PER
+       facts from [canonicalize_sound] and the relaxed [parents_ok].
+       The proof also needs to track parents_ok across the operation:
+       the witness for any parent atom whose canonical-equiv witness
+       in [db_e0] was [a]'s entry is replaced by the corresponding
+       canonically-equivalent atom in [db_e3]. *)
+    assert (Hiff : forall j, egraph_sound_for_interpretation m j e0
+                          <-> egraph_sound_for_interpretation m j e3).
+    { admit. }
+    split.
+    { eapply set_pred_ext; [intro j; apply Hiff | exact HPre]. }
+    { econstructor; [apply Hiff; exact HiSSC|].
+      intros j Hj. exists j. split.
+      - apply Hiff; exact Hj.
+      - apply Properties.map.extends_refl. }
   Admitted.
 
   (* Bridge back to [state_sound_for_model] for callers who can supply a
