@@ -3265,6 +3265,10 @@ TODO: lemmas in the comment block are out of date
       }
     }
   Qed.
+  
+  Arguments repair_parent_analysis {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+  {H} a _.
 
   (* Soundness of [list_Miter repair_parent_analysis ps] under the
      hypothesis that all atoms in [ps] are sound for the model. This
