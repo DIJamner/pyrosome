@@ -2788,67 +2788,61 @@ TODO: lemmas in the comment block are out of date
 *)
 
   (* Helper: repair_each (the inner closure of repair_union) preserves Pre
-     when called on a sound atom. The semantic story is that db_remove
-     followed by canonicalize+update_entry should leave the egraph's
-     set of facts unchanged up to canonicalization. Note that db_remove
-     alone does not preserve Pre (db_remove_sound is Aborted above),
-     so this lemma must be proved as a single unit, not by composition.
+     when called on a sound atom that is structurally in the input db.
+     The semantic story is that db_remove followed by
+     canonicalize+update_entry leaves the egraph's set of facts
+     unchanged up to canonicalization, provided the entry being
+     removed actually corresponds to [a]. Note that db_remove alone
+     does NOT preserve Pre (db_remove_sound is Aborted above), so this
+     lemma is proved as a single unit rather than by composition.
 
-     ** WHY THIS LEMMA IS LIKELY FALSE AS STATED. **
-     The relaxed [parents_ok] is necessary but not sufficient. There is
-     a class of pre-repair states (the kind [repair_union] is designed
-     to clean up) where running the round trip strictly LOOSENS the
-     constraints captured by [denote], breaking [ne_set_maps_to].
-     Concretely: suppose [db_e] contains both [(f, [x], old_v)] and
-     [(f, [x'], y_a)] with [x ≡ x'] in [e.equiv] but [old_v] and [y_a]
-     in different equivalence classes. (This is the canonical "stale
-     entry needs rebuilding" situation.) For [a = (f, [x], y_a)]:
-       - [HPa] gives [atom_sound i a] for [i ∈ Pre]'s set.
-       - [atom_interpretation_e] applied to [(f, [x], old_v)] forces
-         [i(y_a) ≈ i(old_v)] for every [i ∈ denote e].
-       - After [db_remove a + canonicalize a + update_entry], the
-         lookup at the canonicalized [(f, [x'])] finds [y_a],
-         [union y_a y_a] is a no-op, and [(f, [x], old_v)] is gone
-         from [db_e3] forever.
-       - So [denote e3] no longer enforces [j(y_a) ≈ j(old_v)]: a
-         [j' ∈ denote e3] with [j'(old_v) = None] (or with [j'(old_v)]
-         in a different equivalence class than [j'(y_a)]) is sound for
-         [e3] but is not sound for [e] and does not extend any
-         [j ∈ denote e].
-       - Hence [ne_set_maps_to (denote e) (denote e3)] fails.
-
-     A correct version of this lemma needs an additional precondition,
-     either:
-       (a) [Pre] must be downward-closed under [denote]-set growth
-           (which the call sites' [Pre = "all i sound for old_ps"] is,
-           but [ne_set_maps_to] requires structural [extends], not
-           just downward closure of [Pre]); or
-       (b) a structural hypothesis about the input state, like
-           [forall e, Pre (denote e) -> atom_in_egraph a e] (literally
-           in db, not just up-to-equiv) — then [db_remove + db_set]
-           is observationally equivalent and [denote] is preserved; or
-       (c) refactor [state_sound_for_model] to also expose the input
-           [e] in postconditions, so the caller can use the structural
-           parents_ok to rule out the [old_v]-extends-failure scenario.
-
-     The user's call site in [repair_sound] does provide the relevant
-     structural fact (a comes from pull_parents, so it is in
-     [parents_e]; by parents_ok_e, [atom_in_egraph_up_to_equiv a e]),
-     but plumbing it into a lemma whose [Pre] is a predicate over
-     abstract sets requires one of the refactors above.
-
-     Left admitted; reopening the lemma signature is out of scope for
-     the current pass. *)
+     This is a state_triple-level statement (with [state_sound_for_model]
+     unfolded) so we can quantify [atom_in_egraph a e] over the input
+     [e]. The structural hypothesis is necessary: without it there is a
+     "stale entry" counterexample where [db_e] contains
+     [(atom_fn a, atom_args a, old_v)] with [old_v ≠ atom_ret a],
+     [db_remove + canonicalize + update_entry] leaves [denote e3]
+     strictly larger than [denote e], and [ne_set_maps_to] fails.
+     With [atom_in_egraph a e], the entry at [(atom_fn a, atom_args a)]
+     literally has value [atom_ret a], so removing-then-restoring
+     preserves [denote] in every branch of [update_entry]. *)
   Lemma repair_each_sound Pre a
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      forall e0,
+        Pre (denote e0) ->
+        (exists i, denote e0 i) ->
+        atom_in_egraph a e0 ->
+        let res := (@! let _ <- db_remove a in
+                       let a' <- canonicalize a in
+                       let _ <- update_entry a' in
+                       ret a') e0 in
+        Pre (denote (snd res)) /\
+        ne_set_maps_to (denote e0) (denote (snd res)).
+  Admitted.
+
+  (* Bridge back to [state_sound_for_model] for callers who can supply a
+     [Pre]-level structural hypothesis. The extra premise captures, in a
+     form expressible against [state_sound_for_model]'s [Pre] argument,
+     the structural fact required by [repair_each_sound]. *)
+  Lemma repair_each_sound_ssm Pre a
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      (forall e, Pre (denote e) -> (exists i, denote e i) ->
+                 atom_in_egraph a e) ->
       state_sound_for_model Pre
         (@! let _ <- db_remove a in
          let a' <- canonicalize a in
          let _ <- update_entry a' in
          ret a')
         (fun _ => Pre).
-  Admitted.
+  Proof.
+    intros Hex HPa Hstruct.
+    unfold state_sound_for_model, state_triple.
+    intros e0 [HPre Hex_e].
+    apply (repair_each_sound Pre a Hex HPa e0 HPre Hex_e).
+    apply Hstruct; auto.
+  Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
      their existing proofs (in the comment block above, lines 2609-2702)
@@ -3158,7 +3152,7 @@ TODO: lemmas in the comment block are out of date
             (P_elt := fun _ _ => True).
           + intros a_atom.
             eapply state_sound_for_model_wkn_post.
-            * eapply repair_each_sound
+            * eapply repair_each_sound_ssm
                 with (Pre := Sep.and1 (pure (In a_atom old_ps))
                                (fun s => Pre s
                                   /\ forall i, s i -> all (atom_sound_for_model m i) old_ps)).
@@ -3172,6 +3166,15 @@ TODO: lemmas in the comment block are out of date
                  destruct Hpc as [HPre Hsound].
                  eapply in_all; [|exact Hin].
                  apply Hsound; auto.
+              -- (* structural premise: a_atom is literally in the input db.
+                    Pre at this point only constrains [s] semantically, so
+                    we cannot extract [atom_in_egraph a_atom e] directly.
+                    Discharging this requires either (a) refactoring the
+                    bind chain so that pull_parents threads through a
+                    structural fact about a_atom, or (b) an extension of
+                    [state_sound_for_model] that exposes the input
+                    instance. *)
+                 admit.
             * intros a' s Hp.
               cbv [Sep.and1 pure] in Hp.
               destruct Hp as [Hin Hpc].
@@ -3253,7 +3256,7 @@ TODO: lemmas in the comment block are out of date
         + intros s Hp. destruct Hp as [HPre Hsound]; auto.
       - intros r s Hp. destruct Hp as [HPre Hsound]; exact HPre.
     }
-  Qed.
+  Admitted.
 
   Lemma rebuild_sound Pre n
     : (forall s, Pre s -> ex s) ->
