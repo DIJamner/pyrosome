@@ -2859,13 +2859,14 @@ TODO: lemmas in the comment block are out of date
 
   (* Helper: repair_each (the inner closure of repair_union) preserves Pre
      when called on a sound atom that is canonically represented in the
-     input db. The semantic story is that db_remove followed by
-     canonicalize+update_entry leaves the egraph's set of facts
-     unchanged up to canonicalization, provided the entry being
-     removed corresponds (up to canonical equivalence) to [a]. Note
-     that db_remove alone does NOT preserve Pre (db_remove_sound is
-     Aborted above), so this lemma is proved as a single unit rather
-     than by composition.
+     input db, and simultaneously preserves [atom_in_egraph_up_to_equiv]
+     for an arbitrary side-list [l] of other atoms. The semantic story
+     is that db_remove followed by canonicalize+update_entry leaves the
+     egraph's set of facts unchanged up to canonicalization, provided
+     the entry being removed corresponds (up to canonical equivalence)
+     to [a]. Note that db_remove alone does NOT preserve Pre
+     (db_remove_sound is Aborted above), so this lemma is proved as a
+     single unit rather than by composition.
 
      This is a state_triple-level statement (with [state_sound_for_model]
      unfolded) so we can quantify [atom_in_egraph_up_to_equiv a e]
@@ -2881,18 +2882,27 @@ TODO: lemmas in the comment block are out of date
      [update_entry]. The relaxed form (over [atom_in_egraph_up_to_equiv]
      rather than literal [atom_in_egraph]) matches the relaxed
      [parents_ok] invariant, so callers can supply this premise from
-     facts about parent atoms. *)
-  Lemma repair_each_sound Pre a
+     facts about parent atoms.
+
+     The side-list preservation conjunct in the postcondition follows
+     from the same case-split: removing [a] and re-inserting its
+     canonical form replaces a canonical-equivalence witness with
+     another canonically-equivalent witness, so any other atom's
+     [atom_in_egraph_up_to_equiv] witness is either untouched or
+     replaced by an equivalent one. *)
+  Lemma repair_each_sound Pre a l
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
       state_triple (fun e => Pre (denote e)
                              /\ (exists i, denote e i)
-                             /\ atom_in_egraph_up_to_equiv a e)
+                             /\ atom_in_egraph_up_to_equiv a e
+                             /\ all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
                    (@! let _ <- db_remove a in
                        let a' <- canonicalize a in
                        (update_entry a'))
                    (fun e res => Pre (denote (snd res))
-                                 /\ ne_set_maps_to (denote e) (denote (snd res))).
+                                 /\ ne_set_maps_to (denote e) (denote (snd res))
+                                 /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
     (* out-of-date:
     intros Hex HPa e0 HPre Hex_e0 Hain.
@@ -2952,13 +2962,9 @@ TODO: lemmas in the comment block are out of date
      [ne_set_maps_to_trans] + monotone1_atom_sound.
 
      This statement bundles both invariants into the precondition;
-     proving it requires an inductive argument on [old_ps] using
-     [repair_each_sound] and a separate preservation lemma that
-     [db_remove + canonicalize + update_entry] preserves
-     [atom_in_egraph_up_to_equiv] for atoms other than the one being
-     repaired. That preservation argument follows the same
-     [Hiff]-style reasoning as in [repair_each_sound] but is admitted
-     here for now. *)
+     the inductive step is dispatched by [repair_each_sound], which
+     bundles the per-step semantic soundness with the side-list
+     [atom_in_egraph_up_to_equiv]-preservation needed for the tail. *)
 
   (* Generic state_triple-level bind lemma for the new state_triple shape
      (postcondition takes the input state explicitly). *)
@@ -3044,42 +3050,6 @@ TODO: lemmas in the comment block are out of date
       cbn. split; eauto.
   Qed.
 
-  (* The "other atoms" preservation lemma flagged in the comment above:
-     repair_each on atom [a] preserves [atom_in_egraph_up_to_equiv] for
-     any list of atoms [l]. The justification is the same case-split on
-     [update_entry]'s branches as in [repair_each_sound] — removing [a]
-     and re-inserting its canonical form replaces a canonical-equivalence
-     witness with another canonically-equivalent witness, leaving every
-     other atom's witness either untouched or replaced with an equivalent
-     one. The per-atom statement is admitted; the [all]-version below
-     follows by induction. *)
-  Lemma repair_each_preserves_atom_in_egraph_up_to_equiv (a a' : atom)
-    : state_triple
-        (fun e => atom_in_egraph_up_to_equiv a' e)
-        (@! let _ <- db_remove a in
-            let a'' <- canonicalize a in
-            (update_entry a''))
-        (fun _ p => atom_in_egraph_up_to_equiv a' (snd p)).
-  Admitted.
-
-  Lemma repair_each_preserves_atoms_in_egraph_up_to_equiv (a : atom) (l : list atom)
-    : state_triple
-        (fun e => all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
-        (@! let _ <- db_remove a in
-            let a' <- canonicalize a in
-            (update_entry a'))
-        (fun _ p => all (fun a' => atom_in_egraph_up_to_equiv a' (snd p)) l).
-  Proof.
-    induction l as [| a' rest IH].
-    - unfold state_triple. cbn [all]. intros e _. exact I.
-    - unfold state_triple in *. intros e Hall.
-      cbn [all] in *.
-      destruct Hall as [Ha' Hrest].
-      split.
-      + exact (repair_each_preserves_atom_in_egraph_up_to_equiv a a' e Ha').
-      + exact (IH e Hrest).
-  Qed.
-
   Lemma list_Mmap_repair_each_sound Pre old_ps
     : (forall s, Pre s -> ex s) ->
       state_triple
@@ -3130,10 +3100,10 @@ TODO: lemmas in the comment block are out of date
       eapply ne_set_maps_to_refl; eauto.
     - (* transitivity *)
       intros s1 s2 s3; eapply ne_set_maps_to_trans.
-    - (* per-element step: combine [repair_each_sound] with the
-         preservation lemma on the tail via [state_triple_conjunction],
-         then weaken via [state_triple_consequence] to the shape
-         demanded by [state_triple_list_Mmap_inv]. *)
+    - (* per-element step: dispatch by [repair_each_sound] (which now
+         bundles the side-list preservation), then weaken via
+         [state_triple_consequence] to the shape demanded by
+         [state_triple_list_Mmap_inv]. *)
       intros a l_rest.
       pose (Pre' := fun s : abs_set =>
                       Pre s
@@ -3146,13 +3116,13 @@ TODO: lemmas in the comment block are out of date
         specialize (Hsnd i Hi). cbn [all] in Hsnd. tauto. }
       eapply state_triple_consequence
         with (P' := fun e =>
-                      (Pre' (denote e)
-                       /\ (exists i, denote e i)
-                       /\ atom_in_egraph_up_to_equiv a e)
+                      Pre' (denote e)
+                      /\ (exists i, denote e i)
+                      /\ atom_in_egraph_up_to_equiv a e
                       /\ all (fun a' => atom_in_egraph_up_to_equiv a' e) l_rest)
              (Q' := fun e p =>
-                      (Pre' (denote (snd p))
-                       /\ ne_set_maps_to (denote e) (denote (snd p)))
+                      Pre' (denote (snd p))
+                      /\ ne_set_maps_to (denote e) (denote (snd p))
                       /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd p))
                             l_rest).
       + (* pre-weakening *)
@@ -3162,15 +3132,12 @@ TODO: lemmas in the comment block are out of date
         destruct Hatoms_e as [Hatom_a_e Hatoms_rest_e].
         subst Pre'; cbn beta.
         split.
-        { split; [|split].
-          - split; [exact HPre_e | exact Hsound_e].
-          - exact Hex_e.
-          - exact Hatom_a_e. }
-        exact Hatoms_rest_e.
+        { split; [exact HPre_e | exact Hsound_e]. }
+        split; [exact Hex_e|].
+        split; [exact Hatom_a_e | exact Hatoms_rest_e].
       + (* post-weakening *)
         intros e p HPe HPp.
-        destruct HPp as [HPp1 Hatoms_post].
-        destruct HPp1 as [HPre'_post Hmono].
+        destruct HPp as (HPre'_post & Hmono & Hatoms_post).
         subst Pre'; cbn beta in HPre'_post.
         destruct HPre'_post as [HPre_post Hsound_post].
         split; [|exact Hmono].
@@ -3180,9 +3147,7 @@ TODO: lemmas in the comment block are out of date
         * intros i' Hi'. specialize (Hsound_post i' Hi').
           cbn [all] in Hsound_post. tauto.
         * exact Hatoms_post.
-      + apply state_triple_conjunction.
-        * apply repair_each_sound; auto.
-        * apply repair_each_preserves_atoms_in_egraph_up_to_equiv.
+      + apply repair_each_sound; auto.
   Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
