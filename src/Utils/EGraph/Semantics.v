@@ -1885,20 +1885,99 @@ Abort.
   {symbol_map idx_map idx_trie}%function_scope
   {analysis_result}%type_scope a _.
 
-  (* TODO: big issue! not sound wrt egraph wl, parents!
-     The spec needs to change to permit this.
-     How should we adapt things to fit this operation in?
-     Idea: change the postcondition:
-     somehow loosen reqs for each id that this underspecifies.
-
-     NOTE: This is false right now!
-   *)
-  Lemma db_remove_sound Pre a
-    : state_sound_for_model Pre
+  (* [db_remove a] only modifies the [db] field, removing the entry
+     at [(atom_fn a, atom_args a)]. All other instance fields
+     (equiv, parents, epoch, worklist, analyses, log) are unchanged,
+     and the only db fact lost is exactly that one entry. The
+     postcondition records every such preserved fact, so callers can
+     reason about the post-state without re-deriving them. Note that
+     [db_remove] does NOT preserve egraph_ok in general (parents may
+     refer to a now-missing atom), which is why the original
+     [Pre]-preserving formulation was abandoned. *)
+  Lemma db_remove_sound a
+    : state_triple
+        (fun _ : instance => True)
         (db_remove a)
-        (fun _ => Pre).
+        (fun e res =>
+           fst res = tt
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)
+           /\ (snd res).(epoch) = e.(epoch)
+           /\ (snd res).(worklist) = e.(worklist)
+           /\ (snd res).(analyses) = e.(analyses)
+           /\ forall x,
+               atom_in_egraph x (snd res)
+               <-> atom_in_egraph x e
+                   /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
   Proof.
-  Abort.
+    unfold state_triple, db_remove.
+    intros e _.
+    cbv beta zeta.
+    cbn [fst snd Defs.equiv Defs.parents Defs.epoch
+         Defs.worklist Defs.analyses Defs.db].
+    do 6 (split; [reflexivity|]).
+    intros x.
+    unfold atom_in_egraph, atom_in_db.
+    cbn [Defs.db].
+    unfold map_update.
+    destruct (map.get e.(db) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - (* atom_fn a was in the original db with table [tbl] *)
+      pose proof (eqb_spec (atom_fn x) (atom_fn a)) as Hfn.
+      destruct (eqb (atom_fn x) (atom_fn a)).
+      + (* atom_fn x = atom_fn a *)
+        rewrite Hfn.
+        rewrite map.get_put_same.
+        cbn [Is_Some_satisfying].
+        unfold Basics.flip.
+        pose proof (eqb_spec (atom_args x) (atom_args a)) as Hargs.
+        destruct (eqb (atom_args x) (atom_args a)).
+        * (* both fn and args equal: removed entry *)
+          rewrite Hargs.
+          rewrite map.get_remove_same.
+          cbn [Is_Some_satisfying].
+          split; [tauto|].
+          intros [_ Hne]. exfalso. apply Hne. reflexivity.
+        * (* atom_args x <> atom_args a: lookup unchanged in tbl *)
+          rewrite map.get_remove_diff by exact Hargs.
+          rewrite Htbl. cbn [Is_Some_satisfying].
+          split.
+          -- intros HX. split; [exact HX|].
+             intros Hpair. inversion Hpair; subst; auto.
+          -- intros [HX _]; exact HX.
+      + (* atom_fn x <> atom_fn a: lookup unchanged *)
+        rewrite map.get_put_diff
+          by (intros Heq; apply Hfn; exact Heq).
+        split.
+        * intros HX. split; [exact HX|].
+          intros Hpair. inversion Hpair; subst; auto.
+        * intros [HX _]; exact HX.
+    - (* atom_fn a was NOT in the original db originally *)
+      pose proof (eqb_spec (atom_fn x) (atom_fn a)) as Hfn.
+      destruct (eqb (atom_fn x) (atom_fn a)).
+      + (* atom_fn x = atom_fn a: the new table is empty after
+           removing [atom_args a] *)
+        rewrite Hfn.
+        rewrite map.get_put_same.
+        cbn [Is_Some_satisfying].
+        unfold Basics.flip.
+        unfold default, map_default.
+        rewrite Htbl. cbn [Is_Some_satisfying].
+        pose proof (eqb_spec (atom_args x) (atom_args a)) as Hargs.
+        destruct (eqb (atom_args x) (atom_args a)).
+        * rewrite Hargs.
+          rewrite map.get_remove_same.
+          cbn [Is_Some_satisfying]. tauto.
+        * rewrite map.get_remove_diff by exact Hargs.
+          rewrite map.get_empty.
+          cbn [Is_Some_satisfying]. tauto.
+      + (* atom_fn x <> atom_fn a *)
+        rewrite map.get_put_diff
+          by (intros Heq; apply Hfn; exact Heq).
+        split.
+        * intros HX. split; [exact HX|].
+          intros Hpair. inversion Hpair; subst; auto.
+        * intros [HX _]; exact HX.
+  Qed.
 
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
     atom_fn a1 = atom_fn a2 /\
