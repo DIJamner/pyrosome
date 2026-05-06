@@ -396,6 +396,9 @@ Section WithMap.
   Definition update_entry a : ST unit :=
     @! let mout <- db_lookup a.(atom_fn) a.(atom_args) in
       match mout with
+      (* Note: even though this doesn't update the parents of the return value,
+         that's okay because union will push it to the worklist if it needs to be updated.
+       *)
       | Some r => Mseq (union r a.(atom_ret)) (Mret tt)
       | None => db_set a
       end.     
@@ -633,14 +636,13 @@ Section WithMap.
         (db_set_entry a.(atom_fn) a.(atom_args) v_epoch v out_a).
   
   Definition repair_union x_old x_canonical (improved_new_analysis : bool) : ST unit :=
-    let repair_each a : ST atom :=
+    let repair_each a : ST _ :=
       @!let _ <- db_remove a in
         let a' <- canonicalize a in
-        let _ <- update_entry a' in
-        ret a'
+        (update_entry a')
     in
     @! let old_ps <- pull_parents x_old in
-      let ps1 <- list_Mmap repair_each old_ps in
+      let _ <- list_Mmap repair_each old_ps in
       if improved_new_analysis
       then let canon_ps <- get_parents x_canonical in
            (list_Miter repair_parent_analysis canon_ps)
