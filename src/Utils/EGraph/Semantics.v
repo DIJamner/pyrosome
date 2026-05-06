@@ -3064,6 +3064,7 @@ TODO: lemmas in the comment block are out of date
       state_triple
         (fun e => Pre (denote e)
                   /\ (exists i, denote e i)
+                  (*TODO: the conjunct below should be implied by the one after *)
                   /\ (forall i, denote e i ->
                                 all (atom_sound_for_model m i) old_ps)
                   /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
@@ -3143,9 +3144,6 @@ TODO: lemmas in the comment block are out of date
         destruct Hre as [HPre'_post Hmono].
         subst Pre'; cbn beta in HPre'_post.
         destruct HPre'_post as [HPre_post Hsound_post].
-        pose proof (repair_each_preserves_atoms_in_egraph_up_to_equiv a l_rest) as Hpres.
-        unfold state_triple in Hpres.
-        specialize (Hpres e Hatoms_rest_e).
         split; [|exact Hmono].
         split; [exact HPre_post|].
         split; [|split].
@@ -3155,8 +3153,8 @@ TODO: lemmas in the comment block are out of date
           intros i' Hi'. specialize (Hsound_post i' Hi').
           cbn [all] in Hsound_post.
           destruct Hsound_post as [_ Hrest]. exact Hrest.
-        + (* atom_in_egraph_up_to_equiv preserved on l_rest *)
-          exact Hpres. }
+        + eapply repair_each_preserves_atoms_in_egraph_up_to_equiv; eauto.
+    }
     specialize (Hgen e0 HP0).
     destruct Hgen as [HPpost Hmono].
     destruct HPpost as [HPre_post _].
