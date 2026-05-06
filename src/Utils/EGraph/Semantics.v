@@ -2890,8 +2890,7 @@ TODO: lemmas in the comment block are out of date
                              /\ atom_in_egraph_up_to_equiv a e)
                    (@! let _ <- db_remove a in
                        let a' <- canonicalize a in
-                       let _ <- update_entry a' in
-                       ret a')
+                       (update_entry a'))
                    (fun e res => Pre (denote (snd res))
                                  /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
@@ -3059,8 +3058,7 @@ TODO: lemmas in the comment block are out of date
         (fun e => atom_in_egraph_up_to_equiv a' e)
         (@! let _ <- db_remove a in
             let a'' <- canonicalize a in
-            let _ <- update_entry a'' in
-            ret a'')
+            (update_entry a''))
         (fun _ p => atom_in_egraph_up_to_equiv a' (snd p)).
   Admitted.
 
@@ -3069,8 +3067,7 @@ TODO: lemmas in the comment block are out of date
         (fun e => all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
         (@! let _ <- db_remove a in
             let a' <- canonicalize a in
-            let _ <- update_entry a' in
-            ret a')
+            (update_entry a'))
         (fun _ p => all (fun a' => atom_in_egraph_up_to_equiv a' (snd p)) l).
   Proof.
     induction l as [| a' rest IH].
@@ -3095,8 +3092,7 @@ TODO: lemmas in the comment block are out of date
         (list_Mmap (fun a : atom =>
                       @! let _ <- db_remove a in
                          let a' <- canonicalize a in
-                         let _ <- update_entry a' in
-                         ret a')
+                         (update_entry a'))
                    old_ps)
         (fun e res => Pre (denote (snd res))
                       /\ ne_set_maps_to (denote e) (denote (snd res))).
@@ -3571,7 +3567,7 @@ TODO: lemmas in the comment block are out of date
       by (destruct Hne1 as [iH _ _]; eauto).
     enough (Hinner :
               state_triple (fun e => e = e1)
-                (Mbind (fun _ : list atom =>
+                (Mbind (fun _ : list unit =>
                           if improved
                           then (@! let canon_ps <- get_parents x_canonical in
                                    (list_Miter repair_parent_analysis canon_ps))
@@ -3579,8 +3575,7 @@ TODO: lemmas in the comment block are out of date
                        (list_Mmap (fun a : atom =>
                                      @! let _ <- db_remove a in
                                         let a' <- canonicalize a in
-                                        let _ <- update_entry a' in
-                                        ret a') old_ps))
+                                        (update_entry a')) old_ps))
                 (fun _ res =>
                    Pre (denote (snd res))
                    /\ ne_set_maps_to (denote e0) (denote (snd res)))).
