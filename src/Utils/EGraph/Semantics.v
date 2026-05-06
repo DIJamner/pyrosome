@@ -2979,6 +2979,30 @@ TODO: lemmas in the comment block are out of date
     apply Hf; auto.
   Qed.
 
+  (* Pre/post weakening for state_triple. *)
+  Lemma state_triple_consequence {S A} (c : state S A)
+    (P P' : S -> Prop) (Q Q' : S -> A * S -> Prop)
+    : (forall s, P s -> P' s) ->
+      (forall s p, P s -> Q' s p -> Q s p) ->
+      state_triple P' c Q' ->
+      state_triple P c Q.
+  Proof.
+    unfold state_triple. intros HP HQ Hc s HPs.
+    apply HQ; auto.
+  Qed.
+
+  (* Conjunction of two state_triples for the same command, with their
+     preconditions and postconditions taken pointwise. *)
+  Lemma state_triple_conjunction {S A} (c : state S A)
+    (P1 P2 : S -> Prop) (Q1 Q2 : S -> A * S -> Prop)
+    : state_triple P1 c Q1 ->
+      state_triple P2 c Q2 ->
+      state_triple (fun s => P1 s /\ P2 s) c (fun s p => Q1 s p /\ Q2 s p).
+  Proof.
+    unfold state_triple. intros H1 H2 s [HP1 HP2].
+    split; auto.
+  Qed.
+
   (* Generic state_triple-level lemma for list_Mmap. P is a list-indexed
      invariant on the state, R relates pre- and post-states (typically a
      monotonicity relation); the user supplies (i) reflexivity of R on
@@ -3078,87 +3102,91 @@ TODO: lemmas in the comment block are out of date
                       /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
     intros Hex.
-    intros e0 HP0.
-    assert (Hgen :
-              state_triple
-                (fun e : instance =>
-                   Pre (denote e)
-                   /\ (exists i, denote e i)
-                   /\ (forall i, denote e i -> all (atom_sound_for_model m i) old_ps)
-                   /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
-                (list_Mmap (fun a : atom =>
-                              @! let _ <- db_remove a in
-                                 let a' <- canonicalize a in
-                                 let _ <- update_entry a' in
-                                 ret a') old_ps)
-                (fun e p =>
-                   (Pre (denote (snd p))
-                    /\ (exists i, denote (snd p) i)
-                    /\ (forall i, denote (snd p) i ->
-                                  all (atom_sound_for_model m i) (@nil atom))
-                    /\ all (fun a => atom_in_egraph_up_to_equiv a (snd p)) (@nil atom))
-                   /\ ne_set_maps_to (denote e) (denote (snd p)))).
-    { eapply state_triple_list_Mmap_inv with
-        (P := fun l e =>
-                Pre (denote e)
-                /\ (exists i, denote e i)
-                /\ (forall i, denote e i -> all (atom_sound_for_model m i) l)
-                /\ all (fun a => atom_in_egraph_up_to_equiv a e) l)
-        (R := fun e1 e2 : instance =>
-                ne_set_maps_to (denote e1) (denote e2)).
-      - (* base reflexivity on P [] *)
-        intros s HPs.
-        destruct HPs as (_ & Hexists & _).
-        destruct Hexists as [j Hj].
-        eapply ne_set_maps_to_refl; eauto.
-      - (* transitivity *)
-        intros s1 s2 s3 H12 H23. eapply ne_set_maps_to_trans; eauto.
-      - (* per-element step *)
-        intros a l_rest e HPe.
+    eapply state_triple_consequence
+      with (P' := fun e =>
+                    Pre (denote e)
+                    /\ (exists i, denote e i)
+                    /\ (forall i, denote e i ->
+                                  all (atom_sound_for_model m i) old_ps)
+                    /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
+           (Q' := fun e p =>
+                    (Pre (denote (snd p))
+                     /\ (exists i, denote (snd p) i)
+                     /\ (forall i, denote (snd p) i ->
+                                   all (atom_sound_for_model m i) (@nil atom))
+                     /\ all (fun a => atom_in_egraph_up_to_equiv a (snd p)) (@nil atom))
+                    /\ ne_set_maps_to (denote e) (denote (snd p))).
+    { intros e HPe; exact HPe. }
+    { intros e p HPe HPp.
+      destruct HPp as [HPnil Hmono].
+      destruct HPnil as [HPre_post _].
+      split; assumption. }
+    eapply state_triple_list_Mmap_inv with
+      (P := fun l e =>
+              Pre (denote e)
+              /\ (exists i, denote e i)
+              /\ (forall i, denote e i -> all (atom_sound_for_model m i) l)
+              /\ all (fun a => atom_in_egraph_up_to_equiv a e) l)
+      (R := fun e1 e2 : instance =>
+              ne_set_maps_to (denote e1) (denote e2)).
+    - (* base reflexivity on P [] *)
+      intros s (_ & [j Hj] & _).
+      eapply ne_set_maps_to_refl; eauto.
+    - (* transitivity *)
+      intros s1 s2 s3; eapply ne_set_maps_to_trans.
+    - (* per-element step: combine [repair_each_sound] with the
+         preservation lemma on the tail via [state_triple_conjunction],
+         then weaken via [state_triple_consequence] to the shape
+         demanded by [state_triple_list_Mmap_inv]. *)
+      intros a l_rest.
+      pose (Pre' := fun s : abs_set =>
+                      Pre s
+                      /\ (forall i, s i ->
+                                    all (atom_sound_for_model m i) (a::l_rest))).
+      assert (Hex' : forall s, Pre' s -> ex s).
+      { intros s [HPs _]; auto. }
+      assert (HPg : P_guarantees Pre' (fun i => atom_sound_for_model m i a)).
+      { intros s [_ Hsnd] i Hi.
+        specialize (Hsnd i Hi). cbn [all] in Hsnd. tauto. }
+      eapply state_triple_consequence
+        with (P' := fun e =>
+                      (Pre' (denote e)
+                       /\ (exists i, denote e i)
+                       /\ atom_in_egraph_up_to_equiv a e)
+                      /\ all (fun a' => atom_in_egraph_up_to_equiv a' e) l_rest)
+             (Q' := fun e p =>
+                      (Pre' (denote (snd p))
+                       /\ ne_set_maps_to (denote e) (denote (snd p)))
+                      /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd p))
+                            l_rest).
+      + (* pre-weakening *)
+        intros e HPe.
         destruct HPe as (HPre_e & Hex_e & Hsound_e & Hatoms_e).
         cbn [all] in Hatoms_e.
         destruct Hatoms_e as [Hatom_a_e Hatoms_rest_e].
-        pose (Pre' := fun s : abs_set =>
-                        Pre s
-                        /\ (forall i, s i -> all (atom_sound_for_model m i) (a::l_rest))).
-        assert (Hex' : forall s, Pre' s -> ex s).
-        { intros s HPs'. destruct HPs' as [HPs _]. auto. }
-        assert (HPg : P_guarantees Pre' (fun i => atom_sound_for_model m i a)).
-        { intros s HPs' i Hi.
-          destruct HPs' as [_ Hsnd].
-          specialize (Hsnd i Hi). cbn [all] in Hsnd.
-          destruct Hsnd as [Ha _]. exact Ha. }
-        pose proof (repair_each_sound Pre' a Hex' HPg) as Hre.
-        unfold state_triple in Hre.
-        assert (HpreInput :
-                  Pre' (denote e)
-                  /\ (exists i, denote e i)
-                  /\ atom_in_egraph_up_to_equiv a e).
-        { subst Pre'; cbn beta.
-          split; [split |split].
-          - exact HPre_e.
-          - exact Hsound_e.
+        subst Pre'; cbn beta.
+        split.
+        { split; [|split].
+          - split; [exact HPre_e | exact Hsound_e].
           - exact Hex_e.
           - exact Hatom_a_e. }
-        specialize (Hre e HpreInput).
-        destruct Hre as [HPre'_post Hmono].
+        exact Hatoms_rest_e.
+      + (* post-weakening *)
+        intros e p HPe HPp.
+        destruct HPp as [HPp1 Hatoms_post].
+        destruct HPp1 as [HPre'_post Hmono].
         subst Pre'; cbn beta in HPre'_post.
         destruct HPre'_post as [HPre_post Hsound_post].
         split; [|exact Hmono].
         split; [exact HPre_post|].
         split; [|split].
-        + (* exists i, denote (snd ...) i, from ne_set_maps_to *)
-          destruct Hmono as [i' Hi' _]. exists i'; exact Hi'.
-        + (* soundness on l_rest, from preserved Pre' projecting tail *)
-          intros i' Hi'. specialize (Hsound_post i' Hi').
-          cbn [all] in Hsound_post.
-          destruct Hsound_post as [_ Hrest]. exact Hrest.
-        + eapply repair_each_preserves_atoms_in_egraph_up_to_equiv; eauto.
-    }
-    specialize (Hgen e0 HP0).
-    destruct Hgen as [HPpost Hmono].
-    destruct HPpost as [HPre_post _].
-    split; assumption.
+        * destruct Hmono as [i' Hi' _]. exists i'; exact Hi'.
+        * intros i' Hi'. specialize (Hsound_post i' Hi').
+          cbn [all] in Hsound_post. tauto.
+        * exact Hatoms_post.
+      + apply state_triple_conjunction.
+        * apply repair_each_sound; auto.
+        * apply repair_each_preserves_atoms_in_egraph_up_to_equiv.
   Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
