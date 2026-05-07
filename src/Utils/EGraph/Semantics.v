@@ -1962,11 +1962,6 @@ Abort.
     exact Hatom.
   Qed.
 
-  (* [update_entry_after_db_remove_sound] is defined just before
-     [repair_each_sound] (its only consumer), since its proof uses
-     [state_triple_bind], [fields_preserved], and
-     [canonicalize_preserves_fields], which are all defined later
-     in this file. *)
 
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
     atom_fn a1 = atom_fn a2 /\
@@ -3181,10 +3176,10 @@ TODO: lemmas in the comment block are out of date
     apply (fields_preserved_trans _ _ _ Hf01 Hf12).
   Qed.
 
-  (* Canonicalize half of [update_entry_after_db_remove_sound],
-     packaged as a [state_triple] so the main lemma is a clean
-     [state_triple_bind] composition rather than a manual
-     case-split.
+  (* Canonicalize step of [repair_each_sound]'s [canonicalize a >>=
+     update_entry] body, packaged as a [state_triple] so that
+     [repair_each_sound] is a clean [state_triple_bind] composition
+     rather than a manual case-split.
 
      Given outer hypotheses witnessing that [a] is sound under [Pre]
      in some interpretation of [e_ref], and given a state [e]
@@ -3224,12 +3219,13 @@ TODO: lemmas in the comment block are out of date
     intros HPa Hok_ref Hne_ref.
   Admitted.
 
-  (* Update_entry half of [update_entry_after_db_remove_sound].
-     This is where the deep semantic-preservation argument lives.
+  (* Update_entry step of [repair_each_sound]'s [canonicalize a >>=
+     update_entry] body.  This is where the deep semantic-
+     preservation argument lives.
 
-     Given the same outer hypotheses as the main lemma plus a fixed
-     reference post-[db_remove] state [e0] (related to [e_ref] via
-     [post_db_remove]), this lemma takes any [e1] obtained from
+     Given the same outer hypotheses as [repair_each_sound] plus a
+     fixed reference post-[db_remove] state [e0] (related to [e_ref]
+     via [post_db_remove]), this lemma takes any [e1] obtained from
      [e0] by [canonicalize]-style preservation (fields preserved,
      [a'] canonically equivalent to [a] in [e1.(equiv)]) and
      dispatches the three [update_entry] branches.
@@ -3299,52 +3295,7 @@ TODO: lemmas in the comment block are out of date
       admit.
   Admitted.
 
-  (* [update_entry a] from a state [e] that is the result of
-     [db_remove a] applied to some reference state [e_ref] (in
-     which the abstract precondition [Pre] held, [a] was a literal
-     entry in the db, and the atom [a] was sound) preserves [Pre]
-     up to [ne_set_maps_to].
-
-     Decomposed into [canonicalize_after_db_remove_sound] (the
-     canonicalize step, structural) and
-     [update_entry_canonicalized_after_db_remove_sound] (the
-     [update_entry] step, deep semantic argument), composed via
-     [state_triple_bind]; [state_triple] itself is never unfolded
-     in this proof script. *)
-  Lemma update_entry_after_db_remove_sound (Pre : idx_map (domain m) -> Prop)
-    a side_l (e_ref : instance)
-    : (forall i, Pre i -> atom_sound_for_model m i a) ->
-      egraph_ok e_ref ->
-      (forall_ne i | denote e_ref i, Pre i) ->
-      atom_in_egraph_up_to_equiv a e_ref ->
-      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
-      state_triple
-        (fun e => post_db_remove e_ref a e)
-        (@! let a' <- canonicalize a in (update_entry a'))
-        (fun e res =>
-           egraph_ok (snd res)
-           /\ (forall_ne i | denote (snd res) i, Pre i)
-           /\ ne_set_maps_to (denote e_ref) (denote (snd res))
-           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
-  Proof.
-    intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref.
-    eapply state_triple_bind with
-      (Q1 := fun e res =>
-               fields_preserved e (snd res)
-               /\ atom_fn (fst res) = atom_fn a
-               /\ uf_rel_PER _ _ _ (snd res).(equiv)
-                    (atom_ret (fst res)) (atom_ret a)
-               /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
-                    (atom_args (fst res)) (atom_args a)).
-    { apply (canonicalize_after_db_remove_sound Pre); assumption. }
-    intros e0 a' e1 Hpost_e0 HQ1.
-    exact (update_entry_canonicalized_after_db_remove_sound
-             Pre a a' side_l e_ref e0
-             HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
-             e1 HQ1).
-  Qed.
-
-  (* Helper: repair_each (the inner closure of repair_union) preserves Pre
+  (* repair_each (the inner closure of repair_union) preserves Pre
      when called on a sound atom that is canonically represented in the
      input db, and simultaneously preserves [atom_in_egraph_up_to_equiv]
      for an arbitrary side-list [l] of other atoms. The semantic story
@@ -3355,13 +3306,14 @@ TODO: lemmas in the comment block are out of date
      (db_remove_sound is Aborted above), so this lemma is proved as a
      single unit rather than by composition.
 
-     The proof chains [db_remove_sound_post] (giving the
-     [post_db_remove] structural relationship between [e0] and [e1])
-     with [update_entry_after_db_remove_sound] (handling
-     [canonicalize a >>= update_entry] from the post-[db_remove]
-     state, parameterized by the reference state [e0] and the side
-     list [l]) via [state_triple_bind].  [state_triple] is never
-     unfolded in the proof script. *)
+     The proof is two nested [state_triple_bind]s: an outer bind on
+     [db_remove a] (using [db_remove_sound_post] to establish a
+     [post_db_remove] relation between the pre- and post-removal
+     states), and an inner bind on [canonicalize a] (using
+     [canonicalize_after_db_remove_sound] for the structural facts
+     about the canonicalized atom, then
+     [update_entry_canonicalized_after_db_remove_sound] for the
+     deep semantic argument).  [state_triple] is never unfolded. *)
   Lemma repair_each_sound (Pre : idx_map (domain m) -> Prop) a l
     : (forall i, Pre i -> atom_sound_for_model m i a) ->
       state_triple (fun e => egraph_ok e
@@ -3377,28 +3329,52 @@ TODO: lemmas in the comment block are out of date
                                  /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
     intros HPa.
+    (* Outer bind: peel off [db_remove a]. *)
     eapply state_triple_bind with
-      (Q1 := fun e0 p =>
-               egraph_ok e0
-               /\ (forall_ne i | denote e0 i, Pre i)
-               /\ atom_in_egraph_up_to_equiv a e0
-               /\ all (fun a' => atom_in_egraph_up_to_equiv a' e0) l
-               /\ post_db_remove e0 a (snd p)).
+      (Q1 := fun e_ref p =>
+               egraph_ok e_ref
+               /\ (forall_ne i | denote e_ref i, Pre i)
+               /\ atom_in_egraph_up_to_equiv a e_ref
+               /\ all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) l
+               /\ post_db_remove e_ref a (snd p)).
     { eapply state_triple_consequence with
         (P' := fun _ : instance => True)
-        (Q' := fun e0 p => fst p = tt /\ post_db_remove e0 a (snd p)).
+        (Q' := fun e_ref p => fst p = tt /\ post_db_remove e_ref a (snd p)).
       - intros _ _; trivial.
-      - intros e0 p HP HQ.
+      - intros e_ref p HP HQ.
         destruct HQ as [_ Hpost].
-        destruct HP as (Hok_e0 & Hne_e0 & Hatom_e0 & Hatoms_e0).
+        destruct HP as (Hok_ref & Hne_ref & Hatom_ref & Hatoms_ref).
         repeat (split; try assumption).
       - apply db_remove_sound_post. }
-    intros e0 _u e1 _ HQ1.
-    destruct HQ1 as (Hok_e0 & Hne_e0 & Hatom_a_e0 & Hatoms_l_e0 & Hpost_remove).
+    intros e_ref _u e_post _ HQ1.
+    destruct HQ1 as (Hok_ref & Hne_ref & Hatom_ref & Hatoms_ref & Hpost_remove).
     cbn beta.
-    exact (update_entry_after_db_remove_sound Pre a l e0
-             HPa Hok_e0 Hne_e0 Hatom_a_e0 Hatoms_l_e0
-             e1 Hpost_remove).
+    (* Inner bind: peel off [canonicalize a].  Reformulate the goal
+       (parameterized over [e_post]) as a [state_triple] so that
+       [state_triple_bind] applies. *)
+    revert e_post Hpost_remove.
+    change (state_triple
+              (fun e => post_db_remove e_ref a e)
+              (@! let a' <- canonicalize a in (update_entry a'))
+              (fun _ res =>
+                 egraph_ok (snd res)
+                 /\ (forall_ne i | denote (snd res) i, Pre i)
+                 /\ ne_set_maps_to (denote e_ref) (denote (snd res))
+                 /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l)).
+    eapply state_triple_bind with
+      (Q1 := fun e res =>
+               fields_preserved e (snd res)
+               /\ atom_fn (fst res) = atom_fn a
+               /\ uf_rel_PER _ _ _ (snd res).(equiv)
+                    (atom_ret (fst res)) (atom_ret a)
+               /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
+                    (atom_args (fst res)) (atom_args a)).
+    { apply (canonicalize_after_db_remove_sound Pre); assumption. }
+    intros e0 a' e1 Hpost_e0 HQ1.
+    exact (update_entry_canonicalized_after_db_remove_sound
+             Pre a a' l e_ref e0
+             HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
+             e1 HQ1).
   Qed.
 
   (* State-triple level Mmap of repair_each over a list of atoms.
