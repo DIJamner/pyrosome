@@ -528,7 +528,6 @@ Abort.
     
     Record egraph_sound_for_interpretation e : Prop :=
       {
-        sound_egraph_ok :> egraph_ok e;
         idx_interpretation_wf : forall i d, map.get idx_interpretation i = Some d -> m.(domain_wf) d;
         interpretation_exact : forall x,
           Is_Some (map.get idx_interpretation x) -> Sep.has_key x (parent (equiv e));
@@ -560,7 +559,7 @@ Abort.
      Possibly: f is probably sufficiently unique up to equivalence
    *)
   Definition egraph_sound_for_model m e : Prop :=
-    exists f, egraph_sound_for_interpretation m f e.
+    egraph_ok e /\ exists f, egraph_sound_for_interpretation m f e.
 
   (* parents_interpretation and worklist_sound moved below to where
      [model_ok m] is in scope, since the relaxed [parents_ok] requires
@@ -589,17 +588,11 @@ Abort.
   
   Theorem empty_sound_for_interpretation m
     (*: egraph_sound (empty_egraph idx_zero analysis_result) m.*)
-    : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
+    : egraph_ok (empty_egraph idx_zero _) /\
+      egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
   Proof.
-    constructor; cbn; try tauto;
-      unfold atom_in_egraph, atom_in_db;
-      basic_goal_prep;
-      rewrite ? map.get_empty in *;
-      basic_goal_prep;
-      try tauto;
-      try congruence.
-    { 
-      constructor; cbn; auto.
+    split.
+    { constructor; cbn; auto.
       {
         exists [].
         cbn.
@@ -608,8 +601,14 @@ Abort.
       {
         intros.
         basic_utils_crush.
-      }
-    }
+      } }
+    constructor; cbn; try tauto;
+      unfold atom_in_egraph, atom_in_db;
+      basic_goal_prep;
+      rewrite ? map.get_empty in *;
+      basic_goal_prep;
+      try tauto;
+      try congruence.
     {
       exfalso; eapply PER_empty; try eassumption.
       basic_goal_prep;
@@ -624,9 +623,12 @@ Abort.
   
   Theorem empty_sound m : egraph_sound_for_model m (empty_egraph idx_zero analysis_result).
   Proof.
-    unfold empty_egraph.
+    unfold empty_egraph, egraph_sound_for_model.
+    pose proof (empty_sound_for_interpretation m) as Hpair.
+    destruct Hpair as [Hok Hsound].
+    split; [exact Hok|].
     exists map.empty.
-    apply empty_sound_for_interpretation.
+    exact Hsound.
   Qed.
   
   Notation saturate_until' := (saturate_until' idx_succ idx_zero (spaced_list_intersect)).
@@ -760,13 +762,14 @@ Abort.
   Qed.
 
   Lemma args_rel_interpretation m interp e
-    : egraph_sound_for_interpretation m interp e ->
+    : egraph_ok e /\ egraph_sound_for_interpretation m interp e ->
       forall args1 args2,
         all2 (uf_rel_PER _ _ _ e.(equiv)) args1 args2 ->
         option_relation (all2 m.(domain_eq)) (list_Mmap (map.get interp) args1)
           (list_Mmap (map.get interp) args2).
   Proof.
-    destruct e,1; cbn in *.
+    intros [_ Hsnd].
+    destruct e, Hsnd; cbn in *.
     clear atom_interpretation0.
     unfold SomeRel.
     induction args1;
@@ -955,7 +958,8 @@ Abort.
   
   #[local] Notation abs_set := (idx_map (domain m) -> Prop).
 
-  #[local] Notation denote e := (fun i => egraph_sound_for_interpretation m i e).
+  #[local] Notation denote e :=
+    (fun i => egraph_ok e /\ egraph_sound_for_interpretation m i e).
 
   
   (* Hoare logic reasoning about the state monad.
@@ -1018,40 +1022,39 @@ Abort.
     unfold pull_worklist; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j,
-               egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e wl_e analyses_e log_e)
-               <-> egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e [] analyses_e log_e)).
+               (egraph_ok
+                  (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e wl_e analyses_e log_e)
+                /\ egraph_sound_for_interpretation m j
+                     (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e wl_e analyses_e log_e))
+               <-> (egraph_ok
+                      (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e [] analyses_e log_e)
+                    /\ egraph_sound_for_interpretation m j
+                         (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e [] analyses_e log_e))).
     { intros j.
       split.
-      - intros Hsnd.
-        destruct Hsnd as [Hok Hwf Hex Ha Hr].
+      - intros [Hok Hsnd].
+        destruct Hsnd as [Hwf Hex Ha Hr].
         destruct Hok as [Heq Hwl Hpa].
-        constructor.
+        split.
         + constructor; cbn in *; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-      - intros Hsnd.
-        destruct Hsnd as [Hok Hwf Hex Ha Hr].
+        + constructor; cbn in *; auto.
+      - intros [Hok Hsnd].
+        destruct Hsnd as [Hwf Hex Ha Hr].
         destruct Hok as [Heq _ Hpa].
         pose proof HiSSC as HiSSC_copy.
-        destruct HiSSC_copy as [Hok_o _ _ _ _].
+        destruct HiSSC_copy as [Hok_o _].
         destruct Hok_o as [_ Hwl_o _].
         cbn in Hwl_o.
-        constructor.
+        split.
         + constructor; cbn in *; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto. }
+        + constructor; cbn in *; auto. }
     split.
     { split.
       - eapply set_pred_ext; [exact Hiff | exact HPre].
       - intros j Hj.
         apply Hiff in Hj.
-        destruct Hj as [Hok_j Hwf_j Hex_j Ha_j Hrel_j].
+        destruct Hj as [Hok_j Hsnd_j].
+        destruct Hsnd_j as [Hwf_j Hex_j Ha_j Hrel_j].
         destruct Hok_j as [_ Hwl_j _].
         cbn in Hwl_j.
         eapply all_wkn; [|exact Hwl_j].
@@ -1438,8 +1441,8 @@ Abort.
          (limit (parent_rel _ _ g2.(equiv).(parent)))) ->
       g1.(parents) = g2.(parents) ->
       g1.(worklist) = g2.(worklist) ->
-      egraph_sound_for_interpretation m i g1
-      <-> egraph_sound_for_interpretation m i g2.
+      (egraph_ok g1 /\ egraph_sound_for_interpretation m i g1)
+      <-> (egraph_ok g2 /\ egraph_sound_for_interpretation m i g2).
   Proof.
     intros Hdb Huf1 Huf2 Hlim Hpar Hwl.
     pose proof Huf1 as Huf1'; destruct Huf1' as [Hf1 ? ? ? ?].
@@ -1466,9 +1469,9 @@ Abort.
       split; intros (r & Hl1 & Hl2); exists r;
         intuition (try apply Hlim; auto).
     }
-    split; intros He; destruct He as [He_ok Hwf Hexact Hatom Hrel];
+    split; intros [He_ok He]; destruct He as [Hwf Hexact Hatom Hrel];
       destruct He_ok as [Hg_eq Hg_wl Hg_par];
-      constructor; eauto.
+      split; [| constructor; eauto | | constructor; eauto].
     - constructor.
       + exists l; assumption.
       + rewrite <- Hwl.
@@ -1540,7 +1543,8 @@ Abort.
     destruct Hf_ex as [someInterp Hf].
     pose proof (HPkey _ Hpre _ Hf) as Hkx_interp.
     pose proof Hf as Hf_copy.
-    destruct Hf_copy as [Heq_ok Hwf Hexact Hatom Hrel].
+    destruct Hf_copy as [Heq_ok Hsnd_copy].
+    destruct Hsnd_copy as [Hwf Hexact Hatom Hrel].
     pose proof Heq_ok as Heq_ok'.
     destruct Heq_ok' as [Hg_eq Hg_wl Hg_par].
     assert (Hkx : Sep.has_key x (parent graph.(equiv))).
@@ -1561,8 +1565,8 @@ Abort.
     match goal with
     | |- _ /\ ne_set_maps_to _ (denote ?inst) =>
         assert (Hiff_g_n :
-                  forall j, egraph_sound_for_interpretation m j graph
-                            <-> egraph_sound_for_interpretation m j inst);
+                  forall j, (egraph_ok graph /\ egraph_sound_for_interpretation m j graph)
+                            <-> (egraph_ok inst /\ egraph_sound_for_interpretation m j inst));
           [ intros j;
             apply (egraph_sound_for_interpretation_iff_equiv j graph inst l);
             cbn; auto |]
@@ -1571,7 +1575,8 @@ Abort.
     { eapply set_pred_ext; [| exact Hpre].
       intros j. apply Hiff_g_n. }
     { intros j Hj.
-      destruct Hj as [Hj_ok Hj_wf Hj_exact Hj_atom Hj_rel].
+      destruct Hj as [Hj_ok Hj_snd].
+      destruct Hj_snd as [Hj_wf Hj_exact Hj_atom Hj_rel].
       apply Hj_rel.
       cbn.
       unfold uf_rel_PER.
@@ -1611,13 +1616,13 @@ Abort.
   Hint Resolve eq_sound_has_key_r : utils.
 
   Section WithEGraph.
-    Context e i `{Hsoundeg : egraph_sound_for_interpretation m i e}.
+    Context e i `{Hok : egraph_ok e} `{Hsoundeg : egraph_sound_for_interpretation m i e}.
 
     Lemma parents_interpretation
       :forall y l, map.get e.(parents) y = Some l -> all (atom_sound_for_model m i) l.
     Proof.
       intros y l Hpar.
-      apply parents_ok in Hpar; eauto using sound_egraph_ok.
+      apply parents_ok in Hpar; eauto.
       eapply all_wkn; try exact Hpar.
       intros a Hin Hex.
       cbv beta in Hex.
@@ -1625,7 +1630,7 @@ Abort.
       destruct Hex as (aa & Hcanon & Ha_aa).
       destruct Hcanon as (Hfn & Hargs & Hret).
       pose proof (atom_interpretation _ _ _ Hsoundeg _ Ha_aa) as Hsa.
-      pose proof (args_rel_interpretation _ _ _ Hsoundeg _ _ Hargs) as Hopt.
+      pose proof (args_rel_interpretation _ _ _ (conj Hok Hsoundeg) _ _ Hargs) as Hopt.
       pose proof (rel_interpretation _ _ _ Hsoundeg _ _ Hret) as Hret_eq.
       unfold atom_sound_for_model in Hsa |- *.
       unfold eq_sound_for_model in Hret_eq.
@@ -1648,7 +1653,7 @@ Abort.
     Lemma worklist_sound : all (worklist_entry_sound m i) e.(worklist).
     Proof.
       eapply all_wkn.
-      2: apply worklist_ok; eauto using sound_egraph_ok.
+      2: apply worklist_ok; eauto.
       cbn; intros x Hwl.
       destruct x; cbn in *; auto.
       eauto using rel_interpretation.
@@ -1707,6 +1712,7 @@ Abort.
     repeat split.
     { exact HPre. }
     { intros i Hi.
+      destruct Hi as [Hok_e Hsnd_e].
       destruct (map.get e.(parents) old_idx) as [s|] eqn:Hg; cbn.
       - eapply parents_interpretation; eauto.
       - cbn. exact I. }
@@ -1735,7 +1741,8 @@ Abort.
     state_sound_constructor.
     unfold remove_parents. cbn.
     pose proof HiSSC as Hj_copy.
-    destruct Hj_copy as [Hj_ok Hj_wf Hj_exact Hj_atom Hj_rel].
+    destruct Hj_copy as [Hj_ok Hj_snd_copy].
+    destruct Hj_snd_copy as [Hj_wf Hj_exact Hj_atom Hj_rel].
     pose proof Hj_ok as Hj_ok_copy.
     destruct Hj_ok_copy as [Hj_eq Hj_wl Hj_par_old].
     destruct e as [db_e equiv_e parents_e epoch_e worklist_e analyses_e log_e].
@@ -1744,33 +1751,38 @@ Abort.
                     db_e equiv_e (map.remove parents_e old_idx)
                     epoch_e worklist_e analyses_e log_e).
     assert (Hiff : forall i,
-               egraph_sound_for_interpretation m i
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
-                    epoch_e worklist_e analyses_e log_e)
-               <-> egraph_sound_for_interpretation m i e_new).
+               (egraph_ok
+                  (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                     epoch_e worklist_e analyses_e log_e)
+                /\ egraph_sound_for_interpretation m i
+                     (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                        epoch_e worklist_e analyses_e log_e))
+               <-> (egraph_ok e_new /\ egraph_sound_for_interpretation m i e_new)).
     {
       intros i.
-      split; intros He_sound.
-      { destruct He_sound as [He_ok Hwf Hexact Hatom Hrel].
+      split; intros [He_ok He_sound].
+      { destruct He_sound as [Hwf Hexact Hatom Hrel].
         destruct He_ok as [Hg_eq Hg_wl Hg_par].
-        constructor; cbn in *; try assumption.
-        constructor; cbn in *; try assumption.
-        intros y s Hg.
-        eqb_case old_idx y.
-        { rewrite map.get_remove_same in Hg. discriminate. }
-        { rewrite map.get_remove_diff in Hg by auto.
-          eapply Hg_par; eauto. } }
-      { destruct He_sound as [He_ok Hwf Hexact Hatom Hrel].
+        split.
+        - constructor; cbn in *; try assumption.
+          intros y s Hg.
+          eqb_case old_idx y.
+          { rewrite map.get_remove_same in Hg. discriminate. }
+          { rewrite map.get_remove_diff in Hg by auto.
+            eapply Hg_par; eauto. }
+        - constructor; cbn in *; try assumption. }
+      { destruct He_sound as [Hwf Hexact Hatom Hrel].
         destruct He_ok as [Hg_eq Hg_wl Hg_par].
         unfold e_new in *. cbn in *.
-        constructor; cbn in *; [| assumption | assumption | assumption | assumption].
-        constructor; cbn in *; [assumption | assumption |].
-        intros y s Hg.
-        eqb_case old_idx y.
-        { eapply Hj_par_old; eauto. }
-        { specialize (Hg_par y s).
-          rewrite map.get_remove_diff in Hg_par by auto.
-          eapply Hg_par; eauto. } }
+        split.
+        - constructor; cbn in *; [assumption | assumption |].
+          intros y s Hg.
+          eqb_case old_idx y.
+          { eapply Hj_par_old; eauto. }
+          { specialize (Hg_par y s).
+            rewrite map.get_remove_diff in Hg_par by auto.
+            eapply Hg_par; eauto. }
+        - constructor; cbn in *; [assumption | assumption | assumption | assumption]. }
     }
     split.
     { eapply set_pred_ext; [| exact HPre].
@@ -1804,7 +1816,8 @@ Abort.
     intros _ e [HPre Hex_e].
     destruct Hex_e as [iSSC HiSSC].
     pose proof HiSSC as HiSSC_copy.
-    destruct HiSSC_copy as [Hok_o Hwf_o Hex_o Hatom_o Hrel_o].
+    destruct HiSSC_copy as [Hok_o Hsnd_o].
+    destruct Hsnd_o as [Hwf_o Hex_o Hatom_o Hrel_o].
     pose proof Hok_o as Hok_o_copy.
     destruct Hok_o_copy as [Heq_o Hwl_o Hpar_o].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
@@ -1821,32 +1834,37 @@ Abort.
     { reflexivity. }
     rewrite Hcompute. cbn [fst snd].
     assert (Hiff : forall i,
-               egraph_sound_for_interpretation m i
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
-                    epoch_e wl_e analyses_e log_e)
-               <-> egraph_sound_for_interpretation m i e_after).
+               (egraph_ok
+                  (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                     epoch_e wl_e analyses_e log_e)
+                /\ egraph_sound_for_interpretation m i
+                     (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e
+                        epoch_e wl_e analyses_e log_e))
+               <-> (egraph_ok e_after /\ egraph_sound_for_interpretation m i e_after)).
     { intros i.
-      split; intros He_sound.
-      { destruct He_sound as [He_ok Hwf Hex' Hatom Hrel].
+      split; intros [He_ok He_sound].
+      { destruct He_sound as [Hwf Hex' Hatom Hrel].
         destruct He_ok as [Hg_eq Hg_wl Hg_par].
-        constructor; cbn in *; try assumption.
-        constructor; cbn in *; try assumption.
-        intros y s Hg.
-        eqb_case old_idx y.
-        { rewrite map.get_remove_same in Hg. discriminate. }
-        { rewrite map.get_remove_diff in Hg by auto.
-          eapply Hg_par; eauto. } }
-      { destruct He_sound as [He_ok Hwf Hex' Hatom Hrel].
+        split.
+        - constructor; cbn in *; try assumption.
+          intros y s Hg.
+          eqb_case old_idx y.
+          { rewrite map.get_remove_same in Hg. discriminate. }
+          { rewrite map.get_remove_diff in Hg by auto.
+            eapply Hg_par; eauto. }
+        - constructor; cbn in *; try assumption. }
+      { destruct He_sound as [Hwf Hex' Hatom Hrel].
         destruct He_ok as [Hg_eq Hg_wl Hg_par].
         unfold e_after in *. cbn in *.
-        constructor; cbn in *; [| assumption | assumption | assumption | assumption].
-        constructor; cbn in *; [assumption | assumption |].
-        intros y s Hg.
-        eqb_case old_idx y.
-        { eapply Hpar_o; eauto. }
-        { specialize (Hg_par y s).
-          rewrite map.get_remove_diff in Hg_par by auto.
-          eapply Hg_par; eauto. } } }
+        split.
+        - constructor; cbn in *; [assumption | assumption |].
+          intros y s Hg.
+          eqb_case old_idx y.
+          { eapply Hpar_o; eauto. }
+          { specialize (Hg_par y s).
+            rewrite map.get_remove_diff in Hg_par by auto.
+            eapply Hg_par; eauto. }
+        - constructor; cbn in *; [assumption | assumption | assumption | assumption]. } }
     split.
     2:{ eapply Build_forall_nonempty with (fne_elt := iSSC).
         - apply Hiff. exact HiSSC.
@@ -1856,6 +1874,7 @@ Abort.
     { eapply set_pred_ext; [intros i; apply Hiff | exact HPre]. }
     { intros i Hi.
       apply Hiff in Hi.
+      destruct Hi as [Hi_ok Hi_snd].
       unfold ps, unwrap_with_default.
       destruct (map.get parents_e old_idx) as [s'|] eqn:Hg_par;
         [eapply parents_interpretation; eauto | exact I]. }
@@ -3524,6 +3543,7 @@ TODO: lemmas in the comment block are out of date
       destruct (map.get e.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
       destruct (map.get tbl args) as [d|] eqn:Hd; cbn; auto.
       intros i Hi.
+      destruct Hi as [Hi_ok Hi_snd].
       eapply atom_interpretation; eauto.
       unfold atom_in_egraph, atom_in_db; cbn.
       rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
@@ -3561,20 +3581,25 @@ TODO: lemmas in the comment block are out of date
       assert (Hiff : forall j analyses1 analyses2 wl1 wl2,
                  (forall ent, In ent wl1 -> worklist_entry_ok equiv_e ent) ->
                  (forall ent, In ent wl2 -> worklist_entry_ok equiv_e ent) ->
-                 egraph_sound_for_interpretation m j
-                   (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                      wl1 analyses1 log_e)
-                 <-> egraph_sound_for_interpretation m j
-                   (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                      wl2 analyses2 log_e)).
+                 (egraph_ok
+                    (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                       wl1 analyses1 log_e)
+                  /\ egraph_sound_for_interpretation m j
+                       (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                          wl1 analyses1 log_e))
+                 <-> (egraph_ok
+                        (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                           wl2 analyses2 log_e)
+                      /\ egraph_sound_for_interpretation m j
+                           (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                              wl2 analyses2 log_e))).
       { intros j a1 a2 w1 w2 Hw1 Hw2.
-        split; intros Hsnd; destruct Hsnd as [Hok Hwf Hex' Ha Hr];
+        split; intros [Hok Hsnd];
+          destruct Hsnd as [Hwf Hex' Ha Hr];
           destruct Hok as [Heq Hwl Hpa];
-          constructor; cbn in *; auto.
-        - constructor; cbn; auto.
-        - constructor; cbn; auto. }
+          (split; [constructor; cbn; auto | constructor; cbn in *; auto]). }
       pose proof HiSSC as HiSSC_copy.
-      destruct HiSSC_copy as [Hok_o _ _ _ _].
+      destruct HiSSC_copy as [Hok_o _].
       destruct Hok_o as [_ Hwl_o _].
       cbn in Hwl_o.
       assert (Hwl_o' : forall ent, In ent wl_e -> worklist_entry_ok equiv_e ent).
@@ -3627,17 +3652,23 @@ TODO: lemmas in the comment block are out of date
     state_sound_constructor.
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j analyses1 analyses2,
-               egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                    wl_e analyses1 log_e)
-               <-> egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                    wl_e analyses2 log_e)).
+               (egraph_ok
+                  (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                     wl_e analyses1 log_e)
+                /\ egraph_sound_for_interpretation m j
+                     (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                        wl_e analyses1 log_e))
+               <-> (egraph_ok
+                      (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                         wl_e analyses2 log_e)
+                    /\ egraph_sound_for_interpretation m j
+                         (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                            wl_e analyses2 log_e))).
     { intros j a1 a2.
-      split; intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+      split; intros [Hok Hsnd];
+        destruct Hsnd as [Hwf Hex Ha Hr];
         destruct Hok as [Heq Hwl Hpa];
-        constructor; cbn in *; auto;
-        constructor; cbn; auto. }
+        (split; [constructor; cbn; auto | constructor; cbn in *; auto]). }
     unfold update_analyses; cbn [fst snd].
     split.
     { eapply set_pred_ext; [|exact HPre]. intro j; apply Hiff. }
@@ -3658,31 +3689,31 @@ TODO: lemmas in the comment block are out of date
     state_sound_constructor.
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j,
-               egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                    wl_e analyses_e log_e)
-               <-> egraph_sound_for_interpretation m j
-                 (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
-                    (analysis_repair idx o :: wl_e) analyses_e log_e)).
+               (egraph_ok
+                  (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                     wl_e analyses_e log_e)
+                /\ egraph_sound_for_interpretation m j
+                     (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                        wl_e analyses_e log_e))
+               <-> (egraph_ok
+                      (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                         (analysis_repair idx o :: wl_e) analyses_e log_e)
+                    /\ egraph_sound_for_interpretation m j
+                         (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
+                            (analysis_repair idx o :: wl_e) analyses_e log_e))).
     { intros j.
       split.
-      - intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+      - intros [Hok Hsnd]; destruct Hsnd as [Hwf Hex Ha Hr];
           destruct Hok as [Heq Hwl Hpa].
-        constructor.
+        split.
+        + constructor; cbn; auto.
         + constructor; cbn in *; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-      - intros Hsnd; destruct Hsnd as [Hok Hwf Hex Ha Hr];
+      - intros [Hok Hsnd]; destruct Hsnd as [Hwf Hex Ha Hr];
           destruct Hok as [Heq Hwl Hpa].
         cbn in Hwl. destruct Hwl as [_ Hwl].
-        constructor.
+        split.
         + constructor; cbn in *; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto.
-        + cbn; auto. }
+        + constructor; cbn in *; auto. }
     unfold push_worklist; cbn [fst snd].
     split.
     { eapply set_pred_ext; [exact Hiff | exact HPre]. }

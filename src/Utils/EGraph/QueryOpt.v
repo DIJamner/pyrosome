@@ -682,10 +682,14 @@ Eqb_idx.
 
       
       Lemma empty_egraph_sound m
-        : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero X).
+        : egraph_ok (empty_egraph idx_zero X) /\
+          egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero X).
       Proof.
         revert idx_map_ok symbol_map_ok.
         clear.
+        split.
+        { constructor; basic_goal_prep;
+          basic_utils_crush. }
         constructor; basic_goal_prep;
           basic_utils_crush.
         {
