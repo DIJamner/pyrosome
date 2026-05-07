@@ -884,22 +884,6 @@ Abort.
   Qed.
 
   Context `{analysis idx symbol analysis_result}.
-    
-
-  Definition monotone {A} P : Prop :=
-    (forall i i' : idx_map A, map.extends i i' -> P i' -> P i).
-
-  Definition monotone1 {A B} (P : _ -> B -> _) : Prop :=
-    (forall a (i i' : idx_map A), map.extends i i' -> P i' a -> P i a).
-
-  Definition monotone2 {A B C} (P : _ -> B -> C -> _) : Prop :=
-    (forall a b (i i' : idx_map A), map.extends i i' -> P i' a b -> P i a b).
-
-  Definition monotone3 {A B C D} (P : _ -> B -> C -> D -> _) : Prop :=
-    (forall a b c (i i' : idx_map A), map.extends i i' -> P i' a b c -> P i a b c).
-  
-  Definition monotone4 {A B C D E} (P : _ -> B -> C -> D -> E -> _) : Prop :=
-    (forall a b c d (i i' : idx_map A), map.extends i i' -> P i' a b c d -> P i a b c d).
 
   (*TODO: move*)
   Record forall_nonempty {A} P Q : Prop :=
@@ -959,7 +943,7 @@ Abort.
   #[local] Notation abs_set := (idx_map (domain m) -> Prop).
 
   #[local] Notation denote e :=
-    (fun i => egraph_ok e /\ egraph_sound_for_interpretation m i e).
+    (fun i => egraph_sound_for_interpretation m i e).
 
   
   (* Hoare logic reasoning about the state monad.
@@ -974,11 +958,11 @@ Abort.
     
     (* Outcome logic reasoning about e-graph abstractions *)
     Definition state_sound_for_model
-      (Pre : abs_set -> Prop)
+      Pre
       (c : state instance A)
-      (Post : A -> abs_set -> Prop) :=
-      state_triple (fun e => Pre (denote e) /\ exists i, denote e i) c
-        (fun e res => Post (fst res) (denote (snd res))
+      (Post : A -> _ -> Prop) :=
+      state_triple (fun e => egraph_ok e /\ forall_ne i | denote e i, Pre i) c
+        (fun e res => (forall_ne i | denote (snd res) i, Post (fst res) i)
                       /\ ne_set_maps_to (denote e) (denote (snd res))).
   End __.
 
