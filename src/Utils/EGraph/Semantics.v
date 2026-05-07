@@ -2049,18 +2049,15 @@ Abort.
      This is the same shape of argument that is admitted in
      [db_set_entry_sound'] and [repair_each_sound]; it remains
      admitted here. *)
-  Lemma update_entry_after_db_remove_sound Pre a (e_ref : instance)
-    : (forall s, Pre s -> ex s) ->
-      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
-      Pre (denote e_ref) ->
-      (exists i, denote e_ref i) ->
-      atom_in_egraph a e_ref ->
-      state_triple
-        (fun e => post_db_remove e_ref a e)
-        (update_entry a)
-        (fun e res =>
-           Pre (denote (snd res))
-           /\ ne_set_maps_to (denote e_ref) (denote (snd res))).
+  Lemma update_entry_after_db_remove_sound a
+    : state_triple
+      (* weakened egraph_ok as the precondition *)
+      (fun e => (exists roots : list idx, union_find_ok lt (equiv e) roots)
+                /\ all (worklist_entry_ok (equiv e)) (worklist e)
+                /\ forall x s, map.get (parents e) x = Some s ->
+                               all (fun a' => atom_in_egraph_up_to_equiv a' e \/ atom_canonical_equiv e a a') s)
+      (update_entry a)
+      (fun e res => ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
     intros Hex HPa HPre_ref Hex_ref Hatom_ref.
     unfold state_triple, update_entry, post_db_remove.
