@@ -956,15 +956,15 @@ Abort.
 
     Context {A : Type}.
     
-    (* Outcome logic reasoning about e-graph abstractions *)
+    (* Hoare logic reasoning about e-graph abstractions *)
     Definition state_sound_for_model
       (Pre : idx_map (domain m) -> Prop)
       (c : state instance A)
       (Post : A -> idx_map (domain m) -> Prop) :=
       state_triple (fun e => egraph_ok e /\ forall_ne i | denote e i, Pre i) c
         (fun e res => egraph_ok (snd res)
-                      /\ (forall_ne i | denote (snd res) i, Post (fst res) i)
-                      /\ ne_set_maps_to (denote e) (denote (snd res))).
+                      /\ (forall_ne i | denote (snd res) i, Post (fst res) i /\ exists ie, denote e ie /\ map.extends i ie)).
+    
   End __.
 
   (*TODO: move*)
