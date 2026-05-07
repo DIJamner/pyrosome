@@ -2049,41 +2049,33 @@ Abort.
      This is the same shape of argument that is admitted in
      [db_set_entry_sound'] and [repair_each_sound]; it remains
      admitted here. *)
-  Lemma update_entry_after_db_remove_sound a
-    : state_triple
-      (* weakened egraph_ok as the precondition *)
-      (fun e => (exists roots : list idx, union_find_ok lt (equiv e) roots)
-                /\ all (worklist_entry_ok (equiv e)) (worklist e)
-                /\ forall x s, map.get (parents e) x = Some s ->
-                               all (fun a' => atom_in_egraph_up_to_equiv a' e \/ atom_canonical_equiv e a a') s)
-      (update_entry a)
-      (fun e res => ne_set_maps_to (denote e) (denote (snd res))).
+  (* The full structural lemma for the second half of [repair_each]:
+     after [db_remove a] (relating the input state [e] to a
+     pre-removal reference state [e_ref] via [post_db_remove]),
+     [canonicalize a >>= update_entry] restores the egraph so that
+     [Pre], the original [ne_set_maps_to] reference, and the
+     [atom_in_egraph_up_to_equiv]-membership of an arbitrary side
+     list [side_l] are all preserved.  The proof is the deep
+     structural argument (case-split on [update_entry]'s branches
+     and use [HPa]+[atom_in_egraph_up_to_equiv a e_ref] to show
+     [denote] is preserved up to set inclusion, plus the parents-
+     disjunction structural reasoning); it is the same kind of
+     argument that is admitted in [db_set_entry_sound']. *)
+  Lemma update_entry_after_db_remove_sound Pre a side_l (e_ref : instance)
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      Pre (denote e_ref) ->
+      (exists i, denote e_ref i) ->
+      atom_in_egraph_up_to_equiv a e_ref ->
+      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+      state_triple
+        (fun e => post_db_remove e_ref a e)
+        (@! let a' <- canonicalize a in (update_entry a'))
+        (fun e res =>
+           Pre (denote (snd res))
+           /\ ne_set_maps_to (denote e_ref) (denote (snd res))
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
-    unfold state_triple, update_entry.
-    intros e (Hroots & Hwl_ok & Hpar_ok).
-    cbn [Mbind StateMonad.state_monad].
-    destruct (db_lookup idx symbol symbol_map idx_map idx_trie
-                analysis_result a.(atom_fn) a.(atom_args) e)
-      as [mout e0] eqn:Hlk.
-    cbn [fst snd].
-    destruct mout as [r|].
-    - (* [Some r]: [update_entry a] runs [union r a.(atom_ret)],
-         which only refines [equiv].  Every interpretation that
-         is sound for the post-state (which has more equalities)
-         is also sound for the pre-state, so [ne_set_maps_to]
-         holds with [map.extends_refl]. *)
-      admit.
-    - (* [None]: [update_entry a] runs [db_set a].  Same deep
-         structural argument as in [db_set_entry_sound']/
-         [repair_each_sound]: [db_set] extends [db] with [a]'s
-         entry and adds [a] to its arg/ret parents.  The
-         precondition's parents disjunction
-         ([atom_in_egraph_up_to_equiv a' e \/
-            atom_canonical_equiv e a a']) is exactly what is
-         needed to conclude that the new parents map is
-         well-formed in the post-state, since [a] is now in the
-         db. *)
-      admit.
   Admitted.
 
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
@@ -3341,16 +3333,13 @@ TODO: lemmas in the comment block are out of date
      (db_remove_sound is Aborted above), so this lemma is proved as a
      single unit rather than by composition.
 
-     The proof composes the recent state_triple-level lemmas:
-     [db_remove_sound_post] for [db_remove a] (giving the
-     [post_db_remove] structural relationship), then
-     [canonicalize_preserves_fields] for [canonicalize a] (giving
-     [fields_preserved] from the post-[db_remove] state), then
-     [update_entry_after_db_remove_sound] for [update_entry a']
-     (giving [ne_set_maps_to] from the post-canonicalize state).
-     The chaining is done with [state_triple_bind] /
-     [state_triple_consequence] so that [state_triple] never has to
-     be unfolded directly. *)
+     The proof chains [db_remove_sound_post] (giving the
+     [post_db_remove] structural relationship between [e0] and [e1])
+     with [update_entry_after_db_remove_sound] (handling
+     [canonicalize a >>= update_entry] from the post-[db_remove]
+     state, parameterized by the reference state [e0] and the side
+     list [l]) via [state_triple_bind].  [state_triple] is never
+     unfolded in the proof script. *)
   Lemma repair_each_sound Pre a l
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
@@ -3367,9 +3356,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     intros Hex HPa.
     (* Step 1: outer Mbind = [db_remove a] >>= rest.
-       [Q1] carries forward both the original [Pre]/existence/
-       atom-membership facts about [e0] AND the [post_db_remove] facts
-       relating [e0] to [e1]. *)
+       [Q1] bundles the original-[e0] facts and [post_db_remove e0 a e1]. *)
     eapply state_triple_bind with
       (Q1 := fun e0 p =>
                Pre (denote e0)
@@ -3377,10 +3364,7 @@ TODO: lemmas in the comment block are out of date
                /\ atom_in_egraph_up_to_equiv a e0
                /\ all (fun a' => atom_in_egraph_up_to_equiv a' e0) l
                /\ post_db_remove e0 a (snd p)).
-    { (* [db_remove_sound_post] has trivial precondition; weaken via
-         [state_triple_consequence] and bundle the original-state facts
-         into [Q1]. *)
-      eapply state_triple_consequence with
+    { eapply state_triple_consequence with
         (P' := fun _ : instance => True)
         (Q' := fun e0 p => fst p = tt /\ post_db_remove e0 a (snd p)).
       - intros _ _; trivial.
@@ -3392,58 +3376,16 @@ TODO: lemmas in the comment block are out of date
     intros e0 _u e1 _ HQ1.
     destruct HQ1 as (HPre_e0 & Hex_e0 & Hatom_a_e0 & Hatoms_l_e0 & Hpost_remove).
     cbn beta.
-    cbn [Mbind StateMonad.state_monad].
-    (* Step 2: build the inner [state_triple] for [canonicalize a >>=
-       update_entry] via another [state_triple_bind], chained from
-       [canonicalize_preserves_fields] and
-       [update_entry_after_db_remove_sound].  Then apply it as a
-       function to [e1]. *)
-    assert (Hinner :
-              state_triple
-                (fun e1' : instance =>
-                   (exists ll, union_find_ok lt e1'.(equiv) ll)
-                   /\ all (fun i => Sep.has_key i e1'.(equiv).(parent))
-                          a.(atom_args)
-                   /\ Sep.has_key a.(atom_ret) e1'.(equiv).(parent))
-                (Mbind update_entry (canonicalize a))
-                (fun e1' res =>
-                   ne_set_maps_to (denote e1') (denote (snd res)))).
-    { eapply state_triple_bind with
-        (Q1 := fun e1' p => fields_preserved e1' (snd p)).
-      - apply canonicalize_preserves_fields.
-      - intros e1' a' e2 HP HQ.
-        (* [HQ : fields_preserved e1' e2].  Goal:
-             [ne_set_maps_to (denote e1') (denote (snd (update_entry a' e2)))].
-           Apply [update_entry_after_db_remove_sound a'] at [e2]: its
-           precondition (weakened [egraph_ok] with the parents
-           disjunction) needs to be derived from [HP] +
-           [fields_preserved e1' e2]. *)
-        admit. }
-    (* Apply [Hinner] to [e1].  Its precondition (union_find_ok and
-       Sep.has_key for [a]'s args/ret) follows from the soundness of
-       [e0] (via [Hex_e0] + [HPa]) and the field equalities of
-       [Hpost_remove] (equiv unchanged from [e0] to [e1]).  We admit
-       this routine derivation. *)
-    assert (Hpre_e1 :
-              (exists ll, union_find_ok lt e1.(equiv) ll)
-              /\ all (fun i => Sep.has_key i e1.(equiv).(parent))
-                     a.(atom_args)
-              /\ Sep.has_key a.(atom_ret) e1.(equiv).(parent)) by admit.
-    specialize (Hinner e1 Hpre_e1).
-    cbn beta in Hinner.
-    (* [Hinner : ne_set_maps_to (denote e1)
-                                (denote (snd (Mbind (canonicalize a)
-                                                    update_entry e1)))].
-       The remaining repair_each_sound postcondition has three
-       conjuncts: [Pre], [ne_set_maps_to (denote e0) ...] and the
-       side-list preservation.  All three need facts not exposed by
-       the current [ne_set_maps_to]-only postcondition of
-       [update_entry_after_db_remove_sound]; they would need either
-       [upwards_closed Pre] or a strengthening of
-       [update_entry_after_db_remove_sound] to expose the deep iff
-       [forall j, denote e1 j <-> denote e_post j]. *)
-    admit.
-  Admitted.
+    (* Step 2: dispatch [canonicalize a >>= update_entry] from the
+       post-[db_remove] state [e1] via [update_entry_after_db_remove_sound],
+       which is parameterized by the pre-removal reference state [e0]
+       and the side list [l].  Specializing it to [e1] with
+       [Hpost_remove] yields exactly repair_each_sound's three
+       postconditions. *)
+    exact (update_entry_after_db_remove_sound Pre a l e0
+             Hex HPa HPre_e0 Hex_e0 Hatom_a_e0 Hatoms_l_e0
+             e1 Hpost_remove).
+  Qed.
 
   (* State-triple level Mmap of repair_each over a list of atoms.
      The structural invariant — every remaining atom is canonically
