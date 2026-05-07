@@ -1979,6 +1979,107 @@ Abort.
         * intros [HX _]; exact HX.
   Qed.
 
+  (* Predicate capturing the structural facts that [db_remove a]
+     establishes about the relationship between its input state
+     [e_ref] and its output state [e]: every non-db field is
+     unchanged, and the db has lost exactly the entry at
+     [(atom_fn a, atom_args a)]. This is the conjunction of
+     conjuncts in the postcondition of [db_remove_sound]. *)
+  Definition post_db_remove (e_ref : instance) (a : atom) (e : instance) : Prop :=
+    e.(equiv) = e_ref.(equiv)
+    /\ e.(parents) = e_ref.(parents)
+    /\ e.(epoch) = e_ref.(epoch)
+    /\ e.(worklist) = e_ref.(worklist)
+    /\ e.(analyses) = e_ref.(analyses)
+    /\ (forall x, atom_in_egraph x e
+                  <-> atom_in_egraph x e_ref
+                      /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
+
+  (* [db_remove_sound]'s postcondition immediately rephrased as
+     [post_db_remove], for use as a precondition of downstream
+     [update_entry] lemmas. *)
+  Lemma db_remove_sound_post a
+    : state_triple
+        (fun _ : instance => True)
+        (db_remove a)
+        (fun e res => fst res = tt /\ post_db_remove e a (snd res)).
+  Proof.
+    pose proof (db_remove_sound a) as Hd.
+    unfold state_triple, post_db_remove in *.
+    intros e _.
+    specialize (Hd e I).
+    destruct Hd as (Hfst & Heq & Hpa & Hep & Hwl & Han & Hatom).
+    split; [exact Hfst|].
+    split; [exact Heq|].
+    split; [exact Hpa|].
+    split; [exact Hep|].
+    split; [exact Hwl|].
+    split; [exact Han|].
+    exact Hatom.
+  Qed.
+
+  (* [update_entry a] from a state [e] that is the result of
+     [db_remove a] applied to some reference state [e_ref] (in
+     which the abstract precondition [Pre] held and the atom [a]
+     was sound) preserves [Pre] up to [ne_set_maps_to].
+
+     The shape mirrors the postcondition of [state_sound_for_model]
+     ([Pre (denote (snd res)) /\ ne_set_maps_to (denote e)
+     (denote (snd res))]); the precondition is exactly the
+     post-condition of [db_remove_sound] (the [post_db_remove]
+     facts) together with [Pre]/atom-soundness for the original
+     reference state.
+
+     Proof status: the outer reduction (db_lookup at the post-
+     removal state returns [None], so [update_entry] takes the
+     [db_set] branch) is provable from [post_db_remove]; the deep
+     semantic-preservation argument for [db_set] (showing every
+     interpretation sound on the post-state was sound on
+     [e_ref]) reduces to the same [denote]-extensional question
+     that is admitted in [db_set_entry_sound'] and
+     [repair_each_sound], so it is admitted here as well. *)
+  Lemma update_entry_after_db_remove_sound Pre a (e_ref : instance)
+    : (forall s, Pre s -> ex s) ->
+      P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
+      Pre (denote e_ref) ->
+      (exists i, denote e_ref i) ->
+      state_triple
+        (fun e => post_db_remove e_ref a e)
+        (update_entry a)
+        (fun e res =>
+           Pre (denote (snd res))
+           /\ ne_set_maps_to (denote e_ref) (denote (snd res))).
+  Proof.
+    intros Hex HPa HPre_ref Hex_ref.
+    unfold state_triple, update_entry, post_db_remove.
+    intros e (Heq_eq & Heq_pa & Heq_ep & Heq_wl & Heq_an & Hatom_iff).
+    cbn [Mbind StateMonad.state_monad].
+    (* db_lookup at e returns None, since e has lost a's entry. *)
+    assert (Hlk : db_lookup idx symbol symbol_map idx_map idx_trie
+                     analysis_result a.(atom_fn) a.(atom_args) e
+                  = (None, e)).
+    { unfold db_lookup. cbn [fst snd].
+      destruct (map.get e.(db) (atom_fn a)) as [tbl|] eqn:Htbl;
+        cbn; [|reflexivity].
+      destruct (map.get tbl (atom_args a)) as [d|] eqn:Hd;
+        cbn; [|reflexivity].
+      (* [a] would be in [e.(db)] at this point, contradicting
+         [Hatom_iff]. *)
+      exfalso.
+      assert (Hin_e : atom_in_egraph
+                       (Build_atom (atom_fn a) (atom_args a)
+                                   (entry_value _ _ d)) e).
+      { unfold atom_in_egraph, atom_in_db; cbn.
+        rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
+      apply Hatom_iff in Hin_e.
+      destruct Hin_e as [_ Hne]. apply Hne. cbn. reflexivity. }
+    rewrite Hlk. cbn [fst snd].
+    (* Now the goal is to show [Pre] / [ne_set_maps_to] for
+       [db_set a e]. The deep semantic argument that [db_set a]
+       restores the egraph denotation up to [ne_set_maps_to] from
+       [e_ref] is admitted; see the lemma's docstring. *)
+  Admitted.
+
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
     atom_fn a1 = atom_fn a2 /\
       all2 (eq_sound_for_model m i) (atom_args a1) (atom_args a2) /\
