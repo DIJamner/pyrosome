@@ -2020,29 +2020,41 @@ Abort.
 
   (* [update_entry a] from a state [e] that is the result of
      [db_remove a] applied to some reference state [e_ref] (in
-     which the abstract precondition [Pre] held and the atom [a]
-     was sound) preserves [Pre] up to [ne_set_maps_to].
+     which the abstract precondition [Pre] held, [a] was a
+     literal entry in the db, and the atom [a] was sound)
+     preserves [Pre] up to [ne_set_maps_to].
 
      The shape mirrors the postcondition of [state_sound_for_model]
      ([Pre (denote (snd res)) /\ ne_set_maps_to (denote e)
      (denote (snd res))]); the precondition is exactly the
      post-condition of [db_remove_sound] (the [post_db_remove]
-     facts) together with [Pre]/atom-soundness for the original
-     reference state.
+     facts), [atom_in_egraph a e_ref] so that the entry
+     [db_remove] erased had value [atom_ret a], plus
+     [Pre]/atom-soundness/existence for the original reference
+     state.
 
-     Proof status: the outer reduction (db_lookup at the post-
-     removal state returns [None], so [update_entry] takes the
-     [db_set] branch) is provable from [post_db_remove]; the deep
-     semantic-preservation argument for [db_set] (showing every
-     interpretation sound on the post-state was sound on
-     [e_ref]) reduces to the same [denote]-extensional question
-     that is admitted in [db_set_entry_sound'] and
-     [repair_each_sound], so it is admitted here as well. *)
+     The proof reduces to two parts: (1) [db_lookup] at the
+     post-removal state returns [None], so [update_entry] takes
+     the [db_set] branch (provable from [post_db_remove]);
+     (2) for every interpretation [j], [denote e_ref j] iff
+     [denote (snd (db_set a e)) j], from which the conclusion
+     follows by [set_pred_ext] and [Properties.map.extends_refl].
+     Part (2) is the deep semantic-preservation argument: the
+     [equiv] field is unchanged by [db_set], the only [db]
+     change is restoring the (atom_fn a, atom_args a) entry that
+     [atom_in_egraph a e_ref] guarantees was already there with
+     value [atom_ret a], the new [parents] entries reference [a]
+     which is in the db, and any new [worklist] entries are
+     [analysis_repair] which are trivially [worklist_entry_ok].
+     This is the same shape of argument that is admitted in
+     [db_set_entry_sound'] and [repair_each_sound]; it remains
+     admitted here. *)
   Lemma update_entry_after_db_remove_sound Pre a (e_ref : instance)
     : (forall s, Pre s -> ex s) ->
       P_guarantees Pre (fun i => atom_sound_for_model m i a) ->
       Pre (denote e_ref) ->
       (exists i, denote e_ref i) ->
+      atom_in_egraph a e_ref ->
       state_triple
         (fun e => post_db_remove e_ref a e)
         (update_entry a)
@@ -2050,7 +2062,7 @@ Abort.
            Pre (denote (snd res))
            /\ ne_set_maps_to (denote e_ref) (denote (snd res))).
   Proof.
-    intros Hex HPa HPre_ref Hex_ref.
+    intros Hex HPa HPre_ref Hex_ref Hatom_ref.
     unfold state_triple, update_entry, post_db_remove.
     intros e (Heq_eq & Heq_pa & Heq_ep & Heq_wl & Heq_an & Hatom_iff).
     cbn [Mbind StateMonad.state_monad].
@@ -2074,10 +2086,22 @@ Abort.
       apply Hatom_iff in Hin_e.
       destruct Hin_e as [_ Hne]. apply Hne. cbn. reflexivity. }
     rewrite Hlk. cbn [fst snd].
-    (* Now the goal is to show [Pre] / [ne_set_maps_to] for
-       [db_set a e]. The deep semantic argument that [db_set a]
-       restores the egraph denotation up to [ne_set_maps_to] from
-       [e_ref] is admitted; see the lemma's docstring. *)
+    (* Reduced to: state_triple-style claim about [db_set a] from
+       [e].  Factor out the deep semantic preservation as an
+       extensional iff between [denote e_ref] and [denote
+       (snd (db_set a e))], from which the postcondition follows
+       structurally. *)
+    set (e3 := snd (db_set _ _ _ _ _ _ _ a e)).
+    assert (Hiff : forall j, denote e_ref j <-> denote e3 j).
+    { admit. }
+    split.
+    - eapply set_pred_ext; [intros j; apply Hiff | exact HPre_ref].
+    - destruct Hex_ref as [iSSC HiSSC].
+      econstructor.
+      + apply Hiff. exact HiSSC.
+      + intros j Hj. exists j. split.
+        * apply Hiff. exact Hj.
+        * apply Properties.map.extends_refl.
   Admitted.
 
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
