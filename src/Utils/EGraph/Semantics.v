@@ -3176,6 +3176,165 @@ TODO: lemmas in the comment block are out of date
     apply (fields_preserved_trans _ _ _ Hf01 Hf12).
   Qed.
 
+  (* Strengthened [find_preserves_fields]: in addition to fields
+     preservation, the returned canonical idx [v'] is
+     [uf_rel_PER]-equivalent to the input [x] in the post-state's
+     [equiv].  The extra conjunct comes from [find_spec]'s
+     [parent_rel uf'.(parent) x v'], which is included in
+     [PER_closure] via [trans_PER_subrel] and then symmetrized. *)
+  Lemma find_preserves_fields_strong (x : idx)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ Sep.has_key x e.(equiv).(parent))
+        (find x)
+        (fun (e : instance) (res : (idx * instance)%type) =>
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
+           /\ uf_rel_PER _ _ _ (snd res).(equiv) (fst res) x).
+  Proof.
+    unfold state_triple, find, fields_preserved.
+    intros e [Hex Hkey].
+    destruct Hex as [l Huf].
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
+         Defs.analyses Defs.equiv].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Huf Hkey Hfind) as Hspec.
+    destruct Hspec as (Huf' & _ & Hpr & _ & Hlim_iff & Hkey_iff).
+    pose proof Huf as Huf_copy. destruct Huf_copy as [Hf_old _ _ _ _].
+    pose proof Huf' as Huf'_copy. destruct Huf'_copy as [Hf_new _ _ _ _].
+    cbn in Hf_old, Hf_new.
+    split; [exists l; exact Huf'|].
+    split.
+    { repeat (split; [reflexivity|]).
+      split.
+      { intros y; split; intros Hk; apply Hkey_iff; exact Hk. }
+      intros i j.
+      unfold uf_rel_PER.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as HP2.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim_iff; auto). }
+    cbn [fst].
+    unfold uf_rel_PER.
+    apply PER_clo_sym.
+    unfold parent_rel in Hpr.
+    clear -Hpr.
+    induction Hpr.
+    - apply PER_clo_base; assumption.
+    - eapply PER_clo_trans;
+        [apply PER_clo_base; eassumption | exact IHHpr].
+  Qed.
+
+  (* Strengthened [list_Mmap_find_preserves_fields]: additionally,
+     the returned canonical idxs are [uf_rel_PER]-equivalent to
+     their inputs (pointwise via [all2]) in the post-state's
+     [equiv].  Proven by direct induction on [xs] rather than via
+     [state_triple_list_Mmap_inv], since the per-element canonical-
+     equivalence outputs need to be carried through subsequent
+     [find]s (using [iff2] of [uf_rel_PER] across path
+     compression). *)
+  Lemma list_Mmap_find_preserves_fields_strong (xs : list idx)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs)
+        (list_Mmap find xs)
+        (fun (e : instance) (res : (list idx * instance)%type) =>
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
+           /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv)) (fst res) xs).
+  Proof.
+    induction xs as [| x xs' IH].
+    - unfold state_triple. intros e [Hex _].
+      cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      split; [exact Hex|]. split; [apply fields_preserved_refl|]. exact I.
+    - unfold state_triple. intros e [Hex Hkeys].
+      cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
+      cbn [list_Mmap Mbind StateMonad.state_monad].
+      pose proof (find_preserves_fields_strong x e (conj Hex Hkey_x)) as Hf.
+      cbn beta in Hf.
+      destruct (find x e) as [y e1] eqn:Hfind_x.
+      cbn [fst snd] in Hf.
+      destruct Hf as (Hex1 & Hf01 & Huf_yx).
+      assert (Hkeys'_e1 :
+                all (fun i => Sep.has_key i e1.(equiv).(parent)) xs').
+      { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+        revert Hkeys'. clear -Hkey_iff.
+        induction xs' as [| y' ys' IHy']; cbn; auto.
+        intros [Hy' Hys']. split;
+          [apply Hkey_iff; exact Hy' | apply IHy'; exact Hys']. }
+      pose proof (IH e1 (conj Hex1 Hkeys'_e1)) as IHapp.
+      cbn beta in IHapp.
+      destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
+      cbn [fst snd] in IHapp.
+      destruct IHapp as (Hex2 & Hf12 & Hall_ys'_xs').
+      cbn [Mret StateMonad.state_monad fst snd].
+      split; [exact Hex2|].
+      split; [eapply fields_preserved_trans; eauto|].
+      cbn [all2].
+      split.
+      + destruct Hf12 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+        apply Huf_iff. exact Huf_yx.
+      + exact Hall_ys'_xs'.
+  Qed.
+
+  (* Strengthened [canonicalize_preserves_fields]: additionally, the
+     returned atom [a'] has the same [atom_fn] as [a] (by
+     construction of [Build_atom]) and its [atom_ret]/[atom_args]
+     are pointwise [uf_rel_PER]-equivalent to those of [a] in the
+     post-state's [equiv]. *)
+  Lemma canonicalize_preserves_fields_strong (a : atom)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ all (fun i => Sep.has_key i e.(equiv).(parent))
+                  a.(atom_args)
+           /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
+        (canonicalize a)
+        (fun (e : instance) (res : (atom * instance)%type) =>
+           fields_preserved e (snd res)
+           /\ atom_fn (fst res) = atom_fn a
+           /\ uf_rel_PER _ _ _ (snd res).(equiv)
+                (atom_ret (fst res)) (atom_ret a)
+           /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
+                (atom_args (fst res)) (atom_args a)).
+  Proof.
+    destruct a as [fn args o]. cbn [atom_args atom_ret atom_fn] in *.
+    unfold canonicalize.
+    unfold state_triple.
+    intros e (Hex & Hkey_args & Hkey_o).
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (list_Mmap_find_preserves_fields_strong args e
+                  (conj Hex Hkey_args)) as Hl.
+    cbn beta in Hl.
+    destruct (list_Mmap find args e) as [args' e1] eqn:Hmap.
+    cbn [fst snd] in Hl.
+    destruct Hl as (Hex1 & Hf01 & Hall_args').
+    assert (Hkey_o_e1 : Sep.has_key o e1.(equiv).(parent)).
+    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      apply Hkey_iff. exact Hkey_o. }
+    pose proof (find_preserves_fields_strong o e1
+                  (conj Hex1 Hkey_o_e1)) as Hfo.
+    cbn beta in Hfo.
+    destruct (find o e1) as [o' e2] eqn:Hfind_o.
+    cbn [fst snd] in Hfo.
+    destruct Hfo as (_ & Hf12 & Huf_o'_o).
+    cbn [Mret StateMonad.state_monad fst snd].
+    cbn [Defs.atom_fn Defs.atom_ret Defs.atom_args].
+    split; [eapply fields_preserved_trans; eauto|].
+    split; [reflexivity|].
+    split; [exact Huf_o'_o|].
+    destruct Hf12 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+    eapply all2_iff2; [exact Huf_iff | exact Hall_args'].
+  Qed.
+
   (* Canonicalize step of [repair_each_sound]'s [canonicalize a >>=
      update_entry] body, packaged as a [state_triple] so that
      [repair_each_sound] is a clean [state_triple_bind] composition
@@ -3217,7 +3376,54 @@ TODO: lemmas in the comment block are out of date
                 (atom_args (fst res)) (atom_args a)).
   Proof.
     intros HPa Hok_ref Hne_ref.
-  Admitted.
+    eapply state_triple_consequence
+      with (P' := fun e =>
+                    (exists l, union_find_ok lt e.(equiv) l)
+                    /\ all (fun i => Sep.has_key i e.(equiv).(parent))
+                           a.(atom_args)
+                    /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
+           (Q' := fun e res =>
+                    fields_preserved e (snd res)
+                    /\ atom_fn (fst res) = atom_fn a
+                    /\ uf_rel_PER _ _ _ (snd res).(equiv)
+                         (atom_ret (fst res)) (atom_ret a)
+                    /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
+                         (atom_args (fst res)) (atom_args a)).
+    - (* Derive the [canonicalize_preserves_fields_strong] precondition
+         from [post_db_remove e_ref a s] together with the outer
+         hypotheses (existence of an interpretation of [e_ref]
+         witnessing [Pre], hence [atom_sound_for_model m _ a], hence
+         [Sep.has_key] for [a]'s args/ret in [e_ref.(equiv).(parent)],
+         hence in [s.(equiv).(parent)] by [post_db_remove]). *)
+      intros s Hpost_s.
+      destruct Hpost_s as (Hequiv_eq & _).
+      destruct Hne_ref as [iSSC HiSSC HPre].
+      pose proof (HPre _ HiSSC) as HPre_iSSC.
+      pose proof (HPa _ HPre_iSSC) as Hsound.
+      pose proof (atom_sound_args_have_key _ _ Hsound) as Hkey_args_i.
+      pose proof (atom_sound_ret_has_key _ _ Hsound) as Hkey_ret_i.
+      destruct HiSSC as [_ Hexact _ _].
+      destruct Hok_ref as [Hex_ref _ _].
+      assert (Hkey_lift : forall x,
+                 Sep.has_key x iSSC ->
+                 Sep.has_key x s.(equiv).(parent)).
+      { intros x Hkx.
+        rewrite Hequiv_eq.
+        apply Hexact.
+        unfold Sep.has_key in Hkx.
+        destruct (map.get iSSC x); cbn; [exact I | tauto]. }
+      split; [|split].
+      + (* exists l, union_find_ok ... *)
+        rewrite Hequiv_eq. exact Hex_ref.
+      + (* all has_key on args *)
+        revert Hkey_args_i. clear -Hkey_lift.
+        induction (atom_args a) as [| x xs IH]; cbn; auto.
+        intros [Hx Hxs]. split; [apply Hkey_lift; exact Hx | apply IH; exact Hxs].
+      + (* has_key on ret *)
+        apply Hkey_lift. exact Hkey_ret_i.
+    - intros s p _ HQ; exact HQ.
+    - apply canonicalize_preserves_fields_strong.
+  Qed.
 
   (* Update_entry step of [repair_each_sound]'s [canonicalize a >>=
      update_entry] body.  This is where the deep semantic-
