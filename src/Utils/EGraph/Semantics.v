@@ -2087,11 +2087,23 @@ Abort.
       destruct Hin_e as [_ Hne]. apply Hne. cbn. reflexivity. }
     rewrite Hlk. cbn [fst snd].
     (* Reduced to: state_triple-style claim about [db_set a] from
-       [e].  Factor out the deep semantic preservation as an
-       extensional iff between [denote e_ref] and [denote
-       (snd (db_set a e))], from which the postcondition follows
-       structurally. *)
-    set (e3 := snd (db_set _ _ _ _ _ _ _ a e)).
+       [e].  Compute [db_set a e] step by step and extract
+       structural facts about the final state [e3]. *)
+    unfold db_set; cbn [Mbind StateMonad.state_monad].
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                 analysis_result (atom_args a) e) as [arg_as e1] eqn:Hge.
+    cbn [fst snd].
+    set (out_a := @analyze _ _ _ H a arg_as).
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_ret a) out_a e1) as [u e2] eqn:Hue.
+    destruct u. cbn [fst snd].
+    (* [get_analyses] preserves all fields except [analyses] and
+       [worklist]; [update_analyses] preserves all fields except
+       [analyses]; [db_set'] only modifies [db] and [parents].
+       Together with [Heq_eq], [Heq_ep], etc., we obtain the
+       structural relationship between the final state and
+       [e_ref]. *)
+    set (e3 := snd (db_set' _ _ _ _ _ _ _ a out_a e2)).
     assert (Hiff : forall j, denote e_ref j <-> denote e3 j).
     { admit. }
     split.
