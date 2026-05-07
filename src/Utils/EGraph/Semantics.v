@@ -3129,6 +3129,209 @@ TODO: lemmas in the comment block are out of date
       cbn. split; eauto.
   Qed.
 
+  (* Predicate: every instance field except [equiv] is preserved
+     verbatim, [equiv] may have been path-compressed but its key set
+     and equivalence relation [uf_rel_PER] are preserved. *)
+  Definition fields_preserved (e e' : instance) : Prop :=
+    e'.(db) = e.(db)
+    /\ e'.(parents) = e.(parents)
+    /\ e'.(epoch) = e.(epoch)
+    /\ e'.(worklist) = e.(worklist)
+    /\ e'.(analyses) = e.(analyses)
+    /\ (forall y, Sep.has_key y e.(equiv).(parent)
+                  <-> Sep.has_key y e'.(equiv).(parent))
+    /\ iff2 (uf_rel_PER _ _ _ e.(equiv))
+            (uf_rel_PER _ _ _ e'.(equiv)).
+
+  Lemma fields_preserved_refl (e : instance)
+    : fields_preserved e e.
+  Proof.
+    unfold fields_preserved.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [intros y; reflexivity|].
+    intros i j; reflexivity.
+  Qed.
+
+  Lemma fields_preserved_trans (e1 e2 e3 : instance)
+    : fields_preserved e1 e2 ->
+      fields_preserved e2 e3 ->
+      fields_preserved e1 e3.
+  Proof.
+    unfold fields_preserved.
+    intros (Hd1 & Hp1 & Hep1 & Hw1 & Han1 & Hk1 & Hi1).
+    intros (Hd2 & Hp2 & Hep2 & Hw2 & Han2 & Hk2 & Hi2).
+    split; [congruence|].
+    split; [congruence|].
+    split; [congruence|].
+    split; [congruence|].
+    split; [congruence|].
+    split.
+    + intros y; specialize (Hk1 y); specialize (Hk2 y); tauto.
+    + intros i j; specialize (Hi1 i j); specialize (Hi2 i j); tauto.
+  Qed.
+
+  (* [find x] only modifies the [equiv] field through path
+     compression. All non-equiv fields are preserved verbatim,
+     union-find well-formedness is preserved with the same root
+     list, and the equivalence relation [uf_rel_PER] together with
+     the key set of [equiv.(parent)] is preserved up to pointwise
+     iff. *)
+  Lemma find_preserves_fields (x : idx)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ Sep.has_key x e.(equiv).(parent))
+        (find x)
+        (fun (e : instance) (res : (idx * instance)%type) =>
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)).
+  Proof.
+    unfold state_triple, find, fields_preserved.
+    intros e Hpre.
+    destruct Hpre as [Hex Hkey].
+    destruct Hex as [l Huf].
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
+         Defs.analyses Defs.equiv].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Huf Hkey Hfind) as Hspec.
+    destruct Hspec as (Huf' & _ & _ & _ & Hlim_iff & Hkey_iff).
+    pose proof Huf as Huf_copy. destruct Huf_copy as [Hf_old _ _ _ _].
+    pose proof Huf' as Huf'_copy. destruct Huf'_copy as [Hf_new _ _ _ _].
+    cbn in Hf_old, Hf_new.
+    split; [exists l; exact Huf'|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split.
+    { intros y; split; intros Hk; apply Hkey_iff; exact Hk. }
+    intros i j.
+    unfold uf_rel_PER.
+    pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                  _ _ Hf_old i j) as HP1.
+    pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                  _ _ Hf_new i j) as HP2.
+    rewrite HP1, HP2.
+    split; intros (r & Hl1 & Hl2); exists r;
+      intuition (try apply Hlim_iff; auto).
+  Qed.
+
+  (* Iterating [find] over a list of indices preserves the same
+     structural facts as a single [find]. Proven by [state_triple_
+     list_Mmap_inv] using [fields_preserved] (reflexive +
+     transitive) as the step relation. *)
+  Lemma list_Mmap_find_preserves_fields (xs : list idx)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs)
+        (list_Mmap find xs)
+        (fun (e : instance) (res : (list idx * instance)%type) =>
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)).
+  Proof.
+    pose (P := fun (xs : list idx) (e : instance) =>
+                 (exists l, union_find_ok lt e.(equiv) l)
+                 /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs).
+    eapply state_triple_consequence
+      with (P' := P xs)
+           (Q' := fun e p => P [] (snd p) /\ fields_preserved e (snd p)).
+    { intros s HP; exact HP. }
+    { intros s p _ HQ.
+      destruct HQ as [HPnil Hf].
+      subst P. cbv beta in HPnil.
+      destruct HPnil as [Hex _].
+      split; [exact Hex | exact Hf]. }
+    eapply state_triple_list_Mmap_inv with (R := fields_preserved).
+    - intros s _; apply fields_preserved_refl.
+    - intros e1 e2 e3; apply fields_preserved_trans.
+    - intros x l_rest.
+      subst P. cbv beta.
+      eapply state_triple_consequence
+        with (P' := fun e => (exists l, union_find_ok lt e.(equiv) l)
+                             /\ Sep.has_key x e.(equiv).(parent))
+             (Q' := fun e p => (exists l, union_find_ok lt (snd p).(equiv) l)
+                               /\ fields_preserved e (snd p)).
+      + intros s [Hex Hall]. cbn [all] in Hall.
+        destruct Hall as [Hkey _]. split; assumption.
+      + intros s p [Hex_pre Hall_pre] [Hex_post Hf_post].
+        cbn [all] in Hall_pre.
+        destruct Hall_pre as [Hkey_x Hall_rest].
+        split; [split; [exact Hex_post|] | exact Hf_post].
+        destruct Hf_post as (_ & _ & _ & _ & _ & Hkey_iff & _).
+        revert Hall_rest. clear -Hkey_iff.
+        induction l_rest as [| y ys IHy]; cbn; auto.
+        intros [Hy Hys]; split; [apply Hkey_iff; exact Hy
+                                | apply IHy; exact Hys].
+      + apply find_preserves_fields.
+  Qed.
+
+  (* [canonicalize a] is a sequence of [find] calls (one per arg
+     and one for the return idx) followed by a [Build_atom]. As
+     such, every instance field except [equiv] is preserved
+     verbatim, and [equiv] changes only by path compression so
+     [uf_rel_PER] is preserved up to pointwise iff. *)
+  Lemma canonicalize_preserves_fields (a : atom)
+    : state_triple
+        (fun (e : instance) =>
+           (exists l, union_find_ok lt e.(equiv) l)
+           /\ all (fun i => Sep.has_key i e.(equiv).(parent))
+                  a.(atom_args)
+           /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
+        (canonicalize a)
+        (fun (e : instance) (res : (atom * instance)%type) =>
+           fields_preserved e (snd res)).
+  Proof.
+    destruct a as [fn args o]. cbn [atom_args atom_ret] in *.
+    unfold canonicalize.
+    eapply state_triple_bind with
+      (P := fun e => (exists l, union_find_ok lt e.(equiv) l)
+                     /\ all (fun i => Sep.has_key i e.(equiv).(parent)) args
+                     /\ Sep.has_key o e.(equiv).(parent))
+      (Q1 := fun e p => Sep.has_key o (snd p).(equiv).(parent)
+                        /\ (exists l, union_find_ok lt (snd p).(equiv) l)
+                        /\ fields_preserved e (snd p)).
+    { (* state_triple for [list_Mmap find args] with the strict P. *)
+      eapply state_triple_consequence
+        with (P' := fun e => (exists l, union_find_ok lt e.(equiv) l)
+                             /\ all (fun i => Sep.has_key i e.(equiv).(parent)) args)
+             (Q' := fun e p => (exists l, union_find_ok lt (snd p).(equiv) l)
+                               /\ fields_preserved e (snd p)).
+      - intros s HP.
+        destruct HP as [Hex HrestP].
+        destruct HrestP as [Hall_args Hkey_o_unused].
+        split; assumption.
+      - intros s p HP HQ.
+        destruct HP as [HexPre HrestP].
+        destruct HrestP as [Hall_args_unused Hkey_o].
+        destruct HQ as [Hex_post Hf].
+        split; [|split; assumption].
+        destruct Hf as (_ & _ & _ & _ & _ & Hkey_iff & _).
+        apply Hkey_iff; exact Hkey_o.
+      - apply list_Mmap_find_preserves_fields. }
+    (* Continuation: given Q1, run [find o >>= ret (Build_atom ...)] *)
+    intros e0 args' e1 HP HQ.
+    destruct HQ as [Hkey_o_e1 HrestQ].
+    destruct HrestQ as [Hex_e1 Hf01].
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (find_preserves_fields o e1
+                  (conj Hex_e1 Hkey_o_e1)) as Hfo.
+    cbn beta in Hfo.
+    destruct (find o e1) as [o' e2] eqn:Hfind_o.
+    cbn [fst snd] in Hfo.
+    destruct Hfo as [_ Hf12].
+    cbn [Mret StateMonad.state_monad fst snd].
+    apply (fields_preserved_trans _ _ _ Hf01 Hf12).
+  Qed.
+
   Lemma list_Mmap_repair_each_sound Pre old_ps
     : (forall s, Pre s -> ex s) ->
       state_triple
