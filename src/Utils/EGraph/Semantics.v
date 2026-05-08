@@ -3458,6 +3458,24 @@ TODO: lemmas in the comment block are out of date
     - intros r Hatom. exact Hatom.
   Qed.
 
+  Definition union_worklist_rel (e e' : instance) x y :=
+    e'.(worklist) = e.(worklist)
+    \/ exists a, e'.(worklist) = (union_repair _ x y a)::e.(worklist)
+    \/ exists a, e'.(worklist) = (union_repair _ y x a)::e.(worklist).
+
+  Lemma union_sound x y
+    : state_triple (fun e => exists roots : list idx, union_find_ok lt (equiv e) roots)
+        (Defs.union x y)
+        (fun e res =>
+           e.(db) = (snd res).(db)
+           /\ e.(parents) = (snd res).(parents)
+           /\ union_worklist_rel e (snd res) x y
+           /\ (forall y : idx, Sep.has_key y (parent (equiv e)) <-> Sep.has_key y (parent (equiv (snd res))))
+           /\ iff2 (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e))
+                 (union_closure_PER (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv (snd res))) (singleton_rel x y))).
+  Proof.
+  Admitted.
+
   (* Some-branch helper for [update_entry_canonicalized_after_db_
      remove_sound].  When [db_lookup (atom_fn a') (atom_args a')]
      returned [Some r] (so [Build_atom (atom_fn a') (atom_args a') r]
