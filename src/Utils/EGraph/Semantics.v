@@ -2911,6 +2911,16 @@ TODO: lemmas in the comment block are out of date
     apply Hf; auto.
   Qed.
 
+  (* Generic state_triple-level [Mseq] lemma, derived from
+     [state_triple_bind]: lets callers reason about [Mseq c1 c2]
+     without unfolding [Mseq]. *)
+  Lemma state_triple_Mseq {S A B} (c1 : state S A) (c2 : state S B)
+    (P : S -> Prop) (Q1 : S -> A * S -> Prop) (Q2 : S -> B * S -> Prop)
+    : state_triple P c1 Q1 ->
+      (forall e0 a e1, P e0 -> Q1 e0 (a, e1) -> Q2 e0 (c2 e1)) ->
+      state_triple P (Mseq c1 c2) Q2.
+  Proof. apply state_triple_bind. Qed.
+
   (* Pre/post weakening for state_triple. *)
   Lemma state_triple_consequence {S A} (c : state S A)
     (P P' : S -> Prop) (Q Q' : S -> A * S -> Prop)
@@ -3516,8 +3526,7 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
     intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0.
-    unfold Mseq.
-    eapply state_triple_bind with
+    eapply state_triple_Mseq with
       (Q1 := fun e1 res =>
          (* [union_sound] facts about how [Defs.union r a'.(atom_ret)]
             relates the pre-state [e1] and the post-state [snd res]. *)
