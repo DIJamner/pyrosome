@@ -3303,7 +3303,8 @@ TODO: lemmas in the comment block are out of date
            /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
         (canonicalize a)
         (fun (e : instance) (res : (atom * instance)%type) =>
-           fields_preserved e (snd res)
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
            /\ atom_fn (fst res) = atom_fn a
            /\ uf_rel_PER _ _ _ (snd res).(equiv)
                 (atom_ret (fst res)) (atom_ret a)
@@ -3329,9 +3330,10 @@ TODO: lemmas in the comment block are out of date
     cbn beta in Hfo.
     destruct (find o e1) as [o' e2] eqn:Hfind_o.
     cbn [fst snd] in Hfo.
-    destruct Hfo as (_ & Hf12 & Huf_o'_o).
+    destruct Hfo as (Hex2 & Hf12 & Huf_o'_o).
     cbn [Mret StateMonad.state_monad fst snd].
     cbn [Defs.atom_fn Defs.atom_ret Defs.atom_args].
+    split; [exact Hex2|].
     split; [eapply fields_preserved_trans; eauto|].
     split; [reflexivity|].
     split; [exact Huf_o'_o|].
@@ -3372,7 +3374,8 @@ TODO: lemmas in the comment block are out of date
         (fun e => post_db_remove e_ref a e)
         (canonicalize a)
         (fun e res =>
-           fields_preserved e (snd res)
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
            /\ atom_fn (fst res) = atom_fn a
            /\ uf_rel_PER _ _ _ (snd res).(equiv)
                 (atom_ret (fst res)) (atom_ret a)
@@ -3387,7 +3390,8 @@ TODO: lemmas in the comment block are out of date
                            a.(atom_args)
                     /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
            (Q' := fun e res =>
-                    fields_preserved e (snd res)
+                    (exists l, union_find_ok lt (snd res).(equiv) l)
+                    /\ fields_preserved e (snd res)
                     /\ atom_fn (fst res) = atom_fn a
                     /\ uf_rel_PER _ _ _ (snd res).(equiv)
                          (atom_ret (fst res)) (atom_ret a)
@@ -3471,8 +3475,9 @@ TODO: lemmas in the comment block are out of date
            /\ e.(parents) = (snd res).(parents)
            /\ union_worklist_rel e (snd res) x y
            /\ (forall y : idx, Sep.has_key y (parent (equiv e)) <-> Sep.has_key y (parent (equiv (snd res))))
-           /\ iff2 (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e))
-                 (union_closure_PER (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv (snd res))) (singleton_rel x y))).
+           /\ (exists roots' : list idx, union_find_ok lt (equiv (snd res)) roots')
+           /\ iff2 (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv (snd res)))
+                 (union_closure_PER (uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e)) (singleton_rel x y))).
   Proof.
   Admitted.
 
@@ -3496,7 +3501,8 @@ TODO: lemmas in the comment block are out of date
       post_db_remove e_ref a e0 ->
       state_triple
         (fun e1 =>
-           fields_preserved e0 e1
+           (exists roots, union_find_ok lt e1.(equiv) roots)
+           /\ fields_preserved e0 e1
            /\ atom_fn a' = atom_fn a
            /\ uf_rel_PER _ _ _ e1.(equiv) (atom_ret a') (atom_ret a)
            /\ all2 (uf_rel_PER _ _ _ e1.(equiv))
@@ -3510,13 +3516,185 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
     intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0.
-    (* Same shape of admit as [db_set_entry_sound'] (line ~3882):
-       a [state_triple]-level [union_sound] argument, lifting the
-       per-interpretation [union_sound] (in the older [state_sound_
-       for_model m i] formulation, currently inside the comment
-       block at line ~2270) to the [Pre]-quantified setting, plus
-       [side_l]-monotonicity in [equiv] (enlarging [equiv] only
-       enlarges the [atom_canonical_equiv]-class). *)
+    unfold Mseq.
+    eapply state_triple_bind with
+      (Q1 := fun e1 res =>
+         (* [union_sound] facts about how [Defs.union r a'.(atom_ret)]
+            relates the pre-state [e1] and the post-state [snd res]. *)
+         e1.(db) = (snd res).(db)
+         /\ e1.(parents) = (snd res).(parents)
+         /\ union_worklist_rel e1 (snd res) r a'.(atom_ret)
+         /\ (forall y, Sep.has_key y (parent (equiv e1))
+                       <-> Sep.has_key y (parent (equiv (snd res))))
+         /\ (exists roots', union_find_ok lt (equiv (snd res)) roots')
+         /\ iff2 (uf_rel_PER _ _ _ (equiv (snd res)))
+                (union_closure_PER
+                   (uf_rel_PER _ _ _ (equiv e1))
+                   (singleton_rel r a'.(atom_ret)))
+         (* Pre-union facts threaded forward (the union does not
+            touch [db], [parents], or the structural [a/a']
+            equalities; we keep them on [e1] for use after the
+            bind). *)
+         /\ fields_preserved e0 e1
+         /\ atom_fn a' = atom_fn a
+         /\ uf_rel_PER _ _ _ e1.(equiv) (atom_ret a') (atom_ret a)
+         /\ all2 (uf_rel_PER _ _ _ e1.(equiv))
+              (atom_args a') (atom_args a)
+         /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1).
+    { (* Run [union_sound] under a strengthened pre/post via
+         [state_triple_consequence].  The strengthened precondition
+         [P'] adds [exists roots, union_find_ok lt e1.(equiv) roots],
+         which [union_sound] requires; the post just packages
+         [union_sound]'s output with the threaded pre-union facts. *)
+      eapply state_triple_consequence with
+        (P' := fun e1 =>
+           (exists roots, union_find_ok lt (equiv e1) roots)
+           /\ fields_preserved e0 e1
+           /\ atom_fn a' = atom_fn a
+           /\ uf_rel_PER _ _ _ e1.(equiv) (atom_ret a') (atom_ret a)
+           /\ all2 (uf_rel_PER _ _ _ e1.(equiv))
+                (atom_args a') (atom_args a)
+           /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1)
+        (Q' := fun e1 res =>
+           (e1.(db) = (snd res).(db)
+            /\ e1.(parents) = (snd res).(parents)
+            /\ union_worklist_rel e1 (snd res) r a'.(atom_ret)
+            /\ (forall y, Sep.has_key y (parent (equiv e1))
+                          <-> Sep.has_key y (parent (equiv (snd res))))
+            /\ (exists roots', union_find_ok lt (equiv (snd res)) roots')
+            /\ iff2 (uf_rel_PER _ _ _ (equiv (snd res)))
+                   (union_closure_PER
+                      (uf_rel_PER _ _ _ (equiv e1))
+                      (singleton_rel r a'.(atom_ret))))).
+      - (* Original precondition implies [P']: the [union_find_ok]
+           witness now comes directly from the precondition. *)
+        intros e1 (Hex_e1 & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1).
+        repeat (split; try assumption).
+      - (* [P] /\ [Q'] implies [Q1]: just package conjuncts. *)
+        intros e1 res Hp HQ.
+        destruct Hp as (Hex_e1 & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1).
+        destruct HQ as (Hdb & Hpa & Hwl & Hkey & Hex_post & Huf).
+        repeat (split; try assumption).
+      - (* Apply [union_sound] after weakening [P'] down to its
+           [union_sound] precondition. *)
+        eapply state_triple_consequence;
+          [ intros e1 Hp; exact (proj1 Hp)
+          | intros s p _ HQ; exact HQ
+          | apply union_sound ]. }
+    intros e1_pre _u e_post Hpre HQ1.
+    cbn beta. cbn [Mret StateMonad.state_monad fst snd].
+    cbn [fst snd] in HQ1.
+    destruct HQ1 as (Hdb_eq & Hpa_eq & Hwl & Hkey & Hex_post & Huf
+                     & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1_pre).
+    (* Pull apart [Hf01], [Hpost_e0] for repeated use. *)
+    pose proof Hf01 as Hf01_copy.
+    destruct Hf01_copy as (Hdb_01 & Hpa_01 & Hep_01 & Hwl_01
+                            & Han_01 & Hkey_01 & Huf_01).
+    pose proof Hpost_e0 as Hpost_e0_copy.
+    destruct Hpost_e0_copy as (Heq_equiv0 & Hpa_0 & Hep_0 & Hwl_0
+                                & Han_0 & Hatom_iff0).
+    (* PER monotonicity: every pair in [e1.equiv]'s PER is in
+       [e_post.equiv]'s PER (output PER ⊇ input PER under the
+       corrected [union_sound] orientation). *)
+    assert (HPER_e1_post : forall i j, uf_rel_PER _ _ _ e1_pre.(equiv) i j ->
+                                       uf_rel_PER _ _ _ e_post.(equiv) i j).
+    { intros i j Hij. apply Huf. apply PER_clo_base. left. exact Hij. }
+    (* Singleton in [e_post.equiv]'s PER. *)
+    assert (Hr_a'_post : uf_rel_PER _ _ _ e_post.(equiv) r a'.(atom_ret)).
+    { apply Huf. apply PER_clo_base. right.
+      unfold singleton_rel. split; reflexivity. }
+    (* Goal: the four post-union conjuncts about [e_post]. *)
+    split.
+    { (* (1) [egraph_ok e_post]. *)
+      constructor.
+      + (* [exists roots, union_find_ok lt e_post.equiv roots] *)
+        exact Hex_post.
+      + (* [worklist_ok]: each entry in [e_post.worklist] is
+           [worklist_entry_ok] in [e_post.equiv].  Entries inherited
+           from [e1.worklist] = [e0.worklist] = [e_ref.worklist] are
+           ok in [e_ref.equiv] (via [Hok_ref]); the PER of [e_ref]
+           is included in [e_post.equiv]'s PER, so they remain ok.
+           Any newly-added [union_repair r a'.atom_ret _] (or its
+           swap) is ok because [r ~ a'.atom_ret] holds in
+           [e_post.equiv] by [Hr_a'_post]. *)
+        destruct Hok_ref as [_ Hwl_ok_ref _].
+        assert (Hwl_e1 : e1_pre.(worklist) = e_ref.(worklist))
+          by (rewrite Hwl_01; exact Hwl_0).
+        assert (Hlift : forall ent,
+                   worklist_entry_ok e_ref.(equiv) ent ->
+                   worklist_entry_ok e_post.(equiv) ent).
+        { intros [old new improved | k]; cbn; auto.
+          intros Hold_new. apply HPER_e1_post.
+          apply Huf_01. rewrite Heq_equiv0. exact Hold_new. }
+        assert (Hwl_ok_e1_post :
+                  all (worklist_entry_ok e_post.(equiv)) e1_pre.(worklist)).
+        { rewrite Hwl_e1.
+          eapply all_wkn; [| exact Hwl_ok_ref].
+          intros ent _ Hok_e. apply Hlift. exact Hok_e. }
+        unfold union_worklist_rel in Hwl.
+        destruct Hwl as [Hwl_eq | Hwl_ex].
+        { rewrite Hwl_eq. exact Hwl_ok_e1_post. }
+        destruct Hwl_ex as [an Hwl_or].
+        destruct Hwl_or as [Hwl_eq | Hwl_ex2].
+        { rewrite Hwl_eq. cbn.
+          split; [exact Hr_a'_post | exact Hwl_ok_e1_post]. }
+        destruct Hwl_ex2 as [an' Hwl_eq].
+        rewrite Hwl_eq. cbn.
+        split; [| exact Hwl_ok_e1_post].
+        unfold uf_rel_PER in *.
+        apply PER_clo_sym. exact Hr_a'_post.
+      + (* [parents_ok]: every atom in [parents] is
+           [atom_in_egraph_up_to_equiv] in [e_post].  For atoms
+           whose [e_ref] witness is not at the removed key, the
+           same witness works (since [e_post.db] retains them and
+           [e_post]'s PER extends [e_ref]'s).  For atoms whose only
+           [e_ref] witness is at literal key [(atom_fn a, atom_args a)],
+           the witness [(atom_fn a', atom_args a', r)] (in
+           [e_post.db] by [Hatom_e1_pre]+[Hdb_eq]) works: its
+           [atom_fn] matches, its args are PER-equivalent (via
+           [Hargs_eq] + chain), and its [ret] [r] is PER-equivalent
+           in [e_post.equiv] to [aa.ret] only when [aa] also
+           witnesses [a] (via [r ~ atom_ret a' ~ atom_ret a] in
+           [e_post] and [aa.ret ~ atom_ret a] in [e_ref] when [aa]
+           is the witness of [Hatom_ref]).  This subcase is the
+           deep semantic step. *)
+        admit. }
+    split.
+    { (* (2) [forall_ne i | denote e_post i, Pre i].  Use [iSSC]
+         from [Hne_ref] as the witness; [iSSC] denotes [e_post]
+         because (a) [e_post.db ⊆ e_ref.db] (post_db_remove only
+         removes entries), (b) the parent key set is preserved, and
+         (c) the new equivalence [r ~ atom_ret a'] is [eq_sound]
+         under [iSSC] via [HPa] applied to [a] plus
+         [atom_interpretation] of [(atom_fn a', atom_args a', r)]
+         (which lies in [e_ref.db] since post_db_remove only removes
+         entries at [(atom_fn a, atom_args a)] and the [Some r]
+         branch entails [atom_args a' ≠ atom_args a] literally).
+         The universal [forall i, denote e_post i → Pre i] is the
+         [Pre]-transfer step: every interpretation of [e_post] is
+         (an extension of) an interpretation of [e_ref], so
+         [Hne_ref]'s universal applies modulo upward-closure of
+         [Pre] in [map.extends].  This is the same shape of admit
+         as in [db_set_entry_sound']. *)
+      admit. }
+    split.
+    { (* (3) [ne_set_maps_to (denote e_ref) (denote e_post)].
+         Witness: [iSSC] (denoting [e_post] as in (2)).  For any
+         [i'] denoting [e_post], take [i = i']: every atom in
+         [e_ref.db] not at the removed key is in [e_post.db], so
+         sound under [i'] by [atom_interpretation]; the removed
+         atom (if any) is sound under [i'] when its [ret] is
+         PER-equivalent in [e_post.equiv] to some sound value
+         (the same deep semantic step as in (1)'s [parents_ok]).
+         Same shape of admit. *)
+      admit. }
+    (* (4) [all atom_in_egraph_up_to_equiv side_l e_post]:
+       identical structure to (1)'s [parents_ok] — each side
+       atom from [Hatoms_ref] uses its [e_ref] witness in
+       [e_post] unless that witness is at the removed key, in
+       which case [(atom_fn a', atom_args a', r)] is the
+       replacement. *)
+    admit.
   Admitted.
 
   (* None-branch helper for [update_entry_canonicalized_after_db_
@@ -3540,7 +3718,8 @@ TODO: lemmas in the comment block are out of date
       post_db_remove e_ref a e0 ->
       state_triple
         (fun e1 =>
-           fields_preserved e0 e1
+           (exists roots, union_find_ok lt e1.(equiv) roots)
+           /\ fields_preserved e0 e1
            /\ atom_fn a' = atom_fn a
            /\ uf_rel_PER _ _ _ e1.(equiv) (atom_ret a') (atom_ret a)
            /\ all2 (uf_rel_PER _ _ _ e1.(equiv))
@@ -3584,7 +3763,8 @@ TODO: lemmas in the comment block are out of date
       post_db_remove e_ref a e0 ->
       state_triple
         (fun e1 =>
-           fields_preserved e0 e1
+           (exists roots, union_find_ok lt e1.(equiv) roots)
+           /\ fields_preserved e0 e1
            /\ atom_fn a' = atom_fn a
            /\ uf_rel_PER _ _ _ e1.(equiv) (atom_ret a') (atom_ret a)
            /\ all2 (uf_rel_PER _ _ _ e1.(equiv))
@@ -3601,6 +3781,7 @@ TODO: lemmas in the comment block are out of date
     eapply state_triple_bind with
       (Q1 := fun e res =>
                snd res = e
+               /\ (exists roots, union_find_ok lt e.(equiv) roots)
                /\ fields_preserved e0 e
                /\ atom_fn a' = atom_fn a
                /\ uf_rel_PER _ _ _ e.(equiv) (atom_ret a') (atom_ret a)
@@ -3633,14 +3814,14 @@ TODO: lemmas in the comment block are out of date
                     end).
       - intros _ _; trivial.
       - intros s p HP HQ.
-        destruct HP as (Hf01 & Hfn & Hret & Hargs).
+        destruct HP as (Hex & Hf01 & Hfn & Hret & Hargs).
         destruct HQ as [Heq Hcase].
         repeat (split; try assumption).
       - apply db_lookup_pure. }
     intros e_pre mout e_post Hpre HQ1.
     cbn [fst snd] in HQ1.
     destruct HQ1 as
-      (Heq_e_post & Hf01 & Hfn_a' & Hret_a'_a & Hargs_a'_a & Hcase).
+      (Heq_e_post & Hex_e & Hf01 & Hfn_a' & Hret_a'_a & Hargs_a'_a & Hcase).
     subst e_post.
     destruct mout as [r | ].
     - (* Some r — union branch. *)
@@ -3727,7 +3908,8 @@ TODO: lemmas in the comment block are out of date
                  /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l)).
     eapply state_triple_bind with
       (Q1 := fun e res =>
-               fields_preserved e (snd res)
+               (exists l, union_find_ok lt (snd res).(equiv) l)
+               /\ fields_preserved e (snd res)
                /\ atom_fn (fst res) = atom_fn a
                /\ uf_rel_PER _ _ _ (snd res).(equiv)
                     (atom_ret (fst res)) (atom_ret a)
