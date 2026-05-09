@@ -1305,8 +1305,8 @@ Abort.
       <-> (egraph_ok g2 /\ egraph_sound_for_interpretation m i g2).
   Proof.
     intros Hdb Huf1 Huf2 Hlim Hpar Hwl.
-    pose proof Huf1 as Huf1'; destruct Huf1' as [Hf1 ? ? ? ?].
-    pose proof Huf2 as Huf2'; destruct Huf2' as [Hf2 ? ? ? ?].
+    pose proof Huf1 as [Hf1 ? ? ? ?].
+    pose proof Huf2 as [Hf2 ? ? ? ?].
     cbn in Hf1, Hf2.
     assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
       by (intros; Lia.lia).
@@ -1397,10 +1397,8 @@ Abort.
   Proof.
     intros HPkey.
     state_sound_constructor.
-    pose proof HiSSC as Hsnd_copy.
-    destruct Hsnd_copy as [Hwf Hexact Hatom Hrel].
-    pose proof Hok as Hok_copy.
-    destruct Hok_copy as [Hg_eq Hg_wl Hg_par].
+    pose proof HiSSC as [Hwf Hexact Hatom Hrel].
+    pose proof Hok as [Hg_eq Hg_wl Hg_par].
     pose proof (HPkey _ (HPre _ HiSSC)) as Hkx_interp.
     assert (Hkx : Sep.has_key x (parent e.(equiv))).
     { apply Hexact. unfold Is_Some, Sep.has_key in *.
@@ -1578,10 +1576,8 @@ Abort.
   Proof.
     state_sound_constructor.
     unfold remove_parents. cbn.
-    pose proof HiSSC as Hsnd_copy.
-    destruct Hsnd_copy as [Hwf Hexact Hatom Hrel].
-    pose proof Hok as Hok_copy.
-    destruct Hok_copy as [Hg_eq Hg_wl Hg_par].
+    pose proof HiSSC as [Hwf Hexact Hatom Hrel].
+    pose proof Hok as [Hg_eq Hg_wl Hg_par].
     destruct e as [db_e equiv_e parents_e epoch_e worklist_e analyses_e log_e].
     cbn in *.
     pose (e_new := Build_instance _ _ _ _ _ _
@@ -1597,10 +1593,11 @@ Abort.
                <-> (egraph_ok e_new /\ egraph_sound_for_interpretation m j e_new)).
     {
       intros j.
-      split; intros [He_ok He_sound].
-      { destruct He_sound as [Hwf' Hexact' Hatom' Hrel'].
-        destruct He_ok as [Hg_eq' Hg_wl' Hg_par'].
-        split.
+      split; intros [He_ok He_sound];
+        destruct He_sound as [Hwf' Hexact' Hatom' Hrel'];
+        destruct He_ok as [Hg_eq' Hg_wl' Hg_par'];
+        unfold e_new in *; cbn in *.
+      { split.
         - constructor; cbn in *; try assumption.
           intros y s Hg.
           eqb_case old_idx y.
@@ -1608,10 +1605,7 @@ Abort.
           { rewrite map.get_remove_diff in Hg by auto.
             eapply Hg_par'; eauto. }
         - constructor; cbn in *; try assumption. }
-      { destruct He_sound as [Hwf' Hexact' Hatom' Hrel'].
-        destruct He_ok as [Hg_eq' Hg_wl' Hg_par'].
-        unfold e_new in *. cbn in *.
-        split.
+      { split.
         - constructor; cbn in *; [assumption | assumption |].
           intros y s Hg.
           eqb_case old_idx y.
@@ -1652,10 +1646,8 @@ Abort.
   Proof.
     intros e Hpre. destruct Hpre as [Hok Hne_pre].
     destruct Hne_pre as [iSSC HiSSC HPre].
-    pose proof HiSSC as HiSSC_copy.
-    destruct HiSSC_copy as [Hwf_o Hex_o Hatom_o Hrel_o].
-    pose proof Hok as Hok_copy.
-    destruct Hok_copy as [Heq_o Hwl_o Hpar_o].
+    pose proof HiSSC as [Hwf_o Hex_o Hatom_o Hrel_o].
+    pose proof Hok as [Heq_o Hwl_o Hpar_o].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     cbn [Defs.db Defs.equiv Defs.parents Defs.epoch
          Defs.worklist Defs.analyses Defs.log] in *.
@@ -1678,10 +1670,11 @@ Abort.
                         epoch_e wl_e analyses_e log_e))
                <-> (egraph_ok e_after /\ egraph_sound_for_interpretation m i e_after)).
     { intros i.
-      split; intros [He_ok He_sound].
-      { destruct He_sound as [Hwf Hex' Hatom Hrel].
-        destruct He_ok as [Hg_eq Hg_wl Hg_par].
-        split.
+      split; intros [He_ok He_sound];
+        destruct He_sound as [Hwf Hex' Hatom Hrel];
+        destruct He_ok as [Hg_eq Hg_wl Hg_par];
+        unfold e_after in *; cbn in *.
+      { split.
         - constructor; cbn in *; try assumption.
           intros y s Hg.
           eqb_case old_idx y.
@@ -1689,10 +1682,7 @@ Abort.
           { rewrite map.get_remove_diff in Hg by auto.
             eapply Hg_par; eauto. }
         - constructor; cbn in *; try assumption. }
-      { destruct He_sound as [Hwf Hex' Hatom Hrel].
-        destruct He_ok as [Hg_eq Hg_wl Hg_par].
-        unfold e_after in *. cbn in *.
-        split.
+      { split.
         - constructor; cbn in *; [assumption | assumption |].
           intros y s Hg.
           eqb_case old_idx y.
@@ -1866,16 +1856,7 @@ Abort.
   Proof.
     pose proof (db_remove_sound a) as Hd.
     unfold state_triple, post_db_remove in *.
-    intros e _.
-    specialize (Hd e I).
-    destruct Hd as (Hfst & Heq & Hpa & Hep & Hwl & Han & Hatom).
-    split; [exact Hfst|].
-    split; [exact Heq|].
-    split; [exact Hpa|].
-    split; [exact Hep|].
-    split; [exact Hwl|].
-    split; [exact Han|].
-    exact Hatom.
+    intros e _; specialize (Hd e I); tauto.
   Qed.
 
 
@@ -2921,13 +2902,7 @@ TODO: lemmas in the comment block are out of date
     : fields_preserved e e.
   Proof.
     unfold fields_preserved.
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [intros y; reflexivity|].
-    intros i j; reflexivity.
+    repeat split; auto; intros; tauto.
   Qed.
 
   Lemma fields_preserved_trans (e1 e2 e3 : instance)
@@ -2938,12 +2913,8 @@ TODO: lemmas in the comment block are out of date
     unfold fields_preserved.
     intros (Hd1 & Hp1 & Hep1 & Hw1 & Han1 & Hk1 & Hi1).
     intros (Hd2 & Hp2 & Hep2 & Hw2 & Han2 & Hk2 & Hi2).
-    split; [congruence|].
-    split; [congruence|].
-    split; [congruence|].
-    split; [congruence|].
-    split; [congruence|].
-    split.
+    split; [congruence|]. split; [congruence|]. split; [congruence|].
+    split; [congruence|]. split; [congruence|]. split.
     + intros y; specialize (Hk1 y); specialize (Hk2 y); tauto.
     + intros i j; specialize (Hi1 i j); specialize (Hi2 i j); tauto.
   Qed.
@@ -2976,15 +2947,11 @@ TODO: lemmas in the comment block are out of date
     pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
                   _ _ _ _ _ Huf Hkey Hfind) as Hspec.
     destruct Hspec as (Huf' & _ & _ & _ & Hlim_iff & Hkey_iff).
-    pose proof Huf as Huf_copy. destruct Huf_copy as [Hf_old _ _ _ _].
-    pose proof Huf' as Huf'_copy. destruct Huf'_copy as [Hf_new _ _ _ _].
+    pose proof Huf as [Hf_old _ _ _ _].
+    pose proof Huf' as [Hf_new _ _ _ _].
     cbn in Hf_old, Hf_new.
     split; [exists l; exact Huf'|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
-    split; [reflexivity|].
+    repeat (split; [reflexivity|]).
     split.
     { intros y; split; intros Hk; apply Hkey_iff; exact Hk. }
     intros i j.
@@ -3134,8 +3101,8 @@ TODO: lemmas in the comment block are out of date
     pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
                   _ _ _ _ _ Huf Hkey Hfind) as Hspec.
     destruct Hspec as (Huf' & _ & Hpr & _ & Hlim_iff & Hkey_iff).
-    pose proof Huf as Huf_copy. destruct Huf_copy as [Hf_old _ _ _ _].
-    pose proof Huf' as Huf'_copy. destruct Huf'_copy as [Hf_new _ _ _ _].
+    pose proof Huf as [Hf_old _ _ _ _].
+    pose proof Huf' as [Hf_new _ _ _ _].
     cbn in Hf_old, Hf_new.
     split; [exists l; exact Huf'|].
     split.
@@ -3512,12 +3479,10 @@ TODO: lemmas in the comment block are out of date
     destruct HQ1 as (Hdb_eq & Hpa_eq & Hwl & Hkey & Hex_post & Huf
                      & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1_pre).
     (* Pull apart [Hf01], [Hpost_e0] for repeated use. *)
-    pose proof Hf01 as Hf01_copy.
-    destruct Hf01_copy as (Hdb_01 & Hpa_01 & Hep_01 & Hwl_01
-                            & Han_01 & Hkey_01 & Huf_01).
-    pose proof Hpost_e0 as Hpost_e0_copy.
-    destruct Hpost_e0_copy as (Heq_equiv0 & Hpa_0 & Hep_0 & Hwl_0
-                                & Han_0 & Hatom_iff0).
+    pose proof Hf01 as (Hdb_01 & Hpa_01 & Hep_01 & Hwl_01
+                          & Han_01 & Hkey_01 & Huf_01).
+    pose proof Hpost_e0 as (Heq_equiv0 & Hpa_0 & Hep_0 & Hwl_0
+                              & Han_0 & Hatom_iff0).
     (* PER monotonicity: every pair in [e1.equiv]'s PER is in
        [e_post.equiv]'s PER (output PER ⊇ input PER under the
        corrected [union_sound] orientation). *)
@@ -4045,19 +4010,11 @@ TODO: lemmas in the comment block are out of date
                     /\ egraph_sound_for_interpretation m j
                          (Build_instance _ _ _ _ _ _ db_e equiv_e parents_e epoch_e
                             (analysis_repair idx o :: wl_e) analyses_e log_e))).
-    { intros j.
-      split.
-      - intros [Hok' Hsnd]; destruct Hsnd as [Hwf Hex Ha Hr];
-          destruct Hok' as [Heq Hwl Hpa].
-        split.
-        + constructor; cbn; auto.
-        + constructor; cbn in *; auto.
-      - intros [Hok' Hsnd]; destruct Hsnd as [Hwf Hex Ha Hr];
-          destruct Hok' as [Heq Hwl Hpa].
-        cbn in Hwl. destruct Hwl as [_ Hwl].
-        split.
-        + constructor; cbn in *; auto.
-        + constructor; cbn in *; auto. }
+    { intros j; split; intros [Hok' Hsnd];
+        destruct Hsnd as [Hwf Hex Ha Hr];
+        destruct Hok' as [Heq Hwl Hpa];
+        (split; [constructor; cbn in *; intuition auto
+                | constructor; cbn in *; auto]). }
     unfold push_worklist; cbn [fst snd].
     pose proof (proj1 (Hiff iSSC) (conj Hok HiSSC)) as [Hok_new HiSSC_new].
     split; [exact Hok_new|].
