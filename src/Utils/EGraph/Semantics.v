@@ -3715,6 +3715,51 @@ TODO: lemmas in the comment block are out of date
     inversions; eauto.
   Qed.
 
+  (* Two atoms in the e-graph (or just sound under [i]) with the same
+     [atom_fn] and pointwise [eq_sound]-equal [atom_args] have
+     [eq_sound]-equal [atom_ret].  Lift of [interprets_to_functional]
+     to interpretation level. *)
+  Lemma atom_sound_eq_ret i f args1 args2 r1 r2
+    : atom_sound_for_model m i (Build_atom f args1 r1) ->
+      atom_sound_for_model m i (Build_atom f args2 r2) ->
+      all2 (eq_sound_for_model m i) args1 args2 ->
+      eq_sound_for_model m i r1 r2.
+  Proof.
+    clear idx_succ idx_zero.
+    intros Hsa1 Hsa2 Hargs.
+    (* Convert (Build_atom f args1 r1) to (Build_atom f args2 r1)
+       using eq_atom_implies_sound_l_active. *)
+    pose proof Hsa1 as Hsa1_orig.
+    apply (eq_atom_implies_sound_l_active i (Build_atom f args1 r1)
+                                            (Build_atom f args2 r1))
+      in Hsa1.
+    2:{ unfold eq_atom_in_interpretation; cbn.
+        split; [reflexivity|]; split; [exact Hargs |].
+        (* eq_sound i r1 r1: from has_key r1 in i + interprets_to_implies_wf_conclusion. *)
+        unfold atom_sound_for_model in Hsa1_orig. cbn in Hsa1_orig.
+        destruct (list_Mmap (map.get i) args1) as [vs|] eqn:Hvs;
+          cbn in Hsa1_orig; try tauto.
+        unfold eq_sound_for_model.
+        destruct (map.get i r1) as [r1v|] eqn:Hr1; cbn in Hsa1_orig; try tauto.
+        cbn.
+        eapply interprets_to_implies_wf_conclusion; eauto. }
+    (* Now Hsa1 : atom_sound i (Build_atom f args2 r1) and
+       Hsa2 : atom_sound i (Build_atom f args2 r2).  Direct. *)
+    unfold atom_sound_for_model in Hsa1, Hsa2.
+    cbn in Hsa1, Hsa2.
+    destruct (list_Mmap (map.get i) args2) as [vs|] eqn:Hvs;
+      cbn in Hsa1, Hsa2; try tauto.
+    destruct (map.get i r1) as [v1|] eqn:Hv1; cbn in Hsa1; try tauto.
+    destruct (map.get i r2) as [v2|] eqn:Hv2; cbn in Hsa2; try tauto.
+    unfold eq_sound_for_model.
+    rewrite Hv1, Hv2; cbn.
+    pose proof (interprets_to_implies_wf_args _ _ _ Hsa1) as Hwf_vs.
+    eapply interprets_to_functional with (args1 := vs) (args2 := vs); eauto.
+    clear -Hwf_vs.
+    induction vs; cbn in *; auto.
+    intuition.
+  Qed.
+
   (* Both endpoints of a PER pair are has_key in the union-find. *)
   Lemma uf_rel_PER_has_key (uf : union_find) (l : list idx) i j
     : union_find_ok lt uf l ->
@@ -4572,36 +4617,90 @@ TODO: lemmas in the comment block are out of date
        The remaining work is the [iSSC denotes e_post] construction:
        in particular showing [eq_sound iSSC r (atom_ret a')] for the
        new singleton in [e_post.equiv]'s PER. *)
+    (* Helper for both (2) and (3): the witness [iSSC] from [Hne_ref]
+       (sound for [e_ref]) is also sound for [e_post].  PER e_post is
+       the union closure of PER e_ref with the new singleton
+       [(r, atom_ret a')], which is [eq_sound] under [iSSC] via
+       [atom_sound_eq_ret] on the two sound atoms
+       [(atom_fn a', atom_args a', r)] (in [e_ref.db]) and [a]. *)
+    destruct Hne_ref as [iSSC HiSSC HPre_all].
+    assert (HiSSC_post : egraph_sound_for_interpretation m iSSC e_post).
+    { destruct HiSSC as [Hwf Hexact Hatom Hrel].
+      constructor.
+      - exact Hwf.
+      - intros x Hx.
+        apply Hkey. apply Hkey_01.
+        rewrite Heq_equiv0.
+        apply Hexact; exact Hx.
+      - intros a0 Ha0.
+        unfold atom_in_egraph in Ha0.
+        rewrite <- Hdb_eq, Hdb_01 in Ha0.
+        apply Hatom_iff0 in Ha0.
+        apply Hatom; tauto.
+      - intros i1 i2 H_PER.
+        apply Huf in H_PER.
+        induction H_PER as [a0 b [Hl|Hr]
+                            |a0 b c _ IHab _ IHbc
+                            |a0 b _ IHab].
+        + (* Pair from e1.equiv = e_ref.equiv. *)
+          apply Hrel.
+          apply Huf_01 in Hl. rewrite <- Heq_equiv0; exact Hl.
+        + (* Singleton (r, atom_ret a'). *)
+          destruct Hr as [Hax Hby]; subst.
+          assert (Ha'_in_ref :
+                    atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r)
+                                   e_ref).
+          { assert (Hin_e0 : atom_in_egraph
+                               (Build_atom (atom_fn a') (atom_args a') r) e0).
+            { unfold atom_in_egraph in *. rewrite <- Hdb_01. exact Hatom_e1_pre. }
+            apply Hatom_iff0 in Hin_e0. tauto. }
+          pose proof (Hatom _ Ha'_in_ref) as Hsa'.
+          assert (HiSSC_orig : egraph_sound_for_interpretation m iSSC e_ref)
+            by (constructor; auto).
+          pose proof (HPa iSSC (HPre_all _ HiSSC_orig)) as Hsa_a.
+          (* eq_sound iSSC atom_ret a' atom_ret a (via Hret_eq + Hrel). *)
+          assert (Hret_eq_ref :
+                    uf_rel_PER _ _ _ e_ref.(equiv) (atom_ret a') (atom_ret a)).
+          { apply Huf_01 in Hret_eq. rewrite <- Heq_equiv0; exact Hret_eq. }
+          pose proof (Hrel _ _ Hret_eq_ref) as Heqret.
+          (* eq_sound iSSC r atom_ret a (via atom_sound_eq_ret). *)
+          assert (Hr_eq_atom_ret_a :
+                    eq_sound_for_model m iSSC r (atom_ret a)).
+          { (* Massage [a] to [Build_atom (atom_fn a) (atom_args a) (atom_ret a)]
+               in [Hsa_a], then rewrite atom_fn a to atom_fn a'. *)
+            replace a with (Build_atom (atom_fn a) (atom_args a) (atom_ret a))
+              in Hsa_a by (destruct a; reflexivity).
+            rewrite <- Hfn_eq in Hsa_a.
+            (* Need all2 eq_sound (atom_args a') (atom_args a). *)
+            assert (Hargs_eq_ref :
+                      all2 (uf_rel_PER _ _ _ e_ref.(equiv))
+                        (atom_args a') (atom_args a)).
+            { eapply all2_impl; [|exact Hargs_eq].
+              intros x0 y0 Hxy. apply Huf_01 in Hxy.
+              rewrite <- Heq_equiv0; exact Hxy. }
+            assert (Hargs_eq_sound :
+                      all2 (eq_sound_for_model m iSSC) (atom_args a')
+                        (atom_args a)).
+            { eapply all2_impl; [|exact Hargs_eq_ref].
+              intros x0 y0 Hxy. apply Hrel; exact Hxy. }
+            eapply atom_sound_eq_ret with
+              (f := atom_fn a') (args1 := atom_args a') (args2 := atom_args a);
+              eauto. }
+          (* Combine: eq_sound iSSC r atom_ret a' via transitivity. *)
+          eapply eq_sound_for_model_trans;
+            [exact Hr_eq_atom_ret_a |].
+          (* Goal: eq_sound iSSC (atom_ret a) (atom_ret a').  Symmetric of Heqret. *)
+          symmetry; exact Heqret.
+        + eapply eq_sound_for_model_trans; eauto.
+        + symmetry; exact IHab. }
     split.
     { (* (2) [forall_ne i | denote e_post i, Pre i]. *)
-      destruct Hne_ref as [iSSC HiSSC HPre_all].
-      (* iSSC denotes e_post: iSSC denotes e_ref by Hne_ref's witness;
-         we need iSSC denotes e_post.  This requires iSSC to satisfy
-         e_post's stricter PER relation, which adds (r, atom_ret a').
-         The new pair is eq_sound under iSSC via the same chain as
-         the deep step. *)
-      assert (HiSSC_post : egraph_sound_for_interpretation m iSSC e_post).
-      { (* Construction admitted: the rel_interpretation case for the
-           new singleton [(r, atom_ret a')] requires constructing
-           [eq_sound iSSC r (atom_ret a')], which involves a chain
-           through [interprets_to_functional] on the atoms in
-           [e_ref.db].  The construction is conceptually direct but
-           hits the same [Is_Some_satisfying]-rewrite friction as
-           [Hpost_to_ref]; both could close once a small computational
-           helper for "[eq_sound] composes pointwise" is added. *)
-        admit. }
       econstructor; [exact HiSSC_post|].
       intros i Hi_post.
       apply HPre_all.
       apply Hpost_to_ref. exact Hi_post. }
     split.
-    { (* (3) [ne_set_maps_to (denote e_ref) (denote e_post)].
-         Same shape as (2): witness [iSSC] denoting [e_post] (admitted
-         on the same deep step), then for any [i'] sound for [e_post]
-         take [i = i'] (which is sound for [e_ref] by [Hpost_to_ref]). *)
-      destruct Hne_ref as [iSSC HiSSC HPre_all].
-      assert (HiSSC_post : egraph_sound_for_interpretation m iSSC e_post)
-        by admit.
+    { (* (3) [ne_set_maps_to (denote e_ref) (denote e_post)]. *)
       econstructor; [exact HiSSC_post|].
       intros i' Hi'_post.
       exists i'. split.
@@ -4690,7 +4789,7 @@ TODO: lemmas in the comment block are out of date
           intros Heq.
           apply Hargs_sp.
           cbn in Heq. inversion Heq; reflexivity. }
-  Admitted.
+  Qed.
 
   (* None-branch helper for [update_entry_canonicalized_after_db_
      remove_sound].  When [db_lookup (atom_fn a') (atom_args a')]
