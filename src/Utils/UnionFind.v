@@ -52,6 +52,38 @@ Section __.
       (succ : idx -> idx)
       (zero : idx).
 
+  (* Section-local redefinition of [generic_crush] (from Utils/Base.v).
+     Profiling shows [intuition]'s [Tauto.t_tauto_intuit]/[t_solver]
+     consume >87%% of this file's compile time across ~2.5k calls.  The
+     upstream definition runs [intuition] twice per loop iteration; we drop
+     the second one (which only ran [unshelve eauto] at the propositional
+     leaves) and replace it with a cheap [break + subst] sweep followed by
+     [try solve [...]].  The first [intuition break] is kept verbatim so
+     [intros] behaviour and the auto-generated hypothesis names existing
+     scripts rely on are unchanged.  The [::=] redefinition is inside
+     [Section __] and reverts when the section closes, so no other file is
+     affected. *)
+  Ltac generic_crush rewrite_tac hint_auto ::=
+    repeat (intuition break; subst; rewrite_tac;
+            repeat (break; subst);
+            try solve [unshelve hint_auto]).
+
+  (* Cap leaf [eauto] at depth 4 in [basic_utils_crush].  The upstream
+     definition uses default [eauto] depth (5); profiling and bisection
+     show every proof in this file (except [parent_decidable]) closes at
+     depth <=4, so the deeper search is wasted work.  [parent_decidable]
+     keeps using the deeper variant via [basic_utils_crush_deep] below.
+     Section-local. *)
+  Ltac basic_utils_crush ::=
+    let x := autorewrite with bool rw_prop inversion utils in * in
+    let y := eauto 4 with utils in
+    generic_crush x y.
+
+  Ltac basic_utils_crush_deep :=
+    let x := autorewrite with bool rw_prop inversion utils in * in
+    let y := eauto with utils in
+    generic_crush x y.
+
   Definition in_bounds c := exists c', lt c c'.
   Context
     (succ_lt : forall c, in_bounds c -> lt c (succ c))
@@ -3809,7 +3841,7 @@ Section __.
           | intro H'; eapply transitive_iff_count_step in H'];
           basic_goal_prep;
           try eexists;
-          basic_utils_crush.
+          basic_utils_crush_deep.
       }
       enough ({exists n, n <= length (map.keys f)
                          /\ count_step_closure (fun i j : idx => map.get f i = Some j) n x i}
@@ -3819,11 +3851,11 @@ Section __.
       {
         destruct Hcounted; [ left | right; intro];
           basic_goal_prep;
-          basic_utils_crush.
+          basic_utils_crush_deep.
         eapply n.
         eapply step_limit in H.
         basic_goal_prep.
-        exists x0; basic_utils_crush.
+        exists x0; basic_utils_crush_deep.
       }
       eapply bounded_exists_decidable.
       intros; apply counted_parent_decidable.
