@@ -52,6 +52,22 @@ Section __.
       (succ : idx -> idx)
       (zero : idx).
 
+  (* Section-local redefinition of [generic_crush] (from Utils/Base.v).
+     Profiling shows [intuition]'s [Tauto.t_tauto_intuit]/[t_solver]
+     consume >87%% of this file's compile time across ~2.5k calls.  The
+     upstream definition runs [intuition] twice per loop iteration; we drop
+     the second one (which only ran [unshelve eauto] at the propositional
+     leaves) and replace it with a cheap [break + subst] sweep followed by
+     [try solve [...]].  The first [intuition break] is kept verbatim so
+     [intros] behaviour and the auto-generated hypothesis names existing
+     scripts rely on are unchanged.  The [::=] redefinition is inside
+     [Section __] and reverts when the section closes, so no other file is
+     affected. *)
+  Ltac generic_crush rewrite_tac hint_auto ::=
+    repeat (intuition break; subst; rewrite_tac;
+            repeat (break; subst);
+            try solve [unshelve hint_auto]).
+
   Definition in_bounds c := exists c', lt c c'.
   Context
     (succ_lt : forall c, in_bounds c -> lt c (succ c))
