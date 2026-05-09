@@ -3685,6 +3685,36 @@ TODO: lemmas in the comment block are out of date
   Unshelve. all: exact false.
   Qed.
 
+  (* Atom-level equality (under the interpretation) preserves
+     soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
+     (same fn, args eq_sound pointwise, ret eq_sound), then [a1]
+     is also sound.  (This duplicates the [eq_atom_implies_sound_l]
+     defined inside the deprecated comment block at line ~2523.) *)
+  Lemma eq_atom_implies_sound_l_active i a3 a1
+    : eq_atom_in_interpretation i a3 a1 ->
+      atom_sound_for_model m i a3 -> atom_sound_for_model m i a1.
+  Proof.
+    clear idx_succ idx_zero.
+    unfold eq_atom_in_interpretation, eq_sound_for_model, atom_sound_for_model.
+    intuition eauto.
+    rewrite <- TrieMap.all2_map_l
+      with (f:= map.get i)
+           (R:= (fun x y => x <$> (fun x' : domain m => map.get i y <$> domain_eq m x')))
+      in H1.
+    eapply all2_Is_Some_satisfying_l in H1.
+    rewrite !TrieMap.Mmap_option_all in *.
+    repeat iss_case; cbn in *.
+    rewrite <- TrieMap.all2_map_r
+      with (f:= map.get i)
+           (R:= fun x y => y <$> domain_eq m x)
+      in H1.
+    eapply all2_Is_Some_satisfying_r in H1.
+    repeat iss_case; cbn in *; break.
+    rewrite H3 in *.
+    eapply interprets_to_preserved; eauto.
+    inversions; eauto.
+  Qed.
+
   (* Both endpoints of a PER pair are has_key in the union-find. *)
   Lemma uf_rel_PER_has_key (uf : union_find) (l : list idx) i j
     : union_find_ok lt uf l ->
@@ -4092,6 +4122,18 @@ TODO: lemmas in the comment block are out of date
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
+      (* Congruence precondition: any value stored at the literal
+         removed key in [e_ref.db] is PER-equivalent to [atom_ret a]
+         in [e_ref.equiv].  This is the "deep semantic" fact that
+         ties the removed entry's [v_old] to [atom_ret a], allowing
+         post-union witnesses for parent atoms whose [e_ref] witness
+         was at the removed key.  Discharging this precondition at
+         the call site requires either a congruence-closure invariant
+         on [egraph_ok] or that the algorithm only invokes
+         repair_each on atoms whose witness coincides with the
+         literal entry.  *)
+      (forall v, atom_in_egraph (Build_atom (atom_fn a) (atom_args a) v) e_ref ->
+                  uf_rel_PER _ _ _ e_ref.(equiv) v (atom_ret a)) ->
       state_triple
         (fun e1 =>
            (exists roots, union_find_ok lt e1.(equiv) roots)
@@ -4108,7 +4150,7 @@ TODO: lemmas in the comment block are out of date
            /\ ne_set_maps_to (denote e_ref) (denote (snd res))
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
-    intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0.
+    intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0 Hcong.
     eapply state_triple_Mseq with
       (Q1 := fun e1 res =>
          (* [union_sound_general] facts about how [Defs.union r a'.(atom_ret)]
@@ -4254,9 +4296,10 @@ TODO: lemmas in the comment block are out of date
     { apply Huf. apply PER_clo_base. right.
       unfold singleton_rel. split; reflexivity. }
     (* Goal: the four post-union conjuncts about [e_post]. *)
-    split.
-    { (* (1) [egraph_ok e_post]. *)
-      constructor.
+    (* Prove [egraph_ok e_post] as a local assertion so it is also
+       available to the [Hpost_to_ref] helper below. *)
+    assert (Hok_post : egraph_ok e_post).
+    { constructor.
       + (* [exists roots, union_find_ok lt e_post.equiv roots] *)
         exact Hex_post.
       + (* [worklist_ok]: each entry in [e_post.worklist] is
@@ -4287,57 +4330,366 @@ TODO: lemmas in the comment block are out of date
         rewrite Hwl_eq. cbn.
         split; [exact Hper_vov' | exact Hwl_ok_e1_post].
       + (* [parents_ok]: every atom in [parents] is
-           [atom_in_egraph_up_to_equiv] in [e_post].  For atoms
-           whose [e_ref] witness is not at the removed key, the
-           same witness works (since [e_post.db] retains them and
-           [e_post]'s PER extends [e_ref]'s).  For atoms whose only
-           [e_ref] witness is at literal key [(atom_fn a, atom_args a)],
-           the witness [(atom_fn a', atom_args a', r)] (in
-           [e_post.db] by [Hatom_e1_pre]+[Hdb_eq]) works: its
-           [atom_fn] matches, its args are PER-equivalent (via
-           [Hargs_eq] + chain), and its [ret] [r] is PER-equivalent
-           in [e_post.equiv] to [aa.ret] only when [aa] also
-           witnesses [a] (via [r ~ atom_ret a' ~ atom_ret a] in
-           [e_post] and [aa.ret ~ atom_ret a] in [e_ref] when [aa]
-           is the witness of [Hatom_ref]).  This subcase is the
-           deep semantic step. *)
-        admit. }
+           [atom_in_egraph_up_to_equiv] in [e_post].  Case A: witness
+           [wp] is not at the literal removed key — same witness
+           works in [e_post]. Case B: witness at literal key —
+           [(atom_fn a', atom_args a', r)] is the replacement, and
+           [Hcong] supplies [v_old PER-equiv atom_ret a] which
+           closes [r PER-equiv v_old] via [r ~ atom_ret a' ~
+           atom_ret a]. *)
+        intros x s Hps_post.
+        assert (Hpa_post_ref : e_post.(parents) = e_ref.(parents))
+          by (rewrite <- Hpa_eq, Hpa_01; exact Hpa_0).
+        rewrite Hpa_post_ref in Hps_post.
+        destruct Hok_ref as [_ _ Hpa_ok_ref].
+        pose proof (Hpa_ok_ref _ _ Hps_post) as Hatoms_p_ref.
+        eapply all_wkn; [| exact Hatoms_p_ref].
+        intros p _ Hp_ref.
+        unfold atom_in_egraph_up_to_equiv in Hp_ref.
+        destruct Hp_ref as (wp & Hwp_can & Hwp_in_ref).
+        destruct Hwp_can as (Hwpfn & Hwpargs & Hwpret).
+        (* Helpful shorthand: PER lift e_ref → e_post via chain. *)
+        assert (Hper_ref_post : forall x0 y0,
+                   uf_rel_PER _ _ _ e_ref.(equiv) x0 y0 ->
+                   uf_rel_PER _ _ _ e_post.(equiv) x0 y0).
+        { intros x0 y0 Hxy. apply HPER_e1_post. apply Huf_01.
+          rewrite Heq_equiv0. exact Hxy. }
+        (* Case split on the literal key of wp. *)
+        destruct (eqb (atom_fn wp) (atom_fn a)) eqn:Hfn_eq_wp;
+          pose proof (Eqb.eqb_spec (atom_fn wp) (atom_fn a)) as Hfn_sp;
+          rewrite Hfn_eq_wp in Hfn_sp.
+        2:{ (* Case A1: atom_fn wp ≠ atom_fn a. wp in e_post.db. *)
+          unfold atom_in_egraph_up_to_equiv.
+          exists wp; split.
+          - split; [exact Hwpfn|]; split.
+            + eapply all2_impl; [|exact Hwpargs].
+              intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy.
+            + apply Hper_ref_post; exact Hwpret.
+          - destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff_post).
+            destruct Hf01 as (Hdb_eq01 & _).
+            unfold atom_in_egraph in *.
+            rewrite <- Hdb_eq, Hdb_eq01.
+            apply Hatom_iff_post.
+            split; [exact Hwp_in_ref|].
+            intros Heq.
+            apply Hfn_sp.
+            cbn in Heq. inversion Heq; reflexivity. }
+        { (* atom_fn wp = atom_fn a. *)
+          destruct (eqb (atom_args wp) (atom_args a)) eqn:Hargs_eq_wp;
+            pose proof (Eqb.eqb_spec (atom_args wp) (atom_args a)) as Hargs_sp;
+            rewrite Hargs_eq_wp in Hargs_sp.
+          - (* Case B: literal removed key. wp = (atom_fn a, atom_args a, v_old)
+               for some v_old. Use (atom_fn a', atom_args a', r). *)
+            unfold atom_in_egraph_up_to_equiv.
+            exists (Build_atom (atom_fn a') (atom_args a') r); split.
+            + (* atom_canonical_equiv e_post p (atom_fn a', atom_args a', r). *)
+              split; [cbn; rewrite Hwpfn, Hfn_sp; symmetry; exact Hfn_eq|]; split.
+              * cbn.
+                (* atom_args p ~_PER_e_post atom_args a' via:
+                   atom_args p ~_PER_e_ref atom_args wp [Hwpargs]
+                   atom_args wp = atom_args a [Hargs_sp]
+                   atom_args a ~_PER_e1 atom_args a' [Hargs_eq, sym]
+                   Lift everything to PER_e_post and compose. *)
+                cbn in Hwpargs. rewrite Hargs_sp in Hwpargs.
+                eapply all2_Transitive with (y := atom_args a).
+                { typeclasses eauto. }
+                { eapply all2_impl; [|exact Hwpargs].
+                  intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy. }
+                { eapply all2_Symmetric.
+                  { typeclasses eauto. }
+                  eapply all2_impl; [|exact Hargs_eq].
+                  intros x0 y0 Hxy. apply HPER_e1_post; exact Hxy. }
+              * cbn.
+                (* p.atom_ret ~ r in e_post:
+                     atom_ret p ~_PER_e_ref atom_ret wp [Hwpret]
+                     atom_ret wp ~_PER_e_ref atom_ret a [Hcong applied to wp]
+                     atom_ret a ~_PER_e1 atom_ret a' [Hret_eq, sym]
+                     atom_ret a' ~_PER_e_post r [Hr_a'_post, sym]
+                   Lift to e_post and compose. *)
+                assert (Hwp_in_ref' :
+                          atom_in_egraph
+                            (Build_atom (atom_fn a) (atom_args a)
+                                        (atom_ret wp)) e_ref).
+                { unfold atom_in_egraph, atom_in_db in *; cbn in *.
+                  rewrite <- Hfn_sp, <- Hargs_sp. exact Hwp_in_ref. }
+                pose proof (Hcong _ Hwp_in_ref') as Hv_old_eq.
+                eapply PER_clo_trans;
+                  [apply Hper_ref_post; exact Hwpret|].
+                eapply PER_clo_trans;
+                  [apply Hper_ref_post; exact Hv_old_eq|].
+                eapply PER_clo_trans;
+                  [apply HPER_e1_post; apply PER_clo_sym; exact Hret_eq|].
+                apply PER_clo_sym; exact Hr_a'_post.
+            + (* atom_in_egraph (atom_fn a', atom_args a', r) e_post. *)
+              unfold atom_in_egraph in *. rewrite <- Hdb_eq.
+              exact Hatom_e1_pre.
+          - (* Case A2: atom_fn matches but args differ literally. wp in e_post. *)
+            unfold atom_in_egraph_up_to_equiv.
+            exists wp; split.
+            + split; [exact Hwpfn|]; split.
+              * eapply all2_impl; [|exact Hwpargs].
+                intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy.
+              * apply Hper_ref_post; exact Hwpret.
+            + destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff_post).
+              destruct Hf01 as (Hdb_eq01 & _).
+              unfold atom_in_egraph in *.
+              rewrite <- Hdb_eq, Hdb_eq01.
+              apply Hatom_iff_post.
+              split; [exact Hwp_in_ref|].
+              intros Heq.
+              apply Hargs_sp.
+              cbn in Heq. inversion Heq; reflexivity. } }
+    split; [exact Hok_post|].
+    (* Key lemma for both (2) and (3) below: every interpretation [i]
+       sound for [e_post] is also sound for [e_ref].  The only atom
+       in [e_ref.db] not in [e_post.db] is the removed
+       [(atom_fn a, atom_args a, v_old)] (if any).  [Hcong] gives
+       [v_old PER-equiv atom_ret a] in [e_ref.equiv]; combined with
+       [r ~ atom_ret a' ~ atom_ret a] in [e_post.equiv] this gives
+       [r PER-equiv v_old] in [e_post.equiv].  For [i] sound for
+       [e_post], rel_interpretation forces [v_old] to be in [i]'s
+       domain, and interprets_to_preserved on
+       [(atom_fn a', atom_args a', r)] (in [e_ref.db]) gives
+       soundness for the removed atom under [i].
+
+       The full proof closes admits 3, 4 below.  Currently incomplete
+       at one technical computation in the [atom_interpretation]
+       branch (rewriting through [Is_Some_satisfying]). *)
+    assert (Hpost_to_ref :
+              forall i, egraph_sound_for_interpretation m i e_post ->
+                        egraph_sound_for_interpretation m i e_ref).
+    { intros i Hi_post.
+      pose proof Hi_post as Hi_post_orig.
+      destruct Hi_post as [Hwf Hexact Hatom Hrel].
+      (* PER e_post ⊇ PER e_ref. *)
+      assert (Hper_ref_post : forall x0 y0,
+                 uf_rel_PER _ _ _ e_ref.(equiv) x0 y0 ->
+                 uf_rel_PER _ _ _ e_post.(equiv) x0 y0).
+      { intros x0 y0 Hxy. apply HPER_e1_post. apply Huf_01.
+        rewrite Heq_equiv0. exact Hxy. }
+      (* key sets agree across e_ref → e0 → e1 → e_post. *)
+      assert (Hkey_ref_post : forall x0,
+                 Sep.has_key x0 e_ref.(equiv).(parent) <->
+                 Sep.has_key x0 e_post.(equiv).(parent)).
+      { intros x0; split; intros Hx.
+        - apply Hkey.
+          apply Hkey_01.
+          rewrite Heq_equiv0; exact Hx.
+        - apply Hkey in Hx.
+          apply Hkey_01 in Hx.
+          rewrite Heq_equiv0 in Hx; exact Hx. }
+      constructor.
+      - exact Hwf.
+      - intros x Hx.
+        apply Hkey_ref_post.
+        apply Hexact; exact Hx.
+      - intros a0 Ha0.
+        unfold atom_in_egraph in Ha0.
+        destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff_post).
+        destruct Hf01 as (Hdb_eq01 & _).
+        destruct (Hatom_iff_post a0) as [_ Hto_e0].
+        (* Two cases: atom a0 is in e0.db (= e_post.db), or it's
+           the removed atom (atom_fn a, atom_args a, v_old). *)
+        destruct (eqb (atom_fn a0) (atom_fn a)) eqn:Hfn_a0;
+          pose proof (Eqb.eqb_spec (atom_fn a0) (atom_fn a)) as Hfn_a0_sp;
+          rewrite Hfn_a0 in Hfn_a0_sp.
+        2:{ (* atom_fn differs: a0 in e_post.db, sound by Hatom. *)
+          apply Hatom.
+          unfold atom_in_egraph.
+          rewrite <- Hdb_eq, Hdb_eq01.
+          apply Hatom_iff_post.
+          split; [exact Ha0|].
+          intros Heq. apply Hfn_a0_sp.
+          inversion Heq; reflexivity. }
+        { destruct (eqb (atom_args a0) (atom_args a)) eqn:Hargs_a0;
+            pose proof (Eqb.eqb_spec (atom_args a0) (atom_args a)) as Hargs_a0_sp;
+            rewrite Hargs_a0 in Hargs_a0_sp.
+          - (* a0 at literal removed key: a0 = (atom_fn a, atom_args a, atom_ret a0).
+               Apply Hcong to get atom_ret a0 ~ atom_ret a in e_ref.equiv.
+               Then the removed atom is sound via the chain. *)
+            assert (Ha0_form :
+                      atom_in_egraph (Build_atom (atom_fn a) (atom_args a)
+                                                 (atom_ret a0)) e_ref).
+            { unfold atom_in_egraph, atom_in_db in *; cbn in *.
+              rewrite <- Hfn_a0_sp, <- Hargs_a0_sp. exact Ha0. }
+            pose proof (Hcong _ Ha0_form) as Hretrel_ref.
+            (* atom_ret a0 ~ r in e_post.equiv. *)
+            assert (Hretrel_post :
+                      uf_rel_PER _ _ _ e_post.(equiv) (atom_ret a0) r).
+            { eapply PER_clo_trans;
+                [apply Hper_ref_post; exact Hretrel_ref|].
+              eapply PER_clo_trans;
+                [apply HPER_e1_post; apply PER_clo_sym; exact Hret_eq|].
+              apply PER_clo_sym; exact Hr_a'_post. }
+            (* (atom_fn a', atom_args a', r) is in e_post.db
+               (= e_ref.db's same atom) so sound under [i]. *)
+            assert (Ha'_in_post :
+                      atom_in_egraph
+                        (Build_atom (atom_fn a') (atom_args a') r) e_post).
+            { unfold atom_in_egraph in *. rewrite <- Hdb_eq.
+              exact Hatom_e1_pre. }
+            pose proof (Hatom _ Ha'_in_post) as Hsa.
+            (* PER args lifted to e_post. *)
+            assert (Hargs_eq_post :
+                      all2 (uf_rel_PER _ _ _ e_post.(equiv))
+                        (atom_args a') (atom_args a)).
+            { eapply all2_impl; [|exact Hargs_eq].
+              intros x0 y0 Hxy. apply HPER_e1_post; exact Hxy. }
+            (* Goal: atom_sound_for_model m i a0.  Use
+               [eq_atom_implies_sound_l_active]: a0 is i-equivalent to
+               (atom_fn a', atom_args a', r) (via Hfn_eq + PER args
+               + Hretrel_post), and the latter is sound under i. *)
+            eapply eq_atom_implies_sound_l_active with
+              (a3 := Build_atom (atom_fn a') (atom_args a') r);
+              [|exact Hsa].
+            unfold eq_atom_in_interpretation; cbn.
+            split.
+            { (* atom_fn match. *)
+              rewrite Hfn_a0_sp. exact Hfn_eq. }
+            split.
+            { (* all2 eq_sound (atom_args a') (atom_args a0). *)
+              rewrite Hargs_a0_sp.
+              eapply all2_impl; [| exact Hargs_eq_post].
+              intros x0 y0 Hxy. apply Hrel; exact Hxy. }
+            { (* eq_sound r (atom_ret a0): from Hretrel_post via Hrel. *)
+              apply Hrel; unfold uf_rel_PER in *.
+              apply PER_clo_sym; exact Hretrel_post. }
+          - (* atom_fn matches but args differ: a0 in e_post.db. *)
+            apply Hatom.
+            unfold atom_in_egraph.
+            rewrite <- Hdb_eq, Hdb_eq01.
+            apply Hatom_iff_post.
+            split; [exact Ha0|].
+            intros Heq. apply Hargs_a0_sp.
+            cbn in Heq. inversion Heq; reflexivity. }
+      - intros i1 i2 H_PER.
+        apply Hrel.
+        apply Hper_ref_post; exact H_PER. }
+    (* (2) and (3): With [Hpost_to_ref] above, the universals reduce to
+       [Hne_ref]'s universal (Pre) and reflexivity (extends_refl).
+       The witness for both is [iSSC] — once we show [iSSC] denotes
+       [e_post] (via the construction below), both (2) and (3) close.
+       The remaining work is the [iSSC denotes e_post] construction:
+       in particular showing [eq_sound iSSC r (atom_ret a')] for the
+       new singleton in [e_post.equiv]'s PER. *)
     split.
-    { (* (2) [forall_ne i | denote e_post i, Pre i].  Use [iSSC]
-         from [Hne_ref] as the witness; [iSSC] denotes [e_post]
-         because (a) [e_post.db ⊆ e_ref.db] (post_db_remove only
-         removes entries), (b) the parent key set is preserved, and
-         (c) the new equivalence [r ~ atom_ret a'] is [eq_sound]
-         under [iSSC] via [HPa] applied to [a] plus
-         [atom_interpretation] of [(atom_fn a', atom_args a', r)]
-         (which lies in [e_ref.db] since post_db_remove only removes
-         entries at [(atom_fn a, atom_args a)] and the [Some r]
-         branch entails [atom_args a' ≠ atom_args a] literally).
-         The universal [forall i, denote e_post i → Pre i] is the
-         [Pre]-transfer step: every interpretation of [e_post] is
-         (an extension of) an interpretation of [e_ref], so
-         [Hne_ref]'s universal applies modulo upward-closure of
-         [Pre] in [map.extends].  This is the same shape of admit
-         as in [db_set_entry_sound']. *)
-      admit. }
+    { (* (2) [forall_ne i | denote e_post i, Pre i]. *)
+      destruct Hne_ref as [iSSC HiSSC HPre_all].
+      (* iSSC denotes e_post: iSSC denotes e_ref by Hne_ref's witness;
+         we need iSSC denotes e_post.  This requires iSSC to satisfy
+         e_post's stricter PER relation, which adds (r, atom_ret a').
+         The new pair is eq_sound under iSSC via the same chain as
+         the deep step. *)
+      assert (HiSSC_post : egraph_sound_for_interpretation m iSSC e_post).
+      { (* Construction admitted: the rel_interpretation case for the
+           new singleton [(r, atom_ret a')] requires constructing
+           [eq_sound iSSC r (atom_ret a')], which involves a chain
+           through [interprets_to_functional] on the atoms in
+           [e_ref.db].  The construction is conceptually direct but
+           hits the same [Is_Some_satisfying]-rewrite friction as
+           [Hpost_to_ref]; both could close once a small computational
+           helper for "[eq_sound] composes pointwise" is added. *)
+        admit. }
+      econstructor; [exact HiSSC_post|].
+      intros i Hi_post.
+      apply HPre_all.
+      apply Hpost_to_ref. exact Hi_post. }
     split.
     { (* (3) [ne_set_maps_to (denote e_ref) (denote e_post)].
-         Witness: [iSSC] (denoting [e_post] as in (2)).  For any
-         [i'] denoting [e_post], take [i = i']: every atom in
-         [e_ref.db] not at the removed key is in [e_post.db], so
-         sound under [i'] by [atom_interpretation]; the removed
-         atom (if any) is sound under [i'] when its [ret] is
-         PER-equivalent in [e_post.equiv] to some sound value
-         (the same deep semantic step as in (1)'s [parents_ok]).
-         Same shape of admit. *)
-      admit. }
+         Same shape as (2): witness [iSSC] denoting [e_post] (admitted
+         on the same deep step), then for any [i'] sound for [e_post]
+         take [i = i'] (which is sound for [e_ref] by [Hpost_to_ref]). *)
+      destruct Hne_ref as [iSSC HiSSC HPre_all].
+      assert (HiSSC_post : egraph_sound_for_interpretation m iSSC e_post)
+        by admit.
+      econstructor; [exact HiSSC_post|].
+      intros i' Hi'_post.
+      exists i'. split.
+      - apply Hpost_to_ref; exact Hi'_post.
+      - apply Properties.map.extends_refl. }
     (* (4) [all atom_in_egraph_up_to_equiv side_l e_post]:
        identical structure to (1)'s [parents_ok] — each side
        atom from [Hatoms_ref] uses its [e_ref] witness in
        [e_post] unless that witness is at the removed key, in
        which case [(atom_fn a', atom_args a', r)] is the
        replacement. *)
-    admit.
+    eapply all_wkn; [| exact Hatoms_ref].
+    intros p _ Hp_ref.
+    unfold atom_in_egraph_up_to_equiv in Hp_ref.
+    destruct Hp_ref as (wp & Hwp_can & Hwp_in_ref).
+    destruct Hwp_can as (Hwpfn & Hwpargs & Hwpret).
+    assert (Hper_ref_post : forall x0 y0,
+               uf_rel_PER _ _ _ e_ref.(equiv) x0 y0 ->
+               uf_rel_PER _ _ _ e_post.(equiv) x0 y0).
+    { intros x0 y0 Hxy. apply HPER_e1_post. apply Huf_01.
+      rewrite Heq_equiv0. exact Hxy. }
+    destruct (eqb (atom_fn wp) (atom_fn a)) eqn:Hfn_eq_wp;
+      pose proof (Eqb.eqb_spec (atom_fn wp) (atom_fn a)) as Hfn_sp;
+      rewrite Hfn_eq_wp in Hfn_sp.
+    2:{ unfold atom_in_egraph_up_to_equiv.
+      exists wp; split.
+      - split; [exact Hwpfn|]; split.
+        + eapply all2_impl; [|exact Hwpargs].
+          intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy.
+        + apply Hper_ref_post; exact Hwpret.
+      - destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff_post).
+        destruct Hf01 as (Hdb_eq01 & _).
+        unfold atom_in_egraph in *.
+        rewrite <- Hdb_eq, Hdb_eq01.
+        apply Hatom_iff_post.
+        split; [exact Hwp_in_ref|].
+        intros Heq.
+        apply Hfn_sp.
+        cbn in Heq. inversion Heq; reflexivity. }
+    { destruct (eqb (atom_args wp) (atom_args a)) eqn:Hargs_eq_wp;
+        pose proof (Eqb.eqb_spec (atom_args wp) (atom_args a)) as Hargs_sp;
+        rewrite Hargs_eq_wp in Hargs_sp.
+      - (* Case B: literal removed key. *)
+        unfold atom_in_egraph_up_to_equiv.
+        exists (Build_atom (atom_fn a') (atom_args a') r); split.
+        + split; [cbn; rewrite Hwpfn, Hfn_sp; symmetry; exact Hfn_eq|]; split.
+          * cbn in Hwpargs. rewrite Hargs_sp in Hwpargs.
+            cbn.
+            eapply all2_Transitive with (y := atom_args a).
+            { typeclasses eauto. }
+            { eapply all2_impl; [|exact Hwpargs].
+              intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy. }
+            { eapply all2_Symmetric.
+              { typeclasses eauto. }
+              eapply all2_impl; [|exact Hargs_eq].
+              intros x0 y0 Hxy. apply HPER_e1_post; exact Hxy. }
+          * cbn.
+            assert (Hwp_in_ref' :
+                      atom_in_egraph
+                        (Build_atom (atom_fn a) (atom_args a)
+                                    (atom_ret wp)) e_ref).
+            { unfold atom_in_egraph, atom_in_db in *; cbn in *.
+              rewrite <- Hfn_sp, <- Hargs_sp. exact Hwp_in_ref. }
+            pose proof (Hcong _ Hwp_in_ref') as Hv_old_eq.
+            eapply PER_clo_trans;
+              [apply Hper_ref_post; exact Hwpret|].
+            eapply PER_clo_trans;
+              [apply Hper_ref_post; exact Hv_old_eq|].
+            eapply PER_clo_trans;
+              [apply HPER_e1_post; apply PER_clo_sym; exact Hret_eq|].
+            apply PER_clo_sym; exact Hr_a'_post.
+        + unfold atom_in_egraph in *. rewrite <- Hdb_eq.
+          exact Hatom_e1_pre.
+      - unfold atom_in_egraph_up_to_equiv.
+        exists wp; split.
+        + split; [exact Hwpfn|]; split.
+          * eapply all2_impl; [|exact Hwpargs].
+            intros x0 y0 Hxy. apply Hper_ref_post; exact Hxy.
+          * apply Hper_ref_post; exact Hwpret.
+        + destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff_post).
+          destruct Hf01 as (Hdb_eq01 & _).
+          unfold atom_in_egraph in *.
+          rewrite <- Hdb_eq, Hdb_eq01.
+          apply Hatom_iff_post.
+          split; [exact Hwp_in_ref|].
+          intros Heq.
+          apply Hargs_sp.
+          cbn in Heq. inversion Heq; reflexivity. }
   Admitted.
 
   (* None-branch helper for [update_entry_canonicalized_after_db_
@@ -4469,9 +4821,21 @@ TODO: lemmas in the comment block are out of date
     destruct mout as [r | ].
     - (* Some r — union branch. *)
       cbn [Mbind StateMonad.state_monad].
+      assert (Hcong : forall v, atom_in_egraph
+                                  (Build_atom (atom_fn a) (atom_args a) v) e_ref ->
+                                uf_rel_PER _ _ _ e_ref.(equiv) v (atom_ret a)).
+      { (* Congruence at the literal removed key.  This is the deep
+           semantic step that the OUTER algorithm/invariant must
+           supply: in [e_ref], any value at the literal entry
+           [(atom_fn a, atom_args a)] must be PER-equivalent to
+           [atom_ret a].  Without a [congruence_ok] field on
+           [egraph_ok] (or a stronger precondition propagated through
+           [repair_each_sound]), this is not derivable from the
+           local hypotheses. *)
+        admit. }
       apply (union_after_canonicalize_sound
                Pre a a' side_l e_ref e0 r
-               HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
+               HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0 Hcong
                e_pre).
       repeat (split; try assumption).
     - (* None — db_set branch. *)
@@ -4481,7 +4845,7 @@ TODO: lemmas in the comment block are out of date
                HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
                e_pre).
       repeat (split; try assumption).
-  Qed.
+  Admitted.
 
   (* repair_each (the inner closure of repair_union) preserves Pre
      when called on a sound atom that is canonically represented in the
