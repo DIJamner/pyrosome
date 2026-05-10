@@ -1516,82 +1516,44 @@ Section WithVar.
           (parameterize_args p_name pl (Some p') s1)
           (parameterize_args p_name pl (Some p') s2)).
   Proof.
-    apply cut_ind;
-      eauto;
-      try typeclasses eauto;
-      basic_goal_prep.
-    {
-      my_case H' (no_sort_eqns l).
-      2: simpl in *; tauto.
-      unfold no_sort_eqns in *.
-      rewrite forallb_forall in H'.
-      apply H' in H.
-      cbn in *.
-      congruence.
-    }
-    {
-      use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      case_match.
-      2:{
-        eapply eq_sort_ctx_monotonicity; eauto.
-        {
-          eapply sort_con_congruence; eauto.
-          2:{
-            eapply parameterize_preserving'_None; eauto.
-            
-            {
-              p_name_lift_in H.
-              eauto.
-            }
-            {
-              change c' with (get_ctx ( sort_rule c' args)).
-              eapply ctx_fresh_if_sort_fresh; eauto.
-              apply named_list_lookup_none_iff; eauto.
-            }
-          }
-          param_in_map_in H.
-          unfold parameterize_lang.
-          cbn in H.
-          rewrite case_match_eqn in *.
-          subst l_plus; basic_utils_crush.
-        }
-        {
-          cbn.
-          basic_utils_crush.
-        }
-      }
-      {
-        eapply sort_con_congruence; eauto.
-        {
-          param_in_map_in H.
-          unfold parameterize_lang.
-          cbn in H.
-          rewrite case_match_eqn in *.
-          subst l_plus; basic_utils_crush.
-        }
-        cbn.
-        specialize H1 with (p:= (n,b)).
-        eapply H1; eauto.
-        {
-          p_name_lift_in H.
-          eauto.
-        }
-        change c' with (get_ctx (sort_rule c' args)).
-        eapply  H_pl_indices_sound; eauto.
-        basic_utils_crush.
-      }
-    }
-    {
-      specialize H0 with (p:=(n,b)).
-      specialize H2 with (p:=(n,b)).
-      basic_goal_prep.
-      eauto using eq_sort_trans.
-    }
-    {
-      specialize H0 with (p:=(n,b)).
-      basic_goal_prep.
-      eauto using eq_sort_sym.
-    }
+    apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep.
+    (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
+    1: my_case H' (no_sort_eqns l);
+       [ unfold no_sort_eqns in *; rewrite forallb_forall in H';
+         apply H' in H; cbn in *; congruence
+       | simpl in *; tauto ].
+    (* sort_con_congruence *)
+    1: use_rule_in_wf; autorewrite with utils lang_core in *; break;
+       case_match;
+         [ eapply sort_con_congruence; eauto;
+             [ param_in_map_in H; unfold parameterize_lang;
+               cbn in H; rewrite case_match_eqn in *;
+               subst l_plus; basic_utils_crush
+             | cbn; specialize H1 with (p:= (n,b)); eapply H1; eauto;
+                 [ p_name_lift_in H; eauto
+                 | change c' with (get_ctx (sort_rule c' args));
+                   eapply H_pl_indices_sound; eauto;
+                   basic_utils_crush ] ]
+         | eapply eq_sort_ctx_monotonicity; eauto;
+             [ eapply sort_con_congruence; eauto;
+                 [ param_in_map_in H; unfold parameterize_lang;
+                   cbn in H; rewrite case_match_eqn in *;
+                   subst l_plus; basic_utils_crush
+                 | eapply parameterize_preserving'_None; eauto;
+                     [ p_name_lift_in H; eauto
+                     | change c' with (get_ctx (sort_rule c' args));
+                       eapply ctx_fresh_if_sort_fresh; eauto;
+                       apply named_list_lookup_none_iff; eauto ] ]
+             | cbn; basic_utils_crush ] ].
+    (* eq_sort_trans *)
+    1: specialize H0 with (p:=(n,b));
+       specialize H2 with (p:=(n,b));
+       basic_goal_prep;
+       eauto using eq_sort_trans.
+    (* eq_sort_sym *)
+    1: specialize H0 with (p:=(n,b));
+       basic_goal_prep;
+       eauto using eq_sort_sym.
     {
       erewrite !parameterize_term_subst with (mn:=(named_list_lookup_err pl name)),
           !parameterize_sort_subst with (mn:=(named_list_lookup_err pl name)).
@@ -1732,34 +1694,25 @@ Section WithVar.
         }
       }
     }
-    {
-      basic_core_crush.
-    }
-    {
-      specialize H0 with (p:=(n,b)).
-      specialize H2 with (p:=(n,b)).
-      eapply eq_term_trans; eauto.
-    }
-    {
-      specialize H0 with (p:=(n,b)).
-      eapply eq_term_sym; eauto.
-    }
-    {
-      specialize H0 with (p:=(n,b)).
-      specialize H2 with (p:=(n,b)).
-      eapply eq_term_conv; eauto.
-    }
-    {
-      unfold insert.
-      basic_utils_crush.
-      cbn.
-      constructor; constructor.
-      eapply wf_term_var.
-      replace  p_sort [/[] /] with p_sort;
-        basic_core_crush.
-      symmetry.
-      apply sort_subst_nil.
-    }
+    (* eq_term_var *)
+    1: basic_core_crush.
+    (* eq_term_trans *)
+    1: specialize H0 with (p:=(n,b));
+       specialize H2 with (p:=(n,b));
+       eapply eq_term_trans; eauto.
+    (* eq_term_sym *)
+    1: specialize H0 with (p:=(n,b));
+       eapply eq_term_sym; eauto.
+    (* eq_term_conv *)
+    1: specialize H0 with (p:=(n,b));
+       specialize H2 with (p:=(n,b));
+       eapply eq_term_conv; eauto.
+    (* eq_subst_nil *)
+    1: unfold insert; basic_utils_crush;
+       cbn; constructor; constructor;
+       eapply wf_term_var;
+       replace p_sort [/[] /] with p_sort;
+         [ basic_core_crush | symmetry; apply sort_subst_nil ].
     {
       specialize H0 with (p:=(n0,b0)).
       cbn -[insert] in *.
@@ -1818,17 +1771,12 @@ Section WithVar.
         }
       }
     }
-    {
-      unfold insert.
-      basic_utils_crush.
-      cbn.
-      constructor; constructor.
-      eapply wf_term_var.
-      replace  p_sort [/with_names_from [] [] /] with p_sort;
-        basic_core_crush.
-      symmetry.
-      apply sort_subst_nil.
-    }
+    (* eq_args_nil *)
+    1: unfold insert; basic_utils_crush;
+       cbn; constructor; constructor;
+       eapply wf_term_var;
+       replace p_sort [/with_names_from [] [] /] with p_sort;
+         [ basic_core_crush | symmetry; apply sort_subst_nil ].
     {
       specialize H0 with (p:=(n0,b0)).
       cbn -[insert] in *.
