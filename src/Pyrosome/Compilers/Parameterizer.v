@@ -1411,12 +1411,12 @@ Section WithVar.
         use_rule_in_wf; autorewrite with utils lang_core in *; break;
         erewrite !parameterize_sort_subst with (mn:=None);
           [| eapply eq_subst_name_fresh_r_from_ctx; eauto
-           | basic_core_crush ];
+           | pure_fast_core_crush ];
         erewrite !parameterize_term_subst with (mn:=None);
           [| eapply eq_subst_name_fresh_r_from_ctx; eauto
-           | basic_core_crush
+           | pure_fast_core_crush
            | eapply eq_subst_name_fresh_l_from_ctx; eauto
-           | basic_core_crush ];
+           | pure_fast_core_crush ];
         rewrite H8 in *;
         eapply eq_term_subst; [| eapply H1; eauto | eauto];
         subst l_plus; eapply eq_term_by; basic_utils_crush
@@ -1445,7 +1445,7 @@ Section WithVar.
           | basic_utils_crush
           | rewrite H4; apply H1; eauto ]
       | (* eq_term_var *)
-        basic_core_crush
+        pure_fast_core_crush
       | (* eq_term_trans *)
         eauto using eq_term_trans
       | (* eq_term_sym *)
@@ -1457,7 +1457,7 @@ Section WithVar.
           | eapply H0; eauto;
             apply sort_names_equal in H; congruence ]
       | (* eq_subst_nil *)
-        basic_core_crush
+        pure_fast_core_crush
       | (* eq_subst_cons *)
         unfold constructors_of_ctx in *;
         basic_goal_prep;
@@ -1466,11 +1466,11 @@ Section WithVar.
         unfold Model.eq_term, core_model;
         erewrite !parameterize_sort_subst with (mn:=None) in H2;
           [| eapply eq_subst_name_fresh_r_from_ctx; eauto
-           | basic_core_crush ];
+           | pure_fast_core_crush ];
         eapply H2; eauto;
         destruct t; basic_goal_prep; intuition eauto
       | (* eq_args_nil *)
-        basic_core_crush
+        pure_fast_core_crush
       | (* eq_args_cons *)
         unfold constructors_of_ctx in *;
         basic_goal_prep;
@@ -1482,7 +1482,7 @@ Section WithVar.
              eapply @eq_args_length_eq_r with (Model:=core_model l); eauto
            | autorewrite with term model utils lang_core;
                [| eapply @eq_args_length_eq_r with (Model:=core_model l); eauto];
-             basic_core_crush ];
+             pure_fast_core_crush ];
         cbn in *; autorewrite with term model utils in *;
         eapply H2; eauto;
         destruct t; cbn in *; intuition ].
