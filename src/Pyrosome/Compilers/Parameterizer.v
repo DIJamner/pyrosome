@@ -1374,192 +1374,118 @@ Section WithVar.
    eq_args l_plus (pctx None c) (pctx None c') (parameterize_args p_name pl None s1)
      (parameterize_args p_name pl None s2)).
   Proof.
-    apply cut_ind;
-      eauto;
-      try typeclasses eauto;
-      basic_goal_prep.
-    {
-      my_case H' (no_sort_eqns l).
-      2: simpl in *; tauto.
-      unfold no_sort_eqns in *.
-      rewrite forallb_forall in H'.
-      apply H' in H.
-      cbn in *.
-      congruence.
-    }
-    {
-      use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
-      {
-        change c' with (get_ctx ( sort_rule c' args)).
-        eapply ctx_fresh_if_sort_fresh; eauto.
-      }
-      p_name_lift_in H.
-      eapply sort_con_congruence; subst l_plus; basic_utils_crush.
-      apply named_list_lookup_none_iff in H3; rewrite <- H3.
-      eauto.
-    }
-    {
-      apply sort_names_equal in H, H1.
-      rewrite H in *; rewrite H1 in *.
-      eauto using eq_sort_trans.
-    }
-    {
-      apply sort_names_equal in H.
-      rewrite H in *.
-      eauto using eq_sort_sym.
-    }
-    {
-      eapply in_all in H_p_name_l; eauto;
-      cbn in *.
-      use_rule_in_wf.
-      autorewrite with lang_core utils term in *.
-      break.
-      assert (named_list_lookup_err pl name = None).
-      {
-        symmetry.
-        apply named_list_lookup_none_iff.
-        eapply eq_fresh_iff_sort_fresh; eauto.
-      }      
-      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
-      {
-        change c' with (get_ctx (term_eq_rule c' e1 e2 t)).
-        eapply ctx_fresh_if_sort_fresh; eauto.
-        apply named_list_lookup_none_iff; eauto.        
-      }
-      param_in_map_in H.
-      cbn in H.
-      epose proof (in_or_app _ l_base _ (or_introl H)).
-      use_rule_in_wf; autorewrite with utils lang_core in *; break.
-
-      erewrite !parameterize_sort_subst with (mn:=None).
-      2:{
-        eapply eq_subst_name_fresh_r_from_ctx; eauto.
-      }
-      2: basic_core_crush.
-      erewrite !parameterize_term_subst with (mn:=None).
-      2:{
-        eapply eq_subst_name_fresh_r_from_ctx; eauto.
-      }      
-      3:{
-        eapply eq_subst_name_fresh_l_from_ctx; eauto.
-      }
-      2,3:basic_core_crush.
-      rewrite H8 in *.
-      eapply eq_term_subst; [| eapply H1; eauto| eauto].
-      subst l_plus.
-      eapply eq_term_by; basic_utils_crush.
-    }
-    {
-      
-      assert (named_list_lookup_err pl name = None).
-      {
-        autorewrite with term in H3.
-        eapply con_fresh_iff_sort_fresh in H.
-        symmetry.
-        apply named_list_lookup_none_iff.
-        intuition auto.
-      }
-      assert (all (fun n : V => fresh n pl) (constructors_of_ctx c')).
-      {
-        change c' with (get_ctx (term_rule c' args t)).
-        eapply ctx_fresh_if_sort_fresh; eauto.
-        apply named_list_lookup_none_iff; eauto.        
-      }
-      use_rule_in_wf; autorewrite with utils lang_core in *; break.
-      rewrite H4 in *.
-       p_name_lift_in H.
-       subst l_plus.
-       eapply term_con_congruence.
-       1: basic_utils_crush.
-       2: basic_utils_crush.
-       2:{
-         rewrite H4.
-         apply H1; eauto.
-       }
-       {
-         right.
-         rewrite H4.
-         cbn.
-         rewrite with_names_from_map_is_named_map.
-         rewrite  with_named_from_named_map.
-         erewrite !parameterize_sort_subst with (mn:=None); auto;
-           autorewrite with utils model term lang_core;
-           eauto with utils model term lang_core.
-         rewrite CutElim.fresh_with_names_from; eauto.
-         
-         eapply @eq_args_length_eq_r with (Model:=core_model l).
-         eapply H0.
-       }
-     }
-     {
-       basic_core_crush.
-     }
-     {
-       eauto using eq_term_trans.
-     }
-     {
-       eauto using eq_term_sym.
-     }
-     {
-       eapply eq_term_conv; eauto.
-       {
-         eapply H2; eauto.
-         apply sort_names_equal in H.
-         congruence.
-       }
-       {
-         eapply H0; eauto.
-         apply sort_names_equal in H.
-         congruence.
-       }
-     }
-     {
-       basic_core_crush.
-     }
-     {
-       unfold constructors_of_ctx in *.
-       basic_goal_prep.
-       autorewrite with rw_prop inversion utils lang_core term model in *; break.
-       constructor; eauto.
-       unfold Model.eq_term, core_model.
-       erewrite !parameterize_sort_subst with (mn:=None) in H2.
-       2:{
-         eapply eq_subst_name_fresh_r_from_ctx; eauto.
-       }      
-       2:basic_core_crush.
-       eapply H2; eauto.
-       destruct t;
-         basic_goal_prep.
-       intuition eauto.
-     }
-     {
-       basic_core_crush.
-     }
-     {
-       unfold constructors_of_ctx in *.
-       basic_goal_prep.
-       autorewrite with utils lang_core term model in *; break.
-       constructor; eauto.
-       unfold Model.eq_term, core_model.
-       erewrite !parameterize_sort_subst with (mn:=None) in H2.
-       2:{
-         rewrite CutElim.fresh_with_names_from; eauto.
-         eapply @eq_args_length_eq_r with (Model:=core_model l);
-           eauto.
-       }      
-       2:{
-         autorewrite with term model utils lang_core.
-         2:eapply @eq_args_length_eq_r with (Model:=core_model l);
-         eauto.
-         basic_core_crush.
-       }      
-       cbn in *.
-       autorewrite with term model utils in *.
-       eapply H2; eauto.
-       destruct t; cbn in *.
-       intuition.
-     }
+    apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep;
+      [ (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
+        my_case H' (no_sort_eqns l);
+          [ unfold no_sort_eqns in *; rewrite forallb_forall in H';
+            apply H' in H; cbn in *; congruence
+          | simpl in *; tauto ]
+      | (* sort_con_congruence *)
+        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
+          by (change c' with (get_ctx (sort_rule c' args));
+              eapply ctx_fresh_if_sort_fresh; eauto);
+        p_name_lift_in H;
+        eapply sort_con_congruence; subst l_plus; basic_utils_crush;
+        apply named_list_lookup_none_iff in H3; rewrite <- H3; eauto
+      | (* eq_sort_trans *)
+        apply sort_names_equal in H, H1;
+        rewrite H in *; rewrite H1 in *;
+        eauto using eq_sort_trans
+      | (* eq_sort_sym *)
+        apply sort_names_equal in H; rewrite H in *;
+        eauto using eq_sort_sym
+      | (* term_eq_subst (term_eq_rule application) *)
+        eapply in_all in H_p_name_l; eauto; cbn in *;
+        use_rule_in_wf;
+        autorewrite with lang_core utils term in *; break;
+        assert (named_list_lookup_err pl name = None)
+          by (symmetry; apply named_list_lookup_none_iff;
+              eapply eq_fresh_iff_sort_fresh; eauto);
+        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
+          by (change c' with (get_ctx (term_eq_rule c' e1 e2 t));
+              eapply ctx_fresh_if_sort_fresh; eauto;
+              apply named_list_lookup_none_iff; eauto);
+        param_in_map_in H; cbn in H;
+        epose proof (in_or_app _ l_base _ (or_introl H));
+        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        erewrite !parameterize_sort_subst with (mn:=None);
+          [| eapply eq_subst_name_fresh_r_from_ctx; eauto
+           | basic_core_crush ];
+        erewrite !parameterize_term_subst with (mn:=None);
+          [| eapply eq_subst_name_fresh_r_from_ctx; eauto
+           | basic_core_crush
+           | eapply eq_subst_name_fresh_l_from_ctx; eauto
+           | basic_core_crush ];
+        rewrite H8 in *;
+        eapply eq_term_subst; [| eapply H1; eauto | eauto];
+        subst l_plus; eapply eq_term_by; basic_utils_crush
+      | (* term_con_congruence *)
+        assert (named_list_lookup_err pl name = None)
+          by (autorewrite with term in H3;
+              eapply con_fresh_iff_sort_fresh in H;
+              symmetry; apply named_list_lookup_none_iff;
+              intuition auto);
+        assert (all (fun n : V => fresh n pl) (constructors_of_ctx c'))
+          by (change c' with (get_ctx (term_rule c' args t));
+              eapply ctx_fresh_if_sort_fresh; eauto;
+              apply named_list_lookup_none_iff; eauto);
+        use_rule_in_wf; autorewrite with utils lang_core in *; break;
+        rewrite H4 in *;
+        p_name_lift_in H; subst l_plus;
+        eapply term_con_congruence;
+          [ basic_utils_crush
+          | right; rewrite H4; cbn;
+            rewrite with_names_from_map_is_named_map, with_named_from_named_map;
+            erewrite !parameterize_sort_subst with (mn:=None); auto;
+              autorewrite with utils model term lang_core;
+              eauto with utils model term lang_core;
+            rewrite CutElim.fresh_with_names_from; eauto;
+            eapply @eq_args_length_eq_r with (Model:=core_model l); eapply H0
+          | basic_utils_crush
+          | rewrite H4; apply H1; eauto ]
+      | (* eq_term_var *)
+        basic_core_crush
+      | (* eq_term_trans *)
+        eauto using eq_term_trans
+      | (* eq_term_sym *)
+        eauto using eq_term_sym
+      | (* eq_term_conv *)
+        eapply eq_term_conv; eauto;
+          [ eapply H2; eauto;
+            apply sort_names_equal in H; congruence
+          | eapply H0; eauto;
+            apply sort_names_equal in H; congruence ]
+      | (* eq_subst_nil *)
+        basic_core_crush
+      | (* eq_subst_cons *)
+        unfold constructors_of_ctx in *;
+        basic_goal_prep;
+        autorewrite with rw_prop inversion utils lang_core term model in *; break;
+        constructor; eauto;
+        unfold Model.eq_term, core_model;
+        erewrite !parameterize_sort_subst with (mn:=None) in H2;
+          [| eapply eq_subst_name_fresh_r_from_ctx; eauto
+           | basic_core_crush ];
+        eapply H2; eauto;
+        destruct t; basic_goal_prep; intuition eauto
+      | (* eq_args_nil *)
+        basic_core_crush
+      | (* eq_args_cons *)
+        unfold constructors_of_ctx in *;
+        basic_goal_prep;
+        autorewrite with utils lang_core term model in *; break;
+        constructor; eauto;
+        unfold Model.eq_term, core_model;
+        erewrite !parameterize_sort_subst with (mn:=None) in H2;
+          [| rewrite CutElim.fresh_with_names_from; eauto;
+             eapply @eq_args_length_eq_r with (Model:=core_model l); eauto
+           | autorewrite with term model utils lang_core;
+               [| eapply @eq_args_length_eq_r with (Model:=core_model l); eauto];
+             basic_core_crush ];
+        cbn in *; autorewrite with term model utils in *;
+        eapply H2; eauto;
+        destruct t; cbn in *; intuition ].
   Qed.
   
   Lemma parameterize_preserving'_Some
