@@ -296,6 +296,7 @@ Section InjectiveOn.
     {Eqb_ok_A : Eqb_ok Eqb_A}
     {Eqb_ok_B : Eqb_ok Eqb_B}
     {V_default : WithDefault A}
+    {V_default_B : WithDefault B}
     (S : A -> Prop)
     (f : A -> B)
     (f_inj_S : Injective_on S f).
@@ -726,9 +727,159 @@ Section InjectiveOn.
       - intros c' s1 s2 Heq Hc' _ _; apply (Ha _ _ _ Heq Hc').
     Qed.
 
+    (** ** wf_term / wf_sort: corollaries of the eq-half via reflexivity.
+
+       Given [wf_term l c e t], we have [eq_term l c t e e] by reflexivity.
+       Renaming the eq_term via [rename_mono_S_eq] and then projecting
+       [wf_term] back via [eq_term_wf_l] (which requires [wf_lang] and
+       [wf_ctx] of the renamed language).  This sidesteps the need to do
+       induction on [wf_term] directly, which is awkward because the
+       [wf_term_conv] case introduces an arbitrary intermediate sort that
+       may not be in [S]. *)
+
+    Lemma rename_mono_S_wf_term c (wfc : wf_ctx l c) (Hcs : ctx_in_S c)
+          (wfc_ren_c : wf_ctx (rename_lang f l) (rename_ctx f c))
+          e t (Hwf : wf_term l c e t) (He : term_in_S e) (Ht : sort_in_S t)
+      : wf_term (rename_lang f l) (rename_ctx f c)
+                (rename f e) (rename_sort f t).
+    Proof using wfl Hls wfl_ren f_inj_S Eqb_ok_A Eqb_ok_B V_default V_default_B.
+      eapply eq_term_wf_l; eauto.
+      apply (proj1 (proj2 (rename_mono_S_eq wfc Hcs wfc_ren_c)));
+        auto using eq_term_refl.
+    Qed.
+
+    Lemma rename_mono_S_wf_sort c (wfc : wf_ctx l c) (Hcs : ctx_in_S c)
+          (wfc_ren_c : wf_ctx (rename_lang f l) (rename_ctx f c))
+          t (Hwf : wf_sort l c t) (Ht : sort_in_S t)
+      : wf_sort (rename_lang f l) (rename_ctx f c) (rename_sort f t).
+    Proof using wfl Hls wfl_ren f_inj_S Eqb_ok_A Eqb_ok_B V_default V_default_B.
+      eapply eq_sort_wf_l; eauto.
+      apply (proj1 (rename_mono_S_eq wfc Hcs wfc_ren_c));
+        auto using eq_sort_refl.
+    Qed.
+
+    (** ** wf_ctx preservation.
+
+       By induction on [wf_ctx l c].  At each cons step we use
+       [rename_mono_S_wf_sort] with the tail's freshly-built renamed
+       wf_ctx, plus [injective_in_S] to lift freshness through the
+       (partial) renaming. *)
+    Lemma rename_mono_S_wf_ctx c (wfc : wf_ctx l c) (Hcs : ctx_in_S c)
+      : wf_ctx (rename_lang f l) (rename_ctx f c).
+    Proof using wfl Hls wfl_ren f_inj_S Eqb_ok_A Eqb_ok_B V_default V_default_B.
+      induction wfc as [|name c0 v Hfresh wfc IH Hwfs]; cbn.
+      - constructor.
+      - destruct Hcs as [[Hname Hv] Hc0].
+        cbn in Hname, Hv.
+        specialize (IH Hc0).
+        constructor; auto.
+        + (* fresh (f name) (rename_ctx f c0) *)
+          intro Hin.
+          unfold rename_ctx in Hin; rewrite map_map in Hin; cbn in Hin.
+          (* normalize map (fun x => f (fst x)) to map f (map fst) *)
+          rewrite <- map_map with (f := fst) (g := f) in Hin.
+          assert (Hall_S : all S (map fst c0)).
+          { clear -Hc0. induction c0 as [|[n t] c0 IH]; cbn in *; auto.
+            destruct Hc0 as [[Hn Ht] Hc0]; split; auto. }
+          unfold fresh in Hfresh.
+          apply Hfresh.
+          apply (injective_in_S (a := name) (map fst c0) Hname Hall_S Hin).
+        + (* wf_sort renamed *)
+          apply (rename_mono_S_wf_sort wfc Hc0 IH); auto.
+    Qed.
+
+    (** ** wf_rule preservation. *)
+    Lemma rename_rule_mono_S r (wfr : wf_rule l r) (Hrs : rule_in_S r)
+      : wf_rule (rename_lang f l) (rename_rule f r).
+    Proof using wfl Hls wfl_ren f_inj_S Eqb_ok_A Eqb_ok_B V_default V_default_B.
+      destruct r as [rc rargs | rc rargs rt | rc rt1 rt2 | rc re1 re2 rt];
+        cbn in Hrs |- *;
+        inversion wfr; subst.
+      - (* sort_rule rc rargs *)
+        destruct Hrs as [Hc Hargs].
+        constructor.
+        + apply rename_mono_S_wf_ctx; auto.
+        + unfold rename_ctx.
+          rewrite map_map; cbn.
+          rewrite <- map_map with (f := fst) (g := f).
+          eauto using sublist_map.
+      - (* term_rule rc rargs rt *)
+        destruct Hrs as (Hc & Hargs & Ht).
+        match goal with H : wf_ctx _ rc |- _ => rename H into Hwfc end.
+        match goal with H : wf_sort _ rc rt |- _ => rename H into Hwfs end.
+        assert (Hctxr : wf_ctx (rename_lang f l) (rename_ctx f rc))
+          by (apply rename_mono_S_wf_ctx; auto).
+        constructor.
+        + exact Hctxr.
+        + apply (rename_mono_S_wf_sort Hwfc Hc Hctxr); auto.
+        + unfold rename_ctx.
+          rewrite map_map; cbn.
+          rewrite <- map_map with (f := fst) (g := f).
+          eauto using sublist_map.
+      - (* sort_eq_rule rc rt1 rt2 *)
+        destruct Hrs as (Hc & Ht1 & Ht2).
+        match goal with H : wf_ctx _ rc |- _ => rename H into Hwfc end.
+        match goal with H : wf_sort _ rc rt1 |- _ => rename H into Hwfs1 end.
+        match goal with H : wf_sort _ rc rt2 |- _ => rename H into Hwfs2 end.
+        assert (Hctxr : wf_ctx (rename_lang f l) (rename_ctx f rc))
+          by (apply rename_mono_S_wf_ctx; auto).
+        constructor; auto.
+        + apply (rename_mono_S_wf_sort Hwfc Hc Hctxr); auto.
+        + apply (rename_mono_S_wf_sort Hwfc Hc Hctxr); auto.
+      - (* term_eq_rule rc re1 re2 rt *)
+        destruct Hrs as (Hc & He1 & He2 & Ht).
+        match goal with H : wf_ctx _ rc |- _ => rename H into Hwfc end.
+        match goal with H : wf_sort _ rc rt |- _ => rename H into Hwfs end.
+        match goal with H : wf_term _ rc re1 rt |- _ => rename H into Hwfe1 end.
+        match goal with H : wf_term _ rc re2 rt |- _ => rename H into Hwfe2 end.
+        assert (Hctxr : wf_ctx (rename_lang f l) (rename_ctx f rc))
+          by (apply rename_mono_S_wf_ctx; auto).
+        constructor; auto.
+        + apply (rename_mono_S_wf_sort Hwfc Hc Hctxr); auto.
+        + apply (rename_mono_S_wf_term Hwfc Hc Hctxr); auto.
+        + apply (rename_mono_S_wf_term Hwfc Hc Hctxr); auto.
+    Qed.
+
   End Mono.
 
+  (** ** wf_lang preservation: bootstrap [wfl_ren] from [wf_lang l] by
+     induction on the language list. *)
+  Lemma rename_lang_mono_S l (Hls : lang_in_S l)
+    : wf_lang l -> wf_lang (rename_lang f l).
+  Proof.
+    induction l as [|[n r] l IH]; cbn in Hls |- *.
+    - intros _. constructor.
+    - intros Hwfl.
+      destruct Hls as [[Hn Hr] Hl].
+      cbn in Hn, Hr.
+      inversion Hwfl; subst.
+      match goal with H : wf_lang_ext [] l |- _ => rename H into Hwfl_tail end.
+      match goal with H : wf_rule (l ++ []) r |- _ => rename H into Hwfr end.
+      rewrite app_nil_r in Hwfr.
+      specialize (IH Hl Hwfl_tail).
+      constructor.
+      + (* fresh (f n) (rename_lang f l ++ []) *)
+        rewrite app_nil_r.
+        intro Hin.
+        unfold rename_lang in Hin; rewrite map_map in Hin; cbn in Hin.
+        rewrite <- map_map with (f := fst) (g := f) in Hin.
+        assert (Hall : all S (map fst l)).
+        { clear -Hl. induction l as [|[n0 r0] l IH]; cbn in *; auto.
+          destruct Hl as [[Hn0 Hr0] Hl]; split; auto. }
+        match goal with H : fresh n (l ++ []) |- _ =>
+          unfold fresh in H; rewrite app_nil_r in H; apply H end.
+        apply (injective_in_S (a := n) (map fst l) Hn Hall Hin).
+      + exact IH.
+      + rewrite app_nil_r.
+        apply (rename_rule_mono_S Hwfl_tail Hl IH Hwfr Hr).
+  Qed.
+
 End InjectiveOn.
+
+Arguments rename_lang_mono_S {A B}%_type_scope {Eqb_A Eqb_B Eqb_ok_A Eqb_ok_B
+  V_default V_default_B}
+  [S]%_function_scope [f]%_function_scope f_inj_S [l]%_lang_scope _ _.
+#[export] Hint Resolve rename_lang_mono_S : lang_core.
 
 
 Section Inverse.
