@@ -116,10 +116,12 @@ Section WithVar.
   (** ** State well-formedness invariant
 
      [renaming_ok] packages four bijection/boundedness facts about the
-     [v_to_p]/[p_to_v] tables of [r] together with global injectivity
-     of [pos_of_v r].  Including injectivity here means downstream
-     operations can use the property directly instead of taking it as
-     a separate hypothesis. *)
+     [v_to_p]/[p_to_v] tables of [r] together with injectivity of
+     [pos_of_v r] *on the set of keys of [r.(v_to_p)]*.  Asking only
+     for on-keys injectivity (rather than global) lets
+     [empty_renaming_ok] hold for any [V]; for V's outside the renaming
+     [pos_of_v] returns the [xH] default, and globally injective
+     extensions can be constructed by the caller when needed. *)
 
   Record renaming_ok (r : renaming) : Prop :=
     {
@@ -130,8 +132,22 @@ Section WithVar.
         forall v p, map.get r.(p_to_v) p = Some v -> In (v, p) r.(v_to_p);
       ren_bound :
         forall v p, In (v, p) r.(v_to_p) -> Pos.lt p r.(next_id);
-      ren_pos_of_v_inj : Renaming.Injective (pos_of_v r)
+      ren_pos_of_v_inj :
+        forall v1 v2,
+          In v1 (map fst r.(v_to_p)) ->
+          In v2 (map fst r.(v_to_p)) ->
+          pos_of_v r v1 = pos_of_v r v2 -> v1 = v2
     }.
+
+  Lemma empty_renaming_ok : renaming_ok empty_rename.
+  Proof.
+    constructor; cbn.
+    - exact I.
+    - intros ? ? [].
+    - intros v p Hget; cbn in Hget; congruence.
+    - intros ? ? [].
+    - intros v1 v2 [] _ _.
+  Qed.
 
   Lemma renaming_ok_next_id r :
     renaming_ok r -> map.get r.(p_to_v) r.(next_id) = None.
@@ -180,116 +196,34 @@ Section WithVar.
     rewrite (of_p_lookup Hv), (of_p_grows Hg Hv); reflexivity.
   Qed.
 
-  (* These helper lemmas use the bijection fields of [renaming_ok]
-     directly (as granular hypotheses) so they can be invoked during
-     the proof of [to_p_correct] before the full [renaming_ok r'] has
-     been assembled. *)
-
-  (* Two v's with the same nondefault [pos_of_v] are equal: both
-     lookups returned [Some p] for the same [p], so the bijection
-     gives [v1 = v2]. *)
-  Lemma pos_of_v_unique_when_nondefault_aux r v1 v2 :
+  (** On-keys injectivity of [pos_of_v] follows directly from the
+      bijection fields.  Stated with granular hypotheses so it can be
+      invoked inside [to_p_correct] before the full [renaming_ok r']
+      record has been assembled. *)
+  Lemma pos_of_v_inj_on_keys_aux r :
+    all_fresh r.(v_to_p) ->
     (forall v p, In (v, p) r.(v_to_p) -> map.get r.(p_to_v) p = Some v) ->
-    pos_of_v r v1 = pos_of_v r v2 ->
-    pos_of_v r v1 <> 1 ->
-    v1 = v2.
+    forall v1 v2,
+      In v1 (map fst r.(v_to_p)) ->
+      In v2 (map fst r.(v_to_p)) ->
+      pos_of_v r v1 = pos_of_v r v2 -> v1 = v2.
   Proof.
-    intros Hvp Heq Hne.
-    unfold pos_of_v in *.
-    destruct (named_list_lookup_err r.(v_to_p) v1) as [p1|] eqn:Hl1;
-      destruct (named_list_lookup_err r.(v_to_p) v2) as [p2|] eqn:Hl2.
-    - subst p2.
-      pose proof (named_list_lookup_err_in _ _ (eq_sym Hl1)) as Hin1.
-      pose proof (named_list_lookup_err_in _ _ (eq_sym Hl2)) as Hin2.
-      apply Hvp in Hin1, Hin2.
-      rewrite Hin1 in Hin2; inversion Hin2; reflexivity.
-    - exfalso; apply Hne; rewrite Heq; reflexivity.
-    - exfalso; apply Hne; reflexivity.
-    - exfalso; apply Hne; reflexivity.
-  Qed.
-
-  Lemma pos_of_v_unique_when_nondefault r v1 v2 :
-    renaming_ok r ->
-    pos_of_v r v1 = pos_of_v r v2 ->
-    pos_of_v r v1 <> 1 ->
-    v1 = v2.
-  Proof.
-    intros Hr; eapply pos_of_v_unique_when_nondefault_aux,
-              (ren_v_to_p_in_p_to_v Hr).
-  Qed.
-
-  (* If [pos_of_v r va] is not the default, then [va] is genuinely
-     bound in [r], so the answer is preserved across [rename_grows]. *)
-  Lemma pos_of_v_preserved_when_nondefault_aux r r' va :
-    (forall v p, In (v, p) r.(v_to_p) -> map.get r.(p_to_v) p = Some v) ->
-    all_fresh r'.(v_to_p) ->
-    (forall v p, map.get r'.(p_to_v) p = Some v -> In (v, p) r'.(v_to_p)) ->
-    rename_grows r r' ->
-    pos_of_v r va <> 1 ->
-    pos_of_v r va = pos_of_v r' va.
-  Proof.
-    intros Hvp Hfresh' Hpv' Hg Hne.
-    unfold pos_of_v in *.
-    destruct (named_list_lookup_err r.(v_to_p) va) as [p|] eqn:Hl;
-      [|exfalso; apply Hne; reflexivity].
-    pose proof (named_list_lookup_err_in _ _ (eq_sym Hl)) as Hin.
-    apply Hvp in Hin.
-    apply Hg in Hin.
-    apply Hpv' in Hin.
-    pose proof (proj2 (all_fresh_named_list_lookup_err_in _ _ _ Hfresh') Hin)
-      as Hlp.
-    rewrite <- Hlp; reflexivity.
-  Qed.
-
-  Lemma pos_of_v_preserved_when_nondefault r r' va :
-    renaming_ok r -> renaming_ok r' -> rename_grows r r' ->
-    pos_of_v r va <> 1 ->
-    pos_of_v r va = pos_of_v r' va.
-  Proof.
-    intros Hr Hr' Hg.
-    eapply pos_of_v_preserved_when_nondefault_aux; eauto;
-      [ apply (ren_v_to_p_in_p_to_v Hr)
-      | apply (ren_all_fresh Hr')
-      | apply (ren_p_to_v_in_v_to_p Hr') ].
-  Qed.
-
-  (** Given [Renaming.Injective (pos_of_v r)] and the bijection
-      structure on both [r] and [r'], state-extension via
-      [rename_grows] preserves injectivity.  Stated with granular
-      hypotheses for [r'] so it can be used inside [to_p_correct]
-      before the [renaming_ok r'] record has been assembled. *)
-  Lemma rename_grows_preserves_injective_aux r r' :
-    Renaming.Injective (pos_of_v r) ->
-    rename_grows r r' ->
-    (forall v p, In (v, p) r.(v_to_p) -> map.get r.(p_to_v) p = Some v) ->
-    all_fresh r'.(v_to_p) ->
-    (forall v p, In (v, p) r'.(v_to_p) -> map.get r'.(p_to_v) p = Some v) ->
-    (forall v p, map.get r'.(p_to_v) p = Some v -> In (v, p) r'.(v_to_p)) ->
-    Renaming.Injective (pos_of_v r').
-  Proof.
-    intros Hinj Hg Hvp Hfresh' Hvp' Hpv' v1 v2 Heq.
-    destruct (Pos.eq_dec (pos_of_v r' v1) 1) as [E1|Ne1].
-    - rewrite E1 in Heq; symmetry in Heq.
-      apply Hinj.
-      assert (H1 : pos_of_v r v1 = 1).
-      { destruct (Pos.eq_dec (pos_of_v r v1) 1) as [|N]; auto.
-        pose proof (@pos_of_v_preserved_when_nondefault_aux
-                      r r' v1 Hvp Hfresh' Hpv' Hg N) as Hp.
-        rewrite Hp, E1 in N; contradiction. }
-      assert (H2 : pos_of_v r v2 = 1).
-      { destruct (Pos.eq_dec (pos_of_v r v2) 1) as [|N]; auto.
-        pose proof (@pos_of_v_preserved_when_nondefault_aux
-                      r r' v2 Hvp Hfresh' Hpv' Hg N) as Hp.
-        rewrite Hp, Heq in N; contradiction. }
-      rewrite H1, H2; reflexivity.
-    - exact (@pos_of_v_unique_when_nondefault_aux r' v1 v2 Hvp' Heq Ne1).
-  Qed.
-
-  Lemma rename_grows_preserves_injective r r' :
-    renaming_ok r -> renaming_ok r' -> rename_grows r r' ->
-    Renaming.Injective (pos_of_v r') (* trivially follows from [renaming_ok r'] *).
-  Proof.
-    intros _ Hr' _. exact (ren_pos_of_v_inj Hr').
+    intros Hfresh Hvp v1 v2 Hk1 Hk2 Heq.
+    apply in_map_iff in Hk1, Hk2.
+    destruct Hk1 as [vp1 Hpair1].
+    destruct Hk2 as [vp2 Hpair2].
+    destruct vp1 as [v1' p1].
+    destruct vp2 as [v2' p2].
+    destruct Hpair1 as [E1 Hin1]; cbn in E1; subst v1'.
+    destruct Hpair2 as [E2 Hin2]; cbn in E2; subst v2'.
+    pose proof (proj2 (all_fresh_named_list_lookup_err_in _ _ _ Hfresh) Hin1)
+      as Hl1.
+    pose proof (proj2 (all_fresh_named_list_lookup_err_in _ _ _ Hfresh) Hin2)
+      as Hl2.
+    unfold pos_of_v in Heq; rewrite <- Hl1, <- Hl2 in Heq.
+    subst p2.
+    apply Hvp in Hin1, Hin2.
+    rewrite Hin1 in Hin2; inversion Hin2; reflexivity.
   Qed.
 
   Fixpoint term_bound (r : renaming) (e : pterm) : Prop :=
@@ -584,13 +518,25 @@ Section WithVar.
         { intro; subst; rewrite Hnf in Hget; congruence. }
         unfold map.get, map.put in *; cbn in *.
         rewrite PTree.gso by auto; assumption. }
-      assert (Hinj' : Renaming.Injective
-                        (pos_of_v
-                           (MkRenaming
-                              (map.put r.(p_to_v) r.(next_id) v)
-                              ((v, r.(next_id)) :: r.(v_to_p))
-                              (r.(next_id) + 1)))).
-      { eapply rename_grows_preserves_injective_aux; eauto. }
+      assert (Hinj' : forall v1 v2,
+                 In v1 (map fst ((v, r.(next_id)) :: r.(v_to_p))) ->
+                 In v2 (map fst ((v, r.(next_id)) :: r.(v_to_p))) ->
+                 pos_of_v
+                   (MkRenaming
+                      (map.put r.(p_to_v) r.(next_id) v)
+                      ((v, r.(next_id)) :: r.(v_to_p))
+                      (r.(next_id) + 1)) v1
+                 = pos_of_v
+                     (MkRenaming
+                        (map.put r.(p_to_v) r.(next_id) v)
+                        ((v, r.(next_id)) :: r.(v_to_p))
+                        (r.(next_id) + 1)) v2 ->
+                 v1 = v2).
+      { eapply (pos_of_v_inj_on_keys_aux
+                  (MkRenaming
+                     (map.put r.(p_to_v) r.(next_id) v)
+                     ((v, r.(next_id)) :: r.(v_to_p))
+                     (r.(next_id) + 1))); auto. }
       split; [|split].
       + constructor; assumption.
       + assumption.
@@ -1423,23 +1369,25 @@ Section WithVar.
 
   (** ** Preservation of [Theory.Core] judgments
 
-     [pos_of_v r'] is the canonical [V -> positive] function read off
-     the final renaming state, and its injectivity is part of
-     [renaming_ok r']; so each preservation theorem needs no extra
-     [Injective] hypothesis. *)
+     [renaming_ok] only requires [pos_of_v] to be injective on its set
+     of keys; [Theory.Renaming.rename_lang_mono] needs global
+     injectivity, so each preservation theorem takes [Renaming.Injective
+     (pos_of_v r_final)] as an additional hypothesis.  Callers can
+     discharge it by extending [pos_of_v r_final] with any injective
+     map on V's outside the renaming. *)
 
   Theorem rename_lang_preserves_wf_lang l r lp r' :
     wf_lang l ->
     renaming_ok r ->
     rename_lang l r = (lp, r') ->
+    Renaming.Injective (pos_of_v r') ->
     wf_lang lp.
   Proof.
-    intros Hwf Hr Hrl.
+    intros Hwf Hr Hrl Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as (Hr'ok & _ & _ & _).
     erewrite (rename_lang_via_f (f := pos_of_v r') l Hr Hrl
                 (pos_of_v_matches Hr'ok)).
     apply Renaming.rename_lang_mono; auto.
-    exact (ren_pos_of_v_inj Hr'ok).
   Qed.
 
   Theorem rename_preserves_eq_sort l c ts1 ts2 r r1 r2 r3 r4
@@ -1450,9 +1398,10 @@ Section WithVar.
     rename_ctx c r1 = (cp, r2) ->
     rename_sort ts1 r2 = (tsp1, r3) ->
     rename_sort ts2 r3 = (tsp2, r4) ->
+    Renaming.Injective (pos_of_v r4) ->
     eq_sort lp cp tsp1 tsp2.
   Proof.
-    intros Heq Hr Hrl Hrc Hr1 Hr2.
+    intros Heq Hr Hrl Hrc Hr1 Hr2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1473,8 +1422,7 @@ Section WithVar.
     erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
     erewrite (rename_sort_via_f (f := f) ts1 Hr2ok Hr1 Hfm3).
     erewrite (rename_sort_via_f (f := f) ts2 Hr3ok Hr2 Hfm4).
-    eapply (proj1 (Renaming.rename_mono (ren_pos_of_v_inj Hr4ok) l)
-              c ts1 ts2 Heq).
+    eapply (proj1 (Renaming.rename_mono Hinj l) c ts1 ts2 Heq).
   Qed.
 
   Theorem rename_preserves_eq_term l c ts e1 e2 r r1 r2 r3 r4 r5
@@ -1486,9 +1434,10 @@ Section WithVar.
     rename_sort ts r2 = (tsp, r3) ->
     rename_term e1 r3 = (e1p, r4) ->
     rename_term e2 r4 = (e2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
     eq_term lp cp tsp e1p e2p.
   Proof.
-    intros Heq Hr Hrl Hrc Hrt He1 He2.
+    intros Heq Hr Hrl Hrc Hrt He1 He2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1514,8 +1463,7 @@ Section WithVar.
     erewrite (rename_sort_via_f (f := f) ts Hr2ok Hrt Hfm3).
     erewrite (rename_term_via_f (f := f) e1 Hr3ok He1 Hfm4).
     erewrite (rename_term_via_f (f := f) e2 Hr4ok He2 Hfm5).
-    eapply (proj1 (proj2 (Renaming.rename_mono (ren_pos_of_v_inj Hr5ok) l))
-              c ts e1 e2 Heq).
+    eapply (proj1 (proj2 (Renaming.rename_mono Hinj l)) c ts e1 e2 Heq).
   Qed.
 
   Theorem rename_preserves_wf_ctx l c r r1 r2 lp cp :
@@ -1523,9 +1471,10 @@ Section WithVar.
     renaming_ok r ->
     rename_lang l r = (lp, r1) ->
     rename_ctx c r1 = (cp, r2) ->
+    Renaming.Injective (pos_of_v r2) ->
     wf_ctx lp cp.
   Proof.
-    intros Hwf Hr Hrl Hrc.
+    intros Hwf Hr Hrl Hrc Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1536,7 +1485,7 @@ Section WithVar.
       (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
     erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
     erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
-    pose proof (Renaming.rename_mono (ren_pos_of_v_inj Hr2ok) l) as Hmono.
+    pose proof (Renaming.rename_mono Hinj l) as Hmono.
     do 6 (apply proj2 in Hmono).
     eapply Hmono; exact Hwf.
   Qed.
@@ -1580,9 +1529,10 @@ Section WithVar.
     rename_ctx c' r2 = (cp', r3) ->
     list_Mmap rename_term es1 r3 = (es1p, r4) ->
     list_Mmap rename_term es2 r4 = (es2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
     eq_args lp cp cp' es1p es2p.
   Proof.
-    intros Heq Hr Hrl Hrc Hrc' He1 He2.
+    intros Heq Hr Hrl Hrc Hrc' He1 He2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1608,17 +1558,24 @@ Section WithVar.
     erewrite (rename_ctx_via_f (f := f) c' Hr2ok Hrc' Hfm3).
     erewrite (list_Mmap_rename_term_via_f (f := f) es1 Hr3ok He1 Hfm4).
     erewrite (list_Mmap_rename_term_via_f (f := f) es2 Hr4ok He2 Hfm5).
-    apply (eq_args_preserve_via (ren_pos_of_v_inj Hr5ok)); auto.
+    apply (eq_args_preserve_via Hinj); auto.
   Qed.
 
-  (** ** Each operation's output is [renaming_ok], so [Renaming.Injective
-      (pos_of_v _)] is automatically preserved.  These corollaries are
-      one-line projections from the corresponding [_correct] lemmas. *)
+  (** ** Each operation's output is [renaming_ok], so [pos_of_v] is
+      automatically injective on the keys of the output state.  These
+      corollaries are one-line projections from the corresponding
+      [_correct] lemmas. *)
+
+  Notation pos_of_v_inj_on_keys r :=
+    (forall v1 v2,
+        In v1 (map fst r.(v_to_p)) ->
+        In v2 (map fst r.(v_to_p)) ->
+        pos_of_v r v1 = pos_of_v r v2 -> v1 = v2).
 
   Corollary to_p_preserves_injective r v p r' :
     renaming_ok r ->
     to_p v r = (p, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hto.
     exact (ren_pos_of_v_inj (proj1 (to_p_correct Hr Hto))).
@@ -1627,7 +1584,7 @@ Section WithVar.
   Corollary rename_term_preserves_injective e r ep r' :
     renaming_ok r ->
     rename_term e r = (ep, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_term_correct e Hr Hre))).
@@ -1636,7 +1593,7 @@ Section WithVar.
   Corollary rename_sort_preserves_injective ts r tsp r' :
     renaming_ok r ->
     rename_sort ts r = (tsp, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_sort_correct ts Hr Hre))).
@@ -1645,7 +1602,7 @@ Section WithVar.
   Corollary rename_ctx_preserves_injective c r cp r' :
     renaming_ok r ->
     rename_ctx c r = (cp, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_ctx_correct c Hr Hre))).
@@ -1654,7 +1611,7 @@ Section WithVar.
   Corollary rename_rule_preserves_injective rr r rrp r' :
     renaming_ok r ->
     rename_rule rr r = (rrp, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_rule_correct rr Hr Hre))).
@@ -1663,7 +1620,7 @@ Section WithVar.
   Corollary rename_lang_preserves_injective l r lp r' :
     renaming_ok r ->
     rename_lang l r = (lp, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_lang_correct l Hr Hre))).
@@ -1672,7 +1629,7 @@ Section WithVar.
   Corollary list_Mmap_to_p_preserves_injective args r ps r' :
     renaming_ok r ->
     list_Mmap to_p args r = (ps, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (list_Mmap_to_p_correct Hr Hre))).
@@ -1681,7 +1638,7 @@ Section WithVar.
   Corollary list_Mmap_rename_term_preserves_injective l r s r' :
     renaming_ok r ->
     list_Mmap rename_term l r = (s, r') ->
-    Renaming.Injective (pos_of_v r').
+    pos_of_v_inj_on_keys r'.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj
