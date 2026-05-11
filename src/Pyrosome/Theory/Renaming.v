@@ -5,7 +5,7 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad.
-From Pyrosome Require Import Theory.Core.
+From Pyrosome Require Import Theory.Core Theory.CutFreeInd.
 
 
 
@@ -25,6 +25,17 @@ From Pyrosome Require Import Theory.Core.
     If not, move it to Utils.v
  *)
 Definition Injective {A B : Type} (f : A -> B) := forall a a', f a = f a' -> a = a'.
+
+Definition Injective_on {A B : Type} (S : A -> Prop) (f : A -> B) :=
+  forall a a', S a -> S a' -> f a = f a' -> a = a'.
+
+Lemma Injective_to_Injective_on {A B} (S : A -> Prop) (f : A -> B)
+  : Injective f -> Injective_on S f.
+Proof. unfold Injective, Injective_on; eauto. Qed.
+
+Lemma Injective_on_weaken {A B} (S S' : A -> Prop) (f : A -> B)
+  : (forall a, S a -> S' a) -> Injective_on S' f -> Injective_on S f.
+Proof. unfold Injective_on; eauto. Qed.
 
 Section Injective.
   Context (A B : Type)
@@ -276,6 +287,236 @@ End Injective.
 Arguments rename_lang_mono {A B}%type_scope {Eqb_A Eqb_B Eqb_ok_A Eqb_ok_B}
   [f]%function_scope f_inj [l]%lang_scope _.
 #[export] Hint Resolve rename_lang_mono : lang_core.
+
+
+Section InjectiveOn.
+  Context (A B : Type)
+    {Eqb_A : Eqb A}
+    {Eqb_B : Eqb B}
+    {Eqb_ok_A : Eqb_ok Eqb_A}
+    {Eqb_ok_B : Eqb_ok Eqb_B}
+    {V_default : WithDefault A}
+    (S : A -> Prop)
+    (f : A -> B)
+    (f_inj_S : Injective_on S f).
+
+  Fixpoint term_in_S (e : @term A) : Prop :=
+    match e with
+    | var n => S n
+    | con n l => S n /\ all term_in_S l
+    end.
+
+  Definition sort_in_S (t : @sort A) : Prop :=
+    match t with scon n l => S n /\ all term_in_S l end.
+
+  Definition subst_in_S (s : @subst A) : Prop :=
+    all (fun p => S (fst p) /\ term_in_S (snd p)) s.
+
+  Definition ctx_in_S (c : @ctx A) : Prop :=
+    all (fun p => S (fst p) /\ sort_in_S (snd p)) c.
+
+  Definition rule_in_S (r : @rule A) : Prop :=
+    match r with
+    | sort_rule c args => ctx_in_S c /\ all S args
+    | term_rule c args t => ctx_in_S c /\ all S args /\ sort_in_S t
+    | sort_eq_rule c t1 t2 => ctx_in_S c /\ sort_in_S t1 /\ sort_in_S t2
+    | term_eq_rule c e1 e2 t =>
+        ctx_in_S c /\ term_in_S e1 /\ term_in_S e2 /\ sort_in_S t
+    end.
+
+  Definition lang_in_S (l : @lang A) : Prop :=
+    all (fun p => S (fst p) /\ rule_in_S (snd p)) l.
+
+  Lemma lang_in_S_in n r l_ :
+    lang_in_S l_ -> In (n, r) l_ -> S n /\ rule_in_S r.
+  Proof. induction l_; basic_goal_prep; basic_utils_crush. Qed.
+
+  Lemma ctx_in_S_in n t c :
+    ctx_in_S c -> In (n, t) c -> S n /\ sort_in_S t.
+  Proof. induction c; basic_goal_prep; basic_utils_crush. Qed.
+
+  Lemma lang_in_S_app l1 l2 :
+    lang_in_S l1 -> lang_in_S l2 -> lang_in_S (l1 ++ l2).
+  Proof. unfold lang_in_S. intros. apply all_app. split; auto. Qed.
+
+  Lemma injective_in_S a l_
+    : S a -> all S l_ ->
+      In (f a) (map f l_) -> In a l_.
+  Proof.
+    intros Ha Hl Hin.
+    induction l_; cbn in *; [tauto|].
+    destruct Hl as [Ha' Hl].
+    destruct Hin as [Heq | Hin]; [|right; auto].
+    left. symmetry; apply f_inj_S; auto.
+  Qed.
+
+  Lemma rename_lookup_S s n
+    : S n -> subst_in_S s ->
+      rename f (subst_lookup s n) = subst_lookup (rename_subst f s) (f n).
+  Proof.
+    intros Hn Hs.
+    induction s as [|[m e] s' IH]; cbn in *; [reflexivity|].
+    destruct Hs as [[Hm He] Hs'].
+    pose proof (eqb_spec n m) as Heq_nm.
+    pose proof (eqb_spec (f n) (f m)) as Heq_fnm.
+    destruct (eqb n m); destruct (eqb (f n) (f m)).
+    - reflexivity.
+    - exfalso; apply Heq_fnm; subst; reflexivity.
+    - exfalso; apply Heq_nm; apply f_inj_S; auto.
+    - apply IH; auto.
+  Qed.
+
+  Lemma rename_distr_subst_S e s
+    : term_in_S e -> subst_in_S s ->
+      rename f e[/s/] = (rename f e) [/rename_subst f s/].
+  Proof.
+    intros He Hs.
+    induction e; cbn in *.
+    - apply rename_lookup_S; assumption.
+    - f_equal.
+      destruct He as [Hn Hl].
+      revert H Hl.
+      induction l; cbn; intros HH Hl; [reflexivity|].
+      destruct HH; destruct Hl.
+      f_equal; auto.
+  Qed.
+
+  Lemma rename_args_distr_subst_S es s
+    : all term_in_S es -> subst_in_S s ->
+      map (rename f) es[/s/] = (map (rename f) es) [/rename_subst f s/].
+  Proof.
+    intros Hes Hs.
+    induction es; cbn in *; fold_Substable; [reflexivity|].
+    destruct Hes.
+    f_equal; auto using rename_distr_subst_S.
+  Qed.
+
+  Lemma rename_sort_distr_subst_S t s
+    : sort_in_S t -> subst_in_S s ->
+      rename_sort f t[/s/] = (rename_sort f t) [/rename_subst f s/].
+  Proof.
+    destruct t; cbn; intros [Hn Hes] Hs; f_equal.
+    apply rename_args_distr_subst_S; auto.
+  Qed.
+
+  Lemma term_subst_in_S e s
+    : term_in_S e -> subst_in_S s -> term_in_S e[/s/].
+  Proof.
+    revert s.
+    induction e using term_ind; intros s He Hs; cbn in *.
+    - induction s as [|[m a] s' IH]; cbn in *; [exact He|].
+      destruct Hs as [[Hm Ha] Hs'].
+      destruct (eqb n m); auto.
+    - destruct He as [Hn Hes].
+      split; auto.
+      revert H Hes.
+      induction l; cbn in *; auto.
+      intros [HP HPs] [Ha Has].
+      split; auto.
+      apply HP; auto.
+  Qed.
+
+  Lemma args_subst_in_S es s
+    : all term_in_S es -> subst_in_S s -> all term_in_S es[/s/].
+  Proof.
+    induction es; cbn in *; fold_Substable; intros Hes Hs; auto.
+    destruct Hes; split; auto using term_subst_in_S.
+  Qed.
+
+  Lemma sort_subst_in_S t s
+    : sort_in_S t -> subst_in_S s -> sort_in_S t[/s/].
+  Proof.
+    destruct t; cbn; intros [Hn Hes] Hs; split; auto using args_subst_in_S.
+  Qed.
+
+  Lemma with_names_from_subst_in_S (c : @ctx A) (es : list (@term A))
+    : ctx_in_S c -> all term_in_S es -> subst_in_S (with_names_from c es).
+  Proof.
+    revert es.
+    induction c as [|[n t] c IH]; intros [|e es] Hc Hes; cbn in *; auto.
+    destruct Hc as [[Hn Ht] Hc].
+    destruct Hes as [He Hes].
+    split; [split; auto | apply IH; auto].
+  Qed.
+
+  Lemma rename_lang_in n r l_ :
+    In (n, r) l_ -> In (f n, rename_rule f r) (rename_lang f l_).
+  Proof.
+    intros Hin.
+    apply (in_map (fun p => (f (fst p), rename_rule f (snd p)))) in Hin.
+    exact Hin.
+  Qed.
+
+  Lemma rename_ctx_in n t c :
+    In (n, t) c -> In (f n, rename_sort f t) (rename_ctx f c).
+  Proof.
+    intros Hin.
+    apply (in_map (fun p => (f (fst p), rename_sort f (snd p)))) in Hin.
+    exact Hin.
+  Qed.
+
+  Lemma rename_subst_with_names_from c' s :
+    rename_subst f (with_names_from c' s)
+    = with_names_from (rename_ctx f c') (map (rename f) s).
+  Proof.
+    revert s.
+    induction c' as [|[n t] c' IH]; intros [|e s]; cbn in *; auto.
+    f_equal; auto.
+  Qed.
+
+  (* Extract wf_ctx of an intermediate context c' from In ... l
+     and wf_lang. *)
+  Lemma rename_ctx_wf_from_eq_rule (lr : @lang B) (name : B) (c' : @ctx A)
+        (t1 t2 : @sort A) :
+    wf_lang lr ->
+    In (name, sort_eq_rule (rename_ctx f c') (rename_sort f t1) (rename_sort f t2)) lr ->
+    wf_ctx lr (rename_ctx f c').
+  Proof.
+    intros Hwf Hin.
+    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    inversion Hr; auto.
+  Qed.
+
+  Lemma rename_ctx_wf_from_term_eq_rule (lr : @lang B) (name : B) (c' : @ctx A)
+        (e1 e2 : @term A) (t : @sort A) :
+    wf_lang lr ->
+    In (name, term_eq_rule (rename_ctx f c') (rename f e1) (rename f e2)
+                            (rename_sort f t)) lr ->
+    wf_ctx lr (rename_ctx f c').
+  Proof.
+    intros Hwf Hin.
+    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    inversion Hr; auto.
+  Qed.
+
+  Lemma rename_ctx_wf_from_sort_rule (lr : @lang B) (name : B) (c' : @ctx A)
+        (args : list A) :
+    wf_lang lr ->
+    In (name, sort_rule (rename_ctx f c') (map f args)) lr ->
+    wf_ctx lr (rename_ctx f c').
+  Proof.
+    intros Hwf Hin.
+    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    inversion Hr; auto.
+  Qed.
+
+  Lemma rename_ctx_wf_from_term_rule (lr : @lang B) (name : B) (c' : @ctx A)
+        (args : list A) (t : @sort A) :
+    wf_lang lr ->
+    In (name, term_rule (rename_ctx f c') (map f args) (rename_sort f t)) lr ->
+    wf_ctx lr (rename_ctx f c') /\ wf_sort lr (rename_ctx f c') (rename_sort f t).
+  Proof.
+    intros Hwf Hin.
+    pose proof (rule_in_wf _ _ Hwf Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    inversion Hr; auto.
+  Qed.
+
+End InjectiveOn.
+
 
 Section Inverse.
   
