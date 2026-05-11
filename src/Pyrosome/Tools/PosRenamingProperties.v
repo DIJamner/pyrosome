@@ -169,6 +169,16 @@ Section WithVar.
     rewrite (of_p_lookup Hv), (of_p_grows Hg Hv); reflexivity.
   Qed.
 
+  (** A concrete [V -> positive] function read off the renaming.  On
+      V's bound in [r] it returns the corresponding positive; otherwise
+      it returns [xH] (the [positive_default]).  This is the canonical
+      function the final preservation theorems use. *)
+
+  #[local] Instance positive_default : WithDefault positive := xH.
+
+  Definition pos_of_v (r : renaming) (v : V) : positive :=
+    unwrap_with_default (named_list_lookup_err r.(v_to_p) v).
+
   Fixpoint term_bound (r : renaming) (e : pterm) : Prop :=
     match e with
     | var p => pbound r p
@@ -1268,193 +1278,211 @@ Section WithVar.
 
   End Bridge.
 
+  (* [pos_of_v r] always satisfies [f_matches] on a well-formed [r];
+     this is what eliminates the [f_matches] hypothesis from the
+     preservation theorems below. *)
+  Lemma pos_of_v_matches r :
+    renaming_ok r -> f_matches (pos_of_v r) r.
+  Proof.
+    intros Hr v p Hin.
+    unfold pos_of_v.
+    destruct Hr as [Hfresh _ _ _].
+    erewrite <- (all_fresh_named_list_lookup_err_in _ _ _ Hfresh) in Hin.
+    rewrite <- Hin; reflexivity.
+  Qed.
+
   (** ** Preservation of [Theory.Core] judgments
 
-     Given a globally injective function [f] that matches the final
-     renaming state, the stateful renaming preserves
-     [eq_sort]/[eq_term]/[eq_args]/[wf_ctx]/[wf_lang]. *)
+     [pos_of_v r'] is the canonical [V -> positive] function read off
+     the final renaming state; it agrees with [r'.(v_to_p)] on bound
+     V's by [pos_of_v_matches].  Each preservation theorem only needs
+     [Renaming.Injective (pos_of_v r')] (where [r'] is the final state
+     of the renaming pipeline) as an additional hypothesis. *)
 
-  Section Preservation.
+  Theorem rename_lang_preserves_wf_lang l r lp r' :
+    wf_lang l ->
+    renaming_ok r ->
+    rename_lang l r = (lp, r') ->
+    Renaming.Injective (pos_of_v r') ->
+    wf_lang lp.
+  Proof.
+    intros Hwf Hr Hrl Hinj.
+    pose proof (rename_lang_correct l Hr Hrl) as (Hr'ok & _ & _ & _).
+    erewrite (rename_lang_via_f (f := pos_of_v r') l Hr Hrl
+                (pos_of_v_matches Hr'ok)).
+    apply Renaming.rename_lang_mono; auto.
+  Qed.
 
-    Context (f : V -> positive)
-      (f_inj : Renaming.Injective f).
+  Theorem rename_preserves_eq_sort l c ts1 ts2 r r1 r2 r3 r4
+    lp cp tsp1 tsp2 :
+    eq_sort l c ts1 ts2 ->
+    renaming_ok r ->
+    rename_lang l r = (lp, r1) ->
+    rename_ctx c r1 = (cp, r2) ->
+    rename_sort ts1 r2 = (tsp1, r3) ->
+    rename_sort ts2 r3 = (tsp2, r4) ->
+    Renaming.Injective (pos_of_v r4) ->
+    eq_sort lp cp tsp1 tsp2.
+  Proof.
+    intros Heq Hr Hrl Hrc Hr1 Hr2 Hinj.
+    pose proof (rename_lang_correct l Hr Hrl) as
+      (Hr1ok & Hg01 & _ & _).
+    pose proof (rename_ctx_correct c Hr1ok Hrc) as
+      (Hr2ok & Hg12 & _ & _).
+    pose proof (rename_sort_correct ts1 Hr2ok Hr1) as
+      (Hr3ok & Hg23 & _ & _).
+    pose proof (rename_sort_correct ts2 Hr3ok Hr2) as
+      (Hr4ok & Hg34 & _ & _).
+    set (f := pos_of_v r4).
+    assert (Hfm4 : f_matches f r4) by exact (pos_of_v_matches Hr4ok).
+    assert (Hfm3 : f_matches f r3) by
+      (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
+    assert (Hfm2 : f_matches f r2) by
+      (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
+    assert (Hfm1 : f_matches f r1) by
+      (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
+    erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
+    erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
+    erewrite (rename_sort_via_f (f := f) ts1 Hr2ok Hr1 Hfm3).
+    erewrite (rename_sort_via_f (f := f) ts2 Hr3ok Hr2 Hfm4).
+    eapply (proj1 (Renaming.rename_mono Hinj l) c ts1 ts2 Heq).
+  Qed.
 
-    Theorem rename_lang_preserves_wf_lang l r lp r' :
-      wf_lang l ->
-      renaming_ok r ->
-      rename_lang l r = (lp, r') ->
-      f_matches f r' ->
-      wf_lang lp.
-    Proof.
-      intros Hwf Hr Hrl Hfm.
-      erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm).
-      apply Renaming.rename_lang_mono; auto.
-    Qed.
+  Theorem rename_preserves_eq_term l c ts e1 e2 r r1 r2 r3 r4 r5
+    lp cp tsp e1p e2p :
+    eq_term l c ts e1 e2 ->
+    renaming_ok r ->
+    rename_lang l r = (lp, r1) ->
+    rename_ctx c r1 = (cp, r2) ->
+    rename_sort ts r2 = (tsp, r3) ->
+    rename_term e1 r3 = (e1p, r4) ->
+    rename_term e2 r4 = (e2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
+    eq_term lp cp tsp e1p e2p.
+  Proof.
+    intros Heq Hr Hrl Hrc Hrt He1 He2 Hinj.
+    pose proof (rename_lang_correct l Hr Hrl) as
+      (Hr1ok & Hg01 & _ & _).
+    pose proof (rename_ctx_correct c Hr1ok Hrc) as
+      (Hr2ok & Hg12 & _ & _).
+    pose proof (rename_sort_correct ts Hr2ok Hrt) as
+      (Hr3ok & Hg23 & _ & _).
+    pose proof (rename_term_correct e1 Hr3ok He1) as
+      (Hr4ok & Hg34 & _ & _).
+    pose proof (rename_term_correct e2 Hr4ok He2) as
+      (Hr5ok & Hg45 & _ & _).
+    set (f := pos_of_v r5).
+    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_matches Hr5ok).
+    assert (Hfm4 : f_matches f r4) by
+      (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm5)).
+    assert (Hfm3 : f_matches f r3) by
+      (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
+    assert (Hfm2 : f_matches f r2) by
+      (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
+    assert (Hfm1 : f_matches f r1) by
+      (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
+    erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
+    erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
+    erewrite (rename_sort_via_f (f := f) ts Hr2ok Hrt Hfm3).
+    erewrite (rename_term_via_f (f := f) e1 Hr3ok He1 Hfm4).
+    erewrite (rename_term_via_f (f := f) e2 Hr4ok He2 Hfm5).
+    eapply (proj1 (proj2 (Renaming.rename_mono Hinj l)) c ts e1 e2 Heq).
+  Qed.
 
-    Theorem rename_preserves_eq_sort l c ts1 ts2 r r1 r2 r3 r4
-      lp cp tsp1 tsp2 :
-      eq_sort l c ts1 ts2 ->
-      renaming_ok r ->
-      rename_lang l r = (lp, r1) ->
-      rename_ctx c r1 = (cp, r2) ->
-      rename_sort ts1 r2 = (tsp1, r3) ->
-      rename_sort ts2 r3 = (tsp2, r4) ->
-      f_matches f r4 ->
-      eq_sort lp cp tsp1 tsp2.
-    Proof.
-      intros Heq Hr Hrl Hrc Hr1 Hr2 Hfm.
-      pose proof (rename_lang_correct l Hr Hrl) as
-        (Hr1ok & Hg01 & _ & _).
-      pose proof (rename_ctx_correct c Hr1ok Hrc) as
-        (Hr2ok & Hg12 & _ & _).
-      pose proof (rename_sort_correct ts1 Hr2ok Hr1) as
-        (Hr3ok & Hg23 & _ & _).
-      pose proof (rename_sort_correct ts2 Hr3ok Hr2) as
-        (Hr4ok & Hg34 & _ & _).
-      assert (Hfm3 : f_matches f r3) by
-        (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm)).
-      assert (Hfm2 : f_matches f r2) by
-        (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
-      assert (Hfm1 : f_matches f r1) by
-        (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
-      erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
-      erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
-      erewrite (rename_sort_via_f (f := f) ts1 Hr2ok Hr1 Hfm3).
-      erewrite (rename_sort_via_f (f := f) ts2 Hr3ok Hr2 Hfm).
-      eapply (proj1 (Renaming.rename_mono f_inj l) c ts1 ts2 Heq).
-    Qed.
+  Theorem rename_preserves_wf_ctx l c r r1 r2 lp cp :
+    wf_ctx l c ->
+    renaming_ok r ->
+    rename_lang l r = (lp, r1) ->
+    rename_ctx c r1 = (cp, r2) ->
+    Renaming.Injective (pos_of_v r2) ->
+    wf_ctx lp cp.
+  Proof.
+    intros Hwf Hr Hrl Hrc Hinj.
+    pose proof (rename_lang_correct l Hr Hrl) as
+      (Hr1ok & Hg01 & _ & _).
+    pose proof (rename_ctx_correct c Hr1ok Hrc) as
+      (Hr2ok & Hg12 & _ & _).
+    set (f := pos_of_v r2).
+    assert (Hfm2 : f_matches f r2) by exact (pos_of_v_matches Hr2ok).
+    assert (Hfm1 : f_matches f r1) by
+      (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
+    erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
+    erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
+    pose proof (Renaming.rename_mono Hinj l) as Hmono.
+    do 6 (apply proj2 in Hmono).
+    eapply Hmono; exact Hwf.
+  Qed.
 
-    Theorem rename_preserves_eq_term l c ts e1 e2 r r1 r2 r3 r4 r5
-      lp cp tsp e1p e2p :
-      eq_term l c ts e1 e2 ->
-      renaming_ok r ->
-      rename_lang l r = (lp, r1) ->
-      rename_ctx c r1 = (cp, r2) ->
-      rename_sort ts r2 = (tsp, r3) ->
-      rename_term e1 r3 = (e1p, r4) ->
-      rename_term e2 r4 = (e2p, r5) ->
-      f_matches f r5 ->
-      eq_term lp cp tsp e1p e2p.
-    Proof.
-      intros Heq Hr Hrl Hrc Hrt He1 He2 Hfm.
-      pose proof (rename_lang_correct l Hr Hrl) as
-        (Hr1ok & Hg01 & _ & _).
-      pose proof (rename_ctx_correct c Hr1ok Hrc) as
-        (Hr2ok & Hg12 & _ & _).
-      pose proof (rename_sort_correct ts Hr2ok Hrt) as
-        (Hr3ok & Hg23 & _ & _).
-      pose proof (rename_term_correct e1 Hr3ok He1) as
-        (Hr4ok & Hg34 & _ & _).
-      pose proof (rename_term_correct e2 Hr4ok He2) as
-        (Hr5ok & Hg45 & _ & _).
-      assert (Hfm4 : f_matches f r4) by
-        (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm)).
-      assert (Hfm3 : f_matches f r3) by
-        (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
-      assert (Hfm2 : f_matches f r2) by
-        (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
-      assert (Hfm1 : f_matches f r1) by
-        (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
-      erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
-      erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
-      erewrite (rename_sort_via_f (f := f) ts Hr2ok Hrt Hfm3).
-      erewrite (rename_term_via_f (f := f) e1 Hr3ok He1 Hfm4).
-      erewrite (rename_term_via_f (f := f) e2 Hr4ok He2 Hfm).
-      eapply (proj1 (proj2 (Renaming.rename_mono f_inj l)) c ts e1 e2 Heq).
-    Qed.
+  (** [eq_args] is not part of [Theory.Renaming.rename_mono], so we
+      prove it by direct induction. *)
 
-    Theorem rename_preserves_wf_ctx l c r r1 r2 lp cp :
-      wf_ctx l c ->
-      renaming_ok r ->
-      rename_lang l r = (lp, r1) ->
-      rename_ctx c r1 = (cp, r2) ->
-      f_matches f r2 ->
-      wf_ctx lp cp.
-    Proof.
-      intros Hwf Hr Hrl Hrc Hfm.
-      pose proof (rename_lang_correct l Hr Hrl) as
-        (Hr1ok & Hg01 & _ & _).
-      pose proof (rename_ctx_correct c Hr1ok Hrc) as
-        (Hr2ok & Hg12 & _ & _).
-      assert (Hfm1 : f_matches f r1) by
-        (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm)).
-      erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
-      erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm).
-      pose proof (Renaming.rename_mono f_inj l) as Hmono.
-      do 6 (apply proj2 in Hmono).
-      eapply Hmono; exact Hwf.
-    Qed.
-
-    (** [eq_args] is not part of [Theory.Renaming.rename_mono], so we
-        prove it by direct induction. *)
-
-    Lemma eq_args_preserve_via_f :
-      forall (l : lang) c c' es1 es2,
-        eq_args l c c' es1 es2 ->
-        let lp := Renaming.rename_lang f l in
-        let cp := Renaming.rename_ctx f c in
-        let cp' := Renaming.rename_ctx f c' in
-        let es1p := map (Renaming.rename f) es1 in
-        let es2p := map (Renaming.rename f) es2 in
-        eq_args lp cp cp' es1p es2p.
-    Proof.
-      intros l c c' es1 es2 H.
-      induction H; cbn; eauto with lang_core.
-      eapply eq_args_cons; auto.
-      pose proof (proj1 (proj2 (Renaming.rename_mono f_inj l))) as Hterm.
-      specialize (Hterm c (t[/with_names_from c' es2/]) e1 e2 H0).
-      cbn in Hterm.
-      pose proof (Renaming.rename_sort_distr_subst
-                    (f := f) f_inj t (with_names_from c' es2))
-        as Heq1.
-      cbn in Heq1.
-      pose proof (Renaming.rename_subst_distr_with_names_from
-                    f c' es2) as Heq2.
-      rewrite Heq2 in Heq1.
-      rewrite Heq1 in Hterm.
-      exact Hterm.
-    Qed.
-
-    Theorem rename_preserves_eq_args l c c' es1 es2 r r1 r2 r3 r4 r5
-      lp cp cp' es1p es2p :
+  Lemma eq_args_preserve_via (f : V -> positive) (f_inj : Renaming.Injective f) :
+    forall (l : lang) c c' es1 es2,
       eq_args l c c' es1 es2 ->
-      renaming_ok r ->
-      rename_lang l r = (lp, r1) ->
-      rename_ctx c r1 = (cp, r2) ->
-      rename_ctx c' r2 = (cp', r3) ->
-      list_Mmap rename_term es1 r3 = (es1p, r4) ->
-      list_Mmap rename_term es2 r4 = (es2p, r5) ->
-      f_matches f r5 ->
+      let lp := Renaming.rename_lang f l in
+      let cp := Renaming.rename_ctx f c in
+      let cp' := Renaming.rename_ctx f c' in
+      let es1p := map (Renaming.rename f) es1 in
+      let es2p := map (Renaming.rename f) es2 in
       eq_args lp cp cp' es1p es2p.
-    Proof.
-      intros Heq Hr Hrl Hrc Hrc' He1 He2 Hfm.
-      pose proof (rename_lang_correct l Hr Hrl) as
-        (Hr1ok & Hg01 & _ & _).
-      pose proof (rename_ctx_correct c Hr1ok Hrc) as
-        (Hr2ok & Hg12 & _ & _).
-      pose proof (rename_ctx_correct c' Hr2ok Hrc') as
-        (Hr3ok & Hg23 & _ & _).
-      pose proof (list_Mmap_rename_term_correct es1 Hr3ok He1) as
-        (Hr4ok & Hg34 & _ & _).
-      pose proof (list_Mmap_rename_term_correct es2 Hr4ok He2) as
-        (Hr5ok & Hg45 & _ & _).
-      assert (Hfm4 : f_matches f r4) by
-        (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm)).
-      assert (Hfm3 : f_matches f r3) by
-        (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
-      assert (Hfm2 : f_matches f r2) by
-        (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
-      assert (Hfm1 : f_matches f r1) by
-        (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
-      erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
-      erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
-      erewrite (rename_ctx_via_f (f := f) c' Hr2ok Hrc' Hfm3).
-      erewrite (list_Mmap_rename_term_via_f (f := f) es1 Hr3ok He1 Hfm4).
-      erewrite (list_Mmap_rename_term_via_f (f := f) es2 Hr4ok He2 Hfm).
-      apply eq_args_preserve_via_f; auto.
-    Qed.
+  Proof.
+    intros l c c' es1 es2 H.
+    induction H; cbn; eauto with lang_core.
+    eapply eq_args_cons; auto.
+    pose proof (proj1 (proj2 (Renaming.rename_mono f_inj l))) as Hterm.
+    specialize (Hterm c (t[/with_names_from c' es2/]) e1 e2 H0).
+    cbn in Hterm.
+    pose proof (Renaming.rename_sort_distr_subst
+                  (f := f) f_inj t (with_names_from c' es2))
+      as Heq1.
+    cbn in Heq1.
+    pose proof (Renaming.rename_subst_distr_with_names_from
+                  f c' es2) as Heq2.
+    rewrite Heq2 in Heq1.
+    rewrite Heq1 in Hterm.
+    exact Hterm.
+  Qed.
 
-  End Preservation.
+  Theorem rename_preserves_eq_args l c c' es1 es2 r r1 r2 r3 r4 r5
+    lp cp cp' es1p es2p :
+    eq_args l c c' es1 es2 ->
+    renaming_ok r ->
+    rename_lang l r = (lp, r1) ->
+    rename_ctx c r1 = (cp, r2) ->
+    rename_ctx c' r2 = (cp', r3) ->
+    list_Mmap rename_term es1 r3 = (es1p, r4) ->
+    list_Mmap rename_term es2 r4 = (es2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
+    eq_args lp cp cp' es1p es2p.
+  Proof.
+    intros Heq Hr Hrl Hrc Hrc' He1 He2 Hinj.
+    pose proof (rename_lang_correct l Hr Hrl) as
+      (Hr1ok & Hg01 & _ & _).
+    pose proof (rename_ctx_correct c Hr1ok Hrc) as
+      (Hr2ok & Hg12 & _ & _).
+    pose proof (rename_ctx_correct c' Hr2ok Hrc') as
+      (Hr3ok & Hg23 & _ & _).
+    pose proof (list_Mmap_rename_term_correct es1 Hr3ok He1) as
+      (Hr4ok & Hg34 & _ & _).
+    pose proof (list_Mmap_rename_term_correct es2 Hr4ok He2) as
+      (Hr5ok & Hg45 & _ & _).
+    set (f := pos_of_v r5).
+    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_matches Hr5ok).
+    assert (Hfm4 : f_matches f r4) by
+      (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm5)).
+    assert (Hfm3 : f_matches f r3) by
+      (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
+    assert (Hfm2 : f_matches f r2) by
+      (eapply (f_matches_grows (f := f) Hr2ok Hr3ok Hg23 Hfm3)).
+    assert (Hfm1 : f_matches f r1) by
+      (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
+    erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
+    erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
+    erewrite (rename_ctx_via_f (f := f) c' Hr2ok Hrc' Hfm3).
+    erewrite (list_Mmap_rename_term_via_f (f := f) es1 Hr3ok He1 Hfm4).
+    erewrite (list_Mmap_rename_term_via_f (f := f) es2 Hr4ok He2 Hfm5).
+    apply (eq_args_preserve_via Hinj); auto.
+  Qed.
 
 End WithVar.
 
