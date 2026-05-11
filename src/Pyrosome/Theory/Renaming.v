@@ -130,7 +130,7 @@ Section Injective.
   #[local] Hint Rewrite rename_subst_distr_with_names_from : term.
   
 
-  Local Lemma rename_mono l
+  Lemma rename_mono l
     : (forall c t1 t2,
           eq_sort l c t1 t2 ->
           eq_sort (rename_lang l) (rename_ctx c) (rename_sort t1) (rename_sort t2))
