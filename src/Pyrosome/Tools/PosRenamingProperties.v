@@ -253,6 +253,174 @@ Section WithVar.
   Definition lang_bound (r : renaming) (l : plang) : Prop :=
     all (fun p => pbound r (fst p) /\ rule_bound r (snd p)) l.
 
+  (** ** V-side domain predicate: every V appearing in a source structure
+      is one of the keys of [r.(v_to_p)].  Used together with
+      [Theory.Renaming.Injective_on] to invoke the partial-injectivity
+      monotonicity lemmas. *)
+
+  Definition v_in_keys (r : renaming) (v : V) : Prop :=
+    In v (map fst r.(v_to_p)).
+
+  Lemma pos_of_v_inj_on_keys r :
+    renaming_ok r ->
+    Renaming.Injective_on (v_in_keys r) (pos_of_v r).
+  Proof.
+    intros Hr v1 v2 Hk1 Hk2 Heq.
+    exact (ren_pos_of_v_inj Hr _ _ Hk1 Hk2 Heq).
+  Qed.
+
+  (* [v_in_keys] grows whenever both [r] and [r'] are well-formed and
+     [r] grows into [r'].  In practice, all callers have renaming_ok r'
+     since growth lemmas preserve well-formedness. *)
+  Lemma v_in_keys_grows {r r'} :
+    rename_grows r r' -> renaming_ok r -> renaming_ok r' ->
+    forall v, v_in_keys r v -> v_in_keys r' v.
+  Proof.
+    intros Hg Hr Hr' v Hv.
+    unfold v_in_keys in *.
+    apply in_map_iff in Hv.
+    destruct Hv as (vp & Hfst & Hin).
+    destruct vp as (v0, p0).
+    cbn in Hfst; subst v0.
+    pose proof (ren_v_to_p_in_p_to_v Hr _ _ Hin) as Hget.
+    apply Hg in Hget.
+    apply (ren_p_to_v_in_v_to_p Hr') in Hget.
+    apply in_map with (f := fst) in Hget.
+    exact Hget.
+  Qed.
+
+  (** ** V-side bound predicates: source structures' V's all bound in [r].
+
+     These mirror [*_bound] but on the V (source) side: they say every
+     [V] mentioned in the source term/sort/etc. is in [v_in_keys r].
+     Crucially, [v_in_keys r] is the exact set on which [pos_of_v r] is
+     guaranteed (by [renaming_ok]) to be injective, so the [_in_S]
+     invariants below give us what [Theory.Renaming.rename_lang_mono_S]
+     needs. *)
+
+  (* These are just Theory.Renaming.*_in_S specialized to [v_in_keys r]. *)
+  Notation term_in_keys r := (Renaming.term_in_S (v_in_keys r)).
+  Notation sort_in_keys r := (Renaming.sort_in_S (v_in_keys r)).
+  Notation ctx_in_keys r := (Renaming.ctx_in_S (v_in_keys r)).
+  Notation rule_in_keys r := (Renaming.rule_in_S (v_in_keys r)).
+  Notation lang_in_keys r := (Renaming.lang_in_S (v_in_keys r)).
+
+  (** When the renamed pterm is [_bound] in [r] and unrenames to [e],
+      every V in [e] is a key of [r]. *)
+  Lemma term_in_keys_of_unrename r ep :
+    renaming_ok r -> term_bound r ep ->
+    term_in_keys r (unrename_term r ep).
+  Proof.
+    intros Hr.
+    induction ep using term_ind; cbn.
+    - (* var p *)
+      intros [v Hget].
+      unfold of_p; rewrite Hget; cbn.
+      apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+      apply in_map with (f := fst) in Hget; exact Hget.
+    - (* con n l *)
+      intros [Hn Hl].
+      split.
+      + destruct Hn as [v Hget].
+        unfold of_p; rewrite Hget; cbn.
+        apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+        apply in_map with (f := fst) in Hget; exact Hget.
+      + revert Hl. induction l as [|a l IH']; cbn; auto.
+        destruct H as [Ha Hrest]. intros [Hb Hbs]. split; auto.
+  Qed.
+
+  Lemma sort_in_keys_of_unrename r tsp :
+    renaming_ok r -> sort_bound r tsp ->
+    sort_in_keys r (unrename_sort r tsp).
+  Proof.
+    destruct tsp as [n s]; cbn.
+    intros Hr [Hn Hs]. split.
+    - destruct Hn as [v Hget].
+      unfold of_p; rewrite Hget; cbn.
+      apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+      apply in_map with (f := fst) in Hget; exact Hget.
+    - induction s as [|a s IH]; cbn in *; auto.
+      destruct Hs as [Ha Hs]. split; auto.
+      exact (term_in_keys_of_unrename a Hr Ha).
+  Qed.
+
+  Lemma all_pbound_of_p_in_keys r ps :
+    renaming_ok r -> all (pbound r) ps ->
+    all (v_in_keys r) (map (of_p r) ps).
+  Proof.
+    intros Hr. induction ps as [|p ps IH]; cbn; auto.
+    intros [Hp Hps]. split; auto.
+    destruct Hp as [v Hget].
+    unfold of_p; rewrite Hget; cbn.
+    apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+    apply in_map with (f := fst) in Hget; exact Hget.
+  Qed.
+
+  Lemma ctx_in_keys_of_unrename r cp :
+    renaming_ok r -> ctx_bound r cp ->
+    ctx_in_keys r (unrename_ctx r cp).
+  Proof.
+    intros Hr.
+    induction cp as [|pt cp IH]; cbn; auto.
+    destruct pt as (p, ts).
+    intros [Hpts Hcp].
+    destruct Hpts as [Hp Hts].
+    cbn in Hp, Hts.
+    split.
+    - cbn. split.
+      + destruct Hp as [v Hget].
+        unfold of_p; rewrite Hget; cbn.
+        apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+        apply in_map with (f := fst) in Hget; exact Hget.
+      + exact (sort_in_keys_of_unrename _ Hr Hts).
+    - apply IH. exact Hcp.
+  Qed.
+
+  Lemma rule_in_keys_of_unrename r rrp :
+    renaming_ok r -> rule_bound r rrp ->
+    rule_in_keys r (unrename_rule r rrp).
+  Proof.
+    intros Hr.
+    destruct rrp as [c args | c args ts | c ts1 ts2 | c e1 e2 ts]; cbn.
+    - intros [Hc Ha]. split.
+      + apply (ctx_in_keys_of_unrename _ Hr Hc).
+      + apply (all_pbound_of_p_in_keys _ Hr Ha).
+    - intros (Hc & Ha & Ht). split; [|split].
+      + apply (ctx_in_keys_of_unrename _ Hr Hc).
+      + apply (all_pbound_of_p_in_keys _ Hr Ha).
+      + apply (sort_in_keys_of_unrename _ Hr Ht).
+    - intros (Hc & Ht1 & Ht2). split; [|split].
+      + apply (ctx_in_keys_of_unrename _ Hr Hc).
+      + apply (sort_in_keys_of_unrename _ Hr Ht1).
+      + apply (sort_in_keys_of_unrename _ Hr Ht2).
+    - intros (Hc & He1 & He2 & Ht).
+      repeat split.
+      + apply (ctx_in_keys_of_unrename _ Hr Hc).
+      + apply (term_in_keys_of_unrename _ Hr He1).
+      + apply (term_in_keys_of_unrename _ Hr He2).
+      + apply (sort_in_keys_of_unrename _ Hr Ht).
+  Qed.
+
+  Lemma lang_in_keys_of_unrename r lp :
+    renaming_ok r -> lang_bound r lp ->
+    lang_in_keys r (unrename_lang r lp).
+  Proof.
+    intros Hr.
+    induction lp as [|prr lp IH]; cbn; auto.
+    destruct prr as (p, rr).
+    intros [Hprr Hlp].
+    destruct Hprr as [Hp Hrr].
+    cbn in Hp, Hrr.
+    split.
+    - cbn. split.
+      + destruct Hp as [v Hget].
+        unfold of_p; rewrite Hget; cbn.
+        apply (ren_p_to_v_in_v_to_p Hr) in Hget.
+        apply in_map with (f := fst) in Hget; exact Hget.
+      + exact (rule_in_keys_of_unrename _ Hr Hrr).
+    - apply IH. exact Hlp.
+  Qed.
+
   (** ** Growth lemmas for bound predicates and inverse functions. *)
 
   Lemma all_grows {A} (P P' : A -> Prop) (l : list A) :
@@ -1566,16 +1734,17 @@ Section WithVar.
       corollaries are one-line projections from the corresponding
       [_correct] lemmas. *)
 
-  Notation pos_of_v_inj_on_keys r :=
-    (forall v1 v2,
-        In v1 (map fst r.(v_to_p)) ->
-        In v2 (map fst r.(v_to_p)) ->
-        pos_of_v r v1 = pos_of_v r v2 -> v1 = v2).
+  (* The old [pos_of_v_inj_on_keys] notation was here; it now collides with
+     the [pos_of_v_inj_on_keys] lemma above, so its inline expansion is used
+     directly in the corollaries below. *)
 
   Corollary to_p_preserves_injective r v p r' :
     renaming_ok r ->
     to_p v r = (p, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hto.
     exact (ren_pos_of_v_inj (proj1 (to_p_correct Hr Hto))).
@@ -1584,7 +1753,10 @@ Section WithVar.
   Corollary rename_term_preserves_injective e r ep r' :
     renaming_ok r ->
     rename_term e r = (ep, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_term_correct e Hr Hre))).
@@ -1593,7 +1765,10 @@ Section WithVar.
   Corollary rename_sort_preserves_injective ts r tsp r' :
     renaming_ok r ->
     rename_sort ts r = (tsp, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_sort_correct ts Hr Hre))).
@@ -1602,7 +1777,10 @@ Section WithVar.
   Corollary rename_ctx_preserves_injective c r cp r' :
     renaming_ok r ->
     rename_ctx c r = (cp, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_ctx_correct c Hr Hre))).
@@ -1611,7 +1789,10 @@ Section WithVar.
   Corollary rename_rule_preserves_injective rr r rrp r' :
     renaming_ok r ->
     rename_rule rr r = (rrp, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_rule_correct rr Hr Hre))).
@@ -1620,7 +1801,10 @@ Section WithVar.
   Corollary rename_lang_preserves_injective l r lp r' :
     renaming_ok r ->
     rename_lang l r = (lp, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (rename_lang_correct l Hr Hre))).
@@ -1629,7 +1813,10 @@ Section WithVar.
   Corollary list_Mmap_to_p_preserves_injective args r ps r' :
     renaming_ok r ->
     list_Mmap to_p args r = (ps, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj (proj1 (list_Mmap_to_p_correct Hr Hre))).
@@ -1638,7 +1825,10 @@ Section WithVar.
   Corollary list_Mmap_rename_term_preserves_injective l r s r' :
     renaming_ok r ->
     list_Mmap rename_term l r = (s, r') ->
-    pos_of_v_inj_on_keys r'.
+    forall v1 v2,
+        In v1 (map fst r'.(v_to_p)) ->
+        In v2 (map fst r'.(v_to_p)) ->
+        pos_of_v r' v1 = pos_of_v r' v2 -> v1 = v2.
   Proof.
     intros Hr Hre.
     exact (ren_pos_of_v_inj
