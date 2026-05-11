@@ -515,6 +515,219 @@ Section InjectiveOn.
     inversion Hr; auto.
   Qed.
 
+  (** ** Main monotonicity proof (under boundedness hypotheses).
+
+     Unlike [rename_mono], we cannot eliminate the [wf_ctx] side conditions
+     of [eq_sort_subst]/[eq_term_subst] via induction here: building those
+     constructors on the renamed lang requires [wf_ctx (rename_lang f l) c']
+     for some intermediate [c'], which is the very statement we'd be trying
+     to prove.  We resolve the cycle by taking [wf_lang (rename_lang f l)]
+     and [wf_ctx (rename_lang f l) (rename_ctx f c)] as hypotheses; callers
+     supply these from [rename_lang_mono_S] and [rename_mono_S_wf_ctx]
+     (which is proven separately by induction on [wf_ctx]).
+   *)
+
+  Section Mono.
+    Context (l : @lang A) (wfl : wf_lang l) (Hls : lang_in_S l)
+            (wfl_ren : wf_lang (rename_lang f l)).
+
+    Section MonoCtx.
+      Context (c : @ctx A) (wfc : wf_ctx l c) (Hcs : ctx_in_S c)
+              (wfc_ren_c : wf_ctx (rename_lang f l) (rename_ctx f c)).
+
+      Definition P_sort_mono (t1 t2 : @sort A) : Prop :=
+        sort_in_S t1 /\ sort_in_S t2 /\
+        Core.eq_sort (rename_lang f l) (rename_ctx f c)
+                     (rename_sort f t1) (rename_sort f t2).
+
+      Definition P_term_mono (t : @sort A) (e1 e2 : @term A) : Prop :=
+        sort_in_S t /\ term_in_S e1 /\ term_in_S e2 /\
+        Core.eq_term (rename_lang f l) (rename_ctx f c)
+                     (rename_sort f t) (rename f e1) (rename f e2).
+
+      Definition P_subst_mono (c' : @ctx A) (s1 s2 : @subst A) : Prop :=
+        ctx_in_S c' ->
+        subst_in_S s1 /\ subst_in_S s2 /\
+        eq_subst (rename_lang f l) (rename_ctx f c) (rename_ctx f c')
+                 (rename_subst f s1) (rename_subst f s2).
+
+      Definition P_args_mono (c' : @ctx A) (s1 s2 : list (@term A)) : Prop :=
+        ctx_in_S c' ->
+        all term_in_S s1 /\ all term_in_S s2 /\
+        eq_args (rename_lang f l) (rename_ctx f c) (rename_ctx f c')
+                (map (rename f) s1) (map (rename f) s2).
+
+      Lemma rename_mono_S_eq_aux
+        : (forall t1 t2, eq_sort l c t1 t2 -> P_sort_mono t1 t2)
+          /\ (forall t e1 e2, eq_term l c t e1 e2 -> P_term_mono t e1 e2)
+          /\ (forall c' s1 s2, eq_subst l c c' s1 s2 -> P_subst_mono c' s1 s2)
+          /\ (forall c' s1 s2, eq_args l c c' s1 s2 -> P_args_mono c' s1 s2).
+      Proof using wfl wfc Hls Hcs wfl_ren wfc_ren_c f_inj_S Eqb_ok_A Eqb_ok_B V_default.
+        eapply (cut_ind A l wfl c wfc
+                        P_sort_mono P_term_mono P_subst_mono P_args_mono);
+          unfold P_sort_mono, P_term_mono, P_subst_mono, P_args_mono.
+        - (* Hsort0: eq_sort_subst (sort_eq_rule) *)
+          intros c' name t1 t2 s1 s2 Hin _ IHsubst.
+          pose proof (lang_in_S_in _ _ _ Hls Hin) as [Hname Hrule].
+          cbn in Hrule. destruct Hrule as (Hc' & Ht1 & Ht2).
+          specialize (IHsubst Hc') as (Hs1 & Hs2 & Heqr).
+          split; [|split].
+          + apply sort_subst_in_S; auto.
+          + apply sort_subst_in_S; auto.
+          + rewrite (rename_sort_distr_subst_S _ _ Ht1 Hs1).
+            rewrite (rename_sort_distr_subst_S _ _ Ht2 Hs2).
+            eapply eq_sort_subst; eauto.
+            * eapply eq_sort_by. apply (rename_lang_in _ _ _ Hin).
+            * eapply rename_ctx_wf_from_eq_rule; eauto.
+              apply (rename_lang_in _ _ _ Hin).
+        - (* Hsort1: sort congruence *)
+          intros c' name args s1 s2 Hin _ IHargs.
+          pose proof (lang_in_S_in _ _ _ Hls Hin) as [Hname Hrule].
+          cbn in Hrule. destruct Hrule as (Hc' & Hargs).
+          specialize (IHargs Hc') as (Hs1 & Hs2 & Heqr).
+          split; [|split].
+          + split; auto.
+          + split; auto.
+          + cbn. eapply sort_con_congruence; eauto.
+            apply (rename_lang_in _ _ _ Hin).
+        - (* Hsort2: eq_sort_trans *)
+          intros t1 t12 t2 _ IH1 _ IH2.
+          destruct IH1 as (Ht1 & Ht12 & Heq1).
+          destruct IH2 as (_ & Ht2 & Heq2).
+          split; [|split]; auto.
+          eapply eq_sort_trans; eauto.
+        - (* Hsort3: eq_sort_sym *)
+          intros t1 t2 _ IH.
+          destruct IH as (Ht1 & Ht2 & Heq).
+          split; [|split]; auto.
+          eapply eq_sort_sym; eauto.
+        - (* f: eq_term_subst (term_eq_rule) *)
+          intros c' name t e1 e2 s1 s2 Hin _ IHsubst.
+          pose proof (lang_in_S_in _ _ _ Hls Hin) as [Hname Hrule].
+          cbn in Hrule. destruct Hrule as (Hc' & He1 & He2 & Ht).
+          specialize (IHsubst Hc') as (Hs1 & Hs2 & Heqr).
+          split; [|split; [|split]].
+          + apply sort_subst_in_S; auto.
+          + apply term_subst_in_S; auto.
+          + apply term_subst_in_S; auto.
+          + rewrite (rename_sort_distr_subst_S _ _ Ht Hs2).
+            rewrite (rename_distr_subst_S _ _ He1 Hs1).
+            rewrite (rename_distr_subst_S _ _ He2 Hs2).
+            eapply eq_term_subst; eauto.
+            * eapply eq_term_by. apply (rename_lang_in _ _ _ Hin).
+            * eapply rename_ctx_wf_from_term_eq_rule; eauto.
+              apply (rename_lang_in _ _ _ Hin).
+        - (* f0: term congruence *)
+          intros c' name t args s1 s2 Hin _ IHargs.
+          pose proof (lang_in_S_in _ _ _ Hls Hin) as [Hname Hrule].
+          cbn in Hrule. destruct Hrule as (Hc' & Hargs & Ht).
+          specialize (IHargs Hc') as (Hs1 & Hs2 & Heqr).
+          assert (Hws2 : subst_in_S (with_names_from c' s2))
+            by (apply with_names_from_subst_in_S; auto).
+          split; [|split; [|split]].
+          + apply sort_subst_in_S; auto.
+          + split; auto.
+          + split; auto.
+          + cbn.
+            rewrite (rename_sort_distr_subst_S _ _ Ht Hws2).
+            rewrite rename_subst_with_names_from.
+            eapply term_con_congruence.
+            * apply (rename_lang_in _ _ _ Hin).
+            * right; reflexivity.
+            * exact wfl_ren.
+            * exact Heqr.
+        - (* f01: eq_term_refl on var *)
+          intros n t Hin.
+          pose proof (ctx_in_S_in _ _ _ Hcs Hin) as [Hn Ht].
+          split; [|split; [|split]]; auto.
+          eapply eq_term_refl. eapply wf_term_var.
+          apply (rename_ctx_in _ _ _ Hin).
+        - (* f1: eq_term_trans *)
+          intros t e1 e12 e2 _ IH1 _ IH2.
+          destruct IH1 as (Ht & He1 & He12 & Heq1).
+          destruct IH2 as (_ & _ & He2 & Heq2).
+          split; [|split; [|split]]; auto.
+          eapply eq_term_trans; eauto.
+        - (* f2: eq_term_sym *)
+          intros t e1 e2 _ IH.
+          destruct IH as (Ht & He1 & He2 & Heq).
+          split; [|split; [|split]]; auto.
+          eapply eq_term_sym; eauto.
+        - (* f3: eq_term_conv *)
+          intros t t' _ IHs e1 e2 _ IHe.
+          destruct IHs as (Ht & Ht' & Heqs).
+          destruct IHe as (_ & He1 & He2 & Heqe).
+          split; [|split; [|split]]; auto.
+          eapply eq_term_conv; eauto.
+        - (* f4: eq_subst_nil *)
+          intros _.
+          split; [|split]; cbn; auto.
+          constructor.
+        - (* f5: eq_subst_cons *)
+          intros c' s1 s2 _ IHsubst name t e1 e2 _ IHterm.
+          intros [[Hname Ht] Hc'].
+          cbn in Hname, Ht.
+          specialize (IHsubst Hc') as (Hs1 & Hs2 & Heqs).
+          destruct IHterm as (_ & He1 & He2 & Heqe).
+          split; [|split].
+          + cbn; split; auto.
+          + cbn; split; auto.
+          + cbn.
+            rewrite (rename_sort_distr_subst_S _ _ Ht Hs2) in Heqe.
+            econstructor; eauto.
+        - (* f6: eq_args_nil *)
+          intros _.
+          split; [|split]; cbn; auto.
+          constructor.
+        - (* f7: eq_args_cons *)
+          intros c' s1 s2 _ IHargs name t e1 e2 _ IHterm.
+          intros [[Hname Ht] Hc'].
+          cbn in Hname, Ht.
+          specialize (IHargs Hc') as (Hs1 & Hs2 & Heqs).
+          assert (Hws2 : subst_in_S (with_names_from c' s2))
+            by (apply with_names_from_subst_in_S; auto).
+          destruct IHterm as (_ & He1 & He2 & Heqe).
+          split; [|split].
+          + cbn; split; auto.
+          + cbn; split; auto.
+          + cbn.
+            rewrite (rename_sort_distr_subst_S _ _ Ht Hws2) in Heqe.
+            rewrite rename_subst_with_names_from in Heqe.
+            econstructor; eauto.
+      Qed.
+
+    End MonoCtx.
+
+    Lemma rename_mono_S_eq c (wfc : wf_ctx l c) (Hcs : ctx_in_S c)
+          (wfc_ren_c : wf_ctx (rename_lang f l) (rename_ctx f c))
+      : (forall t1 t2, eq_sort l c t1 t2 ->
+                       sort_in_S t1 -> sort_in_S t2 ->
+                       Core.eq_sort (rename_lang f l) (rename_ctx f c)
+                                    (rename_sort f t1) (rename_sort f t2))
+        /\ (forall t e1 e2, eq_term l c t e1 e2 ->
+                            sort_in_S t -> term_in_S e1 -> term_in_S e2 ->
+                            Core.eq_term (rename_lang f l) (rename_ctx f c)
+                                         (rename_sort f t) (rename f e1) (rename f e2))
+        /\ (forall c' s1 s2, eq_subst l c c' s1 s2 ->
+                             ctx_in_S c' -> subst_in_S s1 -> subst_in_S s2 ->
+                             eq_subst (rename_lang f l) (rename_ctx f c) (rename_ctx f c')
+                                      (rename_subst f s1) (rename_subst f s2))
+        /\ (forall c' s1 s2, eq_args l c c' s1 s2 ->
+                             ctx_in_S c' -> all term_in_S s1 -> all term_in_S s2 ->
+                             eq_args (rename_lang f l) (rename_ctx f c) (rename_ctx f c')
+                                     (map (rename f) s1) (map (rename f) s2)).
+    Proof using wfl Hls wfl_ren f_inj_S Eqb_ok_A Eqb_ok_B V_default.
+      pose proof (rename_mono_S_eq_aux wfc Hcs wfc_ren_c) as
+        (Hs & Ht & Hsu & Ha).
+      split; [|split; [|split]].
+      - intros t1 t2 Heq _ _; apply (Hs _ _ Heq).
+      - intros t e1 e2 Heq _ _ _; apply (Ht _ _ _ Heq).
+      - intros c' s1 s2 Heq Hc' _ _; apply (Hsu _ _ _ Heq Hc').
+      - intros c' s1 s2 Heq Hc' _ _; apply (Ha _ _ _ Heq Hc').
+    Qed.
+
+  End Mono.
+
 End InjectiveOn.
 
 
