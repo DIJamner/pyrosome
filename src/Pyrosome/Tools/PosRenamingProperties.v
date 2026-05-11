@@ -44,14 +44,7 @@ Section WithVar.
   Context (V : Type)
     {V_Eqb : Eqb V}
     {V_Eqb_ok : Eqb_ok V_Eqb}
-    {V_default : WithDefault V}
-    (* A globally injective [V -> positive] map.  Used only to extend
-       [pos_of_v] to a globally-injective function for the preservation
-       theorems; the rest of the file is independent.  For concrete
-       countable [V] (strings, [int63], [positive]) the caller provides
-       this trivially. *)
-    (V_inj : V -> positive)
-    (V_inj_inj : Renaming.Injective V_inj).
+    {V_default : WithDefault V}.
 
   Notation named_list := (@named_list V).
   Notation term := (@term V).
@@ -107,42 +100,6 @@ Section WithVar.
 
   Definition unrename_lang (r : renaming) (l : plang) : lang :=
     map (fun p => (of_p r (fst p), unrename_rule r (snd p))) l.
-
-  (** ** V-vars helpers: the V's appearing in a piece of syntax.
-
-      These let us state the partial-injectivity rename lemmas below
-      without needing global injectivity of [f]. *)
-
-  Fixpoint term_vars (e : term) : list V :=
-    match e with
-    | var x => [x]
-    | con n s => n :: flat_map term_vars s
-    end.
-
-  Definition sort_vars (t : sort) : list V :=
-    let (n, s) := t in n :: flat_map term_vars s.
-
-  Definition subst_vars (s : list (V * term)) : list V :=
-    flat_map (fun p => fst p :: term_vars (snd p)) s.
-
-  Definition args_vars (es : list term) : list V :=
-    flat_map term_vars es.
-
-  Definition ctx_vars (c : ctx) : list V :=
-    flat_map (fun p => fst p :: sort_vars (snd p)) c.
-
-  Definition rule_vars (rr : rule) : list V :=
-    match rr with
-    | sort_rule c args => ctx_vars c ++ args
-    | term_rule c args t => ctx_vars c ++ args ++ sort_vars t
-    | sort_eq_rule c t1 t2 =>
-        ctx_vars c ++ sort_vars t1 ++ sort_vars t2
-    | term_eq_rule c e1 e2 t =>
-        ctx_vars c ++ term_vars e1 ++ term_vars e2 ++ sort_vars t
-    end.
-
-  Definition lang_vars (l : lang) : list V :=
-    flat_map (fun p => fst p :: rule_vars (snd p)) l.
 
   (** ** Canonical [V -> positive] function from a renaming.
 
@@ -237,26 +194,6 @@ Section WithVar.
   Proof.
     intros Hg [v Hv].
     rewrite (of_p_lookup Hv), (of_p_grows Hg Hv); reflexivity.
-  Qed.
-
-  (** Set-restricted injectivity: [f] is injective on the elements of
-      [S].  This is what [renaming_ok] gives us about [pos_of_v r] on
-      the keys of [r.(v_to_p)]. *)
-  Definition Injective_on (S : V -> Prop) (f : V -> positive) : Prop :=
-    forall a a', S a -> S a' -> f a = f a' -> a = a'.
-
-  Lemma injective_in_on (S : V -> Prop) (f : V -> positive) :
-    Injective_on S f ->
-    forall (a : V) (xs : list V),
-      S a ->
-      (forall a', In a' xs -> S a') ->
-      In (f a) (map f xs) -> In a xs.
-  Proof.
-    intros Hinj a xs Ha Hxs Hin.
-    induction xs as [|x xs IH]; cbn in *; auto.
-    destruct Hin as [Heq | Hin].
-    - left; apply Hinj; auto.
-    - right; apply IH; auto.
   Qed.
 
   (** On-keys injectivity of [pos_of_v] follows directly from the
@@ -1430,91 +1367,27 @@ Section WithVar.
     rewrite <- Hin; reflexivity.
   Qed.
 
-  (** ** Globally-injective extension of [pos_of_v]
-
-     [pos_of_v r] is only on-keys injective; for [V]'s not in
-     [r.(v_to_p)] it returns [xH], so distinct unbound V's collide.
-     [pos_of_v_ext r] extends it: on keys, use the assigned positive;
-     on non-keys, use [next_id r + V_inj v].  Bound positives are all
-     strictly less than [next_id r], so they cannot collide with
-     extended values (which are strictly above [next_id r]); two
-     extended values are distinct because [V_inj] is injective; two
-     bound positives are distinct because [pos_of_v r] is on-keys
-     injective (from [renaming_ok]).  So [pos_of_v_ext r] is globally
-     injective, and it [f_matches] [r] (extension only changes
-     non-key V's).  This is what discharges the [Renaming.Injective]
-     premise of [Theory.Renaming.rename_lang_mono] cleanly in each
-     preservation theorem below. *)
-
-  Definition pos_of_v_ext (r : renaming) (v : V) : positive :=
-    match named_list_lookup_err r.(v_to_p) v with
-    | Some p => p
-    | None => Pos.add r.(next_id) (V_inj v)
-    end.
-
-  Lemma pos_of_v_ext_matches r :
-    renaming_ok r -> f_matches (pos_of_v_ext r) r.
-  Proof.
-    intros Hr v p Hin.
-    unfold pos_of_v_ext.
-    destruct Hr as [Hfresh _ _ _].
-    erewrite <- (all_fresh_named_list_lookup_err_in _ _ _ Hfresh) in Hin.
-    rewrite <- Hin; reflexivity.
-  Qed.
-
-  Lemma pos_of_v_ext_injective r :
-    renaming_ok r -> Renaming.Injective (pos_of_v_ext r).
-  Proof.
-    intros Hr v1 v2 Heq.
-    unfold pos_of_v_ext in Heq.
-    destruct (named_list_lookup_err r.(v_to_p) v1) as [p1|] eqn:Hl1;
-      destruct (named_list_lookup_err r.(v_to_p) v2) as [p2|] eqn:Hl2.
-    - (* both bound: use on-keys injectivity *)
-      apply (ren_pos_of_v_inj Hr).
-      + eapply pair_fst_in, (named_list_lookup_err_in _ _ (eq_sym Hl1)).
-      + eapply pair_fst_in, (named_list_lookup_err_in _ _ (eq_sym Hl2)).
-      + unfold pos_of_v; rewrite Hl1, Hl2; exact Heq.
-    - (* v1 bound at p1, v2 unbound: p1 < next_id r < next_id r + V_inj v2 = p1 *)
-      exfalso.
-      pose proof (named_list_lookup_err_in _ _ (eq_sym Hl1)) as Hin.
-      apply (ren_bound Hr) in Hin.
-      rewrite Heq in Hin.
-      apply (Pos.lt_irrefl (r.(next_id) + V_inj v2)).
-      eapply Pos.lt_trans; [exact Hin | apply Pos.lt_add_r].
-    - (* symmetric *)
-      exfalso.
-      pose proof (named_list_lookup_err_in _ _ (eq_sym Hl2)) as Hin.
-      apply (ren_bound Hr) in Hin.
-      rewrite <- Heq in Hin.
-      apply (Pos.lt_irrefl (r.(next_id) + V_inj v1)).
-      eapply Pos.lt_trans; [exact Hin | apply Pos.lt_add_r].
-    - (* both unbound: V_inj injective *)
-      apply V_inj_inj.
-      apply Pos.add_reg_l with r.(next_id); exact Heq.
-  Qed.
-
   (** ** Preservation of [Theory.Core] judgments
 
-     Each preservation theorem uses [pos_of_v_ext r_final] as the
-     V → positive map: it agrees with [pos_of_v r_final] on bound
-     V's (so the [f_matches]/bridge lemmas apply) and is globally
-     injective (by [pos_of_v_ext_injective]), so
-     [Theory.Renaming.rename_lang_mono]/[rename_mono] applies
-     directly.  No extra [Injective] hypothesis is needed at the
-     theorem level; the section-level [V_inj] discharges it. *)
+     [renaming_ok] only requires [pos_of_v] to be injective on its set
+     of keys; [Theory.Renaming.rename_lang_mono] needs global
+     injectivity, so each preservation theorem takes [Renaming.Injective
+     (pos_of_v r_final)] as an additional hypothesis.  Callers can
+     discharge it by extending [pos_of_v r_final] with any injective
+     map on V's outside the renaming. *)
 
   Theorem rename_lang_preserves_wf_lang l r lp r' :
     wf_lang l ->
     renaming_ok r ->
     rename_lang l r = (lp, r') ->
+    Renaming.Injective (pos_of_v r') ->
     wf_lang lp.
   Proof.
-    intros Hwf Hr Hrl.
+    intros Hwf Hr Hrl Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as (Hr'ok & _ & _ & _).
-    erewrite (rename_lang_via_f (f := pos_of_v_ext r') l Hr Hrl
-                (pos_of_v_ext_matches Hr'ok)).
+    erewrite (rename_lang_via_f (f := pos_of_v r') l Hr Hrl
+                (pos_of_v_matches Hr'ok)).
     apply Renaming.rename_lang_mono; auto.
-    apply pos_of_v_ext_injective; assumption.
   Qed.
 
   Theorem rename_preserves_eq_sort l c ts1 ts2 r r1 r2 r3 r4
@@ -1525,9 +1398,10 @@ Section WithVar.
     rename_ctx c r1 = (cp, r2) ->
     rename_sort ts1 r2 = (tsp1, r3) ->
     rename_sort ts2 r3 = (tsp2, r4) ->
+    Renaming.Injective (pos_of_v r4) ->
     eq_sort lp cp tsp1 tsp2.
   Proof.
-    intros Heq Hr Hrl Hrc Hr1 Hr2.
+    intros Heq Hr Hrl Hrc Hr1 Hr2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1536,8 +1410,8 @@ Section WithVar.
       (Hr3ok & Hg23 & _ & _).
     pose proof (rename_sort_correct ts2 Hr3ok Hr2) as
       (Hr4ok & Hg34 & _ & _).
-    set (f := pos_of_v_ext r4).
-    assert (Hfm4 : f_matches f r4) by exact (pos_of_v_ext_matches Hr4ok).
+    set (f := pos_of_v r4).
+    assert (Hfm4 : f_matches f r4) by exact (pos_of_v_matches Hr4ok).
     assert (Hfm3 : f_matches f r3) by
       (eapply (f_matches_grows (f := f) Hr3ok Hr4ok Hg34 Hfm4)).
     assert (Hfm2 : f_matches f r2) by
@@ -1548,8 +1422,7 @@ Section WithVar.
     erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
     erewrite (rename_sort_via_f (f := f) ts1 Hr2ok Hr1 Hfm3).
     erewrite (rename_sort_via_f (f := f) ts2 Hr3ok Hr2 Hfm4).
-    eapply (proj1 (Renaming.rename_mono (pos_of_v_ext_injective Hr4ok) l)
-              c ts1 ts2 Heq).
+    eapply (proj1 (Renaming.rename_mono Hinj l) c ts1 ts2 Heq).
   Qed.
 
   Theorem rename_preserves_eq_term l c ts e1 e2 r r1 r2 r3 r4 r5
@@ -1561,9 +1434,10 @@ Section WithVar.
     rename_sort ts r2 = (tsp, r3) ->
     rename_term e1 r3 = (e1p, r4) ->
     rename_term e2 r4 = (e2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
     eq_term lp cp tsp e1p e2p.
   Proof.
-    intros Heq Hr Hrl Hrc Hrt He1 He2.
+    intros Heq Hr Hrl Hrc Hrt He1 He2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1574,8 +1448,8 @@ Section WithVar.
       (Hr4ok & Hg34 & _ & _).
     pose proof (rename_term_correct e2 Hr4ok He2) as
       (Hr5ok & Hg45 & _ & _).
-    set (f := pos_of_v_ext r5).
-    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_ext_matches Hr5ok).
+    set (f := pos_of_v r5).
+    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_matches Hr5ok).
     assert (Hfm4 : f_matches f r4) by
       (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm5)).
     assert (Hfm3 : f_matches f r3) by
@@ -1589,9 +1463,7 @@ Section WithVar.
     erewrite (rename_sort_via_f (f := f) ts Hr2ok Hrt Hfm3).
     erewrite (rename_term_via_f (f := f) e1 Hr3ok He1 Hfm4).
     erewrite (rename_term_via_f (f := f) e2 Hr4ok He2 Hfm5).
-    eapply (proj1 (proj2 (Renaming.rename_mono
-                            (pos_of_v_ext_injective Hr5ok) l))
-              c ts e1 e2 Heq).
+    eapply (proj1 (proj2 (Renaming.rename_mono Hinj l)) c ts e1 e2 Heq).
   Qed.
 
   Theorem rename_preserves_wf_ctx l c r r1 r2 lp cp :
@@ -1599,21 +1471,21 @@ Section WithVar.
     renaming_ok r ->
     rename_lang l r = (lp, r1) ->
     rename_ctx c r1 = (cp, r2) ->
+    Renaming.Injective (pos_of_v r2) ->
     wf_ctx lp cp.
   Proof.
-    intros Hwf Hr Hrl Hrc.
+    intros Hwf Hr Hrl Hrc Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
       (Hr2ok & Hg12 & _ & _).
-    set (f := pos_of_v_ext r2).
-    assert (Hfm2 : f_matches f r2) by exact (pos_of_v_ext_matches Hr2ok).
+    set (f := pos_of_v r2).
+    assert (Hfm2 : f_matches f r2) by exact (pos_of_v_matches Hr2ok).
     assert (Hfm1 : f_matches f r1) by
       (eapply (f_matches_grows (f := f) Hr1ok Hr2ok Hg12 Hfm2)).
     erewrite (rename_lang_via_f (f := f) l Hr Hrl Hfm1).
     erewrite (rename_ctx_via_f (f := f) c Hr1ok Hrc Hfm2).
-    pose proof (Renaming.rename_mono (pos_of_v_ext_injective Hr2ok) l)
-      as Hmono.
+    pose proof (Renaming.rename_mono Hinj l) as Hmono.
     do 6 (apply proj2 in Hmono).
     eapply Hmono; exact Hwf.
   Qed.
@@ -1657,9 +1529,10 @@ Section WithVar.
     rename_ctx c' r2 = (cp', r3) ->
     list_Mmap rename_term es1 r3 = (es1p, r4) ->
     list_Mmap rename_term es2 r4 = (es2p, r5) ->
+    Renaming.Injective (pos_of_v r5) ->
     eq_args lp cp cp' es1p es2p.
   Proof.
-    intros Heq Hr Hrl Hrc Hrc' He1 He2.
+    intros Heq Hr Hrl Hrc Hrc' He1 He2 Hinj.
     pose proof (rename_lang_correct l Hr Hrl) as
       (Hr1ok & Hg01 & _ & _).
     pose proof (rename_ctx_correct c Hr1ok Hrc) as
@@ -1670,8 +1543,8 @@ Section WithVar.
       (Hr4ok & Hg34 & _ & _).
     pose proof (list_Mmap_rename_term_correct es2 Hr4ok He2) as
       (Hr5ok & Hg45 & _ & _).
-    set (f := pos_of_v_ext r5).
-    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_ext_matches Hr5ok).
+    set (f := pos_of_v r5).
+    assert (Hfm5 : f_matches f r5) by exact (pos_of_v_matches Hr5ok).
     assert (Hfm4 : f_matches f r4) by
       (eapply (f_matches_grows (f := f) Hr4ok Hr5ok Hg45 Hfm5)).
     assert (Hfm3 : f_matches f r3) by
@@ -1685,7 +1558,7 @@ Section WithVar.
     erewrite (rename_ctx_via_f (f := f) c' Hr2ok Hrc' Hfm3).
     erewrite (list_Mmap_rename_term_via_f (f := f) es1 Hr3ok He1 Hfm4).
     erewrite (list_Mmap_rename_term_via_f (f := f) es2 Hr4ok He2 Hfm5).
-    apply (eq_args_preserve_via (pos_of_v_ext_injective Hr5ok)); auto.
+    apply (eq_args_preserve_via Hinj); auto.
   Qed.
 
   (** ** Each operation's output is [renaming_ok], so [pos_of_v] is
