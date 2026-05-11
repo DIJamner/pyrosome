@@ -1628,11 +1628,12 @@ Section WithVar.
   (** ** Preservation of [Theory.Core] judgments
 
      [renaming_ok] only requires [pos_of_v] to be injective on its set
-     of keys; [Theory.Renaming.rename_lang_mono] needs global
-     injectivity, so each preservation theorem takes [Renaming.Injective
-     (pos_of_v r_final)] as an additional hypothesis.  Callers can
-     discharge it by extending [pos_of_v r_final] with any injective
-     map on V's outside the renaming. *)
+     of keys; we use [Theory.Renaming.rename_lang_mono_S] (partial
+     injectivity), so the preservation theorems do not need any
+     [Renaming.Injective] hypothesis.  The eq/wf preservation theorems
+     take [wf_lang lp] (and [wf_lang l] / [wf_ctx l c]) as
+     hypotheses; callers can discharge [wf_lang lp] via
+     [rename_lang_preserves_wf_lang]. *)
 
   Theorem rename_lang_preserves_wf_lang l r lp r' :
     wf_lang l ->
