@@ -5165,8 +5165,9 @@ TODO: lemmas in the comment block are out of date
                 atom_sound_for_model m i
                   (Build_atom f args (entry_value idx analysis_result e)))).
   Proof.
-    (*outdated
-    state_sound_constructor.
+    unfold state_sound_for_model, vc.
+    intros e Hok Hpre.
+    destruct Hpre as [iSSC HiSSC HPre].
     unfold db_lookup_entry; cbn [fst snd].
     split; [exact Hok|].
     econstructor; [exact HiSSC|].
@@ -5179,8 +5180,7 @@ TODO: lemmas in the comment block are out of date
       unfold atom_in_egraph, atom_in_db; cbn.
       rewrite Htbl; cbn. rewrite Hd; cbn. reflexivity. }
     { exists i; split; [exact Hi | apply Properties.map.extends_refl]. }
-  Qed. *)
-  Admitted.
+  Qed.
 
   Lemma update_analyses_sound' (Pre : idx_map (domain m) -> Prop) k v
     : state_sound_for_model Pre
@@ -5188,8 +5188,9 @@ TODO: lemmas in the comment block are out of date
            analysis_result k v)
         (fun _ => Pre).
   Proof.
-    (* outdated
-    state_sound_constructor.
+    unfold state_sound_for_model, vc.
+    intros e Hok Hpre.
+    destruct Hpre as [iSSC HiSSC HPre].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j analyses1 analyses2,
                (egraph_ok
@@ -5214,16 +5215,17 @@ TODO: lemmas in the comment block are out of date
     | |- _ /\ forall_nonempty (fun i => egraph_sound_for_interpretation m i ?inst) _ =>
         set (e' := inst)
     end.
-    pose proof (proj1 (Hiff iSSC analyses_e (analyses e')) (conj Hok HiSSC)) as [Hok_new HiSSC_new].
+    pose proof (proj1 (Hiff iSSC analyses_e (analyses e')) (conj Hok HiSSC))
+      as [Hok_new HiSSC_new].
     split; [exact Hok_new|].
     econstructor; [exact HiSSC_new|].
     intros j Hj.
-    pose proof (proj2 (proj2 (Hiff j analyses_e (analyses e')) (conj Hok_new Hj))) as Hj_e.
+    pose proof (proj2 (proj2 (Hiff j analyses_e (analyses e')) (conj Hok_new Hj)))
+      as Hj_e.
     split.
     { apply HPre. exact Hj_e. }
     { exists j; split; [exact Hj_e | apply Properties.map.extends_refl]. }
-  Qed. *)
-  Admitted.
+  Qed.
 
   Lemma push_worklist_analysis_sound (Pre : idx_map (domain m) -> Prop) o
     : state_sound_for_model Pre
@@ -5231,8 +5233,9 @@ TODO: lemmas in the comment block are out of date
            analysis_result (analysis_repair idx o))
         (fun _ => Pre).
   Proof.
-    (*outdated
-    state_sound_constructor.
+    unfold state_sound_for_model, vc.
+    intros e Hok Hpre.
+    destruct Hpre as [iSSC HiSSC HPre].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j,
                (egraph_ok
@@ -5261,37 +5264,33 @@ TODO: lemmas in the comment block are out of date
     split.
     { apply HPre. exact Hj_e. }
     { exists j; split; [exact Hj_e | apply Properties.map.extends_refl]. }
-  Qed.*)
-  Admitted.
+  Qed.
 
   Lemma get_analysis_sound' (Pre : idx_map (domain m) -> Prop) x
     : state_sound_for_model Pre
         (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
         (fun _ => Pre).
   Proof.
-    (*outdated
     unfold get_analysis.
-    unfold state_sound_for_model, state_triple.
-    intros e Hpre.
+    unfold state_sound_for_model, vc.
+    intros e Hok Hpre.
     destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
     { (* Some case: state unchanged *)
       cbn [fst snd].
-      destruct Hpre as [Hok Hne_pre].
-      destruct Hne_pre as [iSSC HiSSC HPre].
+      destruct Hpre as [iSSC HiSSC HPre].
       split; [exact Hok|].
       econstructor; [exact HiSSC|].
       intros j Hj; split; eauto using Properties.map.extends_refl. }
     (* None case: update_analyses then push_worklist *)
     cbn [Mret Mbind StateMonad.state_monad fst snd Mseq].
-    pose proof (update_analyses_sound' Pre x default e Hpre) as Hupd.
+    pose proof (update_analyses_sound' Pre x default e Hok Hpre) as Hupd.
     destruct (update_analyses idx symbol symbol_map idx_map idx_trie
                 analysis_result x default e) as [u e1] eqn:Hua.
     cbn in Hupd.
     destruct Hupd as (Hok1 & [j1 Hj1 HPostall1]).
-    pose proof (push_worklist_analysis_sound Pre x e1
-                  (conj Hok1
-                     (Build_forall_nonempty _ _ _ j1 Hj1
-                        (fun j Hj => proj1 (HPostall1 j Hj))))) as Hpw.
+    pose proof (push_worklist_analysis_sound Pre x e1 Hok1
+                  (Build_forall_nonempty _ _ _ j1 Hj1
+                     (fun j Hj => proj1 (HPostall1 j Hj)))) as Hpw.
     destruct (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
                 (analysis_repair idx x) e1) as [u' e2] eqn:Hpw_eqn.
     cbn in Hpw.
@@ -5304,8 +5303,7 @@ TODO: lemmas in the comment block are out of date
     destruct (HPostall1 i_mid Hi_mid) as (_ & i_old & Hi_old & Hext_old).
     split; [exact HPre2_j|].
     exists i_old; eauto using map_extends_trans.
-  Qed.*)
-  Admitted.
+  Qed.
 
   Lemma get_analyses_sound' (Pre : idx_map (domain m) -> Prop) args
     : state_sound_for_model Pre
