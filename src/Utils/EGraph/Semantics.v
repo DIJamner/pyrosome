@@ -3430,7 +3430,38 @@ TODO: lemmas in the comment block are out of date
              In (fst res) roots /\
              uf_rel_PER (snd res).(equiv) x (fst res)).
   Proof.
-  Admitted.
+    unfold vc, find.
+    intros e Hok Hkx.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [fst snd db parents worklist equiv analyses log epoch].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Hok Hkx Hfind) as Hspec.
+    destruct Hspec as
+      (Huf'_l & Hin_v' & Hpar_uf' & Hsubrel & Hlim_iff & Hkey_iff).
+    split; [reflexivity|].
+    split; [exact Huf'_l|].
+    split.
+    - (* iff2 PER: both forests, share limits, so PERs match *)
+      pose proof Hok as [Hf_old _ _ _ _]; cbn in Hf_old.
+      pose proof Huf'_l as [Hf_new _ _ _ _]; cbn in Hf_new.
+      intros i j; unfold uf_rel_PER.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as Hold.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as Hnew.
+      rewrite Hold, Hnew.
+      split; intros (r0 & Hl1 & Hl2);
+        exists r0; split; apply Hlim_iff; assumption.
+    - split; [reflexivity|].
+      split; [reflexivity|].
+      split; [exact Hkey_iff|].
+      split; [exact Hin_v'|].
+      unfold uf_rel_PER.
+      unfold parent_rel in Hpar_uf'.
+      eapply trans_PER_subrel; exact Hpar_uf'.
+  Qed.
 
   
   (* TODO: this is the better way to state this lemma. replace the one above with this everywhere*)
