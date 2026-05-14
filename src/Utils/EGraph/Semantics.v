@@ -973,11 +973,18 @@ Abort.
     erewrite <- set_ext; try eassumption.
   Qed.
   
-  Ltac state_sound_constructor :=
-    unfold state_sound_for_model, state_triple;
-    intros e Hpre_pair;
-    destruct Hpre_pair as [Hok Hpre_ne];
-    destruct Hpre_ne as [iSSC HiSSC HPre].
+  (* Open a [state_sound_for_model] goal: unfold to [vc] and intro
+     the input state [e], the [egraph_ok] hypothesis, and the
+     witness interpretation [iSSC] from the [forall_ne] precondition,
+     destructured to expose the underlying [HiSSC]/[HPre]. *)
+  Ltac open_state_sound :=
+    unfold state_sound_for_model, vc;
+    let e := fresh "e" in
+    let Hok := fresh "Hok" in
+    let iSSC := fresh "iSSC" in
+    let HiSSC := fresh "HiSSC" in
+    let HPre := fresh "HPre" in
+    intros e Hok [iSSC HiSSC HPre].
 
   Lemma pull_worklist_sound Pre
     : state_sound_for_model Pre
@@ -1421,9 +1428,7 @@ Abort.
         (fun x' i => Pre i /\ eq_sound_for_model m i x x').
   Proof.
     intros HPkey.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     pose proof HiSSC as [Hwf Hexact Hatom Hrel].
     pose proof Hok as [Hg_eq Hg_wl Hg_par].
     pose proof (HPkey _ (HPre _ HiSSC)) as Hkx_interp.
@@ -1575,9 +1580,7 @@ Abort.
     : state_sound_for_model Pre (get_parents old_idx)
         (fun a i => Pre i /\ all (atom_sound_for_model m i) a).
   Proof.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     unfold get_parents. cbn [fst snd].
     split; [exact Hok|].
     econstructor; [exact HiSSC|].
@@ -1604,9 +1607,7 @@ Abort.
         (remove_parents old_idx)
         (fun _ => Pre).
   Proof.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     unfold remove_parents. cbn.
     pose proof HiSSC as [Hwf Hexact Hatom Hrel].
     pose proof Hok as [Hg_eq Hg_wl Hg_par].
@@ -2797,10 +2798,8 @@ TODO: lemmas in the comment block are out of date
       assert (Hkeys'_e1 :
                 all (fun i => Sep.has_key i e1.(equiv).(parent)) xs').
       { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
-        revert Hkeys'. clear -Hkey_iff.
-        induction xs' as [| y' ys' IHy']; cbn; auto.
-        intros [Hy' Hys']. split;
-          [apply Hkey_iff; exact Hy' | apply IHy'; exact Hys']. }
+        eapply all_wkn; [| exact Hkeys'].
+        intros z _ Hz. apply Hkey_iff. exact Hz. }
       pose proof (IH e1 Hex1 Hkeys'_e1) as IHapp.
       cbn beta in IHapp.
       destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
@@ -2932,9 +2931,8 @@ TODO: lemmas in the comment block are out of date
       destruct (map.get iSSC x); cbn; [exact I | tauto]. }
     apply Hcps.
     + rewrite Hequiv_eq. exact Hex_ref.
-    + revert Hkey_args_i. clear -Hkey_lift.
-      induction (atom_args a) as [| x xs IH]; cbn; auto.
-      intros [Hx Hxs]. split; [apply Hkey_lift; exact Hx | apply IH; exact Hxs].
+    + eapply all_wkn; [| exact Hkey_args_i].
+      intros x _ Hx; apply Hkey_lift; exact Hx.
     + apply Hkey_lift. exact Hkey_ret_i.
   Qed.
 
@@ -4256,9 +4254,7 @@ TODO: lemmas in the comment block are out of date
                 atom_sound_for_model m i
                   (Build_atom f args (entry_value idx analysis_result e)))).
   Proof.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     unfold db_lookup_entry; cbn [fst snd].
     split; [exact Hok|].
     econstructor; [exact HiSSC|].
@@ -4279,9 +4275,7 @@ TODO: lemmas in the comment block are out of date
            analysis_result k v)
         (fun _ => Pre).
   Proof.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j analyses1 analyses2,
                (egraph_ok
@@ -4324,9 +4318,7 @@ TODO: lemmas in the comment block are out of date
            analysis_result (analysis_repair idx o))
         (fun _ => Pre).
   Proof.
-    unfold state_sound_for_model, vc.
-    intros e Hok Hpre.
-    destruct Hpre as [iSSC HiSSC HPre].
+    open_state_sound.
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
     assert (Hiff : forall j,
                (egraph_ok
