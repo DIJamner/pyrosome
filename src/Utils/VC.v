@@ -31,6 +31,17 @@ Proof.
   unfold vc; intuition.
 Qed.
 
+(* [Mseq c1 c2] discards [c1]'s value; same shape as [vc_bind] but
+   with the per-value vc on [c2] replaced by a per-input-state one. *)
+Lemma vc_Mseq {S A B} (c1 : state S A) (c2 : state S B)
+  (P1 : S -> A * S -> Prop) (P2 : S -> B * S -> Prop)
+  : vc c1 P1 ->
+    (forall s0 a, vc c2 (fun s1 res => P1 s0 (a, s1) -> P2 s0 res)) ->
+    vc (Mseq c1 c2) P2.
+Proof.
+  exact (vc_bind c1 (fun _ => c2) P1 P2).
+Qed.
+
 Ltac vc_apply lem :=
   first [ simple eapply lem
         | simple eapply vc_consequence;
@@ -39,6 +50,10 @@ Ltac vc_apply lem :=
 
 Ltac vc_bind lem :=
   eapply vc_bind;
+  [ vc_apply lem; intuition eauto | intros ? ?].
+
+Ltac vc_Mseq lem :=
+  eapply vc_Mseq;
   [ vc_apply lem; intuition eauto | intros ? ?].
 
 (* List-induction principle for [vc] over [list_Mmap]: given a list-

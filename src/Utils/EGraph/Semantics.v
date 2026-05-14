@@ -3508,33 +3508,19 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
     intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0 Hcong.
-    intros e_in.
-    (* Reduce to the original state_triple-form proof: package the six
-       in-line hypotheses into a single conjunction precondition. *)
-    cut (state_triple
-           (fun e1 =>
-              (exists roots, union_find_ok lt e1.(equiv) roots)
-              /\ fields_preserved e0 e1
-              /\ atom_fn a' = atom_fn a
-              /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-              /\ all2 (uf_rel_PER e1.(equiv))
-                   (atom_args a') (atom_args a)
-              /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1)
-           (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
-           (fun _ res =>
-              egraph_ok (snd res)
-              /\ (forall_ne i | denote (snd res) i, Pre i)
-              /\ ne_set_maps_to (denote e_ref) (denote (snd res))
-              /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l)).
-    { intros Hst Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hatom_e1.
-      apply (Hst e_in).
-      repeat (split; try assumption). }
-    eapply state_triple_Mseq with
-      (Q1 := fun e1 res =>
-         (* Facts about how [Defs.union r a'.(atom_ret)] relates the
-            pre-state [e1] and the post-state [snd res], packaged from
-            [union_sound]'s vc-style output plus the derived
-            [has_key] iff. *)
+    (* Apply [vc_Mseq] to peel off [Defs.union]: [P1] captures
+       [union]'s effects on the post-state, with the per-input
+       hypotheses (Hex_e1, Hf01, ...) threaded as implications so
+       they're available when proving [vc] of [union]. *)
+    eapply vc_Mseq with
+      (P1 := fun e1 res =>
+         (exists roots, union_find_ok lt e1.(equiv) roots) ->
+         fields_preserved e0 e1 ->
+         atom_fn a' = atom_fn a ->
+         uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+         all2 (uf_rel_PER e1.(equiv))
+              (atom_args a') (atom_args a) ->
+         atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1 ->
          e1.(db) = (snd res).(db)
          /\ e1.(parents) = (snd res).(parents)
          /\ ((snd res).(worklist) = e1.(worklist)
@@ -3548,115 +3534,50 @@ TODO: lemmas in the comment block are out of date
          /\ iff2 (uf_rel_PER (equiv (snd res)))
                 (union_closure_PER
                    (uf_rel_PER (equiv e1))
-                   (singleton_rel r a'.(atom_ret)))
-         (* Pre-union facts threaded forward (the union does not
-            touch [db], [parents], or the structural [a/a']
-            equalities; we keep them on [e1] for use after the
-            bind). *)
-         /\ fields_preserved e0 e1
-         /\ atom_fn a' = atom_fn a
-         /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-         /\ all2 (uf_rel_PER e1.(equiv))
-              (atom_args a') (atom_args a)
-         /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1).
-    { (* Run [union_sound] under a strengthened pre/post via
-         [state_triple_consequence].  The strengthened precondition
-         [P'] adds [exists roots, union_find_ok lt e1.(equiv) roots]
-         and the [has_key] facts needed to instantiate [union_sound];
-         the post just packages [union_sound]'s output (and the
-         derived [has_key] iff) with the threaded pre-union facts. *)
-      eapply state_triple_consequence with
-        (P' := fun e1 =>
-           (exists roots, union_find_ok lt (equiv e1) roots)
-           /\ Sep.has_key r e1.(equiv).(parent)
-           /\ Sep.has_key a'.(atom_ret) e1.(equiv).(parent)
-           /\ fields_preserved e0 e1
-           /\ atom_fn a' = atom_fn a
-           /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-           /\ all2 (uf_rel_PER e1.(equiv))
-                (atom_args a') (atom_args a)
-           /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1)
-        (Q' := fun e1 res =>
-           (e1.(db) = (snd res).(db)
-            /\ e1.(parents) = (snd res).(parents)
-            /\ ((snd res).(worklist) = e1.(worklist)
-                \/ exists v_old v' a0,
-                     (snd res).(worklist) =
-                       (union_repair _ v_old v' a0) :: e1.(worklist)
-                     /\ uf_rel_PER (snd res).(equiv) v_old v')
-            /\ (forall y, Sep.has_key y (parent (equiv e1))
-                          <-> Sep.has_key y (parent (equiv (snd res))))
-            /\ (exists roots', union_find_ok lt (equiv (snd res)) roots')
-            /\ iff2 (uf_rel_PER (equiv (snd res)))
-                   (union_closure_PER
-                      (uf_rel_PER (equiv e1))
-                      (singleton_rel r a'.(atom_ret))))).
-      - (* Original precondition implies [P']: derive the two new
-           [has_key] conjuncts from the outer hypotheses. *)
-        intros e1 (Hex_e1 & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1).
-        (* has_key a'.atom_ret comes from [Hret_eq] (PER pair). *)
-        destruct Hex_e1 as [l_e1 Huf_e1].
-        pose proof (uf_rel_PER_has_key _ _ _ _ Huf_e1 Hret_eq)
-          as [Hkey_a'ret _].
-        (* has_key r needs work: r is the value at (atom_fn a',
-           atom_args a') in e1.db; under any interpretation [iSSC]
-           sound for e_ref (and hence for e1, since e1's db ⊆ e_ref's),
-           [iSSC] interprets [r] (via [atom_sound_ret_has_key]
-           applied to [atom_in_egraph (..., r) e1]). Then
-           [interpretation_exact] gives has_key r in e1.equiv.parent.
-
-           To avoid threading interpretations through this proof step,
-           we use the witness [iSSC] from [Hne_ref]. *)
-        assert (Hkey_r : Sep.has_key r e1.(equiv).(parent)).
-        { destruct Hne_ref as [iSSC HiSSC HPre_all].
-          (* iSSC sound for e_ref. Need: iSSC sound for e1.  e1 is
-             reachable from e_ref by db_remove + canonicalize.  db
-             only shrunk; equiv preserved by find under iff2 PER and
-             same key set; parents/etc unchanged. *)
-          assert (HiSSC_e1 : egraph_sound_for_interpretation m iSSC e1).
-          { destruct HiSSC as [Hwf Hexact Hatom Hrel].
-            constructor.
-            - exact Hwf.
-            - intros x Hx.
-              apply Hexact in Hx.
-              destruct Hpost_e0 as (Heq_eq0 & _ & _ & _ & _ & _).
-              destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
-              apply Hkey_iff. rewrite Heq_eq0. exact Hx.
-            - intros a0 Ha0.
-              apply Hatom.
-              (* atom_in_egraph a0 e1 → atom_in_egraph a0 e_ref *)
-              destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff).
-              destruct Hf01 as (Hdb_eq & _).
-              unfold atom_in_egraph in *.
-              rewrite Hdb_eq in Ha0.
-              apply Hatom_iff in Ha0. tauto.
-            - intros i1 i2 H_PER.
-              destruct Hf01 as (_ & _ & _ & _ & _ & _ & Huf_iff).
-              destruct Hpost_e0 as (Heq_eq0 & _).
-              apply Hrel.
-              apply Huf_iff in H_PER.
-              rewrite Heq_eq0 in H_PER. exact H_PER. }
-          pose proof (atom_interpretation _ _ _ HiSSC_e1 _ Hatom_e1) as Hsa.
-          apply atom_sound_ret_has_key in Hsa. cbn in Hsa.
-          destruct HiSSC_e1 as [_ Hexact1 _ _].
-          apply Hexact1; exact Hsa. }
-        repeat (split; try assumption).
-        exists l_e1; exact Huf_e1.
-      - (* [P] /\ [Q'] implies [Q1]: just package conjuncts. *)
-        intros e1 res Hp HQ.
-        destruct Hp as (Hex_e1 & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1).
-        destruct HQ as (Hdb & Hpa & Hwl & Hkey & Hex_post & Huf).
-        repeat (split; try assumption).
-      - (* Use [union_sound] directly: convert state_triple to vc,
-           destruct the existential [roots], specialize union_sound,
-           and derive the [has_key] iff (which [union_sound] does
-           not expose) from union_sound's [iff2] PER conclusion via
-           [forest_root_limit] and [uf_rel_PER_has_key]. *)
-        unfold state_triple.
-        intros e1 (Hex & Hkr & Hka' & _).
-        destruct Hex as [roots Huf_e1].
-        pose proof (union_sound r a'.(atom_ret) roots e1 Huf_e1 Hkr Hka')
-          as Hus.
+                   (singleton_rel r a'.(atom_ret)))).
+    { (* Subgoal 1: [vc (Defs.union r a'.atom_ret) P1].  Discharge the
+         per-input implications, derive [Sep.has_key r] and
+         [Sep.has_key a'.atom_ret], then specialize [union_sound]. *)
+      intros e1 Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hatom_e1.
+      destruct Hex_e1 as [l_e1 Huf_e1].
+      (* has_key a'.atom_ret comes from [Hret_eq] (PER pair). *)
+      pose proof (uf_rel_PER_has_key _ _ _ _ Huf_e1 Hret_eq)
+        as [Hkey_a'ret _].
+      (* has_key r: under any [iSSC] sound for [e_ref] (hence for
+         [e1] via [Hpost_e0]+[Hf01]), [iSSC] interprets [r] (via
+         [atom_sound_ret_has_key] on [atom_in_egraph (..., r) e1]),
+         so [interpretation_exact] gives [has_key r] in
+         [e1.equiv.parent]. *)
+      assert (Hkey_r : Sep.has_key r e1.(equiv).(parent)).
+      { destruct Hne_ref as [iSSC HiSSC HPre_all].
+        assert (HiSSC_e1 : egraph_sound_for_interpretation m iSSC e1).
+        { destruct HiSSC as [Hwf Hexact Hatom Hrel].
+          constructor.
+          - exact Hwf.
+          - intros x Hx.
+            apply Hexact in Hx.
+            destruct Hpost_e0 as (Heq_eq0 & _ & _ & _ & _ & _).
+            destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+            apply Hkey_iff. rewrite Heq_eq0. exact Hx.
+          - intros a0 Ha0.
+            apply Hatom.
+            destruct Hpost_e0 as (_ & _ & _ & _ & _ & Hatom_iff).
+            destruct Hf01 as (Hdb_eq & _).
+            unfold atom_in_egraph in *.
+            rewrite Hdb_eq in Ha0.
+            apply Hatom_iff in Ha0. tauto.
+          - intros i1 i2 H_PER.
+            destruct Hf01 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+            destruct Hpost_e0 as (Heq_eq0 & _).
+            apply Hrel.
+            apply Huf_iff in H_PER.
+            rewrite Heq_eq0 in H_PER. exact H_PER. }
+        pose proof (atom_interpretation _ _ _ HiSSC_e1 _ Hatom_e1) as Hsa.
+        apply atom_sound_ret_has_key in Hsa. cbn in Hsa.
+        destruct HiSSC_e1 as [_ Hexact1 _ _].
+        apply Hexact1; exact Hsa. }
+      pose proof (union_sound r a'.(atom_ret) l_e1 e1 Huf_e1 Hkey_r Hkey_a'ret)
+        as Hus.
         cbn [fst snd] in Hus.
         destruct Hus
           as (Hdb_eq & [roots' Huf_post] & Hiff_PER_ux & Hpa_eq
@@ -3689,7 +3610,7 @@ TODO: lemmas in the comment block are out of date
                        lt_trans_nat _ _ Hf_e1) in Hk.
             destruct Hk as (r0 & Hin_r0 & Hlim_r0).
             assert (Hr0_root : map.get e1.(equiv).(parent) r0 = Some r0)
-              by (apply (@forest_root_iff _ _ _ _ _ r0 roots _ Hf_e1);
+              by (apply (@forest_root_iff _ _ _ _ _ r0 l_e1 _ Hf_e1);
                   exact Hin_r0).
             assert (Hpre_PER : uf_rel_PER e1.(equiv) y0 r0).
             { unfold uf_rel_PER.
@@ -3747,11 +3668,13 @@ TODO: lemmas in the comment block are out of date
             destruct Hpost_PER as [Hk_y0 _]; exact Hk_y0. }
         split; [exists roots'; exact Huf_post|].
         intros i j; specialize (Hiff_PER_ux i j); tauto. }
-    intros e1_pre _u e_post Hpre HQ1.
-    cbn beta. cbn [Mret StateMonad.state_monad fst snd].
+    intros e1_pre _u.
+    unfold vc;
+      intros e_post HQ1 Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hatom_e1_pre.
+    cbn [Mret StateMonad.state_monad fst snd].
+    specialize (HQ1 Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hatom_e1_pre).
     cbn [fst snd] in HQ1.
-    destruct HQ1 as (Hdb_eq & Hpa_eq & Hwl & Hkey & Hex_post & Huf
-                     & Hf01 & Hfn_eq & Hret_eq & Hargs_eq & Hatom_e1_pre).
+    destruct HQ1 as (Hdb_eq & Hpa_eq & Hwl & Hkey & Hex_post & Huf).
     (* Pull apart [Hf01], [Hpost_e0] for repeated use. *)
     pose proof Hf01 as (Hdb_01 & Hpa_01 & Hep_01 & Hwl_01
                           & Han_01 & Hkey_01 & Huf_01).
