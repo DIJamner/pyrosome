@@ -834,38 +834,6 @@ Abort.
     unfold iff2 in *; firstorder.
   Qed.
   
-  Lemma state_triple_list_Mfoldl A B f l P acc
-    : (forall (acc : B) (l1 : list A) (a : A) (l2 : list A),
-          l = l1 ++ a :: l2 ->
-          state_triple
-            (fun e : instance => P (a :: l2) acc e)
-            (f acc a)
-            (fun p => P l2 (fst p) (snd p))) ->
-      state_triple (fun e => P l acc e) (list_Mfoldl f l acc)
-        (fun p => P [] (fst p) (snd p)).
-  Proof.
-    revert acc.
-    induction l.
-    {
-      cbn; intros.
-      eapply state_triple_wkn_ret.
-      basic_goal_prep; subst.
-      basic_utils_crush.
-    }
-    {
-      cbn [all list_Mfoldl]; intros; break.
-      eapply state_triple_bind.
-      { eapply H with (l1:=[]); eauto. }
-      unfold curry.
-      intro b.
-      cbn.
-      eapply IHl;
-        basic_goal_prep.
-      eapply H with (l1:= a::l1).
-      basic_utils_crush.
-    }
-  Qed.
-
   Context `{analysis idx symbol analysis_result}.
 
   (*TODO: move*)
@@ -927,13 +895,6 @@ Abort.
 
   #[local] Notation denote e :=
     (fun i => egraph_sound_for_interpretation m i e).
-
-  
-  (* Hoare logic reasoning about the state monad.
-     TODO: replace the definition in Monad.v with this updated one.
-   *)
-  Definition state_triple {S A} (P : S -> Prop) (c : state S A) (Q : S -> A * S -> Prop) :=
-    forall e, P e -> Q e (c e).
 
   Section __.
 
@@ -1663,7 +1624,7 @@ Abort.
      [atom_in_egraph_up_to_equiv] structural fact w.r.t. the output
      instance. This structural fact is what callers need to apply
      [repair_each_sound]; we expose the input/output instance via
-     state_triple because it cannot be expressed at the
+     [vc] because it cannot be expressed at the
      [state_sound_for_model] (abs_set) level. *)
   Lemma pull_parents_sound (Pre : idx_map (domain m) -> Prop) old_idx
     : vc (pull_parents old_idx)
@@ -2578,100 +2539,6 @@ TODO: lemmas in the comment block are out of date
   Qed.    
   
 *)
-
-  (* Generic state_triple-level bind lemma for the new state_triple shape
-     (postcondition takes the input state explicitly). *)
-  Lemma state_triple_bind {S A B} (c : state S A) (f : A -> state S B)
-    (P : S -> Prop) (Q1 : S -> A * S -> Prop) (Q2 : S -> B * S -> Prop)
-    : state_triple P c Q1 ->
-      (forall e0 a e1, P e0 -> Q1 e0 (a, e1) -> Q2 e0 (f a e1)) ->
-      state_triple P (Mbind f c) Q2.
-  Proof.
-    intros Hc Hf.
-    unfold state_triple in *.
-    intros e HP.
-    pose proof (Hc e HP) as HQ1.
-    cbn.
-    destruct (c e) as [a e1] eqn:Hce.
-    cbn in HQ1.
-    apply Hf; auto.
-  Qed.
-
-  (* Generic state_triple-level [Mseq] lemma, derived from
-     [state_triple_bind]: lets callers reason about [Mseq c1 c2]
-     without unfolding [Mseq]. *)
-  Lemma state_triple_Mseq {S A B} (c1 : state S A) (c2 : state S B)
-    (P : S -> Prop) (Q1 : S -> A * S -> Prop) (Q2 : S -> B * S -> Prop)
-    : state_triple P c1 Q1 ->
-      (forall e0 a e1, P e0 -> Q1 e0 (a, e1) -> Q2 e0 (c2 e1)) ->
-      state_triple P (Mseq c1 c2) Q2.
-  Proof. apply state_triple_bind. Qed.
-
-  (* Pre/post weakening for state_triple. *)
-  Lemma state_triple_consequence {S A} (c : state S A)
-    (P P' : S -> Prop) (Q Q' : S -> A * S -> Prop)
-    : (forall s, P s -> P' s) ->
-      (forall s p, P s -> Q' s p -> Q s p) ->
-      state_triple P' c Q' ->
-      state_triple P c Q.
-  Proof.
-    unfold state_triple. intros HP HQ Hc s HPs.
-    apply HQ; auto.
-  Qed.
-
-  (* Conjunction of two state_triples for the same command, with their
-     preconditions and postconditions taken pointwise. *)
-  Lemma state_triple_conjunction {S A} (c : state S A)
-    (P1 P2 : S -> Prop) (Q1 Q2 : S -> A * S -> Prop)
-    : state_triple P1 c Q1 ->
-      state_triple P2 c Q2 ->
-      state_triple (fun s => P1 s /\ P2 s) c (fun s p => Q1 s p /\ Q2 s p).
-  Proof.
-    unfold state_triple. intros H1 H2 s [HP1 HP2].
-    split; auto.
-  Qed.
-
-  (* Generic state_triple-level lemma for list_Mmap. P is a list-indexed
-     invariant on the state, R relates pre- and post-states (typically a
-     monotonicity relation); the user supplies (i) reflexivity of R on
-     terminal P-states, (ii) transitivity of R, and (iii) a per-element
-     state_triple that consumes the head of the list and produces an
-     R-step. The conclusion threads the invariant through the entire
-     list_Mmap and exposes a single end-to-end R-step from the initial
-     to the final state. Designed so that [list_Mmap_repair_each_sound]
-     can be reduced to its per-element preservation argument. *)
-  Lemma state_triple_list_Mmap_inv {S A B}
-    (f : A -> state S B)
-    (P : list A -> S -> Prop)
-    (R : S -> S -> Prop)
-    : (forall s, P [] s -> R s s) ->
-      (forall s s' s'', R s s' -> R s' s'' -> R s s'') ->
-      (forall a l_rest,
-         state_triple
-           (P (a::l_rest))
-           (f a)
-           (fun s p => P l_rest (snd p) /\ R s (snd p))) ->
-      forall l,
-        state_triple
-          (P l)
-          (list_Mmap f l)
-          (fun s p => P [] (snd p) /\ R s (snd p)).
-  Proof.
-    intros Hrefl_base Htrans Hstep.
-    induction l as [| a l' IH].
-    - unfold state_triple. cbn. intros e HP. split; auto.
-    - unfold state_triple in *. intros e HP.
-      cbn [list_Mmap].
-      pose proof (Hstep a l' e HP) as Hae.
-      cbn in *.
-      destruct (f a e) as [b s1] eqn:Hfa.
-      cbn in Hae. destruct Hae as [HPl' Hmono1].
-      pose proof (IH s1 HPl') as IH1.
-      cbn in IH1.
-      destruct (list_Mmap f l' s1) as [bl' s2] eqn:Hmap.
-      cbn in IH1. destruct IH1 as [HPnil Hmono2].
-      cbn. split; eauto.
-  Qed.
 
   (* Predicate: every instance field except [equiv] is preserved
      verbatim, [equiv] may have been path-compressed but its key set
