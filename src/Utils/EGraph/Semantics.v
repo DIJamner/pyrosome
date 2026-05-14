@@ -2205,127 +2205,6 @@ TODO: lemmas in the comment block are out of date
     all: eapply parent_rel_put_same; now eauto.
   Qed.
     
-  Lemma union_sound i x y
-    : eq_sound_for_model m i x y ->
-      state_sound_for_model m i (Defs.union x y)
-        (fun i' a => i = i' /\ eq_sound_for_model m i' x a).
-  Proof.
-    intros; open_ssm'.
-    basic_goal_prep.
-    eqb_case x y.
-    Admitted (*TODO: make sure to fix this proof*).
-    (*
-    { basic_goal_prep; intuition eauto with utils. }
-    case_match.
-    destruct (egraph_equiv_ok _ H3).
-    pose proof case_match_eqn as Hdom.
-    eapply union_spec in case_match_eqn; try Lia.lia; eauto.
-    2:{
-      eapply interpretation_exact; eauto.
-      eapply eq_sound_has_key_r; symmetry; eauto.
-    }
-    2:{
-      eapply interpretation_exact; eauto.
-      eapply eq_sound_has_key_r; eauto.
-    }
-    break.
-    eqb_case x i0; basic_goal_prep.
-    {
-      intuition eauto with utils.
-      { eapply eq_sound_for_model_trans; try eassumption; symmetry; now eauto. }
-      {
-        constructor; cbn.
-        eexists; eauto.
-      }
-      {
-        destruct H4; constructor; cbn; eauto.
-        {
-          intros x H'; apply interpretation_exact0 in H'.
-          eapply union_same_domain in Hdom; eauto.
-          { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
-          {
-            symmetry in H1; eapply eq_sound_has_key_r in H1.
-            eapply interpretation_exact0; eauto.
-          }
-          {
-            eapply eq_sound_has_key_r in H1.
-            eapply interpretation_exact0; eauto.
-          }
-        }
-        {
-          intros.
-          eapply H10 in H4.
-          revert H4; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-          unfold singleton_rel, impl2; basic_goal_prep; subst; eauto.
-        }
-        { split; auto; symmetry; auto. }
-      }
-    }
-    intuition try constructor; basic_goal_prep; intuition eauto with utils.    
-    { eapply union_output in Hdom; eauto.
-      2:{
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      2:{
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      break.
-      eapply trans_PER_subrel in H11; eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-    { eapply idx_interpretation_wf; eauto. }
-    {
-      eapply interpretation_exact in H11; eauto.
-      eapply union_same_domain in Hdom; eauto.
-      { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
-      {
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      {
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-    }
-    { eapply atom_interpretation in H4; eauto. }
-    {
-      eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-    { eapply parents_interpretation; eauto. }
-    2:{ eapply worklist_sound; eauto. }    
-    { eapply union_output in Hdom; eauto.
-      2:{
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      2:{
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      break.
-      eapply trans_PER_subrel in H11; eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-      Qed.
-      *)
   
   Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
     : state_sound_for_model m i s P ->
@@ -2341,44 +2220,8 @@ TODO: lemmas in the comment block are out of date
   Qed.
 
   
-  Lemma get_analysis_sound i a
-    : state_sound_for_model m i
-        (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result a)
-        (fun i' _ => i = i').
-  Proof.
-    open_ssm'.
-    split; eauto.
-    case_match; cbn; intuition eauto with utils.
-    { destruct H2; constructor; intros; intuition eauto. }
-    { destruct H3; constructor; intros; cbn; intuition eauto. }
-  Qed.
 
-  Lemma get_analyses_sound i args
-    : state_sound_for_model m i
-         (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args) 
-         (fun i' _ => i = i').
-  Proof.
-    clear idx_zero idx_succ.
-    unfold get_analyses.
-    eapply state_sound_for_model_wkn.
-    1:apply state_sound_for_model_Mmap with
-      (P_const := fun i' => i = i')
-      (P_elt := fun _ _ => True); auto with utils.
-    {
-      intros; subst.
-      eapply state_sound_for_model_wkn; [apply get_analysis_sound |].
-      basic_goal_prep; subst; intuition auto.
-    }
-    basic_goal_prep; subst; intuition auto.
-  Qed.
 
-  Lemma update_analyses_sound i o a
-    : state_sound_for_model m i
-        (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result o a)
-         (fun i' _ => i = i').
-  Proof.
-    open_ssm.
-  Qed.
   
   Lemma set_eq_empty_l A (l : list A) : set_eq [] l <-> l = [].
   Proof using.
@@ -2598,26 +2441,6 @@ TODO: lemmas in the comment block are out of date
 
 
     
-  Lemma db_lookup_entry_sound i f args
-    : state_sound_for_model m i
-        (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
-           f args) (fun i' e => i' = i
-                                /\ e <?> (fun e => atom_sound_for_model m i
-                                        (Build_atom f args e.(entry_value _ _)))).
-  Proof.
-    open_ssm.
-    basic_goal_prep.
-    case_match; cbn; auto.
-    case_match; cbn; auto.
-    assert (atom_in_egraph (Build_atom f args d.(entry_value _ _)) e).
-    {
-      unfold atom_in_egraph, atom_in_db; cbn.
-      rewrite case_match_eqn; cbn.
-      rewrite case_match_eqn0; cbn.
-      reflexivity.
-    }
-    eapply atom_interpretation; eauto.
-  Qed.
   
   
   Lemma push_worklist_sound_analysis i o
@@ -2630,68 +2453,7 @@ TODO: lemmas in the comment block are out of date
     cbn; eauto.
   Qed.
 
-  Lemma db_set_entry_sound i f args entry_epoch entry_value a
-    : atom_sound_for_model m i (Build_atom f args entry_value) ->
-      state_sound_for_model m i
-       (db_set_entry idx symbol symbol_map idx_map idx_trie analysis_result 
-          f args entry_epoch entry_value a) 
-         (fun i' _ => i = i').
-  Proof.
-    intro Hsound.
-    open_ssm.
-    intuition eauto with utils.
-    unfold atom_in_egraph,atom_in_db in *; cbn in *.
-    repeat iss_case.
-    eqb_case f (atom_fn a0).
-    {
-      rewrite get_update_same in* by eauto.
-      inversions.
-      case_match.
-      all: eqb_case args (atom_args a0).
-      all: rewrite ?map.get_put_same in * by eauto; inversions; cbn in *; subst; eauto.
-      all: rewrite  ?map.get_put_diff in * by eauto; inversions;cbn in *; subst; eauto.
-      {
-        eapply atom_interpretation0; rewrite case_match_eqn; cbn.
-        rewrite Hma0; cbn.
-        eauto.
-      }
-      {
-        exfalso.
-        change (map.get map.empty (atom_args a0) = Some d) in Hma0.
-        rewrite map.get_empty in *.
-        congruence.
-      }
-    }
-    {
-      rewrite get_update_diff in * by eauto.
-      apply atom_interpretation0.
-      rewrite Hma; cbn.
-      rewrite Hma0;cbn.
-      eauto.
-    }   
-  Qed.    
 
-  Lemma repair_parent_analysis_sound i a
-    : state_sound_for_model m i
-        (repair_parent_analysis idx symbol
-           symbol_map idx_map idx_trie analysis_result a)
-         (fun i' _ => i = i').
-  Proof.
-    cleanup_context.
-    unfold repair_parent_analysis.
-    bind_with_fn db_lookup_entry_sound.
-    case_match; break; subst.
-    2:{ eapply ret_sound_for_model'; eauto with utils. }
-    case_match.
-    cbn in H4.
-    bind_with_fn get_analyses_sound.
-    cbn beta;intros; subst.
-    case_match.
-    { eapply ret_sound_for_model'; eauto with utils. }
-    bind_with_fn update_analyses_sound.
-    bind_with_fn push_worklist_sound_analysis.
-    apply db_set_entry_sound; auto.
-  Qed.
 
   Lemma state_sound_for_model_Mfoldl A B i P_const P_acc l (f : B -> A -> state instance B) acc
     : (forall (a:A) acc i', In a l ->
