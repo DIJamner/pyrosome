@@ -2763,32 +2763,36 @@ TODO: lemmas in the comment block are out of date
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)).
   Proof.
-    revert xs.
-    induction xs as [| x xs' IH]; intros e Hex Hkeys.
-    { cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      split; [exact Hex|]. apply fields_preserved_refl. }
-    cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
-    cbn [list_Mmap Mbind StateMonad.state_monad].
-    pose proof (find_preserves_fields x e Hex Hkey_x) as Hf.
-    cbn beta in Hf.
-    destruct (find x e) as [y e1] eqn:Hfind_x.
-    cbn [fst snd] in Hf.
-    destruct Hf as (Hex1 & Hf01).
-    assert (Hkeys'_e1 :
-              all (fun i => Sep.has_key i e1.(equiv).(parent)) xs').
-    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
-      revert Hkeys'. clear -Hkey_iff.
-      induction xs' as [| y' ys' IHy']; cbn; auto.
-      intros [Hy' Hys']. split;
-        [apply Hkey_iff; exact Hy' | apply IHy'; exact Hys']. }
-    pose proof (IH e1 Hex1 Hkeys'_e1) as IHapp.
-    cbn beta in IHapp.
-    destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
-    cbn [fst snd] in IHapp.
-    destruct IHapp as (Hex2 & Hf12).
-    cbn [Mret StateMonad.state_monad fst snd].
-    split; [exact Hex2|].
-    eapply fields_preserved_trans; eauto.
+    pose (P := fun (l : list idx) (e : instance) =>
+                 (exists l_uf, union_find_ok lt e.(equiv) l_uf)
+                 /\ all (fun i => Sep.has_key i e.(equiv).(parent)) l).
+    assert (Hstep : forall a l_rest,
+               vc (find a)
+                 (fun (e : instance) (p : (idx * instance)%type) =>
+                    P (a :: l_rest) e ->
+                    P l_rest (snd p) /\ fields_preserved e (snd p))).
+    { intros a l_rest.
+      eapply vc_consequence; [| exact (find_preserves_fields a)].
+      intros e res Hf [Hex Hkeys]. cbn [all] in Hkeys.
+      destruct Hkeys as [Hkey_a Hkeys'].
+      specialize (Hf Hex Hkey_a).
+      destruct Hf as (Hex_post & Hfp).
+      split; [|exact Hfp].
+      split; [exact Hex_post|].
+      destruct Hfp as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      clear -Hkey_iff Hkeys'.
+      induction l_rest as [| y ys IHy]; cbn in *; auto.
+      destruct Hkeys' as [Hy Hys].
+      split; [apply Hkey_iff; exact Hy | apply IHy; exact Hys]. }
+    eapply vc_consequence;
+      [| exact (vc_list_Mmap_inv find P fields_preserved
+                  (fun s _ => fields_preserved_refl s)
+                  fields_preserved_trans Hstep xs)].
+    intros e res Hinv Hex Hkeys.
+    specialize (Hinv (conj Hex Hkeys)).
+    destruct Hinv as [HPnil Hfp].
+    destruct HPnil as [Hex_post _].
+    split; assumption.
   Qed.
 
   (* [canonicalize a] is a sequence of [find] calls (one per arg
@@ -4378,63 +4382,60 @@ TODO: lemmas in the comment block are out of date
            /\ (forall_ne i | denote (snd res) i, Pre i)
            /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
-    induction old_ps as [| a l_rest IH]; intros e Hok Hne Hatoms.
-    { cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      split; [exact Hok|].
-      split.
-      - destruct Hne as [j Hj HPp_all].
-        econstructor; [exact Hj|].
-        intros j' Hj'. specialize (HPp_all j' Hj').
-        destruct HPp_all as [HPi _]; exact HPi.
-      - destruct Hne as [j Hj _].
-        eapply ne_set_maps_to_refl; exact Hj. }
-    cbn [all] in Hatoms.
-    destruct Hatoms as [Hatom_a_e Hatoms_rest_e].
-    (* Destructure the inner ops first, then specialize repair_each_sound
-       and IH using the post-states. *)
-    destruct (db_remove a e) as [_u_db e_db] eqn:Hdb.
-    destruct (canonicalize a e_db) as [a_can e_can] eqn:Hcan.
-    destruct (update_entry a_can e_can) as [_u_up e1] eqn:Hup.
-    (* Step 1: apply repair_each_sound; the conclusion is on e1. *)
-    pose proof (repair_each_sound
-                  (fun i => Pre i /\ all (atom_sound_for_model m i) (a::l_rest))
-                  a l_rest
-                  ltac:(intros i HP; destruct HP as [_ Hall]; cbn [all] in Hall; tauto)
-                  e Hok Hne Hatom_a_e Hatoms_rest_e) as Hre.
-    cbn [Mbind StateMonad.state_monad fst snd] in Hre.
-    rewrite Hdb in Hre. cbn [fst snd] in Hre.
-    rewrite Hcan in Hre. cbn [fst snd] in Hre.
-    rewrite Hup in Hre. cbn [fst snd] in Hre.
-    destruct Hre as (Hok_e1 & HPre_e1 & Hne_e1 & Hatoms_e1).
-    (* Step 2: induction hypothesis on the tail l_rest. *)
-    assert (Hne_tail : (forall_ne i | denote e1 i,
-                         Pre i /\ all (atom_sound_for_model m i) l_rest)).
-    { destruct HPre_e1 as [j' Hj' HPp_all].
+    pose (P := fun (l : list atom) (e : instance) =>
+                 egraph_ok e
+                 /\ (forall_ne i | denote e i,
+                       Pre i /\ all (atom_sound_for_model m i) l)
+                 /\ all (fun a => atom_in_egraph_up_to_equiv a e) l).
+    pose (R := fun e1 e2 : instance => ne_set_maps_to (denote e1) (denote e2)).
+    assert (Hrefl : forall s, P [] s -> R s s).
+    { intros s HP. destruct HP as [_ HP'].
+      destruct HP' as [Hne _].
+      destruct Hne as [j Hj _].
+      eapply ne_set_maps_to_refl; exact Hj. }
+    assert (Hstep : forall a l_rest,
+               vc (@! let _ <- db_remove a in
+                      let a' <- canonicalize a in
+                      (update_entry a'))
+                  (fun e p => P (a :: l_rest) e ->
+                              P l_rest (snd p) /\ R e (snd p))).
+    { intros a l_rest.
+      eapply vc_consequence;
+        [| exact (repair_each_sound
+                    (fun i => Pre i /\ all (atom_sound_for_model m i) (a :: l_rest))
+                    a l_rest
+                    ltac:(intros i HP; destruct HP as [_ Hall];
+                          cbn [all] in Hall; tauto))].
+      intros e res Hf HP. destruct HP as [Hok HP'].
+      destruct HP' as [Hne Hatoms].
+      cbn [all] in Hatoms.
+      destruct Hatoms as [Hatom_a Hatoms_rest].
+      specialize (Hf Hok Hne Hatom_a Hatoms_rest).
+      destruct Hf as (Hok_post & HPre_post & Hne_post & Hatoms_post).
+      split; [|exact Hne_post].
+      split; [exact Hok_post|].
+      split; [|exact Hatoms_post].
+      destruct HPre_post as [j' Hj' HPp_all].
       econstructor; [exact Hj'|].
       intros j Hj. specialize (HPp_all j Hj).
       destruct HPp_all as [HPi Hall]. cbn [all] in Hall.
       destruct Hall as [_ Hrest].
       split; [exact HPi | exact Hrest]. }
-    pose proof (IH e1 Hok_e1 Hne_tail Hatoms_e1) as IHapp.
-    cbn beta in IHapp.
-    destruct (list_Mmap (fun a0 : atom =>
-                           @! let _ <- db_remove a0 in
-                              let a' <- canonicalize a0 in
-                              (update_entry a'))
-                        l_rest e1) as [bs e2] eqn:Hmap.
-    cbn [fst snd] in IHapp.
-    destruct IHapp as (Hok_e2 & HPre_e2 & Hne_e2).
-    (* Reduce Hmap to unfolded form so it matches the cbn-reduced goal. *)
-    cbn [Mbind StateMonad.state_monad] in Hmap.
-    (* Reduce the goal to (e2) form via rewriting. *)
-    cbn [list_Mmap Mbind Mret StateMonad.state_monad fst snd].
-    rewrite Hdb. cbn [Mbind StateMonad.state_monad fst snd].
-    rewrite Hcan. cbn [Mbind StateMonad.state_monad fst snd].
-    rewrite Hup. cbn [Mbind StateMonad.state_monad fst snd].
-    rewrite Hmap. cbn [fst snd].
-    split; [exact Hok_e2|].
-    split; [exact HPre_e2|].
-    eapply ne_set_maps_to_trans; eauto.
+    eapply vc_consequence;
+      [| exact (vc_list_Mmap_inv _ P R Hrefl
+                  (fun e1 e2 e3 => ne_set_maps_to_trans (denote e1) (denote e2) (denote e3))
+                  Hstep old_ps)].
+    intros e res Hinv Hok Hne Hatoms.
+    specialize (Hinv (conj Hok (conj Hne Hatoms))).
+    destruct Hinv as [HPnil Hne_set].
+    destruct HPnil as [Hok_post HPnil'].
+    destruct HPnil' as [HPre_post _].
+    split; [exact Hok_post|].
+    split; [|exact Hne_set].
+    destruct HPre_post as [j' Hj' HPp_all].
+    econstructor; [exact Hj'|].
+    intros j Hj. specialize (HPp_all j Hj).
+    destruct HPp_all as [HPi _]; exact HPi.
   Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
