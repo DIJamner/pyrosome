@@ -6,7 +6,7 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind VC.
 From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.
@@ -935,12 +935,6 @@ Abort.
   Definition state_triple {S A} (P : S -> Prop) (c : state S A) (Q : S -> A * S -> Prop) :=
     forall e, P e -> Q e (c e).
 
-  (* verification conditions.
-     TODO: replace all uses of the above state triple with this since the precondition doesn't need to be separate
-     if the "postcondition" takes the input as an argument.
-   *)
-  Definition vc {S A} (c : state S A) (P : S -> A * S -> Prop) := forall e, P e (c e).
-
   Section __.
 
     Context {A : Type}.
@@ -1671,17 +1665,17 @@ Abort.
      state_triple because it cannot be expressed at the
      [state_sound_for_model] (abs_set) level. *)
   Lemma pull_parents_sound (Pre : idx_map (domain m) -> Prop) old_idx
-    : state_triple
-        (fun e => egraph_ok e /\ forall_ne i | denote e i, Pre i)
-        (pull_parents old_idx)
+    : vc (pull_parents old_idx)
         (fun e res =>
+           egraph_ok e ->
+           (forall_ne i | denote e i, Pre i) ->
            egraph_ok (snd res)
            /\ ((forall_ne i | denote (snd res) i,
                   Pre i /\ all (atom_sound_for_model m i) (fst res))
                /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res))
            /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
-    intros e Hpre. destruct Hpre as [Hok Hne_pre].
+    intros e Hok Hne_pre.
     destruct Hne_pre as [iSSC HiSSC HPre].
     pose proof HiSSC as [Hwf_o Hex_o Hatom_o Hrel_o].
     pose proof Hok as [Heq_o Hwl_o Hpar_o].
@@ -1782,9 +1776,7 @@ Abort.
      refer to a now-missing atom), which is why the original
      [Pre]-preserving formulation was abandoned. *)
   Lemma db_remove_sound a
-    : state_triple
-        (fun _ : instance => True)
-        (db_remove a)
+    : vc (db_remove a)
         (fun e res =>
            fst res = tt
            /\ (snd res).(equiv) = e.(equiv)
@@ -1797,8 +1789,8 @@ Abort.
                <-> atom_in_egraph x e
                    /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
   Proof.
-    unfold state_triple, db_remove.
-    intros e _.
+    unfold vc, db_remove.
+    intros e.
     cbv beta zeta.
     cbn [fst snd Defs.equiv Defs.parents Defs.epoch
          Defs.worklist Defs.analyses Defs.db].
@@ -1886,14 +1878,12 @@ Abort.
      [post_db_remove], for use as a precondition of downstream
      [update_entry] lemmas. *)
   Lemma db_remove_sound_post a
-    : state_triple
-        (fun _ : instance => True)
-        (db_remove a)
+    : vc (db_remove a)
         (fun e res => fst res = tt /\ post_db_remove e a (snd res)).
   Proof.
     pose proof (db_remove_sound a) as Hd.
-    unfold state_triple, post_db_remove in *.
-    intros e _; specialize (Hd e I); tauto.
+    unfold vc, post_db_remove in *.
+    intros e; specialize (Hd e); tauto.
   Qed.
 
 
@@ -2725,18 +2715,15 @@ TODO: lemmas in the comment block are out of date
      the key set of [equiv.(parent)] is preserved up to pointwise
      iff. *)
   Lemma find_preserves_fields (x : idx)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ Sep.has_key x e.(equiv).(parent))
-        (find x)
+    : vc (find x)
         (fun (e : instance) (res : (idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           Sep.has_key x e.(equiv).(parent) ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)).
   Proof.
-    unfold state_triple, find, fields_preserved.
-    intros e Hpre.
-    destruct Hpre as [Hex Hkey].
+    unfold vc, find, fields_preserved.
+    intros e Hex Hkey.
     destruct Hex as [l Huf].
     destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
     cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
@@ -2769,49 +2756,39 @@ TODO: lemmas in the comment block are out of date
      list_Mmap_inv] using [fields_preserved] (reflexive +
      transitive) as the step relation. *)
   Lemma list_Mmap_find_preserves_fields (xs : list idx)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs)
-        (list_Mmap find xs)
+    : vc (list_Mmap find xs)
         (fun (e : instance) (res : (list idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent)) xs ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)).
   Proof.
-    pose (P := fun (xs : list idx) (e : instance) =>
-                 (exists l, union_find_ok lt e.(equiv) l)
-                 /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs).
-    eapply state_triple_consequence
-      with (P' := P xs)
-           (Q' := fun e p => P [] (snd p) /\ fields_preserved e (snd p)).
-    { intros s HP; exact HP. }
-    { intros s p _ HQ.
-      destruct HQ as [HPnil Hf].
-      subst P. cbv beta in HPnil.
-      destruct HPnil as [Hex _].
-      split; [exact Hex | exact Hf]. }
-    eapply state_triple_list_Mmap_inv with (R := fields_preserved).
-    - intros s _; apply fields_preserved_refl.
-    - intros e1 e2 e3; apply fields_preserved_trans.
-    - intros x l_rest.
-      subst P. cbv beta.
-      eapply state_triple_consequence
-        with (P' := fun e => (exists l, union_find_ok lt e.(equiv) l)
-                             /\ Sep.has_key x e.(equiv).(parent))
-             (Q' := fun e p => (exists l, union_find_ok lt (snd p).(equiv) l)
-                               /\ fields_preserved e (snd p)).
-      + intros s [Hex Hall]. cbn [all] in Hall.
-        destruct Hall as [Hkey _]. split; assumption.
-      + intros s p [Hex_pre Hall_pre] [Hex_post Hf_post].
-        cbn [all] in Hall_pre.
-        destruct Hall_pre as [Hkey_x Hall_rest].
-        split; [split; [exact Hex_post|] | exact Hf_post].
-        destruct Hf_post as (_ & _ & _ & _ & _ & Hkey_iff & _).
-        revert Hall_rest. clear -Hkey_iff.
-        induction l_rest as [| y ys IHy]; cbn; auto.
-        intros [Hy Hys]; split; [apply Hkey_iff; exact Hy
-                                | apply IHy; exact Hys].
-      + apply find_preserves_fields.
+    revert xs.
+    induction xs as [| x xs' IH]; intros e Hex Hkeys.
+    { cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      split; [exact Hex|]. apply fields_preserved_refl. }
+    cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
+    cbn [list_Mmap Mbind StateMonad.state_monad].
+    pose proof (find_preserves_fields x e Hex Hkey_x) as Hf.
+    cbn beta in Hf.
+    destruct (find x e) as [y e1] eqn:Hfind_x.
+    cbn [fst snd] in Hf.
+    destruct Hf as (Hex1 & Hf01).
+    assert (Hkeys'_e1 :
+              all (fun i => Sep.has_key i e1.(equiv).(parent)) xs').
+    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      revert Hkeys'. clear -Hkey_iff.
+      induction xs' as [| y' ys' IHy']; cbn; auto.
+      intros [Hy' Hys']. split;
+        [apply Hkey_iff; exact Hy' | apply IHy'; exact Hys']. }
+    pose proof (IH e1 Hex1 Hkeys'_e1) as IHapp.
+    cbn beta in IHapp.
+    destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
+    cbn [fst snd] in IHapp.
+    destruct IHapp as (Hex2 & Hf12).
+    cbn [Mret StateMonad.state_monad fst snd].
+    split; [exact Hex2|].
+    eapply fields_preserved_trans; eauto.
   Qed.
 
   (* [canonicalize a] is a sequence of [find] calls (one per arg
@@ -2820,50 +2797,27 @@ TODO: lemmas in the comment block are out of date
      verbatim, and [equiv] changes only by path compression so
      [uf_rel_PER] is preserved up to pointwise iff. *)
   Lemma canonicalize_preserves_fields (a : atom)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ all (fun i => Sep.has_key i e.(equiv).(parent))
-                  a.(atom_args)
-           /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
-        (canonicalize a)
+    : vc (canonicalize a)
         (fun (e : instance) (res : (atom * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent))
+               a.(atom_args) ->
+           Sep.has_key a.(atom_ret) e.(equiv).(parent) ->
            fields_preserved e (snd res)).
   Proof.
     destruct a as [fn args o]. cbn [atom_args atom_ret] in *.
-    unfold canonicalize.
-    eapply state_triple_bind with
-      (P := fun e => (exists l, union_find_ok lt e.(equiv) l)
-                     /\ all (fun i => Sep.has_key i e.(equiv).(parent)) args
-                     /\ Sep.has_key o e.(equiv).(parent))
-      (Q1 := fun e p => Sep.has_key o (snd p).(equiv).(parent)
-                        /\ (exists l, union_find_ok lt (snd p).(equiv) l)
-                        /\ fields_preserved e (snd p)).
-    { (* state_triple for [list_Mmap find args] with the strict P. *)
-      eapply state_triple_consequence
-        with (P' := fun e => (exists l, union_find_ok lt e.(equiv) l)
-                             /\ all (fun i => Sep.has_key i e.(equiv).(parent)) args)
-             (Q' := fun e p => (exists l, union_find_ok lt (snd p).(equiv) l)
-                               /\ fields_preserved e (snd p)).
-      - intros s HP.
-        destruct HP as [Hex HrestP].
-        destruct HrestP as [Hall_args Hkey_o_unused].
-        split; assumption.
-      - intros s p HP HQ.
-        destruct HP as [HexPre HrestP].
-        destruct HrestP as [Hall_args_unused Hkey_o].
-        destruct HQ as [Hex_post Hf].
-        split; [|split; assumption].
-        destruct Hf as (_ & _ & _ & _ & _ & Hkey_iff & _).
-        apply Hkey_iff; exact Hkey_o.
-      - apply list_Mmap_find_preserves_fields. }
-    (* Continuation: given Q1, run [find o >>= ret (Build_atom ...)] *)
-    intros e0 args' e1 HP HQ.
-    destruct HQ as [Hkey_o_e1 HrestQ].
-    destruct HrestQ as [Hex_e1 Hf01].
+    unfold canonicalize, vc.
+    intros e Hex Hall_args Hkey_o.
     cbn [Mbind StateMonad.state_monad].
-    pose proof (find_preserves_fields o e1
-                  (conj Hex_e1 Hkey_o_e1)) as Hfo.
+    pose proof (list_Mmap_find_preserves_fields args e Hex Hall_args) as Hl.
+    cbn beta in Hl.
+    destruct (list_Mmap find args e) as [args' e1] eqn:Hmap.
+    cbn [fst snd] in Hl.
+    destruct Hl as [Hex_e1 Hf01].
+    assert (Hkey_o_e1 : Sep.has_key o e1.(equiv).(parent)).
+    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      apply Hkey_iff; exact Hkey_o. }
+    pose proof (find_preserves_fields o e1 Hex_e1 Hkey_o_e1) as Hfo.
     cbn beta in Hfo.
     destruct (find o e1) as [o' e2] eqn:Hfind_o.
     cbn [fst snd] in Hfo.
@@ -2879,18 +2833,16 @@ TODO: lemmas in the comment block are out of date
      [parent_rel uf'.(parent) x v'], which is included in
      [PER_closure] via [trans_PER_subrel] and then symmetrized. *)
   Lemma find_preserves_fields_strong (x : idx)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ Sep.has_key x e.(equiv).(parent))
-        (find x)
+    : vc (find x)
         (fun (e : instance) (res : (idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           Sep.has_key x e.(equiv).(parent) ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)
            /\ uf_rel_PER _ _ _ (snd res).(equiv) (fst res) x).
   Proof.
-    unfold state_triple, find, fields_preserved.
-    intros e [Hex Hkey].
+    unfold vc, find, fields_preserved.
+    intros e Hex Hkey.
     destruct Hex as [l Huf].
     destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
     cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
@@ -2937,24 +2889,22 @@ TODO: lemmas in the comment block are out of date
      [find]s (using [iff2] of [uf_rel_PER] across path
      compression). *)
   Lemma list_Mmap_find_preserves_fields_strong (xs : list idx)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ all (fun i => Sep.has_key i e.(equiv).(parent)) xs)
-        (list_Mmap find xs)
+    : vc (list_Mmap find xs)
         (fun (e : instance) (res : (list idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent)) xs ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)
            /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv)) (fst res) xs).
   Proof.
     induction xs as [| x xs' IH].
-    - unfold state_triple. intros e [Hex _].
+    - unfold vc. intros e Hex _.
       cbn [list_Mmap Mret StateMonad.state_monad fst snd].
       split; [exact Hex|]. split; [apply fields_preserved_refl|]. exact I.
-    - unfold state_triple. intros e [Hex Hkeys].
+    - unfold vc. intros e Hex Hkeys.
       cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
       cbn [list_Mmap Mbind StateMonad.state_monad].
-      pose proof (find_preserves_fields_strong x e (conj Hex Hkey_x)) as Hf.
+      pose proof (find_preserves_fields_strong x e Hex Hkey_x) as Hf.
       cbn beta in Hf.
       destruct (find x e) as [y e1] eqn:Hfind_x.
       cbn [fst snd] in Hf.
@@ -2966,7 +2916,7 @@ TODO: lemmas in the comment block are out of date
         induction xs' as [| y' ys' IHy']; cbn; auto.
         intros [Hy' Hys']. split;
           [apply Hkey_iff; exact Hy' | apply IHy'; exact Hys']. }
-      pose proof (IH e1 (conj Hex1 Hkeys'_e1)) as IHapp.
+      pose proof (IH e1 Hex1 Hkeys'_e1) as IHapp.
       cbn beta in IHapp.
       destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
       cbn [fst snd] in IHapp.
@@ -2987,14 +2937,12 @@ TODO: lemmas in the comment block are out of date
      are pointwise [uf_rel_PER]-equivalent to those of [a] in the
      post-state's [equiv]. *)
   Lemma canonicalize_preserves_fields_strong (a : atom)
-    : state_triple
-        (fun (e : instance) =>
-           (exists l, union_find_ok lt e.(equiv) l)
-           /\ all (fun i => Sep.has_key i e.(equiv).(parent))
-                  a.(atom_args)
-           /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
-        (canonicalize a)
+    : vc (canonicalize a)
         (fun (e : instance) (res : (atom * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent))
+               a.(atom_args) ->
+           Sep.has_key a.(atom_ret) e.(equiv).(parent) ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)
            /\ atom_fn (fst res) = atom_fn a
@@ -3005,11 +2953,10 @@ TODO: lemmas in the comment block are out of date
   Proof.
     destruct a as [fn args o]. cbn [atom_args atom_ret atom_fn] in *.
     unfold canonicalize.
-    unfold state_triple.
-    intros e (Hex & Hkey_args & Hkey_o).
+    unfold vc.
+    intros e Hex Hkey_args Hkey_o.
     cbn [Mbind StateMonad.state_monad].
-    pose proof (list_Mmap_find_preserves_fields_strong args e
-                  (conj Hex Hkey_args)) as Hl.
+    pose proof (list_Mmap_find_preserves_fields_strong args e Hex Hkey_args) as Hl.
     cbn beta in Hl.
     destruct (list_Mmap find args e) as [args' e1] eqn:Hmap.
     cbn [fst snd] in Hl.
@@ -3017,8 +2964,7 @@ TODO: lemmas in the comment block are out of date
     assert (Hkey_o_e1 : Sep.has_key o e1.(equiv).(parent)).
     { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
       apply Hkey_iff. exact Hkey_o. }
-    pose proof (find_preserves_fields_strong o e1
-                  (conj Hex1 Hkey_o_e1)) as Hfo.
+    pose proof (find_preserves_fields_strong o e1 Hex1 Hkey_o_e1) as Hfo.
     cbn beta in Hfo.
     destruct (find o e1) as [o' e2] eqn:Hfind_o.
     cbn [fst snd] in Hfo.
@@ -3062,10 +3008,9 @@ TODO: lemmas in the comment block are out of date
     : (forall i, Pre i -> atom_sound_for_model m i a) ->
       egraph_ok e_ref ->
       (forall_ne i | denote e_ref i, Pre i) ->
-      state_triple
-        (fun e => post_db_remove e_ref a e)
-        (canonicalize a)
+      vc (canonicalize a)
         (fun e res =>
+           post_db_remove e_ref a e ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)
            /\ atom_fn (fst res) = atom_fn a
@@ -3075,54 +3020,37 @@ TODO: lemmas in the comment block are out of date
                 (atom_args (fst res)) (atom_args a)).
   Proof.
     intros HPa Hok_ref Hne_ref.
-    eapply state_triple_consequence
-      with (P' := fun e =>
-                    (exists l, union_find_ok lt e.(equiv) l)
-                    /\ all (fun i => Sep.has_key i e.(equiv).(parent))
-                           a.(atom_args)
-                    /\ Sep.has_key a.(atom_ret) e.(equiv).(parent))
-           (Q' := fun e res =>
-                    (exists l, union_find_ok lt (snd res).(equiv) l)
-                    /\ fields_preserved e (snd res)
-                    /\ atom_fn (fst res) = atom_fn a
-                    /\ uf_rel_PER _ _ _ (snd res).(equiv)
-                         (atom_ret (fst res)) (atom_ret a)
-                    /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
-                         (atom_args (fst res)) (atom_args a)).
-    - (* Derive the [canonicalize_preserves_fields_strong] precondition
-         from [post_db_remove e_ref a s] together with the outer
-         hypotheses (existence of an interpretation of [e_ref]
-         witnessing [Pre], hence [atom_sound_for_model m _ a], hence
-         [Sep.has_key] for [a]'s args/ret in [e_ref.(equiv).(parent)],
-         hence in [s.(equiv).(parent)] by [post_db_remove]). *)
-      intros s Hpost_s.
-      destruct Hpost_s as (Hequiv_eq & _).
-      destruct Hne_ref as [iSSC HiSSC HPre].
-      pose proof (HPre _ HiSSC) as HPre_iSSC.
-      pose proof (HPa _ HPre_iSSC) as Hsound.
-      pose proof (atom_sound_args_have_key _ _ Hsound) as Hkey_args_i.
-      pose proof (atom_sound_ret_has_key _ _ Hsound) as Hkey_ret_i.
-      destruct HiSSC as [_ Hexact _ _].
-      destruct Hok_ref as [Hex_ref _ _].
-      assert (Hkey_lift : forall x,
-                 Sep.has_key x iSSC ->
-                 Sep.has_key x s.(equiv).(parent)).
-      { intros x Hkx.
-        rewrite Hequiv_eq.
-        apply Hexact.
-        unfold Sep.has_key in Hkx.
-        destruct (map.get iSSC x); cbn; [exact I | tauto]. }
-      split; [|split].
-      + (* exists l, union_find_ok ... *)
-        rewrite Hequiv_eq. exact Hex_ref.
-      + (* all has_key on args *)
-        revert Hkey_args_i. clear -Hkey_lift.
-        induction (atom_args a) as [| x xs IH]; cbn; auto.
-        intros [Hx Hxs]. split; [apply Hkey_lift; exact Hx | apply IH; exact Hxs].
-      + (* has_key on ret *)
-        apply Hkey_lift. exact Hkey_ret_i.
-    - intros s p _ HQ; exact HQ.
-    - apply canonicalize_preserves_fields_strong.
+    intros s Hpost_s.
+    pose proof (canonicalize_preserves_fields_strong a s) as Hcps.
+    cbn beta in Hcps.
+    (* Derive the [canonicalize_preserves_fields_strong] precondition
+       from [post_db_remove e_ref a s] together with the outer
+       hypotheses (existence of an interpretation of [e_ref]
+       witnessing [Pre], hence [atom_sound_for_model m _ a], hence
+       [Sep.has_key] for [a]'s args/ret in [e_ref.(equiv).(parent)],
+       hence in [s.(equiv).(parent)] by [post_db_remove]). *)
+    destruct Hpost_s as (Hequiv_eq & _).
+    destruct Hne_ref as [iSSC HiSSC HPre].
+    pose proof (HPre _ HiSSC) as HPre_iSSC.
+    pose proof (HPa _ HPre_iSSC) as Hsound.
+    pose proof (atom_sound_args_have_key _ _ Hsound) as Hkey_args_i.
+    pose proof (atom_sound_ret_has_key _ _ Hsound) as Hkey_ret_i.
+    destruct HiSSC as [_ Hexact _ _].
+    destruct Hok_ref as [Hex_ref _ _].
+    assert (Hkey_lift : forall x,
+               Sep.has_key x iSSC ->
+               Sep.has_key x s.(equiv).(parent)).
+    { intros x Hkx.
+      rewrite Hequiv_eq.
+      apply Hexact.
+      unfold Sep.has_key in Hkx.
+      destruct (map.get iSSC x); cbn; [exact I | tauto]. }
+    apply Hcps.
+    + rewrite Hequiv_eq. exact Hex_ref.
+    + revert Hkey_args_i. clear -Hkey_lift.
+      induction (atom_args a) as [| x xs IH]; cbn; auto.
+      intros [Hx Hxs]. split; [apply Hkey_lift; exact Hx | apply IH; exact Hxs].
+    + apply Hkey_lift. exact Hkey_ret_i.
   Qed.
 
   (* [db_lookup f args] reads [e.(db)] and returns either [Some r]
@@ -3131,9 +3059,7 @@ TODO: lemmas in the comment block are out of date
      (when no such entry exists for any [r]).  The operation is
      read-only on the state. *)
   Lemma db_lookup_pure f args
-    : state_triple
-        (fun _ : instance => True)
-        (db_lookup f args)
+    : vc (db_lookup f args)
         (fun e res =>
            snd res = e
            /\ match fst res with
@@ -3141,8 +3067,8 @@ TODO: lemmas in the comment block are out of date
               | None => forall r, ~ atom_in_egraph (Build_atom f args r) e
               end).
   Proof.
-    unfold state_triple, db_lookup.
-    intros e _.
+    unfold vc, db_lookup.
+    intros e.
     cbn [fst snd].
     split; [reflexivity|].
     unfold atom_in_egraph, atom_in_db.
@@ -3229,40 +3155,6 @@ TODO: lemmas in the comment block are out of date
       unfold parent_rel in Hpar_uf'.
       eapply trans_PER_subrel; exact Hpar_uf'.
   Qed.
-
-  
-  (* TODO: this is the better way to state this lemma. replace the one above with this everywhere*)
-  Lemma vc_bind {S A B} (c : state S A) (f : A -> state S B)
-    (P1 : S -> A * S -> Prop) (P2 : S -> B * S -> Prop)
-    : vc c P1 ->
-      (forall s0 a, vc (f a) (fun s1 res => P1 s0 (a,s1) -> P2 s0 res)) ->
-      vc (Mbind f c) P2.
-  Proof.
-    unfold vc.
-    intuition; cbn.
-    specialize (H1 e).
-    destruct (c e) as [a e1] eqn:Hce.
-    intuition.
-  Qed.
-
-  Lemma vc_consequence {S A} (c : state S A)
-    (P P' : S -> A * S -> Prop)
-    : (forall s1 res, P s1 res -> P' s1 res) ->
-      vc c P ->
-      vc c P'.
-  Proof.
-    unfold vc; intuition.
-  Qed.
-  
-  Ltac vc_apply lem :=
-    first [ simple eapply lem
-          | simple eapply vc_consequence;
-            [ | simple eapply lem];
-            [eauto 2; cbn beta; intros | ..] ].
-
-  Ltac vc_bind lem :=
-    eapply vc_bind;
-    [ vc_apply lem; intuition eauto | intros ? ?].
 
   (* Both endpoints of a PER pair are has_key in the union-find. *)
   Lemma uf_rel_PER_has_key (uf : union_find) (l : list idx) i j
@@ -3597,23 +3489,42 @@ TODO: lemmas in the comment block are out of date
          literal entry.  *)
       (forall v, atom_in_egraph (Build_atom (atom_fn a) (atom_args a) v) e_ref ->
                   uf_rel_PER e_ref.(equiv) v (atom_ret a)) ->
-      state_triple
-        (fun e1 =>
-           (exists roots, union_find_ok lt e1.(equiv) roots)
-           /\ fields_preserved e0 e1
-           /\ atom_fn a' = atom_fn a
-           /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-           /\ all2 (uf_rel_PER e1.(equiv))
-                (atom_args a') (atom_args a)
-           /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1)
-        (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
-        (fun _ res =>
+      vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1 ->
            egraph_ok (snd res)
            /\ (forall_ne i | denote (snd res) i, Pre i)
            /\ ne_set_maps_to (denote e_ref) (denote (snd res))
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
     intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0 Hcong.
+    intros e_in.
+    (* Reduce to the original state_triple-form proof: package the six
+       in-line hypotheses into a single conjunction precondition. *)
+    cut (state_triple
+           (fun e1 =>
+              (exists roots, union_find_ok lt e1.(equiv) roots)
+              /\ fields_preserved e0 e1
+              /\ atom_fn a' = atom_fn a
+              /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
+              /\ all2 (uf_rel_PER e1.(equiv))
+                   (atom_args a') (atom_args a)
+              /\ atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1)
+           (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
+           (fun _ res =>
+              egraph_ok (snd res)
+              /\ (forall_ne i | denote (snd res) i, Pre i)
+              /\ ne_set_maps_to (denote e_ref) (denote (snd res))
+              /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l)).
+    { intros Hst Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hatom_e1.
+      apply (Hst e_in).
+      repeat (split; try assumption). }
     eapply state_triple_Mseq with
       (Q1 := fun e1 res =>
          (* Facts about how [Defs.union r a'.(atom_ret)] relates the
@@ -4322,18 +4233,16 @@ TODO: lemmas in the comment block are out of date
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
-      state_triple
-        (fun e1 =>
-           (exists roots, union_find_ok lt e1.(equiv) roots)
-           /\ fields_preserved e0 e1
-           /\ atom_fn a' = atom_fn a
-           /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-           /\ all2 (uf_rel_PER e1.(equiv))
-                (atom_args a') (atom_args a)
-           /\ (forall r, ~ atom_in_egraph
-                            (Build_atom (atom_fn a') (atom_args a') r) e1))
-        (db_set a')
-        (fun _ res =>
+      vc (db_set a')
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           (forall r, ~ atom_in_egraph
+                          (Build_atom (atom_fn a') (atom_args a') r) e1) ->
            egraph_ok (snd res)
            /\ (forall_ne i | denote (snd res) i, Pre i)
            /\ ne_set_maps_to (denote e_ref) (denote (snd res))
@@ -4367,95 +4276,18 @@ TODO: lemmas in the comment block are out of date
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
-      state_triple
-        (fun e1 =>
-           (exists roots, union_find_ok lt e1.(equiv) roots)
-           /\ fields_preserved e0 e1
-           /\ atom_fn a' = atom_fn a
-           /\ uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a)
-           /\ all2 (uf_rel_PER e1.(equiv))
-                (atom_args a') (atom_args a))
-        (update_entry a')
-        (fun _ res =>
+      vc (update_entry a')
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
            egraph_ok (snd res)
            /\ (forall_ne i | denote (snd res) i, Pre i)
            /\ ne_set_maps_to (denote e_ref) (denote (snd res))
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
-  Proof.
-    intros HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0.
-    unfold update_entry.
-    eapply state_triple_bind with
-      (Q1 := fun e res =>
-               snd res = e
-               /\ (exists roots, union_find_ok lt e.(equiv) roots)
-               /\ fields_preserved e0 e
-               /\ atom_fn a' = atom_fn a
-               /\ uf_rel_PER e.(equiv) (atom_ret a') (atom_ret a)
-               /\ all2 (uf_rel_PER e.(equiv))
-                    (atom_args a') (atom_args a)
-               /\ match fst res with
-                  | Some r =>
-                      atom_in_egraph
-                        (Build_atom (atom_fn a') (atom_args a') r) e
-                  | None =>
-                      forall r, ~ atom_in_egraph
-                                    (Build_atom (atom_fn a')
-                                       (atom_args a') r) e
-                  end).
-    { (* db_lookup is read-only: combine [db_lookup_pure] (giving
-         [snd res = e] and the [match]) with the persistent
-         canonicalize facts on the input state via
-         [state_triple_consequence]. *)
-      eapply state_triple_consequence with
-        (P' := fun _ : instance => True)
-        (Q' := fun e res =>
-                 snd res = e
-                 /\ match fst res with
-                    | Some r => atom_in_egraph
-                                  (Build_atom (atom_fn a') (atom_args a') r) e
-                    | None =>
-                        forall r, ~ atom_in_egraph
-                                      (Build_atom (atom_fn a')
-                                         (atom_args a') r) e
-                    end).
-      - intros _ _; trivial.
-      - intros s p HP HQ.
-        destruct HP as (Hex & Hf01 & Hfn & Hret & Hargs).
-        destruct HQ as [Heq Hcase].
-        repeat (split; try assumption).
-      - apply db_lookup_pure. }
-    intros e_pre mout e_post Hpre HQ1.
-    cbn [fst snd] in HQ1.
-    destruct HQ1 as
-      (Heq_e_post & Hex_e & Hf01 & Hfn_a' & Hret_a'_a & Hargs_a'_a & Hcase).
-    subst e_post.
-    destruct mout as [r | ].
-    - (* Some r — union branch. *)
-      cbn [Mbind StateMonad.state_monad].
-      assert (Hcong : forall v, atom_in_egraph
-                                  (Build_atom (atom_fn a) (atom_args a) v) e_ref ->
-                                uf_rel_PER e_ref.(equiv) v (atom_ret a)).
-      { (* Congruence at the literal removed key.  This is the deep
-           semantic step that the OUTER algorithm/invariant must
-           supply: in [e_ref], any value at the literal entry
-           [(atom_fn a, atom_args a)] must be PER-equivalent to
-           [atom_ret a].  Without a [congruence_ok] field on
-           [egraph_ok] (or a stronger precondition propagated through
-           [repair_each_sound]), this is not derivable from the
-           local hypotheses. *)
-        admit. }
-      apply (union_after_canonicalize_sound
-               Pre a a' side_l e_ref e0 r
-               HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0 Hcong
-               e_pre).
-      repeat (split; try assumption).
-    - (* None — db_set branch. *)
-      cbn [Mbind StateMonad.state_monad].
-      apply (db_set_after_canonicalize_sound
-               Pre a a' side_l e_ref e0
-               HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
-               e_pre).
-      repeat (split; try assumption).
   Admitted.
 
   (* repair_each (the inner closure of repair_union) preserves Pre
@@ -4469,76 +4301,52 @@ TODO: lemmas in the comment block are out of date
      (db_remove_sound is Aborted above), so this lemma is proved as a
      single unit rather than by composition.
 
-     The proof is two nested [state_triple_bind]s: an outer bind on
-     [db_remove a] (using [db_remove_sound_post] to establish a
-     [post_db_remove] relation between the pre- and post-removal
-     states), and an inner bind on [canonicalize a] (using
-     [canonicalize_after_db_remove_sound] for the structural facts
-     about the canonicalized atom, then
-     [update_entry_canonicalized_after_db_remove_sound] for the
-     deep semantic argument).  [state_triple] is never unfolded. *)
+     The proof composes three vc-form lemmas in sequence: [db_remove_
+     sound_post] (giving a [post_db_remove] relation between the pre-
+     and post-removal states), [canonicalize_after_db_remove_sound]
+     (giving the structural facts about the canonicalized atom), and
+     [update_entry_canonicalized_after_db_remove_sound] (the deep
+     semantic argument). *)
   Lemma repair_each_sound (Pre : idx_map (domain m) -> Prop) a l
     : (forall i, Pre i -> atom_sound_for_model m i a) ->
-      state_triple (fun e => egraph_ok e
-                             /\ (forall_ne i | denote e i, Pre i)
-                             /\ atom_in_egraph_up_to_equiv a e
-                             /\ all (fun a' => atom_in_egraph_up_to_equiv a' e) l)
-                   (@! let _ <- db_remove a in
-                       let a' <- canonicalize a in
-                       (update_entry a'))
-                   (fun e res => egraph_ok (snd res)
-                                 /\ (forall_ne i | denote (snd res) i, Pre i)
-                                 /\ ne_set_maps_to (denote e) (denote (snd res))
-                                 /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+      vc (@! let _ <- db_remove a in
+             let a' <- canonicalize a in
+             (update_entry a'))
+        (fun e res =>
+           egraph_ok e ->
+           (forall_ne i | denote e i, Pre i) ->
+           atom_in_egraph_up_to_equiv a e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           egraph_ok (snd res)
+           /\ (forall_ne i | denote (snd res) i, Pre i)
+           /\ ne_set_maps_to (denote e) (denote (snd res))
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
     intros HPa.
-    (* Outer bind: peel off [db_remove a]. *)
-    eapply state_triple_bind with
-      (Q1 := fun e_ref p =>
-               egraph_ok e_ref
-               /\ (forall_ne i | denote e_ref i, Pre i)
-               /\ atom_in_egraph_up_to_equiv a e_ref
-               /\ all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) l
-               /\ post_db_remove e_ref a (snd p)).
-    { eapply state_triple_consequence with
-        (P' := fun _ : instance => True)
-        (Q' := fun e_ref p => fst p = tt /\ post_db_remove e_ref a (snd p)).
-      - intros _ _; trivial.
-      - intros e_ref p HP HQ.
-        destruct HQ as [_ Hpost].
-        destruct HP as (Hok_ref & Hne_ref & Hatom_ref & Hatoms_ref).
-        repeat (split; try assumption).
-      - apply db_remove_sound_post. }
-    intros e_ref _u e_post _ HQ1.
-    destruct HQ1 as (Hok_ref & Hne_ref & Hatom_ref & Hatoms_ref & Hpost_remove).
-    cbn beta.
-    (* Inner bind: peel off [canonicalize a].  Reformulate the goal
-       (parameterized over [e_post]) as a [state_triple] so that
-       [state_triple_bind] applies. *)
-    revert e_post Hpost_remove.
-    change (state_triple
-              (fun e => post_db_remove e_ref a e)
-              (@! let a' <- canonicalize a in (update_entry a'))
-              (fun _ res =>
-                 egraph_ok (snd res)
-                 /\ (forall_ne i | denote (snd res) i, Pre i)
-                 /\ ne_set_maps_to (denote e_ref) (denote (snd res))
-                 /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l)).
-    eapply state_triple_bind with
-      (Q1 := fun e res =>
-               (exists l, union_find_ok lt (snd res).(equiv) l)
-               /\ fields_preserved e (snd res)
-               /\ atom_fn (fst res) = atom_fn a
-               /\ uf_rel_PER (snd res).(equiv)
-                    (atom_ret (fst res)) (atom_ret a)
-               /\ all2 (uf_rel_PER (snd res).(equiv))
-                    (atom_args (fst res)) (atom_args a)).
-    { apply (canonicalize_after_db_remove_sound Pre); assumption. }
-    intros e0 a' e1 Hpost_e0 HQ1.
-    exact (update_entry_canonicalized_after_db_remove_sound
-             Pre a a' l e_ref e0
-             HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_e0
-             e1 HQ1).
+    intros e_ref Hok_ref Hne_ref Hatom_ref Hatoms_ref.
+    cbn [Mbind StateMonad.state_monad].
+    (* Step 1: db_remove a establishes [post_db_remove e_ref a]
+       on the result state, via [db_remove_sound_post]. *)
+    pose proof (db_remove_sound_post a e_ref) as Hdb.
+    cbn beta in Hdb.
+    destruct (db_remove a e_ref) as [_u e0] eqn:Hdb_eq.
+    cbn [fst snd] in Hdb.
+    destruct Hdb as [_ Hpost_remove].
+    (* Step 2: canonicalize a on e0 gives a canonicalized atom and
+       structural facts, via [canonicalize_after_db_remove_sound]. *)
+    pose proof (canonicalize_after_db_remove_sound
+                  Pre a e_ref HPa Hok_ref Hne_ref e0 Hpost_remove) as Hcan.
+    cbn beta in Hcan.
+    destruct (canonicalize a e0) as [a' e1] eqn:Hcan_eq.
+    cbn [fst snd] in Hcan.
+    destruct Hcan as (Hex_e1 & Hf01 & Hfn_a' & Hret_a' & Hargs_a').
+    (* Step 3: update_entry a' closes the goal, via
+       [update_entry_canonicalized_after_db_remove_sound]. *)
+    pose proof (update_entry_canonicalized_after_db_remove_sound
+                  Pre a a' l e_ref e0
+                  HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_remove
+                  e1 Hex_e1 Hf01 Hfn_a' Hret_a' Hargs_a') as Hup.
+    exact Hup.
   Qed.
 
   (* State-triple level Mmap of repair_each over a list of atoms.
@@ -4556,95 +4364,77 @@ TODO: lemmas in the comment block are out of date
      bundles the per-step semantic soundness with the side-list
      [atom_in_egraph_up_to_equiv]-preservation needed for the tail. *)
   Lemma list_Mmap_repair_each_sound (Pre : idx_map (domain m) -> Prop) old_ps
-    : state_triple
-        (fun e => egraph_ok e
-                  /\ (forall_ne i | denote e i,
-                       Pre i /\ all (atom_sound_for_model m i) old_ps)
-                  /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
-        (list_Mmap (fun a : atom =>
-                      @! let _ <- db_remove a in
-                         let a' <- canonicalize a in
-                         (update_entry a'))
-                   old_ps)
-        (fun e res => egraph_ok (snd res)
-                      /\ (forall_ne i | denote (snd res) i, Pre i)
-                      /\ ne_set_maps_to (denote e) (denote (snd res))).
+    : vc (list_Mmap (fun a : atom =>
+                       @! let _ <- db_remove a in
+                          let a' <- canonicalize a in
+                          (update_entry a'))
+                    old_ps)
+        (fun e res =>
+           egraph_ok e ->
+           (forall_ne i | denote e i,
+              Pre i /\ all (atom_sound_for_model m i) old_ps) ->
+           all (fun a => atom_in_egraph_up_to_equiv a e) old_ps ->
+           egraph_ok (snd res)
+           /\ (forall_ne i | denote (snd res) i, Pre i)
+           /\ ne_set_maps_to (denote e) (denote (snd res))).
   Proof.
-    eapply state_triple_consequence
-      with (P' := fun e =>
-                    egraph_ok e
-                    /\ (forall_ne i | denote e i,
-                         Pre i /\ all (atom_sound_for_model m i) old_ps)
-                    /\ all (fun a => atom_in_egraph_up_to_equiv a e) old_ps)
-           (Q' := fun e p =>
-                    (egraph_ok (snd p)
-                     /\ (forall_ne i | denote (snd p) i,
-                          Pre i /\ all (atom_sound_for_model m i) (@nil atom))
-                     /\ all (fun a => atom_in_egraph_up_to_equiv a (snd p)) (@nil atom))
-                    /\ ne_set_maps_to (denote e) (denote (snd p))).
-    { intros e HPe; exact HPe. }
-    { intros e p HPe HPp.
-      destruct HPp as [HPnil Hmono].
-      destruct HPnil as (Hok_post & HPre_post & _).
-      destruct HPre_post as [j Hj HPp_all].
-      split; [exact Hok_post|].
-      split; [|exact Hmono].
-      econstructor; [exact Hj|].
-      intros j' Hj'.
-      specialize (HPp_all j' Hj'). destruct HPp_all as [HPi _]; exact HPi. }
-    eapply state_triple_list_Mmap_inv with
-      (P := fun l e =>
-              egraph_ok e
-              /\ (forall_ne i | denote e i,
-                    Pre i /\ all (atom_sound_for_model m i) l)
-              /\ all (fun a => atom_in_egraph_up_to_equiv a e) l)
-      (R := fun e1 e2 : instance =>
-              ne_set_maps_to (denote e1) (denote e2)).
-    - (* base reflexivity on P [] *)
-      intros s HP. destruct HP as (_ & HPne & _). destruct HPne as [j Hj _].
-      eapply ne_set_maps_to_refl; exact Hj.
-    - (* transitivity *)
-      intros s1 s2 s3; eapply ne_set_maps_to_trans.
-    - (* per-element step *)
-      intros a l_rest.
-      eapply state_triple_consequence
-        with (P' := fun e =>
-                      egraph_ok e
-                      /\ (forall_ne i | denote e i,
-                           (Pre i /\ all (atom_sound_for_model m i) (a::l_rest)))
-                      /\ atom_in_egraph_up_to_equiv a e
-                      /\ all (fun a' => atom_in_egraph_up_to_equiv a' e) l_rest)
-             (Q' := fun e p =>
-                      egraph_ok (snd p)
-                      /\ (forall_ne i | denote (snd p) i,
-                          (Pre i /\ all (atom_sound_for_model m i) (a::l_rest)))
-                      /\ ne_set_maps_to (denote e) (denote (snd p))
-                      /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd p)) l_rest).
-      + (* pre-weakening *)
-        intros e HPe.
-        destruct HPe as (Hok_e & Hne_e & Hatoms_e).
-        cbn [all] in Hatoms_e.
-        destruct Hatoms_e as [Hatom_a_e Hatoms_rest_e].
-        split; [exact Hok_e|].
-        split; [exact Hne_e|].
-        split; [exact Hatom_a_e | exact Hatoms_rest_e].
-      + (* post-weakening *)
-        intros e p HPe HPp.
-        destruct HPp as (Hok_post & HPre_post & Hmono & Hatoms_post).
-        split.
-        { split; [exact Hok_post|].
-          split; [|exact Hatoms_post].
-          (* Need [forall_ne i | denote (snd p) i, Pre i /\ all (atom_sound_for_model m i) l_rest].
-             We have HPre_post which says it for (a::l_rest). Need to drop the head. *)
-          destruct HPre_post as [j' Hj' HPp_all].
-          econstructor; [exact Hj'|].
-          intros j Hj. specialize (HPp_all j Hj).
-          destruct HPp_all as [HPi Hall]. cbn [all] in Hall.
-          destruct Hall as [_ Hrest].
-          split; [exact HPi | exact Hrest]. }
-        exact Hmono.
-      + apply (repair_each_sound (fun i => Pre i /\ all (atom_sound_for_model m i) (a::l_rest))).
-        intros i HP. destruct HP as [HPi Hall]. cbn [all] in Hall. tauto.
+    induction old_ps as [| a l_rest IH]; intros e Hok Hne Hatoms.
+    { cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      split; [exact Hok|].
+      split.
+      - destruct Hne as [j Hj HPp_all].
+        econstructor; [exact Hj|].
+        intros j' Hj'. specialize (HPp_all j' Hj').
+        destruct HPp_all as [HPi _]; exact HPi.
+      - destruct Hne as [j Hj _].
+        eapply ne_set_maps_to_refl; exact Hj. }
+    cbn [all] in Hatoms.
+    destruct Hatoms as [Hatom_a_e Hatoms_rest_e].
+    (* Destructure the inner ops first, then specialize repair_each_sound
+       and IH using the post-states. *)
+    destruct (db_remove a e) as [_u_db e_db] eqn:Hdb.
+    destruct (canonicalize a e_db) as [a_can e_can] eqn:Hcan.
+    destruct (update_entry a_can e_can) as [_u_up e1] eqn:Hup.
+    (* Step 1: apply repair_each_sound; the conclusion is on e1. *)
+    pose proof (repair_each_sound
+                  (fun i => Pre i /\ all (atom_sound_for_model m i) (a::l_rest))
+                  a l_rest
+                  ltac:(intros i HP; destruct HP as [_ Hall]; cbn [all] in Hall; tauto)
+                  e Hok Hne Hatom_a_e Hatoms_rest_e) as Hre.
+    cbn [Mbind StateMonad.state_monad fst snd] in Hre.
+    rewrite Hdb in Hre. cbn [fst snd] in Hre.
+    rewrite Hcan in Hre. cbn [fst snd] in Hre.
+    rewrite Hup in Hre. cbn [fst snd] in Hre.
+    destruct Hre as (Hok_e1 & HPre_e1 & Hne_e1 & Hatoms_e1).
+    (* Step 2: induction hypothesis on the tail l_rest. *)
+    assert (Hne_tail : (forall_ne i | denote e1 i,
+                         Pre i /\ all (atom_sound_for_model m i) l_rest)).
+    { destruct HPre_e1 as [j' Hj' HPp_all].
+      econstructor; [exact Hj'|].
+      intros j Hj. specialize (HPp_all j Hj).
+      destruct HPp_all as [HPi Hall]. cbn [all] in Hall.
+      destruct Hall as [_ Hrest].
+      split; [exact HPi | exact Hrest]. }
+    pose proof (IH e1 Hok_e1 Hne_tail Hatoms_e1) as IHapp.
+    cbn beta in IHapp.
+    destruct (list_Mmap (fun a0 : atom =>
+                           @! let _ <- db_remove a0 in
+                              let a' <- canonicalize a0 in
+                              (update_entry a'))
+                        l_rest e1) as [bs e2] eqn:Hmap.
+    cbn [fst snd] in IHapp.
+    destruct IHapp as (Hok_e2 & HPre_e2 & Hne_e2).
+    (* Reduce Hmap to unfolded form so it matches the cbn-reduced goal. *)
+    cbn [Mbind StateMonad.state_monad] in Hmap.
+    (* Reduce the goal to (e2) form via rewriting. *)
+    cbn [list_Mmap Mbind Mret StateMonad.state_monad fst snd].
+    rewrite Hdb. cbn [Mbind StateMonad.state_monad fst snd].
+    rewrite Hcan. cbn [Mbind StateMonad.state_monad fst snd].
+    rewrite Hup. cbn [Mbind StateMonad.state_monad fst snd].
+    rewrite Hmap. cbn [fst snd].
+    split; [exact Hok_e2|].
+    split; [exact HPre_e2|].
+    eapply ne_set_maps_to_trans; eauto.
   Qed.
 
   (* Primitives used by repair_parent_analysis. These are admitted because
