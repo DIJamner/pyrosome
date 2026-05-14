@@ -1881,9 +1881,8 @@ Abort.
     : vc (db_remove a)
         (fun e res => fst res = tt /\ post_db_remove e a (snd res)).
   Proof.
-    pose proof (db_remove_sound a) as Hd.
-    unfold vc, post_db_remove in *.
-    intros e; specialize (Hd e); tauto.
+    eapply vc_consequence; [| exact (db_remove_sound a)].
+    unfold post_db_remove; intuition.
   Qed.
 
 
@@ -2713,125 +2712,7 @@ TODO: lemmas in the comment block are out of date
      union-find well-formedness is preserved with the same root
      list, and the equivalence relation [uf_rel_PER] together with
      the key set of [equiv.(parent)] is preserved up to pointwise
-     iff. *)
-  Lemma find_preserves_fields (x : idx)
-    : vc (find x)
-        (fun (e : instance) (res : (idx * instance)%type) =>
-           (exists l, union_find_ok lt e.(equiv) l) ->
-           Sep.has_key x e.(equiv).(parent) ->
-           (exists l, union_find_ok lt (snd res).(equiv) l)
-           /\ fields_preserved e (snd res)).
-  Proof.
-    unfold vc, find, fields_preserved.
-    intros e Hex Hkey.
-    destruct Hex as [l Huf].
-    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
-    cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
-         Defs.analyses Defs.equiv].
-    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
-      by (intros; Lia.lia).
-    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
-                  _ _ _ _ _ Huf Hkey Hfind) as Hspec.
-    destruct Hspec as (Huf' & _ & _ & _ & Hlim_iff & Hkey_iff).
-    pose proof Huf as [Hf_old _ _ _ _].
-    pose proof Huf' as [Hf_new _ _ _ _].
-    cbn in Hf_old, Hf_new.
-    split; [exists l; exact Huf'|].
-    repeat (split; [reflexivity|]).
-    split.
-    { intros y; split; intros Hk; apply Hkey_iff; exact Hk. }
-    intros i j.
-    unfold uf_rel_PER.
-    pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
-                  _ _ Hf_old i j) as HP1.
-    pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
-                  _ _ Hf_new i j) as HP2.
-    rewrite HP1, HP2.
-    split; intros (r & Hl1 & Hl2); exists r;
-      intuition (try apply Hlim_iff; auto).
-  Qed.
-
-  (* Iterating [find] over a list of indices preserves the same
-     structural facts as a single [find]. Proven by [state_triple_
-     list_Mmap_inv] using [fields_preserved] (reflexive +
-     transitive) as the step relation. *)
-  Lemma list_Mmap_find_preserves_fields (xs : list idx)
-    : vc (list_Mmap find xs)
-        (fun (e : instance) (res : (list idx * instance)%type) =>
-           (exists l, union_find_ok lt e.(equiv) l) ->
-           all (fun i => Sep.has_key i e.(equiv).(parent)) xs ->
-           (exists l, union_find_ok lt (snd res).(equiv) l)
-           /\ fields_preserved e (snd res)).
-  Proof.
-    pose (P := fun (l : list idx) (e : instance) =>
-                 (exists l_uf, union_find_ok lt e.(equiv) l_uf)
-                 /\ all (fun i => Sep.has_key i e.(equiv).(parent)) l).
-    assert (Hstep : forall a l_rest,
-               vc (find a)
-                 (fun (e : instance) (p : (idx * instance)%type) =>
-                    P (a :: l_rest) e ->
-                    P l_rest (snd p) /\ fields_preserved e (snd p))).
-    { intros a l_rest.
-      eapply vc_consequence; [| exact (find_preserves_fields a)].
-      intros e res Hf [Hex Hkeys]. cbn [all] in Hkeys.
-      destruct Hkeys as [Hkey_a Hkeys'].
-      specialize (Hf Hex Hkey_a).
-      destruct Hf as (Hex_post & Hfp).
-      split; [|exact Hfp].
-      split; [exact Hex_post|].
-      destruct Hfp as (_ & _ & _ & _ & _ & Hkey_iff & _).
-      clear -Hkey_iff Hkeys'.
-      induction l_rest as [| y ys IHy]; cbn in *; auto.
-      destruct Hkeys' as [Hy Hys].
-      split; [apply Hkey_iff; exact Hy | apply IHy; exact Hys]. }
-    eapply vc_consequence;
-      [| exact (vc_list_Mmap_inv find P fields_preserved
-                  (fun s _ => fields_preserved_refl s)
-                  fields_preserved_trans Hstep xs)].
-    intros e res Hinv Hex Hkeys.
-    specialize (Hinv (conj Hex Hkeys)).
-    destruct Hinv as [HPnil Hfp].
-    destruct HPnil as [Hex_post _].
-    split; assumption.
-  Qed.
-
-  (* [canonicalize a] is a sequence of [find] calls (one per arg
-     and one for the return idx) followed by a [Build_atom]. As
-     such, every instance field except [equiv] is preserved
-     verbatim, and [equiv] changes only by path compression so
-     [uf_rel_PER] is preserved up to pointwise iff. *)
-  Lemma canonicalize_preserves_fields (a : atom)
-    : vc (canonicalize a)
-        (fun (e : instance) (res : (atom * instance)%type) =>
-           (exists l, union_find_ok lt e.(equiv) l) ->
-           all (fun i => Sep.has_key i e.(equiv).(parent))
-               a.(atom_args) ->
-           Sep.has_key a.(atom_ret) e.(equiv).(parent) ->
-           fields_preserved e (snd res)).
-  Proof.
-    destruct a as [fn args o]. cbn [atom_args atom_ret] in *.
-    unfold canonicalize, vc.
-    intros e Hex Hall_args Hkey_o.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (list_Mmap_find_preserves_fields args e Hex Hall_args) as Hl.
-    cbn beta in Hl.
-    destruct (list_Mmap find args e) as [args' e1] eqn:Hmap.
-    cbn [fst snd] in Hl.
-    destruct Hl as [Hex_e1 Hf01].
-    assert (Hkey_o_e1 : Sep.has_key o e1.(equiv).(parent)).
-    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
-      apply Hkey_iff; exact Hkey_o. }
-    pose proof (find_preserves_fields o e1 Hex_e1 Hkey_o_e1) as Hfo.
-    cbn beta in Hfo.
-    destruct (find o e1) as [o' e2] eqn:Hfind_o.
-    cbn [fst snd] in Hfo.
-    destruct Hfo as [_ Hf12].
-    cbn [Mret StateMonad.state_monad fst snd].
-    apply (fields_preserved_trans _ _ _ Hf01 Hf12).
-  Qed.
-
-  (* Strengthened [find_preserves_fields]: in addition to fields
-     preservation, the returned canonical idx [v'] is
+     iff.  Additionally, the returned canonical idx [v'] is
      [uf_rel_PER]-equivalent to the input [x] in the post-state's
      [equiv].  The extra conjunct comes from [find_spec]'s
      [parent_rel uf'.(parent) x v'], which is included in
@@ -2884,14 +2765,14 @@ TODO: lemmas in the comment block are out of date
         [apply PER_clo_base; eassumption | exact IHHpr].
   Qed.
 
-  (* Strengthened [list_Mmap_find_preserves_fields]: additionally,
-     the returned canonical idxs are [uf_rel_PER]-equivalent to
-     their inputs (pointwise via [all2]) in the post-state's
-     [equiv].  Proven by direct induction on [xs] rather than via
-     [state_triple_list_Mmap_inv], since the per-element canonical-
-     equivalence outputs need to be carried through subsequent
-     [find]s (using [iff2] of [uf_rel_PER] across path
-     compression). *)
+  (* Iterating [find] over a list of indices preserves the same
+     structural facts as a single [find], and additionally the
+     returned canonical idxs are [uf_rel_PER]-equivalent to their
+     inputs (pointwise via [all2]) in the post-state's [equiv].
+     Proven by direct induction on [xs] rather than via
+     [vc_list_Mmap_inv], since the per-element canonical-equivalence
+     outputs need to be carried through subsequent [find]s (using
+     [iff2] of [uf_rel_PER] across path compression). *)
   Lemma list_Mmap_find_preserves_fields_strong (xs : list idx)
     : vc (list_Mmap find xs)
         (fun (e : instance) (res : (list idx * instance)%type) =>
@@ -2935,11 +2816,15 @@ TODO: lemmas in the comment block are out of date
       + exact Hall_ys'_xs'.
   Qed.
 
-  (* Strengthened [canonicalize_preserves_fields]: additionally, the
-     returned atom [a'] has the same [atom_fn] as [a] (by
-     construction of [Build_atom]) and its [atom_ret]/[atom_args]
-     are pointwise [uf_rel_PER]-equivalent to those of [a] in the
-     post-state's [equiv]. *)
+  (* [canonicalize a] is a sequence of [find] calls (one per arg
+     and one for the return idx) followed by a [Build_atom]. As
+     such, every instance field except [equiv] is preserved
+     verbatim, [equiv] changes only by path compression (so
+     [uf_rel_PER] is preserved up to pointwise iff), the returned
+     atom [a'] has the same [atom_fn] as [a] (by construction of
+     [Build_atom]), and its [atom_ret]/[atom_args] are pointwise
+     [uf_rel_PER]-equivalent to those of [a] in the post-state's
+     [equiv]. *)
   Lemma canonicalize_preserves_fields_strong (a : atom)
     : vc (canonicalize a)
         (fun (e : instance) (res : (atom * instance)%type) =>
@@ -2996,16 +2881,12 @@ TODO: lemmas in the comment block are out of date
      compression (preserving its key set and [uf_rel_PER]), and
      [a'] is canonically equivalent to [a] in [e1.(equiv)].
 
-     Reduction.  Combine [canonicalize_preserves_fields] (gives the
-     seven [fields_preserved] conjuncts) with the [find_spec] used
-     inside each [find] call of [canonicalize] (gives the [atom_fn]
-     equality and the [uf_rel_PER] facts about [a']).  To invoke
-     [canonicalize_preserves_fields] we need the [Sep.has_key]
-     facts about [a]'s args/ret, derived from [HPa]+[Hne_ref] via
+     Reduction.  Apply [canonicalize_preserves_fields_strong]; its
+     [Sep.has_key] preconditions about [a]'s args/ret are derived
+     from [HPa]+[Hne_ref] via
      [atom_sound_args_have_key]/[atom_sound_ret_has_key],
      [interpretation_exact], and [post_db_remove ⇒ e.(equiv) =
-     e_ref.(equiv)]. A routine ~100-line lifting; orthogonal to the
-     deep semantic argument in
+     e_ref.(equiv)].  Orthogonal to the deep semantic argument in
      [update_entry_canonicalized_after_db_remove_sound]. *)
   Lemma canonicalize_after_db_remove_sound (Pre : idx_map (domain m) -> Prop)
     a (e_ref : instance)
