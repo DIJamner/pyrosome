@@ -4659,13 +4659,67 @@ TODO: lemmas in the comment block are out of date
     intuition.
   Qed.
 
-  (* TODO: prove. The composed [db_remove a; canonicalize a; update_entry a']
-     preserves egraph_ok and denote when [a] is already in the egraph
-     (up to canonical equivalence): update_entry restores a canonically-
-     equivalent atom, so the egraph is the same modulo canonicalization.
-     The side-list [l] of other atoms (used to thread invariants through
-     [list_Mmap]) is also preserved. Depends on the still-admitted
+  (* An atom that is canonically present in the egraph has all of its
+     args and ret as keys in the union-find: pick the witness [aa] in
+     the db (whose args/ret are in the equiv via egraph_ok), and the
+     pairwise PER-equivalence with [a] transfers has_key. *)
+  Lemma atom_in_egraph_up_to_equiv_has_key (e : instance) (a : atom)
+    : egraph_ok e ->
+      atom_in_egraph_up_to_equiv a e ->
+      all (fun i => Sep.has_key i e.(equiv).(parent)) a.(atom_args)
+      /\ Sep.has_key a.(atom_ret) e.(equiv).(parent).
+  Proof.
+    intros Hok Hex.
+    destruct Hok as [Heq Hwl Hpa].
+    destruct Heq as [roots Huf_l].
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+    destruct Hex as (aa & (Hfn & Hargs & Hret) & _).
+    split.
+    - clear Hret Hfn.
+      remember (atom_args aa) as args_aa eqn:Eaa.
+      clear Eaa aa.
+      revert args_aa Hargs.
+      induction a.(atom_args) as [|x xs IH];
+        destruct args_aa as [|y ys]; cbn;
+        try contradiction; auto.
+      intros [Hxy Hxs_ys].
+      split.
+      + apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hxy).
+      + apply (IH ys); exact Hxs_ys.
+    - apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hret).
+  Qed.
+
+  (* TODO: prove. The deep semantic step inside [repair_each]: given
+     that [a] was in the egraph [e_ref] before [db_remove a] produced
+     [e0], and [a'] is the canonicalization of [a] in [e1] (with
+     [equiv]-only changes from [e0] to [e1]), [update_entry a']
+     applied in [e1] restores egraph_ok and denote w.r.t. [e_ref].
+     This is the denote-iff analog of the still-admitted
      [update_entry_canonicalized_after_db_remove_sound]. *)
+  Lemma update_entry_canonicalized_denote_iff a a' side_l (e_ref e0 : instance)
+    : vc (update_entry a')
+        (fun e1 res =>
+           egraph_ok e_ref ->
+           atom_in_egraph_up_to_equiv a e_ref ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+           post_db_remove e_ref a e0 ->
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv)) (atom_args a') (atom_args a) ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+  Proof.
+  Admitted.
+
+  (* Composes the three pieces: [db_remove a] gives [post_db_remove],
+     [canonicalize a] uses the has-key facts derived from
+     [atom_in_egraph_up_to_equiv a e_ref] to produce a canonically-
+     equivalent atom [a'] in a state with [equiv]-only changes, and
+     [update_entry_canonicalized_denote_iff] finishes by restoring
+     egraph_ok and denote w.r.t. the original [e_ref]. *)
   Lemma repair_each_denote_iff a l
     : vc (@! let _ <- db_remove a in
              let a' <- canonicalize a in
@@ -4678,7 +4732,38 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
-  Admitted.
+    unfold vc; intros e_ref.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (db_remove_sound_post a e_ref) as Hdbr.
+    destruct (db_remove a e_ref) as [u0 e0] eqn:Hdb.
+    cbn [fst snd] in Hdbr.
+    destruct Hdbr as [_ Hpost].
+    pose proof (canonicalize_preserves_fields_strong a e0) as Hcan.
+    destruct (canonicalize a e0) as [a' e1] eqn:Hca.
+    cbn beta in Hcan. cbn [fst snd] in Hcan.
+    pose proof (update_entry_canonicalized_denote_iff a a' l e_ref e0 e1) as Hupd.
+    cbn beta in Hupd.
+    destruct (update_entry a' e1) as [u2 e2] eqn:Hup.
+    cbn [fst snd] in Hupd |- *.
+    intros Hok_ref Hatom_ref Hatoms_ref.
+    pose proof Hpost as Hpost_full.
+    destruct Hpost as (Hequiv_eq & _).
+    pose proof (atom_in_egraph_up_to_equiv_has_key e_ref a Hok_ref Hatom_ref)
+      as [Hkargs Hkret].
+    assert (Hkargs_e0 : all (fun i => Sep.has_key i e0.(equiv).(parent))
+                              a.(atom_args)).
+    { rewrite Hequiv_eq. exact Hkargs. }
+    assert (Hkret_e0 : Sep.has_key a.(atom_ret) e0.(equiv).(parent)).
+    { rewrite Hequiv_eq. exact Hkret. }
+    pose proof Hok_ref as Hok_ref_orig.
+    destruct Hok_ref as [Heq_ref Hwl Hpa].
+    destruct Heq_ref as [roots Huf_ref].
+    assert (Hex_e0 : exists l, union_find_ok lt e0.(equiv) l).
+    { exists roots. rewrite Hequiv_eq. exact Huf_ref. }
+    specialize (Hcan Hex_e0 Hkargs_e0 Hkret_e0).
+    destruct Hcan as (Hex_e1 & Hfp01 & Hfn_a' & Hret_a' & Hargs_a').
+    apply Hupd; auto.
+  Qed.
 
   (* Iterating [repair_each] over a list of atoms-in-egraph preserves
      egraph_ok and denote, by induction with [repair_each_denote_iff]
