@@ -4696,7 +4696,28 @@ TODO: lemmas in the comment block are out of date
      union [union r (atom_ret a')] preserves egraph_ok and the denote
      relation pointwise w.r.t. the pre-[db_remove] state [e_ref].
      This is the denote-iff analog of the proved
-     [union_after_canonicalize_sound]. *)
+     [union_after_canonicalize_sound].
+
+     The forward direction (denote e_ref i -> denote (snd res) i)
+     generalizes the existing proof's [HiSSC_post] construction: the
+     new PER pair [r ~ atom_ret a'] is implied by atom_in_db
+     interpretations under any sound i.
+
+     The backward direction (denote (snd res) i -> denote e_ref i)
+     needs the congruence invariant the existing proof captures as
+     the [Hcong] precondition: if [(atom_fn a, atom_args a, v)] is in
+     [e_ref.db], then [v ~ atom_ret a] in [e_ref.equiv]. This is
+     needed because the removed atom must be soundly interpretable by
+     any i sound for the post-state, and the equivalence between the
+     literal removed key's value and [atom_ret a] is not derivable
+     from [egraph_ok e_ref] alone (egraph_ok doesn't include a
+     congruence-closure invariant).
+
+     To discharge this admit, either: (a) strengthen [egraph_ok] with
+     a congruence-closure invariant and re-prove dependents, or (b)
+     thread an explicit congruence precondition through the chain
+     ([repair_each_denote_iff] -> [update_entry_canonicalized_denote_
+     iff] -> branches). *)
   Lemma union_after_canonicalize_denote_iff
     a a' side_l (e_ref e0 : instance) (r : idx)
     : egraph_ok e_ref ->
@@ -4721,7 +4742,14 @@ TODO: lemmas in the comment block are out of date
   (* TODO: prove. Denote-iff form of the [None] branch: when
      [db_lookup] returned [None], we reinstall the canonicalized atom
      via [db_set a']. Mirrors the still-admitted
-     [db_set_after_canonicalize_sound]. *)
+     [db_set_after_canonicalize_sound].
+
+     Same congruence-closure issue as the union branch: the removed
+     literal (atom_fn a, atom_args a) entry's value v_old needs to
+     be PER-equivalent to atom_ret a in e_ref.equiv to interpret the
+     removed atom soundly from a post-state interpretation. See the
+     comment on [union_after_canonicalize_denote_iff] for the two
+     resolution options. *)
   Lemma db_set_after_canonicalize_denote_iff
     a a' side_l (e_ref e0 : instance)
     : egraph_ok e_ref ->
