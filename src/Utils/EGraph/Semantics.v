@@ -4392,6 +4392,196 @@ TODO: lemmas in the comment block are out of date
       intros r i HP. destruct HP as [HPi _]; exact HPi.
   Qed.
 
+  (* [pull_worklist] only swaps the worklist field of the instance for
+     [[]]; denote/egraph_ok don't read the worklist outside of
+     [worklist_ok], which trivially holds for [[]]. *)
+  Lemma pull_worklist_denote_iff
+    : vc (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, pull_worklist; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    split.
+    { constructor; cbn; auto. }
+    intros j; split; intros [Hwf Hex Ha Hr]; constructor; cbn in *; auto.
+  Qed.
+
+  (* If [x] is not in [equiv]'s parent map, [UnionFind.find] returns
+     the union-find unchanged. Used to handle the no-key case in
+     [find_denote_iff]. *)
+  Lemma find_no_key_identity (e : instance) x
+    : map.get e.(equiv).(parent) x = None ->
+      UnionFind.find e.(equiv) x = (e.(equiv), x).
+  Proof.
+    intros Hgx.
+    unfold UnionFind.find.
+    destruct e.(equiv) as [ra pa mr l] eqn:Heq.
+    cbn in Hgx |- *.
+    destruct mr; cbn; rewrite Hgx; reflexivity.
+  Qed.
+
+  (* [find] only updates [equiv] via path compression; both [egraph_ok]
+     and [denote] are preserved. Path compression keeps the union-find
+     well-formed with the same root list and preserves
+     [uf_rel_PER] up to [iff2]. *)
+  Lemma find_denote_iff x
+    : vc (find x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, find; intros e Hok.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [fst snd].
+    destruct Hok as [Heq Hwl Hpa].
+    destruct Heq as [roots Huf_l].
+    pose (e' := {| db := db e; equiv := uf'; parents := parents e;
+                   epoch := epoch e; worklist := worklist e;
+                   analyses := analyses e;
+                   log := log idx symbol symbol_map idx_map idx_trie
+                            analysis_result e |}).
+    change ({| db := db e; equiv := uf'; parents := parents e;
+               epoch := epoch e; worklist := worklist e;
+               analyses := analyses e;
+               log := log idx symbol symbol_map idx_map idx_trie
+                        analysis_result e |}) with e'.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hcommon : union_find_ok lt e'.(equiv) roots
+                     /\ iff2 (limit (parent_rel idx (idx_map idx)
+                                       (equiv e).(parent)))
+                            (limit (parent_rel idx (idx_map idx)
+                                      e'.(equiv).(parent)))).
+    { destruct (map.get e.(equiv).(parent) x) as [px|] eqn:Hgx.
+      - assert (Hkx : Sep.has_key x e.(equiv).(parent)).
+        { unfold Sep.has_key. rewrite Hgx. exact I. }
+        pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                      _ _ _ _ _ Huf_l Hkx Hfind) as Hspec.
+        destruct Hspec as (Huf'_l & _ & _ & _ & Hlim_iff & _).
+        subst e'; cbn. split; [exact Huf'_l | exact Hlim_iff].
+      - rewrite (find_no_key_identity e x Hgx) in Hfind.
+        injection Hfind; intros; subst uf' v'.
+        subst e'; cbn.
+        split; [exact Huf_l|].
+        intros i j; reflexivity. }
+    destruct Hcommon as [Huf'_l Hlim_iff].
+    assert (Hiff : forall j, (egraph_ok e /\ denote e j)
+                             <-> (egraph_ok e' /\ denote e' j)).
+    { intros j. apply (egraph_sound_for_interpretation_iff_equiv j e e' roots);
+        subst e'; cbn; auto. }
+    assert (Hper_iff : iff2 (uf_rel_PER (equiv e)) (uf_rel_PER (equiv e'))).
+    { pose proof Huf_l as [Hf_old _ _ _ _]; cbn in Hf_old.
+      pose proof Huf'_l as [Hf_new _ _ _ _]; cbn in Hf_new.
+      unfold uf_rel_PER.
+      intros i j.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as HP2.
+      cbn in *.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim_iff; auto). }
+    assert (Hok_e' : egraph_ok e').
+    { constructor.
+      - exists roots. exact Huf'_l.
+      - subst e'; cbn.
+        eapply all_wkn; [|exact Hwl].
+        intros [old new improved | k] _ Hwentry; cbn in *; auto.
+        apply Hper_iff; assumption.
+      - subst e'; cbn.
+        intros y s Hg.
+        pose proof (Hpa _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in *.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        exists aa; split.
+        + split; [exact Hfn|]. split.
+          * eapply all2_impl; [|exact Hargs]. intros; apply Hper_iff; auto.
+          * apply Hper_iff. exact Hret.
+        + unfold atom_in_egraph in *; cbn in *. exact Ha_aa. }
+    split; [exact Hok_e'|].
+    intros j; split; intros Hd.
+    - apply (Hiff j). split; [|exact Hd]. constructor; auto.
+      exists roots; exact Huf_l.
+    - destruct (proj2 (Hiff j) (conj Hok_e' Hd)) as [_ Hde]. exact Hde.
+  Qed.
+
+  (* [canonicalize_worklist_entry] on a [union_repair] entry calls
+     [find] on its [new_idx]; the [analysis_repair] case is a [Mret].
+     Both preserve [egraph_ok] and [denote]. *)
+  Lemma canonicalize_worklist_entry_denote_iff a
+    : vc (canonicalize_worklist_entry idx Eqb_idx symbol
+            symbol_map idx_map idx_trie analysis_result a)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold canonicalize_worklist_entry.
+    destruct a as [old new improved | i_repair]; cbn beta iota.
+    - eapply vc_bind.
+      { apply find_denote_iff. }
+      intros s0 new'.
+      unfold vc, Mret, StateMonad.state_monad.
+      intros s1 HPpost Hok_s0; cbn [fst snd] in *.
+      exact (HPpost Hok_s0).
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+  Qed.
+
+  (* List-iterated [canonicalize_worklist_entry] preserves [egraph_ok]
+     and [denote] pointwise; proved by induction on the list with
+     [vc_bind] composing per-element preservation and the IH. *)
+  Lemma list_Mmap_canonicalize_worklist_entry_denote_iff l
+    : vc (list_Mmap
+            (canonicalize_worklist_entry idx Eqb_idx symbol
+               symbol_map idx_map idx_trie analysis_result) l)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    induction l as [|a l' IH].
+    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+    - cbn [list_Mmap Mbind StateMonad.state_monad].
+      eapply vc_bind.
+      { apply canonicalize_worklist_entry_denote_iff. }
+      intros s0 b.
+      eapply vc_bind.
+      { apply IH. }
+      intros s1 bs.
+      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros s2 HIH Hcan Hok_s0.
+      destruct (Hcan Hok_s0) as [Hok_s1 Hde_s1].
+      destruct (HIH Hok_s1) as [Hok_s2 Hde_s2].
+      split; [exact Hok_s2|]. intros i. rewrite Hde_s1; exact (Hde_s2 i).
+  Qed.
+
+  (* TODO: prove. Iterating [repair] preserves [egraph_ok] and the
+     [denote] relation pointwise. The atomic [repair] steps replace
+     stale parents with canonically-equivalent atoms; under
+     [egraph_ok], denoted interpretations see the equivalence and so
+     soundness for the canonicalized atom matches soundness for the
+     original. *)
+  Lemma list_Miter_repair_denote_iff l
+    : vc (list_Miter repair l)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+  Admitted.
+
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
     : vc (rebuild n)
         (fun e res =>
@@ -4399,60 +4589,36 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ forall i, denote e i <-> denote (snd res) i).
   Proof.
-    (* outdated
     induction n.
-    { eapply state_sound_for_model_wkn_post.
-      { eapply state_sound_for_model_ret. }
-      intros r i [HPi _]; exact HPi. }
+    { unfold vc, rebuild. intros e Hok. split; [exact Hok|]. intros i; reflexivity. }
     cbn [rebuild].
-    eapply state_sound_for_model_bind.
-    { apply pull_worklist_sound. }
-    intros wl.
+    eapply vc_bind.
+    { apply pull_worklist_denote_iff. }
+    intros s0 wl.
     destruct wl as [|w wl'].
-    { eapply state_sound_for_model_wkn_post.
-      { apply state_sound_for_model_ret. }
-      intros r i HP. destruct HP as [HP _]. destruct HP as [HPi _]. exact HPi. }
-    eapply state_sound_for_model_bind.
-    { eapply state_sound_for_model_wkn_post.
-      { eapply state_sound_for_model_Mmap
-          with (P_const := fun i => Pre i /\ all (worklist_entry_sound m i) (w :: wl'))
-               (P_elt := fun i a' => worklist_entry_sound m i a').
-        - intros a.
-          eapply state_sound_for_model_wkn_post.
-          { eapply state_sound_for_model_strengthen_pre.
-            { apply (canonicalize_worklist_entry_sound
-                       (fun i => In a (w :: wl')
-                                 /\ Pre i
-                                 /\ all (worklist_entry_sound m i) (w :: wl'))).
-              intros i HP. destruct HP as [Hin HP1]. destruct HP1 as [HPi Hsound].
-              eapply in_all; eauto. }
-            intros i HP. destruct HP as [Hin HPiAll]. split; [exact Hin|exact HPiAll]. }
-          intros r i HP.
-          destruct HP as [HPin Hsound].
-          destruct HPin as [_ HPi].
-          split; [exact HPi | exact Hsound].
-        - intros i HPi; exact HPi.
-        - (* monotonicity of worklist_entry_sound *)
-          intros a i i' Hext Hsound.
-          unfold worklist_entry_sound, eq_sound_for_model in *.
-          destruct a as [old new improved | k]; auto.
-          unfold Is_Some_satisfying in *.
-          destruct (map.get i old) eqn:Hg1; try contradiction.
-          destruct (map.get i new) eqn:Hg2; try contradiction.
-          apply Hext in Hg1, Hg2. rewrite Hg1, Hg2; cbn; exact Hsound. }
-      intros r i HP. destruct HP as [HP _]. destruct HP as [HPi _]; exact HPi. }
-    intros wl''.
-    eapply state_sound_for_model_bind.
-    { eapply state_sound_for_model_Miter with (P_inv := fun _ => Pre).
-      - intros a.
-        eapply state_sound_for_model_strengthen_pre.
-        { apply repair_sound. }
-        intros i [Hin HPi]; exact HPi.
-      - intros i HPi; exact HPi. }
-    intros r.
-    apply IHn.
-  Qed. *)
-  Admitted.
+    { unfold vc; cbn [Mret StateMonad.state_monad fst snd].
+      intros s1 HPpull Hok_s0.
+      apply HPpull. exact Hok_s0. }
+    cbn [Mbind StateMonad.state_monad Mseq].
+    eapply vc_bind with (P1 := fun s1 res =>
+      egraph_ok s1 ->
+      egraph_ok (snd res) /\ forall i, denote s1 i <-> denote (snd res) i).
+    { apply list_Mmap_canonicalize_worklist_entry_denote_iff. }
+    intros s1 wl''.
+    eapply vc_bind with (P1 := fun s2 res =>
+      egraph_ok s2 ->
+      egraph_ok (snd res) /\ forall i, denote s2 i <-> denote (snd res) i).
+    { apply list_Miter_repair_denote_iff. }
+    intros s2 a.
+    eapply vc_consequence; [|apply IHn].
+    cbn beta. intros s3 res HIH Hmiter Hmap Hpull Hok_s0.
+    destruct (Hpull Hok_s0) as [Hok_s1 Hde_s1].
+    destruct (Hmap Hok_s1) as [Hok_s2 Hde_s2].
+    destruct (Hmiter Hok_s2) as [Hok_s3 Hde_s3].
+    destruct (HIH Hok_s3) as [Hok_res Hde_res].
+    split; [exact Hok_res|].
+    intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
+  Qed.
 
   (*TODO: do not read beyond this point. needs to be updated. *)
   (*
