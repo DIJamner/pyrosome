@@ -4799,12 +4799,210 @@ TODO: lemmas in the comment block are out of date
       intros i. rewrite Hde_s1. exact (Hde_s2 i).
   Qed.
 
-  (* TODO: prove. [repair_parent_analysis] reads a db entry, computes
-     a new analysis, and writes back if changed. The atom_args/atom_ret
-     are unchanged, so [atom_in_egraph] (which doesn't read the analysis
-     component) is preserved; [rel_interpretation] is unchanged since
-     equiv isn't touched. Depends on the still-admitted
-     [db_set_entry_sound']. *)
+  (* [update_analyses] only writes the [analyses] field, which doesn't
+     affect egraph_ok or denote. *)
+  Lemma update_analyses_denote_iff k v
+    : vc (update_analyses idx symbol symbol_map idx_map idx_trie
+            analysis_result k v)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, update_analyses; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    split.
+    - constructor; cbn; auto.
+    - intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto.
+  Qed.
+
+  (* [push_worklist (analysis_repair _)] adds a trivially-ok entry to
+     the worklist. denote doesn't read the worklist. *)
+  Lemma push_worklist_analysis_denote_iff o
+    : vc (push_worklist idx symbol symbol_map idx_map idx_trie
+            analysis_result (analysis_repair idx o))
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, push_worklist; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    split.
+    - constructor; cbn; auto.
+    - intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto.
+  Qed.
+
+  (* [get_analysis x]: read [analyses] for [x], or on miss run
+     [update_analyses x default] + [push_worklist (analysis_repair x)].
+     Both branches preserve egraph_ok and denote. *)
+  Lemma get_analysis_denote_iff x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, get_analysis; intros e Hok.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn [fst snd]. split; [exact Hok|]. intros i; reflexivity.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
+      pose proof (update_analyses_denote_iff x default e Hok) as Hu.
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result x default e) as [u e1] eqn:Hue.
+      cbn [fst snd] in Hu.
+      destruct Hu as [Hok1 Hde1].
+      pose proof (push_worklist_analysis_denote_iff x e1 Hok1) as Hp.
+      destruct (push_worklist idx symbol symbol_map idx_map idx_trie
+                  analysis_result (analysis_repair idx x) e1) as [u' e2] eqn:Hpe.
+      cbn [fst snd] in Hp |- *.
+      destruct Hp as [Hok2 Hde2].
+      split; [exact Hok2|].
+      intros i. rewrite Hde1. exact (Hde2 i).
+  Qed.
+
+  (* [get_analyses] = [list_Mmap get_analysis]. Inductive composition. *)
+  Lemma get_analyses_denote_iff args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold get_analyses.
+    induction args as [|x xs IH].
+    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+    - cbn [list_Mmap Mbind StateMonad.state_monad].
+      eapply vc_bind.
+      { apply get_analysis_denote_iff. }
+      intros s0 a0.
+      eapply vc_bind.
+      { apply IH. }
+      intros s1 bs.
+      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros s2 HIH Hone Hok_s0.
+      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
+      destruct (HIH Hok_s1) as [Hok_s2 Hde_s2].
+      split; [exact Hok_s2|].
+      intros i. rewrite Hde_s1. exact (Hde_s2 i).
+  Qed.
+
+  (* [get_analyses] preserves [db], [equiv], and [parents] verbatim;
+     used by [repair_parent_analysis_denote_iff] to transport
+     [atom_in_egraph] across the [get_analyses] step. *)
+  Lemma get_analyses_preserves_fields args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold get_analyses.
+    induction args as [|x xs IH].
+    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd];
+        intros e; intuition.
+    - cbn [list_Mmap Mbind StateMonad.state_monad].
+      eapply vc_bind with (P1 := fun s0 res =>
+        (snd res).(db) = s0.(db) /\ (snd res).(equiv) = s0.(equiv)
+        /\ (snd res).(parents) = s0.(parents)).
+      { unfold vc, get_analysis; intros e.
+        destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+        - cbn; intuition.
+        - cbn [Mseq Mbind StateMonad.state_monad fst snd
+               update_analyses push_worklist].
+          intuition; cbn; reflexivity. }
+      intros s0 a0.
+      eapply vc_bind.
+      { apply IH. }
+      intros s1 bs.
+      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e (HdbIH & HeqIH & HpaIH) (Hdb01 & Heq01 & Hpa01).
+      repeat split; congruence.
+  Qed.
+
+  (* [db_lookup_entry] is read-only; if it returns [Some entry], the
+     entry's value is recorded as a [Build_atom f args ·] in the db. *)
+  Lemma db_lookup_entry_pure f args
+    : vc (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+            analysis_result f args)
+        (fun e res =>
+           snd res = e
+           /\ match fst res with
+              | Some entry =>
+                  atom_in_egraph
+                    (Build_atom f args (entry_value idx analysis_result entry)) e
+              | None => True
+              end).
+  Proof.
+    unfold vc, db_lookup_entry; intros e; cbn [fst snd].
+    split; [reflexivity|].
+    unfold atom_in_egraph, atom_in_db; cbn.
+    destruct (map.get e.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
+    destruct (map.get tbl args) as [entry|] eqn:Hentry; cbn; auto.
+  Qed.
+
+  (* [db_set_entry f args ep v an] preserves egraph_ok and denote when
+     an entry at [(f, args)] with value [v] already exists: the new
+     entry has the same [entry_value], so [atom_in_db] is unchanged
+     for every atom; egraph_ok's [parents_ok] transfers via
+     [atom_in_egraph_up_to_equiv] using the same iff. *)
+  Lemma db_set_entry_denote_iff f args ep v an
+    : vc (db_set_entry idx symbol symbol_map idx_map idx_trie
+            analysis_result f args ep v an)
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph (Build_atom f args v) e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, db_set_entry; intros e Hok Hain; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    unfold atom_in_egraph, atom_in_db in Hain; cbn in Hain.
+    unfold map_update in *.
+    destruct (map.get db_e f) as [tbl|] eqn:Htbl; cbn in Hain; [|tauto].
+    destruct (map.get tbl args) as [old_entry|] eqn:Hold; cbn in Hain; [|tauto].
+    assert (Hdb_iff : forall a',
+               atom_in_db a' (map.put db_e f (map.put tbl args
+                                (Build_db_entry idx analysis_result ep v an)))
+               <-> atom_in_db a' db_e).
+    { intros a'. unfold atom_in_db; cbn.
+      eqb_case (atom_fn a') f.
+      - rewrite !map.get_put_same. cbn.
+        eqb_case (atom_args a') args.
+        + rewrite !map.get_put_same. cbn. rewrite Htbl. cbn. rewrite Hold.
+          cbn. rewrite Hain. reflexivity.
+        + rewrite !map.get_put_diff by auto. rewrite Htbl. cbn. reflexivity.
+      - rewrite map.get_put_diff by auto. reflexivity. }
+    split.
+    - constructor; cbn; auto.
+      intros y s Hg. specialize (Hpa _ _ Hg).
+      eapply all_wkn; [|exact Hpa].
+      intros aa _ Hex.
+      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+        atom_in_egraph in *.
+      destruct Hex as (a'' & Hcanon & Hain'').
+      exists a''; cbn in *. split.
+      + exact Hcanon.
+      + apply Hdb_iff. exact Hain''.
+    - intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto.
+      + intros a' Ha'. apply Hatom. unfold atom_in_egraph in *.
+        apply Hdb_iff. exact Ha'.
+      + intros a' Ha'. apply Hatom. unfold atom_in_egraph in *.
+        apply Hdb_iff in Ha'. exact Ha'.
+  Qed.
+
+  (* [repair_parent_analysis] reads the db entry for [a], computes a
+     new analysis, and if it differs from the stored one, writes it
+     back (preserving the entry's value [v]). The proof composes the
+     primitive denote_iff lemmas above; [db_set_entry] is invoked with
+     the same [v] that was read out, so [atom_in_egraph] is unchanged. *)
   Lemma repair_parent_analysis_denote_iff a
     : vc (repair_parent_analysis a)
         (fun e res =>
@@ -4812,7 +5010,60 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-  Admitted.
+    unfold vc, repair_parent_analysis; intros e_ref.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (db_lookup_entry_pure (atom_fn a) (atom_args a) e_ref) as Hdl.
+    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_fn a) (atom_args a) e_ref) as [mr e_l] eqn:Hdle.
+    cbn [fst snd] in Hdl.
+    destruct Hdl as [He_l_eq Hain_or].
+    subst e_l.
+    intros Hok_ref.
+    destruct mr as [entry|]; cbn [Mret StateMonad.state_monad fst snd];
+      [| split; [exact Hok_ref|]; intros i; reflexivity].
+    destruct entry as [v_epoch v old_a].
+    cbn in Hain_or.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (get_analyses_denote_iff (atom_args a) e_ref Hok_ref) as Hga.
+    pose proof (get_analyses_preserves_fields (atom_args a) e_ref) as Hgaf.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e_ref) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hga, Hgaf.
+    destruct Hga as [Hok_g Hde_g].
+    destruct Hgaf as (Hdb_g & Heq_g & Hpa_g).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd].
+      split; [exact Hok_g | exact Hde_g].
+    - cbn [Mseq Mbind StateMonad.state_monad].
+      pose proof (update_analyses_denote_iff (atom_ret a) (analyze idx symbol analysis_result a arg_as) e_g Hok_g) as Hua.
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                  (atom_ret a) (analyze idx symbol analysis_result a arg_as) e_g) as [u e_u] eqn:Hue.
+      cbn [fst snd] in Hua.
+      destruct Hua as [Hok_u Hde_u].
+      assert (Hdb_u : e_u.(db) = e_g.(db)).
+      { unfold update_analyses in Hue. injection Hue. intros He_u_eq _.
+        subst e_u. reflexivity. }
+      pose proof (push_worklist_analysis_denote_iff (atom_ret a) e_u Hok_u) as Hpw.
+      destruct (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
+                  (analysis_repair idx (atom_ret a)) e_u) as [u2 e_p] eqn:Hpe.
+      cbn [fst snd] in Hpw.
+      destruct Hpw as [Hok_p Hde_p].
+      assert (Hdb_p : e_p.(db) = e_u.(db)).
+      { unfold push_worklist in Hpe. injection Hpe. intros He_p_eq _.
+        subst e_p. reflexivity. }
+      assert (Hain_p : atom_in_egraph (Build_atom (atom_fn a) (atom_args a) v) e_p).
+      { unfold atom_in_egraph, atom_in_db in *; cbn in *.
+        rewrite Hdb_p, Hdb_u, Hdb_g. exact Hain_or. }
+      pose proof (db_set_entry_denote_iff (atom_fn a) (atom_args a) v_epoch v
+                    (analyze idx symbol analysis_result a arg_as) e_p Hok_p Hain_p) as Hds.
+      destruct (db_set_entry idx symbol symbol_map idx_map idx_trie analysis_result
+                  (atom_fn a) (atom_args a) v_epoch v (analyze idx symbol analysis_result a arg_as) e_p)
+        as [u3 e_s] eqn:Hse.
+      cbn [fst snd] in Hds |- *.
+      destruct Hds as [Hok_s Hde_s].
+      split; [exact Hok_s|].
+      intros i. rewrite Hde_g, Hde_u, Hde_p. exact (Hde_s i).
+  Qed.
 
   (* Iterate [repair_parent_analysis] over a list. *)
   Lemma list_Miter_repair_parent_analysis_denote_iff ps
