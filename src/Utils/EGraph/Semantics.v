@@ -2872,17 +2872,16 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    induction l as [|a l' IH].
-    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
-    - cbn [list_Mmap Mbind StateMonad.state_monad].
-      vc_bind canonicalize_worklist_entry_denote_iff.
-      vc_bind IH.
-      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros s2 HIH Hcan Hok_s0.
-      destruct (Hcan Hok_s0) as [Hok_s1 Hde_s1].
-      destruct (HIH Hok_s1) as [Hok_s2 Hde_s2].
-      split; [exact Hok_s2|]. intros i. rewrite Hde_s1; exact (Hde_s2 i).
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))].
+    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
+    - intros s _ i; reflexivity.
+    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (canonicalize_worklist_entry_denote_iff a)].
+      cbn beta. intros s p Hone Hok. apply (Hone Hok).
   Qed.
 
   (* [get_parents] is read-only: returned parents are recorded as
@@ -3192,19 +3191,23 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    induction old_ps as [|a l' IH].
-    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      intros e Hok _; split; [exact Hok|]. intros i; reflexivity.
-    - cbn [list_Mmap Mbind StateMonad.state_monad].
-      vc_bind (repair_each_denote_iff a l').
-      vc_bind IH.
-      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros s2 HIH Hone Hok_s0 Hall_s0.
-      cbn [all] in Hall_s0. destruct Hall_s0 as [Ha_s0 Hl'_s0].
-      destruct (Hone Hok_s0 Ha_s0 Hl'_s0) as (Hok_s1 & Hde_s1 & Hl'_s1).
-      destruct (HIH Hok_s1 Hl'_s1) as [Hok_s2 Hde_s2].
-      split; [exact Hok_s2|].
-      intros i. rewrite Hde_s1. exact (Hde_s2 i).
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun l s =>
+                     egraph_ok s
+                     /\ all (fun a => atom_in_egraph_up_to_equiv a s) l)
+                  (fun s s' => forall i, denote s i <-> denote s' i))].
+    - cbn beta. intros s res Hinv Hok Hall.
+      specialize (Hinv (conj Hok Hall)).
+      destruct Hinv as [Hp Hiff]. destruct Hp as [Hok_p _]. auto.
+    - intros s _ i; reflexivity.
+    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_each_denote_iff a l_rest)].
+      cbn beta. intros s p Hone [Hok Hall].
+      cbn [all] in Hall. destruct Hall as [Ha Hl_rest].
+      destruct (Hone Hok Ha Hl_rest) as (Hok_p & Hde_p & Hl_p).
+      split; [split; assumption | exact Hde_p].
   Qed.
 
   (* [update_analyses] only writes the [analyses] field, which doesn't
@@ -3286,18 +3289,16 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
     unfold get_analyses.
-    induction args as [|x xs IH].
-    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
-    - cbn [list_Mmap Mbind StateMonad.state_monad].
-      vc_bind get_analysis_denote_iff.
-      vc_bind IH.
-      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros s2 HIH Hone Hok_s0.
-      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
-      destruct (HIH Hok_s1) as [Hok_s2 Hde_s2].
-      split; [exact Hok_s2|].
-      intros i. rewrite Hde_s1. exact (Hde_s2 i).
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))].
+    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
+    - intros s _ i; reflexivity.
+    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_denote_iff x)].
+      cbn beta. intros s p Hone Hok. apply (Hone Hok).
   Qed.
 
   (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
@@ -3329,15 +3330,19 @@ TODO: lemmas in the comment block are out of date
            /\ (snd res).(parents) = e.(parents)).
   Proof.
     unfold get_analyses.
-    induction args as [|x xs IH].
-    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd];
-        intros e; intuition.
-    - cbn [list_Mmap Mbind StateMonad.state_monad].
-      vc_bind get_analysis_preserves_fields.
-      vc_bind IH.
-      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros e (HdbIH & HeqIH & HpaIH) (Hdb01 & Heq01 & Hpa01).
-      repeat split; congruence.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ _ => True)
+                  (fun s s' =>
+                     s'.(db) = s.(db)
+                     /\ s'.(equiv) = s.(equiv)
+                     /\ s'.(parents) = s.(parents)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _; intuition.
+    - intros ? ? ? (?&?&?) (?&?&?); repeat split; congruence.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_preserves_fields x)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
   Qed.
 
   (* [db_lookup_entry] is read-only; if it returns [Some entry], the
@@ -3480,17 +3485,16 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    induction ps as [|p ps' IH].
-    - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
-    - cbn [list_Miter].
-      vc_Mseq repair_parent_analysis_denote_iff.
-      eapply vc_consequence; [|apply IH].
-      cbn beta. intros s1 res HIH Hone Hok_s0.
-      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
-      destruct (HIH Hok_s1) as [Hok_res Hde_res].
-      split; [exact Hok_res|].
-      intros i. rewrite Hde_s1. exact (Hde_res i).
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))].
+    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
+    - intros s _ i; reflexivity.
+    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+    - intros p ps'.
+      eapply vc_consequence; [| apply (repair_parent_analysis_denote_iff p)].
+      cbn beta. intros s pres Hone Hok. apply (Hone Hok).
   Qed.
 
   (* The optional analysis pass after the parent-canonicalization mmap.
@@ -3575,17 +3579,16 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    induction l as [|a l' IH].
-    - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
-    - cbn [list_Miter].
-      vc_Mseq repair_denote_iff.
-      eapply vc_consequence; [|apply IH].
-      cbn beta. intros s1 res HIH Hone Hok_s0.
-      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
-      destruct (HIH Hok_s1) as [Hok_res Hde_res].
-      split; [exact Hok_res|].
-      intros i. rewrite Hde_s1. exact (Hde_res i).
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))].
+    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
+    - intros s _ i; reflexivity.
+    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_denote_iff a)].
+      cbn beta. intros s p Hone Hok. apply (Hone Hok).
   Qed.
 
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n

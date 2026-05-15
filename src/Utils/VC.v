@@ -89,3 +89,32 @@ Proof.
     cbn [Mret StateMonad.state_monad fst snd].
     split; eauto.
 Qed.
+
+(* [list_Miter] analog of [vc_list_Mmap_inv]; same invariant style. *)
+Lemma vc_list_Miter_inv {S A}
+  (f : A -> state S unit)
+  (P : list A -> S -> Prop)
+  (R : S -> S -> Prop)
+  : (forall s, P [] s -> R s s) ->
+    (forall s s' s'', R s s' -> R s' s'' -> R s s'') ->
+    (forall a l_rest,
+       vc (f a)
+          (fun s p => P (a :: l_rest) s -> P l_rest (snd p) /\ R s (snd p))) ->
+    forall l,
+      vc (list_Miter f l)
+        (fun s p => P l s -> P [] (snd p) /\ R s (snd p)).
+Proof.
+  intros Hrefl_base Htrans Hstep l.
+  induction l as [| a l' IH].
+  - unfold vc; cbn; intros e HP; split; auto.
+  - unfold vc in *; intros e HP.
+    cbn [list_Miter Mseq Mbind StateMonad.state_monad].
+    pose proof (Hstep a l' e HP) as Hae.
+    destruct (f a e) as [b s1] eqn:Hfa.
+    cbn [fst snd] in Hae. destruct Hae as [HPl' Hmono1].
+    pose proof (IH s1) as IH1.
+    specialize (IH1 HPl').
+    destruct (list_Miter f l' s1) as [u s2] eqn:Hmiter.
+    cbn [fst snd] in IH1 |- *. destruct IH1 as [HPnil Hmono2].
+    split; eauto.
+Qed.
