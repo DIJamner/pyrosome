@@ -2716,6 +2716,35 @@ TODO: lemmas in the comment block are out of date
 
 
 
+  (* Lift a per-element vc lemma with post
+       [egraph_ok e -> egraph_ok (snd res) /\ denote_iff e (snd res)]
+     to a [list_Mmap]/[list_Miter] of the same shape, using
+     [vc_list_Mmap_inv]/[vc_list_Miter_inv] with [P l s := egraph_ok s]
+     and [R s s' := forall i, denote s i <-> denote s' i]. *)
+  Ltac vc_list_Mmap_egraph_iff per_step :=
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))];
+      [ cbn beta; intros ? ? Hinv Hok; apply (Hinv Hok)
+      | intros ? _ i; reflexivity
+      | intros ? ? ? H1 H2 i; rewrite H1; auto
+      | intros a l_rest;
+        eapply vc_consequence; [| apply (per_step a)];
+        cbn beta; intros ? ? Hone Hok; apply (Hone Hok) ].
+
+  Ltac vc_list_Miter_egraph_iff per_step :=
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))];
+      [ cbn beta; intros ? ? Hinv Hok; apply (Hinv Hok)
+      | intros ? _ i; reflexivity
+      | intros ? ? ? H1 H2 i; rewrite H1; auto
+      | intros a l_rest;
+        eapply vc_consequence; [| apply (per_step a)];
+        cbn beta; intros ? ? Hone Hok; apply (Hone Hok) ].
+
   (* [pull_worklist] only swaps the worklist field of the instance for
      [[]]; denote/egraph_ok don't read the worklist outside of
      [worklist_ok], which trivially holds for [[]]. *)
@@ -2872,16 +2901,7 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    eapply vc_consequence;
-      [| apply (vc_list_Mmap_inv _
-                  (fun _ s => egraph_ok s)
-                  (fun s s' => forall i, denote s i <-> denote s' i))].
-    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
-    - intros s _ i; reflexivity.
-    - intros ? ? ? H1 H2 i; rewrite H1; auto.
-    - intros a l_rest.
-      eapply vc_consequence; [| apply (canonicalize_worklist_entry_denote_iff a)].
-      cbn beta. intros s p Hone Hok. apply (Hone Hok).
+    vc_list_Mmap_egraph_iff canonicalize_worklist_entry_denote_iff.
   Qed.
 
   (* [get_parents] is read-only: returned parents are recorded as
@@ -3289,16 +3309,7 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
     unfold get_analyses.
-    eapply vc_consequence;
-      [| apply (vc_list_Mmap_inv _
-                  (fun _ s => egraph_ok s)
-                  (fun s s' => forall i, denote s i <-> denote s' i))].
-    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
-    - intros s _ i; reflexivity.
-    - intros ? ? ? H1 H2 i; rewrite H1; auto.
-    - intros x xs.
-      eapply vc_consequence; [| apply (get_analysis_denote_iff x)].
-      cbn beta. intros s p Hone Hok. apply (Hone Hok).
+    vc_list_Mmap_egraph_iff get_analysis_denote_iff.
   Qed.
 
   (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
@@ -3485,16 +3496,7 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    eapply vc_consequence;
-      [| apply (vc_list_Miter_inv _
-                  (fun _ s => egraph_ok s)
-                  (fun s s' => forall i, denote s i <-> denote s' i))].
-    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
-    - intros s _ i; reflexivity.
-    - intros ? ? ? H1 H2 i; rewrite H1; auto.
-    - intros p ps'.
-      eapply vc_consequence; [| apply (repair_parent_analysis_denote_iff p)].
-      cbn beta. intros s pres Hone Hok. apply (Hone Hok).
+    vc_list_Miter_egraph_iff repair_parent_analysis_denote_iff.
   Qed.
 
   (* The optional analysis pass after the parent-canonicalization mmap.
@@ -3579,16 +3581,7 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    eapply vc_consequence;
-      [| apply (vc_list_Miter_inv _
-                  (fun _ s => egraph_ok s)
-                  (fun s s' => forall i, denote s i <-> denote s' i))].
-    - cbn beta. intros s res Hinv Hok. apply (Hinv Hok).
-    - intros s _ i; reflexivity.
-    - intros ? ? ? H1 H2 i; rewrite H1; auto.
-    - intros a l_rest.
-      eapply vc_consequence; [| apply (repair_denote_iff a)].
-      cbn beta. intros s p Hone Hok. apply (Hone Hok).
+    vc_list_Miter_egraph_iff repair_denote_iff.
   Qed.
 
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
