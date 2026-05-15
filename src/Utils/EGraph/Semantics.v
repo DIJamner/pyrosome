@@ -4567,12 +4567,274 @@ TODO: lemmas in the comment block are out of date
       split; [exact Hok_s2|]. intros i. rewrite Hde_s1; exact (Hde_s2 i).
   Qed.
 
-  (* TODO: prove. Iterating [repair] preserves [egraph_ok] and the
-     [denote] relation pointwise. The atomic [repair] steps replace
-     stale parents with canonically-equivalent atoms; under
-     [egraph_ok], denoted interpretations see the equivalence and so
-     soundness for the canonicalized atom matches soundness for the
-     original. *)
+  (* [get_parents] is read-only: returned parents are recorded as
+     parents in the egraph, so they satisfy [atom_in_egraph_up_to_equiv]
+     by [parents_ok]. *)
+  Lemma get_parents_denote_iff x
+    : vc (get_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ snd res = e
+           /\ all (fun a => atom_in_egraph_up_to_equiv a e) (fst res)).
+  Proof.
+    unfold vc, get_parents; intros e Hok; cbn [fst snd].
+    split; [exact Hok|].
+    split; [intros i; reflexivity|].
+    split; [reflexivity|].
+    unfold unwrap_with_default.
+    destruct (map.get e.(parents) x) as [s|] eqn:Hg.
+    - destruct Hok as [_ _ Hpa]. eapply Hpa; exact Hg.
+    - cbn. exact I.
+  Qed.
+
+  (* [remove_parents x] removes the entry for [x] from the parents map.
+     db and equiv are unchanged, so denote (which doesn't read parents)
+     is preserved. [parents_ok] still holds because removing entries
+     only weakens the per-key invariant. *)
+  Lemma remove_parents_denote_iff x
+    : vc (remove_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, remove_parents; intros e Hok; cbn [fst snd].
+    destruct Hok as [Heq Hwl Hpa].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e];
+      cbn in *.
+    split.
+    - constructor; cbn; auto.
+      intros y s Hg.
+      eqb_case x y.
+      + rewrite map.get_remove_same in Hg. discriminate.
+      + rewrite map.get_remove_diff in Hg by auto.
+        pose proof (Hpa _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+          atom_in_egraph, atom_in_db in *.
+        destruct Hex as (aa & Hcanon & Hain).
+        exists aa; cbn in *; intuition.
+    - intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto.
+  Qed.
+
+  (* [pull_parents] = [get_parents] composed with [remove_parents].
+     The returned parents are still atoms in the post-state's egraph
+     since [remove_parents] doesn't touch db or equiv. *)
+  Lemma pull_parents_denote_iff x
+    : vc (pull_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res)).
+  Proof.
+    unfold vc, pull_parents; intros e Hok.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (get_parents_denote_iff x e Hok) as Hgp.
+    destruct (get_parents x e) as [ps s0] eqn:Hge.
+    cbn [fst snd] in Hgp.
+    destruct Hgp as (Hok0 & Hde0 & Hs0_eq & Hain0).
+    subst s0.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (remove_parents_denote_iff x e Hok) as Hrp.
+    destruct (remove_parents x e) as [u s1] eqn:Hre.
+    cbn [fst snd] in Hrp.
+    destruct Hrp as [Hok1 Hde1].
+    cbn [Mret StateMonad.state_monad fst snd].
+    split; [exact Hok1|].
+    split; [exact Hde1|].
+    unfold remove_parents in Hre.
+    injection Hre; intros Hs1_eq _. clear Hre.
+    eapply all_wkn; [|exact Hain0].
+    intros a Hin Hex.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+      atom_in_egraph, atom_in_db in *.
+    destruct Hex as (aa & (Hfn & Hargs & Hret) & Hain).
+    exists aa.
+    rewrite <- Hs1_eq; cbn in *.
+    intuition.
+  Qed.
+
+  (* TODO: prove. The composed [db_remove a; canonicalize a; update_entry a']
+     preserves egraph_ok and denote when [a] is already in the egraph
+     (up to canonical equivalence): update_entry restores a canonically-
+     equivalent atom, so the egraph is the same modulo canonicalization.
+     The side-list [l] of other atoms (used to thread invariants through
+     [list_Mmap]) is also preserved. Depends on the still-admitted
+     [update_entry_canonicalized_after_db_remove_sound]. *)
+  Lemma repair_each_denote_iff a l
+    : vc (@! let _ <- db_remove a in
+             let a' <- canonicalize a in
+             (update_entry a'))
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph_up_to_equiv a e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+  Admitted.
+
+  (* Iterating [repair_each] over a list of atoms-in-egraph preserves
+     egraph_ok and denote, by induction with [repair_each_denote_iff]
+     threading the side-list invariant. *)
+  Lemma list_Mmap_repair_each_denote_iff old_ps
+    : vc (list_Mmap (fun a : atom =>
+                       @! let _ <- db_remove a in
+                          let a' <- canonicalize a in
+                          (update_entry a'))
+                    old_ps)
+        (fun e res =>
+           egraph_ok e ->
+           all (fun a => atom_in_egraph_up_to_equiv a e) old_ps ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    induction old_ps as [|a l' IH].
+    - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
+      intros e Hok _; split; [exact Hok|]. intros i; reflexivity.
+    - cbn [list_Mmap Mbind StateMonad.state_monad].
+      eapply vc_bind.
+      { apply (repair_each_denote_iff a l'). }
+      intros s0 b.
+      eapply vc_bind.
+      { apply IH. }
+      intros s1 bs.
+      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros s2 HIH Hone Hok_s0 Hall_s0.
+      cbn [all] in Hall_s0. destruct Hall_s0 as [Ha_s0 Hl'_s0].
+      destruct (Hone Hok_s0 Ha_s0 Hl'_s0) as (Hok_s1 & Hde_s1 & Hl'_s1).
+      destruct (HIH Hok_s1 Hl'_s1) as [Hok_s2 Hde_s2].
+      split; [exact Hok_s2|].
+      intros i. rewrite Hde_s1. exact (Hde_s2 i).
+  Qed.
+
+  (* TODO: prove. [repair_parent_analysis] reads a db entry, computes
+     a new analysis, and writes back if changed. The atom_args/atom_ret
+     are unchanged, so [atom_in_egraph] (which doesn't read the analysis
+     component) is preserved; [rel_interpretation] is unchanged since
+     equiv isn't touched. Depends on the still-admitted
+     [db_set_entry_sound']. *)
+  Lemma repair_parent_analysis_denote_iff a
+    : vc (repair_parent_analysis a)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+  Admitted.
+
+  (* Iterate [repair_parent_analysis] over a list. *)
+  Lemma list_Miter_repair_parent_analysis_denote_iff ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    induction ps as [|p ps' IH].
+    - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+    - cbn [list_Miter].
+      eapply vc_Mseq.
+      { apply repair_parent_analysis_denote_iff. }
+      intros s0 a.
+      eapply vc_consequence; [|apply IH].
+      cbn beta. intros s1 res HIH Hone Hok_s0.
+      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      intros i. rewrite Hde_s1. exact (Hde_res i).
+  Qed.
+
+  (* The optional analysis pass after the parent-canonicalization mmap.
+     Both branches (run-analyses or skip) preserve egraph_ok and denote. *)
+  Lemma repair_after_mmap_denote_iff x_canonical (improved : bool)
+    : vc (if improved
+          then (@! let canon_ps <- get_parents x_canonical in
+                   (list_Miter repair_parent_analysis canon_ps))
+          else Mret tt)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    destruct improved.
+    - eapply vc_bind.
+      { apply get_parents_denote_iff. }
+      intros s0 canon_ps.
+      eapply vc_consequence;
+        [|apply list_Miter_repair_parent_analysis_denote_iff].
+      cbn beta. intros s1 res HIH Hgp Hok_s0.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & _).
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      intros i. rewrite Hde_s1. exact (Hde_res i).
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+  Qed.
+
+  (* [repair_union] = [pull_parents] of [x_old], then [list_Mmap] of
+     [repair_each] over those parents, then conditional analysis pass.
+     Each piece preserves egraph_ok and denote; pull_parents gives the
+     atom-in-egraph invariant that [list_Mmap_repair_each_denote_iff]
+     consumes. *)
+  Lemma repair_union_denote_iff x_old x_canonical improved
+    : vc (repair_union x_old x_canonical improved)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold repair_union.
+    eapply vc_bind.
+    { apply pull_parents_denote_iff. }
+    intros s0 old_ps.
+    eapply vc_bind.
+    { apply list_Mmap_repair_each_denote_iff. }
+    intros s1 ps1.
+    eapply vc_consequence;
+      [|apply (repair_after_mmap_denote_iff x_canonical improved)].
+    cbn beta. intros s2 res HIH Hmap Hpull Hok_s0.
+    destruct (Hpull Hok_s0) as (Hok_s1 & Hde_s1 & Hains_s1).
+    destruct (Hmap Hok_s1 Hains_s1) as [Hok_s2 Hde_s2].
+    destruct (HIH Hok_s2) as [Hok_res Hde_res].
+    split; [exact Hok_res|].
+    intros i. rewrite Hde_s1, Hde_s2. exact (Hde_res i).
+  Qed.
+
+  (* Top-level [repair] dispatches by worklist-entry shape. Union
+     repairs delegate to [repair_union_denote_iff]; analysis repairs
+     run [list_Miter_repair_parent_analysis] over the parents of the
+     analyzed index. *)
+  Lemma repair_denote_iff a
+    : vc (repair a)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    destruct a as [old new improved | i_repair]; cbn [repair].
+    - apply repair_union_denote_iff.
+    - eapply vc_bind.
+      { apply get_parents_denote_iff. }
+      intros s0 ps.
+      eapply vc_consequence;
+        [|apply list_Miter_repair_parent_analysis_denote_iff].
+      cbn beta. intros s1 res HIH Hgp Hok_s0.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & _).
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      intros i. rewrite Hde_s1. exact (Hde_res i).
+  Qed.
+
+  (* Iterate [repair] over a list of worklist entries. Used by
+     [rebuild_sound]'s inner loop. *)
   Lemma list_Miter_repair_denote_iff l
     : vc (list_Miter repair l)
         (fun e res =>
@@ -4580,7 +4842,20 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-  Admitted.
+    induction l as [|a l' IH].
+    - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
+      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+    - cbn [list_Miter].
+      eapply vc_Mseq.
+      { apply repair_denote_iff. }
+      intros s0 a0.
+      eapply vc_consequence; [|apply IH].
+      cbn beta. intros s1 res HIH Hone Hok_s0.
+      destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      intros i. rewrite Hde_s1. exact (Hde_res i).
+  Qed.
 
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
     : vc (rebuild n)
