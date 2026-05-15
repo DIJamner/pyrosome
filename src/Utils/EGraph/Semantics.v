@@ -2916,14 +2916,16 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)).
   Proof.
     unfold vc, remove_parents; intros e Hok; cbn [fst snd].
     destruct Hok as [Heq Hwl Hpa].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e];
       cbn in *.
     split.
-    - constructor; cbn; auto.
+    { constructor; cbn; auto.
       intros y s Hg.
       eqb_case x y.
       + rewrite map.get_remove_same in Hg. discriminate.
@@ -2934,9 +2936,11 @@ TODO: lemmas in the comment block are out of date
         unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
           atom_in_egraph, atom_in_db in *.
         destruct Hex as (aa & Hcanon & Hain).
-        exists aa; cbn in *; intuition.
-    - intros i; split; intros [Hwf Hex Hatom Hrel];
-        constructor; cbn in *; auto.
+        exists aa; cbn in *; intuition. }
+    split.
+    { intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto. }
+    split; reflexivity.
   Qed.
 
   (* [pull_parents] = [get_parents] composed with [remove_parents].
@@ -2950,31 +2954,24 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)
            /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res)).
   Proof.
-    unfold vc, pull_parents; intros e Hok.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (get_parents_denote_iff x e Hok) as Hgp.
-    destruct (get_parents x e) as [ps s0] eqn:Hge.
-    cbn [fst snd] in Hgp.
-    destruct Hgp as (Hok0 & Hde0 & Hs0_eq & Hain0).
-    subst s0.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (remove_parents_denote_iff x e Hok) as Hrp.
-    destruct (remove_parents x e) as [u s1] eqn:Hre.
-    cbn [fst snd] in Hrp.
-    destruct Hrp as [Hok1 Hde1].
-    cbn [Mret StateMonad.state_monad fst snd].
-    split; [exact Hok1|].
-    split; [exact Hde1|].
-    unfold remove_parents in Hre.
-    injection Hre; intros Hs1_eq _. clear Hre.
-    eapply all_wkn; [|exact Hain0].
-    intros a Hin Hex.
+    vc_bind get_parents_denote_iff.
+    rename s0 into e, a into ps.
+    vc_bind remove_parents_denote_iff.
+    rename s0 into e0, a into u.
+    unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+    intros s1 Hrm Hgp Hok.
+    destruct (Hgp Hok) as (Hok_e0 & Hde_e0 & Hs0_eq & Hain_ps_e).
+    subst e0.
+    destruct (Hrm Hok) as (Hok_s1 & Hde_s1 & Hdb_eq & Hequiv_eq).
+    split; [exact Hok_s1|].
+    split; [intros i; rewrite Hde_s1; reflexivity|].
+    eapply all_wkn; [|exact Hain_ps_e].
+    intros a _ Hex.
     unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
       atom_in_egraph, atom_in_db in *.
-    destruct Hex as (aa & (Hfn & Hargs & Hret) & Hain).
+    destruct Hex as (aa & Hcanon & Hain).
     exists aa.
-    rewrite <- Hs1_eq; cbn in *.
-    intuition.
+    rewrite Hdb_eq, Hequiv_eq; auto.
   Qed.
 
   (* An atom that is canonically present in the egraph has all of its
@@ -3112,35 +3109,25 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
-    unfold vc, update_entry; intros e1.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (db_lookup_pure (atom_fn a') (atom_args a') e1) as Hdl.
-    destruct (db_lookup (atom_fn a') (atom_args a') e1) as [mr e_l] eqn:Hdle.
-    cbn [fst snd] in Hdl.
-    destruct Hdl as [He_l_eq Hatom_case].
-    subst e_l.
-    destruct mr as [r|]; cbn [fst snd].
-    - (* Some r: invoke union branch *)
+    unfold update_entry.
+    vc_bind db_lookup_pure.
+    rename s0 into e1, a0 into mr.
+    unfold vc.
+    destruct mr as [r|]; cbn beta iota; cbn [fst snd];
+      intros s_pre [Hs_eq Hatom_case]; subst s_pre;
       intros Hok_ref Hatom_ref Hatoms_ref Hpost
              Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
+    - (* Some r: invoke union branch *)
       pose proof (union_after_canonicalize_denote_iff
                     a a' side_l e_ref e0 r
                     Hok_ref Hatom_ref Hatoms_ref Hpost) as Hu.
-      cbn [fst snd] in Hu.
       specialize (Hu e1).
-      destruct (Mseq (Defs.union r (atom_ret a')) (Mret tt) e1) as [u e_post] eqn:Hsq.
-      cbn [fst snd] in Hu |- *.
       apply Hu; auto.
     - (* None: invoke db_set branch *)
-      intros Hok_ref Hatom_ref Hatoms_ref Hpost
-             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
       pose proof (db_set_after_canonicalize_denote_iff
                     a a' side_l e_ref e0
                     Hok_ref Hatom_ref Hatoms_ref Hpost) as Hd.
-      cbn [fst snd] in Hd.
       specialize (Hd e1).
-      destruct (db_set a' e1) as [u e_post] eqn:Hds.
-      cbn [fst snd] in Hd |- *.
       apply Hd; auto.
   Qed.
 
@@ -3162,20 +3149,15 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
-    unfold vc; intros e_ref.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (db_remove_sound_post a e_ref) as Hdbr.
-    destruct (db_remove a e_ref) as [u0 e0] eqn:Hdb.
-    cbn [fst snd] in Hdbr.
+    vc_bind db_remove_sound_post.
+    rename s0 into e_ref, a0 into u_dbr.
+    vc_bind canonicalize_preserves_fields_strong.
+    rename s0 into e0, a0 into a'.
+    eapply vc_consequence;
+      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0)].
+    cbn beta. cbn [fst snd].
+    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hatoms_ref.
     destruct Hdbr as [_ Hpost].
-    pose proof (canonicalize_preserves_fields_strong a e0) as Hcan.
-    destruct (canonicalize a e0) as [a' e1] eqn:Hca.
-    cbn beta in Hcan. cbn [fst snd] in Hcan.
-    pose proof (update_entry_canonicalized_denote_iff a a' l e_ref e0 e1) as Hupd.
-    cbn beta in Hupd.
-    destruct (update_entry a' e1) as [u2 e2] eqn:Hup.
-    cbn [fst snd] in Hupd |- *.
-    intros Hok_ref Hatom_ref Hatoms_ref.
     pose proof Hpost as Hpost_full.
     destruct Hpost as (Hequiv_eq & _).
     pose proof (atom_in_egraph_up_to_equiv_has_key e_ref a Hok_ref Hatom_ref)
@@ -3233,15 +3215,17 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
   Proof.
     unfold vc, update_analyses; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
     destruct Hok as [Heq Hwl Hpa]; cbn in *.
-    split.
-    - constructor; cbn; auto.
-    - intros i; split; intros [Hwf Hex Hatom Hrel];
-        constructor; cbn in *; auto.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
   Qed.
 
   (* [push_worklist (analysis_repair _)] adds a trivially-ok entry to
@@ -3252,15 +3236,17 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
   Proof.
     unfold vc, push_worklist; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
     destruct Hok as [Heq Hwl Hpa]; cbn in *.
-    split.
-    - constructor; cbn; auto.
-    - intros i; split; intros [Hwf Hex Hatom Hrel];
-        constructor; cbn in *; auto.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
   Qed.
 
   (* [get_analysis x]: read [analyses] for [x], or on miss run
@@ -3281,12 +3267,12 @@ TODO: lemmas in the comment block are out of date
       destruct (update_analyses idx symbol symbol_map idx_map idx_trie
                   analysis_result x default e) as [u e1] eqn:Hue.
       cbn [fst snd] in Hu.
-      destruct Hu as [Hok1 Hde1].
+      destruct Hu as (Hok1 & Hde1 & _).
       pose proof (push_worklist_analysis_denote_iff x e1 Hok1) as Hp.
       destruct (push_worklist idx symbol symbol_map idx_map idx_trie
                   analysis_result (analysis_repair idx x) e1) as [u' e2] eqn:Hpe.
       cbn [fst snd] in Hp |- *.
-      destruct Hp as [Hok2 Hde2].
+      destruct Hp as (Hok2 & Hde2 & _).
       split; [exact Hok2|].
       intros i. rewrite Hde1. exact (Hde2 i).
   Qed.
@@ -3314,6 +3300,24 @@ TODO: lemmas in the comment block are out of date
       intros i. rewrite Hde_s1. exact (Hde_s2 i).
   Qed.
 
+  (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
+     the [Some] branch is [Mret]; the [None] branch only writes
+     [analyses] and [worklist]. *)
+  Lemma get_analysis_preserves_fields x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold vc, get_analysis; intros e.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn; intuition.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist].
+      intuition; cbn; reflexivity.
+  Qed.
+
   (* [get_analyses] preserves [db], [equiv], and [parents] verbatim;
      used by [repair_parent_analysis_denote_iff] to transport
      [atom_in_egraph] across the [get_analyses] step. *)
@@ -3329,16 +3333,7 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd];
         intros e; intuition.
     - cbn [list_Mmap Mbind StateMonad.state_monad].
-      eapply vc_bind with (P1 := fun s0 res =>
-        (snd res).(db) = s0.(db) /\ (snd res).(equiv) = s0.(equiv)
-        /\ (snd res).(parents) = s0.(parents)).
-      { unfold vc, get_analysis; intros e.
-        destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
-        - cbn; intuition.
-        - cbn [Mseq Mbind StateMonad.state_monad fst snd
-               update_analyses push_worklist].
-          intuition; cbn; reflexivity. }
-      intros s0 a0.
+      vc_bind get_analysis_preserves_fields.
       vc_bind IH.
       unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
       intros e (HdbIH & HeqIH & HpaIH) (Hdb01 & Heq01 & Hpa01).
@@ -3430,17 +3425,14 @@ TODO: lemmas in the comment block are out of date
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
-    unfold vc, repair_parent_analysis; intros e_ref.
-    cbn [Mbind StateMonad.state_monad].
-    pose proof (db_lookup_entry_pure (atom_fn a) (atom_args a) e_ref) as Hdl.
-    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
-                (atom_fn a) (atom_args a) e_ref) as [mr e_l] eqn:Hdle.
-    cbn [fst snd] in Hdl.
-    destruct Hdl as [He_l_eq Hain_or].
-    subst e_l.
-    intros Hok_ref.
-    destruct mr as [entry|]; cbn [Mret StateMonad.state_monad fst snd];
-      [| split; [exact Hok_ref|]; intros i; reflexivity].
+    unfold repair_parent_analysis.
+    vc_bind db_lookup_entry_pure.
+    rename s0 into e_ref, a0 into mr.
+    unfold vc.
+    destruct mr as [entry|]; cbn beta iota; cbn [fst snd];
+      intros s_pre [Hs_eq Hain_or]; subst s_pre; intros Hok_ref;
+      [| cbn beta iota; cbn [Mret StateMonad.state_monad fst snd];
+         split; [exact Hok_ref|]; intros i; reflexivity].
     destruct entry as [v_epoch v old_a].
     cbn in Hain_or.
     cbn [Mbind StateMonad.state_monad].
@@ -3455,22 +3447,17 @@ TODO: lemmas in the comment block are out of date
     - cbn [Mret StateMonad.state_monad fst snd].
       split; [exact Hok_g | exact Hde_g].
     - cbn [Mseq Mbind StateMonad.state_monad].
-      pose proof (update_analyses_denote_iff (atom_ret a) (analyze idx symbol analysis_result a arg_as) e_g Hok_g) as Hua.
+      pose proof (update_analyses_denote_iff (atom_ret a)
+                    (analyze idx symbol analysis_result a arg_as) e_g Hok_g) as Hua.
       destruct (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result
                   (atom_ret a) (analyze idx symbol analysis_result a arg_as) e_g) as [u e_u] eqn:Hue.
       cbn [fst snd] in Hua.
-      destruct Hua as [Hok_u Hde_u].
-      assert (Hdb_u : e_u.(db) = e_g.(db)).
-      { unfold update_analyses in Hue. injection Hue. intros He_u_eq _.
-        subst e_u. reflexivity. }
+      destruct Hua as (Hok_u & Hde_u & Hdb_u).
       pose proof (push_worklist_analysis_denote_iff (atom_ret a) e_u Hok_u) as Hpw.
       destruct (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
                   (analysis_repair idx (atom_ret a)) e_u) as [u2 e_p] eqn:Hpe.
       cbn [fst snd] in Hpw.
-      destruct Hpw as [Hok_p Hde_p].
-      assert (Hdb_p : e_p.(db) = e_u.(db)).
-      { unfold push_worklist in Hpe. injection Hpe. intros He_p_eq _.
-        subst e_p. reflexivity. }
+      destruct Hpw as (Hok_p & Hde_p & Hdb_p).
       assert (Hain_p : atom_in_egraph (Build_atom (atom_fn a) (atom_args a) v) e_p).
       { unfold atom_in_egraph, atom_in_db in *; cbn in *.
         rewrite Hdb_p, Hdb_u, Hdb_g. exact Hain_or. }
