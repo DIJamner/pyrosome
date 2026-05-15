@@ -2852,9 +2852,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     unfold canonicalize_worklist_entry.
     destruct a as [old new improved | i_repair]; cbn beta iota.
-    - eapply vc_bind.
-      { apply find_denote_iff. }
-      intros s0 new'.
+    - vc_bind find_denote_iff.
       unfold vc, Mret, StateMonad.state_monad.
       intros s1 HPpost Hok_s0; cbn [fst snd] in *.
       exact (HPpost Hok_s0).
@@ -2878,12 +2876,8 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
       intros e Hok; split; [exact Hok|]. intros i; reflexivity.
     - cbn [list_Mmap Mbind StateMonad.state_monad].
-      eapply vc_bind.
-      { apply canonicalize_worklist_entry_denote_iff. }
-      intros s0 b.
-      eapply vc_bind.
-      { apply IH. }
-      intros s1 bs.
+      vc_bind canonicalize_worklist_entry_denote_iff.
+      vc_bind IH.
       unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
       intros s2 HIH Hcan Hok_s0.
       destruct (Hcan Hok_s0) as [Hok_s1 Hde_s1].
@@ -3220,12 +3214,8 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
       intros e Hok _; split; [exact Hok|]. intros i; reflexivity.
     - cbn [list_Mmap Mbind StateMonad.state_monad].
-      eapply vc_bind.
-      { apply (repair_each_denote_iff a l'). }
-      intros s0 b.
-      eapply vc_bind.
-      { apply IH. }
-      intros s1 bs.
+      vc_bind (repair_each_denote_iff a l').
+      vc_bind IH.
       unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
       intros s2 HIH Hone Hok_s0 Hall_s0.
       cbn [all] in Hall_s0. destruct Hall_s0 as [Ha_s0 Hl'_s0].
@@ -3314,12 +3304,8 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Mmap Mret StateMonad.state_monad fst snd].
       intros e Hok; split; [exact Hok|]. intros i; reflexivity.
     - cbn [list_Mmap Mbind StateMonad.state_monad].
-      eapply vc_bind.
-      { apply get_analysis_denote_iff. }
-      intros s0 a0.
-      eapply vc_bind.
-      { apply IH. }
-      intros s1 bs.
+      vc_bind get_analysis_denote_iff.
+      vc_bind IH.
       unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
       intros s2 HIH Hone Hok_s0.
       destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
@@ -3353,9 +3339,7 @@ TODO: lemmas in the comment block are out of date
                update_analyses push_worklist].
           intuition; cbn; reflexivity. }
       intros s0 a0.
-      eapply vc_bind.
-      { apply IH. }
-      intros s1 bs.
+      vc_bind IH.
       unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
       intros e (HdbIH & HeqIH & HpaIH) (Hdb01 & Heq01 & Hpa01).
       repeat split; congruence.
@@ -3513,9 +3497,7 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
       intros e Hok; split; [exact Hok|]. intros i; reflexivity.
     - cbn [list_Miter].
-      eapply vc_Mseq.
-      { apply repair_parent_analysis_denote_iff. }
-      intros s0 a.
+      vc_Mseq repair_parent_analysis_denote_iff.
       eapply vc_consequence; [|apply IH].
       cbn beta. intros s1 res HIH Hone Hok_s0.
       destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
@@ -3537,9 +3519,7 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
     destruct improved.
-    - eapply vc_bind.
-      { apply get_parents_denote_iff. }
-      intros s0 canon_ps.
+    - vc_bind get_parents_denote_iff.
       eapply vc_consequence;
         [|apply list_Miter_repair_parent_analysis_denote_iff].
       cbn beta. intros s1 res HIH Hgp Hok_s0.
@@ -3564,12 +3544,8 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)).
   Proof.
     unfold repair_union.
-    eapply vc_bind.
-    { apply pull_parents_denote_iff. }
-    intros s0 old_ps.
-    eapply vc_bind.
-    { apply list_Mmap_repair_each_denote_iff. }
-    intros s1 ps1.
+    vc_bind pull_parents_denote_iff.
+    vc_bind list_Mmap_repair_each_denote_iff.
     eapply vc_consequence;
       [|apply (repair_after_mmap_denote_iff x_canonical improved)].
     cbn beta. intros s2 res HIH Hmap Hpull Hok_s0.
@@ -3593,9 +3569,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     destruct a as [old new improved | i_repair]; cbn [repair].
     - apply repair_union_denote_iff.
-    - eapply vc_bind.
-      { apply get_parents_denote_iff. }
-      intros s0 ps.
+    - vc_bind get_parents_denote_iff.
       eapply vc_consequence;
         [|apply list_Miter_repair_parent_analysis_denote_iff].
       cbn beta. intros s1 res HIH Hgp Hok_s0.
@@ -3618,9 +3592,7 @@ TODO: lemmas in the comment block are out of date
     - unfold vc; cbn [list_Miter Mret StateMonad.state_monad fst snd].
       intros e Hok; split; [exact Hok|]. intros i; reflexivity.
     - cbn [list_Miter].
-      eapply vc_Mseq.
-      { apply repair_denote_iff. }
-      intros s0 a0.
+      vc_Mseq repair_denote_iff.
       eapply vc_consequence; [|apply IH].
       cbn beta. intros s1 res HIH Hone Hok_s0.
       destruct (Hone Hok_s0) as [Hok_s1 Hde_s1].
@@ -3639,24 +3611,14 @@ TODO: lemmas in the comment block are out of date
     induction n.
     { unfold vc, rebuild. intros e Hok. split; [exact Hok|]. intros i; reflexivity. }
     cbn [rebuild].
-    eapply vc_bind.
-    { apply pull_worklist_denote_iff. }
-    intros s0 wl.
-    destruct wl as [|w wl'].
+    vc_bind pull_worklist_denote_iff.
+    destruct a as [|w wl'].
     { unfold vc; cbn [Mret StateMonad.state_monad fst snd].
       intros s1 HPpull Hok_s0.
       apply HPpull. exact Hok_s0. }
     cbn [Mbind StateMonad.state_monad Mseq].
-    eapply vc_bind with (P1 := fun s1 res =>
-      egraph_ok s1 ->
-      egraph_ok (snd res) /\ forall i, denote s1 i <-> denote (snd res) i).
-    { apply list_Mmap_canonicalize_worklist_entry_denote_iff. }
-    intros s1 wl''.
-    eapply vc_bind with (P1 := fun s2 res =>
-      egraph_ok s2 ->
-      egraph_ok (snd res) /\ forall i, denote s2 i <-> denote (snd res) i).
-    { apply list_Miter_repair_denote_iff. }
-    intros s2 a.
+    vc_bind list_Mmap_canonicalize_worklist_entry_denote_iff.
+    vc_bind list_Miter_repair_denote_iff.
     eapply vc_consequence; [|apply IHn].
     cbn beta. intros s3 res HIH Hmiter Hmap Hpull Hok_s0.
     destruct (Hpull Hok_s0) as [Hok_s1 Hde_s1].
