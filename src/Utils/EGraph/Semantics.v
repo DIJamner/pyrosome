@@ -4393,8 +4393,13 @@ TODO: lemmas in the comment block are out of date
   Qed.
 
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
-    : state_sound_for_model Pre (rebuild n) (fun _ => Pre).
+    : vc (rebuild n)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ forall i, denote e i <-> denote (snd res) i).
   Proof.
+    (* outdated
     induction n.
     { eapply state_sound_for_model_wkn_post.
       { eapply state_sound_for_model_ret. }
@@ -4446,7 +4451,8 @@ TODO: lemmas in the comment block are out of date
       - intros i HPi; exact HPi. }
     intros r.
     apply IHn.
-  Qed.
+  Qed. *)
+  Admitted.
 
   (*TODO: do not read beyond this point. needs to be updated. *)
   (*
