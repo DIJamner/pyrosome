@@ -4689,13 +4689,67 @@ TODO: lemmas in the comment block are out of date
     - apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hret).
   Qed.
 
-  (* TODO: prove. The deep semantic step inside [repair_each]: given
-     that [a] was in the egraph [e_ref] before [db_remove a] produced
-     [e0], and [a'] is the canonicalization of [a] in [e1] (with
-     [equiv]-only changes from [e0] to [e1]), [update_entry a']
-     applied in [e1] restores egraph_ok and denote w.r.t. [e_ref].
-     This is the denote-iff analog of the still-admitted
-     [update_entry_canonicalized_after_db_remove_sound]. *)
+  (* TODO: prove. Denote-iff form of the [Some r] branch of
+     [update_entry_canonicalized_denote_iff]: when [db_lookup] of the
+     canonicalized atom returned [Some r], so a canonically-equivalent
+     entry [(atom_fn a, atom_args a', r)] is still in [e1.db], the
+     union [union r (atom_ret a')] preserves egraph_ok and the denote
+     relation pointwise w.r.t. the pre-[db_remove] state [e_ref].
+     This is the denote-iff analog of the proved
+     [union_after_canonicalize_sound]. *)
+  Lemma union_after_canonicalize_denote_iff
+    a a' side_l (e_ref e0 : instance) (r : idx)
+    : egraph_ok e_ref ->
+      atom_in_egraph_up_to_equiv a e_ref ->
+      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+      post_db_remove e_ref a e0 ->
+      vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1 ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+  Proof.
+  Admitted.
+
+  (* TODO: prove. Denote-iff form of the [None] branch: when
+     [db_lookup] returned [None], we reinstall the canonicalized atom
+     via [db_set a']. Mirrors the still-admitted
+     [db_set_after_canonicalize_sound]. *)
+  Lemma db_set_after_canonicalize_denote_iff
+    a a' side_l (e_ref e0 : instance)
+    : egraph_ok e_ref ->
+      atom_in_egraph_up_to_equiv a e_ref ->
+      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+      post_db_remove e_ref a e0 ->
+      vc (db_set a')
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           (forall r, ~ atom_in_egraph
+                          (Build_atom (atom_fn a') (atom_args a') r) e1) ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+  Proof.
+  Admitted.
+
+  (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
+     a'.args]; the [Some r] case uses [union_after_canonicalize_
+     denote_iff] and the [None] case uses
+     [db_set_after_canonicalize_denote_iff]. This is the denote-iff
+     analog of [update_entry_canonicalized_after_db_remove_sound],
+     proved by composing the two branch helpers. *)
   Lemma update_entry_canonicalized_denote_iff a a' side_l (e_ref e0 : instance)
     : vc (update_entry a')
         (fun e1 res =>
@@ -4712,7 +4766,37 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
   Proof.
-  Admitted.
+    unfold vc, update_entry; intros e1.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (db_lookup_pure (atom_fn a') (atom_args a') e1) as Hdl.
+    destruct (db_lookup (atom_fn a') (atom_args a') e1) as [mr e_l] eqn:Hdle.
+    cbn [fst snd] in Hdl.
+    destruct Hdl as [He_l_eq Hatom_case].
+    subst e_l.
+    destruct mr as [r|]; cbn [fst snd].
+    - (* Some r: invoke union branch *)
+      intros Hok_ref Hatom_ref Hatoms_ref Hpost
+             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
+      pose proof (union_after_canonicalize_denote_iff
+                    a a' side_l e_ref e0 r
+                    Hok_ref Hatom_ref Hatoms_ref Hpost) as Hu.
+      cbn [fst snd] in Hu.
+      specialize (Hu e1).
+      destruct (Mseq (Defs.union r (atom_ret a')) (Mret tt) e1) as [u e_post] eqn:Hsq.
+      cbn [fst snd] in Hu |- *.
+      apply Hu; auto.
+    - (* None: invoke db_set branch *)
+      intros Hok_ref Hatom_ref Hatoms_ref Hpost
+             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
+      pose proof (db_set_after_canonicalize_denote_iff
+                    a a' side_l e_ref e0
+                    Hok_ref Hatom_ref Hatoms_ref Hpost) as Hd.
+      cbn [fst snd] in Hd.
+      specialize (Hd e1).
+      destruct (db_set a' e1) as [u e_post] eqn:Hds.
+      cbn [fst snd] in Hd |- *.
+      apply Hd; auto.
+  Qed.
 
   (* Composes the three pieces: [db_remove a] gives [post_db_remove],
      [canonicalize a] uses the has-key facts derived from
