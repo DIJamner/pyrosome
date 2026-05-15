@@ -2756,11 +2756,11 @@ TODO: lemmas in the comment block are out of date
      [update_entry_canonicalized_after_db_remove_sound]. *)
   Lemma canonicalize_after_db_remove_sound (Pre : idx_map (domain m) -> Prop)
     a (e_ref : instance)
-    : (forall i, Pre i -> atom_sound_for_model m i a) ->
-      egraph_ok e_ref ->
-      (forall_ne i | denote e_ref i, Pre i) ->
-      vc (canonicalize a)
+    : vc (canonicalize a)
         (fun e res =>
+           (forall i, Pre i -> atom_sound_for_model m i a) ->
+           egraph_ok e_ref ->
+           (forall_ne i | denote e_ref i, Pre i) ->
            post_db_remove e_ref a e ->
            (exists l, union_find_ok lt (snd res).(equiv) l)
            /\ fields_preserved e (snd res)
@@ -2770,8 +2770,7 @@ TODO: lemmas in the comment block are out of date
            /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
                 (atom_args (fst res)) (atom_args a)).
   Proof.
-    intros HPa Hok_ref Hne_ref.
-    intros s Hpost_s.
+    unfold vc; intros s HPa Hok_ref Hne_ref Hpost_s.
     pose proof (canonicalize_preserves_fields_strong a s) as Hcps.
     cbn beta in Hcps.
     (* Derive the [canonicalize_preserves_fields_strong] precondition
@@ -3871,32 +3870,13 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
     intros HPa.
-    (* Local wrapper for [canonicalize_after_db_remove_sound] that
-       moves the [HPa]/[Hok_ref]/[Hne_ref] preconditions inside the
-       [vc]'s postcondition, so [vc_bind] can apply it directly. *)
-    assert (Hcan : forall e_ref,
-                      vc (canonicalize a)
-                         (fun e res =>
-                            egraph_ok e_ref ->
-                            (forall_ne i | denote e_ref i, Pre i) ->
-                            post_db_remove e_ref a e ->
-                            (exists l0, union_find_ok lt (snd res).(equiv) l0)
-                            /\ fields_preserved e (snd res)
-                            /\ atom_fn (fst res) = atom_fn a
-                            /\ uf_rel_PER (snd res).(equiv)
-                                 (atom_ret (fst res)) (atom_ret a)
-                            /\ all2 (uf_rel_PER (snd res).(equiv))
-                                 (atom_args (fst res)) (atom_args a))).
-    { intros e_ref. unfold vc. intros s Hok Hne Hpost.
-      exact (canonicalize_after_db_remove_sound
-               Pre a e_ref HPa Hok Hne s Hpost). }
     vc_bind db_remove_sound_post.
-    vc_bind (Hcan s0).
+    vc_bind canonicalize_after_db_remove_sound.
     unfold vc.
     intros s2 HQ_can HQ_db Hok_ref Hne_ref Hatom_ref Hatoms_ref.
     destruct HQ_db as [_ Hpost_remove].
     cbn [fst snd] in *.
-    specialize (HQ_can Hok_ref Hne_ref Hpost_remove).
+    specialize (HQ_can HPa Hok_ref Hne_ref Hpost_remove).
     destruct HQ_can as (Hex_e1 & Hf01 & Hfn_a' & Hret_a' & Hargs_a').
     exact (update_entry_canonicalized_after_db_remove_sound
              Pre a a1 l s0 s1
