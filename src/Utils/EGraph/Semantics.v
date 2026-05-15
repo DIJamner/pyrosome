@@ -3817,14 +3817,14 @@ TODO: lemmas in the comment block are out of date
   Lemma update_entry_canonicalized_after_db_remove_sound
     (Pre : idx_map (domain m) -> Prop)
     a a' side_l (e_ref e0 : instance)
-    : (forall i, Pre i -> atom_sound_for_model m i a) ->
-      egraph_ok e_ref ->
-      (forall_ne i | denote e_ref i, Pre i) ->
-      atom_in_egraph_up_to_equiv a e_ref ->
-      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
-      post_db_remove e_ref a e0 ->
-      vc (update_entry a')
+    : vc (update_entry a')
         (fun e1 res =>
+           (forall i, Pre i -> atom_sound_for_model m i a) ->
+           egraph_ok e_ref ->
+           (forall_ne i | denote e_ref i, Pre i) ->
+           atom_in_egraph_up_to_equiv a e_ref ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+           post_db_remove e_ref a e0 ->
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
            fields_preserved e0 e1 ->
            atom_fn a' = atom_fn a ->
@@ -3879,9 +3879,9 @@ TODO: lemmas in the comment block are out of date
     specialize (HQ_can HPa Hok_ref Hne_ref Hpost_remove).
     destruct HQ_can as (Hex_e1 & Hf01 & Hfn_a' & Hret_a' & Hargs_a').
     exact (update_entry_canonicalized_after_db_remove_sound
-             Pre a a1 l s0 s1
+             Pre a a1 l s0 s1 s2
              HPa Hok_ref Hne_ref Hatom_ref Hatoms_ref Hpost_remove
-             s2 Hex_e1 Hf01 Hfn_a' Hret_a' Hargs_a').
+             Hex_e1 Hf01 Hfn_a' Hret_a' Hargs_a').
   Qed.
 
   (* State-triple level Mmap of repair_each over a list of atoms.
