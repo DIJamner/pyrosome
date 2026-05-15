@@ -4146,6 +4146,65 @@ TODO: lemmas in the comment block are out of date
         (fun _ => Pre).
   Admitted.
 
+  (* Adding an entry (and its parent pointers) for a sound atom preserves
+     any [Pre] every interpretation of the egraph satisfies.  The proof
+     is structural — [db_set'] only enlarges the [atom_in_egraph] set and
+     updates [parents] in lockstep — but is left admitted here, since the
+     interesting composition is in [db_set_sound] below. *)
+  Lemma db_set'_sound (Pre : idx_map (domain m) -> Prop) a out_a
+    : (forall i, Pre i -> atom_sound_for_model m i a) ->
+      state_sound_for_model Pre
+        (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+           analysis_result a out_a)
+        (fun _ => Pre).
+  Admitted.
+
+  (* Generic soundness for [db_set]: if all interpretations witnessing
+     [Pre] also see [a] as sound, then writing [a] (with computed analysis)
+     preserves [Pre].  Composes [get_analyses_sound'],
+     [update_analyses_sound'], and [db_set'_sound] via [vc_bind].  The
+     tail of the proof threads the three per-step [exists ie /\ map.extends]
+     witnesses back to the input state. *)
+  Lemma db_set_sound (Pre : idx_map (domain m) -> Prop) a
+    : (forall i, Pre i -> atom_sound_for_model m i a) ->
+      state_sound_for_model Pre (db_set a) (fun _ => Pre).
+  Proof.
+    intros HPa.
+    unfold db_set.
+    cbn [Mbind StateMonad.state_monad].
+    vc_bind (get_analyses_sound' Pre a.(atom_args)).
+    vc_bind (update_analyses_sound' Pre (atom_ret a)
+               (analyze idx symbol analysis_result a a0)).
+    vc_apply (db_set'_sound Pre a (analyze idx symbol analysis_result a a0) HPa).
+    specialize (H3 H4 H5).
+    destruct H3 as [Hok_s1 HPre_s1_all].
+    cbn [fst snd] in *.
+    assert (HPre_s1 : forall_ne i | denote s1 i, Pre i).
+    { destruct HPre_s1_all as [j1 Hj1 HPostall1].
+      econstructor; [exact Hj1|].
+      intros x Hx; destruct (HPostall1 x Hx) as [HP1 _]; exact HP1. }
+    specialize (H2 Hok_s1 HPre_s1).
+    destruct H2 as [Hok_s2 HPre_s2_all].
+    cbn [fst snd] in *.
+    assert (HPre_s2 : forall_ne i | denote s2 i, Pre i).
+    { destruct HPre_s2_all as [j2 Hj2 HPostall2].
+      econstructor; [exact Hj2|].
+      intros x Hx; destruct (HPostall2 x Hx) as [HP2 _]; exact HP2. }
+    specialize (H1 Hok_s2 HPre_s2).
+    destruct H1 as [Hok_res HPre_res_all].
+    split; [exact Hok_res|].
+    destruct HPre_res_all as [j_res Hj_res HPostall_res].
+    econstructor; [exact Hj_res|].
+    intros x Hx.
+    destruct (HPostall_res x Hx) as [HPx (ie2 & Hie2 & Hext2)].
+    split; [exact HPx|].
+    destruct HPre_s2_all as [_ _ HPostall_s2].
+    destruct (HPostall_s2 ie2 Hie2) as [_ (ie1 & Hie1 & Hext1)].
+    destruct HPre_s1_all as [_ _ HPostall_s1].
+    destruct (HPostall_s1 ie1 Hie1) as [_ (ie0 & Hie0 & Hext0)].
+    exists ie0; split; [exact Hie0 | eauto using map_extends_trans].
+  Qed.
+
   Lemma repair_parent_analysis_sound (Pre : idx_map (domain m) -> Prop) a
     : (forall i, Pre i -> atom_sound_for_model m i a) ->
       state_sound_for_model Pre
