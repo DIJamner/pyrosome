@@ -514,6 +514,15 @@ Abort.
          canonically-equivalent one without scrubbing the parents map. *)
       parents_ok : forall x s, map.get e.(parents) x = Some s ->
                              all (fun a => atom_in_egraph_up_to_equiv a e) s;
+      (* Every idx appearing in the db (as an [atom_arg] or [atom_ret])
+         is a key in the union-find. Needed by [update_entry] to call
+         [union_sound] with values returned by [db_lookup]: without this,
+         [Sep.has_key] for the looked-up [atom_ret] cannot be recovered
+         from [atom_in_db] alone. *)
+      db_idxs_in_equiv : forall a, atom_in_db a e.(db) ->
+                                   all (fun i => Sep.has_key i e.(equiv).(parent))
+                                       a.(atom_args)
+                                   /\ Sep.has_key a.(atom_ret) e.(equiv).(parent);
     }.
 
   Section ForModel.
@@ -594,7 +603,10 @@ Abort.
     split.
     { constructor; cbn; auto.
       - exists []; cbn; apply union_find_empty_ok.
-      - intros; basic_utils_crush. }
+      - intros; basic_utils_crush.
+      - intros a Hin.
+        unfold atom_in_db in Hin.
+        rewrite map.get_empty in Hin. cbn in Hin. tauto. }
     constructor; cbn; try tauto;
       unfold atom_in_egraph, atom_in_db;
       basic_goal_prep;
@@ -1053,7 +1065,7 @@ Abort.
         intuition (try apply Hlim; auto).
     }
     split; intros [He_ok He]; destruct He as [Hwf Hexact Hatom Hrel];
-      destruct He_ok as [Hg_eq Hg_wl Hg_par];
+      destruct He_ok as [Hg_eq Hg_wl Hg_par Hg_db];
       split; [| constructor; eauto | | constructor; eauto].
     - constructor.
       + exists l; assumption.
@@ -1076,6 +1088,11 @@ Abort.
           -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
           -- apply HPER; exact Hret.
         * unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha_aa.
+      + intros a Ha.
+        rewrite <- Hdb in Ha.
+        destruct (Hg_db _ Ha) as [Hargs Hret].
+        split; [|apply Hkey; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey; assumption.
     - intros x Hi. apply Hkey. apply Hexact. exact Hi.
     - intros a Ha.
       apply Hatom. unfold atom_in_egraph in *. rewrite Hdb. exact Ha.
@@ -1102,6 +1119,11 @@ Abort.
           -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
           -- apply HPER; exact Hret.
         * unfold atom_in_egraph in *. rewrite Hdb. exact Ha_aa.
+      + intros a Ha.
+        rewrite Hdb in Ha.
+        destruct (Hg_db _ Ha) as [Hargs Hret].
+        split; [|apply Hkey; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey; assumption.
     - intros x Hi. apply Hkey. apply Hexact. exact Hi.
     - intros a Ha.
       apply Hatom. unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha.
@@ -2775,7 +2797,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     unfold vc, pull_worklist; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
     split.
     { constructor; cbn; auto. }
     split; [intros j; split; intros [Hwf Hex Ha Hr]; constructor; cbn in *; auto|].
@@ -2810,7 +2832,7 @@ TODO: lemmas in the comment block are out of date
     unfold vc, find; intros e Hok.
     destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
     cbn [fst snd].
-    destruct Hok as [Heq Hwl Hpa].
+    destruct Hok as [Heq Hwl Hpa Hdb].
     destruct Heq as [roots Huf_l].
     pose (e' := {| db := db e; equiv := uf'; parents := parents e;
                    epoch := epoch e; worklist := worklist e;
@@ -2828,20 +2850,23 @@ TODO: lemmas in the comment block are out of date
                      /\ iff2 (limit (parent_rel idx (idx_map idx)
                                        (equiv e).(parent)))
                             (limit (parent_rel idx (idx_map idx)
-                                      e'.(equiv).(parent)))).
+                                      e'.(equiv).(parent)))
+                     /\ (forall y, Sep.has_key y e.(equiv).(parent)
+                                   <-> Sep.has_key y e'.(equiv).(parent))).
     { destruct (map.get e.(equiv).(parent) x) as [px|] eqn:Hgx.
       - assert (Hkx : Sep.has_key x e.(equiv).(parent)).
         { unfold Sep.has_key. rewrite Hgx. exact I. }
         pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
                       _ _ _ _ _ Huf_l Hkx Hfind) as Hspec.
-        destruct Hspec as (Huf'_l & _ & _ & _ & Hlim_iff & _).
-        subst e'; cbn. split; [exact Huf'_l | exact Hlim_iff].
+        destruct Hspec as (Huf'_l & _ & _ & _ & Hlim_iff & Hkey_iff).
+        subst e'; cbn.
+        split; [exact Huf'_l|]. split; [exact Hlim_iff|exact Hkey_iff].
       - rewrite (find_no_key_identity e x Hgx) in Hfind.
         injection Hfind; intros; subst uf' v'.
         subst e'; cbn.
         split; [exact Huf_l|].
-        intros i j; reflexivity. }
-    destruct Hcommon as [Huf'_l Hlim_iff].
+        split; [intros i j; reflexivity | intros y; reflexivity]. }
+    destruct Hcommon as (Huf'_l & Hlim_iff & Hkey_iff).
     assert (Hiff : forall j, (egraph_ok e /\ denote e j)
                              <-> (egraph_ok e' /\ denote e' j)).
     { intros j. apply (egraph_sound_for_interpretation_iff_equiv j e e' roots);
@@ -2879,7 +2904,12 @@ TODO: lemmas in the comment block are out of date
         + split; [exact Hfn|]. split.
           * eapply all2_impl; [|exact Hargs]. intros; apply Hper_iff; auto.
           * apply Hper_iff. exact Hret.
-        + unfold atom_in_egraph in *; cbn in *. exact Ha_aa. }
+        + unfold atom_in_egraph in *; cbn in *. exact Ha_aa.
+      - subst e'; cbn.
+        intros a Ha.
+        destruct (Hdb _ Ha) as [Hargs Hret].
+        split; [|apply Hkey_iff; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey_iff; assumption. }
     split; [exact Hok_e'|].
     intros j; split; intros Hd.
     - apply (Hiff j). split; [|exact Hd]. constructor; auto.
@@ -3027,7 +3057,7 @@ TODO: lemmas in the comment block are out of date
     split; [reflexivity|].
     unfold unwrap_with_default.
     destruct (map.get e.(parents) x) as [s|] eqn:Hg.
-    - destruct Hok as [_ _ Hpa]. eapply Hpa; exact Hg.
+    - destruct Hok as [_ _ Hpa _]. eapply Hpa; exact Hg.
     - cbn. exact I.
   Qed.
 
@@ -3045,7 +3075,7 @@ TODO: lemmas in the comment block are out of date
            /\ (snd res).(equiv) = e.(equiv)).
   Proof.
     unfold vc, remove_parents; intros e Hok; cbn [fst snd].
-    destruct Hok as [Heq Hwl Hpa].
+    destruct Hok as [Heq Hwl Hpa Hdb].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e];
       cbn in *.
     split.
@@ -3111,7 +3141,7 @@ TODO: lemmas in the comment block are out of date
       /\ Sep.has_key a.(atom_ret) e.(equiv).(parent).
   Proof.
     intros Hok Hex.
-    destruct Hok as [Heq Hwl Hpa].
+    destruct Hok as [Heq Hwl Hpa Hdb].
     destruct Heq as [roots Huf_l].
     unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
     destruct Hex as (aa & (Hfn & Hargs & Hret) & _).
@@ -3128,6 +3158,31 @@ TODO: lemmas in the comment block are out of date
       + apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hxy).
       + apply (IH ys); exact Hxs_ys.
     - apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hret).
+  Qed.
+
+  (* Composes [db_idxs_in_equiv] across the [db_remove a_rem] +
+     fields-preserving step that produces [e1] from [e_init]: any atom
+     still in [e1]'s db comes from [e_init]'s db (db_remove only
+     deletes), and [e1]'s equiv has the same key set as [e_init]'s. *)
+  Lemma atom_in_db_post_db_remove_has_key
+    (e_init e_rem e1 : instance) (a a_rem : atom)
+    : egraph_ok e_init ->
+      post_db_remove e_init a_rem e_rem ->
+      fields_preserved e_rem e1 ->
+      atom_in_db a e1.(db) ->
+      all (fun i => Sep.has_key i e1.(equiv).(parent)) a.(atom_args)
+      /\ Sep.has_key a.(atom_ret) e1.(equiv).(parent).
+  Proof.
+    intros Hok Hpost Hfp Hain_e1.
+    destruct Hok as [_ _ _ Hdb_init].
+    destruct Hpost as (Heq_er & _ & _ & _ & _ & Hdb_iff).
+    destruct Hfp as (Hdb_eq & _ & _ & _ & _ & Hkey_iff & _).
+    assert (Hain_er : atom_in_db a e_rem.(db)) by (rewrite <- Hdb_eq; exact Hain_e1).
+    apply Hdb_iff in Hain_er. destruct Hain_er as [Hain_init _].
+    destruct (Hdb_init _ Hain_init) as [Hargs Hret].
+    rewrite Heq_er in Hkey_iff.
+    split; [|apply Hkey_iff; exact Hret].
+    eapply all_wkn; [|exact Hargs]; intros; apply Hkey_iff; assumption.
   Qed.
 
   (* TODO: prove. Denote-iff form of the [Some r] branch of
@@ -3246,33 +3301,84 @@ TODO: lemmas in the comment block are out of date
         destruct e_init, e_rem; cbn in*.
         unfold atom_in_egraph in *; cbn in *.
         subst.
-        assert (Sep.has_key i (parent (Defs.equiv e1))) by admit (*from H10*).
-        assert (Sep.has_key (atom_ret a') (parent (Defs.equiv e1))) by admit (*from H11*).
-        econstructor; intuition eauto.
-        {
-          unfold union_worklist_rel, fields_preserved in *.
-          cbn in *.
-          intuition subst; eauto.
-          1:admit(* from worklist_ok0, H24, and H12*).
-          1: admit(*probably similar to the last admit*).
-        }
-        {
-          unfold union_worklist_rel, fields_preserved in *.
-          cbn in *.
-          clear H16.
-          intuition subst; eauto.
-          rewrite <- H13 in H17.
-          eapply parents_ok0 in H17.
-          eapply all_wkn; try eassumption.
-          cbn.
-          intros.
-          admit(*using H24 and others*).
-        }
+        pose proof H7 as Hfp_full.
+        destruct H7 as (Hdb_eq & Hpar_eq & Hep_eq & Hwl_eq & Han_eq
+                        & Hkey_iff & Hper_iff).
+        cbn in *.
+        (* admit 1: from H10 — chain atom_in_db e1 → db0 → db, then use
+           db_idxs_in_equiv0, then lift via fields_preserved key-iff. *)
+        assert (Hain_db : atom_in_db
+                  {| atom_fn := atom_fn a'; atom_args := atom_args a';
+                     atom_ret := i |} db).
+        { rewrite Hdb_eq in H10. apply H15 in H10. exact (proj1 H10). }
+        assert (Sep.has_key i (parent (Defs.equiv e1))).
+        { apply Hkey_iff. exact (proj2 (db_idxs_in_equiv0 _ Hain_db)). }
+        (* admit 2: from H11 (uf_rel_PER on equiv) via uf_rel_PER_has_key
+           and the fields_preserved key-iff. *)
+        assert (Sep.has_key (atom_ret a') (parent (Defs.equiv e1))).
+        { apply Hkey_iff.
+          exact (proj2 (uf_rel_PER_has_key _ x0 _ _ H14 H11)). }
+        specialize (H1 H3 H5).
+        destruct H1 as (Hdbe_eq & Hex_e & Hper_e & Hpar_e
+                        & Hunion_wl & Huf_i_a0).
+        (* [equiv]'s PER lifts to [e.equiv] via fields_preserved (e1) and
+           Hper_e (union closure). Used in worklist / db_idxs preservation. *)
+        assert (Hext : forall x1 y1, uf_rel_PER equiv x1 y1 ->
+                                     uf_rel_PER (Defs.equiv e) x1 y1).
+        { intros x1 y1 Hxy. apply Hper_e.
+          unfold union_closure_PER, uf_rel_PER in *.
+          induction Hxy.
+          - apply PER_clo_base. left. apply Hper_iff.
+            apply PER_clo_base. exact H1.
+          - apply PER_clo_trans with b; assumption.
+          - apply PER_clo_sym; assumption. }
+        (* has_key lift e_init → e via uf_rel_PER reflexivity on has_key. *)
+        assert (Hkey_lift : forall j, Sep.has_key j (parent equiv) ->
+                                      Sep.has_key j (parent (Defs.equiv e))).
+        { intros j Hj.
+          destruct Hex_e as [roots_e Huf_e].
+          assert (Hjj : uf_rel_PER (Defs.equiv e) j j).
+          { apply Hext.
+            unfold Sep.has_key in Hj.
+            destruct (map.get (parent equiv) j) as [v|] eqn:Hgj; [|tauto].
+            unfold uf_rel_PER.
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgj
+              |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+          exact (proj1 (uf_rel_PER_has_key (Defs.equiv e) roots_e j j Huf_e Hjj)). }
+        econstructor.
+        - (* egraph_equiv_ok *) exact Hex_e.
+        - (* admits 3 & 4 (worklist_ok): from worklist_ok0 + Hunion_wl + PER lift *)
+          assert (Hi_a' : uf_rel_PER (Defs.equiv e) i (atom_ret a')).
+          { apply Hper_e. apply PER_clo_base. right. split; reflexivity. }
+          unfold union_worklist_rel in Hunion_wl.
+          destruct Hunion_wl as
+            [Hwl_unchanged | (v_old & v' & ar & Hwl_new & Hv_old & Hv')].
+          + rewrite Hwl_unchanged, Hwl_eq.
+            eapply all_wkn; [|exact worklist_ok0].
+            intros [old new improved | k] _ Hent; cbn in *; auto.
+          + rewrite Hwl_new, Hwl_eq. cbn. split.
+            * cbn. unfold uf_rel_PER in *.
+              eapply PER_clo_trans; [exact Hv_old |].
+              eapply PER_clo_trans; [exact Hi_a' |].
+              apply PER_clo_sym. exact Hv'.
+            * eapply all_wkn; [|exact worklist_ok0].
+              intros [old new improved | k] _ Hent; cbn in *; auto.
+        - (* admit 5 (parents_ok): postponed *)
+          admit.
+        - (* new field db_idxs_in_equiv on e *)
+          intros a1 Ha1.
+          rewrite <- Hdbe_eq, Hdb_eq in Ha1.
+          apply H15 in Ha1. destruct Ha1 as [Ha1 _].
+          destruct (db_idxs_in_equiv0 _ Ha1) as [Hargs Hret].
+          split.
+          + eapply all_wkn; [|exact Hargs]; intros; apply Hkey_lift; assumption.
+          + apply Hkey_lift. exact Hret.
       }
-      admit (*TODO*).
+      admit (*TODO: denote_iff direction*).
     }
     {
-      admit(*TODO: db_set soundness lemma*).
+      admit(*TODO: db_set soundness lemma — None branch*).
     }
   Admitted.
   
@@ -3423,7 +3529,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     unfold vc, update_analyses; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
     split; [constructor; cbn; auto|].
     split;
       [intros i; split; intros [Hwf Hex Hatom Hrel];
@@ -3444,7 +3550,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     unfold vc, push_worklist; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
     split; [constructor; cbn; auto|].
     split;
       [intros i; split; intros [Hwf Hex Hatom Hrel];
@@ -3573,7 +3679,7 @@ TODO: lemmas in the comment block are out of date
   Proof.
     unfold vc, db_set_entry; intros e Hok Hain; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa]; cbn in *.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
     unfold atom_in_egraph, atom_in_db in Hain; cbn in Hain.
     unfold map_update in *.
     destruct (map.get db_e f) as [tbl|] eqn:Htbl; cbn in Hain; [|tauto].
@@ -3592,15 +3698,16 @@ TODO: lemmas in the comment block are out of date
       - rewrite map.get_put_diff by auto. reflexivity. }
     split.
     - constructor; cbn; auto.
-      intros y s Hg. specialize (Hpa _ _ Hg).
-      eapply all_wkn; [|exact Hpa].
-      intros aa _ Hex.
-      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
-        atom_in_egraph in *.
-      destruct Hex as (a'' & Hcanon & Hain'').
-      exists a''; cbn in *. split.
-      + exact Hcanon.
-      + apply Hdb_iff. exact Hain''.
+      + intros y s Hg. specialize (Hpa _ _ Hg).
+        eapply all_wkn; [|exact Hpa].
+        intros aa _ Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+          atom_in_egraph in *.
+        destruct Hex as (a'' & Hcanon & Hain'').
+        exists a''; cbn in *. split.
+        * exact Hcanon.
+        * apply Hdb_iff. exact Hain''.
+      + intros a' Ha'. apply Hdb. apply Hdb_iff. exact Ha'.
     - intros i; split; intros [Hwf Hex Hatom Hrel];
         constructor; cbn in *; auto.
       + intros a' Ha'. apply Hatom. unfold atom_in_egraph in *.
