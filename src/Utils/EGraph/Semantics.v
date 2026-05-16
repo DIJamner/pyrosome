@@ -3271,11 +3271,66 @@ TODO: lemmas in the comment block are out of date
   Admitted.
 
   
+  (* Forward direction of an [atom_in_egraph_up_to_equiv] iff: any
+     [egraph_extensional_eq]-related pair preserves canonical-witness
+     existence. The [egraph_ok e] hypothesis is needed because
+     extracting a witness in [e']'s db requires [all2 (uf_rel_PER
+     (equiv e)) (atom_args a') (atom_args a')], i.e. PER-reflexivity
+     on the witness's args — which follows from the
+     [db_idxs_in_equiv] field of [egraph_ok e]. The backward
+     direction would symmetrically need [egraph_ok e']; we expose
+     only the forward implication for now since that is what callers
+     (e.g. the [parents_ok] case of [update_entry_restore_sound])
+     need. *)
   Lemma atom_in_egraph_up_to_equiv_iff x e e'
-    : egraph_extensional_eq e e' ->
-      atom_in_egraph_up_to_equiv x e <-> atom_in_egraph_up_to_equiv x e'.
+    : egraph_ok e ->
+      egraph_extensional_eq e e' ->
+      atom_in_egraph_up_to_equiv x e -> atom_in_egraph_up_to_equiv x e'.
   Proof.
-  Admitted.
+    intros Hok_e Hext.
+    destruct Hok_e as [_ _ _ Hdb_init].
+    destruct Hext as [Hdb_eq Hequiv_eq _ _].
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph in *.
+    intros (a' & (Hfn & Hargs & Hret) & Hain_a').
+    pose proof (Hdb_init _ Hain_a') as [Hargs_key Hret_key].
+    assert (Hargs_refl : all2 (uf_rel_PER (equiv e)) (atom_args a') (atom_args a')).
+    { clear -Hargs_key.
+      induction (atom_args a') as [|y ys IH]; cbn in *; auto.
+      destruct Hargs_key as [Hy Hys].
+      split; [|auto].
+      unfold Sep.has_key in Hy.
+      destruct (map.get (parent (equiv e)) y) as [v|] eqn:Hgy; [|tauto].
+      unfold uf_rel_PER.
+      eapply PER_clo_trans;
+        [apply PER_clo_base; exact Hgy
+        |apply PER_clo_sym; apply PER_clo_base; exact Hgy]. }
+    unfold atom_in_db, Is_Some_satisfying in Hain_a'.
+    destruct (map.get (db e) (atom_fn a')) as [tbl|] eqn:Htbl;
+      cbn in Hain_a'; [|tauto].
+    destruct (map.get tbl (atom_args a')) as [entry|] eqn:Hentry;
+      cbn in Hain_a'; [|tauto].
+    pose proof (proj1 (Hdb_eq (atom_fn a') (atom_fn a')) eq_refl) as Hdb_at_fn.
+    unfold Defs.db_map in *.
+    rewrite Htbl in Hdb_at_fn.
+    cbn in Hdb_at_fn.
+    case_match; rename case_match_eqn into Htbl'; [|tauto].
+    rename r into tbl'.
+    pose proof (proj1 (Hdb_at_fn (atom_args a') (atom_args a')) Hargs_refl)
+      as Hentry_or.
+    rewrite Hentry in Hentry_or. cbn in Hentry_or.
+    case_match; rename case_match_eqn into Hentry'; cbn in Hentry_or; [|tauto].
+    rename d into entry'.
+    exists (Build_atom (atom_fn a') (atom_args a') (entry_value _ _ entry')).
+    cbn.
+    split.
+    + split; [exact Hfn|]. split.
+      * eapply all2_impl; [|exact Hargs]. intros; apply Hequiv_eq; assumption.
+      * apply Hequiv_eq.
+        eapply PER_clo_trans; [exact Hret|].
+        rewrite <- Hain_a'. exact Hentry_or.
+    + unfold atom_in_db, Is_Some_satisfying. cbn. unfold Defs.db_map in *.
+      rewrite Htbl', Hentry'. cbn. reflexivity.
+  Qed.
 
   (*
     Proof that update entry soundly restores invariants after an atom hsa been removed.
@@ -3377,7 +3432,15 @@ TODO: lemmas in the comment block are out of date
           eapply all_wkn; try eassumption.
           intros.
           cbn beta in *.
-          eapply atom_in_egraph_up_to_equiv_iff; eauto.
+          (* Reconstruct [egraph_ok] for the destructured [e_init] so
+             [atom_in_egraph_up_to_equiv_iff] (forward direction) can be
+             applied with [eauto] discharging the precondition. *)
+          assert (Hok_init :
+                    egraph_ok {| db := db; equiv := equiv; parents := parents;
+                                 epoch := epoch; worklist := worklist;
+                                 analyses := analyses; log := log |})
+            by (constructor; cbn; eauto).
+          eapply atom_in_egraph_up_to_equiv_iff; [exact Hok_init | | eassumption].
           admit.
         - (* new field db_idxs_in_equiv on e *)
           intros a1 Ha1.
