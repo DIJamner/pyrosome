@@ -31,6 +31,16 @@ Proof.
   unfold vc; intuition.
 Qed.
 
+(* Two [vc] facts about the same command share a state evolution, so
+   they combine into a single [vc] with a conjunctive postcondition.
+   Useful when one [vc] has the structural fact you want and another
+   has the postcondition shape your caller expects. *)
+Lemma vc_and {S A} (c : state S A) (P1 P2 : S -> A * S -> Prop)
+  : vc c P1 -> vc c P2 -> vc c (fun s r => P1 s r /\ P2 s r).
+Proof.
+  unfold vc; intros H1 H2 e; split; auto.
+Qed.
+
 (* [Mseq c1 c2] discards [c1]'s value; same shape as [vc_bind] but
    with the per-value vc on [c2] replaced by a per-input-state one. *)
 Lemma vc_Mseq {S A B} (c1 : state S A) (c2 : state S B)

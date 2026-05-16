@@ -1981,6 +1981,35 @@ TODO: lemmas in the comment block are out of date
     + intros i j; specialize (Hi1 i j); specialize (Hi2 i j); tauto.
   Qed.
 
+  (* Monotonic growth of [equiv]'s PER. Used to propagate
+     [worklist_entry_ok]-derived facts ([uf_rel_PER e.equiv x_old
+     x_canonical] for an unprocessed [union_repair] entry) across
+     repair iterations: each repair step may union new pairs but
+     never removes existing PER pairs. *)
+  Definition equiv_extends (e e' : instance) : Prop :=
+    forall x y, uf_rel_PER _ _ _ e.(equiv) x y ->
+                uf_rel_PER _ _ _ e'.(equiv) x y.
+
+  Lemma equiv_extends_refl e : equiv_extends e e.
+  Proof. unfold equiv_extends; auto. Qed.
+
+  Lemma equiv_extends_trans e1 e2 e3 :
+    equiv_extends e1 e2 -> equiv_extends e2 e3 -> equiv_extends e1 e3.
+  Proof. unfold equiv_extends; auto. Qed.
+
+  Lemma equiv_extends_worklist_entry_ok e e' ent :
+    equiv_extends e e' ->
+    worklist_entry_ok e.(equiv) ent ->
+    worklist_entry_ok e'.(equiv) ent.
+  Proof. destruct ent; cbn; auto. Qed.
+
+  Lemma fields_preserved_equiv_extends e e' :
+    fields_preserved e e' -> equiv_extends e e'.
+  Proof.
+    unfold fields_preserved, equiv_extends.
+    intros (_ & _ & _ & _ & _ & _ & Huf_iff) x y. apply Huf_iff.
+  Qed.
+
   (* [find x] only modifies the [equiv] field through path
      compression. All non-equiv fields are preserved verbatim,
      union-find well-formedness is preserved with the same root
@@ -2740,14 +2769,17 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ all (worklist_entry_ok e.(equiv)) (fst res)).
   Proof.
     unfold vc, pull_worklist; intros e Hok; cbn [fst snd].
     destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
     destruct Hok as [Heq Hwl Hpa]; cbn in *.
     split.
     { constructor; cbn; auto. }
-    intros j; split; intros [Hwf Hex Ha Hr]; constructor; cbn in *; auto.
+    split; [intros j; split; intros [Hwf Hex Ha Hr]; constructor; cbn in *; auto|].
+    split; [reflexivity | exact Hwl].
   Qed.
 
   (* If [x] is not in [equiv]'s parent map, [UnionFind.find] returns
@@ -2857,38 +2889,124 @@ TODO: lemmas in the comment block are out of date
 
   (* [canonicalize_worklist_entry] on a [union_repair] entry calls
      [find] on its [new_idx]; the [analysis_repair] case is a [Mret].
-     Both preserve [egraph_ok] and [denote]. *)
+     Both preserve [egraph_ok] and [denote], and a [worklist_entry_ok]
+     input remains [worklist_entry_ok] in the post-state's equiv (the
+     output entry is [union_repair old new' _] where [new ~ new'] in
+     the post equiv, transitively giving [old ~ new']). *)
   Lemma canonicalize_worklist_entry_denote_iff a
     : vc (canonicalize_worklist_entry idx Eqb_idx symbol
             symbol_map idx_map idx_trie analysis_result a)
         (fun e res =>
            egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)
+           /\ worklist_entry_ok (snd res).(equiv) (fst res)).
   Proof.
     unfold canonicalize_worklist_entry.
     destruct a as [old new improved | i_repair]; cbn beta iota.
-    - vc_bind find_denote_iff.
+    - eapply vc_bind;
+        [ apply (vc_and _ _ _ (find_denote_iff new) (find_preserves_fields_strong new)) |].
+      cbn beta. cbn [fst snd].
+      intros e v_e.
       unfold vc, Mret, StateMonad.state_monad.
-      intros s1 HPpost Hok_s0; cbn [fst snd] in *.
-      exact (HPpost Hok_s0).
+      intros e1 [Hde Hpf] Hok Hwl_pre.
+      cbn beta iota. cbn [fst snd] in *.
+      destruct (Hde Hok) as [Hok_e1 Hde_e1].
+      pose proof Hok as Hok_orig.
+      destruct Hok as [Hex_e _ _].
+      specialize (Hpf Hex_e).
+      cbn in Hwl_pre.
+      assert (Hkey_new : Sep.has_key new e.(equiv).(parent)).
+      { destruct Hex_e as [roots Huf]; pose proof Huf as Huf_l.
+        destruct (uf_rel_PER_has_key _ _ _ _ Huf_l Hwl_pre) as [_ Hk].
+        exact Hk. }
+      specialize (Hpf Hkey_new).
+      destruct Hpf as (Hex_e1 & Hf01 & Huf_v_new).
+      destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & Hper_iff).
+      split; [exact Hok_e1|].
+      split; [exact Hde_e1|].
+      split; [intros x y Hxy; apply Hper_iff; exact Hxy|].
+      cbn.
+      assert (Holdnew_e1 : uf_rel_PER e1.(equiv) old new)
+        by (apply Hper_iff; exact Hwl_pre).
+      unfold uf_rel_PER in *.
+      eapply PER_clo_trans; [exact Holdnew_e1|].
+      apply PER_clo_sym; exact Huf_v_new.
     - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+      intros e Hok _; split; [exact Hok|].
+      split; [intros i; reflexivity|].
+      split; [apply equiv_extends_refl | cbn; exact I].
+  Qed.
+
+  (* Convert an [all2] with constant left predicate to [all]. *)
+  Lemma all2_const_to_all_l A B (P : A -> Prop) (l1 : list A) (l2 : list B) :
+    all2 (fun a _ => P a) l1 l2 -> all P l1.
+  Proof.
+    revert l2; induction l1 as [|h t IH]; destruct l2 as [|x xs]; cbn;
+      try contradiction; auto.
+    intros [Hh Ht]; split; [exact Hh | apply (IH _ Ht)].
+  Qed.
+
+  (* [worklist_dedup] returns a subset of its input, so any [all]
+     predicate transports to the dedup. *)
+  Lemma worklist_dedup_preserves_all (P : worklist_entry idx -> Prop) l :
+    all P l -> all P (worklist_dedup _ _ l).
+  Proof.
+    induction l as [|h t IH]; cbn; auto.
+    intros [Hh Ht].
+    destruct (List.existsb (entry_subsumed_by idx Eqb_idx h)
+                (worklist_dedup _ _ t)).
+    - apply IH; exact Ht.
+    - cbn; split; [exact Hh | apply IH; exact Ht].
   Qed.
 
   (* List-iterated [canonicalize_worklist_entry] preserves [egraph_ok]
-     and [denote] pointwise; proved by induction on the list with
-     [vc_bind] composing per-element preservation and the IH. *)
+     and [denote] pointwise, AND if every input entry was
+     [worklist_entry_ok] in the pre-state's equiv, every output entry
+     is [worklist_entry_ok] in the post-state's equiv. *)
   Lemma list_Mmap_canonicalize_worklist_entry_denote_iff l
     : vc (list_Mmap
             (canonicalize_worklist_entry idx Eqb_idx symbol
                symbol_map idx_map idx_trie analysis_result) l)
         (fun e res =>
            egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) l ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)
+           /\ all (worklist_entry_ok (snd res).(equiv)) (fst res)).
   Proof.
-    vc_list_Mmap_egraph_iff canonicalize_worklist_entry_denote_iff.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_outputs _
+                  (fun l s => egraph_ok s
+                              /\ all (worklist_entry_ok s.(equiv)) l)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s')
+                  (fun s b _ => worklist_entry_ok s.(equiv) b))].
+    - cbn beta. intros e res Hinv Hok Hwl.
+      destruct (Hinv (conj Hok Hwl)) as ((Hok_p & _) & (Hiff & Hext) & Hall_out).
+      split; [exact Hok_p|].
+      split; [exact Hiff|].
+      split; [exact Hext|].
+      eapply all2_const_to_all_l; exact Hall_out.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
+    - intros s s' b _a [_ Hext] Hwl.
+      destruct b as [old new improved | i_repair]; cbn in *; auto.
+    - intros a l_rest.
+      eapply vc_consequence;
+        [| apply (canonicalize_worklist_entry_denote_iff a)].
+      cbn beta. intros s p Hone (Hok & Hwl).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hone Hok Hwl_a) as (Hok_p & Hde_p & Hext_p & Hwlok_p).
+      split; [split; [exact Hok_p|]|].
+      + eapply all_wkn; [|exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + split; [split; [exact Hde_p | exact Hext_p] | exact Hwlok_p].
   Qed.
 
   (* [get_parents] is read-only: returned parents are recorded as
@@ -2958,6 +3076,7 @@ TODO: lemmas in the comment block are out of date
            egraph_ok e ->
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(equiv) = e.(equiv)
            /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res)).
   Proof.
     vc_bind get_parents_denote_iff.
@@ -2971,6 +3090,7 @@ TODO: lemmas in the comment block are out of date
     destruct (Hrm Hok) as (Hok_s1 & Hde_s1 & Hdb_eq & Hequiv_eq).
     split; [exact Hok_s1|].
     split; [intros i; rewrite Hde_s1; reflexivity|].
+    split; [exact Hequiv_eq|].
     eapply all_wkn; [|exact Hain_ps_e].
     intros a _ Hex.
     unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
@@ -3040,11 +3160,12 @@ TODO: lemmas in the comment block are out of date
      ([repair_each_denote_iff] -> [update_entry_canonicalized_denote_
      iff] -> branches). *)
   Lemma union_after_canonicalize_denote_iff
-    a a' side_l (e_ref e0 : instance) (r : idx)
+    a a' side_l (e_ref e0 : instance) (r : idx) (x_old x_canonical : idx)
     : egraph_ok e_ref ->
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
+      uf_rel_PER e_ref.(equiv) x_old x_canonical ->
       vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3056,7 +3177,8 @@ TODO: lemmas in the comment block are out of date
            atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1 ->
            egraph_ok (snd res)
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
-           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
   Proof.
   Admitted.
 
@@ -3072,11 +3194,12 @@ TODO: lemmas in the comment block are out of date
      comment on [union_after_canonicalize_denote_iff] for the two
      resolution options. *)
   Lemma db_set_after_canonicalize_denote_iff
-    a a' side_l (e_ref e0 : instance)
+    a a' side_l (e_ref e0 : instance) (x_old x_canonical : idx)
     : egraph_ok e_ref ->
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
+      uf_rel_PER e_ref.(equiv) x_old x_canonical ->
       vc (db_set a')
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3089,7 +3212,8 @@ TODO: lemmas in the comment block are out of date
                           (Build_atom (atom_fn a') (atom_args a') r) e1) ->
            egraph_ok (snd res)
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
-           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
   Proof.
   Admitted.
 
@@ -3100,12 +3224,14 @@ TODO: lemmas in the comment block are out of date
      analog of [update_entry_canonicalized_after_db_remove_sound],
      proved by composing the two branch helpers. *)
   Lemma update_entry_canonicalized_denote_iff a a' side_l (e_ref e0 : instance)
+    (x_old x_canonical : idx)
     : vc (update_entry a')
         (fun e1 res =>
            egraph_ok e_ref ->
            atom_in_egraph_up_to_equiv a e_ref ->
            all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
            post_db_remove e_ref a e0 ->
+           uf_rel_PER e_ref.(equiv) x_old x_canonical ->
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
            fields_preserved e0 e1 ->
            atom_fn a' = atom_fn a ->
@@ -3113,7 +3239,8 @@ TODO: lemmas in the comment block are out of date
            all2 (uf_rel_PER e1.(equiv)) (atom_args a') (atom_args a) ->
            egraph_ok (snd res)
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
-           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l).
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
   Proof.
     unfold update_entry.
     vc_bind db_lookup_pure.
@@ -3121,18 +3248,18 @@ TODO: lemmas in the comment block are out of date
     unfold vc.
     destruct mr as [r|]; cbn beta iota; cbn [fst snd];
       intros s_pre [Hs_eq Hatom_case]; subst s_pre;
-      intros Hok_ref Hatom_ref Hatoms_ref Hpost
+      intros Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can
              Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
     - (* Some r: invoke union branch *)
       pose proof (union_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0 r
-                    Hok_ref Hatom_ref Hatoms_ref Hpost) as Hu.
+                    a a' side_l e_ref e0 r x_old x_canonical
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can) as Hu.
       specialize (Hu e1).
       apply Hu; auto.
     - (* None: invoke db_set branch *)
       pose proof (db_set_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0
-                    Hok_ref Hatom_ref Hatoms_ref Hpost) as Hd.
+                    a a' side_l e_ref e0 x_old x_canonical
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can) as Hd.
       specialize (Hd e1).
       apply Hd; auto.
   Qed.
@@ -3143,7 +3270,7 @@ TODO: lemmas in the comment block are out of date
      equivalent atom [a'] in a state with [equiv]-only changes, and
      [update_entry_canonicalized_denote_iff] finishes by restoring
      egraph_ok and denote w.r.t. the original [e_ref]. *)
-  Lemma repair_each_denote_iff a l
+  Lemma repair_each_denote_iff a l (x_old x_canonical : idx)
     : vc (@! let _ <- db_remove a in
              let a' <- canonicalize a in
              (update_entry a'))
@@ -3151,18 +3278,21 @@ TODO: lemmas in the comment block are out of date
            egraph_ok e ->
            atom_in_egraph_up_to_equiv a e ->
            all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
            egraph_ok (snd res)
            /\ (forall i, denote e i <-> denote (snd res) i)
-           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l
+           /\ equiv_extends e (snd res)).
   Proof.
     vc_bind db_remove_sound.
     rename s0 into e_ref, a0 into u_dbr.
     vc_bind canonicalize_preserves_fields_strong.
     rename s0 into e0, a0 into a'.
     eapply vc_consequence;
-      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0)].
+      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0
+                  x_old x_canonical)].
     cbn beta. cbn [fst snd].
-    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hatoms_ref.
+    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hatoms_ref Hper_old_can.
     destruct Hdbr as [_ Hpost].
     pose proof Hpost as Hpost_full.
     destruct Hpost as (Hequiv_eq & _).
@@ -3185,8 +3315,11 @@ TODO: lemmas in the comment block are out of date
 
   (* Iterating [repair_each] over a list of atoms-in-egraph preserves
      egraph_ok and denote, by induction with [repair_each_denote_iff]
-     threading the side-list invariant. *)
-  Lemma list_Mmap_repair_each_denote_iff old_ps
+     threading the side-list invariant. The [uf_rel_PER e.equiv x_old
+     x_canonical] precondition (the [worklist_entry_ok]-derived fact
+     for the [union_repair x_old x_canonical _] entry being processed)
+     is preserved across iterations via [equiv_extends]. *)
+  Lemma list_Mmap_repair_each_denote_iff old_ps (x_old x_canonical : idx)
     : vc (list_Mmap (fun a : atom =>
                        @! let _ <- db_remove a in
                           let a' <- canonicalize a in
@@ -3195,26 +3328,33 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            all (fun a => atom_in_egraph_up_to_equiv a e) old_ps ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
   Proof.
     eapply vc_consequence;
       [| apply (vc_list_Mmap_inv _
                   (fun l s =>
                      egraph_ok s
-                     /\ all (fun a => atom_in_egraph_up_to_equiv a s) l)
-                  (fun s s' => forall i, denote s i <-> denote s' i))].
-    - cbn beta. intros s res Hinv Hok Hall.
-      specialize (Hinv (conj Hok Hall)).
-      destruct Hinv as [Hp Hiff]. destruct Hp as [Hok_p _]. auto.
-    - intros s _ i; reflexivity.
-    - intros ? ? ? H1 H2 i; rewrite H1; auto.
+                     /\ all (fun a => atom_in_egraph_up_to_equiv a s) l
+                     /\ uf_rel_PER s.(equiv) x_old x_canonical)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s'))].
+    - cbn beta. intros s res Hinv Hok Hall Hper.
+      specialize (Hinv (conj Hok (conj Hall Hper))).
+      destruct Hinv as ([Hok_p _] & Hiff & Hext). auto.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
     - intros a l_rest.
-      eapply vc_consequence; [| apply (repair_each_denote_iff a l_rest)].
-      cbn beta. intros s p Hone [Hok Hall].
+      eapply vc_consequence;
+        [| apply (repair_each_denote_iff a l_rest x_old x_canonical)].
+      cbn beta. intros s p Hone (Hok & Hall & Hper).
       cbn [all] in Hall. destruct Hall as [Ha Hl_rest].
-      destruct (Hone Hok Ha Hl_rest) as (Hok_p & Hde_p & Hl_p).
-      split; [split; assumption | exact Hde_p].
+      destruct (Hone Hok Ha Hl_rest Hper) as (Hok_p & Hde_p & Hl_p & Hext_p).
+      split; [split; [exact Hok_p|]; split; [exact Hl_p|]; apply Hext_p; exact Hper |].
+      split; [exact Hde_p | exact Hext_p].
   Qed.
 
   (* [update_analyses] only writes the [analyses] field, which doesn't
@@ -3486,8 +3626,63 @@ TODO: lemmas in the comment block are out of date
     vc_list_Miter_egraph_iff repair_parent_analysis_denote_iff.
   Qed.
 
+  (* [repair_parent_analysis] only writes to db / analyses / worklist;
+     equiv is unchanged. *)
+  Lemma repair_parent_analysis_preserves_equiv a
+    : vc (repair_parent_analysis a)
+        (fun e res => (snd res).(equiv) = e.(equiv)).
+  Proof.
+    unfold repair_parent_analysis, vc.
+    intros e. cbn [Mbind Mseq StateMonad.state_monad fst snd].
+    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_fn a) (atom_args a) e)
+      as [me e_l] eqn:Hlk; cbn [fst snd].
+    assert (Hlk_eq : e_l = e).
+    { unfold db_lookup_entry, Mret, StateMonad.state_monad in Hlk.
+      repeat (match type of Hlk with
+              | context [match ?x with _ => _ end] => destruct x; cbn in Hlk
+              end); inversion Hlk; reflexivity. }
+    subst e_l.
+    destruct me as [entry|]; [|cbn; reflexivity].
+    destruct entry as [v_epoch v old_a].
+    pose proof (get_analyses_preserves_fields (atom_args a) e) as Hga.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hga. destruct Hga as (_ & Heq_g & _).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd]. exact Heq_g.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist db_set_entry].
+      destruct e_g as [db_g equiv_g parents_g epoch_g wl_g analyses_g log_g];
+        cbn in *.
+      unfold map_update.
+      destruct (map.get db_g (atom_fn a)) as [tbl|] eqn:Htbl;
+        cbn; exact Heq_g.
+  Qed.
+
+  (* [list_Miter repair_parent_analysis] iterates a no-equiv-change op,
+     so equiv is unchanged across the whole iter. *)
+  Lemma list_Miter_repair_parent_analysis_preserves_equiv ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res => (snd res).(equiv) = e.(equiv)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ _ => True)
+                  (fun s s' => s'.(equiv) = s.(equiv)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _; reflexivity.
+    - intros ? ? ? H1 H2; congruence.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_parent_analysis_preserves_equiv a)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
   (* The optional analysis pass after the parent-canonicalization mmap.
-     Both branches (run-analyses or skip) preserve egraph_ok and denote. *)
+     Both branches (run-analyses or skip) preserve egraph_ok and denote.
+     Equiv is preserved literally (the analysis pass only writes
+     analyses/worklist/db); the [equiv_extends] conjunct is for callers
+     that thread a [worklist_entry_ok]-derived PER fact through. *)
   Lemma repair_after_mmap_denote_iff x_canonical (improved : bool)
     : vc (if improved
           then (@! let canon_ps <- get_parents x_canonical in
@@ -3496,20 +3691,27 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
   Proof.
     destruct improved.
     - vc_bind get_parents_denote_iff.
       eapply vc_consequence;
-        [|apply list_Miter_repair_parent_analysis_denote_iff].
-      cbn beta. intros s1 res HIH Hgp Hok_s0.
-      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & _).
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_denote_iff a)
+                    (list_Miter_repair_parent_analysis_preserves_equiv a))].
+      cbn beta. intros s1 res [HIH Heq_res_s1] Hgp Hok_s0.
+      cbn [fst snd] in Hgp.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & Hs1_eq & _).
       destruct (HIH Hok_s1) as [Hok_res Hde_res].
       split; [exact Hok_res|].
-      intros i. rewrite Hde_s1. exact (Hde_res i).
+      split; [intros i; rewrite Hde_s1; exact (Hde_res i)|].
+      intros x y Hxy. rewrite Heq_res_s1, Hs1_eq; exact Hxy.
     - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
-      intros e Hok; split; [exact Hok|]. intros i; reflexivity.
+      intros e Hok; split; [exact Hok|].
+      split; [intros i; reflexivity | apply equiv_extends_refl].
   Qed.
+
 
   (* [repair_union] = [pull_parents] of [x_old], then [list_Mmap] of
      [repair_each] over those parents, then conditional analysis pass.
@@ -3520,20 +3722,29 @@ TODO: lemmas in the comment block are out of date
     : vc (repair_union x_old x_canonical improved)
         (fun e res =>
            egraph_ok e ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
   Proof.
     unfold repair_union.
     vc_bind pull_parents_denote_iff.
-    vc_bind list_Mmap_repair_each_denote_iff.
+    rename s0 into e_init, a into ps.
+    vc_bind (list_Mmap_repair_each_denote_iff ps x_old x_canonical).
+    rename s0 into s1, a into _u.
     eapply vc_consequence;
       [|apply (repair_after_mmap_denote_iff x_canonical improved)].
-    cbn beta. intros s2 res HIH Hmap Hpull Hok_s0.
-    destruct (Hpull Hok_s0) as (Hok_s1 & Hde_s1 & Hains_s1).
-    destruct (Hmap Hok_s1 Hains_s1) as [Hok_s2 Hde_s2].
-    destruct (HIH Hok_s2) as [Hok_res Hde_res].
+    cbn beta. cbn [fst snd]. intros s2 res HIH Hmap Hpull Hok_init Hper_init.
+    destruct (Hpull Hok_init) as (Hok_s1 & Hde_s1 & Hequiv_s1 & Hains_s1).
+    assert (Hper_s1 : uf_rel_PER s1.(equiv) x_old x_canonical)
+      by (rewrite Hequiv_s1; exact Hper_init).
+    destruct (Hmap Hok_s1 Hains_s1 Hper_s1) as (Hok_s2 & Hde_s2 & Hext_s2).
+    destruct (HIH Hok_s2) as (Hok_res & Hde_res & Hext_res).
     split; [exact Hok_res|].
-    intros i. rewrite Hde_s1, Hde_s2. exact (Hde_res i).
+    split; [intros i; rewrite Hde_s1, Hde_s2; exact (Hde_res i)|].
+    intros x y Hxy.
+    apply Hext_res, Hext_s2.
+    rewrite Hequiv_s1; exact Hxy.
   Qed.
 
   (* Top-level [repair] dispatches by worklist-entry shape. Union
@@ -3544,19 +3755,26 @@ TODO: lemmas in the comment block are out of date
     : vc (repair a)
         (fun e res =>
            egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
   Proof.
     destruct a as [old new improved | i_repair]; cbn [repair].
-    - apply repair_union_denote_iff.
+    - unfold vc; intros e Hok Hwl.
+      cbn in Hwl.
+      apply (repair_union_denote_iff old new improved e); auto.
     - vc_bind get_parents_denote_iff.
       eapply vc_consequence;
-        [|apply list_Miter_repair_parent_analysis_denote_iff].
-      cbn beta. intros s1 res HIH Hgp Hok_s0.
-      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & _).
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_denote_iff a)
+                    (list_Miter_repair_parent_analysis_preserves_equiv a))].
+      cbn beta. cbn [fst snd]. intros s1 res [HIH Heq_res_s1] Hgp Hok_s0 _Hwl.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & Hs1_eq & _).
       destruct (HIH Hok_s1) as [Hok_res Hde_res].
       split; [exact Hok_res|].
-      intros i. rewrite Hde_s1. exact (Hde_res i).
+      split; [intros i; rewrite Hde_s1; exact (Hde_res i)|].
+      intros x y Hxy. rewrite Heq_res_s1, Hs1_eq; exact Hxy.
   Qed.
 
   (* Iterate [repair] over a list of worklist entries. Used by
@@ -3565,10 +3783,32 @@ TODO: lemmas in the comment block are out of date
     : vc (list_Miter repair l)
         (fun e res =>
            egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) l ->
            egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
   Proof.
-    vc_list_Miter_egraph_iff repair_denote_iff.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun l s => egraph_ok s /\ all (worklist_entry_ok s.(equiv)) l)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s'))].
+    - cbn beta. intros e res Hinv Hok Hl.
+      destruct (Hinv (conj Hok Hl)) as ((Hok_p & _) & Hiff & Hext); auto.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_denote_iff a)].
+      cbn beta. intros s p Hone (Hok & Hwl).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hone Hok Hwl_a) as (Hok_p & Hde_p & Hext_p).
+      split; [split; [exact Hok_p|]|].
+      + (* preserve all worklist_entry_ok across PER growth *)
+        eapply all_wkn; [| exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + split; [exact Hde_p | exact Hext_p].
   Qed.
 
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
@@ -3582,18 +3822,27 @@ TODO: lemmas in the comment block are out of date
     { unfold vc, rebuild. intros e Hok. split; [exact Hok|]. intros i; reflexivity. }
     cbn [rebuild].
     vc_bind pull_worklist_denote_iff.
-    destruct a as [|w wl'].
+    rename s0 into e_init, a into wl_pulled.
+    destruct wl_pulled as [|w wl'].
     { unfold vc; cbn [Mret StateMonad.state_monad fst snd].
       intros s1 HPpull Hok_s0.
-      apply HPpull. exact Hok_s0. }
+      destruct (HPpull Hok_s0) as (Hok_s1 & Hde_s1 & _).
+      split; [exact Hok_s1 | exact Hde_s1]. }
     cbn [Mbind StateMonad.state_monad Mseq].
     vc_bind list_Mmap_canonicalize_worklist_entry_denote_iff.
+    rename s0 into s1, a into wl_canon.
     vc_bind list_Miter_repair_denote_iff.
+    rename s0 into s2, a into u_miter.
     eapply vc_consequence; [|apply IHn].
-    cbn beta. intros s3 res HIH Hmiter Hmap Hpull Hok_s0.
-    destruct (Hpull Hok_s0) as [Hok_s1 Hde_s1].
-    destruct (Hmap Hok_s1) as [Hok_s2 Hde_s2].
-    destruct (Hmiter Hok_s2) as [Hok_s3 Hde_s3].
+    cbn beta. cbn [fst snd]. intros s3 res HIH Hmiter Hmap Hpull Hok_init.
+    destruct (Hpull Hok_init) as (Hok_s1 & Hde_s1 & Hequiv_s1 & Hwl_pulled).
+    assert (Hwl_s1 : all (worklist_entry_ok s1.(equiv)) (w :: wl')).
+    { rewrite Hequiv_s1; exact Hwl_pulled. }
+    destruct (Hmap Hok_s1 Hwl_s1) as (Hok_s2 & Hde_s2 & _Hext_s2 & Hwl_canon_s2).
+    pose proof (worklist_dedup_preserves_all
+                  (worklist_entry_ok s2.(equiv)) wl_canon Hwl_canon_s2)
+      as Hwl_dedup_s2.
+    destruct (Hmiter Hok_s2 Hwl_dedup_s2) as (Hok_s3 & Hde_s3 & _Hext_s3).
     destruct (HIH Hok_s3) as [Hok_res Hde_res].
     split; [exact Hok_res|].
     intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
