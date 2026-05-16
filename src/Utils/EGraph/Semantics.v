@@ -3160,12 +3160,11 @@ TODO: lemmas in the comment block are out of date
      ([repair_each_denote_iff] -> [update_entry_canonicalized_denote_
      iff] -> branches). *)
   Lemma union_after_canonicalize_denote_iff
-    a a' side_l (e_ref e0 : instance) (r : idx) (x_old x_canonical : idx)
+    a a' side_l (e_ref e0 : instance) (r : idx)
     : egraph_ok e_ref ->
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
-      uf_rel_PER e_ref.(equiv) x_old x_canonical ->
       vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3194,12 +3193,11 @@ TODO: lemmas in the comment block are out of date
      comment on [union_after_canonicalize_denote_iff] for the two
      resolution options. *)
   Lemma db_set_after_canonicalize_denote_iff
-    a a' side_l (e_ref e0 : instance) (x_old x_canonical : idx)
+    a a' side_l (e_ref e0 : instance)
     : egraph_ok e_ref ->
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
-      uf_rel_PER e_ref.(equiv) x_old x_canonical ->
       vc (db_set a')
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3217,6 +3215,67 @@ TODO: lemmas in the comment block are out of date
   Proof.
   Admitted.
 
+  (*
+    Proof that update entry soundly restores invariants after an atom hsa been removed.
+   *)
+  Lemma update_entry_restore_sound a a' (e_init e_rem : instance)
+    : vc (update_entry a')
+        (fun e1 res =>
+           egraph_ok e_init ->
+           atom_in_egraph_up_to_equiv a e_init ->
+           post_db_remove e_init a e_rem ->
+           atom_canonical_equiv e_init a a' ->
+           fields_preserved e_rem e1 ->
+           (exists roots : list idx, union_find_ok lt (equiv e1) roots) ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_init i <-> denote (snd res) i)).
+  Proof.
+    unfold update_entry.
+    vc_bind db_lookup_pure.
+    rename s0 into e1, a0 into mr.
+
+    destruct mr.
+    {
+      vc_bind union_sound.
+      unfold vc; cbn; intros.
+      break; subst.
+      specialize (H1 ltac:(eauto)).
+      split.
+      {
+        destruct H3, H5, H6; break.
+        destruct e_init, e_rem; cbn in*.
+        unfold atom_in_egraph in *; cbn in *.
+        subst.
+        assert (Sep.has_key i (parent (Defs.equiv e1))) by admit (*from H10*).
+        assert (Sep.has_key (atom_ret a') (parent (Defs.equiv e1))) by admit (*from H11*).
+        econstructor; intuition eauto.
+        {
+          unfold union_worklist_rel, fields_preserved in *.
+          cbn in *.
+          intuition subst; eauto.
+          1:admit(* from worklist_ok0, H24, and H12*).
+          1: admit(*probably similar to the last admit*).
+        }
+        {
+          unfold union_worklist_rel, fields_preserved in *.
+          cbn in *.
+          clear H16.
+          intuition subst; eauto.
+          rewrite <- H13 in H17.
+          eapply parents_ok0 in H17.
+          eapply all_wkn; try eassumption.
+          cbn.
+          intros.
+          admit(*using H24 and others*).
+        }
+      }
+      admit (*TODO*).
+    }
+    {
+      admit(*TODO: db_set soundness lemma*).
+    }
+  Admitted.
+  
   (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
      a'.args]; the [Some r] case uses [union_after_canonicalize_
      denote_iff] and the [None] case uses
@@ -3224,14 +3283,12 @@ TODO: lemmas in the comment block are out of date
      analog of [update_entry_canonicalized_after_db_remove_sound],
      proved by composing the two branch helpers. *)
   Lemma update_entry_canonicalized_denote_iff a a' side_l (e_ref e0 : instance)
-    (x_old x_canonical : idx)
     : vc (update_entry a')
         (fun e1 res =>
            egraph_ok e_ref ->
            atom_in_egraph_up_to_equiv a e_ref ->
            all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
            post_db_remove e_ref a e0 ->
-           uf_rel_PER e_ref.(equiv) x_old x_canonical ->
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
            fields_preserved e0 e1 ->
            atom_fn a' = atom_fn a ->
@@ -3245,21 +3302,18 @@ TODO: lemmas in the comment block are out of date
     unfold update_entry.
     vc_bind db_lookup_pure.
     rename s0 into e1, a0 into mr.
-    unfold vc.
     destruct mr as [r|]; cbn beta iota; cbn [fst snd];
       intros s_pre [Hs_eq Hatom_case]; subst s_pre;
-      intros Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can
+      intros Hok_ref Hatom_ref Hatoms_ref Hpost
              Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
     - (* Some r: invoke union branch *)
       pose proof (union_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0 r x_old x_canonical
-                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can) as Hu.
+                    a a' side_l e_ref e0 r Hok_ref Hatom_ref Hatoms_ref Hpost) as Hu.
       specialize (Hu e1).
       apply Hu; auto.
     - (* None: invoke db_set branch *)
       pose proof (db_set_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0 x_old x_canonical
-                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_old_can) as Hd.
+                    a a' side_l e_ref e0 Hok_ref Hatom_ref Hatoms_ref Hpost) as Hd.
       specialize (Hd e1).
       apply Hd; auto.
   Qed.
@@ -3289,8 +3343,7 @@ TODO: lemmas in the comment block are out of date
     vc_bind canonicalize_preserves_fields_strong.
     rename s0 into e0, a0 into a'.
     eapply vc_consequence;
-      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0
-                  x_old x_canonical)].
+      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0)].
     cbn beta. cbn [fst snd].
     intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hatoms_ref Hper_old_can.
     destruct Hdbr as [_ Hpost].
