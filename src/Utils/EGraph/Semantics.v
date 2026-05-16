@@ -1321,18 +1321,6 @@ Abort.
                   <-> atom_in_egraph x e_ref
                       /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
 
-  (* [db_remove_sound]'s postcondition immediately rephrased as
-     [post_db_remove], for use as a precondition of downstream
-     [update_entry] lemmas. *)
-  Lemma db_remove_sound_post a
-    : vc (db_remove a)
-        (fun e res => fst res = tt /\ post_db_remove e a (snd res)).
-  Proof.
-    eapply vc_consequence; [| exact (db_remove_sound a)].
-    unfold post_db_remove; intuition.
-  Qed.
-
-
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
     atom_fn a1 = atom_fn a2 /\
       all2 (eq_sound_for_model m i) (atom_args a1) (atom_args a2) /\
@@ -3168,7 +3156,7 @@ TODO: lemmas in the comment block are out of date
            /\ (forall i, denote e i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
   Proof.
-    vc_bind db_remove_sound_post.
+    vc_bind db_remove_sound.
     rename s0 into e_ref, a0 into u_dbr.
     vc_bind canonicalize_preserves_fields_strong.
     rename s0 into e0, a0 into a'.
