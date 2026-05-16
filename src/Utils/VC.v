@@ -90,6 +90,50 @@ Proof.
     split; eauto.
 Qed.
 
+(* Variant of [vc_list_Mmap_inv] that also tracks per-element outputs.
+   Compared to [vc_list_Mmap_inv], this adds a per-element relation [Q :
+   S -> A -> B -> Prop] (in the post-state) and requires that [Q]
+   transports across the [R] step relation, so a witness produced for an
+   earlier element remains valid in the final state. The conclusion adds
+   [all2 (Q (snd p)) (fst p) l] relating the output and input lists. *)
+Lemma vc_list_Mmap_outputs {S A B}
+  (f : A -> state S B)
+  (P : list A -> S -> Prop)
+  (R : S -> S -> Prop)
+  (Q : S -> B -> A -> Prop)
+  : (forall s, P [] s -> R s s) ->
+    (forall s s' s'', R s s' -> R s' s'' -> R s s'') ->
+    (forall s s' b a, R s s' -> Q s b a -> Q s' b a) ->
+    (forall a l_rest,
+       vc (f a)
+          (fun s p => P (a :: l_rest) s ->
+                      P l_rest (snd p) /\ R s (snd p) /\ Q (snd p) (fst p) a)) ->
+    forall l,
+      vc (list_Mmap f l)
+        (fun s p => P l s ->
+                    P [] (snd p) /\ R s (snd p) /\ all2 (Q (snd p)) (fst p) l).
+Proof.
+  intros Hrefl_base Htrans Htrans_Q Hstep l.
+  induction l as [| a l' IH].
+  - unfold vc; cbn; intros e HP.
+    split; [exact HP|].
+    split; [apply Hrefl_base; exact HP|].
+    exact I.
+  - unfold vc in *; intros e HP.
+    cbn [list_Mmap Mbind StateMonad.state_monad].
+    pose proof (Hstep a l' e HP) as Hae.
+    destruct (f a e) as [b s1] eqn:Hfa.
+    cbn [fst snd] in Hae. destruct Hae as (HPl' & Hmono1 & HQ_ba).
+    pose proof (IH s1) as IH1.
+    specialize (IH1 HPl').
+    destruct (list_Mmap f l' s1) as [bl' s2] eqn:Hmap.
+    cbn [fst snd] in IH1. destruct IH1 as (HPnil & Hmono2 & Hall2).
+    cbn [Mret StateMonad.state_monad fst snd].
+    split; [exact HPnil|]. split; [eauto|].
+    cbn [all2].
+    split; [exact (Htrans_Q s1 s2 b a Hmono2 HQ_ba) | exact Hall2].
+Qed.
+
 (* [list_Miter] analog of [vc_list_Mmap_inv]; same invariant style. *)
 Lemma vc_list_Miter_inv {S A}
   (f : A -> state S unit)

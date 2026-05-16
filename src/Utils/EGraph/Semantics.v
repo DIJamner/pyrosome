@@ -2042,11 +2042,12 @@ TODO: lemmas in the comment block are out of date
   (* Iterating [find] over a list of indices preserves the same
      structural facts as a single [find], and additionally the
      returned canonical idxs are [uf_rel_PER]-equivalent to their
-     inputs (pointwise via [all2]) in the post-state's [equiv].
-     Proven by direct induction on [xs] rather than via
-     [vc_list_Mmap_inv], since the per-element canonical-equivalence
-     outputs need to be carried through subsequent [find]s (using
-     [iff2] of [uf_rel_PER] across path compression). *)
+     inputs (pointwise via [all2]) in the post-state's [equiv]. A
+     clean application of [vc_list_Mmap_outputs]: the invariant [P]
+     bundles the union-find ok-witness with [all has_key], the step
+     relation [R] is [fields_preserved], and the per-element relation
+     [Q] is [uf_rel_PER] in the current state's [equiv]. The transport
+     of [Q] across [R] is the [iff2] conjunct of [fields_preserved]. *)
   Lemma list_Mmap_find_preserves_fields_strong (xs : list idx)
     : vc (list_Mmap find xs)
         (fun (e : instance) (res : (list idx * instance)%type) =>
@@ -2056,36 +2057,34 @@ TODO: lemmas in the comment block are out of date
            /\ fields_preserved e (snd res)
            /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv)) (fst res) xs).
   Proof.
-    induction xs as [| x xs' IH].
-    - unfold vc. intros e Hex _.
-      cbn [list_Mmap Mret StateMonad.state_monad fst snd].
-      split; [exact Hex|]. split; [apply fields_preserved_refl|]. exact I.
-    - unfold vc. intros e Hex Hkeys.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_outputs find
+                  (fun l e => (exists rs, union_find_ok lt e.(equiv) rs)
+                              /\ all (fun i => Sep.has_key i e.(equiv).(parent)) l)
+                  fields_preserved
+                  (fun (e : instance) y x => uf_rel_PER _ _ _ e.(equiv) y x))].
+    - cbn beta.
+      intros e res Hgen Hex Hkeys.
+      destruct (Hgen (conj Hex Hkeys)) as ((Hex' & _) & Hf01 & Hall).
+      split; [exact Hex'|]. split; [exact Hf01|]. exact Hall.
+    - intros s _; apply fields_preserved_refl.
+    - intros; eapply fields_preserved_trans; eauto.
+    - intros e e' y x Hf01 Huf.
+      destruct Hf01 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+      apply Huf_iff. exact Huf.
+    - intros x l_rest. unfold vc. intros e [Hex Hkeys].
       cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
-      cbn [list_Mmap Mbind StateMonad.state_monad].
       pose proof (find_preserves_fields_strong x e Hex Hkey_x) as Hf.
       cbn beta in Hf.
       destruct (find x e) as [y e1] eqn:Hfind_x.
-      cbn [fst snd] in Hf.
+      cbn [fst snd] in Hf |- *.
       destruct Hf as (Hex1 & Hf01 & Huf_yx).
-      assert (Hkeys'_e1 :
-                all (fun i => Sep.has_key i e1.(equiv).(parent)) xs').
-      { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
-        eapply all_wkn; [| exact Hkeys'].
-        intros z _ Hz. apply Hkey_iff. exact Hz. }
-      pose proof (IH e1 Hex1 Hkeys'_e1) as IHapp.
-      cbn beta in IHapp.
-      destruct (list_Mmap find xs' e1) as [ys' e2] eqn:Hmap.
-      cbn [fst snd] in IHapp.
-      destruct IHapp as (Hex2 & Hf12 & Hall_ys'_xs').
-      cbn [Mret StateMonad.state_monad fst snd].
-      split; [exact Hex2|].
-      split; [eapply fields_preserved_trans; eauto|].
-      cbn [all2].
       split.
-      + destruct Hf12 as (_ & _ & _ & _ & _ & _ & Huf_iff).
-        apply Huf_iff. exact Huf_yx.
-      + exact Hall_ys'_xs'.
+      + split; [exact Hex1|].
+        destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+        eapply all_wkn; [| exact Hkeys'].
+        intros z _ Hz. apply Hkey_iff. exact Hz.
+      + split; [exact Hf01 | exact Huf_yx].
   Qed.
 
   (* [canonicalize a] is a sequence of [find] calls (one per arg
