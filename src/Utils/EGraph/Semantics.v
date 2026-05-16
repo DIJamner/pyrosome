@@ -3270,6 +3270,13 @@ TODO: lemmas in the comment block are out of date
   Proof.
   Admitted.
 
+  
+  Lemma atom_in_egraph_up_to_equiv_iff x e e'
+    : egraph_extensional_eq e e' ->
+      atom_in_egraph_up_to_equiv x e <-> atom_in_egraph_up_to_equiv x e'.
+  Proof.
+  Admitted.
+
   (*
     Proof that update entry soundly restores invariants after an atom hsa been removed.
    *)
@@ -3364,7 +3371,13 @@ TODO: lemmas in the comment block are out of date
               apply PER_clo_sym. exact Hv'.
             * eapply all_wkn; [|exact worklist_ok0].
               intros [old new improved | k] _ Hent; cbn in *; auto.
-        - (* admit 5 (parents_ok): postponed *)
+        - intros.
+          rewrite <- Hpar_e, Hpar_eq in H1.
+          eapply parents_ok0 in H1.
+          eapply all_wkn; try eassumption.
+          intros.
+          cbn beta in *.
+          eapply atom_in_egraph_up_to_equiv_iff; eauto.
           admit.
         - (* new field db_idxs_in_equiv on e *)
           intros a1 Ha1.
