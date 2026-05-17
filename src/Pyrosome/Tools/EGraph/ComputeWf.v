@@ -4,7 +4,6 @@ Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Monad GallinaHintDb Ltac Result.
-From Utils Require Import EGraph.Defs.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Tools Require Import Matches Resolution EGraph.Defs EGraph.Automation.
 From Pyrosome.Compilers Require Import Compilers CompilerFacts
@@ -722,7 +721,7 @@ Ltac compute_args_wf :=
   (* TODO: use flagged_exact *)
   | vm_compute; reflexivity].
 
-Require Import Pyrosome.Elab.Elab.
+From Pyrosome.Elab Require Import Elab.
 
 
 Notation wf_args l :=

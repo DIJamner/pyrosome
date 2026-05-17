@@ -1,5 +1,5 @@
-Require Import Coq.Classes.RelationClasses.
-Require Import Coq.Classes.Morphisms.
+From Stdlib Require Import Classes.RelationClasses.
+From Stdlib Require Import Classes.Morphisms.
 
 From Utils Require Import Utils.
 

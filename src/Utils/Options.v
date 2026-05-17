@@ -1,7 +1,6 @@
-Require Import Coq.Classes.RelationClasses.
-
-From Utils Require Import Base Booleans Eqb Default.
+From Stdlib Require Import Classes.RelationClasses.
 From coqutil Require Export Option.
+From Utils Require Import Base Default.
 
 Section __.
   Context {A : Type}.

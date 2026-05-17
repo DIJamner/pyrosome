@@ -1,7 +1,7 @@
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope list.
-From Utils Require Import Utils SymmetricInduction.
+From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core (*CutElim*) .
 
 

@@ -1,12 +1,12 @@
 (* Some basic tests of the egraph machinery *)
-Require Import Lists.List Strings.String.
+From Stdlib Require Import Lists.List Strings.String.
 Import ListNotations.
 Open Scope list.
 
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad.
 From Utils.EGraph Require Import Defs QueryOpt Semantics.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
@@ -15,9 +15,9 @@ From Pyrosome.Tools.EGraph Require Defs.
 Import Defs.StringInstantiation.
 
 
-Require Import BinNums.
+From Stdlib Require Import BinNums.
 Import PosListMap.
-Require Tools.UnElab.
+From Pyrosome.Tools Require UnElab.
 
 (* TODO: make this available in other places than the tests *)
 Declare Custom Entry logrule.
@@ -192,12 +192,9 @@ Notation build_tries := (build_tries _ _ _ _ _ _ _ _).
 
 (* Lang tests *)
 (*
-From Utils Require Import Utils.
-From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches.
-From Pyrosome.Lang Require Import SimpleVSubst SimpleUnit SimpleEvalCtx.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Open Scope lang_scope.*)
 

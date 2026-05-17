@@ -2,11 +2,10 @@
 
    TODO: benchmark, then use plist everywhere feasible and retest
  *)
-Require Import Equalities Orders ZArith Lists.List Uint63.
+From Stdlib Require Import Equalities Orders ZArith Lists.List Uint63.
 Import ListNotations.
 From coqutil Require Import Map.Interface Datatypes.dlist.
 From coqutil Require Map.SortedList.
-Require Import Tries.Canonical.
 
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind (*SpacedMapTreeN*).
 From Utils Require TrieMap TrieMapInt63.

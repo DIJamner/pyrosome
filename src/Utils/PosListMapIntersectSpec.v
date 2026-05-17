@@ -1,4 +1,7 @@
-Require Import NArith Tries.Canonical Lists.List Sorting.Permutation.
+From Stdlib Require Import NArith.
+From Tries Require Import Canonical.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Sorting.Permutation.
 Import ListNotations.
 
 From Utils Require Import Utils Monad.

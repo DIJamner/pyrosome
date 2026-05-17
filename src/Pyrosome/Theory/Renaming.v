@@ -1,11 +1,12 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad.
-From Pyrosome Require Import Theory.Core Theory.CutFreeInd.
+From Utils Require Import Utils.
+From Pyrosome.Theory Require Import Core CutFreeInd.
 
 
 

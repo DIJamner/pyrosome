@@ -1,4 +1,4 @@
-From Utils Require Import Utils Monad.
+From Utils Require Import Monad.
 Import StateMonad.
 
 Class Lens (A:Type) (B: Type) : Type :=

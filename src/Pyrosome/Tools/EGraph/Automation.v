@@ -1,25 +1,27 @@
 Set Implicit Arguments.
 
 (*TODO: clean up imports*)
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
 From Utils Require Import Utils Ltac Result.
-From Pyrosome Require Import Theory.Core Compilers.Compilers Elab.Elab Elab.ElabCompilers.
+From Pyrosome Require Import Theory.Core Elab.ElabCompilers.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 From Utils Require Import EGraph.Defs.
-Require Import Pyrosome.Tools.EGraph.Defs.
+From Pyrosome.Tools.EGraph Require Import Defs.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
-Require Import Utils.Monad PosRenaming NArith.
+From Utils Require Import Monad.
+From Pyrosome.Tools Require Import PosRenaming.
+From Stdlib Require Import NArith.
 Import StateMonad.
-Require Import Tools.UnElab.
 Import StringInstantiation.
 
 

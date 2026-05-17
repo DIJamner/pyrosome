@@ -12,7 +12,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 (*TODO: move to utils*)
 Lemma all_app A (P : A -> Prop) l1 l2
@@ -897,5 +897,5 @@ Ltac prove_by_cmp_db :=
   flagged_exact I.
 
 (*TODO: get rid of this *)
-Require Pyrosome.Tools.Matches.
+From Pyrosome.Tools Require Matches.
 Ltac Matches.prove_from_known_elabs ::= prove_by_lang_db.

@@ -1,4 +1,4 @@
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface Map.Properties.
 

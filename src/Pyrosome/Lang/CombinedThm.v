@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -19,7 +20,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Local Notation compiler_case := (compiler_case string (tgt_term:=term) (tgt_sort:=sort)).
 
@@ -138,7 +139,7 @@ Definition full_compiler :=
   (compile_cmp (fix_cc++heap_cc++heap_id'++cc++prod_cc_compile++subst_cc++[])
      (let_cps++fix_cps++ cps ++ heap_ctx_cps ++ Ectx_cps++ heap_cps++heap_id++cps_subst++[])).
 
-Require Import Pyrosome.Compilers.PartialEval.
+From Pyrosome.Compilers Require Import PartialEval.
 
 Definition compile_fn l c t e :=
   partial_eval _ l (compile_ctx full_compiler c) (compile_sort full_compiler t) 100 (compile full_compiler e).

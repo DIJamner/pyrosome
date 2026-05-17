@@ -4,7 +4,7 @@
 From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-From Ltac2 Require Import Ltac2 Ident Control List Bool Constr.
+From Ltac2 Require Import Ltac2 Control List Constr.
 Set Default Proof Mode "Classic".
 
 (* TODO: generalize tactics to allow DBs w/ more than 1 type of entry?*)

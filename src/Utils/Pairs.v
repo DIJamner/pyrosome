@@ -1,7 +1,7 @@
-Require Import Bool.
+From Stdlib Require Import Bool.
 Import BoolNotations.
 
-From Utils Require Import Base Booleans Eqb Default.
+From Utils Require Import Base Eqb Default.
 
 Section __.
   Context (A B : Type)

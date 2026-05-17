@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -20,7 +21,7 @@ From Pyrosome.Lang Require Import PolySubst
 Import Core.Notations.
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Definition stlc_parameterized :=
     let ps := (elab_param "D" (stlc ++ exp_ret ++ exp_subst_base
@@ -424,7 +425,7 @@ Definition exp_ty_subst_cps_def : compiler string :=
       {{e #"blk_ty_subst" "g" "e"}}
   end.
 
-Require Import Tools.UnElab.
+From Pyrosome.Tools Require Import UnElab.
 
 Definition ir_param_substs_def :=
   Eval compute in
@@ -925,7 +926,7 @@ Qed.
   cmp_entry (elab_compiler_implies_preserving exists_cc_preserving).
 #[export] Hint Resolve exists_cc_cmp_entry : preserving_db.
 
-Require Import Pyrosome.Compilers.CompilerTransitivity.
+From Pyrosome.Compilers Require Import CompilerTransitivity.
 
   Local Notation preserving_compiler_ext' tgt cmp_pre cmp src :=
     (preserving_compiler_ext (tgt_Model:=core_model tgt) cmp_pre cmp src).

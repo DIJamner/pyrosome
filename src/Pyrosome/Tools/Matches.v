@@ -3,8 +3,9 @@
  *)
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List Uint63.
-Require PArray.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List Uint63.
+From Stdlib Require PArray.
 Import PArray (array, get, set).
 Import ListNotations.
 Open Scope string.

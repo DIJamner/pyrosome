@@ -1,6 +1,6 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String.
+From coqutil Require Import Datatypes.String.
 Local Open Scope string.
 
 (* Note: use with caution! *)

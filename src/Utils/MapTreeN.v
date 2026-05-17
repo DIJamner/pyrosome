@@ -1,8 +1,8 @@
-Require Import NArith Lists.List.
+From Stdlib Require Import NArith Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Base Options ExtraMaps Monad.
+From Utils Require Import Base ExtraMaps Monad.
 From Utils Require TrieMap.
 
 

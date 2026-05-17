@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Ascii Datatypes.String Lists.List.
+From Stdlib Require Import Strings.Ascii Lists.List.
+From coqutil Require Import Datatypes.String.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -12,7 +13,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Lang.GenericSubst.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 
 Definition cat_def : lang _ :=
@@ -57,7 +58,6 @@ Definition cat_def : lang _ :=
 
 
 
-Require Import Coq.derive.Derive.
 
 Derive cat
        SuchThat (elab_lang_ext [] cat_def cat)

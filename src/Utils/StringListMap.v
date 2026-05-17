@@ -1,10 +1,11 @@
-Require Import NArith Tries.Canonical Lists.List Sorting.Permutation.
-Require Ascii.
+From Stdlib Require Import NArith Lists.List Sorting.Permutation.
+From Tries Require Import Canonical.
+From Stdlib Require Strings.Ascii.
 Import ListNotations.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils Monad ExtraMaps TrieMap.
+From Utils Require Import Utils ExtraMaps TrieMap.
 From Utils Require PosListMap.
 Import Monad.StateMonad.
 
@@ -37,7 +38,7 @@ Definition ascii_succ a : Ascii.ascii :=
         ascii_of_bit_list (blist_succ [x; x0; x1; x2; x3; x4; x5; x6])
     end.
 
-Require Import Ascii.
+From Stdlib Require Import Strings.Ascii.
 
 Goal ascii_succ "0"%char = "1"%char.
 Proof. compute. reflexivity. Abort.

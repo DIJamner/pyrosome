@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -11,7 +12,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Definition usubst_def : lang :=
   {[l/subst [exp_subst++value_subst]

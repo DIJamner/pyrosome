@@ -1,4 +1,4 @@
-Require Import NArith.
+From Stdlib Require Import NArith.
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Base.

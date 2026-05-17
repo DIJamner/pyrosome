@@ -1,7 +1,8 @@
-Require Import Ascii Lists.List Datatypes.String.
+From Stdlib Require Import Strings.Ascii Lists.List.
+From coqutil Require Import Datatypes.String.
 Import ListNotations.
-Require Import Utils.Utils.
-Require Import Pyrosome.Theory.Core.
+From Utils Require Import Utils.
+From Pyrosome.Theory Require Import Core.
 Import Core.Notations.
 
 Local Open Scope string.  

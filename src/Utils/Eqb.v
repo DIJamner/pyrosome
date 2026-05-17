@@ -1,7 +1,6 @@
-From Stdlib Require Import Uint63.
 From coqutil Require Import Datatypes.Bool Datatypes.String.
-Require Import Utils.Base.
-Require Export coqutil.Eqb.
+From coqutil Require Export Eqb.
+From Utils Require Import Base.
 
 
 Section __.

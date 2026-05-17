@@ -1,5 +1,6 @@
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -10,7 +11,7 @@ From Pyrosome Require Import Theory.Core Elab.Elab
 From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Definition fix_def : lang :=
   {[l/subst [stlc++exp_subst++value_subst]

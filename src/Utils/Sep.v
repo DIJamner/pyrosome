@@ -1,11 +1,10 @@
 From coqutil Require Import Map.Interface.
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-Require Import Setoid.
-Require Import Coq.Classes.Morphisms.
+From Stdlib Require Import Classes.Morphisms.
 
-Require Import Coq.Sorting.Permutation.
+From Stdlib Require Import Sorting.Permutation.
 
 From Utils Require Import Base Booleans Eqb Options Lists ExtraMaps
   Permutation.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Lists.List.
+From Stdlib Require Lists.List.
 From Utils Require Import Utils Monad.
 
 Section __.

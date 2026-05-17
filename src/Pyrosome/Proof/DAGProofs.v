@@ -1,12 +1,12 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import NArith Lists.List micromega.Lia.
+From Stdlib Require Import NArith Lists.List micromega.Lia.
 Open Scope positive.
 Import ListNotations.
 Open Scope list.
 
-Require Import Tries.Canonical.
+From Tries Require Import Canonical.
 Import PTree.
 
 From Utils Require Import Utils Monad.
