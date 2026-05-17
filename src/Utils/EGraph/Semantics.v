@@ -2256,6 +2256,22 @@ TODO: lemmas in the comment block are out of date
   Definition db_equiv R : symbol_map (idx_trie (db_entry idx analysis_result)) -> _ -> Prop :=
     map_equiv eq (map_equiv (all2 R) (fun x y => R x.(entry_value _ _) y.(entry_value _ _))).
 
+  (* One-direction counterpart of [db_equiv]: every entry [(fn, args, r)]
+     in [db1] has a canonically-equivalent witness [(fn, args', r')] in
+     [db2] (same [fn], [args] pointwise [R]-related, [r] [R]-related to
+     [r']). Used where [db_equiv]'s backward direction is too strong
+     (e.g. callers that have removed an entry and inserted a
+     canonically-equivalent one, breaking the literal-key bijection
+     that [db_equiv] would require). *)
+  Definition db_impl R : symbol_map (idx_trie (db_entry idx analysis_result)) -> _ -> Prop :=
+    fun db1 db2 =>
+      forall fn args r,
+        atom_in_db (Build_atom fn args r) db1 ->
+        exists args' r',
+          all2 R args args'
+          /\ R r r'
+          /\ atom_in_db (Build_atom fn args' r') db2.
+
   Record egraph_extensional_eq (e1 e2 : instance) : Prop :=
     {
       db_eq : db_equiv (uf_rel_PER e1.(equiv)) e1.(db) e2.(db);
@@ -3271,65 +3287,41 @@ TODO: lemmas in the comment block are out of date
   Admitted.
 
   
-  (* Forward direction of an [atom_in_egraph_up_to_equiv] iff: any
-     [egraph_extensional_eq]-related pair preserves canonical-witness
-     existence. The [egraph_ok e] hypothesis is needed because
-     extracting a witness in [e']'s db requires [all2 (uf_rel_PER
-     (equiv e)) (atom_args a') (atom_args a')], i.e. PER-reflexivity
-     on the witness's args — which follows from the
-     [db_idxs_in_equiv] field of [egraph_ok e]. The backward
-     direction would symmetrically need [egraph_ok e']; we expose
-     only the forward implication for now since that is what callers
-     (e.g. the [parents_ok] case of [update_entry_restore_sound])
-     need. *)
+  (* Forward direction of an [atom_in_egraph_up_to_equiv] iff: a
+     canonical witness in [e]'s db transports to [e']'s db given a
+     [uf_rel_PER]-monotone PER and a [db_impl] relation between the
+     two dbs. Weaker hypothesis than [egraph_extensional_eq]: only
+     forward PER inclusion and forward db witness existence are
+     required, not the iff/equality fields. The new witness
+     [Build_atom a'.fn args' r'] is the one [db_impl] produces. *)
   Lemma atom_in_egraph_up_to_equiv_iff x e e'
-    : egraph_ok e ->
-      egraph_extensional_eq e e' ->
+    : (forall a b, uf_rel_PER (Defs.equiv e) a b ->
+                   uf_rel_PER (Defs.equiv e') a b) ->
+      db_impl (uf_rel_PER (Defs.equiv e')) (Defs.db e) (Defs.db e') ->
       atom_in_egraph_up_to_equiv x e -> atom_in_egraph_up_to_equiv x e'.
   Proof.
-    intros Hok_e Hext.
-    destruct Hok_e as [_ _ _ Hdb_init].
-    destruct Hext as [Hdb_eq Hequiv_eq _ _].
-    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph in *.
+    intros Hper_ext Hdb_imp.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph.
     intros (a' & (Hfn & Hargs & Hret) & Hain_a').
-    pose proof (Hdb_init _ Hain_a') as [Hargs_key Hret_key].
-    assert (Hargs_refl : all2 (uf_rel_PER (equiv e)) (atom_args a') (atom_args a')).
-    { clear -Hargs_key.
-      induction (atom_args a') as [|y ys IH]; cbn in *; auto.
-      destruct Hargs_key as [Hy Hys].
-      split; [|auto].
-      unfold Sep.has_key in Hy.
-      destruct (map.get (parent (equiv e)) y) as [v|] eqn:Hgy; [|tauto].
-      unfold uf_rel_PER.
-      eapply PER_clo_trans;
-        [apply PER_clo_base; exact Hgy
-        |apply PER_clo_sym; apply PER_clo_base; exact Hgy]. }
-    unfold atom_in_db, Is_Some_satisfying in Hain_a'.
-    destruct (map.get (db e) (atom_fn a')) as [tbl|] eqn:Htbl;
-      cbn in Hain_a'; [|tauto].
-    destruct (map.get tbl (atom_args a')) as [entry|] eqn:Hentry;
-      cbn in Hain_a'; [|tauto].
-    pose proof (proj1 (Hdb_eq (atom_fn a') (atom_fn a')) eq_refl) as Hdb_at_fn.
-    unfold Defs.db_map in *.
-    rewrite Htbl in Hdb_at_fn.
-    cbn in Hdb_at_fn.
-    case_match; rename case_match_eqn into Htbl'; [|tauto].
-    rename r into tbl'.
-    pose proof (proj1 (Hdb_at_fn (atom_args a') (atom_args a')) Hargs_refl)
-      as Hentry_or.
-    rewrite Hentry in Hentry_or. cbn in Hentry_or.
-    case_match; rename case_match_eqn into Hentry'; cbn in Hentry_or; [|tauto].
-    rename d into entry'.
-    exists (Build_atom (atom_fn a') (atom_args a') (entry_value _ _ entry')).
+    destruct a' as [fn args r]; cbn in *.
+    destruct (Hdb_imp fn args r Hain_a') as (args' & r' & Hargs_imp & Hret_imp & Hain').
+    exists (Build_atom fn args' r').
     cbn.
     split.
-    + split; [exact Hfn|]. split.
-      * eapply all2_impl; [|exact Hargs]. intros; apply Hequiv_eq; assumption.
-      * apply Hequiv_eq.
-        eapply PER_clo_trans; [exact Hret|].
-        rewrite <- Hain_a'. exact Hentry_or.
-    + unfold atom_in_db, Is_Some_satisfying. cbn. unfold Defs.db_map in *.
-      rewrite Htbl', Hentry'. cbn. reflexivity.
+    - split; [exact Hfn|]. split.
+      + (* x.args ~_{e'.equiv} args' by transitivity through args *)
+        clear -Hargs Hargs_imp Hper_ext.
+        revert Hargs Hargs_imp.
+        revert args args'.
+        induction (atom_args x) as [|y ys IH]; intros [|z zs] [|w ws];
+          cbn; auto; try tauto.
+        intros [Hyz Hys] [Hzw Hws]. split.
+        * unfold uf_rel_PER in *.
+          eapply PER_clo_trans; [apply Hper_ext; exact Hyz | exact Hzw].
+        * apply (IH zs ws Hys Hws).
+      + unfold uf_rel_PER in *.
+        eapply PER_clo_trans; [apply Hper_ext; exact Hret | exact Hret_imp].
+    - exact Hain'.
   Qed.
 
   (*
@@ -3432,15 +3424,15 @@ TODO: lemmas in the comment block are out of date
           eapply all_wkn; try eassumption.
           intros.
           cbn beta in *.
-          (* Reconstruct [egraph_ok] for the destructured [e_init] so
-             [atom_in_egraph_up_to_equiv_iff] (forward direction) can be
-             applied with [eauto] discharging the precondition. *)
-          assert (Hok_init :
-                    egraph_ok {| db := db; equiv := equiv; parents := parents;
-                                 epoch := epoch; worklist := worklist;
-                                 analyses := analyses; log := log |})
-            by (constructor; cbn; eauto).
-          eapply atom_in_egraph_up_to_equiv_iff; [exact Hok_init | | eassumption].
+          (* Lift via the weakened [atom_in_egraph_up_to_equiv_iff]:
+             [Hext] gives the PER monotonicity ([e_init.equiv] PER
+             included in [e.equiv]); the [db_impl] precondition is the
+             only remaining congruence-style obligation (admit). *)
+          eapply (atom_in_egraph_up_to_equiv_iff
+                    _ {| db := db; equiv := equiv; parents := parents;
+                         epoch := epoch; worklist := worklist;
+                         analyses := analyses; log := log |});
+            [exact Hext | | eassumption].
           admit.
         - (* new field db_idxs_in_equiv on e *)
           intros a1 Ha1.
