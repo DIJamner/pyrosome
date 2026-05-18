@@ -3433,7 +3433,22 @@ TODO: lemmas in the comment block are out of date
                          epoch := epoch; worklist := worklist;
                          analyses := analyses; log := log |});
             [exact Hext | | eassumption].
-          admit.
+          cbn.
+          unfold db_impl.
+          intros.
+          eqb_case (fn, args) (atom_fn a, atom_args a).
+          {
+            admit (*TODO: the tricky case *).
+          }
+          {
+            specialize (H15 {| atom_fn := fn; atom_args := args; atom_ret := r |}).
+            cbn in H15.
+            intuition.
+            unfold fields_preserved in *; break; subst.
+            exists args, r.
+            intuition try congruence.
+            all: admit (*from properties of e & atom membership in the db*).
+          }
         - (* new field db_idxs_in_equiv on e *)
           intros a1 Ha1.
           rewrite <- Hdbe_eq, Hdb_eq in Ha1.
