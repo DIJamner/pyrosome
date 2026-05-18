@@ -3725,12 +3725,45 @@ TODO: lemmas in the comment block are out of date
             rewrite Hdbe_eq in *.
             eapply Hatom_e in H7.
             enough (all2 (eq_sound_for_model m i_interp) (atom_args a) args_aa
-                    /\ eq_sound_for_model m i_interp a1_ret ret_aa)
-              by admit(*TODO: atom_sound_for_model_Proper*).
+                    /\ eq_sound_for_model m i_interp a1_ret ret_aa).
+            { destruct H18 as [Hargs_eq Hret_eq].
+              apply eq_atom_implies_sound_l_active
+                with (a3 := Build_atom (atom_fn a) args_aa ret_aa).
+              - unfold eq_atom_in_interpretation; cbn.
+                split; [reflexivity|]. split.
+                + revert Hargs_eq. generalize (atom_args a), args_aa.
+                  intros l1 l2. revert l2.
+                  induction l1; destruct l2; cbn; auto; try tauto.
+                  intros [HH1 HH2]; split.
+                  * apply eq_sound_for_model_Symmetric. exact HH1.
+                  * apply IHl1. exact HH2.
+                + apply eq_sound_for_model_Symmetric. exact Hret_eq.
+              - exact H7. }
             split.
-            1:admit (*follows from Hargs_aa*).
-            unfold eq_sound_for_model.
-            admit(* prove using interprets_to_functional*).
+            { (* all2 eq_sound (atom_args a) args_aa from Hargs_aa via Hext + Hrel_e *)
+              clear -Hargs_aa Hext Hrel_e.
+              revert Hargs_aa. generalize (atom_args a), args_aa.
+              intros l1 l2. revert l2.
+              induction l1; destruct l2; cbn; auto; try tauto.
+              intros [HH1 HH2]; split.
+              - apply Hrel_e. apply Hext. exact HH1.
+              - apply IHl1. exact HH2. }
+            (* eq_sound a1_ret ret_aa: prove using interprets_to_functional.
+               We have two interprets_to derivations available:
+                 [aa] sound (H7): interprets_to atom_fn (i (args_aa)) (i ret_aa)
+                 canonical sound (Hsa_can_pre): interprets_to atom_fn (i (atom_args a')) (i i)
+               with args_aa ~ atom_args a ~ atom_args a' pointwise in equiv,
+               lifted to eq_sound via Hrel_e. By functionality, [i ret_aa ~_d
+               i i]. But to close the goal we still need [i a1_ret ~_d i
+               ret_aa], and the existing structure of [e] doesn't put
+               [a1_ret] (= the removed entry's ret, an arbitrary idx in
+               [equiv] with has_key but no specific PER pair) into the same
+               equivalence class as [ret_aa], [i], [atom_ret a], or
+               [atom_ret a']. Need either a congruence invariant, or to
+               restrict witnesses of [atom_in_egraph_up_to_equiv a] to
+               match keys literally (which would collapse sub-case B into
+               sub-case A). *)
+            admit.
         + (* a1 has a different key: a1 is still in e.db, use e's
              atom_interpretation. *)
           apply Hatom_e.
