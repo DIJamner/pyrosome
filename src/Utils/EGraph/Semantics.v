@@ -3716,7 +3716,21 @@ TODO: lemmas in the comment block are out of date
                [interprets_to_functional] gives us
                [i_interp aa.ret ~_d i_interp i] but not
                [i_interp a1_ret ~_d i_interp aa.ret]. *)
-            admit.
+            unfold atom_in_egraph in Hain_aa; cbn in Hain_aa.
+            specialize (H15 {| atom_fn := atom_fn a; atom_args := args_aa; atom_ret := ret_aa |}).
+            cbn in H15.
+            assert ((atom_fn a, args_aa) <> (atom_fn a, atom_args a)) by congruence.
+            intuition auto.
+            unfold fields_preserved in Hfp_full; intuition cbn in *; subst.
+            rewrite Hdbe_eq in *.
+            eapply Hatom_e in H7.
+            enough (all2 (eq_sound_for_model m i_interp) (atom_args a) args_aa
+                    /\ eq_sound_for_model m i_interp a1_ret ret_aa)
+              by admit(*TODO: atom_sound_for_model_Proper*).
+            split.
+            1:admit (*follows from Hargs_aa*).
+            unfold eq_sound_for_model.
+            admit(* prove using interprets_to_functional*).
         + (* a1 has a different key: a1 is still in e.db, use e's
              atom_interpretation. *)
           apply Hatom_e.
