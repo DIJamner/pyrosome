@@ -3608,22 +3608,123 @@ TODO: lemmas in the comment block are out of date
               apply Hrel_init. exact H11.
           + eapply eq_sound_for_model_trans; eauto.
           + apply eq_sound_for_model_Symmetric. exact IH. }
-      (* Backward direction: e sound -> e_init sound.
-         Symmetric to the forward case for atoms in [e.db] (which are a
-         subset of [e_init.db]) and for the PER pairs in [e_init.equiv]
-         (which are a subset of [e.equiv]). The remaining obligation is
-         the soundness of the [(atom_fn a, atom_args a, r_orig)] entry
-         that [db_remove a] deleted from [e_init.db]: for a sound
-         interpretation [i] of [e], [i (r_orig)] must coincide with
-         [atom_fn] applied to [i (atom_args a)]. The functionality of
-         [atom_fn] gives the latter via the canonical replacement
-         [(atom_fn a, atom_args a', i)] still in [e.db]; what's missing
-         is linking [r_orig] to [atom_ret a] / [atom_ret aa] when the
-         witness [aa] for [atom_in_egraph_up_to_equiv a e_init] has
-         [atom_args aa <> atom_args a] literally — i.e., the entry at
-         the removed key in [e_init.db] need not be canonical for [a]
-         under the weak parents_ok invariant. *)
-      admit.
+      (* Backward direction: e sound -> e_init sound. *)
+      intros [Hwf Hexact Hatom_e Hrel_e].
+      pose proof (Hatom_e
+                    {| atom_fn := atom_fn a'; atom_args := atom_args a';
+                       atom_ret := i |}) as Hsa_can_pre.
+      assert (Hain_can_e : atom_in_db
+                {| atom_fn := atom_fn a'; atom_args := atom_args a';
+                   atom_ret := i |} (Defs.db e)).
+      { rewrite <- Hdbe_eq. exact H10. }
+      specialize (Hsa_can_pre Hain_can_e).
+      constructor.
+      - exact Hwf.
+      - (* interpretation_exact: has_key in e.equiv → has_key in equiv.
+           For has_key x_idx in e.equiv, by reflexivity we have
+           [uf_rel_PER e.equiv x_idx x_idx], which via [Hper_e]
+           backward sits in the union closure of [e1.equiv] with the
+           new singleton pair. The base elements of the closure all
+           live in [e1.equiv]'s key set (either via [uf_rel_PER_has_key]
+           or via [Hkey_i]), so we can recover has_key in [equiv]. *)
+        intros x_idx Hx_def.
+        apply Hexact in Hx_def. cbn.
+        unfold Sep.has_key in Hx_def.
+        destruct (map.get (parent (Defs.equiv e)) x_idx) as [v|] eqn:Hgx;
+          [|tauto].
+        apply Hkey_iff.
+        assert (Hxx : uf_rel_PER (Defs.equiv e) x_idx x_idx).
+        { unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgx
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgx]. }
+        apply Hper_e in Hxx.
+        clear Hgx Hx_def.
+        assert (Hclo_key : forall p q,
+                  union_closure_PER (uf_rel_PER (Defs.equiv e1))
+                    (singleton_rel i (atom_ret a')) p q ->
+                  Sep.has_key p (parent (Defs.equiv e1))
+                  /\ Sep.has_key q (parent (Defs.equiv e1))).
+        { intros p q Hpq.
+          induction Hpq as [p q Hbase | p q r _ IH1 _ IH2 | p q _ IH].
+          - destruct Hbase as [Hbase | Hsing].
+            + apply (uf_rel_PER_has_key _ _ _ _ H2 Hbase).
+            + destruct Hsing as [Heq1 Heq2]. subst.
+              split; [exact Hkey_i | exact Hkey_ret_a'].
+          - split; [apply IH1 | apply IH2].
+          - destruct IH. split; assumption. }
+        exact (proj1 (Hclo_key _ _ Hxx)).
+      - (* atom_interpretation: every atom in e_init.db is sound *)
+        intros a1 Ha1. cbn in Ha1.
+        eqb_case (atom_fn a1, atom_args a1) (atom_fn a, atom_args a).
+        + (* a1 has the removed key *)
+          inversion H1; clear H1.
+          destruct a1 as [a1_fn a1_args a1_ret]; cbn in *.
+          subst a1_fn a1_args.
+          destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+          subst fn_aa.
+          eqb_case args_aa (atom_args a).
+          * (* sub-case A: aa.args = atom_args a literally → aa = a1 by db
+               function, so ret_aa = a1_ret. The witness aa is exactly the
+               removed entry, so [Hret_aa] directly links its ret to
+               [atom_ret a], and the chain through [H11] + the new union
+               pair to [i] uses [interprets_to_functional] (via
+               [eq_atom_implies_sound_l_active]) to transport the canonical
+               replacement's soundness back to [a1]. *)
+            assert (Hret_eq : ret_aa = a1_ret).
+            { clear -Ha1 Hain_aa.
+              unfold atom_in_egraph, atom_in_db, Is_Some_satisfying in *;
+                cbn in *.
+              destruct (map.get db (atom_fn a)) as [tbl|]; cbn in *;
+                try tauto.
+              destruct (map.get tbl (atom_args a)) as [entry|]; cbn in *;
+                try tauto.
+              congruence. }
+            subst ret_aa.
+            apply eq_atom_implies_sound_l_active
+              with (a3 := Build_atom (atom_fn a') (atom_args a') i).
+            -- unfold eq_atom_in_interpretation; cbn.
+               split; [symmetry; exact H6|]. split.
+               ++ assert (Hargs_e :
+                    all2 (uf_rel_PER (Defs.equiv e))
+                         (atom_args a') (atom_args a)).
+                  { clear -H9 Hext.
+                    revert H9. generalize (atom_args a), (atom_args a').
+                    intros l1 l2. revert l2.
+                    induction l1; destruct l2;
+                      cbn; auto; try tauto.
+                    intros [HH1 HH2]; split.
+                    - apply PER_clo_sym. apply Hext. exact HH1.
+                    - apply IHl1. exact HH2. }
+                  eapply all2_impl; [|exact Hargs_e].
+                  intros; apply Hrel_e; assumption.
+               ++ apply Hrel_e.
+                  eapply PER_clo_trans with (atom_ret a').
+                  { apply Hper_e. apply PER_clo_base. right.
+                    split; reflexivity. }
+                  eapply PER_clo_trans with (atom_ret a).
+                  { apply PER_clo_sym. apply Hext. exact H11. }
+                  apply Hext. exact Hret_aa.
+            -- exact Hsa_can_pre.
+          * (* sub-case B: aa.args <> atom_args a literally. The witness
+               aa is at a different db key than [a1]; both are in
+               [e_init.db] with the same [atom_fn] and PER-equivalent
+               args, but the entry at [a1]'s key (= the removed key) need
+               not be canonical for [a]. Without linking [r_orig =
+               a1_ret] to [atom_ret a] in [e_init.equiv], we cannot
+               derive [atom_sound a1] from [aa]'s soundness alone —
+               [interprets_to_functional] gives us
+               [i_interp aa.ret ~_d i_interp i] but not
+               [i_interp a1_ret ~_d i_interp aa.ret]. *)
+            admit.
+        + (* a1 has a different key: a1 is still in e.db, use e's
+             atom_interpretation. *)
+          apply Hatom_e.
+          unfold atom_in_egraph; cbn.
+          rewrite <- Hdbe_eq, Hdb_eq.
+          apply H15. split; [exact Ha1 | exact H1].
+      - (* rel_interpretation: e_init.equiv ⊆ e.equiv, transport via Hext *)
+        intros i1 i2 Hi12. apply Hrel_e. apply Hext. exact Hi12.
     }
     {
       admit(*TODO: db_set soundness lemma — None branch*).
