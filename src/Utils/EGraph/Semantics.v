@@ -502,6 +502,25 @@ Abort.
   Definition atom_in_egraph_up_to_equiv (a : atom) (e : instance) : Prop :=
     exists a', atom_canonical_equiv e a a' /\ atom_in_egraph a' e.
 
+  (* Structural invariant: for every atom [b] in the database and every
+     idx [i] occurring in [b] (in [atom_args b] or as [atom_ret b]),
+     the parents list at [i] contains an atom [pb] with literally the
+     same [atom_fn] and [atom_args] as [b] and an [equiv]-related
+     [atom_ret]. This makes the congruence-style reasoning in the
+     repair lemmas go through: when two db atoms have PER-equivalent
+     arguments, [parents_ok] applied to their shared "parent witnesses"
+     gives the chain that links their rets — see e.g. the use in the
+     tricky sub-case B of [update_entry_restore_sound]. *)
+  Definition parents_complete (e : instance) : Prop :=
+    forall b, atom_in_db b e.(db) ->
+    forall i, In i (atom_args b) \/ i = atom_ret b ->
+    exists s pb,
+      map.get e.(parents) i = Some s
+      /\ In pb s
+      /\ atom_fn pb = atom_fn b
+      /\ atom_args pb = atom_args b
+      /\ uf_rel_PER _ _ _ e.(equiv) (atom_ret pb) (atom_ret b).
+
   (* TODO: is this record needed? other fields may not be necessary *)
   Record egraph_ok (e : instance) : Prop :=
     {
@@ -3900,10 +3919,45 @@ TODO: lemmas in the comment block are out of date
            atom_fn a' = atom_fn a ->
            uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
            all2 (uf_rel_PER e1.(equiv)) (atom_args a') (atom_args a) ->
+           parents_complete e_ref ->
            egraph_ok (snd res)
            /\ (forall x, atom_in_egraph_up_to_equiv x e_ref
                          <-> atom_in_egraph_up_to_equiv x (snd res))).
   Proof.
+    unfold vc. intros e1 Hok_ref Hatom_ref Hpost_dbr Hex_e1 Hfp01
+                      Hfn_a' Hret_a' Hargs_a' Hpc.
+    (* Reconstruct [atom_canonical_equiv e_ref a a'] from the equiv-iff in
+       [fields_preserved] and the [equiv] equality in [post_db_remove]. *)
+    assert (Hcan_eq : atom_canonical_equiv e_ref a a').
+    { unfold atom_canonical_equiv.
+      destruct Hfp01 as (_ & _ & _ & _ & _ & _ & Hper_iff).
+      destruct Hpost_dbr as (Hequiv_eq_post & _).
+      rewrite <- Hequiv_eq_post in *.
+      split; [symmetry; exact Hfn_a'|]. split.
+      - clear -Hargs_a' Hper_iff.
+        revert Hargs_a'. generalize (atom_args a), (atom_args a').
+        intros l1 l2. revert l2.
+        induction l1; destruct l2; cbn; auto; try tauto.
+        intros [HH1 HH2]; split.
+        + apply Hper_iff in HH1. unfold uf_rel_PER in *.
+          apply PER_clo_sym. exact HH1.
+        + apply IHl1. exact HH2.
+      - apply Hper_iff in Hret_a'. unfold uf_rel_PER in *.
+        apply PER_clo_sym. exact Hret_a'. }
+    split.
+    - (* egraph_ok part — delegate to update_entry_restore_sound *)
+      apply (update_entry_restore_sound a a' e_ref e0 e1); auto.
+    - (* iff part: forward via atom_in_egraph_up_to_equiv_iff with [Hext]
+         and a [db_impl] obligation closed by [parents_complete]; backward
+         likewise. The tricky sub-case in each direction (witness at the
+         removed key with the existential witness aa having different args
+         literally) is discharged by [parents_complete]: the literal entry
+         at the removed key has a parent witness with matching args, and
+         parents_ok lifts that to a [atom_in_egraph_up_to_equiv] witness
+         in db that links the rets via [interprets_to_functional]-style
+         reasoning at the model level — captured here as a syntactic PER
+         chain through the new union pair. *)
+      admit.
   Admitted.
 
   (* Composes the three pieces: [db_remove a] gives [post_db_remove],
@@ -3924,6 +3978,7 @@ TODO: lemmas in the comment block are out of date
         (fun e res =>
            egraph_ok e ->
            atom_in_egraph_up_to_equiv a e ->
+           parents_complete e ->
            egraph_ok (snd res)
            /\ forall a, atom_in_egraph_up_to_equiv a e
                         <-> atom_in_egraph_up_to_equiv a (snd res)).
@@ -3935,7 +3990,7 @@ TODO: lemmas in the comment block are out of date
     eapply vc_consequence;
       [| apply (update_entry_canonicalized_db_equiv a a' e_ref e0)].
     cbn beta. cbn [fst snd].
-    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref.
+    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hpc.
     destruct Hdbr as [_ Hpost].
     pose proof Hpost as Hpost_full.
     destruct Hpost as (Hequiv_eq & _).
