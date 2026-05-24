@@ -1157,6 +1157,43 @@ Section WithVar.
       map.get i' x = Some d.
   Proof. intros Hext Hgd. apply Hext. exact Hgd. Qed.
 
+  (* Splitter: from `In (n, r) l` and `wf_lang l`, extract a smaller
+     well-formed prefix `l_post` (the part strictly before `(n, r)`
+     in cons-order) where `r` is wf.  Used to satisfy the strict-
+     decreasing-language precondition of add_open_sort_inner_sound. *)
+  Lemma wf_lang_ext_split (l : lang) (n : V) (r : rule)
+    : wf_lang l -> In (n, r) l ->
+      exists l_post,
+        wf_lang l_post /\ wf_rule l_post r /\ incl l_post l
+        /\ length l_post < length l.
+  Proof.
+    induction l as [|[n0 r0] l_rest IH]; intros Hwf Hin; cbn in Hin.
+    - contradiction.
+    - destruct Hin as [Heq | Hin'].
+      + inversion Heq; subst.
+        exists l_rest. cbn.
+        pose proof Hwf as Hwf'.
+        apply invert_wf_lang_cons in Hwf'.
+        destruct Hwf' as [_ Hwfr]. destruct Hwfr as [Hwfl Hwfrule].
+        rewrite List.app_nil_r in Hwfrule.
+        repeat split.
+        * exact Hwfl.
+        * exact Hwfrule.
+        * intros x Hx. right. exact Hx.
+        * Lia.lia.
+      + pose proof Hwf as Hwf'.
+        apply invert_wf_lang_cons in Hwf'.
+        destruct Hwf' as [_ Hwfr]. destruct Hwfr as [Hwfl _].
+        specialize (IH Hwfl Hin').
+        destruct IH as [l_post H_lp].
+        destruct H_lp as [Hwfl_post H_lp1].
+        destruct H_lp1 as [Hwfr_post H_lp2].
+        destruct H_lp2 as [Hincl_post Hlen_post].
+        exists l_post. repeat split; auto.
+        * intros x Hx. right. apply Hincl_post. exact Hx.
+        * cbn. Lia.lia.
+  Qed.
+
   (* =============================================================== *)
   (* Re-proof of add_open_term_sound / add_open_sort_sound /          *)
   (* add_ctx_sound against the current `vc` + `egraph_ok` style       *)
@@ -1292,9 +1329,9 @@ Section WithVar.
            Computation: list_Mmap of add_open_term' for args, then hash_entry
            on the constructor. with_sorts=true also adds a sort_of annotation
            via add_open_sort_inner + update_entry. *)
-        intros name c'_rule args t_rule s' Hrule_in Hwf_args_inner IH r i Hmaps.
+        intros name c'_rule args t_rule s' Hrule_in_l1 Hwf_args_inner IH r i Hmaps.
         cbn [add_open_term'].
-        apply Hl1 in Hrule_in.
+        pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
         assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
         { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
           basic_core_crush. }
