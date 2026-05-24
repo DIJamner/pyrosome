@@ -2003,7 +2003,7 @@ Abort.
      [egraph_sound_for_interpretation]: the new id is not in [i]'s
      domain, so atom soundness, eq soundness, and the
      [interpretation_exact] field all carry over unchanged. *)
-  Lemma alloc_opaque_sound (i : idx_map m.(domain))
+  Lemma alloc_opaque_sound (Hlti : Asymmetric lt) (i : idx_map m.(domain))
     : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie
                        analysis_result)
         (fun e_in res =>
