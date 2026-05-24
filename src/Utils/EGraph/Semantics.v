@@ -2003,6 +2003,31 @@ Abort.
      [egraph_sound_for_interpretation]: the new id is not in [i]'s
      domain, so atom soundness, eq soundness, and the
      [interpretation_exact] field all carry over unchanged. *)
+  (* Forest extension: adding a fresh self-loop as a new root tree. *)
+  Lemma forest_extend (l : list idx) (r : idx_map idx) (x : idx)
+    : map.get r x = None ->
+      forest idx (idx_map idx) l r ->
+      forest idx (idx_map idx) (x :: l) (map.put r x x).
+  Proof.
+    intros Hnone Hf.
+    unfold forest in *. cbn [map].
+    change (Sep.seps (?h :: ?t)) with (Sep.sep h (Sep.seps t)).
+    exists (map.singleton x x), r.
+    assert (Hdj : map.disjoint (map.singleton x x) r).
+    { intros k v1 v2 Hk1 Hk2.
+      eqb_case k x.
+      - rewrite Hnone in Hk2; discriminate.
+      - rewrite get_singleton_diff in Hk1; auto; discriminate. }
+    repeat split.
+    3:{ apply (tree_singleton _ Eqb_idx Eqb_idx_ok (idx_map idx) (idx_map_ok _)). }
+    3:{ exact Hf. }
+    2:{ exact Hdj. }
+    rewrite <- (@Sep.putmany_singleton _ Eqb_idx Eqb_idx_ok (idx_map idx) (idx_map_ok _)).
+    symmetry.
+    pose proof (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) as Hbs.
+    apply (@Properties.map.putmany_comm _ _ _ (idx_map_ok _) _ Hbs _ _ Hdj).
+  Qed.
+
   Lemma alloc_opaque_sound (Hlti : Asymmetric lt) (i : idx_map m.(domain))
     : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie
                        analysis_result)
