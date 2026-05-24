@@ -277,7 +277,18 @@ Section WithMap.
                           e.(worklist) = (snd res).(worklist) /\
                           (forall z, Sep.has_key z e.(equiv).(parent)
                                      <-> Sep.has_key z (snd res).(equiv).(parent))).
-  Admitted.
+  Proof.
+    unfold vc, force_equiv.
+    intros [db equiv parents epoch wl an log].
+    cbn.
+    intros [roots Hroots].
+    repeat split; auto.
+    - eexists. eapply force_uf_ok; eauto.
+    - eapply force_uf_equivalent; eauto.
+    - eapply force_uf_equivalent; eauto.
+    - eapply force_uf_same_domain; eauto.
+    - eapply force_uf_same_domain; eauto.
+  Qed.
   
   (*TODO: duplicated*)  
   Ltac iss_case :=
