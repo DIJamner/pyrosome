@@ -1480,14 +1480,20 @@ Section WithVar.
                           Hwfl1 Hincl s c Hsubst Hctx)
                 _ _ Hwfargs r i Hmaps). }
         intros e_post a_out.
-        (* hash_entry_sound is now Qed in Semantics.v.  The remaining work
-           is to thread args_in_instance (from open_args_post) into
-           hash_entry_sound's preconditions and to build the interprets_to
-           witness via interprets_to_sort applied to the substituted
-           rule's eq_sort.  This requires ~100 lines of careful plumbing
-           (lifting args_in_instance through lang_model_eq to get
-           dl ≈ map inl s_t[/subst/] and extracting it; converting that
-           to interprets_to_sort).  See Layer C note in the plan file. *)
+        cbn [Mbind StateMonad.state_monad Mret].
+        (* The body after the Mret tt is just `hash_entry n a_out`.  All
+           Layer A primitives needed here are Qed-proven; what remains is
+           plumbing.  Sketch (~120 lines):
+           1. unfold vc; intros e_inner Hpost_args Hok Hsound Hai.
+           2. specialize Hpost_args to extract i_out and args_in_instance
+              for s_t[/with_names_from c s/].
+           3. iss_case to extract dl from args_in_instance.
+           4. all2_lang_model_eq_inl' gives dl = map inl dl'.
+           5. pose proof hash_entry_sound with appropriate section args.
+           6. Discharge args_keys via interpretation_exact.
+           7. Build interprets_to witness via interprets_to_sort +
+              sort_con_congruence + all2_model_eq_eq_args.
+           8. Combine for the i' extension and domain_eq witness. *)
         unfold vc, hash_entry.
         admit.
     Admitted.
