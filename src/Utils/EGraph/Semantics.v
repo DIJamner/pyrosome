@@ -4057,10 +4057,31 @@ Abort.
           * unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hy.
           * apply IHl1. exact Hys.
         + unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hret_bb.
-      - (* old atom bb in e_in.db; show atom_in_db bb e_post.db. *)
-        (* TODO: lifting via case-split on key. Currently inlined below
-           via the Hain_post_split / Hain_old patterns from the template. *)
-        admit. }
+      - (* old atom bb in e_in.db; show atom_in_db bb e_post.db.
+           e_post.db = put e_u.db a.fn (put tbl a.args new_entry).
+           Cases:
+           - bb.key = (a.fn, a.args): would contradict Hno_can (which says
+             no atom with this key is in e_in.db, hence not in e_u.db).
+           - bb.key != (a.fn, a.args): bb survives the map.put. *)
+        unfold atom_in_egraph in Hbain. rewrite <- Hdb_u_e_in in Hbain.
+        unfold atom_in_egraph. cbn.
+        destruct bb as [bfn bargs bret].
+        unfold atom_in_db, Is_Some_satisfying in Hbain; cbn in Hbain.
+        unfold atom_in_db, Is_Some_satisfying; cbn.
+        rewrite <- Hdeq; cbn. unfold map_update; cbn.
+        destruct (map.get (db e_u) (atom_fn a)) as [tbl|] eqn:Htbl.
+        { eqb_case bfn (atom_fn a).
+          { subst. rewrite Htbl in Hbain.
+            rewrite map.get_put_same.
+            eqb_case bargs (atom_args a).
+            { subst. exfalso. apply (Hno_can bret).
+              unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite <- Hdb_u_e_in. unfold Is_Some_satisfying. rewrite Htbl. exact Hbain. }
+            { rewrite map.get_put_diff by auto. exact Hbain. } }
+          { rewrite map.get_put_diff by auto. exact Hbain. } }
+        { eqb_case bfn (atom_fn a).
+          { subst. rewrite Htbl in Hbain. cbn in Hbain. destruct Hbain. }
+          { rewrite map.get_put_diff by auto. exact Hbain. } } }
     (* Hdeq : Build_instance ... = e_post. Use Heq_post_u, Hep_post_u, Hwl_post_u
        to characterize the e_post fields. *)
     split; [|split].
@@ -4153,7 +4174,7 @@ Abort.
         intros i1 i2 Hper. rewrite Heq_post_e_in in Hper.
         apply Hi_rel. exact Hper.
     - exact Hkeys.
-  Admitted.
+  Qed.
 
   (* ============================================================== *)
   (* hash_entry_sound and update_entry_sound (relocated from earlier *)
