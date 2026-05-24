@@ -4292,15 +4292,130 @@ Abort.
         edestruct uf_rel_PER_has_key as [Hkx _];
           [exact Hroots' | exact Hxx' |].
         unfold Sep.has_key in Hkx. rewrite Hgx in Hkx. tauto. }
-      (* TODO: prove egraph_ok and egraph_sound for e_u'. *)
-      admit.
+      (* Establish the soundness of the new PER edge (r, atom_ret a).
+         From Hin we have atom_in_egraph (a.fn, a.args, r) e_in, hence
+         (by atom_interpretation) atom_sound_for_model i (a.fn, a.args, r).
+         Combined with Hatom_sound and interprets_to_functional, the two
+         return ids are domain_eq, i.e. eq_sound_for_model i r (atom_ret a). *)
+      destruct Hsound as [Hi_wf Hi_exact Hi_atom Hi_rel].
+      assert (Hr_eq : eq_sound_for_model m i r (atom_ret a)).
+      { pose proof (Hi_atom _ Hin) as Hatom_r.
+        eapply atom_sound_eq_ret with (args1 := atom_args a) (args2 := atom_args a).
+        - exact Hatom_r.
+        - (* Hatom_sound has type atom_sound_for_model m i a;
+             we need atom_sound_for_model m i (Build_atom (atom_fn a) ...). *)
+          revert Hatom_sound. clear.
+          destruct a; cbn in *. intros; assumption.
+        - (* all2 eq_sound on (atom_args a) with itself *)
+          unfold atom_sound_for_model in Hatom_sound; cbn in Hatom_sound.
+          destruct (list_Mmap (map.get i) (atom_args a)) as [arg_doms|] eqn:Hargdoms;
+            cbn in Hatom_sound; [|tauto].
+          destruct (map.get i (atom_ret a)) as [da|] eqn:Hia;
+            cbn in Hatom_sound; [|tauto].
+          pose proof (interprets_to_implies_wf_args _ _ _ Hatom_sound) as Hwf.
+          clear -Hwf Hargdoms.
+          revert arg_doms Hargdoms Hwf.
+          induction (atom_args a) as [|x xs IH]; cbn; intros arg_doms Hmap Hwf.
+          + auto.
+          + destruct (map.get i x) as [vx|] eqn:Hgx; cbn in Hmap; [|discriminate].
+            destruct (list_Mmap (map.get i) xs) as [ls|] eqn:Hmxs; cbn in Hmap;
+              [|discriminate].
+            inversion Hmap; subst arg_doms.
+            destruct Hwf as [Hwfx Hwfls]. split.
+            * unfold eq_sound_for_model. rewrite Hgx. cbn.
+              exact Hwfx.  (* domain_wf vx = domain_eq vx vx *)
+            * eapply IH; eauto. }
+      (* rel_interpretation: new PER edges are either in old PER or
+         the closure with (r, atom_ret a). *)
+      assert (Hrel_new : forall i1 i2,
+                          uf_rel_PER (equiv e_u') i1 i2 ->
+                          eq_sound_for_model m i i1 i2).
+      { intros i1 i2 Hi12. apply Hper in Hi12.
+        induction Hi12.
+        - destruct H1 as [Hold | Hnew].
+          + apply Hi_rel. exact Hold.
+          + destruct Hnew as [Hpa Hpb]. subst.
+            exact Hr_eq.
+        - eapply eq_sound_for_model_trans; eauto.
+        - eapply eq_sound_for_model_Symmetric; eauto. }
+      (* Old PER edges still hold in new equiv (one direction of Hper). *)
+      assert (Hper_lift : forall i1 i2,
+                          uf_rel_PER (equiv e_in) i1 i2 ->
+                          uf_rel_PER (equiv e_u') i1 i2).
+      { intros i1 i2 Hi12. apply Hper.
+        unfold union_closure_PER. apply PER_clo_base. left. exact Hi12. }
+      split; [|split].
+      + (* egraph_ok e_u' *)
+        constructor.
+        * exact Hroots.
+        * (* worklist_ok: either same or new union_repair entry *)
+          assert (Hwl_lift : forall ent, worklist_entry_ok (equiv e_in) ent ->
+                                         worklist_entry_ok (equiv e_u') ent).
+          { intros ent. destruct ent as [old new improved|x]; cbn.
+            - intros Hper_old. unfold uf_rel_PER in *.
+              apply Hper_lift. exact Hper_old.
+            - intros; exact I. }
+          destruct Hwl_rel as [Hwl_same | Hwl_new].
+          { rewrite Hwl_same.
+            eapply all_wkn; [|exact Hwlok].
+            intros ent _. apply Hwl_lift. }
+          { destruct Hwl_new as [v_old Hwl_new'].
+            destruct Hwl_new' as [v_new Hwl_new''].
+            destruct Hwl_new'' as [improved Hwl_new3].
+            destruct Hwl_new3 as [Hwl_eq Hpers].
+            destruct Hpers as [Hper_old Hper_new].
+            rewrite Hwl_eq. cbn. split.
+            - (* v_old ~ v_new via v_old ~ r ~ atom_ret a ~ v_new *)
+              assert (Hr_ar : uf_rel_PER (equiv e_u') r (atom_ret a)).
+              { apply Hper. apply PER_clo_base. right. unfold singleton_rel.
+                split; reflexivity. }
+              unfold uf_rel_PER in *.
+              eapply PER_clo_trans; [exact Hper_old|].
+              eapply PER_clo_trans; [exact Hr_ar|].
+              apply PER_clo_sym. exact Hper_new.
+            - eapply all_wkn; [|exact Hwlok].
+              intros ent _. apply Hwl_lift. }
+        * (* parents_ok: parents same, PER monotone *)
+          rewrite <- Hpar_eq. intros x s Hgs. specialize (Hparok _ _ Hgs).
+          eapply all_wkn; [|exact Hparok].
+          intros b _ Hbup.
+          destruct Hbup as [bb Hcan_ain].
+          destruct Hcan_ain as [Hcan Hbain].
+          destruct Hcan as [Hfn_bb Hargs_ret].
+          destruct Hargs_ret as [Hargs_bb Hret_bb].
+          exists bb. split.
+          { unfold atom_canonical_equiv. split; [exact Hfn_bb|]. split.
+            + clear -Hargs_bb Hper_lift.
+              revert Hargs_bb. generalize (atom_args b), (atom_args bb).
+              intros l1 l2. revert l2.
+              induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                cbn; auto; try tauto.
+              intros [Hy Hys]. split.
+              * apply Hper_lift. exact Hy.
+              * apply IH. exact Hys.
+            + apply Hper_lift. exact Hret_bb. }
+          { unfold atom_in_egraph. rewrite <- Hdb_eq. exact Hbain. }
+        * (* db_idxs_in_equiv: db same, has_key preserved via Hkey_pres *)
+          rewrite <- Hdb_eq. intros b Hbain. specialize (Hdbkok _ Hbain).
+          destruct Hdbkok as [Hka Hkr]. split.
+          { eapply all_wkn; [|exact Hka].
+            intros j _ Hj. apply Hkey_pres. exact Hj. }
+          { apply Hkey_pres. exact Hkr. }
+      + (* egraph_sound_for_interpretation *)
+        constructor.
+        * exact Hi_wf.
+        * intros y Hy. apply Hkey_pres. apply Hi_exact. exact Hy.
+        * (* atom_interpretation: db same *)
+          unfold atom_in_egraph. rewrite <- Hdb_eq. exact Hi_atom.
+        * exact Hrel_new.
+      + exact Hkey_pres.
     - (* None: db_set a — apply db_set_sound *)
       intros s_pre HpreL. destruct HpreL as [Heq Hnone]; subst s_pre.
       pose proof (db_set_sound i a) as Hdss.
       unfold vc in Hdss. specialize (Hdss e_in).
       intros Hok Hsound Hargs Hret Hatom_sound.
       apply Hdss; auto.
-  Admitted.
+  Qed.
 
   (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
      a'.args]; the [Some r] case uses
