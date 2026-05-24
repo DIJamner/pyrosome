@@ -3960,9 +3960,107 @@ Abort.
     assert (Hkeys : forall x, Sep.has_key x e_in.(equiv).(parent) ->
                               Sep.has_key x e_post.(equiv).(parent)).
     { intros x Hx. rewrite Heq_post_e_in. exact Hx. }
-    (* Extract db / parents structure of e_post from db_set'. *)
+    (* has_key facts for args/ret in e_post *)
+    assert (Hkargs_post : forall x, In x (atom_args a) ->
+                                    Sep.has_key x e_post.(equiv).(parent)).
+    { intros x Hx. apply Hkeys. apply Hargs. exact Hx. }
+    assert (Hkret_post : Sep.has_key (atom_ret a) e_post.(equiv).(parent))
+      by (apply Hkeys; exact Hret).
+    (* e_post.db = map_update e_u.db a.fn (put tbl a.args ...);
+       extract structural facts. *)
     pose proof Hde as Hde_orig.
     unfold db_set' in Hde. injection Hde as _ Hdeq.
+    (* The new atom is in e_post.db: *)
+    assert (Hain_a_post : atom_in_db
+                            (Build_atom (atom_fn a) (atom_args a) (atom_ret a))
+                            e_post.(db)).
+    { subst e_post. unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct (map.get (db e_u) (atom_fn a)) as [tbl|] eqn:Htbl;
+        rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+    (* Every atom in e_post.db is either the new atom or was in e_u.db
+       at a different key. *)
+    assert (Hain_post_split : forall b, atom_in_db b e_post.(db) ->
+              b = Build_atom (atom_fn a) (atom_args a) (atom_ret a)
+              \/ (atom_in_db b e_u.(db)
+                  /\ (atom_fn b, atom_args b)
+                     <> (atom_fn a, atom_args a))).
+    { intros b Hb.
+      subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update in Hb; cbn in Hb.
+      destruct b as [bfn bargs bret]; cbn in Hb.
+      destruct (map.get (db e_u) (atom_fn a)) as [tbl|] eqn:Htbl;
+        eqb_case bfn (atom_fn a).
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs (atom_args a).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          right. split.
+          * unfold atom_in_db, Is_Some_satisfying; cbn.
+            rewrite Htbl. cbn. exact Hb.
+          * cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs (atom_args a).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          unfold default in Hb. rewrite map.get_empty in Hb. cbn in Hb. destruct Hb.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction. }
+    (* atom_in_egraph_up_to_equiv a e_post — witness is a itself. *)
+    assert (Hain_a_uptopost : atom_in_egraph_up_to_equiv a e_post).
+    { exists (Build_atom (atom_fn a) (atom_args a) (atom_ret a)). split.
+      - unfold atom_canonical_equiv. cbn. split; [reflexivity|]. split.
+        + (* PER reflexivity on args using has_key *)
+          clear -Hkargs_post.
+          generalize (atom_args a) Hkargs_post; intros l Hl.
+          induction l as [|y ys IH]; cbn; auto.
+          assert (Hky : Sep.has_key y (parent (equiv e_post))) by (apply Hl; cbn; auto).
+          assert (Hkys : forall x, In x ys -> Sep.has_key x (parent (equiv e_post)))
+            by (intros x Hx; apply Hl; cbn; auto).
+          split.
+          * unfold uf_rel_PER, Sep.has_key in *.
+            destruct (map.get (parent (equiv e_post)) y) as [vy|] eqn:Hgy;
+              [|tauto].
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgy
+              | apply PER_clo_sym; apply PER_clo_base; exact Hgy].
+          * apply IH. exact Hkys.
+        + (* PER reflexivity on ret *)
+          unfold uf_rel_PER, Sep.has_key in *.
+          destruct (map.get (parent (equiv e_post)) (atom_ret a)) as [vr|] eqn:Hgr;
+            [|tauto].
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgr
+            | apply PER_clo_sym; apply PER_clo_base; exact Hgr].
+      - unfold atom_in_egraph. exact Hain_a_post. }
+    (* atom_in_egraph_up_to_equiv lifts from e_in to e_post for any old atom *)
+    assert (Hlift : forall b, atom_in_egraph_up_to_equiv b e_in ->
+                              atom_in_egraph_up_to_equiv b e_post).
+    { intros b Hbref.
+      destruct Hbref as [bb Hcan_ain].
+      destruct Hcan_ain as [Hcan Hbain].
+      destruct Hcan as [Hfn_bb Hargs_ret].
+      destruct Hargs_ret as [Hargs_bb Hret_bb].
+      exists bb. split.
+      - unfold atom_canonical_equiv.
+        split; [exact Hfn_bb|]. split.
+        + (* args PER lift via Heq_post_e_in *)
+          clear -Hargs_bb Heq_post_e_in.
+          revert Hargs_bb. generalize (atom_args b), (atom_args bb).
+          intros l1 l2. revert l2. induction l1; destruct l2; cbn; auto; try tauto.
+          intros [Hy Hys]. split.
+          * unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hy.
+          * apply IHl1. exact Hys.
+        + unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hret_bb.
+      - (* old atom bb in e_in.db; show atom_in_db bb e_post.db. *)
+        (* TODO: lifting via case-split on key. Currently inlined below
+           via the Hain_post_split / Hain_old patterns from the template. *)
+        admit. }
     (* Hdeq : Build_instance ... = e_post. Use Heq_post_u, Hep_post_u, Hwl_post_u
        to characterize the e_post fields. *)
     split; [|split].
