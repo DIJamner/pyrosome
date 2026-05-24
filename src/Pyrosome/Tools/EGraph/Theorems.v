@@ -1481,22 +1481,104 @@ Section WithVar.
                 _ _ Hwfargs r i Hmaps). }
         intros e_post a_out.
         cbn [Mbind StateMonad.state_monad Mret].
-        (* The body after the Mret tt is just `hash_entry n a_out`.  All
-           Layer A primitives needed here are Qed-proven; what remains is
-           plumbing.  Sketch (~120 lines):
-           1. unfold vc; intros e_inner Hpost_args Hok Hsound Hai.
-           2. specialize Hpost_args to extract i_out and args_in_instance
-              for s_t[/with_names_from c s/].
-           3. iss_case to extract dl from args_in_instance.
-           4. all2_lang_model_eq_inl' gives dl = map inl dl'.
-           5. pose proof hash_entry_sound with appropriate section args.
-           6. Discharge args_keys via interpretation_exact.
-           7. Build interprets_to witness via interprets_to_sort +
-              sort_con_congruence + all2_model_eq_eq_args.
-           8. Combine for the i' extension and domain_eq witness. *)
-        unfold vc, hash_entry.
-        admit.
-    Admitted.
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_sort_post.
+        intros Hok Hsound Hai.
+        unfold open_args_post in Hpost_args.
+        specialize (Hpost_args Hok Hsound Hai).
+        destruct Hpost_args as [i_out Hpa]. destruct Hpa as [Hext_sound Hai_out].
+        destruct Hext_sound as [Hok_out Hr1]. destruct Hr1 as [Hexti_out Hr2].
+        destruct Hr2 as [Hsnd_out Hkeys_out].
+        cbn [fst snd] in *.
+        unfold args_in_instance in Hai_out.
+        iss_case.
+        rename Hma into Hdl. rename l0 into dl.
+        pose proof Hai_out as Hai_out'.
+        apply all2_lang_model_eq_inl' in Hai_out'.
+        destruct Hai_out' as [dl' Hdl_eq]; subst dl.
+        pose proof (@hash_entry_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                       V_map V_map_ok V_map V_map_ok V_trie V_trie_ok X _ lang_model
+                       (lang_model_ok l Hsof Hwf) lt_asymmetric lt_succ lt_trans
+                       i_out n a_out (inr (scon n s_t[/with_names_from c s/]))) as Hhe.
+        unfold vc in Hhe. specialize (Hhe e_inner).
+        assert (Hkeys_args : forall x, In x a_out ->
+                              Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hin_x.
+          pose proof Hsnd_out as Hsnd_out_copy.
+          destruct Hsnd_out_copy as [_ Hsnd_exact _ _].
+          apply Hsnd_exact.
+          destruct (map.get i_out x) eqn:Hgx; [exact I|].
+          exfalso.
+          assert (Hgx_lift : @map.get V (Term.term V + Term.sort V)
+                              (V_map (Term.term V + Term.sort V)) i_out x = None)
+            by exact Hgx.
+          clear Hgx.
+          revert Hin_x Hdl. clear -Hgx_lift.
+          revert dl'.
+          induction a_out as [|y ys IH];
+            [intros dl' Hin_x Hdl; cbn in Hin_x; contradiction|].
+          intros dl' Hin_x Hdl. cbn in Hin_x. cbn in Hdl.
+          destruct Hin_x as [Hxy | Hin_x'];
+            [subst y; rewrite Hgx_lift in Hdl; discriminate|].
+          destruct (@map.get V (Term.term V + Term.sort V)
+                      (V_map (Term.term V + Term.sort V)) i_out y) eqn:Hgy;
+            [|discriminate].
+          destruct (list_Mmap (@map.get V (Term.term V + Term.sort V)
+                                (V_map (Term.term V + Term.sort V)) i_out) ys)
+            as [vs|] eqn:Hgs; [|discriminate].
+          destruct dl' as [|hd tl]; cbn in Hdl; [discriminate|].
+          inversion Hdl; subst. eapply IH; eauto. }
+        assert (Hwfc' : wf_ctx l c').
+        { use_rule_in_wf. inversion H0; subst.
+          rewrite List.app_nil_r in H3. exact H3. }
+        assert (Hwfargs_subst : wf_args l {{c }} s_t [/with_names_from c s /] c').
+        { eapply wf_args_subst_monotonicity.
+          1: exact V_Eqb_ok.
+          1: exact Hwf.
+          1:{ eapply wf_args_lang_monotonicity. 1: exact Hincl. exact Hwfargs. }
+          1:{ eapply wf_ctx_lang_monotonicity. 1: exact Hincl. exact Hctx. }
+          1: exact Hwfc'.
+          apply wf_subst_from_wf_args; exact Hsubst. }
+        assert (Heqs : eq_sort l {{c }} (scon n dl') (scon n s_t [/with_names_from c s /])).
+        { eapply sort_con_congruence.
+          1: exact V_Eqb_ok.
+          1: exact Hrule.
+          1: exact Hwf.
+          eapply eq_args_sym.
+          1: apply (core_model_ok Hwf).
+          1: exact Hwfc'.
+          eapply all2_model_eq_eq_args.
+          1: exact Hwf.
+          1: exact Hwfargs_subst.
+          1: exact Hwfc'.
+          pose proof (lang_model_eq_PER l Hwf : PER (lang_model_eq l)) as Hper.
+          destruct Hper as [Hsym_per _].
+          apply (@all2_Symmetric _ _ Hsym_per).
+          exact Hai_out. }
+        assert (Hint_wit :
+                  exists arg_doms,
+                    list_Mmap (map.get i_out) a_out = Some arg_doms
+                    /\ interprets_to V lang_model n arg_doms
+                         (inr (scon n s_t[/with_names_from c s/]))).
+        { exists (map inl dl').
+          split. 1: exact Hdl.
+          cbn [lang_model domain interprets_to].
+          eapply interprets_to_sort. exact Heqs. }
+        specialize (Hhe Hok_out Hsnd_out Hkeys_args Hint_wit).
+        destruct Hhe as [Hok_he Hex_he].
+        destruct Hex_he as [i' Hi']. destruct Hi' as [Hexti' Hr1].
+        destruct Hr1 as [Hsnd' Hr2]. destruct Hr2 as [Hkeys' Hr3].
+        destruct Hr3 as [Hkey_res Hdom_eq].
+        exists i'.
+        split.
+        1:{ unfold extending_sound.
+            split. 1: exact Hok_he.
+            split.
+            1:{ intros x v Hgv. apply Hexti'. apply Hexti_out. exact Hgv. }
+            split. 1: exact Hsnd'.
+            intros x Hx. apply Hkeys'. apply Hkeys_out. exact Hx. }
+        exact Hdom_eq.
+    Qed.
 
     Lemma add_open_sort_sound c r s t
       : wf_args l [] s c ->
