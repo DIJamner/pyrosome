@@ -3972,8 +3972,30 @@ Abort.
       + (* equiv_ok: rewrite via Heq_post_e_in. *)
         destruct Heqok as [roots Hufok].
         exists roots. rewrite Heq_post_e_in. exact Hufok.
-      + (* worklist_ok: TODO via get_analyses_worklist_extends + Heq_post_e_in *)
-        admit.
+      + (* worklist_ok: e_post.worklist = e_u.worklist = e_g.worklist;
+           e_g.worklist = (analysis_repair entries) ++ e_in.worklist;
+           each prefix entry trivially ok; old entries lift via Heq_post_e_in. *)
+        rewrite Hwl_post_u.
+        assert (Hwl_u_g : e_u.(worklist) = e_g.(worklist))
+          by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+              subst e_u; reflexivity).
+        rewrite Hwl_u_g.
+        pose proof (get_analyses_worklist_extends a.(atom_args) e_in) as Hgwe.
+        rewrite Hge in Hgwe. cbn [snd] in Hgwe.
+        destruct Hgwe as [new_ents Hg2]; destruct Hg2 as [Hwl_g_eq Hpref_anr].
+        rewrite Hwl_g_eq.
+        apply all_app. split.
+        * (* analysis_repair entries are ok *)
+          clear -Hpref_anr.
+          induction new_ents as [|ent ents IH]; cbn in *; auto.
+          destruct Hpref_anr as [Hent_ex Hrest].
+          destruct Hent_ex as [ix Hent]; subst ent.
+          split; [cbn; exact I | apply IH; exact Hrest].
+        * (* old entries lift via Heq_post_e_in *)
+          eapply all_wkn; [|exact Hwlok].
+          intros ent Hin_ent Hent_ok.
+          destruct ent as [ix1 ix2 ibool|ix]; cbn in *; auto.
+          unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hent_ok.
       + (* parents_ok: TODO; db_set' adds [a] to parents at args/ret *)
         admit.
       + (* db_idxs_in_equiv: TODO for the new atom + preserved old atoms *)
