@@ -2353,7 +2353,24 @@ Abort.
                 /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
                 /\ option_relation m.(domain_eq)
                      (map.get i' (fst res)) (Some out_d)).
-  Proof. Admitted.
+  Proof.
+  (* TODO (Layer A): structural sketch:
+     1. vc_bind over [list_Mmap find args] — yields canonicalized args';
+        preservation of fields, has_key for all args' via find_sound'
+        applied per-element.
+     2. vc_bind over [db_lookup f args'] — db_lookup_pure gives the option
+        result and atom_in_egraph if Some.
+     3. Case on the lookup result:
+        - Some r: trivial Mret with snd res = e (unchanged). Result id is r.
+          By atom_interpretation from egraph_sound_for_interpretation, the
+          atom (f, args', r) is sound; combined with the precondition's
+          interprets_to f arg_doms out_d and interprets_to_functional, we
+          get domain_eq (i r) out_d.  i' := i.
+        - None: alloc then db_set.  Needs new primitives [alloc_sound]
+          (analogous to alloc_opaque_sound but without writing analyses)
+          and [db_set_sound] (a fresh-insertion variant whose preconditions
+          are atom_sound_for_model on the new atom).  i' := map.put i r out_d. *)
+  Admitted.
 
   (* update_entry: ensures atom [a] is recorded.  If a previous
      entry exists for [(a.fn, a.args)], it unions [a.ret] with that
