@@ -1982,6 +1982,97 @@ Abort.
     exact (union_sound_with_roots x y roots e Hok Hkx Hky).
   Qed.
 
+  (* ============================================================== *)
+  (* Soundness of the egraph-population primitives                  *)
+  (* (add_open_term, add_open_sort, add_ctx in Pyrosome).            *)
+  (*                                                                 *)
+  (* These statements are admitted here; they form Layer A of the    *)
+  (* re-proof of `add_open_term_sound` / `add_ctx_sound` in          *)
+  (* Pyrosome/Tools/EGraph/Theorems.v.  See                          *)
+  (* /root/.claude/plans/a-number-of-theorems-functional-trinket.md  *)
+  (* for the design.                                                 *)
+  (*                                                                 *)
+  (* All three lemmas use `vc` (Utils/VC.v) for their conclusions    *)
+  (* and `egraph_ok` + `egraph_sound_for_interpretation` as          *)
+  (* invariants, matching the style of [rebuild_sound] above.        *)
+  (* ============================================================== *)
+
+  (* alloc_opaque: returns a fresh id, leaves db/parents/worklist
+     unchanged, adds [fst res] as a key in the union-find, writes
+     a default analysis for it.  Preserves both [egraph_ok] and
+     [egraph_sound_for_interpretation]: the new id is not in [i]'s
+     domain, so atom soundness, eq soundness, and the
+     [interpretation_exact] field all carry over unchanged. *)
+  Lemma alloc_opaque_sound (i : idx_map m.(domain))
+    : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie
+                       analysis_result)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           egraph_ok (snd res)
+           /\ egraph_sound_for_interpretation m i (snd res)
+           /\ map.get i (fst res) = None
+           /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
+           /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))
+           /\ e_in.(db) = (snd res).(db)
+           /\ e_in.(parents) = (snd res).(parents)
+           /\ e_in.(worklist) = (snd res).(worklist)).
+  Proof. Admitted.
+
+  (* hash_entry: canonicalizes args, looks up (f, args') in the db;
+     if present, returns the existing id, otherwise allocates a
+     fresh id and writes (f, args', new_id) into the db.
+
+     Precondition: every arg is a key in the union-find, the
+     interpretation [i] is sound for the input egraph, all args
+     map under [i] to a list of domain values [arg_doms], and the
+     model has [interprets_to f arg_doms out_d] for some [out_d].
+
+     Postcondition: result id is mapped (under an extended [i']) to
+     a domain value [domain_eq]-related to [out_d]; both invariants
+     are preserved. *)
+  Lemma hash_entry_sound (i : idx_map m.(domain)) f args (out_d : m.(domain))
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
+           (exists arg_doms,
+              list_Mmap (map.get i) args = Some arg_doms
+              /\ m.(interprets_to) f arg_doms out_d) ->
+           egraph_ok (snd res)
+           /\ exists i',
+                map.extends i' i
+                /\ egraph_sound_for_interpretation m i' (snd res)
+                /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                              Sep.has_key x (snd res).(equiv).(parent))
+                /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
+                /\ option_relation m.(domain_eq)
+                     (map.get i' (fst res)) (Some out_d)).
+  Proof. Admitted.
+
+  (* update_entry: ensures atom [a] is recorded.  If a previous
+     entry exists for [(a.fn, a.args)], it unions [a.ret] with that
+     value; otherwise it inserts [a].
+
+     Precondition: args and ret are keys, the atom is sound under
+     [i].  Postcondition: invariants preserved (no extension to [i]
+     needed because the ret value is supplied by the caller). *)
+  Lemma update_entry_sound (i : idx_map m.(domain)) a
+    : vc (update_entry a)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           (forall x, In x a.(atom_args) -> Sep.has_key x e_in.(equiv).(parent)) ->
+           Sep.has_key a.(atom_ret) e_in.(equiv).(parent) ->
+           atom_sound_for_model m i a ->
+           egraph_ok (snd res)
+           /\ egraph_sound_for_interpretation m i (snd res)
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))).
+  Proof. Admitted.
 
   (* Atom-level equality (under the interpretation) preserves
      soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
