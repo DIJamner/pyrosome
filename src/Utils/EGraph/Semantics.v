@@ -2323,99 +2323,6 @@ Abort.
     split; reflexivity.
   Qed.
 
-  (* hash_entry: canonicalizes args, looks up (f, args') in the db;
-     if present, returns the existing id, otherwise allocates a
-     fresh id and writes (f, args', new_id) into the db.
-
-     Precondition: every arg is a key in the union-find, the
-     interpretation [i] is sound for the input egraph, all args
-     map under [i] to a list of domain values [arg_doms], and the
-     model has [interprets_to f arg_doms out_d] for some [out_d].
-
-     Postcondition: result id is mapped (under an extended [i']) to
-     a domain value [domain_eq]-related to [out_d]; both invariants
-     are preserved. *)
-  Lemma hash_entry_sound (i : idx_map m.(domain)) f args (out_d : m.(domain))
-    : vc (hash_entry idx_succ f args)
-        (fun e_in res =>
-           egraph_ok e_in ->
-           egraph_sound_for_interpretation m i e_in ->
-           (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
-           (exists arg_doms,
-              list_Mmap (map.get i) args = Some arg_doms
-              /\ m.(interprets_to) f arg_doms out_d) ->
-           egraph_ok (snd res)
-           /\ exists i',
-                map.extends i' i
-                /\ egraph_sound_for_interpretation m i' (snd res)
-                /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
-                              Sep.has_key x (snd res).(equiv).(parent))
-                /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
-                /\ option_relation m.(domain_eq)
-                     (map.get i' (fst res)) (Some out_d)).
-  Proof.
-  (* TODO (Layer A): structural sketch:
-     1. vc_bind over [list_Mmap find args] — yields canonicalized args';
-        preservation of fields, has_key for all args' via find_sound'
-        applied per-element.
-     2. vc_bind over [db_lookup f args'] — db_lookup_pure gives the option
-        result and atom_in_egraph if Some.
-     3. Case on the lookup result:
-        - Some r: trivial Mret with snd res = e (unchanged). Result id is r.
-          By atom_interpretation from egraph_sound_for_interpretation, the
-          atom (f, args', r) is sound; combined with the precondition's
-          interprets_to f arg_doms out_d and interprets_to_functional, we
-          get domain_eq (i r) out_d.  i' := i.
-        - None: alloc then db_set.  Needs new primitives [alloc_sound]
-          (analogous to alloc_opaque_sound but without writing analyses)
-          and [db_set_sound] (a fresh-insertion variant whose preconditions
-          are atom_sound_for_model on the new atom).  i' := map.put i r out_d. *)
-  Admitted.
-
-  (* update_entry: ensures atom [a] is recorded.  If a previous
-     entry exists for [(a.fn, a.args)], it unions [a.ret] with that
-     value; otherwise it inserts [a].
-
-     Precondition: args and ret are keys, the atom is sound under
-     [i].  Postcondition: invariants preserved (no extension to [i]
-     needed because the ret value is supplied by the caller). *)
-  Lemma update_entry_sound (i : idx_map m.(domain)) a
-    : vc (update_entry a)
-        (fun e_in res =>
-           egraph_ok e_in ->
-           egraph_sound_for_interpretation m i e_in ->
-           (forall x, In x a.(atom_args) -> Sep.has_key x e_in.(equiv).(parent)) ->
-           Sep.has_key a.(atom_ret) e_in.(equiv).(parent) ->
-           atom_sound_for_model m i a ->
-           egraph_ok (snd res)
-           /\ egraph_sound_for_interpretation m i (snd res)
-           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
-                         Sep.has_key x (snd res).(equiv).(parent))).
-  Proof.
-    unfold update_entry.
-    vc_bind db_lookup_pure.
-    rename s0 into e_in, a0 into mout.
-    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
-    - (* Some r: union r (atom_ret a) *)
-      intros s_pre [Heq Hin]; subst s_pre.
-      (* Goal: vc (Mseq (Defs.union r (atom_ret a)) (Mret tt)) ...
-         Apply union_sound; pull preconditions out of egraph_ok + Hin (which gives
-         Sep.has_key r via db_idxs_in_equiv). The remaining steps (egraph_ok and
-         egraph_sound preservation, has_key monotonicity) follow from union_sound's
-         postcondition + the atom_sound_for_model premise (which connects the new
-         PER edge (r, atom_ret a) to interprets_to-equivalent values, via
-         interprets_to_functional). *)
-      admit.
-    - (* None: db_set a *)
-      intros s_pre [Heq Hnone]; subst s_pre.
-      (* db_set a does: get_analyses (atom_args a), update_analyses (atom_ret a),
-         db_set' a. The egraph_ok preservation requires careful tracking of
-         worklist (push_worklist of analysis_repair entries) and parents updates.
-         No db_set_sound primitive exists; needs to be built from scratch or
-         extracted from db_set_after_canonicalize_denote_iff. *)
-      admit.
-  Admitted.
-
   (* Atom-level equality (under the interpretation) preserves
      soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
      (same fn, args eq_sound pointwise, ret eq_sound), then [a1]
@@ -3992,7 +3899,134 @@ Abort.
       unfold equiv_extends. intros x y Hxy. apply Hper_iff_post. exact Hxy. }
   Qed.
 
-  
+  (* ============================================================== *)
+  (* db_set_sound: fresh-insertion variant of                        *)
+  (* db_set_after_canonicalize_denote_iff.                            *)
+  (* Inserts an atom [a] whose key (a.fn, a.args) doesn't yet appear  *)
+  (* in the db, and whose contents are sound under the model under i. *)
+  (* Preserves egraph_ok, egraph_sound_for_interpretation, has_key.   *)
+  (* ============================================================== *)
+  Lemma db_set_sound (i : idx_map m.(domain)) a
+    : vc (db_set a)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           (forall x, In x a.(atom_args) -> Sep.has_key x e_in.(equiv).(parent)) ->
+           Sep.has_key a.(atom_ret) e_in.(equiv).(parent) ->
+           atom_sound_for_model m i a ->
+           (forall r, ~ atom_in_egraph (Build_atom a.(atom_fn) a.(atom_args) r) e_in) ->
+           egraph_ok (snd res)
+           /\ egraph_sound_for_interpretation m i (snd res)
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))).
+  Proof.
+  (* TODO (Layer A primitive): adapt db_set_after_canonicalize_denote_iff
+     to the fresh-insertion case.  Same get_analyses + update_analyses +
+     db_set' decomposition; egraph_ok / sound preservation follows because:
+     - equiv: unchanged through all three steps -> all has_key facts and
+       the PER carry over.
+     - db: db_set' inserts (a.fn, a.args, a.ret); the new atom is sound
+       under [i] by the [atom_sound_for_model] precondition.  Existing
+       atoms remain in db_set' output (Hain_old style) so atom_interpretation
+       continues to hold for them.
+     - parents: db_set' prepends [a] to parents of a.atom_args and
+       a.atom_ret.  Each prepended slot's parents_ok holds because the
+       new atom is in db (so atom_in_egraph_up_to_equiv holds reflexively).
+     - analyses: changed via get_analyses + update_analyses; doesn't
+       affect egraph_ok or interpretation soundness.
+     - worklist: get_analyses may push analysis_repair entries; each is
+       trivially worklist_entry_ok. *)
+  Admitted.
+
+  (* ============================================================== *)
+  (* hash_entry_sound and update_entry_sound (relocated from earlier *)
+  (* in the file so that they can use db_set_sound).                  *)
+  (* ============================================================== *)
+
+  (* hash_entry: canonicalizes args, looks up (f, args') in the db;
+     if present, returns the existing id, otherwise allocates a
+     fresh id and writes (f, args', new_id) into the db.
+
+     Precondition: every arg is a key in the union-find, the
+     interpretation [i] is sound for the input egraph, all args
+     map under [i] to a list of domain values [arg_doms], and the
+     model has [interprets_to f arg_doms out_d] for some [out_d].
+
+     Postcondition: result id is mapped (under an extended [i']) to
+     a domain value [domain_eq]-related to [out_d]; both invariants
+     are preserved. *)
+  Lemma hash_entry_sound (i : idx_map m.(domain)) f args (out_d : m.(domain))
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
+           (exists arg_doms,
+              list_Mmap (map.get i) args = Some arg_doms
+              /\ m.(interprets_to) f arg_doms out_d) ->
+           egraph_ok (snd res)
+           /\ exists i',
+                map.extends i' i
+                /\ egraph_sound_for_interpretation m i' (snd res)
+                /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                              Sep.has_key x (snd res).(equiv).(parent))
+                /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
+                /\ option_relation m.(domain_eq)
+                     (map.get i' (fst res)) (Some out_d)).
+  Proof.
+  (* TODO (Layer A): structural sketch:
+     1. vc_bind over [list_Mmap find args] — yields canonicalized args';
+        preservation of fields, has_key for all args' via find_sound'
+        applied per-element.
+     2. vc_bind over [db_lookup f args'] — db_lookup_pure gives the option
+        result and atom_in_egraph if Some.
+     3. Case on the lookup result:
+        - Some r: trivial Mret with snd res = e (unchanged). Result id is r.
+          By atom_interpretation from egraph_sound_for_interpretation, the
+          atom (f, args', r) is sound; combined with the precondition's
+          interprets_to f arg_doms out_d and interprets_to_functional, we
+          get domain_eq (i r) out_d.  i' := i.
+        - None: alloc then db_set.  Needs new primitives [alloc_sound]
+          (analogous to alloc_opaque_sound but without writing analyses)
+          and [db_set_sound] (now available above).  i' := map.put i r out_d. *)
+  Admitted.
+
+  (* update_entry: ensures atom [a] is recorded.  If a previous
+     entry exists for [(a.fn, a.args)], it unions [a.ret] with that
+     value; otherwise it inserts [a].
+
+     Precondition: args and ret are keys, the atom is sound under
+     [i].  Postcondition: invariants preserved (no extension to [i]
+     needed because the ret value is supplied by the caller). *)
+  Lemma update_entry_sound (i : idx_map m.(domain)) a
+    : vc (update_entry a)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           (forall x, In x a.(atom_args) -> Sep.has_key x e_in.(equiv).(parent)) ->
+           Sep.has_key a.(atom_ret) e_in.(equiv).(parent) ->
+           atom_sound_for_model m i a ->
+           egraph_ok (snd res)
+           /\ egraph_sound_for_interpretation m i (snd res)
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))).
+  Proof.
+    unfold update_entry.
+    vc_bind db_lookup_pure.
+    rename s0 into e_in, a0 into mout.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Some r: union r (atom_ret a) *)
+      intros s_pre [Heq Hin]; subst s_pre.
+      (* Apply union_sound; pull preconditions out of egraph_ok + Hin (which gives
+         Sep.has_key r via db_idxs_in_equiv). *)
+      admit.
+    - (* None: db_set a *)
+      intros s_pre [Heq Hnone]; subst s_pre.
+      (* Apply db_set_sound; the no-existing-entry precondition follows
+         directly from Hnone (db_lookup returned None). *)
+      admit.
+  Admitted.
+
   (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
      a'.args]; the [Some r] case uses
      [union_after_canonicalize_denote_iff] and the [None] case uses
