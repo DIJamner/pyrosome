@@ -1366,19 +1366,53 @@ Section WithVar.
       - (* cons args: chain via vc_bind on the head and IH_args on the tail,
            then args_in_instance_cons. *)
         intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r i Hmaps.
+        unfold vc. intros e_in.
         cbn [list_Mmap].
-        eapply vc_bind.
-        { apply IH_term; exact Hmaps. }
-        intros e_state v_head.
-        eapply vc_bind.
-        { (* the inner-list call uses the post-head state and we need
-             to upgrade i_in to i_out_head. Apply IH_args with the
-             extended interpretation. *)
-          admit. }
-        intros e_state_2 v_tail.
-        unfold vc, Mret. cbn [StateMonad.state_monad fst snd].
-        intros s_final Hseq Hpost_args Hpost_head.
-        admit.
+        cbn [Mbind Mret StateMonad.state_monad].
+        unfold open_args_post.
+        intros Hok Hsound Hai.
+        (* Apply IH_term to e_in *)
+        specialize (IH_term r i Hmaps).
+        unfold vc, open_term_post in IH_term.
+        specialize (IH_term e_in Hok Hsound Hai).
+        destruct (add_open_term' succ sort_of l with_sorts false
+                    add_open_sort_inner r e_arg e_in)
+          as [v_head e_after_head] eqn:Heq1.
+        cbn [fst snd] in IH_term.
+        destruct IH_term as [i_head IHh].
+        destruct IHh as [Hext_head Hgvhead].
+        destruct Hext_head as [Hok_head Hex1].
+        destruct Hex1 as [Hexti_head Hex2].
+        destruct Hex2 as [Hsound_head Hkeys_head].
+        (* Now apply IH_args with i_head *)
+        specialize (IH_args r i_head Hmaps).
+        unfold vc, open_args_post in IH_args.
+        specialize (IH_args e_after_head Hok_head Hsound_head
+                            (args_in_instance_monotone _ _ _ _ _ Hexti_head Hai)).
+        destruct (list_Mmap
+                    (add_open_term' succ sort_of l with_sorts false
+                       add_open_sort_inner r) es e_after_head)
+          as [v_tail e_final] eqn:Heq2.
+        cbn [fst snd] in IH_args.
+        destruct IH_args as [i_final IHargs2].
+        destruct IHargs2 as [Hext_final Hai_tail].
+        destruct Hext_final as [Hok_final Hex3].
+        destruct Hex3 as [Hexti_final Hex4].
+        destruct Hex4 as [Hsound_final Hkeys_final].
+        exists i_final. split.
+        { (* extending_sound i e_in i_final e_final *)
+          unfold extending_sound.
+          split; [exact Hok_final|].
+          split.
+          { intros x v Hgx. apply Hexti_final. apply Hexti_head. exact Hgx. }
+          split; [exact Hsound_final|].
+          intros x Hx. apply Hkeys_final. apply Hkeys_head. exact Hx. }
+        { (* args_in_instance for (v_head :: v_tail) *)
+          apply args_in_instance_cons; [exact Hai_tail|].
+          unfold option_relation in Hgvhead.
+          destruct (map.get i_head v_head) as [d|] eqn:Hgh; cbn in Hgvhead.
+          - apply Hexti_final in Hgh. rewrite Hgh. cbn. exact Hgvhead.
+          - discriminate. }
     Admitted.
 
     (* Induction on the fuel parameter, using [add_open_sound] in the
