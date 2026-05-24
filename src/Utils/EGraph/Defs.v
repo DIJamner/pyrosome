@@ -637,7 +637,12 @@ Section WithMap.
   
   Definition repair_union x_old x_canonical (improved_new_analysis : bool) : ST unit :=
     let repair_each a : ST _ :=
-      @!let _ <- db_remove a in
+      @!let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                     match mv with
+                     | Some v => union v a.(atom_ret)
+                     | None => Mret a.(atom_ret)
+                     end) in
+        let _ <- db_remove a in
         let a' <- canonicalize a in
         (update_entry a')
     in

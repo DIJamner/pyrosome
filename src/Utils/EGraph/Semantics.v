@@ -3255,6 +3255,12 @@ TODO: lemmas in the comment block are out of date
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
+      (* New: every entry literally at the removed key has a ret
+         PER-related to [atom_ret a].  Established by the prepended
+         [repair_each] union step. *)
+      (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                             e_ref.(db) ->
+                  uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
       vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3269,25 +3275,596 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
            /\ equiv_extends e_ref (snd res)).
   Proof.
-  Admitted.
+    intros Hok_ref Hatom_ref Hatoms_ref Hpost_dbr Hper_lk.
+    unfold Mseq. vc_bind union_sound.
+    rename s0 into e1, a0 into u_val.
+    unfold vc; cbn [Mret StateMonad.state_monad fst snd].
+    intros e_post Hu_lazy
+           Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hain_can.
+    (* has_key facts for the union *)
+    pose proof Hok_ref as [Heq_ref Hwl_ref Hpa_ref Hdb_ref_init].
+    destruct Hpost_dbr as (Hequiv_eq_post & Hpar_eq_post & Hep_eq_post
+                           & Hwl_eq_post & Han_eq_post & Hdb_iff_post).
+    destruct Hf01 as (Hdb_eq01 & Hpar_eq01 & Hep_eq01 & Hwl_eq01 & Han_eq01
+                      & Hkey_iff01 & Hper_iff01).
+    (* Hkey_lift_01: e0's has_key lifts to e1 (path compression). *)
+    assert (Hain_db_e1 : atom_in_db
+                          (Build_atom (atom_fn a') (atom_args a') r) e1.(db))
+      by exact Hain_can.
+    assert (Hain_db_e0 : atom_in_db
+                          (Build_atom (atom_fn a') (atom_args a') r) e0.(db))
+      by (rewrite Hdb_eq01 in Hain_db_e1; exact Hain_db_e1).
+    apply Hdb_iff_post in Hain_db_e0.
+    destruct Hain_db_e0 as [Hain_db_ref _].
+    assert (Hkr_e1 : Sep.has_key r e1.(equiv).(parent)).
+    { destruct (Hdb_ref_init _ Hain_db_ref) as [_ Hkret].
+      cbn in Hkret. apply Hkey_iff01. rewrite Hequiv_eq_post in *. exact Hkret. }
+    assert (Hkaret_e1 : Sep.has_key (atom_ret a') e1.(equiv).(parent)).
+    { destruct Hex_e1 as [rs1 Huf_e1].
+      exact (proj1 (uf_rel_PER_has_key e1.(equiv) rs1 _ _ Huf_e1 Hret_eq)). }
+    specialize (Hu_lazy Hex_e1 Hkr_e1 Hkaret_e1).
+    destruct Hu_lazy as (Hdb_eqe & Hex_post & Hper_iff_union & Hpar_eqe
+                        & Hwl_rel & Hu_ret).
+    (* [Hext_e1]: lift e1's PER into post-union PER. *)
+    assert (Hext_e1 : forall x1 y1, uf_rel_PER e1.(equiv) x1 y1 ->
+                                    uf_rel_PER e_post.(equiv) x1 y1).
+    { intros x1 y1 Hxy. apply Hper_iff_union.
+      apply PER_clo_base. left. exact Hxy. }
+    assert (Hr_aret_post : uf_rel_PER e_post.(equiv) r (atom_ret a')).
+    { apply Hper_iff_union. apply PER_clo_base. right.
+      split; reflexivity. }
+    (* [Hext_ref]: e_ref's PER lifts into post-union PER, through e1's
+       PER (which is e0's = e_ref's by [Hequiv_eq_post] and [Hper_iff01]
+       which is iff). *)
+    assert (Hext_ref : forall x1 y1, uf_rel_PER e_ref.(equiv) x1 y1 ->
+                                     uf_rel_PER e_post.(equiv) x1 y1).
+    { intros x1 y1 Hxy. apply Hext_e1.
+      apply Hper_iff01. rewrite Hequiv_eq_post. exact Hxy. }
+    (* [Hkey_lift_e1]: keys in e1 lift to post-union. *)
+    assert (Hkey_lift_post : forall j, Sep.has_key j e1.(equiv).(parent) ->
+                                       Sep.has_key j e_post.(equiv).(parent)).
+    { intros j Hj.
+      destruct Hex_post as [rs_post Huf_post].
+      assert (Hjj_e1 : uf_rel_PER e1.(equiv) j j).
+      { unfold Sep.has_key in Hj.
+        destruct (map.get e1.(equiv).(parent) j) as [vj|] eqn:Hgj;
+          [|tauto].
+        unfold uf_rel_PER.
+        eapply PER_clo_trans;
+          [apply PER_clo_base; exact Hgj
+          |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+      exact (proj1 (uf_rel_PER_has_key e_post.(equiv) rs_post j j
+                     Huf_post (Hext_e1 _ _ Hjj_e1))). }
+    (* [Hkey_back_post]: keys in post-union lift back to e1.  The PER
+       closure base elements come from e1's PER or the new singleton;
+       [r] and [a'.atom_ret] are both has_key in e1. *)
+    assert (Hkey_back_post : forall j,
+              Sep.has_key j e_post.(equiv).(parent) ->
+              Sep.has_key j e1.(equiv).(parent)).
+    { intros j Hj.
+      destruct Hex_post as [rs_post Huf_post].
+      destruct Hex_e1 as [rs_e1 Huf_e1].
+      assert (Hjj_post : uf_rel_PER e_post.(equiv) j j).
+      { unfold Sep.has_key in Hj.
+        destruct (map.get e_post.(equiv).(parent) j) as [vj|] eqn:Hgj;
+          [|tauto].
+        unfold uf_rel_PER.
+        eapply PER_clo_trans;
+          [apply PER_clo_base; exact Hgj
+          |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+      apply Hper_iff_union in Hjj_post.
+      assert (Hclo_key : forall p q,
+                union_closure_PER (uf_rel_PER e1.(equiv))
+                  (singleton_rel r (atom_ret a')) p q ->
+                Sep.has_key p e1.(equiv).(parent)
+                /\ Sep.has_key q e1.(equiv).(parent)).
+      { intros p q Hpq.
+        induction Hpq as [p q Hbase | p q rr _ IH1 _ IH2 | p q _ IH].
+        - destruct Hbase as [Hbase | Hsing].
+          + apply (uf_rel_PER_has_key _ _ _ _ Huf_e1 Hbase).
+          + destruct Hsing as [Heq1 Heq2]; subst.
+            split; [exact Hkr_e1 | exact Hkaret_e1].
+        - split; [apply IH1 | apply IH2].
+        - destruct IH; split; assumption. }
+      exact (proj1 (Hclo_key _ _ Hjj_post)). }
+    (* [e_post]'s db = e1's db = e0's db; parents unchanged. *)
+    assert (Hdb_post_eq_e1 : e1.(db) = e_post.(db)) by exact Hdb_eqe.
+    assert (Hpar_post_eq_e1 : e1.(parents) = e_post.(parents))
+      by exact Hpar_eqe.
+    (* Helper: lift [atom_in_egraph_up_to_equiv b e_ref] to [e_post] by
+       case-splitting on whether the witness is at the removed literal
+       key.  Used in [parents_ok], the side-list conjunct, and the
+       backward direction of [denote_iff]. *)
+    assert (Hargs_eq_post : all2 (uf_rel_PER e_post.(equiv))
+                                 (atom_args a) (atom_args a')).
+    { clear -Hargs_eq Hext_e1.
+      revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+      intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+        cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - apply Hext_e1. unfold uf_rel_PER in *. apply PER_clo_sym. exact Hyz.
+      - apply (IH zs Hys). }
+    assert (Hain_can_post : atom_in_db
+                              (Build_atom (atom_fn a') (atom_args a') r)
+                              e_post.(db)).
+    { rewrite <- Hdb_post_eq_e1. exact Hain_can. }
+    assert (Hlift : forall b, atom_in_egraph_up_to_equiv b e_ref ->
+                              atom_in_egraph_up_to_equiv b e_post).
+    { intros b Hbref.
+      destruct Hbref as (bb & (Hfn & Hargs & Hret) & Hbb_in).
+      destruct bb as [fn_bb args_bb ret_bb]; cbn in *.
+      subst fn_bb.
+      pose proof (eqb_spec (atom_fn b, args_bb) (atom_fn a, atom_args a))
+        as Hkey_eq.
+      destruct (eqb (atom_fn b, args_bb) (atom_fn a, atom_args a)).
+      { assert (H_fn : atom_fn b = atom_fn a)
+          by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        assert (H_args : args_bb = atom_args a)
+          by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        clear Hkey_eq. subst args_bb.
+        assert (Hain_bb_db : atom_in_db
+                              (Build_atom (atom_fn a) (atom_args a) ret_bb)
+                              e_ref.(db)).
+        { revert Hbb_in. unfold atom_in_egraph, atom_in_db; cbn.
+          rewrite H_fn. tauto. }
+        pose proof (Hper_lk _ Hain_bb_db) as Hret_bb_aret.
+        exists (Build_atom (atom_fn a') (atom_args a') r).
+        split; cbn.
+        - unfold atom_canonical_equiv; cbn. split; [congruence|]. split.
+          + clear -Hargs Hargs_eq_post Hext_ref.
+            revert Hargs Hargs_eq_post.
+            generalize (atom_args b), (atom_args a), (atom_args a').
+            intros l1 l2 l3. revert l2 l3.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              destruct l3 as [|w ws]; cbn; auto; try tauto.
+            intros [Hyz Hys] [Hzw Hzs]. split.
+            * unfold uf_rel_PER in *.
+              eapply PER_clo_trans;
+                [apply Hext_ref; exact Hyz | exact Hzw].
+            * apply (IH zs ws Hys Hzs).
+          + unfold uf_rel_PER in *.
+            eapply PER_clo_trans;
+              [apply Hext_ref; exact Hret |].
+            eapply PER_clo_trans;
+              [apply Hext_ref; exact Hret_bb_aret|].
+            eapply PER_clo_trans;
+              [apply Hext_e1; apply PER_clo_sym; exact Hret_eq |].
+            apply PER_clo_sym; exact Hr_aret_post.
+        - exact Hain_can_post. }
+      { exists (Build_atom (atom_fn b) args_bb ret_bb).
+        split; cbn.
+        - unfold atom_canonical_equiv; cbn. split; [reflexivity|]. split.
+          + clear -Hargs Hext_ref.
+            revert Hargs. generalize (atom_args b), args_bb.
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split;
+              [apply Hext_ref; exact Hyz | apply IH; exact Hys].
+          + apply Hext_ref; exact Hret.
+        - assert (Hbb_in_e0 : atom_in_db
+                                (Build_atom (atom_fn b) args_bb ret_bb)
+                                e0.(db)).
+          { apply Hdb_iff_post.
+            split; [exact Hbb_in|].
+            cbn. intros Heq. apply Hkey_eq. exact Heq. }
+          unfold atom_in_egraph.
+          rewrite <- Hdb_post_eq_e1, Hdb_eq01. exact Hbb_in_e0. } }
+    (* The proof's main split: egraph_ok, denote_iff, side-list,
+       equiv_extends. *)
+    split.
+    { (* egraph_ok e_post *)
+      constructor.
+      - (* equiv_ok *) exact Hex_post.
+      - (* worklist_ok *)
+        destruct Hwl_rel as [Hwl_unchanged
+                            | (v_old & v' & ar & Hwl_new & Hv_old & Hv')].
+        + rewrite Hwl_unchanged, Hwl_eq01, Hwl_eq_post.
+          eapply all_wkn; [|exact Hwl_ref].
+          intros [old new improved | k] _ Hent; cbn in *.
+          * apply Hext_ref. exact Hent.
+          * exact I.
+        + rewrite Hwl_new, Hwl_eq01, Hwl_eq_post.
+          cbn. split.
+          * unfold uf_rel_PER in *.
+            eapply PER_clo_trans; [exact Hv_old |].
+            eapply PER_clo_trans; [exact Hr_aret_post|].
+            apply PER_clo_sym; exact Hv'.
+          * eapply all_wkn; [|exact Hwl_ref].
+            intros [old new improved | k] _ Hent; cbn in *.
+            -- apply Hext_ref. exact Hent.
+            -- exact I.
+      - (* parents_ok: parents unchanged via Hpar_eq01 + Hpar_eq_post
+           + Hpar_eqe; lift atom_in_egraph_up_to_equiv via PER + db
+           preservation. *)
+        intros x s Hgs.
+        rewrite <- Hpar_post_eq_e1 in Hgs.
+        rewrite Hpar_eq01 in Hgs.
+        rewrite Hpar_eq_post in Hgs.
+        eapply all_wkn; [|apply (Hpa_ref _ _ Hgs)].
+        intros b _ Hbain. apply Hlift. exact Hbain.
+      - (* db_idxs_in_equiv *)
+        intros b Hbain.
+        rewrite <- Hdb_post_eq_e1 in Hbain.
+        rewrite Hdb_eq01 in Hbain.
+        apply Hdb_iff_post in Hbain. destruct Hbain as [Hbain _].
+        destruct (Hdb_ref_init _ Hbain) as [Hargs_keys Hret_key].
+        split.
+        + eapply all_wkn; [|exact Hargs_keys]; intros j _ Hj.
+          apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. exact Hj.
+        + apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. exact Hret_key.
+    }
+    split.
+    { (* denote_iff e_ref e_post *)
+      intros i. split.
+      { (* Forward: e_ref sound → e_post sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        - exact Hwf.
+        - intros x Hx. apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. apply Hexact. exact Hx.
+        - intros b Hbain. apply Hatom_e.
+          unfold atom_in_egraph in *.
+          rewrite <- Hdb_post_eq_e1, Hdb_eq01 in Hbain.
+          apply Hdb_iff_post in Hbain. exact (proj1 Hbain).
+        - intros i1 i2 Hi12.
+          apply Hper_iff_union in Hi12.
+          induction Hi12 as [p q Hbase | p q rr _ IH1 _ IH2 | p q _ IH].
+          + destruct Hbase as [Hbase | Hsing].
+            * (* PER pair in e1.equiv = e_ref.equiv *)
+              apply Hrel_e. apply Hper_iff01 in Hbase.
+              rewrite Hequiv_eq_post in Hbase. exact Hbase.
+            * destruct Hsing as [Hpr Hqaret]; subst.
+              (* Need: eq_sound (i r) (i a'.atom_ret) *)
+              destruct Hatom_ref as
+                (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+              destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+              subst fn_aa.
+              pose proof (Hatom_e _ Hain_db_ref) as Hsa_can.
+              pose proof (Hatom_e _ Hain_aa) as Hsa_aa.
+              cbn in Hsa_can, Hsa_aa.
+              (* args_aa ~PER~ atom_args a' in e_ref.equiv (chain via a) *)
+              assert (Hargs_aa_a' :
+                all2 (eq_sound_for_model m i) args_aa (atom_args a')).
+              { clear -Hargs_aa Hargs_eq Hper_iff01 Hequiv_eq_post Hrel_e.
+                revert Hargs_aa Hargs_eq.
+                generalize (atom_args a), args_aa, (atom_args a').
+                intros l1 l2 l3. revert l2 l3.
+                induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                  destruct l3 as [|w ws]; cbn; auto; try tauto.
+                intros [Hyz Hys] [Hwy Hws]. split.
+                - apply Hrel_e. unfold uf_rel_PER in *.
+                  apply Hper_iff01 in Hwy. rewrite Hequiv_eq_post in Hwy.
+                  eapply PER_clo_trans;
+                    [apply PER_clo_sym; exact Hyz | apply PER_clo_sym; exact Hwy].
+                - apply (IH zs ws Hys Hws). }
+              rewrite Hfn_eq in Hsa_can.
+              pose proof (atom_sound_eq_ret i (atom_fn a)
+                            args_aa (atom_args a')
+                            ret_aa r
+                            Hsa_aa Hsa_can Hargs_aa_a') as Hret_aa_r.
+              (* And ret_aa ~PER~ a.ret ~PER~ a'.ret -> i ret_aa ~_d i a'.ret *)
+              assert (Hret_aa_a' :
+                eq_sound_for_model m i ret_aa (atom_ret a')).
+              { apply Hrel_e. apply Hper_iff01 in Hret_eq.
+                rewrite Hequiv_eq_post in Hret_eq.
+                unfold uf_rel_PER in *.
+                eapply PER_clo_trans;
+                  [apply PER_clo_sym; exact Hret_aa
+                  | apply PER_clo_sym; exact Hret_eq]. }
+              eapply eq_sound_for_model_trans;
+                [apply eq_sound_for_model_Symmetric; exact Hret_aa_r |].
+              exact Hret_aa_a'.
+          + eapply eq_sound_for_model_trans; eauto.
+          + apply eq_sound_for_model_Symmetric; exact IH. }
+      { (* Backward: e_post sound → e_ref sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        - exact Hwf.
+        - intros x Hx.
+          (* has_key x e_ref.equiv ← has_key x e_post.equiv via Hkey_back_post *)
+          rewrite <- Hequiv_eq_post. apply Hkey_iff01.
+          apply Hkey_back_post. apply Hexact. exact Hx.
+        - intros b Hbain.
+          (* atoms in e_ref.db: if at removed key, use canonical entry's
+             soundness + eq_atom_implies_sound_l_active. *)
+          pose proof (eqb_spec (atom_fn b, atom_args b)
+                              (atom_fn a, atom_args a)) as Hkey_eq.
+          destruct (eqb (atom_fn b, atom_args b) (atom_fn a, atom_args a)).
+          + (* b at removed key *)
+            assert (H_fn : atom_fn b = atom_fn a)
+              by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq;
+                  exact Hkey_eq).
+            assert (H_args : atom_args b = atom_args a)
+              by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq;
+                  exact Hkey_eq).
+            (* b = (atom_fn a, atom_args a, atom_ret b).  By Hper_lk: atom_ret b
+               ~PER~ atom_ret a in e_ref.equiv. *)
+            assert (Hain_b_db_ref : atom_in_db
+                                      (Build_atom (atom_fn a) (atom_args a)
+                                                  (atom_ret b))
+                                      e_ref.(db)).
+            { revert Hbain. unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite H_fn, H_args. tauto. }
+            pose proof (Hper_lk _ Hain_b_db_ref) as Hretb_aret.
+            (* The canonical entry (a'.fn, a'.args, r) is in e_post.db, sound *)
+            pose proof (Hatom_e _ Hain_can_post) as Hsa_can_post.
+            cbn in Hsa_can_post.
+            (* Use eq_atom_implies_sound_l_active to transport. *)
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom (atom_fn a') (atom_args a') r)).
+            * unfold eq_atom_in_interpretation; cbn.
+              split; [rewrite Hfn_eq; symmetry; exact H_fn|]. split.
+              { (* args eq_sound: atom_args a' ~PER~ atom_args a (= atom_args b)
+                   in e_post.equiv → eq_sound via Hrel_e. *)
+                rewrite H_args.
+                clear -Hargs_eq Hext_e1 Hrel_e.
+                revert Hargs_eq.
+                generalize (atom_args a'), (atom_args a).
+                intros l1 l2. revert l2.
+                induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                  cbn; auto; try tauto.
+                intros [Hyz Hys]. split.
+                - apply Hrel_e. apply Hext_e1. exact Hyz.
+                - apply IH; exact Hys. }
+              { (* ret eq_sound: r ~PER~ a'.ret in e_post.equiv via union pair;
+                   chain through atom_ret a via Hret_eq + Hretb_aret. *)
+                apply Hrel_e. unfold uf_rel_PER in *.
+                eapply PER_clo_trans;
+                  [exact Hr_aret_post|].
+                eapply PER_clo_trans;
+                  [apply Hext_e1; exact Hret_eq|].
+                apply PER_clo_sym. apply Hext_ref. exact Hretb_aret. }
+            * exact Hsa_can_post.
+          + (* b at different key: still in e_post.db *)
+            assert (Hbain_e0 : atom_in_db b e0.(db)).
+            { apply Hdb_iff_post. split; [exact Hbain|].
+              cbn. intros Heq. apply Hkey_eq. exact Heq. }
+            apply Hatom_e.
+            unfold atom_in_egraph.
+            rewrite <- Hdb_post_eq_e1, Hdb_eq01. exact Hbain_e0.
+        - intros i1 i2 Hi12.
+          apply Hrel_e. apply Hext_ref. exact Hi12. } }
+    split.
+    { (* all atom_in_egraph_up_to_equiv e_post side_l *)
+      eapply all_wkn; [|exact Hatoms_ref].
+      intros b _ Hb. apply Hlift. exact Hb. }
+    (* equiv_extends e_ref e_post *)
+    unfold equiv_extends. intros x1 y1 Hxy. apply Hext_ref. exact Hxy.
+  Qed.
 
-  (* TODO: prove. Denote-iff form of the [None] branch: when
-     [db_lookup] returned [None], we reinstall the canonicalized atom
-     via [db_set a']. Mirrors the still-admitted
-     [db_set_after_canonicalize_sound].
+  (* [update_analyses] only writes the [analyses] field, which doesn't
+     affect egraph_ok or denote. *)
+  Lemma update_analyses_denote_iff k v
+    : vc (update_analyses idx symbol symbol_map idx_map idx_trie
+            analysis_result k v)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
+  Proof.
+    unfold vc, update_analyses; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
+  Qed.
 
-     Same congruence-closure issue as the union branch: the removed
-     literal (atom_fn a, atom_args a) entry's value v_old needs to
-     be PER-equivalent to atom_ret a in e_ref.equiv to interpret the
-     removed atom soundly from a post-state interpretation. See the
-     comment on [union_after_canonicalize_denote_iff] for the two
-     resolution options. *)
+  (* [push_worklist (analysis_repair _)] adds a trivially-ok entry to
+     the worklist. denote doesn't read the worklist. *)
+  Lemma push_worklist_analysis_denote_iff o
+    : vc (push_worklist idx symbol symbol_map idx_map idx_trie
+            analysis_result (analysis_repair idx o))
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
+  Proof.
+    unfold vc, push_worklist; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
+  Qed.
+
+  (* [get_analysis x]: read [analyses] for [x], or on miss run
+     [update_analyses x default] + [push_worklist (analysis_repair x)].
+     Both branches preserve egraph_ok and denote. *)
+  Lemma get_analysis_denote_iff x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, get_analysis; intros e Hok.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn [fst snd]. split; [exact Hok|]. intros i; reflexivity.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
+      pose proof (update_analyses_denote_iff x default e Hok) as Hu.
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result x default e) as [u e1] eqn:Hue.
+      cbn [fst snd] in Hu.
+      destruct Hu as (Hok1 & Hde1 & _).
+      pose proof (push_worklist_analysis_denote_iff x e1 Hok1) as Hp.
+      destruct (push_worklist idx symbol symbol_map idx_map idx_trie
+                  analysis_result (analysis_repair idx x) e1) as [u' e2] eqn:Hpe.
+      cbn [fst snd] in Hp |- *.
+      destruct Hp as (Hok2 & Hde2 & _).
+      split; [exact Hok2|].
+      intros i. rewrite Hde1. exact (Hde2 i).
+  Qed.
+
+  (* [get_analyses] = [list_Mmap get_analysis]. Inductive composition. *)
+  Lemma get_analyses_denote_iff args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold get_analyses.
+    vc_list_Mmap_egraph_iff get_analysis_denote_iff.
+  Qed.
+
+  (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
+     the [Some] branch is [Mret]; the [None] branch only writes
+     [analyses] and [worklist]. *)
+  Lemma get_analysis_preserves_fields x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold vc, get_analysis; intros e.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn; intuition.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist].
+      intuition; cbn; reflexivity.
+  Qed.
+
+  (* [get_analyses] preserves [db], [equiv], and [parents] verbatim;
+     used by [repair_parent_analysis_denote_iff] to transport
+     [atom_in_egraph] across the [get_analyses] step. *)
+  Lemma get_analyses_preserves_fields args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold get_analyses.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ _ => True)
+                  (fun s s' =>
+                     s'.(db) = s.(db)
+                     /\ s'.(equiv) = s.(equiv)
+                     /\ s'.(parents) = s.(parents)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _; intuition.
+    - intros ? ? ? (?&?&?) (?&?&?); repeat split; congruence.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_preserves_fields x)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  (* Helper: [get_analysis] only ever adds [analysis_repair] entries to
+     the worklist; existing entries are preserved.  Used to lift
+     worklist_ok across [get_analyses]. *)
+  Lemma get_analysis_worklist_extends x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents).
+  Proof.
+    unfold vc, get_analysis; intros e.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn [fst snd]. exists []. split; [reflexivity | exact I].
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
+      unfold update_analyses, push_worklist; cbn.
+      exists [analysis_repair _ x]. split; [reflexivity |].
+      cbn. split; [eexists; reflexivity | exact I].
+  Qed.
+
+  (* Characterization of how [fold_left] with [map_update] + [cons a]
+     transforms the [parents] map: at every index, the new list is
+     either the same as before, or has [a] prepended (possibly multiple
+     times). In either case, every entry in the new list is either [a]
+     itself or was in the old list. *)
+  Lemma all_via_in_local {A} (P : A -> Prop) l
+    : (forall x, In x l -> P x) -> all P l.
+  Proof.
+    induction l as [|a rest IH]; cbn; intros HH.
+    - exact I.
+    - split.
+      + apply HH. left. reflexivity.
+      + apply IH. intros x Hx. apply HH. right. exact Hx.
+  Qed.
+
+  (* Helper specialized for default = []: the "default" list when no
+     entry exists is empty.  We pass the WithDefault instance explicitly
+     to avoid typeclass-resolution surprises. *)
+  Lemma fold_left_cons_map_update_get
+    {V} (l : list idx) (a : V) :
+    forall (mp : idx_map (list V)) x s,
+      map.get (fold_left
+                 (fun m x => @map_update _ _ (@nil V)
+                                _ m x (cons a)) l mp) x = Some s ->
+      forall v, In v s -> v = a \/ (exists s_old, map.get mp x = Some s_old /\ In v s_old).
+  Proof.
+    induction l as [|y ys IH]; cbn; intros mp x s Hg v Hin.
+    - right. exists s. split; [exact Hg | exact Hin].
+    - pose proof (IH _ _ _ Hg v Hin) as IHapplied. clear Hg Hin.
+      destruct IHapplied as [Hva | (s_old & Hgs_old & Hvin_old)].
+      + left. exact Hva.
+      + unfold map_update in Hgs_old.
+        destruct (map.get mp y) as [s_y|] eqn:Hg_mpy.
+        * eqb_case x y.
+          -- rewrite map.get_put_same in Hgs_old. injection Hgs_old as <-.
+             cbn in Hvin_old. destruct Hvin_old as [Hva | Hvin'].
+             ++ left. symmetry. exact Hva.
+             ++ right. exists s_y. split; [exact Hg_mpy | exact Hvin'].
+          -- rewrite map.get_put_diff in Hgs_old by auto.
+             right. exists s_old. split; [exact Hgs_old | exact Hvin_old].
+        * eqb_case x y.
+          -- rewrite map.get_put_same in Hgs_old. injection Hgs_old as <-.
+             cbn in Hvin_old. destruct Hvin_old as [Hva | Hvin'].
+             ++ left. symmetry. exact Hva.
+             ++ cbn in Hvin'. contradiction.
+          -- rewrite map.get_put_diff in Hgs_old by auto.
+             right. exists s_old. split; [exact Hgs_old | exact Hvin_old].
+  Qed.
+
+  Lemma get_analyses_worklist_extends args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents).
+  Proof.
+    unfold get_analyses.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ _ => True)
+                  (fun s s' =>
+                     exists new_ents,
+                       s'.(worklist) = new_ents ++ s.(worklist)
+                       /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents))].
+    - cbn beta. intros s res Hinv. exact (proj2 (Hinv I)).
+    - intros s _. exists []. split; [reflexivity | exact I].
+    - intros s1 s2 s3 (l1 & H1 & Hp1) (l2 & H2 & Hp2).
+      exists (l2 ++ l1). rewrite H2, H1. rewrite app_assoc. split; [reflexivity|].
+      clear -Hp1 Hp2. induction l2; cbn; auto. destruct Hp2; split; auto.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_worklist_extends x)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
   Lemma db_set_after_canonicalize_denote_iff
     a a' side_l (e_ref e0 : instance)
     : egraph_ok e_ref ->
       atom_in_egraph_up_to_equiv a e_ref ->
       all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
       post_db_remove e_ref a e0 ->
+      (* New: same PER fact as in [union_after_canonicalize_denote_iff]. *)
+      (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                             e_ref.(db) ->
+                  uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
       vc (db_set a')
         (fun e1 res =>
            (exists roots, union_find_ok lt e1.(equiv) roots) ->
@@ -3303,7 +3880,460 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
            /\ equiv_extends e_ref (snd res)).
   Proof.
-  Admitted.
+    (* Bring the [map_default] instance from Defs.v into typeclass scope
+       so [map_update]'s implicit [WithDefault] resolves. *)
+    Local Instance WithDefault_map_local {K V} `{m : map.map K V} : WithDefault m
+      := map.empty.
+    intros Hok_ref Hatom_ref Hatoms_ref Hpost_dbr Hper_lk.
+    unfold db_set, vc; cbn [Mbind StateMonad.state_monad fst snd].
+    intros e1 Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hno_can.
+    (* Decompose hypotheses. *)
+    pose proof Hok_ref as Hok_ref_orig.
+    pose proof Hok_ref as [Heq_ref Hwl_ref Hpa_ref Hdb_ref_init].
+    destruct Hpost_dbr as (Hequiv_eq_post & Hpar_eq_post & Hep_eq_post
+                           & Hwl_eq_post & Han_eq_post & Hdb_iff_post).
+    destruct Hf01 as (Hdb_eq01 & Hpar_eq01 & Hep_eq01 & Hwl_eq01 & Han_eq01
+                      & Hkey_iff01 & Hper_iff01).
+    (* === Step 1: get_analyses preserves db/equiv/parents. === *)
+    pose proof (get_analyses_preserves_fields (atom_args a') e1) as Hgaf.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_args a') e1) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hgaf.
+    destruct Hgaf as (Hdb_g & Heq_g & Hpa_g).
+    set (out_a := analyze idx symbol analysis_result a' arg_as).
+    (* === Step 2: update_analyses preserves all fields except analyses.
+       Destructure manually. === *)
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_ret a') out_a e_g) as [_u e_u] eqn:Hue.
+    assert (Hdb_u_g : e_u.(db) = e_g.(db))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Heq_u_g : e_u.(equiv) = e_g.(equiv))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Hpa_u_g : e_u.(parents) = e_g.(parents))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    cbn [fst snd] in *.
+    (* Combine field equalities back to e1. *)
+    assert (Hdb_ue1 : e_u.(db) = e1.(db)) by congruence.
+    assert (Heq_ue1 : e_u.(equiv) = e1.(equiv)) by congruence.
+    assert (Hpa_ue1 : e_u.(parents) = e1.(parents)) by congruence.
+    (* === Step 3: db_set'. Destructure. === *)
+    destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                analysis_result a' out_a e_u) as [_v e_post] eqn:Hde.
+    cbn [fst snd] in *.
+    (* Extract e_post's field equalities from Hde. *)
+    assert (Heq_post_u : e_post.(equiv) = e_u.(equiv))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hep_post_u : e_post.(epoch) = e_u.(epoch))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hwl_post_u : e_post.(worklist) = e_u.(worklist))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Heq_post_e1 : e_post.(equiv) = e1.(equiv)) by congruence.
+    (* Bridge PER and key-set iffs between e_ref and e_post. *)
+    assert (Hper_iff_post : forall x y,
+              uf_rel_PER e_ref.(equiv) x y <-> uf_rel_PER e_post.(equiv) x y).
+    { intros x y. rewrite Heq_post_e1.
+      rewrite <- (Hper_iff01 x y). rewrite Hequiv_eq_post. reflexivity. }
+    assert (Hkey_iff_post : forall y,
+              Sep.has_key y e_ref.(equiv).(parent)
+              <-> Sep.has_key y e_post.(equiv).(parent)).
+    { intros y. rewrite Heq_post_e1.
+      rewrite <- (Hkey_iff01 y). rewrite Hequiv_eq_post. reflexivity. }
+    (* has_key facts for the new canonical entry's idxs (a'.args, a'.ret). *)
+    assert (Hkargs_a' : all (fun i => Sep.has_key i e_post.(equiv).(parent))
+                             a'.(atom_args)).
+    { rewrite Heq_post_e1.
+      destruct Hex_e1 as [roots Huf]. revert Hargs_eq.
+      generalize (atom_args a'), (atom_args a). intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs]; cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - exact (proj1 (uf_rel_PER_has_key e1.(equiv) roots y z Huf Hyz)).
+      - apply (IH zs Hys). }
+    assert (Hkret_a' : Sep.has_key a'.(atom_ret) e_post.(equiv).(parent)).
+    { rewrite Heq_post_e1. destruct Hex_e1 as [roots Huf].
+      exact (proj1 (uf_rel_PER_has_key e1.(equiv) roots _ _ Huf Hret_eq)). }
+    (* The new canonical entry is in e_post.db. *)
+    assert (Hain_can_post : atom_in_db
+                              (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret))
+                              e_post.(db)).
+    { unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+    (* Hain_old: any atom in e_u.db whose key isn't the canonical key
+       survives in e_post.db. *)
+    assert (Hain_old : forall b, atom_in_db b e_u.(db) ->
+                                 (atom_fn b, atom_args b)
+                                 <> (atom_fn a', atom_args a') ->
+                                 atom_in_db b e_post.(db)).
+    { intros b Hbu Hneq.
+      unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct b as [bfn bargs bret]; cbn in *.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        eqb_case bfn a'.(atom_fn).
+      - rewrite map.get_put_same.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+        rewrite Htbl in Hbu. cbn in Hbu.
+        eqb_case bargs a'.(atom_args); cbn.
+        + exfalso. apply Hneq. reflexivity.
+        + rewrite map.get_put_diff by auto. exact Hbu.
+      - rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu.
+      - rewrite map.get_put_same.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+        rewrite Htbl in Hbu. cbn in Hbu. destruct Hbu.
+      - rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu. }
+    (* Hain_post_split: any atom in e_post.db is either the new canonical
+       entry, or was in e_u.db with a different key. *)
+    assert (Hain_post_split : forall b, atom_in_db b e_post.(db) ->
+              b = Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)
+              \/ (atom_in_db b e_u.(db)
+                  /\ (atom_fn b, atom_args b)
+                     <> (atom_fn a', atom_args a'))).
+    { intros b Hb.
+      unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update in Hb; cbn in Hb.
+      destruct b as [bfn bargs bret]; cbn in Hb.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        eqb_case bfn a'.(atom_fn).
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs a'.(atom_args).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          right. split.
+          * unfold atom_in_db, Is_Some_satisfying; cbn.
+            rewrite Htbl. cbn. exact Hb.
+          * cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs a'.(atom_args).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          unfold default in Hb.
+          rewrite map.get_empty in Hb. cbn in Hb. destruct Hb.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction. }
+    (* Extract the witness aa for atom_in_egraph_up_to_equiv a e_ref. *)
+    pose proof Hatom_ref as Hatom_ref_orig.
+    destruct Hatom_ref as (aa & Hcan_aa & Hain_aa).
+    unfold atom_canonical_equiv in Hcan_aa.
+    destruct Hcan_aa as (Hfn_aa & Hargs_aa & Hret_aa).
+    destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+    subst fn_aa.
+    (* Args lift e_ref → e_post via Hper_iff_post. *)
+    assert (Hargs_eq_post : all2 (uf_rel_PER e_post.(equiv))
+                                 (atom_args a) (atom_args a')).
+    { revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+      intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+        cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - rewrite Heq_post_e1. unfold uf_rel_PER in *.
+        apply PER_clo_sym. exact Hyz.
+      - apply (IH zs Hys). }
+    (* Hlift: lift atom_in_egraph_up_to_equiv from e_ref to e_post. *)
+    assert (Hlift : forall b, atom_in_egraph_up_to_equiv b e_ref ->
+                              atom_in_egraph_up_to_equiv b e_post).
+    { intros b Hbref.
+      destruct Hbref as (bb & (Hfn_bb & Hargs_bb & Hret_bb) & Hain_bb).
+      destruct bb as [fn_bb args_bb ret_bb]; cbn in Hfn_bb, Hargs_bb, Hret_bb.
+      subst fn_bb.
+      pose proof (eqb_spec (atom_fn b, args_bb) (atom_fn a, atom_args a))
+        as Hkey_eq.
+      destruct (eqb (atom_fn b, args_bb) (atom_fn a, atom_args a)).
+      - (* bb at removed key — substitute with new canonical entry. *)
+        assert (H_fn : atom_fn b = atom_fn a)
+          by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        assert (H_args : args_bb = atom_args a)
+          by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        clear Hkey_eq. subst args_bb.
+        assert (Hain_bb_db_ref : atom_in_db
+                                  (Build_atom (atom_fn a) (atom_args a) ret_bb)
+                                  e_ref.(db)).
+        { revert Hain_bb. unfold atom_in_egraph, atom_in_db; cbn.
+          rewrite H_fn. tauto. }
+        pose proof (Hper_lk _ Hain_bb_db_ref) as Hretbb_aret.
+        exists (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)).
+        split; cbn.
+        + unfold atom_canonical_equiv; cbn. split; [congruence|]. split.
+          * (* b.args ~ a'.args in e_post.equiv *)
+            clear -Hargs_bb Hargs_eq_post Hper_iff_post.
+            revert Hargs_bb Hargs_eq_post.
+            generalize (atom_args b), (atom_args a), (atom_args a').
+            intros l1 l2 l3. revert l2 l3.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              destruct l3 as [|w ws]; cbn; auto; try tauto.
+            intros [Hyz Hys] [Hzw Hzs]. split.
+            -- unfold uf_rel_PER in *.
+               apply Hper_iff_post in Hyz.
+               eapply PER_clo_trans; [exact Hyz | exact Hzw].
+            -- apply (IH zs ws Hys Hzs).
+          * (* b.ret ~ a'.ret in e_post.equiv *)
+            unfold uf_rel_PER in *.
+            apply Hper_iff_post in Hret_bb.
+            apply Hper_iff_post in Hretbb_aret.
+            eapply PER_clo_trans; [exact Hret_bb |].
+            eapply PER_clo_trans; [exact Hretbb_aret |].
+            rewrite Heq_post_e1.
+            apply PER_clo_sym. exact Hret_eq.
+        + unfold atom_in_egraph; cbn. exact Hain_can_post.
+      - (* bb at different key — survives in e_post.db. *)
+        exists (Build_atom (atom_fn b) args_bb ret_bb).
+        split; cbn.
+        + unfold atom_canonical_equiv; cbn. split; [reflexivity|]. split.
+          * clear -Hargs_bb Hper_iff_post.
+            revert Hargs_bb. generalize (atom_args b), args_bb.
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split.
+            -- apply Hper_iff_post in Hyz. exact Hyz.
+            -- apply (IH zs Hys).
+          * apply Hper_iff_post in Hret_bb. exact Hret_bb.
+        + unfold atom_in_egraph; cbn.
+          apply Hain_old.
+          * (* bb in e_u.db: bb in e_ref.db at non-removed key → in e0.db → in e1.db = e_u.db. *)
+            rewrite Hdb_ue1, Hdb_eq01. apply Hdb_iff_post.
+            split.
+            -- unfold atom_in_egraph, atom_in_db in Hain_bb. cbn in Hain_bb. exact Hain_bb.
+            -- cbn. intros Heq. apply Hkey_eq. exact Heq.
+          * (* bb's key isn't the canonical key.  Suppose it were:
+               (atom_fn b, args_bb) = (a'.fn, a'.args).
+               Then Hno_can applied to bb's ret would give contradiction. *)
+            cbn. intros Habs. injection Habs as He1 He2.
+            exfalso. apply (Hno_can ret_bb).
+            change (atom_in_egraph (Build_atom (atom_fn a') (atom_args a') ret_bb) e1).
+            unfold atom_in_egraph at 1. rewrite Hdb_eq01.
+            change (atom_in_egraph (Build_atom (atom_fn a') (atom_args a') ret_bb) e0).
+            apply Hdb_iff_post.
+            split;
+              [rewrite <- He1, <- He2; exact Hain_bb |
+               cbn; rewrite He1, He2 in Hkey_eq; exact Hkey_eq]. }
+    (* === Now prove the four conjuncts: egraph_ok, denote_iff, side_l, equiv_extends. === *)
+    split. 2: split. 3: split.
+    { (* (1) egraph_ok e_post *)
+      constructor.
+      - (* equiv_ok *) rewrite Heq_post_e1. exact Hex_e1.
+      - (* worklist_ok: e_post.worklist = e_u.worklist = e_g.worklist.
+           e_g.worklist = (analysis_repair entries) ++ e1.worklist (via
+           [get_analyses_worklist_extends]).  Each prefix entry is trivially
+           ok.  Each e1.worklist entry was ok in e_ref.equiv (Hwl_ref),
+           lifts to e_post.equiv via Hper_iff_post. *)
+        rewrite Hwl_post_u.
+        assert (Hwl_u_g : e_u.(worklist) = e_g.(worklist))
+          by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+              subst e_u; reflexivity).
+        rewrite Hwl_u_g.
+        pose proof (get_analyses_worklist_extends (atom_args a') e1) as Hwe.
+        rewrite Hge in Hwe. cbn [fst snd] in Hwe.
+        destruct Hwe as (new_ents & Hwl_split & Hpre).
+        rewrite Hwl_split.
+        assert (Hwl_e1 : e1.(worklist) = e_ref.(worklist)) by congruence.
+        rewrite Hwl_e1.
+        (* Show: all (worklist_entry_ok e_post.equiv) (new_ents ++ e_ref.worklist). *)
+        clear -Hpre Hwl_ref Hper_iff_post.
+        induction new_ents as [|ent rest IH]; cbn.
+        + (* No new entries: lift e_ref.worklist via Hper_iff_post. *)
+          eapply all_wkn; [|exact Hwl_ref].
+          intros ent _ Hent.
+          destruct ent as [old new improved | k_an]; cbn in *; auto.
+          apply Hper_iff_post. exact Hent.
+        + (* New entry ent: analysis_repair, trivially ok. Then recurse. *)
+          destruct Hpre as (Hpre_ent & Hpre_rest).
+          destruct Hpre_ent as (i_repair & Heq_ent).
+          subst ent. cbn. split; [exact I | exact (IH Hpre_rest)].
+      - (* parents_ok: e_post.parents = fold_left over dedup of
+           (a'.ret :: a'.args) adding [cons a'] to e_u.parents.
+           For each (x, s) in e_post.parents: every entry in s is either
+           a' (witnessed by Hain_can_post + reflexive canonical_equiv)
+           or an entry from e_u.parents (= e_ref.parents, witnessed via
+           Hpa_ref + Hlift). *)
+        intros x s Hgs.
+        unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post; cbn in *.
+        apply all_via_in_local. intros v Hv_in.
+        pose proof (fold_left_cons_map_update_get
+                      (dedup (eqb (A:=_)) (a'.(atom_ret) :: a'.(atom_args)))
+                      a' e_u.(parents) x s Hgs v Hv_in)
+          as [Hva | (s_old & Hs_old & Hvs_old)].
+        + (* v = a' — use canonical entry in e_post.db. *)
+          subst v.
+          exists (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)).
+          unfold atom_canonical_equiv. cbn.
+          (* PER-reflexivity for a'.args and a'.ret in e_post.equiv: use
+             Hkargs_a' and Hkret_a'. *)
+          repeat split.
+          * (* all2 PER (atom_args a') (atom_args a') *)
+            clear -Hkargs_a'. revert Hkargs_a'.
+            generalize (atom_args a'). intros l. induction l as [|y ys IH]; cbn; auto.
+            intros [Hy Hys]. split.
+            -- unfold uf_rel_PER, Sep.has_key in *.
+               destruct (map.get (parent (equiv e_u)) y) as [vy|] eqn:Hgy;
+                 [|tauto].
+               eapply PER_clo_trans;
+                 [apply PER_clo_base; exact Hgy
+                 | apply PER_clo_sym; apply PER_clo_base; exact Hgy].
+            -- apply (IH Hys).
+          * (* PER a'.ret a'.ret *)
+            unfold uf_rel_PER, Sep.has_key in *.
+            destruct (map.get (parent (equiv e_u)) a'.(atom_ret)) as [vr|] eqn:Hgr;
+              [|tauto].
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgr
+              | apply PER_clo_sym; apply PER_clo_base; exact Hgr].
+          * cbn. exact Hain_can_post.
+        + (* v in old parents s_old — apply Hpa_ref + Hlift. *)
+          rewrite Hpa_ue1 in Hs_old. rewrite Hpar_eq01 in Hs_old.
+          rewrite Hpar_eq_post in Hs_old.
+          pose proof (Hpa_ref _ _ Hs_old) as Hall_ref.
+          eapply in_all in Hvs_old; [|exact Hall_ref].
+          apply Hlift. exact Hvs_old.
+      - (* db_idxs_in_equiv *)
+        intros b Hbain.
+        apply Hain_post_split in Hbain. destruct Hbain as [Heq | (Hbu & Hneq)].
+        + (* new canonical entry *)
+          subst b. cbn. split; [exact Hkargs_a' | exact Hkret_a'].
+        + (* old atom from e_u.db *)
+          rewrite Hdb_ue1, Hdb_eq01 in Hbu.
+          apply Hdb_iff_post in Hbu. destruct Hbu as [Hbref _].
+          destruct (Hdb_ref_init _ Hbref) as [Hka Hkr].
+          split.
+          * eapply all_wkn; [|exact Hka]; intros j _ Hj.
+            apply Hkey_iff_post. exact Hj.
+          * apply Hkey_iff_post. exact Hkr.
+    }
+    { (* (2) denote_iff e_ref e_post *)
+      intros i. split.
+      - (* Forward: e_ref sound → e_post sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        + exact Hwf.
+        + intros x Hx. apply Hkey_iff_post. apply Hexact. exact Hx.
+        + intros b Hbain. apply Hain_post_split in Hbain.
+          destruct Hbain as [Heq | (Hbu & Hneq)].
+          * (* new canonical entry sound via aa *)
+            subst b. cbn.
+            pose proof (Hatom_e _ Hain_aa) as Hsa_aa. cbn in Hsa_aa.
+            (* aa = (atom_fn a, args_aa, ret_aa), sound in e_ref.
+               Build_atom a'.fn a'.args a'.ret should be sound.
+               Use atom_sound_eq_ret to convert aa to canonical entry. *)
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom (atom_fn a) args_aa ret_aa)).
+            -- unfold eq_atom_in_interpretation; cbn.
+               split; [symmetry; exact Hfn_eq |]. split.
+               ** (* args_aa eq_sound a'.args via Hargs_aa + Hargs_eq lifted *)
+                  clear -Hargs_aa Hargs_eq Hper_iff01 Hequiv_eq_post Hrel_e Hper_iff_post Heq_post_e1.
+                  revert Hargs_aa Hargs_eq.
+                  generalize (atom_args a), args_aa, (atom_args a').
+                  intros l1 l2 l3. revert l2 l3.
+                  induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                    destruct l3 as [|w ws]; cbn; auto; try tauto.
+                  intros [Hyz Hys] [Hwy Hws]. split.
+                  --- apply Hrel_e. unfold uf_rel_PER in *.
+                      (* Need: z ~PER~ w in e_ref.equiv (for Hrel_e to apply).
+                         Hyz : y ~PER~ z in e_ref.equiv (no lift needed).
+                         Hwy : w ~PER~ y in e1.equiv (lift to e_ref). *)
+                      apply Hper_iff01 in Hwy. rewrite Hequiv_eq_post in Hwy.
+                      eapply PER_clo_trans;
+                        [apply PER_clo_sym; exact Hyz | apply PER_clo_sym; exact Hwy].
+                  --- apply (IH zs ws Hys Hws).
+               ** (* ret_aa eq_sound a'.ret via Hret_aa + Hret_eq *)
+                  apply Hrel_e. unfold uf_rel_PER in *.
+                  (* Hret_aa : atom_ret a ~PER~ ret_aa in e_ref.
+                     Hret_eq : atom_ret a' ~PER~ atom_ret a in e1.
+                     Goal: PER_closure e_ref.equiv ret_aa (atom_ret a'). *)
+                  apply Hper_iff01 in Hret_eq. rewrite Hequiv_eq_post in Hret_eq.
+                  eapply PER_clo_trans;
+                    [apply PER_clo_sym; exact Hret_aa | apply PER_clo_sym; exact Hret_eq].
+            -- exact Hsa_aa.
+          * (* old atom from e_u.db; in e_ref.db via reverse chain. *)
+            rewrite Hdb_ue1, Hdb_eq01 in Hbu.
+            apply Hdb_iff_post in Hbu. destruct Hbu as [Hbref _].
+            apply Hatom_e. unfold atom_in_egraph. exact Hbref.
+        + intros i1 i2 Hi12. apply Hrel_e. apply Hper_iff_post. exact Hi12.
+      - (* Backward: e_post sound → e_ref sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        + exact Hwf.
+        + intros x Hx. apply Hkey_iff_post. apply Hexact. exact Hx.
+        + intros b Hbain.
+          (* b is in e_ref.db.  Either at removed key (use Hper_lk + canonical
+             entry) or at non-removed key (use Hain_old to find in e_post.db). *)
+          pose proof (eqb_spec (atom_fn b, atom_args b)
+                              (atom_fn a, atom_args a)) as Hkey_eq.
+          destruct (eqb (atom_fn b, atom_args b) (atom_fn a, atom_args a)).
+          * (* b at removed key *)
+            assert (H_fn : atom_fn b = atom_fn a)
+              by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+            assert (H_args : atom_args b = atom_args a)
+              by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+            assert (Hain_b_db_ref : atom_in_db
+                                     (Build_atom (atom_fn a) (atom_args a)
+                                                 (atom_ret b))
+                                     e_ref.(db)).
+            { revert Hbain. unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite H_fn, H_args. tauto. }
+            pose proof (Hper_lk _ Hain_b_db_ref) as Hretb_aret.
+            pose proof (Hatom_e _ Hain_can_post) as Hsa_can_post.
+            cbn in Hsa_can_post.
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret))).
+            -- unfold eq_atom_in_interpretation; cbn.
+               split; [rewrite Hfn_eq; symmetry; exact H_fn |]. split.
+               ** (* atom_args a' eq_sound atom_args b (= atom_args a) *)
+                  rewrite H_args.
+                  clear -Hargs_eq Hrel_e Hper_iff_post Heq_post_e1.
+                  revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+                  intros l1 l2. revert l2.
+                  induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                    cbn; auto; try tauto.
+                  intros [Hyz Hys]. split.
+                  --- apply Hrel_e. rewrite Heq_post_e1. exact Hyz.
+                  --- apply (IH zs Hys).
+               ** (* atom_ret a' eq_sound atom_ret b *)
+                  apply Hrel_e.
+                  unfold uf_rel_PER in *.
+                  rewrite Heq_post_e1.
+                  eapply PER_clo_trans; [exact Hret_eq |].
+                  apply Hper_iff01. rewrite Hequiv_eq_post.
+                  apply PER_clo_sym. exact Hretb_aret.
+            -- exact Hsa_can_post.
+          * (* b at different key: in e_post.db via Hain_old *)
+            assert (Hbain_e_u : atom_in_db b e_u.(db)).
+            { rewrite Hdb_ue1, Hdb_eq01. apply Hdb_iff_post.
+              split.
+              - unfold atom_in_egraph, atom_in_db in Hbain. cbn in Hbain. exact Hbain.
+              - cbn. intros Heq. apply Hkey_eq. exact Heq. }
+            assert (Hbain_e_post : atom_in_db b e_post.(db)).
+            { apply Hain_old; [exact Hbain_e_u |].
+              (* (atom_fn b, atom_args b) <> (atom_fn a', atom_args a'). *)
+              cbn. intros Habs. injection Habs as He1 He2.
+              apply (Hno_can (atom_ret b)).
+              unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite <- Hdb_ue1.
+              unfold atom_in_db, Is_Some_satisfying in Hbain_e_u; cbn in Hbain_e_u.
+              rewrite <- He1, <- He2. exact Hbain_e_u. }
+            apply Hatom_e. exact Hbain_e_post.
+        + intros i1 i2 Hi12.
+          apply Hrel_e. apply Hper_iff_post. exact Hi12.
+    }
+    { (* (3) side_l preservation *)
+      eapply all_wkn; [|exact Hatoms_ref].
+      intros b _ Hb. apply Hlift. exact Hb. }
+    { (* (4) equiv_extends *)
+      unfold equiv_extends. intros x y Hxy. apply Hper_iff_post. exact Hxy. }
+  Qed.
 
   
   (* Forward direction of an [atom_in_egraph_up_to_equiv] iff: a
@@ -3815,6 +4845,11 @@ TODO: lemmas in the comment block are out of date
            atom_fn a' = atom_fn a ->
            uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
            all2 (uf_rel_PER e1.(equiv)) (atom_args a') (atom_args a) ->
+           (* New: PER fact for the literal removed key, provided by the
+              prepended [repair_each] union step. *)
+           (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                                  e_ref.(db) ->
+                       uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
            egraph_ok (snd res)
            /\ (forall i, denote e_ref i <-> denote (snd res) i)
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
@@ -3826,17 +4861,295 @@ TODO: lemmas in the comment block are out of date
     destruct mr as [r|]; cbn beta iota; cbn [fst snd];
       intros s_pre [Hs_eq Hatom_case]; subst s_pre;
       intros Hok_ref Hatom_ref Hatoms_ref Hpost
-             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq.
+             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hper_lk.
     - (* Some r: invoke union branch *)
       pose proof (union_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0 r Hok_ref Hatom_ref Hatoms_ref Hpost) as Hu.
+                    a a' side_l e_ref e0 r
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_lk) as Hu.
       specialize (Hu e1).
       apply Hu; auto.
     - (* None: invoke db_set branch *)
       pose proof (db_set_after_canonicalize_denote_iff
-                    a a' side_l e_ref e0 Hok_ref Hatom_ref Hatoms_ref Hpost) as Hd.
+                    a a' side_l e_ref e0
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_lk) as Hd.
       specialize (Hd e1).
       apply Hd; auto.
+  Qed.
+
+  (* The conditional-union prefix of the new [repair_each]: looks up
+     the entry literally at [(atom_fn a, atom_args a)] and, if found,
+     unions its [entry_value] with [atom_ret a].  Behavior is identical
+     to a no-op whenever [entry_value = atom_ret a] (the only case that
+     actually arises in egglog execution, since [parents] only stores
+     atoms that were inserted via [db_set'] with their own [atom_ret]).
+     The point of this step is to materialize the previously-missing
+     PER link [v ~ atom_ret a] in [equiv] so that the downstream
+     [update_entry_restore_sound] sub-case where the up-to-equiv
+     witness for [a] lives at a different db key from [a]'s literal
+     args becomes discharge-able. *)
+  Lemma repair_each_prefix_denote_iff a l (x_old x_canonical : idx)
+    : vc (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+             match mv with
+             | Some v => Defs.union v a.(atom_ret)
+             | None => Mret a.(atom_ret)
+             end)
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph_up_to_equiv a e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ atom_in_egraph_up_to_equiv a (snd res)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l
+           /\ equiv_extends e (snd res)
+           /\ uf_rel_PER (snd res).(equiv) x_old x_canonical
+           /\ e.(db) = (snd res).(db)
+           /\ (forall r, atom_in_db
+                           (Build_atom a.(atom_fn) a.(atom_args) r) e.(db)
+                         -> uf_rel_PER (snd res).(equiv) r a.(atom_ret))).
+  Proof.
+    vc_bind db_lookup_pure.
+    rename s0 into e_init, a0 into mv.
+    destruct mv as [v | ]; cbn beta iota; cbn [fst snd];
+      intros e_lkup [He_eq Hlk]; subst e_lkup.
+    - (* Some v: union v with a.(atom_ret) *)
+      intros Hok_init Hatom_init Hatoms_init Hper_init.
+      pose proof Hlk as Hain_v.
+      (* has_key facts for the union's preconditions *)
+      pose proof Hok_init as Hok_init'.
+      destruct Hok_init' as [Heq_init _ _ Hdb_init].
+      assert (Hkv : Sep.has_key v e_init.(equiv).(parent)).
+      { destruct (Hdb_init _ Hain_v) as [_ Hret_key]. exact Hret_key. }
+      pose proof (atom_in_egraph_up_to_equiv_has_key e_init a Hok_init Hatom_init)
+        as [_Hkargs Hkaret].
+      pose proof (union_sound v a.(atom_ret) e_init Heq_init Hkv Hkaret) as Hu.
+      destruct (Defs.union v a.(atom_ret) e_init) as [u_v e_post] eqn:Eunion.
+      cbn [fst snd] in Hu |- *.
+      destruct Hu as (Hdb_eq & Hex_post & Hper_iff & Hpar_eq
+                      & Hwl_rel & Hu_v_aret).
+      (* [Hext] lifts e_init's PER into e_post's PER. *)
+      assert (Hext : forall x1 y1, uf_rel_PER e_init.(equiv) x1 y1 ->
+                                   uf_rel_PER e_post.(equiv) x1 y1).
+      { intros x1 y1 Hxy. apply Hper_iff. apply PER_clo_base. left. exact Hxy. }
+      assert (Hv_aret_post : uf_rel_PER e_post.(equiv) v a.(atom_ret)).
+      { apply Hper_iff. apply PER_clo_base. right. split; reflexivity. }
+      (* [Hkey_lift]: union preserves has_key — any j in e_init.equiv's
+         key set has [uf_rel_PER e_init.equiv j j] (from get-then-get-back),
+         lifts via [Hext] to e_post's PER, then [uf_rel_PER_has_key]. *)
+      assert (Hkey_lift : forall j, Sep.has_key j e_init.(equiv).(parent) ->
+                                    Sep.has_key j e_post.(equiv).(parent)).
+      { intros j Hj.
+        destruct Hex_post as [roots_post Huf_post].
+        assert (Hjj_init : uf_rel_PER e_init.(equiv) j j).
+        { unfold Sep.has_key in Hj.
+          destruct (map.get e_init.(equiv).(parent) j) as [v_j|] eqn:Hgj;
+            [|tauto].
+          unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgj
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+        exact (proj1 (uf_rel_PER_has_key e_post.(equiv) roots_post j j
+                       Huf_post (Hext _ _ Hjj_init))). }
+      split.
+      { (* egraph_ok e_post *)
+        pose proof Hok_init as [_ Hwl_init Hpa_init _].
+        constructor.
+        - (* egraph_equiv_ok *) exact Hex_post.
+        - (* worklist_ok: case on [Hwl_rel] *)
+          destruct Hwl_rel as [Hwl_unchanged
+                              | (v_old & v' & ar & Hwl_new & Hv_old & Hv')].
+          + rewrite Hwl_unchanged.
+            eapply all_wkn; [|exact Hwl_init].
+            intros [old new improved | k] _ Hent; cbn in *; auto.
+          + rewrite Hwl_new. cbn. split.
+            * (* uf_rel_PER e_post.equiv v_old v':
+                 v_old ~ v ~ a.ret ~ v' via transitivity *)
+              unfold uf_rel_PER in *.
+              eapply PER_clo_trans; [exact Hv_old|].
+              eapply PER_clo_trans; [exact Hv_aret_post|].
+              apply PER_clo_sym. exact Hv'.
+            * eapply all_wkn; [|exact Hwl_init].
+              intros [old new improved | k] _ Hent; cbn in *; auto.
+        - (* parents_ok: parents unchanged; lift via PER monotonicity *)
+          intros x s Hgs. rewrite <- Hpar_eq in Hgs.
+          eapply all_wkn; [|apply (Hpa_init _ _ Hgs)].
+          intros b _ Hbain.
+          destruct Hbain as (aa & (Hfn & Hargs & Hret) & Hain).
+          exists aa. split.
+          + unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+            * clear -Hargs Hext.
+              revert Hargs. generalize (atom_args b), (atom_args aa).
+              intros l1 l2. revert l2.
+              induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                cbn; auto; try tauto.
+              intros [Hyz Hys]. split;
+                [apply Hext; exact Hyz | apply IH; exact Hys].
+            * apply Hext; exact Hret.
+          + unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain.
+        - (* db_idxs_in_equiv: db unchanged, lift has_key *)
+          intros b Hbain. rewrite <- Hdb_eq in Hbain.
+          destruct (Hdb_init _ Hbain) as [Hargs_keys Hret_key].
+          split.
+          + eapply all_wkn; [|exact Hargs_keys]; intros; apply Hkey_lift; auto.
+          + apply Hkey_lift; exact Hret_key.
+      }
+      (* Reverse key-lift: the union's PER closure base cases live
+         in e_init's PER + {(v, a.ret)}; both v and a.ret are
+         already has_key in e_init (Hkv / Hkaret), and induction on
+         the closure transports has_key back. *)
+      assert (Hkey_back : forall j, Sep.has_key j e_post.(equiv).(parent) ->
+                                    Sep.has_key j e_init.(equiv).(parent)).
+      { intros j Hj.
+        destruct Hex_post as [roots_post Huf_post].
+        destruct Heq_init as [roots_init Huf_init].
+        assert (Hjj_post : uf_rel_PER e_post.(equiv) j j).
+        { unfold Sep.has_key in Hj.
+          destruct (map.get e_post.(equiv).(parent) j) as [v_j|] eqn:Hgj;
+            [|tauto].
+          unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgj
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+        apply Hper_iff in Hjj_post.
+        assert (Hclo_key : forall p q,
+                  union_closure_PER (uf_rel_PER e_init.(equiv))
+                    (singleton_rel v a.(atom_ret)) p q ->
+                  Sep.has_key p e_init.(equiv).(parent)
+                  /\ Sep.has_key q e_init.(equiv).(parent)).
+        { intros p q Hpq.
+          induction Hpq as [p q Hbase | p q r _ IH1 _ IH2 | p q _ IH].
+          - destruct Hbase as [Hbase | Hsing].
+            + apply (uf_rel_PER_has_key _ _ _ _ Huf_init Hbase).
+            + destruct Hsing as [Heq1 Heq2]; subst.
+              split; [exact Hkv | exact Hkaret].
+          - split; [apply IH1 | apply IH2].
+          - destruct IH; split; assumption. }
+        exact (proj1 (Hclo_key _ _ Hjj_post)). }
+      split.
+      { intros i. split.
+        { (* Forward: e_init sound → e_post sound. *)
+          intros [Hwf Hexact Hatom_e Hrel_e].
+          constructor.
+          - exact Hwf.
+          - intros x Hx. apply Hkey_lift. apply Hexact. exact Hx.
+          - intros b Hbain. apply Hatom_e.
+            unfold atom_in_egraph in *. rewrite Hdb_eq. exact Hbain.
+          - intros i1 i2 Hi12.
+            apply Hper_iff in Hi12.
+            induction Hi12 as [p q Hbase | p q r _ IH1 _ IH2 | p q _ IH].
+            + destruct Hbase as [Hbase | Hsing].
+              * apply Hrel_e; exact Hbase.
+              * destruct Hsing as [Hpv Hqaret]; subst.
+                (* eq_sound (i v) (i a.ret) via interprets_to_functional *)
+                destruct Hatom_init as
+                  (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+                destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+                subst fn_aa.
+                pose proof (Hatom_e _ Hain_v) as Hsa_v.
+                pose proof (Hatom_e _ Hain_aa) as Hsa_aa.
+                cbn in Hsa_v, Hsa_aa.
+                (* args_aa ~PER~ atom_args a lifted to eq_sound *)
+                assert (Hargs_eq :
+                  all2 (eq_sound_for_model m i) args_aa (atom_args a)).
+                { clear -Hargs_aa Hrel_e.
+                  revert Hargs_aa. generalize (atom_args a), args_aa.
+                  intros l1 l2. revert l1.
+                  induction l2 as [|y ys IH]; destruct l1 as [|z zs];
+                    cbn; auto; try tauto.
+                  intros [Hyz Hys]. split.
+                  - apply Hrel_e. unfold uf_rel_PER in *.
+                    apply PER_clo_sym. exact Hyz.
+                  - apply IH; exact Hys. }
+                (* atom_sound_eq_ret: aa and (a.fn, a.args, v) sound,
+                   args eq_sound → ret_aa eq_sound v *)
+                pose proof (atom_sound_eq_ret i (atom_fn a)
+                              args_aa (atom_args a)
+                              ret_aa v
+                              Hsa_aa Hsa_v Hargs_eq) as Hret_eq.
+                (* combine with ret_aa ~PER~ a.ret lifted via Hrel_e *)
+                eapply eq_sound_for_model_trans;
+                  [apply eq_sound_for_model_Symmetric; exact Hret_eq |].
+                apply Hrel_e.
+                unfold uf_rel_PER in *.
+                apply PER_clo_sym. exact Hret_aa.
+            + eapply eq_sound_for_model_trans; eauto.
+            + apply eq_sound_for_model_Symmetric; exact IH. }
+        { (* Backward: e_post sound → e_init sound. *)
+          intros [Hwf Hexact Hatom_e Hrel_e].
+          constructor.
+          - exact Hwf.
+          - intros x Hx. apply Hkey_back. apply Hexact. exact Hx.
+          - intros b Hbain. apply Hatom_e.
+            unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hbain.
+          - intros i1 i2 Hi12.
+            apply Hrel_e. apply Hext. exact Hi12. } }
+      split.
+      { (* atom_in_egraph_up_to_equiv a e_post: same witness, PER widened *)
+        destruct Hatom_init as (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+        exists aa. split.
+        - unfold atom_canonical_equiv. split; [exact Hfn_aa|]. split.
+          + clear -Hargs_aa Hext.
+            revert Hargs_aa. generalize (atom_args a), (atom_args aa).
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split; [apply Hext; exact Hyz | apply IH; exact Hys].
+          + apply Hext; exact Hret_aa.
+        - unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain_aa. }
+      split.
+      { (* all (atom_in_egraph_up_to_equiv ... e_post) l: same lift *)
+        clear -Hatoms_init Hext Hdb_eq.
+        induction l as [|b bs IH]; cbn in *; auto.
+        destruct Hatoms_init as [Hb Hbs]. split.
+        - destruct Hb as (aa & (Hfn & Hargs & Hret) & Hain).
+          exists aa. split.
+          + unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+            * clear -Hargs Hext.
+              revert Hargs. generalize (atom_args b), (atom_args aa).
+              intros l1 l2. revert l2.
+              induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                cbn; auto; try tauto.
+              intros [Hyz Hys]. split; [apply Hext; exact Hyz | apply IH; exact Hys].
+            * apply Hext; exact Hret.
+          + unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain.
+        - apply IH; exact Hbs. }
+      split.
+      { (* equiv_extends e_init e_post *)
+        unfold equiv_extends. intros x1 y1 Hxy. apply Hext; exact Hxy. }
+      split.
+      { (* uf_rel_PER e_post.equiv x_old x_canonical *)
+        apply Hext; exact Hper_init. }
+      split; [exact Hdb_eq|].
+      (* (forall r, atom_in_db (Build_atom a.fn a.args r) e_init.db ->
+                    uf_rel_PER e_post.equiv r a.ret).
+         The atom-in-db at key (a.fn, a.args) forces r = v (single entry
+         per key), and union puts v ~ a.ret in e_post.equiv. *)
+      intros r Hain_r.
+      assert (Hr_eq : r = v).
+      { clear -Hain_r Hain_v.
+        unfold atom_in_egraph, atom_in_db, Is_Some_satisfying in *;
+          cbn in *.
+        destruct (map.get e_init.(db) a.(atom_fn)) as [tbl|]; cbn in *;
+          try tauto.
+        destruct (map.get tbl a.(atom_args)) as [entry|]; cbn in *;
+          try tauto.
+        congruence. }
+      subst r. exact Hv_aret_post.
+    - (* None: Mret a.(atom_ret); state unchanged *)
+      intros Hok_init Hatom_init Hatoms_init Hper_init.
+      split; [exact Hok_init|].
+      split; [intros j; reflexivity|].
+      split; [exact Hatom_init|].
+      split; [exact Hatoms_init|].
+      split; [apply equiv_extends_refl|].
+      split; [exact Hper_init|].
+      split; [reflexivity|].
+      (* (forall r, atom_in_db (Build_atom a.fn a.args r) e_init.db ->
+         uf_rel_PER e_init.equiv r a.ret): vacuous since [Hlk] says
+         no such r exists. *)
+      intros r Hr.
+      exfalso. eapply Hlk; exact Hr.
   Qed.
 
   (* Composes the three pieces: [db_remove a] gives [post_db_remove],
@@ -3844,9 +5157,19 @@ TODO: lemmas in the comment block are out of date
      [atom_in_egraph_up_to_equiv a e_ref] to produce a canonically-
      equivalent atom [a'] in a state with [equiv]-only changes, and
      [update_entry_canonicalized_denote_iff] finishes by restoring
-     egraph_ok and denote w.r.t. the original [e_ref]. *)
+     egraph_ok and denote w.r.t. the original [e_ref].  The new outer
+     [db_lookup]/conditional-[union] prefix is handled by
+     [repair_each_prefix_denote_iff], which both preserves all the
+     pre-existing properties and yields the new PER fact that
+     [update_entry_canonicalized_denote_iff] needs to discharge its
+     sub-case B obligation. *)
   Lemma repair_each_denote_iff a l (x_old x_canonical : idx)
-    : vc (@! let _ <- db_remove a in
+    : vc (@! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                          match mv with
+                          | Some v => Defs.union v a.(atom_ret)
+                          | None => Mret a.(atom_ret)
+                          end) in
+             let _ <- db_remove a in
              let a' <- canonicalize a in
              (update_entry a'))
         (fun e res =>
@@ -3859,6 +5182,8 @@ TODO: lemmas in the comment block are out of date
            /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l
            /\ equiv_extends e (snd res)).
   Proof.
+    vc_bind (repair_each_prefix_denote_iff a l x_old x_canonical).
+    rename s0 into e_orig, a0 into _u_pref.
     vc_bind db_remove_sound.
     rename s0 into e_ref, a0 into u_dbr.
     vc_bind canonicalize_preserves_fields_strong.
@@ -3866,7 +5191,11 @@ TODO: lemmas in the comment block are out of date
     eapply vc_consequence;
       [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0)].
     cbn beta. cbn [fst snd].
-    intros e1 res Hupd Hcan Hdbr Hok_ref Hatom_ref Hatoms_ref Hper_old_can.
+    intros e1 res Hupd Hcan Hdbr Hpref Hok_orig Hatom_orig Hatoms_orig
+                  Hper_orig.
+    destruct (Hpref Hok_orig Hatom_orig Hatoms_orig Hper_orig)
+      as (Hok_ref & Hde_ref & Hatom_ref & Hatoms_ref & Hext_ref
+          & Hper_old_can & Hdb_pref_eq & Hper_lookup_ret).
     destruct Hdbr as [_ Hpost].
     pose proof Hpost as Hpost_full.
     destruct Hpost as (Hequiv_eq & _).
@@ -3884,7 +5213,20 @@ TODO: lemmas in the comment block are out of date
     { exists roots. rewrite Hequiv_eq. exact Huf_ref. }
     specialize (Hcan Hex_e0 Hkargs_e0 Hkret_e0).
     destruct Hcan as (Hex_e1 & Hfp01 & Hfn_a' & Hret_a' & Hargs_a').
-    apply Hupd; auto.
+    (* Transport the prefix's PER fact from [e_orig.db] to [e_ref.db]
+       (both equal since the prefix step doesn't touch the db). *)
+    assert (Hper_lk_ref : forall r0,
+              atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                         e_ref.(db) ->
+              uf_rel_PER e_ref.(equiv) r0 (atom_ret a)).
+    { intros r0 Hain. apply Hper_lookup_ret. rewrite Hdb_pref_eq. exact Hain. }
+    specialize (Hupd Hok_ref_orig Hatom_ref Hatoms_ref Hpost_full
+                  Hex_e1 Hfp01 Hfn_a' Hret_a' Hargs_a' Hper_lk_ref).
+    destruct Hupd as (Hok_res & Hde_res & Hatoms_res & Hext_res).
+    split; [exact Hok_res|].
+    split; [intros i; rewrite Hde_ref; exact (Hde_res i)|].
+    split; [exact Hatoms_res|].
+    eapply equiv_extends_trans; [exact Hext_ref | exact Hext_res].
   Qed.
 
   (* Helper for [repair_each_db_equiv]: the [update_entry a'] step,
@@ -4019,7 +5361,12 @@ TODO: lemmas in the comment block are out of date
      is preserved across iterations via [equiv_extends]. *)
   Lemma list_Mmap_repair_each_denote_iff old_ps (x_old x_canonical : idx)
     : vc (list_Mmap (fun a : atom =>
-                       @! let _ <- db_remove a in
+                       @! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                                       match mv with
+                                       | Some v => Defs.union v a.(atom_ret)
+                                       | None => Mret a.(atom_ret)
+                                       end) in
+                          let _ <- db_remove a in
                           let a' <- canonicalize a in
                           (update_entry a'))
                     old_ps)
@@ -4053,132 +5400,6 @@ TODO: lemmas in the comment block are out of date
       destruct (Hone Hok Ha Hl_rest Hper) as (Hok_p & Hde_p & Hl_p & Hext_p).
       split; [split; [exact Hok_p|]; split; [exact Hl_p|]; apply Hext_p; exact Hper |].
       split; [exact Hde_p | exact Hext_p].
-  Qed.
-
-  (* [update_analyses] only writes the [analyses] field, which doesn't
-     affect egraph_ok or denote. *)
-  Lemma update_analyses_denote_iff k v
-    : vc (update_analyses idx symbol symbol_map idx_map idx_trie
-            analysis_result k v)
-        (fun e res =>
-           egraph_ok e ->
-           egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)
-           /\ (snd res).(db) = e.(db)).
-  Proof.
-    unfold vc, update_analyses; intros e Hok; cbn [fst snd].
-    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
-    split; [constructor; cbn; auto|].
-    split;
-      [intros i; split; intros [Hwf Hex Hatom Hrel];
-         constructor; cbn in *; auto
-      | reflexivity].
-  Qed.
-
-  (* [push_worklist (analysis_repair _)] adds a trivially-ok entry to
-     the worklist. denote doesn't read the worklist. *)
-  Lemma push_worklist_analysis_denote_iff o
-    : vc (push_worklist idx symbol symbol_map idx_map idx_trie
-            analysis_result (analysis_repair idx o))
-        (fun e res =>
-           egraph_ok e ->
-           egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)
-           /\ (snd res).(db) = e.(db)).
-  Proof.
-    unfold vc, push_worklist; intros e Hok; cbn [fst snd].
-    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
-    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
-    split; [constructor; cbn; auto|].
-    split;
-      [intros i; split; intros [Hwf Hex Hatom Hrel];
-         constructor; cbn in *; auto
-      | reflexivity].
-  Qed.
-
-  (* [get_analysis x]: read [analyses] for [x], or on miss run
-     [update_analyses x default] + [push_worklist (analysis_repair x)].
-     Both branches preserve egraph_ok and denote. *)
-  Lemma get_analysis_denote_iff x
-    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
-        (fun e res =>
-           egraph_ok e ->
-           egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
-  Proof.
-    unfold vc, get_analysis; intros e Hok.
-    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
-    - cbn [fst snd]. split; [exact Hok|]. intros i; reflexivity.
-    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
-      pose proof (update_analyses_denote_iff x default e Hok) as Hu.
-      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
-                  analysis_result x default e) as [u e1] eqn:Hue.
-      cbn [fst snd] in Hu.
-      destruct Hu as (Hok1 & Hde1 & _).
-      pose proof (push_worklist_analysis_denote_iff x e1 Hok1) as Hp.
-      destruct (push_worklist idx symbol symbol_map idx_map idx_trie
-                  analysis_result (analysis_repair idx x) e1) as [u' e2] eqn:Hpe.
-      cbn [fst snd] in Hp |- *.
-      destruct Hp as (Hok2 & Hde2 & _).
-      split; [exact Hok2|].
-      intros i. rewrite Hde1. exact (Hde2 i).
-  Qed.
-
-  (* [get_analyses] = [list_Mmap get_analysis]. Inductive composition. *)
-  Lemma get_analyses_denote_iff args
-    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
-        (fun e res =>
-           egraph_ok e ->
-           egraph_ok (snd res)
-           /\ (forall i, denote e i <-> denote (snd res) i)).
-  Proof.
-    unfold get_analyses.
-    vc_list_Mmap_egraph_iff get_analysis_denote_iff.
-  Qed.
-
-  (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
-     the [Some] branch is [Mret]; the [None] branch only writes
-     [analyses] and [worklist]. *)
-  Lemma get_analysis_preserves_fields x
-    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
-        (fun e res =>
-           (snd res).(db) = e.(db)
-           /\ (snd res).(equiv) = e.(equiv)
-           /\ (snd res).(parents) = e.(parents)).
-  Proof.
-    unfold vc, get_analysis; intros e.
-    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
-    - cbn; intuition.
-    - cbn [Mseq Mbind StateMonad.state_monad fst snd
-           update_analyses push_worklist].
-      intuition; cbn; reflexivity.
-  Qed.
-
-  (* [get_analyses] preserves [db], [equiv], and [parents] verbatim;
-     used by [repair_parent_analysis_denote_iff] to transport
-     [atom_in_egraph] across the [get_analyses] step. *)
-  Lemma get_analyses_preserves_fields args
-    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
-        (fun e res =>
-           (snd res).(db) = e.(db)
-           /\ (snd res).(equiv) = e.(equiv)
-           /\ (snd res).(parents) = e.(parents)).
-  Proof.
-    unfold get_analyses.
-    eapply vc_consequence;
-      [| apply (vc_list_Mmap_inv _
-                  (fun _ _ => True)
-                  (fun s s' =>
-                     s'.(db) = s.(db)
-                     /\ s'.(equiv) = s.(equiv)
-                     /\ s'.(parents) = s.(parents)))].
-    - cbn beta. intros s res Hinv. apply (Hinv I).
-    - intros s _; intuition.
-    - intros ? ? ? (?&?&?) (?&?&?); repeat split; congruence.
-    - intros x xs.
-      eapply vc_consequence; [| apply (get_analysis_preserves_fields x)].
-      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
   Qed.
 
   (* [db_lookup_entry] is read-only; if it returns [Some entry], the
