@@ -1407,7 +1407,21 @@ Section WithVar.
            Mret tt >>= fun _ => if with_sorts then add_open_sort_inner ... else Mret x_res *)
         cbn [Mbind StateMonad.state_monad Mret].
         destruct with_sorts eqn:Hws.
-        1:{ (* with_sorts = true: add_open_sort + update_entry *)
+        1:{ (* with_sorts = true: add_open_sort_inner on t_rule, then
+               update_entry on sort_of(x_res).
+               Blocked on the strict-decreasing-language constraint for
+               add_open_sort_inner_sound: needs `length l2 < length l1`,
+               which requires constructing l2 as a proper prefix of l1
+               where t_rule is wf (i.e., where the original rule for
+               `name` does not yet appear).  The structural argument
+               (extract a smaller l2 via wf_lang_ext_split on Hrule_in)
+               is conceptually straightforward but requires plumbing
+               not present elsewhere in the codebase.  Once that l2 is
+               in hand, the proof mirrors add_open_sort'_sound's
+               structure: apply add_open_sort_inner_sound to get the
+               sort id t_v, then update_entry_sound on (sort_of,
+               [x_res], t_v) with the interprets_to_sort_of witness
+               from H0 (wf_term e_x t[/s/]), then conclude. *)
             admit. }
         (* with_sorts = false: just return x_res *)
         cbn [Mret StateMonad.state_monad fst snd].
