@@ -1269,15 +1269,50 @@ Section WithVar.
           split; [apply Properties.map.extends_refl|].
           split; [exact Hsound|].
           intros; assumption.
-        + (* TODO (Layer C): result id is named_list_lookup default r n; extract
-             its interpretation via args_in_instance_in.  Sketch:
-             - all_fresh c via wf_ctx_all_fresh
-             - all_fresh r via NoDup_fresh + Hmaps
-             - find x_n in r and e_n in (with_names_from c s) at name n
-             - apply args_in_instance_in
-             - show named_list_lookup default r n = x_n via all_fresh r + Hin_xn
-             - show (var n)[/with_names_from c s/] = e_n via named_list lookup *)
-          admit.
+        + (* result id is named_list_lookup default r n; extract interpretation
+             via args_in_instance_in *)
+          assert (Hafc : all_fresh c) by basic_core_crush.
+          assert (Hafr : all_fresh r).
+          { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
+          assert (Hlen_cs : length c = length s) by (eapply wf_args_length_eq; eauto).
+          assert (Hafws : all_fresh (with_names_from c s)).
+          { apply NoDup_fresh. rewrite map_fst_with_names_from by auto.
+            apply NoDup_fresh; exact Hafc. }
+          assert (Hex_x : exists x_n, In (n, x_n) r).
+          { apply pair_fst_in_exists. rewrite <- Hmaps. eapply pair_fst_in; exact Hin_var. }
+          destruct Hex_x as [x_n Hin_xn].
+          assert (Hex_e : exists e_n, In (n, e_n) (with_names_from c s)).
+          { apply pair_fst_in_exists. rewrite map_fst_with_names_from by auto.
+            eapply pair_fst_in; exact Hin_var. }
+          destruct Hex_e as [e_n Hin_en].
+          pose proof (args_in_instance_in l s i c n e_n x_n r Hai Hsubst Hmaps Hafc Hin_en Hin_xn)
+            as Hin_d.
+          destruct Hin_d as [d Hd_conj]. destruct Hd_conj as [Hgd Hled].
+          assert (Hlk : named_list_lookup default r n = x_n).
+          { clear -V_Eqb_ok Hafr Hin_xn.
+            induction r as [|[m v_m] r' IH]; cbn in *; [tauto|].
+            destruct Hafr as [Hfr Hafr'].
+            destruct Hin_xn as [Heq|Hin_xn'].
+            - inversion Heq; subst.
+              eqb_case n n; congruence.
+            - eqb_case n m.
+              + exfalso. apply Hfr. eapply pair_fst_in; exact Hin_xn'.
+              + apply IH; auto. }
+          cbn [fst].
+          rewrite Hlk, Hgd. cbn.
+          unfold term_subst_lookup.
+          assert (named_list_lookup (var n) (with_names_from c s) n = e_n) as Hsl.
+          { clear -V_Eqb_ok Hafws Hin_en.
+            induction (with_names_from c s) as [|[m v_m] r' IH]; cbn in *; [tauto|].
+            destruct Hafws as [Hfr Hafr'].
+            destruct Hin_en as [Heq|Hin_en'].
+            - inversion Heq; subst.
+              eqb_case n n; congruence.
+            - eqb_case n m.
+              + exfalso. apply Hfr. eapply pair_fst_in; exact Hin_en'.
+              + apply IH; auto. }
+          rewrite Hsl.
+          exact Hled.
       - (* eq_sort conversion: postcondition doesn't depend on the sort, so IH applies. *)
         intros e_x t_x t_x' Hwft IH_term Heq_sort r i Hmaps.
         apply IH_term; assumption.
