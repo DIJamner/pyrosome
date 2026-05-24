@@ -1269,9 +1269,14 @@ Section WithVar.
           split; [apply Properties.map.extends_refl|].
           split; [exact Hsound|].
           intros; assumption.
-        + (* TODO: result id is named_list_lookup default r n. Use
-             [args_in_instance_in] (above) to recover its interpretation as
-             inl (var n)[/with_names_from c s/] = inl (lookup in s at name n). *)
+        + (* TODO (Layer C): result id is named_list_lookup default r n; extract
+             its interpretation via args_in_instance_in.  Sketch:
+             - all_fresh c via wf_ctx_all_fresh
+             - all_fresh r via NoDup_fresh + Hmaps
+             - find x_n in r and e_n in (with_names_from c s) at name n
+             - apply args_in_instance_in
+             - show named_list_lookup default r n = x_n via all_fresh r + Hin_xn
+             - show (var n)[/with_names_from c s/] = e_n via named_list lookup *)
           admit.
       - (* eq_sort conversion: postcondition doesn't depend on the sort, so IH applies. *)
         intros e_x t_x t_x' Hwft IH_term Heq_sort r i Hmaps.
