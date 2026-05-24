@@ -4094,10 +4094,44 @@ Abort.
           intros ent Hin_ent Hent_ok.
           destruct ent as [ix1 ix2 ibool|ix]; cbn in *; auto.
           unfold uf_rel_PER in *. rewrite Heq_post_e_in. exact Hent_ok.
-      + (* parents_ok: TODO; db_set' adds [a] to parents at args/ret *)
-        admit.
-      + (* db_idxs_in_equiv: TODO for the new atom + preserved old atoms *)
-        admit.
+      + (* parents_ok: db_set' prepends [a] to parents at dedup(a.ret :: a.args).
+           Each v in any updated parents list is either = a (use Hain_a_uptopost)
+           or was in old parents (use Hparok + Hlift). *)
+        intros x s Hgs. subst e_post. cbn in Hgs.
+        apply all_via_in_local. intros v Hv_in.
+        pose proof (fold_left_cons_map_update_get
+                      (dedup (eqb (A:=_)) (atom_ret a :: atom_args a))
+                      a e_u.(parents) x s Hgs v Hv_in)
+          as [Hva | Hold].
+        * subst v. exact Hain_a_uptopost.
+        * destruct Hold as [s_old Hsold_in].
+          destruct Hsold_in as [Hgs_old Hvin_old].
+          rewrite Hpa_u_e_in in Hgs_old.
+          pose proof (Hparok _ _ Hgs_old) as Hall_old.
+          eapply in_all in Hvin_old; [|exact Hall_old].
+          apply Hlift. exact Hvin_old.
+      + (* db_idxs_in_equiv: every atom in e_post.db has args/ret as keys.
+           Either the new atom (use Hkargs_post / Hkret_post) or an old
+           atom (use Hdbkok + Heq_post_e_in). *)
+        intros b Hbain.
+        apply Hain_post_split in Hbain.
+        destruct Hbain as [Heq_b | Hb_old_split].
+        * subst b. cbn. split.
+          -- (* all has_key on atom_args a *)
+             clear -Hkargs_post.
+             generalize (atom_args a) Hkargs_post; intros l Hl.
+             induction l as [|y ys IH]; cbn; auto.
+             split; [apply Hl; cbn; auto|].
+             apply IH. intros x Hx. apply Hl. cbn. auto.
+          -- exact Hkret_post.
+        * destruct Hb_old_split as [Hbu _].
+          rewrite Hdb_u_e_in in Hbu.
+          specialize (Hdbkok _ Hbu).
+          destruct Hdbkok as [Hka Hkr].
+          split.
+          -- eapply all_wkn; [|exact Hka].
+             intros j _ Hj. apply Hkeys. exact Hj.
+          -- apply Hkeys. exact Hkr.
     - (* egraph_sound_for_interpretation m i e_post. *)
       destruct Hsound as [Hi_wf Hi_exact Hi_atom Hi_rel].
       constructor.
@@ -4106,9 +4140,15 @@ Abort.
       + (* interpretation_exact: equiv unchanged via Heq_post_e_in *)
         intros y Hy. specialize (Hi_exact _ Hy).
         rewrite Heq_post_e_in. exact Hi_exact.
-      + (* atom_interpretation: TODO; new atom is sound (Hatom_sound),
-           old atoms still in db_set' output preserve their soundness. *)
-        admit.
+      + (* atom_interpretation: every atom in e_post.db is sound for the model.
+           Either the new atom (Hatom_sound) or an old atom (Hi_atom). *)
+        intros b Hbain. unfold atom_in_egraph in Hbain.
+        apply Hain_post_split in Hbain.
+        destruct Hbain as [Heq_b | Hb_old_split].
+        * subst b. exact Hatom_sound.
+        * destruct Hb_old_split as [Hbu _].
+          rewrite Hdb_u_e_in in Hbu.
+          apply Hi_atom. unfold atom_in_egraph. exact Hbu.
       + (* rel_interpretation: PER unchanged via Heq_post_e_in *)
         intros i1 i2 Hper. rewrite Heq_post_e_in in Hper.
         apply Hi_rel. exact Hper.
