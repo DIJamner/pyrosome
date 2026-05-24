@@ -4254,9 +4254,45 @@ Abort.
     rename s0 into e_in, a0 into mout.
     destruct mout as [r|]; cbn beta iota; cbn [fst snd].
     - (* Some r: union r (atom_ret a) *)
-      intros s_pre [Heq Hin]; subst s_pre.
-      (* Apply union_sound; pull preconditions out of egraph_ok + Hin (which gives
-         Sep.has_key r via db_idxs_in_equiv). *)
+      intros s_pre HpreL. destruct HpreL as [Heq Hin]; subst s_pre.
+      unfold Mseq.
+      intros Hok Hsound Hargs Hret Hatom_sound.
+      destruct Hok as [Heqok Hwlok Hparok Hdbkok].
+      assert (Hkey_r : Sep.has_key r e_in.(equiv).(parent))
+        by (apply Hdbkok in Hin; apply Hin).
+      pose proof (union_sound r (atom_ret a) e_in) as Hus.
+      cbn [fst snd] in Hus.
+      destruct Heqok as [roots_e Hroots_e].
+      destruct (Defs.union r (atom_ret a) e_in) as [v_u e_u'] eqn:Heu.
+      cbn [fst snd] in Hus.
+      specialize (Hus ltac:(exists roots_e; exact Hroots_e) Hkey_r Hret).
+      destruct Hus as [Hdb_eq Hus2].
+      destruct Hus2 as [Hroots Hus3].
+      destruct Hus3 as [Hper Hus4].
+      destruct Hus4 as [Hpar_eq Hus5].
+      destruct Hus5 as [Hwl_rel Hper_xr].
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      rewrite Heu. cbn [fst snd].
+      assert (Hkey_pres : forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                                    Sep.has_key x e_u'.(equiv).(parent)).
+      { intros x Hx.
+        destruct Hroots as [roots' Hroots'].
+        unfold Sep.has_key in *.
+        destruct (map.get (parent (equiv e_u')) x) eqn:Hgx; [constructor|].
+        exfalso.
+        destruct (map.get (parent (equiv e_in)) x) eqn:Hgx_in; [|tauto].
+        assert (Hxx : uf_rel_PER (equiv e_in) x x).
+        { unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgx_in
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgx_in]. }
+        assert (Hxx' : uf_rel_PER (equiv e_u') x x).
+        { apply Hper. unfold union_closure_PER.
+          apply PER_clo_base. left. exact Hxx. }
+        edestruct uf_rel_PER_has_key as [Hkx _];
+          [exact Hroots' | exact Hxx' |].
+        unfold Sep.has_key in Hkx. rewrite Hgx in Hkx. tauto. }
+      (* TODO: prove egraph_ok and egraph_sound for e_u'. *)
       admit.
     - (* None: db_set a — apply db_set_sound *)
       intros s_pre HpreL. destruct HpreL as [Heq Hnone]; subst s_pre.
