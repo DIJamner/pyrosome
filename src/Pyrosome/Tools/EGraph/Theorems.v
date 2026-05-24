@@ -1288,8 +1288,21 @@ Section WithVar.
                   vc (list_Mmap (add_open_term' succ sort_of l with_sorts false
                                                 add_open_sort_inner r) args)
                      (open_args_post c s args r i))).
-      - (* con case: e = con name s', wf_term l1 c (con name s') t [/.../]. *)
+      - (* con case: e = con name s', wf_term l1 c (con name s') t [/.../].
+           Computation: list_Mmap of add_open_term' for args, then hash_entry
+           on the constructor. with_sorts=true also adds a sort_of annotation
+           via add_open_sort_inner + update_entry. *)
         intros name c'_rule args t_rule s' Hrule_in Hwf_args_inner IH r i Hmaps.
+        cbn [add_open_term'].
+        apply Hl1 in Hrule_in.
+        assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad Mret].
+        (* TODO: vc_bind through IH (list_Mmap), then hash_entry_sound
+           (admitted in Semantics.v), then with_sorts conditional via
+           add_open_sort_inner_sound + update_entry_sound (also admitted). *)
         admit.
       - (* var case: e = var n, wf_term l1 c (var n) t (with In (n, t) c). *)
         intros n t_var Hin_var r i Hmaps.
