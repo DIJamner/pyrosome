@@ -1331,6 +1331,18 @@ Section WithVar.
       - (* cons args: chain via vc_bind on the head and IH_args on the tail,
            then args_in_instance_cons. *)
         intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r i Hmaps.
+        cbn [list_Mmap].
+        eapply vc_bind.
+        { apply IH_term; exact Hmaps. }
+        intros e_state v_head.
+        eapply vc_bind.
+        { (* the inner-list call uses the post-head state and we need
+             to upgrade i_in to i_out_head. Apply IH_args with the
+             extended interpretation. *)
+          admit. }
+        intros e_state_2 v_tail.
+        unfold vc, Mret. cbn [StateMonad.state_monad fst snd].
+        intros s_final Hseq Hpost_args Hpost_head.
         admit.
     Admitted.
 
