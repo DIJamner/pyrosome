@@ -1358,11 +1358,27 @@ Section WithVar.
         vc (add_ctx succ sort_of l with_sorts false c)
            (ctx_post s c i).
     Proof.
-    (* TODO (Layer C): induct on [wf_subst l [] s c].  Base case:
-       both empty, return [] with [i_in].  Step case: per the sketch
-       above, chain four vc_binds; the [union_sound] step needs the
-       just-allocated [x'] to be a key, which [alloc_opaque_sound]
-       provides. *)
+      intros Hsubst Hctx i.
+      unfold add_ctx.
+      induction Hsubst.
+      - (* nil case: list_Mfoldr ... [] [] reduces to ret []; ctx_post holds
+           with i_out := i_in (identity extension). *)
+        cbn [list_Mfoldr].
+        unfold vc, Mret. cbn.
+        unfold ctx_post. intros e_in Hok Hsound.
+        exists i. split.
+        + unfold extending_sound.
+          split; [exact Hok|].
+          split; [apply Properties.map.extends_refl|].
+          split; [exact Hsound|].
+          intros; assumption.
+        + split.
+          * cbn. reflexivity.
+          * cbn. unfold args_in_instance. cbn. constructor.
+      - (* cons case: chain vc_bind over
+           add_open_sort_sound -> alloc_opaque_sound -> hash_entry_sound -> union_sound,
+           then construct the extended ctx_post. *)
+        admit.
     Admitted.
 
   End AddOpenSound.
