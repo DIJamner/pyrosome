@@ -1300,9 +1300,18 @@ Section WithVar.
           basic_core_crush. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
-        (* TODO: vc_bind through IH (list_Mmap), then hash_entry_sound
-           (admitted in Semantics.v), then with_sorts conditional via
-           add_open_sort_inner_sound + update_entry_sound (also admitted). *)
+        (* Layer A primitives are now Qed-proven (hash_entry_sound,
+           update_entry_sound, db_set_sound, alloc_sound, alloc_opaque_sound
+           in Semantics.v).  Discharging this case is a routine vc_bind
+           chain through:
+           (1) IH on list_Mmap to obtain args_in_instance on the canonical args;
+           (2) hash_entry_sound on (name, a_out) with interprets_to_term
+               supplied by interprets_to_term_rule lifted from Hrule_in;
+           (3) when with_sorts = false, the result is just (Mret v) from
+               hash_entry; the postcondition derives from hash_entry_sound's
+               domain_eq witness combined with eq_term reflexivity for the
+               substituted con-term.
+           Estimated size: 150-200 lines of vc plumbing. *)
         admit.
       - (* var case: e = var n, wf_term l1 c (var n) t (with In (n, t) c). *)
         intros n t_var Hin_var r i Hmaps.
@@ -1471,12 +1480,14 @@ Section WithVar.
                           Hwfl1 Hincl s c Hsubst Hctx)
                 _ _ Hwfargs r i Hmaps). }
         intros e_post a_out.
-        (* TODO: discharge hash_entry step using hash_entry_sound (admitted).
-           Inputs: a_out is sound for s_t[/with_names_from c s/] via
-           open_args_post; the model's interprets_to witness comes from
-           interprets_to_sort applied to eq_sort_refl on wf_sort_by Hrule
-           against the substituted args. Output value: inr (scon n
-           s_t[/with_names_from c s/]). *)
+        (* hash_entry_sound is now Qed in Semantics.v.  The remaining work
+           is to thread args_in_instance (from open_args_post) into
+           hash_entry_sound's preconditions and to build the interprets_to
+           witness via interprets_to_sort applied to the substituted
+           rule's eq_sort.  This requires ~100 lines of careful plumbing
+           (lifting args_in_instance through lang_model_eq to get
+           dl ≈ map inl s_t[/subst/] and extracting it; converting that
+           to interprets_to_sort).  See Layer C note in the plan file. *)
         unfold vc, hash_entry.
         admit.
     Admitted.
@@ -1548,18 +1559,20 @@ Section WithVar.
       - (* cons case: chain vc_bind over
            add_open_sort_sound -> alloc_opaque_sound -> hash_entry_sound -> union_sound,
            then construct the extended ctx_post. *)
-        (* TODO: complete; requires careful threading of interpretations
-           across the four steps:
-           - inner sub via IHHsubst (returns base', args_in_instance preserved)
+        (* All four primitives this proof needs (add_open_sort_sound,
+           alloc_opaque_sound, hash_entry_sound, union_sound) are now
+           Qed-proven.  The cons-case proof chains vc_bind across:
+           - IHHsubst -> base', args_in_instance threaded through
            - t_v <- add_open_sort: id for sort t, interp = inr t[/subst/]
            - x' <- alloc_opaque: fresh id, choose interp d := inl e_x (the
              substituted term value)
-           - tx' <- hash_entry sort_of [x']: needs interprets_to sort_of
-             [inl e_x] (inr t[/subst/]) via interprets_to_sort_of
-           - _ <- union t_v tx': identifies them; both interp to inr t[/subst/]
-             (domain_eq via reflexivity)
-           - ret (x, x') :: sub: build the new args_in_instance for
-             (e :: s) -> (x' :: sub) via args_in_instance_cons. *)
+           - tx' <- hash_entry sort_of [x']: interprets_to_sort_of witness
+             from wf_term e_x t[/subst/]
+           - _ <- union t_v tx': identifies them; both interp to
+             inr t[/subst/] (domain_eq via reflexivity)
+           - ret (x, x') :: sub: extend args_in_instance via
+             args_in_instance_cons.
+           Estimated size: 200-300 lines of vc plumbing. *)
         admit.
     Admitted.
 
