@@ -2028,7 +2028,8 @@ Abort.
     apply (@Properties.map.putmany_comm _ _ _ (idx_map_ok _) _ Hbs _ _ Hdj).
   Qed.
 
-  Lemma alloc_opaque_sound (Hlti : Asymmetric lt) (i : idx_map m.(domain))
+  Lemma alloc_opaque_sound (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt) (i : idx_map m.(domain))
     : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie
                        analysis_result)
         (fun e_in res =>
@@ -2044,7 +2045,147 @@ Abort.
            /\ e_in.(db) = (snd res).(db)
            /\ e_in.(parents) = (snd res).(parents)
            /\ e_in.(worklist) = (snd res).(worklist)).
-  Proof. Admitted.
+  Proof.
+    unfold vc, alloc_opaque.
+    intros [db_in equiv_in parents_in epoch_in worklist_in analyses_in log_in].
+    destruct equiv_in as [rk_in pa_in mr_in nx_in] eqn:Heq_in.
+    cbn -[map.get map.put].
+    intros Hok Hsnd.
+    destruct Hok as [Heqok Hwlok Hparok Hdbkok].
+    destruct Heqok as [roots Heqok].
+    pose proof Heqok as Heqok'.
+    destruct Heqok as [Hforest Hrcd Hri Hmax Hnub].
+    cbn [parent rank max_rank next equiv] in *.
+    assert (Hnxfresh : ~ Sep.has_key nx_in pa_in).
+    { intro Hk. specialize (Hnub _ Hk). eapply Hlti; exact Hnub. }
+    assert (Hnxnone : map.get i nx_in = None).
+    { destruct Hsnd as [_ Hinterp_exact _ _].
+      destruct (map.get i nx_in) eqn:Hgi; auto.
+      exfalso. apply Hnxfresh.
+      apply Hinterp_exact. cbn. rewrite Hgi. constructor. }
+    assert (Hgetnone_pa : map.get pa_in nx_in = None).
+    { unfold Sep.has_key in Hnxfresh. destruct (map.get pa_in nx_in); tauto. }
+    (* Build new union_find_ok with roots' = nx_in :: roots *)
+    assert (Hnewok : union_find_ok lt
+                      {| rank := map.put rk_in nx_in 0;
+                         parent := map.put pa_in nx_in nx_in;
+                         max_rank := mr_in;
+                         next := idx_succ nx_in |}
+                      (nx_in :: roots)).
+    { constructor; cbn [parent rank max_rank next].
+      - apply forest_extend; auto.
+      - intros k v Hget.
+        eqb_case k nx_in.
+        + exists 0. rewrite map.get_put_same. reflexivity.
+        + rewrite map.get_put_diff in Hget by congruence.
+          specialize (Hrcd _ _ Hget). destruct Hrcd as [r0 Hr0].
+          exists r0. rewrite map.get_put_diff by congruence. exact Hr0.
+      - intros ki kj Hget Hneq.
+        eqb_case ki nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget. congruence.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eqb_case kj nx_in.
+          * exfalso. apply Hnxfresh.
+            apply (forest_closed _ _ Eqb_idx_ok _ (idx_map_ok _) _ _ Hforest _ _ Hget).
+          * specialize (Hri _ _ Hget Hneq).
+            rewrite ! map.get_put_diff by congruence. exact Hri.
+      - intros j r Hget.
+        eqb_case j nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget; subst. Lia.lia.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eauto.
+      - intros k Hk.
+        unfold Sep.has_key in Hk.
+        eqb_case k nx_in.
+        + apply Hlts.
+        + rewrite map.get_put_diff in Hk by congruence.
+          assert (Sep.has_key k pa_in) as Hkpa.
+          { unfold Sep.has_key. destruct (map.get pa_in k); auto. }
+          specialize (Hnub _ Hkpa).
+          (* lt k nx_in -> lt k (succ nx_in) by transitivity *)
+          eapply Hltt; [exact Hnub | apply Hlts]. }
+    (* Assemble proofs of each conjunct as separate hypotheses *)
+    (* Pre-extract sound fields *)
+    destruct Hsnd as [Hint_wf Hint_exact Hatom_int Hrel_int].
+    assert (Hnewok' : egraph_ok
+                       {| db := db_in;
+                          equiv := {| rank := map.put rk_in nx_in 0;
+                                      parent := map.put pa_in nx_in nx_in;
+                                      max_rank := mr_in;
+                                      next := idx_succ nx_in |};
+                          parents := parents_in;
+                          epoch := epoch_in;
+                          worklist := worklist_in;
+                          analyses := map.put analyses_in nx_in default;
+                          log := log_in |}).
+    { constructor.
+      - exists (nx_in :: roots). exact Hnewok.
+      - cbn [worklist].
+        eapply all_wkn; [|exact Hwlok].
+        intros [old new improved | xa]; cbn; auto.
+        intros Hin_wl Hper.
+        admit.
+      - cbn [parents db equiv].
+        intros xp s Hgetps. specialize (Hparok _ _ Hgetps).
+        eapply all_wkn; [|exact Hparok].
+        intros at0 Hin_s Hain.
+        destruct Hain as [a' Ha']. destruct Ha' as [Hca Hin].
+        exists a'. split; [|exact Hin].
+        destruct Hca as [Hfn Hrest]. destruct Hrest as [Hargs Hret].
+        split; [exact Hfn|split].
+        + admit.
+        + admit.
+      - cbn [db].
+        intros at0 Hat. specialize (Hdbkok _ Hat).
+        destruct Hdbkok as [Hargk Hretk]. split.
+        + eapply all_wkn; [|exact Hargk].
+          intros i' Hin_args Hi'. unfold Sep.has_key in *.
+          cbn [parent equiv].
+          pose proof (Eqb_idx_ok i' nx_in) as Heq.
+          destruct (eqb i' nx_in).
+          * subst. rewrite map.get_put_same. constructor.
+          * rewrite map.get_put_diff by congruence. exact Hi'.
+        + unfold Sep.has_key in *.
+          cbn [parent equiv].
+          pose proof (Eqb_idx_ok (atom_ret at0) nx_in) as Heq.
+          destruct (eqb (atom_ret at0) nx_in).
+          * rewrite Heq. rewrite map.get_put_same. constructor.
+          * rewrite map.get_put_diff by congruence. exact Hretk. }
+    assert (Hnewsnd : egraph_sound_for_interpretation m i
+                       {| db := db_in;
+                          equiv := {| rank := map.put rk_in nx_in 0;
+                                      parent := map.put pa_in nx_in nx_in;
+                                      max_rank := mr_in;
+                                      next := idx_succ nx_in |};
+                          parents := parents_in;
+                          epoch := epoch_in;
+                          worklist := worklist_in;
+                          analyses := map.put analyses_in nx_in default;
+                          log := log_in |}).
+    { constructor.
+      - exact Hint_wf.
+      - intros y Hy. specialize (Hint_exact _ Hy).
+        cbn [parent equiv] in *. unfold Sep.has_key in *.
+        eqb_case y nx_in.
+        + rewrite map.get_put_same. constructor.
+        + rewrite map.get_put_diff by congruence. exact Hint_exact.
+      - cbn [db] in *. exact Hatom_int.
+      - admit. }
+    split; [exact Hnewok'|].
+    split; [exact Hnewsnd|].
+    split; [exact Hnxnone|].
+    split; [exact Hnxfresh|].
+    split; [unfold Sep.has_key; rewrite map.get_put_same; constructor|].
+    split.
+    { intros xa Hxa. unfold Sep.has_key in *.
+      cbn [parent equiv].
+      pose proof (Eqb_idx_ok xa nx_in) as Heq.
+      destruct (eqb xa nx_in).
+      + subst. rewrite map.get_put_same. constructor.
+      + rewrite map.get_put_diff by congruence. exact Hxa. }
+    split; [reflexivity|].
+    split; reflexivity.
+  Admitted.
 
   (* hash_entry: canonicalizes args, looks up (f, args') in the db;
      if present, returns the existing id, otherwise allocates a
