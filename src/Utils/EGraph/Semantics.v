@@ -2028,15 +2028,85 @@ Abort.
     apply (@Properties.map.putmany_comm _ _ _ (idx_map_ok _) _ Hbs _ _ Hdj).
   Qed.
 
+  (* PER monotonicity for the new union-find after alloc_opaque:
+     The new parent map is (map.put pa nx nx) where nx is fresh in pa.
+     Any old PER fact carries over since the underlying [parent_rel]
+     fact must reference a [map.get pa i = Some j] with i in pa, so
+     i ≠ nx, so the [map.put] doesn't shadow it. *)
+  (* Reflection: the new PER after alloc_opaque is the old PER plus the
+     isolated self-loop at [nx].  Needs forest-closedness to rule out
+     edges that "land on" nx in the old map (impossible since
+     map.get pa nx = None plus the forest closure says map.get pa x =
+     Some y implies y is also a key). *)
+  Lemma uf_rel_PER_alloc_reflect (uf : union_find) (nx : idx) (roots : list idx)
+    : union_find_ok lt uf roots ->
+      map.get uf.(parent) nx = None ->
+      forall i1 i2,
+        PER_closure (fun x y => map.get (map.put uf.(parent) nx nx) x = Some y) i1 i2 ->
+        (i1 = nx /\ i2 = nx) \/ uf_rel_PER uf i1 i2.
+  Proof.
+    intros Huok Hnone i1 i2 HP.
+    pose proof (uf_forest _ _ _ _ _ _ Huok) as Hforest.
+    pose proof (forest_closed _ _ Eqb_idx_ok _ (idx_map_ok _) _ _ Hforest) as Hcl.
+    induction HP.
+    - (* base *)
+      pose proof (Eqb_idx_ok a nx) as Heqa.
+      destruct (eqb a nx).
+      + subst. rewrite map.get_put_same in H1. inversion H1; subst.
+        left; split; reflexivity.
+      + rewrite map.get_put_diff in H1 by congruence.
+        right. apply PER_clo_base. exact H1.
+    - (* trans *)
+      destruct IHHP1 as [Hc1 | Hold1]; destruct IHHP2 as [Hc2 | Hold2].
+      + destruct Hc1 as [Ha Hb]. destruct Hc2 as [Hb' Hc].
+        left; split; congruence.
+      + destruct Hc1 as [Ha Hb]. subst.
+        exfalso.
+        edestruct uf_rel_PER_has_key as [Hkb _]; [exact Huok | exact Hold2 |].
+        unfold Sep.has_key in Hkb. rewrite Hnone in Hkb. tauto.
+      + destruct Hc2 as [Hb Hc]. subst.
+        exfalso.
+        edestruct uf_rel_PER_has_key as [_ Hkb]; [exact Huok | exact Hold1 |].
+        unfold Sep.has_key in Hkb. rewrite Hnone in Hkb. tauto.
+      + right. eapply PER_clo_trans; eauto.
+    - (* sym *)
+      destruct IHHP as [Hc | Hold].
+      + destruct Hc as [Ha Hb]; subst. left; auto.
+      + right. apply PER_clo_sym; exact Hold.
+  Qed.
+
+  Lemma uf_rel_PER_alloc_monotone (uf : union_find) (nx : idx)
+    : map.get uf.(parent) nx = None ->
+      forall i1 j,
+        uf_rel_PER uf i1 j ->
+        PER_closure
+          (fun x y => map.get (map.put uf.(parent) nx nx) x = Some y)
+          i1 j.
+  Proof.
+    intros Hnone i1 j HP.
+    induction HP.
+    - apply PER_clo_base.
+      assert (a <> nx).
+      { intro; subst. rewrite Hnone in H1. discriminate. }
+      rewrite map.get_put_diff by congruence. exact H1.
+    - eapply PER_clo_trans; eauto.
+    - apply PER_clo_sym; auto.
+  Qed.
+
+  (* The caller supplies a domain value [d] (with [domain_wf] and a
+     reflexivity witness [domain_eq d d]) to interpret the fresh id.
+     The postcondition extends the interpretation accordingly. *)
   Lemma alloc_opaque_sound (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
         (Hltt : Transitive lt) (i : idx_map m.(domain))
+        (d : m.(domain)) (Hwfd : m.(domain_wf) d) (Hdd : m.(domain_eq) d d)
     : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie
                        analysis_result)
         (fun e_in res =>
            egraph_ok e_in ->
            egraph_sound_for_interpretation m i e_in ->
            egraph_ok (snd res)
-           /\ egraph_sound_for_interpretation m i (snd res)
+           /\ egraph_sound_for_interpretation m
+                (map.put i (fst res) d) (snd res)
            /\ map.get i (fst res) = None
            /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
            /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
@@ -2124,7 +2194,10 @@ Abort.
         eapply all_wkn; [|exact Hwlok].
         intros [old new improved | xa]; cbn; auto.
         intros Hin_wl Hper.
-        admit.
+        apply (uf_rel_PER_alloc_monotone
+                 {| rank := rk_in; parent := pa_in;
+                    max_rank := mr_in; next := nx_in |}
+                 nx_in Hgetnone_pa _ _ Hper).
       - cbn [parents db equiv].
         intros xp s Hgetps. specialize (Hparok _ _ Hgetps).
         eapply all_wkn; [|exact Hparok].
@@ -2133,8 +2206,19 @@ Abort.
         exists a'. split; [|exact Hin].
         destruct Hca as [Hfn Hrest]. destruct Hrest as [Hargs Hret].
         split; [exact Hfn|split].
-        + admit.
-        + admit.
+        + (* PER monotonicity for args *)
+          eapply all2_impl; [|exact Hargs].
+          intros i1 j Hp. cbn [parent equiv].
+          apply (uf_rel_PER_alloc_monotone
+                   {| rank := rk_in; parent := pa_in;
+                      max_rank := mr_in; next := nx_in |}
+                   nx_in Hgetnone_pa _ _ Hp).
+        + (* PER monotonicity for ret *)
+          cbn [parent equiv].
+          apply (uf_rel_PER_alloc_monotone
+                   {| rank := rk_in; parent := pa_in;
+                      max_rank := mr_in; next := nx_in |}
+                   nx_in Hgetnone_pa _ _ Hret).
       - cbn [db].
         intros at0 Hat. specialize (Hdbkok _ Hat).
         destruct Hdbkok as [Hargk Hretk]. split.
@@ -2151,7 +2235,7 @@ Abort.
           destruct (eqb (atom_ret at0) nx_in).
           * rewrite Heq. rewrite map.get_put_same. constructor.
           * rewrite map.get_put_diff by congruence. exact Hretk. }
-    assert (Hnewsnd : egraph_sound_for_interpretation m i
+    assert (Hnewsnd : egraph_sound_for_interpretation m (map.put i nx_in d)
                        {| db := db_in;
                           equiv := {| rank := map.put rk_in nx_in 0;
                                       parent := map.put pa_in nx_in nx_in;
@@ -2163,14 +2247,66 @@ Abort.
                           analyses := map.put analyses_in nx_in default;
                           log := log_in |}).
     { constructor.
-      - exact Hint_wf.
-      - intros y Hy. specialize (Hint_exact _ Hy).
-        cbn [parent equiv] in *. unfold Sep.has_key in *.
-        eqb_case y nx_in.
-        + rewrite map.get_put_same. constructor.
-        + rewrite map.get_put_diff by congruence. exact Hint_exact.
-      - cbn [db] in *. exact Hatom_int.
-      - admit. }
+      - intros y dy Hgy.
+        pose proof (Eqb_idx_ok y nx_in) as Heq.
+        destruct (eqb y nx_in).
+        + subst. rewrite map.get_put_same in Hgy. inversion Hgy; subst. exact Hwfd.
+        + rewrite map.get_put_diff in Hgy by congruence. eauto.
+      - intros y Hy. cbn [parent equiv].
+        unfold Sep.has_key in *.
+        pose proof (Eqb_idx_ok y nx_in) as Heq.
+        destruct (eqb y nx_in).
+        + subst. rewrite map.get_put_same. constructor.
+        + (* y <> nx_in: get i' y = get i y. Use Hint_exact. *)
+          rewrite map.get_put_diff in Hy by congruence.
+          specialize (Hint_exact _ Hy).
+          cbn [parent equiv] in Hint_exact.
+          rewrite map.get_put_diff by congruence. exact Hint_exact.
+      - cbn [db] in *. intros a Ha. specialize (Hatom_int _ Ha).
+        specialize (Hdbkok _ Ha). destruct Hdbkok as [Hargk Hretk].
+        (* Key lemma: get with (put i nx_in d) agrees with get i on non-nx_in keys *)
+        assert (Hext_ret : map.get (map.put i nx_in d) a.(atom_ret) = map.get i a.(atom_ret)).
+        { unfold Sep.has_key in Hretk.
+          destruct (map.get pa_in (atom_ret a)) eqn:Hr; [|tauto].
+          rewrite map.get_put_diff; auto.
+          intro Hex. subst.
+          apply Hnxfresh. unfold Sep.has_key. rewrite Hr. constructor. }
+        assert (Hext_args : list_Mmap (map.get (map.put i nx_in d)) a.(atom_args)
+                          = list_Mmap (map.get i) a.(atom_args)).
+        { revert Hargk. generalize (atom_args a). intro xs.
+          induction xs as [|x xs IH]; auto.
+          intros [Hxk Hxsk]. cbn.
+          rewrite (IH Hxsk).
+          unfold Sep.has_key in Hxk.
+          destruct (map.get pa_in x) eqn:Hgx; [|tauto].
+          rewrite map.get_put_diff; auto.
+          intro Hex. subst.
+          apply Hnxfresh. unfold Sep.has_key. rewrite Hgx. constructor. }
+        unfold atom_sound_for_model in *.
+        rewrite Hext_args, Hext_ret. exact Hatom_int.
+      - intros i1 i2 Hper. cbn [equiv parent] in Hper.
+        (* Reflect the new PER edge back to either (nx_in, nx_in) or an
+           old PER edge. *)
+        unfold uf_rel_PER in Hper.
+        eapply (uf_rel_PER_alloc_reflect
+                  {| rank := rk_in; parent := pa_in;
+                     max_rank := mr_in; next := nx_in |}
+                  nx_in roots Heqok' Hgetnone_pa) in Hper.
+        destruct Hper as [Hconj | Hold].
+        + destruct Hconj as [Hi1 Hi2]; subst. unfold eq_sound_for_model.
+          rewrite !map.get_put_same. cbn. exact Hdd.
+        + specialize (Hrel_int _ _ Hold).
+          unfold eq_sound_for_model in *.
+          (* Both i1, i2 in old equiv (has_key), so neither is nx_in. *)
+          edestruct uf_rel_PER_has_key as [Hki1 Hki2]; [exact Heqok' | exact Hold |].
+          cbn [parent] in Hki1, Hki2.
+          assert (Hi1ne : i1 <> nx_in).
+          { intro; subst. unfold Sep.has_key in Hki1.
+            rewrite Hgetnone_pa in Hki1. tauto. }
+          assert (Hi2ne : i2 <> nx_in).
+          { intro; subst. unfold Sep.has_key in Hki2.
+            rewrite Hgetnone_pa in Hki2. tauto. }
+          rewrite !map.get_put_diff by congruence. exact Hrel_int. }
     split; [exact Hnewok'|].
     split; [exact Hnewsnd|].
     split; [exact Hnxnone|].
@@ -2185,7 +2321,7 @@ Abort.
       + rewrite map.get_put_diff by congruence. exact Hxa. }
     split; [reflexivity|].
     split; reflexivity.
-  Admitted.
+  Qed.
 
   (* hash_entry: canonicalizes args, looks up (f, args') in the db;
      if present, returns the existing id, otherwise allocates a
