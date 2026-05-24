@@ -2374,7 +2374,23 @@ Abort.
            /\ egraph_sound_for_interpretation m i (snd res)
            /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
                          Sep.has_key x (snd res).(equiv).(parent))).
-  Proof. Admitted.
+  Proof.
+  (* TODO: prove. Sketch: unfold update_entry; vc_bind db_lookup_pure (yields mout
+     and preservation). Case mout:
+     - Some r: vc_Mseq union_sound. The new state has egraph_ok preserved (most
+       fields unchanged; the new worklist entry's worklist_entry_ok holds because
+       union_sound's union_worklist_rel guarantees the inserted (v_old, v') is
+       PER-related to (r, atom_ret a) which is connected via the closure ext).
+       egraph_sound_for_interpretation: atom_interpretation and idx_interp_wf and
+       interpretation_exact preserved (db, idxs unchanged); rel_interpretation:
+       the new PER is the union closure ext of the old PER with (r, atom_ret a),
+       which is sound because atom_sound_for_model gives interprets_to with these
+       PER-equivalent to atom_args/atom_ret. Need a lifting analogous to
+       union_after_canonicalize_denote_iff but simpler.
+     - None: vc_apply db_set_sound (a separate primitive we'd need to prove from
+       db_set_after_canonicalize_denote_iff which is too specialized; simpler to
+       prove db_set_sound directly). *)
+  Admitted.
 
   (* Atom-level equality (under the interpretation) preserves
      soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
