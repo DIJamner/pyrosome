@@ -1548,6 +1548,18 @@ Section WithVar.
       - (* cons case: chain vc_bind over
            add_open_sort_sound -> alloc_opaque_sound -> hash_entry_sound -> union_sound,
            then construct the extended ctx_post. *)
+        (* TODO: complete; requires careful threading of interpretations
+           across the four steps:
+           - inner sub via IHHsubst (returns base', args_in_instance preserved)
+           - t_v <- add_open_sort: id for sort t, interp = inr t[/subst/]
+           - x' <- alloc_opaque: fresh id, choose interp d := inl e_x (the
+             substituted term value)
+           - tx' <- hash_entry sort_of [x']: needs interprets_to sort_of
+             [inl e_x] (inr t[/subst/]) via interprets_to_sort_of
+           - _ <- union t_v tx': identifies them; both interp to inr t[/subst/]
+             (domain_eq via reflexivity)
+           - ret (x, x') :: sub: build the new args_in_instance for
+             (e :: s) -> (x' :: sub) via args_in_instance_cons. *)
         admit.
     Admitted.
 
