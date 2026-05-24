@@ -3920,22 +3920,44 @@ Abort.
            /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
                          Sep.has_key x (snd res).(equiv).(parent))).
   Proof.
-  (* TODO (Layer A primitive): adapt db_set_after_canonicalize_denote_iff
-     to the fresh-insertion case.  Same get_analyses + update_analyses +
-     db_set' decomposition; egraph_ok / sound preservation follows because:
-     - equiv: unchanged through all three steps -> all has_key facts and
-       the PER carry over.
-     - db: db_set' inserts (a.fn, a.args, a.ret); the new atom is sound
-       under [i] by the [atom_sound_for_model] precondition.  Existing
-       atoms remain in db_set' output (Hain_old style) so atom_interpretation
-       continues to hold for them.
-     - parents: db_set' prepends [a] to parents of a.atom_args and
-       a.atom_ret.  Each prepended slot's parents_ok holds because the
-       new atom is in db (so atom_in_egraph_up_to_equiv holds reflexively).
-     - analyses: changed via get_analyses + update_analyses; doesn't
-       affect egraph_ok or interpretation soundness.
-     - worklist: get_analyses may push analysis_repair entries; each is
-       trivially worklist_entry_ok. *)
+    unfold db_set, vc; cbn [Mbind StateMonad.state_monad fst snd].
+    intros e_in.
+    intros Hok Hsound Hargs Hret Hatom_sound Hno_can.
+    pose proof (get_analyses_preserves_fields a.(atom_args) e_in) as Hgaf.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result a.(atom_args) e_in) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hgaf.
+    destruct Hgaf as (Hdb_g & Heq_g & Hpa_g).
+    set (out_a := analyze idx symbol analysis_result a arg_as).
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result a.(atom_ret) out_a e_g) as [_u e_u] eqn:Hue.
+    assert (Hdb_u_g : e_u.(db) = e_g.(db))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Heq_u_g : e_u.(equiv) = e_g.(equiv))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Hpa_u_g : e_u.(parents) = e_g.(parents))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Hdb_u_e_in : e_u.(db) = e_in.(db)) by congruence.
+    assert (Heq_u_e_in : e_u.(equiv) = e_in.(equiv)) by congruence.
+    assert (Hpa_u_e_in : e_u.(parents) = e_in.(parents)) by congruence.
+    destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                analysis_result a out_a e_u) as [_v e_post] eqn:Hde.
+    cbn [fst snd] in *.
+    assert (Heq_post_u : e_post.(equiv) = e_u.(equiv))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hep_post_u : e_post.(epoch) = e_u.(epoch))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hwl_post_u : e_post.(worklist) = e_u.(worklist))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Heq_post_e_in : e_post.(equiv) = e_in.(equiv)) by congruence.
+    (* TODO: prove egraph_ok, egraph_sound, has_key preservation. *)
+    admit.
   Admitted.
 
   (* ============================================================== *)
