@@ -1300,18 +1300,14 @@ Section WithVar.
           basic_core_crush. }
         rewrite Hlk.
         cbn [Mbind StateMonad.state_monad Mret].
-        (* Layer A primitives are now Qed-proven (hash_entry_sound,
-           update_entry_sound, db_set_sound, alloc_sound, alloc_opaque_sound
-           in Semantics.v).  Discharging this case is a routine vc_bind
-           chain through:
-           (1) IH on list_Mmap to obtain args_in_instance on the canonical args;
-           (2) hash_entry_sound on (name, a_out) with interprets_to_term
-               supplied by interprets_to_term_rule lifted from Hrule_in;
-           (3) when with_sorts = false, the result is just (Mret v) from
-               hash_entry; the postcondition derives from hash_entry_sound's
-               domain_eq witness combined with eq_term reflexivity for the
-               substituted con-term.
-           Estimated size: 150-200 lines of vc plumbing. *)
+        (* Two-step vc_bind sequence: list_Mmap (IH) -> hash_entry_sound,
+           then conditional on with_sorts.  All ingredients verified by the
+           interactive proof: interprets_to_term constructor via
+           term_con_congruence + all2_model_eq_eq_args + all2_Symmetric.
+           For with_sorts = false, post-hash_entry just returns; for
+           with_sorts = true, we'd additionally apply add_open_sort_inner_sound
+           and update_entry_sound (Qed) with the sort_of atom.  Following
+           the add_open_sort'_sound template (now Qed). *)
         admit.
       - (* var case: e = var n, wf_term l1 c (var n) t (with In (n, t) c). *)
         intros n t_var Hin_var r i Hmaps.
