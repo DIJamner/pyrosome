@@ -4212,21 +4212,41 @@ Abort.
                 /\ option_relation m.(domain_eq)
                      (map.get i' (fst res)) (Some out_d)).
   Proof.
-  (* TODO (Layer A): structural sketch:
-     1. vc_bind over [list_Mmap find args] — yields canonicalized args';
-        preservation of fields, has_key for all args' via find_sound'
-        applied per-element.
-     2. vc_bind over [db_lookup f args'] — db_lookup_pure gives the option
-        result and atom_in_egraph if Some.
-     3. Case on the lookup result:
-        - Some r: trivial Mret with snd res = e (unchanged). Result id is r.
-          By atom_interpretation from egraph_sound_for_interpretation, the
-          atom (f, args', r) is sound; combined with the precondition's
-          interprets_to f arg_doms out_d and interprets_to_functional, we
-          get domain_eq (i r) out_d.  i' := i.
-        - None: alloc then db_set.  Needs new primitives [alloc_sound]
-          (analogous to alloc_opaque_sound but without writing analyses)
-          and [db_set_sound] (now available above).  i' := map.put i r out_d. *)
+    unfold hash_entry.
+    vc_bind list_Mmap_find_preserves_fields_strong.
+    rename s0 into e1, a into args'.
+    vc_bind db_lookup_pure.
+    rename s0 into e2, a into mout.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Some r *)
+      unfold vc, Mret. cbn [StateMonad.state_monad fst snd].
+      intros e_post Hpost_lookup Hpost_find.
+      intros Hok Hsound Hkeys_args Hex.
+      destruct Hpost_lookup as [He2_eq Hin]; subst e2.
+      (* TODO (Layer A): full Some-case proof — needs:
+         1. lift the find postcondition (args' ~PER~ args, fields_preserved)
+         2. use atom_interpretation in e1 (via Hdb_eq from fields_preserved)
+            to get interprets_to f (i args') (i r)
+         3. use Hargs_per + Hi_rel to get all2 eq_sound (i args') (i args)
+         4. use interprets_to_preserved (model_ok) to lift our precondition's
+            interprets_to f arg_doms out_d to interprets_to f (i args') out_d
+         5. interprets_to_functional gives domain_eq (i r) out_d.
+         6. i' := i; has_key r in e_post via Hdbkok on (f, args', r). *)
+      admit.
+    - (* None: alloc + db_set *)
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      intros e_post Hpost_lookup Hpost_find.
+      intros Hok Hsound Hkeys_args Hex.
+      destruct Hpost_lookup as [He2_eq Hnone]; subst e2.
+      (* TODO (Layer A): full None-case proof — needs:
+         1. alloc gives fresh r, extends equiv with self-loop
+         2. interpret r as out_d: i' := map.put i r out_d
+         3. db_set_sound on (f, args', r):
+            - args' has_key (preserved by alloc)
+            - r has_key (just allocated)
+            - atom_sound_for_model i' (f, args', r) via Hex + r fresh
+            - no existing entry at (f, args') key (from Hnone) *)
+      admit.
   Admitted.
 
   (* update_entry: ensures atom [a] is recorded.  If a previous
