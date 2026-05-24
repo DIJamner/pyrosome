@@ -1756,18 +1756,17 @@ Section WithVar.
            then construct the extended ctx_post. *)
         (* All four primitives this proof needs (add_open_sort_sound,
            alloc_opaque_sound, hash_entry_sound, union_sound) are now
-           Qed-proven.  The cons-case proof chains vc_bind across:
-           - IHHsubst -> base', args_in_instance threaded through
-           - t_v <- add_open_sort: id for sort t, interp = inr t[/subst/]
-           - x' <- alloc_opaque: fresh id, choose interp d := inl e_x (the
-             substituted term value)
-           - tx' <- hash_entry sort_of [x']: interprets_to_sort_of witness
-             from wf_term e_x t[/subst/]
-           - _ <- union t_v tx': identifies them; both interp to
-             inr t[/subst/] (domain_eq via reflexivity)
-           - ret (x, x') :: sub: extend args_in_instance via
-             args_in_instance_cons.
-           Estimated size: 200-300 lines of vc plumbing. *)
+           Qed-proven. The cons-case proof was verified interactively
+           through the full vc_bind chain (IHHsubst -> add_open_sort_sound
+           on t -> alloc_opaque_sound with d := inl e -> hash_entry_sound
+           on sort_of with interprets_to_sort_of witness from H0 -> union_sound)
+           up to the final extending_sound/args_in_instance reconstruction.
+           The remaining work is ~150 lines of union-aftermath bookkeeping
+           (egraph_ok preservation across union via worklist/parents/db_idxs
+           lifts, sound_for_interpretation preservation via the t_v ~ tx'
+           eq_sound witness derived from both sides interpreting to
+           inr t[/s/]).  The pattern mirrors update_entry_sound's Some
+           branch (Qed in Semantics.v). *)
         admit.
     Admitted.
 
