@@ -1274,12 +1274,41 @@ Section WithVar.
         vc (add_open_sort' succ sort_of l with_sorts false fuel r t)
            (open_sort_post c s t r i).
     Proof.
-    (* TODO (Layer C): induct on [fuel].  Base case: fuel = 0 means
-       [length l1 < 0] is false so the hypothesis is vacuous.  Step:
-       destruct [t = scon n s'], look up the sort_rule in [l],
-       vc_bind over the args via [add_open_sound] (instantiated with
-       [add_open_sort' fuel'] as the inner sort handler), then
-       [hash_entry_sound] on the constructor. *)
+      revert l1 c r s t.
+      induction fuel; intros l1 c r s t Hwfl1 Hflen Hincl Hsubst Hctx Hsort Hmaps i.
+      - exfalso. Lia.lia.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        pose proof Hsort as Hsort'.
+        inversion Hsort' as [? n_ s_t_ args c' Hrule Hwfargs]; subst.
+        apply Hincl in Hrule.
+        assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        eapply vc_bind.
+        { (* args: apply add_open_sound proj2 with IHfuel as inner soundness *)
+          apply (proj2 (add_open_sound l1
+                          (add_open_sort' succ sort_of l with_sorts false fuel)
+                          (fun l2 c'2 t2 s2 r2 i2 Hwfl2 Hflen2 Hincl2
+                               Hsubst2 Hctx2 Hsort2 Hmaps2 =>
+                             IHfuel l2 c'2 r2 s2 t2 Hwfl2
+                               ltac:(Lia.lia)
+                               (incl_tran Hincl2 Hincl)
+                               Hsubst2 Hctx2 Hsort2 Hmaps2 i2)
+                          Hwfl1 Hincl s c Hsubst Hctx)
+                _ _ Hwfargs r i Hmaps). }
+        intros e_post a_out.
+        (* TODO: discharge hash_entry step using hash_entry_sound (admitted).
+           Inputs: a_out is sound for s_t[/with_names_from c s/] via
+           open_args_post; the model's interprets_to witness comes from
+           interprets_to_sort applied to eq_sort_refl on wf_sort_by Hrule
+           against the substituted args. Output value: inr (scon n
+           s_t[/with_names_from c s/]). *)
+        unfold vc, hash_entry.
+        admit.
     Admitted.
 
     Lemma add_open_sort_sound c r s t
