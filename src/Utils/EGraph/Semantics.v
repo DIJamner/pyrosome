@@ -4258,11 +4258,12 @@ Abort.
       (* Apply union_sound; pull preconditions out of egraph_ok + Hin (which gives
          Sep.has_key r via db_idxs_in_equiv). *)
       admit.
-    - (* None: db_set a *)
-      intros s_pre [Heq Hnone]; subst s_pre.
-      (* Apply db_set_sound; the no-existing-entry precondition follows
-         directly from Hnone (db_lookup returned None). *)
-      admit.
+    - (* None: db_set a — apply db_set_sound *)
+      intros s_pre HpreL. destruct HpreL as [Heq Hnone]; subst s_pre.
+      pose proof (db_set_sound i a) as Hdss.
+      unfold vc in Hdss. specialize (Hdss e_in).
+      intros Hok Hsound Hargs Hret Hatom_sound.
+      apply Hdss; auto.
   Admitted.
 
   (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
