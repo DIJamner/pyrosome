@@ -144,8 +144,6 @@ Section WithVar.
   Context (sort_of : V).
   
   Context (lt : V -> V -> Prop).
-
-  Notation state_sound_for_model := (state_sound_for_model lt).
   
   Context (lt_asymmetric : Asymmetric lt)
     (lt_succ : forall x, lt x (succ x))
@@ -376,9 +374,11 @@ Section WithVar.
   Ltac transitive_extension :=
     repeat first [apply Properties.map.extends_refl
                  | eapply map_extends_trans;[ eassumption |] ].
+
+  (*TODO: tactic changed due to missing Mmap_extends. May be broken*)
   Ltac extension_congruence Hext H H' :=
     apply eq_of_eq_Some;
-    (eapply Hext in H' || (eapply Mmap_extends in H'; [| eauto | eauto | apply Hext]));
+    (eapply Hext in H' (*outdated|| (eapply Mmap_extends in H'; [| eauto | eauto | apply Hext])*));
     rewrite <- H, <- H'; reflexivity.
   
   Ltac get_ext_cong :=
@@ -892,22 +892,6 @@ Section WithVar.
         r.
      *)
 
-    
-  (*TODO: move to definition site*)
-  Arguments monotone1 {idx}%type_scope {idx_map}%function_scope {A B}%type_scope P%function_scope.
-  
-  Lemma args_in_instance_monotone s
-    : monotone1 (args_in_instance s).
-  Proof.
-    unfold args_in_instance.
-    repeat intro.
-    iss_case.
-    eapply Mmap_extends in Hma; eauto.
-    rewrite Hma.
-    cbn.
-    auto.
-  Qed.
-
   (*
   Lemma Mmap_subst_in_inst i a s (c' : ctx)
     : option_relation (all2 lang_model.(domain_eq _))
@@ -1019,9 +1003,11 @@ Section WithVar.
   Ltac transitive_extension :=
     repeat first [apply Properties.map.extends_refl
                  | eapply map_extends_trans;[ eassumption |] ].
+  
+  (*TODO: tactic changed due to missing Mmap_extends. May be broken*)
   Ltac extension_congruence Hext H H' :=
     apply eq_of_eq_Some;
-    (eapply Hext in H' || (eapply Mmap_extends in H'; [| eauto | eauto | apply Hext]));
+    (eapply Hext in H' (*outdated|| (eapply Mmap_extends in H'; [| eauto | eauto | apply Hext])*));
     rewrite <- H, <- H'; reflexivity.
   
   Ltac get_ext_cong :=
@@ -1135,7 +1121,8 @@ Section WithVar.
     cbn.
     intuition auto.
   Qed.
-    
+
+  (*TODO: outdated and needs to be updated
   Section __.
     Context (X : Type) `{analysis V V X} (with_sorts : bool) (l l1 : lang) (sort_of_fresh : fresh sort_of l).
     Context (add_open_sort : named_list V -> Term.sort V -> state (instance X) V).
@@ -1515,6 +1502,7 @@ Section WithVar.
     Qed.*)
 
   End __.
+   *)
 
   (*
   Lemma assign_subst_subst l i r c s s' c'
@@ -1527,6 +1515,7 @@ Section WithVar.
     Abort.
    *)
 
+  (*TODO: outdated
     Lemma add_open_sort'_sound l l' with_sorts r s c t fuel (sort_of_fresh : fresh sort_of l)
       : wf_lang l ->
         length l' < fuel ->
@@ -1553,6 +1542,7 @@ Section WithVar.
         safe_invert H5.
         apply in_split in H11; break; subst.
     Admitted.
+   *)
     (*TODO: fix
         ssm_bind.
         {
@@ -1700,7 +1690,8 @@ Section WithVar.
        *)
     
     Context (l : lang) (Hwf : wf_lang l) (sort_of_fresh : fresh sort_of l).
-    
+
+    (*TODO: outdated
     Lemma add_open_sort_sound (i : V_map _) with_sorts r s c t
       : wf_args l [] s c ->
         wf_sort l c t ->
@@ -1769,6 +1760,7 @@ Section WithVar.
       ssm_bind.
       {
   Admitted.
+     *)
   (* update_entry lemma
         eapply hash_entry_sound; eauto using lang_model_ok.
         {
