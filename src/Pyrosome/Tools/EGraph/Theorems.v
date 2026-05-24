@@ -1244,18 +1244,54 @@ Section WithVar.
                                                       add_open_sort_inner r) args)
                           (open_args_post c s args r i)).
     Proof.
-    (* TODO (Layer C): discharge using WfCutElim.wf_cut_ind.  Sketch:
-       - var case: result id is [named_list_lookup default r x]; use
-         [args_in_instance_in] to recover its interpretation.
-       - con case (with_sorts = false): vc_bind over the recursive
-         [list_Mmap (add_open_term' ...)], then [hash_entry_sound]
-         from Semantics.v.  The interprets_to witness comes from
-         [interprets_to_term_rule] (above in this file).
-       - con case (with_sorts = true): same plus
-         [add_open_sort_inner_sound] for the type and
-         [update_entry_sound] for the sort_of annotation.
-       - cons-arg case for [list_Mmap]: chain via [vc_list_Mmap_outputs]
-         (Utils/VC.v) and [args_in_instance_cons]. *)
+      apply (WfCutElim.wf_cut_ind V l1 c
+               (fun e t => forall r i, map fst c = map fst r ->
+                  vc (add_open_term' succ sort_of l with_sorts false
+                                     add_open_sort_inner r e)
+                     (open_term_post c s e r i))
+               (fun args c' => forall r i, map fst c = map fst r ->
+                  vc (list_Mmap (add_open_term' succ sort_of l with_sorts false
+                                                add_open_sort_inner r) args)
+                     (open_args_post c s args r i))).
+      - (* con case: e = con name s', wf_term l1 c (con name s') t [/.../]. *)
+        intros name c'_rule args t_rule s' Hrule_in Hwf_args_inner IH r i Hmaps.
+        admit.
+      - (* var case: e = var n, wf_term l1 c (var n) t (with In (n, t) c). *)
+        intros n t_var Hin_var r i Hmaps.
+        cbn [add_open_term'].
+        unfold vc. intros e_pre.
+        cbn [Mret StateMonad.state_monad fst snd].
+        unfold open_term_post.
+        intros Hok Hsound Hai.
+        exists i. split.
+        + unfold extending_sound.
+          split; [exact Hok|].
+          split; [apply Properties.map.extends_refl|].
+          split; [exact Hsound|].
+          intros; assumption.
+        + (* TODO: result id is named_list_lookup default r n. Use
+             [args_in_instance_in] (above) to recover its interpretation as
+             inl (var n)[/with_names_from c s/] = inl (lookup in s at name n). *)
+          admit.
+      - (* eq_sort conversion: postcondition doesn't depend on the sort, so IH applies. *)
+        intros e_x t_x t_x' Hwft IH_term Heq_sort r i Hmaps.
+        apply IH_term; assumption.
+      - (* nil args: list_Mmap on []. Trivial: open_args_post holds with i_in. *)
+        intros r i Hmaps.
+        cbn [list_Mmap].
+        unfold vc, Mret. cbn.
+        unfold open_args_post. intros e_pre Hok Hsound Hai.
+        exists i. split.
+        + unfold extending_sound.
+          split; [exact Hok|].
+          split; [apply Properties.map.extends_refl|].
+          split; [exact Hsound|].
+          intros; assumption.
+        + cbn. unfold args_in_instance. cbn. constructor.
+      - (* cons args: chain via vc_bind on the head and IH_args on the tail,
+           then args_in_instance_cons. *)
+        intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r i Hmaps.
+        admit.
     Admitted.
 
     (* Induction on the fuel parameter, using [add_open_sound] in the
