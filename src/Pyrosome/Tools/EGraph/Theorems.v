@@ -1122,6 +1122,41 @@ Section WithVar.
     intuition auto.
   Qed.
 
+  Lemma list_Mmap_get_extends {A} (i i' : V_map A) a ds
+    : map.extends i' i ->
+      list_Mmap (map.get i) a = Some ds ->
+      list_Mmap (map.get i') a = Some ds.
+  Proof.
+    intros Hext. revert ds.
+    induction a as [|x xs IH]; cbn; intros ds Hmi.
+    - exact Hmi.
+    - destruct (map.get i x) as [vx|] eqn:Hgix.
+      2:{ cbn in Hmi. discriminate. }
+      cbn in Hmi.
+      destruct (list_Mmap (map.get i) xs) as [ls|] eqn:Hmxs.
+      2:{ cbn in Hmi. discriminate. }
+      cbn in Hmi.
+      apply Hext in Hgix. rewrite Hgix.
+      specialize (IH ls eq_refl). rewrite IH. cbn. exact Hmi.
+  Qed.
+
+  Lemma args_in_instance_monotone l s i i' a
+    : map.extends i' i ->
+      args_in_instance l s i a ->
+      args_in_instance l s i' a.
+  Proof.
+    unfold args_in_instance.
+    intros Hext Hin.
+    destruct (list_Mmap (map.get i) a) as [ds|] eqn:Hmi; cbn in Hin; [|tauto].
+    erewrite list_Mmap_get_extends; cbn; eauto.
+  Qed.
+
+  Lemma map_get_monotone {A} (i i' : V_map A) (x : V) (d : A)
+    : map.extends i' i ->
+      map.get i x = Some d ->
+      map.get i' x = Some d.
+  Proof. intros Hext Hgd. apply Hext. exact Hgd. Qed.
+
   (* =============================================================== *)
   (* Re-proof of add_open_term_sound / add_open_sort_sound /          *)
   (* add_ctx_sound against the current `vc` + `egraph_ok` style       *)
