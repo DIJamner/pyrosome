@@ -2375,21 +2375,28 @@ Abort.
            /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
                          Sep.has_key x (snd res).(equiv).(parent))).
   Proof.
-  (* TODO: prove. Sketch: unfold update_entry; vc_bind db_lookup_pure (yields mout
-     and preservation). Case mout:
-     - Some r: vc_Mseq union_sound. The new state has egraph_ok preserved (most
-       fields unchanged; the new worklist entry's worklist_entry_ok holds because
-       union_sound's union_worklist_rel guarantees the inserted (v_old, v') is
-       PER-related to (r, atom_ret a) which is connected via the closure ext).
-       egraph_sound_for_interpretation: atom_interpretation and idx_interp_wf and
-       interpretation_exact preserved (db, idxs unchanged); rel_interpretation:
-       the new PER is the union closure ext of the old PER with (r, atom_ret a),
-       which is sound because atom_sound_for_model gives interprets_to with these
-       PER-equivalent to atom_args/atom_ret. Need a lifting analogous to
-       union_after_canonicalize_denote_iff but simpler.
-     - None: vc_apply db_set_sound (a separate primitive we'd need to prove from
-       db_set_after_canonicalize_denote_iff which is too specialized; simpler to
-       prove db_set_sound directly). *)
+    unfold update_entry.
+    vc_bind db_lookup_pure.
+    rename s0 into e_in, a0 into mout.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Some r: union r (atom_ret a) *)
+      intros s_pre [Heq Hin]; subst s_pre.
+      (* Goal: vc (Mseq (Defs.union r (atom_ret a)) (Mret tt)) ...
+         Apply union_sound; pull preconditions out of egraph_ok + Hin (which gives
+         Sep.has_key r via db_idxs_in_equiv). The remaining steps (egraph_ok and
+         egraph_sound preservation, has_key monotonicity) follow from union_sound's
+         postcondition + the atom_sound_for_model premise (which connects the new
+         PER edge (r, atom_ret a) to interprets_to-equivalent values, via
+         interprets_to_functional). *)
+      admit.
+    - (* None: db_set a *)
+      intros s_pre [Heq Hnone]; subst s_pre.
+      (* db_set a does: get_analyses (atom_args a), update_analyses (atom_ret a),
+         db_set' a. The egraph_ok preservation requires careful tracking of
+         worklist (push_worklist of analysis_repair entries) and parents updates.
+         No db_set_sound primitive exists; needs to be built from scratch or
+         extracted from db_set_after_canonicalize_denote_iff. *)
+      admit.
   Admitted.
 
   (* Atom-level equality (under the interpretation) preserves
