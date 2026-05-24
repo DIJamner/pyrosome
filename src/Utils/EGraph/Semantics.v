@@ -3956,8 +3956,36 @@ Abort.
       by (unfold db_set' in Hde; injection Hde as _ Hdeq;
           subst e_post; reflexivity).
     assert (Heq_post_e_in : e_post.(equiv) = e_in.(equiv)) by congruence.
-    (* TODO: prove egraph_ok, egraph_sound, has_key preservation. *)
-    admit.
+    (* Conjunct 3 (has_key preservation): trivial from Heq_post_e_in. *)
+    assert (Hkeys : forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                              Sep.has_key x e_post.(equiv).(parent)).
+    { intros x Hx. rewrite Heq_post_e_in. exact Hx. }
+    (* Extract db / parents structure of e_post from db_set'. *)
+    pose proof Hde as Hde_orig.
+    unfold db_set' in Hde. injection Hde as _ Hdeq.
+    (* Hdeq : Build_instance ... = e_post. Use Heq_post_u, Hep_post_u, Hwl_post_u
+       to characterize the e_post fields. *)
+    split; [|split].
+    - (* TODO: egraph_ok e_post.  Components:
+         + equiv_ok: rewrite via Heq_post_e_in, use Hok's equiv_ok.
+         + worklist_ok: e_post.worklist = e_u.worklist = e_g.worklist, which is
+           (analysis_repair entries) ++ e_in.worklist by get_analyses_worklist_extends;
+           each prefix entry trivially ok; old entries lift via Heq_post_e_in.
+         + parents_ok: db_set' prepends [a] to parents at a.atom_ret :: dedup a.atom_args.
+           For the new entries: atom_in_egraph_up_to_equiv a e_post holds reflexively
+           because [a] is in e_post.db (by Hde_orig). For old entries: lift via Heq_post_e_in
+           plus the fact that the old db ⊆ new db (only added one entry).
+         + db_idxs_in_equiv: for the new atom [a], args/ret are has_key (Hargs/Hret + Hkeys);
+           old atoms preserved with the same equiv. *)
+      admit.
+    - (* TODO: egraph_sound_for_interpretation m i e_post.  Components:
+         + idx_interpretation_wf: i unchanged → preserved from Hsound.
+         + interpretation_exact: equiv unchanged → preserved.
+         + atom_interpretation: new atom is sound (Hatom_sound); old atoms still in
+           db_set' output preserve their soundness (Hsound.atom_interpretation).
+         + rel_interpretation: equiv (hence PER) unchanged → preserved. *)
+      admit.
+    - exact Hkeys.
   Admitted.
 
   (* ============================================================== *)
