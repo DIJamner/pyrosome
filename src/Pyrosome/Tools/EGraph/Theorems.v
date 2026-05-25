@@ -6,7 +6,7 @@ Open Scope list.
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad.
-From Utils.EGraph Require Import Defs Semantics.
+From Utils.EGraph Require Import Defs Semantics QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Theory Require WfCutElim.
