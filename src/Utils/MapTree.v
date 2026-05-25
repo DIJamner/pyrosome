@@ -53,12 +53,12 @@ Section WithMap.
 End WithMap.
 
 
-Arguments leaf {key}%type_scope {m}%function_scope {map_tree} {A}%type_scope _.
-Arguments top_node {key}%type_scope {m}%function_scope {map_tree} {A}%type_scope _.
-Arguments node {key}%type_scope {m}%function_scope {map_tree} {A}%type_scope _.
+Arguments leaf {key}%_type_scope {m}%_function_scope {map_tree} {A}%_type_scope _.
+Arguments top_node {key}%_type_scope {m}%_function_scope {map_tree} {A}%_type_scope _.
+Arguments node {key}%_type_scope {m}%_function_scope {map_tree} {A}%_type_scope _.
 
 Global Coercion rep : map_tree >-> Funclass.
-Arguments map_tree_ok {key}%type_scope {m}%function_scope tree.
+Arguments map_tree_ok {key}%_type_scope {m}%_function_scope tree.
   
 Section Positive.
   Local Open Scope positive.

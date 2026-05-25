@@ -390,9 +390,9 @@ Section __.
     repeat lazymatch goal with H : context [?m] |- _ => clear H end;
     revert m.
   
-  Arguments sep_sequent_focus {A}%type_scope
+  Arguments sep_sequent_focus {A}%_type_scope
     {Eqb_A Eqb_A_ok mem mem_ok}
-    (perm1 perm2 l1 l2)%list_scope _ _ (_ _)%function_scope 
+    (perm1 perm2 l1 l2)%_list_scope _ _ (_ _)%_function_scope 
     m _.
   Ltac sep_focus p1 p2 :=        
     apply sep_sequent_focus with (perm1:=p1) (perm2:=p2);
@@ -1498,7 +1498,7 @@ Section __.
     Proof.
       
       intros.
-      my_case Hget (map.get r i).
+      destruct (map.get r i) eqn:Hget.
       2:{      
         pose proof (Properties.map.split_undef_put _ i j Hget).
         replace (map.put x i j) with (map.putmany (map.put map.empty i j) x).
@@ -1570,7 +1570,7 @@ Section __.
         forest_ptsto j (map.put r i j).
     Proof.
       intros.
-      my_case Hget (map.get r i).
+      destruct (map.get r i) eqn:Hget.
       2:{
         eapply forest_join.
         exists (map.put map.empty i j), r;
@@ -2062,7 +2062,7 @@ Section __.
           break.
           rewrite H, H2.
           autorewrite with utils.
-          my_case Hget (map.get x i); try intuition congruence.
+          destruct (map.get x i) eqn:Hget; try intuition congruence.
           eqb_case i i0; try intuition congruence.
           
           exfalso.
@@ -2110,7 +2110,7 @@ Section __.
         sep (tree j) (forest l) (map.put r i j).
     Proof.
       intros Hnin ?.
-      my_case Hget (map.get r i).
+      destruct (map.get r i) eqn:Hget.
       1: eapply distribute_get in H; eauto; destruct H.
       {
         clear Hget.
@@ -2366,7 +2366,7 @@ Section __.
         case_match; [|congruence].
         replace ( map.get f_Q i) with (Some i0).
         2:{
-          my_case Hget (map.get f_Q i).
+          destruct (map.get f_Q i) eqn:Hget.
           {
             eapply sep_get_split' in H; eauto.
             destruct H; unfold sep, and1 in *;
@@ -2710,7 +2710,7 @@ Section __.
       
       change (seps (?P :: ?L)) with (sep P (seps L)) in *.
       destruct H2; break.
-      my_case Hget (map.get x i).
+      destruct (map.get x i) eqn:Hget.
       {
         exists a; split;[intuition eauto | exists x, x0]; unfold and1, has_key.
         rewrite Hget.
@@ -3208,7 +3208,7 @@ Section __.
         find_aux' mr f i = Some (f', j) -> forest l f'.
     Proof.
       intros.
-      my_case Hget (map.get f i).
+      destruct (map.get f i) eqn:Hget.
       2:{
         destruct mr; cbn in*; try congruence.
         rewrite Hget in H0; congruence.
@@ -3482,7 +3482,7 @@ Section __.
         In j l /\ forest l f' /\ reachable f i j /\ iff2 (reachable f) (reachable f').
     Proof.
       intros.
-      my_case Hget (map.get f i).
+      destruct (map.get f i) eqn:Hget.
       2:{
         destruct mr; cbn in*; try congruence.
         rewrite Hget in H0; congruence.
@@ -3671,7 +3671,7 @@ Section __.
     Proof.
       destruct uf, uf'.
       unfold find', uf_rel.
-      my_case Haux (find_aux' (S max_rank0) parent0 i); cbn;[| congruence].
+      destruct (find_aux' (S max_rank0) parent0 i) eqn:Haux; cbn;[| congruence].
       intros; break.
       safe_invert H0.
       eapply find_aux_spec_partial in Haux; intuition eauto.
@@ -3765,7 +3765,7 @@ Section __.
         {
           pose proof (map_keys_in' f a).
           rewrite H in H0.
-          destruct (map.keys f); basic_goal_prep; intuition.
+          destruct (map.keys f); basic_goal_prep; intuition (auto with *).
         }
       }
       {
@@ -3976,7 +3976,7 @@ Section __.
     Proof.
       unfold has_key.
       rewrite Properties.map.get_putmany_dec.
-      my_case H2 (map.get m2 i);
+      destruct (map.get m2 i) eqn:H2;
         [ basic_utils_crush
         | case_match]; intuition fail.
     Qed.
@@ -4013,7 +4013,7 @@ Section __.
         basic_goal_prep;
         basic_utils_crush.
       {
-        my_case Hinb (inb i l);
+        destruct (inb i l) eqn:Hinb;
           basic_utils_crush.
         { safe_invert H0; tauto. }
         {
@@ -4060,7 +4060,7 @@ Section __.
                     (and1 (forest_ptsto i) (not1 (has_key j)));
                     eq (map.singleton i i)] m).
       {
-        revert dependent m.
+        generalize dependent m.
         sep_focus [1;2] [0;2]; try reflexivity.
         intros m Hm.
         eapply sep_get_split'  with (j:=j) (k:=j) in Hm.
@@ -4247,7 +4247,7 @@ Section __.
             basic_utils_crush.
             { rewrite remove_none; eauto. }
             {
-              my_case Hget (map.get x7 j); try tauto.
+              destruct (map.get x7 j) eqn:Hget; try tauto.
               exfalso.
               eapply split_both_have_key with (x:=j) in H1; eauto;
                 basic_utils_crush.
@@ -4384,8 +4384,8 @@ Section __.
           /\ uf_rel u' y z.
     Proof.
       unfold union'.
-      my_case Hfx (find' u x);break;cbn;[| congruence].
-      my_case Hfy (find' u0 y);break;cbn;[| congruence].
+      destruct (find' u x) eqn:Hfx;break;cbn;[| congruence].
+      destruct (find' u0 y) eqn:Hfy;break;cbn;[| congruence].
       intro.
       eapply find_spec' in Hfx, Hfy; break; eauto.
       eqb_case i i0.
@@ -5747,6 +5747,6 @@ Section __.
 End __.
  
 
-Arguments UnionFind.find {idx}%type_scope {Eqb_idx idx_map rank_map} pat x.
-Arguments parent {idx}%type_scope {idx_map rank_map} u.
-Arguments union_find_ok {idx}%type_scope {idx_map} {rank_map} lt uf l%list_scope.
+Arguments UnionFind.find {idx}%_type_scope {Eqb_idx idx_map rank_map} pat x.
+Arguments parent {idx}%_type_scope {idx_map rank_map} u.
+Arguments union_find_ok {idx}%_type_scope {idx_map} {rank_map} lt uf l%_list_scope.

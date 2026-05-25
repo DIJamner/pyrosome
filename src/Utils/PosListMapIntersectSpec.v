@@ -3293,8 +3293,8 @@ Section PtSpacedIntersectSpec.
     = List.fold_left (fun acc l => map2 orb (combine l acc)) cil (snd (fst tries)).
   Proof.
     intros Hsplit. unfold combined_bools.
-    pose proof (split_length_l (snd tries)) as Hll.
-    pose proof (split_length_r (snd tries)) as Hlr.
+    pose proof (length_fst_split (snd tries)) as Hll.
+    pose proof (length_snd_split (snd tries)) as Hlr.
     rewrite Hsplit in Hll, Hlr; cbn in Hll, Hlr.
     apply split_combine in Hsplit.
     rewrite <- Hsplit. clear Hsplit.
@@ -3363,8 +3363,8 @@ Section PtSpacedIntersectSpec.
     cbn [fst snd] in *.
     pose proof (split_combine tail Hsplit) as Htail_eq.
     assert (Hlen_pc : length ptl_opt = length cil).
-    { pose proof (split_length_l tail) as Hll.
-      pose proof (split_length_r tail) as Hlr.
+    { pose proof (length_fst_split tail) as Hll.
+      pose proof (length_snd_split tail) as Hlr.
       rewrite Hsplit in Hll, Hlr. cbn in Hll, Hlr. congruence. }
 
     (* Rewrite combined_bools in terms of [cil] and [ci0]. *)

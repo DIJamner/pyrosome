@@ -398,7 +398,7 @@ Section MapIntersect.
   Context {A B C} (elt_intersect : A -> B -> C).
 
   Import Canonical.PTree.
-  Arguments empty {A}%type_scope.
+  Arguments empty {A}%_type_scope.
                                             
   Fixpoint intersect' m1 m2 : tree _ :=
     match m1, m2 with
@@ -486,7 +486,7 @@ Section MapIntersectList.
 
   Import Lists.List.
   Import Canonical.PTree List.ListNotations.
-  Arguments empty {A}%type_scope.
+  Arguments empty {A}%_type_scope.
   
   Section __.
     Context {A : Type}.
@@ -971,7 +971,7 @@ Section MapIntersectList.
   Proof. destruct ma; reflexivity. Qed.
   Hint Rewrite Mbind_option_map : utils.
 
-  #[local] Hint Rewrite rev_length : utils.
+  #[local] Hint Rewrite length_rev : utils.
 
   Fixpoint flip_by_length i b :=
     match i with
@@ -1476,7 +1476,7 @@ it's dependent on the length of i. use flip_by_length (could be backwards?)
   Qed.
 
   
-  Arguments get' {A}%type_scope !p%positive_scope !m.
+  Arguments get' {A}%_type_scope !p%_positive_scope !m.
   
   Lemma list_intersect_correct' x hd tl is_rev
     : map_elts_wf is_rev hd tl ->

@@ -2,6 +2,8 @@
  *)
 From Stdlib Require Import Equalities Orders Lists.List.
 Import ListNotations.
+From Stdlib Require Import Logic.PropExtensionality
+  Logic.FunctionalExtensionality.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 
@@ -427,7 +429,7 @@ Section WithMap.
     case_match; cbn -[map]; try congruence.
     remember [] as acc.
     
-    revert dependent l.
+    generalize dependent l.
     revert args.
     (*
     symmetry in HeqH.
@@ -532,7 +534,7 @@ Abort.
       (atom_sound_for_model m idx_interpretation).
 
     (*TODO: move to defining file*)
-    Arguments parent {idx}%type_scope {idx_map rank_map} u.
+    Arguments parent {idx}%_type_scope {idx_map rank_map} u.
     
     Record egraph_sound_for_interpretation e : Prop :=
       {
@@ -848,12 +850,14 @@ Abort.
   Context `{analysis idx symbol analysis_result}.
 
   (*TODO: move*)
+  #[local] Set Warnings "-cannot-define-projection".
   Record forall_nonempty {A} P Q : Prop :=
     {
       fne_elt : A;
       fne_elt_in : P fne_elt;
       fne_all : forall x, P x -> Q x;
     }.
+  #[local] Set Warnings "cannot-define-projection".
 
   Notation "'forall_ne' p | P , Q" :=
     (forall_nonempty (fun p => P) (fun p => Q))
@@ -910,11 +914,8 @@ Abort.
 
   (*TODO: move*)
   Hint Resolve Properties.map.extends_refl : utils.
-  
-  From Stdlib Require Import Logic.PropExtensionality
-    Logic.FunctionalExtensionality.
 
-  
+
   Lemma set_ext A (S S' : A -> Prop)
     : (forall x, S x <-> S' x) -> S = S'.                                        
   Proof.
@@ -1210,13 +1211,13 @@ Abort.
 
 
   (*TODO: move to Defs.v*)
-  Arguments pull_parents {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope x _.
+  Arguments pull_parents {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope x _.
   (*TODO: move to Defs.v*)
-  Arguments remove_parents {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope x _.
+  Arguments remove_parents {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope x _.
 
 
   Ltac iss_case :=
@@ -1230,9 +1231,9 @@ Abort.
     end.
 
   (*TODO: move to Defs.v*)
-  Arguments db_remove {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope a _.
+  Arguments db_remove {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope a _.
 
   (* [db_remove a] only modifies the [db] field, removing the entry
      at [(atom_fn a, atom_args a)]. All other instance fields
@@ -1410,12 +1411,12 @@ Abort.
   Qed.
 
   
-  Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-    {analysis_result}%type_scope f args%list_scope _.
+  Arguments db_lookup {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+    {analysis_result}%_type_scope f args%_list_scope _.
 
-  Arguments db_set {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope
-    {analysis_result}%type_scope {H} a _.
+  Arguments db_set {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+    {symbol_map idx_map idx_trie}%_function_scope
+    {analysis_result}%_type_scope {H} a _.
 
 
   (* Predicate: every instance field except [equiv] is preserved
@@ -2058,12 +2059,12 @@ Abort.
 
 
   
-  Arguments repair_parent_analysis {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  Arguments repair_parent_analysis {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope
   {H} a _.
 
-  Arguments repair_union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  Arguments repair_union {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope
   {H} _ _ _ _.
 
   (* Lift a per-element vc lemma with post
@@ -4374,40 +4375,40 @@ Abort.
 
 End WithMap.
 
-Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope
+Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope
   a i.
 
-Arguments seq_assumptions {idx symbol}%type_scope s.
-Arguments seq_conclusions {idx symbol}%type_scope s.
+Arguments seq_assumptions {idx symbol}%_type_scope s.
+Arguments seq_conclusions {idx symbol}%_type_scope s.
 
-Arguments forall_vars {idx symbol}%type_scope s.
-Arguments exists_vars {idx}%type_scope {Eqb_idx} {symbol}%type_scope s.
-Arguments sequent_vars {idx symbol}%type_scope s.
+Arguments forall_vars {idx symbol}%_type_scope s.
+Arguments exists_vars {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope s.
+Arguments sequent_vars {idx symbol}%_type_scope s.
 
-Arguments eq_clause {idx symbol}%type_scope x y.
-Arguments atom_clause {idx symbol}%type_scope a.
+Arguments eq_clause {idx symbol}%_type_scope x y.
+Arguments atom_clause {idx symbol}%_type_scope a.
 
 
-Arguments clauses_to_instance {idx}%type_scope {Eqb_idx}
-  idx_succ%function_scope
-  {symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope
+Arguments clauses_to_instance {idx}%_type_scope {Eqb_idx}
+  idx_succ%_function_scope
+  {symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope
   {H}
-  l%list_scope _ _.
+  l%_list_scope _ _.
 
 
-Arguments instance_to_clauses {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
+Arguments instance_to_clauses {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
 
 
-Arguments db_to_atoms {idx symbol}%type_scope
-  {symbol_map idx_trie}%function_scope 
-  {analysis_result}%type_scope
+Arguments db_to_atoms {idx symbol}%_type_scope
+  {symbol_map idx_trie}%_function_scope 
+  {analysis_result}%_type_scope
   d.
 
 
-Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
+Arguments uf_to_clauses {idx symbol}%_type_scope {idx_map}%_function_scope u.
 
 

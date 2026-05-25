@@ -128,7 +128,7 @@ Proof.
 Qed.
 Hint Rewrite option_all_empty : utils.
 
-Hint Rewrite app_length : utils.
+Hint Rewrite length_app : utils.
 
 Lemma rev_eq_nil C (l : list C)
   : rev l = [] <-> l = [].
@@ -171,11 +171,11 @@ Hint Rewrite all2_empty_l : utils.
 
 
 (*TODO: put this in utils?*)
-#[local] Arguments combine_app [A B]%type_scope (lA lA' lB lB')%list_scope _.
+#[local] Arguments combine_app [A B]%_type_scope (lA lA' lB lB')%_list_scope _.
 #[local] Hint Rewrite combine_app : utils.
 
 (*TODO: put this in utils *)
-#[local] Hint Rewrite rev_length : utils.
+#[local] Hint Rewrite length_rev : utils.
     
 Lemma rev_combine T1 T2 (l1: list T1) (l2 : list T2)
   : length l1 = length l2 ->
@@ -1327,7 +1327,7 @@ Section __.
     Proof. destruct ma; reflexivity. Qed.
 
     
-    Hint Rewrite rev_length : utils.
+    Hint Rewrite length_rev : utils.
 
     
     (*TODO: move to TrieMap.v*)    

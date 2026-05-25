@@ -646,13 +646,13 @@ Section __.
      {
        f_equal.
        specialize (IHx b).
-       my_case Hb (eqb x b); cbn in *; tauto.       
+       destruct (eqb x b) eqn:Hb; cbn in *; tauto.
      }
      {
        intro Hcong; safe_invert Hcong.
        intuition auto.
        specialize (IHx b).
-       my_case Hb (eqb b b); cbn in *; tauto.
+       destruct (eqb b b) eqn:Hb; cbn in *; tauto.
      }
    Qed.   
    
