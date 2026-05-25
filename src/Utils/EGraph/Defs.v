@@ -539,7 +539,7 @@ Section WithMap.
               ne_list (idx_trie B * list bool) ->
               (* Doesn't return a flag list because we assume it will always be all true*)
               idx_trie B).
-  Arguments spaced_list_intersect {B}%type_scope {_} merge%function_scope _.
+  Arguments spaced_list_intersect {B}%_type_scope {_} merge%_function_scope _.
                                                  
   Definition intersection_keys (tries : ne_list (idx_trie unit * list bool)) : list _ :=
     map.keys (spaced_list_intersect (fun _ _ => tt) tries).
@@ -828,24 +828,22 @@ Section WithMap.
 
 End WithMap.
 
-Arguments atom_fn {idx symbol}%type_scope a.
-Arguments atom_args {idx symbol}%type_scope a.
-Arguments atom_ret {idx symbol}%type_scope a.
+Arguments atom_fn {idx symbol}%_type_scope a.
+Arguments atom_args {idx symbol}%_type_scope a.
+Arguments atom_ret {idx symbol}%_type_scope a.
 
-Arguments db {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-Arguments equiv {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-Arguments parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-Arguments epoch {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-Arguments worklist {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-Arguments analyses {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope i.
-
-Existing Class analysis.
+Arguments db {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
+Arguments equiv {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
+Arguments parents {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
+Arguments epoch {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
+Arguments worklist {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
+Arguments analyses {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope i.
 
 (*TODO: move to utils*)
 #[local] Instance eqb_unit : Eqb unit := fun _ _ => true.
@@ -856,71 +854,71 @@ Existing Class analysis.
     analysis_meet _ _ := tt;
   }.
 
-Arguments union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope {H} v v1 _.
-Arguments Build_atom {idx symbol}%type_scope atom_fn 
-  atom_args%list_scope atom_ret.
+Arguments union {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope {H} v v1 _.
+Arguments Build_atom {idx symbol}%_type_scope atom_fn 
+  atom_args%_list_scope atom_ret.
 
-Arguments log_event {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
-  {E}%type_scope e _.
+Arguments log_event {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope
+  {E}%_type_scope e _.
 
-Arguments update_entry {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+Arguments update_entry {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope 
   {H} a _.
 
 
-Arguments hash_entry {idx}%type_scope {Eqb_idx} idx_succ%function_scope {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
-  {H} f args%list_scope _.
+Arguments hash_entry {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope 
+  {H} f args%_list_scope _.
   
-Arguments Build_rule_set {idx symbol}%type_scope {symbol_map idx_map}%function_scope 
-  query_clauses compiled_rules%list_scope.
+Arguments Build_rule_set {idx symbol}%_type_scope {symbol_map idx_map}%_function_scope 
+  query_clauses compiled_rules%_list_scope.
 
-Arguments repair {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-    {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
+Arguments repair {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+    {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope 
     {H} e _.
 
 
-Arguments get_parents {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-    {analysis_result}%type_scope x _.
+Arguments get_parents {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+    {analysis_result}%_type_scope x _.
 
-Arguments rebuild {idx}%type_scope {Eqb_idx} {symbol}%type_scope 
-  {symbol_map idx_map idx_trie}%function_scope 
-  {analysis_result}%type_scope {H}
-  fuel%nat_scope _.
-
-
-Arguments saturate_until' {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
-  {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
-  {analysis_result}%type_scope {H}
-  spaced_list_intersect%function_scope 
-  _ rs P fuel%nat_scope.
-
-Arguments saturate_until {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
-  {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope
-  {analysis_result}%type_scope {H}
-  spaced_list_intersect%function_scope rebuild_fuel
-  rs P fuel%nat_scope _.
-
-Arguments are_unified {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope x1 x2 _.
+Arguments rebuild {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope 
+  {symbol_map idx_map idx_trie}%_function_scope 
+  {analysis_result}%_type_scope {H}
+  fuel%_nat_scope _.
 
 
-Arguments empty_egraph {idx}%type_scope idx_zero {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope.
+Arguments saturate_until' {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
+  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+  {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
+  {analysis_result}%_type_scope {H}
+  spaced_list_intersect%_function_scope 
+  _ rs P fuel%_nat_scope.
+
+Arguments saturate_until {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
+  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+  {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope
+  {analysis_result}%_type_scope {H}
+  spaced_list_intersect%_function_scope rebuild_fuel
+  rs P fuel%_nat_scope _.
+
+Arguments are_unified {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope x1 x2 _.
 
 
-Arguments canonicalize {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-  {analysis_result}%type_scope a _.
-Arguments find {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope
-   {analysis_result}%type_scope a _.
+Arguments empty_egraph {idx}%_type_scope idx_zero {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope.
+
+
+Arguments canonicalize {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+  {analysis_result}%_type_scope a _.
+Arguments find {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope
+   {analysis_result}%_type_scope a _.
 
 Module PositiveIdx.
 

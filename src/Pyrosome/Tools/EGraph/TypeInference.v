@@ -142,7 +142,7 @@ Section __.
           end.
       
       (* Separated out for the termination checker*)
-      Fixpoint insert_next_implicit_arg (c_names e_args : list string)
+      Definition insert_next_implicit_arg (c_names e_args : list string)
           : M (list term) :=
           match c_names with
           | [] => Mret default (* should not happen *)
@@ -150,7 +150,7 @@ Section __.
               if eqb x e_name then
                 @! let s'' <- insert_arg_holes_rest c_names' e_args in
                   ret (e_holes :: s'')
-              else 
+              else
                 @! let s'' <- insert_next_arg c_names' e_args in
                   let x_sym <- gensym in
                   ret (con x_sym [] :: s'')

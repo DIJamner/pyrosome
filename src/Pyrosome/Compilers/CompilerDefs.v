@@ -118,7 +118,7 @@ Section CompileFn.
   | x :: tl, y :: tl' => (x, y) :: combine_r_padded tl tl'
   end.
 
-Arguments combine_r_padded [A B]%type_scope {_} (_ _)%list_scope.
+Arguments combine_r_padded [A B]%_type_scope {_} (_ _)%_list_scope.
   
   (*TODO: notations do a poor job of spacing this*)
   Fixpoint compile (e : term) : tgt_term :=

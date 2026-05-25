@@ -219,13 +219,13 @@ Lemma compile_strengthen_term cmp n cc e
     compile ((n,cc)::cmp) e = compile cmp e.
 Proof.
   induction e; basic_goal_prep; basic_core_crush.
-  my_case Heq (eqb n0 n); basic_goal_prep.
+  destruct (eqb n0 n) eqn:Heq; basic_goal_prep.
   1: basic_core_crush.
   case_match; basic_goal_prep; auto.
   case_match; basic_goal_prep; auto.
   f_equal.
   f_equal.
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; basic_core_crush.
 Qed.
 Hint Rewrite compile_strengthen_term : lang_core.
@@ -247,7 +247,7 @@ Lemma compile_strengthen_sort cmp n cc e
     compile_sort ((n,cc)::cmp) e = compile_sort cmp e.
 Proof.
   destruct e; basic_goal_prep; basic_core_crush.
-  my_case Heq (eqb v n); basic_goal_prep.
+  destruct (eqb v n) eqn:Heq; basic_goal_prep.
   1: basic_core_crush.
   case_match; basic_goal_prep; auto.
   case_match; basic_goal_prep; auto.

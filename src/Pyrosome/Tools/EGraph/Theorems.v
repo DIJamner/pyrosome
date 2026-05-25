@@ -871,7 +871,7 @@ Section WithVar.
     Proof. eauto using wf_term_con_inv'. Qed.
 
     (*TODO: move*)    
-    Arguments interprets_to {symbol}%type_scope m f args%list_scope d.
+    Arguments interprets_to {symbol}%_type_scope m f args%_list_scope d.
     
     Definition args_in_instance (args : list _)
       (i : V_map lang_model.(domain _)) (r : list V) : Prop :=
@@ -2373,7 +2373,7 @@ Section WithVar.
         TODO: ctx_to_clauses lemma
         eqb_case n sort_of.
         {
-          revert dependent l1.
+          generalize dependent l1.
           TODO: stateT writer tactics?
           Or, as thought, change to reuse more code first?
           TODO: some kind of nested induction?
@@ -2522,7 +2522,7 @@ Section WithVar.
     How to define?
 
      *)
-    Arguments uf_rel {idx}%type_scope {idx_map rank_map} uf1 _ _.
+    Arguments uf_rel {idx}%_type_scope {idx_map rank_map} uf1 _ _.
 
     (*TODO: move to FunctionalDB.v*)
     (* TODO: invariant currently depends on i! Seems undesirable*)

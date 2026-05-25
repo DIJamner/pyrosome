@@ -31,7 +31,7 @@ Section WithVar.
     Context (c : ctx).
 
     (*TODO: move this to the definition*)
-    Arguments eq_sort {V}%type_scope {V_Eqb} l c _ _.
+    Arguments eq_sort {V}%_type_scope {V_Eqb} l c _ _.
 
     Inductive wf_term : term -> sort -> Prop :=
     | wf_term_cong : forall name c' args t s,

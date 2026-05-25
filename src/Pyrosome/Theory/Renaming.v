@@ -285,8 +285,8 @@ Section Injective.
 End Injective.
 
 
-Arguments rename_lang_mono {A B}%type_scope {Eqb_A Eqb_B Eqb_ok_A Eqb_ok_B}
-  [f]%function_scope f_inj [l]%lang_scope _.
+Arguments rename_lang_mono {A B}%_type_scope {Eqb_A Eqb_B Eqb_ok_A Eqb_ok_B}
+  [f]%_function_scope f_inj [l]%_lang_scope _.
 #[export] Hint Resolve rename_lang_mono : lang_core.
 
 

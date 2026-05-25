@@ -47,7 +47,7 @@ Notation "x <$> P" :=
 Fixpoint nth_tail {A} (n: nat) (l : list A) : list A :=
   match n,l with
   | 0,_ => l
-  | S_,[]=> []
+  | S _,[]=> []
   | S n', _::l'=> nth_tail n' l'
   end.
 

@@ -51,7 +51,7 @@ End WithInstance.
 #[export] Hint Resolve gensym_ok : utils.
 
   
-Arguments Infinite_ok V%type_scope {Inf}.
+Arguments Infinite_ok V%_type_scope {Inf}.
  
 #[export] Instance string_infinite : Infinite string :=
   {

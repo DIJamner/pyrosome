@@ -1,4 +1,7 @@
 (* Some basic tests of the egraph machinery *)
+(* native_compute falls back to vm_compute when Rocq is built without
+   the native compiler; silence the resulting environmental warning. *)
+#[local] Set Warnings "-native-compiler-disabled".
 From Stdlib Require Import Lists.List Strings.String.
 Import ListNotations.
 Open Scope list.
@@ -176,13 +179,13 @@ Definition ex2_qset :=
     QueryOpt.build_rule_set string_succ "v0" (idx_map:=string_trie_map) 1000 ex2_query.
 
 
-Arguments run_query {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
-  {idx_trie}%function_scope {analysis_result}%type_scope
-  spaced_list_intersect%function_scope rs n%nat_scope _.
-Arguments run_query' {idx}%type_scope {Eqb_idx} {symbol}%type_scope
-  {symbol_map}%function_scope {symbol_map_plus} {idx_map}%function_scope {idx_map_plus}
-  {idx_trie}%function_scope  {analysis_result}%type_scope rs n%nat_scope _.
+Arguments run_query {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map}%_function_scope {symbol_map_plus} {idx_map}%_function_scope {idx_map_plus}
+  {idx_trie}%_function_scope {analysis_result}%_type_scope
+  spaced_list_intersect%_function_scope rs n%_nat_scope _.
+Arguments run_query' {idx}%_type_scope {Eqb_idx} {symbol}%_type_scope
+  {symbol_map}%_function_scope {symbol_map_plus} {idx_map}%_function_scope {idx_map_plus}
+  {idx_trie}%_function_scope  {analysis_result}%_type_scope rs n%_nat_scope _.
 
 Notation run_query := (run_query (@PosListMap.compat_intersect)).
 Notation run_query' := (run_query').
@@ -480,10 +483,10 @@ Compute (filter (fun p => negb (eqb (fst p) (snd p)))
 *)
 
 
-  Arguments Defs.run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-  idx_zero {symbol}%type_scope {symbol_map}%function_scope symbol_map_plus
-  {idx_map}%function_scope idx_map_plus {idx_trie}%function_scope {analysis_result}%type_scope 
-  {H} spaced_list_intersect%function_scope rebuild_fuel%nat_scope rs _.
+  Arguments Defs.run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
+  idx_zero {symbol}%_type_scope {symbol_map}%_function_scope symbol_map_plus
+  {idx_map}%_function_scope idx_map_plus {idx_trie}%_function_scope {analysis_result}%_type_scope 
+  {H} spaced_list_intersect%_function_scope rebuild_fuel%_nat_scope rs _.
 
   
 

@@ -365,8 +365,8 @@ Section SequentOfStates.
         snd (uncurry comp assumption_inst).
 
   (*TODO: move to the defining file *)
-  Arguments db_remove {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
-    {analysis_result}%type_scope a _.
+  Arguments db_remove {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
+    {analysis_result}%_type_scope a _.
 
   (* Remove the atoms of the assumptions.
      We remove them rather than not adding them in the first place
@@ -1031,11 +1031,11 @@ End Optimize.
 End WithMap.
 
 
-Arguments build_rule_set {idx}%type_scope {Eqb_idx} idx_succ%function_scope idx_zero 
-  {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus} 
-  {idx_map}%function_scope {idx_trie}%function_scope rf rules%list_scope.
+Arguments build_rule_set {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope idx_zero 
+  {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus} 
+  {idx_map}%_function_scope {idx_trie}%_function_scope rf rules%_list_scope.
 
-Arguments QueryOpt.sequent_of_states {idx}%type_scope {Eqb_idx} 
-  {idx_zero} {symbol}%type_scope {symbol_map idx_map}%function_scope
-  {idx_trie}%function_scope {X A}%type_scope {H} 
-  assumptions {B}%type_scope conclusions%function_scope r_fuel.
+Arguments QueryOpt.sequent_of_states {idx}%_type_scope {Eqb_idx} 
+  {idx_zero} {symbol}%_type_scope {symbol_map idx_map}%_function_scope
+  {idx_trie}%_function_scope {X A}%_type_scope {H} 
+  assumptions {B}%_type_scope conclusions%_function_scope r_fuel.

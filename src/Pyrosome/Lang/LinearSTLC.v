@@ -118,8 +118,8 @@ Definition linear_stlc_def : lang :=
 *)
 
 Derive linear_stlc
-       SuchThat (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
-       As linear_stlc_wf.
+       in (elab_lang_ext (linear_exp_subst++linear_value_subst) linear_stlc_def linear_stlc)
+       as linear_stlc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_stlc_entry :=
   lang_entry (elab_lang_implies_wf linear_stlc_wf).

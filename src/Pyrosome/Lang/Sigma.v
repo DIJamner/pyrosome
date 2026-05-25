@@ -28,8 +28,8 @@ Definition sigma_injectivity :=
    ("Sig", ["B"; "A"; "G"])].
 
 Derive sigma
-       SuchThat (wf_lang_ext subst_lang sigma)
-       As sigma_wf.
+       in (wf_lang_ext subst_lang sigma)
+       as sigma_wf.
 Proof.
   setup_lang_interactive.
 

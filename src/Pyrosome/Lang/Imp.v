@@ -66,8 +66,8 @@ Definition ch8_def : lang :=
     ]}.
 
 Derive ch8
-       SuchThat (elab_lang_ext (heap++nat_lang) ch8_def ch8)
-       As ch8_wf.
+       in (elab_lang_ext (heap++nat_lang) ch8_def ch8)
+       as ch8_wf.
 Proof. auto_elab. Qed.
 #[local] Definition ch8_entry :=
   lang_entry (elab_lang_implies_wf ch8_wf).
@@ -136,8 +136,8 @@ Definition ch8_config_def : lang :=
   ]}.
 
 Derive ch8_config
-       SuchThat (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
-       As ch8_config_wf.
+       in (elab_lang_ext (ch8 ++ heap++nat_lang) ch8_config_def ch8_config)
+       as ch8_config_wf.
 Proof.  auto_elab. Qed.
 #[local] Definition ch8_config_entry :=
   lang_entry (elab_lang_implies_wf ch8_config_wf).
@@ -228,8 +228,8 @@ Definition ch8_ectx_def : lang :=
   ]}.
 
 Derive ch8_ectx
-       SuchThat (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
-       As ch8_ectx_wf.
+       in (elab_lang_ext (ch8_config ++ ch8 ++ heap++nat_lang) ch8_ectx_def ch8_ectx)
+       as ch8_ectx_wf.
 Proof.  auto_elab. Qed.
 #[local] Definition ch8_ectx_entry :=
   lang_entry (elab_lang_implies_wf ch8_ectx_wf).
@@ -386,13 +386,13 @@ Ltac clo_eta_cong :=
           try term_refl;[]).
 
 Derive ch8_cc
-       SuchThat (elab_preserving_compiler
+       in (elab_preserving_compiler
                    []
                    target_lang
                    ch8_cc_def
                    ch8_cc
                    (ch8_ectx++ch8_config++ch8++heap++nat_lang))
-       As ch8_cc_preserving.
+       as ch8_cc_preserving.
 Proof.
   (*Note: Automation.auto_elab_compiler doesn't work because the goals take too long to fail. *)
   ElabCompilers.auto_elab_compiler.  

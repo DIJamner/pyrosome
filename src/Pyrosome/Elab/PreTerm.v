@@ -72,17 +72,17 @@ Definition to_ctx := named_map to_sort.
 
 End WithVar.
 
-Arguments pre_var {V}%type_scope _.
-Arguments pre_con {V}%type_scope _ _.
-Arguments pre_scon {V}%type_scope _ _.
+Arguments pre_var {V}%_type_scope _.
+Arguments pre_con {V}%_type_scope _ _.
+Arguments pre_scon {V}%_type_scope _ _.
 
-Arguments of_term {V}%type_scope t.
-Arguments of_sort {V}%type_scope t.
-Arguments of_ctx {V}%type_scope _.
+Arguments of_term {V}%_type_scope t.
+Arguments of_sort {V}%_type_scope t.
+Arguments of_ctx {V}%_type_scope _.
 
-Arguments to_term {V}%type_scope t.
-Arguments to_sort {V}%type_scope t.
-Arguments to_ctx {V}%type_scope _.
+Arguments to_term {V}%_type_scope t.
+Arguments to_sort {V}%_type_scope t.
+Arguments to_ctx {V}%_type_scope _.
 
 Notation prectx V := (named_list V (presort V)).
 

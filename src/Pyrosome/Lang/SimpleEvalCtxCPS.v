@@ -33,14 +33,14 @@ Definition Ectx_cps_def : compiler :=
   end.
 
 Derive Ectx_cps
-       SuchThat (elab_preserving_compiler cps_subst
+       in (elab_preserving_compiler cps_subst
                                           (cps_lang
                                              ++ block_subst
                                              ++ value_subst)
                                           Ectx_cps_def
                                           Ectx_cps
                                           eval_ctx)
-       As Ectx_cps_preserving.
+       as Ectx_cps_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition Ectx_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving Ectx_cps_preserving).

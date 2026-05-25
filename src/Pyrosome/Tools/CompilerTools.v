@@ -56,7 +56,7 @@ Proof.
     (* TODO: add as resolve hint? *)
     apply all_fresh_named_list_lookup_err_in; eauto.
   }
-  my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  destruct (eqb n v) eqn:neq; basic_goal_prep; basic_utils_crush.
   {
     (* TODO: add as resolve hint? *)
     apply all_fresh_named_list_lookup_err_in; eauto.
@@ -80,7 +80,7 @@ Proof.
   f_equal.
   f_equal.
  
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; f_equal; firstorder.
 Qed.
 
@@ -224,7 +224,7 @@ Lemma strengthen_named_list_lookup' {A} (ecmp cmp : named_list A) n
 Proof.
   induction ecmp; basic_goal_prep; basic_utils_crush.
   - eapply strengthen_named_list_lookup; eauto.
-  - my_case neq (eqb n v); basic_goal_prep; basic_utils_crush.
+  - destruct (eqb n v) eqn:neq; basic_goal_prep; basic_utils_crush.
 Qed.
 
 
@@ -241,7 +241,7 @@ Proof.
   f_equal.
   f_equal.
  
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; f_equal; firstorder.
 Qed.
 

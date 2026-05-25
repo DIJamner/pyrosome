@@ -166,7 +166,7 @@ Proof.
 
   (*prove inner induction*)
   clear x x0 H0 H2  case_match_eqn.
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep; basic_core_crush.
 Qed.
 Hint Rewrite compile_term_subst : lang_core.
@@ -277,7 +277,7 @@ Proof.
 
     (*nested induction*)
     clear x x0 H1 H2 H4 H5.
-    revert dependent l.
+    generalize dependent l.
     induction l; basic_goal_prep; basic_core_crush.
   }
   {
@@ -358,7 +358,7 @@ Proof.
 
       (*nested induction*)
       clear x x0 H1 H0 H3 H4.
-      revert dependent l.
+      generalize dependent l.
       induction l; basic_goal_prep; basic_core_crush.
     }
     now auto.

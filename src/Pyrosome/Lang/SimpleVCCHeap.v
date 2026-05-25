@@ -59,10 +59,10 @@ Definition forget_eq_wkn'_def : lang :=
       ]
   ]}.
 Derive forget_eq_wkn'
-       SuchThat (elab_lang_ext value_subst
+       in (elab_lang_ext value_subst
                                forget_eq_wkn'_def
                                forget_eq_wkn')
-       As forget_eq_wkn'_wf.
+       as forget_eq_wkn'_wf.
 Proof. auto_elab. Qed.
 #[local] Definition forget_eq_wkn'_entry :=
   lang_entry (elab_lang_implies_wf forget_eq_wkn'_wf).

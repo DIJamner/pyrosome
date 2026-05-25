@@ -55,8 +55,8 @@ Definition prod_cc_def : lang :=
 
 
 Derive prod_cc
-       SuchThat (elab_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
-       As prod_cc_wf.
+       in (elab_lang_ext (cps_prod_lang ++ block_subst ++value_subst) prod_cc_def prod_cc)
+       as prod_cc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition prod_cc_entry := lang_entry (elab_lang_implies_wf prod_cc_wf).
 #[export] Hint Resolve prod_cc_entry : wf_lang_db.
@@ -105,11 +105,11 @@ Definition cc_lang_def : lang :=
   ]]}.
 
 Derive cc_lang
-  SuchThat (elab_lang_ext (prod_cc ++ cps_prod_lang
+  in (elab_lang_ext (prod_cc ++ cps_prod_lang
                              ++ block_subst ++value_subst)
                                cc_lang_def
                                cc_lang)
-       As cc_lang_wf.
+       as cc_lang_wf.
 Proof. auto_elab. Qed.
 #[local] Definition cc_entry := lang_entry (elab_lang_implies_wf cc_lang_wf).
 #[export] Hint Resolve cc_entry : wf_lang_db.
@@ -137,7 +137,7 @@ Definition subst_cc_def : compiler :=
   end.
 
 Derive subst_cc
-       SuchThat (elab_preserving_compiler []
+       in (elab_preserving_compiler []
                                           (unit_eta
                                              ++ unit_lang
                                              ++ prod_cc
@@ -147,7 +147,7 @@ Derive subst_cc
                                           subst_cc_def
                                           subst_cc
                                           (block_subst++value_subst))
-       As subst_cc_preserving.
+       as subst_cc_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition subst_cc_entry :=
   cmp_entry (elab_compiler_implies_preserving subst_cc_preserving).
@@ -176,10 +176,10 @@ Definition forget_eq_wkn_def : lang :=
       ]
   ]}.
 Derive forget_eq_wkn
-       SuchThat (elab_lang_ext value_subst
+       in (elab_lang_ext value_subst
                                forget_eq_wkn_def
                                forget_eq_wkn)
-       As forget_eq_wkn_wf.
+       as forget_eq_wkn_wf.
 Proof. auto_elab. Qed.
 #[local] Definition forget_eq_wkn_entry :=
   lang_entry (elab_lang_implies_wf forget_eq_wkn_wf).
@@ -189,7 +189,7 @@ Definition cc_bidirectional_rules :=
   ["forget_eq_wkn"; "clo_eta"; "id_emp_forget"; "cmp_snoc"].
 
 Derive prod_cc_compile
-       SuchThat (elab_preserving_compiler subst_cc
+       in (elab_preserving_compiler subst_cc
                                           ( unit_eta
                                              ++ unit_lang
                                              ++ prod_cc
@@ -199,7 +199,7 @@ Derive prod_cc_compile
                                           prod_cc_compile_def
                                           prod_cc_compile
                                           cps_prod_lang)
-       As prod_cc_preserving.
+       as prod_cc_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition prod_cc_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving prod_cc_preserving).
@@ -215,7 +215,7 @@ Definition cc_def : compiler :=
   end.
  
 Derive cc
-       SuchThat (elab_preserving_compiler (prod_cc_compile++subst_cc)
+       in (elab_preserving_compiler (prod_cc_compile++subst_cc)
                                           (cc_lang
                                              ++ forget_eq_wkn
                                              ++ unit_eta
@@ -227,7 +227,7 @@ Derive cc
                                           cc_def
                                           cc
                                           cps_lang)
-       As cc_preserving.
+       as cc_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition cc_cmp_entry :=
   cmp_entry (elab_compiler_implies_preserving cc_preserving).

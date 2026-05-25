@@ -256,8 +256,8 @@ Definition linear_value_subst_def : lang :=
 
 (*TODO: use modern inference procedure *)
 Derive linear_value_subst
-       SuchThat (elab_lang_ext [] linear_value_subst_def linear_value_subst)
-       As linear_value_subst_wf.
+       in (elab_lang_ext [] linear_value_subst_def linear_value_subst)
+       as linear_value_subst_wf.
 Proof. auto_elab. Qed.
 
 #[local] Definition linear_value_entry :=
@@ -302,8 +302,8 @@ Definition linear_exp_subst_def : lang :=
   ]}.
 
 Derive linear_exp_subst
-       SuchThat (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
-       As linear_exp_subst_wf.
+       in (elab_lang_ext linear_value_subst linear_exp_subst_def linear_exp_subst)
+       as linear_exp_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_exp_entry :=
   lang_entry (elab_lang_implies_wf linear_exp_subst_wf).
@@ -336,8 +336,8 @@ Definition linear_block_subst_def : lang :=
   ]}.
 
 Derive linear_block_subst
-       SuchThat (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
-       As linear_block_subst_wf.
+       in (elab_lang_ext linear_value_subst linear_block_subst_def linear_block_subst)
+       as linear_block_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_block_entry :=
   lang_entry (elab_lang_implies_wf linear_block_subst_wf).

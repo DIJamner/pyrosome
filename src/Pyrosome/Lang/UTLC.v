@@ -28,8 +28,8 @@ Definition usubst_def : lang :=
   ]}.
 
 Derive usubst
-       SuchThat (elab_lang_ext (exp_subst++value_subst) usubst_def usubst)
-       As usubst_wf.
+       in (elab_lang_ext (exp_subst++value_subst) usubst_def usubst)
+       as usubst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition usubst_entry :=
   lang_entry (elab_lang_implies_wf usubst_wf).
@@ -59,8 +59,8 @@ Definition utlc_def : lang :=
   ]}.
 
 Derive utlc
-       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) utlc_def utlc)
-       As utlc_wf.
+       in (elab_lang_ext (usubst++exp_subst++value_subst) utlc_def utlc)
+       as utlc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition utlc_entry :=
   lang_entry (elab_lang_implies_wf utlc_wf).

@@ -45,7 +45,7 @@ Section __.
 
 End __.
 
-Arguments dec {A}%type_scope {DecidableEq} s1 s2.
+Arguments dec {A}%_type_scope {DecidableEq} s1 s2.
 
   
 (*TODO: also account for _=_->False *)

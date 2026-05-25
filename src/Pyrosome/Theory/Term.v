@@ -37,6 +37,14 @@ Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
   Qed.
 
 Create HintDb term discriminated.
+
+#[export] Hint Rewrite id_args_nil : term.
+
+#[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite subst_id using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite strengthen_subst using solve[typeclasses eauto] : term.
+#[global] Hint Resolve well_scoped_subst : term.
+
 Ltac basic_term_crush :=
   let x := autorewrite with bool rw_prop inversion utils term in * in
         let y := eauto with bool utils term in
@@ -194,14 +202,14 @@ Proof.
       basic_term_crush.
   }
   {
-    my_case Hn (eqb n v);
+    destruct (eqb n v) eqn:Hn;
       basic_goal_prep;
       basic_term_crush.
     revert l0 H; induction l;
       destruct l0;
       basic_goal_prep;
       basic_term_crush.
-    my_case Ha (term_eqb a t);
+    destruct (term_eqb a t) eqn:Ha;
       basic_goal_prep;
       basic_term_crush.
     2: solve [eauto using term_eqb_refl].
@@ -224,7 +232,7 @@ Proof.
   destruct a;
     destruct b;
     simpl.
-  my_case Hv (eqb v v0);
+  destruct (eqb v v0) eqn:Hv;
     simpl;
     basic_term_crush.
   case_match; basic_goal_prep;
@@ -244,7 +252,7 @@ Definition term_subst (s : subst) e : term :=
 
 Arguments term_subst s !e /.
 
-Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
+Arguments subst_cmp [V]%_type_scope {A}%_type_scope {Substable0} _ _ /.
 
 (* Well-scoped languages
    Written as functions that decide the properties
@@ -358,7 +366,7 @@ Lemma term_subst_assoc : forall s1 s2 a,
 Proof.
   induction a; basic_goal_prep;
     basic_term_crush.
-  revert dependent l;
+  generalize dependent l;
     induction l;
     basic_goal_prep;
     basic_term_crush.
@@ -384,7 +392,7 @@ Proof.
   induction a; basic_goal_prep;
     basic_term_crush.
   f_equal.
-  revert dependent l;
+  generalize dependent l;
     induction l;
     basic_goal_prep;
     basic_term_crush.
@@ -399,7 +407,7 @@ Proof.
   induction a; basic_goal_prep; try case_match;
     basic_term_crush.
 
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep;
     basic_term_crush.
 Qed.
@@ -423,7 +431,7 @@ Proof.
   induction a; basic_goal_prep; try case_match;
     basic_term_crush.
 
-  revert dependent l.
+  generalize dependent l.
   induction l; basic_goal_prep;
     basic_term_crush.
 Qed.
@@ -607,8 +615,8 @@ Definition ctx_eq_dec := list_eq_dec (pair_eq_dec dec sort_eq_dec).
   
 End WithVar.
 
-Arguments var {V}%type_scope _.
-Arguments con {V}%type_scope _ _%list_scope.
+Arguments var {V}%_type_scope _.
+Arguments con {V}%_type_scope _ _%_list_scope.
 
 #[export] Hint Rewrite id_args_nil : term.
 #[export] Hint Rewrite id_args_cons : term.
@@ -660,16 +668,16 @@ Ltac cbn_substs :=
       term_var_map subst_lookup named_list_lookup eqb String.eqb Ascii.eqb Bool.eqb].
 
 
-Arguments ctx_lookup [V]%type_scope {V_Eqb V_default} !c n/.
-Arguments term_var_map [V]%type_scope f !e /.
-Arguments term_subst [V]%type_scope {V_Eqb} s !e /.
-Arguments subst_cmp [V]%type_scope {A}%type_scope {Substable0} _ _ /.
+Arguments ctx_lookup [V]%_type_scope {V_Eqb V_default} !c n/.
+Arguments term_var_map [V]%_type_scope f !e /.
+Arguments term_subst [V]%_type_scope {V_Eqb} s !e /.
+Arguments subst_cmp [V]%_type_scope {A}%_type_scope {Substable0} _ _ /.
 
 
-Arguments ws_term [V]%type_scope args !e/.
-Arguments ws_ctx [V]%type_scope {V_Eqb} !c/.
+Arguments ws_term [V]%_type_scope args !e/.
+Arguments ws_ctx [V]%_type_scope {V_Eqb} !c/.
 Arguments id_args : simpl never.
-Arguments sort_subst [V]%type_scope {V_Eqb} s !t/.
+Arguments sort_subst [V]%_type_scope {V_Eqb} s !t/.
 
 (*Moved out of the module because Coq seems
   to include them at the the top level anyway
@@ -762,12 +770,11 @@ Abort.
 
   Notation "'{{c' }}" :=
     nil
-      (at level 0, format "'[' '{{c'  '}}' ']'", only parsing)
+      (at level 0, only parsing)
     : ctx_scope.
   Notation "'{{c' bd , .. , bd' '}}'" :=
     (cons bd' .. (cons bd nil)..)
-      (at level 0, bd custom ctx_binding at level 100,
-          format "'[' {{c  '[hv' bd ,  '/' .. ,  '/' bd' ']' }} ']'", only parsing) : ctx_scope.
+      (at level 0, bd custom ctx_binding at level 100, only parsing) : ctx_scope.
 
   Notation "bd , .. , bd'" :=
     (cons bd' .. (cons bd nil)..)

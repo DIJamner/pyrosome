@@ -405,7 +405,7 @@ Definition exists_block_def : lang _ :=
   ]}.
 
 Derive exists_block_lang
-  SuchThat (elab_lang_ext (block_param_substs
+  in (elab_lang_ext (block_param_substs
                              ++val_param_substs
                              ++ block_ty_subst
                              ++env_ty_subst
@@ -413,7 +413,7 @@ Derive exists_block_lang
                              ++block_parameterized++val_parameterized
                              ++ty_env_lang)
               exists_block_def exists_block_lang)
-       As exists_block_lang_wf.
+       as exists_block_lang_wf.
 Proof. auto_elab. Qed.
 #[local] Definition exists_block_lang_entry :=
   lang_entry (elab_lang_implies_wf exists_block_lang_wf).
@@ -441,7 +441,7 @@ Definition ir_param_substs_def :=
     (hide_lang_implicits (ir_parameterized++deps) ir_parameterized).
 
 Derive ir_param_substs
-  SuchThat (elab_lang_ext (ir_parameterized
+  in (elab_lang_ext (ir_parameterized
                              ++block_param_substs
                              ++val_param_substs
                              ++block_ty_subst
@@ -452,7 +452,7 @@ Derive ir_param_substs
                              ++ty_env_lang)
               ir_param_substs_def
               ir_param_substs)
-  As ir_param_substs_wf.
+  as ir_param_substs_wf.
 Proof. auto_elab. Qed.
 #[local] Definition ir_param_substs_entry :=
   lang_entry (elab_lang_implies_wf ir_param_substs_wf).
@@ -460,7 +460,7 @@ Proof. auto_elab. Qed.
 
 #[local] Definition cmp' := Eval compute in cps_parameterized.
 Derive exp_ty_subst_cps
-  SuchThat (elab_preserving_compiler
+  in (elab_preserving_compiler
               (id_compiler (val_param_substs
                              ++ val_ty_subst
                               ++env_ty_subst
@@ -478,7 +478,7 @@ Derive exp_ty_subst_cps
               exp_ty_subst_cps_def
               exp_ty_subst_cps
               (exp_param_substs ++ exp_ty_subst))
-  As exp_ty_subst_cps_preserving.
+  as exp_ty_subst_cps_preserving.
 Proof. auto_elab_compiler. Qed.
 #[local] Definition exp_ty_subst_cps_entry :=
   cmp_entry (elab_compiler_implies_preserving exp_ty_subst_cps_preserving).
@@ -640,7 +640,7 @@ Definition exists_cps_def : compiler string :=
   end.
 
 Derive exists_cps
-  SuchThat (elab_preserving_compiler
+  in (elab_preserving_compiler
               (exp_ty_subst_cps
                  ++ id_compiler (val_param_substs
                                    ++ val_ty_subst
@@ -660,7 +660,7 @@ Derive exists_cps
               exists_cps_def
               exists_cps
               exists_lang)
-  As exists_cps_preserving.
+  as exists_cps_preserving.
 Proof.
   (*TODO: takes much longer than legacy auto_elab_compiler (has not terminated). Why?
     Time  1:Automation.auto_elab_compiler.
@@ -800,7 +800,7 @@ Definition tgt_param_substs_def :=
     (hide_lang_implicits (tgt_parameterized++deps) tgt_parameterized).
 
 Derive tgt_param_substs
-  SuchThat (elab_lang_ext (tgt_parameterized
+  in (elab_lang_ext (tgt_parameterized
                              ++block_param_substs
                              ++val_param_substs
                              ++block_ty_subst
@@ -811,7 +811,7 @@ Derive tgt_param_substs
                              ++ty_env_lang)
               tgt_param_substs_def
               tgt_param_substs)
-  As tgt_param_substs_wf.
+  as tgt_param_substs_wf.
 Proof. auto_elab. Qed.
 #[local] Definition tgt_param_substs_entry :=
   lang_entry (elab_lang_implies_wf tgt_param_substs_wf).
@@ -834,7 +834,7 @@ Definition block_ty_subst_cc_def : compiler string :=
   end.
 
 Derive block_ty_subst_cc
-  SuchThat (elab_preserving_compiler
+  in (elab_preserving_compiler
               (id_compiler (ty_subst_lang)
                  ++ cc_parameterized++ty_env_cmp)
               (tgt_param_substs
@@ -850,14 +850,14 @@ Derive block_ty_subst_cc
               block_ty_subst_cc
               (block_param_substs ++ val_param_substs
                  ++ block_ty_subst++env_ty_subst))
-  As block_ty_subst_cc_preserving.
+  as block_ty_subst_cc_preserving.
 Proof. Automation.auto_elab_compiler. Qed.
 #[local] Definition block_ty_subst_cc_entry :=
   cmp_entry (elab_compiler_implies_preserving block_ty_subst_cc_preserving).
 #[export] Hint Resolve block_ty_subst_cc_entry : preserving_db.
 
 Derive exists_cc
-  SuchThat (elab_preserving_compiler
+  in (elab_preserving_compiler
               (block_ty_subst_cc ++id_compiler (ty_subst_lang)
                  ++ cc_parameterized++ty_env_cmp)
               (exists_block_lang
@@ -875,7 +875,7 @@ Derive exists_cc
               exists_cc_def
               exists_cc
               exists_block_lang)
-  As exists_cc_preserving.
+  as exists_cc_preserving.
 Proof.
   auto_elab_compiler.
   { Automation.by_reduction; Matches.t'. }

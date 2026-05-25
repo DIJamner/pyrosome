@@ -20,7 +20,7 @@ Section __.
 End __.
 
 
-Arguments default {A}%type_scope {d}.
+Arguments default {A}%_type_scope {d}.
 
 #[export] Instance string_default : WithDefault string := "".
 #[export] Instance unit_default : WithDefault unit := tt.

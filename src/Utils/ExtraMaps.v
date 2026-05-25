@@ -155,6 +155,6 @@ Section __.
 
 End __.
 
-Arguments map_intersect {key}%type_scope {m}%function_scope {map_plus} {A B C}%type_scope _%function_scope _ _.
-Arguments map_fold_values {key}%type_scope {m}%function_scope {map_plus} {A B}%type_scope _%function_scope _ _.
-Arguments map_map {key}%type_scope {m}%function_scope {map_plus} {A B}%type_scope _%function_scope _.
+Arguments map_intersect {key}%_type_scope {m}%_function_scope {map_plus} {A B C}%_type_scope _%_function_scope _ _.
+Arguments map_fold_values {key}%_type_scope {m}%_function_scope {map_plus} {A B}%_type_scope _%_function_scope _ _.
+Arguments map_map {key}%_type_scope {m}%_function_scope {map_plus} {A B}%_type_scope _%_function_scope _.
