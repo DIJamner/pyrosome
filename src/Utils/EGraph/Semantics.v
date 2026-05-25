@@ -6,7 +6,7 @@ From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
 Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind.
+From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind VC.
 From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.
@@ -479,6 +479,52 @@ Abort.
   Inductive le (n : idx) : idx -> Prop :=
     le_n : le n n | le_S : forall m, le n m -> le n (idx_succ m).
 
+  
+  Notation union_find := (union_find idx (idx_map idx) (idx_map nat)).
+
+  Definition worklist_entry_ok (equiv : union_find) ent :=
+    match ent with
+    | union_repair _ old_idx new_idx improved_new_analysis =>
+        uf_rel_PER _ _ _ equiv old_idx new_idx
+    | analysis_repair _ i => True
+    end.
+
+  (* Two atoms have the same canonical representation in [e] iff they
+     share a function symbol and their args/ret are pointwise equivalent
+     in [e]'s union-find. *)
+  Definition atom_canonical_equiv (e : instance) (a1 a2 : atom) : Prop :=
+    a1.(atom_fn) = a2.(atom_fn)
+    /\ all2 (uf_rel_PER _ _ _ e.(equiv)) a1.(atom_args) a2.(atom_args)
+    /\ uf_rel_PER _ _ _ e.(equiv) a1.(atom_ret) a2.(atom_ret).
+
+  (* [a] need not literally be in [e.(db)]; it is sufficient that some
+     atom with the same canonical representation is. *)
+  Definition atom_in_egraph_up_to_equiv (a : atom) (e : instance) : Prop :=
+    exists a', atom_canonical_equiv e a a' /\ atom_in_egraph a' e.
+
+  (* TODO: is this record needed? other fields may not be necessary *)
+  Record egraph_ok (e : instance) : Prop :=
+    {
+      egraph_equiv_ok : exists roots, union_find_ok lt e.(equiv) roots;
+      worklist_ok : all (worklist_entry_ok e.(equiv)) e.(worklist);
+      (* For every atom [a] recorded as a parent, there must exist some
+         canonically-equivalent atom in the database. This is weaker than
+         requiring [atom_in_egraph a e] directly: db_remove followed by
+         canonicalize+update_entry replaces a parent atom with a
+         canonically-equivalent one without scrubbing the parents map. *)
+      parents_ok : forall x s, map.get e.(parents) x = Some s ->
+                             all (fun a => atom_in_egraph_up_to_equiv a e) s;
+      (* Every idx appearing in the db (as an [atom_arg] or [atom_ret])
+         is a key in the union-find. Needed by [update_entry] to call
+         [union_sound] with values returned by [db_lookup]: without this,
+         [Sep.has_key] for the looked-up [atom_ret] cannot be recovered
+         from [atom_in_db] alone. *)
+      db_idxs_in_equiv : forall a, atom_in_db a e.(db) ->
+                                   all (fun i => Sep.has_key i e.(equiv).(parent))
+                                       a.(atom_args)
+                                   /\ Sep.has_key a.(atom_ret) e.(equiv).(parent);
+    }.
+
   Section ForModel.
 
     Context m (idx_interpretation : idx_map m.(domain)).
@@ -486,13 +532,6 @@ Abort.
     Local Notation atom_sound_for_model :=
       (atom_sound_for_model m idx_interpretation).
 
-    Definition worklist_entry_sound e :=
-      match e with
-      | union_repair _ old_idx new_idx improved_new_analysis =>
-          eq_sound_for_model m idx_interpretation old_idx new_idx
-      | analysis_repair _ i => True (* these don't affect soundness of the egraph *)
-      end.
-    
     (*TODO: move to defining file*)
     Arguments parent {idx}%type_scope {idx_map rank_map} u.
     
@@ -513,38 +552,28 @@ Abort.
            *)
           uf_rel_PER _ _ _ e.(equiv) i1 i2 ->
           eq_sound_for_model m idx_interpretation i1 i2;
-        parents_interpretation :
-        (* Parents do not have to exist in the egraph (and may not, during rebuilding)
-           but they must be valid in the model or rebuilding is unsound.
-         *)
-        forall i l, map.get e.(parents) i = Some l -> all atom_sound_for_model l;
-        worklist_sound : all worklist_entry_sound e.(worklist)
       }.
+    
+    Definition worklist_entry_sound e :=
+      match e with
+      | union_repair _ old_idx new_idx improved_new_analysis =>
+          eq_sound_for_model m idx_interpretation old_idx new_idx
+      | analysis_repair _ i => True (* these don't affect soundness of the egraph *)
+      end.    
 
   End ForModel.
+  
 
-  (* TODO: is exists right?
+  (* Todo: is exists right?
      Possibly: f is probably sufficiently unique up to equivalence
    *)
   Definition egraph_sound_for_model m e : Prop :=
-    exists f, egraph_sound_for_interpretation m f e.
+    egraph_ok e /\ exists f, egraph_sound_for_interpretation m f e.
 
-  (* TODO: is this record needed? other fields may not be necessary *)
-  Record egraph_ok (e : instance) : Prop :=
-    {
-      egraph_equiv_ok : exists roots, union_find_ok lt e.(equiv) roots;
-      (* TODO: not an invariant that parents exist?
-           Can be broken in many places.
-           What is the invariant?
-           - that the parent could exist
-       *)
-    }.
-
-  Record egraph_sound e m : Prop :=
-    {
-      sound_egraph_ok :> egraph_ok e;
-      sound_egraph_for_model : egraph_sound_for_model m e;
-    }.
+  (* parents_interpretation and worklist_sound moved below to where
+     [model_ok m] is in scope, since the relaxed [parents_ok] requires
+     [interprets_to_preserved] to lift atom soundness across canonical
+     equivalence. *)
 
   Context (spaced_list_intersect
              (*TODO: nary merge?*)
@@ -554,12 +583,30 @@ Abort.
               idx_trie B).
 
 
-  Hint Rewrite @map.get_empty : utils.  
+  Hint Rewrite @map.get_empty : utils.
+
+  (*TODO: move *)
+  Lemma union_find_empty_ok
+    : union_find_ok lt (empty (WithDefault idx) (idx_map idx) (idx_map nat) idx_zero) [].
+  Proof.
+    constructor; cbn; eauto.
+    1:apply empty_forest_rooted.
+    all: basic_goal_prep; basic_utils_crush.
+    rewrite has_key_empty in H; eauto; tauto.
+  Qed.
   
   Theorem empty_sound_for_interpretation m
     (*: egraph_sound (empty_egraph idx_zero analysis_result) m.*)
-    : egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
+    : egraph_ok (empty_egraph idx_zero _) /\
+      egraph_sound_for_interpretation m map.empty (empty_egraph idx_zero _).
   Proof.
+    split.
+    { constructor; cbn; auto.
+      - exists []; cbn; apply union_find_empty_ok.
+      - intros; basic_utils_crush.
+      - intros a Hin.
+        unfold atom_in_db in Hin.
+        rewrite map.get_empty in Hin. cbn in Hin. tauto. }
     constructor; cbn; try tauto;
       unfold atom_in_egraph, atom_in_db;
       basic_goal_prep;
@@ -567,28 +614,20 @@ Abort.
       basic_goal_prep;
       try tauto;
       try congruence.
-    {
-      exfalso; eapply PER_empty; try eassumption.
-      basic_goal_prep;
-        basic_utils_crush.
-    }
+    exfalso; eapply PER_empty; try eassumption.
+    basic_goal_prep; basic_utils_crush.
   Qed.
-
   
   Lemma has_key_empty A k
     : Sep.has_key k (map.empty : idx_map A) <-> False.
   Proof. clear idx_succ. unfold Sep.has_key; basic_utils_crush. Qed.
   Hint Rewrite has_key_empty : utils.
   
-  Theorem empty_sound m : egraph_sound (empty_egraph idx_zero analysis_result) m.
+  Theorem empty_sound m : egraph_sound_for_model m (empty_egraph idx_zero analysis_result).
   Proof.
-    unfold empty_egraph.
-    constructor.
-    { cbn; do 3 econstructor; basic_goal_prep; basic_utils_crush.
-      { apply empty_forest_rooted. }
-    }
-    intros; exists map.empty.
-    apply empty_sound_for_interpretation.
+    unfold empty_egraph, egraph_sound_for_model.
+    destruct (empty_sound_for_interpretation m) as [Hok Hsound].
+    split; [exact Hok | exists map.empty; exact Hsound].
   Qed.
   
   Notation saturate_until' := (saturate_until' idx_succ idx_zero (spaced_list_intersect)).
@@ -703,33 +742,30 @@ Abort.
   Proof.
     clear idx_succ idx_zero.
     revert l2; induction l1; destruct l2;
-      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
-    { eapply IHl1; eauto. }
-    { eapply IHl1; eauto. } 
-    { eapply IHl1; eauto. }
+      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush;
+      eapply IHl1; eauto.
   Qed.
-  
+
   Lemma all2_Is_Some_satisfying_r A B (R : A -> B -> Prop) l1 l2
       : all2 (fun x y => y <$> (fun y' => R x y')) l1 l2
         <-> option_all l2 <$> (fun l2' => all2 R l1 l2').
   Proof.
     clear idx_succ idx_zero.
     revert l1; induction l2; destruct l1;
-      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush.
-    { eapply IHl2; eauto. }
-    { eapply IHl2; eauto. } 
-    { eapply IHl2; eauto. }
+      basic_goal_prep; (repeat case_match; basic_goal_prep); basic_utils_crush;
+      eapply IHl2; eauto.
   Qed.
 
   Lemma args_rel_interpretation m interp e
-    : egraph_sound_for_interpretation m interp e ->
+    : egraph_ok e /\ egraph_sound_for_interpretation m interp e ->
       forall args1 args2,
         all2 (uf_rel_PER _ _ _ e.(equiv)) args1 args2 ->
         option_relation (all2 m.(domain_eq)) (list_Mmap (map.get interp) args1)
           (list_Mmap (map.get interp) args2).
   Proof.
-    destruct e,1; cbn in *.
-    clear atom_interpretation0 parents_interpretation0.
+    intros [_ Hsnd].
+    destruct e, Hsnd; cbn in *.
+    clear atom_interpretation0.
     unfold SomeRel.
     induction args1;
       destruct args2;
@@ -765,7 +801,7 @@ Abort.
     case_match; cbn in *; tauto.
   Qed.
   
-  Definition atom_rel (equiv : union_find idx (idx_map idx) (idx_map nat)) (a1 a2 : atom) : Prop :=
+  Definition atom_rel (equiv : union_find) (a1 a2 : atom) : Prop :=
     a1.(atom_fn) = a2.(atom_fn)
     /\ all2 (uf_rel _ _ _ equiv) a1.(atom_args) a2.(atom_args)
     /\ uf_rel _ _ _ equiv a1.(atom_ret) a2.(atom_ret).
@@ -810,135 +846,97 @@ Abort.
     unfold iff2 in *; firstorder.
   Qed.
   
-  Lemma state_triple_list_Mfoldl A B f l P acc
-    : (forall (acc : B) (l1 : list A) (a : A) (l2 : list A),
-          l = l1 ++ a :: l2 ->
-          state_triple
-            (fun e : instance => P (a :: l2) acc e)
-            (f acc a)
-            (fun p => P l2 (fst p) (snd p))) ->
-      state_triple (fun e => P l acc e) (list_Mfoldl f l acc)
-        (fun p => P [] (fst p) (snd p)).
-  Proof.
-    revert acc.
-    induction l.
-    {
-      cbn; intros.
-      eapply state_triple_wkn_ret.
-      basic_goal_prep; subst.
-      basic_utils_crush.
-    }
-    {
-      cbn [all list_Mfoldl]; intros; break.
-      eapply state_triple_bind.
-      { eapply H with (l1:=[]); eauto. }
-      unfold curry.
-      intro b.
-      cbn.
-      eapply IHl;
-        basic_goal_prep.
-      eapply H with (l1:= a::l1).
-      basic_utils_crush.
-    }
-  Qed.
-
   Context `{analysis idx symbol analysis_result}.
+
+  (*TODO: move*)
+  Record forall_nonempty {A} P Q : Prop :=
+    {
+      fne_elt : A;
+      fne_elt_in : P fne_elt;
+      fne_all : forall x, P x -> Q x;
+    }.
+
+  Notation "'forall_ne' p | P , Q" :=
+    (forall_nonempty (fun p => P) (fun p => Q))
+      (at level 200, p binder).
+
+  Section __.
+    Context {key value : Type} {map : map.map key value}.
     
+    Definition ne_set_maps_to (s1 s2 : map -> Prop) := 
+      forall_ne i' | s2 i', exists i, s1 i /\ map.extends i' i.
+    
+    Definition upwards_closed P : Prop :=
+      forall s s', P s -> ne_set_maps_to s s' -> P s'.
+    
+    Lemma map_extends_trans 
+      (m1 m2 m3 : map)
+      : map.extends m1 m2 -> map.extends m2 m3 -> map.extends m1 m3.
+    Proof using. clear; unfold map.extends; intuition eauto. Qed.
 
-  Definition monotone {A} P : Prop :=
-    (forall i i' : idx_map A, map.extends i i' -> P i' -> P i).
+    Lemma ne_set_maps_to_trans s1 s2 s3
+      : ne_set_maps_to s1 s2 ->
+        ne_set_maps_to s2 s3 ->
+        ne_set_maps_to s1 s3.
+    Proof.
+      clear idx_zero idx_succ.
+      unfold ne_set_maps_to.
+      intros [] [].
+      econstructor; eauto.
+      intros.
+      eapply fne_all0 in H0; break.
+      eapply fne_all in H0; break.
+      eexists; intuition eauto using map_extends_trans.
+    Qed.
 
-  Definition monotone1 {A B} (P : _ -> B -> _) : Prop :=
-    (forall a (i i' : idx_map A), map.extends i i' -> P i' a -> P i a).
+    
+    Lemma ne_set_maps_to_refl x P
+      : P x -> ne_set_maps_to P P.
+    Proof.
+      clear idx_succ idx_zero.
+      econstructor; eauto.
+      intros.
+      eexists; intuition eauto using Properties.map.extends_refl.
+    Qed.
+    
+  End __.
 
-  Definition monotone2 {A B C} (P : _ -> B -> C -> _) : Prop :=
-    (forall a b (i i' : idx_map A), map.extends i i' -> P i' a b -> P i a b).
-
-  Definition monotone3 {A B C D} (P : _ -> B -> C -> D -> _) : Prop :=
-    (forall a b c (i i' : idx_map A), map.extends i i' -> P i' a b c -> P i a b c).
+  Context (m : model).
   
-  Definition monotone4 {A B C D E} (P : _ -> B -> C -> D -> E -> _) : Prop :=
-    (forall a b c d (i i' : idx_map A), map.extends i i' -> P i' a b c d -> P i a b c d).
-  
-  Lemma monotone2_fix_l {A B C} (P : idx_map A -> B -> C -> _) x
-    : monotone2 P ->
-      monotone1 (fun i => P i x).
-  Proof.
-    unfold monotone2, monotone1.
-    basic_goal_prep.
-    eapply H0; eauto.
-  Qed.
+  #[local] Notation abs_set := (idx_map (domain m) -> Prop).
 
-  
-  Definition state_sound_for_model {A} (m : model) i
-    (s : state instance A) Post :=
-    state_triple (Sep.and1 egraph_ok (egraph_sound_for_interpretation m i)) s
-      (*TODO: make sure that i' can depend on x *)
-      (fun x => exists i', (Post i' (fst x))
-                           /\ egraph_ok (snd x)
-                           /\ egraph_sound_for_interpretation m i' (snd x)
-                           /\ map.extends i' i).
+  #[local] Notation denote e :=
+    (fun i => egraph_sound_for_interpretation m i e).
 
+
+  (*TODO: move*)
   Hint Resolve Properties.map.extends_refl : utils.
   
-  Lemma worklist_entry_sound_mono m
-    : monotone1 (worklist_entry_sound m).
-  Proof.
-    clear idx_zero idx_succ.
-    intros x ? ?.
-    destruct x; basic_goal_prep; auto.
-    revert H1.
-    unfold eq_sound_for_model, Is_Some_satisfying in *; case_match; try tauto.
-    case_match; try tauto.
-    eapply H0 in case_match_eqn, case_match_eqn0.
-    rewrite case_match_eqn, case_match_eqn0.
-    auto.
-  Qed.
-        
-  Lemma pull_worklist_sound m i
-    : state_sound_for_model m i
-        (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result) 
-        (fun i' wl => i = i' /\ all (worklist_entry_sound m i) wl).
-  Proof.
-    clear idx_zero idx_succ.
-    cbv -[map.rep domain map.get all worklist_entry_sound map.extends];
-      intros; break.
-    {
-      eexists; intuition eauto; destruct e; cbn in *.
-      { destruct H1; basic_utils_crush. }
-      { destruct H0; constructor; cbn in *; eauto with utils. }
-      { destruct H1; constructor; cbn in *; intuition (cbn; eauto). }
-      { basic_utils_crush. }
-    } 
-  Qed.
+  From Stdlib Require Import Logic.PropExtensionality
+    Logic.FunctionalExtensionality.
 
-  Lemma map_extends_trans {key value : Type} {map : map.map key value} (m1 m2 m3 : map)
-    : map.extends m1 m2 -> map.extends m2 m3 -> map.extends m1 m3.
-  Proof using. clear; unfold map.extends; intuition eauto. Qed.
-
-  Lemma state_sound_for_model_bind A B m i c P Q (f : A -> _ B)
-    : state_sound_for_model m i c P ->
-      (forall (a:A) i', map.extends i' i ->
-                        P i' a ->
-                        state_sound_for_model m i' (f a) Q) ->
-      state_sound_for_model m i (@! let p <- c in (f p)) Q.
+  
+  Lemma set_ext A (S S' : A -> Prop)
+    : (forall x, S x <-> S' x) -> S = S'.                                        
   Proof.
-    clear idx_succ idx_zero.
-    basic_goal_prep.
-    intros; auto.
-    intros e He.
-    specialize (H0 e He).
-    repeat basic_goal_prep.
-    destruct (c e) eqn:Hce.
-    repeat basic_goal_prep.
-    clear c Hce.
-    eapply H1 in H0; eauto with utils; clear H1.
-    
-    specialize (H0 i0).
-    unfold Sep.and1 in *; intuition break.
-    eexists; intuition eauto using map_extends_trans.
+    intros.
+    eapply functional_extensionality; intros.
+    eapply propositional_extensionality; eauto.
   Qed.
+  
+  Lemma set_pred_ext A (S S' : A -> Prop) (P : (A -> Prop) -> Prop)
+    : (forall x, S x <-> S' x) -> P S -> P S'.                                        
+  Proof.
+    intros.
+    erewrite <- set_ext; try eassumption.
+  Qed.
+  
 
+
+
+  
+          
+  (*
   Lemma monotone1_all A m (Pmono : _ -> A -> _)
     : monotone1 Pmono ->
       monotone1 (fun i' : idx_map (domain m) => all (Pmono i')).
@@ -950,169 +948,27 @@ Abort.
       basic_utils_crush.
   Qed.
   Hint Resolve monotone1_all : utils.
-  
-  Lemma state_sound_for_model_Mmap A B m i P_const P_elt l (f : A -> _ B) 
-    : (forall (a:A) i', In a l ->
-                        map.extends i' i ->
-                        P_const i' ->
-                        state_sound_for_model m i' (f a)
-                          (fun i' a => P_const i' /\ P_elt i' a)) ->
-      P_const i ->
-      monotone1 P_elt ->
-      state_sound_for_model m i (list_Mmap f l)
-        (fun i' l => P_const i' /\ all (P_elt i') l).
-  Proof.
-    cleanup_context.
-    revert i.
-    induction l.
-    {
-      intros.
-      eapply state_triple_wkn_ret;
-        unfold Sep.and1 in *;
-        basic_goal_prep; subst;
-        eexists; cbn; intuition eauto with utils.
-    }
-    {
-      intros.
-      cbn [list_Mmap].
-      eapply state_sound_for_model_bind; eauto using monotone1_all.
-      {
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-      intros.
-      eapply state_sound_for_model_bind; eauto using monotone1_all.
-      {
-        eapply IHl; auto.
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply H0.
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply map_extends_trans; eauto.
-      }
-      {
-        intros.
-        eapply state_triple_wkn_ret;
-          unfold Sep.and1 in *;
-          basic_goal_prep; subst;
-          eexists; intuition eauto using Properties.map.extends_refl.
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-    }
-  Qed.
+   *)
   
 
-  
-  Lemma ret_sound_for_model A m i (x:A)
-    : state_sound_for_model m i (Mret x) (fun i' a => i = i' /\ a = x).
-  Proof.
-    unfold state_sound_for_model, Sep.and1; basic_goal_prep; basic_utils_crush.
-    intros ? ?.
-    eexists; basic_goal_prep; basic_utils_crush.
-  Qed.
-  
-  Lemma ret_sound_for_model' A m i (x:A) P
-    : P i x ->
-      state_sound_for_model m i (Mret x) P.
-  Proof.
-    clear idx_succ idx_zero.
-    unfold state_sound_for_model, monotone1, Sep.and1; basic_goal_prep; basic_utils_crush.
-    intros ? ?.
-    eexists; basic_goal_prep; basic_utils_crush.
-  Qed.
-  
-  Lemma state_sound_for_model_Mmap_dep A B m i P_const P_elt l (f : A -> _ B) 
-    : (forall (a:A) i', In a l ->
-                        map.extends i' i ->
-                        P_const i' ->
-                        state_sound_for_model m i' (f a)
-                          (fun i' a' => P_const i' /\ P_elt a i' a')) ->
-      P_const i ->
-      (forall a, monotone1 (P_elt a)) ->
-      state_sound_for_model m i (list_Mmap f l)
-        (fun i' l' => P_const i' /\ all2 (fun a => P_elt a i') l l').
-  Proof.
-    cleanup_context.
-    revert i.
-    induction l.
-    {
-      intros.
-      eapply state_triple_wkn_ret;
-        unfold Sep.and1 in *;
-        basic_goal_prep; subst;
-        eexists; cbn; intuition eauto with utils.
-    }
-    {
-      intros.
-      cbn [list_Mmap].
-      eapply state_sound_for_model_bind; eauto using monotone1_all.
-      {
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-      intros.
-      eapply state_sound_for_model_bind; eauto using monotone1_all.
-      {
-        eapply IHl; auto.
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply H0.
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply map_extends_trans; eauto.
-      }
-      {
-        intros.
-        eapply ret_sound_for_model'; eauto with utils.
-        {
-          basic_goal_prep; intuition eauto.
-          eapply H2; eauto.
-        }
-      }
-    }
-  Qed.
-  
-  Lemma const_monotone1 A B
-    : monotone1 (fun (_ : idx_map A) (_ : B) => True).
-  Proof. repeat intro; auto. Qed.
-  Hint Resolve const_monotone1 : utils.
-  
-  Lemma state_sound_for_model_Miter A B m i (P : _ -> _ -> Prop)
-    l (f : A -> state instance B) 
-    : (forall (a:A) i', In a l ->
-                        map.extends i' i ->
-                        P i' tt ->
-                        state_sound_for_model m i' (f a) (fun i'' _ => P i'' tt)) ->
-      P i tt ->
-      state_sound_for_model m i (list_Miter f l) P.
-  Proof.
-    clear idx_succ idx_zero.
-    revert i.
-    induction l.
-    { intros; eapply ret_sound_for_model'; eauto with utils. }
-    {
-      intros.
-      cbn [list_Miter].
-      eapply state_sound_for_model_bind.
-      {
-        eapply H0;basic_goal_prep;
-          basic_utils_crush.
-      }
-      {
-        intros.
-        eapply IHl; eauto.        
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply H0.
-        all:basic_goal_prep;
-          basic_utils_crush.
-        eapply map_extends_trans; eauto.
-      }
-    }
-  Qed.
 
+  
+
+  Definition pure P {A} (_ : A) : Prop := P.
+
+  Definition forall_lift {A B} (P : B -> Prop) (f : A -> B) : Prop :=
+    forall a, P (f a).
+
+
+  (* Mmap requires monotonicity of [P_elt] under interpretation
+     extension: when we process the head, we produce [P_elt i b] for
+     some [i]; subsequent recursive iterations may refine the
+     interpretation to [i']. The user must supply this monotonicity
+     so the head's P_elt fact survives the tail. *)
+
+
+
+  (*
   Lemma eq_sound_monotone m
     : monotone2 (eq_sound_for_model m).
   Proof using.
@@ -1130,6 +986,7 @@ Abort.
     rewrite Hb in *.
     cbn; auto.
   Qed.
+   *)
 
   
   Lemma find_next_const x u u' i0
@@ -1171,46 +1028,115 @@ Abort.
     exact H.
   Qed.
   
-  Lemma find_sound m i x
-    : Sep.has_key x i ->
-      state_sound_for_model m i (find x) (fun i' a => i = i' /\ eq_sound_for_model m i x a).
+  Lemma egraph_sound_for_interpretation_iff_equiv i g1 g2 l
+    : g1.(db) = g2.(db) ->
+      union_find_ok lt g1.(equiv) l ->
+      union_find_ok lt g2.(equiv) l ->
+      (iff2 (limit (parent_rel _ _ g1.(equiv).(parent)))
+         (limit (parent_rel _ _ g2.(equiv).(parent)))) ->
+      g1.(parents) = g2.(parents) ->
+      g1.(worklist) = g2.(worklist) ->
+      (egraph_ok g1 /\ egraph_sound_for_interpretation m i g1)
+      <-> (egraph_ok g2 /\ egraph_sound_for_interpretation m i g2).
   Proof.
-    cleanup_context.
-    unfold find.
+    intros Hdb Huf1 Huf2 Hlim Hpar Hwl.
+    pose proof Huf1 as [Hf1 ? ? ? ?].
+    pose proof Huf2 as [Hf2 ? ? ? ?].
+    cbn in Hf1, Hf2.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hkey : forall x, Sep.has_key x (parent g1.(equiv))
+                             <-> Sep.has_key x (parent g2.(equiv))).
     {
-      intros ? ? ?.
-      case_match; cbn.
-      unfold Sep.and1 in *; break.
-      destruct H1; break.
-      pose proof case_match_eqn.
-      eapply find_spec in case_match_eqn;
-        try Lia.lia; eauto.
-      2:{ eapply interpretation_exact; eauto. }
-      break.
-      eexists; intuition eauto with utils.
-      {
-        eapply rel_interpretation; eauto.
-        eapply H7 in H6.
-        eapply trans_PER_subrel; eauto.
-      }
-      { constructor; eauto. }
-      {
-        destruct H2; constructor; basic_goal_prep; intuition eauto.
-        {
-          eapply interpretation_exact0 in H2.
-          eapply find_preserves_domain in H3; eauto.
-          eapply H3; eauto.
-        }
-        {
-          eapply rel_interpretation0; eauto.
-          eapply trans_to_PER_natural; eauto.
-        }
-      }
+      intro x.
+      rewrite (@forest_root_limit _ _ _ _ _ _ default lt_trans_nat _ _ Hf1 x).
+      rewrite (@forest_root_limit _ _ _ _ _ _ default lt_trans_nat _ _ Hf2 x).
+      split; intros (r & Hin & Hl); exists r; intuition (try apply Hlim; auto).
     }
+    assert (HPER : iff2 (uf_rel_PER _ _ _ g1.(equiv))
+                        (uf_rel_PER _ _ _ g2.(equiv))).
+    {
+      unfold uf_rel_PER.
+      intros x y.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat _ _ Hf1 x y) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat _ _ Hf2 x y) as HP2.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim; auto).
+    }
+    split; intros [He_ok He]; destruct He as [Hwf Hexact Hatom Hrel];
+      destruct He_ok as [Hg_eq Hg_wl Hg_par Hg_db];
+      split; [| constructor; eauto | | constructor; eauto].
+    - constructor.
+      + exists l; assumption.
+      + rewrite <- Hwl.
+        eapply all_wkn; [|exact Hg_wl].
+        intros [old new improved | i'] _ He; cbn in *; auto.
+        apply HPER; assumption.
+      + rewrite <- Hpar.
+        intros x s Hg.
+        pose proof (Hg_par _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv.
+        exists aa; split.
+        * split; [exact Hfn|]. split.
+          -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
+          -- apply HPER; exact Hret.
+        * unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha_aa.
+      + intros a Ha.
+        rewrite <- Hdb in Ha.
+        destruct (Hg_db _ Ha) as [Hargs Hret].
+        split; [|apply Hkey; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey; assumption.
+    - intros x Hi. apply Hkey. apply Hexact. exact Hi.
+    - intros a Ha.
+      apply Hatom. unfold atom_in_egraph in *. rewrite Hdb. exact Ha.
+    - intros i1 i2 Hr.
+      apply Hrel. apply HPER. exact Hr.
+    - constructor.
+      + exists l; assumption.
+      + rewrite Hwl.
+        eapply all_wkn; [|exact Hg_wl].
+        intros [old new improved | i'] _ He; cbn in *; auto.
+        apply HPER; assumption.
+      + rewrite Hpar.
+        intros x s Hg.
+        pose proof (Hg_par _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv.
+        exists aa; split.
+        * split; [exact Hfn|]. split.
+          -- eapply all2_impl; [|exact Hargs]. intros; apply HPER; auto.
+          -- apply HPER; exact Hret.
+        * unfold atom_in_egraph in *. rewrite Hdb. exact Ha_aa.
+      + intros a Ha.
+        rewrite Hdb in Ha.
+        destruct (Hg_db _ Ha) as [Hargs Hret].
+        split; [|apply Hkey; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey; assumption.
+    - intros x Hi. apply Hkey. apply Hexact. exact Hi.
+    - intros a Ha.
+      apply Hatom. unfold atom_in_egraph in *. rewrite <- Hdb. exact Ha.
+    - intros i1 i2 Hr.
+      apply Hrel. apply HPER. exact Hr.
   Qed.
 
-  (*TODO: this should be implied by model_ok*)
-  Context m `{model_ok m}.
+  Definition P_guarantees
+    {A} (P : (A -> Prop) -> Prop) Q : Prop :=
+    forall s, P s -> forall i, s i -> Q i.
+  
+
+  Context `{model_ok m}.
   
   Lemma eq_sound_for_model_trans i x y z
     : eq_sound_for_model m i x y ->
@@ -1233,126 +1159,67 @@ Abort.
     repeat case_match; tauto.
   Qed.
   Hint Resolve eq_sound_has_key_r : utils.
-  
-  Lemma canonicalize_worklist_entry_sound i a
-    : (worklist_entry_sound m i a) ->
-      state_sound_for_model m i
-        (canonicalize_worklist_entry idx Eqb_idx symbol
-           symbol_map idx_map idx_trie
-           analysis_result a)
-        (fun i' a => i = i' /\ worklist_entry_sound m i' a).
-  Proof.
-    clear idx_zero idx_succ.
-    intro.
-    destruct a; cbn -[Mbind].
-    2:{ eapply ret_sound_for_model'; eauto using worklist_entry_sound_mono. }
-    {
-      eapply state_sound_for_model_bind; eauto using worklist_entry_sound_mono.
-      { eapply find_sound; eauto with utils. }
-      basic_goal_prep; subst.
-      eapply ret_sound_for_model'; eauto using worklist_entry_sound_mono.
-      cbn.
-      intuition subst.
-      eapply eq_sound_for_model_trans; eauto.
-    }
-  Qed.
-  
 
-  
+  Section WithEGraph.
+    Context e i `{Hok : egraph_ok e} `{Hsoundeg : egraph_sound_for_interpretation m i e}.
 
-  Lemma atom_sound_monotone
-    : monotone1 (atom_sound_for_model m).
-  Proof using.
-    clear.
-    unfold atom_sound_for_model.
-    repeat intro.
-    unfold Is_Some_satisfying in H0.
-    repeat case_match; try tauto.
-    rewrite !TrieMap.Mmap_option_all in *.
-    eapply Properties.map.getmany_of_list_extends in case_match_eqn; eauto.
-    unfold map.getmany_of_list in case_match_eqn;
-      rewrite case_match_eqn.
-    eapply H in case_match_eqn0; rewrite case_match_eqn0.
-    cbn.
-    auto.
-  Qed.
-  Hint Resolve atom_sound_monotone : utils.
-  Hint Resolve monotone1_all : utils.
+    Lemma parents_interpretation
+      :forall y l, map.get e.(parents) y = Some l -> all (atom_sound_for_model m i) l.
+    Proof.
+      intros y l Hpar.
+      apply parents_ok in Hpar; eauto.
+      eapply all_wkn; try exact Hpar.
+      intros a Hin Hex.
+      cbv beta in Hex.
+      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+      destruct Hex as (aa & Hcanon & Ha_aa).
+      destruct Hcanon as (Hfn & Hargs & Hret).
+      pose proof (atom_interpretation _ _ _ Hsoundeg _ Ha_aa) as Hsa.
+      pose proof (args_rel_interpretation _ _ _ (conj Hok Hsoundeg) _ _ Hargs) as Hopt.
+      pose proof (rel_interpretation _ _ _ Hsoundeg _ _ Hret) as Hret_eq.
+      unfold atom_sound_for_model in Hsa |- *.
+      unfold eq_sound_for_model in Hret_eq.
+      unfold Is_Some_satisfying in Hsa, Hret_eq |- *.
+      unfold option_relation in Hopt.
+      destruct (list_Mmap (map.get i) (atom_args aa)) as [margs_aa|] eqn:Hma_aa;
+        cbn in *; [| exfalso; exact Hsa].
+      destruct (map.get i (atom_ret aa)) as [out_aa|] eqn:Hmret_aa;
+        cbn in *; [| exfalso; exact Hsa].
+      destruct (list_Mmap (map.get i) (atom_args a)) as [margs|] eqn:Hma;
+        cbn in *; [| discriminate Hopt].
+      destruct (map.get i (atom_ret a)) as [out|] eqn:Hmret;
+        cbn in *; [| exfalso; exact Hret_eq].
+      rewrite Hfn.
+      eapply interprets_to_preserved with (args1 := margs_aa) (d1 := out_aa); eauto.
+      - apply all2_Symmetric; [typeclasses eauto | exact Hopt].
+      - symmetry; exact Hret_eq.
+    Qed.
 
-  
-  (*TODO: lift upwards, use as needed *)
-  Ltac open_ssm' :=
-    cleanup_context;
-    lazymatch goal with
-    | |- state_sound_for_model _ _ ?e _ =>
-        let h := get_head e in
-        unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
-        eexists; eauto with utils;
-        break; cbn[fst snd]
-    end.
-  
-  Ltac open_ssm :=
-    open_ssm';
-    intuition eauto with utils;
-    break; cbn[fst snd];
-    try lazymatch goal with
-      | H : egraph_ok _ |- egraph_ok _ =>
-          destruct H; constructor; eauto with utils
-      | H : egraph_sound_for_interpretation _ _ _
-        |- egraph_sound_for_interpretation _ _ _ =>
-          destruct H; constructor; eauto with utils
-    end.
-  
-  Lemma get_parents_sound i old_idx
-    : state_sound_for_model m i (get_parents old_idx)
-         (fun i' a => i = i' /\ all (atom_sound_for_model m i) a).
-  Proof.
-    open_ssm.
-    unfold unwrap_with_default; case_match; [| exact I].
-    eapply parents_interpretation in case_match_eqn; eauto.
-  Qed.
+    Lemma worklist_sound : all (worklist_entry_sound m i) e.(worklist).
+    Proof.
+      eapply all_wkn.
+      2: apply worklist_ok; eauto.
+      cbn; intros x Hwl.
+      destruct x; cbn in *; auto.
+      eauto using rel_interpretation.
+    Qed.
 
-  Hint Rewrite @map.get_remove_same: utils.
-  (*Hint Rewrite @map.get_remove_diff using tauto: utils.*)
-  
-  Lemma remove_parents_sound i old_idx
-    : state_sound_for_model m i
-        (remove_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx) 
-        (fun i' _ => i' = i).
-  Proof.
-    open_ssm.
-    basic_goal_prep.
-    eqb_case i0 old_idx;
-      basic_utils_crush.
-    rewrite map.get_remove_diff in H1; try tauto.
-    eauto.
-  Qed.
+  End WithEGraph.
 
-  
+  (* TODO: canonicalize_worklist_entry_sound. Previously formulated
+     against set-level [Pre] using [P_guarantees]. *)
 
-  Ltac bind_with_fn H :=
-    eapply state_sound_for_model_bind;
-    eauto using H with utils;
-    cbn beta;intros; subst; cleanup_context.
-  
-  Ltac ssm_bind :=
-    eapply state_sound_for_model_bind;
-    eauto with utils;
-    cbn beta in *;intros; subst; cleanup_context.
-  
-  Lemma pull_parents_sound i old_idx
-    : state_sound_for_model m i
-        (pull_parents idx symbol symbol_map idx_map idx_trie analysis_result old_idx) 
-        (fun i' a => i = i' /\ all (atom_sound_for_model m i) a).
-  Proof.
-    unfold pull_parents.
-    ssm_bind; [ apply get_parents_sound |].
-    ssm_bind; [ apply remove_parents_sound |].
-    cbn beta in *; break; subst.
-    eapply ret_sound_for_model'; auto.
-  Qed.
-  
-  
+
+  (*TODO: move to Defs.v*)
+  Arguments pull_parents {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope x _.
+  (*TODO: move to Defs.v*)
+  Arguments remove_parents {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope x _.
+
+
   Ltac iss_case :=
     lazymatch goal with
     | H : ?ma <$> _ |- _ =>
@@ -1362,54 +1229,124 @@ Abort.
         let Hma := fresh "Hma" in
         destruct ma eqn:Hma; cbn;[| tauto]
     end.
-  
-  Lemma db_remove_sound i a1
-    : state_sound_for_model m i
-        (db_remove idx symbol symbol_map idx_map idx_trie analysis_result a1)
-        (fun i' _ => i' = i).
+
+  (*TODO: move to Defs.v*)
+  Arguments db_remove {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope
+  {analysis_result}%type_scope a _.
+
+  (* [db_remove a] only modifies the [db] field, removing the entry
+     at [(atom_fn a, atom_args a)]. All other instance fields
+     (equiv, parents, epoch, worklist, analyses, log) are unchanged,
+     and the only db fact lost is exactly that one entry. The
+     postcondition records every such preserved fact, so callers can
+     reason about the post-state without re-deriving them. Note that
+     [db_remove] does NOT preserve egraph_ok in general (parents may
+     refer to a now-missing atom), which is why the original
+     [Pre]-preserving formulation was abandoned. *)
+  Lemma db_remove_sound a
+    : vc (db_remove a)
+        (fun e res =>
+           fst res = tt
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)
+           /\ (snd res).(epoch) = e.(epoch)
+           /\ (snd res).(worklist) = e.(worklist)
+           /\ (snd res).(analyses) = e.(analyses)
+           /\ forall x,
+               atom_in_egraph x (snd res)
+               <-> atom_in_egraph x e
+                   /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
   Proof.
-    open_ssm.
-    basic_goal_prep.
-    eapply atom_interpretation0.
-    unfold atom_in_egraph, atom_in_db in *.
-    basic_goal_prep.
-    basic_utils_crush.
-    repeat iss_case.
-    eqb_case (atom_fn a1) (atom_fn a).
-    {
-      rewrite H2 in *.
-      rewrite get_update_same in Hma; eauto.
-      autorewrite with inversion in *.
-      unfold Basics.flip in *.
-      case_match.
-      2:{
-        change (map.remove map.empty (atom_args a1) = r) in Hma.
-        rewrite Properties.map.remove_empty in *.
-        basic_utils_crush.
-      }
-      cbn; subst.        
-      eqb_case (atom_args a1) (atom_args a).
-      {
-        rewrite H3 in *.
-        basic_utils_crush.
-      }
-      {
-        rewrite map.get_remove_diff in Hma0; eauto.
-        rewrite Hma0; cbn; eauto.
-      }
-    }
-    {
-      rewrite get_update_diff in Hma; eauto.
-      rewrite Hma; cbn; eauto.
-      rewrite Hma0; cbn; eauto.
-    }
+    unfold vc, db_remove.
+    intros e.
+    cbv beta zeta.
+    cbn [fst snd Defs.equiv Defs.parents Defs.epoch
+         Defs.worklist Defs.analyses Defs.db].
+    do 6 (split; [reflexivity|]).
+    intros x.
+    unfold atom_in_egraph, atom_in_db.
+    cbn [Defs.db].
+    unfold map_update.
+    destruct (map.get e.(db) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - (* atom_fn a was in the original db with table [tbl] *)
+      pose proof (eqb_spec (atom_fn x) (atom_fn a)) as Hfn.
+      destruct (eqb (atom_fn x) (atom_fn a)).
+      + (* atom_fn x = atom_fn a *)
+        rewrite Hfn.
+        rewrite map.get_put_same.
+        cbn [Is_Some_satisfying].
+        unfold Basics.flip.
+        pose proof (eqb_spec (atom_args x) (atom_args a)) as Hargs.
+        destruct (eqb (atom_args x) (atom_args a)).
+        * (* both fn and args equal: removed entry *)
+          rewrite Hargs.
+          rewrite map.get_remove_same.
+          cbn [Is_Some_satisfying].
+          split; [tauto|].
+          intros [_ Hne]. exfalso. apply Hne. reflexivity.
+        * (* atom_args x <> atom_args a: lookup unchanged in tbl *)
+          rewrite map.get_remove_diff by exact Hargs.
+          rewrite Htbl. cbn [Is_Some_satisfying].
+          split.
+          -- intros HX. split; [exact HX|].
+             intros Hpair. inversion Hpair; subst; auto.
+          -- intros [HX _]; exact HX.
+      + (* atom_fn x <> atom_fn a: lookup unchanged *)
+        rewrite map.get_put_diff
+          by (intros Heq; apply Hfn; exact Heq).
+        split.
+        * intros HX. split; [exact HX|].
+          intros Hpair. inversion Hpair; subst; auto.
+        * intros [HX _]; exact HX.
+    - (* atom_fn a was NOT in the original db originally *)
+      pose proof (eqb_spec (atom_fn x) (atom_fn a)) as Hfn.
+      destruct (eqb (atom_fn x) (atom_fn a)).
+      + (* atom_fn x = atom_fn a: the new table is empty after
+           removing [atom_args a] *)
+        rewrite Hfn.
+        rewrite map.get_put_same.
+        cbn [Is_Some_satisfying].
+        unfold Basics.flip.
+        unfold default, map_default.
+        rewrite Htbl. cbn [Is_Some_satisfying].
+        pose proof (eqb_spec (atom_args x) (atom_args a)) as Hargs.
+        destruct (eqb (atom_args x) (atom_args a)).
+        * rewrite Hargs.
+          rewrite map.get_remove_same.
+          cbn [Is_Some_satisfying]. tauto.
+        * rewrite map.get_remove_diff by exact Hargs.
+          rewrite map.get_empty.
+          cbn [Is_Some_satisfying]. tauto.
+      + (* atom_fn x <> atom_fn a *)
+        rewrite map.get_put_diff
+          by (intros Heq; apply Hfn; exact Heq).
+        split.
+        * intros HX. split; [exact HX|].
+          intros Hpair. inversion Hpair; subst; auto.
+        * intros [HX _]; exact HX.
   Qed.
+
+  (* Predicate capturing the structural facts that [db_remove a]
+     establishes about the relationship between its input state
+     [e_ref] and its output state [e]: every non-db field is
+     unchanged, and the db has lost exactly the entry at
+     [(atom_fn a, atom_args a)]. This is the conjunction of
+     conjuncts in the postcondition of [db_remove_sound]. *)
+  Definition post_db_remove (e_ref : instance) (a : atom) (e : instance) : Prop :=
+    e.(equiv) = e_ref.(equiv)
+    /\ e.(parents) = e_ref.(parents)
+    /\ e.(epoch) = e_ref.(epoch)
+    /\ e.(worklist) = e_ref.(worklist)
+    /\ e.(analyses) = e_ref.(analyses)
+    /\ (forall x, atom_in_egraph x e
+                  <-> atom_in_egraph x e_ref
+                      /\ (atom_fn x, atom_args x) <> (atom_fn a, atom_args a)).
 
   Definition eq_atom_in_interpretation i (a1 a2 : atom) :=
     atom_fn a1 = atom_fn a2 /\
       all2 (eq_sound_for_model m i) (atom_args a1) (atom_args a2) /\
       eq_sound_for_model m i (atom_ret a1) (atom_ret a2).
-
   
   Lemma all2_flip A B (R : A -> B -> Prop) l1 l2
     : all2 R l1 l2 = all2 (fun a b => R b a) l2 l1.
@@ -1443,599 +1380,614 @@ Abort.
         let H2 := fresh in
         destruct H as [H1 H2]; try clear H
    | H:exists x, _ |- _ => destruct H
-   end.
+      end.
 
-  Lemma eq_atom_monotone
-    : monotone2 eq_atom_in_interpretation.
-  Proof using.
-    clear.
-    unfold eq_atom_in_interpretation.
-    repeat intro.
-      basic_goal_prep;
-        basic_utils_crush.
-      1: eapply all2_impl; try eassumption.
-      all:intros; eapply eq_sound_monotone; eauto.
-  Qed.
-
-
-  Lemma canonicalize_sound i a1
-    : atom_sound_for_model m i a1 ->
-      state_sound_for_model m i (canonicalize a1)
-        (fun i' a => i = i' /\ eq_atom_in_interpretation i a a1).
+ 
+  Lemma atom_sound_args_have_key i a
+    : atom_sound_for_model m i a ->
+      all (fun x => Sep.has_key x i) a.(atom_args).
   Proof.
-    cleanup_context.
-    unfold canonicalize.
-    destruct a1.
-    intros.
-    eapply state_sound_for_model_bind; eauto with utils.
-    {
-      eapply state_sound_for_model_Mmap_dep with (P_const:= eq i); auto.
-      {
-        cbn beta;intros; subst.
-        eapply find_sound.
-        unfold atom_sound_for_model in *.
-        repeat iss_case.
-        basic_goal_prep.
-        rewrite TrieMap.Mmap_option_all in *.
-        
-        eapply In_option_all in Hma; eauto.
-        2: eapply in_map; eauto.
-        break.
-        unfold Sep.has_key; rewrite H5; auto.
-      }
-      {
-        repeat intro; 
-        eapply eq_sound_monotone; eauto with utils.
-      }
-    }
-    {
-      cbn beta;intros; subst.
-      eapply state_sound_for_model_bind; eauto with utils.
-      {
-        eapply find_sound.
-        unfold atom_sound_for_model in *.
-        repeat iss_case.
-        basic_goal_prep.
-        rewrite TrieMap.Mmap_option_all in *.
-        subst.
-        unfold Sep.has_key; rewrite Hma0; auto.
-      }
-      {
-        cbn beta;intros; subst.
-        eapply ret_sound_for_model'; eauto with utils.
-        {
-          unfold eq_atom_in_interpretation;
-            basic_goal_prep;
-            intuition subst; eauto.
-          {
-            eapply all2_Symmetric; eauto.
-            apply eq_sound_for_model_Symmetric.
-          }
-          { apply eq_sound_for_model_Symmetric; auto. }
-        }      
-      }
-    }
+    unfold atom_sound_for_model, Sep.has_key, Is_Some_satisfying.
+    intros H1.
+    destruct (list_Mmap (map.get i) a.(atom_args)) eqn:Hg; cbn in H1; try tauto.
+    clear H1.
+    revert l Hg.
+    induction (atom_args a) as [| arg args IH]; cbn; intros.
+    - exact I.
+    - destruct (map.get i arg) eqn:Hgarg; cbn in *; try discriminate.
+      destruct (list_Mmap (map.get i) args) eqn:Hgargs; cbn in *; try discriminate.
+      split; auto.
+      eapply IH; eauto.
   Qed.
+
+  Lemma atom_sound_ret_has_key i a
+    : atom_sound_for_model m i a ->
+      Sep.has_key a.(atom_ret) i.
+  Proof.
+    unfold atom_sound_for_model, Sep.has_key, Is_Some_satisfying.
+    intros H1.
+    destruct (list_Mmap (map.get i) a.(atom_args)) eqn:Hg; cbn in H1; try tauto.
+    destruct (map.get i a.(atom_ret)); cbn in *; tauto.
+  Qed.
+
   
   Arguments db_lookup {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
     {analysis_result}%type_scope f args%list_scope _.
 
-  
-  (*TODO: preconditions?*)
-  Lemma db_lookup_sound i f args
-    : state_sound_for_model m i
-        (db_lookup f args)
-        (fun i' mx => i = i'
-                      /\ mx <?> (fun x => atom_sound_for_model m i (Build_atom f args x))).
+  Arguments db_set {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+    {symbol_map idx_map idx_trie}%function_scope
+    {analysis_result}%type_scope {H} a _.
+
+
+  (* Predicate: every instance field except [equiv] is preserved
+     verbatim, [equiv] may have been path-compressed but its key set
+     and equivalence relation [uf_rel_PER] are preserved. *)
+  Definition fields_preserved (e e' : instance) : Prop :=
+    e'.(db) = e.(db)
+    /\ e'.(parents) = e.(parents)
+    /\ e'.(epoch) = e.(epoch)
+    /\ e'.(worklist) = e.(worklist)
+    /\ e'.(analyses) = e.(analyses)
+    /\ (forall y, Sep.has_key y e.(equiv).(parent)
+                  <-> Sep.has_key y e'.(equiv).(parent))
+    /\ iff2 (uf_rel_PER _ _ _ e.(equiv))
+            (uf_rel_PER _ _ _ e'.(equiv)).
+
+  Lemma fields_preserved_refl (e : instance)
+    : fields_preserved e e.
   Proof.
-    open_ssm.
-    basic_goal_prep;
-      basic_utils_crush.
-    case_match; cbn; try tauto.
-    case_match; cbn; try tauto.
-    unfold atom_sound_for_model; cbn.
-    assert (atom_in_egraph (Build_atom f args (entry_value idx analysis_result d)) e).
-    {
-      unfold atom_in_egraph, atom_in_db; cbn.
-      rewrite case_match_eqn; cbn;
-        rewrite case_match_eqn0; cbn.
-      reflexivity.
-    }
-    eapply atom_interpretation in H1; eauto.
+    unfold fields_preserved.
+    repeat split; auto; intros; tauto.
   Qed.
 
-  Lemma state_sound_for_model_Mseq A B (i : idx_map (domain m)) (c1 : state instance A)
-    P Q (c2 : state instance B)
-    : state_sound_for_model m i c1 P ->
-      (forall a (i' : idx_map (domain m)),
-          map.extends i' i -> P i' a -> state_sound_for_model m i' c2 Q) ->
-      state_sound_for_model m i (@! c1; c2) Q.
+  Lemma fields_preserved_trans (e1 e2 e3 : instance)
+    : fields_preserved e1 e2 ->
+      fields_preserved e2 e3 ->
+      fields_preserved e1 e3.
   Proof.
-    intros.
-    change (@! c1; c2) with (@! let _ <- c1 in c2).
-    eapply state_sound_for_model_bind; eauto.
-  Qed.
-  
-  Lemma same_domain_has_key A (m1 m2 : idx_map A)
-    : map.same_domain m1 m2 <->
-        (forall x : idx, Sep.has_key x m1 <-> Sep.has_key x m2).
-  Proof using.
-    clear lt idx_succ idx_zero.
-    unfold map.same_domain, map.sub_domain,  Sep.has_key.
-    intuition repeat case_match; eauto;
-      try eapply H3 in case_match_eqn0; try eapply H2 in case_match_eqn;
-      try eapply H2 in case_match_eqn0; try eapply H3 in case_match_eqn;
-      try specialize (H1 k);
-      rewrite ? H2, ?H3 in *;
-      repeat case_match;
-      break; try eexists; intuition eauto; try congruence.
-    Unshelve.
-    all: auto.
-  Qed.
-  
-  (*TODO: move to UnionFind.v*)
-  Lemma union_same_domain u u' x y i0 l
-    : union_find_ok lt u l ->
-      Sep.has_key x u.(parent) ->
-      Sep.has_key y u.(parent) ->
-      UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) u x y
-      = (u', i0) ->
-      map.same_domain u.(parent) u'.(parent).
-  Proof using idx_map_ok Eqb_idx_ok.
-    clear idx_succ idx_zero.
-    unfold UnionFind.union.
-    intros.
-    eapply same_domain_has_key.
-    intro k.
-    do 2 case_match.
-    pose proof case_match_eqn.
-    pose proof case_match_eqn0.
-    eapply find_spec in H5; eauto; break; try Lia.lia.
-    eapply find_spec in H6; eauto; break; try Lia.lia.
-    2:{ eapply H12; eauto. }
-    eapply find_preserves_domain with (x:=k) in case_match_eqn, case_match_eqn0;
-      eauto.
-    2:{ eapply H12; eauto. }
-    rewrite H12.
-    case_match; autorewrite with inversion in *; break; subst; eauto.
-    
-    assert (Sep.has_key i (parent u)).
-    {
-      unfold Sep.has_key.      
-      eapply forest_root_iff with (m:= parent u) in H5; eauto using uf_forest.
-      rewrite H5; eauto.
-    }
-    assert (Sep.has_key i1 (parent u)).
-    {
-      unfold Sep.has_key.      
-      eapply forest_root_iff with (m:= parent u) in H6; eauto using uf_forest.
-      rewrite H6; eauto.
-    }
-    case_match; cbn in *; autorewrite with inversion in *; break; subst; cbn in *; eauto.
-    all: rewrite H17.
-    all: rewrite has_key_put.
-    all: intuition subst; eauto.
+    unfold fields_preserved.
+    intros (Hd1 & Hp1 & Hep1 & Hw1 & Han1 & Hk1 & Hi1).
+    intros (Hd2 & Hp2 & Hep2 & Hw2 & Han2 & Hk2 & Hi2).
+    split; [congruence|]. split; [congruence|]. split; [congruence|].
+    split; [congruence|]. split; [congruence|]. split.
+    + intros y; specialize (Hk1 y); specialize (Hk2 y); tauto.
+    + intros i j; specialize (Hi1 i j); specialize (Hi2 i j); tauto.
   Qed.
 
-  
-  Lemma union_closure_implies_PER A R `{PER A R} R1 R2
-    : (impl2 R1 R) -> (impl2 R2 R) -> impl2 (union_closure_PER R1 R2) R.
-  Proof using.
-    clear idx_succ idx_zero.
-    unfold impl2;
-      induction 3;
-      basic_goal_prep;
-      basic_utils_crush.
-    { etransitivity; eassumption. }
-    { symmetry; auto. }
+  (* Monotonic growth of [equiv]'s PER. Used to propagate
+     [worklist_entry_ok]-derived facts ([uf_rel_PER e.equiv x_old
+     x_canonical] for an unprocessed [union_repair] entry) across
+     repair iterations: each repair step may union new pairs but
+     never removes existing PER pairs. *)
+  Definition equiv_extends (e e' : instance) : Prop :=
+    forall x y, uf_rel_PER _ _ _ e.(equiv) x y ->
+                uf_rel_PER _ _ _ e'.(equiv) x y.
+
+  Lemma equiv_extends_refl e : equiv_extends e e.
+  Proof. unfold equiv_extends; auto. Qed.
+
+  Lemma equiv_extends_trans e1 e2 e3 :
+    equiv_extends e1 e2 -> equiv_extends e2 e3 -> equiv_extends e1 e3.
+  Proof. unfold equiv_extends; auto. Qed.
+
+  Lemma equiv_extends_worklist_entry_ok e e' ent :
+    equiv_extends e e' ->
+    worklist_entry_ok e.(equiv) ent ->
+    worklist_entry_ok e'.(equiv) ent.
+  Proof. destruct ent; cbn; auto. Qed.
+
+  Lemma fields_preserved_equiv_extends e e' :
+    fields_preserved e e' -> equiv_extends e e'.
+  Proof.
+    unfold fields_preserved, equiv_extends.
+    intros (_ & _ & _ & _ & _ & _ & Huf_iff) x y. apply Huf_iff.
   Qed.
 
-  Instance eq_sound_for_model_PER i
-    : PER (eq_sound_for_model m i).
-  Proof using H0.
-    clear lt idx_succ idx_zero.
-    unfold eq_sound_for_model.
-    constructor; repeat intro; repeat iss_case; cbn.
-    { symmetry; auto. }
-    { etransitivity; eassumption. }
+  (* [find x] only modifies the [equiv] field through path
+     compression. All non-equiv fields are preserved verbatim,
+     union-find well-formedness is preserved with the same root
+     list, and the equivalence relation [uf_rel_PER] together with
+     the key set of [equiv.(parent)] is preserved up to pointwise
+     iff.  Additionally, the returned canonical idx [v'] is
+     [uf_rel_PER]-equivalent to the input [x] in the post-state's
+     [equiv].  The extra conjunct comes from [find_spec]'s
+     [parent_rel uf'.(parent) x v'], which is included in
+     [PER_closure] via [trans_PER_subrel] and then symmetrized. *)
+  Lemma find_preserves_fields_strong (x : idx)
+    : vc (find x)
+        (fun (e : instance) (res : (idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           Sep.has_key x e.(equiv).(parent) ->
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
+           /\ uf_rel_PER _ _ _ (snd res).(equiv) (fst res) x).
+  Proof.
+    unfold vc, find, fields_preserved.
+    intros e Hex Hkey.
+    destruct Hex as [l Huf].
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [snd Defs.db Defs.parents Defs.epoch Defs.worklist
+         Defs.analyses Defs.equiv].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Huf Hkey Hfind) as Hspec.
+    destruct Hspec as (Huf' & _ & Hpr & _ & Hlim_iff & Hkey_iff).
+    pose proof Huf as [Hf_old _ _ _ _].
+    pose proof Huf' as [Hf_new _ _ _ _].
+    cbn in Hf_old, Hf_new.
+    split; [exists l; exact Huf'|].
+    split.
+    { repeat (split; [reflexivity|]).
+      split.
+      { intros y; split; intros Hk; apply Hkey_iff; exact Hk. }
+      intros i j.
+      unfold uf_rel_PER.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as HP2.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim_iff; auto). }
+    cbn [fst].
+    unfold uf_rel_PER.
+    apply PER_clo_sym.
+    unfold parent_rel in Hpr.
+    clear -Hpr.
+    induction Hpr.
+    - apply PER_clo_base; assumption.
+    - eapply PER_clo_trans;
+        [apply PER_clo_base; eassumption | exact IHHpr].
   Qed.
 
-  (*TODO: move to UnionFInd.v *)
-  Arguments parent_rel [idx]%type_scope [idx_map] m _ _.
-  
-  (*TODO: move to UnionFind.v*)
-  Lemma union_output l uf x y uf' z
-    :  union_find_ok lt uf l ->
-       Sep.has_key x (parent uf) ->
-       Sep.has_key y (parent uf) ->
-       UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y = (uf', z) ->
-       parent_rel uf'.(parent) x z
-       /\ parent_rel uf'.(parent) y z.
-  Proof using idx_map_ok Eqb_idx_ok.
-    clear idx_succ idx_zero.
-    unfold UnionFind.union.
-    intros.
-    do 2 case_match.
-    eapply find_spec in case_match_eqn; eauto; break; try Lia.lia.
-    eapply find_spec in case_match_eqn0; eauto; break; try Lia.lia.
-    2:{ eapply H11; eauto. }
-    eqb_case i i0.
-    {
-      autorewrite with inversion in *; break; subst.
-      intuition eauto.
-      eapply H15.
-      eapply union_find_limit; eauto.
-      Lia.lia.
-    }
-    case_match.
-    all: autorewrite with inversion in *; break; subst.
-    all: basic_goal_prep.
-    all: intuition eauto.
-    all:lazymatch goal with
-      |- parent_rel (map.put _ ?i0 _) ?x _ =>
-        eqb_case x i0; [ eapply parent_rel_put_same; now eauto |]
-    end.
-    all: try now (eapply unloop_parent; eauto using uf_forest;
-                  eapply H15; eapply union_find_limit; eauto; Lia.lia).
-    all: eapply transitive_closure_transitive;
-      [now (eapply unloop_parent; eauto using uf_forest;
-            eapply H15; eapply union_find_limit; eauto; Lia.lia)|].
-    all: eapply parent_rel_put_same; now eauto.
-  Qed.
-    
-  Lemma union_sound i x y
-    : eq_sound_for_model m i x y ->
-      state_sound_for_model m i (Defs.union x y)
-        (fun i' a => i = i' /\ eq_sound_for_model m i' x a).
+  (* Iterating [find] over a list of indices preserves the same
+     structural facts as a single [find], and additionally the
+     returned canonical idxs are [uf_rel_PER]-equivalent to their
+     inputs (pointwise via [all2]) in the post-state's [equiv]. A
+     clean application of [vc_list_Mmap_outputs]: the invariant [P]
+     bundles the union-find ok-witness with [all has_key], the step
+     relation [R] is [fields_preserved], and the per-element relation
+     [Q] is [uf_rel_PER] in the current state's [equiv]. The transport
+     of [Q] across [R] is the [iff2] conjunct of [fields_preserved]. *)
+  Lemma list_Mmap_find_preserves_fields_strong (xs : list idx)
+    : vc (list_Mmap find xs)
+        (fun (e : instance) (res : (list idx * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent)) xs ->
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
+           /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv)) (fst res) xs).
   Proof.
-    intros; open_ssm'.
-    basic_goal_prep.
-    eqb_case x y.
-    Admitted (*TODO: make sure to fix this proof*).
-    (*
-    { basic_goal_prep; intuition eauto with utils. }
-    case_match.
-    destruct (egraph_equiv_ok _ H3).
-    pose proof case_match_eqn as Hdom.
-    eapply union_spec in case_match_eqn; try Lia.lia; eauto.
-    2:{
-      eapply interpretation_exact; eauto.
-      eapply eq_sound_has_key_r; symmetry; eauto.
-    }
-    2:{
-      eapply interpretation_exact; eauto.
-      eapply eq_sound_has_key_r; eauto.
-    }
-    break.
-    eqb_case x i0; basic_goal_prep.
-    {
-      intuition eauto with utils.
-      { eapply eq_sound_for_model_trans; try eassumption; symmetry; now eauto. }
-      {
-        constructor; cbn.
-        eexists; eauto.
-      }
-      {
-        destruct H4; constructor; cbn; eauto.
-        {
-          intros x H'; apply interpretation_exact0 in H'.
-          eapply union_same_domain in Hdom; eauto.
-          { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
-          {
-            symmetry in H1; eapply eq_sound_has_key_r in H1.
-            eapply interpretation_exact0; eauto.
-          }
-          {
-            eapply eq_sound_has_key_r in H1.
-            eapply interpretation_exact0; eauto.
-          }
-        }
-        {
-          intros.
-          eapply H10 in H4.
-          revert H4; eapply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-          unfold singleton_rel, impl2; basic_goal_prep; subst; eauto.
-        }
-        { split; auto; symmetry; auto. }
-      }
-    }
-    intuition try constructor; basic_goal_prep; intuition eauto with utils.    
-    { eapply union_output in Hdom; eauto.
-      2:{
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      2:{
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      break.
-      eapply trans_PER_subrel in H11; eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-    { eapply idx_interpretation_wf; eauto. }
-    {
-      eapply interpretation_exact in H11; eauto.
-      eapply union_same_domain in Hdom; eauto.
-      { eapply same_domain_has_key in Hdom; eapply Hdom; eauto. }
-      {
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      {
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-    }
-    { eapply atom_interpretation in H4; eauto. }
-    {
-      eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-    { eapply parents_interpretation; eauto. }
-    2:{ eapply worklist_sound; eauto. }    
-    { eapply union_output in Hdom; eauto.
-      2:{
-        symmetry in H1; eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      2:{
-        eapply eq_sound_has_key_r in H1.
-        eapply interpretation_exact; eauto.
-      }
-      break.
-      eapply trans_PER_subrel in H11; eapply H10 in H11.
-      revert H11; apply union_closure_implies_PER; eauto using eq_sound_for_model_PER.
-      {
-        repeat intro.
-        eapply rel_interpretation; eauto.
-      }
-      { unfold singleton_rel, impl2; basic_goal_prep; subst; auto. }
-    }
-      Qed.
-      *)
-  
-  Lemma state_sound_for_model_wkn i A (s : state instance A) P Q
-    : state_sound_for_model m i s P ->
-      (forall i' a, map.extends i' i -> P i' a -> Q i' a) ->
-      state_sound_for_model m i s Q.
-  Proof.
-    clear idx_zero idx_succ.
-    unfold state_sound_for_model, state_triple, Sep.and1; basic_goal_prep;
-      intuition eauto.
-    specialize (H1 e).
-    intuition break.
-    eexists; intuition eauto.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_outputs find
+                  (fun l e => (exists rs, union_find_ok lt e.(equiv) rs)
+                              /\ all (fun i => Sep.has_key i e.(equiv).(parent)) l)
+                  fields_preserved
+                  (fun (e : instance) y x => uf_rel_PER _ _ _ e.(equiv) y x))].
+    - cbn beta.
+      intros e res Hgen Hex Hkeys.
+      destruct (Hgen (conj Hex Hkeys)) as ((Hex' & _) & Hf01 & Hall).
+      split; [exact Hex'|]. split; [exact Hf01|]. exact Hall.
+    - intros s _; apply fields_preserved_refl.
+    - intros; eapply fields_preserved_trans; eauto.
+    - intros e e' y x Hf01 Huf.
+      destruct Hf01 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+      apply Huf_iff. exact Huf.
+    - intros x l_rest. unfold vc. intros e [Hex Hkeys].
+      cbn [all] in Hkeys. destruct Hkeys as [Hkey_x Hkeys'].
+      pose proof (find_preserves_fields_strong x e Hex Hkey_x) as Hf.
+      cbn beta in Hf.
+      destruct (find x e) as [y e1] eqn:Hfind_x.
+      cbn [fst snd] in Hf |- *.
+      destruct Hf as (Hex1 & Hf01 & Huf_yx).
+      split.
+      + split; [exact Hex1|].
+        destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+        eapply all_wkn; [| exact Hkeys'].
+        intros z _ Hz. apply Hkey_iff. exact Hz.
+      + split; [exact Hf01 | exact Huf_yx].
   Qed.
 
-  
-  Lemma get_analysis_sound i a
-    : state_sound_for_model m i
-        (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result a)
-        (fun i' _ => i = i').
+  (* [canonicalize a] is a sequence of [find] calls (one per arg
+     and one for the return idx) followed by a [Build_atom]. As
+     such, every instance field except [equiv] is preserved
+     verbatim, [equiv] changes only by path compression (so
+     [uf_rel_PER] is preserved up to pointwise iff), the returned
+     atom [a'] has the same [atom_fn] as [a] (by construction of
+     [Build_atom]), and its [atom_ret]/[atom_args] are pointwise
+     [uf_rel_PER]-equivalent to those of [a] in the post-state's
+     [equiv]. *)
+  Lemma canonicalize_preserves_fields_strong (a : atom)
+    : vc (canonicalize a)
+        (fun (e : instance) (res : (atom * instance)%type) =>
+           (exists l, union_find_ok lt e.(equiv) l) ->
+           all (fun i => Sep.has_key i e.(equiv).(parent))
+               a.(atom_args) ->
+           Sep.has_key a.(atom_ret) e.(equiv).(parent) ->
+           (exists l, union_find_ok lt (snd res).(equiv) l)
+           /\ fields_preserved e (snd res)
+           /\ atom_fn (fst res) = atom_fn a
+           /\ uf_rel_PER _ _ _ (snd res).(equiv)
+                (atom_ret (fst res)) (atom_ret a)
+           /\ all2 (uf_rel_PER _ _ _ (snd res).(equiv))
+                (atom_args (fst res)) (atom_args a)).
   Proof.
-    open_ssm'.
-    split; eauto.
-    case_match; cbn; intuition eauto with utils.
-    { destruct H2; constructor; intros; intuition eauto. }
-    { destruct H3; constructor; intros; cbn; intuition eauto. }
+    destruct a as [fn args o]. cbn [atom_args atom_ret atom_fn] in *.
+    unfold canonicalize.
+    unfold vc.
+    intros e Hex Hkey_args Hkey_o.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (list_Mmap_find_preserves_fields_strong args e Hex Hkey_args) as Hl.
+    cbn beta in Hl.
+    destruct (list_Mmap find args e) as [args' e1] eqn:Hmap.
+    cbn [fst snd] in Hl.
+    destruct Hl as (Hex1 & Hf01 & Hall_args').
+    assert (Hkey_o_e1 : Sep.has_key o e1.(equiv).(parent)).
+    { destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      apply Hkey_iff. exact Hkey_o. }
+    pose proof (find_preserves_fields_strong o e1 Hex1 Hkey_o_e1) as Hfo.
+    cbn beta in Hfo.
+    destruct (find o e1) as [o' e2] eqn:Hfind_o.
+    cbn [fst snd] in Hfo.
+    destruct Hfo as (Hex2 & Hf12 & Huf_o'_o).
+    cbn [Mret StateMonad.state_monad fst snd].
+    cbn [Defs.atom_fn Defs.atom_ret Defs.atom_args].
+    split; [exact Hex2|].
+    split; [eapply fields_preserved_trans; eauto|].
+    split; [reflexivity|].
+    split; [exact Huf_o'_o|].
+    destruct Hf12 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+    eapply all2_iff2; [exact Huf_iff | exact Hall_args'].
   Qed.
 
-  Lemma get_analyses_sound i args
-    : state_sound_for_model m i
-         (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args) 
-         (fun i' _ => i = i').
+  (* [db_lookup f args] reads [e.(db)] and returns either [Some r]
+     (when [(f, args)] has a table-entry with value [r], i.e.,
+     [Build_atom f args r] is literally in [e.(db)]), or [None]
+     (when no such entry exists for any [r]).  The operation is
+     read-only on the state. *)
+  Lemma db_lookup_pure f args
+    : vc (db_lookup f args)
+        (fun e res =>
+           snd res = e
+           /\ match fst res with
+              | Some r => atom_in_egraph (Build_atom f args r) e
+              | None => forall r, ~ atom_in_egraph (Build_atom f args r) e
+              end).
   Proof.
-    clear idx_zero idx_succ.
-    unfold get_analyses.
-    eapply state_sound_for_model_wkn.
-    1:apply state_sound_for_model_Mmap with
-      (P_const := fun i' => i = i')
-      (P_elt := fun _ _ => True); auto with utils.
-    {
-      intros; subst.
-      eapply state_sound_for_model_wkn; [apply get_analysis_sound |].
-      basic_goal_prep; subst; intuition auto.
-    }
-    basic_goal_prep; subst; intuition auto.
+    unfold vc, db_lookup.
+    intros e.
+    cbn [fst snd].
+    split; [reflexivity|].
+    unfold atom_in_egraph, atom_in_db.
+    cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret].
+    destruct (map.get e.(db) f) as [tbl|] eqn:Htbl; cbn.
+    - destruct (map.get tbl args) as [entry|] eqn:Hentry; cbn.
+      + reflexivity.
+      + intros r Hatom. exact Hatom.
+    - intros r Hatom. exact Hatom.
   Qed.
 
-  Lemma update_analyses_sound i o a
-    : state_sound_for_model m i
-        (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result o a)
-         (fun i' _ => i = i').
-  Proof.
-    open_ssm.
-  Qed.
-  
-  Lemma set_eq_empty_l A (l : list A) : set_eq [] l <-> l = [].
-  Proof using.
-    clear.
-    unfold set_eq, incl; 
-      basic_goal_prep;
-      basic_utils_crush.
-    destruct l; auto.
-    basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  Hint Rewrite set_eq_empty_l : utils.
+  Definition union_worklist_rel (e e' : instance) x y :=
+    e'.(worklist) = e.(worklist)
+    \/ exists v_old v' a,
+         e'.(worklist) = (union_repair _ v_old v' a) :: e.(worklist)
+         /\ uf_rel_PER idx (idx_map idx) (idx_map nat) e'.(equiv) v_old x
+         /\ uf_rel_PER idx (idx_map idx) (idx_map nat) e'.(equiv) v' y.
 
-  Lemma all_incl A (l1 l2 : list A) P
-    : incl l1 l2 -> all P l2 -> all P l1.
-  Proof using.
-    clear.
-    revert l2; induction l1;
-      basic_goal_prep;
-      basic_utils_crush.
-    eapply in_all; eauto.
-  Qed.
-      
-  Lemma db_set_sound i a
-    : atom_sound_for_model m i a ->
-      state_sound_for_model m i
-        (db_set idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result a)
-        (fun i' _ => i = i').
+  Notation uf_rel_PER := (uf_rel_PER idx (idx_map idx) (idx_map nat)).
+
+  Notation find := (find (symbol_map:= symbol_map) (analysis_result := analysis_result)).
+  
+  Lemma find_sound' x roots
+    : vc (find x)
+        (fun e res =>
+           union_find_ok lt (equiv e) roots ->
+           Sep.has_key x e.(equiv).(parent) ->
+           e.(db) = (snd res).(db) /\
+             union_find_ok lt (snd res).(equiv) roots /\
+             iff2 (uf_rel_PER e.(equiv)) (uf_rel_PER (snd res).(equiv)) /\
+             e.(parents) = (snd res).(parents) /\
+             e.(worklist) = (snd res).(worklist) /\
+             (forall z, Sep.has_key z e.(equiv).(parent)
+                        <-> Sep.has_key z (snd res).(equiv).(parent)) /\
+             In (fst res) roots /\
+             uf_rel_PER (snd res).(equiv) x (fst res)).
   Proof.
-    cleanup_context.
-    unfold db_set.
-    intros.
-    eapply state_sound_for_model_bind; eauto using get_analyses_sound with utils.
-    cbn beta; intros; subst.
-    eapply state_sound_for_model_bind; eauto using update_analyses_sound with utils.
-    cbn beta; intros; subst.
-    unfold db_set'.
-    unfold state_sound_for_model, Sep.and1.
-    repeat intro; eexists; split; cbn; intuition eauto.
-    { destruct H5; constructor; basic_goal_prep; intuition eauto. }
-    {
-      destruct H6; constructor; basic_goal_prep; intuition eauto.
-      {
-        unfold atom_in_egraph, atom_in_db in H4; cbn in H4.
-        eqb_case (atom_fn a) (atom_fn a2);
-          [ rewrite H6 in *; rewrite get_update_same in *
-          | rewrite get_update_diff in * ]; eauto.
-        basic_goal_prep.
-        case_match.
-        {
-          eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H7 in *; rewrite map.get_put_same in *
-          | rewrite map.get_put_diff in * ]; repeat iss_case;
-            autorewrite with inversion in *; break; subst; cbn in *; eauto.
-          { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
-          {
-            apply atom_interpretation0; unfold atom_in_egraph, atom_in_db.
-            rewrite case_match_eqn; cbn.
-            rewrite Hma; cbn.
-            eauto.
-          }
-        }
-        {
-          eqb_case (atom_args a) (atom_args a2);
-          [ rewrite H7 in *; rewrite map.get_put_same in *
-          | rewrite map.get_put_diff in * ]; repeat iss_case;
-            autorewrite with inversion in *; break; subst; cbn in *; eauto.
-          { replace a2 with a in * by (destruct a, a2; cbn in *; congruence); eauto. }
-          {
-            change (map.get map.empty (atom_args a2) = Some d) in Hma.
-            basic_utils_crush.
-          }
-        }
-      }
-      {
-        change (map.get
-                  (fold_left (fun m x => map_update m x (cons a))
-                     (dedup (eqb (A:=_)) (a.(atom_ret)::a.(atom_args))) e.(parents))
-                  i = Some l) in H4.
-        destruct (map.get (parents e) i) eqn:Hpe.
-        2:{
-          assert (incl l [a]).
-          {
-            assert (map.get (parents e) i <?> (fun l => incl l [a])).
-            { rewrite Hpe; cbn; auto. }
-            revert H6 l H4.
-            generalize (parents e);
-            generalize (dedup eqb (atom_ret a :: atom_args a)).
-            induction l;
-              basic_goal_prep;
-              basic_utils_crush.
-            { rewrite H4 in *; cbn in *; auto. }
-            {
-              eapply IHl in H4; eauto.
-              eqb_case i a1.
-              {
-                rewrite get_update_same; cbn; eauto.
-                case_match; cbn in *; eauto with utils.
-                basic_utils_crush.
-              }
-              { rewrite get_update_diff; cbn; eauto. }
-            }
-          }
-          eapply all_incl; eauto; cbn; intuition eauto.
-        }
-        assert (incl l (cons a l0)).
-        {
-          revert H4 Hpe.
-          revert l l0;
-            generalize (parents e);
-            generalize (dedup eqb (atom_ret a :: atom_args a)).
-          induction l;
-            basic_goal_prep;
-            basic_utils_crush.
-          { replace l0 with l by congruence; eauto with utils. }
-          {
-            eqb_case i a1; eapply IHl with (r:=(map_update r a1 (cons a))) in H4.
-            2:{ rewrite get_update_same, Hpe; eauto. }
-            3:{ rewrite get_update_diff, Hpe; eauto. }
-            2: now eauto with utils.
-            revert H4; clear; unfold incl; cbn; intuition eauto.
-            eapply H4 in H.
-            intuition subst; eauto.
-          }
-        }
-        eapply all_incl; try eassumption.
-        cbn; intuition eauto.
-      }
-    }    
+    unfold vc, find.
+    intros e Hok Hkx.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [fst snd db parents worklist equiv analyses log epoch].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Hok Hkx Hfind) as Hspec.
+    destruct Hspec as
+      (Huf'_l & Hin_v' & Hpar_uf' & Hsubrel & Hlim_iff & Hkey_iff).
+    split; [reflexivity|].
+    split; [exact Huf'_l|].
+    split.
+    - (* iff2 PER: both forests, share limits, so PERs match *)
+      pose proof Hok as [Hf_old _ _ _ _]; cbn in Hf_old.
+      pose proof Huf'_l as [Hf_new _ _ _ _]; cbn in Hf_new.
+      intros i j; unfold uf_rel_PER.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as Hold.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as Hnew.
+      rewrite Hold, Hnew.
+      split; intros (r0 & Hl1 & Hl2);
+        exists r0; split; apply Hlim_iff; assumption.
+    - split; [reflexivity|].
+      split; [reflexivity|].
+      split; [exact Hkey_iff|].
+      split; [exact Hin_v'|].
+      unfold uf_rel_PER.
+      unfold parent_rel in Hpar_uf'.
+      eapply trans_PER_subrel; exact Hpar_uf'.
   Qed.
 
-  (*TODO: move *)
-  Lemma all2_same A R (l : list A)
-    : all2 R l l <-> all (fun x => R x x) l.
+  (* Both endpoints of a PER pair are has_key in the union-find. *)
+  Lemma uf_rel_PER_has_key (uf : union_find) (l : list idx) i j
+    : union_find_ok lt uf l ->
+      uf_rel_PER uf i j ->
+      Sep.has_key i uf.(parent) /\ Sep.has_key j uf.(parent).
   Proof.
-    clear.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
+    intros Huf Hij.
+    pose proof Huf as [Hf _ _ _ _]; cbn in Hf.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    (* Both directions: get the parent_rel chain via shared parent and
+       inspect its first step to recover map.get. *)
+    assert (Hkey_l : forall a b,
+               uf_rel_PER uf a b ->
+               Sep.has_key a uf.(parent)).
+    { intros a b Hab.
+      unfold uf_rel_PER in Hab.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf a b) as HP.
+      apply HP in Hab.
+      destruct Hab as (r0 & Hl1 & _).
+      destruct Hl1 as [Hpr _].
+      inversion Hpr as [aa bb Hget|aa bb cc Hget _]; subst;
+        unfold Sep.has_key; rewrite Hget; exact I. }
+    split; [eapply Hkey_l; exact Hij|].
+    eapply Hkey_l. unfold uf_rel_PER in *. apply PER_clo_sym; exact Hij.
   Qed.
-  
-  
-  Lemma update_entry_sound i a
-    : atom_sound_for_model m i a ->
-      state_sound_for_model m i (update_entry a)
-        (fun i' _ => i = i').
+
+  (* Inner version of [union_sound] parameterized by an explicit
+     [roots] list.  Callers that don't have a concrete [roots] in
+     scope (the typical case after [vc_bind] / [vc_Mseq], where the
+     state evar isn't yet introduced when the lemma is applied)
+     should use [union_sound] below, which existentially quantifies
+     over [roots]. *)
+  Lemma union_sound_with_roots (x y : idx) roots
+    : vc (Defs.union x y)
+        (fun e res =>
+           union_find_ok lt (equiv e) roots ->
+           Sep.has_key x e.(equiv).(parent) ->
+           Sep.has_key y e.(equiv).(parent) ->
+           e.(db) = (snd res).(db) /\
+             (exists roots', union_find_ok lt (snd res).(equiv) roots') /\
+             iff2 (union_closure_PER (uf_rel_PER (equiv e)) (singleton_rel x y))
+               (uf_rel_PER (snd res).(equiv)) /\
+             e.(parents) = (snd res).(parents) /\
+             union_worklist_rel e (snd res) x y /\
+             uf_rel_PER (snd res).(equiv) x (fst res)).
   Proof.
-    cleanup_context.
-    unfold update_entry.
-    intros.
-    eapply state_sound_for_model_bind; eauto using db_lookup_sound with utils.
-    cbn beta;intros; subst.
-    case_match; cbn in H2.
-    {
-      eapply state_sound_for_model_Mseq; eauto with utils.
-      {
-        apply union_sound.
-        unfold atom_sound_for_model in *; basic_goal_prep; repeat iss_case.
-        autorewrite with inversion in *; subst.
-        eapply interprets_to_functional in H5; try apply H1.
-        {
-          unfold eq_sound_for_model.
-          rewrite Hma0; cbn; rewrite Hma2; cbn; symmetry; eauto.
-        }
-        {
-          rewrite all2_same.
-          eapply interprets_to_implies_wf_args; eauto.
-        }
-      }
-      {
-        intros; subst.
-        eapply ret_sound_for_model'; intuition subst; eauto with utils.
-        break; subst; eauto.
-      }
-    }        
-    { break; subst; eapply db_set_sound; eauto. }
+    unfold Defs.union.
+    vc_bind find_sound'.
+    vc_bind find_sound'.
+    eqb_case a a0.
+    { (* Mret case: find x = find y = a0, no UnionFind.union *)
+      unfold vc.
+      intros s2 Hpost_y Hpost_x Hok Hkx Hky.
+      cbn [fst snd] in *.
+      specialize (Hpost_x Hok Hkx).
+      destruct Hpost_x as
+        (Hdb_x & Hok_s1 & Hiff_x & Hpa_x & Hwl_x & Hki_x & Hin_x & Hxa).
+      specialize (Hpost_y Hok_s1 (proj1 (Hki_x y) Hky)).
+      destruct Hpost_y as
+        (Hdb_y & Hok_s2 & Hiff_y & Hpa_y & Hwl_y & Hki_y & Hin_y & Hya).
+      cbn [Mret StateMonad.state_monad fst snd].
+      assert (Hiff_02 : iff2 (uf_rel_PER (equiv s0)) (uf_rel_PER (equiv s2))).
+      { intros i j; split; intro Hij;
+          [ apply Hiff_y; apply Hiff_x; exact Hij
+          | apply Hiff_x; apply Hiff_y; exact Hij]. }
+      assert (Hxa_s2 : uf_rel_PER (equiv s2) x a0)
+        by (apply Hiff_y; exact Hxa).
+      assert (Hxy_s2 : uf_rel_PER (equiv s2) x y).
+      { unfold uf_rel_PER in *.
+        eapply PER_clo_trans; [exact Hxa_s2|].
+        apply PER_clo_sym; exact Hya. }
+      split; [congruence|].
+      split; [exists roots; exact Hok_s2|].
+      split.
+      - intros i j; split; intro Hij.
+        + induction Hij as [a' b [Hl|Hr]
+                            |a' b c _ IHab _ IHbc
+                            |a' b _ IHab].
+          * apply Hiff_02; exact Hl.
+          * destruct Hr as [Hax Hby]; subst; exact Hxy_s2.
+          * unfold uf_rel_PER in *. eapply PER_clo_trans; eassumption.
+          * unfold uf_rel_PER in *. apply PER_clo_sym; assumption.
+        + apply PER_clo_base; left.
+          apply Hiff_02; exact Hij.
+      - split; [congruence|].
+        split.
+        + left; congruence.
+        + exact Hxa_s2. }
+    { (* UnionFind.union branch: find x = a, find y = a0, a <> a0 *)
+      unfold vc.
+      intros s2 Hpost_y Hpost_x Hok Hkx Hky.
+      cbn [fst snd] in *.
+      specialize (Hpost_x Hok Hkx).
+      destruct Hpost_x as
+        (Hdb_x & Hok_s1 & Hiff_x & Hpa_x & Hwl_x & Hki_x & Hin_x & Hxa).
+      specialize (Hpost_y Hok_s1 (proj1 (Hki_x y) Hky)).
+      destruct Hpost_y as
+        (Hdb_y & Hok_s2 & Hiff_y & Hpa_y & Hwl_y & Hki_y & Hin_y & Hya).
+      assert (Hiff_02 : iff2 (uf_rel_PER (equiv s0)) (uf_rel_PER (equiv s2))).
+      { intros i j; split; intro Hij;
+          [ apply Hiff_y; apply Hiff_x; exact Hij
+          | apply Hiff_x; apply Hiff_y; exact Hij]. }
+      assert (Hxa_s2 : uf_rel_PER (equiv s2) x a)
+        by (apply Hiff_y; exact Hxa).
+      assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+        by (intros; Lia.lia).
+      pose proof (uf_rel_PER_has_key _ _ _ _ Hok_s2 Hxa_s2) as [_ Hk_a_s2].
+      pose proof (uf_rel_PER_has_key _ _ _ _ Hok_s2 Hya) as [_ Hk_a0_s2].
+      pose proof Hok_s2 as [Hf_s2 _ _ _ _]; cbn in Hf_s2.
+      assert (Hroot_a_s2 : map.get (equiv s2).(parent) a = Some a)
+        by (apply (proj1 (@forest_root_iff _ _ _ _ _ a roots _ Hf_s2));
+            exact Hin_x).
+      assert (Hroot_a0_s2 : map.get (equiv s2).(parent) a0 = Some a0)
+        by (apply (proj1 (@forest_root_iff _ _ _ _ _ a0 roots _ Hf_s2));
+            exact Hin_y).
+      destruct (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat)
+                  (equiv s2) a a0) as [uf3 z'] eqn:Hunion.
+      pose proof (@union_spec _ _ _ _ _ _ _ default lt_trans_nat
+                    _ _ _ _ _ _ _ Hok_s2 Hk_a_s2 Hk_a0_s2 Hunion) as Hus.
+      destruct Hus as [l' (Huf3_l' & Hin_z' & Hincl & Huf3_iff)].
+      assert (Hz'_xy : z' = a \/ z' = a0).
+      { revert Hunion.
+        unfold UnionFind.union, UnionFind.find.
+        destruct (equiv s2) as [rk pa mr nx].
+        cbn [parent rank max_rank next] in *.
+        assert (Hfa_a :
+                  find_aux idx Eqb_idx (idx_map idx) (S mr) a pa = (a, pa)).
+        { cbn [find_aux].
+          rewrite Hroot_a_s2.
+          replace (@eqb _ Eqb_idx a a) with true; [reflexivity|].
+          symmetry. pose proof (Eqb.eqb_spec a a) as Hsp.
+          destruct (eqb a a) eqn:He; intuition congruence. }
+        rewrite Hfa_a.
+        assert (Hfa_a0 :
+                  find_aux idx Eqb_idx (idx_map idx) (S mr) a0 pa = (a0, pa)).
+        { cbn [find_aux].
+          rewrite Hroot_a0_s2.
+          replace (@eqb _ Eqb_idx a0 a0) with true; [reflexivity|].
+          symmetry. pose proof (Eqb.eqb_spec a0 a0) as Hsp.
+          destruct (eqb a0 a0) eqn:He; intuition congruence. }
+        rewrite Hfa_a0.
+        cbn [fst snd].
+        replace (@eqb _ Eqb_idx a a0) with false
+          by (pose proof (Eqb.eqb_spec a a0) as Hsp;
+              destruct (eqb a a0) eqn:He; intuition congruence).
+        destruct (Nat.compare _ _);
+          intros Hu; inversion Hu; subst; auto. }
+      assert (Hxa_uf3 : uf_rel_PER uf3 x a)
+        by (apply Huf3_iff; apply PER_clo_base; left; exact Hxa_s2).
+      assert (Hya_uf3 : uf_rel_PER uf3 y a0)
+        by (apply Huf3_iff; apply PER_clo_base; left; exact Hya).
+      assert (Haa0_uf3 : uf_rel_PER uf3 a a0).
+      { apply Huf3_iff. apply PER_clo_base; right.
+        unfold singleton_rel; split; reflexivity. }
+      assert (Hxy_uf3 : uf_rel_PER uf3 x y).
+      { unfold uf_rel_PER in *.
+        eapply PER_clo_trans; [exact Hxa_uf3|].
+        eapply PER_clo_trans; [exact Haa0_uf3|].
+        apply PER_clo_sym; exact Hya_uf3. }
+      assert (Hiff_closure :
+                iff2 (union_closure_PER (uf_rel_PER (equiv s0))
+                                        (singleton_rel x y))
+                     (uf_rel_PER uf3)).
+      { intros i j; split; intro Hij.
+        - induction Hij as [a' b [Hl|Hr]
+                            |a' b c _ IHab _ IHbc
+                            |a' b _ IHab].
+          + apply Huf3_iff. apply PER_clo_base; left.
+            apply Hiff_02; exact Hl.
+          + destruct Hr as [Hax Hby]; subst; exact Hxy_uf3.
+          + unfold uf_rel_PER in *. eapply PER_clo_trans; eassumption.
+          + unfold uf_rel_PER in *. apply PER_clo_sym; assumption.
+        - apply Huf3_iff in Hij.
+          induction Hij as [a' b [Hl|Hr]
+                            |a' b c _ IHab _ IHbc
+                            |a' b _ IHab].
+          + apply PER_clo_base; left.
+            apply Hiff_02; exact Hl.
+          + destruct Hr as [Hax Hby]; subst.
+            unfold uf_rel_PER in *.
+            eapply PER_clo_trans;
+              [apply PER_clo_sym; apply PER_clo_base; left;
+               apply Hiff_02; exact Hxa_s2|].
+            eapply PER_clo_trans;
+              [apply PER_clo_base; right;
+               unfold singleton_rel; split; reflexivity|].
+            apply PER_clo_base; left.
+            apply Hiff_02; exact Hya.
+          + unfold uf_rel_PER in *. eapply PER_clo_trans; eassumption.
+          + unfold uf_rel_PER in *. apply PER_clo_sym; assumption. }
+      destruct Hz'_xy as [Hz_eq | Hz_eq]; subst z'.
+      - (* z' = a: rank chose a as the new root *)
+        replace (@eqb _ Eqb_idx a a) with true.
+        2: { symmetry. pose proof (Eqb.eqb_spec a a) as Hs.
+             destruct (eqb a a) eqn:He; intuition congruence. }
+        cbn [fst snd db parents worklist equiv].
+        split; [congruence|].
+        split; [exists l'; exact Huf3_l'|].
+        split; [exact Hiff_closure|].
+        split; [congruence|].
+        split.
+        { right. do 3 eexists.
+          split; [rewrite Hwl_x, Hwl_y; reflexivity|].
+          split.
+          + unfold uf_rel_PER in *.
+            apply PER_clo_sym.
+            eapply PER_clo_trans; [exact Hxa_uf3 | exact Haa0_uf3].
+          + unfold uf_rel_PER in *.
+            eapply PER_clo_trans;
+              [exact Haa0_uf3 | apply PER_clo_sym; exact Hya_uf3]. }
+        exact Hxa_uf3.
+      - (* z' = a0: rank chose a0 as the new root *)
+        replace (@eqb _ Eqb_idx a a0) with false.
+        2: { symmetry. pose proof (Eqb.eqb_spec a a0) as Hs.
+             destruct (eqb a a0) eqn:He; intuition congruence. }
+        cbn [fst snd db parents worklist equiv].
+        split; [congruence|].
+        split; [exists l'; exact Huf3_l'|].
+        split; [exact Hiff_closure|].
+        split; [congruence|].
+        split.
+        { right. do 3 eexists.
+          split; [rewrite Hwl_x, Hwl_y; reflexivity|].
+          split.
+          + unfold uf_rel_PER in *. apply PER_clo_sym; exact Hxa_uf3.
+          + unfold uf_rel_PER in *. apply PER_clo_sym; exact Hya_uf3. }
+        unfold uf_rel_PER in *.
+        eapply PER_clo_trans; [exact Hxa_uf3 | exact Haa0_uf3]. }
   Qed.
-  
-  Lemma eq_atom_implies_sound_l i a3 a1 
+
+  (* Existential-roots form of [union_sound]: the precondition
+     [union_find_ok lt (equiv e) roots] is bundled inside an
+     [exists roots, ...].  This is the shape callers want when
+     applying via [vc_bind] / [vc_Mseq], where the [e] being
+     analyzed is only introduced after the lemma is eapplied. *)
+  Lemma union_sound (x y : idx)
+    : vc (Defs.union x y)
+        (fun e res =>
+           (exists roots, union_find_ok lt (equiv e) roots) ->
+           Sep.has_key x e.(equiv).(parent) ->
+           Sep.has_key y e.(equiv).(parent) ->
+           e.(db) = (snd res).(db) /\
+             (exists roots', union_find_ok lt (snd res).(equiv) roots') /\
+             iff2 (union_closure_PER (uf_rel_PER (equiv e)) (singleton_rel x y))
+               (uf_rel_PER (snd res).(equiv)) /\
+             e.(parents) = (snd res).(parents) /\
+             union_worklist_rel e (snd res) x y /\
+             uf_rel_PER (snd res).(equiv) x (fst res)).
+  Proof.
+    unfold vc; intros e [roots Hok] Hkx Hky.
+    exact (union_sound_with_roots x y roots e Hok Hkx Hky).
+  Qed.
+
+
+  (* Atom-level equality (under the interpretation) preserves
+     soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
+     (same fn, args eq_sound pointwise, ret eq_sound), then [a1]
+     is also sound. *)
+  Lemma eq_atom_implies_sound_l_active i a3 a1
     : eq_atom_in_interpretation i a3 a1 ->
       atom_sound_for_model m i a3 -> atom_sound_for_model m i a1.
   Proof.
@@ -2059,2635 +2011,2368 @@ Abort.
     eapply interprets_to_preserved; eauto.
     inversions; eauto.
   Qed.
-  
-  
-  Instance eq_atom_interp_sym i : Symmetric (eq_atom_in_interpretation i).
-  Proof.
-    clear idx_succ idx_zero.
-    unfold eq_atom_in_interpretation; repeat intro; basic_goal_prep;
-      repeat (iss_case; cbn in * ).
-    intuition eauto.
-    {
-      apply all2_Symmetric; eauto.
-      apply eq_sound_for_model_Symmetric; eauto.
-    }
-    { symmetry; eauto. }
-  Qed.
 
-
-    
-  Lemma db_lookup_entry_sound i f args
-    : state_sound_for_model m i
-        (db_lookup_entry idx symbol symbol_map idx_map idx_trie analysis_result
-           f args) (fun i' e => i' = i
-                                /\ e <?> (fun e => atom_sound_for_model m i
-                                        (Build_atom f args e.(entry_value _ _)))).
-  Proof.
-    open_ssm.
-    basic_goal_prep.
-    case_match; cbn; auto.
-    case_match; cbn; auto.
-    assert (atom_in_egraph (Build_atom f args d.(entry_value _ _)) e).
-    {
-      unfold atom_in_egraph, atom_in_db; cbn.
-      rewrite case_match_eqn; cbn.
-      rewrite case_match_eqn0; cbn.
-      reflexivity.
-    }
-    eapply atom_interpretation; eauto.
-  Qed.
-  
-  
-  Lemma push_worklist_sound_analysis i o
-    : state_sound_for_model m i
-        (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
-           (analysis_repair idx o)) 
-        (fun i' _ => i = i').
-  Proof.
-    open_ssm.
-    cbn; eauto.
-  Qed.
-
-  Lemma db_set_entry_sound i f args entry_epoch entry_value a
-    : atom_sound_for_model m i (Build_atom f args entry_value) ->
-      state_sound_for_model m i
-       (db_set_entry idx symbol symbol_map idx_map idx_trie analysis_result 
-          f args entry_epoch entry_value a) 
-         (fun i' _ => i = i').
-  Proof.
-    intro Hsound.
-    open_ssm.
-    intuition eauto with utils.
-    unfold atom_in_egraph,atom_in_db in *; cbn in *.
-    repeat iss_case.
-    eqb_case f (atom_fn a0).
-    {
-      rewrite get_update_same in* by eauto.
-      inversions.
-      case_match.
-      all: eqb_case args (atom_args a0).
-      all: rewrite ?map.get_put_same in * by eauto; inversions; cbn in *; subst; eauto.
-      all: rewrite  ?map.get_put_diff in * by eauto; inversions;cbn in *; subst; eauto.
-      {
-        eapply atom_interpretation0; rewrite case_match_eqn; cbn.
-        rewrite Hma0; cbn.
-        eauto.
-      }
-      {
-        exfalso.
-        change (map.get map.empty (atom_args a0) = Some d) in Hma0.
-        rewrite map.get_empty in *.
-        congruence.
-      }
-    }
-    {
-      rewrite get_update_diff in * by eauto.
-      apply atom_interpretation0.
-      rewrite Hma; cbn.
-      rewrite Hma0;cbn.
-      eauto.
-    }   
-  Qed.    
-
-  Lemma repair_parent_analysis_sound i a
-    : state_sound_for_model m i
-        (repair_parent_analysis idx symbol
-           symbol_map idx_map idx_trie analysis_result a)
-         (fun i' _ => i = i').
-  Proof.
-    cleanup_context.
-    unfold repair_parent_analysis.
-    bind_with_fn db_lookup_entry_sound.
-    case_match; break; subst.
-    2:{ eapply ret_sound_for_model'; eauto with utils. }
-    case_match.
-    cbn in H4.
-    bind_with_fn get_analyses_sound.
-    cbn beta;intros; subst.
-    case_match.
-    { eapply ret_sound_for_model'; eauto with utils. }
-    bind_with_fn update_analyses_sound.
-    bind_with_fn push_worklist_sound_analysis.
-    apply db_set_entry_sound; auto.
-  Qed.
-
-  Lemma state_sound_for_model_Mfoldl A B i P_const P_acc l (f : B -> A -> state instance B) acc
-    : (forall (a:A) acc i', In a l ->
-                            map.extends i' i ->
-                            P_const i' ->
-                            P_acc i' acc ->
-                            state_sound_for_model m i' (f acc a)
-                              (fun i' acc => P_const i' /\ P_acc i' acc)) ->
-      P_const i ->
-      P_acc i acc ->
-      monotone1 P_acc ->
-      state_sound_for_model m i (list_Mfoldl f l acc)
-        (fun i' acc => P_const i' /\ P_acc i' acc).
-  Proof.
-    cleanup_context.
-    revert i acc.
-    induction l.
-    {
-      intros.
-      eapply state_triple_wkn_ret;
-        unfold Sep.and1 in *;
-        basic_goal_prep; subst;
-        eexists; cbn; intuition eauto with utils.
-    }
-    {
-      intros.
-      cbn [list_Mfoldl].
-      eapply state_sound_for_model_bind; eauto using monotone1_all.
-      {
-        basic_goal_prep;
-          basic_utils_crush.
-      }
-      intros.
-      eapply IHl; eauto.
-      all:basic_goal_prep;
-        basic_utils_crush.
-      eapply H1.
-      all:basic_goal_prep;
-        basic_utils_crush.
-      eapply map_extends_trans; eauto.
-    }
-  Qed.
-  
-  Lemma atom_sound_functional i f args r1 r2
-    : atom_sound_for_model m i (Build_atom f args r1) ->
-      atom_sound_for_model m i (Build_atom f args r2) ->
+  (* Two atoms in the e-graph (or just sound under [i]) with the same
+     [atom_fn] and pointwise [eq_sound]-equal [atom_args] have
+     [eq_sound]-equal [atom_ret].  Lift of [interprets_to_functional]
+     to interpretation level. *)
+  Lemma atom_sound_eq_ret i f args1 args2 r1 r2
+    : atom_sound_for_model m i (Build_atom f args1 r1) ->
+      atom_sound_for_model m i (Build_atom f args2 r2) ->
+      all2 (eq_sound_for_model m i) args1 args2 ->
       eq_sound_for_model m i r1 r2.
   Proof.
     clear idx_succ idx_zero.
-    unfold atom_sound_for_model, eq_sound_for_model; cbn.
-    intros; repeat iss_case; inversions; cbn.
-    eapply interprets_to_functional; eauto.
-    eapply all2_same; eapply interprets_to_implies_wf_args; eauto.
+    intros Hsa1 Hsa2 Hargs.
+    (* Convert (Build_atom f args1 r1) to (Build_atom f args2 r1)
+       using eq_atom_implies_sound_l_active. *)
+    pose proof Hsa1 as Hsa1_orig.
+    apply (eq_atom_implies_sound_l_active i (Build_atom f args1 r1)
+                                            (Build_atom f args2 r1))
+      in Hsa1.
+    2:{ unfold eq_atom_in_interpretation; cbn.
+        split; [reflexivity|]; split; [exact Hargs |].
+        (* eq_sound i r1 r1: from has_key r1 in i + interprets_to_implies_wf_conclusion. *)
+        unfold atom_sound_for_model in Hsa1_orig. cbn in Hsa1_orig.
+        destruct (list_Mmap (map.get i) args1) as [vs|] eqn:Hvs;
+          cbn in Hsa1_orig; try tauto.
+        unfold eq_sound_for_model.
+        destruct (map.get i r1) as [r1v|] eqn:Hr1; cbn in Hsa1_orig; try tauto.
+        cbn.
+        eapply interprets_to_implies_wf_conclusion; eauto. }
+    (* Now Hsa1 : atom_sound i (Build_atom f args2 r1) and
+       Hsa2 : atom_sound i (Build_atom f args2 r2).  Direct. *)
+    unfold atom_sound_for_model in Hsa1, Hsa2.
+    cbn in Hsa1, Hsa2.
+    destruct (list_Mmap (map.get i) args2) as [vs|] eqn:Hvs;
+      cbn in Hsa1, Hsa2; try tauto.
+    destruct (map.get i r1) as [v1|] eqn:Hv1; cbn in Hsa1; try tauto.
+    destruct (map.get i r2) as [v2|] eqn:Hv2; cbn in Hsa2; try tauto.
+    unfold eq_sound_for_model.
+    rewrite Hv1, Hv2; cbn.
+    pose proof (interprets_to_implies_wf_args _ _ _ Hsa1) as Hwf_vs.
+    eapply interprets_to_functional with (args1 := vs) (args2 := vs); eauto.
+    clear -Hwf_vs.
+    induction vs; cbn in *; auto.
+    intuition.
   Qed.
-  Hint Resolve atom_sound_functional : utils.
 
-  (*
-  Lemma add_parent_sound i ps p
-    : atom_sound_for_model m i p ->
-      all (atom_sound_for_model m i) ps ->
-      state_sound_for_model m i
-        (add_parent idx Eqb_idx idx_zero symbol Eqb_symbol symbol_map idx_map idx_trie
-           analysis_result ps p)
-        (fun i' a => i = i' /\ all (atom_sound_for_model m i') a).
+
+  
+  Arguments repair_parent_analysis {idx symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  {H} a _.
+
+  Arguments repair_union {idx}%type_scope {Eqb_idx} {symbol}%type_scope
+  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+  {H} _ _ _ _.
+
+  (* Lift a per-element vc lemma with post
+       [egraph_ok e -> egraph_ok (snd res) /\ denote_iff e (snd res)]
+     to a [list_Mmap]/[list_Miter] of the same shape, using
+     [vc_list_Mmap_inv]/[vc_list_Miter_inv] with [P l s := egraph_ok s]
+     and [R s s' := forall i, denote s i <-> denote s' i]. *)
+  Ltac vc_list_Mmap_egraph_iff per_step :=
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))];
+      [ cbn beta; intros ? ? Hinv Hok; apply (Hinv Hok)
+      | intros ? _ i; reflexivity
+      | intros ? ? ? H1 H2 i; rewrite H1; auto
+      | intros a l_rest;
+        eapply vc_consequence; [| apply (per_step a)];
+        cbn beta; intros ? ? Hone Hok; apply (Hone Hok) ].
+
+  Ltac vc_list_Miter_egraph_iff per_step :=
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ s => egraph_ok s)
+                  (fun s s' => forall i, denote s i <-> denote s' i))];
+      [ cbn beta; intros ? ? Hinv Hok; apply (Hinv Hok)
+      | intros ? _ i; reflexivity
+      | intros ? ? ? H1 H2 i; rewrite H1; auto
+      | intros a l_rest;
+        eapply vc_consequence; [| apply (per_step a)];
+        cbn beta; intros ? ? Hone Hok; apply (Hone Hok) ].
+
+  (* [pull_worklist] only swaps the worklist field of the instance for
+     [[]]; denote/egraph_ok don't read the worklist outside of
+     [worklist_ok], which trivially holds for [[]]. *)
+  Lemma pull_worklist_denote_iff
+    : vc (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ all (worklist_entry_ok e.(equiv)) (fst res)).
   Proof.
-    intro.
-    induction ps; cbn [add_parent]; intros.
-    { eapply ret_sound_for_model'; cbn; eauto with utils. }
-    {
-      case_match.
-      cbn [all Defs.atom_ret] in *; break.
-      case_match.
-      eqb_case atom_fn0 atom_fn; 
-        cbn - [Mbind Mret].
-      1:eqb_case atom_args0 atom_args; 
-        cbn - [Mbind Mret].
-      {
-        ssm_bind.
-        {
-          eapply union_sound; eauto.
-          eapply atom_sound_functional; eauto.
-        }
-        cbn beta in *; subst.
-        eapply ret_sound_for_model'; break; subst; eauto with utils.
-        cbn; intuition eauto with utils.
-        unfold atom_sound_for_model; cbn in *.
-        unfold atom_sound_for_model in H1; cbn in *; subst.
-        unfold eq_sound_for_model in H6.
-        repeat (iss_case; cbn).
-        unfold interprets_to in *; break; subst.
-        exists x; intuition eauto.
-        etransitivity; eauto.
-      }
-      {
-        ssm_bind.
-        eapply ret_sound_for_model'; break; subst; eauto with utils.
-        cbn; intuition eauto.
-      }
-      {
-        ssm_bind.
-        eapply ret_sound_for_model'; break; subst; eauto with utils.
-        cbn; intuition eauto.
-      }
+    unfold vc, pull_worklist; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    split.
+    { constructor; cbn; auto. }
+    split; [intros j; split; intros [Hwf Hex Ha Hr]; constructor; cbn in *; auto|].
+    split; [reflexivity | exact Hwl].
+  Qed.
+
+  (* If [x] is not in [equiv]'s parent map, [UnionFind.find] returns
+     the union-find unchanged. Used to handle the no-key case in
+     [find_denote_iff]. *)
+  Lemma find_no_key_identity (e : instance) x
+    : map.get e.(equiv).(parent) x = None ->
+      UnionFind.find e.(equiv) x = (e.(equiv), x).
+  Proof.
+    intros Hgx.
+    unfold UnionFind.find.
+    destruct e.(equiv) as [ra pa mr l] eqn:Heq.
+    cbn in Hgx |- *.
+    destruct mr; cbn; rewrite Hgx; reflexivity.
+  Qed.
+
+  (* [find] only updates [equiv] via path compression; both [egraph_ok]
+     and [denote] are preserved. Path compression keeps the union-find
+     well-formed with the same root list and preserves
+     [uf_rel_PER] up to [iff2]. *)
+  Lemma find_denote_iff x
+    : vc (find x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, find; intros e Hok.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [fst snd].
+    destruct Hok as [Heq Hwl Hpa Hdb].
+    destruct Heq as [roots Huf_l].
+    pose (e' := {| db := db e; equiv := uf'; parents := parents e;
+                   epoch := epoch e; worklist := worklist e;
+                   analyses := analyses e;
+                   log := log idx symbol symbol_map idx_map idx_trie
+                            analysis_result e |}).
+    change ({| db := db e; equiv := uf'; parents := parents e;
+               epoch := epoch e; worklist := worklist e;
+               analyses := analyses e;
+               log := log idx symbol symbol_map idx_map idx_trie
+                        analysis_result e |}) with e'.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hcommon : union_find_ok lt e'.(equiv) roots
+                     /\ iff2 (limit (parent_rel idx (idx_map idx)
+                                       (equiv e).(parent)))
+                            (limit (parent_rel idx (idx_map idx)
+                                      e'.(equiv).(parent)))
+                     /\ (forall y, Sep.has_key y e.(equiv).(parent)
+                                   <-> Sep.has_key y e'.(equiv).(parent))).
+    { destruct (map.get e.(equiv).(parent) x) as [px|] eqn:Hgx.
+      - assert (Hkx : Sep.has_key x e.(equiv).(parent)).
+        { unfold Sep.has_key. rewrite Hgx. exact I. }
+        pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                      _ _ _ _ _ Huf_l Hkx Hfind) as Hspec.
+        destruct Hspec as (Huf'_l & _ & _ & _ & Hlim_iff & Hkey_iff).
+        subst e'; cbn.
+        split; [exact Huf'_l|]. split; [exact Hlim_iff|exact Hkey_iff].
+      - rewrite (find_no_key_identity e x Hgx) in Hfind.
+        injection Hfind; intros; subst uf' v'.
+        subst e'; cbn.
+        split; [exact Huf_l|].
+        split; [intros i j; reflexivity | intros y; reflexivity]. }
+    destruct Hcommon as (Huf'_l & Hlim_iff & Hkey_iff).
+    assert (Hiff : forall j, (egraph_ok e /\ denote e j)
+                             <-> (egraph_ok e' /\ denote e' j)).
+    { intros j. apply (egraph_sound_for_interpretation_iff_equiv j e e' roots);
+        subst e'; cbn; auto. }
+    assert (Hper_iff : iff2 (uf_rel_PER (equiv e)) (uf_rel_PER (equiv e'))).
+    { pose proof Huf_l as [Hf_old _ _ _ _]; cbn in Hf_old.
+      pose proof Huf'_l as [Hf_new _ _ _ _]; cbn in Hf_new.
+      unfold uf_rel_PER.
+      intros i j.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_old i j) as HP1.
+      pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                    _ _ Hf_new i j) as HP2.
+      cbn in *.
+      rewrite HP1, HP2.
+      split; intros (r & Hl1 & Hl2); exists r;
+        intuition (try apply Hlim_iff; auto). }
+    assert (Hok_e' : egraph_ok e').
+    { constructor.
+      - exists roots. exact Huf'_l.
+      - subst e'; cbn.
+        eapply all_wkn; [|exact Hwl].
+        intros [old new improved | k] _ Hwentry; cbn in *; auto.
+        apply Hper_iff; assumption.
+      - subst e'; cbn.
+        intros y s Hg.
+        pose proof (Hpa _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        cbv beta in Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in *.
+        destruct Hex as (aa & Hcanon & Ha_aa).
+        destruct Hcanon as (Hfn & Hargs & Hret).
+        exists aa; split.
+        + split; [exact Hfn|]. split.
+          * eapply all2_impl; [|exact Hargs]. intros; apply Hper_iff; auto.
+          * apply Hper_iff. exact Hret.
+        + unfold atom_in_egraph in *; cbn in *. exact Ha_aa.
+      - subst e'; cbn.
+        intros a Ha.
+        destruct (Hdb _ Ha) as [Hargs Hret].
+        split; [|apply Hkey_iff; exact Hret].
+        eapply all_wkn; [|exact Hargs]; intros; apply Hkey_iff; assumption. }
+    split; [exact Hok_e'|].
+    intros j; split; intros Hd.
+    - apply (Hiff j). split; [|exact Hd]. constructor; auto.
+      exists roots; exact Huf_l.
+    - destruct (proj2 (Hiff j) (conj Hok_e' Hd)) as [_ Hde]. exact Hde.
+  Qed.
+
+  (* [canonicalize_worklist_entry] on a [union_repair] entry calls
+     [find] on its [new_idx]; the [analysis_repair] case is a [Mret].
+     Both preserve [egraph_ok] and [denote], and a [worklist_entry_ok]
+     input remains [worklist_entry_ok] in the post-state's equiv (the
+     output entry is [union_repair old new' _] where [new ~ new'] in
+     the post equiv, transitively giving [old ~ new']). *)
+  Lemma canonicalize_worklist_entry_denote_iff a
+    : vc (canonicalize_worklist_entry idx Eqb_idx symbol
+            symbol_map idx_map idx_trie analysis_result a)
+        (fun e res =>
+           egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)
+           /\ worklist_entry_ok (snd res).(equiv) (fst res)).
+  Proof.
+    unfold canonicalize_worklist_entry.
+    destruct a as [old new improved | i_repair]; cbn beta iota.
+    - eapply vc_bind;
+        [ apply (vc_and _ _ _ (find_denote_iff new) (find_preserves_fields_strong new)) |].
+      cbn beta. cbn [fst snd].
+      intros e v_e.
+      unfold vc, Mret, StateMonad.state_monad.
+      intros e1 [Hde Hpf] Hok Hwl_pre.
+      cbn beta iota. cbn [fst snd] in *.
+      destruct (Hde Hok) as [Hok_e1 Hde_e1].
+      pose proof Hok as Hok_orig.
+      destruct Hok as [Hex_e _ _].
+      specialize (Hpf Hex_e).
+      cbn in Hwl_pre.
+      assert (Hkey_new : Sep.has_key new e.(equiv).(parent)).
+      { destruct Hex_e as [roots Huf]; pose proof Huf as Huf_l.
+        destruct (uf_rel_PER_has_key _ _ _ _ Huf_l Hwl_pre) as [_ Hk].
+        exact Hk. }
+      specialize (Hpf Hkey_new).
+      destruct Hpf as (Hex_e1 & Hf01 & Huf_v_new).
+      destruct Hf01 as (_ & _ & _ & _ & _ & Hkey_iff & Hper_iff).
+      split; [exact Hok_e1|].
+      split; [exact Hde_e1|].
+      split; [intros x y Hxy; apply Hper_iff; exact Hxy|].
+      cbn.
+      assert (Holdnew_e1 : uf_rel_PER e1.(equiv) old new)
+        by (apply Hper_iff; exact Hwl_pre).
+      unfold uf_rel_PER in *.
+      eapply PER_clo_trans; [exact Holdnew_e1|].
+      apply PER_clo_sym; exact Huf_v_new.
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok _; split; [exact Hok|].
+      split; [intros i; reflexivity|].
+      split; [apply equiv_extends_refl | cbn; exact I].
+  Qed.
+
+  (* Convert an [all2] with constant left predicate to [all]. *)
+  Lemma all2_const_to_all_l A B (P : A -> Prop) (l1 : list A) (l2 : list B) :
+    all2 (fun a _ => P a) l1 l2 -> all P l1.
+  Proof.
+    revert l2; induction l1 as [|h t IH]; destruct l2 as [|x xs]; cbn;
+      try contradiction; auto.
+    intros [Hh Ht]; split; [exact Hh | apply (IH _ Ht)].
+  Qed.
+
+  (* [worklist_dedup] returns a subset of its input, so any [all]
+     predicate transports to the dedup. *)
+  Lemma worklist_dedup_preserves_all (P : worklist_entry idx -> Prop) l :
+    all P l -> all P (worklist_dedup _ _ l).
+  Proof.
+    induction l as [|h t IH]; cbn; auto.
+    intros [Hh Ht].
+    destruct (List.existsb (entry_subsumed_by idx Eqb_idx h)
+                (worklist_dedup _ _ t)).
+    - apply IH; exact Ht.
+    - cbn; split; [exact Hh | apply IH; exact Ht].
+  Qed.
+
+  (* List-iterated [canonicalize_worklist_entry] preserves [egraph_ok]
+     and [denote] pointwise, AND if every input entry was
+     [worklist_entry_ok] in the pre-state's equiv, every output entry
+     is [worklist_entry_ok] in the post-state's equiv. *)
+  Lemma list_Mmap_canonicalize_worklist_entry_denote_iff l
+    : vc (list_Mmap
+            (canonicalize_worklist_entry idx Eqb_idx symbol
+               symbol_map idx_map idx_trie analysis_result) l)
+        (fun e res =>
+           egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) l ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)
+           /\ all (worklist_entry_ok (snd res).(equiv)) (fst res)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_outputs _
+                  (fun l s => egraph_ok s
+                              /\ all (worklist_entry_ok s.(equiv)) l)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s')
+                  (fun s b _ => worklist_entry_ok s.(equiv) b))].
+    - cbn beta. intros e res Hinv Hok Hwl.
+      destruct (Hinv (conj Hok Hwl)) as ((Hok_p & _) & (Hiff & Hext) & Hall_out).
+      split; [exact Hok_p|].
+      split; [exact Hiff|].
+      split; [exact Hext|].
+      eapply all2_const_to_all_l; exact Hall_out.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
+    - intros s s' b _a [_ Hext] Hwl.
+      destruct b as [old new improved | i_repair]; cbn in *; auto.
+    - intros a l_rest.
+      eapply vc_consequence;
+        [| apply (canonicalize_worklist_entry_denote_iff a)].
+      cbn beta. intros s p Hone (Hok & Hwl).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hone Hok Hwl_a) as (Hok_p & Hde_p & Hext_p & Hwlok_p).
+      split; [split; [exact Hok_p|]|].
+      + eapply all_wkn; [|exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + split; [split; [exact Hde_p | exact Hext_p] | exact Hwlok_p].
+  Qed.
+
+  (* [get_parents] is read-only: returned parents are recorded as
+     parents in the egraph, so they satisfy [atom_in_egraph_up_to_equiv]
+     by [parents_ok]. *)
+  Lemma get_parents_denote_iff x
+    : vc (get_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ snd res = e
+           /\ all (fun a => atom_in_egraph_up_to_equiv a e) (fst res)).
+  Proof.
+    unfold vc, get_parents; intros e Hok; cbn [fst snd].
+    split; [exact Hok|].
+    split; [intros i; reflexivity|].
+    split; [reflexivity|].
+    unfold unwrap_with_default.
+    destruct (map.get e.(parents) x) as [s|] eqn:Hg.
+    - destruct Hok as [_ _ Hpa _]. eapply Hpa; exact Hg.
+    - cbn. exact I.
+  Qed.
+
+  (* [remove_parents x] removes the entry for [x] from the parents map.
+     db and equiv are unchanged, so denote (which doesn't read parents)
+     is preserved. [parents_ok] still holds because removing entries
+     only weakens the per-key invariant. *)
+  Lemma remove_parents_denote_iff x
+    : vc (remove_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)).
+  Proof.
+    unfold vc, remove_parents; intros e Hok; cbn [fst snd].
+    destruct Hok as [Heq Hwl Hpa Hdb].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e];
+      cbn in *.
+    split.
+    { constructor; cbn; auto.
+      intros y s Hg.
+      eqb_case x y.
+      + rewrite map.get_remove_same in Hg. discriminate.
+      + rewrite map.get_remove_diff in Hg by auto.
+        pose proof (Hpa _ _ Hg) as Hall.
+        eapply all_wkn; [|exact Hall].
+        intros a Hin Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+          atom_in_egraph, atom_in_db in *.
+        destruct Hex as (aa & Hcanon & Hain).
+        exists aa; cbn in *; intuition. }
+    split.
+    { intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto. }
+    split; reflexivity.
+  Qed.
+
+  (* [pull_parents] = [get_parents] composed with [remove_parents].
+     The returned parents are still atoms in the post-state's egraph
+     since [remove_parents] doesn't touch db or equiv. *)
+  Lemma pull_parents_denote_iff x
+    : vc (pull_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ all (fun a => atom_in_egraph_up_to_equiv a (snd res)) (fst res)).
+  Proof.
+    vc_bind get_parents_denote_iff.
+    rename s0 into e, a into ps.
+    vc_bind remove_parents_denote_iff.
+    rename s0 into e0, a into u.
+    unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+    intros s1 Hrm Hgp Hok.
+    destruct (Hgp Hok) as (Hok_e0 & Hde_e0 & Hs0_eq & Hain_ps_e).
+    subst e0.
+    destruct (Hrm Hok) as (Hok_s1 & Hde_s1 & Hdb_eq & Hequiv_eq).
+    split; [exact Hok_s1|].
+    split; [intros i; rewrite Hde_s1; reflexivity|].
+    split; [exact Hequiv_eq|].
+    eapply all_wkn; [|exact Hain_ps_e].
+    intros a _ Hex.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+      atom_in_egraph, atom_in_db in *.
+    destruct Hex as (aa & Hcanon & Hain).
+    exists aa.
+    rewrite Hdb_eq, Hequiv_eq; auto.
+  Qed.
+
+  (* An atom that is canonically present in the egraph has all of its
+     args and ret as keys in the union-find: pick the witness [aa] in
+     the db (whose args/ret are in the equiv via egraph_ok), and the
+     pairwise PER-equivalence with [a] transfers has_key. *)
+  Lemma atom_in_egraph_up_to_equiv_has_key (e : instance) (a : atom)
+    : egraph_ok e ->
+      atom_in_egraph_up_to_equiv a e ->
+      all (fun i => Sep.has_key i e.(equiv).(parent)) a.(atom_args)
+      /\ Sep.has_key a.(atom_ret) e.(equiv).(parent).
+  Proof.
+    intros Hok Hex.
+    destruct Hok as [Heq Hwl Hpa Hdb].
+    destruct Heq as [roots Huf_l].
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv in Hex.
+    destruct Hex as (aa & (Hfn & Hargs & Hret) & _).
+    split.
+    - clear Hret Hfn.
+      remember (atom_args aa) as args_aa eqn:Eaa.
+      clear Eaa aa.
+      revert args_aa Hargs.
+      induction a.(atom_args) as [|x xs IH];
+        destruct args_aa as [|y ys]; cbn;
+        try contradiction; auto.
+      intros [Hxy Hxs_ys].
+      split.
+      + apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hxy).
+      + apply (IH ys); exact Hxs_ys.
+    - apply (uf_rel_PER_has_key _ _ _ _ Huf_l Hret).
+  Qed.
+
+  Lemma union_after_canonicalize_denote_iff
+    a a' side_l (e_ref e0 : instance) (r : idx)
+    : egraph_ok e_ref ->
+      atom_in_egraph_up_to_equiv a e_ref ->
+      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+      post_db_remove e_ref a e0 ->
+      (* New: every entry literally at the removed key has a ret
+         PER-related to [atom_ret a].  Established by the prepended
+         [repair_each] union step. *)
+      (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                             e_ref.(db) ->
+                  uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
+      vc (Mseq (Defs.union r a'.(atom_ret)) (Mret tt))
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           atom_in_egraph (Build_atom (atom_fn a') (atom_args a') r) e1 ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
+  Proof.
+    intros Hok_ref Hatom_ref Hatoms_ref Hpost_dbr Hper_lk.
+    unfold Mseq. vc_bind union_sound.
+    rename s0 into e1, a0 into u_val.
+    unfold vc; cbn [Mret StateMonad.state_monad fst snd].
+    intros e_post Hu_lazy
+           Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hain_can.
+    (* has_key facts for the union *)
+    pose proof Hok_ref as [Heq_ref Hwl_ref Hpa_ref Hdb_ref_init].
+    destruct Hpost_dbr as (Hequiv_eq_post & Hpar_eq_post & Hep_eq_post
+                           & Hwl_eq_post & Han_eq_post & Hdb_iff_post).
+    destruct Hf01 as (Hdb_eq01 & Hpar_eq01 & Hep_eq01 & Hwl_eq01 & Han_eq01
+                      & Hkey_iff01 & Hper_iff01).
+    (* Hkey_lift_01: e0's has_key lifts to e1 (path compression). *)
+    assert (Hain_db_e1 : atom_in_db
+                          (Build_atom (atom_fn a') (atom_args a') r) e1.(db))
+      by exact Hain_can.
+    assert (Hain_db_e0 : atom_in_db
+                          (Build_atom (atom_fn a') (atom_args a') r) e0.(db))
+      by (rewrite Hdb_eq01 in Hain_db_e1; exact Hain_db_e1).
+    apply Hdb_iff_post in Hain_db_e0.
+    destruct Hain_db_e0 as [Hain_db_ref _].
+    assert (Hkr_e1 : Sep.has_key r e1.(equiv).(parent)).
+    { destruct (Hdb_ref_init _ Hain_db_ref) as [_ Hkret].
+      cbn in Hkret. apply Hkey_iff01. rewrite Hequiv_eq_post in *. exact Hkret. }
+    assert (Hkaret_e1 : Sep.has_key (atom_ret a') e1.(equiv).(parent)).
+    { destruct Hex_e1 as [rs1 Huf_e1].
+      exact (proj1 (uf_rel_PER_has_key e1.(equiv) rs1 _ _ Huf_e1 Hret_eq)). }
+    specialize (Hu_lazy Hex_e1 Hkr_e1 Hkaret_e1).
+    destruct Hu_lazy as (Hdb_eqe & Hex_post & Hper_iff_union & Hpar_eqe
+                        & Hwl_rel & Hu_ret).
+    (* [Hext_e1]: lift e1's PER into post-union PER. *)
+    assert (Hext_e1 : forall x1 y1, uf_rel_PER e1.(equiv) x1 y1 ->
+                                    uf_rel_PER e_post.(equiv) x1 y1).
+    { intros x1 y1 Hxy. apply Hper_iff_union.
+      apply PER_clo_base. left. exact Hxy. }
+    assert (Hr_aret_post : uf_rel_PER e_post.(equiv) r (atom_ret a')).
+    { apply Hper_iff_union. apply PER_clo_base. right.
+      split; reflexivity. }
+    (* [Hext_ref]: e_ref's PER lifts into post-union PER, through e1's
+       PER (which is e0's = e_ref's by [Hequiv_eq_post] and [Hper_iff01]
+       which is iff). *)
+    assert (Hext_ref : forall x1 y1, uf_rel_PER e_ref.(equiv) x1 y1 ->
+                                     uf_rel_PER e_post.(equiv) x1 y1).
+    { intros x1 y1 Hxy. apply Hext_e1.
+      apply Hper_iff01. rewrite Hequiv_eq_post. exact Hxy. }
+    (* [Hkey_lift_e1]: keys in e1 lift to post-union. *)
+    assert (Hkey_lift_post : forall j, Sep.has_key j e1.(equiv).(parent) ->
+                                       Sep.has_key j e_post.(equiv).(parent)).
+    { intros j Hj.
+      destruct Hex_post as [rs_post Huf_post].
+      assert (Hjj_e1 : uf_rel_PER e1.(equiv) j j).
+      { unfold Sep.has_key in Hj.
+        destruct (map.get e1.(equiv).(parent) j) as [vj|] eqn:Hgj;
+          [|tauto].
+        unfold uf_rel_PER.
+        eapply PER_clo_trans;
+          [apply PER_clo_base; exact Hgj
+          |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+      exact (proj1 (uf_rel_PER_has_key e_post.(equiv) rs_post j j
+                     Huf_post (Hext_e1 _ _ Hjj_e1))). }
+    (* [Hkey_back_post]: keys in post-union lift back to e1.  The PER
+       closure base elements come from e1's PER or the new singleton;
+       [r] and [a'.atom_ret] are both has_key in e1. *)
+    assert (Hkey_back_post : forall j,
+              Sep.has_key j e_post.(equiv).(parent) ->
+              Sep.has_key j e1.(equiv).(parent)).
+    { intros j Hj.
+      destruct Hex_post as [rs_post Huf_post].
+      destruct Hex_e1 as [rs_e1 Huf_e1].
+      assert (Hjj_post : uf_rel_PER e_post.(equiv) j j).
+      { unfold Sep.has_key in Hj.
+        destruct (map.get e_post.(equiv).(parent) j) as [vj|] eqn:Hgj;
+          [|tauto].
+        unfold uf_rel_PER.
+        eapply PER_clo_trans;
+          [apply PER_clo_base; exact Hgj
+          |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+      apply Hper_iff_union in Hjj_post.
+      assert (Hclo_key : forall p q,
+                union_closure_PER (uf_rel_PER e1.(equiv))
+                  (singleton_rel r (atom_ret a')) p q ->
+                Sep.has_key p e1.(equiv).(parent)
+                /\ Sep.has_key q e1.(equiv).(parent)).
+      { intros p q Hpq.
+        induction Hpq as [p q Hbase | p q rr _ IH1 _ IH2 | p q _ IH].
+        - destruct Hbase as [Hbase | Hsing].
+          + apply (uf_rel_PER_has_key _ _ _ _ Huf_e1 Hbase).
+          + destruct Hsing as [Heq1 Heq2]; subst.
+            split; [exact Hkr_e1 | exact Hkaret_e1].
+        - split; [apply IH1 | apply IH2].
+        - destruct IH; split; assumption. }
+      exact (proj1 (Hclo_key _ _ Hjj_post)). }
+    (* [e_post]'s db = e1's db = e0's db; parents unchanged. *)
+    assert (Hdb_post_eq_e1 : e1.(db) = e_post.(db)) by exact Hdb_eqe.
+    assert (Hpar_post_eq_e1 : e1.(parents) = e_post.(parents))
+      by exact Hpar_eqe.
+    (* Helper: lift [atom_in_egraph_up_to_equiv b e_ref] to [e_post] by
+       case-splitting on whether the witness is at the removed literal
+       key.  Used in [parents_ok], the side-list conjunct, and the
+       backward direction of [denote_iff]. *)
+    assert (Hargs_eq_post : all2 (uf_rel_PER e_post.(equiv))
+                                 (atom_args a) (atom_args a')).
+    { clear -Hargs_eq Hext_e1.
+      revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+      intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+        cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - apply Hext_e1. unfold uf_rel_PER in *. apply PER_clo_sym. exact Hyz.
+      - apply (IH zs Hys). }
+    assert (Hain_can_post : atom_in_db
+                              (Build_atom (atom_fn a') (atom_args a') r)
+                              e_post.(db)).
+    { rewrite <- Hdb_post_eq_e1. exact Hain_can. }
+    assert (Hlift : forall b, atom_in_egraph_up_to_equiv b e_ref ->
+                              atom_in_egraph_up_to_equiv b e_post).
+    { intros b Hbref.
+      destruct Hbref as (bb & (Hfn & Hargs & Hret) & Hbb_in).
+      destruct bb as [fn_bb args_bb ret_bb]; cbn in *.
+      subst fn_bb.
+      pose proof (eqb_spec (atom_fn b, args_bb) (atom_fn a, atom_args a))
+        as Hkey_eq.
+      destruct (eqb (atom_fn b, args_bb) (atom_fn a, atom_args a)).
+      { assert (H_fn : atom_fn b = atom_fn a)
+          by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        assert (H_args : args_bb = atom_args a)
+          by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        clear Hkey_eq. subst args_bb.
+        assert (Hain_bb_db : atom_in_db
+                              (Build_atom (atom_fn a) (atom_args a) ret_bb)
+                              e_ref.(db)).
+        { revert Hbb_in. unfold atom_in_egraph, atom_in_db; cbn.
+          rewrite H_fn. tauto. }
+        pose proof (Hper_lk _ Hain_bb_db) as Hret_bb_aret.
+        exists (Build_atom (atom_fn a') (atom_args a') r).
+        split; cbn.
+        - unfold atom_canonical_equiv; cbn. split; [congruence|]. split.
+          + clear -Hargs Hargs_eq_post Hext_ref.
+            revert Hargs Hargs_eq_post.
+            generalize (atom_args b), (atom_args a), (atom_args a').
+            intros l1 l2 l3. revert l2 l3.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              destruct l3 as [|w ws]; cbn; auto; try tauto.
+            intros [Hyz Hys] [Hzw Hzs]. split.
+            * unfold uf_rel_PER in *.
+              eapply PER_clo_trans;
+                [apply Hext_ref; exact Hyz | exact Hzw].
+            * apply (IH zs ws Hys Hzs).
+          + unfold uf_rel_PER in *.
+            eapply PER_clo_trans;
+              [apply Hext_ref; exact Hret |].
+            eapply PER_clo_trans;
+              [apply Hext_ref; exact Hret_bb_aret|].
+            eapply PER_clo_trans;
+              [apply Hext_e1; apply PER_clo_sym; exact Hret_eq |].
+            apply PER_clo_sym; exact Hr_aret_post.
+        - exact Hain_can_post. }
+      { exists (Build_atom (atom_fn b) args_bb ret_bb).
+        split; cbn.
+        - unfold atom_canonical_equiv; cbn. split; [reflexivity|]. split.
+          + clear -Hargs Hext_ref.
+            revert Hargs. generalize (atom_args b), args_bb.
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split;
+              [apply Hext_ref; exact Hyz | apply IH; exact Hys].
+          + apply Hext_ref; exact Hret.
+        - assert (Hbb_in_e0 : atom_in_db
+                                (Build_atom (atom_fn b) args_bb ret_bb)
+                                e0.(db)).
+          { apply Hdb_iff_post.
+            split; [exact Hbb_in|].
+            cbn. intros Heq. apply Hkey_eq. exact Heq. }
+          unfold atom_in_egraph.
+          rewrite <- Hdb_post_eq_e1, Hdb_eq01. exact Hbb_in_e0. } }
+    (* The proof's main split: egraph_ok, denote_iff, side-list,
+       equiv_extends. *)
+    split.
+    { (* egraph_ok e_post *)
+      constructor.
+      - (* equiv_ok *) exact Hex_post.
+      - (* worklist_ok *)
+        destruct Hwl_rel as [Hwl_unchanged
+                            | (v_old & v' & ar & Hwl_new & Hv_old & Hv')].
+        + rewrite Hwl_unchanged, Hwl_eq01, Hwl_eq_post.
+          eapply all_wkn; [|exact Hwl_ref].
+          intros [old new improved | k] _ Hent; cbn in *.
+          * apply Hext_ref. exact Hent.
+          * exact I.
+        + rewrite Hwl_new, Hwl_eq01, Hwl_eq_post.
+          cbn. split.
+          * unfold uf_rel_PER in *.
+            eapply PER_clo_trans; [exact Hv_old |].
+            eapply PER_clo_trans; [exact Hr_aret_post|].
+            apply PER_clo_sym; exact Hv'.
+          * eapply all_wkn; [|exact Hwl_ref].
+            intros [old new improved | k] _ Hent; cbn in *.
+            -- apply Hext_ref. exact Hent.
+            -- exact I.
+      - (* parents_ok: parents unchanged via Hpar_eq01 + Hpar_eq_post
+           + Hpar_eqe; lift atom_in_egraph_up_to_equiv via PER + db
+           preservation. *)
+        intros x s Hgs.
+        rewrite <- Hpar_post_eq_e1 in Hgs.
+        rewrite Hpar_eq01 in Hgs.
+        rewrite Hpar_eq_post in Hgs.
+        eapply all_wkn; [|apply (Hpa_ref _ _ Hgs)].
+        intros b _ Hbain. apply Hlift. exact Hbain.
+      - (* db_idxs_in_equiv *)
+        intros b Hbain.
+        rewrite <- Hdb_post_eq_e1 in Hbain.
+        rewrite Hdb_eq01 in Hbain.
+        apply Hdb_iff_post in Hbain. destruct Hbain as [Hbain _].
+        destruct (Hdb_ref_init _ Hbain) as [Hargs_keys Hret_key].
+        split.
+        + eapply all_wkn; [|exact Hargs_keys]; intros j _ Hj.
+          apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. exact Hj.
+        + apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. exact Hret_key.
     }
+    split.
+    { (* denote_iff e_ref e_post *)
+      intros i. split.
+      { (* Forward: e_ref sound → e_post sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        - exact Hwf.
+        - intros x Hx. apply Hkey_lift_post. apply Hkey_iff01.
+          rewrite Hequiv_eq_post. apply Hexact. exact Hx.
+        - intros b Hbain. apply Hatom_e.
+          unfold atom_in_egraph in *.
+          rewrite <- Hdb_post_eq_e1, Hdb_eq01 in Hbain.
+          apply Hdb_iff_post in Hbain. exact (proj1 Hbain).
+        - intros i1 i2 Hi12.
+          apply Hper_iff_union in Hi12.
+          induction Hi12 as [p q Hbase | p q rr _ IH1 _ IH2 | p q _ IH].
+          + destruct Hbase as [Hbase | Hsing].
+            * (* PER pair in e1.equiv = e_ref.equiv *)
+              apply Hrel_e. apply Hper_iff01 in Hbase.
+              rewrite Hequiv_eq_post in Hbase. exact Hbase.
+            * destruct Hsing as [Hpr Hqaret]; subst.
+              (* Need: eq_sound (i r) (i a'.atom_ret) *)
+              destruct Hatom_ref as
+                (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+              destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+              subst fn_aa.
+              pose proof (Hatom_e _ Hain_db_ref) as Hsa_can.
+              pose proof (Hatom_e _ Hain_aa) as Hsa_aa.
+              cbn in Hsa_can, Hsa_aa.
+              (* args_aa ~PER~ atom_args a' in e_ref.equiv (chain via a) *)
+              assert (Hargs_aa_a' :
+                all2 (eq_sound_for_model m i) args_aa (atom_args a')).
+              { clear -Hargs_aa Hargs_eq Hper_iff01 Hequiv_eq_post Hrel_e.
+                revert Hargs_aa Hargs_eq.
+                generalize (atom_args a), args_aa, (atom_args a').
+                intros l1 l2 l3. revert l2 l3.
+                induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                  destruct l3 as [|w ws]; cbn; auto; try tauto.
+                intros [Hyz Hys] [Hwy Hws]. split.
+                - apply Hrel_e. unfold uf_rel_PER in *.
+                  apply Hper_iff01 in Hwy. rewrite Hequiv_eq_post in Hwy.
+                  eapply PER_clo_trans;
+                    [apply PER_clo_sym; exact Hyz | apply PER_clo_sym; exact Hwy].
+                - apply (IH zs ws Hys Hws). }
+              rewrite Hfn_eq in Hsa_can.
+              pose proof (atom_sound_eq_ret i (atom_fn a)
+                            args_aa (atom_args a')
+                            ret_aa r
+                            Hsa_aa Hsa_can Hargs_aa_a') as Hret_aa_r.
+              (* And ret_aa ~PER~ a.ret ~PER~ a'.ret -> i ret_aa ~_d i a'.ret *)
+              assert (Hret_aa_a' :
+                eq_sound_for_model m i ret_aa (atom_ret a')).
+              { apply Hrel_e. apply Hper_iff01 in Hret_eq.
+                rewrite Hequiv_eq_post in Hret_eq.
+                unfold uf_rel_PER in *.
+                eapply PER_clo_trans;
+                  [apply PER_clo_sym; exact Hret_aa
+                  | apply PER_clo_sym; exact Hret_eq]. }
+              eapply eq_sound_for_model_trans;
+                [apply eq_sound_for_model_Symmetric; exact Hret_aa_r |].
+              exact Hret_aa_a'.
+          + eapply eq_sound_for_model_trans; eauto.
+          + apply eq_sound_for_model_Symmetric; exact IH. }
+      { (* Backward: e_post sound → e_ref sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        - exact Hwf.
+        - intros x Hx.
+          (* has_key x e_ref.equiv ← has_key x e_post.equiv via Hkey_back_post *)
+          rewrite <- Hequiv_eq_post. apply Hkey_iff01.
+          apply Hkey_back_post. apply Hexact. exact Hx.
+        - intros b Hbain.
+          (* atoms in e_ref.db: if at removed key, use canonical entry's
+             soundness + eq_atom_implies_sound_l_active. *)
+          pose proof (eqb_spec (atom_fn b, atom_args b)
+                              (atom_fn a, atom_args a)) as Hkey_eq.
+          destruct (eqb (atom_fn b, atom_args b) (atom_fn a, atom_args a)).
+          + (* b at removed key *)
+            assert (H_fn : atom_fn b = atom_fn a)
+              by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq;
+                  exact Hkey_eq).
+            assert (H_args : atom_args b = atom_args a)
+              by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq;
+                  exact Hkey_eq).
+            (* b = (atom_fn a, atom_args a, atom_ret b).  By Hper_lk: atom_ret b
+               ~PER~ atom_ret a in e_ref.equiv. *)
+            assert (Hain_b_db_ref : atom_in_db
+                                      (Build_atom (atom_fn a) (atom_args a)
+                                                  (atom_ret b))
+                                      e_ref.(db)).
+            { revert Hbain. unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite H_fn, H_args. tauto. }
+            pose proof (Hper_lk _ Hain_b_db_ref) as Hretb_aret.
+            (* The canonical entry (a'.fn, a'.args, r) is in e_post.db, sound *)
+            pose proof (Hatom_e _ Hain_can_post) as Hsa_can_post.
+            cbn in Hsa_can_post.
+            (* Use eq_atom_implies_sound_l_active to transport. *)
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom (atom_fn a') (atom_args a') r)).
+            * unfold eq_atom_in_interpretation; cbn.
+              split; [rewrite Hfn_eq; symmetry; exact H_fn|]. split.
+              { (* args eq_sound: atom_args a' ~PER~ atom_args a (= atom_args b)
+                   in e_post.equiv → eq_sound via Hrel_e. *)
+                rewrite H_args.
+                clear -Hargs_eq Hext_e1 Hrel_e.
+                revert Hargs_eq.
+                generalize (atom_args a'), (atom_args a).
+                intros l1 l2. revert l2.
+                induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                  cbn; auto; try tauto.
+                intros [Hyz Hys]. split.
+                - apply Hrel_e. apply Hext_e1. exact Hyz.
+                - apply IH; exact Hys. }
+              { (* ret eq_sound: r ~PER~ a'.ret in e_post.equiv via union pair;
+                   chain through atom_ret a via Hret_eq + Hretb_aret. *)
+                apply Hrel_e. unfold uf_rel_PER in *.
+                eapply PER_clo_trans;
+                  [exact Hr_aret_post|].
+                eapply PER_clo_trans;
+                  [apply Hext_e1; exact Hret_eq|].
+                apply PER_clo_sym. apply Hext_ref. exact Hretb_aret. }
+            * exact Hsa_can_post.
+          + (* b at different key: still in e_post.db *)
+            assert (Hbain_e0 : atom_in_db b e0.(db)).
+            { apply Hdb_iff_post. split; [exact Hbain|].
+              cbn. intros Heq. apply Hkey_eq. exact Heq. }
+            apply Hatom_e.
+            unfold atom_in_egraph.
+            rewrite <- Hdb_post_eq_e1, Hdb_eq01. exact Hbain_e0.
+        - intros i1 i2 Hi12.
+          apply Hrel_e. apply Hext_ref. exact Hi12. } }
+    split.
+    { (* all atom_in_egraph_up_to_equiv e_post side_l *)
+      eapply all_wkn; [|exact Hatoms_ref].
+      intros b _ Hb. apply Hlift. exact Hb. }
+    (* equiv_extends e_ref e_post *)
+    unfold equiv_extends. intros x1 y1 Hxy. apply Hext_ref. exact Hxy.
   Qed.
-  *)
 
-  Lemma set_parents_sound i new_idx l
-    : all (atom_sound_for_model m i) l ->
-      state_sound_for_model m i
-        (set_parents idx symbol symbol_map idx_map idx_trie analysis_result new_idx l) 
-        (fun i' _ => i = i').
+  (* [update_analyses] only writes the [analyses] field, which doesn't
+     affect egraph_ok or denote. *)
+  Lemma update_analyses_denote_iff k v
+    : vc (update_analyses idx symbol symbol_map idx_map idx_trie
+            analysis_result k v)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
   Proof.
-    intros.
-    open_ssm.
-    intuition cbn in *; eauto with utils.
-    eqb_case i0 new_idx.
-    { rewrite map.get_put_same in *; inversions; eauto. }
-    { rewrite map.get_put_diff in *; eauto. }
+    unfold vc, update_analyses; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
+  Qed.
+
+  (* [push_worklist (analysis_repair _)] adds a trivially-ok entry to
+     the worklist. denote doesn't read the worklist. *)
+  Lemma push_worklist_analysis_denote_iff o
+    : vc (push_worklist idx symbol symbol_map idx_map idx_trie
+            analysis_result (analysis_repair idx o))
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ (snd res).(db) = e.(db)).
+  Proof.
+    unfold vc, push_worklist; intros e Hok; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    split; [constructor; cbn; auto|].
+    split;
+      [intros i; split; intros [Hwf Hex Hatom Hrel];
+         constructor; cbn in *; auto
+      | reflexivity].
+  Qed.
+
+  (* [get_analysis x]: read [analyses] for [x], or on miss run
+     [update_analyses x default] + [push_worklist (analysis_repair x)].
+     Both branches preserve egraph_ok and denote. *)
+  Lemma get_analysis_denote_iff x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, get_analysis; intros e Hok.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn [fst snd]. split; [exact Hok|]. intros i; reflexivity.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
+      pose proof (update_analyses_denote_iff x default e Hok) as Hu.
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result x default e) as [u e1] eqn:Hue.
+      cbn [fst snd] in Hu.
+      destruct Hu as (Hok1 & Hde1 & _).
+      pose proof (push_worklist_analysis_denote_iff x e1 Hok1) as Hp.
+      destruct (push_worklist idx symbol symbol_map idx_map idx_trie
+                  analysis_result (analysis_repair idx x) e1) as [u' e2] eqn:Hpe.
+      cbn [fst snd] in Hp |- *.
+      destruct Hp as (Hok2 & Hde2 & _).
+      split; [exact Hok2|].
+      intros i. rewrite Hde1. exact (Hde2 i).
+  Qed.
+
+  (* [get_analyses] = [list_Mmap get_analysis]. Inductive composition. *)
+  Lemma get_analyses_denote_iff args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold get_analyses.
+    vc_list_Mmap_egraph_iff get_analysis_denote_iff.
+  Qed.
+
+  (* [get_analysis] preserves [db], [equiv], and [parents] verbatim:
+     the [Some] branch is [Mret]; the [None] branch only writes
+     [analyses] and [worklist]. *)
+  Lemma get_analysis_preserves_fields x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold vc, get_analysis; intros e.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn; intuition.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist].
+      intuition; cbn; reflexivity.
+  Qed.
+
+  (* [get_analyses] preserves [db], [equiv], and [parents] verbatim;
+     used by [repair_parent_analysis_denote_iff] to transport
+     [atom_in_egraph] across the [get_analyses] step. *)
+  Lemma get_analyses_preserves_fields args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (snd res).(parents) = e.(parents)).
+  Proof.
+    unfold get_analyses.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ _ => True)
+                  (fun s s' =>
+                     s'.(db) = s.(db)
+                     /\ s'.(equiv) = s.(equiv)
+                     /\ s'.(parents) = s.(parents)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _; intuition.
+    - intros ? ? ? (?&?&?) (?&?&?); repeat split; congruence.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_preserves_fields x)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  (* Helper: [get_analysis] only ever adds [analysis_repair] entries to
+     the worklist; existing entries are preserved.  Used to lift
+     worklist_ok across [get_analyses]. *)
+  Lemma get_analysis_worklist_extends x
+    : vc (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents).
+  Proof.
+    unfold vc, get_analysis; intros e.
+    destruct (map.get e.(analyses) x) as [a|] eqn:Hga.
+    - cbn [fst snd]. exists []. split; [reflexivity | exact I].
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd].
+      unfold update_analyses, push_worklist; cbn.
+      exists [analysis_repair _ x]. split; [reflexivity |].
+      cbn. split; [eexists; reflexivity | exact I].
+  Qed.
+
+  (* Characterization of how [fold_left] with [map_update] + [cons a]
+     transforms the [parents] map: at every index, the new list is
+     either the same as before, or has [a] prepended (possibly multiple
+     times). In either case, every entry in the new list is either [a]
+     itself or was in the old list. *)
+  Lemma all_via_in_local {A} (P : A -> Prop) l
+    : (forall x, In x l -> P x) -> all P l.
+  Proof.
+    induction l as [|a rest IH]; cbn; intros HH.
+    - exact I.
+    - split.
+      + apply HH. left. reflexivity.
+      + apply IH. intros x Hx. apply HH. right. exact Hx.
+  Qed.
+
+  (* Helper specialized for default = []: the "default" list when no
+     entry exists is empty.  We pass the WithDefault instance explicitly
+     to avoid typeclass-resolution surprises. *)
+  Lemma fold_left_cons_map_update_get
+    {V} (l : list idx) (a : V) :
+    forall (mp : idx_map (list V)) x s,
+      map.get (fold_left
+                 (fun m x => @map_update _ _ (@nil V)
+                                _ m x (cons a)) l mp) x = Some s ->
+      forall v, In v s -> v = a \/ (exists s_old, map.get mp x = Some s_old /\ In v s_old).
+  Proof.
+    induction l as [|y ys IH]; cbn; intros mp x s Hg v Hin.
+    - right. exists s. split; [exact Hg | exact Hin].
+    - pose proof (IH _ _ _ Hg v Hin) as IHapplied. clear Hg Hin.
+      destruct IHapplied as [Hva | (s_old & Hgs_old & Hvin_old)].
+      + left. exact Hva.
+      + unfold map_update in Hgs_old.
+        destruct (map.get mp y) as [s_y|] eqn:Hg_mpy.
+        * eqb_case x y.
+          -- rewrite map.get_put_same in Hgs_old. injection Hgs_old as <-.
+             cbn in Hvin_old. destruct Hvin_old as [Hva | Hvin'].
+             ++ left. symmetry. exact Hva.
+             ++ right. exists s_y. split; [exact Hg_mpy | exact Hvin'].
+          -- rewrite map.get_put_diff in Hgs_old by auto.
+             right. exists s_old. split; [exact Hgs_old | exact Hvin_old].
+        * eqb_case x y.
+          -- rewrite map.get_put_same in Hgs_old. injection Hgs_old as <-.
+             cbn in Hvin_old. destruct Hvin_old as [Hva | Hvin'].
+             ++ left. symmetry. exact Hva.
+             ++ cbn in Hvin'. contradiction.
+          -- rewrite map.get_put_diff in Hgs_old by auto.
+             right. exists s_old. split; [exact Hgs_old | exact Hvin_old].
+  Qed.
+
+  Lemma get_analyses_worklist_extends args
+    : vc (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents).
+  Proof.
+    unfold get_analyses.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun _ _ => True)
+                  (fun s s' =>
+                     exists new_ents,
+                       s'.(worklist) = new_ents ++ s.(worklist)
+                       /\ all (fun ent => exists i, ent = analysis_repair _ i) new_ents))].
+    - cbn beta. intros s res Hinv. exact (proj2 (Hinv I)).
+    - intros s _. exists []. split; [reflexivity | exact I].
+    - intros s1 s2 s3 (l1 & H1 & Hp1) (l2 & H2 & Hp2).
+      exists (l2 ++ l1). rewrite H2, H1. rewrite app_assoc. split; [reflexivity|].
+      clear -Hp1 Hp2. induction l2; cbn; auto. destruct Hp2; split; auto.
+    - intros x xs.
+      eapply vc_consequence; [| apply (get_analysis_worklist_extends x)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  Lemma db_set_after_canonicalize_denote_iff
+    a a' side_l (e_ref e0 : instance)
+    : egraph_ok e_ref ->
+      atom_in_egraph_up_to_equiv a e_ref ->
+      all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+      post_db_remove e_ref a e0 ->
+      (* New: same PER fact as in [union_after_canonicalize_denote_iff]. *)
+      (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                             e_ref.(db) ->
+                  uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
+      vc (db_set a')
+        (fun e1 res =>
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv))
+                (atom_args a') (atom_args a) ->
+           (forall r, ~ atom_in_egraph
+                          (Build_atom (atom_fn a') (atom_args a') r) e1) ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
+  Proof.
+    (* Bring the [map_default] instance from Defs.v into typeclass scope
+       so [map_update]'s implicit [WithDefault] resolves. *)
+    Local Instance WithDefault_map_local {K V} `{m : map.map K V} : WithDefault m
+      := map.empty.
+    intros Hok_ref Hatom_ref Hatoms_ref Hpost_dbr Hper_lk.
+    unfold db_set, vc; cbn [Mbind StateMonad.state_monad fst snd].
+    intros e1 Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hno_can.
+    (* Decompose hypotheses. *)
+    pose proof Hok_ref as Hok_ref_orig.
+    pose proof Hok_ref as [Heq_ref Hwl_ref Hpa_ref Hdb_ref_init].
+    destruct Hpost_dbr as (Hequiv_eq_post & Hpar_eq_post & Hep_eq_post
+                           & Hwl_eq_post & Han_eq_post & Hdb_iff_post).
+    destruct Hf01 as (Hdb_eq01 & Hpar_eq01 & Hep_eq01 & Hwl_eq01 & Han_eq01
+                      & Hkey_iff01 & Hper_iff01).
+    (* === Step 1: get_analyses preserves db/equiv/parents. === *)
+    pose proof (get_analyses_preserves_fields (atom_args a') e1) as Hgaf.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_args a') e1) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hgaf.
+    destruct Hgaf as (Hdb_g & Heq_g & Hpa_g).
+    set (out_a := analyze idx symbol analysis_result a' arg_as).
+    (* === Step 2: update_analyses preserves all fields except analyses.
+       Destructure manually. === *)
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_ret a') out_a e_g) as [_u e_u] eqn:Hue.
+    assert (Hdb_u_g : e_u.(db) = e_g.(db))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Heq_u_g : e_u.(equiv) = e_g.(equiv))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    assert (Hpa_u_g : e_u.(parents) = e_g.(parents))
+      by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+          subst e_u; reflexivity).
+    cbn [fst snd] in *.
+    (* Combine field equalities back to e1. *)
+    assert (Hdb_ue1 : e_u.(db) = e1.(db)) by congruence.
+    assert (Heq_ue1 : e_u.(equiv) = e1.(equiv)) by congruence.
+    assert (Hpa_ue1 : e_u.(parents) = e1.(parents)) by congruence.
+    (* === Step 3: db_set'. Destructure. === *)
+    destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                analysis_result a' out_a e_u) as [_v e_post] eqn:Hde.
+    cbn [fst snd] in *.
+    (* Extract e_post's field equalities from Hde. *)
+    assert (Heq_post_u : e_post.(equiv) = e_u.(equiv))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hep_post_u : e_post.(epoch) = e_u.(epoch))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Hwl_post_u : e_post.(worklist) = e_u.(worklist))
+      by (unfold db_set' in Hde; injection Hde as _ Hdeq;
+          subst e_post; reflexivity).
+    assert (Heq_post_e1 : e_post.(equiv) = e1.(equiv)) by congruence.
+    (* Bridge PER and key-set iffs between e_ref and e_post. *)
+    assert (Hper_iff_post : forall x y,
+              uf_rel_PER e_ref.(equiv) x y <-> uf_rel_PER e_post.(equiv) x y).
+    { intros x y. rewrite Heq_post_e1.
+      rewrite <- (Hper_iff01 x y). rewrite Hequiv_eq_post. reflexivity. }
+    assert (Hkey_iff_post : forall y,
+              Sep.has_key y e_ref.(equiv).(parent)
+              <-> Sep.has_key y e_post.(equiv).(parent)).
+    { intros y. rewrite Heq_post_e1.
+      rewrite <- (Hkey_iff01 y). rewrite Hequiv_eq_post. reflexivity. }
+    (* has_key facts for the new canonical entry's idxs (a'.args, a'.ret). *)
+    assert (Hkargs_a' : all (fun i => Sep.has_key i e_post.(equiv).(parent))
+                             a'.(atom_args)).
+    { rewrite Heq_post_e1.
+      destruct Hex_e1 as [roots Huf]. revert Hargs_eq.
+      generalize (atom_args a'), (atom_args a). intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs]; cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - exact (proj1 (uf_rel_PER_has_key e1.(equiv) roots y z Huf Hyz)).
+      - apply (IH zs Hys). }
+    assert (Hkret_a' : Sep.has_key a'.(atom_ret) e_post.(equiv).(parent)).
+    { rewrite Heq_post_e1. destruct Hex_e1 as [roots Huf].
+      exact (proj1 (uf_rel_PER_has_key e1.(equiv) roots _ _ Huf Hret_eq)). }
+    (* The new canonical entry is in e_post.db. *)
+    assert (Hain_can_post : atom_in_db
+                              (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret))
+                              e_post.(db)).
+    { unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+    (* Hain_old: any atom in e_u.db whose key isn't the canonical key
+       survives in e_post.db. *)
+    assert (Hain_old : forall b, atom_in_db b e_u.(db) ->
+                                 (atom_fn b, atom_args b)
+                                 <> (atom_fn a', atom_args a') ->
+                                 atom_in_db b e_post.(db)).
+    { intros b Hbu Hneq.
+      unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct b as [bfn bargs bret]; cbn in *.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        eqb_case bfn a'.(atom_fn).
+      - rewrite map.get_put_same.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+        rewrite Htbl in Hbu. cbn in Hbu.
+        eqb_case bargs a'.(atom_args); cbn.
+        + exfalso. apply Hneq. reflexivity.
+        + rewrite map.get_put_diff by auto. exact Hbu.
+      - rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu.
+      - rewrite map.get_put_same.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+        rewrite Htbl in Hbu. cbn in Hbu. destruct Hbu.
+      - rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu. }
+    (* Hain_post_split: any atom in e_post.db is either the new canonical
+       entry, or was in e_u.db with a different key. *)
+    assert (Hain_post_split : forall b, atom_in_db b e_post.(db) ->
+              b = Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)
+              \/ (atom_in_db b e_u.(db)
+                  /\ (atom_fn b, atom_args b)
+                     <> (atom_fn a', atom_args a'))).
+    { intros b Hb.
+      unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post.
+      unfold atom_in_db, Is_Some_satisfying, map_update in Hb; cbn in Hb.
+      destruct b as [bfn bargs bret]; cbn in Hb.
+      destruct (map.get e_u.(db) a'.(atom_fn)) as [tbl|] eqn:Htbl;
+        eqb_case bfn a'.(atom_fn).
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs a'.(atom_args).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          right. split.
+          * unfold atom_in_db, Is_Some_satisfying; cbn.
+            rewrite Htbl. cbn. exact Hb.
+          * cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction.
+      - rewrite map.get_put_same in Hb; cbn in Hb.
+        eqb_case bargs a'.(atom_args).
+        + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+        + rewrite map.get_put_diff in Hb by auto.
+          unfold default in Hb.
+          rewrite map.get_empty in Hb. cbn in Hb. destruct Hb.
+      - rewrite map.get_put_diff in Hb by auto.
+        right. split.
+        + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        + cbn. intros Habs; inversion Habs; contradiction. }
+    (* Extract the witness aa for atom_in_egraph_up_to_equiv a e_ref. *)
+    pose proof Hatom_ref as Hatom_ref_orig.
+    destruct Hatom_ref as (aa & Hcan_aa & Hain_aa).
+    unfold atom_canonical_equiv in Hcan_aa.
+    destruct Hcan_aa as (Hfn_aa & Hargs_aa & Hret_aa).
+    destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+    subst fn_aa.
+    (* Args lift e_ref → e_post via Hper_iff_post. *)
+    assert (Hargs_eq_post : all2 (uf_rel_PER e_post.(equiv))
+                                 (atom_args a) (atom_args a')).
+    { revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+      intros l1 l2. revert l2.
+      induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+        cbn; auto; try tauto.
+      intros [Hyz Hys]. split.
+      - rewrite Heq_post_e1. unfold uf_rel_PER in *.
+        apply PER_clo_sym. exact Hyz.
+      - apply (IH zs Hys). }
+    (* Hlift: lift atom_in_egraph_up_to_equiv from e_ref to e_post. *)
+    assert (Hlift : forall b, atom_in_egraph_up_to_equiv b e_ref ->
+                              atom_in_egraph_up_to_equiv b e_post).
+    { intros b Hbref.
+      destruct Hbref as (bb & (Hfn_bb & Hargs_bb & Hret_bb) & Hain_bb).
+      destruct bb as [fn_bb args_bb ret_bb]; cbn in Hfn_bb, Hargs_bb, Hret_bb.
+      subst fn_bb.
+      pose proof (eqb_spec (atom_fn b, args_bb) (atom_fn a, atom_args a))
+        as Hkey_eq.
+      destruct (eqb (atom_fn b, args_bb) (atom_fn a, atom_args a)).
+      - (* bb at removed key — substitute with new canonical entry. *)
+        assert (H_fn : atom_fn b = atom_fn a)
+          by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        assert (H_args : args_bb = atom_args a)
+          by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+        clear Hkey_eq. subst args_bb.
+        assert (Hain_bb_db_ref : atom_in_db
+                                  (Build_atom (atom_fn a) (atom_args a) ret_bb)
+                                  e_ref.(db)).
+        { revert Hain_bb. unfold atom_in_egraph, atom_in_db; cbn.
+          rewrite H_fn. tauto. }
+        pose proof (Hper_lk _ Hain_bb_db_ref) as Hretbb_aret.
+        exists (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)).
+        split; cbn.
+        + unfold atom_canonical_equiv; cbn. split; [congruence|]. split.
+          * (* b.args ~ a'.args in e_post.equiv *)
+            clear -Hargs_bb Hargs_eq_post Hper_iff_post.
+            revert Hargs_bb Hargs_eq_post.
+            generalize (atom_args b), (atom_args a), (atom_args a').
+            intros l1 l2 l3. revert l2 l3.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              destruct l3 as [|w ws]; cbn; auto; try tauto.
+            intros [Hyz Hys] [Hzw Hzs]. split.
+            -- unfold uf_rel_PER in *.
+               apply Hper_iff_post in Hyz.
+               eapply PER_clo_trans; [exact Hyz | exact Hzw].
+            -- apply (IH zs ws Hys Hzs).
+          * (* b.ret ~ a'.ret in e_post.equiv *)
+            unfold uf_rel_PER in *.
+            apply Hper_iff_post in Hret_bb.
+            apply Hper_iff_post in Hretbb_aret.
+            eapply PER_clo_trans; [exact Hret_bb |].
+            eapply PER_clo_trans; [exact Hretbb_aret |].
+            rewrite Heq_post_e1.
+            apply PER_clo_sym. exact Hret_eq.
+        + unfold atom_in_egraph; cbn. exact Hain_can_post.
+      - (* bb at different key — survives in e_post.db. *)
+        exists (Build_atom (atom_fn b) args_bb ret_bb).
+        split; cbn.
+        + unfold atom_canonical_equiv; cbn. split; [reflexivity|]. split.
+          * clear -Hargs_bb Hper_iff_post.
+            revert Hargs_bb. generalize (atom_args b), args_bb.
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split.
+            -- apply Hper_iff_post in Hyz. exact Hyz.
+            -- apply (IH zs Hys).
+          * apply Hper_iff_post in Hret_bb. exact Hret_bb.
+        + unfold atom_in_egraph; cbn.
+          apply Hain_old.
+          * (* bb in e_u.db: bb in e_ref.db at non-removed key → in e0.db → in e1.db = e_u.db. *)
+            rewrite Hdb_ue1, Hdb_eq01. apply Hdb_iff_post.
+            split.
+            -- unfold atom_in_egraph, atom_in_db in Hain_bb. cbn in Hain_bb. exact Hain_bb.
+            -- cbn. intros Heq. apply Hkey_eq. exact Heq.
+          * (* bb's key isn't the canonical key.  Suppose it were:
+               (atom_fn b, args_bb) = (a'.fn, a'.args).
+               Then Hno_can applied to bb's ret would give contradiction. *)
+            cbn. intros Habs. injection Habs as He1 He2.
+            exfalso. apply (Hno_can ret_bb).
+            change (atom_in_egraph (Build_atom (atom_fn a') (atom_args a') ret_bb) e1).
+            unfold atom_in_egraph at 1. rewrite Hdb_eq01.
+            change (atom_in_egraph (Build_atom (atom_fn a') (atom_args a') ret_bb) e0).
+            apply Hdb_iff_post.
+            split;
+              [rewrite <- He1, <- He2; exact Hain_bb |
+               cbn; rewrite He1, He2 in Hkey_eq; exact Hkey_eq]. }
+    (* === Now prove the four conjuncts: egraph_ok, denote_iff, side_l, equiv_extends. === *)
+    split. 2: split. 3: split.
+    { (* (1) egraph_ok e_post *)
+      constructor.
+      - (* equiv_ok *) rewrite Heq_post_e1. exact Hex_e1.
+      - (* worklist_ok: e_post.worklist = e_u.worklist = e_g.worklist.
+           e_g.worklist = (analysis_repair entries) ++ e1.worklist (via
+           [get_analyses_worklist_extends]).  Each prefix entry is trivially
+           ok.  Each e1.worklist entry was ok in e_ref.equiv (Hwl_ref),
+           lifts to e_post.equiv via Hper_iff_post. *)
+        rewrite Hwl_post_u.
+        assert (Hwl_u_g : e_u.(worklist) = e_g.(worklist))
+          by (unfold update_analyses in Hue; injection Hue as _ Hueq;
+              subst e_u; reflexivity).
+        rewrite Hwl_u_g.
+        pose proof (get_analyses_worklist_extends (atom_args a') e1) as Hwe.
+        rewrite Hge in Hwe. cbn [fst snd] in Hwe.
+        destruct Hwe as (new_ents & Hwl_split & Hpre).
+        rewrite Hwl_split.
+        assert (Hwl_e1 : e1.(worklist) = e_ref.(worklist)) by congruence.
+        rewrite Hwl_e1.
+        (* Show: all (worklist_entry_ok e_post.equiv) (new_ents ++ e_ref.worklist). *)
+        clear -Hpre Hwl_ref Hper_iff_post.
+        induction new_ents as [|ent rest IH]; cbn.
+        + (* No new entries: lift e_ref.worklist via Hper_iff_post. *)
+          eapply all_wkn; [|exact Hwl_ref].
+          intros ent _ Hent.
+          destruct ent as [old new improved | k_an]; cbn in *; auto.
+          apply Hper_iff_post. exact Hent.
+        + (* New entry ent: analysis_repair, trivially ok. Then recurse. *)
+          destruct Hpre as (Hpre_ent & Hpre_rest).
+          destruct Hpre_ent as (i_repair & Heq_ent).
+          subst ent. cbn. split; [exact I | exact (IH Hpre_rest)].
+      - (* parents_ok: e_post.parents = fold_left over dedup of
+           (a'.ret :: a'.args) adding [cons a'] to e_u.parents.
+           For each (x, s) in e_post.parents: every entry in s is either
+           a' (witnessed by Hain_can_post + reflexive canonical_equiv)
+           or an entry from e_u.parents (= e_ref.parents, witnessed via
+           Hpa_ref + Hlift). *)
+        intros x s Hgs.
+        unfold db_set' in Hde; injection Hde as _ Hdeq; subst e_post; cbn in *.
+        apply all_via_in_local. intros v Hv_in.
+        pose proof (fold_left_cons_map_update_get
+                      (dedup (eqb (A:=_)) (a'.(atom_ret) :: a'.(atom_args)))
+                      a' e_u.(parents) x s Hgs v Hv_in)
+          as [Hva | (s_old & Hs_old & Hvs_old)].
+        + (* v = a' — use canonical entry in e_post.db. *)
+          subst v.
+          exists (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret)).
+          unfold atom_canonical_equiv. cbn.
+          (* PER-reflexivity for a'.args and a'.ret in e_post.equiv: use
+             Hkargs_a' and Hkret_a'. *)
+          repeat split.
+          * (* all2 PER (atom_args a') (atom_args a') *)
+            clear -Hkargs_a'. revert Hkargs_a'.
+            generalize (atom_args a'). intros l. induction l as [|y ys IH]; cbn; auto.
+            intros [Hy Hys]. split.
+            -- unfold uf_rel_PER, Sep.has_key in *.
+               destruct (map.get (parent (equiv e_u)) y) as [vy|] eqn:Hgy;
+                 [|tauto].
+               eapply PER_clo_trans;
+                 [apply PER_clo_base; exact Hgy
+                 | apply PER_clo_sym; apply PER_clo_base; exact Hgy].
+            -- apply (IH Hys).
+          * (* PER a'.ret a'.ret *)
+            unfold uf_rel_PER, Sep.has_key in *.
+            destruct (map.get (parent (equiv e_u)) a'.(atom_ret)) as [vr|] eqn:Hgr;
+              [|tauto].
+            eapply PER_clo_trans;
+              [apply PER_clo_base; exact Hgr
+              | apply PER_clo_sym; apply PER_clo_base; exact Hgr].
+          * cbn. exact Hain_can_post.
+        + (* v in old parents s_old — apply Hpa_ref + Hlift. *)
+          rewrite Hpa_ue1 in Hs_old. rewrite Hpar_eq01 in Hs_old.
+          rewrite Hpar_eq_post in Hs_old.
+          pose proof (Hpa_ref _ _ Hs_old) as Hall_ref.
+          eapply in_all in Hvs_old; [|exact Hall_ref].
+          apply Hlift. exact Hvs_old.
+      - (* db_idxs_in_equiv *)
+        intros b Hbain.
+        apply Hain_post_split in Hbain. destruct Hbain as [Heq | (Hbu & Hneq)].
+        + (* new canonical entry *)
+          subst b. cbn. split; [exact Hkargs_a' | exact Hkret_a'].
+        + (* old atom from e_u.db *)
+          rewrite Hdb_ue1, Hdb_eq01 in Hbu.
+          apply Hdb_iff_post in Hbu. destruct Hbu as [Hbref _].
+          destruct (Hdb_ref_init _ Hbref) as [Hka Hkr].
+          split.
+          * eapply all_wkn; [|exact Hka]; intros j _ Hj.
+            apply Hkey_iff_post. exact Hj.
+          * apply Hkey_iff_post. exact Hkr.
+    }
+    { (* (2) denote_iff e_ref e_post *)
+      intros i. split.
+      - (* Forward: e_ref sound → e_post sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        + exact Hwf.
+        + intros x Hx. apply Hkey_iff_post. apply Hexact. exact Hx.
+        + intros b Hbain. apply Hain_post_split in Hbain.
+          destruct Hbain as [Heq | (Hbu & Hneq)].
+          * (* new canonical entry sound via aa *)
+            subst b. cbn.
+            pose proof (Hatom_e _ Hain_aa) as Hsa_aa. cbn in Hsa_aa.
+            (* aa = (atom_fn a, args_aa, ret_aa), sound in e_ref.
+               Build_atom a'.fn a'.args a'.ret should be sound.
+               Use atom_sound_eq_ret to convert aa to canonical entry. *)
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom (atom_fn a) args_aa ret_aa)).
+            -- unfold eq_atom_in_interpretation; cbn.
+               split; [symmetry; exact Hfn_eq |]. split.
+               ** (* args_aa eq_sound a'.args via Hargs_aa + Hargs_eq lifted *)
+                  clear -Hargs_aa Hargs_eq Hper_iff01 Hequiv_eq_post Hrel_e Hper_iff_post Heq_post_e1.
+                  revert Hargs_aa Hargs_eq.
+                  generalize (atom_args a), args_aa, (atom_args a').
+                  intros l1 l2 l3. revert l2 l3.
+                  induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                    destruct l3 as [|w ws]; cbn; auto; try tauto.
+                  intros [Hyz Hys] [Hwy Hws]. split.
+                  --- apply Hrel_e. unfold uf_rel_PER in *.
+                      (* Need: z ~PER~ w in e_ref.equiv (for Hrel_e to apply).
+                         Hyz : y ~PER~ z in e_ref.equiv (no lift needed).
+                         Hwy : w ~PER~ y in e1.equiv (lift to e_ref). *)
+                      apply Hper_iff01 in Hwy. rewrite Hequiv_eq_post in Hwy.
+                      eapply PER_clo_trans;
+                        [apply PER_clo_sym; exact Hyz | apply PER_clo_sym; exact Hwy].
+                  --- apply (IH zs ws Hys Hws).
+               ** (* ret_aa eq_sound a'.ret via Hret_aa + Hret_eq *)
+                  apply Hrel_e. unfold uf_rel_PER in *.
+                  (* Hret_aa : atom_ret a ~PER~ ret_aa in e_ref.
+                     Hret_eq : atom_ret a' ~PER~ atom_ret a in e1.
+                     Goal: PER_closure e_ref.equiv ret_aa (atom_ret a'). *)
+                  apply Hper_iff01 in Hret_eq. rewrite Hequiv_eq_post in Hret_eq.
+                  eapply PER_clo_trans;
+                    [apply PER_clo_sym; exact Hret_aa | apply PER_clo_sym; exact Hret_eq].
+            -- exact Hsa_aa.
+          * (* old atom from e_u.db; in e_ref.db via reverse chain. *)
+            rewrite Hdb_ue1, Hdb_eq01 in Hbu.
+            apply Hdb_iff_post in Hbu. destruct Hbu as [Hbref _].
+            apply Hatom_e. unfold atom_in_egraph. exact Hbref.
+        + intros i1 i2 Hi12. apply Hrel_e. apply Hper_iff_post. exact Hi12.
+      - (* Backward: e_post sound → e_ref sound. *)
+        intros [Hwf Hexact Hatom_e Hrel_e].
+        constructor.
+        + exact Hwf.
+        + intros x Hx. apply Hkey_iff_post. apply Hexact. exact Hx.
+        + intros b Hbain.
+          (* b is in e_ref.db.  Either at removed key (use Hper_lk + canonical
+             entry) or at non-removed key (use Hain_old to find in e_post.db). *)
+          pose proof (eqb_spec (atom_fn b, atom_args b)
+                              (atom_fn a, atom_args a)) as Hkey_eq.
+          destruct (eqb (atom_fn b, atom_args b) (atom_fn a, atom_args a)).
+          * (* b at removed key *)
+            assert (H_fn : atom_fn b = atom_fn a)
+              by (apply (f_equal fst) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+            assert (H_args : atom_args b = atom_args a)
+              by (apply (f_equal snd) in Hkey_eq; cbn in Hkey_eq; exact Hkey_eq).
+            assert (Hain_b_db_ref : atom_in_db
+                                     (Build_atom (atom_fn a) (atom_args a)
+                                                 (atom_ret b))
+                                     e_ref.(db)).
+            { revert Hbain. unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite H_fn, H_args. tauto. }
+            pose proof (Hper_lk _ Hain_b_db_ref) as Hretb_aret.
+            pose proof (Hatom_e _ Hain_can_post) as Hsa_can_post.
+            cbn in Hsa_can_post.
+            apply (eq_atom_implies_sound_l_active i
+                     (Build_atom a'.(atom_fn) a'.(atom_args) a'.(atom_ret))).
+            -- unfold eq_atom_in_interpretation; cbn.
+               split; [rewrite Hfn_eq; symmetry; exact H_fn |]. split.
+               ** (* atom_args a' eq_sound atom_args b (= atom_args a) *)
+                  rewrite H_args.
+                  clear -Hargs_eq Hrel_e Hper_iff_post Heq_post_e1.
+                  revert Hargs_eq. generalize (atom_args a'), (atom_args a).
+                  intros l1 l2. revert l2.
+                  induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                    cbn; auto; try tauto.
+                  intros [Hyz Hys]. split.
+                  --- apply Hrel_e. rewrite Heq_post_e1. exact Hyz.
+                  --- apply (IH zs Hys).
+               ** (* atom_ret a' eq_sound atom_ret b *)
+                  apply Hrel_e.
+                  unfold uf_rel_PER in *.
+                  rewrite Heq_post_e1.
+                  eapply PER_clo_trans; [exact Hret_eq |].
+                  apply Hper_iff01. rewrite Hequiv_eq_post.
+                  apply PER_clo_sym. exact Hretb_aret.
+            -- exact Hsa_can_post.
+          * (* b at different key: in e_post.db via Hain_old *)
+            assert (Hbain_e_u : atom_in_db b e_u.(db)).
+            { rewrite Hdb_ue1, Hdb_eq01. apply Hdb_iff_post.
+              split.
+              - unfold atom_in_egraph, atom_in_db in Hbain. cbn in Hbain. exact Hbain.
+              - cbn. intros Heq. apply Hkey_eq. exact Heq. }
+            assert (Hbain_e_post : atom_in_db b e_post.(db)).
+            { apply Hain_old; [exact Hbain_e_u |].
+              (* (atom_fn b, atom_args b) <> (atom_fn a', atom_args a'). *)
+              cbn. intros Habs. injection Habs as He1 He2.
+              apply (Hno_can (atom_ret b)).
+              unfold atom_in_egraph, atom_in_db; cbn.
+              rewrite <- Hdb_ue1.
+              unfold atom_in_db, Is_Some_satisfying in Hbain_e_u; cbn in Hbain_e_u.
+              rewrite <- He1, <- He2. exact Hbain_e_u. }
+            apply Hatom_e. exact Hbain_e_post.
+        + intros i1 i2 Hi12.
+          apply Hrel_e. apply Hper_iff_post. exact Hi12.
+    }
+    { (* (3) side_l preservation *)
+      eapply all_wkn; [|exact Hatoms_ref].
+      intros b _ Hb. apply Hlift. exact Hb. }
+    { (* (4) equiv_extends *)
+      unfold equiv_extends. intros x y Hxy. apply Hper_iff_post. exact Hxy. }
   Qed.
 
   
-  (*TODO: move to Lists.v *)
-  Lemma all_dedup A (P : A -> Prop) f l
-    : all P l -> all P (dedup f l).
-  Proof using.
-    clear.
-    induction l;
-      basic_goal_prep;
-      try case_match; cbn;
-      basic_utils_crush.
-  Qed.    
-  
-  Lemma repair_sound i a
-    : state_sound_for_model m i
-        (repair a)
-        (fun i' _ => i = i').
+  (* Dispatcher: [update_entry a'] case-splits on [db_lookup a'.fn
+     a'.args]; the [Some r] case uses
+     [union_after_canonicalize_denote_iff] and the [None] case uses
+     [db_set_after_canonicalize_denote_iff]. *)
+  Lemma update_entry_canonicalized_denote_iff a a' side_l (e_ref e0 : instance)
+    : vc (update_entry a')
+        (fun e1 res =>
+           egraph_ok e_ref ->
+           atom_in_egraph_up_to_equiv a e_ref ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e_ref) side_l ->
+           post_db_remove e_ref a e0 ->
+           (exists roots, union_find_ok lt e1.(equiv) roots) ->
+           fields_preserved e0 e1 ->
+           atom_fn a' = atom_fn a ->
+           uf_rel_PER e1.(equiv) (atom_ret a') (atom_ret a) ->
+           all2 (uf_rel_PER e1.(equiv)) (atom_args a') (atom_args a) ->
+           (* New: PER fact for the literal removed key, provided by the
+              prepended [repair_each] union step. *)
+           (forall r0, atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                                  e_ref.(db) ->
+                       uf_rel_PER e_ref.(equiv) r0 (atom_ret a)) ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e_ref i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) side_l
+           /\ equiv_extends e_ref (snd res)).
   Proof.
-    cleanup_context.
-    destruct a; cbn [repair].
-    {
-      unfold repair_union.
-      eapply state_sound_for_model_bind;
-        [ eapply pull_parents_sound |].
-      cbn beta;intros; subst.
-      eapply state_sound_for_model_bind; break; subst; eauto with utils.
-      {
-        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto with utils.
-        cbn beta;intros; subst.
-        eapply state_sound_for_model_bind; eauto with utils.
-        { eapply db_remove_sound. }
-        cbn beta;intros; subst.
-        eapply state_sound_for_model_bind; eauto with utils.
-        {
-          eapply canonicalize_sound.
-          eapply in_all; eassumption.
-        }
-        {
-          cbn beta;intros; break; subst.
-          eapply state_sound_for_model_bind; eauto with utils.
-          {
-            eapply update_entry_sound; eauto with utils.
-            eapply eq_atom_implies_sound_l; try symmetry; eauto.
-            eapply in_all; eauto.
-          }
-          cbn beta;intros; break; subst.
-          eapply ret_sound_for_model'; intuition eauto with utils.
-          eapply eq_atom_implies_sound_l; try symmetry; eauto.
-          eapply in_all; eauto.
-        }
-      }
-      cbn beta;intros; break; subst.
-      case_match.
-      {
-        bind_with_fn get_parents_sound; break; subst.
-        eapply state_sound_for_model_Miter with (P:= fun i _ => i' = i); auto with utils.
-        cbn beta;intros; subst.
-        cleanup_context.
-        apply repair_parent_analysis_sound.
-      }
-      { eapply ret_sound_for_model'; eauto with utils. }
-    }
-    {
-      bind_with_fn get_parents_sound.
-      eapply state_sound_for_model_Miter; break; subst; auto.
-      cbn beta;intros; break; subst.
-      eapply repair_parent_analysis_sound.
-    }
-  Qed. 
+    unfold update_entry.
+    vc_bind db_lookup_pure.
+    rename s0 into e1, a0 into mr.
+    destruct mr as [r|]; cbn beta iota; cbn [fst snd];
+      intros s_pre [Hs_eq Hatom_case]; subst s_pre;
+      intros Hok_ref Hatom_ref Hatoms_ref Hpost
+             Hex_e1 Hf01 Hfn_eq Hret_eq Hargs_eq Hper_lk.
+    - (* Some r: invoke union branch *)
+      pose proof (union_after_canonicalize_denote_iff
+                    a a' side_l e_ref e0 r
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_lk) as Hu.
+      specialize (Hu e1).
+      apply Hu; auto.
+    - (* None: invoke db_set branch *)
+      pose proof (db_set_after_canonicalize_denote_iff
+                    a a' side_l e_ref e0
+                    Hok_ref Hatom_ref Hatoms_ref Hpost Hper_lk) as Hd.
+      specialize (Hd e1).
+      apply Hd; auto.
+  Qed.
 
-  Lemma rebuild_sound i n
-    : state_sound_for_model m i (rebuild n) (fun i' _ => i = i').
+  (* The conditional-union prefix of the new [repair_each]: looks up
+     the entry literally at [(atom_fn a, atom_args a)] and, if found,
+     unions its [entry_value] with [atom_ret a].  Behavior is identical
+     to a no-op whenever [entry_value = atom_ret a] (the only case that
+     actually arises in egglog execution, since [parents] only stores
+     atoms that were inserted via [db_set'] with their own [atom_ret]).
+     The point of this step is to materialize the PER link
+     [v ~ atom_ret a] in [equiv] so that downstream the up-to-equiv
+     witness for [a] at the removed key links to [atom_ret a]. *)
+  Lemma repair_each_prefix_denote_iff a l (x_old x_canonical : idx)
+    : vc (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+             match mv with
+             | Some v => Defs.union v a.(atom_ret)
+             | None => Mret a.(atom_ret)
+             end)
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph_up_to_equiv a e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ atom_in_egraph_up_to_equiv a (snd res)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l
+           /\ equiv_extends e (snd res)
+           /\ uf_rel_PER (snd res).(equiv) x_old x_canonical
+           /\ e.(db) = (snd res).(db)
+           /\ (forall r, atom_in_db
+                           (Build_atom a.(atom_fn) a.(atom_args) r) e.(db)
+                         -> uf_rel_PER (snd res).(equiv) r a.(atom_ret))).
+  Proof.
+    vc_bind db_lookup_pure.
+    rename s0 into e_init, a0 into mv.
+    destruct mv as [v | ]; cbn beta iota; cbn [fst snd];
+      intros e_lkup [He_eq Hlk]; subst e_lkup.
+    - (* Some v: union v with a.(atom_ret) *)
+      intros Hok_init Hatom_init Hatoms_init Hper_init.
+      pose proof Hlk as Hain_v.
+      (* has_key facts for the union's preconditions *)
+      pose proof Hok_init as Hok_init'.
+      destruct Hok_init' as [Heq_init _ _ Hdb_init].
+      assert (Hkv : Sep.has_key v e_init.(equiv).(parent)).
+      { destruct (Hdb_init _ Hain_v) as [_ Hret_key]. exact Hret_key. }
+      pose proof (atom_in_egraph_up_to_equiv_has_key e_init a Hok_init Hatom_init)
+        as [_Hkargs Hkaret].
+      pose proof (union_sound v a.(atom_ret) e_init Heq_init Hkv Hkaret) as Hu.
+      destruct (Defs.union v a.(atom_ret) e_init) as [u_v e_post] eqn:Eunion.
+      cbn [fst snd] in Hu |- *.
+      destruct Hu as (Hdb_eq & Hex_post & Hper_iff & Hpar_eq
+                      & Hwl_rel & Hu_v_aret).
+      (* [Hext] lifts e_init's PER into e_post's PER. *)
+      assert (Hext : forall x1 y1, uf_rel_PER e_init.(equiv) x1 y1 ->
+                                   uf_rel_PER e_post.(equiv) x1 y1).
+      { intros x1 y1 Hxy. apply Hper_iff. apply PER_clo_base. left. exact Hxy. }
+      assert (Hv_aret_post : uf_rel_PER e_post.(equiv) v a.(atom_ret)).
+      { apply Hper_iff. apply PER_clo_base. right. split; reflexivity. }
+      (* [Hkey_lift]: union preserves has_key — any j in e_init.equiv's
+         key set has [uf_rel_PER e_init.equiv j j] (from get-then-get-back),
+         lifts via [Hext] to e_post's PER, then [uf_rel_PER_has_key]. *)
+      assert (Hkey_lift : forall j, Sep.has_key j e_init.(equiv).(parent) ->
+                                    Sep.has_key j e_post.(equiv).(parent)).
+      { intros j Hj.
+        destruct Hex_post as [roots_post Huf_post].
+        assert (Hjj_init : uf_rel_PER e_init.(equiv) j j).
+        { unfold Sep.has_key in Hj.
+          destruct (map.get e_init.(equiv).(parent) j) as [v_j|] eqn:Hgj;
+            [|tauto].
+          unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgj
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+        exact (proj1 (uf_rel_PER_has_key e_post.(equiv) roots_post j j
+                       Huf_post (Hext _ _ Hjj_init))). }
+      split.
+      { (* egraph_ok e_post *)
+        pose proof Hok_init as [_ Hwl_init Hpa_init _].
+        constructor.
+        - (* egraph_equiv_ok *) exact Hex_post.
+        - (* worklist_ok: case on [Hwl_rel] *)
+          destruct Hwl_rel as [Hwl_unchanged
+                              | (v_old & v' & ar & Hwl_new & Hv_old & Hv')].
+          + rewrite Hwl_unchanged.
+            eapply all_wkn; [|exact Hwl_init].
+            intros [old new improved | k] _ Hent; cbn in *; auto.
+          + rewrite Hwl_new. cbn. split.
+            * (* uf_rel_PER e_post.equiv v_old v':
+                 v_old ~ v ~ a.ret ~ v' via transitivity *)
+              unfold uf_rel_PER in *.
+              eapply PER_clo_trans; [exact Hv_old|].
+              eapply PER_clo_trans; [exact Hv_aret_post|].
+              apply PER_clo_sym. exact Hv'.
+            * eapply all_wkn; [|exact Hwl_init].
+              intros [old new improved | k] _ Hent; cbn in *; auto.
+        - (* parents_ok: parents unchanged; lift via PER monotonicity *)
+          intros x s Hgs. rewrite <- Hpar_eq in Hgs.
+          eapply all_wkn; [|apply (Hpa_init _ _ Hgs)].
+          intros b _ Hbain.
+          destruct Hbain as (aa & (Hfn & Hargs & Hret) & Hain).
+          exists aa. split.
+          + unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+            * clear -Hargs Hext.
+              revert Hargs. generalize (atom_args b), (atom_args aa).
+              intros l1 l2. revert l2.
+              induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                cbn; auto; try tauto.
+              intros [Hyz Hys]. split;
+                [apply Hext; exact Hyz | apply IH; exact Hys].
+            * apply Hext; exact Hret.
+          + unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain.
+        - (* db_idxs_in_equiv: db unchanged, lift has_key *)
+          intros b Hbain. rewrite <- Hdb_eq in Hbain.
+          destruct (Hdb_init _ Hbain) as [Hargs_keys Hret_key].
+          split.
+          + eapply all_wkn; [|exact Hargs_keys]; intros; apply Hkey_lift; auto.
+          + apply Hkey_lift; exact Hret_key.
+      }
+      (* Reverse key-lift: the union's PER closure base cases live
+         in e_init's PER + {(v, a.ret)}; both v and a.ret are
+         already has_key in e_init (Hkv / Hkaret), and induction on
+         the closure transports has_key back. *)
+      assert (Hkey_back : forall j, Sep.has_key j e_post.(equiv).(parent) ->
+                                    Sep.has_key j e_init.(equiv).(parent)).
+      { intros j Hj.
+        destruct Hex_post as [roots_post Huf_post].
+        destruct Heq_init as [roots_init Huf_init].
+        assert (Hjj_post : uf_rel_PER e_post.(equiv) j j).
+        { unfold Sep.has_key in Hj.
+          destruct (map.get e_post.(equiv).(parent) j) as [v_j|] eqn:Hgj;
+            [|tauto].
+          unfold uf_rel_PER.
+          eapply PER_clo_trans;
+            [apply PER_clo_base; exact Hgj
+            |apply PER_clo_sym; apply PER_clo_base; exact Hgj]. }
+        apply Hper_iff in Hjj_post.
+        assert (Hclo_key : forall p q,
+                  union_closure_PER (uf_rel_PER e_init.(equiv))
+                    (singleton_rel v a.(atom_ret)) p q ->
+                  Sep.has_key p e_init.(equiv).(parent)
+                  /\ Sep.has_key q e_init.(equiv).(parent)).
+        { intros p q Hpq.
+          induction Hpq as [p q Hbase | p q r _ IH1 _ IH2 | p q _ IH].
+          - destruct Hbase as [Hbase | Hsing].
+            + apply (uf_rel_PER_has_key _ _ _ _ Huf_init Hbase).
+            + destruct Hsing as [Heq1 Heq2]; subst.
+              split; [exact Hkv | exact Hkaret].
+          - split; [apply IH1 | apply IH2].
+          - destruct IH; split; assumption. }
+        exact (proj1 (Hclo_key _ _ Hjj_post)). }
+      split.
+      { intros i. split.
+        { (* Forward: e_init sound → e_post sound. *)
+          intros [Hwf Hexact Hatom_e Hrel_e].
+          constructor.
+          - exact Hwf.
+          - intros x Hx. apply Hkey_lift. apply Hexact. exact Hx.
+          - intros b Hbain. apply Hatom_e.
+            unfold atom_in_egraph in *. rewrite Hdb_eq. exact Hbain.
+          - intros i1 i2 Hi12.
+            apply Hper_iff in Hi12.
+            induction Hi12 as [p q Hbase | p q r _ IH1 _ IH2 | p q _ IH].
+            + destruct Hbase as [Hbase | Hsing].
+              * apply Hrel_e; exact Hbase.
+              * destruct Hsing as [Hpv Hqaret]; subst.
+                (* eq_sound (i v) (i a.ret) via interprets_to_functional *)
+                destruct Hatom_init as
+                  (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+                destruct aa as [fn_aa args_aa ret_aa]; cbn in *.
+                subst fn_aa.
+                pose proof (Hatom_e _ Hain_v) as Hsa_v.
+                pose proof (Hatom_e _ Hain_aa) as Hsa_aa.
+                cbn in Hsa_v, Hsa_aa.
+                (* args_aa ~PER~ atom_args a lifted to eq_sound *)
+                assert (Hargs_eq :
+                  all2 (eq_sound_for_model m i) args_aa (atom_args a)).
+                { clear -Hargs_aa Hrel_e.
+                  revert Hargs_aa. generalize (atom_args a), args_aa.
+                  intros l1 l2. revert l1.
+                  induction l2 as [|y ys IH]; destruct l1 as [|z zs];
+                    cbn; auto; try tauto.
+                  intros [Hyz Hys]. split.
+                  - apply Hrel_e. unfold uf_rel_PER in *.
+                    apply PER_clo_sym. exact Hyz.
+                  - apply IH; exact Hys. }
+                (* atom_sound_eq_ret: aa and (a.fn, a.args, v) sound,
+                   args eq_sound → ret_aa eq_sound v *)
+                pose proof (atom_sound_eq_ret i (atom_fn a)
+                              args_aa (atom_args a)
+                              ret_aa v
+                              Hsa_aa Hsa_v Hargs_eq) as Hret_eq.
+                (* combine with ret_aa ~PER~ a.ret lifted via Hrel_e *)
+                eapply eq_sound_for_model_trans;
+                  [apply eq_sound_for_model_Symmetric; exact Hret_eq |].
+                apply Hrel_e.
+                unfold uf_rel_PER in *.
+                apply PER_clo_sym. exact Hret_aa.
+            + eapply eq_sound_for_model_trans; eauto.
+            + apply eq_sound_for_model_Symmetric; exact IH. }
+        { (* Backward: e_post sound → e_init sound. *)
+          intros [Hwf Hexact Hatom_e Hrel_e].
+          constructor.
+          - exact Hwf.
+          - intros x Hx. apply Hkey_back. apply Hexact. exact Hx.
+          - intros b Hbain. apply Hatom_e.
+            unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hbain.
+          - intros i1 i2 Hi12.
+            apply Hrel_e. apply Hext. exact Hi12. } }
+      split.
+      { (* atom_in_egraph_up_to_equiv a e_post: same witness, PER widened *)
+        destruct Hatom_init as (aa & (Hfn_aa & Hargs_aa & Hret_aa) & Hain_aa).
+        exists aa. split.
+        - unfold atom_canonical_equiv. split; [exact Hfn_aa|]. split.
+          + clear -Hargs_aa Hext.
+            revert Hargs_aa. generalize (atom_args a), (atom_args aa).
+            intros l1 l2. revert l2.
+            induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+              cbn; auto; try tauto.
+            intros [Hyz Hys]. split; [apply Hext; exact Hyz | apply IH; exact Hys].
+          + apply Hext; exact Hret_aa.
+        - unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain_aa. }
+      split.
+      { (* all (atom_in_egraph_up_to_equiv ... e_post) l: same lift *)
+        clear -Hatoms_init Hext Hdb_eq.
+        induction l as [|b bs IH]; cbn in *; auto.
+        destruct Hatoms_init as [Hb Hbs]. split.
+        - destruct Hb as (aa & (Hfn & Hargs & Hret) & Hain).
+          exists aa. split.
+          + unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+            * clear -Hargs Hext.
+              revert Hargs. generalize (atom_args b), (atom_args aa).
+              intros l1 l2. revert l2.
+              induction l1 as [|y ys IH]; destruct l2 as [|z zs];
+                cbn; auto; try tauto.
+              intros [Hyz Hys]. split; [apply Hext; exact Hyz | apply IH; exact Hys].
+            * apply Hext; exact Hret.
+          + unfold atom_in_egraph in *. rewrite <- Hdb_eq. exact Hain.
+        - apply IH; exact Hbs. }
+      split.
+      { (* equiv_extends e_init e_post *)
+        unfold equiv_extends. intros x1 y1 Hxy. apply Hext; exact Hxy. }
+      split.
+      { (* uf_rel_PER e_post.equiv x_old x_canonical *)
+        apply Hext; exact Hper_init. }
+      split; [exact Hdb_eq|].
+      (* (forall r, atom_in_db (Build_atom a.fn a.args r) e_init.db ->
+                    uf_rel_PER e_post.equiv r a.ret).
+         The atom-in-db at key (a.fn, a.args) forces r = v (single entry
+         per key), and union puts v ~ a.ret in e_post.equiv. *)
+      intros r Hain_r.
+      assert (Hr_eq : r = v).
+      { clear -Hain_r Hain_v.
+        unfold atom_in_egraph, atom_in_db, Is_Some_satisfying in *;
+          cbn in *.
+        destruct (map.get e_init.(db) a.(atom_fn)) as [tbl|]; cbn in *;
+          try tauto.
+        destruct (map.get tbl a.(atom_args)) as [entry|]; cbn in *;
+          try tauto.
+        congruence. }
+      subst r. exact Hv_aret_post.
+    - (* None: Mret a.(atom_ret); state unchanged *)
+      intros Hok_init Hatom_init Hatoms_init Hper_init.
+      split; [exact Hok_init|].
+      split; [intros j; reflexivity|].
+      split; [exact Hatom_init|].
+      split; [exact Hatoms_init|].
+      split; [apply equiv_extends_refl|].
+      split; [exact Hper_init|].
+      split; [reflexivity|].
+      (* (forall r, atom_in_db (Build_atom a.fn a.args r) e_init.db ->
+         uf_rel_PER e_init.equiv r a.ret): vacuous since [Hlk] says
+         no such r exists. *)
+      intros r Hr.
+      exfalso. eapply Hlk; exact Hr.
+  Qed.
+
+  (* Composes the three pieces: [db_remove a] gives [post_db_remove],
+     [canonicalize a] uses the has-key facts derived from
+     [atom_in_egraph_up_to_equiv a e_ref] to produce a canonically-
+     equivalent atom [a'] in a state with [equiv]-only changes, and
+     [update_entry_canonicalized_denote_iff] finishes by restoring
+     egraph_ok and denote w.r.t. the original [e_ref].  The new outer
+     [db_lookup]/conditional-[union] prefix is handled by
+     [repair_each_prefix_denote_iff], which both preserves all the
+     pre-existing properties and yields the new PER fact that
+     [update_entry_canonicalized_denote_iff] needs to discharge its
+     sub-case B obligation. *)
+  Lemma repair_each_denote_iff a l (x_old x_canonical : idx)
+    : vc (@! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                          match mv with
+                          | Some v => Defs.union v a.(atom_ret)
+                          | None => Mret a.(atom_ret)
+                          end) in
+             let _ <- db_remove a in
+             let a' <- canonicalize a in
+             (update_entry a'))
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph_up_to_equiv a e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l
+           /\ equiv_extends e (snd res)).
+  Proof.
+    vc_bind (repair_each_prefix_denote_iff a l x_old x_canonical).
+    rename s0 into e_orig, a0 into _u_pref.
+    vc_bind db_remove_sound.
+    rename s0 into e_ref, a0 into u_dbr.
+    vc_bind canonicalize_preserves_fields_strong.
+    rename s0 into e0, a0 into a'.
+    eapply vc_consequence;
+      [| apply (update_entry_canonicalized_denote_iff a a' l e_ref e0)].
+    cbn beta. cbn [fst snd].
+    intros e1 res Hupd Hcan Hdbr Hpref Hok_orig Hatom_orig Hatoms_orig
+                  Hper_orig.
+    destruct (Hpref Hok_orig Hatom_orig Hatoms_orig Hper_orig)
+      as (Hok_ref & Hde_ref & Hatom_ref & Hatoms_ref & Hext_ref
+          & Hper_old_can & Hdb_pref_eq & Hper_lookup_ret).
+    destruct Hdbr as [_ Hpost].
+    pose proof Hpost as Hpost_full.
+    destruct Hpost as (Hequiv_eq & _).
+    pose proof (atom_in_egraph_up_to_equiv_has_key e_ref a Hok_ref Hatom_ref)
+      as [Hkargs Hkret].
+    assert (Hkargs_e0 : all (fun i => Sep.has_key i e0.(equiv).(parent))
+                              a.(atom_args)).
+    { rewrite Hequiv_eq. exact Hkargs. }
+    assert (Hkret_e0 : Sep.has_key a.(atom_ret) e0.(equiv).(parent)).
+    { rewrite Hequiv_eq. exact Hkret. }
+    pose proof Hok_ref as Hok_ref_orig.
+    destruct Hok_ref as [Heq_ref Hwl Hpa].
+    destruct Heq_ref as [roots Huf_ref].
+    assert (Hex_e0 : exists l, union_find_ok lt e0.(equiv) l).
+    { exists roots. rewrite Hequiv_eq. exact Huf_ref. }
+    specialize (Hcan Hex_e0 Hkargs_e0 Hkret_e0).
+    destruct Hcan as (Hex_e1 & Hfp01 & Hfn_a' & Hret_a' & Hargs_a').
+    (* Transport the prefix's PER fact from [e_orig.db] to [e_ref.db]
+       (both equal since the prefix step doesn't touch the db). *)
+    assert (Hper_lk_ref : forall r0,
+              atom_in_db (Build_atom (atom_fn a) (atom_args a) r0)
+                         e_ref.(db) ->
+              uf_rel_PER e_ref.(equiv) r0 (atom_ret a)).
+    { intros r0 Hain. apply Hper_lookup_ret. rewrite Hdb_pref_eq. exact Hain. }
+    specialize (Hupd Hok_ref_orig Hatom_ref Hatoms_ref Hpost_full
+                  Hex_e1 Hfp01 Hfn_a' Hret_a' Hargs_a' Hper_lk_ref).
+    destruct Hupd as (Hok_res & Hde_res & Hatoms_res & Hext_res).
+    split; [exact Hok_res|].
+    split; [intros i; rewrite Hde_ref; exact (Hde_res i)|].
+    split; [exact Hatoms_res|].
+    eapply equiv_extends_trans; [exact Hext_ref | exact Hext_res].
+  Qed.
+
+  (* Iterating [repair_each] over a list of atoms-in-egraph preserves
+     egraph_ok and denote, by induction with [repair_each_denote_iff]
+     threading the side-list invariant. The [uf_rel_PER e.equiv x_old
+     x_canonical] precondition (the [worklist_entry_ok]-derived fact
+     for the [union_repair x_old x_canonical _] entry being processed)
+     is preserved across iterations via [equiv_extends]. *)
+  Lemma list_Mmap_repair_each_denote_iff old_ps (x_old x_canonical : idx)
+    : vc (list_Mmap (fun a : atom =>
+                       @! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                                       match mv with
+                                       | Some v => Defs.union v a.(atom_ret)
+                                       | None => Mret a.(atom_ret)
+                                       end) in
+                          let _ <- db_remove a in
+                          let a' <- canonicalize a in
+                          (update_entry a'))
+                    old_ps)
+        (fun e res =>
+           egraph_ok e ->
+           all (fun a => atom_in_egraph_up_to_equiv a e) old_ps ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun l s =>
+                     egraph_ok s
+                     /\ all (fun a => atom_in_egraph_up_to_equiv a s) l
+                     /\ uf_rel_PER s.(equiv) x_old x_canonical)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s'))].
+    - cbn beta. intros s res Hinv Hok Hall Hper.
+      specialize (Hinv (conj Hok (conj Hall Hper))).
+      destruct Hinv as ([Hok_p _] & Hiff & Hext). auto.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
+    - intros a l_rest.
+      eapply vc_consequence;
+        [| apply (repair_each_denote_iff a l_rest x_old x_canonical)].
+      cbn beta. intros s p Hone (Hok & Hall & Hper).
+      cbn [all] in Hall. destruct Hall as [Ha Hl_rest].
+      destruct (Hone Hok Ha Hl_rest Hper) as (Hok_p & Hde_p & Hl_p & Hext_p).
+      split; [split; [exact Hok_p|]; split; [exact Hl_p|]; apply Hext_p; exact Hper |].
+      split; [exact Hde_p | exact Hext_p].
+  Qed.
+
+  (* [db_lookup_entry] is read-only; if it returns [Some entry], the
+     entry's value is recorded as a [Build_atom f args ·] in the db. *)
+  Lemma db_lookup_entry_pure f args
+    : vc (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+            analysis_result f args)
+        (fun e res =>
+           snd res = e
+           /\ match fst res with
+              | Some entry =>
+                  atom_in_egraph
+                    (Build_atom f args (entry_value idx analysis_result entry)) e
+              | None => True
+              end).
+  Proof.
+    unfold vc, db_lookup_entry; intros e; cbn [fst snd].
+    split; [reflexivity|].
+    unfold atom_in_egraph, atom_in_db; cbn.
+    destruct (map.get e.(db) f) as [tbl|] eqn:Htbl; cbn; auto.
+    destruct (map.get tbl args) as [entry|] eqn:Hentry; cbn; auto.
+  Qed.
+
+  (* [db_set_entry f args ep v an] preserves egraph_ok and denote when
+     an entry at [(f, args)] with value [v] already exists: the new
+     entry has the same [entry_value], so [atom_in_db] is unchanged
+     for every atom; egraph_ok's [parents_ok] transfers via
+     [atom_in_egraph_up_to_equiv] using the same iff. *)
+  Lemma db_set_entry_denote_iff f args ep v an
+    : vc (db_set_entry idx symbol symbol_map idx_map idx_trie
+            analysis_result f args ep v an)
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_egraph (Build_atom f args v) e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold vc, db_set_entry; intros e Hok Hain; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e]; cbn.
+    destruct Hok as [Heq Hwl Hpa Hdb]; cbn in *.
+    unfold atom_in_egraph, atom_in_db in Hain; cbn in Hain.
+    unfold map_update in *.
+    destruct (map.get db_e f) as [tbl|] eqn:Htbl; cbn in Hain; [|tauto].
+    destruct (map.get tbl args) as [old_entry|] eqn:Hold; cbn in Hain; [|tauto].
+    assert (Hdb_iff : forall a',
+               atom_in_db a' (map.put db_e f (map.put tbl args
+                                (Build_db_entry idx analysis_result ep v an)))
+               <-> atom_in_db a' db_e).
+    { intros a'. unfold atom_in_db; cbn.
+      eqb_case (atom_fn a') f.
+      - rewrite !map.get_put_same. cbn.
+        eqb_case (atom_args a') args.
+        + rewrite !map.get_put_same. cbn. rewrite Htbl. cbn. rewrite Hold.
+          cbn. rewrite Hain. reflexivity.
+        + rewrite !map.get_put_diff by auto. rewrite Htbl. cbn. reflexivity.
+      - rewrite map.get_put_diff by auto. reflexivity. }
+    split.
+    - constructor; cbn; auto.
+      + intros y s Hg. specialize (Hpa _ _ Hg).
+        eapply all_wkn; [|exact Hpa].
+        intros aa _ Hex.
+        unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+          atom_in_egraph in *.
+        destruct Hex as (a'' & Hcanon & Hain'').
+        exists a''; cbn in *. split.
+        * exact Hcanon.
+        * apply Hdb_iff. exact Hain''.
+      + intros a' Ha'. apply Hdb. apply Hdb_iff. exact Ha'.
+    - intros i; split; intros [Hwf Hex Hatom Hrel];
+        constructor; cbn in *; auto.
+      + intros a' Ha'. apply Hatom. unfold atom_in_egraph in *.
+        apply Hdb_iff. exact Ha'.
+      + intros a' Ha'. apply Hatom. unfold atom_in_egraph in *.
+        apply Hdb_iff in Ha'. exact Ha'.
+  Qed.
+
+  (* [repair_parent_analysis] reads the db entry for [a], computes a
+     new analysis, and if it differs from the stored one, writes it
+     back (preserving the entry's value [v]). The proof composes the
+     primitive denote_iff lemmas above; [db_set_entry] is invoked with
+     the same [v] that was read out, so [atom_in_egraph] is unchanged. *)
+  Lemma repair_parent_analysis_denote_iff a
+    : vc (repair_parent_analysis a)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    unfold repair_parent_analysis.
+    vc_bind db_lookup_entry_pure.
+    rename s0 into e_ref, a0 into mr.
+    unfold vc.
+    destruct mr as [entry|]; cbn beta iota; cbn [fst snd];
+      intros s_pre [Hs_eq Hain_or]; subst s_pre; intros Hok_ref;
+      [| cbn beta iota; cbn [Mret StateMonad.state_monad fst snd];
+         split; [exact Hok_ref|]; intros i; reflexivity].
+    destruct entry as [v_epoch v old_a].
+    cbn in Hain_or.
+    cbn [Mbind StateMonad.state_monad].
+    pose proof (get_analyses_denote_iff (atom_args a) e_ref Hok_ref) as Hga.
+    pose proof (get_analyses_preserves_fields (atom_args a) e_ref) as Hgaf.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e_ref) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hga, Hgaf.
+    destruct Hga as [Hok_g Hde_g].
+    destruct Hgaf as (Hdb_g & Heq_g & Hpa_g).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd].
+      split; [exact Hok_g | exact Hde_g].
+    - cbn [Mseq Mbind StateMonad.state_monad].
+      pose proof (update_analyses_denote_iff (atom_ret a)
+                    (analyze idx symbol analysis_result a arg_as) e_g Hok_g) as Hua.
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                  (atom_ret a) (analyze idx symbol analysis_result a arg_as) e_g) as [u e_u] eqn:Hue.
+      cbn [fst snd] in Hua.
+      destruct Hua as (Hok_u & Hde_u & Hdb_u).
+      pose proof (push_worklist_analysis_denote_iff (atom_ret a) e_u Hok_u) as Hpw.
+      destruct (push_worklist idx symbol symbol_map idx_map idx_trie analysis_result
+                  (analysis_repair idx (atom_ret a)) e_u) as [u2 e_p] eqn:Hpe.
+      cbn [fst snd] in Hpw.
+      destruct Hpw as (Hok_p & Hde_p & Hdb_p).
+      assert (Hain_p : atom_in_egraph (Build_atom (atom_fn a) (atom_args a) v) e_p).
+      { unfold atom_in_egraph, atom_in_db in *; cbn in *.
+        rewrite Hdb_p, Hdb_u, Hdb_g. exact Hain_or. }
+      pose proof (db_set_entry_denote_iff (atom_fn a) (atom_args a) v_epoch v
+                    (analyze idx symbol analysis_result a arg_as) e_p Hok_p Hain_p) as Hds.
+      destruct (db_set_entry idx symbol symbol_map idx_map idx_trie analysis_result
+                  (atom_fn a) (atom_args a) v_epoch v (analyze idx symbol analysis_result a arg_as) e_p)
+        as [u3 e_s] eqn:Hse.
+      cbn [fst snd] in Hds |- *.
+      destruct Hds as [Hok_s Hde_s].
+      split; [exact Hok_s|].
+      intros i. rewrite Hde_g, Hde_u, Hde_p. exact (Hde_s i).
+  Qed.
+
+  (* Iterate [repair_parent_analysis] over a list. *)
+  Lemma list_Miter_repair_parent_analysis_denote_iff ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)).
+  Proof.
+    vc_list_Miter_egraph_iff repair_parent_analysis_denote_iff.
+  Qed.
+
+  (* [repair_parent_analysis] only writes to db / analyses / worklist;
+     equiv is unchanged. *)
+  Lemma repair_parent_analysis_preserves_equiv a
+    : vc (repair_parent_analysis a)
+        (fun e res => (snd res).(equiv) = e.(equiv)).
+  Proof.
+    unfold repair_parent_analysis, vc.
+    intros e. cbn [Mbind Mseq StateMonad.state_monad fst snd].
+    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_fn a) (atom_args a) e)
+      as [me e_l] eqn:Hlk; cbn [fst snd].
+    assert (Hlk_eq : e_l = e).
+    { unfold db_lookup_entry, Mret, StateMonad.state_monad in Hlk.
+      repeat (match type of Hlk with
+              | context [match ?x with _ => _ end] => destruct x; cbn in Hlk
+              end); inversion Hlk; reflexivity. }
+    subst e_l.
+    destruct me as [entry|]; [|cbn; reflexivity].
+    destruct entry as [v_epoch v old_a].
+    pose proof (get_analyses_preserves_fields (atom_args a) e) as Hga.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hga. destruct Hga as (_ & Heq_g & _).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd]. exact Heq_g.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist db_set_entry].
+      destruct e_g as [db_g equiv_g parents_g epoch_g wl_g analyses_g log_g];
+        cbn in *.
+      unfold map_update.
+      destruct (map.get db_g (atom_fn a)) as [tbl|] eqn:Htbl;
+        cbn; exact Heq_g.
+  Qed.
+
+  (* [list_Miter repair_parent_analysis] iterates a no-equiv-change op,
+     so equiv is unchanged across the whole iter. *)
+  Lemma list_Miter_repair_parent_analysis_preserves_equiv ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res => (snd res).(equiv) = e.(equiv)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ _ => True)
+                  (fun s s' => s'.(equiv) = s.(equiv)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _; reflexivity.
+    - intros ? ? ? H1 H2; congruence.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_parent_analysis_preserves_equiv a)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  (* The optional analysis pass after the parent-canonicalization mmap.
+     Both branches (run-analyses or skip) preserve egraph_ok and denote.
+     Equiv is preserved literally (the analysis pass only writes
+     analyses/worklist/db); the [equiv_extends] conjunct is for callers
+     that thread a [worklist_entry_ok]-derived PER fact through. *)
+  Lemma repair_after_mmap_denote_iff x_canonical (improved : bool)
+    : vc (if improved
+          then (@! let canon_ps <- get_parents x_canonical in
+                   (list_Miter repair_parent_analysis canon_ps))
+          else Mret tt)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
+  Proof.
+    destruct improved.
+    - vc_bind get_parents_denote_iff.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_denote_iff a)
+                    (list_Miter_repair_parent_analysis_preserves_equiv a))].
+      cbn beta. intros s1 res [HIH Heq_res_s1] Hgp Hok_s0.
+      cbn [fst snd] in Hgp.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & Hs1_eq & _).
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      split; [intros i; rewrite Hde_s1; exact (Hde_res i)|].
+      intros x y Hxy. rewrite Heq_res_s1, Hs1_eq; exact Hxy.
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok; split; [exact Hok|].
+      split; [intros i; reflexivity | apply equiv_extends_refl].
+  Qed.
+
+
+  (* [repair_union] = [pull_parents] of [x_old], then [list_Mmap] of
+     [repair_each] over those parents, then conditional analysis pass.
+     Each piece preserves egraph_ok and denote; pull_parents gives the
+     atom-in-egraph invariant that [list_Mmap_repair_each_denote_iff]
+     consumes. *)
+  Lemma repair_union_denote_iff x_old x_canonical improved
+    : vc (repair_union x_old x_canonical improved)
+        (fun e res =>
+           egraph_ok e ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
+  Proof.
+    unfold repair_union.
+    vc_bind pull_parents_denote_iff.
+    rename s0 into e_init, a into ps.
+    vc_bind (list_Mmap_repair_each_denote_iff ps x_old x_canonical).
+    rename s0 into s1, a into _u.
+    eapply vc_consequence;
+      [|apply (repair_after_mmap_denote_iff x_canonical improved)].
+    cbn beta. cbn [fst snd]. intros s2 res HIH Hmap Hpull Hok_init Hper_init.
+    destruct (Hpull Hok_init) as (Hok_s1 & Hde_s1 & Hequiv_s1 & Hains_s1).
+    assert (Hper_s1 : uf_rel_PER s1.(equiv) x_old x_canonical)
+      by (rewrite Hequiv_s1; exact Hper_init).
+    destruct (Hmap Hok_s1 Hains_s1 Hper_s1) as (Hok_s2 & Hde_s2 & Hext_s2).
+    destruct (HIH Hok_s2) as (Hok_res & Hde_res & Hext_res).
+    split; [exact Hok_res|].
+    split; [intros i; rewrite Hde_s1, Hde_s2; exact (Hde_res i)|].
+    intros x y Hxy.
+    apply Hext_res, Hext_s2.
+    rewrite Hequiv_s1; exact Hxy.
+  Qed.
+
+  (* Top-level [repair] dispatches by worklist-entry shape. Union
+     repairs delegate to [repair_union_denote_iff]; analysis repairs
+     run [list_Miter_repair_parent_analysis] over the parents of the
+     analyzed index. *)
+  Lemma repair_denote_iff a
+    : vc (repair a)
+        (fun e res =>
+           egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
+  Proof.
+    destruct a as [old new improved | i_repair]; cbn [repair].
+    - unfold vc; intros e Hok Hwl.
+      cbn in Hwl.
+      apply (repair_union_denote_iff old new improved e); auto.
+    - vc_bind get_parents_denote_iff.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_denote_iff a)
+                    (list_Miter_repair_parent_analysis_preserves_equiv a))].
+      cbn beta. cbn [fst snd]. intros s1 res [HIH Heq_res_s1] Hgp Hok_s0 _Hwl.
+      destruct (Hgp Hok_s0) as (Hok_s1 & Hde_s1 & Hs1_eq & _).
+      destruct (HIH Hok_s1) as [Hok_res Hde_res].
+      split; [exact Hok_res|].
+      split; [intros i; rewrite Hde_s1; exact (Hde_res i)|].
+      intros x y Hxy. rewrite Heq_res_s1, Hs1_eq; exact Hxy.
+  Qed.
+
+  (* Iterate [repair] over a list of worklist entries. Used by
+     [rebuild_sound]'s inner loop. *)
+  Lemma list_Miter_repair_denote_iff l
+    : vc (list_Miter repair l)
+        (fun e res =>
+           egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) l ->
+           egraph_ok (snd res)
+           /\ (forall i, denote e i <-> denote (snd res) i)
+           /\ equiv_extends e (snd res)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun l s => egraph_ok s /\ all (worklist_entry_ok s.(equiv)) l)
+                  (fun s s' => (forall i, denote s i <-> denote s' i)
+                               /\ equiv_extends s s'))].
+    - cbn beta. intros e res Hinv Hok Hl.
+      destruct (Hinv (conj Hok Hl)) as ((Hok_p & _) & Hiff & Hext); auto.
+    - intros s _; split; [intros i; reflexivity | apply equiv_extends_refl].
+    - intros ? ? ? [H1 He1] [H2 He2]; split;
+        [intros i; rewrite H1; auto | eapply equiv_extends_trans; eauto].
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_denote_iff a)].
+      cbn beta. intros s p Hone (Hok & Hwl).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hone Hok Hwl_a) as (Hok_p & Hde_p & Hext_p).
+      split; [split; [exact Hok_p|]|].
+      + (* preserve all worklist_entry_ok across PER growth *)
+        eapply all_wkn; [| exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + split; [exact Hde_p | exact Hext_p].
+  Qed.
+
+  Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
+    : vc (rebuild n)
+        (fun e res =>
+           egraph_ok e ->
+           egraph_ok (snd res)
+           /\ forall i, denote e i <-> denote (snd res) i).
   Proof.
     induction n.
-    { eapply ret_sound_for_model'; eauto with utils. }
-    {
-      cbn [rebuild].
-      ssm_bind.
-      { eapply pull_worklist_sound. }
-      
-      destruct a.
-      { eapply ret_sound_for_model'; break; subst; eauto with utils. }
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Mmap with (P_const:= eq i'); auto.
-        {
-          intros; break; subst.
-          eapply canonicalize_worklist_entry_sound.
-          eapply in_all; eauto.
-        }
-        { eauto using worklist_entry_sound_mono. }
-      }
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Miter with (P:= fun i _ => i'0 = i); auto.
-        {
-          intros; break; subst.
-          cleanup_context.
-          eapply repair_sound.
-        }
-      }
-      break; subst; eauto with utils.
-    }
+    { unfold vc, rebuild. intros e Hok. split; [exact Hok|]. intros i; reflexivity. }
+    cbn [rebuild].
+    vc_bind pull_worklist_denote_iff.
+    rename s0 into e_init, a into wl_pulled.
+    destruct wl_pulled as [|w wl'].
+    { unfold vc; cbn [Mret StateMonad.state_monad fst snd].
+      intros s1 HPpull Hok_s0.
+      destruct (HPpull Hok_s0) as (Hok_s1 & Hde_s1 & _).
+      split; [exact Hok_s1 | exact Hde_s1]. }
+    cbn [Mbind StateMonad.state_monad Mseq].
+    vc_bind list_Mmap_canonicalize_worklist_entry_denote_iff.
+    rename s0 into s1, a into wl_canon.
+    vc_bind list_Miter_repair_denote_iff.
+    rename s0 into s2, a into u_miter.
+    eapply vc_consequence; [|apply IHn].
+    cbn beta. cbn [fst snd]. intros s3 res HIH Hmiter Hmap Hpull Hok_init.
+    destruct (Hpull Hok_init) as (Hok_s1 & Hde_s1 & Hequiv_s1 & Hwl_pulled).
+    assert (Hwl_s1 : all (worklist_entry_ok s1.(equiv)) (w :: wl')).
+    { rewrite Hequiv_s1; exact Hwl_pulled. }
+    destruct (Hmap Hok_s1 Hwl_s1) as (Hok_s2 & Hde_s2 & _Hext_s2 & Hwl_canon_s2).
+    pose proof (worklist_dedup_preserves_all
+                  (worklist_entry_ok s2.(equiv)) wl_canon Hwl_canon_s2)
+      as Hwl_dedup_s2.
+    destruct (Hmiter Hok_s2 Hwl_dedup_s2) as (Hok_s3 & Hde_s3 & _Hext_s3).
+    destruct (HIH Hok_s3) as [Hok_res Hde_res].
+    split; [exact Hok_res|].
+    intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
   Qed.
 
-  
-  (*TODO: move to coqutil *)
-  Lemma extends_put_None {key value : Type} {map : map.map key value} `{@map.ok _ _ map}
-                         `{Eqb_ok key}
-    (i : map) k v
-    : map.get i k = None -> map.extends (map.put i k v) i.
-  Proof.
-    repeat intro.
-    eqb_case x k;
-      [ rewrite map.get_put_same | rewrite map.get_put_diff by eauto ];
-      congruence.
-  Qed.
-
-  (*TODO: move to UnionFind.v*)
-  Arguments UnionFind.alloc {idx}%type_scope {idx_map rank_map} succ%function_scope pat.
-
-  
-  Lemma forest_cons l u (x : idx)
-    : forest _ _ l u ->
-      ~ Sep.has_key x u ->
-      forest _ _ (x::l) (map.put u x x).
-  Proof.
-    clear idx_zero idx_succ.
-    exists (map.singleton x x), u;
-      basic_goal_prep;
-      basic_utils_crush.
-    {
-      eapply Sep.map_split_singleton_l; intuition eauto.
-      unfold Sep.has_key in *; case_match; tauto.
-    }
-    { eapply tree_singleton; eauto. }
-  Qed.
-
-  Context (lt_asymmetric : Asymmetric lt)
-    (lt_succ : forall x, lt x (idx_succ x))
-    (lt_trans : Transitive lt).
-
-  Existing Instance lt_trans.
-
-  Lemma asymmetric_unequal a b
-    : lt a b -> a <> b.
-  Proof. repeat intro; subst; eapply asymmetry; eauto. Qed.
-  Hint Resolve asymmetric_unequal : utils.
-  
-  (*TODO: move to UnionFind.v*)
-  Lemma alloc_preserves_ok u l u' x
-    : union_find_ok lt u l ->
-      UnionFind.alloc idx_succ u = (u', x) ->
-      union_find_ok lt u' (x::l).
-  Proof.
-    clear idx_zero.
-    destruct u;
-    unfold UnionFind.alloc;
-      basic_goal_prep; inversions.
-    destruct H1; constructor; basic_goal_prep; eauto.
-    { eapply forest_cons; eauto. }
-    {
-      eqb_case k x.
-      { exists 0; rewrite map.get_put_same; auto. }
-      {
-        rewrite !map.get_put_diff in * by eauto.
-        apply rank_covers_domain in H1; eauto.
-      }
-    }
-    {
-      eqb_case i x; [ repeat (rewrite !map.get_put_same in *; auto; inversions; tauto)
-                    | rewrite !map.get_put_diff in * by eauto].
-      pose proof H1 as H1';
-        eapply forest_closed in H1'; eauto.
-      eapply next_upper_bound in H1'.
-      assert (j <> x) by auto with utils.
-      rewrite !map.get_put_diff in * by eauto.
-      eapply rank_increasing in H1; eauto.
-    }
-    { 
-      eqb_case i x; [ repeat (rewrite !map.get_put_same in *; auto; inversions)
-                    | rewrite !map.get_put_diff in * by eauto];
-        eauto; Lia.lia.
-    }
-    {
-      rewrite has_key_put in *; eauto.
-      intuition subst; eauto.
-    }
-  Qed.
-
-  (*TODO: move to UnionFind.v*)
-  Arguments next {idx}%type_scope {idx_map rank_map} u.
-  
-  Lemma alloc_next u u' i0
-    : UnionFind.alloc idx_succ u = (u', i0) ->
-      i0 = u.(next).
-  Proof.
-    destruct u;
-      unfold UnionFind.alloc; cbn; intros; inversions.
-    reflexivity.
-  Qed.
-
-  Hint Rewrite has_key_put : utils.
-
-  (*TODO: move to Sep*)
-  Lemma get_put_None A (i : idx_map A) k x v v'
-    : map.get i x = None ->
-      map.get i k = Some v' ->
-      map.get (map.put i x v) k = Some v'.
-  Proof.
-    eqb_case k x; [congruence |].
-    rewrite map.get_put_diff; eauto.
-  Qed.
-  
-  Lemma Mmap_get_put_None A (i : idx_map A) l l' x v
-    : map.get i x = None ->
-      list_Mmap (map.get i) l = Some l' ->
-      list_Mmap (map.get (map.put i x v)) l = Some l'.
-  Proof.
-    revert l';
-      induction l;
-      basic_goal_prep;
-      repeat case_match; try tauto;
-      inversions;
-      intuition eauto using get_put_None.
-    {
-      eapply get_put_None with (v:=v) in case_match_eqn1; eauto.
-      replace a0 with a1 by congruence.
-      f_equal.
-      eapply IHl with (l':=l1) in H1; inversions; eauto.
-    }
-    {
-      eapply IHl with (l':=l0) in H1; inversions; eauto.
-    }
-    {
-      eapply get_put_None with (v:=v) in case_match_eqn0; eauto.
-      congruence.
-    }
-  Qed.
-
-
-  Ltac key_case x y :=
-    eqb_case x y; [ rewrite !map.get_put_same in *
-                  | rewrite !map.get_put_diff in * by eauto ].
-  
-  
-  (*TODO: move to union_find *)
-  Arguments closed_graph {idx}%type_scope {idx_map} m. 
-  
-  Lemma PER_closure_put parent x i1 i2
-    : closed_graph parent ->
-      map.get parent x = None ->
-      PER_closure (fun i j : idx => map.get (map.put parent x x) i = Some j) i1 i2
-      <-> PER_closure (fun i j : idx => map.get parent i = Some j) i1 i2
-          \/ (i1 = x /\ i2 = x).
-  Proof.
-    intuition subst.
-    2:{
-      eapply subrelation_PER_closure; eauto.
-      repeat intro.
-      key_case x0 x; congruence.
-    }
-    2:{ constructor 1; rewrite map.get_put_same; auto. }
-    {
-      induction H3; basic_goal_prep; basic_utils_crush.
-      key_case x a; inversions; basic_utils_crush.
-    }
-  Qed.
-
-  
-  Lemma next_None uf l
-    : union_find_ok lt uf l ->
-      map.get uf.(parent) uf.(next) = None.
-  Proof.
-    destruct uf, 1; basic_goal_prep.
-    destruct (map.get parent next) eqn:H'; try congruence.
-    exfalso.
-    assert (Sep.has_key next parent).
-    { unfold Sep.has_key in *; rewrite H' in *; auto. }
-    apply next_upper_bound in H1.
-    eapply asymmetric_unequal; eauto.
-  Qed.
-
-  
-  Lemma map_get_None_contradiction A (i : idx_map A) next
-    : (~Is_Some (map.get i next)) -> map.get i next = None.
-  Proof. unfold Is_Some; destruct (map.get i next); intuition congruence. Qed.
-  
-  Lemma alloc_sound i time_travel_term
-    : m.(domain_wf) time_travel_term ->
-      state_sound_for_model m i
-        (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
-        (fun i' x => map.get i' x = Some time_travel_term).
-  Proof.
-    clear idx_zero.
-    unfold alloc.
-    repeat intro.
-    unfold Sep.and1 in *; break.
-    case_match; cbn.
-    pose proof case_match_eqn as H';
-      eapply alloc_next in H'; subst.
-    exists (map.put i (equiv e).(next) time_travel_term).
-    basic_goal_prep; intuition auto.
-    { rewrite map.get_put_same; eauto. }
-    {
-      destruct H3 as [ [] ].
-      eapply alloc_preserves_ok in case_match_eqn; eauto.
-      constructor; eexists; cbn; eauto.
-    }
-    2:{
-      eapply extends_put_None.
-      destruct (map.get i (next (equiv e))) eqn:Hget; auto.
-      exfalso.
-      assert (Is_Some (map.get i (next (equiv e)))) as Hsome
-          by (rewrite Hget; cbn; auto).
-      clear d Hget.
-      eapply interpretation_exact in Hsome; eauto.
-      
-      destruct H3 as [ [] ].
-      eapply next_upper_bound in Hsome; eauto.
-    }
-    {
-      destruct H4; constructor; basic_goal_prep; eauto.
-      {
-         unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
-           inversions.
-         eqb_case next i0;
-           [rewrite !map.get_put_same in *
-           |rewrite !map.get_put_diff in * by eauto ];
-           inversions; eauto.
-      }
-      {
-        unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
-          inversions; cbn in *.
-        eqb_case next x;
-          [rewrite !map.get_put_same in *
-          |rewrite !map.get_put_diff in * by eauto ];
-          inversions; basic_utils_crush.
-      }
-      {
-        unfold atom_in_egraph in *; cbn in *.
-        eapply atom_interpretation0 in H2.
-        eapply atom_sound_monotone; eauto.
-        apply extends_put_None.
-        destruct H3 as [ [] ].
-        enough (~ Sep.has_key (next (equiv e)) i).
-        { unfold Sep.has_key in *; case_match; try congruence; tauto. }
-        intro.
-        apply interpretation_exact0 in H4.
-        eapply next_upper_bound in H4; eauto.
-      }
-      {
-        destruct e; destruct equiv;
-        unfold uf_rel_PER, UnionFind.alloc in *;
-          basic_goal_prep; inversions; basic_goal_prep.
-        eapply PER_closure_put in H2.
-        2:{
-          destruct H3 as [ [? H3] ].
-          eapply uf_forest in H3; cbn in *; eauto.
-          eapply forest_closed; eauto.
-        }
-        2:{
-          destruct H3 as [ [? H3] ]; cbn in H3.
-          eapply next_None in H3; cbn in H3; auto.
-        }
-        intuition subst.
-        { eapply rel_interpretation0 in H4.
-          eapply eq_sound_monotone; eauto.
-          apply extends_put_None.
-          destruct H3 as [ [? H3] ]; cbn in H3.
-          eapply next_None in H3; cbn in H3; auto.
-          apply map_get_None_contradiction; repeat intro.
-          apply interpretation_exact0 in H2.
-          unfold Sep.has_key in *; rewrite H3 in *; auto.
-        }
-        {
-          unfold eq_sound_for_model; rewrite map.get_put_same; cbn.
-          auto.
-        }
-      }
-      {
-        eapply monotone1_all; [apply atom_sound_monotone | | eauto].
-        apply extends_put_None.
-        destruct H3 as [ [? H3] ]; cbn in H3.
-        eapply next_None in H3; cbn in H3; auto.
-        apply map_get_None_contradiction; repeat intro.
-        apply interpretation_exact0 in H4.
-        unfold Sep.has_key in *; rewrite H3 in *; auto.
-      }
-      {
-        eapply monotone1_all; [apply worklist_entry_sound_mono| | eauto].
-        apply extends_put_None.
-        destruct H3 as [ [? H3] ]; cbn in H3.
-        eapply next_None in H3; cbn in H3; auto.
-        apply map_get_None_contradiction; repeat intro.
-        apply interpretation_exact0 in H2.
-        unfold Sep.has_key in *; rewrite H3 in *; auto.
-      }
-    }        
-  Qed.
-
-    
-  Lemma alloc_opaque_sound i time_travel_term
-    : m.(domain_wf) time_travel_term ->
-      state_sound_for_model m i
-        (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
-        (fun i' x => map.get i' x = Some time_travel_term).
-  Proof.
-    clear idx_zero.
-    unfold alloc_opaque.
-    repeat intro.
-    unfold Sep.and1 in *; break.
-    case_match; cbn.
-    pose proof case_match_eqn as H';
-      eapply alloc_next in H'; subst.
-    exists (map.put i (equiv e).(next) time_travel_term).
-    basic_goal_prep; intuition auto.
-    { rewrite map.get_put_same; eauto. }
-    {
-      destruct H3 as [ [] ].
-      eapply alloc_preserves_ok in case_match_eqn; eauto.
-      constructor; eexists; cbn; eauto.
-    }
-    2:{
-      eapply extends_put_None.
-      destruct (map.get i (next (equiv e))) eqn:Hget; auto.
-      exfalso.
-      assert (Is_Some (map.get i (next (equiv e)))) as Hsome
-          by (rewrite Hget; cbn; auto).
-      clear d Hget.
-      eapply interpretation_exact in Hsome; eauto.
-      
-      destruct H3 as [ [] ].
-      eapply next_upper_bound in Hsome; eauto.
-    }
-    {
-      destruct H4; constructor; basic_goal_prep; eauto.
-      {
-         unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
-           inversions.
-         eqb_case next i0;
-           [rewrite !map.get_put_same in *
-           |rewrite !map.get_put_diff in * by eauto ];
-           inversions; eauto.
-      }
-      {
-        unfold UnionFind.alloc in *; destruct e; destruct equiv;cbn in *;
-          inversions; cbn in *.
-        eqb_case next x;
-          [rewrite !map.get_put_same in *
-          |rewrite !map.get_put_diff in * by eauto ];
-          inversions; basic_utils_crush.
-      }
-      {
-        unfold atom_in_egraph in *; cbn in *.
-        eapply atom_interpretation0 in H2.
-        eapply atom_sound_monotone; eauto.
-        apply extends_put_None.
-        destruct H3 as [ [] ].
-        enough (~ Sep.has_key (next (equiv e)) i).
-        { unfold Sep.has_key in *; case_match; try congruence; tauto. }
-        intro.
-        apply interpretation_exact0 in H4.
-        eapply next_upper_bound in H4; eauto.
-      }
-      {
-        destruct e; destruct equiv;
-        unfold uf_rel_PER, UnionFind.alloc in *;
-          basic_goal_prep; inversions; basic_goal_prep.
-        eapply PER_closure_put in H2.
-        2:{
-          destruct H3 as [ [? H3] ].
-          eapply uf_forest in H3; cbn in *; eauto.
-          eapply forest_closed; eauto.
-        }
-        2:{
-          destruct H3 as [ [? H3] ]; cbn in H3.
-          eapply next_None in H3; cbn in H3; auto.
-        }
-        intuition subst.
-        { eapply rel_interpretation0 in H4.
-          eapply eq_sound_monotone; eauto.
-          apply extends_put_None.
-          destruct H3 as [ [? H3] ]; cbn in H3.
-          eapply next_None in H3; cbn in H3; auto.
-          apply map_get_None_contradiction; repeat intro.
-          apply interpretation_exact0 in H2.
-          unfold Sep.has_key in *; rewrite H3 in *; auto.
-        }
-        {
-          unfold eq_sound_for_model; rewrite map.get_put_same; cbn.
-          auto.
-        }
-      }
-      {
-        eapply monotone1_all; [apply atom_sound_monotone | | eauto].
-        apply extends_put_None.
-        destruct H3 as [ [? H3] ]; cbn in H3.
-        eapply next_None in H3; cbn in H3; auto.
-        apply map_get_None_contradiction; repeat intro.
-        apply interpretation_exact0 in H4.
-        unfold Sep.has_key in *; rewrite H3 in *; auto.
-      }
-      {
-        eapply monotone1_all; [apply worklist_entry_sound_mono| | eauto].
-        apply extends_put_None.
-        destruct H3 as [ [? H3] ]; cbn in H3.
-        eapply next_None in H3; cbn in H3; auto.
-        apply map_get_None_contradiction; repeat intro.
-        apply interpretation_exact0 in H2.
-        unfold Sep.has_key in *; rewrite H3 in *; auto.
-      }
-    }        
-  Qed.
-  
-
-  (*
-  Lemma list_Mfoldl_map A B C (g : A -> B) M `{Monad M} (f : C -> B -> M C) l acc
-    : list_Mfoldl f (map g l) acc = list_Mfoldl (fun acc x => f acc (g x)) l acc.
-  Proof using.
-    revert acc; induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-    (*TODO: needs Mbind_ext?*)
-  Admitted. *)
-
-  (* TODO: Define and implement monad.ok *)
-  (*TODO: avoid depending on funext if possible *)
-  Lemma Mbind_assoc (T1 T2 T3 : Type) S (f : T1 -> state S T2) (g : T2 -> state S T3) ma
-    : Mbind (fun a : T1 => @! let p <- f a in (g p)) ma = Mbind g (@! let p <- ma in (f p)).
-  Proof.
-    (*TODO: primitive pairs would validate this. *)
-    cbn.
-    apply FunctionalExtensionality.functional_extensionality;
-      intros; repeat case_match; eauto.
-  Qed.
-  Lemma Mbind_Mret : forall (T1 T2 : Type) S (f : T1 -> state S T2) v,
-      Mbind f (Mret v) = f v.
-  Proof. intros; reflexivity. Qed.
-
-  
-  (*TODO: Move to a better spot*)
-  Lemma set_eq_refl A (l : list A) : set_eq l l.
-  Proof. unfold set_eq, incl; intuition auto. Qed.
-  Hint Resolve set_eq_refl : utils.
-  
-  Lemma set_eq_trans A : Transitive (A:=list A) set_eq.
-  Proof. unfold set_eq, incl; repeat intro; intuition auto. Qed.
-  
-  Lemma set_eq_sym A : Symmetric (A:=list A) set_eq.
-  Proof. unfold set_eq, incl; repeat intro; intuition auto. Qed.
-
-  Add Parametric Relation {A : Type} : (list A) (set_eq)
-    reflexivity proved by (set_eq_refl _)
-    symmetry proved by (set_eq_sym _)
-    transitivity proved by (set_eq_trans _)
-      as set_eq_rel.
-
-  Instance perm_set_eq_subrel {A} : subrelation (Permutation.Permutation (A:=A)) (set_eq (A:=A)).
-  Proof.
-    unfold set_eq, incl.
-    repeat intro.
-    intuition auto.
-    { rewrite <- H1; auto. }
-    { rewrite H1; auto. }
-  Qed.
-  
-  Lemma map_keys_put A (acc : idx_map A) a a0
-    : set_eq (map.keys (map.put acc a a0)) (a::map.keys acc).
-  Proof.
-    unfold set_eq, incl.
-    repeat intro; cbn in *.
-    intuition auto; cbn; rewrite map_keys_in' in *.
-    all: key_case a a1; inversions; intuition auto.
-  Qed.
-
-  
-  (*TODO: move *)
-  Instance set_eq_cons_Proper {A}
-    : Proper (eq ==> set_eq ==> set_eq) (@ cons A).
-  Proof. unfold set_eq, incl; repeat intro; cbn in *; subst; intuition eauto. Qed.
-  
-  (*TODO: move *)
-  Instance set_eq_app_Proper {A}
-    : Proper (set_eq ==> set_eq ==> set_eq) (@ app A).
-  Proof.
-    unfold set_eq, incl; repeat intro; cbn in *; subst.
-    basic_goal_prep.
-    basic_utils_crush.
-  Qed.
-  
-  (*TODO: move *)
-  Instance set_eq_in_Proper {A}
-    : Proper (eq ==> set_eq ==> iff) (@ In A).
-  Proof. unfold set_eq, incl; repeat intro; cbn in *; subst; intuition eauto. Qed.
-
-  
-  Lemma in_all_iff {A} (P : A -> Prop) l
-    : all P l <-> (forall x, In x l -> P x).
-  Proof.
-    induction l;
-    basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  
-  (*TODO: move *)
-  Instance set_eq_all_Proper {A}
-    : Proper (Sep.Uiff1 ==> set_eq ==> iff) (@all A).
-  Proof.
-    unfold set_eq, incl, Sep.Uiff1;
-      repeat intro; cbn in *; subst;
-      intuition eauto;
-      rewrite !in_all_iff in *;
-      firstorder auto.    
-  Qed.
-  
-  Instance set_eq_map_Proper {A B}
-    : Proper (eq ==> set_eq ==> set_eq) (@map A B).
-  Proof.
-    unfold set_eq, incl;
-      repeat intro; cbn in *; subst;
-      intuition eauto; rewrite !in_map_iff in *; break; subst;
-      rewrite <- in_map_iff;
-      apply in_map; eauto.
-  Qed.
-
-  
-  Lemma atom_sound_for_model_preserved i f args1 args2 o1 o2
-    : atom_sound_for_model m i {| atom_fn := f; atom_args := args1; atom_ret := o1 |} ->
-      all2 (eq_sound_for_model m i) args1 args2 ->
-      eq_sound_for_model m i o1 o2 ->
-      atom_sound_for_model m i {| atom_fn := f; atom_args := args2; atom_ret := o2 |}.
-  Proof.
-    unfold atom_sound_for_model.
-    basic_goal_prep;
-      repeat iss_case; cbn in *.
-    unfold eq_sound_for_model in H2.
-    rewrite <- TrieMap.all2_map_l
-      with (f:= map.get i)
-           (R := (fun x y => x <$> (fun x' : domain m => map.get i y <$> domain_eq m x')))
-      in H2.
-    rewrite all2_Is_Some_satisfying_l in H2; iss_case; cbn in *.
-    rewrite <- TrieMap.all2_map_r
-      with (f:= map.get i)
-           (R := (fun x' y => y <$> domain_eq m x'))
-      in H2.
-    rewrite all2_Is_Some_satisfying_r in H2; iss_case; cbn in *.
-    rewrite <- TrieMap.Mmap_option_all in *.
-    replace l with l0 in * by congruence.
-    rewrite Hma2; cbn.
-    unfold eq_sound_for_model in H3.
-    rewrite Hma0 in *; cbn in *.
-    iss_case;cbn in *.
-    eapply interprets_to_preserved; eauto.
-  Qed.
-
-  
-  Lemma eq_sound_refl i a d
-    : map.get i a = Some d ->
-      m.(domain_wf) d ->
-      eq_sound_for_model m i a a.
-  Proof.
-    unfold eq_sound_for_model;
-      intros H' H0';
-      rewrite H'; cbn.
-    eauto.
-  Qed.
-
-  
-  
-  Lemma map_extends_None A B {mp : map.map A B} `{@map.ok A B mp} `{Eqb_ok A} (x : A) (a b : mp)
-    : map.extends a b -> map.get a x = None -> map.get b x = None.
-  Proof.
-    unfold map.extends.
-    intro H'; specialize (H' x).
-    destruct (map.get b x) eqn:Hget; try congruence.
-    specialize (H' _ eq_refl).
-    congruence.
-  Qed.
-  
-  Lemma Mmap_extends A (i i' : idx_map A) args dargs
-    : list_Mmap (map.get i) args = Some dargs ->
-      map.extends i' i ->
-      list_Mmap (map.get i') args = Some dargs.
-  Proof.
-    revert dargs;
-      induction args;
-      destruct dargs;
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush;
-      try congruence.
-    { apply H2 in case_match_eqn1; congruence. }
-    {
-      specialize (IHargs _ eq_refl);
-        intuition congruence.
-    }
-    {
-      specialize (IHargs _ eq_refl);
-        intuition congruence.
-    }
-    { eapply map_extends_None in case_match_eqn; eauto; congruence. }
-  Qed.
-
-  Lemma hash_entry_sound i f args dargs out
-    : list_Mmap (map.get i) args = Some dargs ->
-      m.(interprets_to) f dargs out ->
-      state_sound_for_model m i (hash_entry idx_succ f args)
-        (fun i x => atom_sound_for_model m i (Build_atom f args x)).
-  Proof.
-    intros.
-    unfold hash_entry.
-    ssm_bind.
-    {
-      eapply state_sound_for_model_Mmap_dep
-        with (P_const := fun i' => i = i')
-             (P_elt := fun a i a' => eq_sound_for_model m i a a'); auto.
-      {
-        intros; subst.
-        eapply state_sound_for_model_wkn.
-        {
-          eapply find_sound.
-          rewrite TrieMap.Mmap_option_all in *.
-          apply in_map with (f:= map.get i') in H3.
-          eapply In_option_all in H1; eauto.
-          break.
-          unfold Sep.has_key; rewrite H5; auto.
-        }
-        { repeat basic_goal_prep; subst; intuition auto. }
-      }
-      { repeat intro; eapply eq_sound_monotone; eauto. }
-    }
-    cbn beta in *; break; subst.
-    ssm_bind.
-    { apply db_lookup_sound. }
-    cbn beta in *; break; subst.
-    case_match;
-      cbn in H7; break; subst.
-    { eapply ret_sound_for_model'.
-      repeat change (fun y => ?f y) with f in *.
-      eapply atom_sound_for_model_preserved; eauto.
-      { eapply all2_Symmetric; eauto; apply eq_sound_for_model_PER. }
-      {
-        unfold atom_sound_for_model in H7.
-        repeat iss_case.
-        unfold eq_sound_for_model; repeat (rewrite Hma0;cbn).
-        eapply interprets_to_implies_wf_conclusion; eauto.
-      }
-    }
-    ssm_bind.
-    {
-      apply alloc_sound with (time_travel_term := out).
-      eauto using interprets_to_implies_wf_conclusion.
-    }
-    ssm_bind.
-    {
-      apply db_set_sound.
-      repeat change (fun y => ?f y) with f in *.
-      eapply atom_sound_for_model_preserved.
-      2:{
-        eapply all2_impl; try eassumption.
-        intros ? ?; apply eq_sound_monotone; auto.
-      }
-      2:{
-        eapply eq_sound_refl; eauto.
-        eapply interprets_to_implies_wf_conclusion; eauto.
-      }
-      unfold atom_sound_for_model; cbn.
-      eapply Mmap_extends in H1; eauto; rewrite H1;cbn.
-      rewrite H5; cbn; auto.
-    }
-    cbn beta in *; break; subst.
-    eapply ret_sound_for_model'.
-    repeat change (fun y => ?f y) with f in *.
-    unfold atom_sound_for_model; cbn.
-    eapply Mmap_extends in H1; eauto; rewrite H1;cbn.
-    rewrite H5; cbn; auto.
-  Qed.
-    
-  (* `time_travel_terms` should be a set of terms determined by code that is run later.
-     Another way of looking at this lemma is that for any list of assignments for vars,
-     fresh allocation is compatible with the evaluation determined by that list.
-     TODO: see if this works.
-   *)
-  Lemma allocate_existential_vars_sound i vars acc time_travel_terms
-    : Datatypes.length time_travel_terms = Datatypes.length vars ->
-      all m.(domain_wf) time_travel_terms ->
-      NoDup vars ->
-      all (fun x => ~Sep.has_key x acc) vars ->
-      state_sound_for_model m i
-        (allocate_existential_vars idx idx_succ symbol symbol_map
-           idx_map idx_trie analysis_result
-           vars acc)
-        (fun i a =>
-           map.extends a acc
-           /\ all2 (fun x t => map.get a x <$> (fun k => map.get i k = Some t))
-                vars time_travel_terms
-           /\ set_eq (map.keys a) (vars ++ (map.keys acc))).
-  Proof.
-    unfold allocate_existential_vars.
-    intros.
-    {
-      revert i acc time_travel_terms H1 H2 H3 H4.
-      induction vars; destruct time_travel_terms;
-        cbn [list_Mfoldl Datatypes.length] in *; intros; try congruence.
-      {
-        eapply ret_sound_for_model';
-          basic_goal_prep;
-          basic_utils_crush.
-      }
-      rewrite <- !Mbind_assoc.
-      ssm_bind.
-      { apply alloc_sound with (time_travel_term:= d); basic_goal_prep; intuition eauto. }
-      rewrite Mbind_Mret.
-      eapply state_sound_for_model_wkn.
-      {
-        inversion H1; inversion H3; subst; basic_goal_prep.
-        eapply IHvars; basic_goal_prep; intuition eauto.
-        eapply all_wkn; try eassumption.
-        intros.
-        basic_utils_crush.
-      }
-      {
-        inversion H1; inversion H3; break; subst.
-        repeat basic_goal_prep.
-        intuition eauto.
-        {
-          eapply map_extends_trans; eauto.
-          apply extends_put_None.
-          apply Sep.not1_has_key.
-          auto.
-        }
-        {
-          assert (map.get (map.put acc a a0) a = Some a0)
-            by apply map.get_put_same.
-          erewrite H12 by eassumption; cbn.
-          erewrite H7 by eassumption; eauto.
-        }
-        {
-          rewrite map_keys_put in H14.
-          change (?a::?l) with ([a]++l) in H14.
-          rewrite Permutation.Permutation_app_comm in H14.
-          cbn in *. 
-          rewrite Permutation.Permutation_app_comm in H14.
-          auto.
-        }
-      }
-    }
-  Qed.
-
-  (*TODO: move to utils.v *)
-  Lemma all_True A P (l : list A)
-    : (forall x, P x) -> all P l.
-  Proof.
-    intro.
-    induction l;
-      basic_goal_prep;
-      eauto.
-  Qed.
-
-  Definition atom_subst_map (m : idx_map idx) (a : atom) : atom :=
-    (Build_atom a.(atom_fn)
-                    (map (fun x : idx => unwrap_with_default (map.get m x)) (atom_args a))
-                    (unwrap_with_default (map.get m (atom_ret a)))).
-  
-  Lemma exec_clause_sound i acc a
-    : (*TODO: should this be split in 2? *)
-    (atom_sound_for_model m i (atom_subst_map acc a)) ->
-    state_sound_for_model m i
-      (exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result acc a)
-      (* no conclusion because the assumption takes care of making sure i is right
-         by interacting with allocation's "time travel"
-       *)
-          (fun _ _ => True).
-  Proof.
-    unfold exec_clause.
-    intros.
-    ssm_bind.
-    {      
-      eapply state_sound_for_model_Mmap_dep with (P_const:= eq i); auto.
-      {
-        cbn beta;intros; subst.
-        eapply find_sound.
-        unfold atom_subst_map, atom_sound_for_model in *; basic_goal_prep.
-        repeat iss_case.
-        rewrite TrieMap.Mmap_option_all in *.
-        eapply In_option_all in Hma; eauto.
-        2:{ eapply in_map; eauto. }
-        break.
-        unfold Sep.has_key; rewrite H5; auto.
-      }
-      {
-        repeat intro; cbn beta.
-        eapply eq_sound_monotone; eauto with utils.
-      }
-    }
-    cbn beta in *; intros; break; subst.
-    ssm_bind.
-    {
-      apply find_sound.
-      unfold atom_subst_map, atom_sound_for_model in *; basic_goal_prep.
-      repeat iss_case.
-      unfold Sep.has_key; rewrite Hma0; auto.
-    }
-    cbn beta in *; intros; break; subst.
-    eapply state_sound_for_model_wkn.
-    {
-      eapply update_entry_sound; eauto.
-      unfold atom_sound_for_model, atom_subst_map in *.
-      basic_goal_prep.
-      repeat iss_case.
-      unfold eq_sound_for_model in *.
-      rewrite Hma0 in *; cbn in *.
-      repeat iss_case; cbn in *.
-      rewrite <- TrieMap.all2_map_l
-        with (f:= map.get i'0)
-             (R:= (fun a a0 => a <$> (fun x' : domain m => map.get i'0 a0 <$> domain_eq m x')))
-        in H5.
-      rewrite all2_Is_Some_satisfying_l in H5.
-      rewrite <- TrieMap.Mmap_option_all in *.
-      rewrite Hma in *; cbn in*.
-      rewrite <- TrieMap.all2_map_r
-        with (f:= map.get i'0)
-             (R:= (fun x a0 => a0 <$> domain_eq m x))
-        in H5.
-      rewrite all2_Is_Some_satisfying_r in H5.
-      rewrite <- TrieMap.Mmap_option_all in *.
-      repeat iss_case; cbn in *.
-      eapply interprets_to_preserved; eauto.
-    }
-    { eauto. }
-  Qed.
-
-  (*TODO: move*)
-  Arguments const_vars {idx symbol}%type_scope c.
-  Arguments const_clauses {idx symbol}%type_scope c.
-  Arguments const_unifications {idx symbol}%type_scope c.
-
-  Definition clauses_of_const r :=
-    (map atom_clause r.(const_clauses)) ++ (map (uncurry eq_clause) r.(const_unifications)).
-  
-  Record const_rule_sound_for_evaluation (*m*) i r : Prop :=
-    {
-      (* rule wfness properties *)
-      const_vars_NoDup : NoDup r.(const_vars);
-      const_vars_all_used : set_eq r.(const_vars) (flat_map clause_vars (clauses_of_const r));
-      (* evaluation-related properties *)
-      (* TODO: a field or an argument? *)
-      const_rule_assignment : idx_map idx;
-      const_rule_eval_dom : set_eq r.(const_vars) (map.keys const_rule_assignment);
-      const_rule_assignment_sound
-      : forall x y, map.get const_rule_assignment x = Some y ->
-                    eq_sound_for_model m i y y;
-      const_clauses_sound : all (fun a => atom_sound_for_model m i
-                                      (atom_subst_map const_rule_assignment a))
-                        r.(const_clauses);
-      const_eqns_sound
-      : all (fun '(x,y) =>
-               map.get const_rule_assignment x <$> (fun x' =>
-               map.get const_rule_assignment y <$> (fun y' =>
-               eq_sound_for_model m i x' y')))
-          r.(const_unifications);
-    }.
-
-  Hint Resolve const_vars_NoDup : utils.
-
-  
-  (*TODO: move*)
-  Lemma all2_all A R (l : list A)
-    : all2 R l l <-> all (fun x => R x x) l.
-  Proof.
-    clear.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  Hint Rewrite all2_all : utils.
-
-  (*TODO: move*)
-  
-  Lemma all_map A B P (f : A -> B) l
-    : all P (map f l) <-> all (fun x => P (f x)) l.
-  Proof.
-      induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-  
-  Lemma all_flat_map A B P (f : A -> list B) l
-    : all P (flat_map f l) <-> all (fun x => all P (f x)) l.
-  Proof.
-      induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  
-  Lemma domain_eq_wf_l d d'
-    : domain_eq m d d' -> domain_wf m d.
-  Proof.
-    unfold domain_wf.
-    intro H'; etransitivity;[| symmetry]; apply H'.
-  Qed.
-  Hint Resolve domain_eq_wf_l : utils.
-  
-  Lemma domain_eq_wf_r d d'
-    : domain_eq m d d' -> domain_wf m d'.
-  Proof.
-    unfold domain_wf.
-    intro H'; etransitivity;[symmetry |]; apply H'.
-  Qed.
-  Hint Resolve domain_eq_wf_r : utils.
-
-  
-  Lemma set_eq_empty A (l : list A)
-    : set_eq [] l <-> l = [].
-  Proof using.
-    clear.
-    unfold set_eq, incl;
-    destruct l; cbn;
-      intuition  subst; eauto; try congruence.
-    specialize (H1 a); intuition.
-  Qed.
-
-
-
-  (*TODO: backport*)
-  Ltac break ::=
-    repeat match goal with
-   | H:unit |- _ => destruct H
-   | H:_ * _ |- _ => destruct H
-    | H:_ /\ _ |- _ => destruct H
-   | H:exists x, _ |- _ => destruct H
-   end.
-  
-  Lemma exec_const_sound i r
-    : const_rule_sound_for_evaluation i r ->
-      state_sound_for_model m i
-        (exec_const idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
-           analysis_result r) (fun _ _ => True).
-  Proof.
-    intros.
-    unfold exec_const.
-    destruct H1.
-    destruct
-      (list_Mmap (fun x => Mbind (map.get i) (map.get const_rule_assignment x)) (const_vars r)) as [ d_lst |] eqn:Httt.
-    2:{
-      exfalso.
-      rewrite TrieMap.Mmap_option_all in *.
-      apply option_all_None in Httt.
-      break.
-      apply nth_error_In in H1.
-      apply in_map_iff in H1; break.
-      rewrite const_rule_eval_dom in H2.
-      rewrite map_keys_in' in H2.
-      case_match; try tauto; cbn in *.
-      apply const_rule_assignment_sound in case_match_eqn.
-      unfold eq_sound_for_model in *; rewrite H1 in *; cbn in *; tauto.
-    }
-    (*TODO: this is a circuitous proof *)
-    destruct d_lst as [| d_hd d_tl].
-    {
-      rewrite TrieMap.Mmap_option_all in *.
-      apply length_option_all in Httt.
-      cbn in Httt.
-      destruct r; cbn in *.
-      destruct const_vars; cbn in *; try congruence.
-      apply set_eq_empty in const_vars_all_used0.
-      rewrite flat_map_app in const_vars_all_used0.
-      apply app_eq_nil in const_vars_all_used0.
-      unfold uncurry in const_vars_all_used0.
-      replace const_clauses with (@nil atom) in *.
-      1:replace const_unifications with (@nil (idx*idx)) in *.
-      {
-        cbn.
-        eapply ret_sound_for_model'; auto.
-      }
-      {
-        destruct const_unifications; try congruence; exfalso.
-        break; cbn in *; congruence.
-      }
-      {
-        destruct const_clauses; try congruence; exfalso.
-        break; cbn in *; congruence.
-      }
-    }
-    ssm_bind.
-    1:eapply allocate_existential_vars_sound
-      with (time_travel_terms :=
-              map (fun x => unwrap_with_default (H:=_)
-                              (Mbind (map.get i) (map.get const_rule_assignment x)))
-                (const_vars r)); eauto with utils.
-    3:{ eapply all_True; basic_goal_prep; rewrite has_key_empty; tauto. }
-    3:{
-      cbn beta in *; break; subst.
-      rewrite TrieMap.all2_map_r in *.
-      autorewrite with utils in *; eauto.
-      assert (forall x i'0, In x (const_vars r) ->
-                           map.extends i'0 i' ->
-                            map.get i'0 (unwrap_with_default (map.get a x))
-                            = map.get i'0 (unwrap_with_default (map.get const_rule_assignment x))).
-          {
-            intros.
-            pose proof H5.
-            eapply in_all in H5; eauto; cbn in *.
-            repeat iss_case; cbn in *.
-            eapply const_rule_eval_dom in H7.
-            rewrite map_keys_in' in H7.
-            case_match; try tauto.
-            eapply H6 in H5; rewrite H5; cbn.
-            eapply const_rule_assignment_sound in case_match_eqn.
-            unfold eq_sound_for_model in *; repeat iss_case; cbn.
-            eapply H1 in Hma0.
-            eapply H6 in Hma0.
-            cbn; congruence.
-          }
-      ssm_bind.
-      {
-        eapply state_sound_for_model_Miter with (P:=(fun (_ : idx_map (domain m)) (_ : unit) => True));
-          auto.
-        intros.
-        eapply state_sound_for_model_wkn.
-        {
-          eapply exec_clause_sound.
-          assert (forall l,
-                     incl l (const_vars r) ->
-                     list_Mmap (fun x => map.get i'0 (unwrap_with_default (map.get a x))) l
-                     = list_Mmap (fun x => map.get i'0 (unwrap_with_default
-                                                          (map.get const_rule_assignment x))) l).
-          {
-            induction l; basic_goal_prep; intuition eauto.
-            rewrite H5 by (basic_goal_prep; basic_utils_crush).
-            case_match; eauto.
-            rewrite IHl by (basic_goal_prep; basic_utils_crush).
-            reflexivity.
-          }          
-          eapply in_all in const_clauses_sound; eauto.
-          unfold atom_sound_for_model, atom_subst_map in *; cbn in *.
-          rewrite ?TrieMap.Mmap_option_all, ?List.map_map, <- ?TrieMap.Mmap_option_all in *.
-          rewrite H9.
-          2:repeat intro;           
-            apply const_vars_all_used0;
-              unfold clauses_of_const;
-              rewrite flat_map_app,
-              !flat_map_concat_map,
-              !List.map_map,
-              <- !flat_map_concat_map,
-              in_app_iff,
-              !in_flat_map;
-              cbn;
-              left;eexists; now intuition eauto.
-          repeat iss_case.
-          replace (list_Mmap (fun x : idx => map.get i'0 (unwrap_with_default
-                                                            (map.get const_rule_assignment x)))
-                     (atom_args a0))
-            with (Some l).
-          2:{
-            rewrite TrieMap.Mmap_option_all in *.
-            symmetry.
-            rewrite <- Hma; f_equal.
-            eapply map_ext_in.
-            intros.
-            eapply in_map in H10.
-            eapply In_option_all in H10; eauto.
-            break; subst.
-            rewrite H10.
-            eapply H1 in H10; eapply H7 in H10.
-            auto.
-          }
-          cbn.
-          rewrite H5; auto.
-          2:repeat intro;           
-            apply const_vars_all_used0;
-              unfold clauses_of_const;
-              rewrite flat_map_app,
-              !flat_map_concat_map,
-              !List.map_map,
-              <- !flat_map_concat_map,
-              in_app_iff,
-              !in_flat_map;
-              cbn;
-          left;eexists; now intuition eauto.
-          apply H1 in Hma0; apply H7 in Hma0.
-          rewrite Hma0.
-          cbn.
-          auto.
-        }
-        cbn; auto.
-      }
-      apply state_sound_for_model_Miter with (P:=(fun (_ : idx_map (domain m)) (_ : unit) => True));
-        auto.
-      intros; break.
-      eapply state_sound_for_model_wkn; auto.
-      apply union_sound.
-      eapply eq_sound_monotone; eauto.
-      pose proof H8.
-      eapply in_all in H8; eauto.
-      cbn in H8.
-      unfold eq_sound_for_model in *.
-      repeat iss_case.
-      rewrite !H5; eauto.
-      2,3:
-        apply const_vars_all_used0;
-        unfold clauses_of_const;
-        rewrite flat_map_app,
-          !flat_map_concat_map,
-          !List.map_map,
-          <- !flat_map_concat_map,
-          in_app_iff,
-          !in_flat_map;
-          cbn;
-        right;eexists; intuition eauto;
-        cbn; now intuition eauto.
-      rewrite Hma, Hma0.
-      cbn.
-      eapply H1 in Hma1; eapply H6 in Hma1; rewrite Hma1; cbn.
-      eapply H1 in Hma2; eapply H6 in Hma2; rewrite Hma2; cbn.
-      auto.
-    }
-    { basic_utils_crush. }
-    {
-      pose proof const_vars_all_used0.
-      eapply set_eq_map_Proper in const_vars_all_used0; eauto.
-      eapply set_eq_all_Proper in const_vars_all_used0; [| repeat intro; reflexivity ].
-      eapply const_vars_all_used0.
-      unfold clauses_of_const.
-      rewrite flat_map_app, map_app, all_app.
-      clear const_vars_all_used0.
-      repeat rewrite ?all_map, ?all_flat_map; split.
-      2:{
-        eapply all_wkn; try eassumption.
-        basic_goal_prep.
-        repeat iss_case; cbn.
-        unfold eq_sound_for_model in *; repeat iss_case; cbn; intuition eauto with utils.
-      }
-      {
-        eapply all_wkn; try eassumption.
-        basic_goal_prep.
-        assert (Sep.has_key (atom_ret x) const_rule_assignment).
-        {
-          apply map_keys_in'.
-          rewrite <- const_rule_eval_dom.
-          rewrite -> H1.
-          unfold clauses_of_const.
-          rewrite ?flat_map_app, ?map_app, ?all_app, in_app_iff.
-          left.
-          destruct r; cbn in *.
-          rewrite in_flat_map.
-          exists (atom_clause x).
-          split; [ eapply in_map; eauto | destruct x; cbn; eauto].
-        }
-        unfold Sep.has_key in H4; case_match; try tauto.
-        split.
-        {
-          apply const_rule_assignment_sound in case_match_eqn.
-          unfold eq_sound_for_model in *;
-            repeat iss_case; cbn; eauto with utils.
-        }
-        {
-          apply in_all_iff.
-          intros.
-          assert (Sep.has_key x0 const_rule_assignment).
-          {
-            apply map_keys_in'.
-            rewrite <- const_rule_eval_dom.
-            rewrite -> H1.
-            unfold clauses_of_const.
-            rewrite ?flat_map_app, ?map_app, ?all_app, in_app_iff.
-            left.
-            destruct r; cbn in *.
-            rewrite in_flat_map.
-            exists (atom_clause x).
-            split; [ eapply in_map; eauto | destruct x; cbn; eauto].
-          }
-          unfold Sep.has_key in H6; case_match; try tauto.
-          apply const_rule_assignment_sound in case_match_eqn0.
-          unfold eq_sound_for_model in *;
-            repeat iss_case; cbn; eauto with utils.
-        }
-      }
-    }
-    Unshelve.
-    exact d_hd.
-  Qed.
-
-  Lemma const_rule_sound_monotone : monotone1 const_rule_sound_for_evaluation.
-  Proof.
-    repeat intro.
-    destruct H2; econstructor; intros; eauto with utils.
-    { eapply eq_sound_monotone; eauto. }
-    {
-      eapply all_wkn; try eassumption.
-      intros; eapply atom_sound_monotone; eauto.
-    }
-    {
-      eapply all_wkn; try eassumption.
-      basic_goal_prep; repeat iss_case; cbn.
-      eapply eq_sound_monotone; eauto.
-    }      
-  Qed.
-  
-  Lemma process_const_rules_sound i rs
-    : all (const_rule_sound_for_evaluation i)
-        (compiled_const_rules idx symbol symbol_map idx_map rs) ->
-      state_sound_for_model m i
-        (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
-           analysis_result rs)
-        (fun _ _ => True).
-  Proof.
-    unfold process_const_rules.
-    intros.
-    eapply state_sound_for_model_Miter; eauto.
-    intros.
-    apply exec_const_sound.
-    eapply in_all; eauto.
-    eapply all_wkn; try eassumption.
-    intros; eapply const_rule_sound_monotone; eauto.
-  Qed.
-
-  Lemma increment_epoch_sound i
-    : state_sound_for_model m i
-        (increment_epoch idx idx_succ symbol symbol_map idx_map idx_trie
-           analysis_result) (fun _ _ => True).
-  Proof.
-    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
-  Qed.
-
- 
-
-  Definition atom_of_access f (access : list nat * nat) args : atom :=
-    Build_atom f (map (fun n => nth n args default) (fst access))
-      (nth (snd access) args default).
-  
-  Definition trie_sound_for_model i f trie (access : list nat * nat) :=
-    forall k, map.get trie k = Some tt ->
-              atom_sound_for_model m i (atom_of_access f access k).
-  
-  Arguments query_ptr_symbol {idx symbol}%type_scope e.
-  Arguments query_ptr_ptr {idx symbol}%type_scope e.
-  
-  Definition lookup_trie_sound_for_model i tries
-    (query_clauses : symbol_map (idx_map (list nat * nat)%type)) f x :=
-    forall qc' access,
-      map.get query_clauses f = Some qc' ->
-      map.get qc' x = Some access ->
-      forall tries',
-        map.get tries f = Some tries' ->
-        forall t1 t2,
-          map.get tries' x = Some (t1, t2) ->
-          trie_sound_for_model i f t1 access
-          /\ trie_sound_for_model i f t2 access.
-
-  Definition ptr_trie_sound_for_model i tries
-    (query_clauses : symbol_map (idx_map (list nat * nat)%type))
-    (p : erule_query_ptr _ _) :=
-    lookup_trie_sound_for_model i tries query_clauses p.(query_ptr_symbol) p.(query_ptr_ptr).
-
-  Definition tries_sound_for_model i tries
-    (query_clauses : symbol_map (idx_map (list nat * nat)%type)) :=
-    forall f x, lookup_trie_sound_for_model i tries query_clauses f x.
-  
-  Arguments query_vars {idx symbol}%type_scope _.
-  Arguments write_vars {idx symbol}%type_scope _.
-  Arguments query_ptr_args {idx symbol}%type_scope _.
-
-  (*
-  Record rule_vars_wf (*i*) (*qc*) (r : erule symbol idx) :=
-    {
-      (* rule wfness properties *)
-      query_vars_NoDup : NoDup r.(query_vars);
-      write_vars_NoDup : NoDup r.(query_vars);
-      rule_vars_disjoint
-      : disjoint (fun x => In x r.(query_vars))
-          (fun x => In x r.(write_vars));
-    }.
-   *)
-
-  Definition assignment_sound_for_ptr i qc qa ptr :=
-    incl ptr.(query_ptr_args) (map fst qa) /\
-    match map.get qc ptr.(query_ptr_symbol) with
-    | Some qc' =>
-        match map.get qc' ptr.(query_ptr_ptr) with
-        | Some access => 
-            atom_sound_for_model m i
-              (atom_subst qa
-                 (atom_of_access ptr.(query_ptr_symbol) access ptr.(query_ptr_args)))
-        | None => False
-        end
-    | None => False
-    end.
-
-  Definition as_list {A} (l : ne_list A) :=
-    cons (fst l) (snd l).
-  Arguments as_list {A}%type_scope !l.
-  
-  
-  Definition query_assignment_sound i qc qa ptrs :=
-    all (assignment_sound_for_ptr i qc qa) (as_list ptrs).
-  
-  Arguments query_clause_ptrs {idx symbol}%type_scope _.
-  Arguments write_clauses {idx symbol}%type_scope _.
-  Arguments write_unifications {idx symbol}%type_scope _.
-      
-  Record rule_sound_for_evaluation' i qc (r : erule idx symbol) : Prop :=
-    {
-      (* rule wfness properties *)
-      vars_NoDup : NoDup (r.(write_vars)++r.(query_vars));
-      write_clauses_well_scoped
-      : incl (flat_map (fun a => atom_ret a :: atom_args a)
-                r.(write_clauses)) (r.(query_vars) ++ r.(write_vars));
-      write_unifications_well_scoped
-      : incl (flat_map (fun p => [fst p; snd p])
-                r.(write_unifications)) (r.(query_vars) ++ r.(write_vars));
-      (*rule_vars_disjoint
-      : disjoint (fun x => In x r.(query_vars))
-          (fun x => In x r.(write_vars));*)
-      rule_vars_covered : incl r.(query_vars)
-                                   (flat_map query_ptr_args
-                                      (as_list r.(query_clause_ptrs)));
-      rule_assignment : named_list idx (named_list idx idx -> idx);
-      rule_assignment_dom
-      : r.(write_vars) = (map fst rule_assignment);
-      rule_assignment_sound
-      : forall x f, In (x,f) rule_assignment ->
-                    forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                               eq_sound_for_model m i (f qa) (f qa);
-      write_assignment :=
-        fun qa => (named_map (fun f => f qa) rule_assignment) ++ qa;
-      clauses_sound
-      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                   all (fun c => atom_sound_for_model m i (atom_subst (write_assignment qa) c))
-                     r.(write_clauses);
-      eqns_sound
-      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                   all (fun '(x,y) =>
-                          exists vx vy,
-                            In (x,vx) qa
-                            /\ In (y,vy) qa
-                            /\ eq_sound_for_model m i vx vy)
-                     r.(write_unifications);
-    }.
-
-  
-  Lemma in_flat_map_incl A B (f : A -> list B) a l
-    : In a l -> incl (f a) (flat_map f l).
-  Proof.
-    clear.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  Hint Rewrite NoDup_cons_iff : inversion.
-  
-  Lemma named_list_lookup_in A `{Eqb_ok A} B (x:A) (xv:B) l d
-    : NoDup (map fst l) -> In (x,xv) l -> named_list_lookup d l x = xv.
-  Proof.
-    induction l; basic_goal_prep; basic_utils_crush.
-    eqb_case x a; basic_goal_prep; basic_utils_crush.
-  Qed.
-  
-  (*Require Import Coq.Sorting.Permutation.*)
-
-  (*TODO: move lemmas from this import to another *)
-  Require Import Utils.PosListMap.
-
-  (*TODO: move*)
-  Lemma named_map_snd_eq:
-    forall [S : Type] {A B : Type} (f : A -> B) (l : named_list S A),
-      map snd (named_map f l) = map f (map snd l).
-  Proof.
-    clear.
-    induction l;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-
-  
-  Lemma In_option_all_out [A : Type] {l1 : list (option A)} {l2 : list A} v1o
-    : option_all l1 = Some l2 ->
-      In v1o l2 -> In (Some v1o) l1.
-  Proof.
-    revert l2; induction l1;
-      destruct l2;
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush.
-  Qed.
-
-  Hint Resolve NoDup_app_remove_r NoDup_app_remove_l : utils.
-
-  
-  Lemma map_get_of_list_In A B `{map.ok A B} `{Eqb_ok A} (x : A) (v : B) l
-    : map.get (map.of_list l) x = Some v -> In (x,v) l.
-  Proof.
-    induction l; 
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush.
-    eqb_case x a.
-    {
-      rewrite map.get_put_same in H4;
-        inversions; intuition auto.
-    }
-    {
-      right.
-      rewrite map.get_put_diff in H4;
-        inversions; intuition auto.
-    }
-  Qed.
-  
-   Lemma map_get_of_list_not_In A B `{map.ok A B} `{Eqb_ok A} (x : A) (l : named_list A B)
-    : NoDup (map fst l) -> map.get (map.of_list l) x = None -> ~In x (map fst l).
-  Proof.
-    induction l; 
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush.
-    all: rewrite ?map.get_put_same in *;
-        inversions; intuition auto.
-    eqb_case x a.
-    {
-      rewrite map.get_put_same in *;
-        inversions; intuition auto.
-    }
-    {
-      rewrite map.get_put_diff in * by eauto.
-      intuition auto.
-    }
-  Qed.
-
-  Lemma in_named_map_iff [S : Type] {A B : Type} (f : A -> B) (l : list (S * A)) (n : S) (x : B)
-    : In (n, x) (named_map f l) <-> exists y, x = f y /\ In (n, y) l.
-  Proof.
-    induction l;
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush.
-  Qed.
-
-  
-  Lemma all_option_all A (P : A -> Prop) l l'
-    : all P l ->
-      Some l = option_all l' ->
-      all (fun ma => ma <$> P) l'.
-  Proof.
-    revert l; induction l'; destruct l;
-      basic_goal_prep;
-      repeat case_match;
-      basic_utils_crush.
-  Qed.
-
-  Lemma exec_write_sound' i r assign_vals qc
-    : rule_sound_for_evaluation' i qc r ->
-      Datatypes.length r.(query_vars) = Datatypes.length assign_vals ->
-      query_assignment_sound i qc (combine r.(query_vars) assign_vals) r.(query_clause_ptrs) ->
-      state_sound_for_model m i
-        (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map
-           idx_trie analysis_result r assign_vals)
-        (fun (_ : idx_map (domain m)) (_ : unit) => True).
-  Proof.
-    unfold exec_write; intros ? Hlen ?.
-    destruct H1.
-    rename H2 into H1.
-    pose (named_map (fun f : named_list idx idx -> idx => f (combine (query_vars r) assign_vals))
-            rule_assignment) as l.
-    destruct (list_Mmap (map.get i) (map snd l)) as [ttt|] eqn:Httt.
-    2:{
-      exfalso.
-      symmetry in Httt; apply list_Mmap_None in Httt; eauto.
-      break.
-      subst l.
-      rewrite named_map_snd_eq, !List.map_map in H2.
-      apply in_map_iff in H2; break.
-      eapply rule_assignment_sound in H1; eauto;
-        basic_goal_prep; subst.
-      unfold eq_sound_for_model in H1; repeat iss_case.
-      congruence.
-    }
-    ssm_bind.
-    {
-      apply allocate_existential_vars_sound
-        with (time_travel_terms:= ttt).
-      {
-        apply TrieMap.list_Mmap_length in Httt.
-        subst l.
-        rewrite rule_assignment_dom.
-        basic_utils_crush.
-      }
-      {
-        pose proof (fun x y H => rule_assignment_sound x y H _ H1).
-        apply in_all_iff; intros.
-        rewrite !TrieMap.Mmap_option_all in *.
-        eapply In_option_all_out in Httt; eauto.
-        eapply in_map_iff in Httt.
-        break.
-        unfold l in H5.
-        eapply in_map_iff in H5; break; subst; cbn in *.
-        unfold named_map in H6.
-        eapply in_map_iff in H6; break; subst; cbn in *.
-        inversions.
-        eapply H2 in H6.
-        unfold eq_sound_for_model in H6.
-        rewrite H4 in *; cbn in *.
-        auto.
-      }
-      { eauto with utils. }
-      {
-        apply NoDup_app_iff in vars_NoDup0; break.
-        eapply in_all_iff; intros.
-        intro.
-        enough (In x (query_vars r)) by firstorder.
-        unfold Sep.has_key in H7.
-        case_match; try tauto.
-        assert (NoDup (map fst (combine (query_vars r) assign_vals))).
-        { rewrite map_combine_fst; eauto. }
-        apply Properties.map.all_gets_from_map_of_NoDup_list in H8.
-        eapply map_get_of_list_In in case_match_eqn; eauto.
-        eapply in_combine_l; eauto.
-      }
-    }
-    ssm_bind.
-    {
-      eapply state_sound_for_model_Miter with (P := fun _ _ => True); auto.
-      intros.
-      eapply exec_clause_sound.
-      break.
-      pose proof H1 as Hclause;
-        eapply clauses_sound in Hclause.
-      eapply in_all in Hclause; eauto.
-      eapply atom_sound_monotone in Hclause.
-      2: eassumption.
-      eapply atom_sound_monotone in Hclause.
-      2: eassumption.
-      assert (forall x d' d, In x (write_vars r ++ query_vars r) ->
-                            map.get i'0 (unwrap_with_default (H:=d) (map.get a x))
-                            = map.get i'0 (named_list_lookup d'
-                                             (write_assignment (combine (query_vars r)
-                                                                   assign_vals))
-                                             x)).
-      {
-        intros.
-        autorewrite with utils in*.
-        destruct (map.get a x) eqn:Hget.
-        2:{
-          pose proof Hget.
-          eapply map_extends_None in Hget; eauto.
-          eapply map_get_of_list_not_In in Hget; eauto;
-            rewrite map_combine_fst in *; eauto with utils.
-          intuition.
-          exfalso.
-          eapply all2_combine in H7; unfold uncurry in H7; cbn in H7; break.
-          replace (write_vars r) with (map fst (combine (write_vars r) ttt))
-            in H11 by (rewrite map_combine_fst in *; eauto with utils).
-          apply pair_fst_in_exists in H11; break.
-          eapply in_all in H9; eauto.
-          cbn in*.
-          repeat iss_case.
-          congruence.
-        }
-        destruct H9.
-        2:{
-          destruct (map.get (map.of_list (combine (query_vars r) assign_vals)) x) eqn:Hget'.
-          {
-            pose proof Hget'; eapply map_get_of_list_In in Hget'; eauto.
-            eapply H3 in H10.
-            replace i0 with i1 in * by congruence.
-            assert (In (x,i1) (write_assignment (combine (query_vars r) assign_vals))).
-            {
-              unfold write_assignment.
-              basic_utils_crush.
-            }
-            eapply named_list_lookup_in in H11; eauto.
-            2:{
-              unfold write_assignment.
-              rewrite map_app, named_map_fst_eq.
-              rewrite <- rule_assignment_dom.
-              rewrite map_combine_fst; eauto.
-            }
-            rewrite H11.
-            reflexivity.
-          }
-          {
-            exfalso.
-            eapply map_get_of_list_not_In in Hget';
-              rewrite ?map_combine_fst in *; eauto with utils.
-          }
-        }
-        {
-          eapply all2_combine in H7; unfold uncurry in H7; cbn in H7; break.
-          replace (write_vars r) with (map fst (combine (write_vars r) ttt))
-            in H9 by (rewrite map_combine_fst in *; eauto with utils).
-          pose proof H9.
-          apply pair_fst_in_exists in H9; break.
-          eapply in_all in H9; cbn in *; eauto; cbn in *.
-          rewrite Hget in *; cbn in *.
-          assert (exists i1, In (x,i1) l).
-          {
-            unfold l.
-            rewrite map_combine_fst in *; eauto with utils.
-            unfold write_assignment.
-            rewrite rule_assignment_dom in H11.
-            apply in_map_iff in H11; break; subst; cbn in *.
-            eapply in_named_map in H12.
-            eexists.
-            autorewrite with utils.
-            exact H12.
-          }
-          break.
-          replace (named_list_lookup d'
-                     (write_assignment (combine (query_vars r) assign_vals)) x)
-            with x1.
-          2:{
-            subst l.
-            epose proof (or_introl H12).
-            apply in_app_iff in H13.
-            eapply named_list_lookup_in with (d:=d) in H13; eauto.
-            2:{
-              rewrite map_app, named_map_fst_eq, map_combine_fst; eauto.
-              change (list (?A*?B)) with (named_list A B).
-              rewrite <- rule_assignment_dom; auto.
-            }
-            {
-              symmetry; apply named_list_lookup_in; eauto.
-              {
-                unfold write_assignment.
-                rewrite map_app, named_map_fst_eq, map_combine_fst; eauto.
-                change (list (?A*?B)) with (named_list A B).
-                rewrite <- rule_assignment_dom; auto.
-              }
-              {
-                unfold write_assignment.
-                autorewrite with utils; eauto.
-              }
-            }
-          }
-          assert (Some (combine (write_vars r) ttt)
-                  = list_Mmap (M:=option)
-                      (fun p => option_map (pair (fst p)) (map.get i (snd p))) l).
-          {
-            replace (write_vars r)
-              with (map fst l).
-            2:{
-              subst l.
-              rewrite named_map_fst_eq.
-              auto.
-            }
-            clear H7 H10 H11.
-            revert ttt Httt.
-            clear.
-            induction l; basic_goal_prep;              
-              basic_utils_crush.
-            destruct (map.get i i1) eqn:Hget; cbn in *; try congruence.
-            destruct (list_Mmap (map.get i) (map snd l)); cbn in *; try congruence.
-            inversions.
-            erewrite <- IHl; eauto.
-          }
-          rewrite TrieMap.Mmap_option_all in *.
-          eapply all_option_all in H13; eauto.
-          rewrite all_map in H13.
-          eapply in_all in H13; eauto.
-          unfold option_map in H13; cbn in H13.
-          case_match; cbn in *; try tauto.
-          repeat iss_case.
-          apply H2 in case_match_eqn; apply H5 in case_match_eqn.
-          inversions.
-          apply H5 in H13.
-          congruence.
-        }
-      }
-      unfold atom_sound_for_model in Hclause;
-        unfold atom_sound_for_model.
-      repeat iss_case.
-      assert (incl (write_vars r) (map.keys a)) as Hwrite_keys.
-      {
-        revert H7 idx_map_ok Eqb_idx_ok; clear.
-        revert ttt;
-          induction (write_vars r);
-          basic_goal_prep;
-          repeat case_match;
-          basic_utils_crush.
-        repeat iss_case.
-        rewrite map_keys_in'.
-        rewrite Hma; auto.
-      }
-      assert (forall l , incl l (write_vars r ++ query_vars r) ->
-                          list_Mmap (map.get i'0)
-                            (map (fun x : idx => unwrap_with_default (map.get a x)) l)
-                            = list_Mmap (map.get i'0)
-                                (map (fun x : idx => named_list_lookup x
-                                                       (write_assignment (combine (query_vars r)
-                                                                             assign_vals)) x)
-                                   l)).
-      {
-        induction l1; basic_goal_prep; auto.
-        erewrite <- H9.
-        2:{ eapply H10; cbn; eauto. }
-        case_match; cbn; auto.
-        {
-          erewrite <- IHl1;
-          clear IHl1.
-          2: basic_utils_crush.
-          case_match; auto.
-        }
-      }
-      destruct a0; cbn in *.
-      erewrite H10, Hma; cbn.
-      1: erewrite H9, Hma0; cbn; eauto.
-      all:repeat intro;
-        rewrite Permutation.Permutation_app_comm;
-        apply write_clauses_well_scoped0;
-        apply in_flat_map;
-        eexists; split; try eassumption;
-        cbn; eauto.
-    }
-    eapply state_sound_for_model_Miter with (P := fun _ _ => True); auto.
-    intros; break.
-    eapply state_sound_for_model_wkn; auto.
-    eapply union_sound.
-    apply eqns_sound0 in H1.
-    eapply in_all in H6; eauto; cbn in H6.
-    break.
-    apply Properties.map.get_of_list_In_NoDup in H6, H11.
-    2,3: rewrite map_combine_fst; eauto.
-    2,3: apply NoDup_app_iff in  vars_NoDup0; break; now eauto.
-    apply H3 in H6, H11.
-    rewrite H6, H11.
-    cbn.
-    repeat (eapply eq_sound_monotone; [eassumption| eauto]).
-  Qed.
-
-   Record wf_erule (r : erule idx symbol) : Prop :=
-    {
-      wf_vars_NoDup : NoDup (r.(write_vars)++r.(query_vars));
-      wf_write_clauses_well_scoped
-      : incl (flat_map (fun a => atom_ret a :: atom_args a)
-                r.(write_clauses)) (r.(query_vars) ++ r.(write_vars));
-      wf_write_unifications_well_scoped
-      : incl (flat_map (fun p => [fst p; snd p])
-                r.(write_unifications)) (r.(query_vars) ++ r.(write_vars));
-      wf_rule_vars_covered : incl r.(query_vars)
-                                   (flat_map query_ptr_args
-                                      (as_list r.(query_clause_ptrs)));
-      }.
-      
-   Record rule_sound_for_assignment i qc (r : erule idx symbol)
-     (rule_assignment : named_list idx (named_list idx idx -> idx)): Prop :=
-    {
-      assign_rule_assignment_dom
-      : r.(write_vars) = (map fst rule_assignment);
-      assign_rule_assignment_sound
-      : forall x f, In (x,f) rule_assignment ->
-                    forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                               eq_sound_for_model m i (f qa) (f qa);
-      assign_write_assignment :=
-        fun qa => (named_map (fun f => f qa) rule_assignment) ++ qa;
-      assign_clauses_sound
-      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                   all (fun c => atom_sound_for_model m i (atom_subst (assign_write_assignment qa) c))
-                     r.(write_clauses);
-      assign_eqns_sound
-      : forall qa, query_assignment_sound i qc qa r.(query_clause_ptrs) ->
-                   all (fun '(x,y) =>
-                          exists vx vy,
-                            In (x,vx) qa
-                            /\ In (y,vy) qa
-                            /\ eq_sound_for_model m i vx vy)
-                     r.(write_unifications);
-    }.
-
-   Definition rule_sound_for_evaluation i qc r : Prop :=
-     wf_erule r /\ forall i', map.extends i' i -> exists a, rule_sound_for_assignment i' qc r a.
-
-  
-  Lemma exec_write_sound i r assign_vals qc
-    : rule_sound_for_evaluation i qc r ->
-      Datatypes.length r.(query_vars) = Datatypes.length assign_vals ->
-      query_assignment_sound i qc (combine r.(query_vars) assign_vals) r.(query_clause_ptrs) ->
-      state_sound_for_model m i
-        (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map
-           idx_trie analysis_result r assign_vals)
-        (fun (_ : idx_map (domain m)) (_ : unit) => True).
-  Proof.
-    intros; eapply exec_write_sound'; eauto.
-    edestruct H1 as [ [] [? [] ] ]; eauto with utils.
-    econstructor; eauto.
-  Qed.
-
-  Lemma monotone_rule_sound_for_evaluation
-    : monotone2 rule_sound_for_evaluation.
-  Proof.
-    repeat intro.
-    destruct H2; econstructor; intros; eauto.
-    eapply map_extends_trans in H1; try eassumption.
-    eapply H3 in H1; break.
-    exists x; eauto.
-  Qed.
-    
-  Lemma process_erule'_sound i tries frontier_idx (r : erule _ _) qc
-    : tries_sound_for_model i tries qc ->
-      rule_sound_for_evaluation i qc r ->
-       state_sound_for_model m i
-        (process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map
-           idx_map idx_trie analysis_result spaced_list_intersect tries r
-           (idx_of_nat idx idx_succ idx_zero frontier_idx))
-        (fun _ _ => True).
-  Proof.
-    unfold process_erule'.
-    intros.
-    apply state_sound_for_model_Miter with (P:= fun _ _ => True);
-      intros; auto.
-    eapply exec_write_sound; eauto.
-    1: eapply monotone_rule_sound_for_evaluation; now eauto.
-    {
-      unfold intersection_keys in *.
-      admit (*TODO: parameterized on spaced_list_intersect*).
-    }
-    {
-      (*TODO: prove from tries_sound_for_model*)
-      
-      admit (*TODO: parameterized on spaced_list_intersect*).
-    }
-  Admitted.
-  
-  Lemma trie_sound_for_model_monotone
-    : monotone3 trie_sound_for_model.
-  Proof.
-    unfold trie_sound_for_model.
-    repeat intro.
-    eapply atom_sound_monotone; eauto.
-  Qed.
-
-  Lemma lookup_trie_sound_for_model_monotone
-    : monotone4 lookup_trie_sound_for_model.
-  Proof.
-    unfold lookup_trie_sound_for_model; repeat intro.
-    specialize (H2 _ _ H3 H4 _ H5 _ _ H6).
-    intuition (eapply trie_sound_for_model_monotone; eauto).
-  Qed.    
-
-  Lemma tries_sound_for_model_monotone
-    : monotone2 tries_sound_for_model.
-  Proof.
-    unfold tries_sound_for_model.
-    do 8 intro. eapply lookup_trie_sound_for_model_monotone; eauto.
-  Qed.
-  
-  Lemma process_erule_sound i tries r qc
-    :  tries_sound_for_model i tries qc ->
-       rule_sound_for_evaluation i qc r ->
-       state_sound_for_model m i
-        (process_erule idx Eqb_idx idx_succ idx_zero symbol symbol_map
-           idx_map idx_trie analysis_result spaced_list_intersect tries r)
-        (fun _ _ => True).
-  Proof.
-    intros.
-    unfold process_erule.
-    apply state_sound_for_model_Miter with (P:= fun _ _ => True);
-      intros; auto.
-    eapply process_erule'_sound; eauto.
-    { eapply tries_sound_for_model_monotone; eauto. }
-    { eapply monotone_rule_sound_for_evaluation; eauto. }
-  Qed.
-
-  (*
-    Definition ptr_trie_sound_for_model i tries (p : erule_query_ptr) :=
-      forall tries' t1 t2,
-        map.get tries p.(query_ptr_symbol) = tries' ->
-        map.get tries' p.(query_ptr_ptr) = (t1, t2) ->
-        todo: use qp args
-        
-    Definition tries_sound_for_model i tries access :=
-      forall s tries', map.get tries s = Some tries' ->
-                       forall x
-    unfold process_erule.
-    apply state_sound_for_model_Miter with (P:= fun _ _ => True);
-      intros; auto.
-    
-query_clauses symbol_map (idx_map (list nat * nat))
-*)
-
-  (*TODO: move to defining file*)
-  Arguments query_clauses {idx symbol}%type_scope {symbol_map idx_map}%function_scope r.
-
-  Context (idx_map_plus_ok : @map_plus_ok _ _ idx_map_plus).
-
-  Lemma empty_trie_sound_for_model i f p
-    : trie_sound_for_model i f map.empty p.
-  Proof.
-    repeat intro;
-      basic_utils_crush.
-  Qed.
-  Hint Resolve empty_trie_sound_for_model : utils.
-  
-  Lemma trie_sound_for_model_put i f r1 access l0
-    : trie_sound_for_model i f r1 access ->
-      atom_sound_for_model m i (atom_of_access f access l0) ->
-      trie_sound_for_model i f (map.put r1 l0 tt) access.
-  Proof.
-    unfold trie_sound_for_model.
-    intros.
-    eqb_case k l0; eauto.
-    rewrite map.get_put_diff in * by auto.
-    eauto.
-  Qed.
-
-  
-  Lemma insert_nth acc n v l1 d
-    : insert idx Eqb_idx acc n v = Some l1 ->
-      nth n l1 d = Some v.
-  Proof.
-    revert acc l1; induction n;
-      basic_goal_prep;
-      repeat case_match; inversions; try congruence;
-      cbn; eauto;
-      basic_utils_crush;
-      unfold option_map in H1; case_match; try congruence;
-      inversions;
-      cbn; eauto.
-  Qed.
-
-  Lemma match_clause'_ret l n k v l1 acc d
-    : match_clause' l n k v acc = Some l1 ->
-      nth n l1 d = Some v.
-  Proof.
-    revert k l1 acc.
-    induction l;
-      basic_goal_prep;
-      repeat case_match; try congruence; eauto using insert_nth.
-  Qed.
-
-  (*TODO: move to Base.v*)
-  Ltac inject f :=
-    lazymatch goal with
-      |- ?A = ?B =>
-        enough (f A = f B) by (cbn; congruence)
-    end.
-
-  Fixpoint match_list_leq (l1 l2 : list (option idx)) :=
-    match l1, l2 with
-    | [], _ => True
-    | None::l1', _::l2' => match_list_leq l1' l2'
-    | (Some x)::l1', (Some y)::l2' =>
-        x = y /\ match_list_leq l1' l2'
-    | _, _ => False
-    end.
-
-  Lemma match_list_leq_refl l : match_list_leq l l.
-  Proof.
-    induction l; basic_goal_prep; repeat case_match; basic_utils_crush.
-  Qed.
-  Hint Resolve match_list_leq_refl : utils.
-  
-  Lemma match_list_leq_trans : Transitive match_list_leq.
-  Proof.
-    intro l.
-    induction l; basic_goal_prep;
-      repeat (case_match; basic_goal_prep); basic_utils_crush.
-  Qed.
-
-  Add Parametric Relation : (list (option idx)) match_list_leq
-    reflexivity proved by match_list_leq_refl
-    transitivity proved by match_list_leq_trans
-    as match_list_leq_rel.
-  
-  Lemma insert_monotone acc n v l'
-    : insert idx Eqb_idx acc n v = Some l' ->
-      match_list_leq acc l'.
-  Proof.
-    revert acc l'; induction n;
-      basic_goal_prep; auto; inversions.
-    {
-      case_match; cbn; intuition auto with utils.
-      case_match; inversions; cbn; intuition auto with utils.
-      eqb_case v i; inversions; cbn; intuition auto with utils.
-    }
-    case_match; cbn; intuition auto with utils.
-    case_match; cbn; intuition auto with utils.
-    all: destruct (insert idx Eqb_idx acc n v) eqn:Hins;
-      cbn in *; inversions; eauto; try tauto.
-  Qed.
-
-  Lemma match_clause'_monotone l n k v l' acc
-    : match_clause' l n k v acc = Some l' ->
-      match_list_leq acc l'.
-  Proof.
-    revert k l' acc;
-    induction l;
-      basic_goal_prep;
-      repeat case_match; try congruence; cbn; eauto using insert_monotone.
-    etransitivity; eauto using insert_monotone.
-  Qed.
-
-  Lemma match_list_leq_nth l1 l2 x n0
-    : match_list_leq l1 l2 ->
-      nth n0 l1 default = Some x ->
-      nth n0 l2 default = Some x.
-  Proof.
-    unfold default, option_default.
-    revert l1 l2;
-      induction n0;
-      destruct l1, l2;
-      basic_goal_prep; subst; try tauto;
-      try congruence.
-    all: case_match; intuition subst; eauto.
-    case_match; intuition subst; eauto.
-  Qed.
-
-  (*TODO: not true?, needs more conditions. specifically, acc*)
-  Lemma match_clause'_args' l n k v l' acc
-    : match_clause' l n k v acc = Some l' ->
-      map (fun n0 : nat => nth n0 l' default) l = map Some k.
-  Proof.
-    revert k l' acc.
-    induction l;
-      basic_goal_prep;
-      repeat case_match; try congruence; cbn; auto.
-    f_equal; eauto.
-    eapply match_list_leq_nth; eauto using match_clause'_monotone.
-    eapply insert_nth; eauto.
-  Qed.
-  
-  Lemma match_clause'_args l n k v acc l0
-    : match_clause' l n k v acc = Some (map Some l0) ->
-      map (fun n0 : nat => nth n0 l0 default) l = k.
-  Proof.
-    intros.
-    apply match_clause'_args' in H1.
-    revert k H1.
-    induction l;
-      destruct k;
-      basic_goal_prep;
-      basic_utils_crush.
-    revert H2.
-    clear.
-    revert l0; induction a; destruct l0;
-      basic_goal_prep;
-      basic_utils_crush.
-  Qed.
-    
-  Lemma match_clause_atom_of_access f access k entry_value l0
-    : match_clause access k entry_value = Some l0 ->
-      atom_of_access f access l0 = Build_atom f k entry_value.
-  Proof.
-    unfold match_clause; break.
-    unfold atom_sound_for_model; cbn.
-    case_match; try congruence; intros.
-    unfold atom_of_access.
-    apply option_all_map_Some in H1; subst.
-    cbn.
-    f_equal.
-    2:{
-      inject (@Some idx).
-      rewrite <- map_nth.
-      eapply match_clause'_ret; eauto.
-    }      
-    { eapply match_clause'_args; eauto. }
-  Qed.
-
-  (*TODO: move to coqutil *)
-  Section MapFacts.
-    Context (key value : Type) (map : map.map key value) `{@map.ok _ _ map}.
-    
-    Lemma map_extends_empty  (m0 : map)
-      : map.extends map.empty m0 <-> m0 = map.empty.
-    Proof.
-      split; intros; subst; eauto with utils.
-      apply map.map_ext.
-      intros.
-      basic_utils_crush; eauto.
-      destruct (map.get m0 k) eqn:Hget; auto.
-      exfalso.
-      apply H2 in Hget.
-      basic_utils_crush.
-    Qed.
-    Hint Rewrite map_extends_empty : utils.
-
-    
-    Lemma map_extends_put_wkn (m0 m1 : map) k v
-      : map.get m1 k = None ->
-        map.extends m0 (map.put m1 k v) ->
-        map.extends m0 m1.
-    Proof.
-      repeat intro.
-      assert (x <> k) by congruence.
-      apply H3.
-      rewrite map.get_put_diff by auto.
-      auto.
-    Qed.
-
-    Lemma map_fold_spec_member' {R : Type} (P : map -> R -> Prop)
-      (f : R -> key -> value -> R) (r0 : R) (m0 : map)
-      : P map.empty r0 ->
-        (forall (k : key) (v : value) (m : map) (r : R),
-            map.get m0 k = Some v ->
-            map.get m k = None -> P m r -> P (map.put m k v) (f r k v)) ->
-        forall m, map.extends m0 m -> P m (map.fold f r0 m).
-    Proof.
-      intros ? ? m1.
-      pattern (map.fold f r0 m1).
-      revert m1.
-      apply map.fold_spec;
-        basic_goal_prep; basic_utils_crush.
-      eapply H3; eauto.
-      2:{
-        apply H5.
-        eapply map_extends_put_wkn; eauto.
-      }
-      {
-        apply H6; rewrite map.get_put_same; auto.
-      }
-    Qed.
-    
-    Lemma map_fold_spec_member {R : Type} (P : map -> R -> Prop)
-      (f : R -> key -> value -> R) (r0 : R) (m0 : map)
-      : P map.empty r0 ->
-        (forall (k : key) (v : value) (m : map) (r : R),
-            map.get m0 k = Some v ->
-            map.get m k = None -> P m r -> P (map.put m k v) (f r k v)) ->
-        P m0 (map.fold f r0 m0).
-    Proof.
-      intros;eapply map_fold_spec_member'; eauto with utils.
-    Qed.
-
-  End MapFacts.
-  Hint Rewrite map_extends_empty : utils.
-  
-  Lemma build_tries_for_symbol_sound i f qc' r0 x t1 t2 l n ep
-    : (forall k v, map.get r0 k = Some v ->
-                   atom_sound_for_model m i (Build_atom f k v.(entry_value _ _))) ->
-      map.get (build_tries_for_symbol idx Eqb_idx idx_map idx_map_plus idx_trie analysis_result 
-                 ep qc' r0) x = Some (t1, t2) ->
-      map.get qc' x = Some (l, n) ->
-      trie_sound_for_model i f t1 (l, n) /\ trie_sound_for_model i f t2 (l, n).
-  Proof.
-    intros Hsound Hget Hqc.
-    revert Hget.
-    unfold build_tries_for_symbol.
-    revert t1 t2.
-    apply map_fold_spec_member; eauto.
-    {
-      rewrite map_map_spec; eauto.
-      unfold option_map; case_match; try congruence; repeat inversions.
-      basic_goal_prep; subst; repeat inversions; intuition eauto with utils.
-    }
-    basic_goal_prep.
-    destruct v.
-    rewrite intersect_spec in *; eauto.
-    case_match; try congruence.
-    case_match; try congruence.
-    break.
-    inversions.
-    case_match.
-    2:{ apply H3; congruence. }
-    specialize (H3 _ _ eq_refl); break.
-    eqb_case entry_epoch ep; inversions; intuition eauto.
-    all: apply trie_sound_for_model_put; auto.
-    all: erewrite match_clause_atom_of_access; eauto.
-  Qed.
-  
-  Lemma build_tries_sound i rs
-    : state_sound_for_model m i
-        (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus idx_map idx_map_plus
-           idx_trie analysis_result rs)
-        (fun i' tries => tries_sound_for_model i' tries rs.(query_clauses)).
-  Proof.
-    open_ssm.
-    repeat intro.
-    rewrite intersect_spec in *; eauto.
-    repeat case_match; cbn; inversions; try tauto.
-    eapply build_tries_for_symbol_sound; eauto.
-    intros.
-    eapply atom_interpretation; eauto.
-    unfold atom_in_egraph, atom_in_db; cbn.
-    unfold db_map.
-    rewrite case_match_eqn0; cbn.
-    rewrite H1; cbn.
-    auto.
-  Qed.
-  
-  (*TODO: move*)
-  Arguments compiled_rules {idx symbol}%type_scope {symbol_map idx_map}%function_scope r.
-
-  
-  Lemma max_id_sound i
-    : state_sound_for_model m i
-        (max_id idx symbol symbol_map idx_map idx_trie
-           analysis_result) (fun _ _ => True).
-  Proof.
-    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
-  Qed.
-  
-  Lemma worklist_empty_sound i
-    : state_sound_for_model m i
-        (worklist_empty idx symbol symbol_map idx_map idx_trie
-           analysis_result) (fun _ _ => True).
-  Proof.
-    open_ssm; destruct e; break; try eexists; intros; cbn; eauto.
-  Qed.
-
-  
-  Lemma run1_iter_sound i rs rb_fuel
-    : all (rule_sound_for_evaluation i (query_clauses rs)) rs.(compiled_rules) ->
-      state_sound_for_model m i
-        (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol
-           symbol_map symbol_map_plus idx_map idx_map_plus idx_trie
-           analysis_result spaced_list_intersect rb_fuel rs) 
-        (fun _ _ => True).
-  Proof.
-    unfold Defs.run1iter.
-    intros.
-    ssm_bind.
-    { apply build_tries_sound. }
-    {
-      ssm_bind.
-      1: apply max_id_sound.
-      ssm_bind.
-      1: apply increment_epoch_sound.
-      ssm_bind.
-      {        
-        apply state_sound_for_model_Miter with (P:= fun _ _ => True);
-          intros; eauto.
-        eapply process_erule_sound; eauto.
-        { repeat (eapply tries_sound_for_model_monotone; try eassumption). }
-        {
-          eapply in_all in H1; eauto.
-          repeat (eapply monotone_rule_sound_for_evaluation; try eassumption).
-        }
-      }
-      ssm_bind.
-      1: apply max_id_sound.
-      ssm_bind.
-      1: apply worklist_empty_sound.
-      ssm_bind.
-      1:eapply rebuild_sound.
-      eapply ret_sound_for_model'; auto.
-    }
-  Qed.
-    
-  Lemma saturate_until'_sound i rb_fuel rs cond fuel P
-    : all (rule_sound_for_evaluation i (query_clauses rs)) rs.(compiled_rules) ->
-      (forall i', map.extends i' i ->
-                  state_sound_for_model m i' cond (fun i2 (b:bool) => if b then P i2 else True)) ->
-      monotone P ->
-      forall i', map.extends i' i ->
-      state_sound_for_model m i' (saturate_until' rb_fuel rs cond fuel)
-        (fun i b => if b then P i else True).
-  Proof.
-    intros Hrule Hcond HP.
-    induction fuel;
-      cbn [Defs.saturate_until'].
-    { intros; eapply ret_sound_for_model'; auto. }
-    {
-      intros.
-      ssm_bind.
-      destruct a.
-      { eapply ret_sound_for_model'; auto. }
-      ssm_bind.
-      {
-        apply run1_iter_sound.
-        eapply all_wkn; try eassumption.
-        intros.
-        repeat (eapply monotone_rule_sound_for_evaluation; try eassumption).
-      }
-      case_match.
-      { eapply ret_sound_for_model'; auto. }        
-      {
-        intros; eauto.
-        eapply IHfuel.
-        eapply map_extends_trans; try eassumption.
-        eapply map_extends_trans; try eassumption.
-      }
-    }
-  Qed.
-  
-  Lemma saturate_until_sound i rb_fuel rs cond fuel P
-    (* TODO: package rs properties together*)
-    : all (const_rule_sound_for_evaluation i)
-        (compiled_const_rules idx symbol symbol_map idx_map rs) ->
-      all (rule_sound_for_evaluation i (query_clauses rs)) rs.(compiled_rules) ->
-      (forall i', map.extends i' i ->
-                  state_sound_for_model m i' cond (fun i2 (b:bool) => if b then P i2 else True)) ->
-      monotone P ->
-      state_sound_for_model m i (saturate_until rb_fuel rs cond fuel)
-        (fun i b => if b then P i else True).
-  Proof.
-    intros.
-    unfold saturate_until.
-    eapply state_sound_for_model_Mseq.
-    1:eapply process_const_rules_sound; eauto.
-    intros; break; cbn beta in *.
-    eapply state_sound_for_model_Mseq.
-    1: apply rebuild_sound.
-    intros.
-    eapply saturate_until'_sound; eauto.
-    repeat (eapply map_extends_trans; try eassumption).
-  Qed.
-      
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%type_scope {symbol_map idx_map idx_trie}%function_scope
@@ -4727,47 +4412,3 @@ Arguments db_to_atoms {idx symbol}%type_scope
 Arguments uf_to_clauses {idx symbol}%type_scope {idx_map}%function_scope u.
 
 
-Arguments state_sound_for_model {idx} lt {symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope 
-  {A}%type_scope m i s (Post)%function_scope.
-
-(*
-Arguments model_satisfies_rule {idx symbol}%type_scope {idx_map}%function_scope m r.
-*)
-
-
-(*TODO: duplicated in section *)
-Ltac open_ssm' :=
-  cleanup_context;
-  lazymatch goal with
-  | |- state_sound_for_model _ _ _ ?e _ =>
-      let h := get_head e in
-      unfold h; unfold state_sound_for_model, Sep.and1; repeat intro;
-      eexists; eauto with utils;
-      break; cbn[fst snd]
-  end.
-
-Ltac open_ssm :=
-  open_ssm';
-  intuition eauto with utils;
-  break; cbn[fst snd];
-  try lazymatch goal with
-    | H : egraph_ok _ |- egraph_ok _ =>
-        destruct H; constructor; eauto with utils
-    | H : egraph_sound_for_interpretation _ _ _
-      |- egraph_sound_for_interpretation _ _ _ =>
-        destruct H; constructor; eauto with utils
-    end.
-
-
-(*TODO: duplicated in section *)
-Ltac bind_with_fn H :=
-  eapply state_sound_for_model_bind;
-  eauto using H with utils;
-  cbn beta;intros; subst; cleanup_context.
-
-(*TODO: duplicated in section *)
-Ltac ssm_bind :=
-  eapply state_sound_for_model_bind;
-  eauto with utils;
-  cbn beta in *;intros; subst; cleanup_context.
