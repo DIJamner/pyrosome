@@ -1,6 +1,6 @@
 From coqutil Require Import Map.Interface Map.Solver.
 
-From Utils Require Import Eqb Options.
+From Utils Require Import Eqb.
 
 (*
 TODO: implement map with tries?
@@ -65,7 +65,7 @@ Module Sets.
 End Sets.
 Global Coercion Sets.set_as_map : Sets.set >-> map.map.
 
-Require Import Utils.Monad.
+From Utils Require Import Monad.
 (*TODO: is this the right place for this?*)
 Section __.
 

@@ -1,6 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Bool Datatypes.String Lists.List.
+From Stdlib Require Import Bool.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Import BoolNotations.
 Open Scope string.

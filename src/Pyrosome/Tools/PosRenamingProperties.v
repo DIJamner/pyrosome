@@ -14,7 +14,7 @@ Open Scope positive.
 From coqutil Require Import Map.Interface.
 From Tries Require Import Canonical.
 
-From Utils Require Import Utils Monad TrieMap.
+From Utils Require Import Utils Monad.
 Import StateMonad.
 
 From Pyrosome Require Import Theory.Core Tools.PosRenaming.

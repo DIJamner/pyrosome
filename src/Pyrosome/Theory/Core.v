@@ -1,9 +1,10 @@
 Set Implicit Arguments.
 
-Require Import Ltac2.Ltac2.
+From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope list.
 From Utils Require Import Utils.

@@ -1,10 +1,10 @@
-Require Import ZArith Lists.List Coq.Classes.RelationClasses Coq.Classes.Morphisms.
-Require Import coqutil.Map.Interface coqutil.Sorting.Permutation.
-Require Import Tries.Canonical.
+From Stdlib Require Import ZArith Lists.List Classes.RelationClasses Classes.Morphisms.
+From coqutil Require Import Map.Interface Sorting.Permutation.
+From Tries Require Import Canonical.
 Import PTree.
 
-Require Utils.ArrayList.
-From Utils Require Import Booleans Base Lists Options ExtraMaps Default Monad.
+From Utils Require ArrayList.
+From Utils Require Import Booleans Base Lists ExtraMaps Monad.
 
 (* TODO: move this somewhere? *)
 (*reverses the bits in a positive number*)

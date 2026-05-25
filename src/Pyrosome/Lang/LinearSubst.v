@@ -1,7 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
-Require Import Coq.Strings.Ascii.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
+From Stdlib Require Import Strings.Ascii.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -9,7 +10,7 @@ From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab Tools.Matches Tools.Resolution.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 
 Notation named_list := (@named_list string).

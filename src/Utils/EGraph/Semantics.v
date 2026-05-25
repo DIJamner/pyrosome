@@ -1,12 +1,11 @@
 (* TODO: separate semantics and theorems
  *)
-Require Import Equalities Orders Lists.List.
+From Stdlib Require Import Equalities Orders Lists.List.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
-Require Import Tries.Canonical.
 
-From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps Relations Maps UnionFind VC.
+From Utils Require Import Utils Monad ExtraMaps Relations Maps UnionFind VC.
 From Utils.EGraph Require Import Defs.
 From Utils Require TrieMap.
 Import Sets.

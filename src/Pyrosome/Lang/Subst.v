@@ -1,11 +1,11 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
-Require Import Coq.Strings.Ascii.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
-From Utils Require Import Utils Monad.
+From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.Matches Tools.Resolution Tools.EGraph.ComputeWf
   Tools.EGraph.TypeInference

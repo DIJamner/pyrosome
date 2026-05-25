@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
 Import ListNotations.
 Open Scope string.
 Open Scope list.

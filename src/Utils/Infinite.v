@@ -1,6 +1,8 @@
 Set Implicit Arguments.
 
-Require Import Lists.List Datatypes.String Ascii.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Strings.Ascii.
 From Utils Require Import Utils.
 
 (* A class for using the infiniteness of types,

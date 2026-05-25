@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -15,8 +16,7 @@ Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
 
-Require Coq.derive.Derive.
-Require Import Pyrosome.Tools.UnElab.
+From Stdlib Require derive.Derive.
 
 Local Notation compiler := (compiler string).
 

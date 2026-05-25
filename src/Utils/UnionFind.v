@@ -12,16 +12,16 @@
 
 
 
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 
 From coqutil Require Import Map.Interface.
 Import ListNotations.
 
-Require Import Setoid.
-Require Import Coq.Classes.Morphisms.
-Require Import Coq.Sorting.Permutation.
+From Stdlib Require Import Setoid.
+From Stdlib Require Import Classes.Morphisms.
+From Stdlib Require Import Sorting.Permutation.
 
-From Utils Require Import Utils Monad Sep Relations Decidable Options Maps.
+From Utils Require Import Utils Monad Sep Relations Decidable Maps.
 Import StateMonad.
 
 

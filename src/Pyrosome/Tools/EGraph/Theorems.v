@@ -1,11 +1,11 @@
-Require Import Lists.List Coq.Classes.RelationClasses.
+From Stdlib Require Import Lists.List Classes.RelationClasses.
 Import ListNotations.
 Open Scope list.
 
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps.
+From Utils Require Import Utils UnionFind Monad.
 From Utils.EGraph Require Import Defs Semantics QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core ModelImpls.

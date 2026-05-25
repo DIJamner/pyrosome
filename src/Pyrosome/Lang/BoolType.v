@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -10,9 +11,9 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Tools.EGraph.TypeInference Tools.Resolution Tools.EGraph.ComputeWf.
 Import Core.Notations.
 
-Require Coq.derive.Derive.
-From Pyrosome.Lang Require Import PolySubst SimpleVSubst SimpleVSTLC.
-From Pyrosome.Lang Require Import UTLC. 
+From Stdlib Require derive.Derive.
+From Pyrosome.Lang Require Import PolySubst SimpleVSubst.
+From Pyrosome.Lang Require Import UTLC.
 
 
 Definition typed_bool_def : lang :=

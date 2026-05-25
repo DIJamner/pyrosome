@@ -1,10 +1,11 @@
 Set Implicit Arguments.
 
-Require Import Coq.Lists.List. Import ListNotations.
-Require Import Bool.
-Require Import Coq.Classes.Morphisms Coq.Classes.RelationClasses.
-Require Import Coq.Sorting.Permutation.
-Require Export Datatypes.List.
+From Stdlib Require Import Lists.List.
+From Stdlib Require Import Bool.
+From Stdlib Require Import Classes.Morphisms Classes.RelationClasses.
+From Stdlib Require Import Sorting.Permutation.
+From coqutil Require Export Datatypes.List.
+Import ListNotations.
 Import BoolNotations.
 Open Scope list.
 

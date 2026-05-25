@@ -15,12 +15,11 @@ Import ListNotations.
 
 From coqutil Require Import Map.Interface.
 
-From Utils Require Import Utils UnionFind Monad Result ExtraMaps.
+From Utils Require Import Utils Monad Result.
 From Utils.EGraph Require Import Semantics Defs QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Theory Require ClosedTerm.
-From Pyrosome.Tools Require Import PosRenaming.
 Import Core.Notations.
 
 Open Scope string.
@@ -901,7 +900,7 @@ Section WithVar.
 End WithVar.
 
 (*TODO: move most of this to Utils*)
-Require Import NArith Tries.Canonical.
+From Stdlib Require Import NArith.
 From Utils Require Import TrieMap (*SpacedMapTreeN *).
 From Pyrosome.Tools Require Import PosRenaming.
 From Utils Require PosListMap StringListMap.
@@ -1030,7 +1029,7 @@ Module PositiveInstantiation.
 End PositiveInstantiation.
 
 
-Require Ascii.
+From Stdlib Require Strings.Ascii.
 Module StringInstantiation.
   Export StringListMap.
 

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 Set Bullet Behavior "Strict Subproofs".
 
-Require Import Ltac2.Ltac2 Ltac2.Constr Ltac2.Message.
+From Ltac2 Require Import Ltac2 Constr.
 Set Default Proof Mode "Classic".
 
 Ltac2 rec head (x:constr) : constr :=

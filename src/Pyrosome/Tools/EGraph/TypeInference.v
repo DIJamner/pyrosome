@@ -1,6 +1,7 @@
 Set Implicit Arguments.
 
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -10,13 +11,12 @@ From Pyrosome Require Import Theory.Core Elab.Elab
   Compilers.Compilers
   Tools.Matches Tools.EGraph.Defs
   Tools.EGraph.Automation.
-Require Import Utils.EGraph.Semantics.
+From Utils.EGraph Require Import Semantics.
 Import PArith.
 Import Ascii.AsciiSyntax.
 Import StringInstantiation.
 Import StateMonad.
-Require Import Coq.Strings.String.
-Require Coq.Numbers.DecimalString.
+From Stdlib Require Numbers.DecimalString.
 
 
 Local Notation named_list := (@named_list string).

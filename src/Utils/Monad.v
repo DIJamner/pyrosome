@@ -1,6 +1,6 @@
 Set Implicit Arguments.
 
-Require Lists.List.
+From Stdlib Require Lists.List.
 From Utils Require Import Utils.
 
 Class Monad (M : Type -> Type) : Type :=

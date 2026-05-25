@@ -1,6 +1,9 @@
-Require Import NArith Tries.Canonical Lists.List Sorting.Permutation.
-Require Import Coq.Classes.Morphisms.
-Require Ascii.
+From Stdlib Require Import NArith.
+From Tries Require Import Canonical.
+From Stdlib Require Import Lists.List.
+From coqutil Require Import Sorting.Permutation.
+From Stdlib Require Import Classes.Morphisms.
+From Stdlib Require Strings.Ascii.
 Import ListNotations.
 
 From coqutil Require Import Map.Interface Map.Properties.

@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 
-Require Lists.List.
-From Utils Require Import Utils Natlike Monad.
+From Stdlib Require Lists.List.
+From Utils Require Import Natlike Monad.
 
 Section __.
   Import StateMonad.

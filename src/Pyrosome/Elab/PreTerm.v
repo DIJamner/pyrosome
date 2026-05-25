@@ -1,4 +1,4 @@
-Require Import Lists.List Strings.String.
+From Stdlib Require Import Lists.List Strings.String.
 Import ListNotations.
 Open Scope list.
 From Utils Require Import Utils.

@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List Coq.Classes.RelationClasses.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List Classes.RelationClasses.
 Import ListNotations.
 Open Scope string.
 Open Scope list.

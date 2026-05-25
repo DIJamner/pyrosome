@@ -1,8 +1,8 @@
 From coqutil Require Import Map.Interface.
-Require Import Lists.List.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 
-From Coq.Sorting Require Import Permutation Mergesort.
+From Stdlib.Sorting Require Import Permutation Mergesort.
 Import NatSort.
 
 From Utils Require Import Base Booleans Eqb Lists.

@@ -1,4 +1,5 @@
-Require Import Datatypes.String Lists.List.
+From coqutil Require Import Datatypes.String.
+From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
 Open Scope list.
@@ -14,13 +15,13 @@ From Pyrosome Require Import
   Tools.EGraph.Automation
   Tools.Interactive.
 
-Require Import Pyrosome.Compilers.Parameterizer.
+From Pyrosome.Compilers Require Import Parameterizer.
 
 From Pyrosome.Lang Require Import
   Subst SubstEqnGen
   Pi Sigma.
 
-Require Coq.derive.Derive.
+From Stdlib Require derive.Derive.
 
 Import Core.Notations.
 Import PreRule.Notations.

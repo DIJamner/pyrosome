@@ -1,10 +1,10 @@
-Require Import ZArith Uint63.
+From Stdlib Require Import ZArith Uint63.
 Open Scope uint63.
-Require Import coqutil.Map.Interface.
-Require Import Tries.Canonical.
+From coqutil Require Import Map.Interface.
+From Tries Require Import Canonical.
 Import PTree.
 
-Require Utils.ArrayList Utils.TrieMap.
+From Utils Require ArrayList TrieMap.
 (*
 (* positives consed when they should be appended*)
 Fixpoint trie_fold' {B A} (f : A -> positive -> B -> A) (acc : A) (m : PTree.tree' B)
