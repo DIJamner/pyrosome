@@ -515,7 +515,7 @@ Section WithVar.
       induction a;
         basic_goal_prep;
         basic_utils_crush.
-      revert dependent l.
+      generalize dependent l.
       induction l;
         basic_goal_prep;
         basic_utils_crush.
@@ -1245,7 +1245,7 @@ Section WithVar.
     induction e;
       basic_goal_prep;
       basic_term_crush.
-    revert dependent l0.
+    generalize dependent l0.
     induction l0;
       basic_goal_prep;
       basic_term_crush.
@@ -1307,7 +1307,7 @@ Section WithVar.
     unfold insert.
     basic_utils_crush.
     rewrite with_names_from_app; eauto.
-    rewrite !firstn_length; Lia.lia.
+    rewrite !length_firstn; Lia.lia.
   Qed.
 
   Section WithCtx.
@@ -1329,7 +1329,7 @@ Section WithVar.
       eapply cut_ind;
         try typeclasses eauto; intuition (eauto; try congruence).
       {
-        my_case H' (no_sort_eqns l).
+        destruct (no_sort_eqns l) eqn:H'.
         2: simpl in *; tauto.
         unfold no_sort_eqns in *.
         rewrite forallb_forall in H'.
@@ -1376,7 +1376,7 @@ Section WithVar.
   Proof.
     apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep;
       [ (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
-        my_case H' (no_sort_eqns l);
+        destruct (no_sort_eqns l) eqn:H';
           [ unfold no_sort_eqns in *; rewrite forallb_forall in H';
             apply H' in H; cbn in *; congruence
           | simpl in *; tauto ]
@@ -1518,7 +1518,7 @@ Section WithVar.
   Proof.
     apply cut_ind; eauto; try typeclasses eauto; basic_goal_prep.
     (* eq_sort_by — H_no_sort_eqns rules out sort eq rules. *)
-    1: my_case H' (no_sort_eqns l);
+    1: destruct (no_sort_eqns l) eqn:H';
        [ unfold no_sort_eqns in *; rewrite forallb_forall in H';
          apply H' in H; cbn in *; congruence
        | simpl in *; tauto ].
@@ -1572,7 +1572,7 @@ Section WithVar.
         subst l_plus; basic_utils_crush.
       }
       {
-        my_case Hmn (named_list_lookup_err pl name).
+        destruct (named_list_lookup_err pl name) eqn:Hmn.
         2:{
           cbn.
           eapply eq_subst_ctx_monotonicity; eauto.
@@ -2135,7 +2135,7 @@ Section WithVar.
     all: try apply eq_sort_refl; eauto.
     all: try apply eq_term_refl; eauto.
     all: try eapply parameterize_ctx_preserving'; eauto.
-    all: my_case H_lookup (named_list_lookup_err pl v); try solve [basic_goal_prep; basic_utils_crush].
+    all: destruct (named_list_lookup_err pl v) eqn:H_lookup; try solve [basic_goal_prep; basic_utils_crush].
   Qed.
 
   End __.
@@ -2710,7 +2710,7 @@ Section WithVar.
       basic_utils_crush.
   Qed.          
   
-  Hint Rewrite firstn_length combine_firstn combine_skipn : utils.
+  Hint Rewrite length_firstn combine_firstn combine_skipn : utils.
   
   Lemma combine_insert A B n (a:A) (b:B) l1 l2
     : length l1 = length l2 ->
@@ -2756,7 +2756,7 @@ Section WithVar.
         autorewrite with utils in *;
         try tauto;
         intuition (subst;try congruence; eauto with lang_core).
-      all: my_case H' (named_list_lookup_err cmp n); cbn in *; try tauto.
+      all: destruct (named_list_lookup_err cmp n) eqn:H'; cbn in *; try tauto.
       all: autorewrite with utils in *.
       all: try congruence.
       all: try match goal with
@@ -2790,7 +2790,7 @@ Section WithVar.
         autorewrite with utils in *;
         try tauto;
         intuition (subst;try congruence; eauto with lang_core).
-      all: my_case H' (named_list_lookup_err cmp n); cbn in *; try tauto.
+      all: destruct (named_list_lookup_err cmp n) eqn:H'; cbn in *; try tauto.
       all: autorewrite with utils in *.
       all: try congruence.
       all: try match goal with
@@ -2897,7 +2897,7 @@ Section WithVar.
     Qed.
     Hint Resolve preserving_compiler_ws : lang_core.
 
-    Hint Rewrite app_length skipn_length : utils.
+    Hint Rewrite length_app length_skipn : utils.
     
     Lemma length_insert A n (a:A) l
       : length (insert n a l) = S (length l).
@@ -2933,7 +2933,7 @@ Section WithVar.
       intros.
     {
       cbn.
-      my_case H_lookup (named_list_lookup_err cmp n).
+      destruct (named_list_lookup_err cmp n) eqn:H_lookup.
       2:{
         eapply preserving_contradiction in H;
         basic_utils_crush.
@@ -3009,7 +3009,7 @@ Section WithVar.
     }
     {
       cbn.
-      my_case H_lookup (named_list_lookup_err cmp n).
+      destruct (named_list_lookup_err cmp n) eqn:H_lookup.
       2:{
         eapply preserving_contradiction in H;
         basic_utils_crush.
@@ -4673,7 +4673,7 @@ Section WithVar.
         {
           assert (exists x, Some x = named_list_lookup_err (frontier l) n0).
           {
-            my_case Hfrontier (named_list_lookup_err (frontier l) n0).
+            destruct (named_list_lookup_err (frontier l) n0) eqn:Hfrontier.
             { exists l1; eauto. }
             exfalso.
             symmetry in Hfrontier.
@@ -4729,7 +4729,7 @@ Section WithVar.
         {
           assert (exists x, Some x = named_list_lookup_err (frontier l) n0).
           {
-            my_case Hfrontier (named_list_lookup_err (frontier l) n0).
+            destruct (named_list_lookup_err (frontier l) n0) eqn:Hfrontier.
             { exists l1; eauto. }
             exfalso.
             symmetry in Hfrontier.

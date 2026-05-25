@@ -118,14 +118,14 @@ Definition boundaries_def : lang :=
     ]
   ]}.
 Derive boundaries
-        SuchThat (elab_lang_ext (utlc ++ 
+        in (elab_lang_ext (utlc ++ 
                                 stlc ++ 
                                 typed_bool ++
                                 untyped_bool ++
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_def boundaries)
-        As boundaries_wf.
+        as boundaries_wf.
 Proof. auto_elab. Qed.
 #[local] Definition boundaries_entry :=
   lang_entry (elab_lang_implies_wf boundaries_wf).
@@ -201,14 +201,14 @@ Definition typed_bool_ty_subst_def := Eval vm_compute in (eqn_rules
        )
        typed_bool_parameterized)).
 Derive typed_bool_ty_subst
-  SuchThat (elab_lang_ext (typed_bool_parameterized ++
+  in (elab_lang_ext (typed_bool_parameterized ++
                                 exp_param_substs ++ exp_ty_subst ++
                                 val_param_substs ++ val_ty_subst ++
                                 env_ty_subst ++ ty_subst_lang ++
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
                                 )
               typed_bool_ty_subst_def typed_bool_ty_subst)
-  As typed_bool_ty_subst_wf.
+  as typed_bool_ty_subst_wf.
 Proof. auto_elab. Qed. 
 #[local] Definition typed_bool_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf typed_bool_ty_subst_wf).
@@ -229,14 +229,14 @@ Definition stlc_ty_subst_def := Eval vm_compute in (eqn_rules
        )
        stlc_parameterized)).
 Derive stlc_ty_subst
-  SuchThat (elab_lang_ext (stlc_parameterized ++
+  in (elab_lang_ext (stlc_parameterized ++
                              exp_param_substs ++ exp_ty_subst ++
                              val_param_substs ++ val_ty_subst ++
                              env_ty_subst ++ ty_subst_lang ++
                              exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               stlc_ty_subst_def stlc_ty_subst)
-  As stlc_ty_subst_wf.
+  as stlc_ty_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition stlc_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf stlc_ty_subst_wf).
@@ -270,14 +270,14 @@ Definition usubst_ty_subst_def := Eval vm_compute in (eqn_rules
        )
        usubst_parameterized)).
 Derive usubst_ty_subst
-  SuchThat (elab_lang_ext (usubst_parameterized ++
+  in (elab_lang_ext (usubst_parameterized ++
                                 exp_param_substs ++ exp_ty_subst ++
                                 val_param_substs ++ val_ty_subst ++
                                 env_ty_subst ++ ty_subst_lang ++
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               usubst_ty_subst_def usubst_ty_subst)
-  As usubst_ty_subst_wf.
+  as usubst_ty_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition usubst_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf usubst_ty_subst_wf).
@@ -376,7 +376,7 @@ Definition type_casing_def : lang :=
   ]}.
 
 Derive type_casing
-  SuchThat (elab_lang_ext (
+  in (elab_lang_ext (
                 stlc_ty_subst ++
                   typed_bool_ty_subst ++ 
                   usubst_ty_subst ++
@@ -391,7 +391,7 @@ Derive type_casing
                   exp_parameterized ++ val_parameterized ++ ty_env_lang
               ) 
                 type_casing_def type_casing)
-        As type_casing_wf.
+        as type_casing_wf.
 Proof. 
   auto_elab.
 Qed. 
@@ -479,7 +479,7 @@ Definition utlc_ty_subst_def := Eval vm_compute in (eqn_rules
      )
      utlc_parameterized)).
 Derive utlc_ty_subst
-  SuchThat (elab_lang_ext (
+  in (elab_lang_ext (
                 utlc_parameterized ++
                   usubst_ty_subst ++
                   usubst_parameterized ++
@@ -492,7 +492,7 @@ Derive utlc_ty_subst
                   exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               utlc_ty_subst_def utlc_ty_subst)
-  As utlc_ty_subst_wf.
+  as utlc_ty_subst_wf.
 Proof. auto_elab. Qed. 
 #[local] Definition utlc_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf utlc_ty_subst_wf).
@@ -564,7 +564,7 @@ Definition untyped_bool_ty_subst_def := Eval vm_compute in (eqn_rules
      )
      untyped_bool_parameterized)).
 Derive untyped_bool_ty_subst
-  SuchThat (elab_lang_ext (
+  in (elab_lang_ext (
                 untyped_bool_parameterized ++
                   usubst_ty_subst ++
                   usubst_parameterized ++
@@ -577,7 +577,7 @@ Derive untyped_bool_ty_subst
                   exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               untyped_bool_ty_subst_def untyped_bool_ty_subst)
-  As untyped_bool_ty_subst_wf.
+  as untyped_bool_ty_subst_wf.
 Proof. auto_elab. Qed. 
 #[local] Definition untyped_bool_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf untyped_bool_ty_subst_wf).
@@ -654,7 +654,7 @@ Definition boolhuh_ty_subst_def := Eval vm_compute in (eqn_rules
        )
      boolhuh_parameterized)). (* change this line to the current parameterized langauge working on *)
 Derive boolhuh_ty_subst
-  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+  in (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
                 boolhuh_parameterized ++
                 untyped_bool_ty_subst ++
                 untyped_bool_parameterized ++
@@ -671,7 +671,7 @@ Derive boolhuh_ty_subst
                 exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               boolhuh_ty_subst_def boolhuh_ty_subst) (* remember to change this *)
-  As boolhuh_ty_subst_wf. (* and remember to change this *)
+  as boolhuh_ty_subst_wf. (* and remember to change this *)
 Proof. 
 auto_elab. Qed. 
 #[local] Definition boolhuh_ty_subst_entry :=
@@ -788,13 +788,13 @@ Definition shared_fragment_compiler_def : compiler :=
   end.
 
 Derive shared_fragment_compiler 
-        SuchThat (elab_preserving_compiler 
+        in (elab_preserving_compiler 
                     []
                     polymorphic_shared_fragment
                     shared_fragment_compiler_def
                     shared_fragment_compiler
                     simple_shared_fragment) 
-        As shared_fragment_compiler_preserving. 
+        as shared_fragment_compiler_preserving. 
 Proof.
   auto_elab_compiler.
 Qed.
@@ -877,7 +877,7 @@ Definition mif_ty_subst_def := Eval vm_compute in (eqn_rules
        )
      mif_parameterized)). (* change this line to the current parameterized langauge working on *)
 Derive mif_ty_subst
-  SuchThat (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
+  in (elab_lang_ext ( (* add all dependencies with their ty_subst versions and the current parameterized lang *)
                 mif_parameterized ++
                 untyped_bool_ty_subst ++
                 untyped_bool_parameterized ++
@@ -894,7 +894,7 @@ Derive mif_ty_subst
                 exp_parameterized ++ val_parameterized ++ ty_env_lang
               )
               mif_ty_subst_def mif_ty_subst) (* remember to change this *)
-  As mif_ty_subst_wf. (* and remember to change this *)
+  as mif_ty_subst_wf. (* and remember to change this *)
 Proof. 
 auto_elab. Qed. 
 #[local] Definition mif_ty_subst_entry :=
@@ -932,7 +932,7 @@ Definition prod_ty_subst_def := Eval vm_compute in (eqn_rules
        )
        prod_parameterized)).
 Derive prod_ty_subst
-  SuchThat (elab_lang_ext (prod_parameterized ++
+  in (elab_lang_ext (prod_parameterized ++
                                 exp_param_substs ++
                                 exp_ty_subst ++
                                 val_param_substs ++
@@ -942,7 +942,7 @@ Derive prod_ty_subst
                                 exp_parameterized ++ val_parameterized ++ ty_env_lang
                                 )
               prod_ty_subst_def prod_ty_subst)
-  As prod_ty_subst_wf.
+  as prod_ty_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition prod_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf prod_ty_subst_wf).
@@ -1096,14 +1096,14 @@ Definition multilang_compiler_def : compiler :=
     end.
 
 Derive multilang_compiler 
-        SuchThat (elab_preserving_compiler 
+        in (elab_preserving_compiler 
                     shared_fragment_compiler
                     target_multilanguage
                     multilang_compiler_def
                     multilang_compiler
                     (boundaries ++ uif)
                     ) 
-        As multilang_compiler_preserving. 
+        as multilang_compiler_preserving. 
 Proof.
   setup_elab_compiler.
   { derive_elab_term. }
@@ -1283,14 +1283,14 @@ Definition boundaries_parameterized_def : lang :=
     ]
   ]}.
 Derive boundaries_parameterized  (* need polymorphic versions of all these *)
-        SuchThat (elab_lang_ext (utlc ++
+        in (elab_lang_ext (utlc ++
                                 untyped_bool ++
                                 stlc ++ 
                                 typed_bool ++ 
                                 usubst ++
                                 exp_subst++value_subst) 
                 boundaries_parameterized_def boundaries_parameterized)
-        As boundaries_parameterized_wf.
+        as boundaries_parameterized_wf.
 Proof. Abort. 
 (* #[export] Hint Resolve boundaries_parameterized_wf : elab_pfs. *)
 *)
@@ -1304,13 +1304,13 @@ Proof. Abort.
 
 (* proof mirrors language proof *)
 (* Derive h2l
-       SuchThat (elab_preserving_compiler [] (* compiler root: for base language *)
+       in (elab_preserving_compiler [] (* compiler root: for base language *)
                                           low_level_multilanguage (* target language—ALL of it *)
                                           h2l_def
                                           h2l
                                           high_level_multilanguage) (* source  *) 
                                           (* ideally, only boundaries ++ uif *)
-       As h2l_preserving.
+       as h2l_preserving.
 Proof. unfold low_level_multilanguage. unfold high_level_multilanguage. 
         unfold shared_fragment. 
         auto_elab_compiler. 

@@ -27,8 +27,8 @@ Import Core.Notations.
 Import PreRule.Notations.
 
 Derive levels
-       SuchThat (wf_lang (levels : lang))
-       As levels_wf.
+       in (wf_lang (levels : lang))
+       as levels_wf.
 Proof.
   setup_lang_interactive.
   elab_rule {[r

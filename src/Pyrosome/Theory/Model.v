@@ -373,11 +373,11 @@ Section WithVar.
 
 End WithVar.
 
-Arguments PreModel (V term sort)%type_scope.
-Arguments Model {V term sort}%type_scope.
-Arguments Model_ok {V term sort}%type_scope Model : rename.
+Arguments PreModel (V term sort)%_type_scope.
+Arguments Model {V term sort}%_type_scope.
+Arguments Model_ok {V term sort}%_type_scope Model : rename.
 
-Arguments ws_ctx {V term sort}%type_scope {PreModel} !c/.
+Arguments ws_ctx {V term sort}%_type_scope {PreModel} !c/.
 
 Create HintDb model discriminated.
 

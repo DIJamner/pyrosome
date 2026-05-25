@@ -545,7 +545,7 @@ Section WithVar.
       Section Memoize.
         Context {A B} {mp : map.map A B} {M} `{Monad M}
           (f : forall {MT} `{MonadTrans MT}, (A -> MT M B) -> A -> MT M B).
-        Arguments f [MT]%function_scope {H0} _%function_scope _.
+        Arguments f [MT]%_function_scope {H0} _%_function_scope _.
 
         Definition memoizeF (rec : A -> stateT mp M B) (a: A) : stateT mp M B :=
           @! let s <- stateT_get in
@@ -678,8 +678,8 @@ Section WithVar.
       in (comp (empty_egraph default _)).
 
     (*TODO: move to Utils Defs.v*)
-    Arguments get_analysis {idx symbol}%type_scope
-  {symbol_map idx_map idx_trie}%function_scope {analysis_result}%type_scope
+    Arguments get_analysis {idx symbol}%_type_scope
+  {symbol_map idx_map idx_trie}%_function_scope {analysis_result}%_type_scope
   {H} x _.
 
     Definition weight_less_than x w : state instance bool :=
@@ -827,18 +827,18 @@ Section WithVar.
       Note: l has to contain the ctx_to_rules of the context
       TODO: currently drops t! decide whether t is useful.
      *)
-    Fixpoint egraph_reducing_equal l schedule inj_list
+    Definition egraph_reducing_equal l schedule inj_list
       rfuel sat_fuel efuel red_fuel (e1 e2 : Term.term V) (*t : Term.sort V*)
       : result unit :=
       egraph_reducing_cong l schedule
         rfuel sat_fuel efuel red_fuel inj_list [(e1,e2)].
 
     (*TODO: move to defining file*)
-    Arguments run1iter {idx}%type_scope {Eqb_idx} idx_succ%function_scope 
-      idx_zero {symbol}%type_scope {symbol_map}%function_scope {symbol_map_plus}
-      {idx_map}%function_scope {idx_map_plus} {idx_trie}%function_scope 
-      {analysis_result}%type_scope {H} spaced_list_intersect%function_scope
-      rebuild_fuel%nat_scope rs _.
+    Arguments run1iter {idx}%_type_scope {Eqb_idx} idx_succ%_function_scope 
+      idx_zero {symbol}%_type_scope {symbol_map}%_function_scope {symbol_map_plus}
+      {idx_map}%_function_scope {idx_map_plus} {idx_trie}%_function_scope 
+      {analysis_result}%_type_scope {H} spaced_list_intersect%_function_scope
+      rebuild_fuel%_nat_scope rs _.
 
     (*
     Fixpoint egraph_simpl_capped'

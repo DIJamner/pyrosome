@@ -57,8 +57,8 @@ Definition typed_bool_def : lang :=
   ]}.
 
 Derive typed_bool
-       SuchThat (elab_lang_ext (exp_subst++value_subst) typed_bool_def typed_bool)
-       As typed_bool_wf.
+       in (elab_lang_ext (exp_subst++value_subst) typed_bool_def typed_bool)
+       as typed_bool_wf.
 Proof. auto_elab. Qed.
 #[local] Definition typed_bool_entry :=
   lang_entry (elab_lang_implies_wf typed_bool_wf).
@@ -77,8 +77,8 @@ Definition untyped_bool_def : lang :=
   ]}.
 
 Derive untyped_bool
-       SuchThat (elab_lang_ext (usubst++exp_subst++value_subst) untyped_bool_def untyped_bool)
-       As untyped_bool_wf.
+       in (elab_lang_ext (usubst++exp_subst++value_subst) untyped_bool_def untyped_bool)
+       as untyped_bool_wf.
 Proof. auto_elab. Qed. 
 #[local] Definition untyped_bool_entry :=
   lang_entry (elab_lang_implies_wf untyped_bool_wf).
@@ -113,8 +113,8 @@ Definition boolhuh_def : lang :=
   ]}.
 
 Derive boolhuh
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
-       As boolhuh_wf.
+       in (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) boolhuh_def boolhuh)
+       as boolhuh_wf.
 Proof. auto_elab. Qed.
 #[local] Definition boolhuh_entry :=
   lang_entry (elab_lang_implies_wf boolhuh_wf).
@@ -149,8 +149,8 @@ Definition utlc_bool_def : lang :=
   ]}.
 
 Derive utlc_bool
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) utlc_bool_def utlc_bool)
-       As utlc_bool_wf.
+       in (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) utlc_bool_def utlc_bool)
+       as utlc_bool_wf.
 Proof. auto_elab. Qed.
 #[local] Definition utlc_bool_entry :=
   lang_entry (elab_lang_implies_wf utlc_bool_wf).
@@ -198,8 +198,8 @@ Definition uif_def : lang :=
   ]}.
 
 Derive uif
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) uif_def uif)
-       As uif_wf. (* leftmost is newest *)
+       in (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) uif_def uif)
+       as uif_wf. (* leftmost is newest *)
 Proof. auto_elab. Qed.
 #[local] Definition uif_entry :=
   lang_entry (elab_lang_implies_wf uif_wf).
@@ -251,8 +251,8 @@ Definition mif_def : lang :=
   ]}.
 
 Derive mif
-       SuchThat (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) mif_def mif)
-       As mif_wf.
+       in (elab_lang_ext (utlc++untyped_bool++usubst++exp_subst++value_subst) mif_def mif)
+       as mif_wf.
 Proof. auto_elab. Qed.
 #[local] Definition mif_entry :=
   lang_entry (elab_lang_implies_wf mif_wf).

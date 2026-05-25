@@ -9,6 +9,8 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core ClosedTerm CutFreeInd.
+(* TODO: theory depending on tools? *)
+From Pyrosome.Tools Require Import AllConstructors.
 
 Module Notations.
   Export ClosedTerm.Notations.
@@ -118,7 +120,7 @@ Section WithVar.
       unfold vtr in *.
       basic_goal_prep.
       rewrite map_map.
-      revert dependent l0;
+      generalize dependent l0;
         induction l0;
         basic_goal_prep;
         basic_term_crush.
@@ -278,9 +280,6 @@ Section WithVar.
       let (n,s) := t in
       scon n (map rtv s).
 
-    (* TODO: theory depending on tools? *)
-    Require Import Tools.AllConstructors.
-    
   Lemma term_rtv_subst e s
     : well_scoped (map fst s) e ->
       all (fun x => fresh x l) (map fst c) ->
@@ -309,7 +308,7 @@ Section WithVar.
       }
       {
         rewrite map_map.
-        revert dependent l0;
+        generalize dependent l0;
           induction l0;
           basic_goal_prep;
           basic_term_crush.

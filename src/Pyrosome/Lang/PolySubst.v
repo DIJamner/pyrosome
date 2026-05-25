@@ -60,8 +60,8 @@ Definition cat_def : lang _ :=
 
 
 Derive cat
-       SuchThat (elab_lang_ext [] cat_def cat)
-       As cat_wf.
+       in (elab_lang_ext [] cat_def cat)
+       as cat_wf.
 Proof. auto_elab. Qed.
 #[local] Definition cat_entry :=
   lang_entry (elab_lang_implies_wf cat_wf).
@@ -80,8 +80,8 @@ Definition obj_consumer_def : lang _ :=
 
 
 Derive obj_consumer
-       SuchThat (elab_lang_ext cat obj_consumer_def obj_consumer)
-       As obj_consumer_wf.
+       in (elab_lang_ext cat obj_consumer_def obj_consumer)
+       as obj_consumer_wf.
 Proof. auto_elab. Qed.
 #[local] Definition obj_consumer_entry :=
   lang_entry (elab_lang_implies_wf obj_consumer_wf).
@@ -109,8 +109,8 @@ Definition unit_action_def : lang _ :=
   ]}.
 
 Derive unit_action
-       SuchThat (elab_lang_ext (obj_consumer++cat) unit_action_def unit_action)
-       As unit_action_wf.
+       in (elab_lang_ext (obj_consumer++cat) unit_action_def unit_action)
+       as unit_action_wf.
 Proof. auto_elab. Qed.
 #[local] Definition unit_action_entry :=
   lang_entry (elab_lang_implies_wf unit_action_wf).
@@ -181,9 +181,9 @@ Definition unit_cartesian_def : lang _ :=
 ]}.
 
 Derive unit_cartesian
-  SuchThat (elab_lang_ext (unit_action++obj_consumer++cat)
+  in (elab_lang_ext (unit_action++obj_consumer++cat)
               unit_cartesian_def unit_cartesian)
-       As unit_cartesian_wf.
+       as unit_cartesian_wf.
 Proof. auto_elab. Qed.
 #[local] Definition unit_cartesian_entry :=
   lang_entry (elab_lang_implies_wf unit_cartesian_wf).
@@ -321,9 +321,9 @@ Definition exp_ret_def : lang _ :=
     ] ]}.
 
 Derive exp_ret
-  SuchThat (elab_lang_ext (exp_subst_base++value_subst)
+  in (elab_lang_ext (exp_subst_base++value_subst)
               exp_ret_def exp_ret)
-       As exp_ret_wf.
+       as exp_ret_wf.
 Proof. auto_elab. Qed.
 #[local] Definition exp_ret_entry := lang_entry (elab_lang_implies_wf exp_ret_wf).
 #[export] Hint Resolve exp_ret_entry : wf_lang_db.
@@ -494,13 +494,13 @@ Definition val_ty_subst_def : lang _ :=
   ]}.
 
 Derive val_ty_subst
-  SuchThat (elab_lang_ext (env_ty_subst
+  in (elab_lang_ext (env_ty_subst
                              ++ty_subst_lang
                              ++val_parameterized
                              ++ty_env_lang)
       val_ty_subst_def
       val_ty_subst)
-       As val_ty_subst_wf.
+       as val_ty_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition val_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf val_ty_subst_wf).
@@ -521,13 +521,13 @@ Definition exp_ty_subst_def : lang _ :=
       ]}.
 
 Derive exp_ty_subst
-  SuchThat (elab_lang_ext (env_ty_subst
+  in (elab_lang_ext (env_ty_subst
                              ++ty_subst_lang
                              ++exp_parameterized++val_parameterized
                              ++ty_env_lang)
       exp_ty_subst_def
       exp_ty_subst)
-       As exp_ty_subst_wf.
+       as exp_ty_subst_wf.
 Proof. auto_elab. Qed.
 #[local] Definition exp_ty_subst_entry :=
   lang_entry (elab_lang_implies_wf exp_ty_subst_wf).
@@ -540,14 +540,14 @@ Definition val_param_substs_def :=
    val_parameterized_def.
              
 Derive val_param_substs
-  SuchThat (elab_lang_ext (val_ty_subst
+  in (elab_lang_ext (val_ty_subst
                              ++env_ty_subst
                              ++ty_subst_lang
                              ++val_parameterized
                              ++ty_env_lang)
               val_param_substs_def
               val_param_substs)
-  As val_param_substs_wf.
+  as val_param_substs_wf.
 Proof. auto_elab. Qed.
 #[local] Definition val_param_substs_entry :=
   lang_entry (elab_lang_implies_wf val_param_substs_wf).
@@ -827,7 +827,7 @@ Definition block_param_substs_def :=
     block_parameterized_def.
              
 Derive block_param_substs
-  SuchThat (elab_lang_ext (val_param_substs
+  in (elab_lang_ext (val_param_substs
                              ++block_ty_subst
                              ++env_ty_subst
                              ++block_parameterized
@@ -836,7 +836,7 @@ Derive block_param_substs
                              ++ty_env_lang)
               block_param_substs_def
               block_param_substs)
-  As block_param_substs_wf.
+  as block_param_substs_wf.
 Proof. auto_elab. Qed.
 #[local] Definition block_param_substs_entry :=
   lang_entry (elab_lang_implies_wf block_param_substs_wf).

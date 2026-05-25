@@ -124,12 +124,12 @@ Section WithVar.
 End WithVar.
 
 
-Arguments rename_term {V}%type_scope {V_Eqb} e _.
-Arguments rename_sort {V}%type_scope {V_Eqb} t _.
-Arguments rename_lang {V}%type_scope {V_Eqb} l _.
-Arguments unrename_term {V}%type_scope {V_default} r e.
+Arguments rename_term {V}%_type_scope {V_Eqb} e _.
+Arguments rename_sort {V}%_type_scope {V_Eqb} t _.
+Arguments rename_lang {V}%_type_scope {V_Eqb} l _.
+Arguments unrename_term {V}%_type_scope {V_default} r e.
 
 
-Arguments v_to_p {V}%type_scope r.
-Arguments p_to_v {V}%type_scope r.
-Arguments to_p {V}%type_scope {V_Eqb} v _.
+Arguments v_to_p {V}%_type_scope r.
+Arguments p_to_v {V}%_type_scope r.
+Arguments to_p {V}%_type_scope {V_Eqb} v _.

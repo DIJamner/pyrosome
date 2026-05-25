@@ -180,8 +180,8 @@ Definition value_subst_def : lang :=
 
 (*TODO: use elab_lang notation?*)
 Derive value_subst
-       SuchThat (elab_lang_ext [] value_subst_def value_subst)
-       As value_subst_wf.
+       in (elab_lang_ext [] value_subst_def value_subst)
+       as value_subst_wf.
 Proof. 
 Abort. (*TODO: REGRESSION! fix when possible. The most obvious fix involves reduction with evars *)
 (*auto_elab. Qed.
@@ -228,8 +228,8 @@ Definition exp_subst_def : lang :=
 
 (*
 Derive exp_subst
-       SuchThat (elab_lang_ext value_subst exp_subst_def exp_subst)
-       As exp_subst_wf.
+       in (elab_lang_ext value_subst exp_subst_def exp_subst)
+       as exp_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve exp_subst_wf : elab_pfs.
 *)
@@ -263,8 +263,8 @@ Definition block_subst_def : lang :=
 
 (*
 Derive block_subst
-       SuchThat (elab_lang_ext value_subst block_subst_def block_subst)
-       As block_subst_wf.
+       in (elab_lang_ext value_subst block_subst_def block_subst)
+       as block_subst_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve block_subst_wf : elab_pfs.
 *)
@@ -322,8 +322,8 @@ Definition tyext_def : lang :=
 
 (*
 Derive tyext
-       SuchThat (elab_lang_ext value_subst tyext_def tyext)
-       As tyext_wf.
+       in (elab_lang_ext value_subst tyext_def tyext)
+       as tyext_wf.
 Proof. auto_elab. Qed.
 #[export] Hint Resolve tyext_wf : elab_pfs.
 *)

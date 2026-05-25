@@ -206,6 +206,7 @@ Goal let x :=
      in False.
 Abort.
            
+#[local] Set Warnings "-notation-incompatible-prefix".
 Notation "( s ) e1 = e2 : t" :=
   (s%string,fun G : prectx string => preterm_eq_rule G e1 e2 t)
     (in custom prerule_body at level 100,
@@ -213,6 +214,7 @@ Notation "( s ) e1 = e2 : t" :=
      t custom presort at level 100,
      e1 custom preterm at level 100, e2 custom preterm at level 100)
   : prerule_scope.
+#[local] Set Warnings "notation-incompatible-prefix".
 
 
 

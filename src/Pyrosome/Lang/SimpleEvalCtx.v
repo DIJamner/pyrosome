@@ -44,8 +44,8 @@ Definition subst_eval_ctx_def : lang :=
   ]]}.
        
 Derive eval_ctx
-       SuchThat (elab_lang_ext (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
-       As eval_ctx_wf.
+       in (elab_lang_ext (exp_subst ++ value_subst) subst_eval_ctx_def eval_ctx)
+       as eval_ctx_wf.
 Proof. auto_elab. Qed.
 #[local] Definition eval_ctx_entry := lang_entry (elab_lang_implies_wf eval_ctx_wf).
 #[export] Hint Resolve eval_ctx_entry : wf_lang_db.
@@ -224,8 +224,8 @@ Definition Estlc_def :=
   eval_ctx_lang Estlc_hints stlc_def.
 
 Derive Estlc
-       SuchThat (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
-       As Estlc_wf.
+       in (elab_lang_ext (eval_ctx ++ stlc ++ exp_subst++ value_subst) Estlc_def Estlc)
+       as Estlc_wf.
 Proof. auto_elab. Qed.
 #[local] Definition Estlc_entry := lang_entry (elab_lang_implies_wf Estlc_wf).
 #[export] Hint Resolve Estlc_entry : wf_lang_db.
@@ -234,8 +234,8 @@ Proof. auto_elab. Qed.
 Definition Esum_def := eval_ctx_lang [("case", "Ecase", ["case_r"; "case_l"; "E"])] sum_def.
 
 Derive Esum
-       SuchThat (elab_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum)
-       As Esum_wf.
+       in (elab_lang_ext (eval_ctx ++ sum ++ exp_subst ++ value_subst) Esum_def Esum)
+       as Esum_wf.
 Proof. auto_elab. Qed.
 #[local] Definition Esum_entry := lang_entry (elab_lang_implies_wf Esum_wf).
 #[export] Hint Resolve Esum_entry : wf_lang_db.
@@ -247,8 +247,8 @@ Definition Eprod_def := eval_ctx_lang [("pair", "Epair_l", ["e2"; "E1"])
                        ; (".2", "E.2", ["E"])] prod_def.
 
 Derive Eprod
-       SuchThat (elab_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod)
-       As Eprod_wf.
+       in (elab_lang_ext (eval_ctx ++ prod ++ exp_subst ++ value_subst) Eprod_def Eprod)
+       as Eprod_wf.
 Proof. auto_elab. Qed.
 #[local] Definition Eprod_entry := lang_entry (elab_lang_implies_wf Eprod_wf).
 #[export] Hint Resolve Eprod_entry : wf_lang_db.

@@ -23,8 +23,8 @@ Definition pi_injectivity :=
   [("app", ["G"]); ("lambda", ["e";"B"; "A"; "G"]); ("Pi", ["B"; "A"; "G"])].
 
 Derive pi
-       SuchThat (wf_lang_ext subst_lang pi)
-       As pi_wf.
+       in (wf_lang_ext subst_lang pi)
+       as pi_wf.
 Proof.
   setup_lang_interactive.
 

@@ -82,10 +82,10 @@ Definition linear_cps_lang :=
 *)
 
 Derive linear_cps_lang
-       SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst)
+       in (elab_lang_ext (linear_block_subst ++ linear_value_subst)
                                linear_cps_lang_def
                                linear_cps_lang)
-       As cps_lang_wf.
+       as cps_lang_wf.
 Proof.
   auto_elab.
 Qed.
@@ -104,14 +104,14 @@ Definition linear_cps_subst_def : compiler :=
   end.
 
 Derive linear_cps_subst
-       SuchThat (elab_preserving_compiler []
+       in (elab_preserving_compiler []
                                           (linear_cps_lang
                                              ++ linear_block_subst
                                              ++ linear_value_subst)
                                           linear_cps_subst_def
                                           linear_cps_subst
                                           (linear_exp_subst ++ linear_value_subst))
-       As linear_cps_subst_preserving.
+       as linear_cps_subst_preserving.
 Proof.
   auto_elab_compiler.
 Qed.
@@ -168,8 +168,8 @@ Definition linear_cps_prod_lang_def : lang :=
   ] ]}.
 
 Derive linear_cps_prod_lang
-       SuchThat (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
-       As linear_cps_prod_wf.
+       in (elab_lang_ext (linear_block_subst ++ linear_value_subst) linear_cps_prod_lang_def linear_cps_prod_lang)
+       as linear_cps_prod_wf.
 Proof. auto_elab. Qed.
 #[local] Definition linear_cps_prod_entry :=
   lang_entry (elab_lang_implies_wf linear_cps_prod_wf).
@@ -241,7 +241,7 @@ Ltac s :=
   end.
 
 Derive linear_cps
-       SuchThat (elab_preserving_compiler linear_cps_subst
+       in (elab_preserving_compiler linear_cps_subst
                                           (linear_cps_prod_lang
                                              ++ linear_cps_lang
                                              ++ linear_block_subst
@@ -249,7 +249,7 @@ Derive linear_cps
                                           linear_cps_def
                                           linear_cps
                                           linear_stlc)
-       As linear_cps_preserving.
+       as linear_cps_preserving.
 Proof.
   setup_elab_compiler.
   { repeat t. }
