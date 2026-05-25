@@ -36,6 +36,15 @@ Lemma Eqb_eqb_extensionally_unique {A} (Heqb1 Heqb2 : Eqb A)
     reflexivity.
   Qed.
 
+Create HintDb term discriminated.
+
+#[export] Hint Rewrite id_args_nil : term.
+
+#[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite subst_id using solve[typeclasses eauto] : term.
+#[global] Hint Rewrite strengthen_subst using solve[typeclasses eauto] : term.
+#[global] Hint Resolve well_scoped_subst : term.
+
 Ltac basic_term_crush :=
   let x := autorewrite with bool rw_prop inversion utils term in * in
         let y := eauto with bool utils term in

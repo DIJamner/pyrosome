@@ -6,8 +6,6 @@ Import ListNotations.
 Open Scope list.
 From Utils Require Import Utils.
 
-Create HintDb term discriminated.
-
 Section WithVar.
   Context (V : Type).
 
@@ -293,13 +291,5 @@ Arguments args_subst [V]%_type_scope {A}%_type_scope {Substable0} s !a%_list_sco
 Arguments ws_args [V]%_type_scope {A}%_type_scope {Substable0} (_ !_)%_list_scope/.
 Arguments subst_id0 [V]%_type_scope {A}%_type_scope {Substable0 Substable0_ok} B%_type_scope _ _ : rename.
 
-
-#[export] Hint Rewrite id_args_nil : term.
-
-
-#[global] Hint Rewrite subst_assoc using solve[typeclasses eauto] : term.
-#[global] Hint Rewrite subst_id using solve[typeclasses eauto] : term.
-#[global] Hint Rewrite strengthen_subst using solve[typeclasses eauto] : term.
-#[global] Hint Resolve well_scoped_subst : term.
 
 Notation "e [/ s /]" := (apply_subst s e) (at level 7, left associativity).
