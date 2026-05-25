@@ -561,6 +561,7 @@ Ltac prove_ident_from_known_elabs :=
   | auto with utils
   | compute_all_fresh].
 
+#[deprecated(note="Use `Tools.Resolution.prove_by_lang_db` instead")]
 Ltac prove_from_known_elabs := fail "Use `Tools.Resolution.prove_by_lang_db` instead".
 
 Ltac term_cong :=
