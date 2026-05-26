@@ -316,11 +316,20 @@ Section WithMap.
       split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
-      + (* eq_clause: use alloc_sound twice + union_sound + IH. *)
-        admit.
-      + (* atom_clause: use alloc_sound (for rename_atom's chain) +
-           update_entry_sound + IH.  Witness for each fresh id comes
-           from a_src via the extended renaming. *)
+      + (* eq_clause: split on whether each var is already in sub0. *)
+        cbn. unfold Mret, lift.
+        destruct (named_list_lookup_err sub0 x) eqn:Hx;
+        destruct (named_list_lookup_err sub0 y) eqn:Hy.
+        * (* both x, y already in sub0; no alloc, only union_sound + IH *)
+          admit.
+        * (* x in sub0, y fresh: alloc_sound on y, then union_sound + IH *)
+          admit.
+        * (* x fresh, y in sub0: alloc_sound on x, then union_sound + IH *)
+          admit.
+        * (* both fresh: alloc_sound twice, then union_sound + IH *)
+          admit.
+      + (* atom_clause: rename_atom (chain of rename_lookups via
+           alloc_sound) + update_entry_sound + IH. *)
         admit.
   Admitted.
 
