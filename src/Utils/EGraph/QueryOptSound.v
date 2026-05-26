@@ -246,16 +246,35 @@ Section WithMap.
      full L11 also extends the interpretation and tracks the renaming;
      this signature is the structural skeleton — the inductive cases
      are filled by alloc_sound, union_sound, update_entry_sound. *)
+  (* Full L11 hypotheses, matching the existing soundness lemmas in
+     Semantics.v (alloc_sound, update_entry_sound, union_sound):
+
+     - Asymmetric/transitive/successor-respecting lt, model_ok m;
+     - Initial egraph_ok + egraph_sound_for_interpretation;
+     - A source assignment [a_src] under which the clauses are sound;
+     - The renaming [sub0] is consistent: where [sub0] maps source
+       var [x] to e-graph id [y], [i y] (the e-graph interpretation
+       at [y]) equals [a_src x] (the source value).
+
+     Conclusion: extend [i] to an [i'] so the post-clauses_to_instance
+     e-graph is still sound, with the renaming [sub1] extending [sub0]
+     and the consistency continuing to hold. *)
   Lemma clauses_to_instance_preserves_ok
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
     (Hltt : Transitive lt) (m : model symbol) (Hm : model_ok symbol m)
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
     (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-    (i : idx_map (m.(domain symbol))) :
+    (i : idx_map (m.(domain symbol)))
+    (a_src : idx_map (m.(domain symbol))) :
     Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e0 ->
     Semantics.egraph_sound_for_interpretation
       idx symbol symbol_map idx_map idx_trie unit m i e0 ->
+    (* Renaming consistency at the start. *)
+    (forall x y, In (x, y) sub0 ->
+                 forall d, map.get a_src x = Some d -> map.get i y = Some d) ->
+    (* The source clauses are sound under a_src. *)
+    all (Semantics.clause_sound_for_model idx symbol idx_map m a_src) cs ->
     match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
     | (_, e1) =>
         Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1 /\
@@ -266,14 +285,16 @@ Section WithMap.
     end.
   Proof.
     revert sub0 e0 i.
-    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd.
+    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hcs.
     - cbn. split; [exact Hok|]. exists i.
       split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
-      + (* eq_clause: rename_lookup x, rename_lookup y, union x' y'. *)
+      + (* eq_clause: use alloc_sound twice + union_sound + IH. *)
         admit.
-      + (* atom_clause: rename_atom, then update_entry. *)
+      + (* atom_clause: use alloc_sound (for rename_atom's chain) +
+           update_entry_sound + IH.  Witness for each fresh id comes
+           from a_src via the extended renaming. *)
         admit.
   Admitted.
 
