@@ -316,20 +316,33 @@ Section WithMap.
       split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
-      + (* eq_clause: split on whether each var is already in sub0. *)
+      + (* eq_clause: split on whether each var is already in sub0.
+
+           Discovered during this session: union_sound (Semantics.v:2030)
+           only delivers union_find_ok for the new UF, NOT full egraph_ok.
+           Closing each sub-case below additionally requires proving that
+           [union x y] preserves the OTHER egraph_ok conjuncts:
+             - worklist_ok (the new worklist entry must be worklist_entry_ok)
+             - parents_ok (atom_in_egraph_up_to_equiv is monotone in equiv)
+             - db_idxs_in_equiv (db unchanged, keys-of-equiv only grows)
+           These three are not in Semantics.v; they need to be proved as
+           Layer A primitives before L11's eq_clause case can close. *)
         cbn. unfold Mret, lift.
         destruct (named_list_lookup_err sub0 x) eqn:Hx;
         destruct (named_list_lookup_err sub0 y) eqn:Hy.
-        * (* both x, y already in sub0; no alloc, only union_sound + IH *)
+        * (* both x, y already in sub0; needs union_preserves_egraph_ok +
+             union_preserves_egraph_sound_for_interpretation + IH *)
           admit.
-        * (* x in sub0, y fresh: alloc_sound on y, then union_sound + IH *)
+        * (* x in sub0, y fresh: alloc_sound + union_preserves_* + IH *)
           admit.
-        * (* x fresh, y in sub0: alloc_sound on x, then union_sound + IH *)
+        * (* x fresh, y in sub0: alloc_sound + union_preserves_* + IH *)
           admit.
-        * (* both fresh: alloc_sound twice, then union_sound + IH *)
+        * (* both fresh: alloc_sound × 2 + union_preserves_* + IH *)
           admit.
       + (* atom_clause: rename_atom (chain of rename_lookups via
-           alloc_sound) + update_entry_sound + IH. *)
+           alloc_sound, requires list-induction over rename_lookup_preserves)
+           + update_entry_sound + IH.  update_entry_sound exists; chain
+           requires alloc_sound to thread through list_Mmap. *)
         admit.
   Admitted.
 
