@@ -419,33 +419,208 @@ Section WithMap.
   Proof.*)
       Abort.
   
+  Lemma insert_nth_at n val acc acc'
+    : @insert idx Eqb_idx acc n val = Some acc'
+      -> nth_error acc' n = Some (Some val).
+  Proof.
+    revert val acc acc'.
+    induction n; intros val acc acc' H.
+    - destruct acc; cbn [insert nth_error] in *.
+      + injection H; intro; subst; reflexivity.
+      + destruct o; [ | injection H; intro; subst; reflexivity].
+        destruct (eqb val i) eqn:Heqb; [ | discriminate].
+        pose proof (Eqb_idx_ok val i) as Hbs.
+        rewrite Heqb in Hbs.
+        injection H; intro; subst; congruence.
+    - destruct acc; cbn [insert nth_error] in *.
+      + destruct (insert idx Eqb_idx [] n val) eqn:Hi.
+        * cbn [option_map] in H. injection H; intro; subst.
+          apply IHn in Hi. exact Hi.
+        * cbn [option_map] in H. discriminate.
+      + destruct (insert idx Eqb_idx acc n val) eqn:Hi.
+        * cbn [option_map] in H. injection H; intro; subst.
+          apply IHn in Hi. exact Hi.
+        * cbn [option_map] in H. discriminate.
+  Qed.
+
+  Lemma insert_preserves_some n x acc m y acc'
+    : nth_error acc n = Some (Some x) ->
+      @insert idx Eqb_idx acc m y = Some acc' ->
+      nth_error acc' n = Some (Some x).
+  Proof.
+    revert n acc acc'.
+    induction m; intros n acc acc' Hn Hi.
+    - destruct acc; cbn [insert] in Hi.
+      + destruct n; cbn [nth_error] in Hn; discriminate.
+      + destruct o.
+        * destruct (eqb y i) eqn:Heqb; [ | discriminate].
+          injection Hi; intro; subst. exact Hn.
+        * injection Hi; intro; subst.
+          destruct n; cbn [nth_error] in Hn.
+          -- discriminate.
+          -- exact Hn.
+    - destruct acc; cbn [insert] in Hi.
+      + destruct n; cbn [nth_error] in Hn; discriminate.
+      + destruct (insert idx Eqb_idx acc m y) eqn:Hin.
+        * cbn [option_map] in Hi. injection Hi; intro; subst.
+          destruct n; cbn [nth_error] in *.
+          -- exact Hn.
+          -- apply (IHm n acc l Hn Hin).
+        * cbn [option_map] in Hi. discriminate.
+  Qed.
+
+  Lemma match_clause'_preserves_some cargs cv args v acc pa n x
+    : match_clause' cargs cv args v acc = Some pa ->
+      nth_error acc n = Some (Some x) ->
+      nth_error pa n = Some (Some x).
+  Proof.
+    revert args acc pa.
+    induction cargs; intros args acc pa Hmc Hn.
+    - destruct args; cbn [match_clause'] in Hmc.
+      + apply (insert_preserves_some n x acc cv v pa Hn Hmc).
+      + discriminate.
+    - destruct args as [ | w args']; cbn [match_clause'] in Hmc.
+      + discriminate.
+      + destruct (insert idx Eqb_idx acc a w) eqn:Hins; [ | discriminate].
+        apply (IHcargs args' l pa Hmc).
+        apply (insert_preserves_some n x acc a w l Hn Hins).
+  Qed.
+
+  Lemma match_clause'_same_length cargs cv args v acc pa
+    : match_clause' cargs cv args v acc = Some pa ->
+      length cargs = length args.
+  Proof.
+    revert args acc pa.
+    induction cargs; intros args acc pa Hmc.
+    - destruct args; cbn [match_clause'] in Hmc.
+      + reflexivity.
+      + discriminate.
+    - destruct args as [ | w args']; cbn [match_clause'] in Hmc.
+      + discriminate.
+      + destruct (insert idx Eqb_idx acc a w) eqn:Hins; [ | discriminate].
+        cbn [length]. f_equal. apply (IHcargs args' l pa Hmc).
+  Qed.
+
+  Lemma match_clause'_nth_error cargs cv args v acc pa
+    : length cargs = length args ->
+      match_clause' cargs cv args v acc = Some pa ->
+      nth_error pa cv = Some (Some v) /\
+      forall i n w, nth_error cargs i = Some n -> nth_error args i = Some w ->
+                    nth_error pa n = Some (Some w).
+  Proof.
+    revert args acc pa.
+    induction cargs; intros args acc pa Hlen Hmc.
+    - destruct args; cbn [length] in Hlen; [ | Lia.lia].
+      cbn [match_clause'] in Hmc.
+      split.
+      + apply insert_nth_at in Hmc. exact Hmc.
+      + intros. destruct i; cbn [nth_error] in *; discriminate.
+    - destruct args as [ | w args']; cbn [length] in Hlen; [ Lia.lia | ].
+      injection Hlen; intro Hlen'.
+      cbn [match_clause'] in Hmc.
+      destruct (insert idx Eqb_idx acc a w) eqn:Hins; [ | discriminate].
+      destruct (IHcargs args' l pa Hlen' Hmc) as [IH1 IH2].
+      split.
+      + exact IH1.
+      + intros i n' wi Hn Hwi.
+        destruct i; cbn [nth_error] in Hn, Hwi.
+        * injection Hn; injection Hwi; intros; subst.
+          apply match_clause'_preserves_some with (acc := l) (1 := Hmc).
+          apply insert_nth_at in Hins. exact Hins.
+        * exact (IH2 i n' wi Hn Hwi).
+  Qed.
+
+  Lemma nth_error_option_all_rev {A} (l1 : list (option A)) (l2 : list A) i x
+    : option_all l1 = Some l2 ->
+      nth_error l1 i = Some (Some x) ->
+      nth_error l2 i = Some x.
+  Proof.
+    revert i. revert l2.
+    induction l1; intros l2 i Hoa He.
+    - destruct i; cbn [nth_error] in He; discriminate.
+    - cbn [option_all] in Hoa.
+      destruct a as [ a' | ]; [ | discriminate].
+      destruct (option_all l1) as [ rest | ] eqn:Hoa'; [ | discriminate].
+      injection Hoa; intro; subst.
+      destruct i; cbn [nth_error] in *.
+      + injection He; intro; subst. reflexivity.
+      + exact (IHl1 rest i (eq_refl) He).
+  Qed.
+
+  Lemma named_list_lookup_combine_seq_nth_error
+    {A : Type} (default : A) (start len : nat) (l : list A) (n : nat)
+    : n < len ->
+      length l = len ->
+      named_list_lookup default (combine (seq start len) l) (start + n) =
+      match nth_error l n with
+      | Some v => v
+      | None => default
+      end.
+  Proof.
+    revert start n l.
+    induction len; intros start n l Hlt Hlen.
+    - Lia.lia.
+    - destruct l as [ | a l']; cbn [length] in Hlen; [ Lia.lia | ].
+      injection Hlen; intro Hlen'.
+      destruct n as [ | n']; cbn [seq combine named_list_lookup nth_error].
+      + rewrite PeanoNat.Nat.add_0_r.
+        rewrite eqb_refl_true; [ | exact nat_eqb_ok]. reflexivity.
+      + pose proof (nat_eqb_ok (start + S n') start) as Hbs.
+        destruct (eqb (start + S n') start) eqn:Heqb.
+        * Lia.lia.
+        * replace (start + S n') with (S start + n') by Lia.lia.
+          apply IHlen; [ Lia.lia | exact Hlen'].
+  Qed.
+
+  Lemma named_list_lookup_assign_sub default n assignment
+    : n < length assignment ->
+      named_list_lookup default (assign_sub assignment) n =
+      match nth_error assignment n with
+      | Some v => v
+      | None => default
+      end.
+  Proof.
+    unfold assign_sub. intro Hlt.
+    rewrite <- (PeanoNat.Nat.add_0_l n).
+    apply named_list_lookup_combine_seq_nth_error; [ exact Hlt | reflexivity].
+  Qed.
+
   Lemma match_clause_correct default cargs cv args v assignment
     : let sub := assign_sub assignment in
       match_clause (cargs, cv) args v = Some assignment
       -> map (fun x => named_list_lookup default sub x) (cv::cargs)
          = v::args.
   Proof.
-    cbn -[map].
-    case_match; cbn -[map]; try congruence.
-    remember [] as acc.
-    
-    generalize dependent l.
-    revert args.
-    (*
-    symmetry in HeqH.
-    eapply match_clause'_correct in HeqH.
-    rewrite <- HeqH.
-    intros.
-    autorewrite with utils in *.
-    subst.
-    eapply map_ext.
-    clear HeqH.
-    intros.
-    (*TODO: need assumption that r is dense
-    cbn.
-     *)
-     *)
-Abort.
+    cbn [match_clause]. unfold Mbind.
+    destruct (match_clause' cargs cv args v []) as [ pa | ] eqn:Hmc; [ | discriminate].
+    intro Hoa.
+    pose proof (match_clause'_same_length cargs cv args v [] pa Hmc) as Hlen.
+    pose proof (match_clause'_nth_error cargs cv args v [] pa Hlen Hmc) as [Hcv Hca].
+    cbn [map]. f_equal.
+    - pose proof (nth_error_option_all_rev _ _ _ _ Hoa Hcv) as Hcv2.
+      pose proof (nth_error_Some_bound_index _ _ _ Hcv2) as Hlt.
+      rewrite named_list_lookup_assign_sub; [ | exact Hlt].
+      rewrite Hcv2. reflexivity.
+    - apply nth_error_ext_samelength; [ rewrite length_map; exact Hlen | ].
+      intros i Hi.
+      rewrite nth_error_map.
+      destruct (nth_error cargs i) as [ n | ] eqn:Hn.
+      + cbn [option_map].
+        destruct (nth_error args i) as [ w | ] eqn:Hw.
+        * pose proof (Hca i n w Hn Hw) as Hpa.
+          pose proof (nth_error_option_all_rev _ _ _ _ Hoa Hpa) as Hw2.
+          pose proof (nth_error_Some_bound_index _ _ _ Hw2) as Hlt.
+          rewrite named_list_lookup_assign_sub; [ | exact Hlt].
+          rewrite Hw2. reflexivity.
+        * exfalso.
+          rewrite nth_error_None in Hw. rewrite <- Hlen in Hw.
+          apply PeanoNat.Nat.le_ngt in Hw. apply Hw.
+          rewrite length_map in Hi. exact Hi.
+      + exfalso.
+        rewrite nth_error_None in Hn.
+        apply PeanoNat.Nat.le_ngt in Hn. apply Hn.
+        rewrite length_map in Hi. exact Hi.
+  Qed.
 
 
   
