@@ -26,6 +26,40 @@ From Stdlib Require derive.Derive.
 Import Core.Notations.
 Import PreRule.Notations.
 
+(* Structural wf prover: decompose wf goals to leaves WITHOUT the e-graph
+   solve_wf_ctx (which does not terminate on the deep ty_subst/El sorts).
+   wf_term_by' lets a con-term be typed at a convertible type; by_reduction
+   discharges the conversion (eq_sort/eq_term) via reduction proofs. *)
+Ltac wfstep :=
+  match goal with
+  | |- fresh _ _ => solve_fresh
+  | |- sublist _ _ => solve_sublist
+  | |- In _ _ => solve_in
+  | |- len_eq _ _ => econstructor
+  | |- wf_ctx (Model := _) _ => apply wf_ctx_nil || apply wf_ctx_cons
+  | |- Model.wf_ctx _ => apply wf_ctx_nil || apply wf_ctx_cons
+  | |- Model.wf_sort _ _ => eapply wf_sort_by
+  | |- wf_sort _ _ _ => eapply wf_sort_by
+  | |- Model.wf_args _ _ _ =>
+        simple apply wf_args_nil || simple eapply wf_args_cons2 || simple eapply wf_args_cons
+  | |- wf_args _ _ _ _ =>
+        simple apply wf_args_nil || simple eapply wf_args_cons2 || simple eapply wf_args_cons
+  | |- Model.wf_term _ (var _) _ =>
+        eapply wf_term_var || (eapply wf_term_conv; [ eapply wf_term_var |])
+  | |- wf_term _ _ (var _) _ =>
+        eapply wf_term_var || (eapply wf_term_conv; [ eapply wf_term_var |])
+  | |- Model.wf_term _ _ _ => eapply wf_term_by'
+  | |- wf_term _ _ _ _ => eapply wf_term_by'
+  | |- _ = _ \/ _ => first [ left; reflexivity | left; vm_compute; reflexivity | right ]
+  | |- Model.eq_sort _ _ _ => first [ sort_cong | by_reduction ]
+  | |- eq_sort _ _ _ _ => first [ sort_cong | by_reduction ]
+  | |- Model.eq_term _ _ _ _ => by_reduction
+  | |- eq_term _ _ _ _ _ => by_reduction
+  | |- eq_args _ _ _ _ =>
+        apply eq_args_nil || simple eapply eq_args_cons2 || simple eapply eq_args_cons
+  | |- _ = _ => vm_compute; reflexivity
+  end.
+
 (* ====================================================================== *)
 (* Identity types (Agda Typed.agda:101-108, 109-116).                     *)
 (*   Id A t u : SProp   (A a proof-relevant code in U_{!,l}; t,u : El A)  *)
@@ -104,17 +138,20 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* NOTE: transp (Typed.agda:109-116) deferred — needs MANUAL CONVERSION.
-     push_rule_no_compute (gets past infer_rule) + compute_noconv_wf_rule_sound
-     (syntactic vm_compute wf check, no e-graph) was tried: it returns None, i.e.
-     transp's wf genuinely needs conversion.  Pinpointed: the single substitution
-     #"snoc" #"id" "t" (and ...u) requires the value's expected type
-     ty_subst id (El A) to equal El A, which holds only by the ty_subst_id rule.
-     The syntactic check can't do that; the e-graph can but solve_wf_ctx does not
-     terminate on these sorts.  Path: prove the wf_rule via manual Matches.v
-     tactics with an explicit wf_term_conv / ty_subst_id step at the snoc-id
-     points (rest via the noconv/structural checks).  transp's computation is in
-     any case subsumed by proof irrelevance. *)
+  (* transp (Typed.agda:109-116): DEFERRED ON THIS MACHINE (out of memory).
+     The structural proof IS correct and complete:
+       push_rule_no_compute [:| <transp, fully explicit> ]%rule.
+       1:{ apply wf_lang_nil. }
+       apply wf_term_rule.
+       all: repeat wfstep.            (* wfstep, defined above, fully decomposes *)
+       Unshelve.
+       all: try (vm_compute; reflexivity). all: try (repeat wfstep). all: shelve.
+     wfstep leaves 0 remaining goals (verified), discharging the snoc-id
+     ty_subst_id conversion via by_reduction.  But the vm_compute/by_reduction
+     steps allocate >7GB and the rocqworker is OOM-killed on this 8GB swapless
+     box (confirmed in dmesg: "Out of memory: Killed process ... rocqworker
+     total-vm:7304860kB").  Needs more RAM / swap (run elsewhere) to land.
+     transp's computation is in any case subsumed by proof irrelevance. *)
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
