@@ -216,6 +216,85 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* Good sequents                                                    *)
+  (* ============================================================== *)
+
+  (* A syntactic condition ruling out sequents the optimiser cannot
+     soundly transform.  Process clauses left-to-right, growing a set
+     of "seen" vars.  An [atom_clause] is always good.  An
+     [eq_clause x y] is good only if at least one of [x], [y] appears
+     in a previously-seen good clause.
+
+     The condition ensures every variable in the sequent is "anchored"
+     (transitively) to some atom — so the optimiser's [live_eqn] filter
+     never drops a semantically-required constraint. *)
+  Fixpoint clauses_good (seen : list idx) (cs : list clause) : Prop :=
+    match cs with
+    | [] => True
+    | atom_clause a :: rest =>
+        clauses_good (clause_vars idx symbol (atom_clause a) ++ seen) rest
+    | eq_clause x y :: rest =>
+        (In x seen \/ In y seen)
+        /\ clauses_good (clause_vars idx symbol (eq_clause x y) ++ seen) rest
+    end.
+
+  Definition good_sequent (s : sequent) : Prop :=
+    clauses_good [] (s.(seq_assumptions) ++ s.(seq_conclusions)).
+
+  (* ============================================================== *)
+  (* Helper: building a "read-back" sequent                           *)
+  (* ============================================================== *)
+
+  (* A sequent built from a list of assumption atoms (with no eqs),
+     a list of conclusion eqs, and a list of conclusion atoms.  This
+     mirrors the exact shape that QueryOpt.sequent_of_states produces. *)
+  Definition mk_seq (atoms_assum : list atom) (eqs : list (idx * idx))
+             (atoms_concl : list atom) : sequent :=
+    Build_sequent _ _
+      (map atom_clause atoms_assum)
+      (map (uncurry eq_clause) eqs ++ map atom_clause atoms_concl).
+
+  (* The predicate live_eqn used by QueryOpt for the dead-equation
+     filter (QueryOpt.v:394-401). *)
+  Definition in_atoms (atoms : list atom) (x : idx) : bool :=
+    existsb (fun a => orb (eqb a.(atom_ret) x) (inb x a.(atom_args))) atoms.
+
+  Definition live_eqn (atoms : list atom) (p : idx * idx) : bool :=
+    let '(x, y) := p in
+    andb (andb (negb (eqb x y)) (in_atoms atoms x)) (in_atoms atoms y).
+
+  (* ============================================================== *)
+  (* Arrow G (forward): filtering dead equations is a subset, which  *)
+  (* is sound by clause-monotonicity.                                 *)
+  (* ============================================================== *)
+
+  Lemma filter_live_eqn_forward
+        (atoms_assum atoms_concl : list atom) (eqs : list (idx * idx))
+        (m : model symbol) :
+    let atoms := atoms_assum ++ atoms_concl in
+    model_satisfies_rule m (mk_seq atoms_assum eqs atoms_concl) ->
+    model_satisfies_rule m
+      (mk_seq atoms_assum (filter (live_eqn atoms) eqs) atoms_concl).
+  Proof.
+    intros atoms Hfull a Hkeys Hass.
+    (* Same forall_vars and same assumptions: just apply the hyp. *)
+    specialize (Hfull a Hkeys Hass).
+    destruct Hfull as [a' [Hext Hconc] ].
+    exists a'; split; auto.
+    (* The conclusion of [mk_seq atoms_assum (filter ...) atoms_concl] is a
+       subset of [mk_seq atoms_assum eqs atoms_concl]. *)
+    cbn [mk_seq seq_conclusions] in *.
+    apply all_app; apply all_app in Hconc.
+    destruct Hconc as [Heqs Hatoms]; split; trivial.
+    (* The filtered eqs are a sublist of the original eqs. *)
+    clear - Heqs.
+    induction eqs as [|p eqs IH]; cbn in *; trivial.
+    destruct (live_eqn atoms p); cbn in *.
+    - destruct Heqs as [Hp Heqs]; split; auto.
+    - destruct Heqs as [_ Heqs]; auto.
+  Qed.
+
+  (* ============================================================== *)
   (* Main theorem                                                     *)
   (* ============================================================== *)
 
@@ -237,6 +316,7 @@ Section WithMap.
      instances for [sequent_equiv]) gives the foundation; the per-arrow
      lemmas remain to be proved. *)
   Theorem optimize_sequent_equiv (s : sequent) :
+    good_sequent s ->
     sequent_equiv (optimize_sequent s) s.
   Proof.
   Admitted.
