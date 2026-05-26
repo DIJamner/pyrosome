@@ -44,12 +44,19 @@ Ltac wfstep :=
         simple apply wf_args_nil || simple eapply wf_args_cons2 || simple eapply wf_args_cons
   | |- wf_args _ _ _ _ =>
         simple apply wf_args_nil || simple eapply wf_args_cons2 || simple eapply wf_args_cons
-  | |- Model.wf_term _ (var _) _ =>
-        eapply wf_term_var || (eapply wf_term_conv; [ eapply wf_term_var |])
-  | |- wf_term _ _ (var _) _ =>
-        eapply wf_term_var || (eapply wf_term_conv; [ eapply wf_term_var |])
-  | |- Model.wf_term _ _ _ => eapply wf_term_by'
-  | |- wf_term _ _ _ _ => eapply wf_term_by'
+  (* Try the COMPACT noconv check first (one soundness-lemma proof, no deep
+     decomposition -> far less memory); fall back to decomposition only when the
+     subterm/ctx genuinely needs conversion. *)
+  | |- Model.wf_term _ _ _ =>
+        first [ solve [compute_noconv_term_wf]
+              | eapply wf_term_var
+              | eapply wf_term_by'
+              | eapply wf_term_conv; [ eapply wf_term_var |] ]
+  | |- wf_term _ _ _ _ =>
+        first [ solve [compute_noconv_term_wf]
+              | eapply wf_term_var
+              | eapply wf_term_by'
+              | eapply wf_term_conv; [ eapply wf_term_var |] ]
   | |- _ = _ \/ _ => first [ left; reflexivity | left; vm_compute; reflexivity | right ]
   | |- Model.eq_sort _ _ _ => first [ sort_cong | by_reduction ]
   | |- eq_sort _ _ _ _ => first [ sort_cong | by_reduction ]
@@ -138,20 +145,19 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* transp (Typed.agda:109-116): DEFERRED ON THIS MACHINE (out of memory).
-     The structural proof IS correct and complete:
+  (* transp (Typed.agda:109-116): DEFERRED — correct proof, but OOMs here.
+     The structural prover (wfstep, above) fully proves transp's wf_rule:
        push_rule_no_compute [:| <transp, fully explicit> ]%rule.
-       1:{ apply wf_lang_nil. }
-       apply wf_term_rule.
-       all: repeat wfstep.            (* wfstep, defined above, fully decomposes *)
-       Unshelve.
-       all: try (vm_compute; reflexivity). all: try (repeat wfstep). all: shelve.
-     wfstep leaves 0 remaining goals (verified), discharging the snoc-id
-     ty_subst_id conversion via by_reduction.  But the vm_compute/by_reduction
-     steps allocate >7GB and the rocqworker is OOM-killed on this 8GB swapless
-     box (confirmed in dmesg: "Out of memory: Killed process ... rocqworker
-     total-vm:7304860kB").  Needs more RAM / swap (run elsewhere) to land.
-     transp's computation is in any case subsumed by proof irrelevance. *)
+       1:{ apply wf_lang_nil. }  apply wf_term_rule.  all: repeat wfstep.
+       Unshelve. all: try (vm_compute;reflexivity). all: try (repeat wfstep). all: shelve.
+     wfstep decomposes to leaves with NO solve_wf_ctx: tries the compact noconv
+     check (compute_noconv_term_wf) first, falls back to wf_sort_by/wf_args_cons2/
+     wf_term_by'/wf_term_conv, and discharges the snoc-id ty_subst_id conversion
+     via by_reduction (0 remaining goals — verified).  Memory: even with
+     noconv-first the proof peaks at 6.93GB RSS (rocqworker OOM-killed; box has
+     7.6GB total / ~6.9GB available, no swap; adding swap was permission-denied).
+     So it is ~0.2GB over on THIS machine — lands with a little more RAM/swap.
+     Its computation is in any case subsumed by proof irrelevance. *)
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
