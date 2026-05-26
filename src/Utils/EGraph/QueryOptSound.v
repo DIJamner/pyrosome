@@ -247,26 +247,33 @@ Section WithMap.
      this signature is the structural skeleton — the inductive cases
      are filled by alloc_sound, union_sound, update_entry_sound. *)
   Lemma clauses_to_instance_preserves_ok
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt) (m : model symbol) (Hm : model_ok symbol m)
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (i : idx_map (m.(domain symbol))) :
     Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e0 ->
+    Semantics.egraph_sound_for_interpretation
+      idx symbol symbol_map idx_map idx_trie unit m i e0 ->
     match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
     | (_, e1) =>
-        Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1
+        Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1 /\
+        exists i',
+          map.extends i' i /\
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i' e1
     end.
   Proof.
-    revert sub0 e0.
-    induction cs as [|c cs IH]; intros sub0 e0 Hok.
-    - cbn. exact Hok.
+    revert sub0 e0 i.
+    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd.
+    - cbn. split; [exact Hok|]. exists i.
+      split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
-      + (* eq_clause: rename_lookup x, rename_lookup y, union x' y'.
-           Each preserves egraph_ok via alloc_sound + union_sound. *)
+      + (* eq_clause: rename_lookup x, rename_lookup y, union x' y'. *)
         admit.
-      + (* atom_clause: rename_atom, then update_entry.
-           rename_atom is a chain of rename_lookups; update_entry
-           preserves egraph_ok via update_entry_sound. *)
+      + (* atom_clause: rename_atom, then update_entry. *)
         admit.
   Admitted.
 
