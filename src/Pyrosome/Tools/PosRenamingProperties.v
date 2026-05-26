@@ -1916,9 +1916,235 @@ Section WithVar.
       auto.
   Qed.
 
+  (* ============================================================== *)
+  (* Reverse-direction preservation theorems (positive -> V).        *)
+  (*                                                                 *)
+  (* Forward theorems lift a V-world judgment to its positive-world  *)
+  (* image under [rename_lang]/[rename_term]/...  Reverse theorems   *)
+  (* go in the opposite direction: given a positive-world judgment   *)
+  (* about [lp/cp/tsp/...] with everything bounded by [r], recover   *)
+  (* the [unrename_*]-applied V-world judgment.  Used by             *)
+  (* [egraph_sound] to lift the equality the egraph proves (in the   *)
+  (* positive world) back to the user-visible string-world equality. *)
+  (* ============================================================== *)
+
+  (* Init state actually used by [egraph_reducing_equal']            *)
+  (* (Defs.v:1026): empty maps, [next_id := 2] (position 1 reserved  *)
+  (* for [sort_of]).                                                  *)
+  Definition init_renaming : renaming :=
+    MkRenaming map.empty [] 2.
+
+  Lemma init_renaming_ok : renaming_ok init_renaming.
+  Proof.
+    constructor; cbn.
+    - exact I.
+    - intros ? ? [].
+    - intros v p Hget; cbn in Hget; congruence.
+    - intros ? ? [].
+    - intros v1 v2 [] _ _.
+  Qed.
+
+  (* [of_p r] is injective on the set of positives bound by [r]. *)
+  Lemma of_p_inj_on_pbound r :
+    renaming_ok r ->
+    Renaming.Injective_on (pbound r) (of_p r).
+  Proof.
+    intros Hr p1 p2 [v1 Hg1] [v2 Hg2] Heq.
+    rewrite (of_p_lookup Hg1) in Heq.
+    rewrite (of_p_lookup Hg2) in Heq.
+    subst v2.
+    apply (ren_p_to_v_in_v_to_p Hr) in Hg1.
+    apply (ren_p_to_v_in_v_to_p Hr) in Hg2.
+    eapply in_all_fresh_same;
+      [apply (ren_all_fresh Hr) | exact Hg1 | exact Hg2].
+  Qed.
+
+  (* Bridge: stateful [unrename_*] equals [Theory.Renaming.rename_*]
+     applied to the inverse function [of_p r].  Both sides traverse
+     identical syntax; equality holds definitionally up to fixpoint
+     unfolding. *)
+
+  Lemma unrename_term_via_of_p r (e : pterm) :
+    unrename_term r e = Renaming.rename (of_p r) e.
+  Proof.
+    induction e using term_ind; reflexivity.
+  Qed.
+
+  Lemma unrename_sort_via_of_p r (ts : psort) :
+    unrename_sort r ts = Renaming.rename_sort (of_p r) ts.
+  Proof. destruct ts; reflexivity. Qed.
+
+  Lemma unrename_ctx_via_of_p r (c : pctx) :
+    unrename_ctx r c = Renaming.rename_ctx (of_p r) c.
+  Proof. reflexivity. Qed.
+
+  Lemma unrename_rule_via_of_p r (rr : prule) :
+    unrename_rule r rr = Renaming.rename_rule (of_p r) rr.
+  Proof. destruct rr; reflexivity. Qed.
+
+  Lemma unrename_lang_via_of_p r (lp : plang) :
+    unrename_lang r lp = Renaming.rename_lang (of_p r) lp.
+  Proof. reflexivity. Qed.
+
+  (* Bridge: [*_bound r] equals [Renaming.*_in_S (pbound r) _].      *)
+  (* The two predicates are defined as separate fixpoints/cases but   *)
+  (* unfold to identical bodies.                                      *)
+
+  Lemma term_bound_iff_in_S r (e : pterm) :
+    term_bound r e <-> Renaming.term_in_S (pbound r) e.
+  Proof.
+    induction e using term_ind; cbn; [reflexivity|].
+    apply Morphisms_Prop.and_iff_morphism; [reflexivity|].
+    revert H; induction l as [|a l IH]; cbn; [reflexivity|].
+    intros [Ha Hrest].
+    apply Morphisms_Prop.and_iff_morphism; [exact Ha | apply IH; exact Hrest].
+  Qed.
+
+  Lemma sort_bound_iff_in_S r (ts : psort) :
+    sort_bound r ts <-> Renaming.sort_in_S (pbound r) ts.
+  Proof.
+    destruct ts as [n s]; cbn.
+    apply Morphisms_Prop.and_iff_morphism; [reflexivity|].
+    induction s as [|a s IH]; cbn; [reflexivity|].
+    apply Morphisms_Prop.and_iff_morphism; [apply term_bound_iff_in_S | exact IH].
+  Qed.
+
+  Lemma ctx_bound_iff_in_S r (c : pctx) :
+    ctx_bound r c <-> Renaming.ctx_in_S (pbound r) c.
+  Proof.
+    induction c as [|[n t] c IH]; cbn; [reflexivity|].
+    apply Morphisms_Prop.and_iff_morphism;
+      [apply Morphisms_Prop.and_iff_morphism;
+         [reflexivity | apply sort_bound_iff_in_S]
+      | exact IH].
+  Qed.
+
+  Lemma rule_bound_iff_in_S r (rr : prule) :
+    rule_bound r rr <-> Renaming.rule_in_S (pbound r) rr.
+  Proof.
+    destruct rr; cbn;
+      repeat (apply Morphisms_Prop.and_iff_morphism);
+      try apply ctx_bound_iff_in_S;
+      try apply sort_bound_iff_in_S;
+      try apply term_bound_iff_in_S;
+      try reflexivity.
+  Qed.
+
+  Lemma lang_bound_iff_in_S r (lp : plang) :
+    lang_bound r lp <-> Renaming.lang_in_S (pbound r) lp.
+  Proof.
+    induction lp as [|[n rr] lp IH]; cbn; [reflexivity|].
+    apply Morphisms_Prop.and_iff_morphism;
+      [apply Morphisms_Prop.and_iff_morphism;
+         [reflexivity | apply rule_bound_iff_in_S]
+      | exact IH].
+  Qed.
+
+  (* Foundational reverse-direction lemmas.  Hypotheses:
+     - [r] is well-formed;
+     - the positive-world data [lp/cp/...] is wholly bounded by [r];
+     - the positive-world judgment holds;
+     - the positive-world [wf_lang]/[wf_ctx] hold (forward direction
+       gives these; for direct use they are also stated as inputs).
+     Conclusion: the corresponding V-world judgment about the
+     [unrename_*]-applied data holds. *)
+
+  Theorem unrename_preserves_wf_lang r lp :
+    renaming_ok r ->
+    lang_bound r lp ->
+    wf_lang lp ->
+    wf_lang (unrename_lang r lp).
+  Proof.
+    intros Hr Hbl Hwfl.
+    rewrite unrename_lang_via_of_p.
+    apply (Renaming.rename_lang_mono_S
+             (of_p_inj_on_pbound Hr)
+             (proj1 (lang_bound_iff_in_S _ _) Hbl) Hwfl).
+  Qed.
+
+  Theorem unrename_preserves_wf_ctx r lp cp :
+    renaming_ok r ->
+    lang_bound r lp ->
+    ctx_bound r cp ->
+    wf_lang lp ->
+    wf_ctx lp cp ->
+    wf_ctx (unrename_lang r lp) (unrename_ctx r cp).
+  Proof.
+    intros Hr Hbl Hbc Hwfl Hwfc.
+    rewrite unrename_lang_via_of_p, unrename_ctx_via_of_p.
+    pose proof (proj1 (lang_bound_iff_in_S _ _) Hbl) as Hbl_S.
+    pose proof (proj1 (ctx_bound_iff_in_S _ _) Hbc) as Hbc_S.
+    apply (Renaming.rename_mono_S_wf_ctx
+             (of_p_inj_on_pbound Hr) Hwfl Hbl_S
+             (Renaming.rename_lang_mono_S
+                (of_p_inj_on_pbound Hr) Hbl_S Hwfl)
+             Hwfc Hbc_S).
+  Qed.
+
+  Theorem unrename_preserves_eq_sort r lp cp tsp1 tsp2 :
+    renaming_ok r ->
+    eq_sort lp cp tsp1 tsp2 ->
+    lang_bound r lp ->
+    ctx_bound r cp ->
+    sort_bound r tsp1 ->
+    sort_bound r tsp2 ->
+    wf_lang lp ->
+    wf_ctx lp cp ->
+    eq_sort (unrename_lang r lp) (unrename_ctx r cp)
+            (unrename_sort r tsp1) (unrename_sort r tsp2).
+  Proof.
+    intros Hr Heq Hbl Hbc Hbt1 Hbt2 Hwfl Hwfc.
+    rewrite unrename_lang_via_of_p, unrename_ctx_via_of_p,
+            !unrename_sort_via_of_p.
+    pose proof (proj1 (lang_bound_iff_in_S _ _) Hbl) as Hbl_S.
+    pose proof (proj1 (ctx_bound_iff_in_S _ _) Hbc) as Hbc_S.
+    pose proof (proj1 (sort_bound_iff_in_S _ _) Hbt1) as Hbt1_S.
+    pose proof (proj1 (sort_bound_iff_in_S _ _) Hbt2) as Hbt2_S.
+    pose proof (Renaming.rename_lang_mono_S
+                  (of_p_inj_on_pbound Hr) Hbl_S Hwfl) as Hwflp_f.
+    pose proof (Renaming.rename_mono_S_wf_ctx
+                  (of_p_inj_on_pbound Hr) Hwfl Hbl_S
+                  Hwflp_f Hwfc Hbc_S) as Hwfcp_f.
+    apply (proj1 (Renaming.rename_mono_S_eq
+                    (of_p_inj_on_pbound Hr) Hwfl Hbl_S
+                    Hwflp_f Hwfc Hbc_S Hwfcp_f)); auto.
+  Qed.
+
+  Theorem unrename_preserves_eq_term r lp cp tsp e1p e2p :
+    renaming_ok r ->
+    eq_term lp cp tsp e1p e2p ->
+    lang_bound r lp ->
+    ctx_bound r cp ->
+    sort_bound r tsp ->
+    term_bound r e1p ->
+    term_bound r e2p ->
+    wf_lang lp ->
+    wf_ctx lp cp ->
+    eq_term (unrename_lang r lp) (unrename_ctx r cp) (unrename_sort r tsp)
+            (unrename_term r e1p) (unrename_term r e2p).
+  Proof.
+    intros Hr Heq Hbl Hbc Hbt Hbe1 Hbe2 Hwfl Hwfc.
+    rewrite unrename_lang_via_of_p, unrename_ctx_via_of_p,
+            unrename_sort_via_of_p, !unrename_term_via_of_p.
+    pose proof (proj1 (lang_bound_iff_in_S _ _) Hbl) as Hbl_S.
+    pose proof (proj1 (ctx_bound_iff_in_S _ _) Hbc) as Hbc_S.
+    pose proof (proj1 (sort_bound_iff_in_S _ _) Hbt) as Hbt_S.
+    pose proof (proj1 (term_bound_iff_in_S _ _) Hbe1) as Hbe1_S.
+    pose proof (proj1 (term_bound_iff_in_S _ _) Hbe2) as Hbe2_S.
+    pose proof (Renaming.rename_lang_mono_S
+                  (of_p_inj_on_pbound Hr) Hbl_S Hwfl) as Hwflp_f.
+    pose proof (Renaming.rename_mono_S_wf_ctx
+                  (of_p_inj_on_pbound Hr) Hwfl Hbl_S
+                  Hwflp_f Hwfc Hbc_S) as Hwfcp_f.
+    apply (proj1 (proj2 (Renaming.rename_mono_S_eq
+                           (of_p_inj_on_pbound Hr) Hwfl Hbl_S
+                           Hwflp_f Hwfc Hbc_S Hwfcp_f))); auto.
+  Qed.
+
 End WithVar.
 
 Arguments unrename_sort {V}%_type_scope {V_default} r ts.
 Arguments unrename_ctx {V}%_type_scope {V_default} r c.
 Arguments unrename_rule {V}%_type_scope {V_default} r rr.
 Arguments unrename_lang {V}%_type_scope {V_default} r l.
+Arguments init_renaming {V}%_type_scope.
