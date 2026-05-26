@@ -411,10 +411,20 @@ Section WithMap.
           { destruct Hm as [HPER _ _ _ _].
             unfold domain_wf. eapply PER_Transitive;
               [eassumption | apply PER_Symmetric; auto]. }
-          (* The remaining steps: rename_lookup_miss for x (alloc),
-             rename_lookup_hit for y on the alloc'd state, then union
-             on the alloc'd state, then IH.  This requires extending
-             [i] with [map.put i x_new dx] via alloc_sound. *)
+          (* Apply alloc_sound to allocate fresh id for x with witness dx. *)
+          pose proof (Semantics.alloc_sound idx Eqb_idx Eqb_idx_ok lt idx_succ
+                        idx_zero symbol symbol_map idx_map idx_map_ok idx_trie unit m
+                        Hlti Hlts Hltt i dx Hwf_dx Hwf_dx) as Halloc_sound.
+          unfold vc in Halloc_sound.
+          destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+            as [x_new e_alloc] eqn:Halloc.
+          specialize (Halloc_sound e0).
+          rewrite Halloc in Halloc_sound. cbn in Halloc_sound.
+          destruct Halloc_sound as
+            (Hok_a & Hsnd_a & Hi_xnew_none & Hk_xnew_e0_none & Hk_xnew_a &
+             Hk_pres & Hdb_a & Hpar_a & Hwl_a); auto.
+          (* The remaining: rename_lookup_hit for y on e_alloc + union on e_alloc
+             + apply IH with (map.put i x_new dx). *)
           admit.
         * (* (miss, miss) *) admit.
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
