@@ -400,7 +400,22 @@ Section WithMap.
               by (rewrite <- Hu; reflexivity).
             cbn in Hpres. apply Hpres. exact (Hsubdom _ _ Hin). }
         * (* (hit, miss) *) admit.
-        * (* (miss, hit) *) admit.
+        * (* (miss, hit) *)
+          cbn in Hcs. destruct Hcs as [Hc Hcs'].
+          unfold Semantics.eq_sound_for_model in Hc.
+          destruct (map.get a_src x) as [dx|] eqn:Hax; cbn in Hc; try tauto.
+          destruct (map.get a_src y) as [dy|] eqn:Hay; cbn in Hc; try tauto.
+          assert (Hiny : In (y, y') sub0) by (apply named_list_lookup_err_in; auto).
+          pose proof (Hsubdom _ _ Hiny) as Hky_e0.
+          assert (Hwf_dx : m.(domain_wf symbol) dx).
+          { destruct Hm as [HPER _ _ _ _].
+            unfold domain_wf. eapply PER_Transitive;
+              [eassumption | apply PER_Symmetric; auto]. }
+          (* The remaining steps: rename_lookup_miss for x (alloc),
+             rename_lookup_hit for y on the alloc'd state, then union
+             on the alloc'd state, then IH.  This requires extending
+             [i] with [map.put i x_new dx] via alloc_sound. *)
+          admit.
         * (* (miss, miss) *) admit.
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
         admit.
