@@ -26,6 +26,44 @@ From Stdlib Require derive.Derive.
 Import Core.Notations.
 Import PreRule.Notations.
 
+(* η for the proof-relevant Π, written as the fully-ELABORATED rule (all
+   implicit env/info args explicit) so it can be added with `push_rule` — which
+   runs only the automated wf-CHECK (`compute_wf_rule`).  This avoids
+   `elab_rule`/`infer_rule`, whose e-graph type-INFERENCE does not terminate on
+   this rule.  (Checked in isolation: compute_wf_rule closes it in ~31s / 0.5GB.)
+
+   The equation is η-expansion `f = λx. (wk1 f) x`: in `ext G (El F)` the domain
+   code F is weakened along wkn, the codomain code B lifted along `under' wkn`
+   (= snoc (cmp wkn wkn) hd), f weakened along wkn, and the argument is hd.  η
+   for the proof-irrelevant Π is subsumed by proof irrelevance. *)
+Definition pi_rel_eta_rule : string * rule :=
+  let iF : term := {{e #"info" "rF" (#"iota" "lF") }} in
+  let elF : term := {{e #"El" "G" "rF" "lF" "F" }} in
+  let gext : term := {{e #"ext" "G" {iF} {elF} }} in
+  let wkn_g : term := {{e #"wkn" "G" {iF} {elF} }} in
+  let wkF : term := {{e #"exp_subst" {gext} "G" {wkn_g} (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF") "F" }} in
+  let elwkF : term := {{e #"El" {gext} "rF" "lF" {wkF} }} in
+  let extnew : term := {{e #"ext" {gext} {iF} {elwkF} }} in
+  let underwkn : term := {{e #"snoc" {extnew} "G" {iF} {elF}
+                              (#"cmp" {extnew} {gext} "G" (#"wkn" {gext} {iF} {elwkF}) {wkn_g})
+                              (#"hd" {gext} {iF} {elwkF}) }} in
+  let liftB : term := {{e #"exp_subst" {extnew} {gext} {underwkn} (#"info" #"rel" (#"next" "lG")) (#"U" {gext} #"rel" "lG") "B" }} in
+  let wkf : term := {{e #"exp_subst" {gext} "G" {wkn_g} (#"info" #"rel" (#"iota" "lG")) (#"El" "G" #"rel" "lG" (#"Pi_rel" "G" "rF" "lF" "lG" "F" "B")) "f" }} in
+  let hd_a : term := {{e #"hd" "G" {iF} {elF} }} in
+  let body : term := {{e #"app_rel" {gext} "rF" "lF" "lG" {wkF} {liftB} {wkf} {hd_a} }} in
+  ("Pi_rel eta",
+   term_eq_rule
+     [("f", {{s #"exp" "G" (#"info" #"rel" (#"iota" "lG")) (#"El" "G" #"rel" "lG" (#"Pi_rel" "G" "rF" "lF" "lG" "F" "B")) }});
+      ("B", {{s #"exp" {gext} (#"info" #"rel" (#"next" "lG")) (#"U" {gext} #"rel" "lG") }});
+      ("F", {{s #"exp" "G" (#"info" #"rel" (#"next" "lF")) (#"U" "G" "rF" "lF") }});
+      ("lG", {{s #"lvl" }});
+      ("lF", {{s #"lvl" }});
+      ("rF", {{s #"relevance" }});
+      ("G", {{s #"env" }})]
+     {{e #"lam_rel" "G" "rF" "lF" "lG" "F" "B" {body} }}
+     {{e "f" }}
+     {{s #"exp" "G" (#"info" #"rel" (#"iota" "lG")) (#"El" "G" #"rel" "lG" (#"Pi_rel" "G" "rF" "lF" "lG" "F" "B")) }}).
+
 (* ====================================================================== *)
 (* Dependent products Π, split by RESULT relevance (Agda Typed.agda:44-49 *)
 (* and the side-conditions r≡!→…, r≡%→lG≡⁰∧l≡⁰).                          *)
@@ -195,6 +233,17 @@ Proof.
               (#"Pi_rel" ["G" := "G'"] "rF" "lF" "lG" "F" "B")))
     ]}%prerule
     (pi_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
+  (* η for the proof-relevant Π (Agda Typed.agda:188-195 `η-eq`, written as the
+     equivalent η-EXPANSION `f = λx. (wk1 f) x` since Pyrosome rule contexts hold
+     typed variables, not the equational hypothesis of the extensionality form).
+     Inner app_rel lives in `ext G (El F)`: domain code F weakened via wkn,
+     codomain code B lifted via under' wkn, f weakened via wkn, argument = hd.
+     η for the proof-irrelevant Π is subsumed by proof irrelevance (its function
+     type carries `info irr`, so any two inhabitants are already equal). *)
+  (* η for proof-relevant Π — pre-elaborated, added via push_rule (automated
+     wf-check only; see pi_rel_eta_rule above for why elab_rule cannot be used). *)
+  push_rule pi_rel_eta_rule.
 
   apply wf_lang_nil.
 Unshelve.
