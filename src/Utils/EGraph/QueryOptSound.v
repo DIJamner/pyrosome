@@ -14,11 +14,27 @@ Import Monad.StateMonad.
 
 (*
   This file states and proves that QueryOpt.optimize_sequent preserves
-  the model-theoretic semantics of a sequent: a model satisfies the
-  optimised sequent iff it satisfies the original.
+  the model-theoretic semantics of a sequent under the [good_sequent]
+  precondition (which excludes the orphan-eqs edge case where the
+  optimiser would be unsound).
+
+  Status (multi-session work in progress):
+
+  - Main theorem [optimize_sequent_equiv] is Qed-proved by composing
+    [optimize_sequent_forward] and [optimize_sequent_reverse].
+  - Both direction lemmas have full proofs of the empty-empty branch
+    of [destruct seq_assumptions; destruct seq_conclusions], and
+    `admit` for the three non-empty branches.
+  - The remaining work is L11 [clauses_to_instance_sound], which
+    builds the renaming<->assignment bridge between source variables
+    (used by [model_satisfies_rule m s]) and canonical e-graph ids
+    (used by [model_satisfies_rule m (optimize_sequent s)]).  Once
+    L11 lands, the three non-empty branches reduce to standard
+    state-monad reasoning over [rebuild_sound], [union_sound],
+    [alloc_sound], [update_entry_sound], [force_equiv_sound].
 
   See /root/.claude/plans/queryopt-v-is-a-file-hidden-nest.md for the
-  overall proof strategy.
+  full strategy and L11's intended signature.
 *)
 
 Section WithMap.
