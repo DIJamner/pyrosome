@@ -1280,6 +1280,69 @@ Section WithVar.
         /\ map fst (fst res) = map fst c
         /\ args_in_instance l (map snd s) i_out (map snd (fst res)).
 
+    (* ----------- Helpers for chaining extending_sound ----------- *)
+
+    Lemma extending_sound_refl i e
+      : egraph_ok e ->
+        egraph_sound_for_interpretation lang_model i e ->
+        extending_sound i e i e.
+    Proof.
+      unfold extending_sound; intuition auto using Properties.map.extends_refl.
+    Qed.
+
+    Lemma extending_sound_trans i1 i2 i3 e1 e2 e3
+      : extending_sound i1 e1 i2 e2 ->
+        extending_sound i2 e2 i3 e3 ->
+        extending_sound i1 e1 i3 e3.
+    Proof.
+      unfold extending_sound.
+      intros (Hok2 & Hext12 & Hsnd2 & Hk12) (Hok3 & Hext23 & Hsnd3 & Hk23).
+      split; [exact Hok3|]. split.
+      { intros k v Hgv. apply Hext23. apply Hext12. exact Hgv. }
+      split; [exact Hsnd3|].
+      intros k Hk. apply Hk23. apply Hk12. exact Hk.
+    Qed.
+
+    (* From a sound interpretation in which a list of ids is jointly
+       resolvable, each individual id has a key. *)
+    Lemma list_Mmap_get_has_some {A} (i : V_map A) a (dl : list A) x
+      : list_Mmap (map.get i) a = Some dl ->
+        In x a ->
+        Is_Some (map.get i x).
+    Proof.
+      revert dl. induction a as [|y ys IH]; cbn; intros dl Hma Hin; [tauto|].
+      destruct (map.get i y) as [vy|] eqn:Hgy; cbn in Hma; [|discriminate].
+      destruct (list_Mmap (map.get i) ys) as [vs|] eqn:Hgs; cbn in Hma;
+        [|discriminate].
+      destruct Hin as [Hxy|Hin']; [subst y; rewrite Hgy; exact I|].
+      eapply IH; eauto.
+    Qed.
+
+    Lemma args_in_instance_has_keys s i e a
+      : egraph_sound_for_interpretation lang_model i e ->
+        args_in_instance l s i a ->
+        forall x, In x a -> Sep.has_key x (parent (Defs.equiv e)).
+    Proof.
+      intros [_ Hexact _ _] Hai x Hin.
+      apply Hexact.
+      unfold args_in_instance in Hai.
+      destruct (list_Mmap (map.get i) a) as [dl|] eqn:Hma; cbn in Hai; [|tauto].
+      eapply list_Mmap_get_has_some; eauto.
+    Qed.
+
+    (* Lift an [option_relation _ (map.get i _) (Some _)] across an
+       interpretation extension. *)
+    Lemma option_relation_get_extends {B} (R : domain V lang_model -> B -> Prop)
+                                      (i i' : interp) x d
+      : map.extends i' i ->
+        option_relation R (map.get i x) (Some d) ->
+        option_relation R (map.get i' x) (Some d).
+    Proof.
+      intros Hext Hor.
+      destruct (map.get i x) as [v|] eqn:Hg; cbn in Hor; [|discriminate].
+      apply Hext in Hg. rewrite Hg. cbn. exact Hor.
+    Qed.
+
     (* ----------- Theorem statements & proofs ----------- *)
 
     (* Mutually recursive workhorse: simultaneous induction on
@@ -1350,9 +1413,9 @@ Section WithVar.
         intros Hok Hsound Hai.
         unfold open_args_post in Hpost_args.
         specialize (Hpost_args Hok Hsound Hai).
-        destruct Hpost_args as [i_out Hpa]. destruct Hpa as [Hext_sound Hai_out].
-        destruct Hext_sound as [Hok_out Hr1]. destruct Hr1 as [Hexti_out Hr2].
-        destruct Hr2 as [Hsnd_out Hkeys_out].
+        destruct Hpost_args as [i_out Hpa]. destruct Hpa as [Hext_out Hai_out].
+        pose proof Hext_out as Hext_out_save.
+        destruct Hext_out as (Hok_out & Hexti_out & Hsnd_out & Hkeys_out).
         cbn [fst snd] in *.
         unfold args_in_instance in Hai_out.
         iss_case.
@@ -1368,31 +1431,8 @@ Section WithVar.
         unfold vc in Hhe. specialize (Hhe e_inner).
         assert (Hkeys_args : forall x, In x a_out ->
                               Sep.has_key x (parent (Defs.equiv e_inner))).
-        { intros x Hin_x.
-          pose proof Hsnd_out as Hsnd_out_copy.
-          destruct Hsnd_out_copy as [_ Hsnd_exact _ _].
-          apply Hsnd_exact.
-          destruct (map.get i_out x) eqn:Hgx; [exact I|].
-          exfalso.
-          assert (Hgx_lift : @map.get V (Term.term V + Term.sort V)
-                              (V_map (Term.term V + Term.sort V)) i_out x = None)
-            by exact Hgx.
-          clear Hgx.
-          revert Hin_x Hdl. clear -Hgx_lift.
-          revert dl'.
-          induction a_out as [|y ys IH'];
-            [intros dl' Hin_x Hdl; cbn in Hin_x; contradiction|].
-          intros dl' Hin_x Hdl. cbn in Hin_x. cbn in Hdl.
-          destruct Hin_x as [Hxy | Hin_x'];
-            [subst y; rewrite Hgx_lift in Hdl; discriminate|].
-          destruct (@map.get V (Term.term V + Term.sort V)
-                      (V_map (Term.term V + Term.sort V)) i_out y) eqn:Hgy;
-            [|discriminate].
-          destruct (list_Mmap (@map.get V (Term.term V + Term.sort V)
-                                (V_map (Term.term V + Term.sort V)) i_out) ys)
-            as [vs|] eqn:Hgs; [|discriminate].
-          destruct dl' as [|hd tl]; cbn in Hdl; [discriminate|].
-          inversion Hdl; subst. eapply IH'; eauto. }
+        { intros x Hx. eapply args_in_instance_has_keys; eauto.
+          unfold args_in_instance. rewrite Hdl. cbn. exact Hai_out. }
         assert (Hwfc'_rule : wf_ctx l c'_rule).
         { use_rule_in_wf. inversion H0; subst.
           rewrite List.app_nil_r in H4. exact H4. }
@@ -1433,13 +1473,15 @@ Section WithVar.
           eapply interprets_to_term. exact Heqt. }
         specialize (Hhe Hok_out Hsnd_out Hkeys_args Hint_wit).
         destruct Hhe as [Hok_he Hex_he].
-        destruct Hex_he as [i' Hi']. destruct Hi' as [Hexti' Hr1].
-        destruct Hr1 as [Hsnd' Hr2]. destruct Hr2 as [Hkeys' Hr3].
-        destruct Hr3 as [Hkey_res Hdom_eq].
+        destruct Hex_he as [i' Hi'].
+        destruct Hi' as (Hexti' & Hsnd' & Hkeys' & Hkey_res & Hdom_eq).
         (* Now we're past hash_entry; need to handle the with_sorts conditional
            and the Mret tt for with_ctx_sorts=false.  Both ifs reduce to literals. *)
         destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
         cbn [fst snd] in *.
+        assert (Hext_he : extending_sound i e_pre i' e_he)
+          by (eapply extending_sound_trans; [exact Hext_out_save|];
+              unfold extending_sound; eauto 10).
         (* The remaining program is:
            Mret tt >>= fun _ => if with_sorts then add_open_sort_inner ... else Mret x_res *)
         cbn [Mbind StateMonad.state_monad Mret].
@@ -1493,9 +1535,9 @@ Section WithVar.
             cbn [fst snd] in Hsort_snd.
             destruct Hsort_snd as [i_sort Hi_sort].
             destruct Hi_sort as [Hext_sort Hdom_sort].
-            destruct Hext_sort as [Hok_sort Hr1'].
-            destruct Hr1' as [Hexti_sort Hr2'].
-            destruct Hr2' as [Hsnd_sort Hkeys_sort].
+            pose proof Hext_sort as Hext_sort_save.
+            destruct Hext_sort as
+                (Hok_sort & Hexti_sort & Hsnd_sort & Hkeys_sort).
             cbn [fst snd] in *.
             assert (Hdom_eq_lifted :
                       option_relation (domain_eq V lang_model)
@@ -1565,29 +1607,19 @@ Section WithVar.
             destruct (update_entry (Build_atom sort_of [x_res] t_v) e_sort)
               as [unit_r e_update] eqn:Heq_update.
             cbn [fst snd] in Hue.
-            destruct Hue as [Hok_update Hue2].
-            destruct Hue2 as [Hsnd_update Hkeys_update].
+            destruct Hue as (Hok_update & Hsnd_update & Hkeys_update).
             exists i_sort. cbn [fst snd]. split.
-            - unfold extending_sound. split; [exact Hok_update|].
-              split.
-              + intros k v Hgv. apply Hexti_sort. apply Hexti'.
-                apply Hexti_out. exact Hgv.
-              + split; [exact Hsnd_update|].
-                intros k Hk. apply Hkeys_update. apply Hkeys_sort.
-                apply Hkeys'. apply Hkeys_out. exact Hk.
-            - rewrite Hgx_sort. cbn.
-              apply lm_eq_terms with (t := t_x). exact Heqterm_x. }
+            { eapply extending_sound_trans; [exact Hext_he|].
+              eapply extending_sound_trans; [exact Hext_sort_save|].
+              unfold extending_sound.
+              split; [exact Hok_update|].
+              split; [apply Properties.map.extends_refl|].
+              split; [exact Hsnd_update | exact Hkeys_update]. }
+            { rewrite Hgx_sort. cbn.
+              apply lm_eq_terms with (t := t_x). exact Heqterm_x. } }
         (* with_sorts = false: just return x_res *)
         cbn [Mret StateMonad.state_monad fst snd].
-        exists i'.
-        split.
-        1:{ unfold extending_sound.
-            split. 1: exact Hok_he.
-            split.
-            1:{ intros x v Hgv. apply Hexti'. apply Hexti_out. exact Hgv. }
-            split. 1: exact Hsnd'.
-            intros x Hx. apply Hkeys'. apply Hkeys_out. exact Hx. }
-        exact Hdom_eq.
+        exists i'. split; [exact Hext_he|exact Hdom_eq].
       - (* var case: e = var n, wf_term l1 c (var n) t (with In (n, t) c). *)
         intros n t_var Hin_var r i Hmaps.
         cbn [add_open_term'].
@@ -1595,13 +1627,8 @@ Section WithVar.
         cbn [Mret StateMonad.state_monad fst snd].
         unfold open_term_post.
         intros Hok Hsound Hai.
-        exists i. split.
-        + unfold extending_sound.
-          split; [exact Hok|].
-          split; [apply Properties.map.extends_refl|].
-          split; [exact Hsound|].
-          intros; assumption.
-        + (* result id is named_list_lookup default r n; extract interpretation
+        exists i. split; [apply extending_sound_refl; auto|].
+        (* result id is named_list_lookup default r n; extract interpretation
              via args_in_instance_in *)
           assert (Hafc : all_fresh c) by basic_core_crush.
           assert (Hafr : all_fresh r).
@@ -1653,13 +1680,8 @@ Section WithVar.
         cbn [list_Mmap].
         unfold vc, Mret. cbn.
         unfold open_args_post. intros e_pre Hok Hsound Hai.
-        exists i. split.
-        + unfold extending_sound.
-          split; [exact Hok|].
-          split; [apply Properties.map.extends_refl|].
-          split; [exact Hsound|].
-          intros; assumption.
-        + cbn. unfold args_in_instance. cbn. constructor.
+        exists i. split; [apply extending_sound_refl; auto|].
+        cbn. unfold args_in_instance. cbn. constructor.
       - (* cons args: chain via vc_bind on the head and IH_args on the tail,
            then args_in_instance_cons. *)
         intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r i Hmaps.
@@ -1676,11 +1698,10 @@ Section WithVar.
                     add_open_sort_inner r e_arg e_in)
           as [v_head e_after_head] eqn:Heq1.
         cbn [fst snd] in IH_term.
-        destruct IH_term as [i_head IHh].
-        destruct IHh as [Hext_head Hgvhead].
-        destruct Hext_head as [Hok_head Hex1].
-        destruct Hex1 as [Hexti_head Hex2].
-        destruct Hex2 as [Hsound_head Hkeys_head].
+        destruct IH_term as [i_head Hih].
+        destruct Hih as [Hext_head Hgvhead].
+        pose proof Hext_head as Hh.
+        destruct Hh as (Hok_head & Hexti_head & Hsound_head & _).
         (* Now apply IH_args with i_head *)
         specialize (IH_args r i_head Hmaps).
         unfold vc, open_args_post in IH_args.
@@ -1691,25 +1712,15 @@ Section WithVar.
                        add_open_sort_inner r) es e_after_head)
           as [v_tail e_final] eqn:Heq2.
         cbn [fst snd] in IH_args.
-        destruct IH_args as [i_final IHargs2].
-        destruct IHargs2 as [Hext_final Hai_tail].
-        destruct Hext_final as [Hok_final Hex3].
-        destruct Hex3 as [Hexti_final Hex4].
-        destruct Hex4 as [Hsound_final Hkeys_final].
+        destruct IH_args as [i_final Hif].
+        destruct Hif as [Hext_final Hai_tail].
         exists i_final. split.
-        { (* extending_sound i e_in i_final e_final *)
-          unfold extending_sound.
-          split; [exact Hok_final|].
-          split.
-          { intros x v Hgx. apply Hexti_final. apply Hexti_head. exact Hgx. }
-          split; [exact Hsound_final|].
-          intros x Hx. apply Hkeys_final. apply Hkeys_head. exact Hx. }
-        { (* args_in_instance for (v_head :: v_tail) *)
-          apply args_in_instance_cons; [exact Hai_tail|].
-          unfold option_relation in Hgvhead.
-          destruct (map.get i_head v_head) as [d|] eqn:Hgh; cbn in Hgvhead.
-          - apply Hexti_final in Hgh. rewrite Hgh. cbn. exact Hgvhead.
-          - discriminate. }
+        { eapply extending_sound_trans; eauto. }
+        { apply args_in_instance_cons; [exact Hai_tail|].
+          destruct Hext_final as (_ & Hexti_final & _).
+          destruct (map.get i_head v_head) as [d|] eqn:Hgh; cbn in Hgvhead;
+            [|discriminate].
+          apply Hexti_final in Hgh. rewrite Hgh. cbn. exact Hgvhead. }
     Qed.
 
     (* Induction on the fuel parameter, using [add_open_sound] in the
@@ -1761,9 +1772,9 @@ Section WithVar.
         intros Hok Hsound Hai.
         unfold open_args_post in Hpost_args.
         specialize (Hpost_args Hok Hsound Hai).
-        destruct Hpost_args as [i_out Hpa]. destruct Hpa as [Hext_sound Hai_out].
-        destruct Hext_sound as [Hok_out Hr1]. destruct Hr1 as [Hexti_out Hr2].
-        destruct Hr2 as [Hsnd_out Hkeys_out].
+        destruct Hpost_args as [i_out Hpa]. destruct Hpa as [Hext_out Hai_out].
+        pose proof Hext_out as Hext_out_save.
+        destruct Hext_out as (Hok_out & Hexti_out & Hsnd_out & Hkeys_out).
         cbn [fst snd] in *.
         unfold args_in_instance in Hai_out.
         iss_case.
@@ -1778,31 +1789,8 @@ Section WithVar.
         unfold vc in Hhe. specialize (Hhe e_inner).
         assert (Hkeys_args : forall x, In x a_out ->
                               Sep.has_key x (parent (Defs.equiv e_inner))).
-        { intros x Hin_x.
-          pose proof Hsnd_out as Hsnd_out_copy.
-          destruct Hsnd_out_copy as [_ Hsnd_exact _ _].
-          apply Hsnd_exact.
-          destruct (map.get i_out x) eqn:Hgx; [exact I|].
-          exfalso.
-          assert (Hgx_lift : @map.get V (Term.term V + Term.sort V)
-                              (V_map (Term.term V + Term.sort V)) i_out x = None)
-            by exact Hgx.
-          clear Hgx.
-          revert Hin_x Hdl. clear -Hgx_lift.
-          revert dl'.
-          induction a_out as [|y ys IH];
-            [intros dl' Hin_x Hdl; cbn in Hin_x; contradiction|].
-          intros dl' Hin_x Hdl. cbn in Hin_x. cbn in Hdl.
-          destruct Hin_x as [Hxy | Hin_x'];
-            [subst y; rewrite Hgx_lift in Hdl; discriminate|].
-          destruct (@map.get V (Term.term V + Term.sort V)
-                      (V_map (Term.term V + Term.sort V)) i_out y) eqn:Hgy;
-            [|discriminate].
-          destruct (list_Mmap (@map.get V (Term.term V + Term.sort V)
-                                (V_map (Term.term V + Term.sort V)) i_out) ys)
-            as [vs|] eqn:Hgs; [|discriminate].
-          destruct dl' as [|hd tl]; cbn in Hdl; [discriminate|].
-          inversion Hdl; subst. eapply IH; eauto. }
+        { intros x Hx. eapply args_in_instance_has_keys; eauto.
+          unfold args_in_instance. rewrite Hdl. cbn. exact Hai_out. }
         assert (Hwfc' : wf_ctx l c').
         { use_rule_in_wf. inversion H0; subst.
           rewrite List.app_nil_r in H3. exact H3. }
@@ -1841,18 +1829,12 @@ Section WithVar.
           eapply interprets_to_sort. exact Heqs. }
         specialize (Hhe Hok_out Hsnd_out Hkeys_args Hint_wit).
         destruct Hhe as [Hok_he Hex_he].
-        destruct Hex_he as [i' Hi']. destruct Hi' as [Hexti' Hr1].
-        destruct Hr1 as [Hsnd' Hr2]. destruct Hr2 as [Hkeys' Hr3].
-        destruct Hr3 as [Hkey_res Hdom_eq].
+        destruct Hex_he as [i' Hi'].
+        destruct Hi' as (Hexti' & Hsnd' & Hkeys' & Hkey_res & Hdom_eq).
         exists i'.
-        split.
-        1:{ unfold extending_sound.
-            split. 1: exact Hok_he.
-            split.
-            1:{ intros x v Hgv. apply Hexti'. apply Hexti_out. exact Hgv. }
-            split. 1: exact Hsnd'.
-            intros x Hx. apply Hkeys'. apply Hkeys_out. exact Hx. }
-        exact Hdom_eq.
+        split; [|exact Hdom_eq].
+        eapply extending_sound_trans; [exact Hext_out_save|].
+        unfold extending_sound; eauto 10.
     Qed.
 
     Lemma add_open_sort_sound c r s t
@@ -1910,15 +1892,9 @@ Section WithVar.
         cbn [list_Mfoldr].
         unfold vc, Mret. cbn.
         unfold ctx_post. intros e_in Hok Hsound.
-        exists i. split.
-        + unfold extending_sound.
-          split; [exact Hok|].
-          split; [apply Properties.map.extends_refl|].
-          split; [exact Hsound|].
-          intros; assumption.
-        + split.
-          * cbn. reflexivity.
-          * cbn. unfold args_in_instance. cbn. constructor.
+        exists i. split; [apply extending_sound_refl; auto|].
+        split; [reflexivity|].
+        cbn. unfold args_in_instance. cbn. constructor.
       - (* cons case: chain vc_bind over
            add_open_sort_sound -> alloc_opaque_sound -> hash_entry_sound -> union_sound,
            then construct the extended ctx_post. *)
@@ -1933,8 +1909,8 @@ Section WithVar.
         specialize (Hpost_tail Hok Hsound).
         destruct Hpost_tail as [i_tail Hpa]. destruct Hpa as [Hext_tail Hpa'].
         destruct Hpa' as [Hfst_tail Hai_tail].
-        destruct Hext_tail as [Hok_tail Hr1]. destruct Hr1 as [Hexti_tail Hr2].
-        destruct Hr2 as [Hsnd_tail Hkeys_tail].
+        pose proof Hext_tail as Hext_tail_save.
+        destruct Hext_tail as (Hok_tail & Hexti_tail & Hsnd_tail & Hkeys_tail).
         cbn [fst snd] in *.
         (* Step 1: add_open_sort_sound on t *)
         pose proof (add_open_sort_sound c' base' (map snd s) t
@@ -1951,8 +1927,8 @@ Section WithVar.
           as [t_v e_sort] eqn:Heq_sort.
         cbn [fst snd] in Hsort_snd.
         destruct Hsort_snd as [i_sort Hi_sort]. destruct Hi_sort as [Hext_sort Hdom_sort].
-        destruct Hext_sort as [Hok_sort Hr1']. destruct Hr1' as [Hexti_sort Hr2'].
-        destruct Hr2' as [Hsnd_sort Hkeys_sort].
+        pose proof Hext_sort as Hext_sort_save.
+        destruct Hext_sort as (Hok_sort & Hexti_sort & Hsnd_sort & Hkeys_sort).
         cbn [fst snd] in *.
         (* Step 2: alloc_opaque_sound with d := inl e *)
         pose proof (@alloc_opaque_sound V V_Eqb V_Eqb_ok lt succ V_default V
@@ -1990,9 +1966,8 @@ Section WithVar.
           - cbn. eapply interprets_to_sort_of. exact H0. }
         specialize (Hhe Hok_alloc Hsnd_alloc Hkeys_args Hint_wit).
         destruct Hhe as [Hok_he Hex_he].
-        destruct Hex_he as [i_he Hi_he]. destruct Hi_he as [Hexti_he Hr1'].
-        destruct Hr1' as [Hsnd_he Hr2']. destruct Hr2' as [Hkeys_he Hr3'].
-        destruct Hr3' as [Hkey_he_res Hdom_he].
+        destruct Hex_he as [i_he Hi_he].
+        destruct Hi_he as (Hexti_he & Hsnd_he & Hkeys_he & Hkey_he_res & Hdom_he).
         destruct (hash_entry succ sort_of [x'] e_alloc) as [tx' e_he] eqn:Heq_he.
         cbn [fst snd] in *.
         (* Step 4: union_sound on (t_v, tx') *)
@@ -2013,11 +1988,8 @@ Section WithVar.
         specialize (Hu Hkey_tv_he Hkey_he_res).
         destruct (union t_v tx' e_he) as [v_u e_u] eqn:Heq_union.
         cbn [fst snd] in Hu.
-        destruct Hu as (Hdb_u & Hu2 & Hu3).
-        destruct Hu2 as [roots_u Hroots_u].
-        destruct Hu3 as [Hper_u Hu4].
-        destruct Hu4 as [Hpar_u Hu5].
-        destruct Hu5 as [Hwl_rel_u Hper_tv_u].
+        destruct Hu as (Hdb_u & [roots_u Hroots_u] & Hper_u & Hpar_u
+                       & Hwl_rel_u & Hper_tv_u).
         cbn [fst snd] in *.
         (* Now build the post for e_u: i_out := i_he *)
         (* Derive eq_sound i_he t_v tx' via both interpreting to inr t[/s/]. *)
