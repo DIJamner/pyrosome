@@ -793,7 +793,17 @@ Section WithVar.
        When it does, it furthermore tries to use knowledge of injective
        constructors to break down the goal.
        TODO: deduplicate goals
-      Note: l has to contain the ctx_to_rules of the context *)
+      Note: l has to contain the ctx_to_rules of the context.
+
+      The saturation step's termination predicate fires on either
+      (a) [are_unified x y] in the egraph or (b) a weight decrease at
+      x or y (i.e. the e-class found a simpler representative).  Only
+      (a) lets us conclude semantic equality, so when [res = true] we
+      double-check [are_unified] in the resulting state: if it holds,
+      return Success; otherwise treat it like a non-converged step and
+      recurse on the extracted simpler forms.  When [res = false] the
+      saturation ran to completion without convergence, so we report a
+      fuel-exhaustion failure rather than recursing endlessly. *)
     Fixpoint egraph_reducing_cong l schedule
       rfuel sat_fuel efuel red_fuel inj_list
       (goals : list (Term.term V * Term.term V))
@@ -807,15 +817,18 @@ Section WithVar.
           let process '(e1,e2) :=
             let '(res,x,y,g) := egraph_reducing_equal_step l schedule
                                   rfuel sat_fuel e1 e2 in
-            if res then Success tt
+            if res then
+              let (unified, _) := are_unified x y g in
+              if (unified : bool) then Success tt
+              else
+                @!let e1' <- extract_weighted g efuel x in
+                  let e2' <- extract_weighted g efuel y in
+                  (egraph_reducing_cong l schedule
+                     rfuel sat_fuel efuel red_fuel inj_list [(e1',e2')])
             else
-              @!let e1' <- extract_weighted g efuel x in
-                let e2' <- extract_weighted g efuel y in
-                (* TODO: is there a reason to do this? *)
-                (*let t' <- extract_weighted g efuel y in*)
-                (*TODO: take injectivity into account*)
-                (egraph_reducing_cong l schedule
-                   rfuel sat_fuel efuel red_fuel inj_list [(e1',e2')])
+              Failure (dlist.dcons
+                         "saturation fuel exhausted in egraph_reducing_cong"
+                         dlist.dnil)
           in
           list_Miter process goals'
       end.
