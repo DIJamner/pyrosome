@@ -185,6 +185,14 @@ Section WithMap.
   Notation table_atoms := (@table_atoms idx symbol idx_trie unit).
   Notation row_to_atom := (@row_to_atom idx symbol unit).
 
+  Lemma db_to_atoms_empty :
+    db_to_atoms (map.empty : symbol_map (idx_trie (db_entry idx unit))) = [].
+  Proof.
+    unfold Semantics.db_to_atoms.
+    cbn.
+    unfold map.tuples. rewrite Properties.map.fold_empty. reflexivity.
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
