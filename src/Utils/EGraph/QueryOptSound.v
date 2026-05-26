@@ -356,33 +356,35 @@ Section WithMap.
       split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
-      + (* eq_clause: split on whether each var is already in sub0.
-
-           Discovered during this session: union_sound (Semantics.v:2030)
-           only delivers union_find_ok for the new UF, NOT full egraph_ok.
-           Closing each sub-case below additionally requires proving that
-           [union x y] preserves the OTHER egraph_ok conjuncts:
-             - worklist_ok (the new worklist entry must be worklist_entry_ok)
-             - parents_ok (atom_in_egraph_up_to_equiv is monotone in equiv)
-             - db_idxs_in_equiv (db unchanged, keys-of-equiv only grows)
-           These three are not in Semantics.v; they need to be proved as
-           Layer A primitives before L11's eq_clause case can close. *)
-        cbn. unfold Mret, lift.
-        destruct (named_list_lookup_err sub0 x) eqn:Hx;
-        destruct (named_list_lookup_err sub0 y) eqn:Hy.
-        * (* both x, y already in sub0; needs union_preserves_egraph_ok +
-             union_preserves_egraph_sound_for_interpretation + IH *)
-          admit.
-        * (* x in sub0, y fresh: alloc_sound + union_preserves_* + IH *)
-          admit.
-        * (* x fresh, y in sub0: alloc_sound + union_preserves_* + IH *)
-          admit.
-        * (* both fresh: alloc_sound × 2 + union_preserves_* + IH *)
-          admit.
-      + (* atom_clause: rename_atom (chain of rename_lookups via
-           alloc_sound, requires list-induction over rename_lookup_preserves)
-           + update_entry_sound + IH.  update_entry_sound exists; chain
-           requires alloc_sound to thread through list_Mmap. *)
+      + (* eq_clause: split on whether each var is already in sub0. *)
+        cbn. unfold Mret, lift, Mseq.
+        destruct (named_list_lookup_err sub0 x) as [x'|] eqn:Hx;
+        destruct (named_list_lookup_err sub0 y) as [y'|] eqn:Hy.
+        * (* (hit, hit) sub-case — uses union_preserves_* admits *)
+          cbn in Hcs. destruct Hcs as [Hc Hcs'].
+          assert (Hinx : In (x, x') sub0) by (apply named_list_lookup_err_in; auto).
+          assert (Hiny : In (y, y') sub0) by (apply named_list_lookup_err_in; auto).
+          pose proof (Hsubdom _ _ Hinx) as Hkx.
+          pose proof (Hsubdom _ _ Hiny) as Hky.
+          cbn.
+          destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x' y' e0)
+            as [v e_unioned] eqn:Hu.
+          rewrite (rename_lookup_hit _ _ _ _ Hx). cbn -[Defs.union].
+          unfold Basics.compose, rename_lookup. rewrite Hy. cbn -[Defs.union].
+          unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
+          apply IH; auto.
+          { (* egraph_ok e_unioned *)
+            pose proof (union_preserves_egraph_ok x' y' e0) as Hpres.
+            unfold vc in Hpres.
+            replace (union x' y' e0) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres. apply Hpres; auto. }
+          { (* egraph_sound m i e_unioned *) admit. }
+          { (* subdom for e_unioned *) admit. }
+        * (* (hit, miss) *) admit.
+        * (* (miss, hit) *) admit.
+        * (* (miss, miss) *) admit.
+      + (* atom_clause: rename_atom + update_entry_sound + IH. *)
         admit.
   Admitted.
 
