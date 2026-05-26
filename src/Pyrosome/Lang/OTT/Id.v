@@ -104,14 +104,20 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* NOTE: transp (Typed.agda:109-116) deferred. Writing it elaborated-direct
-     (push_rule with a fully-explicit [:|...]%rule) DOES get past infer_rule
-     (no @sort_of), but compute_wf_rule then fails to verify the rule in
-     practical time (killed after 20+ min) — the e-graph wf check blows up on
-     the nested ty_subst/snoc/El term. A 20-min-per-build rule is impractical;
-     and transp's computation is in any case subsumed by proof irrelevance
-     (its result lives in SProp). Deferred pending a faster wf path. *)
-
+  (* NOTE: transp (Typed.agda:109-116) deferred.  The full pipeline was tried:
+       push_rule_no_compute (fully-explicit rule, bypasses infer_rule)
+       + the do_check_computations flag (eager e-graph, so checks run in-proof)
+       + apply wf_term_rule (wf_ctx / wf_sort / sublist)
+       + per-binding wf_ctx decomposition.
+     The wall is solve_wf_ctx: the e-graph wf check for transp's CONTEXT (whose
+     P and s sorts are the nested ext/El and ty_subst/snoc terms) does not
+     terminate in practical time (uncapped eager build ran >15 min, killed).
+     compute_sort_wf re-invokes solve_wf_ctx internally, so the conclusion check
+     and every per-binding check inherit the cost (O(n^2)); decomposition alone
+     does not help.  A tractable proof would need fully-manual wf_sort_by/
+     wf_term_by down to leaves (never calling solve_wf_ctx on the big sorts),
+     or a wf_ctx-sharing tactic.  transp's computation is in any case subsumed
+     by proof irrelevance (its result lives in SProp). *)
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
