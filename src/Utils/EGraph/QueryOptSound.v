@@ -580,6 +580,187 @@ Section WithMap.
     apply Hi_rel; exact Hxy_e.
   Qed.
 
+  (* A single [rename_lookup x] on a source var [x] whose source value is
+     [dx]: extends the interpretation, preserves the renaming invariants,
+     and yields a renamed id [x'] that interprets to [dx] and is a key.
+     Either [x] was already renamed (hit; nothing changes) or it is freshly
+     allocated (miss; one [alloc_sound] step). *)
+  Lemma rename_lookup_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt) (m : model symbol) (Hm : model_ok symbol m)
+    (a_src : idx_map (m.(domain symbol)))
+    (x : idx) (dx : m.(domain symbol))
+    (sub : named_list idx idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (i : idx_map (m.(domain symbol))) :
+    Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
+    Semantics.egraph_sound_for_interpretation
+      idx symbol symbol_map idx_map idx_trie unit m i e ->
+    (forall x0 y0, In (x0, y0) sub ->
+                   forall d, map.get a_src x0 = Some d -> map.get i y0 = Some d) ->
+    (forall x0 y0, In (x0, y0) sub -> Sep.has_key y0 (parent (equiv e))) ->
+    map.get a_src x = Some dx ->
+    m.(domain_wf symbol) dx ->
+    match rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+            unit x sub e with
+    | (x', sub', e') =>
+        exists i',
+          map.extends i' i /\
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e' /\
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i' e' /\
+          (forall x0 y0, In (x0, y0) sub' ->
+                         forall d, map.get a_src x0 = Some d -> map.get i' y0 = Some d) /\
+          (forall x0 y0, In (x0, y0) sub' -> Sep.has_key y0 (parent (equiv e'))) /\
+          map.get i' x' = Some dx /\
+          Sep.has_key x' (parent (equiv e')) /\
+          (forall z, Sep.has_key z (parent (equiv e)) ->
+                     Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    intros Hok Hsnd Hren Hsubdom Hax Hwf_dx.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub x) as [x'|] eqn:Hlook.
+    { cbn.
+      assert (Hin : In (x, x') sub) by (apply named_list_lookup_err_in; auto).
+      exists i.
+      split; [intros ? ? Hk; exact Hk|].
+      split; [exact Hok|].
+      split; [exact Hsnd|].
+      split; [exact Hren|].
+      split; [exact Hsubdom|].
+      split; [exact (Hren _ _ Hin _ Hax)|].
+      split; [exact (Hsubdom _ _ Hin)|].
+      intros z Hz; exact Hz. }
+    cbn -[alloc].
+    destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e)
+      as [x_new e_alloc] eqn:Halloc.
+    pose proof (Semantics.alloc_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero
+                  symbol symbol_map idx_map idx_map_ok idx_trie unit m
+                  Hlti Hlts Hltt i dx Hwf_dx Hwf_dx) as Halloc_sound.
+    unfold vc in Halloc_sound.
+    specialize (Halloc_sound e).
+    rewrite Halloc in Halloc_sound. cbn in Halloc_sound.
+    specialize (Halloc_sound Hok Hsnd).
+    destruct Halloc_sound as
+      (Hok_a & Hsnd_a & Hi_xnew_none & Hk_xnew_e0_none & Hk_xnew_a &
+       Hk_pres & Hdb_a & Hpar_a & Hwl_a).
+    exists (map.put i x_new dx).
+    split.
+    { intros k d Hk. rewrite map.get_put_diff; [exact Hk|].
+      intros Heq; subst k. rewrite Hi_xnew_none in Hk; discriminate. }
+    split; [exact Hok_a|].
+    split; [exact Hsnd_a|].
+    split.
+    { intros a b Hin d Hg.
+      destruct Hin as [Heq|Hin].
+      - inversion Heq; subst a b. rewrite map.get_put_same.
+        rewrite Hax in Hg. inversion Hg; subst d. reflexivity.
+      - rewrite map.get_put_diff.
+        + exact (Hren _ _ Hin _ Hg).
+        + intros Heq; subst b. pose proof (Hsubdom _ _ Hin) as Hkb.
+          apply Hk_xnew_e0_none. exact Hkb. }
+    split.
+    { intros a b Hin.
+      destruct Hin as [Heq|Hin].
+      - inversion Heq; subst a b. exact Hk_xnew_a.
+      - apply Hk_pres. exact (Hsubdom _ _ Hin). }
+    split.
+    { rewrite map.get_put_same. reflexivity. }
+    split; [exact Hk_xnew_a|].
+    exact Hk_pres.
+  Qed.
+
+  (* The list version of [rename_lookup_sound], by induction over the
+     argument list: renaming a whole list of source vars (all sound,
+     interpreting to [arg_doms]) yields renamed ids interpreting to the
+     same [arg_doms], all keys, with the invariants preserved. *)
+  Lemma list_Mmap_rename_lookup_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt) (m : model symbol) (Hm : model_ok symbol m)
+    (a_src : idx_map (m.(domain symbol)))
+    (args : list idx) (arg_doms : list (m.(domain symbol)))
+    (sub : named_list idx idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (i : idx_map (m.(domain symbol))) :
+    Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
+    Semantics.egraph_sound_for_interpretation
+      idx symbol symbol_map idx_map idx_trie unit m i e ->
+    (forall x0 y0, In (x0, y0) sub ->
+                   forall d, map.get a_src x0 = Some d -> map.get i y0 = Some d) ->
+    (forall x0 y0, In (x0, y0) sub -> Sep.has_key y0 (parent (equiv e))) ->
+    list_Mmap (map.get a_src) args = Some arg_doms ->
+    all (m.(domain_wf symbol)) arg_doms ->
+    match list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                       idx_trie unit) args sub e with
+    | (args', sub', e') =>
+        exists i',
+          map.extends i' i /\
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e' /\
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i' e' /\
+          (forall x0 y0, In (x0, y0) sub' ->
+                         forall d, map.get a_src x0 = Some d -> map.get i' y0 = Some d) /\
+          (forall x0 y0, In (x0, y0) sub' -> Sep.has_key y0 (parent (equiv e'))) /\
+          list_Mmap (map.get i') args' = Some arg_doms /\
+          all (fun x' => Sep.has_key x' (parent (equiv e'))) args' /\
+          (forall z, Sep.has_key z (parent (equiv e)) ->
+                     Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    revert arg_doms sub e i.
+    induction args as [|a args0 IH];
+      intros arg_doms sub e i Hok Hsnd Hren Hsubdom Hmap Hwf.
+    - cbn in Hmap |- *.
+      inversion Hmap; subst arg_doms.
+      exists i.
+      split; [intros ? ? Hk; exact Hk|].
+      split; [exact Hok|].
+      split; [exact Hsnd|].
+      split; [exact Hren|].
+      split; [exact Hsubdom|].
+      split; [reflexivity|].
+      split; [exact I|].
+      intros z Hz; exact Hz.
+    - cbn [list_Mmap] in Hmap.
+      destruct (map.get a_src a) as [d_a|] eqn:Hda; [|discriminate].
+      destruct (list_Mmap (map.get a_src) args0) as [ds|] eqn:Hds; [|discriminate].
+      inversion Hmap; subst arg_doms.
+      cbn [all] in Hwf.
+      destruct Hwf as [Hwf_da Hwf_ds].
+      pose proof (rename_lookup_sound Hlti Hlts Hltt m Hm a_src a d_a sub e i
+                    Hok Hsnd Hren Hsubdom Hda Hwf_da) as Hrl.
+      cbn [list_Mmap].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                  idx_trie unit a sub e) as [ [a' sub1] e1 ] eqn:Hrla.
+      destruct Hrl as (i1 & Hext1 & Hok1 & Hsnd1 & Hren1 & Hsubdom1 & Hi1a' &
+                       Hka'1 & Hmono1).
+      cbn -[rename_lookup list_Mmap] in *.
+      rewrite Hrla.
+      cbn [uncurry Basics.compose].
+      pose proof (IH ds sub1 e1 i1 Hok1 Hsnd1 Hren1 Hsubdom1 eq_refl Hwf_ds) as HIH.
+      unfold Basics.compose.
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map
+                  idx_map idx_trie unit) args0 sub1 e1)
+        as [ [args0' sub2] e2 ] eqn:Hlm.
+      cbn [uncurry] in HIH |- *.
+      destruct HIH as (i2 & Hext2 & Hok2 & Hsnd2 & Hren2 & Hsubdom2 & Hmap2 &
+                       Hall2 & Hmono2).
+      exists i2.
+      split.
+      { intros k v Hk. apply Hext2. apply Hext1. exact Hk. }
+      split; [exact Hok2|].
+      split; [exact Hsnd2|].
+      split; [exact Hren2|].
+      split; [exact Hsubdom2|].
+      split.
+      { assert (Hi2a' : map.get i2 a' = Some d_a) by (apply Hext2; exact Hi1a').
+        cbn [list_Mmap]. rewrite Hi2a'. rewrite Hmap2. reflexivity. }
+      split.
+      { cbn [all]. split; [apply Hmono2; exact Hka'1 | exact Hall2]. }
+      intros z Hz. apply Hmono2. apply Hmono1. exact Hz.
+  Qed.
+
   (* Full L11 hypotheses, matching the existing soundness lemmas in
      Semantics.v (alloc_sound, update_entry_sound, union_sound):
 
@@ -949,16 +1130,66 @@ Section WithMap.
             assert (Hy_hit : named_list_lookup_err ((x, x_new)::sub0) x = Some x_new).
             { cbn. rewrite Hxx_true. reflexivity. }
             rewrite Hy_hit. cbn -[Defs.union find].
-            (* Union x_new x_new on e_x: trivial (find both = same root, eqb true) *)
-            destruct (find x_new e_x) as [v0 e0_find] eqn:Hf.
-            cbn.
-            destruct (find v0 e0_find) as [v1 e1_find] eqn:Hf2.
-            cbn.
-            (* find x_new = (v0, e0_find); find v0 (the canonical) = (v1, e1_find).
-               Both calls should give the same root.  But proving find equality
-               requires reasoning about find which we haven't done.  Use the
-               canonicalize_does_not_touch_db pattern instead. *)
-            admit. }
+            (* Self-union x_new x_new on e_x: fold the inlined find-guts back
+               into Defs.union (mirrors the hit/hit case), then discharge via
+               the union-preservation lemmas with a reflexive eq_sound. *)
+            destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie
+                        unit _ x_new x_new e_x) as [v e_unioned] eqn:Hu.
+            unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
+            assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+                                                ((x, x_new) :: sub0) e_unioned in
+                               egraph_ok idx lt symbol symbol_map idx_map idx_trie
+                                 unit e1 /\
+                               (exists i' : idx_map (domain symbol m),
+                                  map.extends i' (map.put i x_new dx) /\
+                                  egraph_sound_for_interpretation idx symbol
+                                    symbol_map idx_map idx_trie unit m i' e1)).
+            { apply IH.
+              { pose proof (union_preserves_egraph_ok x_new x_new e_x) as Hpres.
+                unfold vc in Hpres.
+                replace (union x_new x_new e_x) with (v, e_unioned) in Hpres
+                  by (rewrite <- Hu; reflexivity).
+                cbn in Hpres. apply Hpres; auto. }
+              { pose proof (union_preserves_egraph_sound_for_interpretation
+                              m Hm x_new x_new (map.put i x_new dx) e_x) as Hpres.
+                unfold vc in Hpres.
+                replace (union x_new x_new e_x) with (v, e_unioned) in Hpres
+                  by (rewrite <- Hu; reflexivity).
+                cbn in Hpres. apply Hpres; auto.
+                unfold Semantics.eq_sound_for_model.
+                rewrite map.get_put_same. cbn.
+                assert (Hdd : dx = dy) by congruence.
+                rewrite <- Hdd in Hc. exact Hc. }
+              { intros a b Hin d Hg.
+                destruct Hin as [Heq|Hin].
+                - inversion Heq; subst a b.
+                  rewrite map.get_put_same.
+                  rewrite Hax in Hg. inversion Hg; subst d. reflexivity.
+                - rewrite map.get_put_diff.
+                  + exact (Hren _ _ Hin _ Hg).
+                  + intros Heq. subst b.
+                    pose proof (Hsubdom _ _ Hin) as Hkb.
+                    apply Hk_xnew_e0_none. exact Hkb. }
+              { intros a b Hin.
+                pose proof (union_extends_keys x_new x_new e_x) as Hpres.
+                unfold vc in Hpres.
+                replace (union x_new x_new e_x) with (v, e_unioned) in Hpres
+                  by (rewrite <- Hu; reflexivity).
+                cbn in Hpres.
+                destruct Hin as [Heq|Hin].
+                - inversion Heq; subst a b. apply Hpres. exact Hk_xnew_x.
+                - apply Hpres. apply Hk_pres_x. apply (Hsubdom _ _ Hin). }
+              { exact Hcs'. } }
+            destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
+              as [pp e_final] eqn:Hci.
+            destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+            split; [exact Hok_f|].
+            exists i_final.
+            split; [|exact Hsnd_f].
+            intros k d Hk.
+            apply Hext_f.
+            rewrite map.get_put_diff; [exact Hk|].
+            intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate. }
           assert (Hxy_neq : x <> y).
           { intros Heq. pose proof (Eqb_idx_ok x y) as Hxy_dec.
             rewrite Hxy_eqb in Hxy_dec. apply Hxy_dec; auto. }
@@ -1058,8 +1289,83 @@ Section WithMap.
           rewrite map.get_put_diff; [exact Hk|].
           intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
-        admit.
-  Admitted.
+        destruct a as [f args out].
+        cbn [all] in Hcs.
+        destruct Hcs as [Hatom Hcs'].
+        unfold Semantics.clause_sound_for_model, Semantics.atom_sound_for_model in Hatom.
+        cbn [atom_args atom_ret atom_fn] in Hatom.
+        destruct (list_Mmap (map.get a_src) args) as [arg_doms|] eqn:Hargs_src;
+          cbn [Is_Some_satisfying] in Hatom; [|tauto].
+        destruct (map.get a_src out) as [out_dom|] eqn:Hout_src;
+          cbn [Is_Some_satisfying] in Hatom; [|tauto].
+        pose proof (@interprets_to_implies_wf_args symbol m Hm f arg_doms out_dom Hatom)
+          as Hwf_args.
+        pose proof (@interprets_to_implies_wf_conclusion symbol m Hm f arg_doms out_dom Hatom)
+          as Hwf_out.
+        unfold rename_atom.
+        cbn -[rename_lookup list_Mmap update_entry].
+        pose proof (list_Mmap_rename_lookup_sound Hlti Hlts Hltt m Hm a_src args arg_doms
+                      sub0 e0 i Hok Hsnd Hren Hsubdom Hargs_src Hwf_args) as Hlm_args.
+        destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                    idx_trie unit) args sub0 e0) as [ [args' sub1] e1 ] eqn:Hlma.
+        destruct Hlm_args as (i1 & Hext1 & Hok1 & Hsnd1 & Hren1 & Hsubdom1 & Hargs'1 &
+                              Hall_args'1 & Hmono1).
+        cbn [uncurry Basics.compose].
+        pose proof (rename_lookup_sound Hlti Hlts Hltt m Hm a_src out out_dom sub1 e1 i1
+                      Hok1 Hsnd1 Hren1 Hsubdom1 Hout_src Hwf_out) as Hrl_out.
+        destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                    unit out sub1 e1) as [ [out' sub2] e2 ] eqn:Hrlo.
+        destruct Hrl_out as (i2 & Hext2 & Hok2 & Hsnd2 & Hren2 & Hsubdom2 & Hi2out' &
+                             Hkout'2 & Hmono2).
+        cbn [uncurry].
+        unfold Basics.compose.
+        rewrite Hrlo.
+        cbn [uncurry].
+        destruct (update_entry {| atom_fn := f; atom_args := args'; atom_ret := out' |} e2)
+          as [u e3] eqn:Hue_eq.
+        cbn [uncurry].
+        pose proof (@update_entry_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero
+                      symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok
+                      idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm i2
+                      {| atom_fn := f; atom_args := args'; atom_ret := out' |}) as Hue.
+        unfold vc in Hue.
+        specialize (Hue e2).
+        rewrite Hue_eq in Hue.
+        cbn [snd atom_args atom_ret atom_fn] in Hue.
+        assert (Hargs'2 : list_Mmap (map.get i2) args' = Some arg_doms).
+        { clear -Hargs'1 Hext2.
+          revert arg_doms Hargs'1.
+          induction args' as [|aa aas IHa]; intros ad Hm0;
+            cbn [list_Mmap] in Hm0 |- *.
+          - exact Hm0.
+          - destruct (map.get i1 aa) as [da|] eqn:Haa;
+              cbn [Mbind option_monad] in Hm0; [|discriminate].
+            rewrite (Hext2 _ _ Haa). cbn [Mbind option_monad].
+            destruct (list_Mmap (map.get i1) aas) as [dss|] eqn:Haas;
+              cbn [Mbind option_monad] in Hm0; [|discriminate].
+            rewrite (IHa dss eq_refl). exact Hm0. }
+        assert (Hatom2 : atom_sound_for_model idx symbol idx_map m i2
+                           {| atom_fn := f; atom_args := args'; atom_ret := out' |}).
+        { unfold Semantics.atom_sound_for_model. cbn [atom_args atom_ret atom_fn].
+          rewrite Hargs'2. cbn [Is_Some_satisfying].
+          rewrite Hi2out'. cbn [Is_Some_satisfying].
+          exact Hatom. }
+        specialize (Hue Hok2 Hsnd2
+                     ltac:(intros x Hx; apply Hmono2;
+                           exact (in_all (fun x' => Sep.has_key x' (parent (equiv e1)))
+                                    args' x Hall_args'1 Hx))
+                     Hkout'2 Hatom2).
+        destruct Hue as (Hok3 & Hsnd3 & Hmono3).
+        pose proof (IH sub2 e3 i2 Hok3 Hsnd3 Hren2
+                     ltac:(intros x0 y0 Hin; apply Hmono3; exact (Hsubdom2 _ _ Hin)) Hcs')
+          as HIH.
+        destruct (clauses_to_instance idx_succ cs sub2 e3) as [pp e_final] eqn:Hci.
+        destruct HIH as (Hok_f & i_final & Hext_f & Hsnd_f).
+        split; [exact Hok_f|].
+        exists i_final.
+        split; [|exact Hsnd_f].
+        intros k v Hk. apply Hext_f. apply Hext2. apply Hext1. exact Hk.
+  Qed.
 
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
