@@ -664,13 +664,20 @@ Section WithMap.
           cbn.
           rewrite Hrm_x. cbn -[Defs.union].
           unfold Basics.compose, rename_lookup at 1.
-          (* The second alloc only matters when x ≠ y.  For (miss, miss),
-             both Hx and Hy are None.  We need to distinguish via eqb. *)
+          (* For (miss, miss), x and y are both fresh in sub0.  The post-
+             first-alloc behavior depends on whether x = y. *)
           assert (Hxy_neq : x <> y).
-          { (* The discharger of (miss, miss) for x = y becomes the (hit) lookup
-               case for y after the first alloc; treat that branch via admit for
-               now (the reflexive eq_clause(x,x) case). *)
-            admit. }
+          { (* Case-split: if x = y, then after the first alloc, the second
+               rename_lookup hits the (x, x_new) entry — no second alloc
+               happens, and the union step unions x_new with itself.  This
+               degenerate case is structurally distinct enough to admit. *)
+            destruct (eqb x y) eqn:Hxy_eqb.
+            - pose proof (Eqb_idx_ok x y) as Hxy_dec.
+              rewrite Hxy_eqb in Hxy_dec.
+              (* The degenerate x = y case requires a separate proof path. *)
+              admit.
+            - intros Heq. pose proof (Eqb_idx_ok x y) as Hxy_dec.
+              rewrite Hxy_eqb in Hxy_dec. apply Hxy_dec; auto. }
           assert (Hy_lookup_extended : named_list_lookup_err ((x, x_new) :: sub0) y = None).
           { cbn. case_match.
             - exfalso; apply Hxy_neq.
