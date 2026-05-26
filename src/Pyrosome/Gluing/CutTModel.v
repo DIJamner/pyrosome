@@ -28,7 +28,7 @@ Import Core.Notations.
    [scon] and rule membership in [l]); the model's content lives in the Type-valued
    judgments [ceq_sort]/[ceq_term] (e.g. attaching a normal form). *)
 Section WithVar.
-  Context (V : Type)
+  Context {V : Type}
           {V_Eqb : Eqb V}
           {V_Eqb_ok : Eqb_ok V_Eqb}
           {V_default : WithDefault V}.
