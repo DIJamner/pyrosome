@@ -75,6 +75,35 @@ Proof.
     ]}%prerule
     (id_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* First-order ℕ computations for Id (Typed.agda:241-250, 272-277).
+     These equate CODES, so are NOT subsumed by proof irrelevance.
+     (Id ℕ 0 0 = sUnit needs Π and lives in Pi-importing follow-up.) *)
+  elab_rule {[r "G" : #"env",
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      ----------------------------------------------- ("Id-Nat-0S")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) #"zero" (#"suc" "t")
+        = #"Empty" ["G" := "G"]
+      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+  elab_rule {[r "G" : #"env",
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      ----------------------------------------------- ("Id-Nat-S0")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"suc" "t") #"zero"
+        = #"Empty" ["G" := "G"]
+      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+  elab_rule {[r "G" : #"env",
+          "m" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"])),
+          "n" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" ["G" := "G"] ["r" := #"rel"] ["l" := #"L0"] (#"Nat" ["G" := "G"]))
+      ----------------------------------------------- ("Id-Nat-SS")
+      #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) (#"suc" "m") (#"suc" "n")
+        = #"Id" ["G" := "G"] ["l" := #"L0"] (#"Nat" ["G" := "G"]) "m" "n"
+      : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"irr" #"L0")
+    ]}%prerule
+    (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   (* NOTE: transp (Typed.agda:109-116) deferred — its predicate binder P in a
      variable-level context (ext G (El A_{!,l})) plus 8 ctx vars exceeds the
      e-graph sort inferencer (leaves @sort_of on P/s). Its computation is in any
