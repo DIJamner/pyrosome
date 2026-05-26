@@ -764,7 +764,7 @@ Notation wf_args l :=
         let c' := eval vm_compute in c in
         let t' := eval vm_compute in t in
         change_no_check (wf_sort l c' t'); eapply wf_sort_by
-  | [|- wf_lang _] => solve[prove_from_known_elabs]
+  | [|- wf_lang _] => solve[prove_by_lang_db]
   (*Don't use vm_compute here*)
   | [|- _ = _] => compute; reflexivity
   end.

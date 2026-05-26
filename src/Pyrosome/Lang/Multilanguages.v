@@ -170,7 +170,7 @@ Ltac solve_parameterize_wrapper l := (* deleted comments in equivalent code from
   eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
 
 Definition typed_bool_parameterized := parameterize_wrapper typed_bool. 
@@ -445,7 +445,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -528,7 +528,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -611,7 +611,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -707,7 +707,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -834,7 +834,7 @@ Proof.
   - eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
   - cbv; reflexivity. 
 Qed. 
@@ -1140,7 +1140,7 @@ Proof. Abort.
 (*
     (* OLD TACTICS (for some reason this doesn't work now?) *)
     unfold polymorphic_shared_fragment. 
-    apply id_compiler_preserving; prove_from_known_elabs. 
+    apply id_compiler_preserving; prove_by_lang_db.
     typeclasses eauto.
 Qed.
 Hint Resolve polymorphic_shared_fragment_identity_compiler_preserving : auto_elab.

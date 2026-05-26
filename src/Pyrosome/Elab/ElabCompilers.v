@@ -140,6 +140,17 @@ End WithModel.
     
 End Extension.
 
+Lemma elab_preserving_compiler_embed cmp_pre tgt cmp ecmp src tgt'
+    : elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
+      incl tgt tgt' ->
+      elab_preserving_compiler cmp_pre tgt' cmp ecmp src.
+Proof.
+  induction 1; basic_goal_prep; constructor.
+  6:eapply eq_sort_lang_monotonicity; now eauto.
+  7:eapply eq_term_lang_monotonicity; now eauto.
+  all:basic_core_firstorder_crush.
+Qed.
+Hint Resolve elab_preserving_compiler_embed : auto_elab.
 
 End WithVar.
 
@@ -165,13 +176,13 @@ End WithVar.
 (*
   TODO: remove dependency on Matches or no?
  *)
-From Pyrosome.Tools Require Import Matches.
+From Pyrosome.Tools Require Import Matches Resolution.
 
 Ltac setup_elab_compiler :=
   match goal with
   | |- elab_preserving_compiler _ ?tgt ?cmp ?ecmp ?src =>
         rewrite (as_nth_tail cmp); rewrite (as_nth_tail ecmp); rewrite (as_nth_tail src);
-      assert (wf_lang tgt) by prove_from_known_elabs
+      assert (wf_lang tgt) by prove_by_lang_db
   end; break_preserving.
 
 Tactic Notation "cleanup_elab_after" tactic(tc) :=
