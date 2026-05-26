@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 
 (*TODO: clean up imports*)
-From coqutil Require Import Datatypes.String.
+From coqutil Require Import Datatypes.String Datatypes.Result.
 From Stdlib Require Import Lists.List.
 Import ListNotations.
 Open Scope string.
@@ -15,7 +15,7 @@ Import CompilerDefs.Notations.
 From Stdlib Require derive.Derive.
 
 From Utils Require Import EGraph.Defs.
-From Pyrosome.Tools.EGraph Require Import Defs.
+From Pyrosome.Tools.EGraph Require Import Defs Theorems.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Monad.
@@ -54,6 +54,124 @@ Fixpoint term_depth (e : term string) :=
 Instance depth_analysis : analysis string string (option positive) :=
   weighted_depth_analysis (fun a => Some 1).
 
+(* ================================================================== *)
+(* Phases 4-6 SKELETON for [egraph_sound].                            *)
+(*                                                                    *)
+(* These are the positive-side (post-renaming) soundness lemmas of    *)
+(* the reducing-equal chain, stated so the chain type-checks and the  *)
+(* cong -> equal interface is validated.  Bodies are admits to be     *)
+(* discharged in the dedicated phases.  Dependency / status notes:    *)
+(*                                                                    *)
+(*  - egraph_reducing_equal_step_sound (Phase 4): needs Phase 3       *)
+(*    saturation soundness (scheduled_saturate_until_sound), plus     *)
+(*    are_unified_sound (DONE in QueryOptSound) and add_open_*_sound   *)
+(*    (DONE in Theorems).                                              *)
+(*  - egraph_reducing_cong_sound (Phase 5): red_fuel induction over    *)
+(*    the goal list, using step_sound + extract_weighted_sound +      *)
+(*    cong_subgoals_sound.  NOTE the goals are heterogeneously typed   *)
+(*    (injectivity congruence creates subgoals at the constructor's    *)
+(*    argument sorts), so the statement carries a parallel [types]     *)
+(*    list rather than a single sort -- a design point this skeleton   *)
+(*    surfaces.                                                        *)
+(*  - egraph_reducing_equal_sound (Phase 5c): the singleton corollary, *)
+(*    PROVED here from cong_sound (validates that interface).          *)
+(*                                                                    *)
+(* Still missing for [egraph_sound] itself (left Admitted below):     *)
+(*  - the Phase-1 *reverse* renaming bridge (eq_term on positive l'   *)
+(*    => eq_term on string l), which does not exist yet; and          *)
+(*  - [schedule_sound] is a PLACEHOLDER (the real condition -- each    *)
+(*    compiled rule_set sound under lang_model -- is the Phase 3<->6   *)
+(*    interface; only optimize_sequent_FORWARD is needed for it).     *)
+(* ================================================================== *)
+Section ReducingSkeleton.
+
+  Local Notation pos_schedule :=
+    (list (nat * rule_set positive positive TrieMap.trie_map TrieMap.trie_map)).
+  Local Notation red_cong :=
+    (Defs.egraph_reducing_cong TrieMap.ptree_map_plus (@pos_trie_map)
+       Pos.succ PosListMap.sort_of (@compat_intersect)).
+  Local Notation red_eq_step :=
+    (Defs.egraph_reducing_equal_step TrieMap.ptree_map_plus (@pos_trie_map)
+       Pos.succ PosListMap.sort_of (@compat_intersect)).
+
+  (* PLACEHOLDER (Phase 3/6 interface): every rule_set in [sched] is sound
+     under [lang_model PosListMap.sort_of l'].  Stated trivially so the
+     skeleton composes; the real condition needs saturation soundness. *)
+  Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop := True.
+
+  Lemma egraph_reducing_equal_step_sound
+    (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
+    (a b : term positive) (t : sort positive) :
+    wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
+    schedule_sound l' sched ->
+    let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
+    res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
+  Proof. Admitted.
+
+  Lemma egraph_reducing_cong_sound
+    (l' : lang positive) (sched : pos_schedule)
+    (rfuel sat_fuel efuel red_fuel : nat) inj
+    (goals : list (term positive * term positive)) (types : list (sort positive)) :
+    wf_lang l' ->
+    length types = length goals ->
+    all2 (fun p t => let '(a,b) := p in wf_term l' [] a t /\ wf_term l' [] b t)
+         goals types ->
+    schedule_sound l' sched ->
+    red_cong l' sched rfuel sat_fuel efuel red_fuel inj goals = Success tt ->
+    all2 (fun p t => let '(a,b) := p in eq_term l' [] t a b) goals types.
+  Proof. Admitted.
+
+  Lemma egraph_reducing_equal_sound
+    (l' : lang positive) (sched : pos_schedule)
+    (rfuel sat_fuel efuel red_fuel : nat) inj
+    (e1 e2 : term positive) (t : sort positive) :
+    wf_lang l' -> wf_term l' [] e1 t -> wf_term l' [] e2 t ->
+    schedule_sound l' sched ->
+    PositiveInstantiation.egraph_reducing_equal l' sched inj
+      rfuel sat_fuel efuel red_fuel e1 e2 = Success tt ->
+    eq_term l' [] t e1 e2.
+  Proof.
+    intros Hwf He1 He2 Hsched Hsucc.
+    pose proof (@egraph_reducing_cong_sound l' sched rfuel sat_fuel efuel red_fuel
+                  inj [(e1,e2)] [t] Hwf eq_refl
+                  (conj (conj He1 He2) I) Hsched) as Hcong.
+    unfold PositiveInstantiation.egraph_reducing_equal,
+      Defs.egraph_reducing_equal in Hsucc.
+    specialize (Hcong Hsucc).
+    cbn in Hcong. tauto.
+  Qed.
+
+  (* Phase 1 (reverse) + Phase 6 bridge.  Bundles: the forward renaming
+     (string lang/ctx/terms -> a positive lang [l'] with the ctx folded in
+     via ctx_to_rules, preserving wf), the schedule soundness of the built
+     rule_sets, the carry-over of the [Is_Success] hypothesis to the positive
+     [egraph_reducing_equal], and the REVERSE lifting [eq_term on l'] =>
+     [eq_term on l].  The reverse renaming lifting does not exist yet
+     (PosRenamingProperties has only the forward direction); that, plus
+     wf-preservation through [ctx_to_rules], is the remaining content. *)
+  Lemma egraph_reducing_equal'_to_pos
+    (l : lang string)
+    (filter reversible : string * rule string -> bool)
+    (inj_rules : list (ne_list string))
+    (rebuild_fuel sat_fuel efuel red_fuel : nat)
+    (c : ctx string) (t : sort string) (e1 e2 : term string) :
+    wf_lang l ->
+    wf_ctx (Model:=core_model l) c ->
+    wf_term l c e1 t ->
+    wf_term l c e2 t ->
+    Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules
+                       rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
+    exists (l' : lang positive) (e1' e2' : term positive) (t' : sort positive)
+           (sched : pos_schedule) (inj' : named_list positive (list positive)),
+      wf_lang l' /\ wf_term l' [] e1' t' /\ wf_term l' [] e2' t' /\
+      schedule_sound l' sched /\
+      PositiveInstantiation.egraph_reducing_equal l' sched inj'
+        rebuild_fuel sat_fuel efuel red_fuel e1' e2' = Success tt /\
+      (eq_term l' [] t' e1' e2' -> eq_term l c t e1 e2).
+  Proof. Admitted.
+
+End ReducingSkeleton.
+
 (*TODO: generalize what rules to run *)
 Theorem egraph_sound
   (rebuild_fuel sat_fuel efuel red_fuel : nat) l filter
@@ -67,10 +185,16 @@ Theorem egraph_sound
     Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     eq_term l c t e1 e2.
 Proof.
-  intros ? ? ? ?.
-  unfold egraph_reducing_equal'.
-  (*TODO: verify renaming.*)
-Admitted.
+  intros Hl Hc He1 He2 Hsucc.
+  destruct (@egraph_reducing_equal'_to_pos l filter reversible inj_rules
+              rebuild_fuel sat_fuel efuel red_fuel c t e1 e2
+              Hl Hc He1 He2 Hsucc)
+    as (l' & e1' & e2' & t' & sched & inj' & Hwf' & He1' & He2' & Hsched
+        & Hsucc' & Hlift).
+  apply Hlift.
+  eapply egraph_reducing_equal_sound;
+    [ exact Hwf' | exact He1' | exact He2' | exact Hsched | exact Hsucc' ].
+Qed.
 
 (* TODO: think about variable order for query performance
 
