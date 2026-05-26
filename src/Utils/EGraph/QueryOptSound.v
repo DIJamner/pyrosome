@@ -272,8 +272,124 @@ Section WithMap.
   (* ============================================================== *)
   (* Layer A primitives needed by L11 but not yet in Semantics.v.    *)
   (* These should eventually land alongside union_sound, alloc_sound *)
-  (* in Semantics.v; admitted here as a vehicle for L11's proof.     *)
+  (* in Semantics.v.                                                  *)
   (* ============================================================== *)
+
+  (* Helper: find_aux preserves the set of keys in the parent map.
+     [find_aux] either (a) returns the parent unchanged (fuel exhausted,
+     missing key, or self-loop) or (b) [map.put]s an existing key with a
+     new value.  Neither operation removes a key. *)
+  Lemma find_aux_keys_preserved (mr : nat) :
+    forall (i : idx) (pa : idx_map idx) z,
+      Sep.has_key z pa ->
+      Sep.has_key z (snd (find_aux idx Eqb_idx (idx_map idx) mr i pa)).
+  Proof.
+    induction mr; intros i pa z Hz.
+    - cbn. exact Hz.
+    - cbn. destruct (map.get pa i) as [a|] eqn:Hpai; [|exact Hz].
+      eqb_case a i; [exact Hz|].
+      destruct (find_aux idx Eqb_idx (idx_map idx) mr a pa) as [v p'] eqn:Hfa.
+      cbn.
+      pose proof (IHmr a pa z Hz) as IH.
+      rewrite Hfa in IH. cbn in IH.
+      unfold Sep.has_key in *.
+      eqb_case z i.
+      + rewrite map.get_put_same. exact I.
+      + rewrite map.get_put_diff by congruence. exact IH.
+  Qed.
+
+  Lemma UnionFind_find_keys_preserved
+        (uf : union_find idx (idx_map idx) (idx_map nat)) (x : idx) :
+    forall z,
+      Sep.has_key z uf.(parent) ->
+      Sep.has_key z (fst (UnionFind.find uf x)).(parent).
+  Proof.
+    intros z Hz.
+    destruct uf as [ra pa mr nx].
+    cbn [parent] in Hz.
+    unfold UnionFind.find.
+    pose proof (find_aux_keys_preserved (S mr) x pa z Hz) as Hk.
+    destruct (find_aux idx Eqb_idx (idx_map idx) (S mr) x pa) as [cx f] eqn:Hfa.
+    cbn [snd] in Hk.
+    cbn [fst parent]. exact Hk.
+  Qed.
+
+  Lemma Defs_find_keys_preserved (x : idx) :
+    forall e z,
+      Sep.has_key z (parent (equiv e)) ->
+      Sep.has_key z
+        (parent (equiv (snd
+          (@Defs.find idx Eqb_idx symbol symbol_map idx_map idx_trie unit x e)))).
+  Proof.
+    intros e z Hz.
+    unfold Defs.find.
+    destruct (UnionFind.find (equiv e) x) as [uf' v'] eqn:Hf.
+    cbn.
+    pose proof (UnionFind_find_keys_preserved (equiv e) x z Hz) as Hk.
+    rewrite Hf in Hk. cbn in Hk. exact Hk.
+  Qed.
+
+  Lemma UnionFind_union_keys_preserved
+        (uf : union_find idx (idx_map idx) (idx_map nat)) (x y : idx) :
+    forall z,
+      Sep.has_key z uf.(parent) ->
+      Sep.has_key z
+        (fst (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y)).(parent).
+  Proof.
+    intros z Hz.
+    unfold UnionFind.union.
+    destruct (UnionFind.find uf x) as [uf' cx] eqn:Hf1.
+    destruct (UnionFind.find uf' y) as [uf'' cy] eqn:Hf2.
+    cbn.
+    pose proof (UnionFind_find_keys_preserved uf x z Hz) as Hz1.
+    rewrite Hf1 in Hz1. cbn in Hz1.
+    pose proof (UnionFind_find_keys_preserved uf' y z Hz1) as Hz2.
+    rewrite Hf2 in Hz2. cbn in Hz2.
+    eqb_case cx cy.
+    { exact Hz2. }
+    destruct (Nat.compare _ _); cbn in *;
+      unfold Sep.has_key in *.
+    - eqb_case z cy.
+      + rewrite map.get_put_same. exact I.
+      + rewrite map.get_put_diff by congruence. exact Hz2.
+    - eqb_case z cy.
+      + rewrite map.get_put_same. exact I.
+      + rewrite map.get_put_diff by congruence. exact Hz2.
+    - eqb_case z cx.
+      + rewrite map.get_put_same. exact I.
+      + rewrite map.get_put_diff by congruence. exact Hz2.
+  Qed.
+
+  (* union extends the key-set of the union-find. *)
+  Lemma union_extends_keys (x y : idx) :
+    vc (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x y)
+       (fun e res =>
+          forall z, Sep.has_key z e.(equiv).(parent) ->
+                    Sep.has_key z (snd res).(equiv).(parent)).
+  Proof.
+    unfold vc.
+    intros e z Hz.
+    unfold Defs.union; cbn [Mbind StateMonad.state_monad Mret].
+    destruct (@Defs.find idx Eqb_idx symbol symbol_map idx_map idx_trie unit x e)
+      as [v0 e1] eqn:Hf1.
+    cbn [fst snd].
+    assert (Hz1 : Sep.has_key z (parent (equiv e1))).
+    { pose proof (Defs_find_keys_preserved x e z Hz) as Hp.
+      rewrite Hf1 in Hp. cbn in Hp. exact Hp. }
+    destruct (@Defs.find idx Eqb_idx symbol symbol_map idx_map idx_trie unit y e1)
+      as [v1 e2] eqn:Hf2.
+    cbn [fst snd].
+    assert (Hz2 : Sep.has_key z (parent (equiv e2))).
+    { pose proof (Defs_find_keys_preserved y e1 z Hz1) as Hp.
+      rewrite Hf2 in Hp. cbn in Hp. exact Hp. }
+    eqb_case v0 v1.
+    { cbn. exact Hz2. }
+    pose proof (UnionFind_union_keys_preserved (equiv e2) v0 v1 z Hz2) as Hp.
+    destruct (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) (equiv e2) v0 v1)
+      as [uf' v'] eqn:Hu.
+    cbn [fst] in Hp.
+    destruct (eqb v0 v'); cbn [snd equiv parent]; exact Hp.
+  Qed.
 
   (* union preserves the full egraph_ok record (not just union_find_ok). *)
   Lemma union_preserves_egraph_ok (x y : idx) :
@@ -283,7 +399,72 @@ Section WithMap.
           Sep.has_key x e.(equiv).(parent) ->
           Sep.has_key y e.(equiv).(parent) ->
           Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit (snd res)).
-  Admitted.
+  Proof.
+    unfold vc; intros e Hok Hkx Hky.
+    pose proof (egraph_equiv_ok _ _ _ _ _ _ _ _ Hok) as Hexists_roots.
+    epose proof (@Semantics.union_sound idx _ Eqb_idx_ok lt idx_succ idx_zero
+                  symbol symbol_map idx_map idx_map_ok idx_trie unit _ x y e
+                  Hexists_roots Hkx Hky) as Hus.
+    pose proof (union_extends_keys x y) as Hext.
+    unfold vc in Hext. specialize (Hext e).
+    destruct (Defs.union x y e) as [v_u e_u] eqn:Hu_eq.
+    cbn [snd fst] in *.
+    destruct Hus as (Hdb_u & [roots_u Hroots_u] & Hper_u & Hpar_u & Hwl_rel_u & _).
+    (* Hper_lift: pre-union PER is included in post-union PER *)
+    assert (Hper_lift : forall i1 i2,
+              uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e) i1 i2 ->
+              uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e_u) i1 i2).
+    { intros i1 i2 Hi12. apply Hper_u.
+      unfold union_closure_PER. apply PER_clo_base. left. exact Hi12. }
+    constructor.
+    1: { exists roots_u. exact Hroots_u. }
+    1: { (* worklist_ok *)
+         pose proof (worklist_ok _ _ _ _ _ _ _ _ Hok) as Hwlok_e.
+         destruct Hwl_rel_u as [Hwl_same | Hwl_new].
+         { rewrite Hwl_same. eapply all_wkn; [|exact Hwlok_e].
+           intros ent _ Hp. destruct ent as [old new improved | x_a];
+             cbn in *; [apply Hper_lift; exact Hp | exact I]. }
+         { destruct Hwl_new as (v_old & v_new & improved & Hwl_eq & Hper_old & Hper_new).
+           rewrite Hwl_eq. cbn. split.
+           1: { (* uf_rel_PER e_u v_old v_new *)
+                assert (Hr_xy : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e_u) x y).
+                { apply Hper_u. apply PER_clo_base. right. unfold singleton_rel.
+                  split; reflexivity. }
+                unfold uf_rel_PER in *.
+                eapply PER_clo_trans; [exact Hper_old|].
+                eapply PER_clo_trans; [exact Hr_xy|].
+                apply PER_clo_sym. exact Hper_new. }
+           eapply all_wkn; [|exact Hwlok_e].
+           intros ent2 _ Hp2. destruct ent2 as [old2 new2 improved2 | x_a2];
+             cbn in *; [apply Hper_lift; exact Hp2 | exact I]. } }
+    1: { (* parents_ok *)
+         rewrite <- Hpar_u.
+         intros x_p s_p Hgs.
+         pose proof (parents_ok _ _ _ _ _ _ _ _ Hok _ _ Hgs) as Hpok.
+         eapply all_wkn; [|exact Hpok].
+         intros b _ Hbup.
+         destruct Hbup as (bb & Hca & Hbain).
+         destruct Hca as (Hfn & Hargs & Hret).
+         exists bb. split.
+         1: { unfold atom_canonical_equiv. split; [exact Hfn|]. split.
+              1: { clear -Hargs Hper_lift.
+                   revert Hargs. generalize (atom_args b), (atom_args bb).
+                   intros l1 l2. revert l2.
+                   induction l1 as [|w ws IH]; destruct l2 as [|z zs];
+                     cbn; auto; try tauto.
+                   intros [Hw Hws]. split.
+                   { apply Hper_lift. exact Hw. }
+                   { apply IH. exact Hws. } }
+              apply Hper_lift. exact Hret. }
+         unfold atom_in_egraph. rewrite <- Hdb_u. exact Hbain. }
+    (* db_idxs_in_equiv *)
+    rewrite <- Hdb_u. intros b Hb.
+    pose proof (db_idxs_in_equiv _ _ _ _ _ _ _ _ Hok _ Hb) as [Hka Hkr].
+    split.
+    1: { eapply all_wkn; [|exact Hka].
+         intros j _ Hj. apply Hext. exact Hj. }
+    apply Hext. exact Hkr.
+  Qed.
 
   (* union preserves egraph_sound_for_interpretation when the two ids
      are eq_sound_for_model-related under the interpretation. *)
@@ -299,15 +480,45 @@ Section WithMap.
           Semantics.eq_sound_for_model idx symbol idx_map m i x y ->
           Semantics.egraph_sound_for_interpretation
             idx symbol symbol_map idx_map idx_trie unit m i (snd res)).
-  Admitted.
-
-  (* union extends the key-set of the union-find. *)
-  Lemma union_extends_keys (x y : idx) :
-    vc (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x y)
-       (fun e res =>
-          forall z, Sep.has_key z e.(equiv).(parent) ->
-                    Sep.has_key z (snd res).(equiv).(parent)).
-  Admitted.
+  Proof.
+    unfold vc; intros e Hok Hsnd Hkx Hky Heq_xy.
+    pose proof (egraph_equiv_ok _ _ _ _ _ _ _ _ Hok) as Hexists_roots.
+    epose proof (@Semantics.union_sound idx _ Eqb_idx_ok lt idx_succ idx_zero
+                  symbol symbol_map idx_map idx_map_ok idx_trie unit _ x y e
+                  Hexists_roots Hkx Hky) as Hus.
+    pose proof (union_extends_keys x y) as Hext.
+    unfold vc in Hext. specialize (Hext e).
+    destruct (Defs.union x y e) as [v_u e_u] eqn:Hu_eq.
+    cbn [snd fst] in *.
+    destruct Hus as (Hdb_u & _ & Hper_u & _ & _ & _).
+    constructor.
+    1: { (* idx_interpretation_wf: unchanged interpretation *)
+         pose proof (idx_interpretation_wf _ _ _ _ _ _ _ _ _ Hsnd) as Hi_wf.
+         exact Hi_wf. }
+    1: { (* interpretation_exact: keys extended via union_extends_keys *)
+         intros y0 Hy0.
+         pose proof (interpretation_exact _ _ _ _ _ _ _ _ _ Hsnd y0 Hy0) as Hkey.
+         apply Hext. exact Hkey. }
+    1: { (* atom_interpretation: db preserved *)
+         intros a Ha.
+         pose proof (atom_interpretation _ _ _ _ _ _ _ _ _ Hsnd a) as Ha_snd.
+         apply Ha_snd. unfold atom_in_egraph. rewrite Hdb_u. exact Ha. }
+    (* rel_interpretation: lift the closure *)
+    intros i1 i2 Hi12.
+    apply Hper_u in Hi12.
+    induction Hi12 as [a b H1 | a b c IHab Hab IHbc Hbc | a b IHab Hab].
+    - destruct H1 as [Hold | Hnew].
+      + (* Old PER pair: use old rel_interpretation *)
+        pose proof (rel_interpretation _ _ _ _ _ _ _ _ _ Hsnd a b) as Hi_rel.
+        apply Hi_rel; exact Hold.
+      + (* New pair: (a, b) = (x, y) by singleton_rel *)
+        destruct Hnew as [Hax Hby]; subst.
+        exact Heq_xy.
+    - (* Trans *)
+      eapply (eq_sound_for_model_trans idx symbol idx_map m); eauto.
+    - (* Sym *)
+      eapply (eq_sound_for_model_Symmetric idx symbol idx_map m); eauto.
+  Qed.
 
   (* Full L11 hypotheses, matching the existing soundness lemmas in
      Semantics.v (alloc_sound, update_entry_sound, union_sound):
