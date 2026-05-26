@@ -177,6 +177,25 @@ Proof.
     ]}%prerule
     (pi_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* substitution commutes with λ (proof-relevant; lam_irr subst is subsumed
+     by proof irrelevance). Codomain and body lifted via under'. *)
+  elab_rule {[r "G" : #"env", "G'" : #"env", "g" : #"sub" "G" "G'",
+          "rF" : #"relevance", "lF" : #"lvl", "lG" : #"lvl",
+          "F" : #"exp" "G'" (#"info" #"rel" (#"next" "lF")) (#"U" ["G" := "G'"] "rF" "lF"),
+          "B" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"next" "lG"))
+                       (#"U" ["G" := #"ext" "G'" (#"El" "F")] #"rel" "lG"),
+          "t" : #"exp" (#"ext" "G'" (#"El" "F")) (#"info" #"rel" (#"iota" "lG")) (#"El" "B")
+      ----------------------------------------------- ("lam_rel subst")
+      #"exp_subst" "g" (#"lam_rel" "rF" "lF" "lG" "F" "B" "t")
+        = #"lam_rel" "rF" "lF" "lG" (#"exp_subst" "g" "F")
+              (#"exp_subst" {inr (under' {{pe "g"}}) } "B")
+              (#"exp_subst" {inr (under' {{pe "g"}}) } "t")
+      : #"exp" "G" (#"info" #"rel" (#"iota" "lG"))
+        (#"ty_subst" "g" (#"El" ["G" := "G'"] ["r" := #"rel"] ["l" := "lG"]
+              (#"Pi_rel" ["G" := "G'"] "rF" "lF" "lG" "F" "B")))
+    ]}%prerule
+    (pi_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
