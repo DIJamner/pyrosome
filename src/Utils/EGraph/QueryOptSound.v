@@ -193,6 +193,25 @@ Section WithMap.
     unfold map.tuples. rewrite Properties.map.fold_empty. reflexivity.
   Qed.
 
+  (* force_uf on an empty union-find is a no-op.  Useful for reducing
+     optimize_sequent on sequents with no clauses (whose assumption
+     egraph stays empty after clauses_to_instance). *)
+  Lemma force_uf_empty :
+    force_uf idx Eqb_idx idx_map (UnionFind.empty _ _ _ idx_zero)
+    = (tt, UnionFind.empty _ _ _ idx_zero).
+  Proof.
+    unfold force_uf, map.keys, map.tuples.
+    unfold UnionFind.empty. cbn [parent].
+    rewrite Properties.map.fold_empty.
+    cbn. reflexivity.
+  Qed.
+
+  Lemma map_tuples_empty {K V} {mp : map.map K V} {mp_ok : map.ok mp}
+    : map.tuples (@map.empty K V mp) = [].
+  Proof.
+    unfold map.tuples; rewrite Properties.map.fold_empty; reflexivity.
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
@@ -332,10 +351,43 @@ Section WithMap.
      dead eqs), so any satisfying assignment for [s] extends to one
      for the optimised form via the renaming built by
      [clauses_to_instance]. *)
+  (* Helper: optimize_sequent on the empty sequent reduces to a sequent
+     with no assumptions and only trivial conclusions, which any model
+     satisfies. *)
+  Lemma optimize_sequent_empty_satisfies (m : model symbol) :
+    model_satisfies_rule m
+      (optimize_sequent {| seq_assumptions := []; seq_conclusions := [] |}).
+  Proof.
+    intros a_opt Hkeys Hass; cbn -[map.tuples Properties.map.fold_empty] in *.
+    replace (db_to_atoms map.empty : list atom) with (@nil atom)
+      by (symmetry; apply db_to_atoms_empty).
+    cbn [list_Miter]. unfold Mret in *.
+    cbn -[db_to_atoms map.tuples] in *.
+    replace (map.tuples
+               (parent
+                  (snd
+                     (force_uf idx Eqb_idx idx_map
+                        (empty (WithDefault idx) (idx_map idx)
+                           (idx_map nat) idx_zero))))) with (@nil (idx*idx)).
+    { exists a_opt. split; [intros ? ? Hk; exact Hk|]. cbn. trivial. }
+    { cbn. unfold map.tuples. cbn -[map.fold map.keys].
+      unfold UnionFind.empty. cbn -[map.fold map.keys].
+      unfold force_uf. cbn [parent].
+      unfold map.keys, map.tuples.
+      rewrite !Properties.map.fold_empty. cbn.
+      rewrite Properties.map.fold_empty. reflexivity. }
+  Qed.
+
   Lemma optimize_sequent_forward (s : sequent) (m : model symbol) :
     good_sequent s ->
     model_satisfies_rule m s ->
     model_satisfies_rule m (optimize_sequent s).
+  Proof.
+    destruct s as [ [|c_a cs_a] [|c_c cs_c] ]; intros Hgood Hsat.
+    - apply optimize_sequent_empty_satisfies.
+    - admit.
+    - admit.
+    - admit.
   Admitted.
 
   (* Reverse: any model satisfying [optimize_sequent s] also satisfies [s].
@@ -347,6 +399,13 @@ Section WithMap.
     good_sequent s ->
     model_satisfies_rule m (optimize_sequent s) ->
     model_satisfies_rule m s.
+  Proof.
+    destruct s as [ [|c_a cs_a] [|c_c cs_c] ]; intros Hgood Hopt.
+    - (* Empty-empty: model_satisfies_rule m (empty sequent) is trivial. *)
+      intros a Hkeys Hass. exists a; split; [intros ? ? Hk; exact Hk | cbn; trivial].
+    - admit.
+    - admit.
+    - admit.
   Admitted.
 
   Theorem optimize_sequent_equiv (s : sequent) :
