@@ -25,7 +25,7 @@ Import StateMonad.
 Import StringInstantiation.
 
 
-From Pyrosome Require Import Tools.Matches.
+From Pyrosome Require Import Tools.Matches Tools.Resolution.
 
 
 Definition print_egraph {X} (g : instance string string string_trie_map string_trie_map string_list_trie_map X) :=
@@ -82,7 +82,7 @@ Ltac by_reduction' reversible inj_rules :=
   try reduce;
    *)
     apply (egraph_sound 100 100 100 100 filter_rules reversible inj_rules);
-    [prove_from_known_elabs| | | | flagged_exact I].
+    [prove_by_lang_db| | | | flagged_exact I].
 
 
 (* TODO: plug inj_rules into tactics *)

@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome Require Import Theory.Core Tools.AllConstructors Compilers.Compilers
-  Elab.Elab Elab.ElabCompilers.
+  Elab.Elab.
 Import Core.Notations.
 (*TODO: repackage this in compilers*)
 Import CompilerDefs.Notations.
@@ -31,19 +31,6 @@ Section WithVar.
   Notation rule := (@rule V).
   Notation lang := (@lang V).
   Notation compiler := (@compiler V).
-
-Lemma elab_preserving_compiler_embed cmp_pre tgt cmp ecmp src tgt'
-    : elab_preserving_compiler cmp_pre tgt cmp ecmp src ->
-      incl tgt tgt' ->
-      elab_preserving_compiler cmp_pre tgt' cmp ecmp src.
-Proof.
-  induction 1; basic_goal_prep; constructor.
-  6:eapply eq_sort_lang_monotonicity; now eauto.
-  7:eapply eq_term_lang_monotonicity; now eauto.
-  all:basic_core_firstorder_crush.
-Qed.
-Hint Resolve elab_preserving_compiler_embed : auto_elab.
-
 
 Lemma strengthen_named_list_lookup {A} (cmp : named_list A) n
   : forall cmp', incl cmp cmp' ->

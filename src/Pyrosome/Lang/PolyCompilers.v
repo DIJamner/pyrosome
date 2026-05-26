@@ -58,7 +58,7 @@ Proof.
   eapply parameterize_lang_preserving_ext;
     try typeclasses eauto;
     [repeat t';  constructor (*TODO: include in t'*)
-    | now prove_from_known_elabs..
+    | now prove_by_lang_db..
     | vm_compute; exact I].
 Qed.
 #[local] Definition stlc_parameterized_entry :=

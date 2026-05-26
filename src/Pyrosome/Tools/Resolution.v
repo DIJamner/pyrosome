@@ -896,6 +896,3 @@ Ltac prove_by_cmp_db :=
   apply (cmp_wf_in_db_correct _ _ _ _ (proj2_sig (db_append_cmp_list (V:=string) db)));
   flagged_exact I.
 
-(*TODO: get rid of this *)
-From Pyrosome.Tools Require Matches.
-Ltac Matches.prove_from_known_elabs ::= prove_by_lang_db.
