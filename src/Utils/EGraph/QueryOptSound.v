@@ -246,6 +246,29 @@ Section WithMap.
      full L11 also extends the interpretation and tracks the renaming;
      this signature is the structural skeleton — the inductive cases
      are filled by alloc_sound, union_sound, update_entry_sound. *)
+  (* rename_lookup behaviour: hit returns input unchanged. *)
+  Lemma rename_lookup_hit (x : idx) (sub0 : named_list idx idx)
+        (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) (y : idx) :
+    named_list_lookup_err sub0 x = Some y ->
+    rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+      x sub0 e0 = ((y, sub0), e0).
+  Proof.
+    intros Hl. unfold rename_lookup. rewrite Hl. reflexivity.
+  Qed.
+
+  (* rename_lookup behaviour: miss invokes alloc with extended sub. *)
+  Lemma rename_lookup_miss (x : idx) (sub0 : named_list idx idx)
+        (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    named_list_lookup_err sub0 x = None ->
+    forall y e1,
+      alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0 = (y, e1) ->
+      rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+        x sub0 e0 = ((y, (x,y)::sub0), e1).
+  Proof.
+    intros Hl y e1 Ha. unfold rename_lookup. rewrite Hl.
+    cbn. rewrite Ha. reflexivity.
+  Qed.
+
   (* Full L11 hypotheses, matching the existing soundness lemmas in
      Semantics.v (alloc_sound, update_entry_sound, union_sound):
 
