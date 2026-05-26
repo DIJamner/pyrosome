@@ -104,6 +104,20 @@ Proof.
     ]}%prerule
     (cast_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* castrefl A t : a proof that t equals (cast A A refl t).  (Typed.agda:123-126) *)
+  elab_rule {[r "G" : #"env",
+          "A" : #"exp" "G" (#"info" #"rel" (#"next" #"L0")) (#"U" ["G" := "G"] #"rel" #"L0"),
+          "t" : #"exp" "G" (#"info" #"rel" (#"iota" #"L0")) (#"El" "A")
+      -----------------------------------------------
+      #"castrefl" "A" "t"
+        : #"exp" "G" (#"info" #"irr" (#"iota" #"L0"))
+          (#"El" ["G" := "G"] ["r" := #"irr"] ["l" := #"L0"]
+            (#"Id" ["G" := "G"] ["l" := #"L0"] "A" "t"
+              (#"cast" ["r" := #"rel"] "A" "A"
+                (#"Idrefl" ["G" := "G"] ["l" := #"L1"] (#"u0" ["G" := "G"] #"rel") "A") "t")))
+    ]}%prerule
+    (cast_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
