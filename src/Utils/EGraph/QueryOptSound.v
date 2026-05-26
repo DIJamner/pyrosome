@@ -296,6 +296,9 @@ Section WithMap.
     (* Renaming consistency at the start. *)
     (forall x y, In (x, y) sub0 ->
                  forall d, map.get a_src x = Some d -> map.get i y = Some d) ->
+    (* The renaming's codomain lives in the egraph's union-find. *)
+    (forall x y, In (x, y) sub0 ->
+                 Sep.has_key y (parent (equiv e0))) ->
     (* The source clauses are sound under a_src. *)
     all (Semantics.clause_sound_for_model idx symbol idx_map m a_src) cs ->
     match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
@@ -308,7 +311,7 @@ Section WithMap.
     end.
   Proof.
     revert sub0 e0 i.
-    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hcs.
+    induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hsubdom Hcs.
     - cbn. split; [exact Hok|]. exists i.
       split; [intros ? ? Hk; exact Hk | exact Hsnd].
     - cbn. unfold add_clause_to_instance.
