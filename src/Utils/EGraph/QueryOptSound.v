@@ -423,9 +423,104 @@ Section WithMap.
           destruct Halloc_sound as
             (Hok_a & Hsnd_a & Hi_xnew_none & Hk_xnew_e0_none & Hk_xnew_a &
              Hk_pres & Hdb_a & Hpar_a & Hwl_a); auto.
-          (* The remaining: rename_lookup_hit for y on e_alloc + union on e_alloc
-             + apply IH with (map.put i x_new dx). *)
-          admit.
+          assert (Hxy_neq : x <> y).
+          { intros Heq; subst y. rewrite Hx in Hy; discriminate. }
+          assert (Hrm_x : rename_lookup idx Eqb_idx idx_succ symbol symbol_map
+                            idx_map idx_trie unit x sub0 e0
+                          = ((x_new, (x, x_new)::sub0), e_alloc)).
+          { unfold rename_lookup. rewrite Hx. cbn. rewrite Halloc. reflexivity. }
+          cbn.
+          rewrite Hrm_x. cbn -[Defs.union].
+          unfold Basics.compose, rename_lookup at 1.
+          assert (Hy' : named_list_lookup_err ((x, x_new)::sub0) y = Some y').
+          { cbn. case_match.
+            - exfalso; apply Hxy_neq.
+              pose proof (Eqb_idx_ok y x) as Hyx_dec.
+              rewrite case_match_eqn in Hyx_dec.
+              symmetry; exact Hyx_dec.
+            - exact Hy. }
+          rewrite Hy'. cbn -[Defs.union find].
+          (* Apply the union step pattern from (hit, hit), now on e_alloc with
+             extended interpretation (map.put i x_new dx). *)
+          destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _
+                       x_new y' e_alloc)
+            as [v e_unioned] eqn:Hu.
+          unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
+          (* Establish has_key y' in e_alloc via Hk_pres. *)
+          assert (Hky_a : Sep.has_key y' (parent (equiv e_alloc)))
+            by (apply Hk_pres; exact Hky_e0).
+          (* Use IH with the extended interpretation (map.put i x_new dx).
+             The result will also have its existential a' relative to that
+             extended interp; we then convert back to extending i via map.put. *)
+          assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+                                              ((x, x_new) :: sub0) e_unioned in
+                             egraph_ok idx lt symbol symbol_map idx_map idx_trie
+                               unit e1 /\
+                             (exists i' : idx_map (domain symbol m),
+                                map.extends i' (map.put i x_new dx) /\
+                                egraph_sound_for_interpretation idx symbol
+                                  symbol_map idx_map idx_trie unit m i' e1)).
+          { apply IH.
+          { pose proof (union_preserves_egraph_ok x_new y' e_alloc) as Hpres.
+            unfold vc in Hpres.
+            replace (union x_new y' e_alloc) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres. apply Hpres; auto. }
+          { pose proof (union_preserves_egraph_sound_for_interpretation
+                          m Hm x_new y' (map.put i x_new dx) e_alloc) as Hpres.
+            unfold vc in Hpres.
+            replace (union x_new y' e_alloc) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres. apply Hpres; auto.
+            (* eq_sound m (map.put i x_new dx) x_new y' *)
+            unfold Semantics.eq_sound_for_model.
+            rewrite map.get_put_same.
+            rewrite map.get_put_diff.
+            - rewrite (Hren _ _ Hiny _ Hay). cbn. exact Hc.
+            - (* x_new <> y' *)
+              intros Heq. subst y'.
+              apply Hk_xnew_e0_none. exact Hky_e0. }
+          { (* renaming consistency for (x, x_new)::sub0 *)
+            intros a b Hin d Hg.
+            destruct Hin as [Heq|Hin].
+            - inversion Heq; subst a b.
+              rewrite map.get_put_same.
+              rewrite Hax in Hg. inversion Hg; subst d. reflexivity.
+            - rewrite map.get_put_diff.
+              + pose proof (union_extends_keys x_new y' e_alloc) as Hpres.
+                unfold vc in Hpres.
+                replace (union x_new y' e_alloc) with (v, e_unioned) in Hpres
+                  by (rewrite <- Hu; reflexivity).
+                cbn in Hpres.
+                (* Hren applies — but we need value via the original i, not put *)
+                pose proof (Hren _ _ Hin _ Hg) as Hib.
+                exact Hib.
+              + intros Heq. subst b.
+                pose proof (Hsubdom _ _ Hin) as Hkb.
+                apply Hk_xnew_e0_none. exact Hkb. }
+          { (* subdom for (x, x_new)::sub0 in e_unioned *)
+            intros a b Hin.
+            pose proof (union_extends_keys x_new y' e_alloc) as Hpres.
+            unfold vc in Hpres.
+            replace (union x_new y' e_alloc) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres.
+            destruct Hin as [Heq|Hin].
+            - inversion Heq; subst a b. apply Hpres. exact Hk_xnew_a.
+            - apply Hpres. apply Hk_pres. apply (Hsubdom _ _ Hin). }
+          { exact Hcs'. } }
+          (* Now translate Hpost_IH back to the outer goal (extending i not (map.put i x_new dx)) *)
+          destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
+            as [pp e_final] eqn:Hci.
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+          split; [exact Hok_f|].
+          exists i_final.
+          split; [|exact Hsnd_f].
+          (* i_final extends map.put i x_new dx, which extends i (since x_new ∉ i) *)
+          intros k d Hk.
+          apply Hext_f.
+          rewrite map.get_put_diff; [exact Hk|].
+          intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
         * (* (miss, miss) *) admit.
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
         admit.
