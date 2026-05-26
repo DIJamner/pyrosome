@@ -228,6 +228,48 @@ Section WithMap.
     unfold map.tuples; rewrite Properties.map.fold_empty; reflexivity.
   Qed.
 
+  (* ============================================================== *)
+  (* L11: clauses_to_instance soundness                              *)
+  (* ============================================================== *)
+
+  (* The bridge function: extend a source-vars assignment to also
+     interpret the e-graph ids by composing through the renaming. *)
+  Definition extend_via_sub {A} (i : idx_map A) (sub : named_list idx idx)
+    : idx_map A :=
+    fold_right (fun '(x, y) acc =>
+                  match map.get i x with
+                  | Some d => map.put acc y d
+                  | None => acc
+                  end) i sub.
+
+  (* L11 (preservation of egraph_ok across clauses_to_instance).  The
+     full L11 also extends the interpretation and tracks the renaming;
+     this signature is the structural skeleton — the inductive cases
+     are filled by alloc_sound, union_sound, update_entry_sound. *)
+  Lemma clauses_to_instance_preserves_ok
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e0 ->
+    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
+    | (_, e1) =>
+        Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1
+    end.
+  Proof.
+    revert sub0 e0.
+    induction cs as [|c cs IH]; intros sub0 e0 Hok.
+    - cbn. exact Hok.
+    - cbn. unfold add_clause_to_instance.
+      destruct c as [x y | a].
+      + (* eq_clause: rename_lookup x, rename_lookup y, union x' y'.
+           Each preserves egraph_ok via alloc_sound + union_sound. *)
+        admit.
+      + (* atom_clause: rename_atom, then update_entry.
+           rename_atom is a chain of rename_lookups; update_entry
+           preserves egraph_ok via update_entry_sound. *)
+        admit.
+  Admitted.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
