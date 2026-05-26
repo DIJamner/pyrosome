@@ -614,7 +614,158 @@ Section WithMap.
           apply Hext_f.
           rewrite map.get_put_diff; [exact Hk|].
           intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
-        * (* (miss, miss) *) admit.
+        * (* (miss, miss) — both fresh, alloc_sound × 2 *)
+          cbn in Hcs. destruct Hcs as [Hc Hcs'].
+          unfold Semantics.eq_sound_for_model in Hc.
+          destruct (map.get a_src x) as [dx|] eqn:Hax; cbn in Hc; try tauto.
+          destruct (map.get a_src y) as [dy|] eqn:Hay; cbn in Hc; try tauto.
+          assert (Hwf_dx : m.(domain_wf symbol) dx).
+          { destruct Hm as [HPER _ _ _ _].
+            unfold domain_wf. eapply PER_Transitive;
+              [eassumption | apply PER_Symmetric; auto]. }
+          assert (Hwf_dy : m.(domain_wf symbol) dy).
+          { destruct Hm as [HPER _ _ _ _].
+            unfold domain_wf. eapply PER_Transitive;
+              [apply PER_Symmetric; eassumption | eassumption]. }
+          (* First alloc: for x *)
+          pose proof (Semantics.alloc_sound idx Eqb_idx Eqb_idx_ok lt idx_succ
+                        idx_zero symbol symbol_map idx_map idx_map_ok idx_trie unit m
+                        Hlti Hlts Hltt i dx Hwf_dx Hwf_dx) as Halloc_x.
+          unfold vc in Halloc_x.
+          destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+            as [x_new e_x] eqn:Halloc_x_eq.
+          specialize (Halloc_x e0).
+          rewrite Halloc_x_eq in Halloc_x. cbn in Halloc_x.
+          destruct Halloc_x as
+            (Hok_x & Hsnd_x & Hi_xnew_none & Hk_xnew_e0_none & Hk_xnew_x &
+             Hk_pres_x & Hdb_x & Hpar_x & Hwl_x); auto.
+          (* Second alloc: for y, on e_x with interpretation (map.put i x_new dx) *)
+          pose proof (Semantics.alloc_sound idx Eqb_idx Eqb_idx_ok lt idx_succ
+                        idx_zero symbol symbol_map idx_map idx_map_ok idx_trie unit m
+                        Hlti Hlts Hltt (map.put i x_new dx) dy Hwf_dy Hwf_dy)
+            as Halloc_y.
+          unfold vc in Halloc_y.
+          destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e_x)
+            as [y_new e_xy] eqn:Halloc_y_eq.
+          specialize (Halloc_y e_x).
+          rewrite Halloc_y_eq in Halloc_y. cbn in Halloc_y.
+          destruct Halloc_y as
+            (Hok_y & Hsnd_y & Hi_ynew_none & Hk_ynew_x_none & Hk_ynew_y &
+             Hk_pres_y & Hdb_y & Hpar_y & Hwl_y); auto.
+          (* Now case-split on whether x = y.  If x = y, the second alloc
+             doesn't happen (rename_lookup y after the first alloc hits the
+             freshly-added (x, x_new) entry).  If x ≠ y, the second alloc
+             allocates y_new for y. *)
+          (* Establish Hrm_x : rename_lookup x sub0 e0 = ((x_new, (x, x_new)::sub0), e_x) *)
+          assert (Hrm_x : rename_lookup idx Eqb_idx idx_succ symbol symbol_map
+                            idx_map idx_trie unit x sub0 e0
+                          = ((x_new, (x, x_new)::sub0), e_x)).
+          { unfold rename_lookup. rewrite Hx. cbn. rewrite Halloc_x_eq. reflexivity. }
+          cbn.
+          rewrite Hrm_x. cbn -[Defs.union].
+          unfold Basics.compose, rename_lookup at 1.
+          (* The second alloc only matters when x ≠ y.  For (miss, miss),
+             both Hx and Hy are None.  We need to distinguish via eqb. *)
+          assert (Hxy_neq : x <> y).
+          { (* The discharger of (miss, miss) for x = y becomes the (hit) lookup
+               case for y after the first alloc; treat that branch via admit for
+               now (the reflexive eq_clause(x,x) case). *)
+            admit. }
+          assert (Hy_lookup_extended : named_list_lookup_err ((x, x_new) :: sub0) y = None).
+          { cbn. case_match.
+            - exfalso; apply Hxy_neq.
+              pose proof (Eqb_idx_ok y x) as Hyx_dec.
+              rewrite case_match_eqn in Hyx_dec.
+              symmetry; exact Hyx_dec.
+            - exact Hy. }
+          rewrite Hy_lookup_extended. cbn -[Defs.union find].
+          rewrite Halloc_y_eq. cbn -[Defs.union find].
+          (* Union x_new y_new on e_xy *)
+          destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _
+                       x_new y_new e_xy)
+            as [v e_unioned] eqn:Hu.
+          unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
+          assert (Hk_xnew_xy : Sep.has_key x_new (parent (equiv e_xy)))
+            by (apply Hk_pres_y; exact Hk_xnew_x).
+          assert (Hxy_idx_neq : x_new <> y_new).
+          { intros Heq. rewrite <- Heq in Hk_ynew_x_none.
+            apply Hk_ynew_x_none. exact Hk_xnew_x. }
+          assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+                                              ((y, y_new) :: (x, x_new) :: sub0) e_unioned in
+                             egraph_ok idx lt symbol symbol_map idx_map idx_trie
+                               unit e1 /\
+                             (exists i' : idx_map (domain symbol m),
+                                map.extends i' (map.put (map.put i x_new dx) y_new dy) /\
+                                egraph_sound_for_interpretation idx symbol
+                                  symbol_map idx_map idx_trie unit m i' e1)).
+          { apply IH.
+            { pose proof (union_preserves_egraph_ok x_new y_new e_xy) as Hpres.
+              unfold vc in Hpres.
+              replace (union x_new y_new e_xy) with (v, e_unioned) in Hpres
+                by (rewrite <- Hu; reflexivity).
+              cbn in Hpres. apply Hpres; auto. }
+            { pose proof (union_preserves_egraph_sound_for_interpretation
+                            m Hm x_new y_new (map.put (map.put i x_new dx) y_new dy)
+                            e_xy) as Hpres.
+              unfold vc in Hpres.
+              replace (union x_new y_new e_xy) with (v, e_unioned) in Hpres
+                by (rewrite <- Hu; reflexivity).
+              cbn in Hpres. apply Hpres; auto.
+              unfold Semantics.eq_sound_for_model.
+              rewrite (map.get_put_diff _ _ _ _ Hxy_idx_neq).
+              rewrite map.get_put_same. cbn.
+              rewrite map.get_put_same. cbn. exact Hc. }
+            { intros a b Hin d Hg.
+              destruct Hin as [Heq|Hin].
+              - inversion Heq; subst a b.
+                rewrite map.get_put_same.
+                rewrite Hay in Hg. inversion Hg; subst d. reflexivity.
+              - destruct Hin as [Heq|Hin].
+                + inversion Heq; subst a b.
+                  rewrite (map.get_put_diff _ _ _ _ Hxy_idx_neq).
+                  rewrite map.get_put_same.
+                  rewrite Hax in Hg. inversion Hg; subst d. reflexivity.
+                + assert (Hb_ne_ynew : b <> y_new).
+                  { intros Heq; subst b.
+                    pose proof (Hsubdom _ _ Hin) as Hkb.
+                    apply Hk_ynew_x_none. apply Hk_pres_x. exact Hkb. }
+                  assert (Hb_ne_xnew : b <> x_new).
+                  { intros Heq; subst b.
+                    pose proof (Hsubdom _ _ Hin) as Hkb.
+                    apply Hk_xnew_e0_none. exact Hkb. }
+                  rewrite (map.get_put_diff _ _ _ _ Hb_ne_ynew).
+                  rewrite (map.get_put_diff _ _ _ _ Hb_ne_xnew).
+                  exact (Hren _ _ Hin _ Hg). }
+            { intros a b Hin.
+              pose proof (union_extends_keys x_new y_new e_xy) as Hpres.
+              unfold vc in Hpres.
+              replace (union x_new y_new e_xy) with (v, e_unioned) in Hpres
+                by (rewrite <- Hu; reflexivity).
+              cbn in Hpres.
+              destruct Hin as [Heq|Hin].
+              - inversion Heq; subst a b. apply Hpres. exact Hk_ynew_y.
+              - destruct Hin as [Heq|Hin].
+                + inversion Heq; subst a b. apply Hpres. exact Hk_xnew_xy.
+                + apply Hpres. apply Hk_pres_y. apply Hk_pres_x.
+                  apply (Hsubdom _ _ Hin). }
+            { exact Hcs'. } }
+          destruct (clauses_to_instance idx_succ cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned)
+            as [pp e_final] eqn:Hci.
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+          split; [exact Hok_f|].
+          exists i_final.
+          split; [|exact Hsnd_f].
+          intros k d Hk.
+          apply Hext_f.
+          assert (Hyx_idx_neq : y_new <> x_new) by (intros Heq; apply Hxy_idx_neq; symmetry; exact Heq).
+          assert (Hi_ynew_orig : map.get i y_new = None).
+          { rewrite map.get_put_diff in Hi_ynew_none.
+            - exact Hi_ynew_none.
+            - exact Hyx_idx_neq. }
+          rewrite map.get_put_diff.
+          2: { intros Heq. subst k. rewrite Hi_ynew_orig in Hk. discriminate. }
+          rewrite map.get_put_diff; [exact Hk|].
+          intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
         admit.
   Admitted.
