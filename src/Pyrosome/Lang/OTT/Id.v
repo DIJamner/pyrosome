@@ -104,20 +104,17 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* NOTE: transp (Typed.agda:109-116) deferred.  The full pipeline was tried:
-       push_rule_no_compute (fully-explicit rule, bypasses infer_rule)
-       + the do_check_computations flag (eager e-graph, so checks run in-proof)
-       + apply wf_term_rule (wf_ctx / wf_sort / sublist)
-       + per-binding wf_ctx decomposition.
-     The wall is solve_wf_ctx: the e-graph wf check for transp's CONTEXT (whose
-     P and s sorts are the nested ext/El and ty_subst/snoc terms) does not
-     terminate in practical time (uncapped eager build ran >15 min, killed).
-     compute_sort_wf re-invokes solve_wf_ctx internally, so the conclusion check
-     and every per-binding check inherit the cost (O(n^2)); decomposition alone
-     does not help.  A tractable proof would need fully-manual wf_sort_by/
-     wf_term_by down to leaves (never calling solve_wf_ctx on the big sorts),
-     or a wf_ctx-sharing tactic.  transp's computation is in any case subsumed
-     by proof irrelevance (its result lives in SProp). *)
+  (* NOTE: transp (Typed.agda:109-116) deferred — needs MANUAL CONVERSION.
+     push_rule_no_compute (gets past infer_rule) + compute_noconv_wf_rule_sound
+     (syntactic vm_compute wf check, no e-graph) was tried: it returns None, i.e.
+     transp's wf genuinely needs conversion.  Pinpointed: the single substitution
+     #"snoc" #"id" "t" (and ...u) requires the value's expected type
+     ty_subst id (El A) to equal El A, which holds only by the ty_subst_id rule.
+     The syntactic check can't do that; the e-graph can but solve_wf_ctx does not
+     terminate on these sorts.  Path: prove the wf_rule via manual Matches.v
+     tactics with an explicit wf_term_conv / ty_subst_id step at the snoc-id
+     points (rest via the noconv/structural checks).  transp's computation is in
+     any case subsumed by proof irrelevance. *)
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
