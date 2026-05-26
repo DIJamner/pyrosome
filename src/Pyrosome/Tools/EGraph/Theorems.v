@@ -1445,21 +1445,138 @@ Section WithVar.
         cbn [Mbind StateMonad.state_monad Mret].
         destruct with_sorts eqn:Hws.
         1:{ (* with_sorts = true: add_open_sort_inner on t_rule, then
-               update_entry on sort_of(x_res).
-               Blocked on the strict-decreasing-language constraint for
-               add_open_sort_inner_sound: needs `length l2 < length l1`,
-               which requires constructing l2 as a proper prefix of l1
-               where t_rule is wf (i.e., where the original rule for
-               `name` does not yet appear).  The structural argument
-               (extract a smaller l2 via wf_lang_ext_split on Hrule_in)
-               is conceptually straightforward but requires plumbing
-               not present elsewhere in the codebase.  Once that l2 is
-               in hand, the proof mirrors add_open_sort'_sound's
-               structure: apply add_open_sort_inner_sound to get the
-               sort id t_v, then update_entry_sound on (sort_of,
-               [x_res], t_v) with the interprets_to_sort_of witness
-               from H0 (wf_term e_x t[/s/]), then conclude. *)
-            admit. }
+               update_entry on sort_of(x_res). *)
+            pose proof (wf_lang_ext_split _ _ _ Hwf1 Hrule_in_l1) as Hsplit.
+            destruct Hsplit as [l2 Hsplit2].
+            destruct Hsplit2 as [Hwfl2 Hsplit3].
+            destruct Hsplit3 as [Hwfr_l2 Hsplit4].
+            destruct Hsplit4 as [Hincl_l2 Hlen_l2].
+            apply invert_wf_term_rule in Hwfr_l2.
+            destruct Hwfr_l2 as [Hwfc_l2 Hwfrest].
+            destruct Hwfrest as [_ Hwfsort_l2].
+            assert (Hlen_aout : length a_out = length c'_rule) by
+              (pose proof (wf_args_length_eq Hwfargs_subst) as Hlen_eq;
+               apply TrieMap.list_Mmap_length in Hdl; rewrite Hdl, length_map;
+               destruct (PeanoNat.Nat.eq_dec
+                           (length (map inl dl' : list (term + sort)))
+                           (length (map inl s'[/with_names_from c s/]
+                                    : list (term + sort)))) as [Heq|Hne];
+               [rewrite !length_map in Heq; congruence
+               | exfalso;
+                 apply (all2_len_False (lang_model_eq l) _ _ Hne Hai_out)]).
+            assert (Hmaps_rule : map fst c'_rule
+                                 = map fst (combine (map fst c'_rule) a_out)) by
+              (rewrite combine_map_fst_is_with_names_from;
+               symmetry; apply map_fst_with_names_from; congruence).
+            pose proof (add_open_sort_inner_sound l2 c'_rule t_rule
+                          (s'[/with_names_from c s/])
+                          (combine (map fst c'_rule) a_out) i'
+                          Hwfl2 Hlen_l2 Hincl_l2 Hwfargs_subst
+                          Hwfc_l2 Hwfsort_l2 Hmaps_rule)
+              as Hsort_snd.
+            unfold vc in Hsort_snd. specialize (Hsort_snd e_he).
+            unfold open_sort_post in Hsort_snd.
+            assert (Hai_at_he :
+                      args_in_instance l (s'[/with_names_from c s/]) i'
+                        (map snd (combine (map fst c'_rule) a_out))).
+            { rewrite combine_map_fst_is_with_names_from.
+              replace (map snd (with_names_from c'_rule a_out)) with a_out;
+                [|clear -Hlen_aout; revert a_out Hlen_aout;
+                  induction c'_rule as [|[? ?] ? IH]; intros [|? ?]; cbn;
+                  intros; try discriminate; try reflexivity;
+                  f_equal; auto].
+              eapply args_in_instance_monotone; [exact Hexti'|].
+              unfold args_in_instance. rewrite Hdl. cbn. exact Hai_out. }
+            specialize (Hsort_snd Hok_he Hsnd' Hai_at_he).
+            destruct (add_open_sort_inner (combine (map fst c'_rule) a_out)
+                        t_rule e_he) as [t_v e_sort] eqn:Heq_sort.
+            cbn [fst snd] in Hsort_snd.
+            destruct Hsort_snd as [i_sort Hi_sort].
+            destruct Hi_sort as [Hext_sort Hdom_sort].
+            destruct Hext_sort as [Hok_sort Hr1'].
+            destruct Hr1' as [Hexti_sort Hr2'].
+            destruct Hr2' as [Hsnd_sort Hkeys_sort].
+            cbn [fst snd] in *.
+            assert (Hdom_eq_lifted :
+                      option_relation (domain_eq V lang_model)
+                        (map.get i_sort x_res)
+                        (Some (inl (con name s'[/with_names_from c s/])
+                               : domain V lang_model))).
+            { destruct (map.get i' x_res) as [d|] eqn:Hg; cbn in Hdom_eq.
+              - apply Hexti_sort in Hg. rewrite Hg. cbn. exact Hdom_eq.
+              - discriminate Hdom_eq. }
+            destruct (map.get i_sort x_res) as [d_x|] eqn:Hgx_sort;
+              cbn in Hdom_eq_lifted; [|discriminate Hdom_eq_lifted].
+            destruct (map.get i_sort t_v) as [d_t|] eqn:Hgtv;
+              cbn in Hdom_sort; [|discriminate Hdom_sort].
+            inversion Hdom_eq_lifted as
+                [e_x e_y t_x Heqterm_x Hdxeq Hineq | ]; subst d_x.
+            inversion Hdom_sort as
+                [| t_t1 t_t2 Heqsort_t Hdteq Hineq2]; subst d_t.
+            assert (Hwfex_tx : wf_term l [] e_x t_x) by
+              (eapply eq_term_wf_l; eauto using wf_ctx_nil).
+            assert (Hwfcon_tx :
+                      wf_term l [] (con name s'[/with_names_from c s/]) t_x) by
+              (eapply eq_term_wf_r; eauto using wf_ctx_nil).
+            assert (Hwfcon_tr :
+                      wf_term l [] (con name s'[/with_names_from c s/])
+                        (t_rule[/with_names_from c'_rule
+                                 (s'[/with_names_from c s/])/])) by
+              (eapply wf_term_by; eauto).
+            assert (Heq_tx_tr :
+                      eq_sort l [] t_x
+                        (t_rule[/with_names_from c'_rule
+                                 (s'[/with_names_from c s/])/])) by
+              (eapply term_sorts_eq; eauto using wf_ctx_nil).
+            assert (Heq_tx_t1 : eq_sort l [] t_x t_t1) by
+              (eapply eq_sort_trans; [exact Heq_tx_tr|];
+               eapply eq_sort_sym; eauto).
+            assert (Hwfex_t1 : wf_term l [] e_x t_t1) by
+              (eapply wf_term_conv; eauto).
+            assert (Hkey_tv : Sep.has_key t_v (parent (equiv e_sort))).
+            { destruct Hsnd_sort as [_ Hi_exact _ _].
+              apply Hi_exact. rewrite Hgtv. exact I. }
+            assert (Hkey_xres_sort :
+                      Sep.has_key x_res (parent (equiv e_sort))) by
+              (apply Hkeys_sort; exact Hkey_res).
+            assert (Hatom_snd :
+                      atom_sound_for_model V V V_map lang_model i_sort
+                        (Build_atom sort_of [x_res] t_v)).
+            { unfold atom_sound_for_model. cbn.
+              destruct (map.get i_sort x_res) eqn:Hgx_sort2; [|congruence].
+              inversion Hgx_sort2; subst. rewrite H1.
+              destruct (map.get i_sort t_v) eqn:Hgtv2; [|congruence].
+              inversion Hgtv2; subst. rewrite H2. cbn.
+              inversion Hgx_sort; inversion Hgtv; subst.
+              econstructor. exact Hwfex_t1. }
+            pose proof (@update_entry_sound V V_Eqb V_Eqb_ok lt succ V_default
+                          V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok
+                          V_trie V_trie_ok X _ lang_model
+                          (lang_model_ok l Hsof Hwf)
+                          i_sort (Build_atom sort_of [x_res] t_v)) as Hue.
+            unfold vc in Hue. specialize (Hue e_sort).
+            specialize (Hue Hok_sort Hsnd_sort).
+            assert (Hargs_keys :
+                      forall x, In x [x_res] ->
+                                Sep.has_key x (parent (equiv e_sort))) by
+              (intros x Hx; cbn in Hx; destruct Hx as [Hxx|Hxx];
+               [subst x; exact Hkey_xres_sort | contradiction]).
+            specialize (Hue Hargs_keys Hkey_tv Hatom_snd).
+            destruct (update_entry (Build_atom sort_of [x_res] t_v) e_sort)
+              as [unit_r e_update] eqn:Heq_update.
+            cbn [fst snd] in Hue.
+            destruct Hue as [Hok_update Hue2].
+            destruct Hue2 as [Hsnd_update Hkeys_update].
+            exists i_sort. cbn [fst snd]. split.
+            - unfold extending_sound. split; [exact Hok_update|].
+              split.
+              + intros k v Hgv. apply Hexti_sort. apply Hexti'.
+                apply Hexti_out. exact Hgv.
+              + split; [exact Hsnd_update|].
+                intros k Hk. apply Hkeys_update. apply Hkeys_sort.
+                apply Hkeys'. apply Hkeys_out. exact Hk.
+            - rewrite Hgx_sort. cbn.
+              apply lm_eq_terms with (t := t_x). exact Heqterm_x. }
         (* with_sorts = false: just return x_res *)
         cbn [Mret StateMonad.state_monad fst snd].
         exists i'.
@@ -1593,7 +1710,7 @@ Section WithVar.
           destruct (map.get i_head v_head) as [d|] eqn:Hgh; cbn in Hgvhead.
           - apply Hexti_final in Hgh. rewrite Hgh. cbn. exact Hgvhead.
           - discriminate. }
-    Admitted.
+    Qed.
 
     (* Induction on the fuel parameter, using [add_open_sound] in the
        step case to discharge the [list_Mmap (add_open_term' ...)]
