@@ -664,20 +664,33 @@ Section WithMap.
           cbn.
           rewrite Hrm_x. cbn -[Defs.union].
           unfold Basics.compose, rename_lookup at 1.
-          (* For (miss, miss), x and y are both fresh in sub0.  The post-
-             first-alloc behavior depends on whether x = y. *)
+          (* For (miss, miss), x and y are both fresh in sub0.  Case-split on
+             whether x = y.  In the x = y case (reflexive eq_clause x x), the
+             second rename_lookup hits (x, x_new) and no further alloc happens. *)
+          destruct (eqb x y) eqn:Hxy_eqb.
+          { (* x = y case: degenerate; the eq is reflexive after canonicalization *)
+            pose proof (Eqb_idx_ok x y) as Hxy_dec.
+            rewrite Hxy_eqb in Hxy_dec. subst y.
+            (* rename_lookup y (= x) on (x, x_new)::sub0 hits with x_new *)
+            assert (Hxx_true : eqb x x = true).
+            { pose proof (Eqb_idx_ok x x) as Hxx_dec.
+              destruct (eqb x x); [reflexivity|exfalso; apply Hxx_dec; reflexivity]. }
+            assert (Hy_hit : named_list_lookup_err ((x, x_new)::sub0) x = Some x_new).
+            { cbn. rewrite Hxx_true. reflexivity. }
+            rewrite Hy_hit. cbn -[Defs.union find].
+            (* Union x_new x_new on e_x: trivial (find both = same root, eqb true) *)
+            destruct (find x_new e_x) as [v0 e0_find] eqn:Hf.
+            cbn.
+            destruct (find v0 e0_find) as [v1 e1_find] eqn:Hf2.
+            cbn.
+            (* find x_new = (v0, e0_find); find v0 (the canonical) = (v1, e1_find).
+               Both calls should give the same root.  But proving find equality
+               requires reasoning about find which we haven't done.  Use the
+               canonicalize_does_not_touch_db pattern instead. *)
+            admit. }
           assert (Hxy_neq : x <> y).
-          { (* Case-split: if x = y, then after the first alloc, the second
-               rename_lookup hits the (x, x_new) entry — no second alloc
-               happens, and the union step unions x_new with itself.  This
-               degenerate case is structurally distinct enough to admit. *)
-            destruct (eqb x y) eqn:Hxy_eqb.
-            - pose proof (Eqb_idx_ok x y) as Hxy_dec.
-              rewrite Hxy_eqb in Hxy_dec.
-              (* The degenerate x = y case requires a separate proof path. *)
-              admit.
-            - intros Heq. pose proof (Eqb_idx_ok x y) as Hxy_dec.
-              rewrite Hxy_eqb in Hxy_dec. apply Hxy_dec; auto. }
+          { intros Heq. pose proof (Eqb_idx_ok x y) as Hxy_dec.
+            rewrite Hxy_eqb in Hxy_dec. apply Hxy_dec; auto. }
           assert (Hy_lookup_extended : named_list_lookup_err ((x, x_new) :: sub0) y = None).
           { cbn. case_match.
             - exfalso; apply Hxy_neq.
