@@ -104,10 +104,13 @@ Proof.
     ]}%prerule
     (id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
-  (* NOTE: transp (Typed.agda:109-116) deferred — its predicate binder P in a
-     variable-level context (ext G (El A_{!,l})) plus 8 ctx vars exceeds the
-     e-graph sort inferencer (leaves @sort_of on P/s). Its computation is in any
-     case subsumed by proof irrelevance (result lives in SProp). *)
+  (* NOTE: transp (Typed.agda:109-116) deferred. Writing it elaborated-direct
+     (push_rule with a fully-explicit [:|...]%rule) DOES get past infer_rule
+     (no @sort_of), but compute_wf_rule then fails to verify the rule in
+     practical time (killed after 20+ min) — the e-graph wf check blows up on
+     the nested ty_subst/snoc/El term. A 20-min-per-build rule is impractical;
+     and transp's computation is in any case subsumed by proof irrelevance
+     (its result lives in SProp). Deferred pending a faster wf path. *)
 
   apply wf_lang_nil.
 Unshelve.
