@@ -315,10 +315,39 @@ Section WithMap.
      [all_clause_sound_extend], [in_db_to_atoms_iff_atom_in_db], the PER
      instances for [sequent_equiv]) gives the foundation; the per-arrow
      lemmas remain to be proved. *)
+  (* ============================================================== *)
+  (* Forward + reverse directions of the main theorem                 *)
+  (* ============================================================== *)
+
+  (* Forward: any model satisfying [s] also satisfies [optimize_sequent s].
+     Intuition: the optimiser only weakens the sequent (dedups, drops
+     dead eqs), so any satisfying assignment for [s] extends to one
+     for the optimised form via the renaming built by
+     [clauses_to_instance]. *)
+  Lemma optimize_sequent_forward (s : sequent) (m : model symbol) :
+    good_sequent s ->
+    model_satisfies_rule m s ->
+    model_satisfies_rule m (optimize_sequent s).
+  Admitted.
+
+  (* Reverse: any model satisfying [optimize_sequent s] also satisfies [s].
+     Intuition: the dedup'd conclusion atoms are entailed by the
+     assumptions; the dropped reflexive eqs are witnessed by atom
+     soundness (which gives [domain_wf]); the dropped dangling eqs are
+     ruled out by [good_sequent]. *)
+  Lemma optimize_sequent_reverse (s : sequent) (m : model symbol) :
+    good_sequent s ->
+    model_satisfies_rule m (optimize_sequent s) ->
+    model_satisfies_rule m s.
+  Admitted.
+
   Theorem optimize_sequent_equiv (s : sequent) :
     good_sequent s ->
     sequent_equiv (optimize_sequent s) s.
   Proof.
-  Admitted.
+    intros Hgood m; split.
+    - apply optimize_sequent_reverse; assumption.
+    - apply optimize_sequent_forward; assumption.
+  Qed.
 
 End WithMap.
