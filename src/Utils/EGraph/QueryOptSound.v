@@ -520,6 +520,66 @@ Section WithMap.
       eapply (eq_sound_for_model_Symmetric idx symbol idx_map m); eauto.
   Qed.
 
+  (* ============================================================== *)
+  (* Phase 3 auxiliaries: state-read predicates exposed by           *)
+  (* egraph_reducing_equal_step's termination check.                  *)
+  (* ============================================================== *)
+
+  (* [are_unified x y = true] in a state where the model interprets
+     both ids means they are eq_sound_for_model under that
+     interpretation.  Proof: find x and find y both return the same
+     canonical representative; both are PER-related to their finds; so
+     x and y are PER-related; apply [rel_interpretation]. *)
+  Lemma are_unified_sound (m : model symbol) (i : idx_map m.(domain symbol))
+        (x y : idx) :
+    vc (@are_unified idx Eqb_idx symbol symbol_map idx_map idx_trie unit x y)
+       (fun e res =>
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i e ->
+          Sep.has_key x e.(equiv).(parent) ->
+          Sep.has_key y e.(equiv).(parent) ->
+          fst res = true ->
+          Semantics.eq_sound_for_model idx symbol idx_map m i x y).
+  Proof.
+    unfold vc; intros e Hok Hsnd Hkx Hky Hres.
+    unfold are_unified in *; cbn [Mbind StateMonad.state_monad Mret] in *.
+    pose proof (egraph_equiv_ok _ _ _ _ _ _ _ _ Hok) as [roots Hroots].
+    pose proof (Semantics.find_sound' idx Eqb_idx Eqb_idx_ok lt idx_zero
+                  symbol symbol_map idx_map idx_map_ok idx_trie unit x roots) as Hfx_snd.
+    unfold vc in Hfx_snd. specialize (Hfx_snd e).
+    destruct (Defs.find x e) as [x1' s1] eqn:Hf1.
+    cbn [fst snd] in Hfx_snd.
+    specialize (Hfx_snd Hroots Hkx).
+    destruct Hfx_snd as
+      (Hdb_x & Hok_s1 & Hiff_x & Hpa_x & Hwl_x & Hki_x & Hin_x & Hxx').
+    (* Now do find y on s1 *)
+    pose proof (Semantics.find_sound' idx Eqb_idx Eqb_idx_ok lt idx_zero
+                  symbol symbol_map idx_map idx_map_ok idx_trie unit y roots) as Hfy_snd.
+    unfold vc in Hfy_snd. specialize (Hfy_snd s1).
+    destruct (Defs.find y s1) as [x2' s2] eqn:Hf2.
+    cbn [fst snd] in Hfy_snd.
+    assert (Hky_s1 : Sep.has_key y (parent (equiv s1)))
+      by (apply (proj1 (Hki_x y)); exact Hky).
+    specialize (Hfy_snd Hok_s1 Hky_s1).
+    destruct Hfy_snd as
+      (Hdb_y & Hok_s2 & Hiff_y & Hpa_y & Hwl_y & Hki_y & Hin_y & Hyx').
+    cbn [fst snd Mret StateMonad.state_monad] in Hres.
+    (* eqb x1' x2' = true → x1' = x2' *)
+    eqb_case x1' x2'; [|congruence].
+    (* uf_rel_PER (equiv s2) x y via the two find results + trans/sym *)
+    assert (Hxx'_s2 : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv s2) x x2')
+      by (apply Hiff_y; exact Hxx').
+    assert (Hxy_s2 : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv s2) x y).
+    { unfold uf_rel_PER in *.
+      eapply PER_clo_trans; [exact Hxx'_s2|].
+      apply PER_clo_sym; exact Hyx'. }
+    assert (Hxy_e : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e) x y).
+    { apply Hiff_x. apply Hiff_y. exact Hxy_s2. }
+    pose proof (rel_interpretation _ _ _ _ _ _ _ _ _ Hsnd x y) as Hi_rel.
+    apply Hi_rel; exact Hxy_e.
+  Qed.
+
   (* Full L11 hypotheses, matching the existing soundness lemmas in
      Semantics.v (alloc_sound, update_entry_sound, union_sound):
 
