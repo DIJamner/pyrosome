@@ -269,6 +269,46 @@ Section WithMap.
     cbn. rewrite Ha. reflexivity.
   Qed.
 
+  (* ============================================================== *)
+  (* Layer A primitives needed by L11 but not yet in Semantics.v.    *)
+  (* These should eventually land alongside union_sound, alloc_sound *)
+  (* in Semantics.v; admitted here as a vehicle for L11's proof.     *)
+  (* ============================================================== *)
+
+  (* union preserves the full egraph_ok record (not just union_find_ok). *)
+  Lemma union_preserves_egraph_ok (x y : idx) :
+    vc (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x y)
+       (fun e res =>
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
+          Sep.has_key x e.(equiv).(parent) ->
+          Sep.has_key y e.(equiv).(parent) ->
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit (snd res)).
+  Admitted.
+
+  (* union preserves egraph_sound_for_interpretation when the two ids
+     are eq_sound_for_model-related under the interpretation. *)
+  Lemma union_preserves_egraph_sound_for_interpretation (m : model symbol) (Hm : model_ok symbol m)
+        (x y : idx) (i : idx_map (m.(domain symbol))) :
+    vc (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x y)
+       (fun e res =>
+          Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e ->
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i e ->
+          Sep.has_key x e.(equiv).(parent) ->
+          Sep.has_key y e.(equiv).(parent) ->
+          Semantics.eq_sound_for_model idx symbol idx_map m i x y ->
+          Semantics.egraph_sound_for_interpretation
+            idx symbol symbol_map idx_map idx_trie unit m i (snd res)).
+  Admitted.
+
+  (* union extends the key-set of the union-find. *)
+  Lemma union_extends_keys (x y : idx) :
+    vc (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _ x y)
+       (fun e res =>
+          forall z, Sep.has_key z e.(equiv).(parent) ->
+                    Sep.has_key z (snd res).(equiv).(parent)).
+  Admitted.
+
   (* Full L11 hypotheses, matching the existing soundness lemmas in
      Semantics.v (alloc_sound, update_entry_sound, union_sound):
 
