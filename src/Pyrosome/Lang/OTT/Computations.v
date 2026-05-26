@@ -49,6 +49,15 @@ Proof.
     ]}%prerule
     (pi_injectivity ++ id_injectivity ++ nat_injectivity ++ ott_base_injectivity ++ ott_info_injectivity ++ subst_ott_injectivity).
 
+  (* NOTE: the cross-former conversions Id-Π (Typed.agda:231-240), cast-Π
+     (:300-312) and Id-U-ΠΠ (:251-261) are DEFERRED.  Id-Π was attempted here
+     (LHS Id (Pi_rel A B) t u; RHS Pi_irr with codomain Id B of the pointwise
+     applications wk1 t · v0 / wk1 u · v0): the e-graph pipeline does not finish
+     in practical time (killed at 500s) — the same compute_wf_rule/infer_rule
+     wall hit by transp, on deeply-nested binder + substitution + application
+     terms.  cast-Π and Id-U-ΠΠ are strictly harder and additionally need Idsym
+     (built from the deferred transp).  These need a faster wf/inference path. *)
+
   apply wf_lang_nil.
 Unshelve.
 1:shelve.
