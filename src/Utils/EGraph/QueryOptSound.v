@@ -379,8 +379,26 @@ Section WithMap.
             replace (union x' y' e0) with (v, e_unioned) in Hpres
               by (rewrite <- Hu; reflexivity).
             cbn in Hpres. apply Hpres; auto. }
-          { (* egraph_sound m i e_unioned *) admit. }
-          { (* subdom for e_unioned *) admit. }
+          { (* egraph_sound m i e_unioned *)
+            pose proof (union_preserves_egraph_sound_for_interpretation
+                          m Hm x' y' i e0) as Hpres.
+            unfold vc in Hpres.
+            replace (union x' y' e0) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres. apply Hpres; auto.
+            unfold Semantics.eq_sound_for_model in Hc |- *.
+            destruct (map.get a_src x) as [dx|] eqn:Hax; cbn in Hc; try tauto.
+            destruct (map.get a_src y) as [dy|] eqn:Hay; cbn in Hc; try tauto.
+            rewrite (Hren _ _ Hinx _ Hax).
+            rewrite (Hren _ _ Hiny _ Hay).
+            cbn. exact Hc. }
+          { (* subdom for e_unioned *)
+            intros x0 y0 Hin.
+            pose proof (union_extends_keys x' y' e0) as Hpres.
+            unfold vc in Hpres.
+            replace (union x' y' e0) with (v, e_unioned) in Hpres
+              by (rewrite <- Hu; reflexivity).
+            cbn in Hpres. apply Hpres. exact (Hsubdom _ _ Hin). }
         * (* (hit, miss) *) admit.
         * (* (miss, hit) *) admit.
         * (* (miss, miss) *) admit.
