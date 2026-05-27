@@ -24,7 +24,7 @@ Section Reify.
     match v with
     | vNe e => e
     | vZero => con "zero" [G]
-    | vSuc v' => con "suc" [G; reify_val G v']
+    | vSuc v' => con "suc" [reify_val G v'; G]
     | vCode T => reify_ty G T
     | vPair _ _ => reify_todo
     | vLam _ _ => reify_todo
@@ -34,7 +34,7 @@ Section Reify.
     | dNe e => e
     | dNat => con "Nat" [G]
     | dEmpty => con "Empty" [G]
-    | dU r l => con "U" [G; r; l]
+    | dU r l => con "U" [l; r; G]
     | dPi _ _ _ => reify_todo
     | dSig _ _ _ => reify_todo
     end.
