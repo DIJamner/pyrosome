@@ -2918,4 +2918,66 @@ Section CongSubgoals.
     eexists. eapply term_con_congruence; [ exact Hin1 | right; reflexivity | exact wfl | exact Hselect ].
   Qed.
 
+  (* Each pair produced by [select_inj_args] has both components well-formed
+     (they are arguments of the well-formed input terms). *)
+  Lemma select_inj_args_wf (c' : ctx) inj_args (s1 s2 : list term) subgoals :
+    @select_inj_args V V_Eqb c' inj_args s1 s2 = Some subgoals ->
+    wf_args l [] s1 c' ->
+    wf_args l [] s2 c' ->
+    all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                  /\ (exists sb, wf_term l [] (snd p) sb)) subgoals.
+  Proof.
+    intros Hsel Hwfs1 Hwfs2.
+    revert inj_args s2 subgoals Hsel Hwfs2.
+    induction Hwfs1 as [| s1tl ctl nm e1 tyhd Hwfe1 Hwftail IHwf]; intros inj_args s2 subgoals Hsel Hwfs2.
+    - destruct inj_args as [|x inj_t]; simpl in Hsel; [ inversion Hsel; subst; cbn; exact I | discriminate ].
+    - destruct s2 as [|e2 s2tl]; [ inversion Hwfs2 | ].
+      inversion Hwfs2; subst.
+      destruct inj_args as [|x inj_t].
+      + simpl in Hsel. case_match; [ | discriminate ]. inversion Hsel; subst. cbn. exact I.
+      + simpl in Hsel.
+        destruct (eqb x nm) eqn:Hxx'.
+        * destruct (select_inj_args ctl inj_t s1tl s2tl) as [rest|] eqn:Hrest; [ | discriminate ].
+          simpl in Hsel. inversion Hsel; subst.
+          cbn [all]. split.
+          -- split; eexists; eassumption.
+          -- exact (IHwf inj_t s2tl rest Hrest ltac:(eassumption)).
+        * destruct (eqb e1 e2) eqn:He12; [ | discriminate ].
+          exact (IHwf (x :: inj_t) s2tl subgoals Hsel ltac:(eassumption)).
+  Qed.
+
+  (* Every pair in [cong_subgoals] of a goal has well-formed components. *)
+  Lemma cong_subgoals_preserves_wf inj_list (e1 e2 : term) (ta tb : sort) :
+    wf_term l [] e1 ta -> wf_term l [] e2 tb ->
+    all (fun p => (exists sa, wf_term l [] (fst p) sa)
+                  /\ (exists sb, wf_term l [] (snd p) sb))
+        (@cong_subgoals V V_Eqb l inj_list (e1,e2)).
+  Proof.
+    intros Hwf1 Hwf2.
+    unfold cong_subgoals.
+    destruct e1 as [x1 | n1 s1], e2 as [x2 | n2 s2];
+      try (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]).
+    destruct (eqb n1 n2) eqn:Hn12;
+      [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
+    pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq. rewrite Hn12 in Hn12eq. subst n2.
+    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
+      [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
+    destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
+      [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
+    destruct r as [ | c args t_rule | | ];
+      try (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]).
+    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
+      [ | (cbn [all fst snd]; split; [ split; eexists; eassumption | exact I ]) ].
+    assert (Hin1 : In (n1, term_rule c args t_rule) l) by (apply named_list_lookup_err_in; auto).
+    apply WfCutElim.invert_wf_term_con in Hwf1.
+    destruct Hwf1 as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & _).
+    apply WfCutElim.invert_wf_term_con in Hwf2.
+    destruct Hwf2 as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & _).
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf1 Hin1) as Heq1.
+    inversion Heq1; subst c1 args1 t1; clear Heq1.
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
+    inversion Heq2; subst c2 args2 t2; clear Heq2.
+    exact (select_inj_args_wf c inj_args s1 s2 subs Hselect Hwfargs1 Hwfargs2).
+  Qed.
+
 End CongSubgoals.
