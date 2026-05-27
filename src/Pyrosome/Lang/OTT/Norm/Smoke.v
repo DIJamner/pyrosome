@@ -7,63 +7,61 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Reify Env.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Reify.
 Import Core.Notations.
 
-(* Smoke tests: the relational evaluator + readback actually *compute* normal
-   forms (the point of the gluing/NbE approach). Annotation slots irrelevant to
-   evaluation use the dummy [d]. *)
+(* Smoke tests for the environment-free evaluator + readback: values compute and
+   read back to normal-form terms (the point of the NbE approach). *)
 Section Smoke.
   Notation term := (@term string).
-  Let d : term := con "emp" [].
-  Let emp : term := con "emp" [].
+  Let a : term := con "_ann" [].   (* the annotation placeholder used by Reify *)
 
-  (* the substitution redex  (hd)[snoc id zero]  evaluates to the value zero. *)
+  (* readback of closed numerals / codes / a reflected variable *)
+  Example nf_zero : reify_val vZero = con "zero" [a]. Proof. reflexivity. Qed.
+  Example nf_two  : reify_val (vSuc (vSuc vZero)) = con "suc" [con "suc" [con "zero" [a]; a]; a].
+  Proof. reflexivity. Qed.
+  Example nf_Nat  : reify_ty dNat = con "Nat" [a]. Proof. reflexivity. Qed.
+  Example nf_var0 : reify_val (vNe (nVar 0)) = con "hd" [a; a; a]. Proof. reflexivity. Qed.
+
+  (* the substitution acts on values: [snoc id zero] applied to variable 0 is zero *)
+  Example apply_redex : apply_val (vZero :: id_list 0) (vNe (nVar 0)) = vZero.
+  Proof. reflexivity. Qed.
+
+  (* and the corresponding object-level redex evaluates to the value [vZero]:
+        (hd)[snoc id zero]  ==>  vZero
+     The exp_subst value is [apply_val sg ve], so we pin it by [change] first. *)
   Definition redex1 : term :=
     con "exp_subst"
-        [con "hd" [d; d; d];
-         d; d;
-         con "snoc" [con "zero" [d]; con "id" [d]; d; d; d; d];
-         d; d].
+        [con "hd" [a; a; a];
+         a; a;
+         con "snoc" [con "zero" [a]; con "id" [con "emp" []]; a; a; a; a];
+         a; a].
 
-  Example eval_redex1 : eval_rel [] redex1 vZero.
-  Proof. unfold redex1. repeat econstructor. Qed.
+  Example eval_redex1 : eval_rel redex1 vZero.
+  Proof.
+    unfold redex1.
+    change vZero with (apply_val (vZero :: id_list (ctx_len (con "emp" []))) (vNe (nVar 0))).
+    eapply ev_exp_subst.
+    - eapply ev_snoc; econstructor.
+    - econstructor.
+  Qed.
 
-  (* and its normal form reads back to the literal [zero] over the empty env. *)
-  Example nf_redex1 : reify_val emp vZero = con "zero" [emp].
-  Proof. reflexivity. Qed.
-
-  (* deeper: (hd)[snoc id (suc zero)] evaluates to (suc zero) and reifies to it. *)
+  (* deeper: (hd)[snoc id (suc zero)] evaluates to (suc vZero) *)
   Definition redex2 : term :=
     con "exp_subst"
-        [con "hd" [d; d; d];
-         d; d;
-         con "snoc" [con "suc" [con "zero" [d]; d]; con "id" [d]; d; d; d; d];
-         d; d].
+        [con "hd" [a; a; a];
+         a; a;
+         con "snoc" [con "suc" [con "zero" [a]; a]; con "id" [con "emp" []]; a; a; a; a];
+         a; a].
 
-  Example eval_redex2 : eval_rel [] redex2 (vSuc vZero).
-  Proof. unfold redex2. repeat econstructor. Qed.
-
-  Example nf_redex2 : reify_val emp (vSuc vZero) = con "suc" [con "zero" [emp]; emp].
-  Proof. reflexivity. Qed.
-
-  (* OPEN terms: normalizing the env [ext emp Nat] gives a one-slot reflecting
-     environment, and the variable [hd] reflects to a neutral that reads back to
-     itself (the variable is its own normal form). *)
-  Definition ctx1 : term := con "ext" [con "Nat" [emp]; d; emp].
-
-  Example eval_env_ctx1 :
-    reflect_ssub ctx1 = [ vNe (con "hd" [con "Nat" [emp]; d; emp]) ].
-  Proof. reflexivity. Qed.
-
-  Example eval_open_var :
-    eval_rel (reflect_ssub ctx1) (con "hd" [con "Nat" [emp]; d; emp])
-             (vNe (con "hd" [con "Nat" [emp]; d; emp])).
-  Proof. econstructor. Qed.
-
-  Example nf_open_var :
-    reify_val ctx1 (vNe (con "hd" [con "Nat" [emp]; d; emp]))
-      = con "hd" [con "Nat" [emp]; d; emp].
-  Proof. reflexivity. Qed.
+  Example eval_redex2 : eval_rel redex2 (vSuc vZero).
+  Proof.
+    unfold redex2.
+    change (vSuc vZero)
+      with (apply_val (vSuc vZero :: id_list (ctx_len (con "emp" []))) (vNe (nVar 0))).
+    eapply ev_exp_subst.
+    - eapply ev_snoc; [ econstructor | econstructor; econstructor ].
+    - econstructor.
+  Qed.
 
 End Smoke.

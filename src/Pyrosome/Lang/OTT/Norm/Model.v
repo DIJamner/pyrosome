@@ -8,106 +8,49 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Gluing Require Import CutTModel.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Env.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel.
 Import Core.Notations.
 
 (* The normalization (gluing) model as a cut-free Type-valued model over the
-   first-order cast-free OTT language. Two terms are related when they evaluate to
-   the same semantic value in the reflecting environment of their sort's context
-   [G] (which [reflect_ssub] builds by normalizing [G] to its ext-telescope). Two
-   sorts are related when they share a head and a normalized context.
+   first-order cast-free OTT language, on the ENVIRONMENT-FREE evaluator.
 
-   This file gives the judgments [Norm : CutTModel]; the CutTModel_ok operations
-   (the per-former congruence/computation coherence) come next. *)
+   Two terms are related at an exp/ty/sub/env sort iff they evaluate to the SAME
+   semantic value/type/substitution/environment.  Because evaluation is environment-
+   free the relation does NOT depend on the sort's arguments (no ambient context to
+   thread), so it dispatches purely on the sort head; the static info sorts
+   (relevance/lvl/tlvl/tyinfo) are compared by [nf_info], and proof-irrelevant sorts
+   (ltl) are [unit].  Consequently SORT equality need only record matching head and
+   arity — conversion ([cterm_conv]) is then the identity on the term relation. *)
 Section Model.
   Notation term := (@term string).
   Notation sort := (@sort string).
   Notation ctx := (@ctx string).
 
   Definition sort_head (S : sort) : string := match S with scon n _ => n end.
-  (* The ambient env is the LAST argument of a sort: Pyrosome stores con/scon
-     arguments in the rule's context order (innermost binding first), so for
-     [exp G i A] / [ty G i] / [sub G' G] the env [G] sits last, not first. *)
-  Definition sort_env (S : sort) : term :=
-    match S with scon _ args => List.last args (con "emp" []) end.
-
-  (* Normal form of the *static* info fragment (relevance / lvl / tlvl / tyinfo).
-     This data has no environment and is not subject to the substitution calculus;
-     its only computation is the [tlvl] rewriting [next L0 = iota L1], [next L1 = inf]
-     (rules next0/next1).  Everything else is in normal form, so [nf_info] recurses
-     structurally and only fires on [next].  Using [nf_info]-equality (rather than the
-     old trivial [reflect_ssub = [] ] collapse, which identified *all* info data) is what
-     makes the info-sorted [ceq_term] sound and validates next0/next1 in [cterm_by].
-     Inner [let fix] over the argument list per the [term] recursion idiom (a top-level
-     mutual fixpoint over [list term] would fail the guard checker). *)
-  Fixpoint nf_info (e : term) : term :=
-    match e with
-    | var x => var x
-    | con n args =>
-        let args' :=
-          (fix nf_list (l : list term) : list term :=
-             match l with
-             | [] => []
-             | x :: xs => nf_info x :: nf_list xs
-             end) args in
-        if eqb n "next"
-        then match args' with
-             | [l'] =>
-                 match l' with
-                 | con m [] =>
-                     if eqb m "L0" then con "iota" [con "L1" []]
-                     else if eqb m "L1" then con "inf" []
-                     else con "next" [l']
-                 | _ => con "next" [l']
-                 end
-             | _ => con n args'
-             end
-        else con n args'
-    end.
 
   Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
     match t with
     | scon n args =>
-        match args with
-        | [] =>
-            (* argless sorts: [env] is compared by its reflecting environment;
-               the static info sorts (tyinfo/tlvl/lvl/relevance) by [nf_info]. *)
-            if eqb n "env"
-            then (reflect_ssub e1 = reflect_ssub e2)
-            else (nf_info e1 = nf_info e2)
-        | _ =>
-            let G := List.last args (con "emp" []) in
-            if eqb n "exp"
-            then { v : sval & (eval_rel (reflect_ssub G) e1 v * eval_rel (reflect_ssub G) e2 v)%type }
-            else if eqb n "ty"
-            then { S : svalty & (eval_ty (reflect_ssub G) e1 S * eval_ty (reflect_ssub G) e2 S)%type }
-            else if eqb n "sub"
-            then { rr : ssub & (eval_sub (reflect_ssub G) e1 rr * eval_sub (reflect_ssub G) e2 rr)%type }
-            else unit
-        end
+        if eqb n "exp"
+        then { v : sval & (eval_rel e1 v * eval_rel e2 v)%type }
+        else if eqb n "ty"
+        then { S : svalty & (eval_ty e1 S * eval_ty e2 S)%type }
+        else if eqb n "sub"
+        then { s : ssub & (eval_sub e1 s * eval_sub e2 s)%type }
+        else if eqb n "env"
+        then { Genv : senv & (eval_env e1 Genv * eval_env e2 Genv)%type }
+        else match args with
+             | [] => (nf_info e1 = nf_info e2)  (* relevance/lvl/tlvl/tyinfo *)
+             | _ => unit                         (* ltl etc.: proof-irrelevant *)
+             end
     end.
 
-  (* The "environment-bearing" sorts: their last argument is an actual env, so the
-     model compares it by [reflect_ssub].  The static sorts (tyinfo/tlvl/lvl/relevance/
-     ltl) have no env — comparing their [List.last] by [reflect_ssub] would be the same
-     collapse fixed on the term side — so they are compared argument-wise by
-     [nf_info] instead.  ([env] itself is nullary, so either branch is trivial; it
-     sits here only for uniformity with the env-bearing sorts.) *)
-  Definition is_env_sort (n : string) : bool :=
-    eqb n "exp" || eqb n "ty" || eqb n "sub" || eqb n "env".
-
-  (* The dispatch is kept in [Prop] (via [return Prop]) so the [Prop] rule-name
-     disjunction can be eliminated into it during [csort_cong]; left at [Type] (the
-     second factor of the [Type]-level [*] below) that elimination is forbidden. *)
+  (* Sort equality: same head and arity.  (The term relation ignores sort arguments
+     under env-free eval, so this suffices to make conversion sound.) *)
   Definition norm_ceq_sort (S1 S2 : sort) : Type :=
-    ((eqb (sort_head S1) (sort_head S2) = true)
-     * (match S1, S2 return Prop with
-        | scon n1 args1, scon _ args2 =>
-            if is_env_sort n1
-            then reflect_ssub (List.last args1 (con "emp" []))
-                 = reflect_ssub (List.last args2 (con "emp" []))
-            else map nf_info args1 = map nf_info args2
-        end))%type.
+    match S1, S2 with
+    | scon n1 a1, scon n2 a2 => ((eqb n1 n2 = true) * (length a1 = length a2))%type
+    end.
 
   Definition Norm : CutTModel :=
     {|
