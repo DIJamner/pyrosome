@@ -9,18 +9,32 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Gluing Require Import CutTModel.
 From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel.
+From Pyrosome.Lang.OTT Require Import Base Nat.
 Import Core.Notations.
 
 (* The normalization (gluing) model as a cut-free Type-valued model over the
    first-order cast-free OTT language, on the ENVIRONMENT-FREE evaluator.
 
-   Two terms are related at an exp/ty/sub/env sort iff they evaluate to the SAME
-   semantic value/type/substitution/environment.  Because evaluation is environment-
-   free the relation does NOT depend on the sort's arguments (no ambient context to
-   thread), so it dispatches purely on the sort head; the static info sorts
-   (relevance/lvl/tlvl/tyinfo) are compared by [nf_info], and proof-irrelevant sorts
-   (ltl) are [unit].  Consequently SORT equality need only record matching head and
-   arity — conversion ([cterm_conv]) is then the identity on the term relation. *)
+   The model relation has TWO components (a product):
+   - the Core judgmental equality [eq_term fo_lang [] t e1 e2] (resp. [eq_sort]).
+     This is the *well-formedness* gate the user identified as the missing
+     structure: the relation only accepts inputs that are well formed AT THE
+     SORT [t] (eq_term .. t entails wf_term .. t), and it is what every law
+     discharges via the corresponding Core lemma (this part is exactly the
+     SyntacticModel CutTModel_ok).
+   - the eval GLUE: the two terms evaluate to the SAME semantic value/type/
+     substitution/environment.  Because evaluation is environment-free the glue
+     does NOT depend on the sort's arguments (no ambient context to thread), so
+     it dispatches purely on the sort head; the static info sorts
+     (relevance/lvl/tlvl/tyinfo) are compared by [nf_info], and proof-irrelevant
+     sorts (ltl) are [unit].
+
+   The well-formedness component supplies, for the Tier-C eliminator/composition
+   cases, the typing/scope facts the eval glue needs (canonical forms, lengths)
+   which are FALSE for the ill-typed junk that an unguarded relation would admit. *)
+
+Definition fo_lang : lang string := ott_nat ++ ott_base ++ subst_ott ++ ott_info.
+
 Section Model.
   Notation term := (@term string).
   Notation sort := (@sort string).
@@ -28,7 +42,8 @@ Section Model.
 
   Definition sort_head (S : sort) : string := match S with scon n _ => n end.
 
-  Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
+  (* The eval glue: two terms glue iff they evaluate to the same semantic value. *)
+  Definition glue_term (t : sort) (e1 e2 : term) : Type :=
     match t with
     | scon n args =>
         if eqb n "exp"
@@ -45,12 +60,19 @@ Section Model.
              end
     end.
 
-  (* Sort equality: same head and arity.  (The term relation ignores sort arguments
-     under env-free eval, so this suffices to make conversion sound.) *)
-  Definition norm_ceq_sort (S1 S2 : sort) : Type :=
+  (* norm_ceq_term relates only WELL-FORMED terms at the sort [t] (the eq_term
+     component), additionally gluing them to a common semantic value. *)
+  Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
+    (eq_term fo_lang [] t e1 e2 * glue_term t e1 e2)%type.
+
+  (* Glue for sorts: same head and arity. *)
+  Definition glue_sort (S1 S2 : sort) : Type :=
     match S1, S2 with
     | scon n1 a1, scon n2 a2 => ((eqb n1 n2 = true) * (length a1 = length a2))%type
     end.
+
+  Definition norm_ceq_sort (S1 S2 : sort) : Type :=
+    (eq_sort fo_lang [] S1 S2 * glue_sort S1 S2)%type.
 
   Definition Norm : CutTModel :=
     {|
