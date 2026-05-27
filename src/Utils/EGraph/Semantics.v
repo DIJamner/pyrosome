@@ -1057,6 +1057,51 @@ Section WithMap.
           rewrite Hneq. reflexivity.
   Qed.
 
+  (* Reconstruct the logical query atoms of a compiled erule from the
+     positional clause data in [qc = query_clauses]. For a clause pointer
+     (f, n, clause_vars), [qc[f][n] = (cargs, cv)] gives the arg/ret positions
+     into [clause_vars] (as set up by compile_query_clause), so the original
+     atom is [f] applied to those clause_vars. The defaults are unreachable
+     for a well-formed rule_set (every pointer has a [qc] entry). *)
+  Definition query_atoms (qc : symbol_map (idx_map (list nat * nat)))
+      (r : erule idx symbol) : list atom :=
+    map (fun '(Build_erule_query_ptr _ _ f n clause_vars) =>
+          let '(cargs, cv) :=
+            match map.get qc f with
+            | Some q_f => match map.get q_f n with
+                          | Some c => c
+                          | None => ([], 0)
+                          end
+            | None => ([], 0)
+            end in
+          Build_atom f (map (fun k => nth k clause_vars idx_zero) cargs)
+                       (nth cv clause_vars idx_zero))
+        (uncurry cons (query_clause_ptrs idx symbol r)).
+
+  (* Soundness of a compiled erule under model [m]: whenever a query
+     assignment [a_q] over [query_vars] makes the query atoms sound, it
+     extends to an [a_src] (additionally covering the existential
+     [write_vars] with well-formed domain values) under which the
+     conclusion (write_clauses) and the conclusion equalities
+     (write_unifications) are sound. This is the [a_q -> a_src] interface
+     that exec_write_sound consumes; it will be discharged for compiled
+     rules from the source language's equational rules (via
+     optimize_sequent_forward, Phase 2/6). *)
+  Definition erule_sound (m : model) (qc : symbol_map (idx_map (list nat * nat)))
+      (r : erule idx symbol) : Prop :=
+    forall a_q : idx_map m.(domain),
+      (forall x, In x (query_vars idx symbol r) ->
+         exists d, map.get a_q x = Some d /\ m.(domain_wf) d) ->
+      all (atom_sound_for_model m a_q) (query_atoms qc r) ->
+      exists a_src : idx_map m.(domain),
+        (forall x, In x (query_vars idx symbol r) ->
+           map.get a_src x = map.get a_q x)
+        /\ (forall x, In x (write_vars idx symbol r) ->
+              exists d, map.get a_src x = Some d /\ m.(domain_wf) d)
+        /\ all (atom_sound_for_model m a_src) (write_clauses idx symbol r)
+        /\ all (fun p => eq_sound_for_model m a_src (fst p) (snd p))
+               (write_unifications idx symbol r).
+
   (*
   (*Defined separately for proof convenience.
     Equivalent to a term using ~ atom_in_egraph
