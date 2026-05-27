@@ -7087,6 +7087,29 @@ Section WithMap.
     - rewrite (map_combine_fst qs vs Hlen). exact Hin.
   Qed.
 
+  (* of_list lookups for absent / present keys. *)
+  Lemma get_of_list_none (B : Type) (l : list (idx * B)) (x : idx) :
+    ~ In x (map fst l) -> map.get (map.of_list l) x = None.
+  Proof.
+    induction l as [|[a b] l' IH]; cbn [map fst map.of_list]; intros Hni.
+    - apply map.get_empty.
+    - pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x a) as Hbs.
+      destruct (eqb x a) eqn:Hxa.
+      + subst a. exfalso. apply Hni. left. reflexivity.
+      + rewrite (map.get_put_diff _ _ _ _ Hbs). apply IH. intro Hin. apply Hni. right. exact Hin.
+  Qed.
+
+  Lemma get_of_list_in_keys (B : Type) (l : list (idx * B)) (x : idx) (v : B) :
+    map.get (map.of_list l) x = Some v -> In x (map fst l).
+  Proof.
+    induction l as [|[a b] l' IH]; cbn [map fst map.of_list]; intros Hg.
+    - rewrite map.get_empty in Hg. discriminate.
+    - pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok x a) as Hbs.
+      destruct (eqb x a) eqn:Hxa.
+      + subst a. left. reflexivity.
+      + rewrite (map.get_put_diff _ _ _ _ Hbs) in Hg. right. exact (IH Hg).
+  Qed.
+
   (* Every element of a successfully-mapped list has a defined image. *)
   Lemma list_Mmap_get_some (B : Type) (f : idx -> option B) (l : list idx) (l' : list B) :
     list_Mmap f l = Some l' -> forall x, In x l -> exists b, f x = Some b.
