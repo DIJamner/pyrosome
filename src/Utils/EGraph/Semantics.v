@@ -7815,6 +7815,63 @@ Section WithMap.
     split; [eapply map_extends_trans; [exact Hext_f | exact Hext_a] | exact Hsnd_f].
   Qed.
 
+  (* ============================================================== *)
+  (* are_unified soundness (bridge to eq_term)                      *)
+  (* ============================================================== *)
+
+  (* If [are_unified x1 x2] reports [true] (their union-find roots
+     coincide) then [x1] and [x2] are genuinely equivalent in the
+     egraph's union-find.  [are_unified] runs two [find]s, each doing
+     path compression; [find] returns a root that is [uf_rel_PER]-
+     equivalent to its input, and [fields_preserved] carries the
+     [uf_rel_PER] relation (as an [iff2]) across the compressions, so
+     the equivalence holds back in the original [equiv]. *)
+  Lemma are_unified_sound (x1 x2 : idx) (e : instance) :
+    (exists l, union_find_ok lt e.(equiv) l) ->
+    Sep.has_key x1 e.(equiv).(parent) ->
+    Sep.has_key x2 e.(equiv).(parent) ->
+    fst (are_unified x1 x2 e) = true ->
+    uf_rel_PER e.(equiv) x1 x2.
+  Proof.
+    intros Hok Hk1 Hk2 Hunified.
+    unfold are_unified in Hunified.
+    cbn [Mbind Mret StateMonad.state_monad] in Hunified.
+    pose proof (find_preserves_fields_strong x1 e Hok Hk1) as Hf1.
+    destruct (find x1 e) as [r1 e1] eqn:Hfind1.
+    cbn [fst snd] in Hf1, Hunified.
+    destruct Hf1 as (Hok1 & Hfp1 & Hrel1).
+    destruct Hfp1 as (_ & _ & _ & _ & _ & Hkiff1 & Hiff1).
+    assert (Hk2_e1 : Sep.has_key x2 (parent (equiv e1))) by (apply Hkiff1; exact Hk2).
+    pose proof (find_preserves_fields_strong x2 e1 Hok1 Hk2_e1) as Hf2.
+    destruct (find x2 e1) as [r2 e2] eqn:Hfind2.
+    cbn [fst snd] in Hf2, Hunified.
+    destruct Hf2 as (Hok2 & Hfp2 & Hrel2).
+    pose proof (eqb_spec r1 r2) as Hr. rewrite Hunified in Hr. subst r2.
+    destruct Hfp2 as (_ & _ & _ & _ & _ & Hkiff2 & Hiff2).
+    apply (proj1 (Hiff2 r1 x1)) in Hrel1.
+    assert (Hx1x2 : uf_rel_PER (equiv e2) x1 x2)
+      by (eapply PER_clo_trans; [apply PER_clo_sym; exact Hrel1 | exact Hrel2]).
+    apply (proj2 (Hiff1 x1 x2)). apply (proj2 (Hiff2 x1 x2)). exact Hx1x2.
+  Qed.
+
+  (* Soundness consequence: in a sound egraph, [are_unified x1 x2 = true]
+     means [x1] and [x2] denote equal model elements ([eq_sound_for_model]).
+     This is the egraph-side endpoint of the saturation->eq_term bridge:
+     compose with the term denotations from add_open_term_sound. *)
+  Lemma are_unified_eq_sound (x1 x2 : idx) (e : instance) (i : idx_map m.(domain)) :
+    egraph_ok e ->
+    egraph_sound_for_interpretation m i e ->
+    Sep.has_key x1 e.(equiv).(parent) ->
+    Sep.has_key x2 e.(equiv).(parent) ->
+    fst (are_unified x1 x2 e) = true ->
+    eq_sound_for_model m i x1 x2.
+  Proof.
+    intros Hok Hsnd Hk1 Hk2 Hu.
+    apply (rel_interpretation m i e Hsnd).
+    apply (are_unified_sound x1 x2 e); try assumption.
+    apply (egraph_equiv_ok e Hok).
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
