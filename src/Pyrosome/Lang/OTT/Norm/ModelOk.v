@@ -41,6 +41,19 @@ Proof.
   all: intuition eauto.
 Qed.
 
+(* ...and for the equation rules (used by cterm_by). *)
+Lemma term_eq_rules_names name c' e1 e2 t
+  : In (name, term_eq_rule c' e1 e2 t) fo_lang ->
+    In name ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
+             "U subst";"snoc_wkn_hd";"cmp_snoc";"snoc_hd";"wkn_snoc";"id_emp_forget";
+             "cmp_forget";"exp_subst_cmp";"exp_subst_id";"ty_subst_cmp";"ty_subst_id";
+             "cmp_assoc";"id_left";"id_right";"next1";"next0";"ltl_irr"].
+Proof.
+  vm_compute; intuition auto.
+  all: repeat match goal with H : _ = _ |- _ => safe_invert H end.
+  all: intuition eauto.
+Qed.
+
 (* Fast case split on [In (name, rule) fo_lang] WITHOUT normalizing every rule
    body: derive the names-only disjunction via [pair_fst_in] (cheap), pick a
    concrete name, then recover that one rule with a targeted lookup.  Branches
@@ -381,15 +394,67 @@ Admitted.
 (* cterm_by: computation rules                                         *)
 (* ================================================================== *)
 
+(* Dispatch like cterm_cong, but on [name] taken from the [In] hypothesis (the goal
+   term is the equation's LHS [e1r], not [con name _]). *)
+Ltac solve_by :=
+  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  first [ exact tt | reflexivity | solve [congruence] ].
+
+Ltac dispby nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_by | ]
+  end.
+
+Ltac dispbyA nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
+  end.
+
+Ltac finish_absurd_by :=
+  exfalso;
+  match goal with
+  | Hin : In (?nm, _) _ |- _ =>
+      let Hn := fresh "Hn" in
+      let Hex := fresh "Hex" in
+      pose proof (term_eq_rules_names Hin) as Hn;
+      assert (Hex : existsb (eqb nm)
+                ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
+                 "U subst";"snoc_wkn_hd";"cmp_snoc";"snoc_hd";"wkn_snoc";"id_emp_forget";
+                 "cmp_forget";"exp_subst_cmp";"exp_subst_id";"ty_subst_cmp";"ty_subst_id";
+                 "cmp_assoc";"id_left";"id_right";"next1";"next0";"ltl_irr"] = true)
+        by (apply (proj2 (existsb_exists _ _)); exists nm; split;
+            [ exact Hn | apply (@eqb_refl_true string _ string_Eqb_ok) ]);
+      cbn in Hex;
+      repeat match goal with E : eqb _ _ = false |- _ => rewrite E in Hex end;
+      cbn in Hex; discriminate Hex
+  end.
+
+(* PROVEN: the info equations next0 (next L0 = iota L1) and next1 (next L1 = inf) —
+   validated exactly by the nf_info fix — and the proof-irrelevant ltl_irr (the ltl
+   sort lands in the [unit] branch).  STILL ADMITTED: the substitution-calculus
+   computation rules (exp_subst_id, ty_subst_id, *_cmp, cmp_assoc, id_left/right,
+   snoc_*, *_subst, ...), which need the eval relation to validate the equation
+   together with the substitution/typing lemma and determinism (cf. cterm_cong's
+   blocked composite formers). *)
 Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
     In (name, term_eq_rule c' e1r e2r tr) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
     ceq_term (CutTModel := Norm) tr[/with_names_from c' s2/]
              e1r[/with_names_from c' s1/] e2r[/with_names_from c' s2/].
 Proof.
-  (* TODO(fast+fix): body destructs the Prop [In] disjunction into a
-     Type-valued goal (forbidden elimination) AND normalizes rule bodies
-     via vm_compute. Needs a Type-safe, name-only rule split. Deferred. *)
+  intros c' name e1r e2r tr s1 s2 Hin Hargs.
+  dispbyA "Empty subst". dispbyA "suc subst". dispbyA "zero subst".
+  dispbyA "Nat subst". dispbyA "El subst". dispbyA "U subst".
+  dispbyA "snoc_wkn_hd". dispbyA "cmp_snoc". dispbyA "snoc_hd". dispbyA "wkn_snoc".
+  dispbyA "id_emp_forget". dispbyA "cmp_forget". dispbyA "exp_subst_cmp".
+  dispbyA "exp_subst_id". dispbyA "ty_subst_cmp". dispbyA "ty_subst_id".
+  dispbyA "cmp_assoc". dispbyA "id_left". dispbyA "id_right".
+  dispby "next1". dispby "next0". dispby "ltl_irr".
+  finish_absurd_by.
 Admitted.
 
 (* ================================================================== *)
