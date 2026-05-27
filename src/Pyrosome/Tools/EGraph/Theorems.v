@@ -3,9 +3,9 @@ Import ListNotations.
 Open Scope list.
 
 
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Datatypes.Result.
 
-From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations.
+From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
 From Utils.EGraph Require Import Defs Semantics QueryOpt.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core ModelImpls.
@@ -2394,6 +2394,190 @@ Section ReducingStep.
       unfold atom_in_db, Is_Some_satisfying; cbn.
       rewrite Htbl, Hr. exact Hev.
     Qed.
+
+    (* ============================================================== *)
+    (* Extraction soundness, part 2 (Phase 5 keystone).               *)
+    (* [extract_weighted] reads a term out of an e-class that is      *)
+    (* [eq_term]-equal to whatever that class denotes under [interp]. *)
+    (* Fuel + memoization induction over the analysis extraction.     *)
+    (* ============================================================== *)
+
+    (* Clean reduction lemmas for the [stateT (V_map term) result] monad. *)
+    Lemma stateT_result_bind {A B} (f : A -> stateT (V_map (term V)) Result.result B)
+      (m : stateT (V_map (term V)) Result.result A) (s : V_map (term V)) :
+      Mbind f m s = match m s with
+                    | Success p => f (fst p) (snd p)
+                    | Failure e => Failure e
+                    end.
+    Proof. cbn. unfold Basics.compose. destruct (m s) as [ [a s'] | e]; reflexivity. Qed.
+
+    Lemma stateT_result_ret {A} (a : A) (s : V_map (term V)) :
+      (Mret a : stateT (V_map (term V)) Result.result A) s = Success (a, s).
+    Proof. reflexivity. Qed.
+
+    Section ExtractFixed.
+      Context (g : instance V V V_map V_map V_trie (option positive)).
+      Context (interp : V_map (term V + sort V)).
+      Context (Hsnd : sound interp g).
+
+      Definition cache_sound (cache : V_map (term V)) : Prop :=
+        forall k v, map.get cache k = Some v ->
+          exists ek t, map.get interp k = Some (inl ek) /\ eq_term l [] t v ek.
+
+      Lemma list_extract_sound
+        (rec : V -> stateT (V_map (term V)) Result.result (term V))
+        (Hrec : forall x cache e cache' e_x,
+          cache_sound cache -> map.get interp x = Some (inl e_x) ->
+          rec x cache = Result.Success (e, cache') ->
+          cache_sound cache' /\ exists t, eq_term l [] t e e_x) :
+        forall args args_terms cache children cache',
+          list_Mmap (map.get interp) args = Some (map inl args_terms) ->
+          cache_sound cache ->
+          list_Mmap rec args cache = Result.Success (children, cache') ->
+          cache_sound cache'
+          /\ all2 (fun child e => exists t, eq_term l [] t child e) children args_terms.
+      Proof.
+        induction args as [|a args0 IHargs]; intros args_terms cache children cache' Hget Hcache Hmmap.
+        - cbn in Hmmap. injection Hmmap; intros; subst children cache'.
+          cbn in Hget. destruct args_terms as [|et args_terms0]; [ | cbn in Hget; discriminate ].
+          split; [ exact Hcache | cbn; exact I ].
+        - cbn [list_Mmap] in Hget, Hmmap.
+          destruct (map.get interp a) as [d_a|] eqn:Hia; cbn [Mbind option_monad] in Hget; [ | discriminate ].
+          destruct (list_Mmap (map.get interp) args0) as [ds|] eqn:Hds; cbn [Mbind Mret option_monad] in Hget; [ | discriminate ].
+          injection Hget; intro Heq_dads.
+          destruct args_terms as [|e_a args_terms0]; [ cbn in Heq_dads; discriminate | ].
+          cbn [map] in Heq_dads. injection Heq_dads; intros Hds_eq Hda_eq.
+          rewrite stateT_result_bind in Hmmap.
+          destruct (rec a cache) as [ [c_a cache1] | err1 ] eqn:Hreca; [ cbn [fst snd] in Hmmap | discriminate ].
+          rewrite stateT_result_bind in Hmmap.
+          destruct (list_Mmap rec args0 cache1) as [ [cs cache2] | err2 ] eqn:Hlm; [ cbn [fst snd] in Hmmap | discriminate ].
+          rewrite stateT_result_ret in Hmmap.
+          injection Hmmap; intros Hcache'_eq Hchildren_eq; subst children cache'.
+          assert (Hia' : map.get interp a = Some (inl e_a)) by (rewrite Hia, Hda_eq; reflexivity).
+          destruct (Hrec a cache c_a cache1 e_a Hcache Hia' Hreca) as [Hcache1 Hhead].
+          assert (Hds' : Some ds = Some (map inl args_terms0)) by (rewrite Hds_eq; reflexivity).
+          destruct (IHargs args_terms0 cache1 cs cache2 Hds' Hcache1 Hlm) as [Hcache2 Htail].
+          split; [ exact Hcache2 | ].
+          cbn [all2]. split; [ exact Hhead | exact Htail ].
+      Qed.
+
+      Lemma extractF_sound
+        (rec : V -> stateT (V_map (term V)) Result.result (term V))
+        (Hrec : forall x cache e cache' e_x,
+          cache_sound cache -> map.get interp x = Some (inl e_x) ->
+          rec x cache = Result.Success (e, cache') ->
+          cache_sound cache' /\ exists t, eq_term l [] t e e_x) :
+        forall x cache e cache' e_x,
+          cache_sound cache -> map.get interp x = Some (inl e_x) ->
+          memoizeF (extract_weightedF g) rec x cache = Result.Success (e, cache') ->
+          cache_sound cache' /\ exists t, eq_term l [] t e e_x.
+      Proof.
+        intros x cache e cache' e_x Hcache Hix Hmemo.
+        unfold memoizeF in Hmemo.
+        rewrite stateT_result_bind in Hmemo.
+        unfold stateT_get in Hmemo.
+        cbn [fst snd] in Hmemo.
+        destruct (map.get cache x) as [v|] eqn:Hcx.
+        - cbn [Mret result_monad fst snd] in Hmemo.
+          rewrite Hcx in Hmemo.
+          rewrite stateT_result_ret in Hmemo.
+          injection Hmemo; intros Hc' He; subst e cache'.
+          destruct (Hcache x v Hcx) as (ek & t & Hek & Heqv).
+          rewrite Hix in Hek. injection Hek; intro Hekx; subst ek.
+          split; [ exact Hcache | exists t; exact Heqv ].
+        - cbn [Mret result_monad fst snd] in Hmemo.
+          rewrite Hcx in Hmemo.
+          rewrite stateT_result_bind in Hmemo.
+          unfold extract_weightedF in Hmemo.
+          destruct (map.get (select_optimal_nodes V_map V_trie oP_le (analyses g) (db g)) x) as [ [x_f x_args] | ] eqn:Hopt;
+            cbn [result_of_option_else] in Hmemo; [ | cbn in Hmemo; discriminate ].
+          rewrite stateT_result_bind in Hmemo.
+          cbn [lift stateT_trans Mbind Mret result_monad fst snd] in Hmemo.
+          rewrite stateT_result_bind in Hmemo.
+          destruct (list_Mmap rec x_args cache) as [ [children0 cache_mid] | err ] eqn:Hlm;
+            [ cbn [fst snd] in Hmemo | cbn [fst snd] in Hmemo; discriminate ].
+          rewrite stateT_result_ret in Hmemo.
+          cbn [fst snd] in Hmemo.
+          rewrite stateT_result_bind in Hmemo.
+          unfold stateT_put in Hmemo.
+          cbn [Mret result_monad fst snd] in Hmemo.
+          rewrite stateT_result_ret in Hmemo.
+          injection Hmemo; intros Hcache'_eq He_eq; subst e cache'.
+          pose proof (select_optimal_nodes_sound (option positive) oP_le (analyses g) (db g) x x_f x_args Hopt) as Hatomdb.
+          destruct Hsnd as [Hwf_interp Hexact Hatom_interp Hrel].
+          pose proof (Hatom_interp (Build_atom x_f x_args x) Hatomdb) as Hatomsnd.
+          unfold atom_sound_for_model, Is_Some_satisfying in Hatomsnd.
+          cbn [atom_args atom_ret atom_fn] in Hatomsnd.
+          change (domain V lang_model) with (term V + sort V)%type in Hatomsnd.
+          destruct (list_Mmap (map.get interp) x_args) as [arg_doms|] eqn:Hld;
+            cbn beta iota in Hatomsnd; [ | contradiction ].
+          rewrite Hix in Hatomsnd.
+          change (interprets_to V lang_model) with (lang_model_interprets_to V sort_of l) in Hatomsnd.
+          inversion Hatomsnd as [ | | f0 args0 e0 t0 Heqterm Hf0 Hargs0 He0 ]; subst.
+          destruct (list_extract_sound rec Hrec x_args args0 cache children0 cache_mid Hld Hcache Hlm) as [Hcache_mid Hall].
+          pose proof (eq_term_wf_l wfl ltac:(constructor) Heqterm) as Hwfcon.
+          apply WfCutElim.invert_wf_term_con in Hwfcon.
+          destruct Hwfcon as (c & rule_args & t_rule & Hin & Hwfargs0 & Ht0).
+          assert (Hwfc : wf_ctx (Model:=core_model l) c) by eauto with lang_core.
+          assert (Hall2 : all2 (lang_model_eq V l) (map inl args0) (map inl children0))
+            by (clear -Hall; revert args0 Hall; induction children0 as [|c0 cs' IH];
+                intros [|a0 args0'] Hall; cbn in Hall |- *; try contradiction; auto;
+                destruct Hall as [ [t Ht] Hrest ]; split;
+                [ econstructor; apply eq_term_sym; exact Ht | apply IH; exact Hrest ]).
+          pose proof (all2_model_eq_eq_args V l wfl args0 children0 c Hwfargs0 Hwfc Hall2) as Heqargs.
+          pose proof (term_con_congruence x_f rule_args t_rule Hin (or_intror eq_refl) wfl Heqargs) as Hcong.
+          assert (Hwf1 : wf_term l [] (con x_f args0) (t_rule [/with_names_from c children0 /]))
+            by (apply (eq_term_wf_l wfl ltac:(constructor) Hcong)).
+          assert (Hwf2 : wf_term l [] (con x_f args0) t0)
+            by (apply (eq_term_wf_l wfl ltac:(constructor) Heqterm)).
+          assert (Hsorteq : eq_sort l [] (t_rule [/with_names_from c children0 /]) t0)
+            by (apply (term_sorts_eq wfl ltac:(constructor) Hwf1 Hwf2)).
+          assert (Hfinal : eq_term l [] t0 (con x_f children0) e_x)
+            by (eapply eq_term_trans;
+                [ exact (eq_term_conv (eq_term_sym Hcong) Hsorteq) | exact Heqterm ]).
+          split.
+          + intros k v Hk.
+            destruct (eqb k x) eqn:Hkx; pose proof (eqb_spec k x) as Hkxs; rewrite Hkx in Hkxs.
+            ++ subst k. rewrite map.get_put_same in Hk. injection Hk; intro Hv; subst v.
+               exists e_x, t0. split; [ exact Hix | exact Hfinal ].
+            ++ rewrite map.get_put_diff in Hk; [ | congruence ]. exact (Hcache k v Hk).
+          + exists t0. exact Hfinal.
+      Qed.
+
+      Lemma extract_weighted'_sound :
+        forall efuel x cache e cache' e_x,
+          cache_sound cache -> map.get interp x = Some (inl e_x) ->
+          extract_weighted' g efuel x cache = Result.Success (e, cache') ->
+          cache_sound cache' /\ exists t, eq_term l [] t e e_x.
+      Proof.
+        induction efuel as [|n IHn]; intros x cache e cache' e_x Hcache Hix Hext.
+        - cbn [extract_weighted' decr] in Hext.
+          eapply (extractF_sound default); [ | exact Hcache | exact Hix | exact Hext ].
+          intros x0 cache0 e0 cache0' e_x0 _ _ Hd. cbn in Hd. discriminate Hd.
+        - cbn [extract_weighted' decr] in Hext.
+          eapply (extractF_sound (extract_weighted' g n)); [ exact IHn | exact Hcache | exact Hix | exact Hext ].
+      Qed.
+
+      Lemma extract_weighted_sound (efuel : nat) (x : V) (e : term V) (e_x : term V) :
+        map.get interp (snd (UnionFind.find (equiv g) x)) = Some (inl e_x) ->
+        extract_weighted g efuel x = Result.Success e ->
+        exists t, eq_term l [] t e e_x.
+      Proof.
+        intros Hix Hext.
+        unfold extract_weighted in Hext.
+        cbn [Mbind Mret] in Hext.
+        destruct (extract_weighted' g efuel (snd (UnionFind.find (equiv g) x)) map.empty)
+          as [ [e0 cache0] | err ] eqn:Hext'; cbn [Mbind Mret result_monad fst] in Hext;
+          [ | discriminate ].
+        injection Hext; intro He; subst e0.
+        assert (Hcache0 : cache_sound map.empty)
+          by (intros k v Hk; rewrite map.get_empty in Hk; discriminate).
+        destruct (extract_weighted'_sound efuel _ map.empty e cache0 e_x Hcache0 Hix Hext')
+          as [ _ Heq ].
+        exact Heq.
+      Qed.
+
+    End ExtractFixed.
 
     (* The real [schedule_sound] content (Phase 3<->6 interface): every
        compiled rule_set in [schedule] satisfies the per-rule_set
