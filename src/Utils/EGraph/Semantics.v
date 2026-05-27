@@ -7087,6 +7087,94 @@ Section WithMap.
     - rewrite (map_combine_fst qs vs Hlen). exact Hin.
   Qed.
 
+  (* Soundness of one reconstructed query atom: if the intersection key
+     [sigma] hits the clause trie for pointer (f,n,clause_vars), then the
+     matched DB atom (sound under [i]) witnesses that the logical query
+     atom [f(clause_vars[cargs]) = clause_vars[cv]] is sound under the
+     model assignment [a_q = i o env0]. [a_q] is abstract here, specified
+     only by its bind-relationship to [env0 = of_list (combine query_vars
+     sigma)]; process_erule'_sound supplies a concrete [a_q]. *)
+  Lemma query_clause_ptr_sound
+    (i : idx_map m.(domain))
+    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (query_vars : list idx) (frontier_n : idx) (sigma : list idx)
+    (a_q : idx_map m.(domain))
+    (f : symbol) (n : idx) (clause_vars : list idx)
+    (q_f : idx_map (list nat * nat)) (cargs : list nat) (cv : nat)
+    (P : idx -> bool) :
+    egraph_sound_for_interpretation m i inst ->
+    List.NoDup query_vars ->
+    List.length query_vars = List.length sigma ->
+    (forall x, map.get a_q x
+       = match map.get (map.of_list (combine query_vars sigma)) x with
+         | Some v => map.get i v
+         | None => None
+         end) ->
+    map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
+    map.get q_f n = Some (cargs, cv) ->
+    clause_vars = filter P query_vars ->
+    (forall t, In t cargs -> t < List.length clause_vars) ->
+    cv < List.length clause_vars ->
+    map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                    query_vars
+                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
+            (map fst (filter snd (combine sigma
+               (variable_flags idx Eqb_idx query_vars clause_vars))))
+      = Some tt ->
+    atom_sound_for_model m a_q
+      (Build_atom f (map (fun k => nth k clause_vars idx_zero) cargs)
+                    (nth cv clause_vars idx_zero)).
+  Proof.
+    intros Hsnd Hnd Hlen Ha_q Hqf Hclause Hcvars Hbound_args Hbound_cv Hhit.
+    pose proof (clause_ptr_atom_in_db q inst query_vars frontier_n f n clause_vars q_f (cargs,cv) sigma Hqf Hclause Hhit) as Hcp.
+    destruct Hcp as [ args_db [ v_db [ Hdb Hmatch ] ] ].
+    set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))) in *.
+    pose proof (atom_interpretation m i inst Hsnd (Build_atom f args_db v_db) Hdb) as Hdb_snd.
+    unfold atom_sound_for_model in Hdb_snd.
+    cbn [atom_args atom_ret atom_fn] in Hdb_snd.
+    destruct (list_Mmap (map.get i) args_db) as [doms|] eqn:Hdoms; cbn [Is_Some_satisfying] in Hdb_snd; [ | contradiction ].
+    destruct (map.get i v_db) as [out|] eqn:Hout; cbn [Is_Some_satisfying] in Hdb_snd; [ | contradiction ].
+    pose proof (match_clause_correct idx_zero cargs cv args_db v_db proj Hmatch) as Hmc.
+    cbn [map] in Hmc.
+    injection Hmc as Hcv_eq Hcargs_eq.
+    assert (Hproj : proj = map (fun cvv => named_list_lookup idx_zero (combine query_vars sigma) cvv) clause_vars)
+      by (unfold proj; rewrite Hcvars; apply (project_filter_variable_flags P query_vars sigma idx_zero Hnd (eq_sym Hlen))).
+    assert (Hincl : incl clause_vars query_vars)
+      by (intros x Hx; rewrite Hcvars in Hx; apply filter_In in Hx; destruct Hx as [Hx _]; exact Hx).
+    assert (Hkey : forall t, t < length clause_vars ->
+      map.get a_q (nth t clause_vars idx_zero)
+      = map.get i (named_list_lookup idx_zero (assign_sub proj) t))
+      by (intros t Ht; rewrite Ha_q;
+          rewrite (get_of_list_combine idx idx_zero query_vars sigma (nth t clause_vars idx_zero) Hnd Hlen)
+            by (apply Hincl; apply nth_In; exact Ht);
+          f_equal;
+          rewrite named_list_lookup_assign_sub by (rewrite Hproj, length_map; exact Ht);
+          rewrite Hproj; rewrite nth_error_map; rewrite (nth_error_nth' clause_vars idx_zero Ht);
+          cbn [option_map]; reflexivity).
+    assert (Hgen : forall cs, (forall k, In k cs -> k < length clause_vars) ->
+       list_Mmap (map.get a_q) (map (fun k => nth k clause_vars idx_zero) cs)
+       = list_Mmap (map.get i) (map (fun x => named_list_lookup idx_zero (assign_sub proj) x) cs))
+      by (intros cs; induction cs as [|c cs' IH]; intros Hb;
+          [ reflexivity
+          | cbn [list_Mmap map];
+            rewrite (Hkey c (Hb c (or_introl eq_refl)));
+            rewrite (IH (fun k Hk => Hb k (or_intror Hk)));
+            reflexivity ]).
+    unfold atom_sound_for_model.
+    cbn [atom_args atom_ret atom_fn].
+    rewrite (Hgen cargs Hbound_args).
+    setoid_rewrite Hcargs_eq.
+    setoid_rewrite Hdoms.
+    cbn [Is_Some_satisfying].
+    setoid_rewrite (Hkey cv Hbound_cv).
+    setoid_rewrite Hcv_eq.
+    setoid_rewrite Hout.
+    cbn [Is_Some_satisfying].
+    exact Hdb_snd.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
