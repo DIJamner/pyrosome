@@ -417,7 +417,7 @@ Proof.
   - (* eval glue *)
     dispbyB "Empty subst". dispbyB "suc subst". dispbyB "zero subst".
     dispbyB "Nat subst". dispbyA "El subst". dispbyB "U subst".
-    dispbyB_snoc_wkn_hd. dispbyA "cmp_snoc". dispbyB "snoc_hd". dispbyA "wkn_snoc".
+    dispbyB_snoc_wkn_hd. dispbyB "cmp_snoc". dispbyB "snoc_hd". dispbyA "wkn_snoc".
     dispbyB "id_emp_forget". dispbyB "cmp_forget". dispbyA "exp_subst_cmp".
     dispbyB "exp_subst_id". dispbyA "ty_subst_cmp". dispbyB "ty_subst_id".
     dispbyA "cmp_assoc". dispbyB "id_left". dispbyA "id_right".
