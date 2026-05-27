@@ -7356,7 +7356,7 @@ Section WithMap.
      generic-join intersection correctness (pt_spaced_intersect_correct). *)
   Lemma process_erule'_sound
     (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
-    (i : idx_map m.(domain)) (inst : instance)
+    (i_snap i_start : idx_map m.(domain)) (inst : instance)
     (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
     (frontier_n : idx) (e_start : instance) :
     let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
@@ -7364,9 +7364,10 @@ Section WithMap.
     let tries := ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
                            (query_vars idx symbol r) db_tries frontier_n)
                         (query_clause_ptrs idx symbol r) in
-    egraph_sound_for_interpretation m i inst ->
+    egraph_sound_for_interpretation m i_snap inst ->
     egraph_ok e_start ->
-    egraph_sound_for_interpretation m i e_start ->
+    egraph_sound_for_interpretation m i_start e_start ->
+    map.extends i_start i_snap ->
     List.NoDup (query_vars idx symbol r) ->
     List.NoDup (write_vars idx symbol r) ->
     erule_sound m (query_clauses idx symbol symbol_map idx_map q) r ->
@@ -7405,10 +7406,10 @@ Section WithMap.
             analysis_result _ spaced_list_intersect db_tries r frontier_n e_start with
     | (_, e') =>
         egraph_ok e'
-        /\ exists i', map.extends i' i /\ egraph_sound_for_interpretation m i' e'
+        /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation m i' e'
     end.
   Proof.
-    intros db_tries tries Hsnd_inst Hok_start Hsnd_start Hnd_qv Hnd_wv Hrule
+    intros db_tries tries Hsnd_inst Hok_start Hsnd_start Hext_start Hnd_qv Hnd_wv Hrule
            Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
     unfold process_erule'.
     fold tries.
@@ -7419,22 +7420,22 @@ Section WithMap.
          forall fsym nptr cvars, In (Build_erule_query_ptr idx symbol fsym nptr cvars) (uncurry cons (query_clause_ptrs idx symbol r)) ->
          map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie (query_vars idx symbol r) db_tries frontier_n (Build_erule_query_ptr idx symbol fsym nptr cvars)))
                  (map fst (filter snd (combine sigma (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars)))) = Some tt) ->
-      forall e_cur icur, egraph_ok e_cur -> egraph_sound_for_interpretation m icur e_cur -> map.extends icur i ->
+      forall e_cur icur, egraph_ok e_cur -> egraph_sound_for_interpretation m icur e_cur -> map.extends icur i_snap ->
       match list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas e_cur with
-      | (_, e') => egraph_ok e' /\ exists i', map.extends i' icur /\ egraph_sound_for_interpretation m i' e'
+      | (_, e') => egraph_ok e' /\ exists i', map.extends i' i_snap /\ egraph_sound_for_interpretation m i' e'
       end).
     { intro sigmas. induction sigmas as [|sigma sigmas' IH];
         intros Hlen_s Hsli_s e_cur icur Hok_cur Hsnd_cur Hext_cur.
       - cbn [list_Miter]. split; [exact Hok_cur|].
-        exists icur. split; [intros kk vv hh; exact hh | exact Hsnd_cur].
+        exists icur. split; [exact Hext_cur | exact Hsnd_cur].
       - cbn [list_Miter].
         set (env0 := map.of_list (combine (query_vars idx symbol r) sigma)).
-        set (a_q := compose_assignment i env0).
-        assert (Ha_q : forall x, map.get a_q x = match map.get env0 x with Some v => map.get i v | None => None end)
+        set (a_q := compose_assignment i_snap env0).
+        assert (Ha_q : forall x, map.get a_q x = match map.get env0 x with Some v => map.get i_snap v | None => None end)
           by (intros; apply get_compose_assignment).
-        pose proof (query_atoms_sound i q inst r frontier_n sigma a_q Hsnd_inst Hnd_qv
+        pose proof (query_atoms_sound i_snap q inst r frontier_n sigma a_q Hsnd_inst Hnd_qv
                       (Hlen_s sigma (or_introl eq_refl)) Ha_q Hwf (Hsli_s sigma (or_introl eq_refl))) as Hqsnd.
-        pose proof (a_q_wf_query_vars i inst q r a_q env0 Hsnd_inst Ha_q Hqsnd Hcov) as Hawf.
+        pose proof (a_q_wf_query_vars i_snap inst q r a_q env0 Hsnd_inst Ha_q Hqsnd Hcov) as Hawf.
         destruct (Hrule a_q Hawf Hqsnd) as (a_src & Hsrc_qv & Hsrc_wv & Hsrc_c & Hsrc_u).
         pose proof (Hlen_s sigma (or_introl eq_refl)) as Hlen1.
         assert (Hfresh : forall x, In x (write_vars idx symbol r) -> map.get env0 x = None)
@@ -7447,7 +7448,7 @@ Section WithMap.
                 by (pose proof (get_of_list_in_keys idx (combine (query_vars idx symbol r) sigma) x v Hev) as Hk;
                     rewrite (map_combine_fst (query_vars idx symbol r) sigma Hlen1) in Hk; exact Hk);
               destruct (Hawf x Hxq) as (d & Haqx & Hwfd);
-              assert (Hiv : map.get i v = Some d) by (rewrite Ha_q, Hev in Haqx; exact Haqx);
+              assert (Hiv : map.get i_snap v = Some d) by (rewrite Ha_q, Hev in Haqx; exact Haqx);
               assert (Hicurv : map.get icur v = Some d) by (apply Hext_cur; exact Hiv);
               split;
               [ rewrite Hicurv; rewrite (Hsrc_qv x Hxq); exact (eq_sym Haqx)
@@ -7477,17 +7478,16 @@ Section WithMap.
         destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
           as [u e_mid] eqn:Hew_eq.
         destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
-        assert (Hext_mid_i : map.extends i_mid i)
+        assert (Hext_mid_i : map.extends i_mid i_snap)
           by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
         pose proof (IH (fun s Hs => Hlen_s s (or_intror Hs)) (fun s Hs => Hsli_s s (or_intror Hs))
                       e_mid i_mid Hok_mid Hsnd_mid Hext_mid_i) as HIH.
         destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas' e_mid)
           as [u2 e'] eqn:Hlm.
-        destruct HIH as (Hok' & i' & Hext'_mid & Hsnd').
+        destruct HIH as (Hok' & i' & Hext'_snap & Hsnd').
         split; [exact Hok'|].
-        exists i'. split; [intros k vv hh; apply Hext'_mid; apply Hext_mid; exact hh | exact Hsnd']. }
-    apply (Hloop asn Hlen_sig Hsli e_start i Hok_start Hsnd_start);
-      intros kk vv hh; exact hh.
+        exists i'. split; [exact Hext'_snap | exact Hsnd']. }
+    apply (Hloop asn Hlen_sig Hsli e_start i_start Hok_start Hsnd_start Hext_start).
   Qed.
 
 End WithMap.
