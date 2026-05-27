@@ -370,7 +370,7 @@ Section WithVar.
       }
     Qed.
 
-    
+
   Ltac transitive_extension :=
     repeat first [apply Properties.map.extends_refl
                  | eapply map_extends_trans;[ eassumption |] ].
@@ -638,8 +638,25 @@ Section WithVar.
         eapply eq_term_wf_sort; eauto with lang_core.
         eapply eq_term_refl; eauto.
       }
-    Qed.          
-    
+    Qed.
+
+    (* lang_model instance of eq_sound_to_domain_eq: if two ids are equal
+       under interpretation [i] and denote the closed terms [e1], [e2],
+       then [e1] and [e2] are provably equal in [l].  The model-level
+       endpoint of the saturation->eq_term bridge; compose with the term
+       denotations from add_open_term_sound and are_unified_eq_sound. *)
+    Lemma eq_sound_to_eq_term (i : V_map (term + sort)%type) (x1 x2 : V) (e1 e2 : term) :
+      eq_sound_for_model V V V_map lang_model i x1 x2 ->
+      option_relation lang_model_eq (map.get i x1) (Some (inl e1)) ->
+      option_relation lang_model_eq (map.get i x2) (Some (inl e2)) ->
+      exists t, eq_term l [] t e1 e2.
+    Proof.
+      intros Hes Hd1 Hd2.
+      apply invert_lang_model_eq_inl.
+      exact (@eq_sound_to_domain_eq V V V_map lang_model lang_model_ok
+               i x1 x2 (inl e1) (inl e2) Hes Hd1 Hd2).
+    Qed.
+
 (*
     Definition sort_of_term e :=
       match e with
