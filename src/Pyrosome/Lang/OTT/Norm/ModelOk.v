@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Gluing Require Import CutTModel.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model ApplyLemmas.
 From Pyrosome.Lang.OTT Require Import Base Nat.
 Import Core.Notations.
 
@@ -298,6 +298,52 @@ Ltac dispbyA nm :=
       destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
   end.
 
+Ltac build := repeat first [ eassumption | econstructor ].
+
+Ltac rhs_finish :=
+  cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq] in *;
+  repeat match goal with H : @eq (@term string) ?a ?b |- _ => first [ rewrite H | idtac ]; clear H end;
+  rewrite ?apply_id_val, ?apply_id_ty, ?apply_id_map, ?snoc_wkn_hd_list;
+  cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq];
+  build.
+
+Ltac solve_by2 :=
+  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  repeat match goal with H : @sigT _ _ |- _ => destruct H as [? [? ?]] end;
+  first
+    [ exact tt
+    | reflexivity
+    | solve [ eexists; split; [ build | rhs_finish ] ]
+    | solve [ congruence ] ].
+
+Ltac dispbyB nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_by2 | ]
+  end.
+
+(* Bespoke tactic for snoc_wkn_hd: needs eval_env_length to equate ctx_len of
+   the two G sides (s1 vs s2 substitutions both have the same env witness). *)
+Ltac solve_snoc_wkn_hd :=
+  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  repeat match goal with H : @sigT _ _ |- _ => destruct H as [? [? ?]] end;
+  match goal with Ha : eval_env ?G1 ?gv, Hb : eval_env ?G2 ?gv |- _ =>
+    let Hlen := fresh in
+    pose proof (eq_trans (eq_sym (eval_env_length Ha)) (eval_env_length Hb)) as Hlen;
+    eexists; split;
+    [ build
+    | rewrite snoc_wkn_hd_list, Hlen; build ]
+  end.
+
+Ltac dispbyB_snoc_wkn_hd :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name "snoc_wkn_hd") eqn:E;
+      [ concretize_subst; recover_peel; solve_snoc_wkn_hd | ]
+  end.
+
 Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
     In (name, term_eq_rule c' e1r e2r tr) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
@@ -305,12 +351,12 @@ Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2
              e1r[/with_names_from c' s1/] e2r[/with_names_from c' s2/].
 Proof.
   intros c' name e1r e2r tr s1 s2 Hin Hargs.
-  dispbyA "Empty subst". dispbyA "suc subst". dispbyA "zero subst".
-  dispbyA "Nat subst". dispbyA "El subst". dispbyA "U subst".
-  dispbyA "snoc_wkn_hd". dispbyA "cmp_snoc". dispbyA "snoc_hd". dispbyA "wkn_snoc".
-  dispbyA "id_emp_forget". dispbyA "cmp_forget". dispbyA "exp_subst_cmp".
-  dispbyA "exp_subst_id". dispbyA "ty_subst_cmp". dispbyA "ty_subst_id".
-  dispbyA "cmp_assoc". dispbyA "id_left". dispbyA "id_right".
+  dispbyB "Empty subst". dispbyB "suc subst". dispbyB "zero subst".
+  dispbyB "Nat subst". dispbyA "El subst". dispbyB "U subst".
+  dispbyB_snoc_wkn_hd. dispbyA "cmp_snoc". dispbyB "snoc_hd". dispbyA "wkn_snoc".
+  dispbyB "id_emp_forget". dispbyB "cmp_forget". dispbyA "exp_subst_cmp".
+  dispbyB "exp_subst_id". dispbyA "ty_subst_cmp". dispbyB "ty_subst_id".
+  dispbyA "cmp_assoc". dispbyB "id_left". dispbyA "id_right".
   dispby "next1". dispby "next0". dispby "ltl_irr".
   finish_absurd (term_eq_rules_names Hin)
     ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
