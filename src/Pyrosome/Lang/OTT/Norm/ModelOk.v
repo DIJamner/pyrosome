@@ -17,6 +17,18 @@ Definition fo_lang := ott_nat ++ ott_base ++ subst_ott ++ ott_info.
 Lemma fo_lang_all_fresh : all_fresh fo_lang.
 Proof. compute_all_fresh. Qed.
 
+(* One-time: collapse a sort-rule membership to its NAME being in a small list,
+   so per-invocation case analysis never normalizes a rule body. (Pattern from a
+   parallel lemma in the value_subst/STLC development.) *)
+Lemma sort_rules name c' args
+  : In (name, sort_rule c' args) fo_lang ->
+    In name ["exp";"ty";"sub";"env";"tyinfo";"tlvl";"ltl";"lvl";"relevance"].
+Proof.
+  vm_compute; intuition auto.
+  all: repeat match goal with H : _ = _ |- _ => safe_invert H end.
+  all: intuition eauto.
+Qed.
+
 (* Fast case split on [In (name, rule) fo_lang] WITHOUT normalizing every rule
    body: derive the names-only disjunction via [pair_fst_in] (cheap), pick a
    concrete name, then recover that one rule with a targeted lookup.  Branches
@@ -218,12 +230,24 @@ Lemma Norm_csort_cong : forall (c' : @ctx string) (name : string) (args : list s
     ceq_sort (CutTModel := Norm) (scon name s1) (scon name s2).
 Proof.
   intros c' name args s1 s2 Hin Hargs.
-  (* TODO(fast): the proof needs the sort rule's first-arg sort concrete, which
-     means concretizing [c'] per rule. The committed enumeration version (git
-     809835b) works but normalizes every rule body via [vm_compute] -> >580s.
-     A name-only split (pair_fst_in + targeted lookup, as in csort_by) is the
-     intended fast path but hit goal-selector/subst landmines; deferred. *)
-Admitted.
+  unfold ceq_sort, Norm, norm_ceq_sort.
+  split.
+  - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
+  - (* Fast: name the sort rule (one-time lemma, no per-rule normalization),
+       recover its context with a targeted lookup, then peel Hargs to the env
+       (the LAST arg); the env's ceq_term IS the required [eval_env] equality. *)
+    pose proof (sort_rules Hin) as Hname; cbn in Hname.
+    repeat match goal with H : _ \/ _ |- _ => destruct H end.
+    all: try contradiction.
+    all: subst name.
+    all: apply (proj2 (all_fresh_named_list_lookup_err_in _ _ _ fo_lang_all_fresh)) in Hin.
+    all: vm_compute in Hin.
+    all: injection Hin; clear Hin; intros; subst.
+    all: repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end.
+    all: match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end.
+    all: unfold sort_env, ceq_term, Norm, norm_ceq_term in *; cbn [List.last] in *; cbn in *.
+    all: first [ reflexivity | eassumption ].
+Qed.
 
 (* ================================================================== *)
 (* Helpers for cterm_cong                                              *)
