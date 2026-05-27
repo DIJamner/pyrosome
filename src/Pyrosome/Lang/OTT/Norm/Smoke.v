@@ -53,11 +53,11 @@ Section Smoke.
   Definition ctx1 : term := con "ext" [con "Nat" [emp]; d; emp].
 
   Example eval_env_ctx1 :
-    eval_env ctx1 = [ vNe (con "hd" [con "Nat" [emp]; d; emp]) ].
+    reflect_ssub ctx1 = [ vNe (con "hd" [con "Nat" [emp]; d; emp]) ].
   Proof. reflexivity. Qed.
 
   Example eval_open_var :
-    eval_rel (eval_env ctx1) (con "hd" [con "Nat" [emp]; d; emp])
+    eval_rel (reflect_ssub ctx1) (con "hd" [con "Nat" [emp]; d; emp])
              (vNe (con "hd" [con "Nat" [emp]; d; emp])).
   Proof. econstructor. Qed.
 

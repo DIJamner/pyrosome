@@ -10,13 +10,14 @@ From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm Require Import Domain.
 Import Core.Notations.
 
-(* Normalizing the object environment, per the design: the normal form of an env
-   is a telescope of [ext]s on a base ([emp], or an abstract metavar). That
-   telescope IS the reflecting semantic environment used to evaluate open terms:
-   one fresh neutral variable ([hd]) per [ext], with the inner variables WEAKENED
-   (shifted by [wkn]) as we go under each extension. A bare base ([emp]/metavar)
-   contributes no accessible object variables (it is opaque), so its reflecting
-   env is empty.
+(* [reflect_ssub]: the reflecting/identity semantic SUBSTITUTION [ssub = list sval]
+   of an object context [G] — the values used to evaluate OPEN terms over [G].  (The
+   list of the context's TYPES is the separate [eval_env : term -> senv] in EvalRel.v;
+   these were formerly conflated.)  An [ext]-telescope on a base ([emp], or an
+   abstract metavar) gives one fresh neutral variable ([hd]) per [ext], with the
+   inner variables WEAKENED (shifted by [wkn]) as we go under each extension.  A bare
+   base ([emp]/metavar) contributes no accessible object variables (it is opaque), so
+   its reflecting substitution is empty.
 
    [weaken_val]/[weaken_ty] are the renaming (Kripke) action on values: they push
    a [wkn] onto every neutral leaf. NOTE the [wkn]/[exp_subst] annotation slots
@@ -52,10 +53,10 @@ Section Env.
 
   (* Reflecting environment of a context term: a fresh neutral [hd] per [ext],
      with the already-built inner variables weakened.  Base ([emp]/metavar): []. *)
-  Fixpoint eval_env (G : term) : senv :=
+  Fixpoint reflect_ssub (G : term) : ssub :=
     match G with
     | con "ext" [A; i; G'] =>
-        vNe (con "hd" [A; i; G']) :: map weaken_val (eval_env G')
+        vNe (con "hd" [A; i; G']) :: map weaken_val (reflect_ssub G')
     | _ => []
     end.
 

@@ -40,7 +40,14 @@ Section Domain.
   | vCode (T : svalty).                               (* element of U: a code *)
   Set Elimination Schemes.
 
-  (* A semantic environment assigns a value to each (object-level) variable. *)
-  Definition senv := list sval.
+  (* A semantic SUBSTITUTION assigns a value to each (object-level) variable; it is
+     what the evaluator carries (the values of the in-scope variables) and what a
+     [sub] term denotes.  (Formerly misnamed [senv].) *)
+  Definition ssub := list sval.
+
+  (* A semantic ENVIRONMENT is the list of (semantic) TYPES of an object context's
+     variables — the denotation of an [env]/context, NOT of a substitution.  These
+     two were previously conflated as one [list sval]. *)
+  Definition senv := list svalty.
 
 End Domain.

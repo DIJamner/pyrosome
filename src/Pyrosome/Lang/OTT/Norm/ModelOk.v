@@ -158,7 +158,7 @@ Proof.
   destruct l1 as [|G1 r1], l2 as [|G2 r2].
   - exact Hterm.
   - (* l1=[], l2=G2::r2: junk (ill-arity) case; same head, different arg count.
-       Hterm is an [nf_info]/[eval_env] equation but the goal wants an eval sigma. *)
+       Hterm is an [nf_info]/[reflect_ssub] equation but the goal wants an eval sigma. *)
     cbn in Hterm |- *.
     destruct (eqb n1 "exp"); [| destruct (eqb n1 "ty"); [| destruct (eqb n1 "sub")]].
     all: try exact tt.
@@ -169,7 +169,7 @@ Proof.
     all: try exact tt.
     all: admit.
   - (* both nonempty: for the env-bearing heads exp/ty/sub, the (true) dispatch
-       gives [Henv : eval_env (last l1) = eval_env (last l2)], which transports the
+       gives [Henv : reflect_ssub (last l1) = reflect_ssub (last l2)], which transports the
        eval witnesses; other heads land in the [unit] branch. *)
     destruct (eqb n1 "exp") eqn:Hexp.
     + cbn [orb] in Henv.
@@ -263,7 +263,7 @@ Proof.
   - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
   - (* Fast: name the sort rule (one-time lemma, no per-rule normalization),
        recover its context with a targeted lookup, then peel Hargs to the env
-       (the LAST arg); the env's ceq_term IS the required [eval_env] equality. *)
+       (the LAST arg); the env's ceq_term IS the required [reflect_ssub] equality. *)
     pose proof (sort_rules Hin) as Hname; cbn in Hname.
     repeat match goal with H : _ \/ _ |- _ => destruct H end.
     all: try contradiction.
@@ -273,7 +273,7 @@ Proof.
     all: injection Hin; clear Hin; intros; subst.
     all: repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end.
     all: match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end.
-    (* For env-bearing sorts (exp/ty/sub) the goal is the env arg's [eval_env]
+    (* For env-bearing sorts (exp/ty/sub) the goal is the env arg's [reflect_ssub]
        equality (eassumption); for the static sort [ltl] it is [map nf_info]
        equality of the lvl args (congruence from their [nf_info] hypotheses);
        nullary sorts close by reflexivity. *)
@@ -367,13 +367,13 @@ Ltac finish_absurd :=
 (* PROVEN for the 19 formers whose eval is annotation-free or structural in a single
    environment.  STILL ADMITTED (4 + 3):
    - ext / U / El / Emptyrec: the value domain carries RAW syntactic annotations
-     (eval_env's hd-neutral; dU r l; the El code; the Emptyrec neutral), so the
+     (reflect_ssub's hd-neutral; dU r l; the El code; the Emptyrec neutral), so the
      congruence would need syntactic equality of arguments we only relate
      semantically.  These need the de-Bruijn-level neutral redesign / normalized
      value annotations (El additionally needs an eval rule for El of a neutral).
    - exp_subst / ty_subst / cmp: the inner term is evaluated in the CODOMAIN
      reflecting environment, which requires the substitution/typing lemma
-     [eval_sub (eval_env G) g (eval_env G')] not yet available (cf. snoc, which is
+     [eval_sub (reflect_ssub G) g (reflect_ssub G')] not yet available (cf. snoc, which is
      unblocked because its components share the source environment). *)
 Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list string)
     (t : @sort string) s1 s2,
