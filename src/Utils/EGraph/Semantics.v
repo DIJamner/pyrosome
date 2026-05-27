@@ -7898,6 +7898,26 @@ Section WithMap.
     apply (Hde2 i). apply (Hde1 i). exact Hsnd.
   Qed.
 
+  (* Model-level core of the saturation->eq_term bridge.  If [x1] and
+     [x2] are equal under interpretation [i] ([eq_sound_for_model]) and
+     they denote [d1] and [d2] respectively, then [d1] and [d2] are
+     equal in the model.  Pure [domain_eq]-PER chaining (the PER comes
+     from [model_ok]): [d1 ~ i(x1) ~ i(x2) ~ d2]. *)
+  Lemma eq_sound_to_domain_eq (i : idx_map m.(domain)) (x1 x2 : idx) (d1 d2 : m.(domain)) :
+    eq_sound_for_model m i x1 x2 ->
+    option_relation m.(domain_eq) (map.get i x1) (Some d1) ->
+    option_relation m.(domain_eq) (map.get i x2) (Some d2) ->
+    m.(domain_eq) d1 d2.
+  Proof.
+    intros Hes Hd1 Hd2.
+    unfold option_relation in Hd1, Hd2.
+    destruct (map.get i x1) as [a1|] eqn:G1; [|exfalso; discriminate Hd1].
+    destruct (map.get i x2) as [a2|] eqn:G2; [|exfalso; discriminate Hd2].
+    unfold eq_sound_for_model in Hes. rewrite G1, G2 in Hes. cbn [Is_Some_satisfying] in Hes.
+    transitivity a1; [symmetry; exact Hd1|].
+    transitivity a2; [exact Hes | exact Hd2].
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
