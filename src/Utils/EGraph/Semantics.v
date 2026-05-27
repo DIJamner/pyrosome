@@ -924,6 +924,73 @@ Section WithMap.
     - cbn in Hbt_f. discriminate.
   Qed.
 
+  Lemma clause_ptr_atom_in_db
+    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (query_vars : list idx) (frontier_n : idx)
+    (f : symbol) (n : idx) (clause_vars : list idx)
+    (q_f : idx_map (list nat * nat)) (clause : list nat * nat)
+    (sigma : list idx) :
+    map.get (query_clauses idx symbol symbol_map idx_map q) f = Some q_f ->
+    map.get q_f n = Some clause ->
+    map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                    query_vars
+                    (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result q inst))
+                    frontier_n (Build_erule_query_ptr idx symbol f n clause_vars)))
+            (map fst (filter snd (combine sigma
+               (variable_flags idx Eqb_idx query_vars clause_vars))))
+          = Some tt ->
+    exists args v,
+      atom_in_db (Build_atom f args v) inst.(db)
+      /\ match_clause clause args v
+         = Some (map fst (filter snd (combine sigma
+                   (variable_flags idx Eqb_idx query_vars clause_vars)))).
+  Proof.
+    intros Hqf Hclause Hhit.
+    unfold trie_of_clause in Hhit.
+    cbn [fst snd] in Hhit.
+    set (proj := map fst (filter snd (combine sigma (variable_flags idx Eqb_idx query_vars clause_vars)))).
+    set (db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                            idx_map idx_map_plus idx_trie analysis_result q inst)).
+    destruct (map.get db_tries f) as [ trie_list | ] eqn:Hf.
+    - (* Some trie_list case *)
+      fold db_tries in Hhit.
+      rewrite Hf in Hhit.
+      cbn [fst snd] in Hhit.
+      destruct (map.get trie_list n) as [ [ total frontier ] | ] eqn:Hn.
+      + (* map.get trie_list n = Some (total, frontier) *)
+        cbn [unwrap_with_default fst snd] in Hhit.
+        destruct (eqb n frontier_n) eqn:Hn_eq.
+        * (* eqb n frontier_n = true, frontier case *)
+          fold proj in Hhit.
+          assert (Hfull : map.get (fst (total, frontier)) proj = Some tt). {
+            apply (build_tries_frontier_subset q inst f n trie_list (total, frontier) proj Hf Hn).
+            exact Hhit.
+          }
+          cbn [fst] in Hfull.
+          pose proof (build_tries_sound q inst f n clause trie_list (total, frontier) proj q_f Hqf Hclause Hf Hn Hfull)
+            as [ args [ v [Hdb Hmatch] ] ].
+          exists args. exists v.
+          exact (conj Hdb Hmatch).
+        * (* eqb n frontier_n = false, total case *)
+          fold proj in Hhit.
+          pose proof (build_tries_sound q inst f n clause trie_list (total, frontier) proj q_f Hqf Hclause Hf Hn Hhit)
+            as [ args [ v [Hdb Hmatch] ] ].
+          exists args. exists v.
+          exact (conj Hdb Hmatch).
+      + (* map.get trie_list n = None *)
+        destruct (eqb n frontier_n) in Hhit;
+        cbn [fst] in Hhit;
+        rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit;
+        discriminate.
+    - (* map.get db_tries f = None *)
+      fold db_tries in Hhit.
+      rewrite Hf in Hhit.
+      cbn [fst] in Hhit.
+      rewrite (@map.get_empty _ _ _ (idx_trie_ok unit)) in Hhit.
+      discriminate.
+  Qed.
+
   (*
   (*Defined separately for proof convenience.
     Equivalent to a term using ~ atom_in_egraph
