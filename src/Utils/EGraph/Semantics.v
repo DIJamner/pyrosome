@@ -7872,6 +7872,32 @@ Section WithMap.
     apply (egraph_equiv_ok e Hok).
   Qed.
 
+  (* [are_unified] only path-compresses (two [find]s), so it preserves
+     [egraph_ok] and soundness for the same interpretation.  Used to
+     discharge the per-predicate hypothesis [HP] of saturate_until_sound
+     when the saturation termination check calls [are_unified]. *)
+  Lemma are_unified_preserves_ok_sound (x1 x2 : idx) (e : instance) (i : idx_map m.(domain)) :
+    egraph_ok e ->
+    egraph_sound_for_interpretation m i e ->
+    egraph_ok (snd (are_unified x1 x2 e))
+    /\ egraph_sound_for_interpretation m i (snd (are_unified x1 x2 e)).
+  Proof.
+    intros Hok Hsnd.
+    unfold are_unified.
+    cbn [Mbind Mret StateMonad.state_monad].
+    pose proof (find_denote_iff x1 e Hok) as Hf1.
+    destruct (find x1 e) as [r1 e1] eqn:Hfind1.
+    cbn [snd] in Hf1.
+    destruct Hf1 as [Hok1 Hde1].
+    pose proof (find_denote_iff x2 e1 Hok1) as Hf2.
+    destruct (find x2 e1) as [r2 e2] eqn:Hfind2.
+    cbn [snd] in Hf2.
+    destruct Hf2 as [Hok2 Hde2].
+    cbn [snd].
+    split; [exact Hok2|].
+    apply (Hde2 i). apply (Hde1 i). exact Hsnd.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
