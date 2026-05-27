@@ -38,6 +38,9 @@ Section EvalRel.
   | ev_snoc : forall r r' vv G G' i A g v,
       eval_sub r g r' -> eval_rel r v vv ->
       eval_sub r (con "snoc" [G; G'; i; A; g; v]) (vv :: r')
+  (* meta substitution-variable: never fires under c=[] (meta-substitutions do not
+     occur in normalization); present only for totality of cterm_var. *)
+  | ev_sub_var : forall r x, eval_sub r (var x) r
 
   with eval_ty : senv -> term -> svalty -> Type :=
   | ev_U    : forall r G rl l, eval_ty r (con "U" [G; rl; l]) (dU rl l)
@@ -47,6 +50,9 @@ Section EvalRel.
   | ev_ty_subst : forall r r' G G' g i A T,
       eval_sub r g r' -> eval_ty r' A T ->
       eval_ty r (con "ty_subst" [G; G'; g; i; A]) T
+  (* meta type-variable: never fires under the empty meta-context (c=[]); present
+     only so the universal cterm_var field is total. *)
+  | ev_ty_var : forall r x, eval_ty r (var x) (dNe (var x))
 
   with eval_rel : senv -> term -> sval -> Type :=
   | ev_hd   : forall r v G i A, eval_rel (v :: r) (con "hd" [G; i; A]) v
