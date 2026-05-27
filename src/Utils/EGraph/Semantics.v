@@ -7033,6 +7033,27 @@ Section WithMap.
     exists i1. split; [exact Hext1|exact Hsnd3].
   Qed.
 
+  (* ------------------------------------------------------------------ *)
+  (* process_erule' soundness machinery                                 *)
+  (* ------------------------------------------------------------------ *)
+
+  (* [map.of_list] commutes with mapping the values: looking up [k] in a
+     map whose values were transformed by [f] is the same as transforming
+     the (optional) original looked-up value with [f]. Used to relate the
+     model assignment [a_q] (built by composing the interpretation [i]
+     after the query assignment) to the query-variable->idx map [env0]. *)
+  Lemma get_of_list_map_snd (B C : Type) (f : B -> C) (l : list (idx * B)) (k : idx) :
+    map.get (map.of_list (map (fun p => (fst p, f (snd p))) l)) k
+    = option_map f (map.get (map.of_list l) k).
+  Proof.
+    induction l as [|[a b] l IH]; cbn [map map.of_list fst snd].
+    - rewrite ?map.get_empty. reflexivity.
+    - pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok a k) as Hbs.
+      destruct (eqb a k) eqn:Hak.
+      + subst a. rewrite !map.get_put_same. reflexivity.
+      + rewrite !(map.get_put_diff _ _ _ _ (not_eq_sym Hbs)). exact IH.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
