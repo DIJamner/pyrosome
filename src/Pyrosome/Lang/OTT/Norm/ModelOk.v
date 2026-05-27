@@ -214,6 +214,11 @@ Ltac solve_cong :=
               [ econstructor; solve [eassumption | eauto]
               | repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H end;
                 econstructor; solve [eassumption | eauto] ] ]
+    | (* id/wkn: their value depends on [ctx_len], equal by eval_env_length *)
+      solve [ match goal with Ha : eval_env ?G1 ?gv, Hb : eval_env ?G2 ?gv |- _ =>
+                let Hlen := fresh in
+                pose proof (eq_trans (eq_sym (eval_env_length Ha)) (eval_env_length Hb)) as Hlen;
+                eexists; split; [ econstructor | rewrite Hlen; econstructor ] end ]
     | solve [ repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H; clear H end;
               reflexivity ]
     | solve [ congruence ] ].
@@ -248,6 +253,11 @@ Ltac finish_absurd Hmem names :=
 (* cterm_cong                                                          *)
 (* ================================================================== *)
 
+(* PROVEN for 24/26 formers (env-free): all but the eliminators El and Emptyrec,
+   whose congruence requires the scrutinee/code's semantic SHAPE (vCode vs vNe vs a
+   neutral) — available under typing but not for the untyped-junk arguments the
+   universally-quantified statement also admits.  In particular the substitution
+   calculus (exp_subst/ty_subst/cmp), ext, and U/Nat/Empty all go through now. *)
 Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list string)
     (t : @sort string) s1 s2,
     In (name, term_rule c' args t) fo_lang ->
@@ -256,9 +266,9 @@ Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list s
 Proof.
   intros c' name args t s1 s2 Hin Hargs.
   dispA "Emptyrec". disp "Empty". disp "suc". disp "zero". disp "Nat".
-  dispA "El". dispA "U". disp "hd". dispA "wkn". disp "snoc".
+  dispA "El". disp "U". disp "hd". disp "wkn". disp "snoc".
   disp "ext". disp "forget". disp "emp". disp "exp_subst". disp "ty_subst".
-  disp "cmp". dispA "id". disp "info". disp "next". disp "inf".
+  disp "cmp". disp "id". disp "info". disp "next". disp "inf".
   disp "iota". disp "L0<L1". disp "L1". disp "L0". disp "irr". disp "rel".
   finish_absurd (term_rules_names Hin)
     ["Emptyrec";"Empty";"suc";"zero";"Nat";"El";"U";"hd";"wkn";"snoc";
