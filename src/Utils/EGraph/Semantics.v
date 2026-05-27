@@ -6208,6 +6208,168 @@ Section WithMap.
         intros x0 Hx0. apply Hpres2. apply Hpres1. exact Hx0. }
   Qed.
 
+  Lemma list_Mmap_env_i'
+    (env0 : idx_map idx) (i0 : idx_map (m.(domain)))
+    (a_src0 : idx_map (m.(domain))) (args0 : list idx) :
+    (forall j, In j args0 ->
+       exists v, map.get env0 j = Some v /\ map.get i0 v = map.get a_src0 j) ->
+    list_Mmap (map.get i0)
+      (map (fun x => unwrap_with_default (map.get env0 x)) args0) =
+    list_Mmap (map.get a_src0) args0.
+  Proof.
+    intros Henv0.
+    induction args0 as [|j js IH]; cbn; [ reflexivity | ].
+    destruct (Henv0 j (or_introl eq_refl)) as (v & Hg & Hi).
+    rewrite Hg. cbn. rewrite Hi.
+    rewrite IH; [ reflexivity | ].
+    intros k Hk. apply Henv0. right. exact Hk.
+  Qed.
+
+  Lemma all2_uf_rel_has_key
+    (uf : union_find) (l xs ys : list idx) :
+    union_find_ok lt uf l ->
+    all2 (uf_rel_PER uf) xs ys ->
+    all (fun v => Sep.has_key v (parent uf)) ys ->
+    all (fun v => Sep.has_key v (parent uf)) xs.
+  Proof.
+    intros Hok.
+    revert ys.
+    induction xs as [|x xs' IH]; intros ys Hall2 Hky.
+    - cbn. tauto.
+    - destruct ys as [|y ys']; cbn in Hall2; [ tauto | ].
+      destruct Hall2 as [Hrel Hall2'].
+      cbn in Hky. destruct Hky as [Hky_y Hky_ys].
+      cbn. split.
+      + edestruct uf_rel_PER_has_key as [Hk _]; [ exact Hok | exact Hrel | ]. exact Hk.
+      + eapply IH; [ exact Hall2' | exact Hky_ys ].
+  Qed.
+
+  Lemma exec_clause_sound
+    (i : idx_map (m.(domain)))
+    (env : idx_map idx) (c : atom) (a_src : idx_map (m.(domain))) (e : instance) :
+    egraph_ok e ->
+    egraph_sound_for_interpretation m i e ->
+    (forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
+       exists v, map.get env x = Some v
+                 /\ Sep.has_key v (parent (equiv e))
+                 /\ map.get i v = map.get a_src x) ->
+    atom_sound_for_model m a_src c ->
+    match exec_clause idx Eqb_idx idx_zero symbol symbol_map idx_map idx_trie analysis_result env c e with
+    | (_, e') =>
+        egraph_ok e'
+        /\ egraph_sound_for_interpretation m i e'
+        /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    intros Hok Hsound Henv Hatom_src.
+    unfold exec_clause.
+    cbn [Mbind Mret StateMonad.state_monad].
+    set (args_vals := map (fun x => unwrap_with_default (map.get env x)) (atom_args c)).
+    set (out_val := unwrap_with_default (map.get env (atom_ret c))).
+    assert (Henv_args : forall j, In j (atom_args c) ->
+      exists v, map.get env j = Some v /\ Sep.has_key v (parent (equiv e)) /\ map.get i v = map.get a_src j).
+    { intros j Hj. apply Henv. right. exact Hj. }
+    destruct (Henv (atom_ret c) (or_introl eq_refl)) as (vr & Hgvr & Hkr & Hivr).
+    assert (Hkey_args : all (fun v => Sep.has_key v (parent (equiv e))) args_vals).
+    { unfold args_vals.
+      assert (H_ka : forall (xs : list idx),
+        (forall j, In j xs -> exists v, map.get env j = Some v /\ Sep.has_key v (parent (equiv e))) ->
+        all (fun v => Sep.has_key v (parent (equiv e))) (map (fun x => unwrap_with_default (map.get env x)) xs)).
+      { induction xs as [|x xs' IH]; cbn; [ tauto | ].
+        intros Hxs. split.
+        { destruct (Hxs x (or_introl eq_refl)) as (v & Hg & Hk). rewrite Hg. exact Hk. }
+        { apply IH. intros y Hy. apply Hxs. right. exact Hy. } }
+      apply H_ka. intros j Hj. destruct (Henv_args j Hj) as (v & Hg & Hk & _).
+      exact (ex_intro _ v (conj Hg Hk)). }
+    assert (Hkey_out : Sep.has_key out_val (parent (equiv e))).
+    { unfold out_val. rewrite Hgvr. exact Hkr. }
+    unfold atom_sound_for_model in Hatom_src.
+    cbn [atom_args atom_ret atom_fn] in Hatom_src.
+    destruct (list_Mmap (map.get a_src) (atom_args c)) as [doms|] eqn:Hdoms;
+      cbn [Is_Some_satisfying] in Hatom_src; [ | tauto ].
+    destruct (map.get a_src (atom_ret c)) as [out_dom|] eqn:Hout_dom;
+      cbn [Is_Some_satisfying] in Hatom_src; [ | tauto ].
+    assert (Hi_args_vals : list_Mmap (map.get i) args_vals = Some doms).
+    { rewrite <- Hdoms. unfold args_vals.
+      apply list_Mmap_env_i'.
+      intros j Hj. destruct (Henv_args j Hj) as (v & Hg & _ & Hiv).
+      exact (ex_intro _ v (conj Hg Hiv)). }
+    assert (Hi_out_val : map.get i out_val = Some out_dom).
+    { unfold out_val. rewrite Hgvr. cbn. exact Hivr. }
+    destruct Hok as [Heqok Hwlok Hparok Hdbkok].
+    destruct Heqok as [roots Hroots].
+    assert (Hok_e : egraph_ok e).
+    { constructor; [ exact (ex_intro _ roots Hroots) | exact Hwlok | exact Hparok | exact Hdbkok ]. }
+    pose proof (list_Mmap_find_preserves_fields_strong args_vals) as Hlm.
+    unfold vc in Hlm. specialize (Hlm e).
+    destruct (list_Mmap find args_vals e) as [args_vals' e1] eqn:Hlma.
+    cbn [fst snd] in Hlm.
+    destruct (Hlm (ex_intro _ roots Hroots) Hkey_args) as (Hex1 & Hfp01 & Hall_args').
+    assert (Hkey_out_e1 : Sep.has_key out_val (parent (equiv e1))).
+    { destruct Hfp01 as (_ & _ & _ & _ & _ & Hkey_iff & _). apply Hkey_iff. exact Hkey_out. }
+    pose proof (find_preserves_fields_strong out_val) as Hfind_out.
+    unfold vc in Hfind_out. specialize (Hfind_out e1).
+    destruct (find out_val e1) as [out_val' e2] eqn:Hfinoa.
+    cbn [fst snd] in Hfind_out.
+    destruct (Hfind_out Hex1 Hkey_out_e1) as (Hex2 & Hfp12 & Huf_out).
+    cbn [fst snd atom_fn].
+    assert (Hfp02 : fields_preserved e e2).
+    { eapply fields_preserved_trans; [ exact Hfp01 | exact Hfp12 ]. }
+    assert (Hok2 : egraph_ok e2).
+    { exact (fields_preserved_egraph_ok e e2 Hok_e Hfp02 Hex2). }
+    assert (Hsound2 : egraph_sound_for_interpretation m i e2).
+    { eapply fields_preserved_sound_for_interpretation; eassumption. }
+    assert (Hall2 : all2 (uf_rel_PER (equiv e2)) args_vals' args_vals).
+    { destruct Hfp12 as (_ & _ & _ & _ & _ & _ & Huf_iff).
+      eapply all2_impl; [ | exact Hall_args' ].
+      intros x y Hxy. apply Huf_iff. exact Hxy. }
+    pose proof (args_rel_interpretation m i e2 (conj Hok2 Hsound2) args_vals' args_vals Hall2) as Hrel_args.
+    rewrite Hi_args_vals in Hrel_args.
+    destruct (list_Mmap (map.get i) args_vals') as [doms'|] eqn:Hdoms'.
+    2: { cbn in Hrel_args. discriminate. }
+    cbn [option_relation] in Hrel_args.
+    assert (Hrel_out : eq_sound_for_model m i out_val' out_val).
+    { apply (rel_interpretation _ i _ Hsound2). exact Huf_out. }
+    unfold eq_sound_for_model in Hrel_out.
+    rewrite Hi_out_val in Hrel_out.
+    destruct (map.get i out_val') as [out_dom'|] eqn:Hout_val';
+      cbn [Is_Some_satisfying] in Hrel_out; [ | tauto ].
+    assert (Hatom_i : atom_sound_for_model m i
+      {| atom_fn := atom_fn c; atom_args := args_vals'; atom_ret := out_val' |}).
+    { unfold atom_sound_for_model. cbn [atom_args atom_ret atom_fn].
+      rewrite Hdoms'. cbn [Is_Some_satisfying].
+      rewrite Hout_val'. cbn [Is_Some_satisfying].
+      eapply interprets_to_preserved; [ exact Hatom_src | | ].
+      - eapply all2_Symmetric; [ | exact Hrel_args ].
+        apply domain_eq_PER.
+      - apply domain_eq_PER. exact Hrel_out. }
+    destruct Hex2 as [roots2 Hroots2].
+    assert (Hkey_all2 : all (fun v => Sep.has_key v (parent (equiv e2))) args_vals).
+    { destruct Hfp02 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+      eapply all_wkn; [ | exact Hkey_args ].
+      intros v _. apply Hkey_iff. }
+    assert (Hkey_args2 : all (fun v => Sep.has_key v (parent (equiv e2))) args_vals').
+    { exact (all2_uf_rel_has_key _ _ _ _ Hroots2 Hall2 Hkey_all2). }
+    assert (Hkey_out2 : Sep.has_key out_val' (parent (equiv e2))).
+    { edestruct uf_rel_PER_has_key as [Hk _]; [ exact Hroots2 | exact Huf_out | ]. exact Hk. }
+    pose proof (update_entry_sound i {| atom_fn := atom_fn c; atom_args := args_vals'; atom_ret := out_val' |}) as Hue.
+    unfold vc in Hue. specialize (Hue e2).
+    destruct (update_entry {| atom_fn := atom_fn c; atom_args := args_vals'; atom_ret := out_val' |} e2)
+      as [u e'] eqn:Hue_eq.
+    cbn [snd] in Hue |- *.
+    specialize (Hue Hok2).
+    specialize (Hue Hsound2).
+    specialize (Hue ltac:(intros x Hx; cbn [atom_args] in Hx; exact (in_all _ _ _ Hkey_args2 Hx))).
+    specialize (Hue Hkey_out2).
+    specialize (Hue Hatom_i).
+    destruct Hue as (Hok' & Hsound' & Hkeys').
+    split; [ exact Hok' | ].
+    split; [ exact Hsound' | ].
+    intros z Hz. apply Hkeys'.
+    destruct Hfp02 as (_ & _ & _ & _ & _ & Hkey_iff & _).
+    apply Hkey_iff. exact Hz.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
