@@ -6882,6 +6882,7 @@ Section WithMap.
     match exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r assignment e with
     | (_, e') =>
         egraph_ok e'
+        /\ (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
         /\ exists i', map.extends i' i
                       /\ egraph_sound_for_interpretation m i' e'
     end.
@@ -7026,8 +7027,10 @@ Section WithMap.
         intros z Hz. apply Hkeys3. apply Hkeys_mid. exact Hz. }
     pose proof (Hphase3 (write_unifications idx symbol r) Hun_cons e2 Hok2 Hsnd2 Hkeys2) as Hp3.
     destruct (list_Miter (fun '(x,y) => Defs.union (unwrap_with_default (map.get env x)) (unwrap_with_default (map.get env y))) (write_unifications idx symbol r) e2) as [u3 e3] eqn:Hlm_u.
-    destruct Hp3 as (Hok3 & Hsnd3 & _).
-    split; [exact Hok3|]. exists i1. split; [exact Hext1|exact Hsnd3].
+    destruct Hp3 as (Hok3 & Hsnd3 & Hkeys3).
+    split; [exact Hok3|].
+    split; [intros z Hz; apply Hkeys3; apply Hkeys2; apply Hmono1; exact Hz|].
+    exists i1. split; [exact Hext1|exact Hsnd3].
   Qed.
 
 End WithMap.
