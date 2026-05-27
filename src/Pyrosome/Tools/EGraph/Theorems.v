@@ -2300,16 +2300,15 @@ Section ReducingStep.
         @rs_saturation_hyps V V_Eqb V_default V_map V_map_plus V_trie succ lt
           (option positive) (depth V) spaced_list_intersect lang_model rs.
 
-    (* One [egraph_reducing_equal_step] is sound: if it returns
-       [res = true] and the resulting egraph's [are_unified x1 x2] holds,
-       then the two input terms are [eq_term]-equal at their common sort.
-       Chains: [empty] sound -> [add_open_term] x2 (places [a],[b]) ->
-       [get_analysis] x2 (weight reads, preserve) -> [rebuild] (preserve)
-       -> [scheduled_saturate_until] (extends interp, preserve; predicate
-       HP via [get_analysis_preserves]/[are_unified_preserves]) ->
-       [are_unified_eq_sound] -> [eq_sound_to_eq_term] -> conversion to
-       the wanted sort ([term_sorts_eq]/[eq_term_conv]). *)
-    Lemma egraph_reducing_equal_step_sound
+    (* Stronger form, exposing the resulting egraph's soundness and the input
+       denotations regardless of [res]/[are_unified].  Chains: [empty] sound
+       -> [add_open_term] x2 (places [a],[b]) -> [get_analysis] x2 (weight
+       reads, preserve) -> [rebuild] (preserve) -> [scheduled_saturate_until]
+       (extends interp, preserve; predicate HP via
+       [get_analysis_preserves]/[are_unified_preserves]).  Used by
+       [egraph_reducing_cong_sound]'s extract-and-recurse branch, which reads
+       terms back from [g]. *)
+    Lemma egraph_reducing_equal_step_sound_strong
       (schedule : list (nat * rule_set V V V_map V_map))
       (rfuel sat_fuel : nat)
       (a b : term V) (t : sort V) :
@@ -2318,7 +2317,10 @@ Section ReducingStep.
       let '(res, x1, x2, g) :=
         egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
           l schedule rfuel sat_fuel a b in
-      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l [] t a b.
+      exists i,
+        egraph_ok g /\ sound i g
+        /\ option_relation (domain_eq V lang_model) (map.get i x1) (Some (inl a))
+        /\ option_relation (domain_eq V lang_model) (map.get i x2) (Some (inl b)).
     Proof.
       intros Ha Hb Hsched.
       unfold egraph_reducing_equal_step.
@@ -2333,7 +2335,6 @@ Section ReducingStep.
           destruct (scheduled_saturate_until vmp sc sli rf sch p sf e) as [res g] eqn:Hsat
       end.
       cbn [fst snd].
-      intros Hres Hunified.
       pose proof (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok V_map V_map_ok V_trie (option positive) lang_model) as Hempty.
       destruct Hempty as [Hok0 Hsnd0].
       assert (Hsub : forall (e:term V), e [/ with_names_from (@nil (V*sort V)) (@nil (term V)) /] = e) by (intro; cbn [with_names_from]; apply term_subst_nil).
@@ -2398,6 +2399,33 @@ Section ReducingStep.
       destruct Hss as [ Hok_g [ i3 [ Hext3 Hsnd_g ] ] ].
       pose proof (Hlift i2 i3 x1 (inl a) Hext3 (Hlift i1 i2 x1 (inl a) Hextmap2 Hrel1)) as Hr1g.
       pose proof (Hlift i2 i3 x2 (inl b) Hext3 Hrel2) as Hr2g.
+      exists i3.
+      split; [ exact Hok_g | ].
+      split; [ exact Hsnd_g | ].
+      split; [ exact Hr1g | exact Hr2g ].
+    Qed.
+
+    (* The [res = true] / [are_unified] corollary used directly to decide
+       equality: from the strong form's [g] soundness + denotations,
+       [are_unified_eq_sound] -> [eq_sound_to_eq_term] -> conversion to the
+       wanted sort ([term_sorts_eq]/[eq_term_conv]). *)
+    Lemma egraph_reducing_equal_step_sound
+      (schedule : list (nat * rule_set V V V_map V_map))
+      (rfuel sat_fuel : nat)
+      (a b : term V) (t : sort V) :
+      wf_term l [] a t -> wf_term l [] b t ->
+      schedule_sound_real schedule ->
+      let '(res, x1, x2, g) :=
+        egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
+          l schedule rfuel sat_fuel a b in
+      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l [] t a b.
+    Proof.
+      intros Ha Hb Hsched.
+      pose proof (egraph_reducing_equal_step_sound_strong schedule rfuel sat_fuel a b t Ha Hb Hsched) as Hstrong.
+      revert Hstrong.
+      destruct (egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
+                  l schedule rfuel sat_fuel a b) as [ [ [ res x1 ] x2 ] g ].
+      intros [ i3 [ Hok_g [ Hsnd_g [ Hr1g Hr2g ] ] ] ] Hres Hunified.
       assert (Hisx1 : Is_Some (map.get i3 x1)) by (unfold option_relation in Hr1g; destruct (map.get i3 x1); [exact I | discriminate Hr1g]).
       assert (Hisx2 : Is_Some (map.get i3 x2)) by (unfold option_relation in Hr2g; destruct (map.get i3 x2); [exact I | discriminate Hr2g]).
       pose proof Hsnd_g as Hsnd_gc.
