@@ -7725,6 +7725,96 @@ Section WithMap.
     apply (proj1 (Hde i_2)). exact Hsnd_2.
   Qed.
 
+  (* The fuel-bounded saturation loop is sound.  Each iteration runs the
+     termination check [P] (required to preserve ok+soundness) then, if
+     not done, one [run1iter] (sound by [run1iter_sound], using the
+     per-rule bundle re-established against the iteration's snapshot via
+     [Hrules]); the result extends the starting interpretation.  The
+     per-rule bundle is quantified over all egraphs since the snapshot
+     evolves from one iteration to the next. *)
+  Lemma saturate_until'_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (rebuild_fuel : nat)
+    (rs : rule_set idx symbol symbol_map idx_map)
+    (P : state instance bool)
+    (HP : forall e i, egraph_ok e -> egraph_sound_for_interpretation m i e ->
+            egraph_ok (snd (P e)) /\ egraph_sound_for_interpretation m i (snd (P e)))
+    (Hrules : forall e r, In r (compiled_rules idx symbol symbol_map idx_map rs) -> run1iter_rule_hyps rs e r)
+    (fuel : nat) :
+    forall (i_0 : idx_map m.(domain)) (e_0 : instance),
+    egraph_ok e_0 ->
+    egraph_sound_for_interpretation m i_0 e_0 ->
+    match Defs.saturate_until' idx_succ idx_zero spaced_list_intersect rebuild_fuel rs P fuel e_0 with
+    | (_, e') => egraph_ok e' /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation m i' e'
+    end.
+  Proof.
+    induction fuel as [|fuel IH]; intros i_0 e_0 Hok_0 Hsnd_0.
+    - cbn [Defs.saturate_until' Mret StateMonad.state_monad].
+      split; [exact Hok_0|]. exists i_0. split; [apply Properties.map.extends_refl | exact Hsnd_0].
+    - cbn [Defs.saturate_until'].
+      cbn [Mbind Mret StateMonad.state_monad].
+      pose proof (HP e_0 i_0 Hok_0 Hsnd_0) as [HokP HsndP].
+      destruct (P e_0) as [doneP eP] eqn:HPe.
+      cbn [snd] in HokP, HsndP.
+      destruct doneP.
+      { split; [exact HokP|]. exists i_0. split; [apply Properties.map.extends_refl | exact HsndP]. }
+      pose proof (run1iter_sound Hlti Hlts Hltt rebuild_fuel i_0 rs eP HokP HsndP (fun r Hr => Hrules eP r Hr)) as Hri.
+      destruct (Defs.run1iter idx Eqb_idx idx_succ idx_zero symbol symbol_map symbol_map_plus idx_map idx_map_plus idx_trie analysis_result spaced_list_intersect rebuild_fuel rs eP) as [nc e2] eqn:Hru.
+      destruct Hri as (Hok2 & i_1 & Hext1 & Hsnd2).
+      destruct nc.
+      { split; [exact Hok2|]. exists i_1. split; [exact Hext1 | exact Hsnd2]. }
+      pose proof (IH i_1 e2 Hok2 Hsnd2) as HIH.
+      destruct (saturate_until' rebuild_fuel rs P fuel e2) as [b e_final] eqn:Hsat.
+      destruct HIH as (Hok_final & i_f & Hext_f & Hsnd_final).
+      split; [exact Hok_final|]. exists i_f.
+      split; [eapply map_extends_trans; [exact Hext_f | exact Hext1] | exact Hsnd_final].
+  Qed.
+
+  (* Full saturation: run the const rules once, rebuild, then the
+     fuel-bounded loop.  [process_const_rules] soundness is taken as a
+     hypothesis [Hconst] (the const-rule analogue of [erule_sound] +
+     [exec_write_sound]; its operational proof mirrors [exec_write_sound]
+     over [exec_const] and is deferred to the Phase-6 rule_set discharge).
+     [rebuild] preserves ok+soundness (same interpretation); the loop
+     extends it further. *)
+  Lemma saturate_until_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (rebuild_fuel : nat)
+    (rs : rule_set idx symbol symbol_map idx_map)
+    (P : state instance bool)
+    (HP : forall e i, egraph_ok e -> egraph_sound_for_interpretation m i e ->
+            egraph_ok (snd (P e)) /\ egraph_sound_for_interpretation m i (snd (P e)))
+    (Hconst : forall e i, egraph_ok e -> egraph_sound_for_interpretation m i e ->
+            egraph_ok (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e))
+            /\ exists i', map.extends i' i /\ egraph_sound_for_interpretation m i' (snd (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e)))
+    (Hrules : forall e r, In r (compiled_rules idx symbol symbol_map idx_map rs) -> run1iter_rule_hyps rs e r)
+    (fuel : nat)
+    (i_0 : idx_map m.(domain)) (e_0 : instance) :
+    egraph_ok e_0 ->
+    egraph_sound_for_interpretation m i_0 e_0 ->
+    match Defs.saturate_until idx_succ idx_zero spaced_list_intersect rebuild_fuel rs P fuel e_0 with
+    | (_, e') => egraph_ok e' /\ exists i', map.extends i' i_0 /\ egraph_sound_for_interpretation m i' e'
+    end.
+  Proof.
+    intros Hok_0 Hsnd_0.
+    unfold Defs.saturate_until.
+    cbn [Mseq Mbind StateMonad.state_monad].
+    pose proof (Hconst e_0 i_0 Hok_0 Hsnd_0) as Hc.
+    destruct (process_const_rules idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result rs e_0) as [u_c e_a] eqn:Hpc.
+    cbn [snd] in Hc.
+    destruct Hc as (Hok_a & i_a & Hext_a & Hsnd_a).
+    pose proof (rebuild_sound (fun _ => True) rebuild_fuel e_a) as Hrb.
+    specialize (Hrb Hok_a). destruct Hrb as (Hok_b & Hde).
+    destruct (rebuild rebuild_fuel e_a) as [u_b e_b] eqn:Hrbeq.
+    cbn [snd] in Hok_b, Hde.
+    pose proof (proj1 (Hde i_a) Hsnd_a) as Hsnd_b.
+    pose proof (saturate_until'_sound Hlti Hlts Hltt rebuild_fuel rs P HP Hrules fuel i_a e_b Hok_b Hsnd_b) as Hsat.
+    destruct (saturate_until' rebuild_fuel rs P fuel e_b) as [b e_final] eqn:Hsf.
+    destruct Hsat as (Hok_f & i_f & Hext_f & Hsnd_f).
+    split; [exact Hok_f|]. exists i_f.
+    split; [eapply map_extends_trans; [exact Hext_f | exact Hext_a] | exact Hsnd_f].
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
