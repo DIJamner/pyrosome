@@ -7346,6 +7346,150 @@ Section WithMap.
     exact (idx_interpretation_wf m i inst Hsnd v d Hd).
   Qed.
 
+  (* Soundness of one frontier iteration of a single erule: running
+     exec_write over every intersection key preserves egraph_ok and extends
+     the interpretation while preserving soundness. [inst] is the build_tries
+     snapshot (query atoms come from its db, sound under [i]); the loop runs
+     on the evolving [e_start]. The wf bundle ([Hwf], [Hcov], disjointness
+     and write-coverage) and the per-key intersection spec ([Hsli]) /
+     length ([Hlen]) are discharged downstream from build_rule_set + the
+     generic-join intersection correctness (pt_spaced_intersect_correct). *)
+  Lemma process_erule'_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (i : idx_map m.(domain)) (inst : instance)
+    (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
+    (frontier_n : idx) (e_start : instance) :
+    let db_tries := fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                           idx_map idx_map_plus idx_trie analysis_result q inst) in
+    let tries := ne_map (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                           (query_vars idx symbol r) db_tries frontier_n)
+                        (query_clause_ptrs idx symbol r) in
+    egraph_sound_for_interpretation m i inst ->
+    egraph_ok e_start ->
+    egraph_sound_for_interpretation m i e_start ->
+    List.NoDup (query_vars idx symbol r) ->
+    List.NoDup (write_vars idx symbol r) ->
+    erule_sound m (query_clauses idx symbol symbol_map idx_map q) r ->
+    (forall fsym nptr cvars,
+       In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+          (uncurry cons (query_clause_ptrs idx symbol r)) ->
+       exists q_f cargs cv (Pf : idx -> bool),
+         map.get (query_clauses idx symbol symbol_map idx_map q) fsym = Some q_f
+         /\ map.get q_f nptr = Some (cargs, cv)
+         /\ cvars = filter Pf (query_vars idx symbol r)
+         /\ (forall t, In t cargs -> t < List.length cvars)
+         /\ cv < List.length cvars) ->
+    (forall x, In x (query_vars idx symbol r) ->
+       exists a, In a (query_atoms (query_clauses idx symbol symbol_map idx_map q) r)
+                 /\ In x (atom_ret a :: atom_args a)) ->
+    (forall x, In x (write_vars idx symbol r) -> ~ In x (query_vars idx symbol r)) ->
+    (forall c, In c (write_clauses idx symbol r) ->
+        forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
+        In x (query_vars idx symbol r) \/ In x (write_vars idx symbol r)) ->
+    (forall p, In p (write_unifications idx symbol r) ->
+        (In (fst p) (query_vars idx symbol r) \/ In (fst p) (write_vars idx symbol r))
+        /\ (In (snd p) (query_vars idx symbol r) \/ In (snd p) (write_vars idx symbol r))) ->
+    (forall sigma, In sigma (intersection_keys idx idx_trie spaced_list_intersect tries) ->
+       List.length (query_vars idx symbol r) = List.length sigma) ->
+    (forall sigma, In sigma (intersection_keys idx idx_trie spaced_list_intersect tries) ->
+       forall fsym nptr cvars,
+       In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+          (uncurry cons (query_clause_ptrs idx symbol r)) ->
+       map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                       (query_vars idx symbol r) db_tries frontier_n
+                       (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+               (map fst (filter snd (combine sigma
+                  (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
+       = Some tt) ->
+    match @process_erule' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie
+            analysis_result _ spaced_list_intersect db_tries r frontier_n e_start with
+    | (_, e') =>
+        egraph_ok e'
+        /\ exists i', map.extends i' i /\ egraph_sound_for_interpretation m i' e'
+    end.
+  Proof.
+    intros db_tries tries Hsnd_inst Hok_start Hsnd_start Hnd_qv Hnd_wv Hrule
+           Hwf Hcov Hdisj HcovC HcovU Hlen_sig Hsli.
+    unfold process_erule'.
+    fold tries.
+    set (asn := intersection_keys idx idx_trie spaced_list_intersect tries) in *.
+    assert (Hloop : forall sigmas,
+      (forall sigma, In sigma sigmas -> length (query_vars idx symbol r) = length sigma) ->
+      (forall sigma, In sigma sigmas ->
+         forall fsym nptr cvars, In (Build_erule_query_ptr idx symbol fsym nptr cvars) (uncurry cons (query_clause_ptrs idx symbol r)) ->
+         map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie (query_vars idx symbol r) db_tries frontier_n (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+                 (map fst (filter snd (combine sigma (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars)))) = Some tt) ->
+      forall e_cur icur, egraph_ok e_cur -> egraph_sound_for_interpretation m icur e_cur -> map.extends icur i ->
+      match list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas e_cur with
+      | (_, e') => egraph_ok e' /\ exists i', map.extends i' icur /\ egraph_sound_for_interpretation m i' e'
+      end).
+    { intro sigmas. induction sigmas as [|sigma sigmas' IH];
+        intros Hlen_s Hsli_s e_cur icur Hok_cur Hsnd_cur Hext_cur.
+      - cbn [list_Miter]. split; [exact Hok_cur|].
+        exists icur. split; [intros kk vv hh; exact hh | exact Hsnd_cur].
+      - cbn [list_Miter].
+        set (env0 := map.of_list (combine (query_vars idx symbol r) sigma)).
+        set (a_q := compose_assignment i env0).
+        assert (Ha_q : forall x, map.get a_q x = match map.get env0 x with Some v => map.get i v | None => None end)
+          by (intros; apply get_compose_assignment).
+        pose proof (query_atoms_sound i q inst r frontier_n sigma a_q Hsnd_inst Hnd_qv
+                      (Hlen_s sigma (or_introl eq_refl)) Ha_q Hwf (Hsli_s sigma (or_introl eq_refl))) as Hqsnd.
+        pose proof (a_q_wf_query_vars i inst q r a_q env0 Hsnd_inst Ha_q Hqsnd Hcov) as Hawf.
+        destruct (Hrule a_q Hawf Hqsnd) as (a_src & Hsrc_qv & Hsrc_wv & Hsrc_c & Hsrc_u).
+        pose proof (Hlen_s sigma (or_introl eq_refl)) as Hlen1.
+        assert (Hfresh : forall x, In x (write_vars idx symbol r) -> map.get env0 x = None)
+          by (intros x Hxw; unfold env0; apply get_of_list_none;
+              rewrite (map_combine_fst (query_vars idx symbol r) sigma Hlen1); exact (Hdisj x Hxw)).
+        assert (Hcons : forall x v, map.get env0 x = Some v ->
+           map.get icur v = map.get a_src x /\ Sep.has_key v (parent (equiv e_cur)))
+          by (intros x v Hev;
+              assert (Hxq : In x (query_vars idx symbol r))
+                by (pose proof (get_of_list_in_keys idx (combine (query_vars idx symbol r) sigma) x v Hev) as Hk;
+                    rewrite (map_combine_fst (query_vars idx symbol r) sigma Hlen1) in Hk; exact Hk);
+              destruct (Hawf x Hxq) as (d & Haqx & Hwfd);
+              assert (Hiv : map.get i v = Some d) by (rewrite Ha_q, Hev in Haqx; exact Haqx);
+              assert (Hicurv : map.get icur v = Some d) by (apply Hext_cur; exact Hiv);
+              split;
+              [ rewrite Hicurv; rewrite (Hsrc_qv x Hxq); exact (eq_sym Haqx)
+              | apply (interpretation_exact m icur e_cur Hsnd_cur v); rewrite Hicurv; exact I ]).
+        assert (Hcons_c : forall c, In c (write_clauses idx symbol r) ->
+           forall x, In x (atom_ret c :: atom_args c) ->
+           (exists v, map.get env0 x = Some v) \/ In x (write_vars idx symbol r))
+          by (intros c Hc x Hx; destruct (HcovC c Hc x Hx) as [Hq|Hw];
+              [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) x);
+                unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma x Hnd_qv Hlen1 Hq)
+              | right; exact Hw ]).
+        assert (Hcons_u : forall p, In p (write_unifications idx symbol r) ->
+           ((exists v, map.get env0 (fst p) = Some v) \/ In (fst p) (write_vars idx symbol r))
+           /\ ((exists v, map.get env0 (snd p) = Some v) \/ In (snd p) (write_vars idx symbol r)))
+          by (intros p Hp; destruct (HcovU p Hp) as [Hf Hs]; split;
+              [ destruct Hf as [Hq|Hw];
+                [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (fst p));
+                  unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (fst p) Hnd_qv Hlen1 Hq)
+                | right; exact Hw ]
+              | destruct Hs as [Hq|Hw];
+                [ left; exists (named_list_lookup idx_zero (combine (query_vars idx symbol r) sigma) (snd p));
+                  unfold env0; exact (get_of_list_combine idx idx_zero (query_vars idx symbol r) sigma (snd p) Hnd_qv Hlen1 Hq)
+                | right; exact Hw ] ]).
+        pose proof (exec_write_sound Hlti Hlts Hltt H0 icur r sigma e_cur a_src
+                      Hnd_wv Hfresh Hsrc_wv Hcons Hcons_c Hcons_u Hsrc_c Hsrc_u Hok_cur Hsnd_cur) as Hew.
+        cbn [Mseq Mbind Mret StateMonad.state_monad].
+        destruct (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r sigma e_cur)
+          as [u e_mid] eqn:Hew_eq.
+        destruct Hew as (Hok_mid & _Hmono & i_mid & Hext_mid & Hsnd_mid).
+        assert (Hext_mid_i : map.extends i_mid i)
+          by (intros k vv hh; apply Hext_mid; apply Hext_cur; exact hh).
+        pose proof (IH (fun s Hs => Hlen_s s (or_intror Hs)) (fun s Hs => Hsli_s s (or_intror Hs))
+                      e_mid i_mid Hok_mid Hsnd_mid Hext_mid_i) as HIH.
+        destruct (list_Miter (exec_write idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result r) sigmas' e_mid)
+          as [u2 e'] eqn:Hlm.
+        destruct HIH as (Hok' & i' & Hext'_mid & Hsnd').
+        split; [exact Hok'|].
+        exists i'. split; [intros k vv hh; apply Hext'_mid; apply Hext_mid; exact hh | exact Hsnd']. }
+    apply (Hloop asn Hlen_sig Hsli e_start i Hok_start Hsnd_start);
+      intros kk vv hh; exact hh.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
