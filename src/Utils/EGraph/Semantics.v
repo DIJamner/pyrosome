@@ -7054,6 +7054,39 @@ Section WithMap.
       + rewrite !(map.get_put_diff _ _ _ _ (not_eq_sym Hbs)). exact IH.
   Qed.
 
+  (* For a [named_list] with [NoDup] keys, the coqutil [of_list] map and the
+     Pyrosome [named_list_lookup] agree on present keys. *)
+  Lemma named_list_lookup_of_list (B : Type) (dflt : B) (l : list (idx * B)) (k : idx) :
+    List.NoDup (List.map fst l) ->
+    In k (List.map fst l) ->
+    map.get (map.of_list l) k = Some (named_list_lookup dflt l k).
+  Proof.
+    induction l as [|[a b] l' IH]; cbn [List.map fst map.of_list named_list_lookup];
+      intros Hnd Hin.
+    - contradiction.
+    - inversion Hnd as [|? ? Ha_notin Hnd']; subst.
+      pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok k a) as Hbs.
+      destruct (eqb k a) eqn:Hka.
+      + subst k. rewrite map.get_put_same. reflexivity.
+      + rewrite (map.get_put_diff _ _ _ _ Hbs).
+        apply IH; [exact Hnd'|].
+        destruct Hin as [Haeq|Hin']; [ exfalso; apply Hbs; symmetry; exact Haeq | exact Hin' ].
+  Qed.
+
+  (* Specialisation to [combine]: looking up a key present in [qs] in the
+     [of_list] of [combine qs vs] yields the [named_list_lookup] value. *)
+  Lemma get_of_list_combine (B : Type) (dflt : B) (qs : list idx) (vs : list B) (k : idx) :
+    List.NoDup qs ->
+    List.length qs = List.length vs ->
+    In k qs ->
+    map.get (map.of_list (combine qs vs)) k = Some (named_list_lookup dflt (combine qs vs) k).
+  Proof.
+    intros Hnd Hlen Hin.
+    apply named_list_lookup_of_list.
+    - rewrite (map_combine_fst qs vs Hlen). exact Hnd.
+    - rewrite (map_combine_fst qs vs Hlen). exact Hin.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
