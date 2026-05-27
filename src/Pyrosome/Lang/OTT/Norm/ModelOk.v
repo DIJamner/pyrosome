@@ -29,6 +29,18 @@ Proof.
   all: intuition eauto.
 Qed.
 
+(* Same names-only collapse for the term-formers (used by cterm_cong). *)
+Lemma term_rules_names name c' args t
+  : In (name, term_rule c' args t) fo_lang ->
+    In name ["Emptyrec";"Empty";"suc";"zero";"Nat";"El";"U";"hd";"wkn";"snoc";
+             "ext";"forget";"emp";"exp_subst";"ty_subst";"cmp";"id";"info";"next";
+             "inf";"iota";"L0<L1";"L1";"L0";"irr";"rel"].
+Proof.
+  vm_compute; intuition auto.
+  all: repeat match goal with H : _ = _ |- _ => safe_invert H end.
+  all: intuition eauto.
+Qed.
+
 (* Fast case split on [In (name, rule) fo_lang] WITHOUT normalizing every rule
    body: derive the names-only disjunction via [pair_fst_in] (cheap), pick a
    concrete name, then recover that one rule with a targeted lookup.  Branches
@@ -258,49 +270,111 @@ Proof.
 Qed.
 
 (* ================================================================== *)
-(* Helpers for cterm_cong                                              *)
+(* Helpers for cterm_cong  (Type-safe name split)                      *)
 (* ================================================================== *)
 
-(* Invert the first cons of ceq_args *)
-Ltac inv_args_cons H :=
-  inversion H as [|? ? ? ? ? ? ? ? ? ? ? ?]; subst; clear H.
+(* The goal of cterm_cong is Type-valued (a [sigT] for exp/ty/sub heads), so the
+   Prop rule-name disjunction cannot be eliminated into it.  We instead dispatch on
+   [name] by BOOLEAN tests [eqb name "X"]; the true branch threads concreteness as a
+   Prop equation ([name = "X"], [subst]), then recovers the one rule by a targeted
+   lookup, peels [ceq_args] to per-argument witnesses, and runs a uniform solver.
+   The fall-through (no name matched) is absurd by [existsb] against
+   [term_rules_names] — again no disjunction elimination. *)
 
-(* Unfold ceq_term for a given sort head *)
-Ltac unfold_ceq_head :=
-  unfold ceq_term, Norm, norm_ceq_term; cbn.
+(* turn [eqb name "X" = true] into [name = "X"] and substitute *)
+Ltac concretize_subst :=
+  match goal with
+  | E : eqb ?nm ?s = true |- _ =>
+      let Eq := fresh in
+      pose proof (proj1 (eqb_prop_iff _ nm s) ltac:(rewrite E; exact I)) as Eq;
+      clear E; subst nm
+  end.
 
-(* Unfold ceq_term in hypothesis H *)
-Ltac unfold_ceq_in H :=
-  unfold ceq_term, Norm, norm_ceq_term in H; cbn in H.
+(* recover the concrete rule from [name] (all_fresh lookup), then peel ceq_args *)
+Ltac recover_peel :=
+  match goal with Hin : In _ _ |- _ =>
+    apply (proj2 (all_fresh_named_list_lookup_err_in _ _ _ fo_lang_all_fresh)) in Hin;
+    vm_compute in Hin; injection Hin; clear Hin; intros; subst end;
+  repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end;
+  try match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end.
+
+(* uniform witness builder.  Closes the formers whose eval is annotation-free or
+   structural-in-the-same-env: exact tt (ltl), reflexivity (emp), econstructor from
+   the peeled witnesses (zero/suc/Nat/Empty/hd/wkn/snoc/forget/id), and the info
+   formers (info/next/iota/...) whose goal is [f (nf_info e1) = f (nf_info e2)] with
+   [nf_info e1 = nf_info e2] in scope. *)
+Ltac solve_cong :=
+  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  repeat match goal with H : @sigT _ _ |- _ => destruct H as [? [? ?]] end;
+  first
+    [ exact tt
+    | reflexivity
+    | solve [eexists; split; econstructor; solve [eassumption | eauto]]
+    | solve [repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H; clear H end;
+             reflexivity]
+    | solve [congruence] ].
+
+Ltac disp nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | |- ceq_term _ (con ?name _) _ =>
+      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_cong | ]
+  end.
+
+(* blocked formers: recover/peel for shape, then admit (see header below) *)
+Ltac dispA nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | |- ceq_term _ (con ?name _) _ =>
+      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
+  end.
+
+Ltac finish_absurd :=
+  exfalso;
+  match goal with
+  | Hin : In (?nm, _) _ |- _ =>
+      let Hn := fresh "Hn" in
+      let Hex := fresh "Hex" in
+      pose proof (term_rules_names Hin) as Hn;
+      assert (Hex : existsb (eqb nm)
+                ["Emptyrec";"Empty";"suc";"zero";"Nat";"El";"U";"hd";"wkn";"snoc";
+                 "ext";"forget";"emp";"exp_subst";"ty_subst";"cmp";"id";"info";"next";
+                 "inf";"iota";"L0<L1";"L1";"L0";"irr";"rel"] = true)
+        by (apply (proj2 (existsb_exists _ _)); exists nm; split;
+            [ exact Hn | apply (@eqb_refl_true string _ string_Eqb_ok) ]);
+      cbn in Hex;
+      repeat match goal with E : eqb _ _ = false |- _ => rewrite E in Hex end;
+      cbn in Hex; discriminate Hex
+  end.
 
 (* ================================================================== *)
 (* cterm_cong                                                          *)
 (* ================================================================== *)
 
-(* Key points per former:
-   - Eval constructors carry syntactic annotations (G, i, A in wkn/hd/ev_Emptyrec)
-     but EVAL IGNORES them (ev_wkn pops head of env regardless of annotation).
-   - Problematic cases: ext, Emptyrec, U (neutral/value carries annotation)
-   - All other cases build the same semantic witness from both s1 and s2.
-
-   ADMITTED:
-   - ext: eval_env (ext G1...) = eval_env (ext G2...) requires syntactic G1=G2 etc.
-   - Emptyrec: ev_Emptyrec neutral carries syntactic G,rA,lA,A
-   - U: ev_U gives dU r l which carries syntactic r and l
-   - El: ev_El needs e to eval to vCode T
-   - El subst: same issue as El (for the ty_subst side)
-   - U subst: same issue as U
-*)
-
+(* PROVEN for the 19 formers whose eval is annotation-free or structural in a single
+   environment.  STILL ADMITTED (4 + 3):
+   - ext / U / El / Emptyrec: the value domain carries RAW syntactic annotations
+     (eval_env's hd-neutral; dU r l; the El code; the Emptyrec neutral), so the
+     congruence would need syntactic equality of arguments we only relate
+     semantically.  These need the de-Bruijn-level neutral redesign / normalized
+     value annotations (El additionally needs an eval rule for El of a neutral).
+   - exp_subst / ty_subst / cmp: the inner term is evaluated in the CODOMAIN
+     reflecting environment, which requires the substitution/typing lemma
+     [eval_sub (eval_env G) g (eval_env G')] not yet available (cf. snoc, which is
+     unblocked because its components share the source environment). *)
 Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list string)
     (t : @sort string) s1 s2,
     In (name, term_rule c' args t) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
     ceq_term (CutTModel := Norm) t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
-  (* TODO(fast+fix): body destructs the Prop [In] disjunction into a
-     Type-valued goal (forbidden elimination) AND normalizes rule bodies
-     via vm_compute. Needs a Type-safe, name-only rule split. Deferred. *)
+  intros c' name args t s1 s2 Hin Hargs.
+  dispA "Emptyrec". disp "Empty". disp "suc". disp "zero". disp "Nat".
+  dispA "El". dispA "U". disp "hd". disp "wkn". disp "snoc".
+  dispA "ext". disp "forget". disp "emp". dispA "exp_subst". dispA "ty_subst".
+  dispA "cmp". disp "id". disp "info". disp "next". disp "inf".
+  disp "iota". disp "L0<L1". disp "L1". disp "L0". disp "irr". disp "rel".
+  finish_absurd.
 Admitted.
 
 (* ================================================================== *)
