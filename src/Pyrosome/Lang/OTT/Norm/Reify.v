@@ -10,33 +10,40 @@ From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm Require Import Domain.
 Import Core.Notations.
 
-(* Readback for the cast-free first-order NbE model.  No functions yet, so reify
-   is an *untyped* structural fixpoint (no η-expansion): neutrals carry their own
-   normal-form term, numerals/codes are rebuilt with the ambient env [G] in their
-   annotation slot.  Pi/Sig cases are placeholders (unreachable for first-order
-   results); they become type-directed/relational once η is added. *)
+(* Readback for the environment-free first-order NbE model: a structural fixpoint
+   turning a semantic value back into a (normal-form) term.  A neutral with de Bruijn
+   index head [nVar k] reads back to the variable [k] levels in — [hd] under [k]
+   weakenings.  Annotation slots use a placeholder [ann]: faithful annotations are
+   type-directed and need the typing context (TODO, the soundness direction); the
+   point here is that values DO read back to syntactic normal forms. *)
 Section Reify.
   Notation term := (@term string).
 
-  Definition reify_todo : term := con "_reify_TODO" [].
+  Definition ann : term := con "_ann" [].
 
-  Fixpoint reify_val (G : term) (v : sval) : term :=
-    match v with
-    | vNe e => e
-    | vZero => con "zero" [G]
-    | vSuc v' => con "suc" [reify_val G v'; G]
-    | vCode T => reify_ty G T
-    | vPair _ _ => reify_todo
-    | vLam _ _ => reify_todo
-    end
-  with reify_ty (G : term) (T : svalty) : term :=
+  (* one weakening: e |-> exp_subst wkn e *)
+  Definition wk1 (e : term) : term :=
+    con "exp_subst" [e; ann; ann; con "wkn" [ann; ann; ann]; ann; ann].
+
+  Fixpoint reify_ty (T : svalty) : term :=
     match T with
-    | dNe e => e
-    | dNat => con "Nat" [G]
-    | dEmpty => con "Empty" [G]
-    | dU r l => con "U" [l; r; G]
-    | dPi _ _ _ => reify_todo
-    | dSig _ _ _ => reify_todo
+    | dNe n => con "El" [reify_ne n; ann; ann; ann]
+    | dNat => con "Nat" [ann]
+    | dEmpty => con "Empty" [ann]
+    | dU r l => con "U" [l; r; ann]
+    end
+  with reify_val (v : sval) : term :=
+    match v with
+    | vNe n => reify_ne n
+    | vZero => con "zero" [ann]
+    | vSuc v' => con "suc" [reify_val v'; ann]
+    | vCode T => reify_ty T
+    end
+  with reify_ne (n : neutral) : term :=
+    match n with
+    | nVar k => Nat.iter k wk1 (con "hd" [ann; ann; ann])
+    | nEmptyrec rA lA A scrut =>
+        con "Emptyrec" [reify_ne scrut; reify_val A; lA; rA; ann]
     end.
 
 End Reify.
