@@ -489,4 +489,41 @@ Section WithVar.
 
   End WithCtx.
   End TermsAndRules.
+
+  (* [ctx_to_rules c] is a well-formed extension of [l]: each context
+     entry [(x,t)] becomes a constant term rule [term_rule [] [] (svtr t)],
+     whose result sort is well-formed because [eq_vtr] (via reflexivity)
+     closes [wf_sort l c t] into [wf_sort (ctx_to_rules c ++ l) [] (svtr t)].
+     The [wfl'] hypothesis [eq_vtr] needs is supplied inductively by the IH. *)
+  Lemma ctx_to_rules_wf (l : lang)
+    : wf_lang l ->
+      forall (c : ctx),
+      wf_ctx (Model:= core_model l) c ->
+      all (fun x => fresh x l) (map fst c) ->
+      wf_lang_ext l (ctx_to_rules c).
+  Proof.
+    intros wfl c.
+    induction c as [| [v s] c IH]; basic_goal_prep.
+    1: constructor.
+    break.
+    autorewrite with utils lang_core model in H.
+    break.
+    specialize (IH H2 H1).
+    pose proof (wf_lang_concat wfl IH) as Hwfl'.
+    apply wf_lang_cons.
+    2: exact IH.
+    1:{ unfold fresh, ctx_to_rules in *.
+        rewrite map_app, map_fst_named_map, in_app_iff.
+        1: tauto.
+        exact V_Eqb. }
+    unfold sort_to_var_rule.
+    apply wf_term_rule.
+    1: constructor.
+    2: constructor.
+    pose proof (eq_vtr wfl H2 Hwfl') as Hev.
+    destruct Hev as [Hes _].
+    pose proof (Hes s s (eq_sort_refl H3)) as Heqs.
+    eapply eq_sort_wf_l; eauto; constructor.
+  Qed.
+
 End WithVar.
