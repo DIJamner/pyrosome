@@ -6069,6 +6069,145 @@ Section WithMap.
     intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
   Qed.
 
+  (* ============================================================== *)
+  (* Soundness of exec_write                                         *)
+  (* ============================================================== *)
+
+  (* [allocate_existential_vars wvars env0] iterates [alloc] over
+     [wvars], giving each write var a fresh egraph idx and accumulating
+     the idx into the environment.  The domain values for the fresh idxs
+     come from [a_src] (the source-assignment map).
+
+     Soundness: given distinct [wvars] absent from [env0] and with
+     domain values in [a_src], running [allocate_existential_vars] from
+     an ok + sound egraph produces an ok + sound egraph (under an
+     extended interpretation [i']), and every env0 entry and write-var
+     entry survives into the result environment. *)
+  Lemma allocate_existential_vars_sound
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (a_src : idx_map m.(domain))
+    (wvars : list idx)
+    : forall (i : idx_map m.(domain)) (env0 : idx_map idx),
+      List.NoDup wvars ->
+      (forall w, In w wvars -> map.get env0 w = None) ->
+      (forall w, In w wvars ->
+                 exists d, map.get a_src w = Some d /\ m.(domain_wf) d) ->
+      vc (allocate_existential_vars idx idx_succ symbol symbol_map idx_map idx_trie analysis_result wvars env0)
+        (fun e_in res =>
+           egraph_ok e_in ->
+           egraph_sound_for_interpretation m i e_in ->
+           egraph_ok (snd res) /\
+           exists i',
+             map.extends i' i /\
+             egraph_sound_for_interpretation m i' (snd res) /\
+             (forall x v, map.get env0 x = Some v -> map.get (fst res) x = Some v) /\
+             (forall x, In x wvars ->
+                        exists v d,
+                          map.get (fst res) x = Some v /\
+                          map.get a_src x = Some d /\
+                          map.get i' v = Some d /\
+                          Sep.has_key v (snd res).(equiv).(parent)) /\
+             (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                        Sep.has_key x (snd res).(equiv).(parent))).
+  Proof.
+    induction wvars as [|x wvars' IH]; intros i0 env0 Hnodup Hfresh Hdom.
+    - (* base case: wvars = [] *)
+      unfold allocate_existential_vars, list_Mfoldl.
+      unfold vc; intros e_in; cbn [Mret StateMonad.state_monad fst snd].
+      intros Hok Hsnd.
+      split; [exact Hok|].
+      exists i0. split; [intros k v0 Hg; exact Hg|].
+      split; [exact Hsnd|].
+      split; [intros x0 v0 Hg; exact Hg|].
+      split; [intros x0 Hin; contradiction|].
+      intros x0 Hx0; exact Hx0.
+    - (* inductive case: x :: wvars' *)
+      inversion Hnodup as [|?? Hnotin Hnodup']; subst.
+      assert (Hfresh_x : map.get env0 x = None)
+        by (apply Hfresh; left; reflexivity).
+      assert (Hfresh' : forall w, In w wvars' -> map.get env0 w = None)
+        by (intros w Hw; apply Hfresh; right; exact Hw).
+      assert (Hdom' : forall w, In w wvars' ->
+                                exists d, map.get a_src w = Some d /\ m.(domain_wf) d)
+        by (intros w Hw; apply Hdom; right; exact Hw).
+      assert (Hdx : exists d, map.get a_src x = Some d /\ m.(domain_wf) d)
+        by (apply Hdom; left; reflexivity).
+      destruct Hdx as (d_x & Ha_src_x & Hwf_dx).
+      unfold allocate_existential_vars, list_Mfoldl.
+      fold (list_Mfoldl (M:=state instance) (A:=idx) (B:=idx_map idx)).
+      unfold vc; intros e_in.
+      cbn [Mbind StateMonad.state_monad Mret].
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_in)
+        as [v_x e1] eqn:Halloc_eq.
+      cbn [fst snd].
+      intros Hok Hsnd.
+      (* Apply alloc_sound for v_x: gives i1 = map.put i0 v_x d_x *)
+      pose proof (alloc_sound Hlti Hlts Hltt i0 d_x Hwf_dx Hwf_dx) as Hals.
+      unfold vc in Hals. specialize (Hals e_in).
+      rewrite Halloc_eq in Hals. cbn [fst snd] in Hals.
+      destruct Hals as (Hok1 & Hsnd1 & _Hi_vx_none & _Hk_vx_none & Hkv_x &
+                        Hpres1 & _Hdb1 & _Hpar1 & _Hwl1); auto.
+      (* i1 = map.put i0 v_x d_x *)
+      set (i1 := map.put i0 v_x d_x).
+      (* Derive preconditions for IH: write vars in wvars' not in (put env0 x v_x) *)
+      assert (Hfresh_put : forall w, In w wvars' -> map.get (map.put env0 x v_x) w = None).
+      { intros w Hw.
+        rewrite map.get_put_diff.
+        - apply Hfresh'. exact Hw.
+        - intro Heq. subst w. exact (Hnotin Hw). }
+      (* Apply IH for (wvars', i1, map.put env0 x v_x, e1) *)
+      pose proof (IH i1 (map.put env0 x v_x) Hnodup' Hfresh_put Hdom') as IH1.
+      unfold allocate_existential_vars, list_Mfoldl in IH1.
+      fold (list_Mfoldl (M:=state instance) (A:=idx) (B:=idx_map idx)) in IH1.
+      unfold vc in IH1. specialize (IH1 e1).
+      destruct IH1 as (Hok2 & i2 & Hi2ext1 & Hsnd2 & Henv2 & Hwvars2 & Hpres2); auto.
+      split; [exact Hok2|].
+      (* i' = i2 extends i1 = map.put i0 v_x d_x extends i0 *)
+      exists i2.
+      assert (Hi2ext0 : map.extends i2 i0).
+      { intros k vk Hg.
+        apply Hi2ext1.
+        unfold i1. rewrite map.get_put_diff.
+        - exact Hg.
+        - intro Heq. subst k.
+          (* v_x is NOT in i0 (from alloc_sound) but map.get i0 k = Some vk — contradiction *)
+          rewrite _Hi_vx_none in Hg. discriminate. }
+      split; [exact Hi2ext0|].
+      split; [exact Hsnd2|].
+      split.
+      { (* env0 entries preserved *)
+        intros x0 v0 Hg0.
+        apply Henv2.
+        rewrite map.get_put_diff.
+        - exact Hg0.
+        - intro Heq. subst x0. rewrite Hfresh_x in Hg0. discriminate. }
+      split.
+      { (* each write var in (x :: wvars') has its fresh idx in result env *)
+        intros x0 Hin0.
+        destruct Hin0 as [Heq | Hin'].
+        - (* x0 = x: use alloc for v_x *)
+          subst x0.
+          (* IH env preservation: put env0 x v_x maps x to v_x, result preserves it *)
+          assert (Hxv : map.get (map.put env0 x v_x) x = Some v_x)
+            by apply map.get_put_same.
+          apply Henv2 in Hxv.
+          (* map.get i2 v_x = Some d_x because i2 extends i1 and i1 v_x = Some d_x *)
+          assert (Hi1_vx : map.get i1 v_x = Some d_x).
+          { unfold i1. apply map.get_put_same. }
+          apply Hi2ext1 in Hi1_vx.
+          exists v_x, d_x.
+          split; [exact Hxv|].
+          split; [exact Ha_src_x|].
+          split; [exact Hi1_vx|].
+          apply Hpres2. exact Hkv_x.
+        - (* In x0 wvars': from IH *)
+          destruct (Hwvars2 x0 Hin') as (v0 & d0 & Hgv0 & Hasrc0 & Hi2_v0 & Hkey0).
+          exists v0, d0.
+          exact (conj Hgv0 (conj Hasrc0 (conj Hi2_v0 Hkey0))). }
+      { (* parent keys monotone *)
+        intros x0 Hx0. apply Hpres2. apply Hpres1. exact Hx0. }
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
