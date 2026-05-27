@@ -2440,3 +2440,148 @@ Section ReducingStep.
     Qed.
 
 End ReducingStep.
+
+(* ============================================================== *)
+(* Soundness of [cong_subgoals] (Phase 5, syntactic).             *)
+(* If every pair produced by [cong_subgoals]/[select_inj_args] is  *)
+(* [eq_term] (at some sort), the original goal is [eq_term] at its *)
+(* sort -- by reconstructing [eq_args] (dependent arg-sort         *)
+(* reconciliation, as in [all2_model_eq_eq_args]) + congruence.    *)
+(* ============================================================== *)
+Section CongSubgoals.
+  Context (V : Type) {V_Eqb : Eqb V} {V_Eqb_ok : Eqb_ok V_Eqb}.
+  Context (l : lang V) (wfl : wf_lang l).
+
+  Notation term := (@term V).
+  Notation sort := (@sort V).
+  Notation ctx := (@ctx V).
+
+  Notation eq_args l := (eq_args (Model:= core_model l)).
+  Notation wf_args l := (wf_args (Model:= core_model l)).
+  Notation wf_ctx l := (wf_ctx (Model:= core_model l)).
+
+  Lemma select_inj_args_sound (c' : ctx) inj_args (s1 s2 : list term) subgoals :
+    @select_inj_args V V_Eqb c' inj_args s1 s2 = Some subgoals ->
+    wf_ctx l c' ->
+    wf_args l [] s1 c' ->
+    wf_args l [] s2 c' ->
+    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b) subgoals ->
+    eq_args l [] c' s1 s2.
+  Proof.
+    intros Hsel Hwfc Hwfs1 Hwfs2 Hall.
+    revert inj_args s2 subgoals Hsel Hwfs2 Hall.
+    induction Hwfs1; intros inj_args s2 subgoals Hsel Hwfs2 Hall.
+    - (* nil case: c' = [], s1 = [] *)
+      destruct inj_args as [|x inj_t].
+      + simpl in Hsel. inversion Hsel; subst. inversion Hwfs2; subst. constructor.
+      + simpl in Hsel. discriminate.
+    - (* cons case: c' = (name, t) :: c'_tail, s1 = e :: s *)
+      rename c' into c'_tail.
+      rename name into x'.
+      rename t into ty.
+      rename e into e1.
+      rename s into s1_t.
+      destruct s2 as [|e2 s2_t]. { inversion Hwfs2. }
+      inversion Hwfs2 as [|xn' e2' t' Hwft2 Hwfs2_t xneq]; subst.
+      rename H0 into Hwfs2_tail.
+      destruct inj_args as [|x inj_t].
+      { simpl in Hsel.
+        case_match; try discriminate.
+        inversion Hsel; subst.
+        basic_utils_crush.
+        assert (Hwfc_t : wf_ctx l c'_tail) by (inversion Hwfc; eauto).
+        constructor.
+        { eapply eq_args_refl; eauto. eapply core_model_ok; eauto. }
+        { eapply eq_term_refl; eauto. }
+      }
+      simpl in Hsel.
+      destruct (eqb x x') eqn:Hxx'.
+      { destruct (select_inj_args c'_tail inj_t s1_t s2_t) as [rest|] eqn:Hrest.
+        { simpl in Hsel. inversion Hsel; subst.
+          simpl in Hall. destruct Hall as [ [se Hhead] Htail].
+          assert (Hwfc_t : wf_ctx l c'_tail) by (inversion Hwfc; eauto).
+          pose proof (IHHwfs1 Hwfc_t inj_t s2_t rest Hrest Hwfs2_tail Htail) as IH.
+          constructor.
+          { exact IH. }
+          { eapply eq_term_conv; [ exact Hhead |].
+            eapply term_sorts_eq; eauto using wf_ctx_nil.
+            eapply eq_term_wf_r; eauto using wf_ctx_nil. }
+        }
+        { simpl in Hsel. discriminate. }
+      }
+      destruct (eqb e1 e2) eqn:He12.
+      { basic_utils_crush.
+        assert (Hwfc_t : wf_ctx l c'_tail) by (inversion Hwfc; eauto).
+        pose proof (IHHwfs1 Hwfc_t (x :: inj_t) s2_t subgoals Hsel Hwfs2_tail Hall) as IH.
+        constructor.
+        { exact IH. }
+        { eapply eq_term_refl; eauto. }
+      }
+      { discriminate. }
+  Qed.
+
+  Lemma cong_subgoals_sound inj_list (e1 e2 : term) (t : sort) :
+    wf_term l [] e1 t -> wf_term l [] e2 t ->
+    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b)
+        (@cong_subgoals V V_Eqb l inj_list (e1,e2)) ->
+    eq_term l [] t e1 e2.
+  Proof.
+    intros Hwf1 Hwf2 Hall.
+    unfold cong_subgoals in Hall.
+    destruct e1 as [x1 | n1 s1], e2 as [x2 | n2 s2]; simpl in Hall.
+    1-3: (destruct Hall as [ [se Heq] _];
+          eapply eq_term_conv; [ exact Heq |];
+          eapply term_sorts_eq; eauto using wf_ctx_nil;
+          eapply eq_term_wf_r; eauto using wf_ctx_nil).
+    (* con/con case *)
+    destruct (eqb n1 n2) eqn:Hn12;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
+         eapply eq_term_conv; [ exact Heq |];
+         eapply term_sorts_eq; eauto using wf_ctx_nil;
+         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
+    pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq.
+    rewrite Hn12 in Hn12eq. subst n2.
+    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
+         eapply eq_term_conv; [ exact Heq |];
+         eapply term_sorts_eq; eauto using wf_ctx_nil;
+         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
+    destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
+         eapply eq_term_conv; [ exact Heq |];
+         eapply term_sorts_eq; eauto using wf_ctx_nil;
+         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
+    destruct r as [ | c args t_rule | |];
+    try (simpl in Hall; destruct Hall as [ [se Heq] _];
+         eapply eq_term_conv; [ exact Heq |];
+         eapply term_sorts_eq; eauto using wf_ctx_nil;
+         eapply eq_term_wf_r; eauto using wf_ctx_nil).
+    (* term_rule case *)
+    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _];
+         eapply eq_term_conv; [ exact Heq |];
+         eapply term_sorts_eq; eauto using wf_ctx_nil;
+         eapply eq_term_wf_r; eauto using wf_ctx_nil) ].
+    assert (Hin1 : In (n1, term_rule c args t_rule) l) by
+      (apply named_list_lookup_err_in; auto).
+    apply WfCutElim.invert_wf_term_con in Hwf1.
+    destruct Hwf1 as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & Ht1or1).
+    apply WfCutElim.invert_wf_term_con in Hwf2.
+    destruct Hwf2 as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & Ht2or2).
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf1 Hin1) as Heq1.
+    inversion Heq1; subst c1 args1 t1; clear Heq1.
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
+    inversion Heq2; subst c2 args2 t2; clear Heq2.
+    assert (Hwfc : wf_ctx l c) by (eauto with lang_core).
+    eapply select_inj_args_sound in Hselect; eauto.
+    eapply eq_term_conv.
+    { eapply term_con_congruence; eauto. }
+    { destruct Ht2or2 as [Ht2 | Ht2].
+      + exact Ht2.
+      + subst. eapply eq_sort_refl.
+        eapply wf_sort_subst_monotonicity; eauto.
+        * eapply term_rule_in_sort_wf; eauto.
+        * eapply wf_subst_from_wf_args; eauto. }
+  Qed.
+
+End CongSubgoals.
