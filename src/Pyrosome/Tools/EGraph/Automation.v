@@ -147,6 +147,41 @@ Section ReducingSkeleton.
     Qed.
   End StepInst.
 
+  (* The positive instantiation of the (now fully proven, generic)
+     congruence-reduction soundness.  It is real -- modulo the same two
+     [map.ok] trie-lawfulness assumptions [StepInst] takes -- so it lives in
+     an analogous inner section.  This is the concrete demonstration that
+     [Theorems.egraph_reducing_equal_sound_generic] applies at positive; the
+     clean, assumption-free [egraph_reducing_cong_sound] / [egraph_sound]
+     below are kept as-is (so [by_reduction] / Test.v still work) until the
+     trie-lawfulness subproject discharges [trie_map_ok] / [pos_trie_map_ok]. *)
+  Section CongInst.
+    Context (trie_map_ok : forall A, map.ok (TrieMap.trie_map A)).
+    Context (pos_trie_map_ok : forall A, map.ok (@pos_trie_map A)).
+
+    Lemma egraph_reducing_equal_sound_pos
+      (l' : lang positive) (sched : pos_schedule)
+      (rfuel sat_fuel efuel red_fuel : nat) inj
+      (e1 e2 : term positive) (t : sort positive) :
+      wf_lang l' -> wf_term l' [] e1 t -> wf_term l' [] e2 t ->
+      schedule_sound l' sched ->
+      PositiveInstantiation.egraph_reducing_equal l' sched inj
+        rfuel sat_fuel efuel red_fuel e1 e2 = Success tt ->
+      eq_term l' [] t e1 e2.
+    Proof.
+      intros Hwf He1 He2 [Hfresh Hsched] Hsucc.
+      unfold PositiveInstantiation.egraph_reducing_equal,
+        Defs.egraph_reducing_equal in Hsucc.
+      exact (@Theorems.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
+               positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
+               TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
+               Pos.succ PosListMap.sort_of Pos.lt
+               pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+               (@compat_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel red_fuel inj
+               e1 e2 t He1 He2 Hsched Hsucc).
+    Qed.
+  End CongInst.
+
   Lemma egraph_reducing_cong_sound
     (l' : lang positive) (sched : pos_schedule)
     (rfuel sat_fuel efuel red_fuel : nat) inj
