@@ -1,4 +1,4 @@
-From Stdlib Require Import Lists.List Classes.RelationClasses.
+From Stdlib Require Import Lists.List Classes.RelationClasses BinNums.
 Import ListNotations.
 Open Scope list.
 
@@ -2261,3 +2261,154 @@ Section WithVar.
 
   End SchedSat.
 End WithVar.
+
+(* ============================================================== *)
+(* Soundness of one [egraph_reducing_equal_step] (Phase 4).        *)
+(* ============================================================== *)
+Section ReducingStep.
+  Context (V : Type) {V_Eqb : Eqb V} {V_Eqb_ok : Eqb_ok V_Eqb}
+    {V_default : WithDefault V}.
+  Context (V_map : forall A, map.map V A)
+    (V_map_plus : ExtraMaps.map_plus V_map)
+    (V_map_ok : forall A, map.ok (V_map A))
+    (V_map_plus_ok : ExtraMaps.map_plus_ok V_map)
+    (V_trie : forall A, map.map (list V) A)
+    (V_trie_ok : forall A, map.ok (V_trie A)).
+  Context (succ : V -> V) (sort_of : V) (lt : V -> V -> Prop).
+  Context (lt_asymmetric : Asymmetric lt)
+    (lt_succ : forall x, lt x (succ x))
+    (lt_trans : Transitive lt).
+  Context (spaced_list_intersect
+            : forall B, WithDefault B -> (B -> B -> B) ->
+                        ne_list (V_trie B * list bool) -> V_trie B).
+  Context (l : lang V) (wfl : wf_lang l) (sort_of_fresh : fresh sort_of l).
+
+    Local Notation lang_model := (lang_model V sort_of l).
+    Local Notation sound :=
+      (egraph_sound_for_interpretation V V V_map V_map V_trie (option positive) lang_model).
+    Local Notation egraph_ok := (egraph_ok V lt V V_map V_map V_trie (option positive)).
+
+    (* The real [schedule_sound] content (Phase 3<->6 interface): every
+       compiled rule_set in [schedule] satisfies the per-rule_set
+       saturation hypotheses under [lang_model l].  This is exactly the
+       [Hsched] hypothesis that [scheduled_saturate_until_sound] needs;
+       it is discharged downstream from [build_rule_set] +
+       [optimize_sequent_forward] + [pt_spaced_intersect_correct]. *)
+    Definition schedule_sound_real
+      (schedule : list (nat * rule_set V V V_map V_map)) : Prop :=
+      forall n rs, In (n, rs) schedule ->
+        @rs_saturation_hyps V V_Eqb V_default V_map V_map_plus V_trie succ lt
+          (option positive) (depth V) spaced_list_intersect lang_model rs.
+
+    (* One [egraph_reducing_equal_step] is sound: if it returns
+       [res = true] and the resulting egraph's [are_unified x1 x2] holds,
+       then the two input terms are [eq_term]-equal at their common sort.
+       Chains: [empty] sound -> [add_open_term] x2 (places [a],[b]) ->
+       [get_analysis] x2 (weight reads, preserve) -> [rebuild] (preserve)
+       -> [scheduled_saturate_until] (extends interp, preserve; predicate
+       HP via [get_analysis_preserves]/[are_unified_preserves]) ->
+       [are_unified_eq_sound] -> [eq_sound_to_eq_term] -> conversion to
+       the wanted sort ([term_sorts_eq]/[eq_term_conv]). *)
+    Lemma egraph_reducing_equal_step_sound
+      (schedule : list (nat * rule_set V V V_map V_map))
+      (rfuel sat_fuel : nat)
+      (a b : term V) (t : sort V) :
+      wf_term l [] a t -> wf_term l [] b t ->
+      schedule_sound_real schedule ->
+      let '(res, x1, x2, g) :=
+        egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
+          l schedule rfuel sat_fuel a b in
+      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l [] t a b.
+    Proof.
+      intros Ha Hb Hsched.
+      unfold egraph_reducing_equal_step.
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      destruct (add_open_term succ sort_of l true false [] a (empty_egraph default (option positive))) as [x1 ea] eqn:Haa.
+      destruct (add_open_term succ sort_of l true false [] b ea) as [x2 eb] eqn:Hab.
+      destruct (get_analysis V V V_map V_map V_trie (option positive) x1 eb) as [w1 e1] eqn:Hga1.
+      destruct (get_analysis V V V_map V_map V_trie (option positive) x2 e1) as [w2 e2] eqn:Hga2.
+      destruct (rebuild rfuel e2) as [u e3] eqn:Hrb.
+      match goal with
+      | |- context [scheduled_saturate_until ?vmp ?sc ?sli ?rf ?sch ?p ?sf ?e] =>
+          destruct (scheduled_saturate_until vmp sc sli rf sch p sf e) as [res g] eqn:Hsat
+      end.
+      cbn [fst snd].
+      intros Hres Hunified.
+      pose proof (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok V_map V_map_ok V_trie (option positive) lang_model) as Hempty.
+      destruct Hempty as [Hok0 Hsnd0].
+      assert (Hsub : forall (e:term V), e [/ with_names_from (@nil (V*sort V)) (@nil (term V)) /] = e) by (intro; cbn [with_names_from]; apply term_subst_nil).
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] a t) as Hpa.
+      specialize (Hpa ltac:(constructor) Ha ltac:(constructor) (eq_refl) map.empty); unfold vc in Hpa.
+      assert (Haa' : add_open_term succ sort_of l true false [] a (empty_egraph V_default (option positive)) = (x1, ea)) by (exact Haa).
+      specialize (Hpa (empty_egraph V_default (option positive))).
+      rewrite Haa' in Hpa.
+      unfold open_term_post in Hpa.
+      specialize (Hpa Hok0 Hsnd0 ltac:(cbn; trivial)).
+      destruct Hpa as [i1 [ Hext1 Hrel1 ] ].
+      cbn [fst snd] in Hext1, Hrel1.
+      rewrite Hsub in Hrel1.
+      destruct Hext1 as [ Hok_ea [ Hextmap1 [ Hsnd_ea Hkey1 ] ] ].
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] b t) as Hpb.
+      specialize (Hpb ltac:(constructor) Hb ltac:(constructor) (eq_refl) i1); unfold vc in Hpb.
+      specialize (Hpb ea).
+      rewrite Hab in Hpb.
+      unfold open_term_post in Hpb.
+      specialize (Hpb Hok_ea Hsnd_ea ltac:(cbn; trivial)).
+      destruct Hpb as [i2 [ Hext2 Hrel2 ] ].
+      cbn [fst snd] in Hext2, Hrel2.
+      rewrite Hsub in Hrel2.
+      destruct Hext2 as [ Hok_eb [ Hextmap2 [ Hsnd_eb Hkey2 ] ] ].
+      assert (Hlift : forall (ii ii' : V_map (domain V lang_model)) (xx:V) dd,
+         map.extends ii' ii -> option_relation (domain_eq V lang_model) (map.get ii xx) (Some dd) ->
+         option_relation (domain_eq V lang_model) (map.get ii' xx) (Some dd)).
+      { intros ii ii' xx dd Hext Hor.
+        unfold option_relation in *.
+        destruct (map.get ii xx) as [v|] eqn:Hgv.
+        - rewrite (Hext _ _ Hgv); exact Hor.
+        - discriminate Hor. }
+      pose proof (@lang_model_ok V V_Eqb V_Eqb_ok sort_of l sort_of_fresh wfl) as Hmok.
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x1 eb i2 Hok_eb Hsnd_eb) as Hg1.
+      rewrite Hga1 in Hg1; cbn [snd] in Hg1; destruct Hg1 as [Hok_e1 Hsnd_e1].
+      pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x2 e1 i2 Hok_e1 Hsnd_e1) as Hg2.
+      rewrite Hga2 in Hg2; cbn [snd] in Hg2; destruct Hg2 as [Hok_e2 Hsnd_e2].
+      pose proof (@rebuild_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok (option positive) (depth V) lang_model Hmok (fun _ => True) rfuel e2 Hok_e2) as Hrbs.
+      rewrite Hrb in Hrbs; cbn [snd] in Hrbs; destruct Hrbs as [Hok_e3 Hiff3].
+      assert (Hsnd_e3 : sound i2 e3) by (apply (Hiff3 i2); exact Hsnd_e2).
+      match type of Hsat with
+      | scheduled_saturate_until _ _ _ _ _ ?p _ _ = _ => set (pred := p) in *
+      end.
+      assert (HP : forall ee ii, egraph_ok ee -> sound ii ee -> egraph_ok (snd (pred ee)) /\ sound ii (snd (pred ee)))
+        by (intros ee ii Hoke Hsnde; subst pred; unfold weight_less_than;
+            cbn [Mbind Mret StateMonad.state_monad];
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x1 ee ii Hoke Hsnde) as Hp1;
+            destruct (get_analysis V V V_map V_map V_trie (option positive) x1 ee) as [a1 e1'] eqn:He1';
+            cbn [snd] in Hp1; destruct Hp1 as [ Hok1 Hsnd1 ]; cbn [fst snd];
+            destruct (oP_lt a1 w1);
+            [ cbn [snd]; split; assumption | ];
+            cbn [fst snd];
+            pose proof (@get_analysis_preserves_ok_sound V lt V V_map V_map V_trie (option positive) (depth V) lang_model x2 e1' ii Hok1 Hsnd1) as Hp2;
+            destruct (get_analysis V V V_map V_map V_trie (option positive) x2 e1') as [a2 e2'] eqn:He2';
+            cbn [snd] in Hp2; destruct Hp2 as [ Hok2 Hsnd2 ];
+            destruct (oP_lt a2 w2);
+            [ cbn [snd]; split; assumption | ];
+            pose proof (@are_unified_preserves_ok_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 e2' ii Hok2 Hsnd2) as Hau;
+            destruct Hau as [ Hoku Hsndu ]; split; assumption).
+      pose proof (@scheduled_saturate_until_sound V V_Eqb V_Eqb_ok V_default V_map V_map_plus V_map_ok V_trie V_trie_ok succ lt lt_asymmetric lt_succ lt_trans V_map_plus_ok (option positive) (depth V) spaced_list_intersect lang_model Hmok rfuel pred HP schedule Hsched sat_fuel i2 e3 Hok_e3 Hsnd_e3) as Hss.
+      rewrite Hsat in Hss.
+      destruct Hss as [ Hok_g [ i3 [ Hext3 Hsnd_g ] ] ].
+      pose proof (Hlift i2 i3 x1 (inl a) Hext3 (Hlift i1 i2 x1 (inl a) Hextmap2 Hrel1)) as Hr1g.
+      pose proof (Hlift i2 i3 x2 (inl b) Hext3 Hrel2) as Hr2g.
+      assert (Hisx1 : Is_Some (map.get i3 x1)) by (unfold option_relation in Hr1g; destruct (map.get i3 x1); [exact I | discriminate Hr1g]).
+      assert (Hisx2 : Is_Some (map.get i3 x2)) by (unfold option_relation in Hr2g; destruct (map.get i3 x2); [exact I | discriminate Hr2g]).
+      pose proof Hsnd_g as Hsnd_gc.
+      destruct Hsnd_gc as [ _ Hexact _ _ ].
+      assert (Hk1 : Sep.has_key x1 (UnionFind.parent (equiv g))) by (apply Hexact; exact Hisx1).
+      assert (Hk2 : Sep.has_key x2 (UnionFind.parent (equiv g))) by (apply Hexact; exact Hisx2).
+      pose proof (@are_unified_eq_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok V_trie (option positive) lang_model x1 x2 g i3 Hok_g Hsnd_g Hk1 Hk2 Hunified) as Hes.
+      pose proof (@eq_sound_to_eq_term V V_Eqb V_Eqb_ok V_map sort_of l sort_of_fresh wfl i3 x1 x2 a b Hes Hr1g Hr2g) as Het.
+      destruct Het as [ t' Heq ].
+      eapply eq_term_conv; [ exact Heq | ].
+      eapply term_sorts_eq with (e := a); eauto using eq_term_wf_l with lang_core.
+    Qed.
+
+End ReducingStep.
