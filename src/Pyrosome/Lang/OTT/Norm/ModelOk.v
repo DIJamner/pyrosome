@@ -77,7 +77,7 @@ Proof.
   intros t e1 e12 e2 H1 H2.
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct t as [tname [| G rest]].
-  - etransitivity; eassumption.
+  - destruct (eqb tname "env"); etransitivity; eassumption.
   - destruct (eqb tname "exp").
     + destruct H1 as [v1 [a1 b1]], H2 as [v2 [a2 b2]].
       assert (v1 = v2) by (eapply eval_rel_det; eassumption). subst v2.
@@ -104,7 +104,7 @@ Proof.
   intros t e1 e2 H.
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct t as [tname [| G rest]].
-  - symmetry; assumption.
+  - destruct (eqb tname "env"); symmetry; assumption.
   - destruct (eqb tname "exp").
     + destruct H as [v [a b]]. exact (existT _ v (b, a)).
     + destruct (eqb tname "ty").
@@ -124,7 +124,7 @@ Lemma Norm_cterm_conv : forall t1 t2 e1 e2,
     ceq_term (CutTModel := Norm) t2 e1 e2.
 Proof.
   intros t1 t2 e1 e2 Hsort Hterm.
-  unfold ceq_sort, Norm, norm_ceq_sort, sort_head, sort_env in Hsort.
+  unfold ceq_sort, Norm, norm_ceq_sort, is_env_sort, sort_head in Hsort.
   destruct t1 as [n1 l1], t2 as [n2 l2].
   destruct Hsort as [Heqb Henv].
   pose proof (proj1 (eqb_prop_iff _ _ _) ltac:(rewrite Heqb; exact I)) as Hn.
@@ -132,31 +132,31 @@ Proof.
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct l1 as [|G1 r1], l2 as [|G2 r2].
   - exact Hterm.
-  - (* l1=[], l2=G2::r2: degenerate (Henv: eval_env emp = eval_env G2 = []) *)
-    cbn [sort_env] in Henv.
-    unfold ceq_term, Norm, norm_ceq_term in *.
-    cbn in Hterm |- *.
-    destruct (eqb n1 "exp"); [| destruct (eqb n1 "ty"); [| destruct (eqb n1 "sub")]].
-    all: try exact tt.
-    (* For exp/ty/sub cases: Hterm is eval_env e1 = eval_env e2 but goal needs sigma type.
-       Henv says eval_env G2 = []. But we need eval witnesses, which Hterm doesn't provide. *)
-    all: admit.
-  - (* l1=G1::r1, l2=[]: symmetric degenerate *)
-    cbn [sort_env] in Henv.
-    unfold ceq_term, Norm, norm_ceq_term in *.
+  - (* l1=[], l2=G2::r2: junk (ill-arity) case; same head, different arg count.
+       Hterm is an [nf_info]/[eval_env] equation but the goal wants an eval sigma. *)
     cbn in Hterm |- *.
     destruct (eqb n1 "exp"); [| destruct (eqb n1 "ty"); [| destruct (eqb n1 "sub")]].
     all: try exact tt.
     all: admit.
-  - cbn [sort_env] in Henv.
-    destruct (eqb n1 "exp").
-    + destruct Hterm as [v [a b]]. rewrite Henv in a, b.
+  - (* l1=G1::r1, l2=[]: symmetric junk case *)
+    cbn in Hterm |- *.
+    destruct (eqb n1 "exp"); [| destruct (eqb n1 "ty"); [| destruct (eqb n1 "sub")]].
+    all: try exact tt.
+    all: admit.
+  - (* both nonempty: for the env-bearing heads exp/ty/sub, the (true) dispatch
+       gives [Henv : eval_env (last l1) = eval_env (last l2)], which transports the
+       eval witnesses; other heads land in the [unit] branch. *)
+    destruct (eqb n1 "exp") eqn:Hexp.
+    + cbn [orb] in Henv.
+      destruct Hterm as [v [a b]]. rewrite Henv in a, b.
       exact (existT _ v (a, b)).
-    + destruct (eqb n1 "ty").
-      * destruct Hterm as [T [a b]]. rewrite Henv in a, b.
+    + destruct (eqb n1 "ty") eqn:Hty.
+      * cbn [orb] in Henv.
+        destruct Hterm as [T [a b]]. rewrite Henv in a, b.
         exact (existT _ T (a, b)).
-      * destruct (eqb n1 "sub").
-        -- destruct Hterm as [r [a b]]. rewrite Henv in a, b.
+      * destruct (eqb n1 "sub") eqn:Hsub.
+        -- cbn [orb] in Henv.
+           destruct Hterm as [r [a b]]. rewrite Henv in a, b.
            exact (existT _ r (a, b)).
         -- exact tt.
 Admitted.
@@ -172,14 +172,16 @@ Lemma Norm_csort_trans : forall t1 t12 t2,
 Proof.
   intros t1 t12 t2 [Heqb1 Henv1] [Heqb2 Henv2].
   unfold ceq_sort, Norm, norm_ceq_sort in *.
+  destruct t1 as [n1 l1], t12 as [n12 l12], t2 as [n2 l2].
+  cbn [sort_head] in Heqb1, Heqb2.
+  pose proof (proj1 (eqb_prop_iff _ n1 n12) ltac:(rewrite Heqb1; exact I)) as H1.
+  pose proof (proj1 (eqb_prop_iff _ n12 n2) ltac:(rewrite Heqb2; exact I)) as H2.
+  subst n12; subst n2.
   split.
-  - (* eqb (head t1) (head t2) = true: same head via transitivity *)
-    destruct t1 as [n1 l1], t12 as [n12 l12], t2 as [n2 l2].
-    cbn [sort_head] in *.
-    pose proof (proj1 (eqb_prop_iff _ n1 n12) ltac:(rewrite Heqb1; exact I)) as H1.
-    pose proof (proj1 (eqb_prop_iff _ n12 n2) ltac:(rewrite Heqb2; exact I)) as H2.
-    subst. apply (@eqb_refl_true string _ string_Eqb_ok).
-  - etransitivity; eassumption.
+  - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
+  - (* second component: both branches of the env/static dispatch are plain
+       equalities, so transitivity applies to whichever fires. *)
+    destruct (is_env_sort n1); etransitivity; eassumption.
 Qed.
 
 (* ================================================================== *)
@@ -193,12 +195,13 @@ Proof.
   intros t1 t2.
   destruct t1 as [n1 l1], t2 as [n2 l2].
   unfold ceq_sort, Norm, norm_ceq_sort.
-  cbn [sort_head sort_env].
+  cbn [sort_head].
   intros [Heqb Henv].
+  pose proof (proj1 (eqb_prop_iff _ n1 n2) ltac:(rewrite Heqb; exact I)) as H.
+  subst n2.
   split.
-  - pose proof (proj1 (eqb_prop_iff _ n1 n2) ltac:(rewrite Heqb; exact I)) as H.
-    subst n2. apply (@eqb_refl_true string _ string_Eqb_ok).
-  - symmetry; assumption.
+  - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
+  - destruct (is_env_sort n1); symmetry; assumption.
 Qed.
 
 (* ================================================================== *)
@@ -245,8 +248,13 @@ Proof.
     all: injection Hin; clear Hin; intros; subst.
     all: repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end.
     all: match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end.
-    all: unfold sort_env, ceq_term, Norm, norm_ceq_term in *; cbn [List.last] in *; cbn in *.
-    all: first [ reflexivity | eassumption ].
+    (* For env-bearing sorts (exp/ty/sub) the goal is the env arg's [eval_env]
+       equality (eassumption); for the static sort [ltl] it is [map nf_info]
+       equality of the lvl args (congruence from their [nf_info] hypotheses);
+       nullary sorts close by reflexivity. *)
+    all: unfold is_env_sort, ceq_term, Norm, norm_ceq_term in *;
+         cbn [List.last map orb] in *; cbn in *.
+    all: first [ reflexivity | eassumption | congruence ].
 Qed.
 
 (* ================================================================== *)
