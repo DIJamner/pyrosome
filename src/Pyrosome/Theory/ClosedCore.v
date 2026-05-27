@@ -561,4 +561,53 @@ Section WithVar.
     eapply eq_sort_wf_l; eauto; constructor.
   Qed.
 
+  (* Forward closing of [wf_term]: derived from [eq_vtr] applied to the
+     reflexive equality of [e].  [wfl'] (= [wf_lang (ctx_to_rules c ++ l)])
+     comes from [ctx_to_rules_wf]. *)
+  Lemma wf_term_vtr (l : lang) (c : ctx)
+    : wf_lang l -> wf_ctx (Model:=core_model l) c ->
+      all (fun x => fresh x l) (map fst c) ->
+      forall (e : Term.term V) (t : sort V),
+      wf_term l c e t -> wf_term (ctx_to_rules c ++ l) [] (vtr e) (svtr t).
+  Proof.
+    intros wfl wfc Hdisj e t Hwf.
+    pose proof (wf_lang_concat wfl (ctx_to_rules_wf wfl wfc Hdisj)) as Hwfl'.
+    destruct (eq_vtr wfl wfc Hwfl') as [_ [Het _]].
+    pose proof (Het t e e (eq_term_refl Hwf)) as Heq.
+    eapply eq_term_wf_l; eauto; constructor.
+  Qed.
+
+  (* Round-trip under well-formedness: [rtv]/[srtv] invert [vtr]/[svtr] on
+     terms/sorts well-formed in [c] over [l] (with [c] disjoint from [l]).
+     Discharges [rtv_vtr]/[srtv_svtr]'s side conditions from [wf_*]. *)
+  Lemma rtv_vtr_wf (l : lang) (c : ctx)
+    : wf_lang l -> wf_ctx (Model:=core_model l) c ->
+      all (fun x => fresh x l) (map fst c) ->
+      forall (e : Term.term V) (t : sort V),
+      wf_term l c e t -> rtv c (vtr e) = e.
+  Proof.
+    intros wfl wfc Hdisj e t Hwf.
+    apply rtv_vtr.
+    - apply (@all_constructors_term_weaken V V_Eqb V_default
+               (fun n => In n (map fst l)) (fun n => fresh n c) e);
+        [ intros n Hnl Hnc; exact (in_all (fun x => fresh x l) (map fst c) n Hdisj Hnc Hnl)
+        | exact (wf_term_all_constructors Hwf) ].
+    - exact (wf_term_implies_ws (wf_lang_implies_ws_noext wfl) Hwf).
+  Qed.
+
+  Lemma srtv_svtr_wf (l : lang) (c : ctx)
+    : wf_lang l -> wf_ctx (Model:=core_model l) c ->
+      all (fun x => fresh x l) (map fst c) ->
+      forall (t : sort V),
+      wf_sort l c t -> srtv c (svtr t) = t.
+  Proof.
+    intros wfl wfc Hdisj t Hwf.
+    apply srtv_svtr;
+      [ apply (@all_constructors_sort_weaken V V_Eqb V_default
+                 (fun n => In n (map fst l)) (fun n => fresh n c) t);
+          [ intros n Hnl Hnc; exact (in_all (fun x => fresh x l) (map fst c) n Hdisj Hnc Hnl)
+          | exact (wf_sort_all_constructors Hwf) ]
+      | exact (wf_sort_implies_ws (wf_lang_implies_ws_noext wfl) Hwf) ].
+  Qed.
+
 End WithVar.
