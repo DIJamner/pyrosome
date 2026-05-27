@@ -7087,6 +7087,42 @@ Section WithMap.
     - rewrite (map_combine_fst qs vs Hlen). exact Hin.
   Qed.
 
+  (* The model assignment [a_q] for a query assignment: compose the
+     interpretation [i] after the query-variable->idx map [env0], dropping
+     keys whose idx is not in [i]. Realises the bind spec that
+     query_clause_ptr_sound / query_atoms_sound consume. *)
+  Definition compose_assignment (i : idx_map m.(domain)) (env0 : idx_map idx)
+    : idx_map m.(domain) :=
+    map.fold (fun acc x v => match map.get i v with
+                             | Some d => map.put acc x d
+                             | None => acc
+                             end) map.empty env0.
+
+  Lemma get_compose_assignment (i : idx_map m.(domain)) (env0 : idx_map idx) (x : idx) :
+    map.get (compose_assignment i env0) x
+    = match map.get env0 x with
+      | Some v => map.get i v
+      | None => None
+      end.
+  Proof.
+    unfold compose_assignment.
+    revert x.
+    apply (map.fold_spec
+      (fun env0' acc => forall x, map.get acc x
+         = match map.get env0' x with Some v => map.get i v | None => None end)).
+    - intros y. rewrite !map.get_empty. reflexivity.
+    - intros k v m0 r Hnone IH y.
+      destruct (map.get i v) as [d|] eqn:Hiv.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok k y) as Hbs.
+        destruct (eqb k y) eqn:Hky.
+        * subst y. rewrite !map.get_put_same. rewrite Hiv. reflexivity.
+        * rewrite !(map.get_put_diff _ _ _ _ (not_eq_sym Hbs)). apply IH.
+      + pose proof (@eqb_spec idx Eqb_idx Eqb_idx_ok k y) as Hbs.
+        destruct (eqb k y) eqn:Hky.
+        * subst y. rewrite map.get_put_same. rewrite Hiv. rewrite IH, Hnone; reflexivity.
+        * rewrite (map.get_put_diff _ _ _ _ (not_eq_sym Hbs)). apply IH.
+  Qed.
+
   (* [all] over a mapped list reduces to a per-element obligation. *)
   Lemma all_map_in {A B} (g : A -> B) (Pr : B -> Prop) (l : list A) :
     (forall x, In x l -> Pr (g x)) -> all Pr (map g l).
