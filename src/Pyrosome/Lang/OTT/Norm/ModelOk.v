@@ -26,33 +26,25 @@ Lemma eqb_sub_true : @eqb string _ "sub" "sub" = true. Proof. reflexivity. Qed.
 (* cterm_var                                                           *)
 (* ================================================================== *)
 
-Lemma Norm_cterm_var : forall (c : @ctx string) (n : string) (t : @sort string),
-    In (n, t) c ->
-    ceq_term (CutTModel := Norm) c t (var n) (var n).
+(* With the ambient context fixed to [] there are no variables: [In _ []] is
+   [False], so cterm_var is vacuous. *)
+Lemma Norm_cterm_var : forall (n : string) (t : @sort string),
+    In (n, t) [] ->
+    ceq_term (CutTModel := Norm) t (var n) (var n).
 Proof.
-  intros c n t _.
-  unfold ceq_term, Norm, norm_ceq_term.
-  destruct t as [tname [| G rest]].
-  - reflexivity.
-  - destruct (eqb tname "exp") eqn:Hexp.
-    + exact (existT _ (vNe (var n)) (ev_var _ _, ev_var _ _)).
-    + destruct (eqb tname "ty") eqn:Hty.
-      * exact (existT _ (dNe (var n)) (ev_ty_var _ _, ev_ty_var _ _)).
-      * destruct (eqb tname "sub") eqn:Hsub.
-        -- exact (existT _ (eval_env G) (ev_sub_var _ _, ev_sub_var _ _)).
-        -- exact tt.
+  intros n t [].
 Qed.
 
 (* ================================================================== *)
 (* cterm_trans                                                         *)
 (* ================================================================== *)
 
-Lemma Norm_cterm_trans : forall (c : @ctx string) (t : @sort string) e1 e12 e2,
-    ceq_term (CutTModel := Norm) c t e1 e12 ->
-    ceq_term (CutTModel := Norm) c t e12 e2 ->
-    ceq_term (CutTModel := Norm) c t e1 e2.
+Lemma Norm_cterm_trans : forall (t : @sort string) e1 e12 e2,
+    ceq_term (CutTModel := Norm) t e1 e12 ->
+    ceq_term (CutTModel := Norm) t e12 e2 ->
+    ceq_term (CutTModel := Norm) t e1 e2.
 Proof.
-  intros c t e1 e12 e2 H1 H2.
+  intros t e1 e12 e2 H1 H2.
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct t as [tname [| G rest]].
   - etransitivity; eassumption.
@@ -75,11 +67,11 @@ Qed.
 (* cterm_sym                                                           *)
 (* ================================================================== *)
 
-Lemma Norm_cterm_sym : forall (c : @ctx string) (t : @sort string) e1 e2,
-    ceq_term (CutTModel := Norm) c t e1 e2 ->
-    ceq_term (CutTModel := Norm) c t e2 e1.
+Lemma Norm_cterm_sym : forall (t : @sort string) e1 e2,
+    ceq_term (CutTModel := Norm) t e1 e2 ->
+    ceq_term (CutTModel := Norm) t e2 e1.
 Proof.
-  intros c t e1 e2 H.
+  intros t e1 e2 H.
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct t as [tname [| G rest]].
   - symmetry; assumption.
@@ -96,12 +88,12 @@ Qed.
 (* cterm_conv                                                          *)
 (* ================================================================== *)
 
-Lemma Norm_cterm_conv : forall (c : @ctx string) t1 t2 e1 e2,
-    ceq_sort (CutTModel := Norm) c t1 t2 ->
-    ceq_term (CutTModel := Norm) c t1 e1 e2 ->
-    ceq_term (CutTModel := Norm) c t2 e1 e2.
+Lemma Norm_cterm_conv : forall t1 t2 e1 e2,
+    ceq_sort (CutTModel := Norm) t1 t2 ->
+    ceq_term (CutTModel := Norm) t1 e1 e2 ->
+    ceq_term (CutTModel := Norm) t2 e1 e2.
 Proof.
-  intros c t1 t2 e1 e2 Hsort Hterm.
+  intros t1 t2 e1 e2 Hsort Hterm.
   unfold ceq_sort, Norm, norm_ceq_sort, sort_head, sort_env in Hsort.
   destruct t1 as [n1 l1], t2 as [n2 l2].
   destruct Hsort as [Heqb Henv].
@@ -143,12 +135,12 @@ Admitted.
 (* csort_trans                                                         *)
 (* ================================================================== *)
 
-Lemma Norm_csort_trans : forall (c : @ctx string) t1 t12 t2,
-    ceq_sort (CutTModel := Norm) c t1 t12 ->
-    ceq_sort (CutTModel := Norm) c t12 t2 ->
-    ceq_sort (CutTModel := Norm) c t1 t2.
+Lemma Norm_csort_trans : forall t1 t12 t2,
+    ceq_sort (CutTModel := Norm) t1 t12 ->
+    ceq_sort (CutTModel := Norm) t12 t2 ->
+    ceq_sort (CutTModel := Norm) t1 t2.
 Proof.
-  intros c t1 t12 t2 [Heqb1 Henv1] [Heqb2 Henv2].
+  intros t1 t12 t2 [Heqb1 Henv1] [Heqb2 Henv2].
   unfold ceq_sort, Norm, norm_ceq_sort in *.
   split.
   - (* eqb (head t1) (head t2) = true: same head via transitivity *)
@@ -164,11 +156,11 @@ Qed.
 (* csort_sym                                                           *)
 (* ================================================================== *)
 
-Lemma Norm_csort_sym : forall (c : @ctx string) t1 t2,
-    ceq_sort (CutTModel := Norm) c t1 t2 ->
-    ceq_sort (CutTModel := Norm) c t2 t1.
+Lemma Norm_csort_sym : forall t1 t2,
+    ceq_sort (CutTModel := Norm) t1 t2 ->
+    ceq_sort (CutTModel := Norm) t2 t1.
 Proof.
-  intros c t1 t2.
+  intros t1 t2.
   destruct t1 as [n1 l1], t2 as [n2 l2].
   unfold ceq_sort, Norm, norm_ceq_sort.
   cbn [sort_head sort_env].
@@ -183,12 +175,12 @@ Qed.
 (* csort_by: vacuous (fo_lang has no sort_eq_rules)                   *)
 (* ================================================================== *)
 
-Lemma Norm_csort_by : forall (c c' : @ctx string) (name : string) t1 t2 s1 s2,
+Lemma Norm_csort_by : forall (c' : @ctx string) (name : string) t1 t2 s1 s2,
     In (name, sort_eq_rule c' t1 t2) fo_lang ->
-    ceq_args (CM := Norm) c c' s1 s2 ->
-    ceq_sort (CutTModel := Norm) c t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
+    ceq_args (CM := Norm) c' s1 s2 ->
+    ceq_sort (CutTModel := Norm) t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
 Proof.
-  intros c c' name t1 t2 s1 s2 Hin _.
+  intros c' name t1 t2 s1 s2 Hin _.
   exfalso.
   unfold fo_lang in Hin.
   vm_compute in Hin.
@@ -199,12 +191,12 @@ Qed.
 (* csort_cong                                                          *)
 (* ================================================================== *)
 
-Lemma Norm_csort_cong : forall (c c' : @ctx string) (name : string) (args : list string) s1 s2,
+Lemma Norm_csort_cong : forall (c' : @ctx string) (name : string) (args : list string) s1 s2,
     In (name, sort_rule c' args) fo_lang ->
-    ceq_args (CM := Norm) c c' s1 s2 ->
-    ceq_sort (CutTModel := Norm) c (scon name s1) (scon name s2).
+    ceq_args (CM := Norm) c' s1 s2 ->
+    ceq_sort (CutTModel := Norm) (scon name s1) (scon name s2).
 Proof.
-  intros c c' name args s1 s2 Hin Hargs.
+  intros c' name args s1 s2 Hin Hargs.
   unfold ceq_sort, Norm, norm_ceq_sort.
   split.
   - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
@@ -280,13 +272,13 @@ Ltac unfold_ceq_in H :=
    - U subst: same issue as U
 *)
 
-Lemma Norm_cterm_cong : forall (c c' : @ctx string) (name : string) (args : list string)
+Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list string)
     (t : @sort string) s1 s2,
     In (name, term_rule c' args t) fo_lang ->
-    ceq_args (CM := Norm) c c' s1 s2 ->
-    ceq_term (CutTModel := Norm) c t[/with_names_from c' s2/] (con name s1) (con name s2).
+    ceq_args (CM := Norm) c' s1 s2 ->
+    ceq_term (CutTModel := Norm) t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
-  intros c c' name args t s1 s2 Hin Hargs.
+  intros c' name args t s1 s2 Hin Hargs.
   unfold fo_lang in Hin.
   repeat rewrite in_app_iff in Hin.
   destruct Hin as [[[Hin | Hin] | Hin] | Hin].
@@ -490,13 +482,13 @@ Admitted.
 (* cterm_by: computation rules                                         *)
 (* ================================================================== *)
 
-Lemma Norm_cterm_by : forall (c c' : @ctx string) (name : string) e1r e2r tr s1 s2,
+Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
     In (name, term_eq_rule c' e1r e2r tr) fo_lang ->
-    ceq_args (CM := Norm) c c' s1 s2 ->
-    ceq_term (CutTModel := Norm) c tr[/with_names_from c' s2/]
+    ceq_args (CM := Norm) c' s1 s2 ->
+    ceq_term (CutTModel := Norm) tr[/with_names_from c' s2/]
              e1r[/with_names_from c' s1/] e2r[/with_names_from c' s2/].
 Proof.
-  intros c c' name e1r e2r tr s1 s2 Hin Hargs.
+  intros c' name e1r e2r tr s1 s2 Hin Hargs.
   unfold fo_lang in Hin.
   repeat rewrite in_app_iff in Hin.
   destruct Hin as [[[Hin | Hin] | Hin] | Hin].
@@ -805,7 +797,8 @@ Admitted.
 (* Final Instance                                                      *)
 (* ================================================================== *)
 
-#[export] Instance Norm_ok : CutTModel_ok (CM := Norm) fo_lang.
+(* The normalization model uses the empty meta-context. *)
+#[export] Instance Norm_ok : CutTModel_ok (CM := Norm) fo_lang [].
 Proof.
   constructor.
   - exact Norm_cterm_var.
