@@ -30,44 +30,44 @@ Section EvalRel.
 
   Inductive eval_sub : senv -> term -> senv -> Type :=
   | ev_id   : forall r G, eval_sub r (con "id" [G]) r
-  | ev_wkn  : forall r v G i A, eval_sub (v :: r) (con "wkn" [G; i; A]) r
+  | ev_wkn  : forall r v G i A, eval_sub (v :: r) (con "wkn" [A; i; G]) r
   | ev_forget : forall r G, eval_sub r (con "forget" [G]) []
   | ev_cmp  : forall r r' r'' G3 G2 G1 f g,
       eval_sub r f r' -> eval_sub r' g r'' ->
-      eval_sub r (con "cmp" [G3; G2; G1; f; g]) r''
+      eval_sub r (con "cmp" [g; f; G3; G2; G1]) r''
   | ev_snoc : forall r r' vv G G' i A g v,
       eval_sub r g r' -> eval_rel r v vv ->
-      eval_sub r (con "snoc" [G; G'; i; A; g; v]) (vv :: r')
+      eval_sub r (con "snoc" [v; g; A; i; G'; G]) (vv :: r')
   (* meta substitution-variable: never fires under c=[] (meta-substitutions do not
      occur in normalization); present only for totality of cterm_var. *)
   | ev_sub_var : forall r x, eval_sub r (var x) r
 
   with eval_ty : senv -> term -> svalty -> Type :=
-  | ev_U    : forall r G rl l, eval_ty r (con "U" [G; rl; l]) (dU rl l)
+  | ev_U    : forall r G rl l, eval_ty r (con "U" [l; rl; G]) (dU rl l)
   | ev_El   : forall r G rl l e T,
       eval_rel r e (vCode T) ->
-      eval_ty r (con "El" [G; rl; l; e]) T
+      eval_ty r (con "El" [e; l; rl; G]) T
   | ev_ty_subst : forall r r' G G' g i A T,
       eval_sub r g r' -> eval_ty r' A T ->
-      eval_ty r (con "ty_subst" [G; G'; g; i; A]) T
+      eval_ty r (con "ty_subst" [A; i; g; G'; G]) T
   (* meta type-variable: never fires under the empty meta-context (c=[]); present
      only so the universal cterm_var field is total. *)
   | ev_ty_var : forall r x, eval_ty r (var x) (dNe (var x))
 
   with eval_rel : senv -> term -> sval -> Type :=
-  | ev_hd   : forall r v G i A, eval_rel (v :: r) (con "hd" [G; i; A]) v
+  | ev_hd   : forall r v G i A, eval_rel (v :: r) (con "hd" [A; i; G]) v
   | ev_exp_subst : forall r r' G G' g i A e v,
       eval_sub r g r' -> eval_rel r' e v ->
-      eval_rel r (con "exp_subst" [G; G'; g; i; A; e]) v
+      eval_rel r (con "exp_subst" [e; A; i; g; G'; G]) v
   | ev_var  : forall r x, eval_rel r (var x) (vNe (var x))
   | ev_zero : forall r G, eval_rel r (con "zero" [G]) vZero
   | ev_suc  : forall r G n v,
-      eval_rel r n v -> eval_rel r (con "suc" [G; n]) (vSuc v)
+      eval_rel r n v -> eval_rel r (con "suc" [n; G]) (vSuc v)
   | ev_Nat  : forall r G, eval_rel r (con "Nat" [G]) (vCode dNat)
   | ev_Empty : forall r G, eval_rel r (con "Empty" [G]) (vCode dEmpty)
   | ev_Emptyrec : forall r G rA lA A e ne,
       eval_rel r e (vNe ne) ->
-      eval_rel r (con "Emptyrec" [G; rA; lA; A; e])
-               (vNe (con "Emptyrec" [G; rA; lA; A; ne])).
+      eval_rel r (con "Emptyrec" [e; A; lA; rA; G])
+               (vNe (con "Emptyrec" [ne; A; lA; rA; G])).
 
 End EvalRel.

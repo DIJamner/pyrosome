@@ -29,7 +29,7 @@ Section Env.
 
   (* push a weakening onto a neutral term:  e  |->  exp_subst wkn e *)
   Definition wk_term (e : term) : term :=
-    con "exp_subst" [ann; ann; con "wkn" [ann; ann; ann]; ann; ann; e].
+    con "exp_subst" [e; ann; ann; con "wkn" [ann; ann; ann]; ann; ann].
 
   Fixpoint weaken_val (v : sval) : sval :=
     match v with
@@ -54,8 +54,8 @@ Section Env.
      with the already-built inner variables weakened.  Base ([emp]/metavar): []. *)
   Fixpoint eval_env (G : term) : senv :=
     match G with
-    | con "ext" [G'; i; A] =>
-        vNe (con "hd" [G'; i; A]) :: map weaken_val (eval_env G')
+    | con "ext" [A; i; G'] =>
+        vNe (con "hd" [A; i; G']) :: map weaken_val (eval_env G')
     | _ => []
     end.
 
