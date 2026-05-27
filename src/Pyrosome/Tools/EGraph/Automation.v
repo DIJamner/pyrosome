@@ -21,6 +21,7 @@ From coqutil Require Import Map.Interface.
 From Utils Require Import Monad.
 From Pyrosome.Tools Require Import PosRenaming.
 From Stdlib Require Import NArith.
+From Stdlib Require Import Classes.RelationClasses.
 Import StateMonad.
 Import StringInstantiation.
 
@@ -83,6 +84,15 @@ Instance depth_analysis : analysis string string (option positive) :=
 (*    compiled rule_set sound under lang_model -- is the Phase 3<->6   *)
 (*    interface; only optimize_sequent_FORWARD is needed for it).     *)
 (* ================================================================== *)
+(* Trivial positive-side facts the soundness instantiation needs.
+   [positive_Eqb_ok] exists only as a [#[local]] instance in
+   PosRenamingProperties, so reprove it here. *)
+Lemma positive_Eqb_ok : Eqb_ok positive_Eqb.
+Proof. intros a b; unfold eqb, positive_Eqb; destruct (Pos.eqb_spec a b); auto. Qed.
+
+Lemma pos_lt_asym : Asymmetric Pos.lt.
+Proof. intros x y h1 h2; exact (Pos.lt_irrefl x (Pos.lt_trans _ _ _ h1 h2)). Qed.
+
 Section ReducingSkeleton.
 
   Local Notation pos_schedule :=
@@ -94,19 +104,48 @@ Section ReducingSkeleton.
     (Defs.egraph_reducing_equal_step TrieMap.ptree_map_plus (@pos_trie_map)
        Pos.succ PosListMap.sort_of (@compat_intersect)).
 
-  (* PLACEHOLDER (Phase 3/6 interface): every rule_set in [sched] is sound
-     under [lang_model PosListMap.sort_of l'].  Stated trivially so the
-     skeleton composes; the real condition needs saturation soundness. *)
-  Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop := True.
+  (* The real Phase-3/6 interface (no longer a placeholder): [sort_of] is
+     fresh in [l'] (guaranteed by the renaming, which reserves position 1),
+     and every compiled rule_set in [sched] satisfies the saturation
+     hypotheses under [lang_model PosListMap.sort_of l'] (Theorems.v's
+     [schedule_sound_real]).  Discharged downstream by
+     [egraph_reducing_equal'_to_pos] from [build_rule_set] +
+     [optimize_sequent_forward] + [pt_spaced_intersect_correct]. *)
+  Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop :=
+    fresh PosListMap.sort_of l' /\
+    @Theorems.schedule_sound_real positive positive_Eqb positive_default
+      TrieMap.trie_map TrieMap.ptree_map_plus (@pos_trie_map) Pos.succ
+      PosListMap.sort_of Pos.lt (@compat_intersect) l' sched.
 
-  Lemma egraph_reducing_equal_step_sound
-    (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
-    (a b : term positive) (t : sort positive) :
-    wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
-    schedule_sound l' sched ->
-    let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
-    res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
-  Proof. Admitted.
+  (* The egraph-soundness lemmas require [map.ok] of the egraph's maps.  For
+     the positive instantiation these are [map.ok (TrieMap.trie_map A)] (the
+     idx/symbol map) and [map.ok (@pos_trie_map A)] (the db trie).  Neither is
+     currently proven in the tree -- [trie_map_ok] is [Abort]ed on its
+     [fold_spec] (TrieMap.v) and [pos_trie_map] has no [map.ok] at all.  Both
+     are taken as assumptions in this inner section (the deferred
+     trie-lawfulness obligation), confined here so they do not leak onto
+     [schedule_sound] / the wrapper lemmas / [egraph_sound]. *)
+  Section StepInst.
+    Context (trie_map_ok : forall A, map.ok (TrieMap.trie_map A)).
+    Context (pos_trie_map_ok : forall A, map.ok (@pos_trie_map A)).
+
+    Lemma egraph_reducing_equal_step_sound
+      (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
+      (a b : term positive) (t : sort positive) :
+      wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
+      schedule_sound l' sched ->
+      let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
+      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
+    Proof.
+      intros Hwf Ha Hb [Hfresh Hsched].
+      exact (@Theorems.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
+               positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
+               TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
+               Pos.succ PosListMap.sort_of Pos.lt
+               pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+               (@compat_intersect) l' Hwf Hfresh sched rfuel sat_fuel a b t Ha Hb Hsched).
+    Qed.
+  End StepInst.
 
   Lemma egraph_reducing_cong_sound
     (l' : lang positive) (sched : pos_schedule)
