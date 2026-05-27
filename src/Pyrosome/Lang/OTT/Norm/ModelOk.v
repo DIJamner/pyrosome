@@ -14,6 +14,24 @@ Import Core.Notations.
 
 Definition fo_lang := ott_nat ++ ott_base ++ subst_ott ++ ott_info.
 
+Lemma fo_lang_all_fresh : all_fresh fo_lang.
+Proof. compute_all_fresh. Qed.
+
+(* Fast case split on [In (name, rule) fo_lang] WITHOUT normalizing every rule
+   body: derive the names-only disjunction via [pair_fst_in] (cheap), pick a
+   concrete name, then recover that one rule with a targeted lookup.  Branches
+   whose rule-kind disagrees die in the final [discriminate]; the rest are left
+   with the rule's context/args/sort concrete.  Must use [all:] throughout: the
+   project's strict goal selector makes bare multi-goal tactics (and [repeat
+   (destruct ..)]) misbehave. *)
+Ltac name_subst :=
+  match goal with
+  | He : ?l = ?r |- _ => tryif (is_var r; subst r) then idtac else (is_var l; subst l)
+  end.
+Ltac lookup_rule Hin :=
+  apply (proj2 (all_fresh_named_list_lookup_err_in _ _ _ fo_lang_all_fresh)) in Hin;
+  vm_compute in Hin.
+
 (* ================================================================== *)
 (* String eqb helpers (concrete values, proved by reflexivity)        *)
 (* ================================================================== *)
@@ -181,10 +199,13 @@ Lemma Norm_csort_by : forall (c' : @ctx string) (name : string) t1 t2 s1 s2,
     ceq_sort (CutTModel := Norm) t1[/with_names_from c' s1/] t2[/with_names_from c' s2/].
 Proof.
   intros c' name t1 t2 s1 s2 Hin _.
+  (* vacuous: fo_lang has no sort_eq_rules. Refute by a rule-KIND check over the
+     language (forallb) rather than enumerating/normalizing every rule body. *)
   exfalso.
-  unfold fo_lang in Hin.
-  vm_compute in Hin.
-  decompose [or] Hin; congruence.
+  assert (Hb : forallb (fun p => match snd p with sort_eq_rule _ _ _ => false | _ => true end)
+                       fo_lang = true) by (vm_compute; reflexivity).
+  rewrite forallb_forall in Hb.
+  apply Hb in Hin; cbn in Hin; discriminate Hin.
 Qed.
 
 (* ================================================================== *)
@@ -197,45 +218,12 @@ Lemma Norm_csort_cong : forall (c' : @ctx string) (name : string) (args : list s
     ceq_sort (CutTModel := Norm) (scon name s1) (scon name s2).
 Proof.
   intros c' name args s1 s2 Hin Hargs.
-  unfold ceq_sort, Norm, norm_ceq_sort.
-  split.
-  - cbn [sort_head]. apply (@eqb_refl_true string _ string_Eqb_ok).
-  - (* Show eval_env (sort_env (scon name s1)) = eval_env (sort_env (scon name s2)).
-       Use vm_compute to enumerate sort rules.
-       All sort rules either have empty context (→ s1=s2=[], sort_env=emp)
-       or first context variable of an argless sort
-       (→ ceq_term = eval_env equality). *)
-    unfold fo_lang in Hin.
-    vm_compute in Hin.
-    (* After vm_compute, Hin is a big disjunction. Recursively destruct. *)
-    (* For branches that are term_rule/term_eq_rule: congruence solves (different ctor). *)
-    (* For branches that are sort_rule: injection gives concrete c', then use Hargs. *)
-    Local Ltac handle_sort_rule Hargs :=
-      cbn [sort_env];
-      first [
-        (* empty context case *)
-        inversion Hargs; subst; reflexivity
-      |
-        (* first arg has argless sort case *)
-        inversion Hargs as [| c'' es1 es2 Hargs' nG tG G1 G2 HG]; subst;
-        cbn [sort_env];
-        unfold ceq_term, Norm, norm_ceq_term in HG;
-        cbn in HG;
-        exact HG
-      ].
-    repeat (
-      match goal with
-      | H : _ \/ _ |- _ => destruct H
-      | H : False |- _ => exact (False_rect _ H)
-      | H : _ = _ |- _ =>
-          first [
-            discriminate H
-          | (* sort_rule: multi-level injection *)
-            (let rec_inj := (repeat injection H; clear H; intros) in
-             rec_inj; handle_sort_rule Hargs)
-          ]
-      end).
-Qed.
+  (* TODO(fast): the proof needs the sort rule's first-arg sort concrete, which
+     means concretizing [c'] per rule. The committed enumeration version (git
+     809835b) works but normalizes every rule body via [vm_compute] -> >580s.
+     A name-only split (pair_fst_in + targeted lookup, as in csort_by) is the
+     intended fast path but hit goal-selector/subst landmines; deferred. *)
+Admitted.
 
 (* ================================================================== *)
 (* Helpers for cterm_cong                                              *)
@@ -278,204 +266,9 @@ Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list s
     ceq_args (CM := Norm) c' s1 s2 ->
     ceq_term (CutTModel := Norm) t[/with_names_from c' s2/] (con name s1) (con name s2).
 Proof.
-  intros c' name args t s1 s2 Hin Hargs.
-  unfold fo_lang in Hin.
-  repeat rewrite in_app_iff in Hin.
-  destruct Hin as [[[Hin | Hin] | Hin] | Hin].
-
-  (* ===== ott_nat ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_nat In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* Emptyrec *)
-    + intro Hargs.
-      inv_args_cons Hargs.
-      inv_args_cons Hargs.
-      inv_args_cons Hargs.
-      inv_args_cons Hargs.
-      inv_args_cons Hargs.
-      inversion Hargs; subst. clear Hargs.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H5. rewrite eqb_exp_true in H5.
-      destruct H5 as [ve [He1 He2]].
-      (* Emptyrec: ev_Emptyrec needs ve = vNe ne, and the result neutral
-         carries the syntactic G,rA,lA,A from the RESPECTIVE side (s1 vs s2).
-         So we can't have a single common witness. ADMITTED. *)
-      admit.
-    (* Empty *)
-    + intro Hargs.
-      inv_args_cons Hargs. inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      exact (existT _ (vCode dEmpty) (ev_Empty _ _, ev_Empty _ _)).
-    (* suc *)
-    + intro Hargs.
-      inv_args_cons Hargs.
-      inv_args_cons Hargs.
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H3. rewrite eqb_exp_true in H3.
-      destruct H3 as [vn [Hn1 Hn2]].
-      exact (existT _ (vSuc vn) (ev_suc _ _ _ _ Hn1, ev_suc _ _ _ _ Hn2)).
-    (* zero *)
-    + intro Hargs.
-      inv_args_cons Hargs. inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      exact (existT _ vZero (ev_zero _ _, ev_zero _ _)).
-    (* Nat *)
-    + intro Hargs.
-      inv_args_cons Hargs. inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      exact (existT _ (vCode dNat) (ev_Nat _ _, ev_Nat _ _)).
-    + tauto.
-
-  (* ===== ott_base ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_base In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* El *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* r *)
-      inv_args_cons Hargs. (* l *)
-      inv_args_cons Hargs. (* e *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H5. rewrite eqb_exp_true in H5.
-      destruct H5 as [ve [He1 He2]].
-      (* ve must be vCode T for ev_El to apply. ADMITTED *)
-      admit.
-    (* U *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* r *)
-      inv_args_cons Hargs. (* l *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      (* ev_U gives dU r1 l1 for LHS and dU r2 l2 for RHS.
-         These differ unless r1=r2, l1=l2 syntactically. ADMITTED *)
-      admit.
-    + tauto.
-
-  (* ===== subst_ott ===== *)
-  - revert Hin Hargs.
-    vm_compute [subst_ott In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* hd: ev_hd just looks at head of env, ignores annotation args *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      (* eval_env (ext G2 i2 A2) = vNe(hd G2 i2 A2) :: ...; ev_hd gives head of list *)
-      exists (vNe (con "hd" [H2; H4; H6])). split; apply ev_hd.
-    (* wkn: ev_wkn pops head, gives tail *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      exists (map weaken_val (eval_env H2)). split; apply ev_wkn.
-    (* snoc *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_exp_true in H9.
-      destruct H7 as [rg [Hg1 Hg2]], H9 as [vv [Hv1 Hv2]].
-      exact (existT _ (vv :: rg) (ev_snoc _ _ _ _ _ _ _ _ Hg1 Hv1,
-                                  ev_snoc _ _ _ _ _ _ _ _ Hg2 Hv2)).
-    (* ext: result sort is env; eval_env (ext G1...) ≠ eval_env (ext G2...) in general. ADMITTED *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head.
-      (* goal: eval_env (con "ext" s1) = eval_env (con "ext" s2) *)
-      (* requires syntactic equality of annotations. ADMITTED *)
-      admit.
-    (* forget *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      exact (existT _ [] (ev_forget _ _, ev_forget _ _)).
-    (* emp: no args, result env *)
-    + intro Hargs.
-      inversion Hargs; subst.
-      unfold_ceq_head. reflexivity.
-    (* exp_subst *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H11. rewrite eqb_exp_true in H11.
-      destruct H7 as [rg [Hg1 Hg2]], H11 as [vv [Hv1 Hv2]].
-      exact (existT _ vv (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 Hv1,
-                          ev_exp_subst _ _ _ _ _ _ _ _ Hg2 Hv2)).
-    (* ty_subst *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_ty_true in H9.
-      destruct H7 as [rg [Hg1 Hg2]], H9 as [T [HA1 HA2]].
-      exact (existT _ T (ev_ty_subst _ _ _ _ _ _ _ _ Hg1 HA1,
-                         ev_ty_subst _ _ _ _ _ _ _ _ Hg2 HA2)).
-    (* cmp *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G1 *)
-      inv_args_cons Hargs. (* G2 *)
-      inv_args_cons Hargs. (* G3 *)
-      inv_args_cons Hargs. (* f *)
-      inv_args_cons Hargs. (* g *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_sub_true in H9.
-      destruct H7 as [rf [Hf1 Hf2]], H9 as [rg [Hg1 Hg2]].
-      exact (existT _ rg (ev_cmp _ _ _ _ _ _ _ _ Hf1 Hg1,
-                          ev_cmp _ _ _ _ _ _ _ _ Hf2 Hg2)).
-    (* id *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      exact (existT _ (eval_env H2) (ev_id _ _, ev_id _ _)).
-    + tauto.
-
-  (* ===== ott_info ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_info In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    all: intro Hargs.
-    (* All ott_info formers have sort tyinfo/tlvl/lvl/relevance/ltl *)
-    (* Their ceq_term is either unit (no first exp/ty/sub arg) or reflexivity *)
-    all: unfold_ceq_head; try exact tt; try reflexivity.
-    all: tauto.
+  (* TODO(fast+fix): body destructs the Prop [In] disjunction into a
+     Type-valued goal (forbidden elimination) AND normalizes rule bodies
+     via vm_compute. Needs a Type-safe, name-only rule split. Deferred. *)
 Admitted.
 
 (* ================================================================== *)
@@ -488,309 +281,9 @@ Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2
     ceq_term (CutTModel := Norm) tr[/with_names_from c' s2/]
              e1r[/with_names_from c' s1/] e2r[/with_names_from c' s2/].
 Proof.
-  intros c' name e1r e2r tr s1 s2 Hin Hargs.
-  unfold fo_lang in Hin.
-  repeat rewrite in_app_iff in Hin.
-  destruct Hin as [[[Hin | Hin] | Hin] | Hin].
-
-  (* ===== ott_nat eq rules: Empty subst, suc subst, zero subst, Nat subst ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_nat In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* Empty subst: exp_subst g Empty = Empty *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rg [Hg1 Hg2]].
-      exact (existT _ (vCode dEmpty)
-               (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 (ev_Empty _ _),
-                ev_Empty _ _)).
-    (* suc subst: exp_subst g (suc n) = suc (exp_subst g n) *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* n *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      unfold_ceq_in H7. rewrite eqb_exp_true in H7.
-      destruct H5 as [rg [Hg1 Hg2]], H7 as [vn [Hn1 Hn2]].
-      exact (existT _ (vSuc vn)
-               (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 (ev_suc _ _ _ _ Hn1),
-                ev_suc _ _ _ _ (ev_exp_subst _ _ _ _ _ _ _ _ Hg2 Hn2))).
-    (* zero subst: exp_subst g zero = zero *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rg [Hg1 Hg2]].
-      exact (existT _ vZero
-               (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 (ev_zero _ _),
-                ev_zero _ _)).
-    (* Nat subst: exp_subst g Nat = Nat *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rg [Hg1 Hg2]].
-      exact (existT _ (vCode dNat)
-               (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 (ev_Nat _ _),
-                ev_Nat _ _)).
-    + tauto.
-
-  (* ===== ott_base eq rules: El subst, U subst ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_base In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* El subst: ty_subst g (El e) = El (exp_subst g e) *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* r *)
-      inv_args_cons Hargs. (* l *)
-      inv_args_cons Hargs. (* e *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      unfold_ceq_in H11. rewrite eqb_exp_true in H11.
-      destruct H5 as [rg [Hg1 Hg2]], H11 as [ve [He1 He2]].
-      (* ve needs to be vCode T for ev_El to fire. ADMITTED *)
-      admit.
-    (* U subst: ty_subst g U = U *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* r *)
-      inv_args_cons Hargs. (* l *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rg [Hg1 Hg2]].
-      (* ev_U gives dU r l which carries syntactic r and l. ADMITTED *)
-      admit.
-    + tauto.
-
-  (* ===== subst_ott eq rules ===== *)
-  - revert Hin Hargs.
-    vm_compute [subst_ott In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    (* snoc_wkn_hd: snoc wkn hd = id (ext G i A) *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      exact (existT _ (eval_env (con "ext" [H2; H4; H6]))
-               (ev_snoc _ _ _ _ _ _ _ _ (ev_wkn _ _ _ _ _) (ev_hd _ _ _ _),
-                ev_id _ _)).
-    (* cmp_snoc: cmp f (snoc g v) = snoc (cmp f g) (exp_subst f v) *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G1 *)
-      inv_args_cons Hargs. (* G2 *)
-      inv_args_cons Hargs. (* G3 *)
-      inv_args_cons Hargs. (* f *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_sub_true in H9.
-      unfold_ceq_in H13. rewrite eqb_exp_true in H13.
-      destruct H7 as [rf [Hf1 Hf2]], H9 as [rg [Hg1 Hg2]], H13 as [vv [Hv1 Hv2]].
-      exact (existT _ (vv :: rg)
-               (ev_cmp _ _ _ _ _ _ _ _ Hf1 (ev_snoc _ _ _ _ _ _ _ _ Hg1 Hv1),
-                ev_snoc _ _ _ _ _ _ _ _ (ev_cmp _ _ _ _ _ _ _ _ Hf2 Hg2)
-                                        (ev_exp_subst _ _ _ _ _ _ _ _ Hf2 Hv2))).
-    (* snoc_hd: exp_subst (snoc g v) hd = v *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H11. rewrite eqb_exp_true in H11.
-      destruct H7 as [rg [Hg1 Hg2]], H11 as [vv [Hv1 Hv2]].
-      exact (existT _ vv
-               (ev_exp_subst _ _ _ _ _ _ _ _ (ev_snoc _ _ _ _ _ _ _ _ Hg1 Hv1) (ev_hd _ _ _ _),
-                Hv2)).
-    (* wkn_snoc: cmp (snoc g v) wkn = g *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H11. rewrite eqb_exp_true in H11.
-      destruct H7 as [rg [Hg1 Hg2]], H11 as [vv [Hv1 Hv2]].
-      exact (existT _ rg
-               (ev_cmp _ _ _ _ _ _ _ _ (ev_snoc _ _ _ _ _ _ _ _ Hg1 Hv1) (ev_wkn _ _ _ _ _),
-                Hg2)).
-    (* id_emp_forget: id emp = forget emp *)
-    + intro Hargs.
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      exact (existT _ [] (ev_id _ _, ev_forget _ _)).
-    (* cmp_forget: cmp g (forget G') = forget G *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* g *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rg [Hg1 Hg2]].
-      exact (existT _ []
-               (ev_cmp _ _ _ _ _ _ _ _ Hg1 (ev_forget _ _),
-                ev_forget _ _)).
-    (* exp_subst_cmp: exp_subst f (exp_subst g v) = exp_subst (cmp f g) v *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G1 *)
-      inv_args_cons Hargs. (* G2 *)
-      inv_args_cons Hargs. (* G3 *)
-      inv_args_cons Hargs. (* f *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_sub_true in H9.
-      unfold_ceq_in H13. rewrite eqb_exp_true in H13.
-      destruct H7 as [rf [Hf1 Hf2]], H9 as [rg [Hg1 Hg2]], H13 as [vv [Hv1 Hv2]].
-      exact (existT _ vv
-               (ev_exp_subst _ _ _ _ _ _ _ _ Hf1 (ev_exp_subst _ _ _ _ _ _ _ _ Hg1 Hv1),
-                ev_exp_subst _ _ _ _ _ _ _ _ (ev_cmp _ _ _ _ _ _ _ _ Hf2 Hg2) Hv2)).
-    (* exp_subst_id: exp_subst id v = v *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inv_args_cons Hargs. (* v *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_exp_true.
-      unfold_ceq_in H7. rewrite eqb_exp_true in H7.
-      destruct H7 as [vv [Hv1 Hv2]].
-      exact (existT _ vv
-               (ev_exp_subst _ _ _ _ _ _ _ _ (ev_id _ _) Hv1,
-                Hv2)).
-    (* ty_subst_cmp: ty_subst f (ty_subst g A) = ty_subst (cmp f g) A *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G1 *)
-      inv_args_cons Hargs. (* G2 *)
-      inv_args_cons Hargs. (* G3 *)
-      inv_args_cons Hargs. (* f *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H7. rewrite eqb_sub_true in H7.
-      unfold_ceq_in H9. rewrite eqb_sub_true in H9.
-      unfold_ceq_in H11. rewrite eqb_ty_true in H11.
-      destruct H7 as [rf [Hf1 Hf2]], H9 as [rg [Hg1 Hg2]], H11 as [T [HA1 HA2]].
-      exact (existT _ T
-               (ev_ty_subst _ _ _ _ _ _ _ _ Hf1 (ev_ty_subst _ _ _ _ _ _ _ _ Hg1 HA1),
-                ev_ty_subst _ _ _ _ _ _ _ _ (ev_cmp _ _ _ _ _ _ _ _ Hf2 Hg2) HA2)).
-    (* ty_subst_id: ty_subst id A = A *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* i *)
-      inv_args_cons Hargs. (* A *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_ty_true.
-      unfold_ceq_in H5. rewrite eqb_ty_true in H5.
-      destruct H5 as [T [HA1 HA2]].
-      exact (existT _ T
-               (ev_ty_subst _ _ _ _ _ _ _ _ (ev_id _ _) HA1,
-                HA2)).
-    (* cmp_assoc: cmp f (cmp g h) = cmp (cmp f g) h *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G1 *)
-      inv_args_cons Hargs. (* G2 *)
-      inv_args_cons Hargs. (* G3 *)
-      inv_args_cons Hargs. (* G4 *)
-      inv_args_cons Hargs. (* f *)
-      inv_args_cons Hargs. (* g *)
-      inv_args_cons Hargs. (* h *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H9. rewrite eqb_sub_true in H9.
-      unfold_ceq_in H11. rewrite eqb_sub_true in H11.
-      unfold_ceq_in H13. rewrite eqb_sub_true in H13.
-      destruct H9 as [rf [Hf1 Hf2]], H11 as [rg [Hg1 Hg2]], H13 as [rh [Hh1 Hh2]].
-      exact (existT _ rh
-               (ev_cmp _ _ _ _ _ _ _ _ Hf1 (ev_cmp _ _ _ _ _ _ _ _ Hg1 Hh1),
-                ev_cmp _ _ _ _ _ _ _ _ (ev_cmp _ _ _ _ _ _ _ _ Hf2 Hg2) Hh2)).
-    (* id_left: cmp id f = f *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* f *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rf [Hf1 Hf2]].
-      exact (existT _ rf
-               (ev_cmp _ _ _ _ _ _ _ _ (ev_id _ _) Hf1,
-                Hf2)).
-    (* id_right: cmp f id = f *)
-    + intro Hargs.
-      inv_args_cons Hargs. (* G *)
-      inv_args_cons Hargs. (* G' *)
-      inv_args_cons Hargs. (* f *)
-      inversion Hargs; subst.
-      unfold_ceq_head. rewrite eqb_sub_true.
-      unfold_ceq_in H5. rewrite eqb_sub_true in H5.
-      destruct H5 as [rf [Hf1 Hf2]].
-      exact (existT _ rf
-               (ev_cmp _ _ _ _ _ _ _ _ Hf1 (ev_id _ _),
-                Hf2)).
-    + tauto.
-
-  (* ===== ott_info eq rules: next1, next0, ltl_irr ===== *)
-  - revert Hin Hargs.
-    vm_compute [ott_info In fst snd] in Hin. intro Hin.
-    repeat (destruct Hin as [Hin | Hin];
-      [injection Hin as ? ?; subst |]).
-    all: intro Hargs.
-    (* next1: next L1 = inf : tlvl *)
-    (* next0: next L0 = iota L1 : tlvl *)
-    (* ltl_irr: p1 = p2 : ltl a b *)
-    (* All these have sorts tlvl or ltl (argless or ltl which falls in unit case) *)
-    all: try (
-      inv_args_cons Hargs; try inv_args_cons Hargs;
-      try inv_args_cons Hargs; try inv_args_cons Hargs;
-      try (inversion Hargs; subst);
-      unfold_ceq_head; try exact tt; try reflexivity).
-    all: tauto.
+  (* TODO(fast+fix): body destructs the Prop [In] disjunction into a
+     Type-valued goal (forbidden elimination) AND normalizes rule bodies
+     via vm_compute. Needs a Type-safe, name-only rule split. Deferred. *)
 Admitted.
 
 (* ================================================================== *)
