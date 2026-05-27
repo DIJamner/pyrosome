@@ -991,6 +991,72 @@ Section WithMap.
       discriminate.
   Qed.
 
+  Lemma project_filter_variable_flags (P : idx -> bool) (query_vars sigma : list idx) (d : idx) :
+    List.NoDup query_vars ->
+    List.length sigma = List.length query_vars ->
+    map fst (filter snd (combine sigma
+               (variable_flags idx Eqb_idx query_vars (filter P query_vars))))
+    = map (fun cv => named_list_lookup d (combine query_vars sigma) cv) (filter P query_vars).
+  Proof.
+    revert sigma.
+    induction query_vars as [|q qs IH]; intros sigma Hnodup Hlen.
+    - (* base case: query_vars = [] *)
+      cbn in Hlen.
+      destruct sigma; cbn in *; [ reflexivity | discriminate ].
+    - (* step case: query_vars = q::qs *)
+      destruct sigma as [|s ss].
+      + cbn in Hlen. discriminate.
+      + injection Hlen as Hlen'.
+        inversion Hnodup as [ | ?? Hq_notin Hnodup_qs]; subst.
+        cbn [filter].
+        destruct (P q) eqn:HPq.
+        * (* P q = true, so filter P (q::qs) = q :: filter P qs *)
+          cbn [variable_flags].
+          rewrite (@eqb_refl_true idx Eqb_idx Eqb_idx_ok q).
+          cbn [combine filter fst map].
+          f_equal.
+          cbn [snd].
+          cbn [map fst].
+          rewrite (IH ss Hnodup_qs Hlen').
+          cbn [named_list_lookup].
+          rewrite (@eqb_refl_true idx Eqb_idx Eqb_idx_ok q).
+          f_equal.
+          symmetry.
+          apply map_ext_in.
+          intros cv Hcv_in.
+          apply filter_In in Hcv_in as [Hcv_qs _].
+          cbn [named_list_lookup].
+          assert (Hneq : eqb cv q = false).
+          { apply (@eqb_ineq_false idx Eqb_idx Eqb_idx_ok).
+            right. intro Heq. subst. exact (Hq_notin Hcv_qs). }
+          rewrite Hneq. reflexivity.
+        * (* P q = false *)
+          assert (Hvf : variable_flags idx Eqb_idx (q :: qs) (filter P qs) =
+                        false :: variable_flags idx Eqb_idx qs (filter P qs)).
+          { destruct (filter P qs) as [|c cs] eqn:Hfil.
+            - cbn. reflexivity.
+            - cbn [variable_flags].
+              assert (Hc_in_filter : In c (filter P qs)).
+              { rewrite Hfil. left. reflexivity. }
+              apply filter_In in Hc_in_filter as [Hc_qs _].
+              assert (Hneq_qc : eqb q c = false).
+              { apply (@eqb_ineq_false idx Eqb_idx Eqb_idx_ok).
+                left. intro Heq. subst. exact (Hq_notin Hc_qs). }
+              rewrite Hneq_qc. reflexivity. }
+          rewrite Hvf.
+          cbn [combine filter snd fst map].
+          rewrite (IH ss Hnodup_qs Hlen').
+          symmetry.
+          apply map_ext_in.
+          intros cv Hcv_in.
+          apply filter_In in Hcv_in as [Hcv_qs _].
+          cbn [named_list_lookup].
+          assert (Hneq : eqb cv q = false).
+          { apply (@eqb_ineq_false idx Eqb_idx Eqb_idx_ok).
+            right. intro Heq. subst. exact (Hq_notin Hcv_qs). }
+          rewrite Hneq. reflexivity.
+  Qed.
+
   (*
   (*Defined separately for proof convenience.
     Equivalent to a term using ~ atom_in_egraph
