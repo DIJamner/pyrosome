@@ -29,21 +29,23 @@ Section WithVar.
 
   Section Eval.
     Context (l : lang)
+            (c : ctx)
             {CM : CutTModel}
-            {CMok : CutTModel_ok l}.
+            {CMok : CutTModel_ok l c}.
 
-    (* combined per-proof-term property (sort- and term-equality) *)
-    Local Notation Pp c p :=
-      (((forall t1 t2, check_sort_proof l c p = Some (t1, t2) -> ceq_sort (CutTModel:=CM) c t1 t2)
-        * (forall t e1 e2, check_proof l c p = Some (e1, e2, t) -> ceq_term (CutTModel:=CM) c t e1 e2))%type).
+    (* combined per-proof-term property (sort- and term-equality).  The ambient
+       context [c] is fixed (it never changes during the cut-free fold). *)
+    Local Notation Pp p :=
+      (((forall t1 t2, check_sort_proof l c p = Some (t1, t2) -> ceq_sort (CutTModel:=CM) t1 t2)
+        * (forall t e1 e2, check_proof l c p = Some (e1, e2, t) -> ceq_term (CutTModel:=CM) t e1 e2))%type).
 
     (* The argument-list fold, consuming the positional (fold_right prod) IH that
        pf_rect produces for the [pcon] case. *)
-    Lemma eval_args c s
-      : fold_right (fun p => prod (Pp c p)) unit s ->
+    Lemma eval_args s
+      : fold_right (fun p => prod (Pp p)) unit s ->
         forall c' lhs rhs,
           check_args_proof (check_proof l c) s c' = Some (lhs, rhs) ->
-          ceq_args (CM:=CM) c c' lhs rhs.
+          ceq_args (CM:=CM) c' lhs rhs.
     Proof.
       induction s as [| p s IHs]; intros IH c' lhs rhs Hc.
       - destruct c'; cbn in Hc; try discriminate.
@@ -64,7 +66,7 @@ Section WithVar.
         + rewrite Heq. eapply (snd Pp_p); eauto.
     Qed.
 
-    Theorem eval c p : Pp c p.
+    Theorem eval p : Pp p.
     Proof.
       induction p; split; intros; cbn in *;
         (* break down all the matches in the check-equation H *)
@@ -92,13 +94,13 @@ Section WithVar.
                       eval_args with utils.
     Qed.
 
-    Definition eval_sort c p t1 t2
-      (H : check_sort_proof l c p = Some (t1, t2)) : ceq_sort (CutTModel:=CM) c t1 t2 :=
-      fst (eval c p) t1 t2 H.
+    Definition eval_sort p t1 t2
+      (H : check_sort_proof l c p = Some (t1, t2)) : ceq_sort (CutTModel:=CM) t1 t2 :=
+      fst (eval p) t1 t2 H.
 
-    Definition eval_term c p t e1 e2
-      (H : check_proof l c p = Some (e1, e2, t)) : ceq_term (CutTModel:=CM) c t e1 e2 :=
-      snd (eval c p) t e1 e2 H.
+    Definition eval_term p t e1 e2
+      (H : check_proof l c p = Some (e1, e2, t)) : ceq_term (CutTModel:=CM) t e1 e2 :=
+      snd (eval p) t e1 e2 H.
 
   End Eval.
 

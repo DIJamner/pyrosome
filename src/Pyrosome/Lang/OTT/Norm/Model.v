@@ -28,7 +28,7 @@ Section Model.
   Definition sort_env (S : sort) : term :=
     match S with scon _ (G :: _) => G | _ => con "emp" [] end.
 
-  Definition norm_ceq_term (c : ctx) (t : sort) (e1 e2 : term) : Type :=
+  Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
     match t with
     | scon n (G :: _) =>
         if eqb n "exp"
@@ -41,7 +41,7 @@ Section Model.
     | _ => (eval_env e1 = eval_env e2)    (* the [env] sort (no args) *)
     end.
 
-  Definition norm_ceq_sort (c : ctx) (S1 S2 : sort) : Type :=
+  Definition norm_ceq_sort (S1 S2 : sort) : Type :=
     ((eqb (sort_head S1) (sort_head S2) = true)
      * (eval_env (sort_env S1) = eval_env (sort_env S2)))%type.
 

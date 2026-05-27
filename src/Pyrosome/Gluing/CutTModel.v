@@ -45,11 +45,17 @@ Section WithVar.
 
   Section WithLang.
     Context (l : lang).
+    (* The ambient context is CONSTANT across a model (mirroring TreeProofs, where
+       [check_proof]'s context never changes during the cut-free fold), so we fix
+       it here rather than threading it through every judgment.  [ceq_sort]/
+       [ceq_term] drop their context argument; only [cterm_var] still refers to
+       [c] (a variable is well-formed against the ambient context). *)
+    Context (c : ctx).
 
     Class CutTModel :=
       {
-        ceq_sort : ctx -> sort -> sort -> Type;
-        ceq_term : ctx -> sort -> term -> term -> Type;
+        ceq_sort : sort -> sort -> Type;
+        ceq_term : sort -> term -> term -> Type;
       }.
 
     Section WithCM.
@@ -57,56 +63,57 @@ Section WithVar.
 
       (* Argument equality, built pointwise from [ceq_term] exactly as
          TreeProofs.check_args_proof checks an argument list (each argument at the
-         rule-context type substituted by the preceding right-hand values). *)
-      Inductive ceq_args (c : ctx) : ctx -> list term -> list term -> Type :=
-      | ceq_args_nil : ceq_args c [] [] []
+         rule-context type substituted by the preceding right-hand values).  The
+         index is the rule's context [c']; the ambient [c] is the fixed one above. *)
+      Inductive ceq_args : ctx -> list term -> list term -> Type :=
+      | ceq_args_nil : ceq_args [] [] []
       | ceq_args_cons : forall c' es1 es2,
-          ceq_args c c' es1 es2 ->
+          ceq_args c' es1 es2 ->
           forall name t e1 e2,
-            ceq_term c t[/with_names_from c' es2/] e1 e2 ->
-            ceq_args c ((name,t)::c') (e1::es1) (e2::es2).
+            ceq_term t[/with_names_from c' es2/] e1 e2 ->
+            ceq_args ((name,t)::c') (e1::es1) (e2::es2).
 
       (* The cut-free operations.  Each lines up with a [check_proof] /
          [check_sort_proof] case (TreeProofs.v:169-228). *)
       Class CutTModel_ok :=
         {
           (* pvar *)
-          cterm_var : forall c n t,
-            In (n, t) c -> ceq_term c t (var n) (var n);
+          cterm_var : forall n t,
+            In (n, t) c -> ceq_term t (var n) (var n);
           (* pcon, term_rule: congruence *)
-          cterm_cong : forall c c' name args t s1 s2,
+          cterm_cong : forall c' name args t s1 s2,
             In (name, term_rule c' args t) l ->
-            ceq_args c c' s1 s2 ->
-            ceq_term c t[/with_names_from c' s2/] (con name s1) (con name s2);
+            ceq_args c' s1 s2 ->
+            ceq_term t[/with_names_from c' s2/] (con name s1) (con name s2);
           (* pcon, term_eq_rule: axiom instance *)
-          cterm_by : forall c c' name e1 e2 t s1 s2,
+          cterm_by : forall c' name e1 e2 t s1 s2,
             In (name, term_eq_rule c' e1 e2 t) l ->
-            ceq_args c c' s1 s2 ->
-            ceq_term c t[/with_names_from c' s2/]
+            ceq_args c' s1 s2 ->
+            ceq_term t[/with_names_from c' s2/]
                      e1[/with_names_from c' s1/] e2[/with_names_from c' s2/];
           (* ptrans *)
-          cterm_trans : forall c t e1 e12 e2,
-            ceq_term c t e1 e12 -> ceq_term c t e12 e2 -> ceq_term c t e1 e2;
+          cterm_trans : forall t e1 e12 e2,
+            ceq_term t e1 e12 -> ceq_term t e12 e2 -> ceq_term t e1 e2;
           (* psym *)
-          cterm_sym : forall c t e1 e2,
-            ceq_term c t e1 e2 -> ceq_term c t e2 e1;
+          cterm_sym : forall t e1 e2,
+            ceq_term t e1 e2 -> ceq_term t e2 e1;
           (* pconv *)
-          cterm_conv : forall c t1 t2 e1 e2,
-            ceq_sort c t1 t2 -> ceq_term c t1 e1 e2 -> ceq_term c t2 e1 e2;
+          cterm_conv : forall t1 t2 e1 e2,
+            ceq_sort t1 t2 -> ceq_term t1 e1 e2 -> ceq_term t2 e1 e2;
 
           (* sort versions (check_sort_proof) *)
-          csort_cong : forall c c' name args s1 s2,
+          csort_cong : forall c' name args s1 s2,
             In (name, sort_rule c' args) l ->
-            ceq_args c c' s1 s2 ->
-            ceq_sort c (scon name s1) (scon name s2);
-          csort_by : forall c c' name t1 t2 s1 s2,
+            ceq_args c' s1 s2 ->
+            ceq_sort (scon name s1) (scon name s2);
+          csort_by : forall c' name t1 t2 s1 s2,
             In (name, sort_eq_rule c' t1 t2) l ->
-            ceq_args c c' s1 s2 ->
-            ceq_sort c t1[/with_names_from c' s1/] t2[/with_names_from c' s2/];
-          csort_trans : forall c t1 t12 t2,
-            ceq_sort c t1 t12 -> ceq_sort c t12 t2 -> ceq_sort c t1 t2;
-          csort_sym : forall c t1 t2,
-            ceq_sort c t1 t2 -> ceq_sort c t2 t1;
+            ceq_args c' s1 s2 ->
+            ceq_sort t1[/with_names_from c' s1/] t2[/with_names_from c' s2/];
+          csort_trans : forall t1 t12 t2,
+            ceq_sort t1 t12 -> ceq_sort t12 t2 -> ceq_sort t1 t2;
+          csort_sym : forall t1 t2,
+            ceq_sort t1 t2 -> ceq_sort t2 t1;
         }.
 
     End WithCM.
