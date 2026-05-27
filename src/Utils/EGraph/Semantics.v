@@ -7087,6 +7087,17 @@ Section WithMap.
     - rewrite (map_combine_fst qs vs Hlen). exact Hin.
   Qed.
 
+  (* Every element of a successfully-mapped list has a defined image. *)
+  Lemma list_Mmap_get_some (B : Type) (f : idx -> option B) (l : list idx) (l' : list B) :
+    list_Mmap f l = Some l' -> forall x, In x l -> exists b, f x = Some b.
+  Proof.
+    revert l'; induction l as [|a l IHl]; cbn [list_Mmap]; intros l' Hl x Hx.
+    - contradiction.
+    - destruct (f a) as [b0|] eqn:Hfa; cbn [Mbind option_monad] in Hl; [|discriminate].
+      destruct (list_Mmap f l) as [bl|] eqn:Hfl; cbn [Mbind option_monad] in Hl; [|discriminate].
+      destruct Hx as [->|Hx]; [exists b0; exact Hfa | exact (IHl _ eq_refl x Hx)].
+  Qed.
+
   (* The model assignment [a_q] for a query assignment: compose the
      interpretation [i] after the query-variable->idx map [env0], dropping
      keys whose idx is not in [i]. Realises the bind spec that
@@ -7274,6 +7285,42 @@ Section WithMap.
     rewrite Hqf, Hclause.
     apply (query_clause_ptr_sound i q inst (query_vars idx symbol r) frontier_n sigma a_q fsym nptr cvars q_f cargs cv Pf Hsnd Hnd Hlen Ha_q Hqf Hclause Hcvars Hba Hbcv).
     exact (Hsli fsym nptr cvars Hptr).
+  Qed.
+
+  (* From query-atom soundness plus query-variable coverage, [a_q] assigns a
+     well-formed domain value to every query variable -- erule_sound's first
+     premise. [Hcov]: every query var occurs in some reconstructed query atom. *)
+  Lemma a_q_wf_query_vars
+    (i : idx_map m.(domain)) (inst : instance)
+    (q : rule_set idx symbol symbol_map idx_map) (r : erule idx symbol)
+    (a_q : idx_map m.(domain)) (env0 : idx_map idx) :
+    egraph_sound_for_interpretation m i inst ->
+    (forall x, map.get a_q x
+       = match map.get env0 x with Some v => map.get i v | None => None end) ->
+    all (atom_sound_for_model m a_q) (query_atoms (query_clauses idx symbol symbol_map idx_map q) r) ->
+    (forall x, In x (query_vars idx symbol r) ->
+       exists a, In a (query_atoms (query_clauses idx symbol symbol_map idx_map q) r)
+                 /\ In x (atom_ret a :: atom_args a)) ->
+    forall x, In x (query_vars idx symbol r) ->
+      exists d, map.get a_q x = Some d /\ m.(domain_wf) d.
+  Proof.
+    intros Hsnd Ha_q Hsound Hcov x Hx.
+    destruct (Hcov x Hx) as [ a [ Ha_in Hx_in ] ].
+    pose proof (in_all _ _ _ Hsound Ha_in) as Ha_snd.
+    unfold atom_sound_for_model in Ha_snd.
+    destruct (list_Mmap (map.get a_q) (atom_args a)) as [doms|] eqn:Hdoms;
+      cbn [Is_Some_satisfying] in Ha_snd; [|contradiction].
+    destruct (map.get a_q (atom_ret a)) as [outv|] eqn:Hret;
+      cbn [Is_Some_satisfying] in Ha_snd; [|contradiction].
+    assert (Hax : exists d, map.get a_q x = Some d).
+    { destruct Hx_in as [Hxret|Hxargs].
+      - subst x. exists outv. exact Hret.
+      - exact (list_Mmap_get_some _ _ _ _ Hdoms x Hxargs). }
+    destruct Hax as [ d Hd ].
+    exists d. split; [exact Hd|].
+    rewrite Ha_q in Hd.
+    destruct (map.get env0 x) as [v|] eqn:Henv; [|discriminate].
+    exact (idx_interpretation_wf m i inst Hsnd v d Hd).
   Qed.
 
 End WithMap.
