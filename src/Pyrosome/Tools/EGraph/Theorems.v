@@ -2602,8 +2602,8 @@ Section ReducingStep.
     Lemma egraph_reducing_equal_step_sound_strong
       (schedule : list (nat * rule_set V V V_map V_map))
       (rfuel sat_fuel : nat)
-      (a b : term V) (t : sort V) :
-      wf_term l [] a t -> wf_term l [] b t ->
+      (a b : term V) (ta tb : sort V) :
+      wf_term l [] a ta -> wf_term l [] b tb ->
       schedule_sound_real schedule ->
       let '(res, x1, x2, g) :=
         egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
@@ -2629,7 +2629,7 @@ Section ReducingStep.
       pose proof (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok V_map V_map_ok V_trie (option positive) lang_model) as Hempty.
       destruct Hempty as [Hok0 Hsnd0].
       assert (Hsub : forall (e:term V), e [/ with_names_from (@nil (V*sort V)) (@nil (term V)) /] = e) by (intro; cbn [with_names_from]; apply term_subst_nil).
-      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] a t) as Hpa.
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] a ta) as Hpa.
       specialize (Hpa ltac:(constructor) Ha ltac:(constructor) (eq_refl) map.empty); unfold vc in Hpa.
       assert (Haa' : add_open_term succ sort_of l true false [] a (empty_egraph V_default (option positive)) = (x1, ea)) by (exact Haa).
       specialize (Hpa (empty_egraph V_default (option positive))).
@@ -2640,7 +2640,7 @@ Section ReducingStep.
       cbn [fst snd] in Hext1, Hrel1.
       rewrite Hsub in Hrel1.
       destruct Hext1 as [ Hok_ea [ Hextmap1 [ Hsnd_ea Hkey1 ] ] ].
-      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] b t) as Hpb.
+      pose proof (@add_open_term_sound V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans (option positive) (depth V) l wfl sort_of_fresh true [] [] [] b tb) as Hpb.
       specialize (Hpb ltac:(constructor) Hb ltac:(constructor) (eq_refl) i1); unfold vc in Hpb.
       specialize (Hpb ea).
       rewrite Hab in Hpb.
@@ -2712,7 +2712,7 @@ Section ReducingStep.
       res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l [] t a b.
     Proof.
       intros Ha Hb Hsched.
-      pose proof (egraph_reducing_equal_step_sound_strong schedule rfuel sat_fuel a b t Ha Hb Hsched) as Hstrong.
+      pose proof (egraph_reducing_equal_step_sound_strong schedule rfuel sat_fuel a b t t Ha Hb Hsched) as Hstrong.
       revert Hstrong.
       destruct (egraph_reducing_equal_step V_map_plus V_trie succ sort_of spaced_list_intersect
                   l schedule rfuel sat_fuel a b) as [ [ [ res x1 ] x2 ] g ].
@@ -2873,6 +2873,49 @@ Section CongSubgoals.
         eapply wf_sort_subst_monotonicity; eauto.
         * eapply term_rule_in_sort_wf; eauto.
         * eapply wf_subst_from_wf_args; eauto. }
+  Qed.
+
+  (* Existential-sort variant: the two sides may be wf at *different* sorts
+     (the dependent argument sorts that arise in the cong recursion).  We
+     conclude [eq_term] at *some* sort; the final conversion to a specific
+     target sort is done by the caller ([egraph_reducing_equal_sound]). *)
+  Lemma cong_subgoals_sound_ex inj_list (e1 e2 : term) (ta tb : sort) :
+    wf_term l [] e1 ta -> wf_term l [] e2 tb ->
+    all (fun p => let '(a,b) := p in exists s, eq_term l [] s a b)
+        (@cong_subgoals V V_Eqb l inj_list (e1,e2)) ->
+    exists s, eq_term l [] s e1 e2.
+  Proof.
+    intros Hwf1 Hwf2 Hall.
+    unfold cong_subgoals in Hall.
+    destruct e1 as [x1 | n1 s1], e2 as [x2 | n2 s2]; simpl in Hall.
+    1-3: (destruct Hall as [ [se Heq] _]; exists se; exact Heq).
+    (* con/con case *)
+    destruct (eqb n1 n2) eqn:Hn12;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
+    pose proof (@eqb_spec _ _ V_Eqb_ok n1 n2) as Hn12eq.
+    rewrite Hn12 in Hn12eq. subst n2.
+    destruct (named_list_lookup_err inj_list n1) as [inj_args|] eqn:Hinj;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
+    destruct (named_list_lookup_err l n1) as [r|] eqn:Hl1;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
+    destruct r as [ | c args t_rule | |];
+    try (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq).
+    (* term_rule case *)
+    destruct (select_inj_args c inj_args s1 s2) as [subs|] eqn:Hselect;
+    [ | (simpl in Hall; destruct Hall as [ [se Heq] _]; exists se; exact Heq) ].
+    assert (Hin1 : In (n1, term_rule c args t_rule) l) by
+      (apply named_list_lookup_err_in; auto).
+    apply WfCutElim.invert_wf_term_con in Hwf1.
+    destruct Hwf1 as (c1 & args1 & t1 & Hinwf1 & Hwfargs1 & Ht1or1).
+    apply WfCutElim.invert_wf_term_con in Hwf2.
+    destruct Hwf2 as (c2 & args2 & t2 & Hinwf2 & Hwfargs2 & Ht2or2).
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf1 Hin1) as Heq1.
+    inversion Heq1; subst c1 args1 t1; clear Heq1.
+    pose proof (in_all_fresh_same _ _ l n1 (wf_lang_ext_all_fresh wfl) Hinwf2 Hin1) as Heq2.
+    inversion Heq2; subst c2 args2 t2; clear Heq2.
+    assert (Hwfc : wf_ctx l c) by (eauto with lang_core).
+    eapply select_inj_args_sound in Hselect; eauto.
+    eexists. eapply term_con_congruence; [ exact Hin1 | right; reflexivity | exact wfl | exact Hselect ].
   Qed.
 
 End CongSubgoals.
