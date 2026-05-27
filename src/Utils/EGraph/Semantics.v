@@ -7898,6 +7898,26 @@ Section WithMap.
     apply (Hde2 i). apply (Hde1 i). exact Hsnd.
   Qed.
 
+  (* [get_analysis] either returns the egraph unchanged (the [Some]
+     branch) or only updates [analyses] and prepends an [analysis_repair]
+     worklist entry (the [None] branch).  Neither touches
+     [db]/[equiv]/[parents], and an [analysis_repair] entry is trivially
+     [worklist_entry_ok], so [egraph_ok] and soundness (same [i]) are
+     preserved.  Used to discharge the [weight_less_than] branches of the
+     saturate_until predicate HP. *)
+  Lemma get_analysis_preserves_ok_sound (x : idx) (e : instance) (i : idx_map m.(domain)) :
+    egraph_ok e ->
+    egraph_sound_for_interpretation m i e ->
+    egraph_ok (snd (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x e))
+    /\ egraph_sound_for_interpretation m i (snd (get_analysis idx symbol symbol_map idx_map idx_trie analysis_result x e)).
+  Proof.
+    intros Hok Hsnd.
+    pose proof (get_analysis_denote_iff x e Hok) as [Hok' Hiff].
+    split.
+    - exact Hok'.
+    - apply Hiff. exact Hsnd.
+  Qed.
+
   (* Model-level core of the saturation->eq_term bridge.  If [x1] and
      [x2] are equal under interpretation [i] ([eq_sound_for_model]) and
      they denote [d1] and [d2] respectively, then [d1] and [d2] are
