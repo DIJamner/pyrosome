@@ -7087,6 +7087,16 @@ Section WithMap.
     - rewrite (map_combine_fst qs vs Hlen). exact Hin.
   Qed.
 
+  (* [all] over a mapped list reduces to a per-element obligation. *)
+  Lemma all_map_in {A B} (g : A -> B) (Pr : B -> Prop) (l : list A) :
+    (forall x, In x l -> Pr (g x)) -> all Pr (map g l).
+  Proof.
+    induction l as [|a l' IH]; cbn [map]; intros Hl; [exact I|].
+    cbn [all]; split.
+    - apply Hl; left; reflexivity.
+    - apply IH; intros y Hy; apply Hl; right; exact Hy.
+  Qed.
+
   (* Soundness of one reconstructed query atom: if the intersection key
      [sigma] hits the clause trie for pointer (f,n,clause_vars), then the
      matched DB atom (sound under [i]) witnesses that the logical query
@@ -7173,6 +7183,61 @@ Section WithMap.
     setoid_rewrite Hout.
     cbn [Is_Some_satisfying].
     exact Hdb_snd.
+  Qed.
+
+  (* Per-assignment query soundness: for an intersection key [sigma] (whose
+     per-clause projections all hit their clause tries, [Hsli]), every
+     reconstructed query atom of [r] is sound under [a_q = i o env0]. This
+     is the [all (atom_sound_for_model ...) (query_atoms ...)] premise that
+     [erule_sound] consumes inside process_erule'_sound. The query-side
+     well-formedness ([Hwf]: each clause pointer resolves in [query_clauses]
+     to an in-bounds clause whose vars are a filtered subsequence of
+     [query_vars]) is discharged downstream from build_rule_set. *)
+  Lemma query_atoms_sound
+    (i : idx_map m.(domain))
+    (q : rule_set idx symbol symbol_map idx_map) (inst : instance)
+    (r : erule idx symbol) (frontier_n : idx) (sigma : list idx)
+    (a_q : idx_map m.(domain)) :
+    egraph_sound_for_interpretation m i inst ->
+    List.NoDup (query_vars idx symbol r) ->
+    List.length (query_vars idx symbol r) = List.length sigma ->
+    (forall x, map.get a_q x
+       = match map.get (map.of_list (combine (query_vars idx symbol r) sigma)) x with
+         | Some v => map.get i v
+         | None => None
+         end) ->
+    (forall fsym nptr cvars,
+       In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+          (uncurry cons (query_clause_ptrs idx symbol r)) ->
+       exists q_f cargs cv (Pf : idx -> bool),
+         map.get (query_clauses idx symbol symbol_map idx_map q) fsym = Some q_f
+         /\ map.get q_f nptr = Some (cargs, cv)
+         /\ cvars = filter Pf (query_vars idx symbol r)
+         /\ (forall t, In t cargs -> t < List.length cvars)
+         /\ cv < List.length cvars) ->
+    (forall fsym nptr cvars,
+       In (Build_erule_query_ptr idx symbol fsym nptr cvars)
+          (uncurry cons (query_clause_ptrs idx symbol r)) ->
+       map.get (fst (trie_of_clause idx Eqb_idx symbol symbol_map idx_map idx_trie
+                       (query_vars idx symbol r)
+                       (fst (build_tries idx Eqb_idx symbol symbol_map symbol_map_plus
+                               idx_map idx_map_plus idx_trie analysis_result q inst))
+                       frontier_n (Build_erule_query_ptr idx symbol fsym nptr cvars)))
+               (map fst (filter snd (combine sigma
+                  (variable_flags idx Eqb_idx (query_vars idx symbol r) cvars))))
+       = Some tt) ->
+    all (atom_sound_for_model m a_q)
+        (query_atoms (query_clauses idx symbol symbol_map idx_map q) r).
+  Proof.
+    intros Hsnd Hnd Hlen Ha_q Hwf Hsli.
+    unfold query_atoms.
+    apply all_map_in.
+    intros ptr Hptr.
+    destruct ptr as [fsym nptr cvars].
+    destruct (Hwf fsym nptr cvars Hptr) as (q_f & cargs & cv & Pf & Hqf & Hclause & Hcvars & Hba & Hbcv).
+    rewrite Hqf, Hclause.
+    apply (query_clause_ptr_sound i q inst (query_vars idx symbol r) frontier_n sigma a_q fsym nptr cvars q_f cargs cv Pf Hsnd Hnd Hlen Ha_q Hqf Hclause Hcvars Hba Hbcv).
+    exact (Hsli fsym nptr cvars Hptr).
   Qed.
 
 End WithMap.
