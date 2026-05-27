@@ -25,20 +25,27 @@ Section Model.
   Notation ctx := (@ctx string).
 
   Definition sort_head (S : sort) : string := match S with scon n _ => n end.
+  (* The ambient env is the LAST argument of a sort: Pyrosome stores con/scon
+     arguments in the rule's context order (innermost binding first), so for
+     [exp G i A] / [ty G i] / [sub G' G] the env [G] sits last, not first. *)
   Definition sort_env (S : sort) : term :=
-    match S with scon _ (G :: _) => G | _ => con "emp" [] end.
+    match S with scon _ args => List.last args (con "emp" []) end.
 
   Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
     match t with
-    | scon n (G :: _) =>
-        if eqb n "exp"
-        then { v : sval & (eval_rel (eval_env G) e1 v * eval_rel (eval_env G) e2 v)%type }
-        else if eqb n "ty"
-        then { S : svalty & (eval_ty (eval_env G) e1 S * eval_ty (eval_env G) e2 S)%type }
-        else if eqb n "sub"
-        then { rr : senv & (eval_sub (eval_env G) e1 rr * eval_sub (eval_env G) e2 rr)%type }
-        else unit
-    | _ => (eval_env e1 = eval_env e2)    (* the [env] sort (no args) *)
+    | scon n args =>
+        match args with
+        | [] => (eval_env e1 = eval_env e2)   (* argless info/env sorts *)
+        | _ =>
+            let G := List.last args (con "emp" []) in
+            if eqb n "exp"
+            then { v : sval & (eval_rel (eval_env G) e1 v * eval_rel (eval_env G) e2 v)%type }
+            else if eqb n "ty"
+            then { S : svalty & (eval_ty (eval_env G) e1 S * eval_ty (eval_env G) e2 S)%type }
+            else if eqb n "sub"
+            then { rr : senv & (eval_sub (eval_env G) e1 rr * eval_sub (eval_env G) e2 rr)%type }
+            else unit
+        end
     end.
 
   Definition norm_ceq_sort (S1 S2 : sort) : Type :=
