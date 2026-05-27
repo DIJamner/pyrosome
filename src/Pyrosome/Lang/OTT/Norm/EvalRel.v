@@ -7,86 +7,114 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm Require Import Domain Env.
+From Pyrosome.Lang.OTT.Norm Require Import Domain.
 Import Core.Notations.
 
-(* Relational evaluator for the cast-free OTT NbE model (first-order fragment:
-   the substitution calculus + U/El + Nat/Empty; no Pi/Sig yet).
+(* ENVIRONMENT-FREE relational evaluator for the cast-free OTT NbE model (first-order
+   fragment: substitution calculus + U/El + Nat/Empty).
 
-   Three mutual relations over a semantic SUBSTITUTION [ssub = list sval] (the
-     values of the in-scope object-level de Bruijn variables, [hd] = index 0):
-     eval_sub  : ssub -> term -> ssub  -> Type   (substitution terms)
-     eval_ty   : ssub -> term -> svalty -> Type  (type terms: U, El, ty_subst)
-     eval_rel  : ssub -> term -> sval  -> Type    (expression terms)
-   plus [eval_env : term -> senv] (below) normalizing a context to its semantic
-   ENVIRONMENT [senv = list svalty] (its variables' types) — kept distinct from the
-   reflecting substitution [reflect_ssub] (Env.v) to undo the senv/ssub conflation.
+     eval_sub  : term -> ssub   -> Type   (a [sub] term denotes a semantic subst)
+     eval_ty   : term -> svalty -> Type
+     eval_rel  : term -> sval   -> Type
+     eval_env  : term -> senv   -> Type   (a context denotes its variables' types)
 
-   A substitution g : sub G G' acts on environments G->G' (covariantly on envs);
-   codes (Nat/Empty) are expressions of U, evaluating to [vCode ...]; the type is
-   recovered by [El] decoding the code. The neutrals are the object-context
-   variables — the [hd]/[wkn] spines produced by [reflect_ssub] — so [Emptyrec] of a
-   neutral is itself neutral. There are NO Pyrosome metavariables anywhere in the
-   normalization proof (the ambient meta-context is []), hence no [var] cases.
-   Arities per the dumped table. Totality on well-typed terms comes from the generic
-   pf-eval, not from these relations. *)
+   There is NO ambient substitution argument: a variable [hd] reflects straight to
+   [vNe (nVar 0)], and an explicit substitution [exp_subst g e] is realised by
+   [apply (eval_sub g) (eval_rel e)].  [id]/[wkn] denote the identity/shift over a
+   context of [ctx_len] variables; [snoc] conses; [cmp] composes by [apply].  This is
+   what makes substitution-congruence hold (values are absolute).  There are NO
+   Pyrosome metavariables, hence no [var] cases.  Totality on well-typed terms comes
+   from the generic pf-eval, not from these relations. *)
 Section EvalRel.
   Notation term := (@term string).
 
-  Inductive eval_sub : ssub -> term -> ssub -> Type :=
-  | ev_id   : forall r G, eval_sub r (con "id" [G]) r
-  | ev_wkn  : forall r v G i A, eval_sub (v :: r) (con "wkn" [A; i; G]) r
-  | ev_forget : forall r G, eval_sub r (con "forget" [G]) []
-  | ev_cmp  : forall r r' r'' G3 G2 G1 f g,
-      eval_sub r f r' -> eval_sub r' g r'' ->
-      eval_sub r (con "cmp" [g; f; G3; G2; G1]) r''
-  | ev_snoc : forall r r' vv G G' i A g v,
-      eval_sub r g r' -> eval_rel r v vv ->
-      eval_sub r (con "snoc" [v; g; A; i; G'; G]) (vv :: r')
+  (* Number of [ext]s in a context telescope (its variable count). *)
+  Fixpoint ctx_len (G : term) : nat :=
+    match G with
+    | con n args =>
+        if eqb n "ext"
+        then match args with _ :: _ :: G' :: nil => S (ctx_len G') | _ => 0 end
+        else 0
+    | var _ => 0
+    end.
 
-  with eval_ty : ssub -> term -> svalty -> Type :=
-  | ev_U    : forall r G rl l, eval_ty r (con "U" [l; rl; G]) (dU rl l)
-  | ev_El   : forall r G rl l e T,
-      eval_rel r e (vCode T) ->
-      eval_ty r (con "El" [e; l; rl; G]) T
-  | ev_ty_subst : forall r r' G G' g i A T,
-      eval_sub r g r' -> eval_ty r' A T ->
-      eval_ty r (con "ty_subst" [A; i; g; G'; G]) T
+  (* The identity / weakening substitutions over an [n]-variable context. *)
+  Definition id_list  (n : nat) : ssub := map (fun k => vNe (nVar k)) (seq 0 n).
+  Definition wkn_list (n : nat) : ssub := map (fun k => vNe (nVar (S k))) (seq 0 n).
 
-  with eval_rel : ssub -> term -> sval -> Type :=
-  | ev_hd   : forall r v G i A, eval_rel (v :: r) (con "hd" [A; i; G]) v
-  | ev_exp_subst : forall r r' G G' g i A e v,
-      eval_sub r g r' -> eval_rel r' e v ->
-      eval_rel r (con "exp_subst" [e; A; i; g; G'; G]) v
-  | ev_zero : forall r G, eval_rel r (con "zero" [G]) vZero
-  | ev_suc  : forall r G n v,
-      eval_rel r n v -> eval_rel r (con "suc" [n; G]) (vSuc v)
-  | ev_Nat  : forall r G, eval_rel r (con "Nat" [G]) (vCode dNat)
-  | ev_Empty : forall r G, eval_rel r (con "Empty" [G]) (vCode dEmpty)
-  | ev_Emptyrec : forall r G rA lA A e ne,
-      eval_rel r e (vNe ne) ->
-      eval_rel r (con "Emptyrec" [e; A; lA; rA; G])
-               (vNe (con "Emptyrec" [ne; A; lA; rA; G])).
+  (* Normal form of the static info fragment (relevance/lvl/tlvl/tyinfo): the only
+     computation is next0/next1 ([next L0 = iota L1], [next L1 = inf]).  Used so that
+     value annotations ([dU], [nEmptyrec]) are normalized, making the congruences for
+     U/Nat/Empty/Emptyrec go through (the info-soundness fix, now in the value world).
+     Inner [let fix] over the arg list per the [term] recursion idiom. *)
+  Fixpoint nf_info (e : term) : term :=
+    match e with
+    | var x => var x
+    | con n args =>
+        let args' :=
+          (fix nf_list (l : list term) : list term :=
+             match l with
+             | [] => []
+             | x :: xs => nf_info x :: nf_list xs
+             end) args in
+        if eqb n "next"
+        then match args' with
+             | [l'] =>
+                 match l' with
+                 | con m [] =>
+                     if eqb m "L0" then con "iota" [con "L1" []]
+                     else if eqb m "L1" then con "inf" []
+                     else con "next" [l']
+                 | _ => con "next" [l']
+                 end
+             | _ => con n args'
+             end
+        else con n args'
+    end.
 
-  (* ENVIRONMENT normalization (the proper bearer of the [eval_env] name): the
-     denotation of an object context [G] as a semantic ENVIRONMENT [senv = list
-     svalty] — the list of the (semantic) TYPES of its variables.  This is distinct
-     from [reflect_ssub] (Env.v), which builds the identity/reflecting semantic
-     SUBSTITUTION [ssub = list sval] of neutral variables; the two were formerly
-     conflated.  Each [ext]'s type annotation [A] (living in the prefix context
-     [G']) is evaluated in the reflecting substitution of [G'], then weakened into
-     the extended context (mirroring [reflect_ssub]'s weakening of carried-over
-     variables).  The only base is [emp] (there are NO Pyrosome metavariables in the
-     normalization proof).
+  Inductive eval_sub : term -> ssub -> Type :=
+  | ev_id   : forall G, eval_sub (con "id" [G]) (id_list (ctx_len G))
+  | ev_wkn  : forall A i G, eval_sub (con "wkn" [A; i; G]) (wkn_list (ctx_len G))
+  | ev_forget : forall G, eval_sub (con "forget" [G]) []
+  | ev_cmp  : forall g f G1 G2 G3 sf sg,
+      eval_sub f sf -> eval_sub g sg ->
+      eval_sub (con "cmp" [g; f; G3; G2; G1]) (map (apply_val sf) sg)
+  | ev_snoc : forall v g A i G' G sg vv,
+      eval_sub g sg -> eval_rel v vv ->
+      eval_sub (con "snoc" [v; g; A; i; G'; G]) (vv :: sg)
 
-     DRAFT (pending the model redesign that consumes [senv]): the weakening choice
-     mirrors the current [reflect_ssub]; revisit alongside the reflecting-substitution
-     representation (de-Bruijn levels would drop the weakening). *)
+  with eval_ty : term -> svalty -> Type :=
+  | ev_U    : forall l r G, eval_ty (con "U" [l; r; G]) (dU (nf_info r) (nf_info l))
+  | ev_El_code : forall e l r G T,
+      eval_rel e (vCode T) -> eval_ty (con "El" [e; l; r; G]) T
+  | ev_El_ne : forall e l r G n,
+      eval_rel e (vNe n) -> eval_ty (con "El" [e; l; r; G]) (dNe n)
+  | ev_ty_subst : forall A i g G' G sg T,
+      eval_sub g sg -> eval_ty A T ->
+      eval_ty (con "ty_subst" [A; i; g; G'; G]) (apply_ty sg T)
+
+  with eval_rel : term -> sval -> Type :=
+  | ev_hd   : forall A i G, eval_rel (con "hd" [A; i; G]) (vNe (nVar 0))
+  | ev_exp_subst : forall e A i g G' G sg ve,
+      eval_sub g sg -> eval_rel e ve ->
+      eval_rel (con "exp_subst" [e; A; i; g; G'; G]) (apply_val sg ve)
+  | ev_zero : forall G, eval_rel (con "zero" [G]) vZero
+  | ev_suc  : forall n G vn,
+      eval_rel n vn -> eval_rel (con "suc" [n; G]) (vSuc vn)
+  | ev_Nat  : forall G, eval_rel (con "Nat" [G]) (vCode dNat)
+  | ev_Empty : forall G, eval_rel (con "Empty" [G]) (vCode dEmpty)
+  | ev_Emptyrec : forall e A lA rA G ne vA,
+      eval_rel e (vNe ne) -> eval_rel A vA ->
+      eval_rel (con "Emptyrec" [e; A; lA; rA; G])
+               (vNe (nEmptyrec (nf_info rA) (nf_info lA) vA ne)).
+
+  (* Environment normalization: a context's list of (semantic) variable types.  Each
+     [ext]'s annotation evaluates env-free; extending shifts the carried types up by
+     one (index 0 becomes the new variable).  Only base is [emp] (no metavariables). *)
   Inductive eval_env : term -> senv -> Type :=
   | ev_env_emp : eval_env (con "emp" []) []
-  | ev_env_ext : forall A i G' Genv S,
-      eval_env G' Genv ->
-      eval_ty (reflect_ssub G') A S ->
-      eval_env (con "ext" [A; i; G']) (weaken_ty S :: map weaken_ty Genv).
+  | ev_env_ext : forall A i G Genv S,
+      eval_env G Genv -> eval_ty A S ->
+      eval_env (con "ext" [A; i; G]) (shift_ty 1 S :: map (shift_ty 1) Genv).
 
 End EvalRel.
