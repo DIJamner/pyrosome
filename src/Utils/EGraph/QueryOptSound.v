@@ -3905,6 +3905,34 @@ Section WithMap.
       + right. destruct Hex' as [x' Hlook]. exists x'. exact Hlook.
   Qed.
 
+  Lemma force_equiv_preserves_sound (m : model symbol)
+    (i : idx_map (m.(domain symbol)))
+    (e : instance) :
+    (exists roots, union_find_ok lt (equiv e) roots) ->
+    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
+    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i
+      (snd (force_equiv idx Eqb_idx symbol symbol_map idx_map idx_trie (X:=unit) e)).
+  Proof.
+    intros Huf Hsnd.
+    eapply Semantics.fields_preserved_sound_for_interpretation; [exact Hsnd|].
+    pose proof (@force_equiv_sound idx Eqb_idx Eqb_idx_ok lt symbol symbol_map idx_map idx_map_ok idx_trie unit) as Hfe.
+    unfold vc in Hfe.
+    specialize (Hfe e).
+    specialize (Hfe Huf).
+    destruct Hfe as (Hdb & _ & Hper & Hpar & Hwl & Hkey).
+    unfold Semantics.fields_preserved.
+    repeat split.
+    - symmetry. exact Hdb.
+    - symmetry. exact Hpar.
+    - cbn [force_equiv snd]. destruct e as [db' equiv' parents' epoch' wl' an' log']. cbn. reflexivity.
+    - symmetry. exact Hwl.
+    - cbn [force_equiv snd]. destruct e as [db' equiv' parents' epoch' wl' an' log']. cbn. reflexivity.
+    - intro Hy. apply Hkey. exact Hy.
+    - intro Hy. apply Hkey. exact Hy.
+    - intro Hab. apply Hper. exact Hab.
+    - intro Hab. apply Hper. exact Hab.
+  Qed.
+
 
 
   (* ============================================================== *)
