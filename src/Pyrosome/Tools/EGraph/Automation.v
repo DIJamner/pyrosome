@@ -258,8 +258,15 @@ Section ReducingSkeleton.
       (eq_term l' [] t' e1' e2' -> eq_term l c t e1 e2).
   Proof.
     intros Hwf Hwfc He1 He2 Hdisj Hsucc.
+    (* The disjointness premise discharges [egraph_reducing_equal']'s freshness
+       guard, so the computation takes its [then] branch. *)
+    assert (Hguard : Is_true (forallb (fun x => freshb x l) (map fst c))).
+    { apply Is_true_forallb. revert Hdisj. apply all_wkn.
+      intros x _ Hx. apply (proj2 (freshb_spec _ _)). exact Hx. }
     (* Destructure the renaming computation into its 6 sequential steps. *)
     unfold egraph_reducing_equal' in Hsucc.
+    destruct (forallb (fun x => freshb x l) (map fst c)) eqn:Hgeq;
+      [ clear Hguard Hgeq | destruct Hguard ].
     cbn [Mbind Mret state_monad] in Hsucc.
     destruct (rename_lang (ctx_to_rules c ++ l)
                 {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |})
@@ -327,6 +334,30 @@ Section ReducingSkeleton.
 
 End ReducingSkeleton.
 
+(* [Is_Success] of [egraph_reducing_equal'] implies the ctx/lang disjointness
+   side condition, since [egraph_reducing_equal'] fails outright when it does
+   not hold.  This lets [egraph_sound] drop the disjointness premise. *)
+Lemma egraph_reducing_equal'_Is_Success_disjoint
+  {V} {V_Eqb : Eqb V} {V_Eqb_ok : Eqb_ok V_Eqb} {X} `{analysis V V X}
+  (l : lang V)
+  (lang_filter reversible : V * rule V -> bool)
+  inj_rules rn n efuel red_fuel c (e1 e2 : Term.term V)
+  : Is_Success (fst (egraph_reducing_equal' l lang_filter reversible inj_rules
+                       rn n efuel red_fuel c e1 e2)) ->
+    all (fun x => fresh x l) (map fst c).
+Proof.
+  unfold egraph_reducing_equal'.
+  destruct (forallb (fun x => freshb x l) (map fst c)) eqn:Hg.
+  2:{ cbn [fst Is_Success]; intro Hf; destruct Hf. }
+  intros _.
+  assert (Hall : all (fun x => Is_true (freshb x l)) (map fst c)).
+  { apply Is_true_forallb. rewrite Hg. exact I. }
+  revert Hall; apply all_wkn.
+  intros x _ Hx.
+  apply use_compute_fresh.
+  exact Hx.
+Qed.
+
 (*TODO: generalize what rules to run *)
 Theorem egraph_sound
   (rebuild_fuel sat_fuel efuel red_fuel : nat) l filter
@@ -337,11 +368,16 @@ Theorem egraph_sound
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
-    all (fun x => fresh x l) (map fst c) ->
     Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     eq_term l c t e1 e2.
 Proof.
-  intros Hl Hc He1 He2 Hdisj Hsucc.
+  intros Hl Hc He1 He2 Hsucc.
+  (* The ctx/lang disjointness side condition is no longer a premise: it is
+     guaranteed by [Is_Success], since [egraph_reducing_equal'] fails when the
+     context variables clash with the language symbols. *)
+  pose proof (egraph_reducing_equal'_Is_Success_disjoint
+                l filter reversible inj_rules
+                rebuild_fuel sat_fuel efuel red_fuel c e1 e2 Hsucc) as Hdisj.
   destruct (@egraph_reducing_equal'_to_pos l filter reversible inj_rules
               rebuild_fuel sat_fuel efuel red_fuel c t e1 e2
               Hl Hc He1 He2 Hdisj Hsucc)
@@ -368,7 +404,7 @@ Ltac by_reduction' reversible inj_rules :=
   try reduce;
    *)
     apply (egraph_sound 100 100 100 100 filter_rules reversible inj_rules);
-    [prove_by_lang_db| | | | solve_ctx_lang_disjoint | flagged_exact I].
+    [prove_by_lang_db| | | | flagged_exact I].
 
 
 (* TODO: plug inj_rules into tactics *)

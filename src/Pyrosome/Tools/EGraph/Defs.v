@@ -1035,10 +1035,18 @@ Module PositiveInstantiation.
                renamed_inj_rules
                rn n efuel red_fuel e1' e2')
     in
-    (*2 so that sort_of is distict*)
-    (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |})).
+    (* Guard: the context variable names must be disjoint from the language
+       symbols, otherwise [ctx_to_rules c ++ l] is not [all_fresh] and the
+       e-graph reduction would be unsound.  Failing here lets callers derive
+       the disjointness fact from [Is_Success] rather than assuming it. *)
+    if forallb (fun x => freshb x l) (map fst c)
+    then
+      (*2 so that sort_of is distict*)
+      (rename_and_run ( {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |}))
+    else
+      (error:("egraph_reducing_equal': context variable clashes with a language symbol"),
+        {| p_to_v := map.empty; v_to_p := {{c }}; next_id := 2 |}).
 
-  
 End PositiveInstantiation.
 
 
