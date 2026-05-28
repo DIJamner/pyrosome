@@ -6331,6 +6331,245 @@ Section WithMap.
       + split; [exact Hde_p | exact Hext_p].
   Qed.
 
+  (* ============================================================== *)
+  (* rebuild preserves atom_in_db when the worklist has no           *)
+  (* union_repair entries (only analysis_repair).  Used by the M2    *)
+  (* reverse assumption bridge in QueryOptSound: under the           *)
+  (* trivial-equiv (hash-consed, no-union) specialization the        *)
+  (* assumption egraph's worklist holds only analysis_repair         *)
+  (* entries, and repair of those re-sets db entries to the SAME     *)
+  (* entry_value, so the read-back atoms survive rebuild.            *)
+  (* ============================================================== *)
+
+  (* [repair_parent_analysis a] re-sets the db entry at
+     (atom_fn a, atom_args a) to the SAME entry_value (only the
+     analysis annotation changes), so [atom_in_db] is preserved. *)
+  Lemma repair_parent_analysis_preserves_atom_in_db a
+    : vc (repair_parent_analysis a)
+        (fun e res => forall x, atom_in_db x (snd res).(db) <-> atom_in_db x e.(db)).
+  Proof.
+    unfold repair_parent_analysis, vc.
+    intros e. cbn [Mbind Mseq StateMonad.state_monad fst snd].
+    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_fn a) (atom_args a) e)
+      as [me e_l] eqn:Hlk; cbn [fst snd].
+    unfold db_lookup_entry, Mret, StateMonad.state_monad in Hlk.
+    destruct (map.get e.(db) (atom_fn a)) as [tbl|] eqn:Hfn; cbn in Hlk;
+      [| inversion Hlk; subst; intros x; reflexivity].
+    destruct (map.get tbl (atom_args a)) as [ent|] eqn:Hargs; cbn in Hlk;
+      [| inversion Hlk; subst; intros x; reflexivity].
+    inversion Hlk; subst me e_l; clear Hlk.
+    destruct ent as [v_epoch v old_a].
+    pose proof (get_analyses_preserves_fields (atom_args a) e) as Hga.
+    unfold vc in Hga.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hga. destruct Hga as (Hdb_g & _ & _).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd]. intros x. rewrite Hdb_g. reflexivity.
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd
+           update_analyses push_worklist db_set_entry].
+      intros x. cbn [db]. rewrite Hdb_g.
+      unfold atom_in_db, map_update.
+      rewrite Hfn.
+      pose proof (eqb_spec (atom_fn x) (atom_fn a)) as Hfx.
+      destruct (eqb (atom_fn x) (atom_fn a)).
+      + rewrite Hfx. rewrite map.get_put_same.
+        rewrite Hfn. cbn [Is_Some_satisfying].
+        pose proof (eqb_spec (atom_args x) (atom_args a)) as Hax.
+        destruct (eqb (atom_args x) (atom_args a)).
+        * rewrite Hax. rewrite map.get_put_same, Hargs.
+          cbn [Is_Some_satisfying]. reflexivity.
+        * rewrite map.get_put_diff by exact Hax. reflexivity.
+      + rewrite map.get_put_diff by exact Hfx. reflexivity.
+  Qed.
+
+  (* [repair_parent_analysis a] only ever prepends analysis_repair
+     entries to the worklist. *)
+  Lemma repair_parent_analysis_worklist_ar a
+    : vc (repair_parent_analysis a)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists j, ent = analysis_repair idx j) new_ents).
+  Proof.
+    unfold repair_parent_analysis, vc.
+    intros e. cbn [Mbind Mseq StateMonad.state_monad fst snd].
+    destruct (db_lookup_entry idx symbol symbol_map idx_map idx_trie
+                analysis_result (atom_fn a) (atom_args a) e)
+      as [me e_l] eqn:Hlk; cbn [fst snd].
+    unfold db_lookup_entry, Mret, StateMonad.state_monad in Hlk.
+    destruct (map.get e.(db) (atom_fn a)) as [tbl|] eqn:Hfn; cbn in Hlk;
+      [| inversion Hlk; subst; exists nil; split; [reflexivity| exact I] ].
+    destruct (map.get tbl (atom_args a)) as [ent|] eqn:Hargs; cbn in Hlk;
+      [| inversion Hlk; subst; exists nil; split; [reflexivity| exact I] ].
+    inversion Hlk; subst me e_l; clear Hlk.
+    destruct ent as [v_epoch v old_a].
+    pose proof (get_analyses_worklist_extends (atom_args a) e) as Hgw.
+    unfold vc in Hgw.
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result
+                (atom_args a) e) as [arg_as e_g] eqn:Hge.
+    cbn [fst snd] in Hgw. destruct Hgw as (new1 & Hwl_g & Hnew1).
+    destruct (eqb (analyze idx symbol analysis_result a arg_as) old_a) eqn:Hcmp.
+    - cbn [Mret StateMonad.state_monad fst snd]. exists new1. split; [exact Hwl_g | exact Hnew1].
+    - cbn [Mseq Mbind StateMonad.state_monad fst snd update_analyses push_worklist db_set_entry].
+      cbn [worklist]. exists (analysis_repair idx (atom_ret a) :: new1).
+      split.
+      + rewrite Hwl_g. reflexivity.
+      + cbn [all]. split; [eexists; reflexivity | exact Hnew1].
+  Qed.
+
+  Lemma list_Miter_repair_parent_analysis_preserves_atom_in_db ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res => forall x, atom_in_db x (snd res).(db) <-> atom_in_db x e.(db)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ _ => True)
+                  (fun s s' => forall x, atom_in_db x s'.(db) <-> atom_in_db x s.(db)))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _ x; reflexivity.
+    - intros s s' s'' H1 H2 x; rewrite (H2 x); exact (H1 x).
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_parent_analysis_preserves_atom_in_db a)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  Lemma list_Miter_repair_parent_analysis_worklist_ar ps
+    : vc (list_Miter repair_parent_analysis ps)
+        (fun e res =>
+           exists new_ents,
+             (snd res).(worklist) = new_ents ++ e.(worklist)
+             /\ all (fun ent => exists j, ent = analysis_repair idx j) new_ents).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun _ _ => True)
+                  (fun s s' => exists new_ents,
+                       s'.(worklist) = new_ents ++ s.(worklist)
+                       /\ all (fun ent => exists j, ent = analysis_repair idx j) new_ents))].
+    - cbn beta. intros s res Hinv. apply (Hinv I).
+    - intros s _. exists nil. split; [reflexivity | exact I].
+    - intros s1 s2 s3 (l1 & H1 & Hp1) (l2 & H2 & Hp2).
+      exists (l2 ++ l1). rewrite H2, H1. rewrite app_assoc. split; [reflexivity|].
+      clear -Hp1 Hp2. induction l2; cbn; auto. destruct Hp2; split; auto.
+    - intros a l_rest.
+      eapply vc_consequence; [| apply (repair_parent_analysis_worklist_ar a)].
+      cbn beta. intros s p Hone _. split; [exact I | exact Hone].
+  Qed.
+
+  (* [repair] of an analysis_repair entry (= get_parents ; list_Miter
+     repair_parent_analysis) preserves atom_in_db and only prepends
+     analysis_repair entries to the worklist. *)
+  Lemma repair_analysis_repair_preserves i
+    : vc (repair (analysis_repair idx i))
+        (fun e res =>
+           (forall x, atom_in_db x (snd res).(db) <-> atom_in_db x e.(db))
+           /\ exists new_ents,
+                (snd res).(worklist) = new_ents ++ e.(worklist)
+                /\ all (fun ent => exists j, ent = analysis_repair idx j) new_ents).
+  Proof.
+    cbn [repair]. unfold vc. intros e.
+    unfold get_parents. cbn [Mbind StateMonad.state_monad].
+    apply (vc_and _ _ _
+       (list_Miter_repair_parent_analysis_preserves_atom_in_db (unwrap_with_default (map.get (parents e) i)))
+       (list_Miter_repair_parent_analysis_worklist_ar (unwrap_with_default (map.get (parents e) i)))
+       e).
+  Qed.
+
+  (* [list_Miter repair] over a list of analysis_repair entries
+     preserves atom_in_db and the analysis-repair-only worklist shape. *)
+  Lemma list_Miter_repair_ar l
+    : vc (list_Miter repair l)
+        (fun e res =>
+           all (fun ent => exists j, ent = analysis_repair idx j) l ->
+           (forall x, atom_in_db x (snd res).(db) <-> atom_in_db x e.(db))
+           /\ (all (fun ent => exists j, ent = analysis_repair idx j) e.(worklist)
+               -> all (fun ent => exists j, ent = analysis_repair idx j) (snd res).(worklist))).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun l0 (_:instance) => all (fun ent => exists j, ent = analysis_repair idx j) l0)
+                  (fun s s' => (forall x, atom_in_db x s'.(db) <-> atom_in_db x s.(db))
+                               /\ (all (fun ent => exists j, ent = analysis_repair idx j) s.(worklist)
+                                   -> all (fun ent => exists j, ent = analysis_repair idx j) s'.(worklist))))].
+    - cbn beta. intros s res Hinv Hall. exact (proj2 (Hinv Hall)).
+    - intros s _; split; [intros x; reflexivity | intros HH; exact HH].
+    - intros s1 s2 s3 [Hdb1 Hwl1] [Hdb2 Hwl2]; split.
+      + intros x; rewrite (Hdb2 x); exact (Hdb1 x).
+      + intros HH; apply Hwl2; apply Hwl1; exact HH.
+    - intros a l_rest.
+      destruct a as [old new improved | j].
+      + unfold vc. intros e Hp. exfalso. cbn [all] in Hp. destruct Hp as [ [jj Hj] _ ]. discriminate Hj.
+      + eapply vc_consequence; [| apply (repair_analysis_repair_preserves j)].
+        cbn beta. intros s p Hone Hp.
+        cbn [all] in Hp. destruct Hp as [_ Hall_rest].
+        destruct Hone as [Hdb [new_ents [Hwl_eq Hnew] ] ].
+        split; [exact Hall_rest|].
+        split; [exact Hdb|].
+        intros Hwl_s. rewrite Hwl_eq. rewrite all_app. split; [exact Hnew | exact Hwl_s].
+  Qed.
+
+  (* canonicalize_worklist_entry is the identity on analysis_repair
+     entries, so the canonicalization pass of rebuild is a no-op on a
+     worklist holding only analysis_repair entries. *)
+  Lemma list_Mmap_canon_ar l
+    : all (fun ent => exists j, ent = analysis_repair idx j) l ->
+      forall e, list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) l e = (l, e).
+  Proof.
+    induction l as [|a l IH]; intros Hall e.
+    - reflexivity.
+    - cbn [all] in Hall. destruct Hall as [ [j Hj] Hall_rest ]. subst a.
+      cbn [list_Mmap canonicalize_worklist_entry].
+      unfold Mbind, Mret, StateMonad.state_monad.
+      destruct (list_Mmap (canonicalize_worklist_entry idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result) l e) as [xs e'] eqn:Hlm.
+      pose proof (IH Hall_rest e) as HIH.
+      pose proof (eq_trans (eq_sym Hlm) HIH) as Heq.
+      inversion Heq; subst. reflexivity.
+  Qed.
+
+  (* MAIN: when the worklist holds only analysis_repair entries (the
+     situation after clauses_to_instance on hash-consed atom clauses
+     with no unions), rebuild preserves atom_in_db and that worklist
+     shape.  This is the M2-bridge ingredient for QueryOptSound:
+     assumption_atoms (= db_to_atoms after rebuild) read back the same
+     atoms that were inserted. *)
+  Lemma rebuild_preserves_atom_in_db n
+    : vc (rebuild n)
+        (fun e res =>
+           all (fun ent => exists j, ent = analysis_repair idx j) e.(worklist) ->
+           (forall a, atom_in_db a (snd res).(db) <-> atom_in_db a e.(db))
+           /\ all (fun ent => exists j, ent = analysis_repair idx j) (snd res).(worklist)).
+  Proof.
+    induction n as [|fuel IH].
+    - unfold vc, rebuild. intros e Hwl. cbn [Mret StateMonad.state_monad snd].
+      split; [intros a; reflexivity | exact Hwl].
+    - unfold vc. intros e Hwl. cbn [rebuild].
+      unfold pull_worklist. cbn [Mbind StateMonad.state_monad fst snd].
+      destruct (worklist e) as [|w wl'] eqn:Hwle.
+      + cbn [Mret StateMonad.state_monad snd db worklist].
+        split; [intros a; reflexivity | exact I].
+      + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
+          pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
+        rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
+        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (worklist_dedup idx Eqb_idx (w::wl')))
+          by (apply worklist_dedup_preserves_all; exact Hwl).
+        match goal with |- context[list_Miter repair ?dl ?st] => remember st as st0 eqn:Hst0 end.
+        pose proof (list_Miter_repair_ar (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit. unfold vc in Hmit.
+        specialize (Hmit st0 Hdedup).
+        destruct (list_Miter repair (worklist_dedup idx Eqb_idx (w::wl')) st0) as [u s1] eqn:Hmiter.
+        cbn [snd] in Hmit. destruct Hmit as [Hmit_db Hmit_wl].
+        assert (Hwl_st0 : all (fun ent => exists j, ent = analysis_repair idx j) (worklist st0))
+          by (rewrite Hst0; exact I).
+        specialize (Hmit_wl Hwl_st0).
+        pose proof IH as IHs1. unfold vc in IHs1. specialize (IHs1 s1).
+        destruct (rebuild fuel s1) as [u2 s2] eqn:Hrb. cbn [snd] in IHs1 |- *.
+        specialize (IHs1 Hmit_wl). destruct IHs1 as [IH_db IH_wl].
+        split.
+        * intros a. rewrite (IH_db a). rewrite (Hmit_db a). rewrite Hst0. cbn [db]. reflexivity.
+        * exact IH_wl.
+  Qed.
+
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
     : vc (rebuild n)
         (fun e res =>
