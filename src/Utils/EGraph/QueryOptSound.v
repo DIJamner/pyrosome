@@ -1397,6 +1397,38 @@ Section WithMap.
         * apply Properties.map.tuples_spec; exact Htbl.
   Qed.
 
+  Lemma db_to_atoms_sound (m : model symbol) (i : idx_map (m.(domain symbol)))
+      (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
+    all (Semantics.clause_sound_for_model idx symbol idx_map m i)
+        (map (@atom_clause idx symbol) (db_to_atoms (db e))).
+  Proof.
+    intros Hsnd.
+    apply all_map_in.
+    intros a Hin.
+    cbn.
+    exact (Semantics.atom_interpretation _ _ _ _ _ _ _ _ _ Hsnd a
+      (proj1 (in_db_to_atoms_iff_atom_in_db a (db e)) Hin)).
+  Qed.
+
+  Lemma uf_eqs_sound (m : model symbol) (i : idx_map (m.(domain symbol)))
+      (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    Semantics.egraph_sound_for_interpretation idx symbol symbol_map idx_map idx_trie unit m i e ->
+    all (Semantics.clause_sound_for_model idx symbol idx_map m i)
+        (map (fun p => @eq_clause idx symbol (fst p) (snd p))
+             (map.tuples (parent (equiv e)))).
+  Proof.
+    intros Hsnd.
+    apply all_map_in.
+    intros [x y] Hin.
+    cbn.
+    apply (Semantics.rel_interpretation _ _ _ _ _ _ _ _ _ Hsnd).
+    unfold uf_rel_PER.
+    apply PER_clo_base.
+    apply Properties.map.tuples_spec in Hin.
+    exact Hin.
+  Qed.
+
   (* ============================================================== *)
   (* Good sequents                                                    *)
   (* ============================================================== *)
