@@ -11,9 +11,9 @@ From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel.
 Import Core.Notations.
 
 (* Determinism of the environment-free relational evaluator: each term has at most
-   one value.  Every term former is matched by one eval constructor, except [El],
-   whose two constructors (code vs. neutral) are disambiguated by determinism of the
-   code's own evaluation.  Proved by mutual induction. *)
+   one value.  Every term former is matched by exactly one eval constructor (El now
+   has the single uniform [ev_El]), so each case closes by inverting the second
+   derivation and rewriting with the per-premise IHs.  Proved by mutual induction. *)
 
 Scheme eval_sub_mind := Induction for eval_sub Sort Prop
   with eval_ty_mind  := Induction for eval_ty  Sort Prop

@@ -314,7 +314,7 @@ Proof.
     eapply term_con_congruence; try exact _; try (right; reflexivity); try eassumption.
   - (* eval glue *)
     dispA "Emptyrec". disp "Empty". disp "suc". disp "zero". disp "Nat".
-    dispA "El". disp "U". disp "hd". disp "wkn". disp "snoc".
+    disp "El". disp "U". disp "hd". disp "wkn". disp "snoc".
     disp "ext". disp "forget". disp "emp". disp "exp_subst". disp "ty_subst".
     disp "cmp". disp "id". disp "info". disp "next". disp "inf".
     disp "iota". disp "L0<L1". disp "L1". disp "L0". disp "irr". disp "rel".
@@ -497,7 +497,7 @@ Proof.
     + eapply rule_in_ctx_wf; [ exact fo_wf_lang | exact Hin | reflexivity ].
   - (* eval glue *)
     dispbyB "Empty subst". dispbyB "suc subst". dispbyB "zero subst".
-    dispbyB "Nat subst". dispbyA "El subst". dispbyB "U subst".
+    dispbyB "Nat subst". dispbyB "El subst". dispbyB "U subst".
     dispbyB_snoc_wkn_hd. dispbyB "cmp_snoc". dispbyB "snoc_hd". dispby_wkn_snoc.
     dispbyB "id_emp_forget". dispbyB "cmp_forget". dispbyA "exp_subst_cmp".
     dispbyB "exp_subst_id". dispbyA "ty_subst_cmp". dispbyB "ty_subst_id".

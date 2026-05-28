@@ -27,17 +27,16 @@ Section Reify.
 
   Fixpoint reify_ty (T : svalty) : term :=
     match T with
-    | dNe n => con "El" [reify_ne n; ann; ann; ann]
-    | dNat => con "Nat" [ann]
-    | dEmpty => con "Empty" [ann]
     | dU r l => con "U" [l; r; ann]
+    | dEl e => con "El" [reify_val e; ann; ann; ann]
     end
   with reify_val (v : sval) : term :=
     match v with
     | vNe n => reify_ne n
     | vZero => con "zero" [ann]
     | vSuc v' => con "suc" [reify_val v'; ann]
-    | vCode T => reify_ty T
+    | vNat => con "Nat" [ann]
+    | vEmpty => con "Empty" [ann]
     end
   with reify_ne (n : neutral) : term :=
     match n with
