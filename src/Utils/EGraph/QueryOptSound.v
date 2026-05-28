@@ -1656,6 +1656,92 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* Connecting compiled_rules of build_rule_set to compile_rule     *)
+  (* ============================================================== *)
+
+  Lemma split_sum_list_in_fst :
+    forall (A B : Type) (l : list (A + B)) (a : A),
+      In a (fst (split_sum_list l)) <-> In (inl a) l.
+  Proof.
+    intros A B l a.
+    induction l as [|h t IH].
+    - cbn. tauto.
+    - cbn [split_sum_list List.fold_right].
+      destruct h as [a' | b'].
+      + cbn [fst In].
+        rewrite IH.
+        split.
+        * intros [Heq | Hin].
+          -- left. congruence.
+          -- right. exact Hin.
+        * intros [Heq | Hin].
+          -- left. injection Heq. auto.
+          -- right. exact Hin.
+      + cbn [fst In].
+        rewrite IH.
+        split.
+        * intros Hin. right. exact Hin.
+        * intros [Heq | Hin].
+          -- discriminate Heq.
+          -- exact Hin.
+  Qed.
+
+  Lemma list_Mmap_state_in :
+    forall (X S Y : Type) (f : X -> state S Y) (xs : list X) (s0 : S) (y : Y),
+      In y (fst (list_Mmap f xs s0)) ->
+      exists x s s', In x xs /\ f x s = (y, s').
+  Proof.
+    intros X S Y f xs.
+    induction xs as [|x xs IH].
+    - intros s0 y Hin. cbn in Hin. destruct Hin.
+    - intros s0 y Hin.
+      cbn [list_Mmap Mbind Mret StateMonad.state_monad] in Hin.
+      destruct (f x s0) as [y0 s'] eqn:Hf.
+      destruct (list_Mmap f xs s') as [ys s''] eqn:Hrec.
+      cbn [fst] in Hin.
+      cbn [In] in Hin.
+      destruct Hin as [Heq | Hin].
+      + exists x, s0, s'. split.
+        * left. reflexivity.
+        * rewrite Hf. congruence.
+      + assert (Hin' : In y (fst (list_Mmap f xs s'))).
+        { rewrite Hrec. cbn [fst]. exact Hin. }
+        apply IH in Hin'.
+        destruct Hin' as (x' & s1 & s2 & Hxin & Hfx').
+        exists x', s1, s2. split.
+        * right. exact Hxin.
+        * exact Hfx'.
+  Qed.
+
+  Lemma in_compiled_rules_build_rule_set :
+    forall (rf : nat) (rules : list sequent)
+           (er : erule idx symbol),
+      In er (compiled_rules idx symbol symbol_map idx_map
+               (build_rule_set idx_succ idx_zero rf rules)) ->
+      exists rule st0 st1,
+        In rule rules /\
+        compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf rule st0 = (inl er, st1).
+  Proof.
+    intros rf rules er Hin.
+    unfold build_rule_set in Hin.
+    destruct (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)
+      as [crs cp] eqn:Hlm.
+    destruct (split_sum_list crs) as [erules consts] eqn:Hssl.
+    cbn [compiled_rules] in Hin.
+    assert (Herules : erules = fst (split_sum_list crs)).
+    { rewrite Hssl. reflexivity. }
+    rewrite Herules in Hin.
+    apply split_sum_list_in_fst in Hin.
+    assert (Hcrs : crs = fst (list_Mmap (compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf) rules map.empty)).
+    { rewrite Hlm. reflexivity. }
+    rewrite Hcrs in Hin.
+    apply list_Mmap_state_in in Hin.
+    destruct Hin as (rule & s & s' & Hrule_in & Hcompile).
+    exists rule, s, s'.
+    exact (conj Hrule_in Hcompile).
+  Qed.
+
+  (* ============================================================== *)
   (* Good sequents                                                    *)
   (* ============================================================== *)
 
