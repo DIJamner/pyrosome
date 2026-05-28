@@ -2383,6 +2383,297 @@ Section WithMap.
     exact Hwl2.
   Qed.
 
+  (* Helper: when db_lookup returns None, update_entry = db_set *)
+  Local Lemma update_entry_none_eq_db_set (a : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    fst (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+           (atom_fn a) (atom_args a) e0) = None ->
+    update_entry a e0 =
+    Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e0.
+  Proof.
+    intro Hnone.
+    unfold update_entry, Defs.db_set, Defs.db_lookup, Defs.get_analyses.
+    cbn.
+    unfold Mbind, StateMonad.state_monad.
+    destruct (map.get (db e0) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - destruct (map.get tbl (atom_args a)) as [en|] eqn:Hen.
+      + exfalso. cbn in Hnone. rewrite Htbl, Hen in Hnone. cbn in Hnone. discriminate Hnone.
+      + cbn. reflexivity.
+    - cbn. reflexivity.
+  Qed.
+
+  Definition rename_inv (Pl : list atom) (sub : named_list idx idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) : Prop :=
+    (forall a b y, named_list_lookup_err sub a = Some y ->
+                   named_list_lookup_err sub b = Some y -> a = b)
+    /\ (forall x y, named_list_lookup_err sub x = Some y -> Sep.has_key y (parent (equiv e)))
+    /\ all (fun ent => exists j, ent = analysis_repair idx j) (worklist e)
+    /\ (forall f args r, atom_in_db (Build_atom f args r) (db e) ->
+          exists a, In a Pl /\ atom_fn a = f
+            /\ map (named_list_lookup default sub) (atom_args a) = args
+            /\ named_list_lookup default sub (atom_ret a) = r)
+    /\ (forall a, In a Pl ->
+          atom_in_db (Build_atom (atom_fn a)
+            (map (named_list_lookup default sub) (atom_args a))
+            (named_list_lookup default sub (atom_ret a))) (db e))
+    /\ (forall a, In a Pl -> forall x, In x (atom_ret a :: atom_args a) ->
+          exists y, named_list_lookup_err sub x = Some y).
+
+  Lemma clauses_to_instance_atoms_inv
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (atoms_all : list atom)
+    (Huniq : NoDup (map (fun a => (atom_fn a, atom_args a)) atoms_all)) :
+    forall (Pl todo : list atom) (sub : named_list idx idx)
+      (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) (roots : list idx),
+    atoms_all = Pl ++ todo ->
+    union_find_ok lt (equiv e) roots ->
+    rename_inv Pl sub e ->
+    match clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause todo) sub e with
+    | (_, sub1, e1) =>
+        exists roots1, union_find_ok lt (equiv e1) roots1 /\ rename_inv (Pl ++ todo) sub1 e1
+    end.
+  Proof.
+    intros Pl todo. revert Pl.
+    induction todo as [|a todo0 IH]; intros Pl sub e roots Hsplit Huf Hinv.
+    - (* BASE: todo = [] *)
+      cbn [map clauses_to_instance list_Miter Mret StateMonad.state_monad fst snd].
+      rewrite app_nil_r.
+      exists roots. split; [exact Huf | exact Hinv].
+    - (* STEP: todo = a :: todo0 *)
+      cbn [map].
+      (* Peel one atom_clause through clauses_to_instance *)
+      unfold clauses_to_instance. cbn [list_Miter].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      (* Unfold add_clause_to_instance for atom_clause a *)
+      unfold Semantics.add_clause_to_instance.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      (* Destruct rename_atom *)
+      destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub e) as [ [ a' sub' ] e' ] eqn:Hra.
+      cbn [fst snd uncurry].
+      (* Unfold lift *)
+      unfold lift.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      (* Destruct update_entry *)
+      destruct (update_entry a' e') as [u'' e''] eqn:Hue.
+      cbn [fst snd uncurry].
+      (* Fold clauses_to_instance for remainder *)
+      change (list_Miter
+        (fun c : clause =>
+         match c with
+         | eq_clause x y =>
+             fun (x0 : named_list idx idx) (x1 : instance) =>
+             let (x2, y0) :=
+               rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                 idx_trie unit x x0 x1 in
+             uncurry
+               (fun (x' : idx) (x3 : named_list idx idx) (x4 : instance) =>
+                let (x5, y1) :=
+                  rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                    idx_trie unit y x3 x4 in
+                uncurry
+                  (fun (y' : idx) (x6 : named_list idx idx) (x7 : instance) =>
+                   let (x8, y2) :=
+                     let (x8, y2) := union x' y' x7 in (x8, x6, y2) in
+                   uncurry
+                     (fun (_ : idx) (s : named_list idx idx) (s0 : instance) =>
+                      (tt, s, s0))
+                     x8 y2)
+                  x5 y1)
+               x2 y0
+         | atom_clause a0 =>
+             fun (x : named_list idx idx) (x0 : instance) =>
+             let (x1, y) :=
+               rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map
+                 idx_trie unit a0 x x0 in
+             uncurry
+               (fun (a'0 : atom) (s : named_list idx idx) (x2 : instance) =>
+                let (x3, y0) := update_entry a'0 x2 in (x3, s, y0))
+               x1 y
+         end)
+        (map atom_clause todo0) sub' e'')
+      with (clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause todo0) sub' e'').
+      (* Destruct rename_inv *)
+      destruct Hinv as (Hinj & Hdom & Hwl & Hrows & Hfwd & Hvars).
+      (* Apply rename_atom_struct *)
+      pose proof (rename_atom_struct Hlti Hlts Hltt a sub e roots Huf Hinj Hdom) as Hras.
+      rewrite Hra in Hras.
+      destruct Hras as (Huf'_ex & Hinj' & Hdom' & Hext & Hfn & Hargs & Hret & Hvars_a &
+                        Hdbe' & Hwle' & Hmono).
+      destruct Huf'_ex as [roots' Huf'].
+      (* Establish NoDup constraint for this step *)
+      assert (Huniq_step : NoDup (map (fun a0 => (atom_fn a0, atom_args a0)) (Pl ++ a :: todo0))).
+      { rewrite <- Hsplit. exact Huniq. }
+      (* CHECKPOINT 2: no-collision assert *)
+      assert (Hnone : fst (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+                              (atom_fn a') (atom_args a') e') = None).
+      { destruct (fst (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+                          (atom_fn a') (atom_args a') e')) as [r|] eqn:Hlk;
+          [exfalso | reflexivity].
+        pose proof (db_lookup_some_atom_in_db (atom_fn a') (atom_args a') r e' Hlk) as Hain.
+        rewrite Hdbe' in Hain.
+        destruct (Hrows (atom_fn a') (atom_args a') r Hain) as
+            (a0 & Ha0in & Hf0 & Hargs0 & Hr0).
+        assert (Hmap0_ext : map (named_list_lookup default sub) (atom_args a0)
+                           = map (named_list_lookup default sub') (atom_args a0)).
+        { apply map_lookup_default_ext.
+          - exact Hext.
+          - intros x Hx. apply (Hvars a0 Ha0in x). right. exact Hx. }
+        assert (Hmap0_a' : map (named_list_lookup default sub') (atom_args a0) = atom_args a').
+        { rewrite <- Hmap0_ext. exact Hargs0. }
+        assert (Hmap_eq : map (named_list_lookup default sub') (atom_args a0)
+                        = map (named_list_lookup default sub') (atom_args a)).
+        { rewrite Hmap0_a'. rewrite Hargs. reflexivity. }
+        assert (Hargseq : atom_args a0 = atom_args a).
+        { apply (map_inj_eq (named_list_lookup default sub') (atom_args a0) (atom_args a)).
+          - intros x1 x2 Hx1 Hx2 Hfx.
+            assert (Hx1_sub : exists y1, named_list_lookup_err sub' x1 = Some y1).
+            { destruct (Hvars a0 Ha0in x1 (in_cons _ x1 _ Hx1)) as [y1 Hy1].
+              exists y1. exact (Hext x1 y1 Hy1). }
+            assert (Hx2_sub : exists y2, named_list_lookup_err sub' x2 = Some y2).
+            { apply Hvars_a. right. exact Hx2. }
+            destruct Hx1_sub as [y1 Hy1]. destruct Hx2_sub as [y2 Hy2].
+            pose proof (named_list_lookup_err_to_lookup default sub' x1 y1 Hy1) as Hld1.
+            pose proof (named_list_lookup_err_to_lookup default sub' x2 y2 Hy2) as Hld2.
+            rewrite Hld1 in Hfx. rewrite Hld2 in Hfx.
+            assert (Hy12 : y1 = y2) by congruence. subst y2.
+            exact (Hinj' x1 x2 y1 Hy1 Hy2).
+          - exact Hmap_eq. }
+        assert (Hfneq : atom_fn a0 = atom_fn a) by congruence.
+        exact (nodup_map_app_neq (fun a1 => (atom_fn a1, atom_args a1))
+                  Pl a0 a todo0 Huniq_step Ha0in
+                  (f_equal2 pair Hfneq Hargseq)). }
+      (* update_entry = db_set when lookup = None *)
+      assert (He'' : e'' = snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a' e')).
+      { pose proof (update_entry_none_eq_db_set a' e' Hnone) as Hue_eq.
+        rewrite Hue_eq in Hue. rewrite Hue. reflexivity. }
+      (* (Ob1) union_find_ok lt (equiv e'') roots' *)
+      assert (Huf'' : union_find_ok lt (equiv e'') roots').
+      { rewrite He''. rewrite db_set_preserves_equiv. exact Huf'. }
+      (* (Ob2) rename_inv (Pl ++ [a]) sub' e'' *)
+      assert (Hinv2 : rename_inv (Pl ++ [a]) sub' e'').
+      { unfold rename_inv. repeat split.
+        - exact Hinj'.
+        - intros x y Hxy. rewrite He''. rewrite db_set_preserves_equiv. exact (Hdom' x y Hxy).
+        - rewrite He''. apply db_set_preserves_worklist_ar. rewrite Hwle'. exact Hwl.
+        - intros f args r Hin.
+          rewrite He'' in Hin. apply db_set_atom_in_db_inv in Hin.
+          destruct Hin as [ (Hbf & Hba & Hbr) | Hin ].
+          + cbn [atom_fn atom_args atom_ret] in Hbf, Hba, Hbr.
+            exists a. split. { apply in_or_app. right. left. reflexivity. }
+            split. { congruence. } split. { congruence. } { congruence. }
+          + rewrite Hdbe' in Hin.
+            destruct (Hrows f args r Hin) as (a0 & Ha0 & Hf0 & Hargs0 & Hr0).
+            exists a0. split. { apply in_or_app. left. exact Ha0. }
+            split. { exact Hf0. }
+            split.
+            { rewrite <- (map_lookup_default_ext sub sub' (atom_args a0) Hext
+                           (fun x Hx => Hvars a0 Ha0 x (or_intror Hx))).
+              exact Hargs0. }
+            { destruct (Hvars a0 Ha0 (atom_ret a0) (in_eq _ _)) as [y Hy].
+              pose proof (Hext (atom_ret a0) y Hy) as Hy'.
+              pose proof (named_list_lookup_err_to_lookup default sub (atom_ret a0) y Hy) as Hld.
+              pose proof (named_list_lookup_err_to_lookup default sub' (atom_ret a0) y Hy') as Hld'.
+              congruence. }
+        - intros a0 Hin0.
+          apply in_app_or in Hin0. destruct Hin0 as [Hin0 | Hin0].
+          + pose proof (Hfwd a0 Hin0) as Hfwd0.
+            assert (Hmap_a0 : map (named_list_lookup default sub) (atom_args a0)
+                            = map (named_list_lookup default sub') (atom_args a0)).
+            { apply map_lookup_default_ext.
+              - exact Hext.
+              - intros x Hx. apply (Hvars a0 Hin0 x). right. exact Hx. }
+            assert (Hret_a0 : named_list_lookup default sub (atom_ret a0)
+                            = named_list_lookup default sub' (atom_ret a0)).
+            { destruct (Hvars a0 Hin0 (atom_ret a0) (in_eq _ _)) as [y Hy].
+              pose proof (Hext (atom_ret a0) y Hy) as Hy'.
+              pose proof (named_list_lookup_err_to_lookup default sub (atom_ret a0) y Hy) as Hld.
+              pose proof (named_list_lookup_err_to_lookup default sub' (atom_ret a0) y Hy') as Hld'.
+              congruence. }
+            assert (Hfwd0' : atom_in_db (Build_atom (atom_fn a0)
+                              (map (named_list_lookup default sub') (atom_args a0))
+                              (named_list_lookup default sub' (atom_ret a0))) (db e)).
+            { rewrite <- Hmap_a0. rewrite <- Hret_a0. exact Hfwd0. }
+            rewrite <- Hdbe' in Hfwd0'.
+            replace e'' with (snd (update_entry a' e')).
+            { apply update_entry_preserves_atom_in_db. exact Hfwd0'. }
+            { rewrite Hue. reflexivity. }
+          + destruct Hin0 as [<- | Hf]; [| destruct Hf].
+            assert (Ha'_eq : Build_atom (atom_fn a)
+                               (map (named_list_lookup default sub') (atom_args a))
+                               (named_list_lookup default sub' (atom_ret a)) = a').
+            { destruct a' as [f' args' ret'].
+              cbn [atom_fn atom_args atom_ret] in Hfn, Hargs, Hret.
+              rewrite <- Hfn, <- Hargs, <- Hret. reflexivity. }
+            rewrite Ha'_eq. rewrite He''. exact (db_set_adds_atom a' e').
+        - intros a0 Hin0 x Hx.
+          apply in_app_or in Hin0. destruct Hin0 as [Hin0 | Hin0].
+          + destruct (Hvars a0 Hin0 x Hx) as [y Hy]. exists y. exact (Hext x y Hy).
+          + destruct Hin0 as [<- | Hf]; [| destruct Hf]. exact (Hvars_a x Hx). }
+      (* Apply IH *)
+      specialize (IH (Pl ++ [a]) sub' e'' roots').
+      assert (Hsplit2 : atoms_all = (Pl ++ [a]) ++ todo0).
+      { rewrite <- app_assoc. cbn [app]. exact Hsplit. }
+      specialize (IH Hsplit2 Huf'' Hinv2).
+      rewrite <- app_assoc in IH. cbn [app] in IH.
+      exact IH.
+  Qed.
+
+  Lemma clauses_to_instance_atoms_no_collision
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (atoms : list atom)
+    (Huniq : NoDup (map (fun a => (atom_fn a, atom_args a)) atoms)) :
+    match clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause atoms)
+            [] (Defs.empty_egraph idx_zero unit) with
+    | (_, sub1, e1) =>
+        all (fun ent => exists j, ent = analysis_repair idx j) (worklist e1)
+        /\ (forall a, In a atoms ->
+              atom_in_db (Build_atom (atom_fn a)
+                (map (named_list_lookup default sub1) (atom_args a))
+                (named_list_lookup default sub1 (atom_ret a))) (db e1))
+    end.
+  Proof.
+    pose proof (clauses_to_instance_atoms_inv Hlti Hlts Hltt atoms Huniq
+                  [] atoms []
+                  (Defs.empty_egraph idx_zero unit : instance)
+                  []
+                  eq_refl) as Hmain.
+    (* Prove union_find_ok lt (equiv empty_egraph) [] *)
+    assert (Huf_empty : union_find_ok lt
+              (equiv (Defs.empty_egraph idx_zero unit : instance)) []).
+    { cbn [Defs.empty_egraph Defs.equiv].
+      exact (Semantics.union_find_empty_ok idx lt idx_succ idx_zero idx_map idx_map_ok). }
+    (* Prove rename_inv [] [] empty_egraph *)
+    assert (Hinv_empty : rename_inv [] []
+                (Defs.empty_egraph idx_zero unit : instance)).
+    { unfold rename_inv. repeat split.
+      - (* injectivity: vacuous, lookup_err [] _ = None *)
+        intros a b y H. cbn in H. discriminate H.
+      - (* domain: vacuous *)
+        intros x y H. cbn in H. discriminate H.
+      - (* I-rows: atom_in_db in empty db => False
+           Note: worklist conjunct is resolved by repeat split (all _ [] = True) *)
+        intros f args r Hin.
+        unfold atom_in_db, Semantics.atom_in_db, Is_Some_satisfying in Hin.
+        cbn [atom_fn atom_args atom_ret Defs.empty_egraph Defs.db] in Hin.
+        rewrite map.get_empty in Hin. cbn in Hin. destruct Hin.
+      - (* I-fwd: In a [] => False *)
+        intros a Hin. destruct Hin.
+      - (* I-vars: In a [] => False *)
+        intros a Hin. destruct Hin. }
+    specialize (Hmain Huf_empty Hinv_empty).
+    cbn [app] in Hmain.
+    destruct (clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause atoms)
+                [] (Defs.empty_egraph idx_zero unit : instance)) as [ [ u sub1 ] e1 ].
+    destruct Hmain as (roots1 & _ & Hinv1).
+    unfold rename_inv in Hinv1.
+    destruct Hinv1 as (_ & _ & Hwl1 & _ & Hfwd1 & _).
+    split; [exact Hwl1 | exact Hfwd1].
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
