@@ -1769,6 +1769,330 @@ Section WithMap.
         exact Hb.
   Qed.
 
+  (* ============================================================ *)
+  (* Structural (model-free) spec for rename_atom                *)
+  (* ============================================================ *)
+
+  (* F0: if list_Mmap (named_list_lookup_err sub) l = Some l',
+         then map (named_list_lookup default sub) l = l'. *)
+  Lemma list_Mmap_lookup_err_to_map_default (sub : named_list idx idx) (l l' : list idx) :
+    list_Mmap (named_list_lookup_err sub) l = Some l' ->
+    map (named_list_lookup default sub) l = l'.
+  Proof.
+    revert l'.
+    induction l as [|a l0 IH]; intros l'.
+    - cbn. intros H. injection H as <-. reflexivity.
+    - cbn [list_Mmap].
+      destruct (named_list_lookup_err sub a) as [v|] eqn:Ha; [|discriminate].
+      destruct (list_Mmap (named_list_lookup_err sub) l0) as [vs|] eqn:Hrec; [|discriminate].
+      intros H. injection H as <-.
+      cbn [map].
+      rewrite (named_list_lookup_err_to_lookup default sub a v Ha).
+      rewrite (IH vs eq_refl).
+      reflexivity.
+  Qed.
+
+  (* F1: rename_lookup x preserves union_find_ok, injectivity, domain
+         of sub, sub-extension, locates x in sub', x' is a key, and
+         db/worklist are unchanged. *)
+  Lemma rename_lookup_struct
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (x : idx) (sub : named_list idx idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (roots : list idx) :
+    union_find_ok lt (equiv e) roots ->
+    (forall a b y, named_list_lookup_err sub a = Some y ->
+                   named_list_lookup_err sub b = Some y -> a = b) ->
+    (forall a y, named_list_lookup_err sub a = Some y -> Sep.has_key y (parent (equiv e))) ->
+    match rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit x sub e with
+    | (x', sub', e') =>
+        (exists roots', union_find_ok lt (equiv e') roots') /\
+        (forall a b y, named_list_lookup_err sub' a = Some y ->
+                       named_list_lookup_err sub' b = Some y -> a = b) /\
+        (forall a y, named_list_lookup_err sub' a = Some y -> Sep.has_key y (parent (equiv e'))) /\
+        (forall a y, named_list_lookup_err sub a = Some y -> named_list_lookup_err sub' a = Some y) /\
+        named_list_lookup_err sub' x = Some x' /\
+        Sep.has_key x' (parent (equiv e')) /\
+        db e' = db e /\
+        worklist e' = worklist e /\
+        (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    intros Huf Hinj Hdom.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub x) as [x'|] eqn:Hlook.
+    - (* HIT: rename_lookup returns (x', sub, e) *)
+      cbn.
+      split. { exists roots. exact Huf. }
+      split. { exact Hinj. }
+      split. { exact Hdom. }
+      split. { intros a y Ha. exact Ha. }
+      split. { exact Hlook. }
+      split. { exact (Hdom x x' Hlook). }
+      split. { reflexivity. }
+      split. { reflexivity. }
+      { intros z Hz. exact Hz. }
+    - (* MISS: alloc allocates x_new, returns (x_new, (x,x_new)::sub, e_alloc) *)
+      cbn -[alloc].
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e)
+        as [x_new e_alloc] eqn:Halloc.
+      (* Apply alloc_struct *)
+      pose proof (alloc_struct idx Eqb_idx Eqb_idx_ok lt idx_succ
+                    symbol symbol_map idx_map idx_map_ok idx_trie unit
+                    Hlti Hlts Hltt) as Halloc_st.
+      unfold vc in Halloc_st.
+      specialize (Halloc_st e).
+      rewrite Halloc in Halloc_st.
+      cbn [fst snd] in Halloc_st.
+      specialize (Halloc_st roots Huf).
+      destruct Halloc_st as (Huf_a & Hfresh & Hknew & Hkmono & Hdb & Hpar & Hwl).
+      split. { exists (x_new :: roots). exact Huf_a. }
+      split.
+      { (* Injectivity of (x,x_new)::sub *)
+        intros a b y Ha Hb.
+        cbn [named_list_lookup_err] in Ha, Hb.
+        eqb_case a x.
+        - (* a = x, so Ha : Some x_new = Some y, i.e. y = x_new *)
+          injection Ha as <-.
+          (* Now y is gone, replaced by x_new; Hb : ... = Some x_new *)
+          eqb_case b x.
+          + (* b = x *) reflexivity.
+          + (* b <> x: Hb : named_list_lookup_err sub b = Some x_new *)
+            exfalso. apply Hfresh.
+            apply (Hdom b x_new Hb).
+        - (* a <> x *)
+          eqb_case b x.
+          + (* b = x, so Hb : Some x_new = Some y, i.e. y = x_new *)
+            injection Hb as <-.
+            (* Now y is gone, replaced by x_new; Ha : ... = Some x_new *)
+            exfalso. apply Hfresh.
+            apply (Hdom a x_new Ha).
+          + (* b <> x *)
+            exact (Hinj a b y Ha Hb). }
+      split.
+      { (* dom of (x,x_new)::sub w.r.t. e_alloc *)
+        intros a y Ha.
+        cbn [named_list_lookup_err] in Ha.
+        eqb_case a x.
+        - injection Ha as <-.
+          exact Hknew.
+        - exact (Hkmono y (Hdom a y Ha)). }
+      split.
+      { (* sub-extension: sub -> (x,x_new)::sub *)
+        intros a y Ha.
+        cbn [named_list_lookup_err].
+        eqb_case a x.
+        - (* a = x, but named_list_lookup_err sub x = None *)
+          subst. rewrite Hlook in Ha. discriminate.
+        - exact Ha. }
+      split.
+      { (* named_list_lookup_err ((x,x_new)::sub) x = Some x_new *)
+        cbn [named_list_lookup_err].
+        assert (Hxx : eqb x x = true).
+        { pose proof (Eqb_idx_ok x x) as H.
+          destruct (eqb x x); [reflexivity | exfalso; apply H; reflexivity]. }
+        rewrite Hxx. reflexivity. }
+      split. { exact Hknew. }
+      split. { symmetry. exact Hdb. }
+      split. { symmetry. exact Hwl. }
+      { exact Hkmono. }
+  Qed.
+
+  (* F2: list version of rename_lookup_struct by induction over args. *)
+  Lemma list_Mmap_rename_lookup_struct
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (args : list idx) :
+    forall (sub : named_list idx idx)
+      (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+      (roots : list idx),
+    union_find_ok lt (equiv e) roots ->
+    (forall a b y, named_list_lookup_err sub a = Some y ->
+                   named_list_lookup_err sub b = Some y -> a = b) ->
+    (forall a y, named_list_lookup_err sub a = Some y -> Sep.has_key y (parent (equiv e))) ->
+    match list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit)
+                    args sub e with
+    | (args', sub', e') =>
+        (exists roots', union_find_ok lt (equiv e') roots') /\
+        (forall a b y, named_list_lookup_err sub' a = Some y ->
+                       named_list_lookup_err sub' b = Some y -> a = b) /\
+        (forall a y, named_list_lookup_err sub' a = Some y -> Sep.has_key y (parent (equiv e'))) /\
+        (forall a y, named_list_lookup_err sub a = Some y -> named_list_lookup_err sub' a = Some y) /\
+        list_Mmap (named_list_lookup_err sub') args = Some args' /\
+        db e' = db e /\
+        worklist e' = worklist e /\
+        (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    induction args as [|a args0 IH];
+      intros sub e roots Huf Hinj Hdom.
+    - (* nil *)
+      cbn.
+      split. { exists roots. exact Huf. }
+      split. { exact Hinj. }
+      split. { exact Hdom. }
+      split. { intros a y Ha. exact Ha. }
+      split. { reflexivity. }
+      split. { reflexivity. }
+      split. { reflexivity. }
+      { intros z Hz. exact Hz. }
+    - (* cons a args0 *)
+      cbn [list_Mmap].
+      pose proof (rename_lookup_struct Hlti Hlts Hltt a sub e roots Huf Hinj Hdom) as Hrl.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+                  a sub e) as [ [a' sub1] e1 ] eqn:Hrla.
+      destruct Hrl as (Huf1_ex & Hinj1 & Hdom1 & Hext1 & Hlook1 & Hka'1 & Hdb1 & Hwl1 & Hmono1).
+      destruct Huf1_ex as [roots1 Huf1].
+      cbn -[rename_lookup list_Mmap] in *.
+      rewrite Hrla.
+      cbn [uncurry Basics.compose].
+      pose proof (IH sub1 e1 roots1 Huf1 Hinj1 Hdom1) as HIH.
+      unfold Basics.compose.
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map
+                  idx_map idx_trie unit) args0 sub1 e1)
+        as [ [args0' sub2] e2 ] eqn:Hlm.
+      cbn [uncurry] in HIH |- *.
+      destruct HIH as (Huf2_ex & Hinj2 & Hdom2 & Hext2 & Hmap2 & Hdb2 & Hwl2 & Hmono2).
+      split. { exact Huf2_ex. }
+      split. { exact Hinj2. }
+      split. { exact Hdom2. }
+      split.
+      { (* sub-extension: sub -> sub2 *)
+        intros b y Hb.
+        exact (Hext2 b y (Hext1 b y Hb)). }
+      split.
+      { (* list_Mmap (named_list_lookup_err sub2) (a::args0) = Some (a'::args0') *)
+        cbn [list_Mmap].
+        (* Carry Hlook1: named_list_lookup_err sub1 a = Some a' to sub2 *)
+        assert (Ha'_sub2 : named_list_lookup_err sub2 a = Some a')
+          by exact (Hext2 a a' Hlook1).
+        rewrite Ha'_sub2.
+        rewrite Hmap2.
+        reflexivity. }
+      split. { congruence. }
+      split. { congruence. }
+      { intros z Hz. exact (Hmono2 z (Hmono1 z Hz)). }
+  Qed.
+
+  (* Helper: if list_Mmap (f sub1) args = Some args' and
+     forall z y, f sub1 z = Some y -> f sub2 z = Some y,
+     then list_Mmap (f sub2) args = Some args'. *)
+  Local Lemma list_Mmap_lookup_err_mono
+    (sub1 sub2 : named_list idx idx)
+    (args args' : list idx) :
+    list_Mmap (named_list_lookup_err sub1) args = Some args' ->
+    (forall z y, named_list_lookup_err sub1 z = Some y ->
+                 named_list_lookup_err sub2 z = Some y) ->
+    list_Mmap (named_list_lookup_err sub2) args = Some args'.
+  Proof.
+    revert args'.
+    induction args as [|a l0 IH]; intros args' Hm Hext.
+    - cbn in *. exact Hm.
+    - cbn [list_Mmap] in *.
+      destruct (named_list_lookup_err sub1 a) as [v|] eqn:Ha; [|discriminate].
+      destruct (list_Mmap (named_list_lookup_err sub1) l0) as [vs|] eqn:Hrec; [|discriminate].
+      injection Hm as <-.
+      rewrite (Hext a v Ha).
+      rewrite (IH vs eq_refl Hext).
+      reflexivity.
+  Qed.
+
+  (* Helper: In z args -> list_Mmap (named_list_lookup_err sub) args = Some args'
+     -> exists y, named_list_lookup_err sub z = Some y. *)
+  Local Lemma list_Mmap_lookup_err_In_some
+    (sub : named_list idx idx) (args args' : list idx) (z : idx) :
+    In z args ->
+    list_Mmap (named_list_lookup_err sub) args = Some args' ->
+    exists y, named_list_lookup_err sub z = Some y.
+  Proof.
+    revert args'.
+    induction args as [|a l0 IH]; intros args' Hin Hm.
+    - inversion Hin.
+    - cbn [list_Mmap] in Hm.
+      destruct (named_list_lookup_err sub a) as [v|] eqn:Ha; [|discriminate].
+      destruct (list_Mmap (named_list_lookup_err sub) l0) as [vs|] eqn:Hrec; [|discriminate].
+      destruct Hin as [<- | Hin].
+      + exists v. exact Ha.
+      + exact (IH vs Hin eq_refl).
+  Qed.
+
+  (* F3: rename_atom gives the full structural spec. *)
+  Lemma rename_atom_struct
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (a : atom) (sub : named_list idx idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (roots : list idx) :
+    union_find_ok lt (equiv e) roots ->
+    (forall a0 b y, named_list_lookup_err sub a0 = Some y ->
+                    named_list_lookup_err sub b = Some y -> a0 = b) ->
+    (forall a0 y, named_list_lookup_err sub a0 = Some y -> Sep.has_key y (parent (equiv e))) ->
+    match rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit a sub e with
+    | (a', sub', e') =>
+        (exists roots', union_find_ok lt (equiv e') roots') /\
+        (forall a0 b y, named_list_lookup_err sub' a0 = Some y ->
+                        named_list_lookup_err sub' b = Some y -> a0 = b) /\
+        (forall a0 y, named_list_lookup_err sub' a0 = Some y -> Sep.has_key y (parent (equiv e'))) /\
+        (forall z y, named_list_lookup_err sub z = Some y -> named_list_lookup_err sub' z = Some y) /\
+        atom_fn a' = atom_fn a /\
+        atom_args a' = map (named_list_lookup default sub') (atom_args a) /\
+        atom_ret a' = named_list_lookup default sub' (atom_ret a) /\
+        (forall z, In z (atom_ret a :: atom_args a) ->
+                   exists y, named_list_lookup_err sub' z = Some y) /\
+        db e' = db e /\
+        worklist e' = worklist e /\
+        (forall z, Sep.has_key z (parent (equiv e)) -> Sep.has_key z (parent (equiv e')))
+    end.
+  Proof.
+    intros Huf Hinj Hdom.
+    destruct a as [f args out].
+    unfold rename_atom.
+    cbn [atom_fn atom_args atom_ret].
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+    cbn beta iota. unfold Basics.compose.
+    (* Mirror rename_atom_preserves_db: use set BEFORE pose proof, destruct, rewrite *)
+    pose proof (list_Mmap_rename_lookup_struct Hlti Hlts Hltt args sub e roots
+                  Huf Hinj Hdom) as HF2.
+    set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                            idx_trie unit) args sub e) in *.
+    destruct LM as [ [args' sub1] e1 ] eqn:Hargs_eq.
+    cbn [fst snd] in HF2.
+    destruct HF2 as (Huf1_ex & Hinj1 & Hdom1 & Hext1 & Hmap1 & Hdb1 & Hwl1 & Hmono1).
+    destruct Huf1_ex as [roots1 Huf1].
+    cbn [fst snd uncurry].
+    pose proof (rename_lookup_struct Hlti Hlts Hltt out sub1 e1 roots1
+                  Huf1 Hinj1 Hdom1) as HF1.
+    set (RL := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                 unit out sub1 e1) in *.
+    destruct RL as [ [out' sub2] e2 ] eqn:Hout_eq.
+    cbn [fst snd] in HF1.
+    destruct HF1 as (Huf2_ex & Hinj2 & Hdom2 & Hext2 & Hlook2 & Hkout & Hdb2 & Hwl2 & Hmono2).
+    cbn [fst snd uncurry atom_fn atom_args atom_ret].
+    (* Result atom is Build_atom f args' out', sub'=sub2, e'=e2 *)
+    split. { exact Huf2_ex. }
+    split. { exact Hinj2. }
+    split. { exact Hdom2. }
+    split.
+    { intros z y Hz. exact (Hext2 z y (Hext1 z y Hz)). }
+    split. { reflexivity. }
+    split.
+    { symmetry.
+      assert (Hmap2 : list_Mmap (named_list_lookup_err sub2) args = Some args').
+      { exact (list_Mmap_lookup_err_mono sub1 sub2 args args' Hmap1 Hext2). }
+      exact (list_Mmap_lookup_err_to_map_default sub2 args args' Hmap2). }
+    split.
+    { symmetry.
+      exact (named_list_lookup_err_to_lookup default sub2 out out' Hlook2). }
+    split.
+    { intros z Hin.
+      destruct Hin as [<- | Hin].
+      - exists out'. exact Hlook2.
+      - assert (Hmap2 : list_Mmap (named_list_lookup_err sub2) args = Some args').
+        { exact (list_Mmap_lookup_err_mono sub1 sub2 args args' Hmap1 Hext2). }
+        exact (list_Mmap_lookup_err_In_some sub2 args args' z Hin Hmap2). }
+    split. { congruence. }
+    split. { congruence. }
+    { intros z Hz. exact (Hmono2 z (Hmono1 z Hz)). }
+  Qed.
+
   Lemma clauses_to_instance_db_monotone
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
