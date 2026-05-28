@@ -2163,6 +2163,226 @@ Section WithMap.
         apply Hmono. rewrite Hdb1. exact Ha.
   Qed.
 
+  (* ============================================================== *)
+  (* G-series helpers for the no-collision / atoms-in-db induction   *)
+  (* ============================================================== *)
+
+  (* G4: map over a list agrees when the substitution agrees on all list
+     elements and the first substitution is defined on all of them. *)
+  Lemma map_lookup_default_ext (sub sub' : named_list idx idx) (l : list idx) :
+    (forall x y, named_list_lookup_err sub x = Some y ->
+                 named_list_lookup_err sub' x = Some y) ->
+    (forall x, In x l -> exists y, named_list_lookup_err sub x = Some y) ->
+    map (named_list_lookup default sub) l = map (named_list_lookup default sub') l.
+  Proof.
+    intros Hext Hdom.
+    induction l as [|x l IH].
+    - reflexivity.
+    - cbn [map].
+      assert (Hex : exists y, named_list_lookup_err sub x = Some y)
+        by (apply Hdom; left; reflexivity).
+      destruct Hex as [y Hy].
+      assert (Hsub : named_list_lookup default sub x = y)
+        by (exact (named_list_lookup_err_to_lookup default sub x y Hy)).
+      assert (Hsub' : named_list_lookup default sub' x = y).
+      { apply named_list_lookup_err_to_lookup. apply Hext. exact Hy. }
+      rewrite Hsub, Hsub'.
+      f_equal.
+      apply IH.
+      intros z Hz. apply Hdom. right. exact Hz.
+  Qed.
+
+  (* NoDup-map-app: a repeated image under g in an app-list is impossible. *)
+  Lemma nodup_map_app_neq {A B : Type} (g : A -> B) (Pl : list A) (a0 a : A) (tl : list A) :
+    NoDup (map g (Pl ++ a :: tl)) -> In a0 Pl -> g a0 = g a -> False.
+  Proof.
+    intros Hnd Hin Heq.
+    rewrite map_app in Hnd. cbn [map] in Hnd.
+    apply (NoDup_remove_2 (map g Pl) (map g tl) (g a) Hnd).
+    apply in_or_app.
+    left.
+    rewrite <- Heq.
+    apply in_map. exact Hin.
+  Qed.
+
+  (* G1: if db_lookup returns Some r, then the corresponding atom is in the db. *)
+  Local Lemma db_lookup_some_atom_in_db (f : symbol) (args : list idx) (r : idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    fst (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit f args e) = Some r ->
+    atom_in_db (Build_atom f args r) (db e).
+  Proof.
+    unfold Defs.db_lookup. cbn [fst].
+    intro Hr.
+    destruct (map.get (db e) f) as [tbl|] eqn:Htbl.
+    - cbn in Hr.
+      destruct (map.get tbl args) as [en|] eqn:Hen.
+      + cbn in Hr. injection Hr as <-.
+        unfold atom_in_db, Semantics.atom_in_db, Is_Some_satisfying.
+        cbn [atom_fn atom_args atom_ret].
+        rewrite Htbl. cbn [Is_Some_satisfying].
+        rewrite Hen. cbn [Is_Some_satisfying]. reflexivity.
+      + cbn in Hr. discriminate Hr.
+    - cbn in Hr. discriminate Hr.
+  Qed.
+
+  (* Sub-helpers for G2 and G3: equiv/worklist preservation through
+     update_analyses, get_analysis, and list_Mmap get_analysis. *)
+
+  Local Lemma update_analyses_preserves_equiv (x : idx) (v : unit)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    equiv (snd (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit x v e0))
+    = equiv e0.
+  Proof.
+    unfold Defs.update_analyses. cbn [snd equiv]. reflexivity.
+  Qed.
+
+  Local Lemma get_analysis_preserves_equiv (x : idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    equiv (snd (get_analysis idx symbol symbol_map idx_map idx_trie unit x e0)) = equiv e0.
+  Proof.
+    unfold get_analysis.
+    destruct (map.get (analyses e0) x) as [a|] eqn:Ha.
+    - cbn [snd equiv]. reflexivity.
+    - unfold Mseq.
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      unfold Defs.update_analyses, Defs.push_worklist.
+      cbn [snd equiv]. reflexivity.
+  Qed.
+
+  Local Lemma list_Mmap_get_analysis_preserves_equiv (args : list idx) :
+    forall (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit),
+    equiv (snd (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                       args e0)) = equiv e0.
+  Proof.
+    induction args as [|a args IH]; intros e0.
+    - cbn [list_Mmap Mret StateMonad.state_monad snd equiv]. reflexivity.
+    - cbn [list_Mmap].
+      destruct (get_analysis idx symbol symbol_map idx_map idx_trie unit a e0)
+        as [p e1] eqn:Hga.
+      cbn [fst snd].
+      pose proof (get_analysis_preserves_equiv a e0) as Heq1.
+      rewrite Hga in Heq1. cbn [snd] in Heq1.
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [p2 e2] eqn:Hrec.
+      pose proof (IH e1) as Heq2.
+      rewrite Hrec in Heq2. cbn [snd] in Heq2.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hga. cbn [fst snd].
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [q e3] eqn:Hq.
+      cbn [snd]. injection Hrec as <- <-. congruence.
+  Qed.
+
+  (* G2: db_set leaves the equiv (union-find) field unchanged. *)
+  Local Lemma db_set_preserves_equiv (a : atom)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    equiv (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e)) = equiv e.
+  Proof.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad].
+    unfold Defs.get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                        (atom_args a) e) as [p e1] eqn:Hga.
+    cbn [fst snd].
+    pose proof (list_Mmap_get_analysis_preserves_equiv (atom_args a) e) as Heq1.
+    rewrite Hga in Heq1. cbn [snd] in Heq1.
+    destruct (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a) (analyze idx symbol unit a p) e1)
+      as [pu e2] eqn:Hua.
+    pose proof (update_analyses_preserves_equiv (atom_ret a)
+                  (analyze idx symbol unit a p) e1) as Heq2.
+    rewrite Hua in Heq2. cbn [snd] in Heq2.
+    cbn [snd].
+    unfold db_set'. cbn [snd equiv].
+    congruence.
+  Qed.
+
+  (* Sub-helpers for G3: worklist all-analysis_repair preservation. *)
+
+  Local Lemma update_analyses_preserves_worklist_ar (x : idx) (v : unit)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    all (fun ent => exists j, ent = analysis_repair idx j) (worklist e0) ->
+    all (fun ent => exists j, ent = analysis_repair idx j)
+        (worklist (snd (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit x v e0))).
+  Proof.
+    unfold Defs.update_analyses. cbn [snd worklist]. intro H. exact H.
+  Qed.
+
+  Local Lemma get_analysis_preserves_worklist_ar (x : idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    all (fun ent => exists j, ent = analysis_repair idx j) (worklist e0) ->
+    all (fun ent => exists j, ent = analysis_repair idx j)
+        (worklist (snd (get_analysis idx symbol symbol_map idx_map idx_trie unit x e0))).
+  Proof.
+    unfold get_analysis.
+    destruct (map.get (analyses e0) x) as [a|] eqn:Ha.
+    - cbn [snd worklist]. intro H. exact H.
+    - unfold Mseq.
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      unfold Defs.update_analyses, Defs.push_worklist.
+      cbn [snd worklist].
+      intro H.
+      cbn [all].
+      split.
+      + exists x. reflexivity.
+      + exact H.
+  Qed.
+
+  Local Lemma list_Mmap_get_analysis_preserves_worklist_ar (args : list idx) :
+    forall (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit),
+    all (fun ent => exists j, ent = analysis_repair idx j) (worklist e0) ->
+    all (fun ent => exists j, ent = analysis_repair idx j)
+        (worklist (snd (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                       args e0))).
+  Proof.
+    induction args as [|a args IH]; intros e0 Hwl.
+    - cbn [list_Mmap Mret StateMonad.state_monad snd worklist]. exact Hwl.
+    - cbn [list_Mmap].
+      destruct (get_analysis idx symbol symbol_map idx_map idx_trie unit a e0)
+        as [p e1] eqn:Hga.
+      cbn [fst snd].
+      pose proof (get_analysis_preserves_worklist_ar a e0 Hwl) as Hwl1.
+      rewrite Hga in Hwl1. cbn [snd] in Hwl1.
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [p2 e2] eqn:Hrec.
+      pose proof (IH e1 Hwl1) as Hwl2.
+      rewrite Hrec in Hwl2. cbn [snd] in Hwl2.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hga. cbn [fst snd].
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [q e3] eqn:Hq.
+      cbn [snd]. injection Hrec as <- <-. exact Hwl2.
+  Qed.
+
+  (* G3: db_set preserves the "all analysis_repair" invariant on the worklist. *)
+  Local Lemma db_set_preserves_worklist_ar (a : atom)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    all (fun ent => exists j, ent = analysis_repair idx j) (worklist e) ->
+    all (fun ent => exists j, ent = analysis_repair idx j)
+        (worklist (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e))).
+  Proof.
+    intro Hwl.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad].
+    unfold Defs.get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                        (atom_args a) e) as [p e1] eqn:Hga.
+    cbn [fst snd].
+    pose proof (list_Mmap_get_analysis_preserves_worklist_ar (atom_args a) e Hwl) as Hwl1.
+    rewrite Hga in Hwl1. cbn [snd] in Hwl1.
+    destruct (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a) (analyze idx symbol unit a p) e1)
+      as [pu e2] eqn:Hua.
+    pose proof (update_analyses_preserves_worklist_ar (atom_ret a)
+                  (analyze idx symbol unit a p) e1 Hwl1) as Hwl2.
+    rewrite Hua in Hwl2. cbn [snd] in Hwl2.
+    cbn [snd].
+    unfold db_set'. cbn [snd worklist].
+    exact Hwl2.
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
