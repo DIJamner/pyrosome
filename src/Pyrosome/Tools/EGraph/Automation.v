@@ -233,6 +233,11 @@ Section ReducingSkeleton.
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
+    (* The context names must be disjoint from the language symbols, so that
+       [ctx_to_rules c ++ l] is well-formed (a name clash would break
+       [all_fresh] of the renamed language).  Not derivable from the other
+       hypotheses; in practice discharged by computation. *)
+    all (fun x => fresh x l) (map fst c) ->
     Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules
                        rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     exists (l' : lang positive) (e1' e2' : term positive) (t' : sort positive)
@@ -256,13 +261,14 @@ Theorem egraph_sound
     wf_ctx (Model:=core_model l) c ->
     wf_term l c e1 t ->
     wf_term l c e2 t ->
+    all (fun x => fresh x l) (map fst c) ->
     Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     eq_term l c t e1 e2.
 Proof.
-  intros Hl Hc He1 He2 Hsucc.
+  intros Hl Hc He1 He2 Hdisj Hsucc.
   destruct (@egraph_reducing_equal'_to_pos l filter reversible inj_rules
               rebuild_fuel sat_fuel efuel red_fuel c t e1 e2
-              Hl Hc He1 He2 Hsucc)
+              Hl Hc He1 He2 Hdisj Hsucc)
     as (l' & e1' & e2' & t' & sched & inj' & Hwf' & He1' & He2' & Hsched
         & Hsucc' & Hlift).
   apply Hlift.
@@ -274,13 +280,19 @@ Qed.
 
  *)
 
+(* Discharge [all (fun x => fresh x l) (map fst c)] for concrete [c]/[l]:
+   reduce [map fst c] to a literal, split the [all], and solve each
+   [fresh x l] by computation. *)
+Ltac solve_ctx_lang_disjoint :=
+  cbn [map fst all]; repeat first [ exact I | apply conj | compute_fresh ].
+
 (*TODO: call Matches.t' or some other tactic to solve subgoals*)
 Ltac by_reduction' reversible inj_rules :=
   (*TODO: check subsumed by egraph reduction
   try reduce;
    *)
     apply (egraph_sound 100 100 100 100 filter_rules reversible inj_rules);
-    [prove_by_lang_db| | | | flagged_exact I].
+    [prove_by_lang_db| | | | solve_ctx_lang_disjoint | flagged_exact I].
 
 
 (* TODO: plug inj_rules into tactics *)
