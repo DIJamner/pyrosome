@@ -1367,6 +1367,365 @@ Section WithMap.
         intros k v Hk. apply Hext_f. apply Hext2. apply Hext1. exact Hk.
   Qed.
 
+  (* ============================================================== *)
+  (* clauses_to_instance_db_monotone: db only grows, never shrinks  *)
+  (* ============================================================== *)
+
+  Local Lemma alloc_preserves_db_val
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)) = db e0.
+  Proof.
+    unfold alloc.
+    destruct (UnionFind.alloc idx (idx_map idx) (idx_map nat) idx_succ (equiv e0))
+      as [eq' xf] eqn:Heq.
+    cbn [snd db]. reflexivity.
+  Qed.
+
+  Local Lemma find_preserves_db_val (x : idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (Defs.find x e0)) = db e0.
+  Proof.
+    unfold Defs.find.
+    destruct (UnionFind.find (equiv e0) x) as [uf' v'] eqn:Hf.
+    cbn [snd db]. reflexivity.
+  Qed.
+
+  Local Lemma union_preserves_db_val (x y : idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (Defs.union x y e0)) = db e0.
+  Proof.
+    unfold Defs.union.
+    cbn [Mbind StateMonad.state_monad].
+    destruct (Defs.find x e0) as [cx e1] eqn:Hf1.
+    cbn [fst snd].
+    pose proof (find_preserves_db_val x e0) as Hdb1.
+    rewrite Hf1 in Hdb1. cbn [snd] in Hdb1.
+    destruct (Defs.find y e1) as [cy e2] eqn:Hf2.
+    cbn [fst snd].
+    pose proof (find_preserves_db_val y e1) as Hdb2.
+    rewrite Hf2 in Hdb2. cbn [snd] in Hdb2.
+    eqb_case cx cy.
+    - cbn [Mret StateMonad.state_monad snd db]. congruence.
+    - cbn [snd db].
+      destruct (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) (equiv e2) cx cy)
+        as [uf' v'] eqn:Hu.
+      cbn [snd db].
+      destruct (eqb cx v'); cbn [snd db]; congruence.
+  Qed.
+
+  Local Lemma rename_lookup_preserves_db (x : idx) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                    unit x sub0 e0)) = db e0.
+  Proof.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub0 x) as [y|] eqn:Hlook.
+    - cbn [Mret StateMonad.state_monad snd db]. reflexivity.
+    - cbn [Mbind StateMonad.state_monad].
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+        as [y e1] eqn:Halloc.
+      cbn [fst snd].
+      pose proof (alloc_preserves_db_val e0) as Hdb1.
+      rewrite Halloc in Hdb1. cbn [snd] in Hdb1.
+      exact Hdb1.
+  Qed.
+
+  Local Lemma list_Mmap_rename_lookup_preserves_db (args : list idx) :
+    forall (sub0 : named_list idx idx)
+      (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit),
+    db (snd (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                          idx_trie unit) args sub0 e0)) = db e0.
+  Proof.
+    induction args as [|a args IH]; intros sub0 e0.
+    - cbn. reflexivity.
+    - cbn [list_Mmap].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub0 e0) as [p e1] eqn:Hrla.
+      destruct p as [a' sub1].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [p2 e2] eqn:Hrec.
+      pose proof (rename_lookup_preserves_db a sub0 e0) as Hdb1.
+      rewrite Hrla in Hdb1. cbn [snd] in Hdb1.
+      pose proof (IH sub1 e1) as Hdb2.
+      rewrite Hrec in Hdb2. cbn [snd] in Hdb2.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hrla. cbn [fst snd uncurry].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [q e3] eqn:Hq.
+      destruct q as [args2 sub2]. cbn [snd uncurry db].
+      injection Hrec as <- <-. congruence.
+  Qed.
+
+  Local Lemma rename_atom_preserves_db (a : atom)
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+               unit a sub0 e0)) = db e0.
+  Proof.
+    destruct a as [f args out].
+    unfold rename_atom.
+    cbn [atom_fn atom_args atom_ret].
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+    cbn beta iota. unfold Basics.compose.
+    destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                           idx_trie unit) args sub0 e0)
+      as [q1 e1] eqn:Hq1.
+    destruct q1 as [args' sub1].
+    cbn [fst snd uncurry].
+    destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                unit out sub1 e1)
+      as [q2 e2] eqn:Hq2.
+    destruct q2 as [ret' sub2].
+    cbn [snd db uncurry].
+    pose proof (list_Mmap_rename_lookup_preserves_db args sub0 e0) as Hdb1.
+    pose proof (rename_lookup_preserves_db out sub1 e1) as Hdb2.
+    set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                            idx_trie unit) args sub0 e0) in *.
+    rewrite Hq1 in Hdb1. cbn [snd] in Hdb1.
+    set (RL := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+                 out sub1 e1) in *.
+    rewrite Hq2 in Hdb2. cbn [snd] in Hdb2.
+    congruence.
+  Qed.
+
+  Local Lemma atom_in_db_after_db_set' (a : atom) (out_a : unit) (b : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db b (db e0) ->
+    (b.(atom_fn) <> a.(atom_fn) \/ b.(atom_args) <> a.(atom_args)) ->
+    atom_in_db b (db (snd (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                              unit a out_a e0))).
+  Proof.
+    intros Hb Hneq.
+    unfold db_set'. cbn [snd db].
+    unfold map_update, atom_in_db, Is_Some_satisfying.
+    cbn [atom_fn atom_args atom_ret].
+    destruct b as [bfn bargs bret].
+    cbn [atom_fn atom_args atom_ret] in Hb, Hneq.
+    destruct (map.get (db e0) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - eqb_case bfn (atom_fn a).
+      + rewrite map.get_put_same. cbn [Is_Some_satisfying].
+        unfold atom_in_db, Is_Some_satisfying in Hb. cbn [atom_fn] in Hb.
+        rewrite Htbl in Hb. cbn in Hb.
+        destruct Hneq as [H|H]; [contradiction H; reflexivity|].
+        rewrite map.get_put_diff by auto. exact Hb.
+      + rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hb. exact Hb.
+    - eqb_case bfn (atom_fn a).
+      + rewrite map.get_put_same. cbn [Is_Some_satisfying].
+        unfold atom_in_db, Is_Some_satisfying in Hb. cbn [atom_fn] in Hb.
+        rewrite Htbl in Hb. cbn in Hb. destruct Hb.
+      + rewrite map.get_put_diff by auto.
+        unfold atom_in_db, Is_Some_satisfying in Hb. exact Hb.
+  Qed.
+
+  Local Lemma atom_in_db_lookup_none_neq (a' b : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db b (db e0) ->
+    Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+              a'.(atom_fn) a'.(atom_args) e0 = (None, e0) ->
+    b.(atom_fn) <> a'.(atom_fn) \/ b.(atom_args) <> a'.(atom_args).
+  Proof.
+    intros Hb Hlook.
+    unfold Defs.db_lookup in Hlook. cbn in Hlook.
+    injection Hlook as Hlook.
+    unfold atom_in_db, Is_Some_satisfying in Hb.
+    destruct (map.get (db e0) (atom_fn b)) as [tbl_b|] eqn:Htbl_b;
+      cbn in Hb; try destruct Hb.
+    destruct (map.get tbl_b (atom_args b)) as [r_b|] eqn:Hr_b;
+      cbn in Hb; try destruct Hb.
+    destruct (map.get (db e0) (atom_fn a')) as [tbl_a|] eqn:Htbl_a.
+    - cbn in Hlook.
+      destruct (map.get tbl_a (atom_args a')) as [r_a|] eqn:Hr_a.
+      + cbn in Hlook. discriminate Hlook.
+      + eqb_case (atom_fn b) (atom_fn a').
+        * right. intros Hargs_eq.
+          rewrite H in Htbl_b. rewrite Htbl_a in Htbl_b.
+          injection Htbl_b as Htbl_eq. subst tbl_b.
+          rewrite <- Hargs_eq in Hr_a. rewrite Hr_a in Hr_b. discriminate Hr_b.
+        * left. assumption.
+    - cbn in Hlook.
+      left.
+      intros Hfn_eq.
+      rewrite <- Hfn_eq in Htbl_a. rewrite Htbl_a in Htbl_b. discriminate Htbl_b.
+  Qed.
+
+  Local Lemma update_analyses_preserves_db (x : idx) (v : unit)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit x v e0))
+    = db e0.
+  Proof.
+    unfold Defs.update_analyses. cbn [snd db]. reflexivity.
+  Qed.
+
+  Local Lemma get_analysis_preserves_db (x : idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    db (snd (get_analysis idx symbol symbol_map idx_map idx_trie unit x e0)) = db e0.
+  Proof.
+    unfold get_analysis.
+    destruct (map.get (analyses e0) x) as [a|] eqn:Ha.
+    - cbn [snd db]. reflexivity.
+    - unfold Mseq.
+      cbn [Mbind Mret StateMonad.state_monad fst snd].
+      unfold Defs.update_analyses, Defs.push_worklist.
+      cbn [snd db]. reflexivity.
+  Qed.
+
+  Local Lemma list_Mmap_get_analysis_preserves_db (args : list idx) :
+    forall (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit),
+    db (snd (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                       args e0)) = db e0.
+  Proof.
+    induction args as [|a args IH]; intros e0.
+    - cbn [list_Mmap Mret StateMonad.state_monad snd db]. reflexivity.
+    - cbn [list_Mmap].
+      destruct (get_analysis idx symbol symbol_map idx_map idx_trie unit a e0)
+        as [p e1] eqn:Hga.
+      cbn [fst snd].
+      pose proof (get_analysis_preserves_db a e0) as Hdb1.
+      rewrite Hga in Hdb1. cbn [snd] in Hdb1.
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [p2 e2] eqn:Hrec.
+      pose proof (IH e1) as Hdb2.
+      rewrite Hrec in Hdb2. cbn [snd] in Hdb2.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hga. cbn [fst snd].
+      destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                          args e1) as [q e3] eqn:Hq.
+      cbn [snd]. injection Hrec as <- <-. congruence.
+  Qed.
+
+  Local Lemma db_set_preserves_atom_in_db (a' b : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db b (db e0) ->
+    Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+              a'.(atom_fn) a'.(atom_args) e0 = (None, e0) ->
+    atom_in_db b (db (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie
+                              unit a' e0))).
+  Proof.
+    intros Hb Hlook.
+    pose proof (atom_in_db_lookup_none_neq a' b e0 Hb Hlook) as Hneq.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad].
+    unfold Defs.get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                        (atom_args a') e0) as [p e1] eqn:Hga.
+    cbn [fst snd].
+    pose proof (list_Mmap_get_analysis_preserves_db (atom_args a') e0) as Hdb1.
+    rewrite Hga in Hdb1. cbn [snd] in Hdb1.
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a') (analyze idx symbol unit a' p) e1)
+      as [pu e2] eqn:Hua.
+    pose proof (update_analyses_preserves_db (atom_ret a')
+                  (analyze idx symbol unit a' p) e1) as Hdb2.
+    rewrite Hua in Hdb2. cbn [snd] in Hdb2.
+    cbn [snd].
+    apply atom_in_db_after_db_set'.
+    - rewrite Hdb2. rewrite Hdb1. exact Hb.
+    - exact Hneq.
+  Qed.
+
+  Local Lemma update_entry_preserves_atom_in_db (a' b : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db b (db e0) ->
+    atom_in_db b (db (snd (update_entry a' e0))).
+  Proof.
+    intros Hb.
+    unfold update_entry.
+    unfold Mbind, StateMonad.state_monad.
+    destruct (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+                (atom_fn a') (atom_args a') e0) as [mout e1] eqn:Hlook.
+    cbn [fst snd].
+    assert (He1 : e1 = e0).
+    { unfold Defs.db_lookup in Hlook. cbn in Hlook. injection Hlook as _ He1.
+      exact (eq_sym He1). }
+    subst e1.
+    destruct mout as [r|].
+    - unfold Mseq.
+      cbn [Mbind StateMonad.state_monad Mret fst snd].
+      pose proof (union_preserves_db_val r (atom_ret a') e0) as Hdb.
+      set (U := Defs.union r (atom_ret a') e0) in *.
+      destruct U as [v u] eqn:Hu.
+      cbn [snd] in Hdb.
+      cbn [snd]. rewrite Hdb. exact Hb.
+    - cbn [Mret StateMonad.state_monad fst snd].
+      apply db_set_preserves_atom_in_db.
+      + exact Hb.
+      + unfold Defs.db_lookup. cbn.
+        exact Hlook.
+  Qed.
+
+  Lemma clauses_to_instance_db_monotone
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (a : Defs.atom idx symbol) :
+    atom_in_db a (db e0) ->
+    atom_in_db a (db (snd (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0))).
+  Proof.
+    revert sub0 e0.
+    induction cs as [|c cs IH]; intros sub0 e0 Ha.
+    - cbn. exact Ha.
+    - cbn [Semantics.clauses_to_instance list_Miter].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map
+                  idx_map idx_trie unit c sub0 e0) as [q e1] eqn:Hadd.
+      destruct q as [u sub1].
+      cbn [snd uncurry].
+      apply IH.
+      destruct c as [x y | a_clause].
+      + (* eq_clause x y *)
+        unfold add_clause_to_instance in Hadd.
+        cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind]
+          in Hadd.
+        cbn beta iota in Hadd. unfold Basics.compose in Hadd.
+        destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                    unit x sub0 e0) as [p1 e1'] eqn:Hrx.
+        destruct p1 as [x' sub1'].
+        cbn [fst snd uncurry] in Hadd.
+        destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                    unit y sub1' e1') as [p2 e2'] eqn:Hry.
+        destruct p2 as [y' sub2'].
+        cbn [fst snd uncurry] in Hadd.
+        cbn [lift StateMonad.state_monad Mbind Mret fst snd] in Hadd.
+        cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret]
+          in Hadd.
+        cbn beta iota in Hadd. unfold Basics.compose in Hadd.
+        destruct (Defs.union x' y' e2') as [v e3'] eqn:Hu.
+        cbn [uncurry fst snd] in Hadd.
+        injection Hadd as <- <- <-.
+        pose proof (rename_lookup_preserves_db x sub0 e0) as Hdb1.
+        rewrite Hrx in Hdb1. cbn [snd] in Hdb1.
+        pose proof (rename_lookup_preserves_db y sub1' e1') as Hdb2.
+        rewrite Hry in Hdb2. cbn [snd] in Hdb2.
+        pose proof (union_preserves_db_val x' y' e2') as Hdb3.
+        rewrite Hu in Hdb3. cbn [snd] in Hdb3.
+        rewrite Hdb3. rewrite Hdb2. rewrite Hdb1. exact Ha.
+      + (* atom_clause a_clause *)
+        unfold add_clause_to_instance in Hadd.
+        cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind]
+          in Hadd.
+        cbn beta iota in Hadd. unfold Basics.compose in Hadd.
+        destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                    unit a_clause sub0 e0) as [p1 e1'] eqn:Hra.
+        destruct p1 as [a' sub1'].
+        cbn [fst snd uncurry] in Hadd.
+        cbn [lift StateMonad.state_monad Mbind Mret fst snd] in Hadd.
+        cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret]
+          in Hadd.
+        cbn beta iota in Hadd. unfold Basics.compose in Hadd.
+        destruct (update_entry a' e1') as [u' e2'] eqn:Hue.
+        cbn [uncurry fst snd] in Hadd.
+        injection Hadd as <- <- <-.
+        pose proof (rename_atom_preserves_db a_clause sub0 e0) as Hdb1.
+        rewrite Hra in Hdb1. cbn [snd] in Hdb1.
+        pose proof (update_entry_preserves_atom_in_db a' a e1') as Hmono.
+        rewrite Hue in Hmono. cbn [snd] in Hmono.
+        apply Hmono. rewrite Hdb1. exact Ha.
+  Qed.
+
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
     In a (db_to_atoms d) <-> atom_in_db a d.
   Proof.
