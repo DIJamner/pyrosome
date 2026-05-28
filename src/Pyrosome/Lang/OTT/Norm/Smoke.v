@@ -20,7 +20,9 @@ Section Smoke.
   Example nf_zero : reify_val vZero = con "zero" [a]. Proof. reflexivity. Qed.
   Example nf_two  : reify_val (vSuc (vSuc vZero)) = con "suc" [con "suc" [con "zero" [a]; a]; a].
   Proof. reflexivity. Qed.
-  Example nf_Nat  : reify_ty dNat = con "Nat" [a]. Proof. reflexivity. Qed.
+  Example nf_Nat  : reify_val vNat = con "Nat" [a]. Proof. reflexivity. Qed.
+  Example nf_NatTy : reify_ty (dEl vNat) = con "El" [con "Nat" [a]; a; a; a].
+  Proof. reflexivity. Qed.
   Example nf_var0 : reify_val (vNe (nVar 0)) = con "hd" [a; a; a]. Proof. reflexivity. Qed.
 
   (* the substitution acts on values: [snoc id zero] applied to variable 0 is zero *)

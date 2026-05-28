@@ -21,23 +21,27 @@ Import Core.Notations.
 
    Neutrals carry only SEMANTIC data — an index, or a spine of eliminators over
    semantic motives — never raw syntax, so congruent arguments build equal neutrals.
-   [vCode]/[dU] handle the Tarski universe; [dNe] is a neutral type ([El] of a neutral
-   code).  Pi/Sig/pairs (binders) are deferred — re-add their value forms with the
-   binder fragment. *)
+
+   The Tarski universe is handled UNIFORMLY: a semantic type [svalty] is either the
+   universe [dU] or [dEl e] = [El] of a code-value [e : sval] (Nat/Empty are codes,
+   [vNat]/[vEmpty]; a stuck type is [dEl] of a neutral [vNe]).  Because [dEl] wraps an
+   arbitrary code without inspecting its shape, [El]-formation is a plain congruence and
+   [El]-substitution computes definitionally ([apply_ty s (dEl e) = dEl (apply_val s e)]).
+   Pi/Sig/pairs (binders) are deferred — re-add their value forms with the binder
+   fragment. *)
 Section Domain.
   Notation term := (@term string).
 
   Unset Elimination Schemes.
   Inductive svalty : Type :=
-  | dNe   (n : neutral)                  (* neutral type: El of a neutral code *)
-  | dNat
-  | dEmpty
   | dU    (r l : term)                   (* universe U_{r,l}; r,l are nf_info-normal *)
+  | dEl   (e : sval)                     (* El of a code-value (typically a neutral) *)
   with sval : Type :=
   | vNe   (n : neutral)                  (* neutral value *)
   | vZero
   | vSuc  (v : sval)
-  | vCode (T : svalty)                   (* element of U: a code *)
+  | vNat                                 (* the code [Nat] (element of U) *)
+  | vEmpty                               (* the code [Empty] (element of U) *)
   with neutral : Type :=
   | nVar  (k : nat)                      (* de Bruijn index (0 = innermost) *)
   | nEmptyrec (rA lA : term) (A : sval) (scrut : neutral).
@@ -56,17 +60,16 @@ Section Domain.
      variables/types when normalizing an [ext].) *)
   Fixpoint shift_ty (d : nat) (T : svalty) : svalty :=
     match T with
-    | dNe n => dNe (shift_ne d n)
-    | dNat => dNat
-    | dEmpty => dEmpty
     | dU r l => dU r l
+    | dEl e => dEl (shift_val d e)
     end
   with shift_val (d : nat) (v : sval) : sval :=
     match v with
     | vNe n => vNe (shift_ne d n)
     | vZero => vZero
     | vSuc v' => vSuc (shift_val d v')
-    | vCode T => vCode (shift_ty d T)
+    | vNat => vNat
+    | vEmpty => vEmpty
     end
   with shift_ne (d : nat) (n : neutral) : neutral :=
     match n with
@@ -75,27 +78,22 @@ Section Domain.
     end.
 
   (* Apply a semantic substitution to a value/type/neutral (NbE substitution into
-     normal forms).  A variable picks its replacement out of [σ]; [El]-of-neutral
-     ([dNe]) re-decodes in case the code became concrete; the [Emptyrec] spine
+     normal forms).  A variable picks its replacement out of [σ]; [dEl] pushes the
+     substitution into its code (if that code was a neutral that becomes concrete, the
+     type is just [dEl] of the new code — no re-decode needed); the [Emptyrec] spine
      re-substitutes its motive and recurses on its (still-neutral) scrutinee. *)
   Fixpoint apply_ty (s : ssub) (T : svalty) : svalty :=
     match T with
-    | dNe n =>
-        match apply_ne s n with
-        | vCode T' => T'
-        | vNe n' => dNe n'
-        | _ => dNe n
-        end
-    | dNat => dNat
-    | dEmpty => dEmpty
     | dU r l => dU r l
+    | dEl e => dEl (apply_val s e)
     end
   with apply_val (s : ssub) (v : sval) : sval :=
     match v with
     | vNe n => apply_ne s n
     | vZero => vZero
     | vSuc v' => vSuc (apply_val s v')
-    | vCode T => vCode (apply_ty s T)
+    | vNat => vNat
+    | vEmpty => vEmpty
     end
   with apply_ne (s : ssub) (n : neutral) : sval :=
     match n with

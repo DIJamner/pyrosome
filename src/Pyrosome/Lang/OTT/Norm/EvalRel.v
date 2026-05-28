@@ -85,10 +85,8 @@ Section EvalRel.
 
   with eval_ty : term -> svalty -> Type :=
   | ev_U    : forall l r G, eval_ty (con "U" [l; r; G]) (dU (nf_info r) (nf_info l))
-  | ev_El_code : forall e l r G T,
-      eval_rel e (vCode T) -> eval_ty (con "El" [e; l; r; G]) T
-  | ev_El_ne : forall e l r G n,
-      eval_rel e (vNe n) -> eval_ty (con "El" [e; l; r; G]) (dNe n)
+  | ev_El   : forall e l r G ve,
+      eval_rel e ve -> eval_ty (con "El" [e; l; r; G]) (dEl ve)
   | ev_ty_subst : forall A i g G' G sg T,
       eval_sub g sg -> eval_ty A T ->
       eval_ty (con "ty_subst" [A; i; g; G'; G]) (apply_ty sg T)
@@ -101,8 +99,8 @@ Section EvalRel.
   | ev_zero : forall G, eval_rel (con "zero" [G]) vZero
   | ev_suc  : forall n G vn,
       eval_rel n vn -> eval_rel (con "suc" [n; G]) (vSuc vn)
-  | ev_Nat  : forall G, eval_rel (con "Nat" [G]) (vCode dNat)
-  | ev_Empty : forall G, eval_rel (con "Empty" [G]) (vCode dEmpty)
+  | ev_Nat  : forall G, eval_rel (con "Nat" [G]) vNat
+  | ev_Empty : forall G, eval_rel (con "Empty" [G]) vEmpty
   | ev_Emptyrec : forall e A lA rA G ne vA,
       eval_rel e (vNe ne) -> eval_rel A vA ->
       eval_rel (con "Emptyrec" [e; A; lA; rA; G])
