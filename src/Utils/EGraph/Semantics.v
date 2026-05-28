@@ -3244,6 +3244,85 @@ Section WithMap.
     split; reflexivity.
   Qed.
 
+  (* Model-free structural version of alloc_sound: depends only on
+     union_find_ok, no model hypotheses. *)
+  Lemma alloc_struct (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+    : vc (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e_in res =>
+           forall roots,
+           union_find_ok lt e_in.(equiv) roots ->
+           union_find_ok lt (snd res).(equiv) (fst res :: roots)
+           /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
+           /\ Sep.has_key (fst res) (snd res).(equiv).(parent)
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))
+           /\ e_in.(db) = (snd res).(db)
+           /\ e_in.(parents) = (snd res).(parents)
+           /\ e_in.(worklist) = (snd res).(worklist)).
+  Proof.
+    unfold vc, alloc.
+    intros [db_in equiv_in parents_in epoch_in worklist_in analyses_in log_in].
+    destruct equiv_in as [rk_in pa_in mr_in nx_in] eqn:Heq_in.
+    cbn -[map.get map.put].
+    intros roots Huf_roots.
+    destruct Huf_roots as [Hforest Hrcd Hri Hmax Hnub].
+    cbn [parent rank max_rank next equiv] in *.
+    assert (Hnxfresh : ~ Sep.has_key nx_in pa_in).
+    { intro Hk. specialize (Hnub _ Hk). eapply Hlti; exact Hnub. }
+    assert (Hgetnone_pa : map.get pa_in nx_in = None).
+    { unfold Sep.has_key in Hnxfresh. destruct (map.get pa_in nx_in); tauto. }
+    assert (Hnewok : union_find_ok lt
+                      {| rank := map.put rk_in nx_in 0;
+                         parent := map.put pa_in nx_in nx_in;
+                         max_rank := mr_in;
+                         next := idx_succ nx_in |}
+                      (nx_in :: roots)).
+    { constructor; cbn [parent rank max_rank next].
+      - apply forest_extend; auto.
+      - intros k v Hget.
+        eqb_case k nx_in.
+        + exists 0. rewrite map.get_put_same. reflexivity.
+        + rewrite map.get_put_diff in Hget by congruence.
+          specialize (Hrcd _ _ Hget). destruct Hrcd as [r0 Hr0].
+          exists r0. rewrite map.get_put_diff by congruence. exact Hr0.
+      - intros ki kj Hget Hneq.
+        eqb_case ki nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget. congruence.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eqb_case kj nx_in.
+          * exfalso. apply Hnxfresh.
+            apply (forest_closed _ _ Eqb_idx_ok _ (idx_map_ok _) _ _ Hforest _ _ Hget).
+          * specialize (Hri _ _ Hget Hneq).
+            rewrite ! map.get_put_diff by congruence. exact Hri.
+      - intros j r Hget.
+        eqb_case j nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget; subst. Lia.lia.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eauto.
+      - intros k Hk.
+        unfold Sep.has_key in Hk.
+        eqb_case k nx_in.
+        + apply Hlts.
+        + rewrite map.get_put_diff in Hk by congruence.
+          assert (Sep.has_key k pa_in) as Hkpa.
+          { unfold Sep.has_key. destruct (map.get pa_in k); auto. }
+          specialize (Hnub _ Hkpa).
+          eapply Hltt; [exact Hnub | apply Hlts]. }
+    split; [exact Hnewok|].
+    split; [exact Hnxfresh|].
+    split; [unfold Sep.has_key; rewrite map.get_put_same; constructor|].
+    split.
+    { intros xa Hxa. unfold Sep.has_key in *.
+      cbn [parent equiv].
+      pose proof (Eqb_idx_ok xa nx_in) as Heq.
+      destruct (eqb xa nx_in).
+      + subst. rewrite map.get_put_same. constructor.
+      + rewrite map.get_put_diff by congruence. exact Hxa. }
+    split; [reflexivity|].
+    split; reflexivity.
+  Qed.
+
   (* Atom-level equality (under the interpretation) preserves
      soundness: if [a3] is sound and [a1] is i-equivalent to [a3]
      (same fn, args eq_sound pointwise, ret eq_sound), then [a1]
