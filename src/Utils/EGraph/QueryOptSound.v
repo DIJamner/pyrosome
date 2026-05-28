@@ -615,7 +615,10 @@ Section WithMap.
           map.get i' x' = Some dx /\
           Sep.has_key x' (parent (equiv e')) /\
           (forall z, Sep.has_key z (parent (equiv e)) ->
-                     Sep.has_key z (parent (equiv e')))
+                     Sep.has_key z (parent (equiv e'))) /\
+          (forall y d, map.get i' y = Some d ->
+                       map.get i y = Some d \/
+                       (exists x', named_list_lookup_err sub' x' = Some y))
     end.
   Proof.
     intros Hok Hsnd Hren Hsubdom Hax Hwf_dx.
@@ -631,7 +634,8 @@ Section WithMap.
       split; [exact Hsubdom|].
       split; [exact (Hren _ _ Hin _ Hax)|].
       split; [exact (Hsubdom _ _ Hin)|].
-      intros z Hz; exact Hz. }
+      split; [intros z Hz; exact Hz|].
+      intros y d Hyd; left; exact Hyd. }
     cbn -[alloc].
     destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e)
       as [x_new e_alloc] eqn:Halloc.
@@ -668,7 +672,79 @@ Section WithMap.
     split.
     { rewrite map.get_put_same. reflexivity. }
     split; [exact Hk_xnew_a|].
-    exact Hk_pres.
+    split; [exact Hk_pres|].
+    intros y d Hyd.
+    pose proof (Eqb_idx_ok y x_new) as Hyxn_dec.
+    destruct (eqb y x_new) eqn:Hyxn.
+    - right. assert (Heqy : y = x_new) by exact Hyxn_dec. subst y.
+      exists x. cbn [named_list_lookup_err].
+      assert (Hxx : eqb x x = true) by
+        (pose proof (Eqb_idx_ok x x) as Hxx_dec;
+         destruct (eqb x x); [reflexivity | exfalso; apply Hxx_dec; reflexivity]).
+      rewrite Hxx. reflexivity.
+    - left. rewrite map.get_put_diff in Hyd; [exact Hyd | exact Hyxn_dec].
+  Qed.
+
+  (* ============================================================== *)
+  (* sub_mono helpers (early copy): needed by list_Mmap_rename_lookup_sound *)
+  (* ============================================================== *)
+
+  Local Lemma rename_lookup_sub_mono_early (x : idx) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (z w : idx) :
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                   unit x sub0 e0))) z = Some w.
+  Proof.
+    intros Hhit.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub0 x) as [y|] eqn:Hlook.
+    - cbn [Mret StateMonad.state_monad fst snd]. exact Hhit.
+    - cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+        as [fresh e1] eqn:Halloc.
+      cbn [fst snd].
+      cbn [named_list_lookup_err].
+      assert (Hzx : z <> x).
+      { intros Heq. subst z. rewrite Hlook in Hhit. discriminate. }
+      pose proof (Eqb_idx_ok z x) as Hdec.
+      destruct (eqb z x) eqn:Hzxeqb.
+      + exfalso. apply Hzx. exact Hdec.
+      + exact Hhit.
+  Qed.
+
+  Local Lemma list_Mmap_rename_lookup_sub_mono_early (args : list idx) :
+    forall (sub0 : named_list idx idx)
+      (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+      (z w : idx),
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                              idx_trie unit) args sub0 e0))) z = Some w.
+  Proof.
+    induction args as [|a args IH]; intros sub0 e0 z w Hhit.
+    - cbn. exact Hhit.
+    - cbn [list_Mmap].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub0 e0) as [p e1] eqn:Hrla.
+      destruct p as [a' sub1].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [p2 e2] eqn:Hrec.
+      destruct p2 as [args' sub2].
+      pose proof (rename_lookup_sub_mono_early a sub0 e0 z w Hhit) as Hstep.
+      rewrite Hrla in Hstep. cbn [fst snd] in Hstep.
+      pose proof (IH sub1 e1 z w Hstep) as Hrec_mono.
+      rewrite Hrec in Hrec_mono. cbn [fst snd] in Hrec_mono.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hrla. cbn [fst snd uncurry].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [q e3] eqn:Hq.
+      destruct q as [args2 sub3]. cbn [fst snd uncurry].
+      injection Hrec as <- <-.
+      exact Hrec_mono.
   Qed.
 
   (* The list version of [rename_lookup_sound], by induction over the
@@ -705,7 +781,10 @@ Section WithMap.
           list_Mmap (map.get i') args' = Some arg_doms /\
           all (fun x' => Sep.has_key x' (parent (equiv e'))) args' /\
           (forall z, Sep.has_key z (parent (equiv e)) ->
-                     Sep.has_key z (parent (equiv e')))
+                     Sep.has_key z (parent (equiv e'))) /\
+          (forall y d, map.get i' y = Some d ->
+                       map.get i y = Some d \/
+                       (exists x', named_list_lookup_err sub' x' = Some y))
     end.
   Proof.
     revert arg_doms sub e i.
@@ -721,7 +800,8 @@ Section WithMap.
       split; [exact Hsubdom|].
       split; [reflexivity|].
       split; [exact I|].
-      intros z Hz; exact Hz.
+      split; [intros z Hz; exact Hz|].
+      intros y d Hyd; left; exact Hyd.
     - cbn [list_Mmap] in Hmap.
       destruct (map.get a_src a) as [d_a|] eqn:Hda; [|discriminate].
       destruct (list_Mmap (map.get a_src) args0) as [ds|] eqn:Hds; [|discriminate].
@@ -734,7 +814,7 @@ Section WithMap.
       destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
                   idx_trie unit a sub e) as [ [a' sub1] e1 ] eqn:Hrla.
       destruct Hrl as (i1 & Hext1 & Hok1 & Hsnd1 & Hren1 & Hsubdom1 & Hi1a' &
-                       Hka'1 & Hmono1).
+                       Hka'1 & Hmono1 & Hdom1).
       cbn -[rename_lookup list_Mmap] in *.
       rewrite Hrla.
       cbn [uncurry Basics.compose].
@@ -745,7 +825,7 @@ Section WithMap.
         as [ [args0' sub2] e2 ] eqn:Hlm.
       cbn [uncurry] in HIH |- *.
       destruct HIH as (i2 & Hext2 & Hok2 & Hsnd2 & Hren2 & Hsubdom2 & Hmap2 &
-                       Hall2 & Hmono2).
+                       Hall2 & Hmono2 & Hdom2).
       exists i2.
       split.
       { intros k v Hk. apply Hext2. apply Hext1. exact Hk. }
@@ -758,7 +838,200 @@ Section WithMap.
         cbn [list_Mmap]. rewrite Hi2a'. rewrite Hmap2. reflexivity. }
       split.
       { cbn [all]. split; [apply Hmono2; exact Hka'1 | exact Hall2]. }
-      intros z Hz. apply Hmono2. apply Hmono1. exact Hz.
+      split; [intros z Hz; apply Hmono2; apply Hmono1; exact Hz|].
+      { intros y d Hyd.
+        destruct (Hdom2 y d Hyd) as [Hi1 | Hsub2].
+        - destruct (Hdom1 y d Hi1) as [Hi0 | Hsub1].
+          + left; exact Hi0.
+          + right. destruct Hsub1 as [x'' Hx''].
+            exists x''.
+            exact (eq_rect _ (fun p => named_list_lookup_err (snd (fst p)) x'' = Some y)
+                     (list_Mmap_rename_lookup_sub_mono_early args0 sub1 e1 x'' y Hx'')
+                     _ Hlm).
+        - right; exact Hsub2. }
+  Qed.
+
+  (* ============================================================== *)
+  (* sub_mono helpers: clauses_to_instance preserves sub entries    *)
+  (* ============================================================== *)
+
+  Local Lemma rename_lookup_sub_mono (x : idx) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (z w : idx) :
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                   unit x sub0 e0))) z = Some w.
+  Proof.
+    intros Hhit.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub0 x) as [y|] eqn:Hlook.
+    - (* hit: sub unchanged *)
+      cbn [Mret StateMonad.state_monad fst snd]. exact Hhit.
+    - (* miss: prepend (x, fresh) *)
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+        as [fresh e1] eqn:Halloc.
+      cbn [fst snd].
+      (* named_list_lookup_err ((x, fresh) :: sub0) z *)
+      cbn [named_list_lookup_err].
+      assert (Hzx : z <> x).
+      { intros Heq. subst z. rewrite Hlook in Hhit. discriminate. }
+      pose proof (Eqb_idx_ok z x) as Hdec.
+      destruct (eqb z x) eqn:Hzxeqb.
+      + exfalso. apply Hzx. exact Hdec.
+      + exact Hhit.
+  Qed.
+
+  Local Lemma list_Mmap_rename_lookup_sub_mono (args : list idx) :
+    forall (sub0 : named_list idx idx)
+      (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+      (z w : idx),
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                              idx_trie unit) args sub0 e0))) z = Some w.
+  Proof.
+    induction args as [|a args IH]; intros sub0 e0 z w Hhit.
+    - cbn. exact Hhit.
+    - cbn [list_Mmap].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub0 e0) as [p e1] eqn:Hrla.
+      destruct p as [a' sub1].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [p2 e2] eqn:Hrec.
+      destruct p2 as [args' sub2].
+      (* Compute the sub monotonicity along each step *)
+      pose proof (rename_lookup_sub_mono a sub0 e0 z w Hhit) as Hstep.
+      rewrite Hrla in Hstep. cbn [fst snd] in Hstep.
+      pose proof (IH sub1 e1 z w Hstep) as Hrec_mono.
+      rewrite Hrec in Hrec_mono. cbn [fst snd] in Hrec_mono.
+      (* Now reduce the goal *)
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hrla. cbn [fst snd uncurry].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [q e3] eqn:Hq.
+      destruct q as [args2 sub3]. cbn [fst snd uncurry].
+      injection Hrec as <- <-.
+      exact Hrec_mono.
+  Qed.
+
+  Local Lemma rename_atom_sub_mono (a : atom) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (z w : idx) :
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                   unit a sub0 e0))) z = Some w.
+  Proof.
+    intros Hhit.
+    destruct a as [f args out].
+    unfold rename_atom.
+    cbn [atom_fn atom_args atom_ret].
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+    cbn beta iota. unfold Basics.compose.
+    destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                           idx_trie unit) args sub0 e0)
+      as [q1 e1] eqn:Hq1.
+    destruct q1 as [args' sub1].
+    cbn [fst snd uncurry].
+    destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                unit out sub1 e1)
+      as [q2 e2] eqn:Hq2.
+    destruct q2 as [ret' sub2].
+    cbn [fst snd uncurry].
+    (* Goal should now be: named_list_lookup_err sub2 z = Some w *)
+    pose proof (list_Mmap_rename_lookup_sub_mono args sub0 e0 z w Hhit) as Hstep1.
+    set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                            idx_trie unit) args sub0 e0) in *.
+    rewrite Hq1 in Hstep1. cbn [fst snd] in Hstep1.
+    pose proof (rename_lookup_sub_mono out sub1 e1 z w Hstep1) as Hstep2.
+    set (RL := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+                 out sub1 e1) in *.
+    rewrite Hq2 in Hstep2. cbn [fst snd] in Hstep2.
+    exact Hstep2.
+  Qed.
+
+  Local Lemma add_clause_to_instance_sub_mono
+    (c : Semantics.clause idx symbol)
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (z w : idx) :
+    named_list_lookup_err sub0 z = Some w ->
+    named_list_lookup_err
+      (snd (fst (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map idx_map
+                   idx_trie unit c sub0 e0))) z = Some w.
+  Proof.
+    intros Hhit.
+    destruct c as [x y | a_clause].
+    - (* eq_clause x y *)
+      unfold add_clause_to_instance.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit x sub0 e0) as [p1 e1'] eqn:Hrx.
+      destruct p1 as [x' sub1'].
+      cbn [fst snd uncurry].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit y sub1' e1') as [p2 e2'] eqn:Hry.
+      destruct p2 as [y' sub2'].
+      cbn [fst snd uncurry].
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (Defs.union x' y' e2') as [v e3'] eqn:Hu.
+      cbn [uncurry fst snd].
+      (* sub2' is the final sub; union doesn't touch it *)
+      pose proof (rename_lookup_sub_mono x sub0 e0 z w Hhit) as Hstep1.
+      rewrite Hrx in Hstep1. cbn [fst snd] in Hstep1.
+      pose proof (rename_lookup_sub_mono y sub1' e1' z w Hstep1) as Hstep2.
+      rewrite Hry in Hstep2. cbn [fst snd] in Hstep2.
+      exact Hstep2.
+    - (* atom_clause a_clause *)
+      unfold add_clause_to_instance.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a_clause sub0 e0) as [p1 e1'] eqn:Hra.
+      destruct p1 as [a' sub1'].
+      cbn [fst snd uncurry].
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (update_entry a' e1') as [u' e2'] eqn:Hue.
+      cbn [uncurry fst snd].
+      (* sub1' is the final sub; update_entry doesn't touch it *)
+      pose proof (rename_atom_sub_mono a_clause sub0 e0 z w Hhit) as Hstep.
+      rewrite Hra in Hstep. cbn [fst snd] in Hstep.
+      exact Hstep.
+  Qed.
+
+  Lemma clauses_to_instance_sub_mono
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (z w : idx) :
+    named_list_lookup_err sub0 z = Some w ->
+    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
+    | (_, sub1, _) => named_list_lookup_err sub1 z = Some w
+    end.
+  Proof.
+    revert sub0 e0.
+    induction cs as [|c cs IH]; intros sub0 e0 Hhit.
+    - cbn. exact Hhit.
+    - cbn [Semantics.clauses_to_instance list_Miter].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map
+                  idx_map idx_trie unit c sub0 e0) as [q e1] eqn:Hadd.
+      destruct q as [u sub1].
+      cbn [snd uncurry].
+      apply IH.
+      pose proof (add_clause_to_instance_sub_mono c sub0 e0 z w Hhit) as Hstep.
+      rewrite Hadd in Hstep. cbn [fst snd] in Hstep.
+      exact Hstep.
   Qed.
 
   (* Full L11 hypotheses, matching the existing soundness lemmas in
@@ -801,14 +1074,19 @@ Section WithMap.
           Semantics.egraph_sound_for_interpretation
             idx symbol symbol_map idx_map idx_trie unit m i' e1 /\
           (forall x y, In (x, y) sub_final ->
-                 forall d, map.get a_src x = Some d -> map.get i' y = Some d)
+                 forall d, map.get a_src x = Some d -> map.get i' y = Some d) /\
+          (forall y d, map.get i' y = Some d ->
+                       map.get i y = Some d \/
+                       (exists x', named_list_lookup_err sub_final x' = Some y))
     end.
   Proof.
     revert sub0 e0 i.
     induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hsubdom Hcs.
     - cbn. split; [exact Hok|]. exists i.
       split; [intros ? ? Hk; exact Hk|].
-      split; [exact Hsnd | exact Hren].
+      split; [exact Hsnd|].
+      split; [exact Hren|].
+      intros y d Hyd; left; exact Hyd.
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
       + (* eq_clause: split on whether each var is already in sub0. *)
@@ -900,7 +1178,10 @@ Section WithMap.
                                 egraph_sound_for_interpretation idx symbol
                                   symbol_map idx_map idx_trie unit m i' e1 /\
                                 (forall a b, In (a, b) sub_f ->
-                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d) /\
+                                (forall z0 d0, map.get i' z0 = Some d0 ->
+                                   map.get (map.put i y_new dy) z0 = Some d0 \/
+                                   (exists x'', named_list_lookup_err sub_f x'' = Some z0)))).
           { apply IH.
             { pose proof (union_preserves_egraph_ok x' y_new e_alloc) as Hpres.
               unfold vc in Hpres.
@@ -942,14 +1223,29 @@ Section WithMap.
             { exact Hcs'. } }
           destruct (clauses_to_instance idx_succ cs ((y, y_new) :: sub0) e_unioned)
             as [ [u_pp sub_final] e_final ] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f & Hdom_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact (conj Hsnd_f Hren_f)].
-          intros k d Hk.
-          apply Hext_f.
-          rewrite map.get_put_diff; [exact Hk|].
-          intros Heq. subst k. rewrite Hi_ynew_none in Hk. discriminate.
+          refine (conj _ (conj Hsnd_f (conj Hren_f _))).
+          { intros k d Hk.
+            apply Hext_f.
+            rewrite map.get_put_diff; [exact Hk|].
+            intros Heq. subst k. rewrite Hi_ynew_none in Hk. discriminate. }
+          { intros y0 d Hyd.
+            destruct (Hdom_f y0 d Hyd) as [Hput | Hsub].
+            { pose proof (Eqb_idx_ok y0 y_new) as Hy0yn_dec.
+              destruct (eqb y0 y_new) eqn:Hy0yn.
+              { right. assert (Heqy0 : y0 = y_new) by exact Hy0yn_dec. subst y0.
+                exists y.
+                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: sub0) e_unioned y y_new) as Hsm.
+                cbn [named_list_lookup_err] in Hsm.
+                assert (Hyy : eqb y y = true) by
+                  (pose proof (Eqb_idx_ok y y) as Hd;
+                   destruct (eqb y y); [reflexivity | exfalso; apply Hd; reflexivity]).
+                rewrite Hyy in Hsm. specialize (Hsm eq_refl).
+                rewrite Hci in Hsm. cbn [fst snd] in Hsm. exact Hsm. }
+              { left. rewrite map.get_put_diff in Hput; [exact Hput | exact Hy0yn_dec]. } }
+            { right; exact Hsub. } }
         * (* (miss, hit) *)
           cbn in Hcs. destruct Hcs as [Hc Hcs'].
           unfold Semantics.eq_sound_for_model in Hc.
@@ -1011,7 +1307,10 @@ Section WithMap.
                                 egraph_sound_for_interpretation idx symbol
                                   symbol_map idx_map idx_trie unit m i' e1 /\
                                 (forall a b, In (a, b) sub_f ->
-                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d) /\
+                                (forall z0 d0, map.get i' z0 = Some d0 ->
+                                   map.get (map.put i x_new dx) z0 = Some d0 \/
+                                   (exists x'', named_list_lookup_err sub_f x'' = Some z0)))).
           { apply IH.
           { pose proof (union_preserves_egraph_ok x_new y' e_alloc) as Hpres.
             unfold vc in Hpres.
@@ -1064,15 +1363,29 @@ Section WithMap.
           (* Now translate Hpost_IH back to the outer goal (extending i not (map.put i x_new dx)) *)
           destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
             as [ [u_pp sub_final] e_final ] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f & Hdom_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact (conj Hsnd_f Hren_f)].
-          (* i_final extends map.put i x_new dx, which extends i (since x_new ∉ i) *)
-          intros k d Hk.
-          apply Hext_f.
-          rewrite map.get_put_diff; [exact Hk|].
-          intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
+          refine (conj _ (conj Hsnd_f (conj Hren_f _))).
+          { intros k d Hk.
+            apply Hext_f.
+            rewrite map.get_put_diff; [exact Hk|].
+            intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate. }
+          { intros y0 d Hyd.
+            destruct (Hdom_f y0 d Hyd) as [Hput | Hsub].
+            { pose proof (Eqb_idx_ok y0 x_new) as Hy0xn_dec.
+              destruct (eqb y0 x_new) eqn:Hy0xn.
+              { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
+                exists x.
+                pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                cbn [named_list_lookup_err] in Hsm.
+                assert (Hxx : eqb x x = true) by
+                  (pose proof (Eqb_idx_ok x x) as Hd;
+                   destruct (eqb x x); [reflexivity | exfalso; apply Hd; reflexivity]).
+                rewrite Hxx in Hsm. specialize (Hsm eq_refl).
+                rewrite Hci in Hsm. cbn [fst snd] in Hsm. exact Hsm. }
+              { left. rewrite map.get_put_diff in Hput; [exact Hput | exact Hy0xn_dec]. } }
+            { right; exact Hsub. } }
         * (* (miss, miss) — both fresh, alloc_sound × 2 *)
           cbn in Hcs. destruct Hcs as [Hc Hcs'].
           unfold Semantics.eq_sound_for_model in Hc.
@@ -1152,7 +1465,10 @@ Section WithMap.
                                   egraph_sound_for_interpretation idx symbol
                                     symbol_map idx_map idx_trie unit m i' e1 /\
                                   (forall a b, In (a, b) sub_f ->
-                                     forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
+                                     forall d, map.get a_src a = Some d -> map.get i' b = Some d) /\
+                                  (forall z0 d0, map.get i' z0 = Some d0 ->
+                                     map.get (map.put i x_new dx) z0 = Some d0 \/
+                                     (exists x'', named_list_lookup_err sub_f x'' = Some z0)))).
             { apply IH.
               { pose proof (union_preserves_egraph_ok x_new x_new e_x) as Hpres.
                 unfold vc in Hpres.
@@ -1191,14 +1507,29 @@ Section WithMap.
               { exact Hcs'. } }
             destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
               as [ [u_pp sub_final] e_final ] eqn:Hci.
-            destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
+            destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f & Hdom_f).
             split; [exact Hok_f|].
             exists i_final.
-            split; [|exact (conj Hsnd_f Hren_f)].
-            intros k d Hk.
-            apply Hext_f.
-            rewrite map.get_put_diff; [exact Hk|].
-            intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate. }
+            refine (conj _ (conj Hsnd_f (conj Hren_f _))).
+            { intros k d Hk.
+              apply Hext_f.
+              rewrite map.get_put_diff; [exact Hk|].
+              intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate. }
+            { intros y0 d Hyd.
+              destruct (Hdom_f y0 d Hyd) as [Hput | Hsub].
+              { pose proof (Eqb_idx_ok y0 x_new) as Hy0xn_dec.
+                destruct (eqb y0 x_new) eqn:Hy0xn.
+                { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
+                  exists x.
+                  pose proof (clauses_to_instance_sub_mono cs ((x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                  cbn [named_list_lookup_err] in Hsm.
+                  assert (Hxx2 : eqb x x = true) by
+                    (pose proof (Eqb_idx_ok x x) as Hd;
+                     destruct (eqb x x); [reflexivity | exfalso; apply Hd; reflexivity]).
+                  rewrite Hxx2 in Hsm. specialize (Hsm eq_refl).
+                  rewrite Hci in Hsm. cbn [fst snd] in Hsm. exact Hsm. }
+                { left. rewrite map.get_put_diff in Hput; [exact Hput | exact Hy0xn_dec]. } }
+              { right; exact Hsub. } } }
           assert (Hxy_neq : x <> y).
           { intros Heq. pose proof (Eqb_idx_ok x y) as Hxy_dec.
             rewrite Hxy_eqb in Hxy_dec. apply Hxy_dec; auto. }
@@ -1230,7 +1561,10 @@ Section WithMap.
                                 egraph_sound_for_interpretation idx symbol
                                   symbol_map idx_map idx_trie unit m i' e1 /\
                                 (forall a b, In (a, b) sub_f ->
-                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d) /\
+                                (forall z0 d0, map.get i' z0 = Some d0 ->
+                                   map.get (map.put (map.put i x_new dx) y_new dy) z0 = Some d0 \/
+                                   (exists x'', named_list_lookup_err sub_f x'' = Some z0)))).
           { apply IH.
             { pose proof (union_preserves_egraph_ok x_new y_new e_xy) as Hpres.
               unfold vc in Hpres.
@@ -1284,21 +1618,52 @@ Section WithMap.
             { exact Hcs'. } }
           destruct (clauses_to_instance idx_succ cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned)
             as [ [u_pp sub_final] e_final ] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f & Hdom_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact (conj Hsnd_f Hren_f)].
-          intros k d Hk.
-          apply Hext_f.
           assert (Hyx_idx_neq : y_new <> x_new) by (intros Heq; apply Hxy_idx_neq; symmetry; exact Heq).
           assert (Hi_ynew_orig : map.get i y_new = None).
           { rewrite map.get_put_diff in Hi_ynew_none.
             - exact Hi_ynew_none.
             - exact Hyx_idx_neq. }
-          rewrite map.get_put_diff.
-          2: { intros Heq. subst k. rewrite Hi_ynew_orig in Hk. discriminate. }
-          rewrite map.get_put_diff; [exact Hk|].
-          intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate.
+          refine (conj _ (conj Hsnd_f (conj Hren_f _))).
+          { intros k d Hk.
+            apply Hext_f.
+            rewrite map.get_put_diff.
+            2: { intros Heq. subst k. rewrite Hi_ynew_orig in Hk. discriminate. }
+            rewrite map.get_put_diff; [exact Hk|].
+            intros Heq. subst k. rewrite Hi_xnew_none in Hk. discriminate. }
+          { intros y0 d Hyd.
+            destruct (Hdom_f y0 d Hyd) as [Hput | Hsub].
+            { pose proof (Eqb_idx_ok y0 y_new) as Hy0yn_dec.
+              destruct (eqb y0 y_new) eqn:Hy0yn.
+              { right. assert (Heqy0 : y0 = y_new) by exact Hy0yn_dec. subst y0.
+                exists y.
+                pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned y y_new) as Hsm.
+                cbn [named_list_lookup_err] in Hsm.
+                assert (Hyy2 : eqb y y = true) by
+                  (pose proof (Eqb_idx_ok y y) as Hd;
+                   destruct (eqb y y); [reflexivity | exfalso; apply Hd; reflexivity]).
+                rewrite Hyy2 in Hsm. specialize (Hsm eq_refl).
+                rewrite Hci in Hsm. cbn [fst snd] in Hsm. exact Hsm. }
+              { rewrite map.get_put_diff in Hput by exact Hy0yn_dec.
+                pose proof (Eqb_idx_ok y0 x_new) as Hy0xn_dec.
+                destruct (eqb y0 x_new) eqn:Hy0xn.
+                { right. assert (Heqy0 : y0 = x_new) by exact Hy0xn_dec. subst y0.
+                  exists x.
+                  pose proof (clauses_to_instance_sub_mono cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned x x_new) as Hsm.
+                  cbn [named_list_lookup_err] in Hsm.
+                  assert (Hyx2 : eqb x y = false) by
+                    (pose proof (Eqb_idx_ok x y) as Hd;
+                     destruct (eqb x y) eqn:E; [exfalso; apply Hxy_neq; exact Hd | reflexivity]).
+                  rewrite Hyx2 in Hsm.
+                  assert (Hxx2 : eqb x x = true) by
+                    (pose proof (Eqb_idx_ok x x) as Hd;
+                     destruct (eqb x x); [reflexivity | exfalso; apply Hd; reflexivity]).
+                  rewrite Hxx2 in Hsm. specialize (Hsm eq_refl).
+                  rewrite Hci in Hsm. cbn [fst snd] in Hsm. exact Hsm. }
+                { left. rewrite map.get_put_diff in Hput; [exact Hput | exact Hy0xn_dec]. } } }
+            { right; exact Hsub. } }
       + (* atom_clause: rename_atom + update_entry_sound + IH. *)
         destruct a as [f args out].
         cbn [all] in Hcs.
@@ -1320,14 +1685,14 @@ Section WithMap.
         destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
                     idx_trie unit) args sub0 e0) as [ [args' sub1] e1 ] eqn:Hlma.
         destruct Hlm_args as (i1 & Hext1 & Hok1 & Hsnd1 & Hren1 & Hsubdom1 & Hargs'1 &
-                              Hall_args'1 & Hmono1).
+                              Hall_args'1 & Hmono1 & Hdom_lm).
         cbn [uncurry Basics.compose].
         pose proof (rename_lookup_sound Hlti Hlts Hltt m Hm a_src out out_dom sub1 e1 i1
                       Hok1 Hsnd1 Hren1 Hsubdom1 Hout_src Hwf_out) as Hrl_out.
         destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
                     unit out sub1 e1) as [ [out' sub2] e2 ] eqn:Hrlo.
         destruct Hrl_out as (i2 & Hext2 & Hok2 & Hsnd2 & Hren2 & Hsubdom2 & Hi2out' &
-                             Hkout'2 & Hmono2).
+                             Hkout'2 & Hmono2 & Hdom_rl).
         cbn [uncurry].
         unfold Basics.compose.
         rewrite Hrlo.
@@ -1371,11 +1736,30 @@ Section WithMap.
                      ltac:(intros x0 y0 Hin; apply Hmono3; exact (Hsubdom2 _ _ Hin)) Hcs')
           as HIH.
         destruct (clauses_to_instance idx_succ cs sub2 e3) as [ [u_pp sub_final] e_final ] eqn:Hci.
-        destruct HIH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
+        destruct HIH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f & Hdom_f).
         split; [exact Hok_f|].
         exists i_final.
-        split; [|exact (conj Hsnd_f Hren_f)].
-        intros k v Hk. apply Hext_f. apply Hext2. apply Hext1. exact Hk.
+        refine (conj _ (conj Hsnd_f (conj Hren_f _))).
+        { intros k v Hk. apply Hext_f. apply Hext2. apply Hext1. exact Hk. }
+        { intros y0 d Hyd.
+          destruct (Hdom_f y0 d Hyd) as [Hi2 | Hsub_f].
+          { destruct (Hdom_rl y0 d Hi2) as [Hi1 | Hsub2].
+            { destruct (Hdom_lm y0 d Hi1) as [Hi0 | Hsub1].
+              { left; exact Hi0. }
+              { right. destruct Hsub1 as [x'' Hx''].
+                exists x''.
+                pose proof (eq_rect _
+                  (fun p => named_list_lookup_err (snd (fst p)) x'' = Some y0)
+                  (rename_lookup_sub_mono out sub1 e1 x'' y0 Hx'')
+                  _ Hrlo) as Hs12.
+                cbn [snd fst] in Hs12.
+                pose proof (clauses_to_instance_sub_mono cs sub2 e3 x'' y0 Hs12) as Hs2f.
+                rewrite Hci in Hs2f. exact Hs2f. } }
+            { right. destruct Hsub2 as [x'' Hx''].
+              exists x''.
+              pose proof (clauses_to_instance_sub_mono cs sub2 e3 x'' y0 Hx'') as Hs2f.
+              rewrite Hci in Hs2f. exact Hs2f. } }
+          { right; exact Hsub_f. } }
   Qed.
 
   (* ============================================================== *)
@@ -2172,189 +2556,6 @@ Section WithMap.
         pose proof (update_entry_preserves_atom_in_db a' a e1') as Hmono.
         rewrite Hue in Hmono. cbn [snd] in Hmono.
         apply Hmono. rewrite Hdb1. exact Ha.
-  Qed.
-
-  (* ============================================================== *)
-  (* sub_mono helpers: clauses_to_instance preserves sub entries    *)
-  (* ============================================================== *)
-
-  Local Lemma rename_lookup_sub_mono (x : idx) (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-    (z w : idx) :
-    named_list_lookup_err sub0 z = Some w ->
-    named_list_lookup_err
-      (snd (fst (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                   unit x sub0 e0))) z = Some w.
-  Proof.
-    intros Hhit.
-    unfold rename_lookup.
-    destruct (named_list_lookup_err sub0 x) as [y|] eqn:Hlook.
-    - (* hit: sub unchanged *)
-      cbn [Mret StateMonad.state_monad fst snd]. exact Hhit.
-    - (* miss: prepend (x, fresh) *)
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
-      cbn beta iota. unfold Basics.compose.
-      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
-        as [fresh e1] eqn:Halloc.
-      cbn [fst snd].
-      (* named_list_lookup_err ((x, fresh) :: sub0) z *)
-      cbn [named_list_lookup_err].
-      assert (Hzx : z <> x).
-      { intros Heq. subst z. rewrite Hlook in Hhit. discriminate. }
-      pose proof (Eqb_idx_ok z x) as Hdec.
-      destruct (eqb z x) eqn:Hzxeqb.
-      + exfalso. apply Hzx. exact Hdec.
-      + exact Hhit.
-  Qed.
-
-  Local Lemma list_Mmap_rename_lookup_sub_mono (args : list idx) :
-    forall (sub0 : named_list idx idx)
-      (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-      (z w : idx),
-    named_list_lookup_err sub0 z = Some w ->
-    named_list_lookup_err
-      (snd (fst (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
-                              idx_trie unit) args sub0 e0))) z = Some w.
-  Proof.
-    induction args as [|a args IH]; intros sub0 e0 z w Hhit.
-    - cbn. exact Hhit.
-    - cbn [list_Mmap].
-      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                  unit a sub0 e0) as [p e1] eqn:Hrla.
-      destruct p as [a' sub1].
-      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
-                             idx_trie unit) args sub1 e1) as [p2 e2] eqn:Hrec.
-      destruct p2 as [args' sub2].
-      (* Compute the sub monotonicity along each step *)
-      pose proof (rename_lookup_sub_mono a sub0 e0 z w Hhit) as Hstep.
-      rewrite Hrla in Hstep. cbn [fst snd] in Hstep.
-      pose proof (IH sub1 e1 z w Hstep) as Hrec_mono.
-      rewrite Hrec in Hrec_mono. cbn [fst snd] in Hrec_mono.
-      (* Now reduce the goal *)
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
-      cbn beta iota. unfold Basics.compose.
-      rewrite Hrla. cbn [fst snd uncurry].
-      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
-                             idx_trie unit) args sub1 e1) as [q e3] eqn:Hq.
-      destruct q as [args2 sub3]. cbn [fst snd uncurry].
-      injection Hrec as <- <-.
-      exact Hrec_mono.
-  Qed.
-
-  Local Lemma rename_atom_sub_mono (a : atom) (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-    (z w : idx) :
-    named_list_lookup_err sub0 z = Some w ->
-    named_list_lookup_err
-      (snd (fst (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                   unit a sub0 e0))) z = Some w.
-  Proof.
-    intros Hhit.
-    destruct a as [f args out].
-    unfold rename_atom.
-    cbn [atom_fn atom_args atom_ret].
-    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
-    cbn beta iota. unfold Basics.compose.
-    destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
-                           idx_trie unit) args sub0 e0)
-      as [q1 e1] eqn:Hq1.
-    destruct q1 as [args' sub1].
-    cbn [fst snd uncurry].
-    destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                unit out sub1 e1)
-      as [q2 e2] eqn:Hq2.
-    destruct q2 as [ret' sub2].
-    cbn [fst snd uncurry].
-    (* Goal should now be: named_list_lookup_err sub2 z = Some w *)
-    pose proof (list_Mmap_rename_lookup_sub_mono args sub0 e0 z w Hhit) as Hstep1.
-    set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
-                            idx_trie unit) args sub0 e0) in *.
-    rewrite Hq1 in Hstep1. cbn [fst snd] in Hstep1.
-    pose proof (rename_lookup_sub_mono out sub1 e1 z w Hstep1) as Hstep2.
-    set (RL := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
-                 out sub1 e1) in *.
-    rewrite Hq2 in Hstep2. cbn [fst snd] in Hstep2.
-    exact Hstep2.
-  Qed.
-
-  Local Lemma add_clause_to_instance_sub_mono
-    (c : Semantics.clause idx symbol)
-    (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-    (z w : idx) :
-    named_list_lookup_err sub0 z = Some w ->
-    named_list_lookup_err
-      (snd (fst (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map idx_map
-                   idx_trie unit c sub0 e0))) z = Some w.
-  Proof.
-    intros Hhit.
-    destruct c as [x y | a_clause].
-    - (* eq_clause x y *)
-      unfold add_clause_to_instance.
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
-      cbn beta iota. unfold Basics.compose.
-      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                  unit x sub0 e0) as [p1 e1'] eqn:Hrx.
-      destruct p1 as [x' sub1'].
-      cbn [fst snd uncurry].
-      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                  unit y sub1' e1') as [p2 e2'] eqn:Hry.
-      destruct p2 as [y' sub2'].
-      cbn [fst snd uncurry].
-      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
-      cbn beta iota. unfold Basics.compose.
-      destruct (Defs.union x' y' e2') as [v e3'] eqn:Hu.
-      cbn [uncurry fst snd].
-      (* sub2' is the final sub; union doesn't touch it *)
-      pose proof (rename_lookup_sub_mono x sub0 e0 z w Hhit) as Hstep1.
-      rewrite Hrx in Hstep1. cbn [fst snd] in Hstep1.
-      pose proof (rename_lookup_sub_mono y sub1' e1' z w Hstep1) as Hstep2.
-      rewrite Hry in Hstep2. cbn [fst snd] in Hstep2.
-      exact Hstep2.
-    - (* atom_clause a_clause *)
-      unfold add_clause_to_instance.
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
-      cbn beta iota. unfold Basics.compose.
-      destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
-                  unit a_clause sub0 e0) as [p1 e1'] eqn:Hra.
-      destruct p1 as [a' sub1'].
-      cbn [fst snd uncurry].
-      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
-      cbn beta iota. unfold Basics.compose.
-      destruct (update_entry a' e1') as [u' e2'] eqn:Hue.
-      cbn [uncurry fst snd].
-      (* sub1' is the final sub; update_entry doesn't touch it *)
-      pose proof (rename_atom_sub_mono a_clause sub0 e0 z w Hhit) as Hstep.
-      rewrite Hra in Hstep. cbn [fst snd] in Hstep.
-      exact Hstep.
-  Qed.
-
-  Lemma clauses_to_instance_sub_mono
-    (cs : list (Semantics.clause idx symbol))
-    (sub0 : named_list idx idx)
-    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
-    (z w : idx) :
-    named_list_lookup_err sub0 z = Some w ->
-    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, sub1, _) => named_list_lookup_err sub1 z = Some w
-    end.
-  Proof.
-    revert sub0 e0.
-    induction cs as [|c cs IH]; intros sub0 e0 Hhit.
-    - cbn. exact Hhit.
-    - cbn [Semantics.clauses_to_instance list_Miter].
-      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
-      cbn beta iota. unfold Basics.compose.
-      destruct (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map
-                  idx_map idx_trie unit c sub0 e0) as [q e1] eqn:Hadd.
-      destruct q as [u sub1].
-      cbn [snd uncurry].
-      apply IH.
-      pose proof (add_clause_to_instance_sub_mono c sub0 e0 z w Hhit) as Hstep.
-      rewrite Hadd in Hstep. cbn [fst snd] in Hstep.
-      exact Hstep.
   Qed.
 
   (* ============================================================== *)
