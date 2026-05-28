@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Tools Require Import Resolution.
 From Pyrosome.Gluing Require Import CutTModel.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model ApplyLemmas.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model ApplyLemmas SortInj.
 From Pyrosome.Lang.OTT Require Import Base Nat.
 Import Core.Notations.
 
@@ -399,6 +399,87 @@ Ltac dispbyB_snoc_wkn_hd :=
       [ concretize_subst; recover_peel; solve_snoc_wkn_hd | ]
   end.
 
+(* ================================================================== *)
+(* cterm_by Tier-C composition rules [id_right] / [wkn_snoc]           *)
+(*                                                                     *)
+(* Both are [cmp]s whose [g]-slot is an [id]/[wkn] over a context that *)
+(* is the codomain of the [f]-slot; the [ev_cmp] output collapses via  *)
+(* [map_apply_id_list] / [map_apply_wkn_list] once we know the         *)
+(* substitution's length, which the carried [eq_term] (well-formedness)*)
+(* supplies through [eval_sub_len_wf] (SortInj) — the codomain         *)
+(* [ctx_len] then matches the inner [id]/[wkn]'s context via the env    *)
+(* glue ([eval_env_length]).                                           *)
+(* ================================================================== *)
+
+Ltac expose_glue :=
+  unfold ceq_term, Norm, norm_ceq_term, glue_term in *;
+  cbn in *;
+  repeat match goal with H : @prod _ _ |- _ => destruct H end;
+  repeat match goal with H : @sigT _ _ |- _ => destruct H as [? [? ?]] end.
+
+(* Goal [length w = ctx_len G]: the [sub]-sorted argument that evaluates to [w]
+   has codomain [cod] (first internal arg of its [sub] sort, from the carried
+   [eq_term]/wf), and [cod] glues to [G] as environments. *)
+Ltac prove_sub_len w G :=
+  match goal with
+  | Hev : eval_sub ?a w, Heq : eq_term _ [] ?t ?a _ |- _ =>
+      lazymatch eval cbn in t with
+      | scon "sub" [?cod; _] =>
+          let HL := fresh "HL" in
+          pose proof (eval_sub_len_wf Hev
+                        (eq_term_wf_l fo_wf_lang ltac:(constructor) Heq)) as HL;
+          match goal with
+          | Ha : eval_env G ?ex, Hb : eval_env cod ?ex |- _ =>
+              rewrite HL, <- (eval_env_length Hb), <- (eval_env_length Ha);
+              reflexivity
+          end
+      end
+  end.
+
+(* [cmp f id = f] *)
+Ltac solve_id_right :=
+  expose_glue;
+  eexists; split; [ | solve [ eassumption ] ];
+  match goal with
+  | |- eval_sub (con _ [con _ [?Ge]; _; _; _; _]) ?w =>
+      let Hmap := fresh in
+      assert (Hmap : map (apply_val w) (id_list (ctx_len Ge)) = w)
+        by (apply map_apply_id_list; prove_sub_len w Ge);
+      rewrite <- Hmap; econstructor; [ eassumption | econstructor ]
+  end.
+
+(* [cmp (snoc g v) wkn = g] *)
+Ltac solve_wkn_snoc :=
+  expose_glue;
+  eexists; split; [ | solve [ eassumption ] ];
+  match goal with
+  | |- eval_sub (con _ [con _ [_; _; ?Gw]; con _ [?v; ?g; _; _; _; _]; _; _; _]) ?w =>
+      match goal with
+      | Hg : eval_sub g w, Hv : eval_rel v ?vv |- _ =>
+          let Hmap := fresh in
+          assert (Hmap : map (apply_val (vv :: w)) (wkn_list (ctx_len Gw)) = w)
+            by (apply map_apply_wkn_list; prove_sub_len w Gw);
+          rewrite <- Hmap;
+          econstructor; [ econstructor; [ exact Hg | exact Hv ] | econstructor ]
+      end
+  end.
+
+Ltac dispby_id_right :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name "id_right") eqn:E;
+      [ concretize_subst; recover_peel; solve_id_right | ]
+  end.
+
+Ltac dispby_wkn_snoc :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name "wkn_snoc") eqn:E;
+      [ concretize_subst; recover_peel; solve_wkn_snoc | ]
+  end.
+
 Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
     In (name, term_eq_rule c' e1r e2r tr) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
@@ -417,10 +498,10 @@ Proof.
   - (* eval glue *)
     dispbyB "Empty subst". dispbyB "suc subst". dispbyB "zero subst".
     dispbyB "Nat subst". dispbyA "El subst". dispbyB "U subst".
-    dispbyB_snoc_wkn_hd. dispbyB "cmp_snoc". dispbyB "snoc_hd". dispbyA "wkn_snoc".
+    dispbyB_snoc_wkn_hd. dispbyB "cmp_snoc". dispbyB "snoc_hd". dispby_wkn_snoc.
     dispbyB "id_emp_forget". dispbyB "cmp_forget". dispbyA "exp_subst_cmp".
     dispbyB "exp_subst_id". dispbyA "ty_subst_cmp". dispbyB "ty_subst_id".
-    dispbyA "cmp_assoc". dispbyB "id_left". dispbyA "id_right".
+    dispbyA "cmp_assoc". dispbyB "id_left". dispby_id_right.
     dispby "next1". dispby "next0". dispby "ltl_irr".
     finish_absurd (term_eq_rules_names Hin)
       ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
