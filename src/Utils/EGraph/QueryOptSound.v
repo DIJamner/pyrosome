@@ -3071,6 +3071,163 @@ Section WithMap.
         /\ clauses_good (clause_vars idx symbol (eq_clause x y) ++ seen) rest
     end.
 
+  (* ============================================================== *)
+  (* Items D0/D1: pullback_assignment and soundness helpers         *)
+  (* ============================================================== *)
+
+  (* D0: Given an assignment [a_opt] on renamed (target) vars and a
+     renaming [sub : named_list idx idx] of source vars to target vars,
+     [pullback_assignment] produces the induced assignment on source
+     vars: each source var x maps to a_opt's value at x's image y. *)
+  Definition pullback_assignment {A} (a_opt : idx_map A) (sub : named_list idx idx)
+    : idx_map A :=
+    fold_right (fun '(x, y) acc =>
+                  match map.get a_opt y with
+                  | Some d => map.put acc x d
+                  | None => acc
+                  end) map.empty sub.
+
+  (* D0 spec: if sub maps x to y and a_opt maps y to d, then
+     pullback_assignment maps x to d. *)
+  Lemma get_pullback_assignment_some {A} (a_opt : idx_map A) (sub : named_list idx idx)
+        (x y : idx) (d : A) :
+    named_list_lookup_err sub x = Some y ->
+    map.get a_opt y = Some d ->
+    map.get (pullback_assignment a_opt sub) x = Some d.
+  Proof.
+    revert x y d.
+    induction sub as [| [x0 y0] sub' IH]; intros x y d Hlook Hopt.
+    - cbn in Hlook. discriminate.
+    - cbn [pullback_assignment fold_right named_list_lookup_err] in *.
+      destruct (eqb x x0) eqn:Hxx0.
+      + (* x = x0 *)
+        injection Hlook as <-.
+        rewrite Hopt.
+        pose proof (eqb_spec x x0) as Hspec.
+        rewrite Hxx0 in Hspec.
+        subst x0.
+        rewrite map.get_put_same. reflexivity.
+      + (* x <> x0 *)
+        destruct (map.get a_opt y0) as [d0|] eqn:Hy0.
+        * (* head puts x0 -> d0 *)
+          pose proof (eqb_spec x x0) as Hspec.
+          rewrite Hxx0 in Hspec.
+          rewrite map.get_put_diff by exact Hspec.
+          exact (IH x y d Hlook Hopt).
+        * (* head does nothing *)
+          exact (IH x y d Hlook Hopt).
+  Qed.
+
+  (* Helper: if every element of L has a sub-image, and
+     list_Mmap (map.get a_opt) (map (named_list_lookup default sub) L) = Some doms,
+     then list_Mmap (map.get (pullback_assignment a_opt sub)) L = Some doms. *)
+  Lemma list_Mmap_pullback_some {A} (a_opt : idx_map A) (sub : named_list idx idx)
+        (L : list idx) :
+    forall (doms : list A),
+    (forall x, In x L -> exists y, named_list_lookup_err sub x = Some y) ->
+    list_Mmap (map.get a_opt) (map (named_list_lookup default sub) L) = Some doms ->
+    list_Mmap (map.get (pullback_assignment a_opt sub)) L = Some doms.
+  Proof.
+    induction L as [| x L' IH]; intros doms Hvars Hmmap.
+    - cbn in Hmmap. injection Hmmap as <-. reflexivity.
+    - (* Get the sub image for x *)
+      destruct (Hvars x (or_introl eq_refl)) as [y Hyx].
+      pose proof (named_list_lookup_err_to_lookup default sub x y Hyx) as Hld.
+      (* Simplify Hmmap *)
+      cbn [map list_Mmap] in Hmmap.
+      rewrite Hld in Hmmap.
+      destruct (map.get a_opt y) as [d|] eqn:Hdy.
+      + destruct (list_Mmap (map.get a_opt) (map (named_list_lookup default sub) L'))
+          as [ds|] eqn:Hds.
+        * injection Hmmap as <-.
+          cbn [list_Mmap].
+          rewrite (get_pullback_assignment_some a_opt sub x y d Hyx Hdy).
+          rewrite (IH ds (fun z Hz => Hvars z (or_intror Hz)) eq_refl).
+          reflexivity.
+        * discriminate.
+      + discriminate.
+  Qed.
+
+  (* M2 (D1): The source atoms, when renamed via sub1, are all in
+     e_assum's db; and a_opt is sound on e_assum's atoms. Then
+     the pullback assignment is sound on the original source atoms. *)
+  Lemma a_src_sound_on_assumptions
+        (m : model symbol) (Hm : model_ok symbol m)
+        (atoms : list atom) (sub1 : named_list idx idx)
+        (a_opt : idx_map (m.(domain symbol)))
+        (e_assum : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (* every source atom's vars (ret + args) are keys of sub1 *)
+    (forall a, In a atoms -> forall x, In x (atom_ret a :: atom_args a) ->
+         exists y, named_list_lookup_err sub1 x = Some y) ->
+    (* every renamed source atom is in db e_assum *)
+    (forall a, In a atoms ->
+         atom_in_db (Build_atom (atom_fn a)
+           (map (named_list_lookup default sub1) (atom_args a))
+           (named_list_lookup default sub1 (atom_ret a))) (db e_assum)) ->
+    (* a_opt is sound on the read-back atoms of e_assum *)
+    all (Semantics.clause_sound_for_model idx symbol idx_map m a_opt)
+        (map (@atom_clause idx symbol) (db_to_atoms (db e_assum))) ->
+    all (Semantics.clause_sound_for_model idx symbol idx_map m
+           (pullback_assignment a_opt sub1))
+        (map (@atom_clause idx symbol) atoms).
+  Proof.
+    intros Hvars Hren_db Hass.
+    apply (Semantics.all_map_in (@atom_clause idx symbol)
+             (Semantics.clause_sound_for_model idx symbol idx_map m
+                (pullback_assignment a_opt sub1))
+             atoms).
+    intros a Hin_a.
+    cbn [Semantics.clause_sound_for_model].
+    (* Name the renamed atom's components for convenience *)
+    pose proof (Hren_db a Hin_a) as Hin_db.
+    (* RA := Build_atom (atom_fn a) (map ld (atom_args a)) (ld (atom_ret a)) *)
+    set (RA := Build_atom (atom_fn a)
+                 (map (named_list_lookup default sub1) (atom_args a))
+                 (named_list_lookup default sub1 (atom_ret a))) in Hin_db.
+    (* RA is in db_to_atoms (db e_assum) *)
+    pose proof (proj2 (in_db_to_atoms_iff_atom_in_db RA (db e_assum)) Hin_db) as Hin_list.
+    (* atom_clause RA is in map atom_clause (db_to_atoms ...) *)
+    pose proof (in_map (@atom_clause idx symbol) _ _ Hin_list) as Hin_clause.
+    (* Extract soundness of RA from Hass *)
+    pose proof (in_all (Semantics.clause_sound_for_model idx symbol idx_map m a_opt)
+                  _ _ Hass Hin_clause) as Hsnd_RA.
+    cbn [Semantics.clause_sound_for_model] in Hsnd_RA.
+    (* Now unfold atom_sound_for_model for RA and expand RA's fields *)
+    unfold Semantics.atom_sound_for_model in Hsnd_RA.
+    unfold RA in Hsnd_RA.
+    cbn [atom_fn atom_args atom_ret] in Hsnd_RA.
+    (* Destruct the list_Mmap *)
+    destruct (list_Mmap (map.get a_opt)
+                (map (named_list_lookup default sub1) (atom_args a)))
+      as [doms|] eqn:Hdoms.
+    2:{ cbn [Is_Some_satisfying] in Hsnd_RA. contradiction. }
+    cbn [Is_Some_satisfying] in Hsnd_RA.
+    (* Destruct the map.get for ret *)
+    destruct (map.get a_opt (named_list_lookup default sub1 (atom_ret a)))
+      as [out_d|] eqn:Hout.
+    2:{ cbn [Is_Some_satisfying] in Hsnd_RA. contradiction. }
+    cbn [Is_Some_satisfying] in Hsnd_RA.
+    (* Now build the goal for pullback_assignment *)
+    unfold Semantics.atom_sound_for_model.
+    (* Get the sub1 image for atom_ret a *)
+    destruct (Hvars a Hin_a (atom_ret a) (or_introl eq_refl)) as [y_ret Hy_ret].
+    pose proof (named_list_lookup_err_to_lookup default sub1 (atom_ret a) y_ret Hy_ret)
+      as Hld_ret.
+    rewrite Hld_ret in Hout.
+    (* list_Mmap with pullback on args *)
+    assert (Hargs_vars : forall x, In x (atom_args a) ->
+              exists y, named_list_lookup_err sub1 x = Some y).
+    { intros x Hx. exact (Hvars a Hin_a x (or_intror Hx)). }
+    pose proof (list_Mmap_pullback_some a_opt sub1 (atom_args a) doms
+                  Hargs_vars Hdoms) as Hmap_pb.
+    rewrite Hmap_pb. cbn [Is_Some_satisfying].
+    (* map.get pullback on ret *)
+    rewrite (get_pullback_assignment_some a_opt sub1 (atom_ret a) y_ret out_d
+               Hy_ret Hout).
+    cbn [Is_Some_satisfying].
+    exact Hsnd_RA.
+  Qed.
+
   Definition good_sequent (s : sequent) : Prop :=
     clauses_good [] (s.(seq_assumptions) ++ s.(seq_conclusions)).
 
