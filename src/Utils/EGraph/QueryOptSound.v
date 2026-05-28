@@ -1430,6 +1430,232 @@ Section WithMap.
   Qed.
 
   (* ============================================================== *)
+  (* compile_rule structural facts                                    *)
+  (* ============================================================== *)
+
+  (* Helper tactic for the common destructuring pattern *)
+
+  Lemma compile_rule_inl_query_vars_dedup :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      exists L, query_vars idx symbol er = dedup (eqb (A:=idx)) L.
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      exists (flat_map (atom_fvs idx symbol) assumptions).
+      reflexivity.
+  Qed.
+
+  Lemma compile_rule_inl_write_vars_eq :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      write_vars idx symbol er =
+        clauses_fvs idx Eqb_idx symbol
+          (map (uncurry (@eq_clause idx symbol)) (write_unifications idx symbol er)
+           ++ map (@atom_clause idx symbol) (write_clauses idx symbol er))
+          (query_vars idx symbol er).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [write_vars query_vars write_unifications write_clauses].
+      reflexivity.
+  Qed.
+
+  Lemma compile_rule_inl_NoDup_query_vars :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      NoDup (query_vars idx symbol er).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [query_vars].
+      unfold qvs.
+      apply NoDup_dedup.
+  Qed.
+
+  Lemma compile_rule_inl_NoDup_write_vars :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      NoDup (write_vars idx symbol er).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [write_vars].
+      unfold clauses_fvs.
+      apply NoDup_filter.
+      apply NoDup_dedup.
+  Qed.
+
+  Lemma compile_rule_inl_write_query_disjoint :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      forall x, In x (write_vars idx symbol er) -> ~ In x (query_vars idx symbol er).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [write_vars query_vars].
+      unfold clauses_fvs.
+      intros x Hx Hin_qvs.
+      apply filter_In in Hx as [_ Hneg].
+      apply (@inb_is_In idx Eqb_idx Eqb_idx_ok x qvs) in Hin_qvs.
+      rewrite negb_true_iff in Hneg.
+      rewrite Hneg in Hin_qvs.
+      exact Hin_qvs.
+  Qed.
+
+  Lemma compile_rule_inl_write_clauses_cover :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      forall c, In c (write_clauses idx symbol er) ->
+      forall x, In x (c.(atom_ret) :: c.(atom_args)) ->
+      In x (query_vars idx symbol er) \/ In x (write_vars idx symbol er).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [p ceqs].
+    destruct p as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    set (cvars := clauses_fvs idx Eqb_idx symbol
+      (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms) qvs) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [write_clauses query_vars write_vars].
+      intros ac Hac x Hx.
+      assert (Hin_flat : In x (flat_map (clause_vars idx symbol)
+        (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms))).
+      { apply in_flat_map.
+        exists (@atom_clause idx symbol ac).
+        split.
+        - apply in_app_iff. right. apply in_map_iff. exists ac. split; [reflexivity | exact Hac].
+        - cbn [clause_vars]. exact Hx. }
+      destruct (inb x qvs) eqn:Hq.
+      + left.
+        apply (@inb_is_In idx Eqb_idx Eqb_idx_ok x qvs).
+        rewrite Hq. exact I.
+      + right.
+        unfold cvars.
+        unfold clauses_fvs.
+        apply filter_In.
+        split.
+        * apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ x)).
+          exact Hin_flat.
+        * rewrite Hq. reflexivity.
+  Qed.
+
+  Lemma compile_rule_inl_write_unifs_cover :
+    forall rf r st0 er st1,
+      compile_rule idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie rf r st0 = (inl er, st1) ->
+      forall p, In p (write_unifications idx symbol er) ->
+      (In (fst p) (query_vars idx symbol er) \/ In (fst p) (write_vars idx symbol er)) /\
+      (In (snd p) (query_vars idx symbol er) \/ In (snd p) (write_vars idx symbol er)).
+  Proof.
+    intros rf r st0 er st1 Hc.
+    unfold compile_rule in Hc.
+    destruct (optimize_sequent' idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map idx_trie r rf)
+      as [pp ceqs].
+    destruct pp as [assumptions catoms].
+    set (qvs := dedup (eqb (A:=idx)) (flat_map (atom_fvs idx symbol) assumptions)) in *.
+    set (cvars := clauses_fvs idx Eqb_idx symbol
+      (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms) qvs) in *.
+    destruct (list_Mmap (compile_query_clause idx Eqb_idx idx_succ idx_zero symbol symbol_map idx_map qvs) assumptions st0)
+      as [qcls_ptrs st'] eqn:Hmap.
+    cbn [Mbind StateMonad.state_monad] in Hc.
+    rewrite Hmap in Hc.
+    destruct qcls_ptrs as [| c cs].
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc.
+    - cbn [Mret StateMonad.state_monad] in Hc. inversion Hc; subst.
+      cbn [write_unifications query_vars write_vars].
+      intros [x y] Hxy.
+      cbn [fst snd].
+      assert (Hx_flat : In x (flat_map (clause_vars idx symbol)
+        (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms))).
+      { apply in_flat_map.
+        exists (@eq_clause idx symbol x y).
+        split.
+        - apply in_app_iff. left. apply in_map_iff. exists (x, y). split; [reflexivity | exact Hxy].
+        - cbn [clause_vars]. left. reflexivity. }
+      assert (Hy_flat : In y (flat_map (clause_vars idx symbol)
+        (map (uncurry (@eq_clause idx symbol)) ceqs ++ map (@atom_clause idx symbol) catoms))).
+      { apply in_flat_map.
+        exists (@eq_clause idx symbol x y).
+        split.
+        - apply in_app_iff. left. apply in_map_iff. exists (x, y). split; [reflexivity | exact Hxy].
+        - cbn [clause_vars]. right. left. reflexivity. }
+      split.
+      + destruct (inb x qvs) eqn:Hqx.
+        * left. apply (@inb_is_In idx Eqb_idx Eqb_idx_ok x qvs). rewrite Hqx. exact I.
+        * right. unfold cvars, clauses_fvs. apply filter_In. split.
+          { apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ x)). exact Hx_flat. }
+          rewrite Hqx. reflexivity.
+      + destruct (inb y qvs) eqn:Hqy.
+        * left. apply (@inb_is_In idx Eqb_idx Eqb_idx_ok y qvs). rewrite Hqy. exact I.
+        * right. unfold cvars, clauses_fvs. apply filter_In. split.
+          { apply (proj1 (@dedup_preserves_In idx eqb (eqb_boolspec idx) _ y)). exact Hy_flat. }
+          rewrite Hqy. reflexivity.
+  Qed.
+
+  (* ============================================================== *)
   (* Good sequents                                                    *)
   (* ============================================================== *)
 
