@@ -1656,6 +1656,119 @@ Section WithMap.
         exact Hlook.
   Qed.
 
+  Lemma map_inj_eq {A B : Type} (f : A -> B) (l1 l2 : list A) :
+    (forall x1 x2, In x1 l1 -> In x2 l2 -> f x1 = f x2 -> x1 = x2) ->
+    map f l1 = map f l2 -> l1 = l2.
+  Proof.
+    revert l2.
+    induction l1 as [|h1 t1 IH]; intros l2 Hinj Hmap.
+    - destruct l2 as [|h2 t2].
+      + reflexivity.
+      + cbn in Hmap. discriminate Hmap.
+    - destruct l2 as [|h2 t2].
+      + cbn in Hmap. discriminate Hmap.
+      + cbn in Hmap. injection Hmap as Hhead Htail.
+        assert (Hh : h1 = h2).
+        { apply Hinj; [left; reflexivity | left; reflexivity | exact Hhead]. }
+        subst h2.
+        f_equal.
+        apply IH.
+        * intros x1 x2 Hx1 Hx2 Hfx.
+          apply (Hinj x1 x2); [right; exact Hx1 | right; exact Hx2 | exact Hfx].
+        * exact Htail.
+  Qed.
+
+  Lemma named_list_lookup_err_to_lookup (d : idx) (l : named_list idx idx) (x y : idx) :
+    named_list_lookup_err l x = Some y -> named_list_lookup d l x = y.
+  Proof.
+    induction l as [| [s v] l' IH]; intros Herr.
+    - cbn in Herr. discriminate Herr.
+    - cbn in Herr. cbn.
+      destruct (eqb x s) eqn:Heqb.
+      + injection Herr as <-. reflexivity.
+      + apply IH. exact Herr.
+  Qed.
+
+  Local Lemma db_set_adds_atom (a : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db a
+      (db (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e0))).
+  Proof.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad].
+    unfold Defs.get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                        (atom_args a) e0) as [p e1] eqn:Hga.
+    cbn [fst snd].
+    pose proof (list_Mmap_get_analysis_preserves_db (atom_args a) e0) as Hdb1.
+    rewrite Hga in Hdb1. cbn [snd] in Hdb1.
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a) (analyze idx symbol unit a p) e1)
+      as [pu e2] eqn:Hua.
+    pose proof (update_analyses_preserves_db (atom_ret a)
+                  (analyze idx symbol unit a p) e1) as Hdb2.
+    rewrite Hua in Hdb2. cbn [snd] in Hdb2.
+    cbn [snd].
+    unfold db_set'. cbn [snd db].
+    unfold map_update, atom_in_db, Is_Some_satisfying.
+    cbn [atom_fn atom_args atom_ret].
+    destruct (map.get (db e2) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - rewrite map.get_put_same. cbn [Is_Some_satisfying].
+      rewrite map.get_put_same. reflexivity.
+    - rewrite map.get_put_same. cbn [Is_Some_satisfying].
+      rewrite map.get_put_same. reflexivity.
+  Qed.
+
+  Local Lemma db_set_atom_in_db_inv (a b : atom)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    atom_in_db b
+      (db (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e0))) ->
+    (atom_fn b = atom_fn a /\ atom_args b = atom_args a /\ atom_ret b = atom_ret a)
+    \/ atom_in_db b (db e0).
+  Proof.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad].
+    unfold Defs.get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                        (atom_args a) e0) as [p e1] eqn:Hga.
+    cbn [fst snd].
+    pose proof (list_Mmap_get_analysis_preserves_db (atom_args a) e0) as Hdb1.
+    rewrite Hga in Hdb1. cbn [snd] in Hdb1.
+    destruct (update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a) (analyze idx symbol unit a p) e1)
+      as [pu e2] eqn:Hua.
+    pose proof (update_analyses_preserves_db (atom_ret a)
+                  (analyze idx symbol unit a p) e1) as Hdb2.
+    rewrite Hua in Hdb2. cbn [snd] in Hdb2.
+    cbn [snd].
+    unfold db_set'. cbn [snd db].
+    unfold map_update, atom_in_db, Is_Some_satisfying.
+    cbn [atom_fn atom_args atom_ret].
+    destruct b as [bfn bargs bret].
+    cbn [atom_fn atom_args atom_ret].
+    rewrite Hdb2. rewrite Hdb1.
+    destruct (map.get (db e0) (atom_fn a)) as [tbl|] eqn:Htbl.
+    - eqb_case bfn (atom_fn a).
+      + rewrite map.get_put_same. cbn [Is_Some_satisfying].
+        eqb_case bargs (atom_args a).
+        * rewrite map.get_put_same. cbn [entry_value]. intros Hbret.
+          auto using eq_sym.
+        * rewrite map.get_put_diff by auto.
+          intros Hb. right. rewrite Htbl. exact Hb.
+      + rewrite map.get_put_diff by auto. intros Hb. right.
+        exact Hb.
+    - eqb_case bfn (atom_fn a).
+      + rewrite map.get_put_same. cbn [Is_Some_satisfying].
+        eqb_case bargs (atom_args a).
+        * rewrite map.get_put_same. cbn [entry_value]. intros Hbret.
+          auto using eq_sym.
+        * rewrite map.get_put_diff by auto.
+          unfold default. rewrite map.get_empty. cbn [Is_Some_satisfying].
+          intros Hb. destruct Hb.
+      + rewrite map.get_put_diff by auto. intros Hb. right.
+        exact Hb.
+  Qed.
+
   Lemma clauses_to_instance_db_monotone
     (cs : list (Semantics.clause idx symbol))
     (sub0 : named_list idx idx)
