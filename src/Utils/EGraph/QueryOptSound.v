@@ -2645,6 +2645,8 @@ Section WithMap.
               atom_in_db (Build_atom (atom_fn a)
                 (map (named_list_lookup default sub1) (atom_args a))
                 (named_list_lookup default sub1 (atom_ret a))) (db e1))
+        /\ (forall a, In a atoms -> forall x, In x (atom_ret a :: atom_args a) ->
+              exists y, named_list_lookup_err sub1 x = Some y)
     end.
   Proof.
     pose proof (clauses_to_instance_atoms_inv Hlti Hlts Hltt atoms Huniq
@@ -2681,8 +2683,8 @@ Section WithMap.
                 [] (Defs.empty_egraph idx_zero unit : instance)) as [ [ u sub1 ] e1 ].
     destruct Hmain as (roots1 & _ & Hinv1).
     unfold rename_inv in Hinv1.
-    destruct Hinv1 as (_ & _ & Hwl1 & _ & Hfwd1 & _).
-    split; [exact Hwl1 | exact Hfwd1].
+    destruct Hinv1 as (_ & _ & Hwl1 & _ & Hfwd1 & Hvars1).
+    split; [exact Hwl1 | exact (conj Hfwd1 Hvars1)].
   Qed.
 
   Lemma in_db_to_atoms_iff_atom_in_db (a : atom) (d : db_map idx symbol symbol_map idx_trie unit) :
