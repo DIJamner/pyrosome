@@ -18,8 +18,10 @@ From Utils Require Import EGraph.Defs.
 From Pyrosome.Tools.EGraph Require Import Defs Theorems.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
-From Utils Require Import Monad.
-From Pyrosome.Tools Require Import PosRenaming.
+From Utils Require Import Monad Result.
+From Pyrosome.Tools Require Import PosRenaming PosRenamingProperties RenamingBridge.
+From Pyrosome.Tools.EGraph Require Import RenamingCoincide.
+From Pyrosome.Theory Require ClosedCore.
 From Stdlib Require Import NArith.
 From Stdlib Require Import Classes.RelationClasses.
 Import StateMonad.
@@ -220,12 +222,19 @@ Section ReducingSkeleton.
      via ctx_to_rules, preserving wf), the schedule soundness of the built
      rule_sets, the carry-over of the [Is_Success] hypothesis to the positive
      [egraph_reducing_equal], and the REVERSE lifting [eq_term on l'] =>
-     [eq_term on l].  The reverse renaming lifting does not exist yet
-     (PosRenamingProperties has only the forward direction); that, plus
-     wf-preservation through [ctx_to_rules], is the remaining content. *)
+     [eq_term on l].
+
+     The whole renaming bridge is now WIRED (and machine-checked): the proof
+     destructures the renaming state monad, applies [rename_egraph_bridge]
+     (forward wf + bound/unrename facts) and [reverse_eq_term_lift]
+     (unrename-then-eq_rtv), with [RenamingCoincide] bridging the EGraph maps
+     to the ClosedCore ones.  The ONLY remaining gap is the [schedule_sound]
+     conjunct ([admit] below) -- the Phase-6 obligation that the two built
+     rule_sets are sound under [lang_model] (build_rule_set +
+     optimize_sequent_forward + pt_spaced_intersect_correct). *)
   Lemma egraph_reducing_equal'_to_pos
     (l : lang string)
-    (filter reversible : string * rule string -> bool)
+    (lf reversible : string * rule string -> bool)
     (inj_rules : list (ne_list string))
     (rebuild_fuel sat_fuel efuel red_fuel : nat)
     (c : ctx string) (t : sort string) (e1 e2 : term string) :
@@ -238,7 +247,7 @@ Section ReducingSkeleton.
        [all_fresh] of the renamed language).  Not derivable from the other
        hypotheses; in practice discharged by computation. *)
     all (fun x => fresh x l) (map fst c) ->
-    Is_Success (fst (egraph_reducing_equal' l filter reversible inj_rules
+    Is_Success (fst (egraph_reducing_equal' l lf reversible inj_rules
                        rebuild_fuel sat_fuel efuel red_fuel c e1 e2)) ->
     exists (l' : lang positive) (e1' e2' : term positive) (t' : sort positive)
            (sched : pos_schedule) (inj' : named_list positive (list positive)),
@@ -247,7 +256,74 @@ Section ReducingSkeleton.
       PositiveInstantiation.egraph_reducing_equal l' sched inj'
         rebuild_fuel sat_fuel efuel red_fuel e1' e2' = Success tt /\
       (eq_term l' [] t' e1' e2' -> eq_term l c t e1 e2).
-  Proof. Admitted.
+  Proof.
+    intros Hwf Hwfc He1 He2 Hdisj Hsucc.
+    (* Destructure the renaming computation into its 6 sequential steps. *)
+    unfold egraph_reducing_equal' in Hsucc.
+    cbn [Mbind Mret state_monad] in Hsucc.
+    destruct (rename_lang (ctx_to_rules c ++ l)
+                {| p_to_v := map.empty; v_to_p := []; next_id := xO xH |})
+      as [Lp r1] eqn:HrL.
+    destruct (rename_term (var_to_con e1) r1) as [E1p r2] eqn:HrE1.
+    destruct (rename_term (var_to_con e2) r2) as [E2p r3] eqn:HrE2.
+    destruct (rename_lang (ctx_to_rules c ++ filter lf l) r3) as [posR r4] eqn:HrPR.
+    destruct (rename_lang (ctx_to_rules c ++ named_map rev_rule
+                (filter (fun p => reversible p && lf p) l)) r4) as [posRR r5] eqn:HrPRR.
+    destruct (list_Mmap rename_inj inj_rules r5) as [injp r6] eqn:HrInj.
+    cbn [fst] in Hsucc.
+    (* Rename the goal sort [sort_var_to_con t] at [r3] -> [Tp]/[r7].  (The sort
+       is not renamed by the computation; [t'] is our existential choice.) *)
+    destruct (rename_sort (sort_var_to_con t) r3) as [Tp r7] eqn:HrT.
+    (* The closed source data is well-formed (via [ctx_to_rules_wf] / [wf_term_vtr],
+       with the EGraph maps rewritten to the ClosedCore ones). *)
+    assert (HwfLcl : wf_lang (ctx_to_rules c ++ l)) by
+      (rewrite ctx_to_rules_coincide; apply (wf_lang_concat Hwf);
+       apply ClosedCore.ctx_to_rules_wf; first [assumption | typeclasses eauto]).
+    assert (HwfE1cl : wf_term (ctx_to_rules c ++ l) [] (var_to_con e1) (sort_var_to_con t)) by
+      (rewrite ctx_to_rules_coincide, var_to_con_is_vtr, sort_var_to_con_is_svtr;
+       apply ClosedCore.wf_term_vtr; first [assumption | typeclasses eauto]).
+    assert (HwfE2cl : wf_term (ctx_to_rules c ++ l) [] (var_to_con e2) (sort_var_to_con t)) by
+      (rewrite ctx_to_rules_coincide, var_to_con_is_vtr, sort_var_to_con_is_svtr;
+       apply ClosedCore.wf_term_vtr; first [assumption | typeclasses eauto]).
+    pose proof (rename_lang_correct _ (init_renaming_ok string) HrL) as (Hr1ok & _).
+    pose proof (rename_term_correct _ Hr1ok HrE1) as (Hr2ok & _).
+    pose proof (rename_term_correct _ Hr2ok HrE2) as (Hr3ok & _).
+    (* Forward wf of the positive outputs + bound/unrename facts at [r7]. *)
+    pose proof (@rename_egraph_bridge string _ _ _
+                  (ctx_to_rules c ++ l) (var_to_con e1) (var_to_con e2) (sort_var_to_con t)
+                  _ r1 r2 r3 r3 r7 Lp E1p E2p Tp
+                  HwfLcl HwfE1cl HwfE2cl (init_renaming_ok string) HrL HrE1 HrE2
+                  Hr3ok (rename_grows_refl r3) HrT) as Hbridge.
+    destruct Hbridge as (HwfLp & HwfE1p & HwfE2p & Hr7ok & Hbl & Hbe1 & Hbe2 & Hbt
+                         & HuL & HuE1 & HuE2 & HuT).
+    (* The reverse lift: unrename (positive->string) then [eq_rtv] (closed->open). *)
+    assert (Hrev : eq_term Lp [] Tp E1p E2p -> eq_term l c t e1 e2) by
+      (rewrite ctx_to_rules_coincide in HuL;
+       rewrite var_to_con_is_vtr in HuE1;
+       rewrite var_to_con_is_vtr in HuE2;
+       rewrite sort_var_to_con_is_svtr in HuT;
+       intro Heq;
+       exact (@reverse_eq_term_lift string _ _ _ l c t e1 e2 r7 Lp Tp E1p E2p
+                Hwf Hwfc Hdisj He1 He2 Hr7ok Hbl Hbt Hbe1 Hbe2 HwfLp HuL HuE1 HuE2 HuT Heq)).
+    exists Lp, E1p, E2p, Tp,
+           [(10%nat, PositiveInstantiation.build_rule_set rebuild_fuel posR Lp);
+            (1%nat, PositiveInstantiation.build_rule_set rebuild_fuel posRR Lp)], injp.
+    split; [exact HwfLp |].
+    split; [exact HwfE1p |].
+    split; [exact HwfE2p |].
+    split.
+    { (* schedule_sound: the Phase-6 obligation (build_rule_set soundness via
+         optimize_sequent_forward + pt_spaced_intersect_correct).  Still open. *)
+      admit. }
+    split; [| exact Hrev].
+    (* Is_Success carry-over: the egraph result is [Success tt]. *)
+    revert Hsucc;
+      generalize (egraph_reducing_equal Lp
+        [(10%nat, PositiveInstantiation.build_rule_set rebuild_fuel posR Lp);
+         (1%nat, PositiveInstantiation.build_rule_set rebuild_fuel posRR Lp)] injp
+        rebuild_fuel sat_fuel efuel red_fuel E1p E2p);
+      intros res Hsucc; destruct res as [u|]; [destruct u; reflexivity | destruct Hsucc].
+  Admitted.
 
 End ReducingSkeleton.
 
