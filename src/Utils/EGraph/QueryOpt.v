@@ -486,9 +486,7 @@ Eqb_idx.
         cbn.
         unfold map_update.
         case_match; unfold default, map_default; cbn.
-        (*outdated
         2:{
-          rewrite Properties.map.remove_empty.
           unfold db_to_atoms.
           intros ? ?.
           rewrite in_flat_map in *.
@@ -498,8 +496,9 @@ Eqb_idx.
           {
             rewrite map.get_put_same in *.
             autorewrite with inversion in *; subst.
+            unfold Basics.flip in H1.
+            rewrite Properties.map.remove_empty in H1.
             unfold map.tuples in H1.
-            cbn in H1.
             rewrite Properties.map.fold_empty in H1.
             basic_goal_prep;
               basic_utils_crush.
@@ -524,22 +523,24 @@ Eqb_idx.
           apply Properties.map.tuples_spec in H0.
           eqb_case (atom_fn a0) s.
           {
-            rewrite map.get_put_same in *.
-            autorewrite with inversion in *; subst.
-            rewrite in_map_iff in *.
+            rewrite map.get_put_same in H0.
+            autorewrite with inversion in H0; subst.
+            rewrite in_map_iff in H1.
             basic_goal_prep; subst.
-            rewrite Properties.map.tuples_spec in *.
+            unfold Basics.flip in H1.
+            rewrite Properties.map.tuples_spec in H1.
             eqb_case l (atom_args a0).
             {
               exfalso.
-              rewrite map.get_remove_same in *.
+              rewrite map.get_remove_same in H1.
               congruence.
             }
-            rewrite map.get_remove_diff in * by auto.
+            rewrite map.get_remove_diff in H1 by auto.
             exists ((atom_fn a0), r).
             rewrite Properties.map.tuples_spec.
             basic_goal_prep;
               basic_utils_crush.
+            unfold table_atoms.
             let x := open_constr:(_) in
             replace ({| atom_fn := atom_fn a0; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
             {
@@ -548,22 +549,20 @@ Eqb_idx.
             { reflexivity. }
           }
           {
-            rewrite map.get_put_diff in * by auto.
+            rewrite map.get_put_diff in H0 by auto.
             rewrite in_map_iff in H1.
             basic_goal_prep; subst.
             exists (s, r0).
             rewrite Properties.map.tuples_spec.
             intuition auto.
-            unfold table_atoms.          
+            unfold table_atoms.
             let x := open_constr:(_) in
             replace ({| atom_fn := s; atom_args := l; atom_ret := entry_value idx X d |}) with x;[ eapply in_map |].
             { rewrite Properties.map.tuples_spec in *; eauto. }
             { reflexivity. }
-          }          
+          }
         }
       Qed.
-         *)
-      Admitted.
         
       Lemma incl_remove_atoms al (i : instance X)
         : incl ((db_to_atoms
