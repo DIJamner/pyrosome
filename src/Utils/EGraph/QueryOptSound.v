@@ -794,18 +794,21 @@ Section WithMap.
     (* The source clauses are sound under a_src. *)
     all (Semantics.clause_sound_for_model idx symbol idx_map m a_src) cs ->
     match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
-    | (_, e1) =>
+    | ((_, sub_final), e1) =>
         Semantics.egraph_ok idx lt symbol symbol_map idx_map idx_trie unit e1 /\
         exists i',
           map.extends i' i /\
           Semantics.egraph_sound_for_interpretation
-            idx symbol symbol_map idx_map idx_trie unit m i' e1
+            idx symbol symbol_map idx_map idx_trie unit m i' e1 /\
+          (forall x y, In (x, y) sub_final ->
+                 forall d, map.get a_src x = Some d -> map.get i' y = Some d)
     end.
   Proof.
     revert sub0 e0 i.
     induction cs as [|c cs IH]; intros sub0 e0 i Hok Hsnd Hren Hsubdom Hcs.
     - cbn. split; [exact Hok|]. exists i.
-      split; [intros ? ? Hk; exact Hk | exact Hsnd].
+      split; [intros ? ? Hk; exact Hk|].
+      split; [exact Hsnd | exact Hren].
     - cbn. unfold add_clause_to_instance.
       destruct c as [x y | a].
       + (* eq_clause: split on whether each var is already in sub0. *)
@@ -888,14 +891,16 @@ Section WithMap.
           unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
           assert (Hkx_a : Sep.has_key x' (parent (equiv e_alloc)))
             by (apply Hk_pres; exact Hkx_e0).
-          assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+          assert (Hpost_IH : let '((_, sub_f), e1) := clauses_to_instance idx_succ cs
                                               ((y, y_new) :: sub0) e_unioned in
                              egraph_ok idx lt symbol symbol_map idx_map idx_trie
                                unit e1 /\
                              (exists i' : idx_map (domain symbol m),
                                 map.extends i' (map.put i y_new dy) /\
                                 egraph_sound_for_interpretation idx symbol
-                                  symbol_map idx_map idx_trie unit m i' e1)).
+                                  symbol_map idx_map idx_trie unit m i' e1 /\
+                                (forall a b, In (a, b) sub_f ->
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
           { apply IH.
             { pose proof (union_preserves_egraph_ok x' y_new e_alloc) as Hpres.
               unfold vc in Hpres.
@@ -936,11 +941,11 @@ Section WithMap.
               - apply Hpres. apply Hk_pres. apply (Hsubdom _ _ Hin). }
             { exact Hcs'. } }
           destruct (clauses_to_instance idx_succ cs ((y, y_new) :: sub0) e_unioned)
-            as [pp e_final] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+            as [ [u_pp sub_final] e_final ] eqn:Hci.
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact Hsnd_f].
+          split; [|exact (conj Hsnd_f Hren_f)].
           intros k d Hk.
           apply Hext_f.
           rewrite map.get_put_diff; [exact Hk|].
@@ -997,14 +1002,16 @@ Section WithMap.
           (* Use IH with the extended interpretation (map.put i x_new dx).
              The result will also have its existential a' relative to that
              extended interp; we then convert back to extending i via map.put. *)
-          assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+          assert (Hpost_IH : let '((_, sub_f), e1) := clauses_to_instance idx_succ cs
                                               ((x, x_new) :: sub0) e_unioned in
                              egraph_ok idx lt symbol symbol_map idx_map idx_trie
                                unit e1 /\
                              (exists i' : idx_map (domain symbol m),
                                 map.extends i' (map.put i x_new dx) /\
                                 egraph_sound_for_interpretation idx symbol
-                                  symbol_map idx_map idx_trie unit m i' e1)).
+                                  symbol_map idx_map idx_trie unit m i' e1 /\
+                                (forall a b, In (a, b) sub_f ->
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
           { apply IH.
           { pose proof (union_preserves_egraph_ok x_new y' e_alloc) as Hpres.
             unfold vc in Hpres.
@@ -1056,11 +1063,11 @@ Section WithMap.
           { exact Hcs'. } }
           (* Now translate Hpost_IH back to the outer goal (extending i not (map.put i x_new dx)) *)
           destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
-            as [pp e_final] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+            as [ [u_pp sub_final] e_final ] eqn:Hci.
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact Hsnd_f].
+          split; [|exact (conj Hsnd_f Hren_f)].
           (* i_final extends map.put i x_new dx, which extends i (since x_new ∉ i) *)
           intros k d Hk.
           apply Hext_f.
@@ -1136,14 +1143,16 @@ Section WithMap.
             destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie
                         unit _ x_new x_new e_x) as [v e_unioned] eqn:Hu.
             unfold Defs.union in Hu. cbn in Hu. rewrite Hu. cbn.
-            assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+            assert (Hpost_IH : let '((_, sub_f), e1) := clauses_to_instance idx_succ cs
                                                 ((x, x_new) :: sub0) e_unioned in
                                egraph_ok idx lt symbol symbol_map idx_map idx_trie
                                  unit e1 /\
                                (exists i' : idx_map (domain symbol m),
                                   map.extends i' (map.put i x_new dx) /\
                                   egraph_sound_for_interpretation idx symbol
-                                    symbol_map idx_map idx_trie unit m i' e1)).
+                                    symbol_map idx_map idx_trie unit m i' e1 /\
+                                  (forall a b, In (a, b) sub_f ->
+                                     forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
             { apply IH.
               { pose proof (union_preserves_egraph_ok x_new x_new e_x) as Hpres.
                 unfold vc in Hpres.
@@ -1181,11 +1190,11 @@ Section WithMap.
                 - apply Hpres. apply Hk_pres_x. apply (Hsubdom _ _ Hin). }
               { exact Hcs'. } }
             destruct (clauses_to_instance idx_succ cs ((x, x_new) :: sub0) e_unioned)
-              as [pp e_final] eqn:Hci.
-            destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+              as [ [u_pp sub_final] e_final ] eqn:Hci.
+            destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
             split; [exact Hok_f|].
             exists i_final.
-            split; [|exact Hsnd_f].
+            split; [|exact (conj Hsnd_f Hren_f)].
             intros k d Hk.
             apply Hext_f.
             rewrite map.get_put_diff; [exact Hk|].
@@ -1212,14 +1221,16 @@ Section WithMap.
           assert (Hxy_idx_neq : x_new <> y_new).
           { intros Heq. rewrite <- Heq in Hk_ynew_x_none.
             apply Hk_ynew_x_none. exact Hk_xnew_x. }
-          assert (Hpost_IH : let (_, e1) := clauses_to_instance idx_succ cs
+          assert (Hpost_IH : let '((_, sub_f), e1) := clauses_to_instance idx_succ cs
                                               ((y, y_new) :: (x, x_new) :: sub0) e_unioned in
                              egraph_ok idx lt symbol symbol_map idx_map idx_trie
                                unit e1 /\
                              (exists i' : idx_map (domain symbol m),
                                 map.extends i' (map.put (map.put i x_new dx) y_new dy) /\
                                 egraph_sound_for_interpretation idx symbol
-                                  symbol_map idx_map idx_trie unit m i' e1)).
+                                  symbol_map idx_map idx_trie unit m i' e1 /\
+                                (forall a b, In (a, b) sub_f ->
+                                   forall d, map.get a_src a = Some d -> map.get i' b = Some d))).
           { apply IH.
             { pose proof (union_preserves_egraph_ok x_new y_new e_xy) as Hpres.
               unfold vc in Hpres.
@@ -1272,11 +1283,11 @@ Section WithMap.
                   apply (Hsubdom _ _ Hin). }
             { exact Hcs'. } }
           destruct (clauses_to_instance idx_succ cs ((y, y_new) :: (x, x_new) :: sub0) e_unioned)
-            as [pp e_final] eqn:Hci.
-          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f).
+            as [ [u_pp sub_final] e_final ] eqn:Hci.
+          destruct Hpost_IH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
           split; [exact Hok_f|].
           exists i_final.
-          split; [|exact Hsnd_f].
+          split; [|exact (conj Hsnd_f Hren_f)].
           intros k d Hk.
           apply Hext_f.
           assert (Hyx_idx_neq : y_new <> x_new) by (intros Heq; apply Hxy_idx_neq; symmetry; exact Heq).
@@ -1359,11 +1370,11 @@ Section WithMap.
         pose proof (IH sub2 e3 i2 Hok3 Hsnd3 Hren2
                      ltac:(intros x0 y0 Hin; apply Hmono3; exact (Hsubdom2 _ _ Hin)) Hcs')
           as HIH.
-        destruct (clauses_to_instance idx_succ cs sub2 e3) as [pp e_final] eqn:Hci.
-        destruct HIH as (Hok_f & i_final & Hext_f & Hsnd_f).
+        destruct (clauses_to_instance idx_succ cs sub2 e3) as [ [u_pp sub_final] e_final ] eqn:Hci.
+        destruct HIH as (Hok_f & i_final & Hext_f & Hsnd_f & Hren_f).
         split; [exact Hok_f|].
         exists i_final.
-        split; [|exact Hsnd_f].
+        split; [|exact (conj Hsnd_f Hren_f)].
         intros k v Hk. apply Hext_f. apply Hext2. apply Hext1. exact Hk.
   Qed.
 
