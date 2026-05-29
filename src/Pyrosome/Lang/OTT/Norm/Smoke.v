@@ -29,41 +29,17 @@ Section Smoke.
   Example apply_redex : apply_val (vZero :: id_list 0) (vNe (nVar 0)) = vZero.
   Proof. reflexivity. Qed.
 
-  (* and the corresponding object-level redex evaluates to the value [vZero]:
-        (hd)[snoc id zero]  ==>  vZero
-     The exp_subst value is [apply_val sg ve], so we pin it by [change] first. *)
-  Definition redex1 : term :=
-    con "exp_subst"
-        [con "hd" [a; a; a];
-         a; a;
-         con "snoc" [con "zero" [a]; con "id" [con "emp" []]; a; a; a; a];
-         a; a].
+  (* the TYPED evaluator (EvalRel.v) computes closed numerals in the empty
+     context [[]], tracking the semantic type [dEl vNat].  (The old env-free
+     [exp_subst]/[hd] redexes used placeholder [_ann] contexts, which the typed
+     evaluator rejects: [ev_hd]/[ev_zero] require a real [emp]/[ext] context.) *)
+  Example eval_zero :
+    eval_rel [] (con "zero" [con "emp" []]) (dEl vNat) vZero.
+  Proof. apply ev_zero, ev_env_emp. Qed.
 
-  Example eval_redex1 : eval_rel redex1 vZero.
-  Proof.
-    unfold redex1.
-    change vZero with (apply_val (vZero :: id_list (ctx_len (con "emp" []))) (vNe (nVar 0))).
-    eapply ev_exp_subst.
-    - eapply ev_snoc; econstructor.
-    - econstructor.
-  Qed.
-
-  (* deeper: (hd)[snoc id (suc zero)] evaluates to (suc vZero) *)
-  Definition redex2 : term :=
-    con "exp_subst"
-        [con "hd" [a; a; a];
-         a; a;
-         con "snoc" [con "suc" [con "zero" [a]; a]; con "id" [con "emp" []]; a; a; a; a];
-         a; a].
-
-  Example eval_redex2 : eval_rel redex2 (vSuc vZero).
-  Proof.
-    unfold redex2.
-    change (vSuc vZero)
-      with (apply_val (vSuc vZero :: id_list (ctx_len (con "emp" []))) (vNe (nVar 0))).
-    eapply ev_exp_subst.
-    - eapply ev_snoc; [ econstructor | econstructor; econstructor ].
-    - econstructor.
-  Qed.
+  Example eval_suc :
+    eval_rel [] (con "suc" [con "zero" [con "emp" []]; con "emp" []])
+             (dEl vNat) (vSuc vZero).
+  Proof. apply ev_suc, ev_zero, ev_env_emp. Qed.
 
 End Smoke.
