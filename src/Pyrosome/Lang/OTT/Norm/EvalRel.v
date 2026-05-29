@@ -10,21 +10,33 @@ From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm Require Import Domain.
 Import Core.Notations.
 
-(* ENVIRONMENT-FREE relational evaluator for the cast-free OTT NbE model (first-order
+(* TYPED relational evaluator for the cast-free OTT NbE model (first-order
    fragment: substitution calculus + U/El + Nat/Empty).
 
-     eval_sub  : term -> ssub   -> Type   (a [sub] term denotes a semantic subst)
-     eval_ty   : term -> svalty -> Type
-     eval_rel  : term -> sval   -> Type
-     eval_env  : term -> senv   -> Type   (a context denotes its variables' types)
+   Unlike a bare big-step evaluator, each judgment is INDEXED by the semantic
+   typing data, so that a derivation simultaneously witnesses evaluation AND
+   well-formedness of the result ("preservation is by construction"):
 
-   There is NO ambient substitution argument: a variable [hd] reflects straight to
-   [vNe (nVar 0)], and an explicit substitution [exp_subst g e] is realised by
-   [apply (eval_sub g) (eval_rel e)].  [id]/[wkn] denote the identity/shift over a
-   context of [ctx_len] variables; [snoc] conses; [cmp] composes by [apply].  This is
-   what makes substitution-congruence hold (values are absolute).  There are NO
-   Pyrosome metavariables, hence no [var] cases.  Totality on well-typed terms comes
-   from the generic pf-eval, not from these relations. *)
+     eval_env :                 term -> senv          -> Type
+        a context denotes its variables' types [Ge : senv]
+     eval_ty  : senv         -> term -> svalty        -> Type
+        in semantic context [Ge], a type-term denotes a semantic type [T]
+     eval_rel : senv -> term -> svalty -> sval        -> Type
+        in [Ge], a term of (semantic) type [T] denotes a value [v]
+     eval_sub : senv -> senv -> term -> ssub          -> Type
+        a [sub] term denotes a semantic substitution [sg] from the input
+        (domain) [senv] to the output (codomain) [senv]
+
+   Values are still the ENVIRONMENT-FREE/absolute domain of [Domain.v]: a
+   neutral [nVar k] is the de Bruijn index [k]; an explicit substitution
+   [exp_subst g e] is realised by [apply]ing [eval_sub g] to [eval_rel e].
+   The senv/svalty indices simply record the types those absolute indices
+   carry, exactly as in [Typing.v]'s [has_svalty]/[wf_ssub].
+
+   Convention for [eval_sub Gin Gout g sg]: [Gin] is the DOMAIN env (one entry
+   per variable that [sg] substitutes; [length sg = length Gin]) and [Gout] is
+   the CODOMAIN env (the values in [sg] live there).  This matches
+   [wf_ssub Gout sg Gin]. *)
 Section EvalRel.
   Notation term := (@term string).
 
@@ -44,9 +56,7 @@ Section EvalRel.
 
   (* Normal form of the static info fragment (relevance/lvl/tlvl/tyinfo): the only
      computation is next0/next1 ([next L0 = iota L1], [next L1 = inf]).  Used so that
-     value annotations ([dU], [nEmptyrec]) are normalized, making the congruences for
-     U/Nat/Empty/Emptyrec go through (the info-soundness fix, now in the value world).
-     Inner [let fix] over the arg list per the [term] recursion idiom. *)
+     value annotations ([dU], [nEmptyrec]) are normalized. *)
   Fixpoint nf_info (e : term) : term :=
     match e with
     | var x => var x
@@ -72,47 +82,92 @@ Section EvalRel.
         else con n args'
     end.
 
-  Inductive eval_sub : term -> ssub -> Type :=
-  | ev_id   : forall G, eval_sub (con "id" [G]) (id_list (ctx_len G))
-  | ev_wkn  : forall A i G, eval_sub (con "wkn" [A; i; G]) (wkn_list (ctx_len G))
-  | ev_forget : forall G, eval_sub (con "forget" [G]) []
-  | ev_cmp  : forall g f G1 G2 G3 sf sg,
-      eval_sub f sf -> eval_sub g sg ->
-      eval_sub (con "cmp" [g; f; G3; G2; G1]) (map (apply_val sf) sg)
-  | ev_snoc : forall v g A i G' G sg vv,
-      eval_sub g sg -> eval_rel v vv ->
-      eval_sub (con "snoc" [v; g; A; i; G'; G]) (vv :: sg)
-
-  with eval_ty : term -> svalty -> Type :=
-  | ev_U    : forall l r G, eval_ty (con "U" [l; r; G]) (dU (nf_info r) (nf_info l))
-  | ev_El   : forall e l r G ve,
-      eval_rel e ve -> eval_ty (con "El" [e; l; r; G]) (dEl ve)
-  | ev_ty_subst : forall A i g G' G sg T,
-      eval_sub g sg -> eval_ty A T ->
-      eval_ty (con "ty_subst" [A; i; g; G'; G]) (apply_ty sg T)
-
-  with eval_rel : term -> sval -> Type :=
-  | ev_hd   : forall A i G, eval_rel (con "hd" [A; i; G]) (vNe (nVar 0))
-  | ev_exp_subst : forall e A i g G' G sg ve,
-      eval_sub g sg -> eval_rel e ve ->
-      eval_rel (con "exp_subst" [e; A; i; g; G'; G]) (apply_val sg ve)
-  | ev_zero : forall G, eval_rel (con "zero" [G]) vZero
-  | ev_suc  : forall n G vn,
-      eval_rel n vn -> eval_rel (con "suc" [n; G]) (vSuc vn)
-  | ev_Nat  : forall G, eval_rel (con "Nat" [G]) vNat
-  | ev_Empty : forall G, eval_rel (con "Empty" [G]) vEmpty
-  | ev_Emptyrec : forall e A lA rA G ne vA,
-      eval_rel e (vNe ne) -> eval_rel A vA ->
-      eval_rel (con "Emptyrec" [e; A; lA; rA; G])
-               (vNe (nEmptyrec (nf_info rA) (nf_info lA) vA ne)).
-
-  (* Environment normalization: a context's list of (semantic) variable types.  Each
-     [ext]'s annotation evaluates env-free; extending shifts the carried types up by
-     one (index 0 becomes the new variable).  Only base is [emp] (no metavariables). *)
   Inductive eval_env : term -> senv -> Type :=
   | ev_env_emp : eval_env (con "emp" []) []
   | ev_env_ext : forall A i G Genv S,
-      eval_env G Genv -> eval_ty A S ->
-      eval_env (con "ext" [A; i; G]) (shift_ty 1 S :: map (shift_ty 1) Genv).
+      eval_env G Genv -> eval_ty Genv A S ->
+      eval_env (con "ext" [A; i; G]) (shift_ty 1 S :: map (shift_ty 1) Genv)
+
+  with eval_ty : senv -> term -> svalty -> Type :=
+  | ev_U : forall Ge l r G,
+      eval_env G Ge ->
+      eval_ty Ge (con "U" [l; r; G]) (dU (nf_info r) (nf_info l))
+  | ev_El : forall Ge e l r G ve,
+      eval_env G Ge ->
+      eval_rel Ge e (dU (nf_info r) (nf_info l)) ve ->
+      eval_ty Ge (con "El" [e; l; r; G]) (dEl ve)
+  | ev_ty_subst : forall GeD GeC A i g G' G sg T,
+      eval_sub GeD GeC g sg -> eval_ty GeD A T ->
+      eval_ty GeC (con "ty_subst" [A; i; g; G'; G]) (apply_ty sg T)
+
+  with eval_rel : senv -> term -> svalty -> sval -> Type :=
+  | ev_hd : forall A i G Ge S,
+      eval_env G Ge -> eval_ty Ge A S ->
+      eval_rel (shift_ty 1 S :: map (shift_ty 1) Ge) (con "hd" [A; i; G])
+               (shift_ty 1 S) (vNe (nVar 0))
+  | ev_exp_subst : forall e A i g G' G GeD GeC sg ve T,
+      eval_sub GeD GeC g sg -> eval_rel GeD e T ve ->
+      eval_rel GeC (con "exp_subst" [e; A; i; g; G'; G])
+               (apply_ty sg T) (apply_val sg ve)
+  | ev_zero : forall G Ge,
+      eval_env G Ge -> eval_rel Ge (con "zero" [G]) (dEl vNat) vZero
+  | ev_suc  : forall n G Ge vn,
+      eval_rel Ge n (dEl vNat) vn ->
+      eval_rel Ge (con "suc" [n; G]) (dEl vNat) (vSuc vn)
+  | ev_Nat  : forall G Ge,
+      eval_env G Ge ->
+      eval_rel Ge (con "Nat" [G])
+               (dU (nf_info (con "rel" [])) (nf_info (con "L0" []))) vNat
+  | ev_Empty : forall G Ge,
+      eval_env G Ge ->
+      eval_rel Ge (con "Empty" [G])
+               (dU (nf_info (con "irr" [])) (nf_info (con "L0" []))) vEmpty
+  | ev_Emptyrec : forall e A lA rA G Ge ne vA,
+      eval_rel Ge e (dEl vEmpty) (vNe ne) ->
+      eval_rel Ge A (dU (nf_info rA) (nf_info lA)) vA ->
+      eval_rel Ge (con "Emptyrec" [e; A; lA; rA; G])
+               (dEl vA) (vNe (nEmptyrec (nf_info rA) (nf_info lA) vA ne))
+
+  with eval_sub : senv -> senv -> term -> ssub -> Type :=
+  | ev_id   : forall G Ge,
+      eval_env G Ge -> eval_sub Ge Ge (con "id" [G]) (id_list (length Ge))
+  | ev_wkn  : forall A i G Ge S,
+      eval_env G Ge -> eval_ty Ge A S ->
+      eval_sub Ge (shift_ty 1 S :: map (shift_ty 1) Ge) (con "wkn" [A; i; G])
+               (wkn_list (length Ge))
+  | ev_forget : forall G Ge,
+      eval_env G Ge -> eval_sub [] Ge (con "forget" [G]) []
+  | ev_cmp  : forall g f G3 G2 G1 Ge1 Ge2 Ge3 sf sg,
+      eval_sub Ge2 Ge1 f sf -> eval_sub Ge3 Ge2 g sg ->
+      eval_sub Ge3 Ge1 (con "cmp" [g; f; G3; G2; G1]) (map (apply_val sf) sg)
+  | ev_snoc : forall v g A i G' G GeD GeC sg vv S,
+      eval_sub GeD GeC g sg -> eval_ty GeD A S ->
+      eval_rel GeC v (apply_ty sg S) vv ->
+      eval_sub (shift_ty 1 S :: map (shift_ty 1) GeD) GeC
+               (con "snoc" [v; g; A; i; G'; G]) (vv :: sg).
 
 End EvalRel.
+
+(* Mutual induction principle for the four typed eval judgments.  [Combined
+   Scheme] only supports Prop, so we pair the four Type-valued eliminators by
+   hand (they share the same motives + 17-constructor method telescope). *)
+Scheme eval_env_mind := Induction for eval_env Sort Type
+  with eval_ty_mind  := Induction for eval_ty  Sort Type
+  with eval_rel_mind := Induction for eval_rel Sort Type
+  with eval_sub_mind := Induction for eval_sub Sort Type.
+
+Definition eval_mutind
+  (P0 : forall G Ge, eval_env G Ge -> Type)
+  (P1 : forall Ge A T, eval_ty Ge A T -> Type)
+  (P2 : forall Ge e T v, eval_rel Ge e T v -> Type)
+  (P3 : forall Gin Gout g sg, eval_sub Gin Gout g sg -> Type)
+  := fun f_emp f_ext f_U f_El f_tysub f_hd f_expsub f_zero f_suc f_Nat f_Empty
+         f_Emptyrec f_id f_wkn f_forget f_cmp f_snoc =>
+  ( @eval_env_mind P0 P1 P2 P3 f_emp f_ext f_U f_El f_tysub f_hd f_expsub f_zero
+      f_suc f_Nat f_Empty f_Emptyrec f_id f_wkn f_forget f_cmp f_snoc
+  , @eval_ty_mind  P0 P1 P2 P3 f_emp f_ext f_U f_El f_tysub f_hd f_expsub f_zero
+      f_suc f_Nat f_Empty f_Emptyrec f_id f_wkn f_forget f_cmp f_snoc
+  , @eval_rel_mind P0 P1 P2 P3 f_emp f_ext f_U f_El f_tysub f_hd f_expsub f_zero
+      f_suc f_Nat f_Empty f_Emptyrec f_id f_wkn f_forget f_cmp f_snoc
+  , @eval_sub_mind P0 P1 P2 P3 f_emp f_ext f_U f_El f_tysub f_hd f_expsub f_zero
+      f_suc f_Nat f_Empty f_Emptyrec f_id f_wkn f_forget f_cmp f_snoc ).

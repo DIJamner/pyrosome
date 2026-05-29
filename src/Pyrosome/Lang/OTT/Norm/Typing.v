@@ -7,8 +7,17 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism ApplyLemmas SortInj.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel ApplyLemmas.
 Import Core.Notations.
+
+(* [nth_default] is irrelevant in its default when the index is in range. *)
+Lemma nth_default_irrel_sval (l : ssub) (k : nat) (d1 d2 : sval) :
+    k < length l -> nth_default d1 l k = nth_default d2 l k.
+Proof.
+  intro Hlt. unfold nth_default.
+  assert (He : nth_error l k <> None) by (rewrite nth_error_Some; exact Hlt).
+  destruct (nth_error l k); [reflexivity | contradiction].
+Qed.
 
 (* Semantic typing of the NbE value domain (Domain.v).
 
