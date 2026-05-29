@@ -5729,7 +5729,71 @@ Section __.
       }
     Qed.
 
-    
+
+    (*
+      Rank-orientation of union: when the second argument's root (cy_r)
+      has rank ≤ the first argument's root (cx_r) and they are in
+      different classes, the union returns cx_r and demotes cy_r to point
+      to cx_r (i.e., cy_r's parent in uf' is cx_r).
+    *)
+    Lemma union_rank_orientation uf uf' x y z l umid cx_r ufin cy_r
+      : union_find_ok uf l ->
+        has_key x uf.(parent) ->
+        has_key y uf.(parent) ->
+        union uf x y = (uf', z) ->
+        find uf x = (umid, cx_r) ->
+        find umid y = (ufin, cy_r) ->
+        cx_r <> cy_r ->
+        forall rx ry,
+          map.get uf.(rank) cx_r = Some rx ->
+          map.get uf.(rank) cy_r = Some ry ->
+          ry <= rx ->
+          z = cx_r /\ map.get uf'.(parent) cy_r = Some cx_r.
+    Proof.
+      intros Hok Hx Hy Hunion Hfx Hfy Hneq rx ry Hrx Hry Hle.
+      (* Unfold union and rewrite the find results to expose the structure *)
+      unfold union in Hunion.
+      rewrite Hfx in Hunion; cbn zeta in Hunion.
+      rewrite Hfy in Hunion; cbn zeta in Hunion.
+      (* Hunion : (if eqb cx_r cy_r then (ufin, cx_r)
+                   else let rx_v := unwrap_with_default (map.get ufin.(rank) cx_r) in
+                        let ry_v := unwrap_with_default (map.get ufin.(rank) cy_r) in
+                        match Nat.compare ry_v rx_v with ...) = (uf', z) *)
+      (* Prove rank preservation: find h v = (p, q) -> p.(rank) = h.(rank) *)
+      assert (Hrk_lem : forall (h : union_find) v p q,
+          find h v = (p, q) -> p.(rank) = h.(rank)).
+      { intros h v p q Hfind.
+        assert (Hfst : fst (find h v) = p) by (rewrite Hfind; reflexivity).
+        rewrite <- Hfst; clear Hfst Hfind.
+        unfold find; destruct h as [rk_h pa_h mr_h nx_h].
+        destruct (find_aux (S mr_h) v pa_h) as [r0 f0]; reflexivity. }
+      pose proof (Hrk_lem _ _ _ _ Hfx) as Hrk1.
+      pose proof (Hrk_lem _ _ _ _ Hfy) as Hrk2.
+      (* Hrk1 : umid.(rank) = uf.(rank)
+         Hrk2 : ufin.(rank) = umid.(rank) *)
+      (* Rewrite ranks in Hunion: ufin.(rank) = uf.(rank) *)
+      rewrite Hrk2, Hrk1 in Hunion.
+      unfold unwrap_with_default in Hunion.
+      rewrite Hrx, Hry in Hunion.
+      (* Hunion now has exact rx and ry in the Nat.compare match *)
+      (* Split on eqb to handle equal-root case *)
+      eqb_case cx_r cy_r.
+      - (* cx_r = cy_r (subst): contradicts Hneq *)
+        exfalso; exact (Hneq eq_refl).
+      - (* cx_r <> cy_r: Hunion reduces to Nat.compare match *)
+        case_match.
+        + (* Eq: ry = rx; put cy_r -> cx_r in parent, return cx_r *)
+          inversion Hunion; subst.
+          split; [reflexivity | apply map.get_put_same].
+        + (* Lt: ry < rx; put cy_r -> cx_r in parent, return cx_r *)
+          inversion Hunion; subst.
+          split; [reflexivity | apply map.get_put_same].
+        + (* Gt: ry > rx; contradicts Hle : ry <= rx *)
+          rewrite PeanoNat.Nat.compare_gt_iff in case_match_eqn.
+          Lia.lia.
+    Qed.
+
+
   Lemma find_preserves_domain (uf uf': union_find) l i j
     : union_find_ok uf l ->
       Sep.has_key i uf.(parent) ->
