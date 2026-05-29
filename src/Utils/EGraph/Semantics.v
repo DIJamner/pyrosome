@@ -6353,21 +6353,29 @@ Section WithMap.
     exists l'; exact Huf3.
   Qed.
 
-  Definition db_all_roots (e : instance) : Prop :=
+  (* Weaker-than-[db_all_roots] db invariant, parameterized by a predicate [P]
+     on function symbols: EVERY atom has root args, and atoms whose function
+     symbol satisfies [P] additionally have a root ret.  Instantiated downstream
+     with [P := (fun s => s <> sort_of)]: in the assumption egraph, the only
+     non-root rets are the demoted [tx'] ids, which are exactly the [sort_of]
+     atoms' rets, so non-[sort_of] (constructor) atoms keep root rets. *)
+  Definition db_inv (P : symbol -> Prop) (e : instance) : Prop :=
     forall a, atom_in_db a e.(db) ->
       all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args)
-      /\ map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret).
+      /\ (P a.(atom_fn) ->
+          map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret)).
 
-  Lemma hash_entry_all_roots
+  Lemma hash_entry_all_roots (P : symbol -> Prop)
         (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
         f args
     : vc (hash_entry idx_succ f args)
         (fun e_in res =>
            (exists roots, union_find_ok lt e_in.(equiv) roots) ->
-           db_all_roots e_in ->
+           db_inv P e_in ->
+           P f ->
            (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
            (exists roots, union_find_ok lt (snd res).(equiv) roots)
-           /\ db_all_roots (snd res)
+           /\ db_inv P (snd res)
            /\ (forall a, atom_in_db a e_in.(db) -> atom_in_db a (snd res).(db))
            /\ (forall z, map.get e_in.(equiv).(parent) z = Some z ->
                          map.get (snd res).(equiv).(parent) z = Some z)
@@ -6376,7 +6384,7 @@ Section WithMap.
     unfold vc, hash_entry.
     intros e_in.
     cbn [Mbind StateMonad.state_monad].
-    intros Hroots_ex Hdar_in Hkeys_args.
+    intros Hroots_ex Hdar_in Hpf Hkeys_args.
     destruct Hroots_ex as [roots Hroots].
     assert (Hargk : all (fun i => Sep.has_key i e_in.(equiv).(parent)) args).
     { clear -Hkeys_args.
@@ -6409,8 +6417,8 @@ Section WithMap.
         by (intros x Hx; apply (proj1 (@forest_root_iff _ _ _ _ _ x roots _ Hforest_1)); exact Hx).
       assert (Hroot_e_in_to_in : forall x, map.get e_in.(equiv).(parent) x = Some x -> In x roots)
         by (intros x Hx; apply (proj2 (@forest_root_iff _ _ _ _ _ x roots _ Hforest_in)); exact Hx).
-      (* db_all_roots e_post: atoms unchanged (db same), translate roots e_in -> e_post. *)
-      assert (Hdar1 : db_all_roots e_post).
+      (* db_inv P e_post: atoms unchanged (db same), translate roots e_in -> e_post. *)
+      assert (Hdar1 : db_inv P e_post).
       { intros a Ha.
         assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite Hdb1 in Ha; exact Ha).
         destruct (Hdar_in a Ha_in) as [Hargs_r Hret_r].
@@ -6420,7 +6428,8 @@ Section WithMap.
           destruct Hargs_r as [Hy Hys]. split.
           + apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hy.
           + apply IH. exact Hys.
-        - apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hret_r. }
+        - intros Hpa. apply Hin_to_root_post. apply Hroot_e_in_to_in.
+          apply Hret_r; exact Hpa. }
       (* Now assemble the conclusion. *)
       split; [exists roots; exact Hok1|].
       split; [exact Hdar1|].
@@ -6428,10 +6437,10 @@ Section WithMap.
       { intros a Ha. unfold atom_in_egraph. rewrite Hdb1. exact Ha. }
       split.
       { intros z Hz. apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hz. }
-      (* r is a root: (f,args',r) in e_post.db, db_all_roots e_post gives ret = r root. *)
+      (* r is a root: (f,args',r) in e_post.db, db_inv P e_post + [P f] gives ret = r root. *)
       destruct (Hdar1 (Build_atom f args' r)) as [_ Hr_root].
       { unfold atom_in_egraph in Hin; exact Hin. }
-      cbn [atom_ret] in Hr_root. exact Hr_root.
+      cbn [atom_ret atom_fn] in Hr_root. apply Hr_root; exact Hpf.
     - (* None: alloc fresh r, then db_set (Build_atom f args' r). *)
       cbn [Mbind StateMonad.state_monad].
       rename Hlk2 into Hnone.
@@ -6469,9 +6478,9 @@ Section WithMap.
       assert (Hr_root_alloc : map.get e_alloc.(equiv).(parent) r = Some r)
         by (apply Hin_to_root_alloc; left; reflexivity).
       (* db unchanged from e1 to e_alloc; e1.db = e_in.db. *)
-      (* db_all_roots e_alloc: from db_all_roots e_in (same db), roots monotone. *)
+      (* db_inv P e_alloc: from db_inv P e_in (same db), roots monotone. *)
       assert (Hdb_eq_alloc_in : e_alloc.(db) = e_in.(db)) by congruence.
-      assert (Hdar_alloc : db_all_roots e_alloc).
+      assert (Hdar_alloc : db_inv P e_alloc).
       { intros a Ha.
         assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite <- Hdb_eq_alloc_in; exact Ha).
         destruct (Hdar_in a Ha_in) as [Hargs_r Hret_r].
@@ -6481,7 +6490,8 @@ Section WithMap.
           destruct Hargs_r as [Hy Hys]. split.
           + apply Hin_to_root_alloc. right. apply Hroot_e_in_to_in. exact Hy.
           + apply IH. exact Hys.
-        - apply Hin_to_root_alloc. right. apply Hroot_e_in_to_in. exact Hret_r. }
+        - intros Hpa. apply Hin_to_root_alloc. right. apply Hroot_e_in_to_in.
+          apply Hret_r; exact Hpa. }
       (* No existing atom (f,args',_) in e_alloc.db (lookup was None, db same). *)
       assert (Hnone_alloc : forall r0, ~ atom_in_db (Build_atom f args' r0) e_alloc.(db)).
       { intros r0 Hin0. rewrite Hdb_eq_alloc_in in Hin0.
@@ -6587,17 +6597,17 @@ Section WithMap.
       (* Assemble. *)
       split; [exists (r::roots); rewrite Heq_db; exact Hok_alloc|].
       split.
-      { (* db_all_roots e_db *)
+      { (* db_inv P e_db *)
         intros a Ha.
         destruct (Hain_split a Ha) as [Heq | [Ha_ua Hneq] ].
         - (* new atom (f, args', r) *)
-          subst a. cbn [atom_args atom_ret]. split.
+          subst a. cbn [atom_args atom_ret atom_fn]. split.
           + clear -Hargs'_roots_alloc Heq_db.
             induction args' as [|y ys IH]; cbn in *; auto.
             destruct Hargs'_roots_alloc as [Hy Hys]. split.
             * rewrite Heq_db. exact Hy.
             * apply IH. exact Hys.
-          + rewrite Heq_db. exact Hr_root_alloc.
+          + intros _. rewrite Heq_db. exact Hr_root_alloc.
         - (* old atom *)
           rewrite Hdb_ua_alloc in Ha_ua.
           assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite <- Hdb_eq_alloc_in; exact Ha_ua).
@@ -6608,7 +6618,8 @@ Section WithMap.
             destruct Hargs_r as [Hy Hys]. split.
             * apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hy.
             * apply IH. exact Hys.
-          + apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hret_r. }
+          + intros Hpa. apply Hin_to_root_db. right. apply Hroot_e_in_to_in.
+            apply Hret_r; exact Hpa. }
       split.
       { (* db monotone *)
         intros a Ha.

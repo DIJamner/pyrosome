@@ -2170,8 +2170,14 @@ Section WithVar.
     Context (with_sorts : bool).
 
     Local Notation egraph_ok := (egraph_ok V lt V V_map V_map V_trie X).
-    Local Notation db_all_roots := (db_all_roots V V V_map V_map V_trie X).
+    Local Notation db_inv := (db_inv V V V_map V_map V_trie X).
     Local Notation atom_in_db := (atom_in_db V V V_map V_trie X).
+
+    (* The db invariant actually preserved through add_ctx: every atom has root
+       args; only non-[sort_of] (constructor) atoms keep root rets.  The
+       [sort_of]-ctx atoms' rets are the demoted [tx'] ids. *)
+    Definition db_ctx_inv (e : instance X) : Prop :=
+      db_inv (fun s => s <> sort_of) e.
 
     (* "x is a root in e's union-find" -- the inline predicate used by the
        F1c bricks (e.g. repair_each_canonicalizes). *)
@@ -2189,13 +2195,13 @@ Section WithVar.
     (* The structural envelope, parallel to extending_sound but model-free. *)
     Definition roots_env (e_in e_out : instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_out) roots)
-      /\ db_all_roots e_out
+      /\ db_ctx_inv e_out
       /\ db_incl e_in e_out
       /\ roots_mono e_in e_out.
 
     Lemma roots_env_refl (e : instance X)
       : (exists roots, union_find_ok lt (Defs.equiv e) roots) ->
-        db_all_roots e ->
+        db_ctx_inv e ->
         roots_env e e.
     Proof.
       intros Huf Hdb. unfold roots_env, db_incl, roots_mono.
@@ -2220,7 +2226,7 @@ Section WithVar.
     Definition open_roots_post (sub : named_list V) (e_in : instance X)
        (res : V * instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
-      db_all_roots e_in ->
+      db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res)
       /\ is_root (snd res) (fst res).
@@ -2228,7 +2234,7 @@ Section WithVar.
     Definition open_roots_args_post (sub : named_list V) (e_in : instance X)
        (res : list V * instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
-      db_all_roots e_in ->
+      db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res)
       /\ all (is_root (snd res)) (fst res).
@@ -2236,7 +2242,7 @@ Section WithVar.
     Definition open_roots_sort_post (sub : named_list V) (e_in : instance X)
        (res : V * instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
-      db_all_roots e_in ->
+      db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res)
       /\ is_root (snd res) (fst res).
@@ -2294,10 +2300,14 @@ Section WithVar.
                           Sep.has_key x (parent (Defs.equiv e_inner))).
         { intros x Hx. apply is_root_has_key.
           exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : name <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule_in. }
         pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-                      X _ lt_asymmetric lt_succ lt_trans name a_out) as Hhe.
-        unfold vc in Hhe. specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhe.
+        unfold vc in Hhe.
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hname_sof Hkeys).
         destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
         cbn [fst snd] in Hhe.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
@@ -2423,10 +2433,14 @@ Section WithVar.
                           Sep.has_key x (parent (Defs.equiv e_inner))).
         { intros x Hx. apply is_root_has_key.
           exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule. }
         pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
                       V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-                      X _ lt_asymmetric lt_succ lt_trans n a_out) as Hhe.
-        unfold vc in Hhe. specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhe.
+        unfold vc in Hhe.
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hname_sof Hkeys).
         destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
         cbn [fst snd] in Hhe.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
