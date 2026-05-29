@@ -6628,6 +6628,186 @@ Section WithMap.
       rewrite Heq_db. exact Hr_root_alloc.
   Qed.
 
+  (* Regular [alloc] rank-0 structural lemma (sibling of [alloc_opaque_rank_zero];
+     [hash_entry]'s miss branch uses regular [alloc], not [alloc_opaque]).  Same
+     equiv transformation, so the proof mirrors [alloc_struct] + the rank-0/root
+     conjuncts of [alloc_opaque_rank_zero]. *)
+  Lemma alloc_rank_zero
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+    : vc (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e_in res =>
+           forall roots,
+           union_find_ok lt e_in.(equiv) roots ->
+           union_find_ok lt (snd res).(equiv) (fst res :: roots)
+           /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
+           /\ map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)
+           /\ map.get (@rank _ _ _ (snd res).(equiv)) (fst res) = Some 0
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))
+           /\ (forall z, map.get e_in.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ e_in.(db) = (snd res).(db)
+           /\ e_in.(parents) = (snd res).(parents)
+           /\ e_in.(worklist) = (snd res).(worklist)).
+  Proof.
+    unfold vc, alloc.
+    intros [db_in equiv_in parents_in epoch_in worklist_in analyses_in log_in].
+    destruct equiv_in as [rk_in pa_in mr_in nx_in] eqn:Heq_in.
+    cbn -[map.get map.put].
+    intros roots Huf_roots.
+    destruct Huf_roots as [Hforest Hrcd Hri Hmax Hnub].
+    cbn [parent rank max_rank next equiv] in *.
+    assert (Hnxfresh : ~ Sep.has_key nx_in pa_in).
+    { intro Hk. specialize (Hnub _ Hk). eapply Hlti; exact Hnub. }
+    assert (Hgetnone_pa : map.get pa_in nx_in = None).
+    { unfold Sep.has_key in Hnxfresh. destruct (map.get pa_in nx_in); tauto. }
+    assert (Hnewok : union_find_ok lt
+                      {| rank := map.put rk_in nx_in 0;
+                         parent := map.put pa_in nx_in nx_in;
+                         max_rank := mr_in;
+                         next := idx_succ nx_in |}
+                      (nx_in :: roots)).
+    { constructor; cbn [parent rank max_rank next].
+      - apply forest_extend; auto.
+      - intros k v Hget.
+        eqb_case k nx_in.
+        + exists 0. rewrite map.get_put_same. reflexivity.
+        + rewrite map.get_put_diff in Hget by congruence.
+          specialize (Hrcd _ _ Hget). destruct Hrcd as [r0 Hr0].
+          exists r0. rewrite map.get_put_diff by congruence. exact Hr0.
+      - intros ki kj Hget Hneq.
+        eqb_case ki nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget. congruence.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eqb_case kj nx_in.
+          * exfalso. apply Hnxfresh.
+            apply (forest_closed _ _ Eqb_idx_ok _ (idx_map_ok _) _ _ Hforest _ _ Hget).
+          * specialize (Hri _ _ Hget Hneq).
+            rewrite ! map.get_put_diff by congruence. exact Hri.
+      - intros j r Hget.
+        eqb_case j nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget; subst. Lia.lia.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eauto.
+      - intros k Hk.
+        unfold Sep.has_key in Hk.
+        eqb_case k nx_in.
+        + apply Hlts.
+        + rewrite map.get_put_diff in Hk by congruence.
+          assert (Sep.has_key k pa_in) as Hkpa.
+          { unfold Sep.has_key. destruct (map.get pa_in k); auto. }
+          specialize (Hnub _ Hkpa).
+          eapply Hltt; [exact Hnub | apply Hlts]. }
+    split; [exact Hnewok|].
+    split; [exact Hnxfresh|].
+    split; [cbn [parent equiv]; apply map.get_put_same|].
+    split; [cbn [rank equiv]; apply map.get_put_same|].
+    split.
+    { intros xa Hxa. unfold Sep.has_key in *.
+      cbn [parent equiv].
+      pose proof (Eqb_idx_ok xa nx_in) as Heq.
+      destruct (eqb xa nx_in).
+      + subst. rewrite map.get_put_same. constructor.
+      + rewrite map.get_put_diff by congruence. exact Hxa. }
+    split.
+    { intros z Hz. cbn [parent equiv].
+      assert (z <> nx_in) as Hzneq.
+      { intro Hc. subst z. rewrite Hgetnone_pa in Hz. discriminate. }
+      rewrite map.get_put_diff by congruence. exact Hz. }
+    split; [reflexivity|].
+    split; reflexivity.
+  Qed.
+
+  (* [hash_entry] on a FRESH key (no existing atom with this fn and these
+     root args) takes the miss branch: it allocates a fresh rank-0 root and
+     inserts the atom.  This is what add_ctx's [tx' <- hash_entry sort_of [x']]
+     needs (x' just alloc_opaque'd ⇒ sort_of [x'] is novel ⇒ tx' is rank 0),
+     so that the subsequent [union t_v tx'] demotes tx' (via
+     [union_roots_demote_second], which requires rank tx' = 0). *)
+  Lemma hash_entry_fresh_rank_zero
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+        f args
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           (exists roots, union_find_ok lt e_in.(equiv) roots) ->
+           all (fun x => map.get e_in.(equiv).(parent) x = Some x) args ->
+           (forall r, ~ atom_in_db (Build_atom f args r) e_in.(db)) ->
+           map.get (@rank _ _ _ (snd res).(equiv)) (fst res) = Some 0
+           /\ map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)
+           /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
+           /\ atom_in_db (Build_atom f args (fst res)) (snd res).(db)).
+  Proof.
+    unfold vc, hash_entry.
+    intros e_in.
+    cbn [Mbind StateMonad.state_monad].
+    intros Hroots_ex Hargs_roots Hmiss.
+    (* Step 1: args are roots => list_Mmap find args = (args, e_in). *)
+    rewrite (list_Mmap_find_roots_identity args e_in Hargs_roots). cbn [fst snd].
+    (* Step 2: db_lookup f args on e_in -> (mout, e_in). *)
+    pose proof (db_lookup_pure f args e_in) as Hlk.
+    cbn beta in Hlk.
+    destruct (db_lookup f args e_in) as [mout e_lk] eqn:Hlkeq.
+    cbn [fst snd] in Hlk |- *.
+    destruct Hlk as [He_eq Hlk2]. subst e_lk.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Some r: db hit -- contradicts the miss hypothesis. *)
+      exfalso. eapply Hmiss. unfold atom_in_egraph in Hlk2. exact Hlk2.
+    - (* None: alloc fresh r, then db_set (Build_atom f args r). *)
+      cbn [Mbind StateMonad.state_monad].
+      rename Hlk2 into Hnone.
+      (* alloc on e_in via alloc_rank_zero. *)
+      pose proof (alloc_rank_zero Hlti Hlts Hltt) as Halloc.
+      unfold vc in Halloc. specialize (Halloc e_in).
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_in)
+        as [r e_alloc] eqn:Halloc_eq.
+      cbn [fst snd] in Halloc.
+      destruct Hroots_ex as [roots Hroots].
+      specialize (Halloc roots Hroots).
+      destruct Halloc as (Hok_alloc & Hr_fresh & Hr_root & Hr_rank0 & Hkeys_alloc
+                          & Hroots_mono & Hdb_alloc & Hpar_alloc & Hwl_alloc).
+      (* Peel db_set (Build_atom f args r) on e_alloc, mirroring hash_entry_all_roots. *)
+      unfold db_set. cbn [atom_fn atom_args atom_ret].
+      cbn [Mbind StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields args e_alloc) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result args e_alloc) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & Hpa_ga).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result r
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as) e_ga)
+        as [_u e_ua] eqn:Hue.
+      assert (Heq_ua : e_ua.(equiv) = e_ga.(equiv))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      assert (Hdb_ua : e_ua.(db) = e_ga.(db))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result (Build_atom f args r)
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as)
+                  e_ua) as [_v e_db] eqn:Hde.
+      cbn [fst snd].
+      unfold Mret. cbn [StateMonad.state_monad fst snd].
+      (* e_db.equiv = e_alloc.equiv. *)
+      assert (Heq_db : e_db.(equiv) = e_alloc.(equiv)).
+      { assert (Heq_db_ua : e_db.(equiv) = e_ua.(equiv))
+          by (unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity).
+        rewrite Heq_db_ua, Heq_ua. exact Heq_ga. }
+      (* The new atom (f,args,r) is in e_db.db. *)
+      assert (Hain_new : atom_in_db (Build_atom f args r) e_db.(db)).
+      { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+        unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+        destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+          rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+      (* Assemble the four conclusions. *)
+      split; [rewrite Heq_db; exact Hr_rank0|].
+      split; [rewrite Heq_db; exact Hr_root|].
+      split; [exact Hr_fresh|].
+      exact Hain_new.
+  Qed.
+
   (* [repair_each] canonicalizes [a]: under hypothesis H2 that [a.args]
      and [a.ret] are already roots (self-loops) in [e.equiv], and that
      [atom_in_db a e.db] (so the prefix union is a no-op), the result db
