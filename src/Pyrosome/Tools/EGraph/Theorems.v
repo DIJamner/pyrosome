@@ -2560,6 +2560,25 @@ Section WithVar.
                        /\ atom_in_egraph (Build_atom n sids xs) eF
       end.
 
+    Lemma atom_tree_db_incl (eF eF' : instance X) (sub : named_list V)
+      : (forall b, atom_in_egraph b eF -> atom_in_egraph b eF') ->
+        forall e xe, atom_tree eF sub e xe -> atom_tree eF' sub e xe.
+    Proof.
+      intros Hincl e; induction e as [x | n s IHs] using term_ind; intros xe Htree.
+      - safe_invert Htree. constructor.
+      - safe_invert Htree.
+        match goal with
+        | Htrees : Forall2 (atom_tree eF sub) s ?sids,
+          Hatom : atom_in_egraph (Build_atom n ?sids xe) eF |- _ =>
+            eapply at_con; [| eapply Hincl; exact Hatom];
+            clear Hatom;
+            revert sids Htrees IHs; induction s as [|t0 s0 IHsl]; intros sids Htrees IHs;
+            [ safe_invert Htrees; constructor
+            | safe_invert Htrees; destruct IHs as [IHt0 IHs0];
+              constructor; [ apply IHt0; assumption | apply IHsl; assumption ] ]
+        end.
+    Qed.
+
   End AddOpenSound.
 
   Section AddOpenRoots.
