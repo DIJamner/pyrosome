@@ -3505,6 +3505,116 @@ Section WithVar.
       eapply add_open_sort'_node_atoms; try eassumption; eauto with utils.
     Qed.
 
+    (* ============================================================== *)
+    (* atom_tree survives rebuild (the F1c-gated CONNECTION for P2).   *)
+    (* ============================================================== *)
+    (* The node atoms of an [atom_tree] built in the pre-rebuild       *)
+    (* assumption egraph [e] are FULLY canonical DAG (constructor)     *)
+    (* atoms: [db_ctx_inv e] makes their args roots, and their head    *)
+    (* symbol [n <> sort_of] (every constructor name is in [l], and    *)
+    (* [fresh sort_of l]) makes their ret a root too.  Such atoms       *)
+    (* survive [rebuild] (the [L_survive_canonical] kernel — the one    *)
+    (* intentional axiom).  We abstract the survival fact as the        *)
+    (* hypothesis [Hsurv] (a guarded db-inclusion) so this lemma stays  *)
+    (* model-free and 0-axiom; the P3 caller discharges [Hsurv] from    *)
+    (* [L_survive_canonical] in a model-aware context.  This            *)
+    (* generalises [atom_tree_db_incl] (whose inclusion is              *)
+    (* unconditional) to a canonical-only inclusion.                    *)
+
+    Local Notation ain a e := (@atom_in_egraph V V V_map V_map V_trie X a e).
+
+    Lemma atom_tree_args_survives (e eF : instance X) (sub : named_list V)
+      (c c' : ctx) (s : list term)
+      (Hwfa : wf_args l c s c')
+      (IHs : all (fun e0 => forall t, wf_term l c e0 t ->
+                   forall xe, atom_tree X e sub e0 xe ->
+                              atom_tree X eF sub e0 xe) s)
+      : forall sids, Forall2 (atom_tree X e sub) s sids ->
+                     Forall2 (atom_tree X eF sub) s sids.
+    Proof.
+      revert IHs; induction Hwfa; intros IHs sids Htrees.
+      - safe_invert Htrees. constructor.
+      - safe_invert Htrees.
+        destruct IHs as [IHe IHs0].
+        constructor.
+        + eapply IHe; eauto.
+        + eapply IHHwfa; eauto.
+    Qed.
+
+    Lemma atom_tree_survives (e eF : instance X) (sub : named_list V) (c : ctx)
+      (Hdbi : db_ctx_inv e)
+      (Hsurv : forall a, ain a e ->
+                 all (is_root e) a.(atom_args) ->
+                 is_root e a.(atom_ret) ->
+                 ain a eF)
+      : forall e0 t, wf_term l c e0 t ->
+          forall xe, atom_tree X e sub e0 xe -> atom_tree X eF sub e0 xe.
+    Proof.
+      intro e0; induction e0 as [x | n s IHs] using term_ind; intros t Hwt xe Htree.
+      - safe_invert Htree. constructor.
+      - safe_invert Htree.
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        assert (Hn : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hin. }
+        assert (IHsall : all (fun e0 => forall t, wf_term l c e0 t ->
+                                forall xe, atom_tree X e sub e0 xe ->
+                                           atom_tree X eF sub e0 xe) s).
+        { clear -IHs. induction s as [|e1 s0 IH]; cbn; [exact I|].
+          destruct IHs as [IHe1 IHs0]. split; [exact IHe1 | apply IH; exact IHs0]. }
+        match goal with
+          Htrees : Forall2 (atom_tree X e sub) s ?sids,
+          Hatom : atom_in_egraph (Build_atom n ?sids xe) e |- _ =>
+            pose proof (Hdbi _ Hatom) as Hroots;
+            cbn [atom_args atom_ret atom_fn] in Hroots;
+            destruct Hroots as [Hargs_r Hret_r];
+            eapply at_con;
+              [ eapply atom_tree_args_survives with (c:=c) (c':=c'0); eauto
+              | eapply Hsurv;
+                [ exact Hatom
+                | cbn [atom_args]; exact Hargs_r
+                | cbn [atom_ret]; apply Hret_r; exact Hn ] ]
+        end.
+    Qed.
+
+    Lemma atom_tree_sort_survives (e eF : instance X) (sub : named_list V) (c : ctx)
+      (Hdbi : db_ctx_inv e)
+      (Hsurv : forall a, ain a e ->
+                 all (is_root e) a.(atom_args) ->
+                 is_root e a.(atom_ret) ->
+                 ain a eF)
+      : forall ts, wf_sort l c ts ->
+          forall xs, atom_tree_sort X e sub ts xs -> atom_tree_sort X eF sub ts xs.
+    Proof.
+      intros [n s] Hws xs Htree.
+      unfold atom_tree_sort in *.
+      destruct Htree as (sids & Htrees & Hatom).
+      safe_invert Hws.
+      match goal with
+        Hin : In (n, sort_rule ?c'0 ?args0) l,
+        Hwfa : Model.wf_args _ s ?c'0 |- _ =>
+          assert (Hn : n <> sort_of);
+            [ intro Heq; apply Hsof; rewrite <- Heq; eapply pair_fst_in; exact Hin |];
+          exists sids; split;
+            [ eapply atom_tree_args_survives with (c:=c) (c':=c'0); try eassumption
+            | ]
+      end.
+      2:{ pose proof (Hdbi _ Hatom) as Hroots.
+          cbn [atom_args atom_ret atom_fn] in Hroots.
+          destruct Hroots as [Hargs_r Hret_r].
+          eapply Hsurv;
+            [ exact Hatom
+            | cbn [atom_args]; exact Hargs_r
+            | cbn [atom_ret]; apply Hret_r; exact Hn ]. }
+      (* IHsall for the args: each arg term survives *)
+      assert (HP : forall e0 t, wf_term l c e0 t ->
+                     forall xe, atom_tree X e sub e0 xe -> atom_tree X eF sub e0 xe).
+      { intros; eapply atom_tree_survives with (c:=c); eauto. }
+      clear -HP s.
+      induction s as [|e1 s0 IH]; cbn; [exact I|].
+      split; [exact (HP e1) | exact IH].
+    Qed.
+
   End AddOpenRoots.
 
   (* ============================================================== *)
