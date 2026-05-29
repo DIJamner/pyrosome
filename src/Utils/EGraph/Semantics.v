@@ -6972,6 +6972,77 @@ Section WithMap.
       exact Hain_new.
   Qed.
 
+  (* [hash_entry] with all-root args returns its output id paired with the
+     LITERAL atom [(f, args, out)] present in the result db -- in BOTH the
+     hit branch (the hash-consed entry) and the miss branch (the freshly
+     inserted atom).  Unlike [hash_entry_fresh_rank_zero] this needs no
+     novelty hypothesis.  This is the "(e) node-atom-present" fact that
+     [add_open_node_atoms] consumes: since [add_open]'s recursive arg
+     outputs are roots, [find args = args] and the inserted atom is the
+     literal [(f, args, out)] that [atom_tree] needs. *)
+  Lemma hash_entry_output_atom
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+        f args
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           (exists roots, union_find_ok lt e_in.(equiv) roots) ->
+           all (fun x => map.get e_in.(equiv).(parent) x = Some x) args ->
+           atom_in_db (Build_atom f args (fst res)) (snd res).(db)).
+  Proof.
+    unfold vc, hash_entry.
+    intros e_in.
+    cbn [Mbind StateMonad.state_monad].
+    intros Hroots_ex Hargs_roots.
+    rewrite (list_Mmap_find_roots_identity args e_in Hargs_roots). cbn [fst snd].
+    pose proof (db_lookup_pure f args e_in) as Hlk.
+    cbn beta in Hlk.
+    destruct (db_lookup f args e_in) as [mout e_lk] eqn:Hlkeq.
+    cbn [fst snd] in Hlk |- *.
+    destruct Hlk as [He_eq Hlk2]. subst e_lk.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Hit: the returned atom (f,args,r) is already in e_in.db; db unchanged. *)
+      cbn [Mret StateMonad.state_monad fst snd].
+      unfold atom_in_egraph in Hlk2. exact Hlk2.
+    - (* Miss: alloc a fresh root, then db_set inserts (f,args,r). *)
+      cbn [Mbind StateMonad.state_monad].
+      rename Hlk2 into Hnone.
+      pose proof (alloc_struct Hlti Hlts Hltt) as Halloc.
+      unfold vc in Halloc. specialize (Halloc e_in).
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_in)
+        as [r e_alloc] eqn:Halloc_eq.
+      cbn [fst snd] in Halloc.
+      destruct Hroots_ex as [roots Hroots].
+      specialize (Halloc roots Hroots).
+      destruct Halloc as (Hok_alloc & Hr_fresh & Hr_key & Hkeys_alloc & Hdb_alloc
+                          & Hpar_alloc & Hwl_alloc).
+      (* Peel db_set (Build_atom f args r) on e_alloc, mirroring
+         hash_entry_fresh_rank_zero's miss branch. *)
+      unfold db_set. cbn [atom_fn atom_args atom_ret].
+      cbn [Mbind StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields args e_alloc) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result args e_alloc) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & Hpa_ga).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result r
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as) e_ga)
+        as [_u e_ua] eqn:Hue.
+      assert (Hdb_ua : e_ua.(db) = e_ga.(db))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result (Build_atom f args r)
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as)
+                  e_ua) as [_v e_db] eqn:Hde.
+      cbn [fst snd]. unfold Mret. cbn [StateMonad.state_monad fst snd].
+      unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+      unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+      destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+        rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity.
+  Qed.
+
   (* [repair_each] canonicalizes [a]: under hypothesis H2 that [a.args]
      and [a.ret] are already roots (self-loops) in [e.equiv], and that
      [atom_in_db a e.db] (so the prefix union is a no-op), the result db
