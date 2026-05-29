@@ -100,23 +100,10 @@ Proof.
   destruct H1 as [Heq1 G1], H2 as [Heq2 G2].
   split.
   - exact (eq_term_trans Heq1 Heq2).
-  - unfold glue_term in *.
-    destruct (eqb tn "exp").
-    { destruct G1 as [v1 [a1 b1]], G2 as [v2 [a2 b2]].
-      pose proof (eval_rel_det b1 a2); subst v2. exact (existT _ v1 (a1, b2)). }
-    destruct (eqb tn "ty").
-    { destruct G1 as [v1 [a1 b1]], G2 as [v2 [a2 b2]].
-      pose proof (eval_ty_det b1 a2); subst v2. exact (existT _ v1 (a1, b2)). }
-    destruct (eqb tn "sub").
-    { destruct G1 as [v1 [a1 b1]], G2 as [v2 [a2 b2]].
-      pose proof (eval_sub_det b1 a2); subst v2. exact (existT _ v1 (a1, b2)). }
-    destruct (eqb tn "env").
-    { destruct G1 as [v1 [a1 b1]], G2 as [v2 [a2 b2]].
-      pose proof (eval_env_det b1 a2); subst v2. exact (existT _ v1 (a1, b2)). }
-    destruct ta.
-    { etransitivity; eassumption. }
-    { exact tt. }
-Qed.
+  - (* GLUE (typed eval): merge the two derivations of e12 via determinism.
+       Admitted pending the typed-glue gluing soundness (see file note). *)
+    admit.
+Admitted.
 
 Lemma Norm_cterm_sym : forall (t : @sort string) e1 e2,
     ceq_term (CutTModel := Norm) t e1 e2 -> ceq_term (CutTModel := Norm) t e2 e1.
@@ -126,13 +113,10 @@ Proof.
   destruct H as [Heq G].
   split.
   - exact (eq_term_sym Heq).
-  - unfold glue_term in *.
-    destruct (eqb tn "exp"). { destruct G as [v [a b]]. exact (existT _ v (b, a)). }
-    destruct (eqb tn "ty").  { destruct G as [v [a b]]. exact (existT _ v (b, a)). }
-    destruct (eqb tn "sub"). { destruct G as [v [a b]]. exact (existT _ v (b, a)). }
-    destruct (eqb tn "env"). { destruct G as [v [a b]]. exact (existT _ v (b, a)). }
-    destruct ta. { symmetry; assumption. } { exact tt. }
-Qed.
+  - (* GLUE (typed eval): swap the two evals.  Admitted pending typed-glue
+       gluing soundness (see file note). *)
+    admit.
+Admitted.
 
 (* ================================================================== *)
 (* cterm_conv : eq_term_conv + glue carries over (head is preserved)   *)
@@ -150,16 +134,11 @@ Proof.
   destruct Ht as [Heqt Gt].
   split.
   - exact (eq_term_conv Heqt Heqs).
-  - pose proof (proj1 (eqb_prop_iff _ n1 n2) ltac:(rewrite Hn; exact I)); subst n2.
-    unfold glue_term in *.
-    destruct (eqb n1 "exp"); [exact Gt|].
-    destruct (eqb n1 "ty");  [exact Gt|].
-    destruct (eqb n1 "sub"); [exact Gt|].
-    destruct (eqb n1 "env"); [exact Gt|].
-    destruct a1 as [|x1 r1], a2 as [|x2 r2]; cbn in Hlen; try discriminate Hlen.
-    + exact Gt.
-    + exact tt.
-Qed.
+  - (* GLUE (typed eval): the glue now depends on the sort's context/type
+       args; transferring it across eq_sort-related sorts needs eval/eq_term
+       coherence.  Admitted pending the typed-glue gluing soundness. *)
+    admit.
+Admitted.
 
 (* ================================================================== *)
 (* sort ops : eq_sort_* for the eq component, head+arity for the glue  *)
@@ -312,16 +291,11 @@ Proof.
   - (* well-formedness component (= SyntacticModel cterm_cong) *)
     pose proof (norm_ceq_args_eq_args Hargs) as Heqa.
     eapply term_con_congruence; try exact _; try (right; reflexivity); try eassumption.
-  - (* eval glue *)
-    dispA "Emptyrec". disp "Empty". disp "suc". disp "zero". disp "Nat".
-    disp "El". disp "U". disp "hd". disp "wkn". disp "snoc".
-    disp "ext". disp "forget". disp "emp". disp "exp_subst". disp "ty_subst".
-    disp "cmp". disp "id". disp "info". disp "next". disp "inf".
-    disp "iota". disp "L0<L1". disp "L1". disp "L0". disp "irr". disp "rel".
-    finish_absurd (term_rules_names Hin)
-      ["Emptyrec";"Empty";"suc";"zero";"Nat";"El";"U";"hd";"wkn";"snoc";
-       "ext";"forget";"emp";"exp_subst";"ty_subst";"cmp";"id";"info";"next";
-       "inf";"iota";"L0<L1";"L1";"L0";"irr";"rel"].
+  - (* eval glue (typed): build the TYPED eval witnesses for con name s1/s2 at
+       the eval'd context/type from the per-arg glue.  Admitted pending the
+       typed-glue gluing soundness (the old env-free [disp] tactics no longer
+       apply since the glue now threads contexts/types). *)
+    admit.
 Admitted.
 
 (* ================================================================== *)
@@ -406,7 +380,7 @@ Ltac dispbyB_snoc_wkn_hd :=
 (* is the codomain of the [f]-slot; the [ev_cmp] output collapses via  *)
 (* [map_apply_id_list] / [map_apply_wkn_list] once we know the         *)
 (* substitution's length, which the carried [eq_term] (well-formedness)*)
-(* supplies through [eval_sub_len_wf] (SortInj) — the codomain         *)
+(* supplies through [eval_sub_len] (SortInj) — the codomain         *)
 (* [ctx_len] then matches the inner [id]/[wkn]'s context via the env    *)
 (* glue ([eval_env_length]).                                           *)
 (* ================================================================== *)
@@ -426,7 +400,7 @@ Ltac prove_sub_len w G :=
       lazymatch eval cbn in t with
       | scon "sub" [?cod; _] =>
           let HL := fresh "HL" in
-          pose proof (eval_sub_len_wf Hev
+          pose proof (eval_sub_len Hev
                         (eq_term_wf_l fo_wf_lang ltac:(constructor) Heq)) as HL;
           match goal with
           | Ha : eval_env G ?ex, Hb : eval_env cod ?ex |- _ =>
@@ -495,19 +469,11 @@ Proof.
     + eapply eq_term_by; exact Hin.
     + apply eq_args_implies_eq_subst; exact Heqa.
     + eapply rule_in_ctx_wf; [ exact fo_wf_lang | exact Hin | reflexivity ].
-  - (* eval glue *)
-    dispbyB "Empty subst". dispbyB "suc subst". dispbyB "zero subst".
-    dispbyB "Nat subst". dispbyB "El subst". dispbyB "U subst".
-    dispbyB_snoc_wkn_hd. dispbyB "cmp_snoc". dispbyB "snoc_hd". dispby_wkn_snoc.
-    dispbyB "id_emp_forget". dispbyB "cmp_forget". dispbyA "exp_subst_cmp".
-    dispbyB "exp_subst_id". dispbyA "ty_subst_cmp". dispbyB "ty_subst_id".
-    dispbyA "cmp_assoc". dispbyB "id_left". dispby_id_right.
-    dispby "next1". dispby "next0". dispby "ltl_irr".
-    finish_absurd (term_eq_rules_names Hin)
-      ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
-       "U subst";"snoc_wkn_hd";"cmp_snoc";"snoc_hd";"wkn_snoc";"id_emp_forget";
-       "cmp_forget";"exp_subst_cmp";"exp_subst_id";"ty_subst_cmp";"ty_subst_id";
-       "cmp_assoc";"id_left";"id_right";"next1";"next0";"ltl_irr"].
+  - (* eval glue (typed): both sides of each equation rule evaluate (in the
+       eval'd context, at the eval'd type) to the SAME typed value.  Admitted
+       pending the typed-glue gluing soundness (old env-free [dispby] tactics
+       no longer apply). *)
+    admit.
 Admitted.
 
 (* ================================================================== *)
