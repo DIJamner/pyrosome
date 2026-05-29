@@ -3957,6 +3957,115 @@ Section WithVar.
   End AddOpenRoots.
 
   (* ============================================================== *)
+  (* P3 (I)-inversion assembly: ctx_readback_eF + ctx_readback_wf_subst. *)
+  (* ============================================================== *)
+  (* From an adversary [a] sound on the rebuilt assumption egraph     *)
+  (* [eF]'s atoms, plus the F1c-discharged per-var readback in [eF]    *)
+  (* ([ctx_readback_eF]: an [atom_tree_sort] witness for each ctx      *)
+  (* var's sort at a sort id [xs], and the CANONICALISED               *)
+  (* [sort_of([x']) -> xs] atom), reconstruct a wf substitution [sg]   *)
+  (* of the ctx [c] agreeing with [a] on the companion ids.  This is   *)
+  (* the (I)-inversion core of the source-rule soundness adapter; the  *)
+  (* F1c gate is isolated to [ctx_readback_eF] (discharged at P5 from  *)
+  (* [add_ctx_readback] + [atom_tree_sort_survives] + the [sort_of]    *)
+  (* ret-canonicalisation fact).  See [[project-source-rule-adapter]]. *)
+  Section AddCtxInvert.
+    Context (X : Type) `{analysis V V X}.
+    Context (l : lang) (Hwf : wf_lang l) (Hsof : fresh sort_of l).
+
+    Local Notation lang_model := (lang_model l).
+    Local Notation interp := (V_map (lang_model.(domain _))).
+    Local Notation ain a e := (@Semantics.atom_in_egraph V V V_map V_map V_trie X a e).
+    Local Notation asnd a al := (@Semantics.atom_sound_for_model V V V_map lang_model a al).
+
+    (* The eF-side readback: the F1c-discharged form of [ctx_readback].
+       Per ctx var [(x,t)] with companion [x'], the rebuilt egraph [eF]
+       carries (a) a structural [atom_tree_sort] for [t] at some sort id
+       [xs], and (b) the CANONICALISED [sort_of([x']) -> xs] atom (same
+       [xs]).  The (b) ret=[xs] coupling is exactly the [tx' -> xs]
+       canonicalisation the F1c discharge supplies; [ctx_readback]
+       (model-free) only had an existential [tx'].  This is what (I)
+       consumes. *)
+    Fixpoint ctx_readback_eF (eF : instance X) (sub : named_list V) (c0 : ctx)
+      {struct c0} : Prop :=
+      match c0, sub with
+      | [], _ => True
+      | (x,t)::c', (_, x')::sub' =>
+          (exists xs, atom_tree_sort X eF sub' t xs
+                   /\ ain (Build_atom sort_of [x'] xs) eF)
+          /\ ctx_readback_eF eF sub' c'
+      | _, _ => False
+      end.
+
+    Lemma ctx_readback_wf_subst (eF : instance X) (a : interp)
+      (Hsound : forall al, ain al eF -> asnd a al)
+      : forall c sub, wf_ctx l c ->
+          map fst c = map fst sub ->
+          ctx_readback_eF eF sub c ->
+          exists sg, wf_subst l [] sg c
+                  /\ map fst sg = map fst c
+                  /\ (forall x, In x (map fst sub) ->
+                        map.get a (named_list_lookup default sub x)
+                          = Some (inl (named_list_lookup default sg x))).
+    Proof.
+      induction c as [|[x t] c' IH]; intros sub Hwfc Hdom Hrb.
+      - exists []. split; [|split].
+        + constructor.
+        + reflexivity.
+        + destruct sub as [|[? ?] ?]; cbn in Hdom; [|discriminate].
+          intros x [].
+      - destruct sub as [|[x0 x'] sub']; cbn [map fst] in Hdom; [discriminate|].
+        injection Hdom as Hx Hdom'. subst x0.
+        apply invert_wf_ctx_cons in Hwfc.
+        destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+        cbn [ctx_readback_eF] in Hrb.
+        destruct Hrb as [ [xs [Htree Hatom_sof] ] Hrb' ].
+        specialize (IH sub' Hwfc' Hdom' Hrb').
+        destruct IH as [sg' [Hwfsub' [Hdomsg' Hleaf'] ] ].
+        assert (Hrep : represents_sort X l a eF sg' t xs).
+        { eapply atom_tree_sort_to_represents_sort; eauto. }
+        assert (Hfr : exists t', map.get a xs = Some (inr t')
+                              /\ eq_sort l [] t' (t[/sg'/])).
+        { eapply add_open_faithful_rep_sort; eauto. }
+        destruct Hfr as [t' Hfr2]. destruct Hfr2 as [Hgxs Heqs].
+        pose proof (Hsound _ Hatom_sof) as Hsnd.
+        unfold Semantics.atom_sound_for_model, Is_Some_satisfying in Hsnd.
+        cbn [atom_args atom_ret atom_fn Defs.atom_args Defs.atom_ret Defs.atom_fn
+             list_Mmap] in Hsnd.
+        destruct (map.get a x') as [dx|] eqn:Hgx'; cbn beta iota in Hsnd; [|contradiction].
+        rewrite Hgxs in Hsnd.
+        cbn beta iota in Hsnd.
+        change (domain V lang_model) with (term + sort)%type in Hsnd.
+        cbn [interprets_to lang_model] in Hsnd.
+        cbn in Hsnd.
+        (* Hsnd : interprets_to sort_of [dx] (inr t'); the [interprets_to_term]
+           constructor is auto-eliminated (inl vs inr). *)
+        inversion Hsnd as
+          [ es t_es Hwt_es Hargdom Houtdom
+          | f0 args0 t0 Heqs0 Hargdom Houtdom
+          | f0 args0 e0 t0 Heqe0 Hargdom Houtdom ].
+        + (* interprets_to_sort_of: Houtdom : inl es = dx; Hwt_es : wf_term l [] es t' *)
+          exists ((x, es) :: sg').
+          split; [|split].
+          * econstructor; [exact Hwfsub' | eapply wf_term_conv; [exact Hwt_es | exact Heqs] ].
+          * cbn [map fst]. rewrite Hdomsg'. reflexivity.
+          * intros y Hy. cbn [map fst] in Hy. cbn [named_list_lookup].
+            pose proof (eqb_spec y x) as Hsp.
+            destruct (eqb y x) eqn:Hyx;
+              [ rewrite Houtdom; exact Hgx'
+              | apply Hleaf'; destruct Hy as [Heqyx | Hy];
+                  [ exfalso; apply Hsp; symmetry; exact Heqyx | exact Hy ] ].
+        + (* interprets_to_sort: f0 = sort_of, eq_sort scon -> fresh contradiction *)
+          exfalso.
+          apply eq_sort_wf_l in Heqs0; eauto with lang_core.
+          safe_invert Heqs0.
+          match goal with Hin : In (sort_of, _) l |- _ =>
+            apply Hsof; eapply pair_fst_in; exact Hin end.
+    Qed.
+
+  End AddCtxInvert.
+
+  (* ============================================================== *)
   (* Soundness of scheduled saturation                              *)
   (* ============================================================== *)
   (* Wraps Semantics' saturate_until_sound up through the Pyrosome   *)
