@@ -2162,6 +2162,50 @@ Section WithVar.
           econstructor. eapply eq_term_refl; eauto with lang_core.
     Qed.
 
+    (* =============================================================== *)
+    (* Model-faithful representation (the (I)-side workhorse for the    *)
+    (* source-rule soundness adapter).  See [[project-source-rule-      *)
+    (* adapter]].                                                       *)
+    (* =============================================================== *)
+
+    (* [represents a eF sg e xe]: the egraph id [xe] denotes [e[/sg/]]
+       under the adversary interpretation [a], witnessed by node atoms
+       present in the (post-rebuild) assumption egraph [eF].  This is
+       PURE / syntax-directed — the egraph appears only through
+       [atom_in_egraph ... eF] — which decouples the faithful induction
+       below from egraph-building and the rebuild equiv-shift.  It is
+       established for [add_open]'s outputs by [add_ctx_all_roots] +
+       [L_survive_canonical] (the deferred F1c kernel); here we only
+       CONSUME it. *)
+    Inductive represents (a : interp) (eF : instance X) (sg : subst)
+      : term -> V -> Prop :=
+    | rep_var x xv :
+        map.get a xv = Some (inl (named_list_lookup default sg x)) ->
+        represents a eF sg (var x) xv
+    | rep_con n s sids xe :
+        Forall2 (represents a eF sg) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        represents a eF sg (con n s) xe.
+
+    (* The faithful induction: if [a] is sound on every atom of [eF] and
+       [sg] is a wf substitution of [c], then any id representing a wf
+       term [e] is interpreted by [a] as a term [eq_term]-equal to
+       [e[/sg/]].  Engine = the [interprets_to] inversions on
+       [lang_model] (NOT the forward construction).  PROVABLE NOW (no
+       deferral): the only deferred dependency is establishing
+       [represents] for the real add_open outputs. *)
+    Lemma add_open_faithful_rep
+      (a : interp) (eF : instance X) (sg : subst) (c : ctx)
+      (Hsound : forall al, atom_in_egraph al eF ->
+                  atom_sound_for_model V V V_map lang_model a al)
+      (Hsg : wf_subst l [] sg c)
+      : forall e t, wf_term l c e t ->
+          forall xe, represents a eF sg e xe ->
+          exists e', map.get a xe = Some (inl e')
+                   /\ eq_term l [] t[/sg/] e' (e[/sg/]).
+    Proof.
+    Admitted.
+
   End AddOpenSound.
 
   Section AddOpenRoots.
