@@ -5115,6 +5115,395 @@ Section WithMap.
       rewrite Properties.map.fold_empty. reflexivity. }
   Qed.
 
+  (* sub_in_domain helpers: every new key added by the renaming primitives
+     is contained in the source vars touched by that primitive. *)
+
+  Local Lemma rename_lookup_sub_in_domain
+    (xv : idx) (sub0' : named_list idx idx)
+    (e0' : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (k : idx) :
+    In k (map fst (snd (fst (rename_lookup idx Eqb_idx idx_succ symbol symbol_map
+                              idx_map idx_trie unit xv sub0' e0')))) ->
+    In k (map fst sub0') \/ k = xv.
+  Proof.
+    intros Hin. unfold rename_lookup in Hin.
+    destruct (named_list_lookup_err sub0' xv) as [yv|] eqn:Hlook.
+    - cbn [Mret StateMonad.state_monad fst snd] in Hin. left. exact Hin.
+    - cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0')
+        as [fresh e1] eqn:Halloc.
+      cbn [fst snd] in Hin. cbn [map fst] in Hin.
+      destruct Hin as [Heq | Hin]; [ right; symmetry; exact Heq | left; exact Hin ].
+  Qed.
+
+  Local Lemma list_Mmap_rename_lookup_sub_in_domain (args : list idx) :
+    forall (sub0' : named_list idx idx)
+      (e0' : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+      (k : idx),
+    In k (map fst (snd (fst (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol
+                              symbol_map idx_map idx_trie unit) args sub0' e0')))) ->
+    In k (map fst sub0') \/ In k args.
+  Proof.
+    induction args as [|a args IH]; intros sub0' e0' k Hin.
+    - cbn in Hin. left. exact Hin.
+    - cbn [list_Mmap] in Hin.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub0' e0') as [p e1] eqn:Hrla.
+      destruct p as [a' sub1].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      rewrite Hrla in Hin. cbn [fst snd uncurry] in Hin.
+      pose proof (IH sub1 e1 k) as HIH.
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [ [args2 sub3] e3 ] eqn:Hq.
+      cbn [fst snd uncurry] in Hin, HIH.
+      specialize (HIH Hin).
+      destruct HIH as [Hsub1 | Hargs].
+      + pose proof (rename_lookup_sub_in_domain a sub0' e0' k) as Hrl.
+        rewrite Hrla in Hrl. cbn [fst snd] in Hrl.
+        specialize (Hrl Hsub1).
+        destruct Hrl as [Hs0 | Hka];
+          [ left; exact Hs0 | right; left; symmetry; exact Hka ].
+      + right; right; exact Hargs.
+  Qed.
+
+  Local Lemma rename_atom_sub_in_domain
+    (a : atom) (sub0' : named_list idx idx)
+    (e0' : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (k : idx) :
+    In k (map fst (snd (fst (rename_atom idx Eqb_idx idx_succ symbol symbol_map
+                              idx_map idx_trie unit a sub0' e0')))) ->
+    In k (map fst sub0') \/ In k (atom_ret a :: atom_args a).
+  Proof.
+    intros Hin. destruct a as [f args out].
+    unfold rename_atom in Hin. cbn [atom_fn atom_args atom_ret] in Hin |- *.
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind] in Hin.
+    cbn beta iota in Hin. unfold Basics.compose in Hin.
+    destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                           idx_trie unit) args sub0' e0') as [ [args' sub1] e1 ] eqn:Hq1.
+    cbn [fst snd uncurry] in Hin.
+    destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                unit out sub1 e1) as [ [ret' sub2] e2 ] eqn:Hq2.
+    cbn [fst snd uncurry] in Hin.
+    pose proof (rename_lookup_sub_in_domain out sub1 e1 k) as Hrl.
+    rewrite Hq2 in Hrl. cbn [fst snd] in Hrl.
+    specialize (Hrl Hin).
+    destruct Hrl as [Hsub1 | Hkout].
+    - pose proof (list_Mmap_rename_lookup_sub_in_domain args sub0' e0' k) as Hlm.
+      set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                              idx_trie unit) args sub0' e0') in *.
+      rewrite Hq1 in Hlm. cbn [fst snd] in Hlm.
+      specialize (Hlm Hsub1).
+      destruct Hlm as [Hs0 | Hargs];
+        [ left; exact Hs0 | right; right; exact Hargs ].
+    - right; left; symmetry; exact Hkout.
+  Qed.
+
+  Local Lemma add_clause_to_instance_sub_in_domain
+    (c : Semantics.clause idx symbol) (sub0' : named_list idx idx)
+    (e0' : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (k : idx) :
+    In k (map fst (snd (fst (add_clause_to_instance idx Eqb_idx idx_succ symbol
+                              symbol_map idx_map idx_trie unit c sub0' e0')))) ->
+    In k (map fst sub0') \/ In k (clause_vars idx symbol c).
+  Proof.
+    intros Hin. destruct c as [xx yy | a_clause].
+    - (* eq_clause xx yy *)
+      cbn [clause_vars]. unfold add_clause_to_instance in Hin.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit xx sub0' e0') as [ [x' sub1'] e1' ] eqn:Hrx.
+      cbn [fst snd uncurry] in Hin.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit yy sub1' e1') as [ [y' sub2'] e2' ] eqn:Hry.
+      cbn [fst snd uncurry] in Hin.
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd] in Hin.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      destruct (Defs.union x' y' e2') as [v e3'] eqn:Hu.
+      cbn [uncurry fst snd] in Hin.
+      pose proof (rename_lookup_sub_in_domain yy sub1' e1' k) as Hry2.
+      rewrite Hry in Hry2. cbn [fst snd] in Hry2. specialize (Hry2 Hin).
+      destruct Hry2 as [Hsub1' | Hkyy].
+      + pose proof (rename_lookup_sub_in_domain xx sub0' e0' k) as Hrx2.
+        rewrite Hrx in Hrx2. cbn [fst snd] in Hrx2. specialize (Hrx2 Hsub1').
+        destruct Hrx2 as [Hs0 | Hkxx];
+          [ left; exact Hs0 | right; left; symmetry; exact Hkxx ].
+      + right; right; left; symmetry; exact Hkyy.
+    - (* atom_clause a_clause *)
+      cbn [clause_vars]. unfold add_clause_to_instance in Hin.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a_clause sub0' e0') as [ [a' sub1'] e1' ] eqn:Hra.
+      cbn [fst snd uncurry] in Hin.
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd] in Hin.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret] in Hin.
+      cbn beta iota in Hin. unfold Basics.compose in Hin.
+      destruct (update_entry a' e1') as [u' e2'] eqn:Hue.
+      cbn [uncurry fst snd] in Hin.
+      pose proof (rename_atom_sub_in_domain a_clause sub0' e0' k) as Hra2.
+      rewrite Hra in Hra2. cbn [fst snd] in Hra2. specialize (Hra2 Hin). exact Hra2.
+  Qed.
+
+  (* Every key in the renaming produced by [clauses_to_instance] is either
+     a key of the initial renaming or a variable of one of the clauses.
+     Used to show the renaming's domain is contained in the source vars. *)
+  Lemma clauses_to_instance_sub_in_domain
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (x y : idx) :
+    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
+    | (_, sub1, _) =>
+        In (x, y) sub1 ->
+        In x (map fst sub0) \/ In x (flat_map (clause_vars idx symbol) cs)
+    end.
+  Proof.
+    revert sub0 e0.
+    induction cs as [|c cs IH]; intros sub0 e0.
+    - cbn. intros Hxy. left. exact (in_map fst sub0 (x,y) Hxy).
+    - cbn [Semantics.clauses_to_instance list_Miter].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map idx_map
+                  idx_trie unit c sub0 e0) as [q e1] eqn:Hadd.
+      destruct q as [u sub_step].
+      cbn [snd uncurry].
+      pose proof (IH sub_step e1) as IHc.
+      destruct (clauses_to_instance idx_succ (analysis_result:=unit) cs sub_step e1)
+        as [ [u2 sub_final] e_final] eqn:Hctc.
+      cbn [snd fst] in IHc |- *.
+      intros Hxy. specialize (IHc Hxy).
+      cbn [flat_map].
+      destruct IHc as [Hstep | Htail].
+      + pose proof (add_clause_to_instance_sub_in_domain c sub0 e0 x) as Hac.
+        rewrite Hadd in Hac. cbn [fst snd] in Hac. specialize (Hac Hstep).
+        destruct Hac as [Hs0 | Hcv];
+          [ left; exact Hs0 | right; apply in_or_app; left; exact Hcv ].
+      + right; apply in_or_app; right; exact Htail.
+  Qed.
+
+  (* Specialized sibling of [optimize_sequent_forward] for the atom-only,
+     hash-consed assumptions produced by [rule_to_log_rule].  This is the
+     form consumed on the egraph_sound path (Phase 6 / schedule_sound).
+
+     Proof strategy ("Route 2", see project-optimize-sequent-forward memo):
+     reduce the [optimize_sequent] pipeline to named egraphs
+     (e_assum / e_c2), build the STRONG pullback assignment
+     [a_src := pullback_assignment a_opt sub2] that pulls back EVERY
+     conclusion id through [a_opt], feed it through the source rule's
+     satisfaction ([Hsat]), then push the conclusions forward through
+     [clauses_to_instance]/rebuild/force_equiv via the strengthened
+     [clauses_to_instance_preserves_ok] (renaming-consistency + domain-bound
+     conjuncts), reading the optimized conclusion atoms/eqs back with
+     [db_to_atoms_sound]/[uf_eqs_sound] + [incl_remove_atoms]/[filter] subset.
+     The final witness [map.putmany i_c a_opt] overrides with [a_opt] on the
+     assumption ids (they agree by the renaming consistency) and equals the
+     conclusion interpretation [i_c] elsewhere. *)
+  Lemma optimize_sequent_forward_atoms
+        (s : sequent) (m : model symbol) (Hm : model_ok symbol m)
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+        (atoms : list atom)
+        (Hassum : s.(seq_assumptions) = map atom_clause atoms)
+        (Huniq : NoDup (map (fun a => (atom_fn a, atom_args a)) atoms)) :
+    model_satisfies_rule m s ->
+    model_satisfies_rule m (optimize_sequent s).
+  Proof.
+    intros Hsat. unfold model_satisfies_rule. intros a_opt Hkeys Hass.
+    set (RFUEL := Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
+                   ++ flat_map (clause_vars idx symbol) (seq_conclusions s))
+                 * Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
+                   ++ flat_map (clause_vars idx symbol) (seq_conclusions s))) in *.
+    unfold QueryOpt.optimize_sequent in Hkeys, Hass |- *.
+    unfold sequent_of_states in Hkeys, Hass |- *.
+    cbn [seq_assumptions seq_conclusions] in Hkeys, Hass |- *.
+    (* Reduce the state-monad pipeline to named egraphs. *)
+    rewrite Hassum in Hkeys, Hass |- *.
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret lift Basics.compose]
+      in Hkeys, Hass |- *.
+    cbn beta iota in Hkeys, Hass |- *.
+    destruct (clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause atoms) []
+                (empty_egraph idx_zero unit)) as [ [u1 sub1] e1] eqn:Hcti_a.
+    destruct (rebuild RFUEL e1) as [u2 e_assum] eqn:Hrb_a.
+    cbn beta iota in Hkeys, Hass |- *.
+    cbn [snd fst uncurry] in Hkeys, Hass |- *.
+    destruct (clauses_to_instance idx_succ (analysis_result:=unit) (seq_conclusions s) sub1 e_assum)
+      as [ [u3 sub2] e_c0] eqn:Hcti_c.
+    cbn beta iota in Hkeys, Hass |- *.
+    destruct (rebuild RFUEL e_c0) as [u4 e_c1] eqn:Hrb_c.
+    destruct (force_equiv idx Eqb_idx symbol symbol_map idx_map idx_trie (X:=unit) e_c1)
+      as [u5 e_c2] eqn:Hfe_c.
+    cbn beta iota in Hkeys, Hass |- *.
+    cbn [snd] in Hkeys, Hass |- *.
+    set (AA := db_to_atoms (db e_assum)) in *.
+    set (CE := map.tuples (parent (equiv e_c2))) in *.
+    match goal with |- context[db_to_atoms (db (snd ?L))] =>
+      set (CD := db_to_atoms (db (snd L))) in * end.
+    (* Step 1: no-collision facts on the assumption pass; renamed atoms
+       survive rebuild into e_assum. *)
+    pose proof (clauses_to_instance_atoms_no_collision Hlti Hlts Hltt atoms Huniq) as Hnc.
+    rewrite Hcti_a in Hnc.
+    destruct Hnc as (Hwl_e1 & Hren_e1_db & Hvars_sub1).
+    pose proof (@Semantics.rebuild_preserves_atom_in_db idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero
+       symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok unit _ RFUEL) as Hrp.
+    unfold vc in Hrp. specialize (Hrp e1). rewrite Hrb_a in Hrp. cbn [snd] in Hrp.
+    specialize (Hrp Hwl_e1). destruct Hrp as [Hdb_iff Hwl_assum].
+    assert (Hren_assum_db : forall a, In a atoms ->
+      atom_in_db (Build_atom (atom_fn a) (map (named_list_lookup default sub1) (atom_args a))
+        (named_list_lookup default sub1 (atom_ret a))) (db e_assum))
+      by (intros a Ha; apply (proj2 (Hdb_iff _)); apply Hren_e1_db; exact Ha).
+    (* Step 2: sub2 extends sub1; lift the renamed atoms / vars facts to sub2;
+       define the strong pullback assignment and prove it sound on source assumptions. *)
+    assert (Hsub_mono : forall z w, named_list_lookup_err sub1 z = Some w ->
+       named_list_lookup_err sub2 z = Some w)
+      by (intros z w Hzw;
+          pose proof (clauses_to_instance_sub_mono (seq_conclusions s) sub1 e_assum z w Hzw) as Hmm;
+          rewrite Hcti_c in Hmm; exact Hmm).
+    assert (Hvars_sub2 : forall a, In a atoms -> forall x, In x (atom_ret a :: atom_args a) ->
+       exists y, named_list_lookup_err sub2 x = Some y)
+      by (intros a Ha x Hx; destruct (Hvars_sub1 a Ha x Hx) as [y Hy]; exists y; apply Hsub_mono; exact Hy).
+    assert (Hren_assum_db2 : forall a, In a atoms ->
+      atom_in_db (Build_atom (atom_fn a) (map (named_list_lookup default sub2) (atom_args a))
+        (named_list_lookup default sub2 (atom_ret a))) (db e_assum))
+      by (intros a Ha;
+          replace (map (named_list_lookup default sub2) (atom_args a))
+            with (map (named_list_lookup default sub1) (atom_args a))
+            by (apply map_lookup_default_ext;
+                [ exact Hsub_mono | intros x Hx; exact (Hvars_sub1 a Ha x (or_intror Hx)) ]);
+          replace (named_list_lookup default sub2 (atom_ret a))
+            with (named_list_lookup default sub1 (atom_ret a))
+            by (destruct (Hvars_sub1 a Ha (atom_ret a) (or_introl eq_refl)) as [yr Hyr];
+                rewrite (named_list_lookup_err_to_lookup default sub1 (atom_ret a) yr Hyr);
+                rewrite (named_list_lookup_err_to_lookup default sub2 (atom_ret a) yr (Hsub_mono _ _ Hyr));
+                reflexivity);
+          apply Hren_assum_db; exact Ha).
+    set (a_src := pullback_assignment a_opt sub2).
+    pose proof (a_src_sound_on_assumptions m Hm atoms sub2 a_opt e_assum Hvars_sub2 Hren_assum_db2 Hass)
+      as Hsrc_assum.
+    (* Step 4: build the interpretation i_e1 for the assumption pass from empty
+       (handles any unions generically) and lift it to e_assum via rebuild. *)
+    destruct (Semantics.empty_sound_for_interpretation idx lt idx_succ idx_zero symbol symbol_map
+                symbol_map_ok idx_map idx_map_ok idx_trie unit m) as [Hok_empty Hsnd_empty].
+    pose proof (clauses_to_instance_preserves_ok Hlti Hlts Hltt m Hm (map atom_clause atoms) []
+       (empty_egraph idx_zero unit) (map.empty : idx_map (domain symbol m)) a_src
+       Hok_empty Hsnd_empty
+       ltac:(intros ? ? []) ltac:(intros ? ? []) Hsrc_assum) as Hpo_a.
+    rewrite Hcti_a in Hpo_a.
+    destruct Hpo_a as [Hok_e1 [i_e1 [Hext_e1 [Hsnd_e1 [Hren_e1 Hdom_e1] ] ] ] ].
+    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm (fun _ => True) RFUEL) as Hrs_a.
+    unfold vc in Hrs_a. specialize (Hrs_a e1). rewrite Hrb_a in Hrs_a. cbn [snd] in Hrs_a.
+    specialize (Hrs_a Hok_e1). destruct Hrs_a as [Hok_assum Hde_a].
+    pose proof (proj1 (Hde_a i_e1) Hsnd_e1) as Hsnd_assum.
+    (* a_src is defined on every source-assumption variable (needed for has_key). *)
+    assert (Hkeys_src : forall x, In x (forall_vars s) -> Sep.has_key x a_src)
+      by (intros x Hx;
+          unfold forall_vars in Hx; rewrite Hassum in Hx;
+          apply in_flat_map in Hx; destruct Hx as [c [Hc Hxc] ];
+          apply in_map_iff in Hc; destruct Hc as [a0 [Hac Ha0] ]; subst c;
+          cbn [clause_vars] in Hxc;
+          pose proof (in_all (clause_sound_for_model idx symbol idx_map m a_src) _ _ Hsrc_assum
+            (in_map (@atom_clause idx symbol) _ _ Ha0)) as Hsa;
+          cbn [clause_sound_for_model] in Hsa;
+          unfold Semantics.atom_sound_for_model in Hsa;
+          destruct (list_Mmap (map.get a_src) (atom_args a0)) as [argv|] eqn:Hargv; [|cbn in Hsa; contradiction];
+          destruct (map.get a_src (atom_ret a0)) as [retv|] eqn:Hretv; [|cbn in Hsa; contradiction];
+          destruct Hxc as [Heq | Hin];
+          [ subst x; unfold Sep.has_key; rewrite Hretv; exact I
+          | destruct (Semantics.list_Mmap_get_some _ _ _ _ _ Hargv x Hin) as [bv Hbv];
+            unfold Sep.has_key; rewrite Hbv; exact I ]).
+    (* Step 6 (Hsat): the source rule, applied to a_src, gives a_src' sound on
+       the source conclusions. *)
+    assert (Hsrc_assum_s : all (clause_sound_for_model idx symbol idx_map m a_src) (seq_assumptions s))
+      by (rewrite Hassum; exact Hsrc_assum).
+    unfold model_satisfies_rule in Hsat.
+    specialize (Hsat a_src Hkeys_src Hsrc_assum_s).
+    destruct Hsat as [a_src' [Hext_src' Hconcl_src'] ].
+    (* a_src is defined on every key of sub1 (sub1 keys are source vars). *)
+    assert (Ha_src_sub1_def : forall x y, In (x,y) sub1 -> exists d, map.get a_src x = Some d)
+      by (intros x y Hxy;
+          pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) []
+                        (empty_egraph idx_zero unit) x y) as Hdom;
+          rewrite Hcti_a in Hdom; specialize (Hdom Hxy);
+          assert (Hin_fv : In x (forall_vars s))
+            by (unfold forall_vars; rewrite Hassum;
+                destruct Hdom as [Hnil | Hf]; [ destruct Hnil | exact Hf ]);
+          pose proof (Hkeys_src x Hin_fv) as Hhk;
+          unfold Sep.has_key in Hhk;
+          destruct (map.get a_src x) as [d|] eqn:Hg; [ exists d; reflexivity | destruct Hhk ]).
+    (* Step 7: push the conclusion clauses forward; i_c is sound on e_c2
+       (= conclusion_inst). *)
+    assert (Hren_in : forall x y, In (x,y) sub1 -> forall d, map.get a_src' x = Some d -> map.get i_e1 y = Some d).
+    { intros x y Hxy d Hd.
+      destruct (Ha_src_sub1_def x y Hxy) as [d0 Ha0].
+      pose proof (Hext_src' _ _ Ha0) as Ha0'.
+      assert (d = d0) as -> by congruence.
+      apply (Hren_e1 x y Hxy d0 Ha0). }
+    assert (Hsubdom_c : forall x y, In (x,y) sub1 -> Sep.has_key y (parent (equiv e_assum))).
+    { intros x y Hxy.
+      destruct (Ha_src_sub1_def x y Hxy) as [d0 Ha0].
+      pose proof (Hren_e1 x y Hxy d0 Ha0) as Hi.
+      apply (Semantics.interpretation_exact _ _ _ _ _ _ _ _ _ Hsnd_assum y).
+      rewrite Hi; exact I. }
+    pose proof (clauses_to_instance_preserves_ok Hlti Hlts Hltt m Hm (seq_conclusions s) sub1 e_assum i_e1 a_src'
+       Hok_assum Hsnd_assum Hren_in Hsubdom_c Hconcl_src') as Hpo_c.
+    rewrite Hcti_c in Hpo_c.
+    destruct Hpo_c as [Hok_c0 [i_c [Hext_c [Hsnd_c0 [Hren_c Hdom_c] ] ] ] ].
+    pose proof (@Semantics.rebuild_sound idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol Eqb_symbol Eqb_symbol_ok symbol_map symbol_map_ok idx_map idx_map_ok idx_trie idx_trie_ok unit _ m Hm (fun _ => True) RFUEL) as Hrs_c.
+    unfold vc in Hrs_c. specialize (Hrs_c e_c0). rewrite Hrb_c in Hrs_c. cbn [snd] in Hrs_c.
+    specialize (Hrs_c Hok_c0). destruct Hrs_c as [Hok_c1 Hde_c].
+    pose proof (proj1 (Hde_c i_c) Hsnd_c0) as Hsnd_c1.
+    pose proof (force_equiv_preserves_sound m i_c e_c1 (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_c1) Hsnd_c1) as Hsnd_fe.
+    rewrite Hfe_c in Hsnd_fe. cbn [snd] in Hsnd_fe.
+    (* Steps 8-9: the final witness [map.putmany i_c a_opt] extends a_opt and
+       agrees with i_c on i_c's domain (adversary match); read back the
+       optimized conclusions soundly under i_c. *)
+    assert (Hext_final : map.extends (map.putmany i_c a_opt) a_opt)
+      by (intros k v Hv;
+          exact (@Properties.map.get_putmany_right idx (domain symbol m) (idx_map (domain symbol m))
+                   (idx_map_ok (domain symbol m)) _ (@eqb_boolspec idx Eqb_idx Eqb_idx_ok)
+                   i_c a_opt k v Hv)).
+    assert (Hagree : map.extends (map.putmany i_c a_opt) i_c)
+      by (intros k v Hk;
+          destruct (map.get a_opt k) as [w|] eqn:Ha;
+          [ assert (w = v) as Hwv;
+            [ destruct (Hdom_c k v Hk) as [Hie1 | [x' Hx'] ];
+              [ destruct (Hdom_e1 k v Hie1) as [Hempt | [x'' Hx''] ];
+                [ rewrite map.get_empty in Hempt; discriminate
+                | pose proof (get_pullback_assignment_some a_opt sub2 x'' k w (Hsub_mono x'' k Hx'') Ha) as Hsx;
+                  pose proof (Hren_e1 x'' k ltac:(apply named_list_lookup_err_in; symmetry; exact Hx'') w Hsx) as Hie1';
+                  congruence ]
+              | pose proof (get_pullback_assignment_some a_opt sub2 x' k w Hx' Ha) as Hsx;
+                pose proof (Hren_c x' k ltac:(apply named_list_lookup_err_in; symmetry; exact Hx') w (Hext_src' _ _ Hsx)) as Hic';
+                congruence ]
+            | subst w;
+              exact (@Properties.map.get_putmany_right idx (domain symbol m) (idx_map (domain symbol m))
+                       (idx_map_ok (domain symbol m)) _ (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) i_c a_opt k v Ha) ]
+          | rewrite (@Properties.map.get_putmany_left idx (domain symbol m) (idx_map (domain symbol m))
+                       (idx_map_ok (domain symbol m)) _ (@eqb_boolspec idx Eqb_idx Eqb_idx_ok) i_c a_opt k Ha);
+            exact Hk ]).
+    exists (map.putmany i_c a_opt).
+    split;
+      [ exact Hext_final
+      | apply (all_clause_sound_extend m i_c (map.putmany i_c a_opt) _ Hagree);
+        apply all_app; split;
+        [ apply Semantics.all_map_in; intros p Hp; apply incl_filter in Hp;
+          destruct p as [px py];
+          pose proof (in_all (clause_sound_for_model idx symbol idx_map m i_c) _ _
+            (uf_eqs_sound m i_c e_c2 Hsnd_fe)
+            (in_map (fun q => @eq_clause idx symbol (fst q) (snd q)) _ _ Hp)) as Hsp;
+          cbn [uncurry fst snd] in Hsp |- *; exact Hsp
+        | apply Semantics.all_map_in; intros a0 Ha0;
+          exact (in_all (clause_sound_for_model idx symbol idx_map m i_c) _ _
+            (db_to_atoms_sound m i_c e_c2 Hsnd_fe)
+            (in_map (@atom_clause idx symbol) _ _
+              (@QueryOpt.incl_remove_atoms idx Eqb_idx Eqb_idx_ok lt symbol Eqb_symbol Eqb_symbol_ok
+                 symbol_map symbol_map_ok idx_map idx_trie idx_trie_ok unit AA e_c2 a0 Ha0))) ] ].
+  Qed.
+
   Lemma optimize_sequent_forward (s : sequent) (m : model symbol) :
     good_sequent s ->
     model_satisfies_rule m s ->
