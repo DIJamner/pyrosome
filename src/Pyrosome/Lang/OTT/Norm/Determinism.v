@@ -10,48 +10,64 @@ From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel.
 Import Core.Notations.
 
-(* Determinism of the environment-free relational evaluator: each term has at most
-   one value.  Every term former is matched by exactly one eval constructor (El now
-   has the single uniform [ev_El]), so each case closes by inverting the second
-   derivation and rewriting with the per-premise IHs.  Proved by mutual induction. *)
-
-Scheme eval_sub_mind := Induction for eval_sub Sort Prop
-  with eval_ty_mind  := Induction for eval_ty  Sort Prop
-  with eval_rel_mind := Induction for eval_rel Sort Prop.
-Combined Scheme eval_mind from eval_sub_mind, eval_ty_mind, eval_rel_mind.
+(* Determinism of the TYPED relational evaluator: the syntactic term determines
+   ALL of its semantic indices (context, type, value, codomain).  Proved by the
+   4-way mutual induction [eval_mutind]: each former has one constructor, so
+   inverting the second derivation pins it and the per-premise IHs equate every
+   index — including the intermediate/domain contexts of [ty_subst]/[cmp]/...,
+   which are recovered from the substitution's own determinism. *)
 
 Lemma eval_deterministic :
-  (forall e s, eval_sub e s -> forall s', eval_sub e s' -> s = s')
-  /\ (forall e T, eval_ty e T -> forall T', eval_ty e T' -> T = T')
-  /\ (forall e v, eval_rel e v -> forall v', eval_rel e v' -> v = v').
+  (((forall G Ge, eval_env G Ge -> forall Ge', eval_env G Ge' -> Ge = Ge')
+    * (forall Ge A T, eval_ty Ge A T ->
+         forall Ge' T', eval_ty Ge' A T' -> (Ge = Ge') * (T = T')))
+   * (forall Ge e T v, eval_rel Ge e T v ->
+        forall Ge' T' v', eval_rel Ge' e T' v' -> (Ge = Ge') * (T = T') * (v = v')))
+  * (forall Gin Gout g sg, eval_sub Gin Gout g sg ->
+       forall Gin' Gout' sg', eval_sub Gin' Gout' g sg' ->
+         (Gin = Gin') * (Gout = Gout') * (sg = sg')).
 Proof.
-  apply eval_mind; intros;
-    (* invert the second derivation: the hypothesis whose value is the goal's RHS
-       variable (premise sub-derivations have concrete values, so won't match). *)
-    match goal with
-    | H : eval_sub _ ?v |- _ = ?v => inversion H; subst; clear H
-    | H : eval_ty _ ?v |- _ = ?v => inversion H; subst; clear H
-    | H : eval_rel _ ?v |- _ = ?v => inversion H; subst; clear H
-    end;
-    (* turn each sub-derivation into an equality via its IH (motive is [_ = x]) *)
-    repeat match goal with
-    | IH : forall x, eval_sub ?e x -> _ = x, H : eval_sub ?e _ |- _ => specialize (IH _ H); subst
-    | IH : forall x, eval_ty ?e x -> _ = x, H : eval_ty ?e _ |- _ => specialize (IH _ H); subst
-    | IH : forall x, eval_rel ?e x -> _ = x, H : eval_rel ?e _ |- _ => specialize (IH _ H); subst
-    end;
-    try reflexivity; try congruence.
+  refine (eval_mutind
+    (fun G Ge _ => forall Ge', eval_env G Ge' -> Ge = Ge')
+    (fun Ge A T _ => forall Ge' T', eval_ty Ge' A T' -> (Ge = Ge') * (T = T'))
+    (fun Ge e T v _ => forall Ge' T' v', eval_rel Ge' e T' v' ->
+                         (Ge = Ge') * (T = T') * (v = v'))
+    (fun Gin Gout g sg _ => forall Gin' Gout' sg', eval_sub Gin' Gout' g sg' ->
+                              (Gin = Gin') * (Gout = Gout') * (sg = sg'))
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _);
+  intros;
+  (* invert the second derivation — the one about the whole [con] term *)
+  match goal with
+  | H : eval_env (con _ _) _ |- _ => inversion H; subst; clear H
+  | H : eval_ty _ (con _ _) _ |- _ => inversion H; subst; clear H
+  | H : eval_rel _ (con _ _) _ _ |- _ => inversion H; subst; clear H
+  | H : eval_sub _ _ (con _ _) _ |- _ => inversion H; subst; clear H
+  end;
+  (* equate every subderivation's indices via its IH (matching on the term) *)
+  repeat match goal with
+  | IH : forall Ge', eval_env ?G Ge' -> _ = Ge', H : eval_env ?G _ |- _ =>
+      specialize (IH _ H); subst; clear H
+  | IH : forall Ge' T', eval_ty Ge' ?A T' -> _, H : eval_ty _ ?A _ |- _ =>
+      let p := fresh in pose proof (IH _ _ H) as p; destruct p as [? ?]; subst; clear H
+  | IH : forall Ge' T' v', eval_rel Ge' ?e T' v' -> _, H : eval_rel _ ?e _ _ |- _ =>
+      let p := fresh in pose proof (IH _ _ _ H) as p; destruct p as [[? ?] ?]; subst; clear H
+  | IH : forall Gin' Gout' sg', eval_sub Gin' Gout' ?g sg' -> _,
+      H : eval_sub _ _ ?g _ |- _ =>
+      let p := fresh in pose proof (IH _ _ _ H) as p; destruct p as [[? ?] ?]; subst; clear H
+  end;
+  repeat split; try reflexivity; try congruence.
 Qed.
 
-Definition eval_sub_det := proj1 eval_deterministic.
-Definition eval_ty_det  := proj1 (proj2 eval_deterministic).
-Definition eval_rel_det := proj2 (proj2 eval_deterministic).
-
-(* Environment normalization is deterministic too (uses eval_ty determinism). *)
-Lemma eval_env_det : forall G Genv, eval_env G Genv -> forall Genv', eval_env G Genv' -> Genv = Genv'.
-Proof.
-  induction 1 as [ | A i G Genv S HG IH HA ]; intros Genv' H'; inversion H'; subst; clear H'.
-  - reflexivity.
-  - match goal with H : eval_env G _ |- _ => specialize (IH _ H) end.
-    match goal with H : eval_ty A _ |- _ => pose proof (eval_ty_det HA H) end.
-    subst; reflexivity.
-Qed.
+Definition eval_env_det : forall G Ge Ge',
+    eval_env G Ge -> eval_env G Ge' -> Ge = Ge' :=
+  fun G Ge Ge' H => fst (fst (fst eval_deterministic)) G Ge H Ge'.
+Definition eval_ty_det : forall Ge Ge' A T T',
+    eval_ty Ge A T -> eval_ty Ge' A T' -> (Ge = Ge') * (T = T') :=
+  fun Ge Ge' A T T' H => snd (fst (fst eval_deterministic)) Ge A T H Ge' T'.
+Definition eval_rel_det : forall Ge Ge' e T T' v v',
+    eval_rel Ge e T v -> eval_rel Ge' e T' v' -> (Ge = Ge') * (T = T') * (v = v') :=
+  fun Ge Ge' e T T' v v' H => snd (fst eval_deterministic) Ge e T v H Ge' T' v'.
+Definition eval_sub_det : forall Gin Gin' Gout Gout' g sg sg',
+    eval_sub Gin Gout g sg -> eval_sub Gin' Gout' g sg' ->
+    (Gin = Gin') * (Gout = Gout') * (sg = sg') :=
+  fun Gin Gin' Gout Gout' g sg sg' H => snd eval_deterministic Gin Gout g sg H Gin' Gout' sg'.

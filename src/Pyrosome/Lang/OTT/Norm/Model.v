@@ -42,18 +42,42 @@ Section Model.
 
   Definition sort_head (S : sort) : string := match S with scon n _ => n end.
 
-  (* The eval glue: two terms glue iff they evaluate to the same semantic value. *)
+  (* The eval glue: two terms glue iff they evaluate (in the semantic context
+     denoted by the sort's context argument, at the semantic type denoted by the
+     sort's type argument) to the SAME semantic value.  With the TYPED evaluator
+     (EvalRel.v) the glue threads those indices out of the sort:
+       - [exp A i G] : in [Ge = eval G], at [T = eval A], both reach value [v];
+       - [ty i G]    : in [Ge], both reach svalty [T];
+       - [sub G' G]  : from [eval G'] to [eval G], both reach [sg];
+       - [env]       : both reach [Ge]. *)
   Definition glue_term (t : sort) (e1 e2 : term) : Type :=
     match t with
     | scon n args =>
         if eqb n "exp"
-        then { v : sval & (eval_rel e1 v * eval_rel e2 v)%type }
+        then match args with
+             | [A; i; G] =>
+                 sigT (fun Ge : senv => sigT (fun T : svalty => sigT (fun v : sval =>
+                   (eval_env G Ge * eval_ty Ge A T
+                    * eval_rel Ge e1 T v * eval_rel Ge e2 T v)%type)))
+             | _ => unit
+             end
         else if eqb n "ty"
-        then { S : svalty & (eval_ty e1 S * eval_ty e2 S)%type }
+        then match args with
+             | [i; G] =>
+                 sigT (fun Ge : senv => sigT (fun T : svalty =>
+                   (eval_env G Ge * eval_ty Ge e1 T * eval_ty Ge e2 T)%type))
+             | _ => unit
+             end
         else if eqb n "sub"
-        then { s : ssub & (eval_sub e1 s * eval_sub e2 s)%type }
+        then match args with
+             | [Gd; Gc] =>
+                 sigT (fun GeD : senv => sigT (fun GeC : senv => sigT (fun s : ssub =>
+                   (eval_env Gd GeD * eval_env Gc GeC
+                    * eval_sub GeD GeC e1 s * eval_sub GeD GeC e2 s)%type)))
+             | _ => unit
+             end
         else if eqb n "env"
-        then { Genv : senv & (eval_env e1 Genv * eval_env e2 Genv)%type }
+        then sigT (fun Genv : senv => (eval_env e1 Genv * eval_env e2 Genv)%type)
         else match args with
              | [] => (nf_info e1 = nf_info e2)  (* relevance/lvl/tlvl/tyinfo *)
              | _ => unit                         (* ltl etc.: proof-irrelevant *)

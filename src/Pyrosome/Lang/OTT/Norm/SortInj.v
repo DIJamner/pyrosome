@@ -341,112 +341,13 @@ Ltac pin_rule Hin :=
   vm_compute in Hin;
   injection Hin; clear Hin; intros; subst.
 
-Lemma eval_sub_len_wf : forall f sf,
-    eval_sub f sf ->
-    forall G' G, Core.wf_term fo_lang [] f (scon "sub" [G'; G]) ->
-    length sf = ctx_len G'.
+Lemma eval_sub_len : forall Gin Gout g sg,
+    eval_sub Gin Gout g sg -> length sg = length Gin.
 Proof.
-  intros f sf Heval.
-  induction Heval as
-    [ G0                            (* ev_id *)
-    | A i G0                        (* ev_wkn *)
-    | G0                            (* ev_forget *)
-    | g f0 G1 G2 G3 sf0 sg0
-        Hf IHf Hg IHg              (* ev_cmp: eval_sub f0 sf0, eval_sub g sg0 *)
-    | v g0 A i Gp G0 sg0 vv
-        Hg IHg Hv                  (* ev_snoc: eval_sub g0 sg0, eval_rel v vv *)
-    ];
-  intros G' Gdom Hwf.
-
-  (* Helper tactic to invert wf_term_con and pin the rule *)
-  (* After invert_wf_term_con, we get exists c' args t', In ... /\ wf_args ... /\ (eq_sort \/ =) *)
-  (* We use explicit destruct to avoid naming issues from 'break' *)
-
-  (* ---- ev_id ---- *)
-  - (* f = con "id" [G0], sf = id_list (ctx_len G0) *)
-    apply WfCutElim.invert_wf_term_con in Hwf.
-    destruct Hwf as [c' [args_ [t' [Hin [Hwf_args Hdisjunct]]]]].
-    pin_rule Hin.
-    cbn in Hdisjunct.
-    destruct Hdisjunct as [Heqs | Heq].
-    + apply sub_codomain_ctxlen in Heqs.
-      unfold id_list. rewrite length_map, length_seq.
-      exact Heqs.
-    + injection Heq. intros _ HG'. subst.
-      unfold id_list. rewrite length_map, length_seq. reflexivity.
-
-  (* ---- ev_wkn ---- *)
-  - (* f = con "wkn" [A; i; G0], sf = wkn_list (ctx_len G0) *)
-    apply WfCutElim.invert_wf_term_con in Hwf.
-    destruct Hwf as [c' [args_ [t' [Hin [Hwf_args Hdisjunct]]]]].
-    pin_rule Hin.
-    cbn in Hdisjunct.
-    destruct Hdisjunct as [Heqs | Heq].
-    + apply sub_codomain_ctxlen in Heqs.
-      unfold wkn_list. rewrite length_map, length_seq.
-      exact Heqs.
-    + injection Heq. intros _ HG'. subst.
-      unfold wkn_list. rewrite length_map, length_seq. reflexivity.
-
-  (* ---- ev_forget ---- *)
-  - (* f = con "forget" [G0], sf = [] *)
-    apply WfCutElim.invert_wf_term_con in Hwf.
-    destruct Hwf as [c' [args_ [t' [Hin [Hwf_args Hdisjunct]]]]].
-    pin_rule Hin.
-    cbn in Hdisjunct.
-    destruct Hdisjunct as [Heqs | Heq].
-    + apply sub_codomain_ctxlen in Heqs.
-      simpl in Heqs. exact Heqs.
-    + injection Heq. intros _ HG'. subst. reflexivity.
-
-  (* ---- ev_cmp ---- *)
-  - (* sf = map (apply_val sf0) sg0, term = con "cmp" [g; f0; G3; G2; G1] *)
-    apply WfCutElim.invert_wf_term_con in Hwf.
-    destruct Hwf as [c' [args_ [t' [Hin [Hwf_args Hdisjunct]]]]].
-    pin_rule Hin.
-    (* Now c', args_, t' are pinned for the cmp rule.
-       The cmp rule context (after vm_compute, reversed order):
-         [("g", sub G2 G3); ("f", sub G1 G2); ("G3", env); ("G2", env); ("G1", env)]
-       and s = [g; f0; G3; G2; G1], so:
-         wf_args [] [g; f0; G3; G2; G1] [("g",...);("f",...);("G3",env);("G2",env);("G1",env)]
-       First cons: wf_term [] g (sub G2 G3)[/with_names_from [rest] [f0;G3;G2;G1]/]
-       After cbn simplification = wf_term [] g (scon "sub" [G3; G2]) *)
-    cbn in Hwf_args, Hdisjunct.
-    rewrite invert_wf_args_cons in Hwf_args.
-    destruct Hwf_args as [_ Hwf_g].
-    cbn in Hwf_g.
-    (* Hwf_g : wf_term fo_lang [] g (scon "sub" [G3; G2]) *)
-    specialize (IHg G3 G2 Hwf_g).
-    rewrite length_map.
-    destruct Hdisjunct as [Heqs | Heq].
-    + apply sub_codomain_ctxlen in Heqs.
-      rewrite IHg. exact Heqs.
-    + injection Heq. intros _ HG'. subst G'.
-      exact IHg.
-
-  (* ---- ev_snoc ---- *)
-  - (* sf = vv :: sg0, term = con "snoc" [v; g0; A; i; Gp; G0] *)
-    apply WfCutElim.invert_wf_term_con in Hwf.
-    destruct Hwf as [c' [args_ [t' [Hin [Hwf_args Hdisjunct]]]]].
-    pin_rule Hin.
-    (* snoc rule context (reversed): [("v", exp...); ("g", sub G G'); ("A", ty...); ("i",...); ("G'",env); ("G",env)]
-       s = [v; g0; A; i; Gp; G0]
-       First cons: wf_term [] v (exp...)
-       Second cons: wf_term [] g0 (sub G Gp) after simplification *)
-    cbn in Hwf_args, Hdisjunct.
-    rewrite invert_wf_args_cons in Hwf_args.
-    destruct Hwf_args as [Hwf_rest1 _].
-    rewrite invert_wf_args_cons in Hwf_rest1.
-    destruct Hwf_rest1 as [_ Hwf_g].
-    cbn in Hwf_g.
-    (* Hwf_g : wf_term fo_lang [] g0 (scon "sub" [Gp; G0]) *)
-    specialize (IHg Gp G0 Hwf_g).
-    simpl (length (vv :: sg0)).
-    destruct Hdisjunct as [Heqs | Heq].
-    + apply sub_codomain_ctxlen in Heqs.
-      simpl (ctx_len (con "ext" _)) in Heqs.
-      rewrite IHg. exact Heqs.
-    + injection Heq. intros _ HG'. subst G'.
-      simpl (ctx_len (con "ext" _)).
-      rewrite IHg. reflexivity.
+  intros Gin Gout g sg H. induction H.
+  - unfold id_list. rewrite length_map, length_seq. reflexivity.
+  - unfold wkn_list. rewrite length_map, length_seq. reflexivity.
+  - reflexivity.
+  - rewrite length_map. assumption.
+  - cbn [length]. rewrite length_map. f_equal. assumption.
 Qed.
