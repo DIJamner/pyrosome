@@ -8219,6 +8219,43 @@ Section WithMap.
         [apply PER_clo_base; exact Hgr | apply PER_clo_sym; apply PER_clo_base; exact Hgr].
   Qed.
 
+  (* db_injective: no two DISTINCT atoms in the db share a function symbol
+     and have pairwise union-find-equivalent arguments.  Holds for
+     hash-consed egraphs (each (fn, canonical-args) key is unique). *)
+  Definition db_injective (e : instance) : Prop :=
+    forall a b,
+      atom_in_db a e.(db) ->
+      atom_in_db b e.(db) ->
+      a.(atom_fn) = b.(atom_fn) ->
+      all2 (uf_rel_PER e.(equiv)) a.(atom_args) b.(atom_args) ->
+      a = b.
+
+  (* L_survive_canonical (a.k.a. F1c-survival) — the survival lemma the
+     source-rule adapter / faithful-rep actually needs.  DEFERRED (Admitted)
+     per the session-23 user decision: state a clean correct interface, build
+     add_open_faithful + (I)+(II) on top, discharge this last.
+
+     The committed [L_survive] above only covers the analysis_repair-ONLY
+     worklist; the [add_ctx] assumption egraph rebuilds with [union_repair]
+     entries (one per ctx var, from [union t_v tx']).  Under that worklist, a
+     FULLY-CANONICAL atom (all-root args + ret) still survives rebuild
+     verbatim: [repair_each] on a canonical atom removes then re-inserts the
+     identical atom (the prefix [db_lookup;union] is a no-op, [canonicalize] is
+     identity, [update_entry] re-[db_set]s it), and [db_injective] forbids any
+     colliding entry from absorbing it; [repair_parent_analysis] only churns
+     analyses (preserves atom_in_db).  Proof reduces to threading
+     [db_injective] + canonicality as a rebuild loop-invariant — see
+     [[project-source-rule-adapter]] (the deferred F1c kernel). *)
+  Lemma L_survive_canonical n (e : instance) (a : atom)
+    : egraph_ok e ->
+      db_injective e ->
+      atom_in_egraph a e ->
+      all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
+      map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret) ->
+      atom_in_egraph a (snd (rebuild n e)).
+  Proof.
+  Admitted.
+
   (* ============================================================== *)
   (* Soundness of exec_write                                         *)
   (* ============================================================== *)
