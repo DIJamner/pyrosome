@@ -8118,6 +8118,26 @@ Section WithMap.
         * exact IH_wl.
   Qed.
 
+  (* L_survive: an atom present before rebuild, under an analysis-repair-only
+     worklist, is still literally present (atom_in_egraph) after rebuild.
+     Forward/survival direction only; follows immediately from
+     rebuild_preserves_atom_in_db (which gives the biconditional on atom_in_db). *)
+  Lemma L_survive n (e : instance) (a : atom)
+    : all (fun ent => exists j, ent = analysis_repair idx j) e.(worklist) ->
+      atom_in_egraph a e ->
+      atom_in_egraph a (snd (rebuild n e)).
+  Proof.
+    intros Hwl Hain.
+    pose proof (rebuild_preserves_atom_in_db n) as H_rb.
+    unfold vc in H_rb.
+    specialize (H_rb e).
+    destruct (rebuild n e) as [u e'] eqn:Hrb.
+    cbn [snd] in H_rb |- *.
+    destruct (H_rb Hwl) as [Hdb_iff _].
+    unfold atom_in_egraph in *.
+    apply Hdb_iff. exact Hain.
+  Qed.
+
   Lemma rebuild_sound (Pre : idx_map (domain m) -> Prop) n
     : vc (rebuild n)
         (fun e res =>
@@ -8153,6 +8173,50 @@ Section WithMap.
     destruct (HIH Hok_s3) as [Hok_res Hde_res].
     split; [exact Hok_res|].
     intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
+  Qed.
+
+  (* L_survive_up_to_equiv: corollary lifting L_survive to
+     atom_in_egraph_up_to_equiv.  Requires egraph_ok to obtain
+     has_key for the canonical-equiv reflexivity witness (via rebuild_sound,
+     which establishes egraph_ok for the post-rebuild state). *)
+  Lemma L_survive_up_to_equiv n (e : instance) (a : atom)
+    : all (fun ent => exists j, ent = analysis_repair idx j) e.(worklist) ->
+      egraph_ok e ->
+      atom_in_egraph a e ->
+      atom_in_egraph_up_to_equiv a (snd (rebuild n e)).
+  Proof.
+    intros Hwl Hok Hain.
+    pose proof (L_survive n e a Hwl Hain) as Hsurv.
+    unfold atom_in_egraph_up_to_equiv.
+    exists a.
+    split; [| exact Hsurv].
+    unfold atom_canonical_equiv.
+    split; [reflexivity|].
+    (* Use rebuild_sound to get egraph_ok for (snd (rebuild n e)),
+       then db_idxs_in_equiv gives has_key for args/ret, enabling
+       uf_rel_PER reflexivity. *)
+    pose proof (rebuild_sound (fun _ => True) n) as H_rs.
+    unfold vc in H_rs. specialize (H_rs e).
+    destruct (rebuild n e) as [u e'] eqn:Hrb.
+    cbn [snd] in H_rs, Hsurv |- *.
+    destruct (H_rs Hok) as [Hok' _].
+    destruct Hok' as [Heq' Hwlok' Hpa' Hdb'].
+    specialize (Hdb' a Hsurv).
+    destruct Hdb' as [Hkargs Hkret].
+    destruct Heq' as [roots Huf].
+    split.
+    - clear -Hkargs Huf.
+      induction (atom_args a) as [|x xs IH]; cbn in *; auto.
+      destruct Hkargs as [Hx Hxs]. split.
+      + unfold uf_rel_PER, Sep.has_key in *.
+        destruct (map.get (parent (equiv e')) x) as [vx|] eqn:Hgx; [|tauto].
+        eapply PER_clo_trans;
+          [apply PER_clo_base; exact Hgx | apply PER_clo_sym; apply PER_clo_base; exact Hgx].
+      + apply IH. exact Hxs.
+    - unfold uf_rel_PER, Sep.has_key in *.
+      destruct (map.get (parent (equiv e')) (atom_ret a)) as [vr|] eqn:Hgr; [|tauto].
+      eapply PER_clo_trans;
+        [apply PER_clo_base; exact Hgr | apply PER_clo_sym; apply PER_clo_base; exact Hgr].
   Qed.
 
   (* ============================================================== *)
