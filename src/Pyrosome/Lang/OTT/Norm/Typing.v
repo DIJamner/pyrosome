@@ -43,16 +43,16 @@ Section Typing.
   Notation term := (@term string).
 
   Unset Elimination Schemes.
-  Inductive wf_svalty : senv -> svalty -> Type :=
+  Inductive wf_svalty : senv -> svalty -> Prop :=
   | wf_dU  : forall Ge r l, wf_svalty Ge (dU r l)
   | wf_dEl : forall Ge e r l, has_svalty Ge e (dU r l) -> wf_svalty Ge (dEl e)
-  with has_svalty : senv -> sval -> svalty -> Type :=
+  with has_svalty : senv -> sval -> svalty -> Prop :=
   | t_ne    : forall Ge n T, wf_neutral Ge n T -> has_svalty Ge (vNe n) T
   | t_zero  : forall Ge, has_svalty Ge vZero (dEl vNat)
   | t_suc   : forall Ge v, has_svalty Ge v (dEl vNat) -> has_svalty Ge (vSuc v) (dEl vNat)
   | t_Nat   : forall Ge r l, has_svalty Ge vNat   (dU r l)     (* Nat is a CODE in U *)
   | t_Empty : forall Ge r l, has_svalty Ge vEmpty (dU r l)     (* Empty is a CODE in U *)
-  with wf_neutral : senv -> neutral -> svalty -> Type :=
+  with wf_neutral : senv -> neutral -> svalty -> Prop :=
   | n_var   : forall Ge k T, nth_error Ge k = Some T -> wf_neutral Ge (nVar k) T
   | n_emptyrec : forall Ge rA lA A scrut r l,
         has_svalty Ge A (dU r l) ->
@@ -74,20 +74,20 @@ Definition wf_ssub (Delta : senv) (sigma : ssub) (Gamma : senv) : Type :=
        has_svalty Delta (nth_default (vNe (nVar 0)) sigma k) (apply_ty sigma T)))%type.
 
 (* The value-typing mutual pair (neither references [wf_svalty], which only sits on top). *)
-Scheme has_svalty_rect := Induction for has_svalty Sort Type
-  with wf_neutral_rect := Induction for wf_neutral Sort Type.
+Scheme has_svalty_rect := Induction for has_svalty Sort Prop
+  with wf_neutral_rect := Induction for wf_neutral Sort Prop.
 
-(* Combined Scheme chokes on these indexed Type inductives; pair the two mutual [_rect]
+(* Combined Scheme chokes on these indexed inductives; pair the two mutual [_rect]
    by hand (they share the [P0]/[P1] motive + minor-premise telescope). *)
 Definition has_neutral_mutind
-  (P0 : forall Ge v T, has_svalty Ge v T -> Type)
-  (P1 : forall Ge n T, wf_neutral Ge n T -> Type) := fun
+  (P0 : forall Ge v T, has_svalty Ge v T -> Prop)
+  (P1 : forall Ge n T, wf_neutral Ge n T -> Prop) := fun
   fne fzero fsuc fNat fEmpty fvar femptyrec =>
   ( @has_svalty_rect P0 P1 fne fzero fsuc fNat fEmpty fvar femptyrec
   , @wf_neutral_rect P0 P1 fne fzero fsuc fNat fEmpty fvar femptyrec ).
 
 (* Canonical forms at El Empty: only a neutral inhabits it. *)
-Lemma canonical_empty : forall Ge v, has_svalty Ge v (dEl vEmpty) -> { n & v = vNe n }.
+Lemma canonical_empty : forall Ge v, has_svalty Ge v (dEl vEmpty) -> exists n, v = vNe n.
 Proof.
   intros Ge v H.
   inversion H; subst; try (eexists; reflexivity); try discriminate; try congruence.
@@ -241,7 +241,7 @@ Proof. repeat constructor. Qed.
 Example ex_var0 : has_svalty [dEl vNat] (vNe (nVar 0)) (dEl vNat).
 Proof. apply t_ne, n_var. reflexivity. Qed.
 
-Example ex_canon : { n & vNe (nVar 0) = vNe n }.
+Example ex_canon : exists n, vNe (nVar 0) = vNe n.
 Proof.
   apply canonical_empty with (Ge := [dEl vEmpty]).
   apply t_ne, n_var. reflexivity.
