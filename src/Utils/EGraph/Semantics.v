@@ -6170,6 +6170,281 @@ Section WithMap.
       reflexivity.
   Qed.
 
+  Definition db_all_roots (e : instance) : Prop :=
+    forall a, atom_in_db a e.(db) ->
+      all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args)
+      /\ map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret).
+
+  Lemma hash_entry_all_roots
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+        f args
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           (exists roots, union_find_ok lt e_in.(equiv) roots) ->
+           db_all_roots e_in ->
+           (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
+           (exists roots, union_find_ok lt (snd res).(equiv) roots)
+           /\ db_all_roots (snd res)
+           /\ (forall a, atom_in_db a e_in.(db) -> atom_in_db a (snd res).(db))
+           /\ (forall z, map.get e_in.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)).
+  Proof.
+    unfold vc, hash_entry.
+    intros e_in.
+    cbn [Mbind StateMonad.state_monad].
+    intros Hroots_ex Hdar_in Hkeys_args.
+    destruct Hroots_ex as [roots Hroots].
+    assert (Hargk : all (fun i => Sep.has_key i e_in.(equiv).(parent)) args).
+    { clear -Hkeys_args.
+      induction args as [|x xs IH]; cbn; auto.
+      split; [apply Hkeys_args; left; reflexivity|].
+      apply IH. intros y Hy. apply Hkeys_args. right; exact Hy. }
+    (* Step 1: list_Mmap find args -> (args', e_post). *)
+    pose proof (list_Mmap_find_In_roots args roots e_in Hroots Hargk) as Hfind.
+    cbn beta in Hfind.
+    destruct (list_Mmap find args e_in) as [args' e_post] eqn:Hmap.
+    cbn [fst snd] in Hfind |- *.
+    (* Step 2: db_lookup f args' on e_post -> (mout, e_post). *)
+    pose proof (db_lookup_pure f args' e_post) as Hlk.
+    cbn beta in Hlk.
+    destruct (db_lookup f args' e_post) as [mout e_lk] eqn:Hlkeq.
+    cbn [fst snd] in Hlk |- *.
+    destruct Hlk as [He_eq Hlk2]. subst e_lk.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Some r: db hit. No further state change. *)
+      cbn [Mret StateMonad.state_monad fst snd].
+      rename Hlk2 into Hin.
+      destruct Hfind as (Hok1 & Hfp & _ & Hall_in).
+      (* fields_preserved: db unchanged, key-iff. *)
+      destruct Hfp as (Hdb1 & _ & _ & _ & _ & Hkey_iff & _).
+      (* Hdb1 : e_post.db = e_in.db; e_post.equiv has same roots. *)
+      pose proof (uf_forest _ _ _ _ _ _ Hroots) as Hforest_in.
+      pose proof (uf_forest _ _ _ _ _ _ Hok1) as Hforest_1.
+      (* Helper: root in e_post <-> In roots <-> root in e_in. *)
+      assert (Hin_to_root_post : forall x, In x roots -> map.get e_post.(equiv).(parent) x = Some x)
+        by (intros x Hx; apply (proj1 (@forest_root_iff _ _ _ _ _ x roots _ Hforest_1)); exact Hx).
+      assert (Hroot_e_in_to_in : forall x, map.get e_in.(equiv).(parent) x = Some x -> In x roots)
+        by (intros x Hx; apply (proj2 (@forest_root_iff _ _ _ _ _ x roots _ Hforest_in)); exact Hx).
+      (* db_all_roots e_post: atoms unchanged (db same), translate roots e_in -> e_post. *)
+      assert (Hdar1 : db_all_roots e_post).
+      { intros a Ha.
+        assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite Hdb1 in Ha; exact Ha).
+        destruct (Hdar_in a Ha_in) as [Hargs_r Hret_r].
+        split.
+        - clear -Hargs_r Hroot_e_in_to_in Hin_to_root_post.
+          induction a.(atom_args) as [|y ys IH]; cbn in *; auto.
+          destruct Hargs_r as [Hy Hys]. split.
+          + apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hy.
+          + apply IH. exact Hys.
+        - apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hret_r. }
+      (* Now assemble the conclusion. *)
+      split; [exists roots; exact Hok1|].
+      split; [exact Hdar1|].
+      split.
+      { intros a Ha. unfold atom_in_egraph. rewrite Hdb1. exact Ha. }
+      split.
+      { intros z Hz. apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hz. }
+      (* r is a root: (f,args',r) in e_post.db, db_all_roots e_post gives ret = r root. *)
+      destruct (Hdar1 (Build_atom f args' r)) as [_ Hr_root].
+      { unfold atom_in_egraph in Hin; exact Hin. }
+      cbn [atom_ret] in Hr_root. exact Hr_root.
+    - (* None: alloc fresh r, then db_set (Build_atom f args' r). *)
+      cbn [Mbind StateMonad.state_monad].
+      rename Hlk2 into Hnone.
+      destruct Hfind as (Hok1 & Hfp & _ & Hall_in).
+      destruct Hfp as (Hdb1 & _ & _ & _ & _ & Hkey_iff & _).
+      pose proof (uf_forest _ _ _ _ _ _ Hroots) as Hforest_in.
+      pose proof (uf_forest _ _ _ _ _ _ Hok1) as Hforest_1.
+      (* alloc on e_post, via alloc_struct. *)
+      pose proof (alloc_struct Hlti Hlts Hltt) as Halloc.
+      unfold vc in Halloc. specialize (Halloc e_post).
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_post)
+        as [r e_alloc] eqn:Halloc_eq.
+      cbn [fst snd] in Halloc.
+      specialize (Halloc roots Hok1).
+      destruct Halloc as (Hok_alloc & Hr_fresh & Hr_key & Hkeys_alloc & Hdb_alloc
+                          & Hpar_alloc & Hwl_alloc).
+      (* roots facts: forest for e_alloc with (r::roots). *)
+      pose proof (uf_forest _ _ _ _ _ _ Hok_alloc) as Hforest_alloc.
+      (* args' are roots in e_post (all In roots). *)
+      assert (Hroot_e_in_to_in : forall x, map.get e_in.(equiv).(parent) x = Some x -> In x roots)
+        by (intros x Hx; apply (proj2 (@forest_root_iff _ _ _ _ _ x roots _ Hforest_in)); exact Hx).
+      assert (Hin_to_root_alloc : forall x, In x (r::roots) -> map.get e_alloc.(equiv).(parent) x = Some x)
+        by (intros x Hx; apply (proj1 (@forest_root_iff _ _ _ _ _ x (r::roots) _ Hforest_alloc)); exact Hx).
+      assert (Hroot_alloc_to_in : forall x, map.get e_alloc.(equiv).(parent) x = Some x -> In x (r::roots))
+        by (intros x Hx; apply (proj2 (@forest_root_iff _ _ _ _ _ x (r::roots) _ Hforest_alloc)); exact Hx).
+      (* args' are all roots in e_alloc (In roots -> In (r::roots)). *)
+      assert (Hargs'_roots_alloc :
+                all (fun x => map.get e_alloc.(equiv).(parent) x = Some x) args').
+      { clear -Hall_in Hin_to_root_alloc.
+        induction args' as [|y ys IH]; cbn in *; auto.
+        destruct Hall_in as [Hy Hys]. split.
+        - apply Hin_to_root_alloc. right; exact Hy.
+        - apply IH. exact Hys. }
+      (* r is a root in e_alloc. *)
+      assert (Hr_root_alloc : map.get e_alloc.(equiv).(parent) r = Some r)
+        by (apply Hin_to_root_alloc; left; reflexivity).
+      (* db unchanged from e1 to e_alloc; e1.db = e_in.db. *)
+      (* db_all_roots e_alloc: from db_all_roots e_in (same db), roots monotone. *)
+      assert (Hdb_eq_alloc_in : e_alloc.(db) = e_in.(db)) by congruence.
+      assert (Hdar_alloc : db_all_roots e_alloc).
+      { intros a Ha.
+        assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite <- Hdb_eq_alloc_in; exact Ha).
+        destruct (Hdar_in a Ha_in) as [Hargs_r Hret_r].
+        split.
+        - clear -Hargs_r Hroot_e_in_to_in Hin_to_root_alloc.
+          induction a.(atom_args) as [|y ys IH]; cbn in *; auto.
+          destruct Hargs_r as [Hy Hys]. split.
+          + apply Hin_to_root_alloc. right. apply Hroot_e_in_to_in. exact Hy.
+          + apply IH. exact Hys.
+        - apply Hin_to_root_alloc. right. apply Hroot_e_in_to_in. exact Hret_r. }
+      (* No existing atom (f,args',_) in e_alloc.db (lookup was None, db same). *)
+      assert (Hnone_alloc : forall r0, ~ atom_in_db (Build_atom f args' r0) e_alloc.(db)).
+      { intros r0 Hin0. rewrite Hdb_eq_alloc_in in Hin0.
+        rewrite <- Hdb1 in Hin0. eapply Hnone. unfold atom_in_egraph. exact Hin0. }
+      (* Now peel db_set (Build_atom f args' r) on e_alloc, mirroring
+         repair_each_canonicalizes' db_set decomposition. *)
+      unfold db_set. cbn [atom_fn atom_args atom_ret].
+      cbn [Mbind StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields args' e_alloc) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result args' e_alloc) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & Hpa_ga).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result r
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args' r) arg_as) e_ga)
+        as [_u e_ua] eqn:Hue.
+      assert (Heq_ua : e_ua.(equiv) = e_ga.(equiv))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      assert (Hdb_ua : e_ua.(db) = e_ga.(db))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result (Build_atom f args' r)
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args' r) arg_as)
+                  e_ua) as [_v e_db] eqn:Hde.
+      cbn [fst snd].
+      unfold Mret. cbn [StateMonad.state_monad fst snd].
+      (* e_db.equiv = e_alloc.equiv. *)
+      assert (Heq_db : e_db.(equiv) = e_alloc.(equiv)).
+      { assert (Heq_db_ua : e_db.(equiv) = e_ua.(equiv))
+          by (unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity).
+        rewrite Heq_db_ua, Heq_ua. exact Heq_ga. }
+      (* e_ua.db = e_alloc.db (get_analyses + update_analyses preserve db). *)
+      assert (Hdb_ua_alloc : e_ua.(db) = e_alloc.(db)) by congruence.
+      (* The new atom (f,args',r) is in e_db.db. *)
+      assert (Hain_new : atom_in_db (Build_atom f args' r) e_db.(db)).
+      { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+        unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+        destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+          rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+      (* Old atoms (different key) survive; and any atom in e_db.db is either
+         the new one or an old one with a different key. *)
+      assert (Hain_old : forall b, atom_in_db b e_ua.(db) ->
+                                   (atom_fn b, atom_args b) <> (f, args') ->
+                                   atom_in_db b e_db.(db)).
+      { intros b Hbu Hneq.
+        unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+        unfold atom_in_db, Is_Some_satisfying, map_update; cbn.
+        destruct b as [bfn bargs bret]; cbn in *.
+        destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+          eqb_case bfn f.
+        - rewrite map.get_put_same.
+          unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+          rewrite Htbl in Hbu. cbn in Hbu.
+          eqb_case bargs args'; cbn.
+          + exfalso. apply Hneq. reflexivity.
+          + rewrite map.get_put_diff by auto. exact Hbu.
+        - rewrite map.get_put_diff by auto.
+          unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu.
+        - rewrite map.get_put_same.
+          unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu.
+          rewrite Htbl in Hbu. cbn in Hbu. destruct Hbu.
+        - rewrite map.get_put_diff by auto.
+          unfold atom_in_db, Is_Some_satisfying in Hbu; cbn in Hbu. exact Hbu. }
+      assert (Hain_split : forall b, atom_in_db b e_db.(db) ->
+                b = Build_atom f args' r
+                \/ (atom_in_db b e_ua.(db)
+                    /\ (atom_fn b, atom_args b) <> (f, args'))).
+      { intros b Hb.
+        unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+        unfold atom_in_db, Is_Some_satisfying, map_update in Hb; cbn in Hb.
+        destruct b as [bfn bargs bret]; cbn in Hb.
+        destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+          eqb_case bfn f.
+        - rewrite map.get_put_same in Hb; cbn in Hb.
+          eqb_case bargs args'.
+          + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+          + rewrite map.get_put_diff in Hb by auto.
+            right. split.
+            * unfold atom_in_db, Is_Some_satisfying; cbn.
+              rewrite Htbl. cbn. exact Hb.
+            * cbn. intros Habs; inversion Habs; contradiction.
+        - rewrite map.get_put_diff in Hb by auto.
+          right. split.
+          + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+          + cbn. intros Habs; inversion Habs; contradiction.
+        - rewrite map.get_put_same in Hb; cbn in Hb.
+          eqb_case bargs args'.
+          + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+          + rewrite map.get_put_diff in Hb by auto.
+            unfold default in Hb.
+            rewrite map.get_empty in Hb. cbn in Hb. destruct Hb.
+        - rewrite map.get_put_diff in Hb by auto.
+          right. split.
+          + unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+          + cbn. intros Habs; inversion Habs; contradiction. }
+      (* Roots in e_db = roots in e_alloc (r::roots). *)
+      assert (Hin_to_root_db : forall x, In x (r::roots) -> map.get e_db.(equiv).(parent) x = Some x)
+        by (intros x Hx; rewrite Heq_db; apply Hin_to_root_alloc; exact Hx).
+      assert (Hroot_db_to_in : forall x, map.get e_db.(equiv).(parent) x = Some x -> In x (r::roots))
+        by (intros x Hx; rewrite Heq_db in Hx; apply Hroot_alloc_to_in; exact Hx).
+      (* Assemble. *)
+      split; [exists (r::roots); rewrite Heq_db; exact Hok_alloc|].
+      split.
+      { (* db_all_roots e_db *)
+        intros a Ha.
+        destruct (Hain_split a Ha) as [Heq | [Ha_ua Hneq] ].
+        - (* new atom (f, args', r) *)
+          subst a. cbn [atom_args atom_ret]. split.
+          + clear -Hargs'_roots_alloc Heq_db.
+            induction args' as [|y ys IH]; cbn in *; auto.
+            destruct Hargs'_roots_alloc as [Hy Hys]. split.
+            * rewrite Heq_db. exact Hy.
+            * apply IH. exact Hys.
+          + rewrite Heq_db. exact Hr_root_alloc.
+        - (* old atom *)
+          rewrite Hdb_ua_alloc in Ha_ua.
+          assert (Ha_in : atom_in_db a e_in.(db)) by (rewrite <- Hdb_eq_alloc_in; exact Ha_ua).
+          destruct (Hdar_in a Ha_in) as [Hargs_r Hret_r].
+          split.
+          + clear -Hargs_r Hroot_e_in_to_in Hin_to_root_db.
+            induction a.(atom_args) as [|y ys IH]; cbn in *; auto.
+            destruct Hargs_r as [Hy Hys]. split.
+            * apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hy.
+            * apply IH. exact Hys.
+          + apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hret_r. }
+      split.
+      { (* db monotone *)
+        intros a Ha.
+        (* a in e_in.db = e_alloc.db = e_ua.db. *)
+        assert (Ha_ua : atom_in_db a e_ua.(db))
+          by (rewrite Hdb_ua_alloc, Hdb_eq_alloc_in; exact Ha).
+        (* key (a.fn, a.args) <> (f, args'): else lookup wouldn't be None. *)
+        apply Hain_old; [exact Ha_ua|].
+        destruct a as [afn aargs aret]; cbn [atom_fn atom_args] in *.
+        intros Habs. injection Habs as Hfn Hargs_eq. subst afn aargs.
+        eapply Hnone. unfold atom_in_egraph. rewrite Hdb1.
+        exact Ha. }
+      split.
+      { (* roots monotone *)
+        intros z Hz. apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hz. }
+      (* result r is a root in e_db. *)
+      rewrite Heq_db. exact Hr_root_alloc.
+  Qed.
+
   (* [repair_each] canonicalizes [a]: under hypothesis H2 that [a.args]
      and [a.ret] are already roots (self-loops) in [e.equiv], and that
      [atom_in_db a e.db] (so the prefix union is a no-op), the result db
