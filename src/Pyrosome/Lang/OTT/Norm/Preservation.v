@@ -350,6 +350,27 @@ Proof.
     first [ left; reflexivity | right; reflexivity | exfalso; solve_wrong_sort ].
 Qed.
 
+Lemma U_arity : forall l (t : @sort string),
+    wf_term fo_lang [] (con "U" l) t -> length l = 3.
+Proof.
+  intros l t H. apply WfCutElim.invert_wf_term_con in H.
+  destruct H as (c0 & ra & t0 & Hin & Hwa & _). pin_rule Hin.
+  apply wf_args_length_eq in Hwa. cbn in Hwa. Lia.lia.
+Qed.
+
+Lemma ty_name : forall (n : string) l i G,
+    wf_term fo_lang [] (con n l) (scon "ty" [i; G]) ->
+    n = "U" \/ n = "El" \/ n = "ty_subst".
+Proof.
+  intros n l i G H. apply WfCutElim.invert_wf_term_con in H.
+  destruct H as (c0 & ra & t0 & Hin & Hwa & Hdisj).
+  enumerate_rule;
+    first [ left; reflexivity
+          | right; left; reflexivity
+          | right; right; reflexivity
+          | exfalso; solve_wrong_sort ].
+Qed.
+
 Section Fundamental.
   Notation term := (@term string).
 
@@ -431,7 +452,23 @@ Section Fundamental.
          the subterm's evaluation needs an "evaluation respects [eq_term]"
          lemma (a piece of the gluing soundness).  With that lemma the cases
          close uniformly. *)
-      + (* ===== ty ===== *) intros i G Ge Hwf Henv Hwfsenv. admit.
+      + (* ===== ty ===== *) intros i G Ge Hwf Henv Hwfsenv.
+        destruct (eqb n "U") eqn:EU.
+        { (* U : a universe code; evaluates to [dU] and is always wf *)
+          assert (n = "U") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite EU; exact I);
+            subst n.
+          pose proof (U_arity Hwf) as HL.
+          destruct l as [|l0 [|r0 [|G0 [|x xs]]]]; cbn in HL; try discriminate HL.
+          exists (dU (nf_info r0) (nf_info l0)). split; [ apply ev_U | apply wf_dU ]. }
+        (* El and ty_subst need the eval/eq_term coherence noted below *)
+        destruct (eqb n "El") eqn:EEl.
+        { assert (n = "El") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite EEl; exact I);
+            subst n. admit. }
+        destruct (eqb n "ty_subst") eqn:ETs.
+        { assert (n = "ty_subst") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite ETs; exact I);
+            subst n. admit. }
+        exfalso. destruct (ty_name Hwf) as [E | [E | E]]; subst n; cbn in *;
+          first [ discriminate EU | discriminate EEl | discriminate ETs ].
       + (* ===== exp ===== *) intros A i G Ge T Hwf Henv Hwfsenv Hty. admit.
       + (* ===== sub ===== *) intros Gd Gc GeD GeC Hwf HenvD HenvC HwfD HwfC. admit.
   Admitted.
