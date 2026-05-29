@@ -6170,6 +6170,189 @@ Section WithMap.
       reflexivity.
   Qed.
 
+  (* Model-free structural version for [alloc_opaque]: like [alloc_struct]
+     (same equiv transformation), but additionally exposes that the fresh id
+     has rank 0 and that root-ness is monotone.  This is the rank-0 fact
+     needed to demote the fresh [tx'] in add_ctx (step T1 of the F1c-lean
+     canonicity argument). *)
+  Lemma alloc_opaque_rank_zero
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+    : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e_in res =>
+           forall roots,
+           union_find_ok lt e_in.(equiv) roots ->
+           union_find_ok lt (snd res).(equiv) (fst res :: roots)
+           /\ ~ Sep.has_key (fst res) e_in.(equiv).(parent)
+           /\ map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)
+           /\ map.get (@rank _ _ _ (snd res).(equiv)) (fst res) = Some 0
+           /\ (forall x, Sep.has_key x e_in.(equiv).(parent) ->
+                         Sep.has_key x (snd res).(equiv).(parent))
+           /\ (forall z, map.get e_in.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ e_in.(db) = (snd res).(db)
+           /\ e_in.(parents) = (snd res).(parents)
+           /\ e_in.(worklist) = (snd res).(worklist)).
+  Proof.
+    unfold vc, alloc_opaque.
+    intros [db_in equiv_in parents_in epoch_in worklist_in analyses_in log_in].
+    destruct equiv_in as [rk_in pa_in mr_in nx_in] eqn:Heq_in.
+    cbn -[map.get map.put].
+    intros roots Huf_roots.
+    destruct Huf_roots as [Hforest Hrcd Hri Hmax Hnub].
+    cbn [parent rank max_rank next equiv] in *.
+    assert (Hnxfresh : ~ Sep.has_key nx_in pa_in).
+    { intro Hk. specialize (Hnub _ Hk). eapply Hlti; exact Hnub. }
+    assert (Hgetnone_pa : map.get pa_in nx_in = None).
+    { unfold Sep.has_key in Hnxfresh. destruct (map.get pa_in nx_in); tauto. }
+    assert (Hnewok : union_find_ok lt
+                      {| rank := map.put rk_in nx_in 0;
+                         parent := map.put pa_in nx_in nx_in;
+                         max_rank := mr_in;
+                         next := idx_succ nx_in |}
+                      (nx_in :: roots)).
+    { constructor; cbn [parent rank max_rank next].
+      - apply forest_extend; auto.
+      - intros k v Hget.
+        eqb_case k nx_in.
+        + exists 0. rewrite map.get_put_same. reflexivity.
+        + rewrite map.get_put_diff in Hget by congruence.
+          specialize (Hrcd _ _ Hget). destruct Hrcd as [r0 Hr0].
+          exists r0. rewrite map.get_put_diff by congruence. exact Hr0.
+      - intros ki kj Hget Hneq.
+        eqb_case ki nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget. congruence.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eqb_case kj nx_in.
+          * exfalso. apply Hnxfresh.
+            apply (forest_closed _ _ Eqb_idx_ok _ (idx_map_ok _) _ _ Hforest _ _ Hget).
+          * specialize (Hri _ _ Hget Hneq).
+            rewrite ! map.get_put_diff by congruence. exact Hri.
+      - intros j r Hget.
+        eqb_case j nx_in.
+        + rewrite map.get_put_same in Hget. inversion Hget; subst. Lia.lia.
+        + rewrite map.get_put_diff in Hget by congruence.
+          eauto.
+      - intros k Hk.
+        unfold Sep.has_key in Hk.
+        eqb_case k nx_in.
+        + apply Hlts.
+        + rewrite map.get_put_diff in Hk by congruence.
+          assert (Sep.has_key k pa_in) as Hkpa.
+          { unfold Sep.has_key. destruct (map.get pa_in k); auto. }
+          specialize (Hnub _ Hkpa).
+          eapply Hltt; [exact Hnub | apply Hlts]. }
+    split; [exact Hnewok|].
+    split; [exact Hnxfresh|].
+    split; [cbn [parent equiv]; apply map.get_put_same|].
+    split; [cbn [rank equiv]; apply map.get_put_same|].
+    split.
+    { intros xa Hxa. unfold Sep.has_key in *.
+      cbn [parent equiv].
+      pose proof (Eqb_idx_ok xa nx_in) as Heq.
+      destruct (eqb xa nx_in).
+      + subst. rewrite map.get_put_same. constructor.
+      + rewrite map.get_put_diff by congruence. exact Hxa. }
+    split.
+    { intros z Hz. cbn [parent equiv].
+      assert (z <> nx_in) as Hzneq.
+      { intro Hc. subst z. rewrite Hgetnone_pa in Hz. discriminate. }
+      rewrite map.get_put_diff by congruence. exact Hz. }
+    split; [reflexivity|].
+    split; reflexivity.
+  Qed.
+
+  (* Precise rank-orientation effect of [Defs.union v v1] when BOTH [v] and
+     [v1] are roots and [v1] has rank 0 (the add_ctx case: [v := t_v] is a
+     real sort id, [v1 := tx'] is the fresh single-use [sort_of] ret).  The
+     second argument [v1] is demoted directly to [v]; [v] stays root; every
+     other root survives; the worklist gains exactly [union_repair v1 v _].
+     Both args being roots means the two internal finds are identities (no
+     path compression), so the result is read off [UnionFind.union] directly. *)
+  Lemma uf_find_root_equiv (e : instance) (x : idx)
+    : map.get e.(equiv).(parent) x = Some x ->
+      UnionFind.find e.(equiv) x = (e.(equiv), x).
+  Proof.
+    destruct e as [db_e eqv pe ep wl an lg].
+    destruct eqv as [ra pa mr0 ln].
+    cbn [equiv parent] in *.
+    intro Hroot.
+    unfold UnionFind.find. cbn [find_aux].
+    rewrite Hroot.
+    eqb_case x x; [reflexivity | exfalso; auto].
+  Qed.
+
+  Lemma union_roots_demote_second (v v1 : idx)
+    : vc (Defs.union v v1)
+        (fun e_in res =>
+           forall roots,
+           union_find_ok lt e_in.(equiv) roots ->
+           map.get e_in.(equiv).(parent) v = Some v ->
+           map.get e_in.(equiv).(parent) v1 = Some v1 ->
+           v <> v1 ->
+           map.get (@rank _ _ _ e_in.(equiv)) v1 = Some 0 ->
+           fst res = v
+           /\ map.get (snd res).(equiv).(parent) v = Some v
+           /\ map.get (snd res).(equiv).(parent) v1 = Some v
+           /\ (forall z, z <> v1 ->
+                         map.get e_in.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ e_in.(db) = (snd res).(db)
+           /\ e_in.(parents) = (snd res).(parents)
+           /\ (exists improved,
+                  (snd res).(worklist)
+                  = union_repair _ v1 v improved :: e_in.(worklist))
+           /\ (exists roots', union_find_ok lt (snd res).(equiv) roots')).
+  Proof.
+    unfold vc, Defs.union.
+    intros e_in roots Hok Hrv Hrv1 Hneq Hr0.
+    pose proof (find_root_identity e_in v Hrv) as Hdfv.
+    pose proof (find_root_identity e_in v1 Hrv1) as Hdfv1.
+    cbn [Mbind StateMonad.state_monad].
+    rewrite Hdfv. cbn [fst snd].
+    rewrite Hdfv1. cbn [fst snd].
+    assert (Hvv1f : eqb v v1 = false) by (eqb_case v v1; [contradiction|reflexivity]).
+    rewrite Hvv1f.
+    cbn beta iota.
+    assert (Hkv : Sep.has_key v e_in.(equiv).(parent))
+      by (unfold Sep.has_key; rewrite Hrv; exact I).
+    assert (Hkv1 : Sep.has_key v1 e_in.(equiv).(parent))
+      by (unfold Sep.has_key; rewrite Hrv1; exact I).
+    destruct (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat)
+                e_in.(equiv) v v1) as [uf3 z] eqn:Hun.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@union_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ _ _ Hok Hkv Hkv1 Hun) as Hus.
+    destruct Hus as [l' (Huf3 & _ & _ & _)].
+    pose proof Hok as Hok2. destruct Hok2 as [Hforest Hrcd Hri Hmax Hnub].
+    destruct (Hrcd v v Hrv) as [rx Hrx].
+    assert (Hzeq : z = v /\ uf3.(parent) = map.put e_in.(equiv).(parent) v1 v).
+    { revert Hun. unfold UnionFind.union.
+      rewrite (uf_find_root_equiv e_in v Hrv).
+      rewrite (uf_find_root_equiv e_in v1 Hrv1).
+      cbn [fst snd].
+      rewrite Hvv1f.
+      rewrite Hrx, Hr0. cbn [unwrap_with_default].
+      destruct (Nat.compare 0 rx) eqn:Hcmp.
+      - intro Hu. inversion Hu. cbn [parent]. split; reflexivity.
+      - intro Hu. inversion Hu. cbn [parent]. split; reflexivity.
+      - destruct rx; cbn in Hcmp; discriminate. }
+    destruct Hzeq as [Hzv Huf3pa]. subst z.
+    assert (Hvv : eqb v v = true) by (eqb_case v v; [reflexivity|contradiction]).
+    rewrite Hvv.
+    cbn [fst snd equiv parent db parents worklist].
+    rewrite Huf3pa.
+    split; [reflexivity|].
+    split; [rewrite map.get_put_diff by congruence; exact Hrv|].
+    split; [rewrite map.get_put_same; reflexivity|].
+    split; [intros z0 Hz0 Hz0r; rewrite map.get_put_diff by congruence; exact Hz0r|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [eexists; reflexivity|].
+    exists l'; exact Huf3.
+  Qed.
+
   Definition db_all_roots (e : instance) : Prop :=
     forall a, atom_in_db a e.(db) ->
       all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args)
