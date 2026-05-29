@@ -2307,7 +2307,7 @@ Section WithVar.
                       X _ (fun s => s <> sort_of)
                       lt_asymmetric lt_succ lt_trans name a_out) as Hhe.
         unfold vc in Hhe.
-        specialize (Hhe e_inner Huf_inner Hdbr_inner Hname_sof Hkeys).
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
         destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
         cbn [fst snd] in Hhe.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
@@ -2316,7 +2316,7 @@ Section WithVar.
         + eapply roots_env_trans; [exact Henv_args_save|].
           unfold roots_env, db_incl, roots_mono.
           split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
-        + exact Hres_f.
+        + apply Hres_f. exact Hname_sof.
       - (* var case *)
         intros n t_var Hin_var r Hmaps.
         cbn [add_open_term'].
@@ -2440,7 +2440,7 @@ Section WithVar.
                       X _ (fun s => s <> sort_of)
                       lt_asymmetric lt_succ lt_trans n a_out) as Hhe.
         unfold vc in Hhe.
-        specialize (Hhe e_inner Huf_inner Hdbr_inner Hname_sof Hkeys).
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
         destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
         cbn [fst snd] in Hhe.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
@@ -2449,7 +2449,7 @@ Section WithVar.
         + eapply roots_env_trans; [exact Henv_args_save|].
           unfold roots_env, db_incl, roots_mono.
           split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
-        + exact Hres_f.
+        + apply Hres_f. exact Hname_sof.
     Qed.
 
     Lemma add_open_sort_all_roots c r t

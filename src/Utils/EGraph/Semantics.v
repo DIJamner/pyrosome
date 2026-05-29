@@ -6372,19 +6372,18 @@ Section WithMap.
         (fun e_in res =>
            (exists roots, union_find_ok lt e_in.(equiv) roots) ->
            db_inv P e_in ->
-           P f ->
            (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
            (exists roots, union_find_ok lt (snd res).(equiv) roots)
            /\ db_inv P (snd res)
            /\ (forall a, atom_in_db a e_in.(db) -> atom_in_db a (snd res).(db))
            /\ (forall z, map.get e_in.(equiv).(parent) z = Some z ->
                          map.get (snd res).(equiv).(parent) z = Some z)
-           /\ map.get (snd res).(equiv).(parent) (fst res) = Some (fst res)).
+           /\ (P f -> map.get (snd res).(equiv).(parent) (fst res) = Some (fst res))).
   Proof.
     unfold vc, hash_entry.
     intros e_in.
     cbn [Mbind StateMonad.state_monad].
-    intros Hroots_ex Hdar_in Hpf Hkeys_args.
+    intros Hroots_ex Hdar_in Hkeys_args.
     destruct Hroots_ex as [roots Hroots].
     assert (Hargk : all (fun i => Sep.has_key i e_in.(equiv).(parent)) args).
     { clear -Hkeys_args.
@@ -6437,10 +6436,10 @@ Section WithMap.
       { intros a Ha. unfold atom_in_egraph. rewrite Hdb1. exact Ha. }
       split.
       { intros z Hz. apply Hin_to_root_post. apply Hroot_e_in_to_in. exact Hz. }
-      (* r is a root: (f,args',r) in e_post.db, db_inv P e_post + [P f] gives ret = r root. *)
+      (* r is a root (when P f): (f,args',r) in e_post.db, db_inv P e_post gives it. *)
       destruct (Hdar1 (Build_atom f args' r)) as [_ Hr_root].
       { unfold atom_in_egraph in Hin; exact Hin. }
-      cbn [atom_ret atom_fn] in Hr_root. apply Hr_root; exact Hpf.
+      cbn [atom_ret atom_fn] in Hr_root. exact Hr_root.
     - (* None: alloc fresh r, then db_set (Build_atom f args' r). *)
       cbn [Mbind StateMonad.state_monad].
       rename Hlk2 into Hnone.
@@ -6635,8 +6634,8 @@ Section WithMap.
       split.
       { (* roots monotone *)
         intros z Hz. apply Hin_to_root_db. right. apply Hroot_e_in_to_in. exact Hz. }
-      (* result r is a root in e_db. *)
-      rewrite Heq_db. exact Hr_root_alloc.
+      (* result r is a root in e_db (unconditionally; here r is fresh). *)
+      intros _. rewrite Heq_db. exact Hr_root_alloc.
   Qed.
 
   (* Regular [alloc] rank-0 structural lemma (sibling of [alloc_opaque_rank_zero];
