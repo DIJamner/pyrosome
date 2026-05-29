@@ -2579,6 +2579,88 @@ Section WithVar.
         end.
     Qed.
 
+    (* =============================================================== *)
+    (* Bridge: atom_tree -> represents, given faithful leaves.          *)
+    (* =============================================================== *)
+
+    Lemma atom_tree_args_to_represents
+      (a : interp) (eF : instance X) (sub : named_list V) (sg : subst) (c c' : ctx)
+      (Hleaf : forall x, In x (map fst sub) ->
+                 map.get a (named_list_lookup default sub x) = Some (inl (named_list_lookup default sg x)))
+      (s : list term)
+      (Hwfa : wf_args l c s c')
+      (IHs : all (fun e => forall t, wf_term l c e t ->
+                   forall xe, atom_tree eF sub e xe -> represents a eF sg e xe) s)
+      : forall sids, Forall2 (atom_tree eF sub) s sids -> Forall2 (represents a eF sg) s sids.
+    Proof.
+      revert IHs; induction Hwfa; intros IHs sids Htrees.
+      - safe_invert Htrees. constructor.
+      - safe_invert Htrees.
+        destruct IHs as [IHe IHs0].
+        constructor.
+        + eapply IHe; eauto.
+        + eapply IHHwfa; eauto.
+    Qed.
+
+    Lemma atom_tree_to_represents
+      (a : interp) (eF : instance X) (sub : named_list V) (sg : subst) (c : ctx)
+      (Hleaf : forall x, In x (map fst sub) ->
+                 map.get a (named_list_lookup default sub x) = Some (inl (named_list_lookup default sg x)))
+      (Hdom : map fst c = map fst sub)
+      : forall e t, wf_term l c e t -> forall xe, atom_tree eF sub e xe -> represents a eF sg e xe.
+    Proof.
+      intro e; induction e as [x | n s IHs] using term_ind; intros t Hwt xe Htree.
+      - safe_invert Htree.
+        assert (In x (map fst c)) as Hxc.
+        { change (In x (map fst c)) with (ws_term (map fst c) (var x)).
+          eapply wf_term_implies_ws; eauto with lang_core. }
+        rewrite Hdom in Hxc.
+        constructor. apply Hleaf; exact Hxc.
+      - safe_invert Htree.
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        eapply rep_con; [| match goal with H : atom_in_egraph _ eF |- _ => exact H end].
+        assert (IHsall : all (fun e => forall t, wf_term l c e t ->
+                                forall xe, atom_tree eF sub e xe -> represents a eF sg e xe) s).
+        { clear -IHs Hleaf Hdom.
+          induction s as [|e0 s0 IH]; cbn; [exact I|].
+          destruct IHs as [IHe0 IHs0].
+          split.
+          - intros t0 Hwt0 xe0 Htree0.
+            eapply IHe0; eauto.
+          - apply IH; exact IHs0. }
+        match goal with
+          Htrees : Forall2 (atom_tree eF sub) s ?sids |- _ =>
+            eapply atom_tree_args_to_represents with (c:=c) (c':=c'0); eauto
+        end.
+    Qed.
+
+    Lemma atom_tree_sort_to_represents_sort
+      (a : interp) (eF : instance X) (sub : named_list V) (sg : subst) (c : ctx)
+      (Hleaf : forall x, In x (map fst sub) ->
+                 map.get a (named_list_lookup default sub x) = Some (inl (named_list_lookup default sg x)))
+      (Hdom : map fst c = map fst sub)
+      : forall ts, wf_sort l c ts -> forall xs, atom_tree_sort eF sub ts xs -> represents_sort a eF sg ts xs.
+    Proof.
+      intros [n s] Hws xs Htree.
+      unfold atom_tree_sort in Htree.
+      destruct Htree as (sids & Htrees & Hatom).
+      unfold represents_sort.
+      exists sids; split; [| exact Hatom].
+      safe_invert Hws.
+      match goal with
+        Hin : In (n, sort_rule ?c'0 ?args0) l,
+        Hwfa : Model.wf_args _ s ?c'0 |- _ =>
+          eapply atom_tree_args_to_represents with (c:=c) (c':=c'0); try eassumption
+      end.
+      assert (HP : forall e t, wf_term l c e t ->
+                    forall xe, atom_tree eF sub e xe -> represents a eF sg e xe).
+      { intros; eapply atom_tree_to_represents with (c:=c); eauto. }
+      clear -HP s.
+      induction s as [|e0 s0 IH]; cbn; [exact I|].
+      split; [exact (HP e0) | exact IH].
+    Qed.
+
   End AddOpenSound.
 
   Section AddOpenRoots.
