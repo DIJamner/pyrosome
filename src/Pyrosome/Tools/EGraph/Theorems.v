@@ -3215,6 +3215,296 @@ Section WithVar.
           cbn [map fst]. f_equal. exact Hfst_tail. }
     Qed.
 
+    (* ============================================================== *)
+    (* add_open_node_atoms: structural augmentation of add_open_all_  *)
+    (* roots that additionally establishes atom_tree.                 *)
+    (* ============================================================== *)
+
+    Definition open_atomtree_post (e0 : term) (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
+      all (fun p => is_root e_in (snd p)) sub ->
+      roots_env e_in (snd res) /\ is_root (snd res) (fst res)
+      /\ atom_tree X (snd res) sub e0 (fst res).
+
+    Definition open_atomtree_args_post (es : list term) (sub : named_list V) (e_in : instance X)
+       (res : list V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
+      all (fun p => is_root e_in (snd p)) sub ->
+      roots_env e_in (snd res) /\ all (is_root (snd res)) (fst res)
+      /\ Forall2 (atom_tree X (snd res) sub) es (fst res).
+
+    Lemma add_open_node_atoms (l1 : lang)
+      (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
+      (Hwf1 : wf_lang l1) (Hl1 : incl l1 l)
+      c (Hctx : wf_ctx l1 c)
+      : (forall e t, wf_term l1 c e t -> forall r, map fst c = map fst r ->
+           vc (add_open_term' succ sort_of l false false add_open_sort_inner r e)
+              (open_atomtree_post e r))
+        /\ (forall args c', wf_args l1 c args c' -> forall r, map fst c = map fst r ->
+           vc (list_Mmap (add_open_term' succ sort_of l false false add_open_sort_inner r) args)
+              (open_atomtree_args_post args r)).
+    Proof.
+      apply (WfCutElim.wf_cut_ind V l1 c
+               (fun e t => forall r, map fst c = map fst r ->
+                  vc (add_open_term' succ sort_of l false false
+                                     add_open_sort_inner r e)
+                     (open_atomtree_post e r))
+               (fun args c' => forall r, map fst c = map fst r ->
+                  vc (list_Mmap (add_open_term' succ sort_of l false false
+                                                add_open_sort_inner r) args)
+                     (open_atomtree_args_post args r))).
+      - (* con case *)
+        intros name c'_rule args t_rule s' Hrule_in_l1 Hwf_args_inner IH r Hmaps.
+        cbn [add_open_term'].
+        pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
+        assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad Mret].
+        eapply vc_bind.
+        { specialize (IH r Hmaps). apply IH. }
+        intros e_pre a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_atomtree_post.
+        intros Huf Hdbr Hsub.
+        unfold open_atomtree_args_post in Hpost_args.
+        specialize (Hpost_args Huf Hdbr Hsub).
+        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout).
+        pose proof Henv_args as Henv_args_save.
+        destruct Henv_args as (Huf_inner & Hdbr_inner & Hincl_inner & Hmono_inner).
+        assert (Hkeys : forall x, In x a_out ->
+                          Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. apply is_root_has_key.
+          exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : name <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule_in. }
+        (* hash_entry_all_roots: roots + db_inv survive *)
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhe.
+        unfold vc in Hhe.
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+        destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe.
+        destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
+        (* hash_entry_output_atom: the node atom (name, a_out, x_res) is in e_he.db *)
+        pose proof (@hash_entry_output_atom V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hout.
+        unfold vc in Hout.
+        specialize (Hout e_inner).
+        rewrite Heqhe in Hout.
+        cbn [fst snd] in Hout.
+        specialize (Hout Huf_inner).
+        assert (Hroots_all : all (fun x => map.get (parent (Defs.equiv e_inner)) x = Some x) a_out).
+        { eapply all_wkn; [|exact Hroots_aout].
+          intros x _ Hx. unfold is_root in Hx. exact Hx. }
+        specialize (Hout Hroots_all).
+        (* Hout : atom_in_db (Build_atom name a_out x_res) e_he.(db) *)
+        unfold atom_in_egraph in *.
+        cbn [Mret StateMonad.state_monad fst snd].
+        split.
+        + eapply roots_env_trans; [exact Henv_args_save|].
+          unfold roots_env, db_incl, roots_mono.
+          split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
+        + split.
+          * apply Hres_f. exact Hname_sof.
+          * (* atom_tree e_he r (con name s') x_res *)
+            assert (Htrees_he : Forall2 (atom_tree X e_he r) s' a_out).
+            { clear -Htrees_aout Hincl_f.
+              eapply Forall2_impl; [| exact Htrees_aout].
+              intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
+            refine (at_con X e_he r name s' a_out x_res Htrees_he Hout).
+      - (* var case *)
+        intros n t_var Hin_var r Hmaps.
+        cbn [add_open_term'].
+        unfold vc. intros e_pre.
+        cbn [Mret StateMonad.state_monad fst snd].
+        unfold open_atomtree_post.
+        intros Huf Hdbr Hsub.
+        split; [apply roots_env_refl; auto|].
+        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafr : all_fresh r).
+        { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
+        assert (Hex_x : exists x_n, In (n, x_n) r).
+        { apply pair_fst_in_exists. rewrite <- Hmaps. eapply pair_fst_in; exact Hin_var. }
+        destruct Hex_x as [x_n Hin_xn].
+        assert (Hlk : named_list_lookup default r n = x_n).
+        { clear -V_Eqb_ok Hafr Hin_xn.
+          induction r as [|[m v_m] r' IH]; cbn in *; [tauto|].
+          destruct Hafr as [Hfr Hafr'].
+          destruct Hin_xn as [Heq|Hin_xn'].
+          - inversion Heq; subst.
+            eqb_case n n; congruence.
+          - eqb_case n m.
+            + exfalso. apply Hfr. eapply pair_fst_in; exact Hin_xn'.
+            + apply IH; auto. }
+        split.
+        + cbn [fst snd]. rewrite Hlk. exact (in_all _ _ _ Hsub Hin_xn).
+        + cbn [fst snd]. apply (at_var X e_pre r n).
+      - (* eq_sort conversion *)
+        intros e_x t_x t_x' Hwft IH_term Heq_sort r Hmaps.
+        apply IH_term; assumption.
+      - (* nil args *)
+        intros r Hmaps.
+        cbn [list_Mmap].
+        unfold vc, Mret. cbn.
+        unfold open_atomtree_args_post. intros Huf Hdbr Hsub.
+        split; [apply roots_env_refl; auto|].
+        split; [cbn; exact I | constructor].
+      - (* cons args *)
+        intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r Hmaps.
+        unfold vc. intros e_in.
+        cbn [list_Mmap].
+        cbn [Mbind Mret StateMonad.state_monad].
+        unfold open_atomtree_args_post.
+        intros Huf Hdbr Hsub.
+        specialize (IH_term r Hmaps).
+        unfold vc, open_atomtree_post in IH_term.
+        specialize (IH_term e_in Huf Hdbr Hsub).
+        destruct (add_open_term' succ sort_of l false false
+                    add_open_sort_inner r e_arg e_in)
+          as [v_head e_after_head] eqn:Heq1.
+        cbn [fst snd] in IH_term.
+        destruct IH_term as (Henv_head & Hroot_head & Htree_head).
+        pose proof Henv_head as Henv_head_save.
+        destruct Henv_head as (Huf_head & Hdbr_head & Hincl_head & Hmono_head).
+        specialize (IH_args r Hmaps).
+        unfold vc, open_atomtree_args_post in IH_args.
+        assert (Hsub_head : all (fun p => is_root e_after_head (snd p)) r).
+        { eapply all_wkn; [|exact Hsub].
+          intros x Hx Hr. apply Hmono_head. exact Hr. }
+        specialize (IH_args e_after_head Huf_head Hdbr_head Hsub_head).
+        destruct (list_Mmap
+                    (add_open_term' succ sort_of l false false
+                       add_open_sort_inner r) es e_after_head)
+          as [v_tail e_final] eqn:Heq2.
+        cbn [fst snd] in IH_args.
+        destruct IH_args as (Henv_tail & Hroots_tail & Htrees_tail).
+        pose proof Henv_tail as Henv_tail_save.
+        destruct Henv_tail as (Huf_tail & Hdbr_tail & Hincl_tail & Hmono_tail).
+        split.
+        + eapply roots_env_trans; eauto.
+        + split.
+          * cbn [all]. split.
+            -- apply Hmono_tail. exact Hroot_head.
+            -- exact Hroots_tail.
+          * constructor.
+            -- (* lift head atom_tree through tail's db_incl *)
+               unfold db_incl in Hincl_tail.
+               eapply (atom_tree_db_incl X); [exact Hincl_tail | exact Htree_head].
+            -- exact Htrees_tail.
+    Qed.
+
+    Definition open_atomtree_sort_post (ts : sort) (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop :=
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
+      all (fun p => is_root e_in (snd p)) sub ->
+      roots_env e_in (snd res) /\ is_root (snd res) (fst res)
+      /\ atom_tree_sort X (snd res) sub ts (fst res).
+
+    Lemma add_open_sort'_node_atoms l1 c r t fuel
+      : wf_lang l1 ->
+        length l1 < fuel ->
+        incl l1 l ->
+        wf_ctx l1 c ->
+        wf_sort l1 c t ->
+        map fst c = map fst r ->
+        vc (add_open_sort' succ sort_of l false false fuel r t)
+           (open_atomtree_sort_post t r).
+    Proof.
+      revert l1 c r t.
+      induction fuel; intros l1 c r t Hwfl1 Hflen Hincl Hctx Hsort Hmaps.
+      - exfalso. Lia.lia.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        pose proof Hsort as Hsort'.
+        inversion Hsort' as [? n_ s_t_ args c' Hrule Hwfargs]; subst.
+        apply Hincl in Hrule.
+        assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        eapply vc_bind.
+        { apply (proj2 (add_open_node_atoms l1
+                          (add_open_sort' succ sort_of l false false fuel)
+                          Hwfl1 Hincl c Hctx)
+                  _ _ Hwfargs r Hmaps). }
+        intros e_post a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_atomtree_sort_post.
+        intros Huf Hdbr Hsub.
+        unfold open_atomtree_args_post in Hpost_args.
+        specialize (Hpost_args Huf Hdbr Hsub).
+        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout).
+        pose proof Henv_args as Henv_args_save.
+        destruct Henv_args as (Huf_inner & Hdbr_inner & Hincl_inner & Hmono_inner).
+        assert (Hkeys : forall x, In x a_out ->
+                          Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. apply is_root_has_key.
+          exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule. }
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhe.
+        unfold vc in Hhe.
+        specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+        destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe.
+        destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
+        (* hash_entry_output_atom: the node atom (n, a_out, x_res) is in e_he.db *)
+        pose proof (@hash_entry_output_atom V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hout.
+        unfold vc in Hout.
+        specialize (Hout e_inner).
+        rewrite Heqhe in Hout.
+        cbn [fst snd] in Hout.
+        specialize (Hout Huf_inner).
+        assert (Hroots_all : all (fun x => map.get (parent (Defs.equiv e_inner)) x = Some x) a_out).
+        { eapply all_wkn; [|exact Hroots_aout].
+          intros x _ Hx. unfold is_root in Hx. exact Hx. }
+        specialize (Hout Hroots_all).
+        unfold atom_in_egraph in *.
+        cbn [Mret StateMonad.state_monad fst snd].
+        split.
+        + eapply roots_env_trans; [exact Henv_args_save|].
+          unfold roots_env, db_incl, roots_mono.
+          split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
+        + split.
+          * apply Hres_f. exact Hname_sof.
+          * (* atom_tree_sort X e_he r (scon n s_t) x_res *)
+            assert (Htrees_he : Forall2 (atom_tree X e_he r) s_t a_out).
+            { clear -Htrees_aout Hincl_f.
+              eapply Forall2_impl; [| exact Htrees_aout].
+              intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
+            unfold atom_tree_sort.
+            exists a_out. split; [exact Htrees_he | exact Hout].
+    Qed.
+
+    Lemma add_open_sort_node_atoms c r t
+      : wf_ctx l c ->
+        wf_sort l c t ->
+        map fst c = map fst r ->
+        vc (add_open_sort succ sort_of l false false r t)
+           (open_atomtree_sort_post t r).
+    Proof.
+      intros.
+      unfold add_open_sort.
+      eapply add_open_sort'_node_atoms; try eassumption; eauto with utils.
+    Qed.
+
   End AddOpenRoots.
 
   (* ============================================================== *)
