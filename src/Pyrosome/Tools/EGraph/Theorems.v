@@ -2527,6 +2527,39 @@ Section WithVar.
         eapply eq_sort_trans; [ eapply eq_sort_sym; exact Heqs | exact Hcong ]. }
     Qed.
 
+    (* =============================================================== *)
+    (* Model-free skeleton of [represents] (the (P2a) connection layer).*)
+    (* See [[project-source-rule-adapter]].                             *)
+    (* =============================================================== *)
+
+    (* [atom_tree eF sub e xe]: the syntax-directed, PURELY STRUCTURAL
+       witness that, in egraph [eF], id [xe] is [add_open]'s output for
+       term [e] under the leaf map [sub] (var x |-> [named_list_lookup
+       default sub x]).  It records exactly which node atoms [add_open]
+       inserts -- the egraph appears only through [atom_in_egraph].  No
+       model / adversary [a] is involved.  [add_open_node_atoms]
+       establishes it for real [add_open] outputs; [atom_tree_to_represents]
+       upgrades it to [represents] given leaf faithfulness of [a]. *)
+    Inductive atom_tree (eF : instance X) (sub : named_list V)
+      : term -> V -> Prop :=
+    | at_var x :
+        atom_tree eF sub (var x) (named_list_lookup default sub x)
+    | at_con n s sids xe :
+        Forall2 (atom_tree eF sub) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        atom_tree eF sub (con n s) xe.
+
+    (* Sort skeleton: sorts do not nest, so this is a plain definition whose
+       arguments are terms witnessed by the term-level [atom_tree] (mirrors
+       [represents_sort]'s shape). *)
+    Definition atom_tree_sort (eF : instance X) (sub : named_list V)
+       (ts : sort) (xs : V) : Prop :=
+      match ts with
+      | scon n s =>
+          exists sids, Forall2 (atom_tree eF sub) s sids
+                       /\ atom_in_egraph (Build_atom n sids xs) eF
+      end.
+
   End AddOpenSound.
 
   Section AddOpenRoots.
