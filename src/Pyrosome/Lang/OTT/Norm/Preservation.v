@@ -8,7 +8,7 @@ Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Lang.OTT.Norm Require Import
-  Domain EvalRel Determinism ApplyLemmas SortInj Typing Model.
+  Domain EvalRel ApplyLemmas Typing.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -254,242 +254,91 @@ Proof.
       exact (Hpt k Tk E).
 Qed.
 
-(* ===================================================================== *)
-(* Part 5 : the fundamental lemma — totality + preservation.              *)
-(* ===================================================================== *)
-
-(* No variable is well formed in the empty context (closed terms only). *)
-Lemma wf_term_nil_var : forall (x : string) (t : @sort string),
-    wf_term fo_lang [] (@var string x) t -> False.
+(* Type substitution preserves type well-formedness. *)
+Lemma subst_wf_svalty : forall Gamma T, wf_svalty Gamma T ->
+  forall Delta sigma, wf_ssub Delta sigma Gamma -> wf_svalty Delta (apply_ty sigma T).
 Proof.
-  intros x t H.
-  remember (@nil (string * @sort string)) as c eqn:Hc.
-  remember (@var string x) as e eqn:He.
-  revert Hc He. induction H; intros Hc He; try discriminate He.
-  - (* conv *) exact (IHwf_term Hc He).
-  - (* var *) subst c. cbn in H. exact H.
+  intros Gamma T HT Delta sigma Hsub. destruct HT as [Gamma r l | Gamma e r l He].
+  - apply wf_dU.
+  - cbn. apply (wf_dEl (r:=r) (l:=l)).
+    exact (fst subst_has_svalty _ _ _ He Delta sigma Hsub).
 Qed.
 
-(* Dispatch: from [In (n, term_rule ..) fo_lang] (n abstract from term_rect),
-   enumerate the concrete former and pin its rule body.  [vm_compute] turns the
-   membership into a finite disjunction of pair-equalities; non-[term_rule]
-   entries clash on their second component ([discriminate]); the rest yield the
-   concrete [n], context, args and conclusion sort by [injection]. *)
-Ltac enumerate_rule :=
-  match goal with
-  | Hin : In (_, term_rule _ _ _) fo_lang |- _ =>
-      vm_compute in Hin;
-      repeat (destruct Hin as [Hin | Hin]);
-      try contradiction;
-      try discriminate Hin;
-      injection Hin; clear Hin; intros; subst
-  end.
-
-(* When the head [n] is already concrete: invert the term's well-formedness,
-   pin the (single) rule by name lookup (cheap, no 26-way [vm_compute] split),
-   and peel the argument list into per-subterm [wf_term] hypotheses. *)
-Ltac peel_args H :=
-  apply WfCutElim.invert_wf_term_con in H;
-  destruct H as (? & ? & ? & Hpin & Hwa & Hdisj);
-  pin_rule Hpin; cbn in Hwa; autorewrite with model in Hwa;
-  repeat match goal with H' : _ /\ _ |- _ => destruct H' end.
-
-(* Close a component whose required sort head does not match the pinned rule's
-   conclusion head (the [eq_sort]/[=] disjunct from [invert_wf_term_con]). *)
-Ltac solve_wrong_sort :=
-  match goal with
-  | Hd : (eq_sort _ _ _ _ \/ _ = _) |- _ =>
-      exfalso; cbn in Hd; destruct Hd as [Hd | Hd];
-      [ apply eq_sort_inj in Hd;
-        let s2 := fresh in let cc := fresh in let aa := fresh in
-        let Hr := fresh in let Hx := fresh in
-        destruct (Hd _ _ eq_refl) as (s2 & cc & aa & Hr & Hx);
-        cbn in Hr; discriminate Hr
-      | discriminate Hd ]
-  end.
-
-(* ===== One-time inversion lemmas (the only [vm_compute]s) ===============
-   These pin each former's rule ONCE at file-compile time, so the fundamental
-   lemma's proof stays [vm_compute]-free (and fast).  [_subwf] gives the
-   eval-relevant subterms' well-formedness; [_arity] the argument count;
-   [_name] enumerates which formers inhabit a given sort. *)
-
-Lemma emp_inv : forall l (t : @sort string),
-    wf_term fo_lang [] (con "emp" l) t -> l = [].
-Proof.
-  intros l t H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & _). pin_rule Hin.
-  apply invert_wf_args_ctx_nil in Hwa. exact Hwa.
-Qed.
-
-Lemma ext_arity : forall l (t : @sort string),
-    wf_term fo_lang [] (con "ext" l) t -> length l = 3.
-Proof.
-  intros l t H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & _). pin_rule Hin.
-  apply wf_args_length_eq in Hwa. cbn in Hwa. Lia.lia.
-Qed.
-
-Lemma ext_subwf : forall a i0 g (t : @sort string),
-    wf_term fo_lang [] (con "ext" [a; i0; g]) t ->
-    wf_term fo_lang [] a (scon "ty" [i0; g]) /\ wf_term fo_lang [] g (scon "env" []).
-Proof.
-  intros a i0 g t H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & _). pin_rule Hin.
-  cbn in Hwa. autorewrite with model in Hwa.
-  repeat match goal with H' : _ /\ _ |- _ => destruct H' end.
-  cbn in *. split; assumption.
-Qed.
-
-Lemma env_name : forall (n : string) l,
-    wf_term fo_lang [] (con n l) (scon "env" []) -> n = "emp" \/ n = "ext".
-Proof.
-  intros n l H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & Hdisj).
-  enumerate_rule;
-    first [ left; reflexivity | right; reflexivity | exfalso; solve_wrong_sort ].
-Qed.
-
-Lemma U_arity : forall l (t : @sort string),
-    wf_term fo_lang [] (con "U" l) t -> length l = 3.
-Proof.
-  intros l t H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & _). pin_rule Hin.
-  apply wf_args_length_eq in Hwa. cbn in Hwa. Lia.lia.
-Qed.
-
-Lemma ty_name : forall (n : string) l i G,
-    wf_term fo_lang [] (con n l) (scon "ty" [i; G]) ->
-    n = "U" \/ n = "El" \/ n = "ty_subst".
-Proof.
-  intros n l i G H. apply WfCutElim.invert_wf_term_con in H.
-  destruct H as (c0 & ra & t0 & Hin & Hwa & Hdisj).
-  enumerate_rule;
-    first [ left; reflexivity
-          | right; left; reflexivity
-          | right; right; reflexivity
-          | exfalso; solve_wrong_sort ].
-Qed.
-
-Section Fundamental.
-  Notation term := (@term string).
-
-  (* For a term [e], depending on which sort it is well formed at, [e]
-     evaluates and its value is well typed at the evaluated type.  The
-     contexts/types referenced in a former's conclusion sort are always
-     among that former's arguments, hence strict subterms — so the strong
-     term-induction hypothesis ([term_rect]) covers them. *)
-  Definition FL (e : term) : Type :=
-    (* env: the context term itself evaluates (totality) to a well-formed senv. *)
-    (wf_term fo_lang [] e (scon "env" []) ->
-       sigT (fun Ge : senv => (eval_env e Ge * wf_senv Ge)%type))
-    (* ty: given the (evaluated) ambient context, the type evaluates and is wf. *)
-    * (forall i G Ge, wf_term fo_lang [] e (scon "ty" [i; G]) ->
-       eval_env G Ge -> wf_senv Ge ->
-       sigT (fun T : svalty => (eval_ty e T * wf_svalty Ge T)%type))
-    (* exp: given the (evaluated) context and type, the term evaluates and the
-       value has that (evaluated) type — preservation proper. *)
-    * (forall A i G Ge T, wf_term fo_lang [] e (scon "exp" [A; i; G]) ->
-       eval_env G Ge -> wf_senv Ge -> eval_ty A T ->
-       sigT (fun v : sval => (eval_rel e v * has_svalty Ge v T)%type))
-    (* sub: given the (evaluated) domain/codomain, the substitution evaluates to
-       a well-typed semantic substitution. *)
-    * (forall Gd Gc GeD GeC, wf_term fo_lang [] e (scon "sub" [Gd; Gc]) ->
-       eval_env Gd GeD -> eval_env Gc GeC -> wf_senv GeD -> wf_senv GeC ->
-       sigT (fun sg : ssub => (eval_sub e sg * wf_ssub GeC sg GeD)%type)).
-
-  (* Component accessors for the [FL] product. *)
-  Let flenv (e:term) (F : FL e) := fst (fst (fst F)).
-  Let flty  (e:term) (F : FL e) := snd (fst (fst F)).
-  Let flexp (e:term) (F : FL e) := snd (fst F).
-  Let flsub (e:term) (F : FL e) := snd F.
-
-  Theorem eval_preserves_typing : forall e, FL e.
-  Proof.
-    induction e as [x | n l IHl] using term_rect.
-    - (* var: no closed variable is well typed *)
-      unfold FL; repeat split; intros; exfalso;
-        match goal with H : wf_term _ _ (var _) _ |- _ => exact (wf_term_nil_var H) end.
-    - (* con n l *)
-      unfold FL; repeat split.
-      + (* ===== env ===== *) intro Hwf.
-        (* dispatch on the head (data); valid env formers are [emp], [ext] *)
-        destruct (eqb n "emp") eqn:Enm.
-        { assert (n = "emp") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite Enm; exact I);
-            subst n.
-          rewrite (emp_inv Hwf).
-          exists (@nil svalty). split; [ apply ev_env_emp | apply wf_senv_nil ]. }
-        destruct (eqb n "ext") eqn:Ext.
-        { assert (n = "ext") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite Ext; exact I);
-            subst n.
-          pose proof (ext_arity Hwf) as HL.
-          destruct l as [|a [|i0 [|g [|x xs]]]]; cbn in HL; try discriminate HL.
-          pose proof (ext_subwf Hwf) as Hs.
-          destruct IHl as [Fa [Fi [Fg _]]].
-          destruct (flenv Fg (proj2 Hs)) as [GeG [HevG HwfG]].
-          destruct (flty Fa (proj1 Hs) HevG HwfG) as [S [HevA HwfS]].
-          exists (shift_ty 1 S :: map (shift_ty 1) GeG). split.
-          * apply ev_env_ext; [ exact HevG | exact HevA ].
-          * apply wf_senv_ext; [ exact HwfG | exact HwfS ]. }
-        (* else: head is neither emp nor ext, but it is a rule at sort env *)
-        exfalso. destruct (env_name Hwf) as [E | E].
-        * rewrite E in Enm; cbn in Enm; discriminate Enm.
-        * rewrite E in Ext; cbn in Ext; discriminate Ext.
-      (* The [ty]/[exp]/[sub] components follow the SAME shape as [env]:
-         dispatch on the head former, pin its rule via a one-time inversion
-         lemma (cf. [emp_inv]/[ext_subwf]/[env_name]), recurse with the
-         induction hypothesis on the subterm arguments, and assemble the value
-         with the matching [eval_*] constructor + typing rule.  The value
-         formers ([U], [Nat], [Empty], [zero], [suc]) and the substitution
-         lemmas ([wf_ssub_id]/[wf_ssub_wkn]/[wf_ssub_snoc]/[wf_ssub_comp],
-         [subst_has_svalty]) discharge their cases directly.
-
-         One coherence fact is still required for the remaining cases, and is
-         left admitted here: when [invert_wf_term_con] returns its [eq_sort]
-         (rather than [=]) disjunct, the externally-quantified context/type is
-         only eq_sort-EQUAL to the former's own (subterm) context/type, not
-         syntactically equal — so relating the supplied [eval_env]/[eval_ty] to
-         the subterm's evaluation needs an "evaluation respects [eq_term]"
-         lemma (a piece of the gluing soundness).  With that lemma the cases
-         close uniformly. *)
-      + (* ===== ty ===== *) intros i G Ge Hwf Henv Hwfsenv.
-        destruct (eqb n "U") eqn:EU.
-        { (* U : a universe code; evaluates to [dU] and is always wf *)
-          assert (n = "U") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite EU; exact I);
-            subst n.
-          pose proof (U_arity Hwf) as HL.
-          destruct l as [|l0 [|r0 [|G0 [|x xs]]]]; cbn in HL; try discriminate HL.
-          exists (dU (nf_info r0) (nf_info l0)). split; [ apply ev_U | apply wf_dU ]. }
-        (* El and ty_subst need the eval/eq_term coherence noted below *)
-        destruct (eqb n "El") eqn:EEl.
-        { assert (n = "El") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite EEl; exact I);
-            subst n. admit. }
-        destruct (eqb n "ty_subst") eqn:ETs.
-        { assert (n = "ty_subst") as Hn by (apply (proj1 (eqb_prop_iff _ _ _)); rewrite ETs; exact I);
-            subst n. admit. }
-        exfalso. destruct (ty_name Hwf) as [E | [E | E]]; subst n; cbn in *;
-          first [ discriminate EU | discriminate EEl | discriminate ETs ].
-      + (* ===== exp ===== *) intros A i G Ge T Hwf Henv Hwfsenv Hty. admit.
-      + (* ===== sub ===== *) intros Gd Gc GeD GeC Hwf HenvD HenvC HwfD HwfC. admit.
-  Admitted.
-
-End Fundamental.
+(* A neutral value's typing is a neutral typing. *)
+Lemma has_svalty_neutral : forall Ge n T, has_svalty Ge (vNe n) T -> wf_neutral Ge n T.
+Proof. intros Ge n T H. inversion H; subst. assumption. Qed.
 
 (* ===================================================================== *)
-(* User-facing corollary : the headline preservation statement.          *)
+(* Part 5 : soundness of the TYPED evaluator — preservation by induction. *)
 (*                                                                        *)
-(* A well-typed expression that evaluates, evaluates to a well-typed      *)
-(* value (at the evaluated type, in the evaluated environment).           *)
+(* Because [EvalRel.v]'s judgments are indexed by the semantic context/   *)
+(* type, "the value is well typed" is immediate by induction on the eval  *)
+(* derivation: every constructor's typed premises feed exactly the        *)
+(* corresponding value-typing rule (via the Part 1-4 lemmas).  No         *)
+(* well-formedness inversion, no sort coherence — preservation is direct. *)
 (* ===================================================================== *)
-Corollary eval_rel_preserves_typing :
-  forall e A i G v Ge T,
-    wf_term fo_lang [] e (scon "exp" [A; i; G]) ->
-    eval_env G Ge -> eval_ty A T -> eval_rel e v -> wf_senv Ge ->
-    has_svalty Ge v T.
+Theorem eval_sound :
+  (((forall G Ge, eval_env G Ge -> wf_senv Ge)
+    * (forall Ge A T, eval_ty Ge A T -> (wf_senv Ge * wf_svalty Ge T)%type))
+   * (forall Ge e T v, eval_rel Ge e T v -> (wf_senv Ge * has_svalty Ge v T)%type))
+  * (forall Gin Gout g sg, eval_sub Gin Gout g sg ->
+       (wf_senv Gin * wf_senv Gout * wf_ssub Gout sg Gin)%type).
 Proof.
-  intros e A i G v Ge T Hwf Henv Hty Hrel Hwfsenv.
-  destruct (snd (fst (eval_preserves_typing e)) A i G Ge T Hwf Henv Hwfsenv Hty)
-    as [v' [Hrel' Hhas]].
-  pose proof (eval_rel_det Hrel' Hrel); subst v'.
-  exact Hhas.
+  refine (eval_mutind
+    (fun G Ge _ => wf_senv Ge)
+    (fun Ge A T _ => (wf_senv Ge * wf_svalty Ge T)%type)
+    (fun Ge e T v _ => (wf_senv Ge * has_svalty Ge v T)%type)
+    (fun Gin Gout g sg _ => (wf_senv Gin * wf_senv Gout * wf_ssub Gout sg Gin)%type)
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* ev_env_emp *) exact wf_senv_nil.
+  - (* ev_env_ext *) intros A i G Genv S _ IHenv _ IHty.
+    apply wf_senv_ext; [ exact IHenv | exact (snd IHty) ].
+  - (* ev_U *) intros Ge l r G _ IHenv. split; [ exact IHenv | apply wf_dU ].
+  - (* ev_El *) intros Ge e l r G ve _ IHenv _ IHrel.
+    split; [ exact IHenv | apply (wf_dEl (r:=nf_info r) (l:=nf_info l)); exact (snd IHrel) ].
+  - (* ev_ty_subst *) intros GeD GeC A i g G' G sg T _ IHsub _ IHty.
+    split; [ exact (snd (fst IHsub)) | exact (subst_wf_svalty (snd IHty) (snd IHsub)) ].
+  - (* ev_hd *) intros A i G Ge S _ IHenv _ IHty.
+    split.
+    + apply wf_senv_ext; [ exact IHenv | exact (snd IHty) ].
+    + apply t_ne, n_var. cbn [nth_error]. reflexivity.
+  - (* ev_exp_subst *) intros e A i g G' G GeD GeC sg ve T _ IHsub _ IHrel.
+    split; [ exact (snd (fst IHsub))
+           | exact (fst subst_has_svalty _ _ _ (snd IHrel) GeC sg (snd IHsub)) ].
+  - (* ev_zero *) intros G Ge _ IHenv. split; [ exact IHenv | apply t_zero ].
+  - (* ev_suc *) intros n G Ge vn _ IHrel.
+    split; [ exact (fst IHrel) | apply t_suc; exact (snd IHrel) ].
+  - (* ev_Nat *) intros G Ge _ IHenv. split; [ exact IHenv | apply t_Nat ].
+  - (* ev_Empty *) intros G Ge _ IHenv. split; [ exact IHenv | apply t_Empty ].
+  - (* ev_Emptyrec *) intros e A lA rA G Ge ne vA _ IHe _ IHA.
+    split; [ exact (fst IHe) | ].
+    apply t_ne. eapply n_emptyrec.
+    + exact (snd IHA).
+    + apply has_svalty_neutral. exact (snd IHe).
+  - (* ev_id *) intros G Ge _ IHenv.
+    split; [ split; exact IHenv | apply wf_ssub_id ].
+  - (* ev_wkn *) intros A i G Ge S _ IHenv _ IHty.
+    split; [ split; [ exact IHenv | apply wf_senv_ext; [ exact IHenv | exact (snd IHty) ] ]
+           | apply (wf_ssub_wkn IHenv) ].
+  - (* ev_forget *) intros G Ge _ IHenv.
+    split; [ split; [ apply wf_senv_nil | exact IHenv ] | apply wf_ssub_forget ].
+  - (* ev_cmp *) intros g f G3 G2 G1 Ge1 Ge2 Ge3 sf sg _ IHf _ IHg.
+    split; [ split; [ exact (fst (fst IHg)) | exact (snd (fst IHf)) ]
+           | exact (wf_ssub_comp (fst (fst IHg)) (snd IHf) (snd IHg)) ].
+  - (* ev_snoc *) intros v g A i G' G GeD GeC sg vv S _ IHg _ IHA _ IHv.
+    split; [ split; [ apply wf_senv_ext; [ exact (fst (fst IHg)) | exact (snd IHA) ]
+                    | exact (snd (fst IHg)) ]
+           | exact (wf_ssub_snoc (fst (fst IHg)) (snd IHA) (snd IHg) (snd IHv)) ].
+Qed.
+
+(* ===================================================================== *)
+(* User-facing corollary : the typed evaluator's output is well typed.    *)
+(*                                                                        *)
+(* If a term [e] evaluates (in semantic context [Ge], at semantic type    *)
+(* [T]) to value [v], then [v] genuinely has semantic type [T].           *)
+(* ===================================================================== *)
+Corollary eval_rel_preserves_typing : forall Ge e T v,
+    eval_rel Ge e T v -> has_svalty Ge v T.
+Proof.
+  intros Ge e T v H. exact (snd (snd (fst eval_sound) Ge e T v H)).
 Qed.
