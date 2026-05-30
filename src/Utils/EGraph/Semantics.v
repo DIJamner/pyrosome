@@ -8398,6 +8398,333 @@ Section WithMap.
       split; [exact Hroots_args' | exact Hroot_ret'].
   Qed.
 
+  (* [repair_each_canonicalizes_verbatim]: like [repair_each_canonicalizes]
+     but without the [root-ret] hypothesis.  The atom [a] is literally in
+     the db (atom_in_db a e.db), its args are roots, but [a.ret] may be a
+     non-root.  We conclude:
+     - exists a' in the result db with a'.fn = a.fn, a'.args = a.args,
+       a'.ret is the canonical rep of a.ret (a root, PER-related to a.ret),
+       and a'.args / a'.ret are roots in the result.
+     - roots_mono: every root of e is still a root in the result. *)
+  Lemma repair_each_canonicalizes_verbatim a
+    : vc (@! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                          match mv with
+                          | Some v => Defs.union v a.(atom_ret)
+                          | None => Mret a.(atom_ret)
+                          end) in
+             let _ <- db_remove a in
+             let a' <- canonicalize a in
+             (update_entry a'))
+        (fun e res =>
+           egraph_ok e ->
+           atom_in_db a e.(db) ->
+           all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
+           (exists a',
+             atom_in_db a' (snd res).(db)
+             /\ atom_fn a' = atom_fn a
+             /\ atom_args a' = atom_args a
+             /\ uf_rel_PER (snd res).(equiv) a'.(atom_ret) a.(atom_ret)
+             /\ all (fun x => map.get (snd res).(equiv).(parent) x = Some x) a'.(atom_args)
+             /\ map.get (snd res).(equiv).(parent) a'.(atom_ret) = Some a'.(atom_ret))
+           /\ (forall z, map.get e.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)).
+  Proof.
+    unfold vc.
+    intro e_init.
+    intros Hok Hain_db Hroots_args.
+    pose proof (egraph_equiv_ok _ Hok) as [roots_init Huf_init].
+    pose proof (db_idxs_in_equiv _ Hok a Hain_db) as [Hkey_args Hkey_ret].
+    (* Open atom_in_db to get the table/entry witnesses *)
+    unfold atom_in_db, Is_Some_satisfying in Hain_db.
+    destruct (map.get e_init.(db) a.(atom_fn)) as [tbl|] eqn:Htbl; [| destruct Hain_db].
+    cbn in Hain_db.
+    destruct (map.get tbl a.(atom_args)) as [entry|] eqn:Hentry; [| destruct Hain_db].
+    cbn in Hain_db. rename Hain_db into Hentry_val.
+    (* Reduce the monadic computation *)
+    cbn [Mbind StateMonad.state_monad Mret fst snd].
+    unfold db_lookup. cbn [Mbind StateMonad.state_monad fst snd].
+    rewrite Htbl. cbn. rewrite Hentry. cbn. rewrite Hentry_val.
+    (* Prefix: Defs.union a.ret a.ret — verbatim hit gave Some a.ret *)
+    unfold Defs.union. cbn [Mbind StateMonad.state_monad fst snd].
+    destruct (find (atom_ret a) e_init) as [r1 e1] eqn:Hfind1.
+    cbn [fst snd].
+    destruct (find (atom_ret a) e1) as [r2 e2] eqn:Hfind2.
+    cbn [fst snd].
+    (* Get facts from find_sound' for each find *)
+    pose proof (find_sound' (atom_ret a) roots_init) as Hfs1.
+    unfold vc in Hfs1. specialize (Hfs1 e_init).
+    rewrite Hfind1 in Hfs1. cbn [fst snd] in Hfs1.
+    destruct (Hfs1 Huf_init Hkey_ret) as
+        (Hdb_e1 & Huf_e1 & HPER_e1 & _ & _ & Hkiff_e1 & HIn_r1 & Huf_r1_ret).
+    assert (Hkey_ret_e1 : Sep.has_key (atom_ret a) e1.(equiv).(parent)).
+    { apply Hkiff_e1. exact Hkey_ret. }
+    pose proof (find_sound' (atom_ret a) roots_init) as Hfs2.
+    unfold vc in Hfs2. specialize (Hfs2 e1).
+    rewrite Hfind2 in Hfs2. cbn [fst snd] in Hfs2.
+    destruct (Hfs2 Huf_e1 Hkey_ret_e1) as
+        (Hdb_e2 & Huf_e2 & HPER_e2 & _ & _ & Hkiff_e2 & HIn_r2 & Huf_r2_ret).
+    (* r1 = r2: two consecutive finds of the same element give the same rep *)
+    assert (Hr12 : r1 = r2).
+    { assert (lt_trans_nat : forall x y z : nat, x < y -> y < z -> x < z)
+        by (intros; Lia.lia).
+      unfold find in Hfind1, Hfind2. cbn in Hfind1, Hfind2.
+      destruct (UnionFind.find (equiv e_init) (atom_ret a)) as [uf1 r1_uf] eqn:HUF1.
+      injection Hfind1 as Heq_r1 Heq_e1.
+      destruct (UnionFind.find (equiv e1) (atom_ret a)) as [uf2 r2_uf] eqn:HUF2.
+      injection Hfind2 as Heq_r2 Heq_e2.
+      assert (He1_equiv : equiv e1 = uf1)
+        by (rewrite <- Heq_e1; reflexivity).
+      pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                    _ _ _ _ _ Huf_init Hkey_ret HUF1) as Hspec1.
+      destruct Hspec1 as (Huf1_ok & HIn1 & Hpr1 & _ & Hlim1_iff & Hkiff1).
+      assert (Hkey_ret_uf1 : Sep.has_key (atom_ret a) uf1.(parent)).
+      { apply Hkiff1. exact Hkey_ret. }
+      rewrite He1_equiv in HUF2.
+      pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                    _ _ _ _ _ Huf1_ok Hkey_ret_uf1 HUF2) as Hspec2.
+      destruct Hspec2 as (Huf2_ok & HIn2 & Hpr2 & _ & Hlim2_iff & _).
+      assert (Hlim1 : limit (parent_rel idx (idx_map idx) (parent uf1)) (atom_ret a) r1_uf).
+      { rewrite union_find_limit by eauto. split; [exact HIn1 | exact Hpr1]. }
+      assert (Hlim2_uf2 : limit (parent_rel idx (idx_map idx) (parent uf2)) (atom_ret a) r2_uf).
+      { rewrite union_find_limit by eauto. split; [exact HIn2 | exact Hpr2]. }
+      assert (Hlim2_uf1 : limit (parent_rel idx (idx_map idx) (parent uf1)) (atom_ret a) r2_uf).
+      { apply Hlim2_iff. exact Hlim2_uf2. }
+      assert (Hr_eq : r1_uf = r2_uf).
+      { rewrite union_find_limit in Hlim1, Hlim2_uf1 by eauto.
+        destruct Hlim1 as [_ Hpr1_chain].
+        destruct Hlim2_uf1 as [_ Hpr2_chain].
+        eapply forest_reachable_in with (m := parent uf1).
+        { exact Eqb_idx_ok. }
+        { exact (idx_map_ok idx). }
+        { exact (idx_map nat). }
+        Unshelve. all: eauto using uf_forest.
+        unfold reachable.
+        eapply PER_equiv_subrel.
+        eapply PER_clo_trans.
+        - apply PER_clo_sym. exact (trans_PER_subrel _ _ Hpr1_chain).
+        - exact (trans_PER_subrel _ _ Hpr2_chain). }
+      rewrite <- Heq_r1. rewrite <- Heq_r2. exact Hr_eq. }
+    subst r2.
+    eqb_case r1 r1. 2: { exfalso; auto. }
+    cbn [fst snd].
+    (* Post-prefix state: e2. The union was a no-op (eqb true). *)
+    assert (Hdb_02 : db e2 = db e_init) by congruence.
+    assert (Hkey_args_e2 : all (fun i => Sep.has_key i e2.(equiv).(parent)) (atom_args a)).
+    { eapply all_wkn; [| exact Hkey_args].
+      intros z _ Hz. apply Hkiff_e2. apply Hkiff_e1. exact Hz. }
+    assert (Hkey_ret_e2 : Sep.has_key (atom_ret a) e2.(equiv).(parent)).
+    { apply Hkiff_e2. exact Hkey_ret_e1. }
+    (* Args are roots in e2 (find preserves root status) *)
+    assert (Hroots_args_e2 : all (fun x => map.get e2.(equiv).(parent) x = Some x) (atom_args a)).
+    { eapply all_wkn; [| exact Hroots_args].
+      intros z _ Hz.
+      assert (He2_eq : e2 = snd (find (atom_ret a) e1)) by (rewrite Hfind2; reflexivity).
+      rewrite He2_eq.
+      apply find_roots_mono; [exact (ex_intro _ _ Huf_e1)|].
+      assert (He1_eq : e1 = snd (find (atom_ret a) e_init)) by (rewrite Hfind1; reflexivity).
+      rewrite He1_eq.
+      apply find_roots_mono; [exact (ex_intro _ _ Huf_init) | exact Hz]. }
+    (* Name the db-remove state *)
+    set (e_dbr := {| db := map_update (db e2) (atom_fn a) (Basics.flip map.remove (atom_args a));
+                     equiv := equiv e2;
+                     parents := parents e2;
+                     epoch := epoch e2;
+                     worklist := worklist e2;
+                     analyses := analyses e2;
+                     log := log idx symbol symbol_map idx_map idx_trie analysis_result e2 |}).
+    assert (Hroots_args_dbr : all (fun x => map.get e_dbr.(equiv).(parent) x = Some x) (atom_args a))
+      by exact Hroots_args_e2.
+    assert (Hkey_args_dbr : all (fun i => Sep.has_key i e_dbr.(equiv).(parent)) (atom_args a))
+      by exact Hkey_args_e2.
+    assert (Hkey_ret_dbr : Sep.has_key (atom_ret a) e_dbr.(equiv).(parent))
+      by exact Hkey_ret_e2.
+    assert (Huf_dbr : union_find_ok lt e_dbr.(equiv) roots_init) by exact Huf_e2.
+    (* Canonicalize: args are roots => list_Mmap find args = identity *)
+    unfold canonicalize.
+    destruct a as [a_fn a_args a_ret]. cbn [atom_fn atom_args atom_ret] in *.
+    cbn [Mbind StateMonad.state_monad fst snd].
+    rewrite (list_Mmap_find_roots_identity a_args e_dbr Hroots_args_dbr).
+    cbn [fst snd].
+    (* find a_ret in e_dbr gives rep a_ret' (a root, PER-related to a_ret) *)
+    destruct (find a_ret e_dbr) as [a_ret' e_canon] eqn:Hfind_ret.
+    cbn [fst snd Mret StateMonad.state_monad].
+    cbn [atom_fn atom_args atom_ret].
+    (* a_ret' is a root in e_canon *)
+    assert (Hroot_ret' : map.get e_canon.(equiv).(parent) a_ret' = Some a_ret').
+    { assert (He_canon_eq : e_canon = snd (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
+      assert (Ha_ret'_eq : a_ret' = fst (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
+      rewrite He_canon_eq, Ha_ret'_eq.
+      apply find_returns_root; [exact (ex_intro _ _ Huf_dbr) | exact Hkey_ret_dbr]. }
+    (* a_ret' is PER-related to a_ret in e_canon *)
+    assert (Hper_ret' : uf_rel_PER e_canon.(equiv) a_ret' a_ret).
+    { pose proof (find_sound' a_ret roots_init) as Hfr2.
+      unfold vc in Hfr2. specialize (Hfr2 e_dbr).
+      rewrite Hfind_ret in Hfr2. cbn [fst snd] in Hfr2.
+      destruct (Hfr2 Huf_dbr Hkey_ret_dbr) as (_ & _ & _ & _ & _ & _ & _ & Huf_ret'_ret).
+      apply PER_clo_sym. exact Huf_ret'_ret. }
+    (* args roots in e_canon (find preserves roots) *)
+    assert (Hroots_args_canon : all (fun x => map.get e_canon.(equiv).(parent) x = Some x) a_args).
+    { eapply all_wkn; [| exact Hroots_args_dbr].
+      intros z _ Hz.
+      assert (He_canon_eq : e_canon = snd (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
+      rewrite He_canon_eq.
+      apply find_roots_mono; [exact (ex_intro _ _ Huf_dbr) | exact Hz]. }
+    (* Establish that the inner db_lookup at (a_fn, a_args) in e_canon is None.
+       Reason: find is pure (db e_canon = db e_dbr), and e_dbr has a_args removed
+       from the table at a_fn. *)
+    assert (Hnone_canon2 : forall tbl2, map.get (db e_canon) a_fn = Some tbl2 ->
+                                        map.get tbl2 a_args = None).
+    { intros tbl2 Htbl2.
+      pose proof (find_sound' a_ret roots_init) as Hfr2.
+      unfold vc in Hfr2. specialize (Hfr2 e_dbr).
+      rewrite Hfind_ret in Hfr2. cbn [fst snd] in Hfr2.
+      destruct (Hfr2 Huf_dbr Hkey_ret_dbr) as (Hdb_eq & _).
+      rewrite <- Hdb_eq in Htbl2.
+      unfold e_dbr in Htbl2. cbn [db] in Htbl2.
+      unfold map_update in Htbl2. rewrite Hdb_02 in Htbl2. rewrite Htbl in Htbl2.
+      rewrite map.get_put_same in Htbl2. inversion Htbl2. subst tbl2.
+      unfold Basics.flip. apply map.get_remove_same. }
+    (* Destruct the db_lookup in update_entry *)
+    destruct (map.get (db e_canon) a_fn) as [tbl2|] eqn:Htbl2_eq.
+    - (* Some tbl2: inner lookup must be None (a_args was removed) *)
+      specialize (Hnone_canon2 tbl2 (eq_refl _)).
+      rewrite Hnone_canon2.
+      cbn [Mbind Mret Mseq StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields a_args e_canon) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result a_args e_canon) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & _).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result a_ret'
+                  (analyze idx symbol analysis_result
+                     (Build_atom a_fn a_args a_ret') arg_as) e_ga) as [_u e_ua] eqn:Hue.
+      assert (Heq_ua : e_ua.(equiv) = e_ga.(equiv))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result
+                  (Build_atom a_fn a_args a_ret')
+                  (analyze idx symbol analysis_result
+                     (Build_atom a_fn a_args a_ret') arg_as) e_ua) as [_v e_post] eqn:Hde.
+      cbn [fst snd].
+      assert (Heq_post_c : e_post.(equiv) = e_canon.(equiv)).
+      { assert (Heq_post_ua : e_post.(equiv) = e_ua.(equiv))
+          by (unfold db_set' in Hde; injection Hde as _ Hde'; subst e_post; reflexivity).
+        congruence. }
+      assert (Hain_post : atom_in_db (Build_atom a_fn a_args a_ret') e_post.(db)).
+      { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_post.
+        unfold atom_in_db, Is_Some_satisfying, map_update. cbn.
+        destruct (map.get (db e_ua) a_fn) as [tbl3|] eqn:Htbl3;
+          rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+      assert (He_ua_eq : {| db := db e_ga;
+                            equiv := equiv e_ga;
+                            parents := parents e_ga;
+                            epoch := epoch e_ga;
+                            worklist := worklist e_ga;
+                            analyses := map.put (analyses e_ga) a_ret'
+                              match map.get (analyses e_ga) a_ret' with
+                              | Some oa =>
+                                  analysis_meet idx symbol analysis_result
+                                    (analyze idx symbol analysis_result
+                                       (Build_atom a_fn a_args a_ret') arg_as) oa
+                              | None =>
+                                  analyze idx symbol analysis_result
+                                    (Build_atom a_fn a_args a_ret') arg_as
+                              end;
+                            log := log idx symbol symbol_map idx_map idx_trie analysis_result e_ga |}
+                        = e_ua).
+      { unfold update_analyses in Hue. injection Hue as _ Hue'. subst e_ua. reflexivity. }
+      rewrite He_ua_eq. rewrite Hde. cbn [fst snd].
+      split.
+      * exists (Build_atom a_fn a_args a_ret').
+        cbn [atom_fn atom_args atom_ret].
+        split; [exact Hain_post|].
+        split; [reflexivity|].
+        split; [reflexivity|].
+        split; [rewrite Heq_post_c; exact Hper_ret' |].
+        split; [rewrite Heq_post_c; exact Hroots_args_canon |].
+        rewrite Heq_post_c; exact Hroot_ret'.
+      * (* roots_mono for Some branch *)
+        intros z Hz.
+        rewrite Heq_post_c.
+        assert (He_canon_eq : e_canon = snd (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
+        rewrite He_canon_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_dbr)|].
+        assert (He_dbr_equiv : equiv e_dbr = equiv e2) by reflexivity.
+        assert (He2_eq : snd (find a_ret e1) = e2) by (rewrite Hfind2; reflexivity).
+        rewrite He_dbr_equiv, <- He2_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_e1)|].
+        assert (He1_eq : snd (find a_ret e_init) = e1) by (rewrite Hfind1; reflexivity).
+        rewrite <- He1_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_init) | exact Hz].
+    - (* None branch: db_lookup = None, directly take db_set *)
+      cbn [Mbind Mret Mseq StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields a_args e_canon) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result a_args e_canon) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & _).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result a_ret'
+                  (analyze idx symbol analysis_result
+                     (Build_atom a_fn a_args a_ret') arg_as) e_ga) as [_u e_ua] eqn:Hue.
+      assert (Heq_ua : e_ua.(equiv) = e_ga.(equiv))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result
+                  (Build_atom a_fn a_args a_ret')
+                  (analyze idx symbol analysis_result
+                     (Build_atom a_fn a_args a_ret') arg_as) e_ua) as [_v e_post] eqn:Hde.
+      cbn [fst snd].
+      assert (Heq_post_c : e_post.(equiv) = e_canon.(equiv)).
+      { assert (Heq_post_ua : e_post.(equiv) = e_ua.(equiv))
+          by (unfold db_set' in Hde; injection Hde as _ Hde'; subst e_post; reflexivity).
+        congruence. }
+      assert (Hain_post : atom_in_db (Build_atom a_fn a_args a_ret') e_post.(db)).
+      { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_post.
+        unfold atom_in_db, Is_Some_satisfying, map_update. cbn.
+        destruct (map.get (db e_ua) a_fn) as [tbl3|] eqn:Htbl3;
+          rewrite map.get_put_same; cbn; rewrite map.get_put_same; reflexivity. }
+      assert (He_ua_eq2 : {| db := db e_ga;
+                             equiv := equiv e_ga;
+                             parents := parents e_ga;
+                             epoch := epoch e_ga;
+                             worklist := worklist e_ga;
+                             analyses := map.put (analyses e_ga) a_ret'
+                               match map.get (analyses e_ga) a_ret' with
+                               | Some oa =>
+                                   analysis_meet idx symbol analysis_result
+                                     (analyze idx symbol analysis_result
+                                        (Build_atom a_fn a_args a_ret') arg_as) oa
+                               | None =>
+                                   analyze idx symbol analysis_result
+                                     (Build_atom a_fn a_args a_ret') arg_as
+                               end;
+                             log := log idx symbol symbol_map idx_map idx_trie analysis_result e_ga |}
+                         = e_ua).
+      { unfold update_analyses in Hue. injection Hue as _ Hue'. subst e_ua. reflexivity. }
+      rewrite He_ua_eq2. rewrite Hde. cbn [fst snd].
+      split.
+      { exists (Build_atom a_fn a_args a_ret').
+        cbn [atom_fn atom_args atom_ret].
+        split; [exact Hain_post|].
+        split; [reflexivity|].
+        split; [reflexivity|].
+        split; [rewrite Heq_post_c; exact Hper_ret' |].
+        split; [rewrite Heq_post_c; exact Hroots_args_canon |].
+        rewrite Heq_post_c; exact Hroot_ret'. }
+      { intros z Hz.
+        rewrite Heq_post_c.
+        assert (He_canon_eq : e_canon = snd (find a_ret e_dbr)) by (rewrite Hfind_ret; reflexivity).
+        rewrite He_canon_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_dbr)|].
+        assert (He2_eq : snd (find a_ret e1) = e2) by (rewrite Hfind2; reflexivity).
+        assert (He_dbr_equiv2 : equiv e_dbr = equiv e2) by reflexivity.
+        rewrite He_dbr_equiv2, <- He2_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_e1)|].
+        assert (He1_eq : snd (find a_ret e_init) = e1) by (rewrite Hfind1; reflexivity).
+        rewrite <- He1_eq.
+        apply find_roots_mono; [exact (ex_intro _ _ Huf_init) | exact Hz]. }
+  Qed.
+
   (* [db_lookup_entry] is read-only; if it returns [Some entry], the
      entry's value is recorded as a [Build_atom f args ·] in the db. *)
   Lemma db_lookup_entry_pure f args
