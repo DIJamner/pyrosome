@@ -761,28 +761,89 @@ Ltac by_normalize :=
   cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq] in *;
   rewrite ?apply_id_val, ?apply_id_ty, ?apply_id_map, ?snoc_wkn_hd_list in *.
 
+(* Build a single eval witness, normalizing the substitution redexes that the
+   structural laws produce ([apply_val]/[apply_ty] over a value/code, [id]/[wkn]
+   collapses) so the two sides of an equation reach the same normal form. *)
+(* When an inner [exp_subst]/[ty_subst] sits under a constructor that pins its
+   result type RIGID (e.g. [ev_suc]/[ev_El] forcing [dEl vNat]/[dU _]),
+   [ev_exp_subst]/[ev_ty_subst]'s [apply_ty ?sg ?T0] cannot unify (metavar-headed
+   vs the rigid head).  Since the substitution acts trivially on that closed type
+   ([apply_ty sg T = T] by computation), restore the [apply_ty] form so the
+   evaluator constructor applies. *)
+Ltac defer_subst_type :=
+  match goal with
+  | Hs : eval_sub _ ?Gc ?g ?sg |- eval_rel ?Gc (con "exp_subst" [_;_;_;?g;_;_]) ?T _ =>
+      assert_fails (is_evar T);
+      replace T with (apply_ty sg T) by (cbn; reflexivity); eapply ev_exp_subst
+  | Hs : eval_sub _ ?Gc ?g ?sg |- eval_ty ?Gc (con "ty_subst" [_;_;?g;_;_]) ?T =>
+      assert_fails (is_evar T);
+      replace T with (apply_ty sg T) by (cbn; reflexivity); eapply ev_ty_subst
+  end.
+
+Ltac eval1 :=
+  repeat first
+    [ eassumption
+    | match goal with H : @eq (@term string) _ _ |- _ => rewrite H end
+    | progress (cbn [apply_val apply_ty apply_ne shift_val shift_ty shift_ne
+                     nth_default nth_error map ctx_len id_list wkn_list seq];
+                rewrite ?apply_id_val, ?apply_id_ty, ?apply_id_map, ?snoc_wkn_hd_list)
+    | defer_subst_type
+    | econstructor ].
+
 Ltac solve_byT :=
   arg_glue_prep; eval_indices; merge_dets;
   try (match goal with H : eval_rel _ _ (dEl vEmpty) ?v |- _ =>
          destruct (canonical_empty_sig (eval_rel_preserves_typing H)) as [? ?]; subst v end;
        eval_indices; merge_dets);
   first
-    [ solve [ econstructor; cbn; repeat match goal with
+    [ (* info / proof-irrelevant result *)
+      solve [ econstructor; cbn; repeat match goal with
                H : @eq (@term string) _ _ |- _ => rewrite H end;
               first [ reflexivity | congruence ] ]
-    | solve [ econstructor;
+    | (* generic: build the result glue, normalizing apply-redexes *)
+      solve [ econstructor;
               repeat first
                 [ eassumption
                 | match goal with H : @eq (@term string) _ _ |- _ => rewrite H end
                 | progress by_normalize
-                | econstructor ] ] ].
+                | econstructor ] ]
+    | (* [exp]-result law: DEFER the [eval_ty] premise so the LHS [eval_rel] sets
+         the shared type [T := apply_ty s T0] while [T] is a free metavar (else
+         [ev_exp_subst]'s [apply_ty]-headed result can't unify with the [dU]/[dEl]
+         that [ev_U]/[ev_El] would pin first), then reduce.  Build the value-
+         determining sides (env, LHS, RHS) before the deferred type. *)
+      solve [ eapply glue_exp; [ eval1 | idtac | eval1 | eval1 ]; eval1 ] ].
 
-(* [solve_byT] discharges 16/22 equation axioms (the structural/composition
-   laws); the 6 substitution-pushing laws for data constructors
-   ([Empty/Nat/zero/suc/El subst]) and [snoc_wkn_hd] still [admit] (they need the
-   evaluator to compute [apply_val] under [vSuc]/codes and through [snoc]/[wkn]).
-   The [admit] fallback keeps the dispatch robust; hence [Norm_cterm_by] is still
-   [Admitted]. *)
+(* [El subst] : [ty]-result; build [e1] ([ty_subst (El _)], which sets the shared
+   [T] from its [apply_ty]) before [e2] ([El (exp_subst _)]), normalizing. *)
+Ltac solve_by_elsubst :=
+  arg_glue_prep; eval_indices; merge_dets;
+  solve [ eapply glue_ty; [ eval1 | eval1 | eval1 ] ].
+
+(* [suc subst] : [exp]-result with a nested [exp_subst]; same deferred-type build
+   as the other [exp] laws but its RHS recurses through [suc (exp_subst _ n)]. *)
+Ltac solve_by_sucsubst :=
+  arg_glue_prep; eval_indices; merge_dets;
+  solve [ eapply glue_exp; [ eval1 | idtac | eval1 | eval1 ]; eval1 ].
+
+Ltac dispby_with nm tac :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name nm) eqn:E;
+      [ concretize_subst; recover_peel; first [ tac | admit ] | ]
+  end.
+
+(* [solve_byT] discharges most equation axioms (the data-constructor substitution
+   laws, the [El]/[suc] eliminator-subst laws, and many structural laws) by
+   building both sides with the typed evaluator and reducing the substitution
+   redexes to a common value.  The residual — chiefly the [snoc]/[wkn]/[cmp]
+   COMPOSITION laws (e.g. [snoc_wkn_hd], [cmp_snoc], [exp_subst_cmp]) — needs the
+   [apply_compose]/[map_apply_*_list] reasoning of [Typing]/[SortInj] and falls
+   through to [admit]; hence [Norm_cterm_by] is still [Admitted].  (Coq's proof
+   search for the borderline composition laws is not fully reproducible, so the
+   exact admitted set varies between builds; the [admit] fallback keeps the
+   dispatch robustly green regardless.) *)
 Ltac dispbyT nm :=
   let E := fresh "Eqn" in
   match goal with
@@ -810,10 +871,10 @@ Proof.
        eval'd context, at the eval'd type) to the SAME typed value. *)
     pose proof (term_eq_rules_names Hin) as Hmem.
     dispbyT "Empty subst".
-    dispbyT "suc subst".
+    dispby_with "suc subst" solve_by_sucsubst.
     dispbyT "zero subst".
     dispbyT "Nat subst".
-    dispbyT "El subst".
+    dispby_with "El subst" solve_by_elsubst.
     dispbyT "U subst".
     dispbyT "snoc_wkn_hd".
     dispbyT "cmp_snoc".
