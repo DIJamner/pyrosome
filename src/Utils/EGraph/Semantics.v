@@ -6189,6 +6189,35 @@ Section WithMap.
     - exfalso. auto.
   Qed.
 
+  (* Helper: path-compressing [find] preserves root-status of any node z. *)
+  Lemma find_roots_mono (x z : idx) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      map.get e.(equiv).(parent) z = Some z ->
+      map.get (snd (Defs.find x e)).(equiv).(parent) z = Some z.
+  Proof.
+    intros [roots Hok] Hz.
+    unfold Defs.find.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn.
+    destruct (map.get e.(equiv).(parent) x) as [px|] eqn:Hget_x.
+    - (* x is a key: use find_spec *)
+      assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+        by (intros; Lia.lia).
+      assert (Hkey_x : Sep.has_key x e.(equiv).(parent)).
+      { unfold Sep.has_key. rewrite Hget_x. exact I. }
+      pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                    _ _ _ _ _ Hok Hkey_x Hfind) as Hspec.
+      destruct Hspec as (Huf' & _ & _ & _ & _ & _).
+      apply (proj1 (@forest_root_iff _ _ _ _ _ z roots _ (uf_forest _ _ _ _ _ _ Huf'))).
+      apply (proj2 (@forest_root_iff _ _ _ _ _ z roots _ (uf_forest _ _ _ _ _ _ Hok))).
+      exact Hz.
+    - (* x is not a key: find is identity *)
+      pose proof (find_no_key_identity e x Hget_x) as Hid.
+      rewrite Hfind in Hid.
+      injection Hid as Huf_eq _.
+      subst uf'. exact Hz.
+  Qed.
+
   (* Helper: [list_Mmap find] on a list of root elements is the identity. *)
   Lemma list_Mmap_find_roots_identity (xs : list idx) (inst : instance)
     : all (fun x => map.get inst.(equiv).(parent) x = Some x) xs ->
