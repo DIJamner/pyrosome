@@ -64,17 +64,17 @@ Section Typing.
   | t_Empty : forall Ge r l, has_svalty Ge vEmpty (dU r l)
   | t_Pi    : forall Ge F B rF lF rB lB r l,
       has_svalty Ge F (dU rF lF) ->
-      has_svalty (dEl F :: map (shift_ty 0 1) Ge) B (dU rB lB) ->
+      has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) B (dU rB lB) ->
       has_svalty Ge (vPi F B) (dU r l)
   | t_PiI   : forall Ge F B rF lF rB lB r l,
       has_svalty Ge F (dU rF lF) ->
-      has_svalty (dEl F :: map (shift_ty 0 1) Ge) B (dU rB lB) ->
+      has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) B (dU rB lB) ->
       has_svalty Ge (vPiI F B) (dU r l)
   | t_lam   : forall Ge F B b,
-      has_svalty (dEl F :: map (shift_ty 0 1) Ge) b (dEl B) ->
+      has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLam b) (dEl (vPi F B))
   | t_lamI  : forall Ge F B b,
-      has_svalty (dEl F :: map (shift_ty 0 1) Ge) b (dEl B) ->
+      has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLamI b) (dEl (vPiI F B))
   with wf_neutral : senv -> neutral -> svalty -> Prop :=
   | n_var   : forall Ge k T, nth_error Ge k = Some T -> wf_neutral Ge (nVar k) T

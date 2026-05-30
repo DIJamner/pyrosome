@@ -125,31 +125,31 @@ Section EvalRel.
   | ev_Pi : forall G Ge rF lF lG F B vF vB,
       eval_env G Ge ->
       eval_rel Ge F (dU (nf_info rF) (nf_info lF)) vF ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) B
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) B
                (dU (nf_info (con "rel" [])) (nf_info lG)) vB ->
       eval_rel Ge (con "Pi_rel" [B; F; lG; lF; rF; G])
                (dU (nf_info (con "rel" [])) (nf_info lG)) (vPi vF vB)
   | ev_PiI : forall G Ge rF lF F B vF vB,
       eval_env G Ge ->
       eval_rel Ge F (dU (nf_info rF) (nf_info lF)) vF ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) B
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) B
                (dU (nf_info (con "irr" [])) (nf_info (con "L0" []))) vB ->
       eval_rel Ge (con "Pi_irr" [B; F; lF; rF; G])
                (dU (nf_info (con "irr" [])) (nf_info (con "L0" []))) (vPiI vF vB)
   | ev_lam : forall G Ge rF lF lG F B t vF vB vt,
       eval_env G Ge ->
       eval_rel Ge F (dU (nf_info rF) (nf_info lF)) vF ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) B
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) B
                (dU (nf_info (con "rel" [])) (nf_info lG)) vB ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) t (dEl vB) vt ->
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) t (dEl vB) vt ->
       eval_rel Ge (con "lam_rel" [t; B; F; lG; lF; rF; G])
                (dEl (vPi vF vB)) (vLam vt)
   | ev_lamI : forall G Ge rF lF F B t vF vB vt,
       eval_env G Ge ->
       eval_rel Ge F (dU (nf_info rF) (nf_info lF)) vF ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) B
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) B
                (dU (nf_info (con "irr" [])) (nf_info (con "L0" []))) vB ->
-      eval_rel (dEl vF :: map (shift_ty 0 1) Ge) t (dEl vB) vt ->
+      eval_rel (dEl (shift_val 0 1 vF) :: map (shift_ty 0 1) Ge) t (dEl vB) vt ->
       eval_rel Ge (con "lam_irr" [t; B; F; lF; rF; G])
                (dEl (vPiI vF vB)) (vLamI vt)
   | ev_app : forall G Ge rF lF lG F B f a vF vB vf va v vBa,
