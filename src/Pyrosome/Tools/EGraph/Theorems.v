@@ -4256,6 +4256,68 @@ Section WithVar.
             apply Hsof; eapply pair_fst_in; exact Hin end.
     Qed.
 
+    (* ============================================================== *)
+    (* P5 bridge: ctx_readback (pre-rebuild, model-free) -> ctx_readback_eF
+       (post-rebuild eF).  The canonicalizing survival is taken as the
+       single hypothesis [Hsurv] (mirroring [atom_tree_sort_survives]'
+       verbatim Hsurv, but in the UP-TO-EQUIV / canonicalizing form so it
+       also moves the demoted [sort_of([x']) -> tx'] atom to its canonical
+       [sort_of([x']) -> xs]).  The assembly site (task 6) discharges
+       [Hsurv] from the generalised [L_survive_canonical] (with [m :=
+       lang_model] etc.), isolating the F1c gate there.  Keeps this lemma
+       model-free and 0-axiom. *)
+    Lemma ctx_readback_to_eF (e1 eF : instance X)
+      (Hdbi : db_ctx_inv X e1)
+      (Hsurv : forall a : atom,
+          atom_in_egraph_up_to_equiv V V V_map V_map V_trie X a e1 ->
+          all (is_root X e1) (atom_args a) ->
+          is_root X e1 (atom_ret a) ->
+          ain a eF)
+      : forall c sub, wf_ctx l c ->
+          all (fun p => is_root X e1 (snd p)) sub ->
+          ctx_readback X e1 sub c ->
+          ctx_readback_eF eF sub c.
+    Proof.
+      (* reflexivity of uf_rel_PER on a list of roots *)
+      assert (Hrefl : forall xl,
+                 all (is_root X e1) xl ->
+                 all2 (UnionFind.uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1)) xl xl).
+      { induction xl as [|z xl IHxl]; cbn; [trivial|].
+        intros [Hz Hxl]. split; [apply Relations.PER_clo_base; exact Hz | apply IHxl; exact Hxl]. }
+      induction c as [|[x t] c' IH]; intros sub Hwfc Hroots Hrb.
+      - cbn. exact I.
+      - destruct sub as [|[x0 x'] sub'].
+        + cbn in Hrb. contradiction.
+        + apply invert_wf_ctx_cons in Hwfc.
+          destruct Hwfc as [Hfresh [Hwfc' Hwst] ].
+          cbn in Hrb. destruct Hrb as [Hhead Hrb'].
+          destruct Hhead as [xs [Hxs_root [Htree [tx' [Hatom_db Hper] ] ] ] ].
+          cbn in Hroots. destruct Hroots as [Hx'_root Hroots'].
+          cbn [ctx_readback_eF]. split.
+          * exists xs. split.
+            -- (* atom_tree_sort eF sub' t xs via survival (verbatim case of Hsurv) *)
+               eapply atom_tree_sort_survives with (e:=e1) (c:=c');
+                 [ exact Hsof | exact Hdbi | | exact Hwst | exact Htree ].
+               intros a Ha_in Ha_args Ha_ret.
+               apply Hsurv; [ | exact Ha_args | exact Ha_ret ].
+               exists a. split; [| exact Ha_in].
+               unfold atom_canonical_equiv. split; [reflexivity|]. split.
+               ++ apply Hrefl; exact Ha_args.
+               ++ apply Relations.PER_clo_base; exact Ha_ret.
+            -- (* canonical sort_of atom in eF via Hsurv (canonicalizing case) *)
+               apply Hsurv.
+               ++ exists (Build_atom sort_of [x'] tx'). split.
+                  ** unfold atom_canonical_equiv.
+                     cbn [atom_fn atom_args atom_ret Defs.atom_fn Defs.atom_args Defs.atom_ret].
+                     split; [reflexivity|]. split.
+                     --- cbn. split; [apply Relations.PER_clo_base; exact Hx'_root | exact I].
+                     --- apply Relations.PER_clo_sym; exact Hper.
+                  ** exact Hatom_db.
+               ++ cbn [atom_args Defs.atom_args]. split; [exact Hx'_root | exact I].
+               ++ cbn [atom_ret Defs.atom_ret]. exact Hxs_root.
+          * apply IH; [exact Hwfc' | exact Hroots' | exact Hrb'].
+    Qed.
+
   End AddCtxInvert.
 
   (* ============================================================== *)

@@ -8316,11 +8316,23 @@ Section WithMap.
      colliding entry from absorbing it; [repair_parent_analysis] only churns
      analyses (preserves atom_in_db).  Proof reduces to threading
      [db_injective] + canonicality as a rebuild loop-invariant — see
-     [[project-source-rule-adapter]] (the deferred F1c kernel). *)
+     [[project-source-rule-adapter]] (the deferred F1c kernel).
+
+     CANONICALIZING form (generalised from the earlier verbatim version):
+     the hypothesis is [atom_in_egraph_up_to_equiv a e] rather than
+     [atom_in_egraph a e], i.e. SOME atom [a'] canonically-equivalent to [a]
+     is in the db, and [a] is the fully-canonical representative (all-root
+     args + ret).  [rebuild] canonicalizes [a'] to its canonical form, which
+     equals [a] (same fn, equivalent then-rooted args/ret), and [db_injective]
+     forbids collision; so [a] itself ends up in the db.  This subsumes the
+     verbatim case ([a'] := [a], reflexivity of [uf_rel_PER] on roots) and is
+     exactly what the [sort_of([x']) -> tx'] ctx atom needs: its ret [tx'] is
+     demoted to the root [xs] by [union], so only the CANONICAL [sort_of([x'])
+     -> xs] survives, not the verbatim non-canonical db entry. *)
   Lemma L_survive_canonical n (e : instance) (a : atom)
     : egraph_ok e ->
       db_injective e ->
-      atom_in_egraph a e ->
+      atom_in_egraph_up_to_equiv a e ->
       all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
       map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret) ->
       atom_in_egraph a (snd (rebuild n e)).
