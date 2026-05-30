@@ -9508,6 +9508,157 @@ Section WithMap.
        e).
   Qed.
 
+  (* [pull_parents x] returns (ps, e') where ps = unwrap(map.get e.parents x),
+     and e'.db = e.db, e'.equiv = e.equiv, egraph_ok e -> egraph_ok e'. *)
+  Lemma pull_parents_result x
+    : vc (pull_parents x)
+        (fun e res =>
+           fst res = unwrap_with_default (map.get e.(parents) x)
+           /\ (snd res).(db) = e.(db)
+           /\ (snd res).(equiv) = e.(equiv)
+           /\ (egraph_ok e -> egraph_ok (snd res))).
+  Proof.
+    unfold vc, pull_parents, get_parents, remove_parents.
+    intros e.
+    cbn [Mbind StateMonad.state_monad Mret fst snd parents db equiv].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    split; [reflexivity|].
+    intros Hok.
+    destruct Hok as [Heq Hwl Hpa Hdb].
+    constructor; cbn; auto.
+    intros y s Hg.
+    eqb_case x y.
+    - rewrite map.get_remove_same in Hg. discriminate.
+    - rewrite map.get_remove_diff in Hg by auto.
+      apply Hpa in Hg.
+      eapply all_wkn; [|exact Hg].
+      intros a Hin Hex.
+      unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv,
+        atom_in_egraph, atom_in_db in *.
+      destruct Hex as (aa & Hcanon & Hain).
+      exists aa; cbn in *; intuition.
+  Qed.
+
+  (* [list_Mmap repair_each ps] with conclusion gated on ps = [a] (singleton).
+     Combines repair_each_canonicalizes_verbatim and repair_each_db_frame. *)
+  Lemma list_Mmap_repair_each_canon ps
+    : vc (list_Mmap (fun a => @! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                                              match mv with
+                                              | Some v => Defs.union v a.(atom_ret)
+                                              | None => Mret a.(atom_ret)
+                                              end) in
+                                let _ <- db_remove a in
+                                let a' <- canonicalize a in
+                                (update_entry a')) ps)
+        (fun e res =>
+           forall a, ps = a :: nil ->
+           egraph_ok e ->
+           atom_in_db a e.(db) ->
+           all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
+           (exists a',
+              atom_in_db a' (snd res).(db)
+              /\ atom_fn a' = atom_fn a
+              /\ atom_args a' = atom_args a
+              /\ all (fun x => map.get (snd res).(equiv).(parent) x = Some x) a'.(atom_args)
+              /\ map.get (snd res).(equiv).(parent) a'.(atom_ret) = Some a'.(atom_ret))
+           /\ (forall z, map.get e.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ (forall b, (atom_fn b, atom_args b) <> (atom_fn a, atom_args a) ->
+                         (atom_in_db b (snd res).(db) <-> atom_in_db b e.(db)))).
+  Proof.
+    destruct ps as [|a0 ps'].
+    - unfold vc, list_Mmap, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e a Hcontra. discriminate Hcontra.
+    - destruct ps' as [|a1 ps''].
+      + (* ps = [a0] *)
+        unfold vc. intros e a Heq Hok Hdb Hargs.
+        injection Heq as Heqa. subst a0.
+        assert (Hsnd_eq : forall (f : atom -> state instance unit) (e0 : instance),
+            snd (list_Mmap f [a] e0) = snd (f a e0)).
+        { intros f0 e0. cbn [list_Mmap Mbind StateMonad.state_monad Mret fst snd].
+          destruct (f0 a e0) as [u1 s]. reflexivity. }
+        rewrite (Hsnd_eq _ e).
+        pose proof (repair_each_canonicalizes_verbatim a e Hok Hdb Hargs) as Hverb.
+        pose proof (repair_each_db_frame a e Hok Hdb Hargs) as Hframe.
+        destruct Hverb as [(a' & Hain' & Hfn' & Hargs' & Hper & Hall' & Hroot') Hroots_mono].
+        split; [exists a'; exact (conj Hain' (conj Hfn' (conj Hargs' (conj Hall' Hroot'))))|].
+        split; [exact Hroots_mono | exact Hframe].
+      + unfold vc, list_Mmap, Mret, StateMonad.state_monad; cbn [fst snd].
+        intros e a Hcontra. discriminate Hcontra.
+  Qed.
+
+  (* [repair_union x_old x_canonical improved] when parents[x_old] = [a] (singleton),
+     a is in the db, and a.args are all roots: produces a canonicalized atom a' with
+     a'.fn=a.fn, a'.args=a.args, a'.args/a'.ret roots, plus roots_mono and db-frame. *)
+  Lemma repair_union_canon x_old x_canonical improved a
+    : vc (repair_union x_old x_canonical improved)
+        (fun e res =>
+           egraph_ok e ->
+           map.get e.(parents) x_old = Some (a :: nil) ->
+           atom_in_db a e.(db) ->
+           all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
+           (exists a',
+              atom_in_db a' (snd res).(db)
+              /\ atom_fn a' = atom_fn a
+              /\ atom_args a' = atom_args a
+              /\ all (fun x => map.get (snd res).(equiv).(parent) x = Some x) a'.(atom_args)
+              /\ map.get (snd res).(equiv).(parent) a'.(atom_ret) = Some a'.(atom_ret))
+           /\ (forall z, map.get e.(equiv).(parent) z = Some z ->
+                         map.get (snd res).(equiv).(parent) z = Some z)
+           /\ (forall b, (atom_fn b, atom_args b) <> (atom_fn a, atom_args a) ->
+                         (atom_in_db b (snd res).(db) <-> atom_in_db b e.(db)))).
+  Proof.
+    unfold repair_union.
+    vc_bind pull_parents_result.
+    rename s0 into e1, a0 into ps.
+    vc_bind (list_Mmap_repair_each_canon ps).
+    rename s0 into s1.
+    destruct improved.
+    - (* improved = true: analysis pass *)
+      unfold get_parents. cbn [Mbind StateMonad.state_monad fst snd].
+      unfold vc.
+      intros final Hmmap Hpull Hok Hgp Hdb Hroots.
+      destruct Hpull as (Hps & Hdb_s1 & Hequiv_s1 & Hok_s1_fn).
+      assert (Hps_eq : ps = a :: nil) by (rewrite Hps, Hgp; reflexivity).
+      specialize (Hok_s1_fn Hok) as Hok_s1.
+      assert (Hdb_a_s1 : atom_in_db a (db s1)) by (rewrite Hdb_s1; exact Hdb).
+      assert (Hroots_s1 : all (fun x => map.get (equiv s1).(parent) x = Some x) a.(atom_args))
+        by (rewrite Hequiv_s1; exact Hroots).
+      specialize (Hmmap a Hps_eq Hok_s1 Hdb_a_s1 Hroots_s1) as Hmmap'.
+      destruct Hmmap' as (Hex & Hroots_mono & Hframe_f).
+      destruct Hex as (a' & Hain_f & Hfn' & Hargs' & Hall_f & Hroot_f).
+      pose proof (list_Miter_repair_parent_analysis_preserves_atom_in_db
+                    (unwrap_with_default (map.get (parents final) x_canonical)) final) as Hpres_db.
+      unfold vc in Hpres_db.
+      pose proof (list_Miter_repair_parent_analysis_preserves_equiv
+                    (unwrap_with_default (map.get (parents final) x_canonical)) final) as Hpres_equiv.
+      unfold vc in Hpres_equiv.
+      split; [exists a'; split; [rewrite (Hpres_db a'); exact Hain_f|];
+        split; [exact Hfn'|]; split; [exact Hargs'|];
+        split; [rewrite Hpres_equiv; exact Hall_f | rewrite Hpres_equiv; exact Hroot_f]|].
+      split.
+      all: first
+        [intros z Hz; rewrite Hpres_equiv; apply Hroots_mono; rewrite Hequiv_s1; exact Hz
+        |intros b Hkey; rewrite (Hpres_db b); rewrite (Hframe_f b Hkey); rewrite Hdb_s1; reflexivity].
+    - (* improved = false: Mret tt *)
+      unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros final Hmmap Hpull Hok Hgp Hdb Hroots.
+      destruct Hpull as (Hps & Hdb_s1 & Hequiv_s1 & Hok_s1_fn).
+      assert (Hps_eq : ps = a :: nil) by (rewrite Hps, Hgp; reflexivity).
+      specialize (Hok_s1_fn Hok) as Hok_s1.
+      assert (Hdb_a_s1 : atom_in_db a (db s1)) by (rewrite Hdb_s1; exact Hdb).
+      assert (Hroots_s1 : all (fun x => map.get (equiv s1).(parent) x = Some x) a.(atom_args))
+        by (rewrite Hequiv_s1; exact Hroots).
+      specialize (Hmmap a Hps_eq Hok_s1 Hdb_a_s1 Hroots_s1) as Hmmap'.
+      destruct Hmmap' as ((a' & Hain_f & Hfn' & Hargs' & Hall_f & Hroot_f) & Hroots_mono & Hframe_f).
+      split.
+      + exists a'. exact (conj Hain_f (conj Hfn' (conj Hargs' (conj Hall_f Hroot_f)))).
+      + split.
+        * intros z Hz. apply Hroots_mono. rewrite Hequiv_s1. exact Hz.
+        * intros b Hkey. rewrite (Hframe_f b Hkey). rewrite Hdb_s1. reflexivity.
+  Qed.
+
   (* [list_Miter repair] over a list of analysis_repair entries
      preserves atom_in_db and the analysis-repair-only worklist shape. *)
   Lemma list_Miter_repair_ar l
