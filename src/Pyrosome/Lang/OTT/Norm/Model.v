@@ -50,39 +50,32 @@ Section Model.
        - [ty i G]    : in [Ge], both reach svalty [T];
        - [sub G' G]  : from [eval G'] to [eval G], both reach [sg];
        - [env]       : both reach [Ge]. *)
-  Definition glue_term (t : sort) (e1 e2 : term) : Type :=
-    match t with
-    | scon n args =>
-        if eqb n "exp"
-        then match args with
-             | [A; i; G] =>
-                 sigT (fun Ge : senv => sigT (fun T : svalty => sigT (fun v : sval =>
-                   (eval_env G Ge * eval_ty Ge A T
-                    * eval_rel Ge e1 T v * eval_rel Ge e2 T v)%type)))
-             | _ => unit
-             end
-        else if eqb n "ty"
-        then match args with
-             | [i; G] =>
-                 sigT (fun Ge : senv => sigT (fun T : svalty =>
-                   (eval_env G Ge * eval_ty Ge e1 T * eval_ty Ge e2 T)%type))
-             | _ => unit
-             end
-        else if eqb n "sub"
-        then match args with
-             | [Gd; Gc] =>
-                 sigT (fun GeD : senv => sigT (fun GeC : senv => sigT (fun s : ssub =>
-                   (eval_env Gd GeD * eval_env Gc GeC
-                    * eval_sub GeD GeC e1 s * eval_sub GeD GeC e2 s)%type)))
-             | _ => unit
-             end
-        else if eqb n "env"
-        then sigT (fun Genv : senv => (eval_env e1 Genv * eval_env e2 Genv)%type)
-        else match args with
-             | [] => (nf_info e1 = nf_info e2)  (* relevance/lvl/tlvl/tyinfo *)
-             | _ => unit                         (* ltl etc.: proof-irrelevant *)
-             end
-    end.
+  (* Inductive presentation, with one constructor per MEANINGFUL sort head.
+     The degenerate [unit] catch-alls of the old [match] (wrong-arity inputs and
+     unknown heads) are dropped: glue is always paired with [eq_term fo_lang [] t]
+     in [norm_ceq_term], whose well-formedness gate rules those junk inputs out.
+     The proof-irrelevant [ltl] sort keeps its own trivial constructor. *)
+  Inductive glue_term : sort -> term -> term -> Type :=
+  | glue_exp : forall (A i G e1 e2 : term) (Ge : senv) (T : svalty) (v : sval),
+      eval_env G Ge -> eval_ty Ge A T ->
+      eval_rel Ge e1 T v -> eval_rel Ge e2 T v ->
+      glue_term (scon "exp" [A; i; G]) e1 e2
+  | glue_ty : forall (i G e1 e2 : term) (Ge : senv) (T : svalty),
+      eval_env G Ge -> eval_ty Ge e1 T -> eval_ty Ge e2 T ->
+      glue_term (scon "ty" [i; G]) e1 e2
+  | glue_sub : forall (Gd Gc e1 e2 : term) (GeD GeC : senv) (s : ssub),
+      eval_env Gd GeD -> eval_env Gc GeC ->
+      eval_sub GeD GeC e1 s -> eval_sub GeD GeC e2 s ->
+      glue_term (scon "sub" [Gd; Gc]) e1 e2
+  | glue_env : forall (e1 e2 : term) (Genv : senv),
+      eval_env e1 Genv -> eval_env e2 Genv ->
+      glue_term (scon "env" []) e1 e2
+  | glue_info : forall (n : string) (e1 e2 : term),
+      n <> "exp" -> n <> "ty" -> n <> "sub" -> n <> "env" ->
+      nf_info e1 = nf_info e2 ->            (* relevance/lvl/tlvl/tyinfo *)
+      glue_term (scon n []) e1 e2
+  | glue_ltl : forall (a b e1 e2 : term),  (* ltl: proof-irrelevant *)
+      glue_term (scon "ltl" [a; b]) e1 e2.
 
   (* norm_ceq_term relates only WELL-FORMED terms at the sort [t] (the eq_term
      component), additionally gluing them to a common semantic value. *)
