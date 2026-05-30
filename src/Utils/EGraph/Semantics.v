@@ -9414,6 +9414,29 @@ Section WithMap.
     subst. exact Hin'.
   Qed.
 
+  (* L_survive_canonical' — the REDUCED survival lemma = (T) [rebuild_survives_side]
+     composed with (F) [canonical_uptoequiv_present].  Instead of [db_injective e]
+     + canonicality wrt [e] (the FALSE-at-n=0 form), it asks for [db_inv (fun _ =>
+     True)] of the REBUILT egraph [eF := snd (rebuild n e)] and canonicality
+     (all-root args + root ret) wrt [eF].  (T) transports [a]'s up-to-equiv
+     presence from [e] to [eF] (and gives [egraph_ok eF]); (F) then materialises
+     the verbatim canonical [a] in [eF].  The caller (add_ctx discharge) supplies
+     [db_inv (True) eF] and the eF-canonicality from the known add_ctx structure. *)
+  Lemma L_survive_canonical' n (e : instance) (a : atom)
+    : egraph_ok e ->
+      atom_in_egraph_up_to_equiv a e ->
+      db_inv (fun _ => True) (snd (rebuild n e)) ->
+      all (fun x => map.get (snd (rebuild n e)).(equiv).(parent) x = Some x) a.(atom_args) ->
+      map.get (snd (rebuild n e)).(equiv).(parent) a.(atom_ret) = Some a.(atom_ret) ->
+      atom_in_egraph a (snd (rebuild n e)).
+  Proof.
+    intros Hok Hup Hinv Hargs Hret.
+    destruct (rebuild_survives_side (a :: nil) n e Hok (conj Hup I)) as [Hok_F Hall_F].
+    cbn [all] in Hall_F. destruct Hall_F as [Hup_F _].
+    eapply canonical_uptoequiv_present;
+      [exact Hok_F | exact Hinv | exact Hup_F | exact Hargs | exact Hret].
+  Qed.
+
   (* L_survive_canonical (a.k.a. F1c-survival) — the survival lemma the
      source-rule adapter / faithful-rep actually needs.  DEFERRED (Admitted)
      per the session-23 user decision: state a clean correct interface, build
