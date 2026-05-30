@@ -3220,19 +3220,139 @@ Section WithVar.
     (* roots that additionally establishes atom_tree.                 *)
     (* ============================================================== *)
 
+    Local Notation equiv_extends_inst e1 e2 :=
+      (@equiv_extends V V V_map V_map V_trie X e1 e2).
+
+    (* Explicit parent equation for Defs.alloc: the result's equiv.parent
+       is exactly map.put of the input's parent with the fresh node. *)
+    Lemma alloc_parent_eq (e_in : instance X) :
+      let r_pair := Defs.alloc V succ V V_map V_map V_trie X e_in in
+      parent (Defs.equiv (snd r_pair)) =
+      map.put (parent (Defs.equiv e_in)) (fst r_pair) (fst r_pair).
+    Proof.
+      unfold Defs.alloc.
+      destruct (UnionFind.alloc V _ _ succ (Defs.equiv e_in)) as [uf' r'] eqn:Halloc.
+      cbn [fst snd Defs.equiv].
+      unfold UnionFind.alloc in Halloc.
+      destruct (Defs.equiv e_in) as [rk pa mr nx] eqn:Heq.
+      cbn [parent UnionFind.next] in *.
+      injection Halloc as H1 H2. subst.
+      cbn [parent]. reflexivity.
+    Qed.
+
+    (* Same for alloc_opaque: only analyses differs from alloc, equiv.parent
+       is the same map.put computation. *)
+    Lemma alloc_opaque_parent_eq (e_in : instance X) :
+      let r_pair := Defs.alloc_opaque V succ V V_map V_map V_trie X e_in in
+      parent (Defs.equiv (snd r_pair)) =
+      map.put (parent (Defs.equiv e_in)) (fst r_pair) (fst r_pair).
+    Proof.
+      unfold Defs.alloc_opaque.
+      destruct (UnionFind.alloc V _ _ succ (Defs.equiv e_in)) as [uf' r'] eqn:Halloc.
+      cbn [fst snd Defs.equiv].
+      unfold UnionFind.alloc in Halloc.
+      destruct (Defs.equiv e_in) as [rk pa mr nx] eqn:Heq.
+      cbn [parent UnionFind.next] in *.
+      injection Halloc as H1 H2. subst.
+      cbn [parent]. reflexivity.
+    Qed.
+
+    (* hash_entry preserves all existing uf_rel_PER pairs (equiv_extends).
+       Proof: list_Mmap find (fields_preserved -> equiv iff2) + alloc (fresh
+       node -> uf_rel_PER_alloc_monotone via alloc_parent_eq) + db_set
+       (equiv unchanged). *)
+    Lemma hash_entry_equiv_extends f args
+      : vc (hash_entry succ f args)
+          (fun (e_in : instance X) res =>
+             (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+             (forall x, In x args -> Sep.has_key x (parent (Defs.equiv e_in))) ->
+             equiv_extends_inst e_in (snd res)).
+    Proof.
+      unfold hash_entry, vc. intros e_in.
+      cbn [Mbind StateMonad.state_monad].
+      pose proof (@list_Mmap_find_preserves_fields_strong V V_Eqb V_Eqb_ok lt succ V_default
+                    V V_map V_map V_map_ok V_trie X args) as Hfp_vc.
+      unfold vc in Hfp_vc. specialize (Hfp_vc e_in).
+      intros Huf_ex Hkeys.
+      destruct Huf_ex as [roots Huf].
+      assert (Hkeys_all : all (fun i => Sep.has_key i (parent (Defs.equiv e_in))) args).
+      { clear -Hkeys. induction args as [|x xs IH]; cbn; auto.
+        split; [apply Hkeys; left; reflexivity
+               | apply IH; intros y Hy; apply Hkeys; right; exact Hy]. }
+      specialize (Hfp_vc (ex_intro _ roots Huf) Hkeys_all).
+      destruct (list_Mmap find args e_in) as [args' e_post_find] eqn:Hmap.
+      cbn [fst snd] in Hfp_vc |- *.
+      destruct Hfp_vc as (Huf_post & Hfp & _).
+      assert (Hext1 : equiv_extends_inst e_in e_post_find).
+      { exact (@fields_preserved_equiv_extends V V V_map V_map V_trie X e_in e_post_find Hfp). }
+      pose proof (@db_lookup_pure V V V_map V_map V_trie X f args') as Hlk_pure.
+      unfold vc in Hlk_pure. specialize (Hlk_pure e_post_find).
+      destruct (db_lookup V V V_map V_map V_trie X f args' e_post_find) as [mout e_lk] eqn:Hlk.
+      cbn [fst snd] in Hlk_pure. destruct Hlk_pure as [He_eq _]. subst e_lk.
+      destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+      - (* hit: no state change *)
+        unfold Mret. cbn [fst snd StateMonad.state_monad]. exact Hext1.
+      - (* miss: alloc + db_set *)
+        cbn [Mbind StateMonad.state_monad].
+        pose proof (alloc_parent_eq e_post_find) as Hpar.
+        cbn [fst snd] in Hpar.
+        destruct (Defs.alloc V succ V V_map V_map V_trie X e_post_find) as [r_new e_alloc] eqn:Halloc.
+        cbn [fst snd] in Hpar |- *.
+        pose proof (@alloc_struct V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X
+                      lt_asymmetric lt_succ lt_trans) as Halloc_s.
+        unfold vc in Halloc_s. specialize (Halloc_s e_post_find).
+        rewrite Halloc in Halloc_s. cbn [fst snd] in Halloc_s.
+        destruct Huf_post as [roots_post Huf_post_ok].
+        specialize (Halloc_s roots_post Huf_post_ok).
+        destruct Halloc_s as (_ & Hr_fresh & _ & _ & _ & _ & _).
+        assert (Hnone_r : map.get (parent (Defs.equiv e_post_find)) r_new = None).
+        { unfold Sep.has_key in Hr_fresh.
+          destruct (map.get (parent (Defs.equiv e_post_find)) r_new); tauto. }
+        assert (Hext2 : equiv_extends_inst e_post_find e_alloc).
+        { unfold equiv_extends, uf_rel_PER. intros i j Hpre.
+          rewrite Hpar. eapply uf_rel_PER_alloc_monotone;
+            [exact V_map_ok | exact Hnone_r | unfold uf_rel_PER; exact Hpre]. }
+        cbn [Mbind StateMonad.state_monad fst snd].
+        unfold db_set. cbn [atom_fn atom_args atom_ret].
+        cbn [Mbind StateMonad.state_monad fst snd].
+        pose proof (@get_analyses_preserves_fields V lt succ V_default V V_map V_map V_trie X H
+                      args' e_alloc) as Hga.
+        cbn [fst snd] in Hga.
+        destruct (get_analyses V V V_map V_map V_trie X args' e_alloc) as [arg_as e_ga] eqn:Hge.
+        cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & _).
+        destruct (update_analyses V V V_map V_map V_trie X r_new
+                    (analyze V V X (Build_atom f args' r_new) arg_as) e_ga)
+          as [_u e_ua] eqn:Hue.
+        assert (Heq_ua : Defs.equiv e_ua = Defs.equiv e_ga).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity. }
+        destruct (db_set' V V_Eqb V V_map V_map V_trie X (Build_atom f args' r_new)
+                    (analyze V V X (Build_atom f args' r_new) arg_as) e_ua) as [_v e_db] eqn:Hde.
+        assert (Heq_db : Defs.equiv e_db = Defs.equiv e_alloc).
+        { assert (Hdb_eq : Defs.equiv e_db = Defs.equiv e_ua)
+            by (unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity).
+          rewrite Hdb_eq, Heq_ua. exact Heq_ga. }
+        cbn [Mret StateMonad.state_monad fst snd].
+        eapply (@equiv_extends_trans V V V_map V_map V_trie X); [exact Hext1 |].
+        eapply (@equiv_extends_trans V V V_map V_map V_trie X); [exact Hext2 |].
+        unfold equiv_extends, uf_rel_PER. intros i j Hpre.
+        rewrite Heq_db. exact Hpre.
+    Qed.
+
     Definition open_atomtree_post (e0 : term) (sub : named_list V) (e_in : instance X)
        (res : V * instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res) /\ is_root (snd res) (fst res)
-      /\ atom_tree X (snd res) sub e0 (fst res).
+      /\ atom_tree X (snd res) sub e0 (fst res)
+      /\ equiv_extends_inst e_in (snd res).
 
     Definition open_atomtree_args_post (es : list term) (sub : named_list V) (e_in : instance X)
        (res : list V * instance X) : Prop :=
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res) /\ all (is_root (snd res)) (fst res)
-      /\ Forall2 (atom_tree X (snd res) sub) es (fst res).
+      /\ Forall2 (atom_tree X (snd res) sub) es (fst res)
+      /\ equiv_extends_inst e_in (snd res).
 
     Lemma add_open_node_atoms (l1 : lang)
       (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
@@ -3272,7 +3392,7 @@ Section WithVar.
         intros Huf Hdbr Hsub.
         unfold open_atomtree_args_post in Hpost_args.
         specialize (Hpost_args Huf Hdbr Hsub).
-        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout).
+        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout & Hext_args).
         pose proof Henv_args as Henv_args_save.
         destruct Henv_args as (Huf_inner & Hdbr_inner & Hincl_inner & Hmono_inner).
         assert (Hkeys : forall x, In x a_out ->
@@ -3288,8 +3408,12 @@ Section WithVar.
                       lt_asymmetric lt_succ lt_trans name a_out) as Hhe.
         unfold vc in Hhe.
         specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+        (* hash_entry_equiv_extends: equiv_extends e_inner e_he *)
+        pose proof (hash_entry_equiv_extends name a_out) as Hhe_ext.
+        unfold vc in Hhe_ext.
+        specialize (Hhe_ext e_inner Huf_inner Hkeys).
         destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
-        cbn [fst snd] in Hhe.
+        cbn [fst snd] in Hhe, Hhe_ext.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
         (* hash_entry_output_atom: the node atom (name, a_out, x_res) is in e_he.db *)
         pose proof (@hash_entry_output_atom V V_Eqb V_Eqb_ok lt succ V_default
@@ -3314,12 +3438,16 @@ Section WithVar.
           split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
         + split.
           * apply Hres_f. exact Hname_sof.
-          * (* atom_tree e_he r (con name s') x_res *)
-            assert (Htrees_he : Forall2 (atom_tree X e_he r) s' a_out).
-            { clear -Htrees_aout Hincl_f.
-              eapply Forall2_impl; [| exact Htrees_aout].
-              intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
-            refine (at_con X e_he r name s' a_out x_res Htrees_he Hout).
+          * split.
+            -- (* atom_tree e_he r (con name s') x_res *)
+              assert (Htrees_he : Forall2 (atom_tree X e_he r) s' a_out).
+              { clear -Htrees_aout Hincl_f.
+                eapply Forall2_impl; [| exact Htrees_aout].
+                intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
+              refine (at_con X e_he r name s' a_out x_res Htrees_he Hout).
+            -- (* equiv_extends e_pre e_he: compose Hext_args + Hhe_ext *)
+              eapply (@equiv_extends_trans V V V_map V_map V_trie X);
+                [exact Hext_args | exact Hhe_ext].
       - (* var case *)
         intros n t_var Hin_var r Hmaps.
         cbn [add_open_term'].
@@ -3346,7 +3474,10 @@ Section WithVar.
             + apply IH; auto. }
         split.
         + cbn [fst snd]. rewrite Hlk. exact (in_all _ _ _ Hsub Hin_xn).
-        + cbn [fst snd]. apply (at_var X e_pre r n).
+        + split.
+          * cbn [fst snd]. apply (at_var X e_pre r n).
+          * (* equiv_extends e_pre e_pre: reflexivity *)
+            apply (@equiv_extends_refl V V V_map V_map V_trie X).
       - (* eq_sort conversion *)
         intros e_x t_x t_x' Hwft IH_term Heq_sort r Hmaps.
         apply IH_term; assumption.
@@ -3356,7 +3487,8 @@ Section WithVar.
         unfold vc, Mret. cbn.
         unfold open_atomtree_args_post. intros Huf Hdbr Hsub.
         split; [apply roots_env_refl; auto|].
-        split; [cbn; exact I | constructor].
+        split; [cbn; exact I|]. split; [constructor|].
+        apply (@equiv_extends_refl V V V_map V_map V_trie X).
       - (* cons args *)
         intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r Hmaps.
         unfold vc. intros e_in.
@@ -3371,7 +3503,7 @@ Section WithVar.
                     add_open_sort_inner r e_arg e_in)
           as [v_head e_after_head] eqn:Heq1.
         cbn [fst snd] in IH_term.
-        destruct IH_term as (Henv_head & Hroot_head & Htree_head).
+        destruct IH_term as (Henv_head & Hroot_head & Htree_head & Hext_head).
         pose proof Henv_head as Henv_head_save.
         destruct Henv_head as (Huf_head & Hdbr_head & Hincl_head & Hmono_head).
         specialize (IH_args r Hmaps).
@@ -3385,7 +3517,7 @@ Section WithVar.
                        add_open_sort_inner r) es e_after_head)
           as [v_tail e_final] eqn:Heq2.
         cbn [fst snd] in IH_args.
-        destruct IH_args as (Henv_tail & Hroots_tail & Htrees_tail).
+        destruct IH_args as (Henv_tail & Hroots_tail & Htrees_tail & Hext_tail).
         pose proof Henv_tail as Henv_tail_save.
         destruct Henv_tail as (Huf_tail & Hdbr_tail & Hincl_tail & Hmono_tail).
         split.
@@ -3394,11 +3526,15 @@ Section WithVar.
           * cbn [all]. split.
             -- apply Hmono_tail. exact Hroot_head.
             -- exact Hroots_tail.
-          * constructor.
-            -- (* lift head atom_tree through tail's db_incl *)
-               unfold db_incl in Hincl_tail.
-               eapply (atom_tree_db_incl X); [exact Hincl_tail | exact Htree_head].
-            -- exact Htrees_tail.
+          * split.
+            -- constructor.
+               ++ (* lift head atom_tree through tail's db_incl *)
+                  unfold db_incl in Hincl_tail.
+                  eapply (atom_tree_db_incl X); [exact Hincl_tail | exact Htree_head].
+               ++ exact Htrees_tail.
+            -- (* equiv_extends: compose head + tail *)
+               eapply (@equiv_extends_trans V V V_map V_map V_trie X);
+                 [exact Hext_head | exact Hext_tail].
     Qed.
 
     Definition open_atomtree_sort_post (ts : sort) (sub : named_list V) (e_in : instance X)
@@ -3406,7 +3542,8 @@ Section WithVar.
       (exists roots, union_find_ok lt (Defs.equiv e_in) roots) -> db_ctx_inv e_in ->
       all (fun p => is_root e_in (snd p)) sub ->
       roots_env e_in (snd res) /\ is_root (snd res) (fst res)
-      /\ atom_tree_sort X (snd res) sub ts (fst res).
+      /\ atom_tree_sort X (snd res) sub ts (fst res)
+      /\ equiv_extends_inst e_in (snd res).
 
     Lemma add_open_sort'_node_atoms l1 c r t fuel
       : wf_lang l1 ->
@@ -3444,7 +3581,7 @@ Section WithVar.
         intros Huf Hdbr Hsub.
         unfold open_atomtree_args_post in Hpost_args.
         specialize (Hpost_args Huf Hdbr Hsub).
-        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout).
+        destruct Hpost_args as (Henv_args & Hroots_aout & Htrees_aout & Hext_args).
         pose proof Henv_args as Henv_args_save.
         destruct Henv_args as (Huf_inner & Hdbr_inner & Hincl_inner & Hmono_inner).
         assert (Hkeys : forall x, In x a_out ->
@@ -3459,8 +3596,12 @@ Section WithVar.
                       lt_asymmetric lt_succ lt_trans n a_out) as Hhe.
         unfold vc in Hhe.
         specialize (Hhe e_inner Huf_inner Hdbr_inner Hkeys).
+        (* hash_entry_equiv_extends: equiv_extends e_inner e_he *)
+        pose proof (hash_entry_equiv_extends n a_out) as Hhe_ext.
+        unfold vc in Hhe_ext.
+        specialize (Hhe_ext e_inner Huf_inner Hkeys).
         destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
-        cbn [fst snd] in Hhe.
+        cbn [fst snd] in Hhe, Hhe_ext.
         destruct Hhe as (Huf_f & Hdbr_f & Hincl_f & Hmono_f & Hres_f).
         (* hash_entry_output_atom: the node atom (n, a_out, x_res) is in e_he.db *)
         pose proof (@hash_entry_output_atom V V_Eqb V_Eqb_ok lt succ V_default
@@ -3484,13 +3625,17 @@ Section WithVar.
           split; [exact Huf_f|]. split; [exact Hdbr_f|]. split; auto.
         + split.
           * apply Hres_f. exact Hname_sof.
-          * (* atom_tree_sort X e_he r (scon n s_t) x_res *)
-            assert (Htrees_he : Forall2 (atom_tree X e_he r) s_t a_out).
-            { clear -Htrees_aout Hincl_f.
-              eapply Forall2_impl; [| exact Htrees_aout].
-              intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
-            unfold atom_tree_sort.
-            exists a_out. split; [exact Htrees_he | exact Hout].
+          * split.
+            -- (* atom_tree_sort X e_he r (scon n s_t) x_res *)
+              assert (Htrees_he : Forall2 (atom_tree X e_he r) s_t a_out).
+              { clear -Htrees_aout Hincl_f.
+                eapply Forall2_impl; [| exact Htrees_aout].
+                intros a b Hab. eapply (atom_tree_db_incl X); [exact Hincl_f | exact Hab]. }
+              unfold atom_tree_sort.
+              exists a_out. split; [exact Htrees_he | exact Hout].
+            -- (* equiv_extends: compose Hext_args + Hhe_ext *)
+              eapply (@equiv_extends_trans V V V_map V_map V_trie X);
+                [exact Hext_args | exact Hhe_ext].
     Qed.
 
     Lemma add_open_sort_node_atoms c r t
@@ -3655,31 +3800,36 @@ Section WithVar.
           match sub with
           | [] => False
           | (_, x')::sub' =>
-              (exists xs, is_root e1 xs /\ atom_tree_sort X e1 sub' t xs)
-              /\ (exists tx', atom_in_db (Build_atom sort_of [x'] tx') (Defs.db e1))
+              (exists xs, is_root e1 xs /\ atom_tree_sort X e1 sub' t xs
+                       /\ exists tx', atom_in_db (Build_atom sort_of [x'] tx') (Defs.db e1)
+                                   /\ uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1) tx' xs)
               /\ ctx_readback e1 sub' c'
           end
       end.
 
-    (* [ctx_readback] is monotone in the egraph: it survives [db_incl] +
-       [roots_mono] (it only mentions [atom_in_db], [atom_tree_sort], and
-       [is_root]). *)
+    (* [ctx_readback] is monotone in the egraph: it survives [db_incl],
+       [roots_mono], and [uf_rel_PER] monotonicity (equiv_extends). *)
     Lemma ctx_readback_mono (e1 e2 : instance X) (sub : named_list V) (c0 : ctx)
       : (forall a, atom_in_db a (Defs.db e1) -> atom_in_db a (Defs.db e2)) ->
         roots_mono e1 e2 ->
+        (forall i j, uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e1) i j ->
+                     uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e2) i j) ->
         ctx_readback e1 sub c0 -> ctx_readback e2 sub c0.
     Proof.
-      revert sub; induction c0 as [|[x t] c' IH]; intros sub Hincl Hmono Hrb.
+      revert sub; induction c0 as [|[x t] c' IH]; intros sub Hincl Hmono Hequiv Hrb.
       - exact I.
       - destruct sub as [|[x0 x'] sub']; [exact Hrb|].
         cbn in Hrb |- *.
-        destruct Hrb as [ [xs [Hxs_root Htree] ] [ [tx' Hatom] Hrb'] ].
-        split; [|split].
-        + exists xs. split.
-          * exact (Hmono xs Hxs_root).
+        destruct Hrb as [ [xs Hxs] Hrb'].
+        destruct Hxs as (Hxs_root & Htree & tx' & Hatom & Hper).
+        split; [|eapply IH; eauto].
+        exists xs. split.
+        + exact (Hmono xs Hxs_root).
+        + split.
           * eapply atom_tree_sort_db_incl; [exact Hincl | exact Htree].
-        + exists tx'. exact (Hincl _ Hatom).
-        + eapply IH; eauto.
+          * exists tx'. split.
+            -- exact (Hincl _ Hatom).
+            -- exact (Hequiv _ _ Hper).
     Qed.
 
     (* Combined post: [ctx_roots_post]'s 4 conjuncts plus [ctx_readback]. *)
@@ -3725,17 +3875,16 @@ Section WithVar.
         assert (Hwfst : wf_sort l c' t) by (inversion Hctx; assumption).
         specialize (Htail Hok Hdb).
         destruct Htail as (Huf_tail & Hdb_tail & Hall_tail & Hfst_tail & Hrb_tail).
-        (* Step 1: add_open_sort_all_roots *)
-        pose proof (add_open_sort_all_roots c' base' t Hwfc' Hwfst) as Hsort_roots.
+        (* Step 1: add_open_sort_node_atoms (gives roots_env + atom_tree + equiv_extends) *)
         assert (Hmaps : map fst c' = map fst base') by (symmetry; exact Hfst_tail).
-        specialize (Hsort_roots Hmaps).
-        unfold vc in Hsort_roots. specialize (Hsort_roots e_inner).
-        unfold open_roots_sort_post in Hsort_roots.
-        specialize (Hsort_roots Huf_tail Hdb_tail Hall_tail).
+        pose proof (add_open_sort_node_atoms c' base' t Hwfc' Hwfst Hmaps) as Hnode_sort.
+        unfold vc in Hnode_sort. specialize (Hnode_sort e_inner).
+        unfold open_atomtree_sort_post in Hnode_sort.
         destruct (add_open_sort succ sort_of l false false base' t e_inner)
           as [t_v e_sort] eqn:Heq_sort.
-        cbn [fst snd] in Hsort_roots.
-        destruct Hsort_roots as [Henv_sort Htv_root].
+        cbn [fst snd] in Hnode_sort.
+        specialize (Hnode_sort Huf_tail Hdb_tail Hall_tail).
+        destruct Hnode_sort as (Henv_sort & Htv_root & Htree_sort & Hext_sort).
         destruct Henv_sort as (Huf_sort & Hdb_sort & Hincl_sort & Hmono_sort).
         (* Step 2: alloc_opaque_rank_zero *)
         pose proof (@alloc_opaque_rank_zero V V_Eqb V_Eqb_ok lt succ
@@ -3936,22 +4085,66 @@ Section WithVar.
           - intro Heq. subst z. apply Htx'_fresh. apply is_root_has_key.
             unfold is_root. exact (Hmono_alloc _ (Hmono_sort _ Hz)).
           - exact (Hmono_he _ (Hmono_alloc _ (Hmono_sort _ Hz))). }
+        (* equiv_extends e_inner e_u:
+           e_inner ->sort (Hext_sort) ->alloc (alloc_parent_eq+fresh)
+           ->he (hash_entry_equiv_extends) ->u (union extends) *)
+        assert (Hext_alloc : equiv_extends_inst e_sort e_alloc).
+        { pose proof (alloc_opaque_parent_eq e_sort) as Hpar_sort.
+          cbn [fst snd] in Hpar_sort.
+          (* Hpar_sort : parent (equiv (snd (alloc_opaque ... e_sort))) = map.put ... *)
+          rewrite Heq_alloc in Hpar_sort. cbn [fst snd] in Hpar_sort.
+          (* Hpar_sort : parent (equiv e_alloc) = map.put (parent (equiv e_sort)) x' x' *)
+          assert (Hnone_x' : map.get (parent (Defs.equiv e_sort)) x' = None).
+          { unfold Sep.has_key in Hfresh_x'.
+            destruct (map.get (parent (Defs.equiv e_sort)) x'); tauto. }
+          unfold equiv_extends_inst, equiv_extends, uf_rel_PER. intros i j Hpre.
+          rewrite Hpar_sort.
+          eapply uf_rel_PER_alloc_monotone;
+            [exact V_map_ok | exact Hnone_x' | unfold uf_rel_PER; exact Hpre]. }
+        assert (Hext_he : equiv_extends_inst e_alloc e_he).
+        { (* Derive via hash_entry_equiv_extends, specialized AFTER the destruct *)
+          pose proof (hash_entry_equiv_extends sort_of [x']) as Hhe_ext_he.
+          unfold vc in Hhe_ext_he.
+          specialize (Hhe_ext_he e_alloc).
+          rewrite Heq_he in Hhe_ext_he. cbn [fst snd] in Hhe_ext_he.
+          exact (Hhe_ext_he (ex_intro _ _ Hok_alloc) Hkeys_he_args). }
+        (* e_he -> e_u: use union_sound to get iff2 (union_closure_PER ...) (uf_rel_PER e_u),
+           then derive equiv_extends e_he e_u via the left-injection into union_closure_PER. *)
+        assert (Hext_u : equiv_extends_inst e_he e_u).
+        { pose proof (@union_sound V V_Eqb V_Eqb_ok lt succ V_default V V_map V_map V_map_ok
+                        V_trie X H t_v tx') as Hu.
+          unfold vc in Hu. specialize (Hu e_he).
+          rewrite Heq_union in Hu. cbn [fst snd] in Hu.
+          specialize (Hu (ex_intro _ roots_he Hroots_he)
+                        (is_root_has_key e_he t_v Htv_root_he)
+                        (is_root_has_key e_he tx' Htx'_root_he)).
+          destruct Hu as (_ & _ & Hper_iff & _).
+          unfold equiv_extends_inst, equiv_extends, uf_rel_PER. intros i j Hpre.
+          apply Hper_iff.
+          unfold Relations.union_closure_PER.
+          apply PER_clo_base. left. exact Hpre. }
+        assert (Hequiv_iu : forall i j,
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_inner) i j ->
+            uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_u) i j).
+        { intros i j Hij.
+          exact (Hext_u _ _ (Hext_he _ _ (Hext_alloc _ _ (Hext_sort _ _ Hij)))). }
         cbn [ctx_readback].
-        split; [|split].
-        { (* exists xs, is_root e_u xs /\ atom_tree_sort X e_u base' t xs *)
-          pose proof (add_open_sort_node_atoms c' base' t Hwfc' Hwfst Hmaps) as Hnode.
-          unfold vc in Hnode. specialize (Hnode e_inner).
-          rewrite Heq_sort in Hnode. cbn [fst snd] in Hnode.
-          unfold open_atomtree_sort_post in Hnode.
-          specialize (Hnode Huf_tail Hdb_tail Hall_tail).
-          destruct Hnode as (_ & _ & Htree_node).
+        split; [|].
+        { (* exists xs, is_root e_u xs /\ atom_tree_sort X e_u base' t xs
+                     /\ exists tx', atom_in_db (sort_of,[x'],tx') (db e_u)
+                                 /\ uf_rel_PER (equiv e_u) tx' xs *)
           exists t_v. split.
           - exact Htv_root_u.
-          - eapply atom_tree_sort_db_incl; [exact Hincl_su | exact Htree_node]. }
-        { (* exists tx'0, atom_in_db (sort_of,[x'],tx'0) (db e_u) *)
-          exists tx'. rewrite <- Hdb_u. exact Htx'_atom. }
+          - split.
+            + eapply atom_tree_sort_db_incl; [exact Hincl_su | exact Htree_sort].
+            + exists tx'. split.
+              * rewrite <- Hdb_u. exact Htx'_atom.
+              * (* uf_rel_PER e_u tx' t_v = uf_rel_PER e_u tx' (fst (v_u, e_u)) *)
+                (* Htx'_demoted_u : map.get (parent (equiv e_u)) tx' = Some t_v *)
+                apply PER_clo_base. exact Htx'_demoted_u. }
         { (* ctx_readback e_u base' c' *)
-          eapply ctx_readback_mono; [exact Hincl_iu | exact Hmono_iu | exact Hrb_tail]. }
+          eapply ctx_readback_mono;
+            [exact Hincl_iu | exact Hmono_iu | exact Hequiv_iu | exact Hrb_tail]. }
     Qed.
 
   End AddOpenRoots.
