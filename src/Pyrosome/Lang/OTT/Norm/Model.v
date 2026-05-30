@@ -87,11 +87,41 @@ Section Model.
   Definition norm_ceq_term (t : sort) (e1 e2 : term) : Type :=
     (eq_term fo_lang [] t e1 e2 * glue_term t e1 e2)%type.
 
-  (* Glue for sorts: same head and arity. *)
-  Definition glue_sort (S1 S2 : sort) : Type :=
-    match S1, S2 with
-    | scon n1 a1, scon n2 a2 => ((eqb n1 n2 = true) * (length a1 = length a2))%type
-    end.
+  (* Glue for sorts, inductive presentation mirroring [glue_term]: one
+     constructor per MEANINGFUL sort head, each requiring [glue_term] on the
+     sort's subterms (at the sort each subterm inhabits).  A dependent subterm
+     (the type [A] of an [exp]) is glued at the [ty] sort built from the LEFT
+     sort's index/context args [i1; G1]; this is coherent with the right side's
+     [i2; G2] because the index subterms themselves glue (and [glue_ty] only
+     reads the context's evaluated env, which is shared across glued envs). *)
+  Inductive glue_sort : sort -> sort -> Type :=
+  | glue_sort_exp : forall (A1 A2 i1 i2 G1 G2 : term),
+      glue_term (scon "ty" [i1; G1]) A1 A2 ->
+      glue_term (scon "tyinfo" []) i1 i2 ->
+      glue_term (scon "env" []) G1 G2 ->
+      glue_sort (scon "exp" [A1; i1; G1]) (scon "exp" [A2; i2; G2])
+  | glue_sort_ty : forall (i1 i2 G1 G2 : term),
+      glue_term (scon "tyinfo" []) i1 i2 ->
+      glue_term (scon "env" []) G1 G2 ->
+      glue_sort (scon "ty" [i1; G1]) (scon "ty" [i2; G2])
+  | glue_sort_sub : forall (Gd1 Gd2 Gc1 Gc2 : term),
+      glue_term (scon "env" []) Gd1 Gd2 ->
+      glue_term (scon "env" []) Gc1 Gc2 ->
+      glue_sort (scon "sub" [Gd1; Gc1]) (scon "sub" [Gd2; Gc2])
+  | glue_sort_env :
+      glue_sort (scon "env" []) (scon "env" [])
+  | glue_sort_relevance :
+      glue_sort (scon "relevance" []) (scon "relevance" [])
+  | glue_sort_lvl :
+      glue_sort (scon "lvl" []) (scon "lvl" [])
+  | glue_sort_tlvl :
+      glue_sort (scon "tlvl" []) (scon "tlvl" [])
+  | glue_sort_tyinfo :
+      glue_sort (scon "tyinfo" []) (scon "tyinfo" [])
+  | glue_sort_ltl : forall (a1 a2 b1 b2 : term),
+      glue_term (scon "lvl" []) a1 a2 ->
+      glue_term (scon "lvl" []) b1 b2 ->
+      glue_sort (scon "ltl" [a1; b1]) (scon "ltl" [a2; b2]).
 
   Definition norm_ceq_sort (S1 S2 : sort) : Type :=
     (eq_sort fo_lang [] S1 S2 * glue_sort S1 S2)%type.

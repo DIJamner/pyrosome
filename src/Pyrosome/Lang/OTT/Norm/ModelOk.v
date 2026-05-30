@@ -140,6 +140,62 @@ Proof.
 Qed.
 
 (* ================================================================== *)
+(* glue_term symmetry / transitivity, and env-retargeting of [ty] glue. *)
+(* These are the building blocks for the (now inductive) [glue_sort]    *)
+(* congruence / transitivity / symmetry below: a sort's glue is just     *)
+(* [glue_term] on its subterms, so the sort ops reduce to these.         *)
+(* ================================================================== *)
+
+Lemma glue_term_sym : forall t e1 e2,
+    glue_term t e1 e2 -> glue_term t e2 e1.
+Proof.
+  intros t e1 e2 H; inversion H; subst;
+    econstructor; solve [ eassumption | congruence | assumption ].
+Qed.
+
+Lemma glue_term_trans : forall t e1 e12 e2,
+    glue_term t e1 e12 -> glue_term t e12 e2 -> glue_term t e1 e2.
+Proof.
+  intros t e1 e12 e2 G1 G2.
+  inversion G1; subst; inversion G2; subst;
+    first
+      [ exfalso; congruence
+      | match goal with
+          Ha : eval_rel _ e12 _ _, Hb : eval_rel _ e12 _ _ |- _ =>
+            destruct (eval_rel_det Ha Hb) as [[? ?] ?]; subst end;
+        econstructor; eassumption
+      | match goal with
+          Ha : eval_ty _ e12 _, Hb : eval_ty _ e12 _ |- _ =>
+            destruct (eval_ty_det Ha Hb) as [? ?]; subst end;
+        econstructor; eassumption
+      | match goal with
+          Ha : eval_sub _ _ e12 _, Hb : eval_sub _ _ e12 _ |- _ =>
+            destruct (eval_sub_det Ha Hb) as [[? ?] ?]; subst end;
+        econstructor; eassumption
+      | match goal with
+          Ha : eval_env e12 _, Hb : eval_env e12 _ |- _ =>
+            pose proof (eval_env_det Ha Hb); subst end;
+        econstructor; eassumption
+      | econstructor; solve [ congruence | assumption ] ].
+Qed.
+
+(* A [ty]-sorted glue only reads the evaluated env of its context arg; since
+   glued envs evaluate to the SAME [senv], the glue transfers across them. The
+   [tyinfo] index is irrelevant to [glue_ty], so it may change freely. *)
+Lemma glue_ty_retarget : forall i i' G G' A1 A2,
+    glue_term (scon "env" []) G G' ->
+    glue_term (scon "ty" [i; G]) A1 A2 ->
+    glue_term (scon "ty" [i'; G']) A1 A2.
+Proof.
+  intros i i' G G' A1 A2 He Ht.
+  inversion He; subst. inversion Ht; subst.
+  match goal with
+    Ha : eval_env G ?genv, Hb : eval_env G ?ge |- _ =>
+      pose proof (eval_env_det Ha Hb); subst end.
+  econstructor; eassumption.
+Qed.
+
+(* ================================================================== *)
 (* cterm_conv : eq_term_conv + glue carries over (head is preserved)   *)
 (* ================================================================== *)
 
@@ -150,7 +206,7 @@ Lemma Norm_cterm_conv : forall t1 t2 e1 e2,
 Proof.
   intros [n1 a1] [n2 a2] e1 e2 Hs Ht.
   unfold ceq_sort, Norm, norm_ceq_sort in Hs.
-  destruct Hs as [Heqs Gs]. unfold glue_sort in Gs. destruct Gs as [Hn Hlen].
+  destruct Hs as [Heqs _].
   unfold ceq_term, Norm, norm_ceq_term in *.
   destruct Ht as [Heqt Gt].
   split.
@@ -165,6 +221,49 @@ Admitted.
 (* sort ops : eq_sort_* for the eq component, head+arity for the glue  *)
 (* ================================================================== *)
 
+(* Resolve the (now concrete) sort rule's context from [Hin], invert [ceq_args]
+   into one [norm_ceq_term] per argument, and expose the per-argument
+   [glue_term] witnesses (the [glue_sort] constructors consume exactly these). *)
+Ltac peel_sort_args :=
+  match goal with Hin : In _ fo_lang |- _ =>
+    apply (proj2 (all_fresh_named_list_lookup_err_in _ _ _ fo_lang_all_fresh)) in Hin;
+    vm_compute in Hin; injection Hin; clear Hin; intros; subst end;
+  repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end;
+  try match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end;
+  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  repeat match goal with H : @prod _ _ |- _ => destruct H end.
+
+(* [concretize_subst] / [finish_absurd] mirror the like-named tactics used in
+   the [cterm] dispatch below; they are repeated here (Ltac is re-definable) so
+   the sort dispatch can run before that section.  The glue goal lives in [Type],
+   so dispatch goes through the boolean [eqb] (no [Prop]-into-[Type] elimination
+   of the [In] membership). *)
+Ltac concretize_subst_s :=
+  match goal with
+  | E : eqb ?nm ?s = true |- _ =>
+      let Eq := fresh in
+      pose proof (proj1 (eqb_prop_iff _ nm s) ltac:(rewrite E; exact I)) as Eq;
+      clear E; subst nm
+  end.
+
+Ltac finish_absurd_s Hmem names :=
+  exfalso;
+  let Hex := fresh "Hex" in
+  assert (Hex : existsb (eqb _) names = true)
+    by (apply (proj2 (existsb_exists _ _)); eexists; split;
+        [ exact Hmem | apply (@eqb_refl_true string _ string_Eqb_ok) ]);
+  cbn in Hex;
+  repeat match goal with E : eqb _ _ = false |- _ => rewrite E in Hex end;
+  cbn in Hex; discriminate Hex.
+
+Ltac disp_sort_cong nm tac :=
+  let E := fresh "Eqn" in
+  match goal with
+  | |- glue_sort (scon ?name _) _ =>
+      destruct (eqb name nm) eqn:E;
+      [ concretize_subst_s; peel_sort_args; tac | ]
+  end.
+
 Lemma Norm_csort_cong : forall (c' : @ctx string) (name : string) (args : list string) s1 s2,
     In (name, sort_rule c' args) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
@@ -175,9 +274,24 @@ Proof.
   unfold ceq_sort, Norm, norm_ceq_sort. split.
   - pose proof (norm_ceq_args_eq_args Hargs) as Heqa.
     eapply sort_con_congruence; try exact _; try eassumption.
-  - unfold glue_sort. split.
-    + apply (@eqb_refl_true string _ string_Eqb_ok).
-    + clear Hin. induction Hargs; cbn; congruence.
+  - (* glue: dispatch on the sort name (the only sorts), peel its arguments,
+       and rebuild the matching [glue_sort] constructor from the per-argument
+       [glue_term]s.  The [exp] type argument is glued at the right side's
+       index/env [i2;G2]; retarget it to the left's [i1;G1] (their envs glue). *)
+    pose proof (sort_rules Hin) as Hmem.
+    disp_sort_cong "exp"
+      ltac:(eapply glue_sort_exp;
+              [ eapply glue_ty_retarget; [ apply glue_term_sym; eassumption | eassumption ]
+              | eassumption | eassumption ]).
+    disp_sort_cong "ty" ltac:(eapply glue_sort_ty; eassumption).
+    disp_sort_cong "sub" ltac:(eapply glue_sort_sub; eassumption).
+    disp_sort_cong "env" ltac:(constructor).
+    disp_sort_cong "tyinfo" ltac:(constructor).
+    disp_sort_cong "tlvl" ltac:(constructor).
+    disp_sort_cong "ltl" ltac:(eapply glue_sort_ltl; eassumption).
+    disp_sort_cong "lvl" ltac:(constructor).
+    disp_sort_cong "relevance" ltac:(constructor).
+    finish_absurd_s Hmem ["exp";"ty";"sub";"env";"tyinfo";"tlvl";"ltl";"lvl";"relevance"].
 Qed.
 
 Lemma Norm_csort_by : forall (c' : @ctx string) (name : string) t1 t2 s1 s2,
@@ -196,30 +310,47 @@ Lemma Norm_csort_trans : forall t1 t12 t2,
     ceq_sort (CutTModel := Norm) t1 t12 -> ceq_sort (CutTModel := Norm) t12 t2 ->
     ceq_sort (CutTModel := Norm) t1 t2.
 Proof.
-  intros [n1 a1] [n12 a12] [n2 a2] H1 H2.
+  intros t1 t12 t2 H1 H2.
   unfold ceq_sort, Norm, norm_ceq_sort in *.
   destruct H1 as [Heq1 Gs1], H2 as [Heq2 Gs2].
-  unfold glue_sort in *. destruct Gs1 as [Hn1 HL1], Gs2 as [Hn2 HL2].
   split.
   - exact (eq_sort_trans Heq1 Heq2).
-  - split.
-    + pose proof (proj1 (eqb_prop_iff _ n1 n12) ltac:(rewrite Hn1; exact I)).
-      pose proof (proj1 (eqb_prop_iff _ n12 n2) ltac:(rewrite Hn2; exact I)). subst.
-      apply (@eqb_refl_true string _ string_Eqb_ok).
-    + congruence.
+  - (* both glues share the middle sort [t12]; inverting them lines up the
+       per-subterm glues, which compose by [glue_term_trans] (retargeting the
+       [exp] type argument's [ty] glue across the two glued envs). *)
+    inversion Gs1; subst; inversion Gs2; subst;
+      first
+        [ exfalso; congruence
+        | eapply glue_sort_exp;
+            [ eapply glue_term_trans;
+                [ eassumption
+                | eapply glue_ty_retarget; [ apply glue_term_sym; eassumption | eassumption ] ]
+            | eapply glue_term_trans; eassumption
+            | eapply glue_term_trans; eassumption ]
+        | eapply glue_sort_ty; eapply glue_term_trans; eassumption
+        | eapply glue_sort_sub; eapply glue_term_trans; eassumption
+        | eapply glue_sort_ltl; eapply glue_term_trans; eassumption
+        | constructor ].
 Qed.
 
 Lemma Norm_csort_sym : forall t1 t2,
     ceq_sort (CutTModel := Norm) t1 t2 -> ceq_sort (CutTModel := Norm) t2 t1.
 Proof.
-  intros [n1 a1] [n2 a2] H. unfold ceq_sort, Norm, norm_ceq_sort in *.
-  destruct H as [Heq Gs]. unfold glue_sort in *. destruct Gs as [Hn HL].
+  intros t1 t2 H. unfold ceq_sort, Norm, norm_ceq_sort in *.
+  destruct H as [Heq Gs].
   split.
   - exact (eq_sort_sym Heq).
-  - split.
-    + pose proof (proj1 (eqb_prop_iff _ n1 n2) ltac:(rewrite Hn; exact I)); subst.
-      apply (@eqb_refl_true string _ string_Eqb_ok).
-    + auto.
+  - (* invert the glue and swap each per-subterm glue ([glue_term_sym]),
+       retargeting the [exp] type argument's [ty] glue across the glued envs. *)
+    inversion Gs; subst;
+      first
+        [ eapply glue_sort_exp;
+            [ eapply glue_ty_retarget; [ eassumption | apply glue_term_sym; eassumption ]
+            | apply glue_term_sym; eassumption | apply glue_term_sym; eassumption ]
+        | eapply glue_sort_ty; apply glue_term_sym; eassumption
+        | eapply glue_sort_sub; apply glue_term_sym; eassumption
+        | eapply glue_sort_ltl; apply glue_term_sym; eassumption
+        | constructor ].
 Qed.
 
 (* ================================================================== *)
