@@ -2456,6 +2456,39 @@ Section WithMap.
     eapply Hkey_l. unfold uf_rel_PER in *. apply PER_clo_sym; exact Hij.
   Qed.
 
+  (* Two roots related by the PER are equal. *)
+  Lemma roots_uf_rel_eq (uf : union_find) roots x y
+    : union_find_ok lt uf roots ->
+      map.get uf.(parent) x = Some x ->
+      map.get uf.(parent) y = Some y ->
+      uf_rel_PER uf x y ->
+      x = y.
+  Proof.
+    intros Huf Hx Hy Hxy.
+    pose proof Huf as [Hf _ _ _ _]; cbn in Hf.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hroot_lim : forall z, map.get uf.(parent) z = Some z ->
+              limit (parent_rel idx (idx_map idx) (parent uf)) z z).
+    { intros z Hz.
+      apply (proj2 (union_find_limit idx _ _ _ _ _ lt default lt_trans_nat uf roots z z Huf)).
+      split.
+      - apply (proj2 (forest_root_iff idx _ _ _ _ z roots _ Hf)). exact Hz.
+      - unfold parent_rel; apply trans_clo_base; exact Hz. }
+    pose proof (@forest_PER_shared_parent _ _ _ _ _ _ default lt_trans_nat
+                  _ _ Hf x y) as HP.
+    unfold uf_rel_PER in Hxy.
+    apply HP in Hxy.
+    destruct Hxy as [i [ Hlx Hly ] ].
+    pose proof (Hroot_lim x Hx) as Hxx.
+    pose proof (Hroot_lim y Hy) as Hyy.
+    assert (Hix : i = x)
+      by (exact (union_find_unique idx _ _ _ _ _ lt default lt_trans_nat roots uf x i x Huf Hlx Hxx)).
+    assert (Hiy : i = y)
+      by (exact (union_find_unique idx _ _ _ _ _ lt default lt_trans_nat roots uf y i y Huf Hly Hyy)).
+    subst; reflexivity.
+  Qed.
+
   (* Inner version of [union_sound] parameterized by an explicit
      [roots] list.  Callers that don't have a concrete [roots] in
      scope (the typical case after [vc_bind] / [vc_Mseq], where the
@@ -8300,6 +8333,43 @@ Section WithMap.
       a.(atom_fn) = b.(atom_fn) ->
       all2 (uf_rel_PER e.(equiv)) a.(atom_args) b.(atom_args) ->
       a = b.
+
+  (* A well-rooted [db_inv] egraph is [db_injective]: arguments stored in
+     the db are roots, so PER-equivalent argument lists are literally equal,
+     and [atom_in_db] is functional in (fn, args), so the return is unique. *)
+  Lemma db_inv_db_injective (P : symbol -> Prop) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      db_inv P e ->
+      db_injective e.
+  Proof.
+    intros [roots Huf] Hdbinv a b Ha Hb Hfn Hargs.
+    pose proof (Hdbinv a Ha) as [Hra _].
+    pose proof (Hdbinv b Hb) as [Hrb _].
+    assert (Hargseq : atom_args a = atom_args b).
+    { clear Ha Hb Hfn Hdbinv.
+      revert Hargs Hra Hrb.
+      generalize (atom_args a) as la.
+      generalize (atom_args b) as lb.
+      intro lb; induction lb as [|hb tb IHb]; intros la Hargs Hra Hrb.
+      - destruct la; cbn in Hargs; [ reflexivity | contradiction ].
+      - destruct la as [|ha ta]; cbn in Hargs; [ contradiction | ].
+        destruct Hargs as [Hh Ht].
+        cbn in Hra, Hrb.
+        destruct Hra as [Hrha Hrta].
+        destruct Hrb as [Hrhb Hrtb].
+        f_equal.
+        + eapply roots_uf_rel_eq; [ exact Huf | exact Hrha | exact Hrhb | ].
+          exact Hh.
+        + apply IHb; assumption. }
+    unfold atom_in_db in Ha, Hb.
+    rewrite Hfn, Hargseq in Ha.
+    unfold Is_Some_satisfying in Ha, Hb.
+    destruct (map.get (db e) (atom_fn b)) as [tbl|] eqn:Htbl; [|contradiction].
+    destruct (map.get tbl (atom_args b)) as [r|] eqn:Hr; [|contradiction].
+    assert (Hret : atom_ret a = atom_ret b) by (rewrite <- Ha, <- Hb; reflexivity).
+    destruct a as [fa arga reta]; destruct b as [fb argb retb]; cbn in *.
+    subst; reflexivity.
+  Qed.
 
   (* L_survive_canonical (a.k.a. F1c-survival) — the survival lemma the
      source-rule adapter / faithful-rep actually needs.  DEFERRED (Admitted)
