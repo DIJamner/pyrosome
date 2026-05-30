@@ -4321,6 +4321,52 @@ Section WithVar.
   End AddCtxInvert.
 
   (* ============================================================== *)
+  (* F1c discharge: the canonicalizing survival hypothesis Hsurv     *)
+  (* that ctx_readback_to_eF (and atom_tree_sort_survives) consume,   *)
+  (* obtained by applying the (admitted) L_survive_canonical with     *)
+  (* m := lang_model.  This is the SINGLE site where the one          *)
+  (* intentional F1c axiom is pulled in; both its side-conditions     *)
+  (* (egraph_ok via add_ctx_sound, db_injective via db_inv_db_        *)
+  (* injective + add_ctx_all_roots) are provable 0-axiom.  The extra  *)
+  (* map_plus/spaced_list_intersect context is what L_survive_         *)
+  (* canonical was generalised over in Semantics' WithMap; the final   *)
+  (* positive instantiation supplies concrete instances.              *)
+  Section F1cDischarge.
+    Context (X : Type) `{analysis V V X}.
+    Context (l : lang) (Hwf : wf_lang l) (Hsof : fresh sort_of l).
+    Context (V_map_plus_ok : ExtraMaps.map_plus_ok V_map).
+    Context (V_trie_plus : ExtraMaps.map_plus V_trie).
+    Context (sli : forall B, WithDefault B -> (B -> B -> B) ->
+                   ne_list (V_trie B * list bool) -> V_trie B).
+
+    Local Notation lang_model := (lang_model l).
+    Local Notation egraph_ok := (egraph_ok V lt V V_map V_map V_trie X).
+    Local Notation ain a e := (@Semantics.atom_in_egraph V V V_map V_map V_trie X a e).
+
+    Lemma rebuild_survives_canonical (e1 : instance X) (n : nat)
+      (Hok : egraph_ok e1)
+      (Hdbinj : Semantics.db_injective V V V_map V_map V_trie X e1)
+      : forall a : atom,
+          atom_in_egraph_up_to_equiv V V V_map V_map V_trie X a e1 ->
+          all (is_root X e1) (atom_args a) ->
+          is_root X e1 (atom_ret a) ->
+          ain a (snd (rebuild n e1)).
+    Proof.
+      intros a Hup Hargs Hret.
+      eapply (@L_survive_canonical V V_Eqb V_Eqb_ok lt succ V_default
+                V V_Eqb V_Eqb_ok V_map V_map_plus V_map_plus_ok V_map_ok
+                V_map V_map_plus V_map_ok V_trie V_trie_ok V_trie_plus X
+                V_map_plus_ok sli _ lang_model (lang_model_ok l Hsof Hwf) n e1 a).
+      - exact Hok.
+      - exact Hdbinj.
+      - exact Hup.
+      - exact Hargs.
+      - exact Hret.
+    Qed.
+
+  End F1cDischarge.
+
+  (* ============================================================== *)
   (* Soundness of scheduled saturation                              *)
   (* ============================================================== *)
   (* Wraps Semantics' saturate_until_sound up through the Pyrosome   *)
