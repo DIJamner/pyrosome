@@ -9293,6 +9293,72 @@ Section WithMap.
         * exact IH_wl.
   Qed.
 
+  (* [list_Miter repair] over a list of analysis_repair entries preserves
+     equiv literally (the union-repair branch is excluded by hypothesis). *)
+  Lemma list_Miter_repair_ar_equiv l
+    : vc (list_Miter repair l)
+        (fun e res =>
+           all (fun ent => exists j, ent = analysis_repair idx j) l ->
+           (snd res).(equiv) = e.(equiv)).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun l0 (_:instance) => all (fun ent => exists j, ent = analysis_repair idx j) l0)
+                  (fun s s' => s'.(equiv) = s.(equiv)))].
+    - cbn beta. intros s res Hinv Hall. exact (proj2 (Hinv Hall)).
+    - intros s _; reflexivity.
+    - intros s1 s2 s3 H1 H2; congruence.
+    - intros a l_rest.
+      destruct a as [old new improved | j].
+      + unfold vc. intros e Hp. exfalso. cbn [all] in Hp. destruct Hp as [ [jj Hj] _ ]. discriminate Hj.
+      + unfold vc. intros e Hp.
+        cbn [repair] in *. unfold get_parents in *. cbn [Mbind StateMonad.state_monad fst snd] in *.
+        cbn [all] in Hp. destruct Hp as [_ Hall_rest].
+        split.
+        * exact Hall_rest.
+        * exact (list_Miter_repair_parent_analysis_preserves_equiv
+                   (unwrap_with_default (map.get (parents e) j)) e).
+  Qed.
+
+  (* MAIN: when the worklist holds only analysis_repair entries, rebuild
+     leaves equiv UNCHANGED.  This is the (b) "analysis-drain" half of
+     the L_survive_canonical' work. *)
+  Lemma rebuild_analysis_only_preserves_equiv n
+    : vc (rebuild n)
+        (fun e res =>
+           all (fun ent => exists j, ent = analysis_repair idx j) e.(worklist) ->
+           (snd res).(equiv) = e.(equiv)).
+  Proof.
+    induction n as [|fuel IH].
+    - unfold vc, rebuild. intros e Hwl. cbn [Mret StateMonad.state_monad snd].
+      reflexivity.
+    - unfold vc. intros e Hwl. cbn [rebuild].
+      unfold pull_worklist. cbn [Mbind StateMonad.state_monad fst snd].
+      destruct (worklist e) as [|w wl'] eqn:Hwle.
+      + cbn [Mret StateMonad.state_monad snd db worklist].
+        reflexivity.
+      + match goal with |- context[list_Mmap ?f (w::wl') ?st] =>
+            pose proof (list_Mmap_canon_ar (w::wl') Hwl st) as Hcanon end.
+        rewrite Hcanon. cbn [Mseq Mbind StateMonad.state_monad].
+        assert (Hdedup : all (fun ent => exists j, ent = analysis_repair idx j) (worklist_dedup idx Eqb_idx (w::wl')))
+          by (apply worklist_dedup_preserves_all; exact Hwl).
+        match goal with |- context[list_Miter repair ?dl ?st] => remember st as st0 eqn:Hst0 end.
+        pose proof (list_Miter_repair_ar_equiv (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit_eq. unfold vc in Hmit_eq.
+        specialize (Hmit_eq st0 Hdedup).
+        pose proof (list_Miter_repair_ar (worklist_dedup idx Eqb_idx (w::wl'))) as Hmit. unfold vc in Hmit.
+        specialize (Hmit st0 Hdedup).
+        destruct (list_Miter repair (worklist_dedup idx Eqb_idx (w::wl')) st0) as [u s1] eqn:Hmiter.
+        cbn [snd] in Hmit_eq, Hmit |- *.
+        assert (Hwl_st0 : all (fun ent => exists j, ent = analysis_repair idx j) (worklist st0))
+          by (rewrite Hst0; exact I).
+        destruct Hmit as [Hmit_db Hmit_wl].
+        specialize (Hmit_wl Hwl_st0).
+        pose proof IH as IHs1. unfold vc in IHs1. specialize (IHs1 s1).
+        destruct (rebuild fuel s1) as [u2 s2] eqn:Hrb. cbn [snd] in IHs1 |- *.
+        specialize (IHs1 Hmit_wl).
+        rewrite IHs1, Hmit_eq, Hst0. reflexivity.
+  Qed.
+
   (* L_survive: an atom present before rebuild, under an analysis-repair-only
      worklist, is still literally present (atom_in_egraph) after rebuild.
      Forward/survival direction only; follows immediately from
