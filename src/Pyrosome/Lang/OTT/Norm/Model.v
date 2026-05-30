@@ -70,10 +70,15 @@ Section Model.
   | glue_env : forall (e1 e2 : term) (Genv : senv),
       eval_env e1 Genv -> eval_env e2 Genv ->
       glue_term (scon "env" []) e1 e2
-  | glue_info : forall (n : string) (e1 e2 : term),
-      n <> "exp" -> n <> "ty" -> n <> "sub" -> n <> "env" ->
-      nf_info e1 = nf_info e2 ->            (* relevance/lvl/tlvl/tyinfo *)
-      glue_term (scon n []) e1 e2
+  (* static-info sorts: compared by [nf_info], one constructor each *)
+  | glue_relevance : forall (e1 e2 : term),
+      nf_info e1 = nf_info e2 -> glue_term (scon "relevance" []) e1 e2
+  | glue_lvl : forall (e1 e2 : term),
+      nf_info e1 = nf_info e2 -> glue_term (scon "lvl" []) e1 e2
+  | glue_tlvl : forall (e1 e2 : term),
+      nf_info e1 = nf_info e2 -> glue_term (scon "tlvl" []) e1 e2
+  | glue_tyinfo : forall (e1 e2 : term),
+      nf_info e1 = nf_info e2 -> glue_term (scon "tyinfo" []) e1 e2
   | glue_ltl : forall (a b e1 e2 : term),  (* ltl: proof-irrelevant *)
       glue_term (scon "ltl" [a; b]) e1 e2.
 
