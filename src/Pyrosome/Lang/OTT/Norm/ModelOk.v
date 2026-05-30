@@ -443,13 +443,6 @@ Ltac disp nm :=
       destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_cong | ]
   end.
 
-Ltac dispA nm :=
-  let E := fresh "Eqn" in
-  match goal with
-  | |- glue_term _ (con ?name _) _ =>
-      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
-  end.
-
 (* ------------------------------------------------------------------ *)
 (* The two eliminators need a per-rule step beyond the generic recipe.  *)
 (* ------------------------------------------------------------------ *)
@@ -598,160 +591,173 @@ Proof.
 Qed.
 
 (* ================================================================== *)
+(* cterm_by : typed glue for the equation axioms                       *)
+(* ================================================================== *)
+
+(* List-level apply-composition: pushing two substitutions one-by-one equals
+   pushing their composite, for a well-typed substitution [sh].  Needed for the
+   [cmp]/[subst] COMPOSITION laws ([cmp_assoc] et al.). *)
+Lemma map_apply_compose : forall D1 D2 D3 D4 sf sg sh,
+  wf_ssub D1 sf D2 -> wf_ssub D2 sg D3 -> wf_ssub D3 sh D4 ->
+  map (apply_val (map (apply_val sf) sg)) sh
+  = map (apply_val sf) (map (apply_val sg) sh).
+Proof.
+  intros D1 D2 D3 D4 sf sg sh Hf Hg Hh.
+  rewrite map_map. apply map_ext_in. intros v Hin.
+  apply In_nth_error in Hin. destruct Hin as [k Hk].
+  assert (Hlt : k < length sh)
+    by (apply (proj1 (nth_error_Some sh k)); rewrite Hk; discriminate).
+  destruct Hh as [Hlen Hpt].
+  assert (Hlt4 : k < length D4) by (rewrite <- Hlen; exact Hlt).
+  destruct (nth_error D4 k) as [T|] eqn:HT;
+    [ | apply nth_error_None in HT; Lia.lia ].
+  pose proof (Hpt k T HT) as Hty.
+  assert (Hnd : nth_default (vNe (nVar 0)) sh k = v)
+    by (unfold nth_default; rewrite Hk; reflexivity).
+  rewrite Hnd in Hty.
+  exact (fst apply_compose_typed _ _ _ Hty _ _ sf sg Hf Hg).
+Qed.
+
+Ltac benv := solve [ repeat first [ eassumption | econstructor ] ].
+
+(* Extract well-typedness facts from the eval hypotheses (via [eval_sound]), so
+   the apply-composition lemmas' side conditions are dischargeable. *)
+Ltac pose_wf :=
+  repeat match goal with
+  | H : eval_ty ?ge ?A ?T |- _ =>
+      lazymatch goal with _ : wf_svalty ge T |- _ => fail | _ => idtac end;
+      pose proof (snd (snd (fst (fst eval_sound)) _ _ _ H))
+  | H : eval_sub ?gi ?go ?g ?s |- _ =>
+      lazymatch goal with _ : wf_ssub go s gi |- _ => fail | _ => idtac end;
+      pose proof (snd (snd eval_sound _ _ _ _ H))
+  | H : eval_rel ?ge ?e ?T ?v |- _ =>
+      lazymatch goal with _ : has_svalty ge v T |- _ => fail | _ => idtac end;
+      pose proof (eval_rel_preserves_typing H)
+  end.
+
+(* --- The eight COMPOSITION laws [solve_byT] cannot discharge.  Each picks the
+   result [glue_*] constructor, fixes the shared value/type from the side whose
+   evaluation is canonical, then reconciles the other side by the structural
+   apply-laws ([map_apply_*_list]) and apply-composition ([apply_compose_*]).  --- *)
+
+(* [cmp f #id = f] : LHS [map (apply_val sf) (id_list n)] collapses to [sf]. *)
+Ltac byT_id_right :=
+  arg_glue_prep; eval_indices; merge_dets;
+  eapply glue_sub; [ eassumption | eassumption | idtac | eassumption ];
+  match goal with
+  | |- eval_sub ?GeD _ (con "cmp" _) ?sf =>
+      erewrite <- (@map_apply_id_list sf (length GeD))
+        by (eapply eval_sub_len; eassumption);
+      eapply ev_cmp; [ eassumption | eapply ev_id; eassumption ]
+  end.
+
+(* [cmp (snoc g v) #wkn = g] : LHS [map (apply_val (vv::sg)) (wkn_list n)] -> [sg]. *)
+Ltac byT_wkn_snoc :=
+  arg_glue_prep; eval_indices; merge_dets;
+  eapply glue_sub; [ eassumption | eassumption | idtac | eassumption ];
+  match goal with
+  | |- eval_sub ?GeD _ (con "cmp" _) ?s =>
+      erewrite <- (@map_apply_wkn_list s _ (length GeD))
+        by (eapply eval_sub_len; eassumption);
+      eapply ev_cmp; [ eapply ev_snoc; [ eassumption | eassumption | eassumption ]
+                     | eapply ev_wkn; eassumption ]
+  end.
+
+(* [snoc #wkn #hd = #id] : LHS [vNe 0 :: wkn_list n] = [id_list (S n)]. *)
+Ltac byT_snoc_wkn_hd :=
+  arg_glue_prep; eval_indices; merge_dets;
+  eapply glue_sub;
+  [ benv | benv
+  | eapply ev_snoc; [ eapply ev_wkn; eassumption | eassumption
+                    | hd_retype; eapply ev_hd; eassumption ]
+  | rewrite snoc_wkn_hd_list;
+    match goal with |- eval_sub ?GeD _ _ (id_list ?n) =>
+      replace n with (length GeD) by (cbn [length]; rewrite length_map; reflexivity) end;
+    eapply ev_id; benv ].
+
+(* [cmp f (snoc g v) = snoc (cmp f g) (exp_subst f v)] : values agree by [map];
+   the [exp_subst] result type needs [apply_compose_ty_typed]. *)
+Ltac byT_cmp_snoc :=
+  arg_glue_prep; eval_indices; merge_dets; pose_wf;
+  eapply glue_sub;
+  [ benv | benv
+  | eapply ev_cmp; [ eassumption
+                   | eapply ev_snoc; [ eassumption | eassumption | eassumption ] ]
+  | cbn [map];
+    eapply ev_snoc;
+    [ eapply ev_cmp; [ eassumption | eassumption ]
+    | eassumption
+    | match goal with
+      | Wf_f : wf_ssub _ ?s ?D2, Wf_g : wf_ssub ?D2 ?sg ?Ge, HS : wf_svalty ?Ge ?T
+        |- eval_rel _ _ (apply_ty (map (apply_val ?s) ?sg) ?T) _ =>
+          erewrite (apply_compose_ty_typed HS Wf_f Wf_g)
+      end;
+      eapply ev_exp_subst; [ eassumption | eassumption ] ] ].
+
+(* [cmp f (cmp g h) = cmp (cmp f g) h] : list-level apply-composition. *)
+Ltac byT_cmp_assoc :=
+  arg_glue_prep; eval_indices; merge_dets; pose_wf;
+  eapply glue_sub;
+  [ benv | benv
+  | eapply ev_cmp; [ eassumption | eapply ev_cmp; [ eassumption | eassumption ] ]
+  | match goal with
+    | Wf_f : wf_ssub ?D1 ?sf ?D2, Wf_g : wf_ssub ?D2 ?sg ?D3, Wf_h : wf_ssub ?D3 ?sh ?D4
+      |- eval_sub _ _ _ (map (apply_val ?sf) (map (apply_val ?sg) ?sh)) =>
+        erewrite <- (map_apply_compose Wf_f Wf_g Wf_h)
+    end;
+    eapply ev_cmp; [ eapply ev_cmp; [ eassumption | eassumption ] | eassumption ] ].
+
+(* [ty_subst f (ty_subst g A) = ty_subst (cmp f g) A] : [apply_compose_ty_typed]. *)
+Ltac byT_ty_subst_cmp :=
+  arg_glue_prep; eval_indices; merge_dets; pose_wf;
+  eapply glue_ty;
+  [ benv
+  | eapply ev_ty_subst; [ eassumption | eapply ev_ty_subst; [ eassumption | eassumption ] ]
+  | match goal with
+    | Wf_f : wf_ssub _ ?s ?D2, Wf_g : wf_ssub ?D2 ?sg ?Ge, HS : wf_svalty ?Ge ?T
+      |- eval_ty _ _ (apply_ty ?s (apply_ty ?sg ?T)) =>
+        erewrite <- (apply_compose_ty_typed HS Wf_f Wf_g)
+    end;
+    eapply ev_ty_subst; [ eapply ev_cmp; [ eassumption | eassumption ] | eassumption ] ].
+
+(* [exp_subst f (exp_subst g v) = exp_subst (cmp f g) v] : type + value compose. *)
+Ltac byT_exp_subst_cmp :=
+  arg_glue_prep; eval_indices; merge_dets; pose_wf;
+  eapply glue_exp;
+  [ benv
+  | eapply ev_ty_subst; [ eapply ev_cmp; [ eassumption | eassumption ] | eassumption ]
+  | match goal with
+    | Wf_f : wf_ssub _ ?s ?D2, Wf_g : wf_ssub ?D2 ?sg ?Ge, HS : wf_svalty ?Ge ?T
+      |- eval_rel _ _ (apply_ty (map (apply_val ?s) ?sg) ?T) _ =>
+        erewrite (apply_compose_ty_typed HS Wf_f Wf_g)
+    end;
+    eapply ev_exp_subst; [ eassumption | eapply ev_exp_subst; [ eassumption | eassumption ] ]
+  | match goal with
+    | Wf_f : wf_ssub _ ?s ?D2, Wf_g : wf_ssub ?D2 ?sg ?Ge, Hv : has_svalty ?Ge ?vv ?T
+      |- eval_rel _ _ _ (apply_val ?s (apply_val ?sg ?vv)) =>
+        erewrite <- (fst apply_compose_typed _ _ _ Hv _ _ s sg Wf_f Wf_g)
+    end;
+    eapply ev_exp_subst; [ eapply ev_cmp; [ eassumption | eassumption ] | eassumption ] ].
+
+(* [exp_subst (snoc g v) #hd = v] : [hd]'s [shift]ed type cancels the [snoc] head
+   via [apply_shift_cons_ty]; the resulting value [apply_val (v::sg) (vNe 0)] = [v]. *)
+Ltac byT_snoc_hd :=
+  arg_glue_prep; eval_indices; merge_dets; pose_wf;
+  eapply glue_exp;
+  [ benv
+  | eapply ev_ty_subst; [ eassumption | eassumption ]
+  | match goal with
+    | Wf_g : wf_ssub _ ?sg ?Ge, HS : wf_svalty ?Ge ?T |- eval_rel _ _ (apply_ty ?sg ?T) _ =>
+        erewrite <- (apply_shift_cons_ty HS _ Wf_g)
+    end;
+    eapply ev_exp_subst;
+    [ eapply ev_snoc; [ eassumption | eassumption | eassumption ]
+    | eapply ev_hd; eassumption ]
+  | cbn [apply_val nth_default nth_error]; eassumption ].
+
+(* ================================================================== *)
 (* cterm_by                                                            *)
 (* ================================================================== *)
-
-Ltac solve_by :=
-  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
-  repeat match goal with H : @prod _ _ |- _ => destruct H end;
-  first [ exact tt | reflexivity | solve [congruence] ].
-
-Ltac dispby nm :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_by | ]
-  end.
-
-Ltac dispbyA nm :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
-  end.
-
-Ltac build := repeat first [ eassumption | econstructor ].
-
-Ltac rhs_finish :=
-  cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq] in *;
-  repeat match goal with H : @eq (@term string) ?a ?b |- _ => first [ rewrite H | idtac ]; clear H end;
-  rewrite ?apply_id_val, ?apply_id_ty, ?apply_id_map, ?snoc_wkn_hd_list;
-  cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq];
-  build.
-
-Ltac solve_by2 :=
-  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
-  repeat match goal with
-         | H : @sigT _ _ |- _ => destruct H as [? [? ?]]
-         | H : @prod _ _ |- _ => destruct H
-         end;
-  first
-    [ exact tt
-    | reflexivity
-    | solve [ eexists; split; [ build | rhs_finish ] ]
-    | solve [ congruence ] ].
-
-Ltac dispbyB nm :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; solve_by2 | ]
-  end.
-
-(* Bespoke tactic for snoc_wkn_hd: needs eval_env_length to equate ctx_len of
-   the two G sides (s1 vs s2 substitutions both have the same env witness). *)
-Ltac solve_snoc_wkn_hd :=
-  unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
-  repeat match goal with
-         | H : @sigT _ _ |- _ => destruct H as [? [? ?]]
-         | H : @prod _ _ |- _ => destruct H
-         end;
-  match goal with Ha : eval_env ?G1 ?gv, Hb : eval_env ?G2 ?gv |- _ =>
-    let Hlen := fresh in
-    pose proof (eq_trans (eq_sym (eval_env_length Ha)) (eval_env_length Hb)) as Hlen;
-    eexists; split;
-    [ build
-    | rewrite snoc_wkn_hd_list, Hlen; build ]
-  end.
-
-Ltac dispbyB_snoc_wkn_hd :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name "snoc_wkn_hd") eqn:E;
-      [ concretize_subst; recover_peel; solve_snoc_wkn_hd | ]
-  end.
-
-(* ================================================================== *)
-(* cterm_by Tier-C composition rules [id_right] / [wkn_snoc]           *)
-(*                                                                     *)
-(* Both are [cmp]s whose [g]-slot is an [id]/[wkn] over a context that *)
-(* is the codomain of the [f]-slot; the [ev_cmp] output collapses via  *)
-(* [map_apply_id_list] / [map_apply_wkn_list] once we know the         *)
-(* substitution's length, which the carried [eq_term] (well-formedness)*)
-(* supplies through [eval_sub_len] (SortInj) — the codomain         *)
-(* [ctx_len] then matches the inner [id]/[wkn]'s context via the env    *)
-(* glue ([eval_env_length]).                                           *)
-(* ================================================================== *)
-
-Ltac expose_glue :=
-  unfold ceq_term, Norm, norm_ceq_term in *;
-  cbn in *;
-  repeat match goal with H : @prod _ _ |- _ => destruct H end;
-  repeat match goal with H : @sigT _ _ |- _ => destruct H as [? [? ?]] end.
-
-(* Goal [length w = ctx_len G]: the [sub]-sorted argument that evaluates to [w]
-   has codomain [cod] (first internal arg of its [sub] sort, from the carried
-   [eq_term]/wf), and [cod] glues to [G] as environments. *)
-Ltac prove_sub_len w G :=
-  match goal with
-  | Hev : eval_sub ?a w, Heq : eq_term _ [] ?t ?a _ |- _ =>
-      lazymatch eval cbn in t with
-      | scon "sub" [?cod; _] =>
-          let HL := fresh "HL" in
-          pose proof (eval_sub_len Hev
-                        (eq_term_wf_l fo_wf_lang ltac:(constructor) Heq)) as HL;
-          match goal with
-          | Ha : eval_env G ?ex, Hb : eval_env cod ?ex |- _ =>
-              rewrite HL, <- (eval_env_length Hb), <- (eval_env_length Ha);
-              reflexivity
-          end
-      end
-  end.
-
-(* [cmp f id = f] *)
-Ltac solve_id_right :=
-  expose_glue;
-  eexists; split; [ | solve [ eassumption ] ];
-  match goal with
-  | |- eval_sub (con _ [con _ [?Ge]; _; _; _; _]) ?w =>
-      let Hmap := fresh in
-      assert (Hmap : map (apply_val w) (id_list (ctx_len Ge)) = w)
-        by (apply map_apply_id_list; prove_sub_len w Ge);
-      rewrite <- Hmap; econstructor; [ eassumption | econstructor ]
-  end.
-
-(* [cmp (snoc g v) wkn = g] *)
-Ltac solve_wkn_snoc :=
-  expose_glue;
-  eexists; split; [ | solve [ eassumption ] ];
-  match goal with
-  | |- eval_sub (con _ [con _ [_; _; ?Gw]; con _ [?v; ?g; _; _; _; _]; _; _; _]) ?w =>
-      match goal with
-      | Hg : eval_sub g w, Hv : eval_rel v ?vv |- _ =>
-          let Hmap := fresh in
-          assert (Hmap : map (apply_val (vv :: w)) (wkn_list (ctx_len Gw)) = w)
-            by (apply map_apply_wkn_list; prove_sub_len w Gw);
-          rewrite <- Hmap;
-          econstructor; [ econstructor; [ exact Hg | exact Hv ] | econstructor ]
-      end
-  end.
-
-Ltac dispby_id_right :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name "id_right") eqn:E;
-      [ concretize_subst; recover_peel; solve_id_right | ]
-  end.
-
-Ltac dispby_wkn_snoc :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name "wkn_snoc") eqn:E;
-      [ concretize_subst; recover_peel; solve_wkn_snoc | ]
-  end.
 
 (* Typed by-solver: reuse the cong front-end (expose per-arg glues, evaluate
    con-headed indices, reconcile via determinism), canonicalize any [El Empty]
@@ -826,30 +832,16 @@ Ltac solve_by_sucsubst :=
   arg_glue_prep; eval_indices; merge_dets;
   solve [ eapply glue_exp; [ eval1 | idtac | eval1 | eval1 ]; eval1 ].
 
+(* Dispatch one named equation law to its solver [tac].  No [admit] fallback:
+   the dispatched solver must fully close the law's glue, so [Norm_cterm_by] is
+   genuinely [Qed].  [solve_byT] handles the data-constructor / eliminator subst
+   laws; the eight COMPOSITION laws use their bespoke [byT_*] solvers above. *)
 Ltac dispby_with nm tac :=
   let E := fresh "Eqn" in
   match goal with
   | Hin : In (?name, _) _ |- _ =>
       destruct (eqb name nm) eqn:E;
-      [ concretize_subst; recover_peel; first [ tac | admit ] | ]
-  end.
-
-(* [solve_byT] discharges most equation axioms (the data-constructor substitution
-   laws, the [El]/[suc] eliminator-subst laws, and many structural laws) by
-   building both sides with the typed evaluator and reducing the substitution
-   redexes to a common value.  The residual — chiefly the [snoc]/[wkn]/[cmp]
-   COMPOSITION laws (e.g. [snoc_wkn_hd], [cmp_snoc], [exp_subst_cmp]) — needs the
-   [apply_compose]/[map_apply_*_list] reasoning of [Typing]/[SortInj] and falls
-   through to [admit]; hence [Norm_cterm_by] is still [Admitted].  (Coq's proof
-   search for the borderline composition laws is not fully reproducible, so the
-   exact admitted set varies between builds; the [admit] fallback keeps the
-   dispatch robustly green regardless.) *)
-Ltac dispbyT nm :=
-  let E := fresh "Eqn" in
-  match goal with
-  | Hin : In (?name, _) _ |- _ =>
-      destruct (eqb name nm) eqn:E;
-      [ concretize_subst; recover_peel; first [ solve_byT | admit ] | ]
+      [ concretize_subst; recover_peel; tac | ]
   end.
 
 Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
@@ -870,33 +862,33 @@ Proof.
   - (* eval glue (typed): both sides of each equation rule evaluate (in the
        eval'd context, at the eval'd type) to the SAME typed value. *)
     pose proof (term_eq_rules_names Hin) as Hmem.
-    dispbyT "Empty subst".
+    dispby_with "Empty subst" solve_byT.
     dispby_with "suc subst" solve_by_sucsubst.
-    dispbyT "zero subst".
-    dispbyT "Nat subst".
+    dispby_with "zero subst" solve_byT.
+    dispby_with "Nat subst" solve_byT.
     dispby_with "El subst" solve_by_elsubst.
-    dispbyT "U subst".
-    dispbyT "snoc_wkn_hd".
-    dispbyT "cmp_snoc".
-    dispbyT "snoc_hd".
-    dispbyT "wkn_snoc".
-    dispbyT "id_emp_forget".
-    dispbyT "cmp_forget".
-    dispbyT "exp_subst_cmp".
-    dispbyT "exp_subst_id".
-    dispbyT "ty_subst_cmp".
-    dispbyT "ty_subst_id".
-    dispbyT "cmp_assoc".
-    dispbyT "id_left".
-    dispbyT "id_right".
-    dispbyT "next1".
-    dispbyT "next0".
-    dispbyT "ltl_irr".
+    dispby_with "U subst" solve_byT.
+    dispby_with "snoc_wkn_hd" byT_snoc_wkn_hd.
+    dispby_with "cmp_snoc" byT_cmp_snoc.
+    dispby_with "snoc_hd" byT_snoc_hd.
+    dispby_with "wkn_snoc" byT_wkn_snoc.
+    dispby_with "id_emp_forget" solve_byT.
+    dispby_with "cmp_forget" solve_byT.
+    dispby_with "exp_subst_cmp" byT_exp_subst_cmp.
+    dispby_with "exp_subst_id" solve_byT.
+    dispby_with "ty_subst_cmp" byT_ty_subst_cmp.
+    dispby_with "ty_subst_id" solve_byT.
+    dispby_with "cmp_assoc" byT_cmp_assoc.
+    dispby_with "id_left" solve_byT.
+    dispby_with "id_right" byT_id_right.
+    dispby_with "next1" solve_byT.
+    dispby_with "next0" solve_byT.
+    dispby_with "ltl_irr" solve_byT.
     finish_absurd Hmem ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
       "U subst";"snoc_wkn_hd";"cmp_snoc";"snoc_hd";"wkn_snoc";"id_emp_forget";
       "cmp_forget";"exp_subst_cmp";"exp_subst_id";"ty_subst_cmp";"ty_subst_id";
       "cmp_assoc";"id_left";"id_right";"next1";"next0";"ltl_irr"].
-Admitted.
+Qed.
 
 (* ================================================================== *)
 (* Final Instance                                                      *)
