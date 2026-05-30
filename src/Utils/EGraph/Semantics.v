@@ -10398,6 +10398,281 @@ Section WithMap.
       exact (Hpull_par y Hy_ne_old).
   Qed.
 
+  (* ================================================================ *)
+  (* [B3] Union-pass threading: generic list_Miter repair             *)
+  (* ================================================================ *)
+
+  (* Entry data for a single union_repair worklist entry. *)
+  Record entry_data := { ed_old : idx; ed_new : idx; ed_b : bool; ed_atom : atom }.
+
+  (* Convert entry_data to a worklist_entry. *)
+  Definition ed_to_entry (d : entry_data) : worklist_entry idx :=
+    @union_repair idx d.(ed_old) d.(ed_new) d.(ed_b).
+
+  (* is_root: z is its own parent in the union-find. *)
+  Definition is_root (e : instance) (z : idx) : Prop :=
+    map.get e.(equiv).(parent) z = Some z.
+
+  (* Conditions for a single "good" entry in the union-pass. *)
+  Definition good_ed (e : instance) (d : entry_data) : Prop :=
+       map.get e.(parents) d.(ed_old) = Some (d.(ed_atom) :: nil)
+    /\ atom_in_db d.(ed_atom) e.(db)
+    /\ all (fun x => map.get e.(equiv).(parent) x = Some x) d.(ed_atom).(atom_args)
+    /\ d.(ed_atom).(atom_ret) = d.(ed_old)
+    /\ map.get e.(equiv).(parent) d.(ed_new) = Some d.(ed_new)
+    /\ d.(ed_old) <> d.(ed_new)
+    /\ uf_rel_PER e.(equiv) d.(ed_old) d.(ed_new).
+
+  (* Cross-entry disjointness: processing dj does not disturb dk. *)
+  Definition ed_disjoint (dj dk : entry_data) : Prop :=
+       (dk.(ed_atom).(atom_fn), dk.(ed_atom).(atom_args))
+         <> (dj.(ed_atom).(atom_fn), dj.(ed_atom).(atom_args))
+    /\ dk.(ed_old) <> dj.(ed_old)
+    /\ dk.(ed_old) <> dj.(ed_new)
+    /\ ~ In dk.(ed_old) dj.(ed_atom).(atom_args).
+
+  (* Invariant threaded through list_Miter repair for the union-pass. *)
+  Definition union_pass_inv (e0 e : instance) (ed_rem : list entry_data) : Prop :=
+       egraph_ok e
+    /\ (forall z, is_root e0 z -> is_root e z)
+    /\ all (fun ent => exists j, ent = @analysis_repair idx j) e.(worklist)
+    /\ db_inv (fun _ => False) e
+    /\ all (good_ed e) ed_rem
+    /\ (forall dj dk, In dj ed_rem -> In dk ed_rem -> dj <> dk -> ed_disjoint dj dk)
+    /\ (forall b, atom_in_db b e.(db) ->
+                  ~ is_root e b.(atom_ret) ->
+                  exists d, In d ed_rem
+                    /\ b.(atom_fn) = d.(ed_atom).(atom_fn)
+                    /\ b.(atom_args) = d.(ed_atom).(atom_args)).
+
+  (* D1: single-step preservation for the union-pass.
+     The extra hypothesis [Hd0_notin] says d0 does not occur in ed_rem;
+     this is needed to apply ed_disjoint between d0 and each d in ed_rem. *)
+  Lemma union_pass_step e0 d0 ed_rem
+    (Hd0_notin : forall d, In d ed_rem -> d <> d0)
+    : vc (repair_union d0.(ed_old) d0.(ed_new) d0.(ed_b))
+        (fun e res =>
+           union_pass_inv e0 e (d0 :: ed_rem) ->
+           union_pass_inv e0 (snd res) ed_rem).
+  Proof.
+    unfold vc. intros e.
+    pose proof (repair_union_canon d0.(ed_old) d0.(ed_new) d0.(ed_b) d0.(ed_atom)) as Hcanon.
+    unfold vc in Hcanon. pose proof (Hcanon e) as Hcanon_e.
+    pose proof (repair_union_worklist_ar d0.(ed_old) d0.(ed_new) d0.(ed_b) d0.(ed_atom)) as Hwlbrick.
+    unfold vc in Hwlbrick. pose proof (Hwlbrick e) as Hwl_e.
+    pose proof (repair_union_denote_iff d0.(ed_old) d0.(ed_new) d0.(ed_b)) as Hdif.
+    unfold vc in Hdif. pose proof (Hdif e) as Hdif_e.
+    pose proof (repair_union_parents_frame d0.(ed_old) d0.(ed_new) d0.(ed_b) d0.(ed_atom)) as Hpar.
+    unfold vc in Hpar. pose proof (Hpar e) as Hpar_e.
+    intros Hinv.
+    destruct Hinv as (Hok & Hroots_mono_e0e & Hwl_ar & Hdbinv & Hall_good & Hdisj & Hcov).
+    cbn [all] in Hall_good.
+    destruct Hall_good as (Hgood0 & Hall_good_rem).
+    unfold good_ed in Hgood0.
+    destruct Hgood0 as (Hpar0 & Hain0 & Hargs0 & Hret0 & Hnew0_root & Hne0 & Hper0).
+    specialize (Hcanon_e Hok Hpar0 Hain0 Hargs0)
+      as ((a_canon & Ha'in & Ha'fn & Ha'args & Ha'rootargs & Ha'root) & Hroots_mono_e & Hframe).
+    specialize (Hwl_e Hok Hpar0 Hain0 Hargs0) as (new_ents & Hwl_new & Hall_new).
+    specialize (Hdif_e Hok Hper0) as (Hok_P & _ & Hext_equiv).
+    assert (Hper0_ret : uf_rel_PER e.(equiv) (d0.(ed_atom).(atom_ret)) d0.(ed_new)).
+    { rewrite Hret0. exact Hper0. }
+    specialize (Hpar_e Hok Hpar0 Hain0 Hargs0 Hnew0_root Hper0_ret) as Hpar_frame.
+    set (eP := snd (repair_union d0.(ed_old) d0.(ed_new) d0.(ed_b) e)).
+    fold eP in Ha'in, Ha'root, Ha'rootargs, Hroots_mono_e, Hframe.
+    fold eP in Hwl_new, Hok_P, Hext_equiv, Hpar_frame.
+    (* Map determinism in eP.db *)
+    assert (Hdb_det : forall b b',
+        atom_in_db b eP.(db) ->
+        atom_in_db b' eP.(db) ->
+        b.(atom_fn) = b'.(atom_fn) ->
+        b.(atom_args) = b'.(atom_args) ->
+        b.(atom_ret) = b'.(atom_ret)).
+    { intros b b' Hb Hb' Hfn Harg.
+      unfold atom_in_db, "<$>", Is_Some_satisfying in Hb, Hb'.
+      rewrite Hfn, Harg in Hb.
+      destruct (map.get eP.(db) (atom_fn b')) as [tbl|]; cbn in Hb, Hb'; [|contradiction].
+      destruct (map.get tbl (atom_args b')) as [entry|]; cbn in Hb, Hb'; [|contradiction].
+      congruence. }
+    (* equiv_extends gives uf_rel transport *)
+    assert (Hext_uf : forall x y, uf_rel_PER e.(equiv) x y -> uf_rel_PER eP.(equiv) x y).
+    { intros x y Hxy. exact (Hext_equiv x y Hxy). }
+    (* Shorthand eqb lemmas *)
+    pose proof (fun a b => @eqb_spec symbol Eqb_symbol Eqb_symbol_ok a b) as Heqb_sym.
+    pose proof (fun a b => @eqb_spec (list idx) (list_eqb (A:=idx)) (@list_eqb_ok idx Eqb_idx Eqb_idx_ok) a b) as Heqb_idx_list.
+    unfold union_pass_inv.
+    refine (conj Hok_P (conj _ (conj _ (conj _ (conj _ (conj _ _)))))).
+    - (* roots_mono e0 eP *)
+      intros z Hz. unfold is_root in *.
+      exact (Hroots_mono_e z (Hroots_mono_e0e z Hz)).
+    - (* all analysis_repair worklist eP *)
+      rewrite Hwl_new. rewrite all_app. split; [exact Hall_new | exact Hwl_ar].
+    - (* db_inv(False) eP *)
+      unfold db_inv. intros b Hb_in.
+      (* Case on whether (b.fn, b.args) = (a0.fn, a0.args) *)
+      destruct (eqb (atom_fn b) (atom_fn (d0.(ed_atom)))) eqn:Hfneq.
+      + destruct (eqb (atom_args b) (atom_args (d0.(ed_atom)))) eqn:Hargseq.
+        * (* Same key: b.args = a_canon.args (both equal d0.atom.args) *)
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec.
+          pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+          rewrite Hargseq in Hargspec.
+          split.
+          -- rewrite Hargspec, <- Ha'args. exact Ha'rootargs.
+          -- intros HF. exact (False_ind _ HF).
+        * (* args differ → different key → b ∈ e.db *)
+          assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+          { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [_ Heqargs].
+            pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+            rewrite Hargseq in Hargspec. exact (Hargspec Heqargs). }
+          specialize (Hdbinv b ((proj1 (Hframe b Hkey_ne)) Hb_in)) as Hdbinv_b.
+          split; [eapply all_wkn; [| exact (proj1 Hdbinv_b)]; intros x _ Hx; exact (Hroots_mono_e x Hx)
+                 | intros HF; exact (False_ind _ HF)].
+      + (* fn differ → different key *)
+        assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+        { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [Heqfn _].
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec. exact (Hfnspec Heqfn). }
+        specialize (Hdbinv b ((proj1 (Hframe b Hkey_ne)) Hb_in)) as Hdbinv_b.
+        split; [eapply all_wkn; [| exact (proj1 Hdbinv_b)]; intros x _ Hx; exact (Hroots_mono_e x Hx)
+               | intros HF; exact (False_ind _ HF)].
+    - (* all good_ed eP ed_rem *)
+      eapply all_wkn; [| exact Hall_good_rem].
+      intros d Hd_in Hgood_d.
+      assert (Hd0_ne_d : d0 <> d) by (exact (fun H => Hd0_notin d Hd_in (eq_sym H))).
+      (* Get ed_disjoint d0 d from Hdisj *)
+      assert (Hdisj_d0_d : ed_disjoint d0 d).
+      { apply Hdisj.
+        - left. reflexivity.
+        - right. exact Hd_in.
+        - exact Hd0_ne_d. }
+      destruct Hdisj_d0_d as (Hkey_ne_d & Hold_ne_old0 & Hold_ne_new0 & Hold_notin_args0).
+      unfold good_ed in *.
+      destruct Hgood_d as (Hpar_d & Hain_d & Hargs_d & Hret_d & Hnew_d_root & Hne_d & Hper_d).
+      (* 1. parents eP [d.old] preserved (frame) *)
+      assert (Hpar_d_eP : map.get eP.(parents) d.(ed_old) = Some (d.(ed_atom) :: nil)).
+      { rewrite Hpar_frame; [exact Hpar_d | exact Hold_ne_old0 | exact Hold_ne_new0 | exact Hold_notin_args0]. }
+      (* 2. atom_in_db d.atom eP.db (frame) *)
+      assert (Hain_d_eP : atom_in_db d.(ed_atom) eP.(db)).
+      { apply (proj2 (Hframe d.(ed_atom) Hkey_ne_d)).
+        exact Hain_d. }
+      (* 3. root args eP: roots_mono *)
+      assert (Hargs_d_eP : all (fun x => map.get eP.(equiv).(parent) x = Some x) d.(ed_atom).(atom_args)).
+      { eapply all_wkn; [| exact Hargs_d].
+        intros x _ Hx. exact (Hroots_mono_e x Hx). }
+      (* 5. is_root eP d.new: roots_mono *)
+      assert (Hnew_d_root_eP : map.get eP.(equiv).(parent) d.(ed_new) = Some d.(ed_new)).
+      { exact (Hroots_mono_e d.(ed_new) Hnew_d_root). }
+      (* 7. uf_rel eP d.old d.new: equiv_extends *)
+      assert (Hper_d_eP : uf_rel_PER eP.(equiv) d.(ed_old) d.(ed_new)).
+      { exact (Hext_uf d.(ed_old) d.(ed_new) Hper_d). }
+      exact (conj Hpar_d_eP (conj Hain_d_eP (conj Hargs_d_eP
+              (conj Hret_d (conj Hnew_d_root_eP (conj Hne_d Hper_d_eP)))))).
+    - (* disjointness preserved: sub-list of original *)
+      intros dj dk Hdj Hdk Hjk.
+      exact (Hdisj dj dk (or_intror Hdj) (or_intror Hdk) Hjk).
+    - (* coverage eP ed_rem *)
+      intros b Hb_in Hb_nonroot.
+      (* Case on (b.fn, b.args) vs (a_canon.fn, a_canon.args) *)
+      destruct (eqb (atom_fn b) (atom_fn (d0.(ed_atom)))) eqn:Hfneq.
+      + destruct (eqb (atom_args b) (atom_args (d0.(ed_atom)))) eqn:Hargseq.
+        * (* Same key as d0: b.ret = a_canon.ret which is a root → contradiction *)
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec.
+          pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+          rewrite Hargseq in Hargspec.
+          exfalso. apply Hb_nonroot. unfold is_root.
+          rewrite (Hdb_det b a_canon Hb_in Ha'in
+                     (eq_trans Hfnspec (eq_sym Ha'fn))
+                     (eq_trans Hargspec (eq_sym Ha'args))).
+          exact Ha'root.
+        * (* Different args → different key → b ∈ e.db *)
+          assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+          { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [_ Heqargs].
+            pose proof (Heqb_idx_list (atom_args b) (atom_args (d0.(ed_atom)))) as Hargspec.
+            rewrite Hargseq in Hargspec. exact (Hargspec Heqargs). }
+          assert (Hb_in_e : atom_in_db b e.(db)) by exact ((proj1 (Hframe b Hkey_ne)) Hb_in).
+          assert (Hb_nonroot_e : ~ is_root e b.(atom_ret)).
+          { intros Hroot_e. apply Hb_nonroot. unfold is_root in *.
+            exact (Hroots_mono_e b.(atom_ret) Hroot_e). }
+          specialize (Hcov b Hb_in_e Hb_nonroot_e) as (d & Hd_in_full & Hfn_eq & Harg_eq).
+          destruct Hd_in_full as [Heq | Hd_in_rem].
+          -- subst d. exfalso. apply Hkey_ne. apply pair_equal_spec. exact (conj Hfn_eq Harg_eq).
+          -- exists d. exact (conj Hd_in_rem (conj Hfn_eq Harg_eq)).
+      + (* fn differ → different key *)
+        assert (Hkey_ne : (atom_fn b, atom_args b) <> (atom_fn (d0.(ed_atom)), atom_args (d0.(ed_atom)))).
+        { intros Hpair. apply pair_equal_spec in Hpair. destruct Hpair as [Heqfn _].
+          pose proof (Heqb_sym (atom_fn b) (atom_fn (d0.(ed_atom)))) as Hfnspec.
+          rewrite Hfneq in Hfnspec. exact (Hfnspec Heqfn). }
+        assert (Hb_in_e : atom_in_db b e.(db)) by exact ((proj1 (Hframe b Hkey_ne)) Hb_in).
+        assert (Hb_nonroot_e : ~ is_root e b.(atom_ret)).
+        { intros Hroot_e. apply Hb_nonroot. unfold is_root in *.
+          exact (Hroots_mono_e b.(atom_ret) Hroot_e). }
+        specialize (Hcov b Hb_in_e Hb_nonroot_e) as (d & Hd_in_full & Hfn_eq & Harg_eq).
+        destruct Hd_in_full as [Heq | Hd_in_rem].
+        * subst d. exfalso. apply Hkey_ne. apply pair_equal_spec. exact (conj Hfn_eq Harg_eq).
+        * exists d. exact (conj Hd_in_rem (conj Hfn_eq Harg_eq)).
+  Qed.
+
+  (* D2: threading list_Miter repair through a list of good entries.
+     The [NoDup] condition ensures d0 ∉ rest at each step. *)
+  Lemma list_Miter_repair_union_pass e0 ed_list
+    (Hnodup : List.NoDup ed_list)
+    : vc (list_Miter repair (map ed_to_entry ed_list))
+        (fun e res => union_pass_inv e0 e ed_list -> union_pass_inv e0 (snd res) nil).
+  Proof.
+    revert e0. revert ed_list Hnodup.
+    fix IH_main 1. intros ed_list.
+    destruct ed_list as [| d0 rest].
+    - intros _ e0. unfold vc, list_Miter, Mret, StateMonad.state_monad. cbn [fst snd].
+      intros e Hinv. exact Hinv.
+    - intros Hnodup e0.
+      cbn [map list_Miter].
+      unfold vc. intros e.
+      cbn [repair ed_to_entry].
+      inversion Hnodup as [| ? ? Hnotin Hnodup_rest]. subst.
+      assert (Hd0_notin : forall d, In d rest -> d <> d0).
+      { intros d Hd_in Heq. subst d. exact (Hnotin Hd_in). }
+      pose proof (union_pass_step e0 d0 rest Hd0_notin) as Hstep.
+      unfold vc in Hstep. specialize (Hstep e) as Hstep_e.
+      pose proof (IH_main rest Hnodup_rest e0) as IH_rest.
+      unfold vc in IH_rest.
+      intros Hinv.
+      specialize (Hstep_e Hinv).
+      cbn [Mseq Mbind StateMonad.state_monad] in *.
+      destruct (repair_union d0.(ed_old) d0.(ed_new) d0.(ed_b) e) as [u1 e1] eqn:Hrep.
+      cbn [fst snd] in *.
+      exact (IH_rest e1 Hstep_e).
+  Qed.
+
+  (* D3: after full pass (ed_rem = nil), db_inv(fun _ => True) holds. *)
+  Lemma union_pass_inv_db_inv_true e0 e
+    : union_pass_inv e0 e nil -> db_inv (fun _ => True) e.
+  Proof.
+    intros (Hok & Hroots_mono & Hwl_ar & Hdbinv & _ & _ & Hcov).
+    unfold db_inv. intros b Hb_in.
+    split.
+    - exact (proj1 (Hdbinv b Hb_in)).
+    - intros _.
+      (* Show root b.ret: by contradiction, if not root then coverage gives d ∈ nil. *)
+      destruct (map.get (equiv e).(parent) (atom_ret b)) as [r|] eqn:Hret_parent.
+      + destruct (eqb (atom_ret b) r) eqn:Hbeqr.
+        * pose proof (eqb_spec (atom_ret b) r) as Hspec.
+          rewrite Hbeqr in Hspec.
+          unfold is_root. congruence.
+        * exfalso.
+          assert (Hnonroot : ~ is_root e b.(atom_ret)).
+          { unfold is_root. rewrite Hret_parent. intros Hsome. injection Hsome as Heq.
+            pose proof (eqb_spec (atom_ret b) r) as Hspec.
+            rewrite Hbeqr in Hspec. exact (Hspec (eq_sym Heq)). }
+          specialize (Hcov b Hb_in Hnonroot) as (d & Hd_in & _).
+          exact (List.in_nil Hd_in).
+      + exfalso.
+        assert (Hnonroot : ~ is_root e b.(atom_ret)).
+        { unfold is_root. rewrite Hret_parent. intros Hsome. discriminate Hsome. }
+        specialize (Hcov b Hb_in Hnonroot) as (d & Hd_in & _).
+        exact (List.in_nil Hd_in).
+  Qed.
+
   (* [list_Miter repair] over a list of analysis_repair entries
      preserves atom_in_db and the analysis-repair-only worklist shape. *)
   Lemma list_Miter_repair_ar l
