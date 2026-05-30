@@ -4832,6 +4832,8 @@ Section WithVar.
     Local Notation lang_model := (lang_model l).
     Local Notation egraph_ok := (egraph_ok V lt V V_map V_map V_trie X).
     Local Notation ain a e := (@Semantics.atom_in_egraph V V V_map V_map V_trie X a e).
+    Local Notation interp := (V_map (lang_model.(domain _))).
+    Local Notation asnd a al := (@Semantics.atom_sound_for_model V V V_map lang_model a al).
 
     Lemma rebuild_survives_canonical (e1 : instance X) (n : nat)
       (Hok : egraph_ok e1)
@@ -4852,6 +4854,70 @@ Section WithVar.
       - exact Hup.
       - exact Hargs.
       - exact Hret.
+    Qed.
+
+    (* ============================================================ *)
+    (* Assembly: from an adversary [a] sound on the rebuilt           *)
+    (* assumption egraph's atoms, recover a wf substitution of [c].   *)
+    (* Linearly chains add_ctx_egraph_ok + add_ctx_readback +         *)
+    (* db_inv_db_injective + rebuild_survives_canonical +             *)
+    (* ctx_readback_to_eF + ctx_readback_wf_subst.                    *)
+    Lemma add_ctx_inversion (rf : nat) (a : interp) c
+      : wf_ctx l c ->
+        (forall al, ain al (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                                   (empty_egraph V_default X)))))
+                  -> asnd a al) ->
+        exists sg, wf_subst l [] sg c
+                /\ map fst sg = map fst c
+                /\ (forall x, In x (map fst (fst (add_ctx succ sort_of l false false c
+                                                  (empty_egraph V_default X)))) ->
+                      map.get a (named_list_lookup default
+                                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
+                        = Some (inl (named_list_lookup default sg x))).
+    Proof.
+      intros Hwfc Hsound.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx succ sort_of l false false c e0)) in *.
+      set (e1 := snd (add_ctx succ sort_of l false false c e0)) in *.
+      set (eF := snd (rebuild rf e1)) in *.
+      (* --- base facts at empty_egraph --- *)
+      assert (Hok0 : egraph_ok e0).
+      { exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                        V_map V_map_ok V_trie X lang_model)). }
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots).
+      { exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)). }
+      assert (Hdb0 : db_ctx_inv X e0).
+      { intros aa Hin. exfalso.
+        unfold Semantics.atom_in_db in Hin.
+        unfold e0 in Hin. cbn [Defs.db empty_egraph] in Hin.
+        rewrite map.get_empty in Hin.
+        exact Hin. }
+      (* --- add_ctx_egraph_ok: structural envelope --- *)
+      pose proof (add_ctx_egraph_ok X l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e1 in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst & Hok1).
+      (* --- add_ctx_readback: model-free per-var readback --- *)
+      pose proof (add_ctx_readback X l Hwf Hsof c Hwfc) as HR.
+      unfold vc in HR. specialize (HR e0).
+      fold sub e1 in HR.
+      specialize (HR Huf0 Hdb0).
+      destruct HR as (_ & _ & _ & _ & Hrb).
+      (* --- db_injective from db_ctx_inv + uf-ok --- *)
+      assert (Hdbinj : Semantics.db_injective V V V_map V_map V_trie X e1).
+      { exact (@db_inv_db_injective V V_Eqb V_Eqb_ok lt V_default V V_map V_map V_map_ok
+                 V_trie X (fun s => s <> sort_of) e1 Huf1 Hdb1). }
+      (* --- canonicalizing survival for eF --- *)
+      pose proof (rebuild_survives_canonical e1 rf Hok1 Hdbinj) as Hsurv.
+      (* --- ctx_readback (e1) -> ctx_readback_eF (eF) --- *)
+      pose proof (ctx_readback_to_eF X l Hsof e1 eF Hdb1 Hsurv c sub Hwfc Hroots1 Hrb) as Hrbef.
+      (* --- finish: build wf_subst from eF readback + a sound on eF --- *)
+      pose proof (ctx_readback_wf_subst X l Hwf Hsof eF a Hsound c sub Hwfc
+                    (eq_sym Hmapfst) Hrbef) as Hfin.
+      exact Hfin.
     Qed.
 
   End F1cDischarge.
