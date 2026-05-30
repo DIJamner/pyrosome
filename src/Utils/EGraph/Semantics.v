@@ -8833,6 +8833,423 @@ Section WithMap.
     intros i. rewrite Hde_s1, Hde_s2, Hde_s3, Hde_res. reflexivity.
   Qed.
 
+  (* ============================================================== *)
+  (* rebuild_survives_side: a side-list [l] of atoms present         *)
+  (* up-to-equiv before [rebuild] is still present up-to-equiv       *)
+  (* after.  Built bottom-up by threading the [l]-transport through  *)
+  (* the same control structure as [rebuild_sound], reusing the      *)
+  (* per-step [denote_iff] helpers (which already carry the          *)
+  (* atom-in-egraph side conjunct at the [repair_each] level) plus   *)
+  (* field-preservation transport at the field-only steps.           *)
+  (* ============================================================== *)
+
+  (* [atom_in_egraph_up_to_equiv] transports across a step that      *)
+  (* leaves the db literally unchanged and the equivalence relation  *)
+  (* the same up to [iff2].                                          *)
+  Local Lemma aiue_db_per (a' : atom) (e e' : instance)
+    : e'.(db) = e.(db) ->
+      iff2 (uf_rel_PER (equiv e)) (uf_rel_PER (equiv e')) ->
+      atom_in_egraph_up_to_equiv a' e -> atom_in_egraph_up_to_equiv a' e'.
+  Proof.
+    intros Hdb Hiff Hup.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph in *.
+    destruct Hup as (aa & (Hfn & Hargs & Hret) & Hin).
+    exists aa. split.
+    - split; [exact Hfn|]. split.
+      + eapply all2_impl; [|exact Hargs]. intros; apply Hiff; auto.
+      + apply Hiff; exact Hret.
+    - rewrite Hdb. exact Hin.
+  Qed.
+
+  (* [atom_in_egraph_up_to_equiv] transports across a step that      *)
+  (* leaves both the db and the equivalence literally unchanged.     *)
+  Local Lemma aiue_eqfields (a' : atom) (e e' : instance)
+    : e'.(db) = e.(db) -> e'.(equiv) = e.(equiv) ->
+      atom_in_egraph_up_to_equiv a' e -> atom_in_egraph_up_to_equiv a' e'.
+  Proof.
+    intros Hdb Heq Hup.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph in *.
+    rewrite Hdb, Heq. exact Hup.
+  Qed.
+
+  (* [atom_in_egraph_up_to_equiv] transports across a step that      *)
+  (* leaves the equivalence unchanged and preserves [atom_in_db] up  *)
+  (* to a biconditional (the analysis-repair branch re-sets db       *)
+  (* entries to the same value).                                     *)
+  Local Lemma aiue_db_iff_eqequiv (a' : atom) (e e' : instance)
+    : (forall b, atom_in_db b e'.(db) <-> atom_in_db b e.(db)) ->
+      e'.(equiv) = e.(equiv) ->
+      atom_in_egraph_up_to_equiv a' e -> atom_in_egraph_up_to_equiv a' e'.
+  Proof.
+    intros Hdb Heq Hup.
+    unfold atom_in_egraph_up_to_equiv, atom_canonical_equiv, atom_in_egraph in *.
+    rewrite Heq.
+    destruct Hup as (aa & Hcanon & Hin).
+    exists aa. split; [exact Hcanon | apply Hdb; exact Hin].
+  Qed.
+
+  (* [pull_worklist] only swaps the [worklist] field for [[]]; the    *)
+  (* db is left literally unchanged.                                  *)
+  Local Lemma pull_worklist_db
+    : vc (pull_worklist idx symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e res => (snd res).(db) = e.(db)).
+  Proof.
+    unfold vc, pull_worklist; intros e; cbn [fst snd].
+    destruct e as [db_e equiv_e parents_e epoch_e wl_e analyses_e log_e].
+    reflexivity.
+  Qed.
+
+  (* [canonicalize_worklist_entry] transports the side list: the     *)
+  (* union-repair branch calls [find] (db unchanged, equiv [iff2]),  *)
+  (* the analysis branch is a [Mret].                                *)
+  Local Lemma canonicalize_worklist_entry_survives_side (l : list atom) a
+    : vc (canonicalize_worklist_entry idx Eqb_idx symbol
+            symbol_map idx_map idx_trie analysis_result a)
+        (fun e res =>
+           egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    unfold canonicalize_worklist_entry.
+    destruct a as [old new improved | i_repair]; cbn beta iota.
+    - eapply vc_bind;
+        [ apply (vc_and _ _ _ (find_denote_iff new) (find_preserves_fields_strong new)) |].
+      cbn beta. cbn [fst snd].
+      intros e v_e.
+      unfold vc, Mret, StateMonad.state_monad.
+      intros e1 [Hde Hpf] Hok Hwl_pre Hall.
+      cbn beta iota. cbn [fst snd] in *.
+      pose proof Hok as Hok_orig.
+      destruct Hok as [Hex_e _ _].
+      specialize (Hpf Hex_e).
+      cbn in Hwl_pre.
+      assert (Hkey_new : Sep.has_key new e.(equiv).(parent)).
+      { destruct Hex_e as [roots Huf]; pose proof Huf as Huf_l.
+        destruct (uf_rel_PER_has_key _ _ _ _ Huf_l Hwl_pre) as [_ Hk].
+        exact Hk. }
+      specialize (Hpf Hkey_new).
+      destruct Hpf as (_ & Hfp & _).
+      destruct Hfp as (Hdb_eq & _ & _ & _ & _ & _ & Hiff).
+      eapply all_wkn; [| exact Hall].
+      intros a0 _ Ha0.
+      cbn [fst snd].
+      eapply aiue_db_per; [exact Hdb_eq | exact Hiff | exact Ha0].
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok _ Hall; exact Hall.
+  Qed.
+
+  (* List-iterated [canonicalize_worklist_entry] transports the side *)
+  (* list, threaded via [vc_list_Mmap_outputs] with the per-element  *)
+  (* transport above.                                                *)
+  Local Lemma list_Mmap_canonicalize_worklist_entry_survives_side
+        (l : list atom) (le : list (worklist_entry idx))
+    : vc (list_Mmap
+            (canonicalize_worklist_entry idx Eqb_idx symbol
+               symbol_map idx_map idx_trie analysis_result) le)
+        (fun e res =>
+           egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) le ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun le s => egraph_ok s
+                               /\ all (worklist_entry_ok s.(equiv)) le
+                               /\ all (fun a' => atom_in_egraph_up_to_equiv a' s) l)
+                  (fun s s' => True))].
+    - cbn beta. intros e res Hinv Hok Hwl Hall.
+      destruct (Hinv (conj Hok (conj Hwl Hall))) as ((_ & _ & Hall_p) & _).
+      exact Hall_p.
+    - intros s _; exact I.
+    - intros ? ? ? _ _; exact I.
+    - intros a le'.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _
+                    (canonicalize_worklist_entry_denote_iff a)
+                    (canonicalize_worklist_entry_survives_side l a))].
+      cbn beta. intros s p [Hde Hside] (Hok & Hwl & Hall).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hde Hok Hwl_a) as (Hok_p & _ & Hext_p & Hwlok_p).
+      split; [| exact I].
+      split; [exact Hok_p|]. split.
+      + eapply all_wkn; [| exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + apply (Hside Hok Hwl_a Hall).
+  Qed.
+
+  (* List-iterated [repair_each] transports the side list, threaded  *)
+  (* via the [l]-carrying conjunct of [repair_each_denote_iff].      *)
+  Local Lemma list_Mmap_repair_each_survives_side (l : list atom) old_ps
+        (x_old x_canonical : idx)
+    : vc (list_Mmap (fun a : atom =>
+                       @! let _ <- (@! let mv <- db_lookup a.(atom_fn) a.(atom_args) in
+                                       match mv with
+                                       | Some v => Defs.union v a.(atom_ret)
+                                       | None => Mret a.(atom_ret)
+                                       end) in
+                          let _ <- db_remove a in
+                          let a' <- canonicalize a in
+                          (update_entry a'))
+                    old_ps)
+        (fun e res =>
+           egraph_ok e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) old_ps ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Mmap_inv _
+                  (fun old_ps s => egraph_ok s
+                               /\ all (fun a' => atom_in_egraph_up_to_equiv a' s) old_ps
+                               /\ uf_rel_PER s.(equiv) x_old x_canonical
+                               /\ all (fun a' => atom_in_egraph_up_to_equiv a' s) l)
+                  (fun s s' => True))].
+    - cbn beta. intros e res Hinv Hok Hains Hper Hall.
+      destruct (Hinv (conj Hok (conj Hains (conj Hper Hall))))
+        as ((_ & _ & _ & Hall_p) & _).
+      exact Hall_p.
+    - intros s _; exact I.
+    - intros ? ? ? _ _; exact I.
+    - intros a l_rest.
+      (* transport the combined list [l_rest ++ l] through [repair_each] *)
+      eapply vc_consequence;
+        [| apply (repair_each_denote_iff a (l_rest ++ l) x_old x_canonical)].
+      cbn beta. intros s p Hone Hpre.
+      destruct Hpre as (Hok & Hains & Hper & Hall).
+      cbn [all] in Hains. destruct Hains as [Hin_a Hains_rest].
+      pose proof ((proj2 (all_app _ l_rest l)) (conj Hains_rest Hall)) as Hcomb.
+      pose proof (Hone Hok Hin_a Hcomb Hper) as Hpost.
+      destruct Hpost as (Hok_p & Hde_p & Hcomb_p & Hext_p).
+      pose proof ((proj1 (all_app _ l_rest l)) Hcomb_p) as Hsplit_p.
+      destruct Hsplit_p as (Hains_rest_p & Hall_p).
+      refine (conj _ I).
+      refine (conj Hok_p (conj Hains_rest_p (conj _ Hall_p))).
+      apply Hext_p. exact Hper.
+  Qed.
+
+  (* [pull_parents] leaves the db and the equivalence literally       *)
+  (* unchanged: it is [get_parents] (read-only) then [remove_parents]  *)
+  (* (db & equiv unchanged).                                          *)
+  Local Lemma pull_parents_db_equiv x
+    : vc (pull_parents x)
+        (fun e res =>
+           egraph_ok e ->
+           (snd res).(db) = e.(db) /\ (snd res).(equiv) = e.(equiv)).
+  Proof.
+    unfold vc, pull_parents, Mbind, Mret, StateMonad.state_monad.
+    intros e Hok.
+    pose proof (get_parents_denote_iff x e Hok) as Hgp.
+    destruct (get_parents x e) as [ps e1] eqn:Hgpe.
+    cbn [fst snd] in Hgp |- *.
+    destruct Hgp as (Hok1 & _ & Heq1 & _).
+    pose proof (remove_parents_denote_iff x e1 Hok1) as Hrp.
+    destruct (remove_parents x e1) as [u e2] eqn:Hrem.
+    cbn [fst snd] in Hrp |- *.
+    destruct Hrp as (_ & _ & Hdb & Heq).
+    rewrite Heq1 in Hdb, Heq.
+    split; [exact Hdb | exact Heq].
+  Qed.
+
+  (* [repair_after_mmap] preserves [atom_in_db] up to a biconditional  *)
+  (* and leaves the equivalence unchanged: the [improved] branch is    *)
+  (* [get_parents] (no-op) then [list_Miter repair_parent_analysis]    *)
+  (* (both facts hold), the [else] branch is [ret tt].                 *)
+  Local Lemma repair_after_mmap_db_iff_equiv x_canonical (improved : bool)
+    : vc (if improved
+          then (@! let canon_ps <- get_parents x_canonical in
+                   (list_Miter repair_parent_analysis canon_ps))
+          else Mret tt)
+        (fun e res =>
+           egraph_ok e ->
+           (forall b, atom_in_db b (snd res).(db) <-> atom_in_db b e.(db))
+           /\ (snd res).(equiv) = e.(equiv)).
+  Proof.
+    destruct improved.
+    - vc_bind (get_parents_denote_iff x_canonical).
+      rename s0 into e1, a into ps.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_preserves_atom_in_db ps)
+                    (list_Miter_repair_parent_analysis_preserves_equiv ps))].
+      cbn beta. cbn [fst snd].
+      intros e2 res [Hdb_iff Heq_res] Hgp Hok.
+      destruct (Hgp Hok) as (_ & _ & Heq_e1 & _).
+      subst e1.
+      split; [exact Hdb_iff | exact Heq_res].
+    - unfold vc, Mret, StateMonad.state_monad; cbn [fst snd].
+      intros e Hok. split; [intros b; reflexivity | reflexivity].
+  Qed.
+
+  (* [repair_union] transports the side list: [pull_parents] (db &     *)
+  (* equiv unchanged), [list_Mmap repair_each] (the side-list step),    *)
+  (* and [repair_after_mmap] (atom_in_db iff + equiv unchanged).       *)
+  Local Lemma repair_union_survives_side (l : list atom) x_old x_canonical improved
+    : vc (repair_union x_old x_canonical improved)
+        (fun e res =>
+           egraph_ok e ->
+           uf_rel_PER e.(equiv) x_old x_canonical ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    unfold repair_union.
+    pose proof (vc_and _ _ _ (pull_parents_denote_iff x_old)
+                  (pull_parents_db_equiv x_old)) as Hpull.
+    vc_bind Hpull. clear Hpull.
+    rename s0 into e_init, a into ps.
+    pose proof (vc_and _ _ _
+               (list_Mmap_repair_each_denote_iff ps x_old x_canonical)
+               (list_Mmap_repair_each_survives_side l ps x_old x_canonical)) as Hmap.
+    vc_bind Hmap. clear Hmap.
+    rename s0 into s1, a into _u.
+    eapply vc_consequence;
+      [| apply (vc_and _ _ _
+                  (repair_after_mmap_denote_iff x_canonical improved)
+                  (repair_after_mmap_db_iff_equiv x_canonical improved))].
+    cbn beta. cbn [fst snd].
+    intros s2 res [Hafter_de Hafter_pf] [Hmap_de Hmap_side] [Hpull_de Hpull_pf]
+                  Hok_init Hper_init Hall_init.
+    destruct (Hpull_de Hok_init) as (Hok_s1 & _ & Hext_s1 & Hps_s1).
+    destruct (Hpull_pf Hok_init) as (Hdb_s1 & Heq_s1).
+    assert (Hper_s1 : uf_rel_PER s1.(equiv) x_old x_canonical).
+    { rewrite Heq_s1; exact Hper_init. }
+    assert (Hall_s1 : all (fun a' => atom_in_egraph_up_to_equiv a' s1) l).
+    { eapply all_wkn; [| exact Hall_init]. intros a0 _ Ha0.
+      eapply aiue_eqfields; [exact Hdb_s1 | exact Heq_s1 | exact Ha0]. }
+    specialize (Hmap_side Hok_s1 Hps_s1 Hper_s1 Hall_s1).
+    destruct (Hmap_de Hok_s1 Hps_s1 Hper_s1) as (Hok_s2 & _ & _).
+    destruct (Hafter_pf Hok_s2) as (Hdb_res & Heq_res).
+    eapply all_wkn; [| exact Hmap_side]. intros a0 _ Ha0.
+    eapply aiue_db_iff_eqequiv; [exact Hdb_res | exact Heq_res | exact Ha0].
+  Qed.
+
+  (* [repair] transports the side list: union repairs delegate to    *)
+  (* [repair_union_survives_side]; analysis repairs leave equiv       *)
+  (* unchanged and preserve [atom_in_db] up to a biconditional.      *)
+  Local Lemma repair_survives_side (l : list atom) a
+    : vc (repair a)
+        (fun e res =>
+           egraph_ok e ->
+           worklist_entry_ok e.(equiv) a ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    destruct a as [old new improved | i_repair]; cbn [repair].
+    - unfold vc; intros e Hok Hwl Hall.
+      cbn in Hwl.
+      apply (repair_union_survives_side l old new improved e); auto.
+    - vc_bind (get_parents_denote_iff i_repair).
+      rename s0 into s1, a into ps.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _
+                    (list_Miter_repair_parent_analysis_preserves_atom_in_db ps)
+                    (list_Miter_repair_parent_analysis_preserves_equiv ps))].
+      cbn beta. cbn [fst snd].
+      intros s2 res Hand Hgp_post Hok_s0 _Hwl Hall_s0.
+      destruct Hand as [Hdb_iff Heq_res].
+      destruct (Hgp_post Hok_s0) as (_ & _ & Heq_s1 & _).
+      (* the [get_parents] output state [s2] equals its input [s1] *)
+      subst s2.
+      eapply all_wkn; [| exact Hall_s0]. intros a0 _ Ha0.
+      eapply aiue_db_iff_eqequiv; [exact Hdb_iff | exact Heq_res | exact Ha0].
+  Qed.
+
+  (* List-iterated [repair] transports the side list, threaded via    *)
+  (* [vc_list_Miter_inv] with the per-entry transport above.          *)
+  Local Lemma list_Miter_repair_survives_side (l : list atom)
+        (le : list (worklist_entry idx))
+    : vc (list_Miter repair le)
+        (fun e res =>
+           egraph_ok e ->
+           all (worklist_entry_ok e.(equiv)) le ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    eapply vc_consequence;
+      [| apply (vc_list_Miter_inv _
+                  (fun le s => egraph_ok s /\ all (worklist_entry_ok s.(equiv)) le
+                               /\ all (fun a' => atom_in_egraph_up_to_equiv a' s) l)
+                  (fun s s' => True))].
+    - cbn beta. intros e res Hinv Hok Hwl Hall.
+      destruct (Hinv (conj Hok (conj Hwl Hall))) as ((_ & _ & Hall_p) & _).
+      exact Hall_p.
+    - intros s _; exact I.
+    - intros ? ? ? _ _; exact I.
+    - intros a le'.
+      eapply vc_consequence;
+        [| apply (vc_and _ _ _ (repair_denote_iff a) (repair_survives_side l a))].
+      cbn beta. intros s p [Hde Hside] (Hok & Hwl & Hall).
+      cbn [all] in Hwl. destruct Hwl as [Hwl_a Hwl_rest].
+      destruct (Hde Hok Hwl_a) as (Hok_p & _ & Hext_p).
+      split; [| exact I].
+      split; [exact Hok_p|]. split.
+      + eapply all_wkn; [| exact Hwl_rest].
+        intros ent _ Hent.
+        eapply equiv_extends_worklist_entry_ok; [exact Hext_p | exact Hent].
+      + apply (Hside Hok Hwl_a Hall).
+  Qed.
+
+  (* The transport lemma: a side-list [l] of atoms present up-to-     *)
+  (* equiv before [rebuild] is still present up-to-equiv after.       *)
+  Lemma rebuild_survives_side (l : list atom) n
+    : vc (rebuild n)
+        (fun e res =>
+           egraph_ok e ->
+           all (fun a' => atom_in_egraph_up_to_equiv a' e) l ->
+           egraph_ok (snd res)
+           /\ all (fun a' => atom_in_egraph_up_to_equiv a' (snd res)) l).
+  Proof.
+    induction n.
+    { unfold vc, rebuild. intros e Hok Hall. split; [exact Hok | exact Hall]. }
+    cbn [rebuild].
+    pose proof (vc_and _ _ _ pull_worklist_denote_iff pull_worklist_db) as Hpull_both.
+    vc_bind Hpull_both. clear Hpull_both.
+    rename s0 into e_init, a into wl_pulled.
+    destruct wl_pulled as [|w wl'].
+    { unfold vc; cbn [Mret StateMonad.state_monad fst snd].
+      intros s1 [HPpull Hdb_s1] Hok_s0 Hall_s0.
+      destruct (HPpull Hok_s0) as (Hok_s1 & _ & Hequiv_s1 & _).
+      split; [exact Hok_s1|].
+      (* pull_worklist only swaps the worklist field; db & equiv unchanged *)
+      eapply all_wkn; [| exact Hall_s0]. intros a0 _ Ha0.
+      eapply aiue_eqfields; [ exact Hdb_s1 | exact Hequiv_s1 | exact Ha0 ]. }
+    cbn [Mbind StateMonad.state_monad Mseq].
+    pose proof (vc_and _ _ _
+                  (list_Mmap_canonicalize_worklist_entry_denote_iff (w :: wl'))
+                  (list_Mmap_canonicalize_worklist_entry_survives_side l (w :: wl')))
+      as Hmap_both.
+    vc_bind Hmap_both. clear Hmap_both.
+    rename s0 into s1, a into wl_canon.
+    pose proof (vc_and _ _ _
+                  (list_Miter_repair_denote_iff (worklist_dedup _ _ wl_canon))
+                  (list_Miter_repair_survives_side l (worklist_dedup _ _ wl_canon)))
+      as Hmiter_both.
+    vc_bind Hmiter_both. clear Hmiter_both.
+    rename s0 into s2, a into u_miter.
+    eapply vc_consequence; [|apply IHn].
+    cbn beta. cbn [fst snd].
+    intros s3 res HIH [Hmiter_de Hmiter_side] [Hmap_de Hmap_side]
+                  [Hpull Hpull_db] Hok_init Hall_init.
+    destruct (Hpull Hok_init) as (Hok_s1 & _ & Hequiv_s1 & Hwl_pulled).
+    assert (Hall_s1 : all (fun a' => atom_in_egraph_up_to_equiv a' s1) l).
+    { eapply all_wkn; [| exact Hall_init]. intros a0 _ Ha0.
+      eapply aiue_eqfields; [ exact Hpull_db | exact Hequiv_s1 | exact Ha0 ]. }
+    assert (Hwl_s1 : all (worklist_entry_ok s1.(equiv)) (w :: wl')).
+    { rewrite Hequiv_s1; exact Hwl_pulled. }
+    destruct (Hmap_de Hok_s1 Hwl_s1) as (Hok_s2 & _ & _ & Hwl_canon_s2).
+    specialize (Hmap_side Hok_s1 Hwl_s1 Hall_s1).
+    pose proof (worklist_dedup_preserves_all
+                  (worklist_entry_ok s2.(equiv)) wl_canon Hwl_canon_s2)
+      as Hwl_dedup_s2.
+    destruct (Hmiter_de Hok_s2 Hwl_dedup_s2) as (Hok_s3 & _ & _).
+    specialize (Hmiter_side Hok_s2 Hwl_dedup_s2 Hmap_side).
+    destruct (HIH Hok_s3 Hmiter_side) as [Hok_res Hall_res].
+    split; [exact Hok_res | exact Hall_res].
+  Qed.
+
   (* L_survive_up_to_equiv: corollary lifting L_survive to
      atom_in_egraph_up_to_equiv.  Requires egraph_ok to obtain
      has_key for the canonical-equiv reflexivity witness (via rebuild_sound,
