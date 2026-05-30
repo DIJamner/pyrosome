@@ -2,9 +2,9 @@
 
    TODO: benchmark, then use plist everywhere feasible and retest
  *)
-From Stdlib Require Import Equalities Orders ZArith Lists.List Uint63.
+From Stdlib Require Import Equalities Orders ZArith Lists.List Uint63 Strings.String.
 Import ListNotations.
-From coqutil Require Import Map.Interface Datatypes.dlist.
+From coqutil Require Import Map.Interface Datatypes.dlist Datatypes.Result.
 From coqutil Require Map.SortedList.
 
 From Utils Require Import Utils Monad Natlike ArrayList ExtraMaps UnionFind (*SpacedMapTreeN*).
@@ -711,12 +711,12 @@ Section WithMap.
         else e::l'
     end.
 
-  Fixpoint rebuild fuel : ST unit :=
+  Fixpoint rebuild fuel : ST (result unit) :=
     match fuel with
-    | 0 => Mret tt
+    | 0 => Mret (Failure (dlist.dcons "rebuild: out of fuel"%string dlist.dnil))
     | S fuel =>
         @!let todo <- pull_worklist in
-          if todo : list worklist_entry then ret tt
+          if todo : list worklist_entry then ret (Success tt)
           else let todo <- list_Mmap canonicalize_worklist_entry todo in
                (list_Miter repair (worklist_dedup todo));
                (rebuild fuel)
