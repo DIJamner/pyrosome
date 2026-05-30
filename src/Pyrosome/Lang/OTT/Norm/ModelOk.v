@@ -9,7 +9,7 @@ From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
 From Pyrosome.Tools Require Import Resolution.
 From Pyrosome.Gluing Require Import CutTModel.
-From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model ApplyLemmas SortInj.
+From Pyrosome.Lang.OTT.Norm Require Import Domain EvalRel Determinism Model ApplyLemmas SortInj Typing Preservation.
 From Pyrosome.Lang.OTT Require Import Base Nat.
 Import Core.Notations.
 
@@ -195,27 +195,8 @@ Proof.
   econstructor; eassumption.
 Qed.
 
-(* ================================================================== *)
-(* cterm_conv : eq_term_conv + glue carries over (head is preserved)   *)
-(* ================================================================== *)
-
-Lemma Norm_cterm_conv : forall t1 t2 e1 e2,
-    ceq_sort (CutTModel := Norm) t1 t2 ->
-    ceq_term (CutTModel := Norm) t1 e1 e2 ->
-    ceq_term (CutTModel := Norm) t2 e1 e2.
-Proof.
-  intros [n1 a1] [n2 a2] e1 e2 Hs Ht.
-  unfold ceq_sort, Norm, norm_ceq_sort in Hs.
-  destruct Hs as [Heqs _].
-  unfold ceq_term, Norm, norm_ceq_term in *.
-  destruct Ht as [Heqt Gt].
-  split.
-  - exact (eq_term_conv Heqt Heqs).
-  - (* GLUE (typed eval): the glue now depends on the sort's context/type
-       args; transferring it across eq_sort-related sorts needs eval/eq_term
-       coherence.  Admitted pending the typed-glue gluing soundness. *)
-    admit.
-Admitted.
+(* [cterm_conv] is proved below (just before [cterm_cong]); it reuses the
+   typed-glue reconciliation machinery defined in that section. *)
 
 (* ================================================================== *)
 (* sort ops : eq_sort_* for the eq component, head+arity for the glue  *)
@@ -372,30 +353,88 @@ Ltac recover_peel :=
   repeat match goal with H : ceq_args (_ :: _) _ _ |- _ => inversion H; subst; clear H end;
   try match goal with H : ceq_args [] _ _ |- _ => inversion H; subst; clear H end.
 
-(* env-free congruence solver, operating on the GLUE goal/hyps (the per-arg
-   [ceq_term] hyps are now [eq_term * glue] pairs; split them, then build the
-   value with the eval constructors). *)
-Ltac solve_cong :=
+(* ------------------------------------------------------------------ *)
+(* Typed-glue congruence solver.                                        *)
+(*                                                                      *)
+(* After [recover_peel], the per-argument [ceq_term] hyps are [eq_term  *)
+(* * glue_term] pairs.  The TERM arguments [e1_i]/[e2_i] are bare        *)
+(* variables (introduced by the [ceq_args] inversion); the SORT indices *)
+(* threaded by the glue (contexts/types) are CONCRETE [con]-headed       *)
+(* formers built from those variables.  The solver:                      *)
+(*   1. [arg_glue_prep]  : split the pairs and invert each per-arg       *)
+(*      [glue_term], exposing its typed eval witnesses;                  *)
+(*   2. [eval_indices]   : fully evaluate the con-headed type/context    *)
+(*      index witnesses (NEVER the bare-variable term-arg evals), so an  *)
+(*      opaque exp-argument type [T] is revealed as a concrete [dU]/[dEl]*)
+(*      and its [nf_info] annotations surface as rewritable equalities;  *)
+(*   3. [merge_dets]     : equate the shared semantic indices that arise *)
+(*      from different arguments' glues, via the [eval_*_det] lemmas;    *)
+(*   4. [build_eval]     : pick the result [glue_*] constructor and the  *)
+(*      matching [ev_*] evaluator constructors, closing the eval         *)
+(*      premises from the (now reconciled) hypotheses, rewriting         *)
+(*      [nf_info] equalities to align universe annotations.              *)
+(* The two eliminators ([El]/[Emptyrec]) fall out of the same recipe;    *)
+(* [Emptyrec] additionally needs its scrutinee value to be a neutral,    *)
+(* supplied by [canonical_empty] on the preservation of its eval.        *)
+(* ------------------------------------------------------------------ *)
+
+Ltac arg_glue_prep :=
   unfold ceq_term, Norm, norm_ceq_term in *; cbn in *;
+  repeat match goal with H : @prod _ _ |- _ => destruct H end;
+  repeat match goal with H : glue_term _ _ _ |- _ => inversion H; subst; clear H end.
+
+(* Invert ONLY con-headed eval witnesses (the sort's type/context indices);
+   leave the bare-variable term-argument evals untouched (inverting those would
+   case-split on an opaque variable). *)
+Ltac eval_indices :=
   repeat match goal with
-         | H : @sigT _ _ |- _ => destruct H as [? [? ?]]
-         | H : @prod _ _ |- _ => destruct H
-         end;
+    | H : eval_ty  _ (con _ _) _   |- _ => inversion H; subst; clear H
+    | H : eval_rel _ (con _ _) _ _ |- _ => inversion H; subst; clear H
+    | H : eval_sub _ _ (con _ _) _ |- _ => inversion H; subst; clear H
+  end.
+
+(* Equate duplicate semantic indices coming from distinct arguments' glues.
+   Determinism keys only on the SUBJECT term, so two evals of the same term —
+   even with not-yet-unified context/type indices — get fully reconciled. *)
+Ltac merge_dets :=
+  repeat first
+    [ match goal with Ha : eval_env ?G _, Hb : eval_env ?G _ |- _ =>
+        assert_fails (constr_eq Ha Hb);
+        pose proof (eval_env_det Ha Hb); subst; clear Hb end
+    | match goal with Ha : eval_ty _ ?A _, Hb : eval_ty _ ?A _ |- _ =>
+        assert_fails (constr_eq Ha Hb);
+        destruct (eval_ty_det Ha Hb) as [? ?]; subst; clear Hb end
+    | match goal with Ha : eval_rel _ ?e _ _, Hb : eval_rel _ ?e _ _ |- _ =>
+        assert_fails (constr_eq Ha Hb);
+        destruct (eval_rel_det Ha Hb) as [[? ?] ?]; subst; clear Hb end
+    | match goal with Ha : eval_sub _ _ ?g _, Hb : eval_sub _ _ ?g _ |- _ =>
+        assert_fails (constr_eq Ha Hb);
+        destruct (eval_sub_det Ha Hb) as [[? ?] ?]; subst; clear Hb end ].
+
+(* Build the result glue from the evaluator: the result [glue_*] constructor
+   (chosen by the concrete result-sort head) leaves eval premises with concrete
+   heads, so [econstructor] picks the unique [ev_*] and [eassumption] discharges
+   them; [nf_info] equalities realign universe annotations when needed. *)
+Ltac build_eval :=
+  solve [ repeat first
+            [ eassumption
+            | match goal with H : @eq (@term string) _ _ |- _ => rewrite H end
+            | econstructor ] ].
+
+(* Info / [ltl] result: the result glue is an [nf_info] equality (or trivial).
+   Expose the (possibly stuck) [nf_info] match with [cbn], then rewrite the
+   per-arg [nf_info] equalities into the now-visible scrutinees. *)
+Ltac solve_info :=
+  solve [ econstructor; cbn in *;
+          repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H end;
+          first [ reflexivity | congruence ] ].
+
+Ltac solve_cong :=
+  arg_glue_prep; eval_indices; merge_dets;
   first
-    [ exact tt
-    | solve [ eexists; split; econstructor; solve [eassumption | eauto] ]
-    | solve [ eexists; split;
-              [ econstructor; solve [eassumption | eauto]
-              | repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H end;
-                econstructor; solve [eassumption | eauto] ] ]
-    | (* id/wkn: their value depends on [ctx_len], equal by eval_env_length *)
-      solve [ match goal with Ha : eval_env ?G1 ?gv, Hb : eval_env ?G2 ?gv |- _ =>
-                let Hlen := fresh in
-                pose proof (eq_trans (eq_sym (eval_env_length Ha)) (eval_env_length Hb)) as Hlen;
-                eexists; split; [ econstructor | rewrite Hlen; econstructor ] end ]
-    | solve [ repeat match goal with H : @eq (@term string) _ _ |- _ => rewrite H; clear H end;
-              reflexivity ]
-    | solve [ congruence ] ].
+    [ build_eval
+    | solve_info
+    | solve [ econstructor ] ].
 
 Ltac disp nm :=
   let E := fresh "Eqn" in
@@ -411,6 +450,62 @@ Ltac dispA nm :=
       destruct (eqb name nm) eqn:E; [ concretize_subst; recover_peel; admit | ]
   end.
 
+(* ------------------------------------------------------------------ *)
+(* The two eliminators need a per-rule step beyond the generic recipe.  *)
+(* ------------------------------------------------------------------ *)
+
+(* A [Type]-valued canonical-forms lemma for [El Empty]: a value of that type is
+   a neutral.  [canonical_empty] (Typing.v) returns a [Prop] [exists], which
+   cannot be eliminated into the [Type]-valued glue goal; casing on the VALUE
+   (in [Type]) and refuting the non-neutral shapes from typing avoids that. *)
+Lemma canonical_empty_sig : forall Ge v,
+    has_svalty Ge v (dEl vEmpty) -> { n | v = vNe n }.
+Proof.
+  intros Ge v H; destruct v;
+    solve [ eexists; reflexivity | exfalso; inversion H ].
+Qed.
+
+(* [Emptyrec] : its [El Empty] scrutinee value is a NEUTRAL by canonical
+   forms (preservation), which [ev_Emptyrec] requires. *)
+Ltac solve_emptyrec :=
+  arg_glue_prep; eval_indices; merge_dets;
+  match goal with H : eval_rel _ _ (dEl vEmpty) ?v |- _ =>
+    destruct (canonical_empty_sig (eval_rel_preserves_typing H)) as [? ?]; subst v end;
+  build_eval.
+
+(* [hd] : its result type [ty_subst wkn A] evaluates to [apply_ty (wkn_list n) S],
+   while [ev_hd] hands back [shift_ty 1 S]; bridge them with [apply_wkn_eq_shift]
+   (the type [S] is scoped because it is a well-formed semantic type). *)
+Ltac hd_retype :=
+  match goal with
+  | H : eval_ty ?ge ?A ?S |- eval_rel _ _ (apply_ty (wkn_list (length ?ge)) ?S) _ =>
+      rewrite (fst apply_wkn_eq_shift S (length ge)
+                 (wf_svalty_scoped (snd (snd (fst (fst eval_sound)) _ _ _ H))))
+  end.
+Ltac solve_hd :=
+  arg_glue_prep; eval_indices; merge_dets;
+  eapply glue_exp;
+  [ solve [ repeat first [ eassumption | econstructor ] ]
+  | eapply ev_ty_subst; [ eapply ev_wkn; eassumption | eassumption ]
+  | hd_retype; eapply ev_hd; eassumption
+  | hd_retype; eapply ev_hd; eassumption ].
+
+Ltac disp_emptyrec :=
+  let E := fresh "Eqn" in
+  match goal with
+  | |- glue_term _ (con ?name _) _ =>
+      destruct (eqb name "Emptyrec") eqn:E;
+      [ concretize_subst; recover_peel; solve_emptyrec | ]
+  end.
+
+Ltac disp_hd :=
+  let E := fresh "Eqn" in
+  match goal with
+  | |- glue_term _ (con ?name _) _ =>
+      destruct (eqb name "hd") eqn:E;
+      [ concretize_subst; recover_peel; solve_hd | ]
+  end.
+
 (* close the fall-through (no name matched): [name] is in [names] (Hmem), yet every
    [eqb name "X" = false] hypothesis excludes it — via [existsb], no Prop elimination. *)
 Ltac finish_absurd Hmem names :=
@@ -424,13 +519,37 @@ Ltac finish_absurd Hmem names :=
   cbn in Hex; discriminate Hex.
 
 (* ================================================================== *)
+(* cterm_conv : eq_term_conv + glue carries over the glued sorts       *)
+(* ================================================================== *)
+
+(* The glue threads the sort's context/type indices; across [eq_sort]-glued
+   sorts those indices evaluate IDENTICALLY (the [glue_sort] component), so the
+   term glue transfers: invert the sort glue (its per-index sub-glues) and the
+   term glue at [t1], reconcile the shared eval indices, and rebuild at [t2]. *)
+Lemma Norm_cterm_conv : forall t1 t2 e1 e2,
+    ceq_sort (CutTModel := Norm) t1 t2 ->
+    ceq_term (CutTModel := Norm) t1 e1 e2 ->
+    ceq_term (CutTModel := Norm) t2 e1 e2.
+Proof.
+  intros t1 t2 e1 e2 Hs Ht.
+  unfold ceq_sort, Norm, norm_ceq_sort in Hs; destruct Hs as [Heqs Gs].
+  unfold ceq_term, Norm, norm_ceq_term in *; destruct Ht as [Heqt Gt].
+  split.
+  - exact (eq_term_conv Heqt Heqs).
+  - inversion Gs; subst; inversion Gt; subst;
+      repeat match goal with H : glue_term _ _ _ |- _ => inversion H; subst; clear H end;
+      eval_indices; merge_dets;
+      solve [ build_eval | econstructor; solve [ eassumption | congruence ] ].
+Qed.
+
+(* ================================================================== *)
 (* cterm_cong                                                          *)
 (* ================================================================== *)
 
-(* The well-formedness (eq_term) component is uniform (term_con_congruence);
-   the eval GLUE is PROVEN for 24/26 formers, all but the eliminators El and
-   Emptyrec, whose congruence needs the scrutinee/code's semantic SHAPE (Tier C,
-   to be discharged from the now-available well-formedness). *)
+(* The well-formedness (eq_term) component is uniform (term_con_congruence); the
+   eval GLUE is built for ALL 26 formers from the typed evaluator (see
+   [solve_cong]), with [hd] and [Emptyrec] handled by [solve_hd]/[solve_emptyrec]
+   (their result type/scrutinee need [apply_wkn_eq_shift] / canonical forms). *)
 Lemma Norm_cterm_cong : forall (c' : @ctx string) (name : string) (args : list string)
     (t : @sort string) s1 s2,
     In (name, term_rule c' args t) fo_lang ->
@@ -443,12 +562,40 @@ Proof.
   - (* well-formedness component (= SyntacticModel cterm_cong) *)
     pose proof (norm_ceq_args_eq_args Hargs) as Heqa.
     eapply term_con_congruence; try exact _; try (right; reflexivity); try eassumption.
-  - (* eval glue (typed): build the TYPED eval witnesses for con name s1/s2 at
-       the eval'd context/type from the per-arg glue.  Admitted pending the
-       typed-glue gluing soundness (the old env-free [disp] tactics no longer
-       apply since the glue now threads contexts/types). *)
-    admit.
-Admitted.
+  - (* eval glue (typed): dispatch on the (only) term former, peel its arguments
+       into per-arg glue witnesses, and rebuild the result [glue_*] from the
+       typed evaluator constructors (see [solve_cong]). *)
+    pose proof (term_rules_names Hin) as Hmem.
+    disp "rel".
+    disp "irr".
+    disp "L0".
+    disp "L1".
+    disp "L0<L1".
+    disp "inf".
+    disp "iota".
+    disp "next".
+    disp "info".
+    disp "emp".
+    disp "ext".
+    disp "forget".
+    disp "id".
+    disp "wkn".
+    disp "cmp".
+    disp "snoc".
+    disp "Nat".
+    disp "zero".
+    disp "Empty".
+    disp "U".
+    disp "suc".
+    disp "exp_subst".
+    disp "ty_subst".
+    disp_hd.
+    disp "El".
+    disp_emptyrec.
+    finish_absurd Hmem ["Emptyrec";"Empty";"suc";"zero";"Nat";"El";"U";"hd";"wkn";"snoc";
+      "ext";"forget";"emp";"exp_subst";"ty_subst";"cmp";"id";"info";"next";"inf";"iota";
+      "L0<L1";"L1";"L0";"irr";"rel"].
+Qed.
 
 (* ================================================================== *)
 (* cterm_by                                                            *)
@@ -606,6 +753,44 @@ Ltac dispby_wkn_snoc :=
       [ concretize_subst; recover_peel; solve_wkn_snoc | ]
   end.
 
+(* Typed by-solver: reuse the cong front-end (expose per-arg glues, evaluate
+   con-headed indices, reconcile via determinism), canonicalize any [El Empty]
+   scrutinee, then build the result glue, normalizing the structural-substitution
+   redexes ([apply_ty (id_list _)] etc.) so both sides reach the same value. *)
+Ltac by_normalize :=
+  cbn [apply_val apply_ty apply_ne nth_default nth_error map ctx_len id_list wkn_list seq] in *;
+  rewrite ?apply_id_val, ?apply_id_ty, ?apply_id_map, ?snoc_wkn_hd_list in *.
+
+Ltac solve_byT :=
+  arg_glue_prep; eval_indices; merge_dets;
+  try (match goal with H : eval_rel _ _ (dEl vEmpty) ?v |- _ =>
+         destruct (canonical_empty_sig (eval_rel_preserves_typing H)) as [? ?]; subst v end;
+       eval_indices; merge_dets);
+  first
+    [ solve [ econstructor; cbn; repeat match goal with
+               H : @eq (@term string) _ _ |- _ => rewrite H end;
+              first [ reflexivity | congruence ] ]
+    | solve [ econstructor;
+              repeat first
+                [ eassumption
+                | match goal with H : @eq (@term string) _ _ |- _ => rewrite H end
+                | progress by_normalize
+                | econstructor ] ] ].
+
+(* [solve_byT] discharges 16/22 equation axioms (the structural/composition
+   laws); the 6 substitution-pushing laws for data constructors
+   ([Empty/Nat/zero/suc/El subst]) and [snoc_wkn_hd] still [admit] (they need the
+   evaluator to compute [apply_val] under [vSuc]/codes and through [snoc]/[wkn]).
+   The [admit] fallback keeps the dispatch robust; hence [Norm_cterm_by] is still
+   [Admitted]. *)
+Ltac dispbyT nm :=
+  let E := fresh "Eqn" in
+  match goal with
+  | Hin : In (?name, _) _ |- _ =>
+      destruct (eqb name nm) eqn:E;
+      [ concretize_subst; recover_peel; first [ solve_byT | admit ] | ]
+  end.
+
 Lemma Norm_cterm_by : forall (c' : @ctx string) (name : string) e1r e2r tr s1 s2,
     In (name, term_eq_rule c' e1r e2r tr) fo_lang ->
     ceq_args (CM := Norm) c' s1 s2 ->
@@ -622,10 +807,34 @@ Proof.
     + apply eq_args_implies_eq_subst; exact Heqa.
     + eapply rule_in_ctx_wf; [ exact fo_wf_lang | exact Hin | reflexivity ].
   - (* eval glue (typed): both sides of each equation rule evaluate (in the
-       eval'd context, at the eval'd type) to the SAME typed value.  Admitted
-       pending the typed-glue gluing soundness (old env-free [dispby] tactics
-       no longer apply). *)
-    admit.
+       eval'd context, at the eval'd type) to the SAME typed value. *)
+    pose proof (term_eq_rules_names Hin) as Hmem.
+    dispbyT "Empty subst".
+    dispbyT "suc subst".
+    dispbyT "zero subst".
+    dispbyT "Nat subst".
+    dispbyT "El subst".
+    dispbyT "U subst".
+    dispbyT "snoc_wkn_hd".
+    dispbyT "cmp_snoc".
+    dispbyT "snoc_hd".
+    dispbyT "wkn_snoc".
+    dispbyT "id_emp_forget".
+    dispbyT "cmp_forget".
+    dispbyT "exp_subst_cmp".
+    dispbyT "exp_subst_id".
+    dispbyT "ty_subst_cmp".
+    dispbyT "ty_subst_id".
+    dispbyT "cmp_assoc".
+    dispbyT "id_left".
+    dispbyT "id_right".
+    dispbyT "next1".
+    dispbyT "next0".
+    dispbyT "ltl_irr".
+    finish_absurd Hmem ["Empty subst";"suc subst";"zero subst";"Nat subst";"El subst";
+      "U subst";"snoc_wkn_hd";"cmp_snoc";"snoc_hd";"wkn_snoc";"id_emp_forget";
+      "cmp_forget";"exp_subst_cmp";"exp_subst_id";"ty_subst_cmp";"ty_subst_id";
+      "cmp_assoc";"id_left";"id_right";"next1";"next0";"ltl_irr"].
 Admitted.
 
 (* ================================================================== *)
