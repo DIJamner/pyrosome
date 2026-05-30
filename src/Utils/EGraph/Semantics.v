@@ -6,6 +6,7 @@ From Stdlib Require Import Logic.PropExtensionality
   Logic.FunctionalExtensionality.
 From coqutil Require Import Map.Interface.
 From coqutil Require Map.SortedList.
+From coqutil Require Datatypes.Result.
 
 From Utils Require Import Utils Monad ExtraMaps Relations Maps UnionFind VC.
 From Utils.EGraph Require Import Defs.
@@ -8922,6 +8923,78 @@ Section WithMap.
     assert (Hret : atom_ret a = atom_ret b) by (rewrite <- Ha, <- Hb; reflexivity).
     destruct a as [fa arga reta]; destruct b as [fb argb retb]; cbn in *.
     subst; reflexivity.
+  Qed.
+
+  (* [rebuild] returns [Success tt] exactly when it drained the worklist:
+     a successful run terminated on the empty-worklist branch, so the
+     resulting instance has an empty worklist. *)
+  Lemma rebuild_success_iff_drained n (e : instance)
+    : fst (rebuild n e) = Result.Success tt ->
+      worklist (snd (rebuild n e)) = [].
+  Proof.
+    revert e.
+    induction n as [|fuel IH]; intros e Hsucc.
+    - cbn [rebuild] in Hsucc. cbn [Mret StateMonad.state_monad fst] in Hsucc. discriminate.
+    - cbn [rebuild] in Hsucc |- *.
+      unfold pull_worklist in Hsucc |- *.
+      cbn [Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
+      destruct (worklist e) as [|w wl'] eqn:Hwle.
+      + cbn [Mret StateMonad.state_monad fst snd worklist] in Hsucc |- *. reflexivity.
+      + cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
+        match goal with
+        | [ |- context [ list_Mmap ?f (w :: wl') ?st ] ] =>
+          destruct (list_Mmap f (w :: wl') st) as [ wl_canon st1 ] eqn:Hmap
+        end.
+        cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
+        match goal with
+        | [ |- context [ let (_, _) := ?p in _ ] ] => destruct p as [ u st2 ]
+        end.
+        cbn [Mseq Mbind StateMonad.state_monad fst snd] in Hsucc |- *.
+        apply (IH st2 Hsucc).
+  Qed.
+
+  (* A fully-canonical atom (all-root args + root ret) that is present
+     [up_to_equiv] in a [db_inv]-well-rooted egraph is present verbatim:
+     the canonically-equivalent db witness [a'] has, by [db_inv], all-root
+     args and (under the trivial guard) a root ret, so each PER-pair of
+     roots is an equality ([roots_uf_rel_eq]); hence [a = a']. *)
+  Lemma canonical_uptoequiv_present (e : instance) (a : atom)
+    : egraph_ok e ->
+      db_inv (fun _ => True) e ->
+      atom_in_egraph_up_to_equiv a e ->
+      all (fun x => map.get e.(equiv).(parent) x = Some x) a.(atom_args) ->
+      map.get e.(equiv).(parent) a.(atom_ret) = Some a.(atom_ret) ->
+      atom_in_egraph a e.
+  Proof.
+    intros Hok Hinv Hup Hargs Hret.
+    unfold atom_in_egraph in *.
+    unfold atom_in_egraph_up_to_equiv in Hup.
+    destruct Hup as (aw & Hceq & Hin').
+    pose proof (egraph_equiv_ok _ Hok) as Heq0.
+    destruct Heq0 as (roots & Huf).
+    pose proof (Hinv aw Hin') as Hinvaw.
+    destruct Hinvaw as (Hargs' & Hret').
+    specialize (Hret' I).
+    unfold atom_canonical_equiv in Hceq.
+    destruct Hceq as (Hf & Hall2 & Hretrel).
+    assert (Hreteq : atom_ret a = atom_ret aw).
+    { eapply roots_uf_rel_eq; eauto. }
+    assert (Hargseq : atom_args a = atom_args aw).
+    { revert Hall2 Hargs Hargs'.
+      generalize (atom_args a) as la.
+      generalize (atom_args aw) as lb.
+      intro lb; induction lb as [|hb tb IHb]; intros la Hall2 Hra Hrb.
+      - destruct la; cbn in Hall2; [ reflexivity | contradiction ].
+      - destruct la as [|ha ta]; cbn in Hall2; [ contradiction | ].
+        destruct Hall2 as [Hh Ht].
+        cbn in Hra, Hrb.
+        destruct Hra as [Hrha Hrta].
+        destruct Hrb as [Hrhb Hrtb].
+        f_equal.
+        + eapply roots_uf_rel_eq; eauto.
+        + apply IHb; assumption. }
+    destruct a as [fa arga reta]; destruct aw as [fb argb retb]; cbn in *.
+    subst. exact Hin'.
   Qed.
 
   (* L_survive_canonical (a.k.a. F1c-survival) — the survival lemma the
