@@ -100,23 +100,59 @@ Proof.
   destruct H1 as [Heq1 G1], H2 as [Heq2 G2].
   split.
   - exact (eq_term_trans Heq1 Heq2).
-  - (* GLUE (typed eval): merge the two derivations of e12 via determinism.
-       Admitted pending the typed-glue gluing soundness (see file note). *)
-    admit.
-Admitted.
+  - (* GLUE (typed eval): merge the two derivations of e12 via determinism. *)
+    unfold glue_term in *.
+    destruct (eqb tn "exp").
+    { destruct ta as [|A [|i [|G [|x xs]]]]; try exact tt.
+      destruct G1 as [Ge1 [T1 [v1 [[[He1 Hty1] Hr1] Hm1]]]].
+      destruct G2 as [Ge2 [T2 [v2 [[[He2 Hty2] Hm2] Hr2]]]].
+      destruct (eval_rel_det Hm1 Hm2) as [[? ?] ?]; subst Ge2 T2 v2.
+      exact (existT _ Ge1 (existT _ T1 (existT _ v1 (He1, Hty1, Hr1, Hr2)))). }
+    destruct (eqb tn "ty").
+    { destruct ta as [|i [|G [|x xs]]]; try exact tt.
+      destruct G1 as [Ge1 [T1 [[He1 Ht1] Hm1]]].
+      destruct G2 as [Ge2 [T2 [[He2 Hm2] Ht2]]].
+      destruct (eval_ty_det Hm1 Hm2) as [? ?]; subst Ge2 T2.
+      exact (existT _ Ge1 (existT _ T1 (He1, Ht1, Ht2))). }
+    destruct (eqb tn "sub").
+    { destruct ta as [|Gd [|Gc [|x xs]]]; try exact tt.
+      destruct G1 as [GeD1 [GeC1 [s1 [[[Hd1 Hc1] Hs1] Hm1]]]].
+      destruct G2 as [GeD2 [GeC2 [s2 [[[Hd2 Hc2] Hm2] Hs2]]]].
+      destruct (eval_sub_det Hm1 Hm2) as [[? ?] ?]; subst GeD2 GeC2 s2.
+      exact (existT _ GeD1 (existT _ GeC1 (existT _ s1 (Hd1, Hc1, Hs1, Hs2)))). }
+    destruct (eqb tn "env").
+    { destruct G1 as [Genv1 [a1 b1]], G2 as [Genv2 [a2 b2]].
+      pose proof (eval_env_det b1 a2); subst Genv2.
+      exact (existT _ Genv1 (a1, b2)). }
+    destruct ta. { etransitivity; eassumption. } { exact tt. }
+Qed.
 
 Lemma Norm_cterm_sym : forall (t : @sort string) e1 e2,
     ceq_term (CutTModel := Norm) t e1 e2 -> ceq_term (CutTModel := Norm) t e2 e1.
 Proof.
   intros [tn ta] e1 e2 H.
   unfold ceq_term, Norm, norm_ceq_term in *.
-  destruct H as [Heq G].
+  destruct H as [Heq Hg].
   split.
   - exact (eq_term_sym Heq).
-  - (* GLUE (typed eval): swap the two evals.  Admitted pending typed-glue
-       gluing soundness (see file note). *)
-    admit.
-Admitted.
+  - (* GLUE (typed eval): swap the two evals. *)
+    unfold glue_term in *.
+    destruct (eqb tn "exp").
+    { destruct ta as [|A [|i [|G [|x xs]]]]; try exact tt.
+      destruct Hg as [Ge [T [v [[[He Hty] Hr1] Hr2]]]].
+      exact (existT _ Ge (existT _ T (existT _ v (He, Hty, Hr2, Hr1)))). }
+    destruct (eqb tn "ty").
+    { destruct ta as [|i [|G [|x xs]]]; try exact tt.
+      destruct Hg as [Ge [T [[He Ht1] Ht2]]].
+      exact (existT _ Ge (existT _ T (He, Ht2, Ht1))). }
+    destruct (eqb tn "sub").
+    { destruct ta as [|Gd [|Gc [|x xs]]]; try exact tt.
+      destruct Hg as [GeD [GeC [s [[[Hd Hc] Hs1] Hs2]]]].
+      exact (existT _ GeD (existT _ GeC (existT _ s (Hd, Hc, Hs2, Hs1)))). }
+    destruct (eqb tn "env").
+    { destruct Hg as [Genv [a b]]. exact (existT _ Genv (b, a)). }
+    destruct ta. { symmetry; assumption. } { exact tt. }
+Qed.
 
 (* ================================================================== *)
 (* cterm_conv : eq_term_conv + glue carries over (head is preserved)   *)
