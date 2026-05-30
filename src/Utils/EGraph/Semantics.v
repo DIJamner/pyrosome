@@ -6218,6 +6218,167 @@ Section WithMap.
       subst uf'. exact Hz.
   Qed.
 
+  (* Helper: path-compressing [find] preserves the existence of a uf_ok witness. *)
+  Lemma find_preserves_uf_ok (x : idx) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      (exists roots, union_find_ok lt (snd (Defs.find x e)).(equiv) roots).
+  Proof.
+    intros [roots Hok].
+    unfold Defs.find.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [snd].
+    destruct (map.get e.(equiv).(parent) x) as [px|] eqn:Hget_x.
+    - assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+        by (intros; Lia.lia).
+      assert (Hkey_x : Sep.has_key x e.(equiv).(parent)).
+      { unfold Sep.has_key. rewrite Hget_x. exact I. }
+      pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                    _ _ _ _ _ Hok Hkey_x Hfind) as Hspec.
+      destruct Hspec as (Huf' & _).
+      exact (ex_intro _ roots Huf').
+    - pose proof (find_no_key_identity e x Hget_x) as Hid.
+      rewrite Hfind in Hid.
+      injection Hid as Huf_eq _.
+      subst uf'.
+      exact (ex_intro _ roots Hok).
+  Qed.
+
+  (* Helper: list_Mmap of find preserves root-status of any node z. *)
+  Lemma list_Mmap_find_roots_mono (xs : list idx) (z : idx) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      map.get e.(equiv).(parent) z = Some z ->
+      map.get (snd (list_Mmap find xs e)).(equiv).(parent) z = Some z.
+  Proof.
+    revert e.
+    induction xs as [| x xs' IH]; intros e Hok Hz.
+    - cbn [list_Mmap Mbind StateMonad.state_monad fst snd].
+      exact Hz.
+    - cbn [list_Mmap Mbind StateMonad.state_monad fst snd].
+      destruct (find x e) as [v e1] eqn:Hfind_x.
+      cbn [fst snd].
+      assert (He1 : e1 = snd (find x e)) by (rewrite Hfind_x; reflexivity).
+      assert (Hz1 : map.get e1.(equiv).(parent) z = Some z).
+      { rewrite He1. apply find_roots_mono; [exact Hok | exact Hz]. }
+      assert (Hok1 : exists roots, union_find_ok lt e1.(equiv) roots).
+      { rewrite He1. apply find_preserves_uf_ok. exact Hok. }
+      destruct (list_Mmap find xs' e1) as [vs e2] eqn:Hmap.
+      cbn [fst snd].
+      specialize (IH e1 Hok1 Hz1).
+      rewrite Hmap in IH.
+      cbn [snd] in IH.
+      exact IH.
+  Qed.
+
+  (* Helper: [find] returns a value that is a root in the result union-find. *)
+  Lemma find_returns_root (x : idx) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      Sep.has_key x e.(equiv).(parent) ->
+      map.get (snd (Defs.find x e)).(equiv).(parent) (fst (Defs.find x e)) = Some (fst (Defs.find x e)).
+  Proof.
+    intros [roots Hok] Hkey.
+    unfold Defs.find.
+    destruct (UnionFind.find e.(equiv) x) as [uf' v'] eqn:Hfind.
+    cbn [fst snd].
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Hok Hkey Hfind) as Hspec.
+    destruct Hspec as (Huf' & Hj_in & _ & _ & _ & _).
+    apply (proj1 (@forest_root_iff _ _ _ _ _ v' roots _ (uf_forest _ _ _ _ _ _ Huf'))).
+    exact Hj_in.
+  Qed.
+
+  (* Internal helper: two consecutive finds of the same node x give the same rep cv2 = cv. *)
+  Lemma find_find_same_rep (x : idx) (uf1 uf2 : union_find) (cv cv2 : idx)
+    (roots : list idx)
+    (Hok1 : union_find_ok lt uf1 roots)
+    (Huf2 : UnionFind.find uf1 x = (uf2, cv2))
+    (Hlim1_cv : limit (parent_rel idx (idx_map idx) (parent uf1)) x cv)
+    : cv2 = cv.
+  Proof.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    assert (Hkey_x : Sep.has_key x (parent uf1)).
+    { apply (proj1 (@union_find_limit _ _ _ _ _ _ _ default lt_trans_nat _ _ _ _
+                      Hok1)) in Hlim1_cv.
+      destruct Hlim1_cv as [_ Hpar].
+      apply parent_rel_has_key in Hpar. exact Hpar. }
+    pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                  _ _ _ _ _ Hok1 Hkey_x Huf2) as Hspec2.
+    destruct Hspec2 as (Huf2_ok & Hcv2_in & Hpar2_cv2 & _ & Hlim2_iff & _).
+    assert (Hlim_uf2_cv2 : limit (parent_rel idx (idx_map idx) (parent uf2)) x cv2).
+    { exact (proj2 (@union_find_limit _ _ _ _ _ _ _ default lt_trans_nat _ _ _ _
+                      Huf2_ok) (conj Hcv2_in Hpar2_cv2)). }
+    assert (Hlim_uf2_cv : limit (parent_rel idx (idx_map idx) (parent uf2)) x cv).
+    { apply (proj1 (Hlim2_iff x cv)). exact Hlim1_cv. }
+    symmetry.
+    exact (@union_find_unique _ _ _ _ _ _ _ default lt_trans_nat
+             _ _ _ _ _ Huf2_ok Hlim_uf2_cv Hlim_uf2_cv2).
+  Qed.
+
+  (* Helper: [union v v] preserves root-status of any node z. *)
+  Lemma union_self_roots_mono (v z : idx) (e : instance)
+    : (exists roots, union_find_ok lt e.(equiv) roots) ->
+      map.get e.(equiv).(parent) z = Some z ->
+      map.get (snd (Defs.union v v e)).(equiv).(parent) z = Some z.
+  Proof.
+    intros Hok Hz.
+    assert (lt_trans_nat : forall a b c : nat, a < b -> b < c -> a < c)
+      by (intros; Lia.lia).
+    unfold Defs.union.
+    cbn [StateMonad.state_monad Mbind].
+    destruct (find v e) as [cv e1] eqn:Hfind1.
+    cbn [fst snd].
+    destruct (find v e1) as [cv2 e2] eqn:Hfind2.
+    cbn [fst snd].
+    assert (He1 : e1 = snd (find v e)) by (rewrite Hfind1; reflexivity).
+    assert (He2 : e2 = snd (find v e1)) by (rewrite Hfind2; reflexivity).
+    assert (Hok1 : exists roots, union_find_ok lt e1.(equiv) roots).
+    { rewrite He1. apply find_preserves_uf_ok. exact Hok. }
+    assert (Heqb : eqb cv cv2 = true).
+    { destruct (map.get e.(equiv).(parent) v) as [pv|] eqn:Hget_v.
+      - assert (Hkey_v : Sep.has_key v e.(equiv).(parent)).
+        { unfold Sep.has_key. rewrite Hget_v. exact I. }
+        destruct Hok as [roots Hok_r].
+        unfold Defs.find in Hfind1.
+        destruct (UnionFind.find e.(equiv) v) as [uf1 cv1] eqn:Huf1.
+        injection Hfind1 as Hcv1_eq He1_eq. subst cv1.
+        pose proof (@find_spec _ _ _ _ _ _ _ default lt_trans_nat
+                      _ _ _ _ _ Hok_r Hkey_v Huf1) as Hspec1.
+        destruct Hspec1 as (Huf1_ok & Hcv_in & Hpar1_cv & _ & _ & Hkey_iff1).
+        assert (Hlim_uf1_cv : limit (parent_rel idx (idx_map idx) (parent uf1)) v cv).
+        { exact (proj2 (@union_find_limit _ _ _ _ _ _ _ default lt_trans_nat _ _ _ _
+                          Huf1_ok) (conj Hcv_in Hpar1_cv)). }
+        assert (He1_equiv : e1.(equiv) = uf1).
+        { rewrite <- He1_eq. reflexivity. }
+        assert (Hkey_v_e1 : Sep.has_key v e1.(equiv).(parent)).
+        { rewrite He1_equiv. apply Hkey_iff1. exact Hkey_v. }
+        unfold Defs.find in Hfind2.
+        rewrite He1_equiv in Hfind2.
+        destruct (UnionFind.find uf1 v) as [uf2 cv2'] eqn:Huf2.
+        injection Hfind2 as Hcv2_eq He2_eq. subst cv2'.
+        assert (Hcv2_eq2 : cv2 = cv).
+        { exact (find_find_same_rep v uf1 uf2 cv cv2 _ Huf1_ok Huf2 Hlim_uf1_cv). }
+        subst cv2. eqb_case cv cv; [reflexivity | exfalso; auto].
+      - unfold Defs.find in Hfind1.
+        pose proof (find_no_key_identity e v Hget_v) as Hid.
+        rewrite Hid in Hfind1. injection Hfind1 as Hcv_eq He1_eq. subst cv.
+        assert (He1_parent : map.get e1.(equiv).(parent) v = None).
+        { rewrite <- He1_eq. exact Hget_v. }
+        unfold Defs.find in Hfind2.
+        rewrite <- He1_eq in Hfind2.
+        cbn [equiv db parents epoch worklist analyses log] in Hfind2.
+        rewrite Hid in Hfind2. injection Hfind2 as Hcv2_eq He2_eq. subst cv2.
+        eqb_case v v; [reflexivity | exfalso; auto]. }
+    rewrite Heqb.
+    cbn beta iota.
+    cbn [Mret StateMonad.state_monad fst snd].
+    rewrite He2.
+    apply find_roots_mono; [exact Hok1|].
+    rewrite He1.
+    apply find_roots_mono; exact Hok || exact Hz.
+  Qed.
+
   (* Helper: [list_Mmap find] on a list of root elements is the identity. *)
   Lemma list_Mmap_find_roots_identity (xs : list idx) (inst : instance)
     : all (fun x => map.get inst.(equiv).(parent) x = Some x) xs ->
