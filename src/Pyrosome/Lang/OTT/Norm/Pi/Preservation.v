@@ -33,12 +33,20 @@ Section Preservation.
   (* The (relational) substitution-typing judgment.  A substitution
      [sg : Delta <- Gamma] is well-typed when its length matches and each
      entry has, at [Delta], the type obtained by applying [sg] to the
-     corresponding [Gamma]-type. *)
-  Definition wf_ssub (Delta : senv) (sg : ssub) (Gamma : senv) : Prop :=
-    length sg = length Gamma /\
-    (forall k T T', nth_error Gamma k = Some T ->
-       Apply_ty (length Delta) sg T T' ->
-       has_svalty Delta (nth_default (vNe (nVar 0)) sg k) T').
+     corresponding [Gamma]-type.  The clause is stated to PRODUCE the
+     substituted type [T'] (with its [Apply_ty] witness), rather than to
+     consume an arbitrary one: this is what makes [wf_ssub_up] provable
+     using only the forward shift-commutation [Apply_ty_shift0] (no need
+     for an un-shift inversion, hence no appeal to totality).  The
+     consuming form is recovered at use sites by determinism of [Apply]. *)
+  (* [Apply_ty] is [Type]-valued (it carries the substitution derivation),
+     so [wf_ssub] lives in [Type] and uses [sigT]/[prod] rather than
+     [ex]/[and]. *)
+  Definition wf_ssub (Delta : senv) (sg : ssub) (Gamma : senv) : Type :=
+    (length sg = length Gamma) *
+    (forall k T, nth_error Gamma k = Some T ->
+       { T' & (Apply_ty (length Delta) sg T T')
+              * has_svalty Delta (nth_default (vNe (nVar 0)) sg k) T' })%type.
 
   Definition wf_senv (Ge : senv) : Prop :=
     forall k T, nth_error Ge k = Some T -> wf_svalty Ge T.
@@ -353,60 +361,289 @@ Proof.
   exact (snd (fst (fst (fst Apply_shift_commute))) m s v v' H 0 0 (up s) (ShiftSub_0_up s) (Nat.le_0_l m)).
 Qed.
 
+(* Named [Apply_val] projection of the commutation engine (so implicit-arg
+   inference works at use sites, unlike the anonymous tuple projection). *)
+Lemma Apply_val_shiftc : forall m s v v', Apply_val m s v v' ->
+    forall cb cv s2, ShiftSub cb cv s s2 -> cv <= m ->
+      Apply_val (S m) s2 (shift_val cb 1 v) (shift_val cv 1 v').
+Proof. exact (snd (fst (fst (fst Apply_shift_commute)))). Qed.
+
 (* ===================================================================== *)
-(* STATUS (this session): head-shift convention corrected; commutation    *)
-(* engine proved.  What remains, and why.                                  *)
+(* Part 2 : weakening at an arbitrary cutoff (insertion under binders).    *)
+(*                                                                        *)
+(* Front-insertion weakening is not strong enough to recurse under the Pi  *)
+(* binder; the motive must carry the cutoff [c].  [wk_ctx c T0 Ge] inserts *)
+(* [T0] at de Bruijn level [c] and shifts every existing entry's free      *)
+(* variables at [c].  The [t_Pi] reshuffle is exactly [shift_shift_comm]   *)
+(* with [0 <= c], and the [n_app] case is [Apply_shift_commute] driven by  *)
+(* [ShiftSub_beta].                                                        *)
+(* ===================================================================== *)
+
+Lemma nth_error_firstn_lt : forall A (l : list A) c k,
+    k < c -> nth_error (firstn c l) k = nth_error l k.
+Proof.
+  intros A l c. revert l. induction c as [|c IH]; intros l k Hk; [ Lia.lia | ].
+  destruct l as [|x l]; cbn; [ destruct k; reflexivity | ].
+  destruct k as [|k]; [ reflexivity | cbn; apply IH; Lia.lia ].
+Qed.
+
+Lemma nth_error_skipn_add : forall A (l : list A) c j,
+    nth_error (skipn c l) j = nth_error l (c + j).
+Proof.
+  intros A l c. revert l. induction c as [|c IH]; intros l j; [ reflexivity | ].
+  destruct l as [|x l]; cbn; [ destruct j; reflexivity | apply IH ].
+Qed.
+
+Lemma map_firstn : forall A B (f : A -> B) c l,
+    map f (firstn c l) = firstn c (map f l).
+Proof.
+  intros A B f c. induction c as [|c IH]; intros l; [ reflexivity | ].
+  destruct l as [|x l]; cbn; [ reflexivity | f_equal; apply IH ].
+Qed.
+
+Lemma map_skipn : forall A B (f : A -> B) c l,
+    map f (skipn c l) = skipn c (map f l).
+Proof.
+  intros A B f c. induction c as [|c IH]; intros l; [ reflexivity | ].
+  destruct l as [|x l]; cbn; [ reflexivity | apply IH ].
+Qed.
+
+Definition wk_ctx (c : nat) (T0 : svalty) (Ge : senv) : senv :=
+  map (shift_ty c 1) (firstn c Ge) ++ T0 :: map (shift_ty c 1) (skipn c Ge).
+
+Lemma wk_ctx_length : forall c T0 Ge,
+    c <= length Ge -> length (wk_ctx c T0 Ge) = S (length Ge).
+Proof.
+  intros c T0 Ge Hc. unfold wk_ctx.
+  rewrite length_app. cbn [length]. rewrite !length_map.
+  rewrite firstn_length, skipn_length. Lia.lia.
+Qed.
+
+Lemma wk_ctx_nth_lt : forall c T0 Ge k T,
+    k < c -> c <= length Ge -> nth_error Ge k = Some T ->
+    nth_error (wk_ctx c T0 Ge) k = Some (shift_ty c 1 T).
+Proof.
+  intros c T0 Ge k T Hk Hc He. unfold wk_ctx.
+  rewrite nth_error_app1 by (rewrite length_map, firstn_length; Lia.lia).
+  rewrite nth_error_map, nth_error_firstn_lt by exact Hk. rewrite He. reflexivity.
+Qed.
+
+Lemma wk_ctx_nth_ge : forall c T0 Ge k T,
+    c <= k -> c <= length Ge -> nth_error Ge k = Some T ->
+    nth_error (wk_ctx c T0 Ge) (S k) = Some (shift_ty c 1 T).
+Proof.
+  intros c T0 Ge k T Hk Hc He. unfold wk_ctx.
+  rewrite nth_error_app2 by (rewrite length_map, firstn_length; Lia.lia).
+  rewrite length_map, firstn_length.
+  replace (S k - Nat.min c (length Ge)) with (S (k - c))
+    by (rewrite Nat.min_l by Lia.lia; Lia.lia).
+  cbn [nth_error]. rewrite nth_error_map, nth_error_skipn_add.
+  replace (c + (k - c)) with k by Lia.lia. rewrite He. reflexivity.
+Qed.
+
+(* Weakening commutes with map-shift, modulo a cutoff bump (the engine of
+   the binder reshuffle). *)
+Lemma map_shift_S_comm : forall c l,
+    map (shift_ty (S c) 1) (map (shift_ty 0 1) l)
+    = map (shift_ty 0 1) (map (shift_ty c 1) l).
+Proof.
+  intros c l. rewrite !map_map. apply map_ext. intro x.
+  symmetry. apply (fst shift_shift_comm). Lia.lia.
+Qed.
+
+Lemma wk_ctx_under_binder : forall c T0 F Ge,
+    wk_ctx (S c) (shift_ty 0 1 T0) (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge)
+    = dEl (shift_val 0 1 (shift_val c 1 F)) :: map (shift_ty 0 1) (wk_ctx c T0 Ge).
+Proof.
+  intros c T0 F Ge. unfold wk_ctx.
+  cbn [firstn skipn map app].
+  rewrite map_app. cbn [map].
+  rewrite <- !map_firstn, <- !map_skipn.
+  rewrite !map_shift_S_comm.
+  f_equal.
+  - cbn [shift_ty]. f_equal. symmetry. apply (fst (snd shift_shift_comm)). Lia.lia.
+Qed.
+
+Lemma weaken_typing :
+  (forall Ge v T, has_svalty Ge v T ->
+     forall c T0, c <= length Ge ->
+       has_svalty (wk_ctx c T0 Ge) (shift_val c 1 v) (shift_ty c 1 T))
+  * (forall Ge n T, wf_neutral Ge n T ->
+     forall c T0, c <= length Ge ->
+       wf_neutral (wk_ctx c T0 Ge) (shift_ne c 1 n) (shift_ty c 1 T)).
+Proof.
+  refine (has_neutral_mutind
+    (fun Ge v T _ => forall c T0, c <= length Ge ->
+       has_svalty (wk_ctx c T0 Ge) (shift_val c 1 v) (shift_ty c 1 T))
+    (fun Ge n T _ => forall c T0, c <= length Ge ->
+       wf_neutral (wk_ctx c T0 Ge) (shift_ne c 1 n) (shift_ty c 1 T))
+    _ _ _ _ _ _ _ _ _ _ _ _ _).
+  - (* t_ne *) intros Ge n T hn IHn c T0 Hc. cbn. apply t_ne. exact (IHn c T0 Hc).
+  - (* t_zero *) intros Ge c T0 Hc. cbn. apply t_zero.
+  - (* t_suc *) intros Ge v hv IHv c T0 Hc. cbn. apply t_suc. exact (IHv c T0 Hc).
+  - (* t_Nat *) intros Ge r l c T0 Hc. cbn. apply t_Nat.
+  - (* t_Empty *) intros Ge r l c T0 Hc. cbn. apply t_Empty.
+  - (* t_Pi *) intros Ge F B rF lF rB lB r l hF IHF hB IHB c T0 Hc. cbn.
+    eapply t_Pi.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHB (S c) (shift_ty 0 1 T0)
+                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_PiI *) intros Ge F B rF lF rB lB r l hF IHF hB IHB c T0 Hc. cbn.
+    eapply t_PiI.
+    + exact (IHF c T0 Hc).
+    + pose proof (IHB (S c) (shift_ty 0 1 T0)
+                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_lam *) intros Ge F B b hb IHb c T0 Hc. cbn. apply t_lam.
+    pose proof (IHb (S c) (shift_ty 0 1 T0)
+                 ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+    rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_lamI *) intros Ge F B b hb IHb c T0 Hc. cbn. apply t_lamI.
+    pose proof (IHb (S c) (shift_ty 0 1 T0)
+                 ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+    rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* n_var *) intros Ge k T He c T0 Hc. cbn -[Nat.ltb].
+    destruct (Nat.ltb k c) eqn:E; cbn -[Nat.ltb].
+    + apply ltb_true in E. apply n_var. exact (@wk_ctx_nth_lt c T0 Ge k T E Hc He).
+    + apply ltb_false in E. replace (k + 1) with (S k) by Lia.lia.
+      apply n_var. exact (@wk_ctx_nth_ge c T0 Ge k T E Hc He).
+  - (* n_emptyrec *) intros Ge rA lA A scrut r l hA IHA hscr IHscr c T0 Hc. cbn.
+    eapply n_emptyrec; [ exact (IHA c T0 Hc) | exact (IHscr c T0 Hc) ].
+  - (* n_app *) intros Ge f F B a B' hf IHf ha IHa Hap c T0 Hc. cbn.
+    eapply n_app.
+    + exact (IHf c T0 Hc).
+    + exact (IHa c T0 Hc).
+    + rewrite (@wk_ctx_length c T0 Ge Hc).
+      exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+  - (* n_appI *) intros Ge f F B a B' hf IHf ha IHa Hap c T0 Hc. cbn.
+    eapply n_appI.
+    + exact (IHf c T0 Hc).
+    + exact (IHa c T0 Hc).
+    + rewrite (@wk_ctx_length c T0 Ge Hc).
+      exact (Apply_val_shiftc Hap (@ShiftSub_beta (length Ge) a c Hc) Hc).
+Qed.
+
+(* Front insertion (cutoff 0) : the special case used by [wf_ssub_up]. *)
+Lemma shift_typing :
+  (forall Ge v T, has_svalty Ge v T ->
+     forall T0, has_svalty (T0 :: map (shift_ty 0 1) Ge) (shift_val 0 1 v) (shift_ty 0 1 T))
+  * (forall Ge n T, wf_neutral Ge n T ->
+     forall T0, wf_neutral (T0 :: map (shift_ty 0 1) Ge) (shift_ne 0 1 n) (shift_ty 0 1 T)).
+Proof.
+  split; intros Ge x T H T0.
+  - pose proof (fst weaken_typing Ge x T H 0 T0 (Nat.le_0_l _)) as IH.
+    unfold wk_ctx in IH. cbn [firstn skipn map app] in IH. exact IH.
+  - pose proof (snd weaken_typing Ge x T H 0 T0 (Nat.le_0_l _)) as IH.
+    unfold wk_ctx in IH. cbn [firstn skipn map app] in IH. exact IH.
+Qed.
+
+Lemma shift_wf_svalty : forall Ge T, wf_svalty Ge T ->
+  forall T0, wf_svalty (T0 :: map (shift_ty 0 1) Ge) (shift_ty 0 1 T).
+Proof.
+  intros Ge T H T0. destruct H as [Ge r l | Ge e r l He]; cbn.
+  - apply wf_dU.
+  - apply (wf_dEl (r:=r) (l:=l)). exact (fst shift_typing _ _ _ He T0).
+Qed.
+
+Lemma wf_senv_nil : wf_senv [].
+Proof. intros k T He. destruct k; cbn in He; discriminate He. Qed.
+
+Lemma wf_senv_ext : forall Ge S, wf_senv Ge -> wf_svalty Ge S ->
+  wf_senv (shift_ty 0 1 S :: map (shift_ty 0 1) Ge).
+Proof.
+  intros Ge S HG HS k T He. destruct k as [|k]; cbn [nth_error] in He.
+  - injection He as He. subst T. apply (shift_wf_svalty HS).
+  - rewrite nth_error_map in He.
+    destruct (nth_error Ge k) as [Tk|] eqn:E; cbn in He; [|discriminate He].
+    injection He as He. subst T. apply (shift_wf_svalty (HG k Tk E)).
+Qed.
+
+(* ===================================================================== *)
+(* Part 3 : the structural substitutions are well-typed; in particular     *)
+(* [wf_ssub_up] -- the lemma a prior note claimed impossible.              *)
+(* ===================================================================== *)
+
+Lemma wf_ssub_id : forall Ge, wf_senv Ge -> wf_ssub Ge (id_list (length Ge)) Ge.
+Proof.
+  intros Ge Hwf. split; [ apply id_list_length | ].
+  intros k T He. exists T. split.
+  - apply Apply_ty_id.
+  - assert (Hk : k < length Ge)
+      by (apply (proj1 (nth_error_Some Ge k)); rewrite He; discriminate).
+    rewrite (nth_default_irrel (id_list (length Ge)) (vNe (nVar 0)) (vNe (nVar k)))
+      by (rewrite id_list_length; exact Hk).
+    rewrite id_list_nth. apply t_ne, n_var. exact He.
+Qed.
+
+Lemma wf_ssub_forget : forall Delta, wf_ssub Delta [] [].
+Proof.
+  intro Delta. split; [ reflexivity | ].
+  intros k T He. destruct k; cbn in He; discriminate He.
+Qed.
+
+(* The key lemma: lifting a well-typed substitution under a binder.  With
+   the SHIFTED-head convention the head obligation is [vNe (nVar 0)] at
+   [dEl (shift F')], i.e. [n_var] at index 0 -- trivially true.  (Under the
+   old un-shifted convention it was [dEl F = dEl (F[up sg])], FALSE: that
+   was the recorded blocker.)  The tail uses only the FORWARD shift
+   commutation [Apply_ty_shift0]/[Apply_val_shift0] and front weakening. *)
+Lemma wf_ssub_up : forall Delta sg Ge F F',
+    wf_ssub Delta sg Ge ->
+    Apply_val (length Delta) sg F F' ->
+    wf_ssub (dEl (shift_val 0 1 F') :: map (shift_ty 0 1) Delta) (up sg)
+            (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge).
+Proof.
+  intros Delta sg Ge F F' [Hlen Hpt] HF. split.
+  - cbn [length]. unfold up. cbn [length]. rewrite !length_map. rewrite Hlen. reflexivity.
+  - intros k T He. cbn [length]. rewrite length_map.
+    destruct k as [|k'].
+    + (* head : the fresh variable, at the (shifted, substituted) domain *)
+      cbn [nth_error] in He. injection He as He. subst T.
+      exists (dEl (shift_val 0 1 F')). split.
+      * apply ap_dEl. apply Apply_val_shift0. exact HF.
+      * unfold up. cbn [nth_default nth_error].
+        apply t_ne, n_var. reflexivity.
+    + (* tail : weaken the original entry forward *)
+      cbn [nth_error] in He. rewrite nth_error_map in He.
+      destruct (nth_error Ge k') as [Tk|] eqn:E; cbn [option_map] in He;
+        [ injection He as He; subst T | discriminate He ].
+      destruct (Hpt k' Tk E) as [Tk' [Hap Hty]].
+      exists (shift_ty 0 1 Tk'). split.
+      * apply Apply_ty_shift0. exact Hap.
+      * (* [k'] is in range (its type comes from [Ge]), so the default is
+           irrelevant and [(up sg)[S k'] = shift (sg[k'])]. *)
+        assert (Hk : k' < length sg)
+          by (rewrite Hlen; apply (proj1 (nth_error_Some Ge k')); rewrite E; discriminate).
+        destruct (nth_error sg k') as [w|] eqn:Es;
+          [ | apply nth_error_None in Es; Lia.lia ].
+        assert (Hw : nth_default (vNe (nVar 0)) sg k' = w)
+          by (unfold nth_default; rewrite Es; reflexivity).
+        rewrite Hw in Hty.
+        unfold up. rewrite nth_default_cons_S.
+        unfold nth_default. rewrite nth_error_map, Es. cbn [option_map].
+        exact (fst shift_typing Delta w Tk' Hty (dEl (shift_val 0 1 F'))).
+Qed.
+
+(* ===================================================================== *)
+(* STATUS (this session, continued).                                       *)
 (*                                                                         *)
-(* A previous attempt at this file ended with a BLOCKER claiming the       *)
-(* dependent substitution lemma was unprovable because [Pi/Typing.v]       *)
-(* stored a Pi binder's domain type UN-shifted ([dEl F]) while shifting    *)
-(* the tail, which is not closed under weakening.  That diagnosis was      *)
-(* correct, but the conclusion ("out of scope") was not: the fix is simply *)
-(* to store the binder head SHIFTED ([dEl (shift_val 0 1 F)]), exactly as  *)
-(* [Reflect.v]/[ev_env_ext]/[ev_hd]/[ev_wkn]/[ev_snoc] ALREADY do.  This    *)
-(* session made [Pi/Typing.v] ([t_Pi]/[t_PiI]/[t_lam]/[t_lamI]) and        *)
-(* [Pi/EvalRel.v] ([ev_Pi]/[ev_PiI]/[ev_lam]/[ev_lamI]) use the shifted    *)
-(* head; [Pi/Determinism.v] rebuilds unchanged.  (The un-shifted [ev_Pi]/  *)
-(* [ev_lam] was in fact a latent bug: a codomain that mentions its own     *)
-(* binder via [hd] reflects at [ev_hd]'s shifted-head env, so it could not *)
-(* have typed under the old convention.)                                   *)
+(* PROVED ABOVE (all [Qed], axiom-free): the generalized weakening         *)
+(* [weaken_typing] (insertion at an arbitrary cutoff), its front-insertion *)
+(* corollary [shift_typing], the environment lemmas, and -- the headline   *)
+(* -- [wf_ssub_up], which the prior note declared impossible under the     *)
+(* un-shifted convention.  With the corrected (shifted-head) convention it *)
+(* is direct: the [up] head obligation is [n_var] at index 0, and the tail *)
+(* uses only the forward shift commutation already established.  Also       *)
+(* [wf_ssub_id] / [wf_ssub_forget].                                        *)
 (*                                                                         *)
-(* PROVED ABOVE (all [Qed], axiom-free): the shift algebra                 *)
-(* [shift_shift_comm], the relational substitution-commutes-with-shift     *)
-(* engine [Apply_shift_commute] (the genuinely intricate, binder- and      *)
-(* beta-aware core, with its [ShiftSub]/[ShiftSub_up]/[ShiftSub_beta]       *)
-(* invariant), and the cutoff-0 corollaries [Apply_ty_shift0] /            *)
-(* [Apply_val_shift0].  These are the reusable ingredients the dependent   *)
-(* substitution lemma needs.  (The earlier version of this file never      *)
-(* compiled: [shift_shift_comm]'s [nVar] case, [ShiftSub_up], the          *)
-(* [Apply_mutind] tuple associativity, and several implicit-argument /     *)
-(* [cbn]-over-[Nat.ltb] issues were all broken; they are fixed here.)      *)
-(*                                                                         *)
-(* REMAINING:                                                              *)
-(*  1. Generalized weakening at an arbitrary cutoff [c] (insert a context  *)
-(*     entry at de Bruijn level [c], shifting entries at [c]).  The         *)
-(*     front-insertion form alone is not strong enough to go under the Pi  *)
-(*     binder in its own induction; the standard fix is to carry the       *)
-(*     cutoff [c] in the motive.  With the shifted-head convention this     *)
-(*     now goes through (the [t_Pi] reshuffle is exactly [shift_shift_comm *)
-(*     0 <= c]).  This unblocks [wf_ssub_up]: under the corrected           *)
-(*     convention its head obligation reduces to [has_svalty                *)
-(*     (dEl (shift F') :: _) (vNe (nVar 0)) (dEl (shift F'))], i.e. [n_var] *)
-(*     at index 0 -- trivially true, where the old convention made it      *)
-(*     [dEl F = dEl (F[up sg])], FALSE.                                     *)
-(*  2. The dependent substitution lemma [subst_has_svalty] for every       *)
-(*     NON-application case (structural induction on [Apply], using         *)
-(*     [wf_ssub_up] in the binder cases), and [vapp_typed] for the neutral *)
-(*     ([vapp_ne]) case (immediate from [n_app]).                          *)
-(*  3. THE GENUINE KERNEL (research-grade, matches the project memo's       *)
-(*     "totality / logical relations" blocker): the [n_app] case of        *)
-(*     [subst_has_svalty] must type the result of substituting into a       *)
-(*     neutral application whose head [f[sg]] has become a [vLam]           *)
-(*     (hereditary beta).  Typing [f[sg]] needs the SUBSTITUTED function    *)
-(*     type [Pi (F[sg]) (B[up sg])], whose existence is exactly totality    *)
-(*     of substitution on the (dependent) type codes -- which for the Pi   *)
-(*     fragment with universes is a normalization-flavoured argument, not  *)
-(*     a structural one.  This is the one obstacle the head-shift fix does *)
-(*     NOT remove; it is the same blocker that gates [ModelOk]'s [app_rel]  *)
-(*     cong/by for the integrated model.                                   *)
+(* REMAINING (unchanged from the Part-1 status): [wf_ssub_wkn] /            *)
+(* [wf_ssub_snoc] / [wf_ssub_comp] (relational analogues of the first-      *)
+(* order [Norm/Preservation.v] lemmas), the dependent substitution lemma   *)
+(* [subst_has_svalty] + [vapp_typed], and [eval_sound].  The one genuine   *)
+(* obstacle is unchanged and unaffected by the above: the [n_app] /         *)
+(* hereditary-beta case of [subst_has_svalty] needs totality of            *)
+(* substitution on the dependent function-type codes -- a normalization-    *)
+(* flavoured argument (the project memo's "totality / logical relations"    *)
+(* blocker), not a structural one.                                          *)
 (* ===================================================================== *)
