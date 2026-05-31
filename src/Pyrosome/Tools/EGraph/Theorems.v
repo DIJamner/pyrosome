@@ -6,7 +6,7 @@ Open Scope list.
 From coqutil Require Import Map.Interface Datatypes.Result.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
-From Utils.EGraph Require Import Defs Semantics QueryOpt.
+From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Theory Require WfCutElim.
@@ -4644,7 +4644,7 @@ Section WithVar.
     (* Shorthand notation for Semantics.parents_keys_in_equiv instantiated
        at the AddOpenRoots section types. *)
     Local Notation parents_keys_in_equiv_inst :=
-      (Semantics.parents_keys_in_equiv V V V_map V_map V_trie X).
+      (SemanticsParents.parents_keys_in_equiv V V V_map V_map V_trie X).
 
     (* After hash_entry sort_of [x'] on a state e_in where:
        (1) x' is a root, (2) no sort_of[x']→r atom exists,
