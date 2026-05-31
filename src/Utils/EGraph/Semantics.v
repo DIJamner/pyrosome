@@ -13699,6 +13699,79 @@ Section WithMap.
     rewrite map.get_empty in Hg. discriminate.
   Qed.
 
+  (* alloc_opaque preserves parents_keys_in_equiv:
+     parents is UNCHANGED (alloc_opaque_egraph_ok) and equiv only GROWS
+     (monotone: any old key is still a key after alloc). *)
+  Lemma alloc_opaque_parents_keys_in_equiv
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x))
+        (Hltt : Transitive lt)
+    : vc (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result)
+        (fun e res =>
+           egraph_ok e ->
+           parents_keys_in_equiv e ->
+           parents_keys_in_equiv (snd res)).
+  Proof.
+    unfold vc.
+    intros e.
+    destruct (alloc_opaque idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e)
+      as [x' e'] eqn:Heq.
+    cbn [fst snd].
+    pose proof (@alloc_opaque_egraph_ok Hlti Hlts Hltt) as Hao.
+    unfold vc in Hao. specialize (Hao e).
+    rewrite Heq in Hao. cbn [fst snd] in Hao.
+    intros Hok Hpke.
+    destruct (Hao Hok) as (_ & _ & _ & Hmono & _ & Hpar_eq & _).
+    unfold parents_keys_in_equiv in *.
+    intros y (s & Hg).
+    apply Hmono.
+    apply Hpke.
+    exists s.
+    rewrite Hpar_eq.
+    exact Hg.
+  Qed.
+
+  (* union preserves parents_keys_in_equiv:
+     parents is UNCHANGED (union_sound) and equiv only GROWS via the
+     PER-closure extension, so any old key is still a key in the result. *)
+  Lemma union_parents_keys_in_equiv (v v1 : idx)
+    : vc (Defs.union v v1)
+        (fun e res =>
+           (exists roots, union_find_ok lt (equiv e) roots) ->
+           Sep.has_key v e.(equiv).(parent) ->
+           Sep.has_key v1 e.(equiv).(parent) ->
+           parents_keys_in_equiv e ->
+           parents_keys_in_equiv (snd res)).
+  Proof.
+    unfold vc.
+    intros e.
+    destruct (Defs.union v v1 e) as [u e'] eqn:Heq.
+    cbn [fst snd].
+    intros Hroots Hkv Hkv1 Hpke.
+    pose proof (union_sound v v1) as Hus.
+    unfold vc in Hus. specialize (Hus e).
+    rewrite Heq in Hus. cbn [snd] in Hus.
+    destruct (Hus Hroots Hkv Hkv1) as (_ & Hroots' & Hper & Hpar_eq & _).
+    destruct Hroots' as [roots' Hroots'].
+    unfold parents_keys_in_equiv in *.
+    intros y (s & Hg).
+    (* Get has_key y in equiv e from Hpke *)
+    assert (Hyk_e : Sep.has_key y (parent (equiv e))).
+    { apply Hpke. exists s. rewrite Hpar_eq. exact Hg. }
+    (* Convert has_key to uf_rel_PER y y in e *)
+    unfold Sep.has_key in Hyk_e.
+    destruct (map.get (parent (equiv e)) y) as [vy|] eqn:Hgy; [|tauto].
+    assert (Hyy_in : uf_rel_PER (equiv e) y y).
+    { unfold uf_rel_PER.
+      eapply PER_clo_trans;
+        [ apply PER_clo_base; exact Hgy
+        | apply PER_clo_sym; apply PER_clo_base; exact Hgy ]. }
+    (* Lift to union_closure_PER then to uf_rel_PER in e' *)
+    assert (Hyy_clo : union_closure_PER (uf_rel_PER (equiv e)) (singleton_rel v v1) y y).
+    { unfold union_closure_PER. apply PER_clo_base. left. exact Hyy_in. }
+    assert (Hyy_u : uf_rel_PER (equiv e') y y) by (apply Hper; exact Hyy_clo).
+    exact (proj1 (uf_rel_PER_has_key _ roots' _ _ Hroots' Hyy_u)).
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope
