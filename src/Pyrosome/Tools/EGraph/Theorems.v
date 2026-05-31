@@ -3968,6 +3968,250 @@ Section WithVar.
       eapply add_open_sort'_worklist_frame; try eassumption; eauto with utils.
     Qed.
 
+    (* ------------------------------------------------------------------ *)
+    (* PKE (parents-keys-in-equiv) family: add_open preserves              *)
+    (* parents_keys_in_equiv along with egraph_ok.                         *)
+    (* ------------------------------------------------------------------ *)
+
+    (* Shorthand for parents_keys_in_equiv at our section types. *)
+    Local Notation pke_inst :=
+      (SemanticsParents.parents_keys_in_equiv V V V_map V_map V_trie X).
+
+    Definition open_pke_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop :=
+      egraph_ok e_in ->
+      pke_inst e_in ->
+      all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_in))) sub ->
+        egraph_ok (snd res)
+      /\ pke_inst (snd res)
+      /\ (forall x, Sep.has_key x (parent (Defs.equiv e_in)) ->
+                    Sep.has_key x (parent (Defs.equiv (snd res))))
+      /\ Sep.has_key (fst res) (parent (Defs.equiv (snd res))).
+
+    Definition open_pke_args_post (sub : named_list V) (e_in : instance X)
+       (res : list V * instance X) : Prop :=
+      egraph_ok e_in ->
+      pke_inst e_in ->
+      all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_in))) sub ->
+        egraph_ok (snd res)
+      /\ pke_inst (snd res)
+      /\ (forall x, Sep.has_key x (parent (Defs.equiv e_in)) ->
+                    Sep.has_key x (parent (Defs.equiv (snd res))))
+      /\ all (fun x => Sep.has_key x (parent (Defs.equiv (snd res)))) (fst res).
+
+    Definition open_pke_sort_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop := open_pke_post sub e_in res.
+
+    Lemma add_open_pke (l1 : lang)
+      (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
+      (Hwf1 : wf_lang l1) (Hl1 : incl l1 l)
+      c (Hctx : wf_ctx l1 c)
+      : (forall e t, wf_term l1 c e t -> forall r, map fst c = map fst r ->
+           vc (add_open_term' succ sort_of l false false add_open_sort_inner r e)
+              (open_pke_post r))
+        /\ (forall args c', wf_args l1 c args c' -> forall r, map fst c = map fst r ->
+           vc (list_Mmap (add_open_term' succ sort_of l false false add_open_sort_inner r) args)
+              (open_pke_args_post r)).
+    Proof.
+      apply (WfCutElim.wf_cut_ind V l1 c
+               (fun e t => forall r, map fst c = map fst r ->
+                  vc (add_open_term' succ sort_of l false false
+                                     add_open_sort_inner r e)
+                     (open_pke_post r))
+               (fun args c' => forall r, map fst c = map fst r ->
+                  vc (list_Mmap (add_open_term' succ sort_of l false false
+                                                add_open_sort_inner r) args)
+                     (open_pke_args_post r))).
+      - (* con case *)
+        intros name c'_rule args t_rule s' Hrule_in_l1 Hwf_args_inner IH r Hmaps.
+        cbn [add_open_term'].
+        pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
+        assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad Mret].
+        eapply vc_bind.
+        { specialize (IH r Hmaps). apply IH. }
+        intros e_pre a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_pke_post.
+        intros Hok Hpke Hsub.
+        unfold open_pke_args_post in Hpost_args.
+        specialize (Hpost_args Hok Hpke Hsub).
+        destruct Hpost_args as (Hok_inner & Hpke_inner & Hmono_inner & Hkeys_aout).
+        cbn [fst snd] in Hok_inner, Hpke_inner, Hmono_inner, Hkeys_aout.
+        assert (Hkeys_aout_in : forall x, In x a_out ->
+                                  Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. exact (in_all _ _ _ Hkeys_aout Hx). }
+        pose proof (@hash_entry_egraph_ok V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhe_ok.
+        unfold vc in Hhe_ok.
+        specialize (Hhe_ok e_inner Hok_inner Hkeys_aout_in).
+        destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_ok |- *.
+        destruct Hhe_ok as (Hok_he & Hmono_he & Hres_he).
+        pose proof (@SemanticsParents.hash_entry_parents_keys_in_equiv V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map V_map_ok V_trie X _
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hpke_he.
+        unfold vc in Hpke_he.
+        specialize (Hpke_he e_inner).
+        rewrite Heqhe in Hpke_he. cbn [fst snd] in Hpke_he.
+        destruct Hok_inner as [Huf_inner Hdb_inner].
+        specialize (Hpke_he Huf_inner Hkeys_aout Hpke_inner).
+        cbn [Mret StateMonad.state_monad fst snd].
+        split; [exact Hok_he|].
+        split; [exact Hpke_he|].
+        split; [intros x Hx; apply Hmono_he; apply Hmono_inner; exact Hx|].
+        exact Hres_he.
+      - (* var case *)
+        intros n t_var Hin_var r Hmaps.
+        cbn [add_open_term'].
+        unfold vc. intros e_pre.
+        cbn [Mret StateMonad.state_monad fst snd].
+        unfold open_pke_post.
+        intros Hok Hpke Hsub.
+        split; [exact Hok|].
+        split; [exact Hpke|].
+        split; [auto|].
+        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafr : all_fresh r).
+        { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
+        assert (Hex_x : exists x_n, In (n, x_n) r).
+        { apply pair_fst_in_exists. rewrite <- Hmaps. eapply pair_fst_in; exact Hin_var. }
+        destruct Hex_x as [x_n Hin_xn].
+        assert (Hlk : named_list_lookup default r n = x_n).
+        { clear -V_Eqb_ok Hafr Hin_xn.
+          induction r as [|[m v_m] r' IH]; cbn in *; [tauto|].
+          destruct Hafr as [Hfr Hafr'].
+          destruct Hin_xn as [Heq|Hin_xn'].
+          - inversion Heq; subst.
+            eqb_case n n; congruence.
+          - eqb_case n m.
+            + exfalso. apply Hfr. eapply pair_fst_in; exact Hin_xn'.
+            + apply IH; auto. }
+        cbn [fst]. rewrite Hlk.
+        exact (in_all _ _ _ Hsub Hin_xn).
+      - (* eq_sort conversion *)
+        intros e_x t_x t_x' Hwft IH_term Heq_sort r Hmaps.
+        apply IH_term; assumption.
+      - (* nil args *)
+        intros r Hmaps.
+        cbn [list_Mmap].
+        unfold vc, Mret. cbn.
+        unfold open_pke_args_post. intros e_in Hok Hpke Hsub.
+        split; [exact Hok|].
+        split; [exact Hpke|].
+        split; [auto | cbn; exact I].
+      - (* cons args *)
+        intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r Hmaps.
+        unfold vc. intros e_in.
+        cbn [list_Mmap].
+        cbn [Mbind Mret StateMonad.state_monad].
+        unfold open_pke_args_post.
+        intros Hok Hpke Hsub.
+        specialize (IH_term r Hmaps).
+        specialize (IH_args r Hmaps).
+        unfold vc, open_pke_post in IH_term.
+        specialize (IH_term e_in Hok Hpke Hsub).
+        destruct (add_open_term' succ sort_of l false false
+                    add_open_sort_inner r e_arg e_in)
+          as [v_head e_after_head] eqn:Heq1.
+        cbn [fst snd] in IH_term.
+        destruct IH_term as (Hok_head & Hpke_head & Hmono_head & Hkey_vhead).
+        assert (Hsub_head : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_after_head))) r).
+        { eapply all_wkn; [|exact Hsub].
+          intros x _ Hk. apply Hmono_head. exact Hk. }
+        unfold vc, open_pke_args_post in IH_args.
+        specialize (IH_args e_after_head Hok_head Hpke_head Hsub_head).
+        destruct (list_Mmap
+                    (add_open_term' succ sort_of l false false
+                       add_open_sort_inner r) es e_after_head)
+          as [v_tail e_final] eqn:Heq2.
+        cbn [fst snd] in IH_args |- *.
+        destruct IH_args as (Hok_tail & Hpke_tail & Hmono_tail & Hkeys_tail).
+        split; [exact Hok_tail|].
+        split; [exact Hpke_tail|].
+        split.
+        + intros x Hx. apply Hmono_tail. apply Hmono_head. exact Hx.
+        + cbn [all]. split.
+          * apply Hmono_tail. exact Hkey_vhead.
+          * exact Hkeys_tail.
+    Qed.
+
+    Lemma add_open_sort'_pke l1 c r t fuel
+      : wf_lang l1 -> length l1 < fuel -> incl l1 l -> wf_ctx l1 c -> wf_sort l1 c t ->
+        map fst c = map fst r ->
+        vc (add_open_sort' succ sort_of l false false fuel r t)
+           (open_pke_sort_post r).
+    Proof.
+      revert l1 c r t.
+      induction fuel; intros l1 c r t Hwfl1 Hflen Hincl Hctx Hsort Hmaps.
+      - exfalso. Lia.lia.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        pose proof Hsort as Hsort'.
+        inversion Hsort' as [? n_ s_t_ args c' Hrule Hwfargs]; subst.
+        apply Hincl in Hrule.
+        assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        eapply vc_bind.
+        { apply (proj2 (add_open_pke l1
+                          (add_open_sort' succ sort_of l false false fuel)
+                          Hwfl1 Hincl c Hctx)
+                  _ _ Hwfargs r Hmaps). }
+        intros e_post a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_pke_sort_post, open_pke_post.
+        intros Hok Hpke Hsub.
+        unfold open_pke_args_post in Hpost_args.
+        specialize (Hpost_args Hok Hpke Hsub).
+        destruct Hpost_args as (Hok_inner & Hpke_inner & Hmono_inner & Hkeys_aout).
+        assert (Hkeys_aout_in : forall x, In x a_out ->
+                                  Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. exact (in_all _ _ _ Hkeys_aout Hx). }
+        pose proof (@hash_entry_egraph_ok V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhe_ok.
+        unfold vc in Hhe_ok.
+        specialize (Hhe_ok e_inner Hok_inner Hkeys_aout_in).
+        destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_ok |- *.
+        destruct Hhe_ok as (Hok_he & Hmono_he & Hres_he).
+        pose proof (@SemanticsParents.hash_entry_parents_keys_in_equiv V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map V_map_ok V_trie X _
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hpke_he.
+        unfold vc in Hpke_he.
+        specialize (Hpke_he e_inner).
+        rewrite Heqhe in Hpke_he. cbn [fst snd] in Hpke_he.
+        destruct Hok_inner as [Huf_inner Hdb_inner].
+        specialize (Hpke_he Huf_inner Hkeys_aout Hpke_inner).
+        cbn [Mret StateMonad.state_monad fst snd].
+        split; [exact Hok_he|].
+        split; [exact Hpke_he|].
+        split; [intros x Hx; apply Hmono_he; apply Hmono_inner; exact Hx|].
+        exact Hres_he.
+    Qed.
+
+    Lemma add_open_sort_parents_keys_in_equiv c r t
+      : wf_ctx l c -> wf_sort l c t -> map fst c = map fst r ->
+        vc (add_open_sort succ sort_of l false false r t)
+           (open_pke_sort_post r).
+    Proof.
+      intros.
+      unfold add_open_sort.
+      eapply add_open_sort'_pke; try eassumption; eauto with utils.
+    Qed.
+
     Lemma add_open_term_all_roots c r e t
       : wf_term l c e t ->
         wf_ctx l c ->
