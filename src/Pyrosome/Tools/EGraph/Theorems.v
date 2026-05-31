@@ -6,7 +6,7 @@ Open Scope list.
 From coqutil Require Import Map.Interface Datatypes.Result.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations Result.
-From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents.
+From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsParents SemanticsAreUnified.
 Import Monad.StateMonad.
 From Pyrosome.Theory Require Import Core ModelImpls.
 From Pyrosome.Theory Require WfCutElim.

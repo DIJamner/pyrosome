@@ -9,7 +9,7 @@ From Stdlib Require Import Logic.PropExtensionality
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps VC.
-From Utils.EGraph Require Import Defs Semantics QueryOpt.
+From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified.
 Import Monad.StateMonad.
 
 (*
