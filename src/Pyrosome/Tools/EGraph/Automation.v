@@ -15,7 +15,7 @@ Import CompilerDefs.Notations.
 From Stdlib Require derive.Derive.
 
 From Utils Require Import EGraph.Defs.
-From Pyrosome.Tools.EGraph Require Import Defs Theorems.
+From Pyrosome.Tools.EGraph Require Import Defs Theorems ReducingCong.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Monad Result.
@@ -115,7 +115,7 @@ Section ReducingSkeleton.
      [optimize_sequent_forward] + [pt_spaced_intersect_correct]. *)
   Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop :=
     fresh PosListMap.sort_of l' /\
-    @Theorems.schedule_sound_real positive positive_Eqb positive_default
+    @ReducingCong.schedule_sound_real positive positive_Eqb positive_default
       TrieMap.trie_map TrieMap.ptree_map_plus (@pos_trie_map) Pos.succ
       PosListMap.sort_of Pos.lt (@compat_intersect) l' sched.
 
@@ -140,7 +140,7 @@ Section ReducingSkeleton.
       res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
     Proof.
       intros Hwf Ha Hb [Hfresh Hsched].
-      exact (@Theorems.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
+      exact (@ReducingCong.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
                positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
                TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
                Pos.succ PosListMap.sort_of Pos.lt
@@ -153,7 +153,7 @@ Section ReducingSkeleton.
      congruence-reduction soundness.  It is real -- modulo the same two
      [map.ok] trie-lawfulness assumptions [StepInst] takes -- so it lives in
      an analogous inner section.  This is the concrete demonstration that
-     [Theorems.egraph_reducing_equal_sound_generic] applies at positive; the
+     [ReducingCong.egraph_reducing_equal_sound_generic] applies at positive; the
      clean, assumption-free [egraph_reducing_cong_sound] / [egraph_sound]
      below are kept as-is (so [by_reduction] / Test.v still work) until the
      trie-lawfulness subproject discharges [trie_map_ok] / [pos_trie_map_ok]. *)
@@ -174,7 +174,7 @@ Section ReducingSkeleton.
       intros Hwf He1 He2 [Hfresh Hsched] Hsucc.
       unfold PositiveInstantiation.egraph_reducing_equal,
         Defs.egraph_reducing_equal in Hsucc.
-      exact (@Theorems.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
+      exact (@ReducingCong.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
                positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
                TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
                Pos.succ PosListMap.sort_of Pos.lt
