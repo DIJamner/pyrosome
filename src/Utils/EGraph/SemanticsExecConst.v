@@ -6,7 +6,7 @@ From Stdlib Require Import Lists.List Classes.RelationClasses BinNums.
 Import ListNotations.
 From coqutil Require Import Map.Interface.
 From Utils Require Import Utils UnionFind Monad ExtraMaps VC Relations.
-From Utils.EGraph Require Import Defs Semantics.
+From Utils.EGraph Require Import Defs Semantics SemanticsUnionSem.
 Import Monad.StateMonad.
 
 (* exec_write_sound at TOP LEVEL with explicit binders reproducing its section type. *)
