@@ -3179,6 +3179,340 @@ Section WithVar.
       eapply add_open_sort'_egraph_ok; try eassumption; eauto with utils.
     Qed.
 
+    (* ------------------------------------------------------------------ *)
+    (* parents-frame family: add_open preserves parents at any key that   *)
+    (* was already a key in the input and is NOT a root in the output.     *)
+    (* ------------------------------------------------------------------ *)
+
+    (* Rich combined postcondition: egraph_ok + roots_env + has_key_mono +
+       all_keys_aout + parents_frame.  The IH carries all of these so that
+       in the con/sort' cases the vc_bind second goal has enough to work
+       with (paralleling how open_egraph_args_post carries egraph_ok). *)
+    Definition open_parents_frame_args_post (sub : named_list V) (e_in : instance X)
+       (res : list V * instance X) : Prop :=
+      egraph_ok e_in ->
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+      db_ctx_inv e_in ->
+      all (fun p => is_root e_in (snd p)) sub ->
+      egraph_ok (snd res)
+      /\ (exists roots, union_find_ok lt (Defs.equiv (snd res)) roots)
+      /\ db_ctx_inv (snd res)
+      /\ roots_mono e_in (snd res)
+      /\ (forall x, Sep.has_key x (parent (Defs.equiv e_in)) ->
+                    Sep.has_key x (parent (Defs.equiv (snd res))))
+      /\ all (is_root (snd res)) (fst res)
+      /\ (forall y, Sep.has_key y (parent (Defs.equiv e_in)) ->
+                    ~ is_root (snd res) y ->
+                    map.get (Defs.parents (snd res)) y = map.get (Defs.parents e_in) y).
+
+    (* External postcondition for terms: just the parents_frame part. *)
+    Definition open_parents_frame_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop :=
+      egraph_ok e_in ->
+      (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+      db_ctx_inv e_in ->
+      all (fun p => is_root e_in (snd p)) sub ->
+      forall y, Sep.has_key y (parent (Defs.equiv e_in)) ->
+                ~ is_root (snd res) y ->
+        map.get (Defs.parents (snd res)) y = map.get (Defs.parents e_in) y.
+
+    Definition open_parents_frame_sort_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop := open_parents_frame_post sub e_in res.
+
+    (* Internal rich args post with all facts — used in Layer 1. *)
+    Definition open_parents_frame_args_post_rich (sub : named_list V) (e_in : instance X)
+       (res : list V * instance X) : Prop := open_parents_frame_args_post sub e_in res.
+
+    (* Layer 1: mutual induction. The args branch returns the rich post;
+       the term branch returns only the parents_frame (sufficient for Layer 2). *)
+    Lemma add_open_parents_frame (l1 : lang)
+      (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
+      (Hwf1 : wf_lang l1) (Hl1 : incl l1 l)
+      c (Hctx : wf_ctx l1 c)
+      : (forall e t, wf_term l1 c e t -> forall r, map fst c = map fst r ->
+           vc (add_open_term' succ sort_of l false false add_open_sort_inner r e)
+              (open_parents_frame_post r))
+        /\ (forall args c', wf_args l1 c args c' -> forall r, map fst c = map fst r ->
+           vc (list_Mmap (add_open_term' succ sort_of l false false add_open_sort_inner r) args)
+              (open_parents_frame_args_post r)).
+    Proof.
+      apply (WfCutElim.wf_cut_ind V l1 c
+               (fun e t => forall r, map fst c = map fst r ->
+                  vc (add_open_term' succ sort_of l false false
+                                     add_open_sort_inner r e)
+                     (open_parents_frame_post r))
+               (fun args c' => forall r, map fst c = map fst r ->
+                  vc (list_Mmap (add_open_term' succ sort_of l false false
+                                                add_open_sort_inner r) args)
+                     (open_parents_frame_args_post r))).
+      - (* con case *)
+        intros name c'_rule args t_rule s' Hrule_in_l1 Hwf_args_inner IH r Hmaps.
+        cbn [add_open_term'].
+        pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
+        assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad Mret].
+        eapply vc_bind.
+        { specialize (IH r Hmaps). apply IH. }
+        intros e_pre a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_parents_frame_post.
+        intros Hok Huf Hdbi Hsub y Hy_key Hy_nonroot.
+        (* Unpack the rich args post *)
+        unfold open_parents_frame_args_post in Hpost_args.
+        specialize (Hpost_args Hok Huf Hdbi Hsub).
+        destruct Hpost_args as
+          (Hok_inner & Huf_inner & Hdbi_inner & Hmono_roots & Hmono_kf
+           & Hroots_aout & Hpf_inner).
+        assert (Hkeys_aout : forall x, In x a_out -> Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. apply is_root_has_key. exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : name <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule_in. }
+        (* hash_entry_all_roots for roots_mono e_inner e_he *)
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhe_roots.
+        unfold vc in Hhe_roots.
+        specialize (Hhe_roots e_inner).
+        destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_roots, Hy_nonroot |- *.
+        specialize (Hhe_roots Huf_inner Hdbi_inner Hkeys_aout).
+        destruct Hhe_roots as (_ & _ & _ & Hmono_roots_he & _).
+        (* hash_entry_parents_frame: parents e_he y = parents e_inner y *)
+        pose proof (@hash_entry_parents_frame V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map V_map_ok V_trie X _
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhpf.
+        unfold vc in Hhpf.
+        specialize (Hhpf e_inner).
+        rewrite Heqhe in Hhpf. cbn [fst snd] in Hhpf.
+        assert (Hy_key_inner : Sep.has_key y (parent (Defs.equiv e_inner))).
+        { apply Hmono_kf. exact Hy_key. }
+        assert (Hy_nonroot_inner : ~ is_root e_inner y).
+        { intro Hroot. apply Hy_nonroot.
+          unfold is_root in *. apply Hmono_roots_he. exact Hroot. }
+        assert (Hpar_he_inner : map.get (Defs.parents e_he) y = map.get (Defs.parents e_inner) y).
+        { apply Hhpf.
+          - exact Huf_inner.
+          - exact Hkeys_aout.
+          - exact Hy_key_inner.
+          - unfold is_root in Hy_nonroot. exact Hy_nonroot. }
+        (* parents_frame from e_inner to e_pre *)
+        specialize (Hpf_inner y Hy_key Hy_nonroot_inner).
+        cbn [snd] in Hpf_inner.
+        rewrite Hpar_he_inner. exact Hpf_inner.
+      - (* var case *)
+        intros n t_var Hin_var r Hmaps.
+        cbn [add_open_term'].
+        unfold vc. intros e_pre.
+        cbn [Mret StateMonad.state_monad fst snd].
+        unfold open_parents_frame_post.
+        intros Hok Huf Hdbi Hsub y Hy_key Hy_nonroot.
+        reflexivity.
+      - (* eq_sort conversion *)
+        intros e_x t_x t_x' Hwft IH_term Heq_sort r Hmaps.
+        apply IH_term; assumption.
+      - (* nil args *)
+        intros r Hmaps.
+        cbn [list_Mmap].
+        unfold vc, Mret. cbn.
+        unfold open_parents_frame_args_post.
+        intros e_in Hok Huf Hdbi Hsub.
+        cbn [fst snd].
+        split; [exact Hok|].
+        split; [exact Huf|].
+        split; [exact Hdbi|].
+        split; [unfold roots_mono; intros z Hz; exact Hz|].
+        split; [auto|].
+        split; [cbn; exact I|].
+        intros y Hy_key Hy_nonroot. reflexivity.
+      - (* cons args *)
+        intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r Hmaps.
+        unfold vc. intros e_in.
+        cbn [list_Mmap].
+        cbn [Mbind Mret StateMonad.state_monad].
+        unfold open_parents_frame_args_post.
+        intros Hok Huf Hdbi Hsub.
+        specialize (IH_term r Hmaps).
+        specialize (IH_args r Hmaps).
+        destruct (add_open_term' succ sort_of l false false
+                    add_open_sort_inner r e_arg e_in)
+          as [v_head e_after_head] eqn:Heq1.
+        destruct (list_Mmap
+                    (add_open_term' succ sort_of l false false
+                       add_open_sort_inner r) es e_after_head)
+          as [v_tail e_final] eqn:Heq2.
+        cbn [fst snd].
+        (* Get structural facts for the head step from the proven lemmas *)
+        assert (Hhead_roots : open_roots_post r e_in (v_head, e_after_head)).
+        { pose proof (proj1 (add_open_all_roots l1 add_open_sort_inner
+                              Hwf1 Hl1 c Hctx) _ _ Hwft r Hmaps) as Hvc.
+          unfold vc in Hvc. specialize (Hvc e_in). rewrite Heq1 in Hvc. exact Hvc. }
+        unfold open_roots_post in Hhead_roots.
+        specialize (Hhead_roots Huf Hdbi Hsub).
+        destruct Hhead_roots as (Henv_head & Hroot_head).
+        destruct Henv_head as (Huf_head & Hdbi_head & _ & Hmono_roots_head).
+        assert (Hhead_ok : open_egraph_post r e_in (v_head, e_after_head)).
+        { pose proof (proj1 (add_open_egraph_ok l1 add_open_sort_inner
+                              Hwf1 Hl1 c Hctx) _ _ Hwft r Hmaps) as Hvc.
+          unfold vc in Hvc. specialize (Hvc e_in). rewrite Heq1 in Hvc. exact Hvc. }
+        unfold open_egraph_post in Hhead_ok.
+        assert (Hsub_keys : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_in))) r).
+        { eapply all_wkn; [|exact Hsub].
+          intros x Hx Hr. apply is_root_has_key. exact Hr. }
+        specialize (Hhead_ok Hok Hsub_keys).
+        destruct Hhead_ok as (Hok_head & Hmono_kf_head & Hkey_vhead).
+        (* Lift sub to e_after_head *)
+        assert (Hsub_head : all (fun p => is_root e_after_head (snd p)) r).
+        { eapply all_wkn; [|exact Hsub].
+          intros x Hx Hr. apply Hmono_roots_head. exact Hr. }
+        (* Get structural facts for the tail step *)
+        assert (Htail_roots : open_roots_args_post r e_after_head (v_tail, e_final)).
+        { pose proof (proj2 (add_open_all_roots l1 add_open_sort_inner
+                              Hwf1 Hl1 c Hctx) _ _ Hwf_args r Hmaps) as Hvc.
+          unfold vc in Hvc. specialize (Hvc e_after_head). rewrite Heq2 in Hvc. exact Hvc. }
+        unfold open_roots_args_post in Htail_roots.
+        specialize (Htail_roots Huf_head Hdbi_head Hsub_head).
+        destruct Htail_roots as (Henv_tail & Hroots_tail).
+        destruct Henv_tail as (Huf_tail & Hdbi_tail & _ & Hmono_roots_tail).
+        assert (Htail_ok : open_egraph_args_post r e_after_head (v_tail, e_final)).
+        { pose proof (proj2 (add_open_egraph_ok l1 add_open_sort_inner
+                              Hwf1 Hl1 c Hctx) _ _ Hwf_args r Hmaps) as Hvc.
+          unfold vc in Hvc. specialize (Hvc e_after_head). rewrite Heq2 in Hvc. exact Hvc. }
+        unfold open_egraph_args_post in Htail_ok.
+        assert (Hsub_keys_head : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_after_head))) r).
+        { eapply all_wkn; [|exact Hsub_head].
+          intros x Hx Hr. apply is_root_has_key. exact Hr. }
+        specialize (Htail_ok Hok_head Hsub_keys_head).
+        destruct Htail_ok as (Hok_tail & Hmono_kf_tail & Hkeys_tail).
+        (* Get head parents-frame IH *)
+        assert (Hhead_pf : open_parents_frame_post r e_in (v_head, e_after_head)).
+        { unfold vc in IH_term. specialize (IH_term e_in). rewrite Heq1 in IH_term. exact IH_term. }
+        unfold open_parents_frame_post in Hhead_pf.
+        (* Get tail parents-frame IH (rich) *)
+        assert (Htail_pf : open_parents_frame_args_post r e_after_head (v_tail, e_final)).
+        { unfold vc in IH_args. specialize (IH_args e_after_head). rewrite Heq2 in IH_args. exact IH_args. }
+        unfold open_parents_frame_args_post in Htail_pf.
+        specialize (Htail_pf Hok_head Huf_head Hdbi_head Hsub_head).
+        destruct Htail_pf as
+          (Hok_final & Huf_final & Hdbi_final & Hmono_roots_final
+           & Hmono_kf_final & Hroots_final & Hpf_tail).
+        (* Reduce snd/fst in all relevant hyps and the goal *)
+        cbn [fst snd] in Hok_final, Huf_final, Hdbi_final, Hmono_roots_final,
+          Hmono_kf_final, Hroots_final, Hpf_tail, Hhead_pf |- *.
+        (* Now assemble the output: 7 conjuncts *)
+        split; [exact Hok_final|].
+        split; [exact Huf_final|].
+        split; [exact Hdbi_final|].
+        split.
+        { unfold roots_mono. intros z Hz.
+          apply Hmono_roots_final. apply Hmono_roots_head. exact Hz. }
+        split.
+        { intros x Hx. apply Hmono_kf_final. apply Hmono_kf_head. exact Hx. }
+        split.
+        { cbn [all]. split.
+          - apply Hmono_roots_final. exact Hroot_head.
+          - exact Hroots_final. }
+        { intros y Hy_key Hy_nonroot.
+          (* y non-root in e_final, need: parents e_final y = parents e_in y *)
+          (* Chain: parents e_final y = parents e_after_head y = parents e_in y *)
+          assert (Hy_key_head : Sep.has_key y (parent (Defs.equiv e_after_head))).
+          { apply Hmono_kf_head. exact Hy_key. }
+          assert (Hy_nonroot_head : ~ is_root e_after_head y).
+          { intro Hroot. apply Hy_nonroot.
+            unfold is_root in *. apply Hmono_roots_final. exact Hroot. }
+          specialize (Hpf_tail y Hy_key_head Hy_nonroot).
+          specialize (Hhead_pf Hok Huf Hdbi Hsub y Hy_key Hy_nonroot_head).
+          rewrite Hpf_tail. exact Hhead_pf. }
+    Qed.
+
+    Lemma add_open_sort'_parents_frame l1 c r t fuel
+      : wf_lang l1 -> length l1 < fuel -> incl l1 l -> wf_ctx l1 c -> wf_sort l1 c t ->
+        map fst c = map fst r ->
+        vc (add_open_sort' succ sort_of l false false fuel r t)
+           (open_parents_frame_sort_post r).
+    Proof.
+      revert l1 c r t.
+      induction fuel; intros l1 c r t Hwfl1 Hflen Hincl Hctx Hsort Hmaps.
+      - exfalso. Lia.lia.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        pose proof Hsort as Hsort'.
+        inversion Hsort' as [? n_ s_t_ args c' Hrule Hwfargs]; subst.
+        apply Hincl in Hrule.
+        assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        eapply vc_bind.
+        { apply (proj2 (add_open_parents_frame l1
+                          (add_open_sort' succ sort_of l false false fuel)
+                          Hwfl1 Hincl c Hctx)
+                  _ _ Hwfargs r Hmaps). }
+        intros e_post a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_parents_frame_sort_post, open_parents_frame_post.
+        intros Hok Huf Hdbi Hsub y Hy_key Hy_nonroot.
+        (* Unpack the rich args post *)
+        unfold open_parents_frame_args_post in Hpost_args.
+        specialize (Hpost_args Hok Huf Hdbi Hsub).
+        destruct Hpost_args as
+          (Hok_inner & Huf_inner & Hdbi_inner & Hmono_roots & Hmono_kf
+           & Hroots_aout & Hpf_inner).
+        assert (Hkeys_aout : forall x, In x a_out -> Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. apply is_root_has_key. exact (in_all _ _ _ Hroots_aout Hx). }
+        assert (Hname_sof : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hrule. }
+        (* hash_entry_all_roots for roots_mono e_inner e_he *)
+        pose proof (@hash_entry_all_roots V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _ (fun s => s <> sort_of)
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhe_roots.
+        unfold vc in Hhe_roots.
+        specialize (Hhe_roots e_inner).
+        destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_roots, Hy_nonroot |- *.
+        specialize (Hhe_roots Huf_inner Hdbi_inner Hkeys_aout).
+        destruct Hhe_roots as (_ & _ & _ & Hmono_roots_he & _).
+        (* hash_entry_parents_frame: parents e_he y = parents e_inner y *)
+        pose proof (@hash_entry_parents_frame V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_map V_map V_map_ok V_trie X _
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhpf.
+        unfold vc in Hhpf.
+        specialize (Hhpf e_inner).
+        rewrite Heqhe in Hhpf. cbn [fst snd] in Hhpf.
+        assert (Hy_key_inner : Sep.has_key y (parent (Defs.equiv e_inner))).
+        { apply Hmono_kf. exact Hy_key. }
+        assert (Hy_nonroot_inner : ~ is_root e_inner y).
+        { intro Hroot. apply Hy_nonroot.
+          unfold is_root in *. apply Hmono_roots_he. exact Hroot. }
+        assert (Hpar_he_inner : map.get (Defs.parents e_he) y = map.get (Defs.parents e_inner) y).
+        { apply Hhpf.
+          - exact Huf_inner.
+          - exact Hkeys_aout.
+          - exact Hy_key_inner.
+          - unfold is_root in Hy_nonroot. exact Hy_nonroot. }
+        specialize (Hpf_inner y Hy_key Hy_nonroot_inner).
+        cbn [snd] in Hpf_inner.
+        rewrite Hpar_he_inner. exact Hpf_inner.
+    Qed.
+
+    Lemma add_open_sort_parents_frame c r t
+      : wf_ctx l c -> wf_sort l c t -> map fst c = map fst r ->
+        vc (add_open_sort succ sort_of l false false r t)
+           (open_parents_frame_sort_post r).
+    Proof.
+      intros.
+      unfold add_open_sort.
+      eapply add_open_sort'_parents_frame; try eassumption; eauto with utils.
+    Qed.
+
     Lemma add_open_term_all_roots c r e t
       : wf_term l c e t ->
         wf_ctx l c ->
