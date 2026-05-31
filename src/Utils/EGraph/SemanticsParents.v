@@ -169,3 +169,96 @@ Proof.
   assert (Hyy_u : uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e') y y) by (apply Hper; exact Hyy_clo).
   exact (proj1 (@uf_rel_PER_has_key idx Eqb_idx Eqb_idx_ok lt idx_zero idx_map idx_map_ok _ roots' _ _ Hroots' Hyy_u)).
 Qed.
+
+Lemma hash_entry_parents_keys_in_equiv {idx : Type} {Eqb_idx : Eqb idx} {Eqb_idx_ok : Eqb_ok Eqb_idx}
+  {lt : idx -> idx -> Prop} {idx_succ : idx -> idx} {idx_zero : WithDefault idx}
+  {symbol : Type} {symbol_map : forall A, map.map symbol A}
+  {idx_map : forall A, map.map idx A} {idx_map_ok : forall A, map.ok (idx_map A)}
+  {idx_trie : forall A, map.map (list idx) A}
+  {analysis_result : Type} {HA : analysis idx symbol analysis_result}
+  (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+  (f : symbol) (args : list idx)
+  : vc (hash_entry idx_succ f args)
+      (fun e res =>
+         (exists roots, union_find_ok lt (equiv e) roots) ->
+         all (fun x => Sep.has_key x (parent (equiv e))) args ->
+         parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result e ->
+         parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result (snd res)).
+Proof.
+  unfold vc, hash_entry. intro e. cbn [Mbind StateMonad.state_monad].
+  intros Hroots Hargs Hpke.
+  pose proof (@list_Mmap_find_preserves_fields_strong idx Eqb_idx Eqb_idx_ok lt idx_succ idx_zero symbol symbol_map idx_map idx_map_ok idx_trie analysis_result args) as Hmmap.
+  unfold vc in Hmmap. specialize (Hmmap e).
+  destruct (list_Mmap find args e) as [args' e1] eqn:Heq_mmap.
+  cbn [fst snd] in *.
+  destruct (Hmmap Hroots Hargs) as (Hroots1 & Hfp & _).
+  destruct Hfp as (_ & Hpar_eq & _ & _ & _ & Hhk_iff & _).
+  assert (Hpke1 : parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result e1) by
+    (unfold parents_keys_in_equiv in *; intros y (s & Hg);
+     apply (proj1 (Hhk_iff y)); apply Hpke; exists s; rewrite <- Hpar_eq; exact Hg).
+  pose proof (@db_lookup_pure idx symbol symbol_map idx_map idx_trie analysis_result f args') as Hdbl.
+  unfold vc in Hdbl. specialize (Hdbl e1).
+  destruct (db_lookup idx symbol symbol_map idx_map idx_trie analysis_result f args' e1) as [mout e2] eqn:Heq_dbl.
+  cbn [fst snd] in Hdbl.
+  destruct Hdbl as (He2_eq & _).
+  subst e2.
+  destruct mout as [r|].
+  - cbn [Mret StateMonad.state_monad snd]. exact Hpke1.
+  - pose proof (@alloc_struct idx Eqb_idx Eqb_idx_ok lt idx_succ symbol symbol_map idx_map idx_map_ok idx_trie analysis_result Hlti Hlts Hltt) as Halloc.
+    unfold vc in Halloc. specialize (Halloc e1).
+    destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e1) as [r e3] eqn:Heq_alloc.
+    cbn [fst snd] in Halloc.
+    destruct Hroots1 as [roots1 Hroots1].
+    destruct (Halloc roots1 Hroots1) as (Hroots3 & _ & Hr_hk3 & Hmono3 & _ & Hpar_eq3 & _).
+    assert (Hpke3 : parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result e3) by
+      (unfold parents_keys_in_equiv in *; intros y (s & Hg);
+       apply Hmono3; apply Hpke1; exists s; rewrite <- Hpar_eq3 in Hg; exact Hg).
+    cbn [db_set Mbind StateMonad.state_monad snd] in *.
+    cbn [atom_args atom_fn atom_ret] in *.
+    pose proof (@get_analyses_preserves_fields idx lt idx_succ idx_zero symbol symbol_map idx_map idx_trie analysis_result HA args') as Hga.
+    unfold vc in Hga. specialize (Hga e3).
+    destruct (get_analyses idx symbol symbol_map idx_map idx_trie analysis_result args' e3) as [out_a e4] eqn:Heq_ga.
+    cbn [fst snd] in Hga.
+    destruct Hga as (_ & Hequiv_eq4 & Hpar_eq4).
+    assert (Hpke4 : parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result e4) by
+      (unfold parents_keys_in_equiv in *; intros y (s & Hg);
+       rewrite Hequiv_eq4;
+       apply Hpke3; exists s; rewrite <- Hpar_eq4; exact Hg).
+    set (out_val := analyze idx symbol analysis_result {| atom_fn := f; atom_args := args'; atom_ret := r |} out_a).
+    unfold update_analyses.
+    cbn [atom_ret fst snd].
+    set (e5 := {|
+      db := db e4;
+      equiv := equiv e4;
+      parents := parents e4;
+      epoch := epoch e4;
+      worklist := worklist e4;
+      analyses := map.put (analyses e4) r
+        match map.get (analyses e4) r with
+        | Some oa => analysis_meet idx symbol analysis_result out_val oa
+        | None => out_val
+        end;
+      log := log idx symbol symbol_map idx_map idx_trie analysis_result e4
+    |} : instance idx symbol symbol_map idx_map idx_trie analysis_result).
+    assert (Hpke5 : parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result e5) by
+      (unfold parents_keys_in_equiv in *; exact Hpke4).
+    assert (Hr_hk5 : Sep.has_key r (parent (equiv e5))) by
+      (cbn [equiv e5]; rewrite Hequiv_eq4; exact Hr_hk3).
+    pose proof (@Hmmap Hroots Hargs) as Hmmap'.
+    destruct Hmmap' as (Hroots1' & _ & Hall2).
+    assert (Hargs'_hk1 : all (fun x => Sep.has_key x (parent (equiv e1))) args') by
+      (apply all2_const_to_all_l with (l2 := args);
+       apply all2_impl with (R := uf_rel_PER idx (idx_map idx) (idx_map nat) (equiv e1));
+       [ intros a b Hab; exact (proj1 (@uf_rel_PER_has_key idx Eqb_idx Eqb_idx_ok lt idx_zero idx_map idx_map_ok (equiv e1) roots1 a b Hroots1 Hab))
+       | exact Hall2 ]).
+    assert (Hargs'_hk5 : all (fun x => Sep.has_key x (parent (equiv e5))) args') by
+      (apply all_wkn with (P := fun x => Sep.has_key x (parent (equiv e1)));
+       [ intros a _ Ha; cbn [equiv e5]; rewrite Hequiv_eq4; apply Hmono3; exact Ha
+       | exact Hargs'_hk1 ]).
+    pose proof (@db_set'_parents_keys_in_equiv idx Eqb_idx Eqb_idx_ok symbol symbol_map idx_map idx_map_ok idx_trie analysis_result {| atom_fn := f; atom_args := args'; atom_ret := r |} out_val) as Hds'.
+    unfold vc in Hds'. specialize (Hds' e5).
+    cbn [atom_ret atom_args] in *.
+    set (ds_result := db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result {| atom_fn := f; atom_args := args'; atom_ret := r |} out_val e5).
+    change (parents_keys_in_equiv idx symbol symbol_map idx_map idx_trie analysis_result (snd (let (_, y) := ds_result in (@! ret r) y))).
+    exact (Hds' Hr_hk5 Hargs'_hk5 (fun y Hy => Hy) Hpke5).
+Qed.
