@@ -132,33 +132,7 @@ Section Slice.
 
 End Slice.
 
-(* L_survive_canonical (a.k.a. F1c-survival) — the survival lemma the
-   source-rule adapter / faithful-rep actually needs.  DEFERRED (Admitted)
-   per the session-23 user decision. *)
-Lemma L_survive_canonical
-  (idx : Type) (Eqb_idx : Eqb idx) (Eqb_idx_ok : Eqb_ok Eqb_idx)
-  (lt : idx -> idx -> Prop) (idx_succ : idx -> idx) (idx_zero : WithDefault idx)
-  (symbol : Type) (Eqb_symbol : Eqb symbol) (Eqb_symbol_ok : Eqb_ok Eqb_symbol)
-  (symbol_map : forall A : Type, map.map symbol A) (symbol_map_plus : map_plus symbol_map)
-  (symbol_map_plus_ok : map_plus_ok symbol_map)
-  (symbol_map_ok : forall A : Type, map.ok (symbol_map A))
-  (idx_map : forall A : Type, map.map idx A) (idx_map_plus : map_plus idx_map)
-  (idx_map_ok : forall A : Type, map.ok (idx_map A))
-  (idx_trie : forall A : Type, map.map (list idx) A)
-  (idx_trie_ok : forall A : Type, map.ok (idx_trie A))
-  (idx_trie_plus : map_plus idx_trie)
-  (analysis_result : Type)
-  (idx_map_plus_ok : map_plus_ok idx_map)
-  (spaced_list_intersect : forall B : Type, WithDefault B -> (B -> B -> B) -> ne_list (map.rep (map:=idx_trie B) * list bool) -> map.rep (map:=idx_trie B))
-  (HA : analysis idx symbol analysis_result) (m : model symbol)
-  (Hm : model_ok symbol m)
-  (n : nat) (e : instance idx symbol symbol_map idx_map idx_trie analysis_result)
-  (a : atom idx symbol)
-  : egraph_ok idx lt symbol symbol_map idx_map idx_trie analysis_result e ->
-    db_injective idx symbol symbol_map idx_map idx_trie analysis_result e ->
-    atom_in_egraph_up_to_equiv idx symbol symbol_map idx_map idx_trie analysis_result a e ->
-    Lists.all (fun x : idx => map.get (UnionFind.parent (equiv e)) x = Some x) (atom_args a) ->
-    map.get (UnionFind.parent (equiv e)) (atom_ret a) = Some (atom_ret a) ->
-    atom_in_egraph a (snd (rebuild n e)).
-Proof.
-Admitted.
+(* NOTE: the former [L_survive_canonical] axiom (Admitted) was ELIMINATED.
+   Its sole consumer [rebuild_survives_canonical] (Theorems.v) is now
+   derived 0-axiom from [rebuild_canon] + [L_survive_canonical'] using the
+   [good_worklist] witness established by [add_ctx_good_worklist]. *)

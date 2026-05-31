@@ -63,7 +63,7 @@ Section WithVar.
        ctx_egraph_post's 5 structural conjuncts, plus the two threaded
        invariants (parents_keys_in_equiv, analyses_cover), plus the
        existential good_worklist witness. *)
-    Lemma add_ctx_good_worklist c
+    Lemma add_ctx_good_worklist_vc c
       : wf_ctx l c ->
         vc (add_ctx succ sort_of l false false c)
           (fun e_in res =>
@@ -393,6 +393,52 @@ Section WithVar.
         1: exfalso.
         1: apply Hnr.
         1: apply Hothers_u; [exact Hretb_ne_tx' | apply Hmono_he; apply Hmono_alloc; exact Hretb].
+    Qed.
+
+    (* Simple-form corollary: the consumer interface (matches the
+       [W]-rewiring stub).  Instantiate the vc-form at [empty_egraph]
+       and discharge the six invariant hypotheses vacuously (empty db /
+       parents / analyses / worklist, ok union-find), extracting the
+       good_worklist witness. *)
+    Lemma add_ctx_good_worklist c (Hwfc : wf_ctx l c)
+      : exists ed_list,
+          good_worklist V V V_map V_map V_trie X
+            (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+            ed_list.
+    Proof.
+      pose proof (add_ctx_good_worklist_vc c Hwfc) as Hvc.
+      unfold vc in Hvc.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      specialize (Hvc e0).
+      (* hyp 1: union-find ok *)
+      assert (Huf0 : exists roots,
+                 union_find_ok lt (Defs.equiv e0) roots).
+      { exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)). }
+      (* hyp 2: db_inv(True) — empty db *)
+      assert (Hdb0 : @db_inv V V V_map V_map V_trie X (fun _ => True) e0).
+      { intros aa Hin. exfalso.
+        unfold Semantics.atom_in_db in Hin.
+        unfold e0 in Hin. cbn [Defs.db empty_egraph] in Hin.
+        rewrite map.get_empty in Hin. exact Hin. }
+      (* hyp 3: egraph_ok — from empty_sound_for_interpretation *)
+      assert (Hok0 : egraph_ok V lt V V_map V_map V_trie X e0).
+      { exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                        V_map V_map_ok V_trie X lang_model)). }
+      (* hyp 4: parents_keys_in_equiv — empty parents *)
+      assert (Hpke0 : parents_keys_in_equiv V V V_map V_map V_trie X e0).
+      { intros y [s Hs]. unfold e0 in Hs. cbn [parents empty_egraph] in Hs.
+        rewrite map.get_empty in Hs. discriminate. }
+      (* hyp 5: analyses_cover — empty union-find parent map *)
+      assert (Hac0 : analyses_cover V V V_map V_map V_trie X e0).
+      { intros z Hz. exfalso. unfold Sep.has_key in Hz. unfold e0 in Hz.
+        cbn [equiv empty_egraph UnionFind.parent UnionFind.empty] in Hz.
+        rewrite map.get_empty in Hz. exact Hz. }
+      (* hyp 6: worklist empty *)
+      assert (Hwl0 : Defs.worklist e0 = []).
+      { reflexivity. }
+      specialize (Hvc Huf0 Hdb0 Hok0 Hpke0 Hac0 Hwl0).
+      destruct Hvc as (_ & _ & _ & _ & _ & _ & _ & Hgwl).
+      exact Hgwl.
     Qed.
 
   End AddCtxInvert.
