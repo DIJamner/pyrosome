@@ -13606,6 +13606,99 @@ Section WithMap.
         exact (Hroots_mid z Hz).
   Qed.
 
+  (* ================================================================ *)
+  (* parents_keys_in_equiv: structural invariant and preservation      *)
+  (* ================================================================ *)
+
+  (* Every key in e.parents is also a key in e.equiv.parent.
+     Proved for each add_ctx building block and threaded through the
+     add_ctx induction in Theorems.v.  The point of use: freshly-
+     allocated ids (not in e.equiv) are absent from e.parents, so
+     db_set' gives a singleton parents entry for a fresh ret. *)
+  Definition parents_keys_in_equiv (e : instance) : Prop :=
+    forall y, (exists s, map.get e.(parents) y = Some s) ->
+              Sep.has_key y e.(equiv).(parent).
+
+  (* Helper: if y is in dedup l, it is in l. *)
+  Local Lemma in_dedup_in_orig (y : idx) (l : list idx)
+    : In y (dedup (eqb (A:=idx)) l) -> In y l.
+  Proof.
+    intro Hdedup.
+    exact (proj2 (dedup_preserves_In (aeqb_dec := @eqb_boolspec idx _ Eqb_idx_ok) l y) Hdedup).
+  Qed.
+
+  (* fold_left (map_update (cons a)) keys parents: for y ∉ keys,
+     map.get result y = map.get parents y (frame lemma, already exists
+     as fold_left_map_update_cons_frame).
+     For y ∈ keys: map.get result y = Some (_ :: _), a non-empty list. *)
+
+  (* db_set' preserves parents_keys_in_equiv given:
+     - atom_0's ret and args are in equiv
+     - equiv is monotone across the db_set' operation *)
+  (* Helper: induction on fold_left. If map.get (fold...) y = Some s and map.get mp y = None,
+     then y is in the key list. *)
+  Local Lemma fold_left_new_key (ks : list idx) (a0 : atom)
+    (mp : idx_map (list atom)) (y : idx) (s : list atom)
+    : map.get (fold_left (fun m k => map_update m k (cons a0)) ks mp) y = Some s ->
+      map.get mp y = None ->
+      In y ks.
+  Proof.
+    revert mp.
+    induction ks as [|k ks IH]; intros mp Hfold Hnone.
+    - cbn [fold_left] in Hfold. congruence.
+    - cbn [fold_left In].
+      pose proof (@eqb_spec _ _ Eqb_idx_ok y k) as Hspec_yk.
+      destruct (eqb y k); cbn beta iota in Hspec_yk.
+      + (* y = k *) subst k. left. reflexivity.
+      + (* y ≠ k *) right.
+        apply IH with (mp := map_update mp k (cons a0)).
+        * cbn [fold_left] in Hfold. exact Hfold.
+        * (* Hspec_yk : y ≠ k, need k ≠ y *)
+          assert (Hget_eq : map.get (map_update mp k (cons a0)) y = map.get mp y).
+          { apply get_update_diff.
+            - exact (idx_map_ok _).
+            - intro Heq. exact (Hspec_yk (eq_sym Heq)). }
+          rewrite Hget_eq. exact Hnone.
+  Qed.
+
+  Lemma db_set'_parents_keys_in_equiv (atom_0 : atom) (out_0 : analysis_result)
+    : vc (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie analysis_result atom_0 out_0)
+        (fun e res =>
+           Sep.has_key atom_0.(atom_ret) e.(equiv).(parent) ->
+           all (fun x => Sep.has_key x e.(equiv).(parent)) atom_0.(atom_args) ->
+           (forall y, Sep.has_key y e.(equiv).(parent) ->
+                      Sep.has_key y (snd res).(equiv).(parent)) ->
+           parents_keys_in_equiv e ->
+           parents_keys_in_equiv (snd res)).
+  Proof.
+    unfold vc, db_set', parents_keys_in_equiv. intros e.
+    cbn [fst snd].
+    intros Hret_in Hargs_in Hequiv_mono Hstruc y (s & Hg).
+    apply Hequiv_mono.
+    set (dkeys := dedup (eqb (A:=idx)) (atom_0.(atom_ret) :: atom_0.(atom_args))).
+    destruct (map.get e.(parents) y) as [s_old|] eqn:Hg_old.
+    - (* y was already in e.parents *)
+      apply Hstruc. exists s_old. exact Hg_old.
+    - (* y is a new key: derive In y dkeys from fold_left_new_key *)
+      assert (Hin_dkeys : In y dkeys).
+      { eapply fold_left_new_key; [exact Hg | exact Hg_old]. }
+      apply in_dedup_in_orig in Hin_dkeys.
+      cbn [In] in Hin_dkeys.
+      destruct Hin_dkeys as [Heq | Hin].
+      + subst y. exact Hret_in.
+      + exact (in_all _ _ _ Hargs_in Hin).
+  Qed.
+
+  (* Empty egraph satisfies parents_keys_in_equiv. *)
+  Lemma empty_egraph_parents_keys_in_equiv
+    : parents_keys_in_equiv (empty_egraph idx_zero analysis_result).
+  Proof.
+    unfold parents_keys_in_equiv, empty_egraph.
+    cbn [parents equiv parent].
+    intros y (s & Hg).
+    rewrite map.get_empty in Hg. discriminate.
+  Qed.
+
 End WithMap.
 
 Arguments atom_in_egraph {idx symbol}%_type_scope {symbol_map idx_map idx_trie}%_function_scope

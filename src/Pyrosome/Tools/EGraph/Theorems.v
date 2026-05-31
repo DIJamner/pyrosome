@@ -4637,6 +4637,154 @@ Section WithVar.
             [exact Hincl_iu | exact Hmono_iu | exact Hequiv_iu | exact Hrb_tail]. }
     Qed.
 
+    (* ================================================================ *)
+    (* [E] establishment: hash_entry worklist + parents singleton facts *)
+    (* ================================================================ *)
+
+    (* Shorthand notation for Semantics.parents_keys_in_equiv instantiated
+       at the AddOpenRoots section types. *)
+    Local Notation parents_keys_in_equiv_inst :=
+      (Semantics.parents_keys_in_equiv V V V_map V_map V_trie X).
+
+    (* After hash_entry sort_of [x'] on a state e_in where:
+       (1) x' is a root, (2) no sort_of[x']→r atom exists,
+       (3) analyses[x'] is pre-populated (Some _),
+       (4) parents_keys_in_equiv holds for e_in,
+       the result (tx', e_result) satisfies:
+       (a) worklist unchanged: e_in.worklist = e_result.worklist
+       (b) parents[tx'] = Some [Build_atom sort_of [x'] tx']. *)
+    Lemma hash_entry_sortof_fresh_facts (x' : V)
+      : vc (hash_entry succ sort_of [x'])
+          (fun (e_in : instance X) res =>
+             (exists roots, union_find_ok lt (Defs.equiv e_in) roots) ->
+             map.get (parent (Defs.equiv e_in)) x' = Some x' ->
+             (forall r, ~ atom_in_db (Build_atom sort_of [x'] r) (Defs.db e_in)) ->
+             (exists a_x', map.get (Defs.analyses e_in) x' = Some a_x') ->
+             parents_keys_in_equiv_inst e_in ->
+             (Defs.worklist e_in) = (Defs.worklist (snd res))
+             /\ map.get (Defs.parents (snd res)) (fst res) =
+                Some [Build_atom sort_of [x'] (fst res)]).
+    Proof.
+      unfold vc, hash_entry.
+      intros e_in.
+      cbn [Mbind StateMonad.state_monad].
+      intros Hroots_ex Hx'_root Hmiss Hana_x' Hpkf.
+      (* Step 1: list_Mmap find [x'] = ([x'], e_in) since x' is root *)
+      assert (Hargs_roots : all (fun x => map.get (parent (Defs.equiv e_in)) x = Some x) [x']).
+      { cbn. split; [exact Hx'_root | exact I]. }
+      rewrite (@list_Mmap_find_roots_identity V V_Eqb V_Eqb_ok V V_map V_map V_trie X [x'] e_in
+                 Hargs_roots).
+      cbn [fst snd].
+      (* Step 2: db_lookup sort_of [x'] = (None, e_in) by Hmiss *)
+      pose proof (@db_lookup_pure V V V_map V_map V_trie X sort_of [x'] e_in) as Hlk.
+      cbn beta in Hlk.
+      destruct (db_lookup V V V_map V_map V_trie X sort_of [x'] e_in) as [mout e_lk] eqn:Hlkeq.
+      cbn [fst snd] in Hlk |- *.
+      destruct Hlk as [He_eq Hlk2]. subst e_lk.
+      destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+      - exfalso. apply (Hmiss r). unfold atom_in_egraph in Hlk2. exact Hlk2.
+      - cbn [Mbind StateMonad.state_monad].
+        (* Step 3: alloc e_in gives (tx', e_alloc) *)
+        pose proof (@alloc_struct V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X
+                      lt_asymmetric lt_succ lt_trans) as Halloc_s.
+        unfold vc in Halloc_s. specialize (Halloc_s e_in).
+        destruct (Defs.alloc V succ V V_map V_map V_trie X e_in) as [tx' e_alloc] eqn:Halloc_eq.
+        cbn [fst snd] in Halloc_s.
+        destruct Hroots_ex as [roots Hroots].
+        specialize (Halloc_s roots Hroots).
+        destruct Halloc_s as (_ & Htx'_fresh_uf & _ & _ & _ & Hpar_alloc & Hwl_alloc).
+        (* Derive: e_alloc.analyses = e_in.analyses (alloc doesn't change analyses) *)
+        assert (Hana_alloc : Defs.analyses e_alloc = Defs.analyses e_in).
+        { unfold Defs.alloc in Halloc_eq.
+          destruct (UnionFind.alloc V _ _ succ (Defs.equiv e_in)) as [uf' x_f] eqn:Huf.
+          injection Halloc_eq as <- <-. reflexivity. }
+        (* Derive: e_alloc.parents = e_in.parents *)
+        assert (Hpar_alloc_eq : Defs.parents e_alloc = Defs.parents e_in).
+        { symmetry. exact Hpar_alloc. }
+        (* Derive: parents[tx'] = None in e_alloc (via parents_keys_in_equiv e_in + freshness) *)
+        assert (Htx'_none : map.get (Defs.parents e_alloc) tx' = None).
+        { rewrite Hpar_alloc_eq.
+          (* Now goal: map.get e_in.parents tx' = None *)
+          (* By Hpkf + Htx'_fresh_uf: tx' not in e_in.equiv → tx' not in e_in.parents *)
+          destruct (map.get (Defs.parents e_in) tx') as [par_list|] eqn:Hg.
+          - exfalso. apply Htx'_fresh_uf.
+            apply Hpkf. exists par_list. exact Hg.
+          - reflexivity. }
+        (* Step 4: db_set (Build_atom sort_of [x'] tx') *)
+        unfold db_set. cbn [Defs.atom_fn Defs.atom_args Defs.atom_ret].
+        cbn [Mbind StateMonad.state_monad fst snd].
+        (* get_analyses [x'] e_alloc: x' pre-populated → no state change *)
+        unfold get_analyses, get_analysis.
+        cbn [list_Mmap Mbind Mret StateMonad.state_monad fst snd].
+        destruct Hana_x' as [ana_x' Hana_x'_get].
+        rewrite Hana_alloc. rewrite Hana_x'_get.
+        cbn [fst snd].
+        (* update_analyses tx' out_a: preserves parents and worklist *)
+        set (out_a := analyze V V X (Build_atom sort_of [x'] tx') [ana_x']).
+        destruct (update_analyses V V V_map V_map V_trie X tx' out_a e_alloc) as [_u e_ua] eqn:Hue.
+        assert (Hpa_ua : Defs.parents e_ua = Defs.parents e_alloc).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity. }
+        assert (Hwl_ua : Defs.worklist e_ua = Defs.worklist e_alloc).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity. }
+        (* db_set' (Build_atom sort_of [x'] tx') *)
+        destruct (db_set' V V_Eqb V V_map V_map V_trie X (Build_atom sort_of [x'] tx') out_a e_ua)
+          as [_v e_db] eqn:Hde.
+        cbn [fst snd].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        (* Worklist: e_db.wl = e_ua.wl = e_alloc.wl = e_in.wl *)
+        assert (Hwl_db : Defs.worklist e_db = Defs.worklist e_ua).
+        { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity. }
+        split.
+        + rewrite Hwl_db, Hwl_ua, <- Hwl_alloc. reflexivity.
+        + (* parents[tx'] = Some [Build_atom sort_of [x'] tx'] in e_db *)
+          (* e_db.parents = fold_left (map_update (cons a)) (dedup eqb (tx'::[x'])) e_ua.parents *)
+          (* where a = Build_atom sort_of [x'] tx' *)
+          assert (Htx'_ne_x' : tx' <> x').
+          { intro Heq. subst tx'.
+            exact (Htx'_fresh_uf (is_root_has_key e_in x' Hx'_root)). }
+          assert (Htx'_none_ua : map.get (Defs.parents e_ua) tx' = None).
+          { rewrite Hpa_ua. exact Htx'_none. }
+          unfold db_set' in Hde. injection Hde as _ Hde'. subst e_db.
+          cbn [Defs.parents Defs.atom_fn Defs.atom_args Defs.atom_ret fst snd].
+          (* a_new: shorthand for Build_atom sort_of [x'] tx' *)
+          set (a_new := Build_atom sort_of [x'] tx').
+          fold a_new.
+          (* Compute dedup eqb (tx' :: [x']) = [tx', x'] (since tx' ≠ x') *)
+          (* Goal: map.get (fold_left ... (dedup eqb (tx'::x'::[])) e_ua.parents) tx' = Some [a_new]
+             We need to compute fold_left over [tx', x'] (since tx' ≠ x' so dedup preserves order)
+             and then show get at tx' = Some [a_new] using get_update_same + get_update_diff. *)
+          (* Compute dedup (tx'::x'::[]) = tx'::x'::[] (since tx' ≠ x') *)
+          assert (Hne_sym : x' <> tx').
+          { intro h. exact (Htx'_ne_x' (eq_sym h)). }
+          assert (Hfind : List.find (eqb tx') (x' :: nil) = None).
+          { cbn. eqb_case tx' x'; [contradiction | reflexivity]. }
+          (* Use fold_left on [tx', x'] to directly compute *)
+          (* fold_left over [tx', x']: step1: map_update pars tx' (cons a), step2: map_update ... x' (cons a) *)
+          (* map.get step2 tx' = map.get step1 tx' (get_update_diff, x' ≠ tx') *)
+          (* map.get step1 tx' = Some [a_new] (get_update_same + pars[tx'] = None) *)
+          (* Get step1 directly: *)
+          assert (Hstep1 : map.get (map_update (Defs.parents e_ua) tx' (cons a_new)) tx' = Some [a_new]).
+          { rewrite (@get_update_same V (list (Defs.atom V V)) (V_map _) (V_map_ok _) _
+                       (Defs.parents e_ua) tx' (cons a_new)).
+            rewrite Htx'_none_ua. reflexivity. }
+          (* Get step2 doesn't affect tx' *)
+          assert (Hstep2 : map.get (map_update (map_update (Defs.parents e_ua) tx' (cons a_new))
+                                               x' (cons a_new)) tx'
+                         = map.get (map_update (Defs.parents e_ua) tx' (cons a_new)) tx').
+          { apply get_update_diff.
+            - exact (V_map_ok _).
+            - exact Hne_sym. }
+          (* Directly use Hstep1 and Hstep2 by asserting the intermediate fact *)
+          (* The fold_left over [tx', x'] starting from e_ua.parents gives
+             map_update (map_update e_ua.parents tx' (cons a_new)) x' (cons a_new).
+             We prove this separately and use it to rewrite the goal. *)
+          (* Reduce dedup and fold_left directly in the goal *)
+          cbn [dedup List.find].
+          eqb_case tx' x'. { contradiction. }
+          cbn [dedup List.find fold_left].
+          rewrite Hstep2, Hstep1. reflexivity.
+    Qed.
+
   End AddOpenRoots.
 
   (* ============================================================== *)
