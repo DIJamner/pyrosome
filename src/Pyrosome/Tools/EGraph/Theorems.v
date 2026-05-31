@@ -5174,6 +5174,194 @@ Section WithVar.
     Qed.
 
     (* ============================================================== *)
+    (* add_open_sort (false/false) adds NO new [sort_of] atom.         *)
+    (* ============================================================== *)
+    (* With both flags [false], the ONLY db writes performed by        *)
+    (* add_open_sort/add_open_term' are [hash_entry n s'] for language  *)
+    (* constructor names [n], and [n <> sort_of] (since [fresh sort_of  *)
+    (* l]).  Hence the [sort_of] symbol-table slot of the db is never   *)
+    (* touched: [map.get (db) sort_of] is invariant.  This is the       *)
+    (* reverse-inclusion needed for add_ctx's good_worklist coverage.   *)
+
+    Lemma list_Mmap_find_preserves_db
+          (args : list V) (e : instance X) (e_post : instance X) (args' : list V)
+      : list_Mmap
+            (fun x => find (idx:=V) (Eqb_idx:=V_Eqb) (symbol:=V)
+                        (symbol_map:=V_map) (idx_map:=V_map) (idx_trie:=V_trie)
+                        (analysis_result:=X) x) args e
+        = (args', e_post)
+        -> e_post.(db) = e.(db).
+    Proof.
+      revert e e_post args'.
+      induction args as [|x xs IH]; intros e e_post args' Hmap.
+      - cbn in Hmap. injection Hmap as _ <-. reflexivity.
+      - cbn [list_Mmap Mbind StateMonad.state_monad] in Hmap.
+        destruct (find x e) as [x' e1] eqn:Hfx.
+        destruct (list_Mmap (fun x0 => find x0) xs e1) as [xs' e2] eqn:Hxs.
+        cbn [fst snd] in Hmap. injection Hmap as _ <-.
+        assert (He1db : e1.(db) = e.(db)).
+        { unfold find in Hfx.
+          destruct (UnionFind.find (equiv e) x) as [uf' v'] eqn:Huf.
+          injection Hfx as _ <-.
+          cbn [db equiv parents worklist analyses log epoch]. reflexivity. }
+        assert (He2db : e2.(db) = e1.(db))
+          by (apply (IH e1 e2 xs'); exact Hxs).
+        congruence.
+    Qed.
+
+    Lemma hash_entry_db_get_other
+          (f : V) (args : list V) (g : V) (Hne : f <> g)
+      : forall (e : instance X),
+          map.get (snd (hash_entry succ f args e)).(db) g = map.get e.(db) g.
+    Proof.
+      intro e. unfold hash_entry. cbn [Mbind StateMonad.state_monad].
+      destruct (list_Mmap find args e) as [args' e_post] eqn:Hmap. cbn [fst snd].
+      assert (Hdb_post : e_post.(db) = e.(db))
+        by (apply (list_Mmap_find_preserves_db args e e_post args'); exact Hmap).
+      pose proof (@db_lookup_pure V V V_map V_map V_trie X f args') as Hlk.
+      unfold vc in Hlk. specialize (Hlk e_post).
+      destruct (@db_lookup V V V_map V_map V_trie X f args' e_post) as [mout e_lk] eqn:Hlkeq.
+      cbn [fst snd] in Hlk. destruct Hlk as [He_eq _]. subst e_lk.
+      destruct mout as [r|]; cbn [Mbind StateMonad.state_monad fst snd].
+      - cbn [Mret StateMonad.state_monad fst snd]. rewrite Hdb_post. reflexivity.
+      - cbn [Mbind StateMonad.state_monad].
+        destruct (@alloc V succ V V_map V_map V_trie X e_post) as [r e_alloc] eqn:Halloc_eq.
+        cbn [fst snd].
+        assert (Hdb_alloc : e_alloc.(db) = e_post.(db)).
+        { unfold alloc in Halloc_eq.
+          destruct e_post as [db_p [rk_p pa_p mr_p nx_p] parents_p epoch_p worklist_p analyses_p log_p].
+          injection Halloc_eq as _ <-. cbn [db equiv parents worklist analyses log epoch]. reflexivity. }
+        unfold db_set. cbn [atom_fn atom_args atom_ret Mbind StateMonad.state_monad fst snd].
+        pose proof (@get_analyses_preserves_fields V lt succ V_default V V_map V_map V_trie X _
+                      args' e_alloc) as Hga. unfold vc in Hga.
+        destruct (@get_analyses V V V_map V_map V_trie X _ args' e_alloc) as [arg_as e_ga] eqn:Hge.
+        cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & _).
+        destruct (@update_analyses V V V_map V_map V_trie X _ r
+                    (analyze V V X (Build_atom f args' r) arg_as) e_ga) as [_u e_ua] eqn:Hue.
+        assert (Hdb_ua : e_ua.(db) = e_ga.(db))
+          by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+        unfold db_set'. cbn [fst snd Mret StateMonad.state_monad atom_fn atom_args atom_ret db].
+        rewrite (@get_update_diff V _ (V_map _) (V_map_ok _) _ (db e_ua) f g _ Hne).
+        rewrite Hdb_ua. rewrite Hdb_ga. rewrite Hdb_alloc. rewrite Hdb_post. reflexivity.
+    Qed.
+
+    Lemma list_Mmap_keeps_sortof
+          {A : Type} (f : A -> state (instance X) V)
+          (s : list A)
+          (Hf : forall x e, In x s -> map.get (snd (f x e)).(db) sort_of = map.get e.(db) sort_of)
+      : forall e,
+          map.get (snd (list_Mmap f s e)).(db) sort_of = map.get e.(db) sort_of.
+    Proof.
+      induction s as [|a rest IH]; intro e.
+      - cbn [list_Mmap Mret StateMonad.state_monad fst snd]. reflexivity.
+      - cbn [list_Mmap Mbind StateMonad.state_monad fst snd].
+        destruct (f a e) as [va e1] eqn:Hfa.
+        destruct (list_Mmap f rest e1) as [vrest e2] eqn:Hrest.
+        cbn [Mret StateMonad.state_monad fst snd].
+        assert (Hfa_db : map.get e1.(db) sort_of = map.get e.(db) sort_of).
+        { specialize (Hf a e (or_introl eq_refl)).
+          rewrite Hfa in Hf. cbn [fst snd] in Hf. exact Hf. }
+        assert (Hrest_db : map.get e2.(db) sort_of = map.get e1.(db) sort_of).
+        { assert (IH' : map.get (snd (list_Mmap f rest e1)).(db) sort_of = map.get e1.(db) sort_of).
+          { apply IH. intros x e' Hin. apply Hf. right. exact Hin. }
+          rewrite Hrest in IH'. cbn [fst snd] in IH'. exact IH'. }
+        congruence.
+    Qed.
+
+    Lemma add_open_term'_keeps_sortof
+          (aos : named_list V -> Term.sort V -> state (instance X) V)
+          (Haos : forall sub t e, map.get (snd (aos sub t e)).(db) sort_of
+                                  = map.get e.(db) sort_of)
+          sub (e0 : Term.term V)
+      : forall e,
+          map.get (snd (add_open_term' succ sort_of l false false aos sub e0 e)).(db) sort_of
+          = map.get e.(db) sort_of.
+    Proof.
+      induction e0 as [x | n s IHs] using term_ind; intro e.
+      - cbn [add_open_term' Mret StateMonad.state_monad fst snd]. reflexivity.
+      - cbn [add_open_term'].
+        destruct (named_list_lookup_err l n) as [r|] eqn:Hlk.
+        + destruct r as [c args|c args t|c args _t1 _t2|c args _t1 _t2 _t3].
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+          * (* term_rule case *)
+            cbn [Mbind StateMonad.state_monad fst snd].
+            destruct (list_Mmap (add_open_term' succ sort_of l false false aos sub) s e)
+              as [s' e1] eqn:Hs.
+            assert (Hdb1 : map.get e1.(db) sort_of = map.get e.(db) sort_of).
+            { assert (IH' : map.get (snd (list_Mmap (add_open_term' succ sort_of l false false aos sub) s e)).(db) sort_of
+                            = map.get e.(db) sort_of)
+                by (apply list_Mmap_keeps_sortof; intros y e' Hin; apply (in_all _ _ _ IHs Hin)).
+              rewrite Hs in IH'. cbn [fst snd] in IH'. exact IH'. }
+            assert (Hn_ne_sof : n <> sort_of).
+            { intro Hne. apply Hsof. subst.
+              eapply pair_fst_in.
+              apply (@named_list_lookup_err_in V V_Eqb V_Eqb_ok rule l sort_of (term_rule c args t)).
+              symmetry. exact Hlk. }
+            destruct (hash_entry succ n s' e1) as [x e2] eqn:Hhe.
+            assert (Hdb2 : map.get e2.(db) sort_of = map.get e1.(db) sort_of).
+            { specialize (hash_entry_db_get_other n s' sort_of Hn_ne_sof e1).
+              rewrite Hhe. cbn [fst snd]. intro Heq. exact Heq. }
+            cbn [Mret StateMonad.state_monad fst snd].
+            congruence.
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+        + cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+    Qed.
+
+    Lemma add_open_sort'_keeps_sortof fuel sub (t : Term.sort V)
+      : forall e,
+          map.get (snd (add_open_sort' succ sort_of l false false fuel sub t e)).(db) sort_of
+          = map.get e.(db) sort_of.
+    Proof.
+      revert sub t.
+      induction fuel as [|fuel IH]; intros sub t e.
+      - cbn [add_open_sort' Mret StateMonad.state_monad fst snd]. reflexivity.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        destruct (named_list_lookup_err l n) as [r|] eqn:Hlk.
+        + destruct r as [c args|c args t|c args _t1 _t2|c args _t1 _t2 _t3].
+          * (* sort_rule case *)
+            cbn [Mbind StateMonad.state_monad fst snd].
+            destruct (list_Mmap (add_open_term' succ sort_of l false false (add_open_sort' succ sort_of l false false fuel) sub) s_t e)
+              as [s' e1] eqn:Hs.
+            assert (Hdb1 : map.get e1.(db) sort_of = map.get e.(db) sort_of).
+            { assert (IH' : map.get (snd (list_Mmap (add_open_term' succ sort_of l false false (add_open_sort' succ sort_of l false false fuel) sub) s_t e)).(db) sort_of
+                            = map.get e.(db) sort_of)
+                by (apply list_Mmap_keeps_sortof;
+                    intros y e' _;
+                    apply add_open_term'_keeps_sortof;
+                    intros sub' t' e''; apply IH).
+              rewrite Hs in IH'. cbn [fst snd] in IH'. exact IH'. }
+            assert (Hn_ne_sof : n <> sort_of).
+            { intro Hne. apply Hsof. subst.
+              eapply pair_fst_in.
+              apply (@named_list_lookup_err_in V V_Eqb V_Eqb_ok rule l sort_of (sort_rule c args)).
+              symmetry. exact Hlk. }
+            specialize (hash_entry_db_get_other n s' sort_of Hn_ne_sof e1).
+            intro Hhe_db.
+            cbn [fst snd Mret StateMonad.state_monad].
+            congruence.
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+          * cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+        + cbn [Mret StateMonad.state_monad fst snd]. reflexivity.
+    Qed.
+
+    Lemma add_open_sort_no_new_sortof (sub : named_list V) (t : sort) (e : instance X)
+          (b : atom)
+      : atom_in_db b (snd (add_open_sort succ sort_of l false false sub t e)).(db) ->
+        b.(atom_fn) = sort_of ->
+        atom_in_db b e.(db).
+    Proof.
+      unfold add_open_sort.
+      pose proof (add_open_sort'_keeps_sortof (S (length l)) sub t e) as Heq.
+      intros Hin Hfn.
+      unfold Semantics.atom_in_db, Is_Some_satisfying in *.
+      rewrite Hfn in Hin. rewrite Heq in Hin.
+      rewrite Hfn. exact Hin.
+    Qed.
+
+    (* ============================================================== *)
     (* atom_tree survives rebuild (the F1c-gated CONNECTION for P2).   *)
     (* ============================================================== *)
     (* The node atoms of an [atom_tree] built in the pre-rebuild       *)
