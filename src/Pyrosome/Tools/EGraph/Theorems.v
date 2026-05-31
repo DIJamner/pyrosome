@@ -2986,6 +2986,44 @@ Section WithVar.
     Definition open_egraph_sort_post (sub : named_list V) (e_in : instance X)
        (res : V * instance X) : Prop := open_egraph_post sub e_in res.
 
+    (* ------------------------------------------------------------------ *)
+    (* Worklist-frame family: add_open does not push to worklist and       *)
+    (* preserves+extends analyses_cover.                                   *)
+    (* ------------------------------------------------------------------ *)
+
+    (* analyses_cover: every node that is a key in the parent map has an
+       analysis entry. *)
+    Definition analyses_cover (e : instance X) : Prop :=
+      forall z, Sep.has_key z (parent (Defs.equiv e)) ->
+                exists a, map.get (Defs.analyses e) z = Some a.
+
+    Definition open_wlframe_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop :=
+      egraph_ok e_in ->
+      analyses_cover e_in ->
+      all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_in))) sub ->
+        Defs.worklist (snd res) = Defs.worklist e_in
+      /\ egraph_ok (snd res)
+      /\ analyses_cover (snd res)
+      /\ (forall x, Sep.has_key x (parent (Defs.equiv e_in)) ->
+                    Sep.has_key x (parent (Defs.equiv (snd res))))
+      /\ Sep.has_key (fst res) (parent (Defs.equiv (snd res))).
+
+    Definition open_wlframe_args_post (sub : named_list V) (e_in : instance X)
+       (res : list V * instance X) : Prop :=
+      egraph_ok e_in ->
+      analyses_cover e_in ->
+      all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_in))) sub ->
+        Defs.worklist (snd res) = Defs.worklist e_in
+      /\ egraph_ok (snd res)
+      /\ analyses_cover (snd res)
+      /\ (forall x, Sep.has_key x (parent (Defs.equiv e_in)) ->
+                    Sep.has_key x (parent (Defs.equiv (snd res))))
+      /\ all (fun x => Sep.has_key x (parent (Defs.equiv (snd res)))) (fst res).
+
+    Definition open_wlframe_sort_post (sub : named_list V) (e_in : instance X)
+       (res : V * instance X) : Prop := open_wlframe_post sub e_in res.
+
     Lemma add_open_egraph_ok (l1 : lang)
       (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
       (Hwf1 : wf_lang l1) (Hl1 : incl l1 l)
@@ -3511,6 +3549,423 @@ Section WithVar.
       intros.
       unfold add_open_sort.
       eapply add_open_sort'_parents_frame; try eassumption; eauto with utils.
+    Qed.
+
+    (* ------------------------------------------------------------------ *)
+    (* Worklist-frame lemmas                                               *)
+    (* ------------------------------------------------------------------ *)
+
+    (* Helper: get_analyses is a pure read when every arg in the list has an analysis. *)
+    Lemma get_analyses_stable_per_arg args (e : instance X) :
+      (forall x, In x args -> exists a, map.get (Defs.analyses e) x = Some a) ->
+      exists anas, get_analyses V V V_map V_map V_trie X args e = (anas, e).
+    Proof.
+      unfold get_analyses.
+      induction args as [|x xs IH]; intros Hana.
+      - cbn [list_Mmap Mret StateMonad.state_monad fst snd]. exists []. reflexivity.
+      - assert (Hkx : exists a, map.get (Defs.analyses e) x = Some a).
+        { apply Hana. left. reflexivity. }
+        assert (Hana' : forall y, In y xs -> exists a, map.get (Defs.analyses e) y = Some a).
+        { intros y Hy. apply Hana. right. exact Hy. }
+        destruct Hkx as [ax Hax].
+        destruct (IH Hana') as [anas IHe].
+        (* Unfold get_analysis x e → (ax, e) *)
+        assert (Hga_x : get_analysis V V V_map V_map V_trie X x e = (ax, e)).
+        { unfold get_analysis. rewrite Hax. reflexivity. }
+        (* Unfold list_Mmap and use get_analysis result + IHe *)
+        cbn [list_Mmap Mbind StateMonad.state_monad].
+        rewrite Hga_x.
+        cbn [fst snd].
+        rewrite IHe.
+        cbn [fst snd].
+        exists (ax :: anas). reflexivity.
+    Qed.
+
+    (* Helper: alloc parent equality. After alloc e_find = (r_new, e_alloc),
+       parent e_alloc.equiv = map.put (parent e_find.equiv) r_new r_new. *)
+    Lemma alloc_parent_eq_put (e_find : instance X) r_new e_alloc :
+      Defs.alloc V succ V V_map V_map V_trie X e_find = (r_new, e_alloc) ->
+      forall z, z <> r_new ->
+      map.get (parent (Defs.equiv e_alloc)) z = map.get (parent (Defs.equiv e_find)) z.
+    Proof.
+      intros Halloc_eq z Hne.
+      unfold Defs.alloc in Halloc_eq.
+      destruct (UnionFind.alloc V _ _ succ (Defs.equiv e_find)) as [uf' x_f] eqn:Huf_a.
+      injection Halloc_eq as <- <-.
+      cbn [Defs.equiv].
+      unfold UnionFind.alloc in Huf_a.
+      destruct (Defs.equiv e_find) as [ra pa mr l'] eqn:Heq_find.
+      cbn [UnionFind.parent] in *.
+      injection Huf_a as <- <-.
+      cbn [UnionFind.parent].
+      rewrite map.get_put_diff by exact Hne. reflexivity.
+    Qed.
+
+    (* hash_entry worklist frame: worklist and analyses_cover both preserved/extended. *)
+    Lemma hash_entry_wl_frame f args (e : instance X) :
+      egraph_ok e ->
+      analyses_cover e ->
+      (forall x, In x args -> Sep.has_key x (parent (Defs.equiv e))) ->
+      let '(_, e') := hash_entry succ f args e in
+      Defs.worklist e' = Defs.worklist e /\ analyses_cover e'.
+    Proof.
+      intros Hok Hcov Hkeys.
+      unfold hash_entry.
+      cbn [Mbind StateMonad.state_monad].
+      (* Step 1: list_Mmap find args e → (args', e_find) *)
+      assert (Huf_ex : exists l0, union_find_ok lt (Defs.equiv e) l0).
+      { destruct Hok as [Huf_ok _ _ _]. exact Huf_ok. }
+      assert (Hkeys_all : all (fun i => Sep.has_key i (parent (Defs.equiv e))) args).
+      { clear -Hkeys.
+        induction args as [|x xs IH]; cbn; [exact I|].
+        split; [apply Hkeys; left; reflexivity
+               | apply IH; intros y Hy; apply Hkeys; right; exact Hy]. }
+      pose proof (@list_Mmap_find_preserves_fields_strong V V_Eqb V_Eqb_ok lt succ V_default
+                    V V_map V_map V_map_ok V_trie X args) as Hfp_vc.
+      unfold vc in Hfp_vc. specialize (Hfp_vc e).
+      destruct (list_Mmap find args e)
+        as [args' e_find] eqn:Hfind_eq.
+      cbn [fst snd] in Hfp_vc.
+      specialize (Hfp_vc Huf_ex Hkeys_all).
+      destruct Hfp_vc as (Huf_find & Hfp_find & Ha_out'_rel).
+      destruct Hfp_find as (Hdb_find & _ & _ & Hwl_find & Hana_find & Hkey_iff_find & _).
+      (* analyses_cover e_find (from Hcov + fields_preserved) *)
+      assert (Hcov_find : analyses_cover e_find).
+      { unfold analyses_cover. intros z Hz'.
+        assert (Hz : Sep.has_key z (parent (Defs.equiv e))).
+        { apply Hkey_iff_find. exact Hz'. }
+        destruct (Hcov z Hz) as [a Ha].
+        exists a. rewrite Hana_find. exact Ha. }
+      (* args' are all has_key in e_find, using uf_rel_PER_has_key *)
+      assert (Hkeys_args' : forall x', In x' args' -> Sep.has_key x' (parent (Defs.equiv e_find))).
+      { destruct Huf_find as [roots_find Huf_find_ok].
+        (* From all2 (uf_rel_PER e_find.equiv) args' args:
+           each pair (x', x) satisfies uf_rel_PER, x has_key e_find (via iff), hence x' too *)
+        (* Use all2-based induction without reverting the fixed args' variable *)
+        assert (Hstep : forall l1 l2,
+          all2 (uf_rel_PER V (V_map V) (V_map nat) (Defs.equiv e_find)) l1 l2 ->
+          all (fun x => Sep.has_key x (parent (Defs.equiv e))) l2 ->
+          forall z, In z l1 -> Sep.has_key z (parent (Defs.equiv e_find))).
+        { induction l1 as [|y1 l1' IH1]; intros l2 Hall2 Hkl2 z Hz.
+          - inversion Hz.
+          - destruct l2 as [|y2 l2'].
+            + cbn [all2] in Hall2. exact (False_ind _ Hall2).
+            + cbn [all2] in Hall2. destruct Hall2 as [Hrel1 Hrest1].
+              cbn [all] in Hkl2. destruct Hkl2 as [Hky2 Hkl2'].
+              cbn [In] in Hz. destruct Hz as [Heq | Hz'].
+              * subst z.
+                apply (proj1 (@uf_rel_PER_has_key V V_Eqb V_Eqb_ok lt V_default
+                                V_map V_map_ok (Defs.equiv e_find) roots_find y1 y2
+                                Huf_find_ok Hrel1)).
+              * exact (IH1 l2' Hrest1 Hkl2' z Hz'). }
+        intros x' Hx'. apply (Hstep args' args Ha_out'_rel Hkeys_all x' Hx'). }
+      (* Step 2: db_lookup *)
+      pose proof (@db_lookup_pure V V V_map V_map V_trie X f args') as Hlk_pure.
+      unfold vc in Hlk_pure. specialize (Hlk_pure e_find).
+      destruct (db_lookup V V V_map V_map V_trie X f args' e_find) as [mout e_lk] eqn:Hlkeq.
+      cbn [fst snd] in Hlk_pure.
+      destruct Hlk_pure as [He_lk_eq _]. subst e_lk.
+      destruct mout as [r_hit |]; cbn [Mbind StateMonad.state_monad fst snd].
+      - (* Hit: Mret r_hit, state unchanged *)
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        split.
+        + rewrite <- Hwl_find. reflexivity.
+        + exact Hcov_find.
+      - (* Miss: alloc + db_set *)
+        cbn [Mbind StateMonad.state_monad].
+        (* alloc *)
+        pose proof (@alloc_struct V V_Eqb V_Eqb_ok lt succ V V_map V_map V_map_ok V_trie X
+                      lt_asymmetric lt_succ lt_trans) as Halloc_s.
+        unfold vc in Halloc_s. specialize (Halloc_s e_find).
+        destruct (Defs.alloc V succ V V_map V_map V_trie X e_find) as [r_new e_alloc] eqn:Halloc_eq.
+        cbn [fst snd] in Halloc_s.
+        destruct Huf_find as [roots_find Huf_find_ok].
+        specialize (Halloc_s roots_find Huf_find_ok).
+        destruct Halloc_s as (_ & Hr_fresh & Hr_new_key & Hmono_alloc & _ & _ & Hwl_alloc).
+        (* analyses e_alloc = analyses e_find (alloc def) *)
+        assert (Hana_alloc : Defs.analyses e_alloc = Defs.analyses e_find).
+        { unfold Defs.alloc in Halloc_eq.
+          destruct (UnionFind.alloc V _ _ succ (Defs.equiv e_find)) as [uf' x_f] eqn:Huf_alloc.
+          injection Halloc_eq as <- <-. reflexivity. }
+        (* Each arg in args' has an analysis in e_alloc (they are old keys, not r_new) *)
+        assert (Hana_args' : forall x, In x args' ->
+                               exists a, map.get (Defs.analyses e_alloc) x = Some a).
+        { intros x Hx.
+          (* x has_key in e_find *)
+          assert (Hkx_find : Sep.has_key x (parent (Defs.equiv e_find))).
+          { apply Hkeys_args'. exact Hx. }
+          (* x ≠ r_new: r_new is NOT in e_find but x is *)
+          assert (Hxne : x <> r_new).
+          { intro Heq. subst x. exact (Hr_fresh Hkx_find). }
+          (* analyses e_alloc = analyses e_find, so x has analysis there *)
+          destruct (Hcov_find x Hkx_find) as [a Ha].
+          exists a. rewrite Hana_alloc. exact Ha. }
+        (* get_analyses args' e_alloc is a pure read *)
+        destruct (get_analyses_stable_per_arg args' e_alloc Hana_args') as [arg_as Hga_stable].
+        (* db_set (Build_atom f args' r_new) *)
+        unfold db_set.
+        cbn [atom_fn atom_args atom_ret].
+        cbn [Mbind StateMonad.state_monad fst snd].
+        rewrite Hga_stable.
+        cbn [fst snd].
+        (* update_analyses r_new out_a: worklist unchanged, analyses gains r_new *)
+        set (out_a := analyze V V X (Build_atom f args' r_new) arg_as).
+        destruct (update_analyses V V V_map V_map V_trie X r_new out_a e_alloc) as [_u e_ua] eqn:Hue.
+        assert (Hwl_ua : Defs.worklist e_ua = Defs.worklist e_alloc).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity. }
+        assert (Hana_ua_r : exists a, map.get (Defs.analyses e_ua) r_new = Some a).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; cbn.
+          rewrite map.get_put_same. eexists. reflexivity. }
+        assert (Hana_ua_old : forall z, z <> r_new ->
+                               map.get (Defs.analyses e_ua) z = map.get (Defs.analyses e_alloc) z).
+        { intros z Hne.
+          unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; cbn.
+          rewrite map.get_put_diff by exact Hne. reflexivity. }
+        assert (Hequiv_ua : Defs.equiv e_ua = Defs.equiv e_alloc).
+        { unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity. }
+        (* db_set' (Build_atom f args' r_new) out_a e_ua: worklist and analyses unchanged *)
+        destruct (db_set' V V_Eqb V V_map V_map V_trie X (Build_atom f args' r_new) out_a e_ua)
+          as [_v e_db] eqn:Hde.
+        assert (Hwl_db : Defs.worklist e_db = Defs.worklist e_ua).
+        { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity. }
+        assert (Hana_db : Defs.analyses e_db = Defs.analyses e_ua).
+        { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity. }
+        assert (Hequiv_db : Defs.equiv e_db = Defs.equiv e_ua).
+        { unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db; reflexivity. }
+        cbn [Mret StateMonad.state_monad fst snd].
+        split.
+        + (* Worklist: e_db.wl = e_ua.wl = e_alloc.wl = e_find.wl = e.wl *)
+          rewrite Hwl_db, Hwl_ua, <- Hwl_alloc, <- Hwl_find. reflexivity.
+        + (* analyses_cover e_db *)
+          unfold analyses_cover. intros z Hz'.
+          (* parent e_db.equiv = parent e_ua.equiv = parent e_alloc.equiv *)
+          rewrite Hequiv_db, Hequiv_ua in Hz'.
+          (* parent e_alloc.equiv: either r_new or was in e_find *)
+          pose proof (eqb_spec z r_new) as Hzrn_spec.
+          destruct (eqb z r_new) eqn:Hzrn.
+          * (* z = r_new *)
+            subst z.
+            destruct Hana_ua_r as [a Ha].
+            exists a. rewrite Hana_db. exact Ha.
+          * (* z ≠ r_new: z was in e_find.parent (from alloc_parent_eq_put) *)
+            assert (Hne : z <> r_new). { exact Hzrn_spec. }
+            assert (Hz_find : Sep.has_key z (parent (Defs.equiv e_find))).
+            { unfold Sep.has_key.
+              rewrite <- (alloc_parent_eq_put e_find r_new e_alloc Halloc_eq z Hne).
+              exact Hz'. }
+            destruct (Hcov_find z Hz_find) as [a Ha].
+            exists a.
+            rewrite Hana_db, Hana_ua_old by exact Hne.
+            rewrite Hana_alloc. exact Ha.
+    Qed.
+
+    Lemma add_open_worklist_frame (l1 : lang)
+      (add_open_sort_inner : named_list V -> Term.sort V -> state (instance X) V)
+      (Hwf1 : wf_lang l1) (Hl1 : incl l1 l)
+      c (Hctx : wf_ctx l1 c)
+      : (forall e t, wf_term l1 c e t -> forall r, map fst c = map fst r ->
+           vc (add_open_term' succ sort_of l false false add_open_sort_inner r e)
+              (open_wlframe_post r))
+        /\ (forall args c', wf_args l1 c args c' -> forall r, map fst c = map fst r ->
+           vc (list_Mmap (add_open_term' succ sort_of l false false add_open_sort_inner r) args)
+              (open_wlframe_args_post r)).
+    Proof.
+      apply (WfCutElim.wf_cut_ind V l1 c
+               (fun e t => forall r, map fst c = map fst r ->
+                  vc (add_open_term' succ sort_of l false false
+                                     add_open_sort_inner r e)
+                     (open_wlframe_post r))
+               (fun args c' => forall r, map fst c = map fst r ->
+                  vc (list_Mmap (add_open_term' succ sort_of l false false
+                                                add_open_sort_inner r) args)
+                     (open_wlframe_args_post r))).
+      - (* con case *)
+        intros name c'_rule args t_rule s' Hrule_in_l1 Hwf_args_inner IH r Hmaps.
+        cbn [add_open_term'].
+        pose proof (Hl1 _ Hrule_in_l1) as Hrule_in.
+        assert (Hlk : named_list_lookup_err l name = Some (term_rule c'_rule args t_rule)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad Mret].
+        eapply vc_bind.
+        { specialize (IH r Hmaps). apply IH. }
+        intros e_pre a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_wlframe_post.
+        intros Hok Hcov Hsub.
+        unfold open_wlframe_args_post in Hpost_args.
+        specialize (Hpost_args Hok Hcov Hsub).
+        destruct Hpost_args as (Hwl_inner & Hok_inner & Hcov_inner & Hmono_inner & Hkeys_aout).
+        assert (Hkeys_aout_in : forall x, In x a_out ->
+                                  Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. exact (in_all _ _ _ Hkeys_aout Hx). }
+        (* Use hash_entry_egraph_ok for has_key-mono and has_key x_res *)
+        pose proof (@hash_entry_egraph_ok V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans name a_out) as Hhe_ok.
+        unfold vc in Hhe_ok.
+        specialize (Hhe_ok e_inner Hok_inner Hkeys_aout_in).
+        destruct (hash_entry succ name a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_ok |- *.
+        destruct Hhe_ok as (Hok_he & Hmono_he & Hres_he).
+        (* Use hash_entry_wl_frame for worklist and analyses_cover *)
+        pose proof (hash_entry_wl_frame name a_out e_inner Hok_inner Hcov_inner Hkeys_aout_in) as Hwlf.
+        rewrite Heqhe in Hwlf.
+        cbn [fst snd] in Hwlf.
+        destruct Hwlf as (Hwl_he & Hcov_he).
+        cbn [Mret StateMonad.state_monad fst snd].
+        split; [rewrite Hwl_he; exact Hwl_inner|].
+        split; [exact Hok_he|].
+        split; [exact Hcov_he|].
+        split; [intros x Hx; apply Hmono_he; apply Hmono_inner; exact Hx|].
+        exact Hres_he.
+      - (* var case *)
+        intros n t_var Hin_var r Hmaps.
+        cbn [add_open_term'].
+        unfold vc. intros e_pre.
+        cbn [Mret StateMonad.state_monad fst snd].
+        unfold open_wlframe_post.
+        intros Hok Hcov Hsub.
+        split; [reflexivity|].
+        split; [exact Hok|].
+        split; [exact Hcov|].
+        split; [auto|].
+        assert (Hafc : all_fresh c) by basic_core_crush.
+        assert (Hafr : all_fresh r).
+        { apply NoDup_fresh. rewrite <- Hmaps. apply NoDup_fresh; exact Hafc. }
+        assert (Hex_x : exists x_n, In (n, x_n) r).
+        { apply pair_fst_in_exists. rewrite <- Hmaps. eapply pair_fst_in; exact Hin_var. }
+        destruct Hex_x as [x_n Hin_xn].
+        assert (Hlk : named_list_lookup default r n = x_n).
+        { clear -V_Eqb_ok Hafr Hin_xn.
+          induction r as [|[m v_m] r' IH]; cbn in *; [tauto|].
+          destruct Hafr as [Hfr Hafr'].
+          destruct Hin_xn as [Heq|Hin_xn'].
+          - inversion Heq; subst.
+            eqb_case n n; congruence.
+          - eqb_case n m.
+            + exfalso. apply Hfr. eapply pair_fst_in; exact Hin_xn'.
+            + apply IH; auto. }
+        cbn [fst]. rewrite Hlk.
+        exact (in_all _ _ _ Hsub Hin_xn).
+      - (* eq_sort conversion *)
+        intros e_x t_x t_x' Hwft IH_term Heq_sort r Hmaps.
+        apply IH_term; assumption.
+      - (* nil args *)
+        intros r Hmaps.
+        cbn [list_Mmap].
+        unfold vc, Mret. cbn.
+        unfold open_wlframe_args_post. intros e_in Hok Hcov Hsub.
+        split; [reflexivity|].
+        split; [exact Hok|].
+        split; [exact Hcov|].
+        split; [auto | cbn; exact I].
+      - (* cons args *)
+        intros c'_arg es Hwf_args IH_args name_arg t_arg e_arg Hwft IH_term r Hmaps.
+        unfold vc. intros e_in.
+        cbn [list_Mmap].
+        cbn [Mbind Mret StateMonad.state_monad].
+        unfold open_wlframe_args_post.
+        intros Hok Hcov Hsub.
+        specialize (IH_term r Hmaps).
+        specialize (IH_args r Hmaps).
+        unfold vc, open_wlframe_post in IH_term.
+        specialize (IH_term e_in Hok Hcov Hsub).
+        destruct (add_open_term' succ sort_of l false false
+                    add_open_sort_inner r e_arg e_in)
+          as [v_head e_after_head] eqn:Heq1.
+        cbn [fst snd] in IH_term.
+        destruct IH_term as (Hwl_head & Hok_head & Hcov_head & Hmono_head & Hkey_vhead).
+        assert (Hsub_head : all (fun p => Sep.has_key (snd p) (parent (Defs.equiv e_after_head))) r).
+        { eapply all_wkn; [|exact Hsub].
+          intros x _ Hk. apply Hmono_head. exact Hk. }
+        unfold vc, open_wlframe_args_post in IH_args.
+        specialize (IH_args e_after_head Hok_head Hcov_head Hsub_head).
+        destruct (list_Mmap
+                    (add_open_term' succ sort_of l false false
+                       add_open_sort_inner r) es e_after_head)
+          as [v_tail e_final] eqn:Heq2.
+        cbn [fst snd] in IH_args |- *.
+        destruct IH_args as (Hwl_tail & Hok_tail & Hcov_tail & Hmono_tail & Hkeys_tail).
+        split; [rewrite Hwl_tail; exact Hwl_head|].
+        split; [exact Hok_tail|].
+        split; [exact Hcov_tail|].
+        split.
+        + intros x Hx. apply Hmono_tail. apply Hmono_head. exact Hx.
+        + cbn [all]. split.
+          * apply Hmono_tail. exact Hkey_vhead.
+          * exact Hkeys_tail.
+    Qed.
+
+    Lemma add_open_sort'_worklist_frame l1 c r t fuel
+      : wf_lang l1 -> length l1 < fuel -> incl l1 l -> wf_ctx l1 c -> wf_sort l1 c t ->
+        map fst c = map fst r ->
+        vc (add_open_sort' succ sort_of l false false fuel r t)
+           (open_wlframe_sort_post r).
+    Proof.
+      revert l1 c r t.
+      induction fuel; intros l1 c r t Hwfl1 Hflen Hincl Hctx Hsort Hmaps.
+      - exfalso. Lia.lia.
+      - cbn [add_open_sort'].
+        destruct t as [n s_t].
+        pose proof Hsort as Hsort'.
+        inversion Hsort' as [? n_ s_t_ args c' Hrule Hwfargs]; subst.
+        apply Hincl in Hrule.
+        assert (Hlk : named_list_lookup_err l n = Some (sort_rule c' args)).
+        { symmetry. apply all_fresh_named_list_lookup_err_in; auto.
+          basic_core_crush. }
+        rewrite Hlk.
+        cbn [Mbind StateMonad.state_monad].
+        unfold Mret. cbn [StateMonad.state_monad fst snd].
+        eapply vc_bind.
+        { apply (proj2 (add_open_worklist_frame l1
+                          (add_open_sort' succ sort_of l false false fuel)
+                          Hwfl1 Hincl c Hctx)
+                  _ _ Hwfargs r Hmaps). }
+        intros e_post a_out.
+        cbn [Mbind StateMonad.state_monad Mret].
+        unfold vc; intros e_inner Hpost_args.
+        unfold open_wlframe_sort_post, open_wlframe_post.
+        intros Hok Hcov Hsub.
+        unfold open_wlframe_args_post in Hpost_args.
+        specialize (Hpost_args Hok Hcov Hsub).
+        destruct Hpost_args as (Hwl_inner & Hok_inner & Hcov_inner & Hmono_inner & Hkeys_aout).
+        assert (Hkeys_aout_in : forall x, In x a_out ->
+                                  Sep.has_key x (parent (Defs.equiv e_inner))).
+        { intros x Hx. exact (in_all _ _ _ Hkeys_aout Hx). }
+        (* Use hash_entry_egraph_ok and hash_entry_wl_frame *)
+        pose proof (@hash_entry_egraph_ok V V_Eqb V_Eqb_ok lt succ V_default
+                      V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
+                      X _
+                      lt_asymmetric lt_succ lt_trans n a_out) as Hhe_ok.
+        unfold vc in Hhe_ok.
+        specialize (Hhe_ok e_inner Hok_inner Hkeys_aout_in).
+        destruct (hash_entry succ n a_out e_inner) as [x_res e_he] eqn:Heqhe.
+        cbn [fst snd] in Hhe_ok |- *.
+        destruct Hhe_ok as (Hok_he & Hmono_he & Hres_he).
+        pose proof (hash_entry_wl_frame n a_out e_inner Hok_inner Hcov_inner Hkeys_aout_in) as Hwlf.
+        rewrite Heqhe in Hwlf.
+        cbn [fst snd] in Hwlf.
+        destruct Hwlf as (Hwl_he & Hcov_he).
+        cbn [Mret StateMonad.state_monad fst snd].
+        split; [rewrite Hwl_he; exact Hwl_inner|].
+        split; [exact Hok_he|].
+        split; [exact Hcov_he|].
+        split; [intros x Hx; apply Hmono_he; apply Hmono_inner; exact Hx|].
+        exact Hres_he.
+    Qed.
+
+    Lemma add_open_sort_worklist_frame c r t
+      : wf_ctx l c -> wf_sort l c t -> map fst c = map fst r ->
+        vc (add_open_sort succ sort_of l false false r t)
+           (open_wlframe_sort_post r).
+    Proof.
+      intros.
+      unfold add_open_sort.
+      eapply add_open_sort'_worklist_frame; try eassumption; eauto with utils.
     Qed.
 
     Lemma add_open_term_all_roots c r e t
