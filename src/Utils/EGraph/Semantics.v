@@ -6758,6 +6758,109 @@ Section WithMap.
         exact (Hdar_alloc b Ha_ua). }
   Qed.
 
+  Lemma hash_entry_parents_frame
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+        f args
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           (exists roots, union_find_ok lt e_in.(equiv) roots) ->
+           (forall x, In x args -> Sep.has_key x e_in.(equiv).(parent)) ->
+           forall y,
+             Sep.has_key y e_in.(equiv).(parent) ->
+             ~ (map.get (snd res).(equiv).(parent) y = Some y) ->
+             map.get (snd res).(parents) y = map.get e_in.(parents) y).
+  Proof.
+    unfold vc, hash_entry.
+    intros e_in.
+    cbn [Mbind StateMonad.state_monad].
+    intros Hroots_ex Hkeys_args y Hkey_y Hnroot_y.
+    destruct Hroots_ex as [roots Hroots].
+    assert (Hargk : all (fun i => Sep.has_key i e_in.(equiv).(parent)) args).
+    { clear -Hkeys_args.
+      induction args as [|x xs IH]; cbn; auto.
+      split; [apply Hkeys_args; left; reflexivity|].
+      apply IH. intros z Hz. apply Hkeys_args. right; exact Hz. }
+    pose proof (list_Mmap_find_In_roots args roots e_in Hroots Hargk) as Hfind.
+    cbn beta in Hfind.
+    destruct (list_Mmap find args e_in) as [args' e_post] eqn:Hmap.
+    cbn [fst snd] in Hfind |- *.
+    pose proof (db_lookup_pure f args' e_post) as Hlk.
+    cbn beta in Hlk.
+    destruct (db_lookup f args' e_post) as [mout e_lk] eqn:Hlkeq.
+    cbn [fst snd] in Hlk |- *.
+    destruct Hlk as [He_eq Hlk2]. subst e_lk.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    { (* Hit case: parents unchanged - fields_preserved covers it *)
+      cbn [Mret StateMonad.state_monad fst snd].
+      destruct Hfind as (_ & Hfp & _ & _).
+      destruct Hfp as (Hdb1 & Hpa1 & _ & _ & _ & _ & _).
+      rewrite Hpa1. reflexivity. }
+    { (* Miss case *)
+      cbn [Mbind StateMonad.state_monad].
+      destruct Hfind as (Hok1 & Hfp & _ & Hall_in).
+      destruct Hfp as (Hdb1 & Hpa1 & _ & _ & _ & Hkey_iff & _).
+      assert (Hkey_y_post : Sep.has_key y e_post.(equiv).(parent)).
+      { apply Hkey_iff. exact Hkey_y. }
+      pose proof (alloc_struct Hlti Hlts Hltt) as Halloc.
+      unfold vc in Halloc. specialize (Halloc e_post).
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_post)
+        as [r e_alloc] eqn:Halloc_eq.
+      cbn [fst snd] in Halloc.
+      specialize (Halloc roots Hok1).
+      destruct Halloc as (Hok_alloc & Hr_fresh & Hr_key & Hkeys_alloc & Hdb_alloc
+                          & Hpar_alloc & Hwl_alloc).
+      assert (Hry_neq : r <> y) by (intro Heq; subst y; exact (Hr_fresh Hkey_y_post)).
+      pose proof (uf_forest _ _ _ _ _ _ Hok_alloc) as Hforest_alloc.
+      assert (Hin_to_root_alloc : forall x, In x (r::roots) -> map.get e_alloc.(equiv).(parent) x = Some x)
+        by (intros x Hx; apply (proj1 (@forest_root_iff _ _ _ _ _ x (r::roots) _ Hforest_alloc)); exact Hx).
+      assert (Hargs'_roots_alloc : all (fun x => map.get e_alloc.(equiv).(parent) x = Some x) args').
+      { clear -Hall_in Hin_to_root_alloc.
+        induction args' as [|z zs IH]; cbn in *; auto.
+        destruct Hall_in as [Hz Hzs]. split.
+        - apply Hin_to_root_alloc. right; exact Hz.
+        - apply IH. exact Hzs. }
+      unfold db_set. cbn [atom_fn atom_args atom_ret].
+      cbn [Mbind StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields args' e_alloc) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result args' e_alloc) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & Hpa_ga).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result r
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args' r) arg_as) e_ga)
+        as [_u e_ua] eqn:Hue.
+      assert (Heq_ua : e_ua.(equiv) = e_ga.(equiv))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      assert (Hpa_ua : e_ua.(parents) = e_ga.(parents))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      assert (Hpa_chain : e_ua.(parents) = e_in.(parents)) by congruence.
+      unfold db_set'. cbn [atom_fn atom_args atom_ret fst snd].
+      unfold Mret. cbn [StateMonad.state_monad fst snd].
+      cbn [parents].
+      (* Simplify Hnroot_y to get map.get (parent (equiv e_ua)) y <> Some y *)
+      unfold db_set in Hnroot_y. cbn [atom_fn atom_args atom_ret] in Hnroot_y.
+      cbn [Mbind StateMonad.state_monad fst snd] in Hnroot_y.
+      rewrite Hge in Hnroot_y. cbn [fst snd] in Hnroot_y.
+      rewrite Hue in Hnroot_y. cbn [fst snd] in Hnroot_y.
+      unfold db_set' in Hnroot_y. cbn [fst snd equiv] in Hnroot_y.
+      cbn [atom_fn atom_args atom_ret Mret StateMonad.state_monad fst snd] in Hnroot_y.
+      cbn [equiv parent] in Hnroot_y.
+      (* Now: Hnroot_y : map.get (parent (equiv e_ua)) y <> Some y *)
+      (* Goal: map.get (fold_left ... (dedup eqb (r :: args')) (parents e_ua)) y
+                = map.get (parents e_in) y *)
+      rewrite Hpa_chain.
+      apply fold_left_map_update_cons_frame.
+      intro Hin_dedup.
+      rewrite <- dedup_preserves_In in Hin_dedup.
+      cbn [In] in Hin_dedup.
+      destruct Hin_dedup as [Heq | Hin_args'].
+      - exact (Hry_neq Heq).
+      - assert (Hroot_y_alloc : map.get (parent (equiv e_alloc)) y = Some y)
+          by exact (in_all _ _ _ Hargs'_roots_alloc Hin_args').
+        apply Hnroot_y. rewrite Heq_ua, Heq_ga. exact Hroot_y_alloc. }
+  Qed.
+
   Lemma hash_entry_all_roots (P : symbol -> Prop)
         (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
         f args
