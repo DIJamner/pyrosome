@@ -9,7 +9,7 @@ From Stdlib Require Import Logic.PropExtensionality
 From coqutil Require Import Map.Interface.
 
 From Utils Require Import Utils UnionFind Monad ExtraMaps Relations Maps VC.
-From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified.
+From Utils.EGraph Require Import Defs Semantics QueryOpt SemanticsAreUnified SemanticsUtil.
 Import Monad.StateMonad.
 
 (*
@@ -4946,7 +4946,7 @@ Section WithMap.
         (map (@atom_clause idx symbol) atoms).
   Proof.
     intros Hvars Hren_db Hass.
-    apply (Semantics.all_map_in (@atom_clause idx symbol)
+    apply (SemanticsUtil.all_map_in (@atom_clause idx symbol)
              (Semantics.clause_sound_for_model idx symbol idx_map m
                 (pullback_assignment a_opt sub1))
              atoms).
@@ -5413,7 +5413,7 @@ Section WithMap.
           destruct (map.get a_src (atom_ret a0)) as [retv|] eqn:Hretv; [|cbn in Hsa; contradiction];
           destruct Hxc as [Heq | Hin];
           [ subst x; unfold Sep.has_key; rewrite Hretv; exact I
-          | destruct (Semantics.list_Mmap_get_some _ _ _ _ _ Hargv x Hin) as [bv Hbv];
+          | destruct (SemanticsUtil.list_Mmap_get_some _ _ _ _ _ Hargv x Hin) as [bv Hbv];
             unfold Sep.has_key; rewrite Hbv; exact I ]).
     (* Step 6 (Hsat): the source rule, applied to a_src, gives a_src' sound on
        the source conclusions. *)
@@ -5490,13 +5490,13 @@ Section WithMap.
       [ exact Hext_final
       | apply (all_clause_sound_extend m i_c (map.putmany i_c a_opt) _ Hagree);
         apply all_app; split;
-        [ apply Semantics.all_map_in; intros p Hp; apply incl_filter in Hp;
+        [ apply SemanticsUtil.all_map_in; intros p Hp; apply incl_filter in Hp;
           destruct p as [px py];
           pose proof (in_all (clause_sound_for_model idx symbol idx_map m i_c) _ _
             (uf_eqs_sound m i_c e_c2 Hsnd_fe)
             (in_map (fun q => @eq_clause idx symbol (fst q) (snd q)) _ _ Hp)) as Hsp;
           cbn [uncurry fst snd] in Hsp |- *; exact Hsp
-        | apply Semantics.all_map_in; intros a0 Ha0;
+        | apply SemanticsUtil.all_map_in; intros a0 Ha0;
           exact (in_all (clause_sound_for_model idx symbol idx_map m i_c) _ _
             (db_to_atoms_sound m i_c e_c2 Hsnd_fe)
             (in_map (@atom_clause idx symbol) _ _
