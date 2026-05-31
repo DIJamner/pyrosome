@@ -1,0 +1,109 @@
+Set Implicit Arguments.
+
+From Stdlib Require Import Lists.List.
+Import ListNotations.
+Open Scope list.
+From Utils Require Import Utils.
+From Pyrosome.Theory Require Import Core.
+Import Core.Notations.
+From Ltac2 Require Import Ltac2.
+Set Default Proof Mode "Classic".
+
+(* Semantic core of the source-rule adapter's (II) conclusion construction:
+   given a wf substitution [sg] of a rule's context, the rule's own-context
+   conclusion is well-formed / equal after [sg].  These are Core-only facts,
+   consumed by the egraph source-rule adapter (Theorems.v).  Moved verbatim
+   from the validated scratch in WIP/ConclSemantic.v. *)
+Section WithV.
+  Context (V : Type)
+    {V_Eqb : Eqb V}
+    {V_Eqb_ok : Eqb_ok V_Eqb}
+    {V_default : WithDefault V}.
+
+  Notation term := (@term V).
+  Notation var := (@var V).
+  Notation con := (@con V).
+  Notation ctx := (@ctx V).
+  Notation sort := (@sort V).
+  Notation subst := (@subst V).
+  Notation rule := (@rule V).
+  Notation lang := (@lang V).
+
+  (* Re-declare the section-local notations from Core (these are not exported). *)
+  Local Notation wf_subst l c s c' := (wf_subst (Model:=core_model l) c s c').
+  Local Notation eq_subst l c c' s1 s2 := (eq_subst (Model:=core_model l) c c' s1 s2).
+  Local Notation wf_ctx l c := (wf_ctx (Model:=core_model l) c).
+
+  Context (l : lang) (wfl : wf_lang l).
+
+  Lemma term_concl_wf n c args t
+    : In (n, term_rule c args t) l ->
+      forall sg, wf_subst l [] sg c ->
+                 wf_term l [] (con n (id_args c))[/sg/] t[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    rewrite invert_wf_term_rule in Hr.
+    destruct Hr as [Hc [Hsub Ht]].
+    assert (wf_term l c (con n (id_args c)) t) as Hconcl.
+    {
+      replace t with (t[/id_subst c/]);
+        [| basic_core_crush].
+      eapply wf_term_by; eauto.
+      eapply id_args_wf; eauto with utils.
+    }
+    eapply wf_term_subst_monotonicity; eauto.
+  Qed.
+
+  Lemma sort_concl_wf n c args
+    : In (n, sort_rule c args) l ->
+      forall sg, wf_subst l [] sg c ->
+                 wf_sort l [] (scon n (id_args c))[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    rewrite invert_wf_sort_rule in Hr.
+    destruct Hr as [Hc Hsub].
+    assert (wf_sort l c (scon n (id_args c))) as Hconcl.
+    {
+      eapply wf_sort_by; eauto.
+      eapply id_args_wf; eauto with utils.
+    }
+    eapply wf_sort_subst_monotonicity; eauto.
+  Qed.
+
+  Lemma term_eq_concl n c e1 e2 t
+    : In (n, term_eq_rule c e1 e2 t) l ->
+      forall sg, wf_subst l [] sg c ->
+                 eq_term l [] t[/sg/] e1[/sg/] e2[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    rewrite invert_wf_term_eq_rule in Hr.
+    destruct Hr as [Hc [He1 [He2 Ht]]].
+    eapply eq_term_subst.
+    - eapply eq_term_by. exact Hin.
+    - eapply eq_subst_refl. exact Hsg.
+    - exact Hc.
+  Qed.
+
+  Lemma sort_eq_concl n c t1 t2
+    : In (n, sort_eq_rule c t1 t2) l ->
+      forall sg, wf_subst l [] sg c ->
+                 eq_sort l [] t1[/sg/] t2[/sg/].
+  Proof.
+    intros Hin sg Hsg.
+    pose proof (rule_in_wf _ _ wfl Hin) as Hr.
+    rewrite app_nil_r in Hr.
+    rewrite invert_wf_sort_eq_rule in Hr.
+    destruct Hr as [Hc [Ht1 Ht2]].
+    eapply eq_sort_subst.
+    - eapply eq_sort_by. exact Hin.
+    - eapply eq_subst_refl. exact Hsg.
+    - exact Hc.
+  Qed.
+
+End WithV.
