@@ -926,17 +926,17 @@ Module PositiveInstantiation.
   Definition egraph_equal
     : lang positive -> _ -> nat ->
       nat -> Term.term positive -> Term.term positive -> Term.sort positive -> _ :=
-    (egraph_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
-  
+    (egraph_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
+
   Definition egraph_simpl
     : lang positive -> _ -> nat -> nat ->
       nat -> Term.term positive -> _ :=
-    (egraph_simpl ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+    (egraph_simpl ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
 
   Definition egraph_reducing_equal
     : lang positive -> _ -> _ -> nat ->
       nat -> nat -> nat -> Term.term positive -> Term.term positive -> _ :=
-    (egraph_reducing_equal ptree_map_plus (@pos_trie_map) Pos.succ sort_of (@compat_intersect)).
+    (egraph_reducing_equal ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ sort_of (@fpt_spaced_intersect)).
 
   (*TODO: move somewhere?*)
   Definition filter_eqn_rules {V} : lang V -> lang V :=

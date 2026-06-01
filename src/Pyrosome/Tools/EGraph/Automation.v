@@ -15,6 +15,7 @@ Import CompilerDefs.Notations.
 From Stdlib Require derive.Derive.
 
 From Utils Require Import EGraph.Defs.
+From Utils Require Import FullPosTrie FullPosTrieConv TrieMapFold.
 From Pyrosome.Tools.EGraph Require Import Defs Theorems ReducingCong.
 Import PositiveInstantiation.
 From coqutil Require Import Map.Interface.
@@ -100,11 +101,11 @@ Section ReducingSkeleton.
   Local Notation pos_schedule :=
     (list (nat * rule_set positive positive TrieMap.trie_map TrieMap.trie_map)).
   Local Notation red_cong :=
-    (Defs.egraph_reducing_cong TrieMap.ptree_map_plus (@pos_trie_map)
-       Pos.succ PosListMap.sort_of (@compat_intersect)).
+    (Defs.egraph_reducing_cong TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map)
+       Pos.succ PosListMap.sort_of (@fpt_spaced_intersect)).
   Local Notation red_eq_step :=
-    (Defs.egraph_reducing_equal_step TrieMap.ptree_map_plus (@pos_trie_map)
-       Pos.succ PosListMap.sort_of (@compat_intersect)).
+    (Defs.egraph_reducing_equal_step TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map)
+       Pos.succ PosListMap.sort_of (@fpt_spaced_intersect)).
 
   (* The real Phase-3/6 interface (no longer a placeholder): [sort_of] is
      fresh in [l'] (guaranteed by the renaming, which reserves position 1),
@@ -116,73 +117,88 @@ Section ReducingSkeleton.
   Definition schedule_sound (l' : lang positive) (sched : pos_schedule) : Prop :=
     fresh PosListMap.sort_of l' /\
     @ReducingCong.schedule_sound_real positive positive_Eqb positive_default
-      TrieMap.trie_map TrieMap.ptree_map_plus (@pos_trie_map) Pos.succ
-      PosListMap.sort_of Pos.lt (@compat_intersect) l' sched.
+      TrieMap.trie_map TrieMap.ptree_map_plus (@FullPosTrie.full_pos_trie_map) Pos.succ
+      PosListMap.sort_of Pos.lt (@fpt_spaced_intersect) l' sched.
 
   (* The egraph-soundness lemmas require [map.ok] of the egraph's maps.  For
      the positive instantiation these are [map.ok (TrieMap.trie_map A)] (the
-     idx/symbol map) and [map.ok (@pos_trie_map A)] (the db trie).  Neither is
-     currently proven in the tree -- [trie_map_ok] is [Abort]ed on its
-     [fold_spec] (TrieMap.v) and [pos_trie_map] has no [map.ok] at all.  Both
-     are taken as assumptions in this inner section (the deferred
-     trie-lawfulness obligation), confined here so they do not leak onto
-     [schedule_sound] / the wrapper lemmas / [egraph_sound]. *)
-  Section StepInst.
-    Context (trie_map_ok : forall A, map.ok (TrieMap.trie_map A)).
-    Context (pos_trie_map_ok : forall A, map.ok (@pos_trie_map A)).
-
-    Lemma egraph_reducing_equal_step_sound
-      (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
-      (a b : term positive) (t : sort positive) :
-      wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
-      schedule_sound l' sched ->
-      let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
-      res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
-    Proof.
-      intros Hwf Ha Hb [Hfresh Hsched].
-      exact (@ReducingCong.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
-               positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
-               TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
-               Pos.succ PosListMap.sort_of Pos.lt
-               pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
-               (@compat_intersect) l' Hwf Hfresh sched rfuel sat_fuel a b t Ha Hb Hsched).
-    Qed.
-  End StepInst.
+     idx/symbol map) and [map.ok (@full_pos_trie_map A)] (the db trie).  BOTH
+     are now proven in the tree -- [TrieMapFold.trie_map_ok] and
+     [FullPosTrie.full_pos_trie_map_ok], the latter the lawful fattened
+     (3-constructor) carrier the positive instantiation switched to (the db
+     trie is [full_pos_trie_map], the query-side join goes through
+     [fpt_spaced_intersect], a conversion wrapper over [compat_intersect]).  So
+     these soundness lemmas are now UNCONDITIONAL (no trie-lawfulness
+     assumption left to confine). *)
+  Lemma egraph_reducing_equal_step_sound
+    (l' : lang positive) (sched : pos_schedule) (rfuel sat_fuel : nat)
+    (a b : term positive) (t : sort positive) :
+    wf_lang l' -> wf_term l' [] a t -> wf_term l' [] b t ->
+    schedule_sound l' sched ->
+    let '(res, x1, x2, g) := red_eq_step l' sched rfuel sat_fuel a b in
+    res = true -> fst (Defs.are_unified x1 x2 g) = true -> eq_term l' [] t a b.
+  Proof.
+    intros Hwf Ha Hb [Hfresh Hsched].
+    exact (@ReducingCong.egraph_reducing_equal_step_sound positive positive_Eqb positive_Eqb_ok
+             positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
+             TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
+             Pos.succ PosListMap.sort_of Pos.lt
+             pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+             (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel a b t Ha Hb Hsched).
+  Qed.
 
   (* The positive instantiation of the (now fully proven, generic)
-     congruence-reduction soundness.  It is real -- modulo the same two
-     [map.ok] trie-lawfulness assumptions [StepInst] takes -- so it lives in
-     an analogous inner section.  This is the concrete demonstration that
-     [ReducingCong.egraph_reducing_equal_sound_generic] applies at positive; the
-     clean, assumption-free [egraph_reducing_cong_sound] / [egraph_sound]
-     below are kept as-is (so [by_reduction] / Test.v still work) until the
-     trie-lawfulness subproject discharges [trie_map_ok] / [pos_trie_map_ok]. *)
-  Section CongInst.
-    Context (trie_map_ok : forall A, map.ok (TrieMap.trie_map A)).
-    Context (pos_trie_map_ok : forall A, map.ok (@pos_trie_map A)).
+     congruence-reduction soundness, UNCONDITIONAL via the two real [map.ok]
+     instances above. *)
+  Lemma egraph_reducing_equal_sound_pos
+    (l' : lang positive) (sched : pos_schedule)
+    (rfuel sat_fuel efuel red_fuel : nat) inj
+    (e1 e2 : term positive) (t : sort positive) :
+    wf_lang l' -> wf_term l' [] e1 t -> wf_term l' [] e2 t ->
+    schedule_sound l' sched ->
+    PositiveInstantiation.egraph_reducing_equal l' sched inj
+      rfuel sat_fuel efuel red_fuel e1 e2 = Success tt ->
+    eq_term l' [] t e1 e2.
+  Proof.
+    intros Hwf He1 He2 [Hfresh Hsched] Hsucc.
+    unfold PositiveInstantiation.egraph_reducing_equal,
+      Defs.egraph_reducing_equal in Hsucc.
+    exact (@ReducingCong.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
+             positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
+             TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
+             Pos.succ PosListMap.sort_of Pos.lt
+             pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+             (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel red_fuel inj
+             e1 e2 t He1 He2 Hsched Hsucc).
+  Qed.
 
-    Lemma egraph_reducing_equal_sound_pos
-      (l' : lang positive) (sched : pos_schedule)
-      (rfuel sat_fuel efuel red_fuel : nat) inj
-      (e1 e2 : term positive) (t : sort positive) :
-      wf_lang l' -> wf_term l' [] e1 t -> wf_term l' [] e2 t ->
-      schedule_sound l' sched ->
-      PositiveInstantiation.egraph_reducing_equal l' sched inj
-        rfuel sat_fuel efuel red_fuel e1 e2 = Success tt ->
-      eq_term l' [] t e1 e2.
-    Proof.
-      intros Hwf He1 He2 [Hfresh Hsched] Hsucc.
-      unfold PositiveInstantiation.egraph_reducing_equal,
-        Defs.egraph_reducing_equal in Hsucc.
-      exact (@ReducingCong.egraph_reducing_equal_sound_generic positive positive_Eqb positive_Eqb_ok
-               positive_default TrieMap.trie_map TrieMap.ptree_map_plus trie_map_ok
-               TrieMap.ptree_map_plus_ok (@pos_trie_map) pos_trie_map_ok
-               Pos.succ PosListMap.sort_of Pos.lt
-               pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
-               (@compat_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel red_fuel inj
-               e1 e2 t He1 He2 Hsched Hsucc).
-    Qed.
-  End CongInst.
+  (* Bridge: the generic congruence lemma concludes a per-goal EXISTENTIAL-sort
+     equality ([In (a,b) goals -> exists s, eq_term l [] s a b]); recover the
+     [all2]-at-the-declared-types shape by coercing each existential sort to the
+     goal's type [t] (sorts of a term are unique up to [eq_sort], via
+     [term_sorts_eq]). *)
+  Lemma all2_eq_term_of_in
+    (l' : lang positive) (wfl : wf_lang l')
+    (goals : list (term positive * term positive)) (types : list (sort positive)) :
+    length types = length goals ->
+    all2 (fun p t => let '(a,b) := p in wf_term l' [] a t /\ wf_term l' [] b t)
+         goals types ->
+    (forall a b, In (a,b) goals -> exists s, eq_term l' [] s a b) ->
+    all2 (fun p t => let '(a,b) := p in eq_term l' [] t a b) goals types.
+  Proof.
+    pose proof positive_Eqb_ok as Heqbok.
+    revert types.
+    induction goals as [|[a b] goals' IH]; intros [|t types'] Hlen Hwf Hin;
+      cbn [all2] in *; try discriminate; try exact I.
+    destruct Hwf as [Hwfab Hwf'].
+    destruct Hwfab as [Hwfa Hwfb].
+    split.
+    - destruct (Hin a b (or_introl eq_refl)) as [s Heq].
+      assert (Hwfas : wf_term l' [] a s) by exact (eq_term_wf_l wfl wf_ctx_nil Heq).
+      exact (eq_term_conv Heq (term_sorts_eq wfl wf_ctx_nil Hwfas Hwfa)).
+    - apply IH; [ cbn [Datatypes.length] in Hlen; congruence | exact Hwf' | ].
+      intros a0 b0 Hin0. exact (Hin a0 b0 (or_intror Hin0)).
+  Qed.
 
   Lemma egraph_reducing_cong_sound
     (l' : lang positive) (sched : pos_schedule)
@@ -195,7 +211,31 @@ Section ReducingSkeleton.
     schedule_sound l' sched ->
     red_cong l' sched rfuel sat_fuel efuel red_fuel inj goals = Success tt ->
     all2 (fun p t => let '(a,b) := p in eq_term l' [] t a b) goals types.
-  Proof. Admitted.
+  Proof.
+    intros Hwf Hlen Hall2 [Hfresh Hsched] Hsucc.
+    (* Per-goal wf premise required by the generic lemma. *)
+    assert (Hwfgoals : forall a b, In (a,b) goals ->
+              (exists ta, wf_term l' [] a ta) /\ (exists tb, wf_term l' [] b tb)).
+    { clear Hsucc Hsched Hfresh.
+      revert types Hlen Hall2.
+      induction goals as [|[a b] goals' IH]; intros [|t types'] Hlen Hall2 a0 b0 Hin;
+        cbn [all2 In] in *; try contradiction; try discriminate.
+      destruct Hall2 as [Hwfab Hall2'].
+      destruct Hwfab as [Hwfa Hwfb].
+      destruct Hin as [Heq | Hin'].
+      - inversion Heq; subst; clear Heq. split; eexists; eassumption.
+      - exact (IH types' ltac:(cbn [Datatypes.length] in Hlen; congruence)
+                 Hall2' a0 b0 Hin'). }
+    (* Apply the generic congruence soundness at the positive instantiation. *)
+    pose proof (@ReducingCong.egraph_reducing_cong_sound positive positive_Eqb positive_Eqb_ok
+                  positive_default TrieMap.trie_map TrieMap.ptree_map_plus (@TrieMapFold.trie_map_ok)
+                  TrieMap.ptree_map_plus_ok (@FullPosTrie.full_pos_trie_map) (@FullPosTrie.full_pos_trie_map_ok)
+                  Pos.succ PosListMap.sort_of Pos.lt
+                  pos_lt_asym Pos.lt_succ_diag_r Pos.lt_trans
+                  (@fpt_spaced_intersect) l' Hwf Hfresh sched rfuel sat_fuel efuel Hsched
+                  red_fuel inj goals Hwfgoals Hsucc) as Hconc.
+    exact (@all2_eq_term_of_in l' Hwf goals types Hlen Hall2 Hconc).
+  Qed.
 
   Lemma egraph_reducing_equal_sound
     (l' : lang positive) (sched : pos_schedule)
