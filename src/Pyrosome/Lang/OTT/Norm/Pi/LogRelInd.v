@@ -38,11 +38,10 @@ Section LRInduction.
                 (forall Delta sg F' (ws : wf_ssub Delta sg Ge)
                         (af : Apply_val (length Delta) sg F F'),
                     M _ _ _ (shpAd ad ws af)) ->
-                (forall Delta sg a F' Bres (ws : wf_ssub Delta sg Ge)
+                (forall Delta sg a F' (ws : wf_ssub Delta sg Ge)
                         (af : Apply_val (length Delta) sg F F')
-                        (ra : redTm (shpRed PA ws af) a)
-                        (hB : Apply_val (length Delta) (a :: sg) B Bres),
-                    M _ _ _ (posAd ad ws af ra hB)) ->
+                        (ra : redTm (shpRed PA ws af) a),
+                    M _ _ _ (posAd ad ws af ra)) ->
                 M _ _ _ (@LRpi lvl rec Ge F B PA wpi ad))
     (mU     : forall Ge r l (h : TLlt (lvl_of l) lvl),
                 M _ _ _ (@LRU lvl rec Ge r l h)).
@@ -56,8 +55,8 @@ Section LRInduction.
     | @LRpi _ _ Ge0 F B PA wpi ad =>
         mpi Ge0 F B PA wpi ad
           (fun Delta sg F' ws af => LR_mut _ _ _ (shpAd ad ws af))
-          (fun Delta sg a F' Bres ws af ra hB =>
-             LR_mut _ _ _ (posAd ad ws af ra hB))
+          (fun Delta sg a F' ws af ra =>
+             LR_mut _ _ _ (posAd ad ws af ra))
     | @LRU _ _ Ge0 r l h      => mU Ge0 r l h
     end.
 
