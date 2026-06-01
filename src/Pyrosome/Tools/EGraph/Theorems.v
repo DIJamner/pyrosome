@@ -5994,6 +5994,138 @@ Section WithVar.
       split; [exact (HP e1) | exact IH].
     Qed.
 
+    (* [atom_node] survives [rebuild] (under the same canonical-survival
+       hypothesis [Hsurv] as [atom_tree_survives]).  Term-rooted version:
+       the node's underlying term [e0] is a [wf_term] (so its head and every
+       subterm head are language constructors [<> sort_of], hence canonical and
+       surviving).  Proved by induction on the [atom_node] derivation. *)
+    Lemma atom_node_survives (e eF : instance X) (sub : named_list V) (c : ctx)
+      (Hdbi : db_ctx_inv e)
+      (Hsurv : forall a, ain a e ->
+                 all (is_root e) a.(atom_args) ->
+                 is_root e a.(atom_ret) ->
+                 ain a eF)
+      : forall e0 xe b, atom_node X e sub e0 xe b ->
+          forall t, wf_term l c e0 t -> atom_node X eF sub e0 xe b.
+    Proof.
+      intros e0 xe b Hnode.
+      induction Hnode as [n s sids xe HF2 Hatom
+                         | n s sids xe si sid b HF2 Hatom Hcomb Hnode' IH];
+        intros t Hwt.
+      - (* an_root *)
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        assert (Hn : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hin. }
+        pose proof (Hdbi _ Hatom) as Hroots.
+        cbn [atom_args atom_ret atom_fn] in Hroots.
+        destruct Hroots as [Hargs_r Hret_r].
+        assert (Htree_all : all (fun e1 => forall t, wf_term l c e1 t ->
+                               forall xe, atom_tree X e sub e1 xe ->
+                                          atom_tree X eF sub e1 xe) s) by
+          (assert (HP : forall e0 t, wf_term l c e0 t ->
+                     forall xe, atom_tree X e sub e0 xe -> atom_tree X eF sub e0 xe) by
+             (intros; eapply atom_tree_survives with (c:=c); eauto);
+           clear -HP s;
+           induction s as [|e1 s0 IHs]; cbn; [exact I|];
+           split; [ exact (HP e1) | exact IHs ]).
+        eapply an_root.
+        + eapply atom_tree_args_survives with (c:=c); eassumption.
+        + eapply Hsurv;
+            [ exact Hatom | cbn [atom_args]; exact Hargs_r
+            | cbn [atom_ret]; apply Hret_r; exact Hn ].
+      - (* an_sub *)
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        assert (Hn : n <> sort_of).
+        { intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hin. }
+        pose proof (Hdbi _ Hatom) as Hroots.
+        cbn [atom_args atom_ret atom_fn] in Hroots.
+        destruct Hroots as [Hargs_r Hret_r].
+        assert (Hwfs : all (fun e1 => exists t, wf_term l c e1 t) s).
+        { clear -Hwfa. induction Hwfa as [| c'' s' IHwfa nm e1 t1 Hwft IHall];
+            cbn; [exact I|]. split; [ eexists; eassumption | exact IHall ]. }
+        assert (Hsi_in : In si s) by (eapply in_combine_l; exact Hcomb).
+        destruct (in_all _ _ _ Hwfs Hsi_in) as [t_si Hwt_si].
+        assert (Htree_all : all (fun e1 => forall t, wf_term l c e1 t ->
+                               forall xe, atom_tree X e sub e1 xe ->
+                                          atom_tree X eF sub e1 xe) s) by
+          (assert (HP : forall e0 t, wf_term l c e0 t ->
+                     forall xe, atom_tree X e sub e0 xe -> atom_tree X eF sub e0 xe) by
+             (intros; eapply atom_tree_survives with (c:=c); eauto);
+           clear -HP s;
+           induction s as [|e1 s0 IHs]; cbn; [exact I|];
+           split; [ exact (HP e1) | exact IHs ]).
+        eapply an_sub.
+        + eapply atom_tree_args_survives with (c:=c); eassumption.
+        + eapply Hsurv;
+            [ exact Hatom | cbn [atom_args]; exact Hargs_r
+            | cbn [atom_ret]; apply Hret_r; exact Hn ].
+        + exact Hcomb.
+        + exact (IH t_si Hwt_si).
+    Qed.
+
+    (* Sort-rooted version: the node's top term is the phantom [con n s] of a
+       well-formed sort [scon n s]; its argument recursion uses the term-level
+       [atom_node_survives].  Mirrors [atom_tree_sort_survives]. *)
+    Lemma atom_node_sort_survives (e eF : instance X) (sub : named_list V) (c : ctx)
+      (Hdbi : db_ctx_inv e)
+      (Hsurv : forall a, ain a e ->
+                 all (is_root e) a.(atom_args) ->
+                 is_root e a.(atom_ret) ->
+                 ain a eF)
+      : forall n s, wf_sort l c (scon n s) ->
+          forall xs b, atom_node X e sub (con n s) xs b ->
+                       atom_node X eF sub (con n s) xs b.
+    Proof.
+      intros n s Hws xs b Hnode.
+      safe_invert Hws.
+      match goal with
+        Hin : In (n, sort_rule ?c'0 ?args0) l,
+        Hwfa : Model.wf_args _ s ?c'0 |- _ =>
+          assert (Hn : n <> sort_of) by
+            (intro Heq; apply Hsof; rewrite <- Heq; eapply pair_fst_in; exact Hin);
+          assert (Htree_all : all (fun e1 => forall t, wf_term l c e1 t ->
+                                 forall xe, atom_tree X e sub e1 xe ->
+                                            atom_tree X eF sub e1 xe) s) by
+            (assert (HP : forall e0 t, wf_term l c e0 t ->
+                       forall xe, atom_tree X e sub e0 xe -> atom_tree X eF sub e0 xe) by
+               (intros; eapply atom_tree_survives with (c:=c); eauto);
+             clear -HP s;
+             induction s as [|e1 s0 IHs]; cbn; [exact I|];
+             split; [ exact (HP e1) | exact IHs ]);
+          assert (Hwfs : all (fun e1 => exists t, wf_term l c e1 t) s) by
+            (clear -Hwfa;
+             induction Hwfa as [| c'' s' IHwfa nm e1 t1 Hwft IHall];
+               cbn; [exact I|]; split; [ eexists; eassumption | exact IHall ])
+      end.
+      inversion Hnode as [n0 s0 sids0 xs0 HF2 Hatom Heq1 Heq2 Heq3
+                         | n0 s0 sids0 xs0 si sid b0 HF2 Hatom Hcomb Hnode_si
+                           Heq1 Heq2 Heq3 ]; subst.
+      - (* an_root *)
+        pose proof (Hdbi _ Hatom) as Hroots.
+        cbn [atom_args atom_ret atom_fn] in Hroots.
+        destruct Hroots as [Hargs_r Hret_r].
+        eapply an_root.
+        + eapply atom_tree_args_survives with (c:=c); eassumption.
+        + eapply Hsurv;
+            [ exact Hatom | cbn [atom_args]; exact Hargs_r
+            | cbn [atom_ret]; apply Hret_r; exact Hn ].
+      - (* an_sub *)
+        pose proof (Hdbi _ Hatom) as Hroots.
+        cbn [atom_args atom_ret atom_fn] in Hroots.
+        destruct Hroots as [Hargs_r Hret_r].
+        assert (Hsi_in : In si s) by (eapply in_combine_l; exact Hcomb).
+        destruct (in_all _ _ _ Hwfs Hsi_in) as [t_si Hwt_si].
+        eapply an_sub.
+        + eapply atom_tree_args_survives with (c:=c); eassumption.
+        + eapply Hsurv;
+            [ exact Hatom | cbn [atom_args]; exact Hargs_r
+            | cbn [atom_ret]; apply Hret_r; exact Hn ].
+        + exact Hcomb.
+        + exact (atom_node_survives e eF sub c Hdbi Hsurv si sid b Hnode_si t_si Hwt_si).
+    Qed.
+
     (* ============================================================== *)
     (* add_ctx readback characterization (the P3 (I)-inversion gate). *)
     (* ============================================================== *)
