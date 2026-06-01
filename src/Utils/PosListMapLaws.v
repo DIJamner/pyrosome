@@ -8,7 +8,7 @@
 From Stdlib Require Import NArith Lists.List Lia.
 Import ListNotations.
 From Tries Require Import Canonical.
-From Utils Require Import PosListMap TrieMapFold.
+From Utils Require Import PosListMap TrieMapFold DbMapOk.
 
 Set Implicit Arguments.
 
@@ -961,3 +961,28 @@ Proof.
   intros A.
   apply (@pt_fold_spec A (@pt_get_empty A) (@pt_get_put_same A) (@pt_get_put_diff A) (@pt_put_depth A)).
 Qed.
+
+(* ============================================================================
+   Part V: the depth-indexed db-trie interface instance for pos_trie.
+
+   Discharges the [db_map_ok] record (DbMapOk.v) for the positive map family,
+   with [dmo_depth := depth].  This is the fact that replaces the (false)
+   [map.ok (pos_trie_map A)] obligation in the e-graph soundness development.
+   ============================================================================ *)
+
+Definition pos_trie_db_map_ok : @db_map_ok positive (fun A => @pos_trie_map A).
+Proof.
+  refine (Build_db_map_ok (V := positive)
+                          (fun A => @pos_trie_map A)
+                          (fun A => @depth A)
+                          _ _ _ _ _ _ _ _ _).
+  - exact (fun A n => ltac:(destruct n; exact I)).
+  - exact (fun A k => @pt_get_empty A k).
+  - exact (fun A m k v H => @pt_get_put_same A k v m H).
+  - exact (fun A m k k' v H1 H2 H3 => @pt_get_put_diff A k k' v m H1 H2 H3).
+  - exact (fun A m k v H => @pt_put_depth A k v m H).
+  - exact (fun A m k => @pt_get_remove_same A k m).
+  - exact (fun A m k k' H1 H2 H3 => @pt_get_remove_diff A k k' m H1 H2 H3).
+  - exact (fun A m k n H => @pt_remove_depth A k m n H).
+  - exact (fun A R P f r0 n Hb Hs m Hd => @pt_fold_spec' A n R P f r0 Hb Hs m Hd).
+Defined.
