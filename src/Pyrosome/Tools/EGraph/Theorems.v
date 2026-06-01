@@ -6180,101 +6180,11 @@ Section WithVar.
   End AddCtxInvert.
 
   (* ============================================================== *)
-  (* Soundness of scheduled saturation                              *)
+  (* NOTE: the [SchedSat] section (soundness of scheduled           *)
+  (* saturation: [rs_saturation_hyps], [list_Miter_breakable_sound],*)
+  (* [scheduled_saturate_until_sound]) was split out into           *)
+  (* Pyrosome.Tools.EGraph.SchedSat to keep this file smaller.      *)
   (* ============================================================== *)
-  (* Wraps Semantics' saturate_until_sound up through the Pyrosome   *)
-  (* scheduled_saturate_until loop, against an arbitrary model m.    *)
-  (* The Phase-4 caller instantiates m := lang_model.  The per-      *)
-  (* rule_set side conditions [rs_saturation_hyps] are the real      *)
-  (* content of schedule_sound, discharged in Phase 6.               *)
-  Section SchedSat.
-    Context (V_map_plus_ok : ExtraMaps.map_plus_ok V_map).
-    Context (X : Type) `{analysis V V X}.
-    Context (spaced_list_intersect
-              : forall B, WithDefault B -> (B -> B -> B) ->
-                          ne_list (V_trie B * list bool) -> V_trie B).
-    Context (m : model V) (Hm : model_ok V m).
-
-    Local Notation instance := (Utils.EGraph.Defs.instance V V V_map V_map V_trie X).
-    Local Notation egraph_ok := (egraph_ok V lt V V_map V_map V_trie X).
-    Local Notation sound := (egraph_sound_for_interpretation V V V_map V_map V_trie X m).
-
-    (* The per-rule_set side conditions saturation needs: process_const_rules
-       is sound (const-rule analogue of erule_sound; deferred Hconst), and every
-       compiled rule satisfies run1iter's per-rule bundle against any snapshot. *)
-    Definition rs_saturation_hyps (rs : rule_set V V V_map V_map) : Prop :=
-      (forall e i, egraph_ok e -> sound i e ->
-         egraph_ok (snd (process_const_rules V V_Eqb succ V_default V V_map V_map V_trie X rs e))
-         /\ exists i', map.extends i' i /\ sound i' (snd (process_const_rules V V_Eqb succ V_default V V_map V_map V_trie X rs e)))
-      /\ (forall e r, In r (compiled_rules V V V_map V_map rs) ->
-            run1iter_rule_hyps V V_Eqb V_default V V_map V_map_plus V_map V_map_plus V_trie X spaced_list_intersect m rs e r).
-
-    (* One pass of the schedule (list_Miter_breakable, stopping at the first
-       entry whose termination check fires) is sound: each entry runs
-       saturate_until on its rule_set, sound by saturate_until_sound, and the
-       interpretations compose. *)
-    Lemma list_Miter_breakable_sound (rfuel : nat) (p : state instance bool)
-      (HP : forall e i, egraph_ok e -> sound i e -> egraph_ok (snd (p e)) /\ sound i (snd (p e))) :
-      forall (sched : list (nat * rule_set V V V_map V_map)),
-      (forall n rs, In (n, rs) sched -> rs_saturation_hyps rs) ->
-      forall i e, egraph_ok e -> sound i e ->
-      match list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) sched e with
-      | (_, e') => egraph_ok e' /\ exists i', map.extends i' i /\ sound i' e'
-      end.
-    Proof.
-      induction sched as [|entry sched' IH]; intros Hsched i e Hok Hsnd.
-      - cbn [list_Miter_breakable Mret StateMonad.state_monad].
-        split; [exact Hok|]. exists i. split; [apply Properties.map.extends_refl | exact Hsnd].
-      - cbn [list_Miter_breakable Mbind Mret StateMonad.state_monad].
-        destruct entry as [fuel_i rs_i].
-        cbn [fst snd].
-        destruct (Hsched fuel_i rs_i (or_introl eq_refl)) as [Hconst_i Hrules_i].
-        pose proof (@saturate_until_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
-                      V_map V_map_plus V_map_plus_ok V_map_ok V_map V_map_plus V_map_ok
-                      V_trie V_trie_ok X V_map_plus_ok spaced_list_intersect _ m Hm
-                      lt_asymmetric lt_succ lt_trans rfuel rs_i p HP Hconst_i Hrules_i fuel_i i e Hok Hsnd) as Hsat.
-        destruct (saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel rs_i p fuel_i e) as [break e1] eqn:Hsu.
-        destruct Hsat as (Hok1 & i1 & Hext1 & Hsnd1).
-        destruct break.
-        + split; [exact Hok1|]. exists i1. split; [exact Hext1 | exact Hsnd1].
-        + assert (Hsched' : forall n rs, In (n, rs) sched' -> rs_saturation_hyps rs)
-            by (intros n rs Hin; apply (Hsched n rs); right; exact Hin).
-          pose proof (IH Hsched' i1 e1 Hok1 Hsnd1) as HIH.
-          destruct (list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) sched' e1) as [b e2] eqn:Hlmb.
-          destruct HIH as (Hok2 & i2 & Hext2 & Hsnd2).
-          split; [exact Hok2|]. exists i2.
-          split; [eapply map_extends_trans; [exact Hext2 | exact Hext1] | exact Hsnd2].
-    Qed.
-
-    (* The scheduled saturation loop is sound: fuel induction, each round one
-       schedule pass (list_Miter_breakable_sound); interpretations compose. *)
-    Lemma scheduled_saturate_until_sound (rfuel : nat) (p : state instance bool)
-      (HP : forall e i, egraph_ok e -> sound i e -> egraph_ok (snd (p e)) /\ sound i (snd (p e)))
-      (schedule : list (nat * rule_set V V V_map V_map))
-      (Hsched : forall n rs, In (n, rs) schedule -> rs_saturation_hyps rs)
-      (fuel : nat) :
-      forall i e, egraph_ok e -> sound i e ->
-      match scheduled_saturate_until V_map_plus succ spaced_list_intersect rfuel schedule p fuel e with
-      | (_, e') => egraph_ok e' /\ exists i', map.extends i' i /\ sound i' e'
-      end.
-    Proof.
-      induction fuel as [|fuel IH]; intros i e Hok Hsnd.
-      - cbn [scheduled_saturate_until Mret StateMonad.state_monad].
-        split; [exact Hok|]. exists i. split; [apply Properties.map.extends_refl | exact Hsnd].
-      - cbn [scheduled_saturate_until Mbind Mret StateMonad.state_monad].
-        pose proof (list_Miter_breakable_sound rfuel p HP schedule Hsched i e Hok Hsnd) as Hlmb.
-        destruct (list_Miter_breakable (fun entry => saturate_until succ V_default (analysis_result:=X) spaced_list_intersect rfuel (snd entry) p (fst entry)) schedule e) as [done e1] eqn:Hlmb_eq.
-        destruct Hlmb as (Hok1 & i1 & Hext1 & Hsnd1).
-        destruct done.
-        + split; [exact Hok1|]. exists i1. split; [exact Hext1 | exact Hsnd1].
-        + pose proof (IH i1 e1 Hok1 Hsnd1) as HIH.
-          destruct (scheduled_saturate_until V_map_plus succ spaced_list_intersect rfuel schedule p fuel e1) as [b e2] eqn:Hss.
-          destruct HIH as (Hok2 & i2 & Hext2 & Hsnd2).
-          split; [exact Hok2|]. exists i2.
-          split; [eapply map_extends_trans; [exact Hext2 | exact Hext1] | exact Hsnd2].
-    Qed.
-
-  End SchedSat.
 End WithVar.
 
 (* ============================================================== *)

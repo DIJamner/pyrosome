@@ -13,6 +13,7 @@ From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 From Pyrosome.Tools.EGraph Require Import Theorems.
+From Pyrosome.Tools.EGraph Require Import SchedSat.
 
 #[local] Hint Resolve Properties.map.extends_refl : utils.
 #[local] Hint Rewrite combine_map_fst_snd : utils.
