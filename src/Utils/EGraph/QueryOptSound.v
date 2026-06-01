@@ -5146,6 +5146,435 @@ Section WithMap.
       rewrite Properties.map.fold_empty. reflexivity. }
   Qed.
 
+  (* ============================================================== *)
+  (* next-monotonicity chain: clauses_to_instance_new_key_fresh      *)
+  (* ============================================================== *)
+
+  (* Order helpers on idx *)
+  Definition idx_le (a b : idx) : Prop := a = b \/ lt a b.
+
+  Lemma idx_le_refl (a : idx) : idx_le a a.
+  Proof. left; reflexivity. Qed.
+
+  Lemma idx_le_trans (Hltt : Transitive lt) (a b c : idx) :
+    idx_le a b -> idx_le b c -> idx_le a c.
+  Proof.
+    intros [Hab | Hab] [Hbc | Hbc].
+    - subst. left; reflexivity.
+    - subst. right; exact Hbc.
+    - subst. right; exact Hab.
+    - right; exact (Hltt _ _ _ Hab Hbc).
+  Qed.
+
+  Lemma idx_le_succ (Hlts : forall x, lt x (idx_succ x)) (a : idx) :
+    idx_le a (idx_succ a).
+  Proof. right; apply Hlts. Qed.
+
+  Lemma idx_le_not_lt (Hlti : Asymmetric lt) (a b : idx) :
+    idx_le a b -> lt b a -> False.
+  Proof.
+    intros [Hab | Hab] Hba.
+    - subst. exact (Hlti _ _ Hba Hba).
+    - exact (Hlti _ _ Hab Hba).
+  Qed.
+
+  (* Primitive next facts *)
+
+  (* alloc bumps next by one succ; the returned fresh id equals the old next *)
+  Local Lemma alloc_next_succ
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (equiv (snd (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e))).(next _ _ _)
+    = idx_succ ((equiv e).(next _ _ _))
+    /\ fst (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e)
+       = (equiv e).(next _ _ _).
+  Proof.
+    unfold alloc.
+    unfold UnionFind.alloc.
+    destruct (equiv e) as [ra pa mr nx] eqn:Heqv.
+    cbn. split; reflexivity.
+  Qed.
+
+  (* Defs.find preserves next *)
+  Local Lemma Defs_find_next_preserved (x : idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (equiv (snd (Defs.find x e))).(next _ _ _)
+    = (equiv e).(next _ _ _).
+  Proof.
+    unfold Defs.find.
+    unfold UnionFind.find.
+    destruct (equiv e) as [ra pa mr nx] eqn:Heqv.
+    destruct (find_aux idx Eqb_idx (idx_map idx) (S mr) x pa) as [cx f] eqn:Hfa.
+    cbn. reflexivity.
+  Qed.
+
+  (* UnionFind.union preserves next (via direct inspection of all branches) *)
+  Local Lemma UnionFind_union_next_preserved
+    (uf : union_find idx (idx_map idx) (idx_map nat)) (x y : idx) :
+    (next _ _ _ (fst (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) uf x y)))
+    = (next _ _ _ uf).
+  Proof.
+    unfold UnionFind.union.
+    destruct uf as [ra pa mr nx] eqn:Huf.
+    unfold UnionFind.find.
+    destruct (find_aux idx Eqb_idx (idx_map idx) (S mr) x pa) as [cx f3] eqn:Hfa3.
+    cbn [fst snd next rank parent max_rank].
+    destruct (find_aux idx Eqb_idx (idx_map idx) (S mr) y f3) as [cy f4] eqn:Hfa4.
+    cbn [fst snd next rank parent max_rank].
+    eqb_case cx cy.
+    { cbn [fst next]. reflexivity. }
+    destruct (Nat.compare _ _);
+      cbn [fst next]; reflexivity.
+  Qed.
+
+  (* Defs.union preserves next *)
+  Local Lemma union_next_preserved (v v1 : idx)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (equiv (snd (Defs.union v v1 e))).(next _ _ _)
+    = (equiv e).(next _ _ _).
+  Proof.
+    unfold Defs.union.
+    cbn [Mbind StateMonad.state_monad Mret].
+    destruct (Defs.find v e) as [cv e1] eqn:Hf1.
+    cbn [fst snd].
+    assert (Hn1 : (equiv e1).(next _ _ _) = (equiv e).(next _ _ _)).
+    { pose proof (Defs_find_next_preserved v e) as H.
+      rewrite Hf1 in H. cbn in H. exact H. }
+    destruct (Defs.find v1 e1) as [cv1 e2] eqn:Hf2.
+    cbn [fst snd].
+    assert (Hn2 : (equiv e2).(next _ _ _) = (equiv e1).(next _ _ _)).
+    { pose proof (Defs_find_next_preserved v1 e1) as H.
+      rewrite Hf2 in H. cbn in H. exact H. }
+    eqb_case cv cv1.
+    { cbn [snd equiv]. congruence. }
+    (* UnionFind.union preserves next *)
+    pose proof (UnionFind_union_next_preserved (equiv e2) cv cv1) as Hn3.
+    destruct (UnionFind.union idx Eqb_idx (idx_map idx) (idx_map nat) (equiv e2) cv cv1)
+      as [uf' v'] eqn:Huu.
+    cbn [fst] in Hn3.
+    destruct (eqb cv v'); cbn [snd equiv next]; congruence.
+  Qed.
+
+  (* Helper: db_set doesn't change equiv (and thus next) *)
+  Local Lemma db_set_next_preserved (a : atom)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (equiv (snd (Defs.db_set idx Eqb_idx symbol symbol_map idx_map idx_trie unit a e))).(next _ _ _)
+    = (equiv e).(next _ _ _).
+  Proof.
+    unfold Defs.db_set.
+    cbn [Mbind StateMonad.state_monad fst snd].
+    unfold get_analyses.
+    destruct (list_Mmap (get_analysis idx symbol symbol_map idx_map idx_trie unit)
+                (atom_args a) e) as [arg_as e2] eqn:Hga.
+    cbn [fst snd].
+    destruct (Defs.update_analyses idx symbol symbol_map idx_map idx_trie unit
+                (atom_ret a)
+                (analyze idx symbol unit a arg_as) e2) as [pu e3] eqn:Hua.
+    cbn [snd]. unfold db_set'. cbn [snd equiv next].
+    unfold Defs.update_analyses in Hua. cbn [snd] in Hua. injection Hua as _ He3.
+    subst e3.
+    pose proof (list_Mmap_get_analysis_preserves_equiv_early (atom_args a) e) as Hea.
+    rewrite Hga in Hea. cbn [snd] in Hea. rewrite <- Hea. reflexivity.
+  Qed.
+
+  (* update_entry preserves next (no allocation):
+     union preserves next, db_set doesn't change equiv *)
+  Local Lemma update_entry_next_preserved (a : atom)
+    (e : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    (equiv (snd (update_entry a e))).(next _ _ _)
+    = (equiv e).(next _ _ _).
+  Proof.
+    unfold update_entry. cbn [Mbind StateMonad.state_monad].
+    destruct (Defs.db_lookup idx symbol symbol_map idx_map idx_trie unit
+                (atom_fn a) (atom_args a) e) as [mout e'] eqn:Hlu.
+    cbn [fst snd].
+    assert (He' : e' = e).
+    { unfold Defs.db_lookup in Hlu. cbn in Hlu. injection Hlu as _ <-. reflexivity. }
+    subst e'. destruct mout as [r|].
+    - (* Some r: union r (atom_ret a) *)
+      cbn [Mseq Mbind Mret StateMonad.state_monad snd].
+      destruct (@Defs.union idx Eqb_idx symbol symbol_map idx_map idx_trie unit _
+                  r (atom_ret a) e) as [v_u e_u] eqn:Hu.
+      cbn [snd].
+      pose proof (union_next_preserved r (atom_ret a) e) as Hn.
+      rewrite Hu in Hn. cbn [snd] in Hn. exact Hn.
+    - (* None: db_set a *)
+      cbn [Mret StateMonad.state_monad snd].
+      exact (db_set_next_preserved a e).
+  Qed.
+
+  (* rename_lookup is next-monotone: on hit next unchanged, on miss next steps up by succ *)
+  Local Lemma rename_lookup_next_invariant
+    (Hlts : forall x, lt x (idx_succ x))
+    (x : idx) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    let r := rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+                x sub0 e0 in
+    idx_le ((equiv e0).(next _ _ _)) ((equiv (snd r)).(next _ _ _))
+    /\ (forall x' y', In (x', y') (snd (fst r)) ->
+          In (x', y') sub0 \/ idx_le ((equiv e0).(next _ _ _)) y').
+  Proof.
+    unfold rename_lookup.
+    destruct (named_list_lookup_err sub0 x) as [y|] eqn:Hlook.
+    - (* hit: e unchanged, sub unchanged *)
+      cbn [Mret StateMonad.state_monad fst snd].
+      split.
+      + apply idx_le_refl.
+      + intros x' y' Hin. left. exact Hin.
+    - (* miss: alloc *)
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie unit e0)
+        as [fresh e1] eqn:Halloc.
+      cbn [fst snd].
+      pose proof (alloc_next_succ e0) as [Hn1 Hfresh].
+      rewrite Halloc in Hn1, Hfresh. cbn [snd fst] in Hn1, Hfresh.
+      split.
+      + (* idx_le (next e0) (next e1) = idx_le (next e0) (succ (next e0)) *)
+        rewrite Hn1. apply idx_le_succ. intros z; apply Hlts.
+      + (* new sub = (x, fresh) :: sub0 *)
+        intros x' y' Hin.
+        cbn [map fst] in Hin.
+        destruct Hin as [Heq | Hin].
+        * (* (x', y') = (x, fresh) *)
+          injection Heq as <- <-.
+          right.
+          (* fresh = next e0, idx_le (next e0) (next e0) *)
+          rewrite <- Hfresh. apply idx_le_refl.
+        * left. exact Hin.
+  Qed.
+
+  Local Lemma list_Mmap_rename_lookup_next_invariant
+    (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt)
+    (args : list idx) :
+    forall (sub0 : named_list idx idx)
+      (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit),
+    let r := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                          idx_trie unit) args sub0 e0 in
+    idx_le ((equiv e0).(next _ _ _)) ((equiv (snd r)).(next _ _ _))
+    /\ (forall x' y', In (x', y') (snd (fst r)) ->
+          In (x', y') sub0 \/ idx_le ((equiv e0).(next _ _ _)) y').
+  Proof.
+    induction args as [|a args IH]; intros sub0 e0.
+    - cbn. split.
+      + apply idx_le_refl.
+      + intros x' y' Hin. left. exact Hin.
+    - cbn [list_Mmap].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a sub0 e0) as [ [a' sub1] e1 ] eqn:Hrla.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      rewrite Hrla. cbn [fst snd uncurry].
+      pose proof (rename_lookup_next_invariant Hlts a sub0 e0) as [Hle1 Hsub1].
+      rewrite Hrla in Hle1, Hsub1. cbn [fst snd] in Hle1, Hsub1.
+      pose proof (IH sub1 e1) as [Hle2 Hsub2].
+      destruct (list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                             idx_trie unit) args sub1 e1) as [ [args2 sub3] e3 ] eqn:Hq.
+      cbn [fst snd] in Hle2, Hsub2 |- *.
+      split.
+      + exact (idx_le_trans Hltt _ _ _ Hle1 Hle2).
+      + intros x' y' Hin.
+        specialize (Hsub2 x' y' Hin).
+        destruct Hsub2 as [Hin_sub1 | Hle_y'].
+        * specialize (Hsub1 x' y' Hin_sub1).
+          destruct Hsub1 as [Hs0 | Hle_y''].
+          -- left; exact Hs0.
+          -- right; exact Hle_y''.
+        * right; exact (idx_le_trans Hltt _ _ _ Hle1 Hle_y').
+  Qed.
+
+  Local Lemma rename_atom_next_invariant
+    (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt)
+    (a : atom) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    let r := rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie unit
+               a sub0 e0 in
+    idx_le ((equiv e0).(next _ _ _)) ((equiv (snd r)).(next _ _ _))
+    /\ (forall x' y', In (x', y') (snd (fst r)) ->
+          In (x', y') sub0 \/ idx_le ((equiv e0).(next _ _ _)) y').
+  Proof.
+    destruct a as [f args out].
+    unfold rename_atom. cbn [atom_fn atom_args atom_ret].
+    cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+    cbn beta iota. unfold Basics.compose.
+    pose proof (list_Mmap_rename_lookup_next_invariant Hlts Hltt args sub0 e0) as [Hle1 Hsub1].
+    set (LM := list_Mmap (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map
+                            idx_trie unit) args sub0 e0) in *.
+    destruct LM as [ [args' sub1] e1 ] eqn:Hq1.
+    cbn [fst snd] in Hle1, Hsub1.
+    cbn [fst snd uncurry].
+    destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                unit out sub1 e1) as [ [out' sub2] e2 ] eqn:Hq2.
+    cbn [fst snd uncurry].
+    pose proof (rename_lookup_next_invariant Hlts out sub1 e1) as [Hle2 Hsub2].
+    rewrite Hq2 in Hle2, Hsub2. cbn [fst snd] in Hle2, Hsub2.
+    split.
+    - exact (idx_le_trans Hltt _ _ _ Hle1 Hle2).
+    - intros x' y' Hin.
+      specialize (Hsub2 x' y' Hin).
+      destruct Hsub2 as [Hin_sub1 | Hle_y'].
+      + specialize (Hsub1 x' y' Hin_sub1).
+        destruct Hsub1 as [Hs0 | Hle_y''].
+        * left; exact Hs0.
+        * right; exact Hle_y''.
+      + right; exact (idx_le_trans Hltt _ _ _ Hle1 Hle_y').
+  Qed.
+
+  Local Lemma add_clause_to_instance_next_invariant
+    (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt)
+    (c : Semantics.clause idx symbol) (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    let r := add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map idx_map
+                idx_trie unit c sub0 e0 in
+    idx_le ((equiv e0).(next _ _ _)) ((equiv (snd r)).(next _ _ _))
+    /\ (forall x' y', In (x', y') (snd (fst r)) ->
+          In (x', y') sub0 \/ idx_le ((equiv e0).(next _ _ _)) y').
+  Proof.
+    destruct c as [xx yy | a_clause].
+    - (* eq_clause xx yy *)
+      unfold add_clause_to_instance.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit xx sub0 e0) as [ [x' sub1] e1 ] eqn:Hrx.
+      cbn [fst snd uncurry].
+      destruct (rename_lookup idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit yy sub1 e1) as [ [y' sub2] e2 ] eqn:Hry.
+      cbn [fst snd uncurry].
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (Defs.union x' y' e2) as [v e3] eqn:Hu.
+      cbn [uncurry fst snd].
+      pose proof (rename_lookup_next_invariant Hlts xx sub0 e0) as [Hle1 Hsub1].
+      rewrite Hrx in Hle1, Hsub1. cbn [fst snd] in Hle1, Hsub1.
+      pose proof (rename_lookup_next_invariant Hlts yy sub1 e1) as [Hle2 Hsub2].
+      rewrite Hry in Hle2, Hsub2. cbn [fst snd] in Hle2, Hsub2.
+      pose proof (union_next_preserved x' y' e2) as Hle3.
+      rewrite Hu in Hle3. cbn [snd] in Hle3.
+      split.
+      + apply (idx_le_trans Hltt _ _ _ Hle1).
+        apply (idx_le_trans Hltt _ _ _ Hle2).
+        rewrite Hle3. apply idx_le_refl.
+      + intros x'' y'' Hin.
+        specialize (Hsub2 x'' y'' Hin).
+        destruct Hsub2 as [Hin_sub1 | Hle_y''].
+        * specialize (Hsub1 x'' y'' Hin_sub1).
+          destruct Hsub1 as [Hs0 | Hle_y'''].
+          -- left; exact Hs0.
+          -- right; exact Hle_y'''.
+        * right; exact (idx_le_trans Hltt _ _ _ Hle1 Hle_y'').
+    - (* atom_clause a_clause *)
+      unfold add_clause_to_instance.
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mret Mbind].
+      cbn beta iota. unfold Basics.compose.
+      destruct (rename_atom idx Eqb_idx idx_succ symbol symbol_map idx_map idx_trie
+                  unit a_clause sub0 e0) as [ [a' sub1] e1 ] eqn:Hra.
+      cbn [fst snd uncurry].
+      cbn [lift StateMonad.state_monad Mbind Mret fst snd].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (update_entry a' e1) as [u e2] eqn:Hue.
+      cbn [uncurry fst snd].
+      pose proof (rename_atom_next_invariant Hlts Hltt a_clause sub0 e0) as [Hle1 Hsub1].
+      rewrite Hra in Hle1, Hsub1. cbn [fst snd] in Hle1, Hsub1.
+      pose proof (update_entry_next_preserved a' e1) as Hue2.
+      rewrite Hue in Hue2. cbn [snd] in Hue2.
+      split.
+      + apply (idx_le_trans Hltt _ _ _ Hle1).
+        rewrite Hue2. apply idx_le_refl.
+      + intros x' y' Hin.
+        specialize (Hsub1 x' y' Hin).
+        destruct Hsub1 as [Hs0 | Hle_y'].
+        * left; exact Hs0.
+        * right; exact Hle_y'.
+  Qed.
+
+  Local Lemma clauses_to_instance_next_invariant
+    (Hlts : forall x, lt x (idx_succ x))
+    (Hltt : Transitive lt)
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit) :
+    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
+    | (_, sub1, e1) =>
+        idx_le ((equiv e0).(next _ _ _)) ((equiv e1).(next _ _ _))
+        /\ (forall x y, In (x, y) sub1 ->
+              In (x, y) sub0 \/ idx_le ((equiv e0).(next _ _ _)) y)
+    end.
+  Proof.
+    revert sub0 e0.
+    induction cs as [|c cs IH]; intros sub0 e0.
+    - cbn. split.
+      + apply idx_le_refl.
+      + intros x y Hin. left. exact Hin.
+    - cbn [Semantics.clauses_to_instance list_Miter].
+      cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret].
+      cbn beta iota. unfold Basics.compose.
+      destruct (add_clause_to_instance idx Eqb_idx idx_succ symbol symbol_map idx_map
+                  idx_trie unit c sub0 e0) as [q e1] eqn:Hadd.
+      destruct q as [u sub_step].
+      cbn [snd uncurry].
+      pose proof (add_clause_to_instance_next_invariant Hlts Hltt c sub0 e0) as [Hle1 Hsub_step].
+      rewrite Hadd in Hle1, Hsub_step. cbn [fst snd] in Hle1, Hsub_step.
+      pose proof (IH sub_step e1) as IHc.
+      destruct (clauses_to_instance idx_succ (analysis_result:=unit) cs sub_step e1)
+        as [ [u2 sub_final] e_final] eqn:Hctc.
+      cbn [snd fst] in IHc |- *.
+      destruct IHc as [Hle2 Hsub_final].
+      split.
+      + exact (idx_le_trans Hltt _ _ _ Hle1 Hle2).
+      + intros x y Hxy.
+        specialize (Hsub_final x y Hxy).
+        destruct Hsub_final as [Hin_step | Hle_y].
+        * specialize (Hsub_step x y Hin_step).
+          destruct Hsub_step as [Hs0 | Hle_y'].
+          -- left; exact Hs0.
+          -- right; exact Hle_y'.
+        * right; exact (idx_le_trans Hltt _ _ _ Hle1 Hle_y).
+  Qed.
+
+  (* F5': every new egraph id introduced by clauses_to_instance is strictly
+     above all pre-existing keys in the union-find's parent map.
+     This means it cannot collide with any id already allocated in e0. *)
+  Lemma clauses_to_instance_new_key_fresh
+    (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+    (cs : list (Semantics.clause idx symbol))
+    (sub0 : named_list idx idx)
+    (e0 : Defs.instance idx symbol symbol_map idx_map idx_trie unit)
+    (x y : idx) :
+    (exists roots, UnionFind.union_find_ok lt (equiv e0) roots) ->
+    match clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0 with
+    | (_, sub1, _) =>
+        In (x, y) sub1 ->
+        ~ In x (map fst sub0) ->
+        ~ Sep.has_key y (parent (equiv e0))
+    end.
+  Proof.
+    intros [roots Hok].
+    pose proof (clauses_to_instance_next_invariant Hlts Hltt cs sub0 e0) as Hinv.
+    destruct (clauses_to_instance idx_succ (analysis_result:=unit) cs sub0 e0)
+      as [ [u sub1] e1] eqn:Hctc.
+    cbn [fst snd] in Hinv |- *.
+    destruct Hinv as [_ Hsub1].
+    intros Hxy Hnotin Hhk.
+    specialize (Hsub1 x y Hxy).
+    destruct Hsub1 as [Hinsub0 | Hle].
+    - (* (x, y) in sub0 => x in dom(sub0) => contradicts Hnotin *)
+      exact (Hnotin (in_map fst sub0 (x, y) Hinsub0)).
+    - (* idx_le (next e0) y, and has_key y (parent (equiv e0)) *)
+      (* by next_upper_bound: lt y (next e0) *)
+      pose proof (@UnionFind.next_upper_bound _ _ _ lt _ _ Hok y) as Hub.
+      unfold Sep.has_key in Hhk.
+      destruct (map.get (parent (equiv e0)) y) as [p|] eqn:Hgy;
+        [|destruct Hhk].
+      unfold Sep.has_key in Hub.
+      rewrite Hgy in Hub.
+      exact (idx_le_not_lt Hlti _ _ Hle (Hub I)).
+  Qed.
+
   (* sub_in_domain helpers: every new key added by the renaming primitives
      is contained in the source vars touched by that primitive. *)
 
