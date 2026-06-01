@@ -934,10 +934,26 @@ Section WithVar.
           * exact (Hwf_i2 k d Hk_get).
     Qed.
 
-    (* ===== Residual coverage obligation (conclusion vars only) ===== *)
-    (* This is the single remaining Admitted: for every id k appearing in a
-       conclusion clause var, if both a and i2 map k, then k is covered by
+    (* ===== Clean assumption-coverage lemma (the single remaining Admitted on the term path) ===== *)
+    (* For every id k appearing in an assumption clause var, k is covered by
        an atom_tree in the assumption egraph. *)
+    Lemma assum_ids_covered name c args t
+        (Hin : In (name, term_rule c args t) l)
+      : forall k,
+          In k (forall_vars
+                  (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))) ->
+          (exists e t', wf_term l c e t'
+             /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e k)
+        \/ (exists ts, wf_sort l c ts
+             /\ atom_tree_sort (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                               (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+    Admitted.
+
+    (* ===== Residual coverage obligation (conclusion vars only) ===== *)
+    (* Now proved by threading the confinement hypothesis Hconf through
+       assum_ids_covered: conclusion ids must be assumption ids (by confinement),
+       and assumption ids are covered (by assum_ids_covered). *)
     Lemma Hcover_concl_term name c args t
         (a i2 : V_map (domain V (lang_model l)))
         (sg : subst) (Hin : In (name, term_rule c args t) l)
@@ -945,6 +961,9 @@ Section WithVar.
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
+        (Hconf : forall x, Sep.has_key x a ->
+                   In x (forall_vars
+                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))))
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
                    (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
@@ -956,7 +975,12 @@ Section WithVar.
         \/ (exists ts, wf_sort l c ts
              /\ atom_tree_sort (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
                                (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
-    Admitted.
+    Proof.
+      intros k da d Hk Ha Hi2k.
+      apply (assum_ids_covered name c args t Hin k).
+      apply Hconf.
+      unfold Sep.has_key. rewrite Ha. exact I.
+    Qed.
 
     (* ===== (II) conclusion obligation for term rules ===== *)
     Lemma term_rule_concl_obligation name c args t
@@ -975,6 +999,9 @@ Section WithVar.
         (Hsnd_a : forall al, atom_in_egraph al
                     (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
+        (Hconf : forall x, Sep.has_key x a ->
+                   In x (forall_vars
+                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))))
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
@@ -1011,7 +1038,7 @@ Section WithVar.
                   (exists e t', wf_term l c e t' /\ atom_tree e_assum sub e k)
                 \/ (exists ts, wf_sort l c ts /\ atom_tree_sort e_assum sub ts k)).
       { intros k da d HP Ha Hi2k.
-        exact (Hcover_concl_term name c args t a i2 sg Hin Hsg Hsnd_a k da d HP Ha Hi2k). }
+        exact (Hcover_concl_term name c args t a i2 sg Hin Hsg Hsnd_a Hconf k da d HP Ha Hi2k). }
       assert (Hagree : forall k d da, P k -> map.get i2 k = Some d ->
                   map.get a k = Some da -> domain_eq V (lang_model l) d da).
       { exact (assumption_ids_agree a i2 e_assum sub c P
@@ -1049,7 +1076,7 @@ Section WithVar.
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
       rewrite Heq_e in Hassum.
-      clear Heq_e Hkeys Hconf.
+      clear Heq_e Hkeys.
       assert (Hwfc : wf_ctx l c).
       { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
         rewrite invert_wf_term_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
@@ -1063,7 +1090,7 @@ Section WithVar.
       destruct Hinv as [sg [ Hsg [ Hmapfst Hfaith ] ] ].
       (* (II) conclusion construction. *)
       exact (term_rule_concl_obligation name c args t a sg Hsg Hmapfst Hfaith Hin
-               Hsucc Hsnd_atoms).
+               Hsucc Hsnd_atoms Hconf).
     Qed.
 
     (* ===== (II) conclusion obligation for sort rules — Admitted placeholder ===== *)
