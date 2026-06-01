@@ -26,6 +26,7 @@ From Pyrosome.Theory Require WfCutElim.
 Import Core.Notations.
 From Pyrosome.Tools.EGraph Require Import Defs.
 From Pyrosome.Tools.EGraph Require Import Theorems.
+From Pyrosome.Tools.EGraph Require Import CtxReadback.
 
 
 #[local] Hint Resolve Properties.map.extends_refl : utils.
@@ -91,8 +92,8 @@ Section WithVar.
   Local Notation lang_model_ok := (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of).
   Local Notation is_root := (@Theorems.is_root V V_map V_trie).
   Local Notation db_ctx_inv := (@Theorems.db_ctx_inv V V_map V_trie sort_of).
-  Local Notation ctx_readback_to_eF := (@Theorems.ctx_readback_to_eF V V_Eqb V_default V_map V_trie sort_of).
-  Local Notation ctx_readback_wf_subst := (@Theorems.ctx_readback_wf_subst V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of).
+  Local Notation ctx_readback_to_eF := (@CtxReadback.ctx_readback_to_eF V V_Eqb V_default V_map V_trie sort_of).
+  Local Notation ctx_readback_wf_subst := (@CtxReadback.ctx_readback_wf_subst V V_Eqb V_Eqb_ok V_default V_map V_trie sort_of).
 
   Section F1cDischarge.
     Context (X : Type) `{HX : analysis V V X}.
