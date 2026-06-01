@@ -109,8 +109,38 @@ hash-cons to an EXISTING var-sort id (shared) when the rule's output sort t equa
 shared sort ret tx' (= ret of sort_of[x']→tx', arg x' a leaf): deq(a tx')(i2 tx') follows from
 interprets_to_functional on sort_of with args [a x'][i2 x'] (deq via leaf) — i.e. atom_tree_sort_deq applies. So
 the ONLY coverage needed = shared sort rets referenced by conclusions have atom_tree_sort (from ctx_readback_eF).
-**REMAINING for R4**:
- (i) `atom_tree_sort_deq` — thin wrapper (one scon layer; = the con case of atom_tree_deq standalone). EASY.
+**LANDED session 46** (all 0-axiom, pushed long_horizon): atom_tree_args_deq + atom_tree_deq (commit 890500b),
+atom_tree_sort_deq (86d9e21), **term_concl_construct (a72dc6d)** — R4 assembly CORE (pure putmany plumbing):
+given (Hwf_i2: i2 values are domain_wf) + (Hclauses: i2 sound on seq_conclusions, = concl_clauses_sound_term) +
+(Hagree: ∀k d da, get i2 k=Some d → get a k=Some da → deq d da), build a':=putmany i2 a, extends a
+(get_putmany_right), sound on conclusions (all_clause_sound_setoid: fresh→i2 refl via Hwf_i2/get_putmany_left,
+shared→a via Hagree). get_putmany_{right,left} sig: `@Properties.map.get_putmany_{right,left} V (domain V
+(lang_model l)) (V_map _)(V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k …`. lang_model_ok sig =
+`@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf` (NO V_map args). domain_wf m x := domain_eq m x x.
+So `term_rule_concl_obligation = conclusion_egraph_sound (i2,Hi2_concl,Hai2) + concl_clauses_sound_term (Hclauses)
++ idx_interpretation_wf of Hi2_concl (Hwf_i2) + assumption_ids_agree (Hagree) + term_concl_construct`. ALL pieces
+proven EXCEPT assumption_ids_agree.
+**THE ONLY REMAINING HARD PIECE = `assumption_ids_agree` (produces Hagree).** Decomposes into:
+ (a) i2 sound on eF's LITERAL atoms (Hsnd1 for atom_tree_deq): from i1 sound on e_assum=eF (assumption_egraph_sound)
+     + i2 extends i1 (add_open_term_sound Hext12) + atom_sound monotone-under-extends. ⚠ conclusion_egraph_sound
+     does NOT currently expose i1/extends/i2-sound-on-eF — must STRENGTHEN it or re-derive (re-run
+     assumption_egraph_sound + add_open_term_sound). RISK: re-proving touches a proven Qed.
+ (b) leaf agreement i2/a (Hleaf): a(lookup sub x)=inl(sg x) [Hfaith]; i2(lookup sub x) =deq inl(sg x) [extract
+     per-x from Hai2 = args_in_instance l (map snd sg) i2 (map snd sub), aligning lookup sub x = snd-of-x-entry].
+     Combine via PER symmetry. Fiddly list extraction (~40 LoC).
+ (c) ⚠⚠ COVERAGE (the genuine remaining math, ~250-450 LoC, MULTI-SESSION): ∀ k ∈ keys(a)=forall_vars(eF),
+     ∃ atom_tree eF sub e k (wf_term) ∨ atom_tree_sort eF sub ts k (wf_sort). Sub-agent (a20b693d) CONFIRMED: NO
+     existing completeness lemma (all readback infra runs SOUNDNESS dir: readback→atom; the converse atom→readback
+     is new). Needs either a fresh add_ctx induction threading "every atom is a readback node" through
+     alloc/hash/union/rebuild (mirrors db_ctx_inv-preservation proofs Theorems.v:4231-4700, ~200 LoC each), OR a
+     completeness lemma "db_to_atoms eF ⊆ readback-tree atoms" from ctx_readback_eF (which is currently NOT exposed
+     by add_ctx_inversion — would need re-deriving via ctx_readback_to_eF). This is the subproject's remaining core.
+     NB SORT ids only ever atom RETS (never args) ⇒ conclusion atoms reference x' leaves (at_var, trivial) + fresh
+     as ARGS; shared ids referenced = x' leaves + shared sort RETS (hash-consed to a var sort). The interface path
+     (weaken all_clause_sound_setoid to Hcompat-on-clause_vars + characterize add_open_term output) is the agent's
+     recommended alternative (~120-200 LoC) but hides the hash-consing identification (conclusion sort ret = which
+     readback xs?). Either way coverage/completeness is the wall.
+ (i_old) `atom_tree_sort_deq` — DONE (86d9e21).
  (ii) COVERAGE — ⚠ THE remaining risk: for each conclusion-referenced shared id k ∈ keys(a), an atom_tree(_sort)
      witness. x' leaves trivial (at_var + wf_term var). Shared sort rets: need atom_tree_sort eF sub t k from
      ctx_readback_eF. OPEN: is it cleaner to (A) prove UNIVERSAL coverage [every db_to_atoms eF id has
