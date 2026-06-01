@@ -1,5 +1,49 @@
 # (II) conclusion-construction design — term_rule_concl_obligation / sort_rule_concl_obligation
 
+> ## ⭐ SESSION 48 (2026-06-01): A2 decomposition REFINED + inner engine started
+> Re-derived A2's structure from the infrastructure (atom_tree/atom_tree_sort defs Theorems.v:2543,
+> ctx_readback_eF CtxReadback.v:134, add_ctx_readback Theorems.v:5557, add_open_sort_node_atoms :5164,
+> open_atomtree_post :4864, db_to_atoms/clause_vars Semantics.v:178/56, db_ctx_inv :2678, NoNewSortof.v).
+> FINDING: **every part of A2 routes through ONE exhaustiveness induction over add_ctx** that
+> characterizes db(eF)'s atom set. There is NO easy sub-piece that avoids it — even the "sort_of half"
+> needs "every sort_of atom of eF is a per-var one" (which needs the add_ctx induction + NoNewSortof).
+> So A2 = OUTER frame (exhaustiveness, the wall) + INNER per-tree coverage engine (clean, reusable).
+>
+> **A2 = `assum_coverage` (target):** `ctx_readback_eF eF sub c -> db_ctx_inv eF -> wf_ctx l c ->`
+>   `forall k, In k (flat_map clause_vars (db_to_atoms (db eF))) ->`
+>   `(∃e' t', wf_term l c e' t' /\ atom_tree eF sub e' k) \/ (∃ts, wf_sort l c ts /\ atom_tree_sort eF sub ts k).`
+>   Define `covered k := (∃e' t', wf_term l c e' t' /\ atom_tree eF sub e' k) \/ (∃ts, wf_sort..)`.
+>   Equivalent reformulation actually used: `forall a, atom_in_egraph a eF -> forall k, In k (clause_vars a) -> covered k`.
+>
+> **DECOMPOSITION (two inductions):**
+>   • **FRAME (the wall — OUTER add_ctx induction).** `assum_db_frame`: characterizes db(eF):
+>       `forall a, atom_in_egraph a eF ->`
+>         `(a.(atom_fn) = sort_of  -> ∃ x x' xs, In(x,x') sub /\ a = (sort_of,[x'],xs) /\ <x' is var-leaf> /\ <xs is var-sort root>)`
+>         `\/ (a.(atom_fn) <> sort_of -> ∃ x t xs, In(x,_) c /\ atom_tree_sort eF sub_x t xs /\ atom_node eF sub_x t xs a)`
+>     i.e. every non-sort_of atom is a NODE of some ctx-var's sort-skeleton tree; every sort_of atom is a
+>     per-var companion atom. Proof = induction on c via the add_ctx fold, threading this as an invariant
+>     ALONGSIDE add_ctx_readback's existing 5 conjuncts (Theorems.v:5557-5870). Inductive step adds: the
+>     var's sort skeleton (from add_open_sort_node_atoms => atom_tree_sort, the new non-sort_of atoms) +
+>     one sort_of atom (hash_entry sort_of [x']). NoNewSortof (add_open_sort adds no sort_of atom) +
+>     hash_entry_db_get_other gate the sort_of partition. alloc/union add no db atoms. Transport OLD atoms
+>     forward through the step + through rebuild via atom_tree_survives / rebuild_survives_canonical.
+>     ⚠ Needs an INNER strengthening of open_atomtree_post: "every newly-added db atom is a node
+>     (atom_node) of the produced tree" (mirror add_open_node_atoms' induction). EST ~250-400 LoC, MULTI-SESSION.
+>   • **INNER ENGINE (clean, reusable — induction on wf_term, NO add_ctx).** `atom_node` inductive +
+>     `atom_node_covered` / `atom_tree_sort_node_covered`. Given the FRAME hands "a is a node of var-x's
+>     sort tree (atom_node)", these cover a's clause_vars. STARTED session 48 in WIP/CoverNode.v; delegated.
+>     - `atom_node eF sub : term -> V -> atom -> Prop` (an_root: the top atom of con n s; an_sub: recurse
+>       into an arg subterm via In(si,sid)(combine s sids)).
+>     - `atom_node_covered`: `wf_term l c e t -> atom_tree eF sub e xe -> atom_node eF sub e xe a ->`
+>       `a.(atom_fn)<>sort_of /\ forall k, In k (clause_vars a) -> covered_term k`. Proof: wf_term_ind;
+>       an_root => fn=n is a lang ctor (n∈l via wf_term_by's rule lookup => n<>sort_of by Hsof);
+>       xe covered by (con n s,t) itself; each sid_i covered by subterm s_i (wf via wf_args). an_sub => IH.
+>     - `atom_tree_sort_node_covered`: wraps for the sort's OWN top atom (xs covered by atom_tree_sort/wf_sort;
+>       its term-args covered by atom_node_covered on each arg). Then A2's two halves close.
+>   • Then A2 = FRAME (case split on fn=sort_of) + INNER engine for the non-sort_of node ids + ctx_readback_eF
+>     (xs of sort_of atoms) + at_var (x' of sort_of atoms). + R5 confinement to restrict to overlap.
+> NEXT: land atom_node_covered (inner, in progress) → then design/build the FRAME outer induction.
+
 > ## STATUS AFTER SESSION 47 (read this first)
 > All assembly pieces for `term_rule_concl_obligation` are 0-axiom DONE except TWO:
 >  1. **Hcover (coverage)** — the only remaining MATH. `assumption_ids_agree` (DONE) reduces

@@ -589,6 +589,123 @@ Section WithVar.
       exact (@interprets_to_functional V (lang_model l) Hmok n d1s d2s out1 out2 Hsa1 Hsa2 Hds).
     Qed.
 
+    (* ===== atom_node: pick out a single node atom from an atom_tree derivation ===== *)
+
+    Inductive atom_node (eF : instance) (sub : named_list V)
+      : term -> V -> atom -> Prop :=
+    | an_root n s sids xe :
+        Forall2 (atom_tree eF sub) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        atom_node eF sub (con n s) xe (Build_atom n sids xe)
+    | an_sub n s sids xe si sid a :
+        Forall2 (atom_tree eF sub) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        In (si, sid) (combine s sids) ->
+        atom_node eF sub si sid a ->
+        atom_node eF sub (con n s) xe a.
+
+    (* Helper: Forall2 R s sids -> In (si,sid) (combine s sids) -> R si sid *)
+    Lemma forall2_in_combine_r (A B : Type) (R : A -> B -> Prop) (s : list A) (sids : list B)
+      : Forall2 R s sids ->
+        forall si sid, In (si, sid) (combine s sids) -> R si sid.
+    Proof.
+      induction 1 as [|x y s' sids' HR HF2 IH]; intros si sid HIn.
+      - cbn in HIn. destruct HIn.
+      - cbn in HIn. destruct HIn as [Heq | HIn].
+        + injection Heq as <- <-. exact HR.
+        + exact (IH si sid HIn).
+    Qed.
+
+    (* Helper: each element of wf_args s has a wf_term *)
+    Lemma wf_args_in_wf_term (cc c' : ctx) (s : list term)
+        (Hwfa : wf_args l cc s c')
+      : all (fun e => exists t, wf_term l cc e t) s.
+    Proof.
+      induction Hwfa as [| c'' s' IHwfa name e0 t Hwft IH].
+      - exact I.
+      - cbn. split.
+        + eexists. eassumption.
+        + exact IH.
+    Qed.
+
+    (* Helper: In k sids -> length s = length sids -> exists si, In (si,k) (combine s sids) *)
+    Lemma in_list_exists_pair (A B : Type) (s : list A) (sids : list B) (k : B)
+        (Hlen : length s = length sids)
+        (Hk : In k sids)
+      : exists si, In (si, k) (combine s sids).
+    Proof.
+      revert sids Hlen Hk.
+      induction s as [| e s' IH]; intros sids Hlen Hk.
+      - destruct sids; cbn in *; [destruct Hk | discriminate].
+      - destruct sids as [| sid sids']; cbn in Hlen; [discriminate|].
+        injection Hlen as Hlen'.
+        cbn in Hk. destruct Hk as [Heq | Hk].
+        + subst sid. exists e. cbn. left. reflexivity.
+        + destruct (IH sids' Hlen' Hk) as [si Hsi].
+          exists si. cbn. right. exact Hsi.
+    Qed.
+
+    (* Every id appearing in an atom_node's atom (ret or args) is covered:
+       it is the root of an atom_tree of some wf subterm. *)
+    Lemma atom_node_covered (eF : instance) (sub : named_list V) (cc : ctx)
+      : forall e t, wf_term l cc e t -> forall xe,
+          atom_tree eF sub e xe ->
+          forall a, atom_node eF sub e xe a ->
+            a.(atom_fn) <> sort_of
+            /\ (forall k, In k (a.(atom_ret) :: a.(atom_args)) ->
+                  exists e' t', wf_term l cc e' t' /\ atom_tree eF sub e' k).
+    Proof.
+      intro e; induction e as [x | n s IHs] using term_ind; intros t Hwt xe Htree a Hnode.
+      - inversion Hnode.
+      - safe_invert Htree.
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        assert (IHsall : all (fun e => forall t, wf_term l cc e t -> forall xe,
+                   atom_tree eF sub e xe ->
+                   forall a, atom_node eF sub e xe a ->
+                     a.(atom_fn) <> sort_of
+                     /\ forall k, In k (a.(atom_ret) :: a.(atom_args)) ->
+                           exists e' t', wf_term l cc e' t' /\ atom_tree eF sub e' k) s).
+        { clear -IHs. induction s as [|e0 s0 IH]; cbn; [exact I|].
+          destruct IHs as [IHe0 IHs0]. split; [exact IHe0 | exact (IH IHs0)]. }
+        pose proof (wf_args_in_wf_term cc c'0 s Hwfa) as Hwfs.
+        match goal with
+          Htrees : Forall2 (atom_tree eF sub) s ?sids,
+          Hatom : atom_in_egraph (Build_atom n ?sids xe) eF |- _ =>
+            rename Htrees into Htrees_orig; rename Hatom into Hatom_orig
+        end.
+        inversion Hnode; subst.
+        + (* an_root *)
+          cbn [atom_fn atom_ret atom_args].
+          split.
+          * intro Heq. apply Hsof. rewrite <- Heq.
+            eapply pair_fst_in. exact Hin.
+          * intros k Hk.
+            destruct Hk as [Hk | Hk].
+            -- subst k.
+               exists (con n s), (t' [/with_names_from c'0 s/]).
+               split.
+               ++ eapply wf_term_by; eassumption.
+               ++ eapply at_con; eassumption.
+            -- rename H1 into HF2_0. rename H4 into Hatom0.
+               pose proof (Forall2_length HF2_0) as Hlen.
+               destruct (in_list_exists_pair _ _ s _ k Hlen Hk) as [si Hsi].
+               pose proof (in_combine_l s _ si k Hsi) as Hin_si.
+               pose proof (forall2_in_combine_r _ _ (atom_tree eF sub) s _ HF2_0 si k Hsi)
+                 as Htree_si.
+               pose proof (in_all _ _ _ Hwfs Hin_si) as [t_si Hwft_si].
+               exists si, t_si.
+               split; [exact Hwft_si | exact Htree_si].
+        + (* an_sub *)
+          rename H1 into HF2_0. rename H3 into Hcomb. rename H6 into Hnode'.
+          pose proof (in_combine_l s _ si sid Hcomb) as Hin_si.
+          pose proof (forall2_in_combine_r _ _ (atom_tree eF sub) s _ HF2_0 si sid Hcomb)
+            as Htree_si.
+          pose proof (in_all _ _ _ Hwfs Hin_si) as [t_si Hwft_si].
+          pose proof (in_all _ _ _ IHsall Hin_si) as IHsi.
+          exact (IHsi t_si Hwft_si sid Htree_si a Hnode').
+    Qed.
+
     (* ===== assumption_ids_agree: the agreement engine.  Given [a] and [i2]
        both sound on [eF]'s atoms, agreeing up to [domain_eq] on the readback
        leaves ([Hleaf]), and COVERAGE ([Hcover]: every id mapped by BOTH [a] and
