@@ -86,6 +86,39 @@
 >     ctx_readback_eF (sort_of atom's xs) + at_var (sort_of atom's x'). + R5 confinement → overlap.
 > ORDER: (1) add_open_new_atoms_are_nodes [WIP probe, Sonnet], (2) assum_db_frame_pre [add_ctx induction],
 > (3) assum_db_frame [transport], (4) assum_coverage = A2, (5) wire Hcover into assumption_ids_agree, (6) R5.
+>
+> ### ⭐ SESSION 48b (2026-06-01): CLAUSE-RESTRICTED REFRAME VALIDATED (commit fab5de6, pushed, 0-axiom). Frame SHRUNK, not eliminated.
+> EXPERIMENT: weakened the setoid chain to per-clause-var Hcompat and reassembled term_rule_concl_obligation.
+> RESULT (verified, rocq_assumptions): term_rule_concl_obligation now rests on EXACTLY ONE axiom
+> `Hcover_concl_term`, quantifying ONLY over `k ∈ flat_map clause_vars (seq_conclusions (rule_to_log_rule …
+> (term_rule c args t)))` (NOT all forall_vars). Changes (all 0-axiom, build): list_Mmap_get_setoid +
+> all_clause_sound_setoid → In-guarded Hcompat; assumption_ids_agree → +predicate P guarding Hcover/concl;
+> term_concl_construct → Hagree per-conclusion-clause-var; term_rule_concl_obligation reassembled (added
+> Hsnd_a hyp; i2/Hsnd via conclusion_i2_sound_assum, Hclauses via concl_clauses_sound_term, Hwf_i2 via
+> @Semantics.idx_interpretation_wf [EXPLICIT args], Hfst_sub via assumption_egraph_sound, Hleaf via leaf_agree,
+> P-conversion via in_flat_map; clause_vars needs explicit `V V`). model_satisfies_rule_adapter_term threads Hsnd_atoms.
+> CONCLUSION on "is the frame avoidable?" — PARTIALLY. Structural analysis (grounded in concl_clauses_sound_term):
+>   seq_conclusions = eq_clauses(e_concl uf, via incl_filter) ++ atom_clauses(db_to_atoms e_concl MINUS assumption
+>   atoms, via incl_remove_atoms). The conclusion is built by add_open_term TRUE false sub (con name (id_args c)):
+>   • con node (name,[x'_leaves],x_out): args = id_args = bare vars = x' LEAVES → at_var, TRIVIAL, NO frame.
+>   • with_sorts=TRUE ⇒ also runs add_open_sort t (OUTPUT SORT) + sort_of[x_out]→tx. add_open_sort t HASH-CONSES
+>     its sub-structure onto EXISTING var-sort-skeleton ids whenever t shares structure with a ctx var's sort
+>     (COMMON, e.g. t=(el A), A:ty a ctx var). Those shared internal ids are conclusion-clause vars that ARE
+>     assumption ids ⇒ need a tree in e_assum at k. THIS is the residual wall — but MUCH smaller than the original
+>     full add_ctx exhaustiveness frame:
+> NEW ATTACK on Hcover_concl_term (replaces the assum_db_frame plan for the TERM rule):
+>   - leaf args (con node) → at_var. trivial.
+>   - shared OUTPUT-SORT ids: add_open_sort t built `atom_tree_sort e_concl tsub t xs` (from add_open_node_atoms,
+>     EXISTING) ⇒ k is an atom_node of it ⇒ atom_node_covered (DONE S48) gives a covering wf-subterm-of-t tree at
+>     k IN e_concl. Then a NEW (small) TREE-RESTRICTION lemma: an e_concl atom_tree at an assumption id k whose
+>     node-atoms all lie in e_assum ⟹ atom_tree e_assum at k. The genuine remaining content = showing k's covering
+>     subtree atoms are in e_assum (k assumption id ⇒ defining subtree pre-existed). This is a LOCALIZED frame-ish
+>     fact over the OUTPUT SORT only, not the whole context construction. Likely far < the ~400 LoC assum_db_frame.
+>   - STILL NEEDED: R5 confinement (dom a ⊆ assumption ids; else a fresh conclusion-clause var ∈ dom a breaks it).
+>   - TODO CHECK: the eq_clause half (force_equiv eqns for a plain term_rule) — confirm it references no new
+>     problematic ids (likely trivial/empty for non-eq rules; force_equiv mainly canonicalizes).
+> NET: the reframe is committed real progress (universal coverage is provably unnecessary). Next: try to discharge
+> Hcover_concl_term via conclusion-side trees + tree-restriction; only if that snags, fall back to assum_db_frame.
 
 > ## STATUS AFTER SESSION 47 (read this first)
 > All assembly pieces for `term_rule_concl_obligation` are 0-axiom DONE except TWO:
