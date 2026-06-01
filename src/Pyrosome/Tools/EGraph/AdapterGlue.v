@@ -638,6 +638,89 @@ Section WithVar.
         exact (Hsym _ _ Hdeq).
     Qed.
 
+    (* ===== leaf_agree: given the faithfulness hypothesis (Hfaith) and
+       args_in_instance (Hai2), every variable x in sub maps to entries
+       in both a and i2 that agree up to domain_eq.  This is exactly the
+       [Hleaf] hypothesis consumed by [atom_tree_deq] / [assumption_ids_agree]. ===== *)
+    Lemma leaf_agree (a i2 : V_map (domain V (lang_model l))) (sg : subst)
+        (cc : ctx) (sub : named_list V)
+        (Hwfc : wf_ctx l cc)
+        (Hsg : wf_subst l [] sg cc)
+        (Hmapfst_sg : map fst sg = map fst cc)
+        (Hfst_sub : map fst sub = map fst cc)
+        (Hfaith : forall x, In x (map fst sub) ->
+                    map.get a (named_list_lookup default sub x) = Some (inl (named_list_lookup default sg x)))
+        (Hai2 : args_in_instance l (map snd sg) i2 (map snd sub))
+      : forall x, In x (map fst sub) ->
+          exists d1 d2,
+            map.get a  (named_list_lookup default sub x) = Some d1
+            /\ map.get i2 (named_list_lookup default sub x) = Some d2
+            /\ domain_eq V (lang_model l) d1 d2.
+    Proof.
+      intros x Hx.
+      pose proof (wf_ctx_all_fresh Hwfc) as Hafc.
+      assert (Hafsub : all_fresh sub) by
+        (apply NoDup_fresh; rewrite Hfst_sub; apply NoDup_fresh; exact Hafc).
+      assert (Hafsg : all_fresh sg) by
+        (apply NoDup_fresh; rewrite Hmapfst_sg; apply NoDup_fresh; exact Hafc).
+      (* Helper: named_list_lookup default l x = v when all_fresh l, In (x,v) l *)
+      assert (Hlk_sub : forall v, In (x, v) sub -> named_list_lookup default sub x = v).
+      { intros v Hv.
+        clear -V_Eqb_ok Hafsub Hv.
+        induction sub as [| [m w] sub' IH]; cbn in *; [tauto|].
+        destruct Hafsub as [Hfr Hafsub'].
+        destruct Hv as [Heq | Hv'].
+        - inversion Heq; subst m w. eqb_case x x; congruence.
+        - eqb_case x m.
+          + exfalso. apply Hfr. apply pair_fst_in with (a:=v). exact Hv'.
+          + apply IH; auto. }
+      assert (Hlk_sg : forall e, In (x, e) sg -> named_list_lookup default sg x = e).
+      { intros e He.
+        clear -V_Eqb_ok Hafsg He.
+        induction sg as [| [m w] sg' IH]; cbn in *; [tauto|].
+        destruct Hafsg as [Hfr Hafsg'].
+        destruct He as [Heq | He'].
+        - inversion Heq; subst m w. eqb_case x x; congruence.
+        - eqb_case x m.
+          + exfalso. apply Hfr. apply pair_fst_in with (a:=e). exact He'.
+          + apply IH; auto. }
+      destruct (pair_fst_in_exists sub x Hx) as [v_sub Hv_sub].
+      assert (Hx_sg : In x (map fst sg)) by
+        (rewrite Hmapfst_sg; rewrite <- Hfst_sub; exact Hx).
+      destruct (pair_fst_in_exists sg x Hx_sg) as [e_sg He_sg].
+      (* with_names_from cc (map snd sg) = sg *)
+      assert (Heq_subst : with_names_from cc (map snd sg) = sg).
+      { pose proof (wf_subst_dom_eq Hsg) as Hdom.
+        revert Hdom. clear -sg cc. revert sg.
+        induction cc as [|[n0 t0] cc_rest IH]; destruct sg as [|[n1 e1] sg_rest];
+          cbn; intros Hdom; auto; try discriminate.
+        inversion Hdom; subst. f_equal. apply IH. exact H1. }
+      assert (Hin_sg_wn : In (x, e_sg) (with_names_from cc (map snd sg))).
+      { rewrite Heq_subst. exact He_sg. }
+      assert (Hin_sub_eq : In (x, v_sub) sub) by exact Hv_sub.
+      (* i2 side: use args_in_instance_in *)
+      pose proof (@Theorems.args_in_instance_in V V_Eqb V_Eqb_ok V_map sort_of l
+                    (map snd sg) i2 cc x e_sg v_sub sub Hai2
+                    (@Theorems.wf_args_from_wf_subst V V_Eqb l [] sg cc Hsg)
+                    (eq_sym Hfst_sub) Hafc Hin_sg_wn Hin_sub_eq) as Haii.
+      destruct Haii as [d2 Hd2].
+      destruct Hd2 as [Hgd2 Hdeq2].
+      (* Rewrite sub-lookups *)
+      rewrite (Hlk_sub v_sub Hv_sub).
+      pose proof (Hfaith x Hx) as Hga.
+      rewrite (Hlk_sub v_sub Hv_sub) in Hga.
+      rewrite (Hlk_sg e_sg He_sg) in Hga.
+      exists (inl e_sg : domain V (lang_model l)), d2.
+      split; [exact Hga|].
+      split; [exact Hgd2|].
+      (* domain_eq V (lang_model l) (inl e_sg) d2 from lang_model_eq l d2 (inl e_sg) via PER symmetry *)
+      pose proof (domain_eq_PER V
+        (model_ok:=(@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)))
+        as Hper.
+      pose proof (@PER_Symmetric _ _ Hper) as Hsym.
+      exact (Hsym _ _ Hdeq2).
+    Qed.
+
     (* ===== R4 assembly core (pure plumbing): given the canonical interp i2
        sound on all seq_conclusions clauses, well-formed, and AGREEING with the
        adversary a wherever both are defined, build a' := putmany i2 a (a wins),
