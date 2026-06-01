@@ -156,10 +156,14 @@ Section WithMap.
     (* Realising the second draft from Semantics.v:306-312.
        Precondition weakened from `set_eq (map.keys a) (forall_vars r)` to
        `forall x in forall_vars r, has_key x a` — the strict equality fails
-       on the optimised side after canonicalisation renames keys. *)
+       on the optimised side after canonicalisation renames keys.
+       A ⊆-confinement premise is also added: every key of [a] must be in
+       [forall_vars r], ensuring the domain of the assignment is exactly the
+       variable set of the sequent. *)
     Definition model_satisfies_rule (r : sequent) : Prop :=
       forall a : idx_map domain,
         (forall x, In x (forall_vars r) -> Sep.has_key x a) ->
+        (forall x, Sep.has_key x a -> In x (forall_vars r)) ->
         all (clause_sound_for_model a) r.(seq_assumptions) ->
         exists a' : idx_map domain,
           map.extends a' a /\
@@ -5071,9 +5075,9 @@ Section WithMap.
     model_satisfies_rule m
       (mk_seq atoms_assum (filter (live_eqn atoms) eqs) atoms_concl).
   Proof.
-    intros atoms Hfull a Hkeys Hass.
+    intros atoms Hfull a Hkeys Hconf Hass.
     (* Same forall_vars and same assumptions: just apply the hyp. *)
-    specialize (Hfull a Hkeys Hass).
+    specialize (Hfull a Hkeys Hconf Hass).
     destruct Hfull as [a' [Hext Hconc] ].
     exists a'; split; auto.
     (* The conclusion of [mk_seq atoms_assum (filter ...) atoms_concl] is a
@@ -5126,7 +5130,7 @@ Section WithMap.
     model_satisfies_rule m
       (optimize_sequent {| seq_assumptions := []; seq_conclusions := [] |}).
   Proof.
-    intros a_opt Hkeys Hass; cbn -[map.tuples Properties.map.fold_empty] in *.
+    intros a_opt Hkeys Hconf Hass; cbn -[map.tuples Properties.map.fold_empty] in *.
     replace (db_to_atoms map.empty : list atom) with (@nil atom)
       by (symmetry; apply db_to_atoms_empty).
     cbn [list_Miter]. unfold Mret in *.
@@ -5773,32 +5777,32 @@ Section WithMap.
     model_satisfies_rule m s ->
     model_satisfies_rule m (optimize_sequent s).
   Proof.
-    intros Hsat. unfold model_satisfies_rule. intros a_opt Hkeys Hass.
+    intros Hsat. unfold model_satisfies_rule. intros a_opt Hkeys Hconf Hass.
     set (RFUEL := Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
                    ++ flat_map (clause_vars idx symbol) (seq_conclusions s))
                  * Datatypes.length (flat_map (clause_vars idx symbol) (seq_assumptions s)
                    ++ flat_map (clause_vars idx symbol) (seq_conclusions s))) in *.
-    unfold QueryOpt.optimize_sequent in Hkeys, Hass |- *.
-    unfold sequent_of_states in Hkeys, Hass |- *.
-    cbn [seq_assumptions seq_conclusions] in Hkeys, Hass |- *.
+    unfold QueryOpt.optimize_sequent in Hkeys, Hconf, Hass |- *.
+    unfold sequent_of_states in Hkeys, Hconf, Hass |- *.
+    cbn [seq_assumptions seq_conclusions] in Hkeys, Hconf, Hass |- *.
     (* Reduce the state-monad pipeline to named egraphs. *)
-    rewrite Hassum in Hkeys, Hass |- *.
+    rewrite Hassum in Hkeys, Hconf, Hass |- *.
     cbv delta [StateMonad.state_monad transformer_monad stateT_trans Mseq Mbind Mret lift Basics.compose]
-      in Hkeys, Hass |- *.
-    cbn beta iota in Hkeys, Hass |- *.
+      in Hkeys, Hconf, Hass |- *.
+    cbn beta iota in Hkeys, Hconf, Hass |- *.
     destruct (clauses_to_instance idx_succ (analysis_result:=unit) (map atom_clause atoms) []
                 (empty_egraph idx_zero unit)) as [ [u1 sub1] e1] eqn:Hcti_a.
     destruct (rebuild RFUEL e1) as [u2 e_assum] eqn:Hrb_a.
-    cbn beta iota in Hkeys, Hass |- *.
-    cbn [snd fst uncurry] in Hkeys, Hass |- *.
+    cbn beta iota in Hkeys, Hconf, Hass |- *.
+    cbn [snd fst uncurry] in Hkeys, Hconf, Hass |- *.
     destruct (clauses_to_instance idx_succ (analysis_result:=unit) (seq_conclusions s) sub1 e_assum)
       as [ [u3 sub2] e_c0] eqn:Hcti_c.
-    cbn beta iota in Hkeys, Hass |- *.
+    cbn beta iota in Hkeys, Hconf, Hass |- *.
     destruct (rebuild RFUEL e_c0) as [u4 e_c1] eqn:Hrb_c.
     destruct (force_equiv idx Eqb_idx symbol symbol_map idx_map idx_trie (X:=unit) e_c1)
       as [u5 e_c2] eqn:Hfe_c.
-    cbn beta iota in Hkeys, Hass |- *.
-    cbn [snd] in Hkeys, Hass |- *.
+    cbn beta iota in Hkeys, Hconf, Hass |- *.
+    cbn [snd] in Hkeys, Hconf, Hass |- *.
     set (AA := db_to_atoms (db e_assum)) in *.
     set (CE := map.tuples (parent (equiv e_c2))) in *.
     match goal with |- context[db_to_atoms (db (snd ?L))] =>
@@ -5879,8 +5883,53 @@ Section WithMap.
        the source conclusions. *)
     assert (Hsrc_assum_s : all (clause_sound_for_model idx symbol idx_map m a_src) (seq_assumptions s))
       by (rewrite Hassum; exact Hsrc_assum).
+    (* Step 6a: domain-confinement for a_src: every key of a_src is in forall_vars s. *)
+    assert (Hconf_src : forall x, Sep.has_key x a_src -> In x (forall_vars s)).
+    { intros x Hx.
+      destruct (pullback_assignment_dom_converse a_opt sub2 x Hx) as (y & Hin_xy & Hhk_y).
+      (* y has a key in a_opt; use Hconf to get y in the optimized forall_vars,
+         then db_idxs_in_equiv to get has_key y (parent (equiv e_assum)). *)
+      assert (Hy_assum : Sep.has_key y (parent (equiv e_assum))).
+      { specialize (Hconf y Hhk_y).
+        (* Reduce Hconf's forall_vars to the assumption atoms of the optimized sequent. *)
+        unfold forall_vars in Hconf.
+        cbn [seq_assumptions] in Hconf.
+        (* After all the reductions, seq_assumptions is map atom_clause AA *)
+        apply in_flat_map in Hconf.
+        destruct Hconf as (cl & Hcl_in & Hy_cl).
+        apply in_map_iff in Hcl_in.
+        destruct Hcl_in as (a0 & Ha0_eq & Ha0_in).
+        subst cl. cbn [clause_vars] in Hy_cl.
+        pose proof (proj1 (in_db_to_atoms_iff_atom_in_db a0 (db e_assum)) Ha0_in) as Ha0_db.
+        pose proof (db_idxs_in_equiv _ _ _ _ _ _ _ _ Hok_assum _ Ha0_db) as [Hka Hkr].
+        destruct Hy_cl as [Hyret | Hyarg].
+        - subst y. exact Hkr.
+        - exact (in_all (fun i => Sep.has_key i (parent (equiv e_assum))) _ _ Hka Hyarg). }
+      (* Now use domain confinement: x must have been in sub1, or else y would be fresh w.r.t e_assum. *)
+      destruct (inb x (map fst sub1)) eqn:Hib.
+      - (* x in keys sub1 -> forall_vars s *)
+        assert (Hin_keys : In x (map fst sub1))
+          by (apply (@inb_is_In idx Eqb_idx Eqb_idx_ok); rewrite Hib; exact I).
+        apply in_map_iff in Hin_keys.
+        destruct Hin_keys as ((x' & y') & Hxeq & Hin_pair).
+        cbn [fst] in Hxeq. subst x'.
+        pose proof (clauses_to_instance_sub_in_domain (map atom_clause atoms) []
+                      (empty_egraph idx_zero unit) x y') as Hsd.
+        rewrite Hcti_a in Hsd. specialize (Hsd Hin_pair).
+        unfold forall_vars. rewrite Hassum.
+        destruct Hsd as [Hnil | Hfv]; [ destruct Hnil | exact Hfv ].
+      - (* x NOT in keys sub1 -> contradiction via clauses_to_instance_new_key_fresh *)
+        exfalso.
+        assert (Hnin : ~ In x (map fst sub1))
+          by (intro Hc;
+              apply (@inb_is_In idx Eqb_idx Eqb_idx_ok) in Hc;
+              rewrite Hib in Hc; exact Hc).
+        pose proof (clauses_to_instance_new_key_fresh Hlti Hlts Hltt (seq_conclusions s) sub1 e_assum x y
+                      (Semantics.egraph_equiv_ok _ _ _ _ _ _ _ _ Hok_assum)) as Hfresh.
+        rewrite Hcti_c in Hfresh.
+        exact (Hfresh Hin_xy Hnin Hy_assum). }
     unfold model_satisfies_rule in Hsat.
-    specialize (Hsat a_src Hkeys_src Hsrc_assum_s).
+    specialize (Hsat a_src Hkeys_src Hconf_src Hsrc_assum_s).
     destruct Hsat as [a_src' [Hext_src' Hconcl_src'] ].
     (* a_src is defined on every key of sub1 (sub1 keys are source vars). *)
     assert (Ha_src_sub1_def : forall x y, In (x,y) sub1 -> exists d, map.get a_src x = Some d)
@@ -5988,7 +6037,7 @@ Section WithMap.
   Proof.
     destruct s as [ [|c_a cs_a] [|c_c cs_c] ]; intros Hgood Hopt.
     - (* Empty-empty: model_satisfies_rule m (empty sequent) is trivial. *)
-      intros a Hkeys Hass. exists a; split; [intros ? ? Hk; exact Hk | cbn; trivial].
+      intros a Hkeys Hconf Hass. exists a; split; [intros ? ? Hk; exact Hk | cbn; trivial].
     - admit.
     - admit.
     - admit.

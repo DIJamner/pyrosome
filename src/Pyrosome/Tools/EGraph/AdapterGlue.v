@@ -1036,7 +1036,7 @@ Section WithVar.
              X HX rf name (term_rule c args t)).
     Proof.
       unfold model_satisfies_rule.
-      intros a Hkeys Hassum.
+      intros a Hkeys Hconf Hassum.
       unfold rule_to_log_rule in Hassum |- *.
       unfold sequent_of_states in Hassum.
       cbn [seq_assumptions] in Hassum.
@@ -1049,7 +1049,7 @@ Section WithVar.
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
       rewrite Heq_e in Hassum.
-      clear Heq_e Hkeys.
+      clear Heq_e Hkeys Hconf.
       assert (Hwfc : wf_ctx l c).
       { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
         rewrite invert_wf_term_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
@@ -1095,7 +1095,7 @@ Section WithVar.
              X HX rf name (sort_rule c args)).
     Proof.
       unfold model_satisfies_rule.
-      intros a Hkeys Hassum.
+      intros a Hkeys Hconf Hassum.
       unfold rule_to_log_rule in Hassum |- *.
       unfold sequent_of_states in Hassum.
       cbn [seq_assumptions] in Hassum.
@@ -1107,7 +1107,7 @@ Section WithVar.
       { destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub e1].
         cbn [snd]. destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
       rewrite Heq_e in Hassum.
-      clear Heq_e Hkeys.
+      clear Heq_e Hkeys Hconf.
       assert (Hwfc : wf_ctx l c).
       { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
         rewrite invert_wf_sort_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
