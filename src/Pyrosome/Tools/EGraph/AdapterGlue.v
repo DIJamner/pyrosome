@@ -176,6 +176,8 @@ Section WithVar.
       (@Theorems.atom_tree V V_Eqb V_default V_map V_trie X).
     Local Notation atom_tree_sort :=
       (@Theorems.atom_tree_sort V V_Eqb V_default V_map V_trie X).
+    Local Notation atom_node :=
+      (@Theorems.atom_node V V_Eqb V_default V_map V_trie X).
 
     (* ===== assumption egraph is ok and sound ===== *)
     Lemma assumption_egraph_sound c (Hwfc : wf_ctx l c) (sg : subst)
@@ -601,20 +603,8 @@ Section WithVar.
       exact (@interprets_to_functional V (lang_model l) Hmok n d1s d2s out1 out2 Hsa1 Hsa2 Hds).
     Qed.
 
-    (* ===== atom_node: pick out a single node atom from an atom_tree derivation ===== *)
-
-    Inductive atom_node (eF : instance) (sub : named_list V)
-      : term -> V -> atom -> Prop :=
-    | an_root n s sids xe :
-        Forall2 (atom_tree eF sub) s sids ->
-        atom_in_egraph (Build_atom n sids xe) eF ->
-        atom_node eF sub (con n s) xe (Build_atom n sids xe)
-    | an_sub n s sids xe si sid a :
-        Forall2 (atom_tree eF sub) s sids ->
-        atom_in_egraph (Build_atom n sids xe) eF ->
-        In (si, sid) (combine s sids) ->
-        atom_node eF sub si sid a ->
-        atom_node eF sub (con n s) xe a.
+    (* [atom_node] is now defined in Theorems.v (next to [atom_tree]); see the
+       [Local Notation atom_node] above. *)
 
     (* Helper: Forall2 R s sids -> In (si,sid) (combine s sids) -> R si sid *)
     Lemma forall2_in_combine_r (A B : Type) (R : A -> B -> Prop) (s : list A) (sids : list B)

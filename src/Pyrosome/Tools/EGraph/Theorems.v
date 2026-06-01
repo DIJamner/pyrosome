@@ -2560,6 +2560,25 @@ Section WithVar.
                        /\ atom_in_egraph (Build_atom n sids xs) eF
       end.
 
+    (* [atom_node eF sub e xe a]: the atom [a] occurs somewhere in the
+       [atom_tree] derivation that witnesses [atom_tree eF sub e xe] -- either
+       it is the top atom of [e = con n s] ([an_root]) or it is a node of one
+       of the argument subterms ([an_sub]).  Used by the assumption-coverage
+       frame to say "every non-sort_of db atom is a node of some ctx var's
+       sort skeleton tree". *)
+    Inductive atom_node (eF : instance X) (sub : named_list V)
+      : term -> V -> atom -> Prop :=
+    | an_root n s sids xe :
+        Forall2 (atom_tree eF sub) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        atom_node eF sub (con n s) xe (Build_atom n sids xe)
+    | an_sub n s sids xe si sid a :
+        Forall2 (atom_tree eF sub) s sids ->
+        atom_in_egraph (Build_atom n sids xe) eF ->
+        In (si, sid) (combine s sids) ->
+        atom_node eF sub si sid a ->
+        atom_node eF sub (con n s) xe a.
+
     Lemma atom_tree_db_incl (eF eF' : instance X) (sub : named_list V)
       : (forall b, atom_in_egraph b eF -> atom_in_egraph b eF') ->
         forall e xe, atom_tree eF sub e xe -> atom_tree eF' sub e xe.
@@ -2577,6 +2596,25 @@ Section WithVar.
             | safe_invert Htrees; destruct IHs as [IHt0 IHs0];
               constructor; [ apply IHt0; assumption | apply IHsl; assumption ] ]
         end.
+    Qed.
+
+    Lemma atom_node_db_incl (eF eF' : instance X) (sub : named_list V)
+      : (forall b, atom_in_egraph b eF -> atom_in_egraph b eF') ->
+        forall e xe a, atom_node eF sub e xe a -> atom_node eF' sub e xe a.
+    Proof.
+      intros Hincl e xe a Hnode.
+      induction Hnode as [n s sids xe HF2 Hatom
+                         | n s sids xe si sid a HF2 Hatom Hcomb Hnode' IH].
+      - apply an_root.
+        + eapply Forall2_impl; [| exact HF2].
+          intros x y Hxy. eapply atom_tree_db_incl; [exact Hincl | exact Hxy].
+        + apply Hincl. exact Hatom.
+      - eapply an_sub.
+        + eapply Forall2_impl; [| exact HF2].
+          intros x y Hxy. eapply atom_tree_db_incl; [exact Hincl | exact Hxy].
+        + apply Hincl. exact Hatom.
+        + exact Hcomb.
+        + exact IH.
     Qed.
 
     (* =============================================================== *)
