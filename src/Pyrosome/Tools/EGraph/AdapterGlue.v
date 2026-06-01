@@ -73,11 +73,12 @@ Section WithVar.
   Qed.
 
   (* Helper: transfer list_Mmap soundness under the setoid compatibility
-     condition (Hcompat). *)
+     condition (Hcompat), guarded by membership in args. *)
   Lemma list_Mmap_get_setoid (m : model V) (i a' : V_map (domain V m))
-      (Hcompat : forall k d, map.get i k = Some d ->
+      (args : list V)
+      (Hcompat : forall k, In k args -> forall d, map.get i k = Some d ->
                    exists d', map.get a' k = Some d' /\ domain_eq V m d d')
-      (args : list V) (iargs : list (domain V m))
+      (iargs : list (domain V m))
       (Hmm : list_Mmap (map.get i) args = Some iargs)
     : exists a'args, list_Mmap (map.get a') args = Some a'args
                      /\ all2 (domain_eq V m) iargs a'args.
@@ -91,21 +92,23 @@ Section WithVar.
       destruct (list_Mmap (map.get i) xs) as [dxs|] eqn:Hxs.
       2: { discriminate. }
       injection Hmm as <-.
-      destruct (IH dxs eq_refl) as (a'xs & Ha'xs & Hall2).
-      destruct (Hcompat x dx Hx) as (dx' & Hx' & Heq).
+      destruct (IH (fun k Hk => Hcompat k (in_cons _ k _ Hk)) dxs eq_refl)
+        as (a'xs & Ha'xs & Hall2).
+      destruct (Hcompat x (in_eq x xs) dx Hx) as (dx' & Hx' & Heq).
       exists (dx' :: a'xs).
       split.
       + cbn. rewrite Hx'. rewrite Ha'xs. reflexivity.
       + cbn. split; assumption.
   Qed.
 
-  (* Setoid transfer: if [i] and [a'] agree up to [domain_eq m] on every
-     key (Hcompat), then soundness of a clause list under [i] implies
-     soundness under [a']. *)
+  (* Setoid transfer: if [i] and [a'] agree up to [domain_eq m] on the keys
+     that appear in (clause_vars c) for each [c] in [cs] (Hcompat), then
+     soundness of [cs] under [i] implies soundness under [a']. *)
   Lemma all_clause_sound_setoid (m : model V) (Hm : model_ok V m)
       (i a' : V_map (domain V m)) (cs : list (clause V V))
-      (Hcompat : forall k d, map.get i k = Some d ->
-                   exists d', map.get a' k = Some d' /\ domain_eq V m d d')
+      (Hcompat : forall c, In c cs -> forall k, In k (clause_vars V V c) ->
+                   forall d, map.get i k = Some d ->
+                     exists d', map.get a' k = Some d' /\ domain_eq V m d d')
     : all (clause_sound_for_model V V V_map m i) cs ->
       all (clause_sound_for_model V V V_map m a') cs.
   Proof.
@@ -113,9 +116,9 @@ Section WithVar.
     - exact I.
     - destruct Hall as [Hc Hcs].
       split.
-      2: { exact (IH Hcs). }
+      2: { exact (IH (fun c0 Hc0 => Hcompat c0 (in_cons _ c0 _ Hc0)) Hcs). }
       destruct c as [x y | a].
-      + (* eq_clause x y *)
+      + (* eq_clause x y; clause_vars V V (eq_clause x y) = [x; y] *)
         unfold clause_sound_for_model, eq_sound_for_model in *.
         destruct (map.get i x) as [dx|] eqn:Hx.
         2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
@@ -123,15 +126,19 @@ Section WithVar.
         destruct (map.get i y) as [dy|] eqn:Hy.
         2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
         cbn [Is_Some_satisfying] in Hc.
-        destruct (Hcompat x dx Hx) as (dx' & Hx' & Heq_x).
-        destruct (Hcompat y dy Hy) as (dy' & Hy' & Heq_y).
+        destruct (Hcompat (eq_clause x y) (in_eq _ _) x
+                    (or_introl eq_refl) dx Hx)
+          as (dx' & Hx' & Heq_x).
+        destruct (Hcompat (eq_clause x y) (in_eq _ _) y
+                    (or_intror (or_introl eq_refl)) dy Hy)
+          as (dy' & Hy' & Heq_y).
         rewrite Hx', Hy'.
         cbn [Is_Some_satisfying].
         pose proof (domain_eq_PER V (model_ok:=Hm)) as Hper.
         pose proof (@PER_Symmetric _ _ Hper) as Hsym.
         pose proof (@PER_Transitive _ _ Hper) as Htrans.
         exact (Htrans _ _ _ (Htrans _ _ _ (Hsym _ _ Heq_x) Hc) Heq_y).
-      + (* atom_clause a *)
+      + (* atom_clause a; clause_vars V V (atom_clause a) = atom_ret a :: atom_args a *)
         unfold clause_sound_for_model, atom_sound_for_model in *.
         destruct (list_Mmap (map.get i) (atom_args a)) as [iargs|] eqn:Hmm.
         2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
@@ -139,9 +146,14 @@ Section WithVar.
         destruct (map.get i (atom_ret a)) as [iret|] eqn:Hret.
         2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
         cbn [Is_Some_satisfying] in Hc.
-        destruct (list_Mmap_get_setoid m i a' Hcompat (atom_args a) iargs Hmm)
+        destruct (list_Mmap_get_setoid m i a' (atom_args a)
+                    (fun k Hk => Hcompat (atom_clause a) (in_eq _ _) k
+                                   (or_intror Hk))
+                    iargs Hmm)
           as (a'args & Ha'args & Hall2).
-        destruct (Hcompat (atom_ret a) iret Hret) as (a'ret & Hret' & Heq_ret).
+        destruct (Hcompat (atom_clause a) (in_eq _ _) (atom_ret a)
+                    (or_introl eq_refl) iret Hret)
+          as (a'ret & Hret' & Heq_ret).
         rewrite Ha'args, Hret'.
         cbn [Is_Some_satisfying].
         exact (@interprets_to_preserved V m Hm _ iargs a'args iret a'ret Hc Hall2 Heq_ret).
@@ -721,7 +733,7 @@ Section WithVar.
        unconfined [a] would have no [atom_tree] in [eF] and break coverage). ===== *)
     Lemma assumption_ids_agree
         (a i2 : V_map (domain V (lang_model l)))
-        (eF : instance) (sub : named_list V) (cc : ctx)
+        (eF : instance) (sub : named_list V) (cc : ctx) (P : V -> Prop)
         (Hsnd_a : forall al, atom_in_egraph al eF ->
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hsnd_i2 : forall al, atom_in_egraph al eF ->
@@ -732,19 +744,19 @@ Section WithVar.
                      /\ map.get i2 (named_list_lookup default sub x) = Some d2
                      /\ domain_eq V (lang_model l) d1 d2)
         (Hdom : map fst cc = map fst sub)
-        (Hcover : forall k da d,
+        (Hcover : forall k da d, P k ->
                     map.get a k = Some da -> map.get i2 k = Some d ->
                     (exists e t, wf_term l cc e t /\ atom_tree eF sub e k)
                   \/ (exists ts, wf_sort l cc ts /\ atom_tree_sort eF sub ts k))
-      : forall k d da, map.get i2 k = Some d -> map.get a k = Some da ->
+      : forall k d da, P k -> map.get i2 k = Some d -> map.get a k = Some da ->
           domain_eq V (lang_model l) d da.
     Proof.
-      intros k d da Hi2 Ha.
+      intros k d da HP Hi2 Ha.
       pose proof (domain_eq_PER V
         (model_ok:=(@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)))
         as Hper.
       pose proof (@PER_Symmetric _ _ Hper) as Hsym.
-      destruct (Hcover k da d Ha Hi2) as [ (e & t & Hwt & Htree) | (ts & Hws & Htree) ].
+      destruct (Hcover k da d HP Ha Hi2) as [ (e & t & Hwt & Htree) | (ts & Hws & Htree) ].
       - destruct (atom_tree_deq a i2 eF sub cc Hsnd_a Hsnd_i2 Hleaf Hdom e t Hwt k Htree)
           as (d1 & d2 & Ha' & Hi2' & Hdeq).
         assert (d1 = da) by congruence; assert (d2 = d) by congruence; subst d1 d2.
@@ -840,17 +852,20 @@ Section WithVar.
 
     (* ===== R4 assembly core (pure plumbing): given the canonical interp i2
        sound on all seq_conclusions clauses, well-formed, and AGREEING with the
-       adversary a wherever both are defined, build a' := putmany i2 a (a wins),
-       which extends a and is sound on the conclusions (via all_clause_sound_setoid:
-       fresh ids -> i2 [reflexive], shared ids -> a [Hagree]). ===== *)
+       adversary a wherever both are defined ON CONCLUSION VARS, build
+       a' := putmany i2 a (a wins), which extends a and is sound on the
+       conclusions (via all_clause_sound_setoid). ===== *)
     Lemma term_concl_construct (a i2 : V_map (domain V (lang_model l)))
         name c args t
         (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
         (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
                       (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
                                           succ sort_of l X HX rf name (term_rule c args t))))
-        (Hagree : forall k d da, map.get i2 k = Some d -> map.get a k = Some da ->
-                    domain_eq V (lang_model l) d da)
+        (Hagree : forall cl, In cl (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
+                                          succ sort_of l X HX rf name (term_rule c args t))) ->
+                    forall k, In k (clause_vars V V cl) ->
+                    forall d da, map.get i2 k = Some d -> map.get a k = Some da ->
+                      domain_eq V (lang_model l) d da)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
@@ -864,20 +879,44 @@ Section WithVar.
                  (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k v Hv).
       - eapply all_clause_sound_setoid;
           [ exact (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) | | exact Hclauses ].
-        intros k d Hk.
+        intros cl Hcl k Hk d Hk_get.
         destruct (map.get a k) as [da|] eqn:Hak.
         + exists da. split.
           * exact (@Properties.map.get_putmany_right V (domain V (lang_model l))
                      (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k da Hak).
-          * exact (Hagree k d da Hk Hak).
+          * exact (Hagree cl Hcl k Hk d da Hk_get Hak).
         + exists d. split.
           * rewrite (@Properties.map.get_putmany_left V (domain V (lang_model l))
                        (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k Hak).
-            exact Hk.
-          * exact (Hwf_i2 k d Hk).
+            exact Hk_get.
+          * exact (Hwf_i2 k d Hk_get).
     Qed.
 
-    (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
+    (* ===== Residual coverage obligation (conclusion vars only) ===== *)
+    (* This is the single remaining Admitted: for every id k appearing in a
+       conclusion clause var, if both a and i2 map k, then k is covered by
+       an atom_tree in the assumption egraph. *)
+    Lemma Hcover_concl_term name c args t
+        (a i2 : V_map (domain V (lang_model l)))
+        (sg : subst) (Hin : In (name, term_rule c args t) l)
+        (Hsg : wf_subst l [] sg c)
+        (Hsnd_a : forall al, atom_in_egraph al
+                    (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) ->
+                    atom_sound_for_model V V V_map (lang_model l) a al)
+      : forall k da d,
+          In k (flat_map (clause_vars V V) (seq_conclusions
+                   (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
+                      X HX rf name (term_rule c args t)))) ->
+          map.get a k = Some da -> map.get i2 k = Some d ->
+          (exists e t', wf_term l c e t'
+             /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e k)
+        \/ (exists ts, wf_sort l c ts
+             /\ atom_tree_sort (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+                               (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ts k).
+    Admitted.
+
+    (* ===== (II) conclusion obligation for term rules ===== *)
     Lemma term_rule_concl_obligation name c args t
         (a : V_map (domain V (lang_model l)))
         (sg : subst)
@@ -889,12 +928,61 @@ Section WithVar.
                                 (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) x)
                       = Some (inl (named_list_lookup default sg x)))
         (Hin : In (name, term_rule c args t) l)
+        (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                         (empty_egraph V_default X)))) = Success tt)
+        (Hsnd_a : forall al, atom_in_egraph al
+                    (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) ->
+                    atom_sound_for_model V V V_map (lang_model l) a al)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
             (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
                                 X HX rf name (term_rule c args t))).
-    Admitted.
+    Proof.
+      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
+      set (e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) in *.
+      assert (Hwfc : wf_ctx l c).
+      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
+        rewrite invert_wf_term_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
+      pose proof (conclusion_i2_sound_assum name c args t sg Hin Hsg)
+        as (i2 & Hsnd_concl_i2 & Hai2 & Hsnd_i2_assum).
+      pose proof (concl_clauses_sound_term name c args t sg Hin Hsg i2 Hsnd_concl_i2)
+        as Hclauses.
+      assert (Hwf_i2 : forall k d, map.get i2 k = Some d ->
+                         domain_eq V (lang_model l) d d).
+      { intros k d Hk.
+        exact (Semantics.idx_interpretation_wf V V V_map V_map V_trie unit (lang_model l)
+                 i2 _ Hsnd_concl_i2 k d Hk). }
+      pose proof (assumption_egraph_sound c Hwfc sg Hsg) as Htmp.
+      destruct Htmp as (_ & i1_tmp & _ & Hfst_sub & _).
+      set (P := fun k => In k (flat_map (clause_vars V V)
+                    (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                                        (term_rule c args t))))).
+      assert (Hleaf : forall x, In x (map fst sub) ->
+                        exists d1 d2,
+                          map.get a (named_list_lookup default sub x) = Some d1
+                          /\ map.get i2 (named_list_lookup default sub x) = Some d2
+                          /\ domain_eq V (lang_model l) d1 d2).
+      { exact (leaf_agree a i2 sg c sub Hwfc Hsg Hmapfst Hfst_sub Hfaith Hai2). }
+      assert (Hcover_res : forall k da d, P k ->
+                  map.get a k = Some da -> map.get i2 k = Some d ->
+                  (exists e t', wf_term l c e t' /\ atom_tree e_assum sub e k)
+                \/ (exists ts, wf_sort l c ts /\ atom_tree_sort e_assum sub ts k)).
+      { intros k da d HP Ha Hi2k.
+        exact (Hcover_concl_term name c args t a i2 sg Hin Hsg Hsnd_a k da d HP Ha Hi2k). }
+      assert (Hagree : forall k d da, P k -> map.get i2 k = Some d ->
+                  map.get a k = Some da -> domain_eq V (lang_model l) d da).
+      { exact (assumption_ids_agree a i2 e_assum sub c P
+                 Hsnd_a Hsnd_i2_assum Hleaf (eq_sym Hfst_sub) Hcover_res). }
+      exact (term_concl_construct a i2 name c args t Hwf_i2 Hclauses
+               (fun cl Hcl k Hk d da Hi2k Ha =>
+                  Hagree k d da
+                    (proj2 (in_flat_map (clause_vars V V)
+                          (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                                              (term_rule c args t))) k)
+                       (ex_intro _ cl (conj Hcl Hk)))
+                    Hi2k Ha)).
+    Qed.
 
     (* ===== (B0) term-rule adapter ===== *)
     Lemma model_satisfies_rule_adapter_term name c args t
@@ -932,7 +1020,8 @@ Section WithVar.
                     Hsucc Hsnd_atoms) as Hinv.
       destruct Hinv as [sg [ Hsg [ Hmapfst Hfaith ] ] ].
       (* (II) conclusion construction. *)
-      exact (term_rule_concl_obligation name c args t a sg Hsg Hmapfst Hfaith Hin).
+      exact (term_rule_concl_obligation name c args t a sg Hsg Hmapfst Hfaith Hin
+               Hsucc Hsnd_atoms).
     Qed.
 
     (* ===== (II) conclusion obligation for sort rules — Admitted placeholder ===== *)
