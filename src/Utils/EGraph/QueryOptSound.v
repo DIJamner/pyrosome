@@ -4892,6 +4892,37 @@ Section WithMap.
           exact (IH x y d Hlook Hopt).
   Qed.
 
+  (* D0 domain converse: every key of [pullback_assignment a_opt sub] comes
+     from some pair (x,y) in [sub] with [a_opt] defined at [y].  Stated with
+     [In (x,y) sub] rather than the first-lookup image of [x], since on
+     duplicate keys the head pair may [a_opt]-miss while a later occurrence
+     supplies the value.  Used (with [clauses_to_instance_sub_in_domain] +
+     uf id-freshness) to discharge domain-confinement of the pullback
+     assignment [a_src] in [optimize_sequent_forward_atoms]. *)
+  Lemma pullback_assignment_dom_converse {A} (a_opt : idx_map A)
+        (sub : named_list idx idx) (x : idx) :
+    Sep.has_key x (pullback_assignment a_opt sub) ->
+    exists y, In (x, y) sub /\ Sep.has_key y a_opt.
+  Proof.
+    induction sub as [| [x0 y0] sub' IH]; intros Hhk.
+    - cbn [pullback_assignment fold_right] in Hhk.
+      unfold Sep.has_key in Hhk. rewrite map.get_empty in Hhk. destruct Hhk.
+    - cbn [pullback_assignment fold_right] in Hhk.
+      destruct (map.get a_opt y0) as [d|] eqn:Hy0.
+      + (* head puts x0 -> d *)
+        eqb_case x x0.
+        * exists y0. split; [ left; reflexivity | ].
+          unfold Sep.has_key; rewrite Hy0; exact I.
+        * assert (Sep.has_key x (pullback_assignment a_opt sub')) as Hhk'.
+          { unfold Sep.has_key in *. rewrite map.get_put_diff in Hhk by congruence.
+            exact Hhk. }
+          destruct (IH Hhk') as (y & Hin & Hhky).
+          exists y. split; [ right; exact Hin | exact Hhky ].
+      + (* head does nothing *)
+        destruct (IH Hhk) as (y & Hin & Hhky).
+        exists y. split; [ right; exact Hin | exact Hhky ].
+  Qed.
+
   (* Helper: if every element of L has a sub-image, and
      list_Mmap (map.get a_opt) (map (named_list_lookup default sub) L) = Some doms,
      then list_Mmap (map.get (pullback_assignment a_opt sub)) L = Some doms. *)
