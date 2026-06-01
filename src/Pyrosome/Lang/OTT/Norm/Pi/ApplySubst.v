@@ -226,3 +226,160 @@ Proof.
       rewrite Hnth. apply t_ne, n_var.
       cbn [nth_error]. rewrite nth_error_map, He. cbn [option_map]. reflexivity.
 Qed.
+
+(* ===================================================================== *)
+(* Part D : shift-cons cancellation and [wf_ssub_snoc].                    *)
+(*                                                                        *)
+(* The renaming-then-substitution identity  (a · s) ∘ ↑ = s : applying     *)
+(* [a :: s] to a once-shifted (scoped) value is the same as applying [s]   *)
+(* to the value — the head [a] is never reached because [shift_val c 1]    *)
+(* skips index [c].  This is the structural ingredient that lets a         *)
+(* substitution go under a binder when the bound variable receives a       *)
+(* CONCRETE value (the application / [a :: sg] case), the dual of          *)
+(* [wf_ssub_up] (which handles the [up sg] / weakening-the-substitution    *)
+(* case).  Proof is by induction on the value, INVERTING the [Apply]       *)
+(* derivation: the output and the codomain length [m] are preserved, so    *)
+(* the [Vapp]/beta witness is reused verbatim — no hereditary reduction    *)
+(* has to be re-run. *)
+(* ===================================================================== *)
+
+(* [s2] inserts a hole at cutoff [c] into [s]: reading [s2] at the shifted
+   index returns [s]'s entry, for in-range indices (which is all a scoped
+   value reaches). *)
+Definition InsAt (c n : nat) (s s2 : ssub) : Prop :=
+  forall k, k < n ->
+    nth_default (vNe (nVar (sh c k))) s2 (sh c k) = nth_default (vNe (nVar k)) s k.
+
+Lemma nth_default_up : forall s i,
+    nth_default (vNe (nVar (S i))) (up s) (S i)
+    = shift_val 0 1 (nth_default (vNe (nVar i)) s i).
+Proof.
+  intros s i. unfold up. rewrite nth_default_cons_S. unfold nth_default.
+  rewrite nth_error_map. destruct (nth_error s i) as [w|]; cbn [option_map].
+  - reflexivity.
+  - cbn [shift_val shift_ne Nat.ltb Nat.leb]. do 2 f_equal. Lia.lia.
+Qed.
+
+Lemma InsAt_up : forall c n s s2,
+    InsAt c n s s2 -> InsAt (S c) (S n) (up s) (up s2).
+Proof.
+  intros c n s s2 H k Hk. destruct k as [|k'].
+  - replace (sh (S c) 0) with 0 by reflexivity.
+    unfold up, nth_default. cbn [nth_error]. reflexivity.
+  - rewrite sh_S, !nth_default_up. f_equal. apply H. Lia.lia.
+Qed.
+
+Lemma InsAt_base : forall s a, InsAt 0 (length s) s (a :: s).
+Proof.
+  intros s a k Hk. replace (sh 0 k) with (S k) by (unfold sh; reflexivity).
+  rewrite nth_default_cons_S. apply nth_default_irrel. exact Hk.
+Qed.
+
+Lemma Apply_cancel :
+  (forall T n0 m c s s2 T', ne_below_ty n0 T -> InsAt c n0 s s2 ->
+     Apply_ty m s T T' -> Apply_ty m s2 (shift_ty c 1 T) T')
+  * ((forall v n0 m c s s2 v', ne_below_val n0 v -> InsAt c n0 s s2 ->
+       Apply_val m s v v' -> Apply_val m s2 (shift_val c 1 v) v')
+  *  (forall nn n0 m c s s2 w, ne_below_ne n0 nn -> InsAt c n0 s s2 ->
+       Apply_ne m s nn w -> Apply_ne m s2 (shift_ne c 1 nn) w)).
+Proof.
+  apply (sval_mutind
+    (fun T => forall n0 m c s s2 T', ne_below_ty n0 T -> InsAt c n0 s s2 ->
+       Apply_ty m s T T' -> Apply_ty m s2 (shift_ty c 1 T) T')
+    (fun v => forall n0 m c s s2 v', ne_below_val n0 v -> InsAt c n0 s s2 ->
+       Apply_val m s v v' -> Apply_val m s2 (shift_val c 1 v) v')
+    (fun nn => forall n0 m c s s2 w, ne_below_ne n0 nn -> InsAt c n0 s s2 ->
+       Apply_ne m s nn w -> Apply_ne m s2 (shift_ne c 1 nn) w)).
+  - (* dU *) intros r l n0 m c s s2 T' _ Hins Hap. inversion Hap; subst. cbn. apply ap_dU.
+  - (* dEl *) intros e IHe n0 m c s s2 T' Hne Hins Hap. inversion Hap; subst.
+    cbn. apply ap_dEl. eapply IHe; [ exact Hne | exact Hins | eassumption ].
+  - (* vNe *) intros nn IHnn n0 m c s s2 v' Hne Hins Hap. inversion Hap; subst.
+    cbn. apply ap_ne. eapply IHnn; [ exact Hne | exact Hins | eassumption ].
+  - (* vZero *) intros n0 m c s s2 v' _ Hins Hap. inversion Hap; subst. cbn. apply ap_zero.
+  - (* vSuc *) intros v IHv n0 m c s s2 v' Hne Hins Hap. inversion Hap; subst.
+    cbn. apply ap_suc. eapply IHv; [ exact Hne | exact Hins | eassumption ].
+  - (* vNat *) intros n0 m c s s2 v' _ Hins Hap. inversion Hap; subst. cbn. apply ap_nat.
+  - (* vEmpty *) intros n0 m c s s2 v' _ Hins Hap. inversion Hap; subst. cbn. apply ap_empty.
+  - (* vPi *) intros F IHF B IHB n0 m c s s2 v' Hne Hins Hap.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB].
+    inversion Hap; subst. cbn. apply ap_pi.
+    + eapply IHF; [ exact HneF | exact Hins | eassumption ].
+    + eapply IHB; [ exact HneB | apply InsAt_up; exact Hins | eassumption ].
+  - (* vPiI *) intros F IHF B IHB n0 m c s s2 v' Hne Hins Hap.
+    cbn [ne_below_val] in Hne. destruct Hne as [HneF HneB].
+    inversion Hap; subst. cbn. apply ap_piI.
+    + eapply IHF; [ exact HneF | exact Hins | eassumption ].
+    + eapply IHB; [ exact HneB | apply InsAt_up; exact Hins | eassumption ].
+  - (* vLam *) intros b IHb n0 m c s s2 v' Hne Hins Hap.
+    cbn [ne_below_val] in Hne. inversion Hap; subst. cbn. apply ap_lam.
+    eapply IHb; [ exact Hne | apply InsAt_up; exact Hins | eassumption ].
+  - (* vLamI *) intros b IHb n0 m c s s2 v' Hne Hins Hap.
+    cbn [ne_below_val] in Hne. inversion Hap; subst. cbn. apply ap_lamI.
+    eapply IHb; [ exact Hne | apply InsAt_up; exact Hins | eassumption ].
+  - (* nVar *) intros k n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. inversion Hap; subst. cbn [shift_ne].
+    replace (if Nat.ltb k c then k else k + 1) with (sh c k)
+      by (unfold sh; destruct (Nat.ltb k c); [ reflexivity | f_equal; Lia.lia ]).
+    rewrite <- (Hins k Hne). apply ap_var.
+  - (* nEmptyrec *) intros rA lA A IHA scrut IHscr n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. destruct Hne as [HneA Hnescr].
+    inversion Hap; subst. cbn [shift_ne]. eapply ap_emptyrec.
+    + eapply IHA; [ exact HneA | exact Hins | eassumption ].
+    + eapply IHscr; [ exact Hnescr | exact Hins | eassumption ].
+  - (* nApp *) intros f IHf a IHa n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+    inversion Hap; subst. cbn [shift_ne]. eapply ap_app.
+    + eapply IHf; [ exact Hnef | exact Hins | eassumption ].
+    + eapply IHa; [ exact Hnea | exact Hins | eassumption ].
+    + eassumption.
+  - (* nAppI *) intros f IHf a IHa n0 m c s s2 w Hne Hins Hap.
+    cbn [ne_below_ne] in Hne. destruct Hne as [Hnef Hnea].
+    inversion Hap; subst. cbn [shift_ne]. eapply ap_appI.
+    + eapply IHf; [ exact Hnef | exact Hins | eassumption ].
+    + eapply IHa; [ exact Hnea | exact Hins | eassumption ].
+    + eassumption.
+Qed.
+
+Definition Apply_ty_cancel  := fst Apply_cancel.
+Definition Apply_val_cancel := fst (snd Apply_cancel).
+Definition Apply_ne_cancel  := snd (snd Apply_cancel).
+
+(* Extending a well-typed substitution by a concrete value for the freshly
+   bound variable.  This is the substitution that goes under a binder in the
+   APPLICATION direction ([a :: sg], dual to [wf_ssub_up]'s [up sg]). *)
+Lemma wf_ssub_snoc : forall Delta sg Ge a F F' rF lF,
+    wf_senv Ge ->
+    has_svalty Ge F (dU rF lF) ->
+    wf_ssub Delta sg Ge ->
+    Apply_val (length Delta) sg F F' ->
+    has_svalty Delta a (dEl F') ->
+    wf_ssub Delta (a :: sg)
+            (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge).
+Proof.
+  intros Delta sg Ge a F F' rF lF Hwf HF [Hlen Hpt] HFa Ha.
+  assert (HinsB : InsAt 0 (length Ge) sg (a :: sg)).
+  { rewrite <- Hlen. apply InsAt_base. }
+  split.
+  - cbn [length]. rewrite length_map. rewrite Hlen. reflexivity.
+  - intros k T He. destruct k as [|k'].
+    + (* head : the fresh variable maps to [a] at [dEl F'] *)
+      cbn [nth_error] in He. injection He as He. subst T.
+      exists (dEl F'). split.
+      * apply ap_dEl.
+        eapply Apply_val_cancel;
+          [ exact (has_svalty_scoped HF) | exact HinsB | exact HFa ].
+      * cbn [nth_default nth_error]. exact Ha.
+    + (* tail : reuse the original entry, post-composed with the cancel *)
+      cbn [nth_error] in He. rewrite nth_error_map in He.
+      destruct (nth_error Ge k') as [Tk|] eqn:E; cbn [option_map] in He;
+        [ injection He as He; subst T | discriminate He ].
+      destruct (Hpt k' Tk E) as [Tk' [Hap Hty]].
+      assert (Hk : k' < length Ge)
+        by (apply (proj1 (nth_error_Some Ge k')); rewrite E; discriminate).
+      exists Tk'. split.
+      * (* [cancel] on the UNSHIFTED [Tk]: its conclusion is exactly the goal
+           [Apply_ty _ (a::sg) (shift_ty 0 1 Tk) Tk']. *)
+        eapply Apply_ty_cancel;
+          [ exact (wf_svalty_scoped (Hwf k' Tk E)) | exact HinsB | exact Hap ].
+      * rewrite nth_default_cons_S. exact Hty.
+Qed.
