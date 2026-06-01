@@ -7,7 +7,7 @@ Open Scope string.
 Open Scope list.
 From Utils Require Import Utils.
 From Pyrosome.Theory Require Import Core.
-From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply.
+From Pyrosome.Lang.OTT.Norm.Pi Require Import Domain Apply Reflect.
 Import Core.Notations.
 
 (* ===================================================================== *)
@@ -76,6 +76,22 @@ Section Typing.
   | t_lamI  : forall Ge F B b,
       has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B) ->
       has_svalty Ge (vLamI b) (dEl (vPiI F B))
+  (* ETA-typing of a relevant lambda (the rule that lets the eta-expanded
+     reflection of a neutral type-check, cf. [reflect_red]'s [LRpi] case).
+     The body [b] need only be well-typed at the codomain INSTANTIATED at the
+     eta-long reflection [ARG] of the bound variable: [B'] is [B] (once-shifted)
+     applied to [ARG :: id_list], matching how [n_app] types the eta-body
+     [nApp (shift n) ARG].  When the domain [F] is a base type, [ARG = vNe
+     (nVar 0)] and [B' = B], recovering [t_lam]; at a relevant-Pi domain [ARG]
+     is itself a lambda and [B' = B[ARG/0] <> B], which rigid [t_lam] cannot
+     type.  The [Reflect] premise pins [ARG] to the canonical eta-expansion of
+     the variable, so the rule is no more permissive than eta on normal forms. *)
+  | t_lam_eta : forall Ge F B b ARG B',
+      Reflect (S (length Ge)) (dEl (shift_val 0 1 F)) (nVar 0) ARG ->
+      Apply_val (S (length Ge)) (ARG :: id_list (S (length Ge)))
+                (shift_val 1 1 B) B' ->
+      has_svalty (dEl (shift_val 0 1 F) :: map (shift_ty 0 1) Ge) b (dEl B') ->
+      has_svalty Ge (vLam b) (dEl (vPi F B))
   with wf_neutral : senv -> neutral -> svalty -> Prop :=
   | n_var   : forall Ge k T, nth_error Ge k = Some T -> wf_neutral Ge (nVar k) T
   | n_emptyrec : forall Ge rA lA A scrut r l,
@@ -103,9 +119,9 @@ Scheme has_svalty_rect := Induction for has_svalty Sort Prop
 Definition has_neutral_mutind
   (P0 : forall Ge v T, has_svalty Ge v T -> Prop)
   (P1 : forall Ge n T, wf_neutral Ge n T -> Prop) := fun
-  fne fzero fsuc fNat fEmpty fPi fPiI flam flamI fvar femptyrec fapp fappI =>
-  ( @has_svalty_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI fvar femptyrec fapp fappI
-  , @wf_neutral_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI fvar femptyrec fapp fappI ).
+  fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI =>
+  ( @has_svalty_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI
+  , @wf_neutral_rect P0 P1 fne fzero fsuc fNat fEmpty fPi fPiI flam flamI flameta fvar femptyrec fapp fappI ).
 
 (* Canonical forms at El Empty: only a neutral inhabits it (used by Emptyrec). *)
 Lemma canonical_empty : forall Ge v, has_svalty Ge v (dEl vEmpty) -> exists n, v = vNe n.

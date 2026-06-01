@@ -36,7 +36,7 @@ Proof.
   refine (has_neutral_mutind
     (fun Ge v T _ => ne_below_val (length Ge) v)
     (fun Ge n T _ => ne_below_ne (length Ge) n)
-    _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn. exact IHn.
   - (* t_zero *) intros Ge. exact I.
   - (* t_suc *) intros Ge v hv IHv. exact IHv.
@@ -51,6 +51,8 @@ Proof.
   - (* t_lam *) intros Ge F B b hb IHb. cbn.
     cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
   - (* t_lamI *) intros Ge F B b hb IHb. cbn.
+    cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
+  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap hb IHb. cbn.
     cbn [length] in IHb. rewrite length_map in IHb. exact IHb.
   - (* n_var *) intros Ge k T He. cbn.
     apply (proj1 (nth_error_Some Ge k)). rewrite He. discriminate.
