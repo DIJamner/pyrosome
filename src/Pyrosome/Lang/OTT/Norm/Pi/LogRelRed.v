@@ -136,3 +136,19 @@ Proof.
   destruct (Hnth k T He) as [T' [[Hap _RTy] RTm]].
   exists T'. split; [ exact Hap | apply RedTm_wf; exact RTm ].
 Qed.
+
+(* ===================================================================== *)
+(* Canonical forms at base types: invert [LR2] at a fixed type former to    *)
+(* read off the predicate (the type-former determines [P]).                 *)
+(* ===================================================================== *)
+
+Lemma RedTm_nat_inv : forall Ge v, RedTm Ge (dEl vNat) v -> RedNat Ge v.
+Proof.
+  intros Ge v [P [HLR Pv]]. inversion HLR; subst; exact Pv.
+Qed.
+
+Lemma RedTm_empty_inv : forall Ge v,
+    RedTm Ge (dEl vEmpty) v -> RedNeutral Ge (dEl vEmpty) v.
+Proof.
+  intros Ge v [P [HLR Pv]]. inversion HLR; subst; exact Pv.
+Qed.
