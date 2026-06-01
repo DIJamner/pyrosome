@@ -1,5 +1,27 @@
 # (II) conclusion-construction design — term_rule_concl_obligation / sort_rule_concl_obligation
 
+> ## STATUS AFTER SESSION 47 (read this first)
+> All assembly pieces for `term_rule_concl_obligation` are 0-axiom DONE except TWO:
+>  1. **Hcover (coverage)** — the only remaining MATH. `assumption_ids_agree` (DONE) reduces
+>     Hagree to: every id in dom(a)∩dom(i2) carries an atom_tree/atom_tree_sort. Proving this
+>     needs (i) R5 confinement so dom(a) ⊆ forall_vars(e_assum atoms), and (ii) a coverage fact
+>     "every id in e_assum's atoms is a readback root". DECISION PENDING — option A (full add_ctx
+>     coverage induction, ~300 LoC, mirror add_ctx_readback Theorems.v:5557) vs option B (weaken
+>     all_clause_sound_setoid + term_concl_construct to clause-var-restricted compat ⇒ only need
+>     coverage for conclusion-clause-vars = x' leaves [trivial at_var] + shared sort rets [need
+>     atom_tree_sort + hash-cons identification]; avoids the big induction but needs add_open_term
+>     output characterization). **Resolve A-vs-B before delegating.**
+>  2. **R5 (contract)** — repoint the proven bridge `optimize_sequent_forward_atoms`
+>     (QueryOptSound.v:5306) hypothesis from open `model_satisfies_rule` (QueryOptSound.v:160,
+>     has_key) to a new `model_satisfies_rule_closed` (set_eq), add confinement premise to the
+>     two `*_rule_concl_obligation`s + adapters. a_src in the bridge is already confined (pullback).
+>     Risky (touches proven 0-axiom file) — do LAST.
+> DONE 0-axiom in AdapterGlue.v: assumption_ids_agree, egraph_atoms_sound, conclusion_i2_sound_assum
+> (+strengthened conclusion_egraph_sound), leaf_agree, term_concl_construct, concl_clauses_sound_term,
+> conclusion_egraph_sound, assumption_egraph_sound, atom_tree_deq/atom_tree_sort_deq/args_deq,
+> all_clause_sound_setoid. Then SORT mirror of everything. The two obligations remain `Admitted`.
+
+
 Target file: `src/Pyrosome/Tools/EGraph/AdapterGlue.v` (two `Admitted` obligations).
 Goal of each obligation: given `sg : wf_subst l [] sg c`, `Hmapfst`, `Hfaith` (the
 faithfulness output of `add_ctx_inversion` relating the query assignment `a` to the
@@ -173,18 +195,15 @@ Verified: rocq_assumptions = "Closed under the global context"; make builds Adap
  The 3 OPEN premises of assumption_ids_agree, with eF := e_assum, sub, cc := c:
   • Hsnd_a  : a sound on e_assum atoms — ALREADY HAVE as `Hsnd_atoms` in the adapter
               (assumption_atoms_sound (lang_model l) a _ Hassum). ✓ free.
-  • Hsnd_i2 : i2 sound on e_assum atoms. i2 (from conclusion_egraph_sound) is sound on e_concl,
-              NOT e_assum. Transfer: i2 extends i1, i1 sound on e_assum (assumption_egraph_sound),
-              atom_sound monotone-under-extends. ⚠ conclusion_egraph_sound does NOT expose i1/Hext12
-              — STRENGTHEN it to also return (i1, Hext12: extends i2 i1, Hsnd_i1_eassum) OR re-derive
-              the assumption chain inline. MEDIUM (~60 LoC, touches the proven conclusion_egraph_sound
-              Qed — restate, don't break).
-  • Hleaf   : a(lookup sub x)=Some(inl(sg x)) [Hfaith, after aligning In x (map fst sub) ↔ the
-              add_ctx readback var set]; i2(lookup sub x)=Some d2 with deq d2 (inl(sg x)) [from
-              Hai2=args_in_instance l (map snd sg) i2 (map snd sub): per-x extraction, lookup sub x =
-              snd of the x-entry]. Then d1:=inl(sg x), deq d1 d2 via PER on the args_in_instance deq.
-              Fiddly list/lookup alignment (~50 LoC).
-  • Hcover  : ⚠⚠ THE WALL (coverage). Stated on overlap; PROOF needs R5 confinement
+  • Hsnd_i2 : ✅ DONE (commit b3b997e). conclusion_egraph_sound STRENGTHENED to also return
+              (i1, Hsnd_i1: sound on e_assum, Hext12: extends i2 i1). New `egraph_atoms_sound`
+              (egraph_sound_for_interpretation → per-atom soundness) + `conclusion_i2_sound_assum`
+              (packages i2 sound on e_concl + args_in_instance + i2 sound on e_assum atoms via
+              atom_sound_extend on i1). 0 axioms.
+  • Hleaf   : ✅ DONE (commit 99c3f76). `leaf_agree` (abstract over a,i2,sg,cc,sub): Hfaith for the
+              a-side, Theorems.args_in_instance_in on Hai2 for the i2-side (gives lang_model_eq =
+              domain_eq), PER symmetry. 0 axioms. Feeds assumption_ids_agree's Hleaf directly.
+  • Hcover  : ⚠⚠ THE WALL (coverage) — THE ONLY REMAINING MATH. Stated on overlap; PROOF needs R5 confinement
               (dom a ⊆ forall_vars = ids in db_to_atoms e_assum) + the new COVERAGE induction:
               every id in e_assum's atoms carries atom_tree/atom_tree_sort. Explore verdict
               (S47): FEASIBLE but NEW induction mirroring add_ctx_readback (Theorems.v:5557-5870,
