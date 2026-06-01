@@ -708,6 +708,58 @@ Section WithVar.
           exact (IHsi t_si Hwft_si sid Htree_si a Hnode').
     Qed.
 
+    (* Sort-level wrapper of [atom_node_covered]: the assumption-coverage
+       frame characterizes each non-sort_of db atom as an [atom_node] of some
+       ctx-var's SORT skeleton (the phantom term [con n s] of [scon n s]).
+       Here [con n s] is the head of a wf_sort, not a wf_term, so the term
+       lemma does not apply directly; the [an_root] top atom is covered by the
+       sort itself ([scon n s]) and by the arg terms, the [an_sub] nodes by
+       [atom_node_covered] on the arg terms. *)
+    Lemma atom_tree_sort_node_covered (eF : instance) (sub : named_list V) (cc : ctx)
+      : forall n s, wf_sort l cc (scon n s) -> forall xs,
+          atom_tree_sort eF sub (scon n s) xs ->
+          forall a, atom_node eF sub (con n s) xs a ->
+            a.(atom_fn) <> sort_of
+            /\ (forall k, In k (a.(atom_ret) :: a.(atom_args)) ->
+                  (exists e t, wf_term l cc e t /\ atom_tree eF sub e k)
+                \/ (exists ts, wf_sort l cc ts /\ atom_tree_sort eF sub ts k)).
+    Proof.
+      intros n s Hws xs Htree_sort a Hnode.
+      inversion Hws; subst.
+      rename H2 into Hin0. rename H3 into Hwfa0.
+      unfold atom_tree_sort in Htree_sort.
+      destruct Htree_sort as [sids0 Htree_sort].
+      destruct Htree_sort as [HF2_sort Hatom_sort].
+      pose proof (wf_args_in_wf_term cc c' s Hwfa0) as Hwfs.
+      inversion Hnode; subst.
+      - (* an_root: a = Build_atom n sids xs *)
+        cbn [atom_fn atom_ret atom_args].
+        split.
+        + intro Heq. apply Hsof. rewrite <- Heq. eapply pair_fst_in. exact Hin0.
+        + intros k Hk. destruct Hk as [Hk | Hk].
+          * subst k. right.
+            exists (scon n s). split.
+            -- eapply wf_sort_by; eassumption.
+            -- unfold atom_tree_sort. eexists. split; [exact H1 | exact H4].
+          * left.
+            pose proof (Forall2_length H1) as Hlen.
+            destruct (in_list_exists_pair _ _ s _ k Hlen Hk) as [si Hsi].
+            pose proof (in_combine_l s _ si k Hsi) as Hin_si.
+            pose proof (forall2_in_combine_r _ _ (atom_tree eF sub) s _ H1 si k Hsi)
+              as Htree_si.
+            pose proof (in_all _ _ _ Hwfs Hin_si) as [t_si Hwft_si].
+            exists si, t_si. split; [exact Hwft_si | exact Htree_si].
+      - (* an_sub into s_i *)
+        pose proof (in_combine_l s sids si sid H3) as Hin_si.
+        pose proof (forall2_in_combine_r _ _ (atom_tree eF sub) s sids H1 si sid H3)
+          as Htree_si.
+        pose proof (in_all _ _ _ Hwfs Hin_si) as [t_si Hwft_si].
+        pose proof (atom_node_covered eF sub cc si t_si Hwft_si sid Htree_si a H6)
+          as [Hfn Hcov].
+        split; [exact Hfn|].
+        intros k Hk. left. exact (Hcov k Hk).
+    Qed.
+
     (* ===== assumption_ids_agree: the agreement engine.  Given [a] and [i2]
        both sound on [eF]'s atoms, agreeing up to [domain_eq] on the readback
        leaves ([Hleaf]), and COVERAGE ([Hcover]: every id mapped by BOTH [a] and
