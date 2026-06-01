@@ -16,7 +16,9 @@
 >     `ctx_readback_eF`, the F1c-CANONICALIZED form, CtxReadback.v:134-143 — NOT model-free ctx_readback.
 >     ctx_readback_eF pins the sort_of[x'] atom's ret to the sort root xs (eliminates the tx' existential
 >     ⇒ canonicalization is ALREADY baked in — no extra rebuild fact needed for A2):
->       A1 — CHEAP (~10 LoC, minimal risk). add_ctx_inversion's PROOF (AddCtxInversion.v:~211) already
+>       A1 — ✅ DONE (commit 34787ba): `add_ctx_readback_eF` in AddCtxInversion.v, 0 axioms — same hyps as
+>           add_ctx_inversion, returns `@CtxReadback.ctx_readback_eF V _ _ V_map V_trie sort_of X eF sub c`.
+>           (was: CHEAP ~10 LoC). add_ctx_inversion's PROOF (AddCtxInversion.v:~211) already
 >           has `Hrbef : ctx_readback_eF eF sub c` in context (from add_ctx_readback :206 → ctx_readback_to_eF
 >           :211). Either STRENGTHEN add_ctx_inversion to ALSO return ctx_readback_eF eF sub c, or write a
 >           sibling `add_ctx_readback_eF` with the SAME hyps that returns it (re-running the 3-line chain:
