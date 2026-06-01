@@ -31,6 +31,7 @@ Section WithVar.
   Notation lang := (@lang V).
 
   Notation wf_subst l := (wf_subst (Model:= core_model l)).
+  Notation wf_args l := (wf_args (Model:= core_model l)).
   Notation wf_ctx l := (wf_ctx (Model:= core_model l)).
 
   Context
@@ -159,6 +160,10 @@ Section WithVar.
     Local Notation args_in_instance :=
       (@Theorems.args_in_instance V V_Eqb V_map sort_of).
     Local Notation instance := (Defs.instance V V V_map V_map V_trie X).
+    Local Notation atom_tree :=
+      (@Theorems.atom_tree V V_Eqb V_default V_map V_trie X).
+    Local Notation atom_tree_sort :=
+      (@Theorems.atom_tree_sort V V_Eqb V_default V_map V_trie X).
 
     (* ===== assumption egraph is ok and sound ===== *)
     Lemma assumption_egraph_sound c (Hwfc : wf_ctx l c) (sg : subst)
@@ -375,6 +380,111 @@ Section WithVar.
           (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
              V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl Hsnd)
           (in_map (@atom_clause V V) _ _ Hin_concl)).
+    Qed.
+
+    (* ===== R3: relational readback-agreement (the one non-mechanical lemma) =====
+       Two interps j1,j2 both sound on the assumption egraph eF's atoms, agreeing
+       up to domain_eq on the readback leaves, agree up to domain_eq on every id
+       carrying an atom_tree.  Purely relational (no term denotation): the con case
+       is closed by interprets_to_functional.  Mirrors atom_tree_to_represents. *)
+    Lemma atom_tree_args_deq
+        (j1 j2 : V_map (domain V (lang_model l)))
+        (eF : instance) (sub : named_list V) (cc c' : ctx)
+        (Hsnd1 : forall al, atom_in_egraph al eF ->
+                   atom_sound_for_model V V V_map (lang_model l) j1 al)
+        (Hsnd2 : forall al, atom_in_egraph al eF ->
+                   atom_sound_for_model V V V_map (lang_model l) j2 al)
+        (Hleaf : forall x, In x (map fst sub) ->
+                   exists d1 d2,
+                     map.get j1 (named_list_lookup default sub x) = Some d1
+                     /\ map.get j2 (named_list_lookup default sub x) = Some d2
+                     /\ domain_eq V (lang_model l) d1 d2)
+        (Hdom : map fst cc = map fst sub)
+        (s : list term)
+        (Hwfa : wf_args l cc s c')
+        (IHs : all (fun e => forall t, wf_term l cc e t -> forall xe,
+                   atom_tree eF sub e xe ->
+                   exists d1 d2, map.get j1 xe = Some d1
+                              /\ map.get j2 xe = Some d2
+                              /\ domain_eq V (lang_model l) d1 d2) s)
+      : forall sids, Forall2 (atom_tree eF sub) s sids ->
+          exists d1s d2s,
+            list_Mmap (map.get j1) sids = Some d1s
+            /\ list_Mmap (map.get j2) sids = Some d2s
+            /\ all2 (domain_eq V (lang_model l)) d1s d2s.
+    Proof.
+      revert IHs; induction Hwfa; intros IHs sids Htrees.
+      - safe_invert Htrees. exists [], []. cbn. tauto.
+      - safe_invert Htrees.
+        destruct IHs as [IHe IHs0].
+        match goal with
+          Ht0 : atom_tree eF sub _ ?y0, Htl : Forall2 (atom_tree eF sub) _ ?yl |- _ =>
+            destruct (IHe _ ltac:(eassumption) y0 Ht0) as (d1 & d2 & Hg1 & Hg2 & Hd);
+            destruct (IHHwfa IHs0 yl Htl) as (d1s & d2s & Hm1 & Hm2 & Hds)
+        end.
+        exists (d1 :: d1s), (d2 :: d2s).
+        cbn [list_Mmap].
+        rewrite Hg1, Hg2, Hm1, Hm2. cbn [Mbind Mret].
+        split; [reflexivity|]. split; [reflexivity|].
+        cbn [all2]. split; assumption.
+    Qed.
+
+    Lemma atom_tree_deq
+        (j1 j2 : V_map (domain V (lang_model l)))
+        (eF : instance) (sub : named_list V) (cc : ctx)
+        (Hsnd1 : forall al, atom_in_egraph al eF ->
+                   atom_sound_for_model V V V_map (lang_model l) j1 al)
+        (Hsnd2 : forall al, atom_in_egraph al eF ->
+                   atom_sound_for_model V V V_map (lang_model l) j2 al)
+        (Hleaf : forall x, In x (map fst sub) ->
+                   exists d1 d2,
+                     map.get j1 (named_list_lookup default sub x) = Some d1
+                     /\ map.get j2 (named_list_lookup default sub x) = Some d2
+                     /\ domain_eq V (lang_model l) d1 d2)
+        (Hdom : map fst cc = map fst sub)
+      : forall e t, wf_term l cc e t -> forall xe,
+          atom_tree eF sub e xe ->
+          exists d1 d2, map.get j1 xe = Some d1
+                     /\ map.get j2 xe = Some d2
+                     /\ domain_eq V (lang_model l) d1 d2.
+    Proof.
+      intro e; induction e as [x | n s IHs] using term_ind; intros t Hwt xe Htree.
+      - safe_invert Htree.
+        assert (In x (map fst cc)) as Hxc.
+        { change (In x (map fst cc)) with (ws_term (map fst cc) (var x)).
+          eapply wf_term_implies_ws; eauto with lang_core. }
+        rewrite Hdom in Hxc.
+        apply Hleaf; exact Hxc.
+      - safe_invert Htree.
+        apply WfCutElim.invert_wf_term_con in Hwt.
+        destruct Hwt as (c'0 & args0 & t' & Hin & Hwfa & _).
+        assert (IHsall : all (fun e => forall t, wf_term l cc e t -> forall xe,
+                   atom_tree eF sub e xe ->
+                   exists d1 d2, map.get j1 xe = Some d1
+                              /\ map.get j2 xe = Some d2
+                              /\ domain_eq V (lang_model l) d1 d2) s).
+        { clear -IHs. induction s as [|e0 s0 IH]; cbn; [exact I|].
+          destruct IHs as [IHe0 IHs0]. split; [exact IHe0 | exact (IH IHs0)]. }
+        match goal with
+          Htrees : Forall2 (atom_tree eF sub) s ?sids,
+          Hatom : atom_in_egraph (Build_atom n ?sids xe) eF |- _ =>
+            destruct (atom_tree_args_deq j1 j2 eF sub cc c'0 Hsnd1 Hsnd2 Hleaf Hdom
+                        s Hwfa IHsall sids Htrees) as (d1s & d2s & Hm1 & Hm2 & Hds);
+            pose proof (Hsnd1 _ Hatom) as Hsa1;
+            pose proof (Hsnd2 _ Hatom) as Hsa2
+        end.
+        unfold atom_sound_for_model in Hsa1, Hsa2.
+        cbn [atom_args atom_ret atom_fn] in Hsa1, Hsa2.
+        rewrite Hm1 in Hsa1. cbn [Is_Some_satisfying] in Hsa1.
+        rewrite Hm2 in Hsa2. cbn [Is_Some_satisfying] in Hsa2.
+        destruct (map.get j1 xe) as [out1|] eqn:Ho1;
+          [| cbn [Is_Some_satisfying] in Hsa1; contradiction].
+        destruct (map.get j2 xe) as [out2|] eqn:Ho2;
+          [| cbn [Is_Some_satisfying] in Hsa2; contradiction].
+        cbn [Is_Some_satisfying] in Hsa1, Hsa2.
+        exists out1, out2. split; [reflexivity|]. split; [reflexivity|].
+        pose proof (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) as Hmok.
+        exact (@interprets_to_functional V (lang_model l) Hmok n d1s d2s out1 out2 Hsa1 Hsa2 Hds).
     Qed.
 
     (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
