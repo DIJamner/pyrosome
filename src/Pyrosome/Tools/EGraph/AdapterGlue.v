@@ -541,6 +541,45 @@ Section WithVar.
       exact (@interprets_to_functional V (lang_model l) Hmok n d1s d2s out1 out2 Hsa1 Hsa2 Hds).
     Qed.
 
+    (* ===== R4 assembly core (pure plumbing): given the canonical interp i2
+       sound on all seq_conclusions clauses, well-formed, and AGREEING with the
+       adversary a wherever both are defined, build a' := putmany i2 a (a wins),
+       which extends a and is sound on the conclusions (via all_clause_sound_setoid:
+       fresh ids -> i2 [reflexive], shared ids -> a [Hagree]). ===== *)
+    Lemma term_concl_construct (a i2 : V_map (domain V (lang_model l)))
+        name c args t
+        (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
+        (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
+                      (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
+                                          succ sort_of l X HX rf name (term_rule c args t))))
+        (Hagree : forall k d da, map.get i2 k = Some d -> map.get a k = Some da ->
+                    domain_eq V (lang_model l) d da)
+      : exists a' : V_map (domain V (lang_model l)),
+          map.extends a' a /\
+          all (clause_sound_for_model V V V_map (lang_model l) a')
+            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
+                                succ sort_of l X HX rf name (term_rule c args t))).
+    Proof.
+      exists (map.putmany i2 a).
+      split.
+      - intros k v Hv.
+        exact (@Properties.map.get_putmany_right V (domain V (lang_model l))
+                 (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k v Hv).
+      - eapply all_clause_sound_setoid;
+          [ exact (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf) | | exact Hclauses ].
+        intros k d Hk.
+        destruct (map.get a k) as [da|] eqn:Hak.
+        + exists da. split.
+          * exact (@Properties.map.get_putmany_right V (domain V (lang_model l))
+                     (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k da Hak).
+          * exact (Hagree k d da Hk Hak).
+        + exists d. split.
+          * rewrite (@Properties.map.get_putmany_left V (domain V (lang_model l))
+                       (V_map _) (V_map_ok _) _ (@eqb_boolspec V V_Eqb V_Eqb_ok) i2 a k Hak).
+            exact Hk.
+          * exact (Hwf_i2 k d Hk).
+    Qed.
+
     (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
     Lemma term_rule_concl_obligation name c args t
         (a : V_map (domain V (lang_model l)))
