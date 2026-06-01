@@ -1,37 +1,8 @@
 (* ============================================================================
-   Depth-restricted fold_spec for pos_trie (the last db-trie law).
-   Ladder: A non-emptiness, B extensionality, C elements+spec+nodup (DONE),
-   D fold=fold_left over elements, E generic induction => fold_spec.
-
-   Key design choice: pt_elements'_aux is defined as a fuel-based fixpoint
-   pt_elements'_aux n t stack (fuel = depth), since a plain structural
-   Fixpoint on pos_trie' does not pass Coq's termination checker (the
-   recursive call in the node case descends through trie_elements, which
-   is opaque).  All helper lemmas are proved by induction on the fuel n.
-
-   Signature changes from PosTrieFoldSpec.v skeleton:
-     - We define pt_elements_n n m instead of pt_elements m, taking an
-       explicit depth n as a parameter.  Consequently:
-     - pt_elements_spec has signature:
-         forall n m k v, depth m n -> (In (k,v) (pt_elements_n n m) <->
-                                        (pt_get m k = Some v /\ length k = n))
-     - pt_elements_nodup has signature:
-         forall n m, depth m n -> NoDup (map fst (pt_elements_n n m))
-       Both added a leading  n : nat  and a  depth m n  hypothesis.
-
-   ALL lemmas proven (Qed, 0 axioms).  pt_fold_spec is the depth-restricted
-   fold_spec.  Phase E (pt_of_list_elements, pt_fold_spec) lives in inner
-   Section EAssembly and is parameterized by the four depth-restricted get/put
-   laws (pt_get_empty / pt_get_put_same / pt_get_put_diff / pt_put_depth, proven
-   0-axiom in PosTrieDepthLaws.v + PosTrieRemoveLaws.v) as section hypotheses;
-   after discharge pt_fold_spec carries them as explicit premises.  They get
-   instantiated when this ladder is merged into src/Utils/PosListMap.v, where
-   the real lemmas are in scope.
-
-   NOTE: rocq_assumptions on the EAssembly-internal pt_of_list_ lemmas lists
-   sibling opaque section-constants as "axioms" -- an interactive-session
-   artifact (they are Qed, and pt_fold_spec itself is "Closed under the global
-   context").
+   Depth-restricted map laws for pos_trie (the db-trie interface):
+   get_empty, get_put_same/diff, get_remove_same/diff, fold_spec.
+   Consolidated from the WIP development; destined to back the depth-indexed
+   e-graph db-trie interface that replaces the (false) map.ok obligation.
    ============================================================================ *)
 
 From Stdlib Require Import NArith Lists.List Lia.
@@ -40,6 +11,293 @@ From Tries Require Import Canonical.
 From Utils Require Import PosListMap TrieMapFold.
 
 Set Implicit Arguments.
+
+(* ============================================================================ *)
+(* Part I: get/put laws (from WIP/PosTrieDepthLaws.v)                          *)
+(* ============================================================================ *)
+
+(* Lemma 1: get'(set' i x m) i = Some x *)
+Lemma gss' : forall (A:Type) (i:positive) (x:A) (m: PTree.tree' A),
+    PTree.get' i (PTree.set' i x m) = Some x.
+Proof.
+  induction i; destruct m; simpl; intros; auto using PTree.gss0.
+Qed.
+
+(* Lemma 2: i<>j -> get'(set' j x m) i = get' i m *)
+Lemma gso' : forall (A:Type) (i j:positive) (x:A) (m: PTree.tree' A),
+    i <> j -> PTree.get' i (PTree.set' j x m) = PTree.get' i m.
+Proof.
+  intros A i j x m H.
+  revert j H m; induction i; destruct j, m; simpl; intros; auto;
+    solve [apply IHi; congruence | apply PTree.gso0; congruence | congruence].
+Qed.
+
+(* Lemma 3: pt_get'(pt_singleton k v) k = Some v *)
+Lemma pt_get'_singleton_same : forall (A:Type) (k: list positive) (v:A),
+    pt_get' (pt_singleton k v) k = Some v.
+Proof.
+  induction k; simpl; auto.
+  intro v. rewrite PTree.gss0. apply IHk.
+Qed.
+
+(* Lemma 4: length k = length k' -> k<>k' -> pt_get'(pt_singleton k' v) k = None *)
+Lemma pt_get'_singleton_diff : forall (A:Type) (k k': list positive) (v:A),
+    length k = length k' -> k <> k' -> pt_get' (pt_singleton k' v) k = None.
+Proof.
+  induction k; destruct k'; simpl; intros; try discriminate; try congruence.
+  destruct (Pos.eq_dec a p) as [Heq | Hne].
+  - subst p.
+    rewrite PTree.gss0.
+    apply IHk.
+    + lia.
+    + intro Heq. apply H0. rewrite Heq. reflexivity.
+  - rewrite PTree.gso0 by auto. reflexivity.
+Qed.
+
+(* Lemma 5: depth'(pt_singleton k v) (length k) *)
+Lemma pt_singleton_depth' : forall (A:Type) (k: list positive) (v:A),
+    depth' (pt_singleton k v) (length k).
+Proof.
+  induction k; simpl.
+  - constructor.
+  - constructor. intros j w Hget.
+    destruct (Pos.eq_dec j a) as [Heq | Hne].
+    + subst a. rewrite PTree.gss0 in Hget. injection Hget. intro; subst w. apply IHk.
+    + rewrite PTree.gso0 in Hget by auto. discriminate.
+Qed.
+
+(* Lemma 6: depth'(pt_put' t k v) (length k) given depth' t (length k) *)
+Lemma pt_put'_depth' : forall (A:Type) (k: list positive) (v:A) t,
+    depth' t (length k) -> depth' (pt_put' t k v) (length k).
+Proof.
+  induction k; intros.
+  - inversion H; subst.
+    simpl. constructor.
+  - inversion H; subst.
+    simpl.
+    case_eq (PTree.get' a m); intros.
+    + constructor. intros j w Hget.
+      destruct (Pos.eq_dec j a) as [Heq | Hne].
+      * subst a. rewrite gss' in Hget. injection Hget. intro; subst w.
+        apply IHk. exact (H2 j p H0).
+      * rewrite gso' in Hget by auto.
+        exact (H2 _ _ Hget).
+    + constructor. intros j w Hget.
+      destruct (Pos.eq_dec j a) as [Heq | Hne].
+      * subst a. rewrite gss' in Hget. injection Hget. intro; subst w.
+        apply pt_singleton_depth'.
+      * rewrite gso' in Hget by auto.
+        exact (H2 _ _ Hget).
+Qed.
+
+(* Lemma 7: depth(pt_put m k v) (length k) given depth m (length k) *)
+Lemma pt_put_depth : forall (A:Type) (k: list positive) (v:A) m,
+    depth m (length k) -> depth (pt_put m k v) (length k).
+Proof.
+  intros A k v m H.
+  destruct m; simpl.
+  - apply pt_put'_depth'. exact H.
+  - apply pt_singleton_depth'.
+Qed.
+
+(* Lemma 8: pt_get'(pt_put' t k v) k = Some v given depth' t (length k) *)
+Lemma pt_get'_put'_same : forall (A:Type) (k: list positive) (v:A) t,
+    depth' t (length k) -> pt_get' (pt_put' t k v) k = Some v.
+Proof.
+  induction k; intros.
+  - inversion H; subst. simpl. reflexivity.
+  - inversion H; subst.
+    simpl.
+    case_eq (PTree.get' a m); intros.
+    + rewrite gss'. apply IHk. exact (H2 a p H0).
+    + rewrite gss'. apply pt_get'_singleton_same.
+Qed.
+
+(* Lemma 9: pt_get(pt_put m k v) k = Some v given depth m (length k) *)
+Lemma pt_get_put_same : forall (A:Type) (k: list positive) (v:A) m,
+    depth m (length k) -> pt_get (pt_put m k v) k = Some v.
+Proof.
+  intros A k v m H.
+  destruct m; simpl.
+  - apply pt_get'_put'_same. exact H.
+  - apply pt_get'_singleton_same.
+Qed.
+
+(* Lemma 10: length k = length k' -> k<>k' -> depth' t (length k') ->
+             pt_get'(pt_put' t k' v) k = pt_get' t k *)
+Lemma pt_get'_put'_diff : forall (A:Type) (k k': list positive) (v:A) t,
+    length k = length k' -> k <> k' -> depth' t (length k') ->
+    pt_get' (pt_put' t k' v) k = pt_get' t k.
+Proof.
+  induction k; destruct k'; intros; try discriminate.
+  - simpl. congruence.
+  - simpl. inversion H1; subst.
+    destruct (PTree.get' p m) eqn:Hgetp.
+    + destruct (Pos.eq_dec a p) as [Heq | Hne2].
+      * subst p. rewrite gss'. rewrite Hgetp.
+        apply IHk.
+        -- simpl in H. lia.
+        -- intro Heq. apply H0. rewrite Heq. reflexivity.
+        -- exact (H4 a p0 Hgetp).
+      * rewrite gso' by auto. reflexivity.
+    + destruct (Pos.eq_dec a p) as [Heq | Hne2].
+      * subst p. rewrite gss'. rewrite Hgetp.
+        apply pt_get'_singleton_diff.
+        -- simpl in H. lia.
+        -- intro Heq. apply H0. rewrite Heq. reflexivity.
+      * rewrite gso' by auto. reflexivity.
+Qed.
+
+(* Lemma 11: length k = length k' -> k<>k' -> depth m (length k') ->
+             pt_get(pt_put m k' v) k = pt_get m k *)
+Lemma pt_get_put_diff : forall (A:Type) (k k': list positive) (v:A) m,
+    length k = length k' -> k <> k' -> depth m (length k') ->
+    pt_get (pt_put m k' v) k = pt_get m k.
+Proof.
+  intros A k k' v m Hlen Hne Hdepth.
+  destruct m; simpl.
+  - apply pt_get'_put'_diff; auto.
+  - simpl. apply pt_get'_singleton_diff; auto.
+Qed.
+
+(* ============================================================================ *)
+(* Part II: remove laws + get_empty (from WIP/PosTrieRemoveLaws.v)             *)
+(* ============================================================================ *)
+
+(* remove' is option-level: PTree.remove' : positive -> tree' A -> tree A, and
+   PTree.remove p (PTree.Nodes m) = PTree.remove' p m definitionally, so the
+   option-level grs/gro instantiate to tree'-level facts. *)
+Lemma grs' : forall (A:Type) (p:positive) (m: PTree.tree' A),
+    PTree.get p (PTree.remove' p m) = None.
+Proof. intros A p m. exact (PTree.grs p (PTree.Nodes m)). Qed.
+
+Lemma gro' : forall (A:Type) (j p:positive) (m: PTree.tree' A),
+    j <> p -> PTree.get j (PTree.remove' p m) = PTree.get j (PTree.Nodes m).
+Proof. intros A j p m H. exact (PTree.gro (PTree.Nodes m) H). Qed.
+
+(* descending one level into [of_ptree T] *)
+Lemma pt_get_of_ptree_cons : forall (A:Type) (T : PTree.tree (@pos_trie' A)) j rest,
+    pt_get (of_ptree T) (j::rest)
+    = match PTree.get j T with Some pt' => pt_get' pt' rest | None => None end.
+Proof. intros. destruct T; reflexivity. Qed.
+
+(* get_empty (trivial) *)
+Lemma pt_get_empty : forall (A:Type) (k:list positive), @pt_get A None k = None.
+Proof. reflexivity. Qed.
+
+(* M1: pt_remove preserves uniform depth. *)
+Lemma pt_remove'_depth' : forall (A:Type) (k:list positive) (t:@pos_trie' A) n,
+    depth' t n -> depth (pt_remove' t k) n.
+Proof.
+  intros A.
+  induction k as [|p k' IH]; intros t n Hd.
+  - destruct t; simpl; exact I.
+  - inversion Hd; subst.
+    + simpl. exact I.
+    + simpl. case_eq (PTree.get' p m); intros.
+      * destruct (pt_remove' p0 k') eqn:E.
+        -- simpl. apply node_depth. intros j w Hget.
+           destruct (Pos.eq_dec j p) as [->|Hjp].
+           ++ rewrite gss' in Hget. injection Hget as <-.
+              pose proof (IH p0 n0 (H p p0 H0)) as Hd'.
+              rewrite E in Hd'. simpl in Hd'. exact Hd'.
+           ++ rewrite gso' in Hget by exact Hjp.
+              exact (H j w Hget).
+        -- destruct (PTree.remove' p m) eqn:ER; simpl.
+           ++ exact I.
+           ++ apply node_depth. intros j w Hget.
+              destruct (Pos.eq_dec j p) as [->|Hjp].
+              +++ pose proof (grs' p m) as Hg. rewrite ER in Hg. simpl in Hg.
+                  rewrite Hget in Hg. discriminate.
+              +++ pose proof (@gro' _ j p m Hjp) as Hg. rewrite ER in Hg. simpl in Hg.
+                  rewrite Hget in Hg. symmetry in Hg. exact (H j w Hg).
+      * simpl. apply node_depth. exact H.
+Qed.
+
+Lemma pt_remove_depth : forall (A:Type) (k:list positive) (m:@pos_trie A) n,
+    depth m n -> depth (pt_remove m k) n.
+Proof.
+  intros A k m n H. destruct m; simpl.
+  - apply pt_remove'_depth'. exact H.
+  - exact I.
+Qed.
+
+(* M2: get_remove_same (UNCONDITIONAL). *)
+Lemma pt_get_remove'_same : forall (A:Type) (k:list positive) (t:@pos_trie' A),
+    pt_get (pt_remove' t k) k = None.
+Proof.
+  intros A k. revert k. induction k as [|p k' IH]; intros t.
+  { destruct t; reflexivity. }
+  { destruct t as [a | m]; simpl.
+    - reflexivity.
+    - case_eq (PTree.get' p m); intros.
+      + destruct (pt_remove' p0 k') eqn:E.
+        * simpl. rewrite gss'.
+          pose proof (IH p0) as Hih. rewrite E in Hih. simpl in Hih. exact Hih.
+        * rewrite pt_get_of_ptree_cons. rewrite grs'. reflexivity.
+      + simpl. rewrite H. reflexivity.
+  }
+Qed.
+
+Lemma pt_get_remove_same : forall (A:Type) (k:list positive) (m:@pos_trie A),
+    pt_get (pt_remove m k) k = None.
+Proof.
+  intros A k m. destruct m; simpl.
+  - apply pt_get_remove'_same.
+  - reflexivity.
+Qed.
+
+(* M3: get_remove_diff (depth-restricted, equal length). *)
+Lemma pt_get_remove'_diff : forall (A:Type) (k k':list positive) (t:@pos_trie' A),
+    length k = length k' -> k <> k' -> depth' t (length k') ->
+    pt_get (pt_remove' t k') k = pt_get' t k.
+Proof.
+  intros A k. revert k. intro k. intros k' t Hlen Hne Hd. revert k' t Hlen Hne Hd.
+  induction k as [|a k0 IH]; intros [|p k0'] t Hlen Hne Hd; simpl in Hlen.
+  - congruence.
+  - discriminate Hlen.
+  - discriminate Hlen.
+  - inversion Hd as [| m n0 Hforall Hm Hn]; subst.
+    injection Hlen as Hlen0.
+    destruct (Pos.eq_dec a p) as [Heq | Hap].
+    + subst p.
+      assert (Hk0 : k0 <> k0') by (intro Hc; apply Hne; subst; reflexivity).
+      simpl.
+      case_eq (PTree.get' a m); [intros pt' Ha | intros Ha].
+      * destruct (pt_remove' pt' k0') eqn:E.
+        -- simpl. rewrite gss'.
+           pose proof (IH k0' pt' Hlen0 Hk0 (Hforall a pt' Ha)) as Hih.
+           rewrite E in Hih; simpl in Hih. exact Hih.
+        -- rewrite pt_get_of_ptree_cons.
+           assert (H : PTree.get a (PTree.remove' a m) = None)
+             by exact (PTree.grs a (PTree.Nodes m)).
+           rewrite H.
+           pose proof (IH k0' pt' Hlen0 Hk0 (Hforall a pt' Ha)) as Hih.
+           rewrite E in Hih; simpl in Hih. exact Hih.
+      * simpl. rewrite Ha. reflexivity.
+    + simpl.
+      case_eq (PTree.get' p m); [intros pt' Hp | intros Hp].
+      * destruct (pt_remove' pt' k0') eqn:E.
+        -- simpl. rewrite (gso' p0 m Hap). reflexivity.
+        -- rewrite pt_get_of_ptree_cons.
+           assert (H : PTree.get a (PTree.remove' p m) = PTree.get a (PTree.Nodes m))
+             by exact (PTree.gro (PTree.Nodes m) Hap).
+           rewrite H. cbn [PTree.get]. reflexivity.
+      * simpl. reflexivity.
+Qed.
+
+Lemma pt_get_remove_diff : forall (A:Type) (k k':list positive) (m:@pos_trie A),
+    length k = length k' -> k <> k' -> depth m (length k') ->
+    pt_get (pt_remove m k') k = pt_get m k.
+Proof.
+  intros A k k' m Hlen Hne Hd. destruct m as [t|]; simpl in *.
+  - apply pt_get_remove'_diff; assumption.
+  - reflexivity.
+Qed.
+
+(* ============================================================================ *)
+(* Part III: fold_spec (from WIP/PosTrieFoldSpec.v)                            *)
+(* ============================================================================ *)
 
 Section FoldSpec.
   Context {A : Type}.
@@ -387,10 +645,9 @@ Section FoldSpec.
     fold_right (fun p acc => pt_put acc (fst p) (snd p)) None l.
 
   Section EAssembly.
-    (* These four hypotheses are proved 0-axiom in WIP/PosTrieDepthLaws.v
-       (pt_get_put_same, pt_get_put_diff, pt_put_depth) and
-       WIP/PosTrieRemoveLaws.v (pt_get_empty).  They will be discharged
-       when everything is merged into src/Utils/PosListMap.v. *)
+    (* These four hypotheses are proved 0-axiom in the top-level lemmas above
+       (pt_get_put_same, pt_get_put_diff, pt_put_depth, pt_get_empty).
+       They are discharged in pt_fold_spec' below the section. *)
     Context (pt_get_empty_h : forall (k : list positive), @pt_get A None k = None).
     Context (pt_get_put_same_h : forall (k : list positive) (v : A) (m : @pos_trie A),
                 depth m (length k) -> pt_get (pt_put m k v) k = Some v).
@@ -401,7 +658,7 @@ Section FoldSpec.
                 depth m (length k) -> depth (pt_put m k v) (length k)).
 
     (* Auxiliary: depth None n for any n *)
-    Lemma depth_none : forall n, depth (@None (pos_trie' A)) n.
+    Lemma depth_none : forall n, depth (@None (@pos_trie' A)) n.
     Proof. intro n. destruct n; exact I. Qed.
 
     (* Auxiliary: all keys in pt_elements_n n m have length n *)
@@ -421,7 +678,7 @@ Section FoldSpec.
     Proof.
       intros n l Hlen.
       induction l as [|[k v] tl IH].
-      - cbn. apply depth_none.
+      - exact I.
       - cbn [pt_of_list fold_right fst snd].
         assert (Hkn : length k = n) by (apply (Hlen (k, v)); left; reflexivity).
         assert (IHd : depth (pt_of_list tl) n).
@@ -452,7 +709,7 @@ Section FoldSpec.
         + (* k = k0, v = v0 *)
           injection Heq as Hkk Hvv. subst k0 v0.
           apply pt_get_put_same_h.
-          rewrite Hkn. exact IHd.
+          exact IHd.
         + (* k in tail *)
           assert (Hne : k <> k0).
           { intro Heq. subst k. apply Hnotin.
@@ -462,7 +719,7 @@ Section FoldSpec.
             -- intros kv Hkv. apply Hlen. right. exact Hkv.
             -- exact Hndtl.
             -- exact Hin'.
-          * rewrite Hkn, Hk0n. reflexivity.
+          * rewrite Hk0n. reflexivity.
           * exact Hne.
           * rewrite Hk0n. exact IHd.
     Qed.
@@ -477,7 +734,7 @@ Section FoldSpec.
     Proof.
       intros n l k Hlen Hkn Hnotin.
       induction l as [|[k0 v0] tl IH].
-      - cbn. apply pt_get_empty_h.
+      - exact (pt_get_empty_h k).
       - cbn [pt_of_list fold_right fst snd].
         assert (Hk0n : length k0 = n) by (apply (Hlen (k0, v0)); left; reflexivity).
         assert (IHd : depth (pt_of_list tl) n).
@@ -689,3 +946,18 @@ Section FoldSpec.
   End EAssembly.
 
 End FoldSpec.
+
+(* ============================================================================ *)
+(* Part IV: discharged fold_spec wrapper                                        *)
+(* ============================================================================ *)
+
+Lemma pt_fold_spec' : forall {A} n (R:Type) (P : @pos_trie A -> R -> Prop)
+                             (f : R -> list positive -> A -> R) r0,
+    P None r0 ->
+    (forall k v (m:@pos_trie A) r,
+        length k = n -> depth m n -> pt_get m k = None -> P m r -> P (pt_put m k v) (f r k v)) ->
+    forall m, depth m n -> P m (pt_fold f r0 m).
+Proof.
+  intros A.
+  apply (@pt_fold_spec A (@pt_get_empty A) (@pt_get_put_same A) (@pt_get_put_diff A) (@pt_put_depth A)).
+Qed.
