@@ -12,23 +12,32 @@
 >     already-proven ctx_readback machinery. Option B (weaken setoid+construct to clause-var-restricted
 >     compat) scatters edits across proven lemmas AND still needs the hash-cons identification of shared
 >     conclusion sort ids — net worse. 
->     OPTION-A PLAN (two sub-lemmas):
->       A1. Obtain `ctx_readback e_assum sub c` for the REBUILT assumption egraph. add_ctx_readback
->           (Theorems.v:5557) gives it for the RAW add_ctx output; add_ctx_inversion (AddCtxInversion.v
->           :~202-213) ALREADY lifts it to the rebuilt eF via `ctx_readback_to_eF`. ⚠ FIRST INVESTIGATE
->           (next session, cheap Explore): is ctx_readback (or ctx_readback_to_eF) exposed/re-derivable
->           for e_assum outside add_ctx_inversion's proof? If add_ctx_inversion can be strengthened to
->           RETURN ctx_readback e_assum sub c (like conclusion_egraph_sound was strengthened for i1),
->           A1 is ~free. This is the make-or-break cheapness question for option A.
->       A2. `ctx_readback e sub c -> forall k, In k (flat_map clause_vars (map atom_clause (db_to_atoms
->           (db e)))) -> (∃e' t, wf_term l c e' t /\ atom_tree e sub e' k) \/ (∃ts, wf_sort l c ts /\
->           atom_tree_sort e sub ts k)`. The genuine content: every atom in db_to_atoms(e) is part of
->           some ctx var's sort atom_tree_sort (whose unfolding gives atom_trees for all internal ids)
->           or a sort_of[x']xs edge (x' covered by at_var, xs by the var's atom_tree_sort root). Whether
->           this needs an add_ctx re-induction or can piggyback on db_ctx_inv + ctx_readback's per-var
->           trees is the second open question — likely a structural induction over c unfolding
->           ctx_readback, NOT a full add_ctx re-run. Canonicalization (sort_of ret tx' = root xs
->           post-rebuild) handled by the same fact add_ctx_inversion already uses.
+>     OPTION-A PLAN (two sub-lemmas — REFINED by S47 Explore #2; the post-rebuild predicate is
+>     `ctx_readback_eF`, the F1c-CANONICALIZED form, CtxReadback.v:134-143 — NOT model-free ctx_readback.
+>     ctx_readback_eF pins the sort_of[x'] atom's ret to the sort root xs (eliminates the tx' existential
+>     ⇒ canonicalization is ALREADY baked in — no extra rebuild fact needed for A2):
+>       A1 — CHEAP (~10 LoC, minimal risk). add_ctx_inversion's PROOF (AddCtxInversion.v:~211) already
+>           has `Hrbef : ctx_readback_eF eF sub c` in context (from add_ctx_readback :206 → ctx_readback_to_eF
+>           :211). Either STRENGTHEN add_ctx_inversion to ALSO return ctx_readback_eF eF sub c, or write a
+>           sibling `add_ctx_readback_eF` with the SAME hyps that returns it (re-running the 3-line chain:
+>           add_ctx_egraph_ok→Hdb1/Hroots1, add_ctx_readback→Hrb, rebuild_survives_canonical→Hsurv,
+>           ctx_readback_to_eF→Hrbef). ctx_readback_to_eF (CtxReadback.v:221) is Qed/0-axiom; all its hyps
+>           are cheaply available. ⚠ Do NOT try to recover bare `ctx_readback eF` via ctx_readback_mono —
+>           that would UN-canonicalize and the pre-canon atom may not survive rebuild. Use ctx_readback_eF.
+>       A2 — THE WALL (~100-200 LoC). The genuine content is a FRAME/EXHAUSTIVENESS lemma:
+>           `ctx_readback_eF eF sub c -> db_ctx_inv eF -> forall k ∈ flat_map clause_vars (map atom_clause
+>           (db_to_atoms (db eF))), (∃e' t, wf_term l c e' t /\ atom_tree eF sub e' k) \/ (∃ts, wf_sort l c
+>           ts /\ atom_tree_sort eF sub ts k)`. ctx_readback_eF gives per-var the atom_tree_sort for its sort
+>           (unfolds to atom_trees for all internal sort-skeleton ids) + the sort_of[x']xs edge (x'→at_var,
+>           xs→the var's sort root). BUT db_ctx_inv + ctx_readback_eF do NOT by themselves prove these account
+>           for EVERY atom in db_to_atoms(eF) — the obstacle (S47 verdict) is showing add_open_sort + the
+>           sort_of hash are the ONLY atom sources. ⇒ needs an INDUCTION over add_ctx's construction threading
+>           a coverage invariant ALONGSIDE the existing add_ctx_readback induction (Theorems.v:5557-5870,
+>           which already tracks exactly these atoms: per-var add_open_sort sort atoms + the sort_of atom +
+>           db_ctx_inv) then lifted through rebuild by the same atom_tree_survives/rebuild_survives_canonical
+>           machinery. So A2 ≈ "add coverage as a 5th conjunct to ctx_readback_post / a parallel
+>           add_ctx_coverage lemma". This is THE remaining math; multi-session; DESIGN the invariant before
+>           delegating. (Leaves: at_var needs wf_term l c (var x) (sort of x) — id_args_wf / wf var.)
 >     Then Hcover = A2 (on forall_vars) + R5 confinement (dom a ⊆ forall_vars) restricted to the overlap.
 >  2. **R5 (contract)** — repoint the proven bridge `optimize_sequent_forward_atoms`
 >     (QueryOptSound.v:5306) hypothesis from open `model_satisfies_rule` (QueryOptSound.v:160,
