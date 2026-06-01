@@ -917,32 +917,9 @@ From Stdlib Require Import NArith.
 From Utils Require Import TrieMap (*SpacedMapTreeN *).
 From Pyrosome.Tools Require Import PosRenaming.
 From Utils Require PosListMap StringListMap.
-From Utils Require Import FullPosTrie.
+From Utils Require Import FullPosTrie FullPosTrieConv.
 Module PositiveInstantiation.
   Export PosListMap.
-
-  (* ---- Conversion wrapper: run the (pos_trie-specialized) generic-join on the
-     LAWFUL full_pos_trie DB carrier by converting at the intersection boundary.
-     fold-rebuild conversions: fold the source map, re-[map.put] into the target.
-     The two reps (option pos_trie' vs option fpt') are distinct, so the map
-     instance for each [map.put]/[map.empty] is inferred unambiguously.  This is
-     a TEMPORARY wrapper; a native fpt generic-join is a planned optimization. *)
-  Definition pt_to_fpt {B} (t : @pos_trie B) : @FullPosTrie.fpt B :=
-    @map.fold (list positive) B (@pos_trie_map B) (@FullPosTrie.fpt B)
-      (fun acc k v => @map.put (list positive) B (@FullPosTrie.full_pos_trie_map B) acc k v)
-      (@map.empty (list positive) B (@FullPosTrie.full_pos_trie_map B)) t.
-
-  Definition fpt_to_pt {B} (t : @FullPosTrie.fpt B) : @pos_trie B :=
-    @map.fold (list positive) B (@FullPosTrie.full_pos_trie_map B) (@pos_trie B)
-      (fun acc k v => @map.put (list positive) B (@pos_trie_map B) acc k v)
-      (@map.empty (list positive) B (@pos_trie_map B)) t.
-
-  Definition fpt_spaced_intersect {B} `{WithDefault B} (merge : B -> B -> B)
-    (tries : (@FullPosTrie.fpt B * list bool)
-             * list (@FullPosTrie.fpt B * list bool))
-    : @FullPosTrie.fpt B :=
-    let conv := fun p : @FullPosTrie.fpt B * list bool => (fpt_to_pt (fst p), snd p) in
-    pt_to_fpt (compat_intersect merge (conv (fst tries), List.map conv (snd tries))).
 
 
   (*TODO: the default is biting me*)
