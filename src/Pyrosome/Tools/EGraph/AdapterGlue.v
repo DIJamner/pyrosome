@@ -230,7 +230,10 @@ Section WithVar.
                               (snd (rebuild rf e_open))) in
         exists i2,
           egraph_sound_for_interpretation (lang_model l) i2 e_concl
-          /\ args_in_instance l (map snd sg) i2 (map snd sub).
+          /\ args_in_instance l (map snd sg) i2 (map snd sub)
+          /\ (exists i1,
+                egraph_sound_for_interpretation (lang_model l) i1 e_assum
+                /\ map.extends i2 i1).
     Proof.
       (* Unfold the let-bindings *)
       cbn zeta.
@@ -298,7 +301,52 @@ Section WithVar.
       exists i2.
       split.
       - exact Hsnd_concl.
-      - exact Hai2.
+      - split.
+        + exact Hai2.
+        + exact (ex_intro _ i1 (conj Hsnd_assum Hext12)).
+    Qed.
+
+    (* ===== Lemma 1: generic projection from egraph_sound_for_interpretation ===== *)
+    Lemma egraph_atoms_sound (i : V_map (domain V (lang_model l))) (e : instance)
+        (Hsnd : egraph_sound_for_interpretation (lang_model l) i e)
+      : forall al, atom_in_egraph al e -> atom_sound_for_model V V V_map (lang_model l) i al.
+    Proof.
+      intros al Hin.
+      assert (Hin' : In al (db_to_atoms (db e))).
+      { apply (proj2 (in_db_to_atoms_iff_atom_in_db V V_Eqb V_Eqb_ok lt succ V_default
+                        V V_Eqb V_Eqb_ok V_map V_map_ok V_trie V_trie_ok al (db e))).
+        exact Hin. }
+      exact (in_all _ _ _
+        (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default
+           V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i e Hsnd)
+        (in_map (@atom_clause V V) _ _ Hin')).
+    Qed.
+
+    (* ===== Lemma 3: conclusion_i2_sound_assum ===== *)
+    Lemma conclusion_i2_sound_assum name c args t (sg : subst)
+        (Hin : In (name, term_rule c args t) l)
+        (Hsg : wf_subst l [] sg c)
+      : let sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))) in
+        let e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X)
+                              (snd (rebuild rf (snd (add_open_term succ sort_of l true false sub
+                                 (con name (id_args c)) e_assum))))) in
+        exists i2,
+          egraph_sound_for_interpretation (lang_model l) i2 e_concl
+          /\ args_in_instance l (map snd sg) i2 (map snd sub)
+          /\ (forall al, atom_in_egraph al e_assum ->
+                atom_sound_for_model V V V_map (lang_model l) i2 al).
+    Proof.
+      cbn zeta.
+      pose proof (conclusion_egraph_sound name c args t sg Hin Hsg) as H.
+      cbn zeta in H.
+      destruct H as (i2 & Hsnd_concl & Hai2 & i1 & Hsnd_i1 & Hext12).
+      exists i2.
+      split; [exact Hsnd_concl|].
+      split; [exact Hai2|].
+      intros al Hin_al.
+      exact (QueryOptSound.atom_sound_extend V lt succ V_default V V_map (lang_model l)
+               i1 i2 al Hext12 (egraph_atoms_sound i1 _ Hsnd_i1 al Hin_al)).
     Qed.
 
     (* ===== R2: lift i2 soundness on e_concl to all seq_conclusions clauses ===== *)
