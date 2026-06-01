@@ -152,6 +152,67 @@ Section WithVar.
     Local Notation X := unit.
     Local Notation HX := (@unit_analysis V V).
 
+    Local Notation egraph_ok :=
+      (Semantics.egraph_ok V lt V V_map V_map V_trie X).
+    Local Notation egraph_sound_for_interpretation :=
+      (Semantics.egraph_sound_for_interpretation V V V_map V_map V_trie X).
+    Local Notation args_in_instance :=
+      (@Theorems.args_in_instance V V_Eqb V_map sort_of).
+    Local Notation instance := (Defs.instance V V V_map V_map V_trie X).
+
+    (* ===== assumption egraph is ok and sound ===== *)
+    Lemma assumption_egraph_sound c (Hwfc : wf_ctx l c) (sg : subst)
+        (Hsg : wf_subst l [] sg c)
+      : egraph_ok (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+        /\ exists i1,
+             egraph_sound_for_interpretation (lang_model l) i1
+               (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+             /\ map fst (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) = map fst c
+             /\ args_in_instance l (map snd sg) i1
+                  (map snd (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))).
+    Proof.
+      cbn zeta.
+      (* Step 1: empty egraph is ok and sound *)
+      destruct (Semantics.empty_sound_for_interpretation
+                  V lt succ V_default V V_map (V_map_ok) V_map (V_map_ok)
+                  V_trie X (lang_model l))
+        as [Hok_empty Hsnd_empty].
+      (* Step 2: add_ctx_sound gives ctx_post *)
+      pose proof (@Theorems.add_ctx_sound
+                    V V_Eqb V_Eqb_ok V_default V_map (V_map_ok) V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans
+                    X HX l Hwf Hsof false
+                    sg c Hsg Hwfc
+                    map.empty)
+        as Hvc_ctx.
+      unfold vc in Hvc_ctx.
+      specialize (Hvc_ctx (empty_egraph V_default X)).
+      unfold Theorems.ctx_post in Hvc_ctx.
+      specialize (Hvc_ctx Hok_empty Hsnd_empty).
+      destruct Hvc_ctx as [i1 (Hext1 & Hfst1 & Hai1)].
+      (* Unpack extending_sound *)
+      destruct Hext1 as (Hok_ctx & _ & Hsnd_ctx & _).
+      (* Step 3: rebuild_sound *)
+      pose proof (@Semantics.rebuild_sound
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                    V_map V_map_ok V_map V_map_ok
+                    V_trie V_trie_ok unit HX
+                    (lang_model l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    (fun _ => True) rf)
+        as Hvc_rb.
+      unfold vc in Hvc_rb.
+      specialize (Hvc_rb (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))).
+      cbn [snd] in Hvc_rb.
+      specialize (Hvc_rb Hok_ctx).
+      destruct Hvc_rb as [Hok_assum Hde_assum].
+      split; [exact Hok_assum|].
+      (* Step 4: transfer soundness of i1 across rebuild *)
+      pose proof (proj1 (Hde_assum i1) Hsnd_ctx) as Hsnd_assum.
+      exists i1. split; [exact Hsnd_assum|].
+      split; [exact Hfst1|exact Hai1].
+    Qed.
+
     (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
     Lemma term_rule_concl_obligation name c args t
         (a : V_map (domain V (lang_model l)))
