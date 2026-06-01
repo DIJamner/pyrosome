@@ -6758,6 +6758,99 @@ Section WithMap.
         exact (Hdar_alloc b Ha_ua). }
   Qed.
 
+  Lemma hash_entry_new_atom_split
+        (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
+        f args
+    : vc (hash_entry idx_succ f args)
+        (fun e_in res =>
+           (exists roots, union_find_ok lt e_in.(equiv) roots) ->
+           all (fun x => map.get e_in.(equiv).(parent) x = Some x) args ->
+           forall b, atom_in_db b (snd res).(db) ->
+             atom_in_db b e_in.(db) \/ b = Build_atom f args (fst res)).
+  Proof.
+    unfold vc, hash_entry.
+    intros e_in.
+    cbn [Mbind StateMonad.state_monad].
+    intros Hroots_ex Hargs_roots.
+    rewrite (list_Mmap_find_roots_identity args e_in Hargs_roots). cbn [fst snd].
+    pose proof (db_lookup_pure f args e_in) as Hlk.
+    cbn beta in Hlk.
+    destruct (db_lookup f args e_in) as [mout e_lk] eqn:Hlkeq.
+    cbn [fst snd] in Hlk |- *.
+    destruct Hlk as [He_eq Hlk2]. subst e_lk.
+    destruct mout as [r|]; cbn beta iota; cbn [fst snd].
+    - (* Hit: db unchanged; every atom in output db is in e_in.db. *)
+      cbn [Mret StateMonad.state_monad fst snd].
+      intros b Hb. left. exact Hb.
+    - (* Miss: alloc a fresh root, then db_set inserts (f,args,r). *)
+      cbn [Mbind StateMonad.state_monad].
+      rename Hlk2 into Hnone.
+      pose proof (alloc_struct Hlti Hlts Hltt) as Halloc.
+      unfold vc in Halloc. specialize (Halloc e_in).
+      destruct (alloc idx idx_succ symbol symbol_map idx_map idx_trie analysis_result e_in)
+        as [r e_alloc] eqn:Halloc_eq.
+      cbn [fst snd] in Halloc.
+      destruct Hroots_ex as [roots Hroots].
+      specialize (Halloc roots Hroots).
+      destruct Halloc as (Hok_alloc & Hr_fresh & Hr_key & Hkeys_alloc & Hdb_alloc
+                          & Hpar_alloc & Hwl_alloc).
+      (* Peel db_set (Build_atom f args r) on e_alloc, mirroring
+         hash_entry_output_atom's miss branch. *)
+      unfold db_set. cbn [atom_fn atom_args atom_ret].
+      cbn [Mbind StateMonad.state_monad fst snd].
+      pose proof (get_analyses_preserves_fields args e_alloc) as Hga.
+      destruct (get_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result args e_alloc) as [arg_as e_ga] eqn:Hge.
+      cbn [fst snd] in Hga. destruct Hga as (Hdb_ga & Heq_ga & Hpa_ga).
+      destruct (update_analyses idx symbol symbol_map idx_map idx_trie
+                  analysis_result r
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as) e_ga)
+        as [_u e_ua] eqn:Hue.
+      assert (Hdb_ua : e_ua.(db) = e_ga.(db))
+        by (unfold update_analyses in Hue; injection Hue as _ Hue'; subst e_ua; reflexivity).
+      destruct (db_set' idx Eqb_idx symbol symbol_map idx_map idx_trie
+                  analysis_result (Build_atom f args r)
+                  (analyze idx symbol analysis_result
+                     (Build_atom f args r) arg_as)
+                  e_ua) as [_v e_db] eqn:Hde.
+      cbn [fst snd]. unfold Mret. cbn [StateMonad.state_monad fst snd].
+      assert (Hdb_ua_in : e_ua.(db) = e_in.(db)) by congruence.
+      (* The split: any atom in e_db.db is either (f,args,r) or was in e_ua.db. *)
+      assert (Hain_split : forall b, atom_in_db b e_db.(db) ->
+                b = Build_atom f args r
+                \/ atom_in_db b e_ua.(db)).
+      { intros b Hb.
+        unfold db_set' in Hde; injection Hde as _ Hde'; subst e_db.
+        unfold atom_in_db, Is_Some_satisfying, map_update in Hb; cbn in Hb.
+        destruct b as [bfn bargs bret]; cbn in Hb.
+        destruct (map.get e_ua.(db) f) as [tbl|] eqn:Htbl;
+          eqb_case bfn f.
+        - rewrite map.get_put_same in Hb; cbn in Hb.
+          eqb_case bargs args.
+          + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+          + rewrite map.get_put_diff in Hb by auto.
+            right.
+            unfold atom_in_db, Is_Some_satisfying; cbn.
+            rewrite Htbl. cbn. exact Hb.
+        - rewrite map.get_put_diff in Hb by auto.
+          right.
+          unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb.
+        - rewrite map.get_put_same in Hb; cbn in Hb.
+          eqb_case bargs args.
+          + rewrite map.get_put_same in Hb; cbn in Hb. left. subst. reflexivity.
+          + rewrite map.get_put_diff in Hb by auto.
+            unfold default in Hb.
+            rewrite map.get_empty in Hb. cbn in Hb. destruct Hb.
+        - rewrite map.get_put_diff in Hb by auto.
+          right.
+          unfold atom_in_db, Is_Some_satisfying; cbn. exact Hb. }
+      intros b Hb.
+      destruct (Hain_split b Hb) as [Heq | Ha_ua].
+      + right. exact Heq.
+      + left. rewrite Hdb_ua_in in Ha_ua. exact Ha_ua.
+  Qed.
+
   Lemma hash_entry_parents_frame
         (Hlti : Asymmetric lt) (Hlts : forall x, lt x (idx_succ x)) (Hltt : Transitive lt)
         f args
