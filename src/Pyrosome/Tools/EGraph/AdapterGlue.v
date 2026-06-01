@@ -71,6 +71,81 @@ Section WithVar.
     exact Hsnd.
   Qed.
 
+  (* Helper: transfer list_Mmap soundness under the setoid compatibility
+     condition (Hcompat). *)
+  Lemma list_Mmap_get_setoid (m : model V) (i a' : V_map (domain V m))
+      (Hcompat : forall k d, map.get i k = Some d ->
+                   exists d', map.get a' k = Some d' /\ domain_eq V m d d')
+      (args : list V) (iargs : list (domain V m))
+      (Hmm : list_Mmap (map.get i) args = Some iargs)
+    : exists a'args, list_Mmap (map.get a') args = Some a'args
+                     /\ all2 (domain_eq V m) iargs a'args.
+  Proof.
+    revert iargs Hmm.
+    induction args as [| x xs IH]; intros iargs Hmm.
+    - cbn in Hmm. injection Hmm as <-. exists []. split; reflexivity.
+    - cbn in Hmm.
+      destruct (map.get i x) as [dx|] eqn:Hx.
+      2: { discriminate. }
+      destruct (list_Mmap (map.get i) xs) as [dxs|] eqn:Hxs.
+      2: { discriminate. }
+      injection Hmm as <-.
+      destruct (IH dxs eq_refl) as (a'xs & Ha'xs & Hall2).
+      destruct (Hcompat x dx Hx) as (dx' & Hx' & Heq).
+      exists (dx' :: a'xs).
+      split.
+      + cbn. rewrite Hx'. rewrite Ha'xs. reflexivity.
+      + cbn. split; assumption.
+  Qed.
+
+  (* Setoid transfer: if [i] and [a'] agree up to [domain_eq m] on every
+     key (Hcompat), then soundness of a clause list under [i] implies
+     soundness under [a']. *)
+  Lemma all_clause_sound_setoid (m : model V) (Hm : model_ok V m)
+      (i a' : V_map (domain V m)) (cs : list (clause V V))
+      (Hcompat : forall k d, map.get i k = Some d ->
+                   exists d', map.get a' k = Some d' /\ domain_eq V m d d')
+    : all (clause_sound_for_model V V V_map m i) cs ->
+      all (clause_sound_for_model V V V_map m a') cs.
+  Proof.
+    induction cs as [| c cs IH]; intro Hall.
+    - exact I.
+    - destruct Hall as [Hc Hcs].
+      split.
+      2: { exact (IH Hcs). }
+      destruct c as [x y | a].
+      + (* eq_clause x y *)
+        unfold clause_sound_for_model, eq_sound_for_model in *.
+        destruct (map.get i x) as [dx|] eqn:Hx.
+        2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
+        cbn [Is_Some_satisfying] in Hc.
+        destruct (map.get i y) as [dy|] eqn:Hy.
+        2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
+        cbn [Is_Some_satisfying] in Hc.
+        destruct (Hcompat x dx Hx) as (dx' & Hx' & Heq_x).
+        destruct (Hcompat y dy Hy) as (dy' & Hy' & Heq_y).
+        rewrite Hx', Hy'.
+        cbn [Is_Some_satisfying].
+        pose proof (domain_eq_PER V (model_ok:=Hm)) as Hper.
+        pose proof (@PER_Symmetric _ _ Hper) as Hsym.
+        pose proof (@PER_Transitive _ _ Hper) as Htrans.
+        exact (Htrans _ _ _ (Htrans _ _ _ (Hsym _ _ Heq_x) Hc) Heq_y).
+      + (* atom_clause a *)
+        unfold clause_sound_for_model, atom_sound_for_model in *.
+        destruct (list_Mmap (map.get i) (atom_args a)) as [iargs|] eqn:Hmm.
+        2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
+        cbn [Is_Some_satisfying] in Hc.
+        destruct (map.get i (atom_ret a)) as [iret|] eqn:Hret.
+        2: { cbn [Is_Some_satisfying] in Hc. contradiction. }
+        cbn [Is_Some_satisfying] in Hc.
+        destruct (list_Mmap_get_setoid m i a' Hcompat (atom_args a) iargs Hmm)
+          as (a'args & Ha'args & Hall2).
+        destruct (Hcompat (atom_ret a) iret Hret) as (a'ret & Hret' & Heq_ret).
+        rewrite Ha'args, Hret'.
+        cbn [Is_Some_satisfying].
+        exact (@interprets_to_preserved V m Hm _ iargs a'args iret a'ret Hc Hall2 Heq_ret).
+  Qed.
+
   Section Adapter.
     Context (l : lang) (Hwf : wf_lang l) (Hsof : fresh sort_of l) (rf : nat).
 
