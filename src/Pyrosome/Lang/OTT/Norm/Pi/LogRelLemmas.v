@@ -41,6 +41,21 @@ Proof.
   - apply wf_dU.
 Qed.
 
+(* ---------------------------------------------------------------------
+   ROADMAP NOTE (reflect_red).  The eta-typing obstruction at relevant Pi is
+   resolved by the [t_lam_eta] rule (Typing.v) + its metatheory (scoping in
+   ApplySubst, [Reflect_weaken]/[weaken_typing] in Preservation): an
+   eta-expanded [vLam body] now type-checks at [dEl (vPi F B)] even when the
+   body lives at the substituted codomain [B[ARG/0]].  This discharges the
+   [has_svalty] component (first factor) of [PiRedTmPred] for reflected
+   lambdas.  The SECOND factor of [PiRedTmPred] — the application clause
+   (applying the reflected lambda to any reducible argument beta-reduces to a
+   reducible result) — is [Apply]/[Vapp] totality on the eta-body, which is
+   mutually entangled with [reflect_red] itself.  Hence [reflect_red] is not a
+   standalone closure lemma but part of the full Fundamental-Lemma mutual
+   induction (reflect + reify/apply together), the next milestone.
+   --------------------------------------------------------------------- *)
+
 (* A reducible term is well-typed at its type. *)
 Lemma RedTm_wf : forall Ge T v, RedTm Ge T v -> has_svalty Ge v T.
 Proof.

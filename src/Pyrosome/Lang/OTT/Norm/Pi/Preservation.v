@@ -369,6 +369,99 @@ Lemma Apply_val_shiftc : forall m s v v', Apply_val m s v v' ->
 Proof. exact (snd (fst (fst (fst Apply_shift_commute)))). Qed.
 
 (* ===================================================================== *)
+(* Part 1b : weakening of type-directed reflection ([Reflect_weaken]).     *)
+(*                                                                        *)
+(* Inserting a binder at cutoff [c] commutes with [Reflect]: the reflected *)
+(* value is just shifted.  Needed by the [t_lam_eta] case of              *)
+(* [weaken_typing] (the eta-typing rule carries a [Reflect] premise that    *)
+(* must travel under the inserted binder).  The [refl_Pi] case threads the  *)
+(* shift through the codomain's [wkn_list] substitution via the commutation *)
+(* engine, which needs the [wkn_list]-cons [ShiftSub] below.                *)
+(* ===================================================================== *)
+
+Lemma wkn_list_is_map : forall n, wkn_list n = map (shift_val 0 1) (id_list n).
+Proof.
+  intro n. unfold wkn_list, id_list. rewrite map_map. apply map_ext.
+  intro k. cbn [shift_val shift_ne Nat.ltb Nat.leb]. do 2 f_equal. Lia.lia.
+Qed.
+
+(* [wkn_list] reads, split into clean in-range / out-of-range forms (no [if],
+   so the downstream [ShiftSub] proof avoids match-collapse fragility). *)
+Lemma wkn_list_nth_lt : forall n k d, k < n ->
+    nth_default d (wkn_list n) k = vNe (nVar (S k)).
+Proof.
+  intros n k d Hk.
+  rewrite <- (nth_default_cons_S d (vNe (nVar 0)) (wkn_list n) k).
+  rewrite snoc_wkn_hd_list, id_list_nth_any, (@ltbT (S k) (S n)) by Lia.lia.
+  reflexivity.
+Qed.
+
+Lemma wkn_list_nth_ge : forall n k d, n <= k ->
+    nth_default d (wkn_list n) k = d.
+Proof.
+  intros n k d Hk. unfold nth_default.
+  assert (Hn : nth_error (wkn_list n) k = None)
+    by (apply nth_error_None; rewrite wkn_list_length; exact Hk).
+  rewrite Hn. reflexivity.
+Qed.
+
+(* The [wkn_list] analogue of [ShiftSub_beta]: lifting the [a :: wkn_list m]
+   substitution through a cutoff-[S c] shift (on BOTH sides — a value, not a
+   domain element, is being shifted) extends to [shift a :: wkn_list (S m)]. *)
+Lemma ShiftSub_wkn_cons : forall m a c, c <= m ->
+    ShiftSub (S c) (S c) (a :: wkn_list m) (shift_val (S c) 1 a :: wkn_list (S m)).
+Proof.
+  intros m a c Hcm k. destruct k as [|k'].
+  - (* k = 0 : sh (S c) 0 = 0, both read the head *)
+    unfold sh. cbn [Nat.ltb]. unfold nth_default. cbn [nth_error]. reflexivity.
+  - (* k = S k' : sh (S c) (S k') = S (sh c k') *)
+    rewrite sh_S. rewrite !nth_default_cons_S.
+    destruct (Nat.ltb k' m) eqn:Em;
+      [ apply ltb_true in Em | apply ltb_false in Em ].
+    + (* k' < m : both in range *)
+      rewrite wkn_list_nth_lt by (apply sh_lt; [ exact Hcm | exact Em ]).
+      rewrite wkn_list_nth_lt by exact Em.
+      cbn [shift_val shift_ne]. unfold sh.
+      destruct (Nat.ltb k' c) eqn:E3.
+      * apply ltb_true in E3. rewrite (@ltbT (S k') (S c)) by Lia.lia. reflexivity.
+      * apply ltb_false in E3. rewrite (@ltbF (S k') (S c)) by Lia.lia.
+        do 2 f_equal. Lia.lia.
+    + (* k' >= m >= c : both out of range *)
+      assert (Hs : sh c k' = S k')
+        by (unfold sh; rewrite (@ltbF k' c) by Lia.lia; reflexivity).
+      rewrite Hs.
+      rewrite wkn_list_nth_ge by Lia.lia.
+      rewrite wkn_list_nth_ge by Lia.lia.
+      cbn [shift_val shift_ne]. rewrite (@ltbF (S k') (S c)) by Lia.lia.
+      do 2 f_equal. Lia.lia.
+Qed.
+
+Lemma Reflect_weaken : forall m T n v, Reflect m T n v ->
+    forall c, c <= m ->
+      Reflect (S m) (shift_ty c 1 T) (shift_ne c 1 n) (shift_val c 1 v).
+Proof.
+  induction 1 as [ m r l n | m n | m n | m c0 n | m F B n
+    | m F B n ARG B' body Harg IHarg Hb Hbody IHbody ]; intros c Hc.
+  - cbn. apply refl_U.
+  - cbn. apply refl_Nat.
+  - cbn. apply refl_Empty.
+  - cbn. apply refl_neEl.
+  - cbn. apply refl_PiI.
+  - cbn [shift_ty shift_val shift_ne].
+    eapply refl_Pi.
+    + (* (1) reflect the bound variable at the shifted domain *)
+      pose proof (IHarg (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_ty shift_val shift_ne] in IH.
+      rewrite shift_val_comm0. exact IH.
+    + (* (2) thread the shift through the codomain substitution *)
+      exact (Apply_val_shiftc Hb (@ShiftSub_wkn_cons m ARG c Hc) ltac:(Lia.lia)).
+    + (* (3) reflect the eta-body at the shifted codomain *)
+      pose proof (IHbody (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_ty shift_val shift_ne] in IH.
+      rewrite ((snd (snd shift_shift_comm)) n 0 c (Nat.le_0_l c)). exact IH.
+Qed.
+
+(* ===================================================================== *)
 (* Part 2 : weakening at an arbitrary cutoff (insertion under binders).    *)
 (*                                                                        *)
 (* Front-insertion weakening is not strong enough to recurse under the Pi  *)
@@ -477,7 +570,7 @@ Proof.
        has_svalty (wk_ctx c T0 Ge) (shift_val c 1 v) (shift_ty c 1 T))
     (fun Ge n T _ => forall c T0, c <= length Ge ->
        wf_neutral (wk_ctx c T0 Ge) (shift_ne c 1 n) (shift_ty c 1 T))
-    _ _ _ _ _ _ _ _ _ _ _ _ _).
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _).
   - (* t_ne *) intros Ge n T hn IHn c T0 Hc. cbn. apply t_ne. exact (IHn c T0 Hc).
   - (* t_zero *) intros Ge c T0 Hc. cbn. apply t_zero.
   - (* t_suc *) intros Ge v hv IHv c T0 Hc. cbn. apply t_suc. exact (IHv c T0 Hc).
@@ -503,6 +596,26 @@ Proof.
     pose proof (IHb (S c) (shift_ty 0 1 T0)
                  ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
     rewrite wk_ctx_under_binder in IH. exact IH.
+  - (* t_lam_eta *) intros Ge F B b ARG B' HR Hap Hb IHb c T0 Hc.
+    cbn [shift_val shift_ty].
+    assert (HL : length (wk_ctx c T0 Ge) = S (length Ge))
+      by (apply wk_ctx_length; exact Hc).
+    eapply t_lam_eta.
+    + (* reflect the bound variable at the shifted domain *)
+      rewrite HL.
+      pose proof (@Reflect_weaken _ _ _ _ HR (S c) ltac:(Lia.lia)) as IH.
+      cbn [shift_ty shift_val shift_ne] in IH.
+      rewrite shift_val_comm0. exact IH.
+    + (* thread the shift through the eta-body's codomain substitution *)
+      rewrite HL.
+      pose proof (Apply_val_shiftc Hap
+                    (@ShiftSub_beta (S (length Ge)) ARG (S c) ltac:(Lia.lia))
+                    ltac:(Lia.lia)) as IH.
+      rewrite (fst (snd shift_shift_comm) B 1 (S c) ltac:(Lia.lia)). exact IH.
+    + (* the body, weakened under the binder *)
+      pose proof (IHb (S c) (shift_ty 0 1 T0)
+                   ltac:(cbn [length]; rewrite length_map; Lia.lia)) as IH.
+      rewrite wk_ctx_under_binder in IH. cbn [shift_ty] in IH. exact IH.
   - (* n_var *) intros Ge k T He c T0 Hc. cbn -[Nat.ltb].
     destruct (Nat.ltb k c) eqn:E; cbn -[Nat.ltb].
     + apply ltb_true in E. apply n_var. exact (@wk_ctx_nth_lt c T0 Ge k T E Hc He).
