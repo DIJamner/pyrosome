@@ -383,3 +383,47 @@ Proof.
           [ exact (wf_svalty_scoped (Hwf k' Tk E)) | exact HinsB | exact Hap ].
       * rewrite nth_default_cons_S. exact Hty.
 Qed.
+
+(* ===================================================================== *)
+(* Part E : reflection codomain coherence.                                 *)
+(*                                                                        *)
+(* In [refl_Pi] the eta-expanded body is reflected at [dEl B'] where        *)
+(* [Apply_val (S m) (ARG :: wkn_list m) B B'] (substitute ARG for the bound *)
+(* variable, keep the [m] ambient indices).  When TYPING the body's neutral *)
+(* [nApp (shift n) ARG] by [n_app], its result type uses the substitution   *)
+(* [ARG :: id_list (S m)] applied to the once-shifted codomain              *)
+(* [shift_val 1 1 B].  Both substitutions compute B[0↦ARG, j+1↦j], so they  *)
+(* produce the SAME [B']; by determinism the lambda's body type matches the *)
+(* typing judgment's result type.  This is the [c = 1] instance of          *)
+(* [Apply_cancel].                                                          *)
+(* ===================================================================== *)
+
+Lemma id_list_nth_lt : forall n k d, k < n -> nth_default d (id_list n) k = vNe (nVar k).
+Proof. intros n k d H. rewrite id_list_nth_any, (@ltbT k n H). reflexivity. Qed.
+
+Lemma wkn_list_nth : forall m k d, k < m -> nth_default d (wkn_list m) k = vNe (nVar (S k)).
+Proof.
+  intros m k d H. rewrite <- shsub_0, (@shsub_nth 0 m k d H). unfold sh. reflexivity.
+Qed.
+
+Lemma InsAt_1_wkn_id : forall m a,
+    InsAt 1 (S m) (a :: wkn_list m) (a :: id_list (S m)).
+Proof.
+  intros m a k Hk. destruct k as [|k'].
+  - reflexivity.
+  - replace (sh 1 (S k')) with (S (S k')) by (unfold sh; reflexivity).
+    assert (Hk' : k' < m) by Lia.lia.
+    rewrite !nth_default_cons_S.
+    rewrite (@id_list_nth_lt (S m) (S k') (vNe (nVar (S (S k')))) ltac:(Lia.lia)).
+    rewrite (@wkn_list_nth m k' (vNe (nVar (S k'))) Hk').
+    reflexivity.
+Qed.
+
+Lemma Apply_reflect_cod : forall m a B B',
+    ne_below_val (S m) B ->
+    Apply_val (S m) (a :: wkn_list m) B B' ->
+    Apply_val (S m) (a :: id_list (S m)) (shift_val 1 1 B) B'.
+Proof.
+  intros m a B B' Hne Hap.
+  eapply Apply_val_cancel; [ exact Hne | apply InsAt_1_wkn_id | exact Hap ].
+Qed.
