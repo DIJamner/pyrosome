@@ -541,6 +541,55 @@ Section WithVar.
       exact (@interprets_to_functional V (lang_model l) Hmok n d1s d2s out1 out2 Hsa1 Hsa2 Hds).
     Qed.
 
+    (* ===== assumption_ids_agree: the agreement engine.  Given [a] and [i2]
+       both sound on [eF]'s atoms, agreeing up to [domain_eq] on the readback
+       leaves ([Hleaf]), and COVERAGE ([Hcover]: every id mapped by BOTH [a] and
+       [i2] carries an [atom_tree] or [atom_tree_sort]), [a] and [i2] agree up to
+       [domain_eq] wherever both are defined.  This is exactly the [Hagree]
+       hypothesis consumed by [term_concl_construct].  Pure application of
+       [atom_tree_deq] / [atom_tree_sort_deq] + PER symmetry; 0 new math.
+
+       NOTE on the contract: [Hcover] is stated on the OVERLAP dom(a) ∩ dom(i2),
+       not on all of [forall_vars].  This keeps the eventual confinement premise
+       (R5: dom(a) ⊆ forall_vars) OUT of this lemma's statement — it is needed
+       only to discharge [Hcover] (a fresh conclusion id mapped by an
+       unconfined [a] would have no [atom_tree] in [eF] and break coverage). ===== *)
+    Lemma assumption_ids_agree
+        (a i2 : V_map (domain V (lang_model l)))
+        (eF : instance) (sub : named_list V) (cc : ctx)
+        (Hsnd_a : forall al, atom_in_egraph al eF ->
+                    atom_sound_for_model V V V_map (lang_model l) a al)
+        (Hsnd_i2 : forall al, atom_in_egraph al eF ->
+                     atom_sound_for_model V V V_map (lang_model l) i2 al)
+        (Hleaf : forall x, In x (map fst sub) ->
+                   exists d1 d2,
+                     map.get a  (named_list_lookup default sub x) = Some d1
+                     /\ map.get i2 (named_list_lookup default sub x) = Some d2
+                     /\ domain_eq V (lang_model l) d1 d2)
+        (Hdom : map fst cc = map fst sub)
+        (Hcover : forall k da d,
+                    map.get a k = Some da -> map.get i2 k = Some d ->
+                    (exists e t, wf_term l cc e t /\ atom_tree eF sub e k)
+                  \/ (exists ts, wf_sort l cc ts /\ atom_tree_sort eF sub ts k))
+      : forall k d da, map.get i2 k = Some d -> map.get a k = Some da ->
+          domain_eq V (lang_model l) d da.
+    Proof.
+      intros k d da Hi2 Ha.
+      pose proof (domain_eq_PER V
+        (model_ok:=(@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)))
+        as Hper.
+      pose proof (@PER_Symmetric _ _ Hper) as Hsym.
+      destruct (Hcover k da d Ha Hi2) as [ (e & t & Hwt & Htree) | (ts & Hws & Htree) ].
+      - destruct (atom_tree_deq a i2 eF sub cc Hsnd_a Hsnd_i2 Hleaf Hdom e t Hwt k Htree)
+          as (d1 & d2 & Ha' & Hi2' & Hdeq).
+        assert (d1 = da) by congruence; assert (d2 = d) by congruence; subst d1 d2.
+        exact (Hsym _ _ Hdeq).
+      - destruct (atom_tree_sort_deq a i2 eF sub cc Hsnd_a Hsnd_i2 Hleaf Hdom ts Hws k Htree)
+          as (d1 & d2 & Ha' & Hi2' & Hdeq).
+        assert (d1 = da) by congruence; assert (d2 = d) by congruence; subst d1 d2.
+        exact (Hsym _ _ Hdeq).
+    Qed.
+
     (* ===== R4 assembly core (pure plumbing): given the canonical interp i2
        sound on all seq_conclusions clauses, well-formed, and AGREEING with the
        adversary a wherever both are defined, build a' := putmany i2 a (a wins),

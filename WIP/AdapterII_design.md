@@ -151,6 +151,55 @@ proven EXCEPT assumption_ids_agree.
      concl_clauses_sound_term. Then sort rule mirror. Then R5 contract (model_satisfies_rule_closed set_eq premise).
  NOTE: i2 sound on eF atoms needs eF atoms = literal atoms i1 maps; transfer i1→i2 by extends (atom_sound monotone).
 
+## ⭐ SESSION 47 (2026-06-01): `assumption_ids_agree` LANDED (0 axioms) — agreement engine.
+The Hagree producer is now a 0-axiom lemma (AdapterGlue.v, after atom_tree_sort_deq).
+Statement: given a,i2 both sound on eF atoms (Hsnd_a/Hsnd_i2), leaf-agreement (Hleaf),
+Hdom, and **OVERLAP-coverage** Hcover (∀ k da d, get a k=Some da → get i2 k=Some d →
+∃atom_tree/atom_tree_sort rooted at k under wf_term/wf_sort), conclude
+∀ k d da, get i2 k=Some d → get a k=Some da → deq d da. Proof = pick the tree witness,
+apply atom_tree_deq (j1:=a,j2:=i2) or atom_tree_sort_deq, congruence the gets, PER_Symmetric.
+KEY DESIGN CHOICE: Hcover is stated on the OVERLAP dom(a)∩dom(i2), NOT on all forall_vars.
+⇒ the R5 confinement premise (dom a ⊆ forall_vars) stays OUT of assumption_ids_agree's
+statement; it is needed only to DISCHARGE Hcover (an unconfined a binding a FRESH conclusion
+id k — not an atom_in_egraph eF — would have no atom_tree ⇒ Hcover false for that k). This
+cleanly decouples the agreement engine (DONE) from confinement (R5, deferred to Hcover's proof).
+Verified: rocq_assumptions = "Closed under the global context"; make builds AdapterGlue.vo.
+
+### REMAINING to close term_rule_concl_obligation (term; sort mirrors):
+ term_rule_concl_obligation = conclusion_egraph_sound (i2 + Hai2=args_in_instance) [DONE]
+   + concl_clauses_sound_term (Hclauses) [DONE] + idx_interpretation_wf of i2 (Hwf_i2) [easy,
+   from egraph_sound_for_interpretation's wf component] + assumption_ids_agree (Hagree) [DONE
+   modulo its 3 premises] + term_concl_construct (assembly) [DONE].
+ The 3 OPEN premises of assumption_ids_agree, with eF := e_assum, sub, cc := c:
+  • Hsnd_a  : a sound on e_assum atoms — ALREADY HAVE as `Hsnd_atoms` in the adapter
+              (assumption_atoms_sound (lang_model l) a _ Hassum). ✓ free.
+  • Hsnd_i2 : i2 sound on e_assum atoms. i2 (from conclusion_egraph_sound) is sound on e_concl,
+              NOT e_assum. Transfer: i2 extends i1, i1 sound on e_assum (assumption_egraph_sound),
+              atom_sound monotone-under-extends. ⚠ conclusion_egraph_sound does NOT expose i1/Hext12
+              — STRENGTHEN it to also return (i1, Hext12: extends i2 i1, Hsnd_i1_eassum) OR re-derive
+              the assumption chain inline. MEDIUM (~60 LoC, touches the proven conclusion_egraph_sound
+              Qed — restate, don't break).
+  • Hleaf   : a(lookup sub x)=Some(inl(sg x)) [Hfaith, after aligning In x (map fst sub) ↔ the
+              add_ctx readback var set]; i2(lookup sub x)=Some d2 with deq d2 (inl(sg x)) [from
+              Hai2=args_in_instance l (map snd sg) i2 (map snd sub): per-x extraction, lookup sub x =
+              snd of the x-entry]. Then d1:=inl(sg x), deq d1 d2 via PER on the args_in_instance deq.
+              Fiddly list/lookup alignment (~50 LoC).
+  • Hcover  : ⚠⚠ THE WALL (coverage). Stated on overlap; PROOF needs R5 confinement
+              (dom a ⊆ forall_vars = ids in db_to_atoms e_assum) + the new COVERAGE induction:
+              every id in e_assum's atoms carries atom_tree/atom_tree_sort. Explore verdict
+              (S47): FEASIBLE but NEW induction mirroring add_ctx_readback (Theorems.v:5557-5870,
+              ~300 LoC), reusing add_open_sort_node_atoms / atom_tree_survives / db_ctx_inv /
+              ctx_readback. NO existing completeness lemma. Biggest risk = canonicalization
+              (sort_of atom ret tx' vs sort-tree root xs are only uf_rel-equiv pre-rebuild; post-
+              rebuild they coincide — needs the rebuild-canonical fact). MULTI-SESSION.
+ PLUS R5 (contract): the obligation is stated for arbitrary `a` (open model_satisfies_rule,
+   QueryOptSound.v:160, has_key premise). To get confinement for Hcover, introduce
+   model_satisfies_rule_closed (set_eq premise), repoint optimize_sequent_forward[_atoms]'s
+   HYPOTHESIS open→closed (a_src already confined via pullback; +1 incl obligation), and add a
+   confinement premise to term/sort_rule_concl_obligation + the adapters. LAST (touches proven
+   0-axiom bridge). NB the active model_satisfies_rule is QueryOptSound.v:160 (has_key); the
+   Semantics.v:295 set_eq version is COMMENTED OUT.
+
 ## PROGRESS LOG (session 45)
 - ✅ `all_clause_sound_setoid` + `list_Mmap_get_setoid` (AdapterGlue.v, generic, 0 axioms) — commit 1d8a47c. The deq-transfer linchpin.
 - ✅ `assumption_egraph_sound` (AdapterGlue.v Section Adapter, 0 axioms) — commit a5745be. i1 sound on e_assum + args_in_instance + map fst eq.
