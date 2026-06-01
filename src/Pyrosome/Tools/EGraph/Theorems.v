@@ -2618,6 +2618,87 @@ Section WithVar.
     Qed.
 
     (* =============================================================== *)
+    (* Sub-weakening: prepending a FRESH binding to [sub] preserves     *)
+    (* [atom_tree]/[atom_node].  When [nm] does not occur as a variable *)
+    (* of [e] (e.g. [nm] is a freshly-allocated ctx var, [e] an earlier *)
+    (* var's sort skeleton), every [at_var] lookup is unchanged, so the *)
+    (* derivation transports verbatim.  Used by the assumption-coverage *)
+    (* frame to lift per-var trees built over a sub-prefix to the full  *)
+    (* readback [sub].                                                  *)
+    (* =============================================================== *)
+
+    Lemma atom_tree_sub_cons_fresh (eF : instance X) (sub : named_list V) (nm x' : V)
+      : forall e xe, ~ In nm (fv e) ->
+          atom_tree eF sub e xe -> atom_tree eF ((nm,x')::sub) e xe.
+    Proof.
+      intros e; induction e as [x | n s IHs] using term_ind; intros xe Hfv Htree.
+      - safe_invert Htree.
+        assert (Hxnm : x <> nm).
+        { intro Heq. apply Hfv. cbn. left. exact Heq. }
+        assert (Hlk : named_list_lookup default ((nm,x')::sub) x
+                      = named_list_lookup default sub x).
+        { cbn [named_list_lookup].
+          assert (Hef : eqb x nm = false).
+          { apply (eqb_ineq_false V x nm). left. exact Hxnm. }
+          rewrite Hef. reflexivity. }
+        rewrite <- Hlk. constructor.
+      - safe_invert Htree.
+        cbn [fv] in Hfv.
+        match goal with
+        | Htrees : Forall2 (atom_tree eF sub) s ?sids,
+          Hatom : atom_in_egraph (Build_atom n ?sids xe) eF |- _ =>
+            eapply at_con; [| exact Hatom];
+            clear Hatom;
+            revert sids Htrees Hfv IHs; induction s as [|t0 s0 IHsl];
+              intros sids Htrees Hfv IHs;
+            [ safe_invert Htrees; constructor
+            | safe_invert Htrees;
+              cbn [flat_map] in Hfv; rewrite in_app_iff in Hfv;
+              destruct IHs as [IHt0 IHs0];
+              constructor;
+              [ apply IHt0; [ tauto | assumption ]
+              | apply IHsl; [ assumption | tauto | exact IHs0 ] ] ]
+        end.
+    Qed.
+
+    Lemma forall2_atom_tree_sub_cons_fresh (eF : instance X) (sub : named_list V) (nm x' : V)
+      : forall s sids, ~ In nm (flat_map (@fv V) s) ->
+          Forall2 (atom_tree eF sub) s sids ->
+          Forall2 (atom_tree eF ((nm,x')::sub)) s sids.
+    Proof.
+      intros s; induction s as [|t0 s0 IHs]; intros sids Hfv Htrees.
+      - safe_invert Htrees. constructor.
+      - safe_invert Htrees.
+        cbn [flat_map] in Hfv. rewrite in_app_iff in Hfv.
+        constructor.
+        + eapply atom_tree_sub_cons_fresh; [ tauto | assumption ].
+        + apply IHs; [ tauto | assumption ].
+    Qed.
+
+    Lemma atom_node_sub_cons_fresh (eF : instance X) (sub : named_list V) (nm x' : V)
+      : forall e xe a, ~ In nm (fv e) ->
+          atom_node eF sub e xe a -> atom_node eF ((nm,x')::sub) e xe a.
+    Proof.
+      intros e xe a Hfv Hnode. revert Hfv.
+      induction Hnode as [n s sids xe HF2 Hatom
+                         | n s sids xe si sid a HF2 Hatom Hcomb Hnode' IH];
+        intros Hfv.
+      - cbn [fv] in Hfv.
+        apply an_root.
+        + eapply forall2_atom_tree_sub_cons_fresh; [ exact Hfv | exact HF2 ].
+        + exact Hatom.
+      - cbn [fv] in Hfv.
+        eapply an_sub.
+        + eapply forall2_atom_tree_sub_cons_fresh; [ exact Hfv | exact HF2 ].
+        + exact Hatom.
+        + exact Hcomb.
+        + apply IH.
+          intro Hin_si. apply Hfv.
+          rewrite in_flat_map. exists si.
+          split; [ eapply in_combine_l; exact Hcomb | exact Hin_si ].
+    Qed.
+
+    (* =============================================================== *)
     (* Bridge: atom_tree -> represents, given faithful leaves.          *)
     (* =============================================================== *)
 
