@@ -146,6 +146,61 @@ Section WithVar.
     Qed.
 
     (* ============================================================ *)
+    (* Structural lemma: the rebuilt egraph satisfies ctx_readback_eF.
+       This is the pure structural core of add_ctx_inversion, factored
+       out so the conclusion-construction side (B0) can consume it
+       directly without re-proving the rebuild/survival chain. *)
+    Lemma add_ctx_readback_eF (rf : nat) c
+      : wf_ctx l c ->
+        (exists ed_list, good_worklist V V V_map V_map V_trie X
+           (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))) ed_list) ->
+        fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                (empty_egraph V_default X)))) = Result.Success tt ->
+        @CtxReadback.ctx_readback_eF V _ _ V_map V_trie sort_of X
+          (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
+          (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+          c.
+    Proof.
+      intros Hwfc Hgwl Hsucc.
+      change (empty_egraph V_default X)
+        with (@empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (e0 := @empty_egraph V V_default V V_map V_map V_trie X) in *.
+      set (sub := fst (add_ctx succ sort_of l false false c e0)) in *.
+      set (e1 := snd (add_ctx succ sort_of l false false c e0)) in *.
+      set (eF := snd (rebuild rf e1)) in *.
+      (* --- base facts at empty_egraph --- *)
+      assert (Hok0 : egraph_ok e0).
+      { exact (proj1 (@empty_sound_for_interpretation V lt succ V_default V V_map V_map_ok
+                        V_map V_map_ok V_trie X lang_model)). }
+      assert (Huf0 : exists roots, union_find_ok lt (Defs.equiv e0) roots).
+      { exact (ex_intro _ [] (@union_find_empty_ok V lt succ V_default V_map V_map_ok)). }
+      assert (Hdb0 : db_ctx_inv X e0).
+      { intros aa Hin. exfalso.
+        unfold Semantics.atom_in_db in Hin.
+        unfold e0 in Hin. cbn [Defs.db empty_egraph] in Hin.
+        rewrite map.get_empty in Hin.
+        exact Hin. }
+      (* --- add_ctx_egraph_ok: structural envelope --- *)
+      pose proof (@Theorems.add_ctx_egraph_ok V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HE.
+      unfold vc in HE. specialize (HE e0).
+      fold sub e1 in HE.
+      specialize (HE Huf0 Hdb0 Hok0).
+      destruct HE as (Huf1 & Hdb1 & Hroots1 & Hmapfst & Hok1).
+      (* --- add_ctx_readback: model-free per-var readback --- *)
+      pose proof (@Theorems.add_ctx_readback V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok succ sort_of lt lt_asymmetric lt_succ lt_trans X HX l Hwf Hsof c Hwfc) as HR.
+      unfold vc in HR. specialize (HR e0).
+      fold sub e1 in HR.
+      specialize (HR Huf0 Hdb0).
+      destruct HR as (_ & _ & _ & _ & Hrb).
+      (* --- canonicalizing survival for eF (0-axiom rebuild kernel),
+             using the supplied good_worklist witness [Hgwl] (folded to e1) --- *)
+      pose proof (rebuild_survives_canonical e1 rf Hok1 Hgwl Hsucc) as Hsurv.
+      (* --- ctx_readback (e1) -> ctx_readback_eF (eF) --- *)
+      pose proof (ctx_readback_to_eF X l Hsof e1 eF Hdb1 Hsurv c sub Hwfc Hroots1 Hrb) as Hrbef.
+      exact Hrbef.
+    Qed.
+
+    (* ============================================================ *)
     (* Assembly: from an adversary [a] sound on the rebuilt           *)
     (* assumption egraph's atoms, recover a wf substitution of [c].   *)
     (* Linearly chains add_ctx_egraph_ok + add_ctx_readback +         *)
