@@ -43,6 +43,49 @@
 >   • Then A2 = FRAME (case split on fn=sort_of) + INNER engine for the non-sort_of node ids + ctx_readback_eF
 >     (xs of sort_of atoms) + at_var (x' of sort_of atoms). + R5 confinement to restrict to overlap.
 > NEXT: land atom_node_covered (inner, in progress) → then design/build the FRAME outer induction.
+>
+> ### SESSION 48 RESULT: inner engine LANDED (commit 1e07887, pushed long_horizon, 0 axioms)
+> `atom_node` (inductive) + `atom_node_covered` + 3 helpers (forall2_in_combine_r, wf_args_in_wf_term,
+> in_list_exists_pair) in AdapterGlue.v Section Adapter, after atom_tree_sort_deq. atom_node_covered:
+> `wf_term l cc e t -> atom_tree eF sub e xe -> atom_node eF sub e xe a -> a.(atom_fn)<>sort_of /\
+> (forall k, In k (a.(atom_ret)::a.(atom_args)) -> exists e' t', wf_term l cc e' t' /\ atom_tree eF sub e' k)`.
+> Hdom unneeded (var case vacuous). rocq_assumptions = Closed; AdapterGlue.vo rebuilds from source (exit 0).
+> ⚠ BUILD NOTE: `make -f Makefile.coq <target>.vo` needs the ABSOLUTE path (VFILES in Makefile.coq.conf are
+> absolute), else "No rule to make target". Use `make Makefile.coq` first if regenerated.
+>
+> ### FRAME ARCHITECTURE (the remaining wall — refined session 48, DESIGN for next session)
+> Mirror the proven ctx_readback / ctx_readback_to_eF split (CtxReadback.v) — do NOT try to prove
+> exhaustiveness directly on post-rebuild eF (rebuild reshuffles atoms; intractable). Instead:
+>   **(F-pre) `assum_db_frame_pre`** — on the PRE-rebuild e_ctx = snd(add_ctx false false c (empty)), where
+>     db atoms are EXACTLY what add_ctx added (characterizable). By induction on c via the add_ctx fold,
+>     STRENGTHENING add_ctx_readback's threaded invariant with a NEW conjunct:
+>       `forall a, atom_in_egraph a e_ctx -> a.(atom_fn) <> sort_of ->
+>          exists x t_x xs_x, In (x, named_list_lookup default sub x) sub_correspondence /\
+>            atom_tree_sort e_ctx sub_x t_x xs_x /\ atom_node e_ctx sub_x t_x xs_x a`
+>     (every non-sort_of atom is a node of some earlier ctx-var's sort skeleton). Plus the sort_of partition:
+>       `a.(atom_fn) = sort_of -> a = (sort_of,[x'],xs) for some var (x,x') with its sort root xs`.
+>     INDUCTIVE STEP adds (per var (x,t)): add_open_sort's atoms (the new non-sort_of, = nodes of
+>     atom_tree_sort t t_v by an INNER lemma) + one sort_of atom (hash_entry sort_of [x']). NoNewSortof
+>     (add_open_sort adds NO sort_of atom, Theorems.v:5176 add_open_sort_no_new_sortof — already proven there)
+>     + hash_entry_db_get_other gate the partition. alloc_opaque/union add no db atoms. OLD atoms (prior fold)
+>     stay covered (db_incl monotone; atom_node lifts via atom_tree_db_incl).
+>     ⚠ NEEDS INNER STRENGTHENING of open_atomtree_post (the genuinely new mechanical lemma):
+>       `add_open_new_atoms_are_nodes`: parallel to add_open_node_atoms (Theorems.v:4880-5061, a wf_cut_ind
+>       over term/args yielding open_atomtree_post = roots_env/is_root/atom_tree/equiv_extends). Add conjunct:
+>         `forall a, atom_in_egraph a (snd res) -> a.(atom_fn)<>sort_of ->
+>            atom_in_egraph a e_in \/ atom_node (snd res) sub e0 (fst res) a`.
+>       con case: new atom is hash_entry output (name,a_out,x_res) = an_root of (con name s); args-recursion
+>       atoms = an_sub into arg s_i (needs the args-post to carry "new atom = node of some arg"); pre-existing
+>       → left. var case: no new atom. EST ~150-250 LoC. Develop in a WIP probe against Theorems.vo (mirror
+>       NoNewSortof.v's section header), then transplant. DELEGATE to Sonnet with the wf_cut_ind structure.
+>   **(F-transport) `assum_db_frame`** — lift F-pre from e_ctx to eF = snd(rebuild rf e_ctx) via the SAME
+>     Hsurv survival hypothesis ctx_readback_to_eF uses (atom_tree_survives for the node trees; rebuild only
+>     canonicalizes, invents no new function-apps, so eF atoms are up_to_equiv images of e_ctx atoms). Reuse
+>     rebuild_survives_canonical (CtxToEF.v:147 / AddCtxInversion.v:118) + db_ctx_inv. Mirror ctx_readback_to_eF.
+>   Then **A2** = F-transport (case fn=sort_of vs not) + atom_node_covered (non-sort_of node ids, DONE) +
+>     ctx_readback_eF (sort_of atom's xs) + at_var (sort_of atom's x'). + R5 confinement → overlap.
+> ORDER: (1) add_open_new_atoms_are_nodes [WIP probe, Sonnet], (2) assum_db_frame_pre [add_ctx induction],
+> (3) assum_db_frame [transport], (4) assum_coverage = A2, (5) wire Hcover into assumption_ids_agree, (6) R5.
 
 > ## STATUS AFTER SESSION 47 (read this first)
 > All assembly pieces for `term_rule_concl_obligation` are 0-axiom DONE except TWO:
