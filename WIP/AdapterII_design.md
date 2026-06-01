@@ -5,12 +5,31 @@
 >  1. **Hcover (coverage)** — the only remaining MATH. `assumption_ids_agree` (DONE) reduces
 >     Hagree to: every id in dom(a)∩dom(i2) carries an atom_tree/atom_tree_sort. Proving this
 >     needs (i) R5 confinement so dom(a) ⊆ forall_vars(e_assum atoms), and (ii) a coverage fact
->     "every id in e_assum's atoms is a readback root". DECISION PENDING — option A (full add_ctx
->     coverage induction, ~300 LoC, mirror add_ctx_readback Theorems.v:5557) vs option B (weaken
->     all_clause_sound_setoid + term_concl_construct to clause-var-restricted compat ⇒ only need
->     coverage for conclusion-clause-vars = x' leaves [trivial at_var] + shared sort rets [need
->     atom_tree_sort + hash-cons identification]; avoids the big induction but needs add_open_term
->     output characterization). **Resolve A-vs-B before delegating.**
+>     "every id in e_assum's atoms is a readback root".
+>     **DECISION (session 47): OPTION A** (ctx_readback-based full coverage), because it localizes
+>     to ONE new self-contained lemma WITHOUT touching the proven assembly (all_clause_sound_setoid /
+>     term_concl_construct stay as-is, consume the overlap-form Hcover directly), and reuses the
+>     already-proven ctx_readback machinery. Option B (weaken setoid+construct to clause-var-restricted
+>     compat) scatters edits across proven lemmas AND still needs the hash-cons identification of shared
+>     conclusion sort ids — net worse. 
+>     OPTION-A PLAN (two sub-lemmas):
+>       A1. Obtain `ctx_readback e_assum sub c` for the REBUILT assumption egraph. add_ctx_readback
+>           (Theorems.v:5557) gives it for the RAW add_ctx output; add_ctx_inversion (AddCtxInversion.v
+>           :~202-213) ALREADY lifts it to the rebuilt eF via `ctx_readback_to_eF`. ⚠ FIRST INVESTIGATE
+>           (next session, cheap Explore): is ctx_readback (or ctx_readback_to_eF) exposed/re-derivable
+>           for e_assum outside add_ctx_inversion's proof? If add_ctx_inversion can be strengthened to
+>           RETURN ctx_readback e_assum sub c (like conclusion_egraph_sound was strengthened for i1),
+>           A1 is ~free. This is the make-or-break cheapness question for option A.
+>       A2. `ctx_readback e sub c -> forall k, In k (flat_map clause_vars (map atom_clause (db_to_atoms
+>           (db e)))) -> (∃e' t, wf_term l c e' t /\ atom_tree e sub e' k) \/ (∃ts, wf_sort l c ts /\
+>           atom_tree_sort e sub ts k)`. The genuine content: every atom in db_to_atoms(e) is part of
+>           some ctx var's sort atom_tree_sort (whose unfolding gives atom_trees for all internal ids)
+>           or a sort_of[x']xs edge (x' covered by at_var, xs by the var's atom_tree_sort root). Whether
+>           this needs an add_ctx re-induction or can piggyback on db_ctx_inv + ctx_readback's per-var
+>           trees is the second open question — likely a structural induction over c unfolding
+>           ctx_readback, NOT a full add_ctx re-run. Canonicalization (sort_of ret tx' = root xs
+>           post-rebuild) handled by the same fact add_ctx_inversion already uses.
+>     Then Hcover = A2 (on forall_vars) + R5 confinement (dom a ⊆ forall_vars) restricted to the overlap.
 >  2. **R5 (contract)** — repoint the proven bridge `optimize_sequent_forward_atoms`
 >     (QueryOptSound.v:5306) hypothesis from open `model_satisfies_rule` (QueryOptSound.v:160,
 >     has_key) to a new `model_satisfies_rule_closed` (set_eq), add confinement premise to the
