@@ -85,28 +85,62 @@ Inductive RedNeutral (Ge : senv) (T : svalty) : sval -> Type :=
 (* Domain/codomain data for a Pi type, quantified over full (well-typed)
    explicit substitutions [sg : Delta <- Ge] (subsuming weakening via wkn_list).
    The codomain producer's argument hypothesis [redTm (shpRed ws af) a] is the
-   domain pack's FIELD applied — positive, not the inductive. *)
+   domain pack's FIELD applied — positive, not the inductive.
+
+   Codomain-substitution TOTALITY is intrinsic: given a reducible argument [a],
+   the pack PRODUCES the substituted codomain [posTy] together with a witness
+   [posApp] that it is the [Apply_val] image of [B] under [a :: sg], and the
+   reducibility pack [posRed] at that substituted codomain.  This is the
+   analogue of logrel-coq's total syntactic substitution [B[a .: σ]]: here our
+   substitution is the relational hereditary [Apply_*], partial in general, so
+   the witness that the substitution is defined is carried by the pack rather
+   than being free.  Consuming this totality (rather than the old design where
+   [posRed] took the [Apply_val] derivation as INPUT) is what lets [reflect_red]
+   produce the eta-expansion codomain in the [LRpi] case. *)
 Record PolyRedPack (Ge : senv) (F B : sval) : Type :=
   { shpRed : forall Delta sg F',
       wf_ssub Delta sg Ge -> Apply_val (length Delta) sg F F' -> LRPack Delta (dEl F')
-  ; posRed : forall Delta sg a F' Bres
+  ; posRed : forall Delta sg a F'
       (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F'),
       redTm (shpRed ws af) a ->
-      Apply_val (length Delta) (a :: sg) B Bres ->
-      LRPack Delta (dEl Bres) }.
+      { Bres : sval &
+        (Apply_val (length Delta) (a :: sg) B Bres * LRPack Delta (dEl Bres))%type } }.
+
+(* Named accessors for the three components of [posRed] (the substituted
+   codomain value, the totality witness, and the codomain reducibility pack). *)
+Definition posTy Ge F B (PA : PolyRedPack Ge F B) Delta sg a F'
+   (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+   (ra : redTm (shpRed PA ws af) a) : sval :=
+  projT1 (@posRed Ge F B PA Delta sg a F' ws af ra).
+Arguments posTy {Ge F B} PA {Delta sg a F' ws af} ra.
+
+Definition posApp Ge F B (PA : PolyRedPack Ge F B) Delta sg a F'
+   (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+   (ra : redTm (shpRed PA ws af) a)
+  : Apply_val (length Delta) (a :: sg) B (posTy PA ra) :=
+  fst (projT2 (@posRed Ge F B PA Delta sg a F' ws af ra)).
+Arguments posApp {Ge F B} PA {Delta sg a F' ws af} ra.
+
+Definition posPack Ge F B (PA : PolyRedPack Ge F B) Delta sg a F'
+   (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
+   (ra : redTm (shpRed PA ws af) a)
+  : LRPack Delta (dEl (posTy PA ra)) :=
+  snd (projT2 (@posRed Ge F B PA Delta sg a F' ws af ra)).
+Arguments posPack {Ge F B} PA {Delta sg a F' ws af} ra.
 
 (* The reducibility predicate computed FROM the pack data (a Definition, not the
-   inductive): the extensional function clause. *)
+   inductive): the extensional function clause.  The substituted codomain and
+   its [Apply_val] witness are now produced by the pack ([posTy]/[posApp]), so
+   the clause no longer quantifies over [Bres]/[hB]. *)
 Definition PiRedTmPred (Ge : senv) (F B : sval) (PA : PolyRedPack Ge F B) : sval -> Type :=
   fun f =>
     (has_svalty Ge f (dEl (vPi F B)) *
-     (forall Delta sg a F' fsg Bres
+     (forall Delta sg a F' fsg
         (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
         (afs : Apply_val (length Delta) sg f fsg)
-        (hB : Apply_val (length Delta) (a :: sg) B Bres)
         (ra : redTm (shpRed PA ws af) a),
         { v & (Vapp (length Delta) fsg a v *
-               redTm (posRed PA ws af ra hB) v)%type }))%type.
+               redTm (posPack PA ra) v)%type }))%type.
 
 (* Adequacy: the packs stored in [PA] are themselves in the graph [R]. *)
 Record PolyRedPackAdequate (R : RedRel) (Ge : senv) (F B : sval)
@@ -114,11 +148,12 @@ Record PolyRedPackAdequate (R : RedRel) (Ge : senv) (F B : sval)
   { shpAd : forall Delta sg F' (ws : wf_ssub Delta sg Ge)
               (af : Apply_val (length Delta) sg F F'),
       R Delta (dEl F') (redTm (shpRed PA ws af))
-  ; posAd : forall Delta sg a F' Bres
+  ; posAd : forall Delta sg a F'
               (ws : wf_ssub Delta sg Ge) (af : Apply_val (length Delta) sg F F')
-              (ra : redTm (shpRed PA ws af) a)
-              (hB : Apply_val (length Delta) (a :: sg) B Bres),
-      R Delta (dEl Bres) (redTm (posRed PA ws af ra hB)) }.
+              (ra : redTm (shpRed PA ws af) a),
+      R Delta (dEl (posTy PA ra)) (redTm (posPack PA ra)) }.
+Arguments shpAd {R Ge F B PA} adq {Delta sg F'} ws af : rename.
+Arguments posAd {R Ge F B PA} adq {Delta sg a F'} ws af ra : rename.
 
 (* The graph inductive, parameterized by the current level [lvl] and a recursor
    [rec] giving the relation at STRICTLY SMALLER levels (logrel-coq style).
