@@ -213,6 +213,89 @@ Section WithVar.
       split; [exact Hfst1|exact Hai1].
     Qed.
 
+    (* ===== conclusion forward chain: given wf_subst, produce a sound interpretation
+         for the conclusion egraph (after add_open_term + rebuild + force_equiv). ===== *)
+    Lemma conclusion_egraph_sound name c args t (sg : subst)
+        (Hin : In (name, term_rule c args t) l)
+        (Hsg : wf_subst l [] sg c)
+      : let sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)) in
+        let e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))) in
+        let e_open  := snd (add_open_term succ sort_of l true false sub (con name (id_args c)) e_assum) in
+        let e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X)
+                              (snd (rebuild rf e_open))) in
+        exists i2,
+          egraph_sound_for_interpretation (lang_model l) i2 e_concl
+          /\ args_in_instance l (map snd sg) i2 (map snd sub).
+    Proof.
+      (* Unfold the let-bindings *)
+      cbn zeta.
+      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_assum := snd (rebuild rf e_ctx)).
+      (* Step 1: derive wf_ctx l c from rule membership *)
+      assert (Hwfc : wf_ctx l c).
+      { pose proof (rule_in_wf _ _ Hwf Hin) as Hr. rewrite app_nil_r in Hr.
+        rewrite invert_wf_term_rule in Hr. destruct Hr as [Hc _]. exact Hc. }
+      (* Step 2: use assumption_egraph_sound *)
+      pose proof (assumption_egraph_sound c Hwfc sg Hsg)
+        as (Hok_assum & i1 & Hsnd_assum & Hfst_sub & Hai1).
+      (* Step 3: derive wf_term l c (con name (id_args c)) t *)
+      assert (Hwft : wf_term l c (con name (id_args c)) t).
+      { replace t with (t[/id_subst c/]); [| basic_core_crush].
+        eapply wf_term_by; eauto.
+        eapply id_args_wf; eauto with utils. }
+      (* Step 4+5: apply add_open_term_sound *)
+      pose proof (@Theorems.add_open_term_sound
+                    V V_Eqb V_Eqb_ok V_default V_map V_map_ok V_trie V_trie_ok
+                    succ sort_of lt lt_asymmetric lt_succ lt_trans
+                    X HX l Hwf Hsof true
+                    c sub (map snd sg) (con name (id_args c)) t
+                    (@Theorems.wf_args_from_wf_subst V V_Eqb l [] sg c Hsg)
+                    Hwft Hwfc
+                    (eq_sym Hfst_sub) i1)
+        as Hvc_open.
+      unfold vc in Hvc_open.
+      specialize (Hvc_open e_assum).
+      unfold Theorems.open_term_post in Hvc_open.
+      specialize (Hvc_open Hok_assum Hsnd_assum Hai1).
+      destruct Hvc_open as [i2 (Hext_open & _)].
+      destruct Hext_open as (Hok_open & Hext12 & Hsnd_open & _).
+      set (e_open := snd (add_open_term succ sort_of l true false sub
+                            (con name (id_args c)) e_assum)).
+      (* Step 6: rebuild_sound on e_open *)
+      pose proof (@Semantics.rebuild_sound
+                    V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+                    V_map V_map_ok V_map V_map_ok
+                    V_trie V_trie_ok unit HX
+                    (lang_model l)
+                    (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
+                    (fun _ => True) rf)
+        as Hvc_rb2.
+      unfold vc in Hvc_rb2.
+      specialize (Hvc_rb2 e_open).
+      cbn [snd] in Hvc_rb2.
+      specialize (Hvc_rb2 Hok_open).
+      destruct Hvc_rb2 as [Hok_rb2 Hde_rb2].
+      pose proof (proj1 (Hde_rb2 i2) Hsnd_open) as Hsnd_rb2.
+      set (e_rb2 := snd (rebuild rf e_open)).
+      (* Step 7: force_equiv_preserves_sound *)
+      pose proof (@QueryOptSound.force_equiv_preserves_sound
+                    V V_Eqb V_Eqb_ok lt V V_map V_map V_map_ok V_trie
+                    (lang_model l) i2 e_rb2
+                    (Semantics.egraph_equiv_ok V lt V V_map V_map V_trie unit e_rb2 Hok_rb2)
+                    Hsnd_rb2)
+        as Hsnd_concl.
+      (* Step 8: args_in_instance monotone under i1 → i2 *)
+      pose proof (@Theorems.args_in_instance_monotone
+                    V V_Eqb V_map sort_of l (map snd sg) i1 i2
+                    (map snd sub) Hext12 Hai1)
+        as Hai2.
+      exists i2.
+      split.
+      - exact Hsnd_concl.
+      - exact Hai2.
+    Qed.
+
     (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
     Lemma term_rule_concl_obligation name c args t
         (a : V_map (domain V (lang_model l)))
