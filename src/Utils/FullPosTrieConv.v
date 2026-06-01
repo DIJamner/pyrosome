@@ -24,9 +24,10 @@
 
 From Stdlib Require Import NArith Lists.List.
 Import ListNotations.
-From coqutil Require Import Map.Interface.
+From coqutil Require Import Map.Interface Map.Properties.
 From Tries Require Import Canonical.
-From Utils Require Import Utils Default FullPosTrie PosListMap PosListMapLaws.
+From Utils Require Import Utils Monad Default FullPosTrie PosListMap PosListMapLaws
+  PosListMapIntersectSpec.
 
 Set Implicit Arguments.
 
@@ -271,3 +272,176 @@ Proof.
       cbn [fst] in Hnn. rewrite lkeqb_refl in Hnn. discriminate.
     + reflexivity.
 Qed.
+
+(* ============================================================================
+   INTERSECT INHERITANCE.
+
+   [fpt_spaced_intersect] is a conversion wrapper:
+     [fpt_spaced_intersect merge (tries, rest)
+        = pt_to_fpt (compat_intersect merge (cvt tries, map cvt rest))]
+   where [cvt p := (fpt_to_pt (fst p), snd p)].
+
+   The e-graph saturation machinery consumes the intersection keys via the
+   [Hsli] obligation (the last conjunct of [run1iter_rule_hyps], SemanticsSaturate.v):
+   for every [sigma] enumerated by [map.keys (fpt_spaced_intersect (fun _ _ => tt) tries)],
+   EVERY input trie's projected lookup must hit ([= Some tt]).
+
+   [fpt_spaced_intersect_inputs_hit] establishes exactly this, by inheriting the
+   already-proven [pt_spaced_intersect_correct] (3352-line proof) through the two
+   get-preserving conversion lemmas [pt_to_fpt_get] / [fpt_to_pt_get].  The one
+   structural fact it cannot derive locally -- that [compat_intersect]'s result is
+   uniform-depth -- is taken as a hypothesis and discharged separately
+   (pt_spaced_intersect result-depth preservation, ingredient (b)).
+   ============================================================================ *)
+
+Section Inherit.
+  Context {B : Type} `{WithDefault B}.
+  Context (merge : B -> B -> B).
+  Context (merge_comm : forall a b, merge a b = merge b a).
+  Context (merge_assoc : forall a b c, merge a (merge b c) = merge (merge a b) c).
+
+  Local Notation cvt :=
+    (fun p : @FullPosTrie.fpt B * list bool => (fpt_to_pt (fst p), snd p)).
+
+  (* ---- helper 1: an all-true bool pattern projects a length-N key to itself. *)
+  Lemma project_repeat_true (sigma : list positive) (N : nat) :
+    length sigma = N ->
+    map fst (filter snd (combine sigma (repeat true N))) = sigma.
+  Proof.
+    intros Hlen. subst N.
+    induction sigma as [|p sigma' IH]; cbn [repeat combine filter map].
+    - reflexivity.
+    - cbn [length repeat combine filter map snd]. rewrite IH. reflexivity.
+  Qed.
+
+  (* ---- helper 2: a projected key's length = the number of selected (true) flags. *)
+  Lemma project_length (sigma : list positive) (bs : list bool) :
+    length sigma = length bs ->
+    length (map fst (filter snd (combine sigma bs))) = length (filter id bs).
+  Proof.
+    intros Hlen. rewrite length_map. revert sigma Hlen.
+    induction bs as [|b bs' IH]; intros sigma Hlen.
+    - destruct sigma; cbn [combine filter]; reflexivity.
+    - destruct sigma as [|p sigma']; cbn [length] in Hlen; [discriminate|].
+      cbn [combine filter id]. destruct b; cbn [length filter snd].
+      + rewrite IH; [reflexivity| congruence].
+      + rewrite IH; [reflexivity| congruence].
+  Qed.
+
+  (* ---- helper 3: a successful [list_Mmap] means every element maps to [Some]. *)
+  Lemma list_Mmap_in_some {T1 T2} (f : T1 -> option T2) (l : list T1) (r : list T2) :
+    list_Mmap f l = Some r -> forall p, In p l -> exists v, f p = Some v.
+  Proof.
+    revert r. induction l as [|a l' IH]; intros r Hmm q Hin.
+    - cbn in Hin. contradiction.
+    - cbn [list_Mmap] in Hmm. unfold Mbind, Mret, option_monad in Hmm.
+      destruct (f a) as [va|] eqn:Hfa; [|discriminate].
+      destruct (list_Mmap f l') as [vs|] eqn:Hml; [|discriminate].
+      destruct Hin as [Heq|Hin].
+      + subst q. exists va. exact Hfa.
+      + apply (IH vs eq_refl q Hin).
+  Qed.
+
+  (* The inheritance bridge.  [tries]/[rest] are the ORIGINAL fpt query tries.
+     Hypotheses (downstream obligations):
+       - [Hdepth]: the converted pos_trie intersection result is uniform depth N
+         (ingredient (b): pt_spaced_intersect result-depth preservation);
+       - [Hbools]: the OR-combined bool pattern is all-true of length N
+         (the build_rule_set invariant: variable_flags cover every query var);
+       - [Hwf]: the converted tries are well-formed at key [sigma]
+         (lengths + per-trie has_depth', from build_tries output);
+       - [Hfd]: each ORIGINAL fpt input has uniform depth = its number of true
+         flags (so [fpt_to_pt_get] fires on the projected key). *)
+  Lemma fpt_spaced_intersect_inputs_hit
+    (tries : @FullPosTrie.fpt B * list bool)
+    (rest : list (@FullPosTrie.fpt B * list bool))
+    (sigma : list positive) (N : nat) :
+    In sigma (@map.keys (list positive) B (@FullPosTrie.full_pos_trie_map B)
+                (fpt_spaced_intersect merge (tries, rest))) ->
+    length sigma = N ->
+    depth (compat_intersect merge (cvt tries, List.map cvt rest)) N ->
+    combined_bools (cvt tries, List.map cvt rest) = repeat true N ->
+    wf_tries sigma (cvt tries, List.map cvt rest) ->
+    (forall p, In p (tries :: rest) ->
+       fpt_depth (fst p) (length (filter id (snd p)))) ->
+    forall p, In p (tries :: rest) ->
+      exists v, fpt_get (fst p) (map fst (filter snd (combine sigma (snd p)))) = Some v.
+  Proof.
+    (* PLAN (the inheritance chain):
+       Let R := compat_intersect merge (cvt tries, map cvt rest).
+       Note fpt_spaced_intersect merge (tries,rest) = pt_to_fpt R (unfold; reflexivity).
+
+       1. From [In sigma (map.keys (pt_to_fpt R))]:
+            map.in_keys_inv (@full_pos_trie_map_ok) -> map.get (pt_to_fpt R) sigma <> None.
+          map.get on full_pos_trie_map is defeq fpt_get, so get [v] with
+            fpt_get (pt_to_fpt R) sigma = Some v.
+       2. pt_to_fpt_get R N Hdepth sigma Hlen : fpt_get (pt_to_fpt R) sigma = pt_get R sigma.
+          So pt_get R sigma = Some v.
+       3. pt_spaced_intersect_correct merge merge_comm merge_assoc
+            (cvt tries, map cvt rest) sigma Hwf : pt_spaced_intersect_spec ... sigma.
+          Unfold the spec: result := spaced_get sigma (combined_bools, R').
+          R' = pt_spaced_intersect merge (...) = compat_intersect ... = R (defeq).
+          spaced_get sigma (combined_bools, R) = pt_get R (project sigma combined_bools).
+          Rewrite Hbools (combined_bools = repeat true N) + project_repeat_true Hlen
+            => spaced_get sigma (...) = pt_get R sigma = Some v (from step 2).
+          So the spec's [match ... with Some (e::es) => result = Some _ | _ => result = None]
+            forces list_Mmap (lookup_one sigma) (fst::snd) = Some (_::_) (else result=None,
+            contradicting Some v). Name it [Hmm].
+       4. For p in tries::rest: cvt p in (cvt tries :: map cvt rest) = the spec's all_tries.
+          list_Mmap_in_some Hmm (cvt p) (In) : exists w, lookup_one sigma (cvt p) = Some w.
+          lookup_one sigma (cvt p) = spaced_get sigma (snd p, fpt_to_pt (fst p))
+            = pt_get (fpt_to_pt (fst p)) (map fst (filter snd (combine sigma (snd p)))).
+       5. fpt_to_pt_get (fst p) (length (filter id (snd p))) (Hfd p)
+            (key := project sigma (snd p)):
+          need |project| = length (filter id (snd p)): project_length with
+            length sigma = length (snd p) (= N, from Hwf's wf_input length fields).
+          => pt_get (fpt_to_pt (fst p)) (project) = fpt_get (fst p) (project) = Some w.
+          exists w; exact. *)
+    intros Hin Hlen Hdepth Hbools Hwf Hfd.
+    set (R := compat_intersect merge (cvt tries, List.map cvt rest)) in *.
+    assert (Heq : fpt_spaced_intersect merge (tries, rest) = pt_to_fpt R).
+    { unfold fpt_spaced_intersect, R. cbn [fst snd]. reflexivity. }
+    rewrite Heq in Hin.
+    assert (Hbs : forall x y : list positive,
+               BoolSpec (x = y) (x <> y) (if list_eq_dec Pos.eq_dec x y then true else false)).
+    { intros x y. destruct (list_eq_dec Pos.eq_dec x y); constructor; assumption. }
+    pose proof (@Properties.map.in_keys_inv (list positive) B
+                  (@FullPosTrie.full_pos_trie_map B) (@FullPosTrie.full_pos_trie_map_ok B)
+                  _ Hbs sigma (pt_to_fpt R) Hin) as Hget.
+    change (@map.get (list positive) B (@FullPosTrie.full_pos_trie_map B) (pt_to_fpt R) sigma)
+      with (fpt_get (pt_to_fpt R) sigma) in Hget.
+    destruct (fpt_get (pt_to_fpt R) sigma) as [v|] eqn:Hfget; [|congruence].
+    clear Hget Hbs Hin.
+    rewrite (pt_to_fpt_get R Hdepth sigma Hlen) in Hfget.
+    pose proof (pt_spaced_intersect_correct (A:=B) merge merge_comm merge_assoc
+                  (cvt tries, List.map cvt rest) sigma Hwf) as Hspec.
+    unfold pt_spaced_intersect_spec in Hspec.
+    unfold spaced_get in Hspec. cbn [fst snd] in Hspec.
+    rewrite Hbools in Hspec.
+    rewrite (project_repeat_true sigma Hlen) in Hspec.
+    change (pt_spaced_intersect merge (fpt_to_pt (fst tries), snd tries, map cvt rest))
+      with R in Hspec.
+    rewrite Hfget in Hspec.
+    destruct (list_Mmap (lookup_one sigma)
+                ((fpt_to_pt (fst tries), snd tries) :: map cvt rest))
+      as [[|e es]|] eqn:Hmm; [discriminate Hspec | | discriminate Hspec].
+    intros p Hp.
+    assert (Hincvt : In (cvt p) ((fpt_to_pt (fst tries), snd tries) :: map cvt rest)).
+    { change ((fpt_to_pt (fst tries), snd tries) :: map cvt rest)
+        with (map cvt (tries :: rest)).
+      exact (in_map cvt (tries :: rest) p Hp). }
+    pose proof (list_Mmap_in_some _ _ Hmm (cvt p) Hincvt) as [w Hw].
+    unfold lookup_one, spaced_get in Hw. cbn [fst snd] in Hw.
+    assert (Hlen_eq : length sigma = length (snd p)).
+    { destruct Hwf as [Hwfh Hwft]. cbn [fst snd] in Hwfh.
+      destruct Hp as [Heqp | Hinp].
+      - subst p. destruct Hwfh as [Hl _]. cbn [snd] in Hl. symmetry. exact Hl.
+      - rewrite Forall_forall in Hwft.
+        specialize (Hwft (cvt p) (in_map cvt rest p Hinp)).
+        destruct Hwft as [Hl _]. cbn [snd] in Hl. symmetry. exact Hl. }
+    pose proof (project_length sigma (snd p) Hlen_eq) as Hkey.
+    rewrite (fpt_to_pt_get (fst p) (Hfd p Hp) _ Hkey) in Hw.
+    exists w. exact Hw.
+  Qed.
+
+End Inherit.
