@@ -296,6 +296,87 @@ Section WithVar.
       - exact Hai2.
     Qed.
 
+    (* ===== R2: lift i2 soundness on e_concl to all seq_conclusions clauses ===== *)
+    Lemma concl_clauses_sound_term name c args t (sg : subst)
+        (Hin : In (name, term_rule c args t) l)
+        (Hsg : wf_subst l [] sg c)
+        (i2 : V_map (domain V (lang_model l)))
+        (Hsnd : egraph_sound_for_interpretation (lang_model l) i2
+                  (snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X)
+                          (snd (rebuild rf
+                            (snd (add_open_term succ sort_of l true false
+                                    (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                                    (con name (id_args c))
+                                    (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))
+      : all (clause_sound_for_model V V V_map (lang_model l) i2)
+            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_rule c args t))).
+    Proof.
+      unfold rule_to_log_rule, sequent_of_states.
+      cbn [seq_conclusions].
+      unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
+      cbn beta iota.
+      set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_ctx  := snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))).
+      set (e_assum := snd (rebuild rf e_ctx)).
+      set (e_open  := snd (add_open_term succ sort_of l true false sub (con name (id_args c)) e_assum)).
+      set (e_rb2   := snd (rebuild rf e_open)).
+      set (e_concl := snd (force_equiv V V_Eqb V V_map V_map V_trie (X:=X) e_rb2)).
+      (* Fold the Hsnd hypothesis: its raw expression equals e_concl by definitional equality *)
+      change (egraph_sound_for_interpretation (lang_model l) i2 e_concl) in Hsnd.
+      (* Fold conclusion_inst to e_concl via the destruct trick *)
+      assert (Heq_concl :
+        snd (uncurry
+          (fun (a : list (V * V)) (x : instance) =>
+           let (x0, y) := add_open_term succ sort_of l true false a (con name (id_args c)) x in
+           let (_, y0) := rebuild rf y in
+           let (_, y1) := force_equiv V V_Eqb V V_map V_map V_trie y0 in
+           (x0, y1))
+          (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
+           let (_, y0) := rebuild rf y in (x, y0))) = e_concl).
+      { unfold e_concl, e_rb2, e_open, e_assum, e_ctx, sub.
+        unfold uncurry.
+        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
+        cbn [fst snd].
+        destruct (rebuild rf e1) as [r2 e2]. cbn [fst snd].
+        destruct (add_open_term succ sort_of l true false sub0 (con name (id_args c)) e2) as [sub3 e3].
+        cbn [fst snd].
+        destruct (rebuild rf e3) as [r4 e4]. cbn [fst snd].
+        destruct (force_equiv V V_Eqb V V_map V_map V_trie e4) as [r5 e5]. cbn [fst snd].
+        reflexivity. }
+      (* Fold assumption egraph to e_assum *)
+      assert (Heq_assum :
+        snd (let (x, y) := add_ctx succ sort_of l false false c (empty_egraph V_default X) in
+             let (_, y0) := rebuild rf y in (x, y0)) = e_assum).
+      { unfold e_assum, e_ctx.
+        destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X)) as [sub0 e1].
+        cbn [snd fst].
+        destruct (rebuild rf e1) as [r2 e2]. reflexivity. }
+      rewrite Heq_concl, Heq_assum.
+      apply all_app; split.
+      - (* eq_clause half via uf_eqs_sound *)
+        apply SemanticsUtil.all_map_in.
+        intros p Hp.
+        apply incl_filter in Hp.
+        destruct p as [px py].
+        pose proof (in_all _ _ _
+          (@QueryOptSound.uf_eqs_sound V V_Eqb V_Eqb_ok V V_map V_map V_map_ok V_trie
+             (lang_model l) i2 e_concl Hsnd)
+          (in_map (fun q => @eq_clause V V (fst q) (snd q)) _ _ Hp)) as Hsp.
+        cbn [uncurry fst snd] in Hsp |- *.
+        exact Hsp.
+      - (* atom_clause half via db_to_atoms_sound + incl_remove_atoms *)
+        apply SemanticsUtil.all_map_in.
+        intros a0 Ha0.
+        (* incl_remove_atoms: X is implicit, must be provided separately *)
+        pose proof (@QueryOpt.incl_remove_atoms V V_Eqb V_Eqb_ok lt V V_Eqb V_Eqb_ok
+           V_map V_map_ok V_map V_trie V_trie_ok) as Hira.
+        pose proof (Hira X (db_to_atoms (db e_assum)) e_concl a0 Ha0) as Hin_concl.
+        exact (in_all _ _ _
+          (@QueryOptSound.db_to_atoms_sound V V_Eqb V_Eqb_ok lt succ V_default V V_Eqb V_Eqb_ok
+             V_map V_map_ok V_map V_trie V_trie_ok (lang_model l) i2 e_concl Hsnd)
+          (in_map (@atom_clause V V) _ _ Hin_concl)).
+    Qed.
+
     (* ===== (II) conclusion obligation for term rules — Admitted placeholder ===== *)
     Lemma term_rule_concl_obligation name c args t
         (a : V_map (domain V (lang_model l)))
