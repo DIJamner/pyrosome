@@ -402,12 +402,48 @@ Section WithVar.
           (fun '(sub,x1) =>
              @! let x2 <- add_open_sort true false sub t2 in
                (union x1 x2))
-    | term_eq_rule c e1 e2 t => 
+    | term_eq_rule c e1 e2 t =>
         sequent_of_states
           (@!let sub <- add_ctx false false c in
              let x1 <- add_open_term false false sub e1 in
              ret (sub,x1))
           (* TODO: should I add that t is its sort?*)
+          (fun '(sub,x1) =>
+             @! let x2 <- add_open_term true false sub e2 in
+               (union x1 x2))
+    end.
+
+  (* The success/failure of the assumption-side [rebuild] used to compile [r]
+     into [rule_to_log_rule n r].  Mirrors [rule_to_log_rule] branch for
+     branch, calling [sequent_of_states_status] with the SAME assumption
+     monad, so it is exactly the rebuild that produced the sequent.  Used to
+     fail the whole reduction when the rebuild ran out of fuel, instead of
+     silently building a sequent from a non-canonical egraph. *)
+  Notation sequent_of_states_status a c :=
+    (QueryOpt.sequent_of_states_status a c rf).
+  Definition rule_to_log_rule_status n (r : rule) : Result.result unit :=
+    match r with
+    | sort_rule c args =>
+        sequent_of_states_status
+          (add_ctx false false c)
+          (fun sub => add_open_sort true false sub (scon n (id_args c)))
+    | term_rule c args t =>
+        sequent_of_states_status
+          (add_ctx false false c)
+          (fun sub => add_open_term true false sub (con n (id_args c)))
+    | sort_eq_rule c t1 t2 =>
+        sequent_of_states_status
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_sort false false sub t1 in
+             ret (sub,x1))
+          (fun '(sub,x1) =>
+             @! let x2 <- add_open_sort true false sub t2 in
+               (union x1 x2))
+    | term_eq_rule c e1 e2 t =>
+        sequent_of_states_status
+          (@!let sub <- add_ctx false false c in
+             let x1 <- add_open_term false false sub e1 in
+             ret (sub,x1))
           (fun '(sub,x1) =>
              @! let x2 <- add_open_term true false sub e2 in
                (union x1 x2))
@@ -427,6 +463,25 @@ Section WithVar.
   Definition rule_set_from_lang rf (l l': lang) : rule_set :=
     build_rule_set succ _ rf (map (uncurry (rule_to_log_rule l'
                                            (analysis_result:=unit) rf)) l).
+
+  (* [Success tt] iff every rule's assumption-side rebuild succeeded; otherwise
+     the first failure (carrying its error).  Companion to [rule_set_from_lang]:
+     when this is a [Failure], the rule_set was built from a non-canonical
+     egraph and should not be trusted. *)
+  Definition all_success : list (Result.result unit) -> Result.result unit :=
+    fold_right (fun r acc => match r with
+                             | Result.Success _ => acc
+                             | Result.Failure e => Result.Failure e
+                             end) (Result.Success tt).
+  Definition rule_set_from_lang_status rf (l l': lang) : Result.result unit :=
+    (* the dead [build_rule_set] reference forces this definition to generalize
+       over exactly the same section variables (in the same order) as
+       [rule_set_from_lang], so [build_rule_set_status] below can be applied
+       with the identical leading arguments as [build_rule_set] *)
+    let _ := build_rule_set succ _ rf
+               (map (uncurry (rule_to_log_rule l' (analysis_result:=unit) rf)) l) in
+    all_success (map (fun '(n,r) =>
+                        rule_to_log_rule_status l' (analysis_result:=unit) rf n r) l).
 
  
   Section AnalysisExtract.
@@ -945,6 +1000,11 @@ Module PositiveInstantiation.
   Definition build_rule_set : nat -> lang positive -> lang positive -> rule_set positive positive trie_map trie_map :=
     rule_set_from_lang ptree_map_plus _ Pos.succ sort_of (*fold_right Pos.max xH *).
 
+  (* [Success tt] iff every rule of [build_rule_set rf l l'] had a successful
+     assumption-side rebuild. *)
+  Definition build_rule_set_status : nat -> lang positive -> lang positive -> Result.result unit :=
+    rule_set_from_lang_status ptree_map_plus _ Pos.succ sort_of.
+
   (*TODO: move *)
   Definition rev_rule {V} (r : rule V) :=
     match r with
@@ -1031,11 +1091,23 @@ Module PositiveInstantiation.
                               l) in
         let {state (renaming V)} pos_rev_rules <- rename_lang (ctx_to_rules c ++ rev_rules) in
         let renamed_inj_rules <- list_Mmap rename_inj inj_rules in
-        ret {state (renaming V)} (egraph_reducing_equal l'
-               [(10%nat,build_rule_set rn pos_rules l');
-                (1%nat,build_rule_set rn pos_rev_rules l')]
-               renamed_inj_rules
-               rn n efuel red_fuel e1' e2')
+        (* Guard: if any rule's assumption-side rebuild ran out of fuel, the
+           compiled rule_set is built from a non-canonical egraph and is
+           unsound.  Fail outright so that [Is_Success] of the whole reduction
+           guarantees every rebuild succeeded (mirrors the freshness guard
+           below). *)
+        ret {state (renaming V)}
+          (match build_rule_set_status rn pos_rules l',
+                 build_rule_set_status rn pos_rev_rules l' with
+           | Result.Success _, Result.Success _ =>
+               egraph_reducing_equal l'
+                 [(10%nat,build_rule_set rn pos_rules l');
+                  (1%nat,build_rule_set rn pos_rev_rules l')]
+                 renamed_inj_rules
+                 rn n efuel red_fuel e1' e2'
+           | Result.Failure e, _ => Result.Failure e
+           | _, Result.Failure e => Result.Failure e
+           end)
     in
     (* Guard: the context variable names must be disjoint from the language
        symbols, otherwise [ctx_to_rules c ++ l] is not [all_fresh] and the

@@ -3306,5 +3306,88 @@ Section WithVar.
       - exact (model_satisfies_rule_adapter_sort_eq name c t1 t2 Hin Hsucc).
     Qed.
 
+    (* ============================================================== *)
+    (* Bridge from the threaded rebuild status to each central         *)
+    (* obligation's [Hsucc] precondition.  [rule_to_log_rule_status] is *)
+    (* the exact rebuild that produced the sequent, so each of these is *)
+    (* definitional.  Used by the schedule-level assembly: a successful *)
+    (* [build_rule_set_status] yields these per-rule [Success]s, which  *)
+    (* discharge the [Hsucc] of [central_obligation_*].                 *)
+    Lemma status_Hsucc_term name c args t
+      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
+          X HX rf name (term_rule c args t) = Result.Success tt ->
+        fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                (empty_egraph V_default X)))) = Result.Success tt.
+    Proof.
+      intro H.
+      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+        as [sub e_ctx].
+      cbn [fst snd] in H |- *.
+      destruct (rebuild rf e_ctx) as [res e_rb].
+      cbn [fst snd] in H |- *.
+      exact H.
+    Qed.
+
+    Lemma status_Hsucc_sort name c args
+      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
+          X HX rf name (sort_rule c args) = Result.Success tt ->
+        fst (rebuild rf (snd (add_ctx succ sort_of l false false c
+                                (empty_egraph V_default X)))) = Result.Success tt.
+    Proof.
+      intro H.
+      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+        as [sub e_ctx].
+      cbn [fst snd] in H |- *.
+      destruct (rebuild rf e_ctx) as [res e_rb].
+      cbn [fst snd] in H |- *.
+      exact H.
+    Qed.
+
+    Lemma status_Hsucc_term_eq name c e1 e2 t
+      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
+          X HX rf name (term_eq_rule c e1 e2 t) = Result.Success tt ->
+        fst (rebuild rf (snd (add_open_term succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  e1
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+        = Result.Success tt.
+    Proof.
+      intro H.
+      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+        as [sub e_ctx].
+      cbn [fst snd] in H |- *.
+      destruct (add_open_term succ sort_of l false false sub e1 e_ctx)
+        as [x1 e_open].
+      cbn [fst snd] in H |- *.
+      destruct (rebuild rf e_open) as [res e_rb].
+      cbn [fst snd] in H |- *.
+      exact H.
+    Qed.
+
+    Lemma status_Hsucc_sort_eq name c t1 t2
+      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
+          X HX rf name (sort_eq_rule c t1 t2) = Result.Success tt ->
+        fst (rebuild rf (snd (add_open_sort succ sort_of l false false
+                  (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
+                  t1
+                  (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
+        = Result.Success tt.
+    Proof.
+      intro H.
+      cbv -[add_ctx add_open_term add_open_sort rebuild empty_egraph] in H.
+      destruct (add_ctx succ sort_of l false false c (empty_egraph V_default X))
+        as [sub e_ctx].
+      cbn [fst snd] in H |- *.
+      destruct (add_open_sort succ sort_of l false false sub t1 e_ctx)
+        as [x1 e_open].
+      cbn [fst snd] in H |- *.
+      destruct (rebuild rf e_open) as [res e_rb].
+      cbn [fst snd] in H |- *.
+      exact H.
+    Qed.
+
   End Adapter.
 End WithVar.
