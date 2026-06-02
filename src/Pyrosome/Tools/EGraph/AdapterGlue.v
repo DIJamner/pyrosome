@@ -179,6 +179,67 @@ Section WithVar.
     Local Notation atom_node :=
       (@Theorems.atom_node V V_Eqb V_default V_map V_trie X).
 
+    (* The bare compiled sequent for [r] — the [Success] value of
+       [rule_to_log_rule] (which now returns [result sequent]).  Used in the
+       adapter's obligations, whose soundness holds regardless of whether the
+       assumption rebuild succeeded. *)
+    Definition rule_to_log_seq n (r : rule) : sequent V V :=
+      match r with
+      | sort_rule c args =>
+          QueryOpt.sequent_of_states_seq
+            (add_ctx succ sort_of l false false c)
+            (fun sub => add_open_sort succ sort_of l true false sub (scon n (id_args c))) rf
+      | term_rule c args t =>
+          QueryOpt.sequent_of_states_seq
+            (add_ctx succ sort_of l false false c)
+            (fun sub => add_open_term succ sort_of l true false sub (con n (id_args c))) rf
+      | sort_eq_rule c t1 t2 =>
+          QueryOpt.sequent_of_states_seq
+            (@! let sub <- add_ctx succ sort_of l false false c in
+                let x1 <- add_open_sort succ sort_of l false false sub t1 in
+                ret (sub, x1))
+            (fun '(sub, x1) =>
+               @! let x2 <- add_open_sort succ sort_of l true false sub t2 in
+                  (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2)) rf
+      | term_eq_rule c e1 e2 t =>
+          QueryOpt.sequent_of_states_seq
+            (@! let sub <- add_ctx succ sort_of l false false c in
+                let x1 <- add_open_term succ sort_of l false false sub e1 in
+                ret (sub, x1))
+            (fun '(sub, x1) =>
+               @! let x2 <- add_open_term succ sort_of l true false sub e2 in
+                  (@Defs.union V V_Eqb V V_map V_map V_trie unit HX x1 x2)) rf
+      end.
+
+    (* Bridge: rule_to_log_rule r = Success s implies s = rule_to_log_seq r *)
+    Lemma rule_to_log_rule_Success_seq name r s
+      : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name r
+          = Result.Success s ->
+        s = rule_to_log_seq name r.
+    Proof.
+      destruct r; intro Heq; cbn [rule_to_log_rule rule_to_log_seq] in *.
+      - (* sort_rule *)
+        unfold QueryOpt.sequent_of_states in Heq.
+        destruct (snd (fst _)) eqn:Hrb.
+        + injection Heq as <-. reflexivity.
+        + discriminate Heq.
+      - (* term_rule *)
+        unfold QueryOpt.sequent_of_states in Heq.
+        destruct (snd (fst _)) eqn:Hrb.
+        + injection Heq as <-. reflexivity.
+        + discriminate Heq.
+      - (* sort_eq_rule *)
+        unfold QueryOpt.sequent_of_states in Heq.
+        destruct (snd (fst _)) eqn:Hrb.
+        + injection Heq as <-. reflexivity.
+        + discriminate Heq.
+      - (* term_eq_rule *)
+        unfold QueryOpt.sequent_of_states in Heq.
+        destruct (snd (fst _)) eqn:Hrb.
+        + injection Heq as <-. reflexivity.
+        + discriminate Heq.
+    Qed.
+
     (* ===== assumption egraph is ok and sound ===== *)
     Lemma assumption_egraph_sound c (Hwfc : wf_ctx l c) (sg : subst)
         (Hsg : wf_subst l [] sg c)
@@ -376,9 +437,9 @@ Section WithVar.
                                     (con name (id_args c))
                                     (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_rule c args t))).
+            (seq_conclusions (rule_to_log_seq name (term_rule c args t))).
     Proof.
-      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
+      unfold rule_to_log_seq, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -874,18 +935,15 @@ Section WithVar.
         name c args t
         (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
         (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
-                      (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (term_rule c args t))))
-        (Hagree : forall cl, In cl (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (term_rule c args t))) ->
+                      (seq_conclusions (rule_to_log_seq name (term_rule c args t))))
+        (Hagree : forall cl, In cl (seq_conclusions (rule_to_log_seq name (term_rule c args t))) ->
                     forall k, In k (clause_vars V V cl) ->
                     forall d da, map.get i2 k = Some d -> map.get a k = Some da ->
                       domain_eq V (lang_model l) d da)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                succ sort_of l X HX rf name (term_rule c args t))).
+            (seq_conclusions (rule_to_log_seq name (term_rule c args t))).
     Proof.
       exists (map.putmany i2 a).
       split.
@@ -916,7 +974,7 @@ Section WithVar.
                                   (empty_egraph V_default X)))) = Result.Success tt)
       : forall k,
           In k (forall_vars
-                  (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))) ->
+                  (rule_to_log_seq name (term_rule c args t))) ->
           (exists e t', wf_term l c e t'
              /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
                           (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e k)
@@ -963,7 +1021,7 @@ Section WithVar.
       (* Step B: reduce Hk to an egraph db atom.
          Mirror exactly the Heq_e rewrite used in model_satisfies_rule_adapter_term. *)
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule in Hk.
+      unfold rule_to_log_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
@@ -1081,13 +1139,12 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))))
+                           (rule_to_log_seq name (term_rule c args t))))
         (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                   (empty_egraph V_default X)))) = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
-                   (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                      X HX rf name (term_rule c args t)))) ->
+                   (rule_to_log_seq name (term_rule c args t)))) ->
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e t', wf_term l c e t'
              /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
@@ -1121,12 +1178,11 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_rule c args t))))
+                           (rule_to_log_seq name (term_rule c args t))))
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                                X HX rf name (term_rule c args t))).
+            (seq_conclusions (rule_to_log_seq name (term_rule c args t))).
     Proof.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) in *.
@@ -1145,7 +1201,7 @@ Section WithVar.
       pose proof (assumption_egraph_sound c Hwfc sg Hsg) as Htmp.
       destruct Htmp as (_ & i1_tmp & _ & Hfst_sub & _).
       set (P := fun k => In k (flat_map (clause_vars V V)
-                    (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                    (seq_conclusions (rule_to_log_seq name
                                         (term_rule c args t))))).
       assert (Hleaf : forall x, In x (map fst sub) ->
                         exists d1 d2,
@@ -1167,7 +1223,7 @@ Section WithVar.
                (fun cl Hcl k Hk d da Hi2k Ha =>
                   Hagree k d da
                     (proj2 (in_flat_map (clause_vars V V)
-                          (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                          (seq_conclusions (rule_to_log_seq name
                                               (term_rule c args t))) k)
                        (ex_intro _ cl (conj Hcl Hk)))
                     Hi2k Ha)).
@@ -1179,12 +1235,11 @@ Section WithVar.
         (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                          (empty_egraph V_default X)))) = Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
-          (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-             X HX rf name (term_rule c args t)).
+          (rule_to_log_seq name (term_rule c args t)).
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
+      unfold rule_to_log_seq in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
       unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
@@ -1333,9 +1388,9 @@ Section WithVar.
                                     (scon name (id_args c))
                                     (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_rule c args))).
+            (seq_conclusions (rule_to_log_seq name (sort_rule c args))).
     Proof.
-      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
+      unfold rule_to_log_seq, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -1378,7 +1433,7 @@ Section WithVar.
                                   (empty_egraph V_default X)))) = Result.Success tt)
       : forall k,
           In k (forall_vars
-                  (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_rule c args))) ->
+                  (rule_to_log_seq name (sort_rule c args))) ->
           (exists e t', wf_term l c e t'
              /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
                           (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) e k)
@@ -1416,7 +1471,7 @@ Section WithVar.
       destruct HE as (_ & _ & _ & Hmapfst_sub & _).
       assert (Hmapfst : map fst sub = map fst c) by exact Hmapfst_sub.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule in Hk.
+      unfold rule_to_log_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
@@ -1518,13 +1573,12 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_rule c args))))
+                           (rule_to_log_seq name (sort_rule c args))))
         (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                   (empty_egraph V_default X)))) = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
-                   (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                      X HX rf name (sort_rule c args)))) ->
+                   (rule_to_log_seq name (sort_rule c args)))) ->
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e t', wf_term l c e t'
              /\ atom_tree (snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))
@@ -1544,18 +1598,15 @@ Section WithVar.
         name c args
         (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
         (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
-                      (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (sort_rule c args))))
-        (Hagree : forall cl, In cl (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (sort_rule c args))) ->
+                      (seq_conclusions (rule_to_log_seq name (sort_rule c args))))
+        (Hagree : forall cl, In cl (seq_conclusions (rule_to_log_seq name (sort_rule c args))) ->
                     forall k, In k (clause_vars V V cl) ->
                     forall d da, map.get i2 k = Some d -> map.get a k = Some da ->
                       domain_eq V (lang_model l) d da)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                succ sort_of l X HX rf name (sort_rule c args))).
+            (seq_conclusions (rule_to_log_seq name (sort_rule c args))).
     Proof.
       exists (map.putmany i2 a).
       split.
@@ -1596,12 +1647,11 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_rule c args))))
+                           (rule_to_log_seq name (sort_rule c args))))
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                                X HX rf name (sort_rule c args))).
+            (seq_conclusions (rule_to_log_seq name (sort_rule c args))).
     Proof.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))) in *.
@@ -1620,7 +1670,7 @@ Section WithVar.
       pose proof (assumption_egraph_sound c Hwfc sg Hsg) as Htmp.
       destruct Htmp as (_ & i1_tmp & _ & Hfst_sub & _).
       set (P := fun k => In k (flat_map (clause_vars V V)
-                    (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                    (seq_conclusions (rule_to_log_seq name
                                         (sort_rule c args))))).
       assert (Hleaf : forall x, In x (map fst sub) ->
                         exists d1 d2,
@@ -1642,7 +1692,7 @@ Section WithVar.
                (fun cl Hcl k Hk d da Hi2k Ha =>
                   Hagree k d da
                     (proj2 (in_flat_map (clause_vars V V)
-                          (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                          (seq_conclusions (rule_to_log_seq name
                                               (sort_rule c args))) k)
                        (ex_intro _ cl (conj Hcl Hk)))
                     Hi2k Ha)).
@@ -1654,12 +1704,11 @@ Section WithVar.
         (Hsucc : fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                          (empty_egraph V_default X)))) = Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
-          (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-             X HX rf name (sort_rule c args)).
+          (rule_to_log_seq name (sort_rule c args)).
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
+      unfold rule_to_log_seq in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
       unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
@@ -1697,13 +1746,11 @@ Section WithVar.
                                          (empty_egraph V_default X)))) = Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
-             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                X HX rf name (term_rule c args t)) rf).
+             (rule_to_log_seq name (term_rule c args t)) rf).
     Proof.
       apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                  X HX rf name (term_rule c args t)) rf (lang_model l)
+               (rule_to_log_seq name (term_rule c args t)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
@@ -1723,13 +1770,11 @@ Section WithVar.
                                          (empty_egraph V_default X)))) = Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
-             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                X HX rf name (sort_rule c args)) rf).
+             (rule_to_log_seq name (sort_rule c args)) rf).
     Proof.
       apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                  X HX rf name (sort_rule c args)) rf (lang_model l)
+               (rule_to_log_seq name (sort_rule c args)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_ctx succ sort_of l false false c
@@ -2040,9 +2085,9 @@ Section WithVar.
                                           (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                                           e1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))).
+            (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))).
     Proof.
-      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
+      unfold rule_to_log_seq, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -2098,7 +2143,7 @@ Section WithVar.
                = Result.Success tt)
       : forall k,
           In k (forall_vars
-                  (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_eq_rule c e1 e2 t))) ->
+                  (rule_to_log_seq name (term_eq_rule c e1 e2 t))) ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
@@ -2118,7 +2163,7 @@ Section WithVar.
         rewrite invert_wf_term_eq_rule in Hr. destruct Hr as (_ & He1 & _ & _). exact He1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule in Hk.
+      unfold rule_to_log_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
@@ -2259,7 +2304,7 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_eq_rule c e1 e2 t))))
+                           (rule_to_log_seq name (term_eq_rule c e1 e2 t))))
         (Hsucc : fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -2267,8 +2312,7 @@ Section WithVar.
                = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
-                   (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                      X HX rf name (term_eq_rule c e1 e2 t)))) ->
+                   (rule_to_log_seq name (term_eq_rule c e1 e2 t)))) ->
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_term succ sort_of l false false
@@ -2292,18 +2336,15 @@ Section WithVar.
         name c e1 e2 t
         (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
         (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
-                      (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))))
-        (Hagree : forall cl, In cl (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))) ->
+                      (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))))
+        (Hagree : forall cl, In cl (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))) ->
                     forall k, In k (clause_vars V V cl) ->
                     forall d da, map.get i2 k = Some d -> map.get a k = Some da ->
                       domain_eq V (lang_model l) d da)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                succ sort_of l X HX rf name (term_eq_rule c e1 e2 t))).
+            (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))).
     Proof.
       exists (map.putmany i2 a).
       split.
@@ -2349,12 +2390,11 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (term_eq_rule c e1 e2 t))))
+                           (rule_to_log_seq name (term_eq_rule c e1 e2 t))))
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                                X HX rf name (term_eq_rule c e1 e2 t))).
+            (seq_conclusions (rule_to_log_seq name (term_eq_rule c e1 e2 t))).
     Proof.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_term succ sort_of l false false sub e1
@@ -2381,7 +2421,7 @@ Section WithVar.
       destruct Htmp as (_ & i1_tmp & _ & Hfst_sub & _).
       fold sub in Hfst_sub.
       set (P := fun k => In k (flat_map (clause_vars V V)
-                    (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                    (seq_conclusions (rule_to_log_seq name
                                         (term_eq_rule c e1 e2 t))))).
       assert (Hleaf : forall x, In x (map fst sub) ->
                         exists d1 d2,
@@ -2403,7 +2443,7 @@ Section WithVar.
                (fun cl Hcl k Hk d da Hi2k Ha =>
                   Hagree k d da
                     (proj2 (in_flat_map (clause_vars V V)
-                          (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                          (seq_conclusions (rule_to_log_seq name
                                               (term_eq_rule c e1 e2 t))) k)
                        (ex_intro _ cl (conj Hcl Hk)))
                     Hi2k Ha)).
@@ -2418,12 +2458,11 @@ Section WithVar.
                   (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
                = Result.Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
-          (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-             X HX rf name (term_eq_rule c e1 e2 t)).
+          (rule_to_log_seq name (term_eq_rule c e1 e2 t)).
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
+      unfold rule_to_log_seq in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
       unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
@@ -2502,13 +2541,11 @@ Section WithVar.
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
-             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                X HX rf name (term_eq_rule c e1 e2 t)) rf).
+             (rule_to_log_seq name (term_eq_rule c e1 e2 t)) rf).
     Proof.
       apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                  X HX rf name (term_eq_rule c e1 e2 t)) rf (lang_model l)
+               (rule_to_log_seq name (term_eq_rule c e1 e2 t)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_term succ sort_of l false false
@@ -2798,9 +2835,9 @@ Section WithVar.
                                           (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                                           t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))))))))))))
       : all (clause_sound_for_model V V V_map (lang_model l) i2)
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_eq_rule c t1 t2))).
+            (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))).
     Proof.
-      unfold rule_to_log_rule, QueryOpt.sequent_of_states_seq.
+      unfold rule_to_log_seq, QueryOpt.sequent_of_states_seq.
       cbn [seq_conclusions fst].
       unfold Monad.Mbind, Monad.Mret, StateMonad.state_monad.
       cbn beta iota.
@@ -2851,7 +2888,7 @@ Section WithVar.
                = Result.Success tt)
       : forall k,
           In k (forall_vars
-                  (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_eq_rule c t1 t2))) ->
+                  (rule_to_log_seq name (sort_eq_rule c t1 t2))) ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
@@ -2871,7 +2908,7 @@ Section WithVar.
         rewrite invert_wf_sort_eq_rule in Hr. destruct Hr as (_ & Ht1 & _). exact Ht1. }
       intros k Hk.
       unfold forall_vars in Hk.
-      unfold rule_to_log_rule in Hk.
+      unfold rule_to_log_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
       unfold QueryOpt.sequent_of_states_seq in Hk.
       cbn [seq_assumptions fst] in Hk.
@@ -3004,7 +3041,7 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_eq_rule c t1 t2))))
+                           (rule_to_log_seq name (sort_eq_rule c t1 t2))))
         (Hsucc : fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1
@@ -3012,8 +3049,7 @@ Section WithVar.
                = Result.Success tt)
       : forall k da d,
           In k (flat_map (clause_vars V V) (seq_conclusions
-                   (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                      X HX rf name (sort_eq_rule c t1 t2)))) ->
+                   (rule_to_log_seq name (sort_eq_rule c t1 t2)))) ->
           map.get a k = Some da -> map.get i2 k = Some d ->
           (exists e' t', wf_term l c e' t'
              /\ atom_tree (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
@@ -3037,18 +3073,15 @@ Section WithVar.
         name c t1 t2
         (Hwf_i2 : forall k d, map.get i2 k = Some d -> domain_eq V (lang_model l) d d)
         (Hclauses : all (clause_sound_for_model V V V_map (lang_model l) i2)
-                      (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (sort_eq_rule c t1 t2))))
-        (Hagree : forall cl, In cl (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                          succ sort_of l X HX rf name (sort_eq_rule c t1 t2))) ->
+                      (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))))
+        (Hagree : forall cl, In cl (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))) ->
                     forall k, In k (clause_vars V V cl) ->
                     forall d da, map.get i2 k = Some d -> map.get a k = Some da ->
                       domain_eq V (lang_model l) d da)
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie
-                                succ sort_of l X HX rf name (sort_eq_rule c t1 t2))).
+            (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))).
     Proof.
       exists (map.putmany i2 a).
       split.
@@ -3094,12 +3127,11 @@ Section WithVar.
                     atom_sound_for_model V V V_map (lang_model l) a al)
         (Hconf : forall x, Sep.has_key x a ->
                    In x (forall_vars
-                           (rule_to_log_rule V_map V_trie succ sort_of l rf name (sort_eq_rule c t1 t2))))
+                           (rule_to_log_seq name (sort_eq_rule c t1 t2))))
       : exists a' : V_map (domain V (lang_model l)),
           map.extends a' a /\
           all (clause_sound_for_model V V V_map (lang_model l) a')
-            (seq_conclusions (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                                X HX rf name (sort_eq_rule c t1 t2))).
+            (seq_conclusions (rule_to_log_seq name (sort_eq_rule c t1 t2))).
     Proof.
       set (sub    := fst (add_ctx succ sort_of l false false c (empty_egraph V_default X))) in *.
       set (e_assum := snd (rebuild rf (snd (add_open_sort succ sort_of l false false sub t1
@@ -3126,7 +3158,7 @@ Section WithVar.
       destruct Htmp as (_ & i1_tmp & _ & Hfst_sub & _).
       fold sub in Hfst_sub.
       set (P := fun k => In k (flat_map (clause_vars V V)
-                    (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                    (seq_conclusions (rule_to_log_seq name
                                         (sort_eq_rule c t1 t2))))).
       assert (Hleaf : forall x, In x (map fst sub) ->
                         exists d1 d2,
@@ -3148,7 +3180,7 @@ Section WithVar.
                (fun cl Hcl k Hk d da Hi2k Ha =>
                   Hagree k d da
                     (proj2 (in_flat_map (clause_vars V V)
-                          (seq_conclusions (rule_to_log_rule V_map V_trie succ sort_of l rf name
+                          (seq_conclusions (rule_to_log_seq name
                                               (sort_eq_rule c t1 t2))) k)
                        (ex_intro _ cl (conj Hcl Hk)))
                     Hi2k Ha)).
@@ -3163,12 +3195,11 @@ Section WithVar.
                   (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X))))))
                = Result.Success tt)
       : @model_satisfies_rule V V V_map (lang_model l)
-          (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-             X HX rf name (sort_eq_rule c t1 t2)).
+          (rule_to_log_seq name (sort_eq_rule c t1 t2)).
     Proof.
       unfold model_satisfies_rule.
       intros a Hkeys Hconf Hassum.
-      unfold rule_to_log_rule in Hassum |- *.
+      unfold rule_to_log_seq in Hassum |- *.
       cbn [seq_assumptions fst] in Hassum.
       unfold QueryOpt.sequent_of_states_seq in Hassum.
       cbn [seq_assumptions fst] in Hassum.
@@ -3242,19 +3273,17 @@ Section WithVar.
                = Result.Success tt)
       : model_satisfies_rule V V V_map (lang_model l)
           (QueryOpt.optimize_sequent V V_Eqb succ V_default V V_map V_map V_trie
-             (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                X HX rf name (sort_eq_rule c t1 t2)) rf).
+             (rule_to_log_seq name (sort_eq_rule c t1 t2)) rf).
     Proof.
       apply (@optimize_sequent_forward_atoms V V_Eqb V_Eqb_ok lt succ V_default
                V V_Eqb V_Eqb_ok V_map V_map_ok V_map V_map_ok V_trie V_trie_ok
-               (@rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l
-                  X HX rf name (sort_eq_rule c t1 t2)) rf (lang_model l)
+               (rule_to_log_seq name (sort_eq_rule c t1 t2)) rf (lang_model l)
                (@Theorems.lang_model_ok V V_Eqb V_Eqb_ok sort_of l Hsof Hwf)
                lt_asymmetric lt_succ lt_trans
                (db_to_atoms (db (snd (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1 (snd (add_ctx succ sort_of l false false c (empty_egraph V_default X)))))))))) .
-      - unfold rule_to_log_rule.
+      - unfold rule_to_log_seq.
         cbn [seq_assumptions fst].
         unfold QueryOpt.sequent_of_states_seq.
         cbn [seq_assumptions fst].
@@ -3273,14 +3302,13 @@ Section WithVar.
 
     (* ============================================================== *)
     (* Bridge from the threaded rebuild status to each central         *)
-    (* obligation's [Hsucc] precondition.  [rule_to_log_rule_status] is *)
-    (* the exact rebuild that produced the sequent, so each of these is *)
-    (* definitional.  Used by the schedule-level assembly: a successful *)
-    (* [build_rule_set_status] yields these per-rule [Success]s, which  *)
-    (* discharge the [Hsucc] of [central_obligation_*].                 *)
-    Lemma status_Hsucc_term name c args t
-      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
-          X HX rf name (term_rule c args t) = Result.Success tt ->
+    (* obligation's [Hsucc] precondition.  These lemmas hypothesize    *)
+    (* rule_to_log_rule succeeded (returning Success s) and conclude   *)
+    (* that the underlying rebuild succeeded.                          *)
+    (* Used by the schedule-level assembly to discharge the [Hsucc]   *)
+    (* of [central_obligation_*].                                      *)
+    Lemma status_Hsucc_term name c args t s
+      : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_rule c args t) = Result.Success s ->
         fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                 (empty_egraph V_default X)))) = Result.Success tt.
     Proof.
@@ -3294,9 +3322,8 @@ Section WithVar.
       destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
-    Lemma status_Hsucc_sort name c args
-      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
-          X HX rf name (sort_rule c args) = Result.Success tt ->
+    Lemma status_Hsucc_sort name c args s
+      : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_rule c args) = Result.Success s ->
         fst (rebuild rf (snd (add_ctx succ sort_of l false false c
                                 (empty_egraph V_default X)))) = Result.Success tt.
     Proof.
@@ -3310,9 +3337,8 @@ Section WithVar.
       destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
-    Lemma status_Hsucc_term_eq name c e1 e2 t
-      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
-          X HX rf name (term_eq_rule c e1 e2 t) = Result.Success tt ->
+    Lemma status_Hsucc_term_eq name c e1 e2 t s
+      : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (term_eq_rule c e1 e2 t) = Result.Success s ->
         fst (rebuild rf (snd (add_open_term succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   e1
@@ -3332,9 +3358,8 @@ Section WithVar.
       destruct res as [u|e]; [destruct u; reflexivity | discriminate H].
     Qed.
 
-    Lemma status_Hsucc_sort_eq name c t1 t2
-      : @rule_to_log_rule_status V V_Eqb V_default V_map V_trie succ sort_of l
-          X HX rf name (sort_eq_rule c t1 t2) = Result.Success tt ->
+    Lemma status_Hsucc_sort_eq name c t1 t2 s
+      : @rule_to_log_rule V V_Eqb V_default V_map V_trie succ sort_of l X HX rf name (sort_eq_rule c t1 t2) = Result.Success s ->
         fst (rebuild rf (snd (add_open_sort succ sort_of l false false
                   (fst (add_ctx succ sort_of l false false c (empty_egraph V_default X)))
                   t1

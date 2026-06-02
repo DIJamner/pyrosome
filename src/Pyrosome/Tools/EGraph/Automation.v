@@ -318,18 +318,17 @@ Section ReducingSkeleton.
                 (filter (fun p => reversible p && lf p) l)) r4) as [posRR r5] eqn:HrPRR.
     destruct (list_Mmap rename_inj inj_rules r5) as [injp r6] eqn:HrInj.
     cbn [fst] in Hsucc.
-    (* The rebuild-success guard (Defs.egraph_reducing_equal'): [Is_Success]
-       forces both rule_sets to have compiled from successful assumption
-       rebuilds.  Expose the two statuses; failing branches contradict
-       [Is_Success], and the Success/Success branch reduces the guard match
-       back to the bare [egraph_reducing_equal] run for the carry-over below.
-       [Hst1]/[Hst2] are kept for discharging [schedule_sound]. *)
-    destruct (PositiveInstantiation.build_rule_set_with_status rebuild_fuel posR Lp)
-      as [rsR stR] eqn:Hbws1.
-    destruct (PositiveInstantiation.build_rule_set_with_status rebuild_fuel posRR Lp)
-      as [rsRR stRR] eqn:Hbws2.
-    destruct stR as [u_st1|e_st1]; [ | cbn in Hsucc; destruct Hsucc ].
-    destruct stRR as [u_st2|e_st2]; [ | cbn in Hsucc; destruct Hsucc ].
+    (* The rebuild-success guard (Defs.egraph_reducing_equal'): [build_rule_set]
+       returns [Failure] when a rule's assumption rebuild ran out of fuel, so
+       [Is_Success] forces both rule_sets to be [Success].  Expose them; the
+       failing branches contradict [Is_Success], and the Success/Success branch
+       reduces the guard match back to the bare [egraph_reducing_equal] run for
+       the carry-over below.  [Hbrs1]/[Hbrs2] are kept for discharging
+       [schedule_sound]. *)
+    destruct (PositiveInstantiation.build_rule_set rebuild_fuel posR Lp)
+      as [rsR|e_st1] eqn:Hbrs1; [ | cbn in Hsucc; destruct Hsucc ].
+    destruct (PositiveInstantiation.build_rule_set rebuild_fuel posRR Lp)
+      as [rsRR|e_st2] eqn:Hbrs2; [ | cbn in Hsucc; destruct Hsucc ].
     cbv beta iota in Hsucc.
     (* Rename the goal sort [sort_var_to_con t] at [r3] -> [Tp]/[r7].  (The sort
        is not renamed by the computation; [t'] is our existential choice.) *)

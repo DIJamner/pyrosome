@@ -303,8 +303,12 @@ Definition term_to_sort (t: term) : sort :=
   end.
 
 Definition const_rules (l: lang) :=
-  (map (uncurry (rule_to_log_rule string_trie_map _
-                   string_succ sort_of l (analysis_result:=unit) 1000))
+  (flat_map (fun '(n,r) =>
+               match rule_to_log_rule string_trie_map _
+                       string_succ sort_of l (analysis_result:=unit) 1000 n r with
+               | Result.Success s => [s]
+               | Result.Failure _ => []
+               end)
   (filter (fun '(n,r) => inclb (get_ctx r) []) l)).
 
 
